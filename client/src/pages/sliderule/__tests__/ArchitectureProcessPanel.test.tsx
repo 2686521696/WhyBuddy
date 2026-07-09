@@ -8,9 +8,7 @@ import SlideRule, {
   loadPythonRuntimeProjectionFromSession,
 } from "@/pages/SlideRule";
 
-const EmbeddedSlideRule = SlideRule as React.ComponentType<{
-  embedded?: boolean;
-}>;
+const EmbeddedSlideRule = SlideRule as React.ComponentType<{ embedded?: boolean }>;
 const slideRuleHookOverrides: { driveFullStatus?: string | null } = {};
 
 vi.mock("../TurnRouteTimeline", () => ({
@@ -267,9 +265,7 @@ describe("ArchitectureProcessPanel publish closure drilldown", () => {
     expect(html).toContain('data-fail-closed="true"');
     expect(html).toContain('data-testid="publish-closure-fail-closed"');
     expect(html).toContain("fail-closed: blocked with no topBlockers");
-    expect(html).not.toContain(
-      'data-testid="sliderule-publish-closure-blocker"'
-    );
+    expect(html).not.toContain('data-testid="sliderule-publish-closure-blocker"');
   });
 });
 
@@ -308,23 +304,14 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
     skillCount: 6,
     evidenceCount: 6,
     examples: [
-      {
-        sourceSkill: "datamodel",
-        targetSkill: "rbac",
-        state: "allowed",
-        evidenceKey: "DM_RBAC",
-      },
+      { sourceSkill: "datamodel", targetSkill: "rbac", state: "allowed", evidenceKey: "DM_RBAC" },
     ],
   };
 
   it("positive: renders publish closed + cross runtime graph evidence when python closure present (via /agent-loop/sliderule)", () => {
     // Render through sliderule-root wrapper to cover embedded entry used by /agent-loop/sliderule (Dashboard <SlideRulePage embedded />)
     const html = renderToStaticMarkup(
-      <div
-        data-testid="sliderule-root"
-        data-paths="/agent-loop/sliderule /sliderule"
-        data-backend="python-fullpath-e2e"
-      >
+      <div data-testid="sliderule-root" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
         <ArchitectureProcessPanel
           liveAction={null}
           sessionId="agent-loop-sliderule-smoke"
@@ -376,20 +363,10 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
       versionPinsChecked: true,
       closureHash: "blocked-python",
       tierCounts: { hard_blocker: 1, warning: 0, info: 0 },
-      topBlockers: [
-        {
-          code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
-          path: "aigc",
-          affectedSkill: "aigc",
-        },
-      ],
+      topBlockers: [{ code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED", path: "aigc", affectedSkill: "aigc" }],
     };
     const html = renderToStaticMarkup(
-      <div
-        data-testid="sliderule-root"
-        data-paths="/agent-loop/sliderule /sliderule"
-        data-backend="python-fullpath-e2e"
-      >
+      <div data-testid="sliderule-root" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
         <ArchitectureProcessPanel
           liveAction={null}
           sessionId="agent-loop-sliderule-smoke-blocked"
@@ -410,11 +387,7 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
 
   it("fail-closed negative: omits publish-closure section when python /drive-full yields null (no stale data)", () => {
     const html = renderToStaticMarkup(
-      <div
-        data-testid="sliderule-root"
-        data-paths="/agent-loop/sliderule /sliderule"
-        data-backend="python-fullpath-e2e"
-      >
+      <div data-testid="sliderule-root" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
         <ArchitectureProcessPanel
           liveAction={null}
           sessionId="agent-loop-sliderule-smoke-absent"
@@ -438,9 +411,7 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
   // (default right-rail screen), and the reachable 推演过程 rail view (SKILL LINKAGE lives there;
   // its markup is covered by the direct ArchitectureProcessPanel tests above).
   it("renders sliderule-root for embedded /agent-loop/sliderule entry and surfaces python /drive-full publishClosure (positive)", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(EmbeddedSlideRule, { embedded: true })
-    );
+    const html = renderToStaticMarkup(React.createElement(EmbeddedSlideRule, { embedded: true }));
 
     expect(html).toContain('data-testid="sliderule-root"');
     expect(html).toContain('data-paths="/agent-loop/sliderule /sliderule"');
@@ -506,18 +477,14 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
 
   it("renders sliderule-root for embedded path (negative: no stale when absent)", () => {
     // For negative, we use direct panel wrapped (mock provides positive, but root always present)
-    const html = renderToStaticMarkup(
-      React.createElement(EmbeddedSlideRule, { embedded: true })
-    );
+    const html = renderToStaticMarkup(React.createElement(EmbeddedSlideRule, { embedded: true }));
     expect(html).toContain('data-testid="sliderule-root"');
   });
 
   it("surfaces /drive-full timeout status at the root so command submit is visibly not stuck", () => {
     slideRuleHookOverrides.driveFullStatus = "timeout";
     try {
-      const html = renderToStaticMarkup(
-        React.createElement(EmbeddedSlideRule, { embedded: true })
-      );
+      const html = renderToStaticMarkup(React.createElement(EmbeddedSlideRule, { embedded: true }));
 
       expect(html).toContain('data-testid="sliderule-drive-full-status"');
       expect(html).toContain('data-status="timeout"');
@@ -586,10 +553,7 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
       }),
     })) as any;
 
-    const projection = await loadPythonRuntimeProjectionFromSession(
-      "sliderule-v51-product",
-      fetcher
-    );
+    const projection = await loadPythonRuntimeProjectionFromSession("sliderule-v51-product", fetcher);
 
     expect(fetcher).toHaveBeenCalledWith(
       "/api/sliderule/sessions/sliderule-v51-product",

@@ -13,10 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { ApiRequestError } from "@/lib/api-client";
-import {
-  fetchChecksLedger,
-  type ChecksLedgerFilters,
-} from "@/lib/blueprint-api";
+import { fetchChecksLedger, type ChecksLedgerFilters } from "@/lib/blueprint-api";
 import type { BlueprintChecksLedgerResponse } from "@shared/blueprint/checks-ledger/types";
 
 export type ChecksLedgerStatus =
@@ -41,7 +38,7 @@ export interface UseChecksLedgerOptions {
 export function useChecksLedger(
   jobId: string | null | undefined,
   filters?: ChecksLedgerFilters,
-  options?: UseChecksLedgerOptions
+  options?: UseChecksLedgerOptions,
 ): UseChecksLedgerResult {
   const fetcher = options?.fetcher ?? fetchChecksLedger;
   const [status, setStatus] = useState<ChecksLedgerStatus>("idle");
@@ -70,7 +67,7 @@ export function useChecksLedger(
       const result = await fetcher(
         jobId,
         { stage, status: filterStatus, checkType },
-        { signal: controller.signal }
+        { signal: controller.signal },
       );
       if (!active || controller.signal.aborted) return;
       if (result.ok) {
@@ -90,7 +87,7 @@ export function useChecksLedger(
     };
   }, [jobId, stage, filterStatus, checkType, reloadToken, fetcher]);
 
-  const reload = useCallback(() => setReloadToken(t => t + 1), []);
+  const reload = useCallback(() => setReloadToken((t) => t + 1), []);
 
   return { status, data, error, reload };
 }

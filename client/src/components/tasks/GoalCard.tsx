@@ -1,8 +1,5 @@
 import { cn } from "@/lib/utils";
-import type {
-  TaskAutopilotSummary,
-  MissionTaskDetail,
-} from "@/lib/tasks-store";
+import type { TaskAutopilotSummary, MissionTaskDetail } from "@/lib/tasks-store";
 
 /* ─── i18n helper ─── */
 
@@ -12,10 +9,7 @@ function t(locale: string, zh: string, en: string): string {
 
 /* ─── Status icon mapping ─── */
 
-const STATUS_ICONS: Record<
-  GoalItemStatus,
-  { icon: string; className: string }
-> = {
+const STATUS_ICONS: Record<GoalItemStatus, { icon: string; className: string }> = {
   completed: { icon: "✓", className: "text-emerald-500" },
   in_progress: { icon: "●", className: "text-blue-500 animate-pulse" },
   pending: { icon: "○", className: "text-muted-foreground" },
@@ -32,9 +26,9 @@ export interface GoalItem {
 }
 
 export interface GoalCardProps {
-  title: string; // i18n: "目标" / "Goals"
+  title: string;                       // i18n: "目标" / "Goals"
   goals: GoalItem[];
-  overallProgress: number; // 0-100
+  overallProgress: number;             // 0-100
   locale: string;
 }
 
@@ -50,36 +44,33 @@ export interface GoalCardProps {
  */
 export function buildGoalCardData(
   autopilotSummary: TaskAutopilotSummary | null | undefined,
-  selectedDetail:
-    | Pick<MissionTaskDetail, "summary" | "title" | "progress">
-    | null
-    | undefined,
-  locale: string
+  selectedDetail: Pick<MissionTaskDetail, "summary" | "title" | "progress"> | null | undefined,
+  locale: string,
 ): Pick<GoalCardProps, "title" | "goals" | "overallProgress"> {
   const title = t(locale, "目标", "Goals");
 
   // Try subGoals first
   const subGoals = autopilotSummary?.destination?.subGoals;
   if (Array.isArray(subGoals) && subGoals.length > 0) {
-    const goals: GoalItem[] = subGoals.map(sg => {
+    const goals: GoalItem[] = subGoals.map((sg) => {
       const status = mapSubGoalStatus(sg.status);
       return {
         label: sg.title || sg.id,
         status,
-        progress:
-          status === "completed" ? 100 : status === "in_progress" ? 50 : 0,
+        progress: status === "completed" ? 100 : status === "in_progress" ? 50 : 0,
       };
     });
-    const completedCount = goals.filter(g => g.status === "completed").length;
-    const overallProgress =
-      goals.length > 0 ? Math.round((completedCount / goals.length) * 100) : 0;
+    const completedCount = goals.filter((g) => g.status === "completed").length;
+    const overallProgress = goals.length > 0
+      ? Math.round((completedCount / goals.length) * 100)
+      : 0;
     return { title, goals, overallProgress };
   }
 
   // Try successCriteria
   const successCriteria = autopilotSummary?.destination?.successCriteria;
   if (Array.isArray(successCriteria) && successCriteria.length > 0) {
-    const goals: GoalItem[] = successCriteria.map(criterion => ({
+    const goals: GoalItem[] = successCriteria.map((criterion) => ({
       label: criterion,
       status: "pending" as const,
     }));
@@ -101,7 +92,9 @@ export function buildGoalCardData(
   return { title, goals: [], overallProgress: 0 };
 }
 
-function mapSubGoalStatus(status: string | null | undefined): GoalItemStatus {
+function mapSubGoalStatus(
+  status: string | null | undefined,
+): GoalItemStatus {
   switch (status) {
     case "done":
     case "completed":
@@ -128,7 +121,7 @@ export function GoalCard({
     <div
       className={cn(
         "bg-card text-card-foreground border rounded-lg p-4",
-        "flex flex-col gap-3"
+        "flex flex-col gap-3",
       )}
     >
       {/* Card title */}
@@ -142,20 +135,11 @@ export function GoalCard({
       ) : (
         <ul className="flex flex-col gap-2">
           {goals.map((goal, index) => {
-            const { icon, className: iconClassName } =
-              STATUS_ICONS[goal.status];
+            const { icon, className: iconClassName } = STATUS_ICONS[goal.status];
             return (
-              <li
-                key={index}
-                className="flex items-center justify-between gap-2 text-sm"
-              >
+              <li key={index} className="flex items-center justify-between gap-2 text-sm">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className={cn(
-                      "flex-shrink-0 text-base leading-none",
-                      iconClassName
-                    )}
-                  >
+                  <span className={cn("flex-shrink-0 text-base leading-none", iconClassName)}>
                     {icon}
                   </span>
                   <span className="truncate">{goal.label}</span>

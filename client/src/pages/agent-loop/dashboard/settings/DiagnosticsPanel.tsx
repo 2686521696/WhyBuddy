@@ -1,22 +1,7 @@
-import { useMemo } from "react";
-import {
-  Alert,
-  Button,
-  Descriptions,
-  Empty,
-  List,
-  Space,
-  Tag,
-  Typography,
-  message,
-} from "antd";
-import {
-  ReloadOutlined,
-  SnippetsOutlined,
-  CopyOutlined,
-  CodeOutlined,
-} from "@ant-design/icons";
-import type { DiagnosticsPanelProps } from "./types";
+import { useMemo } from 'react';
+import { Alert, Button, Descriptions, Empty, List, Space, Tag, Typography, message } from 'antd';
+import { ReloadOutlined, SnippetsOutlined, CopyOutlined, CodeOutlined } from '@ant-design/icons';
+import type { DiagnosticsPanelProps } from './types';
 
 const { Text, Title } = Typography;
 
@@ -28,9 +13,7 @@ type WarningRow = {
 function copyText(text: string, label: string) {
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard
-        .writeText(text)
-        .then(() => message.success(`${label} 已复制`));
+      navigator.clipboard.writeText(text).then(() => message.success(`${label} 已复制`));
     } else {
       message.info(`${label}（请手动复制）`);
     }
@@ -40,7 +23,7 @@ function copyText(text: string, label: string) {
 }
 
 function jsonToLines(value: Record<string, unknown>) {
-  return JSON.stringify(value || {}, null, 2).split("\n");
+  return JSON.stringify(value || {}, null, 2).split('\n');
 }
 
 function renderJsonLine(line: string) {
@@ -49,26 +32,19 @@ function renderJsonLine(line: string) {
     const [, indent, key, rawValue, comma] = keyMatch;
     return (
       <>
-        {indent}
-        <span className="native-json-key">"{key}"</span>:{" "}
-        <JsonValue value={rawValue} />
-        {comma}
+        {indent}<span className="native-json-key">"{key}"</span>: <JsonValue value={rawValue} />{comma}
       </>
     );
   }
-  return <>{line || " "}</>;
+  return <>{line || ' '}</>;
 }
 
 function JsonValue({ value }: { value: string }) {
   const clean = value.trim();
-  if (/^"/.test(clean))
-    return <span className="native-json-string">{value}</span>;
-  if (/^(true|false)$/.test(clean))
-    return <span className="native-json-boolean">{value}</span>;
-  if (/^-?\d+(\.\d+)?$/.test(clean))
-    return <span className="native-json-number">{value}</span>;
-  if (/^null$/.test(clean))
-    return <span className="native-json-null">{value}</span>;
+  if (/^"/.test(clean)) return <span className="native-json-string">{value}</span>;
+  if (/^(true|false)$/.test(clean)) return <span className="native-json-boolean">{value}</span>;
+  if (/^-?\d+(\.\d+)?$/.test(clean)) return <span className="native-json-number">{value}</span>;
+  if (/^null$/.test(clean)) return <span className="native-json-null">{value}</span>;
   return <>{value}</>;
 }
 
@@ -98,10 +74,7 @@ function CodeCard({
       </div>
       <div className="native-diagnostics-code">
         {lines.map((line, index) => (
-          <div
-            className="native-diagnostics-code-line"
-            key={`${title}-${index}-${line}`}
-          >
+          <div className="native-diagnostics-code-line" key={`${title}-${index}-${line}`}>
             <span className="native-diagnostics-code-no">{index + 1}</span>
             <code>{renderJsonLine(line)}</code>
           </div>
@@ -112,10 +85,10 @@ function CodeCard({
 }
 
 function warnTone(category: string) {
-  if (category === "ready") return "success";
-  if (category === "failed") return "error";
-  if (category === "skipped") return "default";
-  return "warning";
+  if (category === 'ready') return 'success';
+  if (category === 'failed') return 'error';
+  if (category === 'skipped') return 'default';
+  return 'warning';
 }
 
 function DiagnosticsSummary({ data }: { data: any }) {
@@ -123,29 +96,16 @@ function DiagnosticsSummary({ data }: { data: any }) {
   return (
     <div className="native-diagnostics-summary">
       <Descriptions size="small" bordered column={3}>
-        <Descriptions.Item label="Repo root">
-          {data?.repoRoot || "-"}
-        </Descriptions.Item>
-        <Descriptions.Item label="Queue path">
-          {data?.queuePath || "-"}
-        </Descriptions.Item>
-        <Descriptions.Item label="Active Profile">
-          {data?.activeProfile || "-"}
-        </Descriptions.Item>
+        <Descriptions.Item label="Repo root">{data?.repoRoot || '-'}</Descriptions.Item>
+        <Descriptions.Item label="Queue path">{data?.queuePath || '-'}</Descriptions.Item>
+        <Descriptions.Item label="Active Profile">{data?.activeProfile || '-'}</Descriptions.Item>
         <Descriptions.Item label="Key status" span={3}>
           <Space wrap>
-            {Object.keys(keys).length > 0 ? (
-              Object.keys(keys).map(key => (
-                <Tag
-                  key={key}
-                  color={keys[key] === "configured" ? "success" : undefined}
-                >
-                  {key}:{keys[key] || "unset"}
-                </Tag>
-              ))
-            ) : (
-              <Tag>no keys</Tag>
-            )}
+            {Object.keys(keys).length > 0 ? Object.keys(keys).map((key) => (
+              <Tag key={key} color={keys[key] === 'configured' ? 'success' : undefined}>
+                {key}:{keys[key] || 'unset'}
+              </Tag>
+            )) : <Tag>no keys</Tag>}
           </Space>
         </Descriptions.Item>
       </Descriptions>
@@ -163,7 +123,7 @@ function DiagnosticsWarnings({ warnings }: { warnings: WarningRow[] }) {
         <List
           size="small"
           dataSource={grouped}
-          renderItem={row => (
+          renderItem={(row) => (
             <List.Item>
               <Space wrap>
                 <Tag color={warnTone(row.category)}>{row.category}</Tag>
@@ -177,18 +137,13 @@ function DiagnosticsWarnings({ warnings }: { warnings: WarningRow[] }) {
   );
 }
 
-function PythonHealthCard({
-  pythonHealth,
-}: {
-  pythonHealth?: DiagnosticsPanelProps["pythonHealth"];
-}) {
+function PythonHealthCard({ pythonHealth }: { pythonHealth?: DiagnosticsPanelProps['pythonHealth'] }) {
   if (!pythonHealth) return null;
-  const tone =
-    pythonHealth.service.status === "ready"
-      ? "success"
-      : pythonHealth.service.status === "offline"
-        ? "error"
-        : "warning";
+  const tone = pythonHealth.service.status === 'ready'
+    ? 'success'
+    : pythonHealth.service.status === 'offline'
+      ? 'error'
+      : 'warning';
   return (
     <section className="native-diagnostics-warning-card">
       <div className="native-diagnostics-code-head">
@@ -199,32 +154,15 @@ function PythonHealthCard({
         <Tag color={tone}>{pythonHealth.service.label}</Tag>
       </div>
       <Descriptions size="small" bordered column={2}>
-        <Descriptions.Item label="Service">
-          {pythonHealth.service.status}
-        </Descriptions.Item>
-        <Descriptions.Item label="Checked At">
-          {pythonHealth.service.checkedAt || "-"}
-        </Descriptions.Item>
-        <Descriptions.Item label="Detail" span={2}>
-          {pythonHealth.service.detail || "-"}
-        </Descriptions.Item>
-        <Descriptions.Item label="Missing config" span={2}>
-          {pythonHealth.hasMissingConfig ? "yes" : "no"}
-        </Descriptions.Item>
+        <Descriptions.Item label="Service">{pythonHealth.service.status}</Descriptions.Item>
+        <Descriptions.Item label="Checked At">{pythonHealth.service.checkedAt || '-'}</Descriptions.Item>
+        <Descriptions.Item label="Detail" span={2}>{pythonHealth.service.detail || '-'}</Descriptions.Item>
+        <Descriptions.Item label="Missing config" span={2}>{pythonHealth.hasMissingConfig ? 'yes' : 'no'}</Descriptions.Item>
       </Descriptions>
       <div style={{ marginTop: 8 }}>
         <Space wrap>
-          {pythonHealth.providers.map(provider => (
-            <Tag
-              key={provider.name}
-              color={
-                provider.readiness === "ready"
-                  ? "success"
-                  : provider.readiness === "offline"
-                    ? "error"
-                    : "warning"
-              }
-            >
+          {pythonHealth.providers.map((provider) => (
+            <Tag key={provider.name} color={provider.readiness === 'ready' ? 'success' : provider.readiness === 'offline' ? 'error' : 'warning'}>
               {provider.name}:{provider.readiness}
             </Tag>
           ))}
@@ -234,11 +172,7 @@ function PythonHealthCard({
   );
 }
 
-export function DiagnosticsView({
-  data,
-  pythonHealth,
-  onRefresh,
-}: DiagnosticsPanelProps) {
+export function DiagnosticsView({ data, pythonHealth, onRefresh }: DiagnosticsPanelProps) {
   const d = data || {};
   const eff = d.effectiveConfig || {};
   const srcs = d.configSources || {};
@@ -246,7 +180,7 @@ export function DiagnosticsView({
   const warns: WarningRow[] = Array.isArray(d.warnings) ? d.warnings : [];
 
   const handleCopy = () => {
-    copyText(JSON.stringify(d, null, 2), "redacted diagnostics artifact JSON");
+    copyText(JSON.stringify(d, null, 2), 'redacted diagnostics artifact JSON');
   };
 
   return (
@@ -254,33 +188,17 @@ export function DiagnosticsView({
       <div className="native-diagnostics-topbar">
         <Title level={5}>Diagnostics（只读）</Title>
         <Space>
-          <Button size="small" icon={<ReloadOutlined />} onClick={onRefresh}>
-            刷新
-          </Button>
-          <Button size="small" icon={<SnippetsOutlined />} onClick={handleCopy}>
-            Copy JSON
-          </Button>
+          <Button size="small" icon={<ReloadOutlined />} onClick={onRefresh}>刷新</Button>
+          <Button size="small" icon={<SnippetsOutlined />} onClick={handleCopy}>Copy JSON</Button>
         </Space>
       </div>
 
       <DiagnosticsSummary data={d} />
 
       <div className="native-diagnostics-grid">
-        <CodeCard
-          title="Effective config"
-          data={eff}
-          className="native-diagnostics-code-effective"
-        />
-        <CodeCard
-          title="Config sources"
-          data={srcs}
-          className="native-diagnostics-code-sources"
-        />
-        <CodeCard
-          title="Last run state"
-          data={last}
-          className="native-diagnostics-code-last"
-        />
+        <CodeCard title="Effective config" data={eff} className="native-diagnostics-code-effective" />
+        <CodeCard title="Config sources" data={srcs} className="native-diagnostics-code-sources" />
+        <CodeCard title="Last run state" data={last} className="native-diagnostics-code-last" />
         <PythonHealthCard pythonHealth={pythonHealth} />
         <section className="native-diagnostics-warning-card">
           <div className="native-diagnostics-code-head">

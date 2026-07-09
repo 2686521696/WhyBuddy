@@ -8,11 +8,11 @@ import {
 
 describe("S20 · RV review pass/reject + ITER recycle parity", () => {
   it("RV reject recycle signature matches chat challenge on report (P2 parity)", () => {
-    const { state, reportId } =
-      buildClearStateWithTrustedReport("s20-rv-reject");
+    const { state, reportId } = buildClearStateWithTrustedReport("s20-rv-reject");
 
-    const { preparedState: viaChallenge, controlSignal: challengeSignal } =
-      intakeMessage(structuredClone(state), {
+    const { preparedState: viaChallenge, controlSignal: challengeSignal } = intakeMessage(
+      structuredClone(state),
+      {
         turnId: "s20-ch",
         userText: "质疑报告",
         intervention: {
@@ -20,15 +20,13 @@ describe("S20 · RV review pass/reject + ITER recycle parity", () => {
           intent: "challenge",
           text: "质疑报告",
         },
-      });
-
-    const { preparedState: viaRv, controlSignal: rvSignal } = intakeMessage(
-      structuredClone(state),
-      {
-        turnId: "s20-rv",
-        userText: "评审打回，退回修改",
       }
     );
+
+    const { preparedState: viaRv, controlSignal: rvSignal } = intakeMessage(structuredClone(state), {
+      turnId: "s20-rv",
+      userText: "评审打回，退回修改",
+    });
 
     expect(recycleSignature(viaRv)).toBe(recycleSignature(viaChallenge));
     expect(viaRv.goal.status).toBe("needs_refinement");
@@ -46,11 +44,10 @@ describe("S20 · RV review pass/reject + ITER recycle parity", () => {
   });
 
   it("RV pass blocked without trusted report keeps awaiting phase", () => {
-    const { state, reportId } =
-      buildClearStateWithTrustedReport("s20-rv-blocked");
+    const { state, reportId } = buildClearStateWithTrustedReport("s20-rv-blocked");
     const noReport = {
       ...state,
-      artifacts: (state.artifacts || []).filter(a => a.id !== reportId),
+      artifacts: (state.artifacts || []).filter((a) => a.id !== reportId),
     };
     const { preparedState } = intakeMessage(noReport, {
       turnId: "s20-block",

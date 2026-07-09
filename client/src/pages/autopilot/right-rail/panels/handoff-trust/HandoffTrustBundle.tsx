@@ -109,7 +109,7 @@ export const HandoffTrustBundleView: FC<HandoffTrustBundleViewProps> = ({
         {t(
           locale,
           "信任层产物（校验台账 / 可追溯矩阵）尚未就绪，将在生成后并入交付包。",
-          "Trust artifacts (checks ledger / traceability matrix) are not ready yet; they will join the bundle once generated."
+          "Trust artifacts (checks ledger / traceability matrix) are not ready yet; they will join the bundle once generated.",
         )}
       </section>
     );
@@ -131,43 +131,26 @@ export const HandoffTrustBundleView: FC<HandoffTrustBundleViewProps> = ({
 
       {/* 56.1 校验台账摘要 */}
       {hasLedger ? (
-        <div
-          data-testid="handoff-ledger-summary"
-          className="flex flex-col gap-1"
-        >
+        <div data-testid="handoff-ledger-summary" className="flex flex-col gap-1">
           <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-tight text-slate-400">
             <ClipboardCheck className="size-3" aria-hidden />
             {t(locale, "校验台账摘要", "Checks ledger summary")}
           </div>
           <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold">
-            <span
-              data-testid="handoff-ledger-total"
-              className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600"
-            >
+            <span data-testid="handoff-ledger-total" className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">
               {t(locale, "总计", "Total")} {ledger!.summary.total}
             </span>
-            <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">
-              pass {ledger!.summary.pass}
-            </span>
-            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">
-              warn {ledger!.summary.warn}
-            </span>
-            <span className="rounded bg-rose-50 px-1.5 py-0.5 text-rose-700">
-              fail {ledger!.summary.fail}
-            </span>
-            <span className="rounded bg-slate-50 px-1.5 py-0.5 text-slate-500">
-              skip {ledger!.summary.skip}
-            </span>
+            <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">pass {ledger!.summary.pass}</span>
+            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">warn {ledger!.summary.warn}</span>
+            <span className="rounded bg-rose-50 px-1.5 py-0.5 text-rose-700">fail {ledger!.summary.fail}</span>
+            <span className="rounded bg-slate-50 px-1.5 py-0.5 text-slate-500">skip {ledger!.summary.skip}</span>
           </div>
         </div>
       ) : null}
 
       {/* 56.2 可追溯矩阵摘要 + markdown 导出 */}
       {hasMatrix ? (
-        <div
-          data-testid="handoff-matrix-summary"
-          className="flex flex-col gap-1"
-        >
+        <div data-testid="handoff-matrix-summary" className="flex flex-col gap-1">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-tight text-slate-400">
               <GitCompare className="size-3" aria-hidden />
@@ -185,15 +168,10 @@ export const HandoffTrustBundleView: FC<HandoffTrustBundleViewProps> = ({
           </div>
           <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold text-slate-500">
             <span data-testid="handoff-matrix-coverage">
-              {t(locale, "覆盖率", "Coverage")}{" "}
-              {Math.round(matrix!.coverage.coveragePercent)}%
+              {t(locale, "覆盖率", "Coverage")} {Math.round(matrix!.coverage.coveragePercent)}%
             </span>
-            <span>
-              {t(locale, "需求", "Req")} {matrix!.coverage.totalRequirements}
-            </span>
-            <span>
-              {t(locale, "缺口", "Gaps")} {matrix!.coverage.gaps.length}
-            </span>
+            <span>{t(locale, "需求", "Req")} {matrix!.coverage.totalRequirements}</span>
+            <span>{t(locale, "缺口", "Gaps")} {matrix!.coverage.gaps.length}</span>
           </div>
         </div>
       ) : null}
@@ -202,15 +180,11 @@ export const HandoffTrustBundleView: FC<HandoffTrustBundleViewProps> = ({
       <div data-testid="handoff-open-items" className="flex flex-col gap-1">
         <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-tight text-slate-400">
           <ListChecks className="size-3" aria-hidden />
-          {t(
-            locale,
-            `未决项 ${openItems.length}`,
-            `Open items ${openItems.length}`
-          )}
+          {t(locale, `未决项 ${openItems.length}`, `Open items ${openItems.length}`)}
         </div>
         {openItems.length > 0 ? (
           <ul className="flex flex-col gap-1">
-            {openItems.map(item => (
+            {openItems.map((item) => (
               <li
                 key={`${item.kind}-${item.id}`}
                 data-testid="handoff-open-item"
@@ -219,21 +193,16 @@ export const HandoffTrustBundleView: FC<HandoffTrustBundleViewProps> = ({
                   "rounded-[8px] border px-2 py-1 text-[10px]",
                   item.kind === "gap"
                     ? "border-amber-200 bg-amber-50 text-amber-800"
-                    : "border-rose-200 bg-rose-50 text-rose-800"
+                    : "border-rose-200 bg-rose-50 text-rose-800",
                 )}
               >
                 <span className="font-bold">{item.label}</span>
-                {item.detail ? (
-                  <span className="opacity-70"> — {item.detail}</span>
-                ) : null}
+                {item.detail ? <span className="opacity-70"> — {item.detail}</span> : null}
               </li>
             ))}
           </ul>
         ) : (
-          <div
-            data-testid="handoff-open-items-empty"
-            className="text-[10px] text-slate-400"
-          >
+          <div data-testid="handoff-open-items-empty" className="text-[10px] text-slate-400">
             {t(locale, "无未决项", "No open items")}
           </div>
         )}

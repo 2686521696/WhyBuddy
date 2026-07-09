@@ -14,10 +14,7 @@ import {
 import type { AppPageChartSchema } from "../live-runtime/app-runtime-schema";
 import type { RuntimeRow } from "../live-runtime/live-runtime";
 
-const row = (
-  values: Record<string, unknown>,
-  id = Math.random().toString(36).slice(2)
-): RuntimeRow => ({
+const row = (values: Record<string, unknown>, id = Math.random().toString(36).slice(2)): RuntimeRow => ({
   id,
   values,
   createdAt: "2026-07-08T00:00:00Z",
@@ -92,10 +89,7 @@ describe("buildEchartsOption", () => {
 
   it("line：2px 线宽 + ≥8px 白描边端点 + 端点直标", () => {
     const spec: AppPageChartSchema = { ...countSpec, type: "line" };
-    const opt = buildEchartsOption(spec, [
-      row({ status: "a" }),
-      row({ status: "b" }),
-    ])!;
+    const opt = buildEchartsOption(spec, [row({ status: "a" }), row({ status: "b" })])!;
     const series = (opt.series as any[])[0];
     expect(series.lineStyle.width).toBe(2);
     expect(series.symbolSize).toBeGreaterThanOrEqual(8);
@@ -138,24 +132,16 @@ describe("工作台内置图 builders（切 ECharts）", () => {
     expect(series.data).toEqual([1, 3]);
     expect(series.itemStyle.color).toBe("#1677ff");
     expect(series.itemStyle.borderRadius).toEqual([0, 4, 4, 0]); // 数据端圆角
-    expect(series.label).toMatchObject({
-      show: true,
-      position: "right",
-      color: "#262626",
-    });
+    expect(series.label).toMatchObject({ show: true, position: "right", color: "#262626" });
   });
 
   it("buildInstanceStatusOption：保留状态色 + 中心合计 + 2px 白缝，无实例 → null", () => {
     expect(buildInstanceStatusOption({})).toBeNull();
     expect(buildInstanceStatusOption({ running: 0 })).toBeNull();
-    const opt = buildInstanceStatusOption({
-      running: 2,
-      completed: 1,
-      rejected: 1,
-    })!;
+    const opt = buildInstanceStatusOption({ running: 2, completed: 1, rejected: 1 })!;
     expect((opt.title as any).text).toBe("4"); // 中心合计
     const data = (opt.series as any[])[0].data as any[];
-    expect(data.map(d => [d.name, d.itemStyle.color])).toEqual([
+    expect(data.map((d) => [d.name, d.itemStyle.color])).toEqual([
       ["进行中", "#1677ff"],
       ["已完成", "#52c41a"],
       ["已驳回", "#ff4d4f"],
@@ -163,8 +149,6 @@ describe("工作台内置图 builders（切 ECharts）", () => {
     for (const d of data) expect(d.itemStyle.borderWidth).toBe(2);
     // 值为 0 的状态不出片（不画空段）
     const opt2 = buildInstanceStatusOption({ running: 5 })!;
-    expect(((opt2.series as any[])[0].data as any[]).map(d => d.name)).toEqual([
-      "进行中",
-    ]);
+    expect(((opt2.series as any[])[0].data as any[]).map((d) => d.name)).toEqual(["进行中"]);
   });
 });

@@ -60,11 +60,7 @@ export {
   CANVAS_H,
   drawBrainstormGraph,
 } from "./brainstorm-wall-graph-logic";
-export type {
-  LayoutNode,
-  LayoutEdge,
-  LayoutResult,
-} from "./brainstorm-wall-graph-logic";
+export type { LayoutNode, LayoutEdge, LayoutResult } from "./brainstorm-wall-graph-logic";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -108,20 +104,19 @@ export function computeBrainstormLayout(
   const rolesWithClaims = new Set<BranchNode["roleId"]>(
     nodes
       .filter(
-        node =>
+        (node) =>
           node.id !== `role:${node.roleId}` &&
           typeof node.content === "string" &&
-          node.content.trim().length > 0
+          node.content.trim().length > 0,
       )
-      .map(node => node.roleId)
+      .map((node) => node.roleId),
   );
   const visibleNodes = nodes.filter(
-    node =>
-      !(node.id === `role:${node.roleId}` && rolesWithClaims.has(node.roleId))
+    (node) => !(node.id === `role:${node.roleId}` && rolesWithClaims.has(node.roleId)),
   );
   if (visibleNodes.length === 0) return null;
 
-  const nodeById = new Map(visibleNodes.map(node => [node.id, node]));
+  const nodeById = new Map(visibleNodes.map((node) => [node.id, node]));
 
   // First parent per node (parent-child sequence edges), restricted to the
   // visible set so dropped anchors don't anchor a layer.
@@ -137,11 +132,7 @@ export function computeBrainstormLayout(
   }
   // Fall back to the persisted parentNodeId when no explicit edge exists.
   for (const node of visibleNodes) {
-    if (
-      !parentOf.has(node.id) &&
-      node.parentNodeId &&
-      nodeById.has(node.parentNodeId)
-    ) {
+    if (!parentOf.has(node.id) && node.parentNodeId && nodeById.has(node.parentNodeId)) {
       parentOf.set(node.id, node.parentNodeId);
     }
   }
@@ -166,13 +157,13 @@ export function computeBrainstormLayout(
   for (const node of visibleNodes) {
     maxBaseLayer = Math.max(maxBaseLayer, layerOf(node.id));
   }
-  const hasSynthesis = visibleNodes.some(node => node.type === "synthesis");
+  const hasSynthesis = visibleNodes.some((node) => node.type === "synthesis");
   const finalLayer = hasSynthesis ? maxBaseLayer + 1 : maxBaseLayer;
   const layerByNode = new Map<string, number>();
   for (const node of visibleNodes) {
     layerByNode.set(
       node.id,
-      node.type === "synthesis" ? finalLayer : layerOf(node.id)
+      node.type === "synthesis" ? finalLayer : layerOf(node.id),
     );
   }
 
@@ -192,17 +183,15 @@ export function computeBrainstormLayout(
   const colStep = Math.max(
     BRAINSTORM_NODE_W + 240,
     (canvasWidth - BRAINSTORM_PADDING * 2 - BRAINSTORM_NODE_W) /
-      Math.max(1, columnCount - 1)
+      Math.max(1, columnCount - 1),
   );
 
   const renderedNodes: LayoutNode[] = [];
-  for (const [layer, group] of [...byLayer.entries()].sort(
-    (a, b) => a[0] - b[0]
-  )) {
+  for (const [layer, group] of [...byLayer.entries()].sort((a, b) => a[0] - b[0])) {
     group.sort(
       (a, b) =>
         roleIndex(a.roleId) - roleIndex(b.roleId) ||
-        (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0)
+        (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0),
     );
     const x = left + layer * colStep;
     const count = group.length;
@@ -226,7 +215,7 @@ export function computeBrainstormLayout(
     });
   }
 
-  const posById = new Map(renderedNodes.map(n => [n.id, n]));
+  const posById = new Map(renderedNodes.map((n) => [n.id, n]));
   const edgeLabelFor = (child: BranchNode, layer: number): string => {
     // Only use the declared BranchNodeType values (no critique/rebuttal here;
     // those are carried via challengeEdges + deliberation overlay for the
@@ -255,16 +244,14 @@ export function computeBrainstormLayout(
   }
 
   const graphWidth =
-    BRAINSTORM_NODE_W +
-    Math.max(0, columnCount - 1) * colStep +
-    BRAINSTORM_PADDING * 2;
+    BRAINSTORM_NODE_W + Math.max(0, columnCount - 1) * colStep + BRAINSTORM_PADDING * 2;
   const graphHeight = canvasHeight;
   const scale = computeAdaptiveScale(
     graphWidth,
     graphHeight,
     canvasWidth,
     canvasHeight,
-    BRAINSTORM_PADDING
+    BRAINSTORM_PADDING,
   );
 
   return { nodes: renderedNodes, edges: layoutEdges, scale };
@@ -370,7 +357,7 @@ export function BrainstormWallGraph({
     // Apply fade-in opacity to layout nodes
     let drawLayout = layout;
     if (drawLayout && fadeNodesRef.current.size > 0) {
-      const fadedNodes = drawLayout.nodes.map(n => {
+      const fadedNodes = drawLayout.nodes.map((n) => {
         const fade = fadeNodesRef.current.get(n.id);
         if (fade) {
           const elapsed = now - fade.startTime;
@@ -411,10 +398,7 @@ export function BrainstormWallGraph({
       receiveShadow
     >
       <planeGeometry
-        args={[
-          BLUEPRINT_WALL_GRAPH_BACKING_WIDTH,
-          BLUEPRINT_WALL_GRAPH_BACKING_HEIGHT,
-        ]}
+        args={[BLUEPRINT_WALL_GRAPH_BACKING_WIDTH, BLUEPRINT_WALL_GRAPH_BACKING_HEIGHT]}
       />
       <meshBasicMaterial depthWrite={false} />
     </mesh>

@@ -113,7 +113,9 @@ export function LaunchPanelActionBar({
           compact
             ? {
                 backgroundColor:
-                  disabled || submitting ? "rgba(241,245,249,0.92)" : "#0ea5e9",
+                  disabled || submitting
+                    ? "rgba(241,245,249,0.92)"
+                    : "#0ea5e9",
                 color: disabled || submitting ? "#64748b" : "#ffffff",
               }
             : {

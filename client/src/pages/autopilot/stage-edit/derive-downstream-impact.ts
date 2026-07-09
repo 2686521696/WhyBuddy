@@ -42,8 +42,7 @@ export function deriveDownstreamImpact({
   stageOrder = DEFAULT_STAGE_ORDER,
 }: DeriveDownstreamImpactInput): DownstreamImpactSummary {
   const stageIndex = stageOrder.indexOf(fromStage);
-  const downstreamStages =
-    stageIndex < 0 ? [] : stageOrder.slice(stageIndex + 1);
+  const downstreamStages = stageIndex < 0 ? [] : stageOrder.slice(stageIndex + 1);
 
   return {
     fromStage,

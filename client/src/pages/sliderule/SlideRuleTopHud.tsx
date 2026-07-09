@@ -78,10 +78,7 @@ export function SlideRuleTopHud({
             >
               {goal || "尚未稳定话题"}
             </span>
-            <span
-              className="hidden h-3 w-px bg-[#e5e7eb] md:inline-block"
-              aria-hidden
-            />
+            <span className="hidden h-3 w-px bg-[#e5e7eb] md:inline-block" aria-hidden />
             <span className="hidden text-stone-400 sm:inline">
               阶段{" "}
               <span className="font-mono font-semibold text-stone-700">
@@ -115,11 +112,7 @@ export function SlideRuleTopHud({
               disabled={isRunning}
               data-testid="sliderule-reset-session"
               className="flex h-9 items-center gap-1.5 rounded-full border border-[#e5e7eb] bg-white px-4 text-[13px] font-medium text-stone-700 shadow-[0_1px_6px_rgb(15_23_42/0.06)] transition hover:border-[#d3d8e0] hover:bg-[#eef0f4] disabled:opacity-45"
-              title={
-                isRunning
-                  ? "推演进行中，稍后再重置"
-                  : "清空本轮对话与持久化状态，重新开始"
-              }
+              title={isRunning ? "推演进行中，稍后再重置" : "清空本轮对话与持久化状态，重新开始"}
             >
               <RotateCw className="h-4 w-4" />
               重置会话
@@ -136,13 +129,7 @@ export function SlideRuleTopHud({
   );
 }
 
-export function InlineMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
+export function InlineMetric({ label, value }: { label: string; value: number }) {
   return (
     <span className="tabular-nums text-stone-600">
       <span className="text-stone-400">{label} </span>

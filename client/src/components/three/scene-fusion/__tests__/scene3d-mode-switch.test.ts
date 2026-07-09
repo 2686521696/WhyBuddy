@@ -82,9 +82,7 @@ describe("Scene3D / blueprint-vs-mission-first mode switch (source guards)", () 
     // mission-first 的静态依赖图。针对剥离注释后的代码检查，避免命中 JSDoc 里记录该护栏
     // 的文档文字。
     expect(
-      /import\s+[^;]*from\s+["']@ant-design\/graphs["']/.test(
-        codeWithoutComments
-      )
+      /import\s+[^;]*from\s+["']@ant-design\/graphs["']/.test(codeWithoutComments)
     ).toBe(false);
     expect(
       /import\s+["']@ant-design\/graphs["']/.test(codeWithoutComments)
@@ -94,9 +92,7 @@ describe("Scene3D / blueprint-vs-mission-first mode switch (source guards)", () 
   it("blueprint 分支把 blueprintLocale 透传给 HUD 的 locale prop（Fix 2，Req 5 本地化）", () => {
     // Scene3DProps 暴露 blueprintLocale（AppLocale），blueprint 分支把它作为 HUD 的
     // locale 透传，使 en-US 页面墙面文案不再回退 deriver 的 zh-CN 默认。
-    expect(codeWithoutComments.includes("blueprintLocale?: AppLocale")).toBe(
-      true
-    );
+    expect(codeWithoutComments.includes("blueprintLocale?: AppLocale")).toBe(true);
     expect(codeWithoutComments).toContain("locale={blueprintLocale}");
     // AppLocale 类型已 import（type-only 即可）。
     expect(

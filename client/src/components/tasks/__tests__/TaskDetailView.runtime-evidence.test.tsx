@@ -71,8 +71,7 @@ function makeDetail(overrides?: Partial<MissionTaskDetail>): MissionTaskDetail {
         time: Date.now() - 120_000,
         level: "warn",
         title: "Executor retried artifact upload",
-        description:
-          "The executor retried the artifact upload after a callback delay.",
+        description: "The executor retried the artifact upload after a callback delay.",
         actor: "lobster",
       },
     ],
@@ -89,9 +88,7 @@ function makeDetail(overrides?: Partial<MissionTaskDetail>): MissionTaskDetail {
         downloadKind: "workflow",
       },
     ],
-    failureReasons: [
-      "Artifact upload is still waiting on callback confirmation.",
-    ],
+    failureReasons: ["Artifact upload is still waiting on callback confirmation."],
     decisionPresets: [],
     decisionPrompt: null,
     decisionPlaceholder: null,
@@ -103,8 +100,7 @@ function makeDetail(overrides?: Partial<MissionTaskDetail>): MissionTaskDetail {
       socket: {
         status: "connected",
         label: "Socket connected",
-        detail:
-          "Mission socket is connected and can receive live runtime updates.",
+        detail: "Mission socket is connected and can receive live runtime updates.",
       },
       callback: {
         status: "active",

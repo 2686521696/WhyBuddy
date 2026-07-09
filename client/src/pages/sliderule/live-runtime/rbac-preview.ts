@@ -21,17 +21,15 @@ export interface RoleAccess {
   menuLabels: string[];
 }
 
-export function deriveRoleAccess(
-  model: FiveSystemModel | null | undefined
-): RoleAccess[] {
+export function deriveRoleAccess(model: FiveSystemModel | null | undefined): RoleAccess[] {
   const roles = model?.rbac?.roles ?? [];
   const menus = model?.rbac?.menus ?? [];
-  return roles.map(role => {
-    const roleMenus = menus.filter(m => (m.roleRefs ?? []).includes(role));
+  return roles.map((role) => {
+    const roleMenus = menus.filter((m) => (m.roleRefs ?? []).includes(role));
     return {
       role,
-      permissions: [...new Set(roleMenus.flatMap(m => m.permissionRefs ?? []))],
-      menuLabels: roleMenus.map(m => m.label || m.id || "").filter(Boolean),
+      permissions: [...new Set(roleMenus.flatMap((m) => m.permissionRefs ?? []))],
+      menuLabels: roleMenus.map((m) => m.label || m.id || "").filter(Boolean),
     };
   });
 }
@@ -54,12 +52,12 @@ export function pageAccessForRole(
   access: RoleAccess | undefined
 ): PageAccess[] {
   const held = new Set(access?.permissions ?? []);
-  return pages.map(page => {
+  return pages.map((page) => {
     const actions = page.actions ?? [];
-    const granted = actions.filter(a => held.has(a));
-    const denied = actions.filter(a => !held.has(a));
-    const createActions = actions.filter(a => /:create$/.test(a));
-    const createHeld = createActions.find(a => held.has(a)) ?? null;
+    const granted = actions.filter((a) => held.has(a));
+    const denied = actions.filter((a) => !held.has(a));
+    const createActions = actions.filter((a) => /:create$/.test(a));
+    const createHeld = createActions.find((a) => held.has(a)) ?? null;
     return {
       pageId: page.id,
       title: page.title,
@@ -77,5 +75,5 @@ export function accessForRole(
   role: string | undefined
 ): RoleAccess | undefined {
   if (!role) return undefined;
-  return deriveRoleAccess(model).find(r => r.role === role);
+  return deriveRoleAccess(model).find((r) => r.role === role);
 }

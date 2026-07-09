@@ -50,8 +50,7 @@ import { deriveBlueprintWallProcessData } from "../blueprint-wall-process-data";
 // ─── Source readers (consolidation / scope guards) ───────────────────────────
 
 const here = dirname(fileURLToPath(import.meta.url));
-const readScene = (file: string) =>
-  readFileSync(resolve(here, "..", file), "utf8");
+const readScene = (file: string) => readFileSync(resolve(here, "..", file), "utf8");
 
 const hudSource = readScene("BlueprintWallProcessGraphHud.tsx");
 const metricsRailSource = readScene("BlueprintWallMetricsRail.tsx");
@@ -73,7 +72,7 @@ function importLines(source: string): string {
   return source
     .split("\n")
     .filter(
-      line => line.trim().startsWith("import") || /\bfrom\s+["']/.test(line)
+      (line) => line.trim().startsWith("import") || /\bfrom\s+["']/.test(line)
     )
     .join("\n");
 }
@@ -115,15 +114,9 @@ describe("BlueprintWallProcessGraphHud consolidates all three overlays (source g
     expect(hudImports).toContain("BlueprintWallMetricsRail");
     expect(hudImports).toContain("BlueprintWallConsoleOverlay");
     expect(hudImports).toContain("BlueprintWallGraphControls");
-    expect(/from\s+["']\.\/BlueprintWallMetricsRail["']/.test(hudImports)).toBe(
-      true
-    );
-    expect(
-      /from\s+["']\.\/BlueprintWallConsoleOverlay["']/.test(hudImports)
-    ).toBe(true);
-    expect(
-      /from\s+["']\.\/BlueprintWallGraphControls["']/.test(hudImports)
-    ).toBe(true);
+    expect(/from\s+["']\.\/BlueprintWallMetricsRail["']/.test(hudImports)).toBe(true);
+    expect(/from\s+["']\.\/BlueprintWallConsoleOverlay["']/.test(hudImports)).toBe(true);
+    expect(/from\s+["']\.\/BlueprintWallGraphControls["']/.test(hudImports)).toBe(true);
   });
 
   it("mounts (renders) all three overlays in the same host", () => {
@@ -162,10 +155,7 @@ describe("Overlays consume the single deriver output (behavioral consolidation)"
     // 故遥测栏四行全部渲染为 muted 占位（首版口径，Req 7.3），不臆造数值。
     const wallData = deriveBlueprintWallProcessData({
       job: makeJob(),
-      capabilityStatuses: { c1: "invoking" } as Record<
-        string,
-        CapabilityStatus
-      >,
+      capabilityStatuses: { c1: "invoking" } as Record<string, CapabilityStatus>,
     });
 
     // 单一数据源前置确认：四个遥测字段确实是 null。

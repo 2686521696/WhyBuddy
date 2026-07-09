@@ -67,9 +67,7 @@ export function ActiveSystemScreen({
         ? null
         : mergeFiveSystemModels(
             parseFiveSystemModelFromContents(skillContents),
-            parseFiveSystemModelFromPerSkillEvidence(
-              publishClosure?.perSkillEvidence
-            )
+            parseFiveSystemModelFromPerSkillEvidence(publishClosure?.perSkillEvidence)
           ),
     [model, skillContents, publishClosure?.perSkillEvidence]
   );
@@ -89,9 +87,7 @@ export function ActiveSystemScreen({
         {/* Each screen is mounted but only the active one is fully visible.
             Keeping them all mounted avoids mermaid re-render flicker. */}
 
-        <div
-          className={activeSkillId === "dataModel" ? "h-full w-full" : "hidden"}
-        >
+        <div className={activeSkillId === "dataModel" ? "h-full w-full" : "hidden"}>
           <DataModelScreen
             publishClosure={publishClosure}
             mermaidSource={skillContents.dataModel ?? latestMermaid}
@@ -101,9 +97,7 @@ export function ActiveSystemScreen({
           />
         </div>
 
-        <div
-          className={activeSkillId === "workflow" ? "h-full w-full" : "hidden"}
-        >
+        <div className={activeSkillId === "workflow" ? "h-full w-full" : "hidden"}>
           <WorkflowScreen
             publishClosure={publishClosure}
             mermaidSource={skillContents.workflow ?? latestMermaid}
@@ -144,13 +138,7 @@ export function ActiveSystemScreen({
         </div>
 
         {/* Default / appBundle — show when no skill is active */}
-        <div
-          className={
-            !activeSkillId || activeSkillId === "appBundle"
-              ? "h-full w-full"
-              : "hidden"
-          }
-        >
+        <div className={!activeSkillId || activeSkillId === "appBundle" ? "h-full w-full" : "hidden"}>
           <AppBundleScreen
             publishClosure={publishClosure}
             model={fiveSystemModel}

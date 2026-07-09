@@ -19,19 +19,17 @@ describe("use-family-data", () => {
       status: "loading",
       loading: true,
     });
-    expect(createFamilyDataState({ jobId: "root", initialData })).toMatchObject(
-      {
-        status: "ready",
-        data: initialData,
-        loading: false,
-      }
-    );
+    expect(createFamilyDataState({ jobId: "root", initialData })).toMatchObject({
+      status: "ready",
+      data: initialData,
+      loading: false,
+    });
     expect(
       createFamilyDataState({
         jobId: "root",
         disableRemoteFetch: true,
         initialData,
-      })
+      }),
     ).toMatchObject({
       status: "static_unsupported",
       data: initialData,
@@ -65,17 +63,10 @@ describe("use-family-data", () => {
     const callerSignal = new AbortController().signal;
     const hookSignal = new AbortController().signal;
 
-    expect(
-      mergeFamilyRequestInit(
-        { headers: { accept: "application/json" } },
-        hookSignal
-      )
-    ).toMatchObject({
+    expect(mergeFamilyRequestInit({ headers: { accept: "application/json" } }, hookSignal)).toMatchObject({
       signal: hookSignal,
     });
-    expect(
-      mergeFamilyRequestInit({ signal: callerSignal }, hookSignal)
-    ).toMatchObject({
+    expect(mergeFamilyRequestInit({ signal: callerSignal }, hookSignal)).toMatchObject({
       signal: callerSignal,
     });
   });

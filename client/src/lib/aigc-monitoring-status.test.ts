@@ -10,7 +10,7 @@ import {
 describe("aigc-monitoring-status", () => {
   it("maps execution statuses to Chinese-friendly labels and tones", () => {
     expect(
-      getAigcMonitoringStatusPresentation("PENDING", { locale: "zh-CN" })
+      getAigcMonitoringStatusPresentation("PENDING", { locale: "zh-CN" }),
     ).toMatchObject({
       label: "待执行",
       shortLabel: "待执行",
@@ -19,7 +19,7 @@ describe("aigc-monitoring-status", () => {
     });
 
     expect(
-      getAigcMonitoringStatusPresentation("EXECUTING", { locale: "zh-CN" })
+      getAigcMonitoringStatusPresentation("EXECUTING", { locale: "zh-CN" }),
     ).toMatchObject({
       label: "执行中",
       shortLabel: "进行中",
@@ -28,7 +28,7 @@ describe("aigc-monitoring-status", () => {
     });
 
     expect(
-      getAigcMonitoringStatusPresentation("EXECUTED", { locale: "zh-CN" })
+      getAigcMonitoringStatusPresentation("EXECUTED", { locale: "zh-CN" }),
     ).toMatchObject({
       label: "已完成",
       shortLabel: "已完成",
@@ -37,7 +37,7 @@ describe("aigc-monitoring-status", () => {
     });
 
     expect(
-      getAigcMonitoringStatusPresentation("EXCEPTION", { locale: "zh-CN" })
+      getAigcMonitoringStatusPresentation("EXCEPTION", { locale: "zh-CN" }),
     ).toMatchObject({
       label: "执行异常",
       shortLabel: "异常",
@@ -46,7 +46,7 @@ describe("aigc-monitoring-status", () => {
     });
 
     expect(
-      getAigcMonitoringStatusPresentation("WAITING_INPUT", { locale: "zh-CN" })
+      getAigcMonitoringStatusPresentation("WAITING_INPUT", { locale: "zh-CN" }),
     ).toMatchObject({
       label: "等待输入",
       shortLabel: "等待输入",
@@ -57,7 +57,7 @@ describe("aigc-monitoring-status", () => {
     expect(
       getAigcMonitoringStatusPresentation("FORCE_TERMINATED", {
         locale: "zh-CN",
-      })
+      }),
     ).toMatchObject({
       label: "强制终止",
       shortLabel: "已终止",
@@ -68,7 +68,7 @@ describe("aigc-monitoring-status", () => {
 
   it("maps node statuses and supports English fallback", () => {
     expect(
-      getAigcMonitoringStatusPresentation("EXECUTING", { locale: "en-US" })
+      getAigcMonitoringStatusPresentation("EXECUTING", { locale: "en-US" }),
     ).toMatchObject({
       label: "Executing",
       shortLabel: "Running",
@@ -76,7 +76,7 @@ describe("aigc-monitoring-status", () => {
     });
 
     expect(
-      getAigcMonitoringStatusPresentation("EXECUTED", { locale: "en-US" })
+      getAigcMonitoringStatusPresentation("EXECUTED", { locale: "en-US" }),
     ).toMatchObject({
       label: "Executed",
       shortLabel: "Done",
@@ -84,7 +84,7 @@ describe("aigc-monitoring-status", () => {
     });
 
     expect(
-      getAigcMonitoringStatusPresentation("EXCEPTION", { locale: "en-US" })
+      getAigcMonitoringStatusPresentation("EXCEPTION", { locale: "en-US" }),
     ).toMatchObject({
       label: "Exception",
       shortLabel: "Error",
@@ -97,14 +97,14 @@ describe("aigc-monitoring-status", () => {
       getAigcMonitoringStatusLabel("EXECUTING", {
         locale: "zh-CN",
         short: true,
-      })
+      }),
     ).toBe("进行中");
 
     expect(
       getAigcMonitoringStatusLabel("FORCE_TERMINATED", {
         locale: "en-US",
         short: true,
-      })
+      }),
     ).toBe("Terminated");
   });
 
@@ -112,7 +112,7 @@ describe("aigc-monitoring-status", () => {
     expect(
       getAigcMonitoringStatusPresentation("CUSTOM_STATUS", {
         locale: "zh-CN",
-      })
+      }),
     ).toMatchObject({
       label: "CUSTOM_STATUS",
       shortLabel: "CUSTOM_STATUS",
@@ -123,7 +123,7 @@ describe("aigc-monitoring-status", () => {
     expect(
       getAigcMonitoringStatusPresentation(undefined, {
         locale: "zh-CN",
-      })
+      }),
     ).toMatchObject({
       label: "未记录",
       shortLabel: "未记录",
@@ -134,7 +134,7 @@ describe("aigc-monitoring-status", () => {
     expect(
       getAigcMonitoringStatusPresentation(null, {
         locale: "en-US",
-      })
+      }),
     ).toMatchObject({
       label: "Unknown",
       shortLabel: "Unknown",
@@ -145,10 +145,10 @@ describe("aigc-monitoring-status", () => {
 
   it("exposes reusable class-name helpers", () => {
     expect(getAigcMonitoringToneClassName("warning")).toBe(
-      "border-amber-200 bg-amber-50 text-amber-700"
+      "border-amber-200 bg-amber-50 text-amber-700",
     );
     expect(getAigcMonitoringStatusClassName("EXECUTED")).toBe(
-      "border-emerald-200 bg-emerald-50 text-emerald-700"
+      "border-emerald-200 bg-emerald-50 text-emerald-700",
     );
   });
 });

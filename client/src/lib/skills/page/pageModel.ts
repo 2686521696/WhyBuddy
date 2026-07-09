@@ -1,29 +1,13 @@
 // Page metamodel - distilled from the page designer layer. It stays runtime-less:
 // no renderer, no database, only component binding + visibility + linkage rules.
 
-export type ComponentType =
-  | "input"
-  | "select"
-  | "number"
-  | "date"
-  | "switch"
-  | "table"
-  | "button"
-  | "text";
+export type ComponentType = "input" | "select" | "number" | "date" | "switch" | "table" | "button" | "text";
 
 export type TriggerEvent = "onChange" | "onClick" | "onLoad";
 
-export type LinkageAction =
-  | "setOptions"
-  | "setVisible"
-  | "setDisabled"
-  | "setValue";
+export type LinkageAction = "setOptions" | "setVisible" | "setDisabled" | "setValue";
 
-export const ALLOWED_TRIGGER_EVENTS: readonly TriggerEvent[] = [
-  "onChange",
-  "onClick",
-  "onLoad",
-];
+export const ALLOWED_TRIGGER_EVENTS: readonly TriggerEvent[] = ["onChange", "onClick", "onLoad"];
 
 /** V2 event schema: represents inputs received by the trigger and emitted payload refs for action payload binding. */
 export interface EventSchema {
@@ -85,11 +69,7 @@ export interface PermissionRender {
 }
 
 /** Runtime render states for executable Page component policy (V2 117). */
-export type ComponentRenderState =
-  | "visible"
-  | "read-only"
-  | "hidden"
-  | "disabled";
+export type ComponentRenderState = "visible" | "read-only" | "hidden" | "disabled";
 
 /** Pure context for renderPageRuntimePolicy. Supplies RBAC decision evidence, DataModel SSOT lifecycle surface, and Workflow task context. */
 export interface PageRenderContext {
@@ -176,6 +156,4 @@ export const taskActions = {
   FULFILL: "procurementFulfill",
 } as const;
 
-export type WorkflowTaskViewResult =
-  | WorkflowTaskView
-  | typeof PAGE_WORKFLOW_TASK_VIEW_INVALID;
+export type WorkflowTaskViewResult = WorkflowTaskView | typeof PAGE_WORKFLOW_TASK_VIEW_INVALID;

@@ -8,7 +8,10 @@ import { describe, it, expect, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { MissionTaskDetail, TaskInteriorAgent } from "@/lib/tasks-store";
+import type {
+  MissionTaskDetail,
+  TaskInteriorAgent,
+} from "@/lib/tasks-store";
 import { useAppStore } from "@/lib/store";
 import {
   agentStatusLabel,
@@ -220,9 +223,7 @@ describe("MissionDetailOverlay summary", () => {
     expect(markup).toContain(
       "日志、产物和运行证据在首页上统一归口到共享运行证据容器。"
     );
-    expect(markup).not.toContain(
-      "日志、产物和运行证据统一保留在任务详情页与首页底部运行区。"
-    );
+    expect(markup).not.toContain("日志、产物和运行证据统一保留在任务详情页与首页底部运行区。");
   });
 });
 

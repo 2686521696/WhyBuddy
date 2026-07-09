@@ -62,19 +62,21 @@ interface UseAutopilotSandboxBridgeArgs {
  * observationSummary 全部拼成单行 `[PHASE iter] message` 文本，便于在 1:1 终端
  * 行级渲染中直接读出。
  */
-function entryToLogLine(entry: {
-  id: string;
-  iteration: number;
-  iterationLabel: string;
-  phase: string;
-  thought?: string;
-  actionToolId?: string;
-  observationSuccess?: boolean;
-  observationSummary?: string;
-  reason?: string;
-  error?: string;
-  timestamp: string;
-}): LogLine {
+function entryToLogLine(
+  entry: {
+    id: string;
+    iteration: number;
+    iterationLabel: string;
+    phase: string;
+    thought?: string;
+    actionToolId?: string;
+    observationSuccess?: boolean;
+    observationSummary?: string;
+    reason?: string;
+    error?: string;
+    timestamp: string;
+  }
+): LogLine {
   // 不同 phase 走不同 stream + 文案：
   // - thinking / acting / observing 都是 stdout
   // - error 走 stderr，让墙面终端用 ANSI 红色渲染
@@ -169,8 +171,7 @@ export function useAutopilotSandboxBridge({
   // 2) agentReasoning.entries 增量 → wall 终端。
   useEffect(() => {
     if (!streamKey) return;
-    if (!Array.isArray(reasoningEntries) || reasoningEntries.length === 0)
-      return;
+    if (!Array.isArray(reasoningEntries) || reasoningEntries.length === 0) return;
 
     const sandbox = useSandboxStore.getState();
     if (sandbox.activeMissionId !== streamKey) return;

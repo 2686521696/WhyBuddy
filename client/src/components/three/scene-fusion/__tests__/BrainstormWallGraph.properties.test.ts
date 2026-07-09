@@ -29,12 +29,7 @@ import type { BranchNodeType } from "@shared/blueprint/brainstorm-contracts";
 // ---------------------------------------------------------------------------
 
 const nodeTypeArb = fc.constantFrom(
-  "decision",
-  "thinking",
-  "action",
-  "observation",
-  "synthesis",
-  "error"
+  "decision", "thinking", "action", "observation", "synthesis", "error"
 ) as fc.Arbitrary<BranchNodeType>;
 
 describe("Feature: autopilot-multi-agent-brainstorm, Wall Graph Properties", () => {
@@ -45,19 +40,23 @@ describe("Feature: autopilot-multi-agent-brainstorm, Wall Graph Properties", () 
      * **Validates: Requirements 7.3**
      */
     fc.assert(
-      fc.property(nodeTypeArb, nodeTypeArb, (typeA, typeB) => {
-        const colorA = BRAINSTORM_NODE_COLORS[typeA];
-        const colorB = BRAINSTORM_NODE_COLORS[typeB];
+      fc.property(
+        nodeTypeArb,
+        nodeTypeArb,
+        (typeA, typeB) => {
+          const colorA = BRAINSTORM_NODE_COLORS[typeA];
+          const colorB = BRAINSTORM_NODE_COLORS[typeB];
 
-        // Both types must have a defined color
-        expect(colorA).toBeDefined();
-        expect(colorB).toBeDefined();
+          // Both types must have a defined color
+          expect(colorA).toBeDefined();
+          expect(colorB).toBeDefined();
 
-        // If types are different, colors must be different
-        if (typeA !== typeB) {
-          expect(colorA).not.toBe(colorB);
+          // If types are different, colors must be different
+          if (typeA !== typeB) {
+            expect(colorA).not.toBe(colorB);
+          }
         }
-      }),
+      ),
       { numRuns: 100 }
     );
   });
@@ -69,22 +68,25 @@ describe("Feature: autopilot-multi-agent-brainstorm, Wall Graph Properties", () 
      * **Validates: Requirements 7.5**
      */
     fc.assert(
-      fc.property(fc.string({ minLength: 0, maxLength: 200 }), title => {
-        const truncated = truncateTitle(title);
+      fc.property(
+        fc.string({ minLength: 0, maxLength: 200 }),
+        (title) => {
+          const truncated = truncateTitle(title);
 
-        if (title.length <= MAX_TITLE_LENGTH) {
-          // Short titles are unchanged
-          expect(truncated).toBe(title);
-          expect(truncated.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
-        } else {
-          // Long titles are truncated with ellipsis
-          expect(truncated.length).toBe(MAX_TITLE_LENGTH + 1); // +1 for the ellipsis char
-          expect(truncated).toMatch(/…$/);
-          expect(truncated.slice(0, MAX_TITLE_LENGTH)).toBe(
-            title.slice(0, MAX_TITLE_LENGTH)
-          );
+          if (title.length <= MAX_TITLE_LENGTH) {
+            // Short titles are unchanged
+            expect(truncated).toBe(title);
+            expect(truncated.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
+          } else {
+            // Long titles are truncated with ellipsis
+            expect(truncated.length).toBe(MAX_TITLE_LENGTH + 1); // +1 for the ellipsis char
+            expect(truncated).toMatch(/…$/);
+            expect(truncated.slice(0, MAX_TITLE_LENGTH)).toBe(
+              title.slice(0, MAX_TITLE_LENGTH)
+            );
+          }
         }
-      }),
+      ),
       { numRuns: 100 }
     );
   });

@@ -19,19 +19,14 @@ export const KEY_MAP: Record<string, string> = {
   "whybuddy:projection-density:v1": "sliderule:projection-density:v1",
   "whybuddy:driveMode": "sliderule:driveMode",
   "whybuddy:marathonBudget": "sliderule:marathonBudget",
-  "whybuddy:autopilot:pages-blueprint-demo":
-    "sliderule:autopilot:pages-blueprint-demo",
+  "whybuddy:autopilot:pages-blueprint-demo": "sliderule:autopilot:pages-blueprint-demo",
   // "whybuddy:github-pages-demo:v2:<dynamic>" — handled by the prefix sweep.
 };
 
-export type StorageLike = Pick<
-  Storage,
-  "getItem" | "setItem" | "removeItem" | "key" | "length"
->;
+export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">;
 
 export function migrateLegacyStorage(storage?: StorageLike): number {
-  const store =
-    storage ?? (typeof localStorage !== "undefined" ? localStorage : undefined);
+  const store = storage ?? (typeof localStorage !== "undefined" ? localStorage : undefined);
   if (!store) return 0;
 
   // Snapshot keys first — removing while iterating shifts Storage indices.

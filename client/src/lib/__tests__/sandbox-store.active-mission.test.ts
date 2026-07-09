@@ -90,8 +90,7 @@ function makeDetail(id: string): MissionTaskDetail {
       socket: {
         status: "connected",
         label: "Socket connected",
-        detail:
-          "Mission socket is connected and can receive live runtime updates.",
+        detail: "Mission socket is connected and can receive live runtime updates.",
       },
       callback: {
         status: "active",
@@ -113,10 +112,7 @@ describe("sandbox-store active mission recovery", () => {
   });
 
   it("requests log history when the restored selected mission becomes active", () => {
-    const tasks = [
-      makeMission({ id: "mission-1" }),
-      makeMission({ id: "mission-2" }),
-    ];
+    const tasks = [makeMission({ id: "mission-1" }), makeMission({ id: "mission-2" })];
     const detailsById = {
       "mission-2": makeDetail("mission-2"),
     };

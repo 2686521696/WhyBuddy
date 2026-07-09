@@ -15,10 +15,12 @@ export const autopilotTheme = {
   immersionCanvas: "absolute inset-0 z-0",
   immersionOverlayTop:
     "pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 px-2 pt-2 sm:gap-2.5 sm:px-3 sm:pt-2",
-  immersionOverlayHeader: "pointer-events-auto w-full",
+  immersionOverlayHeader:
+    "pointer-events-auto w-full",
   /** 架构树节拍 — 顶栏下方、右对齐，预留顶栏右侧放 Dev / 导出等操作 */
   immersionOverlayArchRow: "pointer-events-none flex w-full justify-end",
-  immersionHudLeft: "pointer-events-auto flex min-w-0 flex-1 flex-col gap-1.5",
+  immersionHudLeft:
+    "pointer-events-auto flex min-w-0 flex-1 flex-col gap-1.5",
   immersionHudRight:
     "pointer-events-auto w-[min(100%,600px)] shrink-0 sm:w-[min(52vw,560px)] lg:w-[min(48vw,600px)]",
   overlayTransparent: "bg-transparent",
@@ -35,8 +37,7 @@ export const autopilotTheme = {
   composerDockWidth: "w-full max-w-[min(100%,760px)]",
 
   page: "relative flex h-screen flex-col bg-[#eef0f4] text-[#1f2329]",
-  header:
-    "flex items-center justify-between border-b border-[#e5e7eb] bg-[#f7f8fa] px-4 py-3",
+  header: "flex items-center justify-between border-b border-[#e5e7eb] bg-[#f7f8fa] px-4 py-3",
   label: "font-mono text-[10px] uppercase tracking-[0.06em] text-[#6b7280]",
   goal: "truncate text-sm font-medium tracking-tight text-[#1f2329]",
   split: "flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row",
@@ -50,8 +51,7 @@ export const autopilotTheme = {
   flowPanelBody: "relative min-h-0 flex-1",
   flowEmpty:
     "flex h-full items-center justify-center px-6 text-center text-sm text-stone-500",
-  imPanel:
-    "flex w-full min-h-0 flex-col bg-[#eef0f4] lg:w-[min(420px,34%)] xl:w-[min(440px,32%)] lg:shrink-0",
+  imPanel: "flex w-full min-h-0 flex-col bg-[#eef0f4] lg:w-[min(420px,34%)] xl:w-[min(440px,32%)] lg:shrink-0",
   main: "flex-1 overflow-auto px-4 py-4",
   footer: "shrink-0 border-t border-[#e5e7eb] bg-[#f7f8fa] px-4 py-3",
 
@@ -65,8 +65,7 @@ export const autopilotTheme = {
   artifactCard:
     "group rounded border border-[#e5e7eb] bg-[#ffffff] p-3 text-sm shadow-[0_1px_2px_rgb(15_23_42,0.05)]",
   artifactTitle: "font-semibold text-stone-800",
-  artifactBody:
-    "mt-3 whitespace-pre-wrap text-xs leading-relaxed text-stone-600",
+  artifactBody: "mt-3 whitespace-pre-wrap text-xs leading-relaxed text-stone-600",
   artifactMeta:
     "rounded-sm bg-[#e9edf2] px-2 py-0.5 text-stone-600 ring-1 ring-inset ring-[#e5e7eb]",
   artifactExpand: "text-[11px] text-stone-400",
@@ -83,8 +82,7 @@ export const autopilotTheme = {
 
   auditBtn:
     "rounded-full border border-[#e5e7eb]/90 bg-[#ffffff]/90 px-3 py-1.5 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-white",
-  devLink:
-    "text-[10px] !text-stone-500 transition hover:!text-stone-800 hover:underline",
+  devLink: "text-[10px] !text-stone-500 transition hover:!text-stone-800 hover:underline",
 
   liveActionThink: "text-sm text-stone-500",
   liveActionExternal: "text-sm text-[#0958d9]",
@@ -92,10 +90,8 @@ export const autopilotTheme = {
     "mb-1 block text-[11px] text-[#1677ff] transition hover:text-[#0958d9] hover:underline",
 
   drawerOverlay: "flex-1 bg-[#2A2620]/30 backdrop-blur-[1px]",
-  drawer:
-    "flex h-full w-full max-w-xl flex-col border-l border-[#e5e7eb] bg-[#f7f8fa] shadow-2xl",
-  drawerHeader:
-    "flex items-center justify-between border-b border-[#e5e7eb] px-4 py-3",
+  drawer: "flex h-full w-full max-w-xl flex-col border-l border-[#e5e7eb] bg-[#f7f8fa] shadow-2xl",
+  drawerHeader: "flex items-center justify-between border-b border-[#e5e7eb] px-4 py-3",
   drawerTitle: "text-sm font-semibold text-[#1f2329]",
   drawerSubtitle: "text-[10px] text-stone-500",
   drawerClose: "text-stone-500 transition hover:text-stone-800",

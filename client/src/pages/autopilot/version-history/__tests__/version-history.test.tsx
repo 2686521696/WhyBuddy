@@ -39,7 +39,7 @@ function artifact(
   id: string,
   type: BlueprintGenerationArtifact["type"],
   createdAt: string,
-  stale?: Pick<StaleArtifact, "staleSince" | "invalidatedBy">
+  stale?: Pick<StaleArtifact, "staleSince" | "invalidatedBy">,
 ): StaleArtifact {
   return {
     id,
@@ -53,7 +53,7 @@ function artifact(
 
 function job(
   id: string,
-  overrides: Partial<VersionHistoryJob> = {}
+  overrides: Partial<VersionHistoryJob> = {},
 ): VersionHistoryJob {
   return {
     id,
@@ -77,7 +77,7 @@ function event(
   type: string,
   occurredAt: string,
   message: string,
-  payload?: unknown
+  payload?: unknown,
 ): BlueprintGenerationEvent {
   return {
     id,
@@ -110,10 +110,10 @@ describe("deriveVersionTreeLayout", () => {
       }),
     ]);
 
-    expect(layout.roots.map(node => node.job.id)).toEqual(["root"]);
+    expect(layout.roots.map((node) => node.job.id)).toEqual(["root"]);
     expect(layout.nodesById["root"].depth).toBe(0);
     expect(layout.nodesById["branch-early"].depth).toBe(1);
-    expect(layout.nodesById["root"].children.map(node => node.job.id)).toEqual([
+    expect(layout.nodesById["root"].children.map((node) => node.job.id)).toEqual([
       "branch-early",
       "branch-fallback",
       "branch-late",
@@ -127,7 +127,7 @@ describe("deriveVersionTreeLayout", () => {
       job("cycle-b", { parentJobId: "cycle-a" }),
     ]);
 
-    expect(layout.roots.map(node => node.job.id).sort()).toEqual([
+    expect(layout.roots.map((node) => node.job.id).sort()).toEqual([
       "cycle-a",
       "cycle-b",
       "orphan",
@@ -135,7 +135,7 @@ describe("deriveVersionTreeLayout", () => {
     expect(layout.nodesById["orphan"].missingParent).toBe(true);
     expect(layout.nodesById["cycle-a"].cycleDetected).toBe(true);
     expect(layout.warnings).toContainEqual(
-      expect.objectContaining({ type: "cycle", jobId: "cycle-a" })
+      expect.objectContaining({ type: "cycle", jobId: "cycle-a" }),
     );
   });
 });
@@ -164,11 +164,7 @@ describe("<CompareView>", () => {
     });
 
     const markup = renderToStaticMarkup(
-      <CompareView
-        leftJob={left}
-        rightJob={right}
-        familyJobIds={["left", "right"]}
-      />
+      <CompareView leftJob={left} rightJob={right} familyJobIds={["left", "right"]} />,
     );
 
     expect(markup).toContain('data-testid="version-compare-view"');
@@ -186,7 +182,7 @@ describe("<CompareView>", () => {
         leftJob={job("left")}
         rightJob={job("external")}
         familyJobIds={["left"]}
-      />
+      />,
     );
 
     expect(markup).toContain('data-state="cross-family"');
@@ -199,35 +195,18 @@ describe("<ReplanTimelineView>", () => {
     const markup = renderToStaticMarkup(
       <ReplanTimelineView
         events={[
-          event(
-            "old",
-            "replan.triggered",
-            "2026-05-23T01:00:00.000Z",
-            "old replan"
-          ),
-          event(
-            "ignore",
-            "job.stage",
-            "2026-05-23T04:00:00.000Z",
-            "stage changed"
-          ),
-          event(
-            "new",
-            "replan.triggered",
-            "2026-05-23T03:00:00.000Z",
-            "new replan"
-          ),
+          event("old", "replan.triggered", "2026-05-23T01:00:00.000Z", "old replan"),
+          event("ignore", "job.stage", "2026-05-23T04:00:00.000Z", "stage changed"),
+          event("new", "replan.triggered", "2026-05-23T03:00:00.000Z", "new replan"),
         ]}
-      />
+      />,
     );
 
     expect(markup).toContain('data-testid="replan-timeline-view"');
     expect(markup).toContain("new replan");
     expect(markup).toContain("old replan");
     expect(markup).not.toContain("stage changed");
-    expect(markup.indexOf("new replan")).toBeLessThan(
-      markup.indexOf("old replan")
-    );
+    expect(markup.indexOf("new replan")).toBeLessThan(markup.indexOf("old replan"));
   });
 
   it("renders safe timeline details with truncated plain-text reasons", () => {
@@ -247,10 +226,10 @@ describe("<ReplanTimelineView>", () => {
               triggeredAt: "2026-05-23T03:00:00.000Z",
               inheritedUpstreamArtifactCount: 2,
               reason: longReason,
-            }
+            },
           ),
         ]}
-      />
+      />,
     );
 
     expect(markup).toContain("branch");
@@ -266,11 +245,7 @@ describe("<ReplanTimelineView>", () => {
 describe("<VersionTreeView> and <TreeNode>", () => {
   it("renders a family-of-one as a single active node", () => {
     const markup = renderToStaticMarkup(
-      <VersionTreeView
-        jobs={[job("solo")]}
-        activeJobId="solo"
-        onSelectJob={() => {}}
-      />
+      <VersionTreeView jobs={[job("solo")]} activeJobId="solo" onSelectJob={() => {}} />,
     );
 
     expect(markup).toContain('data-testid="version-tree-view"');
@@ -293,7 +268,7 @@ describe("<VersionTreeView> and <TreeNode>", () => {
         ]}
         activeJobId="branch"
         onSelectJob={() => {}}
-      />
+      />,
     );
 
     expect(markup).toContain('data-connection="root-&gt;branch"');
@@ -306,11 +281,7 @@ describe("<VersionTreeView> and <TreeNode>", () => {
   it("selects a node by click, Enter, and Space", () => {
     const onSelect = vi.fn();
     const node = deriveVersionTreeLayout([job("branch")]).nodesById["branch"];
-    const element = TreeNode({
-      node,
-      activeJobId: "root",
-      onSelect,
-    }) as React.ReactElement<{
+    const element = TreeNode({ node, activeJobId: "root", onSelect }) as React.ReactElement<{
       onClick: () => void;
       onKeyDown: (event: { key: string; preventDefault: () => void }) => void;
     }>;
@@ -343,7 +314,7 @@ describe("use-switch-active-job", () => {
 
   it("submits a narrow switch_active payload when a coordinator is provided", async () => {
     const apply = vi.fn();
-    const submit = vi.fn(async payload => {
+    const submit = vi.fn(async (payload) => {
       payload.apply();
     });
 
@@ -364,7 +335,7 @@ describe("use-switch-active-job", () => {
           toStage: "engineering_handoff",
         },
         pageTransition: { fromPage: 2, toPage: 3 },
-      })
+      }),
     );
     expect(apply).toHaveBeenCalledWith({
       jobId: "branch",
@@ -373,9 +344,9 @@ describe("use-switch-active-job", () => {
   });
 
   it("builds the activeJob URL query without dropping existing history state", () => {
-    expect(
-      withActiveJobSearchParam("?history=1&panel=timeline", "job branch")
-    ).toBe("?history=1&panel=timeline&activeJob=job+branch");
+    expect(withActiveJobSearchParam("?history=1&panel=timeline", "job branch")).toBe(
+      "?history=1&panel=timeline&activeJob=job+branch",
+    );
     expect(withActiveJobSearchParam("", "job-2")).toBe("?activeJob=job-2");
   });
 
@@ -450,19 +421,9 @@ describe("use-family-data", () => {
     const family = {
       rootJobId: "root",
       jobs: [job("root"), job("branch", { parentJobId: "root" })],
-      replanEvents: [
-        event(
-          "replan-1",
-          "replan.triggered",
-          "2026-05-23T05:00:00.000Z",
-          "branch"
-        ),
-      ],
+      replanEvents: [event("replan-1", "replan.triggered", "2026-05-23T05:00:00.000Z", "branch")],
     };
-    const fetchFamily = vi.fn(async () => ({
-      ok: true as const,
-      data: family,
-    }));
+    const fetchFamily = vi.fn(async () => ({ ok: true as const, data: family }));
 
     const state = await loadBlueprintFamilyData({
       jobId: "branch",

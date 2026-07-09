@@ -65,18 +65,10 @@ const finding: CompanionFinding = {
 describe("trust panels i18n — both locales render", () => {
   it("ChecksLedgerView header switches zh-CN / en-US", () => {
     const zh = renderToStaticMarkup(
-      createElement(ChecksLedgerView, {
-        status: "ready",
-        locale: "zh-CN",
-        data: ledger,
-      })
+      createElement(ChecksLedgerView, { status: "ready", locale: "zh-CN", data: ledger }),
     );
     const en = renderToStaticMarkup(
-      createElement(ChecksLedgerView, {
-        status: "ready",
-        locale: "en-US",
-        data: ledger,
-      })
+      createElement(ChecksLedgerView, { status: "ready", locale: "en-US", data: ledger }),
     );
     expect(zh).toContain("校验台账");
     expect(en).toContain("Checks Ledger");
@@ -84,18 +76,10 @@ describe("trust panels i18n — both locales render", () => {
 
   it("TraceabilityMatrixView header switches zh-CN / en-US", () => {
     const zh = renderToStaticMarkup(
-      createElement(TraceabilityMatrixView, {
-        status: "ready",
-        locale: "zh-CN",
-        matrix,
-      })
+      createElement(TraceabilityMatrixView, { status: "ready", locale: "zh-CN", matrix }),
     );
     const en = renderToStaticMarkup(
-      createElement(TraceabilityMatrixView, {
-        status: "ready",
-        locale: "en-US",
-        matrix,
-      })
+      createElement(TraceabilityMatrixView, { status: "ready", locale: "en-US", matrix }),
     );
     expect(zh).toContain("可追溯矩阵");
     expect(en).toContain("Traceability Matrix");
@@ -103,16 +87,10 @@ describe("trust panels i18n — both locales render", () => {
 
   it("CompanionFindingsView header switches zh-CN / en-US", () => {
     const zh = renderToStaticMarkup(
-      createElement(CompanionFindingsView, {
-        locale: "zh-CN",
-        findings: [finding],
-      })
+      createElement(CompanionFindingsView, { locale: "zh-CN", findings: [finding] }),
     );
     const en = renderToStaticMarkup(
-      createElement(CompanionFindingsView, {
-        locale: "en-US",
-        findings: [finding],
-      })
+      createElement(CompanionFindingsView, { locale: "en-US", findings: [finding] }),
     );
     expect(zh).toContain("伴随发现");
     expect(en).toContain("Companion Findings");
@@ -126,11 +104,9 @@ describe("trust panels i18n — both locales render", () => {
       matrix,
       locale: "zh-CN" as const,
     };
-    const zh = renderToStaticMarkup(
-      createElement(HandoffTrustBundleView, props)
-    );
+    const zh = renderToStaticMarkup(createElement(HandoffTrustBundleView, props));
     const en = renderToStaticMarkup(
-      createElement(HandoffTrustBundleView, { ...props, locale: "en-US" })
+      createElement(HandoffTrustBundleView, { ...props, locale: "en-US" }),
     );
     expect(zh).toContain("信任层交付包");
     expect(en).toContain("Trust Bundle");

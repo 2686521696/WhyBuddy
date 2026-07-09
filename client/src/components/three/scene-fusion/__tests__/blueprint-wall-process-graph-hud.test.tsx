@@ -35,7 +35,8 @@ describe("BlueprintWallProcessGraphHud / source-level import guards", () => {
   const importLines = moduleSource
     .split("\n")
     .filter(
-      line => line.trim().startsWith("import") || /\bfrom\s+["']/.test(line)
+      (line) =>
+        line.trim().startsWith("import") || /\bfrom\s+["']/.test(line)
     );
   const importsText = importLines.join("\n");
 
@@ -47,7 +48,7 @@ describe("BlueprintWallProcessGraphHud / source-level import guards", () => {
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\/\/.*$/gm, "");
 
-  it('imports the FlowGraph renderer from "@ant-design/graphs"（Req 2.1 / 10.2）', () => {
+  it("imports the FlowGraph renderer from \"@ant-design/graphs\"（Req 2.1 / 10.2）", () => {
     // 可视层 spec 明确允许 @ant-design/graphs：FlowGraph 是图渲染器。
     expect(/from\s+["']@ant-design\/graphs["']/.test(importsText)).toBe(true);
   });

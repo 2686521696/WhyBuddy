@@ -119,7 +119,9 @@ describe("AutopilotRoutePage", () => {
     expect(markup).toContain('data-testid="autopilot-route-page"');
     expect(markup).toContain('data-testid="autopilot-topbar"');
     expect(markup).toContain('data-testid="autopilot-visual-stage"');
-    expect(markup).toContain("xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]");
+    expect(markup).toContain(
+      "xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
+    );
     expect(markup).toContain('data-testid="autopilot-scene-visual"');
     expect(markup).toContain('data-testid="mock-scene-3d"');
     expect(markup).toContain('data-project-id="project-1"');
@@ -134,9 +136,7 @@ describe("AutopilotRoutePage", () => {
     expect(markup).toContain('data-testid="autopilot-step-input"');
     expect(markup).toContain('data-testid="autopilot-runtime-console"');
     // Spec 3: advanced workbenches fold and inline blueprint progress panel removed.
-    expect(markup).not.toContain(
-      'data-testid="autopilot-advanced-workbenches"'
-    );
+    expect(markup).not.toContain('data-testid="autopilot-advanced-workbenches"');
     expect(markup).not.toContain('data-testid="blueprint-progress-panel"');
     // 2026-05-19：移除顶部 antd Steps 横向步骤条（"输入 / 编组"）。
     // 默认 input 阶段下右栏 StageHeader / StreamingDocRenderer 不渲染，
@@ -179,9 +179,7 @@ describe("AutopilotRoutePage", () => {
     // stage gating 使用 right-rail 权威的 effectiveSubStage / fabricSubStage
     expect(source).toContain("effectiveSubStage");
     expect(source).toContain("fabricSubStage");
-    expect(source).toContain(
-      "activeReasoningStage = effectiveSubStage ?? fabricSubStage ?? job?.stage"
-    );
+    expect(source).toContain("activeReasoningStage = effectiveSubStage ?? fabricSubStage ?? job?.stage");
 
     // 切换控件存在
     expect(source).toContain("3D");
@@ -329,79 +327,73 @@ describe("AutopilotRoutePage", () => {
       effectPreviews: [],
     });
 
-    expect(
-      pageTwoProjection.visualJob?.artifacts.map(artifact => artifact.type)
-    ).toEqual(["brainstorm_reasoning_graph"]);
+    expect(pageTwoProjection.visualJob?.artifacts.map(artifact => artifact.type)).toEqual([
+      "brainstorm_reasoning_graph",
+    ]);
   });
 
   it("keeps partially submitted clarifications in a missing-required state", () => {
     const markup = renderToStaticMarkup(
       <ClarificationPanel
         locale="en-US"
-        session={
-          {
-            id: "clarification-1",
-            intakeId: "intake-1",
-            strategyId: "repository_first",
-            strategyLabel: "Repository-first clarification",
-            templateId: "template-1",
-            routeReadySummary: "1/3 required answers recorded.",
-            readinessSignals: [
-              "goal_defined",
-              "audience_defined",
-              "constraints_defined",
-            ],
-            questions: [
-              {
-                id: "goal",
-                kind: "goal",
-                prompt: "Goal?",
-                required: true,
-                sourceIds: [],
-                evidenceIds: [],
-                routeDimension: "goal",
-                readinessSignal: "goal_defined",
-              },
-              {
-                id: "audience",
-                kind: "audience",
-                prompt: "Audience?",
-                required: true,
-                sourceIds: [],
-                evidenceIds: [],
-                routeDimension: "audience",
-                readinessSignal: "audience_defined",
-              },
-              {
-                id: "constraints",
-                kind: "constraint",
-                prompt: "Constraints?",
-                required: true,
-                sourceIds: [],
-                evidenceIds: [],
-                routeDimension: "risk",
-                readinessSignal: "constraints_defined",
-              },
-            ],
-            answers: [
-              {
-                questionId: "goal",
-                answer: "Engineering landing",
-                answeredAt: "2026-05-28T00:00:00.000Z",
-                source: "user",
-              },
-            ],
-            readiness: {
-              status: "needs_answers",
-              score: 0.33,
-              answeredRequired: 1,
-              requiredTotal: 3,
-              missingQuestionIds: ["audience", "constraints"],
+        session={{
+          id: "clarification-1",
+          intakeId: "intake-1",
+          strategyId: "repository_first",
+          strategyLabel: "Repository-first clarification",
+          templateId: "template-1",
+          routeReadySummary: "1/3 required answers recorded.",
+          readinessSignals: ["goal_defined", "audience_defined", "constraints_defined"],
+          questions: [
+            {
+              id: "goal",
+              kind: "goal",
+              prompt: "Goal?",
+              required: true,
+              sourceIds: [],
+              evidenceIds: [],
+              routeDimension: "goal",
+              readinessSignal: "goal_defined",
             },
-            createdAt: "2026-05-28T00:00:00.000Z",
-            updatedAt: "2026-05-28T00:00:00.000Z",
-          } as any
-        }
+            {
+              id: "audience",
+              kind: "audience",
+              prompt: "Audience?",
+              required: true,
+              sourceIds: [],
+              evidenceIds: [],
+              routeDimension: "audience",
+              readinessSignal: "audience_defined",
+            },
+            {
+              id: "constraints",
+              kind: "constraint",
+              prompt: "Constraints?",
+              required: true,
+              sourceIds: [],
+              evidenceIds: [],
+              routeDimension: "risk",
+              readinessSignal: "constraints_defined",
+            },
+          ],
+          answers: [
+            {
+              questionId: "goal",
+              answer: "Engineering landing",
+              answeredAt: "2026-05-28T00:00:00.000Z",
+              source: "user",
+            },
+          ],
+          readiness: {
+            status: "needs_answers",
+            score: 0.33,
+            answeredRequired: 1,
+            requiredTotal: 3,
+            missingQuestionIds: ["audience", "constraints"],
+          },
+          createdAt: "2026-05-28T00:00:00.000Z",
+          updatedAt: "2026-05-28T00:00:00.000Z",
+        } as any}
         answerDrafts={{
           goal: "Engineering landing",
           audience: "",
@@ -439,9 +431,7 @@ describe("AutopilotRoutePage", () => {
     ];
 
     expect(resolveVisibleWorkflowStepId(flowSteps as any, null)).toBe("fabric");
-    expect(resolveVisibleWorkflowStepId(flowSteps as any, "input")).toBe(
-      "input"
-    );
+    expect(resolveVisibleWorkflowStepId(flowSteps as any, "input")).toBe("input");
   });
 
   it("treats a pinned SPEC-tree review as page 2 even when the backend job is already downstream", () => {
@@ -497,7 +487,9 @@ describe("AutopilotRoutePage", () => {
       /workflowStageOverride !== null && selection !== null/
     );
     // Click handler must clear the override (no jumping by stage)
-    expect(routeSource).toMatch(/setWorkflowStageOverride\(null\)/);
+    expect(routeSource).toMatch(
+      /setWorkflowStageOverride\(null\)/
+    );
     // Test ID must be exposed
     expect(routeSource).toMatch(
       /data-testid="autopilot-forward-to-latest-stage"/
@@ -532,12 +524,8 @@ describe("AutopilotRoutePage", () => {
     );
 
     expect(handlerSource).toMatch(/setWorkflowStageOverride\("fabric"\)/);
-    expect(handlerSource).toMatch(
-      /subStageState\.setPinnedSubStage\("spec_tree"\)/
-    );
-    expect(handlerSource).toMatch(
-      /subStageState\.resetPin\(\);\s*setWorkflowStageOverride\(null\)/
-    );
+    expect(handlerSource).toMatch(/subStageState\.setPinnedSubStage\("spec_tree"\)/);
+    expect(handlerSource).toMatch(/subStageState\.resetPin\(\);\s*setWorkflowStageOverride\(null\)/);
   });
 
   it("projects downstream runtime state back to the input / clarification / route page without leaking later artifacts", () => {
@@ -578,9 +566,9 @@ describe("AutopilotRoutePage", () => {
     expect(projection.visualJob?.events.map(event => event.id)).toEqual([
       "route-event",
     ]);
-    expect(
-      projection.visualJob?.artifacts.map(artifact => artifact.id)
-    ).toEqual(["route-set"]);
+    expect(projection.visualJob?.artifacts.map(artifact => artifact.id)).toEqual([
+      "route-set",
+    ]);
     expect(projection.visualSpecTree).toBeNull();
     expect(projection.visualAgentCrew).toBeNull();
     expect(projection.visualCapabilities).toEqual([]);
@@ -631,9 +619,10 @@ describe("AutopilotRoutePage", () => {
       "spec-event",
       "docs-event",
     ]);
-    expect(
-      projection.visualJob?.artifacts.map(artifact => artifact.id)
-    ).toEqual(["tree", "doc"]);
+    expect(projection.visualJob?.artifacts.map(artifact => artifact.id)).toEqual([
+      "tree",
+      "doc",
+    ]);
     expect(projection.visualSpecTree).toBe(specTree);
     expect(projection.visualAgentCrew).toBe(agentCrew);
     expect(projection.visualCapabilities).toEqual([]);
@@ -651,16 +640,10 @@ describe("AutopilotRoutePage", () => {
     );
 
     expect(source).toMatch(/workflowStageOverride/);
-    expect(source).toMatch(
-      /resolveVisibleWorkflowStepId\(\s*flowSteps,\s*workflowStageOverride\s*\)/
-    );
-    expect(source).toMatch(
-      /const\s+handleNavigateWorkflowStage\s*=\s*useCallback/
-    );
+    expect(source).toMatch(/resolveVisibleWorkflowStepId\(\s*flowSteps,\s*workflowStageOverride\s*\)/);
+    expect(source).toMatch(/const\s+handleNavigateWorkflowStage\s*=\s*useCallback/);
     expect(source).toMatch(/subStageState\.resetPin\(\)/);
-    expect(source).toMatch(
-      /onNavigateWorkflowStage=\{handleNavigateWorkflowStage\}/
-    );
+    expect(source).toMatch(/onNavigateWorkflowStage=\{handleNavigateWorkflowStage\}/);
   });
 
   it("wires the route page fabric stage into the merged right rail continuation", async () => {
@@ -675,9 +658,7 @@ describe("AutopilotRoutePage", () => {
     expect(source).toContain("fabricSubStage={fabricSubStage}");
     expect(source).toContain("rightRailView={rightRailView}");
     expect(source).toContain("onForceAdvance={autoAdvance.forceAdvance}");
-    expect(source).toContain(
-      "onNavigateWorkflowStage={handleNavigateWorkflowStage}"
-    );
+    expect(source).toContain("onNavigateWorkflowStage={handleNavigateWorkflowStage}");
   });
 
   it("falls back to the page SPEC tree when the right-rail W1 tree is empty", () => {
@@ -699,11 +680,7 @@ describe("AutopilotRoutePage", () => {
   });
 
   it("prefers whichever job actually carries SPEC documents so generated docs always surface", () => {
-    const docArtifact = {
-      id: "doc-req",
-      type: "requirements",
-      payload: { id: "d1", nodeId: "n1", type: "requirements" },
-    };
+    const docArtifact = { id: "doc-req", type: "requirements", payload: { id: "d1", nodeId: "n1", type: "requirements" } };
     const railJobNoDocs = {
       id: "job-1",
       stage: "spec_docs",
@@ -716,9 +693,7 @@ describe("AutopilotRoutePage", () => {
     } as unknown as Parameters<typeof selectRailJob>[1];
 
     // W1 rail job lacks docs, latest (same id) has them → upgrade to latest.
-    expect(selectRailJob(railJobNoDocs, latestJobWithDocs)).toBe(
-      latestJobWithDocs
-    );
+    expect(selectRailJob(railJobNoDocs, latestJobWithDocs)).toBe(latestJobWithDocs);
 
     // W1 rail job already has docs → keep it (authoritative refresh source).
     const railJobWithDocs = {
@@ -726,9 +701,7 @@ describe("AutopilotRoutePage", () => {
       stage: "spec_docs",
       artifacts: [docArtifact],
     } as unknown as Parameters<typeof selectRailJob>[0];
-    expect(selectRailJob(railJobWithDocs, latestJobWithDocs)).toBe(
-      railJobWithDocs
-    );
+    expect(selectRailJob(railJobWithDocs, latestJobWithDocs)).toBe(railJobWithDocs);
 
     // Different job ids → never cross-wire docs from latest; keep rail job.
     const latestDifferentId = {
@@ -758,13 +731,11 @@ describe("AutopilotRoutePage", () => {
       jobId: "job-1",
       maxAttempts: 5,
       delay: () => Promise.resolve(),
-      fetchJob: async jobId => {
+      fetchJob: async (jobId) => {
         fetchCalls.push(jobId);
         return {
           ok: true,
-          data: snapshots[
-            Math.min(fetchCalls.length - 1, snapshots.length - 1)
-          ],
+          data: snapshots[Math.min(fetchCalls.length - 1, snapshots.length - 1)],
         } as any;
       },
     });
@@ -783,9 +754,7 @@ describe("AutopilotRoutePage", () => {
     );
     expect(routeSource).toMatch(/AUTOPILOT_HISTORY_OPEN_EVENT/);
     expect(routeSource).toMatch(/readAutopilotHistoryOpenFromLocation/);
-    expect(routeSource).toMatch(
-      /data-testid="autopilot-version-history-panel"/
-    );
+    expect(routeSource).toMatch(/data-testid="autopilot-version-history-panel"/);
     expect(routeSource).toMatch(/<VersionTreeView/);
     expect(routeSource).toMatch(/<ReplanTimelineView/);
     expect(routeSource).toMatch(/<CompareView/);
@@ -882,9 +851,7 @@ describe("AutopilotRoutePage", () => {
 
     expect(routeSource).toMatch(/handleReplanBranchJobActivated/);
     expect(routeSource).toMatch(/setAutopilotHistoryActiveJob\(job\.id\)/);
-    expect(routeSource).toMatch(
-      /onBranchJobActivated=\{handleReplanBranchJobActivated\}/
-    );
+    expect(routeSource).toMatch(/onBranchJobActivated=\{handleReplanBranchJobActivated\}/);
     expect(railSource).toMatch(/onBranchJobActivated/);
   });
 
@@ -900,15 +867,9 @@ describe("AutopilotRoutePage", () => {
       routeSource.indexOf("const railStepLabel")
     );
 
-    expect(routeSource).toMatch(
-      /const refreshLatestGenerationSnapshot\s*=\s*useCallback/
-    );
-    expect(routeSource).toMatch(
-      /fetchLatestBlueprintGenerationJob\(\{\s*projectId:\s*latestProjectId\s*,\s*\}\)/
-    );
-    expect(routeSource).toMatch(
-      /onHistoryPanelClosed=\{async \(\) => \{\s*await refreshLatestGenerationSnapshot\(\);\s*\}\}/
-    );
+    expect(routeSource).toMatch(/const refreshLatestGenerationSnapshot\s*=\s*useCallback/);
+    expect(routeSource).toMatch(/fetchLatestBlueprintGenerationJob\(\{\s*projectId:\s*latestProjectId\s*,\s*\}\)/);
+    expect(routeSource).toMatch(/onHistoryPanelClosed=\{async \(\) => \{\s*await refreshLatestGenerationSnapshot\(\);\s*\}\}/);
     expect(closeHandler).toMatch(/closeAutopilotHistorySearch\(\)/);
     expect(closeHandler).toMatch(/setHistoryPanelOpen\(false\)/);
     expect(closeHandler).toMatch(/void onHistoryPanelClosed\?\.\(\)/);
@@ -940,9 +901,7 @@ describe("AutopilotRoutePage", () => {
       "utf8"
     );
 
-    expect(routeSource).toMatch(
-      /data-testid="autopilot-forward-to-latest-stage"/
-    );
+    expect(routeSource).toMatch(/data-testid="autopilot-forward-to-latest-stage"/);
     expect(routeSource).toMatch(/relative z-50 inline-flex items-center/);
   });
 
@@ -971,14 +930,10 @@ describe("AutopilotRoutePage", () => {
     expect(routeSource).toMatch(/coordinator:\s*autopilotCoordinator/);
     expect(routeSource).toMatch(/refreshJob:\s*\(editResult\)\s*=>/);
     expect(routeSource).toMatch(/onNavigateWorkflowStage\("fabric"\)/);
-    expect(routeSource).toMatch(
-      /isViewingCompletedStage=\{Boolean\(selection\)\}/
-    );
+    expect(routeSource).toMatch(/isViewingCompletedStage=\{Boolean\(selection\)\}/);
     expect(railSource).toMatch(/useStageTransitionAnimator/);
     expect(railSource).toMatch(/stageAnimatorDirection/);
-    expect(railSource).toMatch(
-      /direction=\{stageAnimatorDirection \?\? transitionDirection\}/
-    );
+    expect(railSource).toMatch(/direction=\{stageAnimatorDirection \?\? transitionDirection\}/);
     expect(railSource).toMatch(/coordinator:\s*props\.coordinator/);
     expect(railSource).toMatch(/getCoordinationTransitions/);
   });
@@ -1036,12 +991,8 @@ describe("AutopilotRoutePage", () => {
     expect(markup).toContain("w-full");
     expect(markup).toContain("h-[240px]");
     expect(markup).toContain("shrink-0");
-    expect(markup).not.toContain(
-      'data-testid="autopilot-runtime-console-mini"'
-    );
-    expect(markup).not.toContain(
-      'data-testid="autopilot-runtime-console-expanded"'
-    );
+    expect(markup).not.toContain('data-testid="autopilot-runtime-console-mini"');
+    expect(markup).not.toContain('data-testid="autopilot-runtime-console-expanded"');
     expect(markup).not.toContain("Expand runtime console");
     expect(markup).not.toContain("Collapse runtime console");
     expect(markup).not.toContain("rounded-[10px]");
@@ -1056,10 +1007,8 @@ describe("AutopilotRoutePage", () => {
       "utf8"
     );
 
-    expect(source).toContain('data-testid="autopilot-console-stage-tabs"');
-    expect(source).toContain(
-      'data-testid="autopilot-console-stage-two-observability"'
-    );
+    expect(source).toContain("data-testid=\"autopilot-console-stage-tabs\"");
+    expect(source).toContain("data-testid=\"autopilot-console-stage-two-observability\"");
     expect(source).toMatch(
       /job\?\.stage\s*===\s*"spec_tree"[\s\S]*job\?\.stage\s*===\s*"spec_docs"/
     );
@@ -1081,19 +1030,15 @@ describe("AutopilotRoutePage", () => {
       "utf8"
     );
 
-    expect(source).toContain(
-      'stageGroup?: "stage-one" | "stage-two" | "later"'
-    );
-    expect(source).toContain('line.stageGroup === "stage-two"');
+    expect(source).toContain("stageGroup?: \"stage-one\" | \"stage-two\" | \"later\"");
+    expect(source).toContain("line.stageGroup === \"stage-two\"");
     expect(source).toContain('data-testid="autopilot-console-scroll"');
 
     const consolePanel = source.slice(
       source.indexOf("function AutopilotConsolePanel"),
       source.indexOf("export function AutopilotSpecTreeHandoffPanel")
     );
-    expect(consolePanel).toMatch(
-      /min-h-0 flex-1 overflow-y-auto overscroll-contain/
-    );
+    expect(consolePanel).toMatch(/min-h-0 flex-1 overflow-y-auto overscroll-contain/);
     expect(consolePanel.indexOf("{children}")).toBeGreaterThan(
       consolePanel.indexOf('data-testid="autopilot-console-scroll"')
     );
@@ -1108,7 +1053,9 @@ describe("AutopilotRoutePage", () => {
     );
 
     expect(source).toContain('className="grid h-full min-h-0 gap-3"');
-    expect(source).toContain('? "grid h-full min-h-0 min-w-0 overflow-hidden"');
+    expect(source).toContain(
+      '? "grid h-full min-h-0 min-w-0 overflow-hidden"'
+    );
     expect(source).toContain(
       '? "h-full min-h-0 min-w-0 overflow-hidden bg-white"'
     );
@@ -1147,13 +1094,13 @@ describe("AutopilotRoutePage", () => {
     const markup = renderToStaticMarkup(<AutopilotRoutePage />);
 
     // E2: fold-removal snapshot.
-    expect(markup).not.toContain(
-      'data-testid="autopilot-advanced-workbenches"'
-    );
+    expect(markup).not.toContain('data-testid="autopilot-advanced-workbenches"');
     expect(markup).not.toContain('data-testid="blueprint-progress-panel"');
     expect(markup).not.toContain("高级资产工作台");
     expect(markup).not.toContain("Advanced asset workbenches");
-    expect(markup).not.toContain("展开查看 SPEC、预演、提示词、能力桥和回放");
+    expect(markup).not.toContain(
+      "展开查看 SPEC、预演、提示词、能力桥和回放"
+    );
     expect(markup).not.toContain(
       "Expand for SPEC, previews, prompts, capability bridge, and replay"
     );
@@ -1185,34 +1132,20 @@ describe("AutopilotRoutePage", () => {
     );
 
     expect(source).toMatch(/fetchLatestBlueprintGenerationJob/);
-    expect(source).toMatch(
-      /fetchLatestBlueprintGenerationJob\(\{\s*projectId:\s*latestProjectId\s*,\s*\}\)/
-    );
-    expect(source).toMatch(
-      /const applyLatestGenerationSnapshot\s*=\s*useCallback/
-    );
-    expect(source).toMatch(
-      /applyLatestGenerationSnapshot\(\s*result\.data\s*\)/
-    );
+    expect(source).toMatch(/fetchLatestBlueprintGenerationJob\(\{\s*projectId:\s*latestProjectId\s*,\s*\}\)/);
+    expect(source).toMatch(/const applyLatestGenerationSnapshot\s*=\s*useCallback/);
+    expect(source).toMatch(/applyLatestGenerationSnapshot\(\s*result\.data\s*\)/);
 
     const helperStart = source.indexOf("const applyLatestGenerationSnapshot");
     const helperEnd = source.indexOf("useEffect(() => {", helperStart);
     const helperSource = source.slice(helperStart, helperEnd);
     expect(helperSource).toMatch(/setLatestJob\(\s*snapshot\.job\s*\)/);
-    expect(helperSource).toMatch(
-      /setRouteSet\(\s*snapshot\.routeSet\s*\?\?\s*null\s*\)/
-    );
-    expect(helperSource).toMatch(
-      /setSelection\(\s*snapshot\.selection\s*\?\?\s*null\s*\)/
-    );
-    expect(helperSource).toMatch(
-      /setSpecTree\(\s*snapshot\.specTree\s*\?\?\s*null\s*\)/
-    );
+    expect(helperSource).toMatch(/setRouteSet\(\s*snapshot\.routeSet\s*\?\?\s*null\s*\)/);
+    expect(helperSource).toMatch(/setSelection\(\s*snapshot\.selection\s*\?\?\s*null\s*\)/);
+    expect(helperSource).toMatch(/setSpecTree\(\s*snapshot\.specTree\s*\?\?\s*null\s*\)/);
     expect(helperSource).toMatch(/setIntake\(\s*snapshot\.intake\s*\)/);
     expect(helperSource).toMatch(/resetLatestGenerationSnapshot\(\)/);
-    expect(helperSource).toMatch(
-      /setProjectContext\(\s*snapshot\.projectContext\s*\?\?\s*null\s*\)/
-    );
+    expect(helperSource).toMatch(/setProjectContext\(\s*snapshot\.projectContext\s*\?\?\s*null\s*\)/);
   });
 
   it("does not fetch the global latest blueprint job when no current project is selected", async () => {
@@ -1231,9 +1164,7 @@ describe("AutopilotRoutePage", () => {
       source.indexOf("if (!IS_GITHUB_PAGES && !currentProjectId"),
       source.indexOf("const refreshPagesBlueprintSnapshot")
     );
-    expect(latestFetchRegion).toMatch(
-      /const latestProjectId = currentProjectId \?\? undefined/
-    );
+    expect(latestFetchRegion).toMatch(/const latestProjectId = currentProjectId \?\? undefined/);
     expect(latestFetchRegion).toMatch(/projectId:\s*latestProjectId/);
   });
 
@@ -1288,26 +1219,16 @@ describe("AutopilotRoutePage", () => {
     );
 
     expect(source).toMatch(/generationActions:\s*pagesBlueprintRuntime/);
-    expect(source).toMatch(
-      /generateSpecDocuments:\s*pagesBlueprintRuntime\.generateSpecDocuments/
-    );
-    expect(source).toMatch(
-      /generateEffectPreview:\s*pagesBlueprintRuntime\.generateEffectPreviews/
-    );
-    expect(source).toMatch(
-      /generatePromptPackages:\s*pagesBlueprintRuntime\.generatePromptPackages/
-    );
-    expect(source).toMatch(
-      /generateEngineeringLanding:\s*pagesBlueprintRuntime\.generateEngineeringLanding/
-    );
-    expect(source).toMatch(
-      /generateSpecDocuments=\{pagesBlueprintRuntime\?\.generateSpecDocuments\}/
-    );
+    expect(source).toMatch(/generateSpecDocuments:\s*pagesBlueprintRuntime\.generateSpecDocuments/);
+    expect(source).toMatch(/generateEffectPreview:\s*pagesBlueprintRuntime\.generateEffectPreviews/);
+    expect(source).toMatch(/generatePromptPackages:\s*pagesBlueprintRuntime\.generatePromptPackages/);
+    expect(source).toMatch(/generateEngineeringLanding:\s*pagesBlueprintRuntime\.generateEngineeringLanding/);
+    expect(source).toMatch(/generateSpecDocuments=\{pagesBlueprintRuntime\?\.generateSpecDocuments\}/);
     expect(source).toMatch(/refreshPagesBlueprintSnapshot/);
   });
 
   describe("fabric stage right rail (Spec 3 T08)", () => {
-    it('mounts <AutopilotRightRail> with data-testid="autopilot-right-rail" under fabric stage', () => {
+    it("mounts <AutopilotRightRail> with data-testid=\"autopilot-right-rail\" under fabric stage", () => {
       const markup = renderToStaticMarkup(
         <AutopilotRightRail
           jobId="job-1"

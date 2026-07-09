@@ -12,9 +12,7 @@ export type ConclusionBadgeProjection = {
  * Mechanical projection of sessionState.goal.status (Layer 1 badge).
  * Transcribes only — never adjudicates.
  */
-export function projectConclusionBadge(
-  state: V5SessionState
-): ConclusionBadgeProjection {
+export function projectConclusionBadge(state: V5SessionState): ConclusionBadgeProjection {
   const status = state.goal?.status;
 
   if (status === "clear") {

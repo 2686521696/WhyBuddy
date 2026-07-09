@@ -140,14 +140,16 @@ function buildPreviewFallback(
   if (!node) return "请选择 SPEC 树节点来预览生成文档。";
 
   const heading =
-    type === "requirements" ? "需求" : type === "design" ? "设计" : "任务";
+    type === "requirements"
+      ? "需求"
+      : type === "design"
+        ? "设计"
+        : "任务";
   const outputs = node.outputs.length
     ? node.outputs.map(output => `- ${blueprintCopy(output)}`).join("\n")
     : "- 暂无声明输出。";
   const dependencies = node.dependencies.length
-    ? node.dependencies
-        .map(dependency => `- ${blueprintCopy(dependency)}`)
-        .join("\n")
+    ? node.dependencies.map(dependency => `- ${blueprintCopy(dependency)}`).join("\n")
     : "- 暂无上游依赖记录。";
 
   return `# ${heading}：${blueprintCopy(node.title)}
@@ -261,10 +263,7 @@ export function SpecDocumentWorkbenchPanel({
       { requirements: 0, design: 0, tasks: 0 }
     );
   }, [nodeDocuments]);
-  const reviewStatus = readReviewStatus(
-    activeDocument,
-    Boolean(activeDocument)
-  );
+  const reviewStatus = readReviewStatus(activeDocument, Boolean(activeDocument));
   const reviewStatusText = reviewStatusLabel(reviewStatus);
 
   const publishDocuments = (nextDocuments: BlueprintSpecDocument[]) => {
@@ -335,15 +334,11 @@ export function SpecDocumentWorkbenchPanel({
     setError(null);
 
     try {
-      const result = await reviewBlueprintSpecDocument(
-        jobId,
-        activeDocument.id,
-        {
-          status: decision,
-          reviewedBy: "spec-document-workbench",
-          reviewNote: `从 SPEC 文档工作台标记为${reviewStatusLabel(decision)}。`,
-        }
-      );
+      const result = await reviewBlueprintSpecDocument(jobId, activeDocument.id, {
+        status: decision,
+        reviewedBy: "spec-document-workbench",
+        reviewNote: `从 SPEC 文档工作台标记为${reviewStatusLabel(decision)}。`,
+      });
 
       if (result.ok) {
         replaceDocument(result.data.document);
@@ -453,8 +448,7 @@ export function SpecDocumentWorkbenchPanel({
             需求 / 设计 / 任务
           </h3>
           <p className="mt-1 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
-            选择一个 SPEC 树节点查看预览；生成操作会一次性覆盖整棵树的
-            requirements / design / tasks。
+            选择一个 SPEC 树节点查看预览；生成操作会一次性覆盖整棵树的 requirements / design / tasks。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -475,9 +469,7 @@ export function SpecDocumentWorkbenchPanel({
           <Button
             type="button"
             className="gap-2 rounded-full bg-[#0f766e] font-black text-white hover:bg-[#115e59]"
-            disabled={
-              !jobId || specTree.nodes.length === 0 || generating || loading
-            }
+            disabled={!jobId || specTree.nodes.length === 0 || generating || loading}
             onClick={handleGenerate}
             data-testid="spec-document-generate-button"
           >
@@ -596,10 +588,7 @@ export function SpecDocumentWorkbenchPanel({
                 size="sm"
                 className="gap-2 rounded-full bg-[#0f766e] font-black text-white hover:bg-[#115e59]"
                 disabled={
-                  !jobId ||
-                  !selectedNode ||
-                  !activeDocument ||
-                  Boolean(reviewAction)
+                  !jobId || !selectedNode || !activeDocument || Boolean(reviewAction)
                 }
                 onClick={() => handleReviewDecision("accepted")}
                 data-testid="spec-document-accept-button"
@@ -620,10 +609,7 @@ export function SpecDocumentWorkbenchPanel({
                 size="sm"
                 className="gap-2 rounded-full border-rose-200 bg-white font-black text-rose-700 hover:bg-rose-50 hover:text-rose-800"
                 disabled={
-                  !jobId ||
-                  !selectedNode ||
-                  !activeDocument ||
-                  Boolean(reviewAction)
+                  !jobId || !selectedNode || !activeDocument || Boolean(reviewAction)
                 }
                 onClick={() => handleReviewDecision("rejected")}
                 data-testid="spec-document-reject-button"
@@ -644,10 +630,7 @@ export function SpecDocumentWorkbenchPanel({
                 size="sm"
                 className="gap-2 rounded-full border-slate-200 bg-white font-black text-slate-600 hover:bg-slate-100"
                 disabled={
-                  !jobId ||
-                  !selectedNode ||
-                  !activeDocument ||
-                  Boolean(reviewAction)
+                  !jobId || !selectedNode || !activeDocument || Boolean(reviewAction)
                 }
                 onClick={handleSaveVersion}
                 data-testid="spec-document-save-version-button"
@@ -746,8 +729,7 @@ export function SpecDocumentWorkbenchPanel({
                 {generatingPreview === "success"
                   ? "右栏将自动切换到效果预演面板。"
                   : generatingPreview === "error"
-                    ? (effectPreviewError?.message ??
-                      "请稍后重试或检查后端日志。")
+                    ? effectPreviewError?.message ?? "请稍后重试或检查后端日志。"
                     : documents.length === 0
                       ? "请先生成至少一份 SPEC 文档（点击上方“生成全部文档”）。"
                       : "已生成 " +
@@ -769,18 +751,13 @@ export function SpecDocumentWorkbenchPanel({
               data-testid="spec-document-enter-effect-preview-button"
             >
               {generatingPreview === "loading" ? (
-                <RefreshCw
-                  className="size-3.5 animate-spin"
-                  aria-hidden="true"
-                />
+                <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
               ) : generatingPreview === "success" ? (
                 <CheckCircle2 className="size-3.5" aria-hidden="true" />
               ) : (
                 <Sparkles className="size-3.5" aria-hidden="true" />
               )}
-              {generatingPreview === "success"
-                ? "已进入效果预演"
-                : "进入效果预演 →"}
+              {generatingPreview === "success" ? "已进入效果预演" : "进入效果预演 →"}
             </Button>
           </div>
         </div>

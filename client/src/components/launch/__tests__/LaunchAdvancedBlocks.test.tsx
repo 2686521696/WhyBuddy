@@ -131,8 +131,7 @@ describe("LaunchCockpitGrid", () => {
       })
     );
 
-    const disabledTrueCount = (markup.match(/data-disabled="true"/g) || [])
-      .length;
+    const disabledTrueCount = (markup.match(/data-disabled="true"/g) || []).length;
     expect(disabledTrueCount).toBe(0);
   });
 
@@ -140,11 +139,7 @@ describe("LaunchCockpitGrid", () => {
     expect(COCKPIT_TOOLS).toHaveLength(6);
     const advancedTools = COCKPIT_TOOLS.filter(t => t.requiresAdvancedRuntime);
     expect(advancedTools).toHaveLength(3);
-    expect(advancedTools.map(t => t.id)).toEqual([
-      "browser",
-      "executor",
-      "filesystem",
-    ]);
+    expect(advancedTools.map(t => t.id)).toEqual(["browser", "executor", "filesystem"]);
   });
 
   it("renders the section title", () => {

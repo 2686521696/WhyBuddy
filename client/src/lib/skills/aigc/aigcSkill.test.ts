@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  dataModelSkill,
-  purchaseApprovalDataModel,
-} from "../datamodel/dataModelSkill";
+import { dataModelSkill, purchaseApprovalDataModel } from "../datamodel/dataModelSkill";
 import { purchaseApprovalRbac, rbacSkill } from "../rbac/rbacSkill";
 import {
   aigcSkill,
@@ -46,32 +43,25 @@ const fullSurface = {
 
 describe("aigcSkill - V2 base metamodel", () => {
   it("models purchase budget_risk_summary as a runtime-less PEP capability", () => {
-    const capability = purchaseRiskAigcModel.capabilities.find(
-      cap => cap.id === "budget_risk_summary"
-    );
+    const capability = purchaseRiskAigcModel.capabilities.find(cap => cap.id === "budget_risk_summary");
 
     expect(purchaseRiskAigcModel.pep).toBe("pep");
     expect(capability).toBeTruthy();
     expect(capability?.kind).toBe("summary");
-    expect(capability?.allowedRoleRefs).toEqual([
-      "finance",
-      "department_manager",
-    ]);
+    expect(capability?.allowedRoleRefs).toEqual(["finance", "department_manager"]);
     expect(capability?.inputFieldRefs).toEqual(
       expect.arrayContaining([
         "purchase_request.amount",
         "purchase_request.department",
         "purchase_request.vendor",
         "purchase_request.budgetChecked",
-      ])
+      ]),
     );
     expect(capability?.outputSchemaRef).toBe("purchase_risk_output");
   });
 
   it("passes the deterministic purchase risk sample when RBAC and DataModel are wired", () => {
-    const report = aigcSkill.validate(purchaseRiskAigcModel, {
-      external: fullSurface,
-    });
+    const report = aigcSkill.validate(purchaseRiskAigcModel, { external: fullSurface });
 
     expect(report.ok).toBe(true);
     expect(report.errors).toHaveLength(0);
@@ -89,13 +79,9 @@ describe("aigcSkill - provider router and no-secret gate", () => {
     const report = aigcSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "AIGC_PROVIDER_MISSING")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "AIGC_PROVIDER_MISSING")).toBe(true);
     expect(report.errors.some(e => e.code === "AIGC_MODEL_MISSING")).toBe(true);
-    expect(
-      report.errors.some(e => e.code === "AIGC_TOKEN_BUDGET_INVALID")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_TOKEN_BUDGET_INVALID")).toBe(true);
   });
 
   it("rejects raw provider secrets while allowing keyRef or secretRef only", () => {
@@ -119,15 +105,9 @@ describe("aigcSkill - prompt templates and output schemas", () => {
     const report = aigcSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "AIGC_PROMPT_MISSING")).toBe(
-      true
-    );
-    expect(
-      report.errors.some(e => e.code === "AIGC_PROMPT_VERSION_MISSING")
-    ).toBe(true);
-    expect(
-      report.errors.some(e => e.code === "AIGC_OUTPUT_SCHEMA_INVALID")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_PROMPT_MISSING")).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_PROMPT_VERSION_MISSING")).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_OUTPUT_SCHEMA_INVALID")).toBe(true);
   });
 
   it("rejects capabilities that reference missing output schemas", () => {
@@ -137,21 +117,13 @@ describe("aigcSkill - prompt templates and output schemas", () => {
     const report = aigcSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "AIGC_OUTPUT_SCHEMA_MISSING")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_OUTPUT_SCHEMA_MISSING")).toBe(true);
   });
 
   it("defines deterministic riskLevel, summary, and recommendedAction output fields", () => {
-    const schema = purchaseRiskAigcModel.outputSchemas.find(
-      item => item.id === "purchase_risk_output"
-    );
+    const schema = purchaseRiskAigcModel.outputSchemas.find(item => item.id === "purchase_risk_output");
 
-    expect(schema?.fields.map(field => field.key)).toEqual([
-      "riskLevel",
-      "summary",
-      "recommendedAction",
-    ]);
+    expect(schema?.fields.map(field => field.key)).toEqual(["riskLevel", "summary", "recommendedAction"]);
   });
 });
 
@@ -165,15 +137,9 @@ describe("aigcSkill - RAG retrieval and citation policy", () => {
     const report = aigcSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "AIGC_RAG_SOURCE_MISSING")).toBe(
-      true
-    );
-    expect(
-      report.errors.some(e => e.code === "AIGC_RETRIEVAL_POLICY_MISSING")
-    ).toBe(true);
-    expect(report.errors.some(e => e.code === "AIGC_CITATION_REQUIRED")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "AIGC_RAG_SOURCE_MISSING")).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_RETRIEVAL_POLICY_MISSING")).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_CITATION_REQUIRED")).toBe(true);
   });
 
   it("blocks retrieval policies that make local auth decisions instead of delegating to RBAC", () => {
@@ -184,9 +150,7 @@ describe("aigcSkill - RAG retrieval and citation policy", () => {
     const report = aigcSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "AIGC_RETRIEVAL_PEP_BYPASS")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_RETRIEVAL_PEP_BYPASS")).toBe(true);
   });
 });
 
@@ -200,9 +164,7 @@ describe("aigcSkill - tool metadata gate", () => {
 
     expect(report.ok).toBe(false);
     expect(report.errors.some(e => e.code === "AIGC_TOOL_MISSING")).toBe(true);
-    expect(report.errors.some(e => e.code === "AIGC_TOOL_POLICY_MISSING")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "AIGC_TOOL_POLICY_MISSING")).toBe(true);
   });
 
   it("rejects tool configs without permission refs and invalid budgets", () => {
@@ -214,12 +176,8 @@ describe("aigcSkill - tool metadata gate", () => {
     const report = aigcSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "AIGC_TOOL_PERMISSION_MISSING")
-    ).toBe(true);
-    expect(report.errors.some(e => e.code === "AIGC_TOOL_BUDGET_INVALID")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "AIGC_TOOL_PERMISSION_MISSING")).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_TOOL_BUDGET_INVALID")).toBe(true);
   });
 });
 
@@ -229,24 +187,15 @@ describe("aigcSkill - PEP RBAC gate", () => {
       external: { datamodel: fullSurface.datamodel },
     });
     expect(unresolved.ok).toBe(true);
-    expect(
-      unresolved.warnings.some(e => e.code === "AIGC_ROLE_UNRESOLVED")
-    ).toBe(true);
-    expect(
-      unresolved.warnings.some(e => e.code === "AIGC_PERMISSION_UNRESOLVED")
-    ).toBe(true);
+    expect(unresolved.warnings.some(e => e.code === "AIGC_ROLE_UNRESOLVED")).toBe(true);
+    expect(unresolved.warnings.some(e => e.code === "AIGC_PERMISSION_UNRESOLVED")).toBe(true);
 
     const missing = aigcSkill.validate(purchaseRiskAigcModel, {
-      external: {
-        datamodel: fullSurface.datamodel,
-        rbac: { role: ["requester"], permission: ["purchase:create"] },
-      },
+      external: { datamodel: fullSurface.datamodel, rbac: { role: ["requester"], permission: ["purchase:create"] } },
     });
     expect(missing.ok).toBe(false);
     expect(missing.errors.some(e => e.code === "AIGC_ROLE_MISSING")).toBe(true);
-    expect(missing.errors.some(e => e.code === "AIGC_PERMISSION_MISSING")).toBe(
-      true
-    );
+    expect(missing.errors.some(e => e.code === "AIGC_PERMISSION_MISSING")).toBe(true);
   });
 
   it("blocks local-only authorization on a PEP capability", () => {
@@ -269,12 +218,8 @@ describe("aigcSkill - DataModel SSOT field gate", () => {
     const report = aigcSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "AIGC_INPUT_FIELD_MISSING")).toBe(
-      true
-    );
-    expect(
-      report.errors.some(e => e.code === "AIGC_OUTPUT_FIELD_MISSING")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_INPUT_FIELD_MISSING")).toBe(true);
+    expect(report.errors.some(e => e.code === "AIGC_OUTPUT_FIELD_MISSING")).toBe(true);
   });
 
   it("warns on deprecated fields and fails on removed fields from DataModel metadata", () => {
@@ -293,9 +238,7 @@ describe("aigcSkill - DataModel SSOT field gate", () => {
     });
 
     expect(report.ok).toBe(false);
-    expect(report.warnings.some(e => e.code === "AIGC_FIELD_DEPRECATED")).toBe(
-      true
-    );
+    expect(report.warnings.some(e => e.code === "AIGC_FIELD_DEPRECATED")).toBe(true);
     expect(report.errors.some(e => e.code === "AIGC_FIELD_REMOVED")).toBe(true);
   });
 });
@@ -317,7 +260,7 @@ describe("aigcSkill - projection, resolve, and crossRefs", () => {
         "citationPolicy",
         "tool",
         "toolPolicy",
-      ])
+      ]),
     );
     expect(projection.mermaid).toContain("budget_risk_summary");
   });
@@ -333,19 +276,9 @@ describe("aigcSkill - projection, resolve, and crossRefs", () => {
     expect(surface.outputSchema).toContain("purchase_risk_output");
     expect(surface.knowledgeSource).toContain("vendor_policy_knowledge");
     expect(surface.tool).toContain("budget_policy_lookup");
-    expect(
-      refs.some(
-        ref =>
-          ref.toSkill === "datamodel" &&
-          ref.toValue === "purchase_request.amount"
-      )
-    ).toBe(true);
-    expect(
-      refs.some(ref => ref.toSkill === "rbac" && ref.toValue === "finance")
-    ).toBe(true);
-    expect(aigcSkill.refNodeId("capability", "budget_risk_summary")).toBe(
-      "aigc_cap_budget_risk_summary"
-    );
+    expect(refs.some(ref => ref.toSkill === "datamodel" && ref.toValue === "purchase_request.amount")).toBe(true);
+    expect(refs.some(ref => ref.toSkill === "rbac" && ref.toValue === "finance")).toBe(true);
+    expect(aigcSkill.refNodeId("capability", "budget_risk_summary")).toBe("aigc_cap_budget_risk_summary");
   });
 });
 
@@ -375,59 +308,36 @@ describe("aigcSkill - runtime policy evaluation (117)", () => {
 
   it("fails closed (returns AIGC_RUNTIME_POLICY_DENIED) for missing capability, missing RBAC evidence, insufficient permissions, or removed DataModel fields", () => {
     // missing cap
-    const noCap = evaluateAigcRuntimePolicy(
-      purchaseRiskAigcModel,
-      "nonexistent_cap",
-      runtimeCtx
-    );
+    const noCap = evaluateAigcRuntimePolicy(purchaseRiskAigcModel, "nonexistent_cap", runtimeCtx);
     expect(noCap).toBe(AIGC_RUNTIME_POLICY_DENIED);
 
     // missing RBAC evidence
-    const noRbac = evaluateAigcRuntimePolicy(
-      purchaseRiskAigcModel,
-      "budget_risk_summary",
-      {}
-    );
+    const noRbac = evaluateAigcRuntimePolicy(purchaseRiskAigcModel, "budget_risk_summary", {});
     expect(noRbac).toBe(AIGC_RUNTIME_POLICY_DENIED);
 
     // insufficient perm
-    const weakRbac = evaluateAigcRuntimePolicy(
-      purchaseRiskAigcModel,
-      "budget_risk_summary",
-      {
-        rbac: { permission: ["purchase:view"] }, // missing "purchase:finance_approve"
-        datamodel: fullSurface.datamodel,
-      }
-    );
+    const weakRbac = evaluateAigcRuntimePolicy(purchaseRiskAigcModel, "budget_risk_summary", {
+      rbac: { permission: ["purchase:view"] }, // missing "purchase:finance_approve"
+      datamodel: fullSurface.datamodel,
+    });
     expect(weakRbac).toBe(AIGC_RUNTIME_POLICY_DENIED);
 
     // removed field
     const removedDm = {
-      field: [
-        "purchase_request.amount",
-        "purchase_request.department",
-        "purchase_request.vendor",
-        "purchase_request.budgetChecked",
+      field: ["purchase_request.amount", "purchase_request.department", "purchase_request.vendor", "purchase_request.budgetChecked"],
+      fields: [
+        { ref: "purchase_request.vendor", lifecycle: "removed" },
       ],
-      fields: [{ ref: "purchase_request.vendor", lifecycle: "removed" }],
     };
-    const removedField = evaluateAigcRuntimePolicy(
-      purchaseRiskAigcModel,
-      "budget_risk_summary",
-      {
-        rbac: fullSurface.rbac,
-        datamodel: removedDm,
-      }
-    );
+    const removedField = evaluateAigcRuntimePolicy(purchaseRiskAigcModel, "budget_risk_summary", {
+      rbac: fullSurface.rbac,
+      datamodel: removedDm,
+    });
     expect(removedField).toBe(AIGC_RUNTIME_POLICY_DENIED);
   });
 
   it("denies for leave model (empty capabilities) preserving compatibility", () => {
-    const decision = evaluateAigcRuntimePolicy(
-      emptyLeaveAigcModel,
-      "anything",
-      runtimeCtx
-    );
+    const decision = evaluateAigcRuntimePolicy(emptyLeaveAigcModel, "anything", runtimeCtx);
     expect(decision).toBe(AIGC_RUNTIME_POLICY_DENIED);
   });
 });
@@ -440,18 +350,15 @@ describe("aigcSkill - 118 cross-runtime evidence", () => {
       expect.arrayContaining([
         expect.stringContaining("AIGC_CROSS_RUNTIME_EVIDENCE:rbac"),
         expect.stringContaining("AIGC_CROSS_RUNTIME_EVIDENCE:datamodel"),
-      ])
+      ]),
     );
     expect(surface.crossSkillRuntimeEdges).toEqual(
-      expect.arrayContaining(["aigc->rbac:allowed", "aigc->datamodel:allowed"])
+      expect.arrayContaining(["aigc->rbac:allowed", "aigc->datamodel:allowed"]),
     );
   });
 
   it("builds rbac runtime evidence from capability role and permission refs", () => {
-    const evidence = createAigcRbacRuntimeEvidence(
-      purchaseRiskAigcModel,
-      fullSurface.rbac
-    );
+    const evidence = createAigcRbacRuntimeEvidence(purchaseRiskAigcModel, fullSurface.rbac);
 
     expect(evidence.evidenceKey).toBe(AIGC_RBAC_RUNTIME_EVIDENCE);
     expect(evidence.targetSkill).toBe("rbac");
@@ -473,19 +380,15 @@ describe("aigcSkill - 118 cross-runtime evidence", () => {
     const ctx = normalizeAigcRuntimeContextForSkill(
       purchaseRiskAigcModel,
       "appbundle",
-      { app: ["app_purchase_approval"] }
+      { app: ["app_purchase_approval"] },
     );
 
     expect(ctx.targetSkill).toBe("appbundle");
     expect(ctx.upstreamEvidencePresent).toBe(true);
     expect(ctx.capabilityRefs).toContain("budget_risk_summary");
     expect(ctx.evidence.outputSchemaRefs).toContain("purchase_risk_output");
-    expect(
-      buildAigcCrossRuntimeEdges(purchaseRiskAigcModel).map(
-        edge => edge.targetSkill
-      )
-    ).toEqual(
-      expect.arrayContaining(["rbac", "datamodel", "page", "appbundle"])
+    expect(buildAigcCrossRuntimeEdges(purchaseRiskAigcModel).map(edge => edge.targetSkill)).toEqual(
+      expect.arrayContaining(["rbac", "datamodel", "page", "appbundle"]),
     );
   });
 });
@@ -496,18 +399,9 @@ describe("aigcSkill - runtime output schema and evidence (117)", () => {
       riskLevel: "medium",
       summary: "Medium risk per vendor policy corpus.",
       recommendedAction: "Request additional review",
-      citationEvidence: [
-        {
-          ref: "vendor_policy_knowledge:policy-42",
-          snippet: "approved vendors only",
-        },
-      ],
+      citationEvidence: [{ ref: "vendor_policy_knowledge:policy-42", snippet: "approved vendors only" }],
     };
-    const report = validateAigcRuntimeOutput(
-      purchaseRiskAigcModel,
-      "budget_risk_summary",
-      valid
-    );
+    const report = validateAigcRuntimeOutput(purchaseRiskAigcModel, "budget_risk_summary", valid);
     expect(report.ok).toBe(true);
     expect(report.errors).toHaveLength(0);
   });
@@ -518,15 +412,9 @@ describe("aigcSkill - runtime output schema and evidence (117)", () => {
       summary: "low risk",
       // missing required recommendedAction
     };
-    const r1 = validateAigcRuntimeOutput(
-      purchaseRiskAigcModel,
-      "budget_risk_summary",
-      missingField
-    );
+    const r1 = validateAigcRuntimeOutput(purchaseRiskAigcModel, "budget_risk_summary", missingField);
     expect(r1.ok).toBe(false);
-    expect(
-      r1.errors.some(e => e.code === AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID)
-    ).toBe(true);
+    expect(r1.errors.some((e) => e.code === AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID)).toBe(true);
 
     const noEvidence = {
       riskLevel: "high",
@@ -534,27 +422,15 @@ describe("aigcSkill - runtime output schema and evidence (117)", () => {
       recommendedAction: "block",
       // citationEvidence absent for RAG-backed
     };
-    const r2 = validateAigcRuntimeOutput(
-      purchaseRiskAigcModel,
-      "budget_risk_summary",
-      noEvidence
-    );
+    const r2 = validateAigcRuntimeOutput(purchaseRiskAigcModel, "budget_risk_summary", noEvidence);
     expect(r2.ok).toBe(false);
-    expect(
-      r2.errors.some(e => e.code === AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID)
-    ).toBe(true);
+    expect(r2.errors.some((e) => e.code === AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID)).toBe(true);
   });
 
   it("rejects invalid capability id and wrong field types", () => {
-    const badCap = validateAigcRuntimeOutput(
-      purchaseRiskAigcModel,
-      "nonexistent_cap",
-      {}
-    );
+    const badCap = validateAigcRuntimeOutput(purchaseRiskAigcModel, "nonexistent_cap", {});
     expect(badCap.ok).toBe(false);
-    expect(
-      badCap.errors.some(e => e.code === AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID)
-    ).toBe(true);
+    expect(badCap.errors.some((e) => e.code === AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID)).toBe(true);
 
     const wrongType = {
       riskLevel: "unknown",
@@ -562,37 +438,22 @@ describe("aigcSkill - runtime output schema and evidence (117)", () => {
       recommendedAction: "proceed",
       citationEvidence: [],
     };
-    const r3 = validateAigcRuntimeOutput(
-      purchaseRiskAigcModel,
-      "budget_risk_summary",
-      wrongType
-    );
+    const r3 = validateAigcRuntimeOutput(purchaseRiskAigcModel, "budget_risk_summary", wrongType);
     expect(r3.ok).toBe(false);
-    expect(
-      r3.errors.some(e => e.code === AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID)
-    ).toBe(true);
+    expect(r3.errors.some((e) => e.code === AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID)).toBe(true);
   });
 });
 
 describe("aigcSkill - 119 AIGC positive sample evidence for DataModel/Page/RBAC/AppBundle closure", () => {
   it("exposes purchaseRiskAigcModel as canonical positive sample with cross refs to targets", () => {
     expect(purchaseRiskAigcModel.id).toBe("aigc_purchase_risk");
-    expect(purchaseRiskAigcModel.capabilities.map(c => c.id)).toContain(
-      "budget_risk_summary"
-    );
-    expect(
-      purchaseRiskAigcModel.capabilities[0].inputFieldRefs?.length
-    ).toBeGreaterThan(0);
-    expect(
-      purchaseRiskAigcModel.capabilities[0].permissionRefs?.length
-    ).toBeGreaterThan(0);
+    expect(purchaseRiskAigcModel.capabilities.map(c => c.id)).toContain("budget_risk_summary");
+    expect(purchaseRiskAigcModel.capabilities[0].inputFieldRefs?.length).toBeGreaterThan(0);
+    expect(purchaseRiskAigcModel.capabilities[0].permissionRefs?.length).toBeGreaterThan(0);
   });
 
   it("creates positive sample evidence for appbundle, page, rbac, datamodel (state=allowed when upstream present)", () => {
-    const toApp = createAigcPositiveSampleEvidence(
-      purchaseRiskAigcModel,
-      "appbundle"
-    );
+    const toApp = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "appbundle");
     expect(toApp.evidenceKey).toBe(AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE);
     expect(toApp.targetSkill).toBe("appbundle");
     expect(toApp.state).toBe("allowed");
@@ -600,133 +461,84 @@ describe("aigcSkill - 119 AIGC positive sample evidence for DataModel/Page/RBAC/
     expect(toApp.capabilityRefs).toContain("budget_risk_summary");
     expect(toApp.outputSchemaRefs).toContain("purchase_risk_output");
 
-    const toDm = createAigcPositiveSampleEvidence(
-      purchaseRiskAigcModel,
-      "datamodel"
-    );
+    const toDm = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "datamodel");
     expect(toDm.targetSkill).toBe("datamodel");
     expect(toDm.state).toBe("allowed");
 
-    const toPage = createAigcPositiveSampleEvidence(
-      purchaseRiskAigcModel,
-      "page"
-    );
+    const toPage = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "page");
     expect(toPage.targetSkill).toBe("page");
     expect(toPage.state).toBe("allowed");
 
-    const toRbac = createAigcPositiveSampleEvidence(
-      purchaseRiskAigcModel,
-      "rbac"
-    );
+    const toRbac = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "rbac");
     expect(toRbac.targetSkill).toBe("rbac");
     expect(toRbac.state).toBe("allowed");
     expect(toRbac.roleRefs).toContain("finance");
   });
 
   it("provides dedicated named positive sample constants per target", () => {
-    const ev = createAigcPositiveSampleEvidence(
-      purchaseRiskAigcModel,
-      "datamodel"
-    );
+    const ev = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "datamodel");
     // dedicated keys are exported for consumers; the general evidenceKey uses base
-    expect([
-      AIGC_POSITIVE_SAMPLE_TO_DATAMODEL,
-      AIGC_POSITIVE_SAMPLE_TO_PAGE,
-      AIGC_POSITIVE_SAMPLE_TO_RBAC,
-      AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE,
-    ]).toContain(AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE);
+    expect([AIGC_POSITIVE_SAMPLE_TO_DATAMODEL, AIGC_POSITIVE_SAMPLE_TO_PAGE, AIGC_POSITIVE_SAMPLE_TO_RBAC, AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE]).toContain(AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE);
   });
 
   it("fail-closed negative evidence for missing upstream (blocked, AIGC_RUNTIME_UPSTREAM_ABSENT)", () => {
-    const neg = createAigcFailClosedNegativeEvidence(
-      purchaseRiskAigcModel,
-      "page"
-    );
+    const neg = createAigcFailClosedNegativeEvidence(purchaseRiskAigcModel, "page");
     expect(neg.state).toBe("blocked");
     expect(neg.reasonCode).toBe("AIGC_RUNTIME_UPSTREAM_ABSENT");
     expect(neg.targetSkill).toBe("page");
 
-    const negDm = createAigcFailClosedNegativeEvidence(
-      purchaseRiskAigcModel,
-      "datamodel"
-    );
+    const negDm = createAigcFailClosedNegativeEvidence(purchaseRiskAigcModel, "datamodel");
     expect(negDm.state).toBe("blocked");
   });
 
   it("empty leave model yields no positive capability refs (fail closed for closure feed)", () => {
-    const emptyPos = createAigcPositiveSampleEvidence(
-      emptyLeaveAigcModel,
-      "appbundle"
-    );
+    const emptyPos = createAigcPositiveSampleEvidence(emptyLeaveAigcModel, "appbundle");
     expect(emptyPos.capabilityRefs.length).toBe(0);
     expect(emptyPos.state).toBe("blocked"); // no refs => blocked per aigcRefsForTarget logic
   });
 
   it("exposes AIGC negative sample evidence that fails closed when policy or schema evidence absent (119 objective)", () => {
-    const neg = createAigcNegativeSampleForPolicyOrSchemaAbsent(
-      purchaseRiskAigcModel,
-      "appbundle"
-    );
+    const neg = createAigcNegativeSampleForPolicyOrSchemaAbsent(purchaseRiskAigcModel, "appbundle");
     expect(neg.state).toBe("blocked");
     expect(neg.evidenceKey).toBe(AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT);
-    expect(neg.reasonCode).toBe(
-      "AIGC_RUNTIME_POLICY_OR_SCHEMA_EVIDENCE_ABSENT"
-    );
+    expect(neg.reasonCode).toBe("AIGC_RUNTIME_POLICY_OR_SCHEMA_EVIDENCE_ABSENT");
     expect(neg.targetSkill).toBe("appbundle");
 
     // also via fixture: evaluate denies on schema absent
-    const denied = evaluateAigcRuntimePolicy(
-      aigcModelWithMissingPolicyOrSchema,
-      "cap_without_policy_schema",
-      {
-        rbac: fullSurface.rbac,
-        datamodel: fullSurface.datamodel,
-      }
-    );
+    const denied = evaluateAigcRuntimePolicy(aigcModelWithMissingPolicyOrSchema, "cap_without_policy_schema", {
+      rbac: fullSurface.rbac,
+      datamodel: fullSurface.datamodel,
+    });
     expect(denied).toBe(AIGC_RUNTIME_POLICY_DENIED);
 
     // positive path still works with full policy+schema model
-    const pos = createAigcPositiveSampleEvidence(
-      purchaseRiskAigcModel,
-      "appbundle"
-    );
+    const pos = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "appbundle");
     expect(pos.state).toBe("allowed");
   });
 
   it("traces AIGC positive sample evidence to DataModel schema evidence as a closed path", () => {
-    const trace = traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(
-      purchaseRiskAigcModel
-    );
+    const trace = traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(purchaseRiskAigcModel);
 
     expect(trace.traceId).toBe(AIGC_DATAMODEL_TRACE);
     expect(trace.sourceSkill).toBe("aigc");
     expect(trace.targetSkill).toBe("datamodel");
     expect(trace.state).toBe("closed");
-    expect(trace.reasonCode).toBe(
-      "AIGC_POSITIVE_SAMPLE_TO_DATAMODEL_SCHEMA_CLOSED"
-    );
+    expect(trace.reasonCode).toBe("AIGC_POSITIVE_SAMPLE_TO_DATAMODEL_SCHEMA_CLOSED");
     expect(trace.capabilityRefs).toContain("budget_risk_summary");
     expect(trace.fieldRefs).toContain("purchase_request.amount");
   });
 
   it("traces missing AIGC schema evidence to DataModel as fail-closed", () => {
-    const trace =
-      traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(
-        emptyLeaveAigcModel
-      );
+    const trace = traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(emptyLeaveAigcModel);
 
     expect(trace.state).toBe("blocked");
-    expect(trace.reasonCode).toBe(
-      "AIGC_POSITIVE_SAMPLE_TO_DATAMODEL_SCHEMA_FAIL_CLOSED"
-    );
+    expect(trace.reasonCode).toBe("AIGC_POSITIVE_SAMPLE_TO_DATAMODEL_SCHEMA_FAIL_CLOSED");
   });
 
   it("resolve surface exposes aigcToDataModelTrace for runtime linkage consumers", () => {
     const surface = aigcSkill.resolve(purchaseRiskAigcModel) as any;
 
-    expect(surface.runtimeEvidence).toEqual(
-      expect.arrayContaining([AIGC_POSITIVE_SAMPLE_TO_DATAMODEL])
-    );
+    expect(surface.runtimeEvidence).toEqual(expect.arrayContaining([AIGC_POSITIVE_SAMPLE_TO_DATAMODEL]));
     expect(surface.aigcToDataModelTrace).toBeTruthy();
     expect(surface.aigcToDataModelTrace.traceId).toBe(AIGC_DATAMODEL_TRACE);
     expect(surface.aigcToDataModelTrace.state).toBe("closed");
@@ -735,10 +547,7 @@ describe("aigcSkill - 119 AIGC positive sample evidence for DataModel/Page/RBAC/
   it("traces proposed AIGC access to RBAC as closed when RBAC surface proves all refs", () => {
     const trace = traceAigcProposedAccessFailClosedAgainstRbacEvidence(
       purchaseRiskAigcModel,
-      {
-        role: ["finance", "department_manager"],
-        permission: ["purchase:view", "purchase:finance_approve"],
-      }
+      { role: ["finance", "department_manager"], permission: ["purchase:view", "purchase:finance_approve"] },
     );
 
     expect(trace.traceId).toBe(AIGC_RBAC_PROPOSED_ACCESS_TRACE);
@@ -751,36 +560,26 @@ describe("aigcSkill - 119 AIGC positive sample evidence for DataModel/Page/RBAC/
   });
 
   it("traces proposed AIGC access to RBAC as fail-closed when RBAC evidence is absent or incomplete", () => {
-    const absent = traceAigcProposedAccessFailClosedAgainstRbacEvidence(
-      purchaseRiskAigcModel
-    );
+    const absent = traceAigcProposedAccessFailClosedAgainstRbacEvidence(purchaseRiskAigcModel);
     const incomplete = traceAigcProposedAccessFailClosedAgainstRbacEvidence(
       purchaseRiskAigcModel,
-      { role: ["guest"], permission: ["purchase:view"] }
+      { role: ["guest"], permission: ["purchase:view"] },
     );
 
     expect(absent.state).toBe("blocked");
-    expect(absent.reasonCode).toBe(
-      "AIGC_PROPOSED_ACCESS_FAIL_CLOSED_AGAINST_RBAC"
-    );
+    expect(absent.reasonCode).toBe("AIGC_PROPOSED_ACCESS_FAIL_CLOSED_AGAINST_RBAC");
     expect(incomplete.state).toBe("blocked");
     expect(incomplete.permissionRefs).toContain("purchase:finance_approve");
   });
 
   it("resolve surface exposes aigcToRbacTrace and proposed access RBAC evidence", () => {
     const surface = aigcSkill.resolve(purchaseRiskAigcModel) as any;
-    const evidence = createAigcProposedAccessRbacEvidence(
-      purchaseRiskAigcModel
-    );
+    const evidence = createAigcProposedAccessRbacEvidence(purchaseRiskAigcModel);
 
     expect(evidence.evidenceKey).toBe(AIGC_RBAC_RUNTIME_EVIDENCE);
     expect(evidence.state).toBe("blocked");
-    expect(surface.runtimeEvidence).toEqual(
-      expect.arrayContaining([AIGC_RBAC_RUNTIME_EVIDENCE])
-    );
+    expect(surface.runtimeEvidence).toEqual(expect.arrayContaining([AIGC_RBAC_RUNTIME_EVIDENCE]));
     expect(surface.aigcToRbacTrace).toBeTruthy();
-    expect(surface.aigcToRbacTrace.traceId).toBe(
-      AIGC_RBAC_PROPOSED_ACCESS_TRACE
-    );
+    expect(surface.aigcToRbacTrace.traceId).toBe(AIGC_RBAC_PROPOSED_ACCESS_TRACE);
   });
 });

@@ -31,10 +31,7 @@ describe("ToastQueue", () => {
       message: "boom",
     });
     expect(queue.peekVisible()?.key).toBe("error-1");
-    expect(queue.getPending().map(item => item.key)).toEqual([
-      "warn-1",
-      "info-1",
-    ]);
+    expect(queue.getPending().map(item => item.key)).toEqual(["warn-1", "info-1"]);
   });
 
   it("merges toasts by key without keeping historical duplicates", () => {
@@ -131,30 +128,24 @@ describe("ToastQueue", () => {
     api.dismiss = vi.fn();
     const renderer = createSonnerToastRenderer(api);
 
-    expect(
-      renderer.show({
-        key: "info",
-        level: "info",
-        message: "Information",
-        enqueuedAt: 1,
-      })
-    ).toBe("info-id");
-    expect(
-      renderer.show({
-        key: "warn",
-        level: "warn",
-        message: "Warning",
-        enqueuedAt: 2,
-      })
-    ).toBe("warn-id");
-    expect(
-      renderer.show({
-        key: "error",
-        level: "error",
-        message: "Error",
-        enqueuedAt: 3,
-      })
-    ).toBe("error-id");
+    expect(renderer.show({
+      key: "info",
+      level: "info",
+      message: "Information",
+      enqueuedAt: 1,
+    })).toBe("info-id");
+    expect(renderer.show({
+      key: "warn",
+      level: "warn",
+      message: "Warning",
+      enqueuedAt: 2,
+    })).toBe("warn-id");
+    expect(renderer.show({
+      key: "error",
+      level: "error",
+      message: "Error",
+      enqueuedAt: 3,
+    })).toBe("error-id");
 
     renderer.dismiss("info-id");
 

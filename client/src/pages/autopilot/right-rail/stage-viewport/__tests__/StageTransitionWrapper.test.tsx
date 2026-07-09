@@ -10,7 +10,7 @@ describe("StageTransitionWrapper", () => {
   it("does not block the next stage behind a stuck exit animation", () => {
     const source = readFileSync(
       resolve(__dirname, "../StageTransitionWrapper.tsx"),
-      "utf8"
+      "utf8",
     );
 
     expect(source).toContain('mode="sync"');
@@ -22,7 +22,7 @@ describe("StageTransitionWrapper", () => {
     const markup = renderToStaticMarkup(
       <StageTransitionWrapper stageKey="route" direction="backward">
         <div data-testid="stage-content">Route content</div>
-      </StageTransitionWrapper>
+      </StageTransitionWrapper>,
     );
 
     expect(markup).toContain('data-testid="stage-content"');

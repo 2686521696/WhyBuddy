@@ -9,12 +9,7 @@ import type { CompanionFinding } from "./types";
 import { selectCompanionFindings, sortBySeverity } from "./companion";
 
 const SEVERITIES: CompanionFinding["severity"][] = ["info", "warn", "error"];
-const STAGES = [
-  "input",
-  "clarification",
-  "route_generation",
-  "spec_tree",
-] as const;
+const STAGES = ["input", "clarification", "route_generation", "spec_tree"] as const;
 
 const arbFinding: fc.Arbitrary<CompanionFinding> = fc.record({
   id: fc.string({ minLength: 1, maxLength: 6 }),
@@ -36,19 +31,14 @@ describe("companion property tests", () => {
     fc.assert(
       fc.property(
         fc.option(
-          fc.record({
-            companionFindings: fc.option(
-              fc.array(arbFinding, { maxLength: 10 }),
-              { nil: undefined }
-            ),
-          }),
-          { nil: undefined }
+          fc.record({ companionFindings: fc.option(fc.array(arbFinding, { maxLength: 10 }), { nil: undefined }) }),
+          { nil: undefined },
         ),
-        job => {
+        (job) => {
           const result = selectCompanionFindings(job as never);
           expect(Array.isArray(result)).toBe(true);
-        }
-      )
+        },
+      ),
     );
     expect(selectCompanionFindings(undefined)).toEqual([]);
     expect(selectCompanionFindings(null)).toEqual([]);
@@ -57,15 +47,15 @@ describe("companion property tests", () => {
 
   it("Property 5: sortBySeverity is a severity-ordered stable permutation (error > warn > info)", () => {
     fc.assert(
-      fc.property(fc.array(arbFinding, { maxLength: 20 }), findings => {
+      fc.property(fc.array(arbFinding, { maxLength: 20 }), (findings) => {
         const sorted = sortBySeverity(findings);
         expect(sorted.length).toBe(findings.length);
         for (let i = 1; i < sorted.length; i++) {
           expect(rank(sorted[i - 1].severity)).toBeLessThanOrEqual(
-            rank(sorted[i].severity)
+            rank(sorted[i].severity),
           );
         }
-      })
+      }),
     );
   });
 });

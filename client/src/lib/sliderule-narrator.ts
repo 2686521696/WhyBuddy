@@ -19,12 +19,7 @@ export type NarrationRequest = {
   userText: string;
   intervention?: { intent?: string } | null;
   selected?: Array<{ capabilityId?: string; roleId?: string }>;
-  artifacts?: Array<{
-    kind?: string;
-    title?: string;
-    summary?: string;
-    realLlm?: boolean;
-  }>;
+  artifacts?: Array<{ kind?: string; title?: string; summary?: string; realLlm?: boolean }>;
   mainArtifact?: { kind?: string; title?: string; content?: string } | null;
   goalStatusBefore?: string;
   planReason?: string | null;
@@ -53,9 +48,7 @@ const FALLBACK_REASON_LABELS: Record<NarrationFallbackReason, string> = {
   invalid_response: "叙述服务响应无效，已使用本地模板",
 };
 
-export function narrationFallbackHint(
-  reason?: NarrationFallbackReason
-): string | undefined {
+export function narrationFallbackHint(reason?: NarrationFallbackReason): string | undefined {
   if (!reason) return undefined;
   return FALLBACK_REASON_LABELS[reason];
 }
@@ -81,9 +74,7 @@ function localNarrationFallback(
 }
 
 /** Fetch user-facing narration from server; local template if unreachable (no client-side sanitizer). */
-export async function fetchNarration(
-  req: NarrationRequest
-): Promise<NarrationResponse> {
+export async function fetchNarration(req: NarrationRequest): Promise<NarrationResponse> {
   try {
     const res = await fetch("/api/sliderule/respond", {
       method: "POST",

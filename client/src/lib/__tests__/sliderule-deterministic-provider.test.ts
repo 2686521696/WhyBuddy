@@ -21,7 +21,7 @@ const PBT_OPTS = { numRuns: 100 };
 describe("Task 1.3: Deterministic_Provider assembly", () => {
   it("BUILD_TARGET=test defaults to deterministic stand-ins (client)", () => {
     fc.assert(
-      fc.property(fc.constant("test"), buildTarget => {
+      fc.property(fc.constant("test"), (buildTarget) => {
         const assembled = assembleProvidersForBuildTarget({ buildTarget });
         expect(assembled.deterministic).toBe(true);
         expect(isTestBuildTarget(buildTarget)).toBe(true);
@@ -38,12 +38,7 @@ describe("Task 1.3: Deterministic_Provider assembly", () => {
 
   it("explicit router injection overrides default assembly", () => {
     const custom = createDeterministicRouter([
-      {
-        selected: [],
-        rationale: "x",
-        source: "heuristic_fallback",
-        converged: true,
-      },
+      { selected: [], rationale: "x", source: "heuristic_fallback", converged: true },
     ]);
     const assembled = assembleProvidersForBuildTarget({
       buildTarget: "test",
@@ -53,9 +48,7 @@ describe("Task 1.3: Deterministic_Provider assembly", () => {
   });
 
   it("createDeterministicRouter performs zero real-LLM calls", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockRejectedValue(new Error("network blocked"));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network blocked"));
 
     const router = createDeterministicRouter();
     const res = await router.proposePlan({
@@ -77,9 +70,7 @@ describe("Task 1.3: Deterministic_Provider assembly", () => {
   });
 
   it("createDeterministicCapabilityExecutor performs zero network calls", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockRejectedValue(new Error("network blocked"));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network blocked"));
 
     const executor = createDeterministicCapabilityExecutor();
     const res = await executor.executeCapability({

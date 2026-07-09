@@ -35,9 +35,7 @@ export function newSessionId(): string {
 /** 最近活跃倒序（无时间戳的沉底，稳定排序）。 */
 export function sortSessionsByRecency(sessions: SessionMeta[]): SessionMeta[] {
   return [...sessions].sort((a, b) =>
-    String(b.lastActive ?? b.createdAt ?? "").localeCompare(
-      String(a.lastActive ?? a.createdAt ?? "")
-    )
+    String(b.lastActive ?? b.createdAt ?? "").localeCompare(String(a.lastActive ?? a.createdAt ?? ""))
   );
 }
 
@@ -48,9 +46,7 @@ export function activateSession(sessionId: string): void {
   } catch {
     /* 隐私模式降级：事件仍然广播，本次内存态生效 */
   }
-  window.dispatchEvent(
-    new CustomEvent(SESSION_CHANGED_EVENT, { detail: { sessionId } })
-  );
+  window.dispatchEvent(new CustomEvent(SESSION_CHANGED_EVENT, { detail: { sessionId } }));
 }
 
 function readActiveSessionId(): string {
@@ -61,30 +57,22 @@ function readActiveSessionId(): string {
   }
 }
 
-export function SidebarSessions({
-  onOpenSliderule,
-}: {
-  onOpenSliderule?: () => void;
-}) {
+export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => void }) {
   const [sessions, setSessions] = React.useState<SessionMeta[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [activeId, setActiveId] = React.useState<string>(() =>
-    readActiveSessionId()
-  );
+  const [activeId, setActiveId] = React.useState<string>(() => readActiveSessionId());
   // 两步删除确认：第一次点垃圾桶进入待确认（变红），再点才真删；点别处/超时复位
-  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(
-    null
-  );
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(() => {
     fetch("/api/sliderule/sessions")
-      .then(async res => {
+      .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = (await res.json()) as { sessions?: SessionMeta[] };
         setSessions(sortSessionsByRecency(body.sessions ?? []));
         setError(null);
       })
-      .catch(e => setError(String(e)));
+      .catch((e) => setError(String(e)));
   }, []);
 
   React.useEffect(() => {
@@ -117,16 +105,13 @@ export function SidebarSessions({
   const remove = async (id: string) => {
     setConfirmDeleteId(null);
     try {
-      const res = await fetch(
-        `/api/sliderule/sessions/${encodeURIComponent(id)}`,
-        { method: "DELETE" }
-      );
+      const res = await fetch(`/api/sliderule/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
     } catch (e) {
       setError(String(e));
       return;
     }
-    const remaining = (sessions ?? []).filter(s => s.sessionId !== id);
+    const remaining = (sessions ?? []).filter((s) => s.sessionId !== id);
     setSessions(remaining);
     // 删的是当前会话：切到最近的剩余会话；一个不剩就开新会话
     if (id === activeId) {
@@ -149,20 +134,13 @@ export function SidebarSessions({
       </button>
 
       <div className="native-agent-sessions-label">最近</div>
-      <div
-        className="native-agent-sessions-list"
-        data-testid="sidebar-session-list"
-      >
+      <div className="native-agent-sessions-list" data-testid="sidebar-session-list">
         {sessions === null && !error && (
           <div className="native-agent-sessions-hint">加载中…</div>
         )}
-        {error && (
-          <div className="native-agent-sessions-hint">会话列表不可用</div>
-        )}
-        {sessions?.length === 0 && (
-          <div className="native-agent-sessions-hint">暂无历史会话</div>
-        )}
-        {sessions?.map(s => {
+        {error && <div className="native-agent-sessions-hint">会话列表不可用</div>}
+        {sessions?.length === 0 && <div className="native-agent-sessions-hint">暂无历史会话</div>}
+        {sessions?.map((s) => {
           const active = s.sessionId === activeId;
           const confirming = confirmDeleteId === s.sessionId;
           return (
@@ -185,24 +163,14 @@ export function SidebarSessions({
                 aria-label={confirming ? "确认删除" : "删除会话"}
                 data-testid={`sidebar-session-delete-${s.sessionId}`}
                 className={`native-agent-session-delete${confirming ? " native-agent-session-delete-confirm" : ""}`}
-                onClick={ev => {
+                onClick={(ev) => {
                   ev.stopPropagation();
                   if (confirming) void remove(s.sessionId);
                   else setConfirmDeleteId(s.sessionId);
                 }}
               >
-                {confirming ? (
-                  "确认"
-                ) : (
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="13"
-                    height="13"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  >
+                {confirming ? "确认" : (
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
                   </svg>
                 )}

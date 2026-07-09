@@ -1,19 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  dataModelSkill,
-  leaveRequestDataModel,
-  purchaseApprovalDataModel,
-} from "../datamodel/dataModelSkill";
-import {
-  leaveApprovalRbac,
-  purchaseApprovalRbac,
-  rbacSkill,
-} from "../rbac/rbacSkill";
-import {
-  evaluateAppBundleRuntimeClosure,
-  leaveApprovalAppBundle,
-} from "../appbundle/appBundleSkill";
+import { dataModelSkill, leaveRequestDataModel, purchaseApprovalDataModel } from "../datamodel/dataModelSkill";
+import { leaveApprovalRbac, purchaseApprovalRbac, rbacSkill } from "../rbac/rbacSkill";
+import { evaluateAppBundleRuntimeClosure, leaveApprovalAppBundle } from "../appbundle/appBundleSkill";
 import { slideRule } from "../slideRule";
 import {
   buildPageCrossRuntimeEdges,
@@ -40,13 +29,7 @@ import {
   PAGE_TO_APPBUNDLE_TRACE,
   tracePageRouteBindingToAppBundleClosureEvidence,
 } from "./pageSkill";
-import type {
-  BindingSchema,
-  ComponentRenderState,
-  PageModel,
-  PageRenderContext,
-  PermissionRender,
-} from "./pageModel";
+import type { BindingSchema, ComponentRenderState, PageModel, PageRenderContext, PermissionRender } from "./pageModel";
 
 const clone = (m: PageModel): PageModel => structuredClone(m);
 
@@ -57,9 +40,7 @@ const fullSurface = {
 
 describe("pageSkill - the gate", () => {
   it("passes the coherent leave approval page when DataModel and RBAC surfaces are supplied", () => {
-    const report = pageSkill.validate(leaveApprovalPage, {
-      external: fullSurface,
-    });
+    const report = pageSkill.validate(leaveApprovalPage, { external: fullSurface });
 
     expect(report.ok).toBe(true);
     expect(report.errors).toHaveLength(0);
@@ -71,15 +52,9 @@ describe("pageSkill - the gate", () => {
 
     expect(report.ok).toBe(true);
     expect(report.errors).toHaveLength(0);
-    expect(report.warnings.some(w => w.code === "PAGE_ENTITY_UNRESOLVED")).toBe(
-      true
-    );
-    expect(report.warnings.some(w => w.code === "PAGE_FIELD_UNRESOLVED")).toBe(
-      true
-    );
-    expect(report.warnings.some(w => w.code === "PAGE_ROLE_UNRESOLVED")).toBe(
-      true
-    );
+    expect(report.warnings.some(w => w.code === "PAGE_ENTITY_UNRESOLVED")).toBe(true);
+    expect(report.warnings.some(w => w.code === "PAGE_FIELD_UNRESOLVED")).toBe(true);
+    expect(report.warnings.some(w => w.code === "PAGE_ROLE_UNRESOLVED")).toBe(true);
   });
 
   it("catches a component bound to a field that DataModel never defined", () => {
@@ -89,49 +64,31 @@ describe("pageSkill - the gate", () => {
     const report = pageSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "PAGE_REF_MISSING_FIELD")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "PAGE_REF_MISSING_FIELD")).toBe(true);
   });
 
   it("catches a component visible to a role RBAC never defined", () => {
     const broken = clone(leaveApprovalPage);
-    broken.components.find(c => c.id === "approve")!.visibleToRoles = [
-      "director",
-    ];
+    broken.components.find(c => c.id === "approve")!.visibleToRoles = ["director"];
 
     const report = pageSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "PAGE_REF_MISSING_ROLE")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "PAGE_REF_MISSING_ROLE")).toBe(true);
   });
 
   it("catches linkage rules whose source or target component is missing", () => {
     const broken = clone(leaveApprovalPage);
     broken.linkageRules.push(
-      {
-        id: "lk_missing_source",
-        source: { component: "ghost", event: "onChange" },
-        target: { component: "days", action: "setVisible" },
-      },
-      {
-        id: "lk_missing_target",
-        source: { component: "leaveType", event: "onChange" },
-        target: { component: "ghost", action: "setValue" },
-      }
+      { id: "lk_missing_source", source: { component: "ghost", event: "onChange" }, target: { component: "days", action: "setVisible" } },
+      { id: "lk_missing_target", source: { component: "leaveType", event: "onChange" }, target: { component: "ghost", action: "setValue" } },
     );
 
     const report = pageSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "PAGE_LINKAGE_MISSING_SOURCE")
-    ).toBe(true);
-    expect(
-      report.errors.some(e => e.code === "PAGE_LINKAGE_MISSING_TARGET")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "PAGE_LINKAGE_MISSING_SOURCE")).toBe(true);
+    expect(report.errors.some(e => e.code === "PAGE_LINKAGE_MISSING_TARGET")).toBe(true);
   });
 
   it("catches incompatible linkage semantics", () => {
@@ -145,9 +102,7 @@ describe("pageSkill - the gate", () => {
     const report = pageSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "PAGE_LINKAGE_ACTION_INCOMPATIBLE")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "PAGE_LINKAGE_ACTION_INCOMPATIBLE")).toBe(true);
   });
 
   it("catches linkage rules with invalid source event name (not onChange/onClick/onLoad)", () => {
@@ -161,16 +116,8 @@ describe("pageSkill - the gate", () => {
     const report = pageSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "PAGE_LINKAGE_INVALID_EVENT")
-    ).toBe(true);
-    expect(
-      report.errors.some(
-        e =>
-          e.path.includes("source.event") &&
-          /invalid source event/.test(e.message)
-      )
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "PAGE_LINKAGE_INVALID_EVENT")).toBe(true);
+    expect(report.errors.some(e => e.path.includes("source.event") && /invalid source event/.test(e.message))).toBe(true);
   });
 });
 
@@ -188,49 +135,16 @@ describe("pageSkill - surface, projector, and cross-skill refs", () => {
     const projection = pageSkill.project(leaveApprovalPage);
 
     expect(projection.mermaid.startsWith("flowchart LR")).toBe(true);
-    expect(
-      projection.nodes.some(n => n.id === "cmp_approve" && n.kind === "button")
-    ).toBe(true);
-    expect(
-      projection.edges.some(
-        e =>
-          e.from === "cmp_approve" &&
-          e.to === "cmp_reason" &&
-          e.kind === "linkage"
-      )
-    ).toBe(true);
+    expect(projection.nodes.some(n => n.id === "cmp_approve" && n.kind === "button")).toBe(true);
+    expect(projection.edges.some(e => e.from === "cmp_approve" && e.to === "cmp_reason" && e.kind === "linkage")).toBe(true);
   });
 
   it("declares DataModel field refs and RBAC role refs for the combined diagram", () => {
     const refs = pageSkill.crossRefs(leaveApprovalPage);
 
-    expect(
-      refs.some(
-        r =>
-          r.fromNode === "page_page_leave_request" &&
-          r.toSkill === "datamodel" &&
-          r.toKind === "entity" &&
-          r.toValue === "leave_request"
-      )
-    ).toBe(true);
-    expect(
-      refs.some(
-        r =>
-          r.fromNode === "cmp_approve" &&
-          r.toSkill === "datamodel" &&
-          r.toKind === "field" &&
-          r.toValue === "leave_request.approved"
-      )
-    ).toBe(true);
-    expect(
-      refs.some(
-        r =>
-          r.fromNode === "cmp_approve" &&
-          r.toSkill === "rbac" &&
-          r.toKind === "role" &&
-          r.toValue === "manager"
-      )
-    ).toBe(true);
+    expect(refs.some(r => r.fromNode === "page_page_leave_request" && r.toSkill === "datamodel" && r.toKind === "entity" && r.toValue === "leave_request")).toBe(true);
+    expect(refs.some(r => r.fromNode === "cmp_approve" && r.toSkill === "datamodel" && r.toKind === "field" && r.toValue === "leave_request.approved")).toBe(true);
+    expect(refs.some(r => r.fromNode === "cmp_approve" && r.toSkill === "rbac" && r.toKind === "role" && r.toValue === "manager")).toBe(true);
   });
 });
 
@@ -245,11 +159,7 @@ describe("pageSkill - V2 PEP model (BindingSchema, PermissionRender, componentVe
     const withField = page.components.filter(c => c.field);
     expect(withField.length).toBeGreaterThan(0);
     expect(withField.every(c => !!c.bindingSchema)).toBe(true);
-    expect(
-      page.components.every(
-        c => !!c.permissionRender && c.permissionRender.roleRefs.length > 0
-      )
-    ).toBe(true);
+    expect(page.components.every(c => !!c.permissionRender && c.permissionRender.roleRefs.length > 0)).toBe(true);
     expect(page.components.some(c => c.componentVersion)).toBe(true);
 
     // Linkage rules (local Page-owned execution graph, not global truth) preserved
@@ -257,24 +167,16 @@ describe("pageSkill - V2 PEP model (BindingSchema, PermissionRender, componentVe
     expect(page.linkageRules.some(r => r.id === "lk_type_days")).toBe(true);
 
     // Existing visibleToRoles kept for BC; new PDP refs co-exist
-    expect(
-      page.components.find(c => c.id === "approve")!.visibleToRoles
-    ).toContain("manager");
-    expect(
-      page.components.find(c => c.id === "approve")!.permissionRender!.roleRefs
-    ).toContain("manager");
+    expect(page.components.find(c => c.id === "approve")!.visibleToRoles).toContain("manager");
+    expect(page.components.find(c => c.id === "approve")!.permissionRender!.roleRefs).toContain("manager");
 
     // Binding expresses DataModel SSOT ref
-    const approveBinding = page.components.find(
-      c => c.id === "approve"
-    )!.bindingSchema!;
+    const approveBinding = page.components.find(c => c.id === "approve")!.bindingSchema!;
     expect(approveBinding.entity).toBe("leave_request");
     expect(approveBinding.field).toBe("leave_request.approved");
 
     // PermissionRender expresses RBAC PDP delegation (not local only auth)
-    const approvePerm = page.components.find(
-      c => c.id === "approve"
-    )!.permissionRender!;
+    const approvePerm = page.components.find(c => c.id === "approve")!.permissionRender!;
     expect(approvePerm.roleRefs).toContain("manager");
 
     const report = pageSkill.validate(page, { external: fullSurface });
@@ -287,13 +189,8 @@ describe("pageSkill - V2 PEP model (BindingSchema, PermissionRender, componentVe
     pepPage.traceSpan = "page.leave.trace";
     pepPage.componentVersion = "2.1.0";
     const days = pepPage.components.find(c => c.id === "days")!;
-    days.bindingSchema = {
-      entity: "leave_request",
-      field: "leave_request.days",
-    } as BindingSchema;
-    days.permissionRender = {
-      roleRefs: ["employee", "manager"],
-    } as PermissionRender;
+    days.bindingSchema = { entity: "leave_request", field: "leave_request.days" } as BindingSchema;
+    days.permissionRender = { roleRefs: ["employee", "manager"] } as PermissionRender;
     days.componentVersion = "2.1.0";
 
     const report = pageSkill.validate(pepPage, { external: fullSurface });
@@ -307,18 +204,11 @@ describe("pageSkill - V2 PEP model (BindingSchema, PermissionRender, componentVe
 
   it("catches in test construction that linkage still enforces after PEP fields added", () => {
     const broken = clone(leaveApprovalPage);
-    broken.components.find(c => c.id === "approve")!.bindingSchema = {
-      entity: "leave_request",
-      field: "leave_request.approved",
-    } as BindingSchema;
-    broken.components.find(c => c.id === "approve")!.permissionRender = {
-      roleRefs: ["manager"],
-    } as PermissionRender;
-    broken.linkageRules.push({
-      id: "lk_pep_test",
-      source: { component: "approve", event: "onClick" },
-      target: { component: "reason", action: "setDisabled" },
-    });
+    broken.components.find(c => c.id === "approve")!.bindingSchema = { entity: "leave_request", field: "leave_request.approved" } as BindingSchema;
+    broken.components.find(c => c.id === "approve")!.permissionRender = { roleRefs: ["manager"] } as PermissionRender;
+    broken.linkageRules.push(
+      { id: "lk_pep_test", source: { component: "approve", event: "onClick" }, target: { component: "reason", action: "setDisabled" } },
+    );
 
     const report = pageSkill.validate(broken, { external: fullSurface });
     expect(report.ok).toBe(true); // this one is compatible
@@ -329,17 +219,12 @@ describe("pageSkill - V2 PEP gate and projection", () => {
   it("rejects a BindingSchema that points at a missing DataModel SSOT field", () => {
     const broken = clone(leaveApprovalPage);
     const days = broken.components.find(c => c.id === "days")!;
-    days.bindingSchema = {
-      entity: "leave_request",
-      field: "leave_request.ghost",
-    };
+    days.bindingSchema = { entity: "leave_request", field: "leave_request.ghost" };
 
     const report = pageSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "PAGE_BINDING_FIELD_MISSING")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "PAGE_BINDING_FIELD_MISSING")).toBe(true);
   });
 
   it("rejects BindingSchema with entity/field prefix mismatch (field not belonging to declared entity) or binding entity not matching page entity", () => {
@@ -351,9 +236,7 @@ describe("pageSkill - V2 PEP gate and projection", () => {
 
     const report1 = pageSkill.validate(broken1, { external: fullSurface });
     expect(report1.ok).toBe(false);
-    expect(
-      report1.errors.some(e => e.code === "PAGE_BINDING_FIELD_ENTITY_MISMATCH")
-    ).toBe(true);
+    expect(report1.errors.some(e => e.code === "PAGE_BINDING_FIELD_ENTITY_MISMATCH")).toBe(true);
 
     // entity present + prefix ok for that entity, but binding entity does not match page.entity
     const broken2 = clone(leaveApprovalPage);
@@ -362,9 +245,7 @@ describe("pageSkill - V2 PEP gate and projection", () => {
 
     const report2 = pageSkill.validate(broken2, { external: fullSurface });
     expect(report2.ok).toBe(false);
-    expect(
-      report2.errors.some(e => e.code === "PAGE_BINDING_ENTITY_MISMATCH")
-    ).toBe(true);
+    expect(report2.errors.some(e => e.code === "PAGE_BINDING_ENTITY_MISMATCH")).toBe(true);
   });
 
   it("rejects PermissionRender refs that RBAC PDP cannot resolve", () => {
@@ -378,9 +259,7 @@ describe("pageSkill - V2 PEP gate and projection", () => {
     const report = pageSkill.validate(broken, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.filter(e => e.code === "PAGE_PERMISSION_REF_MISSING")
-    ).toHaveLength(2);
+    expect(report.errors.filter(e => e.code === "PAGE_PERMISSION_REF_MISSING")).toHaveLength(2);
   });
 
   it("rejects local-only role visibility in V2 mode instead of bypassing PDP delegation", () => {
@@ -397,54 +276,17 @@ describe("pageSkill - V2 PEP gate and projection", () => {
   it("projects Page as a PEP canvas with BindingSchema, PermissionRender, and local linkage edges", () => {
     const projection = pageSkill.project(leaveApprovalPage);
 
-    expect(
-      projection.nodes.some(n => n.id === "cmp_approve" && n.kind === "button")
-    ).toBe(true);
-    expect(
-      projection.edges.some(
-        e =>
-          e.from === "cmp_approve" &&
-          e.to === "dm_leave_request_approved" &&
-          e.kind === "binding"
-      )
-    ).toBe(true);
-    expect(
-      projection.edges.some(
-        e =>
-          e.from === "cmp_approve" &&
-          e.to === "role_manager" &&
-          e.kind === "permission"
-      )
-    ).toBe(true);
-    expect(
-      projection.edges.some(
-        e =>
-          e.from === "cmp_approve" &&
-          e.to === "perm_leave_approve" &&
-          e.kind === "permission"
-      )
-    ).toBe(true);
-    expect(
-      projection.edges.some(
-        e =>
-          e.from === "cmp_approve" &&
-          e.to === "cmp_reason" &&
-          e.kind === "linkage"
-      )
-    ).toBe(true);
+    expect(projection.nodes.some(n => n.id === "cmp_approve" && n.kind === "button")).toBe(true);
+    expect(projection.edges.some(e => e.from === "cmp_approve" && e.to === "dm_leave_request_approved" && e.kind === "binding")).toBe(true);
+    expect(projection.edges.some(e => e.from === "cmp_approve" && e.to === "role_manager" && e.kind === "permission")).toBe(true);
+    expect(projection.edges.some(e => e.from === "cmp_approve" && e.to === "perm_leave_approve" && e.kind === "permission")).toBe(true);
+    expect(projection.edges.some(e => e.from === "cmp_approve" && e.to === "cmp_reason" && e.kind === "linkage")).toBe(true);
   });
 
   it("projects visibility edges for component visibleTo roles", () => {
     const projection = pageSkill.project(leaveApprovalPage);
 
-    expect(
-      projection.edges.some(
-        e =>
-          e.from === "cmp_approve" &&
-          e.to === "role_manager" &&
-          e.kind === "visibility"
-      )
-    ).toBe(true);
+    expect(projection.edges.some(e => e.from === "cmp_approve" && e.to === "role_manager" && e.kind === "visibility")).toBe(true);
   });
 });
 
@@ -464,9 +306,7 @@ describe("pageSkill - field-level visibility gate (pdpVisibleTo policy on bound 
     const report = pageSkill.validate(good, { external: purchaseSurface });
 
     expect(report.ok).toBe(true);
-    expect(
-      report.errors.some(e => e.code === "PAGE_FIELD_VISIBILITY_VIOLATION")
-    ).toBe(false);
+    expect(report.errors.some(e => e.code === "PAGE_FIELD_VISIBILITY_VIOLATION")).toBe(false);
   });
 
   it("rejects component visibility exposing bound field to role outside its pdpVisibleTo (negative, amount to requester)", () => {
@@ -479,13 +319,7 @@ describe("pageSkill - field-level visibility gate (pdpVisibleTo policy on bound 
     const report = pageSkill.validate(bad, { external: purchaseSurface });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(
-        e =>
-          e.code === "PAGE_FIELD_VISIBILITY_VIOLATION" &&
-          /requester/.test(e.message)
-      )
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "PAGE_FIELD_VISIBILITY_VIOLATION" && /requester/.test(e.message))).toBe(true);
   });
 });
 
@@ -494,97 +328,45 @@ describe("pageSkill - DataModel field lifecycle (deprecated/removed) via externa
 
   it("warns (ok=true) when Page binds via field or bindingSchema to a deprecated DataModel SSOT field", () => {
     const depDM = cloneDM(leaveRequestDataModel);
-    depDM.entities
-      .find((e: any) => e.id === "leave_request")!
-      .fields.find((f: any) => f.key === "days")!.lifecycle = "deprecated";
+    depDM.entities.find((e: any) => e.id === "leave_request")!.fields.find((f: any) => f.key === "days")!.lifecycle = "deprecated";
     const surf = { datamodel: dataModelSkill.resolve(depDM) };
     const p = clone(leaveApprovalPage);
     // bind component field + bindingSchema to the deprecated field
     const days = p.components.find(c => c.id === "days")!;
     days.field = "leave_request.days";
-    days.bindingSchema = {
-      entity: "leave_request",
-      field: "leave_request.days",
-    };
+    days.bindingSchema = { entity: "leave_request", field: "leave_request.days" };
 
     const report = pageSkill.validate(p, { external: surf });
 
     expect(report.ok).toBe(true);
-    expect(
-      report.warnings.some(
-        w =>
-          w.code === "PAGE_FIELD_DEPRECATED" &&
-          w.message.includes("leave_request.days")
-      )
-    ).toBe(true);
-    expect(
-      report.warnings.some(
-        w =>
-          w.code === "PAGE_BINDING_FIELD_DEPRECATED" &&
-          w.message.includes("leave_request.days")
-      )
-    ).toBe(true);
+    expect(report.warnings.some(w => w.code === "PAGE_FIELD_DEPRECATED" && w.message.includes("leave_request.days"))).toBe(true);
+    expect(report.warnings.some(w => w.code === "PAGE_BINDING_FIELD_DEPRECATED" && w.message.includes("leave_request.days"))).toBe(true);
     // no removed errors
-    expect(
-      report.errors.some(
-        e =>
-          e.code === "PAGE_FIELD_REMOVED" ||
-          e.code === "PAGE_BINDING_FIELD_REMOVED"
-      )
-    ).toBe(false);
+    expect(report.errors.some(e => e.code === "PAGE_FIELD_REMOVED" || e.code === "PAGE_BINDING_FIELD_REMOVED")).toBe(false);
   });
 
   it("errors (ok=false) when Page binds via field or bindingSchema to a removed DataModel SSOT field", () => {
     const remDM = cloneDM(leaveRequestDataModel);
-    remDM.entities
-      .find((e: any) => e.id === "leave_request")!
-      .fields.find((f: any) => f.key === "approved")!.lifecycle = "removed";
+    remDM.entities.find((e: any) => e.id === "leave_request")!.fields.find((f: any) => f.key === "approved")!.lifecycle = "removed";
     const surf = { datamodel: dataModelSkill.resolve(remDM) };
     const p = clone(leaveApprovalPage);
     const approve = p.components.find(c => c.id === "approve")!;
     approve.field = "leave_request.approved";
-    approve.bindingSchema = {
-      entity: "leave_request",
-      field: "leave_request.approved",
-    };
+    approve.bindingSchema = { entity: "leave_request", field: "leave_request.approved" };
 
     const report = pageSkill.validate(p, { external: surf });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(
-        e =>
-          e.code === "PAGE_FIELD_REMOVED" &&
-          e.message.includes("leave_request.approved")
-      )
-    ).toBe(true);
-    expect(
-      report.errors.some(
-        e =>
-          e.code === "PAGE_BINDING_FIELD_REMOVED" &&
-          e.message.includes("leave_request.approved")
-      )
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "PAGE_FIELD_REMOVED" && e.message.includes("leave_request.approved"))).toBe(true);
+    expect(report.errors.some(e => e.code === "PAGE_BINDING_FIELD_REMOVED" && e.message.includes("leave_request.approved"))).toBe(true);
   });
 
   it("accepts active fields without deprecated/removed lifecycle warnings or errors (compat)", () => {
     const surf = fullSurface;
     const report = pageSkill.validate(leaveApprovalPage, { external: surf });
     expect(report.ok).toBe(true);
-    expect(
-      report.warnings.some(
-        w =>
-          w.code === "PAGE_FIELD_DEPRECATED" ||
-          w.code === "PAGE_BINDING_FIELD_DEPRECATED"
-      )
-    ).toBe(false);
-    expect(
-      report.errors.some(
-        e =>
-          e.code === "PAGE_FIELD_REMOVED" ||
-          e.code === "PAGE_BINDING_FIELD_REMOVED"
-      )
-    ).toBe(false);
+    expect(report.warnings.some(w => w.code === "PAGE_FIELD_DEPRECATED" || w.code === "PAGE_BINDING_FIELD_DEPRECATED")).toBe(false);
+    expect(report.errors.some(e => e.code === "PAGE_FIELD_REMOVED" || e.code === "PAGE_BINDING_FIELD_REMOVED")).toBe(false);
   });
 });
 
@@ -601,9 +383,7 @@ describe("pageSkill - page event schema and action payload gate (V2)", () => {
     const report = pageSkill.validate(good, { external: fullSurface });
 
     expect(report.ok).toBe(true);
-    expect(
-      report.errors.some(e => e.code === "PAGE_LINKAGE_PAYLOAD_REF_INVALID")
-    ).toBe(false);
+    expect(report.errors.some(e => e.code === "PAGE_LINKAGE_PAYLOAD_REF_INVALID")).toBe(false);
   });
 
   it("rejects action payloadRef that is neither emitted by the event nor a page binding field (negative)", () => {
@@ -612,23 +392,13 @@ describe("pageSkill - page event schema and action payload gate (V2)", () => {
     bad.linkageRules.push({
       id: "lk_bad_payload_ref",
       source: { component: "submit", event: "onClick" },
-      target: {
-        component: "reason",
-        action: "setValue",
-        payloadRef: "ghostPayload",
-      },
+      target: { component: "reason", action: "setValue", payloadRef: "ghostPayload" },
     });
 
     const report = pageSkill.validate(bad, { external: fullSurface });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(
-        e =>
-          e.code === "PAGE_LINKAGE_PAYLOAD_REF_INVALID" &&
-          /ghostPayload/.test(e.message)
-      )
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "PAGE_LINKAGE_PAYLOAD_REF_INVALID" && /ghostPayload/.test(e.message))).toBe(true);
   });
 
   it("accepts payloadRef that resolves to a page binding field (positive binding case)", () => {
@@ -637,19 +407,13 @@ describe("pageSkill - page event schema and action payload gate (V2)", () => {
     good.linkageRules.push({
       id: "lk_payload_from_binding",
       source: { component: "leaveType", event: "onChange" },
-      target: {
-        component: "days",
-        action: "setValue",
-        payloadRef: "leave_request.days",
-      },
+      target: { component: "days", action: "setValue", payloadRef: "leave_request.days" },
     });
 
     const report = pageSkill.validate(good, { external: fullSurface });
 
     expect(report.ok).toBe(true);
-    expect(
-      report.errors.some(e => e.code === "PAGE_LINKAGE_PAYLOAD_REF_INVALID")
-    ).toBe(false);
+    expect(report.errors.some(e => e.code === "PAGE_LINKAGE_PAYLOAD_REF_INVALID")).toBe(false);
   });
 });
 
@@ -664,14 +428,8 @@ describe("pageSkill - page resource reference gate (V2 115.40: assets/routes/wor
     const report = pageSkill.validate(good, { external: surf });
 
     expect(report.ok).toBe(true);
-    expect(
-      report.errors.some(e => e.code === "PAGE_REF_MISSING_WORKFLOW_LAUNCH")
-    ).toBe(false);
-    expect(
-      report.warnings.some(
-        w => w.code === "PAGE_WORKFLOW_LAUNCH_REF_UNRESOLVED"
-      )
-    ).toBe(false);
+    expect(report.errors.some(e => e.code === "PAGE_REF_MISSING_WORKFLOW_LAUNCH")).toBe(false);
+    expect(report.warnings.some(w => w.code === "PAGE_WORKFLOW_LAUNCH_REF_UNRESOLVED")).toBe(false);
     // also exercises cross-ref and resourceRef field
     good.components[0].resourceRef = "asset:logo";
     expect(good.workflowLaunchRefs).toContain("wf_leave_approval");
@@ -687,20 +445,10 @@ describe("pageSkill - page resource reference gate (V2 115.40: assets/routes/wor
     const report = pageSkill.validate(p); // no external at all
 
     expect(report.ok).toBe(true);
-    expect(
-      report.warnings.some(
-        w => w.code === "PAGE_WORKFLOW_LAUNCH_REF_UNRESOLVED"
-      )
-    ).toBe(true);
-    expect(
-      report.warnings.some(w => w.code === "PAGE_ASSET_REF_UNRESOLVED")
-    ).toBe(true);
-    expect(
-      report.warnings.some(w => w.code === "PAGE_ROUTE_REF_UNRESOLVED")
-    ).toBe(true);
-    expect(
-      report.warnings.some(w => w.code === "PAGE_APP_MENU_REF_UNRESOLVED")
-    ).toBe(true);
+    expect(report.warnings.some(w => w.code === "PAGE_WORKFLOW_LAUNCH_REF_UNRESOLVED")).toBe(true);
+    expect(report.warnings.some(w => w.code === "PAGE_ASSET_REF_UNRESOLVED")).toBe(true);
+    expect(report.warnings.some(w => w.code === "PAGE_ROUTE_REF_UNRESOLVED")).toBe(true);
+    expect(report.warnings.some(w => w.code === "PAGE_APP_MENU_REF_UNRESOLVED")).toBe(true);
   });
 
   it("errors on missing workflow launch ref when surface provided but ref absent (negative)", () => {
@@ -714,13 +462,7 @@ describe("pageSkill - page resource reference gate (V2 115.40: assets/routes/wor
     const report = pageSkill.validate(bad, { external: surf });
 
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(
-        e =>
-          e.code === "PAGE_REF_MISSING_WORKFLOW_LAUNCH" &&
-          /wf_ghost_launch/.test(e.message)
-      )
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "PAGE_REF_MISSING_WORKFLOW_LAUNCH" && /wf_ghost_launch/.test(e.message))).toBe(true);
   });
 
   it("crossRefs declares workflow/route etc and project emits launch/route edges (diagram advance)", () => {
@@ -729,24 +471,11 @@ describe("pageSkill - page resource reference gate (V2 115.40: assets/routes/wor
     p.routeRefs = ["r-home"];
 
     const xrefs = pageSkill.crossRefs(p);
-    expect(
-      xrefs.some(
-        r =>
-          r.toSkill === "workflow" &&
-          r.toKind === "workflow" &&
-          r.toValue === "wf_leave_approval"
-      )
-    ).toBe(true);
-    expect(
-      xrefs.some(r => r.toSkill === "route" && r.toValue === "r-home")
-    ).toBe(true);
+    expect(xrefs.some(r => r.toSkill === "workflow" && r.toKind === "workflow" && r.toValue === "wf_leave_approval")).toBe(true);
+    expect(xrefs.some(r => r.toSkill === "route" && r.toValue === "r-home")).toBe(true);
 
     const proj = pageSkill.project(p);
-    expect(
-      proj.edges.some(
-        e => e.kind === "launch" && String(e.to).includes("wf_leave_approval")
-      )
-    ).toBe(true);
+    expect(proj.edges.some(e => e.kind === "launch" && String(e.to).includes("wf_leave_approval"))).toBe(true);
     expect(proj.edges.some(e => e.kind === "route")).toBe(true);
   });
 });
@@ -762,9 +491,7 @@ describe("pageSkill - page version snapshot for AppBundle immutable pins (V2 115
     expect(surface.page).toContain("page_purchase_request");
     expect((surface as any).pageVersion).toBe("1.0.0");
     expect((surface as any).published).toBe(true);
-    expect((surface as any).snapshotRefs).toContain(
-      "page:page_purchase_request@1.0.0"
-    );
+    expect((surface as any).snapshotRefs).toContain("page:page_purchase_request@1.0.0");
   });
 
   it("does not expose snapshot for missing/unpublished page version (negative)", () => {
@@ -789,11 +516,7 @@ describe("pageSkill - runtime render policy (V2 117)", () => {
 
   it("positive: manager sees approve button visible via PermissionRender + RBAC decision evidence", () => {
     const states = renderPageRuntimePolicy(leaveApprovalPage, {
-      rbac: {
-        model: leaveRbacModel,
-        subjectRoleIds: ["manager"],
-        tenantId: "t1",
-      },
+      rbac: { model: leaveRbacModel, subjectRoleIds: ["manager"], tenantId: "t1" },
       dataModelSurface: dmSurface,
     } as PageRenderContext);
 
@@ -805,11 +528,7 @@ describe("pageSkill - runtime render policy (V2 117)", () => {
 
   it("negative/fail-closed: employee denied on manager-only approve component is hidden, never editable", () => {
     const states = renderPageRuntimePolicy(leaveApprovalPage, {
-      rbac: {
-        model: leaveRbacModel,
-        subjectRoleIds: ["employee"],
-        tenantId: "t1",
-      },
+      rbac: { model: leaveRbacModel, subjectRoleIds: ["employee"], tenantId: "t1" },
       dataModelSurface: dmSurface,
     } as PageRenderContext);
 
@@ -821,17 +540,12 @@ describe("pageSkill - runtime render policy (V2 117)", () => {
 
   it("removed bound field blocks rendering as hidden (DataModel lifecycle)", () => {
     const remDM = structuredClone(leaveRequestDataModel);
-    remDM.entities
-      .find((e: any) => e.id === "leave_request")!
-      .fields.find((f: any) => f.key === "approved")!.lifecycle = "removed";
+    remDM.entities.find((e: any) => e.id === "leave_request")!.fields.find((f: any) => f.key === "approved")!.lifecycle = "removed";
     const remSurf = { datamodel: dataModelSkill.resolve(remDM) };
     const p = clone(leaveApprovalPage);
     const approve = p.components.find(c => c.id === "approve")!;
     approve.field = "leave_request.approved";
-    approve.bindingSchema = {
-      entity: "leave_request",
-      field: "leave_request.approved",
-    };
+    approve.bindingSchema = { entity: "leave_request", field: "leave_request.approved" };
 
     const states = renderPageRuntimePolicy(p, {
       dataModelSurface: remSurf.datamodel,
@@ -842,11 +556,7 @@ describe("pageSkill - runtime render policy (V2 117)", () => {
 
   it("workflow task context can force read-only/disabled or hidden while preserving RBAC", () => {
     const states = renderPageRuntimePolicy(leaveApprovalPage, {
-      rbac: {
-        model: leaveRbacModel,
-        subjectRoleIds: ["manager"],
-        tenantId: "t1",
-      },
+      rbac: { model: leaveRbacModel, subjectRoleIds: ["manager"], tenantId: "t1" },
       workflowTaskContext: { isReadOnly: true },
     } as PageRenderContext);
 
@@ -858,11 +568,7 @@ describe("pageSkill - runtime render policy (V2 117)", () => {
 
   it("purchase approval compat: finance role sees amount (pdp constrained field) as visible", () => {
     const states = renderPageRuntimePolicy(purchaseApprovalPage, {
-      rbac: {
-        model: purchaseRbacModel,
-        subjectRoleIds: ["finance"],
-        tenantId: "t1",
-      },
+      rbac: { model: purchaseRbacModel, subjectRoleIds: ["finance"], tenantId: "t1" },
       dataModelSurface: dataModelSkill.resolve(purchaseApprovalDataModel),
     } as PageRenderContext);
 
@@ -872,11 +578,7 @@ describe("pageSkill - runtime render policy (V2 117)", () => {
 
   it("purchase approval negative: requester cannot see finance-only amount (hidden)", () => {
     const states = renderPageRuntimePolicy(purchaseApprovalPage, {
-      rbac: {
-        model: purchaseRbacModel,
-        subjectRoleIds: ["requester"],
-        tenantId: "t1",
-      },
+      rbac: { model: purchaseRbacModel, subjectRoleIds: ["requester"], tenantId: "t1" },
       dataModelSurface: dataModelSkill.resolve(purchaseApprovalDataModel),
     } as PageRenderContext);
 
@@ -893,7 +595,7 @@ describe("pageSkill - runtime render policy (V2 117)", () => {
 describe("pageSkill - 117 binding expression runtime (pure deterministic)", () => {
   it("evaluates declared bindings to concrete values from input.data (positive)", () => {
     const data = {
-      leave_request: {
+      "leave_request": {
         applicant: "alice",
         leaveType: "annual",
         days: 5,
@@ -913,7 +615,7 @@ describe("pageSkill - 117 binding expression runtime (pure deterministic)", () =
   });
 
   it("returns PAGE_BINDING_RUNTIME_ERROR on unresolved binding ref (negative, fail-closed)", () => {
-    const data = { leave_request: { applicant: "bob" } }; // missing days/approved etc bound by page
+    const data = { "leave_request": { applicant: "bob" } }; // missing days/approved etc bound by page
     const res = evaluatePageBindingExpressions(leaveApprovalPage, { data });
 
     expect(res).toBe(PAGE_BINDING_RUNTIME_ERROR);
@@ -921,7 +623,7 @@ describe("pageSkill - 117 binding expression runtime (pure deterministic)", () =
 
   it("applies linkageRules on matching event and emits linkageEvidence (positive runtime linkage)", () => {
     const data = {
-      leave_request: {
+      "leave_request": {
         applicant: "alice",
         leaveType: "annual",
         days: 3,
@@ -942,7 +644,7 @@ describe("pageSkill - 117 binding expression runtime (pure deterministic)", () =
 
   it("preserves leave/purchase sample compatibility and resolves purchase fields (positive)", () => {
     const purchData = {
-      purchase_request: {
+      "purchase_request": {
         requester: "req1",
         department: "eng",
         vendor: "acme",
@@ -954,9 +656,7 @@ describe("pageSkill - 117 binding expression runtime (pure deterministic)", () =
         procurementFulfilled: false,
       },
     };
-    const res = evaluatePageBindingExpressions(purchaseApprovalPage, {
-      data: purchData,
-    });
+    const res = evaluatePageBindingExpressions(purchaseApprovalPage, { data: purchData });
 
     expect(res).not.toBe("PAGE_BINDING_RUNTIME_ERROR");
     expect(res.values["purchase_request.amount"]).toBe(1234);
@@ -977,18 +677,15 @@ describe("pageSkill - 118 cross-runtime evidence", () => {
       expect.arrayContaining([
         expect.stringContaining("PAGE_CROSS_RUNTIME_EVIDENCE:datamodel"),
         expect.stringContaining("PAGE_CROSS_RUNTIME_EVIDENCE:rbac"),
-      ])
+      ]),
     );
     expect(surface.crossSkillRuntimeEdges).toEqual(
-      expect.arrayContaining(["page->datamodel:allowed", "page->rbac:allowed"])
+      expect.arrayContaining(["page->datamodel:allowed", "page->rbac:allowed"]),
     );
   });
 
   it("builds rbac runtime evidence from permission render refs", () => {
-    const evidence = createPageRbacRuntimeEvidence(
-      leaveApprovalPage,
-      fullSurface.rbac
-    );
+    const evidence = createPageRbacRuntimeEvidence(leaveApprovalPage, fullSurface.rbac);
 
     expect(evidence.evidenceKey).toBe(PAGE_RBAC_RUNTIME_EVIDENCE);
     expect(evidence.targetSkill).toBe("rbac");
@@ -1009,19 +706,15 @@ describe("pageSkill - 118 cross-runtime evidence", () => {
     const ctx = normalizePageRuntimeContextForSkill(
       purchaseApprovalPage,
       "appbundle",
-      { app: ["app_purchase_approval"] }
+      { app: ["app_purchase_approval"] },
     );
 
     expect(ctx.targetSkill).toBe("appbundle");
     expect(ctx.upstreamEvidencePresent).toBe(true);
     expect(ctx.componentRefs).toContain("amount");
     expect(ctx.evidence.snapshotRefs.length).toBeGreaterThan(0);
-    expect(
-      buildPageCrossRuntimeEdges(purchaseApprovalPage).map(
-        edge => edge.targetSkill
-      )
-    ).toEqual(
-      expect.arrayContaining(["datamodel", "rbac", "aigc", "appbundle"])
+    expect(buildPageCrossRuntimeEdges(purchaseApprovalPage).map(edge => edge.targetSkill)).toEqual(
+      expect.arrayContaining(["datamodel", "rbac", "aigc", "appbundle"]),
     );
   });
 });
@@ -1040,9 +733,7 @@ describe("pageSkill - V2 117 workflow task view projection (pure runtime)", () =
     expect(view.currentNodeId).toBe("a_mgr");
     expect(view.title).toContain("请假申请页");
     // fields preserve DataModel bindings
-    expect(view.fields.some(f => f.binding === "leave_request.approved")).toBe(
-      true
-    );
+    expect(view.fields.some(f => f.binding === "leave_request.approved")).toBe(true);
     // actions include workflow state-driven + page buttons
     const actionIds = view.actions.map(a => a.id);
     expect(actionIds).toContain("approve");
@@ -1050,11 +741,7 @@ describe("pageSkill - V2 117 workflow task view projection (pure runtime)", () =
     expect(actionIds).toContain("submit");
     // evidence preserves permissions and datamodel
     expect(view.evidence.dataModelRefs).toContain("leave_request.approved");
-    expect(
-      view.evidence.permissionRefs.some(
-        r => r.includes("manager") || r.includes("employee")
-      )
-    ).toBe(true);
+    expect(view.evidence.permissionRefs.some(r => r.includes("manager") || r.includes("employee"))).toBe(true);
   });
 
   it("projects purchase approval page at finance node to actionable view with finance actions (positive)", () => {
@@ -1078,58 +765,32 @@ describe("pageSkill - V2 117 workflow task view projection (pure runtime)", () =
     const bad1 = projectWorkflowTaskView(leaveApprovalPage, undefined as any);
     expect(bad1).toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
 
-    const bad2 = projectWorkflowTaskView(leaveApprovalPage, {
-      workflowId: "wf_x",
-    } as any);
+    const bad2 = projectWorkflowTaskView(leaveApprovalPage, { workflowId: "wf_x" } as any);
     expect(bad2).toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
   });
 
   it("returns PAGE_WORKFLOW_TASK_VIEW_INVALID on workflow/page launch ref mismatch (negative, fail-closed)", () => {
     const p = structuredClone(leaveApprovalPage);
     p.workflowLaunchRefs = ["wf_purchase_approval"]; // deliberately mismatch
-    const inst = {
-      id: "i1",
-      workflowId: "wf_leave_approval",
-      currentNodeId: "a_mgr",
-    };
+    const inst = { id: "i1", workflowId: "wf_leave_approval", currentNodeId: "a_mgr" };
     const view = projectWorkflowTaskView(p, inst);
     expect(view).toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
   });
 
   it("end node produces disabled terminal action and preserves evidence (runtime behavior)", () => {
-    const inst = {
-      id: "i2",
-      workflowId: "wf_leave_approval",
-      currentNodeId: "e_ok",
-      currentNodeType: "end",
-      variables: { approved: true },
-    };
+    const inst = { id: "i2", workflowId: "wf_leave_approval", currentNodeId: "e_ok", currentNodeType: "end", variables: { approved: true } };
     const view = projectWorkflowTaskView(leaveApprovalPage, inst);
     expect(view).not.toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
-    expect(
-      view.actions.some(
-        a =>
-          a.disabled &&
-          (a.disabledReason?.includes("terminal") || a.label === "Done")
-      )
-    ).toBe(true);
+    expect(view.actions.some(a => a.disabled && (a.disabledReason?.includes("terminal") || a.label === "Done"))).toBe(true);
   });
 
   it("preserves purchase/leave pages compatibility without explicit launchRefs (compat positive)", () => {
     // pages used in prior tests do not always declare workflowLaunchRefs
-    const instLeave = {
-      id: "c1",
-      workflowId: "wf_leave_approval",
-      currentNodeId: "a_mgr",
-    };
+    const instLeave = { id: "c1", workflowId: "wf_leave_approval", currentNodeId: "a_mgr" };
     const v1 = projectWorkflowTaskView(leaveApprovalPage, instLeave);
     expect(v1).not.toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
 
-    const instPurch = {
-      id: "c2",
-      workflowId: "wf_purchase_approval",
-      currentNodeId: "manager",
-    };
+    const instPurch = { id: "c2", workflowId: "wf_purchase_approval", currentNodeId: "manager" };
     const v2 = projectWorkflowTaskView(purchaseApprovalPage, instPurch);
     expect(v2).not.toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
   });
@@ -1138,66 +799,33 @@ describe("pageSkill - V2 117 workflow task view projection (pure runtime)", () =
 // 119 focused: Workflow task view evidence closed vs Page surfaces and AppBundle bindings (positive + fail-closed)
 describe("pageSkill - 119 workflow task view AppBundle binding closure", () => {
   it("positive: matching pageBinding + instance projects valid task view (allowed evidence)", () => {
-    const binding = {
-      pageRef: leaveApprovalPage.id,
-      workflowRef: "wf_leave_approval",
-      mode: "approve" as const,
-    };
-    const inst = {
-      id: "i119",
-      workflowId: "wf_leave_approval",
-      currentNodeId: "a_mgr",
-    };
-    const ev = createWorkflowTaskViewAppBundleBindingEvidence(
-      leaveApprovalPage,
-      binding,
-      inst
-    );
+    const binding = { pageRef: leaveApprovalPage.id, workflowRef: "wf_leave_approval", mode: "approve" as const };
+    const inst = { id: "i119", workflowId: "wf_leave_approval", currentNodeId: "a_mgr" };
+    const ev = createWorkflowTaskViewAppBundleBindingEvidence(leaveApprovalPage, binding, inst);
     expect(ev.state).toBe("allowed");
-    expect(ev.evidenceKey).toContain(
-      WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE
-    );
+    expect(ev.evidenceKey).toContain(WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE);
     expect(ev.result).not.toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
     expect(ev.pageRef).toBe(leaveApprovalPage.id);
   });
 
   it("fail-closed negative: bad instance or no currentNode returns blocked + INVALID", () => {
-    const binding = {
-      pageRef: leaveApprovalPage.id,
-      workflowRef: "wf_leave_approval",
-    };
-    const bad = createWorkflowTaskViewAppBundleBindingEvidence(
-      leaveApprovalPage,
-      binding,
-      { workflowId: "wf_leave_approval" } as any
-    );
+    const binding = { pageRef: leaveApprovalPage.id, workflowRef: "wf_leave_approval" };
+    const bad = createWorkflowTaskViewAppBundleBindingEvidence(leaveApprovalPage, binding, { workflowId: "wf_leave_approval" } as any);
     expect(bad.state).toBe("blocked");
     expect(bad.result).toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
   });
 
   it("fail-closed negative: binding workflowRef mismatch yields blocked", () => {
     const binding = { pageRef: leaveApprovalPage.id, workflowRef: "wf_other" };
-    const inst = {
-      id: "x",
-      workflowId: "wf_leave_approval",
-      currentNodeId: "a_mgr",
-    };
-    const ev = createWorkflowTaskViewAppBundleBindingEvidence(
-      leaveApprovalPage,
-      binding,
-      inst
-    );
+    const inst = { id: "x", workflowId: "wf_leave_approval", currentNodeId: "a_mgr" };
+    const ev = createWorkflowTaskViewAppBundleBindingEvidence(leaveApprovalPage, binding, inst);
     expect(ev.state).toBe("blocked");
   });
 });
 
 describe("pageSkill - Page field binding evidence closure against DataModel SSOT (119)", () => {
   it("provides positive Page field binding evidence to datamodel when upstream SSOT surface present (positive)", () => {
-    const ev = createPageCrossRuntimeEvidence(
-      leaveApprovalPage,
-      "datamodel",
-      fullSurface.datamodel
-    );
+    const ev = createPageCrossRuntimeEvidence(leaveApprovalPage, "datamodel", fullSurface.datamodel);
     expect(ev.targetSkill).toBe("datamodel");
     expect(ev.state).toBe("allowed");
     expect(ev.reasonCode).toBe("PAGE_RUNTIME_EVIDENCE_PRESENT");
@@ -1207,11 +835,7 @@ describe("pageSkill - Page field binding evidence closure against DataModel SSOT
   });
 
   it("fail-closes to blocked state for Page field binding evidence when no upstream DataModel surface (negative, fail-closed)", () => {
-    const ev = createPageCrossRuntimeEvidence(
-      leaveApprovalPage,
-      "datamodel",
-      undefined
-    );
+    const ev = createPageCrossRuntimeEvidence(leaveApprovalPage, "datamodel", undefined);
     expect(ev.state).toBe("blocked");
     expect(ev.reasonCode).toBe("PAGE_RUNTIME_UPSTREAM_ABSENT");
     expect(ev.fieldRefs.length).toBeGreaterThan(0); // fields declared, but evidence blocked
@@ -1228,17 +852,9 @@ describe("pageSkill - Page field binding evidence closure against DataModel SSOT
 
   it("Page fieldRefs match DataModel SSOT fields surface boundary (positive match)", () => {
     const dmSurf = dataModelSkill.resolve(leaveRequestDataModel);
-    const ev = createPageCrossRuntimeEvidence(
-      leaveApprovalPage,
-      "datamodel",
-      dmSurf
-    );
+    const ev = createPageCrossRuntimeEvidence(leaveApprovalPage, "datamodel", dmSurf);
     expect(ev.state).toBe("allowed");
-    const dmFields: string[] = Array.isArray((dmSurf as any).field)
-      ? (dmSurf as any).field
-      : ((dmSurf as any).fields || [])
-          .map((f: any) => f && f.ref)
-          .filter(Boolean);
+    const dmFields: string[] = Array.isArray((dmSurf as any).field) ? (dmSurf as any).field : ((dmSurf as any).fields || []).map((f: any) => f && f.ref).filter(Boolean);
     // all page declared fields must be present in the DM SSOT surface when evidence allowed
     if (ev.fieldRefs.length > 0 && dmFields.length > 0) {
       expect(ev.fieldRefs.every(f => dmFields.includes(f))).toBe(true);
@@ -1278,10 +894,7 @@ describe("pageSkill - Page field binding evidence closure against DataModel SSOT
 
 describe("pageSkill - Page permission render evidence closure against RBAC policy surfaces (119)", () => {
   it("provides positive Page permission render evidence to rbac when upstream RBAC surface present (positive)", () => {
-    const ev = createPageRbacRuntimeEvidence(
-      leaveApprovalPage,
-      fullSurface.rbac
-    );
+    const ev = createPageRbacRuntimeEvidence(leaveApprovalPage, fullSurface.rbac);
     expect(ev.targetSkill).toBe("rbac");
     expect(ev.state).toBe("allowed");
     expect(ev.reasonCode).toBe("PAGE_RUNTIME_EVIDENCE_PRESENT");
@@ -1338,18 +951,13 @@ describe("pageSkill - 120 page route binding to appbundle closure trace", () => 
       workflowLaunchRefs: ["wf_leave_approval"],
     };
 
-    const trace = tracePageRouteBindingToAppBundleClosureEvidence(
-      pageWithRoutes,
-      leaveApprovalAppBundle
-    );
+    const trace = tracePageRouteBindingToAppBundleClosureEvidence(pageWithRoutes, leaveApprovalAppBundle);
 
     expect(trace.traceId).toBe(PAGE_TO_APPBUNDLE_TRACE);
     expect(trace.sourceSkill).toBe("page");
     expect(trace.targetSkill).toBe("appbundle");
     expect(trace.state).toBe("closed");
-    expect(trace.reasonCode).toBe(
-      "PAGE_APPBUNDLE_ROUTE_BINDING_POSITIVE_CLOSED"
-    );
+    expect(trace.reasonCode).toBe("PAGE_APPBUNDLE_ROUTE_BINDING_POSITIVE_CLOSED");
     expect(trace.routeRefs).toContain("leave.form");
     expect(trace.pageBindingEvidencePresent).toBe(true);
   });
@@ -1362,17 +970,11 @@ describe("pageSkill - 120 page route binding to appbundle closure trace", () => 
       workflowLaunchRefs: [],
     };
 
-    const missingRefs = tracePageRouteBindingToAppBundleClosureEvidence(
-      pageWithoutRoutes,
-      leaveApprovalAppBundle
-    );
-    const missingBundle =
-      tracePageRouteBindingToAppBundleClosureEvidence(leaveApprovalPage);
+    const missingRefs = tracePageRouteBindingToAppBundleClosureEvidence(pageWithoutRoutes, leaveApprovalAppBundle);
+    const missingBundle = tracePageRouteBindingToAppBundleClosureEvidence(leaveApprovalPage);
 
     expect(missingRefs.state).toBe("blocked");
-    expect(missingRefs.reasonCode).toBe(
-      "PAGE_APPBUNDLE_ROUTE_BINDING_FAIL_CLOSED"
-    );
+    expect(missingRefs.reasonCode).toBe("PAGE_APPBUNDLE_ROUTE_BINDING_FAIL_CLOSED");
     expect(missingBundle.state).toBe("blocked");
     expect(missingBundle.pageBindingEvidencePresent).toBe(false);
   });
@@ -1384,21 +986,13 @@ describe("pageSkill - 120 page route binding to appbundle closure trace", () => 
       workflowLaunchRefs: ["wf_leave_approval"],
     };
     const surface = pageSkill.resolve(pageWithRoutes) as any;
-    const evidence = createPageRouteBindingAppBundleEvidence(
-      pageWithRoutes,
-      leaveApprovalAppBundle
-    );
-    const report = evaluateAppBundleRuntimeClosure({
-      page: pageWithRoutes,
-      appbundle: leaveApprovalAppBundle,
-    });
+    const evidence = createPageRouteBindingAppBundleEvidence(pageWithRoutes, leaveApprovalAppBundle);
+    const report = evaluateAppBundleRuntimeClosure({ page: pageWithRoutes, appbundle: leaveApprovalAppBundle });
     const pageInfo = report.perSkillEvidence.page as any;
 
     expect(evidence.evidenceKey).toBe(PAGE_ROUTE_BINDING_EVIDENCE);
     expect(evidence.targetSkill).toBe("appbundle");
-    expect(surface.runtimeEvidence).toEqual(
-      expect.arrayContaining([PAGE_ROUTE_BINDING_EVIDENCE])
-    );
+    expect(surface.runtimeEvidence).toEqual(expect.arrayContaining([PAGE_ROUTE_BINDING_EVIDENCE]));
     expect(surface.pageToAppBundleTrace.traceId).toBe(PAGE_TO_APPBUNDLE_TRACE);
     expect(pageInfo.pageRouteBindingEvidence.state).toBe("closed");
   });

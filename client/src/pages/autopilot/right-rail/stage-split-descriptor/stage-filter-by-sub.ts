@@ -9,10 +9,7 @@ import type { AnyStageSub } from "./types";
  * mapping is wrong, the execution lane will silently fail to show reasoning
  * events for that stage.
  */
-export const STAGE_FILTER_BY_SUB: Record<
-  AnyStageSub,
-  string | readonly string[]
-> = {
+export const STAGE_FILTER_BY_SUB: Record<AnyStageSub, string | readonly string[]> = {
   // preflight
   target_input: "target_input",
   intake_created: "intake_created",

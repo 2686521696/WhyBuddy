@@ -334,7 +334,9 @@ export const CodeBlock: FC<CodeBlockProps> = ({
             const renderedSegments: ReactNode[] = segments.map(
               (segment, segmentIndex) => {
                 if (segment.className === undefined) {
-                  return <span key={`s-${segmentIndex}`}>{segment.text}</span>;
+                  return (
+                    <span key={`s-${segmentIndex}`}>{segment.text}</span>
+                  );
                 }
                 return (
                   <span key={`s-${segmentIndex}`} className={segment.className}>

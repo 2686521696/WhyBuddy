@@ -95,10 +95,7 @@ export function topologicalSort(flowDef: FlowDefinition): string[] {
   for (const edge of flowDef.edges) {
     if (edge.source_node_id === edge.target_node_id) continue;
     adj.get(edge.source_node_id)?.push(edge.target_node_id);
-    inDegree.set(
-      edge.target_node_id,
-      (inDegree.get(edge.target_node_id) ?? 0) + 1
-    );
+    inDegree.set(edge.target_node_id, (inDegree.get(edge.target_node_id) ?? 0) + 1);
   }
 
   const queue: string[] = [];
@@ -128,12 +125,9 @@ function resolveInputs(
   ctx: FlowContext
 ): Record<string, unknown> {
   const inputs: Record<string, unknown> = {};
-  const incoming = flowDef.edges.filter(e => e.target_node_id === nodeId);
+  const incoming = flowDef.edges.filter((e) => e.target_node_id === nodeId);
   for (const edge of incoming) {
-    const value = ctx.getPortValue(
-      edge.source_node_id,
-      edge.source_port ?? "output"
-    );
+    const value = ctx.getPortValue(edge.source_node_id, edge.source_port ?? "output");
     if (value !== undefined) {
       inputs[edge.target_port ?? "input"] = value;
     }
@@ -157,9 +151,7 @@ function markBranchSkipped(
   skipped: Set<string>
 ): void {
   const branchEdges = flowDef.edges.filter(
-    e =>
-      e.source_node_id === condNodeId &&
-      (skipPort === "" || e.source_port === skipPort)
+    (e) => e.source_node_id === condNodeId && (skipPort === "" || e.source_port === skipPort)
   );
   for (const edge of branchEdges) {
     if (!skipped.has(edge.target_node_id)) {
@@ -180,11 +172,7 @@ export async function executeFlow(
   try {
     order = topologicalSort(flowDef);
   } catch (e) {
-    return {
-      status: "failed",
-      logs: [],
-      error: e instanceof Error ? e.message : String(e),
-    };
+    return { status: "failed", logs: [], error: e instanceof Error ? e.message : String(e) };
   }
 
   const ctx = new FlowContext(flowDef.variables ?? {});
@@ -192,14 +180,9 @@ export async function executeFlow(
   const skipped = new Set<string>();
 
   for (const nodeId of order) {
-    const nodeDef = flowDef.nodes.find(n => n.node_id === nodeId)!;
+    const nodeDef = flowDef.nodes.find((n) => n.node_id === nodeId)!;
     if (skipped.has(nodeId)) {
-      logs.push({
-        node_id: nodeId,
-        node_type: nodeDef.node_type,
-        inputs: {},
-        status: "skipped",
-      });
+      logs.push({ node_id: nodeId, node_type: nodeDef.node_type, inputs: {}, status: "skipped" });
       opts.onNodeStatus?.(nodeId, "skipped");
       continue;
     }
@@ -227,11 +210,7 @@ export async function executeFlow(
           });
           opts.onNodeStatus?.(nodeId, "failed");
           // fail-fast：下游缺上游产物，跑了也是伪造（与链路试跑同语义）
-          return {
-            status: "failed",
-            logs,
-            error: `节点 ${nodeId} 执行失败: ${lastError}`,
-          };
+          return { status: "failed", logs, error: `节点 ${nodeId} 执行失败: ${lastError}` };
         }
       }
     }

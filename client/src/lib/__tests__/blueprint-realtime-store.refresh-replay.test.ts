@@ -9,9 +9,7 @@ import {
 describe("BlueprintRealtimeStore refresh replay", () => {
   beforeEach(() => {
     __setSocket(null as any);
-    useBlueprintRealtimeStore.setState(
-      useBlueprintRealtimeStore.getInitialState()
-    );
+    useBlueprintRealtimeStore.setState(useBlueprintRealtimeStore.getInitialState());
   });
 
   afterEach(() => {
@@ -117,7 +115,7 @@ describe("BlueprintRealtimeStore refresh replay", () => {
         timestamp: Date.parse("2026-05-24T10:00:01.000Z"),
       }),
     ]);
-    expect(state.logEntries.map(entry => entry.message)).toEqual([
+    expect(state.logEntries.map((entry) => entry.message)).toEqual([
       "role.container.ready",
       "job.stage",
       "role.agent.thinking",

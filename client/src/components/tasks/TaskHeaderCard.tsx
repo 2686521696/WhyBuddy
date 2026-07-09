@@ -57,8 +57,7 @@ export function TaskHeaderCard({
   locale,
 }: TaskHeaderCardProps): React.ReactElement {
   const clampedProgress = Math.max(0, Math.min(100, progress));
-  const badgeClasses =
-    STATUS_BADGE_CLASSES[status] ?? "bg-slate-100 text-slate-600";
+  const badgeClasses = STATUS_BADGE_CLASSES[status] ?? "bg-slate-100 text-slate-600";
   const statusLabel = STATUS_LABELS[status]
     ? t(locale, STATUS_LABELS[status].zh, STATUS_LABELS[status].en)
     : status;
@@ -112,7 +111,9 @@ export function TaskHeaderCard({
           {statusLabel}
         </span>
         {driveState && (
-          <span className="text-xs text-muted-foreground">{driveState}</span>
+          <span className="text-xs text-muted-foreground">
+            {driveState}
+          </span>
         )}
       </div>
 

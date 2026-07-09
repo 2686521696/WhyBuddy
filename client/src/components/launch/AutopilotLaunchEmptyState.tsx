@@ -82,7 +82,9 @@ function FlowStep({
         {icon}
         {title}
       </div>
-      <p className="mt-1 text-[10px] leading-4 text-stone-600">{description}</p>
+      <p className="mt-1 text-[10px] leading-4 text-stone-600">
+        {description}
+      </p>
     </div>
   );
 }
@@ -111,11 +113,7 @@ export function AutopilotLaunchEmptyState({
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#267064]">
             <Sparkles className="size-4" />
-            {copy(
-              locale,
-              "\u81ea\u52a8\u9a7e\u9a76\u53d1\u8d77",
-              "Autopilot launch"
-            )}
+            {copy(locale, "\u81ea\u52a8\u9a7e\u9a76\u53d1\u8d77", "Autopilot launch")}
           </div>
           <h3 className="mt-1 text-sm font-semibold text-stone-950">
             {copy(
@@ -139,17 +137,9 @@ export function AutopilotLaunchEmptyState({
           data-testid="autopilot-launch-empty-state-toggle"
           onClick={() => setCollapsed(value => !value)}
         >
-          {collapsed ? (
-            <ChevronDown className="size-3.5" />
-          ) : (
-            <ChevronUp className="size-3.5" />
-          )}
+          {collapsed ? <ChevronDown className="size-3.5" /> : <ChevronUp className="size-3.5" />}
           {collapsed
-            ? copy(
-                locale,
-                "\u91cd\u65b0\u6253\u5f00\u5f15\u5bfc",
-                "Reopen guide"
-              )
+            ? copy(locale, "\u91cd\u65b0\u6253\u5f00\u5f15\u5bfc", "Reopen guide")
             : copy(locale, "\u6298\u53e0\u5f15\u5bfc", "Collapse guide")}
         </button>
       </div>
@@ -157,14 +147,10 @@ export function AutopilotLaunchEmptyState({
       {!collapsed ? (
         <>
           <div className="mt-3 grid gap-2 md:grid-cols-4">
-            <FlowStep
-              icon={<Route className="size-3.5" />}
-              title={copy(
-                locale,
-                "\u8f93\u5165\u76ee\u7684\u5730",
-                "Destination"
-              )}
-              layer={AUTOPILOT_ONBOARDING_LAYER_MARKERS[0]}
+              <FlowStep
+                icon={<Route className="size-3.5" />}
+                title={copy(locale, "\u8f93\u5165\u76ee\u7684\u5730", "Destination")}
+                layer={AUTOPILOT_ONBOARDING_LAYER_MARKERS[0]}
               description={copy(
                 locale,
                 "\u5199\u6e05\u76ee\u6807\u3001\u4ea4\u4ed8\u7269\u3001\u7ea6\u675f\u548c\u6210\u529f\u6807\u51c6\u3002",
@@ -183,11 +169,7 @@ export function AutopilotLaunchEmptyState({
             />
             <FlowStep
               icon={<Layers3 className="size-3.5" />}
-              title={copy(
-                locale,
-                "\u7f16\u961f\u6267\u884c",
-                "Fleet execution"
-              )}
+              title={copy(locale, "\u7f16\u961f\u6267\u884c", "Fleet execution")}
               layer={AUTOPILOT_ONBOARDING_LAYER_MARKERS[2]}
               description={copy(
                 locale,
@@ -197,11 +179,7 @@ export function AutopilotLaunchEmptyState({
             />
             <FlowStep
               icon={<ShieldCheck className="size-3.5" />}
-              title={copy(
-                locale,
-                "\u63a5\u7ba1 / \u8bc1\u636e",
-                "Takeover / Evidence"
-              )}
+              title={copy(locale, "\u63a5\u7ba1 / \u8bc1\u636e", "Takeover / Evidence")}
               layer={AUTOPILOT_ONBOARDING_LAYER_MARKERS[3]}
               description={copy(
                 locale,
@@ -218,11 +196,7 @@ export function AutopilotLaunchEmptyState({
           >
             <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#267064]">
               <LifeBuoy className="size-3.5" />
-              {copy(
-                locale,
-                "\u9996\u6b21\u8fdb\u5165 cockpit",
-                "First cockpit entry"
-              )}
+              {copy(locale, "\u9996\u6b21\u8fdb\u5165 cockpit", "First cockpit entry")}
             </div>
             <div className="mt-2 grid gap-1.5 text-[10px] leading-4 text-stone-600 sm:grid-cols-3">
               <span className="rounded-[12px] border border-[#d8e6dd] bg-[#f7fdf9]/76 px-2 py-1.5">
@@ -258,11 +232,7 @@ export function AutopilotLaunchEmptyState({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#9a5d32]">
-                  {copy(
-                    locale,
-                    "\u76ee\u7684\u5730\u793a\u4f8b",
-                    "Destination examples"
-                  )}
+                  {copy(locale, "\u76ee\u7684\u5730\u793a\u4f8b", "Destination examples")}
                 </div>
                 <p className="mt-0.5 text-[10px] leading-4 text-stone-600">
                   {copy(
@@ -274,11 +244,7 @@ export function AutopilotLaunchEmptyState({
               </div>
               <span className="inline-flex items-center gap-1 rounded-full border border-[#d8e6dd] bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-[#267064]">
                 <LifeBuoy className="size-3.5" />
-                {copy(
-                  locale,
-                  "\u53ef\u968f\u65f6\u91cd\u65b0\u6253\u5f00",
-                  "Reopen anytime"
-                )}
+                {copy(locale, "\u53ef\u968f\u65f6\u91cd\u65b0\u6253\u5f00", "Reopen anytime")}
               </span>
             </div>
 

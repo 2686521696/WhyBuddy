@@ -55,7 +55,9 @@ describe("readBlueprintRolePhase / brainstorm roleId mapping", () => {
       const rolePhases: Record<string, RolePhase> = {
         [brainstormRoleId]: "acting" as RolePhase,
       };
-      expect(readBlueprintRolePhase(rolePhases, missionAgentId)).toBe("acting");
+      expect(readBlueprintRolePhase(rolePhases, missionAgentId)).toBe(
+        "acting"
+      );
     });
   }
 });
@@ -77,7 +79,10 @@ describe("readBlueprintRoleRuntimeState / FSD runtime evidence mapping", () => {
     } as const;
 
     expect(
-      readBlueprintRoleRuntimeState(runtimeStates, "agent-manager-research")
+      readBlueprintRoleRuntimeState(
+        runtimeStates,
+        "agent-manager-research"
+      )
     ).toMatchObject({
       roleId: "planner",
       runtimeKind: "fallback",

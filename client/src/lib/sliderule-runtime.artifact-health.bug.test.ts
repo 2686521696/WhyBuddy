@@ -30,35 +30,35 @@
  * Validates: Requirements 1.1, 1.2, 1.3, 2.1, 2.2, 2.3
  */
 
-import { describe, it, expect } from "vitest";
-import fc from "fast-check";
+import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
 import {
   createInitialSessionState,
   pickNextCapabilities,
   findInputsForCapability,
   commitArtifact,
   invalidateForIntervention,
-} from "./sliderule-runtime";
+} from './sliderule-runtime';
 import {
   COMPLEX_GOAL_TEXT,
   CONVERGE_TEXT,
   createRawArtifact,
   buildClearStateWithTrustedReport,
   driveConvergeTurn,
-} from "./sliderule-fullpath-fixtures";
+} from './sliderule-fullpath-fixtures';
 import type {
   V5SessionState,
   Artifact,
   UserIntervention,
-} from "@shared/blueprint/v5-reasoning-state";
+} from '@shared/blueprint/v5-reasoning-state';
 
 // ---- shared health rule (the canonical rule hasTrustedCommittedForCap already applies inline) ----
 
-const TRUSTED = new Set<Artifact["trustLevel"]>(["gated_pass", "audited"]);
+const TRUSTED = new Set<Artifact['trustLevel']>(['gated_pass', 'audited']);
 
 /** isHealthyArtifact(artifact, staleSet) = trustLevel ∈ {gated_pass, audited} AND id ∉ staleSet. */
 function isHealthy(
-  artifact: { id: string; trustLevel: Artifact["trustLevel"] },
+  artifact: { id: string; trustLevel: Artifact['trustLevel'] },
   staleSet: Set<string>
 ): boolean {
   return TRUSTED.has(artifact.trustLevel) && !staleSet.has(artifact.id);
@@ -72,15 +72,12 @@ function isHealthy(
  * only artifact of its kind lets us read each site's verdict observably.
  */
 function buildSingleRiskSession(
-  trustLevel: Artifact["trustLevel"],
+  trustLevel: Artifact['trustLevel'],
   stale: boolean
 ): { state: V5SessionState; riskId: string } {
-  const riskId = "probe-risk";
-  const base = createInitialSessionState(
-    COMPLEX_GOAL_TEXT,
-    "artifact-health-probe"
-  );
-  const raw = createRawArtifact(riskId, "risk.analyze", "安全", "risk");
+  const riskId = 'probe-risk';
+  const base = createInitialSessionState(COMPLEX_GOAL_TEXT, 'artifact-health-probe');
+  const raw = createRawArtifact(riskId, 'risk.analyze', '安全', 'risk');
   const artifact: Artifact = { ...raw, trustLevel };
   return {
     state: {
@@ -98,15 +95,13 @@ function buildSingleRiskSession(
  * pushes risk.analyze only when hasRisk is false.)
  */
 function pickPresentRisk(state: V5SessionState): boolean {
-  const caps = pickNextCapabilities(state, CONVERGE_TEXT).map(
-    p => p.capabilityId
-  );
-  return !caps.includes("risk.analyze");
+  const caps = pickNextCapabilities(state, CONVERGE_TEXT).map((p) => p.capabilityId);
+  return !caps.includes('risk.analyze');
 }
 
 /** inputUsable verdict for the probe risk: counter.argue needs a `risk` input. */
 function inputUsableRisk(state: V5SessionState, riskId: string): boolean {
-  return findInputsForCapability(state, "counter.argue").includes(riskId);
+  return findInputsForCapability(state, 'counter.argue').includes(riskId);
 }
 
 // =====================================================================================
@@ -114,7 +109,7 @@ function inputUsableRisk(state: V5SessionState, riskId: string): boolean {
 // Mirrors fullpath-budget.test.ts "C-1 untrusted variant" it.fails.
 // =====================================================================================
 
-describe("BUG: artifact-health disagreement — pickNextCapabilities counts UNTRUSTED kinds as present (S10, EXPECTED TO FAIL on unfixed code)", () => {
+describe('BUG: artifact-health disagreement — pickNextCapabilities counts UNTRUSTED kinds as present (S10, EXPECTED TO FAIL on unfixed code)', () => {
   /**
    * Reset session -> commit risk + counter with forceGateFail=true (untrusted) -> commit a report
    * referencing those untrusted upstreams (auto gate-fail). Same construction as the V5.1 S10 suite.
@@ -123,31 +118,21 @@ describe("BUG: artifact-health disagreement — pickNextCapabilities counts UNTR
     let s = createInitialSessionState(COMPLEX_GOAL_TEXT, sessionId);
     s = commitArtifact(
       s,
-      createRawArtifact(`${sessionId}-risk`, "risk.analyze", "安全", "risk"),
+      createRawArtifact(`${sessionId}-risk`, 'risk.analyze', '安全', 'risk'),
       `${sessionId}-t1-run-0`,
       true, // forceGateFail -> untrusted
       []
     ).updatedState;
     s = commitArtifact(
       s,
-      createRawArtifact(
-        `${sessionId}-counter`,
-        "counter.argue",
-        "挑刺",
-        "risk"
-      ),
+      createRawArtifact(`${sessionId}-counter`, 'counter.argue', '挑刺', 'risk'),
       `${sessionId}-t1-run-1`,
       true, // forceGateFail -> untrusted
       []
     ).updatedState;
     s = commitArtifact(
       s,
-      createRawArtifact(
-        `${sessionId}-report`,
-        "report.write",
-        "综合",
-        "report"
-      ),
+      createRawArtifact(`${sessionId}-report`, 'report.write', '综合', 'report'),
       `${sessionId}-t1-run-2`,
       false,
       [`${sessionId}-risk`, `${sessionId}-counter`] // references untrusted upstreams -> auto fail
@@ -155,24 +140,22 @@ describe("BUG: artifact-health disagreement — pickNextCapabilities counts UNTR
     return s;
   }
 
-  it("next picks SHALL re-include risk.analyze / counter.argue / report.write when the only artifacts of those kinds are untrusted-only", () => {
-    const state = buildVerifyFailSession("S10-c1-untrusted");
+  it('next picks SHALL re-include risk.analyze / counter.argue / report.write when the only artifacts of those kinds are untrusted-only', () => {
+    const state = buildVerifyFailSession('S10-c1-untrusted');
 
     // Sanity: the risk/report artifacts exist but are all untrusted.
-    const untrusted = state.artifacts.filter(a => a.trustLevel === "untrusted");
+    const untrusted = state.artifacts.filter((a) => a.trustLevel === 'untrusted');
     expect(untrusted.length).toBeGreaterThanOrEqual(2);
 
-    const caps = pickNextCapabilities(state, CONVERGE_TEXT).map(
-      p => p.capabilityId
-    );
+    const caps = pickNextCapabilities(state, CONVERGE_TEXT).map((p) => p.capabilityId);
 
     // EXPECTED (design Property 1, pickPresent' = isHealthyArtifact = false for untrusted):
     // an untrusted-only kind reads as ABSENT and is re-scheduled.
     // FAILS on unfixed code: existingKinds excludes stale only, so the untrusted risk/report
     // count as "present" and the picker drops them.
-    expect(caps).toContain("risk.analyze");
-    expect(caps).toContain("counter.argue");
-    expect(caps).toContain("report.write");
+    expect(caps).toContain('risk.analyze');
+    expect(caps).toContain('counter.argue');
+    expect(caps).toContain('report.write');
   });
 });
 
@@ -181,19 +164,19 @@ describe("BUG: artifact-health disagreement — pickNextCapabilities counts UNTR
 // Mirrors fullpath-core.test.ts "challenging an UPSTREAM risk" it.fails.
 // =====================================================================================
 
-describe("BUG: artifact-health disagreement — findInputsForCapability selects STALE/untrusted upstreams (S4, EXPECTED TO FAIL on unfixed code)", () => {
-  it("findInputsForCapability SHALL NOT select a stale risk as an input", () => {
-    const staleRiskId = "stale-risk";
-    const base = createInitialSessionState(COMPLEX_GOAL_TEXT, "S4-stale-input");
-    const raw = createRawArtifact(staleRiskId, "risk.analyze", "安全", "risk");
+describe('BUG: artifact-health disagreement — findInputsForCapability selects STALE/untrusted upstreams (S4, EXPECTED TO FAIL on unfixed code)', () => {
+  it('findInputsForCapability SHALL NOT select a stale risk as an input', () => {
+    const staleRiskId = 'stale-risk';
+    const base = createInitialSessionState(COMPLEX_GOAL_TEXT, 'S4-stale-input');
+    const raw = createRawArtifact(staleRiskId, 'risk.analyze', '安全', 'risk');
     const state: V5SessionState = {
       ...base,
       // Trusted-but-stale: the ONLY risk of the needed input kind is stale.
-      artifacts: [{ ...raw, trustLevel: "gated_pass" }],
+      artifacts: [{ ...raw, trustLevel: 'gated_pass' }],
       staleArtifactIds: [staleRiskId],
     };
 
-    const inputs = findInputsForCapability(state, "counter.argue"); // counter.argue needs a `risk` input
+    const inputs = findInputsForCapability(state, 'counter.argue'); // counter.argue needs a `risk` input
 
     // EXPECTED (design Property 1, inputUsable' = isHealthyArtifact = false for stale):
     // the stale upstream is never selected as an input.
@@ -202,26 +185,20 @@ describe("BUG: artifact-health disagreement — findInputsForCapability selects 
     expect(inputs).not.toContain(staleRiskId);
   });
 
-  it("reconverging after challenging an UPSTREAM risk SHALL produce a fresh trusted report (integration mirror of S4 it.fails)", () => {
-    const { state, riskId } = buildClearStateWithTrustedReport(
-      "S4-upstream-explore"
-    );
+  it('reconverging after challenging an UPSTREAM risk SHALL produce a fresh trusted report (integration mirror of S4 it.fails)', () => {
+    const { state, riskId } = buildClearStateWithTrustedReport('S4-upstream-explore');
     const challenged = invalidateForIntervention(state, {
       targetArtifactId: riskId,
-      intent: "challenge",
-      text: "请重新评估风险并生成最终报告",
+      intent: 'challenge',
+      text: '请重新评估风险并生成最终报告',
     } as UserIntervention);
 
-    const reconverged = driveConvergeTurn(
-      challenged,
-      "S4-uf-explore",
-      "请基于现有证据重新生成最终报告"
-    );
+    const reconverged = driveConvergeTurn(challenged, 'S4-uf-explore', '请基于现有证据重新生成最终报告');
     const stales = new Set(reconverged.staleArtifactIds || []);
     const freshReports = reconverged.artifacts.filter(
-      a =>
-        a.kind === "report" &&
-        a.producedBy?.capabilityId === "report.write" &&
+      (a) =>
+        a.kind === 'report' &&
+        a.producedBy?.capabilityId === 'report.write' &&
         TRUSTED.has(a.trustLevel) &&
         !stales.has(a.id)
     );
@@ -237,9 +214,9 @@ describe("BUG: artifact-health disagreement — findInputsForCapability selects 
 // Three-site disagreement — Property 1 over the bug-condition domain (scoped PBT)
 // =====================================================================================
 
-describe("BUG: three sites DISAGREE on artifact health under the bug condition (Property 1, EXPECTED TO FAIL on unfixed code)", () => {
-  it("untrusted, non-stale artifact: the three verdicts disagree on UNFIXED code (pickPresent=true, gatedHealthy=false, inputUsable=true)", () => {
-    const { state, riskId } = buildSingleRiskSession("untrusted", false);
+describe('BUG: three sites DISAGREE on artifact health under the bug condition (Property 1, EXPECTED TO FAIL on unfixed code)', () => {
+  it('untrusted, non-stale artifact: the three verdicts disagree on UNFIXED code (pickPresent=true, gatedHealthy=false, inputUsable=true)', () => {
+    const { state, riskId } = buildSingleRiskSession('untrusted', false);
     const staleSet = new Set(state.staleArtifactIds);
     const artifact = state.artifacts[0];
     const healthy = isHealthy(artifact, staleSet); // false (untrusted)
@@ -252,8 +229,8 @@ describe("BUG: three sites DISAGREE on artifact health under the bug condition (
     expect(inputUsableRisk(state, riskId)).toBe(healthy); // FAILS: inputUsable = true ≠ false
   });
 
-  it("trusted-but-stale artifact: input resolution disagrees on UNFIXED code (inputUsable=true while the other two exclude it)", () => {
-    const { state, riskId } = buildSingleRiskSession("gated_pass", true);
+  it('trusted-but-stale artifact: input resolution disagrees on UNFIXED code (inputUsable=true while the other two exclude it)', () => {
+    const { state, riskId } = buildSingleRiskSession('gated_pass', true);
     const staleSet = new Set(state.staleArtifactIds);
     const artifact = state.artifacts[0];
     const healthy = isHealthy(artifact, staleSet); // false (stale)
@@ -263,12 +240,8 @@ describe("BUG: three sites DISAGREE on artifact health under the bug condition (
     expect(inputUsableRisk(state, riskId)).toBe(healthy); // FAILS: inputUsable = true ≠ false
   });
 
-  it("PROPERTY: for all artifacts where the bug condition holds, all three sites SHALL equal isHealthyArtifact", () => {
-    const trustArb = fc.constantFrom<Artifact["trustLevel"]>(
-      "untrusted",
-      "gated_pass",
-      "audited"
-    );
+  it('PROPERTY: for all artifacts where the bug condition holds, all three sites SHALL equal isHealthyArtifact', () => {
+    const trustArb = fc.constantFrom<Artifact['trustLevel']>('untrusted', 'gated_pass', 'audited');
     const staleArb = fc.boolean();
 
     fc.assert(
@@ -283,8 +256,7 @@ describe("BUG: three sites DISAGREE on artifact health under the bug condition (
 
         // Scope to the bug condition: the three formal verdicts are NOT all equal.
         const isBugCondition = !(
-          pickPresentFormal === gatedHealthyFormal &&
-          gatedHealthyFormal === inputUsableFormal
+          pickPresentFormal === gatedHealthyFormal && gatedHealthyFormal === inputUsableFormal
         );
         fc.pre(isBugCondition);
 
@@ -300,8 +272,8 @@ describe("BUG: three sites DISAGREE on artifact health under the bug condition (
     );
   });
 
-  it("EDGE (non-bug): a healthy gated_pass non-stale artifact already has all three verdicts true on UNFIXED code", () => {
-    const { state, riskId } = buildSingleRiskSession("gated_pass", false);
+  it('EDGE (non-bug): a healthy gated_pass non-stale artifact already has all three verdicts true on UNFIXED code', () => {
+    const { state, riskId } = buildSingleRiskSession('gated_pass', false);
     const staleSet = new Set(state.staleArtifactIds);
     const artifact = state.artifacts[0];
 

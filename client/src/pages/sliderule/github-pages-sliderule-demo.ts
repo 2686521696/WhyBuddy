@@ -10,10 +10,7 @@ import {
   deriveNodeStatus,
   intakeMessage,
 } from "@/lib/sliderule-runtime";
-import type {
-  Artifact,
-  V5SessionState,
-} from "@shared/blueprint/v5-reasoning-state";
+import type { Artifact, V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import {
   commitTrusted,
   createRawArtifact,
@@ -81,8 +78,7 @@ export function createGithubPagesSlideRuleSeedSession(): V5SessionState {
     ].join("\n")
   );
   evidenceRaw.provenance = "web:search" as Artifact["provenance"];
-  evidenceRaw.summary =
-    "【来源: F2_Web_Search 取数】检索「RBAC 权限」· 2 条（演示）";
+  evidenceRaw.summary = "【来源: F2_Web_Search 取数】检索「RBAC 权限」· 2 条（演示）";
 
   const committed = commitArtifact(
     state,
@@ -112,9 +108,9 @@ export function createGithubPagesSlideRuleSeedSession(): V5SessionState {
     "架构",
     "spec_tree",
     "pages-demo-run-tree",
-    ["demo-risk-1", "demo-evidence-1"]
+    ["demo-risk-1", "demo-evidence-1"],
   );
-  const treeArt = state.artifacts?.find(a => a.id === "demo-tree-1");
+  const treeArt = state.artifacts?.find((a) => a.id === "demo-tree-1");
   if (treeArt) {
     treeArt.content =
       "C_PROMPT:built · G_INV:attempt1:passed\n" +
@@ -222,47 +218,17 @@ export function createGithubPagesDemoFiveSystemModel() {
         "audit:read",
       ],
       menus: [
-        {
-          id: "menu_users",
-          label: "用户管理",
-          roleRefs: ["sys_admin", "security_auditor"],
-          permissionRefs: ["user:read", "user:manage"],
-        },
-        {
-          id: "menu_roles",
-          label: "角色与数据范围",
-          roleRefs: ["sys_admin"],
-          permissionRefs: ["role:manage"],
-        },
-        {
-          id: "menu_grants",
-          label: "授权申请",
-          roleRefs: ["employee", "security_auditor", "sys_admin"],
-          permissionRefs: ["grant:submit", "grant:approve"],
-        },
+        { id: "menu_users", label: "用户管理", roleRefs: ["sys_admin", "security_auditor"], permissionRefs: ["user:read", "user:manage"] },
+        { id: "menu_roles", label: "角色与数据范围", roleRefs: ["sys_admin"], permissionRefs: ["role:manage"] },
+        { id: "menu_grants", label: "授权申请", roleRefs: ["employee", "security_auditor", "sys_admin"], permissionRefs: ["grant:submit", "grant:approve"] },
       ],
     },
     workflow: {
       id: "wf_grant",
       nodes: [
-        {
-          id: "n_submit",
-          name: "提交授权申请",
-          assigneeRole: "employee",
-          phase: "申请",
-        },
-        {
-          id: "n_review",
-          name: "安全审核",
-          assigneeRole: "security_auditor",
-          phase: "审核",
-        },
-        {
-          id: "n_apply",
-          name: "授权生效",
-          assigneeRole: "sys_admin",
-          phase: "生效",
-        },
+        { id: "n_submit", name: "提交授权申请", assigneeRole: "employee", phase: "申请" },
+        { id: "n_review", name: "安全审核", assigneeRole: "security_auditor", phase: "审核" },
+        { id: "n_apply", name: "授权生效", assigneeRole: "sys_admin", phase: "生效" },
       ],
       transitions: [
         { from: "n_submit", to: "n_review" },
@@ -275,13 +241,7 @@ export function createGithubPagesDemoFiveSystemModel() {
         {
           id: "user_admin_page",
           name: "用户管理页",
-          fieldBindings: [
-            "user.user_id",
-            "user.name",
-            "user.department",
-            "user.status",
-            "user.risk_level",
-          ],
+          fieldBindings: ["user.user_id", "user.name", "user.department", "user.status", "user.risk_level"],
           actionPermissions: ["user:manage"],
         },
         {
@@ -310,11 +270,7 @@ export function createGithubPagesDemoFiveSystemModel() {
         {
           id: "cap_grant_risk_scan",
           name: "越权风险扫描",
-          inputFields: [
-            "grant_request.applicant",
-            "grant_request.target_role",
-            "grant_request.reason",
-          ],
+          inputFields: ["grant_request.applicant", "grant_request.target_role", "grant_request.reason"],
           outputField: "grant_request.risk_note",
           roleRefs: ["security_auditor"],
         },
@@ -341,16 +297,9 @@ export function createGithubPagesDemoFiveSystemModel() {
 /** 发布闭环载荷（PublishClosureSummary 形状）：证据 6/6 + 每系统 modelSection。 */
 export function createGithubPagesDemoPublishClosure() {
   const model = createGithubPagesDemoFiveSystemModel();
-  const skills = [
-    "datamodel",
-    "rbac",
-    "workflow",
-    "page",
-    "aigc",
-    "appbundle",
-  ] as const;
+  const skills = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"] as const;
   const perSkillEvidence = Object.fromEntries(
-    skills.map(skill => [
+    skills.map((skill) => [
       skill,
       {
         evidencePresent: true,
@@ -401,6 +350,7 @@ export function createGithubPagesDemoPublishClosure() {
  * - Multi-key pool supported in storage (advanced: edit localStorage or extend UI).
  */
 
+
 export function createGithubPagesSlideRuleSessionStore(
   opts: { storage?: StorageLike | null } = {}
 ): SlideRuleSessionStore {
@@ -429,8 +379,7 @@ export function createGithubPagesSlideRuleSessionStore(
         ...state,
         sessionId,
         lastActive: now,
-        createdAt:
-          (state as V5SessionState & { createdAt?: string }).createdAt || now,
+        createdAt: (state as V5SessionState & { createdAt?: string }).createdAt || now,
       };
       if (pc !== undefined) saved.publishClosure = pc;
       backing?.setItem(STORAGE_KEY_PREFIX + sessionId, JSON.stringify(saved));

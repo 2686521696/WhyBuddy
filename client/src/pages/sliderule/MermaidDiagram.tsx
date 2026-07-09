@@ -43,11 +43,7 @@ function nextId() {
   return `mermaid-${++_idCounter}`;
 }
 
-export function MermaidDiagram({
-  chart,
-  className = "",
-  fit = true,
-}: MermaidDiagramProps) {
+export function MermaidDiagram({ chart, className = "", fit = true }: MermaidDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [rendered, setRendered] = useState(false);
@@ -83,7 +79,7 @@ export function MermaidDiagram({
           if (!cancelled) setError(String(e?.message || e));
         }
       })
-      .catch(e => {
+      .catch((e) => {
         if (!cancelled) setError(String(e?.message || e));
       });
 
@@ -95,9 +91,7 @@ export function MermaidDiagram({
   if (error) {
     return (
       <div className={`overflow-auto rounded bg-[#eef0f4] p-3 ${className}`}>
-        <pre className="text-xs text-stone-500 whitespace-pre-wrap">
-          {chart}
-        </pre>
+        <pre className="text-xs text-stone-500 whitespace-pre-wrap">{chart}</pre>
         <div className="mt-2 text-xs text-red-400">{error}</div>
       </div>
     );
@@ -105,9 +99,7 @@ export function MermaidDiagram({
 
   if (!chart?.trim()) {
     return (
-      <div
-        className={`flex items-center justify-center text-xs text-stone-400 ${className}`}
-      >
+      <div className={`flex items-center justify-center text-xs text-stone-400 ${className}`}>
         暂无图表数据
       </div>
     );

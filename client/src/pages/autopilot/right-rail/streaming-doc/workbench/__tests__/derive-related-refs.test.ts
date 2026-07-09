@@ -45,7 +45,8 @@ function makeDoc(
 
 /** 辅助：创建最小 BlueprintSpecTreeNode 桩。 */
 function makeNode(
-  overrides: Partial<BlueprintSpecTreeNode> & Pick<BlueprintSpecTreeNode, "id">
+  overrides: Partial<BlueprintSpecTreeNode> &
+    Pick<BlueprintSpecTreeNode, "id">
 ): BlueprintSpecTreeNode {
   return {
     id: overrides.id,
@@ -87,20 +88,14 @@ describe("deriveRelatedRefs", () => {
     it("activeDoc === null 时返回空数组", () => {
       const result = deriveRelatedRefs({
         activeDoc: null,
-        specDocuments: [
-          makeDoc({ id: "d1", nodeId: "n1", type: "requirements" }),
-        ],
+        specDocuments: [makeDoc({ id: "d1", nodeId: "n1", type: "requirements" })],
         specTree: null,
       });
       expect(result).toEqual([]);
     });
 
     it("specDocuments 为 undefined 时返回空数组", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "n1",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "n1", type: "requirements" });
       const result = deriveRelatedRefs({
         activeDoc,
         specDocuments: undefined,
@@ -110,11 +105,7 @@ describe("deriveRelatedRefs", () => {
     });
 
     it("specDocuments 为空数组时返回空数组", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "n1",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "n1", type: "requirements" });
       const result = deriveRelatedRefs({
         activeDoc,
         specDocuments: [],
@@ -124,11 +115,7 @@ describe("deriveRelatedRefs", () => {
     });
 
     it("specTree 为 null 时仍返回 sibling-type refs", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "n1",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "n1", type: "requirements" });
       const docs = [
         activeDoc,
         makeDoc({ id: "d2", nodeId: "n1", type: "design" }),
@@ -146,25 +133,11 @@ describe("deriveRelatedRefs", () => {
 
   describe("sibling-type", () => {
     it("同 nodeId 下其他 DocType 的文档被列出", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "node-A",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "node-A", type: "requirements" });
       const docs = [
         activeDoc,
-        makeDoc({
-          id: "d2",
-          nodeId: "node-A",
-          type: "design",
-          title: "Design A",
-        }),
-        makeDoc({
-          id: "d3",
-          nodeId: "node-A",
-          type: "tasks",
-          title: "Tasks A",
-        }),
+        makeDoc({ id: "d2", nodeId: "node-A", type: "design", title: "Design A" }),
+        makeDoc({ id: "d3", nodeId: "node-A", type: "tasks", title: "Tasks A" }),
       ];
       const result = deriveRelatedRefs({
         activeDoc,
@@ -189,11 +162,7 @@ describe("deriveRelatedRefs", () => {
     });
 
     it("不包含 activeDoc 自身", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "node-A",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "node-A", type: "requirements" });
       const docs = [activeDoc];
       const result = deriveRelatedRefs({
         activeDoc,
@@ -204,19 +173,10 @@ describe("deriveRelatedRefs", () => {
     });
 
     it("同 nodeId 同 type 的其他文档不被列出（仅列出不同 type）", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "node-A",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "node-A", type: "requirements" });
       const docs = [
         activeDoc,
-        makeDoc({
-          id: "d2",
-          nodeId: "node-A",
-          type: "requirements",
-          title: "Req 2",
-        }),
+        makeDoc({ id: "d2", nodeId: "node-A", type: "requirements", title: "Req 2" }),
       ];
       const result = deriveRelatedRefs({
         activeDoc,
@@ -229,25 +189,11 @@ describe("deriveRelatedRefs", () => {
 
   describe("parent-node", () => {
     it("父节点的文档被列出", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "node-B",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "node-B", type: "requirements" });
       const docs = [
         activeDoc,
-        makeDoc({
-          id: "d2",
-          nodeId: "node-A",
-          type: "requirements",
-          title: "Parent Req",
-        }),
-        makeDoc({
-          id: "d3",
-          nodeId: "node-A",
-          type: "design",
-          title: "Parent Design",
-        }),
+        makeDoc({ id: "d2", nodeId: "node-A", type: "requirements", title: "Parent Req" }),
+        makeDoc({ id: "d3", nodeId: "node-A", type: "design", title: "Parent Design" }),
       ];
       const tree = makeTree([
         makeNode({ id: "node-A", children: ["node-B"] }),
@@ -258,7 +204,7 @@ describe("deriveRelatedRefs", () => {
         specDocuments: docs,
         specTree: tree,
       });
-      const parentRefs = result.filter(r => r.relation === "parent-node");
+      const parentRefs = result.filter((r) => r.relation === "parent-node");
       expect(parentRefs).toHaveLength(2);
       expect(parentRefs[0]).toMatchObject({
         documentId: "d2",
@@ -275,49 +221,28 @@ describe("deriveRelatedRefs", () => {
     });
 
     it("节点没有 parentId 时不产生 parent-node refs", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "node-A",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "node-A", type: "requirements" });
       const docs = [activeDoc];
-      const tree = makeTree([makeNode({ id: "node-A", children: [] })]);
+      const tree = makeTree([
+        makeNode({ id: "node-A", children: [] }),
+      ]);
       const result = deriveRelatedRefs({
         activeDoc,
         specDocuments: docs,
         specTree: tree,
       });
-      expect(result.filter(r => r.relation === "parent-node")).toHaveLength(0);
+      expect(result.filter((r) => r.relation === "parent-node")).toHaveLength(0);
     });
   });
 
   describe("child-node", () => {
     it("第一层子节点的文档被列出", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "node-A",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "node-A", type: "requirements" });
       const docs = [
         activeDoc,
-        makeDoc({
-          id: "d2",
-          nodeId: "node-C",
-          type: "requirements",
-          title: "Child C Req",
-        }),
-        makeDoc({
-          id: "d3",
-          nodeId: "node-C",
-          type: "design",
-          title: "Child C Design",
-        }),
-        makeDoc({
-          id: "d4",
-          nodeId: "node-D",
-          type: "tasks",
-          title: "Child D Tasks",
-        }),
+        makeDoc({ id: "d2", nodeId: "node-C", type: "requirements", title: "Child C Req" }),
+        makeDoc({ id: "d3", nodeId: "node-C", type: "design", title: "Child C Design" }),
+        makeDoc({ id: "d4", nodeId: "node-D", type: "tasks", title: "Child D Tasks" }),
       ];
       const tree = makeTree([
         makeNode({ id: "node-A", children: ["node-C", "node-D"] }),
@@ -329,7 +254,7 @@ describe("deriveRelatedRefs", () => {
         specDocuments: docs,
         specTree: tree,
       });
-      const childRefs = result.filter(r => r.relation === "child-node");
+      const childRefs = result.filter((r) => r.relation === "child-node");
       expect(childRefs).toHaveLength(3);
       // 按 TYPE_ORDER 排序：requirements → design → tasks
       expect(childRefs[0].type).toBe("requirements");
@@ -338,25 +263,11 @@ describe("deriveRelatedRefs", () => {
     });
 
     it("不包含孙节点的文档（仅第一层子节点）", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "node-A",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "node-A", type: "requirements" });
       const docs = [
         activeDoc,
-        makeDoc({
-          id: "d2",
-          nodeId: "node-B",
-          type: "design",
-          title: "Child B",
-        }),
-        makeDoc({
-          id: "d3",
-          nodeId: "node-C",
-          type: "tasks",
-          title: "Grandchild C",
-        }),
+        makeDoc({ id: "d2", nodeId: "node-B", type: "design", title: "Child B" }),
+        makeDoc({ id: "d3", nodeId: "node-C", type: "tasks", title: "Grandchild C" }),
       ];
       const tree = makeTree([
         makeNode({ id: "node-A", children: ["node-B"] }),
@@ -368,23 +279,21 @@ describe("deriveRelatedRefs", () => {
         specDocuments: docs,
         specTree: tree,
       });
-      const childRefs = result.filter(r => r.relation === "child-node");
+      const childRefs = result.filter((r) => r.relation === "child-node");
       expect(childRefs).toHaveLength(1);
       expect(childRefs[0].documentId).toBe("d2");
       // node-C 是孙节点，不应出现
-      expect(childRefs.find(r => r.documentId === "d3")).toBeUndefined();
+      expect(childRefs.find((r) => r.documentId === "d3")).toBeUndefined();
     });
   });
 
   describe("无关联文档", () => {
     it("activeDoc 是唯一文档、节点无父无子时返回空数组", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "node-A",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "node-A", type: "requirements" });
       const docs = [activeDoc];
-      const tree = makeTree([makeNode({ id: "node-A", children: [] })]);
+      const tree = makeTree([
+        makeNode({ id: "node-A", children: [] }),
+      ]);
       const result = deriveRelatedRefs({
         activeDoc,
         specDocuments: docs,
@@ -400,44 +309,14 @@ describe("deriveRelatedRefs", () => {
       const docs = [
         activeDoc,
         // sibling-type：同 node-B 下的 requirements 和 tasks
-        makeDoc({
-          id: "d2",
-          nodeId: "node-B",
-          type: "requirements",
-          title: "Sibling Req",
-        }),
-        makeDoc({
-          id: "d3",
-          nodeId: "node-B",
-          type: "tasks",
-          title: "Sibling Tasks",
-        }),
+        makeDoc({ id: "d2", nodeId: "node-B", type: "requirements", title: "Sibling Req" }),
+        makeDoc({ id: "d3", nodeId: "node-B", type: "tasks", title: "Sibling Tasks" }),
         // parent-node：node-A 的文档
-        makeDoc({
-          id: "d4",
-          nodeId: "node-A",
-          type: "requirements",
-          title: "Parent Req",
-        }),
-        makeDoc({
-          id: "d5",
-          nodeId: "node-A",
-          type: "design",
-          title: "Parent Design",
-        }),
+        makeDoc({ id: "d4", nodeId: "node-A", type: "requirements", title: "Parent Req" }),
+        makeDoc({ id: "d5", nodeId: "node-A", type: "design", title: "Parent Design" }),
         // child-node：node-C 的文档
-        makeDoc({
-          id: "d6",
-          nodeId: "node-C",
-          type: "tasks",
-          title: "Child Tasks",
-        }),
-        makeDoc({
-          id: "d7",
-          nodeId: "node-C",
-          type: "requirements",
-          title: "Child Req",
-        }),
+        makeDoc({ id: "d6", nodeId: "node-C", type: "tasks", title: "Child Tasks" }),
+        makeDoc({ id: "d7", nodeId: "node-C", type: "requirements", title: "Child Req" }),
       ];
       const tree = makeTree([
         makeNode({ id: "node-A", children: ["node-B"] }),
@@ -454,9 +333,9 @@ describe("deriveRelatedRefs", () => {
       expect(result).toHaveLength(6);
 
       // 按 relation 分组排序：sibling-type → parent-node → child-node
-      const siblingRefs = result.filter(r => r.relation === "sibling-type");
-      const parentRefs = result.filter(r => r.relation === "parent-node");
-      const childRefs = result.filter(r => r.relation === "child-node");
+      const siblingRefs = result.filter((r) => r.relation === "sibling-type");
+      const parentRefs = result.filter((r) => r.relation === "parent-node");
+      const childRefs = result.filter((r) => r.relation === "child-node");
 
       expect(siblingRefs).toHaveLength(2);
       expect(parentRefs).toHaveLength(2);
@@ -476,11 +355,7 @@ describe("deriveRelatedRefs", () => {
 
   describe("不包含 activeDoc 自身", () => {
     it("结果中不包含 activeDoc 的 id", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "node-A",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "node-A", type: "requirements" });
       const docs = [
         activeDoc,
         makeDoc({ id: "d2", nodeId: "node-A", type: "design" }),
@@ -491,7 +366,7 @@ describe("deriveRelatedRefs", () => {
         specDocuments: docs,
         specTree: null,
       });
-      expect(result.every(r => r.documentId !== "d1")).toBe(true);
+      expect(result.every((r) => r.documentId !== "d1")).toBe(true);
     });
   });
 
@@ -502,12 +377,7 @@ describe("deriveRelatedRefs", () => {
         activeDoc,
         // 故意乱序放入
         makeDoc({ id: "d2", nodeId: "node-A", type: "tasks", title: "Tasks" }),
-        makeDoc({
-          id: "d3",
-          nodeId: "node-A",
-          type: "requirements",
-          title: "Req",
-        }),
+        makeDoc({ id: "d3", nodeId: "node-A", type: "requirements", title: "Req" }),
       ];
       const result = deriveRelatedRefs({
         activeDoc,
@@ -521,31 +391,12 @@ describe("deriveRelatedRefs", () => {
     });
 
     it("parent-node 组内也按 TYPE_ORDER 排序", () => {
-      const activeDoc = makeDoc({
-        id: "d1",
-        nodeId: "node-B",
-        type: "requirements",
-      });
+      const activeDoc = makeDoc({ id: "d1", nodeId: "node-B", type: "requirements" });
       const docs = [
         activeDoc,
-        makeDoc({
-          id: "d2",
-          nodeId: "node-A",
-          type: "tasks",
-          title: "Parent Tasks",
-        }),
-        makeDoc({
-          id: "d3",
-          nodeId: "node-A",
-          type: "design",
-          title: "Parent Design",
-        }),
-        makeDoc({
-          id: "d4",
-          nodeId: "node-A",
-          type: "requirements",
-          title: "Parent Req",
-        }),
+        makeDoc({ id: "d2", nodeId: "node-A", type: "tasks", title: "Parent Tasks" }),
+        makeDoc({ id: "d3", nodeId: "node-A", type: "design", title: "Parent Design" }),
+        makeDoc({ id: "d4", nodeId: "node-A", type: "requirements", title: "Parent Req" }),
       ];
       const tree = makeTree([
         makeNode({ id: "node-A", children: ["node-B"] }),
@@ -556,7 +407,7 @@ describe("deriveRelatedRefs", () => {
         specDocuments: docs,
         specTree: tree,
       });
-      const parentRefs = result.filter(r => r.relation === "parent-node");
+      const parentRefs = result.filter((r) => r.relation === "parent-node");
       expect(parentRefs).toHaveLength(3);
       expect(parentRefs[0].type).toBe("requirements");
       expect(parentRefs[1].type).toBe("design");

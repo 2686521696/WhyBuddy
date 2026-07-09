@@ -44,9 +44,9 @@ describe("Feature: autopilot-image-rendering-and-visual-system, Property 8: Visu
             v.endsWith(")") &&
             v.length > "oklch()".length
           );
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -57,9 +57,9 @@ describe("Feature: autopilot-image-rendering-and-visual-system, Property 8: Visu
         fc.constantFrom<"light" | "dark">("light", "dark"),
         (key, theme) => {
           return resolveToken(key, theme) === visualTokens[key][theme];
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });

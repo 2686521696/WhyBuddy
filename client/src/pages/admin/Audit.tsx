@@ -52,7 +52,7 @@ export function AdminAuditPage() {
                   {formatAdminValue(
                     entry.targetType && entry.targetId
                       ? `${entry.targetType}:${entry.targetId}`
-                      : (entry.targetType ?? entry.targetId)
+                      : entry.targetType ?? entry.targetId
                   )}
                 </TableCell>
                 <TableCell>{formatAdminDate(entry.createdAt)}</TableCell>
@@ -61,9 +61,7 @@ export function AdminAuditPage() {
             {!audit.length ? (
               <EmptyTableRow
                 colSpan={5}
-                label={
-                  loading ? "Loading audit..." : "No audit events returned."
-                }
+                label={loading ? "Loading audit..." : "No audit events returned."}
               />
             ) : null}
           </TableBody>

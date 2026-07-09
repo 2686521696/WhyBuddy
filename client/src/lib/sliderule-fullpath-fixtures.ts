@@ -31,28 +31,28 @@ import {
   commitArtifact,
   findInputsForCapability,
   type BudgetPolicy,
-} from "./sliderule-runtime";
+} from './sliderule-runtime';
 import type {
   V5SessionState,
   Artifact,
-} from "@shared/blueprint/v5-reasoning-state";
-import type { V5CapabilityId } from "@shared/blueprint/contracts";
-import { buildStructuredReport } from "@shared/blueprint/sliderule-report-builder";
+} from '@shared/blueprint/v5-reasoning-state';
+import type { V5CapabilityId } from '@shared/blueprint/contracts';
+import { buildStructuredReport } from '@shared/blueprint/sliderule-report-builder';
 export {
   replayCoverage,
   type CoverageReplay,
   type CoverageReplayGapLine,
   type CoverageReplayRequirementLine,
-} from "@shared/blueprint/sliderule-coverage-replay";
+} from '@shared/blueprint/sliderule-coverage-replay';
 
 // ===== Trigger-word constants (plan §1 trigger cheatsheet + existing combo test) =====
 
 /** Plans the full V5 team (risk.analyze + counter.argue + synthesis.merge + report.write). */
-export const COMBO_TEXT = "分析安全风险，反驳 RBAC，并生成可行性报告";
+export const COMBO_TEXT = '分析安全风险，反驳 RBAC，并生成可行性报告';
 /** Carries convergence intent (报告 / 可行性 / 总结 / 收敛). */
-export const CONVERGE_TEXT = "生成可行性报告";
+export const CONVERGE_TEXT = '生成可行性报告';
 /** A goal whose contract resolves to COMPLEX (contains 风险/安全). */
-export const COMPLEX_GOAL_TEXT = "分析权限系统的风险并给出最终报告";
+export const COMPLEX_GOAL_TEXT = '分析权限系统的风险并给出最终报告';
 
 /**
  * Low-limit budget policy for super-limit scenarios. Matches the doc's intent
@@ -70,13 +70,12 @@ export const LOW_BUDGET_POLICY: BudgetPolicy = {
 // ===== Semantic payloads (so aggregation / report content is meaningful) =====
 
 export const SEMANTIC_CONTENTS: Partial<Record<V5CapabilityId, string>> = {
-  "risk.analyze":
-    "数据范围越权风险（仅 RBAC 不足以表达跨部门/项目/租户边界）；审计风险（权限变更需保留操作者、时间、影响对象）。",
-  "counter.argue":
-    "反驳过早引入 ABAC（会增加策略调试成本）；建议 MVP 先采用 RBAC + scoped data filter，保留策略接口。",
-  "synthesis.merge":
-    "本轮从上游聚合的初步结论：权限系统建议采用 RBAC + 数据范围 MVP，预留策略扩展。",
-  "report.write": "【可行性 / 产品推演报告】结论：建议推进权限系统建设。",
+  'risk.analyze':
+    '数据范围越权风险（仅 RBAC 不足以表达跨部门/项目/租户边界）；审计风险（权限变更需保留操作者、时间、影响对象）。',
+  'counter.argue':
+    '反驳过早引入 ABAC（会增加策略调试成本）；建议 MVP 先采用 RBAC + scoped data filter，保留策略接口。',
+  'synthesis.merge': '本轮从上游聚合的初步结论：权限系统建议采用 RBAC + 数据范围 MVP，预留策略扩展。',
+  'report.write': '【可行性 / 产品推演报告】结论：建议推进权限系统建设。',
 };
 
 // ===== Raw artifact + trust helpers (proven patterns from the bugfix suites) =====
@@ -85,24 +84,22 @@ export function createRawArtifact(
   id: string,
   capabilityId: V5CapabilityId,
   roleId: string,
-  kind: Artifact["kind"],
+  kind: Artifact['kind'],
   contentOverride?: string
-): Omit<Artifact, "trustLevel"> {
+): Omit<Artifact, 'trustLevel'> {
   const content =
-    contentOverride ??
-    SEMANTIC_CONTENTS[capabilityId] ??
-    `${roleId} 通过 ${capabilityId} 贡献了内容。`;
+    contentOverride ?? SEMANTIC_CONTENTS[capabilityId] ?? `${roleId} 通过 ${capabilityId} 贡献了内容。`;
   return {
     id,
     kind,
-    provenance: "ai_generated",
+    provenance: 'ai_generated',
     producedBy: {
       capabilityRunId: `run-${id}`,
       capabilityId,
       roleId,
     },
     passedGates: [],
-    title: content.split("\n")[0]?.slice(0, 80),
+    title: content.split('\n')[0]?.slice(0, 80),
     summary: content.slice(0, 200),
     content,
   };
@@ -112,8 +109,8 @@ export function createRawArtifact(
 export function markTrusted(state: V5SessionState, artId: string): void {
   const art = (state.artifacts || []).find((a: any) => a.id === artId);
   if (art) {
-    (art as any).trustLevel = "gated_pass";
-    (art as any).passedGates = ["commit"];
+    (art as any).trustLevel = 'gated_pass';
+    (art as any).passedGates = ['commit'];
   }
 }
 
@@ -123,7 +120,7 @@ export function commitTrusted(
   id: string,
   capabilityId: V5CapabilityId,
   roleId: string,
-  kind: Artifact["kind"],
+  kind: Artifact['kind'],
   runId: string,
   declaredInputs: string[] = []
 ): V5SessionState {
@@ -141,18 +138,18 @@ export function commitTrusted(
 /** Raw artifact shape that passes G-GROUND (external repo / F1 source). */
 export function createGroundedEvidenceRaw(
   id: string
-): Omit<Artifact, "trustLevel"> {
+): Omit<Artifact, 'trustLevel'> {
   return {
     ...createRawArtifact(
       id,
-      "evidence.search",
-      "接地",
-      "evidence",
-      "【来源: F1_Github_Source 取数】外部证据片段"
+      'evidence.search',
+      '接地',
+      'evidence',
+      '【来源: F1_Github_Source 取数】外部证据片段'
     ),
-    provenance: "mcp:github" as Artifact["provenance"],
-    summary: "【来源: F1_Github_Source 取数】",
-    payload: { evidenceSource: "F1_Github_Source 取数" },
+    provenance: 'mcp:github' as Artifact['provenance'],
+    summary: '【来源: F1_Github_Source 取数】',
+    payload: { evidenceSource: 'F1_Github_Source 取数' },
   };
 }
 
@@ -173,12 +170,11 @@ export function commitGroundedEvidence(
 }
 
 /** Map a capability id to the artifact kind it produces (commit-loop helper). */
-export function kindForCap(capabilityId: string): Artifact["kind"] {
-  if (capabilityId === "report.write") return "report";
-  if (capabilityId === "synthesis.merge") return "synthesis";
-  if (capabilityId === "risk.analyze" || capabilityId === "counter.argue")
-    return "risk";
-  return "evidence";
+export function kindForCap(capabilityId: string): Artifact['kind'] {
+  if (capabilityId === 'report.write') return 'report';
+  if (capabilityId === 'synthesis.merge') return 'synthesis';
+  if (capabilityId === 'risk.analyze' || capabilityId === 'counter.argue') return 'risk';
+  return 'evidence';
 }
 
 /**
@@ -191,32 +187,19 @@ export function driveConvergeTurn(
   turnId: string,
   userText: string
 ): V5SessionState {
-  const { newState, plan } = orchestrateReasoningTurn(state, {
-    turnId,
-    userText,
-  });
+  const { newState, plan } = orchestrateReasoningTurn(state, { turnId, userText });
   let working = newState;
   plan.selected.forEach((sel: any, idx: number) => {
     const cap = sel.capabilityId as V5CapabilityId;
-    const role = sel.roleId || "agent";
+    const role = sel.roleId || 'agent';
     const runId = `${turnId}-run-${idx}`;
     const inputs = findInputsForCapability(working, cap);
     let contentOverride: string | undefined;
-    if (cap === "report.write") {
-      const structured = buildStructuredReport({
-        state: working,
-        inputArtifactIds: inputs,
-        roleId: role,
-      });
+    if (cap === 'report.write') {
+      const structured = buildStructuredReport({ state: working, inputArtifactIds: inputs, roleId: role });
       contentOverride = structured.content;
     }
-    const raw = createRawArtifact(
-      `${turnId}-art-${idx}`,
-      cap,
-      role,
-      kindForCap(cap),
-      contentOverride
-    );
+    const raw = createRawArtifact(`${turnId}-art-${idx}`, cap, role, kindForCap(cap), contentOverride);
     const { updatedState } = commitArtifact(
       working,
       raw,
@@ -246,66 +229,36 @@ export function buildClearStateWithTrustedReport(sessionId: string): {
 } {
   let s = createInitialSessionState(COMPLEX_GOAL_TEXT, sessionId);
 
-  const riskId = "risk-1";
-  const critId = "crit-1";
-  const evId = "ev-ground-1";
-  const synthId = "synth-1";
-  s = commitTrusted(
-    s,
-    riskId,
-    "risk.analyze",
-    "安全",
-    "risk",
-    `${sessionId}-r0`
-  );
+  const riskId = 'risk-1';
+  const critId = 'crit-1';
+  const evId = 'ev-ground-1';
+  const synthId = 'synth-1';
+  s = commitTrusted(s, riskId, 'risk.analyze', '安全', 'risk', `${sessionId}-r0`);
   // The complex CoverageContract now includes critique.generate (V5.2/V5.3 面板质疑纳入合约);
   // without a trusted critique run the converge turn can no longer reach a GCOV-pass.
-  s = commitTrusted(
-    s,
-    critId,
-    "critique.generate",
-    "挑刺",
-    "risk",
-    `${sessionId}-r0c`
-  );
+  s = commitTrusted(s, critId, 'critique.generate', '挑刺', 'risk', `${sessionId}-r0c`);
   s = commitGroundedEvidence(s, evId, `${sessionId}-r0b`);
-  s = commitTrusted(
-    s,
-    synthId,
-    "synthesis.merge",
-    "综合",
-    "synthesis",
-    `${sessionId}-r1`
-  );
+  s = commitTrusted(s, synthId, 'synthesis.merge', '综合', 'synthesis', `${sessionId}-r1`);
 
   // Converge turn: GCOV passes -> single-writer applyGoalConclusion writes "clear".
   const { newState } = orchestrateReasoningTurn(s, {
     turnId: `${sessionId}-cv`,
-    userText: "现在可以出最终报告了",
+    userText: '现在可以出最终报告了',
   });
 
   // Commit the planned report using the planned run id so it is a real trusted report.
-  const reportNode = (newState.graph.nodes || []).find(
-    (n: any) => n.capabilityId === "report.write"
-  );
-  const reportRunId =
-    (reportNode as any)?.capabilityRunId ?? `${sessionId}-cv-run-0`;
-  const reportInputs = findInputsForCapability(newState, "report.write");
-  const reportId = "report-1";
+  const reportNode = (newState.graph.nodes || []).find((n: any) => n.capabilityId === 'report.write');
+  const reportRunId = (reportNode as any)?.capabilityRunId ?? `${sessionId}-cv-run-0`;
+  const reportInputs = findInputsForCapability(newState, 'report.write');
+  const reportId = 'report-1';
   const structuredReport = buildStructuredReport({
     state: newState,
     inputArtifactIds: reportInputs,
-    roleId: "综合",
+    roleId: '综合',
   });
   const { updatedState, committed } = commitArtifact(
     newState,
-    createRawArtifact(
-      reportId,
-      "report.write",
-      "综合",
-      "report",
-      structuredReport.content
-    ),
+    createRawArtifact(reportId, 'report.write', '综合', 'report', structuredReport.content),
     reportRunId,
     false,
     reportInputs,
@@ -328,9 +281,9 @@ export function buildClearStateWithPreview(sessionId: string): {
   const state = commitTrusted(
     built.state,
     previewId,
-    "ux.preview",
-    "工程",
-    "preview",
+    'ux.preview',
+    '工程',
+    'preview',
     `${sessionId}-pv0`
   );
   return { ...built, state, previewId };
@@ -341,12 +294,10 @@ export function recycleSignature(state: V5SessionState): string {
   return JSON.stringify({
     staleArtifactIds: [...(state.staleArtifactIds || [])].sort(),
     goal: state.goal,
-    graphNodes: (state.graph?.nodes || []).map(
-      (n: { id?: string; status?: string }) => ({
-        id: n.id,
-        status: n.status,
-      })
-    ),
+    graphNodes: (state.graph?.nodes || []).map((n: { id?: string; status?: string }) => ({
+      id: n.id,
+      status: n.status,
+    })),
     projectionDirtyNodeIds: [...(state.projectionDirtyNodeIds || [])].sort(),
   });
 }
@@ -366,7 +317,6 @@ export function trustedArtifacts(state: V5SessionState): Artifact[] {
   const stales = new Set(state.staleArtifactIds || []);
   return (state.artifacts || []).filter(
     (a: any) =>
-      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
-      !stales.has(a.id)
+      (a.trustLevel === 'gated_pass' || a.trustLevel === 'audited') && !stales.has(a.id)
   );
 }

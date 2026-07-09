@@ -334,8 +334,7 @@ describe("tasks-store autopilot summary projection", () => {
       expect.arrayContaining([
         expect.objectContaining({
           item: "Choose whether to continue with the external write.",
-          impact:
-            "Mission progress remains paused until this input is resolved.",
+          impact: "Mission progress remains paused until this input is resolved.",
           blocking: true,
         }),
       ])
@@ -402,9 +401,9 @@ describe("tasks-store autopilot summary projection", () => {
         "waiting-mission:executor",
       ])
     );
-    expect(
-      autopilotSummary?.execution.availableActions.map(action => action.type)
-    ).toContain("resume");
+    expect(autopilotSummary?.execution.availableActions.map(action => action.type)).toContain(
+      "resume"
+    );
     expect(autopilotSummary?.evidence.timeline.length).toBeGreaterThan(0);
     expect(autopilotSummary?.takeover.options).toEqual([
       {
@@ -511,9 +510,7 @@ describe("tasks-store autopilot summary projection", () => {
 
     mockListPlanets.mockResolvedValue({
       ok: true,
-      planets: [
-        makePlanet(mission.id, { progress: 64, currentStageKey: "plan" }),
-      ],
+      planets: [makePlanet(mission.id, { progress: 64, currentStageKey: "plan" })],
       edges: [],
     });
     mockListMissions.mockResolvedValue({ ok: true, tasks: [mission] });
@@ -562,9 +559,7 @@ describe("tasks-store autopilot summary projection", () => {
   });
 
   it("preserves explicit user-driven route replans without collapsing them into runtime semantics", async () => {
-    const mission = makeMission(
-      "user-replanned-route-mission"
-    ) as MissionRecord & {
+    const mission = makeMission("user-replanned-route-mission") as MissionRecord & {
       autopilotSummary?: unknown;
     };
 
@@ -741,8 +736,7 @@ describe("tasks-store autopilot summary projection", () => {
           mainlineSteps: [],
           pendingSteps: [],
           parallelBranchCount: 0,
-          replanChangeSummary:
-            "Choose the safer route before external publish.",
+          replanChangeSummary: "Choose the safer route before external publish.",
           selectedRouteId: "workflow-user-replanned-route-mission:safe",
           routeSelectionStatus: "replanned",
         },
@@ -1127,9 +1121,7 @@ describe("tasks-store autopilot summary projection", () => {
       expect(autopilotSummary?.route.selectedRouteId).toBe(
         `route-${missionId}:deep`
       );
-      expect(autopilotSummary?.route.selected?.id).toBe(
-        `route-${missionId}:deep`
-      );
+      expect(autopilotSummary?.route.selected?.id).toBe(`route-${missionId}:deep`);
       expect(autopilotSummary?.route.selectedRoute?.id).toBe(
         `route-${missionId}:deep`
       );
@@ -1148,9 +1140,7 @@ describe("tasks-store autopilot summary projection", () => {
       expect(autopilotSummary?.fleet.roles.map(role => role.id)).toContain(
         `${missionId}:planner`
       );
-      expect(autopilotSummary?.execution.availableActions[0]?.type).toBe(
-        "replan"
-      );
+      expect(autopilotSummary?.execution.availableActions[0]?.type).toBe("replan");
       expect(autopilotSummary?.evidence.correlation).toMatchObject({
         missionId,
         workflowId: `server-workflow-${missionId}`,
@@ -1417,9 +1407,7 @@ describe("tasks-store autopilot summary projection", () => {
   });
 
   it("promotes structured destination missing-info details into the normalized summary list", async () => {
-    const mission = makeMission(
-      "structured-destination-missing-info-only"
-    ) as MissionRecord & {
+    const mission = makeMission("structured-destination-missing-info-only") as MissionRecord & {
       autopilotSummary?: unknown;
     };
 
@@ -1445,8 +1433,7 @@ describe("tasks-store autopilot summary projection", () => {
         missingInfoDetails: [
           {
             item: "Confirm the target workspace.",
-            impact:
-              "Execution remains blocked until the workspace is confirmed.",
+            impact: "Execution remains blocked until the workspace is confirmed.",
             blocking: true,
             clarification: "Which workspace should the route continue in?",
           },
@@ -1515,8 +1502,7 @@ describe("tasks-store autopilot summary projection", () => {
     const useTasksStore = await importFreshStore();
     await useTasksStore.getState().refresh();
 
-    const autopilotSummary =
-      useTasksStore.getState().tasks[0]?.autopilotSummary;
+    const autopilotSummary = useTasksStore.getState().tasks[0]?.autopilotSummary;
 
     expect(autopilotSummary?.destination.confidence).toMatchObject({
       level: "medium",
@@ -1546,9 +1532,7 @@ describe("tasks-store autopilot summary projection", () => {
   });
 
   it("normalizes destination field aliases and fallback detail shapes", async () => {
-    const mission = makeMission(
-      "destination-field-alias-fallbacks"
-    ) as MissionRecord & {
+    const mission = makeMission("destination-field-alias-fallbacks") as MissionRecord & {
       autopilotSummary?: unknown;
     };
 
@@ -1568,8 +1552,7 @@ describe("tasks-store autopilot summary projection", () => {
         clarification_details: [
           {
             question: "Confirm the target workspace.",
-            impact_summary:
-              "Execution remains paused without workspace authority.",
+            impact_summary: "Execution remains paused without workspace authority.",
             blocking: true,
             suggested_clarification:
               "Which workspace has approval authority for this release?",
@@ -1644,8 +1627,7 @@ describe("tasks-store autopilot summary projection", () => {
     const useTasksStore = await importFreshStore();
     await useTasksStore.getState().refresh();
 
-    const autopilotSummary =
-      useTasksStore.getState().tasks[0]?.autopilotSummary;
+    const autopilotSummary = useTasksStore.getState().tasks[0]?.autopilotSummary;
 
     expect(autopilotSummary?.destination).toMatchObject({
       auxiliaryTaskTypes: ["coordination"],
@@ -1701,9 +1683,7 @@ describe("tasks-store autopilot summary projection", () => {
   });
 
   it("preserves destination lock state across projected task summary and detail", async () => {
-    const mission = makeMission(
-      "destination-lock-state-projection"
-    ) as MissionRecord & {
+    const mission = makeMission("destination-lock-state-projection") as MissionRecord & {
       autopilotSummary?: unknown;
     };
 
@@ -1786,8 +1766,7 @@ describe("tasks-store autopilot summary projection", () => {
     await useTasksStore.getState().refresh();
 
     const summary = useTasksStore.getState().tasks[0]?.autopilotSummary;
-    const detail =
-      useTasksStore.getState().detailsById[mission.id].autopilotSummary;
+    const detail = useTasksStore.getState().detailsById[mission.id].autopilotSummary;
 
     expect(summary?.destination).toMatchObject({
       lockState: "locked",
@@ -1907,7 +1886,9 @@ describe("tasks-store autopilot summary projection", () => {
         id: "planet-only",
         goal: "Planet planet-only",
         constraints: ["Mission kind: analysis"],
-        successCriteria: ["Mission summary is available"],
+        successCriteria: [
+          "Mission summary is available",
+        ],
         deliverables: ["Mission result package"],
         missingInfo: ["Clarify the target audience."],
       },
@@ -1936,9 +1917,7 @@ describe("tasks-store autopilot summary projection", () => {
   });
 
   it("backfills route selection changedReason from route changeReason and replan reason", async () => {
-    const mission = makeMission(
-      "route-change-reason-fallback"
-    ) as MissionRecord & {
+    const mission = makeMission("route-change-reason-fallback") as MissionRecord & {
       autopilotSummary?: unknown;
     };
 
@@ -2035,8 +2014,7 @@ describe("tasks-store autopilot summary projection", () => {
     const useTasksStore = await importFreshStore();
     await useTasksStore.getState().refresh();
 
-    const autopilotSummary =
-      useTasksStore.getState().tasks[0]?.autopilotSummary;
+    const autopilotSummary = useTasksStore.getState().tasks[0]?.autopilotSummary;
 
     expect(autopilotSummary?.route.changeReason).toBe(
       "Runtime selected a safer route after validation drift."
@@ -2051,9 +2029,7 @@ describe("tasks-store autopilot summary projection", () => {
   });
 
   it("preserves destination clarification details while promoting structured missing-info entries", async () => {
-    const mission = makeMission(
-      "destination-clarification-preserved"
-    ) as MissionRecord & {
+    const mission = makeMission("destination-clarification-preserved") as MissionRecord & {
       autopilotSummary?: unknown;
     };
 
@@ -2073,11 +2049,9 @@ describe("tasks-store autopilot summary projection", () => {
         missingInfoDetails: [
           {
             item: "Confirm the external approval workspace.",
-            impact:
-              "Execution cannot continue until the correct workspace is confirmed.",
+            impact: "Execution cannot continue until the correct workspace is confirmed.",
             blocking: true,
-            clarification:
-              "Which workspace has approval authority for this release?",
+            clarification: "Which workspace has approval authority for this release?",
           },
         ],
       },
@@ -2144,17 +2118,14 @@ describe("tasks-store autopilot summary projection", () => {
     const useTasksStore = await importFreshStore();
     await useTasksStore.getState().refresh();
 
-    const autopilotSummary =
-      useTasksStore.getState().tasks[0]?.autopilotSummary;
+    const autopilotSummary = useTasksStore.getState().tasks[0]?.autopilotSummary;
 
     expect(autopilotSummary?.destination.missingInfoDetails).toEqual([
       {
         item: "Confirm the external approval workspace.",
-        impact:
-          "Execution cannot continue until the correct workspace is confirmed.",
+        impact: "Execution cannot continue until the correct workspace is confirmed.",
         blocking: true,
-        clarification:
-          "Which workspace has approval authority for this release?",
+        clarification: "Which workspace has approval authority for this release?",
       },
     ]);
     expect(autopilotSummary?.destination.suggestedClarifications).toEqual([
@@ -2163,9 +2134,7 @@ describe("tasks-store autopilot summary projection", () => {
   });
 
   it("infers user-driven replan semantics from partial route fields", async () => {
-    const mission = makeMission(
-      "partial-user-replan-fallback"
-    ) as MissionRecord & {
+    const mission = makeMission("partial-user-replan-fallback") as MissionRecord & {
       autopilotSummary?: unknown;
     };
 
@@ -2175,8 +2144,7 @@ describe("tasks-store autopilot summary projection", () => {
       destination: {
         id: "destination-partial-user-replan-fallback",
         goal: "Preserve user route replan semantics",
-        request:
-          "Infer user-triggered replan details from partial route fields.",
+        request: "Infer user-triggered replan details from partial route fields.",
         taskType: "coordination",
         auxiliaryTaskTypes: [],
         constraints: [],
@@ -2286,8 +2254,7 @@ describe("tasks-store autopilot summary projection", () => {
           mainlineSteps: [],
           pendingSteps: [],
           parallelBranchCount: 0,
-          replanChangeSummary:
-            "User switched to the safer route before publish.",
+          replanChangeSummary: "User switched to the safer route before publish.",
           selectedRouteId: "workflow-partial-user-replan-fallback:safe",
           routeSelectionStatus: "replanned",
         },
@@ -2310,8 +2277,7 @@ describe("tasks-store autopilot summary projection", () => {
     const useTasksStore = await importFreshStore();
     await useTasksStore.getState().refresh();
 
-    const autopilotSummary =
-      useTasksStore.getState().tasks[0]?.autopilotSummary;
+    const autopilotSummary = useTasksStore.getState().tasks[0]?.autopilotSummary;
 
     expect(autopilotSummary?.route.selection).toMatchObject({
       status: "replanned",
@@ -2329,9 +2295,7 @@ describe("tasks-store autopilot summary projection", () => {
   });
 
   it("backfills route state from projected correlation and explanation when route fields are partial", async () => {
-    const mission = makeMission(
-      "route-state-correlation-fallback"
-    ) as MissionRecord & {
+    const mission = makeMission("route-state-correlation-fallback") as MissionRecord & {
       autopilotSummary?: unknown;
     };
 
@@ -2511,8 +2475,7 @@ describe("tasks-store autopilot summary projection", () => {
     const useTasksStore = await importFreshStore();
     await useTasksStore.getState().refresh();
 
-    const autopilotSummary =
-      useTasksStore.getState().tasks[0]?.autopilotSummary;
+    const autopilotSummary = useTasksStore.getState().tasks[0]?.autopilotSummary;
 
     expect(autopilotSummary?.route).toMatchObject({
       recommendedRouteId: "wf-route-state-correlation-fallback:fast",
@@ -2535,9 +2498,7 @@ describe("tasks-store autopilot summary projection", () => {
       selectedRouteId: "wf-route-state-correlation-fallback:deep",
       correlationTimelineId: `${mission.id}:timeline`,
     });
-    expect(
-      autopilotSummary?.explanation.recommendationDetails?.[0]
-    ).toMatchObject({
+    expect(autopilotSummary?.explanation.recommendationDetails?.[0]).toMatchObject({
       routeSelectionStatus: "user-selected",
       correlationTimelineId: `${mission.id}:timeline`,
     });
@@ -2548,9 +2509,7 @@ describe("tasks-store autopilot summary projection", () => {
   });
 
   it("normalizes evidence correlation audit and lineage ids from single-value aliases", async () => {
-    const mission = makeMission(
-      "evidence-correlation-aliases"
-    ) as MissionRecord & {
+    const mission = makeMission("evidence-correlation-aliases") as MissionRecord & {
       autopilotSummary?: unknown;
     };
 
@@ -2631,8 +2590,7 @@ describe("tasks-store autopilot summary projection", () => {
     const useTasksStore = await importFreshStore();
     await useTasksStore.getState().refresh();
 
-    const autopilotSummary =
-      useTasksStore.getState().tasks[0]?.autopilotSummary;
+    const autopilotSummary = useTasksStore.getState().tasks[0]?.autopilotSummary;
 
     expect(autopilotSummary?.evidence.correlation.auditEventIds).toEqual([
       `audit-${mission.id}:1`,
@@ -2643,9 +2601,7 @@ describe("tasks-store autopilot summary projection", () => {
   });
 
   it("deduplicates projected destination confidence signals while preserving reason fallback", async () => {
-    const mission = makeMission(
-      "destination-confidence-signal-fallback"
-    ) as MissionRecord & {
+    const mission = makeMission("destination-confidence-signal-fallback") as MissionRecord & {
       autopilotSummary?: unknown;
     };
 
@@ -2729,8 +2685,7 @@ describe("tasks-store autopilot summary projection", () => {
     const useTasksStore = await importFreshStore();
     await useTasksStore.getState().refresh();
 
-    const autopilotSummary =
-      useTasksStore.getState().tasks[0]?.autopilotSummary;
+    const autopilotSummary = useTasksStore.getState().tasks[0]?.autopilotSummary;
 
     expect(autopilotSummary?.destination.confidence).toMatchObject({
       level: "high",

@@ -83,11 +83,7 @@ export const ExpandedConsolePanel: FC<ExpandedConsolePanelProps> = ({
   // 此时仍走默认动画但 duration 极短，不阻塞 SSR markup（Req 9.4）。
   const prefersReducedMotion = useReducedMotion();
 
-  const closeAriaLabel = t(
-    locale,
-    "折叠运行时控制台",
-    "Collapse runtime console"
-  );
+  const closeAriaLabel = t(locale, "折叠运行时控制台", "Collapse runtime console");
 
   return (
     <motion.section
@@ -97,7 +93,7 @@ export const ExpandedConsolePanel: FC<ExpandedConsolePanelProps> = ({
       aria-label={t(
         locale,
         "自动驾驶运行时控制台（展开）",
-        "Autopilot runtime console (expanded)"
+        "Autopilot runtime console (expanded)",
       )}
       // 进入动画：从下方 8px 滑入 + fade。退出动画交给消费者卸载即可，
       // 不在本层挂 AnimatePresence，避免跨组件状态复杂化。
@@ -115,7 +111,7 @@ export const ExpandedConsolePanel: FC<ExpandedConsolePanelProps> = ({
         "shadow-[0_24px_64px_rgba(2,6,23,0.45)] backdrop-blur-xl",
         // 内部 flex column：header 固定高度，body 占满剩余高度并允许滚动。
         "flex flex-col",
-        className
+        className,
       )}
     >
       {/* Header：与 AutopilotConsolePanel 内部 chip 行视觉对齐，但本组件只
@@ -123,7 +119,7 @@ export const ExpandedConsolePanel: FC<ExpandedConsolePanelProps> = ({
       <header
         className={cn(
           "flex shrink-0 items-center justify-between gap-3",
-          "border-b border-white/[0.06] px-3 py-2"
+          "border-b border-white/[0.06] px-3 py-2",
         )}
       >
         <span className="text-[11px] font-black uppercase tracking-normal text-white/65">
@@ -137,7 +133,7 @@ export const ExpandedConsolePanel: FC<ExpandedConsolePanelProps> = ({
           className={cn(
             "inline-flex size-7 items-center justify-center rounded-md",
             "text-white/60 transition-colors hover:bg-white/10 hover:text-white",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60",
           )}
         >
           <X className="size-4" aria-hidden="true" />

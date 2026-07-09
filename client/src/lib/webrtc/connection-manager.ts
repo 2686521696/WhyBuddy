@@ -8,14 +8,14 @@
  * Uses the native RTCPeerConnection API — no third-party WebRTC libraries.
  */
 
-import { SignalingClient } from "./signaling-client";
+import { SignalingClient } from './signaling-client';
 import type {
   ConnectionManagerEvents,
   ConnectionState,
   QualityLevel,
   SignalingMessage,
   StreamError,
-} from "./types";
+} from './types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -32,7 +32,7 @@ const STREAM_TIMEOUT_MS = 10_000;
 
 /** Default ICE servers used when the signaling proxy does not provide config. */
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
-  { urls: "stun:stun.l.google.com:19302" },
+  { urls: 'stun:stun.l.google.com:19302' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -51,14 +51,14 @@ const QUALITY_CONSTRAINTS: Record<QualityLevel, { maxBitrate: number }> = {
 
 export class WebRTCConnectionManager {
   // -- Public observable state ------------------------------------------------
-  private _connectionState: ConnectionState = "disconnected";
-  private _quality: QualityLevel = "high";
+  private _connectionState: ConnectionState = 'disconnected';
+  private _quality: QualityLevel = 'high';
 
   // -- Internal resources -----------------------------------------------------
   private peerConnection: RTCPeerConnection | null = null;
   private signalingClient: SignalingClient | null = null;
   private remoteStream: MediaStream | null = null;
-  private signalingUrl = "";
+  private signalingUrl = '';
   private iceConfig: RTCConfiguration = { iceServers: DEFAULT_ICE_SERVERS };
 
   // -- Reconnection state -----------------------------------------------------
@@ -107,7 +107,7 @@ export class WebRTCConnectionManager {
     this.intentionalDisconnect = true;
     this.cancelReconnect();
     this.teardown();
-    this.setConnectionState("disconnected");
+    this.setConnectionState('disconnected');
   }
 
   /**
@@ -124,7 +124,7 @@ export class WebRTCConnectionManager {
   /** Retrieve the latest RTCStatsReport from the peer connection. */
   async getStats(): Promise<RTCStatsReport> {
     if (!this.peerConnection) {
-      throw new Error("No active peer connection");
+      throw new Error('No active peer connection');
     }
     return this.peerConnection.getStats();
   }
@@ -151,12 +151,12 @@ export class WebRTCConnectionManager {
    *   5. Wait for remote MediaStream
    */
   private async establishConnection(): Promise<MediaStream> {
-    this.setConnectionState("connecting");
+    this.setConnectionState('connecting');
 
     try {
       // 1. Signaling channel
       this.signalingClient = new SignalingClient({
-        onMessage: msg => this.handleSignalingMessage(msg),
+        onMessage: (msg) => this.handleSignalingMessage(msg),
         onClose: () => this.handleSignalingClose(),
         onError: () => {
           // Signaling errors are surfaced through the close handler.
@@ -169,22 +169,22 @@ export class WebRTCConnectionManager {
       this.createPeerConnection();
 
       // 3. Add a transceiver so the remote side knows we want video.
-      this.peerConnection!.addTransceiver("video", { direction: "recvonly" });
-      this.peerConnection!.addTransceiver("audio", { direction: "recvonly" });
+      this.peerConnection!.addTransceiver('video', { direction: 'recvonly' });
+      this.peerConnection!.addTransceiver('audio', { direction: 'recvonly' });
 
       // 4. Create and send SDP offer
       const offer = await this.peerConnection!.createOffer();
       await this.peerConnection!.setLocalDescription(offer);
 
       this.signalingClient.send({
-        type: "offer",
+        type: 'offer',
         sdp: offer.sdp!,
       });
 
       // 5. Wait for the remote stream
       const stream = await this.waitForStream();
       this.remoteStream = stream;
-      this.setConnectionState("connected");
+      this.setConnectionState('connected');
       this.reconnectAttempts = 0;
       this.events.onStream?.(stream);
       return stream;
@@ -197,7 +197,7 @@ export class WebRTCConnectionManager {
         return this.scheduleReconnect();
       }
 
-      this.setConnectionState("failed");
+      this.setConnectionState('failed');
       throw err;
     }
   }
@@ -210,17 +210,17 @@ export class WebRTCConnectionManager {
     this.peerConnection = new RTCPeerConnection(this.iceConfig);
 
     // ICE candidate exchange
-    this.peerConnection.onicecandidate = event => {
+    this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         this.signalingClient?.send({
-          type: "iceCandidate",
+          type: 'iceCandidate',
           candidate: event.candidate.toJSON(),
         });
       }
     };
 
     // Track arrival → build remote stream
-    this.peerConnection.ontrack = event => {
+    this.peerConnection.ontrack = (event) => {
       if (!this.remoteStream) {
         this.remoteStream = new MediaStream();
       }
@@ -243,13 +243,13 @@ export class WebRTCConnectionManager {
 
   private handleSignalingMessage(message: SignalingMessage): void {
     switch (message.type) {
-      case "answer":
+      case 'answer':
         this.handleAnswer(message.sdp);
         break;
-      case "iceCandidate":
+      case 'iceCandidate':
         this.handleRemoteIceCandidate(message.candidate);
         break;
-      case "config":
+      case 'config':
         if (message.peerConnectionOptions) {
           this.iceConfig = message.peerConnectionOptions;
         }
@@ -264,7 +264,7 @@ export class WebRTCConnectionManager {
     if (!this.peerConnection) return;
     try {
       await this.peerConnection.setRemoteDescription({
-        type: "answer",
+        type: 'answer',
         sdp,
       });
     } catch {
@@ -286,10 +286,7 @@ export class WebRTCConnectionManager {
   private handleSignalingClose(): void {
     if (this.intentionalDisconnect) return;
     // Signaling channel dropped — treat as disconnect.
-    if (
-      this._connectionState === "connected" ||
-      this._connectionState === "connecting"
-    ) {
+    if (this._connectionState === 'connected' || this._connectionState === 'connecting') {
       this.handleUnexpectedDisconnect();
     }
   }
@@ -301,16 +298,16 @@ export class WebRTCConnectionManager {
   private handlePeerConnectionStateChange(): void {
     const state = this.peerConnection?.connectionState;
     switch (state) {
-      case "connected":
-        this.setConnectionState("connected");
+      case 'connected':
+        this.setConnectionState('connected');
         break;
-      case "disconnected":
+      case 'disconnected':
         // Brief disconnects are common; wait for ICE to recover.
         break;
-      case "failed":
+      case 'failed':
         this.handleUnexpectedDisconnect();
         break;
-      case "closed":
+      case 'closed':
         if (!this.intentionalDisconnect) {
           this.handleUnexpectedDisconnect();
         }
@@ -320,12 +317,12 @@ export class WebRTCConnectionManager {
 
   private handleIceConnectionStateChange(): void {
     const state = this.peerConnection?.iceConnectionState;
-    if (state === "failed" || state === "disconnected") {
+    if (state === 'failed' || state === 'disconnected') {
       // Give the peer connection a moment to recover before treating as lost.
       setTimeout(() => {
         if (
-          this.peerConnection?.iceConnectionState === "failed" ||
-          this.peerConnection?.iceConnectionState === "disconnected"
+          this.peerConnection?.iceConnectionState === 'failed' ||
+          this.peerConnection?.iceConnectionState === 'disconnected'
         ) {
           this.handleUnexpectedDisconnect();
         }
@@ -344,9 +341,9 @@ export class WebRTCConnectionManager {
         // Reconnection failures are already reported via onError events.
       });
     } else {
-      this.setConnectionState("failed");
+      this.setConnectionState('failed');
       this.events.onError?.({
-        code: "CONNECTION_FAILED",
+        code: 'CONNECTION_FAILED',
         message: `Reconnection failed after ${MAX_RECONNECT_ATTEMPTS} attempts`,
         retryable: false,
       });
@@ -360,22 +357,21 @@ export class WebRTCConnectionManager {
   private scheduleReconnect(): Promise<MediaStream> {
     return new Promise<MediaStream>((resolve, reject) => {
       if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        this.setConnectionState("failed");
+        this.setConnectionState('failed');
         this.events.onError?.({
-          code: "CONNECTION_FAILED",
+          code: 'CONNECTION_FAILED',
           message: `Reconnection failed after ${MAX_RECONNECT_ATTEMPTS} attempts`,
           retryable: false,
         });
-        reject(new Error("Max reconnection attempts exceeded"));
+        reject(new Error('Max reconnection attempts exceeded'));
         return;
       }
 
       this.isReconnecting = true;
       this.reconnectAttempts++;
-      this.setConnectionState("connecting");
+      this.setConnectionState('connecting');
 
-      const delay =
-        BASE_RECONNECT_DELAY_MS * Math.pow(2, this.reconnectAttempts - 1);
+      const delay = BASE_RECONNECT_DELAY_MS * Math.pow(2, this.reconnectAttempts - 1);
 
       this.reconnectTimer = setTimeout(async () => {
         try {
@@ -409,7 +405,7 @@ export class WebRTCConnectionManager {
     const preset = QUALITY_CONSTRAINTS[this._quality];
 
     for (const sender of senders) {
-      if (sender.track?.kind !== "video") continue;
+      if (sender.track?.kind !== 'video') continue;
 
       const params = sender.getParameters();
       if (!params.encodings || params.encodings.length === 0) {
@@ -437,13 +433,13 @@ export class WebRTCConnectionManager {
       }
 
       const timeout = setTimeout(() => {
-        reject(new Error("Timed out waiting for remote media stream"));
+        reject(new Error('Timed out waiting for remote media stream'));
       }, STREAM_TIMEOUT_MS);
 
       // Listen for the first track event.
       const handler = (event: RTCTrackEvent) => {
         clearTimeout(timeout);
-        this.peerConnection?.removeEventListener("track", handler);
+        this.peerConnection?.removeEventListener('track', handler);
 
         if (!this.remoteStream) {
           this.remoteStream = new MediaStream();
@@ -452,7 +448,7 @@ export class WebRTCConnectionManager {
         resolve(this.remoteStream);
       };
 
-      this.peerConnection?.addEventListener("track", handler);
+      this.peerConnection?.addEventListener('track', handler);
     });
   }
 
@@ -490,14 +486,14 @@ export class WebRTCConnectionManager {
 
   private toStreamError(err: unknown): StreamError {
     const message =
-      err instanceof Error ? err.message : "Unknown connection error";
+      err instanceof Error ? err.message : 'Unknown connection error';
 
-    if (message.includes("Signaling")) {
-      return { code: "SIGNALING_ERROR", message, retryable: true };
+    if (message.includes('Signaling')) {
+      return { code: 'SIGNALING_ERROR', message, retryable: true };
     }
-    if (message.includes("Timed out")) {
-      return { code: "TIMEOUT", message, retryable: true };
+    if (message.includes('Timed out')) {
+      return { code: 'TIMEOUT', message, retryable: true };
     }
-    return { code: "CONNECTION_FAILED", message, retryable: true };
+    return { code: 'CONNECTION_FAILED', message, retryable: true };
   }
 }

@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../Home", () => ({
   __esModule: true,
   default: () => (
-    <div data-testid="home-mock" data-region="home-mock-primary-content" />
+    <div
+      data-testid="home-mock"
+      data-region="home-mock-primary-content"
+    />
   ),
 }));
 

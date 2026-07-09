@@ -35,7 +35,10 @@ import type { BlueprintAgentCrewSnapshot } from "@/lib/blueprint-api";
 
 import { AutopilotRightRail } from "../AutopilotRightRail";
 import { resolveRailSubStage } from "../resolve-rail-sub-stage";
-import { RAIL_SUB_STAGE_ORDER, type AutopilotRailSubStage } from "../types";
+import {
+  RAIL_SUB_STAGE_ORDER,
+  type AutopilotRailSubStage,
+} from "../types";
 
 // ---------------------------------------------------------------------------
 // Arbitraries
@@ -58,7 +61,7 @@ const arbJobStage: fc.Arbitrary<BlueprintGenerationStage> = fc.constantFrom(
   "prompt_packaging",
   "runtime_capability",
   "engineering_handoff",
-  "engineering_landing"
+  "engineering_landing",
 ) as fc.Arbitrary<BlueprintGenerationStage>;
 
 const arbJobOrNull: fc.Arbitrary<BlueprintGenerationJob | null> = fc.oneof(
@@ -68,19 +71,18 @@ const arbJobOrNull: fc.Arbitrary<BlueprintGenerationJob | null> = fc.oneof(
       id: fc.string({ minLength: 1, maxLength: 12 }),
       stage: arbJobStage,
     })
-    .map(shape => shape as unknown as BlueprintGenerationJob)
+    .map((shape) => shape as unknown as BlueprintGenerationJob),
 );
 
-const arbSelectionOrNull: fc.Arbitrary<BlueprintRouteSelection | null> =
-  fc.oneof(
-    fc.constant(null),
-    fc
-      .record({
-        id: fc.string({ minLength: 1, maxLength: 12 }),
-        routeTitle: fc.string({ minLength: 0, maxLength: 24 }),
-      })
-      .map(shape => shape as unknown as BlueprintRouteSelection)
-  );
+const arbSelectionOrNull: fc.Arbitrary<BlueprintRouteSelection | null> = fc.oneof(
+  fc.constant(null),
+  fc
+    .record({
+      id: fc.string({ minLength: 1, maxLength: 12 }),
+      routeTitle: fc.string({ minLength: 0, maxLength: 24 }),
+    })
+    .map((shape) => shape as unknown as BlueprintRouteSelection),
+);
 
 const arbSpecTreeOrNull: fc.Arbitrary<BlueprintSpecTree | null> = fc.oneof(
   fc.constant(null),
@@ -90,18 +92,17 @@ const arbSpecTreeOrNull: fc.Arbitrary<BlueprintSpecTree | null> = fc.oneof(
       nodes: fc.constant([]),
       documents: fc.constant([]),
     })
-    .map(shape => shape as unknown as BlueprintSpecTree)
+    .map((shape) => shape as unknown as BlueprintSpecTree),
 );
 
-const arbAgentCrewOrNull: fc.Arbitrary<BlueprintAgentCrewSnapshot | null> =
-  fc.oneof(
-    fc.constant(null),
-    fc
-      .record({
-        agents: fc.constant([]),
-      })
-      .map(shape => shape as unknown as BlueprintAgentCrewSnapshot)
-  );
+const arbAgentCrewOrNull: fc.Arbitrary<BlueprintAgentCrewSnapshot | null> = fc.oneof(
+  fc.constant(null),
+  fc
+    .record({
+      agents: fc.constant([]),
+    })
+    .map((shape) => shape as unknown as BlueprintAgentCrewSnapshot),
+);
 
 // ---------------------------------------------------------------------------
 // Test
@@ -116,14 +117,13 @@ describe("AutopilotRightRail fabric dispatch (Spec 3 PBT)", () => {
         arbSpecTreeOrNull,
         arbAgentCrewOrNull,
         (job, selection, specTree, agentCrew) => {
-          const expected: AutopilotRailSubStage | undefined =
-            resolveRailSubStage({
-              currentStage: "fabric",
-              job,
-              selection,
-              specTree,
-              agentCrew,
-            });
+          const expected: AutopilotRailSubStage | undefined = resolveRailSubStage({
+            currentStage: "fabric",
+            job,
+            selection,
+            specTree,
+            agentCrew,
+          });
 
           // Under currentStage === "fabric" the resolver is total and always returns a
           // member of RAIL_SUB_STAGE_ORDER. Defend this contract inside the property so
@@ -154,7 +154,9 @@ describe("AutopilotRightRail fabric dispatch (Spec 3 PBT)", () => {
           expect(markup).toContain('data-testid="autopilot-right-rail"');
           expect(markup).toContain('data-autopilot-stage="fabric"');
           expect(markup).toContain(`data-autopilot-sub-stage="${expected!}"`);
-          expect(markup).toContain(`data-sub-stage-placeholder="${expected!}"`);
+          expect(markup).toContain(
+            `data-sub-stage-placeholder="${expected!}"`
+          );
           // aria-current="step" is attached exactly to the active sub-stage block.
           expect(markup).toMatch(
             new RegExp(

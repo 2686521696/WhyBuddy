@@ -11,13 +11,7 @@
  * ?im=dev still opens the split engineering cockpit with the flow canvas.
  */
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AssistantRuntimeProvider,
   ThreadPrimitive,
@@ -39,9 +33,7 @@ import { LlmLiveOutput } from "./sliderule/LlmLiveOutput";
 function llmDraftTitle(label: string | null | undefined): string {
   if (!label || label === "five-system-model") return "五系统模型起草中";
   if (label === "closure.summary") return "正在整理推演总结";
-  const entry = (
-    CAPABILITY_PROCESS_LABELS as Record<string, { liveLabel?: unknown }>
-  )[label];
+  const entry = (CAPABILITY_PROCESS_LABELS as Record<string, { liveLabel?: unknown }>)[label];
   const live =
     typeof entry?.liveLabel === "function"
       ? (entry.liveLabel as (ctx: object) => string)({})
@@ -67,10 +59,7 @@ import {
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
 import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
-import {
-  ClarificationCard,
-  type ClarificationItem,
-} from "./sliderule/ClarificationCard";
+import { ClarificationCard, type ClarificationItem } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
 import { deriveComposerHintChips } from "./sliderule/derive-composer-hints";
@@ -94,12 +83,7 @@ import {
   SLIDERULE_TERMINAL_NODE_ID,
   type ProjectionDensity,
 } from "./sliderule/sliderule-projection-constants";
-import {
-  fetchJsonSafe,
-  isPythonBackendFailure,
-  isDegradedApiError,
-  getLegacyFallbackReason,
-} from "@/lib/api-client";
+import { fetchJsonSafe, isPythonBackendFailure, isDegradedApiError, getLegacyFallbackReason } from "@/lib/api-client";
 import { deriveApplication, slideRule } from "@/lib/skills/slideRule";
 import { SlideRuleStudio } from "./sliderule/SlideRuleStudio";
 
@@ -120,9 +104,7 @@ function LiveActionIndicator({ liveAction }: { liveAction: LiveAction }) {
   return (
     <div
       className={
-        liveAction.external
-          ? autopilotTheme.liveActionExternal
-          : autopilotTheme.liveActionThink
+        liveAction.external ? autopilotTheme.liveActionExternal : autopilotTheme.liveActionThink
       }
     >
       {!liveAction.external && (
@@ -199,12 +181,9 @@ function TurnFootnote({
   );
 }
 
-function textFromStep(
-  step: UiTurn["steps"][number] | null | undefined
-): string {
+function textFromStep(step: UiTurn["steps"][number] | null | undefined): string {
   if (!step) return "";
-  if (step.kind === "narration" || step.kind === "step_narration")
-    return step.text;
+  if (step.kind === "narration" || step.kind === "step_narration") return step.text;
   if (step.kind === "chip") return step.label;
   if (step.kind === "capability_fail") return step.message;
   return "";
@@ -225,12 +204,9 @@ function assistantTextForTurn(
   if (publishClosure) {
     // 方案 B 优先：python 真 LLM 收口总结（结合推演全程上下文）；
     // 缺失（未配通道/上游失败）回落零 LLM 模板 A——总结永远有，但从不编造。
-    if (publishClosure.chatSummary?.trim())
-      return publishClosure.chatSummary.trim();
+    if (publishClosure.chatSummary?.trim()) return publishClosure.chatSummary.trim();
     const model = parseFiveSystemModelFromPerSkillEvidence(
-      publishClosure.perSkillEvidence as Parameters<
-        typeof parseFiveSystemModelFromPerSkillEvidence
-      >[0]
+      publishClosure.perSkillEvidence as Parameters<typeof parseFiveSystemModelFromPerSkillEvidence>[0]
     );
     return summarizeClosureForChat(model, {
       goalText: turn.user || goalText,
@@ -240,9 +216,7 @@ function assistantTextForTurn(
       versionPinsChecked: !!publishClosure.versionPinsChecked,
     });
   }
-  return turn.status === "streaming"
-    ? "正在整理推演结果..."
-    : "本轮已完成，但还没有生成可展示的回答。";
+  return turn.status === "streaming" ? "正在整理推演结果..." : "本轮已完成，但还没有生成可展示的回答。";
 }
 
 /**
@@ -262,9 +236,7 @@ function TurnPhaseTimeline({
   const streaming = turn.status === "streaming";
   const [expanded, setExpanded] = React.useState(false);
   // 手动展开的已完成阶段（运行中默认只展开当前阶段）
-  const [openPhases, setOpenPhases] = React.useState<Record<string, boolean>>(
-    {}
-  );
+  const [openPhases, setOpenPhases] = React.useState<Record<string, boolean>>({});
   const stepTexts = turn.steps.map(textFromStep).filter(Boolean);
   const phases = React.useMemo(
     () =>
@@ -293,30 +265,25 @@ function TurnPhaseTimeline({
       {!streaming && (
         <button
           type="button"
-          onClick={() => setExpanded(v => !v)}
+          onClick={() => setExpanded((v) => !v)}
           className="flex items-center gap-1 text-xs text-stone-400 transition-colors hover:text-stone-600"
           data-testid="sliderule-turn-steps-toggle"
         >
-          <span
-            className={`inline-block transition-transform ${expanded ? "rotate-90" : ""}`}
-          >
-            ›
-          </span>
+          <span className={`inline-block transition-transform ${expanded ? "rotate-90" : ""}`}>›</span>
           推演过程 · {phases.length} 阶段 · {totalSteps} 步
         </button>
       )}
       {showBody && (
         <div className="mt-1.5 space-y-1.5">
-          {phases.map(phase => {
+          {phases.map((phase) => {
             const running = phase.status === "running";
-            const open =
-              running || !!openPhases[phase.id] || (!streaming && expanded);
+            const open = running || !!openPhases[phase.id] || (!streaming && expanded);
             return (
               <div key={phase.id} data-testid={`sliderule-phase-${phase.id}`}>
                 <button
                   type="button"
                   onClick={() =>
-                    setOpenPhases(prev => ({ ...prev, [phase.id]: !open }))
+                    setOpenPhases((prev) => ({ ...prev, [phase.id]: !open }))
                   }
                   className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs transition-colors hover:bg-[#eef0f4] hover:text-stone-700"
                 >
@@ -325,16 +292,10 @@ function TurnPhaseTimeline({
                   ) : (
                     <span className="shrink-0 text-emerald-500">✓</span>
                   )}
-                  <span
-                    className={
-                      running ? "font-medium text-stone-700" : "text-stone-500"
-                    }
-                  >
+                  <span className={running ? "font-medium text-stone-700" : "text-stone-500"}>
                     {phase.title}
                   </span>
-                  <span className="text-[10px] text-stone-300">
-                    {phase.lines.length} 步
-                  </span>
+                  <span className="text-[10px] text-stone-300">{phase.lines.length} 步</span>
                   {/* 可展开暗示（用户反馈：完成阶段看不出能点开）——箭头随展开态旋转 */}
                   {!running && phase.lines.length > 0 && (
                     <span
@@ -346,16 +307,11 @@ function TurnPhaseTimeline({
                 </button>
                 {open && phase.lines.length > 0 && (
                   <div className="ml-1 mt-1 space-y-1 border-l border-[#e8eaee] pl-4">
-                    {(running ? phase.lines.slice(-4) : phase.lines).map(
-                      (t, i) => (
-                        <div
-                          key={i}
-                          className="text-xs leading-5 text-stone-400"
-                        >
-                          {t}
-                        </div>
-                      )
-                    )}
+                    {(running ? phase.lines.slice(-4) : phase.lines).map((t, i) => (
+                      <div key={i} className="text-xs leading-5 text-stone-400">
+                        {t}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -418,22 +374,14 @@ const ImSurfaceContext = React.createContext<{
   thinkingText: string;
   isRunning: boolean;
   onChallenge: (id: string) => void;
-}>({
-  llmDraft: "",
-  llmDraftLabel: null,
-  thinkingText: "",
-  isRunning: false,
-  onChallenge: () => {},
-});
+}>({ llmDraft: "", llmDraftLabel: null, thinkingText: "", isRunning: false, onChallenge: () => {} });
 
 const convertImMessage = (m: ImItem): ThreadMessageLike => ({
   id: m.id,
   role: m.role,
   // 文本部件只为 assistant-ui 的消息模型成立（复制/无障碍语义用真文本）；
   // 实际渲染由自定义组件对着原 turn 输出，不读部件。
-  content: [
-    { type: "text", text: m.role === "user" ? (m.turn.user ?? "") : "" },
-  ],
+  content: [{ type: "text", text: m.role === "user" ? m.turn.user ?? "" : "" }],
 });
 
 /** 从 assistant-ui 消息取回绑定的原始 turn（ExternalStore 转换时自动绑定）。 */
@@ -459,9 +407,7 @@ function ImUserMessage() {
         type="button"
         data-testid="sliderule-edit-rerun"
         onClick={() => {
-          window.dispatchEvent(
-            new CustomEvent("sliderule:fill-prompt", { detail: { text } })
-          );
+          window.dispatchEvent(new CustomEvent("sliderule:fill-prompt", { detail: { text } }));
         }}
         className="mt-1 rounded-full px-2 py-0.5 text-[11px] text-stone-400 opacity-0 transition-opacity hover:bg-[#e9edf2] hover:text-stone-600 focus:opacity-100 group-hover:opacity-100"
       >
@@ -476,14 +422,7 @@ function ImAssistantMessage() {
   const ctx = React.useContext(ImSurfaceContext);
   if (!item) return null;
   const { turn } = item;
-  const {
-    publishClosure,
-    llmDraft,
-    llmDraftLabel,
-    goalText,
-    thinkingText,
-    onChallenge,
-  } = ctx;
+  const { publishClosure, llmDraft, llmDraftLabel, goalText, thinkingText, onChallenge } = ctx;
   const answer = assistantTextForTurn(turn, publishClosure, goalText);
   return (
     <div className="mb-6 max-w-[640px]">
@@ -492,20 +431,12 @@ function ImAssistantMessage() {
           <div className="flex items-center gap-2 text-sm text-stone-500">
             <span className="inline-flex gap-0.5">
               {Array.from({ length: 3 }).map((_, i) => (
-                <span
-                  key={i}
-                  className="h-1.5 w-1.5 animate-pulse rounded-full bg-stone-300"
-                  style={{ animationDelay: `${i * 120}ms` }}
-                />
+                <span key={i} className="h-1.5 w-1.5 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: `${i * 120}ms` }} />
               ))}
             </span>
             {thinkingText}
           </div>
-          <TurnPhaseTimeline
-            turn={turn}
-            llmDraft={llmDraft}
-            publishClosure={publishClosure}
-          />
+          <TurnPhaseTimeline turn={turn} llmDraft={llmDraft} publishClosure={publishClosure} />
           {/* LLM 实时想法：每一步真 LLM 调用（risk.analyze / report.write /
               五系统起草…）期间实时流出。随内容生长，滚动由 Viewport 统一负责 */}
           {llmDraft && (
@@ -524,15 +455,11 @@ function ImAssistantMessage() {
             <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
             {publishClosure && (
               <span className="mt-1 rounded-full bg-[#e9edf2] px-2 py-0.5">
-                {publishClosure.blocked ? "blocked" : "closed"}{" "}
-                {publishClosure.evidencePresentCount}/
-                {publishClosure.skillCount}
+                {publishClosure.blocked ? "blocked" : "closed"} {publishClosure.evidencePresentCount}/{publishClosure.skillCount}
               </span>
             )}
           </div>
-          <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">
-            {answer}
-          </div>
+          <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
           {(turn.main || turn.user) && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
               {turn.main && (
@@ -552,9 +479,7 @@ function ImAssistantMessage() {
                   disabled={ctx.isRunning}
                   onClick={() => {
                     window.dispatchEvent(
-                      new CustomEvent("sliderule:resend-prompt", {
-                        detail: { text: turn.user },
-                      })
+                      new CustomEvent("sliderule:resend-prompt", { detail: { text: turn.user } })
                     );
                   }}
                   className="rounded-full bg-[#e9edf2] px-2 py-0.5 hover:bg-[#e5e7eb] disabled:cursor-not-allowed disabled:opacity-50"
@@ -596,9 +521,7 @@ export function ClaudeChatSurface({
   goalText?: string;
   onChallenge: (id: string) => void;
 }) {
-  const latestStepText = latestTurn
-    ? textFromStep(latestTurn.steps.at(-1))
-    : "";
+  const latestStepText = latestTurn ? textFromStep(latestTurn.steps.at(-1)) : "";
   const thinkingText =
     liveAction?.label ||
     latestStepText ||
@@ -610,7 +533,7 @@ export function ClaudeChatSurface({
 
   const items = useMemo<ImItem[]>(
     () =>
-      uiTurns.flatMap(turn => [
+      uiTurns.flatMap((turn) => [
         ...(turn.user
           ? ([{ id: `${turn.id}-user`, role: "user", turn }] as ImItem[])
           : []),
@@ -629,24 +552,8 @@ export function ClaudeChatSurface({
   });
 
   const ctxValue = useMemo(
-    () => ({
-      publishClosure,
-      llmDraft,
-      llmDraftLabel,
-      goalText,
-      thinkingText,
-      isRunning,
-      onChallenge,
-    }),
-    [
-      publishClosure,
-      llmDraft,
-      llmDraftLabel,
-      goalText,
-      thinkingText,
-      isRunning,
-      onChallenge,
-    ]
+    () => ({ publishClosure, llmDraft, llmDraftLabel, goalText, thinkingText, isRunning, onChallenge }),
+    [publishClosure, llmDraft, llmDraftLabel, goalText, thinkingText, isRunning, onChallenge]
   );
 
   return (
@@ -669,55 +576,36 @@ export function ClaudeChatSurface({
                     title="SlideRule"
                   />
                   <div>
-                    <div className="font-display text-[26px] font-medium tracking-tight text-[#1f2329]">
-                      我能帮你把意图推演成应用闭环
-                    </div>
+                    <div className="font-display text-[26px] font-medium tracking-tight text-[#1f2329]">我能帮你把意图推演成应用闭环</div>
                     <div className="mt-2 text-sm text-stone-500">
-                      发一句业务目标，SlideRule
-                      串起五系统，输出可校验的企业应用数字孪生。
+                      发一句业务目标，SlideRule 串起五系统，输出可校验的企业应用数字孪生。
                     </div>
                   </div>
                   <div className="flex flex-col gap-2.5 w-full max-w-[560px]">
-                    {EXAMPLE_PROMPTS.map(
-                      ({ text, icon: Icon, iconBg, iconColor }) => (
-                        <button
-                          key={text}
-                          type="button"
-                          disabled={isRunning}
-                          onClick={() => {
-                            // Dispatch a custom event so ComposerDock can pick it up
-                            window.dispatchEvent(
-                              new CustomEvent("sliderule:fill-prompt", {
-                                detail: { text },
-                              })
-                            );
-                          }}
-                          className="group flex w-full items-center gap-3 rounded-lg border border-[#e5e7eb] bg-white px-4 py-3 text-left text-sm text-stone-700 shadow-[0_2px_10px_rgb(15_23_42/0.05)] transition-all hover:border-[#d3d8e0] hover:shadow-[0_4px_16px_rgb(15_23_42/0.09)] disabled:opacity-50"
-                        >
-                          <span
-                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconBg}`}
-                          >
-                            <Icon className={`h-4 w-4 ${iconColor}`} />
-                          </span>
-                          <span
-                            className="min-w-0 flex-1 truncate"
-                            title={text}
-                          >
-                            {text}
-                          </span>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-stone-300 transition-transform group-hover:translate-x-0.5" />
-                        </button>
-                      )
-                    )}
+                    {EXAMPLE_PROMPTS.map(({ text, icon: Icon, iconBg, iconColor }) => (
+                      <button
+                        key={text}
+                        type="button"
+                        disabled={isRunning}
+                        onClick={() => {
+                          // Dispatch a custom event so ComposerDock can pick it up
+                          window.dispatchEvent(new CustomEvent("sliderule:fill-prompt", { detail: { text } }));
+                        }}
+                        className="group flex w-full items-center gap-3 rounded-lg border border-[#e5e7eb] bg-white px-4 py-3 text-left text-sm text-stone-700 shadow-[0_2px_10px_rgb(15_23_42/0.05)] transition-all hover:border-[#d3d8e0] hover:shadow-[0_4px_16px_rgb(15_23_42/0.09)] disabled:opacity-50"
+                      >
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconBg}`}>
+                          <Icon className={`h-4 w-4 ${iconColor}`} />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-stone-300 transition-transform group-hover:translate-x-0.5" />
+                      </button>
+                    ))}
                   </div>
                 </div>
               </ThreadPrimitive.Empty>
               <div className="py-2">
                 <ThreadPrimitive.Messages
-                  components={{
-                    UserMessage: ImUserMessage,
-                    AssistantMessage: ImAssistantMessage,
-                  }}
+                  components={{ UserMessage: ImUserMessage, AssistantMessage: ImAssistantMessage }}
                 />
               </div>
             </ThreadPrimitive.Viewport>
@@ -736,30 +624,18 @@ function DriveFullStatusBanner({
   status,
   className = "",
 }: {
-  status?:
-    | "idle"
-    | "loading"
-    | "python_success"
-    | "timeout"
-    | "python_unavailable"
-    | "fallback";
+  status?: "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback";
   className?: string;
 }) {
   // "loading" 不再展示：正常运行时左栏已有思考行 + 实时步骤流，这条横幅
   // 是纯重复（用户去重审查）；横幅只保留异常态（timeout/unavailable/fallback）。
-  if (
-    !status ||
-    status === "idle" ||
-    status === "python_success" ||
-    status === "loading"
-  )
-    return null;
+  if (!status || status === "idle" || status === "python_success" || status === "loading") return null;
   const text =
     status === "timeout"
       ? "/drive-full timeout"
       : status === "python_unavailable"
-        ? "/drive-full Python unavailable"
-        : "/drive-full fallback";
+      ? "/drive-full Python unavailable"
+      : "/drive-full fallback";
   return (
     <div
       data-testid="sliderule-drive-full-status"
@@ -783,9 +659,7 @@ export function deriveNoIntentRuntimeProjection({
   publishClosure: PublishClosureSummary | null;
 } {
   const runtimeCross = pythonSkillRuntimeGraph
-    ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, {
-        exampleLimit: 5,
-      })
+    ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, { exampleLimit: 5 })
     : null;
   const closure = pythonPublishClosure ?? null;
   return {
@@ -835,8 +709,7 @@ export async function loadPythonRuntimeProjectionFromSession(
   );
   if (!response.ok) return null;
   const body = await response.json().catch(() => null);
-  const state =
-    body?.state && typeof body.state === "object" ? body.state : body;
+  const state = body?.state && typeof body.state === "object" ? body.state : body;
   return deriveImmediatePythonRuntimeProjection({
     pythonPublishClosure: state?.publishClosure ?? null,
     pythonSkillRuntimeGraph: state?.skillRuntimeGraph ?? null,
@@ -911,9 +784,7 @@ function SlideRuleUnified({
   driveMode?: "single" | "marathon";
   setDriveMode?: (m: "single" | "marathon") => void;
   pendingClarifications?: ClarificationItem[];
-  answerClarifications?: (
-    answers: Array<{ gapId: string; answer: string }>
-  ) => void;
+  answerClarifications?: (answers: Array<{ gapId: string; answer: string }>) => void;
   generateDeliverables: () => void;
   onExportDeliverables: () => void;
   stop?: () => void;
@@ -926,18 +797,10 @@ function SlideRuleUnified({
   retryPythonBackend?: () => void;
   crossRuntimeGraph?: CrossRuntimeGraphSummary | null;
   publishClosure?: PublishClosureSummary | null;
-  driveFullStatus?:
-    | "idle"
-    | "loading"
-    | "python_success"
-    | "timeout"
-    | "python_unavailable"
-    | "fallback";
+  driveFullStatus?: "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback";
   /** SSE-driven active skill highlighting for the right rail */
   activeSkillId?: import("@/lib/sliderule-marathon-driver").SkillId | null;
-  skillContents?: Partial<
-    Record<import("@/lib/sliderule-marathon-driver").SkillId, string>
-  >;
+  skillContents?: Partial<Record<import("@/lib/sliderule-marathon-driver").SkillId, string>>;
   latestMermaid?: string | null;
   /** LLM 实时草稿（llm_delta 累积）+ 当前来源标签。 */
   llmDraft?: string;
@@ -951,19 +814,17 @@ function SlideRuleUnified({
 
   // Clarification cards can be hidden; they reappear when pending questions change.
   const clarifications = pendingClarifications ?? [];
-  const clarifyKey = clarifications.map(c => c.id).join("|");
+  const clarifyKey = clarifications.map((c) => c.id).join("|");
   const [clarifyHidden, setClarifyHidden] = useState(false);
   useEffect(() => {
     setClarifyHidden(false);
   }, [clarifyKey]);
-  const showClarify =
-    clarifications.length > 0 && !clarifyHidden && !!answerClarifications;
+  const showClarify = clarifications.length > 0 && !clarifyHidden && !!answerClarifications;
 
   // Conversation column: live turns during/after a run; after reload uiTurns is
   // empty but the latest turn is rebuilt from persisted state — surface it so the
   // page restores instead of falling back to the empty state.
-  const conversationTurns =
-    uiTurns.length > 0 ? uiTurns : latestTurn ? [latestTurn] : [];
+  const conversationTurns = uiTurns.length > 0 ? uiTurns : latestTurn ? [latestTurn] : [];
 
   const driveLoopCount =
     latestTurn?.routeFacts.rounds?.length ??
@@ -988,30 +849,14 @@ function SlideRuleUnified({
         {/* Python backend failure visible + recoverable status/retry for core SlideRule workflows (105 req 2)。
             GitHub Pages 静态演示本就无后端：降级横幅是预期内噪音，不展示。 */}
         {!IS_GITHUB_PAGES && (pythonApiError || pythonStatusMsg) && (
-          <div
-            className="mb-2 inline-flex rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow-sm"
-            title={pythonStatusMsg}
-          >
+          <div className="mb-2 inline-flex rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow-sm" title={pythonStatusMsg}>
             Python backend: {pythonStatusMsg || "degraded/timeout"} ·
-            <button
-              type="button"
-              onClick={retryPythonBackend}
-              className="ml-2 underline"
-            >
-              Retry
-            </button>
-            {getLegacyFallbackReason(pythonApiError) && (
-              <span className="ml-2 text-amber-600">fallback active</span>
-            )}
-            {isDegradedApiError(pythonApiError) && (
-              <span className="ml-1">(degraded envelope)</span>
-            )}
+            <button type="button" onClick={retryPythonBackend} className="ml-2 underline">Retry</button>
+            {getLegacyFallbackReason(pythonApiError) && <span className="ml-2 text-amber-600">fallback active</span>}
+            {isDegradedApiError(pythonApiError) && <span className="ml-1">(degraded envelope)</span>}
           </div>
         )}
-        <DriveFullStatusBanner
-          status={driveFullStatus}
-          className="mb-2 inline-flex"
-        />
+        <DriveFullStatusBanner status={driveFullStatus} className="mb-2 inline-flex" />
       </div>
 
       {/* Studio body — left conversation column + right skill rail */}
@@ -1035,13 +880,8 @@ function SlideRuleUnified({
           latestMermaid={latestMermaid}
           skillContents={skillContents}
           skillRuntimeGraph={
-            (
-              sessionState as {
-                skillRuntimeGraph?:
-                  | import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike
-                  | null;
-              }
-            ).skillRuntimeGraph ?? null
+            (sessionState as { skillRuntimeGraph?: import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike | null })
+              .skillRuntimeGraph ?? null
           }
           sessionId={sessionId}
           appTitle={goal ? goal.slice(0, 24) : undefined}
@@ -1063,7 +903,7 @@ function SlideRuleUnified({
           {showClarify && (
             <ClarificationCard
               questions={clarifications}
-              onSubmit={answers => answerClarifications?.(answers)}
+              onSubmit={(answers) => answerClarifications?.(answers)}
               onClose={() => setClarifyHidden(true)}
             />
           )}
@@ -1074,6 +914,7 @@ function SlideRuleUnified({
             sendMessage={sendMessage}
             isRunning={isRunning}
             goal={goal}
+
             hintChips={composerHints}
             driveMode={driveMode}
             setDriveMode={setDriveMode}
@@ -1154,10 +995,7 @@ function SlideRuleSplitEngineering({
   graphRevision: string;
   handleGraphNodeClick: (node: BrainstormReasoningNode) => void;
   handleNodeEditSubmit: (node: BrainstormReasoningNode, text: string) => void;
-  handleResolveInteractiveGate?: (
-    gateNodeId: string,
-    choice: string | null
-  ) => void;
+  handleResolveInteractiveGate?: (gateNodeId: string, choice: string | null) => void;
   handleTerminalAction: (action: "report" | "lineage" | "export") => void;
   focusNodeId: string | null;
   lineageHighlightIds: string[];
@@ -1177,13 +1015,7 @@ function SlideRuleSplitEngineering({
   setDeliverablesOpen: (open: boolean) => void;
   openDeliverables: () => void;
   publishClosure?: PublishClosureSummary | null;
-  driveFullStatus?:
-    | "idle"
-    | "loading"
-    | "python_success"
-    | "timeout"
-    | "python_unavailable"
-    | "fallback";
+  driveFullStatus?: "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback";
 }) {
   const imScrollRef = useRef<HTMLElement>(null);
   const imBottomRef = useRef<HTMLDivElement>(null);
@@ -1192,14 +1024,14 @@ function SlideRuleSplitEngineering({
   const imScrollSignature = useMemo(
     () =>
       uiTurns
-        .map(t => {
+        .map((t) => {
           const last = t.steps[t.steps.length - 1];
           const lastBody =
             last && "text" in last
               ? last.text.length
               : last && "label" in last
-                ? last.label.length
-                : 0;
+              ? last.label.length
+              : 0;
           return `${t.id}:${t.status}:${t.routeLitCount}:${t.steps.length}:${t.actions.length}:${last?.id ?? ""}:${lastBody}`;
         })
         .join("|"),
@@ -1263,28 +1095,17 @@ function SlideRuleSplitEngineering({
             disabled={isRunning}
             data-testid="sliderule-reset-session"
             className={autopilotTheme.auditBtn}
-            title={
-              isRunning
-                ? "SlideRule is running; reset later."
-                : "Clear this conversation and restart."
-            }
+            title={isRunning ? "SlideRule is running; reset later." : "Clear this conversation and restart."}
           >
             重置会话
           </button>
-          <a
-            href="/sliderule/dev"
-            className={autopilotTheme.devLink}
-            title="Open engineering cockpit"
-          >
+          <a href="/sliderule/dev" className={autopilotTheme.devLink} title="Open engineering cockpit">
             Dev
           </a>
         </div>
       </header>
 
-      <DriveFullStatusBanner
-        status={driveFullStatus}
-        className="mx-6 mt-2 inline-flex"
-      />
+      <DriveFullStatusBanner status={driveFullStatus} className="mx-6 mt-2 inline-flex" />
 
       <SlideRuleStatusBar
         state={sessionState}
@@ -1346,13 +1167,12 @@ function SlideRuleSplitEngineering({
                 <div className={autopilotTheme.emptyState}>
                   Welcome to SlideRule V5.
                   <p className={autopilotTheme.emptyHint}>
-                    Enter a goal or challenge below; the system dynamically
-                    selects capability x role steps. There are no fixed stages;
-                    current state and your input drive the route.
+                    Enter a goal or challenge below; the system dynamically selects capability x role steps.
+                    There are no fixed stages; current state and your input drive the route.
                   </p>
                 </div>
               )}
-              {uiTurns.map(turn => (
+              {uiTurns.map((turn) => (
                 <div key={turn.id} className="space-y-2">
                   <div className="flex justify-end">
                     <div className={autopilotTheme.userBubble}>{turn.user}</div>
@@ -1364,44 +1184,29 @@ function SlideRuleSplitEngineering({
                         facts={turn.routeFacts}
                         steps={turn.steps}
                         actions={turn.actions}
-                        sessionId={
-                          sessionState.sessionId || "sliderule-v51-product"
-                        }
-                        expanded={
-                          turn.routeExpanded || turn.status === "streaming"
-                        }
+                        sessionId={sessionState.sessionId || "sliderule-v51-product"}
+                        expanded={turn.routeExpanded || turn.status === "streaming"}
                         onToggle={() => toggleRouteExpanded(turn.id)}
                         litCount={turn.routeLitCount}
                         streaming={turn.status === "streaming"}
                         liveAction={
-                          turn.id === latestTurnId &&
-                          turn.status === "streaming"
+                          turn.id === latestTurnId && turn.status === "streaming"
                             ? liveAction
                             : null
                         }
                         surfaceMode={imSurfaceMode}
                         retrying={isRunning}
-                        onRetryCapability={params =>
-                          retryCapability(turn.id, params)
-                        }
+                        onRetryCapability={(params) => retryCapability(turn.id, params)}
                         reasoningEvents={sessionState.reasoningEvents}
                       />
                     )}
                     {driveMode === "marathon" && !turn.routeExpanded && (
-                      <div
-                        className="cursor-pointer text-[10px] text-stone-400"
-                        onClick={() => toggleRouteExpanded(turn.id)}
-                        title="Marathon route details are hidden; click to expand."
-                      >
-                        Continuing SlideRule. Click to expand route.
-                      </div>
+                      <div className="cursor-pointer text-[10px] text-stone-400" onClick={() => toggleRouteExpanded(turn.id)} title="Marathon route details are hidden; click to expand.">Continuing SlideRule. Click to expand route.</div>
                     )}
                     {turn.status === "complete" && (
                       <TurnFootnote
                         turn={turn}
-                        sessionId={
-                          sessionState.sessionId || "sliderule-v51-product"
-                        }
+                        sessionId={sessionState.sessionId || "sliderule-v51-product"}
                         onChallenge={challengeTurn}
                       />
                     )}
@@ -1416,10 +1221,8 @@ function SlideRuleSplitEngineering({
             <div className="flex gap-2">
               <input
                 value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e =>
-                  e.key === "Enter" && !e.shiftKey && sendMessage()
-                }
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
                 placeholder="Engineering path IM..."
                 disabled={isRunning}
                 className={autopilotTheme.input}
@@ -1434,7 +1237,7 @@ function SlideRuleSplitEngineering({
               </button>
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {HINT_CHIPS_SPLIT.map(hint => (
+              {HINT_CHIPS_SPLIT.map((hint) => (
                 <button
                   key={hint}
                   type="button"
@@ -1449,6 +1252,8 @@ function SlideRuleSplitEngineering({
           </footer>
         </section>
       </div>
+
+
 
       <DeliverablesPanel
         open={deliverablesOpen}
@@ -1472,15 +1277,11 @@ const ACTIVE_SESSION_KEY = "sliderule:active-session-id";
  * 运行时排练数据（localStorage 按 id 分键）自动隔离，零状态串味。
  * 会话选择入口在侧栏（SidebarSessions），通过 window 事件通知这里。
  */
-export default function SlideRule({
-  embedded = false,
-}: { embedded?: boolean } = {}) {
+export default function SlideRule({ embedded = false }: { embedded?: boolean } = {}) {
   const [activeSessionId, setActiveSessionId] = useState<string>(() => {
     if (IS_GITHUB_PAGES) return GITHUB_PAGES_DEMO_SESSION_ID;
     try {
-      return (
-        localStorage.getItem(ACTIVE_SESSION_KEY) || "sliderule-v51-product"
-      );
+      return localStorage.getItem(ACTIVE_SESSION_KEY) || "sliderule-v51-product";
     } catch {
       return "sliderule-v51-product";
     }
@@ -1573,9 +1374,7 @@ function SlideRuleSessionBody({
   const [pythonStatusMsg, setPythonStatusMsg] = useState<string>("");
   const probePythonBackend = useCallback(async () => {
     try {
-      const res = await fetchJsonSafe<{ status?: string }>(
-        "/api/sliderule/health"
-      );
+      const res = await fetchJsonSafe<{ status?: string }>("/api/sliderule/health");
       if (!res.ok) {
         setPythonApiError(res.error);
         setPythonStatusMsg(
@@ -1586,12 +1385,7 @@ function SlideRuleSessionBody({
         setPythonStatusMsg("");
       }
     } catch {
-      setPythonApiError({
-        kind: "degraded",
-        message: "probe failed",
-        source: "network",
-        retryable: true,
-      } as any);
+      setPythonApiError({ kind: "degraded", message: "probe failed", source: "network", retryable: true } as any);
       setPythonStatusMsg("Python backend probe unreachable; retry available");
     }
   }, []);
@@ -1609,46 +1403,35 @@ function SlideRuleSessionBody({
   const isImmersion = imSurfaceMode !== "engineering";
   // Rebuild the latest turn from persisted session state after refresh when uiTurns is empty.
   const restoredLatestTurn = useMemo(
-    () =>
-      uiTurns.length === 0 ? deriveLatestTurnFromState(sessionState) : null,
+    () => (uiTurns.length === 0 ? deriveLatestTurnFromState(sessionState) : null),
     [uiTurns.length, sessionState]
   );
-  const latestTurn =
-    uiTurns.length > 0 ? uiTurns[uiTurns.length - 1] : restoredLatestTurn;
+  const latestTurn = uiTurns.length > 0 ? uiTurns[uiTurns.length - 1] : restoredLatestTurn;
   const latestTurnId = latestTurn?.id ?? null;
 
-  const [projectionDensity, setProjectionDensity] = useState<ProjectionDensity>(
-    () => {
-      try {
-        const stored = localStorage.getItem(PROJECTION_DENSITY_STORAGE_KEY);
-        return stored === "detailed" ? "detailed" : "compact";
-      } catch {
-        return "compact";
-      }
+  const [projectionDensity, setProjectionDensity] = useState<ProjectionDensity>(() => {
+    try {
+      const stored = localStorage.getItem(PROJECTION_DENSITY_STORAGE_KEY);
+      return stored === "detailed" ? "detailed" : "compact";
+    } catch {
+      return "compact";
     }
-  );
+  });
   const VIEW_MODE_STORAGE_KEY = "sliderule:view-mode:v1";
-  const [viewMode, setViewMode] = useState<
-    "overview" | "collaboration" | "reasoning"
-  >(() => {
+  const [viewMode, setViewMode] = useState<"overview" | "collaboration" | "reasoning">(() => {
     try {
       const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-      return stored === "collaboration" || stored === "reasoning"
-        ? stored
-        : "overview";
+      return stored === "collaboration" || stored === "reasoning" ? stored : "overview";
     } catch {
       return "overview";
     }
   });
-  const onViewModeChange = useCallback(
-    (m: "overview" | "collaboration" | "reasoning") => {
-      setViewMode(m);
-      try {
-        localStorage.setItem(VIEW_MODE_STORAGE_KEY, m);
-      } catch {}
-    },
-    []
-  );
+  const onViewModeChange = useCallback((m: "overview" | "collaboration" | "reasoning") => {
+    setViewMode(m);
+    try {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, m);
+    } catch {}
+  }, []);
 
   const [lineageHighlightIds, setLineageHighlightIds] = useState<string[]>([]);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
@@ -1669,34 +1452,23 @@ function SlideRuleSessionBody({
     pythonSkillRuntimeGraph,
   });
   const [crossRuntimeGraph, setCrossRuntimeGraph] =
-    useState<CrossRuntimeGraphSummary | null>(
-      initialProjection.crossRuntimeGraph
-    );
+    useState<CrossRuntimeGraphSummary | null>(initialProjection.crossRuntimeGraph);
   const [publishClosure, setPublishClosure] =
     useState<PublishClosureSummary | null>(pythonPublishClosure ?? null);
-  const visiblePythonRuntimeProjection = deriveImmediatePythonRuntimeProjection(
-    {
-      pythonPublishClosure,
-      pythonSkillRuntimeGraph,
-    }
-  );
+  const visiblePythonRuntimeProjection = deriveImmediatePythonRuntimeProjection({
+    pythonPublishClosure,
+    pythonSkillRuntimeGraph,
+  });
   const visibleCrossRuntimeGraph =
     visiblePythonRuntimeProjection?.crossRuntimeGraph ?? crossRuntimeGraph;
   const visiblePublishClosure =
     visiblePythonRuntimeProjection?.publishClosure ?? publishClosure;
 
   useEffect(() => {
-    if (
-      visiblePythonRuntimeProjection ||
-      pythonPublishClosure ||
-      pythonSkillRuntimeGraph
-    )
-      return;
+    if (visiblePythonRuntimeProjection || pythonPublishClosure || pythonSkillRuntimeGraph) return;
     let cancelled = false;
-    loadPythonRuntimeProjectionFromSession(
-      sessionState.sessionId || "sliderule-v51-product"
-    )
-      .then(projection => {
+    loadPythonRuntimeProjectionFromSession(sessionState.sessionId || "sliderule-v51-product")
+      .then((projection) => {
         if (cancelled || !projection) return;
         setCrossRuntimeGraph(projection.crossRuntimeGraph);
         setPublishClosure(projection.publishClosure);
@@ -1745,22 +1517,17 @@ function SlideRuleSessionBody({
     // 此处的结果 (result.spec.skills) 已包含五系统 resolve 产出——publishGate 仍能正常校验闭包。
     // 待 LLM generate() 实现后，覆盖面将从fixture扩展到任意意图，不需要修改此处。
     deriveApplication(intent)
-      .then(result => {
+      .then((result) => {
         if (cancelled) return;
         // Page field binding evidence closed in publish/runtime via create+evaluate against real DM SSOT in closure path (119).
         // publishGate receives the skills (containing datamodel model + page) so runtimeClosure now computes
         // Page->datamodel field binding evidence using real upstream SSOT surface (no temp private field).
         const publishGate = slideRule.publishGate(result.spec.skills);
         const runtimeCross = pythonSkillRuntimeGraph
-          ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, {
-              exampleLimit: 5,
-            })
+          ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, { exampleLimit: 5 })
           : null;
         setCrossRuntimeGraph(
-          runtimeCross ||
-            deriveCrossRuntimeGraphSummary(result.crossRuntimeGraph, {
-              exampleLimit: 5,
-            })
+          runtimeCross || deriveCrossRuntimeGraphSummary(result.crossRuntimeGraph, { exampleLimit: 5 })
         );
         const previewClosure = derivePublishClosureSummary(
           publishGate.runtimeClosure,
@@ -1770,26 +1537,19 @@ function SlideRuleSessionBody({
         // Prefer Python-produced closure evidence (from persisted sessionState via Python /drive-full)
         // when present. Fall back to local TS previewClosure ONLY when Python one is absent.
         // This is the explicit prefer-python-over-preview behavior required for frontend.
-        const preferredClosure = selectPublishClosureSummary(
-          pythonPublishClosure,
-          previewClosure
-        );
+        const preferredClosure = selectPublishClosureSummary(pythonPublishClosure, previewClosure);
         setPublishClosure(preferredClosure);
       })
       .catch(() => {
         if (!cancelled) {
           setCrossRuntimeGraph(
             pythonSkillRuntimeGraph
-              ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, {
-                  exampleLimit: 5,
-                })
+              ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, { exampleLimit: 5 })
               : null
           );
           // fail-closed: on derive error, still select python (if present from session) else null;
           // never fabricate a preview here.
-          setPublishClosure(
-            selectPublishClosureSummary(pythonPublishClosure, null)
-          );
+          setPublishClosure(selectPublishClosureSummary(pythonPublishClosure, null));
         }
       });
     return () => {
@@ -1833,33 +1593,26 @@ function SlideRuleSessionBody({
     if (tid && tid !== prevTid) setFocusNodeId(SLIDERULE_TERMINAL_NODE_ID);
   }, [reasoningViewModel.terminalNode?.id]);
 
-  const handleProjectionDensityChange = useCallback(
-    (density: ProjectionDensity) => {
-      setProjectionDensity(density);
-      if (density === "compact") {
-        setLineageHighlightIds([]);
-      }
-      try {
-        localStorage.setItem(PROJECTION_DENSITY_STORAGE_KEY, density);
-      } catch {
-        /* ignore */
-      }
-    },
-    []
-  );
+  const handleProjectionDensityChange = useCallback((density: ProjectionDensity) => {
+    setProjectionDensity(density);
+    if (density === "compact") {
+      setLineageHighlightIds([]);
+    }
+    try {
+      localStorage.setItem(PROJECTION_DENSITY_STORAGE_KEY, density);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Plain node clicks no longer open challenge dialogs; edits are handled inline.
   // Keep this callback side-effect free for future selection/focus hooks.
-  const handleGraphNodeClick = useCallback(
-    (_node: BrainstormReasoningNode) => {},
-    []
-  );
+  const handleGraphNodeClick = useCallback((_node: BrainstormReasoningNode) => {}, []);
 
   // Inline node edit confirmation triggers a rerun with user input.
   const handleNodeEditSubmit = useCallback(
     (node: BrainstormReasoningNode, text: string) => {
-      const producedArtifactId = (node as { producedArtifactId?: string })
-        .producedArtifactId;
+      const producedArtifactId = (node as { producedArtifactId?: string }).producedArtifactId;
       if (producedArtifactId && text.trim()) {
         challengeTurn(producedArtifactId, text.trim());
       }
@@ -1867,12 +1620,9 @@ function SlideRuleSessionBody({
     [challengeTurn]
   );
 
-  const handleResolveInteractiveGate = useCallback(
-    (gateNodeId: string, choice: string | null) => {
-      resolveInteractiveGate(gateNodeId, choice);
-    },
-    [resolveInteractiveGate]
-  );
+  const handleResolveInteractiveGate = useCallback((gateNodeId: string, choice: string | null) => {
+    resolveInteractiveGate(gateNodeId, choice);
+  }, [resolveInteractiveGate]);
 
   const handleTerminalAction = useCallback(
     (action: "report" | "lineage" | "export") => {
@@ -1898,12 +1648,7 @@ function SlideRuleSessionBody({
         downloadSlideRuleDeliveryMd(sessionState);
       }
     },
-    [
-      sessionState,
-      reasoningViewModel.terminalMeta?.canExport,
-      projectionDensity,
-      openDeliverables,
-    ]
+    [sessionState, reasoningViewModel.terminalMeta?.canExport, projectionDensity, openDeliverables]
   );
 
   const handleEvidenceRefClick = useCallback(
@@ -1987,12 +1732,8 @@ function SlideRuleSessionBody({
         data-python-provenance="via-delegation"
         data-paths="/agent-loop/sliderule /sliderule"
         data-backend="python-fullpath-e2e"
-        data-runtime-publish-closure={
-          visiblePublishClosure ? "present" : "absent"
-        }
-        data-runtime-skill-graph={
-          visibleCrossRuntimeGraph ? "present" : "absent"
-        }
+        data-runtime-publish-closure={visiblePublishClosure ? "present" : "absent"}
+        data-runtime-skill-graph={visibleCrossRuntimeGraph ? "present" : "absent"}
       >
         <SlideRuleUnified {...shared} />
       </div>
@@ -2005,9 +1746,7 @@ function SlideRuleSessionBody({
       data-python-provenance="via-delegation"
       data-paths="/agent-loop/sliderule /sliderule"
       data-backend="python-fullpath-e2e"
-      data-runtime-publish-closure={
-        visiblePublishClosure ? "present" : "absent"
-      }
+      data-runtime-publish-closure={visiblePublishClosure ? "present" : "absent"}
       data-runtime-skill-graph={visibleCrossRuntimeGraph ? "present" : "absent"}
     >
       <SlideRuleSplitEngineering {...shared} />

@@ -13,7 +13,7 @@ describe("github-pages-sliderule-demo", () => {
     expect(state.artifacts?.length).toBeGreaterThanOrEqual(4);
     expect(state.goal?.status).toBe("clear");
     expect(state.deliveryPhase).toBe("shipped");
-    const evidence = state.artifacts?.find(a => a.id === "demo-evidence-1");
+    const evidence = state.artifacts?.find((a) => a.id === "demo-evidence-1");
     expect(evidence?.provenance).toBe("web:search");
     expect(state.graph?.nodes?.length).toBeGreaterThan(0);
     expect(state.conversation?.length).toBeGreaterThanOrEqual(2);
@@ -23,11 +23,11 @@ describe("github-pages-sliderule-demo", () => {
     const mem = new Map<string, string>();
     const store = createGithubPagesSlideRuleSessionStore({
       storage: {
-        getItem: k => mem.get(k) ?? null,
+        getItem: (k) => mem.get(k) ?? null,
         setItem: (k, v) => {
           mem.set(k, v);
         },
-        removeItem: k => {
+        removeItem: (k) => {
           mem.delete(k);
         },
       },

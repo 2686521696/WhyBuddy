@@ -56,30 +56,20 @@ interface STTEngine {
  * Replicates createServerTTSEngine error recovery (tts-engine.ts:225-260).
  * The `serviceFn` simulates the fetch + AudioContext pipeline.
  */
-function createMockServerTTSEngine(
-  serviceFn: (text: string) => Promise<void>
-): TTSEngine {
+function createMockServerTTSEngine(serviceFn: (text: string) => Promise<void>): TTSEngine {
   const listeners = new Set<(state: TTSState) => void>();
   let speaking = false;
 
   function notify(state: TTSState) {
     speaking = state === "speaking";
-    listeners.forEach(cb => {
-      try {
-        cb(state);
-      } catch {
-        /* listener errors must not propagate */
-      }
+    listeners.forEach((cb) => {
+      try { cb(state); } catch { /* listener errors must not propagate */ }
     });
   }
 
   return {
-    get isAvailable() {
-      return true;
-    },
-    get isSpeaking() {
-      return speaking;
-    },
+    get isAvailable() { return true; },
+    get isSpeaking() { return speaking; },
 
     async speak(text: string): Promise<void> {
       this.stop();
@@ -93,15 +83,11 @@ function createMockServerTTSEngine(
       }
     },
 
-    stop() {
-      notify("idle");
-    },
+    stop() { notify("idle"); },
 
     onStateChange(cb: (state: TTSState) => void) {
       listeners.add(cb);
-      return () => {
-        listeners.delete(cb);
-      };
+      return () => { listeners.delete(cb); };
     },
   };
 }
@@ -111,42 +97,28 @@ function createMockServerTTSEngine(
  * The `synthFn` simulates window.speechSynthesis.speak().
  */
 function createMockBrowserTTSEngine(
-  synthFn: (onEnd: () => void, onError: (err: string) => void) => void
+  synthFn: (onEnd: () => void, onError: (err: string) => void) => void,
 ): TTSEngine {
   const listeners = new Set<(state: TTSState) => void>();
   let speaking = false;
 
   function notify(state: TTSState) {
     speaking = state === "speaking";
-    listeners.forEach(cb => {
-      try {
-        cb(state);
-      } catch {
-        /* swallow */
-      }
+    listeners.forEach((cb) => {
+      try { cb(state); } catch { /* swallow */ }
     });
   }
 
   return {
-    get isAvailable() {
-      return true;
-    },
-    get isSpeaking() {
-      return speaking;
-    },
+    get isAvailable() { return true; },
+    get isSpeaking() { return speaking; },
 
     speak(text: string): Promise<void> {
-      return new Promise<void>(resolve => {
+      return new Promise<void>((resolve) => {
         try {
           synthFn(
-            () => {
-              notify("idle");
-              resolve();
-            },
-            _err => {
-              notify("idle");
-              resolve();
-            } // graceful — never reject
+            () => { notify("idle"); resolve(); },
+            (_err) => { notify("idle"); resolve(); }, // graceful — never reject
           );
           notify("speaking");
         } catch {
@@ -156,15 +128,11 @@ function createMockBrowserTTSEngine(
       });
     },
 
-    stop() {
-      notify("idle");
-    },
+    stop() { notify("idle"); },
 
     onStateChange(cb: (state: TTSState) => void) {
       listeners.add(cb);
-      return () => {
-        listeners.delete(cb);
-      };
+      return () => { listeners.delete(cb); };
     },
   };
 }
@@ -173,23 +141,16 @@ function createMockBrowserTTSEngine(
  * Replicates createFallbackTTSEngine (tts-engine.ts:337-400).
  * Wraps primary with fallback: if primary speak() fails, switch to fallback.
  */
-function createMockFallbackTTSEngine(
-  primary: TTSEngine,
-  fallback: TTSEngine
-): TTSEngine {
+function createMockFallbackTTSEngine(primary: TTSEngine, fallback: TTSEngine): TTSEngine {
   const listeners = new Set<(state: TTSState) => void>();
   let activeEngine: TTSEngine = primary;
   let speaking = false;
 
   function wireListeners(engine: TTSEngine) {
-    return engine.onStateChange(state => {
+    return engine.onStateChange((state) => {
       speaking = state === "speaking";
-      listeners.forEach(cb => {
-        try {
-          cb(state);
-        } catch {
-          /* swallow */
-        }
+      listeners.forEach((cb) => {
+        try { cb(state); } catch { /* swallow */ }
       });
     });
   }
@@ -204,12 +165,8 @@ function createMockFallbackTTSEngine(
   }
 
   return {
-    get isAvailable() {
-      return primary.isAvailable || fallback.isAvailable;
-    },
-    get isSpeaking() {
-      return speaking;
-    },
+    get isAvailable() { return primary.isAvailable || fallback.isAvailable; },
+    get isSpeaking() { return speaking; },
 
     async speak(text: string): Promise<void> {
       if (activeEngine === primary && primary.isAvailable) {
@@ -225,15 +182,11 @@ function createMockFallbackTTSEngine(
       }
     },
 
-    stop() {
-      activeEngine.stop();
-    },
+    stop() { activeEngine.stop(); },
 
     onStateChange(cb: (state: TTSState) => void) {
       listeners.add(cb);
-      return () => {
-        listeners.delete(cb);
-      };
+      return () => { listeners.delete(cb); };
     },
   };
 }
@@ -242,16 +195,14 @@ function createMockFallbackTTSEngine(
  * Replicates createServerSTTEngine error recovery (stt-engine.ts:248-380).
  * The `recordFn` simulates MediaRecorder + fetch pipeline.
  */
-function createMockServerSTTEngine(recordFn: () => Promise<string>): STTEngine {
+function createMockServerSTTEngine(
+  recordFn: () => Promise<string>,
+): STTEngine {
   let listening = false;
 
   return {
-    get isAvailable() {
-      return true;
-    },
-    get isListening() {
-      return listening;
-    },
+    get isAvailable() { return true; },
+    get isListening() { return listening; },
 
     async startListening(callbacks: STTEngineCallbacks): Promise<void> {
       try {
@@ -286,12 +237,10 @@ const arbErrorMessage = fc.oneof(
   fc.constant("500 Internal Server Error"),
   fc.constant("CORS blocked"),
   fc.constant("decodeAudioData failed"),
-  fc.string({ minLength: 1, maxLength: 80 })
+  fc.string({ minLength: 1, maxLength: 80 }),
 );
 
-const arbErrorType = fc.constantFrom("throw", "reject") as fc.Arbitrary<
-  "throw" | "reject"
->;
+const arbErrorType = fc.constantFrom("throw", "reject") as fc.Arbitrary<"throw" | "reject">;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -303,11 +252,9 @@ describe("Feature: multi-modal-agent, Property 7: 语音引擎错误恢复", () 
   it("ServerTTSEngine.speak() resolves (never rejects) on service error, and transitions to idle", async () => {
     await fc.assert(
       fc.asyncProperty(arbText, arbErrorMessage, async (text, errorMsg) => {
-        const engine = createMockServerTTSEngine(() =>
-          Promise.reject(new Error(errorMsg))
-        );
+        const engine = createMockServerTTSEngine(() => Promise.reject(new Error(errorMsg)));
         const states: TTSState[] = [];
-        engine.onStateChange(s => states.push(s));
+        engine.onStateChange((s) => states.push(s));
 
         // Must resolve, never reject
         await engine.speak(text);
@@ -316,7 +263,7 @@ describe("Feature: multi-modal-agent, Property 7: 语音引擎错误恢复", () 
         expect(states[states.length - 1]).toBe("idle");
         expect(engine.isSpeaking).toBe(false);
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -330,14 +277,14 @@ describe("Feature: multi-modal-agent, Property 7: 语音引擎错误恢复", () 
           Promise.resolve().then(() => onError(errorMsg));
         });
         const states: TTSState[] = [];
-        engine.onStateChange(s => states.push(s));
+        engine.onStateChange((s) => states.push(s));
 
         await engine.speak(text);
 
         expect(states[states.length - 1]).toBe("idle");
         expect(engine.isSpeaking).toBe(false);
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -350,14 +297,14 @@ describe("Feature: multi-modal-agent, Property 7: 语音引擎错误恢复", () 
           throw new Error(errorMsg);
         });
         const states: TTSState[] = [];
-        engine.onStateChange(s => states.push(s));
+        engine.onStateChange((s) => states.push(s));
 
         await engine.speak(text);
 
         expect(states[states.length - 1]).toBe("idle");
         expect(engine.isSpeaking).toBe(false);
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -367,22 +314,20 @@ describe("Feature: multi-modal-agent, Property 7: 语音引擎错误恢复", () 
     await fc.assert(
       fc.asyncProperty(arbText, arbErrorMessage, async (text, errorMsg) => {
         // Primary always fails
-        const primary = createMockServerTTSEngine(() =>
-          Promise.reject(new Error(errorMsg))
-        );
+        const primary = createMockServerTTSEngine(() => Promise.reject(new Error(errorMsg)));
         // Fallback succeeds
         const fallback = createMockServerTTSEngine(() => Promise.resolve());
 
         const engine = createMockFallbackTTSEngine(primary, fallback);
         const states: TTSState[] = [];
-        engine.onStateChange(s => states.push(s));
+        engine.onStateChange((s) => states.push(s));
 
         await engine.speak(text);
 
         expect(states[states.length - 1]).toBe("idle");
         expect(engine.isSpeaking).toBe(false);
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -390,37 +335,33 @@ describe("Feature: multi-modal-agent, Property 7: 语音引擎错误恢复", () 
 
   it("ServerSTTEngine.startListening() never throws on service error, transitions to idle, and calls onError", async () => {
     await fc.assert(
-      fc.asyncProperty(
-        arbErrorMessage,
-        arbErrorType,
-        async (errorMsg, errorType) => {
-          const engine = createMockServerSTTEngine(() => {
-            if (errorType === "throw") throw new Error(errorMsg);
-            return Promise.reject(new Error(errorMsg));
-          });
+      fc.asyncProperty(arbErrorMessage, arbErrorType, async (errorMsg, errorType) => {
+        const engine = createMockServerSTTEngine(() => {
+          if (errorType === "throw") throw new Error(errorMsg);
+          return Promise.reject(new Error(errorMsg));
+        });
 
-          const states: STTState[] = [];
-          const errors: string[] = [];
+        const states: STTState[] = [];
+        const errors: string[] = [];
 
-          const callbacks: STTEngineCallbacks = {
-            onInterimTranscript: () => {},
-            onFinalTranscript: () => {},
-            onError: err => errors.push(err),
-            onStateChange: s => states.push(s),
-          };
+        const callbacks: STTEngineCallbacks = {
+          onInterimTranscript: () => {},
+          onFinalTranscript: () => {},
+          onError: (err) => errors.push(err),
+          onStateChange: (s) => states.push(s),
+        };
 
-          // Must not throw
-          await engine.startListening(callbacks);
+        // Must not throw
+        await engine.startListening(callbacks);
 
-          // Final state must be idle
-          expect(states[states.length - 1]).toBe("idle");
-          expect(engine.isListening).toBe(false);
-          // Error callback must have been called
-          expect(errors.length).toBeGreaterThan(0);
-          expect(errors[0]).toBe(errorMsg);
-        }
-      ),
-      { numRuns: 100 }
+        // Final state must be idle
+        expect(states[states.length - 1]).toBe("idle");
+        expect(engine.isListening).toBe(false);
+        // Error callback must have been called
+        expect(errors.length).toBeGreaterThan(0);
+        expect(errors[0]).toBe(errorMsg);
+      }),
+      { numRuns: 100 },
     );
   });
 });

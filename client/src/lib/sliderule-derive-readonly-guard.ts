@@ -46,12 +46,7 @@ export const AUTHORITATIVE_STATE_FIELDS = [
  */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
-  if (
-    a === null ||
-    b === null ||
-    typeof a !== "object" ||
-    typeof b !== "object"
-  ) {
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") {
     return a === b;
   }
   const aArr = Array.isArray(a);
@@ -68,8 +63,8 @@ function deepEqual(a: unknown, b: unknown): boolean {
   }
   const ao = a as Record<string, unknown>;
   const bo = b as Record<string, unknown>;
-  const aKeys = Object.keys(ao).filter(k => ao[k] !== undefined);
-  const bKeys = Object.keys(bo).filter(k => bo[k] !== undefined);
+  const aKeys = Object.keys(ao).filter((k) => ao[k] !== undefined);
+  const bKeys = Object.keys(bo).filter((k) => bo[k] !== undefined);
   if (aKeys.length !== bKeys.length) return false;
   for (const k of aKeys) {
     if (!deepEqual(ao[k], bo[k])) return false;
@@ -86,10 +81,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
  *   authoritative STATE field, changed graph metadata outside `nodes`, changed the node count,
  *   or changed any node field other than `status`.
  */
-export function assertDeriveReadOnly(
-  before: V5SessionState,
-  after: V5SessionState
-): void {
+export function assertDeriveReadOnly(before: V5SessionState, after: V5SessionState): void {
   const afterRec = after as unknown as Record<string, unknown>;
   const beforeRec = before as unknown as Record<string, unknown>;
   for (const field of AUTHORITATIVE_STATE_FIELDS) {
@@ -102,14 +94,8 @@ export function assertDeriveReadOnly(
   }
 
   // Graph metadata (everything except nodes) must be unchanged.
-  const afterGraphMeta = {
-    ...(after.graph as unknown as Record<string, unknown>),
-    nodes: undefined,
-  };
-  const beforeGraphMeta = {
-    ...(before.graph as unknown as Record<string, unknown>),
-    nodes: undefined,
-  };
+  const afterGraphMeta = { ...(after.graph as unknown as Record<string, unknown>), nodes: undefined };
+  const beforeGraphMeta = { ...(before.graph as unknown as Record<string, unknown>), nodes: undefined };
   if (!deepEqual(afterGraphMeta, beforeGraphMeta)) {
     throw new Error(
       "DERIVE P3 violation: deriveNodeStatus changed graph metadata outside graph.nodes[]."
@@ -117,10 +103,8 @@ export function assertDeriveReadOnly(
   }
 
   // Only graph.nodes[].status may differ; node identity/shape/count must be unchanged.
-  const beforeNodes = ((before.graph as { nodes?: unknown[] })?.nodes ||
-    []) as Array<Record<string, unknown>>;
-  const afterNodes = ((after.graph as { nodes?: unknown[] })?.nodes ||
-    []) as Array<Record<string, unknown>>;
+  const beforeNodes = ((before.graph as { nodes?: unknown[] })?.nodes || []) as Array<Record<string, unknown>>;
+  const afterNodes = ((after.graph as { nodes?: unknown[] })?.nodes || []) as Array<Record<string, unknown>>;
   if (afterNodes.length !== beforeNodes.length) {
     throw new Error(
       `DERIVE P3 violation: graph node count changed (${beforeNodes.length} -> ${afterNodes.length}).`

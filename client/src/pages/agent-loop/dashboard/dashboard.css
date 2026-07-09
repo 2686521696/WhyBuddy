@@ -69,8 +69,8 @@
 }
 
 .native-agent-brand-name {
-  color: #14295e;
-  font-family: "DM Sans", system-ui, sans-serif;
+  color: #14295E;
+  font-family: 'DM Sans', system-ui, sans-serif;
   font-size: 19px;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -78,7 +78,7 @@
 
 .native-agent-brand-domain {
   color: #8c8c8c;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 13px;
   letter-spacing: 0.02em;
 }
@@ -248,13 +248,13 @@
 }
 
 .native-agent-session-delete:hover {
-  background: #ece7dd;
+  background: #ECE7DD;
   color: #667085;
 }
 
 .native-agent-session-delete-confirm,
 .native-agent-session-delete-confirm:hover {
-  background: #fde8e8;
+  background: #FDE8E8;
   color: #dc2626;
   font-weight: 700;
 }
@@ -1243,6 +1243,10 @@
   flex-direction: column;
 }
 
+
+
+
+
 .native-task-table-card .agent-ant-card-body {
   padding: 12px 6px 12px 12px;
 }
@@ -1375,6 +1379,8 @@
   color: #c4c9d2 !important;
   border-color: #e6edf7 !important;
 }
+
+
 
 .native-task-inspector .agent-ant-card-head {
   border-bottom-color: #edf2f9;
@@ -1691,11 +1697,7 @@
 }
 
 .native-flow-legend-redo {
-  background: repeating-linear-gradient(
-    90deg,
-    #ff4d4f 0 6px,
-    transparent 6px 10px
-  );
+  background: repeating-linear-gradient(90deg, #ff4d4f 0 6px, transparent 6px 10px);
 }
 
 .native-flow-legend-dot {
@@ -1799,10 +1801,7 @@
   --timeline-dot-size: 16px;
   display: grid;
   gap: var(--timeline-gap);
-  grid-template-columns: var(--timeline-col1) var(--timeline-dot-size) minmax(
-      0,
-      1fr
-    );
+  grid-template-columns: var(--timeline-col1) var(--timeline-dot-size) minmax(0, 1fr);
   min-height: 54px;
   position: relative;
 }
@@ -1811,10 +1810,7 @@
   background: #d6e5ff;
   bottom: -2px;
   content: "";
-  left: calc(
-    var(--timeline-col1) + var(--timeline-gap) +
-      (var(--timeline-dot-size) / 2) - 1px
-  );
+  left: calc(var(--timeline-col1) + var(--timeline-gap) + (var(--timeline-dot-size) / 2) - 1px);
   position: absolute;
   top: 18px;
   width: 2px;
@@ -1885,9 +1881,7 @@
 .native-code {
   background: transparent;
   color: rgba(232, 241, 255, 0.92);
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.6;
   margin: 0;
@@ -2146,9 +2140,7 @@
 }
 
 /* profile crud UI 107 */
-.profile-actions button {
-  margin-left: 4px;
-}
+.profile-actions button { margin-left: 4px; }
 
 /* === Workbench polish to match effect diagrams === */
 

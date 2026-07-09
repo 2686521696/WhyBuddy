@@ -79,10 +79,7 @@ export type ReportExportClosureSummary = {
 };
 
 export function normalizeBlockerForRender(
-  blocker:
-    | { code?: string; path?: string; affectedSkill?: string; ref?: string }
-    | null
-    | undefined
+  blocker: { code?: string; path?: string; affectedSkill?: string; ref?: string } | null | undefined
 ): {
   code: string;
   path: string;
@@ -98,10 +95,7 @@ export function normalizeBlockerForRender(
 }
 
 export function renderPublishClosureBlocker(
-  blocker:
-    | { code?: string; path?: string; affectedSkill?: string; ref?: string }
-    | null
-    | undefined
+  blocker: { code?: string; path?: string; affectedSkill?: string; ref?: string } | null | undefined
 ): string {
   const b = normalizeBlockerForRender(blocker);
   const skill = b.affectedSkill ? ` skill=${b.affectedSkill}` : "";
@@ -118,7 +112,7 @@ export function deriveCrossRuntimeGraphSummary(
   if (edges.length === 0) return null;
 
   const exampleLimit = options.exampleLimit ?? 4;
-  const allowedCount = edges.filter(edge => edge.state === "allowed").length;
+  const allowedCount = edges.filter((edge) => edge.state === "allowed").length;
   const blockedCount = edges.length - allowedCount;
   const skillIds = new Set<string>();
   for (const edge of edges) {
@@ -137,7 +131,7 @@ export function deriveCrossRuntimeGraphSummary(
     blockedCount,
     skillCount: skillIds.size,
     evidenceCount,
-    examples: edges.slice(0, exampleLimit).map(edge => ({
+    examples: edges.slice(0, exampleLimit).map((edge) => ({
       sourceSkill: edge.sourceSkill,
       targetSkill: edge.targetSkill,
       state: edge.state,
@@ -154,9 +148,7 @@ export function derivePublishClosureSummary(
 
   const blockerLimit = options.blockerLimit ?? 3;
   const perSkillEvidence = Object.values(report.perSkillEvidence ?? {});
-  const evidencePresentCount = perSkillEvidence.filter(
-    entry => entry.evidencePresent
-  ).length;
+  const evidencePresentCount = perSkillEvidence.filter((entry) => entry.evidencePresent).length;
   const findingsByTier = report.findingsByTier ?? {
     hard_blocker: [],
     warning: [],
@@ -170,10 +162,7 @@ export function derivePublishClosureSummary(
     evidencePresentCount,
     skillCount: report.runtimeClosure.skillsChecked.length,
     versionPinsChecked: report.runtimeClosure.versionPinsChecked,
-    chatSummary:
-      typeof chatSummary === "string" && chatSummary.trim()
-        ? chatSummary
-        : undefined,
+    chatSummary: typeof chatSummary === "string" && chatSummary.trim() ? chatSummary : undefined,
     closureId: report.closureId,
     closureHash: report.closureHash,
     generatedAt: report.generatedAt,
@@ -183,7 +172,7 @@ export function derivePublishClosureSummary(
       warning: findingsByTier.warning?.length ?? 0,
       info: findingsByTier.info?.length ?? 0,
     },
-    topBlockers: report.blockers.slice(0, blockerLimit).map(blocker => {
+    topBlockers: report.blockers.slice(0, blockerLimit).map((blocker) => {
       const normalized = normalizeBlockerForRender(blocker);
       return {
         code: normalized.code,
@@ -192,8 +181,7 @@ export function derivePublishClosureSummary(
         ref: normalized.ref,
       };
     }),
-    perSkillEvidence:
-      report.perSkillEvidence as PublishClosureSummary["perSkillEvidence"],
+    perSkillEvidence: report.perSkillEvidence as PublishClosureSummary["perSkillEvidence"],
   };
 }
 
@@ -254,17 +242,10 @@ export function deriveReportExportClosureSummary(
   const evidencePresentCount = Number(closure.evidencePresentCount ?? 0);
   const skillCount = Number(closure.skillCount ?? 0);
   const evidenceComplete = skillCount > 0 && evidencePresentCount >= skillCount;
-  const requiredSkills = [
-    "datamodel",
-    "rbac",
-    "workflow",
-    "page",
-    "aigc",
-    "appbundle",
-  ] as const;
+  const requiredSkills = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"] as const;
   const perSkill = closure.perSkillEvidence;
   const perSkillComplete = perSkill
-    ? requiredSkills.every(skill => perSkill[skill]?.evidencePresent === true)
+    ? requiredSkills.every((skill) => perSkill[skill]?.evidencePresent === true)
     : true;
   const status =
     closure.blocked === false && digest && evidenceComplete && perSkillComplete
@@ -285,9 +266,7 @@ export function deriveReportExportClosureSummary(
 export function deriveReportExportClosureSummaryFromPublishArtifact(
   artifact: unknown
 ): ReportExportClosureSummary {
-  return deriveReportExportClosureSummary(
-    derivePublishClosureSummaryFromPublishArtifact(artifact)
-  );
+  return deriveReportExportClosureSummary(derivePublishClosureSummaryFromPublishArtifact(artifact));
 }
 
 export function derivePublishClosureSummaryFromPublishArtifact(
@@ -319,9 +298,7 @@ export function derivePublishClosureSummaryFromPublishArtifact(
           warning: Array.isArray(raw.findingsByTier.warning)
             ? raw.findingsByTier.warning.length
             : 0,
-          info: Array.isArray(raw.findingsByTier.info)
-            ? raw.findingsByTier.info.length
-            : 0,
+          info: Array.isArray(raw.findingsByTier.info) ? raw.findingsByTier.info.length : 0,
         }
       : { hard_blocker: 0, warning: 0, info: 0 },
     topBlockers: Array.isArray(raw.findingsByTier?.hard_blocker)
@@ -351,10 +328,7 @@ export function formatClosureStatusAndTopBlockersForFinalReport(
   const topBlockersText =
     Array.isArray(summary.topBlockers) && summary.topBlockers.length > 0
       ? summary.topBlockers
-          .map(
-            (b: any) =>
-              `${String(b.code || "UNKNOWN")}${b.path ? "@" + b.path : ""}`
-          )
+          .map((b: any) => `${String(b.code || "UNKNOWN")}${b.path ? "@" + b.path : ""}`)
           .join("; ")
       : "none";
   return [
@@ -393,17 +367,7 @@ export const BASELINE_SAFE_PUBLISH_CLOSURE_BLOCKED: PublishClosureSummary = {
   stableDigest: "digest-119-blocked",
   tierCounts: { hard_blocker: 1, warning: 0, info: 0 },
   topBlockers: [
-    {
-      code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
-      path: "versionPins.datamodel",
-      affectedSkill: "datamodel",
-      ref: undefined,
-    },
-    {
-      code: "APPBUNDLE_REF_MISSING_ENTITY",
-      path: "entityRefs[0]",
-      affectedSkill: "datamodel",
-      ref: "Order",
-    },
+    { code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED", path: "versionPins.datamodel", affectedSkill: "datamodel", ref: undefined },
+    { code: "APPBUNDLE_REF_MISSING_ENTITY", path: "entityRefs[0]", affectedSkill: "datamodel", ref: "Order" },
   ],
 };

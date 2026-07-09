@@ -62,26 +62,22 @@ export function deriveStatusBarFacts(
 ): StatusBarFacts {
   const badge = projectConclusionBadge(state);
   const goalSnippet = (state.goal?.text || "").trim().slice(0, 48) || "—";
-  const openGapCount = (state.coverageGaps || []).filter(
-    g => g.status === "open"
-  ).length;
+  const openGapCount = (state.coverageGaps || []).filter((g) => g.status === "open").length;
   const runs = state.capabilityRuns || [];
   const llmRunCount = runs.filter(
-    r =>
+    (r) =>
       (r as { provenance?: string }).provenance === "llm" ||
       (r as { source?: string }).source === "llm"
   ).length;
 
   const stale = new Set(state.staleArtifactIds || []);
   const trustedArtifactCount = (state.artifacts || []).filter(
-    a =>
-      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
-      !stale.has(a.id)
+    (a) =>
+      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") && !stale.has(a.id)
   ).length;
   const driveLoopCount =
     opts.driveLoopCount ??
-    new Set((state.capabilityRuns || []).map(r => r.turnId).filter(Boolean))
-      .size;
+    new Set((state.capabilityRuns || []).map((r) => r.turnId).filter(Boolean)).size;
   const publishClosureClosed = !!(
     opts.publishClosure &&
     !opts.publishClosure.blocked &&
@@ -173,8 +169,7 @@ export function deriveStatusBarFacts(
   const groundedEvidenceCount = countGroundedTrustedArtifacts(state);
   const sessionGrounded = hasGroundedExternalEvidence(state);
   const ungroundedAttempts = recentUngroundedEvidenceAttempts(state, 6);
-  const gcovGroundingOk =
-    state.coverageGate?.reason?.includes("G-GROUND: true") ?? false;
+  const gcovGroundingOk = state.coverageGate?.reason?.includes("G-GROUND: true") ?? false;
 
   let groundingLabel: string;
   let groundingClassName: string;
@@ -182,7 +177,8 @@ export function deriveStatusBarFacts(
 
   if (sessionGrounded || groundedEvidenceCount > 0) {
     groundingLabel = `接地 ${groundedEvidenceCount}`;
-    groundingClassName = "bg-emerald-50 text-emerald-800 ring-emerald-200/80";
+    groundingClassName =
+      "bg-emerald-50 text-emerald-800 ring-emerald-200/80";
   } else if (ungroundedAttempts > 0) {
     groundingLabel = "接地 degraded";
     groundingClassName = "bg-amber-50 text-amber-800 ring-amber-200/80";
@@ -201,20 +197,20 @@ export function deriveStatusBarFacts(
     executorMode === "demo"
       ? "demo · 模拟数据"
       : executorMode === "server-llm"
-        ? "executor: server-llm"
-        : executorMode === "pilot"
-          ? "executor: pilot"
-          : executorMode === "browser-llm"
-            ? "executor: browser-llm (BYOK, production)"
-            : "executor: default";
+      ? "executor: server-llm"
+      : executorMode === "pilot"
+      ? "executor: pilot"
+      : executorMode === "browser-llm"
+      ? "executor: browser-llm (BYOK, production)"
+      : "executor: default";
   const executorModeClassName =
     executorMode === "demo"
       ? "bg-amber-50 text-amber-900 ring-amber-200/80"
       : executorMode === "server-llm"
-        ? "bg-sky-50 text-sky-800 ring-sky-200/80"
-        : executorMode === "browser-llm"
-          ? "bg-emerald-50 text-emerald-800 ring-emerald-200/80"
-          : "bg-[#e6f4ff] text-[#1677ff] ring-[#EBCEC0]/80";
+      ? "bg-sky-50 text-sky-800 ring-sky-200/80"
+      : executorMode === "browser-llm"
+      ? "bg-emerald-50 text-emerald-800 ring-emerald-200/80"
+      : "bg-[#e6f4ff] text-[#1677ff] ring-[#EBCEC0]/80";
 
   const publishClosure = opts.publishClosure;
   const publishClosureLabel = publishClosure
@@ -238,8 +234,7 @@ export function deriveStatusBarFacts(
     : undefined;
   const publishClosureFailClosed = !!(
     publishClosure?.blocked &&
-    (!Array.isArray(publishClosure.topBlockers) ||
-      publishClosure.topBlockers.length === 0)
+    (!Array.isArray(publishClosure.topBlockers) || publishClosure.topBlockers.length === 0)
   );
 
   return {
@@ -253,9 +248,7 @@ export function deriveStatusBarFacts(
     openGapCount,
     phaseLabel,
     parkHint,
-    llmRunCount:
-      llmRunCount ||
-      runs.filter(r => String(r.capabilityId || "").length > 0).length,
+    llmRunCount: llmRunCount || runs.filter((r) => String(r.capabilityId || "").length > 0).length,
     trustedArtifactCount,
     driveLoopCount,
     dataReady,

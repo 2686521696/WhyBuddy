@@ -24,12 +24,9 @@ export function useIdleActivation(enabled: boolean, timeout = 800) {
     };
 
     if (typeof window.requestIdleCallback === "function") {
-      idleId = window.requestIdleCallback(
-        () => {
-          activate();
-        },
-        { timeout }
-      );
+      idleId = window.requestIdleCallback(() => {
+        activate();
+      }, { timeout });
     } else {
       timeoutId = window.setTimeout(activate, timeout);
     }

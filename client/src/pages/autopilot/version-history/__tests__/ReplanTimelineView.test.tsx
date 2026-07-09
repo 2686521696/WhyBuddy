@@ -16,40 +16,12 @@ describe("<ReplanTimelineView>", () => {
     const markup = renderToStaticMarkup(
       <ReplanTimelineView
         events={[
-          event(
-            "same-b",
-            "replan.triggered",
-            "2026-05-23T03:00:00.000Z",
-            "same b",
-            {},
-            "job-b"
-          ),
-          event(
-            "new",
-            "replan.triggered",
-            "2026-05-23T04:00:00.000Z",
-            "new",
-            {},
-            "job-c"
-          ),
-          event(
-            "ignore",
-            "job.stage",
-            "2026-05-23T05:00:00.000Z",
-            "ignore",
-            {},
-            "job-d"
-          ),
-          event(
-            "same-a",
-            "replan.triggered",
-            "2026-05-23T03:00:00.000Z",
-            "same a",
-            {},
-            "job-a"
-          ),
+          event("same-b", "replan.triggered", "2026-05-23T03:00:00.000Z", "same b", {}, "job-b"),
+          event("new", "replan.triggered", "2026-05-23T04:00:00.000Z", "new", {}, "job-c"),
+          event("ignore", "job.stage", "2026-05-23T05:00:00.000Z", "ignore", {}, "job-d"),
+          event("same-a", "replan.triggered", "2026-05-23T03:00:00.000Z", "same a", {}, "job-a"),
         ]}
-      />
+      />,
     );
 
     expect(markup).toContain("new");
@@ -63,21 +35,15 @@ describe("<ReplanTimelineView>", () => {
     const markup = renderToStaticMarkup(
       <ReplanTimelineView
         events={[
-          event(
-            "branch",
-            "replan.triggered",
-            "2026-05-23T03:00:00.000Z",
-            "branch",
-            {
-              mode: "branch",
-              parentJobId: "root",
-              fromStage: "spec_docs",
-              inheritedUpstreamArtifactCount: 2,
-              reason,
-            }
-          ),
+          event("branch", "replan.triggered", "2026-05-23T03:00:00.000Z", "branch", {
+            mode: "branch",
+            parentJobId: "root",
+            fromStage: "spec_docs",
+            inheritedUpstreamArtifactCount: 2,
+            reason,
+          }),
         ]}
-      />
+      />,
     );
 
     expect(markup).toContain("branch");

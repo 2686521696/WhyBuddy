@@ -2,9 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/blueprint-realtime-store", () => {
-  const useBlueprintRealtimeStore = ((
-    selector?: (state: unknown) => unknown
-  ) => {
+  const useBlueprintRealtimeStore = ((selector?: (state: unknown) => unknown) => {
     const snapshot = {
       agentReasoning: { entries: [] as unknown[] },
       rolePhases: {} as Record<string, unknown>,
@@ -48,7 +46,9 @@ describe("AutopilotSpecDocumentsWorkbenchFixturePage", () => {
     expect(markup).toContain(
       'data-testid="autopilot-process-artifact-split-panel"'
     );
-    expect(markup).toContain('data-testid="autopilot-process-execution-lane"');
+    expect(markup).toContain(
+      'data-testid="autopilot-process-execution-lane"'
+    );
     expect(markup).toContain('data-testid="autopilot-process-artifact-lane"');
     expect(markup).toContain('data-testid="mirofish-card-reasoning"');
     expect(markup).toContain('data-testid="mirofish-card-artifact"');

@@ -40,33 +40,26 @@ describe("<VersionTreeView>", () => {
       ],
       "ready",
     ],
-  ])(
-    "renders %s family data from useFamilyData input",
-    (_name, jobs, state) => {
-      const markup = renderToStaticMarkup(
-        <VersionTreeView
-          jobId="root"
-          activeJobId={jobs[0].id}
-          initialData={family(jobs)}
-          applySwitchActive={vi.fn()}
-        />
-      );
+  ])("renders %s family data from useFamilyData input", (_name, jobs, state) => {
+    const markup = renderToStaticMarkup(
+      <VersionTreeView
+        jobId="root"
+        activeJobId={jobs[0].id}
+        initialData={family(jobs)}
+        applySwitchActive={vi.fn()}
+      />,
+    );
 
-      expect(markup).toContain('data-testid="version-tree-view"');
-      expect(markup).toContain(`data-state="${state}"`);
-      for (const renderedJob of jobs) {
-        expect(markup).toContain(renderedJob.id);
-      }
+    expect(markup).toContain('data-testid="version-tree-view"');
+    expect(markup).toContain(`data-state="${state}"`);
+    for (const renderedJob of jobs) {
+      expect(markup).toContain(renderedJob.id);
     }
-  );
+  });
 
   it("renders loading, error, and static-preview fallback states", () => {
     const loading = renderToStaticMarkup(
-      <VersionTreeView
-        jobId="root"
-        activeJobId="root"
-        applySwitchActive={vi.fn()}
-      />
+      <VersionTreeView jobId="root" activeJobId="root" applySwitchActive={vi.fn()} />,
     );
     const error = renderToStaticMarkup(
       <VersionTreeView
@@ -87,7 +80,7 @@ describe("<VersionTreeView>", () => {
             status: 500,
           },
         }}
-      />
+      />,
     );
     const staticPreview = renderToStaticMarkup(
       <VersionTreeView
@@ -96,7 +89,7 @@ describe("<VersionTreeView>", () => {
         staticPreview
         initialData={family([job("root")])}
         applySwitchActive={vi.fn()}
-      />
+      />,
     );
 
     expect(loading).toContain('data-state="loading"');
@@ -111,12 +104,9 @@ describe("<VersionTreeView>", () => {
       <VersionTreeView
         jobId="root"
         activeJobId="root"
-        initialData={family([
-          job("root"),
-          job("branch", { parentJobId: "root" }),
-        ])}
+        initialData={family([job("root"), job("branch", { parentJobId: "root" })])}
         applySwitchActive={vi.fn()}
-      />
+      />,
     );
 
     expect(markup).toContain('data-switch-active="true"');
@@ -134,14 +124,14 @@ describe("<VersionTreeView>", () => {
           job("branch-a-child", { parentJobId: "branch-a" }),
         ])}
         applySwitchActive={vi.fn()}
-      />
+      />,
     );
 
     expect(markup).toMatch(
-      /<li(?=[^>]*data-tree-depth="1")(?=[^>]*data-connection="root-&gt;branch-a")[^>]*>/
+      /<li(?=[^>]*data-tree-depth="1")(?=[^>]*data-connection="root-&gt;branch-a")[^>]*>/,
     );
     expect(markup).toMatch(
-      /<li(?=[^>]*data-tree-depth="2")(?=[^>]*data-connection="branch-a-&gt;branch-a-child")[^>]*>/
+      /<li(?=[^>]*data-tree-depth="2")(?=[^>]*data-connection="branch-a-&gt;branch-a-child")[^>]*>/,
     );
     expect(markup).not.toMatch(/<li[^>]*data-connection="[^"]*"><li/);
   });

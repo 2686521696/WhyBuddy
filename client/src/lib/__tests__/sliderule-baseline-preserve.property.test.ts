@@ -19,7 +19,7 @@ import { ALL_V5_CAPABILITIES } from "@shared/blueprint/contracts";
 const PBT_OPTS = { numRuns: 100 };
 
 const REPORT_SECTIONS = [
-  "结论", // tolerate "结论：" (strong) and "结论（待补证）：" (weak-evidence/G-GROUND path in current builder)
+  "结论",  // tolerate "结论：" (strong) and "结论（待补证）：" (weak-evidence/G-GROUND path in current builder)
   "支撑证据：",
   "反证/挑战：",
   "风险：",
@@ -42,11 +42,7 @@ function trustedArtifact(
     trustLevel: "gated_pass" as const,
     content,
     summary: content.slice(0, 80),
-    producedBy: {
-      capabilityId: cap,
-      capabilityRunId: `run-${id}`,
-      roleId: "角色",
-    },
+    producedBy: { capabilityId: cap, capabilityRunId: `run-${id}`, roleId: "角色" },
   };
 }
 
@@ -57,31 +53,26 @@ function trustedArtifact(
 describe("Property 20: LLM capability artifacts use llm provenance", () => {
   it("committed artifacts with llm provenance stay llm (not template)", () => {
     fc.assert(
-      fc.property(
-        fc.constantFrom("risk.analyze", "evidence.search", "counter.argue"),
-        cap => {
-          let s = createInitialSessionState("prov", "s-p20");
-          const { updatedState, committed } = commitArtifact(
-            s,
-            {
-              id: "art-llm",
-              kind: "decision",
-              provenance: "llm",
-              producedBy: { capabilityId: cap, roleId: "安全" },
-              content: "LLM 产出内容",
-            } as any,
-            "t-p20-run",
-            false,
-            []
-          );
-          const art = (updatedState.artifacts || []).find(
-            a => a.id === "art-llm"
-          );
-          expect(art?.provenance).toBe("llm");
-          expect(art?.provenance).not.toBe("template");
-          if (committed) expect(committed.provenance).toBe("llm");
-        }
-      ),
+      fc.property(fc.constantFrom("risk.analyze", "evidence.search", "counter.argue"), (cap) => {
+        let s = createInitialSessionState("prov", "s-p20");
+        const { updatedState, committed } = commitArtifact(
+          s,
+          {
+            id: "art-llm",
+            kind: "decision",
+            provenance: "llm",
+            producedBy: { capabilityId: cap, roleId: "安全" },
+            content: "LLM 产出内容",
+          } as any,
+          "t-p20-run",
+          false,
+          []
+        );
+        const art = (updatedState.artifacts || []).find((a) => a.id === "art-llm");
+        expect(art?.provenance).toBe("llm");
+        expect(art?.provenance).not.toBe("template");
+        if (committed) expect(committed.provenance).toBe("llm");
+      }),
       PBT_OPTS
     );
   });
@@ -95,34 +86,20 @@ describe("Property 21: findInputsForCapability resolves existing artifacts", () 
   it("every resolved input id exists in state.artifacts", () => {
     fc.assert(
       fc.property(
-        fc.constantFrom(
-          ...ALL_V5_CAPABILITIES.filter(
-            c => c === "synthesis.merge" || c === "report.write"
-          )
-        ),
-        cap => {
+        fc.constantFrom(...ALL_V5_CAPABILITIES.filter((c) => c === "synthesis.merge" || c === "report.write")),
+        (cap) => {
           let s = createInitialSessionState("deps", "s-p21");
           s = {
             ...s,
             artifacts: [
               trustedArtifact("risk-1", "risk", "risk.analyze", "风险：越权"),
-              trustedArtifact(
-                "ev-1",
-                "evidence",
-                "evidence.search",
-                "证据：会话内"
-              ),
-              trustedArtifact(
-                "syn-1",
-                "synthesis",
-                "synthesis.merge",
-                "综合结论"
-              ),
+              trustedArtifact("ev-1", "evidence", "evidence.search", "证据：会话内"),
+              trustedArtifact("syn-1", "synthesis", "synthesis.merge", "综合结论"),
             ] as any,
           };
           const inputs = findInputsForCapability(s, cap);
           for (const id of inputs) {
-            expect(s.artifacts.some(a => a.id === id)).toBe(true);
+            expect(s.artifacts.some((a) => a.id === id)).toBe(true);
           }
         }
       ),
@@ -138,7 +115,7 @@ describe("Property 21: findInputsForCapability resolves existing artifacts", () 
 describe("Property 22: trust gate governs trustLevel", () => {
   it("force-failed commit is not gated_pass or audited", () => {
     fc.assert(
-      fc.property(fc.string({ minLength: 4, maxLength: 40 }), content => {
+      fc.property(fc.string({ minLength: 4, maxLength: 40 }), (content) => {
         let s = createInitialSessionState("gate", "s-p22");
         const { updatedState, committed } = commitArtifact(
           s,
@@ -154,9 +131,7 @@ describe("Property 22: trust gate governs trustLevel", () => {
           []
         );
         expect(committed).toBeNull();
-        const art = (updatedState.artifacts || []).find(
-          a => a.id === "art-fail"
-        );
+        const art = (updatedState.artifacts || []).find((a) => a.id === "art-fail");
         if (art) {
           expect(art.trustLevel).not.toBe("gated_pass");
           expect(art.trustLevel).not.toBe("audited");
@@ -174,14 +149,12 @@ describe("Property 22: trust gate governs trustLevel", () => {
 describe("Property 23: stale upstream annotation", () => {
   it("simulated risk output mentions stale when session has stale artifacts", () => {
     fc.assert(
-      fc.property(fc.uuid(), staleId => {
+      fc.property(fc.uuid(), (staleId) => {
         let s = createInitialSessionState("stale", "s-p23");
         s = {
           ...s,
           staleArtifactIds: [staleId],
-          artifacts: [
-            trustedArtifact(staleId, "risk", "risk.analyze", "旧风险"),
-          ] as any,
+          artifacts: [trustedArtifact(staleId, "risk", "risk.analyze", "旧风险")] as any,
         };
         const sim = simulateCapabilityExecution("risk.analyze", s, [staleId]);
         expect(sim.content).toMatch(/stale/i);
@@ -204,16 +177,11 @@ describe("Property 23: stale upstream annotation", () => {
 describe("Property 24: nine-section report structure", () => {
   it("buildStructuredReport contains all section labels", () => {
     fc.assert(
-      fc.property(fc.boolean(), withStale => {
+      fc.property(fc.boolean(), (withStale) => {
         let s = createInitialSessionState("报告", "s-p24");
         const arts = [
           trustedArtifact("risk-r", "risk", "risk.analyze", "风险：越权"),
-          trustedArtifact(
-            "syn-r",
-            "synthesis",
-            "synthesis.merge",
-            "综合：推进"
-          ),
+          trustedArtifact("syn-r", "synthesis", "synthesis.merge", "综合：推进"),
         ];
         s = {
           ...s,
@@ -222,7 +190,7 @@ describe("Property 24: nine-section report structure", () => {
         };
         const report = buildStructuredReport({
           state: s,
-          inputArtifactIds: arts.map(a => a.id),
+          inputArtifactIds: arts.map((a) => a.id),
         });
         for (const section of REPORT_SECTIONS) {
           expect(report.content).toContain(section);
@@ -240,10 +208,7 @@ describe("Property 24: nine-section report structure", () => {
 describe("Property 30: LLM route DLEDGER completeness", () => {
   it("orchestrate with llm proposedPlan records full scheduling decision", () => {
     let s = createInitialSessionState("dledger", "s-p30");
-    const { preparedState, context } = intakeMessage(s, {
-      turnId: "t30",
-      userText: "分析",
-    });
+    const { preparedState, context } = intakeMessage(s, { turnId: "t30", userText: "分析" });
     const { newState } = orchestrateReasoningTurn(preparedState, {
       ...context,
       proposedPlan: {
@@ -252,7 +217,7 @@ describe("Property 30: LLM route DLEDGER completeness", () => {
         source: "llm",
       },
     });
-    const dec = getDecisionLedger(newState).find(d => d.turnId === "t30");
+    const dec = getDecisionLedger(newState).find((d) => d.turnId === "t30");
     expect(dec?.source).toBe("llm");
     expect(Array.isArray(dec?.saw)).toBe(true);
     expect(Array.isArray(dec?.chose)).toBe(true);
@@ -275,7 +240,7 @@ describe("Property 31: heuristic fallback DLEDGER", () => {
       userText: "对比一下方案的运维成本",
     });
     const { newState } = orchestrateReasoningTurn(preparedState, context);
-    const dec = getDecisionLedger(newState).find(d => d.turnId === "t31");
+    const dec = getDecisionLedger(newState).find((d) => d.turnId === "t31");
     expect(dec?.source).toBe("local_heuristic");
     expect(dec?.rationale?.length).toBeGreaterThan(0);
   });
@@ -288,7 +253,7 @@ describe("Property 31: heuristic fallback DLEDGER", () => {
 describe("Property 32: challenge marks decision and triggers stale cascade", () => {
   it("targetDecisionId challenge marks ledger entry challenged", () => {
     fc.assert(
-      fc.property(fc.uuid(), decisionId => {
+      fc.property(fc.uuid(), (decisionId) => {
         let s = createInitialSessionState("challenge", "s-p32");
         s = {
           ...s,
@@ -312,9 +277,7 @@ describe("Property 32: challenge marks decision and triggers stale cascade", () 
           targetDecisionId: decisionId,
           text: "质疑路由",
         });
-        const entry = (next.decisionLedger || []).find(
-          (d: any) => d.id === decisionId
-        );
+        const entry = (next.decisionLedger || []).find((d: any) => d.id === decisionId);
         expect(entry?.status).toBe("challenged");
       }),
       PBT_OPTS
@@ -325,9 +288,7 @@ describe("Property 32: challenge marks decision and triggers stale cascade", () 
     let s = createInitialSessionState("challenge-stale", "s-p32b");
     s = {
       ...s,
-      artifacts: [
-        trustedArtifact("rep-c", "report", "report.write", "报告结论"),
-      ] as any,
+      artifacts: [trustedArtifact("rep-c", "report", "report.write", "报告结论")] as any,
     };
     const next = invalidateForIntervention(s, {
       intent: "challenge",

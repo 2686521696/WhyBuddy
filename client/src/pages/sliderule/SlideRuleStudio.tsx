@@ -103,20 +103,15 @@ export function SlideRuleStudio({
     () =>
       mergeFiveSystemModels(
         parseFiveSystemModelFromContents(skillContents ?? {}),
-        parseFiveSystemModelFromPerSkillEvidence(
-          publishClosure?.perSkillEvidence
-        )
+        parseFiveSystemModelFromPerSkillEvidence(publishClosure?.perSkillEvidence)
       ),
     [skillContents, publishClosure?.perSkillEvidence]
   );
 
   // 起草中的部分模型：五系统 JSON 还在流式生成时容错解析（每 +300 字符重解一次，
   // 避免逐 delta 重渲染）。仅实时预览——最终真实模型仍以闭环证据为准。
-  const isDraftingModel =
-    isRunning && llmDraftLabel === "five-system-model" && !!llmDraft;
-  const draftParseKey = isDraftingModel
-    ? Math.floor(llmDraft.length / 300)
-    : -1;
+  const isDraftingModel = isRunning && llmDraftLabel === "five-system-model" && !!llmDraft;
+  const draftParseKey = isDraftingModel ? Math.floor(llmDraft.length / 300) : -1;
   const draftModel = useMemo(
     () => (isDraftingModel ? parsePartialFiveSystemModel(llmDraft) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 按长度桶节流重解
@@ -148,7 +143,7 @@ export function SlideRuleStudio({
     }
   });
   const toggleXray = useCallback(() => {
-    setXrayOn(v => {
+    setXrayOn((v) => {
       try {
         localStorage.setItem(XRAY_PREF_KEY, v ? "0" : "1");
       } catch {}
@@ -175,9 +170,7 @@ export function SlideRuleStudio({
   if (!stageVisible) {
     return (
       <div className={`flex h-full w-full overflow-hidden ${className}`}>
-        <div className="flex h-full w-full flex-col bg-[#f7f8fa]">
-          {chatSlot}
-        </div>
+        <div className="flex h-full w-full flex-col bg-[#f7f8fa]">{chatSlot}</div>
       </div>
     );
   }
@@ -185,10 +178,8 @@ export function SlideRuleStudio({
   return (
     <div className={`flex h-full w-full overflow-hidden ${className}`}>
       {/* Left panel — 38% — Chat（对话 + 实时推演过程） */}
-      <div
-        className="flex h-full shrink-0 flex-col border-r border-[#e5e7eb] bg-[#f7f8fa]"
-        style={{ width: "38%" }}
-      >
+      <div className="flex h-full shrink-0 flex-col border-r border-[#e5e7eb] bg-[#f7f8fa]"
+           style={{ width: "38%" }}>
         {chatSlot}
       </div>
 
@@ -198,10 +189,7 @@ export function SlideRuleStudio({
         {stage === "app" && fiveSystemModel ? (
           <>
             {/* 应用主舞台：细头条（话题 + 游标开关），其下应用整高铺满 */}
-            <div
-              className="flex shrink-0 items-center gap-2"
-              data-testid="sliderule-app-stage-bar"
-            >
+            <div className="flex shrink-0 items-center gap-2" data-testid="sliderule-app-stage-bar">
               <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
                 {appTitle || "推演应用"}
               </span>
@@ -231,10 +219,7 @@ export function SlideRuleStudio({
                 游标
               </button>
             </div>
-            <div
-              className="flex min-h-0 flex-1 gap-3"
-              data-testid="sliderule-app-stage"
-            >
+            <div className="flex min-h-0 flex-1 gap-3" data-testid="sliderule-app-stage">
               {/* 画布直接浮在奶油底上（自带投影），不再包白色卡框叠色 */}
               <div className="min-w-0 flex-1 overflow-hidden">
                 <AppRuntimeScreen
@@ -267,7 +252,7 @@ export function SlideRuleStudio({
             data-testid="sliderule-live-stage"
           >
             <span className="inline-flex gap-1">
-              {[0, 1, 2].map(i => (
+              {[0, 1, 2].map((i) => (
                 <span
                   key={i}
                   className="h-2 w-2 animate-pulse rounded-full bg-[#1677ff]/60"
@@ -276,9 +261,7 @@ export function SlideRuleStudio({
               ))}
             </span>
             <div className="text-[13px] font-medium text-stone-500">推演中</div>
-            <div className="text-[11px] text-stone-400">
-              应用成形后将在这里实时渲染
-            </div>
+            <div className="text-[11px] text-stone-400">应用成形后将在这里实时渲染</div>
           </div>
         ) : (
           <>
@@ -314,9 +297,7 @@ export function SlideRuleStudio({
               <span className="text-[13px] font-semibold text-stone-800">
                 {SKILL_LABELS[drawerSkill]}
               </span>
-              <span className="text-[11px] text-stone-400">
-                游标透视 · 应用背后的声明
-              </span>
+              <span className="text-[11px] text-stone-400">游标透视 · 应用背后的声明</span>
               <button
                 type="button"
                 onClick={() => setDrawerSkill(null)}

@@ -34,10 +34,7 @@ import {
   traceDataModelEntityFieldToWorkflowBindingEvidence,
 } from "./dataModelSkill";
 import type { DataModelModel, Relation } from "./dataModelModel";
-import {
-  purchaseApprovalWorkflow,
-  leaveApprovalWorkflow,
-} from "../workflow/workflowSkill";
+import { purchaseApprovalWorkflow, leaveApprovalWorkflow } from "../workflow/workflowSkill";
 
 const clone = (m: DataModelModel): DataModelModel => structuredClone(m);
 
@@ -50,13 +47,10 @@ describe("dataModelSkill — the gate", () => {
 
   it("CATCHES a ref field pointing at a non-existent entity", () => {
     const broken = clone(leaveRequestDataModel);
-    broken.entities[1].fields.find(f => f.key === "applicant")!.refEntity =
-      "ghost_entity";
+    broken.entities[1].fields.find(f => f.key === "applicant")!.refEntity = "ghost_entity";
     const report = dataModelSkill.validate(broken);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "DM_REF_MISSING_ENTITY")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "DM_REF_MISSING_ENTITY")).toBe(true);
   });
 
   it("CATCHES an enum field with no values", () => {
@@ -72,9 +66,7 @@ describe("dataModelSkill — the gate", () => {
     expect(surface.entity).toContain("leave_request");
     expect(surface.field).toContain("leave_request.approved");
     // metadata via fields surface
-    const approved = surface.fields.find(
-      (f: any) => f.ref === "leave_request.approved"
-    );
+    const approved = surface.fields.find((f: any) => f.ref === "leave_request.approved");
     expect(approved).toBeTruthy();
   });
 
@@ -87,20 +79,14 @@ describe("dataModelSkill — the gate", () => {
     expect(origSurface.entity).toContain("leave_request");
     expect(origSurface.field).toContain("leave_request.approved");
     expect(origSurface.field).toContain("employee.name");
-    const origApproved = origSurface.fields.find(
-      (f: any) => f.ref === "leave_request.approved"
-    );
-    const origName = origSurface.fields.find(
-      (f: any) => f.ref === "employee.name"
-    );
+    const origApproved = origSurface.fields.find((f: any) => f.ref === "leave_request.approved");
+    const origName = origSurface.fields.find((f: any) => f.ref === "employee.name");
     expect(origApproved).toBeTruthy();
     expect(origName).toBeTruthy();
 
     // The real leave-approval sample is the SSOT host; do not prove this only
     // with a temporary test-only model.
-    const sampleIdField = leaveRequestDataModel.entities[1].fields.find(
-      f => f.key === "id"
-    )!;
+    const sampleIdField = leaveRequestDataModel.entities[1].fields.find(f => f.key === "id")!;
     expect(sampleIdField.fieldId).toBe("f_leave_id_v1");
     expect(sampleIdField.version).toBe(1);
     expect(sampleIdField.lifecycle).toBe("active");
@@ -125,35 +111,9 @@ describe("dataModelSkill — the gate", () => {
           name: "员工",
           namespace: "hr",
           fields: [
-            {
-              key: "id",
-              name: "工号",
-              type: "string",
-              required: true,
-              fieldId: "f_emp_id_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "name",
-              name: "姓名",
-              type: "string",
-              required: true,
-              fieldId: "f_emp_name_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "dept",
-              name: "部门",
-              type: "string",
-              fieldId: "f_emp_dept_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
+            { key: "id", name: "工号", type: "string", required: true, fieldId: "f_emp_id_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "name", name: "姓名", type: "string", required: true, fieldId: "f_emp_name_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "dept", name: "部门", type: "string", fieldId: "f_emp_dept_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
           ],
         },
         {
@@ -161,65 +121,12 @@ describe("dataModelSkill — the gate", () => {
           name: "请假单",
           namespace: "hr",
           fields: [
-            {
-              key: "id",
-              name: "单号",
-              type: "string",
-              required: true,
-              fieldId: "f_leave_id_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "applicant",
-              name: "申请人",
-              type: "ref",
-              refEntity: "employee",
-              required: true,
-              fieldId: "f_leave_applicant_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "leaveType",
-              name: "请假类型",
-              type: "enum",
-              enumValues: ["年假", "病假", "事假"],
-              fieldId: "f_leave_type_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "days",
-              name: "天数",
-              type: "number",
-              required: true,
-              fieldId: "f_leave_days_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "reason",
-              name: "事由",
-              type: "string",
-              fieldId: "f_leave_reason_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "approved",
-              name: "是否通过",
-              type: "boolean",
-              fieldId: "f_leave_approved_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
+            { key: "id", name: "单号", type: "string", required: true, fieldId: "f_leave_id_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "applicant", name: "申请人", type: "ref", refEntity: "employee", required: true, fieldId: "f_leave_applicant_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "leaveType", name: "请假类型", type: "enum", enumValues: ["年假", "病假", "事假"], fieldId: "f_leave_type_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "days", name: "天数", type: "number", required: true, fieldId: "f_leave_days_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "reason", name: "事由", type: "string", fieldId: "f_leave_reason_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "approved", name: "是否通过", type: "boolean", fieldId: "f_leave_approved_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
           ],
         },
       ],
@@ -233,12 +140,8 @@ describe("dataModelSkill — the gate", () => {
     expect(ssotSurface.entity).toContain("leave_request");
     expect(ssotSurface.field).toContain("leave_request.approved");
     expect(ssotSurface.field).toContain("employee.dept");
-    const approvedF = ssotSurface.fields.find(
-      (f: any) => f.ref === "leave_request.approved"
-    );
-    const deptF = ssotSurface.fields.find(
-      (f: any) => f.ref === "employee.dept"
-    );
+    const approvedF = ssotSurface.fields.find((f: any) => f.ref === "leave_request.approved");
+    const deptF = ssotSurface.fields.find((f: any) => f.ref === "employee.dept");
     expect(approvedF).toBeTruthy();
     expect(deptF).toBeTruthy();
     // metadata carried for field-level refs
@@ -246,9 +149,7 @@ describe("dataModelSkill — the gate", () => {
     expect(approvedF.lifecycle).toBe("active");
 
     // Prove stable IDs and SSOT markers are carried on fields
-    const idField = ssotLeaveModel.entities[1].fields.find(
-      f => f.key === "id"
-    )!;
+    const idField = ssotLeaveModel.entities[1].fields.find(f => f.key === "id")!;
     expect(idField.fieldId).toBe("f_leave_id_v1");
     expect(idField.version).toBe(1);
     expect(idField.lifecycle).toBe("active");
@@ -257,24 +158,14 @@ describe("dataModelSkill — the gate", () => {
 
     // OLAP projection role is distinguishable (not authoritative)
     const olapModel: DataModelModel = {
-      entities: [
-        {
-          id: "leave_request_olap",
-          name: "请假单OLAP",
-          namespace: "analytics",
-          fields: [
-            {
-              key: "id",
-              name: "单号",
-              type: "string",
-              fieldId: "f_olap_leave_id",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "olap_projection",
-            },
-          ],
-        },
-      ],
+      entities: [{
+        id: "leave_request_olap",
+        name: "请假单OLAP",
+        namespace: "analytics",
+        fields: [
+          { key: "id", name: "单号", type: "string", fieldId: "f_olap_leave_id", version: 1, lifecycle: "active", storageRole: "olap_projection" },
+        ],
+      }],
     };
     const olapReport = dataModelSkill.validate(olapModel);
     expect(olapReport.ok).toBe(true);
@@ -283,32 +174,14 @@ describe("dataModelSkill — the gate", () => {
 
   it("accepts lifecycle values active/deprecated/removed", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "x",
-          name: "X",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "fx1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "old",
-              name: "Old",
-              type: "string",
-              fieldId: "fx2",
-              version: 2,
-              lifecycle: "deprecated",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{
+        id: "x",
+        name: "X",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "fx1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "old", name: "Old", type: "string", fieldId: "fx2", version: 2, lifecycle: "deprecated", storageRole: "ssot" },
+        ],
+      }],
     };
     expect(dataModelSkill.validate(m).ok).toBe(true);
   });
@@ -320,24 +193,8 @@ describe("dataModelSkill — the gate", () => {
           id: "e",
           name: "E",
           fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "name",
-              name: "Name",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
+            { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "name", name: "Name", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
           ],
         },
       ],
@@ -354,35 +211,15 @@ describe("dataModelSkill — the gate", () => {
           id: "e",
           name: "E",
           fields: [
-            {
-              key: "a",
-              name: "A",
-              type: "string",
-              fieldId: "fa",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "b",
-              name: "B",
-              type: "string",
-              fieldId: "fa",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
+            { key: "a", name: "A", type: "string", fieldId: "fa", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "b", name: "B", type: "string", fieldId: "fa", version: 1, lifecycle: "active", storageRole: "ssot" },
           ],
         },
       ],
     };
     const report = dataModelSkill.validate(dupPair);
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(
-        e => e.code === "DM_DUP_ENTITY_FIELD" || e.code === "DM_DUP_FIELD_ID"
-      )
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "DM_DUP_ENTITY_FIELD" || e.code === "DM_DUP_FIELD_ID")).toBe(true);
   });
 
   it("CATCHES version mismatch expecting DM_FIELD_VERSION_MISMATCH", () => {
@@ -392,99 +229,43 @@ describe("dataModelSkill — the gate", () => {
           id: "e",
           name: "E",
           fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "fv",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "v2",
-              name: "V2",
-              type: "string",
-              fieldId: "fv",
-              version: 2,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
+            { key: "id", name: "ID", type: "string", fieldId: "fv", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "v2", name: "V2", type: "string", fieldId: "fv", version: 2, lifecycle: "active", storageRole: "ssot" },
           ],
         },
       ],
     };
     const report = dataModelSkill.validate(mismatch);
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "DM_FIELD_VERSION_MISMATCH")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "DM_FIELD_VERSION_MISMATCH")).toBe(true);
   });
 
   it("flags deprecated fields with DM_FIELD_DEPRECATED warning", () => {
     const dep: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "old",
-              name: "Old",
-              type: "string",
-              fieldId: "f2",
-              version: 1,
-              lifecycle: "deprecated",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{
+        id: "e",
+        name: "E",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "old", name: "Old", type: "string", fieldId: "f2", version: 1, lifecycle: "deprecated", storageRole: "ssot" },
+        ],
+      }],
     };
     const report = dataModelSkill.validate(dep);
     expect(report.ok).toBe(true);
-    expect(report.warnings.some(e => e.code === "DM_FIELD_DEPRECATED")).toBe(
-      true
-    );
+    expect(report.warnings.some(e => e.code === "DM_FIELD_DEPRECATED")).toBe(true);
   });
 
   it("flags removed fields with DM_FIELD_REMOVED error", () => {
     const rem: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "gone",
-              name: "Gone",
-              type: "string",
-              fieldId: "f3",
-              version: 1,
-              lifecycle: "removed",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{
+        id: "e",
+        name: "E",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "gone", name: "Gone", type: "string", fieldId: "f3", version: 1, lifecycle: "removed", storageRole: "ssot" },
+        ],
+      }],
     };
     const report = dataModelSkill.validate(rem);
     expect(report.ok).toBe(false);
@@ -498,24 +279,8 @@ describe("dataModelSkill — the gate", () => {
           id: "leave_request",
           name: "请假单",
           fields: [
-            {
-              key: "id",
-              name: "单号",
-              type: "string",
-              fieldId: "f_leave_id_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "olapview",
-              name: "OLAP视图",
-              type: "string",
-              fieldId: "f_leave_id_v1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "olap_projection",
-            },
+            { key: "id", name: "单号", type: "string", fieldId: "f_leave_id_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "olapview", name: "OLAP视图", type: "string", fieldId: "f_leave_id_v1", version: 1, lifecycle: "active", storageRole: "olap_projection" },
           ],
         },
       ],
@@ -533,9 +298,7 @@ describe("dataModelSkill — the gate", () => {
     expect(surface.field).toContain("leave_request.approved");
     // detailed fields surface carries metadata
     expect(Array.isArray(surface.fields)).toBe(true);
-    const approved = surface.fields.find(
-      (f: any) => f.ref === "leave_request.approved"
-    );
+    const approved = surface.fields.find((f: any) => f.ref === "leave_request.approved");
     expect(approved).toBeTruthy();
     expect(approved.version).toBe(1);
     expect(approved.lifecycle).toBe("active");
@@ -550,13 +313,9 @@ describe("dataModelSkill — the gate", () => {
     expect(f2).toBe("dm_leave_request_approved");
     // field node is not the entity node
     expect(f1).not.toBe("dm_leave_request");
-    expect(dataModelSkill.refNodeId("entity", "leave_request")).toBe(
-      "dm_leave_request"
-    );
+    expect(dataModelSkill.refNodeId("entity", "leave_request")).toBe("dm_leave_request");
     // also for other field
-    expect(dataModelSkill.refNodeId("field", "employee.name")).toBe(
-      "dm_employee_name"
-    );
+    expect(dataModelSkill.refNodeId("field", "employee.name")).toBe("dm_employee_name");
   });
 
   it("project() emits distinct readable SSOT field nodes (entities kept)", () => {
@@ -564,24 +323,17 @@ describe("dataModelSkill — the gate", () => {
     const entNodes = proj.nodes.filter((n: any) => n.kind === "entity");
     const fldNodes = proj.nodes.filter((n: any) => n.kind === "field");
     expect(entNodes.map((n: any) => n.id)).toContain("dm_leave_request");
-    expect(fldNodes.map((n: any) => n.id)).toContain(
-      "dm_leave_request_approved"
-    );
+    expect(fldNodes.map((n: any) => n.id)).toContain("dm_leave_request_approved");
     expect(fldNodes.length).toBeGreaterThan(0);
     // entities and fields remain distinct sets
-    const allIds = new Set([
-      ...entNodes.map((n: any) => n.id),
-      ...fldNodes.map((n: any) => n.id),
-    ]);
+    const allIds = new Set([...entNodes.map((n: any) => n.id), ...fldNodes.map((n: any) => n.id)]);
     expect(allIds.size).toBe(entNodes.length + fldNodes.length);
   });
 
   it("provides purchase_request.amount field versioning fixture coverage on purchaseApprovalDataModel", () => {
     // Direct fixture use (not temp model) per task requirement
     expect(purchaseApprovalDataModel).toBeTruthy();
-    const purchEntity = purchaseApprovalDataModel.entities.find(
-      e => e.id === "purchase_request"
-    )!;
+    const purchEntity = purchaseApprovalDataModel.entities.find(e => e.id === "purchase_request")!;
     expect(purchEntity).toBeTruthy();
     expect(purchEntity.namespace).toBe("procurement");
     const amount = purchEntity.fields.find(f => f.key === "amount")!;
@@ -602,9 +354,7 @@ describe("dataModelSkill — the gate", () => {
     const surface = dataModelSkill.resolve(purchaseApprovalDataModel);
     expect(surface.entity).toContain("purchase_request");
     expect(surface.field).toContain("purchase_request.amount");
-    const amtF = surface.fields.find(
-      (f: any) => f.ref === "purchase_request.amount"
-    );
+    const amtF = surface.fields.find((f: any) => f.ref === "purchase_request.amount");
     expect(amtF).toBeTruthy();
     expect(amtF.fieldId).toBe("f_purchase_request_amount_v1");
     expect(amtF.version).toBe(1);
@@ -632,18 +382,14 @@ describe("dataModelSkill — the gate", () => {
 
   // --- 115.20.06 DataModel sensitive field policy focused +ve/-ve (per review findings) ---
   it("purchase_request.amount is marked sensitive with PDP delegation metadata visible to finance/admin (positive)", () => {
-    const purch = purchaseApprovalDataModel.entities.find(
-      e => e.id === "purchase_request"
-    )!;
+    const purch = purchaseApprovalDataModel.entities.find(e => e.id === "purchase_request")!;
     const amount = purch.fields.find(f => f.key === "amount")!;
     expect(amount.sensitivity).toBe("financial");
     expect(amount.policyRef).toBe("pdp:purchase:amount");
     expect(amount.pdpVisibleTo).toEqual(["finance", "admin"]);
 
     const surface = dataModelSkill.resolve(purchaseApprovalDataModel);
-    const amtF = surface.fields.find(
-      (f: any) => f.ref === "purchase_request.amount"
-    );
+    const amtF = surface.fields.find((f: any) => f.ref === "purchase_request.amount");
     expect(amtF.sensitivity).toBe("financial");
     expect(amtF.policyRef).toBe("pdp:purchase:amount");
     expect(amtF.pdpVisibleTo).toContain("finance");
@@ -652,142 +398,58 @@ describe("dataModelSkill — the gate", () => {
 
   it("sensitive field without policyRef is rejected by gate (negative)", () => {
     const bad: DataModelModel = {
-      entities: [
-        {
-          id: "purchase_request",
-          name: "PR",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "secretAmount",
-              name: "Secret",
-              type: "number",
-              sensitivity: "financial",
-              fieldId: "f2",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot" /* no policyRef */,
-            },
-          ],
-        },
-      ],
+      entities: [{
+        id: "purchase_request",
+        name: "PR",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "secretAmount", name: "Secret", type: "number", sensitivity: "financial", fieldId: "f2", version: 1, lifecycle: "active", storageRole: "ssot" /* no policyRef */ },
+        ],
+      }],
     };
     const report = dataModelSkill.validate(bad);
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "DM_SENSITIVE_FIELD_NO_POLICY")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "DM_SENSITIVE_FIELD_NO_POLICY")).toBe(true);
   });
 
   it("non-sensitive fields (sensitivity none or absent) do not require policyRef (positive compat)", () => {
     const okM: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "pub",
-              name: "Pub",
-              type: "string",
-              sensitivity: "none",
-              fieldId: "f2",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "norm",
-              name: "Norm",
-              type: "string",
-              fieldId: "f3",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{
+        id: "e",
+        name: "E",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "pub", name: "Pub", type: "string", sensitivity: "none", fieldId: "f2", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "norm", name: "Norm", type: "string", fieldId: "f3", version: 1, lifecycle: "active", storageRole: "ssot" },
+        ],
+      }],
     };
     const report = dataModelSkill.validate(okM);
     expect(report.ok).toBe(true);
-    expect(
-      report.errors.some(e => e.code === "DM_SENSITIVE_FIELD_NO_POLICY")
-    ).toBe(false);
+    expect(report.errors.some(e => e.code === "DM_SENSITIVE_FIELD_NO_POLICY")).toBe(false);
   });
 
   it("project() advances sensitive/policy diagram semantics (policy nodes + edges)", () => {
     const proj = dataModelSkill.project(purchaseApprovalDataModel);
     // policy node for the amount's policyRef
-    expect(
-      proj.nodes.some(
-        (n: any) =>
-          n.kind === "policy" && (n.id || "").includes("pdp_purchase_amount")
-      )
-    ).toBe(true);
+    expect(proj.nodes.some((n: any) => n.kind === "policy" && (n.id || "").includes("pdp_purchase_amount"))).toBe(true);
     // edge from sensitive amount field to its policy
-    const polEdge = proj.edges.find(
-      (e: any) =>
-        e.kind === "policy" && (e.label || "").includes("sensitive:financial")
-    );
+    const polEdge = proj.edges.find((e: any) => e.kind === "policy" && (e.label || "").includes("sensitive:financial"));
     expect(polEdge).toBeTruthy();
     expect(polEdge!.from).toContain("purchase_request_amount");
   });
 
   it("getFieldLifecycle exposes lifecycle from resolve() surface for consumer-side checks (deprecated/removed)", () => {
     const depM: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "old",
-              name: "Old",
-              type: "string",
-              fieldId: "f2",
-              version: 1,
-              lifecycle: "deprecated",
-              storageRole: "ssot",
-            },
-            {
-              key: "gone",
-              name: "Gone",
-              type: "string",
-              fieldId: "f3",
-              version: 1,
-              lifecycle: "removed",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{
+        id: "e",
+        name: "E",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "old", name: "Old", type: "string", fieldId: "f2", version: 1, lifecycle: "deprecated", storageRole: "ssot" },
+          { key: "gone", name: "Gone", type: "string", fieldId: "f3", version: 1, lifecycle: "removed", storageRole: "ssot" },
+        ],
+      }],
     };
     const surf = dataModelSkill.resolve(depM);
     expect(getFieldLifecycle(surf, "e.id")).toBe("active");
@@ -801,51 +463,15 @@ describe("dataModelSkill — the gate", () => {
   it("accepts all four cardinalities with valid targets (positive)", () => {
     const m: DataModelModel = {
       entities: [
-        {
-          id: "dept",
-          name: "Dept",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-        {
-          id: "project",
-          name: "Project",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
+        { id: "dept", name: "Dept", fields: [{ key: "id", name: "ID", type: "string" }] },
+        { id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] },
+        { id: "project", name: "Project", fields: [{ key: "id", name: "ID", type: "string" }] },
       ],
       relations: [
-        {
-          key: "r11",
-          fromEntity: "dept",
-          toEntity: "emp",
-          cardinality: "one-to-one",
-          name: "head",
-        },
-        {
-          key: "r1n",
-          fromEntity: "dept",
-          toEntity: "emp",
-          cardinality: "one-to-many",
-          name: "members",
-        },
-        {
-          key: "rn1",
-          fromEntity: "emp",
-          toEntity: "dept",
-          cardinality: "many-to-one",
-          name: "dept",
-        },
-        {
-          key: "rnn",
-          fromEntity: "emp",
-          toEntity: "project",
-          cardinality: "many-to-many",
-          name: "assignments",
-        },
+        { key: "r11", fromEntity: "dept", toEntity: "emp", cardinality: "one-to-one", name: "head" },
+        { key: "r1n", fromEntity: "dept", toEntity: "emp", cardinality: "one-to-many", name: "members" },
+        { key: "rn1", fromEntity: "emp", toEntity: "dept", cardinality: "many-to-one", name: "dept" },
+        { key: "rnn", fromEntity: "emp", toEntity: "project", cardinality: "many-to-many", name: "assignments" },
       ],
     };
     const report = dataModelSkill.validate(m);
@@ -855,22 +481,9 @@ describe("dataModelSkill — the gate", () => {
 
   it("accepts self-relation only when allowSelf=true (positive)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
+      entities: [{ id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] }],
       relations: [
-        {
-          key: "mgr",
-          fromEntity: "emp",
-          toEntity: "emp",
-          cardinality: "many-to-one",
-          name: "manager",
-          allowSelf: true,
-        },
+        { key: "mgr", fromEntity: "emp", toEntity: "emp", cardinality: "many-to-one", name: "manager", allowSelf: true },
       ],
     };
     const report = dataModelSkill.validate(m);
@@ -884,20 +497,8 @@ describe("dataModelSkill — the gate", () => {
         { id: "emp", name: "E", fields: [] },
       ],
       relations: [
-        {
-          key: "members",
-          fromEntity: "dept",
-          toEntity: "emp",
-          cardinality: "one-to-many",
-          inverse: "deptOf",
-        },
-        {
-          key: "deptOf",
-          fromEntity: "emp",
-          toEntity: "dept",
-          cardinality: "many-to-one",
-          inverse: "members",
-        },
+        { key: "members", fromEntity: "dept", toEntity: "emp", cardinality: "one-to-many", inverse: "deptOf" },
+        { key: "deptOf", fromEntity: "emp", toEntity: "dept", cardinality: "many-to-one", inverse: "members" },
       ],
     };
     const report = dataModelSkill.validate(m);
@@ -907,9 +508,7 @@ describe("dataModelSkill — the gate", () => {
   it("CATCHES relation missing target entity (negative)", () => {
     const m: DataModelModel = {
       entities: [{ id: "a", name: "A", fields: [] }],
-      relations: [
-        { fromEntity: "a", toEntity: "ghost", cardinality: "one-to-many" },
-      ],
+      relations: [{ fromEntity: "a", toEntity: "ghost", cardinality: "one-to-many" }],
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
@@ -919,15 +518,11 @@ describe("dataModelSkill — the gate", () => {
   it("CATCHES invalid self-relation without allowSelf (negative)", () => {
     const m: DataModelModel = {
       entities: [{ id: "emp", name: "E", fields: [] }],
-      relations: [
-        { fromEntity: "emp", toEntity: "emp", cardinality: "one-to-one" },
-      ],
+      relations: [{ fromEntity: "emp", toEntity: "emp", cardinality: "one-to-one" }],
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "DM_REL_INVALID_SELF")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "DM_REL_INVALID_SELF")).toBe(true);
   });
 
   it("CATCHES inverse ref missing or mismatched (negative)", () => {
@@ -937,20 +532,12 @@ describe("dataModelSkill — the gate", () => {
         { id: "emp", name: "E", fields: [] },
       ],
       relations: [
-        {
-          key: "members",
-          fromEntity: "dept",
-          toEntity: "emp",
-          cardinality: "one-to-many",
-          inverse: "missingInv",
-        },
+        { key: "members", fromEntity: "dept", toEntity: "emp", cardinality: "one-to-many", inverse: "missingInv" },
       ],
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "DM_REL_INVERSE_MISMATCH")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "DM_REL_INVERSE_MISMATCH")).toBe(true);
   });
 
   it("project() emits explicit relation edges with cardinality and inverse labels", () => {
@@ -960,21 +547,11 @@ describe("dataModelSkill — the gate", () => {
         { id: "emp", name: "Emp", fields: [] },
       ],
       relations: [
-        {
-          key: "members",
-          fromEntity: "dept",
-          toEntity: "emp",
-          cardinality: "one-to-many",
-          name: "Members",
-          inverse: "dept",
-        },
+        { key: "members", fromEntity: "dept", toEntity: "emp", cardinality: "one-to-many", name: "Members", inverse: "dept" },
       ],
     };
     const proj = dataModelSkill.project(m);
-    const relEdges = proj.edges.filter(
-      (e: any) =>
-        e.kind === "relation" && e.from.includes("dept") && e.to.includes("emp")
-    );
+    const relEdges = proj.edges.filter((e: any) => e.kind === "relation" && e.from.includes("dept") && e.to.includes("emp"));
     expect(relEdges.length).toBeGreaterThan(0);
     const label = relEdges[0].label || "";
     expect(label).toContain("one-to-many");
@@ -989,46 +566,24 @@ describe("dataModelSkill — the gate", () => {
         { id: "emp", name: "Emp", fields: [] },
       ],
       relations: [
-        {
-          fromEntity: "dept",
-          toEntity: "emp",
-          cardinality: "unknown-cardinality" as any,
-        },
+        { fromEntity: "dept", toEntity: "emp", cardinality: "unknown-cardinality" as any },
       ],
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "DM_REL_INVALID_CARDINALITY")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "DM_REL_INVALID_CARDINALITY")).toBe(true);
   });
 
   // --- migration plan gate focused tests (positive + negative per task) ---
   it("accepts planned rename with planRef (positive)", () => {
     const m: DataModelModel = {
       entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [
-            { key: "id", name: "ID", type: "string" },
-            { key: "fullName", name: "Full Name", type: "string" },
-          ],
-        },
+        { id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }, { key: "fullName", name: "Full Name", type: "string" }] },
       ],
       migrationPlan: {
         id: "plan-rename-001",
         version: 2,
-        actions: [
-          {
-            action: "rename",
-            entity: "emp",
-            field: "name",
-            from: "name",
-            to: "fullName",
-            planRef: "TICKET-115-01",
-          },
-        ],
+        actions: [{ action: "rename", entity: "emp", field: "name", from: "name", to: "fullName", planRef: "TICKET-115-01" }],
       },
     };
     const report = dataModelSkill.validate(m);
@@ -1039,21 +594,10 @@ describe("dataModelSkill — the gate", () => {
   it("accepts planned remove with planRef (positive)", () => {
     const m: DataModelModel = {
       entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
+        { id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] },
       ],
       migrationPlan: {
-        actions: [
-          {
-            action: "remove",
-            entity: "emp",
-            field: "legacyCode",
-            planRef: "MIG-115-REMOVE-42",
-          },
-        ],
+        actions: [{ action: "remove", entity: "emp", field: "legacyCode", planRef: "MIG-115-REMOVE-42" }],
       },
     };
     const report = dataModelSkill.validate(m);
@@ -1063,24 +607,9 @@ describe("dataModelSkill — the gate", () => {
 
   it("accepts planned type-change with planRef (positive)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "order",
-          name: "Order",
-          fields: [{ key: "amount", name: "Amount", type: "number" }],
-        },
-      ],
+      entities: [{ id: "order", name: "Order", fields: [{ key: "amount", name: "Amount", type: "number" }] }],
       migrationPlan: {
-        actions: [
-          {
-            action: "type-change",
-            entity: "order",
-            field: "amount",
-            from: "string",
-            to: "number",
-            planRef: "PR-115-TC",
-          },
-        ],
+        actions: [{ action: "type-change", entity: "order", field: "amount", from: "string", to: "number", planRef: "PR-115-TC" }],
       },
     };
     const report = dataModelSkill.validate(m);
@@ -1089,113 +618,61 @@ describe("dataModelSkill — the gate", () => {
 
   it("CATCHES destructive remove without planRef (negative)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
+      entities: [{ id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] }],
       migrationPlan: {
-        actions: [
-          {
-            action: "remove",
-            entity: "emp",
-            field: "oldField" /* no planRef */,
-          },
-        ],
+        actions: [{ action: "remove", entity: "emp", field: "oldField" /* no planRef */ }],
       },
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "DM_MIGRATION_DESTRUCTIVE_NO_PLAN")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "DM_MIGRATION_DESTRUCTIVE_NO_PLAN")).toBe(true);
   });
 
   it("CATCHES destructive type-change without planRef (negative)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "doc",
-          name: "Doc",
-          fields: [{ key: "ver", name: "Ver", type: "number" }],
-        },
-      ],
+      entities: [{ id: "doc", name: "Doc", fields: [{ key: "ver", name: "Ver", type: "number" }] }],
       migrationPlan: {
-        actions: [
-          {
-            action: "type-change",
-            entity: "doc",
-            field: "ver",
-            from: "string",
-            to: "number",
-          },
-        ],
+        actions: [{ action: "type-change", entity: "doc", field: "ver", from: "string", to: "number" }],
       },
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "DM_MIGRATION_DESTRUCTIVE_NO_PLAN")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "DM_MIGRATION_DESTRUCTIVE_NO_PLAN")).toBe(true);
   });
 
   it("warns on high-risk deprecate without planRef (but ok=true)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
+      entities: [{ id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] }],
       migrationPlan: {
-        actions: [
-          { action: "deprecate", entity: "emp", field: "legacy" /*no ref*/ },
-        ],
+        actions: [{ action: "deprecate", entity: "emp", field: "legacy", /*no ref*/ }],
       },
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(true);
-    expect(
-      report.warnings.some(e => e.code === "DM_MIGRATION_HIGH_RISK_NO_REF")
-    ).toBe(true);
+    expect(report.warnings.some(e => e.code === "DM_MIGRATION_HIGH_RISK_NO_REF")).toBe(true);
   });
 
   it("CATCHES invalid migration action type (negative)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
+      entities: [{ id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] }],
       migrationPlan: {
         actions: [{ action: "drop" as any, entity: "emp", field: "foo" }],
       },
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "DM_MIGRATION_INVALID_ACTION")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "DM_MIGRATION_INVALID_ACTION")).toBe(true);
   });
 
   // --- V2 dataset binding model focused tests (positive + negative) ---
   it("accepts valid dataset binding with entity refs, selected fields, params, output aliases (positive)", () => {
     const m: DataModelModel = {
       entities: [
-        {
-          id: "order",
-          name: "Order",
-          fields: [
-            { key: "id", name: "ID", type: "string" },
-            { key: "amount", name: "Amount", type: "number" },
-            { key: "status", name: "Status", type: "string" },
-          ],
-        },
+        { id: "order", name: "Order", fields: [
+          { key: "id", name: "ID", type: "string" },
+          { key: "amount", name: "Amount", type: "number" },
+          { key: "status", name: "Status", type: "string" },
+        ] },
       ],
       datasets: [
         {
@@ -1208,7 +685,7 @@ describe("dataModelSkill — the gate", () => {
             { field: "status" },
           ],
           parameters: [{ key: "minAmount", type: "number", required: false }],
-          outputAliases: { amount: "totalAmount", status: "orderStatus" },
+          outputAliases: { "amount": "totalAmount", "status": "orderStatus" },
         },
       ],
     };
@@ -1227,9 +704,7 @@ describe("dataModelSkill — the gate", () => {
     expect(ds.parameters).toContain("minAmount");
 
     // dataset resolve surface exposes refs usable by consumers
-    expect(dataModelSkill.refNodeId("dataset", "order_amounts")).toBe(
-      "ds_order_amounts"
-    );
+    expect(dataModelSkill.refNodeId("dataset", "order_amounts")).toBe("ds_order_amounts");
   });
 
   it("leaves existing leave/purchase samples compatible and exposes their dataset bindings (compat)", () => {
@@ -1250,90 +725,42 @@ describe("dataModelSkill — the gate", () => {
 
   it("project() emits dataset nodes and bind/selection edges (V2 diagram)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [{ key: "f", name: "F", type: "string" }],
-        },
-      ],
-      datasets: [
-        {
-          id: "d1",
-          entityRef: "e",
-          selectedFields: [{ field: "f", alias: "ff" }],
-        },
-      ],
+      entities: [{ id: "e", name: "E", fields: [{ key: "f", name: "F", type: "string" }] }],
+      datasets: [{ id: "d1", entityRef: "e", selectedFields: [{ field: "f", alias: "ff" }] }],
     };
     const proj = dataModelSkill.project(m);
-    expect(
-      proj.nodes.some((n: any) => n.id === "ds_d1" && n.kind === "dataset")
-    ).toBe(true);
-    const dsEdge = proj.edges.find(
-      (e: any) => e.from === "ds_d1" && e.to === "dm_e"
-    );
+    expect(proj.nodes.some((n: any) => n.id === "ds_d1" && n.kind === "dataset")).toBe(true);
+    const dsEdge = proj.edges.find((e: any) => e.from === "ds_d1" && e.to === "dm_e");
     expect(dsEdge).toBeTruthy();
     expect(dsEdge.label).toBe("binds");
-    const selEdge = proj.edges.find(
-      (e: any) => e.from === "ds_d1" && e.to.includes("dm_e_f")
-    );
+    const selEdge = proj.edges.find((e: any) => e.from === "ds_d1" && e.to.includes("dm_e_f"));
     expect(selEdge).toBeTruthy();
     expect(selEdge.label).toBe("ff");
   });
 
   it("CATCHES dataset bound to non-existent entity (negative)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
-      datasets: [
-        { id: "bad", entityRef: "ghost", selectedFields: [{ field: "id" }] },
-      ],
+      entities: [{ id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] }],
+      datasets: [{ id: "bad", entityRef: "ghost", selectedFields: [{ field: "id" }] }],
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "DM_DATASET_MISSING_ENTITY")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "DM_DATASET_MISSING_ENTITY")).toBe(true);
   });
 
   it("CATCHES dataset selecting field not present on entity (negative)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
-      datasets: [
-        {
-          id: "badfields",
-          entityRef: "emp",
-          selectedFields: [{ field: "ghostField" }, { field: "id" }],
-        },
-      ],
+      entities: [{ id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] }],
+      datasets: [{ id: "badfields", entityRef: "emp", selectedFields: [{ field: "ghostField" }, { field: "id" }] }],
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "DM_DATASET_FIELD_NOT_ON_ENTITY")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "DM_DATASET_FIELD_NOT_ON_ENTITY")).toBe(true);
   });
 
   it("CATCHES duplicate dataset ids (negative)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
+      entities: [{ id: "e", name: "E", fields: [{ key: "id", name: "ID", type: "string" }] }],
       datasets: [
         { id: "dup", entityRef: "e", selectedFields: [{ field: "id" }] },
         { id: "dup", entityRef: "e", selectedFields: [{ field: "id" }] },
@@ -1346,62 +773,32 @@ describe("dataModelSkill — the gate", () => {
 
   it("CATCHES dataset missing selectedFields entirely (negative)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
+      entities: [{ id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] }],
       datasets: [{ id: "bad-missing", entityRef: "emp" } as any],
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "DM_DATASET_FIELD_INVALID")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "DM_DATASET_FIELD_INVALID")).toBe(true);
   });
 
   it("CATCHES dataset with empty selectedFields array (negative)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
+      entities: [{ id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] }],
       datasets: [{ id: "bad-empty", entityRef: "emp", selectedFields: [] }],
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "DM_DATASET_FIELD_INVALID")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "DM_DATASET_FIELD_INVALID")).toBe(true);
   });
 
   it("CATCHES dataset with non-array selectedFields (negative)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
-      datasets: [
-        {
-          id: "bad-nonarray",
-          entityRef: "emp",
-          selectedFields: "not-an-array" as any,
-        },
-      ],
+      entities: [{ id: "emp", name: "Emp", fields: [{ key: "id", name: "ID", type: "string" }] }],
+      datasets: [{ id: "bad-nonarray", entityRef: "emp", selectedFields: "not-an-array" as any }],
     };
     const report = dataModelSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "DM_DATASET_FIELD_INVALID")).toBe(
-      true
-    );
+    expect(report.errors.some(e => e.code === "DM_DATASET_FIELD_INVALID")).toBe(true);
   });
 
   it("exposes dataset via resolve even when using full sample with aliases/params", () => {
@@ -1415,54 +812,19 @@ describe("dataModelSkill — the gate", () => {
   // --- 115.20.07 DataModel PDP delegation policy definitions (model/row/field/export) + decisionScope gate (focused +ve/-ve) ---
   it("policyDefinitions (model/row/field/export) validate when decisionScope present via external.rbac (positive)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{ id: "e", name: "E", fields: [{ key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" }] }],
       policyDefinitions: [
-        {
-          id: "model_pol",
-          level: "model",
-          decisionScope: "RBAC_DECISION_ALLOW",
-        },
-        {
-          id: "row_pol",
-          level: "row",
-          decisionScope: "RBAC_DECISION_FAIL_CLOSED",
-          name: "row level",
-        },
+        { id: "model_pol", level: "model", decisionScope: "RBAC_DECISION_ALLOW" },
+        { id: "row_pol", level: "row", decisionScope: "RBAC_DECISION_FAIL_CLOSED", name: "row level" },
         { id: "fld_pol", level: "field", decisionScope: "RBAC_DECISION_ALLOW" },
-        {
-          id: "exp_pol",
-          level: "export",
-          decisionScope: "RBAC_DECISION_FAIL_CLOSED",
-        },
+        { id: "exp_pol", level: "export", decisionScope: "RBAC_DECISION_FAIL_CLOSED" },
       ],
     };
     const report = dataModelSkill.validate(m, {
-      external: {
-        rbac: {
-          decisionScope: ["RBAC_DECISION_ALLOW", "RBAC_DECISION_FAIL_CLOSED"],
-        },
-      },
+      external: { rbac: { decisionScope: ["RBAC_DECISION_ALLOW", "RBAC_DECISION_FAIL_CLOSED"] } },
     });
     expect(report.ok).toBe(true);
-    expect(report.errors.some(e => e.code && e.code.includes("POLICY"))).toBe(
-      false
-    );
+    expect(report.errors.some(e => e.code && e.code.includes("POLICY"))).toBe(false);
     // resolve exposes the policyDefinition surface
     const surf = dataModelSkill.resolve(m);
     expect(surf.policyDefinition).toContain("model_pol");
@@ -1471,23 +833,7 @@ describe("dataModelSkill — the gate", () => {
 
   it("policyDefinition with missing decisionScope in external.rbac is rejected by gate (negative)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{ id: "e", name: "E", fields: [{ key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" }] }],
       policyDefinitions: [
         { id: "bad_scope", level: "row", decisionScope: "RBAC_DECISION_GHOST" },
       ],
@@ -1496,36 +842,20 @@ describe("dataModelSkill — the gate", () => {
       external: { rbac: { decisionScope: ["RBAC_DECISION_ALLOW"] } },
     });
     expect(report.ok).toBe(false);
-    expect(
-      report.errors.some(e => e.code === "DM_POLICY_DEF_SCOPE_NOT_IN_RBAC")
-    ).toBe(true);
+    expect(report.errors.some(e => e.code === "DM_POLICY_DEF_SCOPE_NOT_IN_RBAC")).toBe(true);
   });
 
   it("policyDefinition requires level and decisionScope (structure negative)", () => {
     const bad1: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
+      entities: [{ id: "e", name: "E", fields: [{ key: "id", name: "ID", type: "string" }] }],
       policyDefinitions: [{ id: "no_level" } as any],
     };
     const r1 = dataModelSkill.validate(bad1);
     expect(r1.ok).toBe(false);
-    expect(r1.errors.some(e => e.code === "DM_POLICY_DEF_INVALID_LEVEL")).toBe(
-      true
-    );
+    expect(r1.errors.some(e => e.code === "DM_POLICY_DEF_INVALID_LEVEL")).toBe(true);
 
     const bad2: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
+      entities: [{ id: "e", name: "E", fields: [{ key: "id", name: "ID", type: "string" }] }],
       policyDefinitions: [{ id: "no_scope", level: "field" } as any],
     };
     const r2 = dataModelSkill.validate(bad2);
@@ -1535,79 +865,27 @@ describe("dataModelSkill — the gate", () => {
 
   it("policyDefinitions project as policy nodes (diagram semantics)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [{ key: "id", name: "ID", type: "string" }],
-        },
-      ],
-      policyDefinitions: [
-        {
-          id: "row_access",
-          level: "row",
-          decisionScope: "RBAC_DECISION_ALLOW",
-        },
-      ],
+      entities: [{ id: "e", name: "E", fields: [{ key: "id", name: "ID", type: "string" }] }],
+      policyDefinitions: [{ id: "row_access", level: "row", decisionScope: "RBAC_DECISION_ALLOW" }],
     };
     const proj = dataModelSkill.project(m);
-    expect(
-      proj.nodes.some(
-        (n: any) => n.kind === "policy" && (n.id || "").includes("row_access")
-      )
-    ).toBe(true);
+    expect(proj.nodes.some((n: any) => n.kind === "policy" && (n.id || "").includes("row_access"))).toBe(true);
   });
 
   // --- V2 projector hardening: SSOT central host + migration projection (per review findings) ---
   it("project() projects SSOT as central host node (kind ssot-host) + host edges to entities/fields/datasets/policies/migrations (positive)", () => {
     const m: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [
-            { key: "f", name: "F", type: "string", lifecycle: "active" },
-          ],
-        },
-      ],
-      datasets: [
-        { id: "d1", entityRef: "e", selectedFields: [{ field: "f" }] },
-      ],
+      entities: [{ id: "e", name: "E", fields: [{ key: "f", name: "F", type: "string", lifecycle: "active" }] }],
+      datasets: [{ id: "d1", entityRef: "e", selectedFields: [{ field: "f" }] }],
       policyDefinitions: [{ id: "p1", level: "model", decisionScope: "S" }],
-      migrationPlan: {
-        id: "plan-v2",
-        actions: [{ action: "add", entity: "e", field: "f", planRef: "T-115" }],
-      },
+      migrationPlan: { id: "plan-v2", actions: [{ action: "add", entity: "e", field: "f", planRef: "T-115" }] },
     };
     const proj = dataModelSkill.project(m);
-    expect(
-      proj.nodes.some(
-        (n: any) => n.id === "ssot_datamodel" && n.kind === "ssot-host"
-      )
-    ).toBe(true);
+    expect(proj.nodes.some((n: any) => n.id === "ssot_datamodel" && n.kind === "ssot-host")).toBe(true);
     // central host edges exist
-    expect(
-      proj.edges.some(
-        (e: any) =>
-          e.from === "ssot_datamodel" && e.to === "dm_e" && e.kind === "ssot"
-      )
-    ).toBe(true);
-    expect(
-      proj.edges.some(
-        (e: any) =>
-          e.from === "ssot_datamodel" &&
-          e.to.includes("dm_e_f") &&
-          e.kind === "ssot"
-      )
-    ).toBe(true);
-    expect(
-      proj.edges.some(
-        (e: any) =>
-          e.from === "ssot_datamodel" &&
-          e.to.includes("mig_") &&
-          e.kind === "ssot"
-      )
-    ).toBe(true);
+    expect(proj.edges.some((e: any) => e.from === "ssot_datamodel" && e.to === "dm_e" && e.kind === "ssot")).toBe(true);
+    expect(proj.edges.some((e: any) => e.from === "ssot_datamodel" && e.to.includes("dm_e_f") && e.kind === "ssot")).toBe(true);
+    expect(proj.edges.some((e: any) => e.from === "ssot_datamodel" && e.to.includes("mig_") && e.kind === "ssot")).toBe(true);
     expect(proj.mermaid).toContain("ssot_datamodel");
     expect(proj.mermaid).toContain("SSOT");
   });
@@ -1615,64 +893,25 @@ describe("dataModelSkill — the gate", () => {
   it("project() projects migrationPlan/actions as diagram nodes and edges (positive)", () => {
     const m: DataModelModel = {
       entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [{ key: "name", name: "Name", type: "string" }],
-        },
+        { id: "emp", name: "Emp", fields: [{ key: "name", name: "Name", type: "string" }] },
       ],
       migrationPlan: {
         id: "plan-115",
         version: 2,
         actions: [
-          {
-            action: "rename",
-            entity: "emp",
-            field: "name",
-            from: "oldName",
-            to: "name",
-            planRef: "TICKET-115-01",
-          },
-          {
-            action: "deprecate",
-            entity: "emp",
-            field: "legacy",
-            planRef: "MIG-42",
-          },
+          { action: "rename", entity: "emp", field: "name", from: "oldName", to: "name", planRef: "TICKET-115-01" },
+          { action: "deprecate", entity: "emp", field: "legacy", planRef: "MIG-42" },
         ],
       },
     };
     const proj = dataModelSkill.project(m);
     // migration plan node and per-action nodes
-    expect(
-      proj.nodes.some(
-        (n: any) =>
-          n.kind === "migration" && (n.id || "").includes("mig_plan_115")
-      )
-    ).toBe(true);
-    expect(
-      proj.nodes.some(
-        (n: any) =>
-          n.kind === "migration" && (n.label || "").includes("rename:emp.name")
-      )
-    ).toBe(true);
-    expect(
-      proj.nodes.some(
-        (n: any) =>
-          n.kind === "migration" && (n.label || "").includes("deprecate")
-      )
-    ).toBe(true);
+    expect(proj.nodes.some((n: any) => n.kind === "migration" && (n.id || "").includes("mig_plan_115"))).toBe(true);
+    expect(proj.nodes.some((n: any) => n.kind === "migration" && (n.label || "").includes("rename:emp.name"))).toBe(true);
+    expect(proj.nodes.some((n: any) => n.kind === "migration" && (n.label || "").includes("deprecate"))).toBe(true);
     // migration edges
-    expect(
-      proj.edges.some(
-        (e: any) => e.kind === "migration" && (e.label || "") === "rename"
-      )
-    ).toBe(true);
-    expect(
-      proj.edges.some(
-        (e: any) => e.kind === "migration" && (e.label || "") === "affects"
-      )
-    ).toBe(true);
+    expect(proj.edges.some((e: any) => e.kind === "migration" && (e.label || "") === "rename")).toBe(true);
+    expect(proj.edges.some((e: any) => e.kind === "migration" && (e.label || "") === "affects")).toBe(true);
     // mermaid must contain V2 migration nodes
     expect(proj.mermaid).toContain("mig_");
     expect(proj.mermaid).toContain("rename");
@@ -1680,9 +919,7 @@ describe("dataModelSkill — the gate", () => {
 
   it("project() surfaces field lifecycle in node labels (V2 diagram)", () => {
     const proj = dataModelSkill.project(leaveRequestDataModel);
-    const fld = proj.nodes.find(
-      (n: any) => n.kind === "field" && n.id.includes("approved")
-    );
+    const fld = proj.nodes.find((n: any) => n.kind === "field" && n.id.includes("approved"));
     expect(fld).toBeTruthy();
     expect(fld!.label).toContain("[active]");
   });
@@ -1691,17 +928,11 @@ describe("dataModelSkill — the gate", () => {
     const proj = dataModelSkill.project(leaveRequestDataModel);
     expect(proj.nodes.some((n: any) => n.kind === "migration")).toBe(false);
     // but SSOT host is always present for V2
-    expect(
-      proj.nodes.some(
-        (n: any) => n.id === "ssot_datamodel" && n.kind === "ssot-host"
-      )
-    ).toBe(true);
+    expect(proj.nodes.some((n: any) => n.id === "ssot_datamodel" && n.kind === "ssot-host")).toBe(true);
   });
 
   it("refNodeId supports migration kind", () => {
-    expect(dataModelSkill.refNodeId("migration", "plan-115")).toBe(
-      "mig_plan_115"
-    );
+    expect(dataModelSkill.refNodeId("migration", "plan-115")).toBe("mig_plan_115");
   });
 
   // --- 117 field lineage runtime index (pure, focused +ve/-ve per task) ---
@@ -1710,20 +941,10 @@ describe("dataModelSkill — the gate", () => {
     expect(idx).toBeTruthy();
     expect(Array.isArray(idx.fieldRefs)).toBe(true);
     expect(idx.fieldRefs).toContain("purchase_request.amount");
-    expect(
-      idx.nodes.some(
-        (n: any) => n.kind === "field" && n.ref === "purchase_request.amount"
-      )
-    ).toBe(true);
+    expect(idx.nodes.some((n: any) => n.kind === "field" && n.ref === "purchase_request.amount")).toBe(true);
     // references from datasets, policies
-    const hasDatasetSel = idx.edges.some(
-      (e: any) => e.kind === "selects" && (e.label || "").includes("amount")
-    );
-    const hasPolicy = idx.edges.some(
-      (e: any) =>
-        e.kind === "policy" &&
-        (e.from || "").includes("purchase_request_amount")
-    );
+    const hasDatasetSel = idx.edges.some((e: any) => e.kind === "selects" && (e.label || "").includes("amount"));
+    const hasPolicy = idx.edges.some((e: any) => e.kind === "policy" && (e.from || "").includes("purchase_request_amount"));
     expect(hasDatasetSel || hasPolicy).toBe(true);
 
     const trace = traceFieldLineage(idx, "purchase_request.amount");
@@ -1748,9 +969,7 @@ describe("dataModelSkill — the gate", () => {
     const trace = traceFieldLineage(idx, "purchase_request.nonexistent");
     expect(trace.fieldRef).toBe("purchase_request.nonexistent");
     expect(trace.findings.length).toBeGreaterThan(0);
-    expect(
-      trace.findings.some((f: any) => f.code === DM_LINEAGE_FIELD_MISSING)
-    ).toBe(true);
+    expect(trace.findings.some((f: any) => f.code === DM_LINEAGE_FIELD_MISSING)).toBe(true);
     expect(trace.upstream).toHaveLength(0);
     expect(trace.downstream).toHaveLength(0);
   });
@@ -1758,17 +977,12 @@ describe("dataModelSkill — the gate", () => {
   it("traceFieldLineage on ghost entity field also yields DM_LINEAGE_FIELD_MISSING (fail-closed)", () => {
     const idx = buildFieldLineageIndex(leaveRequestDataModel);
     const trace = traceFieldLineage(idx, "ghost_entity.x");
-    expect(
-      trace.findings.some((f: any) => f.code === DM_LINEAGE_FIELD_MISSING)
-    ).toBe(true);
+    expect(trace.findings.some((f: any) => f.code === DM_LINEAGE_FIELD_MISSING)).toBe(true);
   });
 
   // --- 117 runtime pure migration planner: planDataModelMigration + blocker (focused +ve/-ve) ---
   it("planDataModelMigration no-op on identical leave model is green (positive, preserves compat)", () => {
-    const res = planDataModelMigration(
-      leaveRequestDataModel,
-      leaveRequestDataModel
-    );
+    const res = planDataModelMigration(leaveRequestDataModel, leaveRequestDataModel);
     expect(res).toBeTruthy();
     expect(Array.isArray(res.migrationActions)).toBe(true);
     expect(res.migrationActions.length).toBe(0);
@@ -1777,175 +991,66 @@ describe("dataModelSkill — the gate", () => {
   });
 
   it("planDataModelMigration on identical purchase model is no-op green (positive, preserves compat)", () => {
-    const res = planDataModelMigration(
-      purchaseApprovalDataModel,
-      purchaseApprovalDataModel
-    );
+    const res = planDataModelMigration(purchaseApprovalDataModel, purchaseApprovalDataModel);
     expect(res.migrationActions.length).toBe(0);
     expect(res.findings.length).toBe(0);
   });
 
   it("planDataModelMigration detects added field and deprecate lifecycle (positive runtime case)", () => {
     const prev: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "name",
-              name: "Name",
-              type: "string",
-              fieldId: "f2",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{
+        id: "emp",
+        name: "Emp",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "name", name: "Name", type: "string", fieldId: "f2", version: 1, lifecycle: "active", storageRole: "ssot" },
+        ],
+      }],
     };
     const next: DataModelModel = {
-      entities: [
-        {
-          id: "emp",
-          name: "Emp",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "name",
-              name: "Name",
-              type: "string",
-              fieldId: "f2",
-              version: 2,
-              lifecycle: "deprecated",
-              storageRole: "ssot",
-            },
-            {
-              key: "email",
-              name: "Email",
-              type: "string",
-              fieldId: "f3",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{
+        id: "emp",
+        name: "Emp",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "name", name: "Name", type: "string", fieldId: "f2", version: 2, lifecycle: "deprecated", storageRole: "ssot" },
+          { key: "email", name: "Email", type: "string", fieldId: "f3", version: 1, lifecycle: "active", storageRole: "ssot" },
+        ],
+      }],
     };
     const res = planDataModelMigration(prev, next);
-    expect(
-      res.migrationActions.some(a => a.action === "add" && a.field === "email")
-    ).toBe(true);
-    expect(
-      res.migrationActions.some(
-        a => a.action === "deprecate" && a.field === "name"
-      )
-    ).toBe(true);
+    expect(res.migrationActions.some(a => a.action === "add" && a.field === "email")).toBe(true);
+    expect(res.migrationActions.some(a => a.action === "deprecate" && a.field === "name")).toBe(true);
     // no blockers
-    expect(
-      res.findings.some(f => f.code === DM_MIGRATION_REMOVED_FIELD_BLOCKER)
-    ).toBe(false);
+    expect(res.findings.some(f => f.code === DM_MIGRATION_REMOVED_FIELD_BLOCKER)).toBe(false);
   });
 
   it("planDataModelMigration classifies removed referenced field (by dataset) as blocker (negative/fail-closed case)", () => {
     const prev: DataModelModel = {
-      entities: [
-        {
-          id: "order",
-          name: "Order",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "legacyAmt",
-              name: "Legacy",
-              type: "number",
-              fieldId: "f2",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
-      datasets: [
-        {
-          id: "ds1",
-          entityRef: "order",
-          selectedFields: [{ field: "id" }, { field: "legacyAmt" }],
-        },
-      ],
+      entities: [{
+        id: "order",
+        name: "Order",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "legacyAmt", name: "Legacy", type: "number", fieldId: "f2", version: 1, lifecycle: "active", storageRole: "ssot" },
+        ],
+      }],
+      datasets: [{ id: "ds1", entityRef: "order", selectedFields: [{ field: "id" }, { field: "legacyAmt" }] }],
     };
     const next: DataModelModel = {
-      entities: [
-        {
-          id: "order",
-          name: "Order",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "legacyAmt",
-              name: "Legacy",
-              type: "number",
-              fieldId: "f2",
-              version: 1,
-              lifecycle: "removed",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
-      datasets: [
-        {
-          id: "ds1",
-          entityRef: "order",
-          selectedFields: [{ field: "id" }, { field: "legacyAmt" }],
-        },
-      ],
+      entities: [{
+        id: "order",
+        name: "Order",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "legacyAmt", name: "Legacy", type: "number", fieldId: "f2", version: 1, lifecycle: "removed", storageRole: "ssot" },
+        ],
+      }],
+      datasets: [{ id: "ds1", entityRef: "order", selectedFields: [{ field: "id" }, { field: "legacyAmt" }] }],
     };
     const res = planDataModelMigration(prev, next);
-    expect(
-      res.migrationActions.some(
-        a => a.action === "remove" && a.field === "legacyAmt"
-      )
-    ).toBe(true);
-    const blocker = res.findings.find(
-      f => f.code === DM_MIGRATION_REMOVED_FIELD_BLOCKER
-    );
+    expect(res.migrationActions.some(a => a.action === "remove" && a.field === "legacyAmt")).toBe(true);
+    const blocker = res.findings.find(f => f.code === DM_MIGRATION_REMOVED_FIELD_BLOCKER);
     expect(blocker).toBeTruthy();
     expect(blocker!.severity).toBe("error");
     expect(blocker!.message).toContain("referenced by datasets");
@@ -1953,57 +1058,14 @@ describe("dataModelSkill — the gate", () => {
 
   it("planDataModelMigration remove without dataset ref does not emit blocker (compat positive)", () => {
     const prev: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "tmp",
-              name: "Tmp",
-              type: "string",
-              fieldId: "f2",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{ id: "e", name: "E", fields: [{ key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" }, { key: "tmp", name: "Tmp", type: "string", fieldId: "f2", version: 1, lifecycle: "active", storageRole: "ssot" }] }],
     };
     const next: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
+      entities: [{ id: "e", name: "E", fields: [{ key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" }] }],
     };
     const res = planDataModelMigration(prev, next);
     expect(res.migrationActions.some(a => a.action === "remove")).toBe(true);
-    expect(
-      res.findings.some(f => f.code === DM_MIGRATION_REMOVED_FIELD_BLOCKER)
-    ).toBe(false);
+    expect(res.findings.some(f => f.code === DM_MIGRATION_REMOVED_FIELD_BLOCKER)).toBe(false);
   });
 
   // --- 117 dataset binding runtime focused tests (positive + negative/fail-closed) ---
@@ -2025,16 +1087,11 @@ describe("dataModelSkill — the gate", () => {
     expect(amt.policyRef).toBe("pdp:purchase:amount");
     expect(amt.version).toBe(1);
     // also direct field ref works
-    const idb = res.resolved.find(
-      (r: any) => r.ref === "purchase_amount_query.id"
-    );
+    const idb = res.resolved.find((r: any) => r.ref === "purchase_amount_query.id");
     expect(idb && idb.entityRef).toBe("purchase_request");
 
     // positive using leave sample for compat
-    const resLeave = resolveDatasetBindingRuntime(leaveRequestDataModel, [
-      "leave_summary.days",
-      "leave_request.approved",
-    ]);
+    const resLeave = resolveDatasetBindingRuntime(leaveRequestDataModel, ["leave_summary.days", "leave_request.approved"]);
     expect(resLeave.ok).toBe(true);
     expect(resLeave.resolved.length).toBe(2);
     const days = resLeave.resolved.find((r: any) => r.ref.includes("days"));
@@ -2042,76 +1099,36 @@ describe("dataModelSkill — the gate", () => {
   });
 
   it("resolveDatasetBindingRuntime produces DM_DATASET_BINDING_FIELD_MISSING and evidence for missing field (negative/fail-closed)", () => {
-    const res = resolveDatasetBindingRuntime(leaveRequestDataModel, [
-      "leave_summary.ghost",
-      "employee.nonexistent",
-    ]);
+    const res = resolveDatasetBindingRuntime(leaveRequestDataModel, ["leave_summary.ghost", "employee.nonexistent"]);
     expect(res.ok).toBe(false);
-    expect(
-      res.findings.some((f: any) => f.code === DM_DATASET_BINDING_FIELD_MISSING)
-    ).toBe(true);
+    expect(res.findings.some((f: any) => f.code === DM_DATASET_BINDING_FIELD_MISSING)).toBe(true);
     // evidence present for consumers (RBAC/AIGC)
     expect(Array.isArray(res.evidence)).toBe(true);
-    expect(
-      res.evidence.some((e: any) => e.code === DM_DATASET_BINDING_FIELD_MISSING)
-    ).toBe(true);
-    expect(res.evidence.some((e: any) => e.ref === "leave_summary.ghost")).toBe(
-      true
-    );
+    expect(res.evidence.some((e: any) => e.code === DM_DATASET_BINDING_FIELD_MISSING)).toBe(true);
+    expect(res.evidence.some((e: any) => e.ref === "leave_summary.ghost")).toBe(true);
   });
 
   it("resolveDatasetBindingRuntime produces stable findings for removed field bindings (fail-closed)", () => {
     const removedM: DataModelModel = {
-      entities: [
-        {
-          id: "e",
-          name: "E",
-          fields: [
-            {
-              key: "id",
-              name: "ID",
-              type: "string",
-              fieldId: "f1",
-              version: 1,
-              lifecycle: "active",
-              storageRole: "ssot",
-            },
-            {
-              key: "gone",
-              name: "Gone",
-              type: "string",
-              fieldId: "f2",
-              version: 1,
-              lifecycle: "removed",
-              storageRole: "ssot",
-            },
-          ],
-        },
-      ],
-      datasets: [
-        { id: "ds", entityRef: "e", selectedFields: [{ field: "gone" }] },
-      ],
+      entities: [{
+        id: "e",
+        name: "E",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "gone", name: "Gone", type: "string", fieldId: "f2", version: 1, lifecycle: "removed", storageRole: "ssot" },
+        ],
+      }],
+      datasets: [{ id: "ds", entityRef: "e", selectedFields: [{ field: "gone" }] }],
     };
     const res = resolveDatasetBindingRuntime(removedM, ["ds.gone", "e.gone"]);
     // removed is hard error via finding
     expect(res.ok).toBe(false);
-    expect(
-      res.findings.some(
-        (f: any) =>
-          f.code === "DM_FIELD_REMOVED" ||
-          f.code === DM_DATASET_BINDING_FIELD_MISSING
-      )
-    ).toBe(true);
+    expect(res.findings.some((f: any) => f.code === "DM_FIELD_REMOVED" || f.code === DM_DATASET_BINDING_FIELD_MISSING)).toBe(true);
     expect(res.resolved.length).toBe(0);
   });
 
   it("bindingEvidence produces stable evidence object for audit", () => {
-    const ev = bindingEvidence(
-      DM_DATASET_BINDING_FIELD_MISSING,
-      "ds.f",
-      "missing field",
-      "error"
-    );
+    const ev = bindingEvidence(DM_DATASET_BINDING_FIELD_MISSING, "ds.f", "missing field", "error");
     expect(ev.code).toBe(DM_DATASET_BINDING_FIELD_MISSING);
     expect(ev.ref).toBe("ds.f");
     expect(ev.severity).toBe("error");
@@ -2136,13 +1153,9 @@ describe("dataModelSkill - 119 datamodel to rbac policy impact evidence", () => 
 
   it("fails closed when a removed DataModel field is still referenced by RBAC policy refs", () => {
     const removedModel = clone(purchaseApprovalDataModel);
-    const purchaseRequest = removedModel.entities.find(
-      entity => entity.id === "purchase_request"
-    )!;
-    purchaseRequest.fields = purchaseRequest.fields.map(field =>
-      field.key === "amount"
-        ? { ...field, lifecycle: "removed" as const }
-        : field
+    const purchaseRequest = removedModel.entities.find((entity) => entity.id === "purchase_request")!;
+    purchaseRequest.fields = purchaseRequest.fields.map((field) =>
+      field.key === "amount" ? { ...field, lifecycle: "removed" as const } : field
     );
 
     const evidence = createDataModelRbacPolicyImpactEvidence(
@@ -2153,9 +1166,7 @@ describe("dataModelSkill - 119 datamodel to rbac policy impact evidence", () => 
 
     expect(evidence.evidenceKey).toBe(DM_RBAC_POLICY_IMPACT_EVIDENCE);
     expect(evidence.state).toBe("blocked");
-    expect(evidence.reasonCode).toBe(
-      "DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD"
-    );
+    expect(evidence.reasonCode).toBe("DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
     expect(evidence.hasPositiveEvidence).toBe(false);
   });
 
@@ -2172,14 +1183,10 @@ describe("dataModelSkill - 119 datamodel to rbac policy impact evidence", () => 
 
   it("resolve surface includes rbacPolicyImpactEvidence and runtimeEvidence key for datamodel->rbac impact", () => {
     const surf: any = dataModelSkill.resolve(purchaseApprovalDataModel);
-    expect(surf.rbacPolicyImpactEvidence?.evidenceKey).toBe(
-      DM_RBAC_POLICY_IMPACT_EVIDENCE
-    );
+    expect(surf.rbacPolicyImpactEvidence?.evidenceKey).toBe(DM_RBAC_POLICY_IMPACT_EVIDENCE);
     expect(surf.rbacPolicyImpactEvidence?.hasPositiveEvidence).toBe(true);
     expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
-    expect(surf.runtimeEvidence).toEqual(
-      expect.arrayContaining([DM_RBAC_POLICY_IMPACT_EVIDENCE])
-    );
+    expect(surf.runtimeEvidence).toEqual(expect.arrayContaining([DM_RBAC_POLICY_IMPACT_EVIDENCE]));
   });
 
   it("deriveDataModelChangedRefs detects policyRef fields as changed (positive path seed)", () => {
@@ -2192,28 +1199,18 @@ describe("dataModelSkill - 119 datamodel to rbac policy impact evidence", () => 
 
   it("resolve surface includes rbacPolicyImpactEvidence but does not add DM key to runtimeEvidence on fail-closed negative", () => {
     const removedModel = clone(purchaseApprovalDataModel);
-    const pr = removedModel.entities.find(
-      (e: any) => e.id === "purchase_request"
-    )!;
-    pr.fields = pr.fields.map((f: any) =>
-      f.key === "amount" ? { ...f, lifecycle: "removed" as const } : f
-    );
+    const pr = removedModel.entities.find((e: any) => e.id === "purchase_request")!;
+    pr.fields = pr.fields.map((f: any) => f.key === "amount" ? { ...f, lifecycle: "removed" as const } : f);
     const surf: any = dataModelSkill.resolve(removedModel);
-    expect(surf.rbacPolicyImpactEvidence?.evidenceKey).toBe(
-      DM_RBAC_POLICY_IMPACT_EVIDENCE
-    );
+    expect(surf.rbacPolicyImpactEvidence?.evidenceKey).toBe(DM_RBAC_POLICY_IMPACT_EVIDENCE);
     expect(surf.rbacPolicyImpactEvidence?.hasPositiveEvidence).toBe(false);
     expect(surf.rbacPolicyImpactEvidence?.state).toBe("blocked");
     expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
-    expect(surf.runtimeEvidence).not.toEqual(
-      expect.arrayContaining([DM_RBAC_POLICY_IMPACT_EVIDENCE])
-    );
+    expect(surf.runtimeEvidence).not.toEqual(expect.arrayContaining([DM_RBAC_POLICY_IMPACT_EVIDENCE]));
   });
 
   it("traces datamodel field changes to RBAC policy impact as a closed cross-skill path", () => {
-    const trace = traceDataModelEntityFieldToRbacPolicyImpact(
-      purchaseApprovalDataModel
-    );
+    const trace = traceDataModelEntityFieldToRbacPolicyImpact(purchaseApprovalDataModel);
 
     expect(trace.traceId).toBe(DM_DATAMODEL_TO_RBAC_TRACE);
     expect(trace.sourceSkill).toBe("datamodel");
@@ -2227,43 +1224,31 @@ describe("dataModelSkill - 119 datamodel to rbac policy impact evidence", () => 
 
   it("traces datamodel removed policy field to RBAC as fail-closed", () => {
     const removed = clone(purchaseApprovalDataModel);
-    const purchaseRequest = removed.entities.find(
-      entity => entity.id === "purchase_request"
-    )!;
+    const purchaseRequest = removed.entities.find(entity => entity.id === "purchase_request")!;
     purchaseRequest.fields = purchaseRequest.fields.map(field =>
-      field.key === "amount"
-        ? { ...field, lifecycle: "removed" as const }
-        : field
+      field.key === "amount" ? { ...field, lifecycle: "removed" as const } : field
     );
 
     const trace = traceDataModelEntityFieldToRbacPolicyImpact(removed);
 
     expect(trace.state).toBe("blocked");
     expect(trace.impact.state).toBe("blocked");
-    expect(trace.reasonCode).toBe(
-      "DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD"
-    );
-    expect(trace.impact.impactedPolicyRefs).toContain(
-      "purchase_request.amount"
-    );
+    expect(trace.reasonCode).toBe("DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
+    expect(trace.impact.impactedPolicyRefs).toContain("purchase_request.amount");
   });
 
   it("resolve surface exposes datamodelToRbacTrace for runtime linkage consumers", () => {
     const surface = dataModelSkill.resolve(purchaseApprovalDataModel) as any;
 
     expect(surface.datamodelToRbacTrace).toBeTruthy();
-    expect(surface.datamodelToRbacTrace.traceId).toBe(
-      DM_DATAMODEL_TO_RBAC_TRACE
-    );
+    expect(surface.datamodelToRbacTrace.traceId).toBe(DM_DATAMODEL_TO_RBAC_TRACE);
     expect(surface.datamodelToRbacTrace.state).toBe("closed");
   });
 });
 
 describe("dataModelSkill - 119 datamodel to page binding impact evidence", () => {
   it("traces datamodel field changes to Page binding impact as a closed cross-skill path", () => {
-    const trace = traceDataModelEntityFieldToPageBindingEvidence(
-      purchaseApprovalDataModel
-    );
+    const trace = traceDataModelEntityFieldToPageBindingEvidence(purchaseApprovalDataModel);
 
     expect(trace.traceId).toBe(DM_DATAMODEL_TO_PAGE_TRACE);
     expect(trace.sourceSkill).toBe("datamodel");
@@ -2277,34 +1262,24 @@ describe("dataModelSkill - 119 datamodel to page binding impact evidence", () =>
 
   it("traces datamodel removed page-bound field as fail-closed", () => {
     const removed = clone(purchaseApprovalDataModel);
-    const purchaseRequest = removed.entities.find(
-      entity => entity.id === "purchase_request"
-    )!;
+    const purchaseRequest = removed.entities.find(entity => entity.id === "purchase_request")!;
     purchaseRequest.fields = purchaseRequest.fields.map(field =>
-      field.key === "amount"
-        ? { ...field, lifecycle: "removed" as const }
-        : field
+      field.key === "amount" ? { ...field, lifecycle: "removed" as const } : field
     );
 
     const trace = traceDataModelEntityFieldToPageBindingEvidence(removed);
 
     expect(trace.state).toBe("blocked");
     expect(trace.impact.state).toBe("blocked");
-    expect(trace.reasonCode).toBe(
-      "DM_PAGE_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD"
-    );
-    expect(trace.impact.impactedPageBindingRefs).toContain(
-      "purchase_request.amount"
-    );
+    expect(trace.reasonCode).toBe("DM_PAGE_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
+    expect(trace.impact.impactedPageBindingRefs).toContain("purchase_request.amount");
   });
 
   it("resolve surface exposes datamodelToPageTrace for runtime linkage consumers", () => {
     const surface = dataModelSkill.resolve(purchaseApprovalDataModel) as any;
 
     expect(surface.datamodelToPageTrace).toBeTruthy();
-    expect(surface.datamodelToPageTrace.traceId).toBe(
-      DM_DATAMODEL_TO_PAGE_TRACE
-    );
+    expect(surface.datamodelToPageTrace.traceId).toBe(DM_DATAMODEL_TO_PAGE_TRACE);
     expect(surface.datamodelToPageTrace.state).toBe("closed");
   });
 
@@ -2319,21 +1294,15 @@ describe("dataModelSkill - 119 datamodel to page binding impact evidence", () =>
     expect(evidence.state).toBe("allowed");
     expect(evidence.reasonCode).toBe("DM_PAGE_BINDING_IMPACT_POSITIVE");
     expect(evidence.changedFieldRefs).toContain("purchase_request.amount");
-    expect(evidence.impactedPageBindingRefs).toContain(
-      "purchase_request.amount"
-    );
+    expect(evidence.impactedPageBindingRefs).toContain("purchase_request.amount");
     expect(evidence.hasPositiveEvidence).toBe(true);
   });
 
   it("fails closed when a removed DataModel field is still referenced by Page binding refs", () => {
     const removedModel = clone(purchaseApprovalDataModel);
-    const purchaseRequest = removedModel.entities.find(
-      entity => entity.id === "purchase_request"
-    )!;
-    purchaseRequest.fields = purchaseRequest.fields.map(field =>
-      field.key === "amount"
-        ? { ...field, lifecycle: "removed" as const }
-        : field
+    const purchaseRequest = removedModel.entities.find((entity) => entity.id === "purchase_request")!;
+    purchaseRequest.fields = purchaseRequest.fields.map((field) =>
+      field.key === "amount" ? { ...field, lifecycle: "removed" as const } : field
     );
 
     const evidence = createDataModelPageBindingImpactEvidence(
@@ -2344,50 +1313,34 @@ describe("dataModelSkill - 119 datamodel to page binding impact evidence", () =>
 
     expect(evidence.evidenceKey).toBe(DM_PAGE_BINDING_IMPACT_EVIDENCE);
     expect(evidence.state).toBe("blocked");
-    expect(evidence.reasonCode).toBe(
-      "DM_PAGE_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD"
-    );
+    expect(evidence.reasonCode).toBe("DM_PAGE_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
     expect(evidence.hasPositiveEvidence).toBe(false);
   });
 
   it("resolve surface includes pageBindingImpactEvidence and runtimeEvidence key for datamodel->page binding impact (positive)", () => {
     const surf: any = dataModelSkill.resolve(purchaseApprovalDataModel);
-    expect(surf.pageBindingImpactEvidence?.evidenceKey).toBe(
-      DM_PAGE_BINDING_IMPACT_EVIDENCE
-    );
+    expect(surf.pageBindingImpactEvidence?.evidenceKey).toBe(DM_PAGE_BINDING_IMPACT_EVIDENCE);
     expect(surf.pageBindingImpactEvidence?.hasPositiveEvidence).toBe(true);
     expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
-    expect(surf.runtimeEvidence).toEqual(
-      expect.arrayContaining([DM_PAGE_BINDING_IMPACT_EVIDENCE])
-    );
+    expect(surf.runtimeEvidence).toEqual(expect.arrayContaining([DM_PAGE_BINDING_IMPACT_EVIDENCE]));
   });
 
   it("resolve surface includes pageBindingImpactEvidence but does not add DM_PAGE key to runtimeEvidence on fail-closed negative", () => {
     const removedModel = clone(purchaseApprovalDataModel);
-    const pr = removedModel.entities.find(
-      (e: any) => e.id === "purchase_request"
-    )!;
-    pr.fields = pr.fields.map((f: any) =>
-      f.key === "amount" ? { ...f, lifecycle: "removed" as const } : f
-    );
+    const pr = removedModel.entities.find((e: any) => e.id === "purchase_request")!;
+    pr.fields = pr.fields.map((f: any) => f.key === "amount" ? { ...f, lifecycle: "removed" as const } : f);
     const surf: any = dataModelSkill.resolve(removedModel);
-    expect(surf.pageBindingImpactEvidence?.evidenceKey).toBe(
-      DM_PAGE_BINDING_IMPACT_EVIDENCE
-    );
+    expect(surf.pageBindingImpactEvidence?.evidenceKey).toBe(DM_PAGE_BINDING_IMPACT_EVIDENCE);
     expect(surf.pageBindingImpactEvidence?.hasPositiveEvidence).toBe(false);
     expect(surf.pageBindingImpactEvidence?.state).toBe("blocked");
     expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
-    expect(surf.runtimeEvidence).not.toEqual(
-      expect.arrayContaining([DM_PAGE_BINDING_IMPACT_EVIDENCE])
-    );
+    expect(surf.runtimeEvidence).not.toEqual(expect.arrayContaining([DM_PAGE_BINDING_IMPACT_EVIDENCE]));
   });
 });
 
 describe("dataModelSkill - 120 datamodel to workflow binding trace", () => {
   it("traces datamodel field changes to Workflow binding impact as a closed cross-skill path", () => {
-    const trace = traceDataModelEntityFieldToWorkflowBindingEvidence(
-      purchaseApprovalDataModel
-    );
+    const trace = traceDataModelEntityFieldToWorkflowBindingEvidence(purchaseApprovalDataModel);
 
     expect(trace.traceId).toBe(DM_DATAMODEL_TO_WORKFLOW_TRACE);
     expect(trace.sourceSkill).toBe("datamodel");
@@ -2401,34 +1354,24 @@ describe("dataModelSkill - 120 datamodel to workflow binding trace", () => {
 
   it("traces datamodel removed workflow-bound field as fail-closed", () => {
     const removed = clone(purchaseApprovalDataModel);
-    const purchaseRequest = removed.entities.find(
-      entity => entity.id === "purchase_request"
-    )!;
+    const purchaseRequest = removed.entities.find(entity => entity.id === "purchase_request")!;
     purchaseRequest.fields = purchaseRequest.fields.map(field =>
-      field.key === "amount"
-        ? { ...field, lifecycle: "removed" as const }
-        : field
+      field.key === "amount" ? { ...field, lifecycle: "removed" as const } : field
     );
 
     const trace = traceDataModelEntityFieldToWorkflowBindingEvidence(removed);
 
     expect(trace.state).toBe("blocked");
     expect(trace.impact.state).toBe("blocked");
-    expect(trace.reasonCode).toBe(
-      "DM_WORKFLOW_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD"
-    );
-    expect(trace.impact.impactedWorkflowBindingRefs).toContain(
-      "purchase_request.amount"
-    );
+    expect(trace.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
+    expect(trace.impact.impactedWorkflowBindingRefs).toContain("purchase_request.amount");
   });
 
   it("resolve surface exposes datamodelToWorkflowTrace for runtime linkage consumers", () => {
     const surface = dataModelSkill.resolve(purchaseApprovalDataModel) as any;
 
     expect(surface.datamodelToWorkflowTrace).toBeTruthy();
-    expect(surface.datamodelToWorkflowTrace.traceId).toBe(
-      DM_DATAMODEL_TO_WORKFLOW_TRACE
-    );
+    expect(surface.datamodelToWorkflowTrace.traceId).toBe(DM_DATAMODEL_TO_WORKFLOW_TRACE);
     expect(surface.datamodelToWorkflowTrace.state).toBe("closed");
   });
 });
@@ -2458,21 +1401,15 @@ describe("dataModelSkill - 119 datamodel to workflow binding impact evidence", (
     expect(evidence.state).toBe("allowed");
     expect(evidence.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_POSITIVE");
     expect(evidence.changedFieldRefs).toContain("purchase_request.amount");
-    expect(evidence.impactedWorkflowBindingRefs).toContain(
-      "purchase_request.amount"
-    );
+    expect(evidence.impactedWorkflowBindingRefs).toContain("purchase_request.amount");
     expect(evidence.hasPositiveEvidence).toBe(true);
   });
 
   it("fails closed when a removed DataModel field is still referenced by real Workflow binding refs (form/branch)", () => {
     const removedModel = clone(purchaseApprovalDataModel);
-    const purchaseRequest = removedModel.entities.find(
-      entity => entity.id === "purchase_request"
-    )!;
-    purchaseRequest.fields = purchaseRequest.fields.map(field =>
-      field.key === "amount"
-        ? { ...field, lifecycle: "removed" as const }
-        : field
+    const purchaseRequest = removedModel.entities.find((entity) => entity.id === "purchase_request")!;
+    purchaseRequest.fields = purchaseRequest.fields.map((field) =>
+      field.key === "amount" ? { ...field, lifecycle: "removed" as const } : field
     );
     const wfBindings = getRealWorkflowBindingRefs(purchaseApprovalWorkflow);
 
@@ -2484,18 +1421,14 @@ describe("dataModelSkill - 119 datamodel to workflow binding impact evidence", (
 
     expect(evidence.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
     expect(evidence.state).toBe("blocked");
-    expect(evidence.reasonCode).toBe(
-      "DM_WORKFLOW_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD"
-    );
+    expect(evidence.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
     expect(evidence.hasPositiveEvidence).toBe(false);
   });
 
   it("recognizes real workflow branch condition fieldRef bindings (e.g. budgetChecked) for positive impact when marked changed", () => {
     const wfBindings = getRealWorkflowBindingRefs(purchaseApprovalWorkflow);
     // branch nodes carry condition refs
-    const branchRefs = (purchaseApprovalWorkflow.nodes || [])
-      .filter((n: any) => n.type === "branch" && n.fieldRef)
-      .map((n: any) => n.fieldRef);
+    const branchRefs = (purchaseApprovalWorkflow.nodes || []).filter((n: any) => n.type === "branch" && n.fieldRef).map((n: any) => n.fieldRef);
     expect(branchRefs.length).toBeGreaterThan(0);
     expect(wfBindings).toEqual(expect.arrayContaining(branchRefs));
     // simulate DM change on a bound branch field (create accepts explicit changed for deterministic test)
@@ -2505,20 +1438,14 @@ describe("dataModelSkill - 119 datamodel to workflow binding impact evidence", (
       wfBindings
     );
     expect(evidence.hasPositiveEvidence).toBe(true);
-    expect(evidence.impactedWorkflowBindingRefs).toContain(
-      "purchase_request.budgetChecked"
-    );
+    expect(evidence.impactedWorkflowBindingRefs).toContain("purchase_request.budgetChecked");
     expect(evidence.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_POSITIVE");
   });
 
   it("fail-closed removed only for bindings that are in real workflow refs (not for unbound DM fields)", () => {
     const removedModel = clone(purchaseApprovalDataModel);
-    const pr = removedModel.entities.find(
-      (e: any) => e.id === "purchase_request"
-    )!;
-    pr.fields = pr.fields.map((f: any) =>
-      f.key === "id" ? { ...f, lifecycle: "removed" as const } : f
-    );
+    const pr = removedModel.entities.find((e: any) => e.id === "purchase_request")!;
+    pr.fields = pr.fields.map((f: any) => f.key === "id" ? { ...f, lifecycle: "removed" as const } : f);
     const wfBindings = getRealWorkflowBindingRefs(purchaseApprovalWorkflow);
     // "purchase_request.id" is not a workflow form/branch binding ref in the fixture
     expect(wfBindings).not.toContain("purchase_request.id");
@@ -2532,9 +1459,7 @@ describe("dataModelSkill - 119 datamodel to workflow binding impact evidence", (
     expect(evidence.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_NO_OVERLAP");
     expect(evidence.hasPositiveEvidence).toBe(false);
     // must not use the removed-field fail-closed code when the removed field is absent from real wf bindings
-    expect(evidence.reasonCode).not.toBe(
-      "DM_WORKFLOW_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD"
-    );
+    expect(evidence.reasonCode).not.toBe("DM_WORKFLOW_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
   });
 
   it("datamodel fixture embeds positive workflow binding impact evidence using real workflow binding refs (closure)", () => {
@@ -2551,41 +1476,25 @@ describe("dataModelSkill - 119 datamodel to workflow binding impact evidence", (
 
   it("resolve surface includes workflowBindingImpactEvidence and runtimeEvidence key for datamodel->workflow binding impact (positive)", () => {
     const surf: any = dataModelSkill.resolve(purchaseApprovalDataModel);
-    expect(surf.workflowBindingImpactEvidence?.evidenceKey).toBe(
-      DM_WORKFLOW_BINDING_IMPACT_EVIDENCE
-    );
+    expect(surf.workflowBindingImpactEvidence?.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
     // resolve now supplies real WF binding refs for canonical fixtures (purchase amount etc have policyRef seeding changed + overlap)
     expect(surf.workflowBindingImpactEvidence?.hasPositiveEvidence).toBe(true);
-    expect(surf.workflowBindingImpactEvidence?.reasonCode).toBe(
-      "DM_WORKFLOW_BINDING_IMPACT_POSITIVE"
-    );
+    expect(surf.workflowBindingImpactEvidence?.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_POSITIVE");
     expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
-    expect(surf.runtimeEvidence).toEqual(
-      expect.arrayContaining([DM_WORKFLOW_BINDING_IMPACT_EVIDENCE])
-    );
-    expect(
-      surf.workflowBindingImpactEvidence?.impactedWorkflowBindingRefs
-    ).toContain("purchase_request.amount");
+    expect(surf.runtimeEvidence).toEqual(expect.arrayContaining([DM_WORKFLOW_BINDING_IMPACT_EVIDENCE]));
+    expect(surf.workflowBindingImpactEvidence?.impactedWorkflowBindingRefs).toContain("purchase_request.amount");
   });
 
   it("resolve surface includes workflowBindingImpactEvidence but does not add DM_WORKFLOW key to runtimeEvidence on fail-closed negative (removed bound field)", () => {
     const removedModel = clone(purchaseApprovalDataModel);
-    const pr = removedModel.entities.find(
-      (e: any) => e.id === "purchase_request"
-    )!;
-    pr.fields = pr.fields.map((f: any) =>
-      f.key === "amount" ? { ...f, lifecycle: "removed" as const } : f
-    );
+    const pr = removedModel.entities.find((e: any) => e.id === "purchase_request")!;
+    pr.fields = pr.fields.map((f: any) => f.key === "amount" ? { ...f, lifecycle: "removed" as const } : f);
     const surf: any = dataModelSkill.resolve(removedModel);
-    expect(surf.workflowBindingImpactEvidence?.evidenceKey).toBe(
-      DM_WORKFLOW_BINDING_IMPACT_EVIDENCE
-    );
+    expect(surf.workflowBindingImpactEvidence?.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
     expect(surf.workflowBindingImpactEvidence?.hasPositiveEvidence).toBe(false);
     expect(surf.workflowBindingImpactEvidence?.state).toBe("blocked");
     expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
-    expect(surf.runtimeEvidence).not.toEqual(
-      expect.arrayContaining([DM_WORKFLOW_BINDING_IMPACT_EVIDENCE])
-    );
+    expect(surf.runtimeEvidence).not.toEqual(expect.arrayContaining([DM_WORKFLOW_BINDING_IMPACT_EVIDENCE]));
   });
 
   it("resolve surface does not add DM_WORKFLOW key for changed/removed DM fields that are not in real Workflow refs (no false-positive closure evidence)", () => {
@@ -2593,36 +1502,24 @@ describe("dataModelSkill - 119 datamodel to workflow binding impact evidence", (
     // Use leaveRequestDataModel + change on "employee" (unrelated to its WF binding "leave_request.approved") so no entity/field overlap.
     const changedModel = clone(leaveRequestDataModel);
     const emp = changedModel.entities.find((e: any) => e.id === "employee")!;
-    emp.fields = emp.fields.map((f: any) =>
-      f.key === "name" ? { ...f, lifecycle: "changed" as const } : f
-    );
+    emp.fields = emp.fields.map((f: any) => f.key === "name" ? { ...f, lifecycle: "changed" as const } : f);
     const wfBindingsForCheck = (() => {
       const refs: string[] = [];
       const wf: any = leaveApprovalWorkflow;
       if (Array.isArray(wf?.fieldRefs)) refs.push(...wf.fieldRefs);
-      (wf?.nodes || []).forEach((n: any) => {
-        if (n && typeof n.fieldRef === "string") refs.push(n.fieldRef);
-      });
+      (wf?.nodes || []).forEach((n: any) => { if (n && typeof n.fieldRef === "string") refs.push(n.fieldRef); });
       return Array.from(new Set(refs)).sort();
     })();
     expect(wfBindingsForCheck).not.toContain("employee.name");
 
     const surf: any = dataModelSkill.resolve(changedModel);
-    expect(surf.workflowBindingImpactEvidence?.evidenceKey).toBe(
-      DM_WORKFLOW_BINDING_IMPACT_EVIDENCE
-    );
+    expect(surf.workflowBindingImpactEvidence?.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
     expect(surf.workflowBindingImpactEvidence?.hasPositiveEvidence).toBe(false);
-    expect(surf.workflowBindingImpactEvidence?.reasonCode).toBe(
-      "DM_WORKFLOW_BINDING_IMPACT_NO_OVERLAP"
-    );
+    expect(surf.workflowBindingImpactEvidence?.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_NO_OVERLAP");
     expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
-    expect(surf.runtimeEvidence).not.toEqual(
-      expect.arrayContaining([DM_WORKFLOW_BINDING_IMPACT_EVIDENCE])
-    );
+    expect(surf.runtimeEvidence).not.toEqual(expect.arrayContaining([DM_WORKFLOW_BINDING_IMPACT_EVIDENCE]));
     // also confirm the changed field was detected by derive but not treated as WF binding impact
-    expect(
-      surf.workflowBindingImpactEvidence?.changedFieldRefs || []
-    ).toContain("employee.name");
+    expect(surf.workflowBindingImpactEvidence?.changedFieldRefs || []).toContain("employee.name");
   });
 });
 
@@ -2634,20 +1531,15 @@ describe("dataModelSkill - 118 cross-runtime evidence", () => {
       expect.arrayContaining([
         expect.stringContaining("DM_CROSS_RUNTIME_EVIDENCE:rbac"),
         expect.stringContaining("DM_CROSS_RUNTIME_EVIDENCE:page"),
-      ])
+      ]),
     );
     expect(surface.crossSkillRuntimeEdges).toEqual(
-      expect.arrayContaining([
-        "datamodel->rbac:allowed",
-        "datamodel->page:allowed",
-      ])
+      expect.arrayContaining(["datamodel->rbac:allowed", "datamodel->page:allowed"]),
     );
   });
 
   it("builds rbac runtime evidence with entity, field, and policy refs", () => {
-    const evidence = createDataModelRbacRuntimeEvidence(leaveRequestDataModel, {
-      decision: ["RBAC_DECISION_ALLOW"],
-    });
+    const evidence = createDataModelRbacRuntimeEvidence(leaveRequestDataModel, { decision: ["RBAC_DECISION_ALLOW"] });
 
     expect(evidence.evidenceKey).toBe(DM_RBAC_RUNTIME_EVIDENCE);
     expect(evidence.targetSkill).toBe("rbac");
@@ -2669,19 +1561,15 @@ describe("dataModelSkill - 118 cross-runtime evidence", () => {
     const ctx = normalizeDataModelRuntimeContextForSkill(
       purchaseApprovalDataModel,
       "aigc",
-      { capability: ["budget_risk_summary"] }
+      { capability: ["budget_risk_summary"] },
     );
 
     expect(ctx.targetSkill).toBe("aigc");
     expect(ctx.upstreamEvidencePresent).toBe(true);
     expect(ctx.datasetRefs).toContain("purchase_amount_query");
     expect(ctx.evidence.lineageRefs.length).toBeGreaterThan(0);
-    expect(
-      buildDataModelCrossRuntimeEdges(purchaseApprovalDataModel).map(
-        edge => edge.targetSkill
-      )
-    ).toEqual(
-      expect.arrayContaining(["rbac", "workflow", "page", "aigc", "appbundle"])
+    expect(buildDataModelCrossRuntimeEdges(purchaseApprovalDataModel).map(edge => edge.targetSkill)).toEqual(
+      expect.arrayContaining(["rbac", "workflow", "page", "aigc", "appbundle"]),
     );
   });
 });

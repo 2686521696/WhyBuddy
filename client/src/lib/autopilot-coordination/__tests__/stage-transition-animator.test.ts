@@ -60,9 +60,7 @@ describe("StageTransitionAnimator", () => {
 
     vi.advanceTimersByTime(TRANSITION_DURATION_MS);
 
-    expect(
-      animator.transition("engineering_handoff", "clarification")
-    ).toMatchObject({
+    expect(animator.transition("engineering_handoff", "clarification")).toMatchObject({
       started: true,
       direction: "retreat",
     });
@@ -94,9 +92,7 @@ describe("StageTransitionAnimator", () => {
   });
 
   it("aborts an in-flight animation before starting the next one", () => {
-    const debug = vi
-      .spyOn(console, "debug")
-      .mockImplementation(() => undefined);
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => undefined);
     const animator = createStageTransitionAnimator({
       prefersReducedMotion: () => false,
     });

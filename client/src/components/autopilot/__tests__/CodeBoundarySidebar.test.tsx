@@ -42,7 +42,7 @@ describe("<CodeBoundarySidebar>", () => {
         nodes={nodes}
         visualTokens={visualTokens}
         theme="light"
-      />
+      />,
     );
 
     // Sidebar shell + node container are present.
@@ -77,7 +77,7 @@ describe("<CodeBoundarySidebar>", () => {
         nodes={nodes}
         visualTokens={visualTokens}
         theme="light"
-      />
+      />,
     );
 
     // Node still mounts but is flagged as missing code paths.

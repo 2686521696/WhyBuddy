@@ -2,20 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { slideRule } from "./slideRule";
 import { purchaseRiskAigcModel } from "./aigc/aigcSkill";
-import {
-  leaveApprovalAppBundle,
-  purchaseApprovalAppBundle,
-} from "./appbundle/appBundleSkill";
-import {
-  leaveRequestDataModel,
-  purchaseApprovalDataModel,
-} from "./datamodel/dataModelSkill";
+import { leaveApprovalAppBundle, purchaseApprovalAppBundle } from "./appbundle/appBundleSkill";
+import { leaveRequestDataModel, purchaseApprovalDataModel } from "./datamodel/dataModelSkill";
 import { leaveApprovalPage, purchaseApprovalPage } from "./page/pageSkill";
 import { leaveApprovalRbac, purchaseApprovalRbac } from "./rbac/rbacSkill";
-import {
-  leaveApprovalWorkflow,
-  purchaseApprovalWorkflow,
-} from "./workflow/workflowSkill";
+import { leaveApprovalWorkflow, purchaseApprovalWorkflow } from "./workflow/workflowSkill";
 import type { ImpactReport } from "./orchestrator";
 
 const models = {
@@ -50,16 +41,10 @@ describe("cross-system impact analysis (global dependency graph)", () => {
   it("builds the dependency graph from Skill projections and cross refs", () => {
     const graph = slideRule.buildDependencyGraph(models);
 
-    expect(
-      graph.nodes.some(node => node.node === "dm_leave_request_approved")
-    ).toBe(true);
+    expect(graph.nodes.some(node => node.node === "dm_leave_request_approved")).toBe(true);
     expect(graph.nodes.some(node => node.node === "cmp_approve")).toBe(true);
-    expect(
-      graph.nodes.some(node => node.node === "page_page_leave_request")
-    ).toBe(true);
-    expect(
-      graph.nodes.some(node => node.node === "app_app_leave_approval")
-    ).toBe(true);
+    expect(graph.nodes.some(node => node.node === "page_page_leave_request")).toBe(true);
+    expect(graph.nodes.some(node => node.node === "app_app_leave_approval")).toBe(true);
     expect(graph.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -77,146 +62,71 @@ describe("cross-system impact analysis (global dependency graph)", () => {
           to: "appbundle::app_app_leave_approval",
           kind: "crossRef",
         }),
-      ])
+      ]),
     );
   });
 
   it("a DataModel field change ripples into Page binding and the AppBundle path", () => {
-    const report = slideRule.impact(models, {
-      skill: "datamodel",
-      kind: "field",
-      value: "leave_request.approved",
-    });
+    const report = slideRule.impact(models, { skill: "datamodel", kind: "field", value: "leave_request.approved" });
 
     expect(report.safe).toBe(false);
     expect(impactedNodes(report)).toEqual(
-      expect.arrayContaining([
-        "cmp_approve",
-        "page_page_leave_request",
-        "app_app_leave_approval",
-      ])
+      expect.arrayContaining(["cmp_approve", "page_page_leave_request", "app_app_leave_approval"]),
     );
-    expect(
-      hasPath(report, [
-        "dm_leave_request_approved",
-        "cmp_approve",
-        "page_page_leave_request",
-        "app_app_leave_approval",
-      ])
-    ).toBe(true);
+    expect(hasPath(report, [
+      "dm_leave_request_approved",
+      "cmp_approve",
+      "page_page_leave_request",
+      "app_app_leave_approval",
+    ])).toBe(true);
   });
 
   it("a RBAC role change reports Workflow approval, Page render, menu entry, and AppBundle paths", () => {
-    const report = slideRule.impact(models, {
-      skill: "rbac",
-      kind: "role",
-      value: "manager",
-    });
+    const report = slideRule.impact(models, { skill: "rbac", kind: "role", value: "manager" });
 
     expect(report.safe).toBe(false);
     expect(impactedNodes(report)).toEqual(
-      expect.arrayContaining([
-        "wf_a_mgr",
-        "cmp_approve",
-        "menu_menu_leave_request",
-        "app_app_leave_approval",
-      ])
+      expect.arrayContaining(["wf_a_mgr", "cmp_approve", "menu_menu_leave_request", "app_app_leave_approval"]),
     );
-    expect(
-      hasPath(report, [
-        "role_manager",
-        "wf_a_mgr",
-        "wf_wf_leave_approval",
-        "app_app_leave_approval",
-      ])
-    ).toBe(true);
-    expect(
-      hasPath(report, [
-        "role_manager",
-        "cmp_approve",
-        "page_page_leave_request",
-        "app_app_leave_approval",
-      ])
-    ).toBe(true);
-    expect(
-      hasPath(report, [
-        "role_manager",
-        "menu_menu_leave_request",
-        "app_app_leave_approval",
-      ])
-    ).toBe(true);
+    expect(hasPath(report, ["role_manager", "wf_a_mgr", "wf_wf_leave_approval", "app_app_leave_approval"])).toBe(true);
+    expect(hasPath(report, ["role_manager", "cmp_approve", "page_page_leave_request", "app_app_leave_approval"])).toBe(true);
+    expect(hasPath(report, ["role_manager", "menu_menu_leave_request", "app_app_leave_approval"])).toBe(true);
   });
 
   it("a Workflow change ripples into the AppBundle", () => {
-    const report = slideRule.impact(models, {
-      skill: "workflow",
-      kind: "workflow",
-      value: "wf_leave_approval",
-    });
+    const report = slideRule.impact(models, { skill: "workflow", kind: "workflow", value: "wf_leave_approval" });
 
     expect(report.safe).toBe(false);
     expect(impactedNodes(report)).toContain("app_app_leave_approval");
-    expect(
-      hasPath(report, ["wf_wf_leave_approval", "app_app_leave_approval"])
-    ).toBe(true);
+    expect(hasPath(report, ["wf_wf_leave_approval", "app_app_leave_approval"])).toBe(true);
   });
 
   it("a Workflow version change ripples into the AppBundle", () => {
-    const report = slideRule.impact(models, {
-      skill: "workflow",
-      kind: "version",
-      value: "wf_leave_approval",
-    });
+    const report = slideRule.impact(models, { skill: "workflow", kind: "version", value: "wf_leave_approval" });
 
     expect(report.safe).toBe(false);
     expect(impactedNodes(report)).toContain("app_app_leave_approval");
-    expect(
-      hasPath(report, [
-        "wf_wf_leave_approval_ver",
-        "wf_wf_leave_approval",
-        "app_app_leave_approval",
-      ])
-    ).toBe(true);
+    expect(hasPath(report, ["wf_wf_leave_approval_ver", "wf_wf_leave_approval", "app_app_leave_approval"])).toBe(true);
   });
 
   it("a Workflow node change ripples into the AppBundle", () => {
-    const report = slideRule.impact(models, {
-      skill: "workflow",
-      kind: "node",
-      value: "a_mgr",
-    });
+    const report = slideRule.impact(models, { skill: "workflow", kind: "node", value: "a_mgr" });
 
     expect(report.safe).toBe(false);
     expect(impactedNodes(report)).toContain("app_app_leave_approval");
-    expect(
-      hasPath(report, [
-        "wf_a_mgr",
-        "wf_wf_leave_approval",
-        "app_app_leave_approval",
-      ])
-    ).toBe(true);
+    expect(hasPath(report, ["wf_a_mgr", "wf_wf_leave_approval", "app_app_leave_approval"])).toBe(true);
   });
 
   it("a Page change ripples into the AppBundle", () => {
-    const report = slideRule.impact(models, {
-      skill: "page",
-      kind: "page",
-      value: "page_leave_request",
-    });
+    const report = slideRule.impact(models, { skill: "page", kind: "page", value: "page_leave_request" });
 
     expect(report.safe).toBe(false);
     expect(impactedNodes(report)).toContain("app_app_leave_approval");
-    expect(
-      hasPath(report, ["page_page_leave_request", "app_app_leave_approval"])
-    ).toBe(true);
+    expect(hasPath(report, ["page_page_leave_request", "app_app_leave_approval"])).toBe(true);
   });
 
   it("an unreferenced role is safe to change", () => {
-    const report = slideRule.impact(models, {
-      skill: "rbac",
-      kind: "role",
-      value: "auditor",
-    });
+    const report = slideRule.impact(models, { skill: "rbac", kind: "role", value: "auditor" });
 
     expect(report.safe).toBe(true);
     expect(report.impacted).toHaveLength(0);
@@ -224,11 +134,7 @@ describe("cross-system impact analysis (global dependency graph)", () => {
   });
 
   it("reports nothing for a resource that does not exist", () => {
-    const report = slideRule.impact(models, {
-      skill: "rbac",
-      kind: "role",
-      value: "ghost",
-    });
+    const report = slideRule.impact(models, { skill: "rbac", kind: "role", value: "ghost" });
 
     expect(report.safe).toBe(true);
     expect(report.impacted).toHaveLength(0);
@@ -249,29 +155,11 @@ describe("cross-system impact analysis (global dependency graph)", () => {
         "page_page_purchase_request",
         "app_app_purchase_approval",
         "wf_wf_purchase_approval",
-      ])
+      ]),
     );
-    expect(
-      hasPath(report, [
-        "dm_purchase_request_amount",
-        "aigc_cap_budget_risk_summary",
-      ])
-    ).toBe(true);
-    expect(
-      hasPath(report, [
-        "dm_purchase_request_amount",
-        "cmp_amount",
-        "page_page_purchase_request",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
-    expect(
-      hasPath(report, [
-        "dm_purchase_request_amount",
-        "wf_wf_purchase_approval",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
+    expect(hasPath(report, ["dm_purchase_request_amount", "aigc_cap_budget_risk_summary"])).toBe(true);
+    expect(hasPath(report, ["dm_purchase_request_amount", "cmp_amount", "page_page_purchase_request", "app_app_purchase_approval"])).toBe(true);
+    expect(hasPath(report, ["dm_purchase_request_amount", "wf_wf_purchase_approval", "app_app_purchase_approval"])).toBe(true);
   });
 
   it("a finance role change impacts the AIGC budget risk summary and reaches purchase AppBundle", () => {
@@ -282,25 +170,10 @@ describe("cross-system impact analysis (global dependency graph)", () => {
     });
 
     expect(report.safe).toBe(false);
-    expect(impactedNodes(report)).toEqual(
-      expect.arrayContaining([
-        "aigc_cap_budget_risk_summary",
-        "app_app_purchase_approval",
-      ])
-    );
-    expect(
-      hasPath(report, ["role_finance", "aigc_cap_budget_risk_summary"])
-    ).toBe(true);
-    expect(hasPath(report, ["role_finance", "app_app_purchase_approval"])).toBe(
-      true
-    );
-    expect(
-      hasPath(report, [
-        "role_finance",
-        "aigc_cap_budget_risk_summary",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
+    expect(impactedNodes(report)).toEqual(expect.arrayContaining(["aigc_cap_budget_risk_summary", "app_app_purchase_approval"]));
+    expect(hasPath(report, ["role_finance", "aigc_cap_budget_risk_summary"])).toBe(true);
+    expect(hasPath(report, ["role_finance", "app_app_purchase_approval"])).toBe(true);
+    expect(hasPath(report, ["role_finance", "aigc_cap_budget_risk_summary", "app_app_purchase_approval"])).toBe(true);
   });
 
   it("a RBAC fieldRule change impacts DataModel-field consumers across Workflow, Page, AIGC, and AppBundle", () => {
@@ -318,7 +191,7 @@ describe("cross-system impact analysis (global dependency graph)", () => {
 
     const report = slideRule.impact(
       { ...purchaseModels, rbac: rbacWithFieldRule },
-      { skill: "rbac", kind: "fieldRule", value: "pr_amount_field_policy" }
+      { skill: "rbac", kind: "fieldRule", value: "pr_amount_field_policy" },
     );
 
     expect(report.safe).toBe(false);
@@ -329,81 +202,35 @@ describe("cross-system impact analysis (global dependency graph)", () => {
         "wf_wf_purchase_approval",
         "aigc_cap_budget_risk_summary",
         "app_app_purchase_approval",
-      ])
+      ]),
     );
-    expect(
-      hasPath(report, [
-        "policy_pr_amount_field_policy",
-        "dm_purchase_request_amount",
-        "cmp_amount",
-        "page_page_purchase_request",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
-    expect(
-      hasPath(report, [
-        "policy_pr_amount_field_policy",
-        "dm_purchase_request_amount",
-        "wf_wf_purchase_approval",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
-    expect(
-      hasPath(report, [
-        "policy_pr_amount_field_policy",
-        "dm_purchase_request_amount",
-        "aigc_cap_budget_risk_summary",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
+    expect(hasPath(report, ["policy_pr_amount_field_policy", "dm_purchase_request_amount", "cmp_amount", "page_page_purchase_request", "app_app_purchase_approval"])).toBe(true);
+    expect(hasPath(report, ["policy_pr_amount_field_policy", "dm_purchase_request_amount", "wf_wf_purchase_approval", "app_app_purchase_approval"])).toBe(true);
+    expect(hasPath(report, ["policy_pr_amount_field_policy", "dm_purchase_request_amount", "aigc_cap_budget_risk_summary", "app_app_purchase_approval"])).toBe(true);
   });
 
   it("a purchase page change ripples into the AppBundle", () => {
-    const report = slideRule.impact(purchaseModels, {
-      skill: "page",
-      kind: "page",
-      value: "page_purchase_request",
-    });
+    const report = slideRule.impact(purchaseModels, { skill: "page", kind: "page", value: "page_purchase_request" });
 
     expect(report.safe).toBe(false);
     expect(impactedNodes(report)).toContain("app_app_purchase_approval");
-    expect(
-      hasPath(report, [
-        "page_page_purchase_request",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
+    expect(hasPath(report, ["page_page_purchase_request", "app_app_purchase_approval"])).toBe(true);
   });
 
   it("a purchase workflow change ripples into the AppBundle", () => {
-    const report = slideRule.impact(purchaseModels, {
-      skill: "workflow",
-      kind: "workflow",
-      value: "wf_purchase_approval",
-    });
+    const report = slideRule.impact(purchaseModels, { skill: "workflow", kind: "workflow", value: "wf_purchase_approval" });
 
     expect(report.safe).toBe(false);
     expect(impactedNodes(report)).toContain("app_app_purchase_approval");
-    expect(
-      hasPath(report, ["wf_wf_purchase_approval", "app_app_purchase_approval"])
-    ).toBe(true);
+    expect(hasPath(report, ["wf_wf_purchase_approval", "app_app_purchase_approval"])).toBe(true);
   });
 
   it("an AIGC capability source change ripples into the AppBundle", () => {
-    const report = slideRule.impact(purchaseModels, {
-      skill: "aigc",
-      kind: "capability",
-      value: "budget_risk_summary",
-    });
+    const report = slideRule.impact(purchaseModels, { skill: "aigc", kind: "capability", value: "budget_risk_summary" });
 
     expect(report.safe).toBe(false);
     expect(impactedNodes(report)).toContain("app_app_purchase_approval");
-    expect(
-      hasPath(report, [
-        "aigc_cap_budget_risk_summary",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
+    expect(hasPath(report, ["aigc_cap_budget_risk_summary", "app_app_purchase_approval"])).toBe(true);
   });
 
   // field deletion and field deprecation impact examples (implementation requirement)
@@ -414,13 +241,7 @@ describe("cross-system impact analysis (global dependency graph)", () => {
           id: "purchase_request",
           name: "Purchase Request",
           fields: [
-            {
-              key: "amount",
-              name: "Amount",
-              type: "number",
-              lifecycle: "deprecated",
-              required: false,
-            },
+            { key: "amount", name: "Amount", type: "number", lifecycle: "deprecated", required: false },
           ],
         },
       ],
@@ -430,13 +251,7 @@ describe("cross-system impact analysis (global dependency graph)", () => {
       name: "Purchase Request Page",
       entity: "purchase_request",
       components: [
-        {
-          id: "amount",
-          type: "number",
-          label: "Amount",
-          field: "purchase_request.amount",
-          visibleToRoles: ["finance"],
-        },
+        { id: "amount", type: "number", label: "Amount", field: "purchase_request.amount", visibleToRoles: ["finance"] },
       ],
       linkageRules: [],
     };
@@ -452,11 +267,7 @@ describe("cross-system impact analysis (global dependency graph)", () => {
       selfGrantDenials: [],
       dualControlPolicies: [],
       policyRules: [
-        {
-          id: "pol_amount_fld",
-          effect: "allow",
-          fieldRef: "purchase_request.amount",
-        },
+        { id: "pol_amount_fld", effect: "allow", fieldRef: "purchase_request.amount" },
       ],
     };
     const deprApp = {
@@ -470,12 +281,7 @@ describe("cross-system impact analysis (global dependency graph)", () => {
       menuEntries: [],
       pageBindings: [],
     };
-    const deprModels = {
-      datamodel: deprDm,
-      page: deprPage,
-      rbac: deprRbac,
-      appbundle: deprApp,
-    };
+    const deprModels = { datamodel: deprDm, page: deprPage, rbac: deprRbac, appbundle: deprApp };
 
     const report = slideRule.impact(deprModels, {
       skill: "datamodel",
@@ -485,24 +291,10 @@ describe("cross-system impact analysis (global dependency graph)", () => {
 
     expect(report.safe).toBe(false);
     expect(impactedNodes(report)).toEqual(
-      expect.arrayContaining([
-        "cmp_amount",
-        "page_page_purchase_request",
-        "app_app_purchase_approval",
-        "policy_pol_amount_fld",
-      ])
+      expect.arrayContaining(["cmp_amount", "page_page_purchase_request", "app_app_purchase_approval", "policy_pol_amount_fld"]),
     );
-    expect(
-      hasPath(report, [
-        "dm_purchase_request_amount",
-        "cmp_amount",
-        "page_page_purchase_request",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
-    expect(
-      hasPath(report, ["dm_purchase_request_amount", "policy_pol_amount_fld"])
-    ).toBe(true);
+    expect(hasPath(report, ["dm_purchase_request_amount", "cmp_amount", "page_page_purchase_request", "app_app_purchase_approval"])).toBe(true);
+    expect(hasPath(report, ["dm_purchase_request_amount", "policy_pol_amount_fld"])).toBe(true);
   });
 
   it("a removed DataModel field (deletion) still produces impact paths (positive)", () => {
@@ -512,13 +304,7 @@ describe("cross-system impact analysis (global dependency graph)", () => {
           id: "purchase_request",
           name: "Purchase Request",
           fields: [
-            {
-              key: "amount",
-              name: "Amount",
-              type: "number",
-              lifecycle: "removed",
-              required: false,
-            },
+            { key: "amount", name: "Amount", type: "number", lifecycle: "removed", required: false },
           ],
         },
       ],
@@ -527,14 +313,7 @@ describe("cross-system impact analysis (global dependency graph)", () => {
       id: "page_purchase_request",
       name: "Purchase Request Page",
       entity: "purchase_request",
-      components: [
-        {
-          id: "amount",
-          type: "number",
-          label: "Amount",
-          field: "purchase_request.amount",
-        },
-      ],
+      components: [{ id: "amount", type: "number", label: "Amount", field: "purchase_request.amount" }],
       linkageRules: [],
     };
     const remApp = {
@@ -557,14 +336,7 @@ describe("cross-system impact analysis (global dependency graph)", () => {
     });
 
     expect(report.safe).toBe(false);
-    expect(
-      hasPath(report, [
-        "dm_purchase_request_amount",
-        "cmp_amount",
-        "page_page_purchase_request",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
+    expect(hasPath(report, ["dm_purchase_request_amount", "cmp_amount", "page_page_purchase_request", "app_app_purchase_approval"])).toBe(true);
   });
 
   it("a non-existent field reports safe (negative case for impact)", () => {
@@ -573,21 +345,11 @@ describe("cross-system impact analysis (global dependency graph)", () => {
         {
           id: "ghost",
           name: "Ghost",
-          fields: [
-            {
-              key: "secret",
-              name: "Secret",
-              type: "string",
-              lifecycle: "deprecated",
-            },
-          ],
+          fields: [{ key: "secret", name: "Secret", type: "string", lifecycle: "deprecated" }],
         },
       ],
     };
-    const report = slideRule.impact(
-      { datamodel: dm },
-      { skill: "datamodel", kind: "field", value: "ghost.nonexistent" }
-    );
+    const report = slideRule.impact({ datamodel: dm }, { skill: "datamodel", kind: "field", value: "ghost.nonexistent" });
 
     expect(report.safe).toBe(true);
     expect(report.impacted).toHaveLength(0);

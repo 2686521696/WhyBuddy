@@ -50,11 +50,7 @@ function extractErrorCode(rawText: string): string | undefined {
   if (!rawText.trim()) return undefined;
   try {
     const parsed = JSON.parse(rawText) as { error?: unknown };
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      typeof parsed.error === "string"
-    ) {
+    if (parsed && typeof parsed === "object" && typeof parsed.error === "string") {
       return parsed.error;
     }
   } catch {

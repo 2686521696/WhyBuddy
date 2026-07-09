@@ -16,34 +16,17 @@ import { derivePipelineFlow } from "../live-runtime/flow-definition";
 import type { AigcCapability } from "../system-screens/five-system-model";
 
 const CAPS: AigcCapability[] = [
-  {
-    id: "cap_a",
-    name: "简介生成",
-    inputFields: ["course.title"],
-    outputField: "course.desc",
-  },
-  {
-    id: "cap_b",
-    name: "口号生成",
-    inputFields: ["course.desc", "course.title"],
-    outputField: "course.slogan",
-  },
+  { id: "cap_a", name: "简介生成", inputFields: ["course.title"], outputField: "course.desc" },
+  { id: "cap_b", name: "口号生成", inputFields: ["course.desc", "course.title"], outputField: "course.slogan" },
 ];
 
-const linearFlow = (
-  variables: Record<string, unknown> = {}
-): FlowDefinition => ({
+const linearFlow = (variables: Record<string, unknown> = {}): FlowDefinition => ({
   nodes: [
     { node_id: "cap_a", node_type: "aigc-capability", name: "简介生成" },
     { node_id: "cap_b", node_type: "aigc-capability", name: "口号生成" },
   ],
   edges: [
-    {
-      source_node_id: "cap_a",
-      target_node_id: "cap_b",
-      source_port: "course.desc",
-      target_port: "course.desc",
-    },
+    { source_node_id: "cap_a", target_node_id: "cap_b", source_port: "course.desc", target_port: "course.desc" },
   ],
   variables,
 });
@@ -51,29 +34,22 @@ const linearFlow = (
 describe("flow-executor（移植：拓扑执行引擎）", () => {
   it("拓扑序执行 + 端口传值：下游节点收到上游 outputField 产出", async () => {
     const seen: Array<{ id: string; inputs: Record<string, unknown> }> = [];
-    const res = await executeFlow(
-      linearFlow({ "course.title": "Python 入门" }),
-      async (node, inputs) => {
-        seen.push({ id: node.node_id, inputs });
-        return {
-          [node.node_id === "cap_a" ? "course.desc" : "course.slogan"]:
-            `${node.node_id}产出`,
-        };
-      }
-    );
+    const res = await executeFlow(linearFlow({ "course.title": "Python 入门" }), async (node, inputs) => {
+      seen.push({ id: node.node_id, inputs });
+      return { [node.node_id === "cap_a" ? "course.desc" : "course.slogan"]: `${node.node_id}产出` };
+    });
     expect(res.status).toBe("completed");
-    expect(seen.map(s => s.id)).toEqual(["cap_a", "cap_b"]);
+    expect(seen.map((s) => s.id)).toEqual(["cap_a", "cap_b"]);
     expect(seen[0].inputs["course.title"]).toBe("Python 入门"); // 无入边 → 手工变量
     expect(seen[1].inputs["course.desc"]).toBe("cap_a产出"); // 端口传值
     expect(seen[1].inputs["course.title"]).toBe("Python 入门"); // 变量补齐边未覆盖的输入
-    expect(res.logs.map(l => l.status)).toEqual(["success", "success"]);
+    expect(res.logs.map((l) => l.status)).toEqual(["success", "success"]);
   });
 
   it("重试后成功：单次瞬时失败不终止链路", async () => {
     let attempts = 0;
-    const res = await executeFlow(linearFlow(), async node => {
-      if (node.node_id === "cap_a" && attempts++ === 0)
-        throw new Error("transient");
+    const res = await executeFlow(linearFlow(), async (node) => {
+      if (node.node_id === "cap_a" && attempts++ === 0) throw new Error("transient");
       return { "course.desc": "ok" };
     });
     expect(res.status).toBe("completed");
@@ -85,7 +61,7 @@ describe("flow-executor（移植：拓扑执行引擎）", () => {
     const statuses: Array<[string, string]> = [];
     const res = await executeFlow(
       linearFlow(),
-      async node => {
+      async (node) => {
         ran.push(node.node_id);
         throw new Error("LLM_GENERATE_FAILED: rate limited");
       },
@@ -131,7 +107,7 @@ describe("flow-executor（移植：拓扑执行引擎）", () => {
     });
     expect(res.status).toBe("completed");
     expect(ran).toEqual(["cond", "yes"]); // no 分支未执行
-    expect(res.logs.find(l => l.node_id === "no")?.status).toBe("skipped");
+    expect(res.logs.find((l) => l.node_id === "no")?.status).toBe("skipped");
   });
 });
 
@@ -139,24 +115,15 @@ describe("derivePipelineFlow（管线 → 图投影）", () => {
   it("端口 = 字段 ref；手工输入 = 全链输入减衔接字段", () => {
     const p = derivePipelineFlow({ id: "p1", steps: ["cap_a", "cap_b"] }, CAPS);
     expect(p.reason).toBeNull();
-    expect(p.flow.nodes.map(n => n.node_id)).toEqual(["cap_a", "cap_b"]);
+    expect(p.flow.nodes.map((n) => n.node_id)).toEqual(["cap_a", "cap_b"]);
     expect(p.flow.edges).toEqual([
-      {
-        source_node_id: "cap_a",
-        target_node_id: "cap_b",
-        source_port: "course.desc",
-        target_port: "course.desc",
-      },
+      { source_node_id: "cap_a", target_node_id: "cap_b", source_port: "course.desc", target_port: "course.desc" },
     ]);
     expect(p.manualInputRefs).toEqual(["course.title"]); // course.desc 是衔接字段
   });
 
   it("不足 2 步 / 步骤未解析 → reason 非空（面板禁跑，不伪造）", () => {
-    expect(
-      derivePipelineFlow({ id: "p", steps: ["cap_a"] }, CAPS).reason
-    ).toContain("不足 2 步");
-    expect(
-      derivePipelineFlow({ id: "p", steps: ["cap_a", "ghost"] }, CAPS).reason
-    ).toContain("未解析");
+    expect(derivePipelineFlow({ id: "p", steps: ["cap_a"] }, CAPS).reason).toContain("不足 2 步");
+    expect(derivePipelineFlow({ id: "p", steps: ["cap_a", "ghost"] }, CAPS).reason).toContain("未解析");
   });
 });

@@ -35,10 +35,7 @@ import {
   traceabilityMatrixReferencesIds,
 } from "@shared/blueprint/sliderule-delivery-chain";
 import { renderSpecTreeToMermaid } from "@shared/blueprint/sliderule-visual-chain";
-import {
-  evaluateCommitGates,
-  evaluateShipGates,
-} from "@shared/blueprint/sliderule-ship-gates";
+import { evaluateCommitGates, evaluateShipGates } from "@shared/blueprint/sliderule-ship-gates";
 import { CAPABILITY_OUTPUT_KIND } from "@shared/blueprint/contracts";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
@@ -57,13 +54,7 @@ function seedVisualArtifacts(sessionId: string): V5SessionState {
     "【SPEC Tree】\n[root] 权限系统: 根\n[requirement] 核心: REQ\n[design] 模块: MOD";
   const { updatedState: withTree } = commitArtifact(
     state,
-    createRawArtifact(
-      `${sessionId}-tree`,
-      "structure.decompose",
-      "架构",
-      "spec_tree",
-      treeContent
-    ),
+    createRawArtifact(`${sessionId}-tree`, "structure.decompose", "架构", "spec_tree", treeContent),
     `${sessionId}-tree-run`,
     false,
     []
@@ -99,11 +90,7 @@ function seedVisualArtifacts(sessionId: string): V5SessionState {
   return withMermaid;
 }
 
-function runDeliveryPipeline(
-  state: V5SessionState,
-  turnId: string,
-  userText: string
-): V5SessionState {
+function runDeliveryPipeline(state: V5SessionState, turnId: string, userText: string): V5SessionState {
   const structure = pickStructureBeforeDelivery(state, userText);
   const delivery = pickDeliveryCapabilities(state);
   const pipeline = [...structure, ...delivery];
@@ -147,8 +134,8 @@ describe("S19 · ship-time delivery chain", () => {
   it("pickDeliveryCapabilities returns ordered pipeline caps not yet trusted", () => {
     const { state } = buildClearStateWithTrustedReport("S19-pick");
     const picks = pickDeliveryCapabilities(state);
-    expect(picks.map(p => p.capabilityId)).toEqual(
-      DELIVERY_PIPELINE.map(p => p.capabilityId)
+    expect(picks.map((p) => p.capabilityId)).toEqual(
+      DELIVERY_PIPELINE.map((p) => p.capabilityId)
     );
   });
 
@@ -159,15 +146,13 @@ describe("S19 · ship-time delivery chain", () => {
       userText: "落地交付验收包",
     });
     const picks = pickNextCapabilities(preparedState, "落地交付验收包");
-    expect(picks.some(p => p.capabilityId === "document.draft")).toBe(true);
+    expect(picks.some((p) => p.capabilityId === "document.draft")).toBe(true);
 
     const { plan } = orchestrateReasoningTurn(preparedState, {
       turnId: "S19-o",
       userText: "落地交付验收包",
     });
-    expect(plan.selected.some(s => s.capabilityId === "document.draft")).toBe(
-      true
-    );
+    expect(plan.selected.some((s) => s.capabilityId === "document.draft")).toBe(true);
   });
 
   it("full pipeline: C_TREE→C_DOC→C_MATRIX→C_PACK→C_HAND→T_MERGE→DONE", () => {
@@ -178,25 +163,21 @@ describe("S19 · ship-time delivery chain", () => {
     expect(final.runtimePhase).toBe("done");
 
     const handoff = (final.artifacts || []).find(
-      a => a.producedBy?.capabilityId === "handoff.package"
+      (a) => a.producedBy?.capabilityId === "handoff.package"
     );
     expect(handoff).toBeTruthy();
-    expect(handoffPackageHasRequiredSections(handoff!.content || "")).toBe(
-      true
-    );
+    expect(handoffPackageHasRequiredSections(handoff!.content || "")).toBe(true);
 
     const matrix = (final.artifacts || []).find(
-      a => a.producedBy?.capabilityId === "traceability.matrix"
+      (a) => a.producedBy?.capabilityId === "traceability.matrix"
     );
     expect(matrix).toBeTruthy();
     expect(traceabilityMatrixHasFiveColumns(matrix!.content || "")).toBe(true);
-    expect(
-      traceabilityMatrixReferencesIds(matrix!.content || "", [reportId])
-    ).toBe(true);
+    expect(traceabilityMatrixReferencesIds(matrix!.content || "", [reportId])).toBe(true);
 
-    const tree = (final.artifacts || []).find(a => a.kind === "spec_tree");
+    const tree = (final.artifacts || []).find((a) => a.kind === "spec_tree");
     expect(tree).toBeTruthy();
-    const doc = (final.artifacts || []).find(a => a.kind === "doc");
+    const doc = (final.artifacts || []).find((a) => a.kind === "doc");
     expect(doc).toBeTruthy();
   });
 
@@ -211,23 +192,16 @@ describe("S19 · ship-time delivery chain", () => {
     const root = getPropositionRootNode(state);
     expect(root).toBeTruthy();
     // 有可信内容节点时,交付 cap 的结构父应是内容节点(report/synthesis),不是 root。
-    for (const cap of [
-      "handoff.package",
-      "instruction.package",
-      "outcome.visualize",
-      "traceability.matrix",
-    ]) {
+    for (const cap of ["handoff.package", "instruction.package", "outcome.visualize", "traceability.matrix"]) {
       const parent = resolveStructuralParentId(state, undefined, cap);
       expect(parent).toBeTruthy();
       expect(parent).not.toBe(root!.id);
-      const parentNode = (state.graph.nodes || []).find(
-        n => n.id === parent
-      ) as { capabilityId?: string } | undefined;
-      expect([
-        "report.write",
-        "synthesis.merge",
-        "structure.decompose",
-      ]).toContain(parentNode?.capabilityId);
+      const parentNode = (state.graph.nodes || []).find((n) => n.id === parent) as
+        | { capabilityId?: string }
+        | undefined;
+      expect(["report.write", "synthesis.merge", "structure.decompose"]).toContain(
+        parentNode?.capabilityId
+      );
     }
   });
 
@@ -237,14 +211,11 @@ describe("S19 · ship-time delivery chain", () => {
     const { state } = buildClearStateWithTrustedReport("S19-flow");
     const { newState } = orchestrateReasoningTurn(state, {
       turnId: "S19-flow-d",
-      userText:
-        "打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包",
+      userText: "打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包",
     });
     const root = getPropositionRootNode(newState);
     expect(root).toBeTruthy();
-    const structEdges = (newState.graph.edges || []).filter(
-      e => e.type === "depends_on"
-    );
+    const structEdges = (newState.graph.edges || []).filter((e) => e.type === "depends_on");
     const deliveryCaps = new Set([
       "traceability.matrix",
       "task.write",
@@ -252,53 +223,45 @@ describe("S19 · ship-time delivery chain", () => {
       "outcome.visualize",
       "handoff.package",
     ]);
-    const deliveryNodes = (newState.graph.nodes || []).filter(n =>
+    const deliveryNodes = (newState.graph.nodes || []).filter((n) =>
       deliveryCaps.has(String((n as { capabilityId?: string }).capabilityId))
     );
     expect(deliveryNodes.length).toBeGreaterThan(0); // 至少排了一个交付节点
     for (const node of deliveryNodes) {
-      const inEdge = structEdges.find(e => e.target === node.id);
+      const inEdge = structEdges.find((e) => e.target === node.id);
       expect(inEdge).toBeTruthy();
       expect(inEdge!.source).not.toBe(root!.id); // 不再平铺在 root 下
-      const parent = (newState.graph.nodes || []).find(
-        n => n.id === inEdge!.source
-      ) as { capabilityId?: string } | undefined;
-      expect([
-        "report.write",
-        "synthesis.merge",
-        "structure.decompose",
-      ]).toContain(parent?.capabilityId);
+      const parent = (newState.graph.nodes || []).find((n) => n.id === inEdge!.source) as
+        | { capabilityId?: string }
+        | undefined;
+      expect(["report.write", "synthesis.merge", "structure.decompose"]).toContain(
+        parent?.capabilityId
+      );
     }
   });
 
   it("P5: commit-time gates never include T_MERGE / T_CONTENT / T_TEST", () => {
-    const commitIds = evaluateCommitGates("handoff.package", {}).map(
-      g => g.gateId
-    );
+    const commitIds = evaluateCommitGates("handoff.package", {}).map((g) => g.gateId);
     expect(commitIds).not.toContain("T_MERGE");
     expect(commitIds).not.toContain("T_CONTENT");
     expect(commitIds).not.toContain("T_TEST");
-    expect(RUNTIME_SRC).not.toMatch(
-      /evaluateShipGates\([^)]*\)[\s\S]{0,120}commitArtifact/
-    );
+    expect(RUNTIME_SRC).not.toMatch(/evaluateShipGates\([^)]*\)[\s\S]{0,120}commitArtifact/);
   });
 
   it("P5: ship-time gates recorded with phase=ship only after handoff.package", () => {
     const { state } = buildClearStateWithTrustedReport("S19-p5");
     const final = runDeliveryPipeline(state, "S19-p5", "落地交付");
 
-    const commitGates = (final.gates || []).filter(g => g.phase === "commit");
-    const shipGates = (final.gates || []).filter(g => g.phase === "ship");
+    const commitGates = (final.gates || []).filter((g) => g.phase === "commit");
+    const shipGates = (final.gates || []).filter((g) => g.phase === "ship");
 
     expect(commitGates.length).toBeGreaterThan(0);
-    expect(shipGates.map(g => g.gateId).sort()).toEqual(
+    expect(shipGates.map((g) => g.gateId).sort()).toEqual(
       ["T_CONTENT", "T_MERGE", "T_TEST"].sort()
     );
-    expect(commitGates.some(g => g.gateId === "T_MERGE")).toBe(false);
+    expect(commitGates.some((g) => g.gateId === "T_MERGE")).toBe(false);
     expect(
-      (final.conversation || []).some(c =>
-        /T_LEDGER.*phase=ship/.test(c.text || "")
-      )
+      (final.conversation || []).some((c) => /T_LEDGER.*phase=ship/.test(c.text || ""))
     ).toBe(true);
   });
 
@@ -319,7 +282,7 @@ describe("S19 · ship-time delivery chain", () => {
     const { state } = buildClearStateWithTrustedReport("S19-ledger");
     const final = runDeliveryPipeline(state, "S19-ledger", "打包交付");
     const handoff = (final.artifacts || []).find(
-      a => a.producedBy?.capabilityId === "handoff.package"
+      (a) => a.producedBy?.capabilityId === "handoff.package"
     );
     expect(handoff?.content).toMatch(/台账导出/);
     expect(handoff?.content).toMatch(/capabilityRuns/);
@@ -329,13 +292,7 @@ describe("S19 · ship-time delivery chain", () => {
     const seeded = seedVisualArtifacts("S19-bundle");
     const withUx = commitArtifact(
       seeded,
-      createRawArtifact(
-        `${seeded.sessionId}-ux`,
-        "ux.preview",
-        "产品",
-        "preview",
-        GOOD_PREVIEW
-      ),
+      createRawArtifact(`${seeded.sessionId}-ux`, "ux.preview", "产品", "preview", GOOD_PREVIEW),
       "S19-bundle-ux-run",
       false,
       findInputsForCapability(seeded, "ux.preview")
@@ -344,23 +301,18 @@ describe("S19 · ship-time delivery chain", () => {
 
     const final = runDeliveryPipeline(withUx, "S19-bundle", "打包落地交付");
     const handoff = (final.artifacts || []).find(
-      a => a.producedBy?.capabilityId === "handoff.package"
+      (a) => a.producedBy?.capabilityId === "handoff.package"
     );
     const matrix = (final.artifacts || []).find(
-      a => a.producedBy?.capabilityId === "traceability.matrix"
+      (a) => a.producedBy?.capabilityId === "traceability.matrix"
     );
 
     expect(handoff).toBeTruthy();
     expect(matrix).toBeTruthy();
-    expect(
-      handoffBundlesMatrixArtifact(handoff!.content || "", matrix!.id)
-    ).toBe(true);
-    expect(
-      handoffBundlesVisualRender(
-        handoff!.content || "",
-        `${withUx.sessionId}-mermaid`
-      )
-    ).toBe(true);
+    expect(handoffBundlesMatrixArtifact(handoff!.content || "", matrix!.id)).toBe(true);
+    expect(handoffBundlesVisualRender(handoff!.content || "", `${withUx.sessionId}-mermaid`)).toBe(
+      true
+    );
     expect(
       handoffBundlesVisualPreview(handoff!.content || "", {
         artifactId: `${withUx.sessionId}-ux`,

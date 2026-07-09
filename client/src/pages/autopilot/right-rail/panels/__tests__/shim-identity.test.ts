@@ -57,7 +57,7 @@ import * as autopilotPanelsBarrel from "@/pages/autopilot/right-rail/panels";
 describe("canonical panel shim identity (Spec 2)", () => {
   it("AgentCrewFabricPanel shim === canonical", () => {
     expect(agentCrewShim.AgentCrewFabricPanel).toBe(
-      agentCrewCanonical.AgentCrewFabricPanel
+      agentCrewCanonical.AgentCrewFabricPanel,
     );
   });
 
@@ -67,31 +67,31 @@ describe("canonical panel shim identity (Spec 2)", () => {
 
   it("SpecDocumentsPanel shim === canonical", () => {
     expect(specDocumentsShim.SpecDocumentsPanel).toBe(
-      specDocumentsCanonical.SpecDocumentsPanel
+      specDocumentsCanonical.SpecDocumentsPanel,
     );
   });
 
   it("EffectPreviewPanel shim === canonical", () => {
     expect(effectPreviewShim.EffectPreviewPanel).toBe(
-      effectPreviewCanonical.EffectPreviewPanel
+      effectPreviewCanonical.EffectPreviewPanel,
     );
   });
 
   it("PromptPackagePanel shim === canonical", () => {
     expect(promptPackageShim.PromptPackagePanel).toBe(
-      promptPackageCanonical.PromptPackagePanel
+      promptPackageCanonical.PromptPackagePanel,
     );
   });
 
   it("RuntimeCapabilityPanel shim === canonical", () => {
     expect(runtimeCapabilityShim.RuntimeCapabilityPanel).toBe(
-      runtimeCapabilityCanonical.RuntimeCapabilityPanel
+      runtimeCapabilityCanonical.RuntimeCapabilityPanel,
     );
   });
 
   it("EngineeringHandoffPanel shim === canonical", () => {
     expect(engineeringLandingShim.EngineeringHandoffPanel).toBe(
-      engineeringHandoffCanonical.EngineeringHandoffPanel
+      engineeringHandoffCanonical.EngineeringHandoffPanel,
     );
   });
 
@@ -99,13 +99,13 @@ describe("canonical panel shim identity (Spec 2)", () => {
     // EngineeringLandingPanel 是历史别名，必须指向 canonical EngineeringHandoffPanel
     // （design.md 决策记录 §3；tasks.md 任务 7 shim 要求同名/别名双导出）
     expect(engineeringLandingShim.EngineeringLandingPanel).toBe(
-      engineeringHandoffCanonical.EngineeringHandoffPanel
+      engineeringHandoffCanonical.EngineeringHandoffPanel,
     );
   });
 
   it("ArtifactMemoryPanel shim === canonical", () => {
     expect(artifactMemoryShim.ArtifactMemoryPanel).toBe(
-      artifactMemoryCanonical.ArtifactMemoryPanel
+      artifactMemoryCanonical.ArtifactMemoryPanel,
     );
   });
 });
@@ -113,28 +113,28 @@ describe("canonical panel shim identity (Spec 2)", () => {
 describe("canonical panels barrel identity (Spec 2)", () => {
   it("specs barrel exports the same components as the canonical barrel", () => {
     expect(specsPanelsBarrel.AgentCrewFabricPanel).toBe(
-      autopilotPanelsBarrel.AgentCrewFabricPanel
+      autopilotPanelsBarrel.AgentCrewFabricPanel,
     );
     expect(specsPanelsBarrel.SpecTreePanel).toBe(
-      autopilotPanelsBarrel.SpecTreePanel
+      autopilotPanelsBarrel.SpecTreePanel,
     );
     expect(specsPanelsBarrel.SpecDocumentsPanel).toBe(
-      autopilotPanelsBarrel.SpecDocumentsPanel
+      autopilotPanelsBarrel.SpecDocumentsPanel,
     );
     expect(specsPanelsBarrel.EffectPreviewPanel).toBe(
-      autopilotPanelsBarrel.EffectPreviewPanel
+      autopilotPanelsBarrel.EffectPreviewPanel,
     );
     expect(specsPanelsBarrel.PromptPackagePanel).toBe(
-      autopilotPanelsBarrel.PromptPackagePanel
+      autopilotPanelsBarrel.PromptPackagePanel,
     );
     expect(specsPanelsBarrel.RuntimeCapabilityPanel).toBe(
-      autopilotPanelsBarrel.RuntimeCapabilityPanel
+      autopilotPanelsBarrel.RuntimeCapabilityPanel,
     );
     expect(specsPanelsBarrel.EngineeringHandoffPanel).toBe(
-      autopilotPanelsBarrel.EngineeringHandoffPanel
+      autopilotPanelsBarrel.EngineeringHandoffPanel,
     );
     expect(specsPanelsBarrel.ArtifactMemoryPanel).toBe(
-      autopilotPanelsBarrel.ArtifactMemoryPanel
+      autopilotPanelsBarrel.ArtifactMemoryPanel,
     );
   });
 });

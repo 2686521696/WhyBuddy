@@ -34,7 +34,10 @@ import { describe, expect, it } from "vitest";
 async function loadHookSource(): Promise<string> {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
-  return fs.readFile(path.resolve(__dirname, "../use-auto-advance.ts"), "utf8");
+  return fs.readFile(
+    path.resolve(__dirname, "../use-auto-advance.ts"),
+    "utf8"
+  );
 }
 
 /**

@@ -88,17 +88,23 @@ export default function SpecCenterPage() {
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="text-lg font-black">{projectSpecs.length}</div>
-                <div className="text-[10px] font-bold text-slate-500">规格</div>
+                <div className="text-[10px] font-bold text-slate-500">
+                  规格
+                </div>
               </div>
               <div className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="text-lg font-black">{sourceStats.evidence}</div>
-                <div className="text-[10px] font-bold text-slate-500">证据</div>
+                <div className="text-[10px] font-bold text-slate-500">
+                  证据
+                </div>
               </div>
               <div className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="text-lg font-black">
                   {sourceStats.artifacts}
                 </div>
-                <div className="text-[10px] font-bold text-slate-500">资产</div>
+                <div className="text-[10px] font-bold text-slate-500">
+                  资产
+                </div>
               </div>
             </div>
           </div>
@@ -164,8 +170,7 @@ export default function SpecCenterPage() {
                       当前规格
                     </div>
                     <h2 className="mt-2 truncate text-xl font-black text-slate-950">
-                      v{currentSpec.version} ·{" "}
-                      {blueprintCopy(currentSpec.title)}
+                      v{currentSpec.version} · {blueprintCopy(currentSpec.title)}
                     </h2>
                   </div>
                   <span className="rounded-full bg-[#0f766e]/12 px-3 py-1 text-xs font-black text-[#0f766e]">

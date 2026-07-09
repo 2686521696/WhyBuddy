@@ -18,10 +18,7 @@ import {
   type Skill,
   type ValidationReport,
 } from "./skill";
-import {
-  analyzeImpact,
-  buildDependencyGraph as buildImpactDependencyGraph,
-} from "./impact";
+import { analyzeImpact, buildDependencyGraph as buildImpactDependencyGraph } from "./impact";
 import type { DependencyGraph, ImpactReport, ResourceRef } from "./impact";
 import {
   evaluateAppBundleRuntimeClosure,
@@ -31,36 +28,22 @@ import {
   type AppBundleRuntimeClosureReport,
 } from "./appbundle/appBundleSkill";
 
-export type {
-  DependencyGraph,
-  ImpactPath,
-  ImpactedArtifact,
-  ImpactReport,
-  ResourceRef,
-} from "./impact";
+export type { DependencyGraph, ImpactPath, ImpactedArtifact, ImpactReport, ResourceRef } from "./impact";
 
 // A registry entry erases the model type but keeps the typed skill internally. Every method
 // is only ever called with the model produced by that same skill, so the casts are sound.
 interface RegisteredSkill {
   id: string;
   title: string;
-  generate(
-    intent: string,
-    surfaces: Record<string, ResolvableSurface>
-  ): Promise<unknown>;
-  validate(
-    model: unknown,
-    surfaces: Record<string, ResolvableSurface>
-  ): ValidationReport;
+  generate(intent: string, surfaces: Record<string, ResolvableSurface>): Promise<unknown>;
+  validate(model: unknown, surfaces: Record<string, ResolvableSurface>): ValidationReport;
   project(model: unknown): Projection;
   resolve(model: unknown): ResolvableSurface;
   crossRefs(model: unknown): CrossRefEdge[];
   refNodeId(kind: string, value: string): string | null;
 }
 
-function register<T>(
-  skill: Skill<T> & Partial<CrossSkill<T>>
-): RegisteredSkill {
+function register<T>(skill: Skill<T> & Partial<CrossSkill<T>>): RegisteredSkill {
   return {
     id: skill.id,
     title: skill.title,
@@ -68,14 +51,11 @@ function register<T>(
       skill.generate
         ? skill.generate(intent, { external: surfaces })
         : Promise.reject(new Error(`skill ${skill.id} 无 generate 实现`)),
-    validate: (model, surfaces) =>
-      skill.validate(model as T, { external: surfaces }),
+    validate: (model, surfaces) => skill.validate(model as T, { external: surfaces }),
     project: model => skill.project(model as T),
     resolve: model => skill.resolve(model as T),
-    crossRefs: model =>
-      skill.crossRefs ? skill.crossRefs(model as T).map(normalizeCrossRef) : [],
-    refNodeId: (kind, value) =>
-      skill.refNodeId ? skill.refNodeId(kind, value) : null,
+    crossRefs: model => (skill.crossRefs ? skill.crossRefs(model as T).map(normalizeCrossRef) : []),
+    refNodeId: (kind, value) => (skill.refNodeId ? skill.refNodeId(kind, value) : null),
   };
 }
 
@@ -89,13 +69,7 @@ export interface SkillRun {
 export interface AggregateReport {
   ok: boolean;
   totals: { errors: number; warnings: number };
-  bySkill: Array<{
-    skillId: string;
-    title: string;
-    ok: boolean;
-    errors: Finding[];
-    warnings: Finding[];
-  }>;
+  bySkill: Array<{ skillId: string; title: string; ok: boolean; errors: Finding[]; warnings: Finding[] }>;
 }
 
 /** The unified artifact — one application described across every skill's metamodel. */
@@ -161,16 +135,12 @@ export class Orchestrator {
   }
 
   /** Pure assembly from already-built models — validate (full cross-surfaces), project, combine. */
-  assemble(
-    intent: string,
-    models: Record<string, unknown>
-  ): OrchestratorResult {
+  assemble(intent: string, models: Record<string, unknown>): OrchestratorResult {
     const active = this.skills.filter(s => s.id in models);
 
     // full cross-skill surfaces — every skill sees every other's resolve()
     const surfaces: Record<string, ResolvableSurface> = {};
-    for (const skill of active)
-      surfaces[skill.id] = skill.resolve(models[skill.id]);
+    for (const skill of active) surfaces[skill.id] = skill.resolve(models[skill.id]);
 
     const runs: SkillRun[] = [];
     const bySkill: AggregateReport["bySkill"] = [];
@@ -182,37 +152,20 @@ export class Orchestrator {
       const report = skill.validate(model, surfaces);
       const projection = skill.project(model);
       runs.push({ skillId: skill.id, title: skill.title, report, projection });
-      bySkill.push({
-        skillId: skill.id,
-        title: skill.title,
-        ok: report.ok,
-        errors: report.errors,
-        warnings: report.warnings,
-      });
+      bySkill.push({ skillId: skill.id, title: skill.title, ok: report.ok, errors: report.errors, warnings: report.warnings });
       errorTotal += report.errors.length;
       warnTotal += report.warnings.length;
     }
 
-    const crossRuntimeGraph = this.buildCrossRuntimeGraphFromSurfaces(
-      active.map(skill => skill.id),
-      surfaces
-    );
+    const crossRuntimeGraph = this.buildCrossRuntimeGraphFromSurfaces(active.map(skill => skill.id), surfaces);
     const mermaid = this.combineDiagram(active, models, runs);
     const ok = runs.every(r => r.report.ok);
 
     return {
       intent,
       ok,
-      spec: {
-        intent,
-        generatedAt: new Date().toISOString(),
-        skills: { ...models },
-      },
-      report: {
-        ok,
-        totals: { errors: errorTotal, warnings: warnTotal },
-        bySkill,
-      },
+      spec: { intent, generatedAt: new Date().toISOString(), skills: { ...models } },
+      report: { ok, totals: { errors: errorTotal, warnings: warnTotal }, bySkill },
       runs,
       crossRuntimeGraph,
       mermaid,
@@ -248,8 +201,7 @@ export class Orchestrator {
     for (const skill of active) {
       for (const ref of skill.crossRefs(models[skill.id])) {
         const targetSurface = surfaces.get(ref.toSkill);
-        const resolved =
-          targetSurface?.[ref.toKind]?.includes(ref.toValue) ?? false;
+        const resolved = targetSurface?.[ref.toKind]?.includes(ref.toValue) ?? false;
         if (!resolved) {
           unresolvedRefs.push(ref);
           if ((ref.severity ?? "error") === "error") {
@@ -272,14 +224,7 @@ export class Orchestrator {
       if (runtimeClosure.blocked) {
         runtimeClosure.blockers.forEach(b => {
           // avoid duplicate codes if already present
-          if (
-            !blockers.some(
-              bb =>
-                bb.code === b.code &&
-                bb.path === b.path &&
-                bb.message === b.message
-            )
-          ) {
+          if (!blockers.some(bb => bb.code === b.code && bb.path === b.path && bb.message === b.message)) {
             blockers.push(b);
           }
         });
@@ -294,11 +239,10 @@ export class Orchestrator {
     if (runtimeClosure && "appbundle" in models) {
       const abModel = (models as any).appbundle;
       if (abModel && abModel.releaseArtifact) {
-        releaseArtifactWithRuntimeClosure =
-          attachRuntimeClosureSummaryToReleaseArtifact(
-            abModel.releaseArtifact,
-            runtimeClosure
-          );
+        releaseArtifactWithRuntimeClosure = attachRuntimeClosureSummaryToReleaseArtifact(
+          abModel.releaseArtifact,
+          runtimeClosure
+        );
       }
     }
 
@@ -309,23 +253,14 @@ export class Orchestrator {
     if (runtimeClosure && "appbundle" in models) {
       const abModel = (models as any).appbundle;
       if (abModel && abModel.publishManifest) {
-        publishManifestWithClosureDigest =
-          attachClosureEvidenceDigestToPublishManifest(
-            abModel.publishManifest,
-            runtimeClosure.stableDigest
-          );
+        publishManifestWithClosureDigest = attachClosureEvidenceDigestToPublishManifest(
+          abModel.publishManifest,
+          runtimeClosure.stableDigest
+        );
       }
     }
 
-    return {
-      publishable: blockers.length === 0,
-      blockers,
-      result,
-      runtimeClosure,
-      releaseArtifactWithRuntimeClosure,
-      publishManifestWithClosureDigest,
-      unresolvedRefs,
-    };
+    return { publishable: blockers.length === 0, blockers, result, runtimeClosure, releaseArtifactWithRuntimeClosure, publishManifestWithClosureDigest, unresolvedRefs };
   }
 
   buildDependencyGraph(models: Record<string, unknown>): DependencyGraph {
@@ -340,17 +275,13 @@ export class Orchestrator {
   buildCrossRuntimeGraph(models: Record<string, unknown>): CrossRuntimeGraph {
     const active = this.skills.filter(s => s.id in models);
     const surfaces: Record<string, ResolvableSurface> = {};
-    for (const skill of active)
-      surfaces[skill.id] = skill.resolve(models[skill.id]);
-    return this.buildCrossRuntimeGraphFromSurfaces(
-      active.map(skill => skill.id),
-      surfaces
-    );
+    for (const skill of active) surfaces[skill.id] = skill.resolve(models[skill.id]);
+    return this.buildCrossRuntimeGraphFromSurfaces(active.map(skill => skill.id), surfaces);
   }
 
   private buildCrossRuntimeGraphFromSurfaces(
     skillIds: string[],
-    surfaces: Record<string, ResolvableSurface>
+    surfaces: Record<string, ResolvableSurface>,
   ): CrossRuntimeGraph {
     const bySkill: Record<string, CrossRuntimeGraphEdge[]> = {};
     const evidenceBySkill: Record<string, string[]> = {};
@@ -358,12 +289,8 @@ export class Orchestrator {
 
     for (const skillId of skillIds) {
       const surface = surfaces[skillId] ?? {};
-      const rawEdges = Array.isArray(surface.crossSkillRuntimeEdges)
-        ? surface.crossSkillRuntimeEdges
-        : [];
-      const evidence = Array.isArray(surface.runtimeEvidence)
-        ? surface.runtimeEvidence
-        : [];
+      const rawEdges = Array.isArray(surface.crossSkillRuntimeEdges) ? surface.crossSkillRuntimeEdges : [];
+      const evidence = Array.isArray(surface.runtimeEvidence) ? surface.runtimeEvidence : [];
       evidenceBySkill[skillId] = [...evidence];
       bySkill[skillId] = [];
 
@@ -388,7 +315,7 @@ export class Orchestrator {
   private combineDiagram(
     active: RegisteredSkill[],
     models: Record<string, unknown>,
-    runs: SkillRun[]
+    runs: SkillRun[],
   ): string {
     const lines: string[] = ["flowchart LR"];
     const byId = new Map(active.map(s => [s.id, s]));
@@ -396,8 +323,7 @@ export class Orchestrator {
     // 1) one subgraph per skill, nodes inside
     for (const run of runs) {
       lines.push(`  subgraph ${run.skillId}["${run.title}"]`);
-      for (const n of run.projection.nodes)
-        lines.push(`    ${shapeNode(n.id, n.label, n.kind)}`);
+      for (const n of run.projection.nodes) lines.push(`    ${shapeNode(n.id, n.label, n.kind)}`);
       lines.push("  end");
     }
 
@@ -416,9 +342,7 @@ export class Orchestrator {
         const target = byId.get(ref.toSkill);
         const targetNode = target?.refNodeId(ref.toKind, ref.toValue) ?? null;
         if (targetNode) {
-          lines.push(
-            `  ${ref.fromNode} -.->|${ref.label ?? ""}| ${targetNode}`
-          );
+          lines.push(`  ${ref.fromNode} -.->|${ref.label ?? ""}| ${targetNode}`);
         } else {
           // dependency on a skill that isn't wired in yet — show it honestly as a ghost.
           const ghostId = `ext_${ref.toSkill}_${ref.toValue.replace(/[^a-zA-Z0-9_]/g, "_")}`;
@@ -428,8 +352,7 @@ export class Orchestrator {
       }
     }
     for (const [id, label] of ghosts) lines.push(`  ${id}["${label}"]:::ghost`);
-    if (ghosts.size)
-      lines.push("  classDef ghost stroke-dasharray:4,fill:#f7f7f7,color:#999");
+    if (ghosts.size) lines.push("  classDef ghost stroke-dasharray:4,fill:#f7f7f7,color:#999");
 
     return lines.join("\n");
   }

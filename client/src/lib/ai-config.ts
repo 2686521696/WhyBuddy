@@ -111,9 +111,7 @@ export function createBrowserAIConfig(
   raw: Partial<AIConfig> = {},
   fallback?: AIConfig
 ): AIConfig {
-  const seed = fallback
-    ? createServerAIConfig(fallback)
-    : createDefaultAIConfig();
+  const seed = fallback ? createServerAIConfig(fallback) : createDefaultAIConfig();
   const baseUrl = sanitizeUrl(raw.baseUrl ?? seed.baseUrl);
   const proxyUrl = sanitizeUrl(raw.proxyUrl);
 
@@ -151,12 +149,8 @@ export function loadPersistedAISettings(serverConfig: AIConfig): {
   browserConfig: AIConfig;
 } {
   const persisted = readPersistedAISettings();
-  const mode =
-    persisted?.mode === "browser_direct" ? "browser_direct" : "server_proxy";
-  const browserConfig = createBrowserAIConfig(
-    persisted?.browserConfig || {},
-    serverConfig
-  );
+  const mode = persisted?.mode === "browser_direct" ? "browser_direct" : "server_proxy";
+  const browserConfig = createBrowserAIConfig(persisted?.browserConfig || {}, serverConfig);
 
   return { mode, browserConfig };
 }

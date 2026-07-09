@@ -82,11 +82,7 @@ describe("BlueprintWallConsoleOverlay / SSR output", () => {
       "error",
     ];
     const lines = tones.map((tone, index) =>
-      makeLine({
-        id: `console:reasoning:r${index}`,
-        tone,
-        text: `line-${tone}`,
-      })
+      makeLine({ id: `console:reasoning:r${index}`, tone, text: `line-${tone}` })
     );
 
     const markup = renderToStaticMarkup(

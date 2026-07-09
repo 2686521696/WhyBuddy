@@ -24,9 +24,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // ---------------------------------------------------------------------------
 
 const mockInitialize = vi.fn();
-const mockRender = vi
-  .fn()
-  .mockResolvedValue({ svg: "<svg>test diagram</svg>" });
+const mockRender = vi.fn().mockResolvedValue({ svg: "<svg>test diagram</svg>" });
 
 vi.mock("mermaid", () => ({
   default: {
@@ -38,11 +36,7 @@ vi.mock("mermaid", () => ({
 let mockTheme: "light" | "dark" = "light";
 
 vi.mock("@/contexts/ThemeContext", () => ({
-  useTheme: () => ({
-    theme: mockTheme,
-    toggleTheme: undefined,
-    switchable: false,
-  }),
+  useTheme: () => ({ theme: mockTheme, toggleTheme: undefined, switchable: false }),
 }));
 
 // Import after mocks
@@ -62,11 +56,7 @@ describe("MermaidBlock", () => {
   describe("streaming state renders CodeBlock", () => {
     it("renders CodeBlock when isStreaming=true and closed=false", () => {
       const html = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={true}
-          closed={false}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={true} closed={false} />,
       );
 
       expect(html).toContain('data-testid="streaming-doc-code-block"');
@@ -77,11 +67,7 @@ describe("MermaidBlock", () => {
 
     it("renders CodeBlock when closed=false even if isStreaming=false", () => {
       const html = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={false}
-          closed={false}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={false} closed={false} />,
       );
 
       expect(html).toContain('data-testid="streaming-doc-code-block"');
@@ -90,11 +76,7 @@ describe("MermaidBlock", () => {
 
     it("marks CodeBlock as streaming when isStreaming=true", () => {
       const html = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={true}
-          closed={false}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={true} closed={false} />,
       );
 
       expect(html).toContain('data-is-streaming="true"');
@@ -106,7 +88,7 @@ describe("MermaidBlock", () => {
           code="sequenceDiagram\n  A->>B: Hello"
           isStreaming={true}
           closed={false}
-        />
+        />,
       );
 
       expect(html).toContain("sequenceDiagram");
@@ -114,11 +96,7 @@ describe("MermaidBlock", () => {
 
     it("passes language='mermaid' to CodeBlock (normalized to plain/TEXT)", () => {
       const html = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={true}
-          closed={false}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={true} closed={false} />,
       );
 
       // CodeBlock normalizes "mermaid" to "plain" since it's not in SUPPORTED_LANGUAGES,
@@ -131,11 +109,7 @@ describe("MermaidBlock", () => {
   describe("loading state shows placeholder", () => {
     it("does not call mermaid.render during SSR (useEffect deferred)", () => {
       renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={false}
-          closed={true}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={false} closed={true} />,
       );
 
       // useEffect doesn't fire in SSR, so render should not be called
@@ -144,11 +118,7 @@ describe("MermaidBlock", () => {
 
     it("renders initial loading state in SSR for closed blocks", () => {
       const html = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={false}
-          closed={true}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={false} closed={true} />,
       );
 
       expect(html).toContain('data-testid="mermaid-loading"');
@@ -164,11 +134,7 @@ describe("MermaidBlock", () => {
       // the state never reaches "rendered", but we verify the component
       // doesn't error when given valid props for the render path.
       const html = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={false}
-          closed={true}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={false} closed={true} />,
       );
 
       expect(html).toBeDefined();
@@ -180,7 +146,7 @@ describe("MermaidBlock", () => {
       // Empty code triggers error state in useEffect (not in SSR).
       // Verify the component doesn't crash with empty/whitespace code.
       const html = renderToStaticMarkup(
-        <MermaidBlock code="" isStreaming={false} closed={true} />
+        <MermaidBlock code="" isStreaming={false} closed={true} />,
       );
 
       expect(html).toBeDefined();
@@ -188,7 +154,7 @@ describe("MermaidBlock", () => {
 
     it("component handles whitespace-only code gracefully", () => {
       const html = renderToStaticMarkup(
-        <MermaidBlock code="   \n  \n  " isStreaming={false} closed={true} />
+        <MermaidBlock code="   \n  \n  " isStreaming={false} closed={true} />,
       );
 
       expect(html).toBeDefined();
@@ -199,11 +165,7 @@ describe("MermaidBlock", () => {
     it("renders without error in light theme", () => {
       mockTheme = "light";
       const html = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={false}
-          closed={true}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={false} closed={true} />,
       );
       expect(html).toBeDefined();
     });
@@ -211,11 +173,7 @@ describe("MermaidBlock", () => {
     it("renders without error in dark theme", () => {
       mockTheme = "dark";
       const html = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={false}
-          closed={true}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={false} closed={true} />,
       );
       expect(html).toBeDefined();
     });
@@ -226,11 +184,7 @@ describe("MermaidBlock", () => {
       // This ensures theme changes trigger re-render. Verified structurally.
       mockTheme = "dark";
       const html = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={true}
-          closed={false}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={true} closed={false} />,
       );
       // Component renders successfully with dark theme mock
       expect(html).toContain('data-testid="streaming-doc-code-block"');
@@ -247,18 +201,10 @@ describe("MermaidBlock", () => {
 
       // Verify both renders produce valid output (no crash)
       const html1 = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; A-->B"
-          isStreaming={false}
-          closed={true}
-        />
+        <MermaidBlock code="graph TD; A-->B" isStreaming={false} closed={true} />,
       );
       const html2 = renderToStaticMarkup(
-        <MermaidBlock
-          code="graph TD; C-->D"
-          isStreaming={false}
-          closed={true}
-        />
+        <MermaidBlock code="graph TD; C-->D" isStreaming={false} closed={true} />,
       );
 
       expect(html1).toBeDefined();
@@ -280,7 +226,7 @@ describe("MermaidBlock", () => {
 
       for (const code of codes) {
         const html = renderToStaticMarkup(
-          <MermaidBlock code={code} isStreaming={false} closed={true} />
+          <MermaidBlock code={code} isStreaming={false} closed={true} />,
         );
         expect(html).toBeDefined();
       }

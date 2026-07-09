@@ -10,9 +10,7 @@ import type { MissionTaskStatus } from "@/lib/tasks-store";
 
 /* ─── Helpers ─── */
 
-function makeProps(
-  overrides?: Partial<TaskHeaderCardProps>
-): TaskHeaderCardProps {
+function makeProps(overrides?: Partial<TaskHeaderCardProps>): TaskHeaderCardProps {
   return {
     title: "Test Task",
     description: "A test task description",

@@ -71,66 +71,17 @@ export interface ProviderPreset {
 }
 
 export const SEED_PRESETS: ProviderPreset[] = [
-  {
-    presetId: "openai",
-    name: "OpenAI",
-    protocol: "openai",
-    baseUrl: "https://api.openai.com/v1",
-    defaultModel: "gpt-4o-mini",
-    glyph: "O",
-  },
-  {
-    presetId: "anthropic",
-    name: "Claude",
-    protocol: "anthropic",
-    baseUrl: "https://api.anthropic.com/v1",
-    defaultModel: "claude-3-5-sonnet-20241022",
-    glyph: "C",
-  },
-  {
-    presetId: "gemini",
-    name: "Gemini",
-    protocol: "openai",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    defaultModel: "gemini-2.0-flash",
-    glyph: "G",
-  },
-  {
-    presetId: "deepseek",
-    name: "DeepSeek",
-    protocol: "openai",
-    baseUrl: "https://api.deepseek.com/v1",
-    defaultModel: "deepseek-chat",
-    glyph: "D",
-  },
-  {
-    presetId: "openrouter",
-    name: "OpenRouter",
-    protocol: "openai",
-    baseUrl: "https://openrouter.ai/api/v1",
-    defaultModel: "openai/gpt-4o-mini",
-    glyph: "R",
-  },
-  {
-    presetId: "zhipu",
-    name: "智谱 GLM",
-    protocol: "openai",
-    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-    defaultModel: "glm-4-flash",
-    glyph: "智",
-  },
-  {
-    presetId: "siliconflow",
-    name: "硅基流动",
-    protocol: "openai",
-    baseUrl: "https://api.siliconflow.cn/v1",
-    defaultModel: "Qwen/Qwen2.5-7B-Instruct",
-    glyph: "硅",
-  },
+  { presetId: "openai", name: "OpenAI", protocol: "openai", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini", glyph: "O" },
+  { presetId: "anthropic", name: "Claude", protocol: "anthropic", baseUrl: "https://api.anthropic.com/v1", defaultModel: "claude-3-5-sonnet-20241022", glyph: "C" },
+  { presetId: "gemini", name: "Gemini", protocol: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModel: "gemini-2.0-flash", glyph: "G" },
+  { presetId: "deepseek", name: "DeepSeek", protocol: "openai", baseUrl: "https://api.deepseek.com/v1", defaultModel: "deepseek-chat", glyph: "D" },
+  { presetId: "openrouter", name: "OpenRouter", protocol: "openai", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openai/gpt-4o-mini", glyph: "R" },
+  { presetId: "zhipu", name: "智谱 GLM", protocol: "openai", baseUrl: "https://open.bigmodel.cn/api/paas/v4", defaultModel: "glm-4-flash", glyph: "智" },
+  { presetId: "siliconflow", name: "硅基流动", protocol: "openai", baseUrl: "https://api.siliconflow.cn/v1", defaultModel: "Qwen/Qwen2.5-7B-Instruct", glyph: "硅" },
 ];
 
 export function presetGlyph(presetId: string): string {
-  return SEED_PRESETS.find(p => p.presetId === presetId)?.glyph ?? "·";
+  return SEED_PRESETS.find((p) => p.presetId === presetId)?.glyph ?? "·";
 }
 
 /**
@@ -148,7 +99,7 @@ export function moveProvider(
   id: string,
   dir: "up" | "down"
 ): LlmProviderConfig[] {
-  const idx = providers.findIndex(p => p.id === id);
+  const idx = providers.findIndex((p) => p.id === id);
   if (idx < 0) return providers;
   const swapWith = dir === "up" ? idx - 1 : idx + 1;
   if (swapWith < 0 || swapWith >= providers.length) return providers;
@@ -178,11 +129,7 @@ export const PROVIDER_MODEL_SUGGESTIONS: Record<string, string[]> = {
   ],
   gemini: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
   deepseek: ["deepseek-chat", "deepseek-reasoner"],
-  openrouter: [
-    "openai/gpt-4o-mini",
-    "anthropic/claude-3.5-sonnet",
-    "google/gemini-2.0-flash-exp",
-  ],
+  openrouter: ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash-exp"],
   zhipu: ["glm-4-flash", "glm-4-plus", "glm-4-air"],
   siliconflow: ["Qwen/Qwen2.5-7B-Instruct", "deepseek-ai/DeepSeek-V3"],
 };
@@ -201,9 +148,7 @@ function seedProvider(p: ProviderPreset): LlmProviderConfig {
     requiresApiKey: true,
     baseUrl: p.baseUrl,
     enabled: false,
-    models: [
-      { id: p.defaultModel, capabilities: ["tools", "stream"], enabled: true },
-    ],
+    models: [{ id: p.defaultModel, capabilities: ["tools", "stream"], enabled: true }],
   };
 }
 
@@ -218,35 +163,23 @@ export function defaultProvidersConfig(): LlmProvidersConfig {
 }
 
 /** 旧扁平池（用户之前用方形 tile 配的）→ 按 presetId 归并为 provider，做一次性导入。 */
-function importFromLegacyPool(
-  seed: LlmProvidersConfig,
-  pool: ByokPoolConfig
-): LlmProvidersConfig {
+function importFromLegacyPool(seed: LlmProvidersConfig, pool: ByokPoolConfig): LlmProvidersConfig {
   // Work on copies so we never mutate the seed/default config objects (prevents surprising side-effects).
-  const providers = seed.providers.map(p => ({
+  const providers = seed.providers.map((p) => ({
     ...p,
-    models: p.models.map(m => ({ ...m })),
+    models: p.models.map((m) => ({ ...m })),
   }));
-  const byPreset = new Map(providers.map(p => [p.presetId, p]));
+  const byPreset = new Map(providers.map((p) => [p.presetId, p]));
   for (const e of pool.entries) {
     const preset = byPreset.get(e.presetId) ?? byPreset.get("openai");
     if (!preset) continue;
     if (!preset.apiKey) preset.apiKey = e.apiKey;
     if (!preset.enabled) preset.enabled = e.enabled;
-    if (!preset.models.some(m => m.id === e.model)) {
-      preset.models.push({
-        id: e.model,
-        capabilities: ["tools", "stream"],
-        enabled: e.enabled,
-      });
+    if (!preset.models.some((m) => m.id === e.model)) {
+      preset.models.push({ id: e.model, capabilities: ["tools", "stream"], enabled: e.enabled });
     }
   }
-  return {
-    ...seed,
-    providers,
-    dispatch: pool.dispatch,
-    raceMode: pool.raceMode,
-  };
+  return { ...seed, providers, dispatch: pool.dispatch, raceMode: pool.raceMode };
 }
 
 export function loadProvidersConfig(): LlmProvidersConfig {
@@ -272,9 +205,7 @@ export function deriveEndpoint(baseUrl: string, protocol: LlmProtocol): string {
   const base = (baseUrl || "").trim().replace(/\/+$/, "");
   if (!base) return "";
   if (/\/(chat\/completions|messages)$/.test(base)) return base;
-  return protocol === "anthropic"
-    ? `${base}/messages`
-    : `${base}/chat/completions`;
+  return protocol === "anthropic" ? `${base}/messages` : `${base}/chat/completions`;
 }
 
 /** provider 配置 → 执行器消费的扁平池。enabled 且（不需 key 或已填 key）的 provider × enabled model。 */
@@ -298,12 +229,7 @@ export function compileToByokPool(cfg: LlmProvidersConfig): ByokPoolConfig {
       });
     }
   }
-  return {
-    version: 1,
-    entries,
-    dispatch: cfg.dispatch,
-    raceMode: cfg.raceMode,
-  };
+  return { version: 1, entries, dispatch: cfg.dispatch, raceMode: cfg.raceMode };
 }
 
 /** 落盘：写 provider 配置 + 编译扁平池写回旧 key + 派发事件让会话热切换 executor。 */
@@ -342,10 +268,7 @@ export function clearProvidersConfig(): void {
 
 /** 把 baseUrl 归约成 `${base}/models` 列表端点（去掉已有的 chat/messages 尾巴）。 */
 export function deriveModelsEndpoint(baseUrl: string): string {
-  const base = (baseUrl || "")
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\/(chat\/completions|messages)$/, "");
+  const base = (baseUrl || "").trim().replace(/\/+$/, "").replace(/\/(chat\/completions|messages)$/, "");
   if (!base) return "";
   return `${base}/models`;
 }
@@ -380,52 +303,27 @@ export async function fetchProviderModels(input: {
         }
       : { authorization: `Bearer ${input.apiKey}` };
   try {
-    const res = await fetch(endpoint, {
-      method: "GET",
-      headers,
-      signal: controller.signal,
-    });
+    const res = await fetch(endpoint, { method: "GET", headers, signal: controller.signal });
     clearTimeout(timer);
     if (!res.ok) {
       if (res.status === 401 || res.status === 403) {
-        return {
-          ok: false,
-          status: res.status,
-          message: `鉴权失败（${res.status}）：检查 API Key`,
-        };
+        return { ok: false, status: res.status, message: `鉴权失败（${res.status}）：检查 API Key` };
       }
-      if (res.status === 404)
-        return {
-          ok: false,
-          status: 404,
-          message: "该厂商不支持 /models 列表（404）",
-        };
+      if (res.status === 404) return { ok: false, status: 404, message: "该厂商不支持 /models 列表（404）" };
       return { ok: false, status: res.status, message: `HTTP ${res.status}` };
     }
     const json = await res.json().catch(() => null);
-    const data =
-      json && Array.isArray(json.data)
-        ? json.data
-        : Array.isArray(json)
-          ? json
-          : [];
+    const data = json && Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
     const models = data
       .map((m: any) => (typeof m === "string" ? m : m?.id))
-      .filter(
-        (id: any): id is string =>
-          typeof id === "string" && id.trim().length > 0
-      );
-    if (models.length === 0)
-      return { ok: false, message: "返回为空或格式不识别" };
+      .filter((id: any): id is string => typeof id === "string" && id.trim().length > 0);
+    if (models.length === 0) return { ok: false, message: "返回为空或格式不识别" };
     return { ok: true, models, message: `拉取到 ${models.length} 个模型` };
   } catch (e: any) {
     clearTimeout(timer);
     const msg = String(e?.message || e);
     if (msg.includes("abort")) return { ok: false, message: "请求超时" };
-    return {
-      ok: false,
-      message: `网络或 CORS 失败（该厂商可能不支持浏览器直连）`,
-    };
+    return { ok: false, message: `网络或 CORS 失败（该厂商可能不支持浏览器直连）` };
   }
 }
 
@@ -443,19 +341,13 @@ export interface ProviderValidation {
   baseUrlError: string | null;
 }
 
-export function validateProviderConfig(
-  p: LlmProviderConfig
-): ProviderValidation {
+export function validateProviderConfig(p: LlmProviderConfig): ProviderValidation {
   const keyError =
-    p.requiresApiKey && !p.apiKey.trim()
-      ? "已勾选「需要 API 密钥」，请填写密钥"
-      : null;
+    p.requiresApiKey && !p.apiKey.trim() ? "已勾选「需要 API 密钥」，请填写密钥" : null;
   const base = (p.baseUrl || "").trim();
   // 空 Base URL 不在此标红（仅保存启用厂商时阻塞）；非空但 scheme 不对则立即提示。
   const baseUrlError =
-    base && !/^https?:\/\//i.test(base)
-      ? "Base URL 需以 http(s):// 开头"
-      : null;
+    base && !/^https?:\/\//i.test(base) ? "Base URL 需以 http(s):// 开头" : null;
   return { keyError, baseUrlError };
 }
 
@@ -517,43 +409,23 @@ export async function pingLlmEndpoint(input: {
     }
     clearTimeout(timer);
     if (res.ok)
-      return {
-        ok: true,
-        status: res.status,
-        message: "连接成功",
-        latencyMs: Date.now() - startedAt,
-      };
+      return { ok: true, status: res.status, message: "连接成功", latencyMs: Date.now() - startedAt };
     const text = await res.text().catch(() => "");
     if (res.status === 401 || res.status === 403) {
-      return {
-        ok: false,
-        status: res.status,
-        message: `鉴权失败（${res.status}）：检查 API Key`,
-      };
+      return { ok: false, status: res.status, message: `鉴权失败（${res.status}）：检查 API Key` };
     }
     if (res.status === 404) {
-      return {
-        ok: false,
-        status: res.status,
-        message: `404：检查 Base URL / 模型 ID`,
-      };
+      return { ok: false, status: res.status, message: `404：检查 Base URL / 模型 ID` };
     }
     if (res.status === 429) {
       return { ok: false, status: res.status, message: `429：限流，稍后重试` };
     }
-    return {
-      ok: false,
-      status: res.status,
-      message: `HTTP ${res.status}：${text.slice(0, 80)}`,
-    };
+    return { ok: false, status: res.status, message: `HTTP ${res.status}：${text.slice(0, 80)}` };
   } catch (e: any) {
     clearTimeout(timer);
     const msg = String(e?.message || e);
     if (msg.includes("abort")) return { ok: false, message: "请求超时" };
     // 浏览器直连最常见的失败：CORS / 网络
-    return {
-      ok: false,
-      message: `网络或 CORS 失败：${msg.slice(0, 80)}（该厂商可能不支持浏览器直连）`,
-    };
+    return { ok: false, message: `网络或 CORS 失败：${msg.slice(0, 80)}（该厂商可能不支持浏览器直连）` };
   }
 }

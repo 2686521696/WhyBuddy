@@ -33,9 +33,7 @@ export const RouteDecisionCard: FC<RouteDecisionCardProps> = ({
   locale = "zh-CN",
 }) => {
   const titleText = blueprintCopy(entry.routeTitle, locale);
-  const reasonText = entry.reason
-    ? blueprintCopy(entry.reason, locale)
-    : undefined;
+  const reasonText = entry.reason ? blueprintCopy(entry.reason, locale) : undefined;
   const kindTag = entry.routeKind ? `· ${entry.routeKind}` : "";
   const primary =
     locale === "zh-CN"
@@ -56,7 +54,9 @@ export const RouteDecisionCard: FC<RouteDecisionCardProps> = ({
       </div>
 
       {/* 路线名称（兼容旧格式 "选择路线：{title}"） */}
-      <div className="text-xs font-medium text-slate-800 mt-1">{primary}</div>
+      <div className="text-xs font-medium text-slate-800 mt-1">
+        {primary}
+      </div>
 
       {/* 描述 + 路线类型 */}
       {(reasonText || kindTag) && (

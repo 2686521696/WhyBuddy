@@ -65,11 +65,7 @@ export interface StageVisualLane {
 /** 基础 slide-up + fade 入场（input / spec_tree / spec_documents 共用）。 */
 const baseEnterVariants: Variants = {
   initial: { opacity: 0, y: 12 },
-  animate: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.35, ease: "easeOut" },
-  },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" } },
 };
 
 /** 基础 slide-down + fade 退场。 */
@@ -80,30 +76,18 @@ const baseExitVariants: Variants = {
 /** clarification 阶段：对话气泡 scale + fade 入场。 */
 const clarifyEnterVariants: Variants = {
   initial: { opacity: 0, scale: 0.92 },
-  animate: {
-    opacity: 1,
-    scale: 1,
-    transition: { duration: 0.35, ease: "easeOut" },
-  },
+  animate: { opacity: 1, scale: 1, transition: { duration: 0.35, ease: "easeOut" } },
 };
 
 /** clarification 阶段：shrink + fade 退场。 */
 const clarifyExitVariants: Variants = {
-  exit: {
-    opacity: 0,
-    scale: 0.95,
-    transition: { duration: 0.25, ease: "easeIn" },
-  },
+  exit: { opacity: 0, scale: 0.95, transition: { duration: 0.25, ease: "easeIn" } },
 };
 
 /** route 阶段：slide-left + fade 入场。 */
 const routeEnterVariants: Variants = {
   initial: { opacity: 0, x: -16 },
-  animate: {
-    opacity: 1,
-    x: 0,
-    transition: { duration: 0.35, ease: "easeOut" },
-  },
+  animate: { opacity: 1, x: 0, transition: { duration: 0.35, ease: "easeOut" } },
 };
 
 /** route 阶段：slide-right + fade 退场。 */

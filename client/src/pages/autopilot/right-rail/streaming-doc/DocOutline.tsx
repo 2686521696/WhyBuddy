@@ -85,19 +85,15 @@ const ITEM_CLASS_BY_LEVEL: Record<1 | 2 | 3, string> = {
 /**
  * 流式文档大纲导航。
  */
-export const DocOutline: FC<DocOutlineProps> = ({
-  headings,
-  onHeadingClick,
-}) => {
+export const DocOutline: FC<DocOutlineProps> = ({ headings, onHeadingClick }) => {
   // 需求 3.1：≥2 个标题时才渲染；其余情况下返回 null 由父组件直接 hide。
   if (headings.length < 2) return null;
 
-  const handleClick =
-    (id: string) => (event: MouseEvent<HTMLButtonElement>) => {
-      // 阻止 button 默认提交行为；同时避免事件冒泡触发父级滚动监听。
-      event.preventDefault();
-      onHeadingClick(id);
-    };
+  const handleClick = (id: string) => (event: MouseEvent<HTMLButtonElement>) => {
+    // 阻止 button 默认提交行为；同时避免事件冒泡触发父级滚动监听。
+    event.preventDefault();
+    onHeadingClick(id);
+  };
 
   return (
     <nav
@@ -107,7 +103,7 @@ export const DocOutline: FC<DocOutlineProps> = ({
       data-heading-count={headings.length}
     >
       <ul className="space-y-0.5">
-        {headings.map(heading => (
+        {headings.map((heading) => (
           <li key={heading.id}>
             <button
               type="button"

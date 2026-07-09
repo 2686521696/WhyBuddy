@@ -70,7 +70,7 @@ export function resolveVideoFrame({
 }
 
 export function buildHUDElementsFromDefinitions(
-  definitions: HUDDefinition[]
+  definitions: HUDDefinition[],
 ): HUDElement[] {
   return definitions.map(definition => ({
     id: definition.id,
@@ -89,10 +89,10 @@ function isNormalisedCoordinate(value: number) {
 
 export function applyHUDPositionUpdate(
   elements: HUDElement[],
-  update: HUDPositionUpdate
+  update: HUDPositionUpdate,
 ): HUDElement[] {
   const positions = new Map(
-    update.characters.map(character => [character.characterId, character])
+    update.characters.map(character => [character.characterId, character]),
   );
 
   return elements.map(element => {
@@ -121,7 +121,8 @@ export function applyHUDPositionUpdate(
 }
 
 function parseHUDPositionPayload(value: unknown): HUDPositionUpdate | null {
-  const candidate = typeof value === "string" ? JSON.parse(value) : value;
+  const candidate =
+    typeof value === "string" ? JSON.parse(value) : value;
 
   if (!candidate || typeof candidate !== "object") return null;
   const update = candidate as Partial<HUDPositionUpdate>;
@@ -140,7 +141,8 @@ function parseHUDPositionPayload(value: unknown): HUDPositionUpdate | null {
           screenX: Number(row.screenX),
           screenY: Number(row.screenY),
           visible: Boolean(row.visible),
-          distance: typeof row.distance === "number" ? row.distance : undefined,
+          distance:
+            typeof row.distance === "number" ? row.distance : undefined,
           occluded: Boolean(row.occluded),
         };
       })
@@ -148,7 +150,7 @@ function parseHUDPositionPayload(value: unknown): HUDPositionUpdate | null {
         character =>
           character.characterId &&
           Number.isFinite(character.screenX) &&
-          Number.isFinite(character.screenY)
+          Number.isFinite(character.screenY),
       ),
   };
 }
@@ -171,13 +173,12 @@ function extractHUDPositionEvent(event: Event): HUDPositionUpdate | null {
 
 export function useHUDPositionSync(
   definitions: HUDDefinition[],
-  eventTarget: EventTarget | null = typeof window === "undefined"
-    ? null
-    : window
+  eventTarget: EventTarget | null =
+    typeof window === "undefined" ? null : window,
 ) {
   const initialElements = useMemo(
     () => buildHUDElementsFromDefinitions(definitions),
-    [definitions]
+    [definitions],
   );
   const [elements, setElements] = useState(initialElements);
   const latestElementsRef = useRef(initialElements);

@@ -15,12 +15,7 @@
  */
 
 import type { FC } from "react";
-import {
-  AlertTriangle,
-  ClipboardList,
-  RefreshCw,
-  ShieldCheck,
-} from "lucide-react";
+import { AlertTriangle, ClipboardList, RefreshCw, ShieldCheck } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -83,7 +78,7 @@ function StatusBadge({
       data-testid={`ledger-summary-${status}`}
       className={cn(
         "rounded-full text-[10px] font-black tabular-nums",
-        STATUS_TONE[status]
+        STATUS_TONE[status],
       )}
     >
       {statusLabel(status, locale)} {count}
@@ -108,7 +103,7 @@ function LedgerEntryRow({
         "rounded-[10px] border px-2.5 py-2",
         isAttention
           ? "border-amber-300 bg-amber-50/60"
-          : "border-slate-200 bg-white"
+          : "border-slate-200 bg-white",
       )}
     >
       <div className="flex items-center justify-between gap-2">
@@ -117,10 +112,7 @@ function LedgerEntryRow({
         </span>
         <Badge
           variant="outline"
-          className={cn(
-            "rounded-full text-[9px] font-black",
-            STATUS_TONE[entry.status]
-          )}
+          className={cn("rounded-full text-[9px] font-black", STATUS_TONE[entry.status])}
         >
           {statusLabel(entry.status, locale)}
         </Badge>
@@ -146,12 +138,7 @@ const FILTER_CHECK_TYPES: BlueprintCheckType[] = [
   "companion_trace",
   "preview_audit",
 ];
-const FILTER_STATUSES: BlueprintCheckStatus[] = [
-  "pass",
-  "warn",
-  "fail",
-  "skip",
-];
+const FILTER_STATUSES: BlueprintCheckStatus[] = ["pass", "warn", "fail", "skip"];
 
 export interface ChecksLedgerViewProps {
   status: ChecksLedgerStatus;
@@ -184,9 +171,7 @@ export const ChecksLedgerView: FC<ChecksLedgerViewProps> = ({
   if (status === "error") {
     return (
       <div data-testid="ledger-error" className="p-3 text-xs text-rose-600">
-        <p className="font-bold">
-          {t(locale, "台账加载失败", "Failed to load ledger")}
-        </p>
+        <p className="font-bold">{t(locale, "台账加载失败", "Failed to load ledger")}</p>
         <Button
           variant="outline"
           size="sm"
@@ -204,11 +189,7 @@ export const ChecksLedgerView: FC<ChecksLedgerViewProps> = ({
   if (status === "empty" || !data) {
     return (
       <div data-testid="ledger-empty" className="p-3 text-xs text-slate-400">
-        {t(
-          locale,
-          "校验台账未启用或暂无记录",
-          "Checks ledger not enabled or empty"
-        )}
+        {t(locale, "校验台账未启用或暂无记录", "Checks ledger not enabled or empty")}
       </div>
     );
   }
@@ -216,21 +197,15 @@ export const ChecksLedgerView: FC<ChecksLedgerViewProps> = ({
   const filtered = applyLedgerFilters(data.entries, filter ?? {});
   const groups = groupLedgerByStage(filtered);
   const invariantEntries = sortWarnFailFirst(
-    selectByCheckType(data.entries, "invariant")
+    selectByCheckType(data.entries, "invariant"),
   );
   const contentEntries = sortWarnFailFirst(
-    selectByCheckType(data.entries, "content_quality")
+    selectByCheckType(data.entries, "content_quality"),
   );
-  const companionCount = selectByCheckType(
-    data.entries,
-    "companion_trace"
-  ).length;
+  const companionCount = selectByCheckType(data.entries, "companion_trace").length;
 
   return (
-    <section
-      data-testid="checks-ledger-panel"
-      className="flex flex-col gap-3 p-1"
-    >
+    <section data-testid="checks-ledger-panel" className="flex flex-col gap-3 p-1">
       {/* 摘要徽章（任务 23） */}
       <header className="flex flex-wrap items-center gap-1.5">
         <ClipboardList className="size-3.5 text-[#0f766e]" aria-hidden />
@@ -250,20 +225,17 @@ export const ChecksLedgerView: FC<ChecksLedgerViewProps> = ({
       </header>
 
       {/* 非阻塞声明（任务 30 / 需求 2.8 / 15.2） */}
-      <p
-        data-testid="ledger-nonblocking-note"
-        className="text-[10px] text-slate-400"
-      >
+      <p data-testid="ledger-nonblocking-note" className="text-[10px] text-slate-400">
         {t(
           locale,
           "以下为评审信号，由人判断，不自动拦截。",
-          "Review signals for human judgement — nothing is auto-blocked."
+          "Review signals for human judgement — nothing is auto-blocked.",
         )}
       </p>
 
       {/* 过滤栏（任务 25） */}
       <div data-testid="ledger-filter-bar" className="flex flex-wrap gap-1">
-        {FILTER_CHECK_TYPES.map(ct => (
+        {FILTER_CHECK_TYPES.map((ct) => (
           <button
             key={ct}
             type="button"
@@ -273,7 +245,7 @@ export const ChecksLedgerView: FC<ChecksLedgerViewProps> = ({
               "rounded-full border px-2 py-0.5 text-[9px] font-bold",
               filter?.checkType === ct
                 ? "border-[#0f766e] bg-[#0f766e]/10 text-[#0f766e]"
-                : "border-slate-200 text-slate-500"
+                : "border-slate-200 text-slate-500",
             )}
             onClick={() =>
               onFilterChange?.({
@@ -285,7 +257,7 @@ export const ChecksLedgerView: FC<ChecksLedgerViewProps> = ({
             {ct}
           </button>
         ))}
-        {FILTER_STATUSES.map(st => (
+        {FILTER_STATUSES.map((st) => (
           <button
             key={st}
             type="button"
@@ -295,7 +267,7 @@ export const ChecksLedgerView: FC<ChecksLedgerViewProps> = ({
               "rounded-full border px-2 py-0.5 text-[9px] font-bold",
               filter?.status === st
                 ? STATUS_TONE[st]
-                : "border-slate-200 text-slate-500"
+                : "border-slate-200 text-slate-500",
             )}
             onClick={() =>
               onFilterChange?.({
@@ -311,16 +283,13 @@ export const ChecksLedgerView: FC<ChecksLedgerViewProps> = ({
 
       {/* 不变量守卫区 SP_INV（任务 26） */}
       {invariantEntries.length > 0 ? (
-        <div
-          data-testid="ledger-section-invariant"
-          className="flex flex-col gap-1.5"
-        >
+        <div data-testid="ledger-section-invariant" className="flex flex-col gap-1.5">
           <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-tight text-slate-500">
             <ShieldCheck className="size-3" aria-hidden />
             {t(locale, "不变量守卫", "Invariant Guard")}
           </div>
           <ul className="flex flex-col gap-1.5">
-            {invariantEntries.map(entry => (
+            {invariantEntries.map((entry) => (
               <LedgerEntryRow key={entry.id} entry={entry} locale={locale} />
             ))}
           </ul>
@@ -329,15 +298,12 @@ export const ChecksLedgerView: FC<ChecksLedgerViewProps> = ({
 
       {/* 内容质量区 QA_CONTENT（任务 27） */}
       {contentEntries.length > 0 ? (
-        <div
-          data-testid="ledger-section-content-quality"
-          className="flex flex-col gap-1.5"
-        >
+        <div data-testid="ledger-section-content-quality" className="flex flex-col gap-1.5">
           <div className="text-[10px] font-black uppercase tracking-tight text-slate-500">
             {t(locale, "内容质量 / EARS", "Content Quality / EARS")}
           </div>
           <ul className="flex flex-col gap-1.5">
-            {contentEntries.map(entry => (
+            {contentEntries.map((entry) => (
               <LedgerEntryRow key={entry.id} entry={entry} locale={locale} />
             ))}
           </ul>
@@ -354,20 +320,20 @@ export const ChecksLedgerView: FC<ChecksLedgerViewProps> = ({
           {t(
             locale,
             `伴随发现 ${companionCount} 条（见伴随面板）`,
-            `${companionCount} companion finding(s) — see Companion panel`
+            `${companionCount} companion finding(s) — see Companion panel`,
           )}
         </div>
       ) : null}
 
       {/* 全量分组列表 */}
       <div className="flex flex-col gap-2">
-        {groups.map(group => (
+        {groups.map((group) => (
           <div key={group.stage} data-testid={`ledger-stage-${group.stage}`}>
             <div className="mb-1 text-[10px] font-black uppercase tracking-tight text-slate-400">
               {group.stage}
             </div>
             <ul className="flex flex-col gap-1.5">
-              {sortWarnFailFirst(group.entries).map(entry => (
+              {sortWarnFailFirst(group.entries).map((entry) => (
                 <LedgerEntryRow key={entry.id} entry={entry} locale={locale} />
               ))}
             </ul>

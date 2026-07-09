@@ -98,9 +98,7 @@ describe("deriveBlueprintWallProcessData / stageSignal consistency", () => {
   });
 
   it("valid job 的 stageSignal 与 getBlueprintSceneStageSignal(job) 完全一致", () => {
-    const job = makeJob({
-      stage: "spec_tree",
-    } as unknown as Partial<BlueprintGenerationJob>);
+    const job = makeJob({ stage: "spec_tree" } as unknown as Partial<BlueprintGenerationJob>);
     const result = deriveBlueprintWallProcessData({ job });
     const expected = getBlueprintSceneStageSignal(job);
 
@@ -108,9 +106,7 @@ describe("deriveBlueprintWallProcessData / stageSignal consistency", () => {
   });
 
   it("backend alias stage 的 stageSignal 与 getBlueprintSceneStageSignal(job) 一致", () => {
-    const job = makeJob({
-      stage: "preview",
-    } as unknown as Partial<BlueprintGenerationJob>);
+    const job = makeJob({ stage: "preview" } as unknown as Partial<BlueprintGenerationJob>);
     const result = deriveBlueprintWallProcessData({ job });
     const expected = getBlueprintSceneStageSignal(job);
 
@@ -125,7 +121,7 @@ describe("deriveBlueprintWallProcessData / stage graph nodes", () => {
     const job = makeJob();
     const result = deriveBlueprintWallProcessData({ job });
 
-    const stageNodes = result.nodes.filter(node => node.type === "stage");
+    const stageNodes = result.nodes.filter((node) => node.type === "stage");
     expect(stageNodes).toHaveLength(BLUEPRINT_SCENE_STAGES.length);
     // 当前阶段节点总数应为 9（input..engineering_handoff）
     expect(stageNodes).toHaveLength(9);
@@ -136,8 +132,8 @@ describe("deriveBlueprintWallProcessData / stage graph nodes", () => {
     const result = deriveBlueprintWallProcessData({ job });
 
     const stageNodeIds = result.nodes
-      .filter(node => node.type === "stage")
-      .map(node => node.id);
+      .filter((node) => node.type === "stage")
+      .map((node) => node.id);
 
     for (const stageKey of BLUEPRINT_SCENE_STAGES) {
       expect(stageNodeIds).toContain(`stage:${stageKey}`);
@@ -145,28 +141,24 @@ describe("deriveBlueprintWallProcessData / stage graph nodes", () => {
   });
 
   it("active 阶段节点由 stageSignal.stageIndex 决定（spec_tree → index 4）", () => {
-    const job = makeJob({
-      stage: "spec_tree",
-    } as unknown as Partial<BlueprintGenerationJob>);
+    const job = makeJob({ stage: "spec_tree" } as unknown as Partial<BlueprintGenerationJob>);
     const result = deriveBlueprintWallProcessData({ job });
     const { stageIndex } = result.stageSignal;
 
     // spec_tree 的 stageIndex 应为 4（input=0..spec_tree=4）
     expect(stageIndex).toBe(4);
 
-    const stageNodes = result.nodes.filter(node => node.type === "stage");
+    const stageNodes = result.nodes.filter((node) => node.type === "stage");
 
     // 当前 active 节点对应 stage:spec_tree
-    const activeNodes = stageNodes.filter(node => node.status === "active");
+    const activeNodes = stageNodes.filter((node) => node.status === "active");
     expect(activeNodes).toHaveLength(1);
-    expect(activeNodes[0]?.id).toBe(
-      `stage:${BLUEPRINT_SCENE_STAGES[stageIndex]}`
-    );
+    expect(activeNodes[0]?.id).toBe(`stage:${BLUEPRINT_SCENE_STAGES[stageIndex]}`);
     expect(activeNodes[0]?.id).toBe("stage:spec_tree");
 
     // 每个阶段节点的状态严格由 stageIndex 派生：前 completed / 当前 active / 后 queued
     BLUEPRINT_SCENE_STAGES.forEach((stageKey, index) => {
-      const node = stageNodes.find(n => n.id === `stage:${stageKey}`);
+      const node = stageNodes.find((n) => n.id === `stage:${stageKey}`);
       expect(node).toBeDefined();
       if (index < stageIndex) {
         expect(node?.status).toBe("completed");
@@ -179,9 +171,7 @@ describe("deriveBlueprintWallProcessData / stage graph nodes", () => {
   });
 
   it("后端别名 stage `preview` 的 active 节点匹配 getBlueprintSceneStageSignal（effect_preview，无第二套阶段公式）", () => {
-    const job = makeJob({
-      stage: "preview",
-    } as unknown as Partial<BlueprintGenerationJob>);
+    const job = makeJob({ stage: "preview" } as unknown as Partial<BlueprintGenerationJob>);
     const result = deriveBlueprintWallProcessData({ job });
     const expected = getBlueprintSceneStageSignal(job);
 
@@ -190,8 +180,8 @@ describe("deriveBlueprintWallProcessData / stage graph nodes", () => {
     expect(result.stageSignal.stageKey).toBe("effect_preview");
     expect(result.stageSignal.stageIndex).toBe(6);
 
-    const stageNodes = result.nodes.filter(node => node.type === "stage");
-    const activeNodes = stageNodes.filter(node => node.status === "active");
+    const stageNodes = result.nodes.filter((node) => node.type === "stage");
+    const activeNodes = stageNodes.filter((node) => node.status === "active");
     expect(activeNodes).toHaveLength(1);
     expect(activeNodes[0]?.id).toBe(
       `stage:${BLUEPRINT_SCENE_STAGES[expected.stageIndex]}`
@@ -214,28 +204,28 @@ describe("deriveBlueprintWallProcessData / reasoning nodes and console lines", (
     });
 
     const reasoningNodes = result.nodes.filter(
-      node => node.type === "reasoning"
+      (node) => node.type === "reasoning"
     );
     // 仅 job-1 的两条 entry 生成 reasoning 节点
     expect(reasoningNodes).toHaveLength(2);
-    expect(reasoningNodes.map(node => node.id)).toEqual([
+    expect(reasoningNodes.map((node) => node.id)).toEqual([
       "reasoning:a1",
       "reasoning:a2",
     ]);
 
     // job-2 的 entry id 不应出现在任何 reasoning 节点 id 中
-    const nodeIds = result.nodes.map(node => node.id);
-    expect(nodeIds.some(id => id.includes("b1"))).toBe(false);
-    expect(nodeIds.some(id => id.includes("b2"))).toBe(false);
+    const nodeIds = result.nodes.map((node) => node.id);
+    expect(nodeIds.some((id) => id.includes("b1"))).toBe(false);
+    expect(nodeIds.some((id) => id.includes("b2"))).toBe(false);
 
     // job-2 的 entry id 不应出现在任何 console 行 id 中
-    const consoleIds = result.consoleLines.map(line => line.id);
+    const consoleIds = result.consoleLines.map((line) => line.id);
     expect(consoleIds).toEqual([
       "console:reasoning:a1",
       "console:reasoning:a2",
     ]);
-    expect(consoleIds.some(id => id.includes("b1"))).toBe(false);
-    expect(consoleIds.some(id => id.includes("b2"))).toBe(false);
+    expect(consoleIds.some((id) => id.includes("b1"))).toBe(false);
+    expect(consoleIds.some((id) => id.includes("b2"))).toBe(false);
 
     // 计数器只反映 job-1 的过滤数量
     expect(result.compatibility.counters.reasoningEntries).toBe(2);
@@ -259,12 +249,12 @@ describe("deriveBlueprintWallProcessData / reasoning nodes and console lines", (
     });
 
     const reasoningNodes = result.nodes.filter(
-      node => node.type === "reasoning"
+      (node) => node.type === "reasoning"
     );
     // 上限裁剪到 5 个 reasoning 节点
     expect(reasoningNodes).toHaveLength(5);
     // 保留的是输入数组尾部最后 5 条（r15..r19）
-    expect(reasoningNodes.map(node => node.id)).toEqual([
+    expect(reasoningNodes.map((node) => node.id)).toEqual([
       "reasoning:r15",
       "reasoning:r16",
       "reasoning:r17",
@@ -297,7 +287,7 @@ describe("deriveBlueprintWallProcessData / reasoning nodes and console lines", (
     // console 行裁剪到 4 条
     expect(result.consoleLines).toHaveLength(4);
     // 保留的是输入尾部最后 4 条（c8..c11）
-    expect(result.consoleLines.map(line => line.id)).toEqual([
+    expect(result.consoleLines.map((line) => line.id)).toEqual([
       "console:reasoning:c8",
       "console:reasoning:c9",
       "console:reasoning:c10",
@@ -323,7 +313,7 @@ describe("deriveBlueprintWallProcessData / reasoning nodes and console lines", (
     });
 
     const reasoningNodes = result.nodes.filter(
-      node => node.type === "reasoning"
+      (node) => node.type === "reasoning"
     );
     expect(reasoningNodes).toHaveLength(1);
     expect(reasoningNodes[0]?.status).toBe("failed");
@@ -344,7 +334,7 @@ describe("deriveBlueprintWallProcessData / user_goal node", () => {
     const result = deriveBlueprintWallProcessData({ job });
 
     const userGoalNodes = result.nodes.filter(
-      node => node.type === "user_goal"
+      (node) => node.type === "user_goal"
     );
     expect(userGoalNodes).toHaveLength(1);
     expect(userGoalNodes[0]?.id).toBe(`user_goal:${job.id}`);
@@ -356,7 +346,7 @@ describe("deriveBlueprintWallProcessData / user_goal node", () => {
     const result = deriveBlueprintWallProcessData({ job });
 
     const userGoalNodes = result.nodes.filter(
-      node => node.type === "user_goal"
+      (node) => node.type === "user_goal"
     );
     expect(userGoalNodes).toHaveLength(0);
   });
@@ -380,11 +370,14 @@ describe("deriveBlueprintWallProcessData / route and spec nodes", () => {
 
     const result = deriveBlueprintWallProcessData({ job, routeSet });
 
-    const routeNodes = result.nodes.filter(node => node.type === "route");
-    expect(routeNodes.map(node => node.id)).toEqual(["route:r1", "route:r2"]);
+    const routeNodes = result.nodes.filter((node) => node.type === "route");
+    expect(routeNodes.map((node) => node.id)).toEqual([
+      "route:r1",
+      "route:r2",
+    ]);
 
-    const primary = routeNodes.find(node => node.id === "route:r1");
-    const alternate = routeNodes.find(node => node.id === "route:r2");
+    const primary = routeNodes.find((node) => node.id === "route:r1");
+    const alternate = routeNodes.find((node) => node.id === "route:r2");
     expect(primary?.status).toBe("active");
     expect(alternate?.status).toBe("queued");
 
@@ -400,12 +393,7 @@ describe("deriveBlueprintWallProcessData / route and spec nodes", () => {
       id: "st1",
       rootNodeId: "root",
       nodes: [
-        {
-          id: "root",
-          title: "Spec Root",
-          summary: "root summary",
-          status: "ready",
-        },
+        { id: "root", title: "Spec Root", summary: "root summary", status: "ready" },
         {
           id: "child",
           parentId: "root",
@@ -418,8 +406,8 @@ describe("deriveBlueprintWallProcessData / route and spec nodes", () => {
 
     const result = deriveBlueprintWallProcessData({ job, specTree });
 
-    const specNodes = result.nodes.filter(node => node.type === "spec_node");
-    expect(specNodes.map(node => node.id)).toEqual(["spec:root", "spec:child"]);
+    const specNodes = result.nodes.filter((node) => node.type === "spec_node");
+    expect(specNodes.map((node) => node.id)).toEqual(["spec:root", "spec:child"]);
 
     expect(result.compatibility.specSummary.totalNodes).toBe(2);
     expect(result.compatibility.specSummary.rootTitle).toBe("Spec Root");
@@ -438,10 +426,10 @@ describe("deriveBlueprintWallProcessData / capability nodes and counts", () => {
     const result = deriveBlueprintWallProcessData({ job, capabilityStatuses });
 
     const capabilityNodes = result.nodes.filter(
-      node => node.type === "capability"
+      (node) => node.type === "capability"
     );
     // 按 id 升序排序后输出
-    expect(capabilityNodes.map(node => node.id)).toEqual([
+    expect(capabilityNodes.map((node) => node.id)).toEqual([
       "capability:c1",
       "capability:c2",
       "capability:c3",
@@ -455,7 +443,7 @@ describe("deriveBlueprintWallProcessData / capability nodes and counts", () => {
     });
 
     // status 映射：running -> active, completed -> completed, failed -> failed
-    const byId = new Map(capabilityNodes.map(node => [node.id, node]));
+    const byId = new Map(capabilityNodes.map((node) => [node.id, node]));
     expect(byId.get("capability:c1")?.status).toBe("active");
     expect(byId.get("capability:c2")?.status).toBe("completed");
     expect(byId.get("capability:c3")?.status).toBe("failed");
@@ -481,7 +469,7 @@ describe("deriveBlueprintWallProcessData / preview summary and node", () => {
 
     expect(result.previewSummary.status).toBe("empty");
     expect(result.emptyReason).toBe("no-blueprint-data");
-    expect(result.nodes.some(node => node.type === "preview")).toBe(false);
+    expect(result.nodes.some((node) => node.type === "preview")).toBe(false);
   });
 
   it("当前 job 的 browser preview 生成 browser previewSummary 与 preview 节点（Req 7.1/7.2）", () => {
@@ -502,7 +490,7 @@ describe("deriveBlueprintWallProcessData / preview summary and node", () => {
 
     expect(result.previewSummary.status).toBe("ready");
     expect(result.previewSummary.kind).toBe("browser");
-    const previewNodes = result.nodes.filter(node => node.type === "preview");
+    const previewNodes = result.nodes.filter((node) => node.type === "preview");
     expect(previewNodes).toHaveLength(1);
     expect(previewNodes[0]?.id).toBe("preview:p-current");
   });
@@ -525,7 +513,7 @@ describe("deriveBlueprintWallProcessData / preview summary and node", () => {
 
     expect(result.previewSummary.status).toBe("ready");
     expect(result.previewSummary.kind).toBe("architecture");
-    const previewNodes = result.nodes.filter(node => node.type === "preview");
+    const previewNodes = result.nodes.filter((node) => node.type === "preview");
     expect(previewNodes).toHaveLength(1);
     expect(previewNodes[0]?.id).toBe("preview:p-arch");
   });
@@ -540,7 +528,9 @@ describe("deriveBlueprintWallProcessData / artifact and final nodes", () => {
 
     const result = deriveBlueprintWallProcessData({ job, artifacts });
 
-    const artifactNodes = result.nodes.filter(node => node.type === "artifact");
+    const artifactNodes = result.nodes.filter(
+      (node) => node.type === "artifact"
+    );
     expect(artifactNodes).toHaveLength(1);
     expect(artifactNodes[0]?.id).toBe("artifact:a1");
 
@@ -557,14 +547,16 @@ describe("deriveBlueprintWallProcessData / artifact and final nodes", () => {
 
     const result = deriveBlueprintWallProcessData({ job, artifacts });
 
-    const finalNodes = result.nodes.filter(node => node.type === "final");
+    const finalNodes = result.nodes.filter((node) => node.type === "final");
     expect(finalNodes).toHaveLength(1);
     expect(finalNodes[0]?.id).toBe("final:a2");
 
-    const artifactNodes = result.nodes.filter(node => node.type === "artifact");
-    expect(artifactNodes.map(node => node.id)).toEqual(["artifact:a1"]);
+    const artifactNodes = result.nodes.filter(
+      (node) => node.type === "artifact"
+    );
+    expect(artifactNodes.map((node) => node.id)).toEqual(["artifact:a1"]);
     // a2 不应同时作为 artifact 节点出现
-    expect(artifactNodes.some(node => node.id === "artifact:a2")).toBe(false);
+    expect(artifactNodes.some((node) => node.id === "artifact:a2")).toBe(false);
 
     // included artifact 总数（artifact + final）= 2
     expect(result.compatibility.counters.artifacts).toBe(2);
@@ -576,7 +568,9 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
   function getStageOrderEdges(
     result: ReturnType<typeof deriveBlueprintWallProcessData>
   ) {
-    return result.edges.filter(edge => edge.id.startsWith("edge:stage-order:"));
+    return result.edges.filter((edge) =>
+      edge.id.startsWith("edge:stage-order:")
+    );
   }
 
   it("阶段主干 edges 覆盖相邻阶段、kind depends_on，且恰好 8 条（Req 5.1-5.4）", () => {
@@ -598,7 +592,7 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
       const prev = BLUEPRINT_SCENE_STAGES[index];
       const next = BLUEPRINT_SCENE_STAGES[index + 1];
       const edge = result.edges.find(
-        e =>
+        (e) =>
           e.from === `stage:${prev}` &&
           e.to === `stage:${next}` &&
           e.kind === "depends_on"
@@ -635,12 +629,12 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
       effectPreviews: [preview],
     });
 
-    const previewNodes = result.nodes.filter(node => node.type === "preview");
+    const previewNodes = result.nodes.filter((node) => node.type === "preview");
     expect(previewNodes).toHaveLength(1);
     const previewId = previewNodes[0]?.id.slice("preview:".length);
 
     const produceEdge = result.edges.find(
-      edge =>
+      (edge) =>
         edge.from === "stage:effect_preview" &&
         edge.to === `preview:${previewId}` &&
         edge.kind === "produces"
@@ -659,12 +653,12 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
     const result = deriveBlueprintWallProcessData({ job, artifacts });
 
     // a2 是终端 final 节点，a1 是普通 artifact 节点。
-    const finalNodes = result.nodes.filter(node => node.type === "final");
+    const finalNodes = result.nodes.filter((node) => node.type === "final");
     expect(finalNodes).toHaveLength(1);
     expect(finalNodes[0]?.id).toBe("final:a2");
 
     const answersEdge = result.edges.find(
-      edge => edge.from === "artifact:a1" && edge.to === "final:a2"
+      (edge) => edge.from === "artifact:a1" && edge.to === "final:a2"
     );
     expect(answersEdge).toBeDefined();
     expect(answersEdge?.id).toBe("edge:answers-artifact:a1->a2");
@@ -681,11 +675,13 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
     const result = deriveBlueprintWallProcessData({ job, capabilityStatuses });
 
     // capability 节点确实存在……
-    expect(result.nodes.some(node => node.id === "capability:c1")).toBe(true);
+    expect(
+      result.nodes.some((node) => node.id === "capability:c1")
+    ).toBe(true);
 
     // ……但没有任何边把它连到阶段节点（capability->stage 整体省略）。
     const capabilityStageEdge = result.edges.find(
-      edge =>
+      (edge) =>
         (edge.from === "capability:c1" && edge.to.startsWith("stage:")) ||
         (edge.to === "capability:c1" && edge.from.startsWith("stage:"))
     );
@@ -693,7 +689,7 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
 
     // 更强：没有任何边引用 capability:c1。
     const anyCapabilityEdge = result.edges.find(
-      edge => edge.from === "capability:c1" || edge.to === "capability:c1"
+      (edge) => edge.from === "capability:c1" || edge.to === "capability:c1"
     );
     expect(anyCapabilityEdge).toBeUndefined();
   });
@@ -710,14 +706,14 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
     });
 
     expect(
-      withoutStage.nodes.some(node => node.id === "reasoning:noStage")
+      withoutStage.nodes.some((node) => node.id === "reasoning:noStage")
     ).toBe(true);
     const orphanEdge = withoutStage.edges.find(
-      edge => edge.id === "edge:reasoning-stage:reasoning:noStage"
+      (edge) => edge.id === "edge:reasoning-stage:reasoning:noStage"
     );
     expect(orphanEdge).toBeUndefined();
     expect(
-      withoutStage.edges.some(edge => edge.to === "reasoning:noStage")
+      withoutStage.edges.some((edge) => edge.to === "reasoning:noStage")
     ).toBe(false);
 
     // 带已知 stageId 的 reasoning：连一条 stage -> reasoning 的 supports 边。
@@ -734,10 +730,13 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
     });
 
     const stageReasoningEdge = withStage.edges.find(
-      edge => edge.from === "stage:spec_tree" && edge.to === "reasoning:spec1"
+      (edge) =>
+        edge.from === "stage:spec_tree" && edge.to === "reasoning:spec1"
     );
     expect(stageReasoningEdge).toBeDefined();
-    expect(stageReasoningEdge?.id).toBe("edge:reasoning-stage:reasoning:spec1");
+    expect(stageReasoningEdge?.id).toBe(
+      "edge:reasoning-stage:reasoning:spec1"
+    );
     expect(stageReasoningEdge?.kind).toBe("supports");
   });
 
@@ -761,26 +760,28 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
     });
 
     const brainstormNodes = result.nodes.filter(
-      node => node.type === "brainstorm"
+      (node) => node.type === "brainstorm"
     );
-    expect(brainstormNodes.map(node => node.id)).toEqual([
+    expect(brainstormNodes.map((node) => node.id)).toEqual([
       "brainstorm:route-planner",
       "brainstorm:repository-analyst",
       "brainstorm:spec-author",
       "brainstorm:runtime-quality-auditor",
     ]);
-    expect(new Set(brainstormNodes.map(node => node.row)).size).toBe(4);
+    expect(new Set(brainstormNodes.map((node) => node.row)).size).toBe(4);
     expect(
-      result.edges.filter(edge => edge.id.startsWith("edge:brainstorm-fanout:"))
+      result.edges.filter((edge) =>
+        edge.id.startsWith("edge:brainstorm-fanout:")
+      )
     ).toHaveLength(4);
     expect(
-      result.edges.filter(edge =>
+      result.edges.filter((edge) =>
         edge.id.startsWith("edge:brainstorm-converge:")
       )
     ).toHaveLength(4);
     expect(
       result.edges.some(
-        edge =>
+        (edge) =>
           edge.from === "stage:spec_tree" &&
           edge.to === "brainstorm:route-planner" &&
           edge.kind === "supports"
@@ -788,7 +789,7 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
     ).toBe(true);
     expect(
       result.edges.some(
-        edge =>
+        (edge) =>
           edge.from === "brainstorm:spec-author" &&
           edge.to === "stage:spec_docs" &&
           edge.kind === "refines"
@@ -816,8 +817,8 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
 
     expect(
       result.nodes
-        .filter(node => node.type === "brainstorm")
-        .map(node => node.id)
+        .filter((node) => node.type === "brainstorm")
+        .map((node) => node.id)
     ).toEqual([
       "brainstorm:llm-market-scout",
       "brainstorm:repo-risk-cartographer",
@@ -856,8 +857,8 @@ describe("deriveBlueprintWallProcessData / graph edges", () => {
 
     expect(
       result.nodes
-        .filter(node => node.type === "brainstorm")
-        .map(node => node.id)
+        .filter((node) => node.type === "brainstorm")
+        .map((node) => node.id)
     ).toEqual([
       "brainstorm:role-runtime-executor",
       "brainstorm:role-architecture-planner",
@@ -927,7 +928,7 @@ describe("deriveBlueprintWallProcessData / metrics and minimap", () => {
     );
   });
 
-  it('activeRoles 只统计 phase === "active" 的角色（Req 6.2）', () => {
+  it("activeRoles 只统计 phase === \"active\" 的角色（Req 6.2）", () => {
     const job = makeJob();
     const rolePhases: Record<string, RolePhase> = {
       r1: "thinking",
@@ -979,7 +980,7 @@ describe("deriveBlueprintWallProcessData / metrics and minimap", () => {
     expect(result.minimap.nodes).toHaveLength(result.nodes.length);
 
     // 每个 minimap 节点与同 id 的图节点的 column / row / status 一致
-    const graphById = new Map(result.nodes.map(node => [node.id, node]));
+    const graphById = new Map(result.nodes.map((node) => [node.id, node]));
     for (const miniNode of result.minimap.nodes) {
       const graphNode = graphById.get(miniNode.id);
       expect(graphNode).toBeDefined();
@@ -989,8 +990,8 @@ describe("deriveBlueprintWallProcessData / metrics and minimap", () => {
     }
 
     // viewport 由真实 min/max column / row 精确推导
-    const columns = result.nodes.map(node => node.column);
-    const rows = result.nodes.map(node => node.row);
+    const columns = result.nodes.map((node) => node.column);
+    const rows = result.nodes.map((node) => node.row);
     expect(result.minimap.viewport).toEqual({
       columnStart: Math.min(...columns),
       columnEnd: Math.max(...columns),
@@ -1018,12 +1019,7 @@ describe("deriveBlueprintWallProcessData / metrics and minimap", () => {
       { id: "r2", title: "Alternate route", summary: "backup path" },
     ]);
     const specTree = makeSpecTree([
-      {
-        id: "root",
-        title: "Spec Root",
-        summary: "root summary",
-        status: "ready",
-      },
+      { id: "root", title: "Spec Root", summary: "root summary", status: "ready" },
       {
         id: "child",
         parentId: "root",
@@ -1080,7 +1076,7 @@ describe("deriveBlueprintWallProcessData / metrics and minimap", () => {
     });
 
     const reasoningNodes = result.nodes.filter(
-      node => node.type === "reasoning"
+      (node) => node.type === "reasoning"
     );
     expect(reasoningNodes).toHaveLength(12);
     // 计数器仍反映全量过滤数（15）
@@ -1121,7 +1117,7 @@ describe("deriveBlueprintWallProcessData / stale-only isolation", () => {
     });
 
     expect(result.emptyReason).toBe("no-blueprint-data");
-    expect(result.nodes.some(node => node.type === "reasoning")).toBe(false);
+    expect(result.nodes.some((node) => node.type === "reasoning")).toBe(false);
     expect(result.consoleLines).toEqual([]);
     expect(result.compatibility.counters.reasoningEntries).toBe(0);
   });
@@ -1141,7 +1137,7 @@ describe("deriveBlueprintWallProcessData / stale-only isolation", () => {
     });
 
     expect(result.emptyReason).toBe("no-blueprint-data");
-    expect(result.nodes.some(node => node.type === "artifact")).toBe(false);
+    expect(result.nodes.some((node) => node.type === "artifact")).toBe(false);
     expect(result.compatibility.counters.artifacts).toBe(0);
     expect(result.metrics.artifacts).toBe(0);
   });
@@ -1163,7 +1159,7 @@ describe("deriveBlueprintWallProcessData / realtime store slice shapes", () => {
     });
 
     const node = result.nodes.find(
-      candidate => candidate.id === "capability:aigc-spec-node"
+      (candidate) => candidate.id === "capability:aigc-spec-node"
     );
 
     expect(node?.status).toBe("active");
@@ -1212,11 +1208,12 @@ describe("deriveBlueprintWallProcessData / data-only boundary guard", () => {
   const importLines = moduleSource
     .split("\n")
     .filter(
-      line => line.trim().startsWith("import") || /\bfrom\s+["']/.test(line)
+      (line) =>
+        line.trim().startsWith("import") || /\bfrom\s+["']/.test(line)
     );
   const importsText = importLines.join("\n");
 
-  it('不从 "react" 引入任何东西（Req 1.2 / 9.1）', () => {
+  it("不从 \"react\" 引入任何东西（Req 1.2 / 9.1）", () => {
     // 精确匹配 `from "react"` / `from 'react'`，避免对 `react-...` 子串误报。
     expect(/from\s+["']react["']/.test(importsText)).toBe(false);
   });

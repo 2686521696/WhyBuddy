@@ -802,10 +802,7 @@ export default function Home({
     ? () => {
         selectTask(currentAutopilotTask.id);
         setLocation(
-          getProjectTaskPath(
-            currentProject?.id ?? null,
-            currentAutopilotTask.id
-          )
+          getProjectTaskPath(currentProject?.id ?? null, currentAutopilotTask.id)
         );
       }
     : undefined;
@@ -1325,7 +1322,8 @@ export default function Home({
     "border border-[#E5E5E5] bg-white rounded-[2px]";
   const projectHubControlClass =
     "border border-[#E5E5E5] bg-white rounded-[2px]";
-  const projectHubInputClass = "border border-[#E5E5E5] bg-white rounded-[2px]";
+  const projectHubInputClass =
+    "border border-[#E5E5E5] bg-white rounded-[2px]";
   const desktopProjectHubDashboard =
     !isMobile && isProjectHub ? (
       <div

@@ -55,9 +55,7 @@ describe("project-spec-draft", () => {
       title: "Spec Center Initial Spec",
       sourceMessageIds: ["message-1"],
     });
-    expect(draft.content).toContain(
-      "Need spec updates from project decisions."
-    );
+    expect(draft.content).toContain("Need spec updates from project decisions.");
   });
 
   it("creates a spec update suggestion from user decision evidence", () => {
@@ -66,8 +64,7 @@ describe("project-spec-draft", () => {
       projectId: project.id,
       type: "decision",
       title: "User approved conservative release",
-      detail:
-        "User decided release must require manual approval before publish.",
+      detail: "User decided release must require manual approval before publish.",
       createdAt: "2026-04-30T02:00:00.000Z",
     };
 
@@ -126,7 +123,9 @@ describe("project-spec-draft", () => {
     expect(suggestion?.rationale).toContain("failed mission");
     expect(suggestion?.content).toContain("Mission failed: mission-runtime-1");
     expect(suggestion?.content).toContain("Artifact: Failure analysis");
-    expect(suggestion?.content).toContain("Source mission: mission-runtime-1");
+    expect(suggestion?.content).toContain(
+      "Source mission: mission-runtime-1"
+    );
   });
 
   it("returns null when no effective project source can update the spec", () => {

@@ -73,12 +73,12 @@ function resolvePhaseClass(phase: RolePhase | undefined): string {
  * 与当前阶段标签，保持总高度 ≤ 48px。
  */
 export const RoleStatusStrip: FC = () => {
-  const rolePhases = useBlueprintRealtimeStore(s => s.rolePhases);
+  const rolePhases = useBlueprintRealtimeStore((s) => s.rolePhases);
   const { roles, currentStageIndex } = useRoleCrewState();
   // Explicit exception to right-rail props-only convention: RoleStatusStrip
   // already consumes useBlueprintRealtimeStore directly as a store-consumer
   // observation strip, so reading locale from useAppStore is consistent.
-  const locale = useAppStore(s => s.locale) as AppLocale;
+  const locale = useAppStore((s) => s.locale) as AppLocale;
 
   // 防御性兜底：rolePhases 在 store 的初始 state 中即为 `{}`，正常路径下不会
   // 是 undefined / null。但为了让本组件不依赖具体测试 mock 的字段完整度，
@@ -96,7 +96,10 @@ export const RoleStatusStrip: FC = () => {
   const sortedEntries = [...entries].sort(([a], [b]) => a.localeCompare(b));
 
   return (
-    <div className="flex flex-col gap-1" data-testid="role-status-strip">
+    <div
+      className="flex flex-col gap-1"
+      data-testid="role-status-strip"
+    >
       {/* 角色状态圆点序列 + 阶段标签 */}
       {roles.length > 0 && (
         <div className="flex items-center gap-2">

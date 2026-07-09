@@ -32,7 +32,7 @@ const EMPTY_SPEC_TREE = {
 } as unknown as BlueprintSpecTree;
 
 function baseProps(
-  overrides: Partial<AutopilotRightRailProps>
+  overrides: Partial<AutopilotRightRailProps>,
 ): AutopilotRightRailProps {
   return {
     jobId: "job-stage2",
@@ -79,7 +79,7 @@ describe("AutopilotRightRail · Stage-2 merge regression guard", () => {
                 currentSubStage: subStage,
                 specTree: specTreeKind === "empty" ? EMPTY_SPEC_TREE : null,
               })}
-            />
+            />,
           );
 
           // P1: merged workspace always present, old split view never.
@@ -89,9 +89,9 @@ describe("AutopilotRightRail · Stage-2 merge regression guard", () => {
           // P2: stage-key stays spec_tree, never spec_documents.
           expect(markup).toContain('data-stage-key="spec_tree"');
           expect(markup).not.toContain('data-stage-key="spec_documents"');
-        }
+        },
       ),
-      { numRuns: 50 }
+      { numRuns: 50 },
     );
   });
 });

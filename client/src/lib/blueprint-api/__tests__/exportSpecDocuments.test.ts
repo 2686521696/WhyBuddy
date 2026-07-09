@@ -113,7 +113,10 @@ describe("exportSpecDocumentsToDownload", () => {
 
   it("成功路径：调用 fetch 并触发 a.click 下载", async () => {
     fetchMock.mockResolvedValueOnce(
-      makeOkResponse("ZIP-BYTES", 'attachment; filename="my-feature-spec.zip"')
+      makeOkResponse(
+        "ZIP-BYTES",
+        'attachment; filename="my-feature-spec.zip"',
+      ),
     );
 
     await exportSpecDocumentsToDownload({
@@ -124,7 +127,7 @@ describe("exportSpecDocumentsToDownload", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toBe(
-      "/api/blueprint/jobs/job-1/spec-documents/export?granularity=tree"
+      "/api/blueprint/jobs/job-1/spec-documents/export?granularity=tree",
     );
 
     expect(dom.anchor.click).toHaveBeenCalledTimes(1);
@@ -153,8 +156,8 @@ describe("exportSpecDocumentsToDownload", () => {
     fetchMock.mockResolvedValueOnce(
       makeOkResponse(
         "ZIP",
-        `attachment; filename="ascii_fallback.zip"; filename*=UTF-8''${encodeURIComponent("项目主航道.zip")}`
-      )
+        `attachment; filename="ascii_fallback.zip"; filename*=UTF-8''${encodeURIComponent("项目主航道.zip")}`,
+      ),
     );
 
     await exportSpecDocumentsToDownload({
@@ -169,8 +172,8 @@ describe("exportSpecDocumentsToDownload", () => {
     fetchMock.mockResolvedValueOnce(
       makeOkResponse(
         "ZIP",
-        `attachment; filename*=UTF-8''${encodeURIComponent("纯中文.zip")}`
-      )
+        `attachment; filename*=UTF-8''${encodeURIComponent("纯中文.zip")}`,
+      ),
     );
 
     await exportSpecDocumentsToDownload({
@@ -200,17 +203,14 @@ describe("exportSpecDocumentsToDownload", () => {
 
   it("非 2xx 响应抛 Error，含 status 与 body 摘要", async () => {
     fetchMock.mockResolvedValueOnce(
-      makeErrorResponse(
-        404,
-        JSON.stringify({ error: "blueprint job not found" })
-      )
+      makeErrorResponse(404, JSON.stringify({ error: "blueprint job not found" })),
     );
 
     await expect(
       exportSpecDocumentsToDownload({
         jobId: "missing",
         granularity: "tree",
-      })
+      }),
     ).rejects.toThrow(/HTTP 404/);
 
     // 失败路径下不应触发 a.click
@@ -224,7 +224,7 @@ describe("exportSpecDocumentsToDownload", () => {
       exportSpecDocumentsToDownload({
         jobId: "j1",
         granularity: "tree",
-      })
+      }),
     ).rejects.toThrow(/network down/);
 
     expect(dom.anchor.click).not.toHaveBeenCalled();

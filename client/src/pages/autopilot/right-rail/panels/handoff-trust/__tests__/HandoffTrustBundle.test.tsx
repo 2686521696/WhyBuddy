@@ -19,7 +19,7 @@ import type {
 function entry(
   id: string,
   status: BlueprintChecksLedgerEntry["status"],
-  checkName = id
+  checkName = id,
 ): BlueprintChecksLedgerEntry {
   return {
     id,
@@ -34,7 +34,7 @@ function entry(
 }
 
 function ledger(
-  entries: BlueprintChecksLedgerEntry[]
+  entries: BlueprintChecksLedgerEntry[],
 ): BlueprintChecksLedgerResponse {
   const summary = { total: entries.length, pass: 0, fail: 0, warn: 0, skip: 0 };
   for (const e of entries) summary[e.status] += 1;
@@ -54,11 +54,7 @@ function matrix(): TraceabilityMatrix {
       coveredByTests: 1,
       coveragePercent: 60,
       gaps: [
-        {
-          requirementId: "R2",
-          requirementTitle: "Logout",
-          missingLinks: ["test"],
-        },
+        { requirementId: "R2", requirementTitle: "Logout", missingLinks: ["test"] },
       ],
     },
   };
@@ -70,14 +66,10 @@ const render = (props: Parameters<typeof HandoffTrustBundleView>[0]) =>
 describe("collectHandoffOpenItems", () => {
   it("collects ledger warn/fail + matrix gaps, skips pass", () => {
     const items = collectHandoffOpenItems({
-      ledger: ledger([
-        entry("a", "pass"),
-        entry("b", "warn"),
-        entry("c", "fail"),
-      ]),
+      ledger: ledger([entry("a", "pass"), entry("b", "warn"), entry("c", "fail")]),
       matrix: matrix(),
     });
-    const kinds = items.map(i => `${i.kind}:${i.id}`);
+    const kinds = items.map((i) => `${i.kind}:${i.id}`);
     expect(kinds).toContain("ledger:b");
     expect(kinds).toContain("ledger:c");
     expect(kinds).toContain("gap:R2");

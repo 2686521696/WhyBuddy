@@ -24,14 +24,14 @@ describe("Pointer passthrough — UI overlay default (Task 2.1)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span>content</span>
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     // The UI layer should have pointer-events-none when pointerPassthrough
     // defaults to true. Extract the full <div ...> tag containing the ui-layer
     // testid so we can inspect its class attribute.
     const uiLayerMatch = markup.match(
-      /<div[^>]*data-testid="ue-overlay-ui-layer"[^>]*/
+      /<div[^>]*data-testid="ue-overlay-ui-layer"[^>]*/,
     );
     expect(uiLayerMatch).toBeTruthy();
     expect(uiLayerMatch![0]).toContain("pointer-events-none");
@@ -44,11 +44,11 @@ describe("Pointer passthrough — UI overlay default (Task 2.1)", () => {
         pointerPassthrough={false}
       >
         <span>content</span>
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     const uiLayerMatch = markup.match(
-      /<div[^>]*data-testid="ue-overlay-ui-layer"[^>]*/
+      /<div[^>]*data-testid="ue-overlay-ui-layer"[^>]*/,
     );
     expect(uiLayerMatch).toBeTruthy();
     expect(uiLayerMatch![0]).not.toContain("pointer-events-none");
@@ -64,7 +64,7 @@ describe("PointerAutoWrapper (Task 2.2)", () => {
     const markup = renderToStaticMarkup(
       <PointerAutoWrapper>
         <button>Click me</button>
-      </PointerAutoWrapper>
+      </PointerAutoWrapper>,
     );
 
     expect(markup).toContain("pointer-events-auto");
@@ -76,7 +76,7 @@ describe("PointerAutoWrapper (Task 2.2)", () => {
     const markup = renderToStaticMarkup(
       <PointerAutoWrapper className="p-4 rounded">
         <span>child</span>
-      </PointerAutoWrapper>
+      </PointerAutoWrapper>,
     );
 
     expect(markup).toContain("pointer-events-auto");
@@ -90,7 +90,7 @@ describe("PointerAutoWrapper (Task 2.2)", () => {
         <PointerAutoWrapper>
           <button data-testid="interactive-btn">Action</button>
         </PointerAutoWrapper>
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     // The overlay layer has pointer-events-none
@@ -113,7 +113,7 @@ describe("PointerPassthroughZone (Task 2.3)", () => {
     };
 
     const markup = renderToStaticMarkup(
-      <PointerPassthroughZone config={config} />
+      <PointerPassthroughZone config={config} />,
     );
 
     expect(markup).toBe("");
@@ -137,7 +137,7 @@ describe("PointerPassthroughZone (Task 2.3)", () => {
     };
 
     const markup = renderToStaticMarkup(
-      <PointerPassthroughZone config={config} />
+      <PointerPassthroughZone config={config} />,
     );
 
     // Zone with passthrough: true should have pointer-events-none
@@ -166,7 +166,7 @@ describe("PointerPassthroughZone (Task 2.3)", () => {
     };
 
     const markup = renderToStaticMarkup(
-      <PointerPassthroughZone config={config} />
+      <PointerPassthroughZone config={config} />,
     );
 
     expect(markup).toContain("top:50px");
@@ -188,12 +188,12 @@ describe("PointerPassthroughZone (Task 2.3)", () => {
     };
 
     const markupPass = renderToStaticMarkup(
-      <PointerPassthroughZone config={configPassthrough} />
+      <PointerPassthroughZone config={configPassthrough} />,
     );
 
     // Container should have pointer-events-none when defaultPassthrough is true
     const containerMatch = markupPass.match(
-      /<div[^>]*data-testid="ue-passthrough-zone-container"[^>]*/
+      /<div[^>]*data-testid="ue-passthrough-zone-container"[^>]*/,
     );
     expect(containerMatch).toBeTruthy();
     expect(containerMatch![0]).toContain("pointer-events-none");
@@ -210,12 +210,12 @@ describe("PointerPassthroughZone (Task 2.3)", () => {
     };
 
     const markupBlock = renderToStaticMarkup(
-      <PointerPassthroughZone config={configBlock} />
+      <PointerPassthroughZone config={configBlock} />,
     );
 
     // Container should have pointer-events-auto when defaultPassthrough is false
     const containerMatch2 = markupBlock.match(
-      /<div[^>]*data-testid="ue-passthrough-zone-container"[^>]*/
+      /<div[^>]*data-testid="ue-passthrough-zone-container"[^>]*/,
     );
     expect(containerMatch2).toBeTruthy();
     expect(containerMatch2![0]).toContain("pointer-events-auto");
@@ -244,7 +244,7 @@ describe("PointerPassthroughZone (Task 2.3)", () => {
     };
 
     const markup = renderToStaticMarkup(
-      <PointerPassthroughZone config={config} />
+      <PointerPassthroughZone config={config} />,
     );
 
     expect(markup).toContain('data-testid="ue-passthrough-zone-alpha"');
@@ -273,14 +273,14 @@ describe("Pointer passthrough — drag correctness (Task 2.4)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <PointerPassthroughZone config={config} />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     // The passthrough zone should have pointer-events-none, meaning
     // mousedown → mousemove → mouseup (drag) events will pass through
     // to the underlying video layer
     const zoneMatch = markup.match(
-      /data-testid="ue-passthrough-zone-drag-zone"[^>]*/
+      /data-testid="ue-passthrough-zone-drag-zone"[^>]*/,
     );
     expect(zoneMatch).toBeTruthy();
 
@@ -306,13 +306,13 @@ describe("Pointer passthrough — drag correctness (Task 2.4)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <PointerPassthroughZone config={config} />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     // The blocking zone should have pointer-events-auto, meaning
     // drag events will be captured by this zone
     const zoneMatch = markup.match(
-      /data-testid="ue-passthrough-zone-block-zone"[^>]*/
+      /data-testid="ue-passthrough-zone-block-zone"[^>]*/,
     );
     expect(zoneMatch).toBeTruthy();
     expect(zoneMatch![0]).toContain('data-zone-passthrough="false"');
@@ -338,7 +338,7 @@ describe("Pointer passthrough — drag correctness (Task 2.4)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <PointerPassthroughZone config={config} />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     // Viewport zone: passthrough (drag works)
@@ -360,12 +360,12 @@ describe("Pointer passthrough — drag correctness (Task 2.4)", () => {
         <PointerAutoWrapper>
           <div data-testid="draggable-panel">Drag me</div>
         </PointerAutoWrapper>
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     // The overlay has pointer-events-none (drag passes through)
     const uiLayerMatch = markup.match(
-      /<div[^>]*data-testid="ue-overlay-ui-layer"[^>]*/
+      /<div[^>]*data-testid="ue-overlay-ui-layer"[^>]*/,
     );
     expect(uiLayerMatch).toBeTruthy();
     expect(uiLayerMatch![0]).toContain("pointer-events-none");

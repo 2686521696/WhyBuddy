@@ -10,16 +10,14 @@ describe("deriveDownstreamImpact", () => {
     expect(deriveDownstreamImpact({ fromStage: "clarification" })).toEqual({
       fromStage: "clarification",
       downstreamStages: DEFAULT_STAGE_ORDER.slice(
-        DEFAULT_STAGE_ORDER.indexOf("clarification") + 1
+        DEFAULT_STAGE_ORDER.indexOf("clarification") + 1,
       ),
       downstreamCount: DEFAULT_STAGE_ORDER.length - 2,
     });
   });
 
   it("returns zero downstream stages for the final local stage", () => {
-    expect(
-      deriveDownstreamImpact({ fromStage: "engineering_landing" })
-    ).toEqual({
+    expect(deriveDownstreamImpact({ fromStage: "engineering_landing" })).toEqual({
       fromStage: "engineering_landing",
       downstreamStages: [],
       downstreamCount: 0,
@@ -31,7 +29,7 @@ describe("deriveDownstreamImpact", () => {
       deriveDownstreamImpact({
         fromStage: "route_generation",
         stageOrder: ["input", "route_generation", "spec_tree"],
-      })
+      }),
     ).toEqual({
       fromStage: "route_generation",
       downstreamStages: ["spec_tree"],

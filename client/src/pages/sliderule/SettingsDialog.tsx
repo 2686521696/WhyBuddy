@@ -1,10 +1,7 @@
 import React from "react";
 import { Cpu, Server, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
-import {
-  PROJECTION_DENSITY_STORAGE_KEY,
-  type ProjectionDensity,
-} from "./sliderule-projection-constants";
+import { PROJECTION_DENSITY_STORAGE_KEY, type ProjectionDensity } from "./sliderule-projection-constants";
 import { LlmProviderSettings } from "./LlmProviderSettings";
 import { LlmChannelPanel } from "./LlmChannelPanel";
 import {
@@ -40,18 +37,10 @@ export type SettingsDialogProps = SettingsSurfaceProps & {
   onClose: () => void;
 };
 
-const NAV_ITEMS: Array<{
-  id: CategoryId;
-  label: string;
-  icon: React.ReactNode;
-}> = [
+const NAV_ITEMS: Array<{ id: CategoryId; label: string; icon: React.ReactNode }> = [
   { id: "channel", label: "推演通道", icon: <Server className="h-4 w-4" /> },
   { id: "llm", label: "浏览器直连", icon: <Cpu className="h-4 w-4" /> },
-  {
-    id: "system",
-    label: "系统设置",
-    icon: <SlidersHorizontal className="h-4 w-4" />,
-  },
+  { id: "system", label: "系统设置", icon: <SlidersHorizontal className="h-4 w-4" /> },
 ];
 
 /**
@@ -77,24 +66,18 @@ export function SettingsDialog(props: SettingsDialogProps) {
 export function SettingsPage() {
   const [density, setDensity] = React.useState<ProjectionDensity>(() => {
     try {
-      return localStorage.getItem(PROJECTION_DENSITY_STORAGE_KEY) === "detailed"
-        ? "detailed"
-        : "compact";
+      return localStorage.getItem(PROJECTION_DENSITY_STORAGE_KEY) === "detailed" ? "detailed" : "compact";
     } catch {
       return "compact";
     }
   });
-  const [driveMode, setDriveMode] = React.useState<"single" | "marathon">(
-    () => {
-      try {
-        return localStorage.getItem("sliderule:driveMode") === "marathon"
-          ? "marathon"
-          : "single";
-      } catch {
-        return "single";
-      }
+  const [driveMode, setDriveMode] = React.useState<"single" | "marathon">(() => {
+    try {
+      return localStorage.getItem("sliderule:driveMode") === "marathon" ? "marathon" : "single";
+    } catch {
+      return "single";
     }
-  );
+  });
   const [budget, setBudget] = React.useState<MarathonBudget>(() => {
     try {
       const raw = localStorage.getItem("sliderule:marathonBudget");
@@ -105,10 +88,7 @@ export function SettingsPage() {
   });
   const sessionId = React.useMemo(() => {
     try {
-      return (
-        localStorage.getItem("sliderule:active-session-id") ||
-        "sliderule-v51-product"
-      );
+      return localStorage.getItem("sliderule:active-session-id") || "sliderule-v51-product";
     } catch {
       return "sliderule-v51-product";
     }
@@ -119,21 +99,21 @@ export function SettingsPage() {
       mode="page"
       sessionId={sessionId}
       projectionDensity={density}
-      onProjectionDensityChange={d => {
+      onProjectionDensityChange={(d) => {
         setDensity(d);
         try {
           localStorage.setItem(PROJECTION_DENSITY_STORAGE_KEY, d);
         } catch {}
       }}
       driveMode={driveMode}
-      setDriveMode={m => {
+      setDriveMode={(m) => {
         setDriveMode(m);
         try {
           localStorage.setItem("sliderule:driveMode", m);
         } catch {}
       }}
       marathonBudget={budget}
-      setMarathonBudget={b => {
+      setMarathonBudget={(b) => {
         setBudget(b);
         try {
           localStorage.setItem("sliderule:marathonBudget", JSON.stringify(b));
@@ -144,17 +124,12 @@ export function SettingsPage() {
 }
 
 function SettingsSurface(
-  props: SettingsSurfaceProps & {
-    mode: "dialog" | "page";
-    onClose?: () => void;
-  }
+  props: SettingsSurfaceProps & { mode: "dialog" | "page"; onClose?: () => void }
 ) {
   const { mode, onClose } = props;
   const isDialog = mode === "dialog";
   const [category, setCategory] = React.useState<CategoryId>("channel");
-  const [draft, setDraft] = React.useState<LlmProvidersConfig | null>(() =>
-    loadProvidersConfig()
-  );
+  const [draft, setDraft] = React.useState<LlmProvidersConfig | null>(() => loadProvidersConfig());
   // Snapshot loaded at mount (for dirty check + no-op Save guard).
   const initialLlmDraftRef = React.useRef<LlmProvidersConfig | null>(
     draft ? JSON.parse(JSON.stringify(draft)) : null
@@ -196,9 +171,7 @@ function SettingsSurface(
       return;
     }
     // 阻塞非法配置：启用的厂商必须密钥就绪 + Base URL 合法（否则进池会失败）。
-    const invalid = draft.providers.find(
-      p => p.enabled && !isEnabledProviderReady(p)
-    );
+    const invalid = draft.providers.find((p) => p.enabled && !isEnabledProviderReady(p));
     if (invalid) {
       toast.error("配置未通过校验", {
         description: `「${invalid.name}」已启用但密钥或 Base URL 不完整，请修正后保存。`,
@@ -209,12 +182,9 @@ function SettingsSurface(
     // After a real save, treat current draft as the new baseline so further accidental Save is no-op.
     initialLlmDraftRef.current = JSON.parse(JSON.stringify(draft));
     setShowUnsavedConfirm(false);
-    const enabled = draft.providers.filter(p => p.enabled).length ?? 0;
+    const enabled = draft.providers.filter((p) => p.enabled).length ?? 0;
     toast.success("设置已保存", {
-      description:
-        enabled > 0
-          ? `已启用 ${enabled} 个厂商，下一轮推演生效。`
-          : "未启用厂商，使用服务端 LLM。",
+      description: enabled > 0 ? `已启用 ${enabled} 个厂商，下一轮推演生效。` : "未启用厂商，使用服务端 LLM。",
     });
   };
 
@@ -225,136 +195,126 @@ function SettingsSurface(
           ? "relative flex h-[min(86vh,760px)] w-[min(96vw,1180px)] flex-col overflow-hidden rounded-lg border border-[#e5e7eb] bg-white shadow-[0_24px_70px_rgb(15_23_42/0.28)]"
           : "relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-[#e5e7eb] bg-white shadow-[0_1px_8px_rgb(15_23_42/0.06)]"
       }
-      data-testid={
-        isDialog ? "sliderule-settings-dialog" : "sliderule-settings-page"
-      }
+      data-testid={isDialog ? "sliderule-settings-dialog" : "sliderule-settings-page"}
       role={isDialog ? "dialog" : undefined}
       aria-label="设置"
-      onClick={isDialog ? e => e.stopPropagation() : undefined}
+      onClick={isDialog ? (e) => e.stopPropagation() : undefined}
     >
-      {isDialog && (
-        <button
-          onClick={guardedClose}
-          className="absolute right-3 top-3 z-10 rounded p-1.5 text-stone-400 transition hover:bg-[#e9edf2] hover:text-stone-700"
-          title="关闭"
-          data-testid="sliderule-settings-close"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      )}
+          {isDialog && (
+            <button
+              onClick={guardedClose}
+              className="absolute right-3 top-3 z-10 rounded p-1.5 text-stone-400 transition hover:bg-[#e9edf2] hover:text-stone-700"
+              title="关闭"
+              data-testid="sliderule-settings-close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
 
-      <div className="flex min-h-0 flex-1">
-        {/* 左栏：分类导航 */}
-        {/* 分类导航不放品牌 logo：侧栏已有品牌位，这里重复是噪音（用户反馈） */}
-        <nav className="flex w-[190px] shrink-0 flex-col gap-1 border-r border-[#e5e7eb] bg-[#eef0f4]/70 p-3">
-          {NAV_ITEMS.map(item => {
-            const active = category === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setCategory(item.id)}
-                data-testid={`sliderule-settings-nav-${item.id}`}
-                className={`flex items-center gap-2.5 rounded px-3 py-2 text-[13px] font-semibold transition ${
-                  active
-                    ? "bg-[#e6f4ff] text-[#1677ff]"
-                    : "text-stone-600 hover:bg-white hover:text-stone-800"
-                }`}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
+          <div className="flex min-h-0 flex-1">
+            {/* 左栏：分类导航 */}
+            {/* 分类导航不放品牌 logo：侧栏已有品牌位，这里重复是噪音（用户反馈） */}
+            <nav className="flex w-[190px] shrink-0 flex-col gap-1 border-r border-[#e5e7eb] bg-[#eef0f4]/70 p-3">
+              {NAV_ITEMS.map((item) => {
+                const active = category === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setCategory(item.id)}
+                    data-testid={`sliderule-settings-nav-${item.id}`}
+                    className={`flex items-center gap-2.5 rounded px-3 py-2 text-[13px] font-semibold transition ${
+                      active
+                        ? "bg-[#e6f4ff] text-[#1677ff]"
+                        : "text-stone-600 hover:bg-white hover:text-stone-800"
+                    }`}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
 
-        {/* 内容区 */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          {category === "channel" ? (
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <LlmChannelPanel />
-            </div>
-          ) : category === "llm" ? (
-            draft ? (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <div className="mx-6 mt-4 rounded-md bg-[#eef0f4] px-4 py-2.5 text-[11px] leading-5 text-stone-500 ring-1 ring-[#e5e7eb]">
-                  备用通道：仅「浏览器直连」模式（本地无服务端时）消费这里的配置；
-                  服务端推演不读它——真通道在左侧「推演通道」里配。
+            {/* 内容区 */}
+            <div className="flex min-w-0 flex-1 flex-col">
+              {category === "channel" ? (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <LlmChannelPanel />
                 </div>
-                <LlmProviderSettings draft={draft} setDraft={setDraft} />
-              </div>
-            ) : null
-          ) : (
-            <div className="flex-1 overflow-y-auto px-6 py-5">
-              <SystemPrefs {...props} />
+              ) : category === "llm" ? (
+                draft ? (
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="mx-6 mt-4 rounded-md bg-[#eef0f4] px-4 py-2.5 text-[11px] leading-5 text-stone-500 ring-1 ring-[#e5e7eb]">
+                      备用通道：仅「浏览器直连」模式（本地无服务端时）消费这里的配置；
+                      服务端推演不读它——真通道在左侧「推演通道」里配。
+                    </div>
+                    <LlmProviderSettings draft={draft} setDraft={setDraft} />
+                  </div>
+                ) : null
+              ) : (
+                <div className="flex-1 overflow-y-auto px-6 py-5">
+                  <SystemPrefs {...props} />
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* 底部操作：整页形态只有「浏览器直连」有保存钮，其余分类无按钮就不渲染空条 */}
-      {(isDialog || category === "llm") && (
-        <div className="flex items-center justify-end gap-2 border-t border-[#e5e7eb] px-4 py-3">
-          {isDialog && showUnsavedConfirm ? (
-            <div className="flex w-full items-center justify-between gap-3 text-[12px]">
-              <span className="text-rose-600">
-                有未保存的更改，关闭将丢失更改。
-              </span>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  onClick={cancelUnsaved}
-                  className="rounded border border-[#e5e7eb] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#eef0f4]"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={forceClose}
-                  className="rounded bg-rose-600 px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-rose-500"
-                >
-                  确认关闭
-                </button>
+          {/* 底部操作：整页形态只有「浏览器直连」有保存钮，其余分类无按钮就不渲染空条 */}
+          {(isDialog || category === "llm") && (
+          <div className="flex items-center justify-end gap-2 border-t border-[#e5e7eb] px-4 py-3">
+            {isDialog && showUnsavedConfirm ? (
+              <div className="flex w-full items-center justify-between gap-3 text-[12px]">
+                <span className="text-rose-600">有未保存的更改，关闭将丢失更改。</span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={cancelUnsaved}
+                    className="rounded border border-[#e5e7eb] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#eef0f4]"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={forceClose}
+                    className="rounded bg-rose-600 px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-rose-500"
+                  >
+                    确认关闭
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <>
-              {isDialog && (
-                <button
-                  onClick={guardedClose}
-                  className="rounded border border-[#e5e7eb] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#eef0f4]"
-                  data-testid="sliderule-settings-close"
-                >
-                  关闭
-                </button>
-              )}
-              {/* 底部保存只管「浏览器直连」草稿；推演通道/系统设置各自即时生效 */}
-              {category === "llm" && (
-                <button
-                  onClick={handleSave}
-                  disabled={!isLlmDirty}
-                  className="rounded bg-[#1677ff] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#0958d9] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#0958d9]"
-                  data-testid="sliderule-settings-save"
-                >
-                  保存
-                </button>
-              )}
-            </>
+            ) : (
+              <>
+                {isDialog && (
+                  <button
+                    onClick={guardedClose}
+                    className="rounded border border-[#e5e7eb] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#eef0f4]"
+                    data-testid="sliderule-settings-close"
+                  >
+                    关闭
+                  </button>
+                )}
+                {/* 底部保存只管「浏览器直连」草稿；推演通道/系统设置各自即时生效 */}
+                {category === "llm" && (
+                  <button
+                    onClick={handleSave}
+                    disabled={!isLlmDirty}
+                    className="rounded bg-[#1677ff] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#0958d9] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#0958d9]"
+                    data-testid="sliderule-settings-save"
+                  >
+                    保存
+                  </button>
+                )}
+              </>
+            )}
+          </div>
           )}
-        </div>
-      )}
     </div>
   );
 
   if (!isDialog) return card;
   return (
     <>
-      <div
-        className="fixed inset-0 z-[80] bg-[#2A2620]/40 backdrop-blur-sm"
-        onClick={guardedClose}
-      />
-      <div
-        className="fixed inset-0 z-[81] flex items-center justify-center p-4"
-        onClick={guardedClose}
-      >
+      <div className="fixed inset-0 z-[80] bg-[#2A2620]/40 backdrop-blur-sm" onClick={guardedClose} />
+      <div className="fixed inset-0 z-[81] flex items-center justify-center p-4" onClick={guardedClose}>
         {card}
       </div>
     </>
@@ -374,7 +334,7 @@ function Segmented<T extends string>({
 }) {
   return (
     <div className="flex max-w-md gap-1 rounded bg-[#e9edf2] p-1">
-      {options.map(opt => (
+      {options.map((opt) => (
         <button
           key={opt.value}
           type="button"
@@ -382,9 +342,7 @@ function Segmented<T extends string>({
           onClick={() => onChange?.(opt.value)}
           title={opt.hint}
           className={`flex-1 rounded-sm px-3 py-1.5 text-[13px] font-medium transition-colors ${
-            value === opt.value
-              ? "bg-white text-stone-800 shadow-sm"
-              : "text-stone-500 hover:text-stone-700"
+            value === opt.value ? "bg-white text-stone-800 shadow-sm" : "text-stone-500 hover:text-stone-700"
           }`}
         >
           {opt.label}
@@ -415,16 +373,10 @@ function SystemPrefs(props: SettingsSurfaceProps) {
           onChange={onProjectionDensityChange}
           options={[
             { value: "compact", label: "简", hint: "精简投影，只显示关键节点" },
-            {
-              value: "detailed",
-              label: "详",
-              hint: "展开证据/阶段/树的溯源链",
-            },
+            { value: "detailed", label: "详", hint: "展开证据/阶段/树的溯源链" },
           ]}
         />
-        <p className="mt-1.5 text-[11px] text-stone-400">
-          控制推演图节点展开的详略程度。
-        </p>
+        <p className="mt-1.5 text-[11px] text-stone-400">控制推演图节点展开的详略程度。</p>
       </div>
 
       <div>
@@ -433,21 +385,11 @@ function SystemPrefs(props: SettingsSurfaceProps) {
           value={driveMode}
           onChange={setDriveMode}
           options={[
-            {
-              value: "single",
-              label: "深思一轮",
-              hint: "想清楚一个问题就停，等你确认下一步",
-            },
-            {
-              value: "marathon",
-              label: "持续推演",
-              hint: "自动多轮推进，直到预算/前沿尽/需要人工介入",
-            },
+            { value: "single", label: "深思一轮", hint: "想清楚一个问题就停，等你确认下一步" },
+            { value: "marathon", label: "持续推演", hint: "自动多轮推进，直到预算/前沿尽/需要人工介入" },
           ]}
         />
-        <p className="mt-1.5 text-[11px] text-stone-400">
-          与底部输入框的模式选择同步。
-        </p>
+        <p className="mt-1.5 text-[11px] text-stone-400">与底部输入框的模式选择同步。</p>
       </div>
 
       <div>
@@ -458,13 +400,10 @@ function SystemPrefs(props: SettingsSurfaceProps) {
           step={1000}
           value={budget}
           disabled={!setMarathonBudget}
-          onChange={ev => {
+          onChange={(ev) => {
             const n = Number.parseInt(ev.target.value, 10);
             if (Number.isFinite(n) && n > 0) {
-              setMarathonBudget?.({
-                maxTokens: n,
-                declaredAt: new Date().toISOString(),
-              });
+              setMarathonBudget?.({ maxTokens: n, declaredAt: new Date().toISOString() });
             }
           }}
           className="w-full max-w-md rounded border border-[#e5e7eb] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#1677ff] focus:ring-2 focus:ring-[#F3DCD0]"
@@ -488,10 +427,7 @@ function RuntimeDataSection({ sessionId }: { sessionId?: string }) {
     const state = loadRuntimeState(sessionId);
     if (!state) return { rows: 0, instances: 0 };
     return {
-      rows: Object.values(state.entities).reduce(
-        (n, list) => n + list.length,
-        0
-      ),
+      rows: Object.values(state.entities).reduce((n, list) => n + list.length, 0),
       instances: state.instances.length,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -503,7 +439,7 @@ function RuntimeDataSection({ sessionId }: { sessionId?: string }) {
     clearRuntimeState(sessionId);
     clearRuntimeRole(sessionId);
     notifyRuntimeChanged(sessionId);
-    setVersion(v => v + 1);
+    setVersion((v) => v + 1);
     toast.success("已清空本话题运行时数据", {
       description: "实体行、流程实例与角色视角已重置；模型与推演过程不受影响。",
     });
@@ -511,19 +447,11 @@ function RuntimeDataSection({ sessionId }: { sessionId?: string }) {
 
   return (
     <div className="border-t border-[#e5e7eb] pt-5">
-      <label className="mb-1.5 block text-[12px] font-semibold text-stone-600">
-        运行时数据（本话题）
-      </label>
+      <label className="mb-1.5 block text-[12px] font-semibold text-stone-600">运行时数据（本话题）</label>
       <p className="text-[11px] text-stone-400">
         运行应用/数据表/试运行产生的排练数据存在浏览器本机：当前
-        <span className="mx-1 font-mono text-stone-500">
-          {summary?.rows ?? 0}
-        </span>
-        行数据 ·
-        <span className="mx-1 font-mono text-stone-500">
-          {summary?.instances ?? 0}
-        </span>
-        个流程实例。
+        <span className="mx-1 font-mono text-stone-500">{summary?.rows ?? 0}</span>行数据 ·
+        <span className="mx-1 font-mono text-stone-500">{summary?.instances ?? 0}</span>个流程实例。
       </p>
       <button
         type="button"

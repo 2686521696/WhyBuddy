@@ -84,10 +84,7 @@ function formatUnknownDriveState(value: string): string {
     .join(" ");
 }
 
-function driveStateLabel(
-  locale: string,
-  state: AutopilotDriveState | string
-): string {
+function driveStateLabel(locale: string, state: AutopilotDriveState | string): string {
   switch (state) {
     case "understanding":
       return t(locale, "理解中", "Understanding");
@@ -112,9 +109,7 @@ function driveStateLabel(
     case "failed":
       return t(locale, "执行失败", "Failed");
     default:
-      return (
-        formatUnknownDriveState(state) || t(locale, "未知状态", "Unknown State")
-      );
+      return formatUnknownDriveState(state) || t(locale, "未知状态", "Unknown State");
   }
 }
 
@@ -190,8 +185,7 @@ export function AutopilotDriveStateTimeline({
             {t(locale, "驾驶状态时间线", "Drive State Timeline")}
           </div>
           <div className="mt-1 text-sm font-semibold text-stone-900">
-            {t(locale, "当前", "Current")}:{" "}
-            {driveStateLabel(locale, currentState)}
+            {t(locale, "当前", "Current")}: {driveStateLabel(locale, currentState)}
           </div>
         </div>
         {activeExceptionStates.size > 0 ? (
@@ -234,9 +228,7 @@ export function AutopilotDriveStateTimeline({
                 </span>
               </div>
               {detail ? (
-                <div className="mt-1 text-[11px] leading-4 opacity-75">
-                  {detail}
-                </div>
+                <div className="mt-1 text-[11px] leading-4 opacity-75">{detail}</div>
               ) : null}
             </li>
           );

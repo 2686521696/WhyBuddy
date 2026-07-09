@@ -33,8 +33,8 @@
  * Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10
  */
 
-import { describe, it, expect } from "vitest";
-import fc from "fast-check";
+import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
 import {
   createInitialSessionState,
   orchestrateReasoningTurn,
@@ -44,15 +44,15 @@ import {
   applyGoalConclusion,
   deriveNodeStatus,
   findInputsForCapability,
-} from "./sliderule-runtime";
-import { assertDeriveReadOnly } from "./sliderule-derive-readonly-guard";
+} from './sliderule-runtime';
+import { assertDeriveReadOnly } from './sliderule-derive-readonly-guard';
 import type {
   V5SessionState,
   Artifact,
   UserIntervention,
-} from "@shared/blueprint/v5-reasoning-state";
-import type { V5CapabilityId } from "@shared/blueprint/contracts";
-import { commitGroundedEvidence } from "./sliderule-fullpath-fixtures";
+} from '@shared/blueprint/v5-reasoning-state';
+import type { V5CapabilityId } from '@shared/blueprint/contracts';
+import { commitGroundedEvidence } from './sliderule-fullpath-fixtures';
 
 // ---- helpers (mirror conventions from sliderule-runtime.reconverge-loop.bug.test.ts) ----
 
@@ -60,20 +60,20 @@ function createRawArtifact(
   id: string,
   capabilityId: V5CapabilityId,
   roleId: string,
-  kind: Artifact["kind"],
+  kind: Artifact['kind'],
   content = `${roleId} 通过 ${capabilityId} 贡献了内容。`
-): Omit<Artifact, "trustLevel" | "passedGates"> {
+): Omit<Artifact, 'trustLevel' | 'passedGates'> {
   return {
     id,
     kind,
-    provenance: "ai_generated",
+    provenance: 'ai_generated',
     producedBy: {
       capabilityRunId: `run-${id}`,
       capabilityId,
       roleId,
     },
     passedGates: [],
-    title: content.split("\n")[0]?.slice(0, 80),
+    title: content.split('\n')[0]?.slice(0, 80),
     summary: content.slice(0, 200),
     content,
   };
@@ -82,8 +82,8 @@ function createRawArtifact(
 function markTrusted(state: V5SessionState, artId: string): void {
   const art = (state.artifacts || []).find((a: any) => a.id === artId);
   if (art) {
-    (art as any).trustLevel = "gated_pass";
-    (art as any).passedGates = ["commit"];
+    (art as any).trustLevel = 'gated_pass';
+    (art as any).passedGates = ['commit'];
   }
 }
 
@@ -93,7 +93,7 @@ function commitTrusted(
   id: string,
   capabilityId: V5CapabilityId,
   roleId: string,
-  kind: Artifact["kind"],
+  kind: Artifact['kind'],
   runId: string,
   declaredInputs: string[] = []
 ): V5SessionState {
@@ -108,12 +108,12 @@ function commitTrusted(
   return updatedState;
 }
 
-function kindForCap(capabilityId: string): Artifact["kind"] {
-  if (capabilityId === "report.write") return "report";
-  if (capabilityId === "risk.analyze") return "risk";
-  if (capabilityId === "synthesis.merge") return "synthesis";
-  if (capabilityId === "counter.argue") return "risk";
-  return "evidence";
+function kindForCap(capabilityId: string): Artifact['kind'] {
+  if (capabilityId === 'report.write') return 'report';
+  if (capabilityId === 'risk.analyze') return 'risk';
+  if (capabilityId === 'synthesis.merge') return 'synthesis';
+  if (capabilityId === 'counter.argue') return 'risk';
+  return 'evidence';
 }
 
 /**
@@ -139,57 +139,34 @@ function picksFixedReference(
  * Mirrors the page's first-convergence flow (trusted risk + synthesis upstreams, a converge turn
  * that GCOV-passes, then commit the planned report.write).
  */
-function buildClearStateWithTrustedReport(sessionId: string): {
-  state: V5SessionState;
-  reportId: string;
-} {
-  const goalText = "分析权限系统的风险并给出最终报告";
+function buildClearStateWithTrustedReport(
+  sessionId: string
+): { state: V5SessionState; reportId: string } {
+  const goalText = '分析权限系统的风险并给出最终报告';
   let s = createInitialSessionState(goalText, sessionId);
 
-  s = commitTrusted(
-    s,
-    "risk-1",
-    "risk.analyze",
-    "安全",
-    "risk",
-    `${sessionId}-r0`
-  );
+  s = commitTrusted(s, 'risk-1', 'risk.analyze', '安全', 'risk', `${sessionId}-r0`);
   // The complex CoverageContract now includes critique.generate (V5.2/V5.3 面板质疑纳入合约);
   // without a trusted critique run the converge turn can no longer reach a GCOV-pass
   // (same treatment as buildClearStateWithTrustedReport in sliderule-fullpath-fixtures.ts).
-  s = commitTrusted(
-    s,
-    "crit-1",
-    "critique.generate",
-    "挑刺",
-    "risk",
-    `${sessionId}-r0c`
-  );
-  s = commitGroundedEvidence(s, "ev-ground-1", `${sessionId}-r0b`);
-  s = commitTrusted(
-    s,
-    "synth-1",
-    "synthesis.merge",
-    "综合",
-    "synthesis",
-    `${sessionId}-r1`
-  );
+  s = commitTrusted(s, 'crit-1', 'critique.generate', '挑刺', 'risk', `${sessionId}-r0c`);
+  s = commitGroundedEvidence(s, 'ev-ground-1', `${sessionId}-r0b`);
+  s = commitTrusted(s, 'synth-1', 'synthesis.merge', '综合', 'synthesis', `${sessionId}-r1`);
 
   const { newState } = orchestrateReasoningTurn(s, {
     turnId: `${sessionId}-cv`,
-    userText: "现在可以出最终报告了",
+    userText: '现在可以出最终报告了',
   });
 
   const reportNode = (newState.graph.nodes || []).find(
-    (n: any) => n.capabilityId === "report.write"
+    (n: any) => n.capabilityId === 'report.write'
   );
-  const reportRunId =
-    (reportNode as any)?.capabilityRunId ?? `${sessionId}-cv-run-0`;
-  const reportInputs = findInputsForCapability(newState, "report.write");
-  const reportId = "report-1";
+  const reportRunId = (reportNode as any)?.capabilityRunId ?? `${sessionId}-cv-run-0`;
+  const reportInputs = findInputsForCapability(newState, 'report.write');
+  const reportId = 'report-1';
   const { updatedState } = commitArtifact(
     newState,
-    createRawArtifact(reportId, "report.write", "综合", "report"),
+    createRawArtifact(reportId, 'report.write', '综合', 'report'),
     reportRunId,
     false,
     reportInputs
@@ -207,22 +184,14 @@ function buildRichSession(
   let s = createInitialSessionState(goalText, `pres-${seed}`);
   turns.forEach((turn, ti) => {
     const turnId = `t${seed}-${ti}`;
-    const { newState, plan } = orchestrateReasoningTurn(s, {
-      turnId,
-      userText: turn.text,
-    });
+    const { newState, plan } = orchestrateReasoningTurn(s, { turnId, userText: turn.text });
     s = newState;
     (plan.selected || []).forEach((sel: any, i: number) => {
       const runId = `${turnId}-run-${i}`;
       const artId = `${turnId}-art-${i}`;
       const { updatedState } = commitArtifact(
         s,
-        createRawArtifact(
-          artId,
-          sel.capabilityId as V5CapabilityId,
-          sel.roleId || "综合",
-          kindForCap(sel.capabilityId)
-        ),
+        createRawArtifact(artId, sel.capabilityId as V5CapabilityId, sel.roleId || '综合', kindForCap(sel.capabilityId)),
         runId,
         false,
         sel.inputArtifactIds || []
@@ -242,186 +211,134 @@ function buildRichSession(
 // ¬C1 PRESERVATION: pickNextCapabilities picks unchanged for non-buggy inputs
 // =====================================================================================
 
-describe("PRESERVATION (¬C1): pickNextCapabilities picks unchanged when no stale-of-kind exists (baseline — PASSES on unfixed code)", () => {
+describe('PRESERVATION (¬C1): pickNextCapabilities picks unchanged when no stale-of-kind exists (baseline — PASSES on unfixed code)', () => {
   // ---- Concrete baseline observations ----
 
-  it("fresh trusted report present (empty staleArtifactIds): converge text does NOT schedule a duplicate report.write (Req 3.1)", () => {
-    const { state } = buildClearStateWithTrustedReport("pres-c1-fresh");
+  it('fresh trusted report present (empty staleArtifactIds): converge text does NOT schedule a duplicate report.write (Req 3.1)', () => {
+    const { state } = buildClearStateWithTrustedReport('pres-c1-fresh');
     // Sanity: a fresh, non-stale, trusted report exists and nothing is stale.
     expect((state.staleArtifactIds || []).length).toBe(0);
     expect(
-      (state.artifacts || []).some(
-        (a: any) => a.kind === "report" && a.trustLevel === "gated_pass"
-      )
+      (state.artifacts || []).some((a: any) => a.kind === 'report' && a.trustLevel === 'gated_pass')
     ).toBe(true);
 
-    const caps = pickNextCapabilities(state, "请生成最终报告 总结 可行性").map(
-      p => p.capabilityId
-    );
+    const caps = pickNextCapabilities(state, '请生成最终报告 总结 可行性').map((p) => p.capabilityId);
     // No duplicate report.write while a fresh report already exists.
-    expect(caps).not.toContain("report.write");
+    expect(caps).not.toContain('report.write');
     // And the picks equal the fixed-reference picks (no stale → filter is a no-op).
-    expect(pickNextCapabilities(state, "请生成最终报告 总结 可行性")).toEqual(
-      picksFixedReference(state, "请生成最终报告 总结 可行性")
+    expect(pickNextCapabilities(state, '请生成最终报告 总结 可行性')).toEqual(
+      picksFixedReference(state, '请生成最终报告 总结 可行性')
     );
   });
 
-  it("ordinary turns with empty staleArtifactIds: picks equal the fixed-reference picks for varied user texts (Req 3.2)", () => {
+  it('ordinary turns with empty staleArtifactIds: picks equal the fixed-reference picks for varied user texts (Req 3.2)', () => {
     const texts = [
-      "先看看有哪些边界情况",
-      "路线对比 拆解结构",
-      "继续分析风险",
-      "收敛并总结",
-      "请澄清需求",
-      "预览效果",
+      '先看看有哪些边界情况',
+      '路线对比 拆解结构',
+      '继续分析风险',
+      '收敛并总结',
+      '请澄清需求',
+      '预览效果',
     ];
     for (const t of texts) {
-      const s = createInitialSessionState(
-        "分析权限系统的风险并给出最终报告",
-        `pres-c1-ord-${t}`
-      );
+      const s = createInitialSessionState('分析权限系统的风险并给出最终报告', `pres-c1-ord-${t}`);
       expect((s.staleArtifactIds || []).length).toBe(0);
       // Equality to the fixed reference (no stale → identical), and a stable, deduped, capped shape.
       const picks = pickNextCapabilities(s, t);
       expect(picks).toEqual(picksFixedReference(s, t));
       expect(picks.length).toBeLessThanOrEqual(5);
-      const keys = picks.map(p => `${p.capabilityId}:${p.roleId}`);
+      const keys = picks.map((p) => `${p.capabilityId}:${p.roleId}`);
       expect(new Set(keys).size).toBe(keys.length); // deduped
       // Determinism: same inputs → same picks.
       expect(pickNextCapabilities(s, t)).toEqual(picks);
     }
   });
 
-  it("stale artifact of a kind that ALSO has a fresh artifact (¬C1): picks equal the fixed-reference picks", () => {
+  it('stale artifact of a kind that ALSO has a fresh artifact (¬C1): picks equal the fixed-reference picks', () => {
     // Two risk artifacts; stale one, keep the other fresh. hasFreshOfKind === true ⇒ ¬C1.
-    let s = createInitialSessionState(
-      "分析权限系统的风险并给出最终报告",
-      "pres-c1-mixed"
-    );
-    s = commitTrusted(s, "risk-a", "risk.analyze", "安全", "risk", "mix-r0");
-    s = commitTrusted(s, "risk-b", "risk.analyze", "安全", "risk", "mix-r1");
-    s = { ...s, staleArtifactIds: ["risk-a"] };
+    let s = createInitialSessionState('分析权限系统的风险并给出最终报告', 'pres-c1-mixed');
+    s = commitTrusted(s, 'risk-a', 'risk.analyze', '安全', 'risk', 'mix-r0');
+    s = commitTrusted(s, 'risk-b', 'risk.analyze', '安全', 'risk', 'mix-r1');
+    s = { ...s, staleArtifactIds: ['risk-a'] };
 
     // A fresh risk still exists, so 'risk' presence is unchanged by stale-aware filtering.
-    const text = "请基于证据重新分析风险并生成报告";
+    const text = '请基于证据重新分析风险并生成报告';
     expect(pickNextCapabilities(s, text)).toEqual(picksFixedReference(s, text));
   });
 
   // ---- Property over the ¬C1 domain ----
 
-  it("PROPERTY (¬C1, empty stale): for all ordinary states with no stale artifacts, picks equal fixed-reference and are well-formed", () => {
+  it('PROPERTY (¬C1, empty stale): for all ordinary states with no stale artifacts, picks equal fixed-reference and are well-formed', () => {
     const goalArb = fc.constantFrom(
-      "分析权限系统的风险并给出最终报告",
-      "整理会议纪要并输出摘要",
-      "权限系统安全审计报告",
-      "简单总结当前进展"
+      '分析权限系统的风险并给出最终报告',
+      '整理会议纪要并输出摘要',
+      '权限系统安全审计报告',
+      '简单总结当前进展'
     );
     const turnsArb = fc.array(
       fc.record({
-        text: fc.constantFrom(
-          "分析风险",
-          "综合证据",
-          "生成最终报告",
-          "先看边界",
-          "路线对比",
-          "继续推进"
-        ),
+        text: fc.constantFrom('分析风险', '综合证据', '生成最终报告', '先看边界', '路线对比', '继续推进'),
         trusted: fc.boolean(),
         stale: fc.constant(false),
       }),
       { minLength: 0, maxLength: 4 }
     );
     const userTextArb = fc.constantFrom(
-      "请生成最终报告",
-      "请重新综合并生成报告",
-      "继续分析风险",
-      "路线对比 拆解结构",
-      "先看看边界情况",
-      "收敛并总结"
+      '请生成最终报告',
+      '请重新综合并生成报告',
+      '继续分析风险',
+      '路线对比 拆解结构',
+      '先看看边界情况',
+      '收敛并总结'
     );
     const seedArb = fc.integer({ min: 0, max: 100000 });
 
     fc.assert(
-      fc.property(
-        seedArb,
-        goalArb,
-        turnsArb,
-        userTextArb,
-        (seed, goalText, turns, userText) => {
-          const s = buildRichSession(seed, goalText, turns);
-          // Scope: ¬C1 via empty stale set (no stale artifact of any kind).
-          fc.pre((s.staleArtifactIds || []).length === 0);
+      fc.property(seedArb, goalArb, turnsArb, userTextArb, (seed, goalText, turns, userText) => {
+        const s = buildRichSession(seed, goalText, turns);
+        // Scope: ¬C1 via empty stale set (no stale artifact of any kind).
+        fc.pre((s.staleArtifactIds || []).length === 0);
 
-          const picks = pickNextCapabilities(s, userText);
-          // Equality to fixed reference (filter is a no-op when nothing is stale).
-          expect(picks).toEqual(picksFixedReference(s, userText));
-          // Well-formed: deduped + capped.
-          expect(picks.length).toBeLessThanOrEqual(5);
-          const keys = picks.map(p => `${p.capabilityId}:${p.roleId}`);
-          expect(new Set(keys).size).toBe(keys.length);
-        }
-      ),
+        const picks = pickNextCapabilities(s, userText);
+        // Equality to fixed reference (filter is a no-op when nothing is stale).
+        expect(picks).toEqual(picksFixedReference(s, userText));
+        // Well-formed: deduped + capped.
+        expect(picks.length).toBeLessThanOrEqual(5);
+        const keys = picks.map((p) => `${p.capabilityId}:${p.roleId}`);
+        expect(new Set(keys).size).toBe(keys.length);
+      }),
       { numRuns: 150 }
     );
   });
 
-  it("PROPERTY (¬C1, stale-but-fresh-duplicate): when a staled kind still has a fresh artifact, picks equal fixed-reference", () => {
-    const kindArb = fc.constantFrom<{
-      kind: Artifact["kind"];
-      cap: V5CapabilityId;
-    }>(
-      { kind: "risk", cap: "risk.analyze" },
-      { kind: "synthesis", cap: "synthesis.merge" },
-      { kind: "report", cap: "report.write" }
+  it('PROPERTY (¬C1, stale-but-fresh-duplicate): when a staled kind still has a fresh artifact, picks equal fixed-reference', () => {
+    const kindArb = fc.constantFrom<{ kind: Artifact['kind']; cap: V5CapabilityId }>(
+      { kind: 'risk', cap: 'risk.analyze' },
+      { kind: 'synthesis', cap: 'synthesis.merge' },
+      { kind: 'report', cap: 'report.write' }
     );
     const userTextArb = fc.constantFrom(
-      "请生成最终报告",
-      "请重新综合并生成报告",
-      "基于证据重新分析风险并生成报告",
-      "继续推进"
+      '请生成最终报告',
+      '请重新综合并生成报告',
+      '基于证据重新分析风险并生成报告',
+      '继续推进'
     );
     const seedArb = fc.integer({ min: 0, max: 100000 });
 
     fc.assert(
-      fc.property(
-        kindArb,
-        userTextArb,
-        seedArb,
-        ({ kind, cap }, userText, seed) => {
-          let s = createInitialSessionState(
-            "分析权限系统的风险并给出最终报告",
-            `c1mix-${seed}`
-          );
-          s = commitTrusted(
-            s,
-            `a-${seed}`,
-            cap,
-            "综合",
-            kind,
-            `c1mix-${seed}-r0`
-          );
-          s = commitTrusted(
-            s,
-            `b-${seed}`,
-            cap,
-            "综合",
-            kind,
-            `c1mix-${seed}-r1`
-          );
-          // Stale one of the two; a fresh artifact of `kind` remains ⇒ ¬C1 (hasFreshOfKind).
-          s = { ...s, staleArtifactIds: [`a-${seed}`] };
+      fc.property(kindArb, userTextArb, seedArb, ({ kind, cap }, userText, seed) => {
+        let s = createInitialSessionState('分析权限系统的风险并给出最终报告', `c1mix-${seed}`);
+        s = commitTrusted(s, `a-${seed}`, cap, '综合', kind, `c1mix-${seed}-r0`);
+        s = commitTrusted(s, `b-${seed}`, cap, '综合', kind, `c1mix-${seed}-r1`);
+        // Stale one of the two; a fresh artifact of `kind` remains ⇒ ¬C1 (hasFreshOfKind).
+        s = { ...s, staleArtifactIds: [`a-${seed}`] };
 
-          const stales = new Set(s.staleArtifactIds);
-          const hasFresh = (s.artifacts || []).some(
-            (x: any) => x.kind === kind && !stales.has(x.id)
-          );
-          fc.pre(hasFresh);
+        const stales = new Set(s.staleArtifactIds);
+        const hasFresh = (s.artifacts || []).some((x: any) => x.kind === kind && !stales.has(x.id));
+        fc.pre(hasFresh);
 
-          expect(pickNextCapabilities(s, userText)).toEqual(
-            picksFixedReference(s, userText)
-          );
-        }
-      ),
+        expect(pickNextCapabilities(s, userText)).toEqual(picksFixedReference(s, userText));
+      }),
       { numRuns: 120 }
     );
   });
@@ -431,127 +348,93 @@ describe("PRESERVATION (¬C1): pickNextCapabilities picks unchanged when no stal
 // ¬C2 PRESERVATION: goal.status unchanged for unrelated challenges / non-converged sessions
 // =====================================================================================
 
-describe("PRESERVATION (¬C2): invalidateForIntervention leaves goal.status unchanged for non-buggy challenges (baseline — PASSES on unfixed code)", () => {
+describe('PRESERVATION (¬C2): invalidateForIntervention leaves goal.status unchanged for non-buggy challenges (baseline — PASSES on unfixed code)', () => {
   it('non-converged session: a challenge that stales artifacts leaves goal.status === "needs_refinement"', () => {
-    let s = createInitialSessionState(
-      "分析权限系统的风险并给出最终报告",
-      "pres-c2-noncon"
-    );
-    s = commitTrusted(s, "risk-1", "risk.analyze", "安全", "risk", "nc-r0");
-    expect(s.goal.status).toBe("needs_refinement");
+    let s = createInitialSessionState('分析权限系统的风险并给出最终报告', 'pres-c2-noncon');
+    s = commitTrusted(s, 'risk-1', 'risk.analyze', '安全', 'risk', 'nc-r0');
+    expect(s.goal.status).toBe('needs_refinement');
 
     const challenged = invalidateForIntervention(s, {
-      targetArtifactId: "risk-1",
-      intent: "challenge",
-      text: "我质疑这个风险分析",
+      targetArtifactId: 'risk-1',
+      intent: 'challenge',
+      text: '我质疑这个风险分析',
     } as UserIntervention);
 
     // Something was staled, but the session was never converged ⇒ no downgrade applies.
-    expect(challenged.staleArtifactIds).toContain("risk-1");
-    expect(challenged.goal.status).toBe("needs_refinement");
+    expect(challenged.staleArtifactIds).toContain('risk-1');
+    expect(challenged.goal.status).toBe('needs_refinement');
     expect(challenged.goal).toEqual(s.goal);
   });
 
   it('converged "clear" session: challenging an UNRELATED standalone artifact leaves goal.status === "clear"', () => {
-    const { state: clearState, reportId } =
-      buildClearStateWithTrustedReport("pres-c2-unrelated");
-    expect(clearState.goal.status).toBe("clear");
+    const { state: clearState, reportId } = buildClearStateWithTrustedReport('pres-c2-unrelated');
+    expect(clearState.goal.status).toBe('clear');
 
     // Add a standalone, unrelated artifact with no dependency edges to the report.
     const { updatedState } = commitArtifact(
       clearState,
-      createRawArtifact(
-        "extra-unrelated",
-        "evidence.search",
-        "接地",
-        "evidence"
-      ),
-      "pres-c2-extra-run",
+      createRawArtifact('extra-unrelated', 'evidence.search', '接地', 'evidence'),
+      'pres-c2-extra-run',
       false,
       []
     );
-    markTrusted(updatedState, "extra-unrelated");
+    markTrusted(updatedState, 'extra-unrelated');
 
     const challenged = invalidateForIntervention(updatedState, {
-      targetArtifactId: "extra-unrelated",
-      intent: "challenge",
-      text: "我质疑这条无关证据",
+      targetArtifactId: 'extra-unrelated',
+      intent: 'challenge',
+      text: '我质疑这条无关证据',
     } as UserIntervention);
 
     // The conclusion-supporting report is NOT staled; only the unrelated artifact is.
-    expect(challenged.staleArtifactIds).toContain("extra-unrelated");
+    expect(challenged.staleArtifactIds).toContain('extra-unrelated');
     expect(challenged.staleArtifactIds).not.toContain(reportId);
     // Conclusion left intact (challenge did not undermine the converged conclusion).
-    expect(challenged.goal.status).toBe("clear");
+    expect(challenged.goal.status).toBe('clear');
   });
 
-  it("intervention with no target leaves the whole state (and goal.status) untouched", () => {
-    const { state: clearState } =
-      buildClearStateWithTrustedReport("pres-c2-notarget");
-    expect(clearState.goal.status).toBe("clear");
+  it('intervention with no target leaves the whole state (and goal.status) untouched', () => {
+    const { state: clearState } = buildClearStateWithTrustedReport('pres-c2-notarget');
+    expect(clearState.goal.status).toBe('clear');
 
     const challenged = invalidateForIntervention(clearState, {
-      intent: "clarify",
-      text: "只是想澄清一下，没有指定目标",
+      intent: 'clarify',
+      text: '只是想澄清一下，没有指定目标',
     } as UserIntervention);
 
-    expect(challenged.goal.status).toBe("clear");
+    expect(challenged.goal.status).toBe('clear');
     expect(challenged.goal).toEqual(clearState.goal);
   });
 
   it('PROPERTY (¬C2, non-converged): for all non-converged sessions and arbitrary challenges, goal.status stays "needs_refinement"', () => {
     const seedArb = fc.integer({ min: 0, max: 100000 });
-    const kindArb = fc.constantFrom<{
-      kind: Artifact["kind"];
-      cap: V5CapabilityId;
-    }>(
-      { kind: "risk", cap: "risk.analyze" },
-      { kind: "synthesis", cap: "synthesis.merge" },
-      { kind: "report", cap: "report.write" },
-      { kind: "evidence", cap: "evidence.search" }
+    const kindArb = fc.constantFrom<{ kind: Artifact['kind']; cap: V5CapabilityId }>(
+      { kind: 'risk', cap: 'risk.analyze' },
+      { kind: 'synthesis', cap: 'synthesis.merge' },
+      { kind: 'report', cap: 'report.write' },
+      { kind: 'evidence', cap: 'evidence.search' }
     );
-    const intentArb = fc.constantFrom<UserIntervention["intent"]>(
-      "challenge",
-      "revise",
-      "clarify",
-      "expand"
-    );
+    const intentArb = fc.constantFrom<UserIntervention['intent']>('challenge', 'revise', 'clarify', 'expand');
     const targetExistsArb = fc.boolean();
 
     fc.assert(
-      fc.property(
-        seedArb,
-        kindArb,
-        intentArb,
-        targetExistsArb,
-        (seed, { kind, cap }, intent, targetExists) => {
-          let s = createInitialSessionState(
-            "分析权限系统的风险并给出最终报告",
-            `c2nc-${seed}`
-          );
-          s = commitTrusted(
-            s,
-            `art-${seed}`,
-            cap,
-            "综合",
-            kind,
-            `c2nc-${seed}-r0`
-          );
-          // Session was never converged.
-          fc.pre(s.goal.status === "needs_refinement");
+      fc.property(seedArb, kindArb, intentArb, targetExistsArb, (seed, { kind, cap }, intent, targetExists) => {
+        let s = createInitialSessionState('分析权限系统的风险并给出最终报告', `c2nc-${seed}`);
+        s = commitTrusted(s, `art-${seed}`, cap, '综合', kind, `c2nc-${seed}-r0`);
+        // Session was never converged.
+        fc.pre(s.goal.status === 'needs_refinement');
 
-          const intervention: UserIntervention = {
-            targetArtifactId: targetExists ? `art-${seed}` : `ghost-${seed}`,
-            intent,
-            text: "挑战/澄清",
-          } as UserIntervention;
+        const intervention: UserIntervention = {
+          targetArtifactId: targetExists ? `art-${seed}` : `ghost-${seed}`,
+          intent,
+          text: '挑战/澄清',
+        } as UserIntervention;
 
-          const next = invalidateForIntervention(s, intervention);
-          // Non-converged ⇒ no legitimate downgrade ⇒ unchanged.
-          expect(next.goal.status).toBe("needs_refinement");
-          expect(next.goal).toEqual(s.goal);
-        }
-      ),
+        const next = invalidateForIntervention(s, intervention);
+        // Non-converged ⇒ no legitimate downgrade ⇒ unchanged.
+        expect(next.goal.status).toBe('needs_refinement');
+        expect(next.goal).toEqual(s.goal);
+      }),
       { numRuns: 150 }
     );
   });
@@ -561,64 +444,41 @@ describe("PRESERVATION (¬C2): invalidateForIntervention leaves goal.status unch
 // SHARED PRESERVATION: GCOV-pass write, single-writer applyGoalConclusion, DERIVE P3
 // =====================================================================================
 
-describe("PRESERVATION (shared): GCOV-pass write, single-writer, DERIVE P3 invariants (baseline — PASSES on unfixed code)", () => {
+describe('PRESERVATION (shared): GCOV-pass write, single-writer, DERIVE P3 invariants (baseline — PASSES on unfixed code)', () => {
   it('GCOV-pass write path is unchanged: a converge turn over trusted upstreams writes "clear" (Req 3.5)', () => {
-    let s = createInitialSessionState(
-      "分析权限系统的风险并给出最终报告",
-      "pres-gcov-pass"
-    );
-    s = commitTrusted(s, "risk-1", "risk.analyze", "安全", "risk", "gp-r0");
+    let s = createInitialSessionState('分析权限系统的风险并给出最终报告', 'pres-gcov-pass');
+    s = commitTrusted(s, 'risk-1', 'risk.analyze', '安全', 'risk', 'gp-r0');
     // Evolved contract (V5.2/V5.3): critique.generate is required for complex goals.
-    s = commitTrusted(
-      s,
-      "crit-1",
-      "critique.generate",
-      "挑刺",
-      "risk",
-      "gp-r0c"
-    );
-    s = commitGroundedEvidence(s, "ev-ground-1", "gp-r0b");
-    s = commitTrusted(
-      s,
-      "synth-1",
-      "synthesis.merge",
-      "综合",
-      "synthesis",
-      "gp-r1"
-    );
+    s = commitTrusted(s, 'crit-1', 'critique.generate', '挑刺', 'risk', 'gp-r0c');
+    s = commitGroundedEvidence(s, 'ev-ground-1', 'gp-r0b');
+    s = commitTrusted(s, 'synth-1', 'synthesis.merge', '综合', 'synthesis', 'gp-r1');
 
     const { newState } = orchestrateReasoningTurn(s, {
-      turnId: "pres-gcov-pass-cv",
-      userText: "现在可以出最终报告了",
+      turnId: 'pres-gcov-pass-cv',
+      userText: '现在可以出最终报告了',
     });
     // GCOV passes ⇒ single-writer applyGoalConclusion writes the conclusion.
-    expect(newState.goal.status).toBe("clear");
+    expect(newState.goal.status).toBe('clear');
   });
 
-  it("applyGoalConclusion is a pure single-field writer: only goal.status changes, everything else deep-equals (Req 3.6)", () => {
-    const { state } = buildClearStateWithTrustedReport("pres-single-writer");
+  it('applyGoalConclusion is a pure single-field writer: only goal.status changes, everything else deep-equals (Req 3.6)', () => {
+    const { state } = buildClearStateWithTrustedReport('pres-single-writer');
     const before = structuredClone(state);
 
-    const downgraded = applyGoalConclusion(state, "needs_refinement");
+    const downgraded = applyGoalConclusion(state, 'needs_refinement');
     // The single writer must not mutate the input.
     expect(state).toEqual(before);
     // Only goal.status differs; all other goal fields and the rest of state are unchanged.
-    expect(downgraded.goal.status).toBe("needs_refinement");
-    expect({ ...downgraded.goal, status: undefined }).toEqual({
-      ...state.goal,
-      status: undefined,
-    });
-    expect({ ...downgraded, goal: undefined }).toEqual({
-      ...state,
-      goal: undefined,
-    });
+    expect(downgraded.goal.status).toBe('needs_refinement');
+    expect({ ...downgraded.goal, status: undefined }).toEqual({ ...state.goal, status: undefined });
+    expect({ ...downgraded, goal: undefined }).toEqual({ ...state, goal: undefined });
   });
 
-  it("DERIVE P3 unchanged: deriveNodeStatus changes only graph.nodes[].status on a rich session (Req 3.7)", () => {
-    const s = buildRichSession(7, "分析权限系统的风险并给出最终可行性报告", [
-      { text: "分析风险", trusted: true, stale: false },
-      { text: "综合证据", trusted: true, stale: false },
-      { text: "生成最终报告", trusted: false, stale: true },
+  it('DERIVE P3 unchanged: deriveNodeStatus changes only graph.nodes[].status on a rich session (Req 3.7)', () => {
+    const s = buildRichSession(7, '分析权限系统的风险并给出最终可行性报告', [
+      { text: '分析风险', trusted: true, stale: false },
+      { text: '综合证据', trusted: true, stale: false },
+      { text: '生成最终报告', trusted: false, stale: true },
     ]);
     expect((s.graph?.nodes || []).length).toBeGreaterThan(0);
     expect((s.artifacts || []).length).toBeGreaterThan(0);
@@ -629,23 +489,16 @@ describe("PRESERVATION (shared): GCOV-pass write, single-writer, DERIVE P3 invar
     assertDeriveReadOnly(clone, after);
   });
 
-  it("PROPERTY (DERIVE P3): for all generated session states, DERIVE leaves authoritative STATE deep-equal", () => {
+  it('PROPERTY (DERIVE P3): for all generated session states, DERIVE leaves authoritative STATE deep-equal', () => {
     const goalArb = fc.constantFrom(
-      "分析权限系统的风险并给出最终报告",
-      "整理会议纪要并输出摘要",
-      "权限系统安全审计报告",
-      "复杂风险评估与可行性报告"
+      '分析权限系统的风险并给出最终报告',
+      '整理会议纪要并输出摘要',
+      '权限系统安全审计报告',
+      '复杂风险评估与可行性报告'
     );
     const turnsArb = fc.array(
       fc.record({
-        text: fc.constantFrom(
-          "分析风险",
-          "综合证据",
-          "生成最终报告",
-          "先看边界",
-          "路线对比",
-          "继续推进"
-        ),
+        text: fc.constantFrom('分析风险', '综合证据', '生成最终报告', '先看边界', '路线对比', '继续推进'),
         trusted: fc.boolean(),
         stale: fc.boolean(),
       }),

@@ -63,11 +63,7 @@ class SectionErrorBoundary extends Component<
           className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] p-3 text-center text-[11px] text-[var(--muted-foreground)]"
           data-testid="section-error"
         >
-          {t(
-            this.props.locale,
-            "此区域加载失败",
-            "Failed to load this section"
-          )}
+          {t(this.props.locale, "此区域加载失败", "Failed to load this section")}
         </div>
       );
     }
@@ -127,7 +123,8 @@ function TaskOverviewSection({
       ? formatDuration(Date.now() - detail.createdAt, locale)
       : "—";
 
-  const creator = autopilot?.destination?.taskType || detail.kind || "—";
+  const creator =
+    autopilot?.destination?.taskType || detail.kind || "—";
 
   const tags = detail.departmentLabels ?? [];
 
@@ -163,7 +160,7 @@ function TaskOverviewSection({
       </div>
       {tags.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
-          {tags.map(tag => (
+          {tags.map((tag) => (
             <span
               key={tag}
               className="rounded-full bg-[var(--secondary)] px-2 py-0.5 text-[10px] text-[var(--secondary-foreground)]"
@@ -286,7 +283,7 @@ function LiveProgressSection({
           </span>
         </div>
         <div className="grid flex-1 grid-cols-2 gap-2">
-          {subMetrics.map(metric => (
+          {subMetrics.map((metric) => (
             <SubMetricItem
               key={metric.label}
               label={metric.label}
@@ -475,7 +472,11 @@ export function RightInfoPanel({
         >
           <Inbox size={32} className="text-[var(--muted-foreground)]" />
           <span className="text-[12px] text-[var(--muted-foreground)]">
-            {t(locale, "选择一个任务查看详情", "Select a task to view details")}
+            {t(
+              locale,
+              "选择一个任务查看详情",
+              "Select a task to view details"
+            )}
           </span>
         </div>
       )}

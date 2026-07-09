@@ -2,12 +2,7 @@ import { useEffect, useRef } from "react";
 import { FolderKanban, LoaderCircle, Search } from "lucide-react";
 
 import { RetryInlineNotice } from "@/components/tasks/RetryInlineNotice";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { workspaceStatusClass } from "@/components/workspace/workspace-tone";
 import { useI18n } from "@/i18n";
@@ -15,7 +10,10 @@ import type { MissionTaskSummary } from "@/lib/tasks-store";
 import { localizeTaskHubBriefText } from "@/lib/task-hub-copy";
 import { cn } from "@/lib/utils";
 
-import { formatTaskRelative, missionStatusTone } from "./task-helpers";
+import {
+  formatTaskRelative,
+  missionStatusTone,
+} from "./task-helpers";
 
 export interface TasksQueueProjectMeta {
   projectName: string | null;
@@ -28,7 +26,10 @@ function t(locale: string, zh: string, en: string) {
   return locale === "zh-CN" ? zh : en;
 }
 
-function taskStatusLabel(status: MissionTaskSummary["status"], locale: string) {
+function taskStatusLabel(
+  status: MissionTaskSummary["status"],
+  locale: string
+) {
   const zh: Record<MissionTaskSummary["status"], string> = {
     queued: "排队中",
     running: "执行中",
@@ -169,10 +170,18 @@ export function TasksQueueRail({
               {t(locale, `全部 ${tasks.length}`, `All ${tasks.length}`)}
             </span>
             <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
-              {t(locale, `执行中 ${runningCount}`, `Running ${runningCount}`)}
+              {t(
+                locale,
+                `执行中 ${runningCount}`,
+                `Running ${runningCount}`
+              )}
             </span>
             <span className="rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
-              {t(locale, `等待 ${waitingCount}`, `Waiting ${waitingCount}`)}
+              {t(
+                locale,
+                `等待 ${waitingCount}`,
+                `Waiting ${waitingCount}`
+              )}
             </span>
           </div>
         ) : null}
@@ -186,7 +195,9 @@ export function TasksQueueRail({
         style={{ scrollbarGutter: "stable both-edges" }}
       >
         <div
-          className={cn(isCompact ? "space-y-1.5 pt-1.5" : "space-y-2 pt-2.5")}
+          className={cn(
+            isCompact ? "space-y-1.5 pt-1.5" : "space-y-2 pt-2.5"
+          )}
         >
           {error ? (
             <RetryInlineNotice
@@ -303,11 +314,7 @@ export function TasksQueueRail({
                         {task.title}
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent
-                      side="right"
-                      align="start"
-                      className="max-w-[260px] text-xs z-[100] ml-2 break-words"
-                    >
+                    <TooltipContent side="right" align="start" className="max-w-[260px] text-xs z-[100] ml-2 break-words">
                       {task.title}
                     </TooltipContent>
                   </Tooltip>
@@ -324,11 +331,7 @@ export function TasksQueueRail({
                           {summary}
                         </div>
                       </TooltipTrigger>
-                      <TooltipContent
-                        side="right"
-                        align="start"
-                        className="max-w-[260px] text-xs z-[100] ml-2 break-words"
-                      >
+                      <TooltipContent side="right" align="start" className="max-w-[260px] text-xs z-[100] ml-2 break-words">
                         {summary}
                       </TooltipContent>
                     </Tooltip>

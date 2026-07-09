@@ -13,14 +13,7 @@ import AgentLoopPage, {
   shouldLoadAgentLoopOverview,
   shouldPollAgentLoopOverview,
 } from "./AgentLoopPage";
-import {
-  DashboardApp,
-  CliConfigForm,
-  QueueDefaultsView,
-  ProfileCrudView,
-  SettingsView,
-  shouldRequestSettingsForView,
-} from "./dashboard/DashboardApp";
+import { DashboardApp, CliConfigForm, QueueDefaultsView, ProfileCrudView, SettingsView, shouldRequestSettingsForView } from "./dashboard/DashboardApp";
 import { LlmKeyForm } from "./dashboard/settings/LlmKeysPanel";
 import { DiagnosticsView } from "./dashboard/settings/DiagnosticsPanel";
 
@@ -30,8 +23,7 @@ function jsonResponse(data: unknown, status = 200): any {
     ok: status >= 200 && status < 300,
     status,
     headers: {
-      get: (name: string) =>
-        name.toLowerCase() === "content-type" ? "application/json" : null,
+      get: (name: string) => (name.toLowerCase() === "content-type" ? "application/json" : null),
     },
     text: async () => body,
     json: async () => data,
@@ -51,10 +43,7 @@ vi.mock("react", async () => {
 
 vi.mock("@/pages/SlideRule", () => ({
   default: ({ embedded }: { embedded?: boolean }) => (
-    <main
-      data-embedded={embedded ? "true" : "false"}
-      data-testid="sliderule-page"
-    />
+    <main data-embedded={embedded ? "true" : "false"} data-testid="sliderule-page" />
   ),
 }));
 
@@ -73,63 +62,33 @@ describe("AgentLoopPage", () => {
     expect(getAgentLoopWorkbenchPath()).toBe("/agent-loop/workbench");
     expect(getAgentLoopSettingsPath()).toBe("/agent-loop/settings");
     expect(getAgentLoopRunPath("2026-06-27T01-02-03-004Z")).toBe(
-      "/agent-loop/runs/2026-06-27T01-02-03-004Z"
+      "/agent-loop/runs/2026-06-27T01-02-03-004Z",
     );
 
-    expect(parseAgentLoopLocation("/agent-loop")).toEqual({
-      kind: "sliderule",
-    });
-    expect(parseAgentLoopLocation("/agent-loop/sliderule")).toEqual({
-      kind: "sliderule",
-    });
-    expect(parseAgentLoopLocation("/agent-loop/workbench")).toEqual({
-      kind: "workbench",
-    });
-    expect(parseAgentLoopLocation("/agent-loop/workbench/legacy")).toEqual({
-      kind: "workbench-legacy",
-    });
-    expect(parseAgentLoopLocation("/agent-loop/skills")).toEqual({
-      kind: "skills",
-    });
-    expect(parseAgentLoopLocation("/agent-loop/settings")).toEqual({
-      kind: "settings",
-    });
-    expect(parseAgentLoopLocation("/agent-loop/settings/legacy")).toEqual({
-      kind: "settings-legacy",
-    });
-    expect(parseAgentLoopLocation("/agent-loop/runs/run%201")).toEqual({
-      kind: "detail",
-      runId: "run 1",
-    });
+    expect(parseAgentLoopLocation("/agent-loop")).toEqual({ kind: "sliderule" });
+    expect(parseAgentLoopLocation("/agent-loop/sliderule")).toEqual({ kind: "sliderule" });
+    expect(parseAgentLoopLocation("/agent-loop/workbench")).toEqual({ kind: "workbench" });
+    expect(parseAgentLoopLocation("/agent-loop/workbench/legacy")).toEqual({ kind: "workbench-legacy" });
+    expect(parseAgentLoopLocation("/agent-loop/skills")).toEqual({ kind: "skills" });
+    expect(parseAgentLoopLocation("/agent-loop/settings")).toEqual({ kind: "settings" });
+    expect(parseAgentLoopLocation("/agent-loop/settings/legacy")).toEqual({ kind: "settings-legacy" });
+    expect(parseAgentLoopLocation("/agent-loop/runs/run%201")).toEqual({ kind: "detail", runId: "run 1" });
   });
 
   it("subscribes live events only for background run ids and ignores SSE pings for refresh", () => {
     expect(
       resolveAgentLoopLiveEventRunId(
-        {
-          current: { runId: "legacy-state-run", backgroundRunId: null },
-          tasks: [],
-          counts: {},
-        },
-        { kind: "workbench-legacy" }
-      )
+        { current: { runId: "legacy-state-run", backgroundRunId: null }, tasks: [], counts: {} },
+        { kind: "workbench-legacy" },
+      ),
     ).toBeNull();
     expect(
       resolveAgentLoopLiveEventRunId(
-        {
-          current: { runId: "legacy-state-run", backgroundRunId: "bridge-run" },
-          tasks: [],
-          counts: {},
-        },
-        { kind: "workbench-legacy" }
-      )
+        { current: { runId: "legacy-state-run", backgroundRunId: "bridge-run" }, tasks: [], counts: {} },
+        { kind: "workbench-legacy" },
+      ),
     ).toBe("bridge-run");
-    expect(
-      resolveAgentLoopLiveEventRunId(null, {
-        kind: "detail",
-        runId: "detail-run",
-      })
-    ).toBe("detail-run");
+    expect(resolveAgentLoopLiveEventRunId(null, { kind: "detail", runId: "detail-run" })).toBe("detail-run");
 
     const refresh = vi.fn();
     const handlers = createAgentLoopLiveEventHandlers(refresh);
@@ -147,36 +106,27 @@ describe("AgentLoopPage", () => {
     expect(shouldLoadAgentLoopOverview({ kind: "settings" })).toBe(false);
     // 新工作台（主线观察台）自行拉取数据；legacy 驾驶舱才消费队列 overview
     expect(shouldLoadAgentLoopOverview({ kind: "workbench" })).toBe(false);
-    expect(shouldLoadAgentLoopOverview({ kind: "workbench-legacy" })).toBe(
-      true
-    );
-    expect(
-      shouldLoadAgentLoopOverview({ kind: "detail", runId: "run-1" })
-    ).toBe(false);
+    expect(shouldLoadAgentLoopOverview({ kind: "workbench-legacy" })).toBe(true);
+    expect(shouldLoadAgentLoopOverview({ kind: "detail", runId: "run-1" })).toBe(false);
 
     expect(
       shouldPollAgentLoopOverview(
-        {
-          queueRunning: true,
-          current: { backgroundRunId: "bridge-run", staleRun: false },
-          tasks: [],
-          counts: {},
-        },
+        { queueRunning: true, current: { backgroundRunId: "bridge-run", staleRun: false }, tasks: [], counts: {} },
         { kind: "sliderule" },
-        "bridge-run"
-      )
+        "bridge-run",
+      ),
     ).toBe(false);
     expect(
       resolveAgentLoopLiveEventRunId(
         { current: { backgroundRunId: "bridge-run" }, tasks: [], counts: {} },
-        { kind: "sliderule" }
-      )
+        { kind: "sliderule" },
+      ),
     ).toBeNull();
     expect(
       resolveAgentLoopLiveEventRunId(
         { current: { backgroundRunId: "bridge-run" }, tasks: [], counts: {} },
-        { kind: "workbench-legacy" }
-      )
+        { kind: "workbench-legacy" },
+      ),
     ).toBe("bridge-run");
 
     expect(shouldRequestSettingsForView("sliderule")).toBe(false);
@@ -199,18 +149,8 @@ describe("AgentLoopPage", () => {
       counts: {},
     };
 
-    expect(
-      resolveAgentLoopLiveEventRunId(stoppedOverview, {
-        kind: "workbench-legacy",
-      })
-    ).toBeNull();
-    expect(
-      shouldPollAgentLoopOverview(
-        stoppedOverview,
-        { kind: "workbench" },
-        "bridge-run"
-      )
-    ).toBe(false);
+    expect(resolveAgentLoopLiveEventRunId(stoppedOverview, { kind: "workbench-legacy" })).toBeNull();
+    expect(shouldPollAgentLoopOverview(stoppedOverview, { kind: "workbench" }, "bridge-run")).toBe(false);
   });
 
   it("allows the shell router to control DashboardApp settings views (整页 + legacy)", () => {
@@ -220,7 +160,7 @@ describe("AgentLoopPage", () => {
         payload={{ tasks: [], counts: {} }}
         view="settings"
         onViewChange={vi.fn()}
-      />
+      />,
     );
     expect(settingsHtml).toContain('data-testid="sliderule-settings-page"');
     expect(settingsHtml).not.toContain("native-settings-content");
@@ -231,7 +171,7 @@ describe("AgentLoopPage", () => {
         payload={{ tasks: [], counts: {} }}
         view="settings-legacy"
         onViewChange={vi.fn()}
-      />
+      />,
     );
     expect(legacyHtml).toContain("native-settings-content");
   });
@@ -242,10 +182,8 @@ describe("AgentLoopPage", () => {
         payload={{ tasks: [], counts: {} }}
         view="workbench-legacy"
         onViewChange={vi.fn()}
-        getViewPath={view =>
-          view === "sliderule" ? getAgentLoopSliderulePath() : `#${view}`
-        }
-      />
+        getViewPath={(view) => view === "sliderule" ? getAgentLoopSliderulePath() : `#${view}`}
+      />,
     );
 
     expect(html).toContain('href="/agent-loop/sliderule"');
@@ -258,10 +196,8 @@ describe("AgentLoopPage", () => {
         payload={{ tasks: [], counts: {} }}
         view="sliderule"
         onViewChange={vi.fn()}
-        getViewPath={view =>
-          view === "sliderule" ? getAgentLoopSliderulePath() : `#${view}`
-        }
-      />
+        getViewPath={(view) => view === "sliderule" ? getAgentLoopSliderulePath() : `#${view}`}
+      />,
     );
 
     expect(html).toContain("native-agent-shell");
@@ -279,17 +215,15 @@ describe("AgentLoopPage", () => {
         payload={{ tasks: [], counts: {} }}
         view="sliderule"
         onViewChange={vi.fn()}
-        getViewPath={view =>
-          view === "sliderule" ? getAgentLoopSliderulePath() : `#${view}`
-        }
-      />
+        getViewPath={(view) => view === "sliderule" ? getAgentLoopSliderulePath() : `#${view}`}
+      />,
     );
     const workbenchHtml = renderToStaticMarkup(
       <DashboardApp
         payload={{ tasks: [], counts: {} }}
         view="workbench-legacy"
         onViewChange={vi.fn()}
-      />
+      />,
     );
 
     expect(slideruleHtml).not.toContain("native-agent-topbar-actions");
@@ -302,17 +236,11 @@ describe("AgentLoopPage", () => {
         view="workbench-legacy"
         payload={{
           counts: {},
-          tasks: [
-            {
-              id: "task-1",
-              task: "agent-loop/tasks/foo.md",
-              lastRunId: "run 1",
-            },
-          ],
+          tasks: [{ id: "task-1", task: "agent-loop/tasks/foo.md", lastRunId: "run 1" }],
         }}
         getTaskRunPath={getAgentLoopRunPath}
         onOpenTask={vi.fn()}
-      />
+      />,
     );
 
     expect(html).toContain('href="/agent-loop/runs/run%201"');
@@ -346,14 +274,12 @@ describe("AgentLoopPage", () => {
         }}
         getTaskRunPath={getAgentLoopRunPath}
         onOpenTask={vi.fn()}
-      />
+      />,
     );
 
     expect(html).toContain("native-workbench-hero");
     expect(html).toContain("native-workbench-metrics");
-    expect(
-      (html.match(/native-metric-card/g) || []).length
-    ).toBeGreaterThanOrEqual(4);
+    expect((html.match(/native-metric-card/g) || []).length).toBeGreaterThanOrEqual(4);
     expect(html).toContain("native-table-toolbar");
     expect(html).toContain("native-task-inspector");
     expect(html).toContain("native-inspector-timeline");
@@ -386,7 +312,7 @@ describe("AgentLoopPage", () => {
           ],
         }}
         view="workbench-legacy"
-      />
+      />,
     );
 
     expect(html).toContain('data-testid="agentloop-task-closure-status"');
@@ -416,7 +342,7 @@ describe("AgentLoopPage", () => {
             },
           ] as any,
         }}
-      />
+      />,
     );
 
     expect(html).toContain("任务队列 1");
@@ -434,7 +360,7 @@ describe("AgentLoopPage", () => {
           },
           tasks: [],
         }}
-      />
+      />,
     );
 
     expect(html).toContain("native-workbench-grid");
@@ -477,7 +403,7 @@ describe("AgentLoopPage", () => {
           tasks,
         }}
         getTaskRunPath={getAgentLoopRunPath}
-      />
+      />,
     );
 
     expect(html).toMatch(/已落地[\s\S]*native-metric-value">52<\/div>/);
@@ -512,9 +438,7 @@ describe("agentLoopApi (wired capabilities)", () => {
     (global.fetch as any).mockResolvedValueOnce(jsonResponse([]));
 
     await api.fetchOverview();
-    expect((global.fetch as any).mock.calls[0]?.[0]).toContain(
-      "/api/agent-loop/queue/overview"
-    );
+    expect((global.fetch as any).mock.calls[0]?.[0]).toContain("/api/agent-loop/queue/overview");
   });
 
   it("fetchDetail and derived paths include reportPath/landingPath/statePath for UI buttons", async () => {
@@ -526,7 +450,7 @@ describe("agentLoopApi (wired capabilities)", () => {
         options: { task: "tasks/foo.md" },
         iterations: [],
         events: [],
-      })
+      }),
     );
 
     const d = await api.fetchDetail("2026-06-25T12-00-00-000Z");
@@ -541,21 +465,17 @@ describe("agentLoopApi (wired capabilities)", () => {
 
   it("fetchSettings/saveSettings hit the Python /settings surface", async () => {
     (global.fetch as any)
-      .mockResolvedValueOnce(
-        jsonResponse({ effective: { fixAgent: "grok" }, keys: {} })
-      )
+      .mockResolvedValueOnce(jsonResponse({ effective: { fixAgent: "grok" }, keys: {} }))
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
     const s = await api.fetchSettings();
-    expect((global.fetch as any).mock.calls[0]?.[0]).toContain(
-      "/api/agent-loop/settings"
-    );
+    expect((global.fetch as any).mock.calls[0]?.[0]).toContain("/api/agent-loop/settings");
     expect(s.effective || s).toBeTruthy();
 
     await api.saveSettings({ fixAgent: "codex" });
     expect(global.fetch).toHaveBeenLastCalledWith(
       expect.stringContaining("/api/agent-loop/settings"),
-      expect.objectContaining({ method: "POST" })
+      expect.objectContaining({ method: "POST" }),
     );
   });
 
@@ -567,13 +487,11 @@ describe("agentLoopApi (wired capabilities)", () => {
         mode: "bridge",
         providers: [{ provider: "grok", status: "ready" }],
         checkedAt: "2026-07-01T00:00:00Z",
-      })
+      }),
     );
 
     const h = await api.fetchProviderHealth();
-    expect((global.fetch as any).mock.calls[0]?.[0]).toContain(
-      "/api/agent-loop/provider-health"
-    );
+    expect((global.fetch as any).mock.calls[0]?.[0]).toContain("/api/agent-loop/provider-health");
     expect(h.backend || h.status).toBeTruthy();
     // provenance must be visible (Python-owned, not hidden)
     expect(String(JSON.stringify(h))).toMatch(/sliderule-python|python/i);
@@ -584,46 +502,25 @@ describe("agentLoopApi (wired capabilities)", () => {
     fetchSpy.mockClear();
     // use persistent resolved for this test to tolerate internal extra calls (snapshot in detail etc)
     const okJson = (data: any) => jsonResponse(data);
-    fetchSpy.mockResolvedValue(
-      okJson({ queueRunning: false, tasks: [], counts: {} })
-    );
+    fetchSpy.mockResolvedValue(okJson({ queueRunning: false, tasks: [], counts: {} }));
 
     await api.fetchOverview();
     expect(fetchSpy.mock.calls[0]?.[0]).toContain("/api/agent-loop/");
     // override for detail specific
-    fetchSpy.mockResolvedValueOnce(
-      okJson({
-        runId: "r1",
-        status: "PENDING",
-        task: null,
-        events: [],
-        artifacts: [],
-      })
-    );
+    fetchSpy.mockResolvedValueOnce(okJson({ runId: "r1", status: "PENDING", task: null, events: [], artifacts: [] }));
     fetchSpy.mockResolvedValueOnce(okJson({})); // snapshot fallback ok
     await api.fetchDetail("r1");
-    expect(
-      fetchSpy.mock.calls.some((call: any[]) =>
-        String(call[0]).includes("/api/agent-loop/runs/r1")
-      )
-    ).toBe(true);
+    expect(fetchSpy.mock.calls.some((call: any[]) => String(call[0]).includes("/api/agent-loop/runs/r1"))).toBe(true);
     fetchSpy.mockResolvedValue(okJson({ effective: {}, keys: {} }));
     await api.fetchSettings();
-    expect(
-      fetchSpy.mock.calls.some((call: any[]) =>
-        String(call[0]).includes("/api/agent-loop/settings")
-      )
-    ).toBe(true);
+    expect(fetchSpy.mock.calls.some((call: any[]) => String(call[0]).includes("/api/agent-loop/settings"))).toBe(true);
   });
 
   it("agentloop secret settings semantics 111 does not report secret save success against nonsecret backend", async () => {
     const fetchSpy = global.fetch as any;
     fetchSpy.mockClear();
     // never use real key values; use marker only to exercise the path
-    const res = await api.saveSettings({
-      grokApiKey: "REDACTED",
-      openaiApiKey: "REDACTED",
-    });
+    const res = await api.saveSettings({ grokApiKey: 'REDACTED', openaiApiKey: 'REDACTED' });
     // pure secret attempt must not hit the nonsecret /settings backend
     expect(fetchSpy).not.toHaveBeenCalled();
     // must not report success (ok:false + flag); callers must not toast persisted success
@@ -681,18 +578,15 @@ describe("agentLoopApi (wired capabilities)", () => {
     (global.fetch as any).mockResolvedValueOnce(
       jsonResponse({
         status: "queued-cancel",
-        message:
-          "cancel is a queued-cancel placeholder (unsupported by bridge; no process kill)",
+        message: "cancel is a queued-cancel placeholder (unsupported by bridge; no process kill)",
         exitCode: null,
         timedOut: false,
-      })
+      }),
     );
 
     const res = await api.cancelCurrent({});
     expect(res.status).toBe("queued-cancel");
-    expect(String(res.message || "")).toMatch(
-      /queued-cancel|placeholder|no process kill/i
-    );
+    expect(String(res.message || "")).toMatch(/queued-cancel|placeholder|no process kill/i);
     // ensure not pretending a stop success (distinguish from real cancellable)
     expect(res.status).not.toBe("stopped");
     expect(res.status).not.toBe("cancelled");
@@ -724,17 +618,11 @@ describe("agentLoopApi (wired capabilities)", () => {
 
     try {
       expect(api.buildRunEventsStreamUrl("run 1")).toBe(
-        "/api/agent-loop/runs/run%201/events/stream/v2?live=1"
+        "/api/agent-loop/runs/run%201/events/stream/v2?live=1",
       );
-      const unsubscribe = api.subscribeRunEvents("run 1", {
-        onEvent,
-        onSnapshot,
-        onPing,
-      });
+      const unsubscribe = api.subscribeRunEvents("run 1", { onEvent, onSnapshot, onPing });
       const instance = (FakeEventSource as any).last as FakeEventSource;
-      expect(instance.url).toBe(
-        "/api/agent-loop/runs/run%201/events/stream/v2?live=1"
-      );
+      expect(instance.url).toBe("/api/agent-loop/runs/run%201/events/stream/v2?live=1");
 
       listeners.event({ data: JSON.stringify({ type: "HEARTBEAT", seq: 1 }) });
       listeners.snapshot({ data: JSON.stringify({ finalized: false }) });
@@ -770,7 +658,7 @@ describe("agentLoopApi (wired capabilities)", () => {
           { id: "landing.json", kind: "landing" },
           { id: "state.json", kind: "state" },
         ],
-      })
+      }),
     );
 
     const d = await api.fetchDetail("2026-06-25T12-00-00-000Z");
@@ -842,7 +730,7 @@ describe("agentloop web bridge interaction 111", () => {
   });
 
   async function flushBridge(): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
   it("agentloop web bridge interaction 111 hydrates settings and surfaces unsupported semantics truthfully", async () => {
@@ -858,80 +746,59 @@ describe("agentloop web bridge interaction 111", () => {
     // legacy 驾驶舱才会——因此这里不再垫 overview 的 fetch mock。
     captured();
     expect(setSpy).toHaveBeenCalled();
-    const handler = setSpy.mock.calls.find(
-      call => typeof call[0] === "function"
-    )?.[0] as
+    const handler = setSpy.mock.calls.find((call) => typeof call[0] === "function")?.[0] as
       | ((type: string, extra?: Record<string, unknown>) => void)
       | undefined;
     expect(handler).toBeTruthy();
 
     (global.fetch as any).mockResolvedValueOnce(
       jsonResponse({
-        effective: {
-          fixAgent: "grok",
-          baseUrl: "http://x",
-          activeProfile: "runtime111",
-        },
+        effective: { fixAgent: "grok", baseUrl: "http://x", activeProfile: "runtime111" },
         keys: { grokApiKey: "configured" },
-      })
+      }),
     );
 
     handler!("getSettings", {});
     await flushBridge();
 
     const dispatched = (globalThis as any).__AGENT_LOOP_DISPATCHED__ as any[];
-    const settingsMsg = dispatched.find(
-      event => event?.data?.type === "settings"
-    );
+    const settingsMsg = dispatched.find((event) => event?.data?.type === "settings");
     expect(settingsMsg).toBeTruthy();
     expect(settingsMsg.data.payload.nonSensitive.fixAgent).toBe("grok");
     expect(settingsMsg.data.payload.activeProfile).toBe("runtime111");
 
     handler!("getQueueDefaults", {});
     await flushBridge();
-    const queueDefaultsMsg = dispatched.find(
-      event => event?.data?.type === "queueDefaults"
-    );
+    const queueDefaultsMsg = dispatched.find((event) => event?.data?.type === "queueDefaults");
     expect(queueDefaultsMsg).toBeTruthy();
     expect(queueDefaultsMsg.data.payload.unsupported).toBe(true);
-    expect(String(queueDefaultsMsg.data.payload.note || "")).toMatch(
-      /not supported|queue defaults/i
-    );
+    expect(String(queueDefaultsMsg.data.payload.note || "")).toMatch(/not supported|queue defaults/i);
 
     handler!("getDiagnostics", {});
     await flushBridge();
-    const diagnosticsMsg = dispatched.find(
-      event => event?.data?.type === "diagnostics"
-    );
+    const diagnosticsMsg = dispatched.find((event) => event?.data?.type === "diagnostics");
     expect(diagnosticsMsg).toBeTruthy();
     expect(diagnosticsMsg.data.payload.unsupported).toBe(true);
 
     handler!("listProfiles", {});
     await flushBridge();
-    const profilesMsg = dispatched.find(
-      event => event?.data?.type === "profiles"
-    );
+    const profilesMsg = dispatched.find((event) => event?.data?.type === "profiles");
     expect(profilesMsg).toBeTruthy();
     expect(profilesMsg.data.payload.unsupported).toBe(true);
 
     (global.fetch as any).mockResolvedValueOnce(
       jsonResponse({
         status: "queued-cancel",
-        message:
-          "cancel is a queued-cancel placeholder (unsupported by bridge; no process kill)",
-      })
+        message: "cancel is a queued-cancel placeholder (unsupported by bridge; no process kill)",
+      }),
     );
 
     handler!("stopRun", {});
     await flushBridge();
-    const cancelMsg = dispatched.find(
-      event => event?.data?.type === "cancelResult"
-    );
+    const cancelMsg = dispatched.find((event) => event?.data?.type === "cancelResult");
     expect(cancelMsg).toBeTruthy();
     expect(cancelMsg.data.payload.status).toBe("queued-cancel");
-    expect(String(cancelMsg.data.payload.message || "")).toMatch(
-      /queued-cancel|placeholder|no process kill/i
-    );
+    expect(String(cancelMsg.data.payload.message || "")).toMatch(/queued-cancel|placeholder|no process kill/i);
     expect(cancelMsg.data.payload.status).not.toBe("stopped");
 
     (global.fetch as any).mockResolvedValueOnce(
@@ -947,22 +814,13 @@ describe("agentloop web bridge interaction 111", () => {
           { id: "landing.json", kind: "landing" },
           { id: "state.json", kind: "state" },
         ],
-      })
+      }),
     );
 
-    handler!("openTask", {
-      taskPath: "tasks/foo.md",
-      runId: "2026-06-25T12-00-00-000Z",
-    });
+    handler!("openTask", { taskPath: "tasks/foo.md", runId: "2026-06-25T12-00-00-000Z" });
     await flushBridge();
 
-    expect(
-      (global.fetch as any).mock.calls.some((call: any[]) =>
-        String(call[0]).includes(
-          "/api/agent-loop/runs/2026-06-25T12-00-00-000Z"
-        )
-      )
-    ).toBe(true);
+    expect((global.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes("/api/agent-loop/runs/2026-06-25T12-00-00-000Z"))).toBe(true);
   });
 });
 
@@ -996,7 +854,7 @@ it("agentloop setting shell 112 renders standalone route without duplicate sideb
   // which would occupy width and duplicate main app navigation even on chrome-free route
   expect(html).not.toContain("native-sidebar");
   expect(html).not.toContain('class="native-sidebar"');
-  expect(html).not.toContain("ant-layout-sider");
+  expect(html).not.toContain('ant-layout-sider');
   // no 224px sidebar footprint in static structure
   expect(html).not.toContain("width:224");
 
@@ -1026,10 +884,7 @@ it("agentloop setting layout 112 renders summary cards and five tabs", () => {
   try {
     // force settings view for static layout contract test; prop only affects initial render state for test
     html = renderToStaticMarkup(
-      <DashboardApp
-        payload={{ tasks: [], counts: {} }}
-        initialView="settings-legacy"
-      />
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings-legacy" />
     );
   } finally {
     if (typeof origWindow === "undefined") {
@@ -1047,9 +902,7 @@ it("agentloop setting layout 112 renders summary cards and five tabs", () => {
   expect(html).toContain("Review Agent");
   expect(html).toContain("Fix Agent");
   // compact card/badge presence markers
-  expect(html).toMatch(
-    /active-profile|summary-card|profile-card|review-agent|fix-agent/i
-  );
+  expect(html).toMatch(/active-profile|summary-card|profile-card|review-agent|fix-agent/i);
 
   // exactly the five tabs in required order: CLI 配置, LLM Keys, 队列默认值, Diagnostics, Profiles
   expect(html).toContain("CLI 配置");
@@ -1076,10 +929,7 @@ it("agentloop setting cli config 112 renders two column worker form", () => {
   let html: string = "";
   try {
     html = renderToStaticMarkup(
-      <DashboardApp
-        payload={{ tasks: [], counts: {} }}
-        initialView="settings-legacy"
-      />
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings-legacy" />
     );
   } finally {
     if (typeof origWindow === "undefined") {
@@ -1107,10 +957,7 @@ it("agentloop setting cli config 112 renders two column worker form", () => {
   // now render CliConfigForm directly with queueRunning to cover lock semantics + explanation UI
   let lockHtml: string = "";
   const origWin2 = (globalThis as any).window;
-  (globalThis as any).window = {
-    __AGENT_LOOP_CSP_NONCE__: undefined,
-    __AGENT_LOOP_ASSETS__: {},
-  };
+  (globalThis as any).window = { __AGENT_LOOP_CSP_NONCE__: undefined, __AGENT_LOOP_ASSETS__: {} };
   try {
     lockHtml = renderToStaticMarkup(
       <CliConfigForm
@@ -1160,14 +1007,7 @@ it("agentloop setting queue defaults 112 previews supported patch only", () => {
     fooBarUnsupported: "no",
     someSecretToken: "tok-xyz",
   };
-  const supportedKeys = [
-    "fixAgent",
-    "reviewAgent",
-    "workerMaxTurns",
-    "workerMaxRetries",
-    "worktreeScope",
-    "queuePath",
-  ];
+  const supportedKeys = ["fixAgent", "reviewAgent", "workerMaxTurns", "workerMaxRetries", "worktreeScope", "queuePath"];
 
   // the util must exist and filter correctly (will fail until impl + wiring)
   const filtered = api.filterSupportedQueuePatch(proposedLeaky, supportedKeys);
@@ -1182,30 +1022,20 @@ it("agentloop setting queue defaults 112 previews supported patch only", () => {
   expect(filtered.patch.fooBarUnsupported).toBeUndefined();
   expect(filtered.patch.someSecretToken).toBeUndefined();
   expect(filtered.rejected.length).toBeGreaterThan(0);
-  expect(filtered.rejected.join("|")).toMatch(
-    /workerEnv|grokApiKey|fooBarUnsupported|secret/i
-  );
+  expect(filtered.rejected.join("|")).toMatch(/workerEnv|grokApiKey|fooBarUnsupported|secret/i);
 
   // UI surface for current defaults: line numbered code + copy (render the panel directly to capture content)
   const origWindow2 = (globalThis as any).window;
-  (globalThis as any).window = {
-    __AGENT_LOOP_CSP_NONCE__: undefined,
-    __AGENT_LOOP_ASSETS__: {},
-  };
+  (globalThis as any).window = { __AGENT_LOOP_CSP_NONCE__: undefined, __AGENT_LOOP_ASSETS__: {} };
   let qdHtml = "";
   try {
     qdHtml = renderToStaticMarkup(
       <QueueDefaultsView
-        data={{
-          defaults: { workerMaxTurns: 512, fixAgent: "grok" },
-          supportedKeys: ["fixAgent", "reviewAgent", "workerMaxTurns"],
-        }}
+        data={{ defaults: { workerMaxTurns: 512, fixAgent: "grok" }, supportedKeys: ["fixAgent", "reviewAgent", "workerMaxTurns"] }}
         preview={null}
         onPreview={() => {}}
         onApply={() => {}}
-        settingsData={{
-          nonSensitive: { fixAgent: "grok", workerMaxTurns: 512 },
-        }}
+        settingsData={{ nonSensitive: { fixAgent: "grok", workerMaxTurns: 512 } }}
       />
     );
   } finally {
@@ -1217,13 +1047,9 @@ it("agentloop setting queue defaults 112 previews supported patch only", () => {
   }
   // copy control for current json (button or aria) + line numbered styling classes
   expect(qdHtml).toMatch(/复制|copy|Copy/i);
-  expect(qdHtml).toMatch(
-    /native-queue-code|native-queue-code-card|native-queue-code-line|native-queue-code-no/i
-  );
+  expect(qdHtml).toMatch(/native-queue-code|native-queue-code-card|native-queue-code-line|native-queue-code-no/i);
   // preview section mentions patch / dry-run / supported
-  expect(qdHtml).toMatch(
-    /预览|preview|patch|dry-run|supported|支持|Proposed|Dry-run/i
-  );
+  expect(qdHtml).toMatch(/预览|preview|patch|dry-run|supported|支持|Proposed|Dry-run/i);
 });
 
 it("agentloop setting profiles 112 renders active profile table truthfully", () => {
@@ -1239,11 +1065,7 @@ it("agentloop setting profiles 112 renders active profile table truthfully", () 
   const profilesData = {
     profiles: {
       local: { fixAgent: "grok", reviewAgent: "codex", baseUrl: "" },
-      team: {
-        fixAgent: "codex",
-        reviewAgent: "grok",
-        baseUrl: "https://api.example.com",
-      },
+      team: { fixAgent: "codex", reviewAgent: "grok", baseUrl: "https://api.example.com" },
     },
     activeProfile: "team",
   };
@@ -1288,15 +1110,9 @@ it("agentloop setting profiles 112 renders active profile table truthfully", () 
 
   // update (TDD): also render single active profile case (truthful data shape from activeProfile/non-secret via listProfiles) to cover cannot-delete-only protection
   let singleHtml = "";
-  const singleData = {
-    profiles: { local: { fixAgent: "grok", reviewAgent: "codex" } },
-    activeProfile: "local",
-  };
+  const singleData = { profiles: { local: { fixAgent: "grok", reviewAgent: "codex" } }, activeProfile: "local" };
   const origWindow2 = (globalThis as any).window;
-  (globalThis as any).window = {
-    __AGENT_LOOP_CSP_NONCE__: undefined,
-    __AGENT_LOOP_ASSETS__: {},
-  };
+  (globalThis as any).window = { __AGENT_LOOP_CSP_NONCE__: undefined, __AGENT_LOOP_ASSETS__: {} };
   try {
     singleHtml = renderToStaticMarkup(
       <ProfileCrudView
@@ -1340,11 +1156,7 @@ it("agentloop setting profiles visual shell matches reference", () => {
           profiles: {
             ci: { fixAgent: "codex", reviewAgent: "none" },
             local: { fixAgent: "grok", reviewAgent: "codex" },
-            proxy: {
-              fixAgent: "grok",
-              reviewAgent: "grok",
-              baseUrl: "http://127.0.0.1:8080",
-            },
+            proxy: { fixAgent: "grok", reviewAgent: "grok", baseUrl: "http://127.0.0.1:8080" },
           },
           activeProfile: "local",
         }}
@@ -1389,9 +1201,7 @@ it("agentloop setting profiles visual shell matches reference", () => {
   expect(html).toContain("重命名");
   expect(html).toContain("复制");
   expect(html).toContain("删除");
-  expect(html).toContain(
-    "仅非敏感配置；不可删除最后一个 profile；运行中禁止切换与删除。"
-  );
+  expect(html).toContain("仅非敏感配置；不可删除最后一个 profile；运行中禁止切换与删除。");
   expect(html).not.toContain("max-width:720");
   expect(html).not.toContain("turns /");
 });
@@ -1413,10 +1223,7 @@ it("agentloop setting component split 112 preserves settings render contract", (
   try {
     // primary render contract via DashboardApp (orchestrator)
     html = renderToStaticMarkup(
-      <DashboardApp
-        payload={{ tasks: [], counts: {} }}
-        initialView="settings-legacy"
-      />
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings-legacy" />
     );
 
     // must still contain core settings UI contract elements (preserved behavior)
@@ -1459,16 +1266,8 @@ it("agentloop setting runtime linkage 112 applies nonsecret settings to run cont
   global.fetch = vi.fn().mockResolvedValue(jsonResponse({}));
   try {
     // direct api usage as exercised by run controls
-    await api.runQueue({
-      queue: "q.json",
-      fixAgent: "codex",
-      reviewAgent: "grok",
-      activeProfile: "team",
-      workerMaxTurns: 64,
-    });
-    let lastCall = (global.fetch as any).mock.calls[
-      (global.fetch as any).mock.calls.length - 1
-    ];
+    await api.runQueue({ queue: "q.json", fixAgent: "codex", reviewAgent: "grok", activeProfile: "team", workerMaxTurns: 64 });
+    let lastCall = (global.fetch as any).mock.calls[(global.fetch as any).mock.calls.length - 1];
     let body = lastCall?.[1]?.body || "";
     expect(body).toContain('"fixAgent":"codex"');
     expect(body).toContain('"reviewAgent":"grok"');
@@ -1476,15 +1275,8 @@ it("agentloop setting runtime linkage 112 applies nonsecret settings to run cont
     expect(body).toContain('"workerMaxTurns":64');
     expect(body).not.toMatch(/grokApiKey|openaiApiKey|sk-/i);
 
-    await api.runSingleTask({
-      task: "agent-loop/tasks/foo.md",
-      workerMaxRetries: 5,
-      worktreeScope: "task",
-      reviewAgent: "none",
-    });
-    lastCall = (global.fetch as any).mock.calls[
-      (global.fetch as any).mock.calls.length - 1
-    ];
+    await api.runSingleTask({ task: "agent-loop/tasks/foo.md", workerMaxRetries: 5, worktreeScope: "task", reviewAgent: "none" });
+    lastCall = (global.fetch as any).mock.calls[(global.fetch as any).mock.calls.length - 1];
     body = lastCall?.[1]?.body || "";
     expect(body).toContain('"workerMaxRetries":5');
     expect(body).toContain('"worktreeScope":"task"');
@@ -1492,18 +1284,11 @@ it("agentloop setting runtime linkage 112 applies nonsecret settings to run cont
     expect(body).not.toMatch(/apiKey|secret/i);
 
     // queuePath case: must result in queue field for backend + queuePath (fixes mapping)
-    await api.runQueue({
-      queuePath: "agent-loop/scripts/migration-queue.json",
-      fixAgent: "grok",
-    });
-    lastCall = (global.fetch as any).mock.calls[
-      (global.fetch as any).mock.calls.length - 1
-    ];
+    await api.runQueue({ queuePath: "agent-loop/scripts/migration-queue.json", fixAgent: "grok" });
+    lastCall = (global.fetch as any).mock.calls[(global.fetch as any).mock.calls.length - 1];
     body = lastCall?.[1]?.body || "";
     expect(body).toContain('"queue":"agent-loop/scripts/migration-queue.json"');
-    expect(body).toContain(
-      '"queuePath":"agent-loop/scripts/migration-queue.json"'
-    );
+    expect(body).toContain('"queuePath":"agent-loop/scripts/migration-queue.json"');
     expect(body).toContain('"fixAgent":"grok"');
     expect(body).not.toMatch(/apiKey|secret/i);
 
@@ -1518,17 +1303,16 @@ it("agentloop setting runtime linkage 112 applies nonsecret settings to run cont
   // Non-ready statuses (missing/skipped) MUST NOT derive ok:true.
   // Simulate the derivation contract that testProvider must honor.
   const buggyDerive = (entry: any) => !!(entry && (entry.status || entry.ok));
-  const honestDerive = (entry: any) =>
-    !!(entry && (entry.status === "ready" || entry.ok === true));
+  const honestDerive = (entry: any) => !!(entry && (entry.status === 'ready' || entry.ok === true));
   // documents old buggy behavior (truthy status was wrongly treated as ok)
-  expect(buggyDerive({ status: "missing", reason: "missing key" })).toBe(true);
-  expect(buggyDerive({ status: "skipped" })).toBe(true);
-  expect(buggyDerive({ status: "ready" })).toBe(true);
+  expect(buggyDerive({ status: 'missing', reason: 'missing key' })).toBe(true);
+  expect(buggyDerive({ status: 'skipped' })).toBe(true);
+  expect(buggyDerive({ status: 'ready' })).toBe(true);
   // honest version is what must be used (and is now implemented in testProvider)
-  expect(honestDerive({ status: "missing" })).toBe(false);
-  expect(honestDerive({ status: "ready" })).toBe(true);
+  expect(honestDerive({ status: 'missing' })).toBe(false);
+  expect(honestDerive({ status: 'ready' })).toBe(true);
   expect(honestDerive({ ok: true })).toBe(true);
-  expect(honestDerive({ status: "failed" })).toBe(false);
+  expect(honestDerive({ status: 'failed' })).toBe(false);
 
   // Also document: workbench must load settings on mount (not only view==='settings')
   // so that OverviewHeader/SidePanel labels and initial rtOpts reflect fix/review agents + activeProfile.
@@ -1549,10 +1333,7 @@ it("agentloop setting visual readiness 112 covers five reference tabs", () => {
   let html: string = "";
   try {
     html = renderToStaticMarkup(
-      <DashboardApp
-        payload={{ tasks: [], counts: {} }}
-        initialView="settings-legacy"
-      />
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings-legacy" />
     );
   } finally {
     if (typeof origWindow === "undefined") {
@@ -1599,8 +1380,7 @@ it("agentloop overview surfaces stale queue path and latest queue candidate", ()
         payload={{
           counts: { total: 16, queueTotal: 16 },
           queuePath: "agent-loop/scripts/sliderule-v2-skills-113-queue.json",
-          latestQueuePath:
-            "agent-loop/scripts/sliderule-v2-hardening-115-queue.json",
+          latestQueuePath: "agent-loop/scripts/sliderule-v2-hardening-115-queue.json",
           queueStale: true,
           tasks: [
             {
@@ -1636,10 +1416,7 @@ it("agentloop setting center visual shell matches SlideRule reference", () => {
   let html = "";
   try {
     html = renderToStaticMarkup(
-      <DashboardApp
-        payload={{ tasks: [], counts: {} }}
-        initialView="settings-legacy"
-      />
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings-legacy" />
     );
   } finally {
     if (typeof origWindow === "undefined") {
@@ -1690,13 +1467,7 @@ it("agentloop setting llm keys visual shell matches reference", () => {
         }}
         onSave={() => {}}
         providerTests={[
-          {
-            provider: "openai",
-            status: "ready",
-            durationMs: 42,
-            reason: "cached",
-            checkedAt: "2026-06-25T00:00:00.000Z",
-          },
+          { provider: "openai", status: "ready", durationMs: 42, reason: "cached", checkedAt: "2026-06-25T00:00:00.000Z" },
         ]}
         workerCliTests={[
           { worker: "grok", status: "ok", durationMs: 18, reason: "found" },
@@ -1806,9 +1577,7 @@ it("agentloop setting queue defaults visual shell matches reference", () => {
   expect(html).toContain("native-json-boolean");
   expect(html).not.toContain("max-width:620");
   expect(html).not.toContain("&quot;workerEnv&quot;");
-  expect(html).not.toMatch(
-    /RAW_SECRET|sk-[a-z0-9]|&quot;apiKey&quot;|apiKey:\s/i
-  );
+  expect(html).not.toMatch(/RAW_SECRET|sk-[a-z0-9]|&quot;apiKey&quot;|apiKey:\s/i);
 });
 
 it("agentloop setting diagnostics visual shell matches reference", () => {
@@ -1976,7 +1745,10 @@ it("agentloop dashboard topbar renders normalized python health status", () => {
   });
 
   const html = renderToStaticMarkup(
-    <DashboardApp payload={{ tasks: [], counts: {} }} view="workbench-legacy" />
+    <DashboardApp
+      payload={{ tasks: [], counts: {} }}
+      view="workbench-legacy"
+    />,
   );
 
   expect(pythonHealth.service.label).toBe("Python ready");
@@ -1996,9 +1768,10 @@ it("agentloop python health adapter preserves degraded and missing config states
   expect(vm.service.status).toBe("degraded");
   expect(vm.service.label).toBe("Python degraded");
   expect(vm.hasMissingConfig).toBe(true);
-  expect(
-    vm.providers.map(provider => `${provider.name}:${provider.readiness}`)
-  ).toEqual(["grok:missing-config", "codex:offline"]);
+  expect(vm.providers.map((provider) => `${provider.name}:${provider.readiness}`)).toEqual([
+    "grok:missing-config",
+    "codex:offline",
+  ]);
 });
 
 it("agentloop workbench 105 shows manual queue landing as applied", () => {
@@ -2007,8 +1780,7 @@ it("agentloop workbench 105 shows manual queue landing as applied", () => {
       payload={{
         counts: { total: 48, queueTotal: 48, done: 48, reviewed: 48 },
         queueRunning: false,
-        queuePath:
-          "agent-loop/scripts/backend-python-total-cutover-105-queue.json",
+        queuePath: "agent-loop/scripts/backend-python-total-cutover-105-queue.json",
         landing: {
           status: "APPLIED_TO_MAIN_MANUAL",
           appliedToMain: true,
@@ -2020,7 +1792,7 @@ it("agentloop workbench 105 shows manual queue landing as applied", () => {
         tasks: [],
       }}
       view="workbench-legacy"
-    />
+    />,
   );
 
   expect(html).toContain("Queue landing applied to main");
@@ -2032,7 +1804,7 @@ it("agentloop workbench 105 shows manual queue landing as applied", () => {
 it("agentloop dashboard shell constrains content to an internal scroll area", () => {
   const css = require("fs").readFileSync(
     require("path").join(__dirname, "dashboard", "dashboard.css"),
-    "utf8"
+    "utf8",
   );
 
   expect(css).toMatch(/\.native-dashboard\s*\{[\s\S]*?height:\s*100%/);
@@ -2045,10 +1817,10 @@ it("agentloop dashboard shell constrains content to an internal scroll area", ()
 it("agentloop workbench cards stretch to their grid columns", () => {
   const css = require("fs").readFileSync(
     require("path").join(__dirname, "dashboard", "dashboard.css"),
-    "utf8"
+    "utf8",
   );
 
   expect(css).toMatch(
-    /\.native-task-table-card,\s*[\r\n]+\.native-task-inspector\s*\{[^}]*width:\s*100%/
+    /\.native-task-table-card,\s*[\r\n]+\.native-task-inspector\s*\{[^}]*width:\s*100%/,
   );
 });

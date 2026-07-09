@@ -381,10 +381,7 @@ export function LaunchOperatorActionRail({
               "max-w-[220px] !gap-1 !px-2 !py-1 !text-xs font-medium"
             )}
             title={[
-              missionOperatorActionLabel(
-                latestAction.action as ActionKind,
-                locale
-              ),
+              missionOperatorActionLabel(latestAction.action as ActionKind, locale),
               latestSummary,
               formatTaskRelative(latestAction.createdAt, locale),
             ]
@@ -393,10 +390,7 @@ export function LaunchOperatorActionRail({
           >
             <Clock3 className="size-3.5" />
             <span className="truncate">
-              {missionOperatorActionLabel(
-                latestAction.action as ActionKind,
-                locale
-              )}
+              {missionOperatorActionLabel(latestAction.action as ActionKind, locale)}
               {latestSummary ? ` / ${latestSummary}` : ""}
             </span>
           </span>

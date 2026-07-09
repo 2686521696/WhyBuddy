@@ -10,12 +10,7 @@
 import React from "react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart } from "echarts/charts";
-import {
-  GridComponent,
-  TooltipComponent,
-  DatasetComponent,
-  TitleComponent,
-} from "echarts/components";
+import { GridComponent, TooltipComponent, DatasetComponent, TitleComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 
 echarts.use([
@@ -35,11 +30,7 @@ interface EchartsChartProps {
   ariaLabel?: string;
 }
 
-export default function EchartsChart({
-  option,
-  height = 200,
-  ariaLabel,
-}: EchartsChartProps) {
+export default function EchartsChart({ option, height = 200, ariaLabel }: EchartsChartProps) {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const chartRef = React.useRef<echarts.ECharts | null>(null);
 

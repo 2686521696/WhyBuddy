@@ -20,10 +20,7 @@ import type {
   RbacRuntimeDecision,
   RbacRuntimeRequest,
 } from "./rbacModel";
-import {
-  RBAC_PDP_EXPLAIN_EVIDENCE,
-  RBAC_RUNTIME_FAIL_CLOSED,
-} from "./rbacModel";
+import { RBAC_PDP_EXPLAIN_EVIDENCE, RBAC_RUNTIME_FAIL_CLOSED } from "./rbacModel";
 export { RBAC_PDP_EXPLAIN_EVIDENCE, RBAC_RUNTIME_FAIL_CLOSED };
 
 // ---------------------------------------------------------------------------
@@ -41,10 +38,9 @@ function findDuplicates(ids: string[]): string[] {
 }
 
 /** Detect cycles / unresolved parents in a parent-pointer tree. Returns offending node ids. */
-function treeFaults(nodes: Array<{ id: string; parentId: string | null }>): {
-  cycles: string[];
-  danglingParents: Array<{ id: string; parentId: string }>;
-} {
+function treeFaults(
+  nodes: Array<{ id: string; parentId: string | null }>,
+): { cycles: string[]; danglingParents: Array<{ id: string; parentId: string }> } {
   const byId = new Map(nodes.map(n => [n.id, n]));
   const cycles: string[] = [];
   const danglingParents: Array<{ id: string; parentId: string }> = [];
@@ -76,9 +72,7 @@ function sanitizeId(raw: string): string {
 // ---------------------------------------------------------------------------
 
 /** Detect cycles in role inheritsRoleIds graph (supports multi-inherit). Returns offending role ids. */
-function roleInheritanceCycles(
-  roles: Array<{ id: string; inheritsRoleIds?: string[] }>
-): string[] {
+function roleInheritanceCycles(roles: Array<{ id: string; inheritsRoleIds?: string[] }>): string[] {
   const byId = new Map(roles.map(r => [r.id, r]));
   const cycles: string[] = [];
   const visited = new Set<string>();
@@ -105,7 +99,7 @@ function roleInheritanceCycles(
 /** Expand direct roles to all transitively inherited (deduped). Breaks on cycles to remain safe. */
 function expandEffectiveRoles(
   roles: Array<{ id: string; inheritsRoleIds?: string[] }>,
-  direct: string[]
+  direct: string[],
 ): string[] {
   const byId = new Map(roles.map(r => [r.id, r]));
   const result = new Set<string>();
@@ -126,10 +120,7 @@ function expandEffectiveRoles(
 }
 
 /** Collect union of permissionCodes from a role set after inheritance expansion. */
-function getEffectivePermissionCodes(
-  model: RbacModel,
-  directRoleIds: string[]
-): string[] {
+function getEffectivePermissionCodes(model: RbacModel, directRoleIds: string[]): string[] {
   const effRoles = expandEffectiveRoles(model.roles, directRoleIds);
   const permSet = new Set<string>();
   const roleMap = new Map(model.roles.map(r => [r.id, r]));
@@ -141,10 +132,7 @@ function getEffectivePermissionCodes(
 }
 
 /** 115.10.05: pure decision helper for RBAC_DECISION_FAIL_CLOSED evidence shape. */
-function failClosedDecision(
-  reason: string,
-  extra?: Partial<PolicyDecision>
-): PolicyDecision {
+function failClosedDecision(reason: string, extra?: Partial<PolicyDecision>): PolicyDecision {
   return { allow: false, code: "RBAC_DECISION_FAIL_CLOSED", reason, ...extra };
 }
 
@@ -154,32 +142,21 @@ function failClosedDecision(
  * When rule.permissionCode is present, match ONLY if the request targets exactly that permissionCode
  * (resolved from action+resourceType). This ensures permission scope precedence is precise and
  * does not degrade to row scope or mis-deny other permissions on the same resource. */
-function matchesDenyRule(
-  rule: PolicyRule,
-  req: PolicyContext,
-  effectiveRoleIds: string[],
-  targetPermissionCode?: string
-): boolean {
+function matchesDenyRule(rule: PolicyRule, req: PolicyContext, effectiveRoleIds: string[], targetPermissionCode?: string): boolean {
   if (rule.effect !== "deny") return false;
   if (rule.tenantId && rule.tenantId !== req.tenantId) return false;
   if (rule.roleId && !effectiveRoleIds.includes(rule.roleId)) return false;
   if (rule.resourceType && rule.resourceType !== req.resourceType) return false;
   if (rule.permissionCode) {
     // permission-scoped deny must exactly hit the permission the request is exercising
-    if (!targetPermissionCode || rule.permissionCode !== targetPermissionCode)
-      return false;
+    if (!targetPermissionCode || rule.permissionCode !== targetPermissionCode) return false;
   }
   if (rule.fieldRef || rule.field) {
     // 115.10.07: prefer fieldRef (entity.field SSOT) but extract key for runtime fieldContext match (compat)
     const raw = rule.fieldRef || rule.field || "";
     const ruleFieldKey: string = raw.split(".").pop() || raw;
-    const hasField =
-      (req.fieldContext.fields ?? []).includes(ruleFieldKey) ||
-      (req.fieldContext.attributes &&
-        Object.prototype.hasOwnProperty.call(
-          req.fieldContext.attributes,
-          ruleFieldKey
-        ));
+    const hasField = (req.fieldContext.fields ?? []).includes(ruleFieldKey) ||
+      (req.fieldContext.attributes && Object.prototype.hasOwnProperty.call(req.fieldContext.attributes, ruleFieldKey));
     if (!hasField) return false;
   }
   return true;
@@ -193,22 +170,8 @@ function matchesDenyRule(
  */
 export const RBAC_RUNTIME_SOD_DENIED = "RBAC_RUNTIME_SOD_DENIED";
 
-export function evaluateRbacSodPolicy(
-  model: RbacModel,
-  request: PolicyContext
-): {
-  denied: boolean;
-  ruleId?: string;
-  reasonCode?: string;
-  reason?: string;
-  matchedRoles?: string[];
-} {
-  if (
-    !model ||
-    !request ||
-    !request.subject ||
-    !Array.isArray(request.subject.roleIds)
-  ) {
+export function evaluateRbacSodPolicy(model: RbacModel, request: PolicyContext): { denied: boolean; ruleId?: string; reasonCode?: string; reason?: string; matchedRoles?: string[] } {
+  if (!model || !request || !request.subject || !Array.isArray(request.subject.roleIds)) {
     return { denied: false };
   }
   const direct = request.subject.roleIds;
@@ -310,10 +273,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
   },
 
   // -- THE GATE ------------------------------------------------------------
-  validate(
-    model: RbacModel,
-    ctx?: ValidateContext
-  ): ReturnType<Skill<RbacModel>["validate"]> {
+  validate(model: RbacModel, ctx?: ValidateContext): ReturnType<Skill<RbacModel>["validate"]> {
     const f: Finding[] = [];
 
     const roleIds = new Set(model.roles.map(r => r.id));
@@ -325,34 +285,13 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
 
     // 1) Uniqueness ---------------------------------------------------------
     for (const [label, dups, code] of [
-      [
-        "role id",
-        findDuplicates(model.roles.map(r => r.id)),
-        "RBAC_DUP_ROLE_ID",
-      ],
-      [
-        "permission code",
-        findDuplicates(model.permissions.map(p => p.code)),
-        "RBAC_DUP_PERMISSION_CODE",
-      ],
-      [
-        "menu id",
-        findDuplicates(model.menus.map(m => m.id)),
-        "RBAC_DUP_MENU_ID",
-      ],
-      [
-        "user id",
-        findDuplicates(model.users.map(u => u.id)),
-        "RBAC_DUP_USER_ID",
-      ],
+      ["role id", findDuplicates(model.roles.map(r => r.id)), "RBAC_DUP_ROLE_ID"],
+      ["permission code", findDuplicates(model.permissions.map(p => p.code)), "RBAC_DUP_PERMISSION_CODE"],
+      ["menu id", findDuplicates(model.menus.map(m => m.id)), "RBAC_DUP_MENU_ID"],
+      ["user id", findDuplicates(model.users.map(u => u.id)), "RBAC_DUP_USER_ID"],
     ] as const) {
       for (const dup of dups) {
-        f.push({
-          code,
-          severity: "error",
-          path: `${label}=${dup}`,
-          message: `重复的${label}：${dup}`,
-        });
+        f.push({ code, severity: "error", path: `${label}=${dup}`, message: `重复的${label}：${dup}` });
       }
     }
 
@@ -522,7 +461,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
         severity: "error",
         path: `roles[${id}].inheritsRoleIds`,
         message: `角色继承存在环：${id}`,
-      })
+      }),
     );
 
     // perm-based SoD now checks direct + inherited permissions
@@ -591,12 +530,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
     ] as const) {
       const { cycles, danglingParents } = treeFaults(nodes);
       cycles.forEach(id =>
-        f.push({
-          code: dupCode,
-          severity: "error",
-          path: `${label}[${id}]`,
-          message: `${label}树存在环：${id}`,
-        })
+        f.push({ code: dupCode, severity: "error", path: `${label}[${id}]`, message: `${label}树存在环：${id}` }),
       );
       danglingParents.forEach(({ id, parentId }) =>
         f.push({
@@ -604,7 +538,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
           severity: "error",
           path: `${label}[${id}].parentId`,
           message: `${label}「${id}」的父级不存在：${parentId}`,
-        })
+        }),
       );
     }
 
@@ -641,11 +575,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
     // 115.10.07: policy row (resourceType) and field (fieldRef/field) refs -> DataModel SSOT
     // Warn when SSOT surface not connected; error when connected but ref missing.
     const dmEntity = ctx?.external?.datamodel?.entity;
-    const dmField =
-      ctx?.external?.datamodel?.field ??
-      (ctx?.external?.datamodel?.fields
-        ? (ctx.external.datamodel.fields as any[]).map((f: any) => f.ref)
-        : undefined);
+    const dmField = ctx?.external?.datamodel?.field ?? (ctx?.external?.datamodel?.fields ? (ctx.external.datamodel.fields as any[]).map((f: any) => f.ref) : undefined);
     (model.policyRules ?? []).forEach(pr => {
       if (pr.resourceType) {
         if (dmEntity === undefined) {
@@ -666,9 +596,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
       }
       let fieldRefVal: string | undefined = pr.fieldRef;
       if (!fieldRefVal && pr.field) {
-        fieldRefVal = pr.resourceType
-          ? `${pr.resourceType}.${pr.field}`
-          : pr.field;
+        fieldRefVal = pr.resourceType ? `${pr.resourceType}.${pr.field}` : pr.field;
       }
       if (fieldRefVal) {
         if (dmField === undefined) {
@@ -706,226 +634,99 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
     const nodes: Projection["nodes"] = [];
     const edges: Projection["edges"] = [];
 
-    model.roles.forEach(r =>
-      nodes.push({
-        id: `role_${sanitizeId(r.id)}`,
-        label: r.name,
-        kind: "role",
-      })
-    );
+    model.roles.forEach(r => nodes.push({ id: `role_${sanitizeId(r.id)}`, label: r.name, kind: "role" }));
     model.permissions.forEach(p =>
-      nodes.push({
-        id: `perm_${sanitizeId(p.code)}`,
-        label: p.code,
-        kind: "permission",
-      })
+      nodes.push({ id: `perm_${sanitizeId(p.code)}`, label: p.code, kind: "permission" }),
     );
-    model.menus.forEach(m =>
-      nodes.push({
-        id: `menu_${sanitizeId(m.id)}`,
-        label: m.name,
-        kind: "menu",
-      })
-    );
-    model.users.forEach(u =>
-      nodes.push({
-        id: `user_${sanitizeId(u.id)}`,
-        label: u.name,
-        kind: "user",
-      })
-    );
-    model.dataRules.forEach(d =>
-      nodes.push({
-        id: `rule_${sanitizeId(d.id)}`,
-        label: d.name,
-        kind: "dataRule",
-      })
-    );
+    model.menus.forEach(m => nodes.push({ id: `menu_${sanitizeId(m.id)}`, label: m.name, kind: "menu" }));
+    model.users.forEach(u => nodes.push({ id: `user_${sanitizeId(u.id)}`, label: u.name, kind: "user" }));
+    model.dataRules.forEach(d => nodes.push({ id: `rule_${sanitizeId(d.id)}`, label: d.name, kind: "dataRule" }));
 
     // PDP surfaces derived from model declarations (no hardcoded non-derived nodes)
     nodes.push({ id: "pdp_rbac", label: "RBAC PDP", kind: "pdp-host" });
     if (model.failClosed) {
-      nodes.push({
-        id: "pdp_fail_closed",
-        label: "fail-closed",
-        kind: "pdp-posture",
-      });
+      nodes.push({ id: "pdp_fail_closed", label: "fail-closed", kind: "pdp-posture" });
     }
-    const hasInherits = model.roles.some(
-      r => (r.inheritsRoleIds ?? []).length > 0
-    );
+    const hasInherits = model.roles.some(r => (r.inheritsRoleIds ?? []).length > 0);
     if (hasInherits) {
-      nodes.push({
-        id: "pdp_inheritance",
-        label: "inheritance",
-        kind: "inheritance",
-      });
+      nodes.push({ id: "pdp_inheritance", label: "inheritance", kind: "inheritance" });
     }
     (model.sodRules ?? []).forEach(sr => {
-      nodes.push({
-        id: `sod_${sanitizeId(sr.id)}`,
-        label: sr.name,
-        kind: "sod",
-      });
+      nodes.push({ id: `sod_${sanitizeId(sr.id)}`, label: sr.name, kind: "sod" });
     });
     (model.sodConstraints ?? []).forEach(sc => {
-      nodes.push({
-        id: `sodc_${sanitizeId(sc.name)}`,
-        label: sc.name,
-        kind: "sod",
-      });
+      nodes.push({ id: `sodc_${sanitizeId(sc.name)}`, label: sc.name, kind: "sod" });
     });
     // 115.10.03: surface self-grant and dual-control SoD policies in projection
     (model.selfGrantDenials ?? []).forEach(sg => {
-      nodes.push({
-        id: `sod_self_${sanitizeId(sg.id)}`,
-        label: sg.name,
-        kind: "sod",
-      });
+      nodes.push({ id: `sod_self_${sanitizeId(sg.id)}`, label: sg.name, kind: "sod" });
     });
     (model.dualControlPolicies ?? []).forEach(dc => {
-      nodes.push({
-        id: `sod_dual_${sanitizeId(dc.id)}`,
-        label: dc.name,
-        kind: "sod",
-      });
+      nodes.push({ id: `sod_dual_${sanitizeId(dc.id)}`, label: dc.name, kind: "sod" });
     });
     // 115.10.06: surface explicit allow/deny policy effects and precedence contract
     // 115.10.08: surface policy version/lifecycle in diagram nodes (advances V2 sample semantics)
-    const hasPolicyLifecycle = (model.policyRules ?? []).some(
-      pr => !!pr.lifecycleState || !!pr.version
-    );
+    const hasPolicyLifecycle = (model.policyRules ?? []).some(pr => !!pr.lifecycleState || !!pr.version);
     if (hasPolicyLifecycle) {
-      nodes.push({
-        id: "pdp_policy_lifecycle",
-        label: "policy-lifecycle",
-        kind: "lifecycle" as any,
-      });
+      nodes.push({ id: "pdp_policy_lifecycle", label: "policy-lifecycle", kind: "lifecycle" as any });
     }
     (model.policyRules ?? []).forEach(pr => {
       const k = pr.effect === "deny" ? "pdp-deny" : "policy";
       const ver = pr.version ? `@${pr.version}` : "";
       const st = pr.lifecycleState ? `:${pr.lifecycleState}` : "";
-      nodes.push({
-        id: `policy_${sanitizeId(pr.id)}`,
-        label:
-          `${pr.effect} ${pr.permissionCode || pr.resourceType || pr.fieldRef || pr.field || pr.roleId || ""}${ver}${st}`.trim(),
-        kind: k as any,
-      });
+      nodes.push({ id: `policy_${sanitizeId(pr.id)}`, label: `${pr.effect} ${pr.permissionCode || pr.resourceType || pr.fieldRef || pr.field || pr.roleId || ""}${ver}${st}`.trim(), kind: k as any });
       if (pr.lifecycleState) {
-        nodes.push({
-          id: `lifecycle_${sanitizeId(pr.id)}`,
-          label: `${pr.lifecycleState}${ver}`,
-          kind: "lifecycle" as any,
-        });
+        nodes.push({ id: `lifecycle_${sanitizeId(pr.id)}`, label: `${pr.lifecycleState}${ver}`, kind: "lifecycle" as any });
       }
     });
     if ((model.policyRules ?? []).length > 0) {
-      nodes.push({
-        id: "pdp_precedence",
-        label: "deny-over-allow",
-        kind: "precedence",
-      });
+      nodes.push({ id: "pdp_precedence", label: "deny-over-allow", kind: "precedence" });
     }
     const decisionCodes = ["RBAC_DECISION_ALLOW", "RBAC_DECISION_FAIL_CLOSED"];
     decisionCodes.forEach(dc => {
-      nodes.push({
-        id: `decision_${sanitizeId(dc)}`,
-        label: dc,
-        kind: "decision",
-      });
+      nodes.push({ id: `decision_${sanitizeId(dc)}`, label: dc, kind: "decision" });
     });
 
     model.roles.forEach(r => {
       r.permissionCodes.forEach(pc =>
-        edges.push({
-          from: `role_${sanitizeId(r.id)}`,
-          to: `perm_${sanitizeId(pc)}`,
-          label: "拥有",
-          kind: "grant",
-        })
+        edges.push({ from: `role_${sanitizeId(r.id)}`, to: `perm_${sanitizeId(pc)}`, label: "拥有", kind: "grant" }),
       );
       r.menuIds.forEach(mid =>
-        edges.push({
-          from: `role_${sanitizeId(r.id)}`,
-          to: `menu_${sanitizeId(mid)}`,
-          label: "可见",
-          kind: "menu",
-        })
+        edges.push({ from: `role_${sanitizeId(r.id)}`, to: `menu_${sanitizeId(mid)}`, label: "可见", kind: "menu" }),
       );
     });
     model.users.forEach(u =>
       u.roleIds.forEach(rid =>
-        edges.push({
-          from: `user_${sanitizeId(u.id)}`,
-          to: `role_${sanitizeId(rid)}`,
-          label: "是",
-          kind: "assign",
-        })
-      )
+        edges.push({ from: `user_${sanitizeId(u.id)}`, to: `role_${sanitizeId(rid)}`, label: "是", kind: "assign" }),
+      ),
     );
     model.dataRules.forEach(d => {
       d.roleIds.forEach(rid =>
-        edges.push({
-          from: `rule_${sanitizeId(d.id)}`,
-          to: `role_${sanitizeId(rid)}`,
-          label: "约束",
-          kind: "data",
-        })
+        edges.push({ from: `rule_${sanitizeId(d.id)}`, to: `role_${sanitizeId(rid)}`, label: "约束", kind: "data" }),
       );
       // cross refs use typed surfaces + orchestrator cross wiring (removed fake dm_ external line here)
     });
 
     // link PDP host for visibility of delegation surface
     if (model.failClosed) {
-      edges.push({
-        from: "pdp_rbac",
-        to: "pdp_fail_closed",
-        label: "posture",
-        kind: "pdp",
-      });
+      edges.push({ from: "pdp_rbac", to: "pdp_fail_closed", label: "posture", kind: "pdp" });
     }
     decisionCodes.forEach(dc => {
-      edges.push({
-        from: "pdp_rbac",
-        to: `decision_${sanitizeId(dc)}`,
-        label: "decides",
-        kind: "pdp",
-      });
+      edges.push({ from: "pdp_rbac", to: `decision_${sanitizeId(dc)}`, label: "decides", kind: "pdp" });
     });
     model.roles.forEach(r => {
-      edges.push({
-        from: "pdp_rbac",
-        to: `role_${sanitizeId(r.id)}`,
-        label: "hosts",
-        kind: "pdp",
-      });
+      edges.push({ from: "pdp_rbac", to: `role_${sanitizeId(r.id)}`, label: "hosts", kind: "pdp" });
     });
     // 115.10.06: pdp hosts precedence and policy effect nodes
     // 115.10.08: link lifecycle projection node
     if ((model.policyRules ?? []).length > 0) {
-      edges.push({
-        from: "pdp_rbac",
-        to: "pdp_precedence",
-        label: "precedence",
-        kind: "pdp",
-      });
+      edges.push({ from: "pdp_rbac", to: "pdp_precedence", label: "precedence", kind: "pdp" });
     }
     if (hasPolicyLifecycle) {
-      edges.push({
-        from: "pdp_rbac",
-        to: "pdp_policy_lifecycle",
-        label: "lifecycle",
-        kind: "pdp",
-      });
+      edges.push({ from: "pdp_rbac", to: "pdp_policy_lifecycle", label: "lifecycle", kind: "pdp" });
     }
     (model.policyRules ?? []).forEach(pr => {
-      edges.push({
-        from: "pdp_rbac",
-        to: `policy_${sanitizeId(pr.id)}`,
-        label: pr.effect,
-        kind: "pdp",
-      });
+      edges.push({ from: "pdp_rbac", to: `policy_${sanitizeId(pr.id)}`, label: pr.effect, kind: "pdp" });
     });
 
     const lines: string[] = ["flowchart LR"];
@@ -943,18 +744,11 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
     const decisionCodes = ["RBAC_DECISION_ALLOW", "RBAC_DECISION_FAIL_CLOSED"];
     const policySurface = [
       ...model.permissions.map(p => p.code),
-      ...(model.policyRules ?? []).map(
-        r =>
-          `${r.effect}:${r.id}${r.version ? `@${r.version}` : ""}${r.lifecycleState ? `#${r.lifecycleState}` : ""}`
-      ),
+      ...((model.policyRules ?? []).map(r => `${r.effect}:${r.id}${r.version ? `@${r.version}` : ""}${r.lifecycleState ? `#${r.lifecycleState}` : ""}`)),
     ];
     const policyRules = model.policyRules ?? [];
-    const rowRuleSurface = policyRules
-      .filter(r => r.resourceType != null)
-      .map(r => r.id);
-    const fieldRuleSurface = policyRules
-      .filter(r => r.fieldRef != null || r.field != null)
-      .map(r => r.id);
+    const rowRuleSurface = policyRules.filter(r => r.resourceType != null).map(r => r.id);
+    const fieldRuleSurface = policyRules.filter(r => r.fieldRef != null || r.field != null).map(r => r.id);
     const decisionScopeSurface = [...decisionCodes];
     const crossRuntime = buildRbacCrossRuntimeEdges(model);
     const surface: any = {
@@ -970,9 +764,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
       position: model.positions.map(p => p.id),
       user: model.users.map(u => u.id),
       runtimeEvidence: crossRuntime.map(edge => edge.evidenceKey),
-      crossSkillRuntimeEdges: crossRuntime.map(
-        edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`
-      ),
+      crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
       rbacToPageTrace: traceRbacAllowDenyToPageRenderPermissionEvidence(model),
       rbacToWorkflowTrace: traceRbacAllowDenyToWorkflowTaskEvidence(model),
     };
@@ -986,9 +778,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
     // when the intent is about leave approval, else throw so callers don't get a fake.
     if (/purchase|procurement|采购/i.test(intent)) return purchaseApprovalRbac;
     if (/请假|leave/i.test(intent)) return leaveApprovalRbac;
-    throw new Error(
-      `rbacSkill.generate: 需要接入推演引擎来为意图生成模型：「${intent}」`
-    );
+    throw new Error(`rbacSkill.generate: 需要接入推演引擎来为意图生成模型：「${intent}」`);
   },
 };
 
@@ -1002,23 +792,14 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
  * 115.10.08: when deny driven by policyRule, decision includes policyVersion and policyLifecycleState so PDP can explain version used.
  * Objective, no browser/user coupling.
  */
-export function decideRbacPolicy(
-  model: RbacModel,
-  request: PolicyContext
-): PolicyDecision {
+export function decideRbacPolicy(model: RbacModel, request: PolicyContext): PolicyDecision {
   try {
-    if (
-      !request ||
-      !request.subject ||
-      !Array.isArray(request.subject.roleIds)
-    ) {
+    if (!request || !request.subject || !Array.isArray(request.subject.roleIds)) {
       return failClosedDecision("missing or invalid subject");
     }
     const reqRoles = request.subject.roleIds;
     if (reqRoles.length === 0 || !request.action || !request.resourceType) {
-      return failClosedDecision(
-        "missing policy inputs (roles/action/resource)"
-      );
+      return failClosedDecision("missing policy inputs (roles/action/resource)");
     }
 
     // 115.10.05: fail-closed for missing tenant context (tenantId is now required PDP input)
@@ -1037,9 +818,7 @@ export function decideRbacPolicy(
     // deny if any requested role missing
     const missingRole = reqRoles.find(rid => !roleMap.has(rid));
     if (missingRole != null) {
-      return failClosedDecision(`role missing: ${missingRole}`, {
-        expandedRoles: [],
-      });
+      return failClosedDecision(`role missing: ${missingRole}`, { expandedRoles: [] });
     }
 
     // expand (inheritance)
@@ -1048,14 +827,11 @@ export function decideRbacPolicy(
     // 117: integrate evaluateRbacSodPolicy into runtime PDP; SoD denial wins before allow
     const sodEval = evaluateRbacSodPolicy(model, request);
     if (sodEval.denied) {
-      return failClosedDecision(
-        `runtime SoD denied by rule ${sodEval.ruleId}`,
-        {
-          expandedRoles: effectiveRoleIds,
-          reasonCode: RBAC_RUNTIME_SOD_DENIED,
-          sodRuleId: sodEval.ruleId,
-        }
-      );
+      return failClosedDecision(`runtime SoD denied by rule ${sodEval.ruleId}`, {
+        expandedRoles: effectiveRoleIds,
+        reasonCode: RBAC_RUNTIME_SOD_DENIED,
+        sodRuleId: sodEval.ruleId,
+      });
     }
 
     // collect granted perms (only those defined)
@@ -1077,11 +853,7 @@ export function decideRbacPolicy(
     let matchedPermission: string | undefined;
     for (const pc of effectivePerms) {
       const p = permMap.get(pc);
-      if (
-        p &&
-        p.action === request.action &&
-        p.resource === request.resourceType
-      ) {
+      if (p && p.action === request.action && p.resource === request.resourceType) {
         matchedPermission = pc;
         break;
       }
@@ -1098,63 +870,48 @@ export function decideRbacPolicy(
     // deny wins even if matchedPermission would otherwise grant (direct or via inheritance).
     // matchesDenyRule now enforces exact permissionCode match when present.
     // 115.10.08: only consider non-retired policies for effective PDP use (retired not effective)
-    const policyRulesForDeny = (model.policyRules ?? []).filter(
-      r => r.lifecycleState !== "retired"
-    );
+    const policyRulesForDeny = (model.policyRules ?? []).filter(r => r.lifecycleState !== "retired");
     for (const dr of policyRulesForDeny) {
       if (dr.effect !== "deny") continue;
-      if (!matchesDenyRule(dr, request, effectiveRoleIds, targetPermissionCode))
-        continue;
-      return failClosedDecision(
-        `denied by policy rule ${dr.id}${dr.version ? `@${dr.version}` : ""} (deny precedence over allow)`,
-        {
-          expandedRoles: effectiveRoleIds,
-          matchedPermission: dr.permissionCode || matchedPermission,
-          policyVersion: dr.version,
-          policyLifecycleState: dr.lifecycleState,
-          policyId: dr.id,
-          denyPrecedence: true,
-        }
-      );
+      if (!matchesDenyRule(dr, request, effectiveRoleIds, targetPermissionCode)) continue;
+      return failClosedDecision(`denied by policy rule ${dr.id}${dr.version ? `@${dr.version}` : ""} (deny precedence over allow)`, {
+        expandedRoles: effectiveRoleIds,
+        matchedPermission: dr.permissionCode || matchedPermission,
+        policyVersion: dr.version,
+        policyLifecycleState: dr.lifecycleState,
+        policyId: dr.id,
+        denyPrecedence: true,
+      });
     }
 
     if (matchedPermission) {
       // 115.10.03 self-grant SoD denial (pure decision, no runtime side effects)
-      const hasSelfGrantDeny = (model.selfGrantDenials ?? []).some(sg =>
-        sg.deniedSelfGrantPermissionCodes.includes(matchedPermission)
+      const hasSelfGrantDeny = (model.selfGrantDenials ?? []).some((sg) =>
+        sg.deniedSelfGrantPermissionCodes.includes(matchedPermission),
       );
       if (hasSelfGrantDeny && request.isSelf === true) {
-        return failClosedDecision(
-          `self-grant denied for ${matchedPermission} by SoD policy`,
-          {
-            expandedRoles: effectiveRoleIds,
-            matchedPermission,
-            reasonCode: "RBAC_SOD_SELF_GRANT",
-          }
-        );
+        return failClosedDecision(`self-grant denied for ${matchedPermission} by SoD policy`, {
+          expandedRoles: effectiveRoleIds,
+          matchedPermission,
+          reasonCode: "RBAC_SOD_SELF_GRANT",
+        });
       }
 
       // 115.10.03 dual-control SoD check (pure, using minApprovers + distinct approvers from context)
       const dual = (model.dualControlPolicies ?? []).find(
-        d => d.action === request.action && d.resource === request.resourceType
+        (d) => d.action === request.action && d.resource === request.resourceType
       );
       if (dual) {
         let provided = request.approverCount ?? 0;
-        if (
-          Array.isArray(request.approverUserIds) &&
-          request.approverUserIds.length > 0
-        ) {
+        if (Array.isArray(request.approverUserIds) && request.approverUserIds.length > 0) {
           provided = new Set(request.approverUserIds).size;
         }
         if (provided < dual.minApprovers) {
-          return failClosedDecision(
-            `dual-control requires at least ${dual.minApprovers} distinct approvers (provided ${provided})`,
-            {
-              expandedRoles: effectiveRoleIds,
-              matchedPermission,
-              reasonCode: "RBAC_SOD_DUAL_CONTROL",
-            }
-          );
+          return failClosedDecision(`dual-control requires at least ${dual.minApprovers} distinct approvers (provided ${provided})`, {
+            expandedRoles: effectiveRoleIds,
+            matchedPermission,
+            reasonCode: "RBAC_SOD_DUAL_CONTROL",
+          });
         }
       }
 
@@ -1168,17 +925,12 @@ export function decideRbacPolicy(
     }
 
     // unknown permission request or not granted => fail closed, never allow
-    return failClosedDecision(
-      "no matching permission for the requested action/resource",
-      {
-        expandedRoles: effectiveRoleIds,
-      }
-    );
+    return failClosedDecision("no matching permission for the requested action/resource", {
+      expandedRoles: effectiveRoleIds,
+    });
   } catch (err: any) {
     // 115.10.05: validator/decision helper exceptions must result in deny (fail-closed)
-    return failClosedDecision(
-      `decision helper exception: ${err?.message ?? String(err)}`
-    );
+    return failClosedDecision(`decision helper exception: ${err?.message ?? String(err)}`);
   }
 }
 
@@ -1190,10 +942,7 @@ export function decideRbacPolicy(
  * Explicit allow only; any matching deny rule sets denyPrecedence and overrides.
  * decideRbacPolicy remains compatible (unchanged body for test stability).
  */
-export function evaluateRbacRuntimePolicy(
-  model: RbacModel,
-  request: RbacRuntimeRequest
-): RbacRuntimeDecision {
+export function evaluateRbacRuntimePolicy(model: RbacModel, request: RbacRuntimeRequest): RbacRuntimeDecision {
   try {
     const subj = request?.subject ?? {};
     const roleIds: string[] = Array.isArray(subj.roleIds) ? subj.roleIds : [];
@@ -1217,12 +966,8 @@ export function evaluateRbacRuntimePolicy(
     )?.code;
 
     // build sim context for existing deny matcher (fieldRef -> fieldContext)
-    const fieldKey = request.fieldRef
-      ? request.fieldRef.split(".").pop() || request.fieldRef
-      : undefined;
-    const simFieldContext: FieldContext =
-      request.fieldContext ??
-      (fieldKey ? { fields: [fieldKey] } : { fields: [] });
+    const fieldKey = request.fieldRef ? (request.fieldRef.split(".").pop() || request.fieldRef) : undefined;
+    const simFieldContext: FieldContext = request.fieldContext ?? (fieldKey ? { fields: [fieldKey] } : { fields: [] });
     const simReq: PolicyContext = {
       subject: { roleIds, userId: subj.userId },
       action,
@@ -1237,22 +982,15 @@ export function evaluateRbacRuntimePolicy(
     };
 
     // 117 runtime: deny precedence first (deny overrides any allow)
-    const policyRulesForDeny = (model.policyRules ?? []).filter(
-      r => r.lifecycleState !== "retired"
-    );
+    const policyRulesForDeny = (model.policyRules ?? []).filter(r => r.lifecycleState !== "retired");
     for (const dr of policyRulesForDeny) {
       if (dr.effect !== "deny") continue;
-      if (!matchesDenyRule(dr, simReq, effectiveRoleIds, targetPermissionCode))
-        continue;
+      if (!matchesDenyRule(dr, simReq, effectiveRoleIds, targetPermissionCode)) continue;
       return {
         effect: "deny",
         reasonCode: RBAC_RUNTIME_FAIL_CLOSED,
         matchedRoleIds: effectiveRoleIds,
-        matchedPermissionIds: dr.permissionCode
-          ? [dr.permissionCode]
-          : targetPermissionCode
-            ? [targetPermissionCode]
-            : [],
+        matchedPermissionIds: dr.permissionCode ? [dr.permissionCode] : (targetPermissionCode ? [targetPermissionCode] : []),
         matchedPolicyIds: [dr.id],
         denyPrecedence: true,
       };
@@ -1318,10 +1056,7 @@ export function evaluateRbacRuntimePolicy(
 }
 
 /** 117: pure exported runtime helper for row-level access. Delegates to PDP (decideRbacPolicy) with no local auth duplication. */
-export function evaluateRbacRowAccess(
-  model: RbacModel,
-  request: PolicyContext
-): PolicyDecision {
+export function evaluateRbacRowAccess(model: RbacModel, request: PolicyContext): PolicyDecision {
   return decideRbacPolicy(model, request);
 }
 
@@ -1336,14 +1071,12 @@ export const RBAC_FIELD_ACCESS_DENIED = "RBAC_FIELD_ACCESS_DENIED";
 export function evaluateRbacFieldAccess(
   model: RbacModel,
   request: PolicyContext,
-  fieldRef?: string
+  fieldRef?: string,
 ): PolicyDecision & { level: RbacFieldAccessLevel; policyId?: string } {
   let effectiveRequest: PolicyContext = request;
   if (fieldRef != null) {
     const fc = request.fieldContext ?? { fields: [] as string[] };
-    const fieldKey = fieldRef.includes(".")
-      ? fieldRef.split(".").pop() || fieldRef
-      : fieldRef;
+    const fieldKey = fieldRef.includes(".") ? (fieldRef.split(".").pop() || fieldRef) : fieldRef;
     effectiveRequest = {
       ...request,
       fieldContext: {
@@ -1376,24 +1109,16 @@ export function createRbacPdpExplainEvidence(
   const decision = decideRbacPolicy(model, request);
   const allow = Boolean(decision.allow);
   // Deterministic classification for downstream closure: allow / deny (explicit precedence or SoD) / fail-closed (default negative)
-  let outcome: "allow" | "deny" | "fail-closed" = allow
-    ? "allow"
-    : "fail-closed";
+  let outcome: "allow" | "deny" | "fail-closed" = allow ? "allow" : "fail-closed";
   if (!allow) {
-    if (
-      decision.denyPrecedence === true ||
-      (decision.reason || "").toLowerCase().includes("deny") ||
-      decision.reasonCode === "RBAC_RUNTIME_SOD_DENIED"
-    ) {
+    if (decision.denyPrecedence === true || (decision.reason || "").toLowerCase().includes("deny") || decision.reasonCode === "RBAC_RUNTIME_SOD_DENIED") {
       outcome = "deny";
     }
   }
   const evidenceKey = `${RBAC_PDP_EXPLAIN_EVIDENCE}:${outcome}`;
   const explanationParts = [
     allow ? `allow via ${decision.matchedPermission ?? "permission"}` : outcome,
-    decision.expandedRoles?.length
-      ? `roles=[${decision.expandedRoles.join(",")}]`
-      : "",
+    decision.expandedRoles?.length ? `roles=[${decision.expandedRoles.join(",")}]` : "",
     decision.matchedPermission ? `matched=${decision.matchedPermission}` : "",
     decision.policyId
       ? `policy=${decision.policyId}${decision.policyVersion ? `@${decision.policyVersion}` : ""}`
@@ -1426,7 +1151,7 @@ export function createRbacPdpExplainEvidence(
  */
 export function createRbacFailClosedNegativePath(
   model: RbacModel,
-  request: RbacRuntimeRequest
+  request: RbacRuntimeRequest,
 ): RbacRuntimeDecision {
   // Pure adapter naming the fail-closed negative path (delegates; caller provides negative request context).
   // Deterministic: when request lacks matching grant evidence, evaluate already returns RBAC_RUNTIME_FAIL_CLOSED deny.
@@ -1437,12 +1162,7 @@ export function createRbacFailClosedNegativePath(
 // Worked example — a "请假审批" platform's RBAC slice (a coherent, valid instance)
 // ---------------------------------------------------------------------------
 
-export type RbacRuntimeTargetSkill =
-  | "datamodel"
-  | "workflow"
-  | "page"
-  | "aigc"
-  | "appbundle";
+export type RbacRuntimeTargetSkill = "datamodel" | "workflow" | "page" | "aigc" | "appbundle";
 
 export type RbacRuntimeEvidenceState = "allowed" | "blocked";
 
@@ -1471,10 +1191,8 @@ export interface NormalizedRbacRuntimeContext {
 export const RBAC_CROSS_RUNTIME_EVIDENCE = "RBAC_CROSS_RUNTIME_EVIDENCE";
 export const RBAC_PAGE_RUNTIME_EVIDENCE = "RBAC_PAGE_RUNTIME_EVIDENCE";
 export const RBAC_WORKFLOW_RUNTIME_EVIDENCE = "RBAC_WORKFLOW_RUNTIME_EVIDENCE";
-export const RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE =
-  "RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE";
-export const RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE =
-  "RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE";
+export const RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE = "RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE";
+export const RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE = "RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE";
 
 export interface RbacToPageTrace {
   traceId: typeof RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE;
@@ -1496,17 +1214,12 @@ export interface RbacToWorkflowTrace {
   workflowEvidence: RbacCrossRuntimeEvidence;
 }
 
-function rbacPolicyRefsForTarget(
-  model: RbacModel,
-  targetSkill: RbacRuntimeTargetSkill
-): string[] {
+function rbacPolicyRefsForTarget(model: RbacModel, targetSkill: RbacRuntimeTargetSkill): string[] {
   const policyRules = model.policyRules ?? [];
   if (targetSkill === "datamodel") {
     return [
       ...model.dataRules.map(rule => rule.modelRef),
-      ...policyRules.flatMap(
-        rule => [rule.resourceType, rule.fieldRef].filter(Boolean) as string[]
-      ),
+      ...policyRules.flatMap(rule => [rule.resourceType, rule.fieldRef].filter(Boolean) as string[]),
     ].sort();
   }
   if (targetSkill === "page") {
@@ -1531,43 +1244,26 @@ function rbacPolicyRefsForTarget(
   ].sort();
 }
 
-function runtimeRequestIsPresent(
-  request?: RbacRuntimeRequest
-): request is RbacRuntimeRequest {
-  return (
-    !!request &&
-    !!request.subject &&
-    Array.isArray(request.subject.roleIds) &&
-    !!request.action &&
-    !!request.resourceType
-  );
+function runtimeRequestIsPresent(request?: RbacRuntimeRequest): request is RbacRuntimeRequest {
+  return !!request && !!request.subject && Array.isArray(request.subject.roleIds) && !!request.action && !!request.resourceType;
 }
 
 export function createRbacCrossRuntimeEvidence(
   model: RbacModel,
   targetSkill: RbacRuntimeTargetSkill,
-  request?: RbacRuntimeRequest
+  request?: RbacRuntimeRequest,
 ): RbacCrossRuntimeEvidence {
   const roleRefs = model.roles.map(role => role.id).sort();
-  const permissionRefs = model.permissions
-    .map(permission => permission.code)
-    .sort();
+  const permissionRefs = model.permissions.map(permission => permission.code).sort();
   const policyRefs = rbacPolicyRefsForTarget(model, targetSkill);
   const decision = runtimeRequestIsPresent(request)
     ? createRbacFailClosedNegativePath(model, request)
     : undefined;
-  const state: RbacRuntimeEvidenceState = decision
-    ? decision.effect === "allow"
-      ? "allowed"
-      : "blocked"
-    : policyRefs.length > 0
-      ? "allowed"
-      : "blocked";
+  const state: RbacRuntimeEvidenceState =
+    decision ? (decision.effect === "allow" ? "allowed" : "blocked") : (policyRefs.length > 0 ? "allowed" : "blocked");
   const reasonCode =
     decision?.reasonCode ??
-    (state === "allowed"
-      ? "RBAC_RUNTIME_EVIDENCE_PRESENT"
-      : "RBAC_RUNTIME_UPSTREAM_ABSENT");
+    (state === "allowed" ? "RBAC_RUNTIME_EVIDENCE_PRESENT" : "RBAC_RUNTIME_UPSTREAM_ABSENT");
 
   return {
     sourceSkill: "rbac",
@@ -1585,7 +1281,7 @@ export function createRbacCrossRuntimeEvidence(
 export function normalizeRbacRuntimeContextForSkill(
   model: RbacModel,
   targetSkill: RbacRuntimeTargetSkill,
-  request?: RbacRuntimeRequest
+  request?: RbacRuntimeRequest,
 ): NormalizedRbacRuntimeContext {
   const evidence = createRbacCrossRuntimeEvidence(model, targetSkill, request);
   return {
@@ -1599,16 +1295,8 @@ export function normalizeRbacRuntimeContextForSkill(
   };
 }
 
-export function buildRbacCrossRuntimeEdges(
-  model: RbacModel
-): RbacCrossRuntimeEvidence[] {
-  const targets: RbacRuntimeTargetSkill[] = [
-    "datamodel",
-    "workflow",
-    "page",
-    "aigc",
-    "appbundle",
-  ];
+export function buildRbacCrossRuntimeEdges(model: RbacModel): RbacCrossRuntimeEvidence[] {
+  const targets: RbacRuntimeTargetSkill[] = ["datamodel", "workflow", "page", "aigc", "appbundle"];
   return targets
     .filter(target => rbacPolicyRefsForTarget(model, target).length > 0)
     .map(target => createRbacCrossRuntimeEvidence(model, target));
@@ -1616,7 +1304,7 @@ export function buildRbacCrossRuntimeEdges(
 
 export function createRbacPageRuntimeEvidence(
   model: RbacModel,
-  request: RbacRuntimeRequest
+  request: RbacRuntimeRequest,
 ): RbacCrossRuntimeEvidence {
   return {
     ...createRbacCrossRuntimeEvidence(model, "page", request),
@@ -1624,13 +1312,9 @@ export function createRbacPageRuntimeEvidence(
   };
 }
 
-function derivePositiveRbacPageTraceRequest(
-  model: RbacModel
-): RbacRuntimeRequest {
+function derivePositiveRbacPageTraceRequest(model: RbacModel): RbacRuntimeRequest {
   for (const permission of model.permissions) {
-    const role = model.roles.find(candidate =>
-      candidate.permissionCodes.includes(permission.code)
-    );
+    const role = model.roles.find(candidate => candidate.permissionCodes.includes(permission.code));
     if (role) {
       return {
         subject: { roleIds: [role.id] },
@@ -1653,21 +1337,18 @@ function derivePositiveRbacPageTraceRequest(
 
 export function traceRbacAllowDenyToPageRenderPermissionEvidence(
   model: RbacModel,
-  request: RbacRuntimeRequest = derivePositiveRbacPageTraceRequest(model)
+  request: RbacRuntimeRequest = derivePositiveRbacPageTraceRequest(model),
 ): RbacToPageTrace {
   const decision = createRbacFailClosedNegativePath(model, request);
   const pageEvidence = createRbacPageRuntimeEvidence(model, request);
-  const closed =
-    decision.effect === "allow" && pageEvidence.state === "allowed";
+  const closed = decision.effect === "allow" && pageEvidence.state === "allowed";
 
   return {
     traceId: RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE,
     sourceSkill: "rbac",
     targetSkill: "page",
     state: closed ? "closed" : "blocked",
-    reasonCode: closed
-      ? "RBAC_PAGE_TRACE_POSITIVE_CLOSED"
-      : "RBAC_PAGE_TRACE_FAIL_CLOSED",
+    reasonCode: closed ? "RBAC_PAGE_TRACE_POSITIVE_CLOSED" : "RBAC_PAGE_TRACE_FAIL_CLOSED",
     decision,
     pageEvidence,
   };
@@ -1675,21 +1356,18 @@ export function traceRbacAllowDenyToPageRenderPermissionEvidence(
 
 export function traceRbacAllowDenyToWorkflowTaskEvidence(
   model: RbacModel,
-  request: RbacRuntimeRequest = derivePositiveRbacPageTraceRequest(model)
+  request: RbacRuntimeRequest = derivePositiveRbacPageTraceRequest(model),
 ): RbacToWorkflowTrace {
   const decision = createRbacFailClosedNegativePath(model, request);
   const workflowEvidence = createRbacWorkflowRuntimeEvidence(model, request);
-  const closed =
-    decision.effect === "allow" && workflowEvidence.state === "allowed";
+  const closed = decision.effect === "allow" && workflowEvidence.state === "allowed";
 
   return {
     traceId: RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE,
     sourceSkill: "rbac",
     targetSkill: "workflow",
     state: closed ? "closed" : "blocked",
-    reasonCode: closed
-      ? "RBAC_WORKFLOW_TRACE_POSITIVE_CLOSED"
-      : "RBAC_WORKFLOW_TRACE_FAIL_CLOSED",
+    reasonCode: closed ? "RBAC_WORKFLOW_TRACE_POSITIVE_CLOSED" : "RBAC_WORKFLOW_TRACE_FAIL_CLOSED",
     decision,
     workflowEvidence,
   };
@@ -1697,7 +1375,7 @@ export function traceRbacAllowDenyToWorkflowTaskEvidence(
 
 export function createRbacWorkflowRuntimeEvidence(
   model: RbacModel,
-  request: RbacRuntimeRequest
+  request: RbacRuntimeRequest,
 ): RbacCrossRuntimeEvidence {
   return {
     ...createRbacCrossRuntimeEvidence(model, "workflow", request),
@@ -1708,48 +1386,15 @@ export function createRbacWorkflowRuntimeEvidence(
 export const leaveApprovalRbac: RbacModel = {
   failClosed: true,
   permissions: [
-    {
-      code: "leave:create",
-      name: "发起请假",
-      resource: "leave_request",
-      action: "create",
-    },
-    {
-      code: "leave:approve",
-      name: "审批请假",
-      resource: "leave_request",
-      action: "approve",
-    },
-    {
-      code: "leave:view",
-      name: "查看请假",
-      resource: "leave_request",
-      action: "view",
-    },
+    { code: "leave:create", name: "发起请假", resource: "leave_request", action: "create" },
+    { code: "leave:approve", name: "审批请假", resource: "leave_request", action: "approve" },
+    { code: "leave:view", name: "查看请假", resource: "leave_request", action: "view" },
   ],
   menus: [
     { id: "m_leave", parentId: null, name: "请假管理", type: "directory" },
-    {
-      id: "m_my_leave",
-      parentId: "m_leave",
-      name: "我的请假",
-      type: "menu",
-      permissionCode: "leave:create",
-    },
-    {
-      id: "m_approve",
-      parentId: "m_leave",
-      name: "待我审批",
-      type: "menu",
-      permissionCode: "leave:approve",
-    },
-    {
-      id: "b_approve",
-      parentId: "m_approve",
-      name: "审批通过",
-      type: "button",
-      permissionCode: "leave:approve",
-    },
+    { id: "m_my_leave", parentId: "m_leave", name: "我的请假", type: "menu", permissionCode: "leave:create" },
+    { id: "m_approve", parentId: "m_leave", name: "待我审批", type: "menu", permissionCode: "leave:approve" },
+    { id: "b_approve", parentId: "m_approve", name: "审批通过", type: "button", permissionCode: "leave:approve" },
   ],
   roles: [
     {
@@ -1767,123 +1412,37 @@ export const leaveApprovalRbac: RbacModel = {
       menuIds: ["m_leave", "m_my_leave", "m_approve", "b_approve"],
     },
   ],
-  departments: [
-    { id: "d_tech", name: "技术部", parentId: null, leaderUserId: "u_mgr" },
-  ],
+  departments: [{ id: "d_tech", name: "技术部", parentId: null, leaderUserId: "u_mgr" }],
   positions: [
     { id: "p_staff", name: "工程师", roleIds: ["employee"] },
     { id: "p_lead", name: "技术主管", roleIds: ["manager"] },
   ],
   users: [
-    {
-      id: "u_emp",
-      name: "张三",
-      roleIds: ["employee"],
-      departmentId: "d_tech",
-      positionId: "p_staff",
-    },
-    {
-      id: "u_mgr",
-      name: "李四",
-      roleIds: ["manager"],
-      departmentId: "d_tech",
-      positionId: "p_lead",
-    },
+    { id: "u_emp", name: "张三", roleIds: ["employee"], departmentId: "d_tech", positionId: "p_staff" },
+    { id: "u_mgr", name: "李四", roleIds: ["manager"], departmentId: "d_tech", positionId: "p_lead" },
   ],
   dataRules: [
-    {
-      id: "dr_self",
-      name: "员工只看自己的请假",
-      modelRef: "leave_request",
-      scope: "self",
-      roleIds: ["employee"],
-    },
-    {
-      id: "dr_dept",
-      name: "主管看本部门请假",
-      modelRef: "leave_request",
-      scope: "dept",
-      roleIds: ["manager"],
-    },
+    { id: "dr_self", name: "员工只看自己的请假", modelRef: "leave_request", scope: "self", roleIds: ["employee"] },
+    { id: "dr_dept", name: "主管看本部门请假", modelRef: "leave_request", scope: "dept", roleIds: ["manager"] },
   ],
 };
 
 export const purchaseApprovalRbac: RbacModel = {
   failClosed: true,
   permissions: [
-    {
-      code: "purchase:create",
-      name: "Create purchase request",
-      resource: "purchase_request",
-      action: "create",
-    },
-    {
-      code: "purchase:view",
-      name: "View purchase request",
-      resource: "purchase_request",
-      action: "view",
-    },
-    {
-      code: "purchase:manager_approve",
-      name: "Manager approve purchase",
-      resource: "purchase_request",
-      action: "manager_approve",
-    },
-    {
-      code: "purchase:finance_approve",
-      name: "Finance approve purchase",
-      resource: "purchase_request",
-      action: "finance_approve",
-    },
-    {
-      code: "purchase:fulfill",
-      name: "Procurement fulfill purchase",
-      resource: "purchase_request",
-      action: "fulfill",
-    },
+    { code: "purchase:create", name: "Create purchase request", resource: "purchase_request", action: "create" },
+    { code: "purchase:view", name: "View purchase request", resource: "purchase_request", action: "view" },
+    { code: "purchase:manager_approve", name: "Manager approve purchase", resource: "purchase_request", action: "manager_approve" },
+    { code: "purchase:finance_approve", name: "Finance approve purchase", resource: "purchase_request", action: "finance_approve" },
+    { code: "purchase:fulfill", name: "Procurement fulfill purchase", resource: "purchase_request", action: "fulfill" },
   ],
   menus: [
-    {
-      id: "m_purchase",
-      parentId: null,
-      name: "Purchase Center",
-      type: "directory",
-    },
-    {
-      id: "m_purchase_request",
-      parentId: "m_purchase",
-      name: "New Purchase Request",
-      type: "menu",
-      permissionCode: "purchase:create",
-    },
-    {
-      id: "m_purchase_manager",
-      parentId: "m_purchase",
-      name: "Manager Approvals",
-      type: "menu",
-      permissionCode: "purchase:manager_approve",
-    },
-    {
-      id: "m_purchase_finance",
-      parentId: "m_purchase",
-      name: "Finance Approvals",
-      type: "menu",
-      permissionCode: "purchase:finance_approve",
-    },
-    {
-      id: "m_purchase_procurement",
-      parentId: "m_purchase",
-      name: "Procurement Fulfillment",
-      type: "menu",
-      permissionCode: "purchase:fulfill",
-    },
-    {
-      id: "b_purchase_finance",
-      parentId: "m_purchase_finance",
-      name: "Finance Approve",
-      type: "button",
-      permissionCode: "purchase:finance_approve",
-    },
+    { id: "m_purchase", parentId: null, name: "Purchase Center", type: "directory" },
+    { id: "m_purchase_request", parentId: "m_purchase", name: "New Purchase Request", type: "menu", permissionCode: "purchase:create" },
+    { id: "m_purchase_manager", parentId: "m_purchase", name: "Manager Approvals", type: "menu", permissionCode: "purchase:manager_approve" },
+    { id: "m_purchase_finance", parentId: "m_purchase", name: "Finance Approvals", type: "menu", permissionCode: "purchase:finance_approve" },
+    { id: "m_purchase_procurement", parentId: "m_purchase", name: "Procurement Fulfillment", type: "menu", permissionCode: "purchase:fulfill" },
+    { id: "b_purchase_finance", parentId: "m_purchase_finance", name: "Finance Approve", type: "button", permissionCode: "purchase:finance_approve" },
   ],
   roles: [
     {
@@ -1915,87 +1474,24 @@ export const purchaseApprovalRbac: RbacModel = {
       menuIds: ["m_purchase", "m_purchase_procurement"],
     },
   ],
-  departments: [
-    {
-      id: "d_ops",
-      name: "Operations",
-      parentId: null,
-      leaderUserId: "u_manager",
-    },
-  ],
+  departments: [{ id: "d_ops", name: "Operations", parentId: null, leaderUserId: "u_manager" }],
   positions: [
     { id: "p_requester", name: "Requester", roleIds: ["requester"] },
-    {
-      id: "p_manager",
-      name: "Department Manager",
-      roleIds: ["department_manager"],
-    },
+    { id: "p_manager", name: "Department Manager", roleIds: ["department_manager"] },
     { id: "p_finance", name: "Finance Analyst", roleIds: ["finance"] },
-    {
-      id: "p_procurement",
-      name: "Procurement Specialist",
-      roleIds: ["procurement"],
-    },
+    { id: "p_procurement", name: "Procurement Specialist", roleIds: ["procurement"] },
   ],
   users: [
-    {
-      id: "u_requester",
-      name: "Rita Requester",
-      roleIds: ["requester"],
-      departmentId: "d_ops",
-      positionId: "p_requester",
-    },
-    {
-      id: "u_manager",
-      name: "Maya Manager",
-      roleIds: ["department_manager"],
-      departmentId: "d_ops",
-      positionId: "p_manager",
-    },
-    {
-      id: "u_finance",
-      name: "Finn Finance",
-      roleIds: ["finance"],
-      departmentId: "d_ops",
-      positionId: "p_finance",
-    },
-    {
-      id: "u_procurement",
-      name: "Paula Procurement",
-      roleIds: ["procurement"],
-      departmentId: "d_ops",
-      positionId: "p_procurement",
-    },
+    { id: "u_requester", name: "Rita Requester", roleIds: ["requester"], departmentId: "d_ops", positionId: "p_requester" },
+    { id: "u_manager", name: "Maya Manager", roleIds: ["department_manager"], departmentId: "d_ops", positionId: "p_manager" },
+    { id: "u_finance", name: "Finn Finance", roleIds: ["finance"], departmentId: "d_ops", positionId: "p_finance" },
+    { id: "u_procurement", name: "Paula Procurement", roleIds: ["procurement"], departmentId: "d_ops", positionId: "p_procurement" },
   ],
   dataRules: [
-    {
-      id: "dr_purchase_self",
-      name: "Requester sees own purchase requests",
-      modelRef: "purchase_request",
-      scope: "self",
-      roleIds: ["requester"],
-    },
-    {
-      id: "dr_purchase_dept",
-      name: "Manager sees department purchase requests",
-      modelRef: "purchase_request",
-      scope: "dept",
-      roleIds: ["department_manager"],
-    },
-    {
-      id: "dr_purchase_finance",
-      name: "Finance sees all purchase requests",
-      modelRef: "purchase_request",
-      scope: "all",
-      roleIds: ["finance"],
-    },
-    {
-      id: "dr_purchase_procurement",
-      name: "Procurement sees all purchase requests",
-      modelRef: "purchase_request",
-      scope: "all",
-      roleIds: ["procurement"],
-    },
+    { id: "dr_purchase_self", name: "Requester sees own purchase requests", modelRef: "purchase_request", scope: "self", roleIds: ["requester"] },
+    { id: "dr_purchase_dept", name: "Manager sees department purchase requests", modelRef: "purchase_request", scope: "dept", roleIds: ["department_manager"] },
+    { id: "dr_purchase_finance", name: "Finance sees all purchase requests", modelRef: "purchase_request", scope: "all", roleIds: ["finance"] },
+    { id: "dr_purchase_procurement", name: "Procurement sees all purchase requests", modelRef: "purchase_request", scope: "all", roleIds: ["procurement"] },
   ],
   // 115.10.03 SoD policy records for finance/admin roles (self-grant + dual-control + mutually via existing)
   selfGrantDenials: [

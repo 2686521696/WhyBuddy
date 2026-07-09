@@ -15,17 +15,15 @@ describe("deriveSlideRuleReasoningViewModel canvas copy", () => {
     });
     const { newState } = orchestrateReasoningTurn(preparedState, context);
     const vm = deriveSlideRuleReasoningViewModel(newState);
-    const pending = vm.visibleNodes.filter(n => !n.id.endsWith("-proposition"));
+    const pending = vm.visibleNodes.filter((n) => !n.id.endsWith("-proposition"));
     expect(pending.length).toBeGreaterThan(0);
     for (const n of pending) {
       expect(n.title).not.toMatch(/：待 .* 推演/);
-      expect(n.body || "").not.toContain(
-        "Produced by orchestrateReasoningTurn"
-      );
+      expect(n.body || "").not.toContain("Produced by orchestrateReasoningTurn");
       expect(n.roleLabel).not.toBe("推演中");
     }
-    expect(
-      pending.some(n => n.title.includes("检索") || n.title.includes("风险"))
-    ).toBe(true);
+    expect(pending.some((n) => n.title.includes("检索") || n.title.includes("风险"))).toBe(
+      true
+    );
   });
 });

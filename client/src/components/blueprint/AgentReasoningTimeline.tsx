@@ -53,8 +53,8 @@ export function AgentReasoningTimeline({
   jobId,
   className,
 }: AgentReasoningTimelineProps) {
-  const agentReasoning = useBlueprintRealtimeStore(s => s.agentReasoning);
-  const connectionState = useBlueprintRealtimeStore(s => s.connectionState);
+  const agentReasoning = useBlueprintRealtimeStore((s) => s.agentReasoning);
+  const connectionState = useBlueprintRealtimeStore((s) => s.connectionState);
   const reducedMotion = useReducedMotion();
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -163,7 +163,7 @@ export function AgentReasoningTimeline({
           <div className="absolute left-1/2 top-0 bottom-0 w-px bg-[#EAEAEA] -translate-x-1/2" />
 
           <AnimatePresence>
-            {groupedEntries.map(group => (
+            {groupedEntries.map((group) => (
               <IterationGroup
                 key={group.iteration}
                 group={group}
@@ -209,7 +209,7 @@ function IterationGroup({
         <div className="flex-1 h-px bg-gray-200" />
       </div>
 
-      {group.entries.map(entry => {
+      {group.entries.map((entry) => {
         if (entry.phase === "error" || entry.phase === "completed") {
           return (
             <ReasoningBanner
@@ -220,7 +220,8 @@ function IterationGroup({
             />
           );
         }
-        const column = entry.phase === "thinking" ? "left" : "right";
+        const column =
+          entry.phase === "thinking" ? "left" : "right";
         return (
           <ReasoningCard
             key={entry.id}
@@ -261,9 +262,7 @@ function ReasoningCard({
       data-column={column}
     >
       <div className="flex items-center gap-2 mb-2">
-        <span
-          className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded ${badgeClass}`}
-        >
+        <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded ${badgeClass}`}>
           {entry.phase}
         </span>
         <span className="text-[10px] text-gray-400 font-mono">
@@ -285,9 +284,7 @@ function ReasoningCard({
         <p className="text-sm text-gray-600">
           {entry.observationSuccess ? "✓ 成功" : "✗ 失败"}
           {entry.observationSummary && (
-            <span className="ml-2 text-gray-500">
-              {entry.observationSummary}
-            </span>
+            <span className="ml-2 text-gray-500">{entry.observationSummary}</span>
           )}
         </p>
       )}
@@ -328,7 +325,9 @@ const ReasoningBanner = forwardRef<
         {isError ? "⚠ " : "✓ "}
         {entry.reason ?? (isError ? "执行异常" : "任务完成")}
       </div>
-      {entry.error && <p className="text-xs opacity-75">{entry.error}</p>}
+      {entry.error && (
+        <p className="text-xs opacity-75">{entry.error}</p>
+      )}
       {entry.degraded && (
         <span className="inline-block mt-1 text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded">
           降级

@@ -7,10 +7,7 @@
  * 端口 = 数据模型字段 ref：与门禁 handoff 校验同一规则，投影零 LLM 纯函数。
  */
 
-import type {
-  AigcCapability,
-  AigcPipeline,
-} from "../system-screens/five-system-model";
+import type { AigcCapability, AigcPipeline } from "../system-screens/five-system-model";
 import type { FlowDefinition, FlowNode } from "./flow-executor";
 
 export interface PipelineFlowProjection {
@@ -32,22 +29,17 @@ export function derivePipelineFlow(
     if (cap.id) capById.set(cap.id, cap);
   }
   const stepIds = (pipeline?.steps ?? []).map(String).filter(Boolean);
-  const steps = stepIds
-    .map(id => capById.get(id))
-    .filter((c): c is AigcCapability => Boolean(c));
+  const steps = stepIds.map((id) => capById.get(id)).filter((c): c is AigcCapability => Boolean(c));
   if (stepIds.length < 2 || steps.length !== stepIds.length) {
     return {
       flow: { nodes: [], edges: [], variables: {} },
       manualInputRefs: [],
-      reason:
-        stepIds.length < 2
-          ? "管线不足 2 步"
-          : "管线步骤未解析到能力（门禁应已拦截）",
+      reason: stepIds.length < 2 ? "管线不足 2 步" : "管线步骤未解析到能力（门禁应已拦截）",
       capByNodeId: capById,
     };
   }
 
-  const nodes: FlowNode[] = steps.map(cap => ({
+  const nodes: FlowNode[] = steps.map((cap) => ({
     node_id: cap.id!,
     node_type: "aigc-capability",
     name: cap.name || cap.id,
@@ -62,21 +54,14 @@ export function derivePipelineFlow(
   }));
 
   // 手工输入：全链所有输入里，减去衔接字段（由上游注入）
-  const handoff = new Set(edges.map(e => e.source_port));
+  const handoff = new Set(edges.map((e) => e.source_port));
   const manualInputRefs = [
     ...new Set(
-      steps
-        .flatMap(cap => cap.inputFields ?? [])
-        .filter(ref => !handoff.has(ref))
+      steps.flatMap((cap) => cap.inputFields ?? []).filter((ref) => !handoff.has(ref))
     ),
   ];
 
-  return {
-    flow: { nodes, edges, variables: {} },
-    manualInputRefs,
-    reason: null,
-    capByNodeId: capById,
-  };
+  return { flow: { nodes, edges, variables: {} }, manualInputRefs, reason: null, capByNodeId: capById };
 }
 
 /**
@@ -108,20 +93,9 @@ export function makeAigcNodeRunner(
         goal,
       }),
     });
-    if (!res.ok)
-      throw new Error(
-        `HTTP_${res.status}: ${(await res.text()).slice(0, 200)}`
-      );
-    const body = (await res.json()) as {
-      ok: boolean;
-      output?: string;
-      code?: string;
-      detail?: string;
-    };
-    if (!body.ok)
-      throw new Error(
-        `${body.code ?? "UNKNOWN"}: ${body.detail ?? ""}`.slice(0, 300)
-      );
+    if (!res.ok) throw new Error(`HTTP_${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const body = (await res.json()) as { ok: boolean; output?: string; code?: string; detail?: string };
+    if (!body.ok) throw new Error(`${body.code ?? "UNKNOWN"}: ${body.detail ?? ""}`.slice(0, 300));
     return { [cap.outputField || "output"]: body.output ?? "" };
   };
 }

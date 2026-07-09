@@ -79,23 +79,13 @@ export const PreviewAuditBadge: FC<PreviewAuditBadgeProps> = ({
         <Badge
           variant="outline"
           data-testid="preview-audit-batch"
-          className={cn(
-            "rounded-full text-[9px] font-black",
-            BATCH_TONE[verdict.batchStatus]
-          )}
+          className={cn("rounded-full text-[9px] font-black", BATCH_TONE[verdict.batchStatus])}
         >
           {verdict.batchStatus.toUpperCase()}
         </Badge>
         {verdict.retryCount > 0 ? (
-          <span
-            data-testid="preview-audit-retry"
-            className="text-[9px] font-semibold text-slate-400"
-          >
-            {t(
-              locale,
-              `回炉 ${verdict.retryCount}`,
-              `reforge ${verdict.retryCount}`
-            )}
+          <span data-testid="preview-audit-retry" className="text-[9px] font-semibold text-slate-400">
+            {t(locale, `回炉 ${verdict.retryCount}`, `reforge ${verdict.retryCount}`)}
           </span>
         ) : null}
         {verdict.exhausted ? (
@@ -110,10 +100,7 @@ export const PreviewAuditBadge: FC<PreviewAuditBadgeProps> = ({
       </div>
 
       {verdict.findings.length > 0 ? (
-        <ul
-          data-testid="preview-audit-findings"
-          className="flex flex-wrap gap-1"
-        >
+        <ul data-testid="preview-audit-findings" className="flex flex-wrap gap-1">
           {verdict.findings.map((f, i) => (
             <li
               key={`${f.reason}-${i}`}
@@ -123,7 +110,7 @@ export const PreviewAuditBadge: FC<PreviewAuditBadgeProps> = ({
                 "rounded-full border px-2 py-0.5 text-[9px] font-bold",
                 f.severity === "error"
                   ? "border-rose-300 bg-rose-50 text-rose-700"
-                  : "border-amber-300 bg-amber-50 text-amber-700"
+                  : "border-amber-300 bg-amber-50 text-amber-700",
               )}
             >
               {t(locale, FRAUD_LABEL[f.reason].zh, FRAUD_LABEL[f.reason].en)}
@@ -132,14 +119,11 @@ export const PreviewAuditBadge: FC<PreviewAuditBadgeProps> = ({
         </ul>
       ) : null}
 
-      <p
-        data-testid="preview-audit-accountability"
-        className="text-[9px] text-slate-400"
-      >
+      <p data-testid="preview-audit-accountability" className="text-[9px] text-slate-400">
         {t(
           locale,
           "由用户自跑核验，agent 改不了这一步。",
-          "User-run verification — the agent cannot alter this step."
+          "User-run verification — the agent cannot alter this step.",
         )}
       </p>
     </section>

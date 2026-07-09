@@ -29,23 +29,29 @@ const KNOWN_DICTIONARY_KEYS = [
 describe("copyDynamic property tests", () => {
   it("Property 3: copyDynamic en-US passthrough — for any string, copyDynamic('en-US', value) returns value unchanged", () => {
     fc.assert(
-      fc.property(fc.string({ minLength: 1, maxLength: 200 }), value => {
-        const result = copyDynamic("en-US", value);
-        expect(result).toBe(value);
-      }),
+      fc.property(
+        fc.string({ minLength: 1, maxLength: 200 }),
+        (value) => {
+          const result = copyDynamic("en-US", value);
+          expect(result).toBe(value);
+        }
+      ),
       { numRuns: 100 }
     );
   });
 
   it("Property 4: copyDynamic zh-CN dictionary hit — for any key in DYNAMIC_ZH_COPY, copyDynamic('zh-CN', key) returns the corresponding Chinese translation", () => {
     fc.assert(
-      fc.property(fc.constantFrom(...KNOWN_DICTIONARY_KEYS), key => {
-        const result = copyDynamic("zh-CN", key);
-        // Must return a non-empty string that is the dictionary value
-        expect(result.length).toBeGreaterThan(0);
-        // Must not return the original English key unchanged (these are all English keys with Chinese translations)
-        expect(result).not.toBe(key);
-      }),
+      fc.property(
+        fc.constantFrom(...KNOWN_DICTIONARY_KEYS),
+        (key) => {
+          const result = copyDynamic("zh-CN", key);
+          // Must return a non-empty string that is the dictionary value
+          expect(result.length).toBeGreaterThan(0);
+          // Must not return the original English key unchanged (these are all English keys with Chinese translations)
+          expect(result).not.toBe(key);
+        }
+      ),
       { numRuns: 100 }
     );
   });
@@ -55,7 +61,7 @@ describe("copyDynamic property tests", () => {
     fc.assert(
       fc.property(
         fc.uuid().map(uuid => `zzz_test_${uuid}`),
-        value => {
+        (value) => {
           const result = copyDynamic("zh-CN", value);
           expect(result).toBe(value);
         }
@@ -66,10 +72,13 @@ describe("copyDynamic property tests", () => {
 
   it("Property 5 (alternative): copyDynamic returns original for random UUIDs in zh-CN", () => {
     fc.assert(
-      fc.property(fc.uuid(), uuid => {
-        const result = copyDynamic("zh-CN", uuid);
-        expect(result).toBe(uuid);
-      }),
+      fc.property(
+        fc.uuid(),
+        (uuid) => {
+          const result = copyDynamic("zh-CN", uuid);
+          expect(result).toBe(uuid);
+        }
+      ),
       { numRuns: 100 }
     );
   });

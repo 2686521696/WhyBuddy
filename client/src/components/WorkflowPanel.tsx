@@ -506,10 +506,7 @@ function renderDeliverableDockHint(
     <button
       type="button"
       onClick={() =>
-        options?.onOpenRuntimeEvidence?.(
-          "artifacts",
-          options?.missionId ?? null
-        )
+        options?.onOpenRuntimeEvidence?.("artifacts", options?.missionId ?? null)
       }
       className={
         options?.className ||
@@ -1849,7 +1846,10 @@ function AgentAssessmentPanel() {
                     </span>
                   </div>
                   <div className="mt-1.5">
-                    <ScoreBar value={result.fitnessScore} color="bg-primary" />
+                    <ScoreBar
+                      value={result.fitnessScore}
+                      color="bg-primary"
+                    />
                   </div>
                   {result.reason ? (
                     <p className="mt-1 text-[9px] leading-4 text-white/50">
@@ -2216,7 +2216,11 @@ function ProgressView() {
               t(locale, "等待分配任务", "Waiting for assignment"),
               52
             ),
-            summary: summarizeText(summarySource, summaryFallback, 78),
+            summary: summarizeText(
+              summarySource,
+              summaryFallback,
+              78
+            ),
             updatedAt:
               getLatestRoleTimestamp(messages, roleId) ||
               currentWorkflow?.started_at ||
@@ -2650,8 +2654,7 @@ function ProgressView() {
                               <div className="space-y-3">
                                 {role.tasks.map(task => {
                                   const blocks = getTaskDetailBlocks(task);
-                                  const deliverableText =
-                                    getTaskPrimaryText(task);
+                                  const deliverableText = getTaskPrimaryText(task);
                                   const hasDeliverableHandoff =
                                     deliverableText.trim().length > 0;
                                   return (
@@ -2696,21 +2699,20 @@ function ProgressView() {
                                         </span>
                                       </div>
 
-                                      {hasDeliverableHandoff
-                                        ? renderDeliverableDockHint(
-                                            locale,
-                                            deliverableText,
-                                            {
-                                              className:
-                                                "mt-3 rounded-lg bg-white/5 px-3 py-2 text-[10px] leading-5 text-white/55",
-                                              missionId:
-                                                currentWorkflow?.missionId ??
-                                                null,
-                                              onOpenRuntimeEvidence:
-                                                dispatchOfficeRuntimeEvidence,
-                                            }
-                                          )
-                                        : null}
+                                      {hasDeliverableHandoff ? (
+                                        renderDeliverableDockHint(
+                                          locale,
+                                          deliverableText,
+                                          {
+                                            className:
+                                              "mt-3 rounded-lg bg-white/5 px-3 py-2 text-[10px] leading-5 text-white/55",
+                                            missionId:
+                                              currentWorkflow?.missionId ?? null,
+                                            onOpenRuntimeEvidence:
+                                              dispatchOfficeRuntimeEvidence,
+                                          }
+                                        )
+                                      ) : null}
 
                                       {blocks.length > 0 ? (
                                         <div
@@ -2726,8 +2728,7 @@ function ProgressView() {
                                               className="rounded-lg bg-white/5 px-3 py-2"
                                             >
                                               <p className="flex items-center text-[9px] font-semibold uppercase tracking-[0.16em] text-white/40">
-                                                {block.key ===
-                                                "manager_feedback"
+                                                {block.key === "manager_feedback"
                                                   ? t(
                                                       locale,
                                                       "经理反馈",

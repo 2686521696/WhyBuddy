@@ -7,7 +7,9 @@ import { useShallow } from "zustand/react/shallow";
 
 import { useI18n } from "@/i18n";
 import { useAppStore } from "@/lib/store";
-import { buildLaunchRoutePlan } from "@/lib/launch-router";
+import {
+  buildLaunchRoutePlan,
+} from "@/lib/launch-router";
 import {
   selectTaskHubLaunchSession,
   useNLCommandStore,
@@ -15,16 +17,14 @@ import {
   type TaskHubCreateMission,
 } from "@/lib/nl-command-store";
 import { useWorkflowStore } from "@/lib/workflow-store";
-import { submitUnifiedLaunch } from "@/lib/unified-launch-coordinator";
+import {
+  submitUnifiedLaunch,
+} from "@/lib/unified-launch-coordinator";
 import { prepareWorkflowAttachments } from "@/lib/workflow-attachments";
 import { cn } from "@/lib/utils";
 import type { WorkflowInputAttachment } from "@shared/workflow-input";
 
-import {
-  LaunchModeTabBar,
-  type LaunchMode,
-  LAUNCH_MODES,
-} from "./LaunchModeTabBar";
+import { LaunchModeTabBar, type LaunchMode, LAUNCH_MODES } from "./LaunchModeTabBar";
 import { LaunchGoalInput } from "./LaunchGoalInput";
 import { LaunchRoutePlanningFlow } from "./LaunchRoutePlanningFlow";
 import { LaunchCockpitGrid } from "./LaunchCockpitGrid";
@@ -243,11 +243,7 @@ export function LaunchPanelShell({
           createdAt: Date.now(),
         });
         toast.success(
-          t(
-            locale,
-            "任务已创建并落入队列。",
-            "Task created and added to the queue."
-          )
+          t(locale, "任务已创建并落入队列。", "Task created and added to the queue.")
         );
       }
     } catch (err) {
@@ -443,10 +439,7 @@ export function LaunchPanelShell({
                     aria-label={t(locale, "关闭面板", "Close panel")}
                     data-testid="launch-panel-close"
                   >
-                    <X
-                      size={18}
-                      style={{ color: "var(--muted-foreground, #64748b)" }}
-                    />
+                    <X size={18} style={{ color: "var(--muted-foreground, #64748b)" }} />
                   </button>
                 </div>
               </div>

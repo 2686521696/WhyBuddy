@@ -36,7 +36,9 @@ export const NodeCompletedCard: FC<NodeCompletedCardProps> = ({
 }) => {
   const nodeTitle = blueprintCopy(entry.nodeTitle, locale);
   const docs = entry.documentTypes.join(" / ");
-  const sourceTag = entry.generationSource ? `· ${entry.generationSource}` : "";
+  const sourceTag = entry.generationSource
+    ? `· ${entry.generationSource}`
+    : "";
 
   return (
     <div

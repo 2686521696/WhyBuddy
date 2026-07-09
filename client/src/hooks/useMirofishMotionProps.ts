@@ -37,10 +37,7 @@ export function useMirofishMotionProps() {
 
   // Also respect prefers-reduced-motion (with guard for environments like jsdom
   // where window.matchMedia may not exist)
-  if (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function"
-  ) {
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
     const prefersReduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;

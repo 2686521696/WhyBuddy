@@ -21,7 +21,7 @@ describe("stage-edit blueprint-api staleEdit parsing", () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(payload), {
         headers: { "Content-Type": "application/json" },
-      })
+      }),
     );
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -41,7 +41,7 @@ describe("stage-edit blueprint-api staleEdit parsing", () => {
     });
     expect(fetchSpy).toHaveBeenCalledWith(
       "/api/blueprint/clarifications/session%2F1/answers",
-      expect.objectContaining({ method: "POST" })
+      expect.objectContaining({ method: "POST" }),
     );
   });
 
@@ -61,7 +61,7 @@ describe("stage-edit blueprint-api staleEdit parsing", () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(payload), {
         headers: { "Content-Type": "application/json" },
-      })
+      }),
     );
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -72,7 +72,7 @@ describe("stage-edit blueprint-api staleEdit parsing", () => {
     expect(result).toEqual({ ok: true, data: payload });
     expect(fetchSpy).toHaveBeenCalledWith(
       "/api/blueprint/jobs/job%2F1/route-selection",
-      expect.objectContaining({ method: "POST" })
+      expect.objectContaining({ method: "POST" }),
     );
   });
 });

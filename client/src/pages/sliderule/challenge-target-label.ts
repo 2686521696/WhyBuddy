@@ -10,9 +10,7 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 /** User-facing challenge target — no capability ids. */
-export function challengeTargetLabel(
-  artifact: Artifact | undefined
-): string | null {
+export function challengeTargetLabel(artifact: Artifact | undefined): string | null {
   if (!artifact) return null;
   const title = String(artifact.title || "").trim();
   if (title && !title.includes(".")) return title;

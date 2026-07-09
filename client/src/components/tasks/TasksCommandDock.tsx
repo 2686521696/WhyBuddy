@@ -234,11 +234,11 @@ export function TasksCommandDock({
               "左侧队列选择后，这里会绑定当前任务。",
               "Selecting a task from the rail binds it here."
             ),
-        tone: (activeTask?.hasWarnings
-          ? "warning"
-          : activeTask
-            ? "info"
-            : "neutral") as "neutral" | "info" | "warning" | "success",
+        tone: (activeTask?.hasWarnings ? "warning" : activeTask ? "info" : "neutral") as
+          | "neutral"
+          | "info"
+          | "warning"
+          | "success",
       },
     ],
     [
@@ -408,8 +408,7 @@ export function TasksCommandDock({
                   "max-w-full !gap-0.5 !px-1 !py-0.5 !text-[8px] font-semibold"
                 )}
               >
-                {t(locale, "编排", "Execution")} /{" "}
-                {compactText(executionShape, 24)}
+                {t(locale, "编排", "Execution")} / {compactText(executionShape, 24)}
               </span>
               {activeTask ? (
                 <span
@@ -418,8 +417,7 @@ export function TasksCommandDock({
                     "max-w-full !gap-0.5 !px-1 !py-0.5 !text-[8px] font-semibold"
                   )}
                 >
-                  {t(locale, "焦点", "Focus")} /{" "}
-                  {compactText(activeTask.title, 20)}
+                  {t(locale, "焦点", "Focus")} / {compactText(activeTask.title, 20)}
                 </span>
               ) : null}
               <span
@@ -614,9 +612,7 @@ export function TasksCommandDock({
               <span
                 className={cn(
                   "workspace-status font-semibold",
-                  isDense
-                    ? "px-2 py-0.5 text-[10px]"
-                    : "px-2.5 py-1 text-[10px]",
+                  isDense ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-[10px]",
                   statusTone === "success"
                     ? workspaceStatusClass("success", "")
                     : statusTone === "warning"
@@ -778,8 +774,7 @@ export function TasksCommandDock({
                       "max-w-full px-2.5 py-1 text-[10px] font-semibold"
                     )}
                   >
-                    {t(locale, "落点", "Landing")} 路{" "}
-                    {compactText(landingText, 32)}
+                    {t(locale, "落点", "Landing")} 路 {compactText(landingText, 32)}
                   </span>
                   <span
                     className={workspaceStatusClass(
@@ -797,8 +792,7 @@ export function TasksCommandDock({
                         "max-w-full px-2.5 py-1 text-[10px] font-semibold"
                       )}
                     >
-                      {t(locale, "焦点", "Focus")} 路{" "}
-                      {compactText(activeTask.title, 28)}
+                      {t(locale, "焦点", "Focus")} 路 {compactText(activeTask.title, 28)}
                     </span>
                   ) : null}
                 </div>
@@ -833,11 +827,7 @@ export function TasksCommandDock({
                     value={
                       activeTask
                         ? compactText(stageText, 40)
-                        : t(
-                            locale,
-                            "等待选择任务",
-                            "Waiting for task selection"
-                          )
+                        : t(locale, "等待选择任务", "Waiting for task selection")
                     }
                     tone={activeTask?.hasWarnings ? "warning" : "info"}
                   />

@@ -39,10 +39,10 @@ export type { AgentReasoningEntry, AgentReasoningPhase };
 // 因此需要从 REST `/api/blueprint/jobs/:id/events` 拉取已落盘的 `role.agent.*`
 // 事件并 seed 到 agentReasoning slice。fetch 函数延迟 import，避免循环依赖
 // 与 SSR 路径在没有 fetch polyfill 时报错。
-type HydrateHistoricalEventsFn = (
-  jobId: string
-) => Promise<BlueprintGenerationEvent[] | null>;
-let hydrateHistoricalEvents: HydrateHistoricalEventsFn = async jobId => {
+type HydrateHistoricalEventsFn = (jobId: string) => Promise<
+  BlueprintGenerationEvent[] | null
+>;
+let hydrateHistoricalEvents: HydrateHistoricalEventsFn = async (jobId) => {
   if (typeof window === "undefined" || typeof fetch === "undefined") {
     return null;
   }
@@ -198,12 +198,7 @@ export interface BlueprintRelayedEvent {
  * "assembled" indicates Phase 2 commit (documents pushed to array) — distinct from
  * Phase 1 "completed" (LLM generation done).
  */
-export type SpecDocsNodeStatus =
-  | "pending"
-  | "processing"
-  | "completed"
-  | "failed"
-  | "assembled";
+export type SpecDocsNodeStatus = "pending" | "processing" | "completed" | "failed" | "assembled";
 
 /**
  * Individual node entry in the spec docs progress slice.
@@ -305,10 +300,7 @@ function isFrontendTimeoutFailed(node: SpecDocsNodeEntry | undefined): boolean {
 /**
  * Check if a transition from one status to another is valid.
  */
-function isValidTransition(
-  from: SpecDocsNodeStatus,
-  to: SpecDocsNodeStatus
-): boolean {
+function isValidTransition(from: SpecDocsNodeStatus, to: SpecDocsNodeStatus): boolean {
   return VALID_TRANSITIONS[from].includes(to);
 }
 
@@ -583,9 +575,7 @@ function readString(value: unknown): string | undefined {
 }
 
 function readNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function readBoolean(value: unknown): boolean | undefined {
@@ -620,11 +610,9 @@ export function readRoleIdFromBlueprintPayload(
   return readRoleIdFromPayload(payload);
 }
 
-function readRoleContainerKey(payload: BlueprintRelayedEvent["payload"]): {
-  roleId?: string;
-  jobId?: string;
-  stageId?: string;
-} {
+function readRoleContainerKey(
+  payload: BlueprintRelayedEvent["payload"]
+): { roleId?: string; jobId?: string; stageId?: string } {
   const record = readPayloadRecord(payload);
   const key = readNestedRecord(record, "key");
   return {
@@ -685,7 +673,9 @@ function mapRoleContainerEventToRuntimeStatus(
 function normalizeExecutionMode(
   value: unknown
 ): RoleRuntimeExecutionMode | undefined {
-  return value === "real" || value === "simulated_fallback" ? value : undefined;
+  return value === "real" || value === "simulated_fallback"
+    ? value
+    : undefined;
 }
 
 function normalizeContainerMode(
@@ -816,9 +806,7 @@ function buildRelayedEventFromHistoricalEvent(
   event: BlueprintGenerationEvent
 ): BlueprintRelayedEvent {
   const payload =
-    event.payload &&
-    typeof event.payload === "object" &&
-    !Array.isArray(event.payload)
+    event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
       ? { ...(event.payload as Record<string, unknown>) }
       : {};
 
@@ -908,7 +896,8 @@ function flattenHistoricalAgentEvent(
         ? payloadRecord.degraded
         : event.degraded,
     reason: pickStringField(payloadRecord.reason) ?? event.reason,
-    tokensUsed: pickFiniteNumber(payloadRecord.tokensUsed) ?? event.tokensUsed,
+    tokensUsed:
+      pickFiniteNumber(payloadRecord.tokensUsed) ?? event.tokensUsed,
     budgetRemaining:
       pickFiniteNumber(payloadRecord.budgetRemaining) ?? event.budgetRemaining,
   };
@@ -983,9 +972,7 @@ function pickStringField(value: unknown): string | undefined {
 
 /** 从 unknown 中读取有限 number，否则返回 undefined。 */
 function pickFiniteNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -1018,15 +1005,15 @@ export function getOrCreateSocket(): Socket {
             "[autopilot-debug] socket connected sid=" + (socket?.id ?? "?")
           );
         });
-        socket.on("disconnect", reason => {
+        socket.on("disconnect", (reason) => {
           // eslint-disable-next-line no-console
           console.log("[autopilot-debug] socket disconnected:", reason);
         });
-        socket.on("blueprint:event", data => {
+        socket.on("blueprint:event", (data) => {
           // eslint-disable-next-line no-console
           console.log("[autopilot-debug] blueprint:event ←", data);
         });
-        socket.on("blueprint:batch", batch => {
+        socket.on("blueprint:batch", (batch) => {
           // eslint-disable-next-line no-console
           console.log(
             "[autopilot-debug] blueprint:batch ← (" +
@@ -1065,10 +1052,8 @@ function handleSpecDocsProgressEvent(
   const payload = event.payload as Record<string, unknown> | undefined;
   if (
     event.type === "job.completed" &&
-    (typeof payload?.documentCount === "number" ||
-      typeof payload?.specTreeId === "string") &&
-    (state.specDocsProgress.batchStatus === "running" ||
-      state.specDocsProgress.batchStatus === "assembling")
+    (typeof payload?.documentCount === "number" || typeof payload?.specTreeId === "string") &&
+    (state.specDocsProgress.batchStatus === "running" || state.specDocsProgress.batchStatus === "assembling")
   ) {
     const currentState = state.specDocsProgress;
     const nodeCount = Number(payload.nodeCount) || currentState.totalCount;
@@ -1165,11 +1150,7 @@ function handleSpecDocsProgressEvent(
       // protection (see failSpecDocsProgress). This prevents a Medium regression
       // where a later successful backend event is ignored after frontend 60s timeout.
       const allowFrontendTimeoutOverride = isFrontendTimeoutFailed(node);
-      if (
-        node.status !== "pending" &&
-        !isValidTransition(node.status, "completed") &&
-        !allowFrontendTimeoutOverride
-      ) {
+      if (node.status !== "pending" && !isValidTransition(node.status, "completed") && !allowFrontendTimeoutOverride) {
         return null; // Invalid transition (e.g., from completed/failed)
       }
       const newNode = { ...node, status: "completed" as const };
@@ -1179,8 +1160,7 @@ function handleSpecDocsProgressEvent(
       return {
         specDocsProgress: {
           ...currentState,
-          completedCount:
-            Number(payload.completedCount) || currentState.completedCount + 1,
+          completedCount: Number(payload.completedCount) || currentState.completedCount + 1,
           processedCount: currentState.processedCount + 1,
           nodes: {
             ...currentState.nodes,
@@ -1197,10 +1177,7 @@ function handleSpecDocsProgressEvent(
       const node = currentState.nodes[nodeId];
       if (!node) return null; // Unknown node (Req 2.8)
       // Tolerate missed node_started: same rationale as node_completed above.
-      if (
-        node.status !== "pending" &&
-        !isValidTransition(node.status, "failed")
-      ) {
+      if (node.status !== "pending" && !isValidTransition(node.status, "failed")) {
         return null; // Invalid transition (e.g., from completed/failed)
       }
       return {
@@ -1230,17 +1207,11 @@ function handleSpecDocsProgressEvent(
       //
       // Allow from frontend-timeout "failed" so that backend success can override
       // a prior frontend protection timeout (Medium fix).
-      if (
-        node.status === "assembled" ||
-        (node.status === "failed" && !isFrontendTimeoutFailed(node))
-      )
-        return null;
-      const newAssembledCount =
-        Number(payload.assembledCount) || currentState.assembledCount + 1;
+      if (node.status === "assembled" || (node.status === "failed" && !isFrontendTimeoutFailed(node))) return null;
+      const newAssembledCount = Number(payload.assembledCount) || currentState.assembledCount + 1;
       // Transition batchStatus to "assembling" on first node_assembled event
       const newBatchStatus: SpecDocsProgressState["batchStatus"] =
-        currentState.batchStatus === "running" ||
-        currentState.batchStatus === "assembling"
+        currentState.batchStatus === "running" || currentState.batchStatus === "assembling"
           ? "assembling"
           : currentState.batchStatus;
       const newNode = { ...node, status: "assembled" as const };
@@ -1303,11 +1274,7 @@ function handleSpecDocsProgressEvent(
             // For frontend-timeout ones, keep their original summary (don't overwrite with "missed").
             resolvedNodes[id] = isFrontendTimeoutFailed(node)
               ? node
-              : {
-                  ...node,
-                  status: "failed",
-                  errorSummary: "terminal event missed",
-                };
+              : { ...node, status: "failed", errorSummary: "terminal event missed" };
           }
         } else {
           resolvedNodes[id] = node;
@@ -1353,8 +1320,7 @@ export type BlueprintRealtimeEventListener = (
  * 模块级监听器集合。刻意保持在 module scope 而非 `BlueprintRealtimeState`，
  * 以满足 Requirements 2.15 / 5.2 / 6.6：本特性不向 store 顶层 state 增加字段。
  */
-const blueprintRealtimeEventListeners =
-  new Set<BlueprintRealtimeEventListener>();
+const blueprintRealtimeEventListeners = new Set<BlueprintRealtimeEventListener>();
 
 /**
  * 订阅 blueprint 实时事件。每次 `dispatchEvent` 在 reducer 状态更新之后会把
@@ -1451,7 +1417,7 @@ export const useBlueprintRealtimeStore = create<
     // agentReasoning.entries,避免"暂无推理记录"占位永远停留。fire-and-forget;
     // 失败时静默回退到只显示实时事件。重入安全：通过 subscribedJobId 比对
     // 防止竞态时旧 hydration 覆盖新 jobId 的状态。
-    void hydrateHistoricalEvents(jobId).then(historicalEvents => {
+    void hydrateHistoricalEvents(jobId).then((historicalEvents) => {
       if (!historicalEvents || historicalEvents.length === 0) return;
       const currentState = get();
       if (currentState.subscribedJobId !== jobId) return;
@@ -1506,8 +1472,9 @@ export const useBlueprintRealtimeStore = create<
         if (next) {
           get().dispatchEvent(next);
         }
-        pacingTimer =
-          pacingQueue.length > 0 ? setTimeout(flushOne, PACE_MS) : null;
+        pacingTimer = pacingQueue.length > 0
+          ? setTimeout(flushOne, PACE_MS)
+          : null;
       }, PACE_MS);
     }
 
@@ -1609,7 +1576,7 @@ export const useBlueprintRealtimeStore = create<
     const { type, payload } = event;
     dispatchBrainstormGraphEvent(event);
 
-    set(state => {
+    set((state) => {
       const updates: Partial<BlueprintRealtimeState> = {};
       const eventTime =
         typeof event.timestamp === "number"
@@ -1638,7 +1605,10 @@ export const useBlueprintRealtimeStore = create<
           buildAgentReasoningEvent(event)
         );
         if (reasoningEntry !== null) {
-          let nextEntries = [...state.agentReasoning.entries, reasoningEntry];
+          let nextEntries = [
+            ...state.agentReasoning.entries,
+            reasoningEntry,
+          ];
           if (nextEntries.length > MAX_AGENT_REASONING_ENTRIES) {
             nextEntries = nextEntries.slice(-MAX_AGENT_REASONING_ENTRIES);
           }
@@ -1697,10 +1667,7 @@ export const useBlueprintRealtimeStore = create<
       }
 
       // Capability 状态更新
-      if (
-        type === "brainstorm.session.started" &&
-        Array.isArray(payload?.roles)
-      ) {
+      if (type === "brainstorm.session.started" && Array.isArray(payload?.roles)) {
         const nextRolePhases = { ...(updates.rolePhases ?? state.rolePhases) };
         for (const role of payload.roles) {
           if (typeof role === "string") {
@@ -1735,7 +1702,8 @@ export const useBlueprintRealtimeStore = create<
           // 优先级使用（不再靠 capability id 猜测）。仅当 payload 带 roleId 时写入。
           const ownerRoleId = readRoleIdFromPayload(payload);
           if (ownerRoleId) {
-            const invocationId = (payload?.invocationId as string) ?? undefined;
+            const invocationId =
+              (payload?.invocationId as string) ?? undefined;
             updates.capabilityOwners = {
               ...(updates.capabilityOwners ?? state.capabilityOwners),
               [capId]: {
@@ -1810,14 +1778,17 @@ export const useBlueprintRealtimeStore = create<
       } catch (err) {
         if (import.meta.env?.DEV) {
           // eslint-disable-next-line no-console
-          console.error("[blueprint-realtime] event listener threw", err);
+          console.error(
+            "[blueprint-realtime] event listener threw",
+            err
+          );
         }
       }
     }
   },
 
   dismissSpecDocsProgress() {
-    set(state => ({
+    set((state) => ({
       specDocsProgress: { ...state.specDocsProgress, dismissed: true },
     }));
   },
@@ -1835,14 +1806,10 @@ export const useBlueprintRealtimeStore = create<
    * batchStatus to "finished" with a synthesized summary.
    */
   completeSpecDocsProgress(elapsedMs: number) {
-    set(state => {
+    set((state) => {
       const current = state.specDocsProgress;
       // Only act when there's an active running or assembling batch
-      if (
-        current.batchStatus !== "running" &&
-        current.batchStatus !== "assembling"
-      )
-        return state;
+      if (current.batchStatus !== "running" && current.batchStatus !== "assembling") return state;
 
       const resolvedNodes: Record<string, SpecDocsNodeEntry> = {};
       let resolvedCompleted = current.completedCount;
@@ -1851,11 +1818,7 @@ export const useBlueprintRealtimeStore = create<
         if (node.status === "assembled") {
           // Already received node_assembled via event stream — do NOT re-transition
           resolvedNodes[id] = node;
-        } else if (
-          node.status === "pending" ||
-          node.status === "processing" ||
-          node.status === "completed"
-        ) {
+        } else if (node.status === "pending" || node.status === "processing" || node.status === "completed") {
           resolvedNodes[id] = { ...node, status: "assembled" };
           if (node.status === "pending" || node.status === "processing") {
             resolvedCompleted += 1;
@@ -1868,7 +1831,7 @@ export const useBlueprintRealtimeStore = create<
 
       // Count assembled nodes for the final assembledCount
       const finalAssembledCount = Object.values(resolvedNodes).filter(
-        n => n.status === "assembled"
+        (n) => n.status === "assembled"
       ).length;
 
       return {
@@ -1891,13 +1854,9 @@ export const useBlueprintRealtimeStore = create<
   },
 
   failSpecDocsProgress(reason?: string) {
-    set(state => {
+    set((state) => {
       const current = state.specDocsProgress;
-      if (
-        current.batchStatus !== "running" &&
-        current.batchStatus !== "assembling"
-      )
-        return state;
+      if (current.batchStatus !== "running" && current.batchStatus !== "assembling") return state;
 
       const failedNodes: Record<string, SpecDocsNodeEntry> = {};
       let failedProcessed = current.processedCount;
@@ -1910,10 +1869,9 @@ export const useBlueprintRealtimeStore = create<
             status: "failed",
             // Use the canonical machine marker so that isFrontendTimeoutFailed
             // can reliably detect it regardless of locale or caller message.
-            errorSummary:
-              reason === FRONTEND_TIMEOUT_MARKER
-                ? FRONTEND_TIMEOUT_MARKER
-                : reason || "timeout",
+            errorSummary: reason === FRONTEND_TIMEOUT_MARKER
+              ? FRONTEND_TIMEOUT_MARKER
+              : (reason || "timeout"),
           };
           failedProcessed += 1;
         } else {
@@ -1931,9 +1889,7 @@ export const useBlueprintRealtimeStore = create<
           // keep completed/assembled as-is; failed nodes are reflected in UI via errorSummary
           summary: current.summary ?? {
             completedCount: failedCompleted,
-            failedCount: Object.values(failedNodes).filter(
-              n => n.status === "failed"
-            ).length,
+            failedCount: Object.values(failedNodes).filter((n) => n.status === "failed").length,
             elapsedMs: 0,
           },
         },
@@ -1990,7 +1946,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
     setBatchStatus: (
       next: "idle" | "running" | "assembling" | "finished"
     ): void => {
-      useBlueprintRealtimeStore.setState(state => ({
+      useBlueprintRealtimeStore.setState((state) => ({
         specDocsProgress: { ...state.specDocsProgress, batchStatus: next },
       }));
     },

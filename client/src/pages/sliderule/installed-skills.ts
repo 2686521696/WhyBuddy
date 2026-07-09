@@ -43,9 +43,7 @@ function save(list: InstalledSkill[]): void {
 }
 
 /** 安装唯一键：技能包按包 id（一仓多技能各装各的），语义档案按仓库键。 */
-export function installKeyOf(
-  skill: Pick<InstalledSkill, "repo" | "packageId">
-): string {
+export function installKeyOf(skill: Pick<InstalledSkill, "repo" | "packageId">): string {
   return skill.packageId ?? skill.repo;
 }
 
@@ -55,23 +53,20 @@ export function installSkill(
   skill: Omit<InstalledSkill, "installedAt">
 ): InstalledSkill[] {
   const key = installKeyOf(skill);
-  if (list.some(s => installKeyOf(s) === key)) return list;
+  if (list.some((s) => installKeyOf(s) === key)) return list;
   const next = [...list, { ...skill, installedAt: new Date().toISOString() }];
   save(next);
   return next;
 }
 
-export function uninstallSkill(
-  list: InstalledSkill[],
-  key: string
-): InstalledSkill[] {
-  const next = list.filter(s => installKeyOf(s) !== key);
+export function uninstallSkill(list: InstalledSkill[], key: string): InstalledSkill[] {
+  const next = list.filter((s) => installKeyOf(s) !== key);
   save(next);
   return next;
 }
 
 export function isInstalled(list: InstalledSkill[], key: string): boolean {
-  return list.some(s => installKeyOf(s) === key);
+  return list.some((s) => installKeyOf(s) === key);
 }
 
 /**
@@ -79,14 +74,8 @@ export function isInstalled(list: InstalledSkill[], key: string): boolean {
  * 上限 6 条（prompt 预算）——随 /drive-full 请求进服务端，生成契约要求
  * 每项落成一条 aigc.capabilities（字段绑定仍过门禁硬校验）。
  */
-export function installedSkillsDrivePayload(): Array<{
-  name: string;
-  description: string;
-}> {
+export function installedSkillsDrivePayload(): Array<{ name: string; description: string }> {
   return loadInstalledSkills()
     .slice(0, 6)
-    .map(s => ({
-      name: s.name.slice(0, 60),
-      description: s.description.slice(0, 160),
-    }));
+    .map((s) => ({ name: s.name.slice(0, 60), description: s.description.slice(0, 160) }));
 }

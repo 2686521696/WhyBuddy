@@ -34,7 +34,7 @@ const { applySubToSearch, parseSubFromSearch, stepSubStage } = __testing__;
 // ---------------------------------------------------------------------------
 
 const arbSubStage: fc.Arbitrary<AutopilotRailSubStage> = fc.constantFrom(
-  ...RAIL_SUB_STAGE_ORDER
+  ...RAIL_SUB_STAGE_ORDER,
 );
 
 /** 与 Spec 3 fabric-dispatch PBT 保持相同的 13 个 stage 枚举值。 */
@@ -51,11 +51,11 @@ const arbJobStage: fc.Arbitrary<BlueprintGenerationStage> = fc.constantFrom(
   "prompt_packaging",
   "runtime_capability",
   "engineering_handoff",
-  "engineering_landing"
+  "engineering_landing",
 ) as fc.Arbitrary<BlueprintGenerationStage>;
 
 const arbJob: fc.Arbitrary<BlueprintGenerationJob> = arbJobStage.map(
-  stage => ({ id: "job-pbt", stage }) as unknown as BlueprintGenerationJob
+  (stage) => ({ id: "job-pbt", stage }) as unknown as BlueprintGenerationJob,
 );
 
 // ---------------------------------------------------------------------------
@@ -67,7 +67,7 @@ describe("P1 — URL ⇔ State idempotent", () => {
     fc.assert(
       fc.property(
         fc.array(arbSubStage, { minLength: 2, maxLength: 6 }),
-        subStageSeq => {
+        (subStageSeq) => {
           // 模拟 hook 的写 URL 路径：累积 query string，并在每步断言 `sub` 与最后一次写入值相等。
           let search = "";
           for (const sub of subStageSeq) {
@@ -84,9 +84,9 @@ describe("P1 — URL ⇔ State idempotent", () => {
           expect(parseSubFromSearch(`?${afterRewrite}`)).toBe(last);
           // 且 URLSearchParams 序列化后字符串也等价
           expect(afterRewrite).toBe(search);
-        }
+        },
       ),
-      { numRuns: 50 }
+      { numRuns: 50 },
     );
   });
 
@@ -94,7 +94,7 @@ describe("P1 — URL ⇔ State idempotent", () => {
     fc.assert(
       fc.property(
         fc.array(arbSubStage, { minLength: 1, maxLength: 4 }),
-        subStageSeq => {
+        (subStageSeq) => {
           let search = "foo=bar";
           for (const sub of subStageSeq) {
             search = applySubToSearch(search, sub);
@@ -104,9 +104,9 @@ describe("P1 — URL ⇔ State idempotent", () => {
           const params = new URLSearchParams(search);
           expect(params.get("foo")).toBe("bar");
           expect(params.has("sub")).toBe(false);
-        }
+        },
       ),
-      { numRuns: 50 }
+      { numRuns: 50 },
     );
   });
 });
@@ -129,19 +129,13 @@ describe("P2 — Pin semantics", () => {
     | { type: "click-tab"; target: AutopilotRailSubStage }
     | { type: "toggle-pin" }
     | { type: "reset-pin" };
-  type JobEvent = {
-    type: "job-stage-change";
-    nextStage: BlueprintGenerationStage;
-  };
+  type JobEvent = { type: "job-stage-change"; nextStage: BlueprintGenerationStage };
   type AnyEvent = UserEvent | JobEvent;
 
   function simulate(
     initialStage: BlueprintGenerationStage,
-    events: AnyEvent[]
-  ): {
-    pinnedSubStage: AutopilotRailSubStage | null;
-    lastJobStage: BlueprintGenerationStage;
-  } {
+    events: AnyEvent[],
+  ): { pinnedSubStage: AutopilotRailSubStage | null; lastJobStage: BlueprintGenerationStage } {
     let pinnedSubStage: AutopilotRailSubStage | null = null;
     let lastJobStage = initialStage;
     for (const event of events) {
@@ -155,18 +149,13 @@ describe("P2 — Pin semantics", () => {
         case "toggle-pin": {
           const resolved = resolveRailSubStage({
             currentStage: "fabric",
-            job: {
-              id: "job-pbt",
-              stage: lastJobStage,
-            } as unknown as BlueprintGenerationJob,
+            job: { id: "job-pbt", stage: lastJobStage } as unknown as BlueprintGenerationJob,
             selection: null,
             specTree: null,
             agentCrew: null,
           });
           pinnedSubStage =
-            pinnedSubStage !== null
-              ? null
-              : (resolved ?? RAIL_SUB_STAGE_ORDER[0]);
+            pinnedSubStage !== null ? null : resolved ?? RAIL_SUB_STAGE_ORDER[0];
           break;
         }
         case "reset-pin":
@@ -183,7 +172,7 @@ describe("P2 — Pin semantics", () => {
       target: arbSubStage,
     }),
     fc.record({ type: fc.constant("toggle-pin" as const) }),
-    fc.record({ type: fc.constant("reset-pin" as const) })
+    fc.record({ type: fc.constant("reset-pin" as const) }),
   );
   const arbJobEvent: fc.Arbitrary<JobEvent> = fc.record({
     type: fc.constant("job-stage-change" as const),
@@ -197,16 +186,10 @@ describe("P2 — Pin semantics", () => {
         arbJobStage,
         fc.array(arbEvent, { minLength: 0, maxLength: 18 }),
         (initialStage, events) => {
-          const { pinnedSubStage, lastJobStage } = simulate(
-            initialStage,
-            events
-          );
+          const { pinnedSubStage, lastJobStage } = simulate(initialStage, events);
           const resolved = resolveRailSubStage({
             currentStage: "fabric",
-            job: {
-              id: "job-pbt",
-              stage: lastJobStage,
-            } as unknown as BlueprintGenerationJob,
+            job: { id: "job-pbt", stage: lastJobStage } as unknown as BlueprintGenerationJob,
             selection: null,
             specTree: null,
             agentCrew: null,
@@ -217,9 +200,9 @@ describe("P2 — Pin semantics", () => {
           } else {
             expect(effective).toBe(resolved);
           }
-        }
+        },
       ),
-      { numRuns: 50 }
+      { numRuns: 50 },
     );
   });
 
@@ -229,14 +212,11 @@ describe("P2 — Pin semantics", () => {
         arbJobStage,
         fc.array(arbEvent, { minLength: 0, maxLength: 10 }),
         (initialStage, events) => {
-          const final = simulate(initialStage, [
-            ...events,
-            { type: "reset-pin" },
-          ]);
+          const final = simulate(initialStage, [...events, { type: "reset-pin" }]);
           expect(final.pinnedSubStage).toBe(null);
-        }
+        },
       ),
-      { numRuns: 50 }
+      { numRuns: 50 },
     );
   });
 });
@@ -268,7 +248,7 @@ describe("P3 — Keyboard shortcut boundaries", () => {
     fc.assert(
       fc.property(
         fc.array(arbKeyStep, { minLength: 0, maxLength: 30 }),
-        seq => {
+        (seq) => {
           let cursor: AutopilotRailSubStage = RAIL_SUB_STAGE_ORDER[0];
           for (const step of seq) {
             const next = stepSubStage(cursor, step);
@@ -279,19 +259,17 @@ describe("P3 — Keyboard shortcut boundaries", () => {
             expect(idx).toBeGreaterThanOrEqual(0);
             expect(idx).toBeLessThanOrEqual(RAIL_SUB_STAGE_ORDER.length - 1);
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
   it("prev at the start is a no-op; next at the end is a no-op", () => {
     fc.assert(
-      fc.property(fc.nat({ max: 50 }), n => {
+      fc.property(fc.nat({ max: 50 }), (n) => {
         // 从起点连续 n 次 prev 仍应停在起点
-        const start = playKeys(
-          Array.from({ length: n }, () => "prev" as const)
-        );
+        const start = playKeys(Array.from({ length: n }, () => "prev" as const));
         expect(start).toBe(RAIL_SUB_STAGE_ORDER[0]);
         // 从终点连续 n 次 next 仍应停在终点
         const lastIdx = RAIL_SUB_STAGE_ORDER.length - 1;
@@ -309,7 +287,7 @@ describe("P3 — Keyboard shortcut boundaries", () => {
         }
         expect(cursor).toBe(RAIL_SUB_STAGE_ORDER[lastIdx]);
       }),
-      { numRuns: 50 }
+      { numRuns: 50 },
     );
   });
 
@@ -317,15 +295,15 @@ describe("P3 — Keyboard shortcut boundaries", () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: RAIL_SUB_STAGE_ORDER.length - 2 }),
-        startIdx => {
+        (startIdx) => {
           const start = RAIL_SUB_STAGE_ORDER[startIdx];
           const prev = stepSubStage(start, "prev");
           expect(prev).toBeDefined();
           const back = stepSubStage(prev!, "next");
           expect(back).toBe(start);
-        }
+        },
       ),
-      { numRuns: 50 }
+      { numRuns: 50 },
     );
   });
 });

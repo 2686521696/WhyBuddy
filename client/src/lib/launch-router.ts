@@ -188,7 +188,8 @@ export function evaluateLaunchRoute(
       input.projectContext?.status === "planning" ||
       input.projectContext?.status === "executing" ||
       Boolean(input.projectContext?.currentSpecTitle));
-  const needsClarification = wouldNeedClarification && !projectContextCanCarry;
+  const needsClarification =
+    wouldNeedClarification && !projectContextCanCarry;
 
   if (text.length < 36) {
     reasons.push("command_too_short");
@@ -235,11 +236,7 @@ export function evaluateLaunchRoute(
     };
   }
 
-  if (
-    attachments.length > 0 ||
-    wantsAttachmentContext ||
-    wantsWorkflowOrTeamSetup
-  ) {
+  if (attachments.length > 0 || wantsAttachmentContext || wantsWorkflowOrTeamSetup) {
     return {
       kind: "workflow",
       reasons,
@@ -281,9 +278,7 @@ export function buildLaunchRoutePlan(
   const blockedByUpgrade = decision.kind === "upgrade-required";
   const blockedByClarification = decision.kind === "clarify";
   const canDrive =
-    !blockedByUpgrade &&
-    !blockedByClarification &&
-    input.text.trim().length > 0;
+    !blockedByUpgrade && !blockedByClarification && input.text.trim().length > 0;
 
   const candidates: LaunchRouteCandidate[] = [
     {
@@ -326,14 +321,7 @@ export function buildLaunchRoutePlan(
           ? "needs_destination_detail"
           : null,
       reasons: [...decision.reasons, "complete_task_brief"],
-      stages: [
-        "destination",
-        "route",
-        "fleet",
-        "execution",
-        "review",
-        "evidence",
-      ],
+      stages: ["destination", "route", "fleet", "execution", "review", "evidence"],
       takeoverPoints: ["route-selection", "final-review"],
     },
     {
@@ -349,14 +337,7 @@ export function buildLaunchRoutePlan(
           ? "needs_destination_detail"
           : null,
       reasons: decision.reasons,
-      stages: [
-        "destination",
-        "route",
-        "fleet",
-        "execution",
-        "review",
-        "evidence",
-      ],
+      stages: ["destination", "route", "fleet", "execution", "review", "evidence"],
       takeoverPoints: ["route-selection", "runtime-upgrade", "final-review"],
     },
     {
@@ -378,3 +359,4 @@ export function buildLaunchRoutePlan(
     candidates,
   };
 }
+

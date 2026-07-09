@@ -58,10 +58,7 @@ function findPreviewArtifact(
     );
     if (match?.previewUrl) return match;
   }
-  return (
-    artifacts.find(artifact => artifact.previewUrl && fallback(artifact)) ??
-    null
-  );
+  return artifacts.find(artifact => artifact.previewUrl && fallback(artifact)) ?? null;
 }
 
 export function resolveReplayScreenshotArtifact(

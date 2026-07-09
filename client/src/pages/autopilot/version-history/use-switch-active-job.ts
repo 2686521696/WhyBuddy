@@ -21,7 +21,7 @@ export interface ExecuteSwitchActiveJobOptions {
 
 function deriveStageTransition(
   fromJob: VersionHistoryJob,
-  toJob: VersionHistoryJob
+  toJob: VersionHistoryJob,
 ): SwitchActiveStageTransition {
   return {
     fromStage: fromJob.stage,
@@ -31,7 +31,7 @@ function deriveStageTransition(
 
 function derivePageTransition(
   fromJob: VersionHistoryJob,
-  toJob: VersionHistoryJob
+  toJob: VersionHistoryJob,
 ): SwitchActivePageTransition | undefined {
   const fromPage = getAutopilotPageForStage(fromJob.stage);
   const toPage = getAutopilotPageForStage(toJob.stage);
@@ -86,13 +86,8 @@ export interface SwitchActiveNavigationApplyOptions {
   refreshJob?: (jobId: string) => void | Promise<void>;
 }
 
-export function withActiveJobSearchParam(
-  search: string,
-  jobId: string
-): string {
-  const params = new URLSearchParams(
-    search.startsWith("?") ? search.slice(1) : search
-  );
+export function withActiveJobSearchParam(search: string, jobId: string): string {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   params.set("activeJob", jobId);
   const next = params.toString();
   return next ? `?${next}` : "";
@@ -105,7 +100,7 @@ export function createSwitchActiveNavigationApply({
   updateUrl,
   refreshJob,
 }: SwitchActiveNavigationApplyOptions): (
-  payload: SwitchActiveApplyPayload
+  payload: SwitchActiveApplyPayload,
 ) => Promise<void> {
   return async ({ jobId, stage }) => {
     setActiveJobId(jobId);
@@ -123,7 +118,7 @@ export interface UseSwitchActiveJobOptions {
   coordinator?: SwitchActiveCoordinator;
   pageTransition?: (
     fromJob: VersionHistoryJob,
-    toJob: VersionHistoryJob
+    toJob: VersionHistoryJob,
   ) => SwitchActivePageTransition | null | undefined;
   onRejected?: (jobId: string, reason: SwitchActiveRejectionReason) => void;
   toast?: {
@@ -131,8 +126,7 @@ export interface UseSwitchActiveJobOptions {
   };
 }
 
-export interface CreateSwitchActiveJobHandlerOptions
-  extends UseSwitchActiveJobOptions {}
+export interface CreateSwitchActiveJobHandlerOptions extends UseSwitchActiveJobOptions {}
 
 export function createSwitchActiveJobHandler({
   jobs,
@@ -144,13 +138,14 @@ export function createSwitchActiveJobHandler({
   toast,
 }: CreateSwitchActiveJobHandlerOptions): (jobId: string) => Promise<boolean> {
   return async (jobId: string) => {
-    const job = jobs.find(candidate => candidate.id === jobId);
+    const job = jobs.find((candidate) => candidate.id === jobId);
     if (!job) {
       onRejected?.(jobId, "not_in_family");
       toast?.error("Selected job is outside the current version family.");
       return false;
     }
-    const fromJob = jobs.find(candidate => candidate.id === activeJobId) ?? job;
+    const fromJob =
+      jobs.find((candidate) => candidate.id === activeJobId) ?? job;
 
     await executeSwitchActiveJob({
       fromJob,
@@ -180,6 +175,6 @@ export function useSwitchActiveJob({
       onRejected,
       toast,
     }),
-    [apply, coordinator, jobs, pageTransition, onRejected, toast]
+    [apply, coordinator, jobs, pageTransition, onRejected, toast],
   );
 }

@@ -97,8 +97,7 @@ export function MissionDetailOverlay({
       "There is no extra coordination note right now. Logs, artifacts, and runtime evidence on Office home stay in the shared runtime evidence container."
     );
   const stageLabel =
-    detail.currentStageLabel ||
-    t(locale, "等待聚焦阶段", "Awaiting stage focus");
+    detail.currentStageLabel || t(locale, "等待聚焦阶段", "Awaiting stage focus");
   const activeAgents = detail.activeAgentCount || detail.agents.length;
 
   return (
@@ -221,10 +220,7 @@ export function MissionDetailOverlay({
                 {t(locale, "暂无执行成员", "No agents yet")}
               </p>
             ) : (
-              <ul
-                className="flex flex-col gap-1"
-                data-testid="mission-detail-agents"
-              >
+              <ul className="flex flex-col gap-1" data-testid="mission-detail-agents">
                 {detail.agents.map(agent => (
                   <li
                     key={agent.id}

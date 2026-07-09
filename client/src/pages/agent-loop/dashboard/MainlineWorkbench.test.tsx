@@ -32,11 +32,7 @@ describe("summarizeRuntimeStores", () => {
           instances: [{ id: "i1" }],
           seq: 4,
         }),
-        "sliderule:live-runtime:s2": JSON.stringify({
-          entities: {},
-          instances: [],
-          seq: 0,
-        }),
+        "sliderule:live-runtime:s2": JSON.stringify({ entities: {}, instances: [], seq: 0 }),
         "sliderule:live-runtime:broken": "not json",
         "unrelated:key": "x",
       })

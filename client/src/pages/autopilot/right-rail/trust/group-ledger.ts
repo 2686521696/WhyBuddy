@@ -24,7 +24,7 @@ import type {
  * 每个输出条目都是输入条目。分组按首次出现的 stage 顺序排列，组内保留输入顺序。
  */
 export function groupLedgerByStage(
-  entries: readonly BlueprintChecksLedgerEntry[] | null | undefined
+  entries: readonly BlueprintChecksLedgerEntry[] | null | undefined,
 ): LedgerStageGroup[] {
   const groups: LedgerStageGroup[] = [];
   const indexByStage = new Map<string, number>();
@@ -47,11 +47,11 @@ export function groupLedgerByStage(
  */
 export function selectByCheckType(
   entries: readonly BlueprintChecksLedgerEntry[] | null | undefined,
-  checkType: BlueprintCheckType
+  checkType: BlueprintCheckType,
 ): BlueprintChecksLedgerEntry[] {
   return (entries ?? []).filter(
     (entry): entry is BlueprintChecksLedgerEntry =>
-      !!entry && entry.checkType === checkType
+      !!entry && entry.checkType === checkType,
   );
 }
 
@@ -70,18 +70,17 @@ function statusBucket(status: BlueprintCheckStatus): 0 | 1 {
  * 同桶内相对顺序保留（稳定）；幂等（排两次 === 排一次）。
  */
 export function sortWarnFailFirst(
-  entries: readonly BlueprintChecksLedgerEntry[] | null | undefined
+  entries: readonly BlueprintChecksLedgerEntry[] | null | undefined,
 ): BlueprintChecksLedgerEntry[] {
   const list = (entries ?? []).filter(
-    (entry): entry is BlueprintChecksLedgerEntry => !!entry
+    (entry): entry is BlueprintChecksLedgerEntry => !!entry,
   );
   // 稳定排序：仅按桶比较，相等保持原序（Array.prototype.sort 在现代引擎稳定，
   // 但为严格稳定性显式用 index 兜底）。
   return list
     .map((entry, index) => ({ entry, index }))
     .sort((a, b) => {
-      const bucketDiff =
-        statusBucket(a.entry.status) - statusBucket(b.entry.status);
+      const bucketDiff = statusBucket(a.entry.status) - statusBucket(b.entry.status);
       return bucketDiff !== 0 ? bucketDiff : a.index - b.index;
     })
     .map(({ entry }) => entry);
@@ -94,13 +93,13 @@ export function sortWarnFailFirst(
  */
 export function applyLedgerFilters(
   entries: readonly BlueprintChecksLedgerEntry[] | null | undefined,
-  filter: LedgerFilterState | null | undefined
+  filter: LedgerFilterState | null | undefined,
 ): BlueprintChecksLedgerEntry[] {
   const list = (entries ?? []).filter(
-    (entry): entry is BlueprintChecksLedgerEntry => !!entry
+    (entry): entry is BlueprintChecksLedgerEntry => !!entry,
   );
   if (!filter) return list;
-  return list.filter(entry => {
+  return list.filter((entry) => {
     if (filter.checkType && entry.checkType !== filter.checkType) return false;
     if (filter.status && entry.status !== filter.status) return false;
     return true;

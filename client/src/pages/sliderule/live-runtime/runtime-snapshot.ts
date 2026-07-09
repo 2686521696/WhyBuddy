@@ -15,9 +15,7 @@ import type { RuntimeState } from "./live-runtime";
 export const RUNTIME_SNAPSHOT_HEADER = "## 排练运行时快照（浏览器运行时）";
 
 function mdEscape(v: unknown): string {
-  return String(v ?? "")
-    .replace(/\|/g, "\\|")
-    .replace(/\n/g, " ");
+  return String(v ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
 export function deriveRuntimeSnapshotMd(
@@ -33,10 +31,10 @@ export function deriveRuntimeSnapshotMd(
   if (entityRows.length === 0 && instances.length === 0) return null;
 
   const entityById = new Map(
-    (model?.datamodel?.entities ?? []).map(e => [e.id, e] as const)
+    (model?.datamodel?.entities ?? []).map((e) => [e.id, e] as const)
   );
   const nodeName = (nodeId: string) =>
-    (model?.workflow?.nodes ?? []).find(n => n.id === nodeId)?.name || nodeId;
+    (model?.workflow?.nodes ?? []).find((n) => n.id === nodeId)?.name || nodeId;
 
   const lines: string[] = [RUNTIME_SNAPSHOT_HEADER, ""];
   lines.push(
@@ -52,19 +50,17 @@ export function deriveRuntimeSnapshotMd(
     const entity = entityById.get(entityId);
     const fields =
       entity?.fields && entity.fields.length > 0
-        ? entity.fields.map(f => ({ id: f.id, label: f.name || f.id }))
-        : [...new Set(rows.flatMap(r => Object.keys(r.values)))].map(id => ({
+        ? entity.fields.map((f) => ({ id: f.id, label: f.name || f.id }))
+        : [...new Set(rows.flatMap((r) => Object.keys(r.values)))].map((id) => ({
             id,
             label: id,
           }));
     lines.push(`### ${entity?.name || entityId} · ${rows.length} 行`);
     lines.push("");
-    lines.push(`| ${fields.map(f => mdEscape(f.label)).join(" | ")} |`);
+    lines.push(`| ${fields.map((f) => mdEscape(f.label)).join(" | ")} |`);
     lines.push(`| ${fields.map(() => "---").join(" | ")} |`);
     for (const row of rows) {
-      lines.push(
-        `| ${fields.map(f => mdEscape(row.values[f.id]) || "—").join(" | ")} |`
-      );
+      lines.push(`| ${fields.map((f) => mdEscape(row.values[f.id]) || "—").join(" | ")} |`);
     }
     lines.push("");
   }

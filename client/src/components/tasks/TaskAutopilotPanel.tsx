@@ -300,11 +300,7 @@ function localizeRouteStatus(locale: string, value: string): string {
     case "completed":
       return t(locale, "\u5df2\u5b8c\u6210", "Completed");
     case "completed_with_errors":
-      return t(
-        locale,
-        "\u5e26\u5f02\u5e38\u5b8c\u6210",
-        "Completed With Errors"
-      );
+      return t(locale, "\u5e26\u5f02\u5e38\u5b8c\u6210", "Completed With Errors");
     case "failed":
       return t(locale, "\u5931\u8d25", "Failed");
     default:
@@ -383,12 +379,7 @@ function localizeDestinationTaskType(locale: string, value: string): string {
 }
 
 function localizeDestinationLockState(locale: string, value: string): string {
-  switch (
-    value
-      .trim()
-      .toLowerCase()
-      .replace(/[\s_]+/g, "-")
-  ) {
+  switch (value.trim().toLowerCase().replace(/[\s_]+/g, "-")) {
     case "locked":
     case "confirmed":
     case "goal-locked":
@@ -684,10 +675,7 @@ function localizeControlAction(locale: string, value: string): string {
   }
 }
 
-function recordListFromPaths(
-  source: unknown,
-  paths: string[]
-): UnknownRecord[] {
+function recordListFromPaths(source: unknown, paths: string[]): UnknownRecord[] {
   for (const path of paths) {
     const candidate = getPath(source, path);
     if (!Array.isArray(candidate)) continue;
@@ -745,20 +733,14 @@ function roleHighlightsFromSummary(
       })
       .map(item => {
         const name = roleDisplayLabel(item, locale);
-        const focus = pickText(item, [
-          "currentFocus",
-          "focus",
-          "currentAction",
-        ]);
+        const focus = pickText(item, ["currentFocus", "focus", "currentAction"]);
         const status = pickText(item, ["status"]);
 
         if (name && focus) return `${name}: ${focus}`;
         if (name && status) {
           return `${name} (${localizeFleetStatus(locale, status)})`;
         }
-        return (
-          name || focus || (status ? localizeFleetStatus(locale, status) : null)
-        );
+        return name || focus || (status ? localizeFleetStatus(locale, status) : null);
       })
   ).slice(0, 3);
 }
@@ -820,14 +802,13 @@ function readFleetRoleStatus(value: string | null): AutopilotFleetRoleStatus {
   }
 }
 
-function buildFleetRoleCardsFromSummary(
-  source: unknown
-): AutopilotFleetRoleCard[] {
+function buildFleetRoleCardsFromSummary(source: unknown): AutopilotFleetRoleCard[] {
   return roleRecordsFromSummary(source).map((item, index) => {
     const role = inferFleetRoleType(item);
     const status = readFleetRoleStatus(pickText(item, ["status", "state"]));
     const id =
-      pickText(item, ["id", "roleId", "key"]) ?? `${role}-${index + 1}`;
+      pickText(item, ["id", "roleId", "key"]) ??
+      `${role}-${index + 1}`;
     const currentFocus = pickText(item, [
       "currentFocus",
       "focus",
@@ -1039,16 +1020,12 @@ function routeSelectionRecord(source: unknown): UnknownRecord | null {
   }
 
   return (
-    candidates.find(
-      candidate => pickBoolean(candidate, ["selected"]) === true
-    ) || null
+    candidates.find(candidate => pickBoolean(candidate, ["selected"]) === true) ||
+    null
   );
 }
 
-function routeRecordById(
-  source: unknown,
-  routeId: string
-): UnknownRecord | null {
+function routeRecordById(source: unknown, routeId: string): UnknownRecord | null {
   const selected = routeSelectionRecord(source);
   if (selected && routeRecordId(selected) === routeId) {
     return selected;
@@ -1076,12 +1053,7 @@ function formatRouteReference(
   const record = routeRecordById(source, routeId);
   const label = record ? pickText(record, ["label", "title", "name"]) : null;
   const summary = record
-    ? pickText(record, [
-        "summary",
-        "recommendationReason",
-        "reason",
-        "description",
-      ])
+    ? pickText(record, ["summary", "recommendationReason", "reason", "description"])
     : null;
   const display = label || summary || routeId;
 
@@ -1106,14 +1078,12 @@ function recommendedRouteRecord(source: unknown): UnknownRecord | null {
     candidates.find(
       candidate =>
         pickBoolean(candidate, ["recommended", "isRecommended"]) === true
-    ) || null
+    ) ||
+    null
   );
 }
 
-function formatRouteCandidate(
-  item: UnknownRecord,
-  locale: string
-): string | null {
+function formatRouteCandidate(item: UnknownRecord, locale: string): string | null {
   const label = pickText(item, ["label", "title", "name"]);
   const summary = pickText(item, [
     "summary",
@@ -1173,16 +1143,12 @@ function parseDurationToMinutes(value: string): number | null {
   let totalMinutes = 0;
   let matched = false;
 
-  for (const match of normalized.matchAll(
-    /(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?/g
-  )) {
+  for (const match of normalized.matchAll(/(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?/g)) {
     totalMinutes += Number(match[1]) * 60;
     matched = true;
   }
 
-  for (const match of normalized.matchAll(
-    /(\d+(?:\.\d+)?)\s*m(?:in(?:ute)?s?)?/g
-  )) {
+  for (const match of normalized.matchAll(/(\d+(?:\.\d+)?)\s*m(?:in(?:ute)?s?)?/g)) {
     totalMinutes += Number(match[1]);
     matched = true;
   }
@@ -1233,7 +1199,10 @@ function summarizeRouteMetric(
   values: Array<string | null | undefined>,
   parser: (value: string) => number | null
 ): string | null {
-  const uniqueValues = uniqueStrings([selectedValue, ...values]);
+  const uniqueValues = uniqueStrings([
+    selectedValue,
+    ...values,
+  ]);
   if (uniqueValues.length === 0) return null;
 
   const range = buildComparableRange(uniqueValues, parser);
@@ -1333,15 +1302,9 @@ function takeoverOptionLabels(source: unknown): string[] {
       if (!isRecord(option)) return [];
 
       const label = pickText(option, ["label", "title", "name"]);
-      const description = pickText(option, [
-        "description",
-        "detail",
-        "summary",
-      ]);
+      const description = pickText(option, ["description", "detail", "summary"]);
       const combined =
-        label && description
-          ? `${label}: ${description}`
-          : label || description;
+        label && description ? `${label}: ${description}` : label || description;
 
       return combined ? [combined] : [];
     })
@@ -1350,10 +1313,7 @@ function takeoverOptionLabels(source: unknown): string[] {
 
 function outputLabelsFromSummary(source: unknown): string[] {
   return uniqueStrings([
-    ...collectTexts(source, [
-      "destination.deliverables",
-      "outputs.deliverables",
-    ]),
+    ...collectTexts(source, ["destination.deliverables", "outputs.deliverables"]),
     ...collectTexts(source, [
       "outputs.items",
       "intermediateOutputs.items",
@@ -1386,9 +1346,8 @@ function blockerLabelsFromSummary(source: unknown): string[] {
 function routeTakeoverPointCount(source: unknown): number {
   const takeoverPointIds = getPath(source, "route.takeoverPointIds");
   if (Array.isArray(takeoverPointIds)) {
-    return takeoverPointIds.filter(
-      value => value !== null && value !== undefined
-    ).length;
+    return takeoverPointIds.filter(value => value !== null && value !== undefined)
+      .length;
   }
 
   return asText(takeoverPointIds) ? 1 : 0;
@@ -1432,10 +1391,7 @@ function routeRemainingStepLabels(source: unknown): string[] {
   );
 }
 
-function routeRemainingStepsSummary(
-  source: unknown,
-  locale: string
-): string | null {
+function routeRemainingStepsSummary(source: unknown, locale: string): string | null {
   const remainingLabels = routeRemainingStepLabels(source);
   const remainingCount = remainingLabels.length;
   const parallelBranchCount = pickNumber(source, [
@@ -1453,10 +1409,7 @@ function routeRemainingStepsSummary(
           `${remainingCount} ${remainingCount === 1 ? "step" : "steps"} left`
         )
       : null,
-    prefixedSegment(
-      t(locale, "Remaining Steps", "Remaining Steps"),
-      remainingLabels
-    ),
+    prefixedSegment(t(locale, "Remaining Steps", "Remaining Steps"), remainingLabels),
     parallelBranchCount !== null && parallelBranchCount > 0
       ? t(
           locale,
@@ -1512,10 +1465,7 @@ function createBlock(input: {
   return { value, detail, badge };
 }
 
-function parseDestination(
-  source: unknown,
-  locale: string
-): AutopilotBlock | null {
+function parseDestination(source: unknown, locale: string): AutopilotBlock | null {
   const missingInfoDetailRecords = recordListFromPaths(source, [
     "destination.missingInfoDetails",
     "destination.missing_info_details",
@@ -1633,11 +1583,7 @@ function parseDestination(
         "missingInfo",
         "missing_info",
       ]);
-      const impact = pickText(item, [
-        "impact",
-        "impactSummary",
-        "impact_summary",
-      ]);
+      const impact = pickText(item, ["impact", "impactSummary", "impact_summary"]);
       const blocking = pickBoolean(item, ["blocking"]);
 
       return joinSegments([
@@ -1714,8 +1660,7 @@ function parseDestination(
     "destination.impact_summary",
   ]);
   const structuredMissingInfoImpact =
-    missingInfoDetails.find(item => item.blocking === true && item.impact)
-      ?.impact ||
+    missingInfoDetails.find(item => item.blocking === true && item.impact)?.impact ||
     missingInfoDetails.find(item => item.impact)?.impact ||
     null;
   const missingInfoImpact =
@@ -1744,16 +1689,22 @@ function parseDestination(
     lockState
       ? `${t(locale, "Lock State", "Lock State")}: ${localizeDestinationLockState(locale, lockState)}`
       : null,
-    confirmedAt
-      ? `${t(locale, "Confirmed", "Confirmed")}: ${confirmedAt}`
-      : null,
+    confirmedAt ? `${t(locale, "Confirmed", "Confirmed")}: ${confirmedAt}` : null,
     modifiedAt ? `${t(locale, "Modified", "Modified")}: ${modifiedAt}` : null,
     auxiliaryTaskTypes.length > 0
       ? `${t(locale, "Aux Types", "Aux Types")}: ${summarizeList(auxiliaryTaskTypes, 3) ?? ""}`
       : null,
     prefixedSegment(t(locale, "Signals", "Signals"), confidenceSignals),
-    prefixedSegment(t(locale, "\u7ea6\u675f", "Constraints"), constraints, 3),
-    prefixedSegment(t(locale, "\u9a8c\u6536", "Success"), successCriteria, 3),
+    prefixedSegment(
+      t(locale, "\u7ea6\u675f", "Constraints"),
+      constraints,
+      3
+    ),
+    prefixedSegment(
+      t(locale, "\u9a8c\u6536", "Success"),
+      successCriteria,
+      3
+    ),
     prefixedSegment(
       t(locale, "\u4ea4\u4ed8\u7269", "Deliverables"),
       deliverables
@@ -1762,10 +1713,7 @@ function parseDestination(
       t(locale, "澄清建议", "Clarifications"),
       suggestedClarifications
     ),
-    prefixedSegment(
-      t(locale, "待澄清项", "Missing Detail"),
-      structuredMissingInfo
-    ),
+    prefixedSegment(t(locale, "待澄清项", "Missing Detail"), structuredMissingInfo),
     missingInfo.length > 0
       ? `${t(locale, "缺失信息", "Missing")}: ${summarizeList(missingInfo, 2) ?? ""}`
       : null,
@@ -1777,8 +1725,7 @@ function parseDestination(
   return createBlock({
     value,
     detail,
-    badge:
-      missingInfo.length > 0 ? t(locale, "Needs Info", "Needs Info") : null,
+    badge: missingInfo.length > 0 ? t(locale, "Needs Info", "Needs Info") : null,
   });
 }
 
@@ -1836,7 +1783,9 @@ function parseRoute(source: unknown, locale: string): AutopilotBlock | null {
         const segments = uniqueStrings([
           type ? localizeRouteEvidenceEventType(locale, type) : null,
           actor ? localizeRouteChangeActor(locale, actor) : null,
-          toRouteId ? `${t(locale, "目标路线", "To")}: ${toRouteId}` : null,
+          toRouteId
+            ? `${t(locale, "目标路线", "To")}: ${toRouteId}`
+            : null,
           fromRouteId
             ? `${t(locale, "来源路线", "From")}: ${fromRouteId}`
             : null,
@@ -1852,26 +1801,21 @@ function parseRoute(source: unknown, locale: string): AutopilotBlock | null {
   const replanFromRouteId = pickText(source, ["route.replan.fromRouteId"]);
   const replanToRouteId = pickText(source, ["route.replan.toRouteId"]);
   const replanTriggeredBy = pickText(source, ["route.replan.triggeredBy"]);
-  const routeMode =
-    pickText(source, [
-      "route.selected.mode",
-      "route.current.mode",
-      "route.mode",
-      "selectedRoute.mode",
-      "routeMode",
-    ]) || pickText(selectedCandidate, ["mode"]);
-  const routeStatus =
-    pickText(source, [
-      "route.status",
-      "route.current.status",
-      "route.selected.status",
-      "selectedRoute.status",
-    ]) || pickText(selectedCandidate, ["status"]);
+  const routeMode = pickText(source, [
+    "route.selected.mode",
+    "route.current.mode",
+    "route.mode",
+    "selectedRoute.mode",
+    "routeMode",
+  ]) || pickText(selectedCandidate, ["mode"]);
+  const routeStatus = pickText(source, [
+    "route.status",
+    "route.current.status",
+    "route.selected.status",
+    "selectedRoute.status",
+  ]) || pickText(selectedCandidate, ["status"]);
   const currentStageLabel = routeCurrentStageLabel(source);
-  const progress = pickNumber(source, [
-    "route.progress",
-    "selectedRoute.progress",
-  ]);
+  const progress = pickNumber(source, ["route.progress", "selectedRoute.progress"]);
   const riskPoints = collectTexts(source, ["route.riskPoints"]);
   const riskPointCount = riskPoints.length;
   const takeoverPointCount = routeTakeoverPointCount(source);
@@ -1879,8 +1823,7 @@ function parseRoute(source: unknown, locale: string): AutopilotBlock | null {
     ? formatRouteCandidate(selectedCandidate, locale)
     : null;
   const recommendedRouteDetail =
-    recommendedCandidate &&
-    !sameRouteRecord(recommendedCandidate, selectedCandidate)
+    recommendedCandidate && !sameRouteRecord(recommendedCandidate, selectedCandidate)
       ? formatRouteCandidate(recommendedCandidate, locale)
       : null;
   const alternativeRouteDetails = uniqueStrings(
@@ -1901,21 +1844,20 @@ function parseRoute(source: unknown, locale: string): AutopilotBlock | null {
       "selectedRoute.locked",
     ]) ??
     (selectedCandidate ? pickBoolean(selectedCandidate, ["locked"]) : null);
-  const explicitDetail =
-    pickText(source, [
-      "route.selected.summary",
-      "route.selected.reason",
-      "route.selected.description",
-      "selectedRoute.summary",
-      "selectedRoute.reason",
-      "selectedRoute.description",
-      "route.current.summary",
-      "route.current.reason",
-      "route.summary",
-      "route.reason",
-      "route.description",
-      "route.detail",
-    ]) || pickText(selectedCandidate, ["summary", "reason", "description"]);
+  const explicitDetail = pickText(source, [
+    "route.selected.summary",
+    "route.selected.reason",
+    "route.selected.description",
+    "selectedRoute.summary",
+    "selectedRoute.reason",
+    "selectedRoute.description",
+    "route.current.summary",
+    "route.current.reason",
+    "route.summary",
+    "route.reason",
+    "route.description",
+    "route.detail",
+  ]) || pickText(selectedCandidate, ["summary", "reason", "description"]);
   const value =
     pickText(source, [
       "route.selected.title",
@@ -1947,11 +1889,7 @@ function parseRoute(source: unknown, locale: string): AutopilotBlock | null {
             : "Route can switch"
         )
       : switchRequiresConfirmation === true
-        ? t(
-            locale,
-            "\u5207\u6362\u9700\u786e\u8ba4",
-            "Switch requires confirmation"
-          )
+        ? t(locale, "\u5207\u6362\u9700\u786e\u8ba4", "Switch requires confirmation")
         : null;
   const selectionChangedReason = joinSegments([
     rawSelectionChangedReason,
@@ -2025,12 +1963,12 @@ function parseRoute(source: unknown, locale: string): AutopilotBlock | null {
     recommendedRouteDetail
       ? `${t(locale, "Recommended", "Recommended")}: ${recommendedRouteDetail}`
       : null,
-    prefixedSegment(
-      t(locale, "Alternatives", "Alternatives"),
-      alternativeRouteDetails
-    ),
+    prefixedSegment(t(locale, "Alternatives", "Alternatives"), alternativeRouteDetails),
     routeDiffSummary,
-    joinSegments([routeEtaSummary, routeCostSummary]),
+    joinSegments([
+      routeEtaSummary,
+      routeCostSummary,
+    ]),
     joinSegments([
       riskPointCount > 0
         ? formatCountSummary(locale, riskPointCount, "risk point", "risk point")
@@ -2081,11 +2019,7 @@ function parseRoute(source: unknown, locale: string): AutopilotBlock | null {
       ? `${t(locale, "Changed", "Changed")}: ${selectionChangedAt}`
       : null,
     switchRequiresConfirmation === true
-      ? t(
-          locale,
-          "Switch requires confirmation",
-          "Switch requires confirmation"
-        )
+      ? t(locale, "Switch requires confirmation", "Switch requires confirmation")
       : null,
     selectionChangedReason
       ? `${t(locale, "Selection Reason", "Selection Reason")}: ${selectionChangedReason}`
@@ -2144,10 +2078,7 @@ function parseRoute(source: unknown, locale: string): AutopilotBlock | null {
   return createBlock({ value, detail, badge });
 }
 
-function parseExecution(
-  source: unknown,
-  locale: string
-): AutopilotBlock | null {
+function parseExecution(source: unknown, locale: string): AutopilotBlock | null {
   const currentStageLabel =
     pickText(source, [
       "execution.currentStepLabel",
@@ -2249,10 +2180,7 @@ function parseExecution(
       progress !== null
         ? t(locale, `\u8fdb\u5ea6 ${progress}%`, `${progress}% complete`)
         : null,
-      prefixedSegment(
-        t(locale, "\u5728\u7ebf\u89d2\u8272", "Live"),
-        activeRoles
-      ),
+      prefixedSegment(t(locale, "\u5728\u7ebf\u89d2\u8272", "Live"), activeRoles),
       executorJobId
         ? `${t(locale, "\u6267\u884c\u4f5c\u4e1a", "Executor job")}: ${executorJobId}`
         : null,
@@ -2278,10 +2206,7 @@ function parseExecution(
   });
 }
 
-function parseDriveState(
-  source: unknown,
-  locale: string
-): AutopilotBlock | null {
+function parseDriveState(source: unknown, locale: string): AutopilotBlock | null {
   const stateLabel = pickText(source, [
     "driveState.label",
     "driveState.title",
@@ -2347,9 +2272,9 @@ function parseDriveState(
       ? t(locale, "\u5df2\u963b\u585e", "Blocked")
       : null,
     pickBoolean(source, [
-      "driveState.waitingForUser",
-      "currentDriveState.waitingForUser",
-    ])
+        "driveState.waitingForUser",
+        "currentDriveState.waitingForUser",
+      ])
       ? t(locale, "\u7b49\u5f85\u7528\u6237", "Waiting for user")
       : null,
     riskLevel
@@ -2376,18 +2301,14 @@ function parseDriveState(
   ]);
 
   return createBlock({
-    value:
-      stateLabel || (stateKey ? localizeDriveState(locale, stateKey) : null),
+    value: stateLabel || (stateKey ? localizeDriveState(locale, stateKey) : null),
     detail,
   });
 }
 
 function parseFleet(source: unknown, locale: string): AutopilotBlock | null {
   const roleTitles = roleTitlesFromSummary(source, locale);
-  const activeRoles = roleHighlightsFromSummary(source, locale, [
-    "running",
-    "waiting",
-  ]);
+  const activeRoles = roleHighlightsFromSummary(source, locale, ["running", "waiting"]);
   const blockedRoles = roleHighlightsFromSummary(source, locale, [
     "blocked",
     "failed",
@@ -2403,11 +2324,7 @@ function parseFleet(source: unknown, locale: string): AutopilotBlock | null {
     "fleetRoleSummary",
   ]);
   const detail = joinSegments([
-    pickText(source, [
-      "fleet.detail",
-      "fleet.statusSummary",
-      "fleet.description",
-    ]),
+    pickText(source, ["fleet.detail", "fleet.statusSummary", "fleet.description"]),
     buildFleetCountText(source, locale),
     prefixedSegment(t(locale, "\u5728\u7ebf", "Live"), activeRoles),
     prefixedSegment(t(locale, "\u963b\u585e", "Blocked"), blockedRoles),
@@ -2415,8 +2332,7 @@ function parseFleet(source: unknown, locale: string): AutopilotBlock | null {
   ]);
 
   return createBlock({
-    value:
-      explicitValue || (roleTitles.length > 0 ? roleTitles.join(" / ") : null),
+    value: explicitValue || (roleTitles.length > 0 ? roleTitles.join(" / ") : null),
     detail,
   });
 }
@@ -2442,10 +2358,7 @@ function parseBlockers(source: unknown, locale: string): AutopilotBlock | null {
     "blockingSummary",
   ]);
   const takeoverType = pickText(source, ["takeover.type", "blockers.type"]);
-  const isBlocked = pickBoolean(source, [
-    "driveState.blocked",
-    "takeover.blocking",
-  ]);
+  const isBlocked = pickBoolean(source, ["driveState.blocked", "takeover.blocking"]);
   const waitingForUser = pickBoolean(source, [
     "driveState.waitingForUser",
     "takeover.required",
@@ -2490,22 +2403,27 @@ function parseRecovery(source: unknown, locale: string): AutopilotBlock | null {
     "recovery.detail",
     "recovery.description",
   ]);
-  const attemptedActions = collectTexts(source, [
-    "recovery.attemptedActions",
-  ]).map(action => localizeControlAction(locale, action));
-  const suggestedActions = collectTexts(source, [
-    "recovery.suggestedActions",
-  ]).map(action => localizeControlAction(locale, action));
+  const attemptedActions = collectTexts(source, ["recovery.attemptedActions"]).map(
+    action => localizeControlAction(locale, action)
+  );
+  const suggestedActions = collectTexts(source, ["recovery.suggestedActions"]).map(
+    action => localizeControlAction(locale, action)
+  );
   const needsHuman = pickBoolean(source, ["recovery.needsHuman"]);
   const canAutoRecover = pickBoolean(source, ["recovery.canAutoRecover"]);
 
   return createBlock({
-    value:
-      explicitValue || (state ? localizeRecoveryState(locale, state) : reason),
+    value: explicitValue || (state ? localizeRecoveryState(locale, state) : reason),
     detail: joinSegments([
       reason,
-      prefixedSegment(t(locale, "Attempted", "Attempted"), attemptedActions),
-      prefixedSegment(t(locale, "Suggested", "Suggested"), suggestedActions),
+      prefixedSegment(
+        t(locale, "Attempted", "Attempted"),
+        attemptedActions
+      ),
+      prefixedSegment(
+        t(locale, "Suggested", "Suggested"),
+        suggestedActions
+      ),
       needsHuman
         ? t(locale, "Human handoff required", "Human handoff required")
         : null,
@@ -2550,10 +2468,7 @@ function parseOutputs(source: unknown, locale: string): AutopilotBlock | null {
     value: explicitValue || summarizeList(outputs, 2),
     detail: joinSegments([
       explicitDetail,
-      prefixedSegment(
-        t(locale, "\u4ea4\u4ed8\u7269", "Deliverables"),
-        deliverables
-      ),
+      prefixedSegment(t(locale, "\u4ea4\u4ed8\u7269", "Deliverables"), deliverables),
       prefixedSegment(
         t(locale, "\u4e2d\u95f4\u4ea7\u7269", "Intermediates"),
         outputs.filter(item => !deliverables.includes(item))
@@ -2593,9 +2508,7 @@ function formatExplanationCurrentStateSegment(
   locale: string
 ): string | null {
   const driveState = pickText(source, ["explanation.currentState.driveState"]);
-  const missionStatus = pickText(source, [
-    "explanation.currentState.missionStatus",
-  ]);
+  const missionStatus = pickText(source, ["explanation.currentState.missionStatus"]);
   const currentStageLabel = pickText(source, [
     "explanation.currentState.currentStageLabel",
   ]);
@@ -2671,7 +2584,7 @@ function formatExplanationRecommendationDetail(
         )}`
       : null,
     routeId ? `${t(locale, "路线", "Route")}: ${routeId}` : null,
-    decisionId ? `${t(locale, "决策", "Decision")}: ${decisionId}` : null,
+      decisionId ? `${t(locale, "决策", "Decision")}: ${decisionId}` : null,
     correlationTimelineId
       ? `${t(locale, "Timeline", "Timeline")}: ${correlationTimelineId}`
       : null,
@@ -2740,10 +2653,9 @@ function parseEvidence(source: unknown, locale: string): AutopilotBlock | null {
         ])}`
       : null,
     pickText(source, ["evidence.correlation.recommendedRouteId"])
-      ? `${t(locale, "Recommended Route", "Recommended Route")}: ${pickText(
-          source,
-          ["evidence.correlation.recommendedRouteId"]
-        )}`
+      ? `${t(locale, "Recommended Route", "Recommended Route")}: ${pickText(source, [
+          "evidence.correlation.recommendedRouteId",
+        ])}`
       : null,
     pickText(source, ["evidence.correlation.currentStepKey"])
       ? `${t(locale, "Current Step", "Current Step")}: ${formatKeyLabel(
@@ -2751,9 +2663,7 @@ function parseEvidence(source: unknown, locale: string): AutopilotBlock | null {
         )}`
       : null,
   ]);
-  const routeIds = textListFromValue(
-    getPath(source, "evidence.correlation.routeIds")
-  );
+  const routeIds = textListFromValue(getPath(source, "evidence.correlation.routeIds"));
   const routeStageKeys = textListFromValue(
     getPath(source, "evidence.correlation.routeStageKeys")
   );
@@ -2773,9 +2683,7 @@ function parseEvidence(source: unknown, locale: string): AutopilotBlock | null {
     getPath(source, "evidence.correlation.lineageIds")
   );
   const correlationCounts = uniqueStrings([
-    routeIds.length > 0
-      ? `${t(locale, "Routes", "Routes")}: ${routeIds.length}`
-      : null,
+    routeIds.length > 0 ? `${t(locale, "Routes", "Routes")}: ${routeIds.length}` : null,
     routeStageKeys.length > 0
       ? `${t(locale, "Stages", "Stages")}: ${routeStageKeys.length}`
       : null,
@@ -2800,11 +2708,7 @@ function parseEvidence(source: unknown, locale: string): AutopilotBlock | null {
       ? t(locale, `${eventCount} \u6761\u4e8b\u4ef6`, `${eventCount} events`)
       : null,
     artifactCount !== null
-      ? t(
-          locale,
-          `${artifactCount} \u4e2a\u4ea7\u7269`,
-          `${artifactCount} artifacts`
-        )
+      ? t(locale, `${artifactCount} \u4e2a\u4ea7\u7269`, `${artifactCount} artifacts`)
       : null,
   ]);
   const projection = projectionSource(source);
@@ -2831,10 +2735,7 @@ function parseEvidence(source: unknown, locale: string): AutopilotBlock | null {
     "state",
   ]);
   const projectionDetail =
-    projectionMarker ||
-    projectionEventId ||
-    projectionRouteId ||
-    projectionDriveState
+    projectionMarker || projectionEventId || projectionRouteId || projectionDriveState
       ? joinSegments([
           `${t(locale, "Takeover projection", "Takeover projection")}: ${
             projectionMarker || t(locale, "recorded", "recorded")
@@ -2872,10 +2773,7 @@ function parseEvidence(source: unknown, locale: string): AutopilotBlock | null {
       updatedAt
         ? `${t(locale, "\u66f4\u65b0\u65f6\u95f4", "Updated")}: ${updatedAt}`
         : null,
-      prefixedSegment(
-        t(locale, "\u8bc1\u636e\u6765\u6e90", "Sources"),
-        evidenceSources
-      ),
+      prefixedSegment(t(locale, "\u8bc1\u636e\u6765\u6e90", "Sources"), evidenceSources),
       prefixedSegment(t(locale, "缺口", "Gaps"), evidenceGaps),
       prefixedSegment(t(locale, "Timeline", "Timeline"), timelinePreview),
       projectionDetail,
@@ -2884,14 +2782,11 @@ function parseEvidence(source: unknown, locale: string): AutopilotBlock | null {
       ? localizeTimelineEventType(locale, latestEventType)
       : trustLevel
         ? localizeEvidenceTrust(locale, trustLevel)
-        : null,
+      : null,
   });
 }
 
-function parseExplanation(
-  source: unknown,
-  locale: string
-): AutopilotBlock | null {
+function parseExplanation(source: unknown, locale: string): AutopilotBlock | null {
   const current = pickText(source, [
     "explanation.current",
     "explanation.summary",
@@ -2905,13 +2800,9 @@ function parseExplanation(
   ]);
   const riskSummary = collectTexts(source, ["explanation.riskSummary"]);
   const evidenceHints = collectTexts(source, ["explanation.evidenceHints"]);
-  const telemetrySignals = collectTexts(source, [
-    "explanation.telemetrySignals",
-  ]);
+  const telemetrySignals = collectTexts(source, ["explanation.telemetrySignals"]);
   const fallbackValue =
-    current ||
-    summarizeList(recommendationReasons, 1) ||
-    summarizeList(nextSteps, 1);
+    current || summarizeList(recommendationReasons, 1) || summarizeList(nextSteps, 1);
 
   return createBlock({
     value: fallbackValue,
@@ -2985,9 +2876,7 @@ function parseTakeover(source: unknown, locale: string): AutopilotBlock | null {
       reason,
       prompt && prompt !== reason ? prompt : null,
       decisionId ? `${t(locale, "决策", "Decision")}: ${decisionId}` : null,
-      required === true
-        ? t(locale, "Action required", "Action required")
-        : null,
+      required === true ? t(locale, "Action required", "Action required") : null,
       blocking === true
         ? t(locale, "阻塞当前路线", "Blocking route progression")
         : null,
@@ -3032,11 +2921,7 @@ function parseDecisionHandoff(
 
   return createBlock({
     value: hasWaitingDecision
-      ? t(
-          locale,
-          "DecisionPanel owns waiting task / DecisionPanel 接管等待任务",
-          "DecisionPanel owns waiting task"
-        )
+      ? t(locale, "DecisionPanel owns waiting task / DecisionPanel 接管等待任务", "DecisionPanel owns waiting task")
       : t(locale, "Decision handoff", "Decision handoff"),
     detail: joinSegments([
       prompt,
@@ -3095,9 +2980,7 @@ function parseDecisionTakeoverItems(
   ]);
   const evidenceRefs = uniqueStrings([
     projectionRouteId ? `Route: ${projectionRouteId}` : null,
-    projectionDriveState
-      ? `Drive: ${formatKeyLabel(projectionDriveState)}`
-      : null,
+    projectionDriveState ? `Drive: ${formatKeyLabel(projectionDriveState)}` : null,
   ]);
 
   return [
@@ -3172,11 +3055,7 @@ function parseCostRisk(source: unknown, locale: string): AutopilotBlock | null {
   return createBlock({
     value:
       routeRiskLevel || selectedRouteCost || selectedRouteDuration
-        ? t(
-            locale,
-            "Right rail cost/risk summary / 右栏成本/风险摘要",
-            "Right rail cost/risk summary"
-          )
+        ? t(locale, "Right rail cost/risk summary / 右栏成本/风险摘要", "Right rail cost/risk summary")
         : summarizeList(riskSummary, 1),
     detail: joinSegments([
       routeRiskLevel
@@ -3200,11 +3079,7 @@ function parseCostRisk(source: unknown, locale: string): AutopilotBlock | null {
         candidateDurations,
         4
       ),
-      prefixedSegment(
-        t(locale, "Risk Signals", "Risk Signals"),
-        riskSummary,
-        3
-      ),
+      prefixedSegment(t(locale, "Risk Signals", "Risk Signals"), riskSummary, 3),
     ]),
     badge: routeRiskLevel ? localizeScale(locale, routeRiskLevel) : null,
   });
@@ -3218,9 +3093,7 @@ function enhanceEvidenceBlock(
   if (!block) return block;
 
   const timelineId = pickText(source, ["evidence.correlation.timelineId"]);
-  const routeIds = textListFromValue(
-    getPath(source, "evidence.correlation.routeIds")
-  );
+  const routeIds = textListFromValue(getPath(source, "evidence.correlation.routeIds"));
   const routeStageKeys = textListFromValue(
     getPath(source, "evidence.correlation.routeStageKeys")
   );
@@ -3261,10 +3134,9 @@ function enhanceEvidenceBlock(
         ])}`
       : null,
     pickText(source, ["evidence.correlation.recommendedRouteId"])
-      ? `${t(locale, "Recommended Route", "Recommended Route")}: ${pickText(
-          source,
-          ["evidence.correlation.recommendedRouteId"]
-        )}`
+      ? `${t(locale, "Recommended Route", "Recommended Route")}: ${pickText(source, [
+          "evidence.correlation.recommendedRouteId",
+        ])}`
       : null,
     pickText(source, ["evidence.correlation.currentStepKey"])
       ? `${t(locale, "Current Step", "Current Step")}: ${formatKeyLabel(
@@ -3322,13 +3194,8 @@ function enhanceExplanationBlock(
   locale: string,
   block: AutopilotBlock | null
 ): AutopilotBlock | null {
-  const currentStateSummary = pickText(source, [
-    "explanation.currentState.summary",
-  ]);
-  const currentStateDetail = formatExplanationCurrentStateSegment(
-    source,
-    locale
-  );
+  const currentStateSummary = pickText(source, ["explanation.currentState.summary"]);
+  const currentStateDetail = formatExplanationCurrentStateSegment(source, locale);
   const currentStateSources = uniqueStrings(
     collectTexts(source, ["explanation.currentState.sources"]).map(item =>
       formatKeyLabel(item)
@@ -3339,8 +3206,8 @@ function enhanceExplanationBlock(
     pickText(source, ["explanation.currentState.updatedAt"])
   );
   const recommendationDetails = uniqueStrings(
-    recordListFromPaths(source, ["explanation.recommendationDetails"]).map(
-      item => formatExplanationRecommendationDetail(item, locale)
+    recordListFromPaths(source, ["explanation.recommendationDetails"]).map(item =>
+      formatExplanationRecommendationDetail(item, locale)
     )
   );
   const remainingCurrentStep = pickText(source, [
@@ -3360,11 +3227,7 @@ function enhanceExplanationBlock(
     currentStateUpdatedAt
       ? `${t(locale, "更新时间", "Updated")}: ${currentStateUpdatedAt}`
       : null,
-    prefixedSegment(
-      t(locale, "建议", "Recommendations"),
-      recommendationDetails,
-      3
-    ),
+    prefixedSegment(t(locale, "建议", "Recommendations"), recommendationDetails, 3),
     remainingCurrentStep
       ? `${t(locale, "当前步骤", "Current step")}: ${remainingCurrentStep}`
       : null,
@@ -3417,11 +3280,7 @@ function parseAutopilotSummary(
     recovery: parseRecovery(raw, locale),
     outputs: parseOutputs(raw, locale),
     evidence: enhanceEvidenceBlock(raw, locale, parseEvidence(raw, locale)),
-    explanation: enhanceExplanationBlock(
-      raw,
-      locale,
-      parseExplanation(raw, locale)
-    ),
+    explanation: enhanceExplanationBlock(raw, locale, parseExplanation(raw, locale)),
     takeover: decisionPanelOwnsWaitingTask ? null : parseTakeover(raw, locale),
     takeoverItems,
     decision,
@@ -3660,7 +3519,11 @@ function EvidenceSlot({
   );
 }
 
-export function TaskAutopilotPanel({ detail }: { detail: MissionTaskDetail }) {
+export function TaskAutopilotPanel({
+  detail,
+}: {
+  detail: MissionTaskDetail;
+}) {
   const { locale } = useI18n();
   const parsedSummary = parseAutopilotSummary(detail, locale);
 
@@ -3675,11 +3538,7 @@ export function TaskAutopilotPanel({ detail }: { detail: MissionTaskDetail }) {
       <CardHeader className="space-y-1 pb-3">
         <CardTitle className="flex items-center gap-2 text-stone-900">
           <Sparkles className="size-4 text-teal-600" />
-          {t(
-            locale,
-            "\u81ea\u52a8\u9a7e\u9a76\u6458\u8981",
-            "Autopilot Summary"
-          )}
+          {t(locale, "\u81ea\u52a8\u9a7e\u9a76\u6458\u8981", "Autopilot Summary")}
         </CardTitle>
         <CardDescription>
           {t(
@@ -3708,62 +3567,56 @@ export function TaskAutopilotPanel({ detail }: { detail: MissionTaskDetail }) {
               groupTestId="task-autopilot-cockpit-route"
             />
           }
-          liveDrive={
-            <LiveDriveSlot locale={locale} summary={renderedSummary} />
-          }
+          liveDrive={<LiveDriveSlot locale={locale} summary={renderedSummary} />}
           takeover={<TakeoverSlot locale={locale} summary={renderedSummary} />}
           evidence={<EvidenceSlot locale={locale} summary={renderedSummary} />}
         />
         {false ? (
-          <div
-            className="hidden"
-            aria-hidden="true"
-            data-testid="task-autopilot-legacy-grid-shadow"
-          >
-            {renderedSummary.destination ? null : null}
-            {renderedSummary.route ? null : null}
-            {renderedSummary.execution ? null : null}
-            {renderedSummary.driveState ? null : null}
-            {renderedSummary.fleet ? null : null}
-            {renderedSummary.blockers ? null : null}
-            {renderedSummary.recovery ? (
-              <SummaryBlock
-                title={t(locale, "恢复", "Recovery")}
-                block={renderedSummary.recovery}
-                testId="task-autopilot-recovery"
-              />
-            ) : null}
-            {renderedSummary.outputs ? (
-              <SummaryBlock
-                title={t(locale, "\u4e2d\u95f4\u4ea7\u7269", "Outputs")}
-                block={renderedSummary.outputs}
-                testId="task-autopilot-outputs"
-                wide
-              />
-            ) : null}
-            {renderedSummary.evidence ? (
-              <SummaryBlock
-                title={t(locale, "\u8bc1\u636e", "Evidence")}
-                block={renderedSummary.evidence}
-                testId="task-autopilot-evidence"
-              />
-            ) : null}
-            {renderedSummary.explanation ? (
-              <SummaryBlock
-                title={t(locale, "解释", "Explanation")}
-                block={renderedSummary.explanation}
-                testId="task-autopilot-explanation"
-                wide
-              />
-            ) : null}
-            {renderedSummary.takeover ? (
-              <SummaryBlock
-                title={t(locale, "\u63a5\u7ba1", "Takeover")}
-                block={renderedSummary.takeover}
-                testId="task-autopilot-takeover"
-              />
-            ) : null}
-          </div>
+        <div className="hidden" aria-hidden="true" data-testid="task-autopilot-legacy-grid-shadow">
+          {renderedSummary.destination ? null : null}
+          {renderedSummary.route ? null : null}
+          {renderedSummary.execution ? null : null}
+          {renderedSummary.driveState ? null : null}
+          {renderedSummary.fleet ? null : null}
+          {renderedSummary.blockers ? null : null}
+          {renderedSummary.recovery ? (
+            <SummaryBlock
+              title={t(locale, "恢复", "Recovery")}
+              block={renderedSummary.recovery}
+              testId="task-autopilot-recovery"
+            />
+          ) : null}
+          {renderedSummary.outputs ? (
+            <SummaryBlock
+              title={t(locale, "\u4e2d\u95f4\u4ea7\u7269", "Outputs")}
+              block={renderedSummary.outputs}
+              testId="task-autopilot-outputs"
+              wide
+            />
+          ) : null}
+          {renderedSummary.evidence ? (
+            <SummaryBlock
+              title={t(locale, "\u8bc1\u636e", "Evidence")}
+              block={renderedSummary.evidence}
+              testId="task-autopilot-evidence"
+            />
+          ) : null}
+          {renderedSummary.explanation ? (
+            <SummaryBlock
+              title={t(locale, "解释", "Explanation")}
+              block={renderedSummary.explanation}
+              testId="task-autopilot-explanation"
+              wide
+            />
+          ) : null}
+          {renderedSummary.takeover ? (
+            <SummaryBlock
+              title={t(locale, "\u63a5\u7ba1", "Takeover")}
+              block={renderedSummary.takeover}
+              testId="task-autopilot-takeover"
+            />
+          ) : null}
+        </div>
         ) : null}
       </CardContent>
     </Card>

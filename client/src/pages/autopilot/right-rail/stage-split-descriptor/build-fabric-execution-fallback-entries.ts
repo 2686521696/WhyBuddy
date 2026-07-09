@@ -86,7 +86,9 @@ export function buildFabricExecutionFallbackEntries({
 
   const rawStageFilter = STAGE_FILTER_BY_SUB[sub];
   const stageId: string =
-    typeof rawStageFilter === "string" ? rawStageFilter : rawStageFilter[0];
+    typeof rawStageFilter === "string"
+      ? rawStageFilter
+      : rawStageFilter[0];
 
   return [
     {

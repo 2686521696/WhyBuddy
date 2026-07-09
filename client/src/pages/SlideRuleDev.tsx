@@ -19,20 +19,10 @@ import React, { useState, useMemo } from "react";
 import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurface";
 import { REASONING_GRAPH_FIXTURE } from "@/dev-harness/reasoning-graph-fixture";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
-import {
-  STAGE_TO_V5_CAPABILITIES,
-  ALL_V5_CAPABILITIES,
-  CAPABILITY_OUTPUT_KIND,
-} from "@shared/blueprint/contracts";
-import type {
-  BrainstormReasoningGraph,
-  BrainstormReasoningNode,
-} from "@shared/blueprint";
+import { STAGE_TO_V5_CAPABILITIES, ALL_V5_CAPABILITIES, CAPABILITY_OUTPUT_KIND } from "@shared/blueprint/contracts";
+import type { BrainstormReasoningGraph, BrainstormReasoningNode } from "@shared/blueprint";
 import * as SlideRuleRuntime from "@/lib/sliderule-runtime";
-import type {
-  Artifact,
-  UserIntervention,
-} from "@shared/blueprint/v5-reasoning-state";
+import type { Artifact, UserIntervention } from "@shared/blueprint/v5-reasoning-state";
 import { V5_ROLE_IDS } from "@shared/blueprint/sliderule-role-map";
 
 /** 与 shared/blueprint/sliderule-role-map 同源（含「接地」） */
@@ -68,7 +58,7 @@ export default function SlideRuleDev() {
     // Real server LLM (aligned with /autopilot getAIConfig + callLLMJson) is explicit opt-in.
     // Usage: /sliderule?executor=server-llm   (or add your own dev toggle that calls useServerLlmCapabilityExecutor)
     const params = new URLSearchParams(window.location.search);
-    const wantServer = params.get("executor") === "server-llm";
+    const wantServer = params.get('executor') === 'server-llm';
 
     if (wantServer && SlideRuleRuntime.useServerLlmCapabilityExecutor) {
       SlideRuleRuntime.useServerLlmCapabilityExecutor?.();
@@ -89,28 +79,20 @@ export default function SlideRuleDev() {
   React.useEffect(() => {
     const prevTitle = document.title;
     document.title = "SlideRule Dev · V5 Engineering Cockpit";
-    return () => {
-      document.title = prevTitle;
-    };
+    return () => { document.title = prevTitle; };
   }, []);
-  const [goal, setGoal] = useState(
-    "做一个权限管理系统（支持 RBAC + 数据范围）"
-  );
+  const [goal, setGoal] = useState("做一个权限管理系统（支持 RBAC + 数据范围）");
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
-  const [pinnedArtifact, setPinnedArtifact] = useState<WhyArtifact | null>(
-    null
-  );
+  const [pinnedArtifact, setPinnedArtifact] = useState<WhyArtifact | null>(null);
   const [nextGateShouldFail, setNextGateShouldFail] = useState(false); // for demo commit gate fail path
 
   // 动态 reasoning graph（复用 fixture 作为 base，每次能力运行可追加节点）
-  const [dynamicGraph, setDynamicGraph] = useState<BrainstormReasoningGraph>(
-    () => ({
-      ...REASONING_GRAPH_FIXTURE,
-      nodes: [...REASONING_GRAPH_FIXTURE.nodes],
-      edges: [...REASONING_GRAPH_FIXTURE.edges],
-    })
-  );
+  const [dynamicGraph, setDynamicGraph] = useState<BrainstormReasoningGraph>(() => ({
+    ...REASONING_GRAPH_FIXTURE,
+    nodes: [...REASONING_GRAPH_FIXTURE.nodes],
+    edges: [...REASONING_GRAPH_FIXTURE.edges],
+  }));
 
   // V5: the page now uses the thin runtime as source of truth for the closed loop.
   // We keep UI-friendly local state (chatTurns for history, dynamicGraph for the surface)
@@ -123,15 +105,9 @@ export default function SlideRuleDev() {
   const [sessionState, setSessionState] = useState(() =>
     SlideRuleRuntime.deriveNodeStatus
       ? SlideRuleRuntime.deriveNodeStatus(
-          SlideRuleRuntime.createInitialSessionState(
-            "做一个权限管理系统（支持 RBAC + 数据范围）",
-            "sliderule-dev-proto"
-          )
+          SlideRuleRuntime.createInitialSessionState("做一个权限管理系统（支持 RBAC + 数据范围）", "sliderule-dev-proto")
         )
-      : SlideRuleRuntime.createInitialSessionState(
-          "做一个权限管理系统（支持 RBAC + 数据范围）",
-          "sliderule-dev-proto"
-        )
+      : SlideRuleRuntime.createInitialSessionState("做一个权限管理系统（支持 RBAC + 数据范围）", "sliderule-dev-proto")
   );
 
   // 当前可用能力池（V5 全量）
@@ -139,69 +115,46 @@ export default function SlideRuleDev() {
 
   // Knife 8: decision challenge handler (single door, re-uses existing intake/orch/markAwait flow)
   const challengeDecision = async (decId: string) => {
-    const text =
-      window.prompt(
-        "质疑这条调度决策的原因？",
-        "质疑这条调度决策，请重新考虑"
-      ) || "质疑这条调度决策，请重新考虑";
+    const text = window.prompt('质疑这条调度决策的原因？', '质疑这条调度决策，请重新考虑') || '质疑这条调度决策，请重新考虑';
     const turnId = `turn-ch-${Date.now()}`;
 
     const loadedState = await SlideRuleRuntime.loadOrCreateSessionState(
       sessionState.sessionId || "sliderule-dev-proto",
       goal
     );
-    const intv: any = { intent: "challenge", targetDecisionId: decId, text };
-    const { preparedState, context } = SlideRuleRuntime.intakeMessage(
-      loadedState,
-      {
-        turnId,
-        userText: text,
-        intervention: intv,
-      }
-    );
+    const intv: any = { intent: 'challenge', targetDecisionId: decId, text };
+    const { preparedState, context } = SlideRuleRuntime.intakeMessage(loadedState, {
+      turnId,
+      userText: text,
+      intervention: intv,
+    });
 
-    const { newState: afterOrch } = SlideRuleRuntime.orchestrateReasoningTurn(
-      preparedState,
-      context
-    );
+    const { newState: afterOrch } = SlideRuleRuntime.orchestrateReasoningTurn(preparedState, context);
 
     // Minimal re-entry surface: update state (DLEDGER will have "reconsider" rationale from runtime),
     // mark AWAIT, add a note turn so user sees the challenge took effect.
     let final = await SlideRuleRuntime.saveSessionState(
       SlideRuleRuntime.markAwaiting(afterOrch, turnId)
     );
-    final = SlideRuleRuntime.deriveNodeStatus
-      ? SlideRuleRuntime.deriveNodeStatus(final)
-      : final;
+    final = SlideRuleRuntime.deriveNodeStatus ? SlideRuleRuntime.deriveNodeStatus(final) : final;
 
     setSessionState(final);
     setDynamicGraph(final.graph || dynamicGraph);
 
-    setChatTurns(prev => [
-      ...prev,
-      {
-        id: turnId,
-        user: `[decision challenge on ${decId}] ${text}`,
-        selected: [],
-        reason: "re-entry from DLEDGER decision challenge (runtime reconsider)",
-        artifacts: [],
-      },
-    ]);
+    setChatTurns((prev) => [...prev, {
+      id: turnId,
+      user: `[decision challenge on ${decId}] ${text}`,
+      selected: [],
+      reason: 're-entry from DLEDGER decision challenge (runtime reconsider)',
+      artifacts: [],
+    }]);
   };
 
   // Knife 10: waive a coverage gap (v1 minimal: prompt for reason, call helper, derive+save+set)
   const waiveGap = async (gapId: string) => {
-    const reason =
-      window.prompt("Waive reason?", "user waived (demo)") ||
-      "user waived (demo)";
-    let working = SlideRuleRuntime.waiveCoverageGap(
-      sessionState,
-      gapId,
-      reason
-    );
-    working = SlideRuleRuntime.deriveNodeStatus
-      ? SlideRuleRuntime.deriveNodeStatus(working)
-      : working;
+    const reason = window.prompt('Waive reason?', 'user waived (demo)') || 'user waived (demo)';
+    let working = SlideRuleRuntime.waiveCoverageGap(sessionState, gapId, reason);
+    working = SlideRuleRuntime.deriveNodeStatus ? SlideRuleRuntime.deriveNodeStatus(working) : working;
     working = await SlideRuleRuntime.saveSessionState(working);
     setSessionState(working);
     // Note: gaps live on sessionState; the Control Surface will re-render on next state update.
@@ -218,42 +171,38 @@ export default function SlideRuleDev() {
       sessionState.sessionId || "sliderule-dev-proto",
       goal
     );
-    const { preparedState, context, controlSignal } =
-      SlideRuleRuntime.intakeMessage(loadedState, {
-        turnId,
-        userText,
-      });
+    const { preparedState, context, controlSignal } = SlideRuleRuntime.intakeMessage(loadedState, {
+      turnId,
+      userText,
+    });
     // 控制信号分类结果（new_goal / refine 等）目前主要用于可观测；orchestrate 仍用 context 里的 intervention 决定路径
     // console.debug('[INTAKE]', controlSignal);
 
-    const { newState: afterOrch, plan } =
-      SlideRuleRuntime.orchestrateReasoningTurn(preparedState, context);
+    const { newState: afterOrch, plan } = SlideRuleRuntime.orchestrateReasoningTurn(preparedState, context);
 
     // Build raw artifacts. Report content is generated later at commit time using freshInputs + actual upstream artifacts.
-    const rawArtifacts: WhyArtifact[] = plan.selected.map(
-      (sel: any, idx: number) => {
-        const cap = sel.capabilityId as V5CapabilityId;
-        const outputKind = CAPABILITY_OUTPUT_KIND[cap] ?? "decision";
-        // Default content for non-report; make more semantic for key V5 capabilities so that
-        // when persisted and later aggregated into report/synthesis, the fragments are actually useful.
-        let content: string;
-        if (cap === "risk.analyze") {
-          content = `${sel.roleId} 通过 risk.analyze 贡献了：\n风险：数据范围越权风险（仅 RBAC 不足以表达跨部门/项目/租户边界）。\n风险：审计风险（权限变更需保留操作者、时间、影响对象）。`;
-        } else if (cap === "counter.argue") {
-          content = `${sel.roleId} 通过 counter.argue 贡献了：\n反驳：过早引入 ABAC 会增加策略调试成本。\n建议：MVP 先采用 RBAC + scoped data filter，保留策略接口。`;
-        } else {
-          content = `${sel.roleId || "agent"} 通过 ${cap} 贡献了新洞察/证据/方案`;
-        }
-        return {
-          id: `${turnId}-art-${idx}`,
-          kind: outputKind,
-          capability: cap,
-          role: sel.roleId || "agent",
-          content,
-          trustLevel: "untrusted",
-        };
+    const rawArtifacts: WhyArtifact[] = plan.selected.map((sel: any, idx: number) => {
+      const cap = sel.capabilityId as V5CapabilityId;
+      const outputKind = CAPABILITY_OUTPUT_KIND[cap] ?? "decision";
+      // Default content for non-report; make more semantic for key V5 capabilities so that
+      // when persisted and later aggregated into report/synthesis, the fragments are actually useful.
+      let content: string;
+      if (cap === "risk.analyze") {
+        content = `${sel.roleId} 通过 risk.analyze 贡献了：\n风险：数据范围越权风险（仅 RBAC 不足以表达跨部门/项目/租户边界）。\n风险：审计风险（权限变更需保留操作者、时间、影响对象）。`;
+      } else if (cap === "counter.argue") {
+        content = `${sel.roleId} 通过 counter.argue 贡献了：\n反驳：过早引入 ABAC 会增加策略调试成本。\n建议：MVP 先采用 RBAC + scoped data filter，保留策略接口。`;
+      } else {
+        content = `${sel.roleId || "agent"} 通过 ${cap} 贡献了新洞察/证据/方案`;
       }
-    );
+      return {
+        id: `${turnId}-art-${idx}`,
+        kind: outputKind,
+        capability: cap,
+        role: sel.roleId || "agent",
+        content,
+        trustLevel: "untrusted",
+      };
+    });
 
     // Commit one-by-one, re-resolving inputs from the *latest* workingState before each commit.
     // This makes same-turn dependency (risk → synthesis → report) real.
@@ -267,15 +216,11 @@ export default function SlideRuleDev() {
       const raw = rawArtifacts[idx];
       const runId = `${turnId}-run-${idx}`;
       // Only force upstreams (risk/counter) when flag set, so report can demonstrate "fails because of bad upstream"
-      const isUpstream =
-        raw.capability.includes("risk") || raw.capability.includes("argue");
+      const isUpstream = raw.capability.includes("risk") || raw.capability.includes("argue");
       const forceFail = nextGateShouldFail && isUpstream;
 
       // Re-resolve inputs right before commit using current state (after previous artifacts in this round)
-      const freshInputs = SlideRuleRuntime.findInputsForCapability(
-        workingState,
-        raw.capability
-      );
+      const freshInputs = SlideRuleRuntime.findInputsForCapability(workingState, raw.capability);
 
       // Route through the official CapabilityExecutor (injected default keeps exact prior simulator behavior).
       // Interface is async to allow real MCP/LLM/agent later; page awaits at the per-artifact commit sites.
@@ -293,8 +238,7 @@ export default function SlideRuleDev() {
       // the 9-section evidence report the real V5 deliverable.
       let content = exec ? exec.content : raw.content;
 
-      const provenance =
-        (exec?.provenance as Artifact["provenance"]) || "ai_generated";
+      const provenance = (exec?.provenance as Artifact["provenance"]) || "ai_generated";
 
       const { updatedState, committed } = SlideRuleRuntime.commitArtifact(
         workingState,
@@ -309,7 +253,7 @@ export default function SlideRuleDev() {
           },
           // Pass the (possibly freshly aggregated) content so that runtime state.artifacts
           // actually stores the enhanced report/synthesis text for future upstream reads.
-          title: content ? content.split("\n")[0]?.slice(0, 80) : undefined,
+          title: content ? content.split('\n')[0]?.slice(0, 80) : undefined,
           summary: content ? content.slice(0, 200) : undefined,
           content,
           ...(exec?.payload !== undefined ? { payload: exec.payload } : {}),
@@ -321,7 +265,7 @@ export default function SlideRuleDev() {
       workingState = updatedState;
       committedArtifacts.push({
         ...raw,
-        content, // use the (possibly freshly built) content
+        content,  // use the (possibly freshly built) content
         trustLevel: committed ? (committed.trustLevel as any) : "untrusted",
       });
     }
@@ -329,23 +273,15 @@ export default function SlideRuleDev() {
     const turn: ChatTurn = {
       id: turnId,
       user: userText,
-      selected: plan.selected.map((s: any) => ({
-        cap: s.capabilityId,
-        role: s.roleId || "agent",
-      })),
+      selected: plan.selected.map((s: any) => ({ cap: s.capabilityId, role: s.roleId || "agent" })),
       reason: plan.reason,
       artifacts: committedArtifacts,
     };
 
     // 先把本轮真正产出的 artifact 精确回写到对应 graph node（run 级绑定闭环）
-    workingState = SlideRuleRuntime.enrichGraphNodesAfterCommit(
-      workingState,
-      turnId
-    );
+    workingState = SlideRuleRuntime.enrichGraphNodesAfterCommit(workingState, turnId);
     // 显式 derive 确保单一真相（load-first 精神）
-    workingState = SlideRuleRuntime.deriveNodeStatus
-      ? SlideRuleRuntime.deriveNodeStatus(workingState)
-      : workingState;
+    workingState = SlideRuleRuntime.deriveNodeStatus ? SlideRuleRuntime.deriveNodeStatus(workingState) : workingState;
 
     // Update graph from runtime (nodes created with stable turnId + 现在带 producedArtifactId)
     setDynamicGraph(workingState.graph);
@@ -356,7 +292,7 @@ export default function SlideRuleDev() {
     );
 
     setSessionState(workingState);
-    setChatTurns(prev => [...prev, turn]);
+    setChatTurns((prev) => [...prev, turn]);
     setInput("");
     setNextGateShouldFail(false);
   };
@@ -369,11 +305,7 @@ export default function SlideRuleDev() {
    * fields like `capability`/`role`/`trustLevel` being passed instead of the
    * proper `producedBy` + `provenance` shape expected by the runtime).
    */
-  async function runReentryTurn(
-    intervention: UserIntervention,
-    turnId: string,
-    forceFail = false
-  ) {
+  async function runReentryTurn(intervention: UserIntervention, turnId: string, forceFail = false) {
     const { preparedState, context } = SlideRuleRuntime.intakeMessage(
       await SlideRuleRuntime.loadOrCreateSessionState(
         sessionState.sessionId || "sliderule-dev-proto",
@@ -386,31 +318,31 @@ export default function SlideRuleDev() {
       }
     );
 
-    const { newState: afterOrch, plan: rePlan } =
-      SlideRuleRuntime.orchestrateReasoningTurn(preparedState, context) as any;
+    const { newState: afterOrch, plan: rePlan } = SlideRuleRuntime.orchestrateReasoningTurn(
+      preparedState,
+      context
+    ) as any;
 
-    const rawNew: WhyArtifact[] = (rePlan.selected || []).map(
-      (sel: any, idx: number) => {
-        const cap = sel.capabilityId as V5CapabilityId;
-        const outputKind = CAPABILITY_OUTPUT_KIND[cap] ?? "risk";
-        let reContent: string;
-        if (cap === "risk.analyze") {
-          reContent = `【重入】${sel.roleId || "agent"} 通过 risk.analyze 贡献了：数据范围越权风险（仅 RBAC 不足以表达跨部门/项目/租户边界）；审计风险（权限变更需保留操作者、时间、影响对象）。`;
-        } else if (cap === "counter.argue") {
-          reContent = `【重入】${sel.roleId || "agent"} 通过 counter.argue 贡献了：反驳过早引入 ABAC（会增加策略调试成本）；建议 MVP 先采用 RBAC + scoped data filter，保留策略接口。`;
-        } else {
-          reContent = `【重入】${sel.roleId || "agent"} 针对干预通过 ${cap} 提供了反证/补充`;
-        }
-        return {
-          id: `${turnId}-art-${idx}`,
-          kind: outputKind,
-          capability: cap,
-          role: sel.roleId || "挑刺",
-          content: reContent,
-          trustLevel: "untrusted",
-        };
+    const rawNew: WhyArtifact[] = (rePlan.selected || []).map((sel: any, idx: number) => {
+      const cap = sel.capabilityId as V5CapabilityId;
+      const outputKind = CAPABILITY_OUTPUT_KIND[cap] ?? "risk";
+      let reContent: string;
+      if (cap === "risk.analyze") {
+        reContent = `【重入】${sel.roleId || "agent"} 通过 risk.analyze 贡献了：数据范围越权风险（仅 RBAC 不足以表达跨部门/项目/租户边界）；审计风险（权限变更需保留操作者、时间、影响对象）。`;
+      } else if (cap === "counter.argue") {
+        reContent = `【重入】${sel.roleId || "agent"} 通过 counter.argue 贡献了：反驳过早引入 ABAC（会增加策略调试成本）；建议 MVP 先采用 RBAC + scoped data filter，保留策略接口。`;
+      } else {
+        reContent = `【重入】${sel.roleId || "agent"} 针对干预通过 ${cap} 提供了反证/补充`;
       }
-    );
+      return {
+        id: `${turnId}-art-${idx}`,
+        kind: outputKind,
+        capability: cap,
+        role: sel.roleId || "挑刺",
+        content: reContent,
+        trustLevel: "untrusted",
+      };
+    });
 
     let working = afterOrch;
     const committedNew: WhyArtifact[] = [];
@@ -420,10 +352,7 @@ export default function SlideRuleDev() {
     for (let idx = 0; idx < rawNew.length; idx++) {
       const raw = rawNew[idx];
       const runId = `${turnId}-run-${idx}`;
-      const freshInputs = SlideRuleRuntime.findInputsForCapability(
-        working,
-        raw.capability
-      );
+      const freshInputs = SlideRuleRuntime.findInputsForCapability(working, raw.capability);
 
       const exec = await SlideRuleRuntime.executeCapability({
         capabilityId: raw.capability,
@@ -443,12 +372,8 @@ export default function SlideRuleDev() {
         id: raw.id,
         kind: raw.kind as any,
         provenance: "ai_generated",
-        producedBy: {
-          capabilityRunId: runId,
-          capabilityId: raw.capability,
-          roleId: raw.role,
-        },
-        title: content ? content.split("\n")[0]?.slice(0, 80) : undefined,
+        producedBy: { capabilityRunId: runId, capabilityId: raw.capability, roleId: raw.role },
+        title: content ? content.split('\n')[0]?.slice(0, 80) : undefined,
         summary: content ? content.slice(0, 200) : undefined,
         content,
       };
@@ -463,11 +388,7 @@ export default function SlideRuleDev() {
 
       working = updatedState;
       if (committed) {
-        committedNew.push({
-          ...raw,
-          content,
-          trustLevel: committed.trustLevel as any,
-        });
+        committedNew.push({ ...raw, content, trustLevel: committed.trustLevel as any });
       } else {
         committedNew.push({ ...raw, content, trustLevel: "untrusted" });
       }
@@ -476,18 +397,13 @@ export default function SlideRuleDev() {
     const reentryTurn: ChatTurn = {
       id: turnId,
       user: intervention.text,
-      selected: rePlan.selected.map((s: any) => ({
-        cap: s.capabilityId,
-        role: s.roleId || "agent",
-      })),
+      selected: rePlan.selected.map((s: any) => ({ cap: s.capabilityId, role: s.roleId || "agent" })),
       reason: "用户干预（卡片或节点）→ 失效/补充 → Orchestrator 重新挑选能力",
       artifacts: committedNew,
     };
 
     working = SlideRuleRuntime.enrichGraphNodesAfterCommit(working, turnId);
-    working = SlideRuleRuntime.deriveNodeStatus
-      ? SlideRuleRuntime.deriveNodeStatus(working)
-      : working;
+    working = SlideRuleRuntime.deriveNodeStatus ? SlideRuleRuntime.deriveNodeStatus(working) : working;
 
     setDynamicGraph(working.graph);
 
@@ -496,7 +412,7 @@ export default function SlideRuleDev() {
     );
 
     setSessionState(working);
-    setChatTurns(prev => [...prev, reentryTurn]);
+    setChatTurns((prev) => [...prev, reentryTurn]);
   }
 
   const challenge = (turn: ChatTurn, artifact: WhyArtifact) => {
@@ -513,9 +429,7 @@ export default function SlideRuleDev() {
     // Node-specific resolution: prefer the enriched producedArtifactId for exact
     // run/artifact binding (the whole point of the previous binding work).
     // Fall back to targetNodeId so the runtime's invalidate logic can still match.
-    const producedArtifactId = (node as any).producedArtifactId as
-      | string
-      | undefined;
+    const producedArtifactId = (node as any).producedArtifactId as string | undefined;
 
     const intervention: UserIntervention = {
       ...(producedArtifactId
@@ -536,46 +450,24 @@ export default function SlideRuleDev() {
       {/* V5 顶部状态条（唯一常驻） */}
       <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4 py-2 text-sm shadow-sm text-zinc-200">
         <div className="flex items-center gap-4">
-          <div className="font-semibold text-xl tracking-tight">
-            SlideRule Dev
-          </div>
-          <div className="rounded bg-zinc-800 px-2 py-0.5 text-xs font-medium text-zinc-300 ring-1 ring-inset ring-white/10">
-            Engineering Cockpit
-          </div>
-          <a
-            href="/sliderule"
-            className="text-[10px] text-violet-400 hover:text-violet-300 hover:underline"
-          >
-            ← 产品视图
-          </a>
+          <div className="font-semibold text-xl tracking-tight">SlideRule Dev</div>
+          <div className="rounded bg-zinc-800 px-2 py-0.5 text-xs font-medium text-zinc-300 ring-1 ring-inset ring-white/10">Engineering Cockpit</div>
+          <a href="/sliderule" className="text-[10px] text-violet-400 hover:text-violet-300 hover:underline">← 产品视图</a>
         </div>
         <div className="flex items-center gap-6 text-xs text-zinc-400">
-          <div>
-            <span className="text-zinc-500">目标：</span>
-            <span className="font-medium text-zinc-100">{goal}</span>
-          </div>
+          <div><span className="text-zinc-500">目标：</span><span className="font-medium text-zinc-100">{goal}</span></div>
           {(() => {
             const conclusion = (sessionState as any).goal?.status as
-              | "clear"
-              | "needs_refinement"
-              | "not_recommended"
+              | 'clear'
+              | 'needs_refinement'
+              | 'not_recommended'
               | undefined;
             const meta: Record<string, { label: string; cls: string }> = {
-              clear: {
-                label: "已收敛 / clear",
-                cls: "bg-emerald-950/60 text-emerald-300 ring-emerald-500/30",
-              },
-              needs_refinement: {
-                label: "待细化",
-                cls: "bg-zinc-800 text-zinc-300 ring-white/10",
-              },
-              not_recommended: {
-                label: "不建议",
-                cls: "bg-rose-950/60 text-rose-300 ring-rose-500/30",
-              },
+              clear: { label: '已收敛 / clear', cls: 'bg-emerald-950/60 text-emerald-300 ring-emerald-500/30' },
+              needs_refinement: { label: '待细化', cls: 'bg-zinc-800 text-zinc-300 ring-white/10' },
+              not_recommended: { label: '不建议', cls: 'bg-rose-950/60 text-rose-300 ring-rose-500/30' },
             };
-            const entry =
-              meta[conclusion ?? "needs_refinement"] ?? meta.needs_refinement;
+            const entry = meta[conclusion ?? 'needs_refinement'] ?? meta.needs_refinement;
             return (
               <div
                 data-testid="sliderule-dev-conclusion-badge"
@@ -586,40 +478,19 @@ export default function SlideRuleDev() {
               </div>
             );
           })()}
-          <div>
-            <span className="text-zinc-500">轮次：</span>
-            <span className="font-mono font-semibold text-zinc-100">
-              {chatTurns.length}
-            </span>
-          </div>
-          <div className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
-            phase:{" "}
-            <span className="font-mono text-zinc-200">
-              {(sessionState as any).runtimePhase || "idle"}
-            </span>
-          </div>
-          <div className="text-[10px] font-mono text-zinc-500">
-            session: {(sessionState as any).sessionId}
-          </div>
+          <div><span className="text-zinc-500">轮次：</span><span className="font-mono font-semibold text-zinc-100">{chatTurns.length}</span></div>
+          <div className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">phase: <span className="font-mono text-zinc-200">{(sessionState as any).runtimePhase || 'idle'}</span></div>
+          <div className="text-[10px] font-mono text-zinc-500">session: {(sessionState as any).sessionId}</div>
           <button
             onClick={async () => {
               let sessions: any[] = [];
               const lister = (SlideRuleRuntime as any).listSlideRuleSessions;
               if (lister) {
                 const res = lister();
-                sessions =
-                  res && typeof res.then === "function" ? await res : res || [];
+                sessions = res && typeof res.then === 'function' ? await res : (res || []);
               }
-              console.log("[V5 Sessions]", sessions);
-              alert(
-                `Active V5 sessions: ${sessions.length}\n` +
-                  sessions
-                    .map(
-                      (s: any) =>
-                        `${s.sessionId} (${s.artifactCount} arts, ${s.phase || "idle"})`
-                    )
-                    .join("\n")
-              );
+              console.log('[V5 Sessions]', sessions);
+              alert(`Active V5 sessions: ${sessions.length}\n` + sessions.map((s: any) => `${s.sessionId} (${s.artifactCount} arts, ${s.phase || 'idle'})`).join('\n'));
             }}
             className="text-[9px] px-1 border border-zinc-700 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200"
             title="List current V5 sessions from the runtime store (demo)"
@@ -628,52 +499,28 @@ export default function SlideRuleDev() {
           </button>
           <button
             onClick={() => {
-              const ledger = SlideRuleRuntime.getSessionLedger
-                ? SlideRuleRuntime.getSessionLedger(sessionState)
-                : [];
-              console.log("[V5 Ledger]", ledger);
-              alert(
-                `Ledger entries: ${ledger.length}\n` +
-                  ledger
-                    .slice(-5)
-                    .map(
-                      (l: any) =>
-                        `${l.capabilityId} @ ${l.trustLevel} (${l.gateSummary})`
-                    )
-                    .join("\n")
-              );
+              const ledger = SlideRuleRuntime.getSessionLedger ? SlideRuleRuntime.getSessionLedger(sessionState) : [];
+              console.log('[V5 Ledger]', ledger);
+              alert(`Ledger entries: ${ledger.length}\n` + ledger.slice(-5).map((l: any) => `${l.capabilityId} @ ${l.trustLevel} (${l.gateSummary})`).join('\n'));
             }}
             className="text-[9px] px-1 border border-zinc-700 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200"
             title="Show simulated T_LEDGER audit trail for this session"
           >
             ledger
           </button>
-          <div>
-            <span className="text-zinc-500">已调用能力：</span>
-            <span className="font-medium">
-              {
-                [...new Set(chatTurns.flatMap(t => t.selected.map(s => s.cap)))]
-                  .length
-              }
-            </span>
-          </div>
+          <div><span className="text-zinc-500">已调用能力：</span><span className="font-medium">{[...new Set(chatTurns.flatMap(t => t.selected.map(s => s.cap)))].length}</span></div>
           <button
             onClick={async () => {
               setChatTurns([]);
-              setDynamicGraph({
-                ...REASONING_GRAPH_FIXTURE,
-                nodes: [...REASONING_GRAPH_FIXTURE.nodes],
-                edges: [...REASONING_GRAPH_FIXTURE.edges],
-              });
+              setDynamicGraph({ ...REASONING_GRAPH_FIXTURE, nodes: [...REASONING_GRAPH_FIXTURE.nodes], edges: [...REASONING_GRAPH_FIXTURE.edges] });
               const sid = sessionState.sessionId || "sliderule-dev-proto";
               if (SlideRuleRuntime.deleteSlideRuleSession) {
                 await SlideRuleRuntime.deleteSlideRuleSession(sid);
               }
-              const resetSession =
-                await SlideRuleRuntime.loadOrCreateSessionState(
-                  sid,
-                  SlideRuleRuntime.EMPTY_SESSION_GOAL_TEXT
-                );
+              const resetSession = await SlideRuleRuntime.loadOrCreateSessionState(
+                sid,
+                SlideRuleRuntime.EMPTY_SESSION_GOAL_TEXT
+              );
               setSessionState(resetSession);
               setPinnedArtifact(null);
               setNextGateShouldFail(false);
@@ -685,11 +532,9 @@ export default function SlideRuleDev() {
           <button
             onClick={() => {
               const result = SlideRuleRuntime.verifyV5ClosedLoop(sessionState);
-              const phase = (sessionState as any).runtimePhase || "unknown";
-              alert(
-                `V5 Closed Loop Verify: ${result.passed ? "PASSED ✅" : "FAILED ❌"}\n${result.details}\n\nruntimePhase: ${phase} (AWAIT 闭环观测)\n(检查：报告是否引用了真实上游 + 相关 capabilityRun 是否存在)`
-              );
-              console.log("[V5 Verify]", result, "phase=", phase);
+              const phase = (sessionState as any).runtimePhase || 'unknown';
+              alert(`V5 Closed Loop Verify: ${result.passed ? 'PASSED ✅' : 'FAILED ❌'}\n${result.details}\n\nruntimePhase: ${phase} (AWAIT 闭环观测)\n(检查：报告是否引用了真实上游 + 相关 capabilityRun 是否存在)`);
+              console.log('[V5 Verify]', result, 'phase=', phase);
             }}
             className="rounded border border-zinc-700 px-2 py-1 text-emerald-400 hover:bg-emerald-950/50"
             title="运行轻量 behavioral test，钉住 risk→counter→synthesis→report 闭环链（推荐在 combo 轮后点击）"
@@ -698,14 +543,10 @@ export default function SlideRuleDev() {
           </button>
           <button
             onClick={() => {
-              const refreshed = SlideRuleRuntime.deriveNodeStatus
-                ? SlideRuleRuntime.deriveNodeStatus(sessionState)
-                : sessionState;
+              const refreshed = SlideRuleRuntime.deriveNodeStatus ? SlideRuleRuntime.deriveNodeStatus(sessionState) : sessionState;
               setSessionState(refreshed);
               setDynamicGraph(refreshed.graph);
-              console.log(
-                "[V5] Derived view refreshed from current artifacts/stale"
-              );
+              console.log('[V5] Derived view refreshed from current artifacts/stale');
             }}
             className="rounded border border-zinc-700 px-2 py-1 text-amber-400 hover:bg-amber-950/50 text-[9px]"
             title="Re-derive graph node statuses from artifacts + stale (single source of truth demo)"
@@ -721,82 +562,49 @@ export default function SlideRuleDev() {
           <div className="flex-1 overflow-auto p-4 space-y-4 text-sm">
             {chatTurns.length === 0 && (
               <div className="text-center text-zinc-500 mt-10">
-                欢迎来到 SlideRule V5。
-                <br />
-                在下方输入你的目标或质疑，系统会从丰富的能力池中动态挑选
-                (capability × role) 进行推演。
-                <br />
+                欢迎来到 SlideRule V5。<br />
+                在下方输入你的目标或质疑，系统会从丰富的能力池中动态挑选 (capability × role) 进行推演。<br />
                 没有固定阶段，一切由当前状态和你的输入驱动。
               </div>
             )}
 
             {chatTurns.map((turn, idx) => (
-              <div
-                key={turn.id}
-                className="rounded-lg border border-zinc-700 bg-zinc-800 p-3"
-              >
-                <div className="mb-1 text-xs text-zinc-500">
-                  第 {idx + 1} 轮 · 用户输入
-                </div>
+              <div key={turn.id} className="rounded-lg border border-zinc-700 bg-zinc-800 p-3">
+                <div className="mb-1 text-xs text-zinc-500">第 {idx + 1} 轮 · 用户输入</div>
                 <div className="font-medium text-zinc-100">{turn.user}</div>
 
-                <div className="mt-2 text-[11px] text-zinc-500">
-                  Orchestrator 挑选：
-                </div>
+                <div className="mt-2 text-[11px] text-zinc-500">Orchestrator 挑选：</div>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {turn.selected.map((s, i) => (
-                    <span
-                      key={i}
-                      className="rounded bg-violet-900/40 px-1.5 py-0.5 text-[10px] text-violet-300 ring-1 ring-inset ring-violet-700/50"
-                    >
+                    <span key={i} className="rounded bg-violet-900/40 px-1.5 py-0.5 text-[10px] text-violet-300 ring-1 ring-inset ring-violet-700/50">
                       {s.cap} × {s.role}
                     </span>
                   ))}
                 </div>
-                <div className="mt-1 text-xs italic text-zinc-500">
-                  {turn.reason}
-                </div>
+                <div className="mt-1 text-xs italic text-zinc-500">{turn.reason}</div>
 
                 {/* 本轮产生的 artifact（临时黑板） */}
                 <div className="mt-3 space-y-2">
-                  {turn.artifacts.map(art => (
-                    <div
-                      key={art.id}
-                      className="rounded border border-zinc-700 bg-zinc-700 p-2 text-xs text-zinc-200"
-                    >
+                  {turn.artifacts.map((art) => (
+                    <div key={art.id} className="rounded border border-zinc-700 bg-zinc-700 p-2 text-xs text-zinc-200">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium">
-                          {art.capability}{" "}
-                          <span className="text-zinc-400">by {art.role}</span>
-                        </span>
+                        <span className="font-medium">{art.capability} <span className="text-zinc-400">by {art.role}</span></span>
                         {sessionState.staleArtifactIds.includes(art.id) ? (
-                          <span className="text-[10px] text-orange-400 font-bold">
-                            stale
-                          </span>
+                          <span className="text-[10px] text-orange-400 font-bold">stale</span>
                         ) : (
-                          <span
-                            className={`text-[10px] ${art.trustLevel === "untrusted" ? "text-rose-400 font-bold" : "text-emerald-400"}`}
-                          >
+                          <span className={`text-[10px] ${art.trustLevel === "untrusted" ? "text-rose-400 font-bold" : "text-emerald-400"}`}>
                             {art.trustLevel}
                           </span>
                         )}
                       </div>
-                      <div className="mt-1 text-[9px] text-zinc-500 font-mono">
-                        run: {(art as any).producedBy?.capabilityRunId || "n/a"}{" "}
-                        | id: {art.id}
-                      </div>
+                      <div className="mt-1 text-[9px] text-zinc-500 font-mono">run: {(art as any).producedBy?.capabilityRunId || 'n/a'} | id: {art.id}</div>
                       <div className="mt-1 text-zinc-300">{art.content}</div>
                       {sessionState.staleArtifactIds.includes(art.id) && (
-                        <div className="mt-1 text-[10px] text-orange-400">
-                          已失效（依赖的上游被挑战，依赖链级联）
-                        </div>
+                        <div className="mt-1 text-[10px] text-orange-400">已失效（依赖的上游被挑战，依赖链级联）</div>
                       )}
-                      {art.trustLevel === "untrusted" &&
-                        !sessionState.staleArtifactIds.includes(art.id) && (
-                          <div className="mt-1 text-[10px] text-rose-400">
-                            Commit Gate 失败 / 已拒绝（未进入可信状态）
-                          </div>
-                        )}
+                      {art.trustLevel === "untrusted" && !sessionState.staleArtifactIds.includes(art.id) && (
+                        <div className="mt-1 text-[10px] text-rose-400">Commit Gate 失败 / 已拒绝（未进入可信状态）</div>
+                      )}
                       <button
                         onClick={() => challenge(turn, art)}
                         className="mt-1 text-[10px] text-rose-400 hover:text-rose-300 hover:underline"
@@ -819,66 +627,36 @@ export default function SlideRuleDev() {
           {/* Knife 8/10/11: V5.1 Control Surface — Grok-style dark telemetry panel */}
           <div className="border-t border-zinc-800 bg-zinc-950 p-3 text-[11px] text-zinc-200">
             <div className="mb-2 flex items-center justify-between">
-              <div className="font-semibold tracking-tight text-zinc-100">
-                V5.1 Control Surface
-              </div>
-              <div className="text-[9px] text-zinc-500">
-                runtime ledgers · live
-              </div>
+              <div className="font-semibold tracking-tight text-zinc-100">V5.1 Control Surface</div>
+              <div className="text-[9px] text-zinc-500">runtime ledgers · live</div>
             </div>
 
             {/* Grok-style live metrics row (moved here for focused Control Surface) */}
             {(() => {
               const gate: any = (sessionState as any).coverageGate;
               const covGaps: any[] = (sessionState as any).coverageGaps || [];
-              const open = covGaps.filter(g => g.status === "open").length;
-              const wvd = covGaps.filter(g => g.status === "waived").length;
-              const covTxt = gate
-                ? `${gate.passed ? "passed" : "blocked"} · open ${open} · waived ${wvd}`
-                : "n/a";
+              const open = covGaps.filter(g => g.status === 'open').length;
+              const wvd = covGaps.filter(g => g.status === 'waived').length;
+              const covTxt = gate ? `${gate.passed ? 'passed' : 'blocked'} · open ${open} · waived ${wvd}` : 'n/a';
               const csts: any[] = (sessionState as any).costLedger || [];
-              const tok = csts.reduce(
-                (s: number, c: any) => s + (c.estimatedTokens || 0),
-                0
-              );
-              const decs: any[] = SlideRuleRuntime.getDecisionLedger
-                ? SlideRuleRuntime.getDecisionLedger(sessionState)
-                : [];
+              const tok = csts.reduce((s: number, c: any) => s + (c.estimatedTokens || 0), 0);
+              const decs: any[] = SlideRuleRuntime.getDecisionLedger ? SlideRuleRuntime.getDecisionLedger(sessionState) : [];
               return (
                 <div className="mb-2 flex items-center gap-2 text-[10px]">
-                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-400">
-                    coverage <span className="text-zinc-100">{covTxt}</span>
-                  </span>
-                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-400">
-                    cost{" "}
-                    <span className="text-zinc-100">
-                      {tok} tok / {csts.length}
-                    </span>
-                  </span>
-                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-400">
-                    decisions{" "}
-                    <span className="text-zinc-100">{decs.length}</span>
-                  </span>
+                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-400">coverage <span className="text-zinc-100">{covTxt}</span></span>
+                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-400">cost <span className="text-zinc-100">{tok} tok / {csts.length}</span></span>
+                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-400">decisions <span className="text-zinc-100">{decs.length}</span></span>
                 </div>
               );
             })()}
 
             {/* Recent decisions — clean list with subtle actions */}
             <div className="mb-3">
-              <div className="mb-1 text-[10px] font-medium text-zinc-400">
-                Recent DLEDGER (last 3)
-              </div>
+              <div className="mb-1 text-[10px] font-medium text-zinc-400">Recent DLEDGER (last 3)</div>
               {(() => {
-                const decs: any[] = SlideRuleRuntime.getDecisionLedger
-                  ? SlideRuleRuntime.getDecisionLedger(sessionState)
-                  : [];
+                const decs: any[] = SlideRuleRuntime.getDecisionLedger ? SlideRuleRuntime.getDecisionLedger(sessionState) : [];
                 const recent = [...decs].slice(-3).reverse();
-                if (!recent.length)
-                  return (
-                    <div className="text-[10px] text-zinc-500">
-                      no decisions yet
-                    </div>
-                  );
+                if (!recent.length) return <div className="text-[10px] text-zinc-500">no decisions yet</div>;
                 const sourceBadge = (src?: string) => {
                   const s = src ?? "local_heuristic";
                   const cls =
@@ -888,33 +666,21 @@ export default function SlideRuleDev() {
                         ? "bg-amber-900/50 text-amber-300"
                         : "bg-zinc-800 text-zinc-400";
                   return (
-                    <span
-                      className={`rounded px-1 py-px font-mono text-[9px] ${cls}`}
-                    >
-                      {s}
-                    </span>
+                    <span className={`rounded px-1 py-px font-mono text-[9px] ${cls}`}>{s}</span>
                   );
                 };
                 return recent.map((d: any, i: number) => (
-                  <div
-                    key={i}
-                    className="group mb-1.5 flex items-start gap-2 border-l border-zinc-700 pl-2 text-[10px] leading-snug rounded hover:bg-zinc-900/40 transition"
-                  >
+                  <div key={i} className="group mb-1.5 flex items-start gap-2 border-l border-zinc-700 pl-2 text-[10px] leading-snug rounded hover:bg-zinc-900/40 transition">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 font-mono text-zinc-400">
                         <span>{d.id}</span>
                         {sourceBadge(d.source)}
                       </div>
                       <div className="truncate text-zinc-300">
-                        chose:{" "}
-                        <span className="text-zinc-100">
-                          {(d.chose || []).join(", ")}
-                        </span>
+                        chose: <span className="text-zinc-100">{(d.chose || []).join(', ')}</span>
                       </div>
-                      <div className="truncate text-zinc-500">
-                        {(d.rationale || "").slice(0, 70)}...
-                      </div>
-                      {d.status === "challenged" && (
+                      <div className="truncate text-zinc-500">{(d.rationale || '').slice(0, 70)}...</div>
+                      {d.status === 'challenged' && (
                         <span className="text-amber-400">challenged</span>
                       )}
                     </div>
@@ -932,26 +698,17 @@ export default function SlideRuleDev() {
 
             {/* Coverage Gaps — actionable, Grok-clean list */}
             <div>
-              <div className="mb-1 text-[10px] font-medium text-zinc-400">
-                Coverage Gaps
-              </div>
+              <div className="mb-1 text-[10px] font-medium text-zinc-400">Coverage Gaps</div>
               {(() => {
                 const covGaps: any[] = (sessionState as any).coverageGaps || [];
-                if (!covGaps.length)
-                  return (
-                    <div className="text-[10px] text-zinc-500">no gaps</div>
-                  );
+                if (!covGaps.length) return <div className="text-[10px] text-zinc-500">no gaps</div>;
                 return covGaps.map((g: any, i: number) => (
-                  <div
-                    key={i}
-                    className="mb-1 flex items-center gap-2 text-[10px] rounded px-1 py-0.5 hover:bg-zinc-900/40 transition"
-                  >
+                  <div key={i} className="mb-1 flex items-center gap-2 text-[10px] rounded px-1 py-0.5 hover:bg-zinc-900/40 transition">
                     <span className="min-w-0 flex-1 truncate text-zinc-300">
-                      {g.label}{" "}
-                      <span className="text-zinc-500">[{g.status}]</span>
+                      {g.label} <span className="text-zinc-500">[{g.status}]</span>
                     </span>
 
-                    {g.status === "open" && (
+                    {g.status === 'open' && (
                       <button
                         onClick={() => waiveGap(g.id)}
                         className="rounded border border-amber-900/60 px-1.5 py-px text-[9px] text-amber-400 transition hover:bg-amber-950 hover:text-amber-300"
@@ -961,15 +718,11 @@ export default function SlideRuleDev() {
                       </button>
                     )}
 
-                    {g.status === "waived" && g.waivedReason && (
-                      <span className="text-[9px] text-zinc-500">
-                        ({g.waivedReason})
-                      </span>
+                    {g.status === 'waived' && g.waivedReason && (
+                      <span className="text-[9px] text-zinc-500">({g.waivedReason})</span>
                     )}
-                    {g.status === "resolved" && (
-                      <span className="text-[9px] text-emerald-400">
-                        resolved
-                      </span>
+                    {g.status === 'resolved' && (
+                      <span className="text-[9px] text-emerald-400">resolved</span>
                     )}
                   </div>
                 ));
@@ -982,8 +735,8 @@ export default function SlideRuleDev() {
             <div className="flex gap-2">
               <input
                 value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && sendMessage()}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendMessage()}
                 placeholder="输入目标、质疑或指令，例如：这个权限方案风险太高，让安全 Agent 再反驳；或者先出个工程 MVP 方案"
                 className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
               />
@@ -1002,14 +755,7 @@ export default function SlideRuleDev() {
               </button>
             </div>
             <div className="mt-2 flex flex-wrap gap-1 text-[10px]">
-              {[
-                "路线对比一下",
-                "澄清权限边界",
-                "分析安全风险",
-                "拆解成 SPEC Tree",
-                "生成可行性报告",
-                "效果预览",
-              ].map((hint, i) => (
+              {["路线对比一下", "澄清权限边界", "分析安全风险", "拆解成 SPEC Tree", "生成可行性报告", "效果预览"].map((hint, i) => (
                 <button
                   key={i}
                   onClick={() => setInput(hint)}
@@ -1020,11 +766,8 @@ export default function SlideRuleDev() {
               ))}
             </div>
             <div className="mt-1 text-[10px] text-zinc-500">
-              能力池示例（{availableCapabilities.length} 个）：
-              {availableCapabilities.slice(0, 6).join(" · ")} ... <br />
-              点击“下次让上游失败”
-              按钮，然后发送包含报告的消息，即可演示上游失败 → report 因引用
-              untrusted upstream 自动 gate fail 的路径（V5 护城河核心）。
+              能力池示例（{availableCapabilities.length} 个）：{availableCapabilities.slice(0, 6).join(" · ")} ... <br />
+              点击“下次让上游失败” 按钮，然后发送包含报告的消息，即可演示上游失败 → report 因引用 untrusted upstream 自动 gate fail 的路径（V5 护城河核心）。
             </div>
           </div>
         </div>
@@ -1032,31 +775,17 @@ export default function SlideRuleDev() {
         {/* 动态主画布（V5 临时黑板区，可展示最新 reasoning graph + pinned artifact） — Grok dark */}
         <div className="flex flex-1 flex-col overflow-hidden border-t border-zinc-800 bg-zinc-900 md:border-t-0">
           <div className="border-b border-zinc-700 bg-zinc-800 px-4 py-2 text-xs font-medium text-zinc-400 flex items-center justify-between">
-            <span>
-              动态推演画布（复用 ReasoningFlowSurface · 随能力调用实时更新）
-            </span>
-            <span className="text-[10px] text-zinc-500">
-              点击节点可针对该结论发起挑战（与卡片等效精确重入）
-            </span>
+            <span>动态推演画布（复用 ReasoningFlowSurface · 随能力调用实时更新）</span>
+            <span className="text-[10px] text-zinc-500">点击节点可针对该结论发起挑战（与卡片等效精确重入）</span>
             {pinnedArtifact && (
-              <button
-                onClick={() => setPinnedArtifact(null)}
-                className="text-rose-400"
-              >
-                取消 Pin
-              </button>
+              <button onClick={() => setPinnedArtifact(null)} className="text-rose-400">取消 Pin</button>
             )}
           </div>
 
           <div className="flex-1 overflow-auto p-4">
             {/* 主 reasoning graph */}
-            <div
-              className="mb-4 rounded border border-zinc-700 bg-zinc-800 p-2 shadow-sm"
-              style={{ height: 420 }}
-            >
-              <div className="mb-1 text-xs font-medium text-zinc-400">
-                当前 Reasoning Graph（capability invocation）
-              </div>
+            <div className="mb-4 rounded border border-zinc-700 bg-zinc-800 p-2 shadow-sm" style={{ height: 420 }}>
+              <div className="mb-1 text-xs font-medium text-zinc-400">当前 Reasoning Graph（capability invocation）</div>
               <ReasoningFlowSurface
                 graph={currentGraphForSurface}
                 initialScale={0.75}
@@ -1069,39 +798,23 @@ export default function SlideRuleDev() {
 
             {/* Pinned 或最新 artifact 详情 — Grok dark card */}
             <div className="rounded border border-zinc-700 bg-zinc-800 p-3 text-sm shadow-sm text-zinc-200">
-              <div className="font-medium mb-2 text-zinc-100">
-                当前焦点 Artifact
-              </div>
+              <div className="font-medium mb-2 text-zinc-100">当前焦点 Artifact</div>
               {pinnedArtifact ? (
                 <div>
-                  <div className="text-xs text-emerald-400">
-                    {pinnedArtifact.capability} × {pinnedArtifact.role}
-                  </div>
-                  <div className="text-[9px] text-zinc-500 font-mono">
-                    run:{" "}
-                    {(pinnedArtifact as any).producedBy?.capabilityRunId ||
-                      "n/a"}{" "}
-                    | id: {pinnedArtifact.id}
-                  </div>
+                  <div className="text-xs text-emerald-400">{pinnedArtifact.capability} × {pinnedArtifact.role}</div>
+                  <div className="text-[9px] text-zinc-500 font-mono">run: {(pinnedArtifact as any).producedBy?.capabilityRunId || 'n/a'} | id: {pinnedArtifact.id}</div>
                   <div className="text-zinc-300">{pinnedArtifact.content}</div>
                 </div>
               ) : chatTurns.length > 0 ? (
-                <div className="text-zinc-500 text-xs">
-                  点击聊天中的 “Pin 到主画布” 查看详情。所有 artifact
-                  都来自真实能力运行（模拟），并带有 trustLevel。
-                </div>
+                <div className="text-zinc-500 text-xs">点击聊天中的 “Pin 到主画布” 查看详情。所有 artifact 都来自真实能力运行（模拟），并带有 trustLevel。</div>
               ) : (
-                <div className="text-zinc-500">
-                  发送第一条消息后，这里会显示最新产生的结构化输出。
-                </div>
+                <div className="text-zinc-500">发送第一条消息后，这里会显示最新产生的结构化输出。</div>
               )}
             </div>
           </div>
 
           <div className="border-t border-zinc-800 bg-zinc-950 p-2 text-[10px] text-zinc-500">
-            V5
-            原则演示：没有“下一步”按钮。所有推进都来自聊天输入驱动的动态能力选择。黑板可随对话更新（画面临时），背后的
-            graph/state 常驻。
+            V5 原则演示：没有“下一步”按钮。所有推进都来自聊天输入驱动的动态能力选择。黑板可随对话更新（画面临时），背后的 graph/state 常驻。
           </div>
         </div>
       </div>

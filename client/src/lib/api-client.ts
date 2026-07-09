@@ -75,49 +75,33 @@ function isPythonDegradedPayload(payload: unknown): boolean {
     p.degraded === true ||
     p.degraded === "true" ||
     p.status === "degraded" ||
-    (p.error &&
-      (typeof p.error === "object"
-        ? p.error.code === "planner_timeout"
-        : String(p.error).includes("timeout"))) ||
+    (p.error && (typeof p.error === "object" ? p.error.code === "planner_timeout" : String(p.error).includes("timeout"))) ||
     (typeof p.reason === "string" && /timeout|degraded|python/i.test(p.reason))
   );
 }
 
-function extractPythonEnvelope(
-  payload: unknown
-): { message: string; detail?: string; retryable?: boolean } | null {
+function extractPythonEnvelope(payload: unknown): { message: string; detail?: string; retryable?: boolean } | null {
   if (!payload || typeof payload !== "object") return null;
   const p: any = payload;
   // Only trigger for explicit Python degraded/timeout markers or 5xx python context (do not swallow generic {error:..} server responses)
-  const hasPythonMarker =
-    isPythonDegradedPayload(p) ||
-    (p.error &&
-      (typeof p.error === "string"
-        ? /python|timeout|degraded|planner/i.test(p.error)
-        : /python|timeout|degraded|planner/i.test(JSON.stringify(p.error)))) ||
-    (typeof p.reason === "string" &&
-      /python|timeout|degraded|planner/i.test(p.reason)) ||
-    p.degraded === true ||
-    p.status === "degraded";
+  const hasPythonMarker = isPythonDegradedPayload(p) ||
+    (p.error && (typeof p.error === "string" ? /python|timeout|degraded|planner/i.test(p.error) : /python|timeout|degraded|planner/i.test(JSON.stringify(p.error)))) ||
+    (typeof p.reason === "string" && /python|timeout|degraded|planner/i.test(p.reason)) ||
+    p.degraded === true || p.status === "degraded";
   if (!hasPythonMarker) return null;
   const msg =
     p.message ||
-    (typeof p.error === "string"
-      ? p.error
-      : p.error?.message || p.error?.code) ||
+    (typeof p.error === "string" ? p.error : p.error?.message || p.error?.code) ||
     p.reason ||
     extractErrorDetail(payload) ||
     "Python backend error/timeout/degraded";
   const detailParts: string[] = [];
   if (p.reason) detailParts.push(`reason=${p.reason}`);
-  if (p.error)
-    detailParts.push(`error=${JSON.stringify(p.error).slice(0, 120)}`);
+  if (p.error) detailParts.push(`error=${JSON.stringify(p.error).slice(0,120)}`);
   if (p.degraded) detailParts.push("degraded=true");
   return {
     message: String(msg).slice(0, 200),
-    detail: detailParts.length
-      ? detailParts.join("; ")
-      : "Python envelope normalized",
+    detail: detailParts.length ? detailParts.join("; ") : "Python envelope normalized",
     retryable: true,
   };
 }
@@ -274,10 +258,7 @@ export async function fetchJsonSafe<T>(
       response,
       error: createApiError(endpoint, {
         kind: "degraded",
-        source:
-          response.status >= 500 || response.status === 504
-            ? "timeout"
-            : "python",
+        source: response.status >= 500 || response.status === 504 ? "timeout" : "python",
         status: response.status,
         message: pyEnv.message,
         detail: pyEnv.detail || "",
@@ -288,15 +269,9 @@ export async function fetchJsonSafe<T>(
 
   if (!response.ok) {
     const isPython5xx =
-      (response.status === 502 ||
-        response.status === 503 ||
-        response.status === 504) &&
-      (String(extractErrorDetail(payload) || "")
-        .toLowerCase()
-        .includes("python") ||
-        String(rawText || "")
-          .toLowerCase()
-          .includes("python"));
+      (response.status === 502 || response.status === 503 || response.status === 504) &&
+      (String(extractErrorDetail(payload) || "").toLowerCase().includes("python") ||
+        String(rawText || "").toLowerCase().includes("python"));
     const fallbackKind =
       response.status === 502 ||
       response.status === 503 ||
@@ -304,15 +279,8 @@ export async function fetchJsonSafe<T>(
         ? getFallbackKind()
         : "error";
 
-    const src: ApiErrorSource = isPython5xx
-      ? "python"
-      : response.status >= 500
-        ? "timeout"
-        : "http";
-    const kind =
-      response.status === 502 || isPython5xx || isPythonDegradedPayload(payload)
-        ? "degraded"
-        : fallbackKind;
+    const src: ApiErrorSource = isPython5xx ? "python" : (response.status >= 500 ? "timeout" : "http");
+    const kind = (response.status === 502 || isPython5xx || isPythonDegradedPayload(payload)) ? "degraded" : fallbackKind;
 
     return {
       ok: false,
@@ -326,14 +294,14 @@ export async function fetchJsonSafe<T>(
           (kind === "degraded"
             ? "Python backend failure (timeout/degraded/502)."
             : fallbackKind === "error"
-              ? `Request failed with status ${response.status}.`
-              : "The backend service is not ready yet."),
+            ? `Request failed with status ${response.status}.`
+            : "The backend service is not ready yet."),
         detail:
           kind === "degraded"
             ? "Python error/timeout/degraded envelope; retry or legacy fallback visible to user."
             : fallbackKind === "error"
-              ? "The request completed, but the server reported an application error."
-              : "Retry after the backend becomes available, or switch back to local preview mode.",
+            ? "The request completed, but the server reported an application error."
+            : "Retry after the backend becomes available, or switch back to local preview mode.",
         retryable: response.status >= 500 || response.status === 429,
       }),
     };

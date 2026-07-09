@@ -23,11 +23,7 @@ import {
   phaseLabel,
   resolveAgentRoles,
 } from "./phaseLabels";
-import {
-  fetchJsonSafe,
-  isPythonBackendFailure,
-  isDegradedApiError,
-} from "@/lib/api-client";
+import { fetchJsonSafe, isPythonBackendFailure, isDegradedApiError } from "@/lib/api-client";
 
 const BASE = "/api/agent-loop";
 
@@ -74,13 +70,9 @@ async function getJson<T>(url: string): Promise<T> {
   const result = await fetchJsonSafe<T>(url);
   if (!result.ok) {
     const short = url.replace(/.*\/api\/agent-loop/, "/api/agent-loop");
-    const pyFail = isPythonBackendFailure(result.error)
-      ? " [python-degraded]"
-      : "";
+    const pyFail = isPythonBackendFailure(result.error) ? " [python-degraded]" : "";
     const degraded = isDegradedApiError(result.error) ? " [degraded]" : "";
-    throw new Error(
-      `${short} → HTTP ${result.error.status ?? "?"} ${pyFail}${degraded} ${result.error.message}`
-    );
+    throw new Error(`${short} → HTTP ${result.error.status ?? "?"} ${pyFail}${degraded} ${result.error.message}`);
   }
   return result.data;
 }
@@ -88,9 +80,7 @@ async function getJson<T>(url: string): Promise<T> {
 function parseSseJson(event: MessageEvent): Record<string, unknown> {
   try {
     const parsed = JSON.parse(String(event?.data || "{}"));
-    return parsed && typeof parsed === "object"
-      ? (parsed as Record<string, unknown>)
-      : {};
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
   } catch {
     return {};
   }
@@ -103,22 +93,16 @@ export function buildRunEventsStreamUrl(runId: string, live = true): string {
 
 export function subscribeRunEvents(
   runId: string | null | undefined,
-  handlers: RunEventSubscriptionHandlers = {}
+  handlers: RunEventSubscriptionHandlers = {},
 ): () => void {
   if (!runId || typeof EventSource === "undefined") {
     return () => undefined;
   }
   const source = new EventSource(buildRunEventsStreamUrl(String(runId), true));
-  source.addEventListener("event", event =>
-    handlers.onEvent?.(parseSseJson(event as MessageEvent))
-  );
-  source.addEventListener("snapshot", event =>
-    handlers.onSnapshot?.(parseSseJson(event as MessageEvent))
-  );
-  source.addEventListener("ping", event =>
-    handlers.onPing?.(parseSseJson(event as MessageEvent))
-  );
-  source.onerror = error => handlers.onError?.(error);
+  source.addEventListener("event", (event) => handlers.onEvent?.(parseSseJson(event as MessageEvent)));
+  source.addEventListener("snapshot", (event) => handlers.onSnapshot?.(parseSseJson(event as MessageEvent)));
+  source.addEventListener("ping", (event) => handlers.onPing?.(parseSseJson(event as MessageEvent)));
+  source.onerror = (error) => handlers.onError?.(error);
   return () => source.close();
 }
 
@@ -151,12 +135,7 @@ function deriveCounts(runs: AgentLoopRunSummary[]): Record<string, number> {
     if (isRunningStatus(run.status)) running += 1;
     else if (isDoneStatus(run.status)) {
       done += 1;
-      if (
-        String(run.status || "")
-          .toUpperCase()
-          .includes("REVIEW")
-      )
-        reviewed += 1;
+      if (String(run.status || "").toUpperCase().includes("REVIEW")) reviewed += 1;
     } else if (isAttentionStatus(run.status)) failed += 1;
     else pending += 1;
   }
@@ -175,18 +154,13 @@ export async function fetchOverview(): Promise<OverviewPayload> {
   try {
     const overview = await getJson<OverviewPayload>(`${BASE}/queue/overview`);
     const tasks = Array.isArray(overview?.tasks) ? overview.tasks : [];
-    const counts =
-      overview?.counts && typeof overview.counts === "object"
-        ? overview.counts
-        : {};
+    const counts = overview?.counts && typeof overview.counts === "object" ? overview.counts : {};
     return {
       queueRunning: Boolean(overview?.queueRunning),
       queuePath: overview?.queuePath ?? null,
       latestQueuePath: overview?.latestQueuePath ?? null,
       queueStale: Boolean(overview?.queueStale),
-      availableQueues: Array.isArray(overview?.availableQueues)
-        ? overview.availableQueues
-        : [],
+      availableQueues: Array.isArray(overview?.availableQueues) ? overview.availableQueues : [],
       counts,
       tasks,
       current: overview?.current ?? null,
@@ -197,7 +171,7 @@ export async function fetchOverview(): Promise<OverviewPayload> {
     const list = Array.isArray(runs) ? runs : [];
     const tasks = list.map(summaryToTask);
     const counts = deriveCounts(list);
-    const currentRun = list.find(run => isRunningStatus(run.status)) || null;
+    const currentRun = list.find((run) => isRunningStatus(run.status)) || null;
     return {
       queueRunning: Boolean(currentRun),
       counts,
@@ -220,30 +194,15 @@ type RawState = {
   runId?: string | null;
   status?: string | null;
   task?: { path?: string | null } | string | null;
-  options?: {
-    task?: string | null;
-    fixAgent?: string | null;
-    reviewAgent?: string | null;
-    skipReview?: boolean | null;
-  } | null;
+  options?: { task?: string | null; fixAgent?: string | null; reviewAgent?: string | null; skipReview?: boolean | null } | null;
   iterations?: Array<Record<string, unknown>> | null;
-  events?: Array<{
-    status?: string | null;
-    ts?: string | null;
-    iteration?: number | null;
-  }> | null;
+  events?: Array<{ status?: string | null; ts?: string | null; iteration?: number | null }> | null;
   reviewRounds?: Array<Record<string, unknown>> | null;
   startedAt?: string | null;
   updatedAt?: string | null;
   commit?: string | null;
   landing?: Record<string, unknown> | null;
-  artifacts?: Array<{
-    id?: string;
-    kind?: string;
-    title?: string | null;
-    path?: string | null;
-    content?: string | null;
-  }> | null;
+  artifacts?: Array<{ id?: string; kind?: string; title?: string | null; path?: string | null; content?: string | null }> | null;
   agentReview?: Record<string, unknown> | null;
   codexReview?: Record<string, unknown> | null;
   grokReview?: Record<string, unknown> | null;
@@ -251,40 +210,31 @@ type RawState = {
 
 function taskPathOf(state: RawState): string | null {
   if (typeof state.task === "string") return state.task;
-  if (state.task && typeof state.task === "object")
-    return state.task.path ?? null;
+  if (state.task && typeof state.task === "object") return state.task.path ?? null;
   return state.options?.task ?? null;
 }
 
-function markPipeline(
-  steps: ReturnType<typeof buildPipelineSteps>,
-  state: RawState
-) {
-  const seen = new Set((state.events || []).map(e => String(e.status || "")));
+function markPipeline(steps: ReturnType<typeof buildPipelineSteps>, state: RawState) {
+  const seen = new Set((state.events || []).map((e) => String(e.status || "")));
   const status = state.status || "";
-  return steps.map(step => {
+  return steps.map((step) => {
     const reached = seen.has(step.key);
     const active = step.key === status;
     // DONE step is done when the run reached any terminal DONE_* status.
-    const done =
-      step.key === "DONE" ? isDoneStatus(status) : reached && !active;
+    const done = step.key === "DONE" ? isDoneStatus(status) : reached && !active;
     return { ...step, done, active };
   });
 }
 
 function elapsedMsOf(state: RawState): number {
   const start = state.startedAt ? new Date(state.startedAt).getTime() : NaN;
-  const end = state.updatedAt
-    ? new Date(state.updatedAt).getTime()
-    : Date.now();
+  const end = state.updatedAt ? new Date(state.updatedAt).getTime() : Date.now();
   if (Number.isNaN(start)) return 0;
   return Math.max(0, end - start);
 }
 
 export async function fetchDetail(runId: string): Promise<DetailPayload> {
-  const state = await getJson<RawState>(
-    `${BASE}/runs/${encodeURIComponent(runId)}`
-  );
+  const state = await getJson<RawState>(`${BASE}/runs/${encodeURIComponent(runId)}`);
   // Best effort: also pull snapshot for richer replay-derived fields (reviewVerdict, flow, etc.)
   let snap: any = {};
   try {
@@ -294,14 +244,14 @@ export async function fetchDetail(runId: string): Promise<DetailPayload> {
   const steps = markPipeline(buildPipelineSteps(state), state);
   const elapsedMs = elapsedMsOf(state);
 
-  const events = (state.events || []).map(event => ({
+  const events = (state.events || []).map((event) => ({
     status: event.status ?? null,
     label: phaseLabel(event.status),
     timeText: formatClock(event.ts),
     iteration: event.iteration ?? null,
   }));
 
-  const reviewRounds = (state.reviewRounds || []).map(round => ({
+  const reviewRounds = (state.reviewRounds || []).map((round) => ({
     round: round.round ?? null,
     verdict: round.verdict ?? null,
     decision: round.decision ?? null,
@@ -321,54 +271,26 @@ export async function fetchDetail(runId: string): Promise<DetailPayload> {
   // Use explicit /artifacts/{name} subroutes (distinct per semantic resource).
   // Fall back only if no artifact index entry (missing degrades cleanly, no crash, no lie).
   // Never collapse distinct artifacts onto identical generic routes.
-  const arts = (state.artifacts || []) as Array<{
-    id?: string;
-    kind?: string;
-    title?: string | null;
-    path?: string | null;
-    content?: string | null;
-  }>;
+  const arts = (state.artifacts || []) as Array<{ id?: string; kind?: string; title?: string | null; path?: string | null; content?: string | null }>;
   function pickArt(cands: string[], kindHint?: string): string | null {
     for (const c of cands) {
-      if (
-        arts.some(
-          a => a && (a.id === c || a.path === c || (a.title || "") === c)
-        )
-      )
-        return c;
+      if (arts.some((a) => a && (a.id === c || a.path === c || (a.title || "") === c))) return c;
     }
     if (kindHint) {
-      const m = arts.find(
-        a =>
-          a &&
-          ((a.kind || "").includes(kindHint) || (a.id || "").includes(kindHint))
-      );
+      const m = arts.find((a) => a && ((a.kind || "").includes(kindHint) || (a.id || "").includes(kindHint)));
       if (m && m.id) return m.id;
     }
     return null;
   }
-  const reportMd = pickArt(
-    ["final-report.md", "report.md", "final-report"],
-    "report"
-  );
+  const reportMd = pickArt(["final-report.md", "report.md", "final-report"], "report");
   const reportJson = pickArt(["final-report.json", "report.json"], "report");
   const landingArt = pickArt(["landing.json", "landing"], "landing");
   const stateArt = pickArt(["state.json"], "state");
 
-  const reportP = reportMd
-    ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(reportMd)}`
-    : `${BASE}/runs/${encId}`;
-  const reportJsonP = reportJson
-    ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(reportJson)}`
-    : reportP !== `${BASE}/runs/${encId}`
-      ? reportP
-      : `${BASE}/runs/${encId}`;
-  const landingP = landingArt
-    ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(landingArt)}`
-    : `${BASE}/runs/${encId}/snapshot`;
-  const stateP = stateArt
-    ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(stateArt)}`
-    : `${BASE}/runs/${encId}/snapshot`;
+  const reportP = reportMd ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(reportMd)}` : `${BASE}/runs/${encId}`;
+  const reportJsonP = reportJson ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(reportJson)}` : (reportP !== `${BASE}/runs/${encId}` ? reportP : `${BASE}/runs/${encId}`);
+  const landingP = landingArt ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(landingArt)}` : `${BASE}/runs/${encId}/snapshot`;
+  const stateP = stateArt ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(stateArt)}` : `${BASE}/runs/${encId}/snapshot`;
 
   // Derive the fields the UI tabs expect (Diff / Agent 输出 / Review).
   // These come from artifact contents (bounded) or fallbacks.
@@ -376,25 +298,12 @@ export async function fetchDetail(runId: string): Promise<DetailPayload> {
   let diffText: string | null = null;
   let agentTail: string | null = null;
   for (const a of arts) {
-    const name = (a.id || a.path || a.title || "").toLowerCase();
+    const name = ((a.id || a.path || a.title) || "").toLowerCase();
     const content = (a.content || "").toString();
-    if (
-      !diffText &&
-      content &&
-      (name.includes("diff") || name.includes("patch"))
-    ) {
+    if (!diffText && content && (name.includes("diff") || name.includes("patch"))) {
       diffText = content;
     }
-    if (
-      !agentTail &&
-      content &&
-      (name.includes("log") ||
-        name.includes("stdout") ||
-        name.includes("stderr") ||
-        name.includes("agent") ||
-        name.includes("worker") ||
-        name.includes("output"))
-    ) {
+    if (!agentTail && content && (name.includes("log") || name.includes("stdout") || name.includes("stderr") || name.includes("agent") || name.includes("worker") || name.includes("output"))) {
       agentTail = content;
     }
   }
@@ -429,28 +338,25 @@ export async function fetchDetail(runId: string): Promise<DetailPayload> {
   // Enrich review summary from review log artifact if the structured summary is missing.
   // The review log often contains the exact JSON the reviewer output, which has the short "summary" text description.
   const reviewLog = arts.find((a: any) => {
-    const n = (a.id || a.path || a.title || "").toLowerCase();
-    return (
-      n.includes("review") &&
-      (n.includes("stdout") || n.includes("output") || n.includes("log"))
-    );
+    const n = ((a.id || a.path || a.title) || '').toLowerCase();
+    return n.includes('review') && (n.includes('stdout') || n.includes('output') || n.includes('log'));
   });
   if (reviewLog?.content && finalReviewRounds.length) {
-    let desc = "";
-    const contentStr = String(reviewLog.content || "").trim();
+    let desc = '';
+    const contentStr = String(reviewLog.content || '').trim();
     try {
       // Try to parse JSON from the log (common for structured grok/scoped reviews)
       const match = contentStr.match(/\{[\s\S]*\}/);
       if (match) {
         const parsed = JSON.parse(match[0]);
-        if (parsed && typeof parsed === "object") {
-          desc = parsed.summary || parsed.description || parsed.text || "";
+        if (parsed && typeof parsed === 'object') {
+          desc = parsed.summary || parsed.description || parsed.text || '';
         }
       }
     } catch {}
     if (!desc) {
       // Fallback to truncated plain text from log
-      desc = contentStr.slice(0, 300) + (contentStr.length > 300 ? "…" : "");
+      desc = contentStr.slice(0, 300) + (contentStr.length > 300 ? '…' : '');
     }
     finalReviewRounds = finalReviewRounds.map((r: any) => ({
       ...r,
@@ -460,12 +366,7 @@ export async function fetchDetail(runId: string): Promise<DetailPayload> {
 
   // Also try to enrich from state review objects if still missing (legacy review summary locations)
   if (finalReviewRounds.length) {
-    const reviewObjs = [
-      state.agentReview,
-      state.codexReview,
-      state.grokReview,
-      state.agentReview,
-    ].filter(Boolean);
+    const reviewObjs = [state.agentReview, state.codexReview, state.grokReview, state.agentReview].filter(Boolean);
     for (const ro of reviewObjs) {
       if (ro && ro.summary) {
         finalReviewRounds = finalReviewRounds.map((r: any) => ({
@@ -510,11 +411,9 @@ export async function fetchSettings(): Promise<any> {
   return getJson(`${BASE}/settings`);
 }
 
-export async function saveSettings(
-  values: Record<string, unknown>
-): Promise<any> {
+export async function saveSettings(values: Record<string, unknown>): Promise<any> {
   // Strip secret fields: /settings backend is non-secret only; never forward or claim persistence for LLM keys
-  const SECRET_KEYS = ["grokApiKey", "openaiApiKey", "anthropicApiKey"];
+  const SECRET_KEYS = ['grokApiKey', 'openaiApiKey', 'anthropicApiKey'];
   const clean: Record<string, unknown> = {};
   let hadSecret = false;
   for (const [k, v] of Object.entries(values || {})) {
@@ -539,10 +438,7 @@ export async function saveSettings(
   if (!res.ok) throw new Error(`POST /settings → HTTP ${res.status}`);
   const json = await res.json();
   if (hadSecret) {
-    return {
-      ...(json && typeof json === "object" ? json : {}),
-      secretsIgnored: true,
-    };
+    return { ...(json && typeof json === 'object' ? json : {}), secretsIgnored: true };
   }
   return json;
 }
@@ -552,51 +448,25 @@ export async function fetchProviderHealth(): Promise<any> {
 }
 
 function normalizePythonHealthStatus(value: unknown): PythonHealthStatus {
-  const text = String(value ?? "")
-    .toLowerCase()
-    .replace(/[_\s]+/g, "-");
-  if (text === "ready" || text === "ok" || text === "healthy" || text === "up")
-    return "ready";
-  if (text === "offline" || text === "down" || text === "unreachable")
-    return "offline";
-  if (
-    text === "degraded" ||
-    text === "timeout" ||
-    text === "error" ||
-    text === "failed"
-  )
-    return "degraded";
-  if (
-    text === "missing-config" ||
-    text === "missing" ||
-    text === "not-configured" ||
-    text === "unconfigured"
-  ) {
+  const text = String(value ?? "").toLowerCase().replace(/[_\s]+/g, "-");
+  if (text === "ready" || text === "ok" || text === "healthy" || text === "up") return "ready";
+  if (text === "offline" || text === "down" || text === "unreachable") return "offline";
+  if (text === "degraded" || text === "timeout" || text === "error" || text === "failed") return "degraded";
+  if (text === "missing-config" || text === "missing" || text === "not-configured" || text === "unconfigured") {
     return "missing-config";
   }
   return "unknown";
 }
 
 function providerRowsFrom(raw: any): PythonHealthViewModel["providers"] {
-  const source =
-    raw?.providers ??
-    raw?.providerHealth ??
-    raw?.readiness ??
-    raw?.checks ??
-    {};
+  const source = raw?.providers ?? raw?.providerHealth ?? raw?.readiness ?? raw?.checks ?? {};
   const rows: PythonHealthViewModel["providers"] = [];
   if (Array.isArray(source)) {
     for (const item of source) {
       if (!item || typeof item !== "object") continue;
       const name = String(item.name ?? item.provider ?? item.id ?? "provider");
-      const readiness = normalizePythonHealthStatus(
-        item.readiness ?? item.status ?? item.state ?? item.ok
-      );
-      rows.push({
-        name,
-        readiness,
-        detail: item.detail ?? item.reason ?? item.message ?? null,
-      });
+      const readiness = normalizePythonHealthStatus(item.readiness ?? item.status ?? item.state ?? item.ok);
+      rows.push({ name, readiness, detail: item.detail ?? item.reason ?? item.message ?? null });
     }
     return rows;
   }
@@ -606,46 +476,28 @@ function providerRowsFrom(raw: any): PythonHealthViewModel["providers"] {
         const it = item as any;
         rows.push({
           name,
-          readiness: normalizePythonHealthStatus(
-            it.readiness ?? it.status ?? it.state ?? it.ok
-          ),
+          readiness: normalizePythonHealthStatus(it.readiness ?? it.status ?? it.state ?? it.ok),
           detail: it.detail ?? it.reason ?? it.message ?? null,
         });
       } else {
-        rows.push({
-          name,
-          readiness: normalizePythonHealthStatus(item),
-          detail: null,
-        });
+        rows.push({ name, readiness: normalizePythonHealthStatus(item), detail: null });
       }
     }
   }
   return rows;
 }
 
-export function normalizePythonHealthViewModel(
-  raw: any
-): PythonHealthViewModel {
+export function normalizePythonHealthViewModel(raw: any): PythonHealthViewModel {
   const serviceRaw = raw?.service ?? raw?.python ?? raw?.backend ?? raw ?? {};
   const status = normalizePythonHealthStatus(
-    serviceRaw?.status ??
-      serviceRaw?.state ??
-      raw?.status ??
-      raw?.state ??
-      (raw?.ok === true ? "ready" : raw?.ok === false ? "degraded" : null)
+    serviceRaw?.status ?? serviceRaw?.state ?? raw?.status ?? raw?.state ?? (raw?.ok === true ? "ready" : raw?.ok === false ? "degraded" : null),
   );
   const providers = providerRowsFrom(raw);
   const hasMissingConfig =
     Boolean(raw?.hasMissingConfig ?? raw?.missingConfig) ||
-    providers.some(provider => provider.readiness === "missing-config");
+    providers.some((provider) => provider.readiness === "missing-config");
   const effectiveStatus: PythonHealthStatus =
-    status !== "unknown"
-      ? status
-      : hasMissingConfig
-        ? "missing-config"
-        : providers.some(p => p.readiness === "degraded")
-          ? "degraded"
-          : "unknown";
+    status !== "unknown" ? status : hasMissingConfig ? "missing-config" : providers.some((p) => p.readiness === "degraded") ? "degraded" : "unknown";
   const label =
     effectiveStatus === "ready"
       ? "Python ready"
@@ -660,14 +512,8 @@ export function normalizePythonHealthViewModel(
     service: {
       status: effectiveStatus,
       label,
-      detail:
-        serviceRaw?.detail ??
-        serviceRaw?.reason ??
-        serviceRaw?.message ??
-        raw?.message ??
-        null,
-      checkedAt:
-        serviceRaw?.checkedAt ?? raw?.checkedAt ?? raw?.updatedAt ?? null,
+      detail: serviceRaw?.detail ?? serviceRaw?.reason ?? serviceRaw?.message ?? raw?.message ?? null,
+      checkedAt: serviceRaw?.checkedAt ?? raw?.checkedAt ?? raw?.updatedAt ?? null,
     },
     providers,
     hasMissingConfig,
@@ -682,8 +528,7 @@ export async function fetchPythonHealth(): Promise<PythonHealthViewModel> {
       fetchProviderHealth(),
     ]);
     const healthRaw = health.status === "fulfilled" ? health.value : {};
-    const providerRaw =
-      providerHealth.status === "fulfilled" ? providerHealth.value : {};
+    const providerRaw = providerHealth.status === "fulfilled" ? providerHealth.value : {};
     return normalizePythonHealthViewModel({
       ...(healthRaw && typeof healthRaw === "object" ? healthRaw : {}),
       providers:
@@ -701,9 +546,7 @@ export async function fetchPythonHealth(): Promise<PythonHealthViewModel> {
   }
 }
 
-export async function runQueue(
-  payload: Record<string, unknown> = {}
-): Promise<any> {
+export async function runQueue(payload: Record<string, unknown> = {}): Promise<any> {
   // Runtime linkage (112): forward supported non-secret runtime options from settings
   // (fixAgent, reviewAgent, workerMaxTurns, workerMaxRetries, worktreeScope, activeProfile, queuePath).
   // queuePath is mapped to `queue` (the field backend CommandRequest + build uses); queuePath also kept in payload.
@@ -715,15 +558,7 @@ export async function runQueue(
     dryRun: false,
     ...(q ? { queue: q } : {}),
   };
-  const rtKeys = [
-    "fixAgent",
-    "reviewAgent",
-    "workerMaxTurns",
-    "workerMaxRetries",
-    "worktreeScope",
-    "activeProfile",
-    "queuePath",
-  ];
+  const rtKeys = ["fixAgent", "reviewAgent", "workerMaxTurns", "workerMaxRetries", "worktreeScope", "activeProfile", "queuePath"];
   for (const k of rtKeys) {
     if (k in payload && payload[k] != null) body[k] = payload[k];
   }
@@ -736,24 +571,14 @@ export async function runQueue(
   return res.json();
 }
 
-export async function runSingleTask(
-  payload: Record<string, unknown> = {}
-): Promise<any> {
+export async function runSingleTask(payload: Record<string, unknown> = {}): Promise<any> {
   // Runtime linkage (112): forward supported non-secret runtime options from settings when provided by run controls.
   // Backend CommandRequest accepts them; queuePath only relevant for queue runs (mapped in runQueue).
   // Backend owns execution-time resolution from persisted active settings/queue defaults for most opts when absent.
   // Explicit contract: client forwards only non-secrets; no secret values reach this boundary.
   const task = payload.task || payload.taskPath || "";
   const body: any = { task: String(task || ""), mode: "single", dryRun: false };
-  const rtKeys = [
-    "fixAgent",
-    "reviewAgent",
-    "workerMaxTurns",
-    "workerMaxRetries",
-    "worktreeScope",
-    "activeProfile",
-    "queuePath",
-  ];
+  const rtKeys = ["fixAgent", "reviewAgent", "workerMaxTurns", "workerMaxRetries", "worktreeScope", "activeProfile", "queuePath"];
   for (const k of rtKeys) {
     if (k in payload && payload[k] != null) body[k] = payload[k];
   }
@@ -766,9 +591,7 @@ export async function runSingleTask(
   return res.json();
 }
 
-export async function cancelCurrent(
-  payload: Record<string, unknown> = {}
-): Promise<any> {
+export async function cancelCurrent(payload: Record<string, unknown> = {}): Promise<any> {
   const body: any = payload.task ? { task: payload.task } : {};
   const res = await fetch(`${BASE}/cancel`, {
     method: "POST",
@@ -783,70 +606,53 @@ export async function cancelCurrent(
 // Typed normalization: projects backend payload (effective + keys) into stable renderable UI contract.
 // Explicitly strips ALL raw secret fields (by name or heuristic) so they NEVER reach nonSensitive / render state.
 // Provides fields: activeProfile, fixAgent, reviewAgent, queuePath, worktreeScope, provider key status, etc.
-const SECRET_KEY_NAMES = [
-  "grokApiKey",
-  "openaiApiKey",
-  "anthropicApiKey",
-  "llmApiKey",
-];
-const SECRET_KEY_RE =
-  /(api[key]|secret|token|password|auth|credential|privatekey)/i;
+const SECRET_KEY_NAMES = ['grokApiKey', 'openaiApiKey', 'anthropicApiKey', 'llmApiKey'];
+const SECRET_KEY_RE = /(api[key]|secret|token|password|auth|credential|privatekey)/i;
 
 function isSecretKeyName(k: string): boolean {
   if (!k) return false;
   if (SECRET_KEY_NAMES.includes(k)) return true;
-  const kl = String(k).toLowerCase().replace(/[_-]/g, "");
+  const kl = String(k).toLowerCase().replace(/[_-]/g, '');
   return SECRET_KEY_RE.test(kl);
 }
 
 function stripRawSecretsDeep(input: any): any {
-  if (input == null || typeof input !== "object") return input;
+  if (input == null || typeof input !== 'object') return input;
   if (Array.isArray(input)) return input.map(stripRawSecretsDeep);
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
     if (isSecretKeyName(k)) continue;
     // drop values that look like raw API key material (never render secrets)
-    if (
-      typeof v === "string" &&
-      v.length > 12 &&
-      /^(sk-|xai-|ghp_|AIza|anthropic|openai)/i.test(v)
-    )
-      continue;
+    if (typeof v === 'string' && v.length > 12 && /^(sk-|xai-|ghp_|AIza|anthropic|openai)/i.test(v)) continue;
     out[k] = stripRawSecretsDeep(v);
   }
   return out;
 }
 
 export function normalizeSettingsForUI(raw: any): AgentLoopSettingsViewModel {
-  if (!raw || typeof raw !== "object") {
-    return { activeProfile: "local", keys: {}, nonSensitive: {} };
+  if (!raw || typeof raw !== 'object') {
+    return { activeProfile: 'local', keys: {}, nonSensitive: {} };
   }
   const effSrc = raw.effective || raw || {};
   const cleanEff = stripRawSecretsDeep(effSrc);
   // safe keys: status strings only (map keys intentionally use *ApiKey names for provider status).
   // Never copy raw values; coerce to 'configured' | '' . Do not apply name-skip on the status map.
-  const rawKeys = raw.keys && typeof raw.keys === "object" ? raw.keys : {};
-  const safeKeys: Record<string, "configured" | ""> = {};
+  const rawKeys = (raw.keys && typeof raw.keys === 'object') ? raw.keys : {};
+  const safeKeys: Record<string, 'configured' | ''> = {};
   for (const [k, v] of Object.entries(rawKeys)) {
-    const sv = String(v ?? "")
-      .toLowerCase()
-      .trim();
-    safeKeys[k] = sv === "configured" ? "configured" : "";
+    const sv = String(v ?? '').toLowerCase().trim();
+    safeKeys[k] = sv === 'configured' ? 'configured' : '';
   }
   // top level secrets in raw also stripped implicitly
-  const activeProfile =
-    (cleanEff as any).activeProfile ?? raw.activeProfile ?? "local";
+  const activeProfile = (cleanEff as any).activeProfile ?? raw.activeProfile ?? 'local';
   const vm: AgentLoopSettingsViewModel = {
-    activeProfile: activeProfile != null ? String(activeProfile) : "local",
+    activeProfile: activeProfile != null ? String(activeProfile) : 'local',
     fixAgent: (cleanEff as any).fixAgent ?? null,
     reviewAgent: (cleanEff as any).reviewAgent ?? null,
     queuePath: (cleanEff as any).queuePath ?? null,
     worktreeScope: (cleanEff as any).worktreeScope ?? null,
-    baseUrl: (cleanEff as any).baseUrl ?? "",
-    injectToWorker:
-      (cleanEff as any).injectKeysToWorker ??
-      (cleanEff as any).injectToWorker ??
-      true,
+    baseUrl: (cleanEff as any).baseUrl ?? '',
+    injectToWorker: (cleanEff as any).injectKeysToWorker ?? (cleanEff as any).injectToWorker ?? true,
     queueRunning: !!raw.queueRunning,
     keys: safeKeys,
     nonSensitive: cleanEff,

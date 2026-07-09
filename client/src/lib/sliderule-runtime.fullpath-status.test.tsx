@@ -13,21 +13,21 @@
  * asserted as STATE fields in sliderule-runtime.fullpath-core.test.ts per the doc's degrade rule.
  */
 
-import { describe, it, expect, vi } from "vitest";
-import React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { describe, it, expect, vi } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 // Stub the heavy reasoning surface so SSR focuses on the STATUS bar.
-vi.mock("@/components/autopilot/ReasoningFlowSurface", () => ({
+vi.mock('@/components/autopilot/ReasoningFlowSurface', () => ({
   ReasoningFlowSurface: () => null,
 }));
 
 // Stage the page's initial sessionState as a CONVERGED ("clear") session, built with the REAL
 // runtime via the single-writer applyGoalConclusion (the GCOV-pass write path).
-vi.mock("@/lib/sliderule-runtime", async () => {
-  const actual = await vi.importActual<
-    typeof import("@/lib/sliderule-runtime")
-  >("@/lib/sliderule-runtime");
+vi.mock('@/lib/sliderule-runtime', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/sliderule-runtime')>(
+    '@/lib/sliderule-runtime'
+  );
 
   const commitTrusted = (
     st: any,
@@ -43,7 +43,7 @@ vi.mock("@/lib/sliderule-runtime", async () => {
       {
         id,
         kind,
-        provenance: "ai_generated",
+        provenance: 'ai_generated',
         producedBy: { capabilityRunId: `run-${id}`, capabilityId, roleId },
         passedGates: [],
         title: id,
@@ -56,44 +56,19 @@ vi.mock("@/lib/sliderule-runtime", async () => {
     );
     const a = (updatedState.artifacts || []).find((x: any) => x.id === id);
     if (a) {
-      a.trustLevel = "gated_pass";
-      a.passedGates = ["commit"];
+      a.trustLevel = 'gated_pass';
+      a.passedGates = ['commit'];
     }
     return updatedState;
   };
 
-  let staged = actual.createInitialSessionState(
-    "分析权限系统的风险并给出最终报告",
-    "status-s2-clear"
-  );
-  staged = commitTrusted(
-    staged,
-    "risk-1",
-    "risk.analyze",
-    "安全",
-    "risk",
-    "s-r0"
-  );
-  staged = commitTrusted(
-    staged,
-    "synth-1",
-    "synthesis.merge",
-    "综合",
-    "synthesis",
-    "s-r1"
-  );
-  const reportInputs = actual.findInputsForCapability(staged, "report.write");
-  staged = commitTrusted(
-    staged,
-    "report-1",
-    "report.write",
-    "综合",
-    "report",
-    "s-r2",
-    reportInputs
-  );
+  let staged = actual.createInitialSessionState('分析权限系统的风险并给出最终报告', 'status-s2-clear');
+  staged = commitTrusted(staged, 'risk-1', 'risk.analyze', '安全', 'risk', 's-r0');
+  staged = commitTrusted(staged, 'synth-1', 'synthesis.merge', '综合', 'synthesis', 's-r1');
+  const reportInputs = actual.findInputsForCapability(staged, 'report.write');
+  staged = commitTrusted(staged, 'report-1', 'report.write', '综合', 'report', 's-r2', reportInputs);
   // Converged conclusion written through the single writer (mirrors the GCOV-pass write).
-  staged = actual.applyGoalConclusion(staged, "clear");
+  staged = actual.applyGoalConclusion(staged, 'clear');
 
   return {
     ...actual,
@@ -101,9 +76,9 @@ vi.mock("@/lib/sliderule-runtime", async () => {
   };
 });
 
-import SlideRule from "@/pages/SlideRule";
+import SlideRule from '@/pages/SlideRule';
 
-describe("S2 STATUS · conclusion badge binds to sessionState.goal.status (clear)", () => {
+describe('S2 STATUS · conclusion badge binds to sessionState.goal.status (clear)', () => {
   it('renders the conclusion badge as "已收敛 / clear" when goal.status === "clear"', () => {
     const html = renderToStaticMarkup(React.createElement(SlideRule));
 
@@ -111,7 +86,7 @@ describe("S2 STATUS · conclusion badge binds to sessionState.goal.status (clear
     expect(html).toContain('data-testid="sliderule-conclusion-badge"');
 
     // Bound to a clear conclusion -> shows the converged label, never the needs_refinement label.
-    expect(html).toContain("已收敛 / clear");
-    expect(html).not.toContain("待细化");
+    expect(html).toContain('已收敛 / clear');
+    expect(html).not.toContain('待细化');
   });
 });

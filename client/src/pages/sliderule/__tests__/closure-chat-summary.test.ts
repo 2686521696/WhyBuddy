@@ -11,19 +11,11 @@ import {
 const MODEL: FiveSystemModel = {
   datamodel: {
     entities: [
-      {
-        id: "pet",
-        name: "宠物档案",
-        fields: [{ id: "a" }, { id: "b" }, { id: "c" }],
-      },
+      { id: "pet", name: "宠物档案", fields: [{ id: "a" }, { id: "b" }, { id: "c" }] },
       { id: "booking", name: "预约单", fields: [{ id: "d" }] },
     ],
   },
-  rbac: {
-    roles: ["owner", "host"],
-    permissions: ["p1", "p2", "p3"],
-    menus: [],
-  },
+  rbac: { roles: ["owner", "host"], permissions: ["p1", "p2", "p3"], menus: [] },
   workflow: {
     nodes: [
       { id: "n1", name: "提交", phase: "申请" },
@@ -82,8 +74,7 @@ describe("summarizeClosureForChat", () => {
   });
 
   it("goalText 超长截断 24 字，空 goal 用「本话题」", () => {
-    const long =
-      "这是一个非常非常非常非常非常非常非常非常长的目标描述超过二十四个字了绝对";
+    const long = "这是一个非常非常非常非常非常非常非常非常长的目标描述超过二十四个字了绝对";
     const t1 = summarizeClosureForChat(MODEL, {
       goalText: long,
       blocked: false,

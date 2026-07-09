@@ -58,12 +58,8 @@ export default function KnowledgeReviewPanel({
   }
 
   return (
-    <div
-      className={`overflow-y-auto ${className}`}
-      role="list"
-      aria-label="Review queue"
-    >
-      {items.map(entity => (
+    <div className={`overflow-y-auto ${className}`} role="list" aria-label="Review queue">
+      {items.map((entity) => (
         <div
           key={entity.entityId}
           role="listitem"
@@ -98,8 +94,7 @@ export default function KnowledgeReviewPanel({
                 Source: <span className="text-gray-600">{entity.source}</span>
               </span>
               <span className={confidenceColor(entity.confidence)}>
-                {(entity.confidence * 100).toFixed(0)}% (
-                {confidenceLabel(entity.confidence)})
+                {(entity.confidence * 100).toFixed(0)}% ({confidenceLabel(entity.confidence)})
               </span>
             </div>
           </div>

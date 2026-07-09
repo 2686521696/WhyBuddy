@@ -25,7 +25,10 @@ describe("deriveChapterChecklist", () => {
   });
 
   it("单个 ## Section 后跟段落内容时返回 completed: true", () => {
-    const md = ["## Section", "This is a paragraph with content."].join("\n");
+    const md = [
+      "## Section",
+      "This is a paragraph with content.",
+    ].join("\n");
     const result = deriveChapterChecklist(md);
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
@@ -36,7 +39,11 @@ describe("deriveChapterChecklist", () => {
   });
 
   it("连续两个 ## 标题之间无内容时第一个为 completed: false", () => {
-    const md = ["## Section1", "## Section2", "Some content here"].join("\n");
+    const md = [
+      "## Section1",
+      "## Section2",
+      "Some content here",
+    ].join("\n");
     const result = deriveChapterChecklist(md);
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual({
@@ -52,21 +59,38 @@ describe("deriveChapterChecklist", () => {
   });
 
   it("## Section 后仅有空白行时返回 completed: false", () => {
-    const md = ["## Section", "", "   ", "\t", ""].join("\n");
+    const md = [
+      "## Section",
+      "",
+      "   ",
+      "\t",
+      "",
+    ].join("\n");
     const result = deriveChapterChecklist(md);
     expect(result).toHaveLength(1);
     expect(result[0].completed).toBe(false);
   });
 
   it("## Section 后跟代码块时返回 completed: true", () => {
-    const md = ["## Section", "", "```ts", "const x = 1;", "```"].join("\n");
+    const md = [
+      "## Section",
+      "",
+      "```ts",
+      "const x = 1;",
+      "```",
+    ].join("\n");
     const result = deriveChapterChecklist(md);
     expect(result).toHaveLength(1);
     expect(result[0].completed).toBe(true);
   });
 
   it("## Section 后跟列表时返回 completed: true", () => {
-    const md = ["## Section", "", "- item 1", "- item 2"].join("\n");
+    const md = [
+      "## Section",
+      "",
+      "- item 1",
+      "- item 2",
+    ].join("\n");
     const result = deriveChapterChecklist(md);
     expect(result).toHaveLength(1);
     expect(result[0].completed).toBe(true);

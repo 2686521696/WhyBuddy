@@ -114,11 +114,15 @@ export const MiroFishCardShell: FC<MiroFishCardShellProps> = ({
       data-tone={tone}
       data-variant={variant}
       {...(dataAttrs ?? {})}
-      className={`${variantClass} transition-opacity duration-200 ${toneClass}`.trim()}
+      className={
+        `${variantClass} transition-opacity duration-200 ${toneClass}`.trim()
+      }
     >
       <div className="flex items-center gap-1.5 text-[10px]">
         <span aria-hidden="true">{icon}</span>
-        <span className={"font-bold uppercase " + TONE_LABEL_CLASS[tone]}>
+        <span
+          className={"font-bold uppercase " + TONE_LABEL_CLASS[tone]}
+        >
           {label}
         </span>
         <span className="ml-auto font-mono text-[9px] text-slate-400">

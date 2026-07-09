@@ -8,10 +8,7 @@ import {
   authorCoverageContract,
   resolveCoverageGapsFromState,
 } from "./sliderule-runtime";
-import type {
-  Artifact,
-  V5SessionState,
-} from "@shared/blueprint/v5-reasoning-state";
+import type { Artifact, V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { EVIDENCE_SOURCE_F1_GITHUB } from "@shared/blueprint/sliderule-grounding";
 
 function commitEvidence(
@@ -51,15 +48,11 @@ describe("G-GROUND integration", () => {
   it("in-session evidence.search commits as untrusted (G-GROUND fail)", () => {
     let s = createInitialSessionState("路线对比分析", "g-in-session");
     s = commitEvidence(s, { grounded: false });
-    const art = s.artifacts?.find(a => a.id === "ev-art-0");
+    const art = s.artifacts?.find((a) => a.id === "ev-art-0");
     expect(art?.trustLevel).toBe("untrusted");
-    const run = s.capabilityRuns?.find(r => r.id === "t-ev-run-0");
-    expect(run?.gateResults?.find(g => g.gateId === "ground")?.status).toBe(
-      "failed"
-    );
-    expect(s.conversation?.some(c => c.text?.includes("[G-GROUND]"))).toBe(
-      true
-    );
+    const run = s.capabilityRuns?.find((r) => r.id === "t-ev-run-0");
+    expect(run?.gateResults?.find((g) => g.gateId === "ground")?.status).toBe("failed");
+    expect(s.conversation?.some((c) => c.text?.includes("[G-GROUND]"))).toBe(true);
   });
 
   it("GCOV does not pass clear without grounded evidence", () => {
@@ -76,10 +69,7 @@ describe("G-GROUND integration", () => {
     expect(gate.passed).toBe(false);
 
     const turnId = "turn-no-clear";
-    const { preparedState, context } = intakeMessage(s, {
-      turnId,
-      userText: "出报告",
-    });
+    const { preparedState, context } = intakeMessage(s, { turnId, userText: "出报告" });
     const { newState } = orchestrateReasoningTurn(preparedState, context);
     expect(newState.goal.status).not.toBe("clear");
   });

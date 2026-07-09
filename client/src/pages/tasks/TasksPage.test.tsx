@@ -1,6 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MissionTaskDetail, MissionTaskSummary } from "@/lib/tasks-store";
+import type {
+  MissionTaskDetail,
+  MissionTaskSummary,
+} from "@/lib/tasks-store";
 
 const { tasksState, workflowState, projectState } = vi.hoisted(() => {
   const now = Date.now();
@@ -260,11 +263,7 @@ vi.mock("@/components/ui/tabs", () => ({
 }));
 
 vi.mock("@/components/tasks/TasksCockpitDetail", () => ({
-  TasksCockpitDetail: ({
-    detail,
-  }: {
-    detail?: { artifacts?: Array<{ title: string }> } | null;
-  }) => (
+  TasksCockpitDetail: ({ detail }: { detail?: { artifacts?: Array<{ title: string }> } | null }) => (
     <section
       data-testid="tasks-cockpit-detail"
       data-artifact-titles={(detail?.artifacts ?? [])

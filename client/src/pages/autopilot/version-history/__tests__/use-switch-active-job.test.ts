@@ -20,25 +20,18 @@ describe("use-switch-active-job", () => {
 
     await expect(switchActive("external")).resolves.toBe(false);
     expect(apply).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledWith(
-      "Selected job is outside the current version family."
-    );
+    expect(toast.error).toHaveBeenCalledWith("Selected job is outside the current version family.");
   });
 
   it("applies same-family active job state and URL updates", async () => {
     const setActiveJobId = vi.fn();
-    const updateUrl = vi.fn((jobId: string) =>
-      withActiveJobSearchParam("?history=1", jobId)
-    );
+    const updateUrl = vi.fn((jobId: string) => withActiveJobSearchParam("?history=1", jobId));
     const apply = createSwitchActiveNavigationApply({
       setActiveJobId,
       updateUrl,
     });
     const switchActive = createSwitchActiveJobHandler({
-      jobs: [
-        job("root"),
-        job("branch", { parentJobId: "root", stage: "effect_preview" }),
-      ],
+      jobs: [job("root"), job("branch", { parentJobId: "root", stage: "effect_preview" })],
       apply,
     });
 
@@ -46,13 +39,13 @@ describe("use-switch-active-job", () => {
     expect(setActiveJobId).toHaveBeenCalledWith("branch");
     expect(updateUrl).toHaveBeenCalledWith("branch");
     expect(withActiveJobSearchParam("?history=1", "branch")).toBe(
-      "?history=1&activeJob=branch"
+      "?history=1&activeJob=branch",
     );
   });
 
   it("submits through the coordination layer when supplied", async () => {
     const apply = vi.fn();
-    const submit = vi.fn(async payload => payload.apply());
+    const submit = vi.fn(async (payload) => payload.apply());
 
     await executeSwitchActiveJob({
       fromJob: job("root", { stage: "spec_docs" }),
@@ -73,7 +66,7 @@ describe("use-switch-active-job", () => {
           fromPage: 2,
           toPage: 3,
         },
-      })
+      }),
     );
     expect(apply).toHaveBeenCalledWith({
       jobId: "branch",
@@ -83,7 +76,7 @@ describe("use-switch-active-job", () => {
 
   it("derives switch_active transitions from the current active job to the selected job", async () => {
     const apply = vi.fn();
-    const submit = vi.fn(async payload => payload.apply());
+    const submit = vi.fn(async (payload) => payload.apply());
     const switchActive = createSwitchActiveJobHandler({
       jobs: [
         job("root", { stage: "spec_docs" }),
@@ -107,7 +100,7 @@ describe("use-switch-active-job", () => {
           fromPage: 2,
           toPage: 3,
         },
-      })
+      }),
     );
     expect(apply).toHaveBeenCalledWith({
       jobId: "branch",
@@ -116,11 +109,11 @@ describe("use-switch-active-job", () => {
   });
 
   it("does not expose spec2/spec3 endpoint calls or backend job-stage mutation", async () => {
-    const source = await import("node:fs/promises").then(fs =>
+    const source = await import("node:fs/promises").then((fs) =>
       fs.readFile(
         new URL("../use-switch-active-job.ts", import.meta.url),
-        "utf8"
-      )
+        "utf8",
+      ),
     );
 
     expect(source).not.toMatch(/\/replan|\/stage-edit|\/jobs\/[^`"']+\/stage/);

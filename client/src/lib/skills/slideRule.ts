@@ -26,7 +26,7 @@ export function deriveApplication(intent: string) {
 /** 跨系统影响分析：给定"改/删某个资源"，算出全平台受影响的产物。 */
 export function analyzeImpact(
   models: Record<string, unknown>,
-  target: import("./orchestrator").ResourceRef
+  target: import("./orchestrator").ResourceRef,
 ) {
   return slideRule.impact(models, target);
 }

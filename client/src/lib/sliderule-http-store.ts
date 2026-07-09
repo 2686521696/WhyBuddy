@@ -54,22 +54,14 @@ export class HttpSlideRuleSessionStore implements SlideRuleSessionStore {
       ...state,
       artifacts: Array.isArray(state.artifacts) ? state.artifacts : [],
       conversation: Array.isArray(state.conversation) ? state.conversation : [],
-      openQuestions: Array.isArray(state.openQuestions)
-        ? state.openQuestions
-        : [],
+      openQuestions: Array.isArray(state.openQuestions) ? state.openQuestions : [],
       evidence: Array.isArray(state.evidence) ? state.evidence : [],
       decisions: Array.isArray(state.decisions) ? state.decisions : [],
       risks: Array.isArray(state.risks) ? state.risks : [],
-      capabilityRuns: Array.isArray(state.capabilityRuns)
-        ? state.capabilityRuns
-        : [],
+      capabilityRuns: Array.isArray(state.capabilityRuns) ? state.capabilityRuns : [],
       gates: Array.isArray(state.gates) ? state.gates : [],
-      dependencyGraph: Array.isArray(state.dependencyGraph)
-        ? state.dependencyGraph
-        : [],
-      staleArtifactIds: Array.isArray(state.staleArtifactIds)
-        ? state.staleArtifactIds
-        : [],
+      dependencyGraph: Array.isArray(state.dependencyGraph) ? state.dependencyGraph : [],
+      staleArtifactIds: Array.isArray(state.staleArtifactIds) ? state.staleArtifactIds : [],
       coverageGaps: Array.isArray(state.coverageGaps) ? state.coverageGaps : [],
       graph: {
         ...state.graph,
@@ -82,17 +74,12 @@ export class HttpSlideRuleSessionStore implements SlideRuleSessionStore {
   private unwrapStateEnvelope(data: unknown): V5SessionState | undefined {
     if (data && typeof data === "object" && "state" in data) {
       const state = (data as { state?: unknown }).state;
-      return this.isSessionState(state)
-        ? this.normalizeState(state)
-        : undefined;
+      return this.isSessionState(state) ? this.normalizeState(state) : undefined;
     }
     return this.isSessionState(data) ? this.normalizeState(data) : undefined;
   }
 
-  private isLegacyUntrustedArtifactRejection(
-    status: number,
-    text: string
-  ): boolean {
+  private isLegacyUntrustedArtifactRejection(status: number, text: string): boolean {
     return (
       status === 422 &&
       text.includes("trustLevel") &&
@@ -101,19 +88,14 @@ export class HttpSlideRuleSessionStore implements SlideRuleSessionStore {
   }
 
   async load(sessionId: string): Promise<V5SessionState | undefined> {
-    const res = await fetch(
-      this.url(`/sessions/${encodeURIComponent(sessionId)}`),
-      {
-        method: "GET",
-        headers: { Accept: "application/json" },
-      }
-    );
+    const res = await fetch(this.url(`/sessions/${encodeURIComponent(sessionId)}`), {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+    });
     if (res.status === 404) return undefined;
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(
-        `HttpSlideRuleSessionStore.load failed: ${res.status} ${text}`
-      );
+      throw new Error(`HttpSlideRuleSessionStore.load failed: ${res.status} ${text}`);
     }
     return this.unwrapStateEnvelope(await res.json());
   }
@@ -122,10 +104,7 @@ export class HttpSlideRuleSessionStore implements SlideRuleSessionStore {
     const sid = state.sessionId || "sliderule-local-proto";
     const res = await fetch(this.url(`/sessions/${encodeURIComponent(sid)}`), {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify(state),
     });
     if (!res.ok) {
@@ -133,33 +112,27 @@ export class HttpSlideRuleSessionStore implements SlideRuleSessionStore {
       if (this.isLegacyUntrustedArtifactRejection(res.status, text)) {
         return state;
       }
-      throw new Error(
-        `HttpSlideRuleSessionStore.save failed: ${res.status} ${text}`
-      );
+      throw new Error(`HttpSlideRuleSessionStore.save failed: ${res.status} ${text}`);
     }
     const data = await res.json().catch(() => null);
     return this.unwrapStateEnvelope(data) ?? state;
   }
 
-  async listSessions(): Promise<
-    Array<{
-      sessionId: string;
-      goal: string;
-      createdAt?: string;
-      lastActive?: string;
-      artifactCount: number;
-      phase?: string;
-    }>
-  > {
+  async listSessions(): Promise<Array<{
+    sessionId: string;
+    goal: string;
+    createdAt?: string;
+    lastActive?: string;
+    artifactCount: number;
+    phase?: string;
+  }>> {
     const res = await fetch(this.url(`/sessions`), {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: { "Accept": "application/json" },
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(
-        `HttpSlideRuleSessionStore.listSessions failed: ${res.status} ${text}`
-      );
+      throw new Error(`HttpSlideRuleSessionStore.listSessions failed: ${res.status} ${text}`);
     }
     const data = await res.json();
     // Accept both { sessions: [...] } and raw array shapes for flexibility
@@ -167,17 +140,12 @@ export class HttpSlideRuleSessionStore implements SlideRuleSessionStore {
   }
 
   async deleteSession(sessionId: string): Promise<void> {
-    const res = await fetch(
-      this.url(`/sessions/${encodeURIComponent(sessionId)}`),
-      {
-        method: "DELETE",
-      }
-    );
+    const res = await fetch(this.url(`/sessions/${encodeURIComponent(sessionId)}`), {
+      method: "DELETE",
+    });
     if (!res.ok && res.status !== 404) {
       const text = await res.text().catch(() => "");
-      throw new Error(
-        `HttpSlideRuleSessionStore.deleteSession failed: ${res.status} ${text}`
-      );
+      throw new Error(`HttpSlideRuleSessionStore.deleteSession failed: ${res.status} ${text}`);
     }
   }
 }
@@ -185,9 +153,7 @@ export class HttpSlideRuleSessionStore implements SlideRuleSessionStore {
 /**
  * Convenience factory (matches the "createHttp..." naming users expect for adapters).
  */
-export function createHttpSlideRuleSessionStore(
-  baseUrl?: string
-): SlideRuleSessionStore {
+export function createHttpSlideRuleSessionStore(baseUrl?: string): SlideRuleSessionStore {
   return new HttpSlideRuleSessionStore(baseUrl);
 }
 

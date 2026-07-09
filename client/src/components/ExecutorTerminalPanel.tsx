@@ -89,9 +89,7 @@ export function ExecutorTerminalPanel({
 
   const visibleLines = logLines.slice(-MAX_VISIBLE_LINES);
   const displayLines =
-    visibleLines.length > 0
-      ? visibleLines
-      : fallbackLines.slice(-MAX_VISIBLE_LINES);
+    visibleLines.length > 0 ? visibleLines : fallbackLines.slice(-MAX_VISIBLE_LINES);
   const hasLines = displayLines.length > 0;
   const unavailable = isExecutorUnavailable(executorStatus);
   const emptyDescription =
@@ -146,8 +144,7 @@ export function ExecutorTerminalPanel({
         onScroll={event => {
           const element = event.currentTarget;
           const nearBottom =
-            element.scrollHeight - element.scrollTop - element.clientHeight <
-            24;
+            element.scrollHeight - element.scrollTop - element.clientHeight < 24;
           if (autoScrollEnabled && !nearBottom) {
             setAutoScrollEnabled(false);
           } else if (!autoScrollEnabled && nearBottom) {
@@ -207,9 +204,7 @@ export function ExecutorTerminalPanel({
             title={copy.tasks.executor.emptyLogsTitle}
             description={emptyDescription}
             actionLabel={copy.tasks.executor.retryLogs}
-            hint={
-              fallbackLoading ? "Loading stored executor.log..." : undefined
-            }
+            hint={fallbackLoading ? "Loading stored executor.log..." : undefined}
             onAction={() => {
               requestLogHistory(missionId);
               if (!fallbackLogUrl) return;

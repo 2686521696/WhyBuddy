@@ -69,18 +69,11 @@ export function useViewportTier(): ViewportTier {
   });
 
   useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      typeof window.matchMedia !== "function"
-    ) {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return;
     }
-    const mdQuery = window.matchMedia(
-      `(min-width: ${VIEWPORT_TIER_BREAKPOINT_MD}px)`
-    );
-    const xlQuery = window.matchMedia(
-      `(min-width: ${VIEWPORT_TIER_BREAKPOINT_XL}px)`
-    );
+    const mdQuery = window.matchMedia(`(min-width: ${VIEWPORT_TIER_BREAKPOINT_MD}px)`);
+    const xlQuery = window.matchMedia(`(min-width: ${VIEWPORT_TIER_BREAKPOINT_XL}px)`);
     const recompute = () => {
       setTier(resolveViewportTier(window.innerWidth));
     };

@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  deriveNodeStatus,
-  invalidateForIntervention,
-} from "../sliderule-runtime";
+import { deriveNodeStatus, invalidateForIntervention } from "../sliderule-runtime";
 import { buildClearStateWithTrustedReport } from "../sliderule-fullpath-fixtures";
 
 describe("P3 incremental deriveNodeStatus", () => {
@@ -15,22 +12,16 @@ describe("P3 incremental deriveNodeStatus", () => {
     });
     expect((challenged.projectionDirtyNodeIds || []).length).toBeGreaterThan(0);
 
-    const before = challenged.graph.nodes.map(
-      (n: { id?: string; status?: string }) => ({
-        id: n.id,
-        status: n.status,
-      })
-    );
+    const before = challenged.graph.nodes.map((n: { id?: string; status?: string }) => ({
+      id: n.id,
+      status: n.status,
+    }));
 
     const after = deriveNodeStatus(challenged, { incremental: true });
-    const changed = (after.graph.nodes || []).filter(
-      (n: { id?: string; status?: string }, i: number) => {
-        const prev = before.find(b => b.id === n.id);
-        return prev && prev.status !== n.status;
-      }
-    );
-    expect(changed.length).toBeLessThanOrEqual(
-      challenged.projectionDirtyNodeIds!.length + 2
-    );
+    const changed = (after.graph.nodes || []).filter((n: { id?: string; status?: string }, i: number) => {
+      const prev = before.find((b) => b.id === n.id);
+      return prev && prev.status !== n.status;
+    });
+    expect(changed.length).toBeLessThanOrEqual(challenged.projectionDirtyNodeIds!.length + 2);
   });
 });

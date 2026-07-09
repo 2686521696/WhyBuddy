@@ -9,5 +9,9 @@
  * 以保持 `@/pages/specs/panels` 作为统一消费入口。
  */
 
-export { AgentCrewFabricPanel } from "@/pages/autopilot/right-rail/panels/AgentCrewFabricPanel";
-export type { AgentCrewFabricPanelProps } from "@/pages/autopilot/right-rail/panels/AgentCrewFabricPanel";
+export {
+  AgentCrewFabricPanel,
+} from "@/pages/autopilot/right-rail/panels/AgentCrewFabricPanel";
+export type {
+  AgentCrewFabricPanelProps,
+} from "@/pages/autopilot/right-rail/panels/AgentCrewFabricPanel";

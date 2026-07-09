@@ -136,7 +136,10 @@ function uniqueNonEmpty(values: string[] | undefined): string[] {
 }
 
 function normalizeToken(value: string): string {
-  return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function titleCase(value: string): string {
@@ -408,7 +411,13 @@ function lockTone(state: AutopilotDestinationGoalLockState): string {
   return "border-blue-200 bg-blue-50 text-blue-700";
 }
 
-function DetailList({ label, values }: { label: string; values: string[] }) {
+function DetailList({
+  label,
+  values,
+}: {
+  label: string;
+  values: string[];
+}) {
   if (values.length === 0) return null;
 
   return (

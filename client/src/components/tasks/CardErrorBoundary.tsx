@@ -51,7 +51,7 @@ export class CardErrorBoundary extends Component<
         <div
           className={cn(
             "bg-card text-card-foreground border rounded-lg p-4",
-            "flex items-center gap-2 text-sm text-muted-foreground"
+            "flex items-center gap-2 text-sm text-muted-foreground",
           )}
         >
           <AlertTriangle size={16} className="flex-shrink-0 text-amber-500" />

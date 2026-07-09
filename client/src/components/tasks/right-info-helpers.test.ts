@@ -16,9 +16,7 @@ import type {
 /*  Minimal factory helpers                                            */
 /* ------------------------------------------------------------------ */
 
-function makeEvent(
-  overrides: Partial<TaskTimelineEvent> = {}
-): TaskTimelineEvent {
+function makeEvent(overrides: Partial<TaskTimelineEvent> = {}): TaskTimelineEvent {
   return {
     id: "evt-1",
     type: "log",
@@ -34,7 +32,7 @@ function makeEvent(
 function makeDetail(
   overrides: Partial<
     Pick<MissionTaskDetail, "stages" | "taskCount" | "completedTaskCount">
-  > = {}
+  > = {},
 ): MissionTaskDetail {
   return {
     stages: [],
@@ -139,27 +137,9 @@ describe("deriveSubMetrics", () => {
     const autopilot = {
       route: {
         stages: [
-          {
-            key: "s1",
-            label: "Planning",
-            status: "done" as const,
-            detail: null,
-            isCurrent: false,
-          },
-          {
-            key: "s2",
-            label: "Execution",
-            status: "running" as const,
-            detail: null,
-            isCurrent: true,
-          },
-          {
-            key: "s3",
-            label: "Review",
-            status: "pending" as const,
-            detail: null,
-            isCurrent: false,
-          },
+          { key: "s1", label: "Planning", status: "done" as const, detail: null, isCurrent: false },
+          { key: "s2", label: "Execution", status: "running" as const, detail: null, isCurrent: true },
+          { key: "s3", label: "Review", status: "pending" as const, detail: null, isCurrent: false },
         ],
       },
     } as unknown as TaskAutopilotSummary;
@@ -176,41 +156,11 @@ describe("deriveSubMetrics", () => {
     const autopilot = {
       route: {
         stages: [
-          {
-            key: "s1",
-            label: "A",
-            status: "done" as const,
-            detail: null,
-            isCurrent: false,
-          },
-          {
-            key: "s2",
-            label: "B",
-            status: "done" as const,
-            detail: null,
-            isCurrent: false,
-          },
-          {
-            key: "s3",
-            label: "C",
-            status: "running" as const,
-            detail: null,
-            isCurrent: true,
-          },
-          {
-            key: "s4",
-            label: "D",
-            status: "pending" as const,
-            detail: null,
-            isCurrent: false,
-          },
-          {
-            key: "s5",
-            label: "E",
-            status: "pending" as const,
-            detail: null,
-            isCurrent: false,
-          },
+          { key: "s1", label: "A", status: "done" as const, detail: null, isCurrent: false },
+          { key: "s2", label: "B", status: "done" as const, detail: null, isCurrent: false },
+          { key: "s3", label: "C", status: "running" as const, detail: null, isCurrent: true },
+          { key: "s4", label: "D", status: "pending" as const, detail: null, isCurrent: false },
+          { key: "s5", label: "E", status: "pending" as const, detail: null, isCurrent: false },
         ],
       },
     } as unknown as TaskAutopilotSummary;
@@ -222,24 +172,8 @@ describe("deriveSubMetrics", () => {
   it("uses detail stages when autopilot has no route stages (priority 2)", () => {
     const detail = makeDetail({
       stages: [
-        {
-          key: "stage-a",
-          label: "Design",
-          status: "done",
-          progress: 100,
-          arcStart: 0,
-          arcEnd: 90,
-          midAngle: 45,
-        },
-        {
-          key: "stage-b",
-          label: "Build",
-          status: "running",
-          progress: 60,
-          arcStart: 90,
-          arcEnd: 180,
-          midAngle: 135,
-        },
+        { key: "stage-a", label: "Design", status: "done", progress: 100, arcStart: 0, arcEnd: 90, midAngle: 45 },
+        { key: "stage-b", label: "Build", status: "running", progress: 60, arcStart: 90, arcEnd: 180, midAngle: 135 },
       ] as MissionTaskDetail["stages"],
       taskCount: 10,
       completedTaskCount: 5,
@@ -321,15 +255,7 @@ describe("dotColorClass", () => {
   });
 
   it("always returns a non-empty string", () => {
-    for (const level of [
-      "info",
-      "success",
-      "warning",
-      "error",
-      "debug",
-      "trace",
-      "",
-    ]) {
+    for (const level of ["info", "success", "warning", "error", "debug", "trace", ""]) {
       const result = dotColorClass(level);
       expect(result).toBeTruthy();
       expect(typeof result).toBe("string");
@@ -355,7 +281,7 @@ describe("prepareTimelineEvents", () => {
 
   it("truncates to maxCount", () => {
     const events = Array.from({ length: 20 }, (_, i) =>
-      makeEvent({ id: `evt-${i}`, time: i * 1000 })
+      makeEvent({ id: `evt-${i}`, time: i * 1000 }),
     );
 
     const result = prepareTimelineEvents(events, 5);

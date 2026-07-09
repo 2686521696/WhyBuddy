@@ -23,7 +23,7 @@ export interface TurnPhase {
 const INTAKE_PREFIXES = ["指令已接收", "上一话题已闭环", "本话题已闭环"];
 
 function phaseKeyForStep(text: string): { key: string; title: string } {
-  if (INTAKE_PREFIXES.some(p => text.startsWith(p))) {
+  if (INTAKE_PREFIXES.some((p) => text.startsWith(p))) {
     return { key: "intake", title: "理解意图" };
   }
   const round = text.match(/^第 (\d+) 轮/);
@@ -54,11 +54,7 @@ export function deriveTurnPhases(args: {
   /** 起草中的实时草稿（非空时 draft 阶段视为进行中并附语义行） */
   llmDraft?: string;
   /** turn 完成后合成「发布闭环」阶段 */
-  closure?: {
-    blocked: boolean;
-    evidencePresentCount: number;
-    skillCount: number;
-  } | null;
+  closure?: { blocked: boolean; evidencePresentCount: number; skillCount: number } | null;
 }): TurnPhase[] {
   const { stepTexts, streaming, llmDraft = "", closure } = args;
   const phases: TurnPhase[] = [];
@@ -88,10 +84,7 @@ export function deriveTurnPhases(args: {
   const draftPhase = byKey.get("draft");
   if (draftPhase && llmDraft) {
     const latest = latestDraftDefinition(llmDraft);
-    if (latest)
-      draftPhase.lines.push(
-        `最新定义：${latest} · 已产出 ${llmDraft.length} 字符`
-      );
+    if (latest) draftPhase.lines.push(`最新定义：${latest} · 已产出 ${llmDraft.length} 字符`);
   }
 
   // 完成后合成「发布闭环」终局阶段（V5.2 闭环的收口一目了然）。

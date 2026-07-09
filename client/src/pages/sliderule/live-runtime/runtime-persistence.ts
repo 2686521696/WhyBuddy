@@ -78,23 +78,15 @@ const ROLE_EVENT = "sliderule:runtime-role-changed";
 
 export function notifyRoleChanged(sessionId: string): void {
   try {
-    window.dispatchEvent(
-      new CustomEvent(ROLE_EVENT, { detail: { sessionId } })
-    );
+    window.dispatchEvent(new CustomEvent(ROLE_EVENT, { detail: { sessionId } }));
   } catch {
     /* SSR / 测试环境无 window */
   }
 }
 
-export function subscribeRoleChanged(
-  sessionId: string,
-  onChange: () => void
-): () => void {
+export function subscribeRoleChanged(sessionId: string, onChange: () => void): () => void {
   const handler = (e: Event) => {
-    if (
-      (e as CustomEvent<{ sessionId: string }>).detail?.sessionId === sessionId
-    )
-      onChange();
+    if ((e as CustomEvent<{ sessionId: string }>).detail?.sessionId === sessionId) onChange();
   };
   try {
     window.addEventListener(ROLE_EVENT, handler);
@@ -110,9 +102,7 @@ const CHANGE_EVENT = "sliderule:runtime-changed";
 
 export function notifyRuntimeChanged(sessionId: string): void {
   try {
-    window.dispatchEvent(
-      new CustomEvent(CHANGE_EVENT, { detail: { sessionId } })
-    );
+    window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: { sessionId } }));
   } catch {
     /* SSR / 测试环境无 window */
   }
@@ -123,10 +113,7 @@ export function subscribeRuntimeChanged(
   onChange: () => void
 ): () => void {
   const handler = (e: Event) => {
-    if (
-      (e as CustomEvent<{ sessionId: string }>).detail?.sessionId === sessionId
-    )
-      onChange();
+    if ((e as CustomEvent<{ sessionId: string }>).detail?.sessionId === sessionId) onChange();
   };
   try {
     window.addEventListener(CHANGE_EVENT, handler);

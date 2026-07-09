@@ -1,9 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import {
-  createInitialSessionState,
-  intakeMessage,
-  orchestrateReasoningTurn,
-} from "@/lib/sliderule-runtime";
+import { createInitialSessionState, intakeMessage, orchestrateReasoningTurn } from "@/lib/sliderule-runtime";
 import { deriveStatusBarFacts } from "../derive-status-bar";
 
 describe("deriveStatusBarFacts", () => {
@@ -13,10 +9,7 @@ describe("deriveStatusBarFacts", () => {
     state.coverageGaps = [
       { id: "g1", status: "open", description: "need evidence" } as any,
     ];
-    const facts = deriveStatusBarFacts(state, {
-      turnCount: 2,
-      isRunning: false,
-    });
+    const facts = deriveStatusBarFacts(state, { turnCount: 2, isRunning: false });
     expect(facts.openGapCount).toBe(1);
     expect(facts.parkHint).toContain("缺口");
     expect(facts.turnCount).toBe(2);
@@ -24,10 +17,7 @@ describe("deriveStatusBarFacts", () => {
 
   it("shows autonomous drive hint while running", () => {
     const state = createInitialSessionState("测试", "status-run");
-    const facts = deriveStatusBarFacts(state, {
-      turnCount: 1,
-      isRunning: true,
-    });
+    const facts = deriveStatusBarFacts(state, { turnCount: 1, isRunning: true });
     expect(facts.parkHint).toContain("自主推进");
     expect(facts.phaseLabel).toBe("推演中");
   });
@@ -42,9 +32,7 @@ describe("deriveStatusBarFacts", () => {
       closureReason: "convergence_signal",
     });
     expect(facts.phaseLabel).not.toBe("停泊");
-    expect(facts.parkHint == null || !/歇脚|停泊/.test(facts.parkHint)).toBe(
-      true
-    );
+    expect(facts.parkHint == null || !/歇脚|停泊/.test(facts.parkHint)).toBe(true);
   });
 
   it("exposes three Autopilot-style metrics and closure reason", () => {
@@ -62,10 +50,7 @@ describe("deriveStatusBarFacts", () => {
   });
 
   it("surfaces publish closure status as a status-bar badge fact", () => {
-    const state = createInitialSessionState(
-      "publish closure status",
-      "status-publish-closure"
-    );
+    const state = createInitialSessionState("publish closure status", "status-publish-closure");
 
     const closed = deriveStatusBarFacts(state, {
       turnCount: 1,
@@ -90,9 +75,7 @@ describe("deriveStatusBarFacts", () => {
         evidencePresentCount: 4,
         skillCount: 6,
         versionPinsChecked: false,
-        topBlockers: [
-          { code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED", path: "page" },
-        ],
+        topBlockers: [{ code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED", path: "page" }],
         tierCounts: { hard_blocker: 2, warning: 1, info: 0 },
       },
     });
@@ -152,20 +135,10 @@ describe("deriveStatusBarFacts", () => {
 /** M7 收尾 + 保全：默认 UI 不得出现内部机制词汇（lint 黑名单）。翻译 + derive 负责用户语言化。 */
 it("M7: deriveStatusBarFacts default labels avoid internal mechanism tokens (lint blacklist)", () => {
   const forbidden = [
-    "T_GATE",
-    "G-GROUND",
-    "gated_pass",
-    "pilot-template",
-    "budget_exhausted",
-    "coverage_sufficient",
-    "user_interrupted",
-    "await_ready",
-    "frontier_exhausted",
-    "session_budget_exhausted",
-    "autopilotPolicy",
-    "supersededArtifactIds",
-    "convergence_signal",
-    "await_confirm",
+    "T_GATE", "G-GROUND", "gated_pass", "pilot-template",
+    "budget_exhausted", "coverage_sufficient", "user_interrupted", "await_ready",
+    "frontier_exhausted", "session_budget_exhausted", "autopilotPolicy", "supersededArtifactIds",
+    "convergence_signal", "await_confirm"
   ];
   const state = createInitialSessionState("m7 lang test");
   const facts = deriveStatusBarFacts(state, { turnCount: 1, isRunning: true });
@@ -180,9 +153,7 @@ it("M2.1: marathon driver skeleton with 3-round mock chain (auto-seed, exhausted
   // 简 mock：直接调用 skeleton (内部用 drive single)，检查返回有 rounds
   const controller = new AbortController();
   const state = createInitialSessionState("m2 marathon test");
-  const res = await (
-    await import("@/lib/sliderule-marathon-driver")
-  ).driveMarathon(state, "seed1", {
+  const res = await (await import("@/lib/sliderule-marathon-driver")).driveMarathon(state, "seed1", {
     stopSignal: controller.signal,
     budget: { declaredAt: new Date().toISOString() },
     policy: {},
@@ -226,9 +197,7 @@ it("BudgetMarathon: driveMarathon first consumes Python authority endpoint", asy
     );
     expect(res.stopReason).toBe("session_budget_exhausted");
     expect((res.finalState as any).awaitReason).toBe("budget");
-    expect((res.finalState as any).publishClosure?.evidencePresentCount).toBe(
-      6
-    );
+    expect((res.finalState as any).publishClosure?.evidencePresentCount).toBe(6);
   } finally {
     fetchSpy.mockRestore();
   }
@@ -239,38 +208,23 @@ it("M3/M5/M6: driver stubs - de-dupe leads to exhausted, budget top, superseded 
   const controller = new AbortController();
   let state = createInitialSessionState("m3-6 test");
   // Force multiple convergence-like by short runs, but stub will hit budget/de-dupe
-  const res = await (
-    await import("@/lib/sliderule-marathon-driver")
-  ).driveMarathon(state, "seed", {
+  const res = await (await import("@/lib/sliderule-marathon-driver")).driveMarathon(state, "seed", {
     stopSignal: controller.signal,
     budget: { maxTokens: 2000, declaredAt: new Date().toISOString() }, // low to hit M5
     policy: {},
   });
   // Stub may hit await_human or other; check that at least one relevant stop or superseded was exercised in this wave
   const stops = [res.stopReason, ...res.rounds.map((r: any) => r.stopReason)];
-  expect(
-    stops.some((s: string) =>
-      [
-        "frontier_exhausted",
-        "session_budget_exhausted",
-        "await_human",
-      ].includes(s)
-    ) || (res.finalState as any).supersededArtifactIds
-  ).toBe(true);
+  expect(stops.some((s: string) => ["frontier_exhausted", "session_budget_exhausted", "await_human"].includes(s)) || (res.finalState as any).supersededArtifactIds).toBe(true);
   // superseded may be set on final state
-  expect(
-    Array.isArray((res.finalState as any).supersededArtifactIds) ||
-      (res.finalState as any).supersededArtifactIds === undefined
-  ).toBe(true);
+  expect(Array.isArray((res.finalState as any).supersededArtifactIds) || (res.finalState as any).supersededArtifactIds === undefined).toBe(true);
 });
 
 /** M4 探索测试：marathon policy for confirm (代答), await_ready = human stop (await_human). */
 it("M4: marathon policy artifact + await_confirm auto (per policy, ledger trace conceptually), await_ready human-only", async () => {
   const controller = new AbortController();
   const state = createInitialSessionState("m4 policy test");
-  const res = await (
-    await import("@/lib/sliderule-marathon-driver")
-  ).driveMarathon(state, "seed", {
+  const res = await (await import("@/lib/sliderule-marathon-driver")).driveMarathon(state, "seed", {
     stopSignal: controller.signal,
     budget: { declaredAt: new Date().toISOString() },
     policy: { autoConfirmRoute: "primary" },
@@ -278,23 +232,14 @@ it("M4: marathon policy artifact + await_confirm auto (per policy, ledger trace 
   // In driver, await_ready -> await_human; await_confirm treated as continue with policy seed
   // Policy attached
   expect((res.finalState as any).autopilotPolicy).toBeDefined();
-  expect(
-    ["await_human", "frontier_exhausted", "session_budget_exhausted"].includes(
-      res.stopReason
-    ) || res.rounds.some((r: any) => r.stopReason === "await_confirm")
-  ).toBe(true);
+  expect(["await_human", "frontier_exhausted", "session_budget_exhausted"].includes(res.stopReason) || res.rounds.some((r: any) => r.stopReason === "await_confirm")).toBe(true);
 });
 
 /** M3 保全测试（真实 frontier.propose）：prompt + rationale + ledger 必须存在且可审计。 */
 it("M3 preservation: real proposeFrontier yields prompt(单源) + rationale + ledgerEntry (type=frontier_propose)", async () => {
-  const { proposeFrontier, createRoundDigest } = await import(
-    "@/lib/sliderule-marathon-driver"
-  );
+  const { proposeFrontier, createRoundDigest } = await import("@/lib/sliderule-marathon-driver");
   const st = createInitialSessionState("m3 real propose test");
-  const digest = createRoundDigest(
-    st,
-    (st.artifacts || []).slice(-3).map((a: any) => a.id)
-  );
+  const digest = createRoundDigest(st, (st.artifacts || []).slice(-3).map((a: any) => a.id));
   const p = await proposeFrontier(st, digest, []);
   expect(typeof p.prompt).toBe("string");
   expect(p.prompt.length).toBeGreaterThan(10);
@@ -320,26 +265,18 @@ it("M6 preservation: createRoundDigest uses buildStructuredReport (9 sections) +
 it("M5 preservation: driveMarathon consumes real costLedger; low maxTokens forces session_budget_exhausted", async () => {
   const controller = new AbortController();
   const st = createInitialSessionState("m5 cost real");
-  const res = await (
-    await import("@/lib/sliderule-marathon-driver")
-  ).driveMarathon(st, "seed-m5", {
+  const res = await (await import("@/lib/sliderule-marathon-driver")).driveMarathon(st, "seed-m5", {
     stopSignal: controller.signal,
     budget: { maxTokens: 1500, declaredAt: new Date().toISOString() }, // low -> force
     policy: {},
   });
   const cl = (res.finalState as any).costLedger || [];
   expect(Array.isArray(cl)).toBe(true);
-  expect(
-    ["session_budget_exhausted", "frontier_exhausted", "await_human"].includes(
-      res.stopReason
-    )
-  ).toBe(true);
+  expect(["session_budget_exhausted", "frontier_exhausted", "await_human"].includes(res.stopReason)).toBe(true);
 });
 
 it("driveFullViaPython attaches Python publishClosure on success and returns null on degraded response", async () => {
-  const { driveFullViaPython } = await import(
-    "@/lib/sliderule-marathon-driver"
-  );
+  const { driveFullViaPython } = await import("@/lib/sliderule-marathon-driver");
   const state = createInitialSessionState("drive-full-python-closure-120");
 
   const fetchSpy = vi
@@ -381,18 +318,12 @@ it("driveFullViaPython attaches Python publishClosure on success and returns nul
         body: expect.stringContaining('"max_loops":7'),
       })
     );
-    expect(
-      JSON.parse(String((fetchSpy.mock.calls[0][1] as any).body)).turnId
-    ).toBe("turn-command-120");
+    expect(JSON.parse(String((fetchSpy.mock.calls[0][1] as any).body)).turnId).toBe("turn-command-120");
     expect(positive?.finalState.runtimePhase).toBe("done");
     expect((positive as any)?.loops?.[0]?.loopTurnId).toBe("turn-command-120");
     expect((positive?.finalState as any).publishClosure?.blocked).toBe(false);
-    expect(
-      (positive?.finalState as any).publishClosure?.evidencePresentCount
-    ).toBe(6);
-    expect((positive?.finalState as any).publishClosure?.closureHash).toBe(
-      "python-closed-120"
-    );
+    expect((positive?.finalState as any).publishClosure?.evidencePresentCount).toBe(6);
+    expect((positive?.finalState as any).publishClosure?.closureHash).toBe("python-closed-120");
 
     const degraded = await driveFullViaPython(state, "fallback locally", {
       stopSignal: new AbortController().signal,
@@ -404,16 +335,12 @@ it("driveFullViaPython attaches Python publishClosure on success and returns nul
 });
 
 it("classifies /drive-full status for visible loading and fallback states", async () => {
-  const { classifyDriveFullStatus } = await import(
-    "@/lib/sliderule-marathon-driver"
-  );
+  const { classifyDriveFullStatus } = await import("@/lib/sliderule-marathon-driver");
 
-  expect(
-    classifyDriveFullStatus({ finalState: createInitialSessionState("ok") })
-  ).toBe("python_success");
-  expect(classifyDriveFullStatus({ error: "timeout" })).toBe("timeout");
-  expect(classifyDriveFullStatus({ error: "python_unavailable" })).toBe(
-    "python_unavailable"
+  expect(classifyDriveFullStatus({ finalState: createInitialSessionState("ok") })).toBe(
+    "python_success"
   );
+  expect(classifyDriveFullStatus({ error: "timeout" })).toBe("timeout");
+  expect(classifyDriveFullStatus({ error: "python_unavailable" })).toBe("python_unavailable");
   expect(classifyDriveFullStatus(null)).toBe("fallback");
 });

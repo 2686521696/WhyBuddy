@@ -45,16 +45,8 @@ import type {
   CapabilityCostRecord,
   CoverageGap,
 } from "@shared/blueprint/v5-reasoning-state";
-import type {
-  BrainstormReasoningGraph,
-  BrainstormReasoningNode,
-  BrainstormReasoningEdge,
-} from "@shared/blueprint/brainstorm-reasoning-graph";
-import {
-  V5_CAPABILITY_POOL,
-  ALL_V5_CAPABILITIES,
-  CAPABILITY_OUTPUT_KIND,
-} from "@shared/blueprint/contracts";
+import type { BrainstormReasoningGraph, BrainstormReasoningNode, BrainstormReasoningEdge } from "@shared/blueprint/brainstorm-reasoning-graph";
+import { V5_CAPABILITY_POOL, ALL_V5_CAPABILITIES, CAPABILITY_OUTPUT_KIND } from "@shared/blueprint/contracts";
 import { CAPABILITY_PROCESS_LABELS } from "@shared/blueprint/capability-process-labels";
 import {
   ensureRouteBranchScaffold,
@@ -82,10 +74,7 @@ import {
 import { findGithubUrlInTexts } from "@shared/blueprint/sliderule-github-context";
 import { createBrowserLlmCapabilityProvider } from "./sliderule-browser-llm";
 import { pickNextCapabilities as pickNextCapabilitiesHeuristic } from "@shared/blueprint/sliderule-pick-heuristic";
-import {
-  makeEventSequence,
-  type ReasoningEvent,
-} from "@shared/blueprint/sliderule-reasoning-events";
+import { makeEventSequence, type ReasoningEvent } from "@shared/blueprint/sliderule-reasoning-events";
 import { validateProposedPlan } from "@shared/blueprint/sliderule-plan-validation";
 import { fetchOrchestratePlan } from "./sliderule-orchestrator";
 import {
@@ -107,11 +96,7 @@ import {
   hasTrustedCommittedForCap,
   reconcileCoverageContract,
 } from "@shared/blueprint/sliderule-coverage-gate";
-export {
-  authorCoverageContract,
-  evaluateCoverageGate,
-  hasTrustedCommittedForCap,
-};
+export { authorCoverageContract, evaluateCoverageGate, hasTrustedCommittedForCap };
 import {
   gapsFromGapAskContent,
   gapsFromClarifyQuestions,
@@ -131,26 +116,15 @@ import {
   buildHandoffPackageContent,
   buildPromptPackContent,
 } from "@shared/blueprint/sliderule-delivery-chain";
-import {
-  evaluateCommitGates,
-  evaluateShipGates,
-} from "@shared/blueprint/sliderule-ship-gates";
-import {
-  evaluateQualityGate,
-  getBaseline,
-  PILOT_TEMPLATE_BASELINE,
-  PRODUCTION_BASELINE,
-} from "@shared/blueprint/sliderule-quality-gate";
+import { evaluateCommitGates, evaluateShipGates } from "@shared/blueprint/sliderule-ship-gates";
+import { evaluateQualityGate, getBaseline, PILOT_TEMPLATE_BASELINE, PRODUCTION_BASELINE } from "@shared/blueprint/sliderule-quality-gate";
 import { shouldEscalateOnBudgetBlock } from "@shared/blueprint/sliderule-budget-esc";
 import {
   applyRoleModeToState,
   isDeliberationCapability,
   markBrainstormDegraded,
 } from "@shared/blueprint/sliderule-role-mode";
-import {
-  auditPreviewReal,
-  isVisualIntent,
-} from "@shared/blueprint/sliderule-visual-chain";
+import { auditPreviewReal, isVisualIntent } from "@shared/blueprint/sliderule-visual-chain";
 import {
   buildStructurePrompt,
   redactStructurePrompt,
@@ -261,11 +235,7 @@ export interface ReasoningRouterRequest {
  * with routers/fixtures that never emit it.
  */
 export interface ReasoningRouterResponse {
-  selected: Array<{
-    capabilityId: V5CapabilityId;
-    roleId: string;
-    why?: string;
-  }>;
+  selected: Array<{ capabilityId: V5CapabilityId; roleId: string; why?: string }>;
   rationale: string;
   source: "llm" | "heuristic_fallback";
   /** 需求 3.3: mechanical convergence signal — only meaningful when selected is empty. */
@@ -381,9 +351,7 @@ export function evaluateBudgetBeforeOrchestrate(
   policy = getDefaultBudgetPolicy()
 ): { allowed: boolean; snapshot: BudgetSnapshot; reason?: string } {
   const runs = state.capabilityRuns || [];
-  const turnIds = new Set<string>(
-    runs.map((r: any) => r.turnId).filter(Boolean)
-  );
+  const turnIds = new Set<string>(runs.map((r: any) => r.turnId).filter(Boolean));
   const currentTurns = turnIds.size;
   const currentRuns = runs.length;
 
@@ -402,15 +370,10 @@ export function evaluateBudgetBeforeOrchestrate(
 
   // Knife 6: include cost summary from costLedger (v1)
   const costs = (state.costLedger || []) as CapabilityCostRecord[];
-  const totalEstimatedTokens = costs.reduce(
-    (sum, c) => sum + (c.estimatedTokens || 0),
-    0
-  );
+  const totalEstimatedTokens = costs.reduce((sum, c) => sum + (c.estimatedTokens || 0), 0);
   const perCapTokens: Record<string, number> = {};
   for (const c of costs) {
-    if (c.capabilityId)
-      perCapTokens[c.capabilityId] =
-        (perCapTokens[c.capabilityId] || 0) + (c.estimatedTokens || 0);
+    if (c.capabilityId) perCapTokens[c.capabilityId] = (perCapTokens[c.capabilityId] || 0) + (c.estimatedTokens || 0);
   }
   (snapshot as any).totalEstimatedTokens = totalEstimatedTokens;
   (snapshot as any).perCapTokens = perCapTokens;
@@ -427,18 +390,12 @@ export function evaluateBudgetBeforeOrchestrate(
   }
   if (currentRuns >= policy.maxCapabilityRunsPerSession) {
     allowed = false;
-    reason =
-      reason ||
-      `maxCapabilityRunsPerSession exceeded (${currentRuns} >= ${policy.maxCapabilityRunsPerSession})`;
+    reason = reason || `maxCapabilityRunsPerSession exceeded (${currentRuns} >= ${policy.maxCapabilityRunsPerSession})`;
   }
-  const repeatHit = Object.entries(perCap).find(
-    ([, c]) => c >= policy.maxRepeatPerCapability
-  );
+  const repeatHit = Object.entries(perCap).find(([, c]) => c >= policy.maxRepeatPerCapability);
   if (repeatHit) {
     allowed = false;
-    reason =
-      reason ||
-      `maxRepeatPerCapability for ${repeatHit[0]} (${repeatHit[1]} >= ${policy.maxRepeatPerCapability})`;
+    reason = reason || `maxRepeatPerCapability for ${repeatHit[0]} (${repeatHit[1]} >= ${policy.maxRepeatPerCapability})`;
   }
   if (totalEstimatedTokens >= policy.maxTokensPerSession) {
     allowed = false;
@@ -459,26 +416,13 @@ export function evaluateBudgetBeforeOrchestrate(
 export function recordCapabilityRunCost(
   state: V5SessionState,
   run: CapabilityRun,
-  cost?: {
-    tokens?: number;
-    durationMs?: number;
-    estimatedCostUsd?: number;
-    source?: "estimated" | "server" | "manual";
-    usage?: {
-      totalTokens?: number;
-      inputTokens?: number;
-      outputTokens?: number;
-      model?: string;
-    };
-    [k: string]: any;
-  }
+  cost?: { tokens?: number; durationMs?: number; estimatedCostUsd?: number; source?: "estimated" | "server" | "manual"; usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number; model?: string }; [k: string]: any }
 ): V5SessionState {
   // Knife 11: prefer real provider usage if present (from server LLM), else fallback estimate.
   const now = new Date().toISOString();
   const usage = cost?.usage;
   let tokens = 0;
-  let src: CapabilityCostRecord["source"] = (cost?.source ??
-    "estimated") as any;
+  let src: CapabilityCostRecord["source"] = (cost?.source ?? "estimated") as any;
 
   if (usage?.totalTokens) {
     tokens = usage.totalTokens;
@@ -529,15 +473,12 @@ export function getPropositionRootNode(
   const expectedId = propositionRootId(sessionId);
   const nodes = state.graph?.nodes || [];
   return (
-    nodes.find(n => n.id === expectedId) ??
-    nodes.find(n => n.type === "question" && n.id.endsWith("-proposition"))
+    nodes.find((n) => n.id === expectedId) ??
+    nodes.find((n) => n.type === "question" && n.id.endsWith("-proposition"))
   );
 }
 
-function buildPropositionRootNode(
-  goalText: string,
-  sessionId: string
-): BrainstormReasoningNode {
+function buildPropositionRootNode(goalText: string, sessionId: string): BrainstormReasoningNode {
   const id = propositionRootId(sessionId);
   return {
     id,
@@ -567,7 +508,7 @@ export function ensurePropositionRoot(
         title: text.trim(),
         body: text.trim(),
       };
-      const nodes = (state.graph.nodes || []).map(n =>
+      const nodes = (state.graph.nodes || []).map((n) =>
         n.id === existing.id ? updated : n
       );
       return {
@@ -622,23 +563,14 @@ export function resolveStructuralParentId(
 
   const intervention = context?.intervention;
   if (intervention?.targetNodeId) {
-    const match = (state.graph.nodes || []).find(
-      n => n.id === intervention.targetNodeId
-    );
+    const match = (state.graph.nodes || []).find((n) => n.id === intervention.targetNodeId);
     if (match) return match.id;
   }
   if (intervention?.targetArtifactId) {
-    const art = (state.artifacts || []).find(
-      a => a.id === intervention.targetArtifactId
-    );
+    const art = (state.artifacts || []).find((a) => a.id === intervention.targetArtifactId);
     if (art) {
       const match = (state.graph.nodes || []).find(
-        (
-          n: BrainstormReasoningNode & {
-            producedArtifactId?: string;
-            capabilityRunId?: string;
-          }
-        ) =>
+        (n: BrainstormReasoningNode & { producedArtifactId?: string; capabilityRunId?: string }) =>
           n.producedArtifactId === art.id ||
           n.capabilityRunId === art.producedBy?.capabilityRunId
       );
@@ -687,28 +619,18 @@ const DELIVERY_NEST_CAPS = new Set<string>([
 function latestContentNodeId(state: V5SessionState): string | undefined {
   const stale = new Set(state.staleArtifactIds || []);
   const trusted = (state.artifacts || []).filter(
-    a =>
-      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
-      !stale.has(a.id)
+    (a) => (a.trustLevel === "gated_pass" || a.trustLevel === "audited") && !stale.has(a.id)
   );
   const lastOfKind = (k: string) => {
-    for (let i = trusted.length - 1; i >= 0; i--)
-      if (trusted[i].kind === k) return trusted[i];
+    for (let i = trusted.length - 1; i >= 0; i--) if (trusted[i].kind === k) return trusted[i];
     return undefined;
   };
-  const pick =
-    lastOfKind("report") || lastOfKind("synthesis") || lastOfKind("spec_tree");
+  const pick = lastOfKind("report") || lastOfKind("synthesis") || lastOfKind("spec_tree");
   if (!pick) return undefined;
   const node = (state.graph?.nodes || []).find(
-    (
-      n: BrainstormReasoningNode & {
-        producedArtifactId?: string;
-        capabilityRunId?: string;
-      }
-    ) =>
+    (n: BrainstormReasoningNode & { producedArtifactId?: string; capabilityRunId?: string }) =>
       n.producedArtifactId === pick.id ||
-      (!!pick.producedBy?.capabilityRunId &&
-        n.capabilityRunId === pick.producedBy.capabilityRunId)
+      (!!pick.producedBy?.capabilityRunId && n.capabilityRunId === pick.producedBy.capabilityRunId)
   );
   return node?.id;
 }
@@ -721,28 +643,27 @@ export function evaluateGraphRootGates(state: V5SessionState): {
   const violations: string[] = [];
   const nodes = state.graph?.nodes || [];
   const edges = state.graph?.edges || [];
-  const nodeIds = new Set(nodes.map(n => n.id));
+  const nodeIds = new Set(nodes.map((n) => n.id));
   const root = getPropositionRootNode(state);
 
   if (!root) {
     violations.push("G-ROOT-1");
   } else {
     const propositionNodes = nodes.filter(
-      n => n.type === "question" && n.id.endsWith("-proposition")
+      (n) => n.type === "question" && n.id.endsWith("-proposition")
     );
     if (propositionNodes.length !== 1) violations.push("G-ROOT-1");
   }
 
-  const structuralEdges = edges.filter(e => e.type === "depends_on");
+  const structuralEdges = edges.filter((e) => e.type === "depends_on");
   for (const node of nodes) {
     if (root && node.id === root.id) continue;
-    const incoming = structuralEdges.filter(e => e.target === node.id);
+    const incoming = structuralEdges.filter((e) => e.target === node.id);
     if (incoming.length !== 1) violations.push(`G-ROOT-2:${node.id}`);
   }
 
   for (const node of nodes) {
-    const refs = (node as BrainstormReasoningNode & { derivedFrom?: string[] })
-      .derivedFrom;
+    const refs = (node as BrainstormReasoningNode & { derivedFrom?: string[] }).derivedFrom;
     if (!refs) continue;
     for (const ref of refs) {
       if (!nodeIds.has(ref)) violations.push(`G-ROOT-3:${node.id}->${ref}`);
@@ -750,10 +671,8 @@ export function evaluateGraphRootGates(state: V5SessionState): {
   }
 
   for (const edge of edges) {
-    if (!nodeIds.has(edge.source))
-      violations.push(`G-ROOT-4:source:${edge.id}`);
-    if (!nodeIds.has(edge.target))
-      violations.push(`G-ROOT-4:target:${edge.id}`);
+    if (!nodeIds.has(edge.source)) violations.push(`G-ROOT-4:source:${edge.id}`);
+    if (!nodeIds.has(edge.target)) violations.push(`G-ROOT-4:target:${edge.id}`);
   }
 
   return { ok: violations.length === 0, violations };
@@ -765,41 +684,28 @@ export function formatProvenanceForLabel(
 ): string {
   const refs = node.derivedFrom || [];
   if (refs.length === 0) return node.body || "";
-  const refNode = graph.nodes?.find(n => n.id === refs[0]);
+  const refNode = graph.nodes?.find((n) => n.id === refs[0]);
   const label =
     refNode?.type === "question"
       ? refNode.title || refNode.body || refs[0]
       : refNode?.title || refs[0];
-  const gist = String(label || "")
-    .trim()
-    .slice(0, 72);
+  const gist = String(label || "").trim().slice(0, 72);
   return gist
     ? `承接「${gist}」继续推演；能力产出后将替换为可读结论。`
     : "能力执行中，产出后将显示具体结论。";
 }
 
-function pendingCapabilityNodeTitle(
-  capabilityId: V5CapabilityId,
-  roleId: string
-): string {
+function pendingCapabilityNodeTitle(capabilityId: V5CapabilityId, roleId: string): string {
   const entry = CAPABILITY_PROCESS_LABELS[capabilityId];
   const live =
-    typeof entry?.liveLabel === "function"
-      ? entry.liveLabel({})
-      : entry?.liveLabel;
+    typeof entry?.liveLabel === "function" ? entry.liveLabel({}) : entry?.liveLabel;
   if (live) {
-    return live
-      .replace(/^⚡\s*/, "")
-      .replace(/…+$/u, "")
-      .trim();
+    return live.replace(/^⚡\s*/, "").replace(/…+$/u, "").trim();
   }
   return `${roleIdToDisplayLabel(roleId)}正在推演`;
 }
 
-export function createInitialSessionState(
-  goalText: string,
-  sessionId = "sliderule-local-proto"
-): V5SessionState {
+export function createInitialSessionState(goalText: string, sessionId = "sliderule-local-proto"): V5SessionState {
   // Start with a minimal but valid state. Graph will be mutated by capabilities.
   // Per 修复闭环.md: sessionId isolation starts here; load path will key off it later.
   const base: V5SessionState = {
@@ -828,12 +734,12 @@ export function createInitialSessionState(
     sessionId,
     runtimePhase: "idle",
     decisionLedger: [],
-    coverageContract: undefined,
-    coverageGate: undefined,
-    flowBoundaryLedger: [],
-    structureGateLedger: [],
-    costLedger: [],
-    coverageGaps: [],
+  coverageContract: undefined,
+  coverageGate: undefined,
+  flowBoundaryLedger: [],
+  structureGateLedger: [],
+  costLedger: [],
+  coverageGaps: [],
   };
   return ensurePropositionRoot({ ...base, sessionId });
 }
@@ -856,35 +762,28 @@ export interface SlideRuleSessionStore {
   load(sessionId: string): Promise<V5SessionState | undefined>;
   save(state: V5SessionState): Promise<V5SessionState>;
   clear?(): void | Promise<void>;
-  listSessions?():
-    | Array<{
-        sessionId: string;
-        goal: string;
-        createdAt?: string;
-        lastActive?: string;
-        artifactCount: number;
-        phase?: string;
-      }>
-    | Promise<
-        Array<{
-          sessionId: string;
-          goal: string;
-          createdAt?: string;
-          lastActive?: string;
-          artifactCount: number;
-          phase?: string;
-        }>
-      >;
+  listSessions?(): Array<{
+    sessionId: string;
+    goal: string;
+    createdAt?: string;
+    lastActive?: string;
+    artifactCount: number;
+    phase?: string;
+  }> | Promise<Array<{
+    sessionId: string;
+    goal: string;
+    createdAt?: string;
+    lastActive?: string;
+    artifactCount: number;
+    phase?: string;
+  }>>;
   deleteSession?(sessionId: string): void | Promise<void>;
 }
 
 // Default in-memory implementation (module-level Map, per-sessionId isolation).
 class InMemorySlideRuleSessionStore implements SlideRuleSessionStore {
   private readonly store = new Map<string, V5SessionState>();
-  private readonly meta = new Map<
-    string,
-    { createdAt: string; lastActive: string }
-  >();
+  private readonly meta = new Map<string, { createdAt: string; lastActive: string }>();
 
   async load(sessionId: string): Promise<V5SessionState | undefined> {
     const s = this.store.get(sessionId);
@@ -892,11 +791,7 @@ class InMemorySlideRuleSessionStore implements SlideRuleSessionStore {
       // attach meta for consumers if present
       const m = this.meta.get(sessionId);
       if (m) {
-        return {
-          ...s,
-          createdAt: m.createdAt,
-          lastActive: m.lastActive,
-        } as any;
+        return { ...s, createdAt: m.createdAt, lastActive: m.lastActive } as any;
       }
     }
     return s;
@@ -928,7 +823,7 @@ class InMemorySlideRuleSessionStore implements SlideRuleSessionStore {
       const m = this.meta.get(sid);
       out.push({
         sessionId: sid,
-        goal: s.goal?.text || "",
+        goal: s.goal?.text || '',
         createdAt: m?.createdAt || (s as any).createdAt,
         lastActive: m?.lastActive || (s as any).lastActive,
         artifactCount: (s.artifacts || []).length,
@@ -944,8 +839,7 @@ class InMemorySlideRuleSessionStore implements SlideRuleSessionStore {
   }
 }
 
-let currentSlideRuleSessionStore: SlideRuleSessionStore =
-  new InMemorySlideRuleSessionStore();
+let currentSlideRuleSessionStore: SlideRuleSessionStore = new InMemorySlideRuleSessionStore();
 
 /**
  * For tests or future backend injection.
@@ -971,10 +865,7 @@ export function isLegacyEmptySessionSeed(state: V5SessionState): boolean {
   const isLegacyGoal =
     text === LEGACY_HARDCODED_PRODUCT_GOAL || text === "SlideRule V5 session";
   if (!isLegacyGoal) return false;
-  return (
-    (state.artifacts || []).length === 0 &&
-    (state.conversation || []).length === 0
-  );
+  return (state.artifacts || []).length === 0 && (state.conversation || []).length === 0;
 }
 
 export async function loadOrCreateSessionState(
@@ -988,30 +879,22 @@ export async function loadOrCreateSessionState(
 
   const created = createInitialSessionState(goalText, sessionId);
   const withReplay = applyReplayOnSave(undefined, created);
-  await currentSlideRuleSessionStore.save(
-    stripProjectionForPersist(withReplay)
-  );
+  await currentSlideRuleSessionStore.save(stripProjectionForPersist(withReplay));
   return deriveNodeStatus(withReplay);
 }
 
-export async function saveSessionState(
-  state: V5SessionState
-): Promise<V5SessionState> {
+export async function saveSessionState(state: V5SessionState): Promise<V5SessionState> {
   const sessionId = state.sessionId || "sliderule-local-proto";
   const previous = await currentSlideRuleSessionStore.load(sessionId);
   const withReplay = applyReplayOnSave(previous, state);
-  await currentSlideRuleSessionStore.save(
-    stripProjectionForPersist(withReplay)
-  );
+  await currentSlideRuleSessionStore.save(stripProjectionForPersist(withReplay));
   return deriveNodeStatus(withReplay);
 }
 
 /** S21 edge 117: replay events for a session from durable STORE (session-isolated). */
 export { replaySessionEvents, type SlideRuleReplayEvent };
 
-export async function loadSessionReplayEvents(
-  sessionId: string
-): Promise<SlideRuleReplayEvent[]> {
+export async function loadSessionReplayEvents(sessionId: string): Promise<SlideRuleReplayEvent[]> {
   const state = await currentSlideRuleSessionStore.load(sessionId);
   if (!state) return [];
   return replaySessionEvents(state);
@@ -1023,7 +906,7 @@ export function clearSlideRuleSessionStore(): void {
 
 export function listSlideRuleSessions() {
   const res = currentSlideRuleSessionStore.listSessions?.();
-  return res instanceof Promise ? res : res || [];
+  return res instanceof Promise ? res : (res || []);
 }
 
 export async function deleteSlideRuleSession(sessionId: string): Promise<void> {
@@ -1045,9 +928,7 @@ export function deriveNodeStatus(
 ): V5SessionState {
   const staleSet = new Set(state.staleArtifactIds || []);
   const artifactByRun = new Map<string, Artifact>();
-  const runById = new Map<string, any>(
-    (state.capabilityRuns || []).map(r => [r.id, r])
-  );
+  const runById = new Map<string, any>((state.capabilityRuns || []).map(r => [r.id, r]));
 
   for (const art of state.artifacts || []) {
     const runId = art.producedBy?.capabilityRunId;
@@ -1073,11 +954,7 @@ export function deriveNodeStatus(
     const artId = node.producedArtifactId;
     let newStatus = node.status || "pending";
 
-    const matchingArt = runId
-      ? artifactByRun.get(runId)
-      : artId
-        ? (state.artifacts || []).find((a: any) => a.id === artId)
-        : undefined;
+    const matchingArt = runId ? artifactByRun.get(runId) : (artId ? (state.artifacts || []).find((a: any) => a.id === artId) : undefined);
     const matchingRun = runId ? runById.get(runId) : undefined;
 
     // Robust stale detection (per audit): cross-ref via node's runId to find the art (works pre-enrich when only capabilityRunId is present on node),
@@ -1094,11 +971,7 @@ export function deriveNodeStatus(
 
     if (isStale) {
       newStatus = "challenged";
-    } else if (
-      matchingRun &&
-      matchingRun.gateResults &&
-      matchingRun.gateResults.some((g: any) => g.status === "failed")
-    ) {
+    } else if (matchingRun && matchingRun.gateResults && matchingRun.gateResults.some((g: any) => g.status === "failed")) {
       newStatus = "failed";
     } else if (matchingArt) {
       if (matchingArt.trustLevel === "untrusted") {
@@ -1118,10 +991,7 @@ export function deriveNodeStatus(
     return node;
   });
 
-  if (
-    newNodes === state.graph?.nodes &&
-    !state.projectionDirtyNodeIds?.length
-  ) {
+  if (newNodes === state.graph?.nodes && !state.projectionDirtyNodeIds?.length) {
     return state;
   }
 
@@ -1131,10 +1001,9 @@ export function deriveNodeStatus(
       ...state.graph,
       nodes: newNodes,
     },
-    projectionDirtyNodeIds:
-      restrict && recomputed < (state.graph?.nodes || []).length
-        ? (state.projectionDirtyNodeIds || []).filter(id => !restrict.has(id))
-        : [],
+    projectionDirtyNodeIds: restrict && recomputed < (state.graph?.nodes || []).length
+      ? (state.projectionDirtyNodeIds || []).filter((id) => !restrict.has(id))
+      : [],
   };
 }
 
@@ -1148,25 +1017,15 @@ function evaluateGates(
   baselineName: "production" | "pilot-template" = "production"
 ): { status: "passed" | "failed"; gateId: string; reason?: string }[] {
   const capId = String((artifact as any).producedBy?.capabilityId || "");
-  const commitGates = evaluateCommitGates(capId, {
-    forceFail,
-    groundingOk,
-  }).map(g => ({
+  const commitGates = evaluateCommitGates(capId, { forceFail, groundingOk }).map((g) => ({
     gateId: g.gateId,
     status: g.status,
   }));
 
   // K3: quality gate now participates in trust decision (explicit baseline from call site)
-  const q = evaluateQualityGate(
-    artifact as any,
-    undefined,
-    getBaseline(baselineName)
-  );
+  const q = evaluateQualityGate(artifact as any, undefined, getBaseline(baselineName));
   if (q) {
-    return [
-      ...commitGates,
-      { gateId: q.gateId, status: q.status, reason: q.reason },
-    ];
+    return [...commitGates, { gateId: q.gateId, status: q.status, reason: q.reason }];
   }
   return commitGates;
 }
@@ -1191,13 +1050,10 @@ export function getSessionLedger(state: V5SessionState): Array<{
 
   return runs.map(run => {
     const outIds = run.outputs || [];
-    const outArts = outIds
-      .map(id => artifactsById.get(id))
-      .filter((x): x is Artifact => !!x);
-    const trust =
-      outArts.length > 0 ? outArts[0].trustLevel || "untrusted" : "untrusted";
+    const outArts = outIds.map(id => artifactsById.get(id)).filter((x): x is Artifact => !!x);
+    const trust = outArts.length > 0 ? (outArts[0].trustLevel || 'untrusted') : 'untrusted';
     const gates = run.gateResults || [];
-    const passed = gates.filter(g => g.status === "passed").length;
+    const passed = gates.filter(g => g.status === 'passed').length;
     const failed = gates.length - passed;
     const gateSummary = `${passed} passed, ${failed} failed`;
 
@@ -1224,9 +1080,7 @@ export function getDecisionLedger(state: V5SessionState): SchedulingDecision[] {
 // Inserted after DLEDGER in ORCH per spec. Budget remains the prior gate.
 
 /** Knife 7: resolve open coverage gaps that are now satisfied by current trusted state (e.g. after commit). */
-export function resolveCoverageGapsFromState(
-  state: V5SessionState
-): V5SessionState {
+export function resolveCoverageGapsFromState(state: V5SessionState): V5SessionState {
   const contract = state.coverageContract;
   if (!contract) return state;
   let gaps = [...(state.coverageGaps || [])] as CoverageGap[];
@@ -1239,19 +1093,12 @@ export function resolveCoverageGapsFromState(
       if (hasTrustedCommittedForCap(state, g.requiredCapabilityId)) {
         g.status = "resolved";
         g.updatedAt = now;
-        const arts = (state.artifacts || []).filter(
-          (a: any) =>
-            a.producedBy?.capabilityId === g.requiredCapabilityId &&
-            (a.trustLevel === "gated_pass" || a.trustLevel === "audited")
-        );
+        const arts = (state.artifacts || []).filter((a: any) => a.producedBy?.capabilityId === g.requiredCapabilityId && (a.trustLevel === "gated_pass" || a.trustLevel === "audited"));
         if (arts.length) g.resolvedByArtifactId = arts[arts.length - 1].id;
         changed = true;
       }
     } else if (g.kind === "missing_evidence") {
-      if (
-        countGroundedTrustedArtifacts(state) >=
-        (contract.minEvidencePerRequirement || 1)
-      ) {
+      if (countGroundedTrustedArtifacts(state) >= (contract.minEvidencePerRequirement || 1)) {
         g.status = "resolved";
         g.updatedAt = now;
         changed = true;
@@ -1264,13 +1111,9 @@ export function resolveCoverageGapsFromState(
 }
 
 /** Knife 7: waive an open gap (runtime helper; UI can call later). */
-export function waiveCoverageGap(
-  state: V5SessionState,
-  gapId: string,
-  reason: string
-): V5SessionState {
+export function waiveCoverageGap(state: V5SessionState, gapId: string, reason: string): V5SessionState {
   let gaps = [...(state.coverageGaps || [])] as CoverageGap[];
-  const idx = gaps.findIndex(g => g.id === gapId);
+  const idx = gaps.findIndex((g) => g.id === gapId);
   if (idx < 0) return state;
   const g = { ...gaps[idx] };
   if (g.status !== "open") return state;
@@ -1286,21 +1129,14 @@ export function waiveCoverageGap(
 export function evaluateContractSufficiencyForBudget(
   state: V5SessionState,
   context?: OrchestrateContext
-): {
-  sufficient: boolean;
-  reason: string;
-  openGapCount: number;
-  unresolvedRequiredCapabilities: string[];
-} {
+): { sufficient: boolean; reason: string; openGapCount: number; unresolvedRequiredCapabilities: string[] } {
   const contract = state.coverageContract;
   const gate = state.coverageGate;
   const gaps: CoverageGap[] = (state.coverageGaps || []) as any;
   const hasStale = (state.staleArtifactIds || []).length > 0;
   const intervention = context?.intervention;
 
-  const isMeaningfulIntervention =
-    !!intervention &&
-    ["challenge", "revise", "clarify", "expand"].includes(intervention.intent);
+  const isMeaningfulIntervention = !!intervention && ['challenge', 'revise', 'clarify', 'expand'].includes(intervention.intent);
   const userText = context?.userText || "";
   const hasExplicitPostClearWork =
     isDeliveryIntent(userText) ||
@@ -1309,28 +1145,20 @@ export function evaluateContractSufficiencyForBudget(
     isPreviewDissatisfiedIntent(userText) ||
     state.deliveryPhase === "shipping";
 
-  const blockingGaps = contract
-    ? gaps.filter((g: any) => (contract as any).blockingGapIds?.includes(g.id))
-    : [];
-  const openBlocking = blockingGaps.filter((g: any) => g.status === "open");
+  const blockingGaps = contract ? gaps.filter((g: any) => (contract as any).blockingGapIds?.includes(g.id)) : [];
+  const openBlocking = blockingGaps.filter((g: any) => g.status === 'open');
   const openGapCount = openBlocking.length;
 
-  const unresolvedRequired = contract
-    ? (contract as any).requiredCapabilities?.filter(
-        (c: string) =>
-          c !== "report.write" && !hasTrustedCommittedForCap(state, c)
-      ) || []
-    : [];
+  const unresolvedRequired = contract ? (contract as any).requiredCapabilities?.filter((c: string) => c !== 'report.write' && !hasTrustedCommittedForCap(state, c)) || [] : [];
 
-  const hasRecentReport = (state.artifacts || []).some(
-    (a: any) =>
-      a.producedBy?.capabilityId === "report.write" &&
-      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
-      !(state.staleArtifactIds || []).includes(a.id)
+  const hasRecentReport = (state.artifacts || []).some((a: any) =>
+    a.producedBy?.capabilityId === 'report.write' &&
+    (a.trustLevel === 'gated_pass' || a.trustLevel === 'audited') &&
+    !(state.staleArtifactIds || []).includes(a.id)
   );
 
   let sufficient = false;
-  let reason = "contract not sufficient or new work needed";
+  let reason = 'contract not sufficient or new work needed';
 
   // v1: sufficiency based on gaps status + state signals + not a meaningful intervention.
   // We do not require pre-computed coverageGate here (check happens early in ORCH before GCOV sets it).
@@ -1344,17 +1172,17 @@ export function evaluateContractSufficiencyForBudget(
     unresolvedRequired.length === 0
   ) {
     sufficient = true;
-    reason = "contract_sufficient_no_new_work";
+    reason = 'contract_sufficient_no_new_work';
   } else if (hasExplicitPostClearWork) {
-    reason = "explicit post-clear work requested (delivery/visual/RV/ITER)";
+    reason = 'explicit post-clear work requested (delivery/visual/RV/ITER)';
   } else if (openGapCount > 0) {
     reason = `open blocking gaps: ${openGapCount}`;
   } else if (hasStale) {
-    reason = "stale artifacts present";
+    reason = 'stale artifacts present';
   } else if (!hasRecentReport) {
-    reason = "no recent trusted report";
+    reason = 'no recent trusted report';
   } else if (isMeaningfulIntervention) {
-    reason = "meaningful intervention (challenge/revise/etc.)";
+    reason = 'meaningful intervention (challenge/revise/etc.)';
   }
 
   return {
@@ -1371,8 +1199,7 @@ function isHealthyArtifact(
   staleSet: Set<string>
 ): boolean {
   return (
-    (artifact.trustLevel === "gated_pass" ||
-      artifact.trustLevel === "audited") &&
+    (artifact.trustLevel === 'gated_pass' || artifact.trustLevel === 'audited') &&
     !staleSet.has(artifact.id)
   );
 }
@@ -1409,21 +1236,17 @@ export function deriveGoalConclusion(
   // Coverage-cannot-be-satisfied check is narrow and reads only gaps + committed runs.
   const gaps = (state.coverageGaps || []) as CoverageGap[];
   const blockingIds = new Set(contract?.blockingGapIds || []);
-  const blockingGaps = gaps.filter(g => blockingIds.has(g.id));
+  const blockingGaps = gaps.filter((g) => blockingIds.has(g.id));
 
   // "all blocking gaps waived" => at least one blocking gap, and every one is waived
   // (so none open, none resolved).
   const allBlockingWaived =
-    blockingGaps.length > 0 && blockingGaps.every(g => g.status === "waived");
+    blockingGaps.length > 0 && blockingGaps.every((g) => g.status === "waived");
 
   // required pre-req capabilities (excluding the terminal report.write) that still lack a
   // trusted committed run.
-  const preReqs = (contract?.requiredCapabilities || []).filter(
-    c => c !== "report.write"
-  );
-  const someRequiredMissing = preReqs.some(
-    c => !hasTrustedCommittedForCap(state, c)
-  );
+  const preReqs = (contract?.requiredCapabilities || []).filter((c) => c !== "report.write");
+  const someRequiredMissing = preReqs.some((c) => !hasTrustedCommittedForCap(state, c));
 
   if (allBlockingWaived && someRequiredMissing) {
     return "not_recommended";
@@ -1479,17 +1302,12 @@ const FLOW_BOUNDARY_PROTOCOL_MARKERS = [
 ] as const;
 
 /** Single mechanical line-filter pass: removes any line containing a protocol marker. */
-function stripProtocolLinesOnce(text: string): {
-  keptLines: string[];
-  strippedLines: string[];
-} {
+function stripProtocolLinesOnce(text: string): { keptLines: string[]; strippedLines: string[] } {
   const keptLines: string[] = [];
   const strippedLines: string[] = [];
   for (const line of text.split(/\r?\n/)) {
     const lower = line.toLowerCase();
-    const isProtocol = FLOW_BOUNDARY_PROTOCOL_MARKERS.some(m =>
-      lower.includes(m.toLowerCase())
-    );
+    const isProtocol = FLOW_BOUNDARY_PROTOCOL_MARKERS.some((m) => lower.includes(m.toLowerCase()));
     if (isProtocol) {
       strippedLines.push(line.trim());
     } else {
@@ -1501,10 +1319,7 @@ function stripProtocolLinesOnce(text: string): {
 
 export function sanitizeThroughFlowBoundary(
   input: string,
-  context: {
-    turnId: string;
-    source?: "brainstorm" | "discussion" | "artifact" | "executor";
-  }
+  context: { turnId: string; source?: "brainstorm" | "discussion" | "artifact" | "executor" }
 ): { cleanedText: string; check: FlowBoundaryCheck } {
   const original = String(input || "");
 
@@ -1554,51 +1369,35 @@ export function simulateCapabilityExecution(
   declaredInputs: string[] = []
 ): { title: string; summary: string; content: string } {
   const lowerCap = capabilityId.toLowerCase();
-  const upstreams = (state.artifacts || []).filter(a =>
-    declaredInputs.includes(a.id)
-  );
+  const upstreams = (state.artifacts || []).filter(a => declaredInputs.includes(a.id));
   // Global session stale (per audit): re-entry scenarios (e.g. prior risk challenged) must be visible even if this cap has no declaredInputs.
-  const hasStale =
-    upstreams.some(a => (state.staleArtifactIds || []).includes(a.id)) ||
-    (state.staleArtifactIds || []).length > 0;
-  const priorRisks = (state.artifacts || []).filter(
-    a => a.kind === "risk"
-  ).length;
-  const priorCounters = (state.artifacts || []).filter(a =>
-    a.producedBy?.capabilityId?.includes("argue")
-  ).length;
+  const hasStale = upstreams.some(a => (state.staleArtifactIds || []).includes(a.id)) || (state.staleArtifactIds || []).length > 0;
+  const priorRisks = (state.artifacts || []).filter(a => a.kind === 'risk').length;
+  const priorCounters = (state.artifacts || []).filter(a => a.producedBy?.capabilityId?.includes('argue')).length;
 
   let title = `${capabilityId} (simulated)`;
   let summary = `State-aware simulation for ${capabilityId}.`;
-  let content = `【${capabilityId} 模拟输出】\n基于当前会话状态生成（${upstreams.length} upstreams, ${hasStale ? "含stale" : "无stale"}）。`;
+  let content = `【${capabilityId} 模拟输出】\n基于当前会话状态生成（${upstreams.length} upstreams, ${hasStale ? '含stale' : '无stale'}）。`;
 
-  if (lowerCap.includes("evidence") || lowerCap.includes("search")) {
-    const evidence = upstreams
-      .filter(a => a.kind === "clarification" || a.kind === "risk")
-      .map(a => `- ${a.summary || a.content?.slice(0, 80)}`)
-      .join("\n");
-    content = `【证据检索 模拟】\n从 prior artifacts 聚合：\n${evidence || "（无直接 upstream）"}\n\n已发现 ${priorRisks} 风险相关记录。`;
-    title = "证据检索 (state-driven sim)";
-  } else if (lowerCap.includes("risk")) {
+  if (lowerCap.includes('evidence') || lowerCap.includes('search')) {
+    const evidence = upstreams.filter(a => a.kind === 'clarification' || a.kind === 'risk').map(a => `- ${a.summary || a.content?.slice(0,80)}`).join('\n');
+    content = `【证据检索 模拟】\n从 prior artifacts 聚合：\n${evidence || '（无直接 upstream）'}\n\n已发现 ${priorRisks} 风险相关记录。`;
+    title = '证据检索 (state-driven sim)';
+  } else if (lowerCap.includes('risk')) {
     // K4: pilot-template 厚度升档（≥400 字符 + 可溯结构）。质量门在 pilot baseline 下可过。
-    content = `【风险分析 模拟 · pilot-template baseline】\n当前会话已有 ${priorRisks} 风险条目，${priorCounters} 反驳。\n${hasStale ? "注意：存在 stale 上游，风险可能需重评。\n" : ""}主要风险：\n- 数据范围越权（跨项目/租户边界未隔离）：WHEN 角色请求跨边界资源，THE system SHALL 拒绝并审计。\n- 审计追溯不足：所有变更操作必须保留操作者、时间、影响对象、before/after。\n- 权限扩散：默认宽松策略在多团队协作时易失控。\n建议：MVP 阶段先做 RBAC + 基础 scope 过滤，预留 ABAC 扩展点（evidence: upstream clarification + risk prior）。\n（本模板内容已满足 pilot baseline 字数与结构要求，用于演示与 fullpath 验证）。`;
-    title = "风险分析 (state-aware sim, pilot)";
-  } else if (lowerCap.includes("counter") || lowerCap.includes("argue")) {
+    content = `【风险分析 模拟 · pilot-template baseline】\n当前会话已有 ${priorRisks} 风险条目，${priorCounters} 反驳。\n${hasStale ? '注意：存在 stale 上游，风险可能需重评。\n' : ''}主要风险：\n- 数据范围越权（跨项目/租户边界未隔离）：WHEN 角色请求跨边界资源，THE system SHALL 拒绝并审计。\n- 审计追溯不足：所有变更操作必须保留操作者、时间、影响对象、before/after。\n- 权限扩散：默认宽松策略在多团队协作时易失控。\n建议：MVP 阶段先做 RBAC + 基础 scope 过滤，预留 ABAC 扩展点（evidence: upstream clarification + risk prior）。\n（本模板内容已满足 pilot baseline 字数与结构要求，用于演示与 fullpath 验证）。`;
+    title = '风险分析 (state-aware sim, pilot)';
+  } else if (lowerCap.includes('counter') || lowerCap.includes('argue')) {
     content = `【反驳模拟 · pilot-template baseline】\n针对 prior risk 反驳要点：\n- 过早引入 ABAC 会显著增加初期实现与测试成本（IF 团队规模 < 8，THE system SHOULD 避免）。\n- MVP 建议 RBAC + 显式 scope 拦截 + 审计日志即可覆盖 80% 场景。\n- 反驳强度：stale 上下文下需二次确认上游证据新鲜度。\n结论：接受 RBAC 优先路径，保留策略扩展接口作为技术债跟踪项。\n（厚度已提升，含 EARS 风格反驳条目）。`;
-    title = "反驳 (context sim, pilot)";
-  } else if (lowerCap.includes("synthesis")) {
-    const dissentNote = hasStale
-      ? "\n分歧：部分角色因 stale 持保留意见，建议再澄清一轮。"
-      : "";
+    title = '反驳 (context sim, pilot)';
+  } else if (lowerCap.includes('synthesis')) {
+    const dissentNote = hasStale ? '\n分歧：部分角色因 stale 持保留意见，建议再澄清一轮。' : '';
     content = `【综合收敛 模拟 · pilot-template baseline】\n聚合 ${upstreams.length} 上游产物（risk/counter/clarification）。\n收敛结论：RBAC MVP 优先，配合基础数据范围过滤与操作审计。\n${dissentNote}\n关键证据支撑：\n- 来自 risk：越权与审计风险已识别并有缓解路径。\n- 来自 counter：ABAC 成本过高论点被接受，暂不引入。\n下一步：走 report.write 产出 9 段证据报告，或 structure.decompose 生成可执行 SPEC 树（带 EARS 节点）。\n（pilot 模板已厚化，满足质量门下限）。`;
-    title = "综合 (multi-input sim, pilot)";
-  } else if (lowerCap.includes("report")) {
+    title = '综合 (multi-input sim, pilot)';
+  } else if (lowerCap.includes('report')) {
     // Delegate to the new structured builder so that executor (and page) get the 9-section evidence-grade report
     // instead of the old one-line simulator stub. This makes report the real V5 main output.
-    const built = buildStructuredReport({
-      state,
-      inputArtifactIds: declaredInputs,
-    });
+    const built = buildStructuredReport({ state, inputArtifactIds: declaredInputs });
     title = built.title;
     summary = built.summary;
     content = built.content;
@@ -1619,20 +1418,19 @@ export function simulateCapabilityExecution(
       `2. 数据范围与权限模型？\n   默认假设：RBAC + 部门隔离\n   风险：后期改造成本高\n`;
     title = "扩展追问";
     summary = "展开阻塞缺口的可操作追问";
-  } else if (lowerCap.includes("decompose") || lowerCap.includes("structure")) {
+  } else if (lowerCap.includes('decompose') || lowerCap.includes('structure')) {
     const upstream = (state.artifacts || [])
       .slice(-4)
-      .map(a => `- [${a.kind}] ${a.title || a.id}`)
-      .join("\n");
+      .map((a) => `- [${a.kind}] ${a.title || a.id}`)
+      .join('\n');
     const prompt = buildStructurePrompt({
       goalText: state.goal?.text || "产品",
       upstreamSummary: upstream,
       turnId: state.lastTurnId,
     });
     const { redacted } = redactStructurePrompt(prompt);
-    const tree = buildTemplateTree(state.goal?.text || "产品");
-    const gateNote =
-      "C_PROMPT:built · C_REDACT:applied:0 · G_SCHEMA:attempt1:passed · G_INV:attempt1:passed";
+    const tree = buildTemplateTree(state.goal?.text || '产品');
+    const gateNote = 'C_PROMPT:built · C_REDACT:applied:0 · G_SCHEMA:attempt1:passed · G_INV:attempt1:passed';
     content =
       formatTreeContent(tree, { source: "template", gateNote }) +
       (hasStale ? "\n（含 stale 上游，部分节点待重审）" : "");
@@ -1673,12 +1471,10 @@ export function simulateCapabilityExecution(
   } else if (capabilityId === "instruction.package") {
     content = buildPromptPackContent(state);
     title = "提示词包";
-  } else if (lowerCap.includes("scenario") || lowerCap.includes("simulate")) {
-    const priorPreviews = (state.artifacts || []).filter(
-      a => a.kind === "preview"
-    ).length;
-    content = `【效果预演 模拟】\n基于 ${upstreams.length} upstream 模拟场景。\n已产出 ${priorPreviews} 预览。${hasStale ? "含风险上下文。\n" : ""}输出：MVP 流程验证通过（带标注）。`;
-    title = "效果预演 (context sim)";
+  } else if (lowerCap.includes('scenario') || lowerCap.includes('simulate')) {
+    const priorPreviews = (state.artifacts || []).filter(a => a.kind === 'preview').length;
+    content = `【效果预演 模拟】\n基于 ${upstreams.length} upstream 模拟场景。\n已产出 ${priorPreviews} 预览。${hasStale ? '含风险上下文。\n' : ''}输出：MVP 流程验证通过（带标注）。`;
+    title = '效果预演 (context sim)';
   } else if (capabilityId === "ux.preview") {
     content =
       `【预览·未验证】UX 模块预览\n` +
@@ -1752,57 +1548,22 @@ function buildSimulatedReasoningEvents(p: {
 }): ReasoningEvent[] {
   const cap = p.capabilityId;
   const role = roleIdToDisplayLabel(p.roleId || "agent");
-  const steps: Array<
-    Omit<Parameters<typeof makeEventSequence>[1][number], never>
-  > = [
+  const steps: Array<Omit<Parameters<typeof makeEventSequence>[1][number], never>> = [
     { kind: "capability_start", text: `${role} 开始执行`, roleId: p.roleId },
   ];
   if (/evidence|search|repo|mcp|skill/.test(cap)) {
-    steps.push({
-      kind: "observe",
-      text: "正在检索相关证据与上下文",
-      roleId: p.roleId,
-    });
-    steps.push({
-      kind: "tool_call",
-      text: "调用外部检索",
-      roleId: p.roleId,
-      meta: { toolName: cap },
-    });
+    steps.push({ kind: "observe", text: "正在检索相关证据与上下文", roleId: p.roleId });
+    steps.push({ kind: "tool_call", text: "调用外部检索", roleId: p.roleId, meta: { toolName: cap } });
   } else if (/risk|counter|critique/.test(cap)) {
-    steps.push({
-      kind: "think",
-      text: "审视方案边界与潜在风险",
-      roleId: p.roleId,
-    });
+    steps.push({ kind: "think", text: "审视方案边界与潜在风险", roleId: p.roleId });
   } else if (/synthesis|report/.test(cap)) {
-    steps.push({
-      kind: "think",
-      text: "聚合上游产物,收敛结论",
-      roleId: p.roleId,
-    });
-  } else if (
-    cap === "gap.ask" ||
-    cap === "question.expand" ||
-    cap === "intent.clarify"
-  ) {
-    steps.push({
-      kind: "think",
-      text: "定位阻塞缺口,准备澄清问题",
-      roleId: p.roleId,
-    });
+    steps.push({ kind: "think", text: "聚合上游产物,收敛结论", roleId: p.roleId });
+  } else if (cap === "gap.ask" || cap === "question.expand" || cap === "intent.clarify") {
+    steps.push({ kind: "think", text: "定位阻塞缺口,准备澄清问题", roleId: p.roleId });
   } else if (/structure|decompose/.test(cap)) {
-    steps.push({
-      kind: "think",
-      text: "把目标拆解为可执行结构",
-      roleId: p.roleId,
-    });
+    steps.push({ kind: "think", text: "把目标拆解为可执行结构", roleId: p.roleId });
   } else {
-    steps.push({
-      kind: "think",
-      text: "基于当前会话状态推进",
-      roleId: p.roleId,
-    });
+    steps.push({ kind: "think", text: "基于当前会话状态推进", roleId: p.roleId });
   }
   steps.push({
     kind: "capability_complete",
@@ -1843,51 +1604,29 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
     // Special case for the V5 main output (report.write): use the structured 9-section builder
     // so the committed artifact carries evidence-grade content even under the default simulator path.
     // This is the "wire into CapabilityExecutor" step: page no longer post-processes report strings.
-    let result: {
-      title: string;
-      summary: string;
-      content: string;
-      provenance?: Artifact["provenance"];
-      payload?: unknown;
-      events?: ReasoningEvent[];
-      usage?: {
-        inputTokens?: number;
-        outputTokens?: number;
-        totalTokens?: number;
-        model?: string;
-      };
-      qualityBaseline?: "production" | "pilot-template";
-    };
-    if (args.capabilityId === "report.write") {
+    let result: { title: string; summary: string; content: string; provenance?: Artifact["provenance"]; payload?: unknown; events?: ReasoningEvent[]; usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; model?: string }; qualityBaseline?: "production" | "pilot-template" };
+    if (args.capabilityId === 'report.write') {
       const built = buildStructuredReport({
         state: args.state,
         inputArtifactIds: args.inputArtifactIds || [],
         roleId: args.roleId,
         // turnLabel can be derived from turnId for re-entry distinction if needed by future callers
-        turnLabel:
-          args.turnId?.includes("challenge") || args.turnId?.includes("node")
-            ? "重入"
-            : undefined,
+        turnLabel: args.turnId?.includes('challenge') || args.turnId?.includes('node') ? '重入' : undefined,
       });
       result = {
         title: built.title,
         summary: built.summary,
         content: built.content,
-        provenance: "ai_generated",
-        qualityBaseline: "pilot-template",
+        provenance: 'ai_generated',
+        qualityBaseline: 'pilot-template',
       };
-    } else if (args.capabilityId === "gap.ask") {
+    } else if (args.capabilityId === 'gap.ask') {
       // 澄清:产出结构化 clarifyQuestions(带选项),只问目标缺失的规约维度。
       // payload.clarifyQuestions 经 drive → commit → gapsFromClarifyQuestions → 澄清卡片(带选项)。
-      const questions = buildSimulatedClarifyQuestions(
-        args.state.goal?.text || ""
-      );
+      const questions = buildSimulatedClarifyQuestions(args.state.goal?.text || "");
       const body = questions
         .map((q, i) => {
-          const opts =
-            q.options && q.options.length > 0
-              ? `\n   选项:${q.options.join(" / ")}`
-              : "";
+          const opts = q.options && q.options.length > 0 ? `\n   选项:${q.options.join(" / ")}` : "";
           const ctx = q.context ? `\n   (${q.context})` : "";
           return `${i + 1}. ${q.prompt}${opts}${ctx}`;
         })
@@ -1898,7 +1637,7 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
         content: `## 待澄清(回答后即可推进)\n\n${body}`,
         provenance: "ai_generated",
         payload: { clarifyQuestions: questions },
-        qualityBaseline: "pilot-template",
+        qualityBaseline: 'pilot-template',
       };
     } else {
       // Delegate everything else (including legacy direct simulate calls in tests) to the state-aware simulator.
@@ -1912,7 +1651,7 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
         summary,
         content,
         provenance: "ai_generated",
-        qualityBaseline: "pilot-template",
+        qualityBaseline: 'pilot-template',
       };
     }
 
@@ -1923,22 +1662,18 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
     // v1 cost telemetry: record estimated usage (callers in real page commit loop can use real duration + tokens).
     // We record on the snapshot state passed in; the costLedger will be present on the state at commit time
     // (or tests can explicitly pass the costed state). This keeps the seam contract unchanged.
-    recordCapabilityRunCost(
-      args.state,
-      {
-        id: `${args.turnId}-run`,
-        capabilityId: args.capabilityId,
-        turnId: args.turnId,
-        inputs: args.inputArtifactIds || [],
-        outputs: [],
-        gateResults: [],
-      } as any,
-      {
-        tokens: estimatedTokens,
-        durationMs,
-        source: "estimated",
-      }
-    );
+    recordCapabilityRunCost(args.state, {
+      id: `${args.turnId}-run`,
+      capabilityId: args.capabilityId,
+      turnId: args.turnId,
+      inputs: args.inputArtifactIds || [],
+      outputs: [],
+      gateResults: [],
+    } as any, {
+      tokens: estimatedTokens,
+      durationMs,
+      source: "estimated",
+    });
 
     // V5.3 #4: 附确定性执行事件,绑定本次 run(capabilityRunId 与 commit 节点一致)。
     result.events = buildSimulatedReasoningEvents({
@@ -2018,50 +1753,32 @@ class PilotRealCapabilityExecutor implements CapabilityExecutor {
         return this.base.executeCapability(args);
       }
     }
-    if (args.capabilityId === "risk.analyze") {
+    if (args.capabilityId === 'risk.analyze') {
       return this.executeRiskPilot(args);
     }
-    if (args.capabilityId === "report.write") {
+    if (args.capabilityId === 'report.write') {
       return this.executeReportPilot(args);
     }
     // Fallback for everything else keeps full backward compat for tests/smoke/default flows.
     return this.base.executeCapability(args);
   }
 
-  private async executeRiskPilot(
-    args: any
-  ): Promise<{
-    title: string;
-    summary: string;
-    content: string;
-    provenance?: Artifact["provenance"];
-    usage?: any;
-    qualityBaseline?: "production" | "pilot-template";
-  }> {
+  private async executeRiskPilot(args: any): Promise<{ title: string; summary: string; content: string; provenance?: Artifact["provenance"]; usage?: any; qualityBaseline?: "production" | "pilot-template" }> {
     const { state, inputArtifactIds, roleId, turnId } = args;
-    const upstreams = (state.artifacts || []).filter((a: any) =>
-      inputArtifactIds.includes(a.id)
-    );
-    const hasStale =
-      (state.staleArtifactIds || []).length > 0 ||
-      upstreams.some((a: any) => (state.staleArtifactIds || []).includes(a.id));
-    const priorRisks = (state.artifacts || []).filter(
-      (a: any) => a.kind === "risk"
-    ).length;
+    const upstreams = (state.artifacts || []).filter((a: any) => inputArtifactIds.includes(a.id));
+    const hasStale = (state.staleArtifactIds || []).length > 0 || upstreams.some((a: any) => (state.staleArtifactIds || []).includes(a.id));
+    const priorRisks = (state.artifacts || []).filter((a: any) => a.kind === 'risk').length;
 
     // Richer pilot content (more specific evidence, explicit counters, actionable next, stale awareness).
     // Still pure + deterministic. Marked for easy identification in tests/smoke.
-    const fragments = upstreams
-      .flatMap((u: any) => extractArtifactFragments(u, 120))
-      .map((f: any) => `- ${f.label}: ${f.text}`)
-      .join("\n");
+    const fragments = upstreams.flatMap((u: any) => extractArtifactFragments(u, 120)).map((f: any) => `- ${f.label}: ${f.text}`).join('\n');
     const content = `【真实试点 executor - risk.analyze】
-基于 ${upstreams.length} upstreams（含 ${priorRisks} 历史风险）。${hasStale ? "注意：存在 stale 上游，风险评估已级联标记。" : "上下文稳定。"}
+基于 ${upstreams.length} upstreams（含 ${priorRisks} 历史风险）。${hasStale ? '注意：存在 stale 上游，风险评估已级联标记。' : '上下文稳定。'}
 
 主要风险：
 - 数据范围越权（跨项目/租户边界 RBAC 不足以表达；需引入 scoped filter + 显式 tenant/project 约束）
 - 审计追溯不足（权限变更缺少操作者、时间、影响对象、before/after 快照）
-${fragments ? "证据片段：\n" + fragments : ""}
+${fragments ? '证据片段：\n' + fragments : ''}
 
 反证/缓解：
 - MVP 阶段可先做 RBAC + 基础范围过滤，预留 ABAC 扩展点（降低初期调试成本）。
@@ -2072,46 +1789,34 @@ ${fragments ? "证据片段：\n" + fragments : ""}
 - 替换本 pilot 为真实 Tool/MCP/LLM 能力（risk.analyze + report.write 已优先试点）
 - 持久化层（SQLite / Postgres）替换 process Map backing（HTTP surface 不变）
 
-pilot provenance：role=${roleId || "安全"} turn=${turnId}（deterministic richer pilot）`;
+pilot provenance：role=${roleId || '安全'} turn=${turnId}（deterministic richer pilot）`;
 
     return {
-      title: "风险分析 (真实试点 executor)",
-      summary: `Pilot richer risk analysis over ${upstreams.length} upstreams. ${hasStale ? "含 stale 级联警示。" : ""}`,
+      title: '风险分析 (真实试点 executor)',
+      summary: `Pilot richer risk analysis over ${upstreams.length} upstreams. ${hasStale ? '含 stale 级联警示。' : ''}`,
       content,
-      provenance: "ai_generated" as const,
-      qualityBaseline: "pilot-template",
+      provenance: 'ai_generated' as const,
+      qualityBaseline: 'pilot-template',
     };
   }
 
-  private async executeReportPilot(
-    args: any
-  ): Promise<{
-    title: string;
-    summary: string;
-    content: string;
-    provenance?: Artifact["provenance"];
-    usage?: any;
-    qualityBaseline?: "production" | "pilot-template";
-  }> {
+  private async executeReportPilot(args: any): Promise<{ title: string; summary: string; content: string; provenance?: Artifact["provenance"]; usage?: any; qualityBaseline?: "production" | "pilot-template" }> {
     // Still produce the exact 9-section schema (labels unchanged). Pilot only enriches depth/clarity.
     const built = buildStructuredReport({
       state: args.state,
       inputArtifactIds: args.inputArtifactIds || [],
       roleId: args.roleId,
-      turnLabel:
-        args.turnId?.includes("challenge") || args.turnId?.includes("node")
-          ? "重入"
-          : "试点",
+      turnLabel: args.turnId?.includes('challenge') || args.turnId?.includes('node') ? '重入' : '试点',
     });
 
     // Light pilot enrichment while preserving every required label and structure.
     // We keep the builder output as the base (provenance/upstreams/fragments already correct) and
     // inject clearer decision rationale + more executable engineering branches.
     let content = built.content;
-    if (!content.includes("【真实试点 executor")) {
+    if (!content.includes('【真实试点 executor')) {
       content = content.replace(
-        "【可行性 / 产品推演报告",
-        "【真实试点 executor - 可行性 / 产品推演报告"
+        '【可行性 / 产品推演报告',
+        '【真实试点 executor - 可行性 / 产品推演报告'
       );
       // Enrich the "下一步工程化分支" section with pilot-specific concrete items (still schema-compliant).
       content = content.replace(
@@ -2129,14 +1834,11 @@ pilot provenance：role=${roleId || "安全"} turn=${turnId}（deterministic ric
     }
 
     return {
-      title: built.title.replace(
-        "V5 Evidence Report",
-        "V5 Evidence Report (真实试点)"
-      ),
-      summary: built.summary + " [pilot richer]",
+      title: built.title.replace('V5 Evidence Report', 'V5 Evidence Report (真实试点)'),
+      summary: built.summary + ' [pilot richer]',
       content,
-      provenance: "ai_generated" as const,
-      qualityBaseline: "pilot-template",
+      provenance: 'ai_generated' as const,
+      qualityBaseline: 'pilot-template',
     };
   }
 }
@@ -2184,34 +1886,28 @@ export class LlmCapabilityExecutor implements CapabilityExecutor {
 
   constructor(provider?: LlmCapabilityProvider) {
     // Default provider = current deterministic richer pilot logic (preserves existing behavior)
-    this.provider =
-      provider ??
-      (async args => {
-        if (args.capabilityId === "risk.analyze") {
-          return {
-            title: "风险分析 (LLM pilot)",
-            summary: "LLM pilot richer risk analysis.",
-            content:
-              "【LLM pilot - risk.analyze】\nPlaceholder richer content for real model/tool call. Fallback to PilotReal on error.",
-            provenance: "llm" as const,
-          };
-        } else {
-          const built = buildStructuredReport({
-            state: args.state,
-            inputArtifactIds: args.inputArtifactIds || [],
-            roleId: args.roleId,
-          });
-          return {
-            title: built.title.replace(
-              "V5 Evidence Report",
-              "V5 Evidence Report (LLM pilot)"
-            ),
-            summary: built.summary + " [llm pilot]",
-            content: built.content,
-            provenance: "llm" as const,
-          };
-        }
-      });
+    this.provider = provider ?? (async (args) => {
+      if (args.capabilityId === 'risk.analyze') {
+        return {
+          title: '风险分析 (LLM pilot)',
+          summary: 'LLM pilot richer risk analysis.',
+          content: '【LLM pilot - risk.analyze】\nPlaceholder richer content for real model/tool call. Fallback to PilotReal on error.',
+          provenance: 'llm' as const,
+        };
+      } else {
+        const built = buildStructuredReport({
+          state: args.state,
+          inputArtifactIds: args.inputArtifactIds || [],
+          roleId: args.roleId,
+        });
+        return {
+          title: built.title.replace('V5 Evidence Report', 'V5 Evidence Report (LLM pilot)'),
+          summary: built.summary + ' [llm pilot]',
+          content: built.content,
+          provenance: 'llm' as const,
+        };
+      }
+    });
   }
 
   async executeCapability(args: {
@@ -2235,23 +1931,23 @@ export class LlmCapabilityExecutor implements CapabilityExecutor {
     qualityBaseline?: "production" | "pilot-template";
   }> {
     const serverRouted: V5CapabilityId[] = [
-      "risk.analyze",
-      "report.write",
-      "intent.clarify",
+      'risk.analyze',
+      'report.write',
+      'intent.clarify',
       // 澄清:走 LLM 生成针对当前目标的澄清问题(否则用静态模板,每次都是一样的 4 题)。
       // 无 LLM/pilot/demo 时,下面的 catch 会回退到 base(模拟器)的固定模板,行为不破坏。
-      "gap.ask",
-      "question.expand",
-      "route.generate",
-      "route.compare",
-      "requirement.write",
-      "repo.inspect",
-      "evidence.search",
-      "memory.recall",
-      "counter.argue",
-      "critique.generate",
-      "rebuttal.resolve",
-      "synthesis.merge",
+      'gap.ask',
+      'question.expand',
+      'route.generate',
+      'route.compare',
+      'requirement.write',
+      'repo.inspect',
+      'evidence.search',
+      'memory.recall',
+      'counter.argue',
+      'critique.generate',
+      'rebuttal.resolve',
+      'synthesis.merge',
     ];
     if (serverRouted.includes(args.capabilityId)) {
       try {
@@ -2261,38 +1957,33 @@ export class LlmCapabilityExecutor implements CapabilityExecutor {
         const contentLen = (result?.content || "").length;
         const tokens = usage?.totalTokens ?? Math.ceil(contentLen / 4);
         const src = usage ? "server" : "estimated";
-        recordCapabilityRunCost(
-          args.state,
-          {
-            id: `${args.turnId}-run`,
-            capabilityId: args.capabilityId,
-            turnId: args.turnId,
-            inputs: args.inputArtifactIds || [],
-            outputs: [],
-            gateResults: [],
-          } as any,
-          {
-            tokens,
-            source: src as any,
-            ...(usage ? { usage } : {}),
-          }
-        );
-        return { ...result, qualityBaseline: "production" };
+        recordCapabilityRunCost(args.state, {
+          id: `${args.turnId}-run`,
+          capabilityId: args.capabilityId,
+          turnId: args.turnId,
+          inputs: args.inputArtifactIds || [],
+          outputs: [],
+          gateResults: [],
+        } as any, {
+          tokens,
+          source: src as any,
+          ...(usage ? { usage } : {}),
+        });
+        return { ...result, qualityBaseline: 'production' };
       } catch (e) {
         // Provider (external) failure — reliable fallback as required by the plan.
         // Fallback produces pilot-template content, so declare it explicitly.
         const fb = await this.base.executeCapability(args);
-        return { ...fb, qualityBaseline: "pilot-template" };
+        return { ...fb, qualityBaseline: 'pilot-template' };
       }
     }
     // Non-pilot caps: fall back without calling the provider.
     const fb = await this.base.executeCapability(args);
-    return { ...fb, qualityBaseline: "pilot-template" };
+    return { ...fb, qualityBaseline: 'pilot-template' };
   }
 }
 
-let currentCapabilityExecutor: CapabilityExecutor =
-  new DefaultCapabilityExecutor();
+let currentCapabilityExecutor: CapabilityExecutor = new DefaultCapabilityExecutor();
 
 /**
  * Inject a different CapabilityExecutor (real agent, MCP bridge, remote LLM runner, etc.).
@@ -2352,12 +2043,10 @@ export function useLlmCapabilityExecutor(): void {
  * Any non-2xx or network error from the endpoint causes the provider to throw,
  * which LlmCapabilityExecutor will catch and turn into a clean fallback to PilotReal.
  */
-export function createServerLlmCapabilityProvider(
-  opts: { endpoint?: string } = {}
-): LlmCapabilityProvider {
+export function createServerLlmCapabilityProvider(opts: { endpoint?: string } = {}): LlmCapabilityProvider {
   const url = opts.endpoint || "/api/sliderule/execute-capability";
 
-  return async args => {
+  return async (args) => {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2366,9 +2055,7 @@ export function createServerLlmCapabilityProvider(
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(
-        `server execute-capability failed ${res.status}: ${text.slice(0, 200)}`
-      );
+      throw new Error(`server execute-capability failed ${res.status}: ${text.slice(0, 200)}`);
     }
 
     // The server must return exactly the raw shape.
@@ -2415,50 +2102,42 @@ export function useBrowserLlmCapabilityExecutor(): void {
  * Scope (per V5 pilot): only risk.analyze and report.write.
  * Still returns the exact raw contract and throws on error (so LlmCapabilityExecutor fallback works).
  */
-export function createOpenAILlmCapabilityProvider(
-  opts: { apiKey?: string; model?: string } = {}
-): LlmCapabilityProvider {
+export function createOpenAILlmCapabilityProvider(opts: { apiKey?: string; model?: string } = {}): LlmCapabilityProvider {
   const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
-  const model = opts.model ?? "gpt-4o-mini";
+  const model = opts.model ?? 'gpt-4o-mini';
 
-  return async args => {
+  return async (args) => {
     const { capabilityId, state, inputArtifactIds = [], roleId, turnId } = args;
 
-    if (capabilityId !== "risk.analyze" && capabilityId !== "report.write") {
-      throw new Error(
-        `OpenAI provider does not handle capability: ${capabilityId}`
-      );
+    if (capabilityId !== 'risk.analyze' && capabilityId !== 'report.write') {
+      throw new Error(`OpenAI provider does not handle capability: ${capabilityId}`);
     }
 
     if (!apiKey) {
-      throw new Error(
-        "OpenAI provider not configured: provide apiKey or set OPENAI_API_KEY"
-      );
+      throw new Error('OpenAI provider not configured: provide apiKey or set OPENAI_API_KEY');
     }
 
     // Compact context for the prompt (avoid token bloat).
-    const goalText = (state as any)?.goal?.text || (state as any)?.goal || "";
-    const recentArtifacts = ((state as any).artifacts || [])
-      .slice(-6)
-      .map((a: any) => ({
-        title: a?.title,
-        kind: a?.kind,
-        summary: String(a?.summary || "").slice(0, 220),
-      }));
+    const goalText = (state as any)?.goal?.text || (state as any)?.goal || '';
+    const recentArtifacts = ((state as any).artifacts || []).slice(-6).map((a: any) => ({
+      title: a?.title,
+      kind: a?.kind,
+      summary: String(a?.summary || '').slice(0, 220),
+    }));
 
     const systemPrompt =
-      "You are an expert AI collaborator for SlideRule V5. " +
-      "Return ONLY a single JSON object (no prose, no ```json fences) with exactly these keys:\n" +
+      'You are an expert AI collaborator for SlideRule V5. ' +
+      'Return ONLY a single JSON object (no prose, no ```json fences) with exactly these keys:\n' +
       '{"title": string, "summary": string, "content": string}\n' +
-      "title: short and specific. summary: one-sentence high-signal. content: professional, actionable, evidence-based.";
+      'title: short and specific. summary: one-sentence high-signal. content: professional, actionable, evidence-based.';
 
-    let userPrompt = "";
-    if (capabilityId === "risk.analyze") {
+    let userPrompt = '';
+    if (capabilityId === 'risk.analyze') {
       userPrompt =
         `Capability: risk.analyze\nGoal: ${goalText}\n` +
         `Context artifacts: ${JSON.stringify(recentArtifacts)}\n` +
-        `Role: ${roleId || "unspecified"}  Turn: ${turnId}\n\n` +
-        "Produce a focused risk analysis: key risks, likelihood/impact, mitigations.";
+        `Role: ${roleId || 'unspecified'}  Turn: ${turnId}\n\n` +
+        'Produce a focused risk analysis: key risks, likelihood/impact, mitigations.';
     } else {
       // report.write — give the model the already-computed structured report as authoritative base
       const built = buildStructuredReport({ state, inputArtifactIds, roleId });
@@ -2466,65 +2145,55 @@ export function createOpenAILlmCapabilityProvider(
         `Capability: report.write\nGoal: ${goalText}\n` +
         `Base structured evidence (preserve facts & sections, improve narrative & insight):\n` +
         `BASE_TITLE: ${built.title}\nBASE_SUMMARY: ${built.summary}\nBASE_CONTENT:\n${built.content}\n\n` +
-        `Role: ${roleId || "综合"}  Turn: ${turnId}\n\n` +
-        "Return the polished final evidence report as the required JSON shape.";
+        `Role: ${roleId || '综合'}  Turn: ${turnId}\n\n` +
+        'Return the polished final evidence report as the required JSON shape.';
     }
 
     const body = {
       model,
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
       ],
       temperature: 0.25,
       max_tokens: 1600,
     };
 
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
     });
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => "");
+      const errText = await res.text().catch(() => '');
       throw new Error(`OpenAI API ${res.status}: ${errText.slice(0, 280)}`);
     }
 
     const json: any = await res.json();
-    const rawContent: string = json?.choices?.[0]?.message?.content || "";
+    const rawContent: string = json?.choices?.[0]?.message?.content || '';
 
     let parsed: { title?: string; summary?: string; content?: string } = {};
     try {
       // Some models still wrap; be tolerant.
-      const maybe = rawContent
-        .trim()
-        .replace(/^```json\s*/i, "")
-        .replace(/```$/, "");
+      const maybe = rawContent.trim().replace(/^```json\s*/i, '').replace(/```$/, '');
       parsed = JSON.parse(maybe);
     } catch {
       parsed = { content: rawContent };
     }
 
-    const title = (
-      parsed.title ||
-      (capabilityId === "risk.analyze" ? "Risk Analysis" : "Evidence Report")
-    ).trim();
-    const summary = (parsed.summary || "").trim();
-    const content = (
-      parsed.content ||
-      rawContent ||
-      "Model returned no content."
-    ).trim();
+    const title = (parsed.title || (capabilityId === 'risk.analyze' ? 'Risk Analysis' : 'Evidence Report')).trim();
+    const summary = (parsed.summary || '').trim();
+    const content = (parsed.content || rawContent || 'Model returned no content.').trim();
 
     return {
       title,
       summary: summary ? `${summary} [openai:${model}]` : `[openai:${model}]`,
       content,
-      provenance: "llm" as const,
+      provenance: 'llm' as const,
     };
   };
 }
@@ -2570,10 +2239,7 @@ export type DeterministicRouterStep =
  */
 export type DeterministicRouterScript =
   | DeterministicRouterStep[]
-  | ((
-      req: ReasoningRouterRequest,
-      loopIndex: number
-    ) => ReasoningRouterResponse);
+  | ((req: ReasoningRouterRequest, loopIndex: number) => ReasoningRouterResponse);
 
 /**
  * createDeterministicRouter — Deterministic_Provider stand-in for the LLM_Router (需求 13.1).
@@ -2582,21 +2248,15 @@ export type DeterministicRouterScript =
  * deterministic plan from the shared heuristic picker (`source: "heuristic_fallback"`).
  * A script (array or function) lets tests drive exact per-loop proposals.
  */
-export function createDeterministicRouter(
-  script?: DeterministicRouterScript
-): ReasoningRouter {
+export function createDeterministicRouter(script?: DeterministicRouterScript): ReasoningRouter {
   let loopIndex = 0;
 
-  const heuristicResponse = (
-    req: ReasoningRouterRequest
-  ): ReasoningRouterResponse => {
+  const heuristicResponse = (req: ReasoningRouterRequest): ReasoningRouterResponse => {
     const userText = req.userText || req.state.goal?.text || "";
-    const selected = pickNextCapabilitiesHeuristic(req.state, userText).map(
-      p => ({
-        capabilityId: p.capabilityId,
-        roleId: p.roleId,
-      })
-    );
+    const selected = pickNextCapabilitiesHeuristic(req.state, userText).map((p) => ({
+      capabilityId: p.capabilityId,
+      roleId: p.roleId,
+    }));
     return {
       selected,
       rationale: `deterministic_router heuristic pick for: ${userText.slice(0, 80)}`,
@@ -2605,9 +2265,7 @@ export function createDeterministicRouter(
   };
 
   return {
-    async proposePlan(
-      req: ReasoningRouterRequest
-    ): Promise<ReasoningRouterResponse> {
+    async proposePlan(req: ReasoningRouterRequest): Promise<ReasoningRouterResponse> {
       const i = loopIndex++;
 
       if (typeof script === "function") {
@@ -2648,13 +2306,9 @@ export function createDeterministicCapabilityExecutor(): CapabilityExecutor {
  * This is the non-deterministic default returned by assembleProvidersForBuildTarget
  * outside BUILD_TARGET=test.
  */
-export function createServerReasoningRouter(options?: {
-  timeoutMs?: number;
-}): ReasoningRouter {
+export function createServerReasoningRouter(options?: { timeoutMs?: number }): ReasoningRouter {
   return {
-    async proposePlan(
-      req: ReasoningRouterRequest
-    ): Promise<ReasoningRouterResponse> {
+    async proposePlan(req: ReasoningRouterRequest): Promise<ReasoningRouterResponse> {
       const body = await fetchOrchestratePlan(
         {
           state: req.state,
@@ -2674,12 +2328,10 @@ export function createServerReasoningRouter(options?: {
       if (!body) {
         const userText = req.userText || req.state.goal?.text || "";
         return {
-          selected: pickNextCapabilitiesHeuristic(req.state, userText).map(
-            p => ({
-              capabilityId: p.capabilityId,
-              roleId: p.roleId,
-            })
-          ),
+          selected: pickNextCapabilitiesHeuristic(req.state, userText).map((p) => ({
+            capabilityId: p.capabilityId,
+            roleId: p.roleId,
+          })),
           rationale: `heuristic_fallback (router unavailable) for: ${userText.slice(0, 80)}`,
           source: "heuristic_fallback",
         };
@@ -2688,8 +2340,7 @@ export function createServerReasoningRouter(options?: {
       return {
         selected: body.selected,
         rationale: body.rationale,
-        source:
-          body.source === "heuristic_fallback" ? "heuristic_fallback" : "llm",
+        source: body.source === "heuristic_fallback" ? "heuristic_fallback" : "llm",
         // `converged` is the net-new optional convergence boolean (需求 3.3); read
         // defensively so this seam stays compatible before task 2.3 lands it server-side.
         converged: (body as { converged?: boolean }).converged,
@@ -2756,13 +2407,13 @@ export function assembleProvidersForBuildTarget(
     options.router ??
     (deterministic
       ? createDeterministicRouter()
-      : (options.realRouter ?? createServerReasoningRouter()));
+      : options.realRouter ?? createServerReasoningRouter());
 
   const executor =
     options.executor ??
     (deterministic
       ? createDeterministicCapabilityExecutor()
-      : (options.realExecutor ?? getCapabilityExecutor()));
+      : options.realExecutor ?? getCapabilityExecutor());
 
   return {
     router,
@@ -2779,9 +2430,7 @@ export function assembleProvidersForBuildTarget(
  * The interface method already returns Promise<...>, so we use Awaited to avoid
  * publishing a nested Promise<Promise<Result>> contract to adapter authors.
  */
-type CapabilityExecutionResult = Awaited<
-  ReturnType<CapabilityExecutor["executeCapability"]>
->;
+type CapabilityExecutionResult = Awaited<ReturnType<CapabilityExecutor["executeCapability"]>>;
 
 /**
  * Official entry point for capability "execution" (content/title/summary generation).
@@ -2839,8 +2488,7 @@ export async function retrySingleCapability(
   }
 
   const content =
-    exec?.content ||
-    `${params.roleId} 通过 ${params.capabilityId} 产出新洞察/证据/方案`;
+    exec?.content || `${params.roleId} 通过 ${params.capabilityId} 产出新洞察/证据/方案`;
   const outputKind = CAPABILITY_OUTPUT_KIND[params.capabilityId] ?? "decision";
   const baseline = (exec as any)?.qualityBaseline ?? "production";
   const { updatedState, committed, run } = commitArtifact(
@@ -2848,8 +2496,7 @@ export async function retrySingleCapability(
     {
       id: `${params.loopTurnId}-art-retry-${params.runIndex}-${Date.now()}`,
       kind: outputKind as Artifact["kind"],
-      provenance:
-        (exec?.provenance as Artifact["provenance"]) || "ai_generated",
+      provenance: (exec?.provenance as Artifact["provenance"]) || "ai_generated",
       producedBy: {
         capabilityRunId: runId,
         capabilityId: params.capabilityId,
@@ -2865,18 +2512,10 @@ export async function retrySingleCapability(
     baseline
   );
 
-  const gateFailed = (run.gateResults || []).some(g => g.status === "failed");
+  const gateFailed = (run.gateResults || []).some((g) => g.status === "failed");
   let next = enrichGraphNodesAfterCommit(updatedState, params.loopTurnId);
-  if (
-    params.capabilityId === "route.generate" ||
-    params.capabilityId === "route.compare"
-  ) {
-    next = tagRouteBranchNodes(
-      next,
-      params.loopTurnId,
-      params.capabilityId,
-      content
-    );
+  if (params.capabilityId === "route.generate" || params.capabilityId === "route.compare") {
+    next = tagRouteBranchNodes(next, params.loopTurnId, params.capabilityId, content);
   }
   return { state: next, committed: Boolean(committed), gateFailed };
 }
@@ -2891,20 +2530,14 @@ function tagRouteBranchNodes(
     capabilityId === "route.generate"
       ? "路线 A"
       : capabilityId === "route.compare"
-        ? "路线 B · 对比"
-        : null;
+      ? "路线 B · 对比"
+      : null;
   if (!branchLabel) return state;
   const suffix = capabilityId === "route.compare" ? "hypo-alt" : "hypo";
   const slotId = `${loopTurnId}-scaffold-${suffix}`;
-  const nodes = (state.graph.nodes || []).map(n => {
-    if (n.id !== slotId && !String(n.id).includes(`-scaffold-${suffix}`))
-      return n;
-    if (
-      n.turnId &&
-      n.turnId !== loopTurnId &&
-      !String(n.id).startsWith(loopTurnId)
-    )
-      return n;
+  const nodes = (state.graph.nodes || []).map((n) => {
+    if (n.id !== slotId && !String(n.id).includes(`-scaffold-${suffix}`)) return n;
+    if (n.turnId && n.turnId !== loopTurnId && !String(n.id).startsWith(loopTurnId)) return n;
     const snippet = content.split("\n")[0]?.slice(0, 72) || branchLabel;
     return {
       ...n,
@@ -2925,11 +2558,7 @@ export function commitArtifact(
   forceGateFail = false,
   declaredInputs: string[] = [], // pass the upstream artifact ids this run depends on
   baseline: "production" | "pilot-template" = "production" // K3 result-declared baseline from executor (drive extracts exec?.qualityBaseline); demo/pilot seeds pass "pilot-template" for relaxed gate
-): {
-  updatedState: V5SessionState;
-  committed: Artifact | null;
-  run: CapabilityRun;
-} {
+): { updatedState: V5SessionState; committed: Artifact | null; run: CapabilityRun } {
   // General Trust Layer rule (extended for demo consistency):
   // Any capability that declares upstreams will gate-fail if any upstream is untrusted/stale.
   // Special for report: also fail if no upstreams at all.
@@ -2942,8 +2571,8 @@ export function commitArtifact(
     if (declaredInputs.length === 0 && isReport) {
       effectiveForceFail = true;
     } else if (declaredInputs.length > 0) {
-      const badUpstreams = declaredInputs.filter(id => {
-        const art = state.artifacts.find(a => a.id === id);
+      const badUpstreams = declaredInputs.filter((id) => {
+        const art = state.artifacts.find((a) => a.id === id);
         if (!art) return true;
         const isStale = state.staleArtifactIds.includes(id);
         return art.trustLevel === "untrusted" || isStale;
@@ -2991,9 +2620,8 @@ export function commitArtifact(
 
   let previewAudit: ReturnType<typeof auditPreviewReal> | undefined;
   if (capId === "ux.preview" || capId === "outcome.visualize") {
-    const payloadAudit = (
-      rawArtifact as { payload?: { audit?: { passed?: boolean } } }
-    ).payload?.audit;
+    const payloadAudit = (rawArtifact as { payload?: { audit?: { passed?: boolean } } }).payload
+      ?.audit;
     previewAudit =
       payloadAudit && typeof payloadAudit.passed === "boolean"
         ? (payloadAudit as ReturnType<typeof auditPreviewReal>)
@@ -3005,12 +2633,7 @@ export function commitArtifact(
 
   // K3: quality gate now fully participates in the trustLevel decision (core of "保下限").
   // Receives result-declared baseline (drive/retry pull from exec; explicit "pilot-template" only from demo seeds / test pilots).
-  let gateResults = evaluateGates(
-    rawArtifact as any,
-    effectiveForceFail,
-    groundingOk,
-    baseline
-  );
+  let gateResults = evaluateGates(rawArtifact as any, effectiveForceFail, groundingOk, baseline);
 
   // U1 验厚回退（修复 "report.write 过了 LLM 但仅 quality 闸未达厚度契约 → 提交为 untrusted → 交付面无产物"）。
   // 仅当 report.write 在 production 基线下、且**唯一**未过的是 quality 闸（schema/invariant/ground/commit 等全过、
@@ -3025,8 +2648,8 @@ export function commitArtifact(
     baseline === "production" &&
     !effectiveForceFail &&
     groundingOk &&
-    gateResults.some(g => g.gateId === "quality" && g.status === "failed") &&
-    gateResults.every(g => g.gateId === "quality" || g.status === "passed")
+    gateResults.some((g) => g.gateId === "quality" && g.status === "failed") &&
+    gateResults.every((g) => g.gateId === "quality" || g.status === "passed")
   ) {
     const base = buildStructuredReport({
       state,
@@ -3039,7 +2662,7 @@ export function commitArtifact(
       groundingOk,
       "pilot-template"
     );
-    if (baseGate.every(g => g.status === "passed")) {
+    if (baseGate.every((g) => g.status === "passed")) {
       const { cleanedText } = sanitizeThroughFlowBoundary(base.content, {
         turnId: runId,
         source: "artifact",
@@ -3052,19 +2675,13 @@ export function commitArtifact(
     }
   }
 
-  const passedGates = gateResults
-    .filter(g => g.status === "passed")
-    .map(g => g.gateId);
-  const allPassed = gateResults.every(g => g.status === "passed");
+  const passedGates = gateResults.filter((g) => g.status === "passed").map((g) => g.gateId);
+  const allPassed = gateResults.every((g) => g.status === "passed");
 
   const committed: Artifact = {
     ...rawArtifact,
-    content: workingContent, // FLOWB-cleaned for report/synthesis formal paths
-    trustLevel: allPassed
-      ? rawArtifact.provenance.includes("rendered")
-        ? "audited"
-        : "gated_pass"
-      : "untrusted",
+    content: workingContent,  // FLOWB-cleaned for report/synthesis formal paths
+    trustLevel: allPassed ? (rawArtifact.provenance.includes("rendered") ? "audited" : "gated_pass") : "untrusted",
     // U1 验厚回退：模板兜底产物诚实标注 provenance=template（封条注明非 production LLM 产出）。
     provenance: qualityFallbackApplied ? "template" : rawArtifact.provenance,
     passedGates,
@@ -3076,14 +2693,11 @@ export function commitArtifact(
     evidenceRefs: declaredInputs.length ? declaredInputs : undefined,
     // Persist content fields so that report/synthesis can aggregate real fragments from upstreams
     title: qualityFallbackApplied ? fallbackTitle : (rawArtifact as any).title,
-    summary: qualityFallbackApplied
-      ? fallbackSummary
-      : (rawArtifact as any).summary,
+    summary: qualityFallbackApplied ? fallbackSummary : (rawArtifact as any).summary,
     ...(previewAudit
       ? {
           payload: {
-            ...((rawArtifact as { payload?: Record<string, unknown> })
-              .payload || {}),
+            ...((rawArtifact as { payload?: Record<string, unknown> }).payload || {}),
             audit: previewAudit,
           },
         }
@@ -3091,7 +2705,7 @@ export function commitArtifact(
   };
 
   // Build real dependency edges: for each declared input, input -> this output
-  const newDeps: DependencyEdge[] = declaredInputs.map(inputId => ({
+  const newDeps: DependencyEdge[] = declaredInputs.map((inputId) => ({
     fromArtifactId: inputId,
     toArtifactId: committed.id,
     reason: `produced-by-${rawArtifact.producedBy.capabilityId}`,
@@ -3105,13 +2719,8 @@ export function commitArtifact(
   gateResults = gateResults.map((gr: any) => {
     const base = { ...gr };
     if (gr.gateId === "ground" || gr.gateId === "G-GROUND") {
-      const evRefs =
-        committed.evidenceRefs ||
-        (rawArtifact as any).evidenceRefs ||
-        declaredInputs;
-      const checked = declaredInputs.length
-        ? declaredInputs
-        : (rawArtifact as any).inputs || [];
+      const evRefs = committed.evidenceRefs || (rawArtifact as any).evidenceRefs || declaredInputs;
+      const checked = declaredInputs.length ? declaredInputs : ((rawArtifact as any).inputs || []);
       base.checkedArtifactIds = checked;
       base.evidenceRefs = evRefs;
       base.detail = groundingOk
@@ -3124,10 +2733,7 @@ export function commitArtifact(
       const hasContent = !!(committed.content || (rawArtifact as any).content);
       base.checkedArtifactIds = declaredInputs;
       base.detail = `artifact ${hasContent || hasSummary || hasTitle ? "非空" : "空"} · title/summary 存在 · provenance=${committed.provenance || (rawArtifact as any).provenance} · passedGates 含 ground`;
-      base.reason =
-        gr.status === "passed"
-          ? "T_GATE 提交闸通过，可产出"
-          : "提交闸打回（前置未过或内容不足）";
+      base.reason = gr.status === "passed" ? "T_GATE 提交闸通过，可产出" : "提交闸打回（前置未过或内容不足）";
     } else if ((gr as any).reason) {
       base.detail = (gr as any).reason;
     }
@@ -3147,9 +2753,7 @@ export function commitArtifact(
 
   // Knife 6 v1: ensure cost record for the run (estimated from content length).
   // Duration is 0 in this path (measured at executor time in Default/Pilot).
-  const contentForCost = (committed.content ||
-    (rawArtifact as any).content ||
-    "") as string;
+  const contentForCost = (committed.content || (rawArtifact as any).content || "") as string;
   const estTokens = Math.ceil(contentForCost.length / 4);
   const costedStateForRun = recordCapabilityRunCost(state, run, {
     tokens: estTokens,
@@ -3165,7 +2769,7 @@ export function commitArtifact(
   const newRuns = [...state.capabilityRuns, run];
   const newGates = [
     ...state.gates,
-    ...gateResults.map(gr => ({
+    ...gateResults.map((gr) => ({
       gateId: gr.gateId as any,
       kind: (gr.gateId === "commit" ? "commit" : "precondition") as any,
       status: gr.status,
@@ -3184,21 +2788,13 @@ export function commitArtifact(
   let finalDecisionLedger = state.decisionLedger || [];
   if (flowCheck && finalDecisionLedger.length > 0) {
     const lastDec: any = finalDecisionLedger[finalDecisionLedger.length - 1];
-    if (
-      lastDec &&
-      typeof lastDec.turnId === "string" &&
-      runId.startsWith(lastDec.turnId.split("-")[0])
-    ) {
-      lastDec.addresses = [
-        ...(lastDec.addresses || []),
-        `flowb:${flowCheck.id}`,
-      ];
+    if (lastDec && typeof lastDec.turnId === "string" && runId.startsWith(lastDec.turnId.split("-")[0])) {
+      lastDec.addresses = [...(lastDec.addresses || []), `flowb:${flowCheck.id}`];
     }
   }
 
   // Merge any cost ledger updates from record during this commit.
-  const finalCostLedger =
-    (costedStateForRun as any).costLedger || state.costLedger || [];
+  const finalCostLedger = (costedStateForRun as any).costLedger || (state.costLedger || []);
 
   let conversation = state.conversation || [];
   if (previewAudit && !previewAudit.passed) {
@@ -3215,20 +2811,13 @@ export function commitArtifact(
 
   let structureGateLedger = state.structureGateLedger || [];
   if (capId === "structure.decompose") {
-    const payloadLedger = (
-      rawArtifact as { payload?: { gateLedger?: string[] } }
-    ).payload?.gateLedger;
+    const payloadLedger = (rawArtifact as { payload?: { gateLedger?: string[] } }).payload?.gateLedger;
     const parsedFromContent =
       payloadLedger ||
       (workingContent.includes("G_SCHEMA:") || workingContent.includes("G_INV:")
         ? String(workingContent.split("\n")[0] || "")
             .split(" · ")
-            .filter(
-              s =>
-                s.startsWith("G_SCHEMA") ||
-                s.startsWith("G_INV") ||
-                s.startsWith("C_")
-            )
+            .filter((s) => s.startsWith("G_SCHEMA") || s.startsWith("G_INV") || s.startsWith("C_"))
         : [
             "C_PROMPT:built",
             "C_REDACT:applied:0",
@@ -3236,10 +2825,7 @@ export function commitArtifact(
             "G_INV:attempt1:passed",
           ]);
     const turnSeed = runId.includes("-run-") ? runId.split("-run-")[0] : runId;
-    const sgChecks = parseStructureGateLedger(parsedFromContent, {
-      turnId: turnSeed,
-      runId,
-    });
+    const sgChecks = parseStructureGateLedger(parsedFromContent, { turnId: turnSeed, runId });
     structureGateLedger = [...structureGateLedger, ...sgChecks];
     const ledgerLines = structureGateLedgerConversationLines(sgChecks);
     conversation = [
@@ -3272,9 +2858,8 @@ export function commitArtifact(
   if (allPassed && capId === "gap.ask") {
     const turnKey = runId.split("-run-")[0] || runId;
     // 结构化澄清问题（带选项）优先；无则退化为纯文本问题（向后兼容）。
-    const clarifyQuestions = (
-      committed as { payload?: { clarifyQuestions?: ClarifyQuestion[] } }
-    ).payload?.clarifyQuestions;
+    const clarifyQuestions = (committed as { payload?: { clarifyQuestions?: ClarifyQuestion[] } })
+      .payload?.clarifyQuestions;
     const newGaps =
       Array.isArray(clarifyQuestions) && clarifyQuestions.length > 0
         ? gapsFromClarifyQuestions(clarifyQuestions, turnKey, committed.id)
@@ -3284,7 +2869,7 @@ export function commitArtifact(
 
   if (allPassed && capId === "handoff.package") {
     const ship = evaluateShipGates(updated);
-    const shipGateStates = ship.gates.map(g => ({
+    const shipGateStates = ship.gates.map((g) => ({
       gateId: g.gateId as GateState["gateId"],
       kind: "commit" as const,
       status: g.status,
@@ -3304,7 +2889,7 @@ export function commitArtifact(
           text: `[SHIP] ${ship.reason}`,
           timestamp: new Date().toISOString(),
         },
-        ...ship.gates.map(g => ({
+        ...ship.gates.map((g) => ({
           id: `${runId}-ship-${g.gateId}`,
           role: "system",
           text: `[T_LEDGER] ${g.gateId} phase=ship status=${g.status}`,
@@ -3325,10 +2910,7 @@ export function commitArtifact(
   }
 
   // Auditable BUS note for planner failure-event回流 (G-GROUND).
-  if (
-    !groundingOk &&
-    (capId === "evidence.search" || capId === "report.write")
-  ) {
+  if (!groundingOk && (capId === "evidence.search" || capId === "report.write")) {
     const noteText =
       capId === "evidence.search"
         ? "[G-GROUND] 外部证据检索未通过接地门：本轮未引入可信任的外部证据。"
@@ -3362,21 +2944,8 @@ const CAPABILITY_INPUT_KINDS: Partial<Record<V5CapabilityId, string[]>> = {
   "risk.analyze": ["clarification", "evidence"],
   "counter.argue": ["risk", "evidence"],
   "synthesis.merge": ["risk", "evidence", "route_options", "clarification"],
-  "report.write": [
-    "synthesis",
-    "risk",
-    "evidence",
-    "route_options",
-    "clarification",
-    "preview",
-  ],
-  "structure.decompose": [
-    "clarification",
-    "evidence",
-    "synthesis",
-    "risk",
-    "report",
-  ],
+  "report.write": ["synthesis", "risk", "evidence", "route_options", "clarification", "preview"],
+  "structure.decompose": ["clarification", "evidence", "synthesis", "risk", "report"],
 };
 
 // 单能力可挂的上游上限(防止极端会话把画布塞爆;远大于此前的 neededKinds.length 封顶)。
@@ -3385,10 +2954,7 @@ const MAX_INPUTS_PER_CAPABILITY = 24;
 // Find artifacts in state matching the required kinds for this capability.
 // 收集**全部**匹配 kind 的健康上游(不再按 kind 数量封顶),让收敛节点依赖完整上下文 ——
 // 画布依赖边因此完整、产出不再悬在"第二层"。仅留一个高位安全上限防极端膨胀。
-export function findInputsForCapability(
-  state: V5SessionState,
-  capabilityId: V5CapabilityId
-): string[] {
+export function findInputsForCapability(state: V5SessionState, capabilityId: V5CapabilityId): string[] {
   const neededKinds = CAPABILITY_INPUT_KINDS[capabilityId] || [];
   if (neededKinds.length === 0) return [];
 
@@ -3469,10 +3035,7 @@ export function invalidateForIntervention(
   while (changed) {
     changed = false;
     for (const edge of state.dependencyGraph) {
-      if (
-        affected.has(edge.fromArtifactId) &&
-        !affected.has(edge.toArtifactId)
-      ) {
+      if (affected.has(edge.fromArtifactId) && !affected.has(edge.toArtifactId)) {
         affected.add(edge.toArtifactId);
         changed = true;
       }
@@ -3484,11 +3047,11 @@ export function invalidateForIntervention(
   // 1. 优先用 intervention 携带的 targetArtifactId 直接找该 artifact 的 capabilityRunId
   // 2. 或者用受影响 artifact 的 producedBy.capabilityRunId 与 node 上预分配的 capabilityRunId 精确匹配
   // 3. 只有在没有 run 级信息时才退回到 turn + capability（避免同一 turn 内同一 capability 被多次调用时互相污染）
-  const affectedArtifacts = state.artifacts.filter(a => affected.has(a.id));
+  const affectedArtifacts = state.artifacts.filter((a) => affected.has(a.id));
 
   // 如果 intervention 直接指定了 targetArtifactId，优先用它对应的精确 run
   const targetArtifact = targetId
-    ? state.artifacts.find(a => a.id === targetId)
+    ? state.artifacts.find((a) => a.id === targetId)
     : undefined;
   const targetRunId = targetArtifact?.producedBy?.capabilityRunId;
 
@@ -3501,7 +3064,7 @@ export function invalidateForIntervention(
     if (targetRunId && node.capabilityRunId === targetRunId) {
       matches = true;
     } else if (node.capabilityRunId) {
-      matches = affectedArtifacts.some(art => {
+      matches = affectedArtifacts.some((art) => {
         if (art.producedBy.capabilityId !== node.capabilityId) return false;
         return art.producedBy?.capabilityRunId === node.capabilityRunId;
       });
@@ -3511,17 +3074,13 @@ export function invalidateForIntervention(
     // 如果双方都有 runId 且精确匹配失败，不能再回退，否则同一 turn 内重复 capability 会被误染。
     const hasRunLevelInfo =
       Boolean(node.capabilityRunId) &&
-      affectedArtifacts.some(art => Boolean(art.producedBy?.capabilityRunId));
+      affectedArtifacts.some((art) => Boolean(art.producedBy?.capabilityRunId));
     if (!matches && !hasRunLevelInfo) {
-      const nodeTurn =
-        node.turnId ||
-        (typeof node.id === "string" ? node.id.split("-node")[0] : "");
-      matches = affectedArtifacts.some(art => {
+      const nodeTurn = node.turnId || (typeof node.id === "string" ? node.id.split("-node")[0] : "");
+      matches = affectedArtifacts.some((art) => {
         if (art.producedBy.capabilityId !== node.capabilityId) return false;
         const run = art.producedBy?.capabilityRunId || "";
-        const artTurn = run.includes("-run-")
-          ? run.split("-run-")[0]
-          : (run.split("-")[0] || "") + "-" + (run.split("-")[1] || "");
+        const artTurn = run.includes("-run-") ? run.split("-run-")[0] : (run.split("-")[0] || "") + "-" + (run.split("-")[1] || "");
         return nodeTurn && artTurn ? nodeTurn === artTurn : true;
       });
     }
@@ -3562,7 +3121,7 @@ export function invalidateForIntervention(
   if (isConvergedConclusion(state.goal.status)) {
     const prevStale = new Set(state.staleArtifactIds || []);
     const conclusionArtifactStaled = (state.artifacts || []).some(
-      a => a.kind === "report" && affected.has(a.id) && !prevStale.has(a.id)
+      (a) => a.kind === "report" && affected.has(a.id) && !prevStale.has(a.id)
     );
     if (conclusionArtifactStaled) {
       nextState = applyGoalConclusion(nextState, "needs_refinement");
@@ -3575,9 +3134,7 @@ export function invalidateForIntervention(
 
   return {
     ...nextState,
-    projectionDirtyNodeIds: [
-      ...new Set([...(state.projectionDirtyNodeIds || []), ...dirtyNodeIds]),
-    ],
+    projectionDirtyNodeIds: [...new Set([...(state.projectionDirtyNodeIds || []), ...dirtyNodeIds])],
   };
 }
 
@@ -3636,11 +3193,7 @@ export function mapInterventionToControlSignal(
  */
 export function intakeMessage(
   state: V5SessionState,
-  inbound: {
-    turnId: string;
-    userText?: string;
-    intervention?: UserIntervention;
-  }
+  inbound: { turnId: string; userText?: string; intervention?: UserIntervention }
 ): IntakeResult {
   let working: V5SessionState = { ...state };
 
@@ -3701,19 +3254,10 @@ export function intakeMessage(
   const incomingAwaitReason = (state as any).awaitReason;
   const incomingAwaitDetail = (state as any).awaitDetail;
   if (incomingAwaitReason != null && working.awaitReason == null) {
-    working = {
-      ...working,
-      awaitReason: incomingAwaitReason,
-      awaitDetail: incomingAwaitDetail,
-    };
+    working = { ...working, awaitReason: incomingAwaitReason, awaitDetail: incomingAwaitDetail };
   }
-  if (
-    incomingRuntimePhase === "awaiting" ||
-    incomingRuntimePhase === "done" ||
-    incomingRuntimePhase === "failed"
-  ) {
-    if (working.runtimePhase !== "done")
-      working.runtimePhase = incomingRuntimePhase;
+  if (incomingRuntimePhase === "awaiting" || incomingRuntimePhase === "done" || incomingRuntimePhase === "failed") {
+    if (working.runtimePhase !== "done") working.runtimePhase = incomingRuntimePhase;
   }
 
   const clearedByCard =
@@ -3726,10 +3270,7 @@ export function intakeMessage(
   ) {
     working = { ...working, awaitReason: undefined, awaitDetail: undefined };
   }
-  if (
-    working.awaitReason === "confirm" &&
-    userRejectsRouteSelection(userText)
-  ) {
+  if (working.awaitReason === "confirm" && userRejectsRouteSelection(userText)) {
     const staleIds = new Set(working.staleArtifactIds || []);
     for (const art of working.artifacts || []) {
       if (art.kind === "route_options") staleIds.add(art.id);
@@ -3747,8 +3288,7 @@ export function intakeMessage(
   // S20 ITER: preview dissatisfaction → same recycle as INTERV revise.
   if (isPreviewDissatisfiedIntent(userText) && !intervention) {
     const previewArt = (working.artifacts || []).find(
-      a =>
-        a.kind === "preview" && !(working.staleArtifactIds || []).includes(a.id)
+      (a) => a.kind === "preview" && !(working.staleArtifactIds || []).includes(a.id)
     );
     if (previewArt) {
       working = invalidateForIntervention(working, {
@@ -3791,11 +3331,7 @@ export function intakeMessage(
   }
 
   // S20 · RV reject → INTERV invalidate (same path as challenge).
-  if (
-    isReviewRejectIntent(userText) &&
-    !intervention &&
-    working.goal?.status === "clear"
-  ) {
+  if (isReviewRejectIntent(userText) && !intervention && working.goal?.status === "clear") {
     const report = latestTrustedReport(working);
     if (report) {
       working = invalidateForIntervention(working, {
@@ -3819,15 +3355,10 @@ export function intakeMessage(
   // 标记阶段：支持外圈 ORCH → AWAIT → INTAKE 证明（RV→DONE 保持 done，不覆写）
   // Thin proxy: preserve awaiting from Python if this intake had no resolving userText (no-op receive case)
   // so frontend gets the awaitReason+phase rather than silent orchestrating overwrite.
-  const hasResolveText =
-    (userText || "").trim().length > 0 ||
-    (intervention && (intervention.answeredGapIds || []).length > 0);
+  const hasResolveText = (userText || "").trim().length > 0 || (intervention && (intervention.answeredGapIds || []).length > 0);
   const phaseAfterIntake =
-    working.runtimePhase === "done"
-      ? "done"
-      : working.runtimePhase === "awaiting" && !hasResolveText
-        ? "awaiting"
-        : ("orchestrating" as const);
+    working.runtimePhase === "done" ? "done" :
+    (working.runtimePhase === "awaiting" && !hasResolveText ? "awaiting" : ("orchestrating" as const));
   working = {
     ...working,
     runtimePhase: phaseAfterIntake,
@@ -3848,10 +3379,7 @@ export function intakeMessage(
 export function markAwaiting(
   state: V5SessionState,
   turnId?: string,
-  awaitMeta?: {
-    reason?: import("@shared/blueprint/v5-reasoning-state").AwaitReason;
-    detail?: string;
-  }
+  awaitMeta?: { reason?: import("@shared/blueprint/v5-reasoning-state").AwaitReason; detail?: string }
 ): V5SessionState {
   return {
     ...state,
@@ -3866,12 +3394,7 @@ export function markAwaiting(
 function awaitMetaForStop(
   stopReason: ReentryStopReason,
   detail?: string
-):
-  | {
-      reason?: import("@shared/blueprint/v5-reasoning-state").AwaitReason;
-      detail?: string;
-    }
-  | undefined {
+): { reason?: import("@shared/blueprint/v5-reasoning-state").AwaitReason; detail?: string } | undefined {
   switch (stopReason) {
     case "budget_exhausted":
       return { reason: "budget", detail };
@@ -3918,7 +3441,7 @@ export function enrichGraphNodesAfterCommit(
 
     // 按预分配的 capabilityRunId 找到本轮真正产出的 artifact
     const match = (state.artifacts || []).find(
-      art => art.producedBy?.capabilityRunId === node.capabilityRunId
+      (art) => art.producedBy?.capabilityRunId === node.capabilityRunId
     );
 
     if (match) {
@@ -3947,11 +3470,7 @@ export function enrichGraphNodesAfterCommit(
 export function orchestrateReasoningTurn(
   state: V5SessionState,
   context?: OrchestrateContext
-): {
-  newState: V5SessionState;
-  plan: TurnPlan;
-  newGraphNodes: BrainstormReasoningNode[];
-} {
+): { newState: V5SessionState; plan: TurnPlan; newGraphNodes: BrainstormReasoningNode[] } {
   let working = { ...state };
   // TS_RUNTIME_OWNED thin proxy (frontend contract consumer):
   // Read and retain awaitReason + runtimePhase set by Python drive (PYTHON_AUTHORITY).
@@ -3963,11 +3482,7 @@ export function orchestrateReasoningTurn(
     (working as any).awaitReason = _incAwait;
     if (_incDetail != null) (working as any).awaitDetail = _incDetail;
   }
-  if (
-    _incPhase &&
-    ["awaiting", "done", "failed"].includes(_incPhase) &&
-    working.runtimePhase !== "done"
-  ) {
+  if (_incPhase && ["awaiting", "done", "failed"].includes(_incPhase) && working.runtimePhase !== "done") {
     working.runtimePhase = _incPhase as any;
   }
   const turnId = context?.turnId || `turn-${Date.now()}`;
@@ -3981,8 +3496,7 @@ export function orchestrateReasoningTurn(
   const alreadyPreprocessedByIntake =
     intervention &&
     working.lastTurnId === turnId &&
-    (working.runtimePhase === "orchestrating" ||
-      working.runtimePhase === "awaiting");
+    (working.runtimePhase === "orchestrating" || working.runtimePhase === "awaiting");
   if (intervention && !alreadyPreprocessedByIntake) {
     working = invalidateForIntervention(working, intervention);
   }
@@ -3990,7 +3504,7 @@ export function orchestrateReasoningTurn(
   // Always append the current user turn to conversation (traceability)
   // 防御重复追加：如果 intake 已为本 turn 追加过，则跳过
   const hasThisTurnConv = (working.conversation || []).some(
-    c => c.id === `${turnId}-conv`
+    (c) => c.id === `${turnId}-conv`
   );
   if (userText && !hasThisTurnConv) {
     working.conversation = [
@@ -4009,23 +3523,12 @@ export function orchestrateReasoningTurn(
   // Evaluate on current persisted runs (pre this turn's commits). If over: park AWAIT partial immediately,
   // return empty plan (caller exec loop becomes no-op), carry trace in conv (auditable, durable).
   // Page flow unchanged: 0 selected + already-awaiting state + later markAwaiting is safe.
-  const budgetCheck = evaluateBudgetBeforeOrchestrate(working, {
-    turnId,
-    userText,
-    intervention: context?.intervention,
-  });
+  const budgetCheck = evaluateBudgetBeforeOrchestrate(working, { turnId, userText, intervention: context?.intervention });
   if (!budgetCheck.allowed) {
-    const escalate = shouldEscalateOnBudgetBlock(
-      working,
-      true,
-      working.coverageGate
-    );
+    const escalate = shouldEscalateOnBudgetBlock(working, true, working.coverageGate);
     let parked = escalate
       ? {
-          ...markAwaiting(working, turnId, {
-            reason: "budget",
-            detail: budgetCheck.reason,
-          }),
+          ...markAwaiting(working, turnId, { reason: "budget", detail: budgetCheck.reason }),
           runtimePhase: "failed" as const,
           escalated: true,
         }
@@ -4038,7 +3541,7 @@ export function orchestrateReasoningTurn(
       : `[BUDGET] exceeded: ${budgetCheck.reason || "policy limit"}. Partial AWAIT (no new capabilities scheduled this turn).`;
     const note = {
       id: `${turnId}-budget`,
-      role: "system",
+      role: 'system',
       text: noteText,
       timestamp: new Date().toISOString(),
     };
@@ -4047,14 +3550,7 @@ export function orchestrateReasoningTurn(
       conversation: [...(parked.conversation || []), note],
     };
     // Record hook (v1 no-op beyond trace; real cost telemetry lands in DLEDGER later)
-    parked = recordCapabilityRunCost(parked, {
-      id: `${turnId}-budget-run`,
-      capabilityId: "budget.gate" as any,
-      turnId,
-      inputs: [],
-      outputs: [],
-      gateResults: [],
-    } as any);
+    parked = recordCapabilityRunCost(parked, { id: `${turnId}-budget-run`, capabilityId: 'budget.gate' as any, turnId, inputs: [], outputs: [], gateResults: [] } as any);
 
     // V5.1 DLEDGER: even on budget block we record a decision (decided policy: special blocked entry for complete history).
     const nowIsoBlock = new Date().toISOString();
@@ -4064,10 +3560,7 @@ export function orchestrateReasoningTurn(
       turnId,
       saw: allCapIdsBlock,
       chose: [],
-      skipped: allCapIdsBlock.map(cid => ({
-        capabilityId: cid,
-        reason: "blocked_by_budget",
-      })),
+      skipped: allCapIdsBlock.map((cid) => ({ capabilityId: cid, reason: "blocked_by_budget" })),
       addresses: [],
       rationale: `blocked_by_budget: ${budgetCheck.reason}`,
       alternativesRejected: allCapIdsBlock,
@@ -4080,11 +3573,7 @@ export function orchestrateReasoningTurn(
 
     return {
       newState: parked,
-      plan: {
-        selected: [],
-        reason: `BUDGET_EXCEEDED: ${budgetCheck.reason}`,
-        expectedArtifacts: [],
-      } as TurnPlan,
+      plan: { selected: [], reason: `BUDGET_EXCEEDED: ${budgetCheck.reason}`, expectedArtifacts: [] } as TurnPlan,
       newGraphNodes: [],
     };
   }
@@ -4093,11 +3582,7 @@ export function orchestrateReasoningTurn(
   // If budget count ok so far, but CoverageContract baseline is sufficient (gaps resolved/waived, no stale,
   // has recent report, and this turn is not a meaningful intervention), stop redundant converge to avoid
   // wasting runs when "够了就停".
-  const sufficiency = evaluateContractSufficiencyForBudget(working, {
-    turnId,
-    userText,
-    intervention: context?.intervention,
-  });
+  const sufficiency = evaluateContractSufficiencyForBudget(working, { turnId, userText, intervention: context?.intervention });
   if (sufficiency.sufficient) {
     let parked = markAwaiting(working, turnId, {
       reason: "convergence",
@@ -4106,7 +3591,7 @@ export function orchestrateReasoningTurn(
     const noteText = `[BUDGET] stopped: contract already sufficient. ${sufficiency.reason}. Partial AWAIT (no new capabilities scheduled this turn).`;
     const note = {
       id: `${turnId}-budget-contract`,
-      role: "system",
+      role: 'system',
       text: noteText,
       timestamp: new Date().toISOString(),
     };
@@ -4114,33 +3599,18 @@ export function orchestrateReasoningTurn(
       ...parked,
       conversation: [...(parked.conversation || []), note],
     };
-    parked = recordCapabilityRunCost(parked, {
-      id: `${turnId}-budget-contract-run`,
-      capabilityId: "budget.contract_stop" as any,
-      turnId,
-      inputs: [],
-      outputs: [],
-      gateResults: [],
-    } as any);
+    parked = recordCapabilityRunCost(parked, { id: `${turnId}-budget-contract-run`, capabilityId: 'budget.contract_stop' as any, turnId, inputs: [], outputs: [], gateResults: [] } as any);
 
     // Special DLEDGER for contract sufficiency stop (auditable, parallel to budget block).
     const nowIsoContractStop = new Date().toISOString();
-    const allCapIdsContractStop = Array.from(
-      V5_CAPABILITY_POOL.keys()
-    ) as string[];
+    const allCapIdsContractStop = Array.from(V5_CAPABILITY_POOL.keys()) as string[];
     const contractStopDecision: SchedulingDecision = {
       id: `${turnId}-dledger-contract-stop`,
       turnId,
       saw: allCapIdsContractStop,
       chose: [],
-      skipped: allCapIdsContractStop.map(cid => ({
-        capabilityId: cid,
-        reason: "stopped_by_contract_sufficiency",
-      })),
-      addresses:
-        (working.coverageContract as any)?.blockingGapIds?.map(
-          (gid: string) => `coverage:gap:${gid}`
-        ) || [],
+      skipped: allCapIdsContractStop.map((cid) => ({ capabilityId: cid, reason: "stopped_by_contract_sufficiency" })),
+      addresses: (working.coverageContract as any)?.blockingGapIds?.map((gid: string) => `coverage:gap:${gid}`) || [],
       rationale: `stopped_by_contract_sufficiency: ${sufficiency.reason}`,
       alternativesRejected: allCapIdsContractStop,
       createdAt: nowIsoContractStop,
@@ -4152,11 +3622,7 @@ export function orchestrateReasoningTurn(
 
     return {
       newState: parked,
-      plan: {
-        selected: [],
-        reason: `CONTRACT_SUFFICIENT: ${sufficiency.reason}`,
-        expectedArtifacts: [],
-      } as TurnPlan,
+      plan: { selected: [], reason: `CONTRACT_SUFFICIENT: ${sufficiency.reason}`, expectedArtifacts: [] } as TurnPlan,
       newGraphNodes: [],
     };
   }
@@ -4180,10 +3646,7 @@ export function orchestrateReasoningTurn(
     selected = pickNextCapabilitiesHeuristic(working, userTextForPick);
     planSource = "local_heuristic";
     pickRationale = `delivery-intent forced deterministic ship pipeline (bypass LLM proposal) for: ${(userTextForPick || "").slice(0, 80)}`;
-  } else if (
-    proposed?.converged === true &&
-    (proposed.selected?.length ?? 0) === 0
-  ) {
+  } else if (proposed?.converged === true && (proposed.selected?.length ?? 0) === 0) {
     const nowIso = new Date().toISOString();
     const allCapIds = Array.from(V5_CAPABILITY_POOL.keys()) as string[];
     const convergenceDecision: SchedulingDecision = {
@@ -4191,7 +3654,7 @@ export function orchestrateReasoningTurn(
       turnId,
       saw: allCapIds,
       chose: [],
-      skipped: allCapIds.map(cid => ({
+      skipped: allCapIds.map((cid) => ({
         capabilityId: cid,
         reason: "convergence_signal: router confirmed no further steps",
       })),
@@ -4210,10 +3673,7 @@ export function orchestrateReasoningTurn(
     if (!working.coverageContract) {
       // Fallback authoring (should rarely hit after reconcile)
       const goalForContract = working.goal?.text || userTextForPick || "";
-      const { contract, gaps } = authorCoverageContract(
-        goalForContract,
-        turnId
-      );
+      const { contract, gaps } = authorCoverageContract(goalForContract, turnId);
       working = {
         ...working,
         coverageContract: contract,
@@ -4225,11 +3685,7 @@ export function orchestrateReasoningTurn(
     // Reconcile may have just (re)authored the contract with all gaps open even though the
     // required capabilities were trusted-committed in earlier turns.
     working = resolveCoverageGapsFromState(working);
-    const gateResult = evaluateCoverageGate(
-      working,
-      [],
-      working.coverageContract
-    );
+    const gateResult = evaluateCoverageGate(working, [], working.coverageContract);
     working = {
       ...working,
       coverageGate: gateResult,
@@ -4258,15 +3714,11 @@ export function orchestrateReasoningTurn(
     const policy = getDefaultBudgetPolicy();
     const missing = gateResult.missingCapabilities || [];
     const forced = missing
-      .filter(m => m !== "report.write")
+      .filter((m) => m !== "report.write")
       .slice(0, policy.maxCapabilityRunsPerTurn)
-      .map(m => ({
+      .map((m) => ({
         capabilityId: m as V5CapabilityId,
-        roleId: m.includes("risk")
-          ? "安全"
-          : m.includes("evidence")
-            ? "综合"
-            : "综合",
+        roleId: m.includes("risk") ? "安全" : m.includes("evidence") ? "综合" : "综合",
       }));
 
     if (forced.length === 0) {
@@ -4302,14 +3754,14 @@ export function orchestrateReasoningTurn(
     const ledgerArr = working.decisionLedger || [];
     if (ledgerArr.length > 0) {
       const lastDec: any = ledgerArr[ledgerArr.length - 1];
-      const forcedIds = forced.map(f => f.capabilityId);
+      const forcedIds = forced.map((f) => f.capabilityId);
       lastDec.chose = forcedIds;
       lastDec.skipped = (lastDec.skipped || []).filter(
         (sk: any) => !forcedIds.includes(sk.capabilityId)
       );
-      lastDec.alternativesRejected = (
-        lastDec.alternativesRejected || []
-      ).filter((cid: string) => !(forcedIds as string[]).includes(cid));
+      lastDec.alternativesRejected = (lastDec.alternativesRejected || []).filter(
+        (cid: string) => !(forcedIds as string[]).includes(cid)
+      );
       lastDec.rationale = `${lastDec.rationale || ""} | GCOV-forced-after-convergence-reject: ${forcedIds.join(",")}`;
     }
   } else if (proposed) {
@@ -4320,8 +3772,7 @@ export function orchestrateReasoningTurn(
     if (validated.valid && validated.selected.length > 0) {
       selected = validated.selected;
       planSource = proposed.source;
-      droppedFromProposal =
-        validated.dropped.length > 0 ? validated.dropped : undefined;
+      droppedFromProposal = validated.dropped.length > 0 ? validated.dropped : undefined;
       pickRationale = proposed.rationale;
     } else {
       selected = pickNextCapabilitiesHeuristic(working, userTextForPick);
@@ -4345,8 +3796,8 @@ export function orchestrateReasoningTurn(
       ? "not chosen by current pickNext heuristic for this turn"
       : "not chosen by orchestration proposal for this turn";
   const skipped = saw
-    .filter(cid => !choseIds.includes(cid))
-    .map(cid => ({ capabilityId: cid, reason: notChosenReason }));
+    .filter((cid) => !choseIds.includes(cid))
+    .map((cid) => ({ capabilityId: cid, reason: notChosenReason }));
   const decision: SchedulingDecision = {
     id: `${turnId}-dledger`,
     turnId,
@@ -4355,7 +3806,7 @@ export function orchestrateReasoningTurn(
     skipped,
     addresses: [],
     rationale: pickRationale,
-    alternativesRejected: skipped.map(s => s.capabilityId),
+    alternativesRejected: skipped.map((s) => s.capabilityId),
     createdAt: nowIso,
     source: planSource,
     ...(droppedFromProposal?.length ? { droppedFromProposal } : {}),
@@ -4365,24 +3816,18 @@ export function orchestrateReasoningTurn(
   // and bias the effective plan to reconsider elements from the challenged decision (v1: prepend previous chose for reconsideration).
   const challengeIntervention = intervention;
   if (challengeIntervention?.targetDecisionId) {
-    const oldDec: any = (working.decisionLedger || []).find(
-      (d: any) => d.id === challengeIntervention.targetDecisionId
-    );
+    const oldDec: any = (working.decisionLedger || []).find((d: any) => d.id === challengeIntervention.targetDecisionId);
     if (oldDec) {
-      (decision as any).rationale =
-        `${decision.rationale} | decision challenged: ${challengeIntervention.targetDecisionId} "${(challengeIntervention.text || "").slice(0, 60)}" — reconsidering prior chose/alternativesRejected`;
+      (decision as any).rationale = `${decision.rationale} | decision challenged: ${challengeIntervention.targetDecisionId} "${(challengeIntervention.text || "").slice(0, 60)}" — reconsidering prior chose/alternativesRejected`;
       // v1 reconsideration bias: include previous chose items that weren't already picked this turn (so plan reflects re-consider)
       const prevChose = (oldDec.chose || []) as string[];
-      const toReconsider = prevChose.filter(
-        (cid: string) => !choseIds.includes(cid)
-      );
+      const toReconsider = prevChose.filter((cid: string) => !choseIds.includes(cid));
       if (toReconsider.length > 0) {
         // prepend for visibility in plan (actual execution will still go through later commit)
         // We adjust the local choseIds for this decision record and will use for effective later if needed.
         (decision as any).chose = [...toReconsider, ...choseIds];
         // Also surface in alternativesRejected note for audit
-        (decision as any).rationale =
-          `${(decision as any).rationale} (reconsidered: ${toReconsider.join(",")})`;
+        (decision as any).rationale = `${(decision as any).rationale} (reconsidered: ${toReconsider.join(',')})`;
       }
     }
   }
@@ -4398,18 +3843,12 @@ export function orchestrateReasoningTurn(
   // propagate to effectiveSelected so the returned TurnPlan reflects the reconsideration for this turn.
   let effectiveSelected = [...selected];
   const recordedChose = (decision as any).chose;
-  if (
-    intervention?.targetDecisionId &&
-    recordedChose &&
-    recordedChose.length > 0
-  ) {
+  if (intervention?.targetDecisionId && recordedChose && recordedChose.length > 0) {
     const origIds = selected.map((s: any) => s.capabilityId);
     const extra = recordedChose.filter((cid: string) => !origIds.includes(cid));
     if (extra.length > 0) {
       effectiveSelected = [
-        ...extra.map((cid: string) => ({
-          capabilityId: cid as V5CapabilityId,
-        })),
+        ...extra.map((cid: string) => ({ capabilityId: cid as V5CapabilityId })),
         ...effectiveSelected,
       ];
     }
@@ -4419,8 +3858,7 @@ export function orchestrateReasoningTurn(
   // Budget already passed earlier; GCOV may force prepend missing required, but we respect per-turn budget afford.
   // Only act when converge intent (report.write selected or similar). Author contract on first need (v1).
   // On !passed: set coverageGate, prepend missing (capped by budget), patch latest DLEDGER decision (addresses + chose), adjust effective plan.
-  const hasConvergeIntent =
-    selected.some((s: any) => s.capabilityId === "report.write") ||
+  const hasConvergeIntent = selected.some((s: any) => s.capabilityId === 'report.write') ||
     /报告|report|总结|收敛|converge/.test(userTextForPick);
   working = reconcileCoverageContract(working, turnId);
   if (!working.coverageContract) {
@@ -4439,11 +3877,7 @@ export function orchestrateReasoningTurn(
   // have just (re)authored the contract with all gaps open even though the required capabilities
   // were trusted-committed in earlier turns.
   working = resolveCoverageGapsFromState(working);
-  const gateResult = evaluateCoverageGate(
-    working,
-    selected,
-    working.coverageContract
-  );
+  const gateResult = evaluateCoverageGate(working, selected, working.coverageContract);
   working = {
     ...working,
     coverageGate: gateResult,
@@ -4464,28 +3898,21 @@ export function orchestrateReasoningTurn(
   if (!gateResult.passed && hasConvergeIntent) {
     const missing = gateResult.missingCapabilities || [];
     const toForce = missing
-      .filter(m => !effectiveSelected.some((s: any) => s.capabilityId === m))
-      .map(m => ({
+      .filter((m) => !effectiveSelected.some((s: any) => s.capabilityId === m))
+      .map((m) => ({
         capabilityId: m as V5CapabilityId,
-        roleId: m.includes("risk")
-          ? "安全"
-          : m.includes("synthesis")
-            ? "综合"
-            : "综合",
+        roleId: m.includes('risk') ? '安全' : (m.includes('synthesis') ? '综合' : '综合'),
       }));
 
     // Budget respect in same turn (conservative v1): use policy maxPerTurn, assume 0 committed yet this turn.
     const policy = getDefaultBudgetPolicy();
-    let afford = Math.max(
-      0,
-      policy.maxCapabilityRunsPerTurn - effectiveSelected.length
-    );
+    let afford = Math.max(0, policy.maxCapabilityRunsPerTurn - effectiveSelected.length);
     // Golden-path fix: a premature report.write cannot commit this turn anyway (GCOV would
     // hard-block below). If evicting it frees exactly enough budget to schedule EVERY missing
     // pre-req, swap it out so the turn makes real progress instead of parking with an empty plan.
     // When even that is not enough, keep the original hard-block behavior unchanged.
     const hasPrematureReport = effectiveSelected.some(
-      (s: any) => s.capabilityId === "report.write"
+      (s: any) => s.capabilityId === 'report.write'
     );
     if (toForce.length > afford && hasPrematureReport) {
       const affordWithoutReport = Math.max(
@@ -4494,7 +3921,7 @@ export function orchestrateReasoningTurn(
       );
       if (toForce.length <= affordWithoutReport) {
         effectiveSelected = effectiveSelected.filter(
-          (s: any) => s.capabilityId !== "report.write"
+          (s: any) => s.capabilityId !== 'report.write'
         );
         afford = affordWithoutReport;
       }
@@ -4513,29 +3940,17 @@ export function orchestrateReasoningTurn(
     if (ledgerArr.length > 0) {
       const lastDec: any = ledgerArr[ledgerArr.length - 1];
       if (lastDec) {
-        const covAdds = missing.map(m => `coverage:required:${m}`);
+        const covAdds = missing.map((m) => `coverage:required:${m}`);
         // Knife 7: richer addresses with gaps from current contract
-        const gapAdds = ((working.coverageGaps || []) as any[])
-          .filter((g: any) =>
-            (working.coverageContract as any)?.blockingGapIds?.includes(g.id)
-          )
-          .map((g: any) => `coverage:gap:${g.id}`);
-        lastDec.addresses = [
-          ...(lastDec.addresses || []),
-          ...covAdds,
-          ...gapAdds,
-        ];
+        const gapAdds = ((working.coverageGaps || []) as any[]).filter((g: any) => (working.coverageContract as any)?.blockingGapIds?.includes(g.id)).map((g: any) => `coverage:gap:${g.id}`);
+        lastDec.addresses = [...(lastDec.addresses || []), ...covAdds, ...gapAdds];
         if (forced.length > 0) {
           lastDec.chose = [...forcedIds, ...(lastDec.chose || [])];
-          lastDec.skipped = (lastDec.skipped || []).filter(
-            (sk: any) => !forcedIds.includes(sk.capabilityId)
-          );
-          lastDec.alternativesRejected = (
-            lastDec.alternativesRejected || []
-          ).filter((cid: string) => !forcedIds.includes(cid));
-          lastDec.rationale = `${lastDec.rationale || ""} | GCOV-forced: ${forcedIds.join(",")}`;
+          lastDec.skipped = (lastDec.skipped || []).filter((sk: any) => !forcedIds.includes(sk.capabilityId));
+          lastDec.alternativesRejected = (lastDec.alternativesRejected || []).filter((cid: string) => !forcedIds.includes(cid));
+          lastDec.rationale = `${lastDec.rationale || ''} | GCOV-forced: ${forcedIds.join(',')}`;
         } else if (missing.length > 0) {
-          lastDec.rationale = `${lastDec.rationale || ""} | GCOV: ${gateResult.reason}`;
+          lastDec.rationale = `${lastDec.rationale || ''} | GCOV: ${gateResult.reason}`;
         }
       }
     }
@@ -4544,13 +3959,9 @@ export function orchestrateReasoningTurn(
     // unresolved pre-req missing (e.g. risk.analyze) and the plan still contains report.write (or converge intent),
     // do not allow the turn to proceed with a report. Instead park at partial AWAIT (like Budget block),
     // record auditable [GCOV] note, return empty plan. This makes GCOV a true mechanical gate, not just a marker.
-    const preReqs = missing.filter(m => m !== "report.write");
-    const stillMissingPreReqs = preReqs.filter(
-      m => !effectiveSelected.some((s: any) => s.capabilityId === m)
-    );
-    const reportStillPresent = effectiveSelected.some(
-      (s: any) => s.capabilityId === "report.write"
-    );
+    const preReqs = missing.filter((m) => m !== 'report.write');
+    const stillMissingPreReqs = preReqs.filter((m) => !effectiveSelected.some((s: any) => s.capabilityId === m));
+    const reportStillPresent = effectiveSelected.some((s: any) => s.capabilityId === 'report.write');
     if (stillMissingPreReqs.length > 0 && reportStillPresent) {
       let parked = markAwaiting(working, turnId, {
         reason: "coverage",
@@ -4559,7 +3970,7 @@ export function orchestrateReasoningTurn(
       const noteText = `[GCOV] blocked: ${gateResult.reason}. Required capabilities not fully scheduled due to budget afford. Partial AWAIT (no convergence this turn).`;
       const note = {
         id: `${turnId}-gcov`,
-        role: "system",
+        role: 'system',
         text: noteText,
         timestamp: new Date().toISOString(),
       };
@@ -4576,29 +3987,22 @@ export function orchestrateReasoningTurn(
       if (ldArr.length > 0) {
         const ld: any = ldArr[ldArr.length - 1];
         if (ld) {
-          ld.rationale = `${ld.rationale || ""} | GCOV_BLOCKED`;
+          ld.rationale = `${ld.rationale || ''} | GCOV_BLOCKED`;
         }
       }
 
       return {
         newState: parked,
-        plan: {
-          selected: [],
-          reason: `GCOV_BLOCKED: ${gateResult.reason}`,
-          expectedArtifacts: [],
-        } as TurnPlan,
+        plan: { selected: [], reason: `GCOV_BLOCKED: ${gateResult.reason}`, expectedArtifacts: [] } as TurnPlan,
         newGraphNodes: [],
       };
     }
   }
 
   // 4. For each selected, declare real inputs from current state (this populates dependencyGraph later in commit)
-  const selectedWithInputs = effectiveSelected.map(sel => ({
+  const selectedWithInputs = effectiveSelected.map((sel) => ({
     ...sel,
-    inputArtifactIds: findInputsForCapability(
-      working,
-      sel.capabilityId as V5CapabilityId
-    ),
+    inputArtifactIds: findInputsForCapability(working, sel.capabilityId as V5CapabilityId),
   }));
 
   // 5. For the prototype, we also produce some graph nodes here (so the surface updates)
@@ -4652,52 +4056,46 @@ export function orchestrateReasoningTurn(
     if (!structuralParentId) continue;
 
     const parentRound =
-      (graphNodes.find(n => n.id === structuralParentId) as { round?: number })
-        ?.round ?? 0;
+      (graphNodes.find((n) => n.id === structuralParentId) as { round?: number })?.round ?? 0;
     const round = parentRound + 1;
-    const parentNode = graphNodes.find(n => n.id === structuralParentId) as
-      | (BrainstormReasoningNode & {
-          capabilityRunId?: string;
-          producedArtifactId?: string;
-        })
+    const parentNode = graphNodes.find((n) => n.id === structuralParentId) as
+      | (BrainstormReasoningNode & { capabilityRunId?: string; producedArtifactId?: string })
       | undefined;
     const reuseScaffold =
       isScaffoldPlaceholderNodeId(structuralParentId) &&
       !parentNode?.capabilityRunId &&
       !parentNode?.producedArtifactId;
-    const childType = capabilityIdToReasoningNodeType(
-      sel.capabilityId as V5CapabilityId
-    );
+    const childType = capabilityIdToReasoningNodeType(sel.capabilityId as V5CapabilityId);
     const label =
       intervention?.intent === "challenge"
         ? "质疑"
         : parentNode?.type === "question"
-          ? childType === "evidence"
-            ? "来源"
-            : childType === "clarification"
-              ? "提出"
-              : childType === "risk"
-                ? "验证"
-                : "拆解"
-          : reuseScaffold
-            ? childType === "evidence"
-              ? "来源"
-              : childType === "risk"
-                ? "验证"
-                : childType === "synthesis" || childType === "decision"
-                  ? "收敛"
-                  : childType === "clarification" || childType === "gap"
-                    ? "提出"
-                    : "拆解"
-            : childType === "risk"
-              ? "反证"
-              : childType === "synthesis" || childType === "decision"
-                ? "收敛"
-                : "支撑";
+        ? childType === "evidence"
+          ? "来源"
+          : childType === "clarification"
+          ? "提出"
+          : childType === "risk"
+          ? "验证"
+          : "拆解"
+        : reuseScaffold
+        ? childType === "evidence"
+          ? "来源"
+          : childType === "risk"
+          ? "验证"
+          : childType === "synthesis" || childType === "decision"
+          ? "收敛"
+          : childType === "clarification" || childType === "gap"
+          ? "提出"
+          : "拆解"
+        : childType === "risk"
+        ? "反证"
+        : childType === "synthesis" || childType === "decision"
+        ? "收敛"
+        : "支撑";
 
     const nodeId = reuseScaffold ? structuralParentId : `${turnId}-node-${i}`;
     const scaffoldParentEdge = reuseScaffold
-      ? graphEdges.find(e => e.type === "depends_on" && e.target === nodeId)
+      ? graphEdges.find((e) => e.type === "depends_on" && e.target === nodeId)
       : undefined;
     const derivedFrom = reuseScaffold
       ? [scaffoldParentEdge?.source ?? structuralParentId]
@@ -4705,10 +4103,7 @@ export function orchestrateReasoningTurn(
     const nodePayload = {
       id: nodeId,
       type: childType,
-      title: pendingCapabilityNodeTitle(
-        sel.capabilityId as V5CapabilityId,
-        sel.roleId
-      ),
+      title: pendingCapabilityNodeTitle(sel.capabilityId as V5CapabilityId, sel.roleId),
       body: formatProvenanceForLabel(
         { derivedFrom } as BrainstormReasoningNode & {
           derivedFrom?: string[];
@@ -4726,7 +4121,7 @@ export function orchestrateReasoningTurn(
     } as BrainstormReasoningNode;
 
     if (reuseScaffold) {
-      const idx = graphNodes.findIndex(n => n.id === nodeId);
+      const idx = graphNodes.findIndex((n) => n.id === nodeId);
       if (idx >= 0) {
         graphNodes[idx] = { ...graphNodes[idx], ...nodePayload };
         touchedNodes.push(graphNodes[idx]);
@@ -4752,7 +4147,7 @@ export function orchestrateReasoningTurn(
   };
 
   const plan: TurnPlan = {
-    selected: selectedWithInputs.map(s => ({
+    selected: selectedWithInputs.map((s) => ({
       capabilityId: s.capabilityId,
       roleId: s.roleId,
       inputArtifactIds: s.inputArtifactIds,
@@ -4760,7 +4155,7 @@ export function orchestrateReasoningTurn(
     reason: intervention
       ? `UserIntervention received. Stale marked. Re-picking capabilities.`
       : `Goal-driven pick from capability pool (userText: ${userTextForPick.slice(0, 60)}...)`,
-    expectedArtifacts: effectiveSelected.map(s => `${s.capabilityId}-artifact`),
+    expectedArtifacts: effectiveSelected.map((s) => `${s.capabilityId}-artifact`),
   };
 
   return { newState: working, plan, newGraphNodes: touchedNodes };
@@ -4785,16 +4180,14 @@ export function orchestrateReasoningTurn(
 function snapshotResolvedGapIds(state: V5SessionState): Set<string> {
   return new Set(
     (state.coverageGaps || [])
-      .filter(g => g.status === "resolved")
-      .map(g => g.id)
+      .filter((g) => g.status === "resolved")
+      .map((g) => g.id)
   );
 }
 
 /** Count persisted capability runs for a given capability id (session-wide). */
 function countCapabilityRuns(state: V5SessionState, capId: string): number {
-  return (state.capabilityRuns || []).filter(
-    r => (r as any).capabilityId === capId
-  ).length;
+  return (state.capabilityRuns || []).filter((r) => (r as any).capabilityId === capId).length;
 }
 
 /**
@@ -4807,9 +4200,7 @@ function filterSelectedByMaxRepeat<T extends { capabilityId: string }>(
   policy: BudgetPolicy
 ): T[] {
   return selected.filter(
-    sel =>
-      countCapabilityRuns(state, sel.capabilityId) <
-      policy.maxRepeatPerCapability
+    (sel) => countCapabilityRuns(state, sel.capabilityId) < policy.maxRepeatPerCapability
   );
 }
 
@@ -4839,9 +4230,7 @@ function evaluateReentryBudgetGate(
   }
   if (currentRuns >= policy.maxCapabilityRunsPerSession) {
     allowed = false;
-    reason =
-      reason ||
-      `maxCapabilityRunsPerSession exceeded (${currentRuns} >= ${policy.maxCapabilityRunsPerSession})`;
+    reason = reason || `maxCapabilityRunsPerSession exceeded (${currentRuns} >= ${policy.maxCapabilityRunsPerSession})`;
   }
   const totalEstimatedTokens = (state.costLedger || []).reduce(
     (sum, c) => sum + (c.estimatedTokens || 0),
@@ -4899,8 +4288,7 @@ export function evaluatePostRoundGuards(
   if (accumulator.noProgressStreak >= 2) return "no_progress";
 
   const runs = state.capabilityRuns?.length ?? 0;
-  if (runs >= opts.budgetPolicy.maxCapabilityRunsPerSession)
-    return "budget_exhausted";
+  if (runs >= opts.budgetPolicy.maxCapabilityRunsPerSession) return "budget_exhausted";
 
   if (accumulator.loopCount >= opts.maxLoops) return "budget_exhausted";
 
@@ -4958,20 +4346,11 @@ export async function driveReasoningSession(
     // In-flight aborts handled by propagating signal to router/executor where supported.
     if (options.abortSignal?.aborted) {
       stopReason = "user_interrupted";
-      working = parkForStop(
-        working,
-        lastLoopTurnId,
-        stopReason,
-        "user requested stop"
-      );
+      working = parkForStop(working, lastLoopTurnId, stopReason, "user requested stop");
       // Record in T_LEDGER style via loops entry (stopSignal carries the reason).
       loops.push({
         loopTurnId: lastLoopTurnId,
-        plan: {
-          selected: [],
-          reason: "USER_INTERRUPTED",
-          expectedArtifacts: [],
-        },
+        plan: { selected: [], reason: "USER_INTERRUPTED", expectedArtifacts: [] },
         committedArtifactIds: [],
         stopSignal: "user_interrupted",
       });
@@ -4992,12 +4371,7 @@ export async function driveReasoningSession(
       budgetPolicy
     );
     if (!budgetCheck.allowed) {
-      working = parkForStop(
-        working,
-        loopTurnId,
-        "budget_exhausted",
-        budgetCheck.reason
-      );
+      working = parkForStop(working, loopTurnId, "budget_exhausted", budgetCheck.reason);
       loops.push({
         loopTurnId,
         plan: {
@@ -5030,11 +4404,7 @@ export async function driveReasoningSession(
       working = markAwaiting(working, loopTurnId);
       loops.push({
         loopTurnId,
-        plan: {
-          selected: [],
-          reason: "MAX_REPEAT_GUARD",
-          expectedArtifacts: [],
-        },
+        plan: { selected: [], reason: "MAX_REPEAT_GUARD", expectedArtifacts: [] },
         committedArtifactIds: [],
         stopSignal: "max_repeat_guard",
       });
@@ -5108,10 +4478,7 @@ export async function driveReasoningSession(
         });
         if (postGuard) {
           working = parkForStop(working, loopTurnId, postGuard, plan.reason);
-          loops[loops.length - 1] = {
-            ...loops[loops.length - 1],
-            stopSignal: postGuard,
-          };
+          loops[loops.length - 1] = { ...loops[loops.length - 1], stopSignal: postGuard };
           stopReason = postGuard;
           return { finalState: working, loops, stopReason };
         }
@@ -5137,10 +4504,7 @@ export async function driveReasoningSession(
       exec: CapabilityExecutionResult | null;
     };
 
-    const runOne = async (
-      sel: (typeof plan.selected)[number],
-      i: number
-    ): Promise<RoundExec> => {
+    const runOne = async (sel: (typeof plan.selected)[number], i: number): Promise<RoundExec> => {
       const cap = sel.capabilityId as V5CapabilityId;
       const roleId = sel.roleId || "agent";
       const runId = `${loopTurnId}-run-${i}`;
@@ -5178,17 +4542,14 @@ export async function driveReasoningSession(
       const provenance =
         (exec?.provenance as Artifact["provenance"]) || "ai_generated";
       const outputKind = CAPABILITY_OUTPUT_KIND[cap] ?? "decision";
-      const execEvidenceSource = (exec as { evidenceSource?: string } | null)
-        ?.evidenceSource;
+      const execEvidenceSource = (exec as { evidenceSource?: string } | null)?.evidenceSource;
       const mergedPayload =
         exec?.payload !== undefined || execEvidenceSource
           ? {
               ...(typeof exec?.payload === "object" && exec?.payload
                 ? exec.payload
                 : {}),
-              ...(execEvidenceSource
-                ? { evidenceSource: execEvidenceSource }
-                : {}),
+              ...(execEvidenceSource ? { evidenceSource: execEvidenceSource } : {}),
             }
           : undefined;
 
@@ -5229,11 +4590,8 @@ export async function driveReasoningSession(
         };
       }
 
-      const execDegraded = Boolean(
-        (exec as { degraded?: boolean } | null)?.degraded
-      );
-      const execDegradedReason = (exec as { degradedReason?: string } | null)
-        ?.degradedReason;
+      const execDegraded = Boolean((exec as { degraded?: boolean } | null)?.degraded);
+      const execDegradedReason = (exec as { degradedReason?: string } | null)?.degradedReason;
       if (execDegraded && isDeliberationCapability(cap)) {
         working = markBrainstormDegraded(
           working,
@@ -5287,14 +4645,9 @@ export async function driveReasoningSession(
         return { finalState: working, loops, stopReason };
       }
 
-      const failedGate = (run.gateResults || []).find(
-        g => g.status === "failed"
-      );
+      const failedGate = (run.gateResults || []).find((g) => g.status === "failed");
       const gateFailed = Boolean(failedGate);
-      if (
-        options.onCapabilityRound &&
-        (execFailed || gateFailed || !committed)
-      ) {
+      if (options.onCapabilityRound && (execFailed || gateFailed || !committed)) {
         options.onCapabilityRound({
           loopTurnId,
           capabilityId: cap,
@@ -5366,12 +4719,7 @@ export async function driveReasoningSession(
   }
 
   // Per-message loop cap reached (需求 1.5).
-  working = parkForStop(
-    working,
-    lastLoopTurnId,
-    "budget_exhausted",
-    "maxLoopsPerMessage"
-  );
+  working = parkForStop(working, lastLoopTurnId, "budget_exhausted", "maxLoopsPerMessage");
   return { finalState: working, loops, stopReason };
 }
 
@@ -5382,18 +4730,10 @@ export async function driveReasoningSession(
  *
  * Call this after a combo round (risk+counter+synthesis+report) to "钉住" the chain.
  */
-export function verifyV5ClosedLoop(state: V5SessionState): {
-  passed: boolean;
-  details: string;
-} {
-  const reports = state.artifacts.filter(
-    a => a.kind === "report" && a.producedBy?.capabilityId === "report.write"
-  );
+export function verifyV5ClosedLoop(state: V5SessionState): { passed: boolean; details: string } {
+  const reports = state.artifacts.filter(a => a.kind === 'report' && a.producedBy?.capabilityId === 'report.write');
   if (reports.length === 0) {
-    return {
-      passed: false,
-      details: "No report.write artifact found in state.",
-    };
+    return { passed: false, details: 'No report.write artifact found in state.' };
   }
 
   const latestReport = reports[reports.length - 1];
@@ -5401,35 +4741,18 @@ export function verifyV5ClosedLoop(state: V5SessionState): {
 
   const hasRealUpstreams = upstreamCount > 0;
   const hasRecentCapabilityRuns = state.capabilityRuns.some(r =>
-    [
-      "risk.analyze",
-      "counter.argue",
-      "synthesis.merge",
-      "report.write",
-    ].includes(r.capabilityId)
+    ['risk.analyze', 'counter.argue', 'synthesis.merge', 'report.write'].includes(r.capabilityId)
   );
 
   // Stricter trust/stale guard as per review
-  const reportTrusted =
-    latestReport.trustLevel === "gated_pass" ||
-    latestReport.trustLevel === "audited";
+  const reportTrusted = latestReport.trustLevel === 'gated_pass' || latestReport.trustLevel === 'audited';
   const upstreamIds = latestReport.evidenceRefs || [];
-  const upstreamArtifacts = state.artifacts.filter(a =>
-    upstreamIds.includes(a.id)
-  );
-  const allUpstreamsTrusted = upstreamArtifacts.every(
-    a =>
-      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
-      !state.staleArtifactIds.includes(a.id)
-  );
+  const upstreamArtifacts = state.artifacts.filter(a => upstreamIds.includes(a.id));
+  const allUpstreamsTrusted = upstreamArtifacts.every(a => (a.trustLevel === 'gated_pass' || a.trustLevel === 'audited') && !state.staleArtifactIds.includes(a.id));
 
   const details = `Report references ${upstreamCount} upstreams (trusted: ${allUpstreamsTrusted}). Report trust: ${latestReport.trustLevel}. Recent relevant runs: ${hasRecentCapabilityRuns}.`;
 
-  const passed =
-    hasRealUpstreams &&
-    hasRecentCapabilityRuns &&
-    reportTrusted &&
-    allUpstreamsTrusted;
+  const passed = hasRealUpstreams && hasRecentCapabilityRuns && reportTrusted && allUpstreamsTrusted;
 
   return { passed, details };
 }

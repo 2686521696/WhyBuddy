@@ -134,7 +134,7 @@ export const visualTokens: VisualTokenSet = {
  */
 export function resolveToken(
   key: VisualTokenKey,
-  theme: "light" | "dark"
+  theme: "light" | "dark",
 ): string {
   return visualTokens[key][theme];
 }

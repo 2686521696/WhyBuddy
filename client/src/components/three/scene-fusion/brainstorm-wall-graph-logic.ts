@@ -42,12 +42,12 @@ export const BRAINSTORM_PADDING = 180;
  * not by extending BranchNodeType.
  */
 export const BRAINSTORM_NODE_COLORS: Record<BranchNodeType, string> = {
-  decision: "#0d9488", // teal
-  thinking: "#6366f1", // indigo
-  action: "#f59e0b", // amber
+  decision: "#0d9488",    // teal
+  thinking: "#6366f1",    // indigo
+  action: "#f59e0b",      // amber
   observation: "#ec4899", // pink
-  synthesis: "#10b981", // emerald
-  error: "#ef4444", // red
+  synthesis: "#10b981",   // emerald
+  error: "#ef4444",       // red
 };
 
 /** Maximum title length before truncation */
@@ -137,7 +137,7 @@ export function truncateTitle(title: string): string {
 export function wrapBrainstormBody(
   text: string,
   maxCharsPerLine: number,
-  maxLines: number
+  maxLines: number,
 ): string[] {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (!normalized) return [];
@@ -183,7 +183,7 @@ export function computeAdaptiveScale(
 
 export function resolveBrainstormEdgeConnection(
   from: { x: number; y: number },
-  to: { x: number; y: number }
+  to: { x: number; y: number },
 ): BrainstormEdgeConnection {
   const direction = to.x >= from.x ? 1 : -1;
   const fromX = from.x + direction * (BRAINSTORM_NODE_W / 2);
@@ -201,10 +201,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function labelOverlapsNode(
-  label: BrainstormChallengeLabel,
-  node: LayoutNode
-): boolean {
+function labelOverlapsNode(label: BrainstormChallengeLabel, node: LayoutNode): boolean {
   const nodeLeft = node.x - BRAINSTORM_NODE_W / 2;
   const nodeRight = node.x + BRAINSTORM_NODE_W / 2;
   const nodeTop = node.y - BRAINSTORM_NODE_H / 2;
@@ -220,16 +217,16 @@ function labelOverlapsNode(
 function avoidBrainstormChallengeLabelObstacles(
   label: BrainstormChallengeLabel,
   nodes: LayoutNode[],
-  canvasHeight: number
+  canvasHeight: number,
 ): BrainstormChallengeLabel {
-  if (!nodes.some(node => labelOverlapsNode(label, node))) return label;
+  if (!nodes.some((node) => labelOverlapsNode(label, node))) return label;
   const offsets = [-132, 132, -240, 240, -348, 348];
   for (const offset of offsets) {
     const candidate = {
       ...label,
       y: clamp(label.y + offset, 72, canvasHeight - 72 - label.height),
     };
-    if (!nodes.some(node => labelOverlapsNode(candidate, node))) {
+    if (!nodes.some((node) => labelOverlapsNode(candidate, node))) {
       return candidate;
     }
   }
@@ -241,7 +238,7 @@ export function resolveBrainstormChallengeLabel(
   to: { x: number; y: number },
   summary: string,
   canvasWidth: number = CANVAS_W,
-  canvasHeight: number = CANVAS_H
+  canvasHeight: number = CANVAS_H,
 ): BrainstormChallengeLabel {
   const trimmed = summary.trim() || "Runtime role interaction";
   const text = trimmed.length > 34 ? `${trimmed.slice(0, 33)}…` : trimmed;
@@ -254,11 +251,7 @@ export function resolveBrainstormChallengeLabel(
     text,
     width,
     height,
-    x: clamp(
-      midX - width / 2,
-      BRAINSTORM_PADDING,
-      canvasWidth - BRAINSTORM_PADDING - width
-    ),
+    x: clamp(midX - width / 2, BRAINSTORM_PADDING, canvasWidth - BRAINSTORM_PADDING - width),
     y: clamp(midY - height / 2, 72, canvasHeight - 72 - height),
   };
 }
@@ -272,7 +265,7 @@ export function drawBrainstormGraph(
   layout: LayoutResult | null,
   canvasWidth: number = CANVAS_W,
   canvasHeight: number = CANVAS_H,
-  deliberation: BrainstormDeliberationOverlay = {}
+  deliberation: BrainstormDeliberationOverlay = {},
 ): void {
   // Background
   const gradient = ctx.createLinearGradient(0, 0, 0, canvasHeight);
@@ -304,18 +297,14 @@ export function drawBrainstormGraph(
     return;
   }
 
-  if (
-    deliberation.currentRound !== null &&
-    deliberation.currentRound !== undefined
-  ) {
+  if (deliberation.currentRound !== null && deliberation.currentRound !== undefined) {
     ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
     ctx.font = "bold 30px system-ui, sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
-    const score =
-      typeof deliberation.convergenceScore === "number"
-        ? ` · ${(deliberation.convergenceScore * 100).toFixed(0)}%`
-        : "";
+    const score = typeof deliberation.convergenceScore === "number"
+      ? ` · ${(deliberation.convergenceScore * 100).toFixed(0)}%`
+      : "";
     ctx.fillText(`轮次 ${deliberation.currentRound}${score}`, 96, 42);
   }
 
@@ -391,13 +380,9 @@ export function drawBrainstormGraph(
     const connection = resolveBrainstormEdgeConnection(from, to);
     const arcLift = from.y <= to.y ? -96 : 96;
     const isSupport = challenge.kind === "support";
-    const lineColor = isSupport
-      ? "rgba(14, 165, 233, 0.78)"
-      : "rgba(244, 63, 94, 0.78)";
+    const lineColor = isSupport ? "rgba(14, 165, 233, 0.78)" : "rgba(244, 63, 94, 0.78)";
     const labelColor = isSupport ? "#0369a1" : "#be123c";
-    const borderColor = isSupport
-      ? "rgba(14, 165, 233, 0.36)"
-      : "rgba(244, 63, 94, 0.36)";
+    const borderColor = isSupport ? "rgba(14, 165, 233, 0.36)" : "rgba(244, 63, 94, 0.36)";
     ctx.strokeStyle = lineColor;
     ctx.lineWidth = 4;
     ctx.setLineDash([10, 10]);
@@ -409,7 +394,7 @@ export function drawBrainstormGraph(
       connection.to.x - connection.controlOffset,
       connection.to.y + arcLift,
       connection.to.x,
-      connection.to.y
+      connection.to.y,
     );
     ctx.stroke();
     ctx.setLineDash([]);
@@ -419,10 +404,10 @@ export function drawBrainstormGraph(
         to,
         challenge.summary,
         canvasWidth,
-        canvasHeight
+        canvasHeight,
       ),
       layout.nodes,
-      canvasHeight
+      canvasHeight,
     );
     challengeLabels.push({
       ...label,
@@ -435,8 +420,7 @@ export function drawBrainstormGraph(
   for (const node of layout.nodes) {
     const x = node.x - BRAINSTORM_NODE_W / 2;
     const y = node.y - BRAINSTORM_NODE_H / 2;
-    const typeColor =
-      BRAINSTORM_NODE_COLORS[node.type as BranchNodeType] ?? "#64748b";
+    const typeColor = BRAINSTORM_NODE_COLORS[node.type as BranchNodeType] ?? "#64748b";
 
     // Apply opacity for fade-in animation
     ctx.globalAlpha = node.opacity;
@@ -466,13 +450,9 @@ export function drawBrainstormGraph(
 
     // Status dot
     const statusColor =
-      node.status === "completed"
-        ? "#10b981"
-        : node.status === "active"
-          ? "#3b82f6"
-          : node.status === "failed"
-            ? "#ef4444"
-            : "#94a3b8";
+      node.status === "completed" ? "#10b981" :
+      node.status === "active" ? "#3b82f6" :
+      node.status === "failed" ? "#ef4444" : "#94a3b8";
     ctx.fillStyle = statusColor;
     ctx.beginPath();
     ctx.arc(x + BRAINSTORM_NODE_W - 36, y + 36, 12, 0, Math.PI * 2);
@@ -490,9 +470,7 @@ export function drawBrainstormGraph(
     // `title` when no content has arrived yet. Wrapped to up to 4 lines so the
     // card shows a fuller paragraph (≈ 80 chars) rather than a one-line snippet.
     const bodyText =
-      node.content && node.content.trim().length > 0
-        ? node.content
-        : node.title;
+      node.content && node.content.trim().length > 0 ? node.content : node.title;
     const bodyLines = wrapBrainstormBody(bodyText, 20, 4);
     ctx.fillStyle = "#1e293b";
     ctx.font = "26px system-ui, sans-serif";
@@ -511,7 +489,7 @@ export function drawBrainstormGraph(
       ctx.fillText(
         `conf: ${(node.confidence * 100).toFixed(0)}%`,
         x + BRAINSTORM_NODE_W - 30,
-        y + 22
+        y + 22,
       );
       ctx.textAlign = "left";
     }

@@ -53,7 +53,7 @@ import type { ImageSettingsViewModel } from "@/components/autopilot/AutopilotIma
  * as if the fetch had failed.
  */
 export function mapImageSettingsResponseToViewModel(
-  body: unknown
+  body: unknown,
 ): ImageSettingsViewModel | null {
   // 1. Top-level must be a non-null, non-array object.
   if (typeof body !== "object" || body === null || Array.isArray(body)) {

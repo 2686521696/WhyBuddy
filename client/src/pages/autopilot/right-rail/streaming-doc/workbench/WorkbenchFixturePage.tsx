@@ -35,8 +35,7 @@ const FIXTURE_NODES: BlueprintSpecTreeNode[] = [
     id: "node-canvas-state",
     parentId: "node-route-authoring",
     title: "Canvas State Sync",
-    summary:
-      "Keep selected nodes, active documents, and review status aligned.",
+    summary: "Keep selected nodes, active documents, and review status aligned.",
     type: "route_step",
     status: "ready",
     priority: 2,
@@ -278,10 +277,10 @@ export const AutopilotSpecDocumentsWorkbenchFixturePage: FC = () => {
   // 与 AutopilotRightRail 的双源合并一致：persisted specDocuments → baseline
   // completed；live progress overlays（assembled→completed 收敛）。
   const specDocsNodes = useBlueprintRealtimeStore(
-    state => state.specDocsProgress.nodes
+    (state) => state.specDocsProgress.nodes
   );
   const specDocsBatchStatus = useBlueprintRealtimeStore(
-    state => state.specDocsProgress.batchStatus
+    (state) => state.specDocsProgress.batchStatus
   );
   const nodeStatusById = useMemo(
     () =>

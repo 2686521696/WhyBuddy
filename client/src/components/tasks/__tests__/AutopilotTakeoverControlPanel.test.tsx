@@ -46,7 +46,9 @@ describe("AutopilotTakeoverControlPanel", () => {
       />
     );
 
-    expect(markup).toContain('data-testid="autopilot-takeover-control-panel"');
+    expect(markup).toContain(
+      'data-testid="autopilot-takeover-control-panel"'
+    );
     expect(markup).toContain('data-testid="autopilot-takeover-lane-current"');
     expect(markup).toMatch(/Runtime upgrade|运行时升级/);
     expect(markup).toContain("Blocked");

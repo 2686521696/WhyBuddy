@@ -25,54 +25,12 @@ const SKILLS: Array<{
   activeBorder: string;
   evidenceKey: string;
 }> = [
-  {
-    id: "dataModel",
-    label: "DataModel",
-    abbr: "DM",
-    iconBg: "bg-blue-400",
-    activeBorder: "ring-blue-400",
-    evidenceKey: "datamodel",
-  },
-  {
-    id: "workflow",
-    label: "Workflow",
-    abbr: "WF",
-    iconBg: "bg-violet-400",
-    activeBorder: "ring-violet-400",
-    evidenceKey: "workflow",
-  },
-  {
-    id: "rbac",
-    label: "RBAC",
-    abbr: "RB",
-    iconBg: "bg-orange-400",
-    activeBorder: "ring-orange-400",
-    evidenceKey: "rbac",
-  },
-  {
-    id: "page",
-    label: "Page",
-    abbr: "PG",
-    iconBg: "bg-teal-400",
-    activeBorder: "ring-teal-400",
-    evidenceKey: "page",
-  },
-  {
-    id: "aigc",
-    label: "AIGC",
-    abbr: "AI",
-    iconBg: "bg-pink-400",
-    activeBorder: "ring-pink-400",
-    evidenceKey: "aigc",
-  },
-  {
-    id: "appBundle",
-    label: "AppBundle",
-    abbr: "AB",
-    iconBg: "bg-emerald-400",
-    activeBorder: "ring-emerald-400",
-    evidenceKey: "appbundle",
-  },
+  { id: "dataModel",  label: "DataModel",  abbr: "DM",  iconBg: "bg-blue-400",   activeBorder: "ring-blue-400",   evidenceKey: "datamodel"  },
+  { id: "workflow",   label: "Workflow",   abbr: "WF",  iconBg: "bg-violet-400", activeBorder: "ring-violet-400", evidenceKey: "workflow"   },
+  { id: "rbac",       label: "RBAC",       abbr: "RB",  iconBg: "bg-orange-400", activeBorder: "ring-orange-400", evidenceKey: "rbac"       },
+  { id: "page",       label: "Page",       abbr: "PG",  iconBg: "bg-teal-400",   activeBorder: "ring-teal-400",   evidenceKey: "page"       },
+  { id: "aigc",       label: "AIGC",       abbr: "AI",  iconBg: "bg-pink-400",   activeBorder: "ring-pink-400",   evidenceKey: "aigc"       },
+  { id: "appBundle",  label: "AppBundle",  abbr: "AB",  iconBg: "bg-emerald-400",activeBorder: "ring-emerald-400",evidenceKey: "appbundle"  },
 ];
 
 export function SkillThumbnailBar({
@@ -81,27 +39,14 @@ export function SkillThumbnailBar({
   onSelect,
   className = "",
 }: SkillThumbnailBarProps) {
-  type SkillKey =
-    | "datamodel"
-    | "rbac"
-    | "workflow"
-    | "page"
-    | "aigc"
-    | "appbundle";
-  const perSkill =
-    publishClosure?.perSkillEvidence ??
-    ({} as Partial<
-      Record<SkillKey, { evidencePresent?: boolean } | undefined>
-    >);
+  type SkillKey = "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle";
+  const perSkill = publishClosure?.perSkillEvidence ?? {} as Partial<Record<SkillKey, { evidencePresent?: boolean } | undefined>>;
 
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className}`}>
       {SKILLS.map(({ id, label, abbr, iconBg, activeBorder, evidenceKey }) => {
-        const isActive =
-          activeSkillId === id || (!activeSkillId && id === "appBundle");
-        const hasEvidence =
-          perSkill[evidenceKey as keyof typeof perSkill]?.evidencePresent ===
-          true;
+        const isActive = activeSkillId === id || (!activeSkillId && id === "appBundle");
+        const hasEvidence = perSkill[evidenceKey as keyof typeof perSkill]?.evidencePresent === true;
 
         return (
           <button
@@ -122,9 +67,7 @@ export function SkillThumbnailBar({
             >
               <span className="text-[9px] font-bold text-white">{abbr}</span>
             </span>
-            <span
-              className={`text-xs font-medium ${isActive ? "text-stone-800" : "text-stone-500"}`}
-            >
+            <span className={`text-xs font-medium ${isActive ? "text-stone-800" : "text-stone-500"}`}>
               {label}
             </span>
 

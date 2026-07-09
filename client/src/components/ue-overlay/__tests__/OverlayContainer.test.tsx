@@ -34,7 +34,7 @@ describe("OverlayContainer — layer structure (Task 1.1)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span>UI content</span>
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain('data-testid="ue-overlay-container"');
@@ -47,7 +47,7 @@ describe("OverlayContainer — layer structure (Task 1.1)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("z-10");
@@ -57,7 +57,7 @@ describe("OverlayContainer — layer structure (Task 1.1)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("z-20");
@@ -70,7 +70,7 @@ describe("OverlayContainer — layer structure (Task 1.1)", () => {
         hudElements={[makeHUDElement()]}
       >
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("z-30");
@@ -81,7 +81,7 @@ describe("OverlayContainer — layer structure (Task 1.1)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).not.toContain('data-testid="ue-overlay-hud-layer"');
@@ -94,7 +94,7 @@ describe("OverlayContainer — layer structure (Task 1.1)", () => {
         hudElements={[makeHUDElement({ visible: false })]}
       >
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).not.toContain('data-testid="ue-overlay-hud-layer"');
@@ -104,7 +104,7 @@ describe("OverlayContainer — layer structure (Task 1.1)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <div data-testid="child-content">Hello</div>
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain('data-testid="child-content"');
@@ -115,7 +115,7 @@ describe("OverlayContainer — layer structure (Task 1.1)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("bg-black");
@@ -128,12 +128,10 @@ describe("OverlayContainer — layer structure (Task 1.1)", () => {
         backgroundClassName="bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]"
       >
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
-    expect(markup).toContain(
-      "bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]"
-    );
+    expect(markup).toContain("bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]");
     expect(markup).not.toContain("bg-black");
   });
 });
@@ -147,7 +145,7 @@ describe("OverlayContainer — video aspect ratio (Task 1.2)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("aspect-ratio:16 / 9");
@@ -157,7 +155,7 @@ describe("OverlayContainer — video aspect ratio (Task 1.2)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("object-contain");
@@ -167,7 +165,7 @@ describe("OverlayContainer — video aspect ratio (Task 1.2)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("<video");
@@ -185,7 +183,7 @@ describe("OverlayContainer — UI overlay styling (Task 1.3)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("backdrop-filter:blur(8px)");
@@ -195,7 +193,7 @@ describe("OverlayContainer — UI overlay styling (Task 1.3)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("rgba(0, 0, 0, 0.15)");
@@ -205,7 +203,7 @@ describe("OverlayContainer — UI overlay styling (Task 1.3)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()} overlayTone="clear">
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain('data-overlay-tone="clear"');
@@ -217,7 +215,7 @@ describe("OverlayContainer — UI overlay styling (Task 1.3)", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer videoElement={makeVideoRef()}>
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("pointer-events-none");
@@ -230,12 +228,14 @@ describe("OverlayContainer — UI overlay styling (Task 1.3)", () => {
         pointerPassthrough={false}
       >
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     // The UI layer should NOT have pointer-events-none
     // We check the UI layer specifically
-    const uiLayerMatch = markup.match(/data-testid="ue-overlay-ui-layer"[^>]*/);
+    const uiLayerMatch = markup.match(
+      /data-testid="ue-overlay-ui-layer"[^>]*/,
+    );
     expect(uiLayerMatch).toBeTruthy();
     expect(uiLayerMatch![0]).not.toContain("pointer-events-none");
   });
@@ -253,7 +253,7 @@ describe("OverlayContainer — HUD elements", () => {
         hudElements={[makeHUDElement({ data: { name: "Bob" } })]}
       >
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("Bob");
@@ -273,7 +273,7 @@ describe("OverlayContainer — HUD elements", () => {
         ]}
       >
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("★");
@@ -293,7 +293,7 @@ describe("OverlayContainer — HUD elements", () => {
         ]}
       >
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain('data-hud-type="progressBar"');
@@ -304,10 +304,12 @@ describe("OverlayContainer — HUD elements", () => {
     const markup = renderToStaticMarkup(
       <OverlayContainer
         videoElement={makeVideoRef()}
-        hudElements={[makeHUDElement({ screenPosition: { x: 0.25, y: 0.75 } })]}
+        hudElements={[
+          makeHUDElement({ screenPosition: { x: 0.25, y: 0.75 } }),
+        ]}
       >
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("left:25%");
@@ -327,7 +329,7 @@ describe("OverlayContainer — HUD elements", () => {
         ]}
       >
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain("left:400px");
@@ -350,7 +352,7 @@ describe("OverlayContainer — HUD elements", () => {
         ]}
       >
         <span />
-      </OverlayContainer>
+      </OverlayContainer>,
     );
 
     expect(markup).toContain('data-hud-id="visible"');

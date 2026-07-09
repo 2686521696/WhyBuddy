@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MissionRecord } from "@shared/mission/contracts";
-import type {
-  ListMissionEventsResponse,
-  ListMissionsResponse,
-} from "@shared/mission/api";
+import type { ListMissionEventsResponse, ListMissionsResponse } from "@shared/mission/api";
 
 const mockListMissions = vi.fn<() => Promise<ListMissionsResponse>>();
 const mockListMissionEvents = vi.fn<() => Promise<ListMissionEventsResponse>>();
@@ -57,16 +54,16 @@ vi.mock("./sandbox-store", () => ({
 }));
 
 vi.mock("./store", () => ({
-  useAppStore: Object.assign(() => ({}), {
-    getState: () => appStoreState,
-    subscribe: vi.fn(),
-  }),
+  useAppStore: Object.assign(
+    () => ({}),
+    {
+      getState: () => appStoreState,
+      subscribe: vi.fn(),
+    }
+  ),
 }));
 
-function makeMission(
-  id: string,
-  overrides?: Partial<MissionRecord>
-): MissionRecord {
+function makeMission(id: string, overrides?: Partial<MissionRecord>): MissionRecord {
   const now = Date.now();
   return {
     id,
@@ -98,13 +95,8 @@ describe("tasks-store socket reconnect recovery", () => {
     mockIo.mockReturnValue(mockSocket);
     appStoreState.runtimeMode = "advanced";
     consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    (
-      globalThis as typeof globalThis & {
-        window?: typeof globalThis & { location: { origin: string } };
-      }
-    ).window = {
-      ...(globalThis as typeof globalThis & { window?: typeof globalThis })
-        .window,
+    (globalThis as typeof globalThis & { window?: typeof globalThis & { location: { origin: string } } }).window = {
+      ...(globalThis as typeof globalThis & { window?: typeof globalThis }).window,
       location: { origin: "http://localhost:3000" },
       sessionStorage: {
         getItem: vi.fn(() => null),
@@ -126,9 +118,7 @@ describe("tasks-store socket reconnect recovery", () => {
       missionId: "mission-1",
       events: [],
     });
-    mockListPlanets.mockRejectedValue(
-      new Error("planets unavailable in reconnect test")
-    );
+    mockListPlanets.mockRejectedValue(new Error("planets unavailable in reconnect test"));
 
     const mod = await import("./tasks-store");
     useTasksStore = mod.useTasksStore;
@@ -151,13 +141,11 @@ describe("tasks-store socket reconnect recovery", () => {
     consoleWarnSpy.mockRestore();
 
     if (originalWindow === undefined) {
-      delete (globalThis as typeof globalThis & { window?: typeof globalThis })
-        .window;
+      delete (globalThis as typeof globalThis & { window?: typeof globalThis }).window;
       return;
     }
 
-    (globalThis as typeof globalThis & { window?: typeof globalThis }).window =
-      originalWindow;
+    (globalThis as typeof globalThis & { window?: typeof globalThis }).window = originalWindow;
   });
 
   it("queues a task refresh when the mission socket reconnects", async () => {
@@ -227,18 +215,16 @@ describe("tasks-store socket reconnect recovery", () => {
       key === "cube-office:selected-task-id" ? "mission-2" : null
     );
 
-    (
-      globalThis as typeof globalThis & {
-        window?: typeof globalThis & {
-          location: { origin: string };
-          sessionStorage: {
-            getItem: typeof getItemMock;
-            setItem: ReturnType<typeof vi.fn>;
-            removeItem: ReturnType<typeof vi.fn>;
-          };
+    (globalThis as typeof globalThis & {
+      window?: typeof globalThis & {
+        location: { origin: string };
+        sessionStorage: {
+          getItem: typeof getItemMock;
+          setItem: ReturnType<typeof vi.fn>;
+          removeItem: ReturnType<typeof vi.fn>;
         };
-      }
-    ).window = {
+      };
+    }).window = {
       ...(globalThis as typeof globalThis & { window?: typeof globalThis })
         .window,
       location: { origin: "http://localhost:3000" },

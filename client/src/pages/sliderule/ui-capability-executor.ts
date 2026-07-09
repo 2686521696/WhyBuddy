@@ -35,11 +35,7 @@ export function createUiCapabilityExecutor(
   let stepSeq = 0;
   return {
     async executeCapability(args) {
-      const labelCtx = buildProcessLabelContext(
-        args.capabilityId,
-        ctx.userText,
-        ctx.goalText
-      );
+      const labelCtx = buildProcessLabelContext(args.capabilityId, ctx.userText, ctx.goalText);
       const live = getLiveAction(args.capabilityId, labelCtx);
       ctx.setLiveAction(live);
       const seq = stepSeq++;
@@ -65,9 +61,7 @@ export function createUiCapabilityExecutor(
         ctx.onCapabilityProgress?.();
       }
 
-      let exec: Awaited<
-        ReturnType<CapabilityExecutor["executeCapability"]>
-      > | null = null;
+      let exec: Awaited<ReturnType<CapabilityExecutor["executeCapability"]>> | null = null;
       let execThrew = false;
       try {
         exec = await base.executeCapability(args);
@@ -83,24 +77,13 @@ export function createUiCapabilityExecutor(
             capabilityRunId: runId,
             runIndex,
             message:
-              err instanceof Error
-                ? err.message.slice(0, 160)
-                : "能力执行失败，可重试",
+              err instanceof Error ? err.message.slice(0, 160) : "能力执行失败，可重试",
           });
         }
       }
 
-      const enrichedCtx = inferProcessContextFromExec(
-        args.capabilityId,
-        labelCtx,
-        exec
-      );
-      const trace = buildActionTrace(
-        args.capabilityId,
-        !execThrew,
-        enrichedCtx,
-        exec
-      );
+      const enrichedCtx = inferProcessContextFromExec(args.capabilityId, labelCtx, exec);
+      const trace = buildActionTrace(args.capabilityId, !execThrew, enrichedCtx, exec);
       // Always record action traces for Flow fallback (derive phase from traces when no steps); IM visibility decided by mode at render.
       if (trace) {
         ctx.onActionTrace?.({ ...trace, turnId: args.turnId });
@@ -166,7 +149,7 @@ export function mapArtifactsToWhyArtifacts(
   const stale = new Set(state.staleArtifactIds || []);
   const out: WhyArtifact[] = [];
   for (const id of artifactIds) {
-    const art = (state.artifacts || []).find(a => a.id === id);
+    const art = (state.artifacts || []).find((a) => a.id === id);
     if (!art?.producedBy?.capabilityId) continue;
     const cap = art.producedBy.capabilityId as V5CapabilityId;
     const realLlm =

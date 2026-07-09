@@ -193,8 +193,7 @@ export const WorkbenchStatusBar: FC<WorkbenchStatusBarProps> = ({
 }) => {
   const resolvedTitle = resolveTitle(title, locale);
   const resolvedSubtitle = resolveSubtitle(subtitle, locale);
-  const { exportLabel, reviewLabel, refreshLabel } =
-    resolveActionLabels(locale);
+  const { exportLabel, reviewLabel, refreshLabel } = resolveActionLabels(locale);
   const docTypeLabels = resolveDocTypeLabels(locale);
 
   // R2 / R6.5：generating !== null 时三个按钮统一禁用；
@@ -243,15 +242,7 @@ export const WorkbenchStatusBar: FC<WorkbenchStatusBarProps> = ({
               aria-disabled={baseDisabled}
               className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-900 px-2 text-[10px] font-bold text-white shadow-sm transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
-              <span className="truncate">
-                {generating === "all"
-                  ? locale === "zh-CN"
-                    ? "生成中..."
-                    : "Generating..."
-                  : locale === "zh-CN"
-                    ? "生成全部"
-                    : "Generate All"}
-              </span>
+              <span className="truncate">{generating === "all" ? (locale === "zh-CN" ? "生成中..." : "Generating...") : (locale === "zh-CN" ? "生成全部" : "Generate All")}</span>
             </button>
           ) : null}
           {onEnterEffectPreview ? (
@@ -285,10 +276,7 @@ export const WorkbenchStatusBar: FC<WorkbenchStatusBarProps> = ({
               }
             >
               {effectPreviewState === "loading" ? (
-                <RefreshCw
-                  className="h-3 w-3 shrink-0 animate-spin"
-                  aria-hidden="true"
-                />
+                <RefreshCw className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
               ) : (
                 <Sparkles className="h-3 w-3 shrink-0" aria-hidden="true" />
               )}
@@ -357,9 +345,7 @@ export const WorkbenchStatusBar: FC<WorkbenchStatusBarProps> = ({
           <span
             data-testid="autopilot-workbench-stat-docs"
             className="block truncate text-[13px] font-bold leading-tight text-slate-950"
-          >
-            {stats.totalDocs} / {stats.targetDocs}
-          </span>
+          >{stats.totalDocs} / {stats.targetDocs}</span>
         </div>
         <div className="min-w-0 rounded-md border border-emerald-100 bg-emerald-50 px-1.5 py-1">
           <div className="truncate text-[9px] font-semibold uppercase leading-tight text-emerald-600">
@@ -368,9 +354,7 @@ export const WorkbenchStatusBar: FC<WorkbenchStatusBarProps> = ({
           <span
             data-testid="autopilot-workbench-stat-tasks"
             className="block truncate text-[13px] font-bold leading-tight text-emerald-900"
-          >
-            {stats.totalTasks} / {stats.targetTasks}
-          </span>
+          >{stats.totalTasks} / {stats.targetTasks}</span>
         </div>
         <div className="min-w-0 rounded-md border border-cyan-100 bg-cyan-50 px-1.5 py-1">
           <div className="truncate text-[9px] font-semibold uppercase leading-tight text-cyan-600">
@@ -379,9 +363,7 @@ export const WorkbenchStatusBar: FC<WorkbenchStatusBarProps> = ({
           <span
             data-testid="autopilot-workbench-stat-completion"
             className="block truncate text-[13px] font-bold leading-tight text-cyan-950"
-          >
-            {Math.round(stats.completionRate * 100)}%
-          </span>
+          >{Math.round(stats.completionRate * 100)}%</span>
         </div>
       </div>
       {/* Phase 2 / Task 7：三张文档类型卡片（R2.7） */}
@@ -393,10 +375,7 @@ export const WorkbenchStatusBar: FC<WorkbenchStatusBarProps> = ({
           <span className="block truncate text-[10px] font-semibold leading-tight text-slate-600">
             {docTypeLabels.requirements}
           </span>
-          <span className="block truncate text-[11px] font-bold leading-tight text-slate-900">
-            {stats.byType.requirements.generated} /{" "}
-            {stats.byType.requirements.completed}
-          </span>
+          <span className="block truncate text-[11px] font-bold leading-tight text-slate-900">{stats.byType.requirements.generated} / {stats.byType.requirements.completed}</span>
         </div>
         <div
           data-testid="autopilot-workbench-doctype-card-design"
@@ -405,9 +384,7 @@ export const WorkbenchStatusBar: FC<WorkbenchStatusBarProps> = ({
           <span className="block truncate text-[10px] font-semibold leading-tight text-slate-600">
             {docTypeLabels.design}
           </span>
-          <span className="block truncate text-[11px] font-bold leading-tight text-slate-900">
-            {stats.byType.design.generated} / {stats.byType.design.completed}
-          </span>
+          <span className="block truncate text-[11px] font-bold leading-tight text-slate-900">{stats.byType.design.generated} / {stats.byType.design.completed}</span>
         </div>
         <div
           data-testid="autopilot-workbench-doctype-card-tasks"
@@ -416,9 +393,7 @@ export const WorkbenchStatusBar: FC<WorkbenchStatusBarProps> = ({
           <span className="block truncate text-[10px] font-semibold leading-tight text-slate-600">
             {docTypeLabels.tasks}
           </span>
-          <span className="block truncate text-[11px] font-bold leading-tight text-slate-900">
-            {stats.byType.tasks.generated} / {stats.byType.tasks.completed}
-          </span>
+          <span className="block truncate text-[11px] font-bold leading-tight text-slate-900">{stats.byType.tasks.generated} / {stats.byType.tasks.completed}</span>
         </div>
       </div>
     </section>

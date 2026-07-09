@@ -105,10 +105,7 @@ describe("github-pages-blueprint-demo", () => {
     expect(promptPackages.data.job.stage).toBe("prompt_packaging");
     expect(promptPackages.data.promptPackages.length).toBeGreaterThan(0);
 
-    const engineeringLanding = await runtime.generateEngineeringLanding(
-      jobId,
-      {}
-    );
+    const engineeringLanding = await runtime.generateEngineeringLanding(jobId, {});
     expect(engineeringLanding.ok).toBe(true);
     if (!engineeringLanding.ok) {
       throw new Error(engineeringLanding.error.message);

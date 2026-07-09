@@ -47,10 +47,7 @@ function FindingCard({
       data-role={finding.role}
       data-severity={finding.severity}
       data-stage={finding.stage}
-      className={cn(
-        "rounded-[10px] border px-2.5 py-2",
-        SEVERITY_TONE[finding.severity]
-      )}
+      className={cn("rounded-[10px] border px-2.5 py-2", SEVERITY_TONE[finding.severity])}
     >
       <div className="flex flex-wrap items-center gap-1.5">
         {finding.role === "critic" ? (
@@ -58,15 +55,11 @@ function FindingCard({
         ) : (
           <Microscope className="size-3" aria-hidden />
         )}
-        <span className="text-[10px] font-black uppercase tracking-tight">
-          {roleLabel}
-        </span>
+        <span className="text-[10px] font-black uppercase tracking-tight">{roleLabel}</span>
         <span className="rounded-full border border-current px-1.5 text-[9px] font-black uppercase">
           {finding.severity}
         </span>
-        <span className="text-[9px] font-semibold opacity-70">
-          {finding.stage}
-        </span>
+        <span className="text-[9px] font-semibold opacity-70">{finding.stage}</span>
       </div>
       {finding.findings.length > 0 ? (
         <ul className="mt-1 list-disc pl-4 text-[11px]">
@@ -76,28 +69,19 @@ function FindingCard({
         </ul>
       ) : null}
       {finding.suggestedActions.length > 0 ? (
-        <div
-          data-testid="companion-finding-actions"
-          className="mt-1 text-[10px] opacity-80"
-        >
+        <div data-testid="companion-finding-actions" className="mt-1 text-[10px] opacity-80">
           {t(locale, "建议：", "Actions: ")}
           {finding.suggestedActions.join("; ")}
         </div>
       ) : null}
       {finding.citations.length > 0 ? (
-        <div
-          data-testid="companion-finding-citations"
-          className="mt-1 text-[10px] opacity-70"
-        >
+        <div data-testid="companion-finding-citations" className="mt-1 text-[10px] opacity-70">
           {t(locale, "引用：", "Citations: ")}
           {finding.citations.join(", ")}
         </div>
       ) : null}
       {finding.repoFilesRead && finding.repoFilesRead.length > 0 ? (
-        <div
-          data-testid="companion-finding-repofiles"
-          className="mt-1 text-[10px] opacity-70"
-        >
+        <div data-testid="companion-finding-repofiles" className="mt-1 text-[10px] opacity-70">
           {t(locale, "读取仓库文件：", "Repo files: ")}
           {finding.repoFilesRead.join(", ")}
         </div>
@@ -126,24 +110,21 @@ export const CompanionFindingsView: FC<CompanionFindingsViewProps> = ({
   const groups = groupCompanionByStage(findings);
 
   return (
-    <section
-      data-testid="companion-findings-panel"
-      className="flex flex-col gap-3 p-1"
-    >
+    <section data-testid="companion-findings-panel" className="flex flex-col gap-3 p-1">
       <header className="flex items-center gap-1.5">
         <ShieldQuestion className="size-3.5 text-[#0f766e]" aria-hidden />
         <span className="text-[11px] font-black uppercase tracking-tight text-slate-500">
           {t(locale, "伴随发现", "Companion Findings")}
         </span>
       </header>
-      {groups.map(group => (
+      {groups.map((group) => (
         <div key={group.stage} data-testid={`companion-stage-${group.stage}`}>
           <div className="mb-1 text-[10px] font-black uppercase tracking-tight text-slate-400">
             {group.stage}
           </div>
           <ul className="flex flex-col gap-1.5">
             {/* warn/error 优先（R2.8） */}
-            {sortBySeverity(group.findings).map(finding => (
+            {sortBySeverity(group.findings).map((finding) => (
               <FindingCard key={finding.id} finding={finding} locale={locale} />
             ))}
           </ul>

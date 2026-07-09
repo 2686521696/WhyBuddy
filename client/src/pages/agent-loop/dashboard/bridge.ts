@@ -8,7 +8,7 @@
 
 export type DashboardCommandHandler = (
   type: string,
-  extra: Record<string, unknown>
+  extra: Record<string, unknown>,
 ) => void;
 
 let handler: DashboardCommandHandler | null = null;
@@ -17,9 +17,6 @@ export function setCommandHandler(next: DashboardCommandHandler | null): void {
   handler = next;
 }
 
-export function postCommand(
-  type: string,
-  extra: Record<string, unknown> = {}
-): void {
+export function postCommand(type: string, extra: Record<string, unknown> = {}): void {
   handler?.(type, extra);
 }

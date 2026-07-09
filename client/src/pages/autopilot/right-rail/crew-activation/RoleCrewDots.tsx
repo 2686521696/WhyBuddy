@@ -56,15 +56,13 @@ export function RoleCrewDots({ roles, size = "sm" }: RoleCrewDotsProps) {
 
   return (
     <div className="flex items-start gap-2">
-      {roles.map(role => (
+      {roles.map((role) => (
         <motion.div
           key={role.roleId}
           layoutId={`crew-dot-${role.roleId}`}
           className="flex flex-col items-center gap-0.5"
           transition={
-            shouldReduceMotion
-              ? { duration: 0 }
-              : { type: "spring", stiffness: 300, damping: 25 }
+            shouldReduceMotion ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 25 }
           }
         >
           <RoleCrewDot role={role} size={size} />

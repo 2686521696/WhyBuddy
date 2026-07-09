@@ -70,9 +70,7 @@ export function checkThreeLayerConsistency(
   const start = now();
   const activeJobStage = normalizeAutopilotStage(snapshot.activeJobStage);
   const urlPin = normalizeStageValue(snapshot.urlPin);
-  const workflowStageOverride = normalizeStageValue(
-    snapshot.workflowStageOverride
-  );
+  const workflowStageOverride = normalizeStageValue(snapshot.workflowStageOverride);
 
   if (!activeJobStage) {
     return {
@@ -85,8 +83,7 @@ export function checkThreeLayerConsistency(
     };
   }
 
-  const urlPinLegal =
-    urlPin === null || isLegalPinOrOverride(activeJobStage, urlPin);
+  const urlPinLegal = urlPin === null || isLegalPinOrOverride(activeJobStage, urlPin);
   const overrideLegal =
     workflowStageOverride === null ||
     isLegalPinOrOverride(activeJobStage, workflowStageOverride);

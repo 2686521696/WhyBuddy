@@ -59,7 +59,9 @@ function Router() {
   return (
     <Switch>
       <Route path={"/"}>
-        {() => <RedirectRoute to={getAgentLoopSliderulePath()} />}
+        {() => (
+          <RedirectRoute to={getAgentLoopSliderulePath()} />
+        )}
       </Route>
       <Route path={PROJECTS_PATH}>{() => <ProjectCockpitHome />}</Route>
       <Route path={AUTOPILOT_PATH} component={AutopilotRoutePage} />
@@ -151,20 +153,11 @@ function Router() {
       </Route>
       <Route path={`${AGENT_LOOP_PATH}/sliderule`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/workbench`} component={AgentLoopPage} />
-      <Route
-        path={`${AGENT_LOOP_PATH}/workbench/legacy`}
-        component={AgentLoopPage}
-      />
+      <Route path={`${AGENT_LOOP_PATH}/workbench/legacy`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/skills`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings`} component={AgentLoopPage} />
-      <Route
-        path={`${AGENT_LOOP_PATH}/settings/legacy`}
-        component={AgentLoopPage}
-      />
-      <Route
-        path={`${AGENT_LOOP_PATH}/runs/:runId`}
-        component={AgentLoopPage}
-      />
+      <Route path={`${AGENT_LOOP_PATH}/settings/legacy`} component={AgentLoopPage} />
+      <Route path={`${AGENT_LOOP_PATH}/runs/:runId`} component={AgentLoopPage} />
       <Route path={AGENT_LOOP_PATH} component={AgentLoopPage} />
       {/* Direct /sliderule redirects above; AgentLoop hosts the embedded 推演 surface. */}
       <Route path={"/command-center/legacy"}>
@@ -301,18 +294,8 @@ function AuthBootstrap() {
     // V5 /sliderule is chrome-free and deliberately isolated from auth/project stores.
     // Skip fetchMe here to eliminate the unconditional 401 console noise on the demo route
     // (the route already skips RecoveryGuard, AuthRouteGuard, sidebar, etc. via isChromeFree).
-    if (
-      isSlideRuleLocation(
-        typeof window !== "undefined" ? window.location.pathname : ""
-      )
-    )
-      return;
-    if (
-      isAgentLoopLocation(
-        typeof window !== "undefined" ? window.location.pathname : ""
-      )
-    )
-      return;
+    if (isSlideRuleLocation(typeof window !== 'undefined' ? window.location.pathname : '')) return;
+    if (isAgentLoopLocation(typeof window !== 'undefined' ? window.location.pathname : '')) return;
     void fetchMe();
   }, [fetchMe]);
 
@@ -326,18 +309,8 @@ function AuthProjectOwnerBridge() {
   useEffect(() => {
     if (IS_GITHUB_PAGES) return;
     // Same isolation: no owner bridging for the standalone V5 sliderule workspace.
-    if (
-      isSlideRuleLocation(
-        typeof window !== "undefined" ? window.location.pathname : ""
-      )
-    )
-      return;
-    if (
-      isAgentLoopLocation(
-        typeof window !== "undefined" ? window.location.pathname : ""
-      )
-    )
-      return;
+    if (isSlideRuleLocation(typeof window !== 'undefined' ? window.location.pathname : '')) return;
+    if (isAgentLoopLocation(typeof window !== 'undefined' ? window.location.pathname : '')) return;
     setActiveOwner(currentUserId);
   }, [currentUserId, setActiveOwner]);
 
@@ -361,9 +334,7 @@ function isAuthLocation(location: string) {
 
 function isSlideRuleLocation(location: string) {
   const [pathname] = location.trim().split(/[?#]/, 1);
-  return (
-    pathname === SLIDERULE_PATH || pathname.startsWith(`${SLIDERULE_PATH}/`)
-  );
+  return pathname === SLIDERULE_PATH || pathname.startsWith(`${SLIDERULE_PATH}/`);
 }
 
 export function isAgentLoopLocation(location: string) {
@@ -372,8 +343,7 @@ export function isAgentLoopLocation(location: string) {
   // so chrome-free sidebar suppression always works regardless of how the URL was entered.
   const [raw] = location.trim().split(/[?#]/, 1);
   let pathname = (raw || "/").toLowerCase();
-  if (pathname.length > 1 && pathname.endsWith("/"))
-    pathname = pathname.slice(0, -1);
+  if (pathname.length > 1 && pathname.endsWith("/")) pathname = pathname.slice(0, -1);
   const target = AGENT_LOOP_PATH.toLowerCase();
   const legacyNoHyphen = "/agentloop";
   return (

@@ -148,7 +148,7 @@ export const PROGRESS_STATE_TOKEN_KEY: {
 function colorForState(
   state: ProgressPlanState,
   visualTokens: VisualTokenSet,
-  theme: "light" | "dark"
+  theme: "light" | "dark",
 ): string {
   const key = PROGRESS_STATE_TOKEN_KEY[state];
   const pair = visualTokens[key];
@@ -190,10 +190,15 @@ const STATE_LABEL: { readonly [S in ProgressPlanState]: string } = {
  *   归零，FLIP 行为退化为即时位移，仍保留 `layoutId` 一致性。
  */
 export function EffectPreviewScheduleTimeline(
-  props: EffectPreviewScheduleTimelineProps
+  props: EffectPreviewScheduleTimelineProps,
 ): ReactElement | null {
-  const { activeStageKey, progressPlan, dependencyOrder, visualTokens, theme } =
-    props;
+  const {
+    activeStageKey,
+    progressPlan,
+    dependencyOrder,
+    visualTokens,
+    theme,
+  } = props;
 
   // hooks 必须在所有 early return 之前调用，遵循 React Rules of Hooks。
   const shouldReduceMotion = useReducedMotion();

@@ -21,10 +21,7 @@ import { latestTrustedReport } from "@shared/blueprint/sliderule-delivery-chain"
 describe("Knife C · terminal delivery platform", () => {
   it("projects terminal node with trust seal when clear + trusted report", () => {
     const { state } = buildClearStateWithTrustedReport("knife-c");
-    const clearState = {
-      ...state,
-      goal: { ...state.goal, status: "clear" as const },
-    };
+    const clearState = { ...state, goal: { ...state.goal, status: "clear" as const } };
     const vm = deriveSlideRuleReasoningViewModel(clearState);
     expect(vm.terminalNode?.id).toBe(SLIDERULE_TERMINAL_NODE_ID);
     expect(vm.terminalMeta?.canExport).toBe(false);
@@ -36,18 +33,17 @@ describe("Knife C · terminal delivery platform", () => {
   });
 
   it("trust seal commit gate counts scope to report capabilityRun", () => {
-    const { state, reportId } =
-      buildClearStateWithTrustedReport("knife-c-seal");
+    const { state, reportId } = buildClearStateWithTrustedReport("knife-c-seal");
     const report = latestTrustedReport(state)!;
     const reportRun = (state.capabilityRuns || []).find(
-      r => r.id === report.producedBy?.capabilityRunId
+      (r) => r.id === report.producedBy?.capabilityRunId
     );
     expect(reportRun?.gateResults?.length).toBeGreaterThan(0);
 
     const seal = deriveTrustSeal(state);
     expect(seal.commitTotal).toBe(reportRun!.gateResults!.length);
     expect(seal.commitPassed).toBe(
-      reportRun!.gateResults!.filter(g => g.status === "passed").length
+      reportRun!.gateResults!.filter((g) => g.status === "passed").length
     );
     expect(seal.commitTotal).toBeLessThan((state.gates || []).length);
   });
@@ -71,8 +67,7 @@ describe("Knife C · terminal delivery platform", () => {
   });
 
   it("canExport stays false when legacy RV targets a superseded report", () => {
-    const { state, reportId } =
-      buildClearStateWithTrustedReport("knife-c-rv-stale");
+    const { state, reportId } = buildClearStateWithTrustedReport("knife-c-rv-stale");
     const withStaleRv = {
       ...state,
       goal: { ...state.goal, status: "clear" as const },
@@ -119,12 +114,11 @@ describe("Knife C · terminal delivery platform", () => {
   });
 
   it("parseReportSections yields named sections from structured report", () => {
-    const { state, reportId } =
-      buildClearStateWithTrustedReport("knife-c-parse");
-    const report = (state.artifacts || []).find(a => a.id === reportId)!;
+    const { state, reportId } = buildClearStateWithTrustedReport("knife-c-parse");
+    const report = (state.artifacts || []).find((a) => a.id === reportId)!;
     const sections = parseReportSections(report);
     expect(sections.length).toBeGreaterThanOrEqual(3);
-    expect(sections.some(s => /结论|支撑|风险/.test(s.label))).toBe(true);
+    expect(sections.some((s) => /结论|支撑|风险/.test(s.label))).toBe(true);
   });
 
   it("parseReportSections ignores inline 风险: inside body text", () => {
@@ -139,10 +133,9 @@ describe("Knife C · terminal delivery platform", () => {
         roleId: "综合",
       },
       passedGates: ["commit"],
-      content:
-        "结论：推进\n\n支撑证据：\n- 来自 risk / 风险: 越权案例\n\n风险：数据范围",
+      content: "结论：推进\n\n支撑证据：\n- 来自 risk / 风险: 越权案例\n\n风险：数据范围",
     });
-    const riskSections = sections.filter(s => s.label === "风险");
+    const riskSections = sections.filter((s) => s.label === "风险");
     expect(riskSections.length).toBe(1);
     expect(riskSections[0].body).toContain("数据范围");
   });
@@ -150,11 +143,10 @@ describe("Knife C · terminal delivery platform", () => {
   it("evidence ref maps to real graph node id", () => {
     const { state, riskId } = buildClearStateWithTrustedReport("knife-c-jump");
     const target = graphNodeIdForArtifact(state, riskId);
-    const graphIds = new Set((state.graph?.nodes || []).map(n => n.id));
+    const graphIds = new Set((state.graph?.nodes || []).map((n) => n.id));
     expect(target).toBeTruthy();
     expect(
-      graphIds.has(target!) ||
-        [...graphIds].some(id => target!.startsWith(`${id}::ev-`))
+      graphIds.has(target!) || [...graphIds].some((id) => target!.startsWith(`${id}::ev-`))
     ).toBe(true);
   });
 
@@ -169,18 +161,13 @@ describe("Knife C · terminal delivery platform", () => {
 
   it("no terminal before clear", () => {
     const { state } = buildClearStateWithTrustedReport("knife-c-pre");
-    const preClear = {
-      ...state,
-      goal: { ...state.goal!, status: "needs_refinement" as const },
-    };
+    const preClear = { ...state, goal: { ...state.goal!, status: "needs_refinement" as const } };
     const vm = deriveSlideRuleReasoningViewModel(preClear);
     expect(vm.terminalNode).toBeNull();
   });
 
   it("derives AppBundle closure render from trusted closure evidence artifacts", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-closure-render"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-closure-render");
     const withoutClosure = deriveAppBundleClosureRender(state);
     expect(withoutClosure.present).toBe(false);
     expect(withoutClosure.summaryLines).toEqual([]);
@@ -213,9 +200,7 @@ describe("Knife C · terminal delivery platform", () => {
     });
 
     expect(withClosure.present).toBe(true);
-    expect(withClosure.summaryLines.join("\n")).toContain(
-      "art-appbundle-closure-119"
-    );
+    expect(withClosure.summaryLines.join("\n")).toContain("art-appbundle-closure-119");
     expect(withClosure.summaryLines.join("\n")).toContain("versionPinsChecked");
   });
 
@@ -247,9 +232,7 @@ describe("Knife C · terminal delivery platform", () => {
   });
 
   it("serializes Python publishClosure state when closure artifact is absent", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-python-closure-md"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-python-closure-md");
     const md = serializeSlideRuleDeliveryMd({
       ...state,
       publishClosure: {
@@ -273,20 +256,16 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("top blockers: none");
     expect(md).toContain("6/6 evidence");
     expect(md).toContain("feedface");
-    expect(
-      md.indexOf(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER)
-    ).toBeGreaterThan(md.indexOf("## 推演报告（核心交付 · 人类可读版）"));
-    expect(
-      (md.match(/## AppBundle publish\/runtime closure/g) || []).length
-    ).toBe(1);
+    expect(md.indexOf(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER)).toBeGreaterThan(
+      md.indexOf("## 推演报告（核心交付 · 人类可读版）")
+    );
+    expect((md.match(/## AppBundle publish\/runtime closure/g) || []).length).toBe(1);
     // Negative: closed case must not emit the blocked closure report section
     expect(md).not.toContain("### Blocked closure report section");
   });
 
   it("serializes publishClosure blocker path details for markdown review", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-python-closure-blockers-md"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-python-closure-blockers-md");
     const md = serializeSlideRuleDeliveryMd({
       ...state,
       publishClosure: {
@@ -317,9 +296,7 @@ describe("Knife C · terminal delivery platform", () => {
 
     expect(md).toContain("closure outcome: blocked");
     expect(md).toContain("closure status: blocked");
-    expect(md).toContain(
-      "top blockers: APPBUNDLE_PUBLISH_REF_MISSING@menuEntries[0].roleRefs[2]; APPBUNDLE_RUNTIME_CLOSURE_BLOCKED@runtimeSnapshot.pageBindings[1]"
-    );
+    expect(md).toContain("top blockers: APPBUNDLE_PUBLISH_REF_MISSING@menuEntries[0].roleRefs[2]; APPBUNDLE_RUNTIME_CLOSURE_BLOCKED@runtimeSnapshot.pageBindings[1]");
     expect(md).toContain("closure blockers");
     expect(md).toContain(
       "APPBUNDLE_PUBLISH_REF_MISSING skill=rbac path=menuEntries[0].roleRefs[2] ref=role:finance-admin"
@@ -338,16 +315,12 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("affectedSkill: rbac");
     expect(md).toContain("code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
     expect(md).toContain("affectedSkill: page");
-    expect(
-      (md.match(/## AppBundle publish\/runtime closure/g) || []).length
-    ).toBe(1);
+    expect((md.match(/## AppBundle publish\/runtime closure/g) || []).length).toBe(1);
     expect(md).not.toContain(CLOSED_CLOSURE_REPORT_SECTION);
   });
 
   it("serializes per-skill publishClosure evidence coverage for markdown review", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-python-closure-coverage-md"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-python-closure-coverage-md");
     const md = serializeSlideRuleDeliveryMd({
       ...state,
       publishClosure: {
@@ -379,9 +352,7 @@ describe("Knife C · terminal delivery platform", () => {
   });
 
   it("serializes closed closure report section and exported coverage table", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-python-closure-closed-section"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-python-closure-closed-section");
     const perSkillEvidence = {
       datamodel: { evidencePresent: true },
       rbac: { evidencePresent: true },
@@ -398,8 +369,7 @@ describe("Knife C · terminal delivery platform", () => {
         evidencePresentCount: 6,
         skillCount: 6,
         versionPinsChecked: true,
-        closureId:
-          "appbundle:sliderule-report-fixture-smoke@119:runtime-closure",
+        closureId: "appbundle:sliderule-report-fixture-smoke@119:runtime-closure",
         closureHash: "c10sure119",
         stableDigest: "deadbeef119",
         tierCounts: { hard_blocker: 0, warning: 0, info: 1 },
@@ -412,20 +382,14 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("closure outcome: closed");
     expect(md).toContain(CLOSED_CLOSURE_REPORT_SECTION);
     expect(md).toContain("versionPinsChecked: true");
-    expect(md).toContain(
-      "evidence coverage and version pins verified for closed runtime closure."
-    );
+    expect(md).toContain("evidence coverage and version pins verified for closed runtime closure.");
     expect(md).toContain("| datamodel | present |");
-    expect(renderPerSkillEvidenceCoverageTable(perSkillEvidence)).toContain(
-      "| appbundle | present |"
-    );
+    expect(renderPerSkillEvidenceCoverageTable(perSkillEvidence)).toContain("| appbundle | present |");
     expect(md).not.toContain("### Blocked closure report section");
   });
 
   it("serializes report/export summary from publishClosure evidence", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-report-export-summary"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-report-export-summary");
     const fullPerSkillEvidence = {
       datamodel: { evidencePresent: true },
       rbac: { evidencePresent: true },
@@ -450,9 +414,7 @@ describe("Knife C · terminal delivery platform", () => {
       },
     } as any);
 
-    expect(closedMd).toContain(
-      "### Report/Export Summary (from publish artifact closure)"
-    );
+    expect(closedMd).toContain("### Report/Export Summary (from publish artifact closure)");
     expect(closedMd).toContain("source=publish-artifact-closure");
     expect(closedMd).toContain("status=closed");
     expect(closedMd).toContain("digest=c0de120");
@@ -482,19 +444,11 @@ describe("Knife C · terminal delivery platform", () => {
   });
 
   it("serializes report/export summary from a real AppBundle publish artifact when publishClosure is absent", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-report-export-artifact-summary"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-report-export-artifact-summary");
     const here = dirname(fileURLToPath(import.meta.url));
-    const fixtureDir = resolve(
-      here,
-      "../../../../../slide-rule-python/tests/fixtures"
-    );
+    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
     const closed = JSON.parse(
-      readFileSync(
-        resolve(fixtureDir, "closed_appbundle_publish_artifact.json"),
-        "utf8"
-      )
+      readFileSync(resolve(fixtureDir, "closed_appbundle_publish_artifact.json"), "utf8")
     );
 
     const md = serializeSlideRuleDeliveryMd({
@@ -502,9 +456,7 @@ describe("Knife C · terminal delivery platform", () => {
       publishArtifact: closed,
     } as any);
 
-    expect(md).toContain(
-      "### Report/Export Summary (from publish artifact closure)"
-    );
+    expect(md).toContain("### Report/Export Summary (from publish artifact closure)");
     expect(md).toContain("source=publish-artifact-closure");
     expect(md).toContain("status=closed");
     expect(md).toContain("digest=deadbeef120");
@@ -513,19 +465,11 @@ describe("Knife C · terminal delivery platform", () => {
   });
 
   it("serializes AppBundle closure section from a real publish artifact when publishClosure is absent", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-appbundle-artifact-section"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-appbundle-artifact-section");
     const here = dirname(fileURLToPath(import.meta.url));
-    const fixtureDir = resolve(
-      here,
-      "../../../../../slide-rule-python/tests/fixtures"
-    );
+    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
     const closed = JSON.parse(
-      readFileSync(
-        resolve(fixtureDir, "closed_appbundle_publish_artifact.json"),
-        "utf8"
-      )
+      readFileSync(resolve(fixtureDir, "closed_appbundle_publish_artifact.json"), "utf8")
     );
 
     const md = serializeSlideRuleDeliveryMd({
@@ -542,19 +486,11 @@ describe("Knife C · terminal delivery platform", () => {
   });
 
   it("serializes blocked AppBundle closure section from a real publish artifact", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-appbundle-artifact-blocked-section"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-appbundle-artifact-blocked-section");
     const here = dirname(fileURLToPath(import.meta.url));
-    const fixtureDir = resolve(
-      here,
-      "../../../../../slide-rule-python/tests/fixtures"
-    );
+    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
     const blocked = JSON.parse(
-      readFileSync(
-        resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"),
-        "utf8"
-      )
+      readFileSync(resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"), "utf8")
     );
 
     const md = serializeSlideRuleDeliveryMd({
@@ -575,17 +511,13 @@ describe("Knife C · terminal delivery platform", () => {
   });
 
   it("serializes fail-closed AppBundle closure note when evidence is absent", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-closure-md-negative"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-closure-md-negative");
     const md = serializeSlideRuleDeliveryMd(state);
 
     expect(md).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
     expect(md).toContain("runtime closure evidence was not found");
     expect(md).toContain("publish should remain blocked");
-    expect(
-      (md.match(/## AppBundle publish\/runtime closure/g) || []).length
-    ).toBe(1);
+    expect((md.match(/## AppBundle publish\/runtime closure/g) || []).length).toBe(1);
     // Fail-closed negative: no structured blocked section when no evidence
     expect(md).not.toContain("### Blocked closure report section");
   });
@@ -616,29 +548,21 @@ describe("Knife C · terminal delivery platform", () => {
 
     expect(result.included).toBe(true);
     expect(result.report).not.toBe(report);
-    expect(result.report.content).toContain(
-      APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER
-    );
+    expect(result.report.content).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
     expect(result.report.content).toContain("art-report-closure-positive");
     expect(report.content).toBe(originalContent);
   });
 
   it("enriches report.write with a fail-closed AppBundle closure appendix when evidence is absent", () => {
-    const { state } = buildClearStateWithTrustedReport(
-      "knife-c-report-enrich-negative"
-    );
+    const { state } = buildClearStateWithTrustedReport("knife-c-report-enrich-negative");
     const report = latestTrustedReport(state)!;
 
     const result = enrichReportWriteWithRuntimeClosure(report, state);
 
     expect(result.included).toBe(false);
     expect(result.report).not.toBe(report);
-    expect(result.report.content).toContain(
-      APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER
-    );
-    expect(result.report.content).toContain(
-      "runtime closure evidence was not found"
-    );
+    expect(result.report.content).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
+    expect(result.report.content).toContain("runtime closure evidence was not found");
     expect(result.report.content).toContain("publish should remain blocked");
   });
 

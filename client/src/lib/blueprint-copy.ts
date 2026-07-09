@@ -25,7 +25,7 @@ const BLUEPRINT_COPY: Record<string, string> = {
   "No blueprint specs returned yet.": "暂未返回蓝图规格。",
   "Pending sync": "待同步",
   "Preview draft": "预览草稿",
-  All: "全部",
+  "All": "全部",
 
   // Generic labels.
   Docs: "文档",
@@ -191,7 +191,8 @@ const BLUEPRINT_COPY: Record<string, string> = {
   "Capability registry snapshot": "能力注册表快照",
   "Capability invocation": "能力调用记录",
   "Capability evidence": "能力证据",
-  "Route generation sandbox derivation": "路线生成沙盒推导",
+  "Route generation sandbox derivation":
+    "路线生成沙盒推导",
   "Sandbox derivation job": "沙盒推导任务",
   "Effect preview snapshot": "效果预演快照",
   "Prompt package": "提示词包",
@@ -298,9 +299,11 @@ const BLUEPRINT_COPY: Record<string, string> = {
   "Analyze source in isolation.": "在隔离环境中分析源码。",
   "Build RBAC with audit evidence.": "构建带审计证据的 RBAC。",
   "Input GitHub ingestion": "输入与 GitHub 接入",
-  "Normalize user goals and GitHub sources.": "规范化用户目标与 GitHub 来源。",
+  "Normalize user goals and GitHub sources.":
+    "规范化用户目标与 GitHub 来源。",
   "Spec tree workbench": "SPEC 树工作台",
-  "Refine and persist the derived SPEC tree.": "微调并持久化已推导的 SPEC 树。",
+  "Refine and persist the derived SPEC tree.":
+    "微调并持久化已推导的 SPEC 树。",
   "Task breakdown": "任务拆分",
   "Split the SPEC into implementation-ready chunks.":
     "将 SPEC 拆分成可实现的任务块。",
@@ -333,7 +336,7 @@ const BLUEPRINT_COPY: Record<string, string> = {
     "用于实现权限系统的可复制提示词包。",
   "Implement the permission system with auditable role grants, denied-action replay, and immutable review evidence.":
     "实现具备可审计角色授权、拒绝动作回放和不可变评审证据的权限系统。",
-  Objective: "目标",
+  "Objective": "目标",
   "Build the permission workflow from accepted SPEC documents and the effect preview.":
     "根据已接受的 SPEC 文档和效果预演构建权限工作流。",
   "Acceptance checklist": "验收清单",
@@ -354,16 +357,17 @@ const BLUEPRINT_COPY: Record<string, string> = {
     "实现可审计角色授权和拒绝动作回放。",
   "Permission tests": "权限测试",
   "Permission workflow tests pass.": "权限工作流测试通过。",
-  "Cursor handoff implemented and verified.": "Cursor 交接已实现并验证。",
+  "Cursor handoff implemented and verified.":
+    "Cursor 交接已实现并验证。",
   "Green test run.": "测试运行通过。",
   "Applied permission schema.": "已应用权限模式。",
   "RouteSet generated": "RouteSet 已生成",
   "Engineering run recorded": "工程执行记录",
-  "Primary SPEC asset route was generated.":
-    "主执行路径：SPEC 资产路线已生成。",
+  "Primary SPEC asset route was generated.": "主执行路径：SPEC 资产路线已生成。",
   "Cursor handoff implementation evidence was stored.":
     "Cursor 交接实现证据已存储。",
-  "Run evidence derives from the RouteSet.": "执行证据来自 RouteSet。",
+  "Run evidence derives from the RouteSet.":
+    "执行证据来自 RouteSet。",
   "Permission project replay": "权限项目回放",
   "Recovered RouteSet to engineering run timeline.":
     "将 RouteSet 恢复到工程执行时间线。",
@@ -372,7 +376,8 @@ const BLUEPRINT_COPY: Record<string, string> = {
     "工程执行记录补充了实现证据。",
   "Execution evidence approved for future SPEC evolution.":
     "执行证据已批准，可用于未来 SPEC 演进。",
-  "Bind this run back into the asset memory.": "将本次执行绑定回资产记忆。",
+  "Bind this run back into the asset memory.":
+    "将本次执行绑定回资产记忆。",
   "Permission boundary analysis": "权限边界分析",
   "Runtime evidence confirms permission checks have auditable service boundaries.":
     "运行时证据确认权限校验具有可审计的服务边界。",
@@ -383,7 +388,8 @@ const BLUEPRINT_COPY: Record<string, string> = {
     "发布可复用技能证据，供后续交接使用。",
   "Normalizes generated notes into runtime capability evidence.":
     "将生成说明规范化为运行时能力证据。",
-  "Collect target users and boundaries.": "收集目标用户和边界条件。",
+  "Collect target users and boundaries.":
+    "收集目标用户和边界条件。",
   "Collect target users, product boundary, constraints, and success criteria before route choice.":
     "在路线选择前收集目标用户、产品边界、约束和成功标准。",
   "Inspect repositories and extract technology stack, module boundaries, and reusable assets.":
@@ -459,8 +465,7 @@ const BLUEPRINT_COPY: Record<string, string> = {
   "Abort / Escalate": "中止 / 转人工",
   "Abort & escalate": "中止并转人工",
   "review signals · human is the gate": "评审信号，人是闸",
-  "Review signal; never auto-blocks or auto-merges.":
-    "评审信号，不自动拦截 / 不自动合并。",
+  "Review signal; never auto-blocks or auto-merges.": "评审信号，不自动拦截 / 不自动合并。",
   "preview · unverified": "预览·未验证",
   "Export MD": "导出 MD",
   Stale: "已失效",
@@ -531,7 +536,9 @@ export function blueprintCopy(
     return `已选择路线「${blueprintCopy(selectedRouteStarted[1])}」并开始推导 SPEC 树。`;
   }
 
-  const routeGenerated = normalized.match(/^(.+) was generated\.$/);
+  const routeGenerated = normalized.match(
+    /^(.+) was generated\.$/
+  );
   if (routeGenerated) {
     return `${blueprintCopy(routeGenerated[1])} 已生成。`;
   }
@@ -551,7 +558,9 @@ export function blueprintCopy(
     return `里程碑：${blueprintCopy(milestone[1])}`;
   }
 
-  const verifyTaskDocument = normalized.match(/^Verify task document:\s*(.+)$/);
+  const verifyTaskDocument = normalized.match(
+    /^Verify task document:\s*(.+)$/
+  );
   if (verifyTaskDocument) {
     return `验证任务文档：${blueprintCopy(verifyTaskDocument[1])}`;
   }
@@ -566,9 +575,7 @@ export function blueprintCopy(
     return `工程执行：${blueprintCopy(engineeringRun[1])}`;
   }
 
-  const capabilityInvocation = normalized.match(
-    /^Capability invocation:\s*(.+)$/
-  );
+  const capabilityInvocation = normalized.match(/^Capability invocation:\s*(.+)$/);
   if (capabilityInvocation) {
     return `能力调用：${blueprintCopy(capabilityInvocation[1])}`;
   }

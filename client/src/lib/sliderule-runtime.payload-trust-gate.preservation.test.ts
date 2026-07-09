@@ -28,13 +28,7 @@ describe("commitArtifact payload preservation (R2-B7)", () => {
   it("trust gate outcome is identical with or without payload", () => {
     const state = createInitialSessionState("权限系统", "payload-gate");
 
-    const without = commitArtifact(
-      state,
-      baseArtifact("a-plain"),
-      "run-plain",
-      false,
-      []
-    );
+    const without = commitArtifact(state, baseArtifact("a-plain"), "run-plain", false, []);
     const withPayload = commitArtifact(
       state,
       {
@@ -57,12 +51,8 @@ describe("commitArtifact payload preservation (R2-B7)", () => {
       []
     );
 
-    expect(without.committed?.trustLevel).toBe(
-      withPayload.committed?.trustLevel
-    );
-    expect(without.committed?.passedGates).toEqual(
-      withPayload.committed?.passedGates
-    );
+    expect(without.committed?.trustLevel).toBe(withPayload.committed?.trustLevel);
+    expect(without.committed?.passedGates).toEqual(withPayload.committed?.passedGates);
     expect(withPayload.committed?.payload).toBeDefined();
     expect(Array.isArray(withPayload.committed?.payload)).toBe(true);
   });
@@ -83,8 +73,8 @@ describe("commitArtifact payload preservation (R2-B7)", () => {
     expect(r2.committed).toBeNull();
     expect(r1.run.gateResults).toEqual(r2.run.gateResults);
 
-    const a1 = r1.updatedState.artifacts.find(a => a.id === "f1");
-    const a2 = r2.updatedState.artifacts.find(a => a.id === "f2");
+    const a1 = r1.updatedState.artifacts.find((a) => a.id === "f1");
+    const a2 = r2.updatedState.artifacts.find((a) => a.id === "f2");
     expect(a1?.trustLevel).toBe("untrusted");
     expect(a2?.trustLevel).toBe("untrusted");
     expect(a1?.passedGates).toEqual(a2?.passedGates);

@@ -73,7 +73,7 @@ function t(locale: AppLocale, key: keyof typeof COPY): string {
  * - 提供且 total > 0 → `determinate`
  */
 function deriveProgressKind(
-  progress: { processed: number; total: number } | null | undefined
+  progress: { processed: number; total: number } | null | undefined,
 ): SpecTreeProgressKind {
   if (progress === null || progress === undefined) return "indeterminate";
   if (progress.total <= 0) return "skeleton";
@@ -100,14 +100,9 @@ export const SpecTreeProgressLayer: FC<SpecTreeProgressLayerProps> = ({
 }) => {
   const kind = deriveProgressKind(progress);
 
-  const label = t(
-    locale,
-    scope === "all" ? "generatingAll" : "generatingSingle"
-  );
+  const label = t(locale, scope === "all" ? "generatingAll" : "generatingSingle");
   const determinate = kind === "determinate" && progress != null;
-  const percent = determinate
-    ? toPercent(progress.processed, progress.total)
-    : 0;
+  const percent = determinate ? toPercent(progress.processed, progress.total) : 0;
 
   return (
     <div
@@ -126,11 +121,7 @@ export const SpecTreeProgressLayer: FC<SpecTreeProgressLayerProps> = ({
             aria-hidden="true"
             className="inline-block h-2 w-2 animate-pulse rounded-full bg-slate-400"
           />
-          {determinate
-            ? label
-            : kind === "skeleton"
-              ? label
-              : t(locale, "preparing")}
+          {determinate ? label : kind === "skeleton" ? label : t(locale, "preparing")}
         </span>
         {determinate ? (
           <span

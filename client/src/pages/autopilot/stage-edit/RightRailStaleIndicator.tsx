@@ -67,7 +67,7 @@ const STAGE_LABELS: Partial<Record<AutopilotLocalStage, string>> = {
 
 export function getRegenerateLabel(
   stage: AutopilotLocalStage,
-  locale: AppLocale = "en-US"
+  locale: AppLocale = "en-US",
 ): string {
   return (
     REGENERATE_LABELS[locale]?.[stage] ??
@@ -86,19 +86,16 @@ export function RightRailStaleIndicator({
     return null;
   }
 
-  const isDisabled = Boolean(
-    status?.isRegenerating || status?.isUpstreamRunning
-  );
+  const isDisabled = Boolean(status?.isRegenerating || status?.isUpstreamRunning);
   const runningStage = status?.runningStage ?? "upstream stage";
   const hint =
     locale === "zh-CN"
       ? status?.isUpstreamRunning
         ? `等待上游阶段：${STAGE_LABELS[runningStage as AutopilotLocalStage] ?? runningStage}`
-        : (artifact.invalidatedBy?.reason ?? `过期时间：${artifact.staleSince}`)
+        : artifact.invalidatedBy?.reason ?? `过期时间：${artifact.staleSince}`
       : status?.isUpstreamRunning
         ? `Waiting for ${runningStage}`
-        : (artifact.invalidatedBy?.reason ??
-          `Stale since ${artifact.staleSince}`);
+        : artifact.invalidatedBy?.reason ?? `Stale since ${artifact.staleSince}`;
   const title =
     locale === "zh-CN"
       ? "当前阶段产物已过期"

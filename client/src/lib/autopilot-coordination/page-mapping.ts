@@ -20,15 +20,13 @@ export type AutopilotUiStageAlias =
 
 type AutopilotStageLike = AutopilotBackendStage | AutopilotUiStageAlias;
 
-const STAGE_ALIAS_TO_BACKEND_STAGE: Record<
-  AutopilotUiStageAlias,
-  AutopilotBackendStage
-> = {
-  route: "route_generation",
-  spec_documents: "spec_docs",
-  prompt_package: "prompt_packaging",
-  preview: "effect_preview",
-};
+const STAGE_ALIAS_TO_BACKEND_STAGE: Record<AutopilotUiStageAlias, AutopilotBackendStage> =
+  {
+    route: "route_generation",
+    spec_documents: "spec_docs",
+    prompt_package: "prompt_packaging",
+    preview: "effect_preview",
+  };
 
 const BACKEND_PAGE_BY_STAGE = {
   input: 1,
@@ -53,9 +51,7 @@ const PAGE_BY_STAGE = {
 
 export const STAGE_TO_PAGE = PAGE_BY_STAGE;
 
-function normalizeStage(
-  stage: string | null | undefined
-): AutopilotStageLike | null {
+function normalizeStage(stage: string | null | undefined): AutopilotStageLike | null {
   const value = (stage ?? "").trim().toLowerCase();
   if (!value) return null;
 
@@ -63,18 +59,14 @@ function normalizeStage(
     return value as AutopilotBackendStage;
   }
 
-  if (
-    Object.prototype.hasOwnProperty.call(STAGE_ALIAS_TO_BACKEND_STAGE, value)
-  ) {
+  if (Object.prototype.hasOwnProperty.call(STAGE_ALIAS_TO_BACKEND_STAGE, value)) {
     return value as AutopilotUiStageAlias;
   }
 
   return null;
 }
 
-function toBackendStage(
-  stage: string | null | undefined
-): AutopilotBackendStage | null {
+function toBackendStage(stage: string | null | undefined): AutopilotBackendStage | null {
   const normalized = normalizeStage(stage);
   if (normalized === null) return null;
 

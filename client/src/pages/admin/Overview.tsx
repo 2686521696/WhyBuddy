@@ -16,11 +16,7 @@ import {
 } from "@/components/ui/card";
 import { useAdminStore } from "@/lib/admin-store";
 
-import {
-  AdminErrorBanner,
-  StatusBadge,
-  formatAdminDate,
-} from "./admin-page-utils";
+import { AdminErrorBanner, StatusBadge, formatAdminDate } from "./admin-page-utils";
 
 const metricItems = [
   { key: "users", label: "Users", icon: Users },
@@ -58,7 +54,7 @@ export function AdminOverviewPage() {
               </CardHeader>
               <CardContent className="px-4">
                 <p className="text-2xl font-semibold">
-                  {loading && !summary ? "..." : (summary?.[item.key] ?? 0)}
+                  {loading && !summary ? "..." : summary?.[item.key] ?? 0}
                 </p>
               </CardContent>
             </Card>
@@ -70,9 +66,7 @@ export function AdminOverviewPage() {
         <Card className="rounded-lg xl:col-span-2">
           <CardHeader className="px-4 py-4">
             <CardTitle className="text-base">Recent Users</CardTitle>
-            <CardDescription>
-              Newest accounts visible to admins.
-            </CardDescription>
+            <CardDescription>Newest accounts visible to admins.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 px-4 pb-4">
             {users.slice(0, 5).map(user => (
@@ -84,9 +78,7 @@ export function AdminOverviewPage() {
                   <p className="truncate text-sm font-medium">
                     {user.displayName || user.email}
                   </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {user.email}
-                  </p>
+                  <p className="truncate text-xs text-slate-500">{user.email}</p>
                 </div>
                 <StatusBadge value={user.role} />
               </div>

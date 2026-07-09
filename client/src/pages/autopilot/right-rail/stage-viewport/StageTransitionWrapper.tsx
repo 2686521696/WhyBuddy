@@ -134,7 +134,11 @@ const StageTransitionWrapper: FC<StageTransitionWrapperProps> = ({
         boxSizing: "border-box",
       }}
     >
-      <AnimatePresence mode="sync" initial={false} custom={direction}>
+      <AnimatePresence
+        mode="sync"
+        initial={false}
+        custom={direction}
+      >
         <motion.div
           key={stageKey}
           custom={direction}

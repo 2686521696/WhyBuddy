@@ -50,12 +50,8 @@ export function ArchitectureProcessPanel({
   onToggleRoute?: () => void;
   crossRuntimeGraph?: CrossRuntimeGraphSummary | null;
   publishClosure?: PublishClosureSummary | null;
-  onSelectSkillLinkage?: (
-    edge: CrossRuntimeGraphSummary["examples"][number]
-  ) => void;
-  onSelectClosureBlocker?: (
-    blocker: PublishClosureSummary["topBlockers"][number]
-  ) => void;
+  onSelectSkillLinkage?: (edge: CrossRuntimeGraphSummary["examples"][number]) => void;
+  onSelectClosureBlocker?: (blocker: PublishClosureSummary["topBlockers"][number]) => void;
   variant?: "overlay" | "rail";
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -74,10 +70,10 @@ export function ArchitectureProcessPanel({
           last && "text" in last
             ? last.text.length
             : last && "label" in last
-              ? last.label.length
-              : last && "message" in last
-                ? last.message.length
-                : 0;
+            ? last.label.length
+            : last && "message" in last
+            ? last.message.length
+            : 0;
         return [
           latestTurn.id,
           latestTurn.routeLitCount,
@@ -124,8 +120,7 @@ export function ArchitectureProcessPanel({
           className="flex h-full items-center justify-center px-6 text-center text-xs text-stone-400"
           aria-label="架构树节拍"
         >
-          发送意图后，这里实时显示执行时间线（INTAKE → 六系统 → Commit Gate）与
-          SKILL LINKAGE。
+          发送意图后，这里实时显示执行时间线（INTAKE → 六系统 → Commit Gate）与 SKILL LINKAGE。
         </div>
       );
     }
@@ -190,8 +185,7 @@ export function ArchitectureProcessPanel({
                   Skill linkage
                 </span>
                 <span className="font-mono text-stone-500">
-                  {crossRuntimeGraph.edgeCount} edges /{" "}
-                  {crossRuntimeGraph.skillCount} skills
+                  {crossRuntimeGraph.edgeCount} edges / {crossRuntimeGraph.skillCount} skills
                 </span>
               </div>
               <div className="mb-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[9px]">
@@ -199,16 +193,12 @@ export function ArchitectureProcessPanel({
                   allowed {crossRuntimeGraph.allowedCount}
                 </span>
                 {crossRuntimeGraph.blockedCount > 0 && (
-                  <span className="text-rose-700">
-                    blocked {crossRuntimeGraph.blockedCount}
-                  </span>
+                  <span className="text-rose-700">blocked {crossRuntimeGraph.blockedCount}</span>
                 )}
-                <span className="text-stone-500">
-                  evidence {crossRuntimeGraph.evidenceCount}
-                </span>
+                <span className="text-stone-500">evidence {crossRuntimeGraph.evidenceCount}</span>
               </div>
               <div className="space-y-0.5">
-                {crossRuntimeGraph.examples.map(edge => (
+                {crossRuntimeGraph.examples.map((edge) => (
                   <div
                     key={`${edge.sourceSkill}-${edge.targetSkill}-${edge.state}-${edge.evidenceKey ?? ""}`}
                     data-testid="sliderule-skill-linkage-row"
@@ -217,10 +207,7 @@ export function ArchitectureProcessPanel({
                     data-state={edge.state}
                     data-evidence-key={edge.evidenceKey ?? ""}
                     className="truncate"
-                    title={
-                      edge.evidenceKey ??
-                      `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`
-                    }
+                    title={edge.evidenceKey ?? `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`}
                   >
                     <button
                       type="button"
@@ -257,52 +244,34 @@ export function ArchitectureProcessPanel({
               data-fail-closed={publishClosureFailClosed ? "true" : "false"}
             >
               <div className="flex items-center justify-between gap-3 font-mono text-[9px]">
-                <span
-                  className={
-                    publishClosure.blocked
-                      ? "text-rose-700"
-                      : "text-emerald-700"
-                  }
-                >
+                <span className={publishClosure.blocked ? "text-rose-700" : "text-emerald-700"}>
                   publish {publishClosure.blocked ? "blocked" : "closed"}
                 </span>
                 <span className="text-stone-500">
-                  {publishClosure.evidencePresentCount}/
-                  {publishClosure.skillCount} evidence
+                  {publishClosure.evidencePresentCount}/{publishClosure.skillCount} evidence
                 </span>
                 <span className="text-stone-500">
-                  pins{" "}
-                  {publishClosure.versionPinsChecked ? "checked" : "missing"}
+                  pins {publishClosure.versionPinsChecked ? "checked" : "missing"}
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[9px] text-stone-500">
                 {publishClosure.stableDigest && (
-                  <span
-                    title={
-                      publishClosure.closureId ?? publishClosure.stableDigest
-                    }
-                  >
+                  <span title={publishClosure.closureId ?? publishClosure.stableDigest}>
                     digest {publishClosure.stableDigest}
                   </span>
                 )}
                 {publishClosure.closureHash && (
-                  <span title={publishClosure.closureHash}>
-                    hash {publishClosure.closureHash}
-                  </span>
+                  <span title={publishClosure.closureHash}>hash {publishClosure.closureHash}</span>
                 )}
                 <span className="text-rose-700">
                   hard {publishClosure.tierCounts.hard_blocker}
                 </span>
-                <span className="text-amber-700">
-                  warn {publishClosure.tierCounts.warning}
-                </span>
-                <span className="text-stone-500">
-                  info {publishClosure.tierCounts.info}
-                </span>
+                <span className="text-amber-700">warn {publishClosure.tierCounts.warning}</span>
+                <span className="text-stone-500">info {publishClosure.tierCounts.info}</span>
               </div>
               {publishClosureBlockers.length > 0 && (
                 <div className="mt-1 space-y-0.5">
-                  {publishClosureBlockers.map(blocker => {
+                  {publishClosureBlockers.map((blocker) => {
                     const affectedSkill = blocker.affectedSkill ?? "";
                     const blockerRef = blocker.ref ?? blocker.path;
                     return (

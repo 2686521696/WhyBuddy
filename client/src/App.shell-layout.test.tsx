@@ -17,11 +17,7 @@ const { deployTargetState, locationState, viewportState } = vi.hoisted(() => ({
   },
 }));
 
-import {
-  AppShell,
-  isAgentLoopLocation,
-  isProjectWorkspaceLocation,
-} from "./App";
+import { AppShell, isAgentLoopLocation, isProjectWorkspaceLocation } from "./App";
 
 vi.mock("./lib/deploy-target", () => ({
   CAN_USE_ADVANCED_RUNTIME: true,
@@ -64,13 +60,10 @@ vi.mock("wouter", () => ({
       (path === "/debug/:section" &&
         current.startsWith("/debug/") &&
         current !== "/debug/autopilot-spec-documents-workbench") ||
-      (path === "/agent-loop/sliderule" &&
-        current === "/agent-loop/sliderule") ||
-      (path === "/agent-loop/workbench" &&
-        current === "/agent-loop/workbench") ||
+      (path === "/agent-loop/sliderule" && current === "/agent-loop/sliderule") ||
+      (path === "/agent-loop/workbench" && current === "/agent-loop/workbench") ||
       (path === "/agent-loop/settings" && current === "/agent-loop/settings") ||
-      (path === "/agent-loop/runs/:runId" &&
-        current.startsWith("/agent-loop/runs/")) ||
+      (path === "/agent-loop/runs/:runId" && current.startsWith("/agent-loop/runs/")) ||
       (path === "/agent-loop" && current === "/agent-loop") ||
       (path === "/sliderule" && current === "/sliderule") ||
       (path === "/AgentLoop" && current === "/AgentLoop") ||
@@ -366,9 +359,7 @@ describe("AppShell fixed sidebar layout", () => {
     expect(isAgentLoopLocation("/agent-loop/sliderule")).toBe(true);
     expect(isAgentLoopLocation("/agent-loop/workbench")).toBe(true);
     expect(isAgentLoopLocation("/agent-loop/settings")).toBe(true);
-    expect(
-      isAgentLoopLocation("/agent-loop/runs/2026-06-27T01-02-03-004Z")
-    ).toBe(true);
+    expect(isAgentLoopLocation("/agent-loop/runs/2026-06-27T01-02-03-004Z")).toBe(true);
     expect(isAgentLoopLocation("/AgentLoop")).toBe(true);
     expect(isAgentLoopLocation("/AGENT-LOOP/")).toBe(true);
     expect(isAgentLoopLocation("/agent-loop?foo=1")).toBe(true);

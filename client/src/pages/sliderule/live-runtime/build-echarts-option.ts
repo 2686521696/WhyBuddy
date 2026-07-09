@@ -18,13 +18,7 @@ import type { RuntimeRow } from "./live-runtime";
 const INK = { label: "#595959", value: "#262626", faint: "#bfbfbf" };
 const SINGLE_HUE = "#1677ff";
 /** 固定次序分类色（validate_palette.js 全查通过；只按序取用，不循环生成） */
-export const CATEGORICAL_ORDER = [
-  "#1677ff",
-  "#13c2c2",
-  "#fa8c16",
-  "#722ed1",
-  "#eb2f96",
-];
+export const CATEGORICAL_ORDER = ["#1677ff", "#13c2c2", "#fa8c16", "#722ed1", "#eb2f96"];
 const OTHER_GRAY = "#bfbfbf";
 const MAX_PIE_SLICES = 5;
 
@@ -59,7 +53,7 @@ export function groupRowsForChart(
   } else {
     entries.sort((a, b) => b[1] - a[1]);
   }
-  return { categories: entries.map(e => e[0]), values: entries.map(e => e[1]) };
+  return { categories: entries.map((e) => e[0]), values: entries.map((e) => e[1]) };
 }
 
 /** >MAX_PIE_SLICES 类折叠进「其他」（灰色，排最后）——分类色只按固定序取用。 */
@@ -87,7 +81,7 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
 export function buildEntityRowcountOption(
   items: Array<{ label: string; value: number }>
 ): Record<string, unknown> | null {
-  if (items.length === 0 || items.every(i => i.value === 0)) return null;
+  if (items.length === 0 || items.every((i) => i.value === 0)) return null;
   // ECharts 纵轴类目自下而上排布 → 倒序让最大值在最上面
   const ordered = [...items].reverse();
   return {
@@ -101,7 +95,7 @@ export function buildEntityRowcountOption(
     },
     yAxis: {
       type: "category",
-      data: ordered.map(i => i.label),
+      data: ordered.map((i) => i.label),
       axisLabel: { color: INK.label, fontSize: 11 },
       axisLine: { lineStyle: { color: "#f0f0f0" } },
       axisTick: { show: false },
@@ -110,15 +104,10 @@ export function buildEntityRowcountOption(
       {
         type: "bar",
         name: "行数",
-        data: ordered.map(i => i.value),
+        data: ordered.map((i) => i.value),
         barMaxWidth: 14, // 细条
         itemStyle: { color: SINGLE_HUE, borderRadius: [0, 4, 4, 0] }, // 数据端 4px 圆角
-        label: {
-          show: true,
-          position: "right",
-          color: INK.value,
-          fontSize: 11,
-        },
+        label: { show: true, position: "right", color: INK.value, fontSize: 11 },
       },
     ],
   };
@@ -133,7 +122,7 @@ export function buildInstanceStatusOption(
 ): Record<string, unknown> | null {
   const entries = Object.entries(STATUS_META)
     .map(([key, meta]) => ({ key, ...meta, value: counts[key] ?? 0 }))
-    .filter(e => e.value > 0);
+    .filter((e) => e.value > 0);
   const total = entries.reduce((s, e) => s + e.value, 0);
   if (total === 0) return null;
   return {
@@ -151,7 +140,7 @@ export function buildInstanceStatusOption(
       {
         type: "pie",
         radius: ["52%", "76%"],
-        data: entries.map(e => ({
+        data: entries.map((e) => ({
           name: e.label,
           value: e.value,
           itemStyle: { color: e.color, borderColor: "#fff", borderWidth: 2 },
@@ -193,10 +182,7 @@ export function buildEchartsOption(
             name,
             value: folded.values[i],
             itemStyle: {
-              color:
-                name === "其他"
-                  ? OTHER_GRAY
-                  : CATEGORICAL_ORDER[i % CATEGORICAL_ORDER.length],
+              color: name === "其他" ? OTHER_GRAY : CATEGORICAL_ORDER[i % CATEGORICAL_ORDER.length],
               borderColor: "#fff",
               borderWidth: 2, // 2px 白缝分片，不靠颜色分界
             },

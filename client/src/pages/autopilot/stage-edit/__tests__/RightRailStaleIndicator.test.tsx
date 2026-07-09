@@ -10,7 +10,7 @@ describe("<RightRailStaleIndicator>", () => {
         artifact={{ id: "spec-docs", stage: "spec_documents" }}
         currentStage="spec_documents"
         onRegenerate={vi.fn()}
-      />
+      />,
     );
 
     expect(markup).toBe("");
@@ -26,14 +26,12 @@ describe("<RightRailStaleIndicator>", () => {
         }}
         currentStage="spec_documents"
         onRegenerate={vi.fn()}
-      />
+      />,
     );
 
     expect(markup).toContain("Current stage artifact is stale");
     expect(markup).toContain("Regenerate documents");
-    expect(markup).toContain(
-      'data-testid="autopilot-right-rail-stale-indicator"'
-    );
+    expect(markup).toContain('data-testid="autopilot-right-rail-stale-indicator"');
   });
 
   it("renders localized stale warning and regenerate action in Chinese mode", () => {
@@ -47,7 +45,7 @@ describe("<RightRailStaleIndicator>", () => {
         currentStage="spec_documents"
         locale="zh-CN"
         onRegenerate={vi.fn()}
-      />
+      />,
     );
 
     expect(markup).toContain("当前阶段产物已过期");
@@ -67,7 +65,7 @@ describe("<RightRailStaleIndicator>", () => {
         currentStage="effect_preview"
         onRegenerate={vi.fn()}
         status={{ isUpstreamRunning: true, runningStage: "spec_documents" }}
-      />
+      />,
     );
 
     expect(markup).toContain("disabled");

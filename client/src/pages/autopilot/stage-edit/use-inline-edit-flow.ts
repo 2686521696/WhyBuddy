@@ -19,9 +19,7 @@ export interface InlineEditCoordinatorEvent {
 }
 
 export interface InlineEditCoordinator {
-  submit: (
-    submission: InlineEditCoordinatorEvent
-  ) => Promise<unknown> | unknown;
+  submit: (submission: InlineEditCoordinatorEvent) => Promise<unknown> | unknown;
 }
 
 export interface InlineEditToast {

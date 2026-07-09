@@ -37,10 +37,13 @@ vi.mock("./sandbox-store", () => ({
 }));
 
 vi.mock("./store", () => ({
-  useAppStore: Object.assign(() => ({}), {
-    getState: () => ({ runtimeMode: "advanced" }),
-    subscribe: vi.fn(),
-  }),
+  useAppStore: Object.assign(
+    () => ({}),
+    {
+      getState: () => ({ runtimeMode: "advanced" }),
+      subscribe: vi.fn(),
+    }
+  ),
 }));
 
 const { buildMissionArtifacts, patchMissionRecordInStore } = await import(
@@ -63,18 +66,8 @@ function makeMission(
     progress: 55,
     currentStageKey: "execute",
     stages: [
-      {
-        key: "receive",
-        label: "Receive",
-        status: "done",
-        startedAt: now - 5000,
-      },
-      {
-        key: "execute",
-        label: "Execute",
-        status: "running",
-        startedAt: now - 2000,
-      },
+      { key: "receive", label: "Receive", status: "done", startedAt: now - 5000 },
+      { key: "execute", label: "Execute", status: "running", startedAt: now - 2000 },
     ],
     createdAt: now - 10000,
     updatedAt: now,
@@ -211,9 +204,9 @@ describe("tasks-store artifact helpers", () => {
     });
 
     mockCancelMission.mockImplementation(async () => {
-      expect(
-        useTasksStore.getState().cancellingMissionIds[cancelledMission.id]
-      ).toBe(true);
+      expect(useTasksStore.getState().cancellingMissionIds[cancelledMission.id]).toBe(
+        true
+      );
 
       return {
         ok: true,
@@ -221,13 +214,11 @@ describe("tasks-store artifact helpers", () => {
       };
     });
 
-    const result = await useTasksStore
-      .getState()
-      .cancelMission(cancelledMission.id, {
-        reason: "Stopped by the operator",
-        requestedBy: "ui-user",
-        source: "user",
-      });
+    const result = await useTasksStore.getState().cancelMission(cancelledMission.id, {
+      reason: "Stopped by the operator",
+      requestedBy: "ui-user",
+      source: "user",
+    });
 
     const state = useTasksStore.getState();
     expect(result).toBe(cancelledMission.id);
@@ -275,9 +266,9 @@ describe("tasks-store artifact helpers", () => {
 
     mockSubmitMissionOperatorAction.mockImplementation(async () => {
       expect(
-        useTasksStore.getState().operatorActionLoadingByMissionId[
-          blockedMission.id
-        ]?.["mark-blocked"]
+        useTasksStore.getState().operatorActionLoadingByMissionId[blockedMission.id]?.[
+          "mark-blocked"
+        ]
       ).toBe(true);
 
       return {
@@ -287,13 +278,14 @@ describe("tasks-store artifact helpers", () => {
       };
     });
 
-    const result = await useTasksStore
-      .getState()
-      .submitOperatorAction(blockedMission.id, {
+    const result = await useTasksStore.getState().submitOperatorAction(
+      blockedMission.id,
+      {
         action: "mark-blocked",
         reason: "Waiting for credential",
         requestedBy: "ui-user",
-      });
+      }
+    );
 
     const state = useTasksStore.getState();
     expect(result).toBe(blockedMission.id);
@@ -306,9 +298,7 @@ describe("tasks-store artifact helpers", () => {
       }
     );
     expect(
-      state.operatorActionLoadingByMissionId[blockedMission.id]?.[
-        "mark-blocked"
-      ]
+      state.operatorActionLoadingByMissionId[blockedMission.id]?.["mark-blocked"]
     ).toBe(false);
     expect(state.tasks[0]).toMatchObject({
       id: blockedMission.id,

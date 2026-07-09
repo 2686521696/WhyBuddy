@@ -95,10 +95,7 @@ function resolveMetricValue(
   key: TelemetryMetricKey,
   metrics: BlueprintWallMetrics
 ): { text: string; isPlaceholder: boolean } {
-  const placeholder = {
-    text: METRIC_PLACEHOLDER,
-    isPlaceholder: true,
-  } as const;
+  const placeholder = { text: METRIC_PLACEHOLDER, isPlaceholder: true } as const;
 
   switch (key) {
     case "burn": {
@@ -202,7 +199,7 @@ export function BlueprintWallMetricsRail({
 
   return (
     <div data-wall-metrics-rail style={railStyle}>
-      {TELEMETRY_ROWS.map(row => {
+      {TELEMETRY_ROWS.map((row) => {
         const resolved = resolveMetricValue(row.key, metrics);
         return (
           <div

@@ -82,7 +82,7 @@ describe("SpecDocPreviewBlock", () => {
     expect(markup).toContain('data-doc-state="missing"');
     expect(markup).toContain("尚未生成");
     // 不应渲染 status / title / summary
-    expect(markup).not.toContain("data-doc-status");
+    expect(markup).not.toContain('data-doc-status');
   });
 
   it("generationSource = 'llm_fallback' 显示为 'fallback'", () => {
@@ -145,14 +145,21 @@ describe("SpecDocPreviewBlock", () => {
 
   it("autopilot-spec-document-export Task 5.3: 缺 jobId 时不渲染导出按钮（向后兼容）", () => {
     const markup = renderToStaticMarkup(
-      <SpecDocPreviewBlock type="design" document={makeDoc("design")} />
+      <SpecDocPreviewBlock
+        type="design"
+        document={makeDoc("design")}
+      />
     );
     expect(markup).not.toContain('data-testid="spec-doc-export-button"');
   });
 
   it("autopilot-spec-document-export Task 5.3: document undefined 时不渲染导出按钮", () => {
     const markup = renderToStaticMarkup(
-      <SpecDocPreviewBlock type="tasks" document={undefined} jobId="job-1" />
+      <SpecDocPreviewBlock
+        type="tasks"
+        document={undefined}
+        jobId="job-1"
+      />
     );
     expect(markup).not.toContain('data-testid="spec-doc-export-button"');
   });

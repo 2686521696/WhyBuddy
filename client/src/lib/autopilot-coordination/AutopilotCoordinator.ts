@@ -1,10 +1,6 @@
 import { useMemo } from "react";
 
-import {
-  runAtomicRefresh,
-  type AtomicRefreshOptions,
-  type AtomicRefreshResult,
-} from "./AtomicRefreshMediator.js";
+import { runAtomicRefresh, type AtomicRefreshOptions, type AtomicRefreshResult } from "./AtomicRefreshMediator.js";
 import {
   type ToastPayload,
   type ToastQueue,
@@ -128,8 +124,7 @@ export function createAutopilotCoordinator(
       );
     } else if (
       submission.stageTransition &&
-      submission.stageTransition.fromStage !==
-        submission.stageTransition.toStage
+      submission.stageTransition.fromStage !== submission.stageTransition.toStage
     ) {
       deps.stageAnimator?.transition(
         submission.stageTransition.fromStage,

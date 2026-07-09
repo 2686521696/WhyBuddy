@@ -14,26 +14,13 @@ export type OrchestratePlanRequest = {
   state: V5SessionState;
   turnId: string;
   userText: string;
-  intervention?: {
-    intent?: string;
-    targetArtifactId?: string;
-    targetDecisionId?: string;
-  } | null;
+  intervention?: { intent?: string; targetArtifactId?: string; targetDecisionId?: string } | null;
 };
 
 export type OrchestratePlanResponse = {
-  selected: Array<{
-    capabilityId: V5CapabilityId;
-    roleId: string;
-    why?: string;
-  }>;
+  selected: Array<{ capabilityId: V5CapabilityId; roleId: string; why?: string }>;
   rationale: string;
-  source:
-    | "llm"
-    | "heuristic_fallback"
-    | "python-rag"
-    | "python-fullpath"
-    | "python-llm";
+  source: "llm" | "heuristic_fallback" | "python-rag" | "python-fullpath" | "python-llm";
   /** Mechanical convergence (empty selected + converged true) — still a valid llm response. */
   converged?: boolean;
   dropped?: Array<{ capabilityId: string; reason: string }>;
@@ -80,32 +67,18 @@ export async function fetchOrchestratePlan(
     if (!body || !Array.isArray(body.selected)) {
       // allow Python degraded even if shape partial
       // scope note (review finding 4 remediation): this file is the shared fetch impl for /orchestrate-plan used by runtime + pages/sliderule; edit required to ensure Python {degraded,error,backend,provenance} reaches UI not swallowed to heuristic. Boundary extension documented in task+status md.
-      if (
-        body &&
-        (body.degraded === true ||
-          body.error ||
-          (body as any).provenance?.startsWith?.("python"))
-      ) {
+      if (body && (body.degraded === true || body.error || (body as any).provenance?.startsWith?.("python"))) {
         return body;
       }
       return null;
     }
     // F0.1 / task 2.3: preserve LLM convergence signals (source=llm, empty selected).
-    if (
-      body.source === "llm" &&
-      body.converged === true &&
-      body.selected.length === 0
-    ) {
+    if (body.source === "llm" && body.converged === true && body.selected.length === 0) {
       return body;
     }
     if (body.selected.length === 0) {
       // Python returns selected:[] + degraded:true for timeout/config/error (must not be treated as null)
-      if (
-        body.degraded === true ||
-        body.error ||
-        body.source?.includes("python") ||
-        (body as any).provenance?.includes("python")
-      ) {
+      if (body.degraded === true || body.error || body.source?.includes("python") || (body as any).provenance?.includes("python")) {
         return body;
       }
       return null;

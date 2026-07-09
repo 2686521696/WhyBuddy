@@ -14,7 +14,7 @@ describe("useIsStaticPreviewMode", () => {
         moduleStaticFlag: true,
         fallbackStaticPreview: false,
         probeLatestJobs,
-      })
+      }),
     ).resolves.toBe(true);
 
     expect(typeof useIsStaticPreviewMode).toBe("function");
@@ -27,7 +27,7 @@ describe("useIsStaticPreviewMode", () => {
         moduleStaticFlag: false,
         fallbackStaticPreview: true,
         probeLatestJobs: vi.fn().mockResolvedValue({ ok: false }),
-      })
+      }),
     ).resolves.toBe(true);
   });
 
@@ -37,7 +37,7 @@ describe("useIsStaticPreviewMode", () => {
         moduleStaticFlag: false,
         fallbackStaticPreview: true,
         probeLatestJobs: vi.fn().mockResolvedValue({ ok: true }),
-      })
+      }),
     ).resolves.toBe(false);
   });
 });

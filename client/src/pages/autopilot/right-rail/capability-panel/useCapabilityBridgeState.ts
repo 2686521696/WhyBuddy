@@ -13,7 +13,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
 
-import type { BridgeInvocation, UseCapabilityBridgeStateReturn } from "./types";
+import type {
+  BridgeInvocation,
+  UseCapabilityBridgeStateReturn,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -36,7 +39,9 @@ const MAX_VISIBLE_INVOCATIONS = 20;
  * - 包含 "skill" → skill
  * - 默认 → mcp
  */
-function inferBridgeType(capabilityId: string): BridgeInvocation["bridgeType"] {
+function inferBridgeType(
+  capabilityId: string
+): BridgeInvocation["bridgeType"] {
   const lower = capabilityId.toLowerCase();
   if (lower.includes("role-container") || lower.includes("rolecontainer")) {
     return "role-container";
@@ -51,7 +56,9 @@ function inferBridgeType(capabilityId: string): BridgeInvocation["bridgeType"] {
 /**
  * 将 store 中的 CapabilityStatus 映射到 BridgeInvocation 的 status。
  */
-function mapStoreStatus(storeStatus: string): BridgeInvocation["status"] {
+function mapStoreStatus(
+  storeStatus: string
+): BridgeInvocation["status"] {
   switch (storeStatus) {
     case "invoking":
       return "running";
@@ -84,7 +91,7 @@ function mapStoreStatus(storeStatus: string): BridgeInvocation["status"] {
  */
 export function useCapabilityBridgeState(): UseCapabilityBridgeStateReturn {
   const capabilityStatuses = useBlueprintRealtimeStore(
-    s => s.capabilityStatuses
+    (s) => s.capabilityStatuses
   );
 
   // 使用 ref 追踪已知的 invocation，避免重复创建
@@ -164,16 +171,20 @@ export function useCapabilityBridgeState(): UseCapabilityBridgeStateReturn {
     if (invocations.length > MAX_VISIBLE_INVOCATIONS) {
       // 保留所有活跃的 + 最近的已完成记录
       const active = invocations.filter(
-        inv =>
+        (inv) =>
           inv.status === "pending" ||
           inv.status === "running" ||
           inv.status === "retrying"
       );
       const inactive = invocations.filter(
-        inv => inv.status === "completed" || inv.status === "failed"
+        (inv) =>
+          inv.status === "completed" || inv.status === "failed"
       );
       // 保留最近的已完成记录，使总数不超过 MAX_VISIBLE_INVOCATIONS
-      const keepCount = Math.max(0, MAX_VISIBLE_INVOCATIONS - active.length);
+      const keepCount = Math.max(
+        0,
+        MAX_VISIBLE_INVOCATIONS - active.length
+      );
       const recentInactive = inactive.slice(-keepCount);
       visibleInvocations = [...recentInactive, ...active].sort(
         (a, b) => a.stageIndex - b.stageIndex
@@ -181,7 +192,7 @@ export function useCapabilityBridgeState(): UseCapabilityBridgeStateReturn {
     }
 
     const activeInvocations = invocations.filter(
-      inv =>
+      (inv) =>
         inv.status === "pending" ||
         inv.status === "running" ||
         inv.status === "retrying"
@@ -189,9 +200,9 @@ export function useCapabilityBridgeState(): UseCapabilityBridgeStateReturn {
 
     const summary = {
       total: invocations.length,
-      running: invocations.filter(inv => inv.status === "running").length,
-      completed: invocations.filter(inv => inv.status === "completed").length,
-      failed: invocations.filter(inv => inv.status === "failed").length,
+      running: invocations.filter((inv) => inv.status === "running").length,
+      completed: invocations.filter((inv) => inv.status === "completed").length,
+      failed: invocations.filter((inv) => inv.status === "failed").length,
     };
 
     return {

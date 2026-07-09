@@ -30,21 +30,11 @@ import {
   type FiveSystemModel,
   type WfGraphNode,
 } from "./five-system-model";
-import {
-  loadRuntimeState,
-  subscribeRuntimeChanged,
-} from "../live-runtime/runtime-persistence";
+import { loadRuntimeState, subscribeRuntimeChanged } from "../live-runtime/runtime-persistence";
 import { useContainerSized } from "./use-sized";
 
 // 经 dataviz 校验的分类色板（低对比两色由角色名文字补偿）
-const ROLE_PALETTE = [
-  "#1677ff",
-  "#fa8c16",
-  "#722ed1",
-  "#13c2c2",
-  "#c41d7f",
-  "#5b8c00",
-];
+const ROLE_PALETTE = ["#1677ff", "#fa8c16", "#722ed1", "#13c2c2", "#c41d7f", "#5b8c00"];
 const ROLE_FALLBACK = "#8c8c8c";
 const HIGHLIGHT = "#1677ff";
 
@@ -58,10 +48,7 @@ export function roleColor(role: string | null, roles: string[]): string {
   return idx >= 0 ? ROLE_PALETTE[idx % ROLE_PALETTE.length] : ROLE_FALLBACK;
 }
 
-type WfFlowNode = Node<
-  { wf: WfGraphNode; color: string; running: number },
-  "wfNode"
->;
+type WfFlowNode = Node<{ wf: WfGraphNode; color: string; running: number }, "wfNode">;
 
 function WfNodeCard({ data }: NodeProps<WfFlowNode>) {
   const { wf, color, running } = data;
@@ -83,24 +70,9 @@ function WfNodeCard({ data }: NodeProps<WfFlowNode>) {
         fontFamily: "inherit",
       }}
     >
-      <Handle
-        id="t-top"
-        type="target"
-        position={Position.Top}
-        style={{ opacity: 0 }}
-      />
-      <Handle
-        id="t-right"
-        type="target"
-        position={Position.Right}
-        style={{ opacity: 0 }}
-      />
-      <Handle
-        id="t-left"
-        type="target"
-        position={Position.Left}
-        style={{ opacity: 0 }}
-      />
+      <Handle id="t-top" type="target" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle id="t-right" type="target" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle id="t-left" type="target" position={Position.Left} style={{ opacity: 0 }} />
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <span
           style={{
@@ -116,52 +88,16 @@ function WfNodeCard({ data }: NodeProps<WfFlowNode>) {
           {wf.name}
         </span>
         {wf.isStart && (
-          <span
-            style={{
-              background: "#e6f4ff",
-              color: "#1677ff",
-              borderRadius: 8,
-              padding: "0 6px",
-              fontSize: 9,
-            }}
-          >
-            始
-          </span>
+          <span style={{ background: "#e6f4ff", color: "#1677ff", borderRadius: 8, padding: "0 6px", fontSize: 9 }}>始</span>
         )}
         {wf.isTerminal && (
-          <span
-            style={{
-              background: "#f6ffed",
-              color: "#5b8c00",
-              borderRadius: 8,
-              padding: "0 6px",
-              fontSize: 9,
-            }}
-          >
-            终
-          </span>
+          <span style={{ background: "#f6ffed", color: "#5b8c00", borderRadius: 8, padding: "0 6px", fontSize: 9 }}>终</span>
         )}
       </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          marginTop: 5,
-          minHeight: 14,
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5, minHeight: 14 }}>
         {wf.role ? (
           <>
-            <span
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: 4,
-                background: barColor,
-                flexShrink: 0,
-              }}
-            />
+            <span style={{ width: 7, height: 7, borderRadius: 4, background: barColor, flexShrink: 0 }} />
             <span
               style={{
                 fontSize: 10,
@@ -194,32 +130,14 @@ function WfNodeCard({ data }: NodeProps<WfFlowNode>) {
           </span>
         )}
       </div>
-      <Handle
-        id="s-bottom"
-        type="source"
-        position={Position.Bottom}
-        style={{ opacity: 0 }}
-      />
-      <Handle
-        id="s-right"
-        type="source"
-        position={Position.Right}
-        style={{ opacity: 0 }}
-      />
-      <Handle
-        id="s-left"
-        type="source"
-        position={Position.Left}
-        style={{ opacity: 0 }}
-      />
+      <Handle id="s-bottom" type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+      <Handle id="s-right" type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle id="s-left" type="source" position={Position.Left} style={{ opacity: 0 }} />
     </div>
   );
 }
 
-type WfLaneNode = Node<
-  { label: string; index: number; w: number; h: number },
-  "wfLane"
->;
+type WfLaneNode = Node<{ label: string; index: number; w: number; h: number }, "wfLane">;
 
 /** 阶段泳道背景卡（zIndex 置底、不可交互，节点浮于其上）。 */
 function WfLaneCard({ data }: NodeProps<WfLaneNode>) {
@@ -229,8 +147,7 @@ function WfLaneCard({ data }: NodeProps<WfLaneNode>) {
         width: data.w,
         height: data.h,
         boxSizing: "border-box",
-        background:
-          data.index % 2 ? "rgba(240,237,229,0.5)" : "rgba(250,248,243,0.65)",
+        background: data.index % 2 ? "rgba(240,237,229,0.5)" : "rgba(250,248,243,0.65)",
         border: "1px dashed #E3DED2",
         borderRadius: 14,
         position: "relative",
@@ -311,11 +228,8 @@ function layoutWithLanes(
   nodes: WfGraphNode[],
   edges: Array<{ from: string; to: string; condition?: string | null }>,
   lanes: Array<{ phase: string; nodeIds: string[] }>
-): {
-  positions: Record<string, { x: number; y: number }>;
-  laneRects: LaneRect[];
-} {
-  const nodeById = new Map(nodes.map(n => [n.id, n]));
+): { positions: Record<string, { x: number; y: number }>; laneRects: LaneRect[] } {
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const locals: Array<{
     phase: string;
     pos: Record<string, { x: number; y: number }>;
@@ -324,13 +238,10 @@ function layoutWithLanes(
   }> = [];
   for (const lane of lanes) {
     const inLane = new Set(lane.nodeIds);
-    const laneNodes = lane.nodeIds.map(id => nodeById.get(id)!).filter(Boolean);
-    const laneEdges = edges.filter(e => inLane.has(e.from) && inLane.has(e.to));
+    const laneNodes = lane.nodeIds.map((id) => nodeById.get(id)!).filter(Boolean);
+    const laneEdges = edges.filter((e) => inLane.has(e.from) && inLane.has(e.to));
     const pos = layoutPositions(laneNodes, laneEdges);
-    let minX = Infinity,
-      minY = Infinity,
-      maxX = -Infinity,
-      maxY = -Infinity;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const id of lane.nodeIds) {
       const p = pos[id];
       if (!p) continue;
@@ -339,27 +250,17 @@ function layoutWithLanes(
       maxX = Math.max(maxX, p.x + CARD_W);
       maxY = Math.max(maxY, p.y + CARD_H);
     }
-    if (!Number.isFinite(minX)) {
-      minX = 0;
-      minY = 0;
-      maxX = CARD_W;
-      maxY = CARD_H;
-    }
+    if (!Number.isFinite(minX)) { minX = 0; minY = 0; maxX = CARD_W; maxY = CARD_H; }
     // 归零到 (0,0)
     const norm: Record<string, { x: number; y: number }> = {};
     for (const id of lane.nodeIds) {
       const p = pos[id];
       if (p) norm[id] = { x: p.x - minX, y: p.y - minY };
     }
-    locals.push({
-      phase: lane.phase,
-      pos: norm,
-      w: maxX - minX,
-      h: maxY - minY,
-    });
+    locals.push({ phase: lane.phase, pos: norm, w: maxX - minX, h: maxY - minY });
   }
 
-  const laneW = Math.max(...locals.map(l => l.w)) + LANE_PAD_X * 2;
+  const laneW = Math.max(...locals.map((l) => l.w)) + LANE_PAD_X * 2;
   const positions: Record<string, { x: number; y: number }> = {};
   const laneRects: LaneRect[] = [];
   let y = 0;
@@ -385,26 +286,20 @@ export function WorkflowGraph({
   className?: string;
 }) {
   const data = React.useMemo(() => deriveWorkflowGraphData(model), [model]);
-  const roles = React.useMemo(
-    () => model.rbac?.roles ?? [],
-    [model.rbac?.roles]
-  );
+  const roles = React.useMemo(() => model.rbac?.roles ?? [], [model.rbac?.roles]);
 
   // 「试运行」推进实例 → runtime-changed 事件 → 重算各节点停留实例数
   const [runtimeVersion, setRuntimeVersion] = React.useState(0);
   React.useEffect(() => {
     if (!sessionId) return;
-    return subscribeRuntimeChanged(sessionId, () =>
-      setRuntimeVersion(v => v + 1)
-    );
+    return subscribeRuntimeChanged(sessionId, () => setRuntimeVersion((v) => v + 1));
   }, [sessionId]);
   const runningByNode = React.useMemo(() => {
     const counts: Record<string, number> = {};
     if (!sessionId) return counts;
     const state = loadRuntimeState(sessionId);
     for (const inst of state?.instances ?? []) {
-      if (inst.status === "running")
-        counts[inst.currentNodeId] = (counts[inst.currentNodeId] ?? 0) + 1;
+      if (inst.status === "running") counts[inst.currentNodeId] = (counts[inst.currentNodeId] ?? 0) + 1;
     }
     return counts;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -412,22 +307,15 @@ export function WorkflowGraph({
 
   // 布局只依赖结构；高亮变化不重排。全节点带 phase 且 ≥2 阶段 → 泳道布局
   const layout = React.useMemo(() => {
-    if (!data)
-      return {
-        positions: {} as Record<string, { x: number; y: number }>,
-        laneRects: [] as LaneRect[],
-      };
+    if (!data) return { positions: {} as Record<string, { x: number; y: number }>, laneRects: [] as LaneRect[] };
     const lanes = derivePhaseLanes(data.nodes);
     if (lanes) return layoutWithLanes(data.nodes, data.edges, lanes);
-    return {
-      positions: layoutPositions(data.nodes, data.edges),
-      laneRects: [],
-    };
+    return { positions: layoutPositions(data.nodes, data.edges), laneRects: [] };
   }, [data]);
   const positions = layout.positions;
 
   const flowNodes: Array<WfFlowNode | WfLaneNode> = React.useMemo(() => {
-    const laneNodes: WfLaneNode[] = layout.laneRects.map(r => ({
+    const laneNodes: WfLaneNode[] = layout.laneRects.map((r) => ({
       id: `lane-${r.index}`,
       type: "wfLane" as const,
       position: { x: r.x, y: r.y },
@@ -437,15 +325,11 @@ export function WorkflowGraph({
       focusable: false,
       zIndex: -1,
     }));
-    const wfNodes: WfFlowNode[] = (data?.nodes ?? []).map(n => ({
+    const wfNodes: WfFlowNode[] = (data?.nodes ?? []).map((n) => ({
       id: n.id,
       type: "wfNode" as const,
       position: positions[n.id] ?? { x: 0, y: 0 },
-      data: {
-        wf: n,
-        color: roleColor(n.role, roles),
-        running: runningByNode[n.id] ?? 0,
-      },
+      data: { wf: n, color: roleColor(n.role, roles), running: runningByNode[n.id] ?? 0 },
     }));
     return [...laneNodes, ...wfNodes];
   }, [data, layout.laneRects, positions, roles, runningByNode]);
@@ -463,32 +347,19 @@ export function WorkflowGraph({
           id: `t-${i}`,
           source: e.from,
           target: e.to,
-          sourceHandle: isBack
-            ? sideRight
-              ? "s-right"
-              : "s-left"
-            : "s-bottom",
+          sourceHandle: isBack ? (sideRight ? "s-right" : "s-left") : "s-bottom",
           targetHandle: isBack ? (sideRight ? "t-right" : "t-left") : "t-top",
           type: "smoothstep",
           pathOptions: { borderRadius: 12 },
           label: e.condition ?? undefined,
           // 实例正停留的节点，出边流动动画——下一步会走向哪里一眼可见
           animated: (runningByNode[e.from] ?? 0) > 0,
-          style: {
-            stroke: isBack ? "#D9CDB8" : "#C9C2B2",
-            strokeWidth: 1.5,
-            strokeDasharray: isBack ? "6 4" : undefined,
-          },
+          style: { stroke: isBack ? "#D9CDB8" : "#C9C2B2", strokeWidth: 1.5, strokeDasharray: isBack ? "6 4" : undefined },
           labelStyle: { fontSize: 10, fill: "#8c8577" },
           labelBgStyle: { fill: "#FCFBF8", fillOpacity: 0.95 },
           labelBgPadding: [4, 2] as [number, number],
           labelBgBorderRadius: 4,
-          markerEnd: {
-            type: "arrowclosed" as const,
-            color: "#C9C2B2",
-            width: 18,
-            height: 18,
-          },
+          markerEnd: { type: "arrowclosed" as const, color: "#C9C2B2", width: 18, height: 18 },
         };
       }),
     [data, positions, runningByNode]
@@ -500,11 +371,7 @@ export function WorkflowGraph({
   if (!data) return null;
 
   return (
-    <div
-      ref={containerRef}
-      className={`relative h-full w-full ${className}`}
-      data-testid="workflow-graph"
-    >
+    <div ref={containerRef} className={`relative h-full w-full ${className}`} data-testid="workflow-graph">
       {sized && (
         <ReactFlow
           nodes={flowNodes}

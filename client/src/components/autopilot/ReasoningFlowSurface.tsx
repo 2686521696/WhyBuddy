@@ -21,14 +21,7 @@
  * - 复用项目里已有的 telemetry / consoleLines 结构。
  */
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useCallback,
-  type CSSProperties,
-} from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, type CSSProperties } from "react";
 import dagre from "dagre";
 
 import type {
@@ -92,10 +85,7 @@ export interface ReasoningFlowSurfaceProps {
    * gateNodeId: the id of the gate node in the graph.
    * choice: the chosen value (e.g. route id or 'primary' for confirm, null for cancel/reject).
    */
-  onResolveInteractiveGate?: (
-    gateNodeId: string,
-    choice: string | null
-  ) => void;
+  onResolveInteractiveGate?: (gateNodeId: string, choice: string | null) => void;
   /** 启用深色（Grok 风格）主题。默认 false 保持原有浅色产品图感。SlideRule V5 等暗色宿主传入 true。 */
   dark?: boolean;
   /** Bump to re-run fit() when the graph grows (e.g. mid-drive session updates). */
@@ -138,7 +128,7 @@ const RANK_SEP = 420;
 const NODE_SEP = 40;
 
 const TYPE_COLORS: Record<string, string> = {
-  question: "#0d9488", // teal
+  question: "#0d9488",     // teal
   clarification: "#6366f1",
   hypothesis: "#7c3aed",
   evidence: "#0d9488",
@@ -182,12 +172,12 @@ const DEBATE_PROTOCOL_TYPES = new Set<string>(["critique", "rebuttal"]);
 // Edge/relation colors for Product Reasoning Map（产品推演平台）
 // 边表达“推演关系”，而非法律证据链
 const EDGE_COLORS: Record<string, string> = {
-  cites: "#0d9488", // 来源 / 引用 - teal
-  supports: "#10b981", // 支撑 / 验证 - green
-  refines: "#7c3aed", // 拆解 / 细化 - violet
-  synthesizes: "#6366f1", // 收敛 - indigo
-  questions: "#f59e0b", // 提出 / 澄清 - amber
-  conflicts: "#ef4444", // 反证 / 冲突 - red
+  cites: "#0d9488",        // 来源 / 引用 - teal
+  supports: "#10b981",     // 支撑 / 验证 - green
+  refines: "#7c3aed",      // 拆解 / 细化 - violet
+  synthesizes: "#6366f1",  // 收敛 - indigo
+  questions: "#f59e0b",    // 提出 / 澄清 - amber
+  conflicts: "#ef4444",    // 反证 / 冲突 - red
   default: "#64748b",
 };
 
@@ -195,44 +185,18 @@ function getEdgeColor(edge: { type?: string; label?: string }): string {
   if (edge.type && EDGE_COLORS[edge.type]) return EDGE_COLORS[edge.type];
   const label = (edge.label || "").toLowerCase();
   // 产品推演语义匹配（支撑、反证、拆解、收敛、来源、提出等）
-  if (
-    label.includes("支撑") ||
-    label.includes("验证") ||
-    label.includes("证据")
-  )
-    return EDGE_COLORS.supports;
-  if (
-    label.includes("反证") ||
-    label.includes("冲突") ||
-    label.includes("风险") ||
-    label.includes("阻塞")
-  )
-    return EDGE_COLORS.conflicts;
-  if (
-    label.includes("拆解") ||
-    label.includes("细化") ||
-    label.includes("派生")
-  )
-    return EDGE_COLORS.refines;
-  if (
-    label.includes("收敛") ||
-    label.includes("决策") ||
-    label.includes("综合")
-  )
-    return EDGE_COLORS.synthesizes;
-  if (label.includes("来源") || label.includes("引用"))
-    return EDGE_COLORS.cites;
-  if (label.includes("提出") || label.includes("澄清"))
-    return EDGE_COLORS.questions;
+  if (label.includes("支撑") || label.includes("验证") || label.includes("证据")) return EDGE_COLORS.supports;
+  if (label.includes("反证") || label.includes("冲突") || label.includes("风险") || label.includes("阻塞")) return EDGE_COLORS.conflicts;
+  if (label.includes("拆解") || label.includes("细化") || label.includes("派生")) return EDGE_COLORS.refines;
+  if (label.includes("收敛") || label.includes("决策") || label.includes("综合")) return EDGE_COLORS.synthesizes;
+  if (label.includes("来源") || label.includes("引用")) return EDGE_COLORS.cites;
+  if (label.includes("提出") || label.includes("澄清")) return EDGE_COLORS.questions;
   return EDGE_COLORS.default;
 }
 
 function estimateLabelWidth(label: string): number {
   // Better estimate for mixed Chinese/English labels (Chinese chars are wider)
-  const units = [...label].reduce(
-    (sum, ch) => sum + (/[\u4e00-\u9fff]/.test(ch) ? 11 : 6.5),
-    0
-  );
+  const units = [...label].reduce((sum, ch) => sum + (/[\u4e00-\u9fff]/.test(ch) ? 11 : 6.5), 0);
   return Math.max(36, units + 16); // padding + min width
 }
 
@@ -268,13 +232,7 @@ function hexWithAlpha(hex: string, alpha: number): string {
  * Reveals the current narration/thinking text chunk-by-chunk with cursor.
  * Re-uses the spirit of the one in SlideRule.tsx for consistency.
  */
-function LiveThinking({
-  text,
-  isActive,
-}: {
-  text?: string;
-  isActive?: boolean;
-}) {
+function LiveThinking({ text, isActive }: { text?: string; isActive?: boolean }) {
   const [display, setDisplay] = useState("");
   const prevRef = useRef<string>("");
 
@@ -332,10 +290,7 @@ function LiveThinking({
 // Pure Layout (复用/简化项目中 computeLayout + dagre 思路)
 // ------------------------------------------------------------------------
 
-function nodeDimensions(node: BrainstormReasoningNode): {
-  width: number;
-  height: number;
-} {
+function nodeDimensions(node: BrainstormReasoningNode): { width: number; height: number } {
   if (node.id === SLIDERULE_TERMINAL_NODE_ID) {
     return { width: TERMINAL_NODE_WIDTH, height: TERMINAL_NODE_HEIGHT };
   }
@@ -367,12 +322,12 @@ function computeReasoningPositions(
   });
   g.setDefaultEdgeLabel(() => ({}));
 
-  nodes.forEach(node => {
+  nodes.forEach((node) => {
     const dim = nodeDimensions(node);
     g.setNode(node.id, { width: dim.width, height: dim.height });
   });
 
-  edges.forEach(edge => {
+  edges.forEach((edge) => {
     if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
       g.setEdge(edge.source, edge.target);
     }
@@ -385,7 +340,7 @@ function computeReasoningPositions(
   let minY = Infinity;
   let maxY = -Infinity;
 
-  const positioned: PositionedNode[] = nodes.map(node => {
+  const positioned: PositionedNode[] = nodes.map((node) => {
     const n = g.node(node.id);
     const dim = nodeDimensions(node);
     const x = n.x - dim.width / 2;
@@ -409,17 +364,17 @@ function buildEdgePaths(
   positioned: PositionedNode[],
   edges: BrainstormReasoningEdge[]
 ): EdgeWithPath[] {
-  const posById = new Map(positioned.map(n => [n.id, n]));
+  const posById = new Map(positioned.map((n) => [n.id, n]));
 
   // Group edges by source for fan-out dispersion (避免多边从一个节点堆在一起)
   const edgesBySource = new Map<string, BrainstormReasoningEdge[]>();
-  edges.forEach(e => {
+  edges.forEach((e) => {
     if (!edgesBySource.has(e.source)) edgesBySource.set(e.source, []);
     edgesBySource.get(e.source)!.push(e);
   });
 
   return edges
-    .map(edge => {
+    .map((edge) => {
       const src = posById.get(edge.source);
       const tgt = posById.get(edge.target);
       if (!src || !tgt) return null;
@@ -434,8 +389,7 @@ function buildEdgePaths(
       // Fan-out dispersion: use stable array index (reliable even without id or duplicate s/t)
       const siblings = edgesBySource.get(edge.source) || [];
       const idx = siblings.indexOf(edge);
-      const fan =
-        siblings.length > 1 ? (idx - (siblings.length - 1) / 2) * 18 : 0;
+      const fan = siblings.length > 1 ? (idx - (siblings.length - 1) / 2) * 18 : 0;
 
       const dx = Math.max(70, (x2 - x1) * 0.42);
       const cy1 = y1 + fan;
@@ -444,10 +398,11 @@ function buildEdgePaths(
 
       // 更好的中点 + 垂直偏移（让标签贴在曲线“上方”，避免压线）
       const midX = (x1 + x2) / 2;
-      const midY = (y1 + y2) / 2 + (fan > 0 ? -12 : 12); // 轻微垂直偏移
+      const midY = (y1 + y2) / 2 + (fan > 0 ? -12 : 12);  // 轻微垂直偏移
 
       const label =
-        edge.label || (edge.type ? edge.type.replace(/_/g, " ") : undefined);
+        edge.label ||
+        (edge.type ? edge.type.replace(/_/g, " ") : undefined);
 
       return {
         id: edge.id || `${edge.source}-${edge.target}`,
@@ -514,7 +469,7 @@ export function ReasoningFlowSurface({
 
   // 仅基于可见数据检测 debate（用于渲染过滤：节点卡片 + 边）。
   const visibleHasDebateProtocolNodes = useMemo(
-    () => baseNodes.some(n => DEBATE_PROTOCOL_TYPES.has(n.type)),
+    () => baseNodes.some((n) => DEBATE_PROTOCOL_TYPES.has(n.type)),
     [baseNodes]
   );
 
@@ -523,14 +478,14 @@ export function ReasoningFlowSurface({
   const sourceHasDebateProtocolNodes = useMemo(
     () =>
       visibleHasDebateProtocolNodes ||
-      (safeSource?.nodes ?? []).some(n => DEBATE_PROTOCOL_TYPES.has(n.type)),
+      (safeSource?.nodes ?? []).some((n) => DEBATE_PROTOCOL_TYPES.has(n.type)),
     [visibleHasDebateProtocolNodes, safeSource?.nodes]
   );
 
   // 防御过滤节点（对 polluted viewModel.visibleNodes 的 defense-in-depth）。
   // 渲染始终基于 baseNodes（调用方提供的可见集），而不是把 graph 里的 debate 节点拉进来。
   const nodes: BrainstormReasoningNode[] = useMemo(
-    () => baseNodes.filter(n => !DEBATE_PROTOCOL_TYPES.has(n.type)),
+    () => baseNodes.filter((n) => !DEBATE_PROTOCOL_TYPES.has(n.type)),
     [baseNodes]
   );
 
@@ -540,10 +495,12 @@ export function ReasoningFlowSurface({
     if (!visibleHasDebateProtocolNodes) return baseEdges;
 
     const debateIds = new Set(
-      baseNodes.filter(n => DEBATE_PROTOCOL_TYPES.has(n.type)).map(n => n.id)
+      baseNodes
+        .filter((n) => DEBATE_PROTOCOL_TYPES.has(n.type))
+        .map((n) => n.id)
     );
     return baseEdges.filter(
-      e => !debateIds.has(e.source) && !debateIds.has(e.target)
+      (e) => !debateIds.has(e.source) && !debateIds.has(e.target)
     );
   }, [baseEdges, visibleHasDebateProtocolNodes, baseNodes]);
 
@@ -553,12 +510,8 @@ export function ReasoningFlowSurface({
     () =>
       sourceHasDebateProtocolNodes
         ? []
-        : (viewModel?.consoleLines ?? safeSource?.consoleLines ?? []),
-    [
-      sourceHasDebateProtocolNodes,
-      viewModel?.consoleLines,
-      safeSource?.consoleLines,
-    ]
+        : viewModel?.consoleLines ?? safeSource?.consoleLines ?? [],
+    [sourceHasDebateProtocolNodes, viewModel?.consoleLines, safeSource?.consoleLines]
   );
 
   const telemetry: BrainstormGraphTelemetry =
@@ -576,11 +529,10 @@ export function ReasoningFlowSurface({
 
   // 布局（纯函数，变化时重算）
   const { positioned, graphWidth, graphHeight } = useMemo(() => {
-    const {
-      positioned: pos,
-      width,
-      height,
-    } = computeReasoningPositions(nodes, edges);
+    const { positioned: pos, width, height } = computeReasoningPositions(
+      nodes,
+      edges
+    );
     return { positioned: pos, graphWidth: width, graphHeight: height };
   }, [nodes, edges]);
 
@@ -613,14 +565,14 @@ export function ReasoningFlowSurface({
 
   // 当前高亮的节点集合（自己 + 祖先 + 后代）
   const visibleNodeIdSet = useMemo(
-    () => new Set(nodes.map(n => n.id)),
+    () => new Set(nodes.map((n) => n.id)),
     [nodes]
   );
 
   // Only highlight ids that exist in the current projection (avoids dimming the whole graph when
   // lineage/evidence targets a ::ev- child that compact mode has not materialized yet).
   const externalHighlightSet = useMemo(() => {
-    const matched = (externalHighlightedIds || []).filter(id =>
+    const matched = (externalHighlightedIds || []).filter((id) =>
       visibleNodeIdSet.has(id)
     );
     return new Set(matched);
@@ -658,10 +610,7 @@ export function ReasoningFlowSurface({
     if (highlightedNodeIds.size === 0) return new Set<string>();
     const set = new Set<string>();
     for (const e of edges) {
-      if (
-        highlightedNodeIds.has(e.source) &&
-        highlightedNodeIds.has(e.target)
-      ) {
+      if (highlightedNodeIds.has(e.source) && highlightedNodeIds.has(e.target)) {
         set.add(e.id);
       }
     }
@@ -679,8 +628,8 @@ export function ReasoningFlowSurface({
       ? "opacity-60 saturate-[0.82] border-zinc-800/90 bg-zinc-900/90"
       : "opacity-50 saturate-[0.88] border-zinc-800/90 bg-zinc-900/90"
     : denseGraph
-      ? "opacity-60 saturate-[0.9] border-slate-200/90 bg-white/95"
-      : "opacity-55 saturate-[0.92] border-slate-200/90 bg-white/95";
+    ? "opacity-60 saturate-[0.9] border-slate-200/90 bg-white/95"
+    : "opacity-55 saturate-[0.92] border-slate-200/90 bg-white/95";
 
   // 视口状态（2D infinite canvas 核心）
   const [scale, setScale] = useState(initialScale);
@@ -732,15 +681,9 @@ export function ReasoningFlowSurface({
   const txRef = useRef(tx);
   const tyRef = useRef(ty);
 
-  useEffect(() => {
-    scaleRef.current = scale;
-  }, [scale]);
-  useEffect(() => {
-    txRef.current = tx;
-  }, [tx]);
-  useEffect(() => {
-    tyRef.current = ty;
-  }, [ty]);
+  useEffect(() => { scaleRef.current = scale; }, [scale]);
+  useEffect(() => { txRef.current = tx; }, [tx]);
+  useEffect(() => { tyRef.current = ty; }, [ty]);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -777,17 +720,15 @@ export function ReasoningFlowSurface({
       setTy(newTy);
     };
 
-    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener('wheel', onWheel, { passive: false });
 
     return () => {
-      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener('wheel', onWheel);
     };
   }, []); // 监听器只挂一次，内部用 ref 拿最新 scale/tx/ty
 
-  const pointerDistance = (
-    a: { x: number; y: number },
-    b: { x: number; y: number }
-  ) => Math.hypot(a.x - b.x, a.y - b.y);
+  const pointerDistance = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y);
 
   const endPanGesture = useCallback((e: React.PointerEvent) => {
     isDraggingRef.current = false;
@@ -800,8 +741,7 @@ export function ReasoningFlowSurface({
     if (e.button !== 0) return;
 
     const target = e.target as HTMLElement;
-    if (target.closest("button, a, input, textarea, [data-pan-exclude]"))
-      return;
+    if (target.closest("button, a, input, textarea, [data-pan-exclude]")) return;
 
     activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -867,16 +807,15 @@ export function ReasoningFlowSurface({
       return;
     }
 
-    if (!isDraggingRef.current || activePointerIdRef.current !== e.pointerId)
-      return;
+    if (!isDraggingRef.current || activePointerIdRef.current !== e.pointerId) return;
 
     const dx = e.clientX - lastPointer.current.x;
     const dy = e.clientY - lastPointer.current.y;
     if (Math.abs(dx) + Math.abs(dy) >= PAN_CLICK_THRESHOLD_PX) {
       didPanRef.current = true;
     }
-    setTx(prev => prev + dx);
-    setTy(prev => prev + dy);
+    setTx((prev) => prev + dx);
+    setTy((prev) => prev + dy);
     lastPointer.current = { x: e.clientX, y: e.clientY };
     if (e.pointerType === "touch") e.preventDefault();
   };
@@ -916,8 +855,8 @@ export function ReasoningFlowSurface({
   }, []);
 
   // 控制按钮
-  const zoomIn = () => setScale(s => Math.min(3.5, s * 1.2));
-  const zoomOut = () => setScale(s => Math.max(0.25, s / 1.2));
+  const zoomIn = () => setScale((s) => Math.min(3.5, s * 1.2));
+  const zoomOut = () => setScale((s) => Math.max(0.25, s / 1.2));
 
   const fit = useCallback(() => {
     const el = viewportRef.current;
@@ -958,7 +897,7 @@ export function ReasoningFlowSurface({
   const panToNode = useCallback(
     (nodeId: string) => {
       const el = viewportRef.current;
-      const target = positioned.find(n => n.id === nodeId);
+      const target = positioned.find((n) => n.id === nodeId);
       if (!el || !target) return;
       const dim = nodeDimensions(target);
       const cx = target.x + dim.width / 2;
@@ -974,7 +913,7 @@ export function ReasoningFlowSurface({
 
   useEffect(() => {
     if (!focusNodeId) return;
-    const target = positioned.find(n => n.id === focusNodeId);
+    const target = positioned.find((n) => n.id === focusNodeId);
     if (!target) return;
     const id = window.requestAnimationFrame(() => panToNode(focusNodeId));
     return () => window.cancelAnimationFrame(id);
@@ -985,12 +924,7 @@ export function ReasoningFlowSurface({
   // so that when this surface is embedded in AutopilotRoutePage it won't steal 'f' from text fields.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (
-        (e.key === "f" || e.key === "F") &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        !e.altKey
-      ) {
+      if ((e.key === "f" || e.key === "F") && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const target = e.target as HTMLElement | null;
         const isEditable =
           target?.tagName === "INPUT" ||
@@ -1024,24 +958,15 @@ export function ReasoningFlowSurface({
     const worldTop = -ty / scale;
     const worldRight = (w - tx) / scale;
     const worldBottom = (h - ty) / scale;
-    return {
-      left: worldLeft,
-      top: worldTop,
-      right: worldRight,
-      bottom: worldBottom,
-    };
+    return { left: worldLeft, top: worldTop, right: worldRight, bottom: worldBottom };
   })();
 
   if (!safeSource || nodes.length === 0) {
     return (
-      <div
-        className={`flex h-full w-full items-center justify-center ${dark ? "bg-zinc-950 text-zinc-500" : "bg-slate-50 text-slate-400"} ${className}`}
-      >
+      <div className={`flex h-full w-full items-center justify-center ${dark ? 'bg-zinc-950 text-zinc-500' : 'bg-slate-50 text-slate-400'} ${className}`}>
         <div className="text-center">
           <div className="mb-2 text-2xl">No reasoning graph</div>
-          <div className="text-sm">
-            等待结构化 reasoning 数据或切换到支持的阶段
-          </div>
+          <div className="text-sm">等待结构化 reasoning 数据或切换到支持的阶段</div>
         </div>
       </div>
     );
@@ -1049,7 +974,7 @@ export function ReasoningFlowSurface({
 
   return (
     <div
-      className={`relative flex h-full w-full select-none flex-col overflow-hidden ${dark ? "bg-zinc-950" : "bg-[#f8fafc]"} ${className}`}
+      className={`relative flex h-full w-full select-none flex-col overflow-hidden ${dark ? 'bg-zinc-950' : 'bg-[#f8fafc]'} ${className}`}
       style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
     >
       {/* 主画布视口 */}
@@ -1083,12 +1008,7 @@ export function ReasoningFlowSurface({
         {/* 内容层（可变换的无限画布） */}
         <div
           className="absolute left-0 top-0 origin-top-left"
-          style={{
-            zIndex: 10,
-            transform: contentTransform,
-            width: graphWidth,
-            height: graphHeight,
-          }}
+          style={{ zIndex: 10, transform: contentTransform, width: graphWidth, height: graphHeight }}
         >
           {/* SVG 边层 */}
           <svg
@@ -1099,8 +1019,8 @@ export function ReasoningFlowSurface({
           >
             <defs>
               {/* Per-color markers for reliable arrowhead colors (no currentColor inheritance fragility from defs) */}
-              {Array.from(new Set(Object.values(EDGE_COLORS))).map(col => {
-                const mid = `arrow-${col.replace("#", "")}`;
+              {Array.from(new Set(Object.values(EDGE_COLORS))).map((col) => {
+                const mid = `arrow-${col.replace('#', '')}`;
                 return (
                   <marker
                     key={col}
@@ -1118,9 +1038,9 @@ export function ReasoningFlowSurface({
               })}
             </defs>
 
-            {edgePaths.map(edge => {
+            {edgePaths.map((edge) => {
               const ec = getEdgeColor(edge);
-              const arrowId = `arrow-${ec.replace("#", "")}`;
+              const arrowId = `arrow-${ec.replace('#', '')}`;
               const isEdgeHighlighted = highlightedEdgeIds.has(edge.id);
               return (
                 <g key={edge.id}>
@@ -1132,102 +1052,92 @@ export function ReasoningFlowSurface({
                     strokeDasharray={
                       isEdgeHighlighted
                         ? undefined
-                        : edge.label === "质疑" ||
-                            (edge as any).type === "challenges"
-                          ? "4 2"
-                          : "5 3"
+                        : (edge.label === "质疑" || (edge as any).type === "challenges")
+                        ? "4 2"
+                        : "5 3"
                     }
                     markerEnd={`url(#${arrowId})`}
                     opacity={
                       isEdgeHighlighted
                         ? 0.95
                         : isHoverFocusActive
-                          ? 0.38
-                          : isPathFocusActive
-                            ? 0.52
-                            : 0.72
+                        ? 0.38
+                        : isPathFocusActive
+                        ? 0.52
+                        : 0.72
                     }
                   />
-                  {edge.label && (
-                    <g
-                      opacity={
-                        isEdgeHighlighted
-                          ? 0.95
-                          : isHoverFocusActive
-                            ? 0.45
-                            : isPathFocusActive
-                              ? 0.58
-                              : 1
-                      }
+                {edge.label && (
+                  <g
+                    opacity={
+                      isEdgeHighlighted
+                        ? 0.95
+                        : isHoverFocusActive
+                        ? 0.45
+                        : isPathFocusActive
+                        ? 0.58
+                        : 1
+                    }
+                  >
+                    {/* subtle label background for readability on canvas */}
+                    {(() => {
+                      const w = estimateLabelWidth(edge.label);
+                      return (
+                        <rect
+                          x={edge.midX - w / 2}
+                          y={edge.midY - 14}
+                          width={w}
+                          height={15}
+                          rx="3"
+                          fill="#ffffff"
+                          fillOpacity="0.9"
+                          stroke="#e2e8f0"
+                          strokeWidth="0.5"
+                        />
+                      );
+                    })()}
+                    <text
+                      x={edge.midX}
+                      y={edge.midY - 3}
+                      fontSize={10}
+                      fill="#334155"
+                      textAnchor="middle"
+                      fontWeight="500"
+                      className="pointer-events-auto"
+                      style={{ userSelect: "none" }}
                     >
-                      {/* subtle label background for readability on canvas */}
-                      {(() => {
-                        const w = estimateLabelWidth(edge.label);
-                        return (
-                          <rect
-                            x={edge.midX - w / 2}
-                            y={edge.midY - 14}
-                            width={w}
-                            height={15}
-                            rx="3"
-                            fill="#ffffff"
-                            fillOpacity="0.9"
-                            stroke="#e2e8f0"
-                            strokeWidth="0.5"
-                          />
-                        );
-                      })()}
-                      <text
-                        x={edge.midX}
-                        y={edge.midY - 3}
-                        fontSize={10}
-                        fill="#334155"
-                        textAnchor="middle"
-                        fontWeight="500"
-                        className="pointer-events-auto"
-                        style={{ userSelect: "none" }}
-                      >
-                        {edge.label}
-                      </text>
-                    </g>
-                  )}
-                </g>
-              );
-            })}
+                      {edge.label}
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
           </svg>
 
           {/* HTML 节点卡片层（轻量 2D 产品风格） */}
-          {positioned.map(node => {
+          {positioned.map((node) => {
             const isTerminal = node.id === SLIDERULE_TERMINAL_NODE_ID;
             const dim = nodeDimensions(node);
-            const color = isTerminal
-              ? "#10b981"
-              : (TYPE_COLORS[node.type] ?? TYPE_COLORS.default);
+            const color = isTerminal ? "#10b981" : (TYPE_COLORS[node.type] ?? TYPE_COLORS.default);
             const typeLabel = NODE_TYPE_LABELS[node.type] ?? node.type;
             const conclusionBadge =
               node.conclusionBadge ||
               (node.roleLabel &&
-              /结论明确|结论待完善|用户命题|信息缺失|终点交付/.test(
-                node.roleLabel
-              )
+              /结论明确|结论待完善|用户命题|信息缺失|终点交付/.test(node.roleLabel)
                 ? node.roleLabel
                 : null);
-            const roleLabel = conclusionBadge
-              ? null
-              : node.roleLabel || node.roleId;
+            const roleLabel = conclusionBadge ? null : node.roleLabel || node.roleId;
             const badgeTone =
               conclusionBadge === "结论明确" || conclusionBadge === "终点交付"
                 ? "text-emerald-700"
                 : conclusionBadge === "信息缺失"
-                  ? "text-rose-600"
-                  : conclusionBadge === "用户命题"
-                    ? "text-teal-700"
-                    : "text-violet-700";
+                ? "text-rose-600"
+                : conclusionBadge === "用户命题"
+                ? "text-teal-700"
+                : "text-violet-700";
             const isActive = node.status === "active" || node.status === "open";
-            const isCompleted =
-              (node.status as any) === "completed" ||
-              (node.status as any) === "done" ||
-              !!(node as any).producedBy?.artifactId;
+            const isCompleted = ((node.status as any) === "completed" || (node.status as any) === "done" || !!(node as any).producedBy?.artifactId);
 
             const isHighlighted = highlightedNodeIds.has(node.id);
             const isDimmed = highlightedNodeIds.size > 0 && !isHighlighted;
@@ -1241,24 +1151,14 @@ export function ReasoningFlowSurface({
             const titleText = (node.title || "").trim();
             const bodyText = (node.body || "").trim();
             const isPhaseChild = node.id.includes("::phase-");
-            const bodyLines = isTerminal
-              ? 8
-              : isPhaseChild
-                ? 6
-                : node.id.includes("::")
-                  ? 3
-                  : isCompleted
-                    ? 8
-                    : FLOW_MAX_LINES;
+            const bodyLines = isTerminal ? 8 : isPhaseChild ? 6 : node.id.includes("::") ? 3 : (isCompleted ? 8 : FLOW_MAX_LINES);
             const cardTitle = isTerminal
               ? flowTooltip
               : clickable
-                ? `${flowTooltip}\n\n点击发起挑战 / 继续讨论`
-                : flowTooltip;
+              ? `${flowTooltip}\n\n点击发起挑战 / 继续讨论`
+              : flowTooltip;
             const sealLine = isTerminal ? bodyText.split("\n")[0] : "";
-            const summaryLine = isTerminal
-              ? bodyText.split("\n").slice(1).join(" ")
-              : bodyText;
+            const summaryLine = isTerminal ? bodyText.split("\n").slice(1).join(" ") : bodyText;
             const liveText = (node as any).liveText;
 
             return (
@@ -1279,20 +1179,20 @@ export function ReasoningFlowSurface({
                   isTerminal
                     ? "border-emerald-400/80 bg-[linear-gradient(180deg,rgba(236,253,245,0.98),rgba(209,250,229,0.92))] shadow-[0_10px_28px_rgba(16,185,129,0.18)] ring-1 ring-emerald-200/60"
                     : dark
-                      ? isDimmed
+                    ? (isDimmed
                         ? dimNodeClass
                         : isHighlighted
-                          ? "scale-[1.012] border-zinc-500 bg-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.35)] ring-1 ring-zinc-500/40"
-                          : isProjectionChild
-                            ? "border-zinc-600/90 bg-zinc-800/95 hover:border-zinc-500"
-                            : "border-zinc-600/90 bg-zinc-900/95 hover:border-zinc-500 hover:shadow-[0_6px_18px_rgba(0,0,0,0.28)]"
-                      : isDimmed
+                        ? "scale-[1.012] border-zinc-500 bg-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.35)] ring-1 ring-zinc-500/40"
+                        : isProjectionChild
+                        ? "border-zinc-600/90 bg-zinc-800/95 hover:border-zinc-500"
+                        : "border-zinc-600/90 bg-zinc-900/95 hover:border-zinc-500 hover:shadow-[0_6px_18px_rgba(0,0,0,0.28)]")
+                    : (isDimmed
                         ? dimNodeClass
                         : isHighlighted
-                          ? "scale-[1.012] border-slate-400 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.14)] ring-1 ring-slate-300/80"
-                          : isProjectionChild
-                            ? "border-slate-300/95 bg-white shadow-[0_1px_4px_rgba(15,23,42,0.06)] hover:border-slate-400"
-                            : "border-slate-300/95 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)] hover:border-slate-400 hover:shadow-[0_6px_16px_rgba(15,23,42,0.1)]"
+                        ? "scale-[1.012] border-slate-400 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.14)] ring-1 ring-slate-300/80"
+                        : isProjectionChild
+                        ? "border-slate-300/95 bg-white shadow-[0_1px_4px_rgba(15,23,42,0.06)] hover:border-slate-400"
+                        : "border-slate-300/95 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)] hover:border-slate-400 hover:shadow-[0_6px_16px_rgba(15,23,42,0.1)]")
                 } ${clickable ? "cursor-pointer" : ""}`}
                 style={{
                   left: node.x,
@@ -1306,8 +1206,7 @@ export function ReasoningFlowSurface({
               >
                 {/* V5.3 节点内联编辑:右下角「编辑」→ 卡内文本框 + 确认/取消(替代弹窗) */}
                 {onNodeEditSubmit &&
-                  (node as { producedArtifactId?: string })
-                    .producedArtifactId &&
+                  (node as { producedArtifactId?: string }).producedArtifactId &&
                   !isTerminal &&
                   !isProjectionChild &&
                   editingNodeId !== node.id && (
@@ -1315,16 +1214,11 @@ export function ReasoningFlowSurface({
                       type="button"
                       title="编辑后重新推演此节点"
                       data-testid="flow-node-edit"
-                      onClick={e => {
+                      onClick={(e) => {
                         e.stopPropagation();
                         setEditingNodeId(node.id);
                         // 把节点现有内容(标题+正文)带进文本框,供编辑而非空手重输。
-                        setEditDraft(
-                          [titleText, bodyText]
-                            .filter(Boolean)
-                            .join("\n")
-                            .trim()
-                        );
+                        setEditDraft([titleText, bodyText].filter(Boolean).join("\n").trim());
                       }}
                       className="absolute bottom-1 right-1 z-10 rounded-md border border-slate-200 bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 shadow-sm backdrop-blur hover:text-slate-800"
                     >
@@ -1334,20 +1228,20 @@ export function ReasoningFlowSurface({
                 {onNodeEditSubmit && editingNodeId === node.id && (
                   <div
                     className="absolute inset-0 z-20 flex flex-col gap-1 rounded-[11px] bg-white p-2"
-                    onClick={e => e.stopPropagation()}
-                    onMouseDown={e => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
                   >
                     <textarea
                       autoFocus
                       value={editDraft}
-                      onChange={e => setEditDraft(e.target.value)}
+                      onChange={(e) => setEditDraft(e.target.value)}
                       placeholder="说明如何重新理解 / 质疑这个节点,确认后据此重推…"
                       className="min-h-0 flex-1 resize-none rounded border border-slate-200 p-1.5 text-[11px] leading-snug text-slate-700 outline-none focus:border-indigo-400"
                     />
                     <div className="flex shrink-0 justify-end gap-1">
                       <button
                         type="button"
-                        onClick={e => {
+                        onClick={(e) => {
                           e.stopPropagation();
                           setEditingNodeId(null);
                           setEditDraft("");
@@ -1360,7 +1254,7 @@ export function ReasoningFlowSurface({
                         type="button"
                         data-testid="flow-node-edit-confirm"
                         disabled={!editDraft.trim()}
-                        onClick={e => {
+                        onClick={(e) => {
                           e.stopPropagation();
                           const t = editDraft.trim();
                           setEditingNodeId(null);
@@ -1415,9 +1309,7 @@ export function ReasoningFlowSurface({
                           </span>
                         )}
                         {roleLabel && (
-                          <span
-                            className={`shrink-0 text-[8px] ${dark ? "text-zinc-600" : "text-slate-300"}`}
-                          >
+                          <span className={`shrink-0 text-[8px] ${dark ? "text-zinc-600" : "text-slate-300"}`}>
                             ·
                           </span>
                         )}
@@ -1425,10 +1317,7 @@ export function ReasoningFlowSurface({
                           className="inline-flex shrink-0 items-center rounded px-1.5 py-px text-[9px] font-semibold leading-none"
                           style={{
                             color,
-                            backgroundColor: hexWithAlpha(
-                              color,
-                              dark ? 0.16 : 0.1
-                            ),
+                            backgroundColor: hexWithAlpha(color, dark ? 0.16 : 0.1),
                             border: `1px solid ${hexWithAlpha(color, 0.28)}`,
                           }}
                         >
@@ -1446,16 +1335,14 @@ export function ReasoningFlowSurface({
                       >
                         {sealLine}
                       </div>
-                      <div className="line-clamp-3 leading-snug text-slate-700">
-                        {summaryLine}
-                      </div>
+                      <div className="line-clamp-3 leading-snug text-slate-700">{summaryLine}</div>
                       {onTerminalAction && (
                         <div className="mt-auto flex flex-wrap gap-1">
                           <button
                             type="button"
                             data-testid="terminal-action-report"
                             className="rounded bg-emerald-600 px-2 py-0.5 text-[9px] font-medium text-white hover:bg-emerald-700"
-                            onClick={e => {
+                            onClick={(e) => {
                               e.stopPropagation();
                               onTerminalAction("report");
                             }}
@@ -1466,7 +1353,7 @@ export function ReasoningFlowSurface({
                             type="button"
                             data-testid="terminal-action-lineage"
                             className="rounded bg-white px-2 py-0.5 text-[9px] font-medium text-emerald-800 ring-1 ring-emerald-200 hover:bg-emerald-50"
-                            onClick={e => {
+                            onClick={(e) => {
                               e.stopPropagation();
                               onTerminalAction("lineage");
                             }}
@@ -1478,7 +1365,7 @@ export function ReasoningFlowSurface({
                               type="button"
                               data-testid="terminal-action-export"
                               className="rounded bg-white px-2 py-0.5 text-[9px] font-medium text-emerald-800 ring-1 ring-emerald-200 hover:bg-emerald-50"
-                              onClick={e => {
+                              onClick={(e) => {
                                 e.stopPropagation();
                                 onTerminalAction("export");
                               }}
@@ -1497,71 +1384,49 @@ export function ReasoningFlowSurface({
                       style={{
                         ...flowTextClampStyle(bodyLines),
                         lineHeight: `${FLOW_LINE_HEIGHT_PX}px`,
-                        whiteSpace:
-                          isPhaseChild || (bodyText || "").includes("\n")
-                            ? "pre-line"
-                            : "normal",
+                        whiteSpace: (isPhaseChild || (bodyText || "").includes("\n")) ? "pre-line" : "normal",
                       }}
                       title={flowTooltip}
                     >
                       {titleText ? (
-                        <span
-                          className={`font-semibold ${dark ? "text-zinc-100" : "text-slate-800"}`}
-                        >
+                        <span className={`font-semibold ${dark ? "text-zinc-100" : "text-slate-800"}`}>
                           {titleText}
                         </span>
                       ) : null}
                       {titleText && (liveText || bodyText) ? (
-                        <span
-                          className={dark ? "text-zinc-500" : "text-slate-400"}
-                        >
-                          {" "}
-                          —{" "}
-                        </span>
+                        <span className={dark ? "text-zinc-500" : "text-slate-400"}> — </span>
                       ) : null}
                       {liveText ? (
                         <LiveThinking text={liveText} isActive={isActive} />
                       ) : bodyText ? (
-                        <span
-                          className={dark ? "text-zinc-300" : "text-slate-700"}
-                        >
-                          {bodyText}
-                        </span>
+                        <span className={dark ? "text-zinc-300" : "text-slate-700"}>{bodyText}</span>
                       ) : null}
-                      {onResolveInteractiveGate &&
-                        (node.id.includes("G_CONFIRM") ||
-                          ((node as { type?: string }).type ===
-                            "interactive_gate" &&
-                            ((node.body || "").includes("确认") ||
-                              (node.title || "").includes("确认路线") ||
-                              (node.body || "").includes("路线选择")))) && (
-                          <div className="mt-2 flex gap-2">
-                            <button
-                              type="button"
-                              className="rounded bg-emerald-600 px-2 py-0.5 text-[9px] font-medium text-white hover:bg-emerald-700"
-                              onClick={e => {
-                                e.stopPropagation();
-                                onResolveInteractiveGate(node.id, "primary");
-                              }}
-                            >
-                              确认
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded bg-white px-2 py-0.5 text-[9px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50"
-                              onClick={e => {
-                                e.stopPropagation();
-                                onResolveInteractiveGate(node.id, null);
-                              }}
-                            >
-                              取消
-                            </button>
-                          </div>
-                        )}
+                      {onResolveInteractiveGate && (node.id.includes('G_CONFIRM') || ((node as { type?: string }).type === 'interactive_gate' && ((node.body || '').includes('确认') || (node.title || '').includes('确认路线') || (node.body || '').includes('路线选择')))) && (
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            className="rounded bg-emerald-600 px-2 py-0.5 text-[9px] font-medium text-white hover:bg-emerald-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onResolveInteractiveGate(node.id, 'primary');
+                            }}
+                          >
+                            确认
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded bg-white px-2 py-0.5 text-[9px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onResolveInteractiveGate(node.id, null);
+                            }}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      )}
                       {!titleText && !bodyText && !liveText ? (
-                        <span
-                          className={`font-medium ${dark ? "text-zinc-500" : "text-slate-500"}`}
-                        >
+                        <span className={`font-medium ${dark ? "text-zinc-500" : "text-slate-500"}`}>
                           {node.id}
                         </span>
                       ) : null}
@@ -1596,68 +1461,34 @@ export function ReasoningFlowSurface({
           <div className="absolute left-4 top-4 flex flex-col gap-0.5 rounded-md bg-white/90 px-2.5 py-1.5 text-[10px] font-mono tabular-nums text-slate-600 shadow-sm border border-slate-200 backdrop-blur">
             <div className="flex items-baseline gap-1.5">
               <span className="text-slate-400 w-9">BURN</span>
-              <span className="font-semibold text-slate-800">
-                {telemetry.tokenBurn ?? "—"}
-              </span>
+              <span className="font-semibold text-slate-800">{telemetry.tokenBurn ?? "—"}</span>
             </div>
             <div className="flex items-baseline gap-1.5">
               <span className="text-slate-400 w-9">SOURCES</span>
-              <span className="font-semibold text-slate-800">
-                {telemetry.sourceCount ?? "—"}
-              </span>
+              <span className="font-semibold text-slate-800">{telemetry.sourceCount ?? "—"}</span>
             </div>
             <div className="flex items-baseline gap-1.5">
               <span className="text-slate-400 w-9">REMAIN</span>
-              <span className="font-semibold text-slate-800">
-                {telemetry.remainingBudget ?? "—"}
-              </span>
+              <span className="font-semibold text-slate-800">{telemetry.remainingBudget ?? "—"}</span>
             </div>
             <div className="flex items-baseline gap-1.5">
               <span className="text-slate-400 w-9">TIME</span>
-              <span className="font-semibold text-slate-800">
-                {telemetry.elapsedMs
-                  ? `${(telemetry.elapsedMs / 1000).toFixed(1)}s`
-                  : "—"}
-              </span>
+              <span className="font-semibold text-slate-800">{telemetry.elapsedMs ? `${(telemetry.elapsedMs / 1000).toFixed(1)}s` : "—"}</span>
             </div>
             <div className="flex items-baseline gap-1.5 border-t border-slate-200/60 pt-0.5 mt-0.5">
               <span className="text-slate-400 w-9">ROLES</span>
-              <span className="font-semibold text-slate-800">
-                {telemetry.activeRoleCount ?? "—"}
-              </span>
+              <span className="font-semibold text-slate-800">{telemetry.activeRoleCount ?? "—"}</span>
             </div>
           </div>
 
           {/* 右上控制区 */}
           {/* Narrow viewport: drop below the left telemetry card so they don't overlap horizontally */}
           <div className="absolute right-4 top-4 flex gap-1.5 max-[520px]:top-20">
-            <button
-              onClick={zoomOut}
-              className="rounded-md border bg-white px-2 py-1 text-sm shadow-sm active:bg-slate-100"
-            >
-              −
-            </button>
-            <button
-              onClick={zoomIn}
-              className="rounded-md border bg-white px-2 py-1 text-sm shadow-sm active:bg-slate-100"
-            >
-              +
-            </button>
-            <button
-              onClick={fit}
-              className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100"
-            >
-              fit
-            </button>
-            <button
-              onClick={reset}
-              className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100"
-            >
-              reset
-            </button>
-            <button className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100">
-              ⛶
-            </button>
+            <button onClick={zoomOut} className="rounded-md border bg-white px-2 py-1 text-sm shadow-sm active:bg-slate-100">−</button>
+            <button onClick={zoomIn} className="rounded-md border bg-white px-2 py-1 text-sm shadow-sm active:bg-slate-100">+</button>
+            <button onClick={fit} className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100">fit</button>
+            <button onClick={reset} className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100">reset</button>
+            <button className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100">⛶</button>
           </div>
         </>
       )}
@@ -1670,34 +1501,10 @@ export function ReasoningFlowSurface({
           style={{ bottom: minimapH + 24 }}
           data-testid="reasoning-flow-controls"
         >
-          <button
-            onClick={zoomOut}
-            title="缩小"
-            className="rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-sm shadow-sm backdrop-blur transition active:bg-slate-100"
-          >
-            −
-          </button>
-          <button
-            onClick={zoomIn}
-            title="放大"
-            className="rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-sm shadow-sm backdrop-blur transition active:bg-slate-100"
-          >
-            +
-          </button>
-          <button
-            onClick={fit}
-            title="适配全部节点"
-            className="rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-xs shadow-sm backdrop-blur transition active:bg-slate-100"
-          >
-            适配
-          </button>
-          <button
-            onClick={reset}
-            title="重置视图"
-            className="rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-xs shadow-sm backdrop-blur transition active:bg-slate-100"
-          >
-            重置
-          </button>
+          <button onClick={zoomOut} title="缩小" className="rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-sm shadow-sm backdrop-blur transition active:bg-slate-100">−</button>
+          <button onClick={zoomIn} title="放大" className="rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-sm shadow-sm backdrop-blur transition active:bg-slate-100">+</button>
+          <button onClick={fit} title="适配全部节点" className="rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-xs shadow-sm backdrop-blur transition active:bg-slate-100">适配</button>
+          <button onClick={reset} title="重置视图" className="rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-xs shadow-sm backdrop-blur transition active:bg-slate-100">重置</button>
         </div>
       )}
 
@@ -1715,31 +1522,20 @@ export function ReasoningFlowSurface({
               {consoleLines.slice(-6).map((line, idx) => {
                 const rawKind = (line.kind || "").trim();
                 const basis = rawKind || line.text || "";
-                const displayKind = /ask|question|clarif/i.test(basis)
-                  ? "Ask"
-                  : /search|source|repo|github/i.test(basis)
-                    ? "Search"
-                    : /think|reason|plan|observation/i.test(basis)
-                      ? "Thinking"
-                      : /report|result|summary|done/i.test(basis)
-                        ? "Report"
-                        : rawKind || "Trace";
+                const displayKind =
+                  /ask|question|clarif/i.test(basis) ? "Ask" :
+                  /search|source|repo|github/i.test(basis) ? "Search" :
+                  /think|reason|plan|observation/i.test(basis) ? "Thinking" :
+                  /report|result|summary|done/i.test(basis) ? "Report" :
+                  rawKind || "Trace";
                 return (
                   <div key={idx} className="truncate leading-tight">
                     {(() => {
-                      const r =
-                        (line as any)?.roleId || (line as any)?.roleLabel;
-                      const rShort = r
-                        ? String(r).split(/[-_]/).pop()?.slice(0, 9)
-                        : null;
+                      const r = (line as any)?.roleId || (line as any)?.roleLabel;
+                      const rShort = r ? String(r).split(/[-_]/).pop()?.slice(0, 9) : null;
                       const who = rShort ? `${rShort}·` : "";
                       return (
-                        <span
-                          className={`mr-1 font-medium ${getConsoleKindClass(basis)}`}
-                        >
-                          [{who}
-                          {displayKind}]
-                        </span>
+                        <span className={`mr-1 font-medium ${getConsoleKindClass(basis)}`}>[{who}{displayKind}]</span>
                       );
                     })()}
                     {line.text}
@@ -1753,10 +1549,8 @@ export function ReasoningFlowSurface({
             className="absolute bottom-4 right-4 z-20 cursor-crosshair overflow-hidden rounded-lg border border-slate-200 bg-slate-50 bg-white/95 shadow-sm max-[640px]:bottom-[132px] max-[640px]:right-3"
             style={{ width: minimapW, height: minimapH }}
             data-testid="reasoning-flow-minimap"
-            onClick={e => {
-              const rect = (
-                e.currentTarget as HTMLDivElement
-              ).getBoundingClientRect();
+            onClick={(e) => {
+              const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
               const clickX = (e.clientX - rect.left) / rect.width;
               const clickY = (e.clientY - rect.top) / rect.height;
 
@@ -1787,10 +1581,7 @@ export function ReasoningFlowSurface({
 
             <div
               className="relative h-full w-full"
-              style={{
-                transform: `scale(${minimapScale})`,
-                transformOrigin: "top left",
-              }}
+              style={{ transform: `scale(${minimapScale})`, transformOrigin: "top left" }}
             >
               {(() => {
                 const s = minimapScale;
@@ -1798,18 +1589,15 @@ export function ReasoningFlowSurface({
                 const miH = minimapH / s;
                 let ml = (viewportRect.left / graphWidth) * miW;
                 let mt = (viewportRect.top / graphHeight) * miH;
-                let mw =
-                  ((viewportRect.right - viewportRect.left) / graphWidth) * miW;
-                let mh =
-                  ((viewportRect.bottom - viewportRect.top) / graphHeight) *
-                  miH;
+                let mw = ((viewportRect.right - viewportRect.left) / graphWidth) * miW;
+                let mh = ((viewportRect.bottom - viewportRect.top) / graphHeight) * miH;
 
                 ml = Math.max(0, Math.min(ml, miW - 2));
                 mt = Math.max(0, Math.min(mt, miH - 2));
                 mw = Math.max(6, Math.min(mw, miW - ml));
                 mh = Math.max(6, Math.min(mh, miH - mt));
 
-                const coversMost = mw / miW > 0.88 || mh / miH > 0.88;
+                const coversMost = (mw / miW > 0.88) || (mh / miH > 0.88);
                 return (
                   <div
                     className={`absolute ${coversMost ? "border border-blue-400/60" : "border border-blue-500/70 bg-blue-500/10"}`}
@@ -1835,8 +1623,7 @@ export function ReasoningFlowSurface({
       {/* 调试提示：console 激活时隐藏，避免与左下浮层重叠；产品化时可并入 telemetry 或移除 */}
       {(showChrome || bottomChrome) && consoleLines.length === 0 && (
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-slate-400">
-          drag to pan • pinch or wheel to zoom • {nodes.length} nodes •{" "}
-          {edges.length} edges
+          drag to pan • pinch or wheel to zoom • {nodes.length} nodes • {edges.length} edges
         </div>
       )}
     </div>

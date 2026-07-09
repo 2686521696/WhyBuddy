@@ -36,7 +36,7 @@ describe("UEOverlayChrome", () => {
       >
         <section data-testid="task-panel">task panel</section>
         <section data-testid="launch-panel">launch panel</section>
-      </UEOverlayChrome>
+      </UEOverlayChrome>,
     );
 
     expect(markup).toContain('data-testid="ue-overlay-container"');
@@ -54,7 +54,7 @@ describe("UEOverlayChrome", () => {
     const markup = renderToStaticMarkup(
       <UEOverlayChrome videoElement={makeVideoRef()} viewportWidth={1280}>
         <div />
-      </UEOverlayChrome>
+      </UEOverlayChrome>,
     );
 
     expect(markup).toContain('data-overlay-layout="desktop"');
@@ -64,7 +64,7 @@ describe("UEOverlayChrome", () => {
     const markup = renderToStaticMarkup(
       <UEOverlayChrome videoElement={makeVideoRef()} viewportWidth={1024}>
         <div />
-      </UEOverlayChrome>
+      </UEOverlayChrome>,
     );
 
     expect(markup).toContain('data-overlay-layout="narrow"');
@@ -74,7 +74,7 @@ describe("UEOverlayChrome", () => {
     const markup = renderToStaticMarkup(
       <UEOverlayChrome videoElement={makeVideoRef()} overlayTone="clear">
         <div />
-      </UEOverlayChrome>
+      </UEOverlayChrome>,
     );
 
     expect(markup).toContain('data-overlay-tone="clear"');
@@ -88,11 +88,11 @@ describe("UEOverlayChrome", () => {
         backgroundClassName="bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]"
       >
         <div />
-      </UEOverlayChrome>
+      </UEOverlayChrome>,
     );
 
     expect(markup).toContain(
-      "bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]"
+      "bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]",
     );
     expect(markup).not.toContain("bg-black");
   });
@@ -104,7 +104,7 @@ describe("UEOverlayChrome", () => {
         hudDefinitions={[hudDefinition]}
       >
         <div />
-      </UEOverlayChrome>
+      </UEOverlayChrome>,
     );
 
     expect(markup).not.toContain('data-testid="ue-overlay-hud-layer"');
@@ -119,7 +119,7 @@ describe("UEOverlayChrome", () => {
         hudElements={[explicitHUDElement]}
       >
         <div />
-      </UEOverlayChrome>
+      </UEOverlayChrome>,
     );
 
     expect(markup).toContain('data-testid="ue-overlay-hud-layer"');

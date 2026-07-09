@@ -351,9 +351,7 @@ describe("OfficeWorkflowHistoryPanel", () => {
     expect(markup).toContain("Marketing planner");
     expect(markup).toContain("Budget approval is still pending");
     expect(markup).toContain("Recent session messages");
-    expect(markup).toContain(
-      "Waiting for budget approval before the next node runs."
-    );
+    expect(markup).toContain("Waiting for budget approval before the next node runs.");
     expect(markup).toContain("Recent workflows");
     expect(markup).toContain("Advance the growth experiment");
   });

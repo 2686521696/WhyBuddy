@@ -25,12 +25,8 @@ describe("displayLabel canonical parity", () => {
   it("matches resolveRoleLabel for a known id in both locales", () => {
     const knownId = "intake-analyst";
 
-    expect(displayLabel(knownId, "zh-CN")).toBe(
-      resolveRoleLabel(knownId, "zh-CN")
-    );
-    expect(displayLabel(knownId, "en-US")).toBe(
-      resolveRoleLabel(knownId, "en-US")
-    );
+    expect(displayLabel(knownId, "zh-CN")).toBe(resolveRoleLabel(knownId, "zh-CN"));
+    expect(displayLabel(knownId, "en-US")).toBe(resolveRoleLabel(knownId, "en-US"));
   });
 });
 

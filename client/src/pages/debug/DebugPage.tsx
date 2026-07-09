@@ -151,16 +151,14 @@ export default function DebugPage() {
 
       <WorkspacePanel className="p-5">
         <div className="flex flex-wrap gap-2">
-          {(
-            [
-              ["overview", t(locale, "概览", "Overview")],
-              ["config", t(locale, "配置", "Config")],
-              ["permissions", t(locale, "权限", "Permissions")],
-              ["audit", t(locale, "审计", "Audit")],
-              ["lineage", t(locale, "血缘", "Lineage")],
-              ["help", t(locale, "帮助", "Help")],
-            ] as const
-          ).map(([id, label]) => (
+          {([
+            ["overview", t(locale, "概览", "Overview")],
+            ["config", t(locale, "配置", "Config")],
+            ["permissions", t(locale, "权限", "Permissions")],
+            ["audit", t(locale, "审计", "Audit")],
+            ["lineage", t(locale, "血缘", "Lineage")],
+            ["help", t(locale, "帮助", "Help")],
+          ] as const).map(([id, label]) => (
             <button
               key={id}
               type="button"
@@ -261,6 +259,7 @@ export default function DebugPage() {
           </div>
         ) : null}
       </WorkspacePanel>
+
     </WorkspacePageShell>
   );
 }

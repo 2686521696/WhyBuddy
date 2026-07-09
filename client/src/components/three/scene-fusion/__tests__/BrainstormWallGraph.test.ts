@@ -33,8 +33,7 @@ import type { LayoutResult } from "../brainstorm-wall-graph-logic";
 import type { BranchNode, BranchEdge } from "@/lib/brainstorm-graph-store";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const componentSource = () =>
-  readFileSync(resolve(here, "../BrainstormWallGraph.tsx"), "utf8");
+const componentSource = () => readFileSync(resolve(here, "../BrainstormWallGraph.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // Title Truncation
@@ -72,10 +71,8 @@ describe("truncateTitle", () => {
 describe("computeAdaptiveScale", () => {
   it("returns 1 when graph fits within bounds", () => {
     const scale = computeAdaptiveScale(
-      100,
-      100,
-      CANVAS_W,
-      CANVAS_H,
+      100, 100,
+      CANVAS_W, CANVAS_H,
       BRAINSTORM_PADDING
     );
     expect(scale).toBeGreaterThanOrEqual(1);
@@ -84,10 +81,8 @@ describe("computeAdaptiveScale", () => {
 
   it("scales down when graph exceeds canvas", () => {
     const scale = computeAdaptiveScale(
-      CANVAS_W * 3,
-      CANVAS_H * 3,
-      CANVAS_W,
-      CANVAS_H,
+      CANVAS_W * 3, CANVAS_H * 3,
+      CANVAS_W, CANVAS_H,
       BRAINSTORM_PADDING
     );
     expect(scale).toBeLessThan(1);
@@ -96,10 +91,8 @@ describe("computeAdaptiveScale", () => {
 
   it("never exceeds 1.5x scale", () => {
     const scale = computeAdaptiveScale(
-      10,
-      10,
-      CANVAS_W,
-      CANVAS_H,
+      10, 10,
+      CANVAS_W, CANVAS_H,
       BRAINSTORM_PADDING
     );
     expect(scale).toBeLessThanOrEqual(1.5);
@@ -107,23 +100,15 @@ describe("computeAdaptiveScale", () => {
 
   it("never goes below 0.2x scale", () => {
     const scale = computeAdaptiveScale(
-      CANVAS_W * 100,
-      CANVAS_H * 100,
-      CANVAS_W,
-      CANVAS_H,
+      CANVAS_W * 100, CANVAS_H * 100,
+      CANVAS_W, CANVAS_H,
       BRAINSTORM_PADDING
     );
     expect(scale).toBeGreaterThanOrEqual(0.2);
   });
 
   it("returns 1 for zero-size graph", () => {
-    const scale = computeAdaptiveScale(
-      0,
-      0,
-      CANVAS_W,
-      CANVAS_H,
-      BRAINSTORM_PADDING
-    );
+    const scale = computeAdaptiveScale(0, 0, CANVAS_W, CANVAS_H, BRAINSTORM_PADDING);
     expect(scale).toBe(1);
   });
 });
@@ -132,7 +117,7 @@ describe("resolveBrainstormEdgeConnection", () => {
   it("uses opposite card sides for left-to-right edges", () => {
     const path = resolveBrainstormEdgeConnection(
       { x: 100, y: 200 },
-      { x: 700, y: 260 }
+      { x: 700, y: 260 },
     );
 
     expect(path.from.x).toBe(100 + BRAINSTORM_NODE_W / 2);
@@ -143,7 +128,7 @@ describe("resolveBrainstormEdgeConnection", () => {
   it("uses opposite card sides for right-to-left edges instead of drawing through cards", () => {
     const path = resolveBrainstormEdgeConnection(
       { x: 900, y: 260 },
-      { x: 200, y: 200 }
+      { x: 200, y: 200 },
     );
 
     expect(path.from.x).toBe(900 - BRAINSTORM_NODE_W / 2);
@@ -159,15 +144,13 @@ describe("resolveBrainstormChallengeLabel", () => {
       { x: 2600, y: 1120 },
       "This challenge summary is intentionally too long to fit cleanly on the wall without truncation.",
       CANVAS_W,
-      CANVAS_H
+      CANVAS_H,
     );
 
     expect(label.text.length).toBeLessThanOrEqual(35);
     expect(label.x).toBeGreaterThanOrEqual(BRAINSTORM_PADDING);
     expect(label.y).toBeGreaterThanOrEqual(72);
-    expect(label.x + label.width).toBeLessThanOrEqual(
-      CANVAS_W - BRAINSTORM_PADDING
-    );
+    expect(label.x + label.width).toBeLessThanOrEqual(CANVAS_W - BRAINSTORM_PADDING);
     expect(label.y + label.height).toBeLessThanOrEqual(CANVAS_H - 72);
   });
 });
@@ -178,17 +161,8 @@ describe("resolveBrainstormChallengeLabel", () => {
 
 describe("BRAINSTORM_NODE_COLORS", () => {
   it("maps all 6 node types to distinct colors", () => {
-    const types = [
-      "decision",
-      "thinking",
-      "action",
-      "observation",
-      "synthesis",
-      "error",
-    ];
-    const colors = types.map(
-      t => BRAINSTORM_NODE_COLORS[t as keyof typeof BRAINSTORM_NODE_COLORS]
-    );
+    const types = ["decision", "thinking", "action", "observation", "synthesis", "error"];
+    const colors = types.map((t) => BRAINSTORM_NODE_COLORS[t as keyof typeof BRAINSTORM_NODE_COLORS]);
 
     // All types have colors
     for (const color of colors) {
@@ -225,13 +199,7 @@ describe("Layout constants", () => {
 
 describe("computeBrainstormLayout", () => {
   it("places a decision marker as the central fanout source before role anchors", () => {
-    const roles = [
-      "decider",
-      "planner",
-      "architect",
-      "executor",
-      "auditor",
-    ] as const;
+    const roles = ["decider", "planner", "architect", "executor", "auditor"] as const;
     const nodes: BranchNode[] = [
       {
         id: "decision-marker",
@@ -256,16 +224,15 @@ describe("computeBrainstormLayout", () => {
         updatedAt: new Date((index + 1) * 1000).toISOString(),
       })),
     ];
-    const edges: BranchEdge[] = roles.map(role => ({
+    const edges: BranchEdge[] = roles.map((role) => ({
       sourceNodeId: "decision-marker",
       targetNodeId: `role:${role}`,
     }));
 
     const layout = computeBrainstormLayout(nodes, edges);
-    const marker = layout?.nodes.find(node => node.id === "decision-marker");
-    const roleNodes =
-      layout?.nodes.filter(node => node.id.startsWith("role:")) ?? [];
-    const minRoleX = Math.min(...roleNodes.map(node => node.x));
+    const marker = layout?.nodes.find((node) => node.id === "decision-marker");
+    const roleNodes = layout?.nodes.filter((node) => node.id.startsWith("role:")) ?? [];
+    const minRoleX = Math.min(...roleNodes.map((node) => node.x));
 
     expect(marker).toBeDefined();
     expect(marker?.y).toBeCloseTo(CANVAS_H / 2, 0);
@@ -275,15 +242,10 @@ describe("computeBrainstormLayout", () => {
 
   it("keeps challenge and support markers near their role instead of collapsing them into the central fanout source", () => {
     const nodes: BranchNode[] = [
-      ...(
-        ["decider", "planner", "architect", "executor", "auditor"] as const
-      ).map((role, index) => ({
+      ...(["decider", "planner", "architect", "executor", "auditor"] as const).map((role, index) => ({
         id: `role:${role}`,
         sessionId: "session-runtime",
-        parentNodeId:
-          index === 0
-            ? null
-            : `role:${(["decider", "planner", "architect", "executor", "auditor"] as const)[index - 1]}`,
+        parentNodeId: index === 0 ? null : `role:${(["decider", "planner", "architect", "executor", "auditor"] as const)[index - 1]}`,
         roleId: role,
         type: "decision" as const,
         status: "completed" as const,
@@ -308,23 +270,17 @@ describe("computeBrainstormLayout", () => {
     ];
 
     const layout = computeBrainstormLayout(nodes, edges);
-    const planner = layout?.nodes.find(node => node.id === "role:planner");
-    const challenge = layout?.nodes.find(node => node.id === "challenge-1");
+    const planner = layout?.nodes.find((node) => node.id === "role:planner");
+    const challenge = layout?.nodes.find((node) => node.id === "challenge-1");
 
     expect(planner).toBeDefined();
     expect(challenge).toBeDefined();
-    expect(challenge?.x).toBeGreaterThan(planner?.x ?? 0);
+    expect(challenge?.x).toBeGreaterThan((planner?.x ?? 0));
     expect(challenge?.y).not.toBeCloseTo(CANVAS_H / 2, 0);
   });
 
   it("places parent→child role nodes into left-to-right topological layer columns", () => {
-    const roles = [
-      "decider",
-      "planner",
-      "architect",
-      "executor",
-      "auditor",
-    ] as const;
+    const roles = ["decider", "planner", "architect", "executor", "auditor"] as const;
     const nodes: BranchNode[] = roles.map((role, index) => ({
       id: `role:${role}`,
       sessionId: "session-runtime",
@@ -345,24 +301,16 @@ describe("computeBrainstormLayout", () => {
     ];
 
     const layout = computeBrainstormLayout(nodes, edges);
-    const byId = new Map(layout?.nodes.map(n => [n.id, n]));
+    const byId = new Map(layout?.nodes.map((n) => [n.id, n]));
     expect(layout).not.toBeNull();
     // Chain decider→planner→architect→executor→auditor → 5 distinct columns,
     // strictly increasing x left-to-right (cycle edge auditor→planner ignored).
-    expect(byId.get("role:decider")!.x).toBeLessThan(
-      byId.get("role:planner")!.x
-    );
-    expect(byId.get("role:planner")!.x).toBeLessThan(
-      byId.get("role:architect")!.x
-    );
-    expect(byId.get("role:architect")!.x).toBeLessThan(
-      byId.get("role:executor")!.x
-    );
-    expect(byId.get("role:executor")!.x).toBeLessThan(
-      byId.get("role:auditor")!.x
-    );
-    const xs = layout!.nodes.map(n => n.x);
-    expect(new Set(xs.map(x => Math.round(x))).size).toBe(5);
+    expect(byId.get("role:decider")!.x).toBeLessThan(byId.get("role:planner")!.x);
+    expect(byId.get("role:planner")!.x).toBeLessThan(byId.get("role:architect")!.x);
+    expect(byId.get("role:architect")!.x).toBeLessThan(byId.get("role:executor")!.x);
+    expect(byId.get("role:executor")!.x).toBeLessThan(byId.get("role:auditor")!.x);
+    const xs = layout!.nodes.map((n) => n.x);
+    expect(new Set(xs.map((x) => Math.round(x))).size).toBe(5);
   });
 
   it("forces synthesis to the rightmost column of the layered DAG", () => {
@@ -390,18 +338,12 @@ describe("computeBrainstormLayout", () => {
     expect(layout?.nodes).toHaveLength(12);
     expect(layout?.edges).toHaveLength(11);
     // A 12-node chain spreads across many layer columns.
-    expect(
-      new Set(layout?.nodes.map(node => Math.round(node.x))).size
-    ).toBeGreaterThan(3);
+    expect(new Set(layout?.nodes.map((node) => Math.round(node.x))).size).toBeGreaterThan(3);
     // Every parent→child edge carries a semantic relation label.
-    expect(
-      layout?.edges.every(
-        e => typeof e.label === "string" && e.label.length > 0
-      )
-    ).toBe(true);
+    expect(layout?.edges.every((e) => typeof e.label === "string" && e.label.length > 0)).toBe(true);
     // The synthesis node sits in the rightmost column.
-    const synth = layout?.nodes.find(n => n.id === "node-11");
-    const maxX = Math.max(...(layout?.nodes.map(n => n.x) ?? [0]));
+    const synth = layout?.nodes.find((n) => n.id === "node-11");
+    const maxX = Math.max(...(layout?.nodes.map((n) => n.x) ?? [0]));
     expect(synth?.x).toBeCloseTo(maxX, 0);
   });
 });
@@ -410,12 +352,8 @@ describe("BrainstormWallGraph scene integration guards", () => {
   it("keeps completed brainstorm sessions visible until an explicit idle/reset state", () => {
     const source = componentSource();
 
-    expect(source).toContain(
-      'sessionStatus === "idle" || sessionStatus === "failed"'
-    );
-    expect(source).not.toContain(
-      'sessionStatus === "completed" || sessionStatus === "failed"'
-    );
+    expect(source).toContain('sessionStatus === "idle" || sessionStatus === "failed"');
+    expect(source).not.toContain('sessionStatus === "completed" || sessionStatus === "failed"');
   });
 
   it("renders slightly in front of the base blueprint wall texture", () => {
@@ -472,29 +410,12 @@ describe("drawBrainstormGraph", () => {
     const ctx = createMockCtx();
     const layout: LayoutResult = {
       nodes: [
-        {
-          id: "n1",
-          x: 100,
-          y: 100,
-          title: "Decision point",
-          type: "decision",
-          status: "active",
-          roleId: "planner",
-          opacity: 1,
-        },
-        {
-          id: "n2",
-          x: 300,
-          y: 100,
-          title: "Thinking",
-          type: "thinking",
-          status: "completed",
-          roleId: "architect",
-          confidence: 0.85,
-          opacity: 1,
-        },
+        { id: "n1", x: 100, y: 100, title: "Decision point", type: "decision", status: "active", roleId: "planner", opacity: 1 },
+        { id: "n2", x: 300, y: 100, title: "Thinking", type: "thinking", status: "completed", roleId: "architect", confidence: 0.85, opacity: 1 },
       ],
-      edges: [{ from: { x: 100, y: 100 }, to: { x: 300, y: 100 } }],
+      edges: [
+        { from: { x: 100, y: 100 }, to: { x: 300, y: 100 } },
+      ],
       scale: 1,
     };
 
@@ -505,26 +426,13 @@ describe("drawBrainstormGraph", () => {
     const ctx = createMockCtx();
     const alphaValues: number[] = [];
     Object.defineProperty(ctx, "globalAlpha", {
-      set(v: number) {
-        alphaValues.push(v);
-      },
-      get() {
-        return 1;
-      },
+      set(v: number) { alphaValues.push(v); },
+      get() { return 1; },
     });
 
     const layout: LayoutResult = {
       nodes: [
-        {
-          id: "n1",
-          x: 100,
-          y: 100,
-          title: "Test",
-          type: "thinking",
-          status: "active",
-          roleId: "planner",
-          opacity: 0.5,
-        },
+        { id: "n1", x: 100, y: 100, title: "Test", type: "thinking", status: "active", roleId: "planner", opacity: 0.5 },
       ],
       edges: [],
       scale: 1,
@@ -541,31 +449,13 @@ describe("drawBrainstormGraph", () => {
     const ctx = createMockCtx();
     const text: string[] = [];
     const dashPatterns: number[][] = [];
-    ctx.fillText as unknown as { mock?: unknown };
+    (ctx.fillText as unknown as { mock?: unknown });
     (ctx as any).fillText = (value: string) => text.push(value);
     (ctx as any).setLineDash = (value: number[]) => dashPatterns.push(value);
     const layout: LayoutResult = {
       nodes: [
-        {
-          id: "planner-node",
-          x: 100,
-          y: 100,
-          title: "Planner",
-          type: "thinking",
-          status: "active",
-          roleId: "planner",
-          opacity: 1,
-        },
-        {
-          id: "architect-node",
-          x: 400,
-          y: 100,
-          title: "Architect",
-          type: "thinking",
-          status: "active",
-          roleId: "architect",
-          opacity: 1,
-        },
+        { id: "planner-node", x: 100, y: 100, title: "Planner", type: "thinking", status: "active", roleId: "planner", opacity: 1 },
+        { id: "architect-node", x: 400, y: 100, title: "Architect", type: "thinking", status: "active", roleId: "architect", opacity: 1 },
       ],
       edges: [],
       scale: 1,
@@ -589,19 +479,13 @@ describe("drawBrainstormGraph", () => {
           isNarrow: true,
           minority: ["Option B"],
         },
-      })
+      }),
     ).not.toThrow();
 
-    expect(
-      text.some(value => value.includes("轮次 2") || value.includes("Round 2"))
-    ).toBe(true);
-    expect(text.some(value => value.includes("Option A"))).toBe(true);
-    expect(
-      text.some(value => value.includes("Clarify runtime boundary."))
-    ).toBe(true);
-    expect(dashPatterns.some(pattern => pattern.join(",") === "10,10")).toBe(
-      true
-    );
+    expect(text.some((value) => value.includes("轮次 2") || value.includes("Round 2"))).toBe(true);
+    expect(text.some((value) => value.includes("Option A"))).toBe(true);
+    expect(text.some((value) => value.includes("Clarify runtime boundary."))).toBe(true);
+    expect(dashPatterns.some((pattern) => pattern.join(",") === "10,10")).toBe(true);
   });
 
   it("routes challenge overlays from the side facing the target role", () => {
@@ -610,26 +494,8 @@ describe("drawBrainstormGraph", () => {
     (ctx as any).moveTo = (x: number, y: number) => moveToCalls.push([x, y]);
     const layout: LayoutResult = {
       nodes: [
-        {
-          id: "role:architect",
-          x: 900,
-          y: 260,
-          title: "Architect",
-          type: "decision",
-          status: "active",
-          roleId: "architect",
-          opacity: 1,
-        },
-        {
-          id: "role:planner",
-          x: 200,
-          y: 220,
-          title: "Planner",
-          type: "decision",
-          status: "active",
-          roleId: "planner",
-          opacity: 1,
-        },
+        { id: "role:architect", x: 900, y: 260, title: "Architect", type: "decision", status: "active", roleId: "architect", opacity: 1 },
+        { id: "role:planner", x: 200, y: 220, title: "Planner", type: "decision", status: "active", roleId: "planner", opacity: 1 },
       ],
       edges: [],
       scale: 1,
@@ -646,7 +512,10 @@ describe("drawBrainstormGraph", () => {
       ],
     });
 
-    expect(moveToCalls).toContainEqual([900 - BRAINSTORM_NODE_W / 2, 260]);
+    expect(moveToCalls).toContainEqual([
+      900 - BRAINSTORM_NODE_W / 2,
+      260,
+    ]);
   });
 
   it("draws challenge labels after role cards so dense branches do not cover interaction text", () => {
@@ -655,26 +524,8 @@ describe("drawBrainstormGraph", () => {
     (ctx as any).fillText = (value: string) => textCalls.push(value);
     const layout: LayoutResult = {
       nodes: [
-        {
-          id: "role:planner",
-          x: 700,
-          y: 260,
-          title: "Planner card",
-          type: "decision",
-          status: "active",
-          roleId: "planner",
-          opacity: 1,
-        },
-        {
-          id: "role:architect",
-          x: 1200,
-          y: 360,
-          title: "Architect card",
-          type: "decision",
-          status: "active",
-          roleId: "architect",
-          opacity: 1,
-        },
+        { id: "role:planner", x: 700, y: 260, title: "Planner card", type: "decision", status: "active", roleId: "planner", opacity: 1 },
+        { id: "role:architect", x: 1200, y: 360, title: "Architect card", type: "decision", status: "active", roleId: "architect", opacity: 1 },
       ],
       edges: [],
       scale: 1,
@@ -776,7 +627,7 @@ describe("drawBrainstormGraph node body content", () => {
     // The role header is still drawn for identity.
     expect(textCalls).toContain("PLANNER");
     // The actual debate content is drawn (first wrapped line), not the title.
-    expect(textCalls.some(t => t.startsWith("We should isolate"))).toBe(true);
+    expect(textCalls.some((t) => t.startsWith("We should isolate"))).toBe(true);
     expect(textCalls).not.toContain("spec_docs context");
   });
 
@@ -802,7 +653,7 @@ describe("drawBrainstormGraph node body content", () => {
 
     drawBrainstormGraph(ctx, layout, CANVAS_W, CANVAS_H, {});
 
-    expect(textCalls.some(t => t.startsWith("Decision: BRANCH"))).toBe(true);
+    expect(textCalls.some((t) => t.startsWith("Decision: BRANCH"))).toBe(true);
   });
 });
 
@@ -815,7 +666,7 @@ describe("computeBrainstormLayout role-anchor de-duplication", () => {
   function branch(
     id: string,
     roleId: BranchNode["roleId"],
-    overrides: Partial<BranchNode> = {}
+    overrides: Partial<BranchNode> = {},
   ): BranchNode {
     return {
       id,
@@ -835,14 +686,8 @@ describe("computeBrainstormLayout role-anchor de-duplication", () => {
     const nodes: BranchNode[] = [
       // 3+ runtime role anchors trigger the anchor-based fan-out layout.
       branch("role:planner", "planner", { type: "decision", title: "planner" }),
-      branch("role:architect", "architect", {
-        type: "decision",
-        title: "architect",
-      }),
-      branch("role:executor", "executor", {
-        type: "decision",
-        title: "executor",
-      }),
+      branch("role:architect", "architect", { type: "decision", title: "architect" }),
+      branch("role:executor", "executor", { type: "decision", title: "executor" }),
       // A claim node carrying the planner's actual debate text.
       branch("claim-1", "planner", {
         content: "Planner proposes a phased rollout with rollback gates.",
@@ -852,11 +697,11 @@ describe("computeBrainstormLayout role-anchor de-duplication", () => {
     const layout = computeBrainstormLayout(nodes, []);
     expect(layout).not.toBeNull();
     // planner has a claim → its bare anchor card is dropped (no duplicate card).
-    expect(layout!.nodes.find(n => n.id === "role:planner")).toBeUndefined();
+    expect(layout!.nodes.find((n) => n.id === "role:planner")).toBeUndefined();
     // the claim node remains and carries the real content.
-    const claim = layout!.nodes.find(n => n.id === "claim-1");
+    const claim = layout!.nodes.find((n) => n.id === "claim-1");
     expect(claim?.content).toContain("phased rollout");
     // a role with no claim yet keeps its anchor so the participant stays visible.
-    expect(layout!.nodes.find(n => n.id === "role:executor")).toBeDefined();
+    expect(layout!.nodes.find((n) => n.id === "role:executor")).toBeDefined();
   });
 });

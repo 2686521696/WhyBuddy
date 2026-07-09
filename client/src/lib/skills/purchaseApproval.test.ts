@@ -4,20 +4,14 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { deriveApplication, slideRule } from "./slideRule";
-import {
-  evaluateAppBundleRuntimeClosure,
-  purchaseApprovalAppBundle,
-} from "./appbundle/appBundleSkill";
+import { evaluateAppBundleRuntimeClosure, purchaseApprovalAppBundle } from "./appbundle/appBundleSkill";
 import { purchaseApprovalDataModel } from "./datamodel/dataModelSkill";
 import { purchaseApprovalRbac } from "./rbac/rbacSkill";
 import { purchaseApprovalWorkflow } from "./workflow/workflowSkill";
 import { purchaseApprovalPage } from "./page/pageSkill";
 import { purchaseRiskAigcModel } from "./aigc/aigcSkill";
 
-function pathIncludes(
-  report: ReturnType<typeof slideRule.impact>,
-  nodes: string[]
-): boolean {
+function pathIncludes(report: ReturnType<typeof slideRule.impact>, nodes: string[]): boolean {
   return report.paths.some(path => {
     const pathNodes = path.steps.map(step => step.node);
     return nodes.every((node, index) => pathNodes[index] === node);
@@ -50,11 +44,7 @@ describe("purchase approval E2E scenario", () => {
     expect(result.spec.skills.aigc).toMatchObject({
       id: "aigc_purchase_risk",
     });
-    expect(
-      (result.spec.skills.aigc as any).outputSchemas[0].fields.map(
-        (field: any) => field.key
-      )
-    ).toContain("recommendedAction");
+    expect((result.spec.skills.aigc as any).outputSchemas[0].fields.map((field: any) => field.key)).toContain("recommendedAction");
     expect(result.mermaid).toContain("budget_risk_summary");
   });
 
@@ -74,62 +64,25 @@ describe("purchase approval E2E scenario", () => {
     expect(publishGate.runtimeClosure?.blocked).toBe(false);
     expect(publishGate.runtimeClosure?.blockers).toHaveLength(0);
     expect(publishGate.runtimeClosure?.runtimeClosure?.skillsChecked).toEqual(
-      expect.arrayContaining([
-        "datamodel",
-        "rbac",
-        "workflow",
-        "page",
-        "aigc",
-        "appbundle",
-      ])
+      expect.arrayContaining(["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]),
     );
-    expect(
-      publishGate.runtimeClosure?.perSkillEvidence.aigc
-        .aigcInvocationOutputPolicy
-    ).toBe(true);
-    expect(
-      publishGate.runtimeClosure?.perSkillEvidence.page
-        .workflowPageTaskViewConsistency
-    ).toBe(true);
-    expect(
-      publishGate.runtimeClosure?.perSkillEvidence.rbac.rbacPdpDecisions
-    ).toBe(true);
+    expect(publishGate.runtimeClosure?.perSkillEvidence.aigc.aigcInvocationOutputPolicy).toBe(true);
+    expect(publishGate.runtimeClosure?.perSkillEvidence.page.workflowPageTaskViewConsistency).toBe(true);
+    expect(publishGate.runtimeClosure?.perSkillEvidence.rbac.rbacPdpDecisions).toBe(true);
 
     // Positive evidence: runtime closure summary attached to release artifact in publish gate return.
     expect(publishGate.releaseArtifactWithRuntimeClosure).toBeDefined();
-    expect(publishGate.releaseArtifactWithRuntimeClosure?.appId).toBe(
-      "app_purchase_approval"
-    );
-    expect(
-      publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary
-        ?.blocked
-    ).toBe(false);
-    expect(
-      publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary
-        ?.closureId
-    ).toContain("runtime-closure");
-    expect(
-      publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary
-        ?.evidencePresentCount
-    ).toBeGreaterThan(0);
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.appId).toBe("app_purchase_approval");
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary?.blocked).toBe(false);
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary?.closureId).toContain("runtime-closure");
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary?.evidencePresentCount).toBeGreaterThan(0);
 
     // Positive: publish closure evidence digest exposed via AppBundle publish manifest surface.
     expect(publishGate.publishManifestWithClosureDigest).toBeDefined();
-    expect(publishGate.publishManifestWithClosureDigest?.appId).toBe(
-      "app_purchase_approval"
-    );
-    expect(
-      publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest
-    ).toBe(publishGate.runtimeClosure?.stableDigest);
-    expect(
-      typeof publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest
-    ).toBe("string");
-    expect(
-      /^[0-9a-f]{6,}$/i.test(
-        publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest ??
-          ""
-      )
-    ).toBe(true);
+    expect(publishGate.publishManifestWithClosureDigest?.appId).toBe("app_purchase_approval");
+    expect(publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest).toBe(publishGate.runtimeClosure?.stableDigest);
+    expect(typeof publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest).toBe("string");
+    expect(/^[0-9a-f]{6,}$/i.test(publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest ?? "")).toBe(true);
   });
 
   it("blocks publishGate through runtime closure when a declared Skill model is missing", async () => {
@@ -140,34 +93,20 @@ describe("purchase approval E2E scenario", () => {
 
     expect(publishGate.publishable).toBe(false);
     expect(publishGate.runtimeClosure?.blocked).toBe(true);
+    expect(publishGate.runtimeClosure?.perSkillEvidence.aigc.evidencePresent).toBe(false);
     expect(
-      publishGate.runtimeClosure?.perSkillEvidence.aigc.evidencePresent
-    ).toBe(false);
-    expect(
-      publishGate.blockers.some(
-        blocker => blocker.code === "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED"
-      )
+      publishGate.blockers.some((blocker) => blocker.code === "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED")
     ).toBe(true);
 
     // Fail-closed negative: blocked summary is still attached to release artifact evidence (no weakening).
     expect(publishGate.releaseArtifactWithRuntimeClosure).toBeDefined();
-    expect(
-      publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary
-        ?.blocked
-    ).toBe(true);
-    expect(
-      publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary
-        ?.blockerCount
-    ).toBeGreaterThan(0);
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary?.blocked).toBe(true);
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary?.blockerCount).toBeGreaterThan(0);
 
     // Fail-closed negative: publish manifest still receives the closure evidence digest (surface exposure not weakened).
     expect(publishGate.publishManifestWithClosureDigest).toBeDefined();
-    expect(
-      publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest
-    ).toBe(publishGate.runtimeClosure?.stableDigest);
-    expect(
-      typeof publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest
-    ).toBe("string");
+    expect(publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest).toBe(publishGate.runtimeClosure?.stableDigest);
+    expect(typeof publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest).toBe("string");
   });
 
   it("returns impact paths for purchase amount and finance role", async () => {
@@ -185,62 +124,42 @@ describe("purchase approval E2E scenario", () => {
 
     expect(amountImpact.safe).toBe(false);
     expect(amountImpact.impacted.map(hit => hit.node)).toEqual(
-      expect.arrayContaining([
-        "cmp_amount",
-        "aigc_cap_budget_risk_summary",
-        "page_page_purchase_request",
-        "app_app_purchase_approval",
-      ])
+      expect.arrayContaining(["cmp_amount", "aigc_cap_budget_risk_summary", "page_page_purchase_request", "app_app_purchase_approval"]),
     );
-    expect(
-      pathIncludes(amountImpact, [
-        "dm_purchase_request_amount",
-        "cmp_amount",
-        "page_page_purchase_request",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
-    expect(
-      pathIncludes(amountImpact, [
-        "dm_purchase_request_amount",
-        "aigc_cap_budget_risk_summary",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
+    expect(pathIncludes(amountImpact, [
+      "dm_purchase_request_amount",
+      "cmp_amount",
+      "page_page_purchase_request",
+      "app_app_purchase_approval",
+    ])).toBe(true);
+    expect(pathIncludes(amountImpact, [
+      "dm_purchase_request_amount",
+      "aigc_cap_budget_risk_summary",
+      "app_app_purchase_approval",
+    ])).toBe(true);
 
     expect(financeImpact.safe).toBe(false);
     expect(financeImpact.impacted.map(hit => hit.node)).toEqual(
-      expect.arrayContaining([
-        "wf_finance",
-        "cmp_financeApprove",
-        "aigc_cap_budget_risk_summary",
-        "app_app_purchase_approval",
-      ])
+      expect.arrayContaining(["wf_finance", "cmp_financeApprove", "aigc_cap_budget_risk_summary", "app_app_purchase_approval"]),
     );
-    expect(
-      pathIncludes(financeImpact, [
-        "role_finance",
-        "wf_finance",
-        "wf_wf_purchase_approval",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
-    expect(
-      pathIncludes(financeImpact, [
-        "role_finance",
-        "aigc_cap_budget_risk_summary",
-        "app_app_purchase_approval",
-      ])
-    ).toBe(true);
+    expect(pathIncludes(financeImpact, [
+      "role_finance",
+      "wf_finance",
+      "wf_wf_purchase_approval",
+      "app_app_purchase_approval",
+    ])).toBe(true);
+    expect(pathIncludes(financeImpact, [
+      "role_finance",
+      "aigc_cap_budget_risk_summary",
+      "app_app_purchase_approval",
+    ])).toBe(true);
   });
 
   it("keeps leave approval green while purchase approval is added", async () => {
     const result = await deriveApplication("leave approval");
 
     expect(result.ok).toBe(true);
-    expect(result.spec.skills.appbundle).toMatchObject({
-      id: "app_leave_approval",
-    });
+    expect(result.spec.skills.appbundle).toMatchObject({ id: "app_leave_approval" });
   });
 
   it("exposes explicit per-skill positive runtime closure evidence for purchase approval AppBundle (positive coverage incl aigc)", () => {
@@ -260,40 +179,25 @@ describe("purchase approval E2E scenario", () => {
     expect(report.perSkillEvidence.rbac?.evidencePresent).toBe(true);
     expect(report.perSkillEvidence.rbac?.rbacPdpDecisions).toBe(true);
     expect(report.perSkillEvidence.workflow?.evidencePresent).toBe(true);
-    expect(
-      report.perSkillEvidence.workflow?.workflowPageTaskViewConsistency
-    ).toBe(true);
+    expect(report.perSkillEvidence.workflow?.workflowPageTaskViewConsistency).toBe(true);
     expect(report.perSkillEvidence.page?.evidencePresent).toBe(true);
-    expect(report.perSkillEvidence.page?.workflowPageTaskViewConsistency).toBe(
-      true
-    );
+    expect(report.perSkillEvidence.page?.workflowPageTaskViewConsistency).toBe(true);
     expect(report.perSkillEvidence.aigc?.evidencePresent).toBe(true);
     expect(report.perSkillEvidence.aigc?.aigcInvocationOutputPolicy).toBe(true);
     expect(report.perSkillEvidence.appbundle?.evidencePresent).toBe(true);
     expect(report.perSkillEvidence.appbundle?.versionPin?.pinned).toBe(true);
     expect(report.findingsByTier?.hard_blocker ?? []).toHaveLength(0);
-    expect(report.closureId).toBe(
-      "appbundle:app_purchase_approval@1.0.0:runtime-closure"
-    );
+    expect(report.closureId).toBe("appbundle:app_purchase_approval@1.0.0:runtime-closure");
   });
 
   it("loads real AppBundle publish artifacts for inspect hash rollback and block evidence", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const fixtureDir = resolve(
-      here,
-      "../../../../slide-rule-python/tests/fixtures"
-    );
+    const fixtureDir = resolve(here, "../../../../slide-rule-python/tests/fixtures");
     const closed = JSON.parse(
-      readFileSync(
-        resolve(fixtureDir, "closed_appbundle_publish_artifact.json"),
-        "utf8"
-      )
+      readFileSync(resolve(fixtureDir, "closed_appbundle_publish_artifact.json"), "utf8")
     );
     const blocked = JSON.parse(
-      readFileSync(
-        resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"),
-        "utf8"
-      )
+      readFileSync(resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"), "utf8")
     );
 
     expect(closed.appId).toBe("app_purchase_approval");
@@ -301,22 +205,13 @@ describe("purchase approval E2E scenario", () => {
     expect(closed.runtimeClosureSummary?.blocked).toBe(false);
     expect(closed.runtimeClosureSummary?.evidencePresentCount).toBe(6);
     expect(closed.runtimeClosure?.skillsChecked).toEqual(
-      expect.arrayContaining([
-        "datamodel",
-        "rbac",
-        "workflow",
-        "page",
-        "aigc",
-        "appbundle",
-      ])
+      expect.arrayContaining(["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"])
     );
     expect(closed.manifest?.closureEvidenceDigest).toBe(
       closed.runtimeClosureSummary?.stableDigest
     );
     expect(closed.perSkillEvidence.datamodel?.evidencePresent).toBe(true);
-    expect(closed.perSkillEvidence.appbundle?.artifactId).toContain(
-      "artifact-"
-    );
+    expect(closed.perSkillEvidence.appbundle?.artifactId).toContain("artifact-");
 
     expect(blocked.appId).toBe("app_purchase_approval");
     expect(blocked.runtimeClosureSummary?.blocked).toBe(true);

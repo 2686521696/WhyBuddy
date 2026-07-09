@@ -252,31 +252,23 @@ export const useAdminStore = create<AdminState>((set, get) => ({
 
   async loadOverview() {
     set({ loading: true, error: null });
-    const [summary, users, projects, runs, failures, audit] = await Promise.all(
-      [
-        fetchAdmin<never[]>(
-          "/api/admin/summary",
-          "Unable to load admin summary."
-        ),
-        fetchAdmin<AdminUser[]>(
-          "/api/admin/users",
-          "Unable to load admin users."
-        ),
-        fetchAdmin<AdminProject[]>(
-          "/api/admin/projects",
-          "Unable to load admin projects."
-        ),
-        fetchAdmin<AdminRun[]>("/api/admin/runs", "Unable to load admin runs."),
-        fetchAdmin<AdminFailure[]>(
-          "/api/admin/failures",
-          "Unable to load admin failures."
-        ),
-        fetchAdmin<AdminAuditEntry[]>(
-          "/api/admin/audit",
-          "Unable to load admin audit log."
-        ),
-      ]
-    );
+    const [summary, users, projects, runs, failures, audit] = await Promise.all([
+      fetchAdmin<never[]>("/api/admin/summary", "Unable to load admin summary."),
+      fetchAdmin<AdminUser[]>("/api/admin/users", "Unable to load admin users."),
+      fetchAdmin<AdminProject[]>(
+        "/api/admin/projects",
+        "Unable to load admin projects."
+      ),
+      fetchAdmin<AdminRun[]>("/api/admin/runs", "Unable to load admin runs."),
+      fetchAdmin<AdminFailure[]>(
+        "/api/admin/failures",
+        "Unable to load admin failures."
+      ),
+      fetchAdmin<AdminAuditEntry[]>(
+        "/api/admin/audit",
+        "Unable to load admin audit log."
+      ),
+    ]);
 
     const failed = [summary, users, projects, runs, failures, audit].find(
       result => "error" in result
@@ -288,7 +280,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     }
 
     set({
-      summary: "summary" in summary ? (summary.summary ?? null) : null,
+      summary: "summary" in summary ? summary.summary ?? null : null,
       users: "data" in users ? users.data : get().users,
       projects: "data" in projects ? projects.data : get().projects,
       runs: "data" in runs ? runs.data : get().runs,

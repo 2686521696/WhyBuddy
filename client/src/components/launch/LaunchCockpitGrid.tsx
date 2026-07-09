@@ -26,60 +26,12 @@ export interface CockpitTool {
 }
 
 export const COCKPIT_TOOLS: CockpitTool[] = [
-  {
-    id: "browser",
-    labelZh: "浏览器能力",
-    labelEn: "Browser",
-    descZh: "真实浏览器 / 操作",
-    descEn: "Real browser / actions",
-    icon: Globe,
-    requiresAdvancedRuntime: true,
-  },
-  {
-    id: "executor",
-    labelZh: "代码执行器",
-    labelEn: "Code Executor",
-    descZh: "运行 Python 代码",
-    descEn: "Run Python code",
-    icon: Terminal,
-    requiresAdvancedRuntime: true,
-  },
-  {
-    id: "filesystem",
-    labelZh: "文件系统",
-    labelEn: "File System",
-    descZh: "读写与管理文件",
-    descEn: "Read/write files",
-    icon: FolderOpen,
-    requiresAdvancedRuntime: true,
-  },
-  {
-    id: "knowledge",
-    labelZh: "知识检索",
-    labelEn: "Knowledge",
-    descZh: "语义搜索 / 问答",
-    descEn: "Semantic search / QA",
-    icon: BookOpen,
-    requiresAdvancedRuntime: false,
-  },
-  {
-    id: "web",
-    labelZh: "网络搜索",
-    labelEn: "Web Search",
-    descZh: "实时网络信息",
-    descEn: "Live web info",
-    icon: Search,
-    requiresAdvancedRuntime: false,
-  },
-  {
-    id: "vision",
-    labelZh: "视觉理解",
-    labelEn: "Vision",
-    descZh: "图片分析与理解",
-    descEn: "Image analysis",
-    icon: Eye,
-    requiresAdvancedRuntime: false,
-  },
+  { id: "browser", labelZh: "浏览器能力", labelEn: "Browser", descZh: "真实浏览器 / 操作", descEn: "Real browser / actions", icon: Globe, requiresAdvancedRuntime: true },
+  { id: "executor", labelZh: "代码执行器", labelEn: "Code Executor", descZh: "运行 Python 代码", descEn: "Run Python code", icon: Terminal, requiresAdvancedRuntime: true },
+  { id: "filesystem", labelZh: "文件系统", labelEn: "File System", descZh: "读写与管理文件", descEn: "Read/write files", icon: FolderOpen, requiresAdvancedRuntime: true },
+  { id: "knowledge", labelZh: "知识检索", labelEn: "Knowledge", descZh: "语义搜索 / 问答", descEn: "Semantic search / QA", icon: BookOpen, requiresAdvancedRuntime: false },
+  { id: "web", labelZh: "网络搜索", labelEn: "Web Search", descZh: "实时网络信息", descEn: "Live web info", icon: Search, requiresAdvancedRuntime: false },
+  { id: "vision", labelZh: "视觉理解", labelEn: "Vision", descZh: "图片分析与理解", descEn: "Image analysis", icon: Eye, requiresAdvancedRuntime: false },
 ];
 
 export interface LaunchCockpitGridProps {
@@ -110,11 +62,7 @@ export function LaunchCockpitGrid({
           className="mb-3 text-[11px]"
           style={{ color: "var(--muted-foreground, #64748b)" }}
         >
-          {t(
-            locale,
-            "连接硬核技术可用的能力，智能体将按需智能调用以完成任务。",
-            "Connected capabilities the agent will intelligently invoke as needed."
-          )}
+          {t(locale, "连接硬核技术可用的能力，智能体将按需智能调用以完成任务。", "Connected capabilities the agent will intelligently invoke as needed.")}
         </p>
       )}
       <div

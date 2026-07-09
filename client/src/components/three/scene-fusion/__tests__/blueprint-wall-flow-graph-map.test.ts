@@ -257,9 +257,7 @@ describe("mapWallDataToFlowGraph / column remap + styling", () => {
 
     // Direct resolveVisualStageLane check: same fallback rule, different stageIndex.
     expect(
-      resolveVisualStageLane(node, {
-        stageSignal: makeWallData({ stageIndex: 2 }).stageSignal,
-      })
+      resolveVisualStageLane(node, { stageSignal: makeWallData({ stageIndex: 2 }).stageSignal })
     ).toBe(2);
   });
 
@@ -288,7 +286,7 @@ describe("mapWallDataToFlowGraph / column remap + styling", () => {
     }
 
     // Representative node (spec → lane 4, row 3).
-    const spec = result.data.nodes.find(n => n.id === "spec:s1")!;
+    const spec = result.data.nodes.find((n) => n.id === "spec:s1")!;
     expect(spec.style.x).toBe(4 * LANE_X + OFFSET_X);
     expect(spec.style.y).toBe(3 * ROW_Y + OFFSET_Y);
   });
@@ -371,9 +369,7 @@ describe("mapWallDataToFlowGraph / column remap + styling", () => {
     expect(mapped.style.labelText).toBeUndefined();
     expect(mapped.data.label).toBeUndefined();
     // secondary priority style is applied.
-    expect(mapped.style.lineWidth).toBe(
-      EDGE_PRIORITY_STYLE.secondary.lineWidth
-    );
+    expect(mapped.style.lineWidth).toBe(EDGE_PRIORITY_STYLE.secondary.lineWidth);
     expect(mapped.style.opacity).toBe(EDGE_PRIORITY_STYLE.secondary.opacity);
   });
 
@@ -431,10 +427,10 @@ describe("mapWallDataToFlowGraph / per-lane row de-confliction (Fix 1)", () => {
       })
     );
     const mappedCapability = result.data.nodes.find(
-      n => n.id === "capability:foo"
+      (n) => n.id === "capability:foo"
     )!;
     const mappedReasoning = result.data.nodes.find(
-      n => n.id === "reasoning:bar"
+      (n) => n.id === "reasoning:bar"
     )!;
 
     // Both land in the same visual stage lane (2) → same x.
@@ -479,12 +475,14 @@ describe("mapWallDataToFlowGraph / per-lane row de-confliction (Fix 1)", () => {
         sourceRefs: [{ kind: "reasoning", id: "r1" }],
       }),
     ];
-    const result = mapWallDataToFlowGraph(makeWallData({ nodes, stageIndex }));
+    const result = mapWallDataToFlowGraph(
+      makeWallData({ nodes, stageIndex })
+    );
 
     // All in lane 2 (same x), distinct effective rows 1,2,3 (distinct y).
-    const coords = result.data.nodes.map(n => `${n.style.x},${n.style.y}`);
+    const coords = result.data.nodes.map((n) => `${n.style.x},${n.style.y}`);
     expect(new Set(coords).size).toBe(coords.length); // all unique (x,y)
-    expect(result.data.nodes.map(n => n.data.effectiveRow)).toEqual([1, 2, 3]);
+    expect(result.data.nodes.map((n) => n.data.effectiveRow)).toEqual([1, 2, 3]);
   });
 
   it("non-colliding nodes keep their preferred row (effectiveRow === row)", () => {
@@ -506,12 +504,7 @@ describe("mapWallDataToFlowGraph / per-lane row de-confliction (Fix 1)", () => {
       mapWallDataToFlowGraph(
         makeWallData({
           nodes: [
-            makeNode({
-              id: "capability:c1",
-              type: "capability",
-              column: 3,
-              row: 1,
-            }),
+            makeNode({ id: "capability:c1", type: "capability", column: 3, row: 1 }),
             makeNode({
               id: "reasoning:r1",
               type: "reasoning",
@@ -523,8 +516,8 @@ describe("mapWallDataToFlowGraph / per-lane row de-confliction (Fix 1)", () => {
           stageIndex: 2,
         })
       );
-    expect(build().data.nodes.map(n => [n.style.x, n.style.y])).toEqual(
-      build().data.nodes.map(n => [n.style.x, n.style.y])
+    expect(build().data.nodes.map((n) => [n.style.x, n.style.y])).toEqual(
+      build().data.nodes.map((n) => [n.style.x, n.style.y])
     );
   });
 });

@@ -165,10 +165,7 @@ const MIN_NODE_H = 56;
  * Uses an offscreen canvas for measureText.
  * Includes space for: title lines + type label line + padding.
  */
-function measureNodeHeight(
-  text: string,
-  measureCtx: CanvasRenderingContext2D
-): number {
+function measureNodeHeight(text: string, measureCtx: CanvasRenderingContext2D): number {
   measureCtx.font = NODE_FONT;
   const lines = wrapTextSimple(text, NODE_W - 60, measureCtx);
   const lineCount = Math.min(lines.length, MAX_TEXT_LINES);
@@ -179,19 +176,12 @@ function measureNodeHeight(
 /**
  * Simple word-wrap without needing the full canvas wrapText (used pre-layout).
  */
-function wrapTextSimple(
-  text: string,
-  maxWidth: number,
-  ctx: CanvasRenderingContext2D
-): string[] {
+function wrapTextSimple(text: string, maxWidth: number, ctx: CanvasRenderingContext2D): string[] {
   const lines: string[] = [];
   let remaining = text;
   while (remaining.length > 0) {
     let end = remaining.length;
-    while (
-      ctx.measureText(remaining.slice(0, end)).width > maxWidth &&
-      end > 1
-    ) {
+    while (ctx.measureText(remaining.slice(0, end)).width > maxWidth && end > 1) {
       end--;
     }
     lines.push(remaining.slice(0, end));
@@ -214,12 +204,8 @@ function computeBrainstormLayout(
   const stageNodes = graphData.nodes.filter(
     node => node.id.startsWith("stage-") && node.data?.type === "capability"
   );
-  const roleIndex = new Map(
-    brainstormNodes.map((node, index) => [node.id, index])
-  );
-  const synthesisIndex = new Map(
-    synthesisNodes.map((node, index) => [node.id, index])
-  );
+  const roleIndex = new Map(brainstormNodes.map((node, index) => [node.id, index]));
+  const synthesisIndex = new Map(synthesisNodes.map((node, index) => [node.id, index]));
   const stageIndex = new Map(stageNodes.map((node, index) => [node.id, index]));
   const roleCount = Math.max(brainstormNodes.length, 1);
   const roleColumns = Math.min(4, Math.max(2, Math.ceil(roleCount / 2)));
@@ -256,8 +242,7 @@ function computeBrainstormLayout(
       const row = Math.floor(rolePos / roleColumns);
       const colT = roleColumns === 1 ? 0.5 : col / (roleColumns - 1);
       const rowT = roleRows === 1 ? 0.5 : row / (roleRows - 1);
-      const stagger =
-        row % 2 === 0 ? 0 : (roleEndX - roleStartX) / (roleColumns * 2);
+      const stagger = row % 2 === 0 ? 0 : (roleEndX - roleStartX) / (roleColumns * 2);
       return toLayoutNode(
         node,
         roleStartX + (roleEndX - roleStartX) * colT + stagger,
@@ -400,29 +385,19 @@ function computeRouteSetLayout(
   nodeHeights: Map<string, number>
 ): LayoutResult {
   const nodesById = new Map(graphData.nodes.map(node => [node.id, node]));
-  const routeRoots = graphData.nodes.filter(
-    node => node.data?.type === "route_root"
-  );
+  const routeRoots = graphData.nodes.filter(node => node.data?.type === "route_root");
   const routeNodes = graphData.nodes.filter(
     node => node.id.startsWith("route-") && node.data?.type !== "route_root"
   );
-  const selectedRoutes = routeNodes.filter(
-    node => node.data?.status === "completed"
-  );
-  const candidateRoutes = routeNodes.filter(
-    node => node.data?.status !== "completed"
-  );
+  const selectedRoutes = routeNodes.filter(node => node.data?.status === "completed");
+  const candidateRoutes = routeNodes.filter(node => node.data?.status !== "completed");
   const routeDetails = graphData.nodes.filter(
     node =>
       !node.id.startsWith("route-") &&
       (node.data?.type === "route_step" || node.data?.type === "capability")
   );
-  const specRoots = graphData.nodes.filter(
-    node => node.data?.type === "route_spec"
-  );
-  const specNodes = graphData.nodes.filter(
-    node => node.data?.type === "spec_node"
-  );
+  const specRoots = graphData.nodes.filter(node => node.data?.type === "route_spec");
+  const specNodes = graphData.nodes.filter(node => node.data?.type === "spec_node");
 
   const toLayoutNode = (
     node: GraphData["nodes"][number],
@@ -540,10 +515,7 @@ function computeLayout(graphData: GraphData): LayoutResult {
   g.setDefaultEdgeLabel(() => ({}));
 
   for (const node of graphData.nodes) {
-    g.setNode(node.id, {
-      width: NODE_W,
-      height: nodeHeights.get(node.id) ?? MIN_NODE_H,
-    });
+    g.setNode(node.id, { width: NODE_W, height: nodeHeights.get(node.id) ?? MIN_NODE_H });
   }
   for (const edge of graphData.edges) {
     g.setEdge(edge.source, edge.target);
@@ -582,12 +554,10 @@ function computeLayout(graphData: GraphData): LayoutResult {
     const from = nodeMap.get(e.source);
     const to = nodeMap.get(e.target);
     const edgeData = g.edge(e.source, e.target);
-    const points = (edgeData?.points ?? []).map(
-      (p: { x: number; y: number }) => ({
-        x: (p.x - PADDING) * scale + offsetX,
-        y: (p.y - PADDING) * scale + offsetY,
-      })
-    );
+    const points = (edgeData?.points ?? []).map((p: { x: number; y: number }) => ({
+      x: (p.x - PADDING) * scale + offsetX,
+      y: (p.y - PADDING) * scale + offsetY,
+    }));
     return {
       from: { x: from?.x ?? 0, y: from?.y ?? 0 },
       to: { x: to?.x ?? 0, y: to?.y ?? 0 },
@@ -612,19 +582,12 @@ function computeLayout(graphData: GraphData): LayoutResult {
 /**
  * Wrap text into multiple lines that fit within maxWidth.
  */
-function wrapText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number
-): string[] {
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const lines: string[] = [];
   let remaining = text;
   while (remaining.length > 0) {
     let end = remaining.length;
-    while (
-      ctx.measureText(remaining.slice(0, end)).width > maxWidth &&
-      end > 1
-    ) {
+    while (ctx.measureText(remaining.slice(0, end)).width > maxWidth && end > 1) {
       end--;
     }
     lines.push(remaining.slice(0, end));
@@ -649,10 +612,7 @@ function sanitizeRoleNodeId(roleId: string): string {
     .replace(/^-|-$/g, "");
 }
 
-function formatRoleLabel(
-  roleId: string,
-  roleLabels?: Record<string, string>
-): string {
+function formatRoleLabel(roleId: string, roleLabels?: Record<string, string>): string {
   const explicit = roleLabels?.[roleId];
   if (explicit && explicit.trim().length > 0) return explicit.trim();
   return roleId
@@ -664,24 +624,18 @@ function formatRoleLabel(
 
 function entryMatchesRole(entry: AgentReasoningEntry, roleId: string): boolean {
   const entryRole = sanitizeRoleNodeId(
-    (entry as AgentReasoningEntry & { roleId?: string }).roleId ?? ""
+    ((entry as AgentReasoningEntry & { roleId?: string }).roleId) ?? ""
   );
   const targetRole = sanitizeRoleNodeId(roleId);
   return entryRole.length > 0 && entryRole === targetRole;
 }
 
-function isStageTwoJob(
-  job: BlueprintGenerationJob | null | undefined
-): boolean {
+function isStageTwoJob(job: BlueprintGenerationJob | null | undefined): boolean {
   return job?.stage === "spec_tree" || job?.stage === "spec_docs";
 }
 
-function shouldRenderRouteSetWall(
-  job: BlueprintGenerationJob | null | undefined
-): boolean {
-  const stage = String(
-    (job as { stage?: string } | null | undefined)?.stage ?? ""
-  );
+function shouldRenderRouteSetWall(job: BlueprintGenerationJob | null | undefined): boolean {
+  const stage = String((job as { stage?: string } | null | undefined)?.stage ?? "");
   return stage === "route_generation" || stage === "route_selection";
 }
 
@@ -701,9 +655,7 @@ function reasoningGraphToGraphData(
   };
 }
 
-function reasoningNodeData(
-  node: BrainstormReasoningNode
-): Record<string, unknown> {
+function reasoningNodeData(node: BrainstormReasoningNode): Record<string, unknown> {
   return {
     title: node.title,
     type: node.type,
@@ -713,9 +665,7 @@ function reasoningNodeData(
   };
 }
 
-function reasoningEdgeData(
-  edge: BrainstormReasoningEdge
-): GraphData["edges"][number] {
+function reasoningEdgeData(edge: BrainstormReasoningEdge): GraphData["edges"][number] {
   return {
     source: edge.source,
     target: edge.target,
@@ -733,10 +683,9 @@ function readSelectedRouteIdFromJob(
   );
   const payload =
     selectionArtifact?.payload && typeof selectionArtifact.payload === "object"
-      ? (selectionArtifact.payload as Record<string, unknown>)
+      ? selectionArtifact.payload as Record<string, unknown>
       : {};
-  const routeId =
-    payload.routeId ?? payload.selectedRouteId ?? payload.selectedPathId;
+  const routeId = payload.routeId ?? payload.selectedRouteId ?? payload.selectedPathId;
   return typeof routeId === "string" && routeId.length > 0 ? routeId : null;
 }
 
@@ -748,15 +697,10 @@ function buildRouteSetGraphData(
 ): GraphData {
   const nodes: GraphData["nodes"] = [];
   const edges: GraphData["edges"] = [];
-  const selectedRouteId =
-    readSelectedRouteIdFromJob(job) ?? routeSet.primaryRouteId;
+  const selectedRouteId = readSelectedRouteIdFromJob(job) ?? routeSet.primaryRouteId;
   const rootId = "routes-root";
-  const selectedRoute = routeSet.routes.find(
-    route => route.id === selectedRouteId
-  );
-  const selectedRouteNodeId = selectedRoute
-    ? `route-${selectedRoute.id}`
-    : null;
+  const selectedRoute = routeSet.routes.find(route => route.id === selectedRouteId);
+  const selectedRouteNodeId = selectedRoute ? `route-${selectedRoute.id}` : null;
 
   nodes.push({
     id: rootId,
@@ -788,12 +732,8 @@ function buildRouteSetGraphData(
       source: rootId,
       target: routeNodeId,
       label: isSelected
-        ? locale === "zh-CN"
-          ? "已选"
-          : "selected"
-        : locale === "zh-CN"
-          ? "候选"
-          : "candidate",
+        ? locale === "zh-CN" ? "已选" : "selected"
+        : locale === "zh-CN" ? "候选" : "candidate",
       type: isSelected ? "supports" : "refines",
       sourceKind: "route_set",
     });
@@ -812,10 +752,7 @@ function buildRouteSetGraphData(
         },
       });
       edges.push({
-        source:
-          index === 0
-            ? routeNodeId
-            : `${routeNodeId}-step-${visibleSteps[index - 1].id}`,
+        source: index === 0 ? routeNodeId : `${routeNodeId}-step-${visibleSteps[index - 1].id}`,
         target: stepNodeId,
         label: locale === "zh-CN" ? `步骤 ${index + 1}` : `step ${index + 1}`,
         type: "depends_on",
@@ -847,9 +784,7 @@ function buildRouteSetGraphData(
   }
 
   const specTreeNodes = specTree?.nodes ?? [];
-  const specRoot =
-    specTreeNodes.find(node => node.id === specTree?.rootNodeId) ??
-    specTreeNodes[0];
+  const specRoot = specTreeNodes.find(node => node.id === specTree?.rootNodeId) ?? specTreeNodes[0];
   if (specRoot && selectedRouteNodeId) {
     const specRootId = `route-spec-${specRoot.id}`;
     nodes.push({
@@ -940,22 +875,13 @@ function edgeColor(edge: LayoutEdge): string {
   }
 }
 
-function telemetryText(
-  telemetry: BrainstormGraphTelemetry | undefined
-): string[] {
-  const format = (
-    label: string,
-    value: number | null | undefined,
-    suffix = ""
-  ) => `${label}: ${typeof value === "number" ? `${value}${suffix}` : "--"}`;
+function telemetryText(telemetry: BrainstormGraphTelemetry | undefined): string[] {
+  const format = (label: string, value: number | null | undefined, suffix = "") =>
+    `${label}: ${typeof value === "number" ? `${value}${suffix}` : "--"}`;
   return [
     format("tokens", telemetry?.tokenBurn),
     format("sources", telemetry?.sourceCount),
-    format(
-      "elapsed",
-      telemetry?.elapsedMs ? Math.round(telemetry.elapsedMs / 1000) : null,
-      "s"
-    ),
+    format("elapsed", telemetry?.elapsedMs ? Math.round(telemetry.elapsedMs / 1000) : null, "s"),
     format("budget", telemetry?.remainingBudget),
     format("roles", telemetry?.activeRoleCount),
   ];
@@ -1011,7 +937,11 @@ function drawWall(ctx: CanvasRenderingContext2D, layout: LayoutResult | null) {
     ctx.strokeStyle = edgeColor(edge);
     ctx.beginPath();
     ctx.moveTo(fromX, fromY);
-    ctx.bezierCurveTo(fromX + cpOffset, fromY, toX - cpOffset, toY, toX, toY);
+    ctx.bezierCurveTo(
+      fromX + cpOffset, fromY,
+      toX - cpOffset, toY,
+      toX, toY
+    );
     ctx.stroke();
 
     // 箭头圆点
@@ -1069,13 +999,9 @@ function drawWall(ctx: CanvasRenderingContext2D, layout: LayoutResult | null) {
 
     // 状态圆点
     const statusColor =
-      node.status === "completed" ||
-      node.status === "resolved" ||
-      node.status === "supported"
+      node.status === "completed" || node.status === "resolved" || node.status === "supported"
         ? "#10b981"
-        : node.status === "running" ||
-            node.status === "active" ||
-            node.status === "open"
+        : node.status === "running" || node.status === "active" || node.status === "open"
           ? "#3b82f6"
           : node.status === "failed" || node.status === "challenged"
             ? "#ef4444"
@@ -1095,10 +1021,7 @@ function drawWall(ctx: CanvasRenderingContext2D, layout: LayoutResult | null) {
     for (let i = 0; i < Math.min(allLines.length, MAX_TEXT_LINES); i++) {
       let line = allLines[i];
       if (i === MAX_TEXT_LINES - 1 && allLines.length > MAX_TEXT_LINES) {
-        while (
-          ctx.measureText(`${line}...`).width > NODE_W - 60 &&
-          line.length > 1
-        ) {
+        while (ctx.measureText(`${line}...`).width > NODE_W - 60 && line.length > 1) {
           line = line.slice(0, -1);
         }
         line += "...";
@@ -1108,10 +1031,7 @@ function drawWall(ctx: CanvasRenderingContext2D, layout: LayoutResult | null) {
 
     if (node.roleLabel) {
       // 更醒目的 role（谁）：更大字号 + 稍醒目色，底部右侧；让用户一眼看到“谁在说”
-      const roleText =
-        node.roleLabel.length > 18
-          ? node.roleLabel.slice(0, 15) + "…"
-          : node.roleLabel;
+      const roleText = node.roleLabel.length > 18 ? node.roleLabel.slice(0, 15) + "…" : node.roleLabel;
       ctx.fillStyle = "#475569";
       ctx.font = "bold 22px system-ui, sans-serif";
       ctx.textAlign = "right";
@@ -1122,11 +1042,7 @@ function drawWall(ctx: CanvasRenderingContext2D, layout: LayoutResult | null) {
     ctx.fillStyle = typeColor;
     ctx.font = "bold 20px system-ui, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(
-      node.type.toUpperCase().replace(/_/g, " "),
-      x + 30,
-      y + node.height - 32
-    );
+    ctx.fillText(node.type.toUpperCase().replace(/_/g, " "), x + 30, y + node.height - 32);
   }
 
   if (layout.mode) {
@@ -1165,17 +1081,12 @@ function drawWall(ctx: CanvasRenderingContext2D, layout: LayoutResult | null) {
     layout.consoleLines.slice(-6).forEach((line, index) => {
       const y = consoleY + 82 + index * 34;
       const roleId = (line as any)?.roleId || (line as any)?.roleLabel;
-      const roleShort = roleId
-        ? String(roleId).split(/[-_]/).pop()?.slice(0, 10)
-        : null;
+      const roleShort = roleId ? String(roleId).split(/[-_]/).pop()?.slice(0, 10) : null;
       ctx.fillStyle = "#94a3b8";
-      const kindLabel = roleShort
-        ? `[${roleShort}·${line.kind}]`
-        : `[${line.kind}]`;
+      const kindLabel = roleShort ? `[${roleShort}·${line.kind}]` : `[${line.kind}]`;
       ctx.fillText(kindLabel, consoleX + 28, y);
       ctx.fillStyle = "#f8fafc";
-      const text =
-        line.text.length > 88 ? `${line.text.slice(0, 85)}...` : line.text;
+      const text = line.text.length > 88 ? `${line.text.slice(0, 85)}...` : line.text;
       ctx.fillText(text, consoleX + (roleShort ? 195 : 150), y);
     });
   }
@@ -1214,23 +1125,13 @@ export function BlueprintWallTexture({
         roleLabels,
         specTree,
       }),
-    [
-      agentReasoningEntries,
-      job,
-      roleLabels,
-      specTree,
-      structuredReasoningGraphs,
-    ]
+    [agentReasoningEntries, job, roleLabels, specTree, structuredReasoningGraphs]
   );
 
   // 优先使用 derive 的 graph (structured 或 fallback)，这样早期阶段 (input, clarification, route selection) 的讨论 (来自 console 的 entries) 也能产生丰富分支的 graph。
   // derive fallback 现加入讨论链 (谁->谁 推进边) + 角色在卡片/ console 更醒目显示，解决“没有看到谁跟谁讨论，然后讨论出来个啥，大家对啥发表意见”。
   const graphData = useMemo(() => {
-    if (
-      reasoningViewModel &&
-      reasoningViewModel.visibleNodes &&
-      reasoningViewModel.visibleNodes.length > 0
-    ) {
+    if (reasoningViewModel && reasoningViewModel.visibleNodes && reasoningViewModel.visibleNodes.length > 0) {
       return reasoningGraphToGraphData(reasoningViewModel);
     }
 
@@ -1251,8 +1152,7 @@ export function BlueprintWallTexture({
     nodes.push({
       id: rootId,
       data: {
-        title:
-          (job as unknown as { title?: string })?.title ?? "Blueprint 执行",
+        title: (job as unknown as { title?: string })?.title ?? "Blueprint 执行",
         type: "route_root",
         status: job?.status ?? "running",
         body: "",
@@ -1262,11 +1162,7 @@ export function BlueprintWallTexture({
     // 按 stageId 分组（每个 stage 是一个主分支）
     const stageMap = new Map<string, typeof entries>();
     for (const entry of entries) {
-      if (
-        entry.phase === "iteration_started" ||
-        entry.phase === "iteration_completed"
-      )
-        continue;
+      if (entry.phase === "iteration_started" || entry.phase === "iteration_completed") continue;
       const stage = entry.stageId ?? "unknown";
       if (!stageMap.has(stage)) stageMap.set(stage, []);
       stageMap.get(stage)!.push(entry);
@@ -1280,9 +1176,7 @@ export function BlueprintWallTexture({
         data: {
           title: stageId.replace(/_/g, " "),
           type: "capability",
-          status: stageEntries.some(e => e.phase === "completed")
-            ? "completed"
-            : "running",
+          status: stageEntries.some(e => e.phase === "completed") ? "completed" : "running",
           body: `${stageEntries.length} 步骤`,
         },
       });
@@ -1333,14 +1227,15 @@ export function BlueprintWallTexture({
         nodes.push({
           id: synthesisNodeId,
           data: {
-            title:
-              locale === "zh-CN" ? "SPEC 共识合成" : "SPEC consensus synthesis",
+            title: locale === "zh-CN" ? "SPEC 共识合成" : "SPEC consensus synthesis",
             type: "final",
             status: stageEntries.some(entry => entry.phase === "completed")
               ? "completed"
               : "running",
             body:
-              locale === "zh-CN" ? "多角色结论汇聚" : "multi-role convergence",
+              locale === "zh-CN"
+                ? "多角色结论汇聚"
+                : "multi-role convergence",
           },
         });
         for (let i = 0; i < roleBranchNodeIds.length; i++) {
@@ -1365,8 +1260,7 @@ export function BlueprintWallTexture({
 
       for (const [iterNum, iterEntries] of iterMap) {
         // 如果只有一个迭代，直接把 entries 挂在 stage 下
-        const parentId =
-          iterMap.size > 1 ? `${stageNodeId}-iter-${iterNum}` : stageNodeId;
+        const parentId = iterMap.size > 1 ? `${stageNodeId}-iter-${iterNum}` : stageNodeId;
 
         if (iterMap.size > 1) {
           nodes.push({
@@ -1374,9 +1268,7 @@ export function BlueprintWallTexture({
             data: {
               title: `迭代 #${iterNum}`,
               type: "route_step",
-              status: iterEntries.some(e => e.phase === "completed")
-                ? "completed"
-                : "running",
+              status: iterEntries.some(e => e.phase === "completed") ? "completed" : "running",
               body: "",
             },
           });
@@ -1388,20 +1280,14 @@ export function BlueprintWallTexture({
           const matchedRole = roleBranches.find(role =>
             entryMatchesRole(entry, role.roleId)
           );
-          return matchedRole
-            ? `${stageNodeId}-role-${matchedRole.roleId}`
-            : parentId;
+          return matchedRole ? `${stageNodeId}-role-${matchedRole.roleId}` : parentId;
         };
 
         // 每个 entry 按 phase 类型分组为子分支
         const thinkingEntries = iterEntries.filter(e => e.phase === "thinking");
         const actingEntries = iterEntries.filter(e => e.phase === "acting");
-        const observingEntries = iterEntries.filter(
-          e => e.phase === "observing"
-        );
-        const completedEntries = iterEntries.filter(
-          e => e.phase === "completed" || e.phase === "error"
-        );
+        const observingEntries = iterEntries.filter(e => e.phase === "observing");
+        const completedEntries = iterEntries.filter(e => e.phase === "completed" || e.phase === "error");
 
         // thinking 分支
         for (const entry of thinkingEntries) {
@@ -1438,17 +1324,13 @@ export function BlueprintWallTexture({
             data: {
               title: entry.observationSummary?.slice(0, 50) ?? "观察结果",
               type: "preview",
-              status:
-                entry.observationSuccess === false ? "failed" : "completed",
+              status: entry.observationSuccess === false ? "failed" : "completed",
               body: "",
             },
           });
           // observing 连接到对应的 acting（如果有的话）
           const lastActing = actingEntries[actingEntries.length - 1];
-          edges.push({
-            source: lastActing?.id ?? pickParentId(entry),
-            target: entry.id,
-          });
+          edges.push({ source: lastActing?.id ?? pickParentId(entry), target: entry.id });
         }
 
         // completed/error 分支
@@ -1456,10 +1338,9 @@ export function BlueprintWallTexture({
           nodes.push({
             id: entry.id,
             data: {
-              title:
-                entry.phase === "error"
-                  ? (entry.error?.slice(0, 40) ?? "错误")
-                  : (entry.reason?.slice(0, 40) ?? "完成"),
+              title: entry.phase === "error"
+                ? (entry.error?.slice(0, 40) ?? "错误")
+                : (entry.reason?.slice(0, 40) ?? "完成"),
               type: "final",
               status: entry.phase === "error" ? "failed" : "completed",
               body: "",
@@ -1467,24 +1348,13 @@ export function BlueprintWallTexture({
           });
           // completed 连接到最后一个 observing（如果有的话）
           const lastObserving = observingEntries[observingEntries.length - 1];
-          edges.push({
-            source: lastObserving?.id ?? pickParentId(entry),
-            target: entry.id,
-          });
+          edges.push({ source: lastObserving?.id ?? pickParentId(entry), target: entry.id });
         }
       }
     }
 
     return { nodes, edges };
-  }, [
-    agentReasoningEntries,
-    job,
-    locale,
-    reasoningViewModel,
-    roleLabels,
-    routeSet,
-    specTree,
-  ]);
+  }, [agentReasoningEntries, job, locale, reasoningViewModel, roleLabels, routeSet, specTree]);
 
   const isEmpty = graphData.nodes.length === 0;
 
@@ -1556,12 +1426,7 @@ export function BlueprintWallTexture({
 
   return (
     <mesh ref={meshRef} position={BLUEPRINT_WALL_GRAPH_POSITION} receiveShadow>
-      <planeGeometry
-        args={[
-          BLUEPRINT_WALL_GRAPH_BACKING_WIDTH,
-          BLUEPRINT_WALL_GRAPH_BACKING_HEIGHT,
-        ]}
-      />
+      <planeGeometry args={[BLUEPRINT_WALL_GRAPH_BACKING_WIDTH, BLUEPRINT_WALL_GRAPH_BACKING_HEIGHT]} />
       <meshBasicMaterial />
     </mesh>
   );

@@ -17,7 +17,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/deploy-target", async importOriginal => {
+vi.mock("@/lib/deploy-target", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/deploy-target")>();
   return { ...actual, IS_GITHUB_PAGES: false };
 });
@@ -130,20 +130,12 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain("/assets/sliderule-logo.png");
     expect(html).toContain("我能帮你把意图推演成应用闭环");
     expect(html).toContain("发一句业务目标，SlideRule 串起五系统");
-    expect(html).toContain(
-      "做一个采购审批应用，含采购单、经理审批、财务确认和字段权限"
-    );
-    expect(html).toContain(
-      "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理"
-    );
+    expect(html).toContain("做一个采购审批应用，含采购单、经理审批、财务确认和字段权限");
+    expect(html).toContain("设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理");
     // 第三条 chip 是新颖域（非内置演示域）——用户从 chips 就能体验真实 LLM 路径
-    expect(html).toContain(
-      "做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养"
-    );
+    expect(html).toContain("做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养");
     // single bottom composer, unchanged
-    expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(
-      1
-    );
+    expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(1);
     // the old duplicate empty-state copy is gone
     expect(html).not.toContain("把应用意图发给 SlideRule");
     expect(html).not.toContain("Welcome to SlideRule V5.");
@@ -152,14 +144,7 @@ describe("unified /sliderule surface (single mental model)", () => {
   it("empty session hides the right stage entirely（欢迎页独占全宽，不摆空壳看板）", () => {
     const html = renderPage();
 
-    for (const label of [
-      "DataModel",
-      "Workflow",
-      "RBAC",
-      "Page",
-      "AIGC",
-      "AppBundle",
-    ]) {
+    for (const label of ["DataModel", "Workflow", "RBAC", "Page", "AIGC", "AppBundle"]) {
       expect(html).not.toContain(`>${label}<`);
     }
     expect(html).not.toContain("发布证据看板");
@@ -172,14 +157,7 @@ describe("unified /sliderule surface (single mental model)", () => {
       isRunning: true,
     });
 
-    for (const label of [
-      "DataModel",
-      "Workflow",
-      "RBAC",
-      "Page",
-      "AIGC",
-      "AppBundle",
-    ]) {
+    for (const label of ["DataModel", "Workflow", "RBAC", "Page", "AIGC", "AppBundle"]) {
       expect(html).toContain(label);
     }
     // 「推演过程」右栏标签页已删（与左栏步骤流+LLM 实时草稿完全重复）
@@ -230,20 +208,10 @@ describe("unified /sliderule surface (single mental model)", () => {
         runtimePhase: "concluded",
         lastTurnId: "turn-restored",
         capabilityRuns: [
-          {
-            capabilityId: "evidence.collect",
-            roleId: "agent",
-            turnId: "turn-restored",
-            gateResults: [],
-          },
+          { capabilityId: "evidence.collect", roleId: "agent", turnId: "turn-restored", gateResults: [] },
         ],
         decisionLedger: [
-          {
-            id: "dl-1",
-            turnId: "turn-restored",
-            source: "llm",
-            chose: ["evidence.collect"],
-          },
+          { id: "dl-1", turnId: "turn-restored", source: "llm", chose: ["evidence.collect"] },
         ],
       },
     });

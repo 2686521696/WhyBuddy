@@ -169,9 +169,8 @@ describe("project-store", () => {
       role: "user",
       content: "Need RBAC and ABAC hybrid permissions.",
     });
-    const clarificationQuestion = useProjectStore
-      .getState()
-      .addProjectClarificationQuestion({
+    const clarificationQuestion =
+      useProjectStore.getState().addProjectClarificationQuestion({
         projectId: project.id,
         text: "Which identity provider must be supported?",
         reason: "Authentication scope changes the implementation route.",
@@ -349,8 +348,9 @@ describe("project-store", () => {
 
     expect(answered).toBeNull();
     expect(
-      useProjectStore.getState().getProjectClarificationQuestions(project.id)[0]
-        ?.answer
+      useProjectStore
+        .getState()
+        .getProjectClarificationQuestions(project.id)[0]?.answer
     ).toBeUndefined();
   });
 
@@ -515,9 +515,9 @@ describe("project-store", () => {
       status: "accepted",
       acceptedAt: expect.any(String),
     });
-    expect(
-      useProjectStore.getState().getCurrentProjectSpec(project.id)?.id
-    ).toBe(spec?.id);
+    expect(useProjectStore.getState().getCurrentProjectSpec(project.id)?.id).toBe(
+      spec?.id
+    );
     expect(
       useProjectStore.getState().getProjectBundle(project.id)?.routes[0]?.specId
     ).toBe(route?.specId);
@@ -536,13 +536,15 @@ describe("project-store", () => {
       sourceEvidenceIds: ["evidence-1"],
     });
 
-    const accepted = useProjectStore
-      .getState()
-      .acceptProjectSpec(project.id, spec!.id, {
+    const accepted = useProjectStore.getState().acceptProjectSpec(
+      project.id,
+      spec!.id,
+      {
         note: "User confirmed this spec is ready for planning.",
         sourceMessageIds: ["message-confirmation"],
         sourceEvidenceIds: ["evidence-confirmation"],
-      });
+      }
+    );
 
     expect(accepted).toMatchObject({
       id: spec?.id,
@@ -620,7 +622,8 @@ describe("project-store", () => {
     const draftInput = buildInitialProjectSpecDraft({
       project,
       messages: useProjectStore.getState().messages,
-      clarificationQuestions: useProjectStore.getState().clarificationQuestions,
+      clarificationQuestions:
+        useProjectStore.getState().clarificationQuestions,
     });
 
     expect(draftInput).toMatchObject({
@@ -629,9 +632,7 @@ describe("project-store", () => {
       status: "draft",
       sourceMessageIds: [message?.id],
     });
-    expect(draftInput.content).toContain(
-      "Create a project-scoped spec center."
-    );
+    expect(draftInput.content).toContain("Create a project-scoped spec center.");
     expect(draftInput.content).toContain(
       "Who reviews spec changes?: Engineering lead reviews changes."
     );
@@ -675,9 +676,9 @@ describe("project-store", () => {
     });
     expect(spec?.content).toContain("## Clarifications");
     expect(spec?.content).toContain("Engineering lead reviews changes.");
-    expect(
-      useProjectStore.getState().getCurrentProjectSpec(project.id)?.id
-    ).toBe(spec?.id);
+    expect(useProjectStore.getState().getCurrentProjectSpec(project.id)?.id).toBe(
+      spec?.id
+    );
     expect(useProjectStore.getState().getCurrentProject()?.status).toBe(
       "spec_ready"
     );
@@ -770,9 +771,7 @@ describe("project-store", () => {
       "What rollback expectation should be assumed?: Rollback within one hour. (assumption)"
     );
     expect(spec?.content).toContain("Who signs off the final release?");
-    expect(spec?.content).not.toContain(
-      "Which unrelated answer should be ignored?"
-    );
+    expect(spec?.content).not.toContain("Which unrelated answer should be ignored?");
     expect(
       useProjectStore.getState().getProjectClarificationQuestions(project.id)
     ).toHaveLength(3);
@@ -902,9 +901,7 @@ describe("project-store", () => {
       currentRouteId: selectedRoute?.id,
       status: "planning",
     });
-    expect(
-      useProjectStore.getState().getProjectBundle(project.id)?.evidence
-    ).toEqual([
+    expect(useProjectStore.getState().getProjectBundle(project.id)?.evidence).toEqual([
       expect.objectContaining({
         projectId: project.id,
         type: "route",
@@ -966,9 +963,7 @@ describe("project-store", () => {
       status: "executing",
     });
     expect(selectedRoute?.id).not.toBe(route?.id);
-    expect(
-      useProjectStore.getState().getProjectBundle(project.id)?.evidence
-    ).toEqual([
+    expect(useProjectStore.getState().getProjectBundle(project.id)?.evidence).toEqual([
       expect.objectContaining({
         projectId: project.id,
         type: "runtime",
@@ -1015,21 +1010,21 @@ describe("project-store", () => {
       summary: "Expand the spec before implementation.",
     });
 
-    const selected = useProjectStore
-      .getState()
-      .selectProjectRoute(project.id, route!.id, {
+    const selected = useProjectStore.getState().selectProjectRoute(
+      project.id,
+      route!.id,
+      {
         action: "selected",
         note: "User chose the deep route for extra design review.",
         sourceMissionId: "mission-review",
-      });
+      }
+    );
 
     expect(selected).toMatchObject({
       id: route?.id,
       selectedAt: expect.any(String),
     });
-    expect(
-      useProjectStore.getState().getProjectBundle(project.id)?.evidence
-    ).toEqual([
+    expect(useProjectStore.getState().getProjectBundle(project.id)?.evidence).toEqual([
       expect.objectContaining({
         projectId: project.id,
         type: "route",
@@ -1112,9 +1107,7 @@ describe("project-store", () => {
       "runtime",
       "decision",
     ]);
-    expect(
-      useProjectStore.getState().getProjectBundle(project.id)?.evidence
-    ).toEqual(
+    expect(useProjectStore.getState().getProjectBundle(project.id)?.evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "message",
@@ -1200,9 +1193,9 @@ describe("project-store", () => {
       missionId: "mission-from-route",
       status: "queued",
     });
-    expect(
-      useProjectStore.getState().getProjectBundle(project.id)?.missions
-    ).toEqual([missionPlan]);
+    expect(useProjectStore.getState().getProjectBundle(project.id)?.missions).toEqual([
+      missionPlan,
+    ]);
     expect(useProjectStore.getState().getCurrentProject()?.status).toBe(
       "executing"
     );

@@ -5,7 +5,9 @@ import type { MissionTaskDetail } from "@/lib/tasks-store";
 
 import { TasksCockpitDetail } from "../TasksCockpitDetail";
 
-function makeDetail(overrides?: Partial<MissionTaskDetail>): MissionTaskDetail {
+function makeDetail(
+  overrides?: Partial<MissionTaskDetail>
+): MissionTaskDetail {
   return {
     id: "mission-1",
     title: "Integration test task",
@@ -269,15 +271,7 @@ describe("TasksCockpitDetail integration with RightInfoPanel", () => {
             estimatedDuration: "3h",
           },
           stages: [
-            {
-              key: "s1",
-              label: "Research",
-              status: "running",
-              progress: 40,
-              arcStart: 0,
-              arcEnd: 180,
-              midAngle: 90,
-            },
+            { key: "s1", label: "Research", status: "running", progress: 40, arcStart: 0, arcEnd: 180, midAngle: 90 },
           ],
           candidateRoutes: [],
         },

@@ -391,7 +391,8 @@ describe("BlueprintProgressPanel", () => {
               platform: "codex",
               title: "Platform handoff: Codex",
               summary: "Use Codex to apply the generated prompt package.",
-              content: "Use target package.\nRun verification before handoff.",
+              content:
+                "Use target package.\nRun verification before handoff.",
               promptPackageId: "prompt-package-latest",
               sourceNodeIds: ["node-root"],
               verificationCommands: [
@@ -460,7 +461,9 @@ describe("BlueprintProgressPanel", () => {
     expect(landingPlans[0]?.sourcePromptPackageIds).toEqual([
       "prompt-package-latest",
     ]);
-    expect(landingPlans[0]?.handoffs[0]?.label).toBe("Platform handoff: Codex");
+    expect(landingPlans[0]?.handoffs[0]?.label).toBe(
+      "Platform handoff: Codex"
+    );
     expect(landingPlans[0]?.verificationCommands[0]?.command).toBe(
       "pnpm vitest server/tests/blueprint-routes.test.ts"
     );
@@ -490,9 +493,7 @@ describe("BlueprintProgressPanel", () => {
     expect(markup).toContain("Use target package.");
     expect(markup).toContain("捕获执行证据");
     expect(markup).toContain('data-testid="engineering-verification-commands"');
-    expect(markup).toContain(
-      "pnpm vitest server/tests/blueprint-routes.test.ts"
-    );
+    expect(markup).toContain("pnpm vitest server/tests/blueprint-routes.test.ts");
     expect(markup).toContain("Codex handoff evidence was recorded.");
   });
 
@@ -893,10 +894,7 @@ describe("BlueprintProgressPanel", () => {
         },
       ],
       source_ids: {
-        capabilityIds: [
-          "capability-docker-analysis",
-          "capability-skill-publisher",
-        ],
+        capabilityIds: ["capability-docker-analysis", "capability-skill-publisher"],
       },
     });
     expect(agentCrew?.roleTimelines.map(role => role.state)).toEqual([
@@ -1174,7 +1172,7 @@ describe("BlueprintProgressPanel", () => {
             securityLevel: "sandboxed",
             status: "available",
             adapter: "docker-blueprint-adapter",
-            inputSchema: '{"type":"object"}',
+            inputSchema: "{\"type\":\"object\"}",
             outputTypes: ["analysis", "log"],
             supportedStages: ["runtime_capability", "engineering_landing"],
             requiresApproval: false,
@@ -1191,7 +1189,7 @@ describe("BlueprintProgressPanel", () => {
             securityLevel: "readonly",
             status: "requires_approval",
             adapter: "skill-blueprint-adapter",
-            inputSchema: '{"type":"object"}',
+            inputSchema: "{\"type\":\"object\"}",
             outputTypes: ["document"],
             supportedStages: ["runtime_capability"],
             requiresApproval: true,
@@ -1301,9 +1299,7 @@ describe("BlueprintProgressPanel", () => {
     expect(markup).toContain("主执行路径：SPEC 资产路线");
     expect(markup).toContain("次选路径：文档优先稳妥路线");
     expect(markup).toContain("Docker 分析沙盒");
-    expect(markup).toContain(
-      'data-testid="blueprint-reset-route-selection-button"'
-    );
+    expect(markup).toContain('data-testid="blueprint-reset-route-selection-button"');
     expect(markup).toContain("重置路线");
     expect(markup).toContain('data-testid="blueprint-spec-tree-preview"');
     expect(markup).toContain("推导 SPEC 树工作台");
@@ -1337,7 +1333,9 @@ describe("BlueprintProgressPanel", () => {
     expect(markup).toContain("接受");
     expect(markup).toContain('data-testid="spec-document-reject-button"');
     expect(markup).toContain("拒绝");
-    expect(markup).toContain('data-testid="spec-document-save-version-button"');
+    expect(markup).toContain(
+      'data-testid="spec-document-save-version-button"'
+    );
     expect(markup).toContain('data-testid="spec-document-preview"');
     expect(markup).toContain("跟踪审计证据。");
     expect(markup).toContain('data-testid="effect-preview-workbench"');
@@ -1351,9 +1349,13 @@ describe("BlueprintProgressPanel", () => {
     expect(markup).toContain('data-testid="effect-preview-list"');
     expect(markup).toContain("预演详情");
     expect(markup).toContain("架构说明");
-    expect(markup).toContain("将策略评估保持在可审计的服务边界之后。");
+    expect(markup).toContain(
+      "将策略评估保持在可审计的服务边界之后。"
+    );
     expect(markup).toContain("原型说明");
-    expect(markup).toContain("在原型中展示角色分配和拒绝动作回放。");
+    expect(markup).toContain(
+      "在原型中展示角色分配和拒绝动作回放。"
+    );
     expect(markup).toContain("进度规划");
     expect(markup).toContain("建模权限资源");
     expect(markup).toContain('data-testid="prompt-package-workbench"');
@@ -1372,7 +1374,9 @@ describe("BlueprintProgressPanel", () => {
     expect(markup).toContain('data-testid="prompt-package-sections-preview"');
     expect(markup).toContain("目标");
     expect(markup).toContain("验收清单");
-    expect(markup).toContain("实现具备可审计角色授权");
+    expect(markup).toContain(
+      "实现具备可审计角色授权"
+    );
     expect(markup).toContain("来源文档 / 预演");
     expect(markup).toContain(
       'data-testid="runtime-capability-bridge-workbench"'
@@ -1406,25 +1410,23 @@ describe("BlueprintProgressPanel", () => {
     expect(markup).toContain('data-testid="capability-invoke-button"');
     expect(markup).toContain("调用能力");
     expect(markup).toContain('data-testid="capability-invocation-list"');
-    expect(markup).toContain("Docker 沙盒发现了可审计的权限边界。");
+    expect(markup).toContain(
+      "Docker 沙盒发现了可审计的权限边界。"
+    );
     expect(markup).toContain('data-testid="capability-evidence-list"');
     expect(markup).toContain("权限边界分析");
-    expect(markup).toContain("运行时证据确认权限校验具有可审计的服务边界。");
-    expect(
-      markup.indexOf('data-testid="prompt-package-workbench"')
-    ).toBeLessThan(
+    expect(markup).toContain(
+      "运行时证据确认权限校验具有可审计的服务边界。"
+    );
+    expect(markup.indexOf('data-testid="prompt-package-workbench"')).toBeLessThan(
       markup.indexOf('data-testid="runtime-capability-bridge-workbench"')
     );
     expect(
       markup.indexOf('data-testid="runtime-capability-bridge-workbench"')
-    ).toBeLessThan(
-      markup.indexOf('data-testid="engineering-landing-workbench"')
-    );
+    ).toBeLessThan(markup.indexOf('data-testid="engineering-landing-workbench"'));
     expect(markup).toContain('data-testid="engineering-landing-workbench"');
     expect(markup).toContain("工程落地");
-    expect(markup).toContain(
-      'data-testid="engineering-landing-generate-button"'
-    );
+    expect(markup).toContain('data-testid="engineering-landing-generate-button"');
     expect(markup).toContain("生成落地计划");
     expect(markup).toContain('data-testid="engineering-landing-plan-list"');
     expect(markup).toContain("Cursor 工程落地计划");
@@ -1457,7 +1459,9 @@ describe("BlueprintProgressPanel", () => {
     expect(markup).toContain('data-testid="artifact-feedback-recorder"');
     expect(markup).toContain("反馈回填记录器");
     expect(markup).toContain('data-testid="artifact-feedback-list"');
-    expect(markup).toContain("执行证据已批准，可用于未来 SPEC 演进。");
+    expect(markup).toContain(
+      "执行证据已批准，可用于未来 SPEC 演进。"
+    );
   });
 
   it("renders Agent Crew companion role states and latest runtime context", () => {
@@ -1686,7 +1690,7 @@ describe("BlueprintProgressPanel", () => {
             securityLevel: "sandboxed",
             status: "available",
             adapter: "docker-blueprint-adapter",
-            inputSchema: '{"type":"object"}',
+            inputSchema: "{\"type\":\"object\"}",
             outputTypes: ["analysis", "log"],
             supportedStages: ["runtime_capability"],
             requiresApproval: false,
@@ -1750,31 +1754,21 @@ describe("BlueprintProgressPanel", () => {
     );
 
     expect(markup).toContain('data-testid="blueprint-agent-crew-surface"');
-    expect(
-      markup.match(/data-testid="blueprint-agent-role-row"/g)?.length
-    ).toBe(4);
+    expect(markup.match(/data-testid="blueprint-agent-role-row"/g)?.length).toBe(4);
     expect(markup).toContain("活跃");
     expect(markup).toContain("观察中");
     expect(markup).toContain("评审中");
     expect(markup).toContain("休眠");
-    expect(markup).toContain(
-      "Runtime executor is invoking Docker analysis sandbox."
-    );
+    expect(markup).toContain("Runtime executor is invoking Docker analysis sandbox.");
     expect(markup).toContain(
       "Architecture planner is watching runtime handoff signals."
     );
-    expect(markup).toContain(
-      "Quality auditor is reviewing capability evidence."
-    );
+    expect(markup).toContain("Quality auditor is reviewing capability evidence.");
     expect(markup).toContain("Product decision lead is on standby.");
     expect(markup).toContain("权限边界分析");
     expect(markup).toContain('data-testid="agent-crew-event-stream-consumers"');
-    expect(
-      markup.match(/data-testid="agent-crew-event-stream-consumer"/g)?.length
-    ).toBe(5);
-    expect(
-      markup.match(/data-testid="agent-crew-role-event-source"/g)?.length
-    ).toBe(4);
+    expect(markup.match(/data-testid="agent-crew-event-stream-consumer"/g)?.length).toBe(5);
+    expect(markup.match(/data-testid="agent-crew-role-event-source"/g)?.length).toBe(4);
     expect(markup).toContain("3D 场景");
     expect(markup).toContain("HUD");
     expect(markup).toContain("日志");
@@ -1908,9 +1902,7 @@ describe("BlueprintProgressPanel", () => {
     );
 
     expect(markup).toContain('data-testid="effect-preview-runtime-projection"');
-    expect(markup.match(/data-testid="runtime-projection-card"/g)?.length).toBe(
-      4
-    );
+    expect(markup.match(/data-testid="runtime-projection-card"/g)?.length).toBe(4);
     expect(markup).toContain("3D 场景");
     expect(markup).toContain("scene-snapshot-3d");
     expect(markup).toContain("HUD");

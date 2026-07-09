@@ -85,9 +85,7 @@ describe("DecisionPanel context rendering", () => {
     expect(markup).toMatch(
       /Input: This step accepts a free-text clarification response\.|输入方式:/
     );
-    expect(markup).toMatch(
-      /aria-label="补充信息"|aria-label="Information response"/
-    );
+    expect(markup).toMatch(/aria-label="补充信息"|aria-label="Information response"/);
     expect(markup).toContain("Tell us what is still missing");
     expect(markup).toMatch(/Submit Information|提交信息/);
   });
@@ -190,22 +188,19 @@ describe("DecisionPanel context rendering", () => {
 
 describe("buildParamCollectionSubmission", () => {
   it("builds metadata.formData with normalized values", () => {
-    const result = buildParamCollectionSubmission(
-      makeParamCollectionDecision(),
-      {
-        title: "上线任务",
-        count: "5" as unknown as number,
-        approved: true,
-        region: "cn",
-        attachment: {
-          kind: "attachment",
-          ref: "artifact-123",
-          name: "需求说明.pdf",
-          url: "https://files.example.test/spec.pdf",
-          source: "manual",
-        },
-      }
-    );
+    const result = buildParamCollectionSubmission(makeParamCollectionDecision(), {
+      title: "上线任务",
+      count: "5" as unknown as number,
+      approved: true,
+      region: "cn",
+      attachment: {
+        kind: "attachment",
+        ref: "artifact-123",
+        name: "需求说明.pdf",
+        url: "https://files.example.test/spec.pdf",
+        source: "manual",
+      },
+    });
 
     expect(result.error).toBeUndefined();
     expect(result.fieldErrors).toEqual({});
@@ -232,13 +227,10 @@ describe("buildParamCollectionSubmission", () => {
   });
 
   it("accepts attachment references as the minimal attachment payload", () => {
-    const result = buildParamCollectionSubmission(
-      makeParamCollectionDecision(),
-      {
-        title: "附件引用任务",
-        attachment: "artifact-ref-1" as unknown as never,
-      }
-    );
+    const result = buildParamCollectionSubmission(makeParamCollectionDecision(), {
+      title: "附件引用任务",
+      attachment: "artifact-ref-1" as unknown as never,
+    });
 
     expect(result.error).toBeUndefined();
     expect(result.fieldErrors).toEqual({});
@@ -251,15 +243,12 @@ describe("buildParamCollectionSubmission", () => {
   });
 
   it("returns field-level errors for invalid required and typed values", () => {
-    const result = buildParamCollectionSubmission(
-      makeParamCollectionDecision(),
-      {
-        title: "",
-        count: "abc" as unknown as number,
-        region: "mars",
-        attachment: {} as unknown as never,
-      }
-    );
+    const result = buildParamCollectionSubmission(makeParamCollectionDecision(), {
+      title: "",
+      count: "abc" as unknown as number,
+      region: "mars",
+      attachment: {} as unknown as never,
+    });
 
     expect(result.metadata).toBeUndefined();
     expect(result.error).toBeTruthy();
@@ -450,11 +439,12 @@ describe("buildDecisionInteractionKey", () => {
       options: baseDecision.options?.map(option => ({ ...option })),
       payload: {
         ...baseDecision.payload,
-        fieldDefinitions: (
-          baseDecision.payload as {
-            fieldDefinitions: Array<Record<string, unknown>>;
-          }
-        ).fieldDefinitions.map(field => ({ ...field })),
+        fieldDefinitions:
+          (
+            baseDecision.payload as {
+              fieldDefinitions: Array<Record<string, unknown>>;
+            }
+          ).fieldDefinitions.map(field => ({ ...field })),
       },
     };
 

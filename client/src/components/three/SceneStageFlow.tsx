@@ -11,7 +11,10 @@ import { useProjectStore } from "@/lib/project-store";
 import { useTasksStore } from "@/lib/tasks-store";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { FUTURE_OFFICE_COLORS } from "@/lib/scene-theme";
-import { getSceneStageSignal, SCENE_FLOW_ZONES } from "@/lib/scene-stage-flow";
+import {
+  getSceneStageSignal,
+  SCENE_FLOW_ZONES,
+} from "@/lib/scene-stage-flow";
 
 import {
   adaptBlueprintSignalToSceneStageSignal,
@@ -76,22 +79,14 @@ function StageFlowSegment({
         color={color}
         lineWidth={floorHugging ? 3.2 : 5.5}
         transparent
-        opacity={
-          floorHugging
-            ? Math.min(0.18, opacity * 0.36)
-            : Math.min(0.38, opacity * 0.7)
-        }
+        opacity={floorHugging ? Math.min(0.18, opacity * 0.36) : Math.min(0.38, opacity * 0.7)}
       />
       <Line
         points={points}
         color={color}
         lineWidth={floorHugging ? 1.45 : 2.6}
         transparent
-        opacity={
-          floorHugging
-            ? Math.min(0.46, opacity * 0.7)
-            : Math.min(0.92, opacity + 0.32)
-        }
+        opacity={floorHugging ? Math.min(0.46, opacity * 0.7) : Math.min(0.92, opacity + 0.32)}
       />
       {[0, 1, 2].map(index => (
         <mesh
@@ -106,11 +101,7 @@ function StageFlowSegment({
             emissive={color}
             emissiveIntensity={1.4}
             transparent
-            opacity={
-              floorHugging
-                ? Math.min(0.6, opacity * 0.86)
-                : Math.min(0.98, opacity + 0.28)
-            }
+            opacity={floorHugging ? Math.min(0.6, opacity * 0.86) : Math.min(0.98, opacity + 0.28)}
           />
         </mesh>
       ))}
@@ -260,11 +251,7 @@ export function SceneStageFlow({
       ))}
 
       <Html
-        position={[
-          focusZone.zone.position[0],
-          1.22,
-          focusZone.zone.position[2],
-        ]}
+        position={[focusZone.zone.position[0], 1.22, focusZone.zone.position[2]]}
         center
         distanceFactor={10}
         style={{ pointerEvents: "none" }}
@@ -272,9 +259,7 @@ export function SceneStageFlow({
         <div
           className="max-w-[180px] rounded-full bg-slate-950/45 px-2.5 py-1.5 text-left shadow-[0_8px_18px_rgba(2,6,23,0.24)] ring-1 ring-white/8 backdrop-blur-sm"
           data-testid="blueprint-stage-hud-compact"
-          title={
-            signal.summary ?? `${signal.statusLabel} · ${signal.stageLabel}`
-          }
+          title={signal.summary ?? `${signal.statusLabel} · ${signal.stageLabel}`}
         >
           <div className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
             <span
@@ -310,7 +295,10 @@ export function SceneStageFlow({
             </div>
           ) : null}
           {signal.summary ? (
-            <span className="sr-only" data-testid="blueprint-stage-hud-summary">
+            <span
+              className="sr-only"
+              data-testid="blueprint-stage-hud-summary"
+            >
               {signal.summary}
             </span>
           ) : null}

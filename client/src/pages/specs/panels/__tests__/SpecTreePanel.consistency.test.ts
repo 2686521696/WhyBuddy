@@ -39,7 +39,9 @@ async function readSource(relativeFromHere: string): Promise<string> {
  */
 async function readCodeOnly(relativeFromHere: string): Promise<string> {
   const raw = await readSource(relativeFromHere);
-  return raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  return raw
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "");
 }
 
 // 路径常量：以本测试文件目录为锚点解析三实现 + 父级 + 状态机核心。
@@ -106,9 +108,7 @@ describe("Generation_State_Machine 唯一锚定在规范实现 (R3.1)", () => {
   it("canonical SpecTreeWorkbench 消费 deriveGenerationState 并渲染 SpecTreeProgressLayer", async () => {
     const source = await readSource(CANONICAL_WORKBENCH);
     // 导入并调用状态机核心。
-    expect(source).toMatch(
-      /import\s*\{[\s\S]*?deriveGenerationState[\s\S]*?\}/
-    );
+    expect(source).toMatch(/import\s*\{[\s\S]*?deriveGenerationState[\s\S]*?\}/);
     expect(source).toMatch(/deriveGenerationState\(/);
     // 在 pending 档渲染进度反馈层。
     expect(source).toMatch(/import\s*\{\s*SpecTreeProgressLayer\s*\}/);
@@ -148,13 +148,17 @@ describe("触发统一经父级 In_Flight_Lock (R3.2 / R3.5)", () => {
     // 唯一的 In_Flight_Lock + API + 回写锚点。
     expect(source).toMatch(/triggerSpecDocsGeneration/);
     // 锁已被任意范围标记进行中时 early return（不发起新 API 调用）。
-    expect(source).toMatch(/specDocsGenerating\s*!==\s*null\s*\)\s*return/);
+    expect(source).toMatch(
+      /specDocsGenerating\s*!==\s*null\s*\)\s*return/
+    );
   });
 
   it("父级把生成触发器经 onGenerateAll / onGenerateNode 收敛到 triggerSpecDocsGeneration", async () => {
     const source = await readSource(RIGHT_RAIL);
     // CTA 触发器最终都路由到唯一锚点（经 handleGenerate* 包装）。
-    expect(source).toMatch(/triggerSpecDocsGeneration\(\s*["']all["']\s*\)/);
+    expect(source).toMatch(
+      /triggerSpecDocsGeneration\(\s*["']all["']\s*\)/
+    );
     expect(source).toMatch(
       /triggerSpecDocsGeneration\(\s*["']single["']\s*,\s*nodeId\s*\)/
     );

@@ -54,10 +54,7 @@ export type AutopilotEvidenceEventPrefix =
 export type AutopilotEvidenceDetailPayload = {
   title?: string | null;
   description?: string | null;
-  attributes?: Record<
-    string,
-    string | number | boolean | null | undefined
-  > | null;
+  attributes?: Record<string, string | number | boolean | null | undefined> | null;
   raw?: unknown;
 };
 
@@ -89,7 +86,10 @@ function copy(locale: string, zh: string, en: string): string {
 }
 
 function normalizeToken(value: string): string {
-  return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function titleCase(value: string): string {
@@ -263,17 +263,14 @@ export function filterAutopilotEvidenceEvents(
   category: AutopilotEvidenceCategory | "all"
 ): AutopilotEvidenceEvent[] {
   if (category === "all") return [...events];
-  return events.filter(
-    event => getAutopilotEvidenceCategory(event) === category
-  );
+  return events.filter(event => getAutopilotEvidenceCategory(event) === category);
 }
 
 export function sortAutopilotEvidenceEvents(
   events: AutopilotEvidenceEvent[]
 ): AutopilotEvidenceEvent[] {
   return [...events].sort((a, b) => {
-    const timeDelta =
-      timestampValue(a.occurredAt) - timestampValue(b.occurredAt);
+    const timeDelta = timestampValue(a.occurredAt) - timestampValue(b.occurredAt);
     if (timeDelta !== 0) return timeDelta;
     return a.id.localeCompare(b.id);
   });
@@ -347,11 +344,7 @@ export function getAutopilotEvidenceDetailDescription(
   return (
     event.detail?.description ||
     event.summary ||
-    copy(
-      locale,
-      "\u8be5\u4e8b\u4ef6\u6682\u65e0\u8be6\u7ec6\u8bf4\u660e\u3002",
-      "No detail payload was recorded for this event."
-    )
+    copy(locale, "\u8be5\u4e8b\u4ef6\u6682\u65e0\u8be6\u7ec6\u8bf4\u660e\u3002", "No detail payload was recorded for this event.")
   );
 }
 
@@ -385,7 +378,9 @@ function EvidenceDetailDrawer({
           <h4 className="mt-1 text-base font-semibold text-stone-950">
             {title}
           </h4>
-          <p className="mt-1 text-sm leading-5 text-stone-600">{description}</p>
+          <p className="mt-1 text-sm leading-5 text-stone-600">
+            {description}
+          </p>
         </div>
 
         <button
@@ -449,7 +444,9 @@ function EvidenceDetailDrawer({
             <dt className="font-semibold text-stone-500">
               {copy(locale, "\u6267\u884c\u8005", "Actor")}
             </dt>
-            <dd className="mt-0.5 font-medium text-stone-900">{event.actor}</dd>
+            <dd className="mt-0.5 font-medium text-stone-900">
+              {event.actor}
+            </dd>
           </div>
         ) : null}
       </dl>
@@ -514,27 +511,15 @@ export function AutopilotEvidenceRecorder({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">
-            {copy(
-              locale,
-              "\u8bc1\u636e\u8bb0\u5f55\u4eea",
-              "Evidence recorder"
-            )}
+            {copy(locale, "\u8bc1\u636e\u8bb0\u5f55\u4eea", "Evidence recorder")}
           </p>
           <h3 className="mt-1 text-base font-semibold text-stone-950">
-            {copy(
-              locale,
-              "\u81ea\u52a8\u9a7e\u9a76\u4e8b\u4ef6\u65f6\u95f4\u7ebf",
-              "Autopilot event timeline"
-            )}
+            {copy(locale, "\u81ea\u52a8\u9a7e\u9a76\u4e8b\u4ef6\u65f6\u95f4\u7ebf", "Autopilot event timeline")}
           </h3>
         </div>
         <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">
           <ShieldCheck className="size-3" />
-          {copy(
-            locale,
-            `${sortedEvents.length} \u6761\u8bc1\u636e`,
-            `${sortedEvents.length} events`
-          )}
+          {copy(locale, `${sortedEvents.length} \u6761\u8bc1\u636e`, `${sortedEvents.length} events`)}
         </span>
       </div>
 
@@ -542,21 +527,21 @@ export function AutopilotEvidenceRecorder({
         className="mt-3 flex flex-wrap items-center gap-1.5"
         data-testid="autopilot-evidence-filter-summary"
       >
-        {(
-          ["route", "takeover", "fleet", "tool", "output", "audit"] as const
-        ).map(category => (
-          <span
-            key={category}
-            className={cn(
-              "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
-              categoryFilter === category
-                ? "border-blue-300 bg-blue-100 text-blue-800"
-                : "border-stone-200 bg-white/70 text-stone-500"
-            )}
-          >
-            {categoryLabel(locale, category)}
-          </span>
-        ))}
+        {(["route", "takeover", "fleet", "tool", "output", "audit"] as const).map(
+          category => (
+            <span
+              key={category}
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+                categoryFilter === category
+                  ? "border-blue-300 bg-blue-100 text-blue-800"
+                  : "border-stone-200 bg-white/70 text-stone-500"
+              )}
+            >
+              {categoryLabel(locale, category)}
+            </span>
+          )
+        )}
       </div>
 
       <div className="mt-4 space-y-0">
@@ -646,11 +631,7 @@ export function AutopilotEvidenceRecorder({
                       >
                         <div className="flex items-center gap-1 font-semibold">
                           <PanelRightOpen className="size-3" />
-                          {copy(
-                            locale,
-                            "\u8be6\u60c5\u5df2\u51c6\u5907",
-                            "Drawer detail ready"
-                          )}
+                          {copy(locale, "\u8be6\u60c5\u5df2\u51c6\u5907", "Drawer detail ready")}
                         </div>
                         {event.detail.title && (
                           <div className="mt-1 font-medium">
@@ -683,11 +664,7 @@ export function AutopilotEvidenceRecorder({
           })
         ) : (
           <div className="rounded-[14px] border border-dashed border-stone-200 bg-white/50 p-4 text-sm text-stone-500">
-            {copy(
-              locale,
-              "\u6682\u65e0\u8bc1\u636e\u4e8b\u4ef6\u3002",
-              "No evidence events yet."
-            )}
+            {copy(locale, "\u6682\u65e0\u8bc1\u636e\u4e8b\u4ef6\u3002", "No evidence events yet.")}
           </div>
         )}
       </div>

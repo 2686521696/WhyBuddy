@@ -28,9 +28,9 @@
  *    `[0, total)`；`total === 0` 时为 no-op。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { NarrativeCard } from "./narrative-card-types";
+import type { NarrativeCard } from './narrative-card-types';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -133,7 +133,7 @@ function clampDwellMs(candidate: number): number {
  * @see UseAutoRotationResult
  */
 export function useAutoRotation(
-  options: UseAutoRotationOptions
+  options: UseAutoRotationOptions,
 ): UseAutoRotationResult {
   const { total, defaultDwellMs, dwellPerCard, cards, paused, reducedMotion } =
     options;
@@ -199,7 +199,7 @@ export function useAutoRotation(
       // 用 functional update：避免把 `total` 写进闭包；同时在并发 setState
       // 重入时仍能拿到最新值。total 在 effect 触发时已经 > 1，但仍走一次
       // wrap 防御。
-      setActiveIndexState(prev => wrapIndex(prev + 1, total));
+      setActiveIndexState((prev) => wrapIndex(prev + 1, total));
     }, dwellMs);
 
     return () => {
@@ -218,7 +218,7 @@ export function useAutoRotation(
       if (total <= 0) return;
       setActiveIndexState(() => wrapIndex(next, total));
     },
-    [reducedMotion, total]
+    [reducedMotion, total],
   );
 
   return {

@@ -1,13 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  MissionPlanetOverviewItem,
-  MissionRecord,
-} from "@shared/mission/contracts";
-import {
-  MISSION_SOCKET_EVENT,
-  MISSION_SOCKET_TYPES,
-} from "@shared/mission/socket";
+import type { MissionPlanetOverviewItem, MissionRecord } from "@shared/mission/contracts";
+import { MISSION_SOCKET_EVENT, MISSION_SOCKET_TYPES } from "@shared/mission/socket";
 import type { ExecutorEvent } from "@shared/executor/contracts";
 
 const mockListMissions = vi.fn();
@@ -48,10 +42,13 @@ vi.mock("./sandbox-store", () => ({
 }));
 
 vi.mock("./store", () => ({
-  useAppStore: Object.assign(() => ({}), {
-    getState: () => ({ runtimeMode: "advanced" }),
-    subscribe: vi.fn(),
-  }),
+  useAppStore: Object.assign(
+    () => ({}),
+    {
+      getState: () => ({ runtimeMode: "advanced" }),
+      subscribe: vi.fn(),
+    }
+  ),
 }));
 
 const now = Date.now();
@@ -143,9 +140,7 @@ async function loadStoreWithMission(mission: MissionRecord) {
 }
 
 function findSocketHandler() {
-  return mockSocketOn.mock.calls.find(
-    call => call[0] === MISSION_SOCKET_EVENT
-  )?.[1];
+  return mockSocketOn.mock.calls.find(call => call[0] === MISSION_SOCKET_EVENT)?.[1];
 }
 
 function findConnectHandler() {
@@ -192,9 +187,7 @@ describe("tasks-store runtime channel summaries", () => {
     const detail = useTasksStore.getState().detailsById["mission-1"];
     expect(detail.runtimeChannels.callback.status).toBe("waiting");
     expect(detail.runtimeChannels.callback.label).toBe("Callback waiting");
-    expect(detail.runtimeChannels.callback.detail).toContain(
-      "Callback waiting"
-    );
+    expect(detail.runtimeChannels.callback.detail).toContain("Callback waiting");
     expect(detail.runtimeChannels.callback.detail).toContain("Job job-42.");
     expect(detail.runtimeChannels.callback.detail).toContain("Request req-7.");
     expect(detail.runtimeChannels.callback.eventSummary).toContain(
@@ -237,12 +230,8 @@ describe("tasks-store runtime channel summaries", () => {
 
     const detail = useTasksStore.getState().detailsById["mission-2"];
     expect(detail.runtimeChannels.callback.status).toBe("active");
-    expect(detail.runtimeChannels.callback.label).toBe(
-      "Relay screenshot update"
-    );
-    expect(detail.runtimeChannels.callback.detail).toContain(
-      "Relay screenshot update"
-    );
+    expect(detail.runtimeChannels.callback.label).toBe("Relay screenshot update");
+    expect(detail.runtimeChannels.callback.detail).toContain("Relay screenshot update");
     expect(detail.runtimeChannels.callback.detail).toContain("Job job-84.");
     expect(detail.runtimeChannels.callback.eventType).toBe("job.screenshot");
     expect(detail.runtimeChannels.callback.eventSummary).toContain(
@@ -259,17 +248,13 @@ describe("tasks-store runtime channel summaries", () => {
     expect(disconnectHandler).toBeTypeOf("function");
 
     connectHandler();
-    expect(
-      useTasksStore.getState().detailsById["mission-3"].runtimeChannels.socket
-    ).toMatchObject({
+    expect(useTasksStore.getState().detailsById["mission-3"].runtimeChannels.socket).toMatchObject({
       status: "connected",
       label: "Socket connected",
     });
 
     disconnectHandler();
-    expect(
-      useTasksStore.getState().detailsById["mission-3"].runtimeChannels.socket
-    ).toMatchObject({
+    expect(useTasksStore.getState().detailsById["mission-3"].runtimeChannels.socket).toMatchObject({
       status: "disconnected",
       label: "Socket disconnected",
     });

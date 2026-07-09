@@ -5,7 +5,9 @@ import type { MissionTaskDetail } from "@/lib/tasks-store";
 
 import { TasksCockpitDetail } from "../TasksCockpitDetail";
 
-function makeDetail(overrides?: Partial<MissionTaskDetail>): MissionTaskDetail {
+function makeDetail(
+  overrides?: Partial<MissionTaskDetail>
+): MissionTaskDetail {
   return {
     id: "mission-1",
     title: "Runtime dock handoff",

@@ -157,16 +157,15 @@ export function stableHash(roleId: string): number {
 /**
  * Top-down substring rules. The first matching rule wins; order matters.
  */
-const ZONE_RULES: ReadonlyArray<readonly [FunctionalZone, readonly string[]]> =
-  [
-    ["intake", ["intake", "coordinator", "product"]],
-    ["repository", ["repository", "analyst", "analyzer"]],
-    ["architect", ["architect", "spec", "planner", "strategist"]],
-    ["runtime", ["runtime", "executor", "dispatcher", "operator"]],
-    ["quality", ["quality", "auditor", "reviewer"]],
-    ["memory", ["memory", "curator", "archivist"]],
-    ["experience", ["experience", "presenter", "director"]],
-  ];
+const ZONE_RULES: ReadonlyArray<readonly [FunctionalZone, readonly string[]]> = [
+  ["intake", ["intake", "coordinator", "product"]],
+  ["repository", ["repository", "analyst", "analyzer"]],
+  ["architect", ["architect", "spec", "planner", "strategist"]],
+  ["runtime", ["runtime", "executor", "dispatcher", "operator"]],
+  ["quality", ["quality", "auditor", "reviewer"]],
+  ["memory", ["memory", "curator", "archivist"]],
+  ["experience", ["experience", "presenter", "director"]],
+];
 
 /**
  * Classify a `roleId` into one of the 8 functional zones using top-down
@@ -176,7 +175,7 @@ const ZONE_RULES: ReadonlyArray<readonly [FunctionalZone, readonly string[]]> =
 export function classifyZone(roleId: string): FunctionalZone {
   const lower = roleId.toLowerCase();
   for (const [zone, tokens] of ZONE_RULES) {
-    if (tokens.some(token => lower.includes(token))) {
+    if (tokens.some((token) => lower.includes(token))) {
       return zone;
     }
   }
@@ -232,11 +231,7 @@ const ROUND_TABLE_CENTER_X = 0;
 const ROUND_TABLE_CENTER_Z = 0.5;
 
 /** Exported for agents to compute facing rotation toward table center. */
-export const ROUND_TABLE_CENTER: [number, number, number] = [
-  ROUND_TABLE_CENTER_X,
-  0,
-  ROUND_TABLE_CENTER_Z,
-];
+export const ROUND_TABLE_CENTER: [number, number, number] = [ROUND_TABLE_CENTER_X, 0, ROUND_TABLE_CENTER_Z];
 
 /**
  * World-space spacing between adjacent grid cells, in metres. Widened in the
@@ -259,7 +254,10 @@ const GRID_ORIGIN_Z = -2.2;
  * and subsequent roles go clockwise.
  * `y` is always `0` (agents stand on the floor).
  */
-function gridPosition(index: number, total: number): [number, number, number] {
+function gridPosition(
+  index: number,
+  total: number
+): [number, number, number] {
   if (total <= 0) return [ROUND_TABLE_CENTER_X, 0, ROUND_TABLE_CENTER_Z];
 
   // Evenly space roles around the circle
@@ -353,9 +351,7 @@ export function pickAnimal(roleId: string): string {
  * it MUST NOT be written into the pet body material.
  */
 export function pickAccentColor(roleId: string): string {
-  return ROLE_ACCENT_COLOR_POOL[
-    stableHash(roleId) % ROLE_ACCENT_COLOR_POOL.length
-  ];
+  return ROLE_ACCENT_COLOR_POOL[stableHash(roleId) % ROLE_ACCENT_COLOR_POOL.length];
 }
 
 // ---------------------------------------------------------------------------
@@ -462,7 +458,7 @@ const STAGE_SEED_ROLES: Partial<Record<AutopilotStage, string[]>> = {
 export function deriveStageSeedRolePhases(
   activeStage?: AutopilotStage
 ): Record<string, RolePhase> {
-  const roster = activeStage ? (STAGE_SEED_ROLES[activeStage] ?? []) : [];
+  const roster = activeStage ? STAGE_SEED_ROLES[activeStage] ?? [] : [];
   const seed: Record<string, RolePhase> = {};
   for (const roleId of roster) {
     seed[roleId] = "activated";
@@ -575,7 +571,7 @@ export function createBlueprintRuntimeSceneData(input: {
   // roleId, so this only fixes array order, not placement.
   const orderedRoleIds = [...roleIds].sort();
 
-  const agents: BlueprintRuntimeAgent[] = orderedRoleIds.map(roleId => {
+  const agents: BlueprintRuntimeAgent[] = orderedRoleIds.map((roleId) => {
     const phase = effectiveRolePhases[roleId];
     const tier = phaseTierOf(phase);
     const visuals = phaseTierVisuals(tier);

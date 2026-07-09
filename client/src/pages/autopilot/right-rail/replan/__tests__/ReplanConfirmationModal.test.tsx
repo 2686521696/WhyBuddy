@@ -60,7 +60,7 @@ import {
 } from "../ReplanConfirmationModal";
 
 function makeProps(
-  overrides: Partial<ReplanConfirmationModalProps> = {}
+  overrides: Partial<ReplanConfirmationModalProps> = {},
 ): ReplanConfirmationModalProps {
   return {
     open: true,
@@ -83,7 +83,7 @@ function makeProps(
 
 function findElementByTestId(
   node: ReactNode,
-  testId: string
+  testId: string,
 ): ReactElement | null {
   if (
     node === null ||
@@ -111,18 +111,16 @@ function findElementByTestId(
 }
 
 function invokeModal(props: ReplanConfirmationModalProps): ReactElement | null {
-  return (
-    ReplanConfirmationModal as unknown as (
-      p: ReplanConfirmationModalProps
-    ) => ReactElement | null
-  )(props);
+  return (ReplanConfirmationModal as unknown as (
+    p: ReplanConfirmationModalProps,
+  ) => ReactElement | null)(props);
 }
 
 function renderModalMarkup(props: ReplanConfirmationModalProps): string {
   const modal = invokeModal(props);
   const dialog = findElementByTestId(
     modal,
-    "autopilot-replan-confirmation-modal"
+    "autopilot-replan-confirmation-modal",
   );
   if (!dialog) return "";
 
@@ -143,7 +141,7 @@ describe("<ReplanConfirmationModal>", () => {
     const path = await import("node:path");
     const source = await fs.readFile(
       path.resolve(__dirname, "../ReplanConfirmationModal.tsx"),
-      "utf8"
+      "utf8",
     );
 
     expect(source).toContain('from "@/components/ui/dialog"');
@@ -161,32 +159,32 @@ describe("<ReplanConfirmationModal>", () => {
       kind: "idle",
     });
     expect(
-      deriveReplanConfirmationState({ ...base, impactLoading: true })
+      deriveReplanConfirmationState({ ...base, impactLoading: true }),
     ).toEqual({ kind: "loading_impact" });
     expect(
       deriveReplanConfirmationState({
         ...base,
         impactError: "impact failed",
-      })
+      }),
     ).toEqual({ kind: "impact_failed", retryable: true });
     expect(
       deriveReplanConfirmationState({
         ...base,
         impact: { artifactIds: [], artifactCount: 0, stages: [] },
-      })
+      }),
     ).toEqual({ kind: "empty" });
     expect(deriveReplanConfirmationState(base)).toEqual({ kind: "ready" });
-    expect(deriveReplanConfirmationState({ ...base, loading: true })).toEqual({
-      kind: "in_flight",
-    });
     expect(
-      deriveReplanConfirmationState({ ...base, error: "request failed" })
+      deriveReplanConfirmationState({ ...base, loading: true }),
+    ).toEqual({ kind: "in_flight" });
+    expect(
+      deriveReplanConfirmationState({ ...base, error: "request failed" }),
     ).toEqual({ kind: "error" });
     expect(
       deriveReplanConfirmationState({
         ...base,
         storeSyncError: "store failed",
-      })
+      }),
     ).toEqual({ kind: "store_sync_failed" });
   });
 
@@ -195,7 +193,7 @@ describe("<ReplanConfirmationModal>", () => {
 
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain(
-      'data-testid="autopilot-replan-confirmation-modal"'
+      'data-testid="autopilot-replan-confirmation-modal"',
     );
     expect(markup).toContain('data-testid="replan-modal-mode-in-place"');
     expect(markup).toContain('data-testid="replan-modal-mode-branch"');
@@ -211,14 +209,14 @@ describe("<ReplanConfirmationModal>", () => {
 
   it("refreshes mode copy immediately and blocks confirm when reason is too long", () => {
     const branchMarkup = renderModalMarkup(
-      makeProps({ mode: "branch", reason: "x".repeat(1001) })
+      makeProps({ mode: "branch", reason: "x".repeat(1001) }),
     );
 
     expect(branchMarkup).toContain("新分支");
     expect(branchMarkup).toContain("1001 / 1000");
     expect(branchMarkup).toContain("reason 不能超过 1000 个字符");
     expect(branchMarkup).toMatch(
-      /data-testid="replan-modal-confirm"[^>]*disabled=""/
+      /data-testid="replan-modal-confirm"[^>]*disabled=""/,
     );
   });
 
@@ -228,7 +226,7 @@ describe("<ReplanConfirmationModal>", () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
     const element = invokeModal(
-      makeProps({ onModeChange, onReasonChange, onConfirm, onCancel })
+      makeProps({ onModeChange, onReasonChange, onConfirm, onCancel }),
     );
 
     const branch = findElementByTestId(element, "replan-modal-mode-branch");
@@ -256,7 +254,7 @@ describe("<ReplanConfirmationModal>", () => {
     const closedMarkup = renderModalMarkup(makeProps({ open: false }));
 
     expect(loadingMarkup).toMatch(
-      /data-testid="replan-modal-confirm"[^>]*disabled=""/
+      /data-testid="replan-modal-confirm"[^>]*disabled=""/,
     );
     expect(loadingMarkup).toContain('aria-busy="true"');
     expect(closedMarkup).toBe("");
@@ -267,36 +265,31 @@ describe("<ReplanConfirmationModal>", () => {
     const loadingCancel = vi.fn();
     const idle = invokeModal(makeProps({ onCancel: idleCancel }));
     const loading = invokeModal(
-      makeProps({ loading: true, onCancel: loadingCancel })
+      makeProps({ loading: true, onCancel: loadingCancel }),
     );
     const idleDialog = findElementByTestId(
       idle,
-      "autopilot-replan-confirmation-modal"
+      "autopilot-replan-confirmation-modal",
     );
     const loadingDialog = findElementByTestId(
       loading,
-      "autopilot-replan-confirmation-modal"
+      "autopilot-replan-confirmation-modal",
     );
     const loadingCancelButton = findElementByTestId(
       loading,
-      "replan-modal-cancel"
+      "replan-modal-cancel",
     );
     const preventDefault = vi.fn();
 
     (idleDialog!.props as { onEscapeKeyDown: () => void }).onEscapeKeyDown();
-    (
-      idleDialog!.props as { onPointerDownOutside: () => void }
-    ).onPointerDownOutside();
-    (
-      loadingDialog!.props as {
-        onEscapeKeyDown: (event: { preventDefault: () => void }) => void;
-      }
-    ).onEscapeKeyDown({ preventDefault });
-    (
-      loadingDialog!.props as {
-        onPointerDownOutside: (event: { preventDefault: () => void }) => void;
-      }
-    ).onPointerDownOutside({ preventDefault });
+    (idleDialog!.props as { onPointerDownOutside: () => void })
+      .onPointerDownOutside();
+    (loadingDialog!.props as {
+      onEscapeKeyDown: (event: { preventDefault: () => void }) => void;
+    }).onEscapeKeyDown({ preventDefault });
+    (loadingDialog!.props as {
+      onPointerDownOutside: (event: { preventDefault: () => void }) => void;
+    }).onPointerDownOutside({ preventDefault });
     (loadingCancelButton!.props as { onClick: () => void }).onClick();
 
     expect(idleCancel).toHaveBeenCalledTimes(2);
@@ -313,13 +306,13 @@ describe("<ReplanConfirmationModal>", () => {
         runningStage: "effect_preview",
         onReasonChange,
         onClearError,
-      })
+      }),
     );
     const markup = renderModalMarkup(
       makeProps({
         error: "Downstream generation is already running.",
         runningStage: "effect_preview",
-      })
+      }),
     );
     const reason = findElementByTestId(modal, "replan-modal-reason");
 

@@ -34,12 +34,10 @@ interface VersionTreeViewProps {
   onRejected?: UseSwitchActiveJobOptions["onRejected"];
 }
 
-function familyFromJobs(
-  jobs: VersionHistoryJob[] | undefined
-): BlueprintFamilyResponse | null {
+function familyFromJobs(jobs: VersionHistoryJob[] | undefined): BlueprintFamilyResponse | null {
   if (!jobs) return null;
   return {
-    rootJobId: jobs.find(job => !job.parentJobId)?.id ?? jobs[0]?.id ?? "",
+    rootJobId: jobs.find((job) => !job.parentJobId)?.id ?? jobs[0]?.id ?? "",
     jobs,
     replanEvents: [],
   };
@@ -50,16 +48,14 @@ function renderNode(
   activeJobId: string | null,
   onSelectJob: (jobId: string) => void,
   locale: AppLocale,
-  parentJobId?: string
+  parentJobId?: string,
 ) {
   return (
     <li
       key={node.job.id}
       data-tree-depth={node.depth}
       data-switch-active="true"
-      data-connection={
-        parentJobId ? `${parentJobId}->${node.job.id}` : undefined
-      }
+      data-connection={parentJobId ? `${parentJobId}->${node.job.id}` : undefined}
     >
       <TreeNode
         node={node}
@@ -69,8 +65,8 @@ function renderNode(
       />
       {node.children.length ? (
         <ul>
-          {node.children.map(child =>
-            renderNode(child, activeJobId, onSelectJob, locale, node.job.id)
+          {node.children.map((child) =>
+            renderNode(child, activeJobId, onSelectJob, locale, node.job.id),
           )}
         </ul>
       ) : null}
@@ -128,9 +124,7 @@ export function VersionTreeView({
         <p>{staticPreviewMessage}</p>
         {familyJobs.length ? (
           <ul>
-            {layout.roots.map(root =>
-              renderNode(root, activeJobId, handleSelectJob, locale)
-            )}
+            {layout.roots.map((root) => renderNode(root, activeJobId, handleSelectJob, locale))}
           </ul>
         ) : null}
       </section>
@@ -150,10 +144,7 @@ export function VersionTreeView({
     );
   }
 
-  if (
-    !familyData &&
-    (resolvedState.loading || resolvedState.status === "loading")
-  ) {
+  if (!familyData && (resolvedState.loading || resolvedState.status === "loading")) {
     const loadingMessage =
       locale === "zh-CN" ? "正在加载版本历史…" : "Loading version history...";
     return (
@@ -164,14 +155,8 @@ export function VersionTreeView({
   }
 
   const layout = deriveVersionTreeLayout(familyJobs);
-  const state =
-    familyJobs.length === 0
-      ? "empty"
-      : familyJobs.length === 1
-        ? "single"
-        : "ready";
-  const emptyMessage =
-    locale === "zh-CN" ? "暂无版本历史。" : "No version history yet.";
+  const state = familyJobs.length === 0 ? "empty" : familyJobs.length === 1 ? "single" : "ready";
+  const emptyMessage = locale === "zh-CN" ? "暂无版本历史。" : "No version history yet.";
 
   return (
     <section data-testid="version-tree-view" data-state={state}>
@@ -179,9 +164,7 @@ export function VersionTreeView({
         <p>{emptyMessage}</p>
       ) : (
         <ul>
-          {layout.roots.map(root =>
-            renderNode(root, activeJobId, handleSelectJob, locale)
-          )}
+          {layout.roots.map((root) => renderNode(root, activeJobId, handleSelectJob, locale))}
         </ul>
       )}
     </section>

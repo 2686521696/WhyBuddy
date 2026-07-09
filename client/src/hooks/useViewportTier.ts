@@ -174,8 +174,7 @@ export function useViewportTier() {
     getTierSnapshot,
     () => serverTierSnapshot
   );
-  const width =
-    typeof window === "undefined" ? snapshot.width : getViewportWidth();
+  const width = typeof window === "undefined" ? snapshot.width : getViewportWidth();
 
   return {
     width,
@@ -196,5 +195,9 @@ export function useViewportWidth() {
 }
 
 export function useViewportResizeState() {
-  return useSyncExternalStore(subscribeResize, getResizeSnapshot, () => false);
+  return useSyncExternalStore(
+    subscribeResize,
+    getResizeSnapshot,
+    () => false
+  );
 }

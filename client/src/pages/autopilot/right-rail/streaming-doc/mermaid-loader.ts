@@ -18,7 +18,7 @@ let renderCounter = 0;
 export async function getMermaid(): Promise<typeof import("mermaid")> {
   if (!initPromise) {
     initPromise = import("mermaid")
-      .then(mod => {
+      .then((mod) => {
         mod.default.initialize({
           startOnLoad: false,
           securityLevel: "strict",
@@ -27,7 +27,7 @@ export async function getMermaid(): Promise<typeof import("mermaid")> {
         } satisfies MermaidConfig);
         return mod;
       })
-      .catch(err => {
+      .catch((err) => {
         initPromise = null; // Reset to allow retry
         throw err;
       });
@@ -45,7 +45,7 @@ export async function getMermaid(): Promise<typeof import("mermaid")> {
  */
 export async function renderMermaidDiagram(
   code: string,
-  theme: "light" | "dark" = "light"
+  theme: "light" | "dark" = "light",
 ): Promise<string> {
   const mermaidModule = await getMermaid();
   const mermaid = mermaidModule.default;

@@ -176,14 +176,14 @@ export function selectNodesByRole(
   state: BrainstormGraphState,
   roleId: BrainstormRoleId
 ): BranchNode[] {
-  return state.nodes.filter(n => n.roleId === roleId);
+  return state.nodes.filter((n) => n.roleId === roleId);
 }
 
 export function selectNodesByStatus(
   state: BrainstormGraphState,
   status: BranchNodeStatus
 ): BranchNode[] {
-  return state.nodes.filter(n => n.status === status);
+  return state.nodes.filter((n) => n.status === status);
 }
 
 export function selectSessionMetadata(
@@ -192,15 +192,11 @@ export function selectSessionMetadata(
   return state.sessionMetadata;
 }
 
-export function selectChallengeEdges(
-  state: BrainstormGraphState
-): ChallengeEdge[] {
+export function selectChallengeEdges(state: BrainstormGraphState): ChallengeEdge[] {
   return state.challengeEdges;
 }
 
-export function selectVoteOutcome(
-  state: BrainstormGraphState
-): VoteOutcomeView | null {
+export function selectVoteOutcome(state: BrainstormGraphState): VoteOutcomeView | null {
   return state.voteOutcome;
 }
 
@@ -208,16 +204,12 @@ export function selectCurrentRound(state: BrainstormGraphState): number | null {
   return state.currentRound;
 }
 
-export function selectConvergenceScore(
-  state: BrainstormGraphState
-): number | null {
+export function selectConvergenceScore(state: BrainstormGraphState): number | null {
   return state.convergenceScore;
 }
 
 export function selectIsActive(state: BrainstormGraphState): boolean {
-  return (
-    state.sessionStatus === "active" || state.sessionStatus === "synthesizing"
-  );
+  return state.sessionStatus === "active" || state.sessionStatus === "synthesizing";
 }
 
 // ---------------------------------------------------------------------------
@@ -244,7 +236,7 @@ export const INITIAL_BRAINSTORM_GRAPH: BrainstormGraphState = {
 
 function seedRoleAnchorNodes(
   sessionId: string,
-  roles: BrainstormRoleId[] = []
+  roles: BrainstormRoleId[] = [],
 ): { nodes: BranchNode[]; edges: BranchEdge[] } {
   const now = new Date().toISOString();
   const uniqueRoles = Array.from(new Set(roles));
@@ -267,13 +259,8 @@ function seedRoleAnchorNodes(
   return { nodes, edges };
 }
 
-function addUniqueEdges(
-  edges: BranchEdge[],
-  additions: BranchEdge[]
-): BranchEdge[] {
-  const seen = new Set(
-    edges.map(edge => `${edge.sourceNodeId}->${edge.targetNodeId}`)
-  );
+function addUniqueEdges(edges: BranchEdge[], additions: BranchEdge[]): BranchEdge[] {
+  const seen = new Set(edges.map((edge) => `${edge.sourceNodeId}->${edge.targetNodeId}`));
   const next = [...edges];
   for (const edge of additions) {
     const key = `${edge.sourceNodeId}->${edge.targetNodeId}`;
@@ -354,8 +341,9 @@ export const useBrainstormGraphStore = create<
       nextNodes = nextNodes.slice(1);
       // Remove edges referencing the dropped node
       nextEdges = nextEdges.filter(
-        e =>
-          e.sourceNodeId !== droppedNode.id && e.targetNodeId !== droppedNode.id
+        (e) =>
+          e.sourceNodeId !== droppedNode.id &&
+          e.targetNodeId !== droppedNode.id
       );
     }
 
@@ -388,7 +376,7 @@ export const useBrainstormGraphStore = create<
       return;
     }
 
-    const nodeIndex = state.nodes.findIndex(n => n.id === payload.nodeId);
+    const nodeIndex = state.nodes.findIndex((n) => n.id === payload.nodeId);
     if (nodeIndex === -1) return;
 
     const updatedNode = { ...state.nodes[nodeIndex] };
@@ -414,8 +402,7 @@ export const useBrainstormGraphStore = create<
       sessionMetadata: {
         ...state.sessionMetadata,
         completedAt: new Date().toISOString(),
-        totalTokenUsage:
-          payload.tokenUsed ?? state.sessionMetadata.totalTokenUsage,
+        totalTokenUsage: payload.tokenUsed ?? state.sessionMetadata.totalTokenUsage,
       },
     });
   },
@@ -445,11 +432,9 @@ export const useBrainstormGraphStore = create<
     const state = get();
     if (state.sessionId && payload.sessionId !== state.sessionId) return;
     const hasChallenger = state.nodes.some(
-      node => node.roleId === payload.challengerRoleId
+      node => node.roleId === payload.challengerRoleId,
     );
-    const hasTarget = state.nodes.some(
-      node => node.roleId === payload.targetRoleId
-    );
+    const hasTarget = state.nodes.some(node => node.roleId === payload.targetRoleId);
     if (!hasChallenger || !hasTarget) return;
 
     const edge: ChallengeEdge = {
@@ -461,22 +446,21 @@ export const useBrainstormGraphStore = create<
     };
     if (
       state.challengeEdges.some(
-        candidate =>
+        (candidate) =>
           candidate.challengerRoleId === edge.challengerRoleId &&
           candidate.targetRoleId === edge.targetRoleId &&
           candidate.summary === edge.summary &&
           candidate.roundNumber === edge.roundNumber &&
-          (candidate.kind ?? "challenge") === (edge.kind ?? "challenge")
+          (candidate.kind ?? "challenge") === (edge.kind ?? "challenge"),
       )
     ) {
       return;
     }
     const next = state.challengeEdges.concat(edge);
     set({
-      challengeEdges:
-        next.length > MAX_CHALLENGE_EDGES
-          ? next.slice(next.length - MAX_CHALLENGE_EDGES)
-          : next,
+      challengeEdges: next.length > MAX_CHALLENGE_EDGES
+        ? next.slice(next.length - MAX_CHALLENGE_EDGES)
+        : next,
     });
   },
 
@@ -488,9 +472,7 @@ export const useBrainstormGraphStore = create<
         winningOption: payload.winningOption,
         margin: payload.margin,
         isNarrow: payload.isNarrow,
-        ...(payload.isNarrow && payload.minority
-          ? { minority: payload.minority }
-          : {}),
+        ...(payload.isNarrow && payload.minority ? { minority: payload.minority } : {}),
       },
     });
   },
@@ -501,9 +483,7 @@ export const useBrainstormGraphStore = create<
 }));
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : {};
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
 }
 
 const RUNTIME_GRAPH_EVENT_TYPES = new Set<BrainstormRuntimeGraphEventType>([
@@ -518,16 +498,11 @@ const RUNTIME_GRAPH_EVENT_TYPES = new Set<BrainstormRuntimeGraphEventType>([
   "synthesis.completed",
 ]);
 
-function isRuntimeGraphEventType(
-  type: string
-): type is BrainstormRuntimeGraphEventType {
+function isRuntimeGraphEventType(type: string): type is BrainstormRuntimeGraphEventType {
   return RUNTIME_GRAPH_EVENT_TYPES.has(type as BrainstormRuntimeGraphEventType);
 }
 
-function ensureRuntimeSession(
-  payload: Record<string, unknown>,
-  store: BrainstormGraphState & BrainstormGraphActions
-): string | null {
+function ensureRuntimeSession(payload: Record<string, unknown>, store: BrainstormGraphState & BrainstormGraphActions): string | null {
   const sessionId = payload.sessionId;
   if (typeof sessionId !== "string") return null;
   if (store.sessionId !== sessionId) {
@@ -541,9 +516,7 @@ function ensureRuntimeSession(
 }
 
 function hasNode(nodeId: string): boolean {
-  return useBrainstormGraphStore
-    .getState()
-    .nodes.some(node => node.id === nodeId);
+  return useBrainstormGraphStore.getState().nodes.some((node) => node.id === nodeId);
 }
 
 function runtimeRoleId(roleId: unknown): BrainstormRoleId {
@@ -567,7 +540,7 @@ function roleIdFromRuntimeNodeId(nodeId: string): BrainstormRoleId | null {
 
 function runtimeSummaryFromPayload(
   payload: Record<string, unknown>,
-  fallback: string
+  fallback: string,
 ): string {
   return typeof payload.rationale === "string"
     ? payload.rationale
@@ -610,8 +583,7 @@ function dispatchRuntimeGraphEvent(
   if (!sessionId) return;
 
   if (type === "decision.marker.emitted") {
-    const nodeId =
-      typeof payload.nodeId === "string" ? payload.nodeId : "decision-marker";
+    const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : "decision-marker";
     const roleId = runtimeRoleId(payload.roleId);
     if (!hasNode(nodeId)) {
       useBrainstormGraphStore.getState().handleNodeCreated({
@@ -630,15 +602,15 @@ function dispatchRuntimeGraphEvent(
             ? payload.rationale
             : typeof payload.summary === "string"
               ? payload.summary
-              : undefined,
+          : undefined,
       });
     }
     const marker = typeof payload.marker === "string" ? payload.marker : "";
     if (marker === "BRANCH" || marker === "BRAINSTORM") {
       const state = useBrainstormGraphStore.getState();
       const fanoutEdges = state.nodes
-        .filter(node => node.id.startsWith("role:"))
-        .map(node => ({
+        .filter((node) => node.id.startsWith("role:"))
+        .map((node) => ({
           sourceNodeId: nodeId,
           targetNodeId: node.id,
         }));
@@ -666,10 +638,9 @@ function dispatchRuntimeGraphEvent(
           payload,
           marker === "SUPPORT"
             ? "Runtime support response"
-            : "Runtime challenge"
+            : "Runtime challenge",
         ),
-        roundNumber:
-          typeof payload.roundNumber === "number" ? payload.roundNumber : 1,
+        roundNumber: typeof payload.roundNumber === "number" ? payload.roundNumber : 1,
         kind: marker === "SUPPORT" ? "support" : "challenge",
       });
     }
@@ -677,12 +648,9 @@ function dispatchRuntimeGraphEvent(
   }
 
   if (type === "edge.condition.evaluated") {
-    const edgeId =
-      typeof payload.edgeId === "string" ? payload.edgeId : "runtime-edge";
+    const edgeId = typeof payload.edgeId === "string" ? payload.edgeId : "runtime-edge";
     const sourceNodeId =
-      typeof payload.sourceNodeId === "string"
-        ? payload.sourceNodeId
-        : "decision-marker";
+      typeof payload.sourceNodeId === "string" ? payload.sourceNodeId : "decision-marker";
     const nodeId = `edge-condition:${edgeId}`;
     if (!hasNode(nodeId)) {
       useBrainstormGraphStore.getState().handleNodeCreated({
@@ -704,9 +672,7 @@ function dispatchRuntimeGraphEvent(
 
   if (type === "edge.triggered" || type === "edge.suppressed") {
     const sourceNodeId =
-      typeof payload.sourceNodeId === "string"
-        ? payload.sourceNodeId
-        : "decision-marker";
+      typeof payload.sourceNodeId === "string" ? payload.sourceNodeId : "decision-marker";
     const targetNodeId =
       typeof payload.targetNodeId === "string"
         ? payload.targetNodeId
@@ -743,8 +709,7 @@ function dispatchRuntimeGraphEvent(
         nodeType: type === "edge.triggered" ? "action" : "observation",
         status: type === "edge.triggered" ? "active" : "completed",
         title: type === "edge.triggered" ? "边触发" : "边抑制",
-        content:
-          typeof payload.reason === "string" ? payload.reason : undefined,
+        content: typeof payload.reason === "string" ? payload.reason : undefined,
       });
     }
     if (sourceRoleId && targetRoleId && type === "edge.triggered") {
@@ -753,12 +718,8 @@ function dispatchRuntimeGraphEvent(
         sessionId,
         challengerRoleId: sourceRoleId,
         targetRoleId,
-        summary:
-          typeof payload.reason === "string"
-            ? payload.reason
-            : "Runtime role interaction",
-        roundNumber:
-          typeof payload.roundNumber === "number" ? payload.roundNumber : 1,
+        summary: typeof payload.reason === "string" ? payload.reason : "Runtime role interaction",
+        roundNumber: typeof payload.roundNumber === "number" ? payload.roundNumber : 1,
         kind: edgeId.startsWith("rebuttal:") ? "support" : "challenge",
       });
     }
@@ -771,8 +732,7 @@ function dispatchRuntimeGraphEvent(
   }
 
   if (type === "tool.action.selected") {
-    const toolId =
-      typeof payload.toolId === "string" ? payload.toolId : "runtime-tool";
+    const toolId = typeof payload.toolId === "string" ? payload.toolId : "runtime-tool";
     const sourceNodeId =
       typeof payload.nodeId === "string"
         ? payload.nodeId
@@ -784,8 +744,7 @@ function dispatchRuntimeGraphEvent(
       roleId: runtimeRoleId(payload.roleId),
       nodeType: "action",
       title: `工具: ${toolId}`,
-      content:
-        typeof payload.rationale === "string" ? payload.rationale : undefined,
+      content: typeof payload.rationale === "string" ? payload.rationale : undefined,
       parentNodeId: hasNode(sourceNodeId) ? sourceNodeId : null,
       status: "completed",
     });
@@ -797,10 +756,9 @@ function dispatchRuntimeGraphEvent(
       typeof payload.nodeId === "string"
         ? payload.nodeId
         : `role:${runtimeRoleId(payload.roleId)}`;
-    const loopId =
-      type === "loop.continued"
-        ? `loop:${String(payload.nextRoundNumber ?? "next")}`
-        : "loop:stopped";
+    const loopId = type === "loop.continued"
+      ? `loop:${String(payload.nextRoundNumber ?? "next")}`
+      : "loop:stopped";
     ensureRuntimeNode({
       sessionId,
       nodeId: loopId,
@@ -811,15 +769,11 @@ function dispatchRuntimeGraphEvent(
       parentNodeId: hasNode(sourceNodeId) ? sourceNodeId : null,
       status: "completed",
     });
-    if (
-      type === "loop.continued" &&
-      typeof payload.nextRoundNumber === "number"
-    ) {
+    if (type === "loop.continued" && typeof payload.nextRoundNumber === "number") {
       useBrainstormGraphStore.getState().handleRoundCompleted({
         sessionId,
         roundNumber: payload.nextRoundNumber,
-        convergenceScore:
-          useBrainstormGraphStore.getState().convergenceScore ?? 0,
+        convergenceScore: useBrainstormGraphStore.getState().convergenceScore ?? 0,
       });
     }
     return;
@@ -833,11 +787,9 @@ function dispatchRuntimeGraphEvent(
           ? payload.nodeId
           : "synthesis";
     const sourceNodeIds = Array.isArray(payload.sourceNodeIds)
-      ? payload.sourceNodeIds.filter(
-          (value): value is string => typeof value === "string"
-        )
+      ? payload.sourceNodeIds.filter((value): value is string => typeof value === "string")
       : [];
-    const parentNodeId = sourceNodeIds.find(nodeId => hasNode(nodeId)) ?? null;
+    const parentNodeId = sourceNodeIds.find((nodeId) => hasNode(nodeId)) ?? null;
 
     if (!hasNode(synthesisNodeId)) {
       useBrainstormGraphStore.getState().handleNodeCreated({
@@ -848,18 +800,15 @@ function dispatchRuntimeGraphEvent(
         nodeType: "synthesis",
         status: "completed",
         title: "综合",
-        content:
-          typeof payload.summary === "string" ? payload.summary : undefined,
+        content: typeof payload.summary === "string" ? payload.summary : undefined,
       });
     }
     useBrainstormGraphStore.getState().handleNodeUpdated({
       sessionId,
       nodeId: synthesisNodeId,
       status: "completed",
-      content:
-        typeof payload.summary === "string" ? payload.summary : undefined,
-      confidence:
-        typeof payload.confidence === "number" ? payload.confidence : undefined,
+      content: typeof payload.summary === "string" ? payload.summary : undefined,
+      confidence: typeof payload.confidence === "number" ? payload.confidence : undefined,
     });
   }
 }
@@ -885,12 +834,11 @@ export function dispatchBrainstormGraphEvent(event: {
       const sessionId = `gate:${jobId}:${stageId}`;
       store.handleSessionStarted({
         sessionId,
-        mode:
-          typeof payload.recommendedMode === "string"
-            ? (payload.recommendedMode as CollaborationMode)
-            : undefined,
+        mode: typeof payload.recommendedMode === "string"
+          ? payload.recommendedMode as CollaborationMode
+          : undefined,
         roles: Array.isArray(payload.requiredRoles)
-          ? (payload.requiredRoles as BrainstormRoleId[])
+          ? payload.requiredRoles as BrainstormRoleId[]
           : undefined,
       });
       useBrainstormGraphStore.getState().handleNodeCreated({
@@ -901,10 +849,9 @@ export function dispatchBrainstormGraphEvent(event: {
         nodeType: "decision",
         status: "completed",
         title: "Decision Gate",
-        content:
-          typeof payload.reasoning === "string"
-            ? payload.reasoning
-            : `Brainstorm needed: ${String(payload.brainstormNeeded)}`,
+        content: typeof payload.reasoning === "string"
+          ? payload.reasoning
+          : `Brainstorm needed: ${String(payload.brainstormNeeded)}`,
         sequenceNumber: 1,
       });
       break;
@@ -914,13 +861,8 @@ export function dispatchBrainstormGraphEvent(event: {
       if (typeof sessionId !== "string") return;
       store.handleSessionStarted({
         sessionId,
-        mode:
-          typeof payload.mode === "string"
-            ? (payload.mode as CollaborationMode)
-            : undefined,
-        roles: Array.isArray(payload.roles)
-          ? (payload.roles as BrainstormRoleId[])
-          : undefined,
+        mode: typeof payload.mode === "string" ? payload.mode as CollaborationMode : undefined,
+        roles: Array.isArray(payload.roles) ? payload.roles as BrainstormRoleId[] : undefined,
       });
       break;
     }
@@ -947,21 +889,12 @@ export function dispatchBrainstormGraphEvent(event: {
       store.handleNodeCreated({
         sessionId,
         nodeId,
-        parentNodeId:
-          typeof payload.parentNodeId === "string"
-            ? payload.parentNodeId
-            : null,
+        parentNodeId: typeof payload.parentNodeId === "string" ? payload.parentNodeId : null,
         roleId: roleId as BrainstormRoleId,
         nodeType: nodeType as BranchNodeType,
-        status:
-          typeof payload.status === "string"
-            ? (payload.status as BranchNodeStatus)
-            : "active",
+        status: typeof payload.status === "string" ? payload.status as BranchNodeStatus : "active",
         title: typeof payload.title === "string" ? payload.title : undefined,
-        sequenceNumber:
-          typeof payload.sequenceNumber === "number"
-            ? payload.sequenceNumber
-            : undefined,
+        sequenceNumber: typeof payload.sequenceNumber === "number" ? payload.sequenceNumber : undefined,
       });
       break;
     }
@@ -972,20 +905,10 @@ export function dispatchBrainstormGraphEvent(event: {
       store.handleNodeUpdated({
         sessionId,
         nodeId,
-        status:
-          typeof payload.status === "string"
-            ? (payload.status as BranchNodeStatus)
-            : undefined,
-        content:
-          typeof payload.content === "string" ? payload.content : undefined,
-        confidence:
-          typeof payload.confidence === "number"
-            ? payload.confidence
-            : undefined,
-        tokenUsage:
-          typeof payload.tokenUsage === "number"
-            ? payload.tokenUsage
-            : undefined,
+        status: typeof payload.status === "string" ? payload.status as BranchNodeStatus : undefined,
+        content: typeof payload.content === "string" ? payload.content : undefined,
+        confidence: typeof payload.confidence === "number" ? payload.confidence : undefined,
+        tokenUsage: typeof payload.tokenUsage === "number" ? payload.tokenUsage : undefined,
       });
       break;
     }
@@ -994,10 +917,7 @@ export function dispatchBrainstormGraphEvent(event: {
       if (typeof sessionId === "string") {
         store.handleSessionCompleted({
           sessionId,
-          tokenUsed:
-            typeof payload.tokenUsed === "number"
-              ? payload.tokenUsed
-              : undefined,
+          tokenUsed: typeof payload.tokenUsed === "number" ? payload.tokenUsed : undefined,
         });
       }
       break;
@@ -1035,12 +955,11 @@ export function dispatchBrainstormGraphEvent(event: {
       // `critiqueSummary`; the legacy heuristic path uses `challengeSummary`;
       // runtime-graph markers may use `summary`. Read all three so the edge
       // label carries the actual critique content, not an empty/role string.
-      const summary =
-        typeof payload.summary === "string"
-          ? payload.summary
-          : typeof payload.challengeSummary === "string"
-            ? payload.challengeSummary
-            : payload.critiqueSummary;
+      const summary = typeof payload.summary === "string"
+        ? payload.summary
+        : typeof payload.challengeSummary === "string"
+          ? payload.challengeSummary
+          : payload.critiqueSummary;
       const roundNumber = payload.roundNumber;
       if (
         typeof sessionId !== "string" ||
@@ -1064,10 +983,9 @@ export function dispatchBrainstormGraphEvent(event: {
       const sessionId = payload.sessionId;
       const responderRoleId = payload.responderRoleId;
       const challengerRoleId = payload.challengerRoleId;
-      const summary =
-        typeof payload.summary === "string"
-          ? payload.summary
-          : payload.rebuttalSummary;
+      const summary = typeof payload.summary === "string"
+        ? payload.summary
+        : payload.rebuttalSummary;
       const roundNumber = payload.roundNumber;
       if (
         typeof sessionId !== "string" ||
@@ -1107,9 +1025,7 @@ export function dispatchBrainstormGraphEvent(event: {
         margin,
         isNarrow,
         minority: Array.isArray(payload.minority)
-          ? payload.minority.filter(
-              (item): item is string => typeof item === "string"
-            )
+          ? payload.minority.filter((item): item is string => typeof item === "string")
           : undefined,
       });
       break;

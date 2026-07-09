@@ -27,9 +27,7 @@ describe("autopilot prompt optimizer", () => {
     });
 
     expect(messages).toHaveLength(2);
-    expect(messages[0].content).toContain(
-      "Return only the optimized prompt text"
-    );
+    expect(messages[0].content).toContain("Return only the optimized prompt text");
     expect(messages[0].content).toContain("Simplified Chinese");
     expect(messages[1].content).toContain("权限管理系统");
     expect(messages[1].content).toContain("advanced");

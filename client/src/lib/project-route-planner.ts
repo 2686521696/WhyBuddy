@@ -108,25 +108,21 @@ function buildTemplate(
       summary: `Turn ${specLabel} into the smallest reviewable delivery slice.`,
       riskLevel: riskAware ? "medium" : "low",
       estimate: "Short",
-      rationale:
-        "Best when the project needs a quick proof before deeper planning.",
+      rationale: "Best when the project needs a quick proof before deeper planning.",
       steps: [
         {
           title: "Slice the spec",
-          description:
-            "Identify the thinnest project outcome that can prove the core intent.",
+          description: "Identify the thinnest project outcome that can prove the core intent.",
           role: "Planner",
         },
         {
           title: "Build the first executable increment",
-          description:
-            "Use FSD role capabilities internally to produce a reviewable artifact.",
+          description: "Use FSD role capabilities internally to produce a reviewable artifact.",
           role: "Builder",
         },
         {
           title: "Capture decision evidence",
-          description:
-            "Record what was validated and what must move to the next route.",
+          description: "Record what was validated and what must move to the next route.",
           role: "Reviewer",
         },
       ],
@@ -140,25 +136,21 @@ function buildTemplate(
       summary: `Expand ${specLabel} into architecture, delivery plan, and evidence checkpoints.`,
       riskLevel: riskAware ? "high" : "medium",
       estimate: "Long",
-      rationale:
-        "Best when ambiguity, integration scope, or review cost is high.",
+      rationale: "Best when ambiguity, integration scope, or review cost is high.",
       steps: [
         {
           title: "Model domain and constraints",
-          description:
-            "Turn the accepted spec into explicit boundaries, risks, and assumptions.",
+          description: "Turn the accepted spec into explicit boundaries, risks, and assumptions.",
           role: "Architect",
         },
         {
           title: "Plan delivery slices",
-          description:
-            "Map FSD roles to implementation, review, and evidence responsibilities.",
+          description: "Map FSD roles to implementation, review, and evidence responsibilities.",
           role: "Planner",
         },
         {
           title: "Run evidence-backed execution",
-          description:
-            "Execute with checkpoints that preserve artifacts and decisions.",
+          description: "Execute with checkpoints that preserve artifacts and decisions.",
           role: "Executor",
         },
       ],
@@ -172,19 +164,16 @@ function buildTemplate(
       summary: `Protect ${specLabel} with review gates before execution starts.`,
       riskLevel: "low",
       estimate: "Medium",
-      rationale:
-        "Best when reversibility, approvals, or production safety matter most.",
+      rationale: "Best when reversibility, approvals, or production safety matter most.",
       steps: [
         {
           title: "Confirm assumptions",
-          description:
-            "Review open questions, defaults, and spec sources before committing.",
+          description: "Review open questions, defaults, and spec sources before committing.",
           role: "Reviewer",
         },
         {
           title: "Prepare rollback-safe work",
-          description:
-            "Break execution into guarded changes with clear stop points.",
+          description: "Break execution into guarded changes with clear stop points.",
           role: "Planner",
         },
         {
@@ -202,25 +191,21 @@ function buildTemplate(
     summary: `Route ${specLabel} through clarification, planning, execution, and evidence review.`,
     riskLevel: riskAware ? "medium" : "low",
     estimate: "Medium",
-    rationale:
-      "Best default for moving from a current spec into coordinated FSD execution.",
+    rationale: "Best default for moving from a current spec into coordinated FSD execution.",
     steps: [
       {
         title: "Align on spec intent",
-        description:
-          "Confirm the project outcome and constraints represented by the current spec.",
+        description: "Confirm the project outcome and constraints represented by the current spec.",
         role: "Planner",
       },
       {
         title: "Coordinate FSD roles",
-        description:
-          "Assign internal role capabilities for design, implementation, and review.",
+        description: "Assign internal role capabilities for design, implementation, and review.",
         role: "Coordinator",
       },
       {
         title: "Execute and preserve evidence",
-        description:
-          "Deliver the chosen slice while linking artifacts and decisions back to the route.",
+        description: "Deliver the chosen slice while linking artifacts and decisions back to the route.",
         role: "Executor",
       },
     ],

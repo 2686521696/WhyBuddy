@@ -15,10 +15,7 @@ import { EvidenceBadges } from "./EvidenceBadges";
 import { EmptyScreenHint } from "./EmptyScreenHint";
 import type { FiveSystemModel } from "./five-system-model";
 import { deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
-import {
-  deriveRoleAccess,
-  pageAccessForRole,
-} from "../live-runtime/rbac-preview";
+import { deriveRoleAccess, pageAccessForRole } from "../live-runtime/rbac-preview";
 import {
   loadRuntimeRole,
   saveRuntimeRole,
@@ -55,27 +52,15 @@ function parseRolesFromContent(content: string): RoleEntry[] | null {
     const roleMatch = line.match(/^#+\s*角色[：:]\s*(.+)$|^Role[：:]\s*(.+)$/i);
     if (roleMatch) {
       if (current?.role) roles.push(current as RoleEntry);
-      current = {
-        role: (roleMatch[1] || roleMatch[2]).trim(),
-        permissions: [],
-        menus: [],
-      };
+      current = { role: (roleMatch[1] || roleMatch[2]).trim(), permissions: [], menus: [] };
       continue;
     }
     if (current && line.match(/权限[：:]/i)) {
-      const perms = line
-        .replace(/.*权限[：:]/, "")
-        .split(/[,，]/)
-        .map(s => s.trim())
-        .filter(Boolean);
+      const perms = line.replace(/.*权限[：:]/, "").split(/[,，]/).map((s) => s.trim()).filter(Boolean);
       current.permissions = perms;
     }
     if (current && line.match(/菜单[：:]/i)) {
-      const menus = line
-        .replace(/.*菜单[：:]/, "")
-        .split(/[,，]/)
-        .map(s => s.trim())
-        .filter(Boolean);
+      const menus = line.replace(/.*菜单[：:]/, "").split(/[,，]/).map((s) => s.trim()).filter(Boolean);
       current.menus = menus;
     }
     if (current && line.match(/数据规则[：:]/i)) {
@@ -87,21 +72,17 @@ function parseRolesFromContent(content: string): RoleEntry[] | null {
 }
 
 /** model.rbac → 角色行：权限/菜单从 menus 的 roleRefs/permissionRefs 反推。 */
-function rolesFromModel(
-  rbac: FiveSystemModel["rbac"] | null | undefined
-): RoleEntry[] | null {
+function rolesFromModel(rbac: FiveSystemModel["rbac"] | null | undefined): RoleEntry[] | null {
   const roleIds = rbac?.roles ?? [];
   if (roleIds.length === 0) return null;
   const menus = rbac?.menus ?? [];
-  return roleIds.map(role => {
-    const roleMenus = menus.filter(m => (m.roleRefs ?? []).includes(role));
-    const permissions = [
-      ...new Set(roleMenus.flatMap(m => m.permissionRefs ?? [])),
-    ];
+  return roleIds.map((role) => {
+    const roleMenus = menus.filter((m) => (m.roleRefs ?? []).includes(role));
+    const permissions = [...new Set(roleMenus.flatMap((m) => m.permissionRefs ?? []))];
     return {
       role,
       permissions,
-      menus: roleMenus.map(m => m.label || m.id || "").filter(Boolean),
+      menus: roleMenus.map((m) => m.label || m.id || "").filter(Boolean),
     };
   });
 }
@@ -135,21 +116,17 @@ function RolePreviewPanel({
     notifyRoleChanged(sessionId);
   };
 
-  const selected = roleAccess.find(r => r.role === role) ?? roleAccess[0];
+  const selected = roleAccess.find((r) => r.role === role) ?? roleAccess[0];
   const pageRows = pageAccessForRole(schema?.pages ?? [], selected);
 
   return (
-    <div
-      className="flex h-full flex-col gap-3 overflow-auto p-4"
-      data-testid="rbac-role-preview"
-    >
+    <div className="flex h-full flex-col gap-3 overflow-auto p-4" data-testid="rbac-role-preview">
       <div className="rounded bg-orange-50 px-3 py-2 text-[11px] text-orange-700 ring-1 ring-orange-200">
-        选中角色实时作用于 AppBundle 屏的「运行应用」——
-        菜单与「新建」按钮按该角色权限锁定
+        选中角色实时作用于 AppBundle 屏的「运行应用」—— 菜单与「新建」按钮按该角色权限锁定
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        {roleAccess.map(r => (
+        {roleAccess.map((r) => (
           <button
             key={r.role}
             type="button"
@@ -173,18 +150,14 @@ function RolePreviewPanel({
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1">
             {selected.permissions.length > 0 ? (
-              selected.permissions.map(p => (
-                <span
-                  key={p}
-                  className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700"
-                >
+              selected.permissions.map((p) => (
+                <span key={p} className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700">
                   {p}
                 </span>
               ))
             ) : (
               <span className="text-[10px] text-stone-400">
-                模型未给该角色挂任何菜单权限 ——
-                声明了权限的页面将全部锁定（fail-closed）
+                模型未给该角色挂任何菜单权限 —— 声明了权限的页面将全部锁定（fail-closed）
               </span>
             )}
           </div>
@@ -195,26 +168,16 @@ function RolePreviewPanel({
         <table className="w-full text-xs">
           <thead className="bg-[#eef0f4]">
             <tr>
-              <th className="px-3 py-2 text-left font-semibold text-stone-600">
-                页面
-              </th>
-              <th className="px-3 py-2 text-left font-semibold text-stone-600">
-                可见
-              </th>
-              <th className="px-3 py-2 text-left font-semibold text-stone-600">
-                新建
-              </th>
-              <th className="px-3 py-2 text-left font-semibold text-stone-600">
-                动作权限
-              </th>
+              <th className="px-3 py-2 text-left font-semibold text-stone-600">页面</th>
+              <th className="px-3 py-2 text-left font-semibold text-stone-600">可见</th>
+              <th className="px-3 py-2 text-left font-semibold text-stone-600">新建</th>
+              <th className="px-3 py-2 text-left font-semibold text-stone-600">动作权限</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e8eaee] bg-white">
-            {pageRows.map(row => (
+            {pageRows.map((row) => (
               <tr key={row.pageId}>
-                <td className="px-3 py-2 font-medium text-stone-700">
-                  {row.title}
-                </td>
+                <td className="px-3 py-2 font-medium text-stone-700">{row.title}</td>
                 <td className="px-3 py-2">
                   {row.visible ? (
                     <span className="text-emerald-600">✓ 可见</span>
@@ -224,46 +187,31 @@ function RolePreviewPanel({
                 </td>
                 <td className="px-3 py-2">
                   {row.createPermission === null ? (
-                    <span
-                      className="text-stone-300"
-                      title="页面未声明 *:create 动作，不设卡"
-                    >
+                    <span className="text-stone-300" title="页面未声明 *:create 动作，不设卡">
                       未声明
                     </span>
                   ) : row.canCreate ? (
                     <span className="text-emerald-600">✓ 允许</span>
                   ) : (
-                    <span
-                      className="text-red-500"
-                      title={`需持有 ${row.createPermission}`}
-                    >
+                    <span className="text-red-500" title={`需持有 ${row.createPermission}`}>
                       ✗ 禁止
                     </span>
                   )}
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap gap-1">
-                    {row.grantedActions.map(a => (
-                      <span
-                        key={a}
-                        className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700"
-                      >
+                    {row.grantedActions.map((a) => (
+                      <span key={a} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
                         ✓ {a}
                       </span>
                     ))}
-                    {row.deniedActions.map(a => (
-                      <span
-                        key={a}
-                        className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] text-red-500"
-                      >
+                    {row.deniedActions.map((a) => (
+                      <span key={a} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] text-red-500">
                         ✗ {a}
                       </span>
                     ))}
-                    {row.grantedActions.length + row.deniedActions.length ===
-                      0 && (
-                      <span className="text-[10px] text-stone-300">
-                        公共页（未声明动作）
-                      </span>
+                    {row.grantedActions.length + row.deniedActions.length === 0 && (
+                      <span className="text-[10px] text-stone-300">公共页（未声明动作）</span>
                     )}
                   </div>
                 </td>
@@ -300,8 +248,7 @@ export function RbacScreen({
   }, [modelRoles, rawContent]);
 
   const evidence = publishClosure?.perSkillEvidence?.["rbac"];
-  const isPlaceholder =
-    !modelRoles && (!rawContent || !parseRolesFromContent(rawContent));
+  const isPlaceholder = !modelRoles && (!rawContent || !parseRolesFromContent(rawContent));
   const hasModel = !!modelRoles;
   // 角色预览需要模型里同时有角色和页面（判定才有对象）
   const canPreview = hasModel && (model?.page?.pages?.length ?? 0) > 0;
@@ -315,9 +262,7 @@ export function RbacScreen({
     >
       <div className="flex items-center gap-2 border-b border-[#e8eaee] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-orange-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-          RBAC
-        </span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">RBAC</span>
         <span className="text-xs text-stone-400">
           {hasModel
             ? `${modelRoles!.length} 角色 · ${model?.rbac?.permissions?.length ?? 0} 权限 · ${model?.rbac?.menus?.length ?? 0} 菜单`
@@ -329,10 +274,10 @@ export function RbacScreen({
               className="flex items-center gap-0.5 rounded-full bg-[#e9edf2] p-0.5 ring-1 ring-[#e5e7eb]/80"
               data-testid="rbac-mode-toggle"
             >
-              {[
+              {([
                 { id: "matrix" as const, label: "权限矩阵" },
                 { id: "preview" as const, label: "角色预览" },
-              ].map(({ id, label }) => (
+              ]).map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
@@ -358,90 +303,66 @@ export function RbacScreen({
           <RolePreviewPanel model={model} sessionId={sessionId} />
         </div>
       ) : isPlaceholder ? (
-        <EmptyScreenHint
-          title="角色权限矩阵"
-          desc="角色、权限与菜单的授权关系，来自五系统模型 rbac 段"
-        />
+        <EmptyScreenHint title="角色权限矩阵" desc="角色、权限与菜单的授权关系，来自五系统模型 rbac 段" />
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 z-10 bg-[#eef0f4]">
-              <tr>
-                <th className="px-4 py-2 text-left font-semibold text-stone-600">
-                  角色
-                </th>
-                <th className="px-4 py-2 text-left font-semibold text-stone-600">
-                  权限
-                </th>
-                <th className="px-4 py-2 text-left font-semibold text-stone-600">
-                  菜单
-                </th>
-                <th className="px-4 py-2 text-left font-semibold text-stone-600">
-                  数据规则
-                </th>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 z-10 bg-[#eef0f4]">
+            <tr>
+              <th className="px-4 py-2 text-left font-semibold text-stone-600">角色</th>
+              <th className="px-4 py-2 text-left font-semibold text-stone-600">权限</th>
+              <th className="px-4 py-2 text-left font-semibold text-stone-600">菜单</th>
+              <th className="px-4 py-2 text-left font-semibold text-stone-600">数据规则</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#e8eaee]">
+            {roles.map((entry) => (
+              <tr
+                key={entry.role}
+                className={`transition-colors hover:bg-[#eef0f4] `}
+              >
+                <td className="px-4 py-2.5 font-medium text-stone-800">{entry.role}</td>
+                <td className="px-4 py-2.5">
+                  <div className="flex flex-wrap gap-1">
+                    {entry.permissions.length > 0 ? (
+                      entry.permissions.map((p) => {
+                        const undeclared = hasModel && !declaredPermissions.has(p);
+                        return (
+                          <span
+                            key={p}
+                            className={
+                              undeclared
+                                ? "rounded bg-red-50 px-1.5 py-0.5 text-red-600 ring-1 ring-red-200"
+                                : "rounded bg-blue-50 px-1.5 py-0.5 text-blue-700"
+                            }
+                            title={undeclared ? `权限未在 rbac.permissions 清单声明：${p}` : p}
+                          >
+                            {undeclared ? "✗ " : ""}
+                            {p}
+                          </span>
+                        );
+                      })
+                    ) : (
+                      <span className="text-[10px] text-stone-300">未挂权限</span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-2.5">
+                  <div className="flex flex-wrap gap-1">
+                    {entry.menus.map((m) => (
+                      <span key={m} className="rounded bg-[#e9edf2] px-1.5 py-0.5 text-stone-600">
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-4 py-2.5 text-stone-500">{entry.dataRules ?? "—"}</td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e8eaee]">
-              {roles.map(entry => (
-                <tr
-                  key={entry.role}
-                  className={`transition-colors hover:bg-[#eef0f4] `}
-                >
-                  <td className="px-4 py-2.5 font-medium text-stone-800">
-                    {entry.role}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1">
-                      {entry.permissions.length > 0 ? (
-                        entry.permissions.map(p => {
-                          const undeclared =
-                            hasModel && !declaredPermissions.has(p);
-                          return (
-                            <span
-                              key={p}
-                              className={
-                                undeclared
-                                  ? "rounded bg-red-50 px-1.5 py-0.5 text-red-600 ring-1 ring-red-200"
-                                  : "rounded bg-blue-50 px-1.5 py-0.5 text-blue-700"
-                              }
-                              title={
-                                undeclared
-                                  ? `权限未在 rbac.permissions 清单声明：${p}`
-                                  : p
-                              }
-                            >
-                              {undeclared ? "✗ " : ""}
-                              {p}
-                            </span>
-                          );
-                        })
-                      ) : (
-                        <span className="text-[10px] text-stone-300">
-                          未挂权限
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1">
-                      {entry.menus.map(m => (
-                        <span
-                          key={m}
-                          className="rounded bg-[#e9edf2] px-1.5 py-0.5 text-stone-600"
-                        >
-                          {m}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-stone-500">
-                    {entry.dataRules ?? "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
+
+      </div>
       )}
     </div>
   );

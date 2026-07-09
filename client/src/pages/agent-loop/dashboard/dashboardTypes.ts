@@ -1,6 +1,6 @@
 export type DashboardMessage =
-  | { type: "overview"; payload: OverviewPayload }
-  | { type: "detail"; payload: DetailPayload };
+  | { type: 'overview'; payload: OverviewPayload }
+  | { type: 'detail'; payload: DetailPayload };
 
 export type OverviewTask = {
   id?: string | null;
@@ -88,12 +88,7 @@ export type DetailPayload = {
   activeTab?: string | null;
   activeEventFilter?: string | null;
   eventSearchQuery?: string | null;
-  pipelineSteps?: Array<{
-    key?: string | null;
-    label?: string | null;
-    done?: boolean;
-    active?: boolean;
-  }>;
+  pipelineSteps?: Array<{ key?: string | null; label?: string | null; done?: boolean; active?: boolean }>;
   details?: string[];
   iterations?: Array<Record<string, unknown>>;
   reviewRounds?: Array<Record<string, unknown>>;
@@ -101,12 +96,7 @@ export type DetailPayload = {
   agentTail?: string | null;
   diffText?: string | null;
   failingGateText?: string | null;
-  artifacts?: Array<{
-    id?: string;
-    kind?: string;
-    title?: string | null;
-    content?: string | null;
-  }>;
+  artifacts?: Array<{ id?: string; kind?: string; title?: string | null; content?: string | null }>;
   reportPath?: string | null;
   reportJsonPath?: string | null;
   landingPath?: string | null;
@@ -129,27 +119,15 @@ export type AgentLoopSettingsViewModel = {
   baseUrl?: string;
   injectToWorker?: boolean;
   queueRunning?: boolean;
-  keys?: Record<string, "configured" | "">;
+  keys?: Record<string, 'configured' | ''>;
   nonSensitive?: Record<string, unknown>;
   // Additional normalized sections for contract (queue/diag/profiles may be separate but referenced here for panels)
-  queueDefaults?: {
-    defaults?: Record<string, unknown>;
-    supportedKeys?: string[];
-    queuePath?: string | null;
-  };
+  queueDefaults?: { defaults?: Record<string, unknown>; supportedKeys?: string[]; queuePath?: string | null };
   diagnostics?: Record<string, unknown> | null;
-  profiles?: {
-    profiles?: Record<string, unknown>;
-    activeProfile?: string | null;
-  } | null;
+  profiles?: { profiles?: Record<string, unknown>; activeProfile?: string | null } | null;
 };
 
-export type PythonHealthStatus =
-  | "ready"
-  | "offline"
-  | "degraded"
-  | "missing-config"
-  | "unknown";
+export type PythonHealthStatus = 'ready' | 'offline' | 'degraded' | 'missing-config' | 'unknown';
 
 export type PythonHealthViewModel = {
   service: {

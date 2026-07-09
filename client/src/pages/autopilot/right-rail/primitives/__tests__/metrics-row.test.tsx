@@ -24,7 +24,7 @@ describe("<MetricsRow>", () => {
           { label: "TOTAL", value: 8 },
           { label: "FAILED", value: 0 },
         ]}
-      />
+      />,
     );
 
     expect(markup).toContain('data-testid="autopilot-metrics-row"');
@@ -44,7 +44,7 @@ describe("<MetricsRow>", () => {
           { label: "LEFT", value: "A" },
           { label: "RIGHT", value: "B" },
         ]}
-      />
+      />,
     );
     expect(twoMarkup).toContain('data-columns="2"');
     expect(twoMarkup).toContain("grid-cols-2");
@@ -59,7 +59,7 @@ describe("<MetricsRow>", () => {
           { label: "Q3", value: 3 },
           { label: "Q4", value: 4 },
         ]}
-      />
+      />,
     );
     expect(fourMarkup).toContain('data-columns="4"');
     expect(fourMarkup).toContain("grid-cols-4");
@@ -73,7 +73,7 @@ describe("<MetricsRow>", () => {
           { label: "ROLES", value: 12, hint: "12 active agents" },
           { label: "ROUTES", value: "3/5" },
         ]}
-      />
+      />,
     );
 
     // Semantic <dl> root + <dd>/<dt> structure (需求 3)

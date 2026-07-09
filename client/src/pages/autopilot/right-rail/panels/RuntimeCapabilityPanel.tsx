@@ -38,7 +38,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FC } from "react";
 
-import { Clipboard, ListChecks, RefreshCw, Send, Sparkles } from "lucide-react";
+import {
+  Clipboard,
+  ListChecks,
+  RefreshCw,
+  Send,
+  Sparkles,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -169,9 +175,7 @@ function SummaryTile({
  * `null`，与 `BlueprintProgressPanel` 原调用点的 `showRuntimeCapabilityBridgeWorkbench
  * && specTree` 条件一致。
  */
-export const RuntimeCapabilityPanel: FC<
-  RuntimeCapabilityPanelProps
-> = props => {
+export const RuntimeCapabilityPanel: FC<RuntimeCapabilityPanelProps> = props => {
   const {
     specTree,
     jobId,
@@ -498,34 +502,34 @@ function RuntimeCapabilityPanelInner({
     >
       {/* Header chrome removed: SubStageCard 已提供标题 / apiPath / summary / 状态胶囊 */}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="gap-2 rounded-none border-[#CCCCCC] bg-white font-black text-black hover:bg-[#F3F3F3]"
-          disabled={!jobId || loading || invoking}
-          onClick={handleRefresh}
-          data-testid="capability-bridge-refresh-button"
-        >
-          <RefreshCw
-            className={cn("size-3.5", loading && "animate-spin")}
-            aria-hidden="true"
-          />
-          {panelText("刷新", "Refresh", locale)}
-        </Button>
-        <Button
-          type="button"
-          className="gap-2 rounded-none bg-black font-black text-white hover:bg-[#333]"
-          disabled={!canInvoke || loading || invoking}
-          onClick={handleInvoke}
-          data-testid="capability-invoke-button"
-        >
-          {invoking ? (
-            <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : (
-            <Send className="size-3.5" aria-hidden="true" />
-          )}
-          {panelText("调用能力", "Invoke capability", locale)}
-        </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2 rounded-none border-[#CCCCCC] bg-white font-black text-black hover:bg-[#F3F3F3]"
+            disabled={!jobId || loading || invoking}
+            onClick={handleRefresh}
+            data-testid="capability-bridge-refresh-button"
+          >
+            <RefreshCw
+              className={cn("size-3.5", loading && "animate-spin")}
+              aria-hidden="true"
+            />
+            {panelText("刷新", "Refresh", locale)}
+          </Button>
+          <Button
+            type="button"
+            className="gap-2 rounded-none bg-black font-black text-white hover:bg-[#333]"
+            disabled={!canInvoke || loading || invoking}
+            onClick={handleInvoke}
+            data-testid="capability-invoke-button"
+          >
+            {invoking ? (
+              <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Send className="size-3.5" aria-hidden="true" />
+            )}
+            {panelText("调用能力", "Invoke capability", locale)}
+          </Button>
       </div>
 
       {error ? (
@@ -607,11 +611,7 @@ function RuntimeCapabilityPanelInner({
                           variant="outline"
                           className="rounded-full border-slate-200 bg-slate-50 text-[10px] font-black text-slate-500"
                         >
-                          {artifactTokenLabel(
-                            capability.kind,
-                            "Capability",
-                            locale
-                          )}
+                          {artifactTokenLabel(capability.kind, "Capability", locale)}
                         </Badge>
                       </div>
                       <div className="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-slate-500">
@@ -632,11 +632,7 @@ function RuntimeCapabilityPanelInner({
                           variant="outline"
                           className="rounded-full border-slate-200 bg-white text-[10px] font-black text-slate-500"
                         >
-                          {artifactTokenLabel(
-                            capability.status,
-                            "Status",
-                            locale
-                          )}
+                          {artifactTokenLabel(capability.status, "Status", locale)}
                         </Badge>
                       </div>
                     </button>
@@ -694,11 +690,7 @@ function RuntimeCapabilityPanelInner({
                 <h4 className="mt-2 text-base font-black text-slate-950">
                   {activeCapability?.label
                     ? blueprintCopy(activeCapability.label, locale)
-                    : panelText(
-                        "能力调用已就绪",
-                        "Capability invocation ready",
-                        locale
-                      )}
+                    : panelText("能力调用已就绪", "Capability invocation ready", locale)}
                 </h4>
               </div>
               <Badge
@@ -706,11 +698,7 @@ function RuntimeCapabilityPanelInner({
                 className="rounded-full border-slate-200 bg-white text-[10px] font-black text-slate-500"
               >
                 {activeCapability
-                  ? artifactTokenLabel(
-                      activeCapability.status,
-                      "Status",
-                      locale
-                    )
+                  ? artifactTokenLabel(activeCapability.status, "Status", locale)
                   : panelText("未选择能力", "No capability selected", locale)}
               </Badge>
             </div>
@@ -725,9 +713,7 @@ function RuntimeCapabilityPanelInner({
                   className="h-10 rounded-[12px] border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none transition focus:border-slate-400"
                   data-testid="capability-launcher-select"
                 >
-                  <option value="">
-                    {panelText("选择能力", "Select capability", locale)}
-                  </option>
+                  <option value="">{panelText("选择能力", "Select capability", locale)}</option>
                   {registry.map(capability => (
                     <option key={capability.id} value={capability.id}>
                       {blueprintCopy(capability.label, locale)}
@@ -756,11 +742,7 @@ function RuntimeCapabilityPanelInner({
                   value={selectedRouteId}
                   onChange={event => setSelectedRouteId(event.target.value)}
                   className="h-10 rounded-[12px] border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-slate-400"
-                  placeholder={panelText(
-                    "可选路线 ID",
-                    "Optional route ID",
-                    locale
-                  )}
+                  placeholder={panelText("可选路线 ID", "Optional route ID", locale)}
                   data-testid="capability-launcher-route-input"
                 />
               </label>
@@ -770,11 +752,7 @@ function RuntimeCapabilityPanelInner({
                   value={requestedBy}
                   onChange={event => setRequestedBy(event.target.value)}
                   className="h-10 rounded-[12px] border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-slate-400"
-                  placeholder={panelText(
-                    "可选执行者",
-                    "Optional requester",
-                    locale
-                  )}
+                  placeholder={panelText("可选执行者", "Optional requester", locale)}
                   data-testid="capability-launcher-requested-by-input"
                 />
               </label>
@@ -831,11 +809,7 @@ function RuntimeCapabilityPanelInner({
                           variant="outline"
                           className="rounded-full border-slate-200 bg-white text-[10px] font-black text-slate-500"
                         >
-                          {artifactTokenLabel(
-                            invocation.status,
-                            "Status",
-                            locale
-                          )}
+                          {artifactTokenLabel(invocation.status, "Status", locale)}
                         </Badge>
                       </div>
                       <div className="mt-1 text-xs font-semibold leading-5 text-slate-500">
@@ -904,9 +878,7 @@ function RuntimeCapabilityPanelInner({
                         {blueprintCopy(item.summary, locale)}
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-black uppercase tracking-normal text-slate-400">
-                        <span>
-                          {artifactTokenLabel(item.kind, "Kind", locale)}
-                        </span>
+                        <span>{artifactTokenLabel(item.kind, "Kind", locale)}</span>
                         <span>{item.artifacts.length} 个资产</span>
                         <span>{item.logs.length} 条日志</span>
                       </div>

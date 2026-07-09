@@ -43,7 +43,7 @@ export const StatusCapsule: FC<StatusCapsuleProps> = ({ status, locale }) => {
       className={cn(
         "inline-flex items-center gap-1 rounded-none px-2.5 py-1",
         "font-mono text-[11px] font-bold uppercase tracking-[0.05em]",
-        STYLES[status]
+        STYLES[status],
       )}
     >
       {LABELS[status][locale]}

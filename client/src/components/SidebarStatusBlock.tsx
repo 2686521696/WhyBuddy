@@ -150,8 +150,7 @@ export function SidebarStatusBlock({
       <div
         className={cn(
           "flex items-center gap-2.5 rounded-[16px] border px-3 py-2.5 text-[11px] shadow-[0_10px_24px_rgba(14,165,233,0.08),inset_0_1px_0_rgba(255,255,255,0.72)]",
-          glass &&
-            "shadow-[0_10px_24px_rgba(14,165,233,0.07),inset_0_1px_0_rgba(255,255,255,0.58)]"
+          glass && "shadow-[0_10px_24px_rgba(14,165,233,0.07),inset_0_1px_0_rgba(255,255,255,0.58)]"
         )}
         data-sidebar-status-card={tone}
         style={glass ? GLASS_STATUS_CARD_STYLE : STATUS_CARD_STYLE}
@@ -175,8 +174,7 @@ export function SidebarStatusBlock({
       <div
         className={cn(
           "flex items-center gap-2.5 rounded-[16px] border px-3 py-2.5 text-[11px] shadow-[0_10px_24px_rgba(14,165,233,0.08),inset_0_1px_0_rgba(255,255,255,0.72)]",
-          glass &&
-            "shadow-[0_10px_24px_rgba(14,165,233,0.07),inset_0_1px_0_rgba(255,255,255,0.58)]"
+          glass && "shadow-[0_10px_24px_rgba(14,165,233,0.07),inset_0_1px_0_rgba(255,255,255,0.58)]"
         )}
         data-sidebar-status-card={tone}
         style={glass ? GLASS_STATUS_CARD_STYLE : STATUS_CARD_STYLE}

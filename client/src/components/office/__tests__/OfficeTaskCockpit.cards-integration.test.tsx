@@ -20,8 +20,7 @@ const { useNLCommandStoreMock } = vi.hoisted(() => {
 /* ─── capture what TaskDetailCardsView receives ─── */
 
 const { capturedProps, TaskDetailCardsViewMock } = vi.hoisted(() => {
-  const capturedProps: Array<{ taskId: string; autopilotSummary: unknown }> =
-    [];
+  const capturedProps: Array<{ taskId: string; autopilotSummary: unknown }> = [];
   const TaskDetailCardsViewMock = (props: {
     taskId: string;
     autopilotSummary: unknown;
@@ -162,7 +161,7 @@ const noopToggle = () => {};
 
 function makeMockDetail(
   id: string,
-  overrides?: Partial<MissionTaskDetail>
+  overrides?: Partial<MissionTaskDetail>,
 ): MissionTaskDetail {
   return {
     id,

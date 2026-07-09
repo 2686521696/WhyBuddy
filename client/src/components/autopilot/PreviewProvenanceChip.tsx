@@ -44,10 +44,8 @@ function classLabel(klass: ProvenanceClass, locale: AppLocale): string {
 }
 
 function ClassIcon({ klass }: { klass: ProvenanceClass }) {
-  if (klass === "model_ok")
-    return <BadgeCheck className="size-3" aria-hidden />;
-  if (klass === "fallback")
-    return <TriangleAlert className="size-3" aria-hidden />;
+  if (klass === "model_ok") return <BadgeCheck className="size-3" aria-hidden />;
+  if (klass === "fallback") return <TriangleAlert className="size-3" aria-hidden />;
   return <CircleSlash className="size-3" aria-hidden />;
 }
 
@@ -77,7 +75,7 @@ export const PreviewProvenanceChip: FC<PreviewProvenanceChipProps> = ({
         variant="outline"
         className={cn(
           "inline-flex items-center gap-1 rounded-full text-[9px] font-black",
-          CLASS_TONE[klass]
+          CLASS_TONE[klass],
         )}
       >
         <ClassIcon klass={klass} />

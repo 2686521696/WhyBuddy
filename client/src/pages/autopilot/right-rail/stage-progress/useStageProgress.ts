@@ -182,10 +182,9 @@ function countEntriesByStage(
  * 根据「阶段 → entry 数量」的统计，按 `STAGE_ORDER` 找到「收到过 entry 的最大
  * index 阶段」作为 `activeStage`；尚未收到任何 entry 时回退到第一个阶段。
  */
-function deriveActiveStage(counts: Record<WorkbenchStage, number>): {
-  activeStage: WorkbenchStage;
-  activeIndex: number;
-} {
+function deriveActiveStage(
+  counts: Record<WorkbenchStage, number>
+): { activeStage: WorkbenchStage; activeIndex: number } {
   let activeIndex = 0;
   for (let index = STAGE_ORDER.length - 1; index >= 0; index -= 1) {
     if (counts[STAGE_ORDER[index]] > 0) {
@@ -222,7 +221,7 @@ function deriveCompletedStages(activeIndex: number): Set<WorkbenchStage> {
  */
 export function useStageProgress(): StageProgressState {
   const entries = useBlueprintRealtimeStore(
-    state => state.agentReasoning.entries
+    (state) => state.agentReasoning.entries
   );
 
   return useMemo<StageProgressState>(() => {

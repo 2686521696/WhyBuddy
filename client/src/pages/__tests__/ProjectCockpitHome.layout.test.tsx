@@ -16,22 +16,22 @@ describe("ProjectCockpitHome layout", () => {
     const markup = await renderCockpitMarkup();
 
     const layoutBandMatch = markup.match(
-      /<[^>]+data-region=["']project-cockpit-layout-band["'][^>]*>/i
+      /<[^>]+data-region=["']project-cockpit-layout-band["'][^>]*>/i,
     );
     expect(layoutBandMatch).not.toBeNull();
 
     const homeMatch = markup.match(
-      /<[^>]+data-testid=["']home-mock["'][^>]*>/i
+      /<[^>]+data-testid=["']home-mock["'][^>]*>/i,
     );
     expect(homeMatch).not.toBeNull();
     expect(markup.indexOf(homeMatch![0])).toBeGreaterThan(
-      markup.indexOf(layoutBandMatch![0])
+      markup.indexOf(layoutBandMatch![0]),
     );
 
     expect(markup).not.toContain("project-cockpit-timeline-band");
     expect(markup).not.toContain("project-main-chain-timeline");
     expect(markup).not.toContain(
-      "project-cockpit-home-main-chain-timeline-slot"
+      "project-cockpit-home-main-chain-timeline-slot",
     );
   });
 });

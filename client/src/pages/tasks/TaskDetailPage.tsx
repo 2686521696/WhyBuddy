@@ -4,10 +4,7 @@ import { toast } from "sonner";
 import { useLocation } from "wouter";
 
 import { TaskDetailView } from "@/components/tasks/TaskDetailView";
-import {
-  getProjectTasksPath,
-  getReplayPath,
-} from "@/components/navigation-config";
+import { getProjectTasksPath, getReplayPath } from "@/components/navigation-config";
 import { RetryInlineNotice } from "@/components/tasks/RetryInlineNotice";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
@@ -36,9 +33,7 @@ export default function TaskDetailPage({
   const selectTask = useTasksStore(state => state.selectTask);
   const setDecisionNote = useTasksStore(state => state.setDecisionNote);
   const launchDecision = useTasksStore(state => state.launchDecision);
-  const submitOperatorAction = useTasksStore(
-    state => state.submitOperatorAction
-  );
+  const submitOperatorAction = useTasksStore(state => state.submitOperatorAction);
   const refresh = useTasksStore(state => state.refresh);
   const detailsById = useTasksStore(state => state.detailsById);
   const selectedTaskId = useTasksStore(state => state.selectedTaskId);
@@ -179,9 +174,7 @@ export default function TaskDetailPage({
                 type="button"
                 variant="outline"
                 className="rounded-full border-stone-200 bg-white/80"
-                onClick={() =>
-                  setLocation(getProjectTasksPath(effectiveProjectId))
-                }
+                onClick={() => setLocation(getProjectTasksPath(effectiveProjectId))}
               >
                 <ArrowLeft className="size-4" />
                 {copy.tasks.detailPage.back}
@@ -193,11 +186,8 @@ export default function TaskDetailPage({
         {taskOutsideProject ? (
           <div className="mb-4 rounded-[22px] border border-amber-200/80 bg-amber-50/90 px-5 py-4 text-sm leading-6 text-amber-900 shadow-[0_18px_40px_rgba(112,84,51,0.06)]">
             This task is not linked to the current project. The detail view is
-            staying inside{" "}
-            {currentProject?.name ??
-              effectiveProjectId ??
-              "the selected project"}{" "}
-            and will not show another project's mission.
+            staying inside {currentProject?.name ?? effectiveProjectId ?? "the selected project"} and
+            will not show another project's mission.
           </div>
         ) : null}
 
@@ -230,7 +220,7 @@ export default function TaskDetailPage({
           onSubmitOperatorAction={handleSubmitOperatorAction}
           operatorActionLoading={
             activeTaskId
-              ? (operatorActionLoadingByMissionId[activeTaskId] ?? {})
+              ? operatorActionLoadingByMissionId[activeTaskId] ?? {}
               : {}
           }
           onDecisionSubmitted={() =>

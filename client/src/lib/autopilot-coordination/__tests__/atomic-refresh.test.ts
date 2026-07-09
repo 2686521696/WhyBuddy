@@ -35,9 +35,7 @@ describe("AtomicRefreshMediator", () => {
   );
 
   it("reports a structured rollback diagnostic when apply throws", () => {
-    const error = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const longMessage = "x".repeat(240);
 
     const result = runAtomicRefresh(

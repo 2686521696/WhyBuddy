@@ -19,26 +19,15 @@
 
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { buildCapabilityPrompt } from "@shared/blueprint/sliderule-capability-prompts";
-import type {
-  ByokPoolDispatcher,
-  ByokLease,
-} from "./sliderule-byok-dispatcher";
+import type { ByokPoolDispatcher, ByokLease } from "./sliderule-byok-dispatcher";
 import { createByokDispatcher } from "./sliderule-byok-dispatcher";
 import type { ByokKeyEntry } from "./sliderule-byok-config";
 import type { LlmCapabilityProvider } from "./sliderule-runtime";
 
-export function createBrowserLlmCapabilityProvider(
-  dispatcher?: ByokPoolDispatcher
-): LlmCapabilityProvider {
+export function createBrowserLlmCapabilityProvider(dispatcher?: ByokPoolDispatcher): LlmCapabilityProvider {
   const pool = dispatcher || createByokDispatcher();
 
-  async function doFetch(
-    lease: ByokLease,
-    systemPrompt: string,
-    userPrompt: string,
-    maxTokens: number,
-    temperature: number
-  ) {
+  async function doFetch(lease: ByokLease, systemPrompt: string, userPrompt: string, maxTokens: number, temperature: number) {
     const entry = lease.entry;
     const isAnthropic = entry.presetId === "anthropic";
 
@@ -84,7 +73,7 @@ export function createBrowserLlmCapabilityProvider(
           method: "POST",
           headers: {
             "content-type": "application/json",
-            authorization: `Bearer ${entry.apiKey}`,
+            "authorization": `Bearer ${entry.apiKey}`,
             ...(entry.extraHeaders || {}),
           },
           body: JSON.stringify(body),
@@ -96,11 +85,9 @@ export function createBrowserLlmCapabilityProvider(
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        if (res.status === 429)
-          throw new Error(`http_429 ${text.slice(0, 100)}`);
-        if (res.status === 401 || res.status === 403)
-          throw new Error(`http_401 ${text.slice(0, 100)}`);
-        throw new Error(`http_${res.status} ${text.slice(0, 100)}`);
+        if (res.status === 429) throw new Error(`http_429 ${text.slice(0,100)}`);
+        if (res.status === 401 || res.status === 403) throw new Error(`http_401 ${text.slice(0,100)}`);
+        throw new Error(`http_${res.status} ${text.slice(0,100)}`);
       }
 
       const data = await res.json();
@@ -123,10 +110,7 @@ export function createBrowserLlmCapabilityProvider(
           } catch {}
         }
       } else {
-        const choice =
-          data.choices?.[0]?.message?.content ||
-          data.choices?.[0]?.text ||
-          JSON.stringify(data);
+        const choice = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || JSON.stringify(data);
         content = choice;
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -144,11 +128,7 @@ export function createBrowserLlmCapabilityProvider(
         throw new Error("llm_content_hijack_detected");
       }
 
-      const usage = data.usage || {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_tokens: 0,
-      };
+      const usage = data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
       return {
         title: title || (content.split("\n")[0] || "Evidence").slice(0, 80),
@@ -165,38 +145,17 @@ export function createBrowserLlmCapabilityProvider(
     } catch (e: any) {
       clearTimeout(timeout);
       const msg = String(e?.message || e || "").toLowerCase();
-      if (
-        e.name === "AbortError" ||
-        msg.includes("abort") ||
-        msg.includes("timeout")
-      ) {
-        throw new Error(
-          "LLM request timeout or aborted. Slow models (thinking) may need more time or a faster preset."
-        );
+      if (e.name === "AbortError" || msg.includes("abort") || msg.includes("timeout")) {
+        throw new Error("LLM request timeout or aborted. Slow models (thinking) may need more time or a faster preset.");
       }
-      if (
-        msg.includes("failed to fetch") ||
-        msg.includes("networkerror") ||
-        msg.includes("cors") ||
-        msg.includes("typeerror")
-      ) {
-        throw new Error(
-          "Failed to fetch from LLM endpoint (likely CORS, network, or the vendor does not allow browser direct access). No proxy is used. Try a CORS-friendly vendor like OpenRouter, or configure 'custom' with a compatible endpoint. See docs for CORS matrix."
-        );
+      if (msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("cors") || msg.includes("typeerror")) {
+        throw new Error("Failed to fetch from LLM endpoint (likely CORS, network, or the vendor does not allow browser direct access). No proxy is used. Try a CORS-friendly vendor like OpenRouter, or configure 'custom' with a compatible endpoint. See docs for CORS matrix.");
       }
-      if (
-        msg.includes("401") ||
-        msg.includes("403") ||
-        msg.includes("unauthorized")
-      ) {
-        throw new Error(
-          "Authentication failed (401/403). Check your API key (masked in UI)."
-        );
+      if (msg.includes("401") || msg.includes("403") || msg.includes("unauthorized")) {
+        throw new Error("Authentication failed (401/403). Check your API key (masked in UI).");
       }
       if (msg.includes("429") || msg.includes("rate limit")) {
-        throw new Error(
-          "Rate limited (429). Key hit limits; the pool will rotate to next key if available, or backoff."
-        );
+        throw new Error("Rate limited (429). Key hit limits; the pool will rotate to next key if available, or backoff.");
       }
       throw e;
     }
@@ -219,23 +178,14 @@ export function createBrowserLlmCapabilityProvider(
     });
 
     // B7: defense-in-depth redaction (generalize C_REDACT) - strip any accidental key-like strings from prompts before send
-    const redact = (s: string) =>
-      s
-        .replace(/\bsk-[a-zA-Z0-9]{10,}\b/gi, "[REDACTED_KEY]")
-        .replace(/Bearer\s+[a-zA-Z0-9._-]{10,}/gi, "Bearer [REDACTED]");
+    const redact = (s: string) => s.replace(/\bsk-[a-zA-Z0-9]{10,}\b/gi, "[REDACTED_KEY]").replace(/Bearer\s+[a-zA-Z0-9._-]{10,}/gi, "Bearer [REDACTED]");
     const safeSystem = redact(prompt.systemPrompt);
     const safeUser = redact(prompt.userPrompt);
 
     let lease: ByokLease | null = null;
     try {
       lease = await pool.acquire();
-      const result = await doFetch(
-        lease,
-        safeSystem,
-        safeUser,
-        prompt.maxTokens,
-        prompt.temperature
-      );
+      const result = await doFetch(lease, safeSystem, safeUser, prompt.maxTokens, prompt.temperature);
       pool.release(lease!, "ok");
       return {
         title: result.title,
@@ -247,11 +197,7 @@ export function createBrowserLlmCapabilityProvider(
     } catch (e: any) {
       if (lease) {
         const msg = String(e?.message || e);
-        const outcome: any = msg.includes("429")
-          ? "http_429"
-          : msg.includes("401")
-            ? "http_401"
-            : "error";
+        const outcome: any = msg.includes("429") ? "http_429" : msg.includes("401") ? "http_401" : "error";
         pool.release(lease, outcome);
       }
       throw e;
@@ -260,9 +206,7 @@ export function createBrowserLlmCapabilityProvider(
   return providerFn as LlmCapabilityProvider;
 }
 
-export function useBrowserLlmCapabilityExecutor(
-  dispatcher?: ByokPoolDispatcher
-) {
+export function useBrowserLlmCapabilityExecutor(dispatcher?: ByokPoolDispatcher) {
   const provider = createBrowserLlmCapabilityProvider(dispatcher);
   // The executor in runtime expects a certain shape; here we return a simple adapter
   // In practice wired in B4 by replacing the executor.

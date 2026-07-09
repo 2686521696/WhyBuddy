@@ -15,7 +15,7 @@ export interface ClarificationPanelProps {
   onAnswer: (
     questionId: string,
     text: string,
-    selectedOptions?: string[]
+    selectedOptions?: string[],
   ) => void | Promise<void>;
   title?: string;
   answerPlaceholder?: string;
@@ -46,13 +46,11 @@ export function ClarificationPanel({
   const isMinimal = chrome === "minimal";
   const answeredIds = new Set(dialog.answers.map(answer => answer.questionId));
   const unanswered = dialog.questions.filter(
-    question => !answeredIds.has(question.questionId)
+    question => !answeredIds.has(question.questionId),
   );
-  const resolvedTitle =
-    title ?? (isZh ? "需要补充信息" : "Clarification needed");
+  const resolvedTitle = title ?? (isZh ? "需要补充信息" : "Clarification needed");
   const resolvedAnswerPlaceholder =
-    answerPlaceholder ??
-    (isZh ? "请在这里输入你的回答..." : "Type your answer here...");
+    answerPlaceholder ?? (isZh ? "请在这里输入你的回答..." : "Type your answer here...");
   const resolvedAnswerLabel = answerLabel ?? (isZh ? "发送" : "Send");
   const resolvedAnsweringLabel =
     answeringLabel ?? (isZh ? "发送中..." : "Sending...");
@@ -66,7 +64,7 @@ export function ClarificationPanel({
         isMinimal
           ? "gap-2"
           : "rounded-xl border border-amber-200 bg-amber-50/60 p-3",
-        className
+        className,
       )}
     >
       {hideHeader ? null : (
@@ -75,30 +73,23 @@ export function ClarificationPanel({
             "flex shrink-0 items-center gap-2",
             isMinimal
               ? "text-[11px] font-medium text-stone-600"
-              : "mb-3 text-sm font-medium text-amber-800"
+              : "mb-3 text-sm font-medium text-amber-800",
           )}
         >
-          <MessageCircleQuestion
-            className={cn("size-4", isMinimal && "size-3.5")}
-          />
+          <MessageCircleQuestion className={cn("size-4", isMinimal && "size-3.5")} />
           {isZh
             ? `${resolvedTitle}（${unanswered.length} 个问题）`
             : `${resolvedTitle} (${unanswered.length} question${unanswered.length > 1 ? "s" : ""})`}
         </div>
       )}
 
-      <div
-        className={cn(
-          "min-h-0 flex-1 overflow-y-auto",
-          isMinimal ? "" : "pr-1"
-        )}
-      >
+      <div className={cn("min-h-0 flex-1 overflow-y-auto", isMinimal ? "" : "pr-1")}>
         <div className={cn(isMinimal ? "space-y-0" : "space-y-3")}>
           {unanswered.map((question, index) => (
             <div
               key={question.questionId}
               className={cn(
-                isMinimal && index > 0 && "mt-3 border-t border-[#efe3d6] pt-3"
+                isMinimal && index > 0 && "mt-3 border-t border-[#efe3d6] pt-3",
               )}
             >
               <QuestionCard
@@ -131,7 +122,7 @@ function QuestionCard({
   onAnswer: (
     questionId: string,
     text: string,
-    selectedOptions?: string[]
+    selectedOptions?: string[],
   ) => void | Promise<void>;
   answerPlaceholder: string;
   answerLabel: string;
@@ -145,7 +136,7 @@ function QuestionCard({
   const isMinimal = chrome === "minimal";
   const resolvedQuestion = localizeTaskHubQuestion(
     question,
-    locale === "zh-CN" ? "zh-CN" : "en-US"
+    locale === "zh-CN" ? "zh-CN" : "en-US",
   );
 
   const isSingleChoice = resolvedQuestion.type === "single_choice";
@@ -195,14 +186,14 @@ function QuestionCard({
         return next;
       });
     },
-    [isSingleChoice, onAnswer, question.questionId, submitting]
+    [isSingleChoice, onAnswer, question.questionId, submitting],
   );
 
   const canSubmit = hasOptions ? selected.size > 0 : freeText.trim().length > 0;
   const keyboardHint = t(
     locale,
     "Enter 发送 · Shift + Enter 换行",
-    "Enter to send · Shift + Enter for a new line"
+    "Enter to send · Shift + Enter for a new line",
   );
   const selectionHint =
     hasOptions && !isSingleChoice
@@ -210,26 +201,26 @@ function QuestionCard({
         ? t(
             locale,
             `已选择 ${selected.size} 项，确认后即可发送。`,
-            `${selected.size} options selected. Send to continue.`
+            `${selected.size} options selected. Send to continue.`,
           )
         : t(
             locale,
             "请选择一个或多个答案后发送。",
-            "Choose one or more options before sending."
+            "Choose one or more options before sending.",
           )
       : null;
   const minimalSubmitClass = cn(
     "inline-flex items-center justify-center gap-1.5 rounded-[22px] px-2.5 py-2 text-sm font-semibold transition-all",
     canSubmit && !submitting
       ? "bg-[linear-gradient(180deg,#db893c,#c76d1d)] text-white shadow-[0_16px_32px_rgba(199,109,29,0.26)] hover:-translate-y-[1px] hover:brightness-105"
-      : "cursor-not-allowed bg-[#f2e6da] text-[#c0a58c] shadow-none"
+      : "cursor-not-allowed bg-[#f2e6da] text-[#c0a58c] shadow-none",
   );
 
   return (
     <div
       className={cn(
         "overflow-hidden",
-        isMinimal ? "px-0 py-0" : "rounded-lg bg-white/80 p-3"
+        isMinimal ? "px-0 py-0" : "rounded-lg bg-white/80 p-3",
       )}
     >
       <p
@@ -237,7 +228,7 @@ function QuestionCard({
           "font-medium text-stone-800",
           isMinimal
             ? "max-w-4xl text-[14px] font-semibold leading-5 tracking-[-0.01em] text-[#24160d]"
-            : "text-sm"
+            : "text-sm",
         )}
       >
         {resolvedQuestion.text}
@@ -246,9 +237,7 @@ function QuestionCard({
       <div className={cn(isMinimal ? "mt-3" : "mt-3")}>
         {hasOptions ? (
           <div className={cn(isMinimal ? "space-y-2.5" : "")}>
-            <div
-              className={cn("flex flex-wrap", isMinimal ? "gap-2" : "gap-2")}
-            >
+            <div className={cn("flex flex-wrap", isMinimal ? "gap-2" : "gap-2")}>
               {resolvedQuestion.options!.map(option => (
                 <button
                   key={option}
@@ -265,7 +254,7 @@ function QuestionCard({
                         : "border-indigo-300 bg-indigo-50 text-indigo-700"
                       : isMinimal
                         ? "border-[#eadfd2] bg-white/96 text-stone-600 hover:border-[#d9b89b] hover:bg-white"
-                        : "border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-300"
+                        : "border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-300",
                   )}
                   onClick={() => void handleOptionPress(option)}
                 >
@@ -283,10 +272,7 @@ function QuestionCard({
                   <button
                     type="button"
                     disabled={!canSubmit || submitting}
-                    className={cn(
-                      "min-h-[48px] min-w-[112px]",
-                      minimalSubmitClass
-                    )}
+                    className={cn("min-h-[48px] min-w-[112px]", minimalSubmitClass)}
                     onClick={() => void handleSubmit()}
                   >
                     <Send className="size-4" />
@@ -358,7 +344,7 @@ function QuestionCard({
         )}
       </div>
 
-      {isMinimal || (hasOptions && isSingleChoice) ? null : (
+      {isMinimal || hasOptions && isSingleChoice ? null : (
         <div className="mt-3 flex justify-end">
           <GlowButton
             type="button"

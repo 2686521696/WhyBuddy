@@ -1,5 +1,1 @@
-export {
-  TimelineNode,
-  type TimelineNodeProps,
-  type TimelineNodeStatus,
-} from "./TimelineNode";
+export { TimelineNode, type TimelineNodeProps, type TimelineNodeStatus } from "./TimelineNode";

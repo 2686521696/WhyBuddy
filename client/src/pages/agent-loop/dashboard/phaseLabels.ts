@@ -3,12 +3,7 @@
 // the dashboard renders. The only host dependency (getAgentLoopConfig) is replaced
 // with static defaults, since per-run fix/review agents come from the API payload.
 
-export type PipelineStep = {
-  key: string;
-  label: string;
-  done?: boolean;
-  active?: boolean;
-};
+export type PipelineStep = { key: string; label: string; done?: boolean; active?: boolean };
 
 const DEFAULT_FIX_AGENT = "grok";
 const DEFAULT_REVIEW_AGENT = "codex";
@@ -41,17 +36,10 @@ export const PHASE_LABELS_ZH: Record<string, string> = {
 };
 
 type RolesSource = {
-  options?: {
-    fixAgent?: string | null;
-    reviewAgent?: string | null;
-    skipReview?: boolean | null;
-  } | null;
+  options?: { fixAgent?: string | null; reviewAgent?: string | null; skipReview?: boolean | null } | null;
 } | null;
 
-export function resolveAgentRoles(state: RolesSource): {
-  fixAgent: string;
-  reviewAgent: string | null;
-} {
+export function resolveAgentRoles(state: RolesSource): { fixAgent: string; reviewAgent: string | null } {
   const fixAgent = state?.options?.fixAgent || DEFAULT_FIX_AGENT;
   const skipReview = state?.options?.skipReview ?? false;
   let reviewAgent: string | null = skipReview
@@ -93,14 +81,13 @@ export function phaseLabel(status: string | undefined | null): string {
 
 export function activeAgentLabel(
   status: string | undefined | null,
-  roles: { fixAgent: string; reviewAgent: string | null }
+  roles: { fixAgent: string; reviewAgent: string | null },
 ): string {
   if (!status) return "-";
   if (status === "GROK_FIX" || status === "GROK_REVIEW") return "Grok";
   if (status === "CODEX_FIX" || status === "CODEX_REVIEW") return "Codex";
   const { fixAgent, reviewAgent } = roles;
-  if (status === "BUDGET_LOOP_HEAD")
-    return fixAgent === "codex" ? "Codex" : "Grok";
+  if (status === "BUDGET_LOOP_HEAD") return fixAgent === "codex" ? "Codex" : "Grok";
   if (status.startsWith("DONE_") || status.startsWith("HALT_")) {
     const parts = [fixAgent, reviewAgent].filter(Boolean);
     return parts.length ? parts.join(" + ") : "-";
@@ -145,10 +132,7 @@ export function isAttentionStatus(status: string | undefined | null): boolean {
 }
 
 /** Map a status into the coarse outcome group the queue table colors/filters by. */
-export function outcomeGroupFor(
-  status: string | undefined | null,
-  running: boolean
-): string {
+export function outcomeGroupFor(status: string | undefined | null, running: boolean): string {
   if (running) return "running";
   if (isDoneStatus(status)) {
     const s = String(status || "").toUpperCase();

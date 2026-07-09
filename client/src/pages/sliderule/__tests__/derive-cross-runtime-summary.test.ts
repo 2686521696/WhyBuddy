@@ -63,11 +63,7 @@ describe("deriveCrossRuntimeGraphSummary", () => {
   it("returns null for empty graph input", () => {
     expect(deriveCrossRuntimeGraphSummary(null)).toBeNull();
     expect(
-      deriveCrossRuntimeGraphSummary({
-        edges: [],
-        bySkill: {},
-        evidenceBySkill: {},
-      })
+      deriveCrossRuntimeGraphSummary({ edges: [], bySkill: {}, evidenceBySkill: {} })
     ).toBeNull();
   });
 
@@ -85,14 +81,7 @@ describe("deriveCrossRuntimeGraphSummary", () => {
           appbundle: { evidencePresent: true },
         } as any,
         runtimeClosure: {
-          skillsChecked: [
-            "datamodel",
-            "rbac",
-            "workflow",
-            "page",
-            "aigc",
-            "appbundle",
-          ],
+          skillsChecked: ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
           versionPinsChecked: true,
           perSkill: {} as any,
         },
@@ -134,8 +123,7 @@ describe("deriveCrossRuntimeGraphSummary", () => {
               code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
               severity: "error",
               path: "page",
-              message:
-                "Missing Page runtime evidence for task view consistency.",
+              message: "Missing Page runtime evidence for task view consistency.",
               affectedSkill: "page",
               ref: "page_purchase_request",
             },
@@ -159,8 +147,7 @@ describe("deriveCrossRuntimeGraphSummary", () => {
                 code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
                 severity: "error",
                 path: "page",
-                message:
-                  "Missing Page runtime evidence for task view consistency.",
+                message: "Missing Page runtime evidence for task view consistency.",
               },
             ],
             warning: [
@@ -274,12 +261,8 @@ describe("deriveCrossRuntimeGraphSummary", () => {
       topBlockers: [],
     };
 
-    expect(selectPublishClosureSummary(null, preview)?.closureHash).toBe(
-      "preview-only"
-    );
-    expect(selectPublishClosureSummary(undefined, preview)?.closureHash).toBe(
-      "preview-only"
-    );
+    expect(selectPublishClosureSummary(null, preview)?.closureHash).toBe("preview-only");
+    expect(selectPublishClosureSummary(undefined, preview)?.closureHash).toBe("preview-only");
     // also when preview is null too
     expect(selectPublishClosureSummary(null, null)).toBeNull();
   });
@@ -305,14 +288,7 @@ describe("formatClosureStatusAndTopBlockersForFinalReport", () => {
         appbundle: { evidencePresent: true },
       } as any,
       runtimeClosure: {
-        skillsChecked: [
-          "datamodel",
-          "rbac",
-          "workflow",
-          "page",
-          "aigc",
-          "appbundle",
-        ],
+        skillsChecked: ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
         versionPinsChecked: true,
         perSkill: {} as any,
       },
@@ -352,21 +328,15 @@ describe("formatClosureStatusAndTopBlockersForFinalReport", () => {
     );
     const text = formatClosureStatusAndTopBlockersForFinalReport(summary);
     expect(text).toContain("closure status: blocked");
-    expect(text).toContain(
-      "top blockers: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED@page; OTHER_BLOCKER@rbac"
-    );
+    expect(text).toContain("top blockers: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED@page; OTHER_BLOCKER@rbac");
     expect(text).toContain("evidence: 0/2");
     expect(text).toContain("pinsChecked: false");
     expect(text).toContain("closureHash: n/a");
   });
 
   it("returns unknown status text for null/undefined (negative path)", () => {
-    expect(formatClosureStatusAndTopBlockersForFinalReport(null)).toBe(
-      "closure status: unknown\ntop blockers: n/a"
-    );
-    expect(formatClosureStatusAndTopBlockersForFinalReport(undefined)).toBe(
-      "closure status: unknown\ntop blockers: n/a"
-    );
+    expect(formatClosureStatusAndTopBlockersForFinalReport(null)).toBe("closure status: unknown\ntop blockers: n/a");
+    expect(formatClosureStatusAndTopBlockersForFinalReport(undefined)).toBe("closure status: unknown\ntop blockers: n/a");
   });
 });
 
@@ -500,38 +470,21 @@ describe("deriveReportExportClosureSummary", () => {
 
   it("derives report/export summary from real AppBundle publish artifact fixtures", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const fixtureDir = resolve(
-      here,
-      "../../../../../slide-rule-python/tests/fixtures"
-    );
-    const closed = JSON.parse(
-      readFileSync(
-        resolve(fixtureDir, "closed_appbundle_publish_artifact.json"),
-        "utf8"
-      )
-    );
-    const blocked = JSON.parse(
-      readFileSync(
-        resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"),
-        "utf8"
-      )
-    );
+    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
+    const closed = JSON.parse(readFileSync(resolve(fixtureDir, "closed_appbundle_publish_artifact.json"), "utf8"));
+    const blocked = JSON.parse(readFileSync(resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"), "utf8"));
 
-    expect(deriveReportExportClosureSummaryFromPublishArtifact(closed)).toEqual(
-      {
-        source: "publish-artifact-closure",
-        status: "closed",
-        digest: "deadbeef120",
-        evidencePresentCount: 6,
-        skillCount: 6,
-        versionPinsChecked: true,
-        blockerCount: 0,
-      }
-    );
+    expect(deriveReportExportClosureSummaryFromPublishArtifact(closed)).toEqual({
+      source: "publish-artifact-closure",
+      status: "closed",
+      digest: "deadbeef120",
+      evidencePresentCount: 6,
+      skillCount: 6,
+      versionPinsChecked: true,
+      blockerCount: 0,
+    });
 
-    expect(
-      deriveReportExportClosureSummaryFromPublishArtifact(blocked)
-    ).toMatchObject({
+    expect(deriveReportExportClosureSummaryFromPublishArtifact(blocked)).toMatchObject({
       source: "publish-artifact-closure",
       status: "blocked",
       digest: "badc0ded120",

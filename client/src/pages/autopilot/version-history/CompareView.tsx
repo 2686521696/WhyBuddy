@@ -20,20 +20,11 @@ const STAGE_ARTIFACT_TYPES: Array<{
   stage: BlueprintGenerationStage;
   artifactTypes: BlueprintGenerationArtifactType[];
 }> = [
-  {
-    stage: "input",
-    artifactTypes: ["intake", "github_source", "project_context"],
-  },
+  { stage: "input", artifactTypes: ["intake", "github_source", "project_context"] },
   { stage: "clarification", artifactTypes: ["clarification_session"] },
-  {
-    stage: "route_generation",
-    artifactTypes: ["route_set", "route_selection"],
-  },
+  { stage: "route_generation", artifactTypes: ["route_set", "route_selection"] },
   { stage: "spec_tree", artifactTypes: ["spec_tree", "spec_tree_version"] },
-  {
-    stage: "spec_docs",
-    artifactTypes: ["requirements", "design", "tasks", "spec_document_version"],
-  },
+  { stage: "spec_docs", artifactTypes: ["requirements", "design", "tasks", "spec_document_version"] },
   { stage: "preview", artifactTypes: ["preview"] },
   { stage: "effect_preview", artifactTypes: ["effect_preview"] },
   { stage: "prompt_packaging", artifactTypes: ["prompt_pack"] },
@@ -72,10 +63,7 @@ const STATUS_LABELS_ZH: Record<CompareStatus, string> = {
   missing: "缺失",
 };
 
-function stageLabel(
-  stage: BlueprintGenerationStage,
-  locale: AppLocale
-): string {
+function stageLabel(stage: BlueprintGenerationStage, locale: AppLocale): string {
   if (locale === "zh-CN") {
     return STAGE_LABELS_ZH[stage] ?? stage;
   }
@@ -89,11 +77,11 @@ function statusLabel(status: CompareStatus, locale: AppLocale): string {
 
 function latestStageArtifact(
   job: VersionHistoryJob,
-  artifactTypes: BlueprintGenerationArtifactType[]
+  artifactTypes: BlueprintGenerationArtifactType[],
 ): StaleAwareArtifact | null {
   const candidates = job.artifacts
     .filter((artifact): artifact is StaleAwareArtifact =>
-      artifactTypes.includes(artifact.type)
+      artifactTypes.includes(artifact.type),
     )
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
@@ -102,7 +90,7 @@ function latestStageArtifact(
 
 function getArtifactStatus(
   job: VersionHistoryJob,
-  artifact: StaleAwareArtifact | null
+  artifact: StaleAwareArtifact | null,
 ): CompareStatus {
   if (!artifact) {
     return "missing";
@@ -155,10 +143,7 @@ export function CompareView({
   locale = "en-US",
 }: CompareViewProps) {
   const familySet = familyJobIds ? new Set(familyJobIds) : null;
-  if (
-    familySet &&
-    (!familySet.has(leftJob.id) || !familySet.has(rightJob.id))
-  ) {
+  if (familySet && (!familySet.has(leftJob.id) || !familySet.has(rightJob.id))) {
     const crossFamilyMessage =
       locale === "zh-CN"
         ? "两个任务不在当前家族中。"
@@ -188,19 +173,9 @@ export function CompareView({
             const rightArtifact = latestStageArtifact(rightJob, artifactTypes);
             return (
               <tr key={stage} data-stage={stage}>
-                <th className="px-3 py-2 font-medium">
-                  {stageLabel(stage, locale)}
-                </th>
-                <CompareCell
-                  job={leftJob}
-                  artifact={leftArtifact}
-                  locale={locale}
-                />
-                <CompareCell
-                  job={rightJob}
-                  artifact={rightArtifact}
-                  locale={locale}
-                />
+                <th className="px-3 py-2 font-medium">{stageLabel(stage, locale)}</th>
+                <CompareCell job={leftJob} artifact={leftArtifact} locale={locale} />
+                <CompareCell job={rightJob} artifact={rightArtifact} locale={locale} />
               </tr>
             );
           })}

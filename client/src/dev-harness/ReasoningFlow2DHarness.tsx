@@ -47,8 +47,7 @@ export function ReasoningFlow2DHarness() {
             whiteSpace: "nowrap",
           }}
         >
-          2D Reasoning Map QA harness — press F to fit • hover nodes to trace
-          paths • ?surface=2d&debug=1
+          2D Reasoning Map QA harness — press F to fit • hover nodes to trace paths • ?surface=2d&debug=1
         </div>
       )}
     </div>

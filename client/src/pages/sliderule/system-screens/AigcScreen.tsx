@@ -35,13 +35,7 @@ interface AigcScreenProps {
   className?: string;
 }
 
-function RefChip({
-  res,
-  tone,
-}: {
-  res: RefResolution;
-  tone: "field" | "output" | "role";
-}) {
+function RefChip({ res, tone }: { res: RefResolution; tone: "field" | "output" | "role" }) {
   if (!res.resolved) {
     return (
       <span className="inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] text-red-600 ring-1 ring-red-200">
@@ -53,12 +47,10 @@ function RefChip({
     tone === "output"
       ? "bg-pink-50 text-pink-700 ring-1 ring-pink-200"
       : tone === "role"
-        ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200"
-        : "bg-blue-50 text-blue-700 ring-1 ring-blue-200";
+      ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200"
+      : "bg-blue-50 text-blue-700 ring-1 ring-blue-200";
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${cls}`}
-    >
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${cls}`}>
       {res.label}
     </span>
   );
@@ -84,17 +76,15 @@ export function AigcScreen({
   const capabilities = model?.aigc?.capabilities ?? [];
   const pipelines = model?.aigc?.pipelines ?? [];
   const hasModel = capabilities.length > 0;
-  const [screenMode, setScreenMode] = useState<"list" | "tryrun" | "pipeline">(
-    "list"
-  );
+  const [screenMode, setScreenMode] = useState<"list" | "tryrun" | "pipeline">("list");
 
   const resolved = useMemo(
     () =>
-      capabilities.map(cap => ({
+      capabilities.map((cap) => ({
         cap,
-        inputs: (cap.inputFields ?? []).map(f => resolveFieldRef(f, model)),
+        inputs: (cap.inputFields ?? []).map((f) => resolveFieldRef(f, model)),
         output: resolveFieldRef(cap.outputField, model),
-        roles: (cap.roleRefs ?? []).map(r => resolveRoleRef(r, model)),
+        roles: (cap.roleRefs ?? []).map((r) => resolveRoleRef(r, model)),
       })),
     [capabilities, model]
   );
@@ -114,13 +104,9 @@ export function AigcScreen({
     >
       <div className="flex items-center gap-2 border-b border-[#e8eaee] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-pink-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-          AIGC
-        </span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">AIGC</span>
         <span className="text-xs text-stone-400">
-          {hasModel
-            ? `${capabilities.length} 项 AI 能力 · 字段绑定`
-            : "Prompt 模板 · 触发条件"}
+          {hasModel ? `${capabilities.length} 项 AI 能力 · 字段绑定` : "Prompt 模板 · 触发条件"}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           {hasModel && (
@@ -128,7 +114,7 @@ export function AigcScreen({
               className="flex items-center gap-0.5 rounded-full bg-[#e9edf2] p-0.5 ring-1 ring-[#e5e7eb]/80"
               data-testid="aigc-mode-toggle"
             >
-              {[
+              {([
                 { id: "list" as const, label: "能力清单" },
                 { id: "tryrun" as const, label: "能力试跑" },
                 // 编排档只在模型产出了管线时出现（不造空壳入口）；
@@ -136,7 +122,7 @@ export function AigcScreen({
                 ...(pipelines.length > 0
                   ? [{ id: "pipeline" as const, label: "能力编排" }]
                   : []),
-              ].map(({ id, label }) => (
+              ]).map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
@@ -166,83 +152,67 @@ export function AigcScreen({
           <AigcTryRunPanel model={model} goal={appTitle} />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          {hasModel ? (
-            <div className="space-y-4" data-testid="aigc-capabilities">
-              {resolved.map(({ cap, inputs, output, roles }) => (
-                <div
-                  key={cap.id || cap.name}
-                  className="rounded-md border border-[#e5e7eb] bg-white p-4 shadow-sm"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[11px] font-semibold text-pink-700 ring-1 ring-pink-200">
-                      AI
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        {hasModel ? (
+          <div className="space-y-4" data-testid="aigc-capabilities">
+            {resolved.map(({ cap, inputs, output, roles }) => (
+              <div
+                key={cap.id || cap.name}
+                className="rounded-md border border-[#e5e7eb] bg-white p-4 shadow-sm"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[11px] font-semibold text-pink-700 ring-1 ring-pink-200">
+                    AI
+                  </span>
+                  <span className="text-sm font-semibold text-stone-800">
+                    {cap.name || cap.id}
+                  </span>
+                  {roles.length > 0 && (
+                    <span className="ml-auto flex flex-wrap items-center gap-1">
+                      <span className="text-[10px] text-stone-400">可用角色</span>
+                      {roles.map((r) => (
+                        <RefChip key={r.ref} res={r} tone="role" />
+                      ))}
                     </span>
-                    <span className="text-sm font-semibold text-stone-800">
-                      {cap.name || cap.id}
-                    </span>
-                    {roles.length > 0 && (
-                      <span className="ml-auto flex flex-wrap items-center gap-1">
-                        <span className="text-[10px] text-stone-400">
-                          可用角色
-                        </span>
-                        {roles.map(r => (
-                          <RefChip key={r.ref} res={r} tone="role" />
-                        ))}
-                      </span>
-                    )}
-                  </div>
+                  )}
+                </div>
 
-                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <div className="mb-1 font-medium text-stone-500">
-                        输入字段（DataModel）
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {inputs.length > 0 ? (
-                          inputs.map(res => (
-                            <RefChip key={res.ref} res={res} tone="field" />
-                          ))
-                        ) : (
-                          <span className="text-[10px] text-stone-300">
-                            无输入字段
-                          </span>
-                        )}
-                      </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <div className="mb-1 font-medium text-stone-500">输入字段（DataModel）</div>
+                    <div className="flex flex-wrap gap-1">
+                      {inputs.length > 0 ? (
+                        inputs.map((res) => <RefChip key={res.ref} res={res} tone="field" />)
+                      ) : (
+                        <span className="text-[10px] text-stone-300">无输入字段</span>
+                      )}
                     </div>
-                    <div>
-                      <div className="mb-1 font-medium text-stone-500">
-                        输出字段（DataModel）
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {output.ref ? (
-                          <RefChip res={output} tone="output" />
-                        ) : (
-                          <span className="text-[10px] text-stone-300">
-                            未声明输出
-                          </span>
-                        )}
-                      </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 font-medium text-stone-500">输出字段（DataModel）</div>
+                    <div className="flex flex-wrap gap-1">
+                      {output.ref ? (
+                        <RefChip res={output} tone="output" />
+                      ) : (
+                        <span className="text-[10px] text-stone-300">未声明输出</span>
+                      )}
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : degradedMermaid ? (
-            <div data-testid="aigc-degraded">
-              <div className="mb-2 rounded bg-amber-50 px-3 py-2 text-[11px] text-amber-700 ring-1 ring-amber-200">
-                本轮产物未携带结构化 AIGC
-                能力清单，以下为该系统的跨系统联动证据。
               </div>
-              <MermaidDiagram chart={degradedMermaid} className="w-full" />
+            ))}
+          </div>
+        ) : degradedMermaid ? (
+          <div data-testid="aigc-degraded">
+            <div className="mb-2 rounded bg-amber-50 px-3 py-2 text-[11px] text-amber-700 ring-1 ring-amber-200">
+              本轮产物未携带结构化 AIGC 能力清单，以下为该系统的跨系统联动证据。
             </div>
-          ) : (
-            <EmptyScreenHint
-              title="AIGC 能力清单"
-              desc="AI 能力、输入/输出字段绑定与可用角色，来自五系统模型 aigc 段"
-            />
-          )}
-        </div>
+            <MermaidDiagram chart={degradedMermaid} className="w-full" />
+          </div>
+        ) : (
+          <EmptyScreenHint title="AIGC 能力清单" desc="AI 能力、输入/输出字段绑定与可用角色，来自五系统模型 aigc 段" />
+        )}
+      </div>
       )}
     </div>
   );

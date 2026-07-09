@@ -127,7 +127,9 @@ describe("deriveSpecTreeChip", () => {
   });
 
   it("1 份 draft → info '1/3 reviewing'", () => {
-    const chip = deriveSpecTreeChip([makeDoc("requirements", "draft", "llm")]);
+    const chip = deriveSpecTreeChip([
+      makeDoc("requirements", "draft", "llm"),
+    ]);
     expect(chip.label).toBe("1/3 reviewing");
     expect(chip.tone).toBe("info");
     expect(chip.sourceTag).toBe("llm");

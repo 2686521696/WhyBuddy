@@ -19,7 +19,7 @@ const arbProvenance: fc.Arbitrary<BlueprintPreviewProvenance> = fc.record({
 describe("provenance property tests", () => {
   it("Property 3: classifyProvenance is total and never maps fallback-fraud to model_ok", () => {
     fc.assert(
-      fc.property(arbProvenance, p => {
+      fc.property(arbProvenance, (p) => {
         const c = classifyProvenance(p);
         expect(["model_ok", "fallback", "failed"]).toContain(c);
         // model_ok iff (source === model && ok === true)
@@ -28,7 +28,7 @@ describe("provenance property tests", () => {
         if (p.source === "fallback" && p.ok === true) {
           expect(c).toBe("fallback");
         }
-      })
+      }),
     );
   });
 

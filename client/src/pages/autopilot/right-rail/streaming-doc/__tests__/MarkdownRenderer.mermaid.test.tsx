@@ -26,11 +26,7 @@ vi.mock("mermaid", () => ({
 }));
 
 vi.mock("@/contexts/ThemeContext", () => ({
-  useTheme: () => ({
-    theme: "light",
-    toggleTheme: undefined,
-    switchable: false,
-  }),
+  useTheme: () => ({ theme: "light", toggleTheme: undefined, switchable: false }),
 }));
 
 // Import after mocks
@@ -44,11 +40,7 @@ const { normalizeFlattenedMermaidCode, tokenizeMarkdown } = __testing__;
 
 function renderMarkdown(markdown: string, isStreaming = false) {
   return renderToStaticMarkup(
-    <MarkdownRenderer
-      markdown={markdown}
-      isStreaming={isStreaming}
-      locale="en-US"
-    />
+    <MarkdownRenderer markdown={markdown} isStreaming={isStreaming} locale="en-US" />,
   );
 }
 
@@ -178,7 +170,7 @@ describe("MarkdownRenderer — mermaid routing", () => {
 
       // Should have 2 code blocks total (typescript + json); mermaid shows loading
       const codeBlockMatches = html.match(
-        /data-testid="streaming-doc-code-block"/g
+        /data-testid="streaming-doc-code-block"/g,
       );
       expect(codeBlockMatches?.length).toBe(2);
       expect(html).toContain('data-testid="mermaid-loading"');
@@ -214,7 +206,7 @@ describe("MarkdownRenderer — mermaid routing", () => {
   describe("detection logic correctness", () => {
     it("normalizes flattened graph diagrams into parseable edge lines", () => {
       const code = normalizeFlattenedMermaidCode(
-        "mermaid graph TD A[Request Intake] --> B[Route Selection] B --> C[Repository Context Loading]"
+        "mermaid graph TD A[Request Intake] --> B[Route Selection] B --> C[Repository Context Loading]",
       );
 
       expect(code).toBe(
@@ -222,7 +214,7 @@ describe("MarkdownRenderer — mermaid routing", () => {
           "graph TD",
           "  A[Request Intake] --> B[Route Selection]",
           "  B --> C[Repository Context Loading]",
-        ].join("\n")
+        ].join("\n"),
       );
     });
 
@@ -266,7 +258,8 @@ describe("MarkdownRenderer — mermaid routing", () => {
       const tokens = tokenizeMarkdown(md);
       const token = tokens[0] as { language?: string };
 
-      const isMermaid = token.language?.toLowerCase().trim() === "mermaid";
+      const isMermaid =
+        token.language?.toLowerCase().trim() === "mermaid";
       expect(isMermaid).toBe(false);
     });
   });

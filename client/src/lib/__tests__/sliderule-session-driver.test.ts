@@ -28,21 +28,18 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
     // question.expand) is scheduled ahead of any convergence, and report.write is never
     // picked on a vague cold start.
     expect(picks[0]?.capabilityId).toBe("critique.generate");
-    expect(picks.some(p => p.capabilityId === "gap.ask")).toBe(true);
-    expect(picks.some(p => p.capabilityId === "question.expand")).toBe(true);
-    const gapIdx = picks.findIndex(p => p.capabilityId === "gap.ask");
-    const riskIdx = picks.findIndex(p => p.capabilityId === "risk.analyze");
+    expect(picks.some((p) => p.capabilityId === "gap.ask")).toBe(true);
+    expect(picks.some((p) => p.capabilityId === "question.expand")).toBe(true);
+    const gapIdx = picks.findIndex((p) => p.capabilityId === "gap.ask");
+    const riskIdx = picks.findIndex((p) => p.capabilityId === "risk.analyze");
     if (riskIdx >= 0) expect(gapIdx).toBeLessThan(riskIdx); // gap.ask still precedes risk
-    expect(picks.some(p => p.capabilityId === "report.write")).toBe(false);
+    expect(picks.some((p) => p.capabilityId === "report.write")).toBe(false);
   });
 
   it("continues closed loop after intent.clarify on specific goal (no G_READY park)", async () => {
     const goal = "面向企业内部 RBAC 权限与数据范围";
     const s = createInitialSessionState(goal, "sd-gready-clarify");
-    const { preparedState } = intakeMessage(s, {
-      turnId: "grc0",
-      userText: goal,
-    });
+    const { preparedState } = intakeMessage(s, { turnId: "grc0", userText: goal });
 
     const result = await driveReasoningSession(preparedState, {
       turnSeedId: "grc0",
@@ -60,17 +57,12 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
 
     expect(result.stopReason).not.toBe("await_ready");
     expect(result.finalState.awaitReason).not.toBe("ready");
-    expect(result.loops[0]?.committedArtifactIds.length).toBeGreaterThanOrEqual(
-      1
-    );
+    expect(result.loops[0]?.committedArtifactIds.length).toBeGreaterThanOrEqual(1);
   });
 
   it("continues closed loop after question.expand on vague goal (no G_READY park)", async () => {
     const s = createInitialSessionState("做一个系统", "sd-gready");
-    const { preparedState } = intakeMessage(s, {
-      turnId: "gr0",
-      userText: "做一个系统",
-    });
+    const { preparedState } = intakeMessage(s, { turnId: "gr0", userText: "做一个系统" });
 
     const result = await driveReasoningSession(preparedState, {
       turnSeedId: "gr0",
@@ -88,17 +80,12 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
 
     expect(result.stopReason).not.toBe("await_ready");
     expect(result.finalState.awaitReason).not.toBe("ready");
-    expect(result.loops[0]?.committedArtifactIds.length).toBeGreaterThanOrEqual(
-      1
-    );
+    expect(result.loops[0]?.committedArtifactIds.length).toBeGreaterThanOrEqual(1);
   });
 
   it("parks await_confirm after route.compare until user selects a branch", async () => {
     const s = createInitialSessionState("路线对比一下", "sd-gconfirm");
-    const { preparedState } = intakeMessage(s, {
-      turnId: "gc0",
-      userText: "路线对比一下",
-    });
+    const { preparedState } = intakeMessage(s, { turnId: "gc0", userText: "路线对比一下" });
 
     const result = await driveReasoningSession(preparedState, {
       turnSeedId: "gc0",
@@ -124,10 +111,7 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
 
   it("does not bypass G_COVERAGE on raw convergence_signal from router", async () => {
     const s = createInitialSessionState("测试目标", "sd-conv");
-    const { preparedState } = intakeMessage(s, {
-      turnId: "t1",
-      userText: "分析",
-    });
+    const { preparedState } = intakeMessage(s, { turnId: "t1", userText: "分析" });
 
     const result = await driveReasoningSession(preparedState, {
       turnSeedId: "t1",
@@ -152,14 +136,8 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
       source: "heuristic_fallback",
     }));
 
-    const s = createInitialSessionState(
-      "面向企业内部 RBAC 权限与数据范围",
-      "sd-budget"
-    );
-    const { preparedState } = intakeMessage(s, {
-      turnId: "t2",
-      userText: "继续",
-    });
+    const s = createInitialSessionState("面向企业内部 RBAC 权限与数据范围", "sd-budget");
+    const { preparedState } = intakeMessage(s, { turnId: "t2", userText: "继续" });
 
     const result = await driveReasoningSession(preparedState, {
       turnSeedId: "t2",
@@ -178,33 +156,23 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
     const policy = getDefaultBudgetPolicy();
     const cap = "intent.clarify";
     let s = createInitialSessionState("重复守卫", "sd-repeat");
-    const runs = Array.from(
-      { length: policy.maxRepeatPerCapability },
-      (_, i) => ({
-        id: `prior-run-${i}`,
-        capabilityId: cap,
-        turnId: "prior",
-        inputs: [],
-        outputs: [],
-        gateResults: [],
-      })
-    );
+    const runs = Array.from({ length: policy.maxRepeatPerCapability }, (_, i) => ({
+      id: `prior-run-${i}`,
+      capabilityId: cap,
+      turnId: "prior",
+      inputs: [],
+      outputs: [],
+      gateResults: [],
+    }));
     s = { ...s, capabilityRuns: runs as any };
 
-    const { preparedState } = intakeMessage(s, {
-      turnId: "t3",
-      userText: "再来",
-    });
+    const { preparedState } = intakeMessage(s, { turnId: "t3", userText: "再来" });
 
     const result = await driveReasoningSession(preparedState, {
       turnSeedId: "t3",
       userText: "再来",
       router: createDeterministicRouter([
-        {
-          selected: [{ capabilityId: cap, roleId: "规划" }],
-          rationale: "retry",
-          source: "llm",
-        },
+        { selected: [{ capabilityId: cap, roleId: "规划" }], rationale: "retry", source: "llm" },
       ]),
       executor: createDeterministicCapabilityExecutor(),
     });
@@ -217,7 +185,10 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
   it("executes multiple capabilities in the same round concurrently when parallelCapabilityExecution is on", async () => {
     const order: string[] = [];
     const executor = {
-      async executeCapability(args: { capabilityId: string; roleId?: string }) {
+      async executeCapability(args: {
+        capabilityId: string;
+        roleId?: string;
+      }) {
         order.push(`start:${args.capabilityId}`);
         return {
           title: args.capabilityId,
@@ -228,14 +199,8 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
       },
     };
 
-    const s = createInitialSessionState(
-      "面向企业内部 RBAC 权限与数据范围并行推演",
-      "sd-parallel"
-    );
-    const { preparedState } = intakeMessage(s, {
-      turnId: "par-0",
-      userText: "分析并对比路线",
-    });
+    const s = createInitialSessionState("面向企业内部 RBAC 权限与数据范围并行推演", "sd-parallel");
+    const { preparedState } = intakeMessage(s, { turnId: "par-0", userText: "分析并对比路线" });
 
     const result = await driveReasoningSession(preparedState, {
       turnSeedId: "par-0",
@@ -257,7 +222,7 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
     });
 
     expect(result.loops[0]?.committedArtifactIds.length).toBe(3);
-    expect(order.filter(x => x.startsWith("start:")).length).toBe(3);
+    expect(order.filter((x) => x.startsWith("start:")).length).toBe(3);
   });
 
   it("re-enters ORCH after GCOV_BLOCKED when the next loop can force-schedule missing pre-reqs", async () => {
@@ -270,14 +235,7 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
       []
     );
     s = updatedState;
-    s = commitTrusted(
-      s,
-      "trusted-synth",
-      "synthesis.merge",
-      "综合",
-      "synthesis",
-      "sd-gcov-s0"
-    );
+    s = commitTrusted(s, "trusted-synth", "synthesis.merge", "综合", "synthesis", "sd-gcov-s0");
 
     const userText = "路线对比，拆解结构，预览效果";
     const { preparedState } = intakeMessage(s, { turnId: "gcov-d0", userText });
@@ -310,20 +268,13 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
     expect(result.loops.length).toBeGreaterThanOrEqual(2);
     expect(result.loops[0].plan.reason).toMatch(/GCOV_BLOCKED/);
     expect(result.loops[0].committedArtifactIds).toHaveLength(0);
-    const laterPlan = result.loops
-      .slice(1)
-      .find(l => l.plan.selected.length > 0);
-    expect(laterPlan?.plan.selected.map(p => p.capabilityId)).toContain(
-      "risk.analyze"
-    );
+    const laterPlan = result.loops.slice(1).find((l) => l.plan.selected.length > 0);
+    expect(laterPlan?.plan.selected.map((p) => p.capabilityId)).toContain("risk.analyze");
   });
 
   it("records orchestrate.plan cost per loop when router returns usage (task 2.4 / Property 27)", async () => {
     const s = createInitialSessionState("成本归因", "sd-cost");
-    const { preparedState } = intakeMessage(s, {
-      turnId: "t4",
-      userText: "规划",
-    });
+    const { preparedState } = intakeMessage(s, { turnId: "t4", userText: "规划" });
 
     const result = await driveReasoningSession(preparedState, {
       turnSeedId: "t4",
@@ -333,12 +284,7 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
           selected: [{ capabilityId: "intent.clarify", roleId: "规划" }],
           rationale: "pick",
           source: "llm",
-          usage: {
-            totalTokens: 42,
-            inputTokens: 30,
-            outputTokens: 12,
-            model: "test-router",
-          },
+          usage: { totalTokens: 42, inputTokens: 30, outputTokens: 12, model: "test-router" },
         },
         { selected: [], rationale: "done", source: "llm", converged: true },
       ]),
@@ -347,7 +293,7 @@ describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
     });
 
     const orchCosts = (result.finalState.costLedger || []).filter(
-      c => c.capabilityId === "orchestrate.plan"
+      (c) => c.capabilityId === "orchestrate.plan"
     );
     expect(orchCosts.length).toBeGreaterThanOrEqual(1);
     expect(orchCosts[0]?.estimatedTokens).toBe(42);
@@ -370,17 +316,10 @@ describe("orchestrate.plan cost attribution regression (task 2.4)", () => {
       } as any,
       {
         source: "server",
-        usage: {
-          totalTokens: 88,
-          inputTokens: 50,
-          outputTokens: 38,
-          model: "gpt-test",
-        },
+        usage: { totalTokens: 88, inputTokens: 50, outputTokens: 38, model: "gpt-test" },
       }
     );
-    const rec = (costed.costLedger || []).find(
-      c => c.capabilityId === "orchestrate.plan"
-    );
+    const rec = (costed.costLedger || []).find((c) => c.capabilityId === "orchestrate.plan");
     expect(rec?.source).toBe("server");
     expect(rec?.estimatedTokens).toBe(88);
   });
@@ -414,20 +353,17 @@ describe("orchestrate.plan cost attribution regression (task 2.4)", () => {
 
     const ledger = s.costLedger || [];
     const orchTotal = ledger
-      .filter(c => c.capabilityId === "orchestrate.plan")
+      .filter((c) => c.capabilityId === "orchestrate.plan")
       .reduce((sum, c) => sum + (c.estimatedTokens || 0), 0);
     const execTotal = ledger
-      .filter(c => c.capabilityId !== "orchestrate.plan")
+      .filter((c) => c.capabilityId !== "orchestrate.plan")
       .reduce((sum, c) => sum + (c.estimatedTokens || 0), 0);
-    const grandTotal = ledger.reduce(
-      (sum, c) => sum + (c.estimatedTokens || 0),
-      0
-    );
+    const grandTotal = ledger.reduce((sum, c) => sum + (c.estimatedTokens || 0), 0);
 
     expect(orchTotal).toBe(100);
     expect(execTotal).toBe(250);
     expect(orchTotal + execTotal).toBe(grandTotal);
-    expect(ledger.some(c => c.capabilityId === "orchestrate.plan")).toBe(true);
-    expect(ledger.some(c => c.capabilityId === "risk.analyze")).toBe(true);
+    expect(ledger.some((c) => c.capabilityId === "orchestrate.plan")).toBe(true);
+    expect(ledger.some((c) => c.capabilityId === "risk.analyze")).toBe(true);
   });
 });

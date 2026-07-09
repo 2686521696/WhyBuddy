@@ -12,9 +12,7 @@ import { PreviewAuditBadge } from "../PreviewAuditBadge";
 import type { BlueprintPreviewProvenance } from "@shared/blueprint/preview-audit/types";
 import type { PreviewAuditVerdict } from "../../../pages/autopilot/right-rail/trust/types";
 
-function prov(
-  p: Partial<BlueprintPreviewProvenance>
-): BlueprintPreviewProvenance {
+function prov(p: Partial<BlueprintPreviewProvenance>): BlueprintPreviewProvenance {
   return {
     source: "model",
     ok: true,
@@ -29,13 +27,9 @@ describe("PreviewProvenanceChip", () => {
   it("renders model_ok success variant", () => {
     const html = renderToStaticMarkup(
       createElement(PreviewProvenanceChip, {
-        provenance: prov({
-          source: "model",
-          ok: true,
-          modelUsed: "gpt-image-2",
-        }),
+        provenance: prov({ source: "model", ok: true, modelUsed: "gpt-image-2" }),
         locale: "en-US",
-      })
+      }),
     );
     expect(html).toContain('data-provenance-class="model_ok"');
     expect(html).toContain('data-testid="preview-provenance-model"');
@@ -47,7 +41,7 @@ describe("PreviewProvenanceChip", () => {
       createElement(PreviewProvenanceChip, {
         provenance: prov({ source: "fallback", ok: true }),
         locale: "en-US",
-      })
+      }),
     );
     expect(html).toContain('data-provenance-class="fallback"');
     expect(html).not.toContain('data-provenance-class="model_ok"');
@@ -56,13 +50,9 @@ describe("PreviewProvenanceChip", () => {
   it("renders failed variant + error indicators when ok:false", () => {
     const html = renderToStaticMarkup(
       createElement(PreviewProvenanceChip, {
-        provenance: prov({
-          source: "fallback",
-          ok: false,
-          errorIndicators: ["503_exhausted"],
-        }),
+        provenance: prov({ source: "fallback", ok: false, errorIndicators: ["503_exhausted"] }),
         locale: "en-US",
-      })
+      }),
     );
     expect(html).toContain('data-provenance-class="failed"');
     expect(html).toContain("503_exhausted");
@@ -79,10 +69,7 @@ describe("PreviewAuditBadge", () => {
 
   it("renders pass batch verdict", () => {
     const html = renderToStaticMarkup(
-      createElement(PreviewAuditBadge, {
-        verdict: baseVerdict,
-        locale: "en-US",
-      })
+      createElement(PreviewAuditBadge, { verdict: baseVerdict, locale: "en-US" }),
     );
     expect(html).toContain('data-batch-status="pass"');
     expect(html).toContain('data-testid="preview-audit-accountability"');
@@ -101,15 +88,11 @@ describe("PreviewAuditBadge", () => {
             { reason: "duplicate_content", details: "y", severity: "warn" },
           ],
         },
-      })
+      }),
     );
     expect(html).toContain('data-batch-status="fail"');
-    expect(html).toContain(
-      'data-testid="preview-audit-fraud-fallback_pretending"'
-    );
-    expect(html).toContain(
-      'data-testid="preview-audit-fraud-duplicate_content"'
-    );
+    expect(html).toContain('data-testid="preview-audit-fraud-fallback_pretending"');
+    expect(html).toContain('data-testid="preview-audit-fraud-duplicate_content"');
     expect(html).toContain('data-testid="preview-audit-retry"');
     expect(html).toContain('data-testid="preview-audit-exhausted"');
   });
@@ -120,7 +103,7 @@ describe("PreviewAuditBadge", () => {
         verdict: baseVerdict,
         locale: "en-US",
         hasData: false,
-      })
+      }),
     );
     expect(html).toContain('data-testid="preview-audit-empty"');
   });

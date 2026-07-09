@@ -510,40 +510,43 @@ function ArtifactMemoryPanelInner({
   }, [handleRefreshReplays, jobId, replays.length]);
 
   return (
-    <div className="grid gap-3" data-testid="artifact-memory-workbench">
+    <div
+      className="grid gap-3"
+      data-testid="artifact-memory-workbench"
+    >
       {/* Header chrome removed: SubStageCard 已提供标题 / apiPath / summary / 状态胶囊 */}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="gap-2 rounded-none border-[#CCCCCC] bg-white font-black text-black hover:bg-[#F3F3F3]"
-          disabled={!jobId || loadingLedger || loadingReplays || replaying}
-          onClick={handleRefreshAll}
-          data-testid="artifact-memory-refresh-button"
-        >
-          <RefreshCw
-            className={cn(
-              "size-3.5",
-              (loadingLedger || loadingReplays) && "animate-spin"
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2 rounded-none border-[#CCCCCC] bg-white font-black text-black hover:bg-[#F3F3F3]"
+            disabled={!jobId || loadingLedger || loadingReplays || replaying}
+            onClick={handleRefreshAll}
+            data-testid="artifact-memory-refresh-button"
+          >
+            <RefreshCw
+              className={cn(
+                "size-3.5",
+                (loadingLedger || loadingReplays) && "animate-spin"
+              )}
+              aria-hidden="true"
+            />
+            {panelText("刷新", "Refresh", locale)}
+          </Button>
+          <Button
+            type="button"
+            className="gap-2 rounded-none bg-black font-black text-white hover:bg-[#333]"
+            disabled={!canReplay || loadingLedger || replaying}
+            onClick={handleReplayEntry}
+            data-testid="artifact-replay-button"
+          >
+            {replaying ? (
+              <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <PlayCircle className="size-3.5" aria-hidden="true" />
             )}
-            aria-hidden="true"
-          />
-          {panelText("刷新", "Refresh", locale)}
-        </Button>
-        <Button
-          type="button"
-          className="gap-2 rounded-none bg-black font-black text-white hover:bg-[#333]"
-          disabled={!canReplay || loadingLedger || replaying}
-          onClick={handleReplayEntry}
-          data-testid="artifact-replay-button"
-        >
-          {replaying ? (
-            <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : (
-            <PlayCircle className="size-3.5" aria-hidden="true" />
-          )}
-          {panelText("回放快照", "Replay snapshot", locale)}
-        </Button>
+            {panelText("回放快照", "Replay snapshot", locale)}
+          </Button>
       </div>
 
       {error ? (
@@ -592,11 +595,7 @@ function ArtifactMemoryPanelInner({
               variant="outline"
               className="rounded-full border-slate-200 bg-slate-50 text-[10px] font-black text-slate-500"
             >
-              {panelText(
-                `${entries.length} 条记录`,
-                `${entries.length} entries`,
-                locale
-              )}
+              {panelText(`${entries.length} 条记录`, `${entries.length} entries`, locale)}
             </Badge>
           </div>
           <ScrollArea className="mt-3 max-h-[500px] pr-2">
@@ -610,11 +609,7 @@ function ArtifactMemoryPanelInner({
                   >
                     <div className="flex items-center justify-between gap-2 px-1 py-1">
                       <span className="text-xs font-black uppercase tracking-normal text-slate-500">
-                        {artifactTokenLabel(
-                          group.stage,
-                          "Artifact memory",
-                          locale
-                        )}
+                        {artifactTokenLabel(group.stage, "Artifact memory", locale)}
                       </span>
                       <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500">
                         {panelText(
@@ -707,11 +702,7 @@ function ArtifactMemoryPanelInner({
                 className="rounded-full border-slate-200 bg-slate-50 text-[10px] font-black text-slate-500"
               >
                 {selectedEntry
-                  ? artifactTokenLabel(
-                      selectedEntry.stage,
-                      "Artifact memory",
-                      locale
-                    )
+                  ? artifactTokenLabel(selectedEntry.stage, "Artifact memory", locale)
                   : panelText("暂无记录", "No entries yet", locale)}
               </Badge>
             </div>
@@ -763,11 +754,7 @@ function ArtifactMemoryPanelInner({
                 <h4 className="mt-2 text-base font-black text-slate-950">
                   {activeReplay?.title
                     ? blueprintCopy(activeReplay.title, locale)
-                    : panelText(
-                        "回放快照已就绪",
-                        "Replay snapshot ready",
-                        locale
-                      )}
+                    : panelText("回放快照已就绪", "Replay snapshot ready", locale)}
                 </h4>
               </div>
               <Badge
@@ -839,11 +826,7 @@ function ArtifactMemoryPanelInner({
                         {blueprintCopy(snapshot.title, locale)}
                       </span>
                       <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500">
-                        {artifactTokenLabel(
-                          snapshot.stage,
-                          "Artifact memory",
-                          locale
-                        )}
+                        {artifactTokenLabel(snapshot.stage, "Artifact memory", locale)}
                       </span>
                     </div>
                     <div className="mt-1 text-xs font-semibold leading-5 text-slate-500">

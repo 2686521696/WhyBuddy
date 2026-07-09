@@ -68,7 +68,7 @@ interface SpeechRecognitionInstance extends EventTarget {
   onerror:
     | ((
         this: SpeechRecognitionInstance,
-        ev: SpeechRecognitionErrorEvent
+        ev: SpeechRecognitionErrorEvent,
       ) => void)
     | null;
   onend: ((this: SpeechRecognitionInstance, ev: Event) => void) | null;
@@ -137,7 +137,7 @@ export function createBrowserSTTEngine(lang?: string): STTEngine {
     },
 
     startListening(callbacks: STTEngineCallbacks): Promise<void> {
-      return new Promise<void>(resolve => {
+      return new Promise<void>((resolve) => {
         if (!available) {
           callbacks.onError("SpeechRecognition API not available");
           resolve();
@@ -156,7 +156,8 @@ export function createBrowserSTTEngine(lang?: string): STTEngine {
 
         try {
           const SpeechRecognitionCtor =
-            (window as unknown as Record<string, unknown>).SpeechRecognition ??
+            (window as unknown as Record<string, unknown>)
+              .SpeechRecognition ??
             (window as unknown as Record<string, unknown>)
               .webkitSpeechRecognition;
 
@@ -176,7 +177,7 @@ export function createBrowserSTTEngine(lang?: string): STTEngine {
             resolve();
           };
 
-          recognition.onresult = event => {
+          recognition.onresult = (event) => {
             resetSilenceTimer();
 
             let interim = "";
@@ -195,7 +196,7 @@ export function createBrowserSTTEngine(lang?: string): STTEngine {
             if (final_) callbacks.onFinalTranscript(final_);
           };
 
-          recognition.onerror = event => {
+          recognition.onerror = (event) => {
             console.error("[BrowserSTT] recognition error:", event.error);
             callbacks.onError(event.error);
             cleanup();
@@ -210,7 +211,7 @@ export function createBrowserSTTEngine(lang?: string): STTEngine {
         } catch (err) {
           console.error("[BrowserSTT] startListening error:", err);
           callbacks.onError(
-            err instanceof Error ? err.message : "Unknown error"
+            err instanceof Error ? err.message : "Unknown error",
           );
           cleanup();
           resolve();
@@ -246,7 +247,7 @@ export function createBrowserSTTEngine(lang?: string): STTEngine {
  */
 export function createServerSTTEngine(
   apiUrl: string,
-  lang?: string
+  lang?: string,
 ): STTEngine {
   let listening = false;
   let available = false;
@@ -275,7 +276,7 @@ export function createServerSTTEngine(
   function cleanup() {
     // Stop all media tracks
     if (mediaStream) {
-      mediaStream.getTracks().forEach(t => t.stop());
+      mediaStream.getTracks().forEach((t) => t.stop());
       mediaStream = null;
     }
     mediaRecorder = null;
@@ -310,7 +311,9 @@ export function createServerSTTEngine(
       }
     } catch (err) {
       console.error("[ServerSTT] sendAudio error:", err);
-      callbacks.onError(err instanceof Error ? err.message : "Unknown error");
+      callbacks.onError(
+        err instanceof Error ? err.message : "Unknown error",
+      );
     }
   }
 
@@ -367,7 +370,9 @@ export function createServerSTTEngine(
         callbacks.onStateChange("listening");
       } catch (err) {
         console.error("[ServerSTT] startListening error:", err);
-        callbacks.onError(err instanceof Error ? err.message : "Unknown error");
+        callbacks.onError(
+          err instanceof Error ? err.message : "Unknown error",
+        );
         cleanup();
         // Graceful degradation — never throw (Req 2.7)
       }
@@ -420,7 +425,7 @@ export function createSTTEngine(config: ClientVoiceConfig): STTEngine {
  */
 function createFallbackSTTEngine(
   primary: STTEngine,
-  fallback: STTEngine
+  fallback: STTEngine,
 ): STTEngine {
   let activeEngine: STTEngine = primary;
 

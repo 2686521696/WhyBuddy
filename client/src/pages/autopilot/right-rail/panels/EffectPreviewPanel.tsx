@@ -47,7 +47,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FC } from "react";
 
-import { Layers3, ListChecks, PlayCircle, RefreshCw, Send } from "lucide-react";
+import {
+  Layers3,
+  ListChecks,
+  PlayCircle,
+  RefreshCw,
+  Send,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -203,6 +209,7 @@ function agentRoleStateClass(state: string): string {
 }
 // endregion
 
+
 // region Types: role event projection（从 BlueprintProgressPanel 原文件搬运）
 type BlueprintRoleEventConsumerId =
   | "scene"
@@ -335,7 +342,7 @@ function derivePerNodeProgressPlan(args: {
 function downloadEffectPreviewImage(
   filename: string,
   b64: string,
-  mimeType: string
+  mimeType: string,
 ): void {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return;
@@ -507,11 +514,7 @@ function buildRoleEventProjection(
           projection?.sceneSnapshotId ||
           roleEventValue(
             sceneEvent,
-            panelText(
-              "等待场景角色事件",
-              "Waiting for scene role event",
-              locale
-            )
+            panelText("等待场景角色事件", "Waiting for scene role event", locale)
           ),
         detail: sceneEvent
           ? panelText(
@@ -525,11 +528,7 @@ function buildRoleEventProjection(
                 "Scene snapshot is linked to the runtime projection.",
                 locale
               )
-            : panelText(
-                "暂无场景角色事件。",
-                "No scene role event yet.",
-                locale
-              ),
+            : panelText("暂无场景角色事件。", "No scene role event yet.", locale),
         status: roleEventProjectionStatus(
           sceneEvent,
           projection?.sceneSnapshotId ? "ready" : "pending"
@@ -687,6 +686,7 @@ function roleEventProjectionLogEntries(
 }
 // endregion
 
+
 // region Helpers: runtime projection + preview meta
 function readRuntimeProjection(
   preview: BlueprintEffectPreviewSnapshot | null | undefined
@@ -711,12 +711,7 @@ function normalizeRuntimeProjection(
     jobId: preview?.jobId,
     treeId: preview?.treeId,
     nodeId: preview?.nodeId,
-    title: (
-      preview as
-        | (BlueprintEffectPreviewSnapshot & { title?: string })
-        | null
-        | undefined
-    )?.title,
+    title: (preview as (BlueprintEffectPreviewSnapshot & { title?: string }) | null | undefined)?.title,
     summary: preview?.summary,
     status: preview?.status,
   });
@@ -805,6 +800,7 @@ function previewNodeProgressLabel(
     : previewStatusLabel(status, locale);
 }
 // endregion
+
 
 // region Subcomponents: version sync / runtime projection card / list
 function EffectPreviewVersionSync({
@@ -1042,11 +1038,7 @@ function EffectPreviewRuntimeProjection({
           detail={
             sceneRoleItem?.detail ||
             (projection.sceneSnapshotId
-              ? panelText(
-                  "场景快照已连接。",
-                  "Scene snapshot is linked.",
-                  locale
-                )
+              ? panelText("场景快照已连接。", "Scene snapshot is linked.", locale)
               : panelText("暂无场景快照。", "No scene snapshot yet.", locale))
           }
           status={sceneRoleItem?.status ?? (hasScene ? "ready" : "pending")}
@@ -1106,11 +1098,7 @@ function EffectPreviewRuntimeProjection({
             projection.browserPreview.url ||
             projection.browserPreview.summary ||
             projection.browserPreview.title ||
-            panelText(
-              "暂无浏览器预览链接。",
-              "No browser preview link yet.",
-              locale
-            )
+            panelText("暂无浏览器预览链接。", "No browser preview link yet.", locale)
           }
           status={browserRoleItem?.status ?? (hasBrowser ? "ready" : "pending")}
           locale={locale}
@@ -1155,6 +1143,7 @@ function EffectPreviewList({
 }
 // endregion
 
+
 /**
  * `EffectPreviewPanel` —— 对应 `AutopilotRailSubStage === "effect_preview"`。
  *
@@ -1183,12 +1172,9 @@ export const EffectPreviewPanel: FC<EffectPreviewPanelProps> = props => {
   } = props;
   const documents: BlueprintSpecDocument[] =
     props.documents ??
-    (
-      specTree as
-        | (BlueprintSpecTree & { documents?: BlueprintSpecDocument[] })
-        | null
-    )?.documents ??
-    [];
+    ((specTree as (BlueprintSpecTree & { documents?: BlueprintSpecDocument[] }) | null)
+      ?.documents ??
+      []);
 
   if (!specTree) {
     return null;
@@ -1338,22 +1324,23 @@ function EffectPreviewPanelInner({
   // Phase 4 Task 31.1：派生 Stage C 图像 + 调度组件需要的 per-node 视图。
   // 详见上方 `derivePerNodeProgressPlan` 注释 — `BlueprintEffectPreviewSnapshot.progressPlan`
   // 是「3 条通用 milestone」，新组件需要的是「每节点状态」，两者字段集互不兼容。
-  const effectPreviewDependencyOrderNodeIds = useMemo<
-    ReadonlyArray<string>
-  >(() => {
-    const order = activePreview?.dependencyOrder;
-    if (!Array.isArray(order)) return [];
-    return order
-      .map(entry => {
-        if (typeof entry === "string") return entry;
-        if (entry && typeof entry === "object" && "nodeId" in entry) {
-          const nodeId = (entry as { nodeId?: unknown }).nodeId;
-          return typeof nodeId === "string" ? nodeId : "";
-        }
-        return "";
-      })
-      .filter((nodeId): nodeId is string => nodeId.length > 0);
-  }, [activePreview]);
+  const effectPreviewDependencyOrderNodeIds = useMemo<ReadonlyArray<string>>(
+    () => {
+      const order = activePreview?.dependencyOrder;
+      if (!Array.isArray(order)) return [];
+      return order
+        .map(entry => {
+          if (typeof entry === "string") return entry;
+          if (entry && typeof entry === "object" && "nodeId" in entry) {
+            const nodeId = (entry as { nodeId?: unknown }).nodeId;
+            return typeof nodeId === "string" ? nodeId : "";
+          }
+          return "";
+        })
+        .filter((nodeId): nodeId is string => nodeId.length > 0);
+    },
+    [activePreview]
+  );
   const effectPreviewNodeTitleById = useMemo<ReadonlyMap<string, string>>(
     () => new Map(specTree.nodes.map(node => [node.id, node.title])),
     [specTree.nodes]
@@ -1505,39 +1492,44 @@ function EffectPreviewPanelInner({
   }, []);
 
   return (
-    <div className="grid gap-3" data-testid="effect-preview-workbench">
+    <div
+      className="grid gap-3"
+      data-testid="effect-preview-workbench"
+    >
       {/* v4 EP_VIS_AUDIT ◆◆：出图审计裁决（无 preview_audit 数据 / gate 关闭时渲染空态） */}
-      {jobId ? <PreviewAuditSection jobId={jobId} locale={locale} /> : null}
+      {jobId ? (
+        <PreviewAuditSection jobId={jobId} locale={locale} />
+      ) : null}
       {/* Header chrome removed: SubStageCard 已提供标题 / apiPath / summary / 状态胶囊 */}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="gap-2 rounded-none border-[#CCCCCC] bg-white font-black text-black hover:bg-[#F3F3F3]"
-          disabled={!jobId || loading || generating}
-          onClick={handleRefresh}
-          data-testid="effect-preview-refresh-button"
-        >
-          <RefreshCw
-            className={cn("size-3.5", loading && "animate-spin")}
-            aria-hidden="true"
-          />
-          {panelText("刷新", "Refresh", locale)}
-        </Button>
-        <Button
-          type="button"
-          className="gap-2 rounded-none bg-black font-black text-white hover:bg-[#333]"
-          disabled={!canGenerate || loading || generating}
-          onClick={handleGenerate}
-          data-testid="effect-preview-generate-button"
-        >
-          {generating ? (
-            <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : (
-            <Send className="size-3.5" aria-hidden="true" />
-          )}
-          {panelText("生成预演", "Generate preview", locale)}
-        </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2 rounded-none border-[#CCCCCC] bg-white font-black text-black hover:bg-[#F3F3F3]"
+            disabled={!jobId || loading || generating}
+            onClick={handleRefresh}
+            data-testid="effect-preview-refresh-button"
+          >
+            <RefreshCw
+              className={cn("size-3.5", loading && "animate-spin")}
+              aria-hidden="true"
+            />
+            {panelText("刷新", "Refresh", locale)}
+          </Button>
+          <Button
+            type="button"
+            className="gap-2 rounded-none bg-black font-black text-white hover:bg-[#333]"
+            disabled={!canGenerate || loading || generating}
+            onClick={handleGenerate}
+            data-testid="effect-preview-generate-button"
+          >
+            {generating ? (
+              <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Send className="size-3.5" aria-hidden="true" />
+            )}
+            {panelText("生成预演", "Generate preview", locale)}
+          </Button>
       </div>
 
       {error ? (
@@ -1571,10 +1563,9 @@ function EffectPreviewPanelInner({
               {previews.length ? (
                 previews.map(preview => {
                   const selected = activePreview?.id === preview.id;
-                  const previewWithTitle =
-                    preview as BlueprintEffectPreviewSnapshot & {
-                      title?: string;
-                    };
+                  const previewWithTitle = preview as BlueprintEffectPreviewSnapshot & {
+                    title?: string;
+                  };
                   const stalePreview = stalePreviewsById.get(preview.id);
                   return (
                     <button
@@ -1685,17 +1676,12 @@ function EffectPreviewPanelInner({
                   预演详情
                 </div>
                 <h4 className="mt-2 truncate text-base font-black text-slate-950">
-                  {(
-                    activePreview as
-                      | (BlueprintEffectPreviewSnapshot & { title?: string })
-                      | null
-                  )?.title
+                  {(activePreview as (BlueprintEffectPreviewSnapshot & { title?: string }) | null)
+                    ?.title
                     ? blueprintCopy(
-                        (
-                          activePreview as BlueprintEffectPreviewSnapshot & {
-                            title?: string;
-                          }
-                        ).title,
+                        (activePreview as BlueprintEffectPreviewSnapshot & {
+                          title?: string;
+                        }).title,
                         locale
                       )
                     : "效果预演已就绪"}

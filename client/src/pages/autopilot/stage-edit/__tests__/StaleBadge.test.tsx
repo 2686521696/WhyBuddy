@@ -19,7 +19,7 @@ describe("<StaleBadge>", () => {
           reason: "upstream_clarification_changed",
           triggeredAt: "2026-05-23T08:00:00.000Z",
         }}
-      />
+      />,
     );
 
     expect(markup).toMatch(/>Stale<\/span>/);
@@ -40,7 +40,7 @@ describe("<StaleBadge>", () => {
           reason: "upstream_spec_tree_changed",
           triggeredAt: "2026-05-23T08:00:00.000Z",
         }}
-      />
+      />,
     );
 
     expect(markup).toMatch(/>已过期<\/span>/);

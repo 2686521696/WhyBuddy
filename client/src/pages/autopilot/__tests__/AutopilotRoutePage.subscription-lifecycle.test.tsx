@@ -101,9 +101,7 @@ describe("AutopilotRoutePage subscription lifecycle (source-level contract)", ()
     // cleanup 函数 unsubscribe；这一对契约保证 React 在 streamKey 变化时
     // 先 cleanup（unsubscribe）→ 重新执行 effect（subscribe 新 streamKey）。
     expect(source).toMatch(/subscribeToJob\(\s*streamKey\s*\)/);
-    expect(source).toMatch(
-      /return\s*\(\s*\)\s*=>\s*\{\s*\n[\s\S]*?unsubscribeFromJob\(\)/
-    );
+    expect(source).toMatch(/return\s*\(\s*\)\s*=>\s*\{\s*\n[\s\S]*?unsubscribeFromJob\(\)/);
 
     // 关键事实 4：useEffect 依赖项同时包含 latestJob?.id 与 intake?.id，
     // 让 React 在两者任一变化时都触发 cleanup → 重新订阅。

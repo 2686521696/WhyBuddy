@@ -23,39 +23,32 @@
  * Validates: Requirements 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.6
  */
 
-import { describe, it, expect } from "vitest";
-import fc from "fast-check";
-import {
-  createInitialSessionState,
-  invalidateForIntervention,
-} from "./sliderule-runtime";
+import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
+import { createInitialSessionState, invalidateForIntervention } from './sliderule-runtime';
 import type {
   V5SessionState,
   Artifact,
   DependencyEdge,
   UserIntervention,
-} from "@shared/blueprint/v5-reasoning-state";
-import type { V5CapabilityId } from "@shared/blueprint/contracts";
+} from '@shared/blueprint/v5-reasoning-state';
+import type { V5CapabilityId } from '@shared/blueprint/contracts';
 
 // ---- helpers ----------------------------------------------------------------
 
 /** A fully-formed, trusted artifact (so graph-node marking + C-2 checks never throw). */
-function makeArtifact(
-  id: string,
-  kind: Artifact["kind"],
-  cap: V5CapabilityId
-): Artifact {
+function makeArtifact(id: string, kind: Artifact['kind'], cap: V5CapabilityId): Artifact {
   return {
     id,
     kind,
-    provenance: "ai_generated",
-    trustLevel: "gated_pass",
+    provenance: 'ai_generated',
+    trustLevel: 'gated_pass',
     producedBy: {
       capabilityRunId: `run-${id}`,
       capabilityId: cap,
-      roleId: "综合",
+      roleId: '综合',
     },
-    passedGates: ["commit"],
+    passedGates: ['commit'],
     title: `artifact ${id}`,
     summary: `artifact ${id}`,
     content: `artifact ${id}`,
@@ -79,7 +72,7 @@ function computeCascade(targetId: string, deps: DependencyEdge[]): Set<string> {
 }
 
 const isSubset = (a: Set<string>, b: Set<string>): boolean =>
-  [...a].every(x => b.has(x));
+  [...a].every((x) => b.has(x));
 
 /**
  * Construct a session whose `staleArtifactIds` is already non-empty (simulating an earlier
@@ -92,17 +85,17 @@ function buildSession(opts: {
   artifactIds: string[];
 }): V5SessionState {
   const base = createInitialSessionState(
-    "分析权限系统的风险并给出最终报告",
-    "stale-monotonic-test"
+    '分析权限系统的风险并给出最终报告',
+    'stale-monotonic-test'
   );
   const artifacts = opts.artifactIds.map((id, i) =>
     i % 2 === 0
-      ? makeArtifact(id, "risk", "risk.analyze")
-      : makeArtifact(id, "report", "report.write")
+      ? makeArtifact(id, 'risk', 'risk.analyze')
+      : makeArtifact(id, 'report', 'report.write')
   );
   return {
     ...base,
-    goal: { ...base.goal, status: "needs_refinement" },
+    goal: { ...base.goal, status: 'needs_refinement' },
     artifacts,
     graph: { ...base.graph, nodes: [] },
     dependencyGraph: opts.deps,
@@ -114,78 +107,70 @@ function buildSession(opts: {
 // Concrete failing seeds (deterministic, reproducible counterexamples)
 // =====================================================================================
 
-describe("BUG: SlideRule stale set is NOT monotonic across challenges (Property 1, exploration — EXPECTED TO FAIL on unfixed code)", () => {
+describe('BUG: SlideRule stale set is NOT monotonic across challenges (Property 1, exploration — EXPECTED TO FAIL on unfixed code)', () => {
   it('S4 "两圈半" core: prior {risk_A, report_A}, second challenge cascade {risk_B, report_B} => prior must be preserved', () => {
     // Loop-1 already staled risk_A + report_A. Reconverged with a new lineage (risk_B → report_B).
     const deps: DependencyEdge[] = [
-      {
-        fromArtifactId: "risk_A",
-        toArtifactId: "report_A",
-        reason: "report depends on risk (loop 1)",
-      },
-      {
-        fromArtifactId: "risk_B",
-        toArtifactId: "report_B",
-        reason: "report depends on risk (loop 2)",
-      },
+      { fromArtifactId: 'risk_A', toArtifactId: 'report_A', reason: 'report depends on risk (loop 1)' },
+      { fromArtifactId: 'risk_B', toArtifactId: 'report_B', reason: 'report depends on risk (loop 2)' },
     ];
     const state = buildSession({
-      staleIds: ["risk_A", "report_A"],
+      staleIds: ['risk_A', 'report_A'],
       deps,
-      artifactIds: ["risk_A", "report_A", "risk_B", "report_B"],
+      artifactIds: ['risk_A', 'report_A', 'risk_B', 'report_B'],
     });
 
     // Challenge loop-2's risk → cascade closes over {risk_B, report_B}.
-    const cascade = computeCascade("risk_B", deps);
-    expect([...cascade].sort()).toEqual(["report_B", "risk_B"]);
+    const cascade = computeCascade('risk_B', deps);
+    expect([...cascade].sort()).toEqual(['report_B', 'risk_B']);
 
     const result = invalidateForIntervention(state, {
-      targetArtifactId: "risk_B",
-      intent: "challenge",
-      text: "我质疑第二圈的风险分析",
+      targetArtifactId: 'risk_B',
+      intent: 'challenge',
+      text: '我质疑第二圈的风险分析',
     } as UserIntervention);
 
     const resultSet = new Set(result.staleArtifactIds);
 
     // EXPECTED (design Property 1) — FAILS on unfixed code (overwrites to {risk_B, report_B}).
     // result must be a superset of the prior stale set...
-    expect(resultSet.has("risk_A")).toBe(true);
-    expect(resultSet.has("report_A")).toBe(true);
+    expect(resultSet.has('risk_A')).toBe(true);
+    expect(resultSet.has('report_A')).toBe(true);
     // ...and of the new cascade.
-    expect(resultSet.has("risk_B")).toBe(true);
-    expect(resultSet.has("report_B")).toBe(true);
+    expect(resultSet.has('risk_B')).toBe(true);
+    expect(resultSet.has('report_B')).toBe(true);
   });
 
-  it("Unrelated-lineage challenge: prior {x}, new challenge cascade {y} => x must remain stale", () => {
+  it('Unrelated-lineage challenge: prior {x}, new challenge cascade {y} => x must remain stale', () => {
     const deps: DependencyEdge[] = []; // y has no dependents → cascade is just {y}
     const state = buildSession({
-      staleIds: ["x"],
+      staleIds: ['x'],
       deps,
-      artifactIds: ["x", "y"],
+      artifactIds: ['x', 'y'],
     });
 
-    const cascade = computeCascade("y", deps);
-    expect([...cascade]).toEqual(["y"]);
+    const cascade = computeCascade('y', deps);
+    expect([...cascade]).toEqual(['y']);
 
     const result = invalidateForIntervention(state, {
-      targetArtifactId: "y",
-      intent: "challenge",
-      text: "我质疑这条无关产物",
+      targetArtifactId: 'y',
+      intent: 'challenge',
+      text: '我质疑这条无关产物',
     } as UserIntervention);
 
     const resultSet = new Set(result.staleArtifactIds);
 
     // EXPECTED — FAILS on unfixed code (overwrites to {y}, dropping x).
-    expect(resultSet.has("x")).toBe(true);
-    expect(resultSet.has("y")).toBe(true);
+    expect(resultSet.has('x')).toBe(true);
+    expect(resultSet.has('y')).toBe(true);
   });
 
   // ===================================================================================
   // Property over the bug-condition domain (scoped PBT, fc.pre-filtered)
   // ===================================================================================
 
-  it("PROPERTY: for all challenges where the bug condition holds, result.staleArtifactIds ⊇ prior AND ⊇ cascade", () => {
-    const pool = ["a", "b", "c", "d", "e"];
+  it('PROPERTY: for all challenges where the bug condition holds, result.staleArtifactIds ⊇ prior AND ⊇ cascade', () => {
+    const pool = ['a', 'b', 'c', 'd', 'e'];
     const edgeArb = fc.record({
       fromArtifactId: fc.constantFrom(...pool),
       toArtifactId: fc.constantFrom(...pool),
@@ -198,8 +183,8 @@ describe("BUG: SlideRule stale set is NOT monotonic across challenges (Property 
         fc.constantFrom(...pool), // challenge target (always defined)
         (rawEdges, prior, target) => {
           const deps: DependencyEdge[] = rawEdges
-            .filter(e => e.fromArtifactId !== e.toArtifactId)
-            .map(e => ({ ...e, reason: "test edge" }));
+            .filter((e) => e.fromArtifactId !== e.toArtifactId)
+            .map((e) => ({ ...e, reason: 'test edge' }));
 
           const cascade = computeCascade(target, deps);
           const priorSet = new Set(prior);
@@ -208,15 +193,11 @@ describe("BUG: SlideRule stale set is NOT monotonic across challenges (Property 
           // (minLength 1) AND NOT isSubset(prior, cascade) — some prior id would be dropped.
           fc.pre(!isSubset(priorSet, cascade));
 
-          const state = buildSession({
-            staleIds: prior,
-            deps,
-            artifactIds: pool,
-          });
+          const state = buildSession({ staleIds: prior, deps, artifactIds: pool });
           const result = invalidateForIntervention(state, {
             targetArtifactId: target,
-            intent: "challenge",
-            text: "质疑",
+            intent: 'challenge',
+            text: '质疑',
           } as UserIntervention);
 
           const resultSet = new Set(result.staleArtifactIds);

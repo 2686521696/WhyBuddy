@@ -104,14 +104,7 @@ export const MAIN_CHAIN_STEP_ORDER: readonly [
   "Route",
   "Execution",
   "Evidence",
-] = [
-  "Project",
-  "Clarification",
-  "Spec",
-  "Route",
-  "Execution",
-  "Evidence",
-] as const;
+] = ["Project", "Clarification", "Spec", "Route", "Execution", "Evidence"] as const;
 
 /**
  * status → CSS class 的稳定映射。任意两个 status 对应的 class 互不相同
@@ -140,10 +133,7 @@ export const MAIN_CHAIN_STATUS_CLASS: Record<MainChainStepStatus, string> = {
  *
  * 注：active 高亮独立使用 `entry` token，与 status 颜色解耦（见组件实现）。
  */
-export const MAIN_CHAIN_STATUS_TOKEN: Record<
-  MainChainStepStatus,
-  VisualTokenKey
-> = {
+export const MAIN_CHAIN_STATUS_TOKEN: Record<MainChainStepStatus, VisualTokenKey> = {
   pending: "external-integration",
   running: "data-state",
   completed: "backend-core",
@@ -166,7 +156,7 @@ export const MAIN_CHAIN_STATUS_GLYPH: Record<MainChainStepStatus, string> = {
  * 主链时间线 — 6 步固定顺序、状态 class 唯一映射、最多一个 active。
  */
 export function ProjectMainChainTimeline(
-  props: ProjectMainChainTimelineProps
+  props: ProjectMainChainTimelineProps,
 ): ReactElement {
   const { steps, activeKey, visualTokens, theme } = props;
 
@@ -177,7 +167,8 @@ export function ProjectMainChainTimeline(
   }
 
   // active 高亮取 `entry` token；与 status 颜色解耦，避免和具体状态色互相覆盖。
-  const accentColor = visualTokens.entry[theme] ?? resolveToken("entry", theme);
+  const accentColor =
+    visualTokens.entry[theme] ?? resolveToken("entry", theme);
 
   return (
     <ol
@@ -193,7 +184,7 @@ export function ProjectMainChainTimeline(
         minWidth: 0,
       }}
     >
-      {MAIN_CHAIN_STEP_ORDER.map(key => {
+      {MAIN_CHAIN_STEP_ORDER.map((key) => {
         // 缺失步骤回退到 pending：渲染端强约束 6 步完整呈现。
         const status: MainChainStepStatus =
           stepByKey.get(key)?.status ?? "pending";

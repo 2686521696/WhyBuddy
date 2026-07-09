@@ -113,20 +113,13 @@ describe("HttpSlideRuleSessionStore Python compatibility", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => ({
-        state,
-        provenance: "python-fullpath",
-        backend: "python",
-      }),
+      json: async () => ({ state, provenance: "python-fullpath", backend: "python" }),
     } as Response);
 
     const store = new HttpSlideRuleSessionStore("/api/sliderule"); // default vite-relative target
     const loaded = await store.load("dev-py-api-thin");
 
-    expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining("/api/sliderule/sessions/"),
-      expect.any(Object)
-    );
+    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("/api/sliderule/sessions/"), expect.any(Object));
     expect(loaded?.sessionId).toBe("dev-py-api-thin");
     // frontend is consumer only; no Node ownership, python signals present
     expect((loaded as any)?.provenance).toBeUndefined(); // unwrapped
@@ -138,22 +131,16 @@ describe("HttpSlideRuleSessionStore Python compatibility", () => {
     // Vitest emulates browser JS runtime (Vite bundle); fetch goes to /api (Vite proxy -> Python 9700).
     // Covers: 1) chinese state fidelity read via http-store.load (no mojibake in client-visible state), 2) delete, 3) subsequent load returns undefined (maps 404).
     // Proves only TS_RUNTIME_OWNED thin frontend contract consumer; Python owns DELETE/GET 404 + no-mojibake (see pytest).
-    const chinese =
-      "浏览器重置会话 smoke 测试：reset session + DELETE/GET 无 mojibake";
+    const chinese = "浏览器重置会话 smoke 测试：reset session + DELETE/GET 无 mojibake";
     const preState = {
       ...makeState("reset-browser-smoke-105"),
       goal: { text: chinese, status: "needs_refinement" },
     };
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({
-          state: preState,
-          provenance: "python-fullpath",
-          backend: "python",
-        }),
+        json: async () => ({ state: preState, provenance: "python-fullpath", backend: "python" }),
       } as Response)
       .mockResolvedValueOnce({
         ok: true,

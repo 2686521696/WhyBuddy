@@ -165,12 +165,9 @@ export const PromptPackagePanel: FC<PromptPackagePanelProps> = props => {
   } = props;
   const documents: BlueprintSpecDocument[] =
     props.documents ??
-    (
-      specTree as
-        | (BlueprintSpecTree & { documents?: BlueprintSpecDocument[] })
-        | null
-    )?.documents ??
-    [];
+    ((specTree as (BlueprintSpecTree & { documents?: BlueprintSpecDocument[] }) | null)
+      ?.documents ??
+      []);
 
   if (!specTree) {
     return null;
@@ -374,37 +371,40 @@ function PromptPackagePanelInner({
   }, [handleRefresh, jobId, packages.length]);
 
   return (
-    <div className="grid gap-3" data-testid="prompt-package-workbench">
+    <div
+      className="grid gap-3"
+      data-testid="prompt-package-workbench"
+    >
       {/* Header chrome removed: SubStageCard 已提供标题 / apiPath / summary / 状态胶囊 */}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="gap-2 rounded-none border-[#CCCCCC] bg-white font-black text-black hover:bg-[#F3F3F3]"
-          disabled={!jobId || loading || generating}
-          onClick={handleRefresh}
-          data-testid="prompt-package-refresh-button"
-        >
-          <RefreshCw
-            className={cn("size-3.5", loading && "animate-spin")}
-            aria-hidden="true"
-          />
-          {panelText("刷新", "Refresh", locale)}
-        </Button>
-        <Button
-          type="button"
-          className="gap-2 rounded-none bg-black font-black text-white hover:bg-[#333]"
-          disabled={!canGenerate || loading || generating}
-          onClick={handleGenerate}
-          data-testid="prompt-package-generate-button"
-        >
-          {generating ? (
-            <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : (
-            <Send className="size-3.5" aria-hidden="true" />
-          )}
-          {panelText("生成提示词包", "Generate prompt package", locale)}
-        </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2 rounded-none border-[#CCCCCC] bg-white font-black text-black hover:bg-[#F3F3F3]"
+            disabled={!jobId || loading || generating}
+            onClick={handleRefresh}
+            data-testid="prompt-package-refresh-button"
+          >
+            <RefreshCw
+              className={cn("size-3.5", loading && "animate-spin")}
+              aria-hidden="true"
+            />
+            {panelText("刷新", "Refresh", locale)}
+          </Button>
+          <Button
+            type="button"
+            className="gap-2 rounded-none bg-black font-black text-white hover:bg-[#333]"
+            disabled={!canGenerate || loading || generating}
+            onClick={handleGenerate}
+            data-testid="prompt-package-generate-button"
+          >
+            {generating ? (
+              <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Send className="size-3.5" aria-hidden="true" />
+            )}
+            {panelText("生成提示词包", "Generate prompt package", locale)}
+          </Button>
       </div>
 
       {error ? (
@@ -624,10 +624,7 @@ function PromptPackagePanelInner({
                       {blueprintCopy(section.title, locale)}
                     </div>
                     <div className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs font-semibold leading-5 text-slate-500">
-                      {blueprintCopy(
-                        section.content || section.summary,
-                        locale
-                      )}
+                      {blueprintCopy(section.content || section.summary, locale)}
                     </div>
                   </div>
                 ))}

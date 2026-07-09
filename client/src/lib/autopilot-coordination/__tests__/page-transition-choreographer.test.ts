@@ -92,9 +92,7 @@ describe("PageTransitionChoreographer", () => {
   });
 
   it("aborts an in-flight page transition before starting the next one", () => {
-    const debug = vi
-      .spyOn(console, "debug")
-      .mockImplementation(() => undefined);
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => undefined);
     const choreographer = createPageTransitionChoreographer({
       prefersReducedMotion: () => false,
     });

@@ -279,23 +279,21 @@ export interface DeriveBlueprintWallProcessDataInput {
 
 // ─── Stage label helper ──────────────────────────────────────────────────────
 
-const STAGE_LABELS: Record<
-  BlueprintSceneStageKey,
-  Record<AppLocale, string>
-> = {
-  input: { "zh-CN": "目标输入", "en-US": "Goal Input" },
-  clarification: { "zh-CN": "澄清交互", "en-US": "Clarification" },
-  route_generation: { "zh-CN": "路线生成", "en-US": "Route Generation" },
-  route_selection: { "zh-CN": "路线选择", "en-US": "Route Selection" },
-  spec_tree: { "zh-CN": "规格树", "en-US": "Spec Tree" },
-  spec_docs: { "zh-CN": "规格文档", "en-US": "Spec Docs" },
-  effect_preview: { "zh-CN": "效果预览", "en-US": "Effect Preview" },
-  prompt_packaging: { "zh-CN": "提示词打包", "en-US": "Prompt Packaging" },
-  engineering_handoff: {
-    "zh-CN": "工程交付",
-    "en-US": "Engineering Handoff",
-  },
-};
+const STAGE_LABELS: Record<BlueprintSceneStageKey, Record<AppLocale, string>> =
+  {
+    input: { "zh-CN": "目标输入", "en-US": "Goal Input" },
+    clarification: { "zh-CN": "澄清交互", "en-US": "Clarification" },
+    route_generation: { "zh-CN": "路线生成", "en-US": "Route Generation" },
+    route_selection: { "zh-CN": "路线选择", "en-US": "Route Selection" },
+    spec_tree: { "zh-CN": "规格树", "en-US": "Spec Tree" },
+    spec_docs: { "zh-CN": "规格文档", "en-US": "Spec Docs" },
+    effect_preview: { "zh-CN": "效果预览", "en-US": "Effect Preview" },
+    prompt_packaging: { "zh-CN": "提示词打包", "en-US": "Prompt Packaging" },
+    engineering_handoff: {
+      "zh-CN": "工程交付",
+      "en-US": "Engineering Handoff",
+    },
+  };
 
 // ─── Reasoning node defaults ─────────────────────────────────────────────────
 
@@ -574,8 +572,7 @@ export function deriveBlueprintWallProcessData(
 
   // Default `maxReasoningNodes` keeps the wall readable (Req 8.4); callers may
   // override it for tests / later UI tuning.
-  const maxReasoningNodes =
-    input.maxReasoningNodes ?? DEFAULT_MAX_REASONING_NODES;
+  const maxReasoningNodes = input.maxReasoningNodes ?? DEFAULT_MAX_REASONING_NODES;
   const reasoningNodes = buildReasoningNodes(
     input.agentReasoningEntries,
     input.job.id,
@@ -612,7 +609,9 @@ export function deriveBlueprintWallProcessData(
     // targetText lives in `request` and is not part of the `hasData` check).
     // Order: [userGoalNode?, ...stageNodes] keeps the input goal before the
     // backbone. Route summary stays at default because there is no routeSet here.
-    const baseNodes = userGoalNode ? [userGoalNode, ...stageNodes] : stageNodes;
+    const baseNodes = userGoalNode
+      ? [userGoalNode, ...stageNodes]
+      : stageNodes;
     return buildOutput(
       stageSignal,
       stages,
@@ -658,10 +657,7 @@ export function deriveBlueprintWallProcessData(
   // `compatibility.counters.artifacts` so the graph and summaries stay
   // consistent (Req 6.2 / 8.1-8.3).
   const finalArtifactIndex = pickFinalArtifactIndex(includedArtifacts);
-  const artifactNodes = buildArtifactNodes(
-    includedArtifacts,
-    finalArtifactIndex
-  );
+  const artifactNodes = buildArtifactNodes(includedArtifacts, finalArtifactIndex);
   const finalNode = buildFinalNode(
     includedArtifacts,
     finalArtifactIndex,
@@ -771,7 +767,7 @@ function mapStageStateToNodeStatus(
 function buildStageNodes(
   stages: BlueprintWallStageItem[]
 ): BlueprintWallGraphNode[] {
-  return stages.map(stage => ({
+  return stages.map((stage) => ({
     id: `stage:${stage.key}`,
     type: "stage" as const,
     title: stage.label,
@@ -863,11 +859,11 @@ function buildRelationshipEdges(
   nodes: BlueprintWallGraphNode[]
 ): BlueprintWallGraphEdge[] {
   const edges: BlueprintWallGraphEdge[] = [];
-  const nodeIds = new Set(nodes.map(node => node.id));
+  const nodeIds = new Set(nodes.map((node) => node.id));
   const hasNode = (id: string): boolean => nodeIds.has(id);
 
   // 1. user_goal → stage:input（Req 5.5）：用户目标支撑/喂入输入阶段。
-  const userGoalNode = nodes.find(node => node.type === "user_goal");
+  const userGoalNode = nodes.find((node) => node.type === "user_goal");
   if (userGoalNode && hasNode("stage:input")) {
     const jobId = userGoalNode.id.slice("user_goal:".length);
     edges.push({
@@ -911,7 +907,7 @@ function buildRelationshipEdges(
 
   // 4. stage:effect_preview → preview 节点（Req 5.5）：effect_preview 阶段产出预览。
   //    方向为 stage → preview（预览生产边，供 Task 5.3 测试断言）。
-  const previewNode = nodes.find(node => node.type === "preview");
+  const previewNode = nodes.find((node) => node.type === "preview");
   if (previewNode && hasNode("stage:effect_preview")) {
     const previewId = previewNode.id.slice("preview:".length);
     edges.push({
@@ -930,7 +926,7 @@ function buildRelationshipEdges(
   //    `{ kind: "stage" }` source ref 且该 stage 节点存在时连边，方向 stage → reasoning。
   for (const node of nodes) {
     if (node.type !== "reasoning") continue;
-    const stageRef = node.sourceRefs.find(ref => ref.kind === "stage");
+    const stageRef = node.sourceRefs.find((ref) => ref.kind === "stage");
     if (!stageRef) continue;
     const stageNodeId = `stage:${stageRef.id}`;
     if (!hasNode(stageNodeId)) continue;
@@ -945,7 +941,7 @@ function buildRelationshipEdges(
 
   // 7. answers edges 连入 final 节点（Req 5.8）：artifact / preview 是支撑终端交付的
   //    具体产出证据。reasoning→final 不确定，省略（Req 5.7）。
-  const finalNode = nodes.find(node => node.type === "final");
+  const finalNode = nodes.find((node) => node.type === "final");
   if (finalNode) {
     const finalId = finalNode.id.slice("final:".length);
     for (const node of nodes) {
@@ -992,12 +988,12 @@ function buildRelationshipEdges(
 function buildBrainstormEdges(
   nodes: BlueprintWallGraphNode[]
 ): BlueprintWallGraphEdge[] {
-  const nodeIds = new Set(nodes.map(node => node.id));
+  const nodeIds = new Set(nodes.map((node) => node.id));
   if (!nodeIds.has("stage:spec_tree") || !nodeIds.has("stage:spec_docs")) {
     return [];
   }
 
-  const brainstormNodes = nodes.filter(node => node.type === "brainstorm");
+  const brainstormNodes = nodes.filter((node) => node.type === "brainstorm");
   if (brainstormNodes.length === 0) return [];
 
   const edges: BlueprintWallGraphEdge[] = [];
@@ -1114,8 +1110,10 @@ function buildRouteSummary(
   if (!Array.isArray(routes)) return DEFAULT_ROUTE_SUMMARY;
 
   const primaryRoute = routes.find(
-    route =>
-      route && typeof route === "object" && route.id === routeSet.primaryRouteId
+    (route) =>
+      route &&
+      typeof route === "object" &&
+      route.id === routeSet.primaryRouteId
   );
 
   return {
@@ -1162,7 +1160,7 @@ function buildSpecNodes(
 
   const rootNodeId = specTree.rootNodeId;
   const rootNode = treeNodes.find(
-    node =>
+    (node) =>
       node &&
       typeof node === "object" &&
       typeof node.id === "string" &&
@@ -1244,7 +1242,10 @@ function buildSpecSummary(
   if (!Array.isArray(treeNodes)) return DEFAULT_SPEC_SUMMARY;
 
   const rootNode = treeNodes.find(
-    node => node && typeof node === "object" && node.id === specTree.rootNodeId
+    (node) =>
+      node &&
+      typeof node === "object" &&
+      node.id === specTree.rootNodeId
   );
 
   return {
@@ -1285,19 +1286,19 @@ function buildBrainstormNodes(
   return activeRoleIds
     .slice(0, MAX_BRAINSTORM_BRANCH_NODES)
     .map((roleId, index) => ({
-      id: `brainstorm:${roleId}`,
-      type: "brainstorm" as const,
-      title: formatBrainstormRoleTitle(roleId),
-      body:
-        locale === "zh-CN"
-          ? `LLM 运行时分支：${roleId}`
-          : `Runtime branch: ${roleId}`,
-      status: "active" as const,
-      column: BRAINSTORM_COLUMN,
-      row: index + 1,
-      accent: "teal" as const,
-      sourceRefs: [{ kind: "brainstorm" as const, id: roleId }],
-    }));
+    id: `brainstorm:${roleId}`,
+    type: "brainstorm" as const,
+    title: formatBrainstormRoleTitle(roleId),
+    body:
+      locale === "zh-CN"
+        ? `LLM 运行时分支：${roleId}`
+        : `Runtime branch: ${roleId}`,
+    status: "active" as const,
+    column: BRAINSTORM_COLUMN,
+    row: index + 1,
+    accent: "teal" as const,
+    sourceRefs: [{ kind: "brainstorm" as const, id: roleId }],
+  }));
 }
 
 function collectBrainstormRoleIds(
@@ -1346,7 +1347,7 @@ function formatBrainstormRoleTitle(roleId: string): string {
   const words = roleId
     .split(/[-_]+/g)
     .filter(Boolean)
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1));
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
   return words.length > 0 ? words.join(" ") : roleId;
 }
 
@@ -1730,7 +1731,7 @@ function buildReasoningConsoleLines(
   jobId: string
 ): BlueprintWallConsoleLine[] {
   const filtered = filterCurrentJobReasoning(entries, jobId);
-  return filtered.map(entry => ({
+  return filtered.map((entry) => ({
     id: `console:reasoning:${entry.id}`,
     text: deriveReasoningConsoleText(entry),
     tone: deriveReasoningConsoleTone(entry),
@@ -2243,8 +2244,10 @@ const EMPTY_MINIMAP_VIEWPORT: BlueprintWallMinimap["viewport"] = {
  *
  * 纯函数、确定性：仅依赖入参节点的 column / row / status，无时间 / 随机 / 全局状态。
  */
-function buildMinimap(nodes: BlueprintWallGraphNode[]): BlueprintWallMinimap {
-  const minimapNodes = nodes.map(node => ({
+function buildMinimap(
+  nodes: BlueprintWallGraphNode[]
+): BlueprintWallMinimap {
+  const minimapNodes = nodes.map((node) => ({
     id: node.id,
     column: node.column,
     row: node.row,

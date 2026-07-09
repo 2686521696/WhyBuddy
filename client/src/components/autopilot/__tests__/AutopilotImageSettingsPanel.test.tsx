@@ -41,7 +41,7 @@ import {
 // ─── Render helpers ─────────────────────────────────────────────────────────
 
 function makeSettings(
-  overrides?: Partial<ImageSettingsViewModel>
+  overrides?: Partial<ImageSettingsViewModel>,
 ): ImageSettingsViewModel {
   return {
     baseUrl: "https://image-proxy.example.com",
@@ -57,10 +57,10 @@ function makeSettings(
 
 function renderPanel(
   settings: ImageSettingsViewModel,
-  theme: "light" | "dark" = "light"
+  theme: "light" | "dark" = "light",
 ): string {
   return renderToStaticMarkup(
-    <AutopilotImageSettingsPanel settings={settings} theme={theme} />
+    <AutopilotImageSettingsPanel settings={settings} theme={theme} />,
   );
 }
 
@@ -74,29 +74,32 @@ function renderPanel(
 function extractTestIdInner(
   html: string,
   testId: string,
-  tagName: string
+  tagName: string,
 ): string {
   const marker = `data-testid="${testId}"`;
   const markerIdx = html.indexOf(marker);
   expect(
     markerIdx,
-    `data-testid=${testId} not found in html`
+    `data-testid=${testId} not found in html`,
   ).toBeGreaterThanOrEqual(0);
 
   const tagStart = html.lastIndexOf(`<${tagName}`, markerIdx);
   expect(
     tagStart,
-    `<${tagName}> open tag not found before testid=${testId}`
+    `<${tagName}> open tag not found before testid=${testId}`,
   ).toBeGreaterThanOrEqual(0);
 
   const tagEnd = html.indexOf(">", markerIdx);
-  expect(tagEnd, `closing > of ${tagName} not found`).toBeGreaterThanOrEqual(0);
+  expect(
+    tagEnd,
+    `closing > of ${tagName} not found`,
+  ).toBeGreaterThanOrEqual(0);
 
   const closeTag = `</${tagName}>`;
   const closeIdx = html.indexOf(closeTag, tagEnd);
   expect(
     closeIdx,
-    `</${tagName}> not found after testid=${testId}`
+    `</${tagName}> not found after testid=${testId}`,
   ).toBeGreaterThanOrEqual(0);
 
   return html.slice(tagEnd + 1, closeIdx);
@@ -140,11 +143,8 @@ const safeApiKeyChar = fc.constantFrom(...SAFE_API_KEY_ALPHABET);
 
 /** length >= 14 with a generous upper bound to exercise non-trivial mask widths. */
 const longApiKeyArb = fc
-  .array(safeApiKeyChar, {
-    minLength: MASKED_API_KEY_MIN_LENGTH,
-    maxLength: 80,
-  })
-  .map(chars => chars.join(""));
+  .array(safeApiKeyChar, { minLength: MASKED_API_KEY_MIN_LENGTH, maxLength: 80 })
+  .map((chars) => chars.join(""));
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -158,12 +158,12 @@ describe(
           "and enables the retry button",
         () => {
           fc.assert(
-            fc.property(longApiKeyArb, apiKey => {
+            fc.property(longApiKeyArb, (apiKey) => {
               const html = renderPanel(makeSettings({ apiKey }));
               const rendered = extractTestIdInner(
                 html,
                 "masked-api-key",
-                "span"
+                "span",
               );
 
               // overall length matches the input
@@ -178,7 +178,7 @@ describe(
               // middle: rendered.length - 14 characters, all the single mask char
               const middle = rendered.slice(8, rendered.length - 6);
               expect(middle.length).toBe(
-                apiKey.length - MASKED_API_KEY_MIN_LENGTH
+                apiKey.length - MASKED_API_KEY_MIN_LENGTH,
               );
               if (middle.length > 0) {
                 const uniqueChars = new Set(middle.split(""));
@@ -189,9 +189,9 @@ describe(
               // retry button stays enabled when key is configured
               expect(isRetryButtonDisabled(html)).toBe(false);
             }),
-            { numRuns: 100 }
+            { numRuns: 100 },
           );
-        }
+        },
       );
     });
 
@@ -218,5 +218,5 @@ describe(
         });
       }
     });
-  }
+  },
 );

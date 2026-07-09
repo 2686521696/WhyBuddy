@@ -113,7 +113,7 @@ export function maskApiKey(apiKey: string | null): string {
   const head = apiKey.slice(0, 8);
   const tail = apiKey.slice(-6);
   const fill = MASKED_API_KEY_FILL_CHAR.repeat(
-    apiKey.length - MASKED_API_KEY_MIN_LENGTH
+    apiKey.length - MASKED_API_KEY_MIN_LENGTH,
   );
   return head + fill + tail;
 }
@@ -180,7 +180,7 @@ function SettingRow({
  * `AutopilotImageSettingsPanel` — image 配置只读视图与脱敏 API key 展示。
  */
 export function AutopilotImageSettingsPanel(
-  props: AutopilotImageSettingsPanelProps
+  props: AutopilotImageSettingsPanelProps,
 ): ReactElement {
   const { settings, theme, onRetry } = props;
 

@@ -125,7 +125,7 @@ function inferPhaseHandoffs(
   void now;
 
   const ordered = phaseEvents
-    .filter(event => Number.isFinite(event.timestamp))
+    .filter((event) => Number.isFinite(event.timestamp))
     .slice()
     .sort((a, b) => a.timestamp - b.timestamp);
 
@@ -167,14 +167,12 @@ function inferPhaseHandoffs(
 const STAGE_RULES: Partial<
   Record<
     string,
-    (
-      rolePhases: Record<string, RolePhase>
-    ) => Array<{ from: string; to: string }>
+    (rolePhases: Record<string, RolePhase>) => Array<{ from: string; to: string }>
   >
 > = {
-  spec_tree: rolePhases => {
+  spec_tree: (rolePhases) => {
     const find = (token: string) =>
-      Object.keys(rolePhases).find(id => id.toLowerCase().includes(token));
+      Object.keys(rolePhases).find((id) => id.toLowerCase().includes(token));
 
     const analyst = find("analyst");
     const architect = find("architect");
@@ -238,7 +236,7 @@ export function deriveConnectionLines(input: {
     input.now
   );
   if (heuristic.length > 0) {
-    const heuristicLines: BlueprintConnectionLine[] = heuristic.map(line => ({
+    const heuristicLines: BlueprintConnectionLine[] = heuristic.map((line) => ({
       from: line.from,
       to: line.to,
       directed: false,
@@ -249,10 +247,10 @@ export function deriveConnectionLines(input: {
 
   // Step 3 — stage-rule fallback, always undirected (Requirements 5.7, 5.9).
   const stageRule = input.activeStage
-    ? (STAGE_RULES[input.activeStage]?.(input.rolePhases) ?? [])
+    ? STAGE_RULES[input.activeStage]?.(input.rolePhases) ?? []
     : [];
   if (stageRule.length > 0) {
-    const stageRuleLines: BlueprintConnectionLine[] = stageRule.map(line => ({
+    const stageRuleLines: BlueprintConnectionLine[] = stageRule.map((line) => ({
       from: line.from,
       to: line.to,
       directed: false,

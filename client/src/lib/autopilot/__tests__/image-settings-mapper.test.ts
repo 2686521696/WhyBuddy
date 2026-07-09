@@ -124,52 +124,49 @@ describe("mapImageSettingsResponseToViewModel — malformed: wrong type", () => 
       mapImageSettingsResponseToViewModel({
         ...VALID_BODY,
         timeoutMs: "60000",
-      })
+      }),
     ).toBeNull();
   });
 
   it("rejects timeoutMs as zero (must be positive)", () => {
     expect(
-      mapImageSettingsResponseToViewModel({ ...VALID_BODY, timeoutMs: 0 })
+      mapImageSettingsResponseToViewModel({ ...VALID_BODY, timeoutMs: 0 }),
     ).toBeNull();
   });
 
   it("rejects timeoutMs as negative", () => {
     expect(
-      mapImageSettingsResponseToViewModel({ ...VALID_BODY, timeoutMs: -1 })
+      mapImageSettingsResponseToViewModel({ ...VALID_BODY, timeoutMs: -1 }),
     ).toBeNull();
   });
 
   it("rejects timeoutMs as non-integer", () => {
     expect(
-      mapImageSettingsResponseToViewModel({ ...VALID_BODY, timeoutMs: 1.5 })
+      mapImageSettingsResponseToViewModel({ ...VALID_BODY, timeoutMs: 1.5 }),
     ).toBeNull();
   });
 
   it("rejects timeoutMs as NaN", () => {
     expect(
-      mapImageSettingsResponseToViewModel({
-        ...VALID_BODY,
-        timeoutMs: Number.NaN,
-      })
+      mapImageSettingsResponseToViewModel({ ...VALID_BODY, timeoutMs: Number.NaN }),
     ).toBeNull();
   });
 
   it("rejects model as number", () => {
     expect(
-      mapImageSettingsResponseToViewModel({ ...VALID_BODY, model: 42 })
+      mapImageSettingsResponseToViewModel({ ...VALID_BODY, model: 42 }),
     ).toBeNull();
   });
 
   it("rejects model as empty string", () => {
     expect(
-      mapImageSettingsResponseToViewModel({ ...VALID_BODY, model: "" })
+      mapImageSettingsResponseToViewModel({ ...VALID_BODY, model: "" }),
     ).toBeNull();
   });
 
   it("rejects path as null", () => {
     expect(
-      mapImageSettingsResponseToViewModel({ ...VALID_BODY, path: null })
+      mapImageSettingsResponseToViewModel({ ...VALID_BODY, path: null }),
     ).toBeNull();
   });
 
@@ -178,7 +175,7 @@ describe("mapImageSettingsResponseToViewModel — malformed: wrong type", () => 
       mapImageSettingsResponseToViewModel({
         ...VALID_BODY,
         defaultSize: true,
-      })
+      }),
     ).toBeNull();
   });
 
@@ -187,13 +184,13 @@ describe("mapImageSettingsResponseToViewModel — malformed: wrong type", () => 
       mapImageSettingsResponseToViewModel({
         ...VALID_BODY,
         defaultAspect: "",
-      })
+      }),
     ).toBeNull();
   });
 
   it("rejects baseUrl as number", () => {
     expect(
-      mapImageSettingsResponseToViewModel({ ...VALID_BODY, baseUrl: 42 })
+      mapImageSettingsResponseToViewModel({ ...VALID_BODY, baseUrl: 42 }),
     ).toBeNull();
   });
 
@@ -202,7 +199,7 @@ describe("mapImageSettingsResponseToViewModel — malformed: wrong type", () => 
       mapImageSettingsResponseToViewModel({
         ...VALID_BODY,
         maskedApiKey: 0,
-      })
+      }),
     ).toBeNull();
   });
 });

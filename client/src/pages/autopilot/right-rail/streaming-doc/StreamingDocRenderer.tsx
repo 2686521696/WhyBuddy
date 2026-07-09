@@ -81,7 +81,7 @@ export type StreamingDocRendererProps = AutopilotSpecDocumentsWorkbenchProps;
  * 既有 `__testing__` 测试契约保持稳定。后续 Task 5+ 会逐步把真实业务交互填充
  * 到容器内的四个子组件中。
  */
-export const StreamingDocRenderer: FC<StreamingDocRendererProps> = props => {
+export const StreamingDocRenderer: FC<StreamingDocRendererProps> = (props) => {
   return (
     <div data-testid="streaming-doc-renderer" className="h-full min-h-0">
       <AutopilotSpecDocumentsWorkbench {...props} />

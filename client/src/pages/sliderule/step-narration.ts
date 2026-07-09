@@ -19,7 +19,7 @@ function firstSummarySentence(summary?: string): string | null {
   if (!summary?.trim()) return null;
   const sentence = summary
     .split(/[。.!?\n]/)
-    .map(s => s.trim())
+    .map((s) => s.trim())
     .find(Boolean);
   if (!sentence) return null;
   if (sentence.length > 120) return `${sentence.slice(0, 117)}…`;
@@ -39,10 +39,7 @@ export function buildStepNarration(args: {
   return `已完成${completionLabel(args.capabilityId)}。`;
 }
 
-export function buildOpeningPlanNarration(
-  rationale?: string,
-  source?: string
-): string | null {
+export function buildOpeningPlanNarration(rationale?: string, source?: string): string | null {
   const text = String(rationale || "").trim();
   if (!text || source === "heuristic_fallback") return null;
   if (text.length > 180) return `${text.slice(0, 177)}…`;

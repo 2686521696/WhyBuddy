@@ -1,10 +1,6 @@
 import { cn } from "@/lib/utils";
 
-import type {
-  HUDElement,
-  OverlayContainerProps,
-  VideoFrameRect,
-} from "./types";
+import type { HUDElement, OverlayContainerProps, VideoFrameRect } from "./types";
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -70,7 +66,7 @@ function UIOverlayLayer({
     <div
       className={cn(
         "absolute inset-0 z-20",
-        pointerPassthrough && "pointer-events-none"
+        pointerPassthrough && "pointer-events-none",
       )}
       style={{
         background: clear ? "transparent" : "rgba(0, 0, 0, 0.15)",
@@ -119,7 +115,7 @@ function HUDLayer({
   videoFrame?: VideoFrameRect;
 }) {
   const visibleElements = elements.filter(
-    el => el.visible && !el.occluded && !el.offscreen
+    (el) => el.visible && !el.occluded && !el.offscreen,
   );
 
   if (visibleElements.length === 0) return null;
@@ -129,7 +125,7 @@ function HUDLayer({
       className="pointer-events-none absolute inset-0 z-30"
       data-testid="ue-overlay-hud-layer"
     >
-      {visibleElements.map(el => (
+      {visibleElements.map((el) => (
         <div
           key={el.id}
           className="absolute"

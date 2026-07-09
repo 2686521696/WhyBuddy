@@ -61,34 +61,32 @@ interface PutInput {
  */
 function uniquePutSequenceArb(): fc.Arbitrary<readonly PutInput[]> {
   const sizeArb = fc.integer({ min: 0, max: 50 });
-  return sizeArb.chain(n =>
-    fc
-      .tuple(
-        fc.array(fc.string({ maxLength: 32 }), { minLength: n, maxLength: n }),
-        fc.array(fc.string({ maxLength: 32 }), { minLength: n, maxLength: n }),
-        fc.array(fc.integer({ min: 1, max: 1_000_000 }), {
-          minLength: n,
-          maxLength: n,
-        }),
-        fc.array(fc.string({ maxLength: 32 }), { minLength: n, maxLength: n })
-      )
-      .map(([missionIds, b64s, versions, prompts]) => {
-        const out: PutInput[] = [];
-        for (let i = 0; i < n; i += 1) {
-          out.push({
-            // Index-based keys guarantee uniqueness across the sequence.
-            key: `entry-${i}`,
-            missionId: missionIds[i] ?? `m-${i}`,
-            nodeId: `node-${i}`,
-            version: versions[i] ?? 1,
-            b64: b64s[i] ?? "",
-            mimeType: "image/png",
-            promptUsed: prompts[i] ?? "",
-            generatedAt: new Date(1_700_000_000_000 + i).toISOString(),
-          });
-        }
-        return out;
-      })
+  return sizeArb.chain((n) =>
+    fc.tuple(
+      fc.array(fc.string({ maxLength: 32 }), { minLength: n, maxLength: n }),
+      fc.array(fc.string({ maxLength: 32 }), { minLength: n, maxLength: n }),
+      fc.array(fc.integer({ min: 1, max: 1_000_000 }), {
+        minLength: n,
+        maxLength: n,
+      }),
+      fc.array(fc.string({ maxLength: 32 }), { minLength: n, maxLength: n }),
+    ).map(([missionIds, b64s, versions, prompts]) => {
+      const out: PutInput[] = [];
+      for (let i = 0; i < n; i += 1) {
+        out.push({
+          // Index-based keys guarantee uniqueness across the sequence.
+          key: `entry-${i}`,
+          missionId: missionIds[i] ?? `m-${i}`,
+          nodeId: `node-${i}`,
+          version: versions[i] ?? 1,
+          b64: b64s[i] ?? "",
+          mimeType: "image/png",
+          promptUsed: prompts[i] ?? "",
+          generatedAt: new Date(1_700_000_000_000 + i).toISOString(),
+        });
+      }
+      return out;
+    }),
   );
 }
 
@@ -107,13 +105,13 @@ function singleEntryArb(): fc.Arbitrary<PutInput> {
     promptUsed: fc.string({ maxLength: 64 }),
     generatedAt: fc
       .integer({ min: 1_700_000_000_000, max: 1_800_000_000_000 })
-      .map(ms => new Date(ms).toISOString()),
+      .map((ms) => new Date(ms).toISOString()),
   });
 }
 
 function entryFromInput(
   input: PutInput,
-  storedAt: number
+  storedAt: number,
 ): ImageGalleryCacheEntry {
   return {
     key: input.key,
@@ -131,7 +129,7 @@ function entryFromInput(
 describe("Feature: autopilot-image-rendering-and-visual-system, Property 6: ImageGalleryCache LRU 24-cap", () => {
   it("caps size at IMAGE_GALLERY_CACHE_CAP and evicts the entries with the smallest storedAt (Requirements 9.3, 9.4)", async () => {
     await fc.assert(
-      fc.asyncProperty(uniquePutSequenceArb(), async puts => {
+      fc.asyncProperty(uniquePutSequenceArb(), async (puts) => {
         // Strictly monotonic storedAt counter for puts. The injected `clock`
         // only fires on `get` (touch-refresh), so we drive put-side ordering
         // explicitly here. Pinning the clock to a value strictly greater than
@@ -156,7 +154,7 @@ describe("Feature: autopilot-image-rendering-and-visual-system, Property 6: Imag
 
         const survivorStart = Math.max(
           0,
-          puts.length - IMAGE_GALLERY_CACHE_CAP
+          puts.length - IMAGE_GALLERY_CACHE_CAP,
         );
         const survivors = puts.slice(survivorStart);
         const evicted = puts.slice(0, survivorStart);
@@ -186,13 +184,13 @@ describe("Feature: autopilot-image-rendering-and-visual-system, Property 6: Imag
 
         await cache.clear();
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
   it("returns a non-null entry whose non-storedAt fields equal the put entry on put-then-get (Requirement 9.3)", async () => {
     await fc.assert(
-      fc.asyncProperty(singleEntryArb(), async input => {
+      fc.asyncProperty(singleEntryArb(), async (input) => {
         let tick = 0;
         const dbName = freshDatabaseName();
         const cache = createImageGalleryCache({
@@ -224,7 +222,7 @@ describe("Feature: autopilot-image-rendering-and-visual-system, Property 6: Imag
 
         await cache.clear();
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -232,15 +230,15 @@ describe("Feature: autopilot-image-rendering-and-visual-system, Property 6: Imag
     await fc.assert(
       fc.asyncProperty(
         fc.string({ minLength: 1, maxLength: 64 }),
-        async missingKey => {
+        async (missingKey) => {
           const dbName = freshDatabaseName();
           const cache = createImageGalleryCache({ databaseName: dbName });
           const got = await cache.get(missingKey);
           expect(got).toBeNull();
           await cache.clear();
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });

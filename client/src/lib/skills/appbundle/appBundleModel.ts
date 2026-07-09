@@ -16,13 +16,7 @@ export interface AppMenuEntry {
   roleRefs: string[];
 }
 
-export type AppBundleSkillId =
-  | "datamodel"
-  | "rbac"
-  | "workflow"
-  | "page"
-  | "aigc"
-  | "appbundle";
+export type AppBundleSkillId = "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle";
 
 export interface AppBundleVersionPin {
   skillId: AppBundleSkillId;
@@ -148,11 +142,7 @@ export interface AppBundleRollbackClosureDiffEvidence {
 
 export type AppBundleClosureTier = "hard_blocker" | "warning" | "info";
 
-export const APPBUNDLE_CLOSURE_TIERS: readonly AppBundleClosureTier[] = [
-  "hard_blocker",
-  "warning",
-  "info",
-] as const;
+export const APPBUNDLE_CLOSURE_TIERS: readonly AppBundleClosureTier[] = ["hard_blocker", "warning", "info"] as const;
 
 export interface ClassifiedAppBundleClosureFinding {
   code: string;

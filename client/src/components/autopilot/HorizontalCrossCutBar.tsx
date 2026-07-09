@@ -75,8 +75,7 @@ export function HorizontalCrossCutBar({
   // 优先消费传入的 visualTokens prop，使 prop 在默认占位实现下也保持「真实使用」语义；
   // 在 prop 缺失对应键的极端情况下回落到全局 resolveToken 取色，保持组件可渲染。
   const nodeColor =
-    visualTokens["business-loop"]?.[theme] ??
-    resolveToken("business-loop", theme);
+    visualTokens["business-loop"]?.[theme] ?? resolveToken("business-loop", theme);
   const lineColor =
     visualTokens["data-state"]?.[theme] ?? resolveToken("data-state", theme);
 

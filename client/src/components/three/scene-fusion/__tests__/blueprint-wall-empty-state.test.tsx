@@ -39,8 +39,7 @@ import { deriveBlueprintWallProcessData } from "../blueprint-wall-process-data";
 // ─── Source readers (HUD wiring + scope guards) ──────────────────────────────
 
 const here = dirname(fileURLToPath(import.meta.url));
-const readScene = (file: string) =>
-  readFileSync(resolve(here, "..", file), "utf8");
+const readScene = (file: string) => readFileSync(resolve(here, "..", file), "utf8");
 
 const hudSource = readScene("BlueprintWallProcessGraphHud.tsx");
 const emptyStateSource = readScene("BlueprintWallEmptyState.tsx");
@@ -55,7 +54,7 @@ function importLines(source: string): string {
   return source
     .split("\n")
     .filter(
-      line => line.trim().startsWith("import") || /\bfrom\s+["']/.test(line)
+      (line) => line.trim().startsWith("import") || /\bfrom\s+["']/.test(line)
     )
     .join("\n");
 }
@@ -146,16 +145,12 @@ describe("HUD wires the empty state (source guard)", () => {
     expect(hudCode).toContain("data={flowGraph.data}");
     // 旧的 EMPTY_GRAPH_DATA 常量 / 三元已移除（不再传空 data 试图阻止挂载）。
     expect(hudCode).not.toContain("EMPTY_GRAPH_DATA");
-    expect(hudCode).not.toContain(
-      "isEmpty ? EMPTY_GRAPH_DATA : flowGraph.data"
-    );
+    expect(hudCode).not.toContain("isEmpty ? EMPTY_GRAPH_DATA : flowGraph.data");
   });
 
   it("挂载 BlueprintWallEmptyState 并透传 deriver 的 emptyReason（Req 4.2 / 10.6）", () => {
     expect(hudImports).toContain("BlueprintWallEmptyState");
-    expect(/from\s+["']\.\/BlueprintWallEmptyState["']/.test(hudImports)).toBe(
-      true
-    );
+    expect(/from\s+["']\.\/BlueprintWallEmptyState["']/.test(hudImports)).toBe(true);
     expect(hudCode).toContain("<BlueprintWallEmptyState");
     expect(hudCode).toContain("reason={wallData.emptyReason}");
     // 仅在空态分支挂载。
@@ -176,9 +171,7 @@ describe("HUD wires the empty state (source guard)", () => {
 
 describe("BlueprintWallEmptyState scope guards (Req 3.7 / 4.4 / 4.5)", () => {
   it("never references useSandboxStore in code", () => {
-    expect(stripComments(emptyStateSource).includes("useSandboxStore")).toBe(
-      false
-    );
+    expect(stripComments(emptyStateSource).includes("useSandboxStore")).toBe(false);
   });
 
   it("does not import SandboxMonitor / MissionWallTaskPanel", () => {

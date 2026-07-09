@@ -48,9 +48,7 @@ function CoverageRing({
       data-coverage-percent={clamped}
       className="flex items-center gap-2"
     >
-      <span className={cn("text-2xl font-black tabular-nums", tone)}>
-        {clamped}%
-      </span>
+      <span className={cn("text-2xl font-black tabular-nums", tone)}>{clamped}%</span>
       <span className="text-[10px] font-semibold uppercase tracking-tight text-slate-400">
         {t(locale, "覆盖率", "Coverage")}
       </span>
@@ -83,14 +81,11 @@ export const TraceabilityMatrixView: FC<TraceabilityMatrixViewProps> = ({
 
   if (status === "not_generated") {
     return (
-      <div
-        data-testid="matrix-not-generated"
-        className="p-3 text-xs text-slate-400"
-      >
+      <div data-testid="matrix-not-generated" className="p-3 text-xs text-slate-400">
         {t(
           locale,
           "追溯矩阵尚未生成（需先完成规格文档）。",
-          "Traceability matrix not generated yet (finish spec documents first)."
+          "Traceability matrix not generated yet (finish spec documents first).",
         )}
       </div>
     );
@@ -99,9 +94,7 @@ export const TraceabilityMatrixView: FC<TraceabilityMatrixViewProps> = ({
   if (status === "error" || !matrix) {
     return (
       <div data-testid="matrix-error" className="p-3 text-xs text-rose-600">
-        <p className="font-bold">
-          {t(locale, "矩阵加载失败", "Failed to load matrix")}
-        </p>
+        <p className="font-bold">{t(locale, "矩阵加载失败", "Failed to load matrix")}</p>
         <Button
           variant="outline"
           size="sm"
@@ -119,10 +112,7 @@ export const TraceabilityMatrixView: FC<TraceabilityMatrixViewProps> = ({
   const { coverage, entries } = matrix;
 
   return (
-    <section
-      data-testid="traceability-matrix-panel"
-      className="flex flex-col gap-3 p-1"
-    >
+    <section data-testid="traceability-matrix-panel" className="flex flex-col gap-3 p-1">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <ListTree className="size-3.5 text-[#0f766e]" aria-hidden />
@@ -156,37 +146,22 @@ export const TraceabilityMatrixView: FC<TraceabilityMatrixViewProps> = ({
           <span data-testid="matrix-dim-total">
             {t(locale, "需求", "Req")} {coverage.totalRequirements}
           </span>
-          <span data-testid="matrix-dim-design">
-            设计 {coverage.coveredByDesign}
-          </span>
-          <span data-testid="matrix-dim-tasks">
-            任务 {coverage.coveredByTasks}
-          </span>
-          <span data-testid="matrix-dim-evidence">
-            证据 {coverage.coveredByEvidence}
-          </span>
-          <span data-testid="matrix-dim-tests">
-            用例 {coverage.coveredByTests}
-          </span>
+          <span data-testid="matrix-dim-design">设计 {coverage.coveredByDesign}</span>
+          <span data-testid="matrix-dim-tasks">任务 {coverage.coveredByTasks}</span>
+          <span data-testid="matrix-dim-evidence">证据 {coverage.coveredByEvidence}</span>
+          <span data-testid="matrix-dim-tests">用例 {coverage.coveredByTests}</span>
         </dl>
       </div>
 
       {/* 缺口列表（任务 41） */}
       {coverage.gaps.length > 0 ? (
-        <div
-          data-testid="matrix-gaps"
-          className="rounded-[10px] border border-amber-300 bg-amber-50/60 px-2.5 py-2"
-        >
+        <div data-testid="matrix-gaps" className="rounded-[10px] border border-amber-300 bg-amber-50/60 px-2.5 py-2">
           <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-tight text-amber-700">
             <GitCompareArrows className="size-3" aria-hidden />
-            {t(
-              locale,
-              `缺口 ${coverage.gaps.length}`,
-              `${coverage.gaps.length} gap(s)`
-            )}
+            {t(locale, `缺口 ${coverage.gaps.length}`, `${coverage.gaps.length} gap(s)`)}
           </div>
           <ul className="mt-1 flex flex-col gap-1">
-            {coverage.gaps.map(gap => (
+            {coverage.gaps.map((gap) => (
               <li
                 key={gap.requirementId}
                 data-testid="matrix-gap-row"
@@ -194,9 +169,7 @@ export const TraceabilityMatrixView: FC<TraceabilityMatrixViewProps> = ({
               >
                 <span className="font-bold">{gap.requirementId}</span>{" "}
                 {gap.requirementTitle} —{" "}
-                <span className="font-semibold">
-                  {gap.missingLinks.join(", ")}
-                </span>
+                <span className="font-semibold">{gap.missingLinks.join(", ")}</span>
               </li>
             ))}
           </ul>
@@ -208,9 +181,7 @@ export const TraceabilityMatrixView: FC<TraceabilityMatrixViewProps> = ({
         <table className="w-full border-collapse text-[10px]">
           <thead>
             <tr className="text-left text-slate-400">
-              <th className="px-1.5 py-1">
-                {t(locale, "需求", "Requirement")}
-              </th>
+              <th className="px-1.5 py-1">{t(locale, "需求", "Requirement")}</th>
               <th className="px-1.5 py-1">{t(locale, "设计", "Design")}</th>
               <th className="px-1.5 py-1">{t(locale, "任务", "Tasks")}</th>
               <th className="px-1.5 py-1">{t(locale, "证据", "Evidence")}</th>
@@ -218,7 +189,7 @@ export const TraceabilityMatrixView: FC<TraceabilityMatrixViewProps> = ({
             </tr>
           </thead>
           <tbody>
-            {entries.map(entry => (
+            {entries.map((entry) => (
               <tr
                 key={entry.requirementId}
                 data-testid="matrix-row"
@@ -228,18 +199,10 @@ export const TraceabilityMatrixView: FC<TraceabilityMatrixViewProps> = ({
                 <td className="px-1.5 py-1 font-bold text-slate-700">
                   {entry.requirementId} {entry.requirementTitle}
                 </td>
-                <td className="px-1.5 py-1 text-slate-500">
-                  {entry.designSections.length}
-                </td>
-                <td className="px-1.5 py-1 text-slate-500">
-                  {entry.taskIds.length}
-                </td>
-                <td className="px-1.5 py-1 text-slate-500">
-                  {entry.evidenceSources.length}
-                </td>
-                <td className="px-1.5 py-1 text-slate-500">
-                  {entry.testCases.length}
-                </td>
+                <td className="px-1.5 py-1 text-slate-500">{entry.designSections.length}</td>
+                <td className="px-1.5 py-1 text-slate-500">{entry.taskIds.length}</td>
+                <td className="px-1.5 py-1 text-slate-500">{entry.evidenceSources.length}</td>
+                <td className="px-1.5 py-1 text-slate-500">{entry.testCases.length}</td>
               </tr>
             ))}
           </tbody>

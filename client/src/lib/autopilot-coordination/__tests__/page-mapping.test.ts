@@ -38,6 +38,8 @@ describe("autopilot coordination page mapping", () => {
     expect(areStagesOnSamePage("prompt_package", "engineering_handoff")).toBe(
       true
     );
-    expect(areStagesOnSamePage("spec_docs", "engineering_landing")).toBe(false);
+    expect(areStagesOnSamePage("spec_docs", "engineering_landing")).toBe(
+      false
+    );
   });
 });

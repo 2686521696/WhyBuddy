@@ -53,9 +53,7 @@ function pageNodeId(pageId: string): string {
 
 function dataModelFieldNodeId(fieldRef: string): string {
   const [entity, field] = fieldRef.split(".");
-  return entity && field
-    ? `dm_${sanitizeId(entity)}_${sanitizeId(field)}`
-    : `dm_${sanitizeId(fieldRef)}`;
+  return entity && field ? `dm_${sanitizeId(entity)}_${sanitizeId(field)}` : `dm_${sanitizeId(fieldRef)}`;
 }
 
 function rbacRoleNodeId(roleRef: string): string {
@@ -74,7 +72,7 @@ function isLinkageCompatible(
   source: PageComponent | undefined,
   event: TriggerEvent,
   target: PageComponent | undefined,
-  action: LinkageAction
+  action: LinkageAction,
 ): boolean {
   if (!source || !target) return true;
   if (event === "onClick" && source.type !== "button") return false;
@@ -83,11 +81,7 @@ function isLinkageCompatible(
 }
 
 /** Validate optional action payloadRef against the source event's emitted schema OR page-level binding fields. */
-function isValidActionPayloadRef(
-  event: TriggerEvent,
-  payloadRef: string | undefined,
-  model: PageModel
-): boolean {
+function isValidActionPayloadRef(event: TriggerEvent, payloadRef: string | undefined, model: PageModel): boolean {
   if (payloadRef === undefined) return true;
   if (typeof payloadRef !== "string" || payloadRef.length === 0) return false;
   const schema = PAGE_EVENT_SCHEMAS[event];
@@ -110,7 +104,7 @@ function checkResourceListRefs(
   pathBase: string,
   kindLabel: string,
   findings: Finding[],
-  pageName: string
+  pageName: string,
 ): void {
   if (!refs || refs.length === 0) return;
   refs.forEach((ref, i) => {
@@ -183,9 +177,7 @@ export function renderPageRuntimePolicy(
       const tenantId: string = rbacCfg?.tenantId ?? "tenant-default";
 
       // Role intersection: if subject has none of the declared, deny
-      const roleMatch =
-        subjectRoles.length === 0 ||
-        subjectRoles.some(r => pr.roleRefs.includes(r));
+      const roleMatch = subjectRoles.length === 0 || subjectRoles.some(r => pr.roleRefs.includes(r));
 
       let rbacAllowed = roleMatch;
 
@@ -207,9 +199,7 @@ export function renderPageRuntimePolicy(
             resourceType,
             tenantId,
             fieldContext: {
-              fields: boundField
-                ? [boundField.split(".").pop() ?? boundField]
-                : [],
+              fields: boundField ? [boundField.split(".").pop() ?? boundField] : [],
             },
             // supply for context; adapter guarantees fail-closed negative (RBAC_RUNTIME_FAIL_CLOSED) with no allow fallback
             approverCount: 2,
@@ -284,10 +274,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
           label: "字段",
         });
       }
-      if (
-        component.bindingSchema &&
-        component.bindingSchema.field !== component.field
-      ) {
+      if (component.bindingSchema && component.bindingSchema.field !== component.field) {
         refs.push({
           fromNode: componentNodeId(component.id),
           toSkill: "datamodel",
@@ -374,10 +361,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
     return null;
   },
 
-  validate(
-    model: PageModel,
-    ctx?: ValidateContext
-  ): ReturnType<Skill<PageModel>["validate"]> {
+  validate(model: PageModel, ctx?: ValidateContext): ReturnType<Skill<PageModel>["validate"]> {
     const f: Finding[] = [];
     const byComponent = componentById(model);
     const datamodelEntities = ctx?.external?.datamodel?.entity;
@@ -390,10 +374,8 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
     const appMenuList = ctx?.external?.appMenu?.menu;
     const isV2Mode = Boolean(
       model.traceSpan ||
-        model.componentVersion ||
-        model.components.some(
-          c => c.bindingSchema || c.permissionRender || c.componentVersion
-        )
+      model.componentVersion ||
+      model.components.some(c => c.bindingSchema || c.permissionRender || c.componentVersion),
     );
 
     for (const dup of findDuplicates(model.components.map(c => c.id))) {
@@ -438,10 +420,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
             message: `Component "${component.label}" binds missing DataModel field: ${component.field}`,
           });
         } else {
-          const lc = getFieldLifecycle(
-            ctx?.external?.datamodel,
-            component.field
-          );
+          const lc = getFieldLifecycle(ctx?.external?.datamodel, component.field);
           if (lc === "deprecated") {
             f.push({
               code: "PAGE_FIELD_DEPRECATED",
@@ -521,10 +500,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
               });
             }
           }
-          if (
-            datamodelEntities.includes(bs.entity) &&
-            datamodelFields.includes(bs.field)
-          ) {
+          if (datamodelEntities.includes(bs.entity) && datamodelFields.includes(bs.field)) {
             const [fieldEnt] = bs.field.split(".");
             if (fieldEnt !== bs.entity) {
               f.push({
@@ -546,11 +522,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
         }
       }
 
-      if (
-        isV2Mode &&
-        component.visibleToRoles?.length &&
-        !component.permissionRender
-      ) {
+      if (isV2Mode && component.visibleToRoles?.length && !component.permissionRender) {
         f.push({
           code: "PAGE_PEP_BYPASS",
           severity: "error",
@@ -577,40 +549,33 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
         }
       });
 
-      component.permissionRender?.permissionRefs?.forEach(
-        (permission, permissionIndex) => {
-          if (rbacPermissions === undefined) {
-            f.push({
-              code: "PAGE_PERMISSION_REF_UNRESOLVED",
-              severity: "warning",
-              path: `components[${componentIndex}].permissionRender.permissionRefs[${permissionIndex}]`,
-              message: `Component "${component.label}" delegates permission "${permission}" to RBAC PDP, but no RBAC permission surface was provided.`,
-            });
-          } else if (!rbacPermissions.includes(permission)) {
-            f.push({
-              code: "PAGE_PERMISSION_REF_MISSING",
-              severity: "error",
-              path: `components[${componentIndex}].permissionRender.permissionRefs[${permissionIndex}]`,
-              message: `Component "${component.label}" delegates missing RBAC PDP permission: ${permission}`,
-            });
-          }
+      component.permissionRender?.permissionRefs?.forEach((permission, permissionIndex) => {
+        if (rbacPermissions === undefined) {
+          f.push({
+            code: "PAGE_PERMISSION_REF_UNRESOLVED",
+            severity: "warning",
+            path: `components[${componentIndex}].permissionRender.permissionRefs[${permissionIndex}]`,
+            message: `Component "${component.label}" delegates permission "${permission}" to RBAC PDP, but no RBAC permission surface was provided.`,
+          });
+        } else if (!rbacPermissions.includes(permission)) {
+          f.push({
+            code: "PAGE_PERMISSION_REF_MISSING",
+            severity: "error",
+            path: `components[${componentIndex}].permissionRender.permissionRefs[${permissionIndex}]`,
+            message: `Component "${component.label}" delegates missing RBAC PDP permission: ${permission}`,
+          });
         }
-      );
+      });
 
       // Field-level visibility policy constraint (core of page/component/field visibility gate)
       // Error if a bound field's component exposes it to roles outside the DataModel pdpVisibleTo (e.g. amount only to finance/admin).
       const boundField = component.bindingSchema?.field ?? component.field;
       if (boundField) {
-        const pdpVisible = getFieldPdpVisibleTo(
-          ctx?.external?.datamodel,
-          boundField
-        );
+        const pdpVisible = getFieldPdpVisibleTo(ctx?.external?.datamodel, boundField);
         if (pdpVisible && pdpVisible.length > 0) {
-          const effRoles: string[] =
-            component.permissionRender?.roleRefs &&
-            component.permissionRender.roleRefs.length > 0
-              ? component.permissionRender.roleRefs
-              : (component.visibleToRoles ?? []);
+          const effRoles: string[] = (component.permissionRender?.roleRefs && component.permissionRender.roleRefs.length > 0)
+            ? component.permissionRender.roleRefs
+            : (component.visibleToRoles ?? []);
           effRoles.forEach((role, roleIndex) => {
             if (!pdpVisible.includes(role)) {
               f.push({
@@ -635,7 +600,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
       "workflowLaunchRefs",
       "workflow",
       f,
-      model.name
+      model.name,
     );
     checkResourceListRefs(
       model.assetRefs,
@@ -645,7 +610,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
       "assetRefs",
       "asset",
       f,
-      model.name
+      model.name,
     );
     checkResourceListRefs(
       model.routeRefs,
@@ -655,7 +620,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
       "routeRefs",
       "route",
       f,
-      model.name
+      model.name,
     );
     checkResourceListRefs(
       model.appMenuRefs,
@@ -665,7 +630,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
       "appMenuRefs",
       "app menu",
       f,
-      model.name
+      model.name,
     );
 
     model.linkageRules.forEach((rule, ruleIndex) => {
@@ -690,10 +655,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
       }
 
       const ev = rule.source.event;
-      if (
-        typeof ev !== "string" ||
-        !(ALLOWED_TRIGGER_EVENTS as readonly string[]).includes(ev)
-      ) {
+      if (typeof ev !== "string" || !(ALLOWED_TRIGGER_EVENTS as readonly string[]).includes(ev)) {
         f.push({
           code: "PAGE_LINKAGE_INVALID_EVENT",
           severity: "error",
@@ -702,14 +664,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
         });
       }
 
-      if (
-        !isLinkageCompatible(
-          source,
-          rule.source.event,
-          target,
-          rule.target.action
-        )
-      ) {
+      if (!isLinkageCompatible(source, rule.source.event, target, rule.target.action)) {
         f.push({
           code: "PAGE_LINKAGE_ACTION_INCOMPATIBLE",
           severity: "error",
@@ -825,8 +780,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
 
     const lines: string[] = ["flowchart LR"];
     for (const n of nodes) lines.push(`  ${n.id}["${n.label}"]`);
-    for (const e of edges)
-      lines.push(`  ${e.from} -->|${e.label ?? ""}| ${e.to}`);
+    for (const e of edges) lines.push(`  ${e.from} -->|${e.label ?? ""}| ${e.to}`);
     return { nodes, edges, mermaid: lines.join("\n") };
   },
 
@@ -836,49 +790,33 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
       component: model.components.map(c => c.id),
       entity: [model.entity],
       field: [
-        ...new Set(
-          model.components.flatMap(c => {
-            const field = c.bindingSchema?.field ?? c.field;
-            return field ? [field] : [];
-          })
-        ),
+        ...new Set(model.components.flatMap(c => {
+          const field = c.bindingSchema?.field ?? c.field;
+          return field ? [field] : [];
+        })),
       ],
     };
     const crossRuntime = buildPageCrossRuntimeEdges(model);
     surf.runtimeEvidence = crossRuntime.map(edge => edge.evidenceKey);
-    surf.crossSkillRuntimeEdges = crossRuntime.map(
-      edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`
-    );
-    surf.pageToAppBundleTrace =
-      tracePageRouteBindingToAppBundleClosureEvidence(model);
+    surf.crossSkillRuntimeEdges = crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`);
+    surf.pageToAppBundleTrace = tracePageRouteBindingToAppBundleClosureEvidence(model);
     if (!surf.runtimeEvidence.includes(PAGE_ROUTE_BINDING_EVIDENCE)) {
-      surf.runtimeEvidence = [
-        ...surf.runtimeEvidence,
-        PAGE_ROUTE_BINDING_EVIDENCE,
-      ];
+      surf.runtimeEvidence = [...surf.runtimeEvidence, PAGE_ROUTE_BINDING_EVIDENCE];
     }
     if (model.pageVersion) surf.pageVersion = model.pageVersion;
     if (model.published !== undefined) surf.published = model.published;
-    if (model.snapshotRefs && model.snapshotRefs.length > 0)
-      surf.snapshotRefs = [...model.snapshotRefs];
+    if (model.snapshotRefs && model.snapshotRefs.length > 0) surf.snapshotRefs = [...model.snapshotRefs];
     return surf as ResolvableSurface;
   },
 
   async generate(intent: string): Promise<PageModel> {
     if (/purchase|procurement|采购/i.test(intent)) return purchaseApprovalPage;
     if (/请假|leave|审批/i.test(intent)) return leaveApprovalPage;
-    throw new Error(
-      `pageSkill.generate: needs the reasoning engine to generate a page model for intent: "${intent}"`
-    );
+    throw new Error(`pageSkill.generate: needs the reasoning engine to generate a page model for intent: "${intent}"`);
   },
 };
 
-export type PageRuntimeTargetSkill =
-  | "datamodel"
-  | "rbac"
-  | "workflow"
-  | "aigc"
-  | "appbundle";
+export type PageRuntimeTargetSkill = "datamodel" | "rbac" | "workflow" | "aigc" | "appbundle";
 
 export type PageRuntimeEvidenceState = "allowed" | "blocked";
 
@@ -930,77 +868,45 @@ export interface PageToAppBundleTrace {
 }
 
 function pageFieldRefs(model: PageModel): string[] {
-  return [
-    ...new Set(
-      (model.components ?? []).flatMap(component => {
-        const field = component.bindingSchema?.field ?? component.field;
-        return field ? [field] : [];
-      })
-    ),
-  ].sort();
+  return [...new Set((model.components ?? []).flatMap(component => {
+    const field = component.bindingSchema?.field ?? component.field;
+    return field ? [field] : [];
+  }))].sort();
 }
 
 function pageRoleRefs(model: PageModel): string[] {
-  return [
-    ...new Set(
-      (model.components ?? []).flatMap(component => [
-        ...(component.visibleToRoles ?? []),
-        ...(component.permissionRender?.roleRefs ?? []),
-      ])
-    ),
-  ].sort();
+  return [...new Set((model.components ?? []).flatMap(component => [
+    ...(component.visibleToRoles ?? []),
+    ...(component.permissionRender?.roleRefs ?? []),
+  ]))].sort();
 }
 
 function pagePermissionRefs(model: PageModel): string[] {
-  return [
-    ...new Set(
-      (model.components ?? []).flatMap(
-        component => component.permissionRender?.permissionRefs ?? []
-      )
-    ),
-  ].sort();
+  return [...new Set((model.components ?? []).flatMap(component => component.permissionRender?.permissionRefs ?? []))].sort();
 }
 
 function pageWorkflowRefs(model: PageModel): string[] {
-  return [
-    ...new Set([
-      ...(model.workflowLaunchRefs ?? []),
-      ...(model.linkageRules ?? []).flatMap(rule =>
-        rule.target.resourceRef ? [rule.target.resourceRef] : []
-      ),
-    ]),
-  ].sort();
+  return [...new Set([
+    ...(model.workflowLaunchRefs ?? []),
+    ...(model.linkageRules ?? []).flatMap(rule => rule.target.resourceRef ? [rule.target.resourceRef] : []),
+  ])].sort();
 }
 
-function pageRefsForTarget(
-  model: PageModel,
-  targetSkill: PageRuntimeTargetSkill
-): string[] {
-  if (targetSkill === "datamodel")
-    return [model.entity, ...pageFieldRefs(model)].sort();
-  if (targetSkill === "rbac")
-    return [...pageRoleRefs(model), ...pagePermissionRefs(model)].sort();
+function pageRefsForTarget(model: PageModel, targetSkill: PageRuntimeTargetSkill): string[] {
+  if (targetSkill === "datamodel") return [model.entity, ...pageFieldRefs(model)].sort();
+  if (targetSkill === "rbac") return [...pageRoleRefs(model), ...pagePermissionRefs(model)].sort();
   if (targetSkill === "workflow") return pageWorkflowRefs(model);
-  if (targetSkill === "aigc")
-    return [
-      ...pageFieldRefs(model),
-      ...(model.components ?? []).map(component => component.id),
-    ].sort();
-  return [
-    model.id,
-    ...(model.snapshotRefs ?? []),
-    ...(model.components ?? []).map(component => component.id),
-  ].sort();
+  if (targetSkill === "aigc") return [...pageFieldRefs(model), ...(model.components ?? []).map(component => component.id)].sort();
+  return [model.id, ...(model.snapshotRefs ?? []), ...(model.components ?? []).map(component => component.id)].sort();
 }
 
 export function createPageCrossRuntimeEvidence(
   model: PageModel,
   targetSkill: PageRuntimeTargetSkill,
-  upstreamSurface?: unknown
+  upstreamSurface?: unknown,
 ): PageCrossRuntimeEvidence {
   const targetRefs = pageRefsForTarget(model, targetSkill);
-  const upstreamEvidencePresent =
-    upstreamSurface !== undefined && upstreamSurface !== null;
+  const upstreamEvidencePresent = upstreamSurface !== undefined && upstreamSurface !== null;
   const state: PageRuntimeEvidenceState =
     targetRefs.length > 0 && upstreamEvidencePresent ? "allowed" : "blocked";
 
@@ -1009,14 +915,9 @@ export function createPageCrossRuntimeEvidence(
     targetSkill,
     evidenceKey: `${PAGE_CROSS_RUNTIME_EVIDENCE}:${targetSkill}:${state}`,
     state,
-    reasonCode:
-      state === "allowed"
-        ? "PAGE_RUNTIME_EVIDENCE_PRESENT"
-        : "PAGE_RUNTIME_UPSTREAM_ABSENT",
+    reasonCode: state === "allowed" ? "PAGE_RUNTIME_EVIDENCE_PRESENT" : "PAGE_RUNTIME_UPSTREAM_ABSENT",
     pageId: model.id,
-    componentRefs: (model.components ?? [])
-      .map(component => component.id)
-      .sort(),
+    componentRefs: (model.components ?? []).map(component => component.id).sort(),
     fieldRefs: pageFieldRefs(model),
     roleRefs: pageRoleRefs(model),
     permissionRefs: pagePermissionRefs(model),
@@ -1028,13 +929,9 @@ export function createPageCrossRuntimeEvidence(
 export function normalizePageRuntimeContextForSkill(
   model: PageModel,
   targetSkill: PageRuntimeTargetSkill,
-  upstreamSurface?: unknown
+  upstreamSurface?: unknown,
 ): NormalizedPageRuntimeContext {
-  const evidence = createPageCrossRuntimeEvidence(
-    model,
-    targetSkill,
-    upstreamSurface
-  );
+  const evidence = createPageCrossRuntimeEvidence(model, targetSkill, upstreamSurface);
   return {
     sourceSkill: "page",
     targetSkill,
@@ -1049,28 +946,16 @@ export function normalizePageRuntimeContextForSkill(
   };
 }
 
-export function buildPageCrossRuntimeEdges(
-  model: PageModel
-): PageCrossRuntimeEvidence[] {
-  const targets: PageRuntimeTargetSkill[] = [
-    "datamodel",
-    "rbac",
-    "workflow",
-    "aigc",
-    "appbundle",
-  ];
+export function buildPageCrossRuntimeEdges(model: PageModel): PageCrossRuntimeEvidence[] {
+  const targets: PageRuntimeTargetSkill[] = ["datamodel", "rbac", "workflow", "aigc", "appbundle"];
   return targets
     .filter(target => pageRefsForTarget(model, target).length > 0)
-    .map(target =>
-      createPageCrossRuntimeEvidence(model, target, {
-        declared: pageRefsForTarget(model, target),
-      })
-    );
+    .map(target => createPageCrossRuntimeEvidence(model, target, { declared: pageRefsForTarget(model, target) }));
 }
 
 export function createPageRbacRuntimeEvidence(
   model: PageModel,
-  upstreamSurface: unknown
+  upstreamSurface: unknown,
 ): PageCrossRuntimeEvidence {
   return {
     ...createPageCrossRuntimeEvidence(model, "rbac", upstreamSurface),
@@ -1080,7 +965,7 @@ export function createPageRbacRuntimeEvidence(
 
 export function createPageWorkflowRuntimeEvidence(
   model: PageModel,
-  upstreamSurface?: unknown
+  upstreamSurface?: unknown,
 ): PageCrossRuntimeEvidence {
   return {
     ...createPageCrossRuntimeEvidence(model, "workflow", upstreamSurface),
@@ -1089,25 +974,20 @@ export function createPageWorkflowRuntimeEvidence(
 }
 
 function pageRouteBindingRefs(model: PageModel): string[] {
-  return [
-    ...new Set([
-      ...(model.routeRefs ?? []),
-      ...(model.appMenuRefs ?? []),
-      ...(model.workflowLaunchRefs ?? []),
-      ...(model.linkageRules ?? []).flatMap(rule =>
-        rule.target.resourceRef ? [rule.target.resourceRef] : []
-      ),
-    ]),
-  ].sort();
+  return [...new Set([
+    ...(model.routeRefs ?? []),
+    ...(model.appMenuRefs ?? []),
+    ...(model.workflowLaunchRefs ?? []),
+    ...(model.linkageRules ?? []).flatMap(rule => rule.target.resourceRef ? [rule.target.resourceRef] : []),
+  ])].sort();
 }
 
 export function tracePageRouteBindingToAppBundleClosureEvidence(
   model: PageModel,
-  appBundleSurface?: unknown
+  appBundleSurface?: unknown,
 ): PageToAppBundleTrace {
   const routeRefs = pageRouteBindingRefs(model);
-  const upstreamPresent =
-    appBundleSurface !== undefined && appBundleSurface !== null;
+  const upstreamPresent = appBundleSurface !== undefined && appBundleSurface !== null;
   const closed = routeRefs.length > 0 && upstreamPresent;
 
   return {
@@ -1115,15 +995,10 @@ export function tracePageRouteBindingToAppBundleClosureEvidence(
     sourceSkill: "page",
     targetSkill: "appbundle",
     state: closed ? "closed" : "blocked",
-    reasonCode: closed
-      ? "PAGE_APPBUNDLE_ROUTE_BINDING_POSITIVE_CLOSED"
-      : "PAGE_APPBUNDLE_ROUTE_BINDING_FAIL_CLOSED",
+    reasonCode: closed ? "PAGE_APPBUNDLE_ROUTE_BINDING_POSITIVE_CLOSED" : "PAGE_APPBUNDLE_ROUTE_BINDING_FAIL_CLOSED",
     pageId: model.id,
     routeRefs,
-    bindingRefs: [
-      ...(model.routeRefs ?? []),
-      ...(model.appMenuRefs ?? []),
-    ].sort(),
+    bindingRefs: [...(model.routeRefs ?? []), ...(model.appMenuRefs ?? [])].sort(),
     pageBindingEvidencePresent: closed,
     evidenceKey: `${PAGE_TO_APPBUNDLE_TRACE}:${closed ? "closed" : "blocked"}`,
   };
@@ -1131,7 +1006,7 @@ export function tracePageRouteBindingToAppBundleClosureEvidence(
 
 export function createPageRouteBindingAppBundleEvidence(
   model: PageModel,
-  appBundleSurface?: unknown
+  appBundleSurface?: unknown,
 ): PageCrossRuntimeEvidence {
   return {
     ...createPageCrossRuntimeEvidence(model, "appbundle", appBundleSurface),
@@ -1144,47 +1019,12 @@ export const leaveApprovalPage: PageModel = {
   name: "请假申请页",
   entity: "leave_request",
   components: [
-    {
-      id: "applicant",
-      type: "select",
-      label: "申请人",
-      field: "leave_request.applicant",
-      visibleToRoles: ["employee", "manager"],
-    },
-    {
-      id: "leaveType",
-      type: "select",
-      label: "请假类型",
-      field: "leave_request.leaveType",
-      visibleToRoles: ["employee", "manager"],
-    },
-    {
-      id: "days",
-      type: "number",
-      label: "天数",
-      field: "leave_request.days",
-      visibleToRoles: ["employee", "manager"],
-    },
-    {
-      id: "reason",
-      type: "input",
-      label: "事由",
-      field: "leave_request.reason",
-      visibleToRoles: ["employee", "manager"],
-    },
-    {
-      id: "submit",
-      type: "button",
-      label: "提交请假",
-      visibleToRoles: ["employee"],
-    },
-    {
-      id: "approve",
-      type: "button",
-      label: "审批通过",
-      field: "leave_request.approved",
-      visibleToRoles: ["manager"],
-    },
+    { id: "applicant", type: "select", label: "申请人", field: "leave_request.applicant", visibleToRoles: ["employee", "manager"] },
+    { id: "leaveType", type: "select", label: "请假类型", field: "leave_request.leaveType", visibleToRoles: ["employee", "manager"] },
+    { id: "days", type: "number", label: "天数", field: "leave_request.days", visibleToRoles: ["employee", "manager"] },
+    { id: "reason", type: "input", label: "事由", field: "leave_request.reason", visibleToRoles: ["employee", "manager"] },
+    { id: "submit", type: "button", label: "提交请假", visibleToRoles: ["employee"] },
+    { id: "approve", type: "button", label: "审批通过", field: "leave_request.approved", visibleToRoles: ["manager"] },
   ],
   linkageRules: [
     {
@@ -1204,25 +1044,16 @@ leaveApprovalPage.traceSpan = "page.leave.request.v2";
 leaveApprovalPage.componentVersion = "1.0.0";
 for (const component of leaveApprovalPage.components) {
   if (component.field) {
-    component.bindingSchema = {
-      entity: leaveApprovalPage.entity,
-      field: component.field,
-    };
+    component.bindingSchema = { entity: leaveApprovalPage.entity, field: component.field };
   }
   if (component.visibleToRoles?.length) {
     component.permissionRender = { roleRefs: [...component.visibleToRoles] };
   }
   if (component.id === "submit") {
-    component.permissionRender = {
-      roleRefs: ["employee"],
-      permissionRefs: ["leave:create"],
-    };
+    component.permissionRender = { roleRefs: ["employee"], permissionRefs: ["leave:create"] };
   }
   if (component.id === "approve") {
-    component.permissionRender = {
-      roleRefs: ["manager"],
-      permissionRefs: ["leave:approve"],
-    };
+    component.permissionRender = { roleRefs: ["manager"], permissionRefs: ["leave:approve"] };
   }
   component.componentVersion = "1.0.0";
 }
@@ -1235,95 +1066,16 @@ export const purchaseApprovalPage: PageModel = {
   name: "Purchase Request Page",
   entity: "purchase_request",
   components: [
-    {
-      id: "requester",
-      type: "select",
-      label: "Requester",
-      field: "purchase_request.requester",
-      visibleToRoles: [
-        "requester",
-        "department_manager",
-        "finance",
-        "procurement",
-      ],
-    },
-    {
-      id: "department",
-      type: "select",
-      label: "Department",
-      field: "purchase_request.department",
-      visibleToRoles: [
-        "requester",
-        "department_manager",
-        "finance",
-        "procurement",
-      ],
-    },
-    {
-      id: "vendor",
-      type: "select",
-      label: "Vendor",
-      field: "purchase_request.vendor",
-      visibleToRoles: [
-        "requester",
-        "department_manager",
-        "finance",
-        "procurement",
-      ],
-    },
-    {
-      id: "amount",
-      type: "number",
-      label: "Amount",
-      field: "purchase_request.amount",
-      visibleToRoles: ["finance"],
-    },
-    {
-      id: "status",
-      type: "select",
-      label: "Approval Status",
-      field: "purchase_request.status",
-      visibleToRoles: [
-        "requester",
-        "department_manager",
-        "finance",
-        "procurement",
-      ],
-    },
-    {
-      id: "budgetCheck",
-      type: "switch",
-      label: "Budget Check",
-      field: "purchase_request.budgetChecked",
-      visibleToRoles: ["department_manager", "finance"],
-    },
-    {
-      id: "submit",
-      type: "button",
-      label: "Submit Purchase",
-      visibleToRoles: ["requester"],
-    },
-    {
-      id: "managerApprove",
-      type: "button",
-      label: "Manager Approve",
-      field: "purchase_request.managerApproved",
-      visibleToRoles: ["department_manager"],
-    },
-    {
-      id: "financeApprove",
-      type: "button",
-      label: "Finance Approve",
-      field: "purchase_request.financeApproved",
-      visibleToRoles: ["finance"],
-    },
-    {
-      id: "procurementFulfill",
-      type: "button",
-      label: "Procurement Fulfill",
-      field: "purchase_request.procurementFulfilled",
-      visibleToRoles: ["procurement"],
-    },
+    { id: "requester", type: "select", label: "Requester", field: "purchase_request.requester", visibleToRoles: ["requester", "department_manager", "finance", "procurement"] },
+    { id: "department", type: "select", label: "Department", field: "purchase_request.department", visibleToRoles: ["requester", "department_manager", "finance", "procurement"] },
+    { id: "vendor", type: "select", label: "Vendor", field: "purchase_request.vendor", visibleToRoles: ["requester", "department_manager", "finance", "procurement"] },
+    { id: "amount", type: "number", label: "Amount", field: "purchase_request.amount", visibleToRoles: ["finance"] },
+    { id: "status", type: "select", label: "Approval Status", field: "purchase_request.status", visibleToRoles: ["requester", "department_manager", "finance", "procurement"] },
+    { id: "budgetCheck", type: "switch", label: "Budget Check", field: "purchase_request.budgetChecked", visibleToRoles: ["department_manager", "finance"] },
+    { id: "submit", type: "button", label: "Submit Purchase", visibleToRoles: ["requester"] },
+    { id: "managerApprove", type: "button", label: "Manager Approve", field: "purchase_request.managerApproved", visibleToRoles: ["department_manager"] },
+    { id: "financeApprove", type: "button", label: "Finance Approve", field: "purchase_request.financeApproved", visibleToRoles: ["finance"] },
+    { id: "procurementFulfill", type: "button", label: "Procurement Fulfill", field: "purchase_request.procurementFulfilled", visibleToRoles: ["procurement"] },
   ],
   linkageRules: [
     {
@@ -1343,37 +1095,22 @@ purchaseApprovalPage.traceSpan = "page.purchase.request.v2";
 purchaseApprovalPage.componentVersion = "1.0.0";
 for (const component of purchaseApprovalPage.components) {
   if (component.field) {
-    component.bindingSchema = {
-      entity: purchaseApprovalPage.entity,
-      field: component.field,
-    };
+    component.bindingSchema = { entity: purchaseApprovalPage.entity, field: component.field };
   }
   if (component.visibleToRoles?.length) {
     component.permissionRender = { roleRefs: [...component.visibleToRoles] };
   }
   if (component.id === "submit") {
-    component.permissionRender = {
-      roleRefs: ["requester"],
-      permissionRefs: ["purchase:create"],
-    };
+    component.permissionRender = { roleRefs: ["requester"], permissionRefs: ["purchase:create"] };
   }
   if (component.id === "managerApprove") {
-    component.permissionRender = {
-      roleRefs: ["department_manager"],
-      permissionRefs: ["purchase:manager_approve"],
-    };
+    component.permissionRender = { roleRefs: ["department_manager"], permissionRefs: ["purchase:manager_approve"] };
   }
   if (component.id === "financeApprove") {
-    component.permissionRender = {
-      roleRefs: ["finance"],
-      permissionRefs: ["purchase:finance_approve"],
-    };
+    component.permissionRender = { roleRefs: ["finance"], permissionRefs: ["purchase:finance_approve"] };
   }
   if (component.id === "procurementFulfill") {
-    component.permissionRender = {
-      roleRefs: ["procurement"],
-      permissionRefs: ["purchase:fulfill"],
-    };
+    component.permissionRender = { roleRefs: ["procurement"], permissionRefs: ["purchase:fulfill"] };
   }
   component.componentVersion = "1.0.0";
 }
@@ -1393,8 +1130,7 @@ export const linkageEvidence = {
 
 /** Safe dot-path resolver. Returns PAGE_BINDING_RUNTIME_ERROR for unresolved/malformed. */
 function resolveValue(expr: string, root: Record<string, unknown>): unknown {
-  if (typeof expr !== "string" || expr.length === 0)
-    return PAGE_BINDING_RUNTIME_ERROR;
+  if (typeof expr !== "string" || expr.length === 0) return PAGE_BINDING_RUNTIME_ERROR;
   let path = expr.startsWith("data.") ? expr.slice(5) : expr;
   const parts = path.split(".");
   let cur: any = root;
@@ -1417,17 +1153,9 @@ function resolveValue(expr: string, root: Record<string, unknown>): unknown {
  */
 export function evaluatePageBindingExpressions(
   model: PageModel,
-  input: {
-    data?: Record<string, unknown>;
-    event?: { type?: string; payload?: unknown };
-  } = {}
+  input: { data?: Record<string, unknown>; event?: { type?: string; payload?: unknown } } = {}
 ): any {
-  if (
-    !model ||
-    typeof model !== "object" ||
-    !Array.isArray(model.components) ||
-    !Array.isArray(model.linkageRules)
-  ) {
+  if (!model || typeof model !== "object" || !Array.isArray(model.components) || !Array.isArray(model.linkageRules)) {
     return PAGE_BINDING_RUNTIME_ERROR;
   }
   try {
@@ -1514,12 +1242,10 @@ type WorkflowInstanceLike = {
   status?: string;
 };
 
-type ProjectCtx =
-  | {
-      external?: any;
-      userRoles?: string[];
-    }
-  | undefined;
+type ProjectCtx = {
+  external?: any;
+  userRoles?: string[];
+} | undefined;
 
 /**
  * projectWorkflowTaskView
@@ -1531,12 +1257,7 @@ export function projectWorkflowTaskView(
   workflowInstance: WorkflowInstanceLike | undefined,
   ctx?: ProjectCtx
 ): WorkflowTaskViewResult {
-  if (
-    !pageModel ||
-    !workflowInstance ||
-    typeof workflowInstance.currentNodeId !== "string" ||
-    workflowInstance.currentNodeId.length === 0
-  ) {
+  if (!pageModel || !workflowInstance || typeof workflowInstance.currentNodeId !== "string" || workflowInstance.currentNodeId.length === 0) {
     return PAGE_WORKFLOW_TASK_VIEW_INVALID;
   }
   if (!Array.isArray(pageModel.components)) {
@@ -1557,16 +1278,12 @@ export function projectWorkflowTaskView(
 
   // Fields: derive from page components that carry DataModel binding (evidence preserved)
   const fields: TaskField[] = pageModel.components
-    .filter(c => c.field || c.bindingSchema)
-    .map(c => {
+    .filter((c) => c.field || c.bindingSchema)
+    .map((c) => {
       const binding = c.bindingSchema?.field ?? c.field;
       // simple state-driven disabled using variables (e.g. if approved, lock)
       let disabled = false;
-      if (
-        binding &&
-        typeof vars[binding.split(".").pop()!] === "boolean" &&
-        vars[binding.split(".").pop()!] === true
-      ) {
+      if (binding && typeof vars[binding.split(".").pop()!] === "boolean" && vars[binding.split(".").pop()!] === true) {
         disabled = true;
       }
       return {
@@ -1580,24 +1297,14 @@ export function projectWorkflowTaskView(
 
   // Action buttons from page buttons (preserve page button actions)
   const pageButtonActions: TaskAction[] = pageModel.components
-    .filter(c => c.type === "button")
-    .map(c => {
+    .filter((c) => c.type === "button")
+    .map((c) => {
       const permRefs = c.permissionRender?.permissionRefs ?? [];
       // fail-closed: if ctx provides roles, check; else leave enabled (compat for existing tests)
       let disabled = false;
       let disabledReason: string | undefined;
       if (ctx?.userRoles && permRefs.length > 0) {
-        const hasAny = permRefs.some(p =>
-          /* simplistic role-perm mapping */ ctx.userRoles!.some(
-            r =>
-              r === "manager" ||
-              r === "finance" ||
-              r === "procurement" ||
-              r === "department_manager" ||
-              r === "requester" ||
-              r === "employee"
-          )
-        );
+        const hasAny = permRefs.some((p) => /* simplistic role-perm mapping */ ctx.userRoles!.some((r) => r === "manager" || r === "finance" || r === "procurement" || r === "department_manager" || r === "requester" || r === "employee"));
         if (!hasAny) {
           disabled = true;
           disabledReason = "permission denied";
@@ -1616,27 +1323,12 @@ export function projectWorkflowTaskView(
   const nodeTypeLower = (workflowInstance.currentNodeType ?? "").toLowerCase();
   let wfDriven: TaskAction[] = [];
 
-  const isEnd =
-    nodeIdLower.includes("end") ||
-    nodeIdLower.includes("approved") ||
-    nodeIdLower.includes("rejected") ||
-    nodeTypeLower.includes("end") ||
-    nodeIdLower.startsWith("e_");
-  const isApproval =
-    nodeIdLower.includes("approve") ||
-    nodeIdLower.includes("mgr") ||
-    nodeIdLower.includes("finance") ||
-    nodeIdLower.includes("procurement") ||
-    nodeTypeLower.includes("approval");
+  const isEnd = nodeIdLower.includes("end") || nodeIdLower.includes("approved") || nodeIdLower.includes("rejected") || nodeTypeLower.includes("end") || nodeIdLower.startsWith("e_");
+  const isApproval = nodeIdLower.includes("approve") || nodeIdLower.includes("mgr") || nodeIdLower.includes("finance") || nodeIdLower.includes("procurement") || nodeTypeLower.includes("approval");
 
   if (isEnd) {
     wfDriven = [
-      {
-        id: "done",
-        label: "Done",
-        disabled: true,
-        disabledReason: "workflow terminal",
-      },
+      { id: "done", label: "Done", disabled: true, disabledReason: "workflow terminal" },
     ];
   } else if (isApproval) {
     wfDriven = [
@@ -1645,7 +1337,9 @@ export function projectWorkflowTaskView(
     ];
   } else {
     // default actionable
-    wfDriven = [{ id: taskActions.SUBMIT, label: "Submit", disabled: false }];
+    wfDriven = [
+      { id: taskActions.SUBMIT, label: "Submit", disabled: false },
+    ];
   }
 
   const actions = [...pageButtonActions, ...wfDriven];
@@ -1654,14 +1348,14 @@ export function projectWorkflowTaskView(
   const dataModelRefs: string[] = Array.from(
     new Set(
       pageModel.components
-        .map(c => c.bindingSchema?.field ?? c.field)
+        .map((c) => c.bindingSchema?.field ?? c.field)
         .filter((f): f is string => typeof f === "string" && f.length > 0)
     )
   );
   const permissionRefs: string[] = [];
-  pageModel.components.forEach(c => {
-    c.permissionRender?.roleRefs?.forEach(r => permissionRefs.push(r));
-    c.permissionRender?.permissionRefs?.forEach(p => permissionRefs.push(p));
+  pageModel.components.forEach((c) => {
+    c.permissionRender?.roleRefs?.forEach((r) => permissionRefs.push(r));
+    c.permissionRender?.permissionRefs?.forEach((p) => permissionRefs.push(p));
   });
   if (wfId) permissionRefs.push(`workflow:${wfId}`);
 
@@ -1688,8 +1382,7 @@ export { PAGE_WORKFLOW_TASK_VIEW_INVALID, taskActions };
 // Pure local executable evidence for AppBundle runtime closure's workflowPageTaskViewConsistency.
 // ---------------------------------------------------------------------------
 
-export const WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE =
-  "WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE";
+export const WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE = "WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE";
 
 type WorkflowInstanceShape = {
   id?: string;
@@ -1732,12 +1425,8 @@ export function createWorkflowTaskViewAppBundleBindingEvidence(
   const isProjectionValid = view !== PAGE_WORKFLOW_TASK_VIEW_INVALID;
   // binding alignment check (when binding declares workflowRef, instance must match or projection already failed)
   const bindingAligned =
-    !wfRef ||
-    !instance ||
-    instance.workflowId === wfRef ||
-    instance.workflowId === undefined;
-  const state: "allowed" | "blocked" =
-    isProjectionValid && bindingAligned ? "allowed" : "blocked";
+    !wfRef || !instance || instance.workflowId === wfRef || instance.workflowId === undefined;
+  const state: "allowed" | "blocked" = isProjectionValid && bindingAligned ? "allowed" : "blocked";
   return {
     state,
     evidenceKey: `${WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE}:${pageRef}:${wfRef ?? "none"}:${state}`,

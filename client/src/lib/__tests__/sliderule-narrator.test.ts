@@ -46,12 +46,7 @@ describe("sliderule-narrator local fallback (S6)", () => {
       goalStatus: "clear",
       selectedCount: 0,
       planReason: "CONTRACT_SUFFICIENT: covered",
-      skipped: [
-        {
-          capabilityId: "report.write",
-          reason: "stopped_by_contract_sufficiency",
-        },
-      ],
+      skipped: [{ capabilityId: "report.write", reason: "stopped_by_contract_sufficiency" }],
     });
     expect(text).toMatch(/没有安排/);
     expect(text).not.toMatch(FALLBACK_BANNED_RE);

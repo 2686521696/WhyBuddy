@@ -20,10 +20,7 @@ import type { BlueprintSpecDocument } from "@shared/blueprint/contracts";
 
 import { deriveNodeStatusById } from "../derive-node-status-by-id";
 
-function makeDoc(
-  nodeId: string,
-  type: "requirements" | "design" | "tasks" = "requirements"
-): BlueprintSpecDocument {
+function makeDoc(nodeId: string, type: "requirements" | "design" | "tasks" = "requirements"): BlueprintSpecDocument {
   return {
     id: `doc-${nodeId}-${type}`,
     jobId: "job-1",
@@ -262,15 +259,19 @@ describe("deriveNodeStatusById", () => {
     ) as fc.Arbitrary<SpecDocsProgressState["batchStatus"]>;
 
     fc.assert(
-      fc.property(arbStaleNonTerminal, arbInactiveBatch, (stale, batch) => {
-        const out = deriveNodeStatusById({
-          persistedSpecDocuments: [makeDoc("n-a")],
-          liveProgressNodes: { "n-a": makeLiveNode("n-a", stale) },
-          liveBatchStatus: batch,
-        });
-        // Persisted baseline must hold; stale non-terminal live state is dropped.
-        expect(out["n-a"].status).toBe("completed");
-      }),
+      fc.property(
+        arbStaleNonTerminal,
+        arbInactiveBatch,
+        (stale, batch) => {
+          const out = deriveNodeStatusById({
+            persistedSpecDocuments: [makeDoc("n-a")],
+            liveProgressNodes: { "n-a": makeLiveNode("n-a", stale) },
+            liveBatchStatus: batch,
+          });
+          // Persisted baseline must hold; stale non-terminal live state is dropped.
+          expect(out["n-a"].status).toBe("completed");
+        }
+      ),
       { numRuns: 50 }
     );
   });

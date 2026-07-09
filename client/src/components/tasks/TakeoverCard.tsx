@@ -11,7 +11,7 @@ function t(locale: string, zh: string, en: string): string {
 /* ─── Props ─── */
 
 export interface TakeoverCardProps {
-  title: string; // i18n: "接管/证据" / "Takeover/Evidence"
+  title: string;                       // i18n: "接管/证据" / "Takeover/Evidence"
   hasPendingDecision: boolean;
   decisionPrompt: string | null;
   decisionPresets: Array<{ id: string; label: string }>;
@@ -23,7 +23,7 @@ export interface TakeoverCardProps {
     reason?: string;
   }) => Promise<void>;
   operatorActionLoading: boolean;
-  takeoverSummary: string | null; // from autopilot takeover parsing
+  takeoverSummary: string | null;      // from autopilot takeover parsing
   locale: string;
 }
 
@@ -45,7 +45,7 @@ export function TakeoverCard({
     <div
       className={cn(
         "bg-card text-card-foreground border rounded-lg p-4",
-        "flex flex-col gap-3"
+        "flex flex-col gap-3",
       )}
     >
       {/* Card title */}
@@ -62,7 +62,10 @@ export function TakeoverCard({
           locale={locale}
         />
       ) : (
-        <EmptyStateView takeoverSummary={takeoverSummary} locale={locale} />
+        <EmptyStateView
+          takeoverSummary={takeoverSummary}
+          locale={locale}
+        />
       )}
     </div>
   );
@@ -94,10 +97,7 @@ function PendingDecisionView({
       {/* Decision prompt */}
       {decisionPrompt && (
         <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/50 rounded-md p-3">
-          <AlertTriangle
-            size={16}
-            className="flex-shrink-0 mt-0.5 text-amber-500"
-          />
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
           <span>{decisionPrompt}</span>
         </div>
       )}
@@ -105,7 +105,7 @@ function PendingDecisionView({
       {/* Decision option buttons */}
       {decisionPresets.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {decisionPresets.map(preset => (
+          {decisionPresets.map((preset) => (
             <button
               key={preset.id}
               type="button"
@@ -115,7 +115,7 @@ function PendingDecisionView({
                 "inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium",
                 "bg-primary text-primary-foreground",
                 "hover:bg-primary/90 transition-colors",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
+                "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
               {preset.label}
@@ -132,7 +132,7 @@ function PendingDecisionView({
         </label>
         <textarea
           value={decisionNote}
-          onChange={e => onSetDecisionNote(e.target.value)}
+          onChange={(e) => onSetDecisionNote(e.target.value)}
           placeholder={t(locale, "输入备注信息...", "Enter a note...")}
           disabled={operatorActionLoading}
           rows={2}
@@ -141,7 +141,7 @@ function PendingDecisionView({
             "placeholder:text-muted-foreground",
             "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
             "disabled:opacity-50 disabled:cursor-not-allowed",
-            "resize-none"
+            "resize-none",
           )}
         />
       </div>
@@ -162,7 +162,9 @@ function EmptyStateView({
 }: EmptyStateViewProps): React.ReactElement {
   if (takeoverSummary) {
     return (
-      <p className="text-sm text-muted-foreground py-1">{takeoverSummary}</p>
+      <p className="text-sm text-muted-foreground py-1">
+        {takeoverSummary}
+      </p>
     );
   }
 

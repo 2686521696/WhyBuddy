@@ -16,12 +16,7 @@ interface RAGFeedbackProps {
   chunkIds: string[];
 }
 
-export function RAGFeedback({
-  taskId,
-  agentId,
-  projectId,
-  chunkIds,
-}: RAGFeedbackProps) {
+export function RAGFeedback({ taskId, agentId, projectId, chunkIds }: RAGFeedbackProps) {
   const { submitFeedback, feedbackSubmitting } = useRAGStore();
   const [helpful, setHelpful] = useState<Set<string>>(new Set());
   const [irrelevant, setIrrelevant] = useState<Set<string>>(new Set());
@@ -30,8 +25,7 @@ export function RAGFeedback({
 
   const toggleHelpful = (id: string) => {
     const next = new Set(helpful);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    if (next.has(id)) next.delete(id); else next.add(id);
     irrelevant.delete(id);
     setHelpful(next);
     setIrrelevant(new Set(irrelevant));
@@ -39,8 +33,7 @@ export function RAGFeedback({
 
   const toggleIrrelevant = (id: string) => {
     const next = new Set(irrelevant);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    if (next.has(id)) next.delete(id); else next.add(id);
     helpful.delete(id);
     setIrrelevant(next);
     setHelpful(new Set(helpful));
@@ -59,11 +52,7 @@ export function RAGFeedback({
   };
 
   if (submitted) {
-    return (
-      <div className="text-xs text-green-600 p-2">
-        Feedback submitted. Thanks!
-      </div>
-    );
+    return <div className="text-xs text-green-600 p-2">Feedback submitted. Thanks!</div>;
   }
 
   if (chunkIds.length === 0) return null;
@@ -71,7 +60,7 @@ export function RAGFeedback({
   return (
     <div className="space-y-2 p-2 border rounded text-xs">
       <div className="font-medium text-gray-600">Rate retrieved chunks</div>
-      {chunkIds.map(id => (
+      {chunkIds.map((id) => (
         <div key={id} className="flex items-center gap-1">
           <span className="font-mono truncate flex-1">{id}</span>
           <button
@@ -97,7 +86,7 @@ export function RAGFeedback({
         <input
           type="text"
           value={missingContext}
-          onChange={e => setMissingContext(e.target.value)}
+          onChange={(e) => setMissingContext(e.target.value)}
           className="mt-1 block w-full border rounded px-2 py-1 text-xs"
           placeholder="Describe what was missing..."
         />

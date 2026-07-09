@@ -6,7 +6,10 @@ import type {
   ProjectSpec,
 } from "./project-store";
 
-export type ProjectReplayTimelineItemKind = "evidence" | "artifact" | "mission";
+export type ProjectReplayTimelineItemKind =
+  | "evidence"
+  | "artifact"
+  | "mission";
 
 export interface ProjectReplayTimelineItem {
   id: string;
@@ -300,12 +303,11 @@ export function buildProjectCockpitEvidenceArtifactSummary({
       artifactType: item.type,
     }));
 
-  const allItems = [...evidenceItems, ...artifactItems].sort(
-    compareReplayItems
-  );
+  const allItems = [...evidenceItems, ...artifactItems].sort(compareReplayItems);
   const safeLimit = Math.max(0, limit);
   const latestEvidence = [...evidenceItems].sort(compareReplayItems)[0] ?? null;
-  const latestArtifact = [...artifactItems].sort(compareReplayItems)[0] ?? null;
+  const latestArtifact =
+    [...artifactItems].sort(compareReplayItems)[0] ?? null;
 
   return {
     projectId,
@@ -399,7 +401,8 @@ export function buildProjectTaskEvidenceArtifactSummary({
 }: BuildProjectTaskEvidenceArtifactSummaryInput): ProjectTaskEvidenceArtifactSummary {
   const evidenceItems: ProjectTaskEvidenceArtifactItem[] = evidence
     .filter(
-      item => item.projectId === projectId && item.sourceMissionId === missionId
+      item =>
+        item.projectId === projectId && item.sourceMissionId === missionId
     )
     .map(item => ({
       id: item.id,
@@ -414,7 +417,8 @@ export function buildProjectTaskEvidenceArtifactSummary({
 
   const artifactItems: ProjectTaskEvidenceArtifactItem[] = artifacts
     .filter(
-      item => item.projectId === projectId && item.sourceMissionId === missionId
+      item =>
+        item.projectId === projectId && item.sourceMissionId === missionId
     )
     .map(item => ({
       id: item.id,
@@ -428,9 +432,7 @@ export function buildProjectTaskEvidenceArtifactSummary({
       artifactType: item.type,
     }));
 
-  const allItems = [...evidenceItems, ...artifactItems].sort(
-    compareReplayItems
-  );
+  const allItems = [...evidenceItems, ...artifactItems].sort(compareReplayItems);
   const safeLimit = Math.max(0, limit);
 
   return {

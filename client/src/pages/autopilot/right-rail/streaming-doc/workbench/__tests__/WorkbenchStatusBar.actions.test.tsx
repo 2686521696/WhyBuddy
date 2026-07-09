@@ -24,9 +24,7 @@ import { describe, expect, it, vi } from "vitest";
 // 与 skeleton 测试保持一致：预先 mock blueprint-realtime-store，避免下游子组件
 // 在内部消费它时产生副作用（Phase 1 状态栏组件本身不订阅 store）。
 vi.mock("@/lib/blueprint-realtime-store", () => {
-  const useBlueprintRealtimeStore = ((
-    selector?: (state: unknown) => unknown
-  ) => {
+  const useBlueprintRealtimeStore = ((selector?: (state: unknown) => unknown) => {
     const snapshot = {
       agentReasoning: { entries: [] as unknown[] },
       rolePhases: {} as Record<string, unknown>,
@@ -103,11 +101,9 @@ function findElementByTestId(
 // 直接调用 FC（无 hooks-internal-context）：WorkbenchStatusBar 仅使用 props，
 // 没有受 React runtime 影响的 hook，因此可以以纯函数方式调用并拿到 ReactElement。
 function invokeStatusBar(props: WorkbenchStatusBarProps): ReactElement {
-  return (
-    WorkbenchStatusBar as unknown as (
-      p: WorkbenchStatusBarProps
-    ) => ReactElement
-  )(props);
+  return (WorkbenchStatusBar as unknown as (
+    p: WorkbenchStatusBarProps
+  ) => ReactElement)(props);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,9 +119,7 @@ describe("WorkbenchStatusBar — action buttons (Phase 1 / Task 2)", () => {
     expect(markup).toContain('data-testid="autopilot-workbench-status-bar"');
     expect(markup).toContain('data-testid="autopilot-workbench-action-export"');
     expect(markup).toContain('data-testid="autopilot-workbench-action-review"');
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-action-refresh"'
-    );
+    expect(markup).toContain('data-testid="autopilot-workbench-action-refresh"');
 
     // 默认非禁用：disabled 与 aria-disabled="true" 都不应出现
     expect(markup).not.toMatch(/disabled(=""|>)/);
@@ -181,7 +175,7 @@ describe("WorkbenchStatusBar — action buttons (Phase 1 / Task 2)", () => {
     );
   });
 
-  it('(d) falls back to a stable zh-CN subtitle and never emits an empty <p data-testid="autopilot-workbench-subtitle"></p> node', () => {
+  it("(d) falls back to a stable zh-CN subtitle and never emits an empty <p data-testid=\"autopilot-workbench-subtitle\"></p> node", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchStatusBar
         {...makeProps({ subtitle: undefined, locale: "zh-CN" })}

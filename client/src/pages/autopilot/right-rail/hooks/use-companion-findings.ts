@@ -28,7 +28,7 @@ export interface UseCompanionFindingsResult {
 }
 
 export function useCompanionFindings(
-  job: CompanionFindingsSource | null | undefined
+  job: CompanionFindingsSource | null | undefined,
 ): UseCompanionFindingsResult {
   return useMemo(() => {
     const findings = selectCompanionFindings(job);

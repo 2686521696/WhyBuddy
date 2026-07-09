@@ -12,31 +12,11 @@ export interface OutputType {
 }
 
 export const OUTPUT_TYPES: OutputType[] = [
-  {
-    id: "summary",
-    labelZh: "结果摘要",
-    labelEn: "Summary",
-    defaultSelected: true,
-  },
+  { id: "summary", labelZh: "结果摘要", labelEn: "Summary", defaultSelected: true },
   { id: "files", labelZh: "生成文件", labelEn: "Files", defaultSelected: true },
-  {
-    id: "logs",
-    labelZh: "执行日志",
-    labelEn: "Exec Logs",
-    defaultSelected: false,
-  },
-  {
-    id: "screenshots",
-    labelZh: "证据截图",
-    labelEn: "Screenshots",
-    defaultSelected: false,
-  },
-  {
-    id: "records",
-    labelZh: "操作记录",
-    labelEn: "Records",
-    defaultSelected: false,
-  },
+  { id: "logs", labelZh: "执行日志", labelEn: "Exec Logs", defaultSelected: false },
+  { id: "screenshots", labelZh: "证据截图", labelEn: "Screenshots", defaultSelected: false },
+  { id: "records", labelZh: "操作记录", labelEn: "Records", defaultSelected: false },
 ];
 
 export interface LaunchOutputChipsProps {
@@ -62,11 +42,7 @@ export function LaunchOutputChips({
         className="mb-3 text-[11px]"
         style={{ color: "var(--muted-foreground, #64748b)" }}
       >
-        {t(
-          locale,
-          "任务完成后，系统将按照勾选的格式来归档和呈现验证过的证据。",
-          "After completion, the system archives and presents verified evidence in selected formats."
-        )}
+        {t(locale, "任务完成后，系统将按照勾选的格式来归档和呈现验证过的证据。", "After completion, the system archives and presents verified evidence in selected formats.")}
       </p>
       <div className="flex flex-wrap gap-2">
         {OUTPUT_TYPES.map(outputType => {

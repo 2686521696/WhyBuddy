@@ -9,7 +9,7 @@ import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 export type ClarificationItem = {
   id: string;
   prompt: string;
-  kind?: string; // V4 alignment (e.g. "audience", blueprint question id)
+  kind?: string;  // V4 alignment (e.g. "audience", blueprint question id)
   type?: "free_text" | "single_choice" | "multi_choice";
   options?: string[];
   defaultAnswer?: string;
@@ -40,11 +40,7 @@ export function ClarificationCard({
     // 预选 defaultAnswer（若匹配某个选项）
     const seedPick: Record<string, string> = {};
     for (const q of questions) {
-      if (
-        q.type !== "multi_choice" &&
-        q.defaultAnswer &&
-        (q.options || []).includes(q.defaultAnswer)
-      ) {
+      if (q.type !== "multi_choice" && q.defaultAnswer && (q.options || []).includes(q.defaultAnswer)) {
         seedPick[q.id] = q.defaultAnswer;
       }
     }
@@ -56,9 +52,7 @@ export function ClarificationCard({
 
   if (total === 0) return null;
   const q = questions[Math.min(step, total - 1)];
-  const isChoice =
-    (q.type === "single_choice" || q.type === "multi_choice") &&
-    (q.options || []).length > 0;
+  const isChoice = (q.type === "single_choice" || q.type === "multi_choice") && (q.options || []).length > 0;
   const isMulti = q.type === "multi_choice";
 
   const answerFor = (item: ClarificationItem): string => {
@@ -83,20 +77,18 @@ export function ClarificationCard({
     return item.type === "multi_choice" && (item.options || []).length > 0;
   }
 
-  const answeredCount = questions.filter(
-    item => answerFor(item).length > 0
-  ).length;
+  const answeredCount = questions.filter((item) => answerFor(item).length > 0).length;
 
   const submit = () => {
     const answers: ClarificationAnswer[] = questions
-      .map(item => ({ gapId: item.id, answer: answerFor(item) }))
-      .filter(a => a.answer.length > 0);
+      .map((item) => ({ gapId: item.id, answer: answerFor(item) }))
+      .filter((a) => a.answer.length > 0);
     if (answers.length === 0) return;
     onSubmit(answers);
   };
 
   const toggleMulti = (value: string) => {
-    setMulti(prev => {
+    setMulti((prev) => {
       const next = new Set(prev[q.id] ?? []);
       if (next.has(value)) next.delete(value);
       else next.add(value);
@@ -114,10 +106,7 @@ export function ClarificationCard({
           <span className="rounded-full bg-[#e6f4ff] px-2 py-0.5 text-[11px] font-semibold text-[#1677ff]">
             待回答问题
           </span>
-          <span
-            className="text-[11px] tabular-nums text-stone-400"
-            data-testid="sliderule-clarification-pager"
-          >
+          <span className="text-[11px] tabular-nums text-stone-400" data-testid="sliderule-clarification-pager">
             {step + 1} / {total}
           </span>
         </div>
@@ -135,45 +124,28 @@ export function ClarificationCard({
         <div className="flex items-baseline gap-2">
           <p className="text-sm font-semibold text-stone-800">{q.prompt}</p>
           {q.kind && (
-            <span
-              className={`rounded px-1 py-0 text-[9px] font-mono ${
-                q.kind.includes("audience") || q.kind.includes("users")
-                  ? "bg-blue-100 text-blue-700"
-                  : q.kind.includes("platform")
-                    ? "bg-green-100 text-green-700"
-                    : q.kind.includes("scope")
-                      ? "bg-amber-100 text-amber-700"
-                      : q.kind.includes("success") ||
-                          q.kind.includes("scenario")
-                        ? "bg-purple-100 text-purple-700"
-                        : "bg-[#F3DCD0] text-[#1677ff]"
-              }`}
-            >
-              {q.kind}
-            </span>
+            <span className={`rounded px-1 py-0 text-[9px] font-mono ${
+              q.kind.includes("audience") || q.kind.includes("users") ? "bg-blue-100 text-blue-700" :
+              q.kind.includes("platform") ? "bg-green-100 text-green-700" :
+              q.kind.includes("scope") ? "bg-amber-100 text-amber-700" :
+              q.kind.includes("success") || q.kind.includes("scenario") ? "bg-purple-100 text-purple-700" :
+              "bg-[#F3DCD0] text-[#1677ff]"
+            }`}>{q.kind}</span>
           )}
         </div>
-        {q.context && (
-          <p className="mt-1 text-[11px] leading-relaxed text-stone-400">
-            {q.context}
-          </p>
-        )}
+        {q.context && <p className="mt-1 text-[11px] leading-relaxed text-stone-400">{q.context}</p>}
 
         <div className="mt-3 space-y-1.5">
           {isChoice &&
-            (q.options || []).map(opt => {
+            (q.options || []).map((opt) => {
               const isRecommended = q.defaultAnswer === opt;
-              const selected = isMulti
-                ? (multi[q.id]?.has(opt) ?? false)
-                : picked[q.id] === opt;
+              const selected = isMulti ? (multi[q.id]?.has(opt) ?? false) : picked[q.id] === opt;
               return (
                 <button
                   key={opt}
                   type="button"
                   onClick={() =>
-                    isMulti
-                      ? toggleMulti(opt)
-                      : setPicked(p => ({ ...p, [q.id]: opt }))
+                    isMulti ? toggleMulti(opt) : setPicked((p) => ({ ...p, [q.id]: opt }))
                   }
                   className={`flex w-full items-center gap-2 rounded border px-3 py-2 text-left text-[13px] transition ${
                     selected
@@ -204,9 +176,7 @@ export function ClarificationCard({
               <button
                 type="button"
                 onClick={() =>
-                  isMulti
-                    ? toggleMulti(OTHER)
-                    : setPicked(p => ({ ...p, [q.id]: OTHER }))
+                  isMulti ? toggleMulti(OTHER) : setPicked((p) => ({ ...p, [q.id]: OTHER }))
                 }
                 className={`flex h-4 w-4 shrink-0 items-center justify-center border ${
                   isMulti ? "rounded-[2px]" : "rounded-full"
@@ -216,17 +186,14 @@ export function ClarificationCard({
                     : "border-[#d3d8e0]"
                 }`}
               >
-                {(isMulti
-                  ? multi[q.id]?.has(OTHER)
-                  : picked[q.id] === OTHER) && <Check className="h-3 w-3" />}
+                {(isMulti ? multi[q.id]?.has(OTHER) : picked[q.id] === OTHER) && <Check className="h-3 w-3" />}
               </button>
               <input
                 type="text"
                 value={otherText[q.id] || ""}
-                onChange={e => {
-                  setOtherText(o => ({ ...o, [q.id]: e.target.value }));
-                  if (!isMulti && e.target.value)
-                    setPicked(p => ({ ...p, [q.id]: OTHER }));
+                onChange={(e) => {
+                  setOtherText((o) => ({ ...o, [q.id]: e.target.value }));
+                  if (!isMulti && e.target.value) setPicked((p) => ({ ...p, [q.id]: OTHER }));
                 }}
                 placeholder="其他（自定义回答）"
                 className="flex-1 rounded border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-[13px] text-stone-800 outline-none transition focus:border-[#1677ff] focus:ring-2 focus:ring-[#F3DCD0]"
@@ -236,9 +203,7 @@ export function ClarificationCard({
           ) : (
             <textarea
               value={otherText[q.id] || ""}
-              onChange={e =>
-                setOtherText(o => ({ ...o, [q.id]: e.target.value }))
-              }
+              onChange={(e) => setOtherText((o) => ({ ...o, [q.id]: e.target.value }))}
               placeholder="输入你的回答…"
               rows={2}
               className="w-full resize-none rounded border border-[#e5e7eb] bg-white px-3 py-2 text-[13px] text-stone-800 outline-none transition focus:border-[#1677ff] focus:ring-2 focus:ring-[#F3DCD0]"
@@ -249,9 +214,7 @@ export function ClarificationCard({
       </div>
 
       <div className="flex items-center justify-between border-t border-[#e8eaee] px-4 py-2.5">
-        <span className="text-[11px] text-stone-400">
-          已答 {answeredCount} / {total}
-        </span>
+        <span className="text-[11px] text-stone-400">已答 {answeredCount} / {total}</span>
         <div className="flex items-center gap-2">
           <button
             onClick={onClose}
@@ -261,7 +224,7 @@ export function ClarificationCard({
           </button>
           {step > 0 && (
             <button
-              onClick={() => setStep(s => Math.max(0, s - 1))}
+              onClick={() => setStep((s) => Math.max(0, s - 1))}
               className="flex items-center gap-1 rounded border border-[#e5e7eb] bg-white px-3 py-1.5 text-[12px] font-medium text-stone-600 transition hover:bg-[#eef0f4]"
             >
               <ChevronLeft className="h-3.5 w-3.5" /> 上一步
@@ -269,7 +232,7 @@ export function ClarificationCard({
           )}
           {step < total - 1 ? (
             <button
-              onClick={() => setStep(s => Math.min(total - 1, s + 1))}
+              onClick={() => setStep((s) => Math.min(total - 1, s + 1))}
               className="flex items-center gap-1 rounded bg-[#1677ff] px-3.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[#0958d9]"
               data-testid="sliderule-clarification-next"
             >
@@ -292,8 +255,8 @@ export function ClarificationCard({
                 // 简单批量: 提交所有同 kind 的已答 (基础实现, 可扩展)
                 const sameKind = questions.filter(item => item.kind === q.kind);
                 const answers: ClarificationAnswer[] = sameKind
-                  .map(item => ({ gapId: item.id, answer: answerFor(item) }))
-                  .filter(a => a.answer.length > 0);
+                  .map((item) => ({ gapId: item.id, answer: answerFor(item) }))
+                  .filter((a) => a.answer.length > 0);
                 if (answers.length > 0) onSubmit(answers);
               }}
               className="rounded border border-[#e5e7eb] bg-white px-2 py-1 text-[11px] text-stone-600 hover:bg-[#eef0f4]"

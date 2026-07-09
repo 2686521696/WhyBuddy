@@ -180,11 +180,7 @@ export function OfficeAgentInspectorPanel({
   );
   const officeAgentOptions = useMemo(
     () =>
-      selectOfficeAgentOptions({
-        workflow: scopedCurrentWorkflow,
-        agents,
-        locale,
-      }),
+      selectOfficeAgentOptions({ workflow: scopedCurrentWorkflow, agents, locale }),
     [agents, scopedCurrentWorkflow, locale]
   );
   const activeAgentId = useMemo(

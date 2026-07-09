@@ -52,11 +52,11 @@ describe("<CapabilitySnapshotBadges>", () => {
   it("exposes 4 静态角标 in DEFAULT_CAPABILITY_SNAPSHOT_BADGES with the spec-locked text", () => {
     // 在渲染之前先校验导出常量本身严格匹配 spec（防止配置漂移）。
     expect(DEFAULT_CAPABILITY_SNAPSHOT_BADGES).toHaveLength(4);
-    expect(DEFAULT_CAPABILITY_SNAPSHOT_BADGES.map(b => b.id)).toEqual(
-      EXPECTED_BADGE_IDS
+    expect(DEFAULT_CAPABILITY_SNAPSHOT_BADGES.map((b) => b.id)).toEqual(
+      EXPECTED_BADGE_IDS,
     );
-    expect(DEFAULT_CAPABILITY_SNAPSHOT_BADGES.map(b => b.text)).toEqual(
-      EXPECTED_BADGE_TEXTS
+    expect(DEFAULT_CAPABILITY_SNAPSHOT_BADGES.map((b) => b.text)).toEqual(
+      EXPECTED_BADGE_TEXTS,
     );
   });
 
@@ -71,7 +71,7 @@ describe("<CapabilitySnapshotBadges>", () => {
     ];
 
     const markup = renderToStaticMarkup(
-      <CapabilitySnapshotBadges badges={badges} theme="light" />
+      <CapabilitySnapshotBadges badges={badges} theme="light" />,
     );
 
     // 角标容器 testid 必须出现（角标列表的稳定挂载点）。
@@ -79,13 +79,15 @@ describe("<CapabilitySnapshotBadges>", () => {
 
     // 4 个角标 testid 各出现一次（恰好 4 个 badge）。
     const badgeTestIdMatches = markup.match(
-      /data-testid="capability-snapshot-badge-[a-z-]+"/g
+      /data-testid="capability-snapshot-badge-[a-z-]+"/g,
     );
     expect(badgeTestIdMatches).not.toBeNull();
     expect(badgeTestIdMatches).toHaveLength(4);
 
     for (const id of EXPECTED_BADGE_IDS) {
-      expect(markup).toContain(`data-testid="capability-snapshot-badge-${id}"`);
+      expect(markup).toContain(
+        `data-testid="capability-snapshot-badge-${id}"`,
+      );
       expect(markup).toContain(`data-badge-id="${id}"`);
     }
 
@@ -97,8 +99,8 @@ describe("<CapabilitySnapshotBadges>", () => {
     }
 
     // 文本顺序与 spec / DEFAULT 数组顺序严格一致。
-    const orderedIndexes = EXPECTED_BADGE_TEXTS.map(text =>
-      markup.indexOf(text)
+    const orderedIndexes = EXPECTED_BADGE_TEXTS.map((text) =>
+      markup.indexOf(text),
     );
     for (const idx of orderedIndexes) {
       expect(idx).toBeGreaterThanOrEqual(0);
@@ -109,11 +111,11 @@ describe("<CapabilitySnapshotBadges>", () => {
 
   it("falls back to DEFAULT_CAPABILITY_SNAPSHOT_BADGES when no badges prop is provided", () => {
     const markup = renderToStaticMarkup(
-      <CapabilitySnapshotBadges theme="light" />
+      <CapabilitySnapshotBadges theme="light" />,
     );
 
     const badgeTestIdMatches = markup.match(
-      /data-testid="capability-snapshot-badge-[a-z-]+"/g
+      /data-testid="capability-snapshot-badge-[a-z-]+"/g,
     );
     expect(badgeTestIdMatches).toHaveLength(4);
 

@@ -13,7 +13,10 @@ import {
   type VerifyEmailLoginCodeRequest,
 } from "@shared/auth";
 
-import { fetchJsonSafe, type FetchJsonSafeResult } from "./api-client";
+import {
+  fetchJsonSafe,
+  type FetchJsonSafeResult,
+} from "./api-client";
 
 type AuthApiResponse = AuthResponse | AuthErrorResponse;
 type SendEmailCodeApiResponse = SendEmailLoginCodeResponse | AuthErrorResponse;
@@ -56,11 +59,7 @@ function authErrorMessage<TSuccess extends { success: true }>(
 }
 
 function authJsonInit(
-  input:
-    | LoginRequest
-    | RegisterRequest
-    | SendEmailLoginCodeRequest
-    | VerifyEmailLoginCodeRequest
+  input: LoginRequest | RegisterRequest | SendEmailLoginCodeRequest | VerifyEmailLoginCodeRequest
 ): RequestInit {
   return {
     method: "POST",

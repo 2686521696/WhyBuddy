@@ -51,8 +51,7 @@ export const CapabilityCard: FC<CapabilityCardProps> = ({ entry }) => {
   // 从 capabilityId 推断能力类型（取第一段作为 key）
   const capType = entry.capabilityId.split(/[-_./]/)[0]?.toLowerCase() ?? "";
   const icon = CAPABILITY_ICON[capType] ?? "🔧";
-  const badgeClass =
-    STATUS_BADGE_CLASS[entry.status] ?? STATUS_BADGE_CLASS.completed;
+  const badgeClass = STATUS_BADGE_CLASS[entry.status] ?? STATUS_BADGE_CLASS.completed;
   const statusText = STATUS_LABEL[entry.status] ?? entry.status;
 
   const isFailed = entry.status === "failed";
@@ -85,7 +84,9 @@ export const CapabilityCard: FC<CapabilityCardProps> = ({ entry }) => {
       </span>
 
       {/* 状态标签（兼容旧测试断言 "capability · {status}"） */}
-      <span className="sr-only">{`capability · ${statusText}`}</span>
+      <span className="sr-only">
+        {`capability · ${statusText}`}
+      </span>
 
       {/* 状态徽章 */}
       <span

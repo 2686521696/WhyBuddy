@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { deriveDownstreamImpact } from "../derive-downstream-impact";
 import type { ReplanArtifact } from "../types";
 
-function artifact(id: string, type: string, stage?: string): ReplanArtifact {
+function artifact(
+  id: string,
+  type: string,
+  stage?: string,
+): ReplanArtifact {
   return {
     id,
     type,
@@ -46,11 +50,17 @@ describe("deriveDownstreamImpact", () => {
   it("keeps spec_tree and spec_docs on the same page but still treats spec_docs artifacts as downstream of spec_tree", () => {
     const fromSpecTree = deriveDownstreamImpact({
       fromStage: "spec_tree",
-      artifacts: [artifact("tree", "spec_tree"), artifact("tasks", "tasks")],
+      artifacts: [
+        artifact("tree", "spec_tree"),
+        artifact("tasks", "tasks"),
+      ],
     });
     const fromSpecDocs = deriveDownstreamImpact({
       fromStage: "spec_docs",
-      artifacts: [artifact("tree", "spec_tree"), artifact("tasks", "tasks")],
+      artifacts: [
+        artifact("tree", "spec_tree"),
+        artifact("tasks", "tasks"),
+      ],
     });
 
     expect(fromSpecTree.artifactIds).toEqual(["tasks"]);

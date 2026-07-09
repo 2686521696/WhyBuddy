@@ -33,7 +33,7 @@ function makeElement(overrides: Partial<HUDElement> = {}): HUDElement {
 }
 
 function makeUpdate(
-  overrides: Partial<HUDPositionUpdate["characters"][number]> = {}
+  overrides: Partial<HUDPositionUpdate["characters"][number]> = {},
 ): HUDPositionUpdate {
   return {
     type: "hud.positionUpdate",
@@ -81,7 +81,7 @@ describe("HUD coordinate sync", () => {
         makeElement({ id: "name", type: "nameTag" }),
         makeElement({ id: "status", type: "statusIcon" }),
       ],
-      makeUpdate()
+      makeUpdate(),
     );
 
     expect(next).toMatchObject([
@@ -103,7 +103,7 @@ describe("HUD coordinate sync", () => {
   it("hides HUD elements when the UE update marks the character occluded", () => {
     const [next] = applyHUDPositionUpdate(
       [makeElement()],
-      makeUpdate({ occluded: true })
+      makeUpdate({ occluded: true }),
     );
 
     expect(next.visible).toBe(false);
@@ -113,7 +113,7 @@ describe("HUD coordinate sync", () => {
   it("hides HUD elements when the projected screen coordinate is offscreen", () => {
     const [next] = applyHUDPositionUpdate(
       [makeElement()],
-      makeUpdate({ screenX: 1.12, screenY: 0.5 })
+      makeUpdate({ screenX: 1.12, screenY: 0.5 }),
     );
 
     expect(next.visible).toBe(false);
@@ -133,7 +133,7 @@ describe("HUD coordinate sync", () => {
         containerWidth: 1280,
         containerHeight: 720,
         aspectRatio: 16 / 9,
-      })
+      }),
     ).toEqual({ left: 0, top: 0, width: 1280, height: 720 });
 
     expect(
@@ -141,7 +141,7 @@ describe("HUD coordinate sync", () => {
         containerWidth: 1280,
         containerHeight: 900,
         aspectRatio: 16 / 9,
-      })
+      }),
     ).toEqual({ left: 0, top: 90, width: 1280, height: 720 });
 
     expect(
@@ -149,7 +149,7 @@ describe("HUD coordinate sync", () => {
         containerWidth: 900,
         containerHeight: 720,
         aspectRatio: 16 / 9,
-      })
+      }),
     ).toEqual({ left: 0, top: 106.875, width: 900, height: 506.25 });
   });
 });

@@ -13,12 +13,7 @@ import type { DemoDataBundle, DemoTimelineEntry } from "@shared/demo/contracts";
 // Types
 // ---------------------------------------------------------------------------
 
-export type PlaybackState =
-  | "idle"
-  | "playing"
-  | "paused"
-  | "completed"
-  | "failed";
+export type PlaybackState = "idle" | "playing" | "paused" | "completed" | "failed";
 
 export interface PlaybackCallbacks {
   /** 每个时间线事件触发时调用 */
@@ -45,7 +40,7 @@ export class DemoPlaybackEngine {
 
   constructor(
     private readonly bundle: DemoDataBundle,
-    private readonly callbacks: PlaybackCallbacks
+    private readonly callbacks: PlaybackCallbacks,
   ) {
     this.events = bundle.timeline;
   }

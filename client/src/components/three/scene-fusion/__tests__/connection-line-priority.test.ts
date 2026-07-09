@@ -175,18 +175,8 @@ describe("deriveConnectionLines step 3 (stage rule)", () => {
 
     expect(lines).toHaveLength(2);
     expect(lines).toEqual([
-      {
-        from: "x-analyst",
-        to: "y-architect",
-        directed: false,
-        source: "stage-rule",
-      },
-      {
-        from: "y-architect",
-        to: "z-auditor",
-        directed: false,
-        source: "stage-rule",
-      },
+      { from: "x-analyst", to: "y-architect", directed: false, source: "stage-rule" },
+      { from: "y-architect", to: "z-auditor", directed: false, source: "stage-rule" },
     ]);
     for (const line of lines) {
       expect(line.directed).toBe(false);

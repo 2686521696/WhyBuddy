@@ -35,7 +35,7 @@ export interface UseTraceabilityMatrixOptions {
 
 export function useTraceabilityMatrix(
   jobId: string | null | undefined,
-  options?: UseTraceabilityMatrixOptions
+  options?: UseTraceabilityMatrixOptions,
 ): UseTraceabilityMatrixResult {
   const fetcher = options?.fetcher ?? fetchTraceabilityMatrix;
   const [status, setStatus] = useState<TraceabilityMatrixStatus>("idle");
@@ -56,9 +56,7 @@ export function useTraceabilityMatrix(
     setError(null);
 
     void (async () => {
-      const result = await fetcher(jobId, "json", {
-        signal: controller.signal,
-      });
+      const result = await fetcher(jobId, "json", { signal: controller.signal });
       if (!active || controller.signal.aborted) return;
       if (result.ok && result.kind === "json") {
         setMatrix(result.data);
@@ -78,7 +76,7 @@ export function useTraceabilityMatrix(
     };
   }, [jobId, reloadToken, fetcher]);
 
-  const reload = useCallback(() => setReloadToken(t => t + 1), []);
+  const reload = useCallback(() => setReloadToken((t) => t + 1), []);
 
   return { status, matrix, error, reload };
 }

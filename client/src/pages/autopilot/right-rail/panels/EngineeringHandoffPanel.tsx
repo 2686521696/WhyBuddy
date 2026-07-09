@@ -477,7 +477,10 @@ function EngineeringHandoffPanelInner({
   }, [handleRefreshRuns, jobId, runs.length]);
 
   return (
-    <div className="grid gap-3" data-testid="engineering-landing-workbench">
+    <div
+      className="grid gap-3"
+      data-testid="engineering-landing-workbench"
+    >
       {/* autopilot-v4-frontend-alignment 任务 56–58：信任层交付包（校验台账摘要 +
           可追溯矩阵 + 未决项），作为附加 section 挂在交付工作台顶部；缺数据时
           优雅省略，既有 spec md/zip 导出与落地计划逻辑保持不变。 */}
@@ -485,37 +488,37 @@ function EngineeringHandoffPanelInner({
 
       {/* Header chrome removed: SubStageCard 已提供标题 / apiPath / summary / 状态胶囊 */}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="gap-2 rounded-none border-[#CCCCCC] bg-white font-black text-black hover:bg-[#F3F3F3]"
-          disabled={!jobId || loadingPlans || loadingRuns || generating}
-          onClick={handleRefreshAll}
-          data-testid="engineering-landing-refresh-button"
-        >
-          <RefreshCw
-            className={cn(
-              "size-3.5",
-              (loadingPlans || loadingRuns) && "animate-spin"
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2 rounded-none border-[#CCCCCC] bg-white font-black text-black hover:bg-[#F3F3F3]"
+            disabled={!jobId || loadingPlans || loadingRuns || generating}
+            onClick={handleRefreshAll}
+            data-testid="engineering-landing-refresh-button"
+          >
+            <RefreshCw
+              className={cn(
+                "size-3.5",
+                (loadingPlans || loadingRuns) && "animate-spin"
+              )}
+              aria-hidden="true"
+            />
+            {panelText("刷新", "Refresh", locale)}
+          </Button>
+          <Button
+            type="button"
+            className="gap-2 rounded-none bg-black font-black text-white hover:bg-[#333]"
+            disabled={!canGenerateLanding || loadingPlans || generating}
+            onClick={handleGenerateLanding}
+            data-testid="engineering-landing-generate-button"
+          >
+            {generating ? (
+              <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Send className="size-3.5" aria-hidden="true" />
             )}
-            aria-hidden="true"
-          />
-          {panelText("刷新", "Refresh", locale)}
-        </Button>
-        <Button
-          type="button"
-          className="gap-2 rounded-none bg-black font-black text-white hover:bg-[#333]"
-          disabled={!canGenerateLanding || loadingPlans || generating}
-          onClick={handleGenerateLanding}
-          data-testid="engineering-landing-generate-button"
-        >
-          {generating ? (
-            <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : (
-            <Send className="size-3.5" aria-hidden="true" />
-          )}
-          {panelText("生成落地计划", "Generate landing plan", locale)}
-        </Button>
+            {panelText("生成落地计划", "Generate landing plan", locale)}
+          </Button>
       </div>
 
       {error ? (
@@ -536,13 +539,11 @@ function EngineeringHandoffPanelInner({
             className="h-10 rounded-[12px] border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none transition focus:border-slate-400"
             data-testid="engineering-landing-package-select"
           >
-            <option value="">
-              {panelText("全部提示词包", "All prompt packages", locale)}
-            </option>
+            <option value="">{panelText("全部提示词包", "All prompt packages", locale)}</option>
             {promptPackages.map(promptPackage => (
               <option key={promptPackage.id} value={promptPackage.id}>
-                {promptPlatformLabel(promptPackage.targetPlatform)} /{" "}
-                {blueprintCopy(promptPackage.title, locale)}
+              {promptPlatformLabel(promptPackage.targetPlatform)} /{" "}
+              {blueprintCopy(promptPackage.title, locale)}
               </option>
             ))}
           </select>
@@ -580,11 +581,7 @@ function EngineeringHandoffPanelInner({
               variant="outline"
               className="rounded-full border-slate-200 bg-white text-[10px] font-black text-slate-500"
             >
-              {panelText(
-                `${plans.length} 个计划`,
-                `${plans.length} plans`,
-                locale
-              )}
+              {panelText(`${plans.length} 个计划`, `${plans.length} plans`, locale)}
             </Badge>
           </div>
           <ScrollArea className="mt-3 max-h-[340px] pr-2">
@@ -648,9 +645,7 @@ function EngineeringHandoffPanelInner({
               {boundPromptPackages.length
                 ? boundPromptPackages
                     .slice(0, 3)
-                    .map(promptPackage =>
-                      blueprintCopy(promptPackage.title, locale)
-                    )
+                    .map(promptPackage => blueprintCopy(promptPackage.title, locale))
                     .join(" / ")
                 : selectedPromptPackage
                   ? blueprintCopy(selectedPromptPackage.title, locale)
@@ -674,11 +669,7 @@ function EngineeringHandoffPanelInner({
                 <h4 className="mt-2 text-base font-black text-slate-950">
                   {activePlan?.title
                     ? blueprintCopy(activePlan.title, locale)
-                    : panelText(
-                        "工程落地已就绪",
-                        "Engineering landing ready",
-                        locale
-                      )}
+                    : panelText("工程落地已就绪", "Engineering landing ready", locale)}
                 </h4>
               </div>
               <Badge
@@ -840,11 +831,11 @@ function EngineeringHandoffPanelInner({
               </div>
             ) : (
               <div className="mt-3 rounded-[12px] border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm font-semibold text-slate-500">
-                {panelText(
-                  "生成落地计划后，验证命令会显示在这里。",
-                  "Verification commands will appear here after a landing plan is generated.",
-                  locale
-                )}
+                  {panelText(
+                    "生成落地计划后，验证命令会显示在这里。",
+                    "Verification commands will appear here after a landing plan is generated.",
+                    locale
+                  )}
               </div>
             )}
           </div>
@@ -968,11 +959,7 @@ function EngineeringHandoffPanelInner({
                   ))
                 ) : (
                   <div className="rounded-[12px] border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm font-semibold text-slate-500">
-                    {panelText(
-                      "暂无工程执行记录。",
-                      "No engineering run records yet.",
-                      locale
-                    )}
+                    {panelText("暂无工程执行记录。", "No engineering run records yet.", locale)}
                   </div>
                 )}
               </div>

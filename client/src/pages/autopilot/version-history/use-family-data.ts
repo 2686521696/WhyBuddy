@@ -23,7 +23,7 @@ export interface FamilyDataState {
 
 export type FetchBlueprintFamily = (
   jobId: string,
-  options?: RequestInit
+  options?: RequestInit,
 ) => Promise<GetBlueprintFamilyResult>;
 
 export interface LoadBlueprintFamilyDataOptions {
@@ -48,7 +48,7 @@ export function createFamilyDataState(
   options: Pick<
     LoadBlueprintFamilyDataOptions,
     "jobId" | "enabled" | "disableRemoteFetch" | "initialData"
-  >
+  >,
 ): FamilyDataState {
   const enabled = options.enabled !== false;
   const data = options.initialData ?? null;
@@ -81,7 +81,7 @@ export function createFamilyDataState(
 
 export function mergeFamilyRequestInit(
   requestInit: RequestInit | undefined,
-  abortSignal: AbortSignal
+  abortSignal: AbortSignal,
 ): RequestInit {
   return {
     ...requestInit,
@@ -144,7 +144,7 @@ export function useFamilyData({
       enabled,
       disableRemoteFetch,
       initialData,
-    })
+    }),
   );
 
   useEffect(() => {
@@ -157,7 +157,7 @@ export function useFamilyData({
           enabled,
           disableRemoteFetch,
           initialData,
-        })
+        }),
       );
       return () => {
         closed = true;
@@ -165,7 +165,7 @@ export function useFamilyData({
     }
 
     const controller = new AbortController();
-    setState(current => ({
+    setState((current) => ({
       status: "loading",
       data: current.data ?? initialData,
       error: null,
@@ -179,7 +179,7 @@ export function useFamilyData({
       initialData,
       fetchFamily,
       requestInit: mergeFamilyRequestInit(requestInit, controller.signal),
-    }).then(nextState => {
+    }).then((nextState) => {
       if (closed) return;
       setState(nextState);
       if (nextState.status === "ready" && nextState.data) {
@@ -208,7 +208,7 @@ export function useFamilyData({
 
   const refetch = useCallback(() => {
     if (disableRemoteFetch) return;
-    setRefetchTick(current => current + 1);
+    setRefetchTick((current) => current + 1);
   }, [disableRemoteFetch]);
 
   return useMemo(
@@ -216,6 +216,6 @@ export function useFamilyData({
       ...state,
       refetch,
     }),
-    [state, refetch]
+    [state, refetch],
   );
 }

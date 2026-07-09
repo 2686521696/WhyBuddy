@@ -129,13 +129,12 @@ const CollapsedNodeGroup: FC<{
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
       >
-        <span
-          className="text-[10px] text-emerald-500 flex-shrink-0"
-          aria-hidden="true"
-        >
+        <span className="text-[10px] text-emerald-500 flex-shrink-0" aria-hidden="true">
           ✓
         </span>
-        <span className="text-[10px] text-slate-500 flex-1">{summaryText}</span>
+        <span className="text-[10px] text-slate-500 flex-1">
+          {summaryText}
+        </span>
         <span className="text-[9px] text-slate-400 flex-shrink-0">
           {expanded ? "▲" : "▼"}
         </span>
@@ -220,9 +219,15 @@ export const MiroFishCardStream: FC<MiroFishCardStreamProps> = ({
     () => readArtifactPayload<BlueprintSpecTree>(job, "spec_tree"),
     [job]
   );
-  const artifacts = useMemo(() => job?.artifacts ?? [], [job]);
+  const artifacts = useMemo(
+    () => job?.artifacts ?? [],
+    [job]
+  );
   const specDocumentTreeStats = useMemo<SpecDocumentTreeStats | null>(
-    () => (job && specTree ? deriveSpecDocumentTreeStats(job, specTree) : null),
+    () =>
+      job && specTree
+        ? deriveSpecDocumentTreeStats(job, specTree)
+        : null,
     [job, specTree]
   );
 

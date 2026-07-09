@@ -28,10 +28,10 @@ vi.mock("../../../../lib/blueprint-api/downstream", () => ({
 const mockedPostBlueprintReplan = vi.mocked(postBlueprintReplan);
 const mockedSelectBlueprintRoute = vi.mocked(selectBlueprintRoute);
 const mockedGenerateBlueprintSpecDocuments = vi.mocked(
-  generateBlueprintSpecDocuments
+  generateBlueprintSpecDocuments,
 );
 const mockedGenerateBlueprintEffectPreview = vi.mocked(
-  generateBlueprintEffectPreview
+  generateBlueprintEffectPreview,
 );
 
 describe("use-per-stage-regenerate utilities", () => {
@@ -92,9 +92,9 @@ describe("use-per-stage-regenerate utilities", () => {
   it("skips disabled and in-flight duplicate triggers", async () => {
     let resolveFirst: (value: unknown) => void = () => undefined;
     mockedGenerateBlueprintSpecDocuments.mockReturnValueOnce(
-      new Promise(resolve => {
+      new Promise((resolve) => {
         resolveFirst = resolve;
-      }) as any
+      }) as any,
     );
     const controller = createPerStageRegenerateController();
 

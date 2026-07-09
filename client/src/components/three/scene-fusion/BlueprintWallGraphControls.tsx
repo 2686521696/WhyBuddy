@@ -90,8 +90,7 @@ const groupStyle: React.CSSProperties = {
   background:
     "linear-gradient(180deg, rgba(255,255,255,0.82), rgba(248,250,252,0.7))",
   border: "1px solid rgba(203,213,225,0.6)",
-  boxShadow:
-    "0 6px 16px rgba(86,105,126,0.14), inset 0 1px 0 rgba(255,255,255,0.6)",
+  boxShadow: "0 6px 16px rgba(86,105,126,0.14), inset 0 1px 0 rgba(255,255,255,0.6)",
 };
 
 const buttonStyle: React.CSSProperties = {

@@ -91,10 +91,7 @@ function monitoringStatusTone(status: string | null | undefined) {
   }
 }
 
-function monitoringStatusLabel(
-  locale: string,
-  status: string | null | undefined
-) {
+function monitoringStatusLabel(locale: string, status: string | null | undefined) {
   switch (status) {
     case "EXECUTING":
       return t(locale, "执行中", "Executing");
@@ -220,9 +217,7 @@ export function WorkflowPanelCompatibility({
   const workflows = useWorkflowStore(state => state.workflows);
   const workflowsError = useWorkflowStore(state => state.workflowsError);
   const agents = useWorkflowStore(state => state.agents);
-  const graphInstance = useWorkflowStore(
-    state => state.currentWorkflowGraphInstance
-  );
+  const graphInstance = useWorkflowStore(state => state.currentWorkflowGraphInstance);
   const monitoringInstance = useWorkflowStore(
     state => state.currentWorkflowMonitoringInstance
   );
@@ -242,9 +237,7 @@ export function WorkflowPanelCompatibility({
     state => state.terminateWorkflowMonitoringInstance
   );
   const fetchWorkflows = useWorkflowStore(state => state.fetchWorkflows);
-  const setCurrentWorkflow = useWorkflowStore(
-    state => state.setCurrentWorkflow
-  );
+  const setCurrentWorkflow = useWorkflowStore(state => state.setCurrentWorkflow);
   const taskSummaries = useTasksStore(state => state.tasks || []);
   const detailsById = useTasksStore(state => state.detailsById);
   const selectedTaskId = useTasksStore(state => state.selectedTaskId);
@@ -321,15 +314,17 @@ export function WorkflowPanelCompatibility({
       };
     }
     return rawDestination;
-  }, [
-    activeView,
-    agents,
-    currentProject?.id,
-    detailsById,
-    selectedPet,
-    scopedCurrentWorkflow,
-    scopedSelectedTaskId,
-  ]);
+  },
+    [
+      activeView,
+      agents,
+      currentProject?.id,
+      detailsById,
+      selectedPet,
+      scopedCurrentWorkflow,
+      scopedSelectedTaskId,
+    ]
+  );
   const missionDetail = useMemo(
     () => selectWorkflowMissionDetail(scopedCurrentWorkflow, detailsById),
     [scopedCurrentWorkflow, detailsById]
@@ -623,11 +618,7 @@ export function WorkflowPanelCompatibility({
                                 </div>
                                 <div className="mt-1 text-xs leading-5 text-stone-500">
                                   {workflow.missionId ||
-                                    t(
-                                      locale,
-                                      "未关联 mission",
-                                      "No mission linked"
-                                    )}
+                                    t(locale, "未关联 mission", "No mission linked")}
                                 </div>
                               </div>
                               <span
@@ -681,10 +672,7 @@ export function WorkflowPanelCompatibility({
                                 monitoringStatusTone(monitoringInstance.status)
                               )}
                             >
-                              {monitoringStatusLabel(
-                                locale,
-                                monitoringInstance.status
-                              )}
+                              {monitoringStatusLabel(locale, monitoringInstance.status)}
                             </span>
                           </div>
                         </div>
@@ -722,18 +710,10 @@ export function WorkflowPanelCompatibility({
                         <div className="rounded-[22px] border border-stone-200/70 bg-stone-50/80 px-3.5 py-3.5">
                           <div className="flex items-center justify-between gap-3">
                             <div className="text-sm font-semibold text-stone-900">
-                              {t(
-                                locale,
-                                "节点执行预览",
-                                "Node execution preview"
-                              )}
+                              {t(locale, "节点执行预览", "Node execution preview")}
                             </div>
                             <div className="text-[11px] text-stone-400">
-                              {t(
-                                locale,
-                                "展示前 3 个节点",
-                                "Showing first 3 nodes"
-                              )}
+                              {t(locale, "展示前 3 个节点", "Showing first 3 nodes")}
                             </div>
                           </div>
 
@@ -759,10 +739,7 @@ export function WorkflowPanelCompatibility({
                                         monitoringStatusTone(node.status)
                                       )}
                                     >
-                                      {monitoringStatusLabel(
-                                        locale,
-                                        node.status
-                                      )}
+                                      {monitoringStatusLabel(locale, node.status)}
                                     </span>
                                   </div>
                                   {node.errorMessage ? (
@@ -786,11 +763,7 @@ export function WorkflowPanelCompatibility({
 
                         <div className="rounded-[22px] border border-stone-200/70 bg-stone-50/80 px-3.5 py-3.5">
                           <div className="text-sm font-semibold text-stone-900">
-                            {t(
-                              locale,
-                              "最近会话摘要",
-                              "Recent session summary"
-                            )}
+                            {t(locale, "最近会话摘要", "Recent session summary")}
                           </div>
                           <div className="mt-1 text-xs leading-5 text-stone-500">
                             {monitoringSession?.sessionId
@@ -816,11 +789,7 @@ export function WorkflowPanelCompatibility({
                                   <div className="mt-2 text-sm leading-6 text-stone-700">
                                     {summarizeText(
                                       message.content || message.thinking,
-                                      t(
-                                        locale,
-                                        "暂无会话内容",
-                                        "No session content yet"
-                                      ),
+                                      t(locale, "暂无会话内容", "No session content yet"),
                                       140
                                     )}
                                   </div>
@@ -844,10 +813,7 @@ export function WorkflowPanelCompatibility({
                             </div>
                             <div>
                               {t(locale, "最近更新", "Last updated")}:{" "}
-                              {formatDate(
-                                locale,
-                                monitoringInstance.lastUpdateTime
-                              )}
+                              {formatDate(locale, monitoringInstance.lastUpdateTime)}
                             </div>
                           </div>
                         </div>
@@ -870,11 +836,7 @@ export function WorkflowPanelCompatibility({
                   <div className="flex items-center gap-2 text-stone-600">
                     <Workflow className="size-4 text-[#4b7aa3]" />
                     <div className="text-sm font-semibold text-stone-900">
-                      {t(
-                        locale,
-                        "运行图兼容摘要",
-                        "Graph runtime compatibility"
-                      )}
+                      {t(locale, "运行图兼容摘要", "Graph runtime compatibility")}
                     </div>
                   </div>
 
@@ -931,14 +893,9 @@ export function WorkflowPanelCompatibility({
                                     {node.title}
                                   </div>
                                   <div className="mt-1 text-xs leading-5 text-stone-500">
-                                    {[
-                                      node.departmentLabel,
-                                      node.role,
-                                      node.stageKey,
-                                    ]
+                                    {[node.departmentLabel, node.role, node.stageKey]
                                       .filter(Boolean)
-                                      .join(" / ") ||
-                                      t(locale, "未标注", "Unlabeled")}
+                                      .join(" / ") || t(locale, "未标注", "Unlabeled")}
                                   </div>
                                 </div>
                                 <span className="inline-flex shrink-0 rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[10px] font-semibold text-stone-700">
@@ -949,11 +906,7 @@ export function WorkflowPanelCompatibility({
                                 <div className="mt-2 text-xs leading-6 text-stone-600">
                                   {summarizeText(
                                     node.outputPreview,
-                                    t(
-                                      locale,
-                                      "暂无输出摘要",
-                                      "No output summary"
-                                    ),
+                                    t(locale, "暂无输出摘要", "No output summary"),
                                     140
                                   )}
                                 </div>

@@ -49,9 +49,7 @@ export function AdminUsersPage() {
               <TableRow key={user.id}>
                 <TableCell>
                   <div className="min-w-48">
-                    <p className="font-medium">
-                      {user.displayName || user.email}
-                    </p>
+                    <p className="font-medium">{user.displayName || user.email}</p>
                     <p className="text-xs text-slate-500">{user.email}</p>
                   </div>
                 </TableCell>

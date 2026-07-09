@@ -21,9 +21,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // 预先 mock blueprint-realtime-store，避免下游子组件在内部消费它时产生副作用。
 vi.mock("@/lib/blueprint-realtime-store", () => {
-  const useBlueprintRealtimeStore = ((
-    selector?: (state: unknown) => unknown
-  ) => {
+  const useBlueprintRealtimeStore = ((selector?: (state: unknown) => unknown) => {
     const snapshot = {
       agentReasoning: { entries: [] as unknown[] },
       rolePhases: {} as Record<string, unknown>,
@@ -116,17 +114,11 @@ describe("WorkbenchStatusBar — stats badges & DocType cards (Phase 2 / Task 7)
     );
 
     // DocType cards
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-doctype-card-requirements"'
-    );
+    expect(markup).toContain('data-testid="autopilot-workbench-doctype-card-requirements"');
     expect(markup).toContain("3 / 2");
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-doctype-card-design"'
-    );
+    expect(markup).toContain('data-testid="autopilot-workbench-doctype-card-design"');
     expect(markup).toContain("3 / 1");
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-doctype-card-tasks"'
-    );
+    expect(markup).toContain('data-testid="autopilot-workbench-doctype-card-tasks"');
     expect(markup).toContain("3 / 0");
   });
 
@@ -193,18 +185,10 @@ describe("WorkbenchStatusBar — stats badges & DocType cards (Phase 2 / Task 7)
 
     expect(markup).toContain('data-testid="autopilot-workbench-stat-docs"');
     expect(markup).toContain('data-testid="autopilot-workbench-stat-tasks"');
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-stat-completion"'
-    );
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-doctype-card-requirements"'
-    );
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-doctype-card-design"'
-    );
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-doctype-card-tasks"'
-    );
+    expect(markup).toContain('data-testid="autopilot-workbench-stat-completion"');
+    expect(markup).toContain('data-testid="autopilot-workbench-doctype-card-requirements"');
+    expect(markup).toContain('data-testid="autopilot-workbench-doctype-card-design"');
+    expect(markup).toContain('data-testid="autopilot-workbench-doctype-card-tasks"');
   });
 
   it("(e) does not render <ul>, <ol>, or *-list testids", () => {
@@ -234,10 +218,8 @@ describe("WorkbenchStatusBar — stats badges & DocType cards (Phase 2 / Task 7)
     const markup = renderToStaticMarkup(
       <WorkbenchStatusBar
         {...makeProps({
-          title:
-            "A very long blueprint title that should never push the action buttons out of the rail",
-          subtitle:
-            "A long subtitle that should stay clipped within the status bar",
+          title: "A very long blueprint title that should never push the action buttons out of the rail",
+          subtitle: "A long subtitle that should stay clipped within the status bar",
           docStats: makeDocStats({
             totalDocs: 123,
             targetDocs: 456,

@@ -31,7 +31,7 @@ const arbEntry: fc.Arbitrary<BlueprintChecksLedgerEntry> = fc.record({
     "fallback_pretending",
     "fake_success",
     "duplicate_content",
-    "other"
+    "other",
   ),
   status: fc.constantFrom(...STATUSES),
   validator: fc.constant("v"),
@@ -41,20 +41,20 @@ const arbEntry: fc.Arbitrary<BlueprintChecksLedgerEntry> = fc.record({
 describe("preview-audit property tests", () => {
   it("Property 4: batchStatus reflects ledger; never throws on missing optionals", () => {
     fc.assert(
-      fc.property(fc.array(arbEntry, { maxLength: 30 }), entries => {
+      fc.property(fc.array(arbEntry, { maxLength: 30 }), (entries) => {
         const verdict = derivePreviewAuditVerdict(entries);
-        const audit = entries.filter(e => e.checkType === "preview_audit");
-        const hasFail = audit.some(e => e.status === "fail");
-        const hasWarn = audit.some(e => e.status === "warn");
+        const audit = entries.filter((e) => e.checkType === "preview_audit");
+        const hasFail = audit.some((e) => e.status === "fail");
+        const hasWarn = audit.some((e) => e.status === "warn");
         const expected = hasFail ? "fail" : hasWarn ? "warn" : "pass";
         expect(verdict.batchStatus).toBe(expected);
         // exhausted iff a retry_exhausted preview_audit entry exists
-        const exhausted = audit.some(e =>
-          (e.checkName ?? "").toLowerCase().includes("retry_exhausted")
+        const exhausted = audit.some((e) =>
+          (e.checkName ?? "").toLowerCase().includes("retry_exhausted"),
         );
         expect(verdict.exhausted).toBe(exhausted);
         expect(verdict.retryCount).toBeGreaterThanOrEqual(0);
-      })
+      }),
     );
   });
 

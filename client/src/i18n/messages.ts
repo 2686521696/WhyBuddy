@@ -87,8 +87,7 @@ export const messages = {
         tasks: {
           label: "任务",
           sublabel: "TASKS",
-          description:
-            "打开全屏任务工作台与深链详情页，用于查看、跟进和深度处理现有任务。",
+          description: "打开全屏任务工作台与深链详情页，用于查看、跟进和深度处理现有任务。",
         },
         more: {
           label: "更多",
@@ -559,12 +558,12 @@ export const messages = {
         selectDescription:
           "从左侧队列选择任务，查看执行摘要、内部状态、时间线、交付物与决策入口。",
       },
-      hero: {
-        updated: "最近更新",
-        recommended: "建议优先操作",
-        pendingDecision: "需要处理的决策",
-        statusStack: "状态概览",
-      },
+        hero: {
+          updated: "最近更新",
+          recommended: "建议优先操作",
+          pendingDecision: "需要处理的决策",
+          statusStack: "状态概览",
+        },
       operatorBar: {
         title: "任务操作",
         latestAction: "最近操作",
@@ -1451,12 +1450,12 @@ export const messages = {
         selectDescription:
           "Pick a mission from the queue to inspect its execution summary, runtime state, timeline, artifacts, and decision entry.",
       },
-      hero: {
-        updated: "Latest update",
-        recommended: "Recommended now",
-        pendingDecision: "Action needed",
-        statusStack: "Status overview",
-      },
+        hero: {
+          updated: "Latest update",
+          recommended: "Recommended now",
+          pendingDecision: "Action needed",
+          statusStack: "Status overview",
+        },
       operatorBar: {
         title: "Operator Actions",
         latestAction: "Latest action",

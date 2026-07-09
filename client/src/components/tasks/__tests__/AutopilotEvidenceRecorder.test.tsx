@@ -118,24 +118,20 @@ describe("AutopilotEvidenceRecorder", () => {
 
     expect(getAutopilotEvidenceCategory(events[0])).toBe("route");
     expect(getAutopilotEvidenceCategory(events[4])).toBe("output");
-    expect(
-      filterAutopilotEvidenceEvents(events, "route").map(event => event.id)
-    ).toEqual(["route"]);
+    expect(filterAutopilotEvidenceEvents(events, "route").map(event => event.id))
+      .toEqual(["route"]);
     expect(
       filterAutopilotEvidenceEvents(events, "takeover").map(event => event.id)
     ).toEqual(["takeover"]);
-    expect(
-      filterAutopilotEvidenceEvents(events, "fleet").map(event => event.id)
-    ).toEqual(["fleet"]);
-    expect(
-      filterAutopilotEvidenceEvents(events, "tool").map(event => event.id)
-    ).toEqual(["tool"]);
+    expect(filterAutopilotEvidenceEvents(events, "fleet").map(event => event.id))
+      .toEqual(["fleet"]);
+    expect(filterAutopilotEvidenceEvents(events, "tool").map(event => event.id))
+      .toEqual(["tool"]);
     expect(
       filterAutopilotEvidenceEvents(events, "output").map(event => event.id)
     ).toEqual(["output"]);
-    expect(
-      filterAutopilotEvidenceEvents(events, "audit").map(event => event.id)
-    ).toEqual(["audit"]);
+    expect(filterAutopilotEvidenceEvents(events, "audit").map(event => event.id))
+      .toEqual(["audit"]);
   });
 
   it("renders event timeline details with drawer-ready payload", () => {
@@ -200,12 +196,8 @@ describe("AutopilotEvidenceRecorder", () => {
     expect(markup).toContain("Partial");
     expect(markup).toContain("Recorded");
     expect(markup).toContain("Autopilot");
-    expect(markup).toContain(
-      "Operator approval requested for release handoff."
-    );
-    expect(markup).toContain(
-      'data-testid="autopilot-evidence-detail-takeover"'
-    );
+    expect(markup).toContain("Operator approval requested for release handoff.");
+    expect(markup).toContain('data-testid="autopilot-evidence-detail-takeover"');
     expect(markup).toMatch(/Drawer detail ready|详情已准备/);
     expect(markup).toContain("Release approval packet");
     expect(markup).toContain("Drawer can render this payload later.");

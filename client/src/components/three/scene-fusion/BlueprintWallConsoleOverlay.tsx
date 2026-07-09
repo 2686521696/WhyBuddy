@@ -166,7 +166,7 @@ export function BlueprintWallConsoleOverlay({
         </span>
       ) : (
         <div style={linesStyle}>
-          {consoleLines.map(line => (
+          {consoleLines.map((line) => (
             <div
               key={line.id}
               data-console-line-id={line.id}

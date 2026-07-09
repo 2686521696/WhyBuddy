@@ -539,7 +539,7 @@ export function resolveVisualStageLane(
       return currentStageLane;
     case "reasoning": {
       // 读 sourceRefs 里的已知 stage；缺失 / 未知 → 当前阶段道。
-      const stageRef = node.sourceRefs.find(ref => ref.kind === "stage");
+      const stageRef = node.sourceRefs.find((ref) => ref.kind === "stage");
       if (stageRef) {
         const laneIndex = BLUEPRINT_SCENE_STAGES.indexOf(
           stageRef.id as BlueprintSceneStageKey
@@ -611,7 +611,7 @@ export function mapWallDataToFlowGraph(
     return row;
   };
 
-  const nodes: FlowGraphNodeData[] = data.nodes.map(node => {
+  const nodes: FlowGraphNodeData[] = data.nodes.map((node) => {
     const visualStageLane = resolveVisualStageLane(node, data);
     // 首选原始 row；同道同行碰撞时顺延到下一个空闲行（确定性）。
     const effectiveRow = claimRow(visualStageLane, node.row);
@@ -639,7 +639,7 @@ export function mapWallDataToFlowGraph(
     };
   });
 
-  const edges: FlowGraphEdgeData[] = data.edges.map(edge => {
+  const edges: FlowGraphEdgeData[] = data.edges.map((edge) => {
     const edgeData: BlueprintFlowGraphEdgeData = {
       kind: edge.kind,
       priority: edge.priority,

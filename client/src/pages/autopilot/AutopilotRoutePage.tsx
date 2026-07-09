@@ -167,7 +167,9 @@ function readActiveHistoryJobIdFromLocation(): string | null {
   return new URLSearchParams(window.location.search).get("activeJob");
 }
 
-function updateAutopilotHistorySearch(updater: (url: URL) => void): void {
+function updateAutopilotHistorySearch(
+  updater: (url: URL) => void,
+): void {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   updater(url);
@@ -188,7 +190,7 @@ function closeAutopilotHistorySearch(): void {
 }
 
 function readLegacyClarificationSession(
-  editResult: unknown
+  editResult: unknown,
 ): BlueprintClarificationSession | undefined {
   if (!editResult || typeof editResult !== "object") return undefined;
   return (editResult as { session?: BlueprintClarificationSession }).session;
@@ -290,7 +292,7 @@ export async function waitForRouteSelectionSnapshot({
   jobId,
   fetchJob = fetchBlueprintGenerationJob,
   delay = (ms: number) =>
-    new Promise<void>(resolve => globalThis.setTimeout(resolve, ms)),
+    new Promise<void>((resolve) => globalThis.setTimeout(resolve, ms)),
   maxAttempts = 24,
   intervalMs = 1500,
 }: {
@@ -341,9 +343,7 @@ function PageTransitionWrapper({
           initial={isReduced ? false : { x: offset, opacity: 0 }}
           animate={isReduced ? false : { x: 0, opacity: 1 }}
           exit={isReduced ? undefined : { x: -offset, opacity: 0 }}
-          transition={
-            isReduced ? { duration: 0 } : { duration: 0.18, ease: "easeInOut" }
-          }
+          transition={isReduced ? { duration: 0 } : { duration: 0.18, ease: "easeInOut" }}
           className="h-full min-w-0"
         >
           {children}
@@ -593,8 +593,7 @@ function projectJobForAutopilotPage(
           artifactIds: job.stageState.artifactIds.filter(artifactId =>
             job.artifacts.some(
               artifact =>
-                artifact.id === artifactId &&
-                allowedArtifacts.has(artifact.type)
+                artifact.id === artifactId && allowedArtifacts.has(artifact.type)
             )
           ),
         }
@@ -1014,10 +1013,7 @@ function buildFlowSteps({
     routeSet,
     selection,
   });
-  const clarificationReady = isClarificationReady(
-    clarificationSession,
-    readiness
-  );
+  const clarificationReady = isClarificationReady(clarificationSession, readiness);
 
   return [
     {
@@ -1029,16 +1025,11 @@ function buildFlowSteps({
       detail: selection
         ? t(locale, "路线已选中", "Route selected")
         : routeSet
-          ? t(
-              locale,
-              `${routeSet.routes.length} 条候选路线`,
-              `${routeSet.routes.length} routes ready`
-            )
+          ? t(locale, `${routeSet.routes.length} 条候选路线`, `${routeSet.routes.length} routes ready`)
           : clarificationReady
             ? t(locale, "澄清完成，等待路线", "Clarified; waiting for routes")
             : intake
-              ? readReadinessLabel(readiness, locale) ||
-                t(locale, "澄清中", "Clarifying")
+              ? readReadinessLabel(readiness, locale) || t(locale, "澄清中", "Clarifying")
               : t(locale, "目标或 GitHub 地址", "Goal or GitHub URLs"),
       status: selection ? "done" : "active",
       icon: Link2,
@@ -1053,11 +1044,7 @@ function buildFlowSteps({
             `${agentCrew.roles.length} 个角色 / ${agentCrew.capabilityMatrix.length} 个能力绑定`,
             `${agentCrew.roles.length} roles / ${agentCrew.capabilityMatrix.length} bindings`
           )
-        : t(
-            locale,
-            "等待角色与能力事件",
-            "Waiting for role and capability events"
-          ),
+        : t(locale, "等待角色与能力事件", "Waiting for role and capability events"),
       status: !selection
         ? "blocked"
         : workflowStage === "fabric"
@@ -1222,7 +1209,9 @@ function AutopilotLanguageSwitch({
               isMirofish
                 ? cn(
                     "rounded-[0px] font-[family-name:var(--mf-font-mono)]",
-                    active ? "bg-black text-white" : "bg-transparent text-black"
+                    active
+                      ? "bg-black text-white"
+                      : "bg-transparent text-black"
                   )
                 : cn(
                     "rounded-[6px] font-black",
@@ -1458,8 +1447,7 @@ function AutopilotVisualStage({
   // 2D ReasoningFlowSurface 集成：优先 viewModel 路径（与 3D 侧 derive 一致，含 strip 防御）。
   // raw graph 作为后备防御入口。
   // 使用 right-rail 的 effectiveSubStage / fabricSubStage 作为权威 gating（而非仅 job.stage）。
-  const activeReasoningStage =
-    effectiveSubStage ?? fabricSubStage ?? job?.stage;
+  const activeReasoningStage = effectiveSubStage ?? fabricSubStage ?? job?.stage;
 
   const [visualModePreference, setVisualModePreference] =
     useState<VisualModePreference>("auto");
@@ -1470,32 +1458,23 @@ function AutopilotVisualStage({
     setVisualModePreference("auto");
   }, [job?.id, activeReasoningStage]);
 
-  const reasoningViewModel = useMemo<BlueprintWallReasoningGraphViewModel>(
-    () =>
-      deriveBlueprintWallReasoningGraph({
-        job,
-        activeSubStage: activeReasoningStage,
-        structuredGraphs: wallReasoningGraphs,
-        agentReasoningEntries: wallAgentReasoningEntries,
-        roleLabels: blueprintRoleLabels,
-        specTree,
-      }),
-    [
+  const reasoningViewModel = useMemo<BlueprintWallReasoningGraphViewModel>(() =>
+    deriveBlueprintWallReasoningGraph({
       job,
-      activeReasoningStage,
-      wallReasoningGraphs,
-      wallAgentReasoningEntries,
-      blueprintRoleLabels,
+      activeSubStage: activeReasoningStage,
+      structuredGraphs: wallReasoningGraphs,
+      agentReasoningEntries: wallAgentReasoningEntries,
+      roleLabels: blueprintRoleLabels,
       specTree,
-    ]
+    }),
+    [job, activeReasoningStage, wallReasoningGraphs, wallAgentReasoningEntries, blueprintRoleLabels, specTree]
   );
 
   // 区分 structured artifact 和 fallback（agentReasoningEntries / specTree 构造的 viewModel）。
   // hasReasoningData 用于决定是否显示 toggle（只要有可展示的 reasoning 就给用户选择权）。
   const hasStructuredReasoningData = (wallReasoningGraphs?.length ?? 0) > 0;
   const hasDerivedReasoningData = reasoningViewModel.visibleNodes.length > 0;
-  const hasReasoningData =
-    hasStructuredReasoningData || hasDerivedReasoningData;
+  const hasReasoningData = hasStructuredReasoningData || hasDerivedReasoningData;
 
   // 核心决策委托给纯函数，便于单元测试固化语义。
   const is2DReasoning =
@@ -1649,14 +1628,8 @@ function ProjectContextSummary({
         value={context.assets.length}
         tone="good"
       />
-      <MetricBox
-        label={t(locale, "证据", "Evidence")}
-        value={context.evidence.length}
-      />
-      <MetricBox
-        label={t(locale, "输入记录", "Intakes")}
-        value={context.intakeIds.length}
-      />
+      <MetricBox label={t(locale, "证据", "Evidence")} value={context.evidence.length} />
+      <MetricBox label={t(locale, "输入记录", "Intakes")} value={context.intakeIds.length} />
     </div>
   );
 }
@@ -1759,11 +1732,7 @@ export function ClarificationPanel({
   if (session.questions.length === 0) {
     return (
       <div className="rounded-[8px] border border-emerald-200 bg-emerald-50 px-3 py-3 text-xs font-black text-emerald-800">
-        {t(
-          locale,
-          "当前没有阻塞性澄清项。",
-          "No blocking clarification items."
-        )}
+        {t(locale, "当前没有阻塞性澄清项。", "No blocking clarification items.")}
       </div>
     );
   }
@@ -1838,9 +1807,7 @@ export function ClarificationPanel({
             ) : null}
             <textarea
               value={answerDrafts[question.id] ?? ""}
-              onChange={event =>
-                onAnswerChange(question.id, event.target.value)
-              }
+              onChange={event => onAnswerChange(question.id, event.target.value)}
               className="min-h-[74px] resize-y border border-[#E5E5E5] bg-white px-3 py-2 font-mono text-[13px] leading-6 text-black outline-none transition focus:border-black focus:ring-1 focus:ring-black"
               style={{ borderRadius: "0px" }}
               placeholder={t(
@@ -1853,7 +1820,7 @@ export function ClarificationPanel({
             {inlineEdit?.enabled ? (
               <EditModeField
                 value={answerDrafts[question.id] ?? ""}
-                onSubmit={value =>
+                onSubmit={(value) =>
                   inlineEdit.onSubmitAnswer(question.id, value)
                 }
                 canEdit
@@ -1889,10 +1856,10 @@ export function ClarificationPanel({
                     `${missingRequiredCount} required answer${missingRequiredCount === 1 ? "" : "s"} still needed`
                   )
                 : pendingChangeCount > 0
-                  ? t(locale, "等待提交澄清", "Clarification changes pending")
-                  : session.answers.length > 0
-                    ? t(locale, "澄清已提交", "Clarifications submitted")
-                    : t(locale, "选择或填写答案", "Choose or write answers")}
+                ? t(locale, "等待提交澄清", "Clarification changes pending")
+                : session.answers.length > 0
+                  ? t(locale, "澄清已提交", "Clarifications submitted")
+                  : t(locale, "选择或填写答案", "Choose or write answers")}
             </div>
             <div className="mt-1 text-xs font-semibold leading-5 text-slate-500">
               {t(
@@ -1920,9 +1887,9 @@ export function ClarificationPanel({
               ? t(locale, "提交中", "Submitting")
               : isPartiallySubmitted
                 ? t(locale, "继续补充", "Continue answering")
-                : pendingChangeCount === 0 && session.answers.length > 0
-                  ? t(locale, "已提交", "Submitted")
-                  : t(locale, "提交澄清", "Submit")}
+              : pendingChangeCount === 0 && session.answers.length > 0
+                ? t(locale, "已提交", "Submitted")
+                : t(locale, "提交澄清", "Submit")}
           </Button>
         </div>
       </div>
@@ -1966,9 +1933,7 @@ function RouteOption({
               className="border border-[#E5E5E5] bg-white px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-[#666]"
               style={{ borderRadius: "0px" }}
             >
-              {primary
-                ? t(locale, "主路线", "Primary")
-                : t(locale, "备选", "Alternative")}
+              {primary ? t(locale, "主路线", "Primary") : t(locale, "备选", "Alternative")}
             </span>
             {selected ? (
               <span
@@ -2004,25 +1969,14 @@ function RouteOption({
           ) : (
             <Route className="size-3.5" aria-hidden="true" />
           )}
-          {selected
-            ? t(locale, "已选", "Selected")
-            : t(locale, "选择", "Select")}
+          {selected ? t(locale, "已选", "Selected") : t(locale, "选择", "Select")}
         </Button>
       </div>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        <MetricBox
-          label={t(locale, "风险", "Risk")}
-          value={levelLabel(route.riskLevel, locale)}
-        />
-        <MetricBox
-          label={t(locale, "成本", "Cost")}
-          value={levelLabel(route.costLevel, locale)}
-        />
-        <MetricBox
-          label={t(locale, "投入", "Effort")}
-          value={copyDynamic(locale, route.estimatedEffort)}
-        />
+        <MetricBox label={t(locale, "风险", "Risk")} value={levelLabel(route.riskLevel, locale)} />
+        <MetricBox label={t(locale, "成本", "Cost")} value={levelLabel(route.costLevel, locale)} />
+        <MetricBox label={t(locale, "投入", "Effort")} value={copyDynamic(locale, route.estimatedEffort)} />
       </div>
     </article>
   );
@@ -2403,10 +2357,7 @@ function AutopilotWorkflowRail({
   };
 
   const renderActiveStepBody = () => {
-    const clarificationReady = isClarificationReady(
-      clarificationSession,
-      readiness
-    );
+    const clarificationReady = isClarificationReady(clarificationSession, readiness);
     switch (activeStepId) {
       case "input": {
         // 输入步骤流式时间线:4 个子阶段
@@ -2419,24 +2370,13 @@ function AutopilotWorkflowRail({
         //   - 选中后（selection 存在）：自身仍处于 active 状态，承接选完路线后
         //     spec_tree 派生过程的进度事件（stageId="route"），让用户能看到
         //     "我选了路线之后系统在做什么"，避免出现"选完就什么都没了"的断层。
-        type InputSub =
-          | "target_input"
-          | "intake_created"
-          | "clarification"
-          | "route";
-        const INPUT_SUBS: InputSub[] = [
-          "target_input",
-          "intake_created",
-          "clarification",
-          "route",
-        ];
+        type InputSub = "target_input" | "intake_created" | "clarification" | "route";
+        const INPUT_SUBS: InputSub[] = ["target_input", "intake_created", "clarification", "route"];
 
         // 判定当前活跃子阶段
         let activeInputSub: InputSub = "target_input";
-        if (routeSet || selection || generatingRouteSet || clarificationReady)
-          activeInputSub = "route";
-        else if (intake && clarificationSession)
-          activeInputSub = "clarification";
+        if (routeSet || selection || generatingRouteSet || clarificationReady) activeInputSub = "route";
+        else if (intake && clarificationSession) activeInputSub = "clarification";
         else if (intake) activeInputSub = "intake_created";
 
         const activeInputIndex = INPUT_SUBS.indexOf(activeInputSub);
@@ -2454,11 +2394,7 @@ function AutopilotWorkflowRail({
               const isCompleted = idx < activeInputIndex;
               const isActive = idx === activeInputIndex;
               const isFuture = idx > activeInputIndex;
-              const status = isCompleted
-                ? "completed"
-                : isActive
-                  ? "active"
-                  : "future";
+              const status = isCompleted ? "completed" : isActive ? "active" : "future";
 
               // 构造摘要
               const summaryObj = {
@@ -2472,25 +2408,12 @@ function AutopilotWorkflowRail({
                         ? "POST /api/blueprint/jobs · POST /api/blueprint/route-selection"
                         : "",
                 summary: "",
-                metrics: [
-                  { label: "-", value: "-" },
-                  { label: "-", value: "-" },
-                  { label: "-", value: "-" },
-                ] as [
-                  { label: string; value: string | number },
-                  { label: string; value: string | number },
-                  { label: string; value: string | number },
-                ],
+                metrics: [{ label: "-", value: "-" }, { label: "-", value: "-" }, { label: "-", value: "-" }] as [{ label: string; value: string | number }, { label: string; value: string | number }, { label: string; value: string | number }],
                 dataReady: isCompleted || isActive,
               };
 
               return (
-                <TimelineNode
-                  key={sub}
-                  index={idx}
-                  status={status}
-                  summary={summaryObj}
-                >
+                <TimelineNode key={sub} index={idx} status={status} summary={summaryObj}>
                   {/*
                     autopilot-streaming-experience integration-gap-2026-05-16 wave 3：
                     isCompleted 不再折叠成简略，而是把 active 时同一组组件保留下来，
@@ -2525,10 +2448,7 @@ function AutopilotWorkflowRail({
                   {isCompleted && sub === "intake_created" && intake && (
                     <div className="mt-2 space-y-2">
                       <IntakeSummary locale={locale} intake={intake} />
-                      <ProjectContextSummary
-                        locale={locale}
-                        context={projectContext}
-                      />
+                      <ProjectContextSummary locale={locale} context={projectContext} />
                       {/*
                         autopilot-streaming-experience integration-gap-2026-05-16：
                         仓库扫描事件 stageId 已改为 "intake_created"，因此这里要
@@ -2558,9 +2478,7 @@ function AutopilotWorkflowRail({
                   )}
                   {isCompleted && sub === "clarification" && (
                     <div className="mt-2 space-y-2">
-                      <div className="text-xs text-slate-500">
-                        {readReadinessLabel(readiness, locale)}
-                      </div>
+                      <div className="text-xs text-slate-500">{readReadinessLabel(readiness, locale)}</div>
                       <ClarificationPanel
                         locale={locale}
                         session={clarificationSession}
@@ -2601,39 +2519,12 @@ function AutopilotWorkflowRail({
                     <div className="mt-2 space-y-2">
                       <div className="text-xs text-slate-500">
                         {selection
-                          ? t(
-                              locale,
-                              `已选择路线：${selection.routeTitle ?? selection.routeId}`,
-                              `Selected route: ${selection.routeTitle ?? selection.routeId}`
-                            )
-                          : t(
-                              locale,
-                              `${routeSet.routes.length} 条路线`,
-                              `${routeSet.routes.length} routes`
-                            )}
+                          ? t(locale, `已选择路线：${selection.routeTitle ?? selection.routeId}`, `Selected route: ${selection.routeTitle ?? selection.routeId}`)
+                          : t(locale, `${routeSet.routes.length} 条路线`, `${routeSet.routes.length} routes`)}
                       </div>
                       <div className="space-y-1">
-                        {primaryRoute && (
-                          <RouteOption
-                            locale={locale}
-                            route={primaryRoute}
-                            primary
-                            selected={selection?.routeId === primaryRoute.id}
-                            selecting={false}
-                            onSelect={onSubmitRouteSelectionEdit}
-                          />
-                        )}
-                        {alternativeRoutes.map(route => (
-                          <RouteOption
-                            key={route.id}
-                            locale={locale}
-                            route={route}
-                            primary={false}
-                            selected={selection?.routeId === route.id}
-                            selecting={false}
-                            onSelect={onSubmitRouteSelectionEdit}
-                          />
-                        ))}
+                        {primaryRoute && <RouteOption locale={locale} route={primaryRoute} primary selected={selection?.routeId === primaryRoute.id} selecting={false} onSelect={onSubmitRouteSelectionEdit} />}
+                        {alternativeRoutes.map(route => <RouteOption key={route.id} locale={locale} route={route} primary={false} selected={selection?.routeId === route.id} selecting={false} onSelect={onSubmitRouteSelectionEdit} />)}
                       </div>
                       {/*
                         autopilot-streaming-experience integration-gap-2026-05-16：
@@ -2669,43 +2560,12 @@ function AutopilotWorkflowRail({
                   {isActive && sub === "target_input" && (
                     <div className="mt-2 space-y-3">
                       <label className="grid gap-1.5">
-                        <span className="text-xs font-black text-slate-700">
-                          {t(
-                            locale,
-                            "执行目标 / GitHub 地址",
-                            "Goal / GitHub URLs"
-                          )}
-                        </span>
-                        <textarea
-                          value={targetText}
-                          onChange={e => setTargetText(e.target.value)}
-                          className="min-h-[100px] resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold leading-6 text-slate-700 outline-none transition focus:border-slate-900/40 focus:ring-2 focus:ring-slate-900/10"
-                          placeholder={t(
-                            locale,
-                            "描述目标，可直接粘贴 GitHub 地址（每行一个）",
-                            "Describe your goal. Paste GitHub URLs directly (one per line)."
-                          )}
-                          data-testid="autopilot-target-input"
-                        />
+                        <span className="text-xs font-black text-slate-700">{t(locale, "执行目标 / GitHub 地址", "Goal / GitHub URLs")}</span>
+                        <textarea value={targetText} onChange={e => setTargetText(e.target.value)} className="min-h-[100px] resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold leading-6 text-slate-700 outline-none transition focus:border-slate-900/40 focus:ring-2 focus:ring-slate-900/10" placeholder={t(locale, "描述目标，可直接粘贴 GitHub 地址（每行一个）", "Describe your goal. Paste GitHub URLs directly (one per line).")} data-testid="autopilot-target-input" />
                       </label>
-                      <Button
-                        type="button"
-                        className="w-full gap-2 rounded-lg bg-slate-900 font-bold text-white hover:bg-slate-700"
-                        disabled={!canCreateIntake || creatingIntake}
-                        onClick={onCreateIntake}
-                        data-testid="autopilot-create-intake-button"
-                      >
-                        {creatingIntake ? (
-                          <RefreshCw
-                            className="size-4 animate-spin"
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <Link2 className="size-4" aria-hidden="true" />
-                        )}
-                        {intake
-                          ? t(locale, "刷新输入记录", "Refresh intake")
-                          : t(locale, "创建输入记录", "Create intake")}
+                      <Button type="button" className="w-full gap-2 rounded-lg bg-slate-900 font-bold text-white hover:bg-slate-700" disabled={!canCreateIntake || creatingIntake} onClick={onCreateIntake} data-testid="autopilot-create-intake-button">
+                        {creatingIntake ? <RefreshCw className="size-4 animate-spin" aria-hidden="true" /> : <Link2 className="size-4" aria-hidden="true" />}
+                        {intake ? t(locale, "刷新输入记录", "Refresh intake") : t(locale, "创建输入记录", "Create intake")}
                       </Button>
                       {/* Requirement 2.1: target_input active-state mount — ensures
                           the two-column split panel is visible even before intake exists */}
@@ -2734,10 +2594,7 @@ function AutopilotWorkflowRail({
                   {isActive && sub === "intake_created" && (
                     <div className="mt-2 space-y-2">
                       <IntakeSummary locale={locale} intake={intake} />
-                      <ProjectContextSummary
-                        locale={locale}
-                        context={projectContext}
-                      />
+                      <ProjectContextSummary locale={locale} context={projectContext} />
                       {/*
                         autopilot-streaming-experience integration-gap-2026-05-16：
                         intake_created 阶段在 POST /api/blueprint/clarifications
@@ -2769,37 +2626,11 @@ function AutopilotWorkflowRail({
                   {isActive && sub === "clarification" && (
                     <div className="mt-2 space-y-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="gap-2 rounded-lg border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50"
-                          disabled={!intake || generatingClarifications}
-                          onClick={onGenerateClarifications}
-                          data-testid="autopilot-generate-clarifications-button"
-                        >
-                          {generatingClarifications ? (
-                            <RefreshCw
-                              className="size-4 animate-spin"
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            <HelpCircle className="size-4" aria-hidden="true" />
-                          )}
-                          {clarificationSession
-                            ? t(locale, "刷新澄清", "Refresh")
-                            : t(locale, "生成澄清", "Generate")}
+                        <Button type="button" variant="outline" className="gap-2 rounded-lg border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50" disabled={!intake || generatingClarifications} onClick={onGenerateClarifications} data-testid="autopilot-generate-clarifications-button">
+                          {generatingClarifications ? <RefreshCw className="size-4 animate-spin" aria-hidden="true" /> : <HelpCircle className="size-4" aria-hidden="true" />}
+                          {clarificationSession ? t(locale, "刷新澄清", "Refresh") : t(locale, "生成澄清", "Generate")}
                         </Button>
-                        <span
-                          className={cn(
-                            "rounded-md px-2 py-1 text-[10px] font-bold",
-                            readiness?.status === "ready"
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-slate-100 text-slate-600"
-                          )}
-                          data-testid="autopilot-readiness"
-                        >
-                          {readReadinessLabel(readiness, locale)}
-                        </span>
+                        <span className={cn("rounded-md px-2 py-1 text-[10px] font-bold", readiness?.status === "ready" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")} data-testid="autopilot-readiness">{readReadinessLabel(readiness, locale)}</span>
                       </div>
                       <ClarificationPanel
                         locale={locale}
@@ -2849,67 +2680,20 @@ function AutopilotWorkflowRail({
                       */}
                       {!routeSet && (
                         <div className="flex items-center gap-2 text-xs text-slate-500">
-                          {generatingRouteSet ? (
-                            <>
-                              <RefreshCw
-                                className="size-3.5 animate-spin"
-                                aria-hidden="true"
-                              />
-                              {t(
-                                locale,
-                                "正在生成路线...",
-                                "Generating routes..."
-                              )}
-                            </>
-                          ) : (
-                            t(locale, "等待路线生成", "Waiting for routes")
-                          )}
+                          {generatingRouteSet
+                            ? <><RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />{t(locale, "正在生成路线...", "Generating routes...")}</>
+                            : t(locale, "等待路线生成", "Waiting for routes")}
                         </div>
                       )}
                       {routeSet && (
                         <div className="space-y-2">
                           <div className="text-xs text-slate-500">
                             {selection
-                              ? t(
-                                  locale,
-                                  "路线已选中，正在派生 SPEC 树...",
-                                  "Route selected, deriving SPEC tree..."
-                                )
-                              : t(
-                                  locale,
-                                  "选中一条路线后系统将派生 SPEC 树。",
-                                  "Select a route and the system will derive the SPEC tree."
-                                )}
+                              ? t(locale, "路线已选中，正在派生 SPEC 树...", "Route selected, deriving SPEC tree...")
+                              : t(locale, "选中一条路线后系统将派生 SPEC 树。", "Select a route and the system will derive the SPEC tree.")}
                           </div>
-                          {primaryRoute && (
-                            <RouteOption
-                              locale={locale}
-                              route={primaryRoute}
-                              primary
-                              selected={selection?.routeId === primaryRoute.id}
-                              selecting={selectingRouteId === primaryRoute.id}
-                              onSelect={
-                                selection
-                                  ? onSubmitRouteSelectionEdit
-                                  : onSelectRoute
-                              }
-                            />
-                          )}
-                          {alternativeRoutes.map(route => (
-                            <RouteOption
-                              key={route.id}
-                              locale={locale}
-                              route={route}
-                              primary={false}
-                              selected={selection?.routeId === route.id}
-                              selecting={selectingRouteId === route.id}
-                              onSelect={
-                                selection
-                                  ? onSubmitRouteSelectionEdit
-                                  : onSelectRoute
-                              }
-                            />
-                          ))}
+                          {primaryRoute && <RouteOption locale={locale} route={primaryRoute} primary selected={selection?.routeId === primaryRoute.id} selecting={selectingRouteId === primaryRoute.id} onSelect={selection ? onSubmitRouteSelectionEdit : onSelectRoute} />}
+                          {alternativeRoutes.map(route => <RouteOption key={route.id} locale={locale} route={route} primary={false} selected={selection?.routeId === route.id} selecting={selectingRouteId === route.id} onSelect={selection ? onSubmitRouteSelectionEdit : onSelectRoute} />)}
                         </div>
                       )}
                       {/*
@@ -2953,8 +2737,7 @@ function AutopilotWorkflowRail({
         // - side-collapsible（md-xl）：顶部 collapse toggle；collapsed 时隐藏
         // - side-fixed（≥xl）：Spec 3 现状，不显示 trigger / toggle
         const tier = viewportTier;
-        const drawerCopy =
-          DRAWER_TIER_COPY[locale] ?? DRAWER_TIER_COPY["en-US"];
+        const drawerCopy = DRAWER_TIER_COPY[locale] ?? DRAWER_TIER_COPY["en-US"];
         const autoAdvanceSubStage = selectAutoAdvanceSubStage(
           autoAdvancingTo ?? ""
         );
@@ -3012,10 +2795,7 @@ function AutopilotWorkflowRail({
           </RightRailSubStageContext.Provider>
         );
         return (
-          <div
-            className="grid h-full min-h-0 gap-3"
-            data-testid="autopilot-fabric-step"
-          >
+          <div className="grid h-full min-h-0 gap-3" data-testid="autopilot-fabric-step">
             {historyPanelOpen && latestJob ? (
               <AutopilotVersionHistoryPanel
                 locale={locale}
@@ -3047,9 +2827,9 @@ function AutopilotWorkflowRail({
                   width={400}
                 >
                   <MirofishThemeProvider enabled>
-                    <div data-testid="autopilot-right-rail-drawer">
-                      {railElement}
-                    </div>
+                  <div data-testid="autopilot-right-rail-drawer">
+                    {railElement}
+                  </div>
                   </MirofishThemeProvider>
                 </HoloDrawer>
               </>
@@ -3064,7 +2844,9 @@ function AutopilotWorkflowRail({
                 onClick={() => onRightRailCollapsedChange(!rightRailCollapsed)}
                 className="rounded border border-border px-3 py-1 text-xs"
               >
-                {rightRailCollapsed ? drawerCopy.expand : drawerCopy.collapse}
+                {rightRailCollapsed
+                  ? drawerCopy.expand
+                  : drawerCopy.collapse}
               </button>
             ) : null}
 
@@ -3087,8 +2869,7 @@ function AutopilotWorkflowRail({
                 Rendering the generic StageSplitMount as well duplicates the
                 same "执行流 / SPEC 产物" block below the workbench. */}
 
-            {(subStageContext.effectiveSubStage ?? fabricSubStage) ===
-              "effect_preview" && (
+            {(subStageContext.effectiveSubStage ?? fabricSubStage) === "effect_preview" && (
               <StageSplitMount
                 descriptor={deriveStageSplitDescriptor({
                   sub: "effect_preview",
@@ -3110,8 +2891,7 @@ function AutopilotWorkflowRail({
               />
             )}
 
-            {(subStageContext.effectiveSubStage ?? fabricSubStage) ===
-              "prompt_package" && (
+            {(subStageContext.effectiveSubStage ?? fabricSubStage) === "prompt_package" && (
               <StageSplitMount
                 descriptor={deriveStageSplitDescriptor({
                   sub: "prompt_package",
@@ -3133,8 +2913,7 @@ function AutopilotWorkflowRail({
               />
             )}
 
-            {(subStageContext.effectiveSubStage ?? fabricSubStage) ===
-              "runtime_capability" && (
+            {(subStageContext.effectiveSubStage ?? fabricSubStage) === "runtime_capability" && (
               <StageSplitMount
                 descriptor={deriveStageSplitDescriptor({
                   sub: "runtime_capability",
@@ -3156,8 +2935,7 @@ function AutopilotWorkflowRail({
               />
             )}
 
-            {(subStageContext.effectiveSubStage ?? fabricSubStage) ===
-              "engineering_handoff" && (
+            {(subStageContext.effectiveSubStage ?? fabricSubStage) === "engineering_handoff" && (
               <StageSplitMount
                 descriptor={deriveStageSplitDescriptor({
                   sub: "engineering_handoff",
@@ -3179,8 +2957,7 @@ function AutopilotWorkflowRail({
               />
             )}
 
-            {(subStageContext.effectiveSubStage ?? fabricSubStage) ===
-              "artifact_memory" && (
+            {(subStageContext.effectiveSubStage ?? fabricSubStage) === "artifact_memory" && (
               <StageSplitMount
                 descriptor={deriveStageSplitDescriptor({
                   sub: "artifact_memory",
@@ -3202,8 +2979,7 @@ function AutopilotWorkflowRail({
               />
             )}
 
-            {(subStageContext.effectiveSubStage ?? fabricSubStage) ===
-              "agent_crew_fabric" && (
+            {(subStageContext.effectiveSubStage ?? fabricSubStage) === "agent_crew_fabric" && (
               <StageSplitMount
                 descriptor={deriveStageSplitDescriptor({
                   sub: "agent_crew_fabric",
@@ -3365,8 +3141,7 @@ function buildConsoleLines({
         )}, ${clarificationSession.questions.length} question(s), ${clarificationSession.answers.length} answer(s).`
       ),
       tone:
-        clarificationSession.answers.length > 0 ||
-        clarificationSession.questions.length === 0
+        clarificationSession.answers.length > 0 || clarificationSession.questions.length === 0
           ? "success"
           : "warning",
       stageGroup: "stage-one",
@@ -3567,9 +3342,7 @@ function AutopilotConsolePanel({
                   ? "bg-cyan-300 text-slate-950"
                   : "text-white/45"
               )}
-              data-state={
-                activeConsoleStage === "stage-one" ? "active" : "idle"
-              }
+              data-state={activeConsoleStage === "stage-one" ? "active" : "idle"}
             >
               {t(locale, "\u9636\u6bb51", "Stage 1")}
             </span>
@@ -3580,9 +3353,7 @@ function AutopilotConsolePanel({
                   ? "bg-emerald-300 text-slate-950"
                   : "text-white/45"
               )}
-              data-state={
-                activeConsoleStage === "stage-two" ? "active" : "idle"
-              }
+              data-state={activeConsoleStage === "stage-two" ? "active" : "idle"}
             >
               {t(locale, "\u9636\u6bb52", "Stage 2")}
             </span>
@@ -3593,8 +3364,7 @@ function AutopilotConsolePanel({
             {t(locale, "事件流", "Event stream")}
           </span>
           <span className="bg-white/5 px-2 py-1 text-[10px] font-black text-white/55">
-            {visibleLines.length}/{scopedLines.length}{" "}
-            {t(locale, "行", "lines")}
+            {visibleLines.length}/{scopedLines.length} {t(locale, "行", "lines")}
           </span>
         </div>
       </div>
@@ -3607,51 +3377,49 @@ function AutopilotConsolePanel({
       >
         <div
           className={cn(
-            "px-4 py-3 font-mono text-[11px] leading-6",
-            // Spec 5 布局校准:embedded 浮层限高 + 内滚,不遮挡 3D 场景。
-            // 自动驾驶 3D 场景融合 follow-up（2026-05-13）：
-            // 去掉 max-h 强制高度让 panel 真正自适应到 visibleLines 行数。
-            // 之前 max-h-32（128px）在只有 1-2 行 console line 时仍占满 128px，
-            // 视觉上 panel 下方留出大段 dim 浮层空白挡住 3D scene 底部。改成只
-            // 设上限不强制最低高，短消息时 panel 自然变低，不再遮挡底部地面。
-            embedded ? "" : "overflow-hidden"
-          )}
-        >
-          {visibleLines.length === 0 ? (
-            <div className="py-2 text-white/45">
-              {activeConsoleStage === "stage-two"
-                ? t(locale, "阶段 2 暂无事件", "No stage 2 events yet")
-                : t(locale, "暂无事件", "No events yet")}
-            </div>
-          ) : (
-            visibleLines.map(line => (
-              <div
-                key={`${line.channel}-${line.id}`}
-                className={cn(
-                  "grid gap-2 border-b border-white/[0.06] py-1.5 last:border-b-0 md:grid-cols-[128px_minmax(0,1fr)]",
-                  line.tone === "success"
-                    ? "text-emerald-100"
-                    : line.tone === "warning"
-                      ? "text-amber-100"
-                      : line.tone === "danger"
-                        ? "text-rose-100"
-                        : "text-slate-200"
-                )}
-              >
-                <span className="truncate text-white/45">
-                  {line.timestamp
-                    ? new Intl.DateTimeFormat(locale, {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      }).format(new Date(line.timestamp))
-                    : "--:--:--"}{" "}
-                  {line.channel}
-                </span>
-                <span className="min-w-0 break-words">{line.message}</span>
-              </div>
-            ))
-          )}
+          "px-4 py-3 font-mono text-[11px] leading-6",
+          // Spec 5 布局校准:embedded 浮层限高 + 内滚,不遮挡 3D 场景。
+          // 自动驾驶 3D 场景融合 follow-up（2026-05-13）：
+          // 去掉 max-h 强制高度让 panel 真正自适应到 visibleLines 行数。
+          // 之前 max-h-32（128px）在只有 1-2 行 console line 时仍占满 128px，
+          // 视觉上 panel 下方留出大段 dim 浮层空白挡住 3D scene 底部。改成只
+          // 设上限不强制最低高，短消息时 panel 自然变低，不再遮挡底部地面。
+          embedded ? "" : "overflow-hidden"
+        )}
+      >
+        {visibleLines.length === 0 ? (
+          <div className="py-2 text-white/45">
+            {activeConsoleStage === "stage-two"
+              ? t(locale, "阶段 2 暂无事件", "No stage 2 events yet")
+              : t(locale, "暂无事件", "No events yet")}
+          </div>
+        ) : visibleLines.map(line => (
+          <div
+            key={`${line.channel}-${line.id}`}
+            className={cn(
+              "grid gap-2 border-b border-white/[0.06] py-1.5 last:border-b-0 md:grid-cols-[128px_minmax(0,1fr)]",
+              line.tone === "success"
+                ? "text-emerald-100"
+                : line.tone === "warning"
+                  ? "text-amber-100"
+                  : line.tone === "danger"
+                    ? "text-rose-100"
+                    : "text-slate-200"
+            )}
+          >
+            <span className="truncate text-white/45">
+              {line.timestamp
+                ? new Intl.DateTimeFormat(locale, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  }).format(new Date(line.timestamp))
+                : "--:--:--"}{" "}
+              {line.channel}
+            </span>
+            <span className="min-w-0 break-words">{line.message}</span>
+          </div>
+        ))}
         </div>
         {children}
       </div>
@@ -3736,13 +3504,7 @@ export function AutopilotSpecTreeHandoffPanel({
           label={t(locale, "SPEC 节点", "SPEC nodes")}
           value={
             specTree
-              ? countLabel(
-                  locale,
-                  specTree.nodes.length,
-                  "个节点",
-                  "node",
-                  "nodes"
-                )
+              ? countLabel(locale, specTree.nodes.length, "个节点", "node", "nodes")
               : t(locale, "已生成", "Generated")
           }
         />
@@ -3797,112 +3559,18 @@ function AgentReasoningTimelineInline({ jobId }: { jobId: string }) {
 
       const now = Date.now();
       const events = [
-        {
-          type: "role.agent.iteration_started",
-          payload: {
-            iteration: 1,
-            roleId: "planner",
-            stageId: "route_generation",
-          },
-        },
-        {
-          type: "role.agent.thinking",
-          payload: {
-            iteration: 1,
-            roleId: "planner",
-            stageId: "route_generation",
-            thought: "我需要先分析仓库的目录结构和核心模块...",
-          },
-        },
-        {
-          type: "role.agent.acting",
-          payload: {
-            iteration: 1,
-            roleId: "planner",
-            stageId: "route_generation",
-            actionToolId: "mcp.github.clone",
-          },
-        },
-        {
-          type: "role.agent.observing",
-          payload: {
-            iteration: 1,
-            roleId: "planner",
-            stageId: "route_generation",
-            observationSuccess: true,
-            observationSummary: "代码已克隆，发现 src/ 下有 12 个模块",
-          },
-        },
-        {
-          type: "role.agent.iteration_started",
-          payload: {
-            iteration: 2,
-            roleId: "planner",
-            stageId: "route_generation",
-          },
-        },
-        {
-          type: "role.agent.thinking",
-          payload: {
-            iteration: 2,
-            roleId: "planner",
-            stageId: "route_generation",
-            thought: "分析模块依赖关系，识别核心状态机和事件流...",
-          },
-        },
-        {
-          type: "role.agent.acting",
-          payload: {
-            iteration: 2,
-            roleId: "planner",
-            stageId: "route_generation",
-            actionToolId: "aigc.code_analysis",
-          },
-        },
-        {
-          type: "role.agent.observing",
-          payload: {
-            iteration: 2,
-            roleId: "planner",
-            stageId: "route_generation",
-            observationSuccess: true,
-            observationSummary: "主模块是 core/engine.ts，依赖 3 个子系统",
-          },
-        },
-        {
-          type: "role.agent.iteration_started",
-          payload: {
-            iteration: 3,
-            roleId: "planner",
-            stageId: "route_generation",
-          },
-        },
-        {
-          type: "role.agent.thinking",
-          payload: {
-            iteration: 3,
-            roleId: "planner",
-            stageId: "route_generation",
-            thought: "基于分析结果生成实现路线规划...",
-          },
-        },
-        {
-          type: "role.agent.acting",
-          payload: {
-            iteration: 3,
-            roleId: "planner",
-            stageId: "route_generation",
-            actionToolId: "builtin.finish",
-          },
-        },
-        {
-          type: "role.agent.completed",
-          payload: {
-            iteration: 3,
-            roleId: "planner",
-            stageId: "route_generation",
-          },
-        },
+        { type: "role.agent.iteration_started", payload: { iteration: 1, roleId: "planner", stageId: "route_generation" } },
+        { type: "role.agent.thinking", payload: { iteration: 1, roleId: "planner", stageId: "route_generation", thought: "我需要先分析仓库的目录结构和核心模块..." } },
+        { type: "role.agent.acting", payload: { iteration: 1, roleId: "planner", stageId: "route_generation", actionToolId: "mcp.github.clone" } },
+        { type: "role.agent.observing", payload: { iteration: 1, roleId: "planner", stageId: "route_generation", observationSuccess: true, observationSummary: "代码已克隆，发现 src/ 下有 12 个模块" } },
+        { type: "role.agent.iteration_started", payload: { iteration: 2, roleId: "planner", stageId: "route_generation" } },
+        { type: "role.agent.thinking", payload: { iteration: 2, roleId: "planner", stageId: "route_generation", thought: "分析模块依赖关系，识别核心状态机和事件流..." } },
+        { type: "role.agent.acting", payload: { iteration: 2, roleId: "planner", stageId: "route_generation", actionToolId: "aigc.code_analysis" } },
+        { type: "role.agent.observing", payload: { iteration: 2, roleId: "planner", stageId: "route_generation", observationSuccess: true, observationSummary: "主模块是 core/engine.ts，依赖 3 个子系统" } },
+        { type: "role.agent.iteration_started", payload: { iteration: 3, roleId: "planner", stageId: "route_generation" } },
+        { type: "role.agent.thinking", payload: { iteration: 3, roleId: "planner", stageId: "route_generation", thought: "基于分析结果生成实现路线规划..." } },
+        { type: "role.agent.acting", payload: { iteration: 3, roleId: "planner", stageId: "route_generation", actionToolId: "builtin.finish" } },
+        { type: "role.agent.completed", payload: { iteration: 3, roleId: "planner", stageId: "route_generation" } },
       ];
       events.forEach((event, index) => {
         setTimeout(() => {
@@ -3976,8 +3644,10 @@ export default function AutopilotRoutePage() {
     () =>
       pagesBlueprintRuntime
         ? {
-            generateSpecDocuments: pagesBlueprintRuntime.generateSpecDocuments,
-            generateEffectPreview: pagesBlueprintRuntime.generateEffectPreviews,
+            generateSpecDocuments:
+              pagesBlueprintRuntime.generateSpecDocuments,
+            generateEffectPreview:
+              pagesBlueprintRuntime.generateEffectPreviews,
             generatePromptPackages:
               pagesBlueprintRuntime.generatePromptPackages,
             generateEngineeringLanding:
@@ -4091,9 +3761,9 @@ export default function AutopilotRoutePage() {
         ? pagesBlueprintRuntime.fetchLatestGenerationJob()
         : requestedHistoryJobId
           ? fetchBlueprintGenerationJob(requestedHistoryJobId)
-          : fetchLatestBlueprintGenerationJob({
-              projectId: latestProjectId,
-            });
+        : fetchLatestBlueprintGenerationJob({
+            projectId: latestProjectId,
+          });
 
     latestJobRequest.then(result => {
       if (!active) return;
@@ -4135,9 +3805,9 @@ export default function AutopilotRoutePage() {
         ? pagesBlueprintRuntime.fetchLatestGenerationJob()
         : requestedHistoryJobId
           ? fetchBlueprintGenerationJob(requestedHistoryJobId)
-          : fetchLatestBlueprintGenerationJob({
-              projectId: latestProjectId,
-            });
+        : fetchLatestBlueprintGenerationJob({
+            projectId: latestProjectId,
+          });
     const result = await latestJobRequest;
     if (!result.ok) {
       setApiError(result.error);
@@ -4490,7 +4160,7 @@ export default function AutopilotRoutePage() {
     url.searchParams.set("activeJob", jobId);
     window.history.pushState({}, "", url);
     window.dispatchEvent(
-      new CustomEvent(AUTOPILOT_HISTORY_OPEN_EVENT, { detail: { jobId } })
+      new CustomEvent(AUTOPILOT_HISTORY_OPEN_EVENT, { detail: { jobId } }),
     );
   }, []);
 
@@ -4539,7 +4209,7 @@ export default function AutopilotRoutePage() {
           if (!result.ok) throw result.error;
           return result.data;
         },
-        refreshJob: editResult => {
+        refreshJob: (editResult) => {
           setTargetText(editResult.intake.targetText ?? value);
           setIntake(editResult.intake);
           if (editResult.projectContext) {
@@ -4567,7 +4237,7 @@ export default function AutopilotRoutePage() {
           if (!result.ok) throw result.error;
           return result.data;
         },
-        refreshJob: editResult => {
+        refreshJob: (editResult) => {
           setGithubInput(editResult.intake.githubUrls.join("\n"));
           setIntake(editResult.intake);
           if (editResult.projectContext) {
@@ -4585,7 +4255,10 @@ export default function AutopilotRoutePage() {
     async (questionId: string, answer: string) => {
       if (!clarificationSession) return;
       const mergedAnswers = new Map(
-        clarificationSession.answers.map(item => [item.questionId, item.answer])
+        clarificationSession.answers.map(item => [
+          item.questionId,
+          item.answer,
+        ])
       );
       mergedAnswers.set(questionId, answer);
       await runInlineEditFlow({
@@ -4606,7 +4279,7 @@ export default function AutopilotRoutePage() {
           if (!result.ok) throw result.error;
           return result.data;
         },
-        refreshJob: editResult => {
+        refreshJob: (editResult) => {
           const updatedSession =
             editResult.clarificationSession ??
             readLegacyClarificationSession(editResult);
@@ -4681,8 +4354,7 @@ export default function AutopilotRoutePage() {
               if (clarResult.data.projectContext) {
                 setProjectContext(clarResult.data.projectContext);
               }
-              const clarAnswers =
-                clarResult.data.clarificationSession.answers ?? [];
+              const clarAnswers = clarResult.data.clarificationSession.answers ?? [];
               setAnswerDrafts(
                 Object.fromEntries(
                   clarAnswers.map(answer => [answer.questionId, answer.answer])
@@ -4853,13 +4525,7 @@ export default function AutopilotRoutePage() {
     if (!isClarifyReady) {
       autoRouteTriggeredRef.current = false;
     }
-  }, [
-    isClarifyReady,
-    routeSet,
-    generatingRouteSet,
-    canGenerateRouteSet,
-    handleGenerateRouteSet,
-  ]);
+  }, [isClarifyReady, routeSet, generatingRouteSet, canGenerateRouteSet, handleGenerateRouteSet]);
 
   // Phase 2:编组阶段自动推进 — spec_tree → spec_docs → effect_preview → prompt_packaging → engineering_landing
   const autoAdvance = useAutoAdvance({
@@ -4979,12 +4645,12 @@ export default function AutopilotRoutePage() {
                   data-testid="autopilot-back-to-project-space"
                 >
                   <ArrowLeft className="size-3" aria-hidden="true" />
-                  <span>{t(locale, "项目自动驾驶", "Project autopilot")}</span>
+                  <span>
+                    {t(locale, "项目自动驾驶", "Project autopilot")}
+                  </span>
                 </a>
                 <span className="text-[#999]">/</span>
-                <span>
-                  {t(locale, "SPEC-first 蓝图", "SPEC-first blueprint")}
-                </span>
+                <span>{t(locale, "SPEC-first 蓝图", "SPEC-first blueprint")}</span>
               </div>
               <div className="truncate font-display text-base font-medium tracking-tight text-black">
                 {currentProject?.name ||
@@ -5004,8 +4670,16 @@ export default function AutopilotRoutePage() {
               <button
                 type="button"
                 onClick={handleForwardToLatestStage}
-                aria-label={t(locale, "返回最新阶段", "Return to latest stage")}
-                title={t(locale, "返回最新阶段", "Return to latest stage")}
+                aria-label={t(
+                  locale,
+                  "返回最新阶段",
+                  "Return to latest stage"
+                )}
+                title={t(
+                  locale,
+                  "返回最新阶段",
+                  "Return to latest stage"
+                )}
                 className="relative z-50 inline-flex items-center gap-1 border border-black bg-white px-2 py-1 font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-black transition hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF4500]/30"
                 style={{ borderRadius: "0px" }}
                 data-testid="autopilot-forward-to-latest-stage"
@@ -5049,95 +4723,91 @@ export default function AutopilotRoutePage() {
             fabricSubStage={fabricSubStage}
           />
 
-          <MirofishThemeProvider
-            enabled
-            className="h-full min-h-0 min-w-0 overflow-hidden"
-            style={{ minWidth: 0, maxWidth: "100%" }}
-          >
-            <AutopilotWorkflowRail
-              locale={locale}
-              targetText={targetText}
-              setTargetText={setTargetText}
-              githubInput={githubInput}
-              setGithubInput={setGithubInput}
-              parsedGithub={parsedGithub}
-              intake={intake}
-              projectContext={projectContext}
-              loadingContext={loadingContext}
-              clarificationSession={clarificationSession}
-              readiness={readiness}
-              answerDrafts={answerDrafts}
-              routeSet={routeSet}
-              selection={selection}
-              specTree={specTree}
-              latestJob={latestJob}
-              selectingRouteId={selectingRouteId}
-              creatingIntake={creatingIntake}
-              generatingClarifications={generatingClarifications}
-              savingAnswers={savingAnswers}
-              generatingRouteSet={generatingRouteSet}
-              canCreateIntake={canCreateIntake}
-              canGenerateRouteSet={canGenerateRouteSet}
-              agentCrew={autopilotAgentCrew}
-              capabilities={autopilotCapabilities}
-              capabilityInvocations={autopilotCapabilityInvocations}
-              capabilityEvidence={autopilotCapabilityEvidence}
-              effectPreviews={autopilotEffectPreviews}
-              flowSteps={flowSteps}
-              onCreateIntake={handleCreateIntake}
-              onGenerateClarifications={handleGenerateClarifications}
-              onAnswerChange={handleAnswerChange}
-              onSubmitTargetEdit={handleSubmitTargetEdit}
-              onSubmitGithubUrlEdit={handleSubmitGithubUrlEdit}
-              onSubmitClarificationEdit={handleSubmitClarificationEdit}
-              onSubmitRouteSelectionEdit={handleSubmitRouteSelectionEdit}
-              onSubmitAnswers={handleSaveAnswers}
-              onGenerateRouteSet={handleGenerateRouteSet}
-              onSelectRoute={handleSelectRoute}
-              apiError={apiError}
-              rightRailView={rightRailView}
-              fabricSubStage={fabricSubStage}
-              subStageContext={subStageState}
-              viewportTier={viewportTier}
-              drawerOpen={drawerOpen}
-              onDrawerOpenChange={setDrawerOpen}
-              rightRailCollapsed={rightRailCollapsed}
-              onRightRailCollapsedChange={setRightRailCollapsed}
-              pageTransitionState={pageTransition.state}
-              activeAutopilotPage={activeAutopilotPage}
-              coordinator={autopilotCoordinator}
-              onForceAdvance={autoAdvance.forceAdvance}
-              autoAdvancing={autoAdvance.advancing}
-              autoAdvancingTo={autoAdvance.advancingTo}
-              workflowStageOverride={workflowStageOverride}
-              onNavigateWorkflowStage={handleNavigateWorkflowStage}
-              onJobUpdated={handleCoordinationJobUpdated}
-              onHistoryJobSelected={handleHistoryJobSelected}
-              onBranchJobActivated={handleReplanBranchJobActivated}
-              onHistoryPanelClosed={async () => {
-                await refreshLatestGenerationSnapshot();
-              }}
-              generateSpecDocuments={
-                pagesBlueprintRuntime?.generateSpecDocuments
+          <MirofishThemeProvider enabled className="h-full min-h-0 min-w-0 overflow-hidden" style={{ minWidth: 0, maxWidth: "100%" }}>
+          <AutopilotWorkflowRail
+            locale={locale}
+            targetText={targetText}
+            setTargetText={setTargetText}
+            githubInput={githubInput}
+            setGithubInput={setGithubInput}
+            parsedGithub={parsedGithub}
+            intake={intake}
+            projectContext={projectContext}
+            loadingContext={loadingContext}
+            clarificationSession={clarificationSession}
+            readiness={readiness}
+            answerDrafts={answerDrafts}
+            routeSet={routeSet}
+            selection={selection}
+            specTree={specTree}
+            latestJob={latestJob}
+            selectingRouteId={selectingRouteId}
+            creatingIntake={creatingIntake}
+            generatingClarifications={generatingClarifications}
+            savingAnswers={savingAnswers}
+            generatingRouteSet={generatingRouteSet}
+            canCreateIntake={canCreateIntake}
+            canGenerateRouteSet={canGenerateRouteSet}
+            agentCrew={autopilotAgentCrew}
+            capabilities={autopilotCapabilities}
+            capabilityInvocations={autopilotCapabilityInvocations}
+            capabilityEvidence={autopilotCapabilityEvidence}
+            effectPreviews={autopilotEffectPreviews}
+            flowSteps={flowSteps}
+            onCreateIntake={handleCreateIntake}
+            onGenerateClarifications={handleGenerateClarifications}
+            onAnswerChange={handleAnswerChange}
+            onSubmitTargetEdit={handleSubmitTargetEdit}
+            onSubmitGithubUrlEdit={handleSubmitGithubUrlEdit}
+            onSubmitClarificationEdit={handleSubmitClarificationEdit}
+            onSubmitRouteSelectionEdit={handleSubmitRouteSelectionEdit}
+            onSubmitAnswers={handleSaveAnswers}
+            onGenerateRouteSet={handleGenerateRouteSet}
+            onSelectRoute={handleSelectRoute}
+            apiError={apiError}
+            rightRailView={rightRailView}
+            fabricSubStage={fabricSubStage}
+            subStageContext={subStageState}
+            viewportTier={viewportTier}
+            drawerOpen={drawerOpen}
+            onDrawerOpenChange={setDrawerOpen}
+            rightRailCollapsed={rightRailCollapsed}
+            onRightRailCollapsedChange={setRightRailCollapsed}
+            pageTransitionState={pageTransition.state}
+            activeAutopilotPage={activeAutopilotPage}
+            coordinator={autopilotCoordinator}
+            onForceAdvance={autoAdvance.forceAdvance}
+            autoAdvancing={autoAdvance.advancing}
+            autoAdvancingTo={autoAdvance.advancingTo}
+            workflowStageOverride={workflowStageOverride}
+            onNavigateWorkflowStage={handleNavigateWorkflowStage}
+            onJobUpdated={handleCoordinationJobUpdated}
+            onHistoryJobSelected={handleHistoryJobSelected}
+            onBranchJobActivated={handleReplanBranchJobActivated}
+            onHistoryPanelClosed={async () => {
+              await refreshLatestGenerationSnapshot();
+            }}
+            generateSpecDocuments={pagesBlueprintRuntime?.generateSpecDocuments}
+            onSpecDocumentsGenerated={response => {
+              // autopilot-spec-tree-workbench（2026-05-17）：把 SpecTreeWorkbench
+              // 从右栏发出的响应回写到 latestJob，让 rightRailView 的派生层
+              // 重算 specTree / specDocuments；同名 onForceAdvance 已在
+              // AutopilotWorkflowRail 内部触发，这里只负责承接 setLatestJob。
+              handleCoordinationJobUpdated(response.job);
+              setSpecTree(response.specTree);
+              if (IS_GITHUB_PAGES && pagesBlueprintRuntime) {
+                void refreshPagesBlueprintSnapshot();
               }
-              onSpecDocumentsGenerated={response => {
-                // autopilot-spec-tree-workbench（2026-05-17）：把 SpecTreeWorkbench
-                // 从右栏发出的响应回写到 latestJob，让 rightRailView 的派生层
-                // 重算 specTree / specDocuments；同名 onForceAdvance 已在
-                // AutopilotWorkflowRail 内部触发，这里只负责承接 setLatestJob。
-                handleCoordinationJobUpdated(response.job);
-                setSpecTree(response.specTree);
-                if (IS_GITHUB_PAGES && pagesBlueprintRuntime) {
-                  void refreshPagesBlueprintSnapshot();
-                }
-              }}
-            />
+            }}
+          />
           </MirofishThemeProvider>
+
         </div>
       </div>
     </main>
   );
 }
+
 
 // ---------------------------------------------------------------------------
 // wt3 任务 3 注记（autopilot-blueprint-refactor-split） + Spec 3 收口注记

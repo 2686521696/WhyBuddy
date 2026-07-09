@@ -41,7 +41,7 @@ function countLabel(
   count: number,
   zh: string,
   enSingular: string,
-  enPlural: string
+  enPlural: string,
 ): string {
   if (locale === "zh-CN") {
     return `${count} ${zh}`;
@@ -51,7 +51,7 @@ function countLabel(
 
 function readRoleStateCount(
   agentCrew: BlueprintAgentCrewSnapshot | null,
-  state: string
+  state: string,
 ): number {
   if (!agentCrew) {
     return 0;
@@ -111,7 +111,7 @@ function MetricBox({
             ? "border-emerald-200 bg-emerald-50 text-emerald-800"
             : tone === "warn"
               ? "border-amber-200 bg-amber-50 text-amber-900"
-              : "border-slate-200 bg-white text-slate-700"
+              : "border-slate-200 bg-white text-slate-700",
       )}
     >
       <div className="truncate text-[10px] font-black uppercase tracking-normal opacity-70">
@@ -169,13 +169,7 @@ export const RailMetricsBlock: FC<RailMetricsBlockProps> = props => {
         value={
           preview?.runtimeProjection?.sceneSnapshotId ||
           (specTree
-            ? countLabel(
-                locale,
-                specTree.nodes.length,
-                "个节点",
-                "node",
-                "nodes"
-              )
+            ? countLabel(locale, specTree.nodes.length, "个节点", "node", "nodes")
             : t(locale, "待同步", "Pending"))
         }
         tone={specTree ? "good" : "neutral"}
@@ -188,7 +182,7 @@ export const RailMetricsBlock: FC<RailMetricsBlockProps> = props => {
             ? t(
                 locale,
                 `${activeRoles} 活跃 / ${reviewingRoles} 评审`,
-                `${activeRoles} active / ${reviewingRoles} reviewing`
+                `${activeRoles} active / ${reviewingRoles} reviewing`,
               )
             : t(locale, "待初始化", "Pending")
         }
@@ -206,7 +200,7 @@ export const RailMetricsBlock: FC<RailMetricsBlockProps> = props => {
                   routeSet.routes.length,
                   "条路线",
                   "route",
-                  "routes"
+                  "routes",
                 )
               : t(locale, "待生成", "Pending")
         }
@@ -222,20 +216,18 @@ export const RailMetricsBlock: FC<RailMetricsBlockProps> = props => {
                 capabilityEvidence.length,
                 "条证据",
                 "evidence item",
-                "evidence items"
+                "evidence items",
               )
             : countLabel(
                 locale,
                 effectPreviews.length,
                 "个预演",
                 "preview",
-                "previews"
+                "previews",
               )
         }
         tone={
-          capabilityEvidence.length || effectPreviews.length
-            ? "good"
-            : "neutral"
+          capabilityEvidence.length || effectPreviews.length ? "good" : "neutral"
         }
         dark={dark}
       />

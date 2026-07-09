@@ -52,9 +52,7 @@ let state = createDefaultState();
 
 function createDefaultState(): RuntimeStateSnapshot {
   const agents = createSeedAgents();
-  const agentStatuses = Object.fromEntries(
-    agents.map(agent => [agent.id, "idle"])
-  );
+  const agentStatuses = Object.fromEntries(agents.map(agent => [agent.id, "idle"]));
 
   return {
     agents,
@@ -62,12 +60,8 @@ function createDefaultState(): RuntimeStateSnapshot {
     tasks: [],
     messages: [],
     agentStatuses,
-    memoryEntriesByAgent: Object.fromEntries(
-      agents.map(agent => [agent.id, []])
-    ),
-    memorySummariesByAgent: Object.fromEntries(
-      agents.map(agent => [agent.id, []])
-    ),
+    memoryEntriesByAgent: Object.fromEntries(agents.map(agent => [agent.id, []])),
+    memorySummariesByAgent: Object.fromEntries(agents.map(agent => [agent.id, []])),
     heartbeatStatuses: createSeedHeartbeatStatuses(agents),
     heartbeatReports: [],
     stages: STAGES,
@@ -115,17 +109,12 @@ function getWorkflowInputSignature(workflow: WorkflowInfo) {
   const signature = workflow.results?.input?.signature;
   return typeof signature === "string" && signature
     ? signature
-    : buildWorkflowInputSignature(
-        workflow.directive,
-        getWorkflowInputAttachments(workflow)
-      );
+    : buildWorkflowInputSignature(workflow.directive, getWorkflowInputAttachments(workflow));
 }
 
 function getWorkflowDirectiveContext(workflow: WorkflowInfo) {
   const context = workflow.results?.input?.directiveContext;
-  return typeof context === "string" && context.trim()
-    ? context
-    : workflow.directive;
+  return typeof context === "string" && context.trim() ? context : workflow.directive;
 }
 
 function inferDepartments(directive: string) {
@@ -173,11 +162,7 @@ function addMemoryEntry(agentId: string, entry: any) {
   state.memoryEntriesByAgent[agentId] = [...list, entry].slice(-80);
 }
 
-function addMemorySummary(
-  agentId: string,
-  workflow: WorkflowInfo,
-  summary: string
-) {
+function addMemorySummary(agentId: string, workflow: WorkflowInfo, summary: string) {
   const list = state.memorySummariesByAgent[agentId] || [];
   const keywords = workflow.directive
     .toLowerCase()
@@ -297,9 +282,7 @@ function buildWorkflowReport(workflow: WorkflowInfo) {
     })
   );
   const passedTasks = tasks.filter(task => task.status === "passed").length;
-  const scoredTasks = tasks.filter(
-    task => typeof task.total_score === "number"
-  );
+  const scoredTasks = tasks.filter(task => typeof task.total_score === "number");
   const averageScore =
     scoredTasks.length > 0
       ? scoredTasks.reduce((sum, task) => sum + (task.total_score || 0), 0) /
@@ -321,9 +304,7 @@ function buildWorkflowReport(workflow: WorkflowInfo) {
       attachments,
     },
     stats: {
-      messageCount: state.messages.filter(
-        message => message.workflow_id === workflow.id
-      ).length,
+      messageCount: state.messages.filter(message => message.workflow_id === workflow.id).length,
       taskCount: tasks.length,
       passedTaskCount: passedTasks,
       revisedTaskCount: tasks.filter(task => task.version > 1).length,
@@ -350,26 +331,16 @@ function buildWorkflowReport(workflow: WorkflowInfo) {
 
 function toMarkdown(value: any, depth = 1): string {
   if (value === null || value === undefined) return "-";
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
   if (Array.isArray(value)) {
     return value
-      .map(
-        item =>
-          `- ${typeof item === "object" ? "\n" + indent(toMarkdown(item, depth + 1)) : String(item)}`
-      )
+      .map(item => `- ${typeof item === "object" ? "\n" + indent(toMarkdown(item, depth + 1)) : String(item)}`)
       .join("\n");
   }
   return Object.entries(value)
-    .map(
-      ([key, item]) =>
-        `${"#".repeat(Math.min(depth + 1, 6))} ${key}\n${toMarkdown(item, depth + 1)}`
-    )
+    .map(([key, item]) => `${"#".repeat(Math.min(depth + 1, 6))} ${key}\n${toMarkdown(item, depth + 1)}`)
     .join("\n\n");
 }
 
@@ -409,29 +380,18 @@ function restoreState(snapshot: RuntimeStateSnapshot | null | undefined) {
   state = {
     ...fresh,
     ...snapshot,
-    agents:
-      Array.isArray(snapshot.agents) && snapshot.agents.length > 0
-        ? snapshot.agents
-        : fresh.agents,
-    workflows: Array.isArray(snapshot.workflows)
-      ? snapshot.workflows
-      : fresh.workflows,
+    agents: Array.isArray(snapshot.agents) && snapshot.agents.length > 0 ? snapshot.agents : fresh.agents,
+    workflows: Array.isArray(snapshot.workflows) ? snapshot.workflows : fresh.workflows,
     tasks: Array.isArray(snapshot.tasks) ? snapshot.tasks : fresh.tasks,
-    messages: Array.isArray(snapshot.messages)
-      ? snapshot.messages
-      : fresh.messages,
-    stages:
-      Array.isArray(snapshot.stages) && snapshot.stages.length > 0
-        ? snapshot.stages
-        : fresh.stages,
+    messages: Array.isArray(snapshot.messages) ? snapshot.messages : fresh.messages,
+    stages: Array.isArray(snapshot.stages) && snapshot.stages.length > 0 ? snapshot.stages : fresh.stages,
     heartbeatStatuses: Array.isArray(snapshot.heartbeatStatuses)
       ? snapshot.heartbeatStatuses
       : fresh.heartbeatStatuses,
     heartbeatReports: Array.isArray(snapshot.heartbeatReports)
       ? snapshot.heartbeatReports
       : fresh.heartbeatReports,
-    memoryEntriesByAgent:
-      snapshot.memoryEntriesByAgent || fresh.memoryEntriesByAgent,
+    memoryEntriesByAgent: snapshot.memoryEntriesByAgent || fresh.memoryEntriesByAgent,
     memorySummariesByAgent:
       snapshot.memorySummariesByAgent || fresh.memorySummariesByAgent,
     agentStatuses: snapshot.agentStatuses || fresh.agentStatuses,
@@ -522,10 +482,7 @@ async function executeWorkflow(workflowId: string) {
       if (!item.manager) continue;
       setAgentStatus(item.manager.id, "planning", workflowId);
       await delay(250);
-      const workers = getWorkersForManager(item.manager.id, state.agents).slice(
-        0,
-        2
-      );
+      const workers = getWorkersForManager(item.manager.id, state.agents).slice(0, 2);
       const createdTasks = workers.map((worker, index) =>
         createTask(
           workflow,
@@ -547,9 +504,7 @@ async function executeWorkflow(workflowId: string) {
     }
 
     setStage(workflowId, "execution");
-    for (const task of state.tasks.filter(
-      item => item.workflow_id === workflowId
-    )) {
+    for (const task of state.tasks.filter(item => item.workflow_id === workflowId)) {
       setAgentStatus(task.worker_id, "executing", workflowId);
       updateTask(task.id, { status: "executing" });
       emit({
@@ -562,13 +517,7 @@ async function executeWorkflow(workflowId: string) {
       await delay(300);
       const deliverable = `${task.worker_id} produced a concrete plan for "${directiveContext}" with next steps, owners, and checkpoints.`;
       updateTask(task.id, { status: "submitted", deliverable });
-      createMessage(
-        workflowId,
-        task.worker_id,
-        task.manager_id,
-        "execution",
-        deliverable
-      );
+      createMessage(workflowId, task.worker_id, task.manager_id, "execution", deliverable);
       emit({
         type: "task_update",
         workflowId,
@@ -580,9 +529,7 @@ async function executeWorkflow(workflowId: string) {
     }
 
     setStage(workflowId, "review");
-    for (const task of state.tasks.filter(
-      item => item.workflow_id === workflowId
-    )) {
+    for (const task of state.tasks.filter(item => item.workflow_id === workflowId)) {
       setAgentStatus(task.manager_id, "reviewing", workflowId);
       await delay(220);
       const score = scoreTask(task);
@@ -612,9 +559,7 @@ async function executeWorkflow(workflowId: string) {
     setAgentStatus("warden", "auditing", workflowId);
     setAgentStatus("prism", "auditing", workflowId);
     await delay(350);
-    for (const task of state.tasks.filter(
-      item => item.workflow_id === workflowId
-    )) {
+    for (const task of state.tasks.filter(item => item.workflow_id === workflowId)) {
       updateTask(task.id, {
         status: "audited",
         meta_audit_feedback:
@@ -625,9 +570,7 @@ async function executeWorkflow(workflowId: string) {
     setAgentStatus("prism", "idle", workflowId);
 
     setStage(workflowId, "revision");
-    for (const task of state.tasks.filter(
-      item => item.workflow_id === workflowId
-    )) {
+    for (const task of state.tasks.filter(item => item.workflow_id === workflowId)) {
       if ((task.total_score || 0) >= 16) {
         updateTask(task.id, { status: "passed" });
         emit({
@@ -659,9 +602,7 @@ async function executeWorkflow(workflowId: string) {
     }
 
     setStage(workflowId, "verify");
-    for (const task of state.tasks.filter(
-      item => item.workflow_id === workflowId
-    )) {
+    for (const task of state.tasks.filter(item => item.workflow_id === workflowId)) {
       if (task.version < 2) continue;
       setAgentStatus(task.manager_id, "verifying", workflowId);
       await delay(220);
@@ -686,15 +627,12 @@ async function executeWorkflow(workflowId: string) {
         setAgentStatus(manager.id, "idle", workflowId);
       }
       const departmentTasks = state.tasks.filter(
-        task =>
-          task.workflow_id === workflowId && task.department === department
+        task => task.workflow_id === workflowId && task.department === department
       );
       const averageScore =
         departmentTasks.length > 0
-          ? departmentTasks.reduce(
-              (sum, task) => sum + (task.total_score || 0),
-              0
-            ) / departmentTasks.length
+          ? departmentTasks.reduce((sum, task) => sum + (task.total_score || 0), 0) /
+            departmentTasks.length
           : null;
 
       return {
@@ -883,12 +821,9 @@ scope.onmessage = async event => {
         respond(message.requestId, getWorkflowDetail(message.payload.id));
         return;
       case "get_agent_recent_memory": {
-        const entries =
-          state.memoryEntriesByAgent[message.payload.agentId] || [];
+        const entries = state.memoryEntriesByAgent[message.payload.agentId] || [];
         const filtered = message.payload.workflowId
-          ? entries.filter(
-              entry => entry.workflowId === message.payload.workflowId
-            )
+          ? entries.filter(entry => entry.workflowId === message.payload.workflowId)
           : entries;
         respond(message.requestId, {
           entries: filtered.slice(-(message.payload.limit || 10)),
@@ -899,15 +834,14 @@ scope.onmessage = async event => {
         const query = String(message.payload.query || "")
           .toLowerCase()
           .trim();
-        const summaries =
-          state.memorySummariesByAgent[message.payload.agentId] || [];
-        const results = !query
-          ? summaries
-          : summaries.filter(summary => {
-              const haystack =
-                `${summary.directive} ${summary.summary} ${summary.keywords.join(" ")}`.toLowerCase();
-              return haystack.includes(query);
-            });
+        const summaries = state.memorySummariesByAgent[message.payload.agentId] || [];
+        const results =
+          !query
+            ? summaries
+            : summaries.filter(summary => {
+                const haystack = `${summary.directive} ${summary.summary} ${summary.keywords.join(" ")}`.toLowerCase();
+                return haystack.includes(query);
+              });
         respond(message.requestId, {
           memories: results.slice(0, message.payload.topK || 5),
         });
@@ -933,23 +867,13 @@ scope.onmessage = async event => {
         return;
       }
       case "submit_directive": {
-        const directive = normalizeDirective(
-          String(message.payload.directive || "")
-        );
-        const attachments = normalizeWorkflowAttachments(
-          message.payload.attachments
-        );
+        const directive = normalizeDirective(String(message.payload.directive || ""));
+        const attachments = normalizeWorkflowAttachments(message.payload.attachments);
         if (!directive) {
           throw new Error("Directive is required.");
         }
-        const directiveContext = buildWorkflowDirectiveContext(
-          directive,
-          attachments
-        );
-        const inputSignature = buildWorkflowInputSignature(
-          directive,
-          attachments
-        );
+        const directiveContext = buildWorkflowDirectiveContext(directive, attachments);
+        const inputSignature = buildWorkflowInputSignature(directive, attachments);
 
         const existing = state.workflows.find(
           workflow =>

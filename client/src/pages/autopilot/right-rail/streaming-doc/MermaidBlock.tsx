@@ -68,16 +68,16 @@ export const MermaidBlock: FC<MermaidBlockProps> = ({
     setState("loading");
 
     renderMermaidDiagram(code, theme).then(
-      svg => {
+      (svg) => {
         if (cancelled || currentRender !== renderIdRef.current) return;
         setSvgHtml(svg);
         setState("rendered");
       },
-      err => {
+      (err) => {
         if (cancelled || currentRender !== renderIdRef.current) return;
         setErrorMsg(err instanceof Error ? err.message : String(err));
         setState("error");
-      }
+      },
     );
 
     return () => {
@@ -89,9 +89,7 @@ export const MermaidBlock: FC<MermaidBlockProps> = ({
   // Streaming state — show raw code with streaming indicator
   // -------------------------------------------------------------------------
   if (state === "streaming") {
-    return (
-      <CodeBlock code={code} language="mermaid" isStreaming={isStreaming} />
-    );
+    return <CodeBlock code={code} language="mermaid" isStreaming={isStreaming} />;
   }
 
   // -------------------------------------------------------------------------

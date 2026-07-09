@@ -18,9 +18,7 @@ import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 
 vi.mock("@/lib/blueprint-realtime-store", () => {
-  const useBlueprintRealtimeStore = ((
-    selector?: (state: unknown) => unknown
-  ) => {
+  const useBlueprintRealtimeStore = ((selector?: (state: unknown) => unknown) => {
     const snapshot = {
       agentReasoning: { entries: [] as unknown[] },
       rolePhases: {} as Record<string, unknown>,
@@ -161,18 +159,10 @@ describe("WorkbenchSpecTree · node status merge", () => {
   it("renders a status icon with correct data-status for all 5 states", () => {
     const markup = renderToStaticMarkup(<WorkbenchSpecTree {...makeProps()} />);
 
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-spec-tree-status-n-pending"'
-    );
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-spec-tree-status-n-processing"'
-    );
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-spec-tree-status-n-completed"'
-    );
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-spec-tree-status-n-failed"'
-    );
+    expect(markup).toContain('data-testid="autopilot-workbench-spec-tree-status-n-pending"');
+    expect(markup).toContain('data-testid="autopilot-workbench-spec-tree-status-n-processing"');
+    expect(markup).toContain('data-testid="autopilot-workbench-spec-tree-status-n-completed"');
+    expect(markup).toContain('data-testid="autopilot-workbench-spec-tree-status-n-failed"');
 
     expect(markup).toContain('data-status="pending"');
     expect(markup).toContain('data-status="processing"');
@@ -186,9 +176,7 @@ describe("WorkbenchSpecTree · node status merge", () => {
     // The retried node carries data-retried + a retry badge + the original
     // failure reason as the title tooltip (A2 white-box trail).
     expect(markup).toContain('data-retried="true"');
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-spec-tree-retry-badge-n-retried"'
-    );
+    expect(markup).toContain('data-testid="autopilot-workbench-spec-tree-retry-badge-n-retried"');
     expect(markup).toContain("agent timeout");
   });
 
@@ -243,9 +231,7 @@ describe("WorkbenchSpecTree · node status merge", () => {
 
   it("node-count header equals specTree.nodes.length", () => {
     const markup = renderToStaticMarkup(<WorkbenchSpecTree {...makeProps()} />);
-    expect(markup).toContain(
-      'data-testid="autopilot-workbench-spec-tree-node-count"'
-    );
+    expect(markup).toContain('data-testid="autopilot-workbench-spec-tree-node-count"');
     expect(markup).toContain("节点 · 5");
   });
 
@@ -279,10 +265,7 @@ describe("WorkbenchSpecTree · node status merge", () => {
         (statuses, retriedFlags) => {
           const map: Record<
             string,
-            {
-              status: "pending" | "processing" | "completed" | "failed";
-              wasRetried?: boolean;
-            }
+            { status: "pending" | "processing" | "completed" | "failed"; wasRetried?: boolean }
           > = {};
           NODES.forEach((node, i) => {
             map[node.id] = {

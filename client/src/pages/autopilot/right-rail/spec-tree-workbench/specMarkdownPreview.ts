@@ -34,7 +34,7 @@ const HEADING_PATTERN = /^#+\s+/;
  * - 没有 H2：`firstH2` 为 `undefined`，`paragraphLines` 为空。
  */
 export function buildSpecMarkdownPreview(
-  markdown: string | undefined
+  markdown: string | undefined,
 ): SpecMarkdownPreview {
   if (!markdown || markdown.length === 0) {
     return { firstH2: undefined, paragraphLines: [] };

@@ -94,7 +94,7 @@ export class SharedTokenRegistry {
     const joined = tokens.join("");
     const now = Date.now();
 
-    this.consumers.forEach(entry => {
+    this.consumers.forEach((entry) => {
       entry.ref += joined;
       entry.lastFlush = now;
     });

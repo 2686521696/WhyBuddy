@@ -1,7 +1,7 @@
 // Shared types for the settings split boundary (112.10 component split).
 // Re-exports the main view model; panels use minimal local prop shapes for tree-shakability.
 
-export type { AgentLoopSettingsViewModel } from "../dashboardTypes";
+export type { AgentLoopSettingsViewModel } from '../dashboardTypes';
 
 // Panel prop shapes (kept minimal and local to avoid pulling full app state)
 export type SettingsData = {
@@ -13,12 +13,12 @@ export type SettingsData = {
   baseUrl?: string;
   injectToWorker?: boolean;
   queueRunning?: boolean;
-  keys?: Record<string, "configured" | "">;
+  keys?: Record<string, 'configured' | ''>;
   nonSensitive?: Record<string, unknown>;
 };
 
 export type CliConfigFormProps = {
-  initial?: SettingsData["nonSensitive"] | null;
+  initial?: SettingsData['nonSensitive'] | null;
   onSave: (v: Record<string, unknown>) => void;
   queueRunning?: boolean;
   activeProfile?: string | null;
@@ -45,7 +45,7 @@ export type QueueDefaultsPanelProps = {
 
 export type DiagnosticsPanelProps = {
   data?: any;
-  pythonHealth?: import("../dashboardTypes").PythonHealthViewModel | null;
+  pythonHealth?: import('../dashboardTypes').PythonHealthViewModel | null;
   onRefresh: () => void;
 };
 

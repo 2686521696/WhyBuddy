@@ -4,10 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { ACESFilmicToneMapping } from "three";
 
 import type { BlueprintGenerationJob } from "@shared/blueprint/contracts";
-import type {
-  BlueprintRouteSet,
-  BlueprintSpecTree,
-} from "@shared/blueprint/contracts";
+import type { BlueprintRouteSet, BlueprintSpecTree } from "@shared/blueprint/contracts";
 import type { BrainstormReasoningGraph } from "@shared/blueprint";
 import type { AgentReasoningEntry } from "@shared/blueprint/agent-reasoning";
 

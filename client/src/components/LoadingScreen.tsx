@@ -122,7 +122,9 @@ function BrandWordmark({ copy }: { copy: typeof CHINESE_COPY }) {
         alt="SlideRule"
         className="h-16 w-auto object-contain"
       />
-      <h1 className="font-display text-[clamp(3.5rem,8vw,5.5rem)] font-medium leading-[0.95] tracking-tight text-black">
+      <h1
+        className="font-display text-[clamp(3.5rem,8vw,5.5rem)] font-medium leading-[0.95] tracking-tight text-black"
+      >
         {BRAND_NAME_DISPLAY}
       </h1>
       <p className="font-display text-base font-normal leading-7 tracking-normal text-black/60">
@@ -158,7 +160,9 @@ export function LoadingScreen() {
             <BrandWordmark copy={copy} />
 
             <div className="mt-10 flex flex-col gap-3">
-              <h2 className="font-display text-2xl font-medium leading-tight tracking-tight text-black">
+              <h2
+                className="font-display text-2xl font-medium leading-tight tracking-tight text-black"
+              >
                 {copy.title}
               </h2>
               <p className="font-display text-sm font-normal leading-6 tracking-normal text-black/60">

@@ -16,11 +16,7 @@ import type {
   BrainstormReasoningNodeType,
 } from "@shared/blueprint";
 
-type ActiveReasoningStage =
-  | "spec_tree"
-  | "spec_documents"
-  | "effect_preview"
-  | string;
+type ActiveReasoningStage = "spec_tree" | "spec_documents" | "effect_preview" | string;
 
 type ReasoningEntryWithRole = AgentReasoningEntry & {
   roleId?: string;
@@ -53,21 +49,20 @@ export interface BlueprintWallReasoningGraphViewModel {
 const DEFAULT_MAX_VISIBLE_NODES = 16;
 const DEFAULT_MAX_CONSOLE_LINES = 6;
 
-const NODE_TYPE_PRIORITY: Partial<Record<BrainstormReasoningNodeType, number>> =
-  {
-    question: 0,
-    clarification: 1,
-    constraint: 2,
-    hypothesis: 3,
-    evidence: 4,
-    risk: 5,
-    gap: 6,
-    decision: 7,
-    synthesis: 8,
-    // NOTE: critique/rebuttal deliberately omitted here.
-    // Effect/Reasoning Flow deriver MUST reject debate protocol nodes (see stripDebateProtocolNodes).
-    // They belong exclusively to the realtime brainstorm debate store + overlays.
-  };
+const NODE_TYPE_PRIORITY: Partial<Record<BrainstormReasoningNodeType, number>> = {
+  question: 0,
+  clarification: 1,
+  constraint: 2,
+  hypothesis: 3,
+  evidence: 4,
+  risk: 5,
+  gap: 6,
+  decision: 7,
+  synthesis: 8,
+  // NOTE: critique/rebuttal deliberately omitted here.
+  // Effect/Reasoning Flow deriver MUST reject debate protocol nodes (see stripDebateProtocolNodes).
+  // They belong exclusively to the realtime brainstorm debate store + overlays.
+};
 
 const FALLBACK_EMPTY_TELEMETRY: BrainstormGraphTelemetry = {
   tokenBurn: null,
@@ -94,13 +89,13 @@ export function stripDebateProtocolNodes(
   graph: BrainstormReasoningGraph
 ): BrainstormReasoningGraph {
   const debateNodeIds = new Set(
-    graph.nodes.filter(isDebateProtocolNode).map(n => n.id)
+    graph.nodes.filter(isDebateProtocolNode).map((n) => n.id)
   );
   if (debateNodeIds.size === 0) return graph;
 
-  const keptNodes = graph.nodes.filter(n => !debateNodeIds.has(n.id));
+  const keptNodes = graph.nodes.filter((n) => !debateNodeIds.has(n.id));
   const keptEdges = graph.edges.filter(
-    e => !debateNodeIds.has(e.source) && !debateNodeIds.has(e.target)
+    (e) => !debateNodeIds.has(e.source) && !debateNodeIds.has(e.target)
   );
 
   // When we had to strip debate protocol nodes, also drop any consoleLines that
@@ -127,29 +122,17 @@ export function deriveBlueprintWallReasoningGraph(
     return emptyView("no-job");
   }
 
-  const rawStructured = pickStructuredGraph(
-    input.structuredGraphs,
-    job.id,
-    input.activeSubStage
-  );
+  const rawStructured = pickStructuredGraph(input.structuredGraphs, job.id, input.activeSubStage);
   if (rawStructured !== null) {
     const structured = stripDebateProtocolNodes(rawStructured);
     // Refuse: if after stripping debate protocol nodes there is nothing left for Effect Flow,
     // or if it was purely a debate graph, fall through to fallback/empty for this wall.
     if (structured.nodes.length > 0) {
-      return toViewModel(
-        structured,
-        "structured",
-        maxVisibleNodes,
-        maxConsoleLines
-      );
+      return toViewModel(structured, "structured", maxVisibleNodes, maxConsoleLines);
     }
   }
 
-  const entries = filterEntriesForJob(
-    input.agentReasoningEntries ?? [],
-    job.id
-  );
+  const entries = filterEntriesForJob(input.agentReasoningEntries ?? [], job.id);
   const fallback = buildFallbackGraph({
     job,
     activeSubStage: input.activeSubStage,
@@ -187,16 +170,15 @@ function pickStructuredGraph(
   jobId: string,
   activeSubStage: string | undefined
 ): BrainstormReasoningGraph | null {
-  const candidates = (graphs ?? []).filter(
-    graph => graph.jobId === jobId && isGraphRenderable(graph)
+  const candidates = (graphs ?? []).filter(graph =>
+    graph.jobId === jobId && isGraphRenderable(graph)
   );
   if (candidates.length === 0) return null;
   const activeStageAliases = stageAliases(activeSubStage);
   const stageMatched = activeSubStage
-    ? candidates.find(
-        graph =>
-          activeStageAliases.has(normalizeReasoningStage(graph.stage)) ||
-          activeStageAliases.has(normalizeReasoningStage(graph.subStage))
+    ? candidates.find(graph =>
+        activeStageAliases.has(normalizeReasoningStage(graph.stage)) ||
+        activeStageAliases.has(normalizeReasoningStage(graph.subStage))
       )
     : undefined;
   return stageMatched ?? candidates[0] ?? null;
@@ -219,9 +201,8 @@ function isGraphRenderable(graph: BrainstormReasoningGraph): boolean {
   if (!graph.id || !graph.jobId) return false;
   const nodeIds = new Set(graph.nodes.map(node => node.id));
   if (nodeIds.size === 0) return false;
-  return graph.edges.every(
-    edge =>
-      Boolean(edge.id) && nodeIds.has(edge.source) && nodeIds.has(edge.target)
+  return graph.edges.every(edge =>
+    Boolean(edge.id) && nodeIds.has(edge.source) && nodeIds.has(edge.target)
   );
 }
 
@@ -234,8 +215,8 @@ function toViewModel(
   const sortedNodes = [...graph.nodes].sort(compareNodes);
   const visibleNodes = sortedNodes.slice(0, maxVisibleNodes);
   const visibleNodeIds = new Set(visibleNodes.map(node => node.id));
-  const visibleEdges = graph.edges.filter(
-    edge => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)
+  const visibleEdges = graph.edges.filter(edge =>
+    visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)
   );
 
   return {
@@ -252,10 +233,7 @@ function toViewModel(
   };
 }
 
-function compareNodes(
-  a: BrainstormReasoningNode,
-  b: BrainstormReasoningNode
-): number {
+function compareNodes(a: BrainstormReasoningNode, b: BrainstormReasoningNode): number {
   const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
   const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
   if (orderA !== orderB) return orderA - orderB;
@@ -268,9 +246,7 @@ function filterEntriesForJob(
   entries: AgentReasoningEntry[],
   jobId: string
 ): ReasoningEntryWithRole[] {
-  return entries.filter(
-    entry => !entry.jobId || entry.jobId === jobId
-  ) as ReasoningEntryWithRole[];
+  return entries.filter(entry => !entry.jobId || entry.jobId === jobId) as ReasoningEntryWithRole[];
 }
 
 function buildFallbackGraph(input: {
@@ -286,10 +262,8 @@ function buildFallbackGraph(input: {
   const nodes: BrainstormReasoningNode[] = [questionNode];
   const edges: BrainstormReasoningEdge[] = [];
 
-  const contributionEntries = input.entries.filter(
-    entry =>
-      entry.phase !== "iteration_started" &&
-      entry.phase !== "iteration_completed"
+  const contributionEntries = input.entries.filter(entry =>
+    entry.phase !== "iteration_started" && entry.phase !== "iteration_completed"
   );
 
   // Build contribution nodes (each carries roleLabel + the "发表的意见" as title/body).
@@ -327,11 +301,8 @@ function buildFallbackGraph(input: {
     prevContribId = node.id;
   });
 
-  const terminalCandidates = nodes.filter(
-    node =>
-      node.type === "decision" ||
-      node.type === "synthesis" ||
-      node.type === "evidence"
+  const terminalCandidates = nodes.filter(node =>
+    node.type === "decision" || node.type === "synthesis" || node.type === "evidence"
   );
   if (terminalCandidates.length > 0) {
     const synthesisNode: BrainstormReasoningNode = {
@@ -367,24 +338,17 @@ function buildFallbackGraph(input: {
       sourceRefs: questionNode.sourceRefs,
     },
     nodes,
-    edges: edges.filter(
-      edge =>
-        nodes.some(node => node.id === edge.source) &&
-        nodes.some(node => node.id === edge.target)
+    edges: edges.filter(edge =>
+      nodes.some(node => node.id === edge.source) &&
+      nodes.some(node => node.id === edge.target)
     ),
     telemetry: {
       ...FALLBACK_EMPTY_TELEMETRY,
-      tokenBurn: sumOptionalNumbers(
-        contributionEntries.map(entry => entry.tokensUsed)
-      ),
-      remainingBudget: lastFinite(
-        contributionEntries.map(entry => entry.budgetRemaining)
-      ),
+      tokenBurn: sumOptionalNumbers(contributionEntries.map(entry => entry.tokensUsed)),
+      remainingBudget: lastFinite(contributionEntries.map(entry => entry.budgetRemaining)),
       activeRoleCount: countRoles(contributionEntries, input.roleLabels),
     },
-    consoleLines: deriveConsoleLines(contributionEntries).slice(
-      -input.maxConsoleLines
-    ),
+    consoleLines: deriveConsoleLines(contributionEntries).slice(-input.maxConsoleLines),
     source: "fallback",
   };
 }
@@ -420,9 +384,7 @@ function buildQuestionNode(input: {
     order: 0,
     sourceRefs: [
       { kind: "job", id: input.job.id },
-      ...(selectedNode
-        ? [{ kind: "spec_node" as const, id: selectedNode.id }]
-        : []),
+      ...(selectedNode ? [{ kind: "spec_node" as const, id: selectedNode.id }] : []),
     ],
   };
 }
@@ -470,23 +432,17 @@ function nodeFromEntry(
     // V5: capabilityId 映射（legacy stage → capability），使 graph 成为 capability invocation graph。
     // 详见 V5 文档：orchestrator 才是权威调度源。
     capabilityId: entry.stageId
-      ? (STAGE_TO_V5_CAPABILITIES[
-          entry.stageId as keyof typeof STAGE_TO_V5_CAPABILITIES
-        ]?.[0] as V5CapabilityId | undefined)
+      ? (STAGE_TO_V5_CAPABILITIES[entry.stageId as keyof typeof STAGE_TO_V5_CAPABILITIES]?.[0] as V5CapabilityId | undefined)
       : undefined,
     sourceRefs: [
       { kind: "reasoning_entry", id: entry.id },
       ...(entry.stageId ? [{ kind: "stage" as const, id: entry.stageId }] : []),
-      ...(roleId
-        ? [{ kind: "role" as const, id: roleId, label: roleLabel }]
-        : []),
+      ...(roleId ? [{ kind: "role" as const, id: roleId, label: roleLabel }] : []),
     ],
   };
 }
 
-function nodeTypeForEntry(
-  entry: AgentReasoningEntry
-): BrainstormReasoningNodeType {
+function nodeTypeForEntry(entry: AgentReasoningEntry): BrainstormReasoningNodeType {
   if (entry.phase === "thinking") {
     return /clarif|澄清|question|ask/i.test(entry.thought ?? "")
       ? "clarification"
@@ -508,16 +464,12 @@ function statusForEntry(
   if (entry.phase === "error") return "failed";
   if (type === "risk" || type === "gap") return "challenged";
   if (entry.phase === "completed") return "resolved";
-  if (entry.phase === "observing" && entry.observationSuccess !== false)
-    return "supported";
+  if (entry.phase === "observing" && entry.observationSuccess !== false) return "supported";
   return "active";
 }
 
-function edgeTypeForNode(
-  node: BrainstormReasoningNode
-): BrainstormReasoningEdge["type"] {
-  if (node.type === "synthesis" || node.type === "decision")
-    return "synthesizes";
+function edgeTypeForNode(node: BrainstormReasoningNode): BrainstormReasoningEdge["type"] {
+  if (node.type === "synthesis" || node.type === "decision") return "synthesizes";
   if (node.type === "evidence") return "cites";
   return "refines";
 }
@@ -529,9 +481,7 @@ function edgeLabelForNode(node: BrainstormReasoningNode): string {
   return "细化";
 }
 
-function deriveConsoleLines(
-  entries: ReasoningEntryWithRole[]
-): BrainstormGraphConsoleLine[] {
+function deriveConsoleLines(entries: ReasoningEntryWithRole[]): BrainstormGraphConsoleLine[] {
   return entries.map(entry => ({
     id: `console-${entry.id}`,
     kind: consoleKindForEntry(entry),
@@ -541,9 +491,7 @@ function deriveConsoleLines(
   }));
 }
 
-function consoleKindForEntry(
-  entry: AgentReasoningEntry
-): BrainstormGraphConsoleLine["kind"] {
+function consoleKindForEntry(entry: AgentReasoningEntry): BrainstormGraphConsoleLine["kind"] {
   if (entry.phase === "thinking") return "Thinking";
   if (entry.phase === "acting") return "Tool";
   if (entry.phase === "observing") return "Observation";
@@ -568,18 +516,15 @@ function countRoles(
   roleLabels: Record<string, string>
 ): number | null {
   const roleIds = new Set(
-    entries
-      .map(entry => pickString(entry.roleId))
-      .filter((value): value is string => Boolean(value))
+    entries.map(entry => pickString(entry.roleId)).filter((value): value is string => Boolean(value))
   );
   if (roleIds.size > 0) return roleIds.size;
   return Object.keys(roleLabels).length || null;
 }
 
 function sumOptionalNumbers(values: Array<number | undefined>): number | null {
-  const finite = values.filter(
-    (value): value is number =>
-      typeof value === "number" && Number.isFinite(value)
+  const finite = values.filter((value): value is number =>
+    typeof value === "number" && Number.isFinite(value)
   );
   if (finite.length === 0) return null;
   return finite.reduce((sum, value) => sum + value, 0);
@@ -600,9 +545,7 @@ function pickString(value: unknown): string | undefined {
 }
 
 function truncate(value: string, maxLength: number): string {
-  return value.length > maxLength
-    ? `${value.slice(0, maxLength - 3)}...`
-    : value;
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 }
 
 function fallbackTitleForType(type: BrainstormReasoningNodeType): string {

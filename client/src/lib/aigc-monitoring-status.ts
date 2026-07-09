@@ -43,10 +43,7 @@ const TONE_CLASS_NAMES: Record<AigcMonitoringStatusTone, string> = {
   danger: "border-rose-200 bg-rose-50 text-rose-700",
 };
 
-const STATUS_DEFINITIONS: Record<
-  MonitoringKnownStatus,
-  MonitoringStatusDefinition
-> = {
+const STATUS_DEFINITIONS: Record<MonitoringKnownStatus, MonitoringStatusDefinition> = {
   PENDING: {
     labelZh: "待执行",
     labelEn: "Pending",
@@ -97,7 +94,7 @@ function isChineseLocale(locale?: string | null | undefined): boolean {
 
 function fallbackLabel(
   locale: string | null | undefined,
-  status: string | null | undefined
+  status: string | null | undefined,
 ): string {
   if (!status) {
     return isChineseLocale(locale) ? "未记录" : "Unknown";
@@ -115,14 +112,14 @@ function resolveDefinition(status: string | null | undefined) {
 }
 
 export function getAigcMonitoringToneClassName(
-  tone: AigcMonitoringStatusTone
+  tone: AigcMonitoringStatusTone,
 ): string {
   return TONE_CLASS_NAMES[tone];
 }
 
 export function getAigcMonitoringStatusPresentation(
   status: string | null | undefined,
-  options: AigcMonitoringStatusOptions = {}
+  options: AigcMonitoringStatusOptions = {},
 ): AigcMonitoringStatusPresentation {
   const definition = resolveDefinition(status);
   const chinese = isChineseLocale(options.locale);
@@ -154,14 +151,14 @@ export function getAigcMonitoringStatusPresentation(
 
 export function getAigcMonitoringStatusLabel(
   status: string | null | undefined,
-  options: AigcMonitoringStatusOptions = {}
+  options: AigcMonitoringStatusOptions = {},
 ): string {
   const presentation = getAigcMonitoringStatusPresentation(status, options);
   return options.short ? presentation.shortLabel : presentation.label;
 }
 
 export function getAigcMonitoringStatusClassName(
-  status: string | null | undefined
+  status: string | null | undefined,
 ): string {
   return getAigcMonitoringStatusPresentation(status).className;
 }

@@ -7,11 +7,7 @@ import { artifact, job } from "./version-history-fixtures";
 describe("<CompareView>", () => {
   it("rejects cross-family jobs before rendering comparison rows", () => {
     const markup = renderToStaticMarkup(
-      <CompareView
-        leftJob={job("left")}
-        rightJob={job("external")}
-        familyJobIds={["left"]}
-      />
+      <CompareView leftJob={job("left")} rightJob={job("external")} familyJobIds={["left"]} />,
     );
 
     expect(markup).toContain('data-state="cross-family"');
@@ -32,18 +28,14 @@ describe("<CompareView>", () => {
     });
 
     const markup = renderToStaticMarkup(
-      <CompareView
-        leftJob={left}
-        rightJob={right}
-        familyJobIds={["left", "right"]}
-      />
+      <CompareView leftJob={left} rightJob={right} familyJobIds={["left", "right"]} />,
     );
 
     expect(markup.indexOf('data-stage="input"')).toBeLessThan(
-      markup.indexOf('data-stage="route_generation"')
+      markup.indexOf('data-stage="route_generation"'),
     );
     expect(markup.indexOf('data-stage="route_generation"')).toBeLessThan(
-      markup.indexOf('data-stage="spec_docs"')
+      markup.indexOf('data-stage="spec_docs"'),
     );
     expect(markup).toContain('data-status="missing"');
     expect(markup).toContain('data-status="stale"');

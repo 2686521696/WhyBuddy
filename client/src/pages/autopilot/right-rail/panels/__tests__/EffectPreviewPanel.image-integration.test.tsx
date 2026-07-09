@@ -212,7 +212,9 @@ describe("EffectPreviewPanel · Phase 4 Task 31.1 production integration", () =>
 
     // 当 activePreview === null 时，新组件不应该出现，避免污染空态视图
     expect(markup).not.toContain('data-testid="effect-preview-image-gallery"');
-    expect(markup).not.toContain('data-testid="effect-preview-schedule-list"');
+    expect(markup).not.toContain(
+      'data-testid="effect-preview-schedule-list"'
+    );
   });
 
   // -------------------------------------------------------------------------

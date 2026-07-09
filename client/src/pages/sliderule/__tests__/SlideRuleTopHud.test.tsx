@@ -26,7 +26,7 @@ describe("SlideRuleTopHud", () => {
         turnCount={0}
         isRunning={false}
         embedded
-      />
+      />,
     );
 
     expect(html).toContain('data-testid="sliderule-status-bar"');
@@ -40,7 +40,7 @@ describe("SlideRuleTopHud", () => {
         goal=""
         turnCount={0}
         isRunning={false}
-      />
+      />,
     );
 
     expect(html).toContain("sliderule_logo_wordmark_transparent.png");

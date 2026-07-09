@@ -27,13 +27,12 @@ let mockedBridgeState: UseCapabilityBridgeStateReturn = {
   summary: { total: 0, running: 0, completed: 0, failed: 0 },
 };
 
-function setMockedBridgeState(
-  next: Partial<UseCapabilityBridgeStateReturn>
-): void {
+function setMockedBridgeState(next: Partial<UseCapabilityBridgeStateReturn>): void {
   mockedBridgeState = {
     invocations: next.invocations ?? [],
     activeInvocations: next.activeInvocations ?? [],
-    summary: next.summary ?? { total: 0, running: 0, completed: 0, failed: 0 },
+    summary:
+      next.summary ?? { total: 0, running: 0, completed: 0, failed: 0 },
   };
 }
 

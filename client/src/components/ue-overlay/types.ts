@@ -10,7 +10,7 @@
 /** A single HUD element rendered on the tracking layer. */
 export interface HUDElement {
   id: string;
-  type: "nameTag" | "statusIcon" | "progressBar";
+  type: 'nameTag' | 'statusIcon' | 'progressBar';
   characterId: string;
   /** Normalised screen position (0-1 range). */
   screenPosition: { x: number; y: number };
@@ -29,14 +29,14 @@ export interface HUDElement {
 /** Static HUD metadata owned by React before UE sends live coordinates. */
 export interface HUDDefinition {
   id: string;
-  type: HUDElement["type"];
+  type: HUDElement['type'];
   characterId: string;
   data: Record<string, unknown>;
 }
 
 /** UE -> frontend HUD coordinate payload. */
 export interface HUDPositionUpdate {
-  type: "hud.positionUpdate";
+  type: 'hud.positionUpdate';
   characters: Array<{
     characterId: string;
     screenX: number;

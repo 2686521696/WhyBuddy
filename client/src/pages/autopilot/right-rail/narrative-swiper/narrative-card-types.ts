@@ -19,7 +19,7 @@
  *    资源，因此本文件不承担文案翻译工作（Req 12.5）。
  */
 
-import type { WorkbenchStage } from "../stage-viewport/stage-config";
+import type { WorkbenchStage } from '../stage-viewport/stage-config';
 
 // ─── Card_Source ───────────────────────────────────────────────────────────
 
@@ -38,12 +38,12 @@ import type { WorkbenchStage } from "../stage-viewport/stage-config";
  * 向观众解释信号来源。
  */
 export type CardSource =
-  | "reasoning"
-  | "role-status"
-  | "capability"
-  | "fleet-activation"
-  | "route-decision"
-  | "artifact";
+  | 'reasoning'
+  | 'role-status'
+  | 'capability'
+  | 'fleet-activation'
+  | 'route-decision'
+  | 'artifact';
 
 // ─── Stage ─────────────────────────────────────────────────────────────────
 
@@ -94,7 +94,7 @@ void STAGE_VALIDATION;
  *
  * 卡片在不传 `severity` 时按 `info` 渲染，避免出现未定义中间态。
  */
-export type CardSeverity = "info" | "success" | "warning" | "danger";
+export type CardSeverity = 'info' | 'success' | 'warning' | 'danger';
 
 // ─── Routing ───────────────────────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ export type CardSeverity = "info" | "success" | "warning" | "danger";
  * - `both`：同时进入左下 Mini_Console_Bar 与右下 Narrative_Swiper，
  *   但展示字段焦点不同（左下展示 jobId / raw，右下展示 headline / actor）
  */
-export type NarrativeCardRouting = "narrative-only" | "both";
+export type NarrativeCardRouting = 'narrative-only' | 'both';
 
 // ─── Narrative_Card ────────────────────────────────────────────────────────
 
@@ -141,7 +141,7 @@ export interface NarrativeCard {
   /** 卡片来源类型，驱动 UI 角标与子卡片分发。 */
   source: CardSource;
   /** 卡片所属 Stage；缺失时视为 `"global"`，默认在所有 Stage 显示。 */
-  stage: Stage | "global";
+  stage: Stage | 'global';
   /** 单行主标题，已 i18n。 */
   headline: string;
   /** 可选副文（建议 ≤ 80 字），已 i18n。 */

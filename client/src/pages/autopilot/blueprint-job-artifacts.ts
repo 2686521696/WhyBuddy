@@ -39,9 +39,10 @@ function readBrainstormReasoningGraphPayload(
   const record = asRecord(payload);
   if (!record) return null;
 
-  const graph = isBrainstormReasoningGraph(record)
-    ? record
-    : readArtifactWrappedGraph(record);
+  const graph =
+    isBrainstormReasoningGraph(record)
+      ? record
+      : readArtifactWrappedGraph(record);
   return graph && isBrainstormReasoningGraph(graph) ? graph : null;
 }
 
@@ -49,8 +50,7 @@ function readArtifactWrappedGraph(
   record: Record<string, unknown>
 ): BrainstormReasoningGraph | null {
   if (record.type !== "brainstorm_reasoning_graph") return null;
-  const graph = (record as Partial<BrainstormReasoningGraphArtifactPayload>)
-    .graph;
+  const graph = (record as Partial<BrainstormReasoningGraphArtifactPayload>).graph;
   return isBrainstormReasoningGraph(graph) ? graph : null;
 }
 

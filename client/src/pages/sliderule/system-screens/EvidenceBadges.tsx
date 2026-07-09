@@ -11,11 +11,13 @@ import React from "react";
 import { evidenceSourceOf } from "./five-system-model";
 
 interface EvidenceBadgesProps {
-  evidence?: {
-    evidencePresent?: boolean;
-    artifactId?: string;
-    evidenceRef?: string;
-  } | null;
+  evidence?:
+    | {
+        evidencePresent?: boolean;
+        artifactId?: string;
+        evidenceRef?: string;
+      }
+    | null;
 }
 
 export function EvidenceBadges({ evidence }: EvidenceBadgesProps) {

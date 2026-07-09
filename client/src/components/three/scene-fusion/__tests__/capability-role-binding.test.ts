@@ -18,10 +18,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type {
-  CapabilityStatus,
-  RolePhase,
-} from "@/lib/blueprint-realtime-store";
+import type { CapabilityStatus, RolePhase } from "@/lib/blueprint-realtime-store";
 
 import {
   capabilityDisplayMeta,
@@ -47,9 +44,9 @@ function chipsFor(
 
 describe("parseRoleContainerLoaderRoleId", () => {
   it("parses the owner roleId from a loader id", () => {
-    expect(
-      parseRoleContainerLoaderRoleId("role-container-loader:spec-architect")
-    ).toBe("spec-architect");
+    expect(parseRoleContainerLoaderRoleId("role-container-loader:spec-architect")).toBe(
+      "spec-architect"
+    );
   });
 
   it("returns null for non-loader ids and empty suffixes", () => {
@@ -92,9 +89,7 @@ describe("capabilityDisplayMeta", () => {
       displayName: "GitHub Source",
       iconKey: "github",
     });
-    expect(
-      capabilityDisplayMeta("role-container-loader:spec-architect", LOCALE)
-    ).toEqual({
+    expect(capabilityDisplayMeta("role-container-loader:spec-architect", LOCALE)).toEqual({
       displayName: "Role Container",
       iconKey: "container",
     });
@@ -207,14 +202,12 @@ describe("deriveCapabilityRoleBindings capability-type heuristic", () => {
     });
 
     const chips = chipsFor(map, "repository-analyst");
-    expect(chips.map(c => c.displayName).sort()).toEqual([
+    expect(chips.map((c) => c.displayName).sort()).toEqual([
       "GitHub Source",
       "Sandbox",
     ]);
-    expect(chips.every(c => c.ownerSource === "capability-heuristic")).toBe(
-      true
-    );
-    expect(chips.every(c => c.inferred)).toBe(true);
+    expect(chips.every((c) => c.ownerSource === "capability-heuristic")).toBe(true);
+    expect(chips.every((c) => c.inferred)).toBe(true);
     expect(map.has("spec-architect")).toBe(false);
   });
 
@@ -225,9 +218,7 @@ describe("deriveCapabilityRoleBindings capability-type heuristic", () => {
       locale: LOCALE,
     });
     expect(chipsFor(map, "spec-architect")[0].displayName).toBe("Spec Node");
-    expect(chipsFor(map, "spec-architect")[0].ownerSource).toBe(
-      "capability-heuristic"
-    );
+    expect(chipsFor(map, "spec-architect")[0].ownerSource).toBe("capability-heuristic");
   });
 });
 
@@ -323,7 +314,9 @@ describe("deriveCapabilityRoleBindings ordering + determinism", () => {
     });
 
     const norm = (m: Map<string, RoleCapabilityChip[]>) =>
-      JSON.stringify([...m.entries()].sort(([x], [y]) => x.localeCompare(y)));
+      JSON.stringify(
+        [...m.entries()].sort(([x], [y]) => x.localeCompare(y))
+      );
     expect(norm(a)).toBe(norm(b));
   });
 

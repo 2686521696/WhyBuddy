@@ -13,19 +13,13 @@ import {
   projectSessionGraphForDisplay,
   roleIdToDisplayLabel,
 } from "@shared/blueprint/sliderule-graph-projection";
-import {
-  eventsByRun,
-  foldEventsForOverview,
-} from "@shared/blueprint/sliderule-reasoning-events.js"; // V5.3 P4
+import { eventsByRun, foldEventsForOverview } from "@shared/blueprint/sliderule-reasoning-events.js"; // V5.3 P4
 import { expandReasoningChain } from "./expand-projection-nodes.js"; // V5.3 P4
 import { CAPABILITY_PROCESS_LABELS } from "@shared/blueprint/capability-process-labels";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import type { LiveAction } from "@shared/blueprint/capability-process-labels";
 import { expandProjectionNodes } from "./expand-projection-nodes";
-import {
-  deriveTerminalProjection,
-  type TerminalNodeMeta,
-} from "./derive-terminal-node";
+import { deriveTerminalProjection, type TerminalNodeMeta } from "./derive-terminal-node";
 import type { UiTurn } from "./types";
 import type { ProjectionDensity } from "./sliderule-projection-constants";
 
@@ -35,7 +29,7 @@ function artifactForNode(
 ) {
   const id = node.producedArtifactId;
   if (!id) return undefined;
-  return (state.artifacts || []).find(a => a.id === id);
+  return (state.artifacts || []).find((a) => a.id === id);
 }
 
 /** Map graph node + artifact trust → wall-style conclusion status. */
@@ -48,13 +42,11 @@ function enrichNodeStatus(
   const art = artifactForNode(state, node);
   if (!art) {
     if (node.status === "challenged") return "challenged";
-    if (node.status === "resolved" || node.status === "supported")
-      return node.status;
+    if (node.status === "resolved" || node.status === "supported") return node.status;
     return node.status ?? "active";
   }
   if (stale.has(art.id) || art.trustLevel === "untrusted") return "challenged";
-  if (art.trustLevel === "gated_pass" || art.trustLevel === "audited")
-    return "resolved";
+  if (art.trustLevel === "gated_pass" || art.trustLevel === "audited") return "resolved";
   return node.status ?? "active";
 }
 
@@ -62,20 +54,12 @@ export function conclusionKindLabel(
   node: BrainstormReasoningNode,
   isPropositionRoot = false
 ): string {
-  if (
-    isPropositionRoot ||
-    (node.type === "question" && node.id.endsWith("-proposition"))
-  ) {
+  if (isPropositionRoot || (node.type === "question" && node.id.endsWith("-proposition"))) {
     return "用户命题";
   }
   const id = String(node.id || "");
-  if (
-    /-scaffold-(clarify|hypo-alt|hypo|evidence|risk|gap|synthesis|scope)$/.test(
-      id
-    )
-  ) {
-    if (node.type === "clarification" || id.includes("clarify"))
-      return "澄清中";
+  if (/-scaffold-(clarify|hypo-alt|hypo|evidence|risk|gap|synthesis|scope)$/.test(id)) {
+    if (node.type === "clarification" || id.includes("clarify")) return "澄清中";
     if (node.type === "hypothesis") return "假设待验";
     if (node.type === "evidence") return "待检索";
     if (node.type === "risk") return "待扫描";
@@ -83,36 +67,22 @@ export function conclusionKindLabel(
     if (node.type === "synthesis") return "待收敛";
     return "管道占位";
   }
-  if (node.status === "resolved" || node.status === "supported")
-    return "结论明确";
+  if (node.status === "resolved" || node.status === "supported") return "结论明确";
   if (node.status === "failed") return "信息缺失";
   if (node.status === "challenged") return "结论待完善";
   if (node.status === "open" || node.status === "active") return "推演中";
   return "结论待完善";
 }
 
-function consoleKindForCapability(
-  capId: string
-): BrainstormGraphConsoleLineKind {
-  if (
-    capId === "evidence.search" ||
-    capId === "repo.inspect" ||
-    capId === "mcp.call"
-  )
+function consoleKindForCapability(capId: string): BrainstormGraphConsoleLineKind {
+  if (capId === "evidence.search" || capId === "repo.inspect" || capId === "mcp.call")
     return "Tool";
   if (capId === "report.write" || capId === "document.draft") return "Report";
-  if (
-    capId === "intent.clarify" ||
-    capId === "gap.ask" ||
-    capId === "intent.parse"
-  )
-    return "Ask";
+  if (capId === "intent.clarify" || capId === "gap.ask" || capId === "intent.parse") return "Ask";
   return "Thinking";
 }
 
-function consoleKindFromConversation(
-  text: string
-): BrainstormGraphConsoleLineKind {
+function consoleKindFromConversation(text: string): BrainstormGraphConsoleLineKind {
   if (/\[G-GROUND\]/i.test(text)) return "System";
   if (/\[GCOV\]/i.test(text)) return "System";
   if (/\[BUDGET\]/i.test(text)) return "System";
@@ -147,8 +117,8 @@ function buildRichConsoleLines(
 
   const artifactByRun = new Map(
     (state.artifacts || [])
-      .filter(a => a.producedBy?.capabilityRunId)
-      .map(a => [a.producedBy!.capabilityRunId!, a])
+      .filter((a) => a.producedBy?.capabilityRunId)
+      .map((a) => [a.producedBy!.capabilityRunId!, a])
   );
 
   for (const run of state.capabilityRuns || []) {
@@ -159,8 +129,7 @@ function buildRichConsoleLines(
       typeof entry?.liveLabel === "function"
         ? entry.liveLabel({})
         : entry?.liveLabel || cap;
-    const text =
-      art?.title || art?.content?.split("\n")[0]?.slice(0, 100) || String(live);
+    const text = art?.title || art?.content?.split("\n")[0]?.slice(0, 100) || String(live);
     lines.push({
       id: `run-${run.id}`,
       kind: consoleKindForCapability(cap),
@@ -193,39 +162,31 @@ export type DeriveReasoningViewModelOptions = {
   viewMode?: "overview" | "collaboration" | "reasoning";
 };
 
-export type SlideRuleReasoningViewModel =
-  BlueprintWallReasoningGraphViewModel & {
-    terminalNode: BrainstormReasoningNode | null;
-    terminalMeta: TerminalNodeMeta | null;
-    density: ProjectionDensity;
-    lineageHighlightIds: string[];
-  };
+export type SlideRuleReasoningViewModel = BlueprintWallReasoningGraphViewModel & {
+  terminalNode: BrainstormReasoningNode | null;
+  terminalMeta: TerminalNodeMeta | null;
+  density: ProjectionDensity;
+  lineageHighlightIds: string[];
+};
 
-function buildTelemetry(
-  state: V5SessionState,
-  visibleNodes: BrainstormReasoningNode[]
-): BrainstormGraphTelemetry {
+function buildTelemetry(state: V5SessionState, visibleNodes: BrainstormReasoningNode[]): BrainstormGraphTelemetry {
   const stale = new Set(state.staleArtifactIds || []);
   const trustedArtifacts = (state.artifacts || []).filter(
-    a =>
-      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
-      !stale.has(a.id)
+    (a) =>
+      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") && !stale.has(a.id)
   );
   const grounded = trustedArtifacts.filter(
-    a =>
+    (a) =>
       a.kind === "evidence" ||
       String(a.provenance || "").includes("mcp") ||
       String(a.provenance || "").includes("github")
   );
 
-  const openGaps = (state.coverageGaps || []).filter(
-    g => g.status === "open"
-  ).length;
-  const blockingOpen = (
-    state.coverageContract as { blockingGapIds?: string[] } | undefined
-  )?.blockingGapIds?.length
+  const openGaps = (state.coverageGaps || []).filter((g) => g.status === "open").length;
+  const blockingOpen = (state.coverageContract as { blockingGapIds?: string[] } | undefined)
+    ?.blockingGapIds?.length
     ? (state.coverageGaps || []).filter(
-        g =>
+        (g) =>
           g.status === "open" &&
           (state.coverageContract as any).blockingGapIds?.includes(g.id)
       ).length
@@ -242,16 +203,14 @@ function buildTelemetry(
 
   const activeRoles = new Set(
     visibleNodes
-      .filter(n => n.status === "active" || n.status === "open")
-      .map(n => n.roleId)
+      .filter((n) => n.status === "active" || n.status === "open")
+      .map((n) => n.roleId)
       .filter(Boolean)
   );
   const runRoles = new Set(
     runs
       .slice(-8)
-      .map(
-        r => (r as { roleId?: string }).roleId || (r as any).producedBy?.roleId
-      )
+      .map((r) => (r as { roleId?: string }).roleId || (r as any).producedBy?.roleId)
       .filter(Boolean)
   );
 
@@ -262,9 +221,7 @@ function buildTelemetry(
     const raw = (a as any).payload || {};
     let positions = Array.isArray(raw?.positions) ? raw.positions : null;
     if (!positions && raw?.panel && typeof raw.panel === "object") {
-      positions = Array.isArray(raw.panel.positions)
-        ? raw.panel.positions
-        : null;
+      positions = Array.isArray(raw.panel.positions) ? raw.panel.positions : null;
     }
     if (positions) {
       for (const p of positions) {
@@ -276,8 +233,7 @@ function buildTelemetry(
 
   return {
     tokenBurn: tokenBurn > 0 ? tokenBurn : null,
-    sourceCount:
-      grounded.length > 0 ? grounded.length : trustedArtifacts.length || null,
+    sourceCount: grounded.length > 0 ? grounded.length : trustedArtifacts.length || null,
     remainingBudget: blockingOpen > 0 ? blockingOpen : openGaps || null,
     elapsedMs,
     activeRoleCount:
@@ -321,10 +277,7 @@ export function deriveSlideRuleReasoningViewModel(
   // K6.5: 简模式回跳静默失效修复 - 当 lineage 高亮 ::ev- (ReportReader 证据回跳) 时自动切详模式
   // 避免在 compact 下点击报告证据后子节点不可见
   let effectiveDensity = density;
-  if (
-    density === "compact" &&
-    lineageHighlightIds.some(id => id.includes("::ev-"))
-  ) {
+  if (density === "compact" && lineageHighlightIds.some((id) => id.includes("::ev-"))) {
     effectiveDensity = "detailed";
   }
 
@@ -334,10 +287,12 @@ export function deriveSlideRuleReasoningViewModel(
   }
 
   const root = getPropositionRootNode(state);
-  const { nodes: projectedNodes, edges: projectedEdges } =
-    projectSessionGraphForDisplay(state, root?.id);
+  const { nodes: projectedNodes, edges: projectedEdges } = projectSessionGraphForDisplay(
+    state,
+    root?.id
+  );
 
-  const visibleNodes: BrainstormReasoningNode[] = projectedNodes.map(n => {
+  const visibleNodes: BrainstormReasoningNode[] = projectedNodes.map((n) => {
     const enriched = enrichNodeStatus(state, n as any);
     const isRoot = n.id === root?.id;
     const kind = conclusionKindLabel({ ...n, status: enriched }, isRoot);
@@ -357,9 +312,7 @@ export function deriveSlideRuleReasoningViewModel(
   // V5.3 P3/P4: collaboration / reasoning 模式需要展开子节点(角色立场/思考链),
   // 不受简/详密度影响 —— 否则 compact 下 expandProjectionNodes 直接返回 base,panel 角色节点永不出现。
   const expansionDensity: ProjectionDensity =
-    viewMode === "collaboration" || viewMode === "reasoning"
-      ? "detailed"
-      : effectiveDensity;
+    viewMode === "collaboration" || viewMode === "reasoning" ? "detailed" : effectiveDensity;
   const expanded = expandProjectionNodes(
     state,
     visibleNodes,
@@ -405,11 +358,7 @@ export function deriveSlideRuleReasoningViewModel(
       if (!runId) return n;
       const evs = byRun.get(runId) || [];
       const fold = foldEventsForOverview(evs as any);
-      const badge =
-        `💭${fold.think}·🔍${fold.observe}·🔧${fold.tool}·👥${fold.role}`.replace(
-          /·0/g,
-          ""
-        );
+      const badge = `💭${fold.think}·🔍${fold.observe}·🔧${fold.tool}·👥${fold.role}`.replace(/·0/g, "");
       return {
         ...n,
         overviewBadge: badge || undefined,
@@ -437,10 +386,7 @@ export function deriveSlideRuleReasoningViewModel(
     mode: "structured",
     visibleNodes: finalNodes,
     visibleEdges: finalEdges,
-    hiddenNodeCount: Math.max(
-      0,
-      (graph.nodes?.length ?? 0) - visibleNodes.length
-    ),
+    hiddenNodeCount: Math.max(0, (graph.nodes?.length ?? 0) - visibleNodes.length),
     consoleLines,
     telemetry,
     terminalNode: terminal?.node ?? null,

@@ -91,7 +91,10 @@ function resolveDotStatus(
 const ConnectorLine: FC<{ isCompleted: boolean }> = ({ isCompleted }) => {
   if (isCompleted) {
     return (
-      <span className="block w-full h-px bg-indigo-400" aria-hidden="true" />
+      <span
+        className="block w-full h-px bg-indigo-400"
+        aria-hidden="true"
+      />
     );
   }
   return (
@@ -160,7 +163,7 @@ const StepIndicator: FC<StepIndicatorProps> = ({
           StepDot 序列与 ProgressBar；这是 spec 任务 4.2 响应式行为的落地点。
       */}
       <div className="hidden sm:grid grid-cols-6 mt-0.5" aria-hidden="true">
-        {STAGE_ORDER.map(stage => (
+        {STAGE_ORDER.map((stage) => (
           <span
             key={stage}
             className="text-[9px] font-mono text-slate-400 text-center"

@@ -68,14 +68,7 @@ const MODEL: FiveSystemModel = {
   rbac: {
     roles: ["student", "teacher", "registrar"],
     permissions: ["course:read", "course:approve"],
-    menus: [
-      {
-        id: "m1",
-        label: "选课",
-        roleRefs: ["student"],
-        permissionRefs: ["course:read"],
-      },
-    ],
+    menus: [{ id: "m1", label: "选课", roleRefs: ["student"], permissionRefs: ["course:read"] }],
   },
   workflow: {
     id: "wf_enroll",
@@ -139,17 +132,9 @@ const CLOSURE_CLOSED: PublishClosureSummary = {
   tierCounts: { hard_blocker: 0, warning: 0, info: 0 },
   topBlockers: [],
   perSkillEvidence: {
-    datamodel: {
-      evidencePresent: true,
-      artifactId: "llm-linkage-datamodel",
-      digest: "d1d1d1d1d1",
-    },
+    datamodel: { evidencePresent: true, artifactId: "llm-linkage-datamodel", digest: "d1d1d1d1d1" },
     rbac: { evidencePresent: true, artifactId: "llm-linkage-rbac" },
-    workflow: {
-      evidencePresent: true,
-      artifactId: "llm-linkage-workflow",
-      evidenceRef: "evidence:workflow:llm-linkage-workflow",
-    },
+    workflow: { evidencePresent: true, artifactId: "llm-linkage-workflow", evidenceRef: "evidence:workflow:llm-linkage-workflow" },
     page: { evidencePresent: true, artifactId: "llm-linkage-page" },
     aigc: { evidencePresent: true, artifactId: "llm-linkage-aigc" },
     appbundle: { evidencePresent: true, artifactId: "llm-linkage-appbundle" },
@@ -188,8 +173,7 @@ describe("five-system-model 解析", () => {
   });
 
   it("解析 fenced ```json 块", () => {
-    const raw =
-      "推演产出如下：\n```json\n" + JSON.stringify(MODEL) + "\n```\n完毕。";
+    const raw = "推演产出如下：\n```json\n" + JSON.stringify(MODEL) + "\n```\n完毕。";
     const parsed = parseFiveSystemModel(raw);
     expect(parsed?.aigc?.capabilities).toHaveLength(2);
   });
@@ -223,9 +207,7 @@ describe("five-system-model 解析", () => {
     // 前段供 extractFlow/extractMermaid，后段 fenced JSON 供本解析器。
     const live =
       'flowchart LR\n  rbac["rbac"] -->|RBAC_WORKFLOW_ASSIGNEE_EVIDENCE| workflow["workflow"]' +
-      "\n\n```json\n" +
-      JSON.stringify({ workflow: MODEL.workflow }) +
-      "\n```";
+      "\n\n```json\n" + JSON.stringify({ workflow: MODEL.workflow }) + "\n```";
     const parsed = parseFiveSystemModel(live);
     expect(parsed?.workflow?.nodes).toHaveLength(3);
     const merged = parseFiveSystemModelFromContents({ workflow: live });
@@ -278,21 +260,12 @@ describe("five-system-model 解析", () => {
 
   it("crossSkillEdgesToMermaid 与 Python _skill_edges_to_mermaid 同构", () => {
     const chart = crossSkillEdgesToMermaid("workflow", [
-      {
-        sourceSkill: "rbac",
-        targetSkill: "workflow",
-        state: "allowed",
-        evidenceKey: "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE",
-      },
+      { sourceSkill: "rbac", targetSkill: "workflow", state: "allowed", evidenceKey: "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE" },
       { sourceSkill: "rbac", targetSkill: "workflow", state: "allowed" }, // 去重
     ]);
-    expect(chart).toContain(
-      'rbac["rbac"] -->|RBAC_WORKFLOW_ASSIGNEE_EVIDENCE| workflow["workflow"]'
-    );
+    expect(chart).toContain('rbac["rbac"] -->|RBAC_WORKFLOW_ASSIGNEE_EVIDENCE| workflow["workflow"]');
     expect(chart.split("\n")).toHaveLength(2);
-    expect(crossSkillEdgesToMermaid("aigc", [])).toBe(
-      'flowchart LR\n  aigc["aigc"]'
-    );
+    expect(crossSkillEdgesToMermaid("aigc", [])).toBe('flowchart LR\n  aigc["aigc"]');
   });
 
   it("交叉引用解析：resolved 与 unresolved", () => {
@@ -315,9 +288,7 @@ describe("five-system-model 解析", () => {
             id: "wf_refund",
             name: "退费链路",
             kind: "money",
-            nodes: [
-              { id: "refund_apply", name: "申请退费", assigneeRole: "student" },
-            ],
+            nodes: [{ id: "refund_apply", name: "申请退费", assigneeRole: "student" }],
             transitions: [],
           },
         ],
@@ -336,9 +307,7 @@ describe("five-system-model 解析", () => {
     };
     const parsed = parseFiveSystemModel(JSON.stringify(withExtras));
     expect(parsed?.workflow?.chains?.[0]?.id).toBe("wf_refund");
-    expect(parsed?.appbundle?.invariants?.[0]?.statement).toContain(
-      "服务端回调"
-    );
+    expect(parsed?.appbundle?.invariants?.[0]?.statement).toContain("服务端回调");
     const rebuilt = parseFiveSystemModelFromPerSkillEvidence({
       workflow: { modelSection: withExtras.workflow },
       appbundle: { modelSection: withExtras.appbundle },
@@ -346,9 +315,7 @@ describe("five-system-model 解析", () => {
     expect(rebuilt?.workflow?.chains).toHaveLength(1);
     expect(rebuilt?.appbundle?.invariants).toHaveLength(1);
     // 链路与 WorkflowSection 同构 → mermaid 构建器直接复用
-    expect(workflowModelToMermaid(withExtras.workflow!.chains![0])).toContain(
-      "申请退费"
-    );
+    expect(workflowModelToMermaid(withExtras.workflow!.chains![0])).toContain("申请退费");
   });
 });
 
@@ -391,12 +358,7 @@ describe("WorkflowScreen", () => {
         skillRuntimeGraph={{
           bySkill: {
             workflow: [
-              {
-                sourceSkill: "rbac",
-                targetSkill: "workflow",
-                state: "allowed",
-                evidenceKey: "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE",
-              },
+              { sourceSkill: "rbac", targetSkill: "workflow", state: "allowed", evidenceKey: "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE" },
             ],
           },
         }}
@@ -423,9 +385,7 @@ describe("WorkflowScreen", () => {
             id: "wf_refund",
             name: "退费链路",
             kind: "money",
-            nodes: [
-              { id: "refund_apply", name: "申请退费", assigneeRole: "student" },
-            ],
+            nodes: [{ id: "refund_apply", name: "申请退费", assigneeRole: "student" }],
             transitions: [],
           },
         ],
@@ -498,35 +458,20 @@ describe("AigcScreen", () => {
             roleRefs: ["registrar"],
           },
         ],
-        pipelines: [
-          {
-            id: "pipe_1",
-            name: "选课文案链",
-            steps: ["cap_summary", "cap_notice"],
-          },
-        ],
+        pipelines: [{ id: "pipe_1", name: "选课文案链", steps: ["cap_summary", "cap_notice"] }],
       },
     };
     // 解析存活（管线随 aigc 段走）
     const parsed = parseFiveSystemModel(JSON.stringify(model));
-    expect(parsed?.aigc?.pipelines?.[0]?.steps).toEqual([
-      "cap_summary",
-      "cap_notice",
-    ]);
+    expect(parsed?.aigc?.pipelines?.[0]?.steps).toEqual(["cap_summary", "cap_notice"]);
     // tab 出现
-    const html = renderToStaticMarkup(
-      <AigcScreen model={model} publishClosure={CLOSURE_CLOSED} />
-    );
+    const html = renderToStaticMarkup(<AigcScreen model={model} publishClosure={CLOSURE_CLOSED} />);
     expect(html).toContain('data-testid="aigc-mode-pipeline"');
     // 无管线 → tab 不出现（不造空壳入口）
-    const htmlNoPipe = renderToStaticMarkup(
-      <AigcScreen model={MODEL} publishClosure={CLOSURE_CLOSED} />
-    );
+    const htmlNoPipe = renderToStaticMarkup(<AigcScreen model={MODEL} publishClosure={CLOSURE_CLOSED} />);
     expect(htmlNoPipe).not.toContain('data-testid="aigc-mode-pipeline"');
     // 面板：步骤链 + 衔接字段 + 注入标注 + 试跑按钮
-    const panel = renderToStaticMarkup(
-      <AigcPipelinePanel model={model} goal="在线选课" />
-    );
+    const panel = renderToStaticMarkup(<AigcPipelinePanel model={model} goal="在线选课" />);
     expect(panel).toContain('data-testid="aigc-pipeline-chain"');
     expect(panel).toContain("1. 课程简介生成");
     expect(panel).toContain("2. 选课通知生成");
@@ -635,28 +580,11 @@ describe("AppBundleScreen", () => {
       appbundle: {
         ...MODEL.appbundle,
         invariants: [
-          {
-            id: "inv_ok",
-            statement: "选课状态变更必须落库",
-            systems: ["datamodel"],
-            refs: ["enrollment.status"],
-          },
+          { id: "inv_ok", statement: "选课状态变更必须落库", systems: ["datamodel"], refs: ["enrollment.status"] },
         ],
         invariantNotes: {
-          repaired: [
-            {
-              invariantId: "inv_ok",
-              from: "do_enroll_status",
-              to: "enrollment.status",
-            },
-          ],
-          dropped: [
-            {
-              invariantId: "inv_ghost",
-              statement: "引用无效被剔除",
-              unresolvedRefs: ["quantum_module"],
-            },
-          ],
+          repaired: [{ invariantId: "inv_ok", from: "do_enroll_status", to: "enrollment.status" }],
+          dropped: [{ invariantId: "inv_ghost", statement: "引用无效被剔除", unresolvedRefs: ["quantum_module"] }],
         },
       },
     };
@@ -722,72 +650,39 @@ describe("ActiveSystemScreen 派发", () => {
     const closureWithModel: PublishClosureSummary = {
       ...CLOSURE_CLOSED,
       perSkillEvidence: {
-        datamodel: {
-          evidencePresent: true,
-          modelSection: MODEL.datamodel as Record<string, unknown>,
-        },
-        rbac: {
-          evidencePresent: true,
-          modelSection: MODEL.rbac as Record<string, unknown>,
-        },
-        workflow: {
-          evidencePresent: true,
-          modelSection: MODEL.workflow as Record<string, unknown>,
-        },
-        page: {
-          evidencePresent: true,
-          modelSection: MODEL.page as Record<string, unknown>,
-        },
-        aigc: {
-          evidencePresent: true,
-          modelSection: MODEL.aigc as Record<string, unknown>,
-        },
-        appbundle: {
-          evidencePresent: true,
-          modelSection: MODEL.appbundle as Record<string, unknown>,
-        },
+        datamodel: { evidencePresent: true, modelSection: MODEL.datamodel as Record<string, unknown> },
+        rbac: { evidencePresent: true, modelSection: MODEL.rbac as Record<string, unknown> },
+        workflow: { evidencePresent: true, modelSection: MODEL.workflow as Record<string, unknown> },
+        page: { evidencePresent: true, modelSection: MODEL.page as Record<string, unknown> },
+        aigc: { evidencePresent: true, modelSection: MODEL.aigc as Record<string, unknown> },
+        appbundle: { evidencePresent: true, modelSection: MODEL.appbundle as Record<string, unknown> },
       },
     };
     const workflowHtml = renderToStaticMarkup(
-      <ActiveSystemScreen
-        activeSkillId="workflow"
-        publishClosure={closureWithModel}
-      />
+      <ActiveSystemScreen activeSkillId="workflow" publishClosure={closureWithModel} />
     );
     expect(workflowHtml).toContain("3 节点 · 2 转移");
     expect(workflowHtml).toContain("✓ student"); // 角色图例条（节点卡在画布内，静态渲染不含）
     const aigcHtml = renderToStaticMarkup(
-      <ActiveSystemScreen
-        activeSkillId="aigc"
-        publishClosure={closureWithModel}
-      />
+      <ActiveSystemScreen activeSkillId="aigc" publishClosure={closureWithModel} />
     );
     expect(aigcHtml).toContain('data-testid="aigc-capabilities"');
     expect(aigcHtml).toContain("课程简介生成");
     const bundleHtml = renderToStaticMarkup(
-      <ActiveSystemScreen
-        activeSkillId={null}
-        publishClosure={closureWithModel}
-      />
+      <ActiveSystemScreen activeSkillId={null} publishClosure={closureWithModel} />
     );
     expect(bundleHtml).toContain('data-testid="appbundle-bindings"');
   });
 
   it("确定性域（无 modelSection）不伪造模型：closed 6/6 但各屏走降级链", () => {
     const workflowHtml = renderToStaticMarkup(
-      <ActiveSystemScreen
-        activeSkillId="workflow"
-        publishClosure={CLOSURE_CLOSED}
-      />
+      <ActiveSystemScreen activeSkillId="workflow" publishClosure={CLOSURE_CLOSED} />
     );
     // 无模型 → 不出现节点角色表；证据徽标仍如实展示
     expect(workflowHtml).not.toContain('data-testid="workflow-node-roles"');
     expect(workflowHtml).toContain("evidence ✓");
     const aigcHtml = renderToStaticMarkup(
-      <ActiveSystemScreen
-        activeSkillId="aigc"
-        publishClosure={CLOSURE_CLOSED}
-      />
+      <ActiveSystemScreen activeSkillId="aigc" publishClosure={CLOSURE_CLOSED} />
     );
     expect(aigcHtml).not.toContain('data-testid="aigc-capabilities"');
   });
@@ -800,18 +695,12 @@ describe("ActiveSystemScreen 派发", () => {
 const CLOSURE_BUILTIN: PublishClosureSummary = {
   ...CLOSURE_CLOSED,
   perSkillEvidence: {
-    datamodel: {
-      evidencePresent: true,
-      artifactId: "runtime-linkage-datamodel",
-    },
+    datamodel: { evidencePresent: true, artifactId: "runtime-linkage-datamodel" },
     rbac: { evidencePresent: true, artifactId: "runtime-linkage-rbac" },
     workflow: { evidencePresent: true, artifactId: "runtime-linkage-workflow" },
     page: { evidencePresent: true, artifactId: "runtime-linkage-page" },
     aigc: { evidencePresent: true, artifactId: "runtime-linkage-aigc" },
-    appbundle: {
-      evidencePresent: true,
-      artifactId: "runtime-linkage-appbundle",
-    },
+    appbundle: { evidencePresent: true, artifactId: "runtime-linkage-appbundle" },
   },
 };
 
@@ -825,26 +714,15 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
       kind: "builtin",
       label: "内置演示域",
     });
-    expect(evidenceSourceOf({ evidenceRef: "llm-linkage-rbac" })?.kind).toBe(
-      "llm"
-    );
+    expect(evidenceSourceOf({ evidenceRef: "llm-linkage-rbac" })?.kind).toBe("llm");
     expect(evidenceSourceOf({ artifactId: "something-else" })).toBeNull();
     expect(evidenceSourceOf(null)).toBeNull();
   });
 
   it("LLM 闭环：各系统屏头部出现「LLM 生成」珊瑚徽章", () => {
-    for (const skill of [
-      "workflow",
-      "rbac",
-      "page",
-      "aigc",
-      "dataModel",
-    ] as const) {
+    for (const skill of ["workflow", "rbac", "page", "aigc", "dataModel"] as const) {
       const html = renderToStaticMarkup(
-        <ActiveSystemScreen
-          activeSkillId={skill}
-          publishClosure={CLOSURE_CLOSED}
-        />
+        <ActiveSystemScreen activeSkillId={skill} publishClosure={CLOSURE_CLOSED} />
       );
       expect(html).toContain('data-testid="evidence-source-llm"');
       expect(html).toContain("LLM 生成");
@@ -854,26 +732,18 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
 
   it("内置演示域闭环：各系统屏 + AppBundle 看板出现「内置演示域」琥珀徽章", () => {
     const workflowHtml = renderToStaticMarkup(
-      <ActiveSystemScreen
-        activeSkillId="workflow"
-        publishClosure={CLOSURE_BUILTIN}
-      />
+      <ActiveSystemScreen activeSkillId="workflow" publishClosure={CLOSURE_BUILTIN} />
     );
     expect(workflowHtml).toContain('data-testid="evidence-source-builtin"');
     expect(workflowHtml).toContain("内置演示域");
     const bundleHtml = renderToStaticMarkup(
-      <ActiveSystemScreen
-        activeSkillId={null}
-        publishClosure={CLOSURE_BUILTIN}
-      />
+      <ActiveSystemScreen activeSkillId={null} publishClosure={CLOSURE_BUILTIN} />
     );
     expect(bundleHtml).toContain('data-testid="evidence-source-builtin"');
   });
 
   it("无证据时不渲染任何徽章（不猜、不冒充）", () => {
-    const html = renderToStaticMarkup(
-      <ActiveSystemScreen activeSkillId="workflow" />
-    );
+    const html = renderToStaticMarkup(<ActiveSystemScreen activeSkillId="workflow" />);
     expect(html).not.toContain("evidence ✓");
     expect(html).not.toContain("evidence-source-");
   });
@@ -906,15 +776,9 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
       ],
     })!;
     expect(diagram).toContain('user_profile ||--o{ birth_info : "user_ref"');
-    expect(diagram).toContain(
-      'birth_info ||--o{ wuyun_liuqi_chart : "birth_ref"'
-    );
-    expect(diagram).toContain(
-      'wuyun_liuqi_chart ||--o{ constitution_assessment : "chart_ref"'
-    );
-    expect(diagram).toContain(
-      'user_profile ||--o{ constitution_assessment : "user_ref"'
-    );
+    expect(diagram).toContain('birth_info ||--o{ wuyun_liuqi_chart : "birth_ref"');
+    expect(diagram).toContain('wuyun_liuqi_chart ||--o{ constitution_assessment : "chart_ref"');
+    expect(diagram).toContain('user_profile ||--o{ constitution_assessment : "user_ref"');
     // user_profile 自己的 user_id 不产生自引用边
     expect(diagram).not.toContain("user_profile ||--o{ user_profile");
     // 歧义（两个候选）不画线
@@ -931,18 +795,11 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
   it("deriveErGraphData：实体卡数据 + 关联边（G6 渲染路径，与 mermaid 同一套推断）", () => {
     const data = deriveErGraphData({
       entities: [
-        {
-          id: "user_profile",
-          name: "用户",
-          fields: [{ id: "name", name: "姓名", type: "string" }],
-        },
-        {
-          id: "birth_info",
-          fields: [{ id: "user_ref", name: "所属用户", type: "ref" }],
-        },
+        { id: "user_profile", name: "用户", fields: [{ id: "name", name: "姓名", type: "string" }] },
+        { id: "birth_info", fields: [{ id: "user_ref", name: "所属用户", type: "ref" }] },
       ],
     })!;
-    expect(data.nodes.map(n => n.id)).toEqual(["user_profile", "birth_info"]);
+    expect(data.nodes.map((n) => n.id)).toEqual(["user_profile", "birth_info"]);
     expect(data.nodes[0].name).toBe("用户");
     expect(data.nodes[1].fields[0].refTarget).toBe("user_profile");
     expect(data.edges).toEqual([
@@ -953,24 +810,20 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
 
   it("deriveWorkflowGraphData：始/终判定、角色解析、条件边（G6 活图路径）", () => {
     const data = deriveWorkflowGraphData(MODEL)!;
-    const byId = Object.fromEntries(data.nodes.map(n => [n.id, n]));
+    const byId = Object.fromEntries(data.nodes.map((n) => [n.id, n]));
     expect(byId.submit.isStart).toBe(false); // approve→submit 退回边使其有入边
     expect(byId.ghost.isStart).toBe(true); // 无入边
     expect(byId.ghost.isTerminal).toBe(true); // 无出边
     expect(byId.submit.roleResolved).toBe(true);
     expect(byId.ghost.role).toBe("not_a_role");
     expect(byId.ghost.roleResolved).toBe(false); // 未在 rbac.roles 声明 → 标红
-    expect(data.edges).toContainEqual({
-      from: "submit",
-      to: "approve",
-      condition: "容量未满",
-    });
+    expect(data.edges).toContainEqual({ from: "submit", to: "approve", condition: "容量未满" });
     expect(deriveWorkflowGraphData({})).toBeNull();
   });
 
   it("deriveSystemLinkageGraph：五系统分组 + 跨系统边（联动图路径）", () => {
     const data = deriveSystemLinkageGraph(MODEL)!;
-    expect(data.groups.map(g => g.system)).toEqual([
+    expect(data.groups.map((g) => g.system)).toEqual([
       "datamodel",
       "page",
       "workflow",
@@ -978,33 +831,13 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
       "aigc",
     ]);
     // 页面→主实体（course）、页面→流程起点（ghost 无入边为起点候选之一）、节点→角色、AIGC→输出实体/角色
-    expect(data.edges).toContainEqual({
-      from: "page:enroll_page",
-      to: "datamodel:course",
-      kind: "page-entity",
-    });
-    expect(
-      data.edges.some(
-        e => e.kind === "page-workflow" && e.from === "page:enroll_page"
-      )
-    ).toBe(true);
-    expect(data.edges).toContainEqual({
-      from: "workflow:submit",
-      to: "rbac:student",
-      kind: "node-role",
-    });
-    expect(data.edges).toContainEqual({
-      from: "aigc:cap_summary",
-      to: "datamodel:enrollment",
-      kind: "aigc-entity",
-    });
-    expect(data.edges).toContainEqual({
-      from: "aigc:cap_summary",
-      to: "rbac:teacher",
-      kind: "aigc-role",
-    });
+    expect(data.edges).toContainEqual({ from: "page:enroll_page", to: "datamodel:course", kind: "page-entity" });
+    expect(data.edges.some((e) => e.kind === "page-workflow" && e.from === "page:enroll_page")).toBe(true);
+    expect(data.edges).toContainEqual({ from: "workflow:submit", to: "rbac:student", kind: "node-role" });
+    expect(data.edges).toContainEqual({ from: "aigc:cap_summary", to: "datamodel:enrollment", kind: "aigc-entity" });
+    expect(data.edges).toContainEqual({ from: "aigc:cap_summary", to: "rbac:teacher", kind: "aigc-role" });
     // 悬空引用不入图（ghost_role 未在 roles 声明）
-    expect(data.edges.some(e => e.to === "rbac:ghost_role")).toBe(false);
+    expect(data.edges.some((e) => e.to === "rbac:ghost_role")).toBe(false);
     expect(deriveSystemLinkageGraph({})).toBeNull();
   });
 
@@ -1026,23 +859,17 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     })!;
     expect(data.nodes[0].phase).toBe("申请");
     const lanes = derivePhaseLanes(data.nodes)!;
-    expect(lanes.map(l => l.phase)).toEqual(["申请", "审核", "收尾"]);
+    expect(lanes.map((l) => l.phase)).toEqual(["申请", "审核", "收尾"]);
     expect(lanes[1].nodeIds).toEqual(["b", "c"]);
     // 有节点缺 phase → null（不猜归属，回退平铺布局）
     const partial = deriveWorkflowGraphData({
-      workflow: {
-        nodes: [{ id: "a", phase: "申请" }, { id: "b" }],
-        transitions: [],
-      },
+      workflow: { nodes: [{ id: "a", phase: "申请" }, { id: "b" }], transitions: [] },
     })!;
     expect(derivePhaseLanes(partial.nodes)).toBeNull();
     // 只有一个阶段 → null（单泳道无意义）
     const single = deriveWorkflowGraphData({
       workflow: {
-        nodes: [
-          { id: "a", phase: "申请" },
-          { id: "b", phase: "申请" },
-        ],
+        nodes: [{ id: "a", phase: "申请" }, { id: "b", phase: "申请" }],
         transitions: [],
       },
     })!;
@@ -1099,24 +926,12 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
         roles: ["student", "registrar"],
         permissions: ["course:read"],
         menus: [
-          {
-            id: "m1",
-            label: "选课",
-            roleRefs: ["student"],
-            permissionRefs: ["course:read"],
-          },
-          {
-            id: "m2",
-            label: "审批台",
-            roleRefs: ["registrar"],
-            permissionRefs: ["course:approve"],
-          }, // 未声明
+          { id: "m1", label: "选课", roleRefs: ["student"], permissionRefs: ["course:read"] },
+          { id: "m2", label: "审批台", roleRefs: ["registrar"], permissionRefs: ["course:approve"] }, // 未声明
         ],
       },
     };
-    const html = renderToStaticMarkup(
-      <RbacScreen model={modelWithUndeclaredPerm} />
-    );
+    const html = renderToStaticMarkup(<RbacScreen model={modelWithUndeclaredPerm} />);
     expect(html).toContain("student");
     expect(html).toContain("registrar");
     expect(html).toContain("选课");
@@ -1133,10 +948,7 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(placeholderHtml).toContain('data-testid="screen-empty-hint"');
     expect(placeholderHtml).not.toContain("采购单:创建"); // 采购假域占位已移除
     const modelHtml = renderToStaticMarkup(
-      <RbacScreen
-        model={MODEL}
-        rawContent={"# 角色: 文本角色\n权限: something"}
-      />
+      <RbacScreen model={MODEL} rawContent={"# 角色: 文本角色\n权限: something"} />
     );
     expect(modelHtml).toContain("student"); // model 优先
     expect(modelHtml).not.toContain("文本角色");
@@ -1156,9 +968,7 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
         ],
       },
     };
-    const html = renderToStaticMarkup(
-      <PageScreen model={modelWithBrokenBinding} />
-    );
+    const html = renderToStaticMarkup(<PageScreen model={modelWithBrokenBinding} />);
     expect(html).toContain("选课页");
     expect(html).toContain("课程.课程名"); // resolved → 实体名.字段名
     expect(html).toContain("✗ nonexistent.field"); // unresolved 如实标红
@@ -1189,9 +999,7 @@ describe("浏览器运行时（试运行）入口", () => {
   });
 
   it("DataModelScreen 有实体时提供「模型图⟷数据表」切换；无模型不显示", () => {
-    const withModel = renderToStaticMarkup(
-      <DataModelScreen model={MODEL} sessionId="t-dm" />
-    );
+    const withModel = renderToStaticMarkup(<DataModelScreen model={MODEL} sessionId="t-dm" />);
     expect(withModel).toContain('data-testid="datamodel-mode-toggle"');
     expect(withModel).toContain("数据表");
     const withoutModel = renderToStaticMarkup(<DataModelScreen />);
@@ -1207,9 +1015,7 @@ describe("浏览器运行时（试运行）入口", () => {
   });
 
   it("AigcTryRunPanel 按能力切页、输入字段解析实体名、提供「试跑」", () => {
-    const html = renderToStaticMarkup(
-      <AigcTryRunPanel model={MODEL} goal="选课系统" />
-    );
+    const html = renderToStaticMarkup(<AigcTryRunPanel model={MODEL} goal="选课系统" />);
     expect(html).toContain('data-testid="aigc-tryrun-panel"');
     expect(html).toContain('data-testid="aigc-tryrun-cap-cap_summary"');
     expect(html).toContain('data-testid="aigc-tryrun-run"');
@@ -1218,9 +1024,7 @@ describe("浏览器运行时（试运行）入口", () => {
   });
 
   it("EntityDataPanel 按实体切页并提供「新增一行」（空表如实提示）", () => {
-    const html = renderToStaticMarkup(
-      <EntityDataPanel model={MODEL} sessionId="t-dm" />
-    );
+    const html = renderToStaticMarkup(<EntityDataPanel model={MODEL} sessionId="t-dm" />);
     expect(html).toContain('data-testid="datamodel-data-panel"');
     expect(html).toContain('data-testid="datamodel-entity-course"');
     expect(html).toContain('data-testid="datamodel-entity-enrollment"');

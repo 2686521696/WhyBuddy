@@ -49,7 +49,7 @@ export function PageScreen({
     if (modelPages.length === 0) return [];
     return modelPages.map((p, i) => ({
       title: p.name || p.id || `页面 ${i + 1}`,
-      fields: (p.fieldBindings ?? []).map(ref => {
+      fields: (p.fieldBindings ?? []).map((ref) => {
         const res = resolveFieldRef(ref, model);
         return {
           name: res.label,
@@ -71,9 +71,7 @@ export function PageScreen({
     >
       <div className="flex items-center gap-2 border-b border-[#e8eaee] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-teal-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-          Page
-        </span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">Page</span>
         <span className="text-xs text-stone-400">页面 Wireframe</span>
         <div className="ml-auto flex items-center gap-1.5">
           <EvidenceBadges evidence={evidence} />
@@ -81,78 +79,65 @@ export function PageScreen({
       </div>
 
       {isPlaceholder ? (
-        <EmptyScreenHint
-          title="页面字段绑定（Wireframe）"
-          desc="页面、字段与操作权限，来自五系统模型 page 段"
-        />
+        <EmptyScreenHint title="页面字段绑定（Wireframe）" desc="页面、字段与操作权限，来自五系统模型 page 段" />
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {pages.map(page => (
-              <div
-                key={page.title}
-                className={`rounded-md border border-[#e5e7eb] bg-[#eef0f4] p-3 `}
-              >
-                {/* Page title bar */}
-                <div className="mb-3 flex items-center gap-2 rounded border border-[#e5e7eb] bg-white px-3 py-1.5 shadow-sm">
-                  <div className="h-1.5 w-1.5 rounded-full bg-teal-400" />
-                  <span className="text-xs font-semibold text-stone-700">
-                    {page.title}
-                  </span>
-                </div>
-
-                {/* Fields */}
-                <div className="space-y-1.5">
-                  {page.fields.map(field => (
-                    <div key={field.name} className="flex items-center gap-2">
-                      <span
-                        className={`w-20 shrink-0 truncate text-[10px] ${
-                          field.type === "unresolved"
-                            ? "text-red-500"
-                            : "text-stone-500"
-                        }`}
-                        title={
-                          field.type === "unresolved"
-                            ? `字段绑定未在数据模型中解析：${field.name}`
-                            : field.name
-                        }
-                      >
-                        {field.type === "unresolved" ? "✗ " : ""}
-                        {field.name}
-                      </span>
-                      <div
-                        className={`h-5 flex-1 rounded border text-[10px] ${
-                          field.editable
-                            ? "border-[#d3d8e0] bg-white"
-                            : "border-transparent bg-[#e9edf2] text-stone-400"
-                        }`}
-                      />
-                      {field.required && (
-                        <span className="text-[10px] text-red-400">*</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Action buttons */}
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {page.actions.map((action, i) => (
-                    <div
-                      key={action}
-                      className={`rounded-sm px-2.5 py-1 text-[10px] font-medium ${
-                        i === 0
-                          ? "bg-teal-500 text-white"
-                          : "border border-[#e5e7eb] bg-white text-stone-600"
-                      }`}
-                    >
-                      {action}
-                    </div>
-                  ))}
-                </div>
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {pages.map((page) => (
+            <div key={page.title} className={`rounded-md border border-[#e5e7eb] bg-[#eef0f4] p-3 `}>
+              {/* Page title bar */}
+              <div className="mb-3 flex items-center gap-2 rounded border border-[#e5e7eb] bg-white px-3 py-1.5 shadow-sm">
+                <div className="h-1.5 w-1.5 rounded-full bg-teal-400" />
+                <span className="text-xs font-semibold text-stone-700">{page.title}</span>
               </div>
-            ))}
-          </div>
+
+              {/* Fields */}
+              <div className="space-y-1.5">
+                {page.fields.map((field) => (
+                  <div key={field.name} className="flex items-center gap-2">
+                    <span
+                      className={`w-20 shrink-0 truncate text-[10px] ${
+                        field.type === "unresolved" ? "text-red-500" : "text-stone-500"
+                      }`}
+                      title={field.type === "unresolved" ? `字段绑定未在数据模型中解析：${field.name}` : field.name}
+                    >
+                      {field.type === "unresolved" ? "✗ " : ""}
+                      {field.name}
+                    </span>
+                    <div
+                      className={`h-5 flex-1 rounded border text-[10px] ${
+                        field.editable
+                          ? "border-[#d3d8e0] bg-white"
+                          : "border-transparent bg-[#e9edf2] text-stone-400"
+                      }`}
+                    />
+                    {field.required && (
+                      <span className="text-[10px] text-red-400">*</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Action buttons */}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {page.actions.map((action, i) => (
+                  <div
+                    key={action}
+                    className={`rounded-sm px-2.5 py-1 text-[10px] font-medium ${
+                      i === 0
+                        ? "bg-teal-500 text-white"
+                        : "border border-[#e5e7eb] bg-white text-stone-600"
+                    }`}
+                  >
+                    {action}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
+
+      </div>
       )}
     </div>
   );

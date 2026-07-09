@@ -93,7 +93,9 @@ describe("SpecDocumentWorkbenchPanel", () => {
     expect(markup).toContain("接受");
     expect(markup).toContain('data-testid="spec-document-reject-button"');
     expect(markup).toContain("拒绝");
-    expect(markup).toContain('data-testid="spec-document-save-version-button"');
+    expect(markup).toContain(
+      'data-testid="spec-document-save-version-button"'
+    );
     expect(markup).toContain("保存版本");
     expect(markup).toContain('data-testid="spec-document-preview"');
     expect(markup).toContain("捕获用户角色。");

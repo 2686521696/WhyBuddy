@@ -70,16 +70,12 @@ function isTextLikeFile(file: File) {
 }
 
 function isPdfFile(file: File) {
-  return (
-    file.type === "application/pdf" ||
-    PDF_EXTENSIONS.has(getFileExtension(file.name))
-  );
+  return file.type === "application/pdf" || PDF_EXTENSIONS.has(getFileExtension(file.name));
 }
 
 function isWordFile(file: File) {
   return (
-    file.type ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     file.type === "application/msword" ||
     WORD_EXTENSIONS.has(getFileExtension(file.name))
   );
@@ -87,8 +83,7 @@ function isWordFile(file: File) {
 
 function isSpreadsheetFile(file: File) {
   return (
-    file.type ===
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
     file.type === "application/vnd.ms-excel" ||
     file.type === "text/csv" ||
     SPREADSHEET_EXTENSIONS.has(getFileExtension(file.name))
@@ -96,10 +91,7 @@ function isSpreadsheetFile(file: File) {
 }
 
 function isImageFile(file: File) {
-  return (
-    file.type.startsWith("image/") ||
-    IMAGE_EXTENSIONS.has(getFileExtension(file.name))
-  );
+  return file.type.startsWith("image/") || IMAGE_EXTENSIONS.has(getFileExtension(file.name));
 }
 
 function buildMetadataNote(file: File, reason?: string) {
@@ -133,10 +125,7 @@ function buildMetadataNote(file: File, reason?: string) {
 }
 
 function makeAttachmentId(file: File) {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
 
@@ -146,9 +135,7 @@ function makeAttachmentId(file: File) {
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string) {
   return new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => {
-      reject(
-        new Error(`${label} timed out after ${Math.ceil(timeoutMs / 1000)}s.`)
-      );
+      reject(new Error(`${label} timed out after ${Math.ceil(timeoutMs / 1000)}s.`));
     }, timeoutMs);
 
     promise.then(
@@ -317,8 +304,7 @@ async function compressImage(file: File): Promise<Blob> {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const image = new Image();
       image.onload = () => resolve(image);
-      image.onerror = () =>
-        reject(new Error("Failed to load image for compression."));
+      image.onerror = () => reject(new Error("Failed to load image for compression."));
       image.src = objectUrl;
     });
 
@@ -412,8 +398,7 @@ async function requestVisionAnalysis(
   }
 
   const data = await response.json();
-  const results: Array<{ name: string; analysis: VisionApiResult }> =
-    data.results || [];
+  const results: Array<{ name: string; analysis: VisionApiResult }> = data.results || [];
   const match = results.find(r => r.name === name);
   if (!match) {
     throw new Error("Vision API returned no result for this image.");
@@ -447,11 +432,7 @@ function formatVisualContext(result: VisionApiResult): string {
  * OCR-based image parsing — the original fallback path.
  */
 async function parseImageFileOcr(file: File): Promise<WorkflowInputAttachment> {
-  const worker = await withTimeout(
-    getOcrWorker(),
-    OCR_TIMEOUT_MS,
-    "OCR worker setup"
-  );
+  const worker = await withTimeout(getOcrWorker(), OCR_TIMEOUT_MS, "OCR worker setup");
   const result = await withTimeout(
     worker.recognize(file, {
       rotateAuto: true,
@@ -497,10 +478,7 @@ async function parseImageFile(file: File) {
   try {
     const visionResult = await requestVisionAnalysis(base64DataUrl, file.name);
     const visualDescription = formatVisualContext(visionResult);
-    const content =
-      visualDescription ||
-      visionResult.rawResponse ||
-      "(no visual description)";
+    const content = visualDescription || visionResult.rawResponse || "(no visual description)";
 
     return finalizeAttachment(file, content, "vision_analyzed", {
       visionReady: true,
@@ -523,14 +501,16 @@ async function parseImageFile(file: File) {
     ocrResult.base64DataUrl = base64DataUrl;
     return ocrResult;
   } catch (ocrError) {
-    console.warn("[WorkflowAttachments] OCR also failed:", file.name, ocrError);
+    console.warn(
+      "[WorkflowAttachments] OCR also failed:",
+      file.name,
+      ocrError
+    );
     return finalizeAttachment(
       file,
       buildMetadataNote(
         file,
-        ocrError instanceof Error
-          ? ocrError.message
-          : "Vision and OCR both failed."
+        ocrError instanceof Error ? ocrError.message : "Vision and OCR both failed."
       ),
       "vision_fallback",
       { visionReady: false, base64DataUrl }
@@ -560,11 +540,7 @@ async function fileToAttachment(file: File): Promise<WorkflowInputAttachment> {
       return await parseImageFile(file);
     }
   } catch (error) {
-    console.error(
-      "[WorkflowAttachments] Failed to parse file:",
-      file.name,
-      error
-    );
+    console.error("[WorkflowAttachments] Failed to parse file:", file.name, error);
     return finalizeAttachment(
       file,
       buildMetadataNote(
