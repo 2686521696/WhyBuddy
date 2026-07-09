@@ -75,11 +75,6 @@ const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
 // 手机档 UI 基建（antd-mobile）同样独立 chunk：切到手机设备档才加载。
 const LazyPhonePageList = React.lazy(() => import("./phone-mobile/PhonePageList"));
 const LazyPhoneTabBar = React.lazy(() => import("./phone-mobile/PhoneTabBar"));
-// 页面设计器二期（组件树画布 + dnd-kit）独立 chunk：点开画布设计才加载。
-const LazyPageDesigner = React.lazy(() => import("./designer/PageDesignerScreen"));
-// 设计树运行时渲染器（有画布设计的页面才加载）
-const LazyRuntimeDesignedPage = React.lazy(() => import("./designer/RuntimePageRenderer"));
-import { loadPageTrees, countDesignedPages, type PageTrees } from "./designer/page-tree";
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -246,9 +241,6 @@ export function AppRuntimeScreen({
   xrayActive?: boolean;
   onXrayTarget?: (target: XrayTarget | null) => void;
 }) {
-  // 页面设计器（画布）：全屏设计器 + 已保存设计树（按 pageId，存在即接管该页渲染）
-  const [canvasDesignOpen, setCanvasDesignOpen] = React.useState(false);
-  const [designTrees, setDesignTrees] = React.useState<PageTrees>(() => loadPageTrees(sessionId));
   // 表格列设置（表格自带能力）：按 pageId 记用户勾选的列；undefined = 默认列
   const [tableColPrefs, setTableColPrefs] = React.useState<Record<string, string[]>>({});
 
@@ -890,65 +882,7 @@ export function AppRuntimeScreen({
     </Card>
   );
 
-  // 设计器二期批次3：该页存在画布设计树 → 树渲染接管（真数据 + 真事件）。
-  // 手机档保持 antd-mobile 默认范式（画布树按桌面栅格设计，不硬塞窄屏）。
-  const designedTree = page && !isPhone ? designTrees[page.id] : undefined;
-  const pageContent =
-    designedTree && page ? (
-      <Card
-        size="small"
-        title={page.title}
-        data-testid="app-runtime-designed-card"
-        extra={
-          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] text-amber-700 ring-1 ring-amber-200">
-            画布设计 · 本地渲染
-          </span>
-        }
-      >
-        <React.Suspense
-          fallback={<div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>页面加载中…</div>}
-        >
-          <LazyRuntimeDesignedPage
-            tree={designedTree}
-            ctx={{
-              model,
-              state,
-              onAddRow: (entityId, values) => {
-                const problems = validateRowValues(model, entityId, values);
-                if (problems.length > 0) {
-                  message.warning(problems.join("；"));
-                  return false;
-                }
-                const { state: next } = addRow(state, entityId, values, new Date().toISOString());
-                apply(next);
-                message.success("已保存");
-                return true;
-              },
-              onOpenPage: (pageId) => {
-                if (schema.pages.some((p) => p.id === pageId)) setActivePageId(pageId);
-                else message.info("目标页面不存在（模型迭代后请在画布里重新绑定）");
-              },
-              onStartApproval: () => {
-                const { state: next, instance } = startInstance(
-                  state,
-                  model,
-                  `${page.title} · 画布发起`,
-                  new Date().toISOString()
-                );
-                if (instance) {
-                  apply(next);
-                  message.success(`已提交审批：${instance.title}（到 Workflow 试运行里推进）`);
-                } else {
-                  message.info("模型未声明流程，无法发起审批");
-                }
-              },
-            }}
-          />
-        </React.Suspense>
-      </Card>
-    ) : (
-      defaultPageContent
-    );
+  const pageContent = defaultPageContent;
 
   const desktopShell = (
     <Layout style={{ height: "100%" }}>
@@ -1178,44 +1112,7 @@ export function AppRuntimeScreen({
             {DEVICE_SPECS[key].label}
           </button>
         ))}
-        {/* 页面设计器：全屏画布设计器（组件树 + 拖拽 + propsSchema 属性面板）。
-            一期属性面板已裁撤——表格列等能力由表格自带（列设置/排序/筛选）。 */}
-        {!isHome && page && (
-          <button
-            type="button"
-            data-testid="app-canvas-design"
-            onClick={() => setCanvasDesignOpen(true)}
-            className="ml-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium text-white/85 transition-colors hover:text-white"
-            title="画布设计：组件树 + 拖拽 + 属性面板（本地设计层，可重置回推演原貌）"
-          >
-            画布{countDesignedPages(designTrees) > 0 ? ` ·${countDesignedPages(designTrees)}` : ""}
-          </button>
-        )}
       </div>
-
-      {/* 画布设计器全屏覆盖层（懒加载：点开才拉 dnd-kit chunk） */}
-      {canvasDesignOpen && page && !isHome && (
-        <div className="absolute inset-0 z-20" data-testid="app-canvas-designer-overlay">
-          <React.Suspense
-            fallback={
-              <div className="flex h-full items-center justify-center bg-[#F4F1EA] text-xs text-stone-400">
-                设计器加载中…
-              </div>
-            }
-          >
-            <LazyPageDesigner
-              model={model}
-              pageId={page.id}
-              sessionId={sessionId}
-              onClose={() => {
-                setCanvasDesignOpen(false);
-                // 设计器关闭即生效：刷新设计树，运行页立刻按新树渲染
-                setDesignTrees(loadPageTrees(sessionId));
-              }}
-            />
-          </React.Suspense>
-        </div>
-      )}
       <span
         className="absolute bottom-2 right-3 rounded-full bg-black/30 px-2 py-0.5 font-mono text-[9px] text-white/90"
         title={`固定 ${spec.w}×${spec.h} 设计分辨率，按容器等比缩放显示`}

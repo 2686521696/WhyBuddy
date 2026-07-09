@@ -6,7 +6,8 @@
  * （端口 = 数据模型字段 ref），逐节点真跑 /aigc-tryrun，步骤卡实时点亮
  * （running/success/failed/skipped），执行日志逐步展示。
  * 诚实边界不变：节点失败 fail-fast（重试 1 次后停），不伪造下游产物。
- * React Flow 画布留给设计器期（可编辑时）——静态链卡在 SSR/测试下可验证。
+ * 定位（用户裁决）：编排由推演产出、只读 Flow 展示给用户看——不开放
+ * 画布编辑；链卡+箭头+衔接字段就是流程图本体，SSR/测试下可验证。
  */
 
 import React from "react";
