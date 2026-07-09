@@ -154,6 +154,7 @@ function Router() {
       <Route path={`${AGENT_LOOP_PATH}/sliderule`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/workbench`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/workbench/legacy`} component={AgentLoopPage} />
+      <Route path={`${AGENT_LOOP_PATH}/skills`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings/legacy`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/runs/:runId`} component={AgentLoopPage} />
