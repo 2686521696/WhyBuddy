@@ -101,6 +101,12 @@ const PERMISSIVE = new Set([
   "MulanPSL-2.0",
 ]);
 
+/** JS 按 UTF-16 code unit 截断会把 emoji 切成孤代理，JSON 下游（Python/严格
+ * 解析器）直接炸——截断后统一清掉孤代理。 */
+function stripLoneSurrogates(text) {
+  return text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "");
+}
+
 /** markdown 头部 → 语义档案（标题/描述/输入输出线索行） */
 function extractSemantics(md) {
   const text = md.slice(0, 6000).replace(/\r/g, "");
@@ -126,9 +132,9 @@ function extractSemantics(md) {
     }
   }
   return {
-    name,
-    description: descLines.join(" ").slice(0, 300),
-    ioHints: ioHints.slice(0, 6),
+    name: stripLoneSurrogates(name),
+    description: stripLoneSurrogates(descLines.join(" ").slice(0, 300)),
+    ioHints: ioHints.slice(0, 6).map(stripLoneSurrogates),
   };
 }
 
@@ -228,6 +234,30 @@ async function main() {
   );
   console.log("[semantics] census:", census);
   console.log(`[semantics] permissive items: ${items.length} -> ${OUT_PATH}`);
+
+  // 双写前端瘦身版（技能库 marketplace 安装/试跑用；topicIds 供索引行 join）
+  const CLIENT_OUT = path.join(process.cwd(), "client", "src", "data", "skill-semantics.json");
+  writeFileSync(
+    CLIENT_OUT,
+    JSON.stringify(
+      {
+        source: "TRAE 论坛 SOLO 技能创作赛开源仓库（经 trae-skills-index 去重）",
+        generatedAt: new Date().toISOString(),
+        items: items.map((it) => ({
+          repo: it.repo,
+          url: it.url,
+          license: it.license,
+          name: it.name,
+          description: it.description,
+          ioHints: it.ioHints,
+          topicIds: it.forumTopics.map((t) => t.topicId),
+        })),
+      },
+      null,
+      1
+    )
+  );
+  console.log(`[semantics] client slim -> ${CLIENT_OUT}`);
 }
 
 await main();

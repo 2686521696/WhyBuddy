@@ -1,24 +1,37 @@
 /**
- * SkillsLibraryPage — 技能库（TRAE 论坛 SOLO 技能创作赛索引）。
+ * SkillsLibraryPage — 技能库 marketplace（TRAE 论坛 SOLO 技能创作赛）。
  *
- * 合规定位（与采集器 scripts/harvest-trae-skills.mjs 同一契约）：
- *   索引 + 回链，不搬本体——库里只有公开元数据（标题/作者/热度/摘要/
- *   获取渠道链接），技能文件与仓库内容留在原处，版权归原作者；
- *   每条必带原帖回链，页头如实标注数据来源与采集时间。
+ * 形态对齐 TRAE 技能市场：技能市场 / 已安装 双 tab，装完即用——
+ *   - 技能市场：889 项索引（搜索/渠道筛选/回链原帖）；带语义档案的
+ *     543 项可「安装」，纯图文帖诚实禁用（没有可执行定义就不装样子）；
+ *   - 已安装：技能卡直接输入试跑（POST /aigc-tryrun 真 LLM 通道，
+ *     技能描述作为任务上下文），输出/失败如实展示；可卸载。
  *
- * 数据从 @/data/trae-skills-index.json 静态导入——本页是懒加载路由，
- * 索引 JSON 打进本页 chunk，不占主包体积。
+ * 合规定位不变：索引 + 回链，技能本体归原作者；安装的是"语义档案"
+ * （名称/描述/IO 线索），不是搬运的代码。数据从 @/data 静态导入，
+ * 打进本页懒加载 chunk。
  */
 
 import React from "react";
-import { Input, Segmented, Table, Tag, Tooltip } from "antd";
+import { Button, Empty, Input, message, Segmented, Table, Tag, Tooltip } from "antd";
 import {
   CloudDownloadOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
   FileZipOutlined,
   GithubOutlined,
   LinkOutlined,
+  PlayCircleOutlined,
 } from "@ant-design/icons";
 import skillsIndex from "@/data/trae-skills-index.json";
+import skillSemantics from "@/data/skill-semantics.json";
+import {
+  installSkill,
+  isInstalled,
+  loadInstalledSkills,
+  uninstallSkill,
+  type InstalledSkill,
+} from "./installed-skills";
 
 interface SkillIndexItem {
   topicId: number;
@@ -37,15 +50,34 @@ interface SkillIndexItem {
   attachments: string[];
 }
 
-interface SkillsIndexFile {
+interface SkillSemanticsItem {
+  repo: string;
+  url: string;
+  license: string;
+  name: string;
+  description: string;
+  ioHints: string[];
+  topicIds: number[];
+}
+
+const INDEX = skillsIndex as {
   source: string;
   license_note: string;
   fetchedAt: string;
   count: number;
   items: SkillIndexItem[];
-}
+};
 
-const INDEX = skillsIndex as SkillsIndexFile;
+const SEMANTICS = (skillSemantics as { items: SkillSemanticsItem[] }).items;
+
+// topicId → 语义档案（description 非空才算"可安装定义"）
+const SEMANTICS_BY_TOPIC = new Map<number, SkillSemanticsItem>();
+for (const sem of SEMANTICS) {
+  if (!sem.description) continue;
+  for (const tid of sem.topicIds) {
+    if (!SEMANTICS_BY_TOPIC.has(tid)) SEMANTICS_BY_TOPIC.set(tid, sem);
+  }
+}
 
 const KIND_META: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   repo: { label: "开源仓库", color: "green", icon: <GithubOutlined /> },
@@ -62,9 +94,132 @@ const KIND_FILTERS = [
   { label: "图文介绍", value: "none" },
 ];
 
+/** 已安装技能卡：输入 → /aigc-tryrun 真 LLM 试跑 → 输出/失败如实展示 */
+function InstalledSkillCard({
+  skill,
+  onUninstall,
+}: {
+  skill: InstalledSkill;
+  onUninstall: (repo: string) => void;
+}) {
+  const [input, setInput] = React.useState("");
+  const [running, setRunning] = React.useState(false);
+  const [output, setOutput] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const run = async () => {
+    if (running || !input.trim()) return;
+    setRunning(true);
+    setOutput(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/sliderule/aigc-tryrun", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          capability: {
+            id: skill.repo.replace(/[^a-zA-Z0-9]+/g, "_"),
+            name: skill.name,
+            inputFields: ["skill.input"],
+            outputField: "skill.output",
+          },
+          inputs: { "skill.input": input },
+          // 技能描述作为任务上下文：让 LLM 按该技能的定位执行
+          goal: `${skill.name}：${skill.description}`,
+        }),
+      });
+      const body = res.ok
+        ? ((await res.json()) as { ok: boolean; output?: string; code?: string; detail?: string })
+        : { ok: false, code: `HTTP_${res.status}`, detail: await res.text() };
+      if (!body.ok || body.output === undefined) {
+        setError(`${body.code ?? "UNKNOWN"}${body.detail ? ` · ${body.detail.slice(0, 160)}` : ""}`);
+      } else {
+        setOutput(body.output);
+      }
+    } catch (e) {
+      setError(`NETWORK_ERROR · ${String(e).slice(0, 160)}`);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div
+      className="rounded-md border border-stone-200 bg-white p-3 shadow-sm"
+      data-testid={`installed-skill-${skill.repo}`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-stone-800">{skill.name}</span>
+        <Tag color="default" style={{ fontSize: 10, marginInlineEnd: 0 }}>
+          {skill.license}
+        </Tag>
+        <a
+          href={skill.url}
+          target="_blank"
+          rel="noreferrer"
+          className="font-mono text-[10px] text-stone-400 hover:text-blue-600"
+        >
+          {skill.repo}
+        </a>
+        <Button
+          size="small"
+          type="text"
+          danger
+          icon={<DeleteOutlined />}
+          className="ml-auto"
+          onClick={() => onUninstall(skill.repo)}
+          title="卸载（只移除本地安装，不影响原仓库）"
+        >
+          卸载
+        </Button>
+      </div>
+      <div className="mt-1 text-xs text-stone-500">{skill.description}</div>
+      {skill.ioHints.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          {skill.ioHints.slice(0, 3).map((h) => (
+            <div key={h} className="font-mono text-[10px] text-stone-400">
+              {h}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 flex items-start gap-2">
+        <Input.TextArea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="给这个技能输入内容，立即试跑（真 LLM，走服务端通道）"
+          autoSize={{ minRows: 1, maxRows: 4 }}
+        />
+        <Button
+          type="primary"
+          icon={<PlayCircleOutlined />}
+          loading={running}
+          disabled={!input.trim()}
+          onClick={run}
+          data-testid="installed-skill-run"
+        >
+          试跑
+        </Button>
+      </div>
+      {output !== null && (
+        <div className="mt-2 whitespace-pre-wrap rounded bg-stone-50 p-2.5 text-xs leading-5 text-stone-700 ring-1 ring-stone-200">
+          {output}
+        </div>
+      )}
+      {error !== null && (
+        <div className="mt-2 rounded bg-red-50 px-2.5 py-1.5 text-[11px] text-red-600 ring-1 ring-red-200">
+          试跑失败：{error}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SkillsLibraryPage() {
+  const [tab, setTab] = React.useState<"market" | "installed">("market");
   const [query, setQuery] = React.useState("");
   const [kind, setKind] = React.useState<string>("all");
+  const [installed, setInstalled] = React.useState<InstalledSkill[]>(() => loadInstalledSkills());
 
   const items = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -86,6 +241,21 @@ export function SkillsLibraryPage() {
     return counts;
   }, []);
 
+  const handleInstall = (sem: SkillSemanticsItem) => {
+    setInstalled((prev) => {
+      const next = installSkill(prev, {
+        repo: sem.repo,
+        url: sem.url,
+        license: sem.license,
+        name: sem.name,
+        description: sem.description,
+        ioHints: sem.ioHints,
+      });
+      if (next !== prev) message.success(`已安装「${sem.name}」，到「已安装」里直接试跑`);
+      return next;
+    });
+  };
+
   return (
     <div className="mx-auto flex h-full max-w-[1080px] flex-col gap-3 overflow-auto p-5" data-testid="skills-library">
       <div>
@@ -101,136 +271,205 @@ export function SkillsLibraryPage() {
         </div>
         <div className="mt-1 rounded bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 ring-1 ring-amber-200">
           {INDEX.license_note}
+          安装的是技能语义档案（名称/描述/IO 线索），试跑走本产品的 LLM 通道。
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Input.Search
-          allowClear
-          placeholder="搜索标题 / 摘要 / 作者"
-          style={{ maxWidth: 320 }}
-          onSearch={setQuery}
-          onChange={(e) => {
-            if (!e.target.value) setQuery("");
-          }}
-          data-testid="skills-search"
-        />
-        <Segmented
-          options={KIND_FILTERS.map((f) => ({
-            ...f,
-            label:
-              f.value === "all"
-                ? `全部 ${INDEX.count}`
-                : `${f.label} ${kindCounts[f.value] ?? 0}`,
-          }))}
-          value={kind}
-          onChange={(v) => setKind(String(v))}
-          data-testid="skills-kind-filter"
-        />
-      </div>
-
-      <Table<SkillIndexItem>
-        size="small"
-        rowKey="topicId"
-        dataSource={items}
-        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (t) => `共 ${t} 项` }}
-        expandable={{
-          expandedRowRender: (it) => (
-            <div className="space-y-1.5 py-1 text-xs text-stone-600">
-              <div>{it.excerpt || "（无摘要）"}</div>
-              {(it.repos.length > 0 || it.pans.length > 0 || it.attachments.length > 0) && (
-                <div className="flex flex-wrap gap-2">
-                  {[...it.repos, ...it.pans, ...it.attachments].map((link) => (
-                    <a
-                      key={link}
-                      href={link}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-mono text-[10px] text-blue-600 hover:underline"
-                    >
-                      {link.length > 72 ? `${link.slice(0, 72)}…` : link}
-                    </a>
-                  ))}
-                </div>
-              )}
-              {it.tags.length > 0 && (
-                <div>
-                  {it.tags.map((t) => (
-                    <Tag key={t} style={{ fontSize: 10 }}>
-                      {t}
-                    </Tag>
-                  ))}
-                </div>
-              )}
-            </div>
-          ),
-        }}
-        columns={[
-          {
-            title: "技能",
-            dataIndex: "title",
-            ellipsis: true,
-            render: (_: unknown, it: SkillIndexItem) => (
-              <a
-                href={it.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-stone-800 hover:text-blue-600"
-                title="打开原帖（技能获取以原帖为准）"
-              >
-                {it.title}
-              </a>
-            ),
-          },
-          {
-            title: "作者",
-            dataIndex: "author",
-            width: 130,
-            ellipsis: true,
-            sorter: (a, b) => a.author.localeCompare(b.author, "zh"),
-          },
-          {
-            title: "获取渠道",
-            dataIndex: "sourceKind",
-            width: 110,
-            filters: KIND_FILTERS.filter((f) => f.value !== "all").map((f) => ({
-              text: f.label,
-              value: f.value,
-            })),
-            onFilter: (v, it) => it.sourceKind === v,
-            render: (v: string) => {
-              const meta = KIND_META[v] ?? KIND_META.none;
-              return (
-                <Tooltip title={v === "none" ? "原帖仅图文介绍，未附交付物" : "展开行可见链接"}>
-                  <Tag color={meta.color} icon={meta.icon} style={{ marginInlineEnd: 0 }}>
-                    {meta.label}
-                  </Tag>
-                </Tooltip>
-              );
-            },
-          },
-          {
-            title: "浏览",
-            dataIndex: "views",
-            width: 80,
-            sorter: (a, b) => a.views - b.views,
-            defaultSortOrder: "descend",
-          },
-          {
-            title: "赞",
-            dataIndex: "likeCount",
-            width: 64,
-            sorter: (a, b) => a.likeCount - b.likeCount,
-          },
-          {
-            title: "发布",
-            dataIndex: "createdAt",
-            width: 104,
-            sorter: (a, b) => a.createdAt.localeCompare(b.createdAt),
-            render: (v: string) => <span className="text-stone-400">{v.slice(0, 10)}</span>,
-          },
+      <Segmented
+        options={[
+          { label: `技能市场 ${INDEX.count}`, value: "market" },
+          { label: `已安装 ${installed.length}`, value: "installed" },
         ]}
+        value={tab}
+        onChange={(v) => setTab(v as "market" | "installed")}
+        data-testid="skills-tab"
       />
+
+      {tab === "installed" ? (
+        <div className="space-y-2.5" data-testid="skills-installed-list">
+          {installed.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="还没安装技能 — 到「技能市场」挑一个带定义的装上，装完立即可试跑"
+            />
+          ) : (
+            installed.map((s) => (
+              <InstalledSkillCard
+                key={s.repo}
+                skill={s}
+                onUninstall={(repo) => setInstalled((prev) => uninstallSkill(prev, repo))}
+              />
+            ))
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input.Search
+              allowClear
+              placeholder="搜索标题 / 摘要 / 作者"
+              style={{ maxWidth: 320 }}
+              onSearch={setQuery}
+              onChange={(e) => {
+                if (!e.target.value) setQuery("");
+              }}
+              data-testid="skills-search"
+            />
+            <Segmented
+              options={KIND_FILTERS.map((f) => ({
+                ...f,
+                label:
+                  f.value === "all" ? `全部 ${INDEX.count}` : `${f.label} ${kindCounts[f.value] ?? 0}`,
+              }))}
+              value={kind}
+              onChange={(v) => setKind(String(v))}
+              data-testid="skills-kind-filter"
+            />
+          </div>
+
+          <Table<SkillIndexItem>
+            size="small"
+            rowKey="topicId"
+            dataSource={items}
+            pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (t) => `共 ${t} 项` }}
+            expandable={{
+              expandedRowRender: (it) => (
+                <div className="space-y-1.5 py-1 text-xs text-stone-600">
+                  <div>{it.excerpt || "（无摘要）"}</div>
+                  {(it.repos.length > 0 || it.pans.length > 0 || it.attachments.length > 0) && (
+                    <div className="flex flex-wrap gap-2">
+                      {[...it.repos, ...it.pans, ...it.attachments].map((link) => (
+                        <a
+                          key={link}
+                          href={link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono text-[10px] text-blue-600 hover:underline"
+                        >
+                          {link.length > 72 ? `${link.slice(0, 72)}…` : link}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {it.tags.length > 0 && (
+                    <div>
+                      {it.tags.map((t) => (
+                        <Tag key={t} style={{ fontSize: 10 }}>
+                          {t}
+                        </Tag>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ),
+            }}
+            columns={[
+              {
+                title: "技能",
+                dataIndex: "title",
+                ellipsis: true,
+                render: (_: unknown, it: SkillIndexItem) => (
+                  <a
+                    href={it.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-stone-800 hover:text-blue-600"
+                    title="打开原帖（技能获取以原帖为准）"
+                  >
+                    {it.title}
+                  </a>
+                ),
+              },
+              {
+                title: "作者",
+                dataIndex: "author",
+                width: 120,
+                ellipsis: true,
+                sorter: (a, b) => a.author.localeCompare(b.author, "zh"),
+              },
+              {
+                title: "获取渠道",
+                dataIndex: "sourceKind",
+                width: 106,
+                filters: KIND_FILTERS.filter((f) => f.value !== "all").map((f) => ({
+                  text: f.label,
+                  value: f.value,
+                })),
+                onFilter: (v, it) => it.sourceKind === v,
+                render: (v: string) => {
+                  const meta = KIND_META[v] ?? KIND_META.none;
+                  return (
+                    <Tooltip title={v === "none" ? "原帖仅图文介绍，未附交付物" : "展开行可见链接"}>
+                      <Tag color={meta.color} icon={meta.icon} style={{ marginInlineEnd: 0 }}>
+                        {meta.label}
+                      </Tag>
+                    </Tooltip>
+                  );
+                },
+              },
+              {
+                title: "浏览",
+                dataIndex: "views",
+                width: 78,
+                sorter: (a, b) => a.views - b.views,
+                defaultSortOrder: "descend",
+              },
+              {
+                title: "赞",
+                dataIndex: "likeCount",
+                width: 62,
+                sorter: (a, b) => a.likeCount - b.likeCount,
+              },
+              {
+                title: "发布",
+                dataIndex: "createdAt",
+                width: 100,
+                sorter: (a, b) => a.createdAt.localeCompare(b.createdAt),
+                render: (v: string) => <span className="text-stone-400">{v.slice(0, 10)}</span>,
+              },
+              {
+                title: "",
+                key: "__install",
+                width: 92,
+                render: (_: unknown, it: SkillIndexItem) => {
+                  const sem = SEMANTICS_BY_TOPIC.get(it.topicId);
+                  if (!sem) {
+                    return (
+                      <Tooltip title="该帖未提供可安装的技能定义（无仓库语义档案）">
+                        <Button
+                          size="small"
+                          disabled
+                          icon={<DownloadOutlined />}
+                          data-testid={`skill-install-disabled-${it.topicId}`}
+                        >
+                          安装
+                        </Button>
+                      </Tooltip>
+                    );
+                  }
+                  const done = isInstalled(installed, sem.repo);
+                  return done ? (
+                    <Tag color="success" style={{ marginInlineEnd: 0 }}>
+                      ✓ 已安装
+                    </Tag>
+                  ) : (
+                    <Button
+                      size="small"
+                      type="primary"
+                      ghost
+                      icon={<DownloadOutlined />}
+                      onClick={() => handleInstall(sem)}
+                      data-testid={`skill-install-${it.topicId}`}
+                    >
+                      安装
+                    </Button>
+                  );
+                },
+              },
+            ]}
+          />
+        </>
+      )}
     </div>
   );
 }

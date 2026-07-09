@@ -1,13 +1,15 @@
 /**
- * 技能库页面静态渲染回归。
+ * 技能库 marketplace 静态渲染回归。
  * 锁：合规标注（来源回链 + 版权说明 + 采集时间）必须在页面上；
- * 渠道分档筛选齐全；表格出真实索引数据（标题即原帖外链）。
+ * 双 tab（技能市场/已安装）；渠道分档筛选齐全；表格出真实索引数据
+ * （标题即原帖外链）；带语义档案的行出「安装」、纯图文行诚实禁用。
  */
 import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SkillsLibraryPage } from "../SkillsLibraryPage";
 import skillsIndex from "@/data/trae-skills-index.json";
+import skillSemantics from "@/data/skill-semantics.json";
 
 describe("SkillsLibraryPage", () => {
   const html = renderToStaticMarkup(<SkillsLibraryPage />);
@@ -31,5 +33,27 @@ describe("SkillsLibraryPage", () => {
     // 默认按浏览量降序，首页 20 行里必有浏览量最高的条目
     const top = [...skillsIndex.items].sort((a, b) => b.views - a.views)[0];
     expect(html).toContain(`href="${top.url}"`);
+  });
+
+  it("marketplace 双 tab + 安装动作：有语义档案出安装钮，纯图文诚实禁用", () => {
+    expect(html).toContain('data-testid="skills-tab"');
+    expect(html).toContain("技能市场");
+    expect(html).toContain("已安装 0");
+    // 首页 20 行（按浏览量降序）里既有可安装项也有纯图文项
+    const semTopicIds = new Set(
+      (skillSemantics as { items: Array<{ description: string; topicIds: number[] }> }).items
+        .filter((s) => s.description)
+        .flatMap((s) => s.topicIds)
+    );
+    const top20 = [...skillsIndex.items].sort((a, b) => b.views - a.views).slice(0, 20);
+    const installable = top20.filter((it) => semTopicIds.has(it.topicId));
+    const notInstallable = top20.filter((it) => !semTopicIds.has(it.topicId));
+    if (installable.length > 0) {
+      expect(html).toContain(`data-testid="skill-install-${installable[0].topicId}"`);
+    }
+    // 纯图文帖：安装钮禁用（诚实——没有可执行定义就不装样子）
+    if (notInstallable.length > 0) {
+      expect(html).toContain(`data-testid="skill-install-disabled-${notInstallable[0].topicId}"`);
+    }
   });
 });
