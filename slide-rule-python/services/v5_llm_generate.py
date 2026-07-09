@@ -182,6 +182,26 @@ def _emit_delta(chunk: str) -> None:
 _last_call_error: str = ""
 
 
+def _build_user_content(goal: str) -> str:
+    """用户消息装配：意图 + （命中时）业界参考技能块。
+
+    参考块来自宽松协议开源技能语料（v5_skill_reference，技能库二期）——
+    只给命名与输入输出风格的 few-shot 氛围，明确指示不复制内容；
+    语料缺失或与意图无关时不加块，prompt 与从前逐字节一致。
+    """
+    parts = [f"Business intent:\n{goal}"]
+    try:
+        from .v5_skill_reference import reference_prompt_block
+
+        block = reference_prompt_block(goal)
+        if block:
+            parts.append(block)
+    except Exception:
+        pass  # 参考语料是增强项，任何异常都不拦生成主路径
+    parts.append("Produce the five-system JSON now.")
+    return "\n\n".join(parts)
+
+
 def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
     """Real LLM path — provider chain + JSON shape validation. None on any failure."""
     global _last_call_error
@@ -193,7 +213,7 @@ def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
         return None
     messages = [
         {"role": "system", "content": _SCHEMA_INSTRUCTION},
-        {"role": "user", "content": f"Business intent:\n{goal}\n\nProduce the five-system JSON now."},
+        {"role": "user", "content": _build_user_content(goal)},
     ]
     try:
         parsed, _result = call_llm_json_with_shape(
