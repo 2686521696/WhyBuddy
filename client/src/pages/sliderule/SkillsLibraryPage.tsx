@@ -685,11 +685,11 @@ export function SkillsLibraryPage({
 
   return (
     <div
-      className="h-full space-y-3.5 overflow-auto p-6"
+      className="h-full space-y-3.5 overflow-auto px-6 pb-6"
       data-testid="skills-library"
     >
-      {/* 头部：标题 + 真实投稿指南直链 */}
-      <div className="flex items-start justify-between gap-3">
+      {/* 头部：标题 + 真实投稿指南直链（滚动容器已去顶部 padding，这里补 pt-6） */}
+      <div className="flex items-start justify-between gap-3 pt-6">
         <div>
           <div className="flex items-baseline gap-3">
             <h1 className="text-lg font-semibold text-stone-800">技能库</h1>
@@ -747,10 +747,11 @@ export function SkillsLibraryPage({
       </div>
 
       {/* 三层 tab（下划线风格）：滚动吸顶（用户反馈：随滚常驻，方便切换）。
-          -mx-6/px-6 让底色铺满滚动容器整宽；sticky 的 top 相对滚动容器
-          padding 边（实测差 24px = p-6），-top-6 才贴容器真顶不漏卡片 */}
+          结构性防漏缝：滚动容器不留顶部 padding（sticky top 相对 padding 边，
+          有 padding 就有歧义缝）+ !mt-0 清 space-y 的透明 margin，top-0 天然贴死；
+          -mx-6/px-6 底色铺满整宽。tab 高度保持紧凑（用户反馈：别加高） */}
       <div
-        className="sticky -top-6 z-20 -mx-6 !mt-0 flex items-center gap-5 border-b border-stone-200 bg-[#f7f8fa] px-6 pb-0 pt-5"
+        className="sticky top-0 z-20 -mx-6 !mt-0 flex items-center gap-5 border-b border-stone-200 bg-[#f7f8fa] px-6 pb-0 pt-3"
         data-testid="skills-tab"
       >
         {(
