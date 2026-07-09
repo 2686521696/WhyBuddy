@@ -107,6 +107,7 @@ import {
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
+import { AiSuggestionCard } from "./AiSuggestionCard";
 import type { AppPageStatSchema } from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
@@ -361,6 +362,16 @@ export function AppRuntimeScreen({
     code: string;
     detail: string;
   } | null>(null);
+  // AI 建议（加厚 schema 三期"可解释输出"）：生成结果先落建议卡，
+  // 用户确认才写回行字段——AI 永远是建议式，不直改数据。
+  const [aiSuggestion, setAiSuggestion] = React.useState<{
+    action: AppAiActionSchema;
+    entityId: string;
+    rowId: string;
+    output: string;
+    confidence: number | null;
+    rationale: string | null;
+  } | null>(null);
   const spec = DEVICE_SPECS[device];
   const { ref: fitRef, scale } = useScaleToFit(spec.w, spec.h);
   // 弹层（Modal/Select/Drawer）挂进画布，跟随 transform 缩放
@@ -479,13 +490,17 @@ export function AppRuntimeScreen({
     message.success("已保存");
   };
 
-  /** AI 生成：当前行喂给绑定能力（真 LLM），成功后把输出写回本行字段。 */
+  /**
+   * AI 生成（三期"可解释输出"）：当前行喂给绑定能力（真 LLM，explain 通道），
+   * 成功后不直接写回——先落建议卡（建议值+置信度+依据），用户确认才应用。
+   */
   const runAiAction = async (action: AppAiActionSchema) => {
     if (!page?.entityId || !detailRow || aiRunningCapId) return;
     const entityId = page.entityId;
     const rowId = detailRow.id;
     setAiRunningCapId(action.capId);
     setAiError(null);
+    setAiSuggestion(null);
     try {
       const res = await fetch("/api/sliderule/aigc-tryrun", {
         method: "POST",
@@ -499,12 +514,15 @@ export function AppRuntimeScreen({
           },
           inputs: buildAiActionInputs(action, entityId, detailRow.values),
           goal: appTitle,
+          explain: true,
         }),
       });
       const body = res.ok
         ? ((await res.json()) as {
             ok: boolean;
             output?: string;
+            confidence?: number;
+            rationale?: string;
             code?: string;
             detail?: string;
           })
@@ -513,18 +531,34 @@ export function AppRuntimeScreen({
         setAiError({ code: body.code ?? "UNKNOWN", detail: body.detail ?? "" });
         return;
       }
-      const next = updateRow(state, entityId, rowId, {
-        [action.outputFieldId]: body.output,
+      setAiSuggestion({
+        action,
+        entityId,
+        rowId,
+        output: body.output,
+        confidence:
+          typeof body.confidence === "number" ? body.confidence : null,
+        rationale: body.rationale?.trim() || null,
       });
-      apply(next);
-      const updated = (next.entities[entityId] ?? []).find(r => r.id === rowId);
-      if (updated) setDetailRow(updated);
-      message.success(`AI 已写回「${action.outputLabel}」`);
     } catch (e) {
       setAiError({ code: "NETWORK_ERROR", detail: String(e) });
     } finally {
       setAiRunningCapId(null);
     }
+  };
+
+  /** 建议卡「确认并应用」：此刻才真正写回行字段。 */
+  const applyAiSuggestion = () => {
+    if (!aiSuggestion) return;
+    const { action, entityId, rowId, output } = aiSuggestion;
+    const next = updateRow(state, entityId, rowId, {
+      [action.outputFieldId]: output,
+    });
+    apply(next);
+    const updated = (next.entities[entityId] ?? []).find(r => r.id === rowId);
+    if (updated) setDetailRow(updated);
+    setAiSuggestion(null);
+    message.success(`已应用 AI 建议 →「${action.outputLabel}」`);
   };
 
   const handleSubmitToWorkflow = (rowId: string, rowLabel: string) => {
@@ -994,6 +1028,16 @@ export function AppRuntimeScreen({
             <div style={{ marginTop: 8, fontSize: 11, color: INK.faint }}>
               真 LLM 生成中……（与五系统生成同一通道）
             </div>
+          )}
+          {aiSuggestion && aiSuggestion.rowId === detailRow.id && (
+            <AiSuggestionCard
+              outputLabel={aiSuggestion.action.outputLabel}
+              output={aiSuggestion.output}
+              confidence={aiSuggestion.confidence}
+              rationale={aiSuggestion.rationale}
+              onApply={applyAiSuggestion}
+              onDismiss={() => setAiSuggestion(null)}
+            />
           )}
           {aiError && (
             <div
@@ -1600,6 +1644,7 @@ export function AppRuntimeScreen({
               onClose={() => {
                 setDetailRow(null);
                 setAiError(null);
+                setAiSuggestion(null); // 未确认的建议随抽屉关闭丢弃（不悄悄写回）
               }}
               placement={isPhone ? "bottom" : "right"}
               height={isPhone ? "72%" : undefined}

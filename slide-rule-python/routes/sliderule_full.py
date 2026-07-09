@@ -742,12 +742,16 @@ DEFAULT_AIGC_TRYRUN_TIMEOUT_MS = 60_000
 def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     """Run one declared AIGC capability against the real LLM channel.
 
-    payload: {capability: {id?, name, inputFields?, outputField?}, inputs: {ref: value}, goal?}
+    payload: {capability: {id?, name, inputFields?, outputField?}, inputs: {ref: value},
+              goal?, explain?}
     Returns 200 always; honesty is in the body: {ok, output?|code+detail}.
+    explain=true（加厚 schema 三期）：请求结构化 {output, confidence, rationale}，
+    LLM 没按 JSON 返回时诚实降级为纯文本（不造置信度数字）。
     """
     import time as _time
 
     from services.v5_capability_executor import _llm_generate_enabled
+    from services.v5_explainable import EXPLAIN_INSTRUCTION, parse_explained_output
     from sliderule_llm.client import call_llm
 
     _auth(x_internal_key)
@@ -759,6 +763,7 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     inputs: Dict[str, Any] = payload.get("inputs") or {}
     output_field = str(capability.get("outputField") or "").strip()
     goal = str(payload.get("goal") or "").strip()
+    explain = bool(payload.get("explain"))
 
     if not _llm_generate_enabled():
         return {
@@ -774,6 +779,8 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
         "根据能力定义和输入字段值，直接生成该能力的输出内容本身——"
         "不要解释、不要客套、不要 markdown 标题，用简体中文，200 字以内。"
     )
+    if explain:
+        system += EXPLAIN_INSTRUCTION
     user = (
         (f"产品意图：{goal}\n" if goal else "")
         + f"能力名称：{name}\n"
@@ -799,10 +806,18 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
             "elapsedMs": int((_time.monotonic() - started) * 1000),
         }
 
+    elapsed_ms = int((_time.monotonic() - started) * 1000)
+    if explain:
+        parsed = parse_explained_output(result.content)
+        if parsed is not None:
+            return {"ok": True, "explained": True, "elapsedMs": elapsed_ms, **parsed}
+        # LLM 没按结构化返回 → 原文当输出、不带置信度（诚实降级，不造数字）
+        return {"ok": True, "output": result.content, "elapsedMs": elapsed_ms}
+
     return {
         "ok": True,
         "output": result.content,
-        "elapsedMs": int((_time.monotonic() - started) * 1000),
+        "elapsedMs": elapsed_ms,
     }
 
 
