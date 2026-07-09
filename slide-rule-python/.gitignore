@@ -1,5 +1,8 @@
 .venv/
 __pycache__/
 .pytest_cache/
-data/
+# data/ 是运行时会话存储（不入库），但技能参考语料是引擎依赖的静态资产——
+# 目录级忽略改为通配 + 白名单（git 无法从被忽略目录里再包含文件）
+data/*
+!data/skill_semantics.json
 .llm-override.json

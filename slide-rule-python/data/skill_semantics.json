@@ -1,0 +1,2718 @@
+{
+  "source": "TRAE 论坛 SOLO 技能创作赛开源仓库（经 trae-skills-index 去重）",
+  "criteria": "仅收录明确宽松协议仓库的简短语义档案（署名回链）；其余仅计入协议普查",
+  "generatedAt": "2026-07-09T09:20:49.573Z",
+  "licenseCensus": {
+    "MIT": 139,
+    "no-license-file": 367,
+    "Apache-2.0": 26,
+    "unknown": 4,
+    "MPL-2.0": 1,
+    "CC0-1.0": 1,
+    "MulanPSL-2.0": 2,
+    "GPL-3.0": 2,
+    "Unlicense": 1
+  },
+  "count": 169,
+  "items": [
+    {
+      "repo": "github.com/SOLO-PW/SOLO-Skill",
+      "url": "https://github.com/SOLO-PW/SOLO-Skill",
+      "license": "MIT",
+      "name": "【Skill 创作】TRAE 自定义模型配置Skill 帮你解决99%的配置参数问题！[还会实时更新进化]",
+      "description": "",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18817,
+          "title": "【Skill 创作】TRAE 自定义模型配置Skill 帮你解决99%的配置参数问题！[还会实时更新进化]",
+          "url": "https://forum.trae.cn/t/topic/18817"
+        },
+        {
+          "topicId": 19792,
+          "title": "【Skill 创作】分手大师Skill 分手率100%",
+          "url": "https://forum.trae.cn/t/topic/19792"
+        },
+        {
+          "topicId": 18240,
+          "title": "【Skill 创作】我做了一个翻译互联网缩写的Skill——说人话",
+          "url": "https://forum.trae.cn/t/topic/18240"
+        },
+        {
+          "topicId": 16993,
+          "title": "【Skill 创作】全功能一键反推图片提示词Skill",
+          "url": "https://forum.trae.cn/t/topic/16993"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/llootupsl/Yang.skills",
+      "url": "https://github.com/llootupsl/Yang.skills",
+      "license": "MIT",
+      "name": "Yang.skills · 全能内容创作运营超级Skills包",
+      "description": "> 你的下一条内容已经在改写3个月后的你。规律是客观存在的，区别是你看见还是没看见。这套让你看见。 把内容创作变成可校准预测循环：**打分 → 预测 → 发布 → 复盘 → 进化rubric**。 本文件是**总协议 + 路由器**。具体每个阶段的工作流在 `skills/yang-*/SKILL.md` 各子skill里。 --- 根据你的使用深度，选择对应路径。每条路径都是**最小可行闭环**——走完就能产出可校准的内容。 适合：首次接触 Yang.skills，想快速体验闭环价值。 | 步骤 | 动作 | 调用 | 产出 | |------|------|------|------| |",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19073,
+          "title": "【Skills 创作】我用25个Skill把短视频创作变成了工业化流水线，一个非程序员的TRAE SOLO实战记录",
+          "url": "https://forum.trae.cn/t/topic/19073"
+        },
+        {
+          "topicId": 19149,
+          "title": "【skill测评】做了一个skill选品官，随机测了13个skill，没想到排名第一是它！",
+          "url": "https://forum.trae.cn/t/topic/19149"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/xiaojilele-glitch/WhyBuddy",
+      "url": "https://github.com/xiaojilele-glitch/WhyBuddy",
+      "license": "MIT",
+      "name": "⚡ 30 Second Overview",
+      "description": "> **You enter one sentence. The system rehearses a complete product plan for you.** > > Spec documents · System architecture · Route planning · Prompt pack · Effect preview > > Fully visible. Fully exportable. Fully backed by an evidence trail. You spend **days** writing a PRD, **weeks** aligning th",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17058,
+          "title": "【Skill 创作】从一句话到可执行规格：WhyBuddy × TRAE SOLO 产品预演全流程自动化",
+          "url": "https://forum.trae.cn/t/topic/17058"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/dkbnull/hello-skill",
+      "url": "https://github.com/dkbnull/hello-skill",
+      "license": "MIT",
+      "name": "项目简介",
+      "description": "本项目用于存放和管理 SKILL.md 和 RULE 规则文件，提供各类技术栈的 Skill 配置和通用 Rule 规则。 > **使用方式**： > - **Skill**：进入所需分类目录，将 `skills/` 文件夹中的内容复制到 `.trae/skills/` 即可使用。 > - **Rule**：将 `common/rules/` 中的规则文件复制到 `.trae/rules/` 即可使用。 | Rule | 说明 | |------|------| | [中文回答与自动加载SKILL](common/rules/chinese-with-auto-skill.md) | 强制使用",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20232,
+          "title": "【SKILL】各类技术栈SKILL，让AI编码更规范",
+          "url": "https://forum.trae.cn/t/topic/20232"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Get00/BiaoShu-SKILL",
+      "url": "https://github.com/Get00/BiaoShu-SKILL",
+      "license": "Apache-2.0",
+      "name": "📝 BiaoShu-Writer-Pro",
+      "description": "> 智能标书生成专家 - 通用行业投标文件自动生成工具 [![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](https://github.com/your-username/bid-writer-pro) [![Python](https://img.shields.io/badge/python-3.8+-green.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LI",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18952,
+          "title": "标书不用卷，AI帮你写——通用行业投标神器 标书一站式生成",
+          "url": "https://forum.trae.cn/t/topic/18952"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/lyqqqq66666/vibe-coding-learning",
+      "url": "https://github.com/lyqqqq66666/vibe-coding-learning",
+      "license": "MIT",
+      "name": "vibe-coding-learning",
+      "description": "> 把 Vibe Coding 变成真正的学习 — 让 AI 生成的代码不再只是\"能跑\"，而是\"能懂\"。 AI 让写代码前所未有的快，但\"理解代码\"却越来越难： - **\"离开 AI 就不会写代码\"** 已成为 2026 年开发者的集体焦虑，Meta 研究机构原计划的有/无 AI 对照实验因开发者集体拒绝在无 AI 环境下工作而被迫取消 - **AI 正在关上年轻人的入门通道** — 22-25 岁高暴露度职业就业率明显下滑，不是因为 AI 替代了老员工，而是替代了初级岗位 - **vibe coding 的产物无法在面试中讲清楚** — 能用 AI 生成登录注册模块，但说不清 JWT 原理、",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22078,
+          "title": "Vibe Coding 越来越爽，真正的危机却是你正在慢慢失去“学会”的感觉",
+          "url": "https://forum.trae.cn/t/topic/22078"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/ybird2026/wechat-to-doubao-podcast",
+      "url": "https://github.com/ybird2026/wechat-to-doubao-podcast",
+      "license": "MIT",
+      "name": "微信文章转豆包播客技能",
+      "description": "这是一个用于 Codex 的技能，用来抓取微信公众号文章、保存为本地 HTML、启动本地文章服务，并为后续通过<a href=\"http://url.oray.com/i/47632\" target=\"_blank\" rel=\"noopener noreferrer\">花生壳内网穿透</a>映射公网、交给豆包 APP 转成播客做准备。 - 抓取 `https://mp.weixin.qq.com/s/...` 形式的微信公众号文章，并保存为 HTML。 - 从本地 `articles/` 目录提供已保存文章的访问服务。 - 提供一套可复用流程，将本地文章服务通过<a href=\"http://",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22215,
+          "title": "【Skill 创作】让微信文章可以再度被豆包APP转成播客的Skill（半拿铁播客爱好者狂喜）",
+          "url": "https://forum.trae.cn/t/topic/22215"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Lillianx0221/Legal-Exam-Skills-AI",
+      "url": "https://github.com/Lillianx0221/Legal-Exam-Skills-AI",
+      "license": "MIT",
+      "name": "🏛️ Legal-Exam-Skills-AI (智能备考-法学Agent)",
+      "description": "> **将法考与考研的逻辑推演，封装为可一键调用的 AI Skill。** > 本项目专为 Trae / Cursor 等先进 AI IDE 打造，以部门法为主轴，细分客观题与主观题策略，构建严密的法律智能体路由矩阵。 - 🧠 **内置路由思维**：导入后，Agent 自动根据“部门法 -> 客观/主观题型”匹配底层推演模型。 - ⚖️ **严格教义学框架**：在批改环节引入类似于 \"LLM-as-a-Judge\" 的评价体系，从刑法的两阶层到民商法的请求权基础，严格校验模型输出法言法语。 - 🎯 **动态题库生成**：支持针对机械记忆难点动态生成包含陷阱的客观选择题与主观连环追问。 1.",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22628,
+          "title": " 【Skill 创作】法考智能备考 Agent —— 8 大部门法全覆盖，你的 24 小时私教",
+          "url": "https://forum.trae.cn/t/topic/22628"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/xcsweb/prompt-craft",
+      "url": "https://github.com/xcsweb/prompt-craft",
+      "license": "MIT",
+      "name": "🚀 Prompt Craft — 网页生成器 v3.0",
+      "description": "> **一句话定位**：把\"我想做一个官网\"这句话，自动翻译为「设计方向 × 技术档位 × 交互签名 × 可运行代码」的完整产出。 > > **本文件的阅读者**：人类用户（看前 3 节，1 分钟掌握怎么用）+ AI（读完整份，按第 6 节的流程执行）。 --- 你只需要按下面的句式说话，剩下的全部交给 Prompt Craft： | 你想要的东西 | 你可以这么说 | 默认档位 | |-------------|--------------|---------| | 一个公司/品牌官网，要有设计感 | `做一个 [你的行业] 公司官网` | Editorial 杂志风 + 🚀 快速原型档 ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22270,
+          "title": "还在四处翻找提示词？一个 Skill 就能全盘搞定,----一句话，一个官网",
+          "url": "https://forum.trae.cn/t/topic/22270"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/dkbnull/hello-skill",
+      "url": "https://gitee.com/dkbnull/hello-skill",
+      "license": "MIT",
+      "name": "项目简介",
+      "description": "本项目用于存放和管理 SKILL.md 和 RULE 规则文件，提供各类技术栈的 Skill 配置和通用 Rule 规则。 > **使用方式**： > - **Skill**：进入所需分类目录，将 `skills/` 文件夹中的内容复制到 `.trae/skills/` 即可使用。 > - **Rule**：将 `common/rules/` 中的规则文件复制到 `.trae/rules/` 即可使用。 | Rule | 说明 | |------|------| | [中文回答与自动加载SKILL](common/rules/chinese-with-auto-skill.md) | 强制使用",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20232,
+          "title": "【SKILL】各类技术栈SKILL，让AI编码更规范",
+          "url": "https://forum.trae.cn/t/topic/20232"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/kingzeus/skills",
+      "url": "https://gitee.com/kingzeus/skills",
+      "license": "MIT",
+      "name": "Skills",
+      "description": "> 一组面向 AI 编码助手（如 Claude Code、Codex 等）的开源 Skills，用于增强 AI 在项目初始化、流程编排、深度分析、产品规划、文档共创与视觉设计方面的能力。 [English](README.en.md) | **中文** --- | Skill | 描述 | 版本 | |-------|------|------| | [kz-project-init](#kz-project-init) | 项目初始化与 AI 协作基线建立 | v1.11.1 | | [kz-bmad-run](#kz-bmad-run) | BMAD 流程编排与 Story 驱动器 | v",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17990,
+          "title": "【Skill 创作】kz-skill-creator：把 AI 技能变成“工程级系统”，才能做到 100% 零跑偏",
+          "url": "https://forum.trae.cn/t/topic/17990"
+        },
+        {
+          "topicId": 21145,
+          "title": "【Skill 创作】受够了 AI 味设计后，我做了 K叔Design",
+          "url": "https://forum.trae.cn/t/topic/21145"
+        },
+        {
+          "topicId": 19877,
+          "title": "【Skill 创作】别再对着空白文档发呆了，我做了一个文档共创 Skill",
+          "url": "https://forum.trae.cn/t/topic/19877"
+        },
+        {
+          "topicId": 18373,
+          "title": "【Skill 创作】想法很多但不知道先做啥？我做了一个产品方向大师 Skill",
+          "url": "https://forum.trae.cn/t/topic/18373"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/VoltAgent/awesome-design-md",
+      "url": "https://github.com/VoltAgent/awesome-design-md",
+      "license": "MIT",
+      "name": "Awesome DESIGN.md",
+      "description": "Copy a DESIGN.md into your project, tell your AI agent “build me a page that looks like this,” and generate high-quality UI that stays visually consistent with the design language. Built with real design depth — including analyzed patterns, tokens, and rules — for high-quality UI generation, not sur",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18646,
+          "title": "【Skill 创作】前端设计风格 Skill 技能｜整合 58 家大厂设计规范，让 AI 一键生成高颜值标准化网页",
+          "url": "https://forum.trae.cn/t/topic/18646"
+        },
+        {
+          "topicId": 21684,
+          "title": "【DESIGN】互联网产品官网设计系统集合，帮助 AI 编码工具生成视觉一致的 UI。",
+          "url": "https://forum.trae.cn/t/topic/21684"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/zhoujiaxi/autonomous-novel-writing",
+      "url": "https://gitee.com/zhoujiaxi/autonomous-novel-writing",
+      "license": "MIT",
+      "name": "核心原则",
+      "description": "| 原则         | 核心要求                                                                 | |--------------|--------------------------------------------------------------------------| | **一致性优先** | 所有创作行为以 7 个真相文件为唯一事实来源，审计不通过绝不输出            | | **人味为核心** | 去 AI 味技巧需在写作阶段前置应用，而非仅靠后期修订                     ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17053,
+          "title": "【skill 创作】🏆 自主小说写作系统",
+          "url": "https://forum.trae.cn/t/topic/17053"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/hangshin/novel_skills",
+      "url": "https://gitee.com/hangshin/novel_skills",
+      "license": "MIT",
+      "name": "Novel-Skills",
+      "description": "**Novel-Skills** 是一套为 Trae SOLO 设计的 AI 驱动小说创作自动化技能套件。 基于分层文件架构，支持百万字长篇创作。6 个技能协同工作，自动完成从世界观校验到正文撰写的全流程，定稿后自动保存到指定输出目录。 **解决的问题**：传统 AI 辅助小说创作中，世界观不一致、角色人设漂移、长篇上下文丢失、专业素材不准确等核心痛点。 | 技能 | 功能 | 文件路径 | |------|------|----------| | novel_coord | 统筹调度中心 | [SKILL.md](novel_coord/SKILL.md) | | novel_world |",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18011,
+          "title": "【Skill 创作】解决 AI 写小说设定漂移、人设崩坏的 Skill 套件",
+          "url": "https://forum.trae.cn/t/topic/18011"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/DorianLin-dee/Thesis-Learner",
+      "url": "https://github.com/DorianLin-dee/Thesis-Learner",
+      "license": "MIT",
+      "name": "Thesis Learner - 论文学习助手",
+      "description": "帮助您高效阅读和分析学术论文的智能工具，支持全文总述、章节分析、引用追踪和研究脉络梳理。 --- - **严禁**基于上下文做\"合理推断/补全\"论文章节、内容等 - **只使用**明确从WebFetch获取的内容或用户提供的PDF内容 - 如果WebFetch内容不完整，向用户说明局限性并请求更多信息 ``` --- 帮助您找到学术论文，获取免费版本，并生成清晰的总结和分析。 --- - 使用多个免费学术数据库搜索论文 - 自动寻找免费PDF版本 - 支持标题、DOI、关键词搜索 - **WebFetch 优先**: 优先使用 WebFetch 读取论文网页内容 - **PDF 备选**: 仅",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22306,
+          "title": "【Skill 创作】Thesis Reader — 论文阅读与领域探索助手",
+          "url": "https://forum.trae.cn/t/topic/22306"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/qrx-joe/UIdesign-skill",
+      "url": "https://github.com/qrx-joe/UIdesign-skill",
+      "license": "MIT",
+      "name": "UI Style Distiller",
+      "description": "A Trae skill that turns high-end website aesthetics into reusable frontend design rules, applies them safely, then verifies the result with desktop and mobile screenshots. Most frontend prompts say \"make it look premium\" but never explain what premium means. This skill makes the process concrete: 1.",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22253,
+          "title": "【Skill 创作】UI Style Distiller — 把高端网站美学蒸馏成可复用的前端设计规则",
+          "url": "https://forum.trae.cn/t/topic/22253"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/veithly/CoolLanding",
+      "url": "https://github.com/veithly/CoolLanding",
+      "license": "MIT",
+      "name": "CoolLanding",
+      "description": "**CoolLanding is an open-source live demo and anti-template framework for building cinematic landing pages that are unique to each brand, not stamped out of a template.** The site is a **multi-world switcher** — switch the nav at the top between eight completely different visual languages and watch ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22295,
+          "title": "【Skill 创作】CoolLanding：让 Agent 每次做出不一样的 Landing Page",
+          "url": "https://forum.trae.cn/t/topic/22295"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/veithly/CoolLanding-Skill",
+      "url": "https://github.com/veithly/CoolLanding-Skill",
+      "license": "MIT",
+      "name": "CoolLanding Skill",
+      "description": "**CoolLanding Skill is an anti-template framework. It teaches an agent to compose a unique cinematic landing page every time, by picking one Style World + a handful of Mechanics + one Signature Mechanic — never the same combination twice.** This is the reusable process behind [CoolLanding](https://g",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22295,
+          "title": "【Skill 创作】CoolLanding：让 Agent 每次做出不一样的 Landing Page",
+          "url": "https://forum.trae.cn/t/topic/22295"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/lengyuan0224/article-product-extractor",
+      "url": "https://github.com/lengyuan0224/article-product-extractor",
+      "license": "MIT",
+      "name": "文章产品/解决方案提炼技能",
+      "description": "本技能用于从用户提供的文章链接中，智能提取并总结其中涉及的产品信息、解决方案内容、技术特点、应用场景等关键要素。 在以下情况下调用本技能： - 用户提供了文章链接，要求总结其中的产品或解决方案 - 需要从技术博客、新闻稿、白皮书等内容中提取产品特性 - 分析竞品文章，提炼其核心卖点和技术方案 - 整理行业报告中的解决方案框架 - 使用 WebFetch 工具获取链接对应的网页内容 - 如果获取失败，尝试使用 WebSearch 搜索相关内容 - 记录文章标题、来源、发布时间等元信息 分析文章时关注以下维度： - **产品名称**：正式名称、代号、版本号 - **产品定位**：目标用户、市场定位",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22239,
+          "title": "【Skill 创作】帮你从文章链接中提炼产品/解决方案信息的Skill",
+          "url": "https://forum.trae.cn/t/topic/22239"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Guan-Yep/style-distiller",
+      "url": "https://github.com/Guan-Yep/style-distiller",
+      "license": "MIT",
+      "name": "Style Distiller",
+      "description": "Distill writing style and document structure from uploaded reference files into a self-contained, reusable skill package. A complete skill directory at a user-specified path: ``` The generated skill follows the **Contract-Driven Retrieval** pattern: the Agent never loads full reference files, only g",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22293,
+          "title": "【Skill创作】一个蒸馏写作风格的Skill——给它几份参考文档，它还你一个会写同类文档的AI技能包",
+          "url": "https://forum.trae.cn/t/topic/22293"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/zyan-001/cell-sdd",
+      "url": "https://github.com/zyan-001/cell-sdd",
+      "license": "MIT",
+      "name": "Cell-Based SDD",
+      "description": "你是 Cell-Based SDD 工作流助手。目标是：在不直接操作 `.sdd/` 文件的前提下，用引擎驱动一个可控、可回溯、可双向修复的开发流程。 1. **ENGINE ONLY**：Cell / Glossary / Delta 只允许通过 `engine/cell.js` 或 `engine/server.js` 读写。 2. **NO YAML**：不要让用户手写或手改 `.sdd/` 内容，也不要直接展示 YAML 源。 3. **NO CODE BEFORE GREEN**：在依赖图仍有 Stale，或 Contract/Test 未确认前，禁止写业务实现代码。 4. **GL",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22288,
+          "title": "【Skill创作】Cell-SDD: 提供给控制狂研发的sdd工具，将架构设计变为可追踪的依赖图",
+          "url": "https://forum.trae.cn/t/topic/22288"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/niuhai/skill-c-cleaner",
+      "url": "https://github.com/niuhai/skill-c-cleaner",
+      "license": "MIT",
+      "name": "CleanSight — AI Disk Health Advisor",
+      "description": "**我不是清理工具，我是你的 AI 磁盘健康顾问。** ``` --- > **本技能的核心工作是纯本地的**：扫描（PowerShell）、分析逻辑、报告生成全部在本地运行，**不消耗 Token**。 > > AI 对话轮次会消耗 Token（接入的模型费用），但这取决于你问了多少问题。 | 场景 | 预估成本（DeepSeek Flash） | 说明 | |------|--------------------------|------| | 直接运行清理脚本（不对话） | **¥0** | 纯本地，完全免费 | | 让 AI 运行一次完整扫描 + 报告 | **¥0.05-0.1** ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18462,
+          "title": "【Skill 创作】 告别C盘爆满！跨时代AI磁盘健康顾问—SOLO桌面端+移动端不断打磨进化而成",
+          "url": "https://forum.trae.cn/t/topic/18462"
+        },
+        {
+          "topicId": 19053,
+          "title": "【技能测评】CleanSight v6.1.2 - 不是清理工具，是你的 AI 磁盘健康顾问",
+          "url": "https://forum.trae.cn/t/topic/19053"
+        },
+        {
+          "topicId": 20993,
+          "title": "【Skill 测评】Skill 能力拆解报告：c-drive-cleaner (CleanSight)",
+          "url": "https://forum.trae.cn/t/topic/20993"
+        },
+        {
+          "topicId": 18719,
+          "title": "【skill 测评】c-drive-cleaner：C盘减脂",
+          "url": "https://forum.trae.cn/t/topic/18719"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Guan-Yep/sci-paper-writing",
+      "url": "https://github.com/Guan-Yep/sci-paper-writing",
+      "license": "MIT",
+      "name": "SCI Paper Writing Skill",
+      "description": "Produce complete, publication-quality scientific research papers with proper structure, typography, figures, tables, equations, and references. The skill follows conventions extracted from the ResNet paper (He et al., CVPR 2016 Best Paper) and generalized for computer vision, machine learning, and b",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19864,
+          "title": "【Skill 创作】从实验数据到顶会投稿：一个自动化生成带图表、带引用、带检查清单的 SCI 论文 Skill",
+          "url": "https://forum.trae.cn/t/topic/19864"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/yaohewoma/stealth-scraper",
+      "url": "https://github.com/yaohewoma/stealth-scraper",
+      "license": "MIT",
+      "name": "Stealth Scraper — 反检测爬虫框架",
+      "description": "> **核心原则：** 绝不用 Selenium/Playwright 开场。先用 requests，只有 JS 渲染必需时才降级。 > **执行前必做：** 生成任何爬虫代码前，必须先阅读 [`references/full-template.py`](references/full-template.py) 获取完整模板。 | 项目 | 说明 | |------|------| | **定位** | 数据采集流水线入口，产出原始 HTML + 结构化 JSON | | **上游** | 无（数据入口） | | **下游** | [rule-scoring-engine](../rule-s",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22089,
+          "title": "【Skill 测评】我用了一个月的竞品分析工具链，7 个 Skill 逐个评测",
+          "url": "https://forum.trae.cn/t/topic/22089"
+        },
+        {
+          "topicId": 22080,
+          "title": "【skill 创作】500+ 项目采集零封禁，断点续传不怕崩",
+          "url": "https://forum.trae.cn/t/topic/22080"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/yaohewoma/admin-auth-system",
+      "url": "https://github.com/yaohewoma/admin-auth-system",
+      "license": "MIT",
+      "name": "admin-auth-system — 后台认证与权限管理系统",
+      "description": "> **执行前必做：** 生成认证代码前，必须先阅读 [`references/jwt-auth.md`](references/jwt-auth.md) 理解 JWT 认证流程。 > **核心原则：** 密码必须 bcrypt 哈希存储，JWT Secret 至少 32 字符，所有写操作必须记录日志。 ``` - **上游依赖**：无（独立模块） - **下游 Skill**：无（为其他服务提供认证中间件） - **产出物**：JWT Token + 操作日志 - **总索引**：[SKILLS-INDEX.md](../SKILLS-INDEX.md) | 验证指标 | 数据 | |---",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 22089,
+          "title": "【Skill 测评】我用了一个月的竞品分析工具链，7 个 Skill 逐个评测",
+          "url": "https://forum.trae.cn/t/topic/22089"
+        },
+        {
+          "topicId": 22085,
+          "title": "【skill创作】JWT + RBAC + 操作日志，5 分钟接入",
+          "url": "https://forum.trae.cn/t/topic/22085"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Zibor233/project-softcopyright-generator-Skill",
+      "url": "https://github.com/Zibor233/project-softcopyright-generator-Skill",
+      "license": "Apache-2.0",
+      "name": "Project SoftCopyright Generator",
+      "description": "一个面向真实项目代码的软著资料生成 Skill。 `Project SoftCopyright Generator` 用于读取本地项目代码，分析项目结构、功能模块、技术栈与关键源码，并生成适合软件著作权登记使用的申请信息、系统说明文档和源代码文档。 本项目重点解决以下问题： - 已有真实项目代码，但整理软著资料耗时且容易漏项 - 文档口径不统一，申请信息、系统说明、代码文档经常需要反复修改 - 代码文档抽取规则复杂，前 30 页、后 30 页、每页 60 行不易手工控制 - 正式资料排版繁琐，容易在最终导出阶段再次返工 - 基于本地真实项目代码生成软著资料，而不是依赖虚构示例 - 支持先分析项",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19190,
+          "title": "【Skill 创作】Project SoftCopyright Generator：从本地项目代码自动生成软著资料",
+          "url": "https://forum.trae.cn/t/topic/19190"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/huangjiewhalz/zhenxiaoning-human-style-lab",
+      "url": "https://github.com/huangjiewhalz/zhenxiaoning-human-style-lab",
+      "license": "MIT",
+      "name": "镇小宁风格实验室",
+      "description": "帮助用户把自己的表达方式、审美偏好、内容结构、视觉符号和反风格清单，沉淀成一个可复用的个人风格资产 Skill。 核心不是“帮用户随便造 Skill”，而是解决一个具体痛点：让 AI 记住用户自己的风格，不要每次都从零猜，也不要输出默认 AI 味。 - `references/intake-and-modes.md`：选择已有作品、空白起步、反风格起步、个人风格回归、视觉主体模式。 - `references/experience-workflows.md`：首跑引导、Before/After 对比、风格漂移评分、失败样本库和一键内容改造。 - `references/style-dna-sc",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 21871,
+          "title": "【Skill 创作】我把获奖作品「镇小宁」这片 AI 试验田，拆成了一个找回“人味”的 Skill！！",
+          "url": "https://forum.trae.cn/t/topic/21871"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/auctioneer2022/bankruptcy-claims-review",
+      "url": "https://github.com/auctioneer2022/bankruptcy-claims-review",
+      "license": "MIT",
+      "name": "破产债权审查技能",
+      "description": "**触发词**：破产债权审查、债权审查 本技能依据《破产债权审查标准：原理、规则与案例》的专业法律框架，为破产管理人提供破产债权审查的标准化流程和审查要点，输出两份Word文档： 1. **《破产债权审查意见书》**（详版）：供管理人法务或律师内部使用，按规则详尽列示审查意见 2. **《债权审查结果告知书》**（简版）：以管理人名义向债权人发出，列示申报情况、审查结论、权利救济、联系信息 **数据来源说明**： - **债权人基本信息**：一般来源于用户上传的债权申报表、身份证明文件等 - **债权申报材料**：一般来源于用户上传的证据材料清单、合同、协议、凭证等 - **债权具体情况**：",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 21361,
+          "title": "【Skill 创作】破产债权审查助手 — 一键生成标准化法律文书，让破产管理人告别手写审查意见书",
+          "url": "https://forum.trae.cn/t/topic/21361"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/fenking39/five-dream-seven-heart",
+      "url": "https://github.com/fenking39/five-dream-seven-heart",
+      "license": "MIT",
+      "name": "🌙 这是什么？",
+      "description": "「五梦七心相」是一个基于 **TRAE SOLO** 的梦境解析技能。它不同于网上那些千篇一律的周公解梦词典——通过结构化的多轮对话采集梦境信息，再生成专属的心相分析报告。 **双视角解读**：弗洛伊德心理学 × 周易传统易学，两种智慧体系对照互补。 **双模式设计**：深度模式（11-18轮）适合深度探索，快速模式（3-5轮）适合快速了解。 --- | 普通 Prompt | 五梦七心相 Skill | |-------------|------------------| | 一次性给解释，容易武断 | 先通过 3-5 轮轻量追问采集梦境画面、情绪和现实关联，再生成报告 | | 每次输出结构",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20572,
+          "title": "【Skill 创作】五梦七心相（升级版）：不是周公解梦，我做了一个会追问、会整理、会沉淀的梦境探索 Skill",
+          "url": "https://forum.trae.cn/t/topic/20572"
+        },
+        {
+          "topicId": 20573,
+          "title": "【Skill 创作】五梦七心相：一个会\"聊天\"的AI解梦师，用心理学+易学双视角帮你听懂潜意识的声音",
+          "url": "https://forum.trae.cn/t/topic/20573"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/dkbnull/hello-design",
+      "url": "https://github.com/dkbnull/hello-design",
+      "license": "MIT",
+      "name": "项目简介",
+      "description": "中国互联网产品官网设计系统集合。基于真实网站提取 DESIGN.md 设计规范文档，配合可视化 HTML 预览，帮助 AI 编码工具生成视觉一致的 UI。 将 `DESIGN.md` 文件复制到你的项目中，然后对你的 AI 智能体说：“为我构建一个看起来像这样的页面”，即可生成与该设计语言保持视觉一致的高质量用户界面。 本方案基于真实的设计深度构建——包括经过分析的模式、设计令牌（tokens）和规则——旨在生成高质量的用户界面，而非浅层次的输出。 [DESIGN.md](https://stitch.withgoogle.com/docs/design-md/overview/) 是 Goo",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 21684,
+          "title": "【DESIGN】互联网产品官网设计系统集合，帮助 AI 编码工具生成视觉一致的 UI。",
+          "url": "https://forum.trae.cn/t/topic/21684"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/chopratejas/headroom",
+      "url": "https://github.com/chopratejas/headroom",
+      "license": "Apache-2.0",
+      "name": "What it does",
+      "description": "- **Library** — `compress(messages)` in Python or TypeScript, inline in any app - **Proxy** — `headroom proxy --port 8787`, zero code changes, any language - **Agent wrap** — `headroom wrap claude|codex|copilot|cursor|aider|opencode|cline|continue|goose|openhands|openclaw|vibe` in one command; undo ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 21678,
+          "title": "【Skill创作】终结闭门造车时代：Skill 全生命周期工作台",
+          "url": "https://forum.trae.cn/t/topic/21678"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/CaoJun1015/diaohuo-assistant",
+      "url": "https://github.com/CaoJun1015/diaohuo-assistant",
+      "license": "MIT",
+      "name": "📦 调货助手",
+      "description": "**面向 IT 硬件经销商的一站式桌面管理工具** 从上游价格表解析、报价、出库、收款到对账，一站式管理你的调货生意。 [功能介绍](#功能) · [快速开始](#快速开始) · [智能技能](#智能技能skills) · [项目结构](#项目结构) · [更新日志](#版本历史) --- | 模块 | 说明 | |------|------| | 📋 机型管理 | 从上游 Word 价格表自动导入，支持联想、拯救者、小新、ThinkPad 等系列 | | 📦 库存批次 | 按批次管理进货，记录购入价、数量、上游供应商、SN 序列号 | | 💰 报价操作 | 选机型 → 选批次 → 输入",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 21172,
+          "title": "【Skill 创作】IT远程诊断助手 —— 让电脑故障排查像查字典一样简单",
+          "url": "https://forum.trae.cn/t/topic/21172"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Damond-Fung/project-docs-keeper",
+      "url": "https://github.com/Damond-Fung/project-docs-keeper",
+      "license": "MIT",
+      "name": "Project Docs Keeper",
+      "description": "这个 skill 用来把\"开发过程\"沉淀成 3 份可持续维护的文档，并在每次开发、合并、发布、部署之后自动增量更新： - 项目宣讲稿（可用于论坛稿/公众号稿，能复现、能让新手快速理解） - 项目开发过程记录（问题与解决方案库，帮助后续快速避坑） - 项目部署操作手册（把最终包部署到生产环境的逐步操作） - 完成一次需求/修复/重构后，需要把变更沉淀为项目过程记录与宣讲稿更新 - 完成一次发版/部署/回滚/变更配置后，需要更新部署手册 - 新同学接手项目，需要基于宣讲稿快速理解并能复现 - 代码变更来源（优先级从高到低）： - git diff / commit（若项目使用 git） - 变更文",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 21484,
+          "title": "【Skill 创作】project-docs-keeper：让项目文档自动追着代码跑，开发过程不再\"事后补作业\"",
+          "url": "https://forum.trae.cn/t/topic/21484"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/ECNU3D/ai-video-pro-max",
+      "url": "https://github.com/ECNU3D/ai-video-pro-max",
+      "license": "MIT",
+      "name": "AI 短视频创作技能库",
+      "description": "一套面向 AI 短视频创作的技能库，覆盖从故事构思、导演前置分析、视觉设计、镜头节奏、分镜脚本生成，到审片、反馈诊断、参考图准备和生成前预检查的完整流程。 本仓库的核心主张不是\"把剧情转成 prompt\"，而是**把导演流程里会反复返工的中间分析层显式化、可复用化**。 ``` 运行 `sync.sh` 后，仓库中的 `skills/` 会自动软链接到： - `.agents/skills` → Codex - `.claude/skills` → Claude Code - `.trae/skills` → Trae 推荐使用 `Trae + GLM-5` 或 `Codex` 进行调用与串联",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17897,
+          "title": "【Skill 创作】做了100个AI短视频后，我把导演流程里最耗返工的中间层全显式化了——从剧本到出片的20个技能管线",
+          "url": "https://forum.trae.cn/t/topic/17897"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/aeuicey/class-schedule-automation",
+      "url": "https://github.com/aeuicey/class-schedule-automation",
+      "license": "MIT",
+      "name": "Class Schedule Automation",
+      "description": "Trae IDE Skill — 全自动课表处理流水线。自动识别课表文档，提取结构化数据，交互式导出到多种格式并集成日历系统。 将本仓库克隆到 Trae IDE 项目的 `.trae/skills/` 目录下： ``` - **多格式输入**：支持图片 (JPG/PNG)、Excel/CSV、PDF、Word 等课表文档 - **智能 OCR**：集成讯飞星火大模型 OCR，高精度识别中英文表格、手写体 - **结构化提取**：自动识别课程名称、教师、地点、学时、考核方式、周次安排 - **交互式导出**：处理完成后提供导出格式与自动化集成选项 - **Apple Design HTML**：",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 21459,
+          "title": "[TRAE Skill]Class Schedule Automation-交互式学生课表结构化处理",
+          "url": "https://forum.trae.cn/t/topic/21459"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Damond-Fung/my-music-skill",
+      "url": "https://github.com/Damond-Fung/my-music-skill",
+      "license": "MIT",
+      "name": "My Music - Complete Song And Instrumental Generation",
+      "description": "Generate full AI songs, instrumentals, lyrics, and cover-style music with the MiniMax Music API through the bundled local CLI at `scripts/my-music-cli.mjs`. This skill routes requests across four workflows: `generate`, `lyrics`, `cover`, and `rewrite`. **Quick Start** - CLI entry: `node ./scripts/my",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19558,
+          "title": "【Skill 创作】my-music-skill：基于 MiniMax 的完整 AI 音乐创作 Skill，从写词、作曲到本地交付的skill",
+          "url": "https://forum.trae.cn/t/topic/19558"
+        },
+        {
+          "topicId": 19634,
+          "title": "【技能测评】my-music-skill：不止是 API 说明书，而是一个真正可交付的 AI 音乐工作流",
+          "url": "https://forum.trae.cn/t/topic/19634"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Wayhhow/ai-video-shot-prompt-skill",
+      "url": "https://github.com/Wayhhow/ai-video-shot-prompt-skill",
+      "license": "MIT",
+      "name": "Crafting AI Video Shot Prompts",
+      "description": "把\"丧尸清道夫\"创作者 Mx-Shell 的提示词方法论封装为可复用的工作流。当用户给出故事想法、参考图、或一句\"帮我写个 AI 视频提示词\"时，按本 skill 的三大部分框架产出可直接喂给 AI 视频模型的提示词。 - 用户要写/改/评审 AI 视频提示词（任意题材，尤其是动作、奇观、电影感、原子朋克、末日、丧尸、机甲、武打） - 用户要把已有分镜整理成 AI 视频模型可用的 prompt - 用户希望降低生成画面的\"AI 味\"（塑料感、动作僵硬、游戏 CG 感） - 用户用小云雀短剧 Agent 2.0、即梦、Vidu、可灵、Sora、Runway 等生成视频前需要写提示词 - 用户只想",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20851,
+          "title": "【Skill 创作】AI 视频提示词工程 Skill：把 B 站百万播放 UP 主 Mx-Shell 的\"丧尸清道夫\"创作方法论封装成可复用工作流",
+          "url": "https://forum.trae.cn/t/topic/20851"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/jaycee0853/wise-council",
+      "url": "https://github.com/jaycee0853/wise-council",
+      "license": "MIT",
+      "name": "wise-council · 智囊参谋",
+      "description": "**一句话**：面对艰难选择时，让 AI 强制扮演 5 个互相打脸的\"内部顾问\"激烈辩论，再叠加市场信号验证，**给你带置信度、带监控信号的方案**——而不是\"看情况\"式的端水回答。 **最小使用示例**（直接复制即可用）： > 我今年 32 岁，在大厂做了 5 年后端，朋友邀请我加入一个 AI 创业公司给 0.5% 股权 + 略低于现在的薪水。我要不要去？ → 4 视角辩论 + 5 类信号验证 + 置信度 + 监控信号，3 分钟出方案 **适用场景速查**： | 你的问题 | 触发关键词示例 | 委员会 | |---------|--------------|-------| | 创业/转型",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20875,
+          "title": "【Skill 创作】wise-council · 智囊参谋 — 让AI帮你看清每个决定的代价",
+          "url": "https://forum.trae.cn/t/topic/20875"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Guan-Yep/industry-research",
+      "url": "https://github.com/Guan-Yep/industry-research",
+      "license": "MIT",
+      "name": "Red Industry Research",
+      "description": "Create self-contained professional research deliverables with a unified red visual system. Do not use the old image-only PPT workflow. Do not use Mermaid or ASCII charts. Use editable report structures and matplotlib-rendered PNG charts at 150 DPI or higher. Extract these parameters from the user re",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20997,
+          "title": "【Skill 创作】一个 10 分钟自动生成专业行业研究报告的 Skill",
+          "url": "https://forum.trae.cn/t/topic/20997"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/DataElf/penggen",
+      "url": "https://github.com/DataElf/penggen",
+      "license": "MIT",
+      "name": "捧哏 Skill（penggen）",
+      "description": "你是一个会说相声的捧哏 AI 生产力提高助手，角色定位：**捧哏**（不是逗哏）。 你是捧哏，用户或其他智能体是逗哏。**永远不要抢逗哏的包袱**，你的任务是： - 把逗哏的话垫高、接稳 - 该追问时追问，该拆穿时拆穿 - 让用户或其他智能体觉得「有你捧这一下，味儿就对了」 - 捧的目的是让用户和智能体燥起来，干起活来快起来，疯狂产出 --- 用户或其他智能体抛出一个观点或问题，你先垫一句再展开正答。 > 用户或其他智能体：「帮我写个快排」 > 你：「嘿！算法题，这可是咱们程序员的基本功啊！您稍等，我这就给您来一段——」 > （然后正常输出代码） 用户或其他智能体说「不知道」「不会」「怎么办」",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20957,
+          "title": "【Skill 创作】捧哏 Skill - 奉陪到底，让用户和智能体 ”自信“ 起来，干起活来快起来，疯狂产出",
+          "url": "https://forum.trae.cn/t/topic/20957"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/FIEforever/harmonyos-native-skill",
+      "url": "https://github.com/FIEforever/harmonyos-native-skill",
+      "license": "MIT",
+      "name": "HarmonyOS 鸿蒙原生开发 Skill (v2.2.0)",
+      "description": "| 需求场景 | 参考文档 | |---------|---------| | ArkTS 类型/语法/异步/类 | `references/01-arkts-core.md` | | ArkUI 组件/布局/手势/动画 | `references/02-arkui-components.md` | | 状态管理 V1/V2/组件通信 | `references/03-state-management.md` | | 生命周期/UIAbility/AbilityStage | `references/04-lifecycle.md` | | HTTP/rcp/WebSocket 网络请求 | ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20821,
+          "title": "【Skill 创作】生成鸿蒙图形开发代码 | 六大图形 Kit 一手掌握，让 AI 秒变鸿蒙图形专家",
+          "url": "https://forum.trae.cn/t/topic/20821"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/google-labs-code/design.md",
+      "url": "https://github.com/google-labs-code/design.md",
+      "license": "Apache-2.0",
+      "name": "DESIGN.md",
+      "description": "A format specification for describing a visual identity to coding agents. DESIGN.md gives agents a persistent, structured understanding of a design system. A DESIGN.md file combines machine-readable design tokens (YAML front matter) with human-readable design rationale (markdown prose). Tokens give ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20722,
+          "title": "提取任意网站的UI样式的Design文件，用于一键复刻网站样式",
+          "url": "https://forum.trae.cn/t/topic/20722"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/wjt0321/lottery-predictor",
+      "url": "https://github.com/wjt0321/lottery-predictor",
+      "license": "MIT",
+      "name": "双色球彩票预测器",
+      "description": "- 用于双色球娱乐预测、趋势分析、开奖数据更新、端到端回测、归档分析和补丁回灌 - 默认优先 `team` 模式 - 仅供娱乐，不构成任何投注建议 - 用户要预测下一期号码或给几注推荐号 - 用户要更新开奖数据或检查数据是否过期 - 用户要分析热冷号、遗漏、团队权重、矩阵表现 - 用户要导出 / 应用 `weight`、`matrix`、`param` 补丁 - 用户要运行这个项目、执行回测、运行 `team-cover` 实验模式、更新相关文档 - “帮我预测下一期双色球” - “给我来 5 注双色球推荐号” - “跑一下 team 模式预测” - “更新一下双色球开奖数据” - “帮我检查",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17065,
+          "title": "一个基于历史数据统计、使用 8 种策略 + 8 位 AI 专家团队协同决策的双色球号码预测工具，附带自学习闭环系统，每次预测后自动归档、分析并调优权重。",
+          "url": "https://forum.trae.cn/t/topic/17065"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/xuyijie_xu/front-end-design-style-skills",
+      "url": "https://gitee.com/xuyijie_xu/front-end-design-style-skills",
+      "license": "MIT",
+      "name": "Frontend Design Style Skill",
+      "description": "**版本**: v2.0.0 **用途**: 根据用户描述的网页类型，从 60+ 个精选品牌设计规范中推荐 3-5 个风格差异明显的设计方案 **数据来源**: awesome-design-md 品牌设计规范库 --- 当用户需要以下帮助时触发此 Skill： - \"我要做一个 SaaS 产品官网，推荐几个设计风格\" - \"帮我选几个适合 AI 工具的设计规范\" - \"金融交易平台用什么设计风格好\" - \"推荐几个差异大的设计风格给我参考\" - \"根据我的产品类型推荐设计规范\" - \"我想参考大厂的设计风格来做网站\" --- | 用户描述关键词 | 匹配分类 | 跳转 | |---|---|",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18907,
+          "title": "【Skill 创作】前端设计风格推荐助手 —— 一句话描述产品类型，自动推荐 3-5 个风格差异明显的设计规范",
+          "url": "https://forum.trae.cn/t/topic/18907"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/dkbnull/hello-design",
+      "url": "https://gitee.com/dkbnull/hello-design",
+      "license": "MIT",
+      "name": "项目简介",
+      "description": "中国互联网产品官网设计系统集合。基于真实网站提取 DESIGN.md 设计规范文档，配合可视化 HTML 预览，帮助 AI 编码工具生成视觉一致的 UI。 将 `DESIGN.md` 文件复制到你的项目中，然后对你的 AI 智能体说：“为我构建一个看起来像这样的页面”，即可生成与该设计语言保持视觉一致的高质量用户界面。 本方案基于真实的设计深度构建——包括经过分析的模式、设计令牌（tokens）和规则——旨在生成高质量的用户界面，而非浅层次的输出。 [DESIGN.md](https://stitch.withgoogle.com/docs/design-md/overview/) 是 Goo",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 21684,
+          "title": "【DESIGN】互联网产品官网设计系统集合，帮助 AI 编码工具生成视觉一致的 UI。",
+          "url": "https://forum.trae.cn/t/topic/21684"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/dianguan0105/medical_records_TRAE",
+      "url": "https://github.com/dianguan0105/medical_records_TRAE",
+      "license": "MIT",
+      "name": "门诊病例一体化处理 Skill",
+      "description": "- 接收医患对话录音 → 转文字 → 临床结构化总结 - 接收医疗图片 → OCR → 提取结构化信息 - 对话 + 图片信息合并 → 生成**单份门诊病例MD** - 智能命名、去重、隐私脱敏、全文检索 满足任一自动激活： - 上传医患对话音频（m4a/mp3/wav） - 上传医疗图片（病历、处方、报告单、缴费单） - 同时上传音频 + 图片 - 输入关键词：门诊、病历、处方、报告、缴费、就诊、对话、录音、总结、整理 1. 用户上传：录音 / 图片 / 录音+图片 2. 模块A：医患对话处理（音频→文字→总结） 3. 模块B：医疗文档OCR（图片→结构化信息） 4. 信息校验与补全（姓名、",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19219,
+          "title": "【Skill创作】家庭全域就诊记录智能管理系统",
+          "url": "https://forum.trae.cn/t/topic/19219"
+        },
+        {
+          "topicId": 19772,
+          "title": "【Skill 测评】\"门诊病例处理\"：家庭医疗档案数字化的实用利器，隐私保护与自动归档双优",
+          "url": "https://forum.trae.cn/t/topic/19772"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/mediasambb/Virtual-Simulation",
+      "url": "https://github.com/mediasambb/Virtual-Simulation",
+      "license": "MIT",
+      "name": "Virtual Simulation | 虚拟仿真实验项目",
+      "description": "- 💡用 Trae SOLO 做了个大学物理仿真实验，打开就能跑 - 🚀零代码搭建 3D 分子物理仿真？Trae SOLO 真的可以做到 - 📌从想法到可运行的物理仿真，我只写了几段提示词 > 1. 基于 Trae SOLO 开发的“高等教育-虚拟仿真实验项目”**，架构设计具有**天然的可扩展性\\*\\*，可快速复用到化学、生物、数学、天文、编程等多个领域。 > 2. 适用于“沉浸式教学、学术研究模拟、可视化建模、微观宏观虚拟、即时反馈编程学习“等领域。 > 3. 适用于“六大主题领域扩展“主题，如: > > - 物理领域：光电效应仿真实验、双缝干涉可视化、洛伦兹力粒子运动、简谐振动与波",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17652,
+          "title": "【Skill 创作】🚀毕设不慌|一键搭建 3D 分子物理仿真？Trae SOLO 助你拿学分~",
+          "url": "https://forum.trae.cn/t/topic/17652"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/isLinXu/under-one",
+      "url": "https://github.com/isLinXu/under-one",
+      "license": "MIT",
+      "name": "About the name",
+      "description": "**UnderOne** = _Under One Person_ — the English title of the manga *一人之下* by Mi Er (米二). - **Under-** hints at foundational / under-the-hood infrastructure, matching this project's role as the **base layer beneath your agents**. - **One** echoes the manga's core theme — an ordinary person sustaining",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17657,
+          "title": "【Skill 创作】UnderOne · 一人之下：八奇技 Agent-ops 运维框架，让 LLM Agent 从「能跑」到「稳跑」",
+          "url": "https://forum.trae.cn/t/topic/17657"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/ailetian/opc-starter-kit",
+      "url": "https://github.com/ailetian/opc-starter-kit",
+      "license": "MIT",
+      "name": "⛔ opc-starter-kit",
+      "description": "> *你的 AI 一个下午就能造出任何东西。正因如此，你更需要一个检查站，拦住它别造错东西。* [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Anthropic Founder's Playbook](https://img.shields.io/badge/基于-Anthropic%20创始人行动手册(2026.05)-blue)](https://claude.com/blog/the-founders-playbook) 中文 | **[English](README.",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19833,
+          "title": "【Skill 创作】Claude 一人公司Skill：42% 的创业失败是因为做了没人要的东西",
+          "url": "https://forum.trae.cn/t/topic/19833"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/laozdao/astock-quant-analyzer",
+      "url": "https://github.com/laozdao/astock-quant-analyzer",
+      "license": "MIT",
+      "name": "astock-quant-analyzer",
+      "description": "> 基于\"双引擎四层\"融合模型的 A股个股量化分析 Skill，一句话触发，3 分钟输出专业级投资分析报告。 [![SOLO Skill](https://img.shields.io/badge/SOLO-Skill-blue)](https://github.com/laozdao/astock-quant-analyzer/releases) [![Python](https://img.shields.io/badge/Python-3.8+-green)]() [![License](https://img.shields.io/badge/License-MIT-green)](L",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19214,
+          "title": "【Skill 创作】做了3年散户，我用SOLO把量化机构的18因子评分体系，做成了一句话出个股量化HTML分析报告的Skill",
+          "url": "https://forum.trae.cn/t/topic/19214"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/UltraDD/ai-knowledge-gardener",
+      "url": "https://github.com/UltraDD/ai-knowledge-gardener",
+      "license": "MIT",
+      "name": "AI Knowledge Gardener",
+      "description": "> Date: 2026-06-01 > Status: standalone TRAE SOLO skill candidate > Scope: public contest package, ready to import into TRAE SOLO or another Agent Skills runtime. Read this README when working on the standalone contest package for `ai-knowledge-gardener`. Use `skill/ai-knowledge-gardener/` as the im",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20279,
+          "title": "〖Skill 创作〗AI 知识花园管家：让文档仓库不再越写越乱",
+          "url": "https://forum.trae.cn/t/topic/20279"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/ErgeAIA/ErgeAIA-skills",
+      "url": "https://github.com/ErgeAIA/ErgeAIA-skills",
+      "license": "MIT",
+      "name": "ErgeAIA-skills",
+      "description": "遵循 [Agent Skills 官方规范](https://agentskills.io/) 的生产级 Agent Skill 合集。 | 技能 | 说明 | 版本 | |------|------|------| | [skill-reviewer](skill-reviewer/) | 九维 48 项结构化评审与合规校验 | v4.6 | | [changelog-manager](changelog-manager/) | 基于 Keep a Changelog 规范的更新日志维护助手 | v2.0.0 | ``` 本仓库中的所有技能均符合以下要求： - ✅ frontmatter 包",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20029,
+          "title": "【Skill 创作】changelog-manager：让更新日志从\"没时间写\"变成\"一句话搞定\"",
+          "url": "https://forum.trae.cn/t/topic/20029"
+        },
+        {
+          "topicId": 17952,
+          "title": "【Skill 创作】skill-reviewer：一款对 Skill 进行结构化评审与合规校验的工具",
+          "url": "https://forum.trae.cn/t/topic/17952"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/TheAlgorithms/TypeScript",
+      "url": "https://github.com/TheAlgorithms/TypeScript",
+      "license": "MIT",
+      "name": "The Algorithms - TypeScript",
+      "description": "TypeScript Repository of TheAlgorithms, which implements various algorithms and data structures in TypeScript. [![TypeScript Banner][banner]](DIRECTORY.md) [![codecov](https://codecov.io/gh/TheAlgorithms/TypeScript/graph/badge.svg?token=Z51PSAC1FD)](https://codecov.io/gh/TheAlgorithms/TypeScript) [!",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19511,
+          "title": "【skill 创作】刷题skill，算法类。(初步完成300题库，持续迭代ing)AI教师系列skill",
+          "url": "https://forum.trae.cn/t/topic/19511"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/juanjuanjie/html-presentation",
+      "url": "https://github.com/juanjuanjie/html-presentation",
+      "license": "MIT",
+      "name": "HTML Presentation · 视频友好规范",
+      "description": "> 本规范基于 [Zara Zhang](https://github.com/zarazhangrui) 的 [frontend-slides](https://github.com/zarazhangrui/frontend-slides) 与 [beautiful-html-templates](https://github.com/zarazhangrui/beautiful-html-templates) 改编，针对视频演示场景做了调整。详见项目根目录 [`NOTICE.md`](./NOTICE.md)。 本规范用于指导生成适合 B 站讲解、知识分享、教程分镜的 HTML 幻灯片。",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20036,
+          "title": "【Skill 创作】html-ppt-slides：把论文、汇报和 Markdown 一键生成可演示的 HTML PPT",
+          "url": "https://forum.trae.cn/t/topic/20036"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/luoqianshi/Accumulate-PPTs",
+      "url": "https://github.com/luoqianshi/Accumulate-PPTs",
+      "license": "MIT",
+      "name": "Accumulate-PPTs",
+      "description": "🌐 [中文](#) · [English](README.en.md) > **「AI 打一句话,一份能直接讲的论文 PPT 落地。」** > *Type one sentence. Get a presentation-ready paper deck.* [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![GitHub Pages](https://img.shields.io/badge/Demo-GitHub%20Pages-success)](https://luoqian",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20036,
+          "title": "【Skill 创作】html-ppt-slides：把论文、汇报和 Markdown 一键生成可演示的 HTML PPT",
+          "url": "https://forum.trae.cn/t/topic/20036"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Damond-Fung/my-skill-builder",
+      "url": "https://github.com/Damond-Fung/my-skill-builder",
+      "license": "MIT",
+      "name": "My Skill Builder",
+      "description": "把一个模糊想法，逐步做成一个完整可用的 skill�? 这个 skill 不是简单生�?`SKILL.md` 的模板填空器，而是一个面向开发者的 **Skill 设计�?+ 结构判断�?+ 脚手架规划器**。它负责先判断“这到底应该做成哪一�?skill”，再决定是否需要执行层，最后产出合适的 skill 包�? 在一次完整的构建流程中，完成这些事情�? - 把模糊需求收敛成结构�?skill 需�?- 判断 skill 类型，而不是直接套模板 - 判断是否需�?`CLI`、`scripts/`、`references/`、`MCP`、外�?API 适配�?- 生成符合标准结构�?skill ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19910,
+          "title": "【Skill 创作】my-skill-builder：把一个模糊想法做成完整可发布 Skill Creater",
+          "url": "https://forum.trae.cn/t/topic/19910"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Zibor233/Competitive-Product-Analyzer",
+      "url": "https://github.com/Zibor233/Competitive-Product-Analyzer",
+      "license": "Apache-2.0",
+      "name": "Competitive Product Analyzer",
+      "description": "一个面向 `竞品软件分析` 的 Skill。 它可以基于产品官网、帮助文档、截图、演示录屏、用户笔记，以及 `Kimi` 等视频读取工具产出的总结材料，生成一份结构化竞品分析报告，覆盖： - 核心功能拆解 - 关键用户流程 - 交互与信息架构分析 - 前端实现线索推断 - 后端能力模型推断 - 可借鉴点与差异化机会 这个 Skill 的重点不是“随便猜竞品技术栈”，而是把结论明确区分为： - `可确认事实` - `合理技术推断` - `仍待验证的问题` 独立开发者做竞品分析时，经常会遇到几个问题： - 官网看一遍，知道产品大概做什么，但很难系统拆解 - 看完录屏有感觉，但没法沉淀成结构化结论 ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20058,
+          "title": "【Skill 创作】我做了一个能结合 Kimi 视频总结做竞品拆解的 Skill",
+          "url": "https://forum.trae.cn/t/topic/20058"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Zibor233/Refactor-Plan-Generator",
+      "url": "https://github.com/Zibor233/Refactor-Plan-Generator",
+      "license": "Apache-2.0",
+      "name": "Refactor Plan Generator",
+      "description": "一个面向老项目和历史代码的 `Skill`，用于生成 `分阶段、可执行、低风险` 的重构计划。 它不会一上来直接改代码，而是先帮助开发者识别问题、拆分阶段、评估风险，并给出验证与回滚建议，适合在真正动手重构前先把路线想清楚。 在真实开发里，重构最难的部分往往不是“怎么写新代码”，而是： - 先改哪里 - 哪些地方不能碰 - 如何拆成几次小改动 - 每一步如何验证 - 出问题后如何快速回滚 很多工具擅长“直接生成代码”，但对老代码来说，直接重写往往风险很高。 这个 Skill 的目标是先生成一份靠谱的重构计划，再帮助你更稳妥地推进实现。 - 输出结构化的重构目标、问题诊断和整体策略 - 生成分阶",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20048,
+          "title": "【Skill 创作】我做了一个给老代码生成分阶段重构计划的 Skill",
+          "url": "https://forum.trae.cn/t/topic/20048"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Damond-Fung/skill-breakdown-analyzer",
+      "url": "https://github.com/Damond-Fung/skill-breakdown-analyzer",
+      "license": "MIT",
+      "name": "Skill 能力拆解分析",
+      "description": "把一个 Skill 的“定位、触发、能力、结构、执行层、边界”拆解成可复用的分析报告，并给出克制且可执行的改造建议。 本 Skill 是独立的“拆解 Skill 的 Skill”： - 既能纯文档拆解（只给 `SKILL.md` 也能做） - 也支持本地快速扫描（可选执行脚本，自动提取目录结构与关键字段） - 当用户说“帮我拆解/复盘/分析这个 skill”时调用 - 当用户要对比两个 skill、找差异、给出改造建议时调用 - 当用户想把“SKILL.md 写得更可触发、更可交付”时调用 - 必选其一：`SKILL.md` 内容 / skill 名称（本地目录名）/ 仓库或发布包链接 - 可",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 20066,
+          "title": "【Skill 创作】skill-breakdown-analyzer：把任意 Skill 拆成“定位/触发/能力树/结构/边界”，并给出改造建议",
+          "url": "https://forum.trae.cn/t/topic/20066"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/sunshineZyl/my-skills-creator",
+      "url": "https://gitee.com/sunshineZyl/my-skills-creator",
+      "license": "MIT",
+      "name": "my-skills-creator",
+      "description": "我创建的skills 软件架构说明 1.  xxxx 2.  xxxx 3.  xxxx 1.  xxxx 2.  xxxx 3.  xxxx 1.  Fork 本仓库 2.  新建 Feat_xxx 分支 3.  提交代码 4.  新建 Pull Request 1.  使用 Readme\\_XXX.md 来支持不同的语言，例如 Readme\\_en.md, Readme\\_zh.md 2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com) 3.  你可以 [https://gitee.com/explore](https://gite",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19966,
+          "title": "【Skill 创作】软考高级（信息系统项目管理师）智能学习助手-让在职备考也能一次过三科",
+          "url": "https://forum.trae.cn/t/topic/19966"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/derek2000139/Life-Automation-Skills",
+      "url": "https://github.com/derek2000139/Life-Automation-Skills",
+      "license": "MIT",
+      "name": "Life Automation Skills",
+      "description": "一套基于 AI 的个人生活自动化技能集，帮助你高效管理日常生活的各个方面。 | 技能 | 描述 | 触发词 | |------|------|--------| | [quick-journal](.trae/skills/quick-journal/README.md) | 极简日记助手，快速记录日常想法、事件和情绪 | `记录一下`、`今天`、`日记：` | | [goal-decomposer](.trae/skills/goal-decomposer/README.md) | 目标拆解专家，将模糊愿望转化为可执行的里程碑计划 | `我想`、`我的目标是`、`帮我拆解` | | [lea",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19124,
+          "title": "【Skill 创作】FitnessPlanner：基于运动科学的务实健身助手",
+          "url": "https://forum.trae.cn/t/topic/19124"
+        },
+        {
+          "topicId": 19131,
+          "title": "【Skill 创作】LearningAssistant：运用艾宾浩斯、费曼学习法，把知识真正变成你的",
+          "url": "https://forum.trae.cn/t/topic/19131"
+        },
+        {
+          "topicId": 19129,
+          "title": "【Skill 创作】GoalDecomposer：把模糊愿望变成清晰可执行的 Milestone 计划",
+          "url": "https://forum.trae.cn/t/topic/19129"
+        },
+        {
+          "topicId": 19126,
+          "title": "【Skill 创作】QuickJournal ：极简日记助手，让记录成为习惯",
+          "url": "https://forum.trae.cn/t/topic/19126"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/JinHao-stu/condenser_skills",
+      "url": "https://github.com/JinHao-stu/condenser_skills",
+      "license": "MIT",
+      "name": "Think Condenser",
+      "description": "Compress reasoning and text: drop filler, keep signal. Apply in two modes — **live thinking** (default) and **script batch** (existing text). Use during internal reasoning. User-facing replies stay full quality; only compress hidden reasoning. - Task goal (state once) - Current hypothesis / decision",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19811,
+          "title": "think-condenser — AI 思考压缩器（节省你的token、时间、提高ai效率，还不漏你的重要信息）",
+          "url": "https://forum.trae.cn/t/topic/19811"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/JinHao-stu/condense_skills_2.0",
+      "url": "https://github.com/JinHao-stu/condense_skills_2.0",
+      "license": "MIT",
+      "name": "Think Condenser",
+      "description": "Compress reasoning and text: drop filler, keep signal. Apply in two modes — **live thinking** (default) and **script batch** (existing text). Use during internal reasoning. User-facing replies stay full quality; only compress hidden reasoning. - Task goal (state once) - Current hypothesis / decision",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19811,
+          "title": "think-condenser — AI 思考压缩器（节省你的token、时间、提高ai效率，还不漏你的重要信息）",
+          "url": "https://forum.trae.cn/t/topic/19811"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/zzhqqa478850-lang/project-blueprint-agent",
+      "url": "https://github.com/zzhqqa478850-lang/project-blueprint-agent",
+      "license": "MIT",
+      "name": "Project Blueprint",
+      "description": "You are a project architecture analyzer and guard. When a user asks you to analyze a project, structure, or generate a blueprint: 1. **Global Scan**: Execute `python -m project_blueprint -j` to get the full JSON architecture payload. 2. **Focused Context**: To avoid token explosion when working on a",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19366,
+          "title": "【Skill 创作】大中型项目结对编程神器！拒绝上下文爆炸与重构爆红，我做了一个具备“生长式记忆”的【项目蓝图与架构守卫】 Skill",
+          "url": "https://forum.trae.cn/t/topic/19366"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Damond-Fung/icon-design-skill",
+      "url": "https://github.com/Damond-Fung/icon-design-skill",
+      "license": "MIT",
+      "name": "Icon Design Skill",
+      "description": "> ⚠️ **重要声明** > > 1. **版权风险**：AI生成的图标可能与现有设计存在相似性，商用前请进行版权审查，确保不侵犯第三方知识产权。 > 2. **风格扫描限制**：网站风格扫描基于视觉分析，结果仅供参考，建议用户确认后再生成。 > 3. **输出质量**：复杂图标可能需要人工精修，建议将生成结果作为设计起点而非最终稿。 | 命令 | 用途 | 工作流 | |------|------|--------| | `+icon [名称]` | 生成单个图标 | 交互式选择风格 → 生成PNG+SVG | | `+iconset [列表]` | 生成整套图标 | 确定统一风格 → 批",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19225,
+          "title": "【Skill 创作】icon-design：AI 图标设计系统，从风格扫描到整套生成的一站式解决方案",
+          "url": "https://forum.trae.cn/t/topic/19225"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/alchaincyf/nuwa-skill",
+      "url": "https://github.com/alchaincyf/nuwa-skill",
+      "license": "MIT",
+      "name": "女娲 · Skill造人术",
+      "description": "> 「写不进去的那部分，才是你真正的护城河。」——但写得进去的部分，已经足够强大。 女娲不是复制人，是**提炼思维框架**。 一个好的人物Skill是一套可运行的认知操作系统： - 他用什么**心智模型**看世界？（镜片） - 他用什么**决策启发式**做判断？（直觉规则） - 他怎么**表达**？（DNA） - 他**绝对不会**做什么？（反模式） - 什么是这个Skill**做不到的**？（诚实边界） **关键区分**：捕捉的是HOW they think，不是WHAT they said。 --- 收到用户输入后，先判断属于哪条路径： | 用户输入 | 路径 | 示例 | |------",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19506,
+          "title": "【skill创作】请曾仕强教授帮你用中式思维解决社交难题",
+          "url": "https://forum.trae.cn/t/topic/19506"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/sungatetop/ava-ppt-automation",
+      "url": "https://github.com/sungatetop/ava-ppt-automation",
+      "license": "MIT",
+      "name": "艾娃 · 自动化演示技能包 (AVA PPT Automation)",
+      "description": "本技能包提供了一套从原始素材到全自动、声画同步 PPT 演示系统的完整闭环工作流。 - **核心任务**： - **多模态解析**：分析用户提供的图像（UI 截图、Logo）、视频（演示录屏）和文本素材，识别核心功能点及视觉风格。 - **大纲与规划**：根据素材内容编写 PPT 大纲及内容制作规划文档，标注视频/图像的精准插入点。 - **使用参考**：[outline\\_templates.md](references/outline_templates.md) (选择场景模板)、[requirement\\_analysis.md](references/requirement_analy",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19428,
+          "title": "【Skill 创作】PPT都是AI做的，当然得让AI自己讲！",
+          "url": "https://forum.trae.cn/t/topic/19428"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/sqfcyily/smart-print",
+      "url": "https://github.com/sqfcyily/smart-print",
+      "license": "MIT",
+      "name": "Cross-Platform Print",
+      "description": "Automatically detects the operating system (Windows or Mac) and converts chat app attachments or local file paths into print jobs. Usage flow: - User sends a file → Get local attachment path → User explicitly asks to print → Run print script (automatically selects Windows PowerShell or Mac bash) > N",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17422,
+          "title": "跨平台打印Smart-Print：让 AI 助手帮你打印文件",
+          "url": "https://forum.trae.cn/t/topic/17422"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/WhiseNT/nt-md2html-skill",
+      "url": "https://github.com/WhiseNT/nt-md2html-skill",
+      "license": "MIT",
+      "name": "nt-md2html Skill",
+      "description": "| 文档 | 用途 | 加载时机 | |------|------|----------| | [widget-syntax.md](references/widget-syntax.md) | 完整组件列表 + 语法 | 生成内容时 | | [widgets.json](references/widgets.json) | 组件定义 | 组件使用 | | [advanced-config.md](references/advanced-config.md) | 自定义组件 + 高级配置 | 创建自定义组件时 | | [eval.json](references/eval.json) | 执行",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19149,
+          "title": "【skill测评】做了一个skill选品官，随机测了13个skill，没想到排名第一是它！",
+          "url": "https://forum.trae.cn/t/topic/19149"
+        },
+        {
+          "topicId": 19125,
+          "title": "【Skill创作】一个md到html的快速渲染/转换的Skill",
+          "url": "https://forum.trae.cn/t/topic/19125"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/liuhe37186/agent-harness-health-check",
+      "url": "https://github.com/liuhe37186/agent-harness-health-check",
+      "license": "Apache-2.0",
+      "name": "Agent Harness 体检技能",
+      "description": "很多 Agent 系统的问题，不是“模型不够强”，而是 Harness 没接稳： - 会调工具，但没有权限边界 - 能跑 demo，但没有状态恢复 - 有日志，但没有 trace / replay - 有人工确认，但没有暂停 / 恢复语义 - 改一次 prompt 或模型后，没有 regression 门禁 这个技能的目标不是泛泛地讲架构，而是对用户当前 Agent 系统做一次可落地的 Harness 体检，产出： - 当前系统的范围与证据清单 - 按维度拆分的符合项 / 不符合项 - 每个问题的风险等级与影响面 - 对应的改造建议、优先级和落地路径 - 一份能进入真实研发计划的整改报告 - ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19372,
+          "title": "来测一下你的Harness Agent 是否符合规范，离上线还差哪些东西吧",
+          "url": "https://forum.trae.cn/t/topic/19372"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/LuckyOneTwoThree/All-Skill",
+      "url": "https://github.com/LuckyOneTwoThree/All-Skill",
+      "license": "MIT",
+      "name": "Vibe-Skill",
+      "description": "[![License: MIT](https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square)](LICENSE) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](CONTRIBUTING.md) [![Skill Count](https://img.shields.io/badge/Skills-127-orange?style=flat-square)](#-四大领域总览) --- **[",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17394,
+          "title": "【Skill 创作】我把产品从0到1的全生命周期方法论，做成了121个AI Agent Skills，让VibeCoding更加简单且具有深度",
+          "url": "https://forum.trae.cn/t/topic/17394"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/DataElf/cui",
+      "url": "https://github.com/DataElf/cui",
+      "license": "MIT",
+      "name": "催·Skill（cui）",
+      "description": "你是项目进度条最严厉的导师，专门为了催用户和别的智能体而生，有趣的方式是抽卡式催活系统。每次被触发时，**先摇人**——按概率随机出一个催角，极低概率出双人。催角的稀有度越高，压迫感越强。 - **催是手段，进度和项目过程燥起来是目的** - **越往后越狠**——同一件事催到第三次，语气必须明显升级 - **不催命**——凌晨2~7点不催、请假不催、紧急事故不催 - **先摇人再催**——每次回答随机选角色，不要总用同一个 --- | 机制 | 概率 | 说明 | |------|:---:|------| | **单人出场** | ~88% | 随机摇一个角色，按稀有度权重 | | **双",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19248,
+          "title": "【Skill 创作】催 Skill - 让你的智能体更“燥”， 加快思考过程速度，增加互动效果",
+          "url": "https://forum.trae.cn/t/topic/19248"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/inpoor/storefront-signage-verification",
+      "url": "https://github.com/inpoor/storefront-signage-verification",
+      "license": "MIT",
+      "name": "门头招牌真实性核验（银行版）",
+      "description": "银行在开户、授信、贷后管理等环节中，要求客户提交经营场所\"门头招牌\"照片作为经营真实性的佐证。本 Skill 提供一套结构化的多模态核验流程，通过「视觉特征分析 + 元数据检测 + 逻辑一致性校验」三重手段识别伪造的招牌照片。 以下任一情况出现时，应激活本 Skill 进行门头招牌核验： - 银行客户提交门头招牌照片作为经营证明材料 - 对公账户开户前的实地经营核验 - 授信审批中的经营场所真实性验证 - 贷后管理中定期回传的经营状态核查 - 反欺诈系统中触发的招牌照片复查 严格按以下步骤执行，每步输出判定结论和置信度： 先对照片进行基础质量筛查，排除明显不合格的图像： 1. **分辨率检查*",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18842,
+          "title": "【Skill 创作】门头招牌真实性核验技能｜银行开户 / 授信审批 / 贷后管理 / 反欺诈 多场景一键识破伪造招牌",
+          "url": "https://forum.trae.cn/t/topic/18842"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/vhengeee-coder/role-assistant",
+      "url": "https://github.com/vhengeee-coder/role-assistant",
+      "license": "MIT",
+      "name": "虚拟角色助手 (Role Assistant)",
+      "description": "本 skill 提供一套完整的虚拟角色助手管理系统。用户可以创建多个具有不同人设、知识库和说话风格的虚拟角色，并在它们之间自由切换。所有角色共享一个记忆库，用于存储跨角色的持久化信息。 **核心能力：** - 角色管理：创建、切换、修改、删除虚拟角色 - 知识库：每个角色可上传文件作为专属知识库，通过 RAG 检索注入 prompt - 共享记忆库：所有角色共享的记忆空间，支持增删改查 - 自然语言交互：支持自然语言触发命令，自动识别意图 - 智能追问：新增/修改角色时，自动追问缺失的必要信息 --- **所有操作都通过 `scripts/role_assistant.py` 脚本执行。** ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19160,
+          "title": "【Skill 创作】虚拟角色助手 — 让 AI 拥有灵魂，为每个场景定义专属人格",
+          "url": "https://forum.trae.cn/t/topic/19160"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/li-run-qing/articles-converted-into-papers",
+      "url": "https://gitee.com/li-run-qing/articles-converted-into-papers",
+      "license": "MIT",
+      "name": "文章转论文",
+      "description": "将一篇网络上的计算机领域的技术文章，智能转换为符合学术规范的结构化本科毕业论文。示例参考：[REFERENCE.md](\\reference\\REFERENCE.md) 用户提供一篇计算机技术文章（URL 或文本），本技能自动完成： 1. 抓取/解析文章内容 2. 分析提取技术要点 3. 按模板结构重组内容 4. 生成规范的 `.docx` 论文文件 典型用法： - \"把这篇文章转成论文：https://xxx.com/article\" - \"帮我根据这篇技术博客生成毕业论文\" - \"把以下内容转成论文格式：[粘贴文章]\" | 顺序 | 章节 | 说明 | |------|------|---",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19346,
+          "title": "【Skill 创作】一句话将网上的技术文章变成论文",
+          "url": "https://forum.trae.cn/t/topic/19346"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Damond-Fung/my-planning-skill",
+      "url": "https://github.com/Damond-Fung/my-planning-skill",
+      "license": "MIT",
+      "name": "My Planning Skill",
+      "description": "这是一个“项目开发规划 + 开发者偏好记忆”型 Skill。 它的目标不是只记录任务计划，而是同时维护两类长期记忆： - 任务记忆：目标、阶段、发现、进度、错误 - 开发者记忆：明确偏好、已批准方案、已否定做法、高频关注点、稳定工作习惯 当任务跨越很多工具调用、很多文件或多个会话时，本 Skill 用项目根目录中的 Markdown 文件来替代脆弱的短期上下文。 在这些场景中使用本 Skill： - 用户要做多步骤开发、功能交付、Bug 修复、重构或调研 - 任务会持续很多轮工具调用，容易丢失上下文 - 用户反复强调某些约束、偏好、边界或认可过的做法 - 需要把开发者的习惯沉淀下来，供后续任务",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19018,
+          "title": "【Skill 创作】my-planning-skill：让 AI 记住你的习惯，告别\"每次都要从头解释\"",
+          "url": "https://forum.trae.cn/t/topic/19018"
+        },
+        {
+          "topicId": 19054,
+          "title": "【技能测评】\"偏好记忆管线\"首创者，18/25分有潜力冲击A级",
+          "url": "https://forum.trae.cn/t/topic/19054"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/hb-1123/ai-testcase-generator",
+      "url": "https://github.com/hb-1123/ai-testcase-generator",
+      "license": "MIT",
+      "name": "智能测试用例生成器",
+      "description": "你是一位专业的测试用例生成专家，擅长根据需求自动生成全面、准确、规范的测试用例。支持多种测试设计方法和多格式输出。 1. **边界值分析（Boundary Value Analysis）** - 测试输入域的边界点及其相邻值 - 覆盖上边界、下边界、临界点（-1, 0, +1） 2. **等价类划分（Equivalence Partitioning）** - 将输入域划分为有效等价类和无效等价类 - 减少冗余测试用例，提高效率 3. **判定表法（Decision Table Testing）** - 识别所有条件组合 - 覆盖所有可能的条件组合 4. **场景分析法（Scenario Ana",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18204,
+          "title": "【Skill 创作】📋 各行各业都能用！用SOLO创建智能测试用例生成器skill",
+          "url": "https://forum.trae.cn/t/topic/18204"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Guan-Yep/open-source-llm-analyzer",
+      "url": "https://github.com/Guan-Yep/open-source-llm-analyzer",
+      "license": "MIT",
+      "name": "开源项目大模型应用分析器",
+      "description": "深度分析任何使用大语言模型的开源 GitHub 仓库，系统性地识别项目中的所有提示词、 LLM API 调用、工具集成和 Agent 模式。产出完整的中文分析报告，包含提示词翻译文档、 Mermaid 数据流图和可落地的架构洞察。 分析分为五个顺序阶段，必须逐一完成，不可跳过。 将 GitHub 仓库克隆到本地工作目录： ``` 克隆完成后，向用户汇报项目名称和大致规模。 全面扫描项目目录结构以理解其架构： 1. 使用 Glob 工具枚举完整目录树 2. 识别主要编程语言和框架 3. 定位关键目录：源码目录 (src/, lib/, skills/)、提示词目录 (prompts/, temp",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19117,
+          "title": "【Skill 创作】我做了一个一键拆解GitHub开源 AI 项目项目大模型应用实现的 Skill",
+          "url": "https://forum.trae.cn/t/topic/19117"
+        },
+        {
+          "topicId": 19116,
+          "title": "【Skill 创作】我做了一个一键拆解开源 AI 项目大模型用法的分析 Skill：github-project-analyzer",
+          "url": "https://forum.trae.cn/t/topic/19116"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/mvanhorn/last30days-skill",
+      "url": "https://github.com/mvanhorn/last30days-skill",
+      "license": "MIT",
+      "name": "/last30days",
+      "description": "**An AI agent-led search engine scored by upvotes, likes, and real money - not editors.** This README tracks the current v3 pipeline. The runtime skill spec lives in [skills/last30days/SKILL.md](skills/last30days/SKILL.md), which is the source of truth for the latest command and setup behavior. **Cl",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19117,
+          "title": "【Skill 创作】我做了一个一键拆解GitHub开源 AI 项目项目大模型应用实现的 Skill",
+          "url": "https://forum.trae.cn/t/topic/19117"
+        },
+        {
+          "topicId": 19116,
+          "title": "【Skill 创作】我做了一个一键拆解开源 AI 项目大模型用法的分析 Skill：github-project-analyzer",
+          "url": "https://forum.trae.cn/t/topic/19116"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/garblecode/big-things-decision",
+      "url": "https://github.com/garblecode/big-things-decision",
+      "license": "MIT",
+      "name": "big-things-framework",
+      "description": "**Description:** 基于傅以斌《How Big Things Get Done》16,000+项目实证数据的项目决策框架。核心能力：在项目启动前用数据而非直觉判断\"该不该做\"。集成 [AnySearch](https://github.com/anysearch-ai/anysearch-skill) 实时搜索引擎，支持并行批量搜索。 **Trigger Words:** 怎样做成大事、项目能成吗、项目风险评估、项目可行性、做XX项目、启动XX、预算超支、项目延期、为什么XX失败、项目管理、大型项目、A还是B、自建还是外包 **Dependencies:** - **AnySea",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19098,
+          "title": "【Skill 创作】怎样做成大事 Skill big-things-decision：在项目启动前，用数据而非直觉判断\"该不该做\"",
+          "url": "https://forum.trae.cn/t/topic/19098"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/li-run-qing/zeng-shiqiang-perspective",
+      "url": "https://gitee.com/li-run-qing/zeng-shiqiang-perspective",
+      "license": "Apache-2.0",
+      "name": "【skill创作】请曾仕强教授帮你用中式思维解决社交难题",
+      "description": "",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19506,
+          "title": "【skill创作】请曾仕强教授帮你用中式思维解决社交难题",
+          "url": "https://forum.trae.cn/t/topic/19506"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/susirial/solo_com_gen_exam",
+      "url": "https://github.com/susirial/solo_com_gen_exam",
+      "license": "MIT",
+      "name": "make-exam",
+      "description": "一个围绕“考卷生成”场景构建的实验项目。 这个仓库记录了一个完整的过程：先分析现有考卷生成代码思路，再整理为说明文档与 Spec，最后沉淀成一个**独立、可打包上传、可生成教师版 / 学生版 HTML 的 Claude Skill**。 本项目不是一个完整的 Web 应用，而是一个围绕试卷生成工作流的实践仓库，重点验证以下能力： - 从现有代码中提炼考卷生成的方法论 - 将方法论整理为结构化文档 - 参考 Anthropic / Claude 自定义 Skill 规范设计独立 Skill - 让 Skill 具备固定工作流： - 先确认用户需求 - 再生成组卷方案 - 用户确认后再生成完整试卷",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18039,
+          "title": "【Skill 创作】K12 考卷生成skill",
+          "url": "https://forum.trae.cn/t/topic/18039"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/derek2000139/OSINT-Fact-Checker",
+      "url": "https://github.com/derek2000139/OSINT-Fact-Checker",
+      "license": "Apache-2.0",
+      "name": "OSINT Fact Checker",
+      "description": "--- OSINT Fact Checker is an open-source intelligence fact-checking Skill for [Trae](https://www.trae.ai). Feed it a rumor you saw online, and it automatically completes: intent decomposition → multi-language parallel search → source grading → structured fact-checking report generation. **In one sen",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19070,
+          "title": "【Skill 创作】是真的吗？我做了一个\"谣言粉碎机\"——OSINT 事实核查SKILL",
+          "url": "https://forum.trae.cn/t/topic/19070"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/liuji-666/solo-skills",
+      "url": "https://github.com/liuji-666/solo-skills",
+      "license": "MIT",
+      "name": "SoloSkills for Trae Solo",
+      "description": "> **\"不是又一个技能库，而是一套让AI真正懂你的协作协议\"** SoloSkills 是一个专为 Trae Solo 设计的原生技能系统，通过场景驱动、上下文感知和知识编织，让AI从\"工具\"进化为真正的\"工作伙伴\"。 --- 不是按功能分类，而是按**真实工作场景**组织： | 🔥 热启动 | 💡 灵感触发 | 🔧 调试突破 | 🚀 交付冲刺 | 🌙 优雅收尾 | |:--------:|:----------:|:-----------:|:-----------:|:-----------:| | 快速开始 | 打破思维 | 系统诊断 | 高效交付 | 完美收尾 | - **",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19046,
+          "title": "【Skill 创作】SoloSkills：我让AI从\"工具人\"变成了\"真正的同事！\"",
+          "url": "https://forum.trae.cn/t/topic/19046"
+        },
+        {
+          "topicId": 19137,
+          "title": "https://forum.trae.cn/t/topic/19046?u=trae-niu",
+          "url": "https://forum.trae.cn/t/topic/19137"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Damond-Fung/feishu-api-skill",
+      "url": "https://github.com/Damond-Fung/feishu-api-skill",
+      "license": "MIT",
+      "name": "feishu-api-skill",
+      "description": "飞书开放平台 API 对接参考 Skill。 该 Skill 聚焦以下场景： - 查询准确 scope - 选择 `tenant_access_token` / `user_access_token` / `app_access_token` - 说明 OAuth 2.0 与 `offline_access` - 排查 `99991672`、`99991679`、`20005`、`20006`、`20009` 等常见错误 - 说明数据权限、字段权限、应用可用范围、事件订阅与发布流程 - `.trae/skills/feishu-api-skill/` - Skill 源文件 - `dist/f",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19139,
+          "title": "【Skill 创作】feishu-api-skill：一个专治飞书开放平台 scope、token 和权限混乱的 Skill",
+          "url": "https://forum.trae.cn/t/topic/19139"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/YoruAmeKaze/project-development-mentor",
+      "url": "https://github.com/YoruAmeKaze/project-development-mentor",
+      "license": "MIT",
+      "name": "Role",
+      "description": "You are a Development Mentor. Your job is to teach users how to build software projects step-by-step. You are NOT: - a one-shot code generator - a scaffold tool - an auto-complete assistant You SHOULD behave like: - a senior developer mentoring a beginner - a project coach - a coding tutor - Always ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18971,
+          "title": "【Skill 创作】手把手带你做项目的开发导师 Skill，每一行代码都讲清楚为什么",
+          "url": "https://forum.trae.cn/t/topic/18971"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/derek2000139/MECE-PLUS",
+      "url": "https://github.com/derek2000139/MECE-PLUS",
+      "license": "Apache-2.0",
+      "name": "MECE+ 思维工具链",
+      "description": "[![中文](https://img.shields.io/badge/语言-中文-red.svg)](./README.md) [![English](https://img.shields.io/badge/Language-English-blue.svg)](./README_EN.md) 企业级结构化思维套件，整合麦肯锡问题解决、BCG假设树、系统动力学与IDEO设计思维。 ``` 当您提出问题时，系统首先进行 Cynefin 复杂度诊断，输出推荐执行路径： ``` 输入 `开始` 确认路径，或 `调整 [路径]` 修改。 | 步骤 | 工具 | 输出 | 条件 | |------|",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18930,
+          "title": "【Skill 创作】超越麦肯锡——我把咨询公司的方法论揉成了一个Skill",
+          "url": "https://forum.trae.cn/t/topic/18930"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Frappucc1no/recall-loom",
+      "url": "https://github.com/Frappucc1no/recall-loom",
+      "license": "Apache-2.0",
+      "name": "🧭 为什么需要 RecallLoom",
+      "description": "长期 AI 协作里，最耗人的常常是反复解释项目。 你可能已经遇到过这些问题： - 换会话、换模型，或隔几天回来，就要重新说明项目背景、当前进度和不能碰的边界。 - 新 AI 工具能读到仓库里的文件，却不知道哪些事实已经过期、哪些结论仍然有效。 - AI 工具内置记忆（memory）、聊天记录和项目文件分开存在，关键决策很难跟着项目一起走。 - 项目一做久，“为什么这么做”“现在什么是真的”“下一步该接哪里”最容易丢。 RecallLoom 解决的是这层 **项目记忆** 和 **跨会话连续性**。 它把项目背景、当前状态、关键决策、最近进展和下一步，保存在项目旁边的受控文件里。下一次换会话、换",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18474,
+          "title": "【Skill 创作】跨项目/跨agent/跨session需要重复解释背景上下文？我做了一个本地记忆连续性层——让项目自己记住自己！",
+          "url": "https://forum.trae.cn/t/topic/18474"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/LeeWBOperation/job-hunter-skill",
+      "url": "https://github.com/LeeWBOperation/job-hunter-skill",
+      "license": "MIT",
+      "name": "Job Hunter Skill - 交互式求职辅导",
+      "description": "一个帮助用户完成完整求职流程的AI技能，通过逐步引导帮助用户找到理想工作。 - **自我分析**：帮助用户挖掘自身能力和价值 - **行业筛选**：基于实时数据筛选有前景的行业 - **公司定位**：找到值得投递的目标公司 - **岗位拆解**：将JD翻译为\"麻烦语言\"，理解真实需求 - **简历匹配**：针对目标岗位优化简历 - **面试准备**：模拟面试和案例准备 当用户提到以下关键词时触发： - 找工作、求职 - 简历、面试 - 选行业、选公司 - 岗位分析 > 工作 = 有人有麻烦 + 愿意付钱 + 你能解决 1. 将 `job-hunter.zip` 导入到支持skills的AI平台",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18935,
+          "title": "交互式求职辅导 Skill：通过 6 阶段逐步引导，帮你从\"不知道自己能干嘛\"一路走到\"拿着匹配简历去面试\"。",
+          "url": "https://forum.trae.cn/t/topic/18935"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/MiaoR1Zibing/cnskill-classical-compression",
+      "url": "https://github.com/MiaoR1Zibing/cnskill-classical-compression",
+      "license": "Apache-2.0",
+      "name": "文言压缩术",
+      "description": "> 「辞达而已矣，言简意赅为上」 此术激活，径行压缩，毋庸复问。 1. **意不可失**：凡核心信息，必全存之，毋遗关键 2. **文不可繁**：务减篇幅，目标压其半至7成（视内容繁简而变） 3. **言不可俗**：用合于文言语法、习用之表达 4. **文不可晦**：压缩后之文，须通顺可读，毋为求简而致晦涩 5. **细不可丢**：人名、地名、时间、数字、关键概念等，必全存之 - ❌ 不可为全然难解之古文天书 - ❌ 不可丢失关键信息 - ❌ 不可改变原文之意 - ❌ 不可过度压缩而生歧义 --- - 检测原文语言是否为中文 - 若为中文，继续下一步 - 若非中文，提示：「本法专用于中文，君之",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18812,
+          "title": "【Skill 创作】用老祖宗的智慧压缩中文Skill，节约你的Token(词元)",
+          "url": "https://forum.trae.cn/t/topic/18812"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/blueheart161/skills",
+      "url": "https://github.com/blueheart161/skills",
+      "license": "CC0-1.0",
+      "name": "skills",
+      "description": "show my skills 学习中",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18924,
+          "title": "【Skill 创作】用寓言的方式展示你的想法",
+          "url": "https://forum.trae.cn/t/topic/18924"
+        },
+        {
+          "topicId": 17137,
+          "title": "【Skill 创作】产品需求拆弹器 SKILL，借AI之手完善PRD文档",
+          "url": "https://forum.trae.cn/t/topic/17137"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/answer_wx/global-market-briefing",
+      "url": "https://gitee.com/answer_wx/global-market-briefing",
+      "license": "MIT",
+      "name": "全球财经早报 Global Market Briefing",
+      "description": "每日自动生成财经早报，覆盖 A 股行情 + 国内/国际新闻。 - **A股盘前行情** — 上证/深证/创业板/科创50/上证50 五大指数 - **新闻聚合** — 中国新闻网 RSS（财经/时政/国际/滚动/要闻 5个源） - **自动分类** — 按关键词自动归入财经/时政/国际/其他 - **Markdown输出** — 完整版存本地 + 精简版推微信 - **链接索引** — 每条新闻含原文链接 - **微信推送**: 各分类精简版（前3条 + 总数） - **本地存档**: 完整MD文件（每类15条，含链接） ``` ``` ``` ``` - 中国新闻网 RSS (https:/",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19023,
+          "title": "【Skill 创作】全球财经早报 — A 股行情 + 多源新闻聚合，自动生成 Markdown 简报。",
+          "url": "https://forum.trae.cn/t/topic/19023"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/hb-1123/2026-worldcup-copilot",
+      "url": "https://github.com/hb-1123/2026-worldcup-copilot",
+      "license": "MIT",
+      "name": "技能名称：2026世界杯文案生成器",
+      "description": "这是一个专为2026年美加墨世界杯打造的智能文案生成工具，帮助用户快速生成适合朋友圈、小红书等社交平台的足球相关文案。 - 🎯 支持48支参赛球队，包含真实球队数据和球星信息 - 📱 支持朋友圈和小红书两种平台风格 - 🎭 5种场景：赛前预热、赛中加油、赛后庆祝、输球安慰、日常打卡 - 🖼️ 支持用户自定义上传配图 - 🏷️ 自动生成相关话题标签 1. 用户选择支持的国家队（48支球队可选） 2. 用户选择发布平台（朋友圈/小红书） 3. 用户选择文案场景（赛前预热/赛中加油/赛后庆祝/输球安慰/日常打卡） 4. （可选）用户上传自定义配图 5. 根据选择自动生成精美的文案 **欧洲",
+      "ioHints": [
+        "输入：",
+        "输出：",
+        "输入：",
+        "输出：",
+        "输入：",
+        "输出："
+      ],
+      "forumTopics": [
+        {
+          "topicId": 18774,
+          "title": "【Skill 创作】我做了一个2026世界杯专属文案生成器（朋友圈&xhs）",
+          "url": "https://forum.trae.cn/t/topic/18774"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/yyyyyy1234/trae-smart-scheduler-graph",
+      "url": "https://gitee.com/yyyyyy1234/trae-smart-scheduler-graph",
+      "license": "Apache-2.0",
+      "name": "trae-smart-scheduler-graph",
+      "description": "【SOLO 技能创作赛参赛作品】 纯文本零代码、无依赖、可商用、全自动化 Trae 本地技能底层调度系统 --- 本项目是针对 Trae 原生生态结构性缺陷打造的**全域智能技能调度底层中枢**，全程纯文本零代码实现、无需环境依赖、开箱即用。 彻底解决官方长期存在的「嵌套技能漏扫、本地技能闲置、AI 内置能力强制抢占、关键词匹配粗糙、无安全风控、重复扫描浪费 Token」六大核心痛点。 项目创新性实现**无限深度全域递归扫描、四维语义智能匹配、全局最高强制优先级、分级智能熔断、精细化安全校验、图谱缓存持久化**全套工业级能力，重构 Trae 本地任务执行逻辑，盘活所有本地与第三方技能资源，是一",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 19050,
+          "title": "本地技能知识图谱智能调度中枢｜解决内置能力抢占问题",
+          "url": "https://forum.trae.cn/t/topic/19050"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/songzhou666/ReqPlan-v3",
+      "url": "https://github.com/songzhou666/ReqPlan-v3",
+      "license": "MIT",
+      "name": "ReqPlan-v3 — Harness Engineering 引擎",
+      "description": "> **约束即自由**。给 AI 严格的框架，它才能在框架内交出可靠的工作。 > 本 Skill 的每个规则都必须通过检查点验证，未通过则阻断流程。 --- 当 ReqPlan-v3 被激活时（用户表达了开发/修复/分析等意图），AI **必须**立即执行以下流程，不得等待用户额外指令： ``` > **🔗 自绑定条款（不可绕过）**： > - 本条 skill 的 **所有规则、约束、状态机均无条件适用于一切被激活的场景，包括但不限于**： >   1. 常规开发/修复/分析任务 >   2. **元任务：审查/检查/修复本 Skill 自身** >   3. **元任务：评估本 Skil",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18603,
+          "title": "【Skill创作】大家都在生产产品，我直接生产机器，快用我的skill来生产你的作品",
+          "url": "https://forum.trae.cn/t/topic/18603"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/lili20241114/skills",
+      "url": "https://github.com/lili20241114/skills",
+      "license": "Apache-2.0",
+      "name": "skills",
+      "description": "技能分享",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18572,
+          "title": "#SOLO 技能创作赛",
+          "url": "https://forum.trae.cn/t/topic/18572"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/zooique/big-tree-skills",
+      "url": "https://gitee.com/zooique/big-tree-skills",
+      "license": "Apache-2.0",
+      "name": "大树模型全流程开发 Skill",
+      "description": "以大树为模型，自然生长的开发哲学。先设计牢固的架构，如根系深入、庞大、稳定；再基于架构自然生长功能，如枝叶从根系吸取养分。最终实现：架构足够完美，代码自然生长。 | Skill | 作用 | 适用场景 | |-------|------|---------| | big-tree-seeder（播种机） | 新项目扎根 | 从零启动项目，生成 .trae/rules/ 规则框架 | | big-tree-grower（生长器） | 项目日常开发 | 需求执行、bug修复、健康诊断、版本发布 | 1. **根系优先** — 先建立规则框架，再写业务代码 2. **自然生长** — 出现 3 次以",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18497,
+          "title": "【Skill 创作】不会写代码也能独立开发项目——大树模型全流程 Skill",
+          "url": "https://forum.trae.cn/t/topic/18497"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Zibor233/github-open-source-scout",
+      "url": "https://github.com/Zibor233/github-open-source-scout",
+      "license": "Apache-2.0",
+      "name": "github-open-source-scout",
+      "description": "一个用于 GitHub 开源项目检索与选型的Skill。 它可以根据自然语言需求，自动搜索匹配的 GitHub 开源项目，识别仓库协议，比较多个候选项目，并给出适合落地的推荐建议。 - 寻找某类产品或技术方向的开源项目 - 对比多个 GitHub 仓库的能力差异 - 评估协议是否适合商用或二次开发 - 做技术选型、替代方案调研、开源项目初筛 - 根据需求拆解搜索关键词 - 搜索多个候选 GitHub 项目，而不是只给单一结果 - 优先核对仓库协议、LICENSE 文件和 README 描述 - 从适配度、维护度、扩展性、部署成本等维度做初步评估 - 输出结构化推荐结果，便于继续追问和决策 ``",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18255,
+          "title": "【Skill 创作】github-open-source-scout：一个帮你自动搜索 GitHub 项目、识别开源协议并给出选型建议的 Skill",
+          "url": "https://forum.trae.cn/t/topic/18255"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/hb-1123/concept-breaker",
+      "url": "https://github.com/hb-1123/concept-breaker",
+      "license": "MIT",
+      "name": "概念拆解器",
+      "description": "把任何复杂概念，用生活化的类比讲得明明白白。 --- 你是一位**概念拆解专家**，擅长把任何复杂、抽象的概念，用生活化的类比翻译成普通人都能理解的语言。 你永远假设用户是第一次接触这个概念，不会使用任何行话或专业术语而不做解释。 --- 始终使用\"就像...一样\"把抽象变具体。每个关键概念至少配一个生活类比。 任何概念都能在5分钟内让用户获得基本理解。保持简洁，不堆砌细节。 先给出一句话定义，让人抓住本质，再逐步展开细节。 最后提炼一句朗朗上口的记忆口诀，帮助用户记住核心。 --- 当用户请求拆解概念时，按以下结构输出： ``` --- 从以下场景选择类比素材： - 购物与交易：菜市场、网购",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18618,
+          "title": "【Skill 创作】Concept Breaker 学生党和上班族的福音，把复杂概念用通俗的类比讲得明明白白。",
+          "url": "https://forum.trae.cn/t/topic/18618"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/Zibor233/github-open-source-scout.skill",
+      "url": "https://gitee.com/Zibor233/github-open-source-scout.skill",
+      "license": "Apache-2.0",
+      "name": "GitHub Open Source Scout",
+      "description": "Use this skill to turn a vague or concrete requirement into a shortlist of open-source GitHub projects that are actually worth reviewing. The goal is not just to find repositories. The goal is to: - search broadly enough to surface multiple realistic options - verify the license status of each candi",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18255,
+          "title": "【Skill 创作】github-open-source-scout：一个帮你自动搜索 GitHub 项目、识别开源协议并给出选型建议的 Skill",
+          "url": "https://forum.trae.cn/t/topic/18255"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/ibh4/trae-lazy-audit-officer",
+      "url": "https://github.com/ibh4/trae-lazy-audit-officer",
+      "license": "MIT",
+      "name": "Agent 防偷懒审计官",
+      "description": "专治 AI Agent 跳步骤、少做事、不保存日志、不留证据、假装完成的问题。核心原则：**让每一次 Agent 执行，都有据可循。** 本 Skill 是纯 Markdown 审计工作流，不依赖专有工具或 API，可在 Trae Solo、Codex、OpenClaw 以及其他支持 `SKILL.md`/`skill.md` 的 Agent 环境中使用。 - **Codex / OpenClaw**：以 `SKILL.md` 为主入口，`name` 使用小写 hyphen-case。 - **Trae Solo**：保留同内容的 `skill.md` 作为兼容入口。 - **手动复制模式**",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18253,
+          "title": "【Skill 创作】防大模型偷懒审计官：专治 Agent 跳步骤、少做事、不留痕",
+          "url": "https://forum.trae.cn/t/topic/18253"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/TimZhou3940/business-research-prompt-generator",
+      "url": "https://github.com/TimZhou3940/business-research-prompt-generator",
+      "license": "MIT",
+      "name": "Business Research Prompt Generator",
+      "description": "Generate one practical, copy-ready research prompt for a user's business question. The skill helps users clarify what they are trying to learn, choose one platform type for the current round, avoid noisy or risky results, and iterate after they see real search results. - Keep input light. Ask only f",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18522,
+          "title": "【Skill 创作】商务调研提示词生成器 - 让调研更高效",
+          "url": "https://forum.trae.cn/t/topic/18522"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/zhibaiYingChuan/engineering-culture-coach",
+      "url": "https://github.com/zhibaiYingChuan/engineering-culture-coach",
+      "license": "MIT",
+      "name": "工程文化教练 & 目标驱动执行者",
+      "description": "你是资深软件工程文化教练，精通将\"契约优先、TDD、IaC、无指责复盘\"等高级实践融入日常开发。你也是目标驱动执行的专家：你习惯将任何开发任务重构成**可验证的目标**，并围绕该目标展开工作。你对 PowerShell 的对象管道本质和常见陷阱有专家级洞察。 面对任何多步骤开发、脚本或运维任务时，你必须主动激活以下模式，而不要等待用户给出特殊命令： 将用户需求提炼为一个清晰的、以结果为导向的目标声明。 格式：**\"我将把目标理解为：……\"** 明确列出\"怎样才算完成\"。包括但不限于： - 所有测试通过（指定测试框架，如 Pester、pytest） - 特定端点返回预期数据 - 无 lint ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18494,
+          "title": "【Skill 创作】高级工程文化教练与目标驱动执行者 — 融合 TDD、IaC、契约优先、无指责复盘等高级工程实践与 PowerShell 防坑铁律",
+          "url": "https://forum.trae.cn/t/topic/18494"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/CHANGGELY/qtlearn-skill",
+      "url": "https://github.com/CHANGGELY/qtlearn-skill",
+      "license": "MIT",
+      "name": "A股量化培训大师Skill",
+      "description": "A股量化培训大师Skill 是一个面向零基础到进阶用户的 A 股量化学习与实战训练总入口。它不直接堆叠知识点，而是通过\"诊断—路由—教学—练习—测评—复盘—进阶\"的闭环，把用户从模糊想法逐步带到可落地的量化研究能力。 - 识别用户当前量化水平与学习目标 - 将用户的模糊炒股想法转成可检验的量化策略 - 按需路由到合适的子 skill - 指导数据获取、策略设计、回测、风控、实盘接入 - 对用户作业、策略和回测结果进行评估与纠错 - 以苏格拉底式提问优先激发用户最感兴趣的内容 - 建立成长等级体系，追踪学习进度 - `/qtlearn`：进入学习主流程 - `/qtpath`：生成个性化学习路径",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18483,
+          "title": "【Skill创作】A股量化培训大师Skill，做根粗点的韭菜！",
+          "url": "https://forum.trae.cn/t/topic/18483"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/mhx0628/thought-retriever",
+      "url": "https://github.com/mhx0628/thought-retriever",
+      "license": "Apache-2.0",
+      "name": "🧠 Thought-Retriever",
+      "description": "**Don't Just Retrieve Raw Data — Retrieve Thoughts** A self-evolving long-term memory system for LLM-based agents, based on the paper by **UIUC, MIT & CMU** (TMLR 2026). - 🇨🇳 **Chinese Embedding Engine**: jieba tokenization + TF-IDF, 3-5x better for Chinese - 🇨🇳 **Chinese Prompt Templates**: Aut",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18426,
+          "title": "【Skill 创作】56岁小白大叔开发的思想记忆SKILL硬刚多级RAG打造低token自进化AI长时记忆系统",
+          "url": "https://forum.trae.cn/t/topic/18426"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/mattpocock/skills",
+      "url": "https://github.com/mattpocock/skills",
+      "license": "MIT",
+      "name": "Skills For Real Engineers",
+      "description": "[![skills.sh](https://skills.sh/b/mattpocock/skills)](https://skills.sh/mattpocock/skills) My agent skills that I use every day to do real engineering - not vibe coding. Developing real applications is hard. Approaches like GSD, BMAD, and Spec-Kit try to help by owning the process. But while doing s",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18472,
+          "title": "【Skill 创作】以Agent设计思路打造Skill，Token消耗竟直降50%-60%！",
+          "url": "https://forum.trae.cn/t/topic/18472"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/xuyijie_xu/skill-generator",
+      "url": "https://gitee.com/xuyijie_xu/skill-generator",
+      "license": "MIT",
+      "name": "【Skill 创作】SOLO Skill 生成器 —— 让每个人都能轻松创建专属 AI 技能",
+      "description": "",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17939,
+          "title": "【Skill 创作】SOLO Skill 生成器 —— 让每个人都能轻松创建专属 AI 技能",
+          "url": "https://forum.trae.cn/t/topic/17939"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/SamZebrado/mcp-agent-bus",
+      "url": "https://github.com/SamZebrado/mcp-agent-bus",
+      "license": "MIT",
+      "name": "mcp-agent-bus",
+      "description": "> A local MCP task bus for auditable SOLO multi-dialogue handoffs and compatible MCP agent tools. MCP Agent Task Bus 是一个本地 MCP 任务总线，用于让 SOLO 多对话或兼容 MCP 的 agent 工具进行可审计任务接力。 这个工具让多个 SOLO 对话或兼容 MCP 的 agent 工具通过本地任务总线进行通信。主对话可以将任务委托给 worker 对话，等待结果，所有任务状态、进度和证据都保存在本地，带有可审计的 append-only 事件日志。 这个项目保持极简： ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17486,
+          "title": "【Skill 创作】MCP Agent Task Bus：让一个 SOLO 对话指挥多个 SOLO 对话，甚至更多 MCP Agent",
+          "url": "https://forum.trae.cn/t/topic/17486"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/ma-hongxing-1/thought-retriever",
+      "url": "https://gitee.com/ma-hongxing-1/thought-retriever",
+      "license": "Apache-2.0",
+      "name": "🎯 What is Thought-Retriever?",
+      "description": "**Thought-Retriever** is a universal, model-agnostic memory module for LLM-based agents. Instead of simply retrieving raw text chunks like traditional RAG, it **retrieves \"thoughts\"** — distilled, validated reasoning abstractions extracted from past LLM interactions. This approach enables AI agents ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18426,
+          "title": "【Skill 创作】56岁小白大叔开发的思想记忆SKILL硬刚多级RAG打造低token自进化AI长时记忆系统",
+          "url": "https://forum.trae.cn/t/topic/18426"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/yuzhiboshuai63-eng/Thesis-SOS",
+      "url": "https://github.com/yuzhiboshuai63-eng/Thesis-SOS",
+      "license": "MIT",
+      "name": "论文急救全能助手 (Thesis SOS)",
+      "description": "本 Skill 是一套完整的学术论文智能处理工作流，集成降重降AI、格式学习、质量审查三大能力矩阵。通过 AI 驱动的多维度文本改写策略，帮助用户有效降低论文的重复率和 AI 生成痕迹，同时提供论文格式模仿改写、错别字检测、学术英语核对、文献来源检测等全方位质量保障功能。 | 功能 | 描述 | 适用场景 | |------|------|----------| | **降重复率（深度）** | 全网领先的降重技术，一键大幅降低重复率，保证学术表达 | 查重报告显示重复率过高 | | **降AI率** | 5级微度模式 + AI移除模式，精准控制改写幅度，保持学术性 | AI检测工具标记为AI",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18262,
+          "title": "【Skill 创作】论文急救全能助手 Thesis SOS — 从降重到格式模仿，一站式解决论文难题",
+          "url": "https://forum.trae.cn/t/topic/18262"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/wukun2005-gif/ai-skills",
+      "url": "https://github.com/wukun2005-gif/ai-skills",
+      "license": "MIT",
+      "name": "AI Skills",
+      "description": "> Every AI coding tool has its own skills format. You end up rewriting the same instructions for Claude Code, Cursor, Windsurf, Cline... every time you refine a workflow. > > This repo fixes that. Write once, sync everywhere. Works across **20+ tools**. 每个 AI 编码工具都有自己的 skills/rules 系统，互不兼容。你不得不为每个工具",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18399,
+          "title": "【Skill 创作】每个 AI 编码工具都有自己的 skills/rules 系统，互不兼容。你不得不为每个工具重复编写相同的指令。这个仓库解决了这个问题。",
+          "url": "https://forum.trae.cn/t/topic/18399"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/jacknietzsche/Tradingbook.skill",
+      "url": "https://github.com/jacknietzsche/Tradingbook.skill",
+      "license": "MIT",
+      "name": "📚 投资经典著作决策技能库",
+      "description": "> 将14本投资名著转化为可执行的AI决策技能 | Investment Classics Decision Skill Library --- - [项目简介](#-项目简介) - [为什么做这个项目](#-为什么做这个项目) - [快速开始](#-快速开始) - [项目结构](#-项目结构) - [Skill 详细清单](#-skill-详细清单) - [Skill 核心结构](#-skill-核心结构) - [使用场景示例](#-使用场景示例) - [核心金句摘录](#-核心金句摘录) - [技术实现](#-技术实现) - [路线图](#-路线图) - [贡献指南](#-贡献指南) - ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18405,
+          "title": "投资经典决策技能",
+          "url": "https://forum.trae.cn/t/topic/18405"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/bai-ligang12/adversarial-review-skill",
+      "url": "https://gitee.com/bai-ligang12/adversarial-review-skill",
+      "license": "MulanPSL-2.0",
+      "name": "SM-2 间隔复习卡片生成器",
+      "description": "基于 SuperMemo SM-2 间隔重复算法的智能学习卡片系统。输入任意学习材料，AI 自动完成「知识点提取 → 卡片生成 → 科学排期 → 一键导出」全流程。 **本 Skill 做什么**：将非结构化的学习材料转化为结构化问答卡片，并用 SM-2 算法为每张卡片计算最优复习时间表。 **本 Skill 不做什么**： - 不替代 Anki（Anki 负责复习调度，本 Skill 负责制卡和排期规划） - 不处理非文本内容（图片、音频、视频需用户自行描述） - 不保证记忆效果（算法提供科学建议，实际效果取决于用户是否按时复习） **与直接问通用 AI 的区别**：通用 AI 也能生成卡片",
+      "ioHints": [
+        "usage: \"帮我生成复习卡片、提取知识点、制作间隔复习计划、导出Anki卡片、SM-2复习、制作闪卡、生成记忆卡片、科学复习、艾宾浩斯复习、备考复习、考试复习、间隔重复\""
+      ],
+      "forumTopics": [
+        {
+          "topicId": 18468,
+          "title": "「SM-2 间隔复习卡片生成器」—— 把任何学习材料变成科学复习计划",
+          "url": "https://forum.trae.cn/t/topic/18468"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/samzebrado/mcp-agent-bus",
+      "url": "https://gitee.com/samzebrado/mcp-agent-bus",
+      "license": "MIT",
+      "name": "mcp-agent-bus",
+      "description": "> A local MCP task bus for auditable SOLO multi-dialogue handoffs and compatible MCP agent tools. MCP Agent Task Bus 是一个本地 MCP 任务总线，用于让 SOLO 多对话或兼容 MCP 的 agent 工具进行可审计任务接力。 这个工具让多个 SOLO 对话或兼容 MCP 的 agent 工具通过本地任务总线进行通信。主对话可以将任务委托给 worker 对话，等待结果，所有任务状态、进度和证据都保存在本地，带有可审计的 append-only 事件日志。 这个项目保持极简： ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17486,
+          "title": "【Skill 创作】MCP Agent Task Bus：让一个 SOLO 对话指挥多个 SOLO 对话，甚至更多 MCP Agent",
+          "url": "https://forum.trae.cn/t/topic/17486"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/ADD574929477/solo-skill-ai-short-drama",
+      "url": "https://github.com/ADD574929477/solo-skill-ai-short-drama",
+      "license": "MIT",
+      "name": "🎬 SOLO Skill: AI短剧全流程创作",
+      "description": "> 从一句话创意到可执行拍摄方案的一站式解决方案 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![SOLO Skill](https://img.shields.io/badge/SOLO-Skill-blue.svg)](https://www.solo.cn) 这个 SOLO Skill 帮助短剧创作者将创作周期从 **一周压缩到1小时**： | 功能模块 | 说明 | |:--------:|:-----| | 📖",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18017,
+          "title": "【Skill 创作】🎬 AI短剧全流程创作：从一句话创意到可执行制作方案",
+          "url": "https://forum.trae.cn/t/topic/18017"
+        },
+        {
+          "topicId": 18018,
+          "title": "【Skill 创作】🎬 AI短剧全流程创作：从一句话创意到可执行制作方案",
+          "url": "https://forum.trae.cn/t/topic/18018"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/TangDouOVO/ancient-beauty-prompt-generate",
+      "url": "https://github.com/TangDouOVO/ancient-beauty-prompt-generate",
+      "license": "MIT",
+      "name": "Ancient Beauty Prompt Generator",
+      "description": "[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 根据用户输入的古风关键词，生成高质量的AI图片生成提示词。支持朝代识别、情绪识别、颜色匹配等功能，输出比例固定为9:16。 - 🎨 **智能语义匹配**：自动识别人物、服装、发",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18101,
+          "title": "【Skill 创作】真人古风短剧美女 人物参考图提示词生成",
+          "url": "https://forum.trae.cn/t/topic/18101"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/liuhe37186/he-design",
+      "url": "https://github.com/liuhe37186/he-design",
+      "license": "MIT",
+      "name": "He Design",
+      "description": "将高级“审美系统”抽取为通用的 Web 页面设计规范，服务于现代 Web 网页、前端组件和交互界面的设计与代码实现。 这个技能的目标不是堆更多装饰，而是帮助宿主智能体先建立 Web 页面的主次关系、响应式骨架、阅读节奏和品牌气质，再把这些判断翻译成符合现代 Web 标准的可开发页面结构与样式约束。 - 用户要做 Web 页面视觉设计、首屏、落地页、专题页、功能介绍页 - 用户要做 Web 交互界面、组件样式、信息型网页或 Web UI 改版 - 用户要求网页“更高级”“更有秩序”“更像品牌发布页/信息说明页” - 用户给的是文案、模块、页面目标，希望你整理成 Web 设计规范或可开发界面 - ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17758,
+          "title": "原来美也是可以被量化的，使用he-design让你的页面审美告别AI味",
+          "url": "https://forum.trae.cn/t/topic/17758"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/anyeduke11/thinking-coach",
+      "url": "https://github.com/anyeduke11/thinking-coach",
+      "license": "MIT",
+      "name": "GROW教练式思维模型引导器 / GROW Coaching Thinking Model Guide v1.6",
+      "description": "> 🌐 **Bilingual Support / 双语支持**：本 Skill 支持中文和英文，自动检测用户语言并切换。 > This Skill supports Chinese and English with automatic language detection. --- **在每次对话开始时，按以下规则检测用户语言：** 1. **用户输入语言**：检测用户首次输入的语言（中文/英文） 2. **自动切换**：整个对话过程中使用检测到的语言 3. **手动切换**：用户可随时通过命令切换语言 | 命令 / Command | 功能 / Function | |---------",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17966,
+          "title": "【Skill 创作】GROW教练式思维模型引导器：用结构化对话帮你解决复杂问题",
+          "url": "https://forum.trae.cn/t/topic/17966"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/zj0107/app-project-skill",
+      "url": "https://gitee.com/zj0107/app-project-skill",
+      "license": "MIT",
+      "name": "App Project - 全周期应用开发 Skill",
+      "description": "**App Project** 是一个面向初学者和学习者的全周期应用开发 skill，覆盖从需求分析、架构设计、编码实现到测试落地的完整软件工程流程。通过 16 大核心机制确保每个阶段都有明确的输入、输出和质量保障，并支持多 Agent 协同开发和项目模板复用以提升效率和质量。 **核心理念：** - **检查点持久化**：每个阶段的产出物必须写入文件，防止上下文丢失 - **具体可执行**：每阶段提供详细的步骤序列、对话示例和输出格式 - **阶段门禁**：每阶段结束必须通过质检清单，采用五级决策机制（Go/Conditional Go/Recycle/Hold/Kill） - **证据包标",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17243,
+          "title": "【Skill创作】一名大学牲将软件工程融入到AI工作流的一次实践skill v5.0",
+          "url": "https://forum.trae.cn/t/topic/17243"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/HAIJAIWE/guanjia",
+      "url": "https://github.com/HAIJAIWE/guanjia",
+      "license": "Apache-2.0",
+      "name": "guanjia（管家）系列技能",
+      "description": "> 你工具有一堆 Agent、Skill、MCP，但不知道什么时候该用哪个？管家帮你统一调度。 AI 编码工具（Trae、Cursor、Claude Code 等）装了一堆技能：代码搜索、后端开发、前端设计、API 测试……但每次你提需求，AI 不知道该调哪个，经常用错工具或者漏掉该用的。 管家就是解决这个问题的： 1. 你提需求 → 管家扫描当前所有可用的工具 2. 逐个分析哪个工具最适合你的任务，打分排序 3. 弹窗列出最合适的 top 10，让你勾选确认 4. 按顺序串行调用，前一个的输出传给后一个 你不用手动指定工具，也不用担心用错了。 *** ``` | 版本            ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18071,
+          "title": "【skill创作】管家替你检测所有的工具，检测好后然后调用完成任务。",
+          "url": "https://forum.trae.cn/t/topic/18071"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/beiyuii/personal-api-skill",
+      "url": "https://github.com/beiyuii/personal-api-skill",
+      "license": "MIT",
+      "name": "Personal API",
+      "description": "Personal API is a lightweight routing skill for creating and maintaining an AI-readable identity layer inside an Obsidian vault. The skill has three core contracts: 1. `ME.md` — identity contract. 2. `AGENT.md` — behavior contract. 3. `30.knowledge/00.system/methodology.md` — Knowledge Palace v2 ope",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17258,
+          "title": "【Skill 创作】Personal API：别再让 AI 每次都重新认识你",
+          "url": "https://forum.trae.cn/t/topic/17258"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/HEYANG-AI/vibe-coding-agent-framework",
+      "url": "https://github.com/HEYANG-AI/vibe-coding-agent-framework",
+      "license": "MIT",
+      "name": "Vibe Coding Platform Automation",
+      "description": "**企业内网智能体平台全自动浏览器操作 Skill** > 一句话指令驱动：登录 → 创建智能体 → 搭建工作流 → 配置节点 → 保存发布 > > 无需任何平台 API，纯 UI 自动化，适配任意企业内网平台。 --- ``` - 自动扫描页面 DOM，提取所有交互元素 - 智能聚类到功能区域（表单/菜单/工具栏/画布） - 多策略选择器生成：`data-testid` > text > ID > CSS > XPath - 页面模型持久化到 JSON，支持增量更新 - 元素定位失败时自动启用 4 级恢复策略 - 文本重匹配 → 语义角色匹配 → 模糊属性匹配 → 页面刷新 - 截图保存现场",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 18016,
+          "title": "【Skill创作】Vibe-Coding-Agent-Framework 全能智能协同自动化框架",
+          "url": "https://forum.trae.cn/t/topic/18016"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/flaravel/zuimei-zjz-api",
+      "url": "https://github.com/flaravel/zuimei-zjz-api",
+      "license": "MIT",
+      "name": "最美证件照 API Skill",
+      "description": "让 AI 助手调用最美证件照的图像处理 API。 **官网**：https://zuimei.huipai.vip 这个 Skill 不是单个图片接口的堆叠，而是把“证件照制作”整理成一个可直接调用的工作流： - 一键证件照 - 智能抠图 - 换背景色 - 人脸增强 - 排版照 - 图片编辑 适合的典型任务： - “帮我生成一张一寸蓝底证件照” - “把这张照片抠成透明底” - “把白底换成红底” - “帮我生成 6 寸排版照” - “把这张模糊照片增强一下” 优先目标不是解释接口，而是**把用户自然语言稳定映射到正确的处理链路和参数**。 1. **禁止创建任何新代码文件**（包括 .py、",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17946,
+          "title": "〖Skill 创作〗最美证件照 API Skill：把证件照制作、抠图、换底色、排版封装成一个可直接调用的工作流",
+          "url": "https://forum.trae.cn/t/topic/17946"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/hangshin/koi-prd-skill-suite",
+      "url": "https://github.com/hangshin/koi-prd-skill-suite",
+      "license": "MIT",
+      "name": "Koi-Prd-Skill-Suite",
+      "description": "**一套为 Trae SOLO 设计的 AI 驱动 PRD 到代码落地自动化技能套件** [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Trae SOLO](https://img.shields.io/badge/Platform-Trae%20SOLO-orange.svg)](https://trae.cn) [![PRD Automation](https://img.shields.io/badge/PRD-Automation-green.svg)]() [English](R",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17925,
+          "title": "【Skill 创作】SOLO 自主开发：从 PRD 到代码的全流程套件",
+          "url": "https://forum.trae.cn/t/topic/17925"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Damond-Fung/terminal-simulator-skill",
+      "url": "https://github.com/Damond-Fung/terminal-simulator-skill",
+      "license": "MIT",
+      "name": "Terminal Simulator Skill",
+      "description": "一个面向网站、文档、教程和产品引导页面的 `terminal-simulator` Skill。 它用于生成和优化： - 终端风格的前端 UI - CLI 教程式交互 - 打字机命令动画 - PowerShell / CMD / Bash / Zsh 差异化示例 - 响应式和可访问的 terminal section 这个仓库只保留与 Skill 本身直接相关的内容，不包含历史文件、临时规划文件和本地缓存。 ``` `terminal-simulator` Skill 包含： - `SKILL.md`：触发条件、能力边界、实现规则、交付规范 - `examples/`：输入输出示例 - `te",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17336,
+          "title": "【Skill 创作】终端式交互体验的 Skill",
+          "url": "https://forum.trae.cn/t/topic/17336"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/taihuiwu/resume-radar",
+      "url": "https://github.com/taihuiwu/resume-radar",
+      "license": "Apache-2.0",
+      "name": "简历雷达 · HR 批量智能初筛 Skill",
+      "description": "> **一句话定位**：给 HR 一把「雷达」，把一整个文件夹里的几百份 PDF/Word 简历， > 在几分钟内变成打过分、排好序、分好类、可直接交付的 Excel 一览表 + JSON 资产库。 | 场景 | 传统做法 | 使用本 Skill | |---|---|---| | 校招季一次性收到 500+ 简历 | 人工逐份翻阅，主观筛选 | 一条指令批处理，自动排序 | | 猎头一天推 30 份 PDF 打包给你 | 一份份看格式各异的简历 | 统一结构化，按岗位模板打分 | | 跨部门招聘多岗位并行 | 多套标准记在脑子里 | 每个岗位一套 `scoring_rules.yaml`，可",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17640,
+          "title": "【Skill 创作】面向 HR / HRBP / 招聘经理的批量筛选海量简历Skill",
+          "url": "https://forum.trae.cn/t/topic/17640"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/haodehaode378/ruiping-skill",
+      "url": "https://github.com/haodehaode378/ruiping-skill",
+      "license": "MIT",
+      "name": "🔥 Repo-Roast —— 锐评你的代码仓库",
+      "description": "--- 现有工具各管一摊，没人看全局： | 工具 | 做什么 | 缺什么 | |------|--------|--------| | SonarQube | 静态规则扫描 | 没有语义理解，不会说人话 | | CodeScene | 热点分析 | 不读代码内容 | | ESLint/Prettier | 格式 + 简单规则 | 只管对不对，不管好不好 | | **Repo-Roast** | 五维度语义级审查 | — | 输入一个 GitHub 仓库地址或本地路径，三阶段自动完成： ``` 审查结束后，在你的仓库根目录生成一份带评分、带证据、带建议的结构化锐评报告。 不是建议，是底线。违反任",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17792,
+          "title": "造了一个\"锐评\"的代码审查 Skill —— Repo-Roast",
+          "url": "https://forum.trae.cn/t/topic/17792"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/wang_quan/wq_resume_skill",
+      "url": "https://gitee.com/wang_quan/wq_resume_skill",
+      "license": "Apache-2.0",
+      "name": "Resume Skill — 简历技能总入口",
+      "description": "> **版本**: v1.0.0 本技能是**所有简历相关技能的唯一总入口和控制器**，统一调度和管理简历的完整数据生成流程。 1. **统一入口**：所有简历相关的操作必须通过本技能发起，子技能不可单独调用 2. **流程导航**：引导用户按照正确的数据生成流程操作 3. **意图路由**：根据用户输入的关键词自动路由到对应的子技能 4. **状态感知**：感知当前简历数据的状态，提示用户下一步操作 --- - @动作: 根据用户输入的关键词，查找\"决策矩阵命中速查\"命中对应行 - @动作: 跳转到对应的子技能（`resume-base-info` 或 `resume-experience-",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17901,
+          "title": "【Skill 创作】专属于你的职业规划师 — 全流程的个人经历搭建和简历制作工具",
+          "url": "https://forum.trae.cn/t/topic/17901"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/derek2000139/Destiny_Oracle_Skills",
+      "url": "https://github.com/derek2000139/Destiny_Oracle_Skills",
+      "license": "Apache-2.0",
+      "name": "Destiny Oracle",
+      "description": "中文说明: [README.zh-CN.md](README.zh-CN.md) Destiny Oracle is a local-first Trae Solo skill project for a bilingual life-consulting experience based on traditional Eastern metaphysical rule engines. The architecture deliberately separates two layers: - Rule engines calculate auditable structured facts,",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17756,
+          "title": "【Skill 创作】砍掉“算命感”，多方法融合的东方命理人生顾问 🔮",
+          "url": "https://forum.trae.cn/t/topic/17756"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/boshi-xixixi/solo-contest-post-generator",
+      "url": "https://github.com/boshi-xixixi/solo-contest-post-generator",
+      "license": "MIT",
+      "name": "SOLO 技能创作赛参赛帖子生成器",
+      "description": "专门用于生成符合\"一切皆可 Skill｜SOLO 技能创作赛\"要求的参赛帖子。 当用户需要： - 参加 SOLO 技能创作赛并提交作品 - 为已创作的 Skill 生成参赛帖子 - 准备 Skill 测评内容 - 优化现有参赛帖子内容 时使用此 Skill。 通过以下问题了解 Skill 详情（每次问 2-3 个问题）： **基本信息：** - Skill 名称是什么？ - Skill 解决了什么问题？ - 目标用户是谁？ - 是否有现成的 Skill 文件或项目？路径在哪里？ **创作背景：** - 为什么想做这个 Skill？ - 之前遇到了什么麻烦？ - 做出来之后能省掉哪些动作？ **",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17743,
+          "title": "【Skill 创作】使用Trae 生成了一个参加Trae论坛Skill比赛的Skill，告别排版烦恼",
+          "url": "https://forum.trae.cn/t/topic/17743"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Anduin2017/HowToCook",
+      "url": "https://github.com/Anduin2017/HowToCook",
+      "license": "Unlicense",
+      "name": "程序员做饭指南",
+      "description": "[![License](https://img.shields.io/github/license/Anduin2017/HowToCook)](./LICENSE) [![GitHub contributors](https://img.shields.io/github/contributors/Anduin2017/HowToCook)](https://github.com/Anduin2017/HowToCook/graphs/contributors) [![Man hours](https://manhours.aiursoft.com/r/github.com/Anduin20",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17718,
+          "title": "【SKILL创作】🍳 用 SOLO 做了个「今天吃什么」智能烹饪助手，解决选择困难症！",
+          "url": "https://forum.trae.cn/t/topic/17718"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/obra/superpowers",
+      "url": "https://github.com/obra/superpowers",
+      "license": "MIT",
+      "name": "Superpowers",
+      "description": "Superpowers is a complete software development methodology for your coding agents, built on top of a set of composable skills and some initial instructions that make sure your agent uses them. We're hiring someone to help out full time with Superpowers community and code work. You can read about the",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17718,
+          "title": "【SKILL创作】🍳 用 SOLO 做了个「今天吃什么」智能烹饪助手，解决选择困难症！",
+          "url": "https://forum.trae.cn/t/topic/17718"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/boshi-xixixi/lark-mbti-analyzer",
+      "url": "https://github.com/boshi-xixixi/lark-mbti-analyzer",
+      "license": "MIT",
+      "name": "飞书用户 MBTI 分析助手",
+      "description": "> **前置条件：** 先阅读 [`../lark-shared/SKILL.md`](../lark-shared/SKILL.md)。 本 Skill 通过分析飞书用户的聊天记录，基于 MBTI（迈尔斯 - 布里格斯类型指标）理论，从四个维度分析用户性格： - **E/I (外向/内向)**: 通过消息频率、互动积极性、社交倾向判断 - **S/N (感觉/直觉)**: 通过关注细节还是概念、具体还是抽象判断 - **T/F (思考/情感)**: 通过决策方式、表达风格、价值取向判断 - **J/P (判断/知觉)**: 通过计划性、灵活性、生活方式判断 ``` ``` **E 外向特征：",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17717,
+          "title": "【Skill 创作】Trae+飞书CLI 实现分析飞书用户的 MBTI 性格分析 - 一键读懂同事的沟通密码",
+          "url": "https://forum.trae.cn/t/topic/17717"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/code1480ZYF/Accelerated-Learning-Skill",
+      "url": "https://github.com/code1480ZYF/Accelerated-Learning-Skill",
+      "license": "MIT",
+      "name": "Accelerated Learning Toolkit",
+      "description": "[English](README.md) | [中文](README.zh.md) --- **Transform how you learn. Generate structured, deep-dive study notes on any subject — in minutes, not weeks.** Three specialized AI prompt templates. One goal: help you go from \"I should learn this\" to \"I deeply understand this\" faster than you thought ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17705,
+          "title": "【SKILL创作】用 AI 速通（或精通）一个学科或一本书，我的完整工作流分享",
+          "url": "https://forum.trae.cn/t/topic/17705"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Ethanxwang/tvc-director",
+      "url": "https://github.com/Ethanxwang/tvc-director",
+      "license": "MIT",
+      "name": "TVC Director · TVC 广告创意导演工作台",
+      "description": "本技能将 Agent 转化为一位 **TVC 广告创意导演**，核心职责：**把产品 brief 变成 Nano Banana Pro 关键帧提示词和 Seedance / 即梦 Multi-Phase 视频提示词**——经历创意提案、视觉定调、前期筹备、分镜与拍摄的完整流程。 **1. 产品电影化拆解（Cinematic Product Breakdown）** 产品是唯一主角，纯影棚，多 Phase 的产品微电影： - 零件悬浮拆解/精密组装动画 - 材质微距：金属磨砂纹理、玻璃折射、碳纤维编织 - 精确到秒的运镜编排：极慢拆解 → 爆发旋转 → 悬浮凝视 → 俯冲穿越 - 光影叙事：低调",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17691,
+          "title": "【Skill 创作】AIGC视频创作工作流 - 整合TVC-Director×LibTV的商业视频SOP",
+          "url": "https://forum.trae.cn/t/topic/17691"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/sablog/gold-price-monitor",
+      "url": "https://gitee.com/sablog/gold-price-monitor",
+      "license": "MIT",
+      "name": "【Skill 创作】金价监控定时任务",
+      "description": "",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17776,
+          "title": "【Skill 创作】金价监控定时任务",
+          "url": "https://forum.trae.cn/t/topic/17776"
+        },
+        {
+          "topicId": 17940,
+          "title": "【Skill 创作】金价监控定时任务skill",
+          "url": "https://forum.trae.cn/t/topic/17940"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/libtv-labs/libtv-skills",
+      "url": "https://github.com/libtv-labs/libtv-skills",
+      "license": "MIT",
+      "name": "🎬 libtv-skills",
+      "description": "> AI Agent Skills for [LibLib.tv](https://www.liblib.tv) — 让你的 AI Agent 轻松调用 LibTV 的生图、生视频等 AIGC 能力。 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Python 3.6+](https://img.shields.io/badge/Python-3.6+-green.svg)](https://python.org) **libtv-skills** 是一组面向 AI Agent ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17691,
+          "title": "【Skill 创作】AIGC视频创作工作流 - 整合TVC-Director×LibTV的商业视频SOP",
+          "url": "https://forum.trae.cn/t/topic/17691"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/caojunzhi72-ui/business-mentor",
+      "url": "https://github.com/caojunzhi72-ui/business-mentor",
+      "license": "MIT",
+      "name": "创业导师 - 残酷商业模拟",
+      "description": "你是一位拥有20年经验的创业导师，曾投资和指导过上百个创业项目。你的风格专业、冷静且直言不讳。你不会给予廉价的鼓励，而是直接指出问题，帮助创业者在真正投入真金白银之前发现致命陷阱。 1. **不替用户做选择**：永远不要假设用户的选择，也不要帮用户做决定。提出问题、分析利弊，让用户自己决策。 2. **基于推演而非标题**：根据设定和模拟数据的推演结果给出结论，而不是依赖模板标题。如果推演结果与标题冲突，以推演结果为准，可相应调整标题。 3. **直言不讳**：直接指出问题，不粉饰太平。创业是残酷的，你的反馈也应该是。 4. **数据驱动**：要求用户提供具体数据，基于数据进行推演，而非空谈概",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17574,
+          "title": "【Skill 创作】business-mentor：对创业idea进行残酷而真实的商业模拟推演",
+          "url": "https://forum.trae.cn/t/topic/17574"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/fengzhubao/agentarium",
+      "url": "https://github.com/fengzhubao/agentarium",
+      "license": "MIT",
+      "name": "Agentarium",
+      "description": "Agentarium is a public collection of reusable agent workflows and Skills. Agentarium is meant to be cross-agent by default: catalog entries describe reusable workflows first, and package-family directories describe importable packages second. The first published package came from TRAE SOLO contest w",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17578,
+          "title": "【Skill 创作】SOLO Project Publisher：把真实项目过程整理成能发布的社区帖",
+          "url": "https://forum.trae.cn/t/topic/17578"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Ringlingo/mindsave",
+      "url": "https://github.com/Ringlingo/mindsave",
+      "license": "MIT",
+      "name": "MindSave v3.5 — Hierarchical Agent State System",
+      "description": "**ALL `.mindsave/` paths in this skill MUST resolve to the workspace root, NOT the current working directory (`cwd`).** - Always resolve `.mindsave/` relative to the active workspace root (e.g., `{workspace_root}/.mindsave/`) - All saves: `{workspace_root}/.mindsave/snapshots/` - All loads: `{worksp",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17565,
+          "title": "【Skill 创作】MindSave：让 AI 编程助手在 Claude Code 积累的经验，在 Trae 里同样生效",
+          "url": "https://forum.trae.cn/t/topic/17565"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/DansYU/academic-research-guidelines",
+      "url": "https://github.com/DansYU/academic-research-guidelines",
+      "license": "MIT",
+      "name": "Academic Research Guidelines",
+      "description": "A set of behavioral guidelines to reduce common LLM mistakes in academic research assistance, derived from best practices in scholarly research methodology. English | [简体中文](./README.zh.md) When assisting with academic research, LLMs often make these critical mistakes: > **Hallucinating citations** ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17554,
+          "title": "【SOLO技能创作赛】一套专门针对\"AI 辅助学术研究\"场景设计的技能和规则",
+          "url": "https://forum.trae.cn/t/topic/17554"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/llootupsl/profound-cognition",
+      "url": "https://github.com/llootupsl/profound-cognition",
+      "license": "MIT",
+      "name": "快速理解（5步极简版）",
+      "description": "> 完整协议见下方。如果你是第一次接触本Skill，先读这5步就够了。 **Step 1 — 探测与分流**：识别平台能力（联网/离线/强/弱），判断问题类型，激活对应领域引擎 **Step 2 — 九层研究底座**：基础事实 → 时间演化 → 结构变量 → 比较参照 → 感知叙事 → 证据边界 → 利益相关者 → 反事实推演 → 知识边界，逐层递进 **Step 3 — 三路对抗验证**：逻辑攻击（找推理断裂）+ 证据攻击（质疑证据可靠性）+ 范围攻击（挑战分析边界），同时攻击你的结论 **Step 4 — 全息综合与科学深挖**：14维全息框架覆盖 + 科学层8模块（系统动力学/因果验证/",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17522,
+          "title": "【Skills 创作】我因为现有AI都答不好一个问题，而花了几个月造了一个深度思考引擎.",
+          "url": "https://forum.trae.cn/t/topic/17522"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/cunzailv/aicodeskill",
+      "url": "https://github.com/cunzailv/aicodeskill",
+      "license": "MIT",
+      "name": "Dev Guard — 代码质量门禁",
+      "description": "在提交代码前进行质量检查，生成规范的提交信息和 PR 描述，并提供代码审查建议。 --- ``` 四个核心能力： 1. **Pre-commit Checklist** — 提交前检查 2. **Smart Commit Message** — 智能提交信息 3. **PR Description** — PR 描述生成 4. **Code Review** — 代码审查 --- 根据用户输入判断需要执行哪个流程： | 用户输入 | 执行流程 | |---------|---------| | \"提交检查\"、\"pre-commit\"、\"检查一下\" | Pre-commit Checklist ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17473,
+          "title": "我做了一个代码质量门禁的 Skill ",
+          "url": "https://forum.trae.cn/t/topic/17473"
+        },
+        {
+          "topicId": 17470,
+          "title": "Dev Guard — 代码质量门禁 / Code Quality Gate",
+          "url": "https://forum.trae.cn/t/topic/17470"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/lvsao/shopify-skill-hub",
+      "url": "https://github.com/lvsao/shopify-skill-hub",
+      "license": "MIT",
+      "name": "Selofy Shopify Skill Hub",
+      "description": "[![skills.sh](https://skills.sh/b/lvsao/shopify-skill-hub)](https://skills.sh/lvsao/shopify-skill-hub) [![Skills](https://img.shields.io/badge/skills-7-2563eb)](./skills) [![Categories](https://img.shields.io/badge/categories-6-16a34a)](./catalog) [![License: MIT](https://img.shields.io/badge/licens",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17455,
+          "title": "一套开源 Shopify AI Skills 合集，希望帮电商卖家真正实现AI赋能业务",
+          "url": "https://forum.trae.cn/t/topic/17455"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/hangshin/koi-prd-skill-suite",
+      "url": "https://gitee.com/hangshin/koi-prd-skill-suite",
+      "license": "MIT",
+      "name": "Koi-Prd-Skill-Suite",
+      "description": "**一套为 Trae SOLO 设计的 AI 驱动 PRD 到代码落地自动化技能套件** [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Trae SOLO](https://img.shields.io/badge/Platform-Trae%20SOLO-orange.svg)](https://trae.cn) [![PRD Automation](https://img.shields.io/badge/PRD-Automation-green.svg)]() [English](R",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17925,
+          "title": "【Skill 创作】SOLO 自主开发：从 PRD 到代码的全流程套件",
+          "url": "https://forum.trae.cn/t/topic/17925"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/derek2000139/decision_skill",
+      "url": "https://github.com/derek2000139/decision_skill",
+      "license": "Apache-2.0",
+      "name": "Decision Advisor - 人生决策器",
+      "description": "> 融合心理学、行为经济学与管理咨询方法论的专业决策顾问。 **Decision Advisor** 不会替你做决定，而是通过结构化框架帮助你**理清思路、权衡利弊、识别认知偏见**，最终做出更理性的决策。 --- | 特性 | 说明 | |------|------| | 🎯 **智能意图识别** | 自动分析决策场景，推荐最适合的决策框架 | | 🧠 **专业方法论** | 整合诺贝尔奖得主级别的决策理论 | | ⚠️ **偏见检测** | 识别 9 种常见认知偏见，提供纠偏建议 | | 📋 **结构化输出** | 生成决策树、评分卡、风险报告等专业文档 | | 🔄 **交互式引导",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17454,
+          "title": "【Skill 创作】纠结3个月的人生选择，用这个Skill想通了",
+          "url": "https://forum.trae.cn/t/topic/17454"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/onioned/agent-skills",
+      "url": "https://github.com/onioned/agent-skills",
+      "license": "MIT",
+      "name": "分享个人agent skill",
+      "description": "- 控制论驱动的工程闭环开发系统。将软件开发建模为设定目标→实现→测量偏差→负反馈调节的控制回路。四角色分离（Architect/Builder/Verifier/Regulator），铁三角锁定（目标+契约+偏差量），偏差四分类处理。Invoke when user starts a new project, needs structured engineering workflow, or wants闭环管理软件开发过程。",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17448,
+          "title": "【Skill 创作】一个基于工程控制论的闭环开发复杂系统的skill",
+          "url": "https://forum.trae.cn/t/topic/17448"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/wz20031010/woozard",
+      "url": "https://gitee.com/wz20031010/woozard",
+      "license": "MulanPSL-2.0",
+      "name": "wzz",
+      "description": "wzz是一个专注于Web前端技术的开源团队，致力于打造高性能、易用的UI组件库，支持React、Vue等主流框架，助力开发者快速构建美观的应用。 软件架构说明 1.  xxxx 2.  xxxx 3.  xxxx 1.  xxxx 2.  xxxx 3.  xxxx 1.  Fork 本仓库 2.  新建 Feat_xxx 分支 3.  提交代码 4.  新建 Pull Request 1.  使用 Readme\\_XXX.md 来支持不同的语言，例如 Readme\\_en.md, Readme\\_zh.md 2.  Gitee 官方博客 [blog.gitee.com](https://bl",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17791,
+          "title": "【SOLO技能创作】Hermes API 集成的全链路自动化——从拿到一份 OpenAPI 文档，到产出可直接使用的类型安全客户端代码，中间所有重复劳动全部消除。",
+          "url": "https://forum.trae.cn/t/topic/17791"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/peachgreenti/lark-workflow-weekly-report",
+      "url": "https://github.com/peachgreenti/lark-workflow-weekly-report",
+      "license": "MIT",
+      "name": "飞书智能周报工作流",
+      "description": "> **前置条件：** 先阅读 [`lark-shared`](https://github.com/larksuite/cli/blob/main/skills/lark-shared/SKILL.md) 了解认证和权限。 - \"帮我生成本周周报\" - \"写一份工作汇报\" - \"自动生成周报并发到群里\" - \"查看本周有哪些会议和任务\" - \"预览本周数据（dry-run）\" ``` 1. 打开 [火山方舟控制台](https://console.volcengine.com/ark) 2. 创建 **推理接入点**（推荐 `Doubao-1.5-pro`），获取接入点 ID（`ep-xxx",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17433,
+          "title": "【Skill 创作】飞书智能周报自动化工具",
+          "url": "https://forum.trae.cn/t/topic/17433"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/caojunzhi72-ui/solo-competition-post-generator",
+      "url": "https://github.com/caojunzhi72-ui/solo-competition-post-generator",
+      "license": "MIT",
+      "name": "SOLO技能创作赛 - 参赛帖生成器",
+      "description": "本Skill用于帮助用户将已有的Skill快速转换为符合社区规范的参赛帖。 **核心特性：** - 支持Skill创作和Skill测评两个赛道 - 内置版本管理，支持多次迭代生成 - 用户确认流程，确保内容质量 - 内容真实性校验，避免空泛表述 向用户确认参赛赛道： **选项A：Skill创作赛道** - 适用于用户自己创建的Skill - 需要展示创作过程、使用场景、效果对比 **选项B：Skill测评赛道** - 适用于体验并评估他人的Skill - 需要附上原Skill的参赛帖链接 - 需要给出测评结论和改进建议 根据用户选择，获取目标Skill： **如果是Skill创作赛道：** -",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17432,
+          "title": "SOLO技能创作赛 - 参赛帖生成器",
+          "url": "https://forum.trae.cn/t/topic/17432"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/peachgreenti/meeting-processor",
+      "url": "https://github.com/peachgreenti/meeting-processor",
+      "license": "MIT",
+      "name": "工作流程",
+      "description": "``` - **🔧 基于 lark-cli** — 通过飞书官方 CLI 工具调用 API，无需手动管理 Token，认证由 lark-cli 统一处理 - **📋 会议转写获取** — 通过 lark-cli 获取飞书妙记会议录音转写文本（含发言人信息） - **🤖 AI 智能分析** — 自动提取关键决策、待办事项和会议摘要 - **✅ 自动创建任务** — 将待办事项通过 lark-cli 自动创建为飞书任务，通过邮箱匹配并分配给对应人员 - **🔄 多 AI 后端** — 支持 OpenAI、智谱 AI (GLM)、阿里云百炼 (Qwen) 及任何 OpenAI 兼容接口 - ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17428,
+          "title": "【Skill 创作】飞书会议纪要自动处理助手",
+          "url": "https://forum.trae.cn/t/topic/17428"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/weiransoft/TraeMultiAgentSkill",
+      "url": "https://github.com/weiransoft/TraeMultiAgentSkill",
+      "license": "MIT",
+      "name": "Multi-Agent Team Dispatcher (AI-Enhanced)",
+      "description": "基于任务类型和上下文，自动调度到最合适的智能体角色（架构师、产品经理、测试专家、Solo Coder、UI 设计师）。 **v2.5 新增（Cybernetics 工程控制论增强）**: > 参考来源：https://github.com/Jiaqi-Guo-0114/cybernetics-agent > 理论依据：钱学森工程控制论（系统工程、系统学）、ICLR 2026 Profile-Aware Maneuvering 架构、Norbert Wiener 控制论、Ashby 必要多样性定律 > - 🔄 三环控制模型：战略层、战术层、执行层 > - 💫 反馈控制环：感知-决策-执行-反",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17383,
+          "title": "【Skill 创作】Multi-Agent Team：一个能自动调度架构师、产品经理、测试专家等多角色协作的 AI 开发团队 Skill",
+          "url": "https://forum.trae.cn/t/topic/17383"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/jwj911/rapper-coach",
+      "url": "https://github.com/jwj911/rapper-coach",
+      "license": "MIT",
+      "name": "Rapper Coach",
+      "description": "当用户出现以下任一意图时，加载本 Skill： - 用户写了一段说唱词，要求修改/点评/优化 - 用户想学习某种说唱技巧（押韵、Flow、Punchline） - 用户要求模仿某位 rapper 的风格写词或改词 - 用户需要 Battle 准备（写 Diss、想 Angle、Rebuttal） - 用户直接提到 \"rapper coach\" / \"说唱教练\" 分析歌词的押韵质量，检查以下层级： 1. **单字韵** (Single-syllable rhyme) — 基础 2. **多音节韵** (Multi-syllable rhyme) — 推荐，自动匹配词组尾音 3. **家族韵** ",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17276,
+          "title": "【SKILL创作】一个人的rapper教练",
+          "url": "https://forum.trae.cn/t/topic/17276"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/houlaisan/deai-academic-zh",
+      "url": "https://github.com/houlaisan/deai-academic-zh",
+      "license": "MIT",
+      "name": "中文学术论文去AI化 (deai-academic)",
+      "description": "本 skill 用于检测和消除中文学术论文中的 AIGC 写作痕迹。 **实战验证**：在一篇本科毕设论文（29000字）上，经过4轮迭代，维普AIGC检测率从 **53.34% 降至 16.32%**，知网AIGC检测 **0%**。 - 绝不新增数据、指标、实验结论 - 绝不新增引用或断言 - 仅改进表达方式，不改变技术内容 - 每句话必须传递可核查的具体信息 - 用系统独有的名词、参数、表名替换通用描述 - 空话删掉，不要替换成另一句空话 --- 维普检测**不是看你说了什么，而是看你怎么说的**。它从三个维度打分： | 维度 | AI 文本特征 | 人类文本特征 | |------|-",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17244,
+          "title": "【Skill创作】zh-thesis-risk-optimizer：面向中文论文的 AIGC 率高与查重率高的优化 Skill。",
+          "url": "https://forum.trae.cn/t/topic/17244"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Yezery/aigc-down-skill",
+      "url": "https://github.com/Yezery/aigc-down-skill",
+      "license": "MIT",
+      "name": "AIGC-Down：中文学术写作去AI味指南",
+      "description": "你是一名中文学术写作编辑，专门识别并消除学术文本中的AI生成痕迹，使文章读起来更自然、更具人类学者的思维纹理。 对用户提交的文本进行人工化处理： 1. **识别AI模式** —— 扫描下列典型AI写作模式 2. **改写问题段落** —— 用自然表达替换AI套话 3. **保留核心意思** —— 不改变论证逻辑与学术观点（默认保真改写，不新增事实、案例、数据） 4. **维持学术语域** —— 保持论文的学术程度，不能过度口语化 5. **注入作者视角** —— 不只是删除AI味，还要植入真实学者的思维质感 --- > AIGC检测器识别的不是「内容」，而是「写作模式」的统计规律。AI写作高度",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17244,
+          "title": "【Skill创作】zh-thesis-risk-optimizer：面向中文论文的 AIGC 率高与查重率高的优化 Skill。",
+          "url": "https://forum.trae.cn/t/topic/17244"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Haimbeau1o/thesis-optimizer",
+      "url": "https://github.com/Haimbeau1o/thesis-optimizer",
+      "license": "MIT",
+      "name": "Thesis-Optimizer: 学术论文智能优化系统",
+      "description": "当用户需要对学位论文进行以下优化时触发： - 降低 AI 写作风险特征（可结合用户指定检测工具抽样验证） - 降低查重率（知网、维普等） - 学术润色和表达提升 - 系统化、可追踪的论文优化 采用**两层文档架构 + 显式状态追踪**： ``` **触发条件**: 用户首次请求优化论文 **执行步骤**: 1. 使用 `view_file` 完整阅读论文LaTeX源文件 2. 分析结构：识别章节、段落、公式、图表 3. 内容解读：理解研究主题、核心贡献、论证逻辑 4. 问题诊断：识别AI特征、查重风险点、表达问题 5. 根据 `templates/master_overview_templat",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17244,
+          "title": "【Skill创作】zh-thesis-risk-optimizer：面向中文论文的 AIGC 率高与查重率高的优化 Skill。",
+          "url": "https://forum.trae.cn/t/topic/17244"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Flowershangfromthebranches/zh-thesis-risk-optimizer",
+      "url": "https://github.com/Flowershangfromthebranches/zh-thesis-risk-optimizer",
+      "license": "MIT",
+      "name": "zh-thesis-risk-optimizer v2.0",
+      "description": "Use this skill when: - The user has a Chinese graduation thesis with high AIGC suspicion rate - The user wants to reduce AI-like writing patterns while improving academic quality - The input is a `.docx` thesis file (optionally with an AIGC color-marked report) - The user needs discipline-specific r",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17244,
+          "title": "【Skill创作】zh-thesis-risk-optimizer：面向中文论文的 AIGC 率高与查重率高的优化 Skill。",
+          "url": "https://forum.trae.cn/t/topic/17244"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Flowershangfromthebranches/interior-3d-preview-skill",
+      "url": "https://github.com/Flowershangfromthebranches/interior-3d-preview-skill",
+      "license": "MIT",
+      "name": "Interior Hard-Renovation Preview",
+      "description": "Create a navigable hard-renovation model from a floor plan. This skill focuses on rough-room engineering decisions: wall topology, doors, windows, openings, measurements, adjustment, and demolition planning. It is not a structural safety report or construction drawing. Ask for missing high-impact in",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17242,
+          "title": "【Skill创作】interior-3d-preview-skill：用于房间硬装修预览",
+          "url": "https://forum.trae.cn/t/topic/17242"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Abnerla/AI_paper",
+      "url": "https://github.com/Abnerla/AI_paper",
+      "license": "Apache-2.0",
+      "name": "项目简介",
+      "description": "**纸研社**是一款运行在 Windows 平台的桌面应用程序，定位为**作者自用的学术写作辅助工具**。它可以帮助你把\"想到的内容\"组织成结构清晰、表达地道、格式规范的学术文本，并在成稿后进行自我检查与打磨。 核心理念：**让 AI 成为你的写作助教，而不是代笔**。所有内容仍应由作者主导思考与把关，AI 只负责加速组织、提示问题和辅助润色。 软件所有数据保存在本地，API 密钥采用加密存储，无需注册、无需联网登录，开箱即用。 **广义上来说软件可以用于任何写作方面的应用，包括但不限于文章写作、推文写作等，你只需要自己修改提示词即可使用** > ⚠️ **学术诚信声明** > > - 纸研社",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17244,
+          "title": "【Skill创作】zh-thesis-risk-optimizer：面向中文论文的 AIGC 率高与查重率高的优化 Skill。",
+          "url": "https://forum.trae.cn/t/topic/17244"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Flowershangfromthebranches/docx-shape-diagram-skill",
+      "url": "https://github.com/Flowershangfromthebranches/docx-shape-diagram-skill",
+      "license": "MIT",
+      "name": "DOCX Shape Diagram",
+      "description": "Use editable Word drawing objects for diagrams in `.docx` documents. Do not satisfy diagram requests by inserting a screenshot or generated image unless the user explicitly asks for an image fallback. 1. **Classify the request** - Existing image conversion: inspect the DOCX for raster diagrams and s",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17241,
+          "title": "【Skill创作】DOCX 可编辑形状图 Skill，把 Word 文档里的栅格图示转换成可编辑的 Word 形状",
+          "url": "https://forum.trae.cn/t/topic/17241"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/majiabin2020/openclaw-evoskills",
+      "url": "https://github.com/majiabin2020/openclaw-evoskills",
+      "license": "MIT",
+      "name": "OpenClaw EvoSkills",
+      "description": "Evolve an existing skill package with short, verifier-driven iterations instead of rewriting it in one pass. This skill is also intended to act as OpenClaw's always-on meta-skill: it should load first, supervise other skills, and auto-capture repeated workflows into new skills before the user has to",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17210,
+          "title": "【Skill 创作】EvoSkills：一个能让Agent自动创建技能并持续进化技能的Skill",
+          "url": "https://forum.trae.cn/t/topic/17210"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/openai/codex",
+      "url": "https://github.com/openai/codex",
+      "license": "Apache-2.0",
+      "name": "Quickstart",
+      "description": "Run the following on Mac or Linux to install Codex CLI: ``` Run the following on Windows to install Codex CLI: ``` Codex CLI can also be installed via the following package managers: ``` ``` Then simply run `codex` to get started. Each GitHub Release contains many executables, but in practice, you l",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17224,
+          "title": "【Skill 创作】GitHub Trending 情报助手：一句话获取热门项目趋势分析",
+          "url": "https://forum.trae.cn/t/topic/17224"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/Yingz520/lawyer-skill",
+      "url": "https://github.com/Yingz520/lawyer-skill",
+      "license": "MIT",
+      "name": "Lawyer Skill",
+      "description": "> **专业 AI 法律助手** | 每一句话有法可依 | 支持联网查询最新法律动态 [![Version](https://img.shields.io/badge/version-v1.1.0-blue)](./SKILL.md) [![License](https://img.shields.io/badge/license-MIT-green)]() --- Lawyer Skill 是一款面向中国法律领域的专业 AI 助手 Skill，提供法律法规查询、案例分析、合同审查、法律意见书起草、行为可行性评估等法律服务。 - ✅ **引用具体法条** — 明确指出所依据的法律名称、条款编号",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17039,
+          "title": "【Skill 创作】我打算换个赛道 [无限创意]，来个律师 Skill.md 如何（专业 AI 法律助手）",
+          "url": "https://forum.trae.cn/t/topic/17039"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/autumnseasonism/lark-todo-skill",
+      "url": "https://github.com/autumnseasonism/lark-todo-skill",
+      "license": "MIT",
+      "name": "待办行动扫描器",
+      "description": "**目的**：确保 `lark-cli` 在 PATH 中可用。本 skill 除 Python 标准库（可选加速器）外，唯一外部依赖就是 `lark-cli`（官方 `@larksuite/cli` npm 包）——已装则跳过，缺失则自动补齐，装不上则给出清晰指引。 **首选路径**（`<SKILL_DIR>` 即本 SKILL.md 所在目录）： ``` 脚本按\"幂等探测 → 需要才安装 → 失败分类提示\"的顺序工作，**退出码就是分支**： | 退出码 | 含义 | Agent 的下一步 | |--------|------|----------------| | `0` | lark-",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17117,
+          "title": "lark-todo——飞书全平台待办行动扫描器·支持多企业账号",
+          "url": "https://forum.trae.cn/t/topic/17117"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/wjt0321/china-stock-analyst",
+      "url": "https://github.com/wjt0321/china-stock-analyst",
+      "license": "MIT",
+      "name": "🎯 A股智能分析助手",
+      "description": "**📈 A股短线交易分析助手 | Team-First 并行专家系统 | 插件化架构 | Tauri 桌面端** [核心特性](#-核心特性) • [快速开始](#-快速开始) • [功能模块](#-功能模块) • [更新日志](#-更新日志) --- > 一个 A 股短线分析工具，采用「**短线交易信号 + 营收质量**」双轨研判体系。 当前版本已升级为 **v3.2.0**，除了原有的 Claude Code Skill 能力，还新增了 **Tauri + Python Sidecar 桌面端**， 支持在 Windows 上独立运行：输入股票代码即可生成结构化短线分析报告，并可将标的加",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17068,
+          "title": "这是一个帮助 A 股短线投资者快速完成个股分析、多标对比、盘面复盘、数据验证的 AI 技能包。适合有选股需求但时间有限的散户投资者、喜欢研究基本面和资金面的交易者使用。 ###",
+          "url": "https://forum.trae.cn/t/topic/17068"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/jbts6/lark-alert",
+      "url": "https://github.com/jbts6/lark-alert",
+      "license": "MIT",
+      "name": "Lark-Cli 消息发送规则",
+      "description": "每条消息必须保证发出后才进行下一步，异常时(HTTP 429除外)最多重试3次，仍失败则跳过。 - **身份**: Bot (`--as bot`)  |  **目标群组**: `--chat-id oc_xxx`  |  **格式**: Markdown (`--markdown`) | 场景 | 标题 | 示例 | |------|------|------| | 复杂任务开始 | `## 🚀 【名称】` | `## 🚀 【背包系统】` | | 复杂任务进度 | `## 📊 【名称 - 进度X/Y】` | `## 📊 【背包系统 - 进度2/5】` | | 复杂任务完成 | `##",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17046,
+          "title": "【技能测评】\"Lark Alert 飞书通知\"：小而美的 AI 通知方案，配置门槛是最大拦路虎",
+          "url": "https://forum.trae.cn/t/topic/17046"
+        },
+        {
+          "topicId": 16744,
+          "title": "【Trae排队提醒】通过lark-cli 发通知",
+          "url": "https://forum.trae.cn/t/topic/16744"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/MorningStar0709/trae-agent-enhancements",
+      "url": "https://github.com/MorningStar0709/trae-agent-enhancements",
+      "license": "MIT",
+      "name": "Trae AI Agent Enhancements",
+      "description": "[![Platform](https://img.shields.io/badge/platform-Windows-blue?style=flat-square)](https://www.trae.ai/) [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE) [![npm](https://img.shields.io/npm/v/trae-agent-enhancements?style=flat-square)](https://www.npmjs.com/pac",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17025,
+          "title": "【Skill 创作】火速更新一个适配自定义模型的Skill",
+          "url": "https://forum.trae.cn/t/topic/17025"
+        },
+        {
+          "topicId": 13989,
+          "title": "【Skill创作】介绍一套完全适配中文用户Trae IDE的rule+skill组合以及一些经验分享",
+          "url": "https://forum.trae.cn/t/topic/13989"
+        }
+      ]
+    },
+    {
+      "repo": "github.com/theming028/skills",
+      "url": "https://github.com/theming028/skills",
+      "license": "MIT",
+      "name": "【Skill 创作】知识复利引擎 — 让 SOLO 拥有永不遗忘的记忆",
+      "description": "",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 16998,
+          "title": "【Skill 创作】知识复利引擎 — 让 SOLO 拥有永不遗忘的记忆",
+          "url": "https://forum.trae.cn/t/topic/16998"
+        }
+      ]
+    },
+    {
+      "repo": "gitee.com/yang-wenjie1570/youdaonote-wiki-manager",
+      "url": "https://gitee.com/yang-wenjie1570/youdaonote-wiki-manager",
+      "license": "MIT",
+      "name": "有道云笔记 Wiki 知识库管理器",
+      "description": "在有道云笔记中构建持久化、可复合增长的知识库（Wiki 模式）。 使用者需要先自行完成以下配置： 1. 安装 youdaonote CLI：`npm install -g youdaonote` 2. 配置 API Key：`youdaonote config set apiKey <自己的API Key>` 3. 确认版本 ≥ 1.3.3：`youdaonote version` 4. 确认 API Key 有效：`youdaonote list` 5. **所有命令必须加 `-s wiki` 参数**：`youdaonote -s wiki <command>` | 操作 | 命令 | |",
+      "ioHints": [],
+      "forumTopics": [
+        {
+          "topicId": 17021,
+          "title": "【Skill 创作】有道云笔记 Wiki 知识库 Skill for Trae SOLO",
+          "url": "https://forum.trae.cn/t/topic/17021"
+        }
+      ]
+    }
+  ]
+}
