@@ -20,6 +20,7 @@ import { getComponentDefinition } from "./component-registry";
 import type { RuntimeRow, RuntimeState } from "../live-runtime";
 import type { AppPageChartSchema } from "../app-runtime-schema";
 import { buildEchartsOption } from "../build-echarts-option";
+import { buildColumnFeatures } from "../table-features";
 
 const LazyEchartsChart = React.lazy(() => import("../EchartsChart"));
 
@@ -68,6 +69,8 @@ function LiveDataTable({ node }: { node: ComponentNode }) {
       columns={fields.map((f) => ({
         title: f.name || f.id,
         dataIndex: ["values", f.id],
+        // 表格自带能力：按字段类型排序 + enum/低基数真实取值筛选
+        ...buildColumnFeatures({ id: f.id, type: f.type }, rows as RuntimeRow[]),
         render: (v: unknown) => (v === undefined || v === null || v === "" ? "—" : String(v)),
       }))}
       dataSource={rows as RuntimeRow[]}

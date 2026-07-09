@@ -38,6 +38,8 @@ import {
   ConfigProvider,
   theme as antdTheme,
   message,
+  Popover,
+  Checkbox,
 } from "antd";
 import {
   DashboardOutlined,
@@ -48,6 +50,7 @@ import {
   UserOutlined,
   PlusOutlined,
   LockOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 import {
@@ -99,16 +102,7 @@ import {
   subscribeRoleChanged,
 } from "./runtime-persistence";
 import { accessForRole, pageAccessForRole, type PageAccess } from "./rbac-preview";
-import {
-  applyPageDesignOverrides,
-  clearPageDesignOverrides,
-  countOverrideEdits,
-  loadPageDesignOverrides,
-  savePageDesignOverrides,
-  type PageDesignOverride,
-  type PageDesignOverrides,
-} from "./page-design-overrides";
-import { PageDesignPanel } from "./PageDesignPanel";
+import { buildColumnFeatures } from "./table-features";
 import type { XrayTarget } from "../XrayPanel";
 
 // 多端设计分辨率（固定渲染 + 等比缩放）
@@ -252,23 +246,15 @@ export function AppRuntimeScreen({
   xrayActive?: boolean;
   onXrayTarget?: (target: XrayTarget | null) => void;
 }) {
-  // 页面设计器一期：本地设计覆盖层（属性面板改动 → 渲染前叠加，不动模型本体）
-  const [designOverrides, setDesignOverrides] = React.useState<PageDesignOverrides>(() =>
-    loadPageDesignOverrides(sessionId)
-  );
-  const [designMode, setDesignMode] = React.useState(false);
-  // 设计器二期：全屏画布设计器（组件树 + 拖拽），与一期属性面板并存
+  // 页面设计器（画布）：全屏设计器 + 已保存设计树（按 pageId，存在即接管该页渲染）
   const [canvasDesignOpen, setCanvasDesignOpen] = React.useState(false);
-  // 已保存的画布设计树（按 pageId）：存在即接管该页渲染，设计器关闭时刷新
   const [designTrees, setDesignTrees] = React.useState<PageTrees>(() => loadPageTrees(sessionId));
-  const effectiveModel = React.useMemo(
-    () => applyPageDesignOverrides(model, designOverrides),
-    [model, designOverrides]
-  );
+  // 表格列设置（表格自带能力）：按 pageId 记用户勾选的列；undefined = 默认列
+  const [tableColPrefs, setTableColPrefs] = React.useState<Record<string, string[]>>({});
 
   const schema = React.useMemo(
-    () => deriveAppRuntimeSchema(effectiveModel, appTitle || "推演应用"),
-    [effectiveModel, appTitle]
+    () => deriveAppRuntimeSchema(model, appTitle || "推演应用"),
+    [model, appTitle]
   );
   const [state, setState] = React.useState<RuntimeState>(() => {
     return loadRuntimeState(sessionId) ?? initRuntimeState(model);
@@ -473,12 +459,19 @@ export function AppRuntimeScreen({
     </Space>
   );
 
+  // 表格列：列设置勾选优先（从实体全字段挑），否则默认列；
+  // 每列自带排序（按字段类型）与筛选（enum/低基数真实取值）——表格自带能力，不走设计面板。
+  const chosenColIds = page ? tableColPrefs[page.id] : undefined;
+  const shownColumns = chosenColIds
+    ? (page?.detailFields ?? []).filter((f) => chosenColIds.includes(f.id))
+    : page?.columns ?? [];
   const columns = [
-    ...(page?.columns ?? []).map((c) => ({
+    ...shownColumns.map((c) => ({
       title: c.label,
       dataIndex: ["values", c.id],
       key: c.id,
       ellipsis: true,
+      ...buildColumnFeatures(c, rows),
       onHeaderCell: () =>
         page?.entityId
           ? probe({ kind: "field", entityId: page.entityId, fieldId: c.id, label: c.label })
@@ -492,6 +485,40 @@ export function AppRuntimeScreen({
       render: (_: unknown, row: RuntimeRow) => rowActions(row),
     },
   ];
+
+  // 列设置（ProTable 式齿轮）：从实体全字段勾选表格列
+  const columnSettings = page && page.detailFields.length > 0 && (
+    <Popover
+      trigger="click"
+      placement="bottomRight"
+      content={
+        <div style={{ maxHeight: 260, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+          {page.detailFields.map((f) => {
+            const current = tableColPrefs[page.id] ?? page.columns.map((c) => c.id);
+            const checked = current.includes(f.id);
+            return (
+              <Checkbox
+                key={f.id}
+                checked={checked}
+                onChange={(e) => {
+                  const next = e.target.checked
+                    ? [...current, f.id]
+                    : current.filter((id) => id !== f.id);
+                  // 保实体字段声明序 + 至少保留一列
+                  const ordered = page.detailFields.map((d) => d.id).filter((id) => next.includes(id));
+                  if (ordered.length > 0) setTableColPrefs((prev) => ({ ...prev, [page.id]: ordered }));
+                }}
+              >
+                {f.label}
+              </Checkbox>
+            );
+          })}
+        </div>
+      }
+    >
+      <Button size="small" type="text" icon={<SettingOutlined />} title="列设置" data-testid="app-table-col-settings" />
+    </Popover>
+  );
 
   const recentInstances = [...state.instances].slice(-5).reverse();
 
@@ -753,6 +780,7 @@ export function AppRuntimeScreen({
               {a}
             </Tag>
           ))}
+          {columnSettings}
           <span
             {...probe({
               kind: "action",
@@ -883,7 +911,7 @@ export function AppRuntimeScreen({
           <LazyRuntimeDesignedPage
             tree={designedTree}
             ctx={{
-              model: effectiveModel,
+              model,
               state,
               onAddRow: (entityId, values) => {
                 const problems = validateRowValues(model, entityId, values);
@@ -1150,25 +1178,14 @@ export function AppRuntimeScreen({
             {DEVICE_SPECS[key].label}
           </button>
         ))}
-        {/* 页面设计器一期：属性面板开关（业务页可用；工作台/无主实体页无可编辑面） */}
-        <button
-          type="button"
-          data-testid="app-design-toggle"
-          onClick={() => setDesignMode((v) => !v)}
-          className={`ml-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
-            designMode ? "bg-amber-300 text-stone-900 shadow-sm" : "text-white/85 hover:text-white"
-          }`}
-          title="设计模式：右侧属性面板改页面标题/表格列/表单字段/图表，即改即渲染（本地覆盖，可重置）"
-        >
-          设计{countOverrideEdits(designOverrides) > 0 ? ` ·${countOverrideEdits(designOverrides)}` : ""}
-        </button>
-        {/* 页面设计器二期：全屏画布设计器（组件树 + 拖拽 + propsSchema 属性面板） */}
+        {/* 页面设计器：全屏画布设计器（组件树 + 拖拽 + propsSchema 属性面板）。
+            一期属性面板已裁撤——表格列等能力由表格自带（列设置/排序/筛选）。 */}
         {!isHome && page && (
           <button
             type="button"
             data-testid="app-canvas-design"
             onClick={() => setCanvasDesignOpen(true)}
-            className="rounded-full px-2.5 py-0.5 text-[10px] font-medium text-white/85 transition-colors hover:text-white"
+            className="ml-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium text-white/85 transition-colors hover:text-white"
             title="画布设计：组件树 + 拖拽 + 属性面板（本地设计层，可重置回推演原貌）"
           >
             画布{countDesignedPages(designTrees) > 0 ? ` ·${countDesignedPages(designTrees)}` : ""}
@@ -1187,7 +1204,7 @@ export function AppRuntimeScreen({
             }
           >
             <LazyPageDesigner
-              model={effectiveModel}
+              model={model}
               pageId={page.id}
               sessionId={sessionId}
               onClose={() => {
@@ -1197,36 +1214,6 @@ export function AppRuntimeScreen({
               }}
             />
           </React.Suspense>
-        </div>
-      )}
-
-      {/* 设计属性面板（画布外右栏，对标 web-designer 属性面板范式） */}
-      {designMode && !isHome && page && page.entityId && (
-        <div className="absolute bottom-2 right-3 top-10 z-10 flex">
-          <PageDesignPanel
-            page={page}
-            entityId={page.entityId}
-            entityFields={page.detailFields}
-            override={(page.id && designOverrides[page.id]) || {}}
-            editCount={countOverrideEdits(designOverrides)}
-            onChange={(next: PageDesignOverride) => {
-              if (!page.id) return;
-              setDesignOverrides((prev) => {
-                const merged = { ...prev, [page.id]: next };
-                savePageDesignOverrides(sessionId, merged);
-                return merged;
-              });
-            }}
-            onResetAll={() => {
-              clearPageDesignOverrides(sessionId);
-              setDesignOverrides({});
-            }}
-          />
-        </div>
-      )}
-      {designMode && (isHome || !page?.entityId) && (
-        <div className="absolute right-3 top-10 z-10 rounded bg-black/40 px-2.5 py-1.5 text-[10px] text-white/90">
-          切到业务页面开始设计（工作台与无主实体页暂无可编辑面）
         </div>
       )}
       <span

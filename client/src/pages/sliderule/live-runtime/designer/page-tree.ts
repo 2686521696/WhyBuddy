@@ -13,7 +13,26 @@
 import type { FiveSystemModel, PageModelDef } from "../../system-screens/five-system-model";
 import { createNode, type ComponentNode } from "./component-schema";
 import { getComponentDefinition } from "./component-registry";
-import { dominantEntityIdOf } from "../page-design-overrides";
+
+/** 与 app-runtime-schema.dominantEntityId 同一规则（独立实现避免跨层依赖）。 */
+export function dominantEntityIdOf(fieldBindings: string[] | undefined): string | null {
+  const counts = new Map<string, number>();
+  for (const binding of fieldBindings ?? []) {
+    const dot = binding.indexOf(".");
+    if (dot <= 0) continue;
+    const entityId = binding.slice(0, dot);
+    counts.set(entityId, (counts.get(entityId) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [id, count] of counts) {
+    if (count > bestCount) {
+      best = id;
+      bestCount = count;
+    }
+  }
+  return best;
+}
 
 function mustCreate(type: string): ComponentNode {
   const def = getComponentDefinition(type);
