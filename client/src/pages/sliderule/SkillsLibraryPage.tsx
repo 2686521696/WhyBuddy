@@ -25,6 +25,7 @@ import {
 } from "@ant-design/icons";
 import skillsIndex from "@/data/trae-skills-index.json";
 import skillSemantics from "@/data/skill-semantics.json";
+import featuredSkills from "@/data/featured-skills.json";
 import {
   installKeyOf,
   installSkill,
@@ -83,6 +84,18 @@ const INDEX = skillsIndex as {
 };
 
 const SEMANTICS = (skillSemantics as { items: SkillSemanticsItem[] }).items;
+
+/** 精选层：官方/大厂出品的开源 Skill（用户提供的 TRAE 官方市场清单） */
+interface FeaturedSkill {
+  id: string;
+  name: string;
+  description: string;
+  author: string;
+  category: string;
+}
+
+const FEATURED = (featuredSkills as { items: FeaturedSkill[] }).items;
+const FEATURED_CATEGORIES = ["全部", ...new Set(FEATURED.map((f) => f.category))];
 
 // topicId → 语义档案（description 非空才算"可安装定义"）
 const SEMANTICS_BY_TOPIC = new Map<number, SkillSemanticsItem>();
@@ -187,14 +200,18 @@ function InstalledSkillCard({
         <Tag color="default" style={{ fontSize: 10, marginInlineEnd: 0 }}>
           {skill.license}
         </Tag>
-        <a
-          href={skill.url}
-          target="_blank"
-          rel="noreferrer"
-          className="font-mono text-[10px] text-stone-400 hover:text-blue-600"
-        >
-          {skill.repo}
-        </a>
+        {skill.url ? (
+          <a
+            href={skill.url}
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-[10px] text-stone-400 hover:text-blue-600"
+          >
+            {skill.repo}
+          </a>
+        ) : (
+          <span className="font-mono text-[10px] text-stone-400">{skill.repo}</span>
+        )}
         <Button
           size="small"
           type="text"
@@ -249,8 +266,14 @@ function InstalledSkillCard({
   );
 }
 
-export function SkillsLibraryPage() {
-  const [tab, setTab] = React.useState<"market" | "installed">("market");
+export function SkillsLibraryPage({
+  initialTab = "featured",
+}: {
+  /** 初始 tab（测试用；产品默认精选层） */
+  initialTab?: "featured" | "market" | "installed";
+} = {}) {
+  const [tab, setTab] = React.useState<"featured" | "market" | "installed">(initialTab);
+  const [featuredCat, setFeaturedCat] = React.useState("全部");
   const [query, setQuery] = React.useState("");
   const [kind, setKind] = React.useState<string>("all");
   const [installed, setInstalled] = React.useState<InstalledSkill[]>(() => loadInstalledSkills());
@@ -335,6 +358,22 @@ export function SkillsLibraryPage() {
     return counts;
   }, []);
 
+  const installFeatured = (f: FeaturedSkill) => {
+    setInstalled((prev) => {
+      const next = installSkill(prev, {
+        repo: `trae-market/${f.id}`,
+        url: "",
+        license: "官方市场",
+        name: f.name,
+        description: f.description,
+        ioHints: [],
+        kind: "semantic",
+      });
+      if (next !== prev) message.success(`已安装「${f.name}」，到「已安装」里直接试跑`);
+      return next;
+    });
+  };
+
   const handleInstall = (sem: SkillSemanticsItem) => {
     setInstalled((prev) => {
       const next = installSkill(prev, {
@@ -358,48 +397,132 @@ export function SkillsLibraryPage() {
       <div>
         <div className="flex items-baseline gap-3">
           <h1 className="text-lg font-semibold text-stone-800">技能库</h1>
-          <span className="text-xs text-stone-400">
-            {INDEX.count} 项 · 索引自{" "}
-            <a href={INDEX.source} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-              TRAE 论坛「SOLO技能创作赛」
-            </a>{" "}
-            · 采集于 {INDEX.fetchedAt.slice(0, 10)}
+          <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-500">
+            {FEATURED.length + INDEX.count} 项
           </span>
         </div>
-        <div className="mt-1 rounded bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 ring-1 ring-amber-200">
-          {INDEX.license_note}
-          安装的是技能语义档案（名称/描述/IO 线索），试跑走本产品的 LLM 通道。
+        <div className="mt-0.5 text-xs text-stone-400">
+          来自官方技能市场与 TRAE 社区「SOLO 技能创作赛」的优质 Skill，覆盖产品、研发、设计、运营等多个领域。
+        </div>
+      </div>
+
+      {/* 统计卡（全部真数据，不造假指标） */}
+      <div className="flex flex-wrap gap-2.5">
+        {[
+          { label: "精选技能", value: FEATURED.length, sub: "官方/大厂出品", tone: "bg-blue-50 text-blue-600" },
+          { label: "社区技能", value: INDEX.count, sub: "SOLO 创作赛索引", tone: "bg-emerald-50 text-emerald-600" },
+          {
+            label: "原版 SKILL.md",
+            value: packages.length > 0 ? packages.length : "—",
+            sub: packages.length > 0 ? "装完即按原指令执行" : "需 Python 服务在线",
+            tone: "bg-purple-50 text-purple-600",
+          },
+          { label: "已安装", value: installed.length, sub: "本地即装即用", tone: "bg-orange-50 text-orange-600" },
+        ].map((s) => (
+          <div key={s.label} className="min-w-[150px] flex-1 rounded-lg border border-stone-200 bg-white px-3.5 py-2.5" data-testid={`skills-stat-${s.label}`}>
+            <div className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${s.tone}`}>{s.label}</div>
+            <div className="mt-1 text-xl font-semibold text-stone-800">{s.value}</div>
+            <div className="text-[10px] text-stone-400">{s.sub}</div>
+          </div>
+        ))}
+        <div className="min-w-[220px] flex-[1.4] rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5">
+          <div className="text-[11px] font-semibold text-amber-700">✦ 合规说明</div>
+          <div className="mt-1 text-[10px] leading-4 text-amber-700/90">
+            {INDEX.license_note} 采集于 {INDEX.fetchedAt.slice(0, 10)}，
+            <a href={INDEX.source} target="_blank" rel="noreferrer" className="underline">
+              来源论坛
+            </a>
+            。
+          </div>
         </div>
       </div>
 
       <Segmented
         options={[
-          { label: `技能市场 ${INDEX.count}`, value: "market" },
+          { label: `精选技能 ${FEATURED.length}`, value: "featured" },
+          { label: `社区技能 ${INDEX.count}`, value: "market" },
           { label: `已安装 ${installed.length}`, value: "installed" },
         ]}
         value={tab}
-        onChange={(v) => setTab(v as "market" | "installed")}
+        onChange={(v) => setTab(v as "featured" | "market" | "installed")}
         data-testid="skills-tab"
       />
 
-      {tab === "installed" ? (
+      {tab === "featured" && (
+        <>
+          <div className="flex flex-wrap items-center gap-1.5" data-testid="skills-featured-cats">
+            {FEATURED_CATEGORIES.map((cat) => {
+              const count = cat === "全部" ? FEATURED.length : FEATURED.filter((f) => f.category === cat).length;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setFeaturedCat(cat)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
+                    featuredCat === cat
+                      ? "bg-stone-800 text-white"
+                      : "bg-white text-stone-500 ring-1 ring-stone-200 hover:text-stone-700"
+                  }`}
+                >
+                  {cat} {count}
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2" data-testid="skills-featured-grid">
+            {FEATURED.filter((f) => featuredCat === "全部" || f.category === featuredCat).map((f) => {
+              const done = isInstalled(installed, `trae-market/${f.id}`);
+              return (
+                <div key={f.id} className="flex gap-3 rounded-lg border border-stone-200 bg-white p-3.5" data-testid={`featured-skill-${f.id}`}>
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-stone-100 text-sm font-semibold text-stone-500">
+                    {f.name.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-semibold text-stone-800">{f.name}</span>
+                      <Tag style={{ fontSize: 10, marginInlineEnd: 0 }}>{f.category}</Tag>
+                    </div>
+                    <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-stone-500">{f.description}</div>
+                    <div className="mt-1 text-[10px] text-stone-400">by {f.author}</div>
+                  </div>
+                  <div className="shrink-0 self-center">
+                    {done ? (
+                      <Tag color="success" style={{ marginInlineEnd: 0 }}>
+                        ✓
+                      </Tag>
+                    ) : (
+                      <Button size="small" type="primary" ghost icon={<DownloadOutlined />} onClick={() => installFeatured(f)}>
+                        安装
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {tab === "installed" && (
         <div className="space-y-2.5" data-testid="skills-installed-list">
           {installed.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="还没安装技能 — 到「技能市场」挑一个带定义的装上，装完立即可试跑"
+              description="还没安装技能 — 到「精选技能」或「社区技能」装一个，装完立即可试跑"
             />
           ) : (
             installed.map((s) => (
               <InstalledSkillCard
-                key={s.repo}
+                key={installKeyOf(s)}
                 skill={s}
-                onUninstall={(repo) => setInstalled((prev) => uninstallSkill(prev, repo))}
+                onUninstall={(key) => setInstalled((prev) => uninstallSkill(prev, key))}
               />
             ))
           )}
         </div>
-      ) : (
+      )}
+
+      {tab === "market" && (
         <>
           <div className="flex flex-wrap items-center gap-2">
             <Input.Search

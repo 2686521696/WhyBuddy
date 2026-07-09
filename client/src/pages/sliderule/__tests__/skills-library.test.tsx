@@ -11,8 +11,23 @@ import { SkillsLibraryPage } from "../SkillsLibraryPage";
 import skillsIndex from "@/data/trae-skills-index.json";
 import skillSemantics from "@/data/skill-semantics.json";
 
+import featuredSkills from "@/data/featured-skills.json";
+
 describe("SkillsLibraryPage", () => {
-  const html = renderToStaticMarkup(<SkillsLibraryPage />);
+  // 市场层断言用 initialTab 直开（静态渲染切不了 tab）；精选层用默认渲染
+  const html = renderToStaticMarkup(<SkillsLibraryPage initialTab="market" />);
+  const featuredHtml = renderToStaticMarkup(<SkillsLibraryPage />);
+
+  it("精选层（默认 tab）：官方技能卡片网格 + 分类 chips + 统计卡真数据", () => {
+    expect(featuredHtml).toContain('data-testid="skills-featured-grid"');
+    expect(featuredHtml).toContain('data-testid="skills-featured-cats"');
+    const first = (featuredSkills as { items: Array<{ id: string; author: string }> }).items[0];
+    expect(featuredHtml).toContain(`data-testid="featured-skill-${first.id}"`);
+    expect(featuredHtml).toContain(`by ${first.author}`);
+    // 统计卡：精选/社区/已安装为真数据
+    expect(featuredHtml).toContain('data-testid="skills-stat-精选技能"');
+    expect(featuredHtml).toContain('data-testid="skills-stat-社区技能"');
+  });
 
   it("合规标注齐全：来源回链、版权说明、采集时间、总数", () => {
     expect(html).toContain("forum.trae.cn/c/37-category/37");
