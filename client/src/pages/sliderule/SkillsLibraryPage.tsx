@@ -199,12 +199,13 @@ function SkillCard({
         <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-stone-500">
           {description || "（无摘要）"}
         </div>
+        {/* 底行：作者/统计信息 + 右下角动作（用户反馈：按钮与信息同一行，右下角） */}
         <div className="mt-1 flex items-center gap-2 text-[10px] text-stone-400">
           <span>by {author}</span>
           {meta}
+          <span className="ml-auto shrink-0">{action}</span>
         </div>
       </div>
-      <div className="shrink-0 self-center">{action}</div>
     </div>
   );
 }
@@ -745,9 +746,11 @@ export function SkillsLibraryPage({
         </div>
       </div>
 
-      {/* 三层 tab（下划线风格） */}
+      {/* 三层 tab（下划线风格）：滚动吸顶（用户反馈：随滚常驻，方便切换）。
+          -mx-6/px-6 让底色铺满滚动容器整宽；sticky 的 top 相对滚动容器
+          padding 边（实测差 24px = p-6），-top-6 才贴容器真顶不漏卡片 */}
       <div
-        className="flex items-center gap-5 border-b border-stone-200"
+        className="sticky -top-6 z-20 -mx-6 flex items-center gap-5 border-b border-stone-200 bg-[#f7f8fa] px-6 pb-0 pt-2"
         data-testid="skills-tab"
       >
         {(
