@@ -8,7 +8,7 @@
  */
 
 export interface InstalledSkill {
-  /** 仓库键（host/owner/repo），也是安装唯一键 */
+  /** 安装唯一键：语义档案 = 仓库键；原版技能包 = 包 id（一仓可装多技能） */
   repo: string;
   url: string;
   license: string;
@@ -16,6 +16,10 @@ export interface InstalledSkill {
   description: string;
   ioHints: string[];
   installedAt: string;
+  /** "package" = 原版 SKILL.md 指令执行；缺省/"semantic" = 语义档案驱动 */
+  kind?: "package" | "semantic";
+  /** kind=package 时的技能包 id（/skill-package-tryrun 用） */
+  packageId?: string;
 }
 
 const KEY = "sliderule:installed-skills";
@@ -38,23 +42,29 @@ function save(list: InstalledSkill[]): void {
   }
 }
 
-/** 幂等安装（同 repo 重复安装为 no-op），返回新列表。 */
+/** 安装唯一键：技能包按包 id（一仓多技能各装各的），语义档案按仓库键。 */
+export function installKeyOf(skill: Pick<InstalledSkill, "repo" | "packageId">): string {
+  return skill.packageId ?? skill.repo;
+}
+
+/** 幂等安装（同键重复安装为 no-op），返回新列表。 */
 export function installSkill(
   list: InstalledSkill[],
   skill: Omit<InstalledSkill, "installedAt">
 ): InstalledSkill[] {
-  if (list.some((s) => s.repo === skill.repo)) return list;
+  const key = installKeyOf(skill);
+  if (list.some((s) => installKeyOf(s) === key)) return list;
   const next = [...list, { ...skill, installedAt: new Date().toISOString() }];
   save(next);
   return next;
 }
 
-export function uninstallSkill(list: InstalledSkill[], repo: string): InstalledSkill[] {
-  const next = list.filter((s) => s.repo !== repo);
+export function uninstallSkill(list: InstalledSkill[], key: string): InstalledSkill[] {
+  const next = list.filter((s) => installKeyOf(s) !== key);
   save(next);
   return next;
 }
 
-export function isInstalled(list: InstalledSkill[], repo: string): boolean {
-  return list.some((s) => s.repo === repo);
+export function isInstalled(list: InstalledSkill[], key: string): boolean {
+  return list.some((s) => installKeyOf(s) === key);
 }

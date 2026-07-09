@@ -26,12 +26,26 @@ import {
 import skillsIndex from "@/data/trae-skills-index.json";
 import skillSemantics from "@/data/skill-semantics.json";
 import {
+  installKeyOf,
   installSkill,
   isInstalled,
   loadInstalledSkills,
   uninstallSkill,
   type InstalledSkill,
 } from "./installed-skills";
+
+/** 服务端原版技能包元数据（GET /skill-packages；Python 不在场时优雅缺席） */
+interface SkillPackageMeta {
+  id: string;
+  repo: string;
+  path: string;
+  sourceUrl: string;
+  license: string;
+  name: string;
+  description: string;
+  truncated: boolean;
+  contentChars: number;
+}
 
 interface SkillIndexItem {
   topicId: number;
@@ -113,21 +127,28 @@ function InstalledSkillCard({
     setOutput(null);
     setError(null);
     try {
-      const res = await fetch("/api/sliderule/aigc-tryrun", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          capability: {
-            id: skill.repo.replace(/[^a-zA-Z0-9]+/g, "_"),
-            name: skill.name,
-            inputFields: ["skill.input"],
-            outputField: "skill.output",
-          },
-          inputs: { "skill.input": input },
-          // 技能描述作为任务上下文：让 LLM 按该技能的定位执行
-          goal: `${skill.name}：${skill.description}`,
-        }),
-      });
+      // 原版技能包：完整 SKILL.md 指令在服务端做 system prompt（真·原版执行）；
+      // 语义档案：技能定位描述作为任务上下文（转述驱动，fallback 档）
+      const res = skill.kind === "package" && skill.packageId
+        ? await fetch("/api/sliderule/skill-package-tryrun", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ packageId: skill.packageId, input }),
+          })
+        : await fetch("/api/sliderule/aigc-tryrun", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              capability: {
+                id: skill.repo.replace(/[^a-zA-Z0-9]+/g, "_"),
+                name: skill.name,
+                inputFields: ["skill.input"],
+                outputField: "skill.output",
+              },
+              inputs: { "skill.input": input },
+              goal: `${skill.name}：${skill.description}`,
+            }),
+          });
       const body = res.ok
         ? ((await res.json()) as { ok: boolean; output?: string; code?: string; detail?: string })
         : { ok: false, code: `HTTP_${res.status}`, detail: await res.text() };
@@ -150,6 +171,19 @@ function InstalledSkillCard({
     >
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-stone-800">{skill.name}</span>
+        {skill.kind === "package" ? (
+          <Tooltip title="试跑时原作者的完整 SKILL.md 指令作为 system prompt 执行">
+            <Tag color="green" style={{ fontSize: 10, marginInlineEnd: 0 }}>
+              原版 SKILL.md
+            </Tag>
+          </Tooltip>
+        ) : (
+          <Tooltip title="该仓库未抓到 SKILL.md，按语义档案（名称/描述）驱动执行">
+            <Tag color="default" style={{ fontSize: 10, marginInlineEnd: 0 }}>
+              语义档案
+            </Tag>
+          </Tooltip>
+        )}
         <Tag color="default" style={{ fontSize: 10, marginInlineEnd: 0 }}>
           {skill.license}
         </Tag>
@@ -167,7 +201,7 @@ function InstalledSkillCard({
           danger
           icon={<DeleteOutlined />}
           className="ml-auto"
-          onClick={() => onUninstall(skill.repo)}
+          onClick={() => onUninstall(installKeyOf(skill))}
           title="卸载（只移除本地安装，不影响原仓库）"
         >
           卸载
@@ -220,6 +254,66 @@ export function SkillsLibraryPage() {
   const [query, setQuery] = React.useState("");
   const [kind, setKind] = React.useState<string>("all");
   const [installed, setInstalled] = React.useState<InstalledSkill[]>(() => loadInstalledSkills());
+  // 原版技能包元数据（服务端）：Python 不在场（Pages 演示/后端未起）时为空，
+  // 页面优雅回退到语义档案安装——不装样子也不报错刷屏
+  const [packages, setPackages] = React.useState<SkillPackageMeta[]>([]);
+
+  React.useEffect(() => {
+    let alive = true;
+    fetch("/api/sliderule/skill-packages")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { items?: SkillPackageMeta[] } | null) => {
+        if (alive && body && Array.isArray(body.items)) setPackages(body.items);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const packagesByRepo = React.useMemo(() => {
+    const map = new Map<string, SkillPackageMeta[]>();
+    for (const p of packages) {
+      const list = map.get(p.repo) ?? [];
+      list.push(p);
+      map.set(p.repo, list);
+    }
+    return map;
+  }, [packages]);
+
+  // 索引行 → 该行仓库对应的技能包（经 repos 链接归一化出 host/owner/repo 键）
+  const packagesOfRow = React.useCallback(
+    (it: SkillIndexItem): SkillPackageMeta[] => {
+      const out: SkillPackageMeta[] = [];
+      for (const link of it.repos) {
+        const m = /https?:\/\/(github\.com|gitee\.com|gitcode\.com)\/([^/\s]+)\/([^/\s#?]+)/.exec(link);
+        if (!m) continue;
+        const key = `${m[1]}/${m[2]}/${m[3].replace(/\.git$/, "")}`;
+        for (const p of packagesByRepo.get(key) ?? []) {
+          if (!out.some((x) => x.id === p.id)) out.push(p);
+        }
+      }
+      return out;
+    },
+    [packagesByRepo]
+  );
+
+  const installPackage = (pkg: SkillPackageMeta) => {
+    setInstalled((prev) => {
+      const next = installSkill(prev, {
+        repo: pkg.repo,
+        url: pkg.sourceUrl,
+        license: pkg.license,
+        name: pkg.name,
+        description: pkg.description,
+        ioHints: [],
+        kind: "package",
+        packageId: pkg.id,
+      });
+      if (next !== prev) message.success(`已安装「${pkg.name}」（原版 SKILL.md），到「已安装」直接试跑`);
+      return next;
+    });
+  };
 
   const items = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -250,6 +344,7 @@ export function SkillsLibraryPage() {
         name: sem.name,
         description: sem.description,
         ioHints: sem.ioHints,
+        kind: "semantic",
       });
       if (next !== prev) message.success(`已安装「${sem.name}」，到「已安装」里直接试跑`);
       return next;
@@ -336,6 +431,32 @@ export function SkillsLibraryPage() {
               expandedRowRender: (it) => (
                 <div className="space-y-1.5 py-1 text-xs text-stone-600">
                   <div>{it.excerpt || "（无摘要）"}</div>
+                  {packagesOfRow(it).length > 1 && (
+                    <div className="space-y-1 rounded bg-stone-50 p-2 ring-1 ring-stone-200">
+                      <div className="text-[10px] font-medium text-stone-500">
+                        合集仓库 · {packagesOfRow(it).length} 个原版技能（可单装）
+                      </div>
+                      {packagesOfRow(it).map((pkg) => (
+                        <div key={pkg.id} className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate">
+                            <span className="font-medium text-stone-700">{pkg.name}</span>
+                            {pkg.description && (
+                              <span className="ml-1.5 text-[10px] text-stone-400">{pkg.description.slice(0, 60)}</span>
+                            )}
+                          </span>
+                          {isInstalled(installed, pkg.id) ? (
+                            <Tag color="success" style={{ marginInlineEnd: 0, fontSize: 10 }}>
+                              ✓
+                            </Tag>
+                          ) : (
+                            <Button size="small" type="link" onClick={() => installPackage(pkg)}>
+                              安装
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {(it.repos.length > 0 || it.pans.length > 0 || it.attachments.length > 0) && (
                     <div className="flex flex-wrap gap-2">
                       {[...it.repos, ...it.pans, ...it.attachments].map((link) => (
@@ -430,12 +551,54 @@ export function SkillsLibraryPage() {
               {
                 title: "",
                 key: "__install",
-                width: 92,
+                width: 104,
                 render: (_: unknown, it: SkillIndexItem) => {
+                  // 优先原版技能包（完整 SKILL.md）；无包退语义档案；都没有诚实禁用
+                  const rowPkgs = packagesOfRow(it);
+                  if (rowPkgs.length === 1) {
+                    const pkg = rowPkgs[0];
+                    return isInstalled(installed, pkg.id) ? (
+                      <Tag color="success" style={{ marginInlineEnd: 0 }}>
+                        ✓ 已安装
+                      </Tag>
+                    ) : (
+                      <Tooltip title="原版 SKILL.md 指令，装完即用">
+                        <Button
+                          size="small"
+                          type="primary"
+                          icon={<DownloadOutlined />}
+                          onClick={() => installPackage(pkg)}
+                          data-testid={`skill-install-${it.topicId}`}
+                        >
+                          安装
+                        </Button>
+                      </Tooltip>
+                    );
+                  }
+                  if (rowPkgs.length > 1) {
+                    const fresh = rowPkgs.filter((p) => !isInstalled(installed, p.id));
+                    return fresh.length === 0 ? (
+                      <Tag color="success" style={{ marginInlineEnd: 0 }}>
+                        ✓ 已装 {rowPkgs.length}
+                      </Tag>
+                    ) : (
+                      <Tooltip title={`合集仓库含 ${rowPkgs.length} 个技能（展开行可单装），点击全部安装`}>
+                        <Button
+                          size="small"
+                          type="primary"
+                          icon={<DownloadOutlined />}
+                          onClick={() => fresh.forEach(installPackage)}
+                          data-testid={`skill-install-${it.topicId}`}
+                        >
+                          装 {fresh.length} 技能
+                        </Button>
+                      </Tooltip>
+                    );
+                  }
                   const sem = SEMANTICS_BY_TOPIC.get(it.topicId);
                   if (!sem) {
                     return (
-                      <Tooltip title="该帖未提供可安装的技能定义（无仓库语义档案）">
+                      <Tooltip title="该帖未提供可安装的技能定义（无 SKILL.md 也无语义档案）">
                         <Button
                           size="small"
                           disabled
@@ -453,16 +616,18 @@ export function SkillsLibraryPage() {
                       ✓ 已安装
                     </Tag>
                   ) : (
-                    <Button
-                      size="small"
-                      type="primary"
-                      ghost
-                      icon={<DownloadOutlined />}
-                      onClick={() => handleInstall(sem)}
-                      data-testid={`skill-install-${it.topicId}`}
-                    >
-                      安装
-                    </Button>
+                    <Tooltip title="未抓到 SKILL.md，按语义档案安装（转述驱动）">
+                      <Button
+                        size="small"
+                        type="primary"
+                        ghost
+                        icon={<DownloadOutlined />}
+                        onClick={() => handleInstall(sem)}
+                        data-testid={`skill-install-${it.topicId}`}
+                      >
+                        安装
+                      </Button>
+                    </Tooltip>
                   );
                 },
               },

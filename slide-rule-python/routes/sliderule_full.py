@@ -791,6 +791,81 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     }
 
 
+@router.get("/skill-packages")
+def skill_packages_list(x_internal_key: Optional[str] = Header(None)):
+    """原版技能包清单（技能库四期）：完整 SKILL.md 的轻量元数据（不含正文）。"""
+    _auth(x_internal_key)
+    from services.v5_skill_packages import list_skill_packages
+
+    items = list_skill_packages()
+    return {"count": len(items), "items": items}
+
+
+@router.post("/skill-package-tryrun")
+def skill_package_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+    """按原版 SKILL.md 指令执行一次（技能库四期"装完即用"的真身）。
+
+    payload: {packageId, input}
+    与 /aigc-tryrun 同一诚实契约：HTTP 恒 200，成败在 body：
+    {ok, output?|code+detail}；无 LLM 通道时不伪造输出。
+    """
+    import time as _time
+
+    from services.v5_capability_executor import _llm_generate_enabled
+    from services.v5_skill_packages import build_skill_messages, get_skill_package
+    from sliderule_llm.client import call_llm
+
+    _auth(x_internal_key)
+
+    package_id = str(payload.get("packageId") or "").strip()
+    user_input = str(payload.get("input") or "").strip()
+    if not package_id:
+        raise HTTPException(400, "packageId required")
+    if not user_input:
+        raise HTTPException(400, "input required")
+
+    pkg = get_skill_package(package_id)
+    if pkg is None:
+        return {
+            "ok": False,
+            "code": "PACKAGE_NOT_FOUND",
+            "detail": f"技能包不存在：{package_id}（技能包库可能未采集或该条已按异议下架）",
+        }
+
+    if not _llm_generate_enabled():
+        return {
+            "ok": False,
+            "code": "LLM_GENERATE_DISABLED",
+            "detail": "SLIDERULE_LLM_GENERATE_ENABLED 未开启（或运行时无 LLM key），"
+            "技能试跑不伪造输出",
+        }
+
+    timeout_ms = int(os.getenv(AIGC_TRYRUN_TIMEOUT_MS_ENV, str(DEFAULT_AIGC_TRYRUN_TIMEOUT_MS)))
+    started = _time.monotonic()
+    try:
+        # 原版 SKILL.md 全文做 system prompt；产出上限放宽（技能输出普遍比
+        # 单能力试跑长——章节草稿/研报段落级别）
+        result = call_llm(
+            build_skill_messages(pkg, user_input),
+            temperature=0.5,
+            max_tokens=1600,
+            timeout_ms=timeout_ms,
+        )
+    except LlmError as exc:
+        return {
+            "ok": False,
+            "code": "LLM_GENERATE_FAILED",
+            "detail": str(exc)[:300],
+            "elapsedMs": int((_time.monotonic() - started) * 1000),
+        }
+
+    return {
+        "ok": True,
+        "output": result.content,
+        "elapsedMs": int((_time.monotonic() - started) * 1000),
+    }
+
+
 @router.post("/aigc-pipeline-tryrun")
 def aigc_pipeline_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     """链路试跑（编排一期）：按 steps 顺序真跑一串能力，字段级传递。
