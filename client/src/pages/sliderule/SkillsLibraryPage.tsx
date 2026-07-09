@@ -352,7 +352,9 @@ export function SkillsLibraryPage() {
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-[1080px] flex-col gap-3 overflow-auto p-5" data-testid="skills-library">
+    // 块级流式 + 整页滚动：不用 flex-col 分高度——内容超高时 flex 子项会被
+    // 压缩（筛选行被压到 0 高、表格盖上来，实测踩过）
+    <div className="mx-auto h-full max-w-[1080px] space-y-3 overflow-auto p-5" data-testid="skills-library">
       <div>
         <div className="flex items-baseline gap-3">
           <h1 className="text-lg font-semibold text-stone-800">技能库</h1>
