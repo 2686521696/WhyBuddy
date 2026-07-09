@@ -750,7 +750,7 @@ export function SkillsLibraryPage({
           -mx-6/px-6 让底色铺满滚动容器整宽；sticky 的 top 相对滚动容器
           padding 边（实测差 24px = p-6），-top-6 才贴容器真顶不漏卡片 */}
       <div
-        className="sticky -top-6 z-20 -mx-6 flex items-center gap-5 border-b border-stone-200 bg-[#f7f8fa] px-6 pb-0 pt-2"
+        className="sticky -top-6 z-20 -mx-6 !mt-0 flex items-center gap-5 border-b border-stone-200 bg-[#f7f8fa] px-6 pb-0 pt-5"
         data-testid="skills-tab"
       >
         {(
