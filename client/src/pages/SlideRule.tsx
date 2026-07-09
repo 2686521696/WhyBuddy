@@ -12,6 +12,14 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AssistantRuntimeProvider,
+  ThreadPrimitive,
+  getExternalStoreMessages,
+  useExternalStoreRuntime,
+  useMessage,
+  type ThreadMessageLike,
+} from "@assistant-ui/react";
 import { ChevronRight, ClipboardCheck, Dumbbell, Users } from "lucide-react";
 import type { BrainstormReasoningNode } from "@shared/blueprint";
 import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurface";
@@ -348,6 +356,113 @@ const EXAMPLE_PROMPTS: ReadonlyArray<{
  * 头部动作（交付物 / 重置会话 / Dev）由页面唯一顶栏承担；这里只负责对话流与
  * 唯一空态（古典 logo 水印 + hero 文案 + 3 个示例 chips）。
  */
+// --- assistant-ui 迁移（左栏 IM 地基）--------------------------------------
+// 滚动跟随 / 消息列表 / 空态分支由 Thread 原语接管（Viewport 自带贴底跟随，
+// 替换此前手写的 stick-to-bottom）；语义时间线、实时流、结论块是差异化
+// 内容，保留为自定义消息渲染，不外包给通用库。
+
+/** uiTurns（用户+助手成对）→ 扁平消息项；turn 原对象随消息绑定回取。 */
+type ImItem = { id: string; role: "user" | "assistant"; turn: UiTurn };
+
+/** 轮次之外的渲染上下文（草稿流/闭环/话题），经 context 传给自定义消息组件——
+ *  组件定义在模块层保持身份稳定（每帧重建会让 Messages 整列重挂）。 */
+const ImSurfaceContext = React.createContext<{
+  publishClosure?: PublishClosureSummary | null;
+  llmDraft: string;
+  llmDraftLabel: string | null;
+  goalText?: string;
+  thinkingText: string;
+  onChallenge: (id: string) => void;
+}>({ llmDraft: "", llmDraftLabel: null, thinkingText: "", onChallenge: () => {} });
+
+const convertImMessage = (m: ImItem): ThreadMessageLike => ({
+  id: m.id,
+  role: m.role,
+  // 文本部件只为 assistant-ui 的消息模型成立（复制/无障碍语义用真文本）；
+  // 实际渲染由自定义组件对着原 turn 输出，不读部件。
+  content: [{ type: "text", text: m.role === "user" ? m.turn.user ?? "" : "" }],
+});
+
+/** 从 assistant-ui 消息取回绑定的原始 turn（ExternalStore 转换时自动绑定）。 */
+function useImTurn(): ImItem | null {
+  const message = useMessage();
+  const items = getExternalStoreMessages<ImItem>(message as never);
+  return items[0] ?? null;
+}
+
+function ImUserMessage() {
+  const item = useImTurn();
+  // 从持久化状态恢复的轮次没有用户文本——整条不渲染（与迁移前一致）
+  if (!item?.turn.user) return null;
+  return (
+    <div className="mb-4 flex justify-end">
+      <div className="max-w-[520px] rounded-lg bg-[#F8E8E0] px-4 py-2.5 text-[15px] leading-7 text-[#1F1E1B]">
+        {item.turn.user}
+      </div>
+    </div>
+  );
+}
+
+function ImAssistantMessage() {
+  const item = useImTurn();
+  const ctx = React.useContext(ImSurfaceContext);
+  if (!item) return null;
+  const { turn } = item;
+  const { publishClosure, llmDraft, llmDraftLabel, goalText, thinkingText, onChallenge } = ctx;
+  const answer = assistantTextForTurn(turn, publishClosure, goalText);
+  return (
+    <div className="mb-6 max-w-[640px]">
+      {turn.status === "streaming" ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm text-stone-500">
+            <span className="inline-flex gap-0.5">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <span key={i} className="h-1.5 w-1.5 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: `${i * 120}ms` }} />
+              ))}
+            </span>
+            {thinkingText}
+          </div>
+          <TurnPhaseTimeline turn={turn} llmDraft={llmDraft} publishClosure={publishClosure} />
+          {/* LLM 实时想法：每一步真 LLM 调用（risk.analyze / report.write /
+              五系统起草…）期间实时流出。随内容生长，滚动由 Viewport 统一负责 */}
+          {llmDraft && (
+            <LlmLiveOutput
+              title={llmDraftTitle(llmDraftLabel)}
+              text={llmDraft}
+              formatJson={llmDraftLabel === "five-system-model"}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2 text-[15px] leading-7 text-stone-800">
+          {/* Claude 式顺序：折叠的推演过程 + 闭环徽标在前，总结正文在后
+              （items-start：展开过程时徽标停在首行不跟着下坠） */}
+          <div className="flex flex-wrap items-start gap-2 text-xs text-stone-400">
+            <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
+            {publishClosure && (
+              <span className="mt-1 rounded-full bg-[#F0EDE5] px-2 py-0.5">
+                {publishClosure.blocked ? "blocked" : "closed"} {publishClosure.evidencePresentCount}/{publishClosure.skillCount}
+              </span>
+            )}
+          </div>
+          <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
+          {turn.main && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
+              <button
+                type="button"
+                onClick={() => onChallenge(turn.main!.artifactId)}
+                className="rounded-full bg-[#F0EDE5] px-2 py-0.5 hover:bg-[#E7E2D9]"
+              >
+                质疑本轮
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClaudeChatSurface({
   uiTurns,
   isRunning,
@@ -382,149 +497,87 @@ function ClaudeChatSurface({
         : "发布闭环完成"
       : "正在推演...");
 
-  // 单滚动条 + Claude 式贴底跟随：实时流块（LlmLiveOutput）不再内部滚动，
-  // 由本聊天列统一滚动；增量到达时若用户贴底（<40px）则自动跟到底，
-  // 往回翻阅时停住不打扰。
-  const chatScrollRef = React.useRef<HTMLDivElement | null>(null);
-  const chatAtBottomRef = React.useRef(true);
-  React.useEffect(() => {
-    const el = chatScrollRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      chatAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-  const latestTurnStepCount = latestTurn?.steps.length ?? 0;
-  const latestTurnStatus = latestTurn?.status ?? "";
-  React.useEffect(() => {
-    const el = chatScrollRef.current;
-    if (!el || !chatAtBottomRef.current) return;
-    el.scrollTop = el.scrollHeight;
-  }, [llmDraft, thinkingText, latestTurnStepCount, latestTurnStatus, uiTurns.length]);
+  const items = useMemo<ImItem[]>(
+    () =>
+      uiTurns.flatMap((turn) => [
+        ...(turn.user
+          ? ([{ id: `${turn.id}-user`, role: "user", turn }] as ImItem[])
+          : []),
+        { id: `${turn.id}-assistant`, role: "assistant" as const, turn },
+      ]),
+    [uiTurns]
+  );
+
+  const runtime = useExternalStoreRuntime<ImItem>({
+    messages: items,
+    isRunning,
+    convertMessage: convertImMessage,
+    // 输入条是自定义 ComposerDock（语音/闪电/示例填充），不走 Thread 原语的
+    // Composer——onNew 是适配器必填项，但当前没有 UI 会触发它。
+    onNew: async () => {},
+  });
+
+  const ctxValue = useMemo(
+    () => ({ publishClosure, llmDraft, llmDraftLabel, goalText, thinkingText, onChallenge }),
+    [publishClosure, llmDraft, llmDraftLabel, goalText, thinkingText, onChallenge]
+  );
 
   return (
     <div className="relative z-0 flex h-full flex-col overflow-hidden bg-[#FAF9F5] text-[#1F1E1B]">
-      {/* 底部暖色波纹装饰已移除：与指令条区域形成异色带（用户反馈颜色接不上） */}
-      {/* Chat area */}
-      <div
-        ref={chatScrollRef}
-        className="mx-auto flex min-h-0 w-full max-w-[780px] flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4 sm:px-6"
-      >
-        {uiTurns.length === 0 ? (
-          /* THE single empty state — classical logo watermark + hero copy + 3 example prompts */
-          <div
-            className="flex h-full flex-col items-center justify-center gap-6 text-center"
-            data-testid="sliderule-empty-state"
-          >
-            <img
-              src={`${import.meta.env.BASE_URL}assets/sliderule-logo.png`}
-              alt="SlideRule"
-              className="w-[min(56%,220px)] object-contain opacity-[0.9] drop-shadow-[0_14px_30px_rgb(68_60_44/0.12)]"
-              title="SlideRule"
-            />
-            <div>
-              <div className="font-display text-[26px] font-medium tracking-tight text-[#1F1E1B]">我能帮你把意图推演成应用闭环</div>
-              <div className="mt-2 text-sm text-stone-500">
-                发一句业务目标，SlideRule 串起五系统，输出可校验的企业应用数字孪生。
-              </div>
-            </div>
-            <div className="flex flex-col gap-2.5 w-full max-w-[560px]">
-              {EXAMPLE_PROMPTS.map(({ text, icon: Icon, iconBg, iconColor }) => (
-                <button
-                  key={text}
-                  type="button"
-                  disabled={isRunning}
-                  onClick={() => {
-                    // Dispatch a custom event so ComposerDock can pick it up
-                    window.dispatchEvent(new CustomEvent("sliderule:fill-prompt", { detail: { text } }));
-                  }}
-                  className="group flex w-full items-center gap-3 rounded-lg border border-[#E7E2D9] bg-white px-4 py-3 text-left text-sm text-stone-700 shadow-[0_2px_10px_rgb(68_60_44/0.05)] transition-all hover:border-[#D8D1C4] hover:shadow-[0_4px_16px_rgb(68_60_44/0.09)] disabled:opacity-50"
+      {/* Chat area — Viewport 自带贴底跟随（增量到达自动滚底、回翻停住） */}
+      <AssistantRuntimeProvider runtime={runtime}>
+        <ImSurfaceContext.Provider value={ctxValue}>
+          <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
+            <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[780px] flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4 sm:px-6">
+              <ThreadPrimitive.Empty>
+                {/* THE single empty state — classical logo watermark + hero copy + 3 example prompts */}
+                <div
+                  className="flex h-full flex-col items-center justify-center gap-6 text-center"
+                  data-testid="sliderule-empty-state"
                 >
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconBg}`}>
-                    <Icon className={`h-4 w-4 ${iconColor}`} />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-stone-300 transition-transform group-hover:translate-x-0.5" />
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-6 py-2">
-            {uiTurns.map((turn) => {
-              const answer = assistantTextForTurn(turn, publishClosure, goalText);
-              return (
-                <section key={turn.id} className="space-y-4">
-                  {/* User bubble — right; hidden for turns restored from persisted state (no user text) */}
-                  {turn.user && (
-                    <div className="flex justify-end">
-                      <div className="max-w-[520px] rounded-lg bg-[#F8E8E0] px-4 py-2.5 text-[15px] leading-7 text-[#1F1E1B]">
-                        {turn.user}
-                      </div>
+                  <img
+                    src={`${import.meta.env.BASE_URL}assets/sliderule-logo.png`}
+                    alt="SlideRule"
+                    className="w-[min(56%,220px)] object-contain opacity-[0.9] drop-shadow-[0_14px_30px_rgb(68_60_44/0.12)]"
+                    title="SlideRule"
+                  />
+                  <div>
+                    <div className="font-display text-[26px] font-medium tracking-tight text-[#1F1E1B]">我能帮你把意图推演成应用闭环</div>
+                    <div className="mt-2 text-sm text-stone-500">
+                      发一句业务目标，SlideRule 串起五系统，输出可校验的企业应用数字孪生。
                     </div>
-                  )}
-
-                  {/* Assistant reply — left, prose, no card.
-                      Claude 式：运行中流式吐最近几步（可展开全程）；
-                      完成后过程折叠为一行，只留结论句 + 状态。 */}
-                  <div className="max-w-[640px]">
-                    {turn.status === "streaming" ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-stone-500">
-                          <span className="inline-flex gap-0.5">
-                            {Array.from({ length: 3 }).map((_, i) => (
-                              <span key={i} className="h-1.5 w-1.5 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: `${i * 120}ms` }} />
-                            ))}
-                          </span>
-                          {thinkingText}
-                        </div>
-                        <TurnPhaseTimeline turn={turn} llmDraft={llmDraft} publishClosure={publishClosure} />
-                        {/* LLM 实时想法：每一步真 LLM 调用（risk.analyze / report.write /
-                            五系统起草…）期间实时流出。Claude 式浅色块——超高滚动 + 可折叠 */}
-                        {llmDraft && (
-                          <LlmLiveOutput
-                            title={llmDraftTitle(llmDraftLabel)}
-                            text={llmDraft}
-                            formatJson={llmDraftLabel === "five-system-model"}
-                          />
-                        )}
-                      </div>
-                    ) : (
-                      <div className="space-y-2 text-[15px] leading-7 text-stone-800">
-                        {/* Claude 式顺序：折叠的推演过程 + 闭环徽标在前，总结正文在后
-                            （items-start：展开过程时徽标停在首行不跟着下坠） */}
-                        <div className="flex flex-wrap items-start gap-2 text-xs text-stone-400">
-                          <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
-                          {publishClosure && (
-                            <span className="mt-1 rounded-full bg-[#F0EDE5] px-2 py-0.5">
-                              {publishClosure.blocked ? "blocked" : "closed"} {publishClosure.evidencePresentCount}/{publishClosure.skillCount}
-                            </span>
-                          )}
-                        </div>
-                        <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
-                        {turn.main && (
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
-                            <button
-                              type="button"
-                              onClick={() => onChallenge(turn.main!.artifactId)}
-                              className="rounded-full bg-[#F0EDE5] px-2 py-0.5 hover:bg-[#E7E2D9]"
-                            >
-                              质疑本轮
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
-                </section>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                  <div className="flex flex-col gap-2.5 w-full max-w-[560px]">
+                    {EXAMPLE_PROMPTS.map(({ text, icon: Icon, iconBg, iconColor }) => (
+                      <button
+                        key={text}
+                        type="button"
+                        disabled={isRunning}
+                        onClick={() => {
+                          // Dispatch a custom event so ComposerDock can pick it up
+                          window.dispatchEvent(new CustomEvent("sliderule:fill-prompt", { detail: { text } }));
+                        }}
+                        className="group flex w-full items-center gap-3 rounded-lg border border-[#E7E2D9] bg-white px-4 py-3 text-left text-sm text-stone-700 shadow-[0_2px_10px_rgb(68_60_44/0.05)] transition-all hover:border-[#D8D1C4] hover:shadow-[0_4px_16px_rgb(68_60_44/0.09)] disabled:opacity-50"
+                      >
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconBg}`}>
+                          <Icon className={`h-4 w-4 ${iconColor}`} />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-stone-300 transition-transform group-hover:translate-x-0.5" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </ThreadPrimitive.Empty>
+              <div className="py-2">
+                <ThreadPrimitive.Messages
+                  components={{ UserMessage: ImUserMessage, AssistantMessage: ImAssistantMessage }}
+                />
+              </div>
+            </ThreadPrimitive.Viewport>
+          </ThreadPrimitive.Root>
+        </ImSurfaceContext.Provider>
+      </AssistantRuntimeProvider>
 
       {/* 底部六系统标签行已移除（用户反馈：终端用户不关心内部 skill 名，
           只添乱）——闭环状态在每轮回答的 closed x/6 pill 与右栏看板已有，
