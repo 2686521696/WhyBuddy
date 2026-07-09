@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -270,6 +270,11 @@ if (testFiles.length === 0) {
   console.error("[test:server] No test files found.");
   process.exit(1);
 }
+
+// blueprint e2e 系测试往 <repo>/tmp 里 mkdtemp（gitignored，鲜属 CI checkout）。
+// 串行时代靠更早文件的副作用带出该目录；分片后"创建者"可能在别的分片——
+// 由本脚本（环境供应者）确保存在，各分片自足。
+mkdirSync(path.join(ROOT, "tmp"), { recursive: true });
 
 const batches = chunk(testFiles, batchSize);
 
