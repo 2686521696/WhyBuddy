@@ -98,7 +98,7 @@ const DEFINITIONS: ComponentDefinition[] = [
     description: "每个直接子容器是一个页签",
     isContainer: true,
     allowedChildren: ["container"],
-    defaultProps: { titles: ["页签一", "页签二"] },
+    defaultProps: { titles: "页签一,页签二" },
     propsSchema: [
       {
         key: "titles",

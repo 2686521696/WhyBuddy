@@ -72,6 +72,8 @@ const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
 // 手机档 UI 基建（antd-mobile）同样独立 chunk：切到手机设备档才加载。
 const LazyPhonePageList = React.lazy(() => import("./phone-mobile/PhonePageList"));
 const LazyPhoneTabBar = React.lazy(() => import("./phone-mobile/PhoneTabBar"));
+// 页面设计器二期（组件树画布 + dnd-kit）独立 chunk：点开画布设计才加载。
+const LazyPageDesigner = React.lazy(() => import("./designer/PageDesignerScreen"));
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -252,6 +254,8 @@ export function AppRuntimeScreen({
     loadPageDesignOverrides(sessionId)
   );
   const [designMode, setDesignMode] = React.useState(false);
+  // 设计器二期：全屏画布设计器（组件树 + 拖拽），与一期属性面板并存
+  const [canvasDesignOpen, setCanvasDesignOpen] = React.useState(false);
   const effectiveModel = React.useMemo(
     () => applyPageDesignOverrides(model, designOverrides),
     [model, designOverrides]
@@ -1093,7 +1097,39 @@ export function AppRuntimeScreen({
         >
           设计{countOverrideEdits(designOverrides) > 0 ? ` ·${countOverrideEdits(designOverrides)}` : ""}
         </button>
+        {/* 页面设计器二期：全屏画布设计器（组件树 + 拖拽 + propsSchema 属性面板） */}
+        {!isHome && page && (
+          <button
+            type="button"
+            data-testid="app-canvas-design"
+            onClick={() => setCanvasDesignOpen(true)}
+            className="rounded-full px-2.5 py-0.5 text-[10px] font-medium text-white/85 transition-colors hover:text-white"
+            title="画布设计：组件树 + 拖拽 + 属性面板（本地设计层，可重置回推演原貌）"
+          >
+            画布
+          </button>
+        )}
       </div>
+
+      {/* 画布设计器全屏覆盖层（懒加载：点开才拉 dnd-kit chunk） */}
+      {canvasDesignOpen && page && !isHome && (
+        <div className="absolute inset-0 z-20" data-testid="app-canvas-designer-overlay">
+          <React.Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center bg-[#F4F1EA] text-xs text-stone-400">
+                设计器加载中…
+              </div>
+            }
+          >
+            <LazyPageDesigner
+              model={effectiveModel}
+              pageId={page.id}
+              sessionId={sessionId}
+              onClose={() => setCanvasDesignOpen(false)}
+            />
+          </React.Suspense>
+        </div>
+      )}
 
       {/* 设计属性面板（画布外右栏，对标 web-designer 属性面板范式） */}
       {designMode && !isHome && page && page.entityId && (
