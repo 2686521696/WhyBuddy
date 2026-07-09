@@ -25,36 +25,12 @@ import copy
 import difflib
 from typing import Any, Dict, List
 
-from .v5_model_gate import (
-    _as_dict,
-    _as_list,
-    _collect_datamodel_field_refs,
-    _collect_page_ids,
-    _collect_permission_ids,
-    _collect_role_ids,
-    _collect_workflow_ids,
-)
+from .v5_model_gate import _as_dict, _as_list, collect_invariant_ref_ids
 
 # difflib 相似度阈值：0.75 能接住"多/少一个前缀词"级别的拼错
 # （generate_fall_risk_explanation ↔ fall_risk_explanation ≈ 0.86），
 # 又不至于把不相干 id 拉郎配。
 _SIMILARITY_CUTOFF = 0.75
-
-
-def _known_ref_ids(model: Dict[str, Any]) -> set:
-    m = _as_dict(model)
-    return (
-        _collect_datamodel_field_refs(_as_dict(m.get("datamodel")))
-        | _collect_role_ids(_as_dict(m.get("rbac")))
-        | _collect_permission_ids(_as_dict(m.get("rbac")))
-        | _collect_page_ids(_as_dict(m.get("page")))
-        | _collect_workflow_ids(_as_dict(m.get("workflow")))
-        | {
-            str(_as_dict(c).get("id") or "").strip()
-            for c in _as_list(_as_dict(m.get("aigc")).get("capabilities"))
-            if str(_as_dict(c).get("id") or "").strip()
-        }
-    )
 
 
 def _unique_near_match(ref: str, known: set) -> str | None:
@@ -82,7 +58,9 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
     if not invariants:
         return {"model": m, "repaired": [], "dropped": []}
 
-    known = _known_ref_ids(m)
+    # 合法解析域与门禁第 7 节共享同一函数（曾因两边各自维护导致奇偶不齐：
+    # 修复器认 AIGC 能力 id、门禁不认 → 合法不变式被误拦）
+    known = collect_invariant_ref_ids(m)
     repaired: List[Dict[str, Any]] = []
     dropped: List[Dict[str, Any]] = []
     kept: List[Any] = []

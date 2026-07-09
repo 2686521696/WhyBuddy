@@ -79,7 +79,7 @@ Required shape (use these exact keys):
     "invariants": [
       {"id": "<snake_case>", "statement": "<one-sentence declarative constraint>",
        "systems": ["datamodel|rbac|workflow|page|aigc"],
-       "refs": ["<entity_id or entity_id.field_id or role_id or permission or workflow/chain node_id>"]}
+       "refs": ["<entity_id or entity_id.field_id or role_id or permission or workflow/chain node_id or aigc capability id>"]}
     ]
   }
 }

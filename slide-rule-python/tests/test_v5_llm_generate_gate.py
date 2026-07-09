@@ -191,6 +191,29 @@ def test_page_charts_valid_and_dangling():
     assert any(f["ref"] == "loan.ghost" for f in result["findings"])
 
 
+def test_invariant_ref_to_aigc_capability_is_legal():
+    """线上截图案例（'vocal_pitch_coach'）：不变式引用 AIGC 能力 id 是合法写法
+    （"AI 建议不得直发"这类约束必然引用能力节点）。曾因门禁与修复器各自维护
+    合法域导致奇偶不齐——修复器认、门禁不认 → 合法不变式被误拦整模型报废。"""
+    from services.v5_model_repair import repair_five_system_model
+
+    m = _with_chain_and_invariants(_valid_library_model())
+    m["appbundle"]["invariants"].append({
+        "id": "inv_ai_not_direct",
+        "statement": "AI 图书推荐结果不得跳过馆员确认直接生效",
+        "systems": ["aigc", "workflow"],
+        "refs": ["c_reco", "review"],  # c_reco = aigc.capabilities[0].id
+    })
+    # 修复器：合法 ref 原样保留（不改写、不剔除）
+    result = repair_five_system_model(m)
+    assert result["repaired"] == [] and result["dropped"] == []
+    kept = {i["id"] for i in result["model"]["appbundle"]["invariants"]}
+    assert "inv_ai_not_direct" in kept
+    # 门禁：直接通过（与修复器同一合法域）
+    gate = validate_five_system_model(result["model"])
+    assert gate["passed"] is True, gate["findings"]
+
+
 def test_repair_fixes_unique_near_miss_and_drops_unresolvable():
     from services.v5_model_repair import repair_five_system_model
 

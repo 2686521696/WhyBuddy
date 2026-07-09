@@ -134,6 +134,33 @@ def _collect_workflow_ids(workflow: Dict[str, Any]) -> set:
     return ids
 
 
+def _collect_aigc_capability_ids(aigc: Dict[str, Any]) -> set:
+    ids: set = set()
+    for cap in _as_list(aigc.get("capabilities")):
+        cid = str(_as_dict(cap).get("id") or "").strip()
+        if cid:
+            ids.add(cid)
+    return ids
+
+
+def collect_invariant_ref_ids(model: Any) -> set:
+    """不变式 refs 的合法解析域：实体/字段/角色/权限/页面/流程节点/AIGC 能力。
+
+    门禁第 7 节与 v5_model_repair 共用本函数——两边各自维护集合曾导致
+    奇偶不齐（修复器认 AIGC 能力 id、门禁不认 → 合法不变式被误拦，
+    线上案例 ref 'vocal_pitch_coach'）。合法域只在这里改。
+    """
+    m = _as_dict(model)
+    return (
+        _collect_datamodel_field_refs(_as_dict(m.get("datamodel")))
+        | _collect_role_ids(_as_dict(m.get("rbac")))
+        | _collect_permission_ids(_as_dict(m.get("rbac")))
+        | _collect_page_ids(_as_dict(m.get("page")))
+        | _collect_workflow_ids(_as_dict(m.get("workflow")))
+        | _collect_aigc_capability_ids(_as_dict(m.get("aigc")))
+    )
+
+
 def validate_five_system_model(model: Any) -> Dict[str, Any]:
     """Structural closure gate. Returns {'passed': bool, 'findings': [...]}.
 
@@ -318,7 +345,7 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
     #    refs 必须解析到本模型内的实体/字段/角色/权限/流程节点，systems 必须是已知系统名。
     #    宽泛口号（无 refs）也算失败：不变式的价值就在于可对照模型检查。
     #    落在 appbundle（总装段）而非顶层：随 per-skill 证据通道原样到达客户端。
-    known_ref_ids = field_refs | role_ids | perm_ids | page_ids | workflow_ids
+    known_ref_ids = collect_invariant_ref_ids(m)
     for inv in _as_list(appbundle.get("invariants")):
         iv = _as_dict(inv)
         iid = str(iv.get("id") or iv.get("statement") or "").strip()[:60] or "<unnamed>"
@@ -338,7 +365,7 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
             if ref not in known_ref_ids:
                 findings.append(_finding(
                     DANGLING, f"invariants[{iid}].refs",
-                    f"invariant ref '{ref}' not found in model (entity/field/role/permission/page/workflow node)",
+                    f"invariant ref '{ref}' not found in model (entity/field/role/permission/page/workflow node/aigc capability)",
                     ref=ref, skill="invariants",
                 ))
         for system in _as_list(iv.get("systems")):
