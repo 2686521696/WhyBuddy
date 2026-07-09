@@ -1073,13 +1073,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     runTurn(text);
   }, [runTurn]);
 
-  const sendMessage = async () => {
+  // textOverride：迭代环（重新推演/编辑重跑）程序化重发用。typeof 守卫是刻意的——
+  // 既有调用点 onClick={sendMessage} 会把 MouseEvent 当第一参传进来，不能误当文本。
+  const sendMessage = async (textOverride?: unknown) => {
     if (isRunning) {
       stop();
       return;
     }
-    if (!input.trim()) return;
-    const text = input.trim();
+    const text = (typeof textOverride === "string" ? textOverride : input).trim();
+    if (!text) return;
     setInput("");
     await runTurn(text);
   };

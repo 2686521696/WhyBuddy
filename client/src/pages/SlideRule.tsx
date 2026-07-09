@@ -372,8 +372,9 @@ const ImSurfaceContext = React.createContext<{
   llmDraftLabel: string | null;
   goalText?: string;
   thinkingText: string;
+  isRunning: boolean;
   onChallenge: (id: string) => void;
-}>({ llmDraft: "", llmDraftLabel: null, thinkingText: "", onChallenge: () => {} });
+}>({ llmDraft: "", llmDraftLabel: null, thinkingText: "", isRunning: false, onChallenge: () => {} });
 
 const convertImMessage = (m: ImItem): ThreadMessageLike => ({
   id: m.id,
@@ -394,11 +395,23 @@ function ImUserMessage() {
   const item = useImTurn();
   // 从持久化状态恢复的轮次没有用户文本——整条不渲染（与迁移前一致）
   if (!item?.turn.user) return null;
+  const text = item.turn.user;
   return (
-    <div className="mb-4 flex justify-end">
+    <div className="group mb-4 flex flex-col items-end">
       <div className="max-w-[520px] rounded-lg bg-[#F8E8E0] px-4 py-2.5 text-[15px] leading-7 text-[#1F1E1B]">
-        {item.turn.user}
+        {text}
       </div>
+      {/* 迭代环：意图原文回填输入条，改半句再推（悬停显现，不抢注意力） */}
+      <button
+        type="button"
+        data-testid="sliderule-edit-rerun"
+        onClick={() => {
+          window.dispatchEvent(new CustomEvent("sliderule:fill-prompt", { detail: { text } }));
+        }}
+        className="mt-1 rounded-full px-2 py-0.5 text-[11px] text-stone-400 opacity-0 transition-opacity hover:bg-[#F0EDE5] hover:text-stone-600 focus:opacity-100 group-hover:opacity-100"
+      >
+        编辑重跑
+      </button>
     </div>
   );
 }
@@ -446,15 +459,34 @@ function ImAssistantMessage() {
             )}
           </div>
           <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
-          {turn.main && (
+          {(turn.main || turn.user) && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
-              <button
-                type="button"
-                onClick={() => onChallenge(turn.main!.artifactId)}
-                className="rounded-full bg-[#F0EDE5] px-2 py-0.5 hover:bg-[#E7E2D9]"
-              >
-                质疑本轮
-              </button>
+              {turn.main && (
+                <button
+                  type="button"
+                  onClick={() => onChallenge(turn.main!.artifactId)}
+                  className="rounded-full bg-[#F0EDE5] px-2 py-0.5 hover:bg-[#E7E2D9]"
+                >
+                  质疑本轮
+                </button>
+              )}
+              {/* 迭代环：同题重发（基于当前推演状态再推一次，非回滚重放） */}
+              {turn.user && (
+                <button
+                  type="button"
+                  data-testid="sliderule-rerun-turn"
+                  disabled={ctx.isRunning}
+                  onClick={() => {
+                    window.dispatchEvent(
+                      new CustomEvent("sliderule:resend-prompt", { detail: { text: turn.user } })
+                    );
+                  }}
+                  className="rounded-full bg-[#F0EDE5] px-2 py-0.5 hover:bg-[#E7E2D9] disabled:cursor-not-allowed disabled:opacity-50"
+                  title="以同一句意图基于当前推演状态再推一轮"
+                >
+                  重新推演
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -463,7 +495,8 @@ function ImAssistantMessage() {
   );
 }
 
-function ClaudeChatSurface({
+// export：仅供测试静态渲染（页面内唯一消费方仍是本文件）
+export function ClaudeChatSurface({
   uiTurns,
   isRunning,
   liveAction,
@@ -518,8 +551,8 @@ function ClaudeChatSurface({
   });
 
   const ctxValue = useMemo(
-    () => ({ publishClosure, llmDraft, llmDraftLabel, goalText, thinkingText, onChallenge }),
-    [publishClosure, llmDraft, llmDraftLabel, goalText, thinkingText, onChallenge]
+    () => ({ publishClosure, llmDraft, llmDraftLabel, goalText, thinkingText, isRunning, onChallenge }),
+    [publishClosure, llmDraft, llmDraftLabel, goalText, thinkingText, isRunning, onChallenge]
   );
 
   return (
@@ -1321,6 +1354,19 @@ function SlideRuleSessionBody({
       ? `${goal.slice(0, 24)} · SlideRule`
       : "新会话 · SlideRule";
   }, [goal]);
+
+  // 迭代环：消息上的「重新推演」经事件总线把该轮意图原文程序化重发
+  // （与空态示例卡的 fill-prompt 同一套事件模式，免去跨层 prop 钻孔）。
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const text = (e as CustomEvent<{ text: string }>).detail?.text;
+      if (text) void sendMessageRef.current(text);
+    };
+    window.addEventListener("sliderule:resend-prompt", handler);
+    return () => window.removeEventListener("sliderule:resend-prompt", handler);
+  }, []);
 
   // Python backend error/timeout/degraded/legacy status + retry for core SlideRule workflow (105)
   const [pythonApiError, setPythonApiError] = useState<any>(null);
