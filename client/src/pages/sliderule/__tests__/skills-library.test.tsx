@@ -52,8 +52,10 @@ describe("SkillsLibraryPage", () => {
 
   it("marketplace 双 tab + 安装动作：有语义档案出安装钮，纯图文诚实禁用", () => {
     expect(html).toContain('data-testid="skills-tab"');
-    expect(html).toContain("技能市场");
+    expect(html).toContain("精选技能");
+    expect(html).toContain("社区技能");
     expect(html).toContain("已安装 0");
+    expect(html).toContain('data-testid="skills-community-grid"');
     // 首页 20 行（按浏览量降序）里既有可安装项也有纯图文项
     const semTopicIds = new Set(
       (skillSemantics as { items: Array<{ description: string; topicIds: number[] }> }).items
