@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 // jsxLocPlugin removed to avoid R3F data-loc conflicts
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -148,45 +149,11 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-// === Python-first frontend API routing (backend-python-total-cutover-105) ===
-// Local dev and frontend API calls prefer Python where a Python route exists (listed owned prefixes).
-// Default is Python-first for /api/sliderule, /api/blueprint/spec-documents (and always /api/agent-loop);
-// explicit Node legacy fallback for other /api/* (Node thin proxy / compat shell).
-// Set VITE_PYTHON_FIRST_API=false (or FRONTEND_PYTHON_FIRST=false etc) to opt out for owned prefixes.
-// PYTHON_API_TARGET overrides target. resolveApiTarget(path) is executable guard (importable for tests/verif).
-// Placed at top level for tsx/node -e verification and vitest.
-const PYTHON_DEFAULT_TARGET = "http://localhost:9700";
-const NODE_DEFAULT_TARGET = "http://localhost:3001";
-export function resolveApiTarget(path: string, env: NodeJS.ProcessEnv = process.env): string {
-  const pyTarget = env.PYTHON_API_TARGET || env.AGENT_LOOP_API_TARGET || PYTHON_DEFAULT_TARGET;
-  if (path.startsWith("/api/agent-loop")) {
-    return pyTarget; // explicit Python-owned (baseline, always)
-  }
-  if (path === "/api/health" || path.startsWith("/api/health/") || path === "/health" || path === "/ready") {
-    return pyTarget; // health/readiness unified to Python per foundation task 04 + task 05 Vite default proxy
-  }
-  const hasExplicitDisable =
-    env.VITE_PYTHON_FIRST_API === "false" ||
-    env.FRONTEND_PYTHON_FIRST === "false" ||
-    env.PYTHON_FIRST_PROXY === "false";
-  const hasExplicitEnable =
-    env.VITE_PYTHON_FIRST_API === "true" ||
-    env.FRONTEND_PYTHON_FIRST === "true" ||
-    env.PYTHON_FIRST_PROXY === "true" ||
-    !!env.PYTHON_API_TARGET;
-  const pythonFirstEnabled = hasExplicitEnable || !hasExplicitDisable;
-  const pythonOwnedPrefixes = [
-    "/api/sliderule",
-    "/api/blueprint/spec-documents",
-    "/api/health",
-    // health/readiness unified under Python (task 04). Vite dev routing defaults Python for owned (task 05).
-    // Non-listed /api/* stay Node explicit thin compat per policy.
-  ];
-  if (pythonFirstEnabled && pythonOwnedPrefixes.some((p) => path.startsWith(p))) {
-    return pyTarget;
-  }
-  return NODE_DEFAULT_TARGET;
-}
+// Python-first API 路由守卫移至 ./api-target.ts（测试/脚本可直接引，
+// 不连带 vite 插件链）；此处 import + re-export：配置体内 proxy 仍在用，
+// 且保持既有 `node -e`/脚本的导入路径兼容。
+import { resolveApiTarget } from "./api-target";
+export { resolveApiTarget };
 
 export default defineConfig(() => {
   const repository = process.env.GITHUB_REPOSITORY || "opencroc/sliderule";
@@ -225,6 +192,13 @@ export default defineConfig(() => {
       __GITHUB_PAGES__: JSON.stringify(isGitHubPagesBuild),
       __GITHUB_REPOSITORY__: JSON.stringify(repository),
       __GITHUB_REPOSITORY_URL__: JSON.stringify(repositoryUrl),
+    },
+    // 测试提速：vmThreads 池在保留"每文件独立模块注册表"隔离语义的前提下
+    // 共享编译缓存——本套件 collect 阶段（antd 等重依赖逐文件重载）是大头，
+    // 全量 4500+ 例从 ~89s 降到 ~53s。不用 isolate:false：实测 103 例
+    // 跨文件全局态污染（fetch/localStorage 模块级 stub），省的时间不值风险。
+    test: {
+      pool: "vmThreads",
     },
     plugins,
     resolve: {

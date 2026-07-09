@@ -21,6 +21,7 @@
     "check": "tsc --noEmit",
     "test": "node --run test:client && node --run test:server && node --run test:executor",
     "test:client": "vitest run client/src",
+    "test:client:changed": "vitest run client/src --changed origin/main",
     "test:server": "node scripts/test-server.mjs",
     "test:executor": "vitest run --config services/lobster-executor/vitest.config.ts",
     "test:decision": "vitest run --config vitest.config.server.ts server/tests/hitl-decision.test.ts server/tests/hitl-decision.property.test.ts",

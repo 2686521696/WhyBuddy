@@ -151,7 +151,7 @@ describe("resolveApiTarget (backend-python-total-cutover-105)", () => {
   const NODE = "http://localhost:3001";
 
   it("defaults to Python for /api/agent-loop and listed pythonOwnedPrefixes, Node for others", async () => {
-    const { resolveApiTarget } = await import("../../../vite.config.ts");
+    const { resolveApiTarget } = await import("../../../api-target");
     expect(resolveApiTarget("/api/agent-loop")).toBe(PY);
     expect(resolveApiTarget("/api/agent-loop/runs/1")).toBe(PY);
     expect(resolveApiTarget("/api/sliderule")).toBe(PY);
@@ -163,7 +163,7 @@ describe("resolveApiTarget (backend-python-total-cutover-105)", () => {
   });
 
   it("explicit disable (VITE_PYTHON_FIRST_API=false etc) routes owned prefixes to Node except always-Python agent-loop", async () => {
-    const { resolveApiTarget } = await import("../../../vite.config.ts");
+    const { resolveApiTarget } = await import("../../../api-target");
     const dis = { VITE_PYTHON_FIRST_API: "false" as const };
     expect(resolveApiTarget("/api/sliderule", dis)).toBe(NODE);
     expect(resolveApiTarget("/api/blueprint/spec-documents", dis)).toBe(NODE);
@@ -175,7 +175,7 @@ describe("resolveApiTarget (backend-python-total-cutover-105)", () => {
   });
 
   it("PYTHON_API_TARGET overrides python target for owned routes", async () => {
-    const { resolveApiTarget } = await import("../../../vite.config.ts");
+    const { resolveApiTarget } = await import("../../../api-target");
     const ov = { PYTHON_API_TARGET: "http://py-local:9705" };
     expect(resolveApiTarget("/api/agent-loop", ov)).toBe("http://py-local:9705");
     expect(resolveApiTarget("/api/sliderule", ov)).toBe("http://py-local:9705");
@@ -185,7 +185,7 @@ describe("resolveApiTarget (backend-python-total-cutover-105)", () => {
   });
 
   it("unlisted /api always resolves to Node (explicit retained compatibility shell) even if python-first enabled", async () => {
-    const { resolveApiTarget } = await import("../../../vite.config.ts");
+    const { resolveApiTarget } = await import("../../../api-target");
     expect(resolveApiTarget("/api", { VITE_PYTHON_FIRST_API: "true" })).toBe(NODE);
     expect(resolveApiTarget("/api/foo", { PYTHON_API_TARGET: "http://x:9" })).toBe(NODE);
     expect(resolveApiTarget("/api/v2/data")).toBe(NODE);
