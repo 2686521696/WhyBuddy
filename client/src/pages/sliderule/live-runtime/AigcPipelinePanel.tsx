@@ -1,38 +1,29 @@
 /**
- * AigcPipelinePanel — AIGC 屏的「能力编排」视图（编排一期）。
+ * AigcPipelinePanel — AIGC 屏的「能力编排」视图（编排二期）。
  *
- * 模型声明的线性管线（aigc.pipelines）可视化 + 链路试跑：
- * - 步骤链卡片：能力名 + 衔接字段标注（上一步 outputField ⭢ 下一步输入），
- *   衔接字段与门禁 handoff 校验同一规则，图上如实标注；
- * - 首步输入表单（衔接字段之外的输入才需要人填，衔接字段标「由上一步注入」）；
- * - 链路试跑：POST /api/sliderule/aigc-pipeline-tryrun（复用五系统生成同一
- *   LLM 通道），fail-fast，逐步展示产出/失败诊断——诚实边界与单步试跑一致。
+ * 二期升级：链路试跑改走浏览器端图执行器（flow-executor，移植自用户 MIT
+ * 项目的拓扑排序执行引擎）——管线经 derivePipelineFlow 投影成 FlowDefinition
+ * （端口 = 数据模型字段 ref），逐节点真跑 /aigc-tryrun，步骤卡实时点亮
+ * （running/success/failed/skipped），执行日志逐步展示。
+ * 诚实边界不变：节点失败 fail-fast（重试 1 次后停），不伪造下游产物。
+ * React Flow 画布留给设计器期（可编辑时）——静态链卡在 SSR/测试下可验证。
  */
 
 import React from "react";
 import {
-  type AigcCapability,
   type AigcPipeline,
   type FiveSystemModel,
   resolveFieldRef,
 } from "../system-screens/five-system-model";
+import { derivePipelineFlow, makeAigcNodeRunner } from "./flow-definition";
+import { executeFlow, type FlowResult, type NodeRunStatus } from "./flow-executor";
 
-interface StepResult {
-  id?: string;
-  name?: string;
-  ok: boolean;
-  output?: string;
-  code?: string;
-  detail?: string;
-  elapsedMs?: number;
-}
-
-interface PipelineRunResult {
-  ok: boolean;
-  code?: string;
-  detail?: string;
-  steps: StepResult[];
-}
+const STATUS_RING: Record<NodeRunStatus, string> = {
+  running: "border-pink-400 ring-2 ring-pink-100",
+  success: "border-emerald-300 bg-emerald-50/40",
+  failed: "border-red-300 bg-red-50/60",
+  skipped: "border-[#E7E2D9] opacity-50",
+};
 
 export function AigcPipelinePanel({
   model,
@@ -42,68 +33,34 @@ export function AigcPipelinePanel({
   goal?: string;
 }) {
   const pipelines = model.aigc?.pipelines ?? [];
-  const capById = React.useMemo(() => {
-    const map = new Map<string, AigcCapability>();
-    for (const cap of model.aigc?.capabilities ?? []) {
-      if (cap.id) map.set(cap.id, cap);
-    }
-    return map;
-  }, [model.aigc?.capabilities]);
+  const capabilities = model.aigc?.capabilities ?? [];
 
   const [activeIdx, setActiveIdx] = React.useState(0);
   const [inputs, setInputs] = React.useState<Record<string, string>>({});
   const [running, setRunning] = React.useState(false);
-  const [result, setResult] = React.useState<PipelineRunResult | null>(null);
+  const [statuses, setStatuses] = React.useState<Record<string, NodeRunStatus>>({});
+  const [result, setResult] = React.useState<FlowResult | null>(null);
 
   const pipeline: AigcPipeline | null = pipelines[activeIdx] ?? pipelines[0] ?? null;
-  const steps = React.useMemo(
-    () =>
-      (pipeline?.steps ?? [])
-        .map((id) => capById.get(id))
-        .filter((c): c is AigcCapability => Boolean(c)),
-    [pipeline, capById]
+  const projection = React.useMemo(
+    () => derivePipelineFlow(pipeline, capabilities),
+    [pipeline, capabilities]
   );
-
-  // 衔接字段集合：这些输入由上一步注入，不需要人填
-  const handoffRefs = React.useMemo(() => {
-    const refs = new Set<string>();
-    for (const cap of steps.slice(0, -1)) {
-      if (cap.outputField) refs.add(cap.outputField);
-    }
-    return refs;
-  }, [steps]);
-
-  const firstStepManualInputs = (steps[0]?.inputFields ?? []).filter(
-    (ref) => !handoffRefs.has(ref)
-  );
+  const steps = projection.flow.nodes.map((n) => projection.capByNodeId.get(n.node_id)!);
+  const handoffRefs = new Set(projection.flow.edges.map((e) => e.source_port ?? ""));
 
   const run = async () => {
-    if (!pipeline || steps.length < 2 || running) return;
+    if (projection.reason || running) return;
     setRunning(true);
     setResult(null);
+    setStatuses({});
     try {
-      const res = await fetch("/api/sliderule/aigc-pipeline-tryrun", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pipeline: { id: pipeline.id, name: pipeline.name },
-          steps: steps.map((c) => ({
-            id: c.id,
-            name: c.name,
-            inputFields: c.inputFields,
-            outputField: c.outputField,
-          })),
-          inputs,
-          goal,
-        }),
+      const flow = { ...projection.flow, variables: { ...inputs } };
+      const res = await executeFlow(flow, makeAigcNodeRunner(projection.capByNodeId, goal), {
+        onNodeStatus: (nodeId, status) =>
+          setStatuses((prev) => ({ ...prev, [nodeId]: status })),
       });
-      if (!res.ok) {
-        setResult({ ok: false, code: `HTTP_${res.status}`, detail: await res.text(), steps: [] });
-      } else {
-        setResult((await res.json()) as PipelineRunResult);
-      }
-    } catch (e) {
-      setResult({ ok: false, code: "NETWORK_ERROR", detail: String(e), steps: [] });
+      setResult(res);
     } finally {
       setRunning(false);
     }
@@ -135,6 +92,7 @@ export function AigcPipelinePanel({
               setActiveIdx(i);
               setInputs({});
               setResult(null);
+              setStatuses({});
             }}
             className={`rounded-full px-2 py-0.5 text-[11px] ring-1 transition-colors ${
               i === activeIdx
@@ -147,59 +105,73 @@ export function AigcPipelinePanel({
         ))}
       </div>
 
-      {/* 步骤链：能力卡 + 衔接字段标注 */}
+      {/* 步骤链：能力卡（执行状态实时点亮）+ 衔接字段标注 */}
       <div className="flex flex-wrap items-stretch gap-2" data-testid="aigc-pipeline-chain">
-        {steps.map((cap, i) => (
-          <React.Fragment key={cap.id || i}>
-            {i > 0 && (
-              <div className="flex flex-col items-center justify-center px-1">
-                <span className="text-stone-300">⭢</span>
-                <span
-                  className="max-w-[120px] truncate font-mono text-[9px] text-stone-400"
-                  title={`衔接字段：${steps[i - 1]?.outputField ?? ""}（上一步产出注入本步输入）`}
-                >
-                  {steps[i - 1]?.outputField ?? ""}
-                </span>
-              </div>
-            )}
-            <div className="min-w-[150px] flex-1 rounded-md border border-[#E7E2D9] bg-white p-2.5">
-              <div className="text-[11px] font-semibold text-stone-700">
-                {i + 1}. {cap.name || cap.id}
-              </div>
-              <div className="mt-1 space-y-0.5">
-                {(cap.inputFields ?? []).map((ref) => {
-                  const res = resolveFieldRef(ref, model);
-                  const isHandoff = handoffRefs.has(ref);
-                  return (
-                    <div key={ref} className="flex items-center gap-1 text-[9px]">
-                      <span className={res.resolved ? "text-stone-400" : "text-red-500"}>
-                        ← {res.resolved ? res.label : `✗ ${ref}`}
-                      </span>
-                      {isHandoff && (
-                        <span className="rounded bg-pink-50 px-1 text-[8px] text-pink-500">
-                          由上一步注入
+        {steps.map((cap, i) => {
+          const status = statuses[cap.id ?? ""];
+          return (
+            <React.Fragment key={cap.id || i}>
+              {i > 0 && (
+                <div className="flex flex-col items-center justify-center px-1">
+                  <span className="text-stone-300">⭢</span>
+                  <span
+                    className="max-w-[120px] truncate font-mono text-[9px] text-stone-400"
+                    title={`衔接字段：${steps[i - 1]?.outputField ?? ""}（上一步产出注入本步输入）`}
+                  >
+                    {steps[i - 1]?.outputField ?? ""}
+                  </span>
+                </div>
+              )}
+              <div
+                className={`min-w-[150px] flex-1 rounded-md border bg-white p-2.5 transition-all ${
+                  status ? STATUS_RING[status] : "border-[#E7E2D9]"
+                }`}
+                data-testid={`aigc-pipeline-node-${cap.id}`}
+                data-status={status ?? "idle"}
+              >
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-stone-700">
+                  {status === "running" && (
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-pink-500" />
+                  )}
+                  {status === "success" && <span className="text-emerald-600">✓</span>}
+                  {status === "failed" && <span className="text-red-600">✗</span>}
+                  {i + 1}. {cap.name || cap.id}
+                </div>
+                <div className="mt-1 space-y-0.5">
+                  {(cap.inputFields ?? []).map((ref) => {
+                    const res = resolveFieldRef(ref, model);
+                    const isHandoff = handoffRefs.has(ref);
+                    return (
+                      <div key={ref} className="flex items-center gap-1 text-[9px]">
+                        <span className={res.resolved ? "text-stone-400" : "text-red-500"}>
+                          ← {res.resolved ? res.label : `✗ ${ref}`}
                         </span>
-                      )}
+                        {isHandoff && (
+                          <span className="rounded bg-pink-50 px-1 text-[8px] text-pink-500">
+                            由上一步注入
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {cap.outputField && (
+                    <div className="text-[9px] text-stone-500">
+                      → {resolveFieldRef(cap.outputField, model).label || cap.outputField}
                     </div>
-                  );
-                })}
-                {cap.outputField && (
-                  <div className="text-[9px] text-stone-500">
-                    → {resolveFieldRef(cap.outputField, model).label || cap.outputField}
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          </React.Fragment>
-        ))}
+            </React.Fragment>
+          );
+        })}
       </div>
 
-      {/* 首步输入 + 试跑 */}
+      {/* 手工输入 + 试跑（图执行器：拓扑序逐节点真跑，状态实时点亮） */}
       <div className="rounded-md border border-[#E7E2D9] bg-[#FBF9F4] p-3">
         <div className="text-[11px] font-semibold text-stone-600">链路试跑</div>
-        {firstStepManualInputs.length > 0 && (
+        {projection.manualInputRefs.length > 0 && (
           <div className="mt-2 space-y-1.5">
-            {firstStepManualInputs.map((ref) => {
+            {projection.manualInputRefs.map((ref) => {
               const res = resolveFieldRef(ref, model);
               return (
                 <div key={ref} className="flex items-center gap-2">
@@ -220,56 +192,70 @@ export function AigcPipelinePanel({
         <button
           type="button"
           data-testid="aigc-pipeline-run"
-          disabled={running || steps.length < 2}
+          disabled={running || projection.reason !== null}
           onClick={run}
           className="mt-2 rounded-full bg-pink-500 px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
+          title={projection.reason ?? undefined}
         >
-          {running ? "链路运行中…（逐步真跑 LLM）" : `试跑整条链（${steps.length} 步）`}
+          {running ? "链路运行中…（逐节点真跑 LLM）" : `试跑整条链（${steps.length} 步）`}
         </button>
       </div>
 
-      {/* 结果：逐步产出 / fail-fast 诊断 */}
+      {/* 执行日志：逐节点产出 / fail-fast 诊断 */}
       {result && (
         <div className="space-y-2" data-testid="aigc-pipeline-result">
-          {result.code && (
+          {result.error && (
             <div className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] text-red-600">
-              <span className="font-mono font-semibold">{result.code}</span>
-              <span className="ml-1.5">{result.detail}</span>
+              {result.error}
             </div>
           )}
-          {result.steps.map((s, i) => (
-            <div
-              key={s.id || i}
-              className={`rounded-md border p-2.5 ${
-                s.ok ? "border-[#E7E2D9] bg-white" : "border-red-200 bg-red-50/60"
-              }`}
-            >
-              <div className="flex items-center gap-2 text-[10px]">
-                <span className={s.ok ? "text-emerald-600" : "text-red-600"}>
-                  {s.ok ? "✓" : "✗"}
-                </span>
-                <span className="font-semibold text-stone-700">
-                  {i + 1}. {s.name || s.id}
-                </span>
-                {typeof s.elapsedMs === "number" && (
-                  <span className="text-stone-300">{(s.elapsedMs / 1000).toFixed(1)}s</span>
+          {result.logs.map((log, i) => {
+            const cap = projection.capByNodeId.get(log.node_id);
+            const output = log.outputs?.[cap?.outputField || "output"];
+            return (
+              <div
+                key={log.node_id || i}
+                className={`rounded-md border p-2.5 ${
+                  log.status === "success"
+                    ? "border-[#E7E2D9] bg-white"
+                    : log.status === "skipped"
+                    ? "border-[#E7E2D9] bg-white opacity-50"
+                    : "border-red-200 bg-red-50/60"
+                }`}
+              >
+                <div className="flex items-center gap-2 text-[10px]">
+                  <span
+                    className={
+                      log.status === "success"
+                        ? "text-emerald-600"
+                        : log.status === "skipped"
+                        ? "text-stone-400"
+                        : "text-red-600"
+                    }
+                  >
+                    {log.status === "success" ? "✓" : log.status === "skipped" ? "⊘" : "✗"}
+                  </span>
+                  <span className="font-semibold text-stone-700">
+                    {i + 1}. {cap?.name || log.node_id}
+                  </span>
+                  {typeof log.duration_ms === "number" && (
+                    <span className="text-stone-300">{(log.duration_ms / 1000).toFixed(1)}s</span>
+                  )}
+                </div>
+                {log.status === "success" && (
+                  <div className="mt-1 whitespace-pre-wrap text-[11px] leading-5 text-stone-600">
+                    {String(output ?? "")}
+                  </div>
+                )}
+                {log.status === "failed" && (
+                  <div className="mt-1 text-[10px] text-red-600">{log.error}</div>
                 )}
               </div>
-              {s.ok ? (
-                <div className="mt-1 whitespace-pre-wrap text-[11px] leading-5 text-stone-600">
-                  {s.output}
-                </div>
-              ) : (
-                <div className="mt-1 text-[10px] text-red-600">
-                  <span className="font-mono font-semibold">{s.code}</span>
-                  <span className="ml-1.5">{s.detail}</span>
-                </div>
-              )}
-            </div>
-          ))}
-          {!result.ok && result.steps.length > 0 && result.steps.length < (steps.length || 0) && (
+            );
+          })}
+          {result.status === "failed" && result.logs.length > 0 && (
             <div className="text-[10px] text-stone-400">
-              链路在第 {result.steps.length} 步中断（fail-fast：下游缺上游产物，不伪造后续步骤）
+              链路中断（fail-fast：下游缺上游产物，不伪造后续节点；失败节点已重试 1 次）
             </div>
           )}
         </div>
