@@ -108,6 +108,7 @@ import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
 import { AiSuggestionCard } from "./AiSuggestionCard";
+import { CodeProjectionView } from "./CodeProjectionView";
 import type { AppPageStatSchema } from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
@@ -345,6 +346,9 @@ export function AppRuntimeScreen({
   });
   const [activePageId, setActivePageId] = React.useState<string>("home");
   const [device, setDevice] = React.useState<DeviceKey>("desktop");
+  // 代码视图档（代码视图一期）：schema 的确定性代码投影——与设备档并列的
+  // 观察视角切换，开着时替换缩放画布（代码要整幅面积，不做 16:9 缩放）
+  const [codeView, setCodeView] = React.useState(false);
   // 当前角色与 RBAC 屏「角色预览」共享（localStorage + 事件），谁改都实时生效
   const [role, setRole] = React.useState<string | undefined>(
     () => loadRuntimeRole(sessionId) ?? schema?.roles[0]
@@ -1547,11 +1551,17 @@ export function AppRuntimeScreen({
       style={{ background: "transparent" }}
       data-testid="app-runtime-screen"
     >
+      {codeView ? (
+        <div className="absolute inset-0" data-testid="app-runtime-code-host">
+          <CodeProjectionView model={model} appName={appTitle} />
+        </div>
+      ) : null}
       <div
         style={{
           width: spec.w * scale,
           height: spec.h * scale,
           position: "relative",
+          display: codeView ? "none" : undefined,
         }}
       >
         <div
@@ -1659,16 +1669,19 @@ export function AppRuntimeScreen({
         </div>
       </div>
 
-      {/* 设备切换（画布外的排练控制，不属于被渲染的系统本身） */}
+      {/* 档位切换（画布外的排练控制）：三档设备 + 代码投影视角 */}
       <div className="absolute left-3 top-2 flex items-center gap-0.5 rounded-full bg-black/25 p-0.5">
         {(Object.keys(DEVICE_SPECS) as DeviceKey[]).map(key => (
           <button
             key={key}
             type="button"
             data-testid={`app-device-${key}`}
-            onClick={() => setDevice(key)}
+            onClick={() => {
+              setCodeView(false);
+              setDevice(key);
+            }}
             className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
-              device === key
+              !codeView && device === key
                 ? "bg-white text-stone-800 shadow-sm"
                 : "text-white/85 hover:text-white"
             }`}
@@ -1676,13 +1689,28 @@ export function AppRuntimeScreen({
             {DEVICE_SPECS[key].label}
           </button>
         ))}
+        <button
+          type="button"
+          data-testid="app-device-code"
+          onClick={() => setCodeView(true)}
+          title="schema 的确定性代码投影（只读）"
+          className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
+            codeView
+              ? "bg-white text-stone-800 shadow-sm"
+              : "text-white/85 hover:text-white"
+          }`}
+        >
+          代码
+        </button>
       </div>
-      <span
-        className="absolute bottom-2 right-3 rounded-full bg-black/30 px-2 py-0.5 font-mono text-[9px] text-white/90"
-        title={`固定 ${spec.w}×${spec.h} 设计分辨率，按容器等比缩放显示`}
-      >
-        {spec.w}×{spec.h} · {Math.round(scale * 100)}%
-      </span>
+      {!codeView && (
+        <span
+          className="absolute bottom-2 right-3 rounded-full bg-black/30 px-2 py-0.5 font-mono text-[9px] text-white/90"
+          title={`固定 ${spec.w}×${spec.h} 设计分辨率，按容器等比缩放显示`}
+        >
+          {spec.w}×{spec.h} · {Math.round(scale * 100)}%
+        </span>
+      )}
     </div>
   );
 }
