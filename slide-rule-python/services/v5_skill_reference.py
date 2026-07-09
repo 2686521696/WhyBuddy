@@ -1,8 +1,10 @@
 """v5_skill_reference — 业界技能参考语料（技能库二期"化为己用"）。
 
-语料来自 TRAE 技能创作赛的宽松协议开源仓库（scripts/harvest-skill-semantics.mjs
-采集，data/skill_semantics.json，每条带协议标签与署名回链）。检索是零依赖的
-词面重叠打分：ASCII 词 + 中文 bigram，对意图取 top-k。
+语料来自 TRAE 技能创作赛的公开开源仓库（scripts/harvest-skill-semantics.mjs
+采集，data/skill_semantics.json，每条带协议标签与署名回链；收录范围为
+项目 owner 决策——全量简短摘要，未挂协议仓库的引用风险由 owner 兜底，
+异议按条下架）。检索是零依赖的词面重叠打分：ASCII 词 + 中文 bigram，
+对意图取 top-k。
 
 用途边界（刻意克制）：
   - 只作为生成 prompt 里的"命名与输入输出风格参考"，明确指示不复制内容；

@@ -3,9 +3,9 @@
  * 从索引里的开源仓库中筛出宽松协议（MIT/Apache/BSD/Unlicense/CC0）的，
  * 抽取技能语义档案（名称/描述/输入输出线索），产出推演引擎参考语料。
  *
- * 合规边界：
- *   - 只对"明确宽松协议"的仓库摘录简短语义描述（≤300 字 + 署名回链）；
- *     协议未知/copyleft 的仓库只记协议标签，不摘录内容；
+ * 收录策略（项目 owner 决策，2026-07-09）：全量收录简短语义档案
+ * （≤300 字摘要 + 署名回链），不再按协议门控——owner 对未挂协议仓库
+ * 的引用风险兜底，异议按条下架（每条保留协议标签便于定位）。
  *   - 只读公开 raw 文件（LICENSE / SKILL.md / README），无认证、限并发；
  *   - 产物按仓库署名（repo url + 论坛原帖回链），供生成 prompt 做
  *     命名/输入输出风格参考，不复制任何实现内容。
@@ -181,8 +181,8 @@ async function main() {
       }
       census[license] = (census[license] ?? 0) + 1;
 
-      // 2) 宽松协议才摘录语义（其余只记协议标签）
-      if (PERMISSIVE.has(license)) {
+      // 2) 全量摘录语义（owner 兜底决策）；协议标签随条保留，异议可按条下架
+      {
         let doc = null;
         for (const file of DOC_FILES) {
           for (const url of rawUrlCandidates(entry.host, entry.owner, entry.repo, file)) {
@@ -196,6 +196,7 @@ async function main() {
           repo: key,
           url: `https://${key}`,
           license,
+          permissive: PERMISSIVE.has(license),
           name: semantics.name || entry.topics[0]?.title?.slice(0, 80) || entry.repo,
           description: semantics.description,
           ioHints: semantics.ioHints,
@@ -214,7 +215,8 @@ async function main() {
     JSON.stringify(
       {
         source: "TRAE 论坛 SOLO 技能创作赛开源仓库（经 trae-skills-index 去重）",
-        criteria: "仅收录明确宽松协议仓库的简短语义档案（署名回链）；其余仅计入协议普查",
+        criteria:
+          "全量收录简短语义档案（署名回链，每条带协议标签；owner 对未挂协议引用兜底，异议按条下架）",
         generatedAt: new Date().toISOString(),
         licenseCensus: census,
         count: items.length,
