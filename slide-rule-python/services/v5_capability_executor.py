@@ -185,14 +185,24 @@ def _try_llm_generate_evidence(
             "detail": str((_diag or {}).get("detail") or "LLM 未返回完整五系统模型")[:200],
         }
         return None
+    # 门禁前确定性修复：不变式引用近邻修复 + 修不好的整条剔除（零 LLM，留痕）。
+    # 骨架五段不修——悬挂仍由下面的门禁硬拦。
+    try:
+        from .v5_model_repair import repair_five_system_model
+
+        model = repair_five_system_model(model)["model"]
+    except Exception as exc:  # noqa: BLE001 — 修复器故障不得放行未修模型，也不该炸管线
+        print(f"[v5_capability_executor] model repair skipped: {str(exc)[:120]}")
     gate = validate_five_system_model(model)
     if not gate.get("passed"):
         # Gate blocked — do NOT inject evidence. Caller stays fail-closed.
         findings = gate.get("findings") or []
         first = findings[0] if findings else {}
+        # 人话化首条 finding（此前直接打 dict repr，UI 上是一屏工程术语）
+        first_text = f"{first.get('path', '')}：{first.get('message', '')}".strip("：")
         _llm_generate_diagnostic = {
             "code": "MODEL_GATE_BLOCKED",
-            "detail": f"结构闸拦截（{len(findings)} 项）：{str(first)[:160]}",
+            "detail": f"结构闸拦截（{len(findings)} 项）：{first_text[:160]}",
         }
         return None
     _llm_generate_diagnostic = {}

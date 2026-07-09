@@ -376,7 +376,7 @@ export function AppBundleScreen({
 
         {/* 系统不变式 — appbundle.invariants（总装约束层）：陈述性约束 + 落地引用，
             门禁已保证 refs 可解析；此处如实罗列，refs 用等宽体便于对照模型。 */}
-        {(bundle?.invariants?.length ?? 0) > 0 && (
+        {((bundle?.invariants?.length ?? 0) > 0 || bundle?.invariantNotes) && (
           <div
             className="mt-3 rounded-md border border-[#E7E2D9] bg-white p-3"
             data-testid="appbundle-invariants"
@@ -384,11 +384,38 @@ export function AppBundleScreen({
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold text-stone-600">系统不变式</span>
               <span className="text-[10px] text-stone-400">
-                {bundle!.invariants!.length} 条 · 必须恒真的总装约束
+                {bundle!.invariants?.length ?? 0} 条 · 必须恒真的总装约束
               </span>
             </div>
+            {/* 修复/剔除留痕（v5_model_repair）：诚实透出，不静默 */}
+            {bundle?.invariantNotes &&
+              ((bundle.invariantNotes.repaired?.length ?? 0) > 0 ||
+                (bundle.invariantNotes.dropped?.length ?? 0) > 0) && (
+                <div
+                  className="mt-1.5 rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-700 ring-1 ring-amber-200"
+                  data-testid="appbundle-invariant-notes"
+                >
+                  {(bundle.invariantNotes.repaired?.length ?? 0) > 0 && (
+                    <span>
+                      自动修复 {bundle.invariantNotes.repaired!.length} 处引用
+                      （{bundle.invariantNotes.repaired!
+                        .map((r) => `${r.from} → ${r.to}`)
+                        .join("；")}）
+                    </span>
+                  )}
+                  {(bundle.invariantNotes.dropped?.length ?? 0) > 0 && (
+                    <span className="ml-1">
+                      剔除 {bundle.invariantNotes.dropped!.length} 条引用无效的不变式
+                      （{bundle.invariantNotes.dropped!
+                        .map((d) => d.invariantId || d.statement || "")
+                        .filter(Boolean)
+                        .join("；")}）
+                    </span>
+                  )}
+                </div>
+              )}
             <ul className="mt-2 space-y-1.5">
-              {bundle!.invariants!.map((inv, i) => (
+              {(bundle!.invariants ?? []).map((inv, i) => (
                 <li
                   key={inv.id || i}
                   className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px]"

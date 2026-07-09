@@ -115,12 +115,20 @@ export interface ModelInvariant {
   refs?: string[];
 }
 
+/** 门禁前确定性修复留痕（v5_model_repair：近邻改写 + 悬挂不变式剔除） */
+export interface InvariantNotes {
+  repaired?: Array<{ invariantId?: string; from?: string; to?: string }>;
+  dropped?: Array<{ invariantId?: string; statement?: string; unresolvedRefs?: string[] }>;
+}
+
 export interface AppBundleSection {
   pageBindings?: AppBundlePageBinding[];
   roleRefs?: string[];
   dataModelRefs?: string[];
   /** 系统不变式（总装约束层，改进②） */
   invariants?: ModelInvariant[];
+  /** 不变式引用修复/剔除留痕（AppBundle 屏如实展示） */
+  invariantNotes?: InvariantNotes;
 }
 
 export interface FiveSystemModel {

@@ -191,6 +191,90 @@ def test_page_charts_valid_and_dangling():
     assert any(f["ref"] == "loan.ghost" for f in result["findings"])
 
 
+def test_repair_fixes_unique_near_miss_and_drops_unresolvable():
+    from services.v5_model_repair import repair_five_system_model
+
+    m = _with_chain_and_invariants(_valid_library_model())
+    m["appbundle"]["invariants"].append({
+        "id": "inv_near_miss",
+        "statement": "罚款核定必须留痕",
+        "systems": ["workflow"],
+        # 拼错：真实节点是 fine_assess（LLM 常见的多前缀幻觉）
+        "refs": ["do_fine_assess"],
+    })
+    m["appbundle"]["invariants"].append({
+        "id": "inv_hopeless",
+        "statement": "引用一个完全不存在的东西",
+        "systems": ["workflow"],
+        "refs": ["quantum_blockchain_module"],
+    })
+    result = repair_five_system_model(m)
+    repaired_model = result["model"]
+    # 原模型不被修改（纯函数）
+    assert m["appbundle"]["invariants"][-1]["id"] == "inv_hopeless"
+    # 近邻唯一命中 → 改写留痕
+    assert {"invariantId": "inv_near_miss", "from": "do_fine_assess", "to": "fine_assess"} in result["repaired"]
+    # 修不好的整条剔除 → 留痕含未解析引用
+    dropped_ids = {d["invariantId"] for d in result["dropped"]}
+    assert "inv_hopeless" in dropped_ids
+    kept_ids = {i["id"] for i in repaired_model["appbundle"]["invariants"]}
+    assert "inv_near_miss" in kept_ids and "inv_hopeless" not in kept_ids
+    # 留痕随 appbundle 段走
+    assert repaired_model["appbundle"]["invariantNotes"]["dropped"]
+    # 修复后的模型过门禁（不变式层不再株连骨架）
+    gate = validate_five_system_model(repaired_model)
+    assert gate["passed"] is True, gate["findings"]
+
+
+def test_repair_is_noop_for_clean_or_legacy_models():
+    from services.v5_model_repair import repair_five_system_model
+
+    clean = _with_chain_and_invariants(_valid_library_model())
+    r = repair_five_system_model(clean)
+    assert r["repaired"] == [] and r["dropped"] == []
+    assert "invariantNotes" not in r["model"]["appbundle"]
+    assert r["model"]["appbundle"]["invariants"] == clean["appbundle"]["invariants"]
+
+    legacy = _valid_library_model()  # 无 invariants 的老模型
+    r2 = repair_five_system_model(legacy)
+    assert r2["model"]["appbundle"].get("invariants") in (None, [])
+    assert r2["repaired"] == [] and r2["dropped"] == []
+
+
+def test_repair_refuses_ambiguous_matches():
+    from services.v5_model_repair import repair_five_system_model
+
+    m = _with_chain_and_invariants(_valid_library_model())
+    # "loan.b" 同时近似 loan.book_id 与其他 loan.* 字段 → 歧义不猜 → 剔除
+    m["appbundle"]["invariants"] = [{
+        "id": "inv_ambiguous",
+        "statement": "歧义引用",
+        "systems": ["datamodel"],
+        "refs": ["loan.b"],
+    }]
+    result = repair_five_system_model(m)
+    assert result["repaired"] == []
+    assert result["dropped"][0]["invariantId"] == "inv_ambiguous"
+
+
+def test_generate_pipeline_survives_hallucinated_invariant_ref():
+    """集成：fake LLM 返回带幻觉不变式引用的模型 → 修复剔除 → 证据照常产出（不再 0/6）。"""
+    from services.v5_capability_executor import _try_llm_generate_evidence
+
+    bad_model = _with_chain_and_invariants(_valid_library_model())
+    bad_model["appbundle"]["invariants"].append({
+        "id": "inv_hallucinated",
+        "statement": "线上截图同款：引用不存在的能力 id",
+        "systems": ["aigc"],
+        "refs": ["generate_fall_risk_explanation"],
+    })
+    artifacts = _try_llm_generate_evidence("智能助行监测", lambda _goal: bad_model)
+    assert artifacts is not None, "一条坏不变式不应再株连整个模型（0/6）"
+    assert set(artifacts.keys()) == {"datamodel", "rbac", "workflow", "page", "aigc", "appbundle"}
+    notes = artifacts["appbundle"]["_model_section"]["invariantNotes"]
+    assert any(d["invariantId"] == "inv_hallucinated" for d in notes["dropped"])
+
+
 def test_invariant_dangling_ref_and_bad_system_blocked():
     m = _with_chain_and_invariants(_valid_library_model())
     m["appbundle"]["invariants"][0]["refs"] = ["loan.nonexistent_field"]

@@ -530,6 +530,30 @@ describe("AppBundleScreen", () => {
     expect(html).not.toContain('data-testid="appbundle-invariants"');
   });
 
+  it("invariantNotes 留痕如实展示：自动修复与剔除各出一段（不静默）", () => {
+    const model: FiveSystemModel = {
+      ...MODEL,
+      appbundle: {
+        ...MODEL.appbundle,
+        invariants: [
+          { id: "inv_ok", statement: "选课状态变更必须落库", systems: ["datamodel"], refs: ["enrollment.status"] },
+        ],
+        invariantNotes: {
+          repaired: [{ invariantId: "inv_ok", from: "do_enroll_status", to: "enrollment.status" }],
+          dropped: [{ invariantId: "inv_ghost", statement: "引用无效被剔除", unresolvedRefs: ["quantum_module"] }],
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <AppBundleScreen model={model} publishClosure={CLOSURE_CLOSED} />
+    );
+    expect(html).toContain('data-testid="appbundle-invariant-notes"');
+    expect(html).toContain("自动修复 1 处引用");
+    expect(html).toContain("do_enroll_status → enrollment.status");
+    expect(html).toContain("剔除 1 条引用无效的不变式");
+    expect(html).toContain("inv_ghost");
+  });
+
   it("空态：无 publishClosure → 诚实提示，无绑定区", () => {
     const html = renderToStaticMarkup(<AppBundleScreen />);
     expect(html).toContain("发送应用意图后");
