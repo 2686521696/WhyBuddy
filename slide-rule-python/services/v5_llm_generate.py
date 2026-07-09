@@ -70,7 +70,10 @@ Required shape (use these exact keys):
     "capabilities": [{"id": "<id>", "name": "<label>",
                       "inputFields": ["<entity_id>.<field_id>"],
                       "outputField": "<entity_id>.<field_id>",
-                      "roleRefs": ["<role_id>"]}]
+                      "roleRefs": ["<role_id>"]}],
+    "pipelines": [
+      {"id": "<id>", "name": "<label>", "steps": ["<capability_id>", "<capability_id>"]}
+    ]
   },
   "appbundle": {
     "pageBindings": [{"pageRef": "<page_id>", "workflowRef": "<workflow_id_or_node_id>"}],
@@ -120,6 +123,14 @@ Content-quality rules (checked by a deterministic regression gate):
   Every chain follows the same node/transition rules (assigneeRole ∈ rbac.roles,
   phase labels, at least one branch or return path). Node ids must be unique
   ACROSS all chains. Do NOT duplicate the primary chain inside "chains".
+- PIPELINES (agent orchestration): when two or more capabilities naturally
+  chain — one capability's outputField feeds another's inputFields — declare
+  1-2 "pipelines" (2-4 steps each, steps are capability ids in execution
+  order). HARD RULE: for every adjacent pair, the previous capability's
+  outputField MUST literally appear in the next capability's inputFields —
+  that field IS the handoff (orchestration is wired through datamodel fields,
+  not loose prose). Do NOT force pipelines when capabilities are unrelated;
+  omit "pipelines" entirely in that case.
 - CHARTS (library-agnostic): pages whose job includes monitoring/analytics
   (dashboards, finance, audit, ops) should declare 1-2 "charts". A chart is a
   SEMANTIC declaration — what to visualize, never which UI library renders it:

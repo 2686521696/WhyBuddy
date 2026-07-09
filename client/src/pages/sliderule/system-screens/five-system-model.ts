@@ -100,6 +100,17 @@ export interface AigcCapability {
   roleRefs?: string[];
 }
 
+/**
+ * AIGC 能力编排（一期，线性管线）：steps 为能力 id 执行序。
+ * 衔接语义（门禁硬校验）：上一步能力的 outputField 必须出现在下一步的
+ * inputFields——编排经数据模型字段接线，不是松散的节点连线。
+ */
+export interface AigcPipeline {
+  id?: string;
+  name?: string;
+  steps?: string[];
+}
+
 export interface AppBundlePageBinding {
   pageRef?: string;
   workflowRef?: string;
@@ -136,7 +147,7 @@ export interface FiveSystemModel {
   rbac?: { roles?: string[]; permissions?: string[]; menus?: RbacMenu[] };
   workflow?: WorkflowSection;
   page?: { pages?: PageModelDef[] };
-  aigc?: { capabilities?: AigcCapability[] };
+  aigc?: { capabilities?: AigcCapability[]; pipelines?: AigcPipeline[] };
   appbundle?: AppBundleSection;
 }
 

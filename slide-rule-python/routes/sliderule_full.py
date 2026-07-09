@@ -791,6 +791,96 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     }
 
 
+@router.post("/aigc-pipeline-tryrun")
+def aigc_pipeline_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+    """链路试跑（编排一期）：按 steps 顺序真跑一串能力，字段级传递。
+
+    payload: {
+      pipeline: {id?, name?},
+      steps: [{id, name, inputFields?, outputField?}, ...],  # 已解析能力对象（客户端按模型展开）
+      inputs: {ref: value},   # 首步输入；后续步的衔接字段由上一步输出注入
+      goal?: str
+    }
+    语义：上一步 outputField 的产出注入下一步同 ref 的输入字段（与门禁的
+    handoff 校验同一规则）。fail-fast：某步失败即停——下游缺上游产物，
+    跑了也是伪造；已完成步骤如实返回。
+    Returns 200 always；诚实性在 body：{ok, steps:[{id,name,ok,output?|code+detail,elapsedMs}]}。
+    """
+    import time as _time
+
+    from services.v5_capability_executor import _llm_generate_enabled
+    from sliderule_llm.client import call_llm
+
+    _auth(x_internal_key)
+
+    steps_def = [s for s in (payload.get("steps") or []) if isinstance(s, dict)]
+    if len(steps_def) < 2:
+        raise HTTPException(400, "pipeline needs at least 2 resolved steps")
+    goal = str(payload.get("goal") or "").strip()
+    pipeline_name = str((payload.get("pipeline") or {}).get("name") or "").strip()
+
+    if not _llm_generate_enabled():
+        return {
+            "ok": False,
+            "code": "LLM_GENERATE_DISABLED",
+            "detail": "SLIDERULE_LLM_GENERATE_ENABLED 未开启（或运行时无 LLM key），链路试跑不伪造输出",
+            "steps": [],
+        }
+
+    timeout_ms = int(os.getenv(AIGC_TRYRUN_TIMEOUT_MS_ENV, str(DEFAULT_AIGC_TRYRUN_TIMEOUT_MS)))
+    carried: Dict[str, Any] = dict(payload.get("inputs") or {})
+    step_results: List[Dict[str, Any]] = []
+    all_ok = True
+
+    for step in steps_def:
+        name = str(step.get("name") or step.get("id") or "").strip() or "未命名能力"
+        input_fields = [str(f) for f in (step.get("inputFields") or [])]
+        output_field = str(step.get("outputField") or "").strip()
+        filled = "\n".join(
+            f"- {ref}：{carried[ref]}" for ref in input_fields if str(carried.get(ref, "")).strip()
+        ) or "（未提供输入值）"
+        system = (
+            "你是产品排练系统里一条 AI 能力链中的一步，正在被链路试跑验证。"
+            "根据能力定义和输入字段值，直接生成该能力的输出内容本身——"
+            "不要解释、不要客套、不要 markdown 标题，用简体中文，200 字以内。"
+        )
+        user = (
+            (f"产品意图：{goal}\n" if goal else "")
+            + (f"能力链：{pipeline_name}\n" if pipeline_name else "")
+            + f"当前能力：{name}\n"
+            + f"输入字段值：\n{filled}\n"
+            + (f"输出字段：{output_field}\n" if output_field else "")
+            + "请生成这项能力应产出的内容。"
+        )
+        started = _time.monotonic()
+        try:
+            result = call_llm(
+                [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                temperature=0.4,
+                max_tokens=600,
+                timeout_ms=timeout_ms,
+            )
+        except LlmError as exc:
+            step_results.append({
+                "id": step.get("id"), "name": name, "ok": False,
+                "code": "LLM_GENERATE_FAILED", "detail": str(exc)[:300],
+                "elapsedMs": int((_time.monotonic() - started) * 1000),
+            })
+            all_ok = False
+            break
+        output = result.content
+        step_results.append({
+            "id": step.get("id"), "name": name, "ok": True,
+            "output": output,
+            "elapsedMs": int((_time.monotonic() - started) * 1000),
+        })
+        # 字段级传递：本步产出注入衔接字段（与门禁 handoff 校验同一规则）
+        if output_field:
+            carried[output_field] = output
+
+    return {"ok": all_ok, "steps": step_results}
+
+
 # ---------------------------------------------------------------------------
 # 推演 LLM 通道配置（设置中心「推演通道」）：查看/修改/测试真通道。
 # 密钥只回掩码；override 持久化在服务端本机 .llm-override.json（gitignored）。

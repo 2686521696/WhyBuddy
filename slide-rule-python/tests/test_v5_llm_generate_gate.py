@@ -191,6 +191,46 @@ def test_page_charts_valid_and_dangling():
     assert any(f["ref"] == "loan.ghost" for f in result["findings"])
 
 
+def test_aigc_pipelines_gate_valid_and_broken():
+    """编排一期：steps 解析 + 相邻步字段级衔接（prev.outputField ∈ next.inputFields）。"""
+    m = _valid_library_model()
+    m["aigc"]["capabilities"].append({
+        "id": "c_blurb",
+        "name": "推荐语润色",
+        # 衔接字段：上一能力 c_reco 的 outputField 是 loan.book_id
+        "inputFields": ["loan.book_id", "book.title"],
+        "outputField": "book.title",
+        "roleRefs": ["librarian"],
+    })
+    # 合法管线：c_reco → c_blurb（loan.book_id 衔接）
+    m["aigc"]["pipelines"] = [
+        {"id": "pipe_reco", "name": "推荐链", "steps": ["c_reco", "c_blurb"]}
+    ]
+    assert validate_five_system_model(m)["passed"] is True, validate_five_system_model(m)["findings"]
+
+    # 悬挂步骤 id
+    m["aigc"]["pipelines"] = [{"id": "p_bad", "steps": ["c_reco", "ghost_cap"]}]
+    result = validate_five_system_model(m)
+    assert result["passed"] is False
+    assert any(f["ref"] == "ghost_cap" for f in result["findings"])
+
+    # 衔接断裂：c_reco → c_reco（c_reco 输出 loan.book_id 不在自身输入 book.title 里）
+    m["aigc"]["pipelines"] = [{"id": "p_broken", "steps": ["c_reco", "c_reco"]}]
+    result = validate_five_system_model(m)
+    assert result["passed"] is False
+    assert any("handoff broken" in f["message"] for f in result["findings"])
+
+    # 单步不算编排
+    m["aigc"]["pipelines"] = [{"id": "p_single", "steps": ["c_reco"]}]
+    result = validate_five_system_model(m)
+    assert result["passed"] is False
+    assert any("at least 2 steps" in f["message"] for f in result["findings"])
+
+    # 无 pipelines 字段 → 老模型零变化
+    del m["aigc"]["pipelines"]
+    assert validate_five_system_model(m)["passed"] is True
+
+
 def test_invariant_ref_to_aigc_capability_is_legal():
     """线上截图案例（'vocal_pitch_coach'）：不变式引用 AIGC 能力 id 是合法写法
     （"AI 建议不得直发"这类约束必然引用能力节点）。曾因门禁与修复器各自维护

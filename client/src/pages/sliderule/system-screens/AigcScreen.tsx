@@ -15,6 +15,7 @@ import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
 import { AigcTryRunPanel } from "../live-runtime/AigcTryRunPanel";
+import { AigcPipelinePanel } from "../live-runtime/AigcPipelinePanel";
 import { EmptyScreenHint } from "./EmptyScreenHint";
 import {
   type FiveSystemModel,
@@ -73,8 +74,9 @@ export function AigcScreen({
   className = "",
 }: AigcScreenProps) {
   const capabilities = model?.aigc?.capabilities ?? [];
+  const pipelines = model?.aigc?.pipelines ?? [];
   const hasModel = capabilities.length > 0;
-  const [screenMode, setScreenMode] = useState<"list" | "tryrun">("list");
+  const [screenMode, setScreenMode] = useState<"list" | "tryrun" | "pipeline">("list");
 
   const resolved = useMemo(
     () =>
@@ -115,6 +117,10 @@ export function AigcScreen({
               {([
                 { id: "list" as const, label: "能力清单" },
                 { id: "tryrun" as const, label: "能力试跑" },
+                // 编排档只在模型声明了管线时出现（不造空壳入口）
+                ...(pipelines.length > 0
+                  ? [{ id: "pipeline" as const, label: "能力编排" }]
+                  : []),
               ]).map(({ id, label }) => (
                 <button
                   key={id}
@@ -136,7 +142,11 @@ export function AigcScreen({
         </div>
       </div>
 
-      {screenMode === "tryrun" && hasModel && model ? (
+      {screenMode === "pipeline" && hasModel && model ? (
+        <div className="min-h-0 flex-1">
+          <AigcPipelinePanel model={model} goal={appTitle} />
+        </div>
+      ) : screenMode === "tryrun" && hasModel && model ? (
         <div className="min-h-0 flex-1">
           <AigcTryRunPanel model={model} goal={appTitle} />
         </div>

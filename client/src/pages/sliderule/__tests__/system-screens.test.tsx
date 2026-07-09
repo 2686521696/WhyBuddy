@@ -20,6 +20,7 @@ import { DataModelScreen } from "../system-screens/DataModelScreen";
 import { PageScreen } from "../system-screens/PageScreen";
 import { RbacScreen } from "../system-screens/RbacScreen";
 import { WorkflowRuntimePanel } from "../live-runtime/WorkflowRuntimePanel";
+import { AigcPipelinePanel } from "../live-runtime/AigcPipelinePanel";
 import { EntityDataPanel } from "../live-runtime/EntityDataPanel";
 import { AigcTryRunPanel } from "../live-runtime/AigcTryRunPanel";
 import {
@@ -435,6 +436,49 @@ describe("AigcScreen", () => {
     const html = renderToStaticMarkup(<AigcScreen model={MODEL} />);
     expect(html).toContain("✗ nonexistent.field");
     expect(html).toContain("✗ ghost_role");
+  });
+
+  it("aigc.pipelines：编排档 tab 只在声明管线时出现；面板渲染步骤链 + 衔接字段标注", () => {
+    const model: FiveSystemModel = {
+      ...MODEL,
+      aigc: {
+        capabilities: [
+          {
+            id: "cap_summary",
+            name: "课程简介生成",
+            inputFields: ["course.title"],
+            outputField: "enrollment.status",
+            roleRefs: ["teacher"],
+          },
+          {
+            id: "cap_notice",
+            name: "选课通知生成",
+            inputFields: ["enrollment.status", "course.title"],
+            outputField: "course.title",
+            roleRefs: ["registrar"],
+          },
+        ],
+        pipelines: [{ id: "pipe_1", name: "选课文案链", steps: ["cap_summary", "cap_notice"] }],
+      },
+    };
+    // 解析存活（管线随 aigc 段走）
+    const parsed = parseFiveSystemModel(JSON.stringify(model));
+    expect(parsed?.aigc?.pipelines?.[0]?.steps).toEqual(["cap_summary", "cap_notice"]);
+    // tab 出现
+    const html = renderToStaticMarkup(<AigcScreen model={model} publishClosure={CLOSURE_CLOSED} />);
+    expect(html).toContain('data-testid="aigc-mode-pipeline"');
+    // 无管线 → tab 不出现（不造空壳入口）
+    const htmlNoPipe = renderToStaticMarkup(<AigcScreen model={MODEL} publishClosure={CLOSURE_CLOSED} />);
+    expect(htmlNoPipe).not.toContain('data-testid="aigc-mode-pipeline"');
+    // 面板：步骤链 + 衔接字段 + 注入标注 + 试跑按钮
+    const panel = renderToStaticMarkup(<AigcPipelinePanel model={model} goal="在线选课" />);
+    expect(panel).toContain('data-testid="aigc-pipeline-chain"');
+    expect(panel).toContain("1. 课程简介生成");
+    expect(panel).toContain("2. 选课通知生成");
+    expect(panel).toContain("enrollment.status"); // 衔接字段标注
+    expect(panel).toContain("由上一步注入");
+    expect(panel).toContain('data-testid="aigc-pipeline-run"');
+    expect(panel).toContain("试跑整条链（2 步）");
   });
 
   it("rawContent 有跨系统联动图但无结构化清单 → 降级标注", () => {

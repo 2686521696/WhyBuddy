@@ -290,6 +290,48 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                     ref=ref, skill="aigc",
                 ))
 
+    # 4.5 aigc.pipelines（编排一期，可选段）：步骤必须解析到能力 id；
+    #     相邻步字段级衔接——上一步 outputField 必须出现在下一步 inputFields
+    #     （编排经数据模型字段接线，这是可校验的硬语义，不是松散文案）。
+    cap_by_id: Dict[str, Dict[str, Any]] = {}
+    for cap in _as_list(aigc.get("capabilities")):
+        cd = _as_dict(cap)
+        cid = str(cd.get("id") or "").strip()
+        if cid:
+            cap_by_id[cid] = cd
+    for pipe in _as_list(aigc.get("pipelines")):
+        pd = _as_dict(pipe)
+        pid = pd.get("id") or pd.get("name") or "<unnamed>"
+        steps = [str(s).strip() for s in _as_list(pd.get("steps")) if str(s).strip()]
+        if len(steps) < 2:
+            findings.append(_finding(
+                EMPTY_SECTION, f"aigc.pipelines[{pid}].steps",
+                "pipeline needs at least 2 steps (a single capability is not an orchestration)",
+                skill="aigc",
+            ))
+            continue
+        resolved = True
+        for step in steps:
+            if step not in cap_by_id:
+                findings.append(_finding(
+                    DANGLING, f"aigc.pipelines[{pid}].steps",
+                    f"pipeline step '{step}' not found in aigc.capabilities",
+                    ref=step, skill="aigc",
+                ))
+                resolved = False
+        if not resolved:
+            continue
+        for prev_id, next_id in zip(steps, steps[1:]):
+            prev_out = str(cap_by_id[prev_id].get("outputField") or "").strip()
+            next_inputs = {str(f).strip() for f in _as_list(cap_by_id[next_id].get("inputFields"))}
+            if prev_out and prev_out not in next_inputs:
+                findings.append(_finding(
+                    DANGLING, f"aigc.pipelines[{pid}].steps[{prev_id}→{next_id}]",
+                    f"pipeline handoff broken: '{prev_id}' outputField '{prev_out}' "
+                    f"is not an inputField of '{next_id}'",
+                    ref=prev_out, skill="aigc",
+                ))
+
     # 5. rbac.menus.roleRefs ∈ roles; permissionRefs ∈ permissions
     for menu in _as_list(rbac.get("menus")):
         md = _as_dict(menu)
