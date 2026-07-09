@@ -220,8 +220,39 @@ async function runBatch(batch, batchIndex, totalBatches, depth = 0) {
   });
 }
 
+// 分片（CI 矩阵横向扩展用）：TEST_SERVER_SHARD="2/3" = 三片中的第二片。
+// 按排序后文件序号取模切分——每片文件集稳定且互不重叠、并集全覆盖。
+function parseShard() {
+  const raw = (process.env.TEST_SERVER_SHARD ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+  const match = /^([1-9]\d*)\/([1-9]\d*)$/.exec(raw);
+  if (!match) {
+    console.error(`[test:server] Invalid TEST_SERVER_SHARD "${raw}" (expected like "1/3").`);
+    process.exit(1);
+  }
+  const index = Number.parseInt(match[1], 10);
+  const total = Number.parseInt(match[2], 10);
+  if (index > total) {
+    console.error(`[test:server] Invalid TEST_SERVER_SHARD "${raw}" (index > total).`);
+    process.exit(1);
+  }
+  return { index, total };
+}
+
 const batchSize = Number.parseInt(process.env.TEST_SERVER_BATCH_SIZE ?? "", 10) || DEFAULT_BATCH_SIZE;
-const testFiles = collectTestFiles();
+const allTestFiles = collectTestFiles();
+const shard = parseShard();
+const testFiles = shard
+  ? allTestFiles.filter((_, index) => index % shard.total === shard.index - 1)
+  : allTestFiles;
+
+if (shard) {
+  console.log(
+    `[test:server] Shard ${shard.index}/${shard.total}: ${testFiles.length} of ${allTestFiles.length} files.`,
+  );
+}
 
 if (process.env.TEST_SERVER_SINGLE_FORK === undefined && isCiEnvironment()) {
   process.env.TEST_SERVER_SINGLE_FORK = "0";
