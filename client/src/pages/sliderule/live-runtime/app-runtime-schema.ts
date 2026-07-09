@@ -81,6 +81,23 @@ export interface AppPageStatSchema {
   format: "number" | "money" | "percent";
 }
 
+/**
+ * 页面范式（加厚 schema 二期）：kind 决定视图骨架。kanban/calendar 的
+ * 字段绑定必须解析到本页主实体的对应类型字段——绑不上时诚实降级
+ * workbench（门禁负责标红，运行应用不渲染坏视图）。
+ */
+export type AppPageKind = "workbench" | "kanban" | "calendar" | "dashboard";
+
+export interface AppPageViewSchema {
+  kind: AppPageKind;
+  /** kanban：看板列字段 id（主实体 enum 字段，列来自其 options） */
+  statusFieldId?: string;
+  /** calendar：日期字段 id（主实体 date 字段） */
+  dateFieldId?: string;
+  /** calendar：事件着色字段 id（主实体 enum 字段，可选） */
+  colorByFieldId?: string;
+}
+
 export interface AppPageSchema {
   id: string;
   title: string;
@@ -102,6 +119,8 @@ export interface AppPageSchema {
   stats: AppPageStatSchema[];
   /** 模型声明的页面级图表（库无关声明 → 运行应用用 ECharts 渲染） */
   charts: AppPageChartSchema[];
+  /** 页面范式（视图骨架；绑定失效已降级 workbench） */
+  view: AppPageViewSchema;
 }
 
 export interface AppStatCardSchema {
@@ -340,6 +359,37 @@ export function deriveAppRuntimeSchema(
       });
     }
 
+    // 页面范式（加厚 schema 二期）：绑定必须解析到本页主实体的对应类型
+    // 字段（含一期归一化后的 options/format），绑不上诚实降级 workbench。
+    const fieldOfThisEntity = (
+      ref: string | undefined,
+      wantType: string
+    ): AppFormFieldSchema | undefined => {
+      const r = String(ref ?? "");
+      const dot = r.indexOf(".");
+      if (dot <= 0 || !entityId || r.slice(0, dot) !== entityId)
+        return undefined;
+      const field = allFields.find(f => f.id === r.slice(dot + 1));
+      return field?.type === wantType ? field : undefined;
+    };
+    let view: AppPageViewSchema = { kind: "workbench" };
+    const rawKind = String(page.kind ?? "workbench");
+    if (rawKind === "kanban") {
+      const statusField = fieldOfThisEntity(page.statusField, "enum");
+      if (statusField) view = { kind: "kanban", statusFieldId: statusField.id };
+    } else if (rawKind === "calendar") {
+      const dateField = fieldOfThisEntity(page.dateField, "date");
+      if (dateField) {
+        view = {
+          kind: "calendar",
+          dateFieldId: dateField.id,
+          colorByFieldId: fieldOfThisEntity(page.colorBy, "enum")?.id,
+        };
+      }
+    } else if (rawKind === "dashboard") {
+      view = { kind: "dashboard" };
+    }
+
     return {
       id,
       title: page.name || id,
@@ -353,6 +403,7 @@ export function deriveAppRuntimeSchema(
       aiActions: entityId ? (aiActionsByEntity.get(entityId) ?? []) : [],
       stats,
       charts,
+      view,
     };
   });
 

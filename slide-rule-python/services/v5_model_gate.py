@@ -48,6 +48,10 @@ NUMBER_FORMATS = ("money", "percent", "progress", "score", "rating")
 STRING_FORMATS = ("masked",)
 STAT_FORMATS = ("number", "money", "percent")
 
+# 页面范式（加厚 schema 二期）：kind 决定运行时视图骨架。
+# kanban 需 statusField（enum 字段）、calendar 需 dateField（date 字段）。
+PAGE_KINDS = ("workbench", "kanban", "calendar", "dashboard")
+
 
 def _as_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
@@ -76,6 +80,22 @@ def _collect_datamodel_field_refs(datamodel: Dict[str, Any]) -> set:
             if fid:
                 refs.add(f"{eid}.{fid}")
     return refs
+
+
+def _collect_field_types(datamodel: Dict[str, Any]) -> Dict[str, str]:
+    """'entityId.fieldId' → 字段类型（小写）。页面范式绑定校验用。"""
+    types: Dict[str, str] = {}
+    for entity in _as_list(datamodel.get("entities")):
+        e = _as_dict(entity)
+        eid = str(e.get("id") or e.get("name") or "").strip()
+        if not eid:
+            continue
+        for field in _as_list(e.get("fields")):
+            f = _as_dict(field)
+            fid = str(f.get("id") or f.get("name") or "").strip()
+            if fid:
+                types[f"{eid}.{fid}"] = str(f.get("type") or "string").strip().lower()
+    return types
 
 
 def _collect_role_ids(rbac: Dict[str, Any]) -> set:
@@ -284,9 +304,47 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                 ))
 
     # 3. page fieldBindings ∈ datamodel fields; actionPermissions ∈ rbac.permissions
+    field_types = _collect_field_types(datamodel)
     for p in _as_list(page.get("pages")):
         pd = _as_dict(p)
         pid = pd.get("id") or pd.get("name")
+        # 页面范式（加厚 schema 二期，可选字段）：出现即校验、缺省不罚。
+        # kind 合法域；kanban 必须带 enum 的 statusField、calendar 必须带
+        # date 的 dateField（colorBy 可选但出现必须是 enum 字段）。
+        kind = str(pd.get("kind") or "").strip()
+        if kind and kind not in PAGE_KINDS:
+            findings.append(_finding(
+                DANGLING, f"page.pages[{pid}].kind",
+                f"page kind '{kind}' is not one of {'/'.join(PAGE_KINDS)}",
+                ref=kind, skill="page",
+            ))
+
+        def _check_view_binding(key: str, required_type: str, required: bool) -> None:
+            ref = str(pd.get(key) or "").strip()
+            if not ref:
+                if required:
+                    findings.append(_finding(
+                        EMPTY_SECTION, f"page.pages[{pid}].{key}",
+                        f"page kind '{kind}' requires '{key}' (a {required_type} field of this page's entity)",
+                        skill="page",
+                    ))
+                return
+            if ref not in field_types:
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].{key}",
+                    f"page {key} '{ref}' not found in datamodel fields",
+                    ref=ref, skill="page",
+                ))
+            elif field_types[ref] != required_type:
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].{key}",
+                    f"page {key} '{ref}' must be a {required_type} field (got '{field_types[ref]}')",
+                    ref=ref, skill="page",
+                ))
+
+        _check_view_binding("statusField", "enum", required=kind == "kanban")
+        _check_view_binding("dateField", "date", required=kind == "calendar")
+        _check_view_binding("colorBy", "enum", required=False)
         for fb in _as_list(pd.get("fieldBindings")):
             ref = str(fb).strip()
             if ref and ref not in field_refs:

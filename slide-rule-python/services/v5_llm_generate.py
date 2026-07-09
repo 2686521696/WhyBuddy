@@ -60,6 +60,10 @@ Required shape (use these exact keys):
   },
   "page": {
     "pages": [{"id": "<id>", "name": "<label>",
+               "kind": "workbench|kanban|calendar|dashboard",
+               "statusField": "<entity_id>.<field_id> (kanban only)",
+               "dateField": "<entity_id>.<field_id> (calendar only)",
+               "colorBy": "<entity_id>.<field_id> (calendar only, optional)",
                "fieldBindings": ["<entity_id>.<field_id>"],
                "actionPermissions": ["<resource>:<action>"],
                "stats": [
@@ -165,6 +169,16 @@ Content-quality rules (checked by a deterministic regression gate):
   declare 2-4 "stats" — headline metric cards rendered above the page table.
   "entity" scopes count; sum/avg must target a number field. Same
   field-existence rules as charts. Pure CRUD pages need none.
+- PAGE KIND (view paradigm): pick each page's "kind" by its job — omit or
+  "workbench" (default) for CRUD tables; "kanban" when the core object flows
+  through stages (跟进/审批/生产状态) — REQUIRES "statusField" naming an enum
+  field (with options) of this page's entity, columns come from its options;
+  "calendar" when rows live on dates (排期/预约/计划) — REQUIRES "dateField"
+  naming a date field of this page's entity, optional "colorBy" naming an
+  enum field for event coloring; "dashboard" for overview/monitoring pages —
+  give those 2-4 stats and 1-2 charts (charts render wide, table shrinks).
+  Use at most one kanban and one calendar page; never force a paradigm the
+  domain doesn't need.
 - INVARIANTS: emit 5-8 entries in "appbundle.invariants" — declarative constraints that
   must always hold, the kind an architect writes after a production incident
   (ordering: "charge before calling the upstream provider"; source of truth:

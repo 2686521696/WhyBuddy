@@ -115,6 +115,14 @@ export interface PageStatSpec {
 export interface PageModelDef {
   id?: string;
   name?: string;
+  /** 页面范式（加厚 schema 二期）：workbench(缺省)|kanban|calendar|dashboard */
+  kind?: string;
+  /** kanban 的看板列字段（"entity.field"，必须是本页主实体的 enum 字段） */
+  statusField?: string;
+  /** calendar 的日期字段（"entity.field"，必须是本页主实体的 date 字段） */
+  dateField?: string;
+  /** calendar 的事件着色字段（可选，enum 字段） */
+  colorBy?: string;
   fieldBindings?: string[];
   actionPermissions?: string[];
   stats?: PageStatSpec[];

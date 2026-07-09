@@ -172,6 +172,62 @@ def test_stats_dangling_entity_and_metric_blocked() -> None:
     assert all("stats[" in f["path"] for f in findings)
 
 
+def test_page_kind_valid_paradigms_pass() -> None:
+    """二期页面范式：合法 kanban/calendar/dashboard 声明通过。"""
+    m = _base_model()
+    m["datamodel"]["entities"][0]["fields"].append(
+        {"id": "next_follow_at", "name": "下次跟进日期", "type": "date"}
+    )
+    m["page"]["pages"][0]["kind"] = "kanban"
+    m["page"]["pages"][0]["statusField"] = "customer.status"
+    m["page"]["pages"].append({
+        "id": "p_calendar", "name": "跟进日历", "kind": "calendar",
+        "dateField": "customer.next_follow_at", "colorBy": "customer.status",
+        "fieldBindings": ["customer.name"], "actionPermissions": ["customer:view"],
+    })
+    m["rbac"]["menus"][0]["permissionRefs"].append("customer:view")
+    passed, findings = _findings_of(m)
+    assert passed is True, findings
+
+
+def test_page_kind_bad_kind_and_missing_bindings_blocked() -> None:
+    # 未知 kind
+    m = _base_model()
+    m["page"]["pages"][0]["kind"] = "hologram"
+    passed, findings = _findings_of(m)
+    assert passed is False
+    assert any(f["ref"] == "hologram" for f in findings)
+
+    # kanban 缺 statusField
+    m2 = _base_model()
+    m2["page"]["pages"][0]["kind"] = "kanban"
+    passed2, findings2 = _findings_of(m2)
+    assert passed2 is False
+    assert any("requires 'statusField'" in f["message"] for f in findings2)
+
+    # calendar 的 dateField 指向非 date 字段
+    m3 = _base_model()
+    m3["page"]["pages"][0]["kind"] = "calendar"
+    m3["page"]["pages"][0]["dateField"] = "customer.name"
+    passed3, findings3 = _findings_of(m3)
+    assert passed3 is False
+    assert any("must be a date field" in f["message"] for f in findings3)
+
+    # statusField 悬挂引用
+    m4 = _base_model()
+    m4["page"]["pages"][0]["kind"] = "kanban"
+    m4["page"]["pages"][0]["statusField"] = "customer.ghost"
+    passed4, findings4 = _findings_of(m4)
+    assert passed4 is False
+    assert any(f["ref"] == "customer.ghost" for f in findings4)
+
+
+def test_page_kind_absent_is_legacy_safe() -> None:
+    """kind 缺省 = workbench，老模型零破坏（一期基础模型即无 kind）。"""
+    passed, findings = _findings_of(_base_model())
+    assert passed is True, findings
+
+
 def test_stats_avg_metric_valid() -> None:
     """avg 是 stats 独有指标（charts 只有 count/sum）——合法 avg 不误拦。"""
     m = _base_model()

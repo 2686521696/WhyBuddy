@@ -309,6 +309,50 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     expect(schema.pages[1].stats).toEqual([]);
   });
 
+  it("页面范式派生（二期）：kanban/calendar 绑定成立即生效，绑不上诚实降级 workbench", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.datamodel!.entities![0].fields!.push(
+      {
+        id: "status",
+        name: "状态",
+        type: "enum",
+        options: [{ id: "待处理", tone: "warning" }],
+      },
+      { id: "due_at", name: "到期日", type: "date" }
+    );
+    const p = model.page!.pages![0];
+    p.kind = "kanban";
+    p.statusField = "member_card.status";
+    let schema = deriveAppRuntimeSchema(model)!;
+    expect(schema.pages[0].view).toEqual({
+      kind: "kanban",
+      statusFieldId: "status",
+    });
+
+    // calendar + colorBy
+    p.kind = "calendar";
+    p.dateField = "member_card.due_at";
+    p.colorBy = "member_card.status";
+    schema = deriveAppRuntimeSchema(model)!;
+    expect(schema.pages[0].view).toEqual({
+      kind: "calendar",
+      dateFieldId: "due_at",
+      colorByFieldId: "status",
+    });
+
+    // 绑定指向非对应类型字段 → 降级 workbench（门禁负责标红）
+    p.kind = "kanban";
+    p.statusField = "member_card.holder"; // string，非 enum
+    schema = deriveAppRuntimeSchema(model)!;
+    expect(schema.pages[0].view).toEqual({ kind: "workbench" });
+
+    // dashboard 无绑定要求；缺省 kind = workbench（老模型零变化）
+    p.kind = "dashboard";
+    schema = deriveAppRuntimeSchema(model)!;
+    expect(schema.pages[0].view).toEqual({ kind: "dashboard" });
+    expect(schema.pages[1].view).toEqual({ kind: "workbench" });
+  });
+
   it("无绑定页 entityId=null；缺页面/实体时整体返回 null（不伪造）", () => {
     const schema = deriveAppRuntimeSchema(MODEL)!;
     expect(schema.pages[1].entityId).toBeNull();

@@ -106,6 +106,7 @@ import {
 } from "./rbac-preview";
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
+import { KanbanBoard, CalendarBoard } from "./PageViews";
 import type { AppPageStatSchema } from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
@@ -580,6 +581,13 @@ export function AppRuntimeScreen({
 
   // 表格列：列设置勾选优先（从实体全字段挑），否则默认列；
   // 每列自带排序（按字段类型）与筛选（enum/低基数真实取值）——表格自带能力，不走设计面板。
+  // kanban 范式的看板列字段（派生层已保证是主实体 enum 字段；再解析一次
+  // 拿到带 options 的完整字段 schema，解析不到 = 视图退回表格）
+  const kanbanStatusField =
+    page && page.view.kind === "kanban" && page.view.statusFieldId
+      ? page.detailFields.find(f => f.id === page.view.statusFieldId)
+      : undefined;
+
   const chosenColIds = page ? tableColPrefs[page.id] : undefined;
   const shownColumns = chosenColIds
     ? (page?.detailFields ?? []).filter(f => chosenColIds.includes(f.id))
@@ -1159,7 +1167,11 @@ export function AppRuntimeScreen({
                 key={chart.id}
                 size="small"
                 title={chart.label}
-                style={{ flex: 1, minWidth: 220 }}
+                style={{
+                  flex: 1,
+                  // dashboard 范式：图表升主角，两列铺开（表格退居下方小表）
+                  minWidth: page.view.kind === "dashboard" ? "45%" : 220,
+                }}
                 data-testid={`app-runtime-page-chart-${chart.id}`}
               >
                 {option ? (
@@ -1250,9 +1262,31 @@ export function AppRuntimeScreen({
             )}
           </Card>
         </div>
+      ) : page.view.kind === "kanban" && kanbanStatusField ? (
+        // 页面范式（加厚 schema 二期）：kanban——列来自 statusField 声明取值，
+        // 卡片点击进详情抽屉。平板保持主从双栏（详情面板依赖表格视图）。
+        <KanbanBoard
+          rows={rows}
+          statusField={kanbanStatusField}
+          cardFields={page.columns.filter(f => f.id !== kanbanStatusField.id)}
+          onOpenRow={setDetailRow}
+        />
+      ) : page.view.kind === "calendar" && page.view.dateFieldId ? (
+        // calendar——自建月历，默认展示数据所在月；事件按 colorBy tone 着色
+        <CalendarBoard
+          rows={rows}
+          dateFieldId={page.view.dateFieldId}
+          colorByField={page.detailFields.find(
+            f => f.id === page.view.colorByFieldId
+          )}
+          titleFieldId={
+            page.columns.find(f => f.id !== page.view.dateFieldId)?.id
+          }
+          onOpenRow={setDetailRow}
+        />
       ) : (
         <Table
-          size="middle"
+          size={page.view.kind === "dashboard" ? "small" : "middle"}
           rowKey="id"
           columns={columns as any}
           dataSource={rows}
@@ -1260,7 +1294,11 @@ export function AppRuntimeScreen({
             onClick: () => setDetailRow(row as RuntimeRow),
             style: { cursor: "pointer" },
           })}
-          pagination={rows.length > 8 ? { pageSize: 8 } : false}
+          pagination={
+            page.view.kind === "dashboard"
+              ? rows.length > 5 && { pageSize: 5 }
+              : rows.length > 8 && { pageSize: 8 }
+          }
           locale={{ emptyText: "暂无数据 — 点「新建」写入第一条真实数据" }}
         />
       )}
