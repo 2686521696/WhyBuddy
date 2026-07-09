@@ -222,6 +222,8 @@ function InstalledSkillCard({
   const [running, setRunning] = React.useState(false);
   const [output, setOutput] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  // 试跑区默认收起（TRAE Work 式紧凑卡片；点「试跑」展开输入/输出）
+  const [open, setOpen] = React.useState(false);
 
   const run = async () => {
     if (running || !input.trim()) return;
@@ -274,91 +276,120 @@ function InstalledSkillCard({
 
   return (
     <div
-      className="rounded-lg border border-stone-200 bg-white p-3.5 shadow-sm"
+      className="flex flex-col rounded-lg border border-stone-200 bg-white p-3.5"
       data-testid={`installed-skill-${skill.repo}`}
     >
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-stone-800">
-          {skill.name}
-        </span>
-        {skill.kind === "package" ? (
-          <Tooltip title="试跑时原作者的完整 SKILL.md 指令作为 system prompt 执行">
-            <Tag color="green" style={{ fontSize: 10, marginInlineEnd: 0 }}>
-              原版 SKILL.md
-            </Tag>
-          </Tooltip>
-        ) : (
-          <Tooltip title="按语义档案（名称/描述）驱动执行">
+      <div className="flex gap-3">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold ${avatarToneOf(skill.name)}`}
+        >
+          {skill.name
+            .replace(/[^\p{L}\p{N}]/gu, "")
+            .slice(0, 1)
+            .toUpperCase() || "S"}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-sm font-semibold text-[#14295E]">
+              {skill.name}
+            </span>
+            {skill.kind === "package" ? (
+              <Tooltip title="试跑时原作者的完整 SKILL.md 指令作为 system prompt 执行">
+                <Tag color="green" style={{ fontSize: 10, marginInlineEnd: 0 }}>
+                  原版 SKILL.md
+                </Tag>
+              </Tooltip>
+            ) : (
+              <Tooltip title="按语义档案（名称/描述）驱动执行">
+                <Tag
+                  color="default"
+                  style={{ fontSize: 10, marginInlineEnd: 0 }}
+                >
+                  语义档案
+                </Tag>
+              </Tooltip>
+            )}
             <Tag color="default" style={{ fontSize: 10, marginInlineEnd: 0 }}>
-              语义档案
+              {skill.license}
             </Tag>
-          </Tooltip>
-        )}
-        <Tag color="default" style={{ fontSize: 10, marginInlineEnd: 0 }}>
-          {skill.license}
-        </Tag>
-        {skill.url ? (
-          <a
-            href={skill.url}
-            target="_blank"
-            rel="noreferrer"
-            className="font-mono text-[10px] text-stone-400 hover:text-blue-600"
-          >
-            {skill.repo}
-          </a>
-        ) : (
-          <span className="font-mono text-[10px] text-stone-400">
-            {skill.repo}
-          </span>
-        )}
-        <Button
-          size="small"
-          type="text"
-          danger
-          icon={<DeleteOutlined />}
-          className="ml-auto"
-          onClick={() => onUninstall(installKeyOf(skill))}
-          title="卸载（只移除本地安装，不影响原仓库）"
-        >
-          卸载
-        </Button>
+          </div>
+          <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-stone-500">
+            {skill.description}
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[10px] text-stone-400">
+            {skill.url ? (
+              <a
+                href={skill.url}
+                target="_blank"
+                rel="noreferrer"
+                className="truncate font-mono hover:text-blue-600"
+              >
+                {skill.repo}
+              </a>
+            ) : (
+              <span className="truncate font-mono">{skill.repo}</span>
+            )}
+            <span className="ml-auto flex shrink-0 items-center">
+              <Button
+                size="small"
+                type="link"
+                icon={<PlayCircleOutlined />}
+                onClick={() => setOpen(v => !v)}
+                data-testid="installed-skill-toggle"
+              >
+                试跑
+              </Button>
+              <Button
+                size="small"
+                type="text"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => onUninstall(installKeyOf(skill))}
+                title="卸载（只移除本地安装，不影响原仓库）"
+              />
+            </span>
+          </div>
+        </div>
       </div>
-      <div className="mt-1 text-xs text-stone-500">{skill.description}</div>
-      {skill.ioHints.length > 0 && (
-        <div className="mt-1 space-y-0.5">
-          {skill.ioHints.slice(0, 3).map(h => (
-            <div key={h} className="font-mono text-[10px] text-stone-400">
-              {h}
+      {open && (
+        <div className="mt-2.5 border-t border-stone-100 pt-2.5">
+          {skill.ioHints.length > 0 && (
+            <div className="mb-1.5 space-y-0.5">
+              {skill.ioHints.slice(0, 3).map(h => (
+                <div key={h} className="font-mono text-[10px] text-stone-400">
+                  {h}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-      <div className="mt-2 flex items-start gap-2">
-        <Input.TextArea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          placeholder="给这个技能输入内容，立即试跑（真 LLM，走服务端通道）"
-          autoSize={{ minRows: 1, maxRows: 4 }}
-        />
-        <Button
-          type="primary"
-          icon={<PlayCircleOutlined />}
-          loading={running}
-          disabled={!input.trim()}
-          onClick={run}
-          data-testid="installed-skill-run"
-        >
-          试跑
-        </Button>
-      </div>
-      {output !== null && (
-        <div className="mt-2 whitespace-pre-wrap rounded bg-stone-50 p-2.5 text-xs leading-5 text-stone-700 ring-1 ring-stone-200">
-          {output}
-        </div>
-      )}
-      {error !== null && (
-        <div className="mt-2 rounded bg-red-50 px-2.5 py-1.5 text-[11px] text-red-600 ring-1 ring-red-200">
-          试跑失败：{error}
+          )}
+          <div className="flex items-start gap-2">
+            <Input.TextArea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="给这个技能输入内容，立即试跑（真 LLM，走服务端通道）"
+              autoSize={{ minRows: 1, maxRows: 4 }}
+            />
+            <Button
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              loading={running}
+              disabled={!input.trim()}
+              onClick={run}
+              data-testid="installed-skill-run"
+            >
+              试跑
+            </Button>
+          </div>
+          {output !== null && (
+            <div className="mt-2 whitespace-pre-wrap rounded bg-stone-50 p-2.5 text-xs leading-5 text-stone-700 ring-1 ring-stone-200">
+              {output}
+            </div>
+          )}
+          {error !== null && (
+            <div className="mt-2 rounded bg-red-50 px-2.5 py-1.5 text-[11px] text-red-600 ring-1 ring-red-200">
+              试跑失败：{error}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -988,15 +1019,36 @@ export function SkillsLibraryPage({
               description="还没安装技能 — 到「精选技能」或「社区技能」装一个，装完立即可试跑"
             />
           ) : (
-            installed.map(s => (
-              <InstalledSkillCard
-                key={installKeyOf(s)}
-                skill={s}
-                onUninstall={key =>
-                  setInstalled(prev => uninstallSkill(prev, key))
-                }
-              />
-            ))
+            /* TRAE Work 式来源分组：精选（trae-market/ 前缀）与社区各自 label */
+            [
+              {
+                label: "来自精选技能",
+                list: installed.filter(s => s.repo.startsWith("trae-market/")),
+              },
+              {
+                label: "来自社区技能",
+                list: installed.filter(s => !s.repo.startsWith("trae-market/")),
+              },
+            ]
+              .filter(g => g.list.length > 0)
+              .map(g => (
+                <div key={g.label} className="space-y-2">
+                  <div className="text-xs font-medium text-stone-500">
+                    {g.label} · {g.list.length}
+                  </div>
+                  <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 2xl:grid-cols-3">
+                    {g.list.map(s => (
+                      <InstalledSkillCard
+                        key={installKeyOf(s)}
+                        skill={s}
+                        onUninstall={key =>
+                          setInstalled(prev => uninstallSkill(prev, key))
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))
           )}
         </div>
       )}
