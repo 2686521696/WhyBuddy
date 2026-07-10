@@ -225,6 +225,41 @@ describe("tour-driver 执行层（真调运行时）", () => {
     expect(deliveryWithout).not.toContain("角色巡演报告");
   });
 
+  it("带分支的 workflow：按剧本约定走第一条出边，流程照样到终态（用户实测回归）", async () => {
+    mem.clear();
+    const branched: FiveSystemModel = {
+      ...MODEL,
+      workflow: {
+        nodes: [
+          { id: "n1", name: "提交", assigneeRole: "creator" },
+          { id: "n2", name: "审核", assigneeRole: "auditor" },
+          { id: "n3a", name: "归档", assigneeRole: "auditor" },
+          { id: "n3b", name: "驳回返工", assigneeRole: "creator" },
+        ],
+        transitions: [
+          { from: "n1", to: "n2" },
+          { from: "n2", to: "n3a", condition: "通过" },
+          { from: "n2", to: "n3b", condition: "驳回" },
+        ],
+      },
+    };
+    const bschema = deriveAppRuntimeSchema(branched, "分支应用")!;
+    const script = buildTourScript(branched, bschema)!;
+    const report = await runTour(script, {
+      model: branched,
+      schema: bschema,
+      sessionId: "tour-test-branch",
+      onEvent: () => {},
+      pause: () => Promise.resolve(),
+      now: () => "2026-07-10T00:00:00.000Z",
+    });
+    // 分支节点不再推进失败（曾在真实推演模型上整链卡死）
+    expect(report.errors).toEqual([]);
+    expect(report.instanceCompleted).toBe(true);
+    // 主路径：提交 → 审核 → 归档（第一条出边）
+    expect(report.approvals).toBe(3);
+  });
+
   it("样例值按字段类型确定性生成", () => {
     const values = sampleValuesFor(schema, "ticket");
     expect(values.amount).toBe(1);

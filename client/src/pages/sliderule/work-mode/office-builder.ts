@@ -129,11 +129,11 @@ export async function buildOffice(
   const floorD = 14;
   const floor = new THREE.Mesh(
     new THREE.BoxGeometry(floorW, 0.1, floorD),
-    new THREE.MeshStandardMaterial({ color: "#e9ecf2" })
+    new THREE.MeshStandardMaterial({ color: "#f1ede5" })
   );
   floor.position.set(0, -0.05, 0.6);
   add(floor);
-  const wallMat = new THREE.MeshStandardMaterial({ color: "#f4f6f9" });
+  const wallMat = new THREE.MeshStandardMaterial({ color: "#f7f4ee" });
   const backWall = new THREE.Mesh(
     new THREE.BoxGeometry(floorW, 3.2, 0.18),
     wallMat
@@ -240,11 +240,6 @@ export async function buildOffice(
       );
       screenPlane.position.set(x, 1.06, DESK_Z + 0.02);
       add(screenPlane);
-      // 工位名牌
-      const tag = makeLabelSprite(st.title, { width: 232, fontPx: 24 });
-      tag.position.set(x, 1.62, DESK_Z);
-      add(tag);
-
       built.set(st.stationId, {
         stationId: st.stationId,
         position: pos,

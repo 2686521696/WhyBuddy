@@ -205,13 +205,15 @@ export async function runTour(
         emit({ type: "npc_status", npcId: step.npcId, status: "审批中" });
         emit({ type: "npc_anim", npcId: step.npcId, anim: "Interact" });
         const actor = script.cast.find(a => a.npcId === step.npcId);
+        // 分支节点按剧本层同一约定走第一条出边（viaTransitionIndex: 0
+        // 对单出边同样成立）——巡演验证主路径，分支覆盖是后续档的事
         const r = advanceInstance(
           state,
           model,
           activeInstanceId,
           "approve",
           now(),
-          { byRole: actor?.roleId }
+          { byRole: actor?.roleId, viaTransitionIndex: 0 }
         );
         if (r.error) {
           report.errors.push(`节点「${step.nodeName}」推进失败：${r.error}`);

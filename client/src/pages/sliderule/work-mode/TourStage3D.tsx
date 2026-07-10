@@ -24,7 +24,7 @@ export interface TourStageHandle {
 
 const WALK_SPEED = 2.6; // 世界单位/秒
 const SPAWN_GAP = 1.1;
-const HOME_Z = 4.2;
+const HOME_Z = 2.6;
 
 interface ActorRig {
   group: THREE.Group;
@@ -156,13 +156,25 @@ export default function TourStage3D({
     scene.background = new THREE.Color("#f2f4f8");
     scene.fog = new THREE.Fog("#f2f4f8", 20, 40);
 
-    const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 100);
-    camera.position.set(0, 6.6, 10.4);
-    camera.lookAt(0, 0.6, -1.6);
+    // 等距俯视（参考图观感）：正交相机 45° 方位角 + 俯角
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+    let viewSize = 10; // 垂直取景（世界单位），办公室装配后按场宽重算
+    let aspect = 1;
+    const frameCamera = () => {
+      camera.left = (-viewSize * aspect) / 2;
+      camera.right = (viewSize * aspect) / 2;
+      camera.top = viewSize / 2;
+      camera.bottom = -viewSize / 2;
+      camera.updateProjectionMatrix();
+    };
+    camera.position.set(16, 14, 16);
+    camera.lookAt(0, 0, -0.6);
+    frameCamera();
 
-    scene.add(new THREE.HemisphereLight("#ffffff", "#d7dde6", 1.15));
-    const sun = new THREE.DirectionalLight("#ffffff", 1.6);
-    sun.position.set(4, 8, 5);
+    scene.add(new THREE.HemisphereLight("#ffffff", "#e3e0d8", 1.65));
+    scene.add(new THREE.AmbientLight("#ffffff", 0.35));
+    const sun = new THREE.DirectionalLight("#ffffff", 1.7);
+    sun.position.set(6, 10, 4);
     scene.add(sun);
 
     const loader = new GLTFLoader();
@@ -183,10 +195,9 @@ export default function TourStage3D({
         return;
       }
       office = layout;
-      // 相机按场景宽度取景
-      const w = layout.totalWidth;
-      camera.position.set(0, 5.4 + w * 0.16, 7.2 + w * 0.34);
-      camera.lookAt(0, 0.4, -1.2);
+      // 等距取景：垂直视野按场宽收紧（不留大片空地）
+      viewSize = Math.max(8.5, layout.totalWidth * 0.5 + 3.5);
+      frameCamera();
     });
 
     // 站位防重叠（Agentshire SpotAllocator 直搬）
@@ -208,7 +219,7 @@ export default function TourStage3D({
       group.userData.npcId = actor.npcId;
       scene.add(group);
       const status = makeStatusSprite();
-      status.sprite.position.set(0, 2.45, 0);
+      status.sprite.position.set(0, 2.12, 0);
       group.add(status.sprite);
       const rig: ActorRig = {
         group,
@@ -227,6 +238,10 @@ export default function TourStage3D({
         gltf => {
           if (disposed) return;
           gltf.scene.rotation.y = Math.PI; // 面向观众
+          // 身高归一化到 1.5：UACP 角色与 Kenney 家具比例对齐（用户反馈人比桌大）
+          const bbox = new THREE.Box3().setFromObject(gltf.scene);
+          const height = bbox.getSize(new THREE.Vector3()).y || 1;
+          gltf.scene.scale.setScalar(1.5 / height);
           gltf.scene.traverse(o => {
             o.userData.npcId = actor.npcId;
           });
@@ -236,7 +251,7 @@ export default function TourStage3D({
           rig.mixer = new THREE.AnimationMixer(gltf.scene);
           playClip(rig, "Idle");
           const tag = nameSprite(actor.roleId);
-          tag.position.set(0, 2.1, 0);
+          tag.position.set(0, 1.82, 0);
           group.add(tag);
         },
         undefined,
@@ -315,7 +330,7 @@ export default function TourStage3D({
           const spot = spots.allocate(
             { x: raw.x, z: raw.z },
             event.npcId,
-            0.85
+            1.05
           );
           const dest = new THREE.Vector3(spot.x, 0, spot.z);
           if (isMotionReduced()) {
@@ -358,7 +373,7 @@ export default function TourStage3D({
           }
           if (event.emoji) {
             const sprite = emojiSprite(event.emoji);
-            sprite.position.set(0, 2.85, 0);
+            sprite.position.set(0, 2.5, 0);
             rig.group.add(sprite);
             rig.emoji = sprite;
           }
@@ -383,8 +398,8 @@ export default function TourStage3D({
       const w = host.clientWidth || 1;
       const h = host.clientHeight || 1;
       renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
+      aspect = w / h;
+      frameCamera();
     };
     resize();
     const ro = new ResizeObserver(resize);
