@@ -45,7 +45,7 @@ Work 模式 = 三层，实用价值全部在前两层：
   走既有真通道 / BYOK，fail-closed。
 - **3D 阶段（独立裁决，见下）**：0 期解剖 → 器官移植 → 氛围系统。
 
-## 三、Agentshire 借用方案（3D 阶段执行时参照）
+## 三、Agentshire 借用方案（0 期解剖已完成：B 终裁成立，见本节末）
 
 ### 探查到的硬事实（2026-07-10）
 
@@ -83,12 +83,38 @@ Work 模式 = 三层，实用价值全部在前两层：
    不进 git。依赖变更遵守 pnpm 三锁同步（package.json + package-lock.json +
    pnpm-lock.yaml），否则 CI frozen-lockfile 全红。
 
-### 3D 阶段的 0 期解剖（写产品代码前必做，半天~一天）
+### 0 期解剖报告（2026-07-10 已完成，源码实测于 fork `xiaojilele-glitch/agentshire` @ f54a798）
 
-1. `engine/npc` 能否脱离 WebSocket 用内存事件源驱动（决定 B 是否成立）；
-2. 对 OpenClaw 事件协议的耦合深度（薄接口 or 散布全身）；
-3. 精选资产子集实测体积。
-   结论出来，走 B 还是退 C 就不是估的而是量出来的。
+**终裁：方案 B（器官移植）成立，且比预估更容易。** 三问实测结论：
+
+1. **内存事件源：出厂即支持，无需手术。** 它自带 `IWorldDataSource`
+   接口（`town-frontend/src/data/IWorldDataSource.ts`，仅 7 个成员：
+   connect/disconnect/connected/onGameEvent/sendAction/getSnapshot）+
+   `MockDataSource` 离线实现——后者用 `NarrativeEngine` 播 8 幕内存剧本
+   （ACT_1_ENTER…ACT_8_PUBLISH）驱动整个小镇，WS 断开时 main.ts 本来就
+   fallback 到它。**SlideRuleDirectorBridge = 第三个 IWorldDataSource 实现**：
+   "剧本"从五系统 model 确定性推导，每个 GameEvent 绑定 runtime 真事实。
+2. **耦合深度：薄到极致。** 游戏层唯一入口是
+   `MainScene.handleGameEvent(event: GameEvent)` → `EventDispatcher`
+   （自述"零业务逻辑"，~47 类 handler）；GameEvent 是纯 TS 联合类型
+   （`data/GameProtocol.ts`，npc_spawn/npc_move_to/npc_anim/workstation_assign/
+   fx/set_time/set_weather…）。**四器官（engine/game/npc/narrative）对
+   platform/ 与 hooks/ 的 import 依赖为零**——WS 只活在 main.ts/ChatView；
+   `platform/Bridge.ts` 仅 54 行 postMessage。前端出现的 "OpenClaw" 字样
+   全是文案默认值，无协议依赖。OpenClaw 真耦合都在仓库根 `src/` 插件层
+   （不搬）。
+3. **资产子集：极小。** `town-frontend/public` 共 24MB，其中音乐 9.5MB
+   （可不采）、角色 5.7MB（我们已有自采 Quaternius 套装）、办公场景
+   实际需要的家具 1MB + 道具 2.5MB 级别——办公戏台增量 ≈ **3~4MB**。
+4. **附加验证：独立构建一次通过。** `town-frontend` 用自己的
+   package.json（deps 仅 react/react-dom/three/lucide/react-markdown/
+   remark-gfm，与主仓同族）`npm install && npm run build` 23 秒成功；
+   town 入口 gzip 217KB + GLTFLoader 155KB + main 131KB——懒加载分包
+   后可控。
+
+一期（2D 泳道）应把巡演事件流直接设计成 **GameEvent 兼容的词汇表子集**
+（spawn/move_to/anim/work_done/fx…语义对齐），3D 阶段挂
+SlideRuleDirectorBridge 时零翻译成本。
 
 ## 四、3D 知识备忘：五件套与选型纪律
 
