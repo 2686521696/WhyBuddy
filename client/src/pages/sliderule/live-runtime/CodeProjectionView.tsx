@@ -3,7 +3,8 @@
  *
  * 左侧目录树（文件夹分层、可折叠）+ 右侧 CodeMirror 只读编辑器
  * （懒加载分包；未就绪/测试态回退纯 <pre>）。
- * 顶部常驻说明：这是 schema 的确定性投影（只读），与运行应用同源。
+ * "确定性投影（只读）"的诚实声明在每份投影文件的首行注释里
+ * （顶部常驻说明条已按用户裁决移除）。
  */
 
 import React from "react";
@@ -250,19 +251,8 @@ export function CodeProjectionView({
       }}
       data-testid="app-runtime-code"
     >
-      <div
-        style={{
-          flexShrink: 0,
-          padding: "8px 14px",
-          fontSize: 11,
-          color: "#595959",
-          background: "#f7f8fa",
-          borderBottom: "1px solid #e5e7eb",
-        }}
-      >
-        代码视图 = 五系统 schema 的确定性投影（只读，非 LLM
-        生成）——与运行应用同源同真相；要改内容请回到意图重新推演。
-      </div>
+      {/* 顶部说明条已按用户裁决移除——"确定性投影（只读）"的诚实声明
+          仍在每份投影文件的首行注释与「代码」档的悬停提示里 */}
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <div
           style={{

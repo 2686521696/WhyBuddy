@@ -462,7 +462,7 @@ function ImUserMessage() {
     <div className="group mb-4 flex flex-col items-end">
       {/* 用户气泡随壳体走冷调（用户反馈：旧暖色与中性冷调壳体不搭）——
           取品牌蓝浅色，与侧栏选中态同源 */}
-      <div className="max-w-[520px] rounded-lg bg-[#e6f4ff] px-4 py-2.5 text-[15px] leading-7 text-[#1f2329]">
+      <div className="max-w-[520px] rounded-lg bg-[#e6f4ff] px-4 py-2.5 text-[14px] leading-[26px] text-[#1f2329]">
         {text}
       </div>
       {/* 迭代环：意图原文回填输入条，改半句再推（悬停显现，不抢注意力） */}
@@ -529,7 +529,8 @@ function ImAssistantMessage() {
           )}
         </div>
       ) : (
-        <div className="space-y-2 text-[15px] leading-7 text-stone-800">
+        /* 14px 正文（用户裁决：再小一号，信息密度优先） */
+        <div className="space-y-2 text-[14px] leading-[26px] text-stone-800">
           {/* Claude 式顺序：折叠的推演过程 + 闭环徽标在前，总结正文在后
               （items-start：展开过程时徽标停在首行不跟着下坠） */}
           <div className="flex flex-wrap items-start gap-2 text-xs text-stone-400">

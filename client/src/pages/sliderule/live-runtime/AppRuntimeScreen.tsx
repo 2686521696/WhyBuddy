@@ -17,6 +17,7 @@
  */
 
 import React from "react";
+import { createPortal } from "react-dom";
 import {
   Layout,
   Menu,
@@ -322,6 +323,7 @@ export function AppRuntimeScreen({
   onActivePageChange,
   xrayActive = false,
   onXrayTarget,
+  controlsContainer,
 }: {
   model: FiveSystemModel;
   sessionId: string;
@@ -331,6 +333,9 @@ export function AppRuntimeScreen({
   /** 元素级游标：开启时被埋点的元素悬停上报目标 + 描边高亮 */
   xrayActive?: boolean;
   onXrayTarget?: (target: XrayTarget | null) => void;
+  /** 档位切换条的外部挂载点（studio 顶条「游标」左侧）。传了本 prop 就
+   *  不再浮在画布左上角：元素就绪前不渲染切换条（避免闪跳）。 */
+  controlsContainer?: HTMLElement | null;
 }) {
   // 表格列设置（表格自带能力）：按 pageId 记用户勾选的列；undefined = 默认列
   const [tableColPrefs, setTableColPrefs] = React.useState<
@@ -1675,40 +1680,61 @@ export function AppRuntimeScreen({
         </div>
       </div>
 
-      {/* 档位切换（画布外的排练控制）：三档设备 + 代码投影视角 */}
-      <div className="absolute left-3 top-2 flex items-center gap-0.5 rounded-full bg-black/25 p-0.5">
-        {(Object.keys(DEVICE_SPECS) as DeviceKey[]).map(key => (
-          <button
-            key={key}
-            type="button"
-            data-testid={`app-device-${key}`}
-            onClick={() => {
-              setCodeView(false);
-              setDevice(key);
-            }}
-            className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
-              !codeView && device === key
-                ? "bg-white text-stone-800 shadow-sm"
-                : "text-white/85 hover:text-white"
-            }`}
+      {/* 档位切换（画布外的排练控制）：设备档 + 代码投影视角。
+          平板档已按用户裁决从切换条下架（渲染范式代码保留，随时可回归）。
+          有外部挂载点（studio 顶条）时 portal 过去，否则浮在画布左上角。 */}
+      {(() => {
+        const inBar = controlsContainer !== undefined;
+        const gearBar = (
+          <div
+            className={
+              inBar
+                ? "flex items-center gap-0.5 rounded-full bg-[#e9edf2] p-0.5"
+                : "absolute left-3 top-2 flex items-center gap-0.5 rounded-full bg-black/25 p-0.5"
+            }
           >
-            {DEVICE_SPECS[key].label}
-          </button>
-        ))}
-        <button
-          type="button"
-          data-testid="app-device-code"
-          onClick={() => setCodeView(true)}
-          title="schema 的确定性代码投影（只读）"
-          className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
-            codeView
-              ? "bg-white text-stone-800 shadow-sm"
-              : "text-white/85 hover:text-white"
-          }`}
-        >
-          代码
-        </button>
-      </div>
+            {(["desktop", "phone"] as DeviceKey[]).map(key => (
+              <button
+                key={key}
+                type="button"
+                data-testid={`app-device-${key}`}
+                onClick={() => {
+                  setCodeView(false);
+                  setDevice(key);
+                }}
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                  !codeView && device === key
+                    ? "bg-white text-stone-800 shadow-sm"
+                    : inBar
+                      ? "text-stone-500 hover:text-stone-700"
+                      : "text-white/85 hover:text-white"
+                }`}
+              >
+                {DEVICE_SPECS[key].label}
+              </button>
+            ))}
+            <button
+              type="button"
+              data-testid="app-device-code"
+              onClick={() => setCodeView(true)}
+              title="schema 的确定性代码投影（只读）"
+              className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                codeView
+                  ? "bg-white text-stone-800 shadow-sm"
+                  : inBar
+                    ? "text-stone-500 hover:text-stone-700"
+                    : "text-white/85 hover:text-white"
+              }`}
+            >
+              代码
+            </button>
+          </div>
+        );
+        if (!inBar) return gearBar;
+        return controlsContainer
+          ? createPortal(gearBar, controlsContainer)
+          : null;
+      })()}
       {!codeView && (
         <span
           className="absolute bottom-2 right-3 rounded-full bg-black/30 px-2 py-0.5 font-mono text-[9px] text-white/90"

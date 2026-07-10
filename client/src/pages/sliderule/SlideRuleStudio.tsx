@@ -169,6 +169,8 @@ export function SlideRuleStudio({
   const [appActivePageId, setAppActivePageId] = useState<string>("home");
   // 元素级焦点：应用内被悬停元素的背后声明（AR）
   const [xrayTarget, setXrayTarget] = useState<XrayTarget | null>(null);
+  // 设备/代码档位切换条的挂载点（顶条「游标」左侧，AppRuntimeScreen portal）
+  const [gearSlot, setGearSlot] = useState<HTMLDivElement | null>(null);
 
   // 系统屏抽屉（游标深入 / 抽屉内六系统横向切换）
   const [drawerSkill, setDrawerSkill] = useState<SkillId | null>(null);
@@ -225,12 +227,19 @@ export function SlideRuleStudio({
                   运行中
                 </span>
               )}
+              {/* 设备/代码档位切换：AppRuntimeScreen portal 到这里
+                  （用户裁决：显示在「游标」左侧，不再浮在画布上） */}
+              <div
+                ref={setGearSlot}
+                className="ml-auto flex items-center"
+                data-testid="sliderule-stage-gears"
+              />
               <button
                 type="button"
                 onClick={toggleXray}
                 data-testid="sliderule-xray-toggle"
                 aria-pressed={xrayOn}
-                className={`ml-auto flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[12px] font-semibold transition ${
+                className={`flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[12px] font-semibold transition ${
                   xrayOn
                     ? "border-transparent bg-[#1677ff] text-white shadow-sm"
                     : "border-[#e5e7eb] bg-white text-stone-600 hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
@@ -256,6 +265,7 @@ export function SlideRuleStudio({
                   onActivePageChange={setAppActivePageId}
                   xrayActive={xrayOn}
                   onXrayTarget={setXrayTarget}
+                  controlsContainer={gearSlot}
                 />
               </div>
               {xrayOn && appSchema && (

@@ -276,7 +276,7 @@ describe("deriveCodeProjection", () => {
 });
 
 describe("CodeProjectionView 渲染", () => {
-  it("目录树（文件夹 + 文件）+ 只读说明 + 代码面板回退 <pre>", () => {
+  it("目录树（文件夹 + 文件）+ 代码面板回退 <pre>（无顶部说明条）", () => {
     const html = renderToStaticMarkup(
       <CodeProjectionView model={MODEL} appName="轻量 CRM" />
     );
@@ -285,7 +285,8 @@ describe("CodeProjectionView 渲染", () => {
     expect(html).toContain('data-testid="code-dir-src/api"');
     expect(html).toContain('data-testid="code-file-db/schema.sql"');
     expect(html).toContain('data-testid="code-file-src/pages/p_board.tsx"');
-    expect(html).toContain("确定性投影（只读，非 LLM 生成）");
+    // 顶部说明条已按用户裁决移除；诚实声明留在投影文件首行注释（上一用例锁）
+    expect(html).not.toContain("要改内容请回到意图重新推演");
     // 编辑器懒加载未就绪时回退 <pre>，内容为默认展示文件（README）
     expect(html).toContain('data-testid="code-content"');
     expect(html).toContain("# 轻量 CRM");
