@@ -49,7 +49,13 @@ export type TourEvent =
     }
   | { type: "fx"; effect: "denied" | "celebrate"; npcId?: string }
   | { type: "progress"; current: number; total: number; label: string }
-  | { type: "narration"; text: string; tone: "info" | "ok" | "blocked" };
+  | {
+      type: "narration";
+      text: string;
+      tone: "info" | "ok" | "blocked";
+      /** 台词归属的出演者（演出层据此冒对话气泡）；finale 等全场旁白不带 */
+      npcId?: string;
+    };
 
 export interface TourReport {
   rowsCreated: number;
@@ -127,8 +133,11 @@ export async function runTour(
   let index = 0;
 
   const emit = onEvent;
-  const narrate = (text: string, tone: "info" | "ok" | "blocked" = "info") =>
-    emit({ type: "narration", text, tone });
+  const narrate = (
+    text: string,
+    tone: "info" | "ok" | "blocked" = "info",
+    npcId?: string
+  ) => emit({ type: "narration", text, tone, npcId });
 
   const persist = () => {
     saveRuntimeState(sessionId, state);
@@ -164,7 +173,7 @@ export async function runTour(
         break;
       }
       case "walk": {
-        narrate(step.narration);
+        narrate(step.narration, "info", step.npcId);
         emit({ type: "npc_status", npcId: step.npcId, status: "移动中" });
         emit({ type: "npc_anim", npcId: step.npcId, anim: "Walk" });
         emit({
@@ -183,7 +192,11 @@ export async function runTour(
         persist();
         emit({ type: "npc_status", npcId: step.npcId, status: "录入中" });
         emit({ type: "npc_anim", npcId: step.npcId, anim: "PickUp" });
-        narrate(`${step.narration}（row ${r.row.id} 已真实落库）`, "ok");
+        narrate(
+          `${step.narration}（row ${r.row.id} 已真实落库）`,
+          "ok",
+          step.npcId
+        );
         break;
       }
       case "start_instance": {
@@ -193,7 +206,11 @@ export async function runTour(
           activeInstanceId = r.instance.id;
           report.instancesStarted += 1;
           persist();
-          narrate(`${step.narration}（实例 ${r.instance.id} 运行中）`, "ok");
+          narrate(
+            `${step.narration}（实例 ${r.instance.id} 运行中）`,
+            "ok",
+            step.npcId
+          );
         } else {
           report.errors.push("工作流无起始节点，流程未发起");
           narrate("工作流无起始节点，流程未发起", "blocked");
@@ -217,7 +234,11 @@ export async function runTour(
         );
         if (r.error) {
           report.errors.push(`节点「${step.nodeName}」推进失败：${r.error}`);
-          narrate(`「${step.nodeName}」推进失败：${r.error}`, "blocked");
+          narrate(
+            `「${step.nodeName}」推进失败：${r.error}`,
+            "blocked",
+            step.npcId
+          );
           break;
         }
         state = r.state;
@@ -232,9 +253,13 @@ export async function runTour(
             status: "completed",
             note: step.nodeName,
           });
-          narrate(`${step.narration} → 流程走到终态（completed）`, "ok");
+          narrate(
+            `${step.narration} → 流程走到终态（completed）`,
+            "ok",
+            step.npcId
+          );
         } else {
-          narrate(`${step.narration} → 通过`, "ok");
+          narrate(`${step.narration} → 通过`, "ok", step.npcId);
         }
         break;
       }
@@ -248,7 +273,7 @@ export async function runTour(
           status: "failed",
           note: "RBAC 拦截",
         });
-        narrate(step.narration, "blocked");
+        narrate(step.narration, "blocked", step.npcId);
         break;
       }
       case "finale": {

@@ -1,5 +1,5 @@
 /**
- * office-builder — 部门分区办公室场景（Work 模式二期）。
+ * office-builder — 部门分区办公室场景（Work 模式二期/三期沉浸化）。
  *
  * 结构与手法适配移植自 Agentshire（MIT，commit f54a798）的
  * town-frontend/src/game/scene/OfficeBuilder.ts + ScreenRenderer.ts：
@@ -7,6 +7,10 @@
  * 绘内容）/绿植点缀/灯光。差异：工位按 **RBAC menus 推导的部门区** 分组
  * （schema 真相，非造出来的分组）；家具用仓库已有的 Kenney Furniture Kit
  * （CC0，client/public/kenney_furniture-kit）。
+ *
+ * 三期（对照 Agentshire 官方演示）：暖木地板 + 奶油墙 + 墙面窗景、
+ * 侧墙巡演进度大屏（drawBoard，绑真 progress/narration 事件）、
+ * 休息角（沙发/咖啡桌/咖啡机）、书柜/盆栽/垃圾桶环境密度。
  */
 
 import * as THREE from "three";
@@ -18,7 +22,7 @@ const ZONE_PAD = 1.6; // 区内左右留白
 const ZONE_GAP = 1.2; // 区与区之间
 const DESK_Z = -3.2; // 工位排深度
 
-const ZONE_COLORS = ["#e8eef7", "#e9f4ec", "#f6efe6", "#efe9f5", "#e9f2f4"];
+const ZONE_COLORS = ["#dbe6f3", "#dcebe0", "#f0e5d3", "#e6ddef", "#dceaee"];
 
 export interface BuiltStation {
   stationId: string;
@@ -32,8 +36,10 @@ export interface BuiltStation {
 
 export interface OfficeLayout {
   stations: Map<string, BuiltStation>;
-  /** 场景总宽（相机取景用） */
+  /** 工位排总宽（相机取景用——只框工位区，地板留出画面外余量） */
   totalWidth: number;
+  /** 侧墙进度大屏（绑真事件：progress/narration 写上去） */
+  drawBoard: (lines: string[]) => void;
   dispose: () => void;
 }
 
@@ -102,11 +108,32 @@ export async function buildOffice(
         () => resolve(null)
       );
     });
-  const [deskT, chairT, screenT, plantT] = await Promise.all([
+  const [
+    deskT,
+    chairT,
+    screenT,
+    plantT,
+    bookcaseT,
+    sofaT,
+    coffeeTableT,
+    coffeeMachineT,
+    sideTableT,
+    rugT,
+    pottedT,
+    trashT,
+  ] = await Promise.all([
     load("desk.glb"),
     load("chairModernCushion.glb"),
     load("computerScreen.glb"),
     load("plantSmall1.glb"),
+    load("bookcaseClosedWide.glb"),
+    load("loungeSofa.glb"),
+    load("tableCoffee.glb"),
+    load("kitchenCoffeeMachine.glb"),
+    load("sideTable.glb"),
+    load("rugRounded.glb"),
+    load("pottedPlant.glb"),
+    load("trashcan.glb"),
   ]);
 
   // ── 分区布局计算 ─────────────────────────────────────────────
@@ -124,29 +151,122 @@ export async function buildOffice(
   const totalWidth =
     zoneWidths.reduce((a, b) => a + b, 0) + ZONE_GAP * (zones.length - 1);
 
-  // ── 地板与墙 ────────────────────────────────────────────────
-  const floorW = Math.max(totalWidth + 6, 16);
-  const floorD = 14;
+  // ── 地板与墙（暖木地板铺出取景外，看不到"世界边缘"）──────────────
+  const floorW = Math.max(totalWidth + 7, 22);
+  const floorD = 12.5;
+  const floorZ = 0.8; // 地板中心（前方留出走位/休息角）
+  const wallZ = floorZ - floorD / 2; // 后墙
   const floor = new THREE.Mesh(
     new THREE.BoxGeometry(floorW, 0.1, floorD),
-    new THREE.MeshStandardMaterial({ color: "#f1ede5" })
+    new THREE.MeshStandardMaterial({ color: "#c09468" })
   );
-  floor.position.set(0, -0.05, 0.6);
+  floor.position.set(0, -0.05, floorZ);
   add(floor);
-  const wallMat = new THREE.MeshStandardMaterial({ color: "#f7f4ee" });
+  const wallMat = new THREE.MeshStandardMaterial({ color: "#efe6d7" });
   const backWall = new THREE.Mesh(
-    new THREE.BoxGeometry(floorW, 3.2, 0.18),
+    new THREE.BoxGeometry(floorW, 3.4, 0.18),
     wallMat
   );
-  backWall.position.set(0, 1.6, 0.6 - floorD / 2);
+  backWall.position.set(0, 1.7, wallZ);
   add(backWall);
   for (const side of [-1, 1]) {
     const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(0.18, 3.2, floorD),
+      new THREE.BoxGeometry(0.18, 3.4, floorD),
       wallMat
     );
-    wall.position.set((side * floorW) / 2, 1.6, 0.6);
+    wall.position.set((side * floorW) / 2, 1.7, floorZ);
     add(wall);
+  }
+
+  // 后墙窗景（Agentshire 式浅青窗块，环境密度不空墙；中央让位进度大屏）
+  const windowMat = new THREE.MeshBasicMaterial({ color: "#bfe0e8" });
+  const frameMat = new THREE.MeshStandardMaterial({ color: "#d9cbb4" });
+  const winCount = Math.max(2, Math.round(floorW / 6));
+  for (let i = 0; i < winCount; i++) {
+    const wx = (i - (winCount - 1) / 2) * (floorW / winCount);
+    if (Math.abs(wx) < 1.9) continue; // 中央墙面留给进度大屏
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(1.9, 1.15, 0.06),
+      frameMat
+    );
+    frame.position.set(wx, 1.8, wallZ + 0.12);
+    add(frame);
+    const win = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.95), windowMat);
+    win.position.set(wx, 1.8, wallZ + 0.17);
+    add(win);
+  }
+
+  // 后墙中央巡演进度大屏（ScreenRenderer 手法，绑真事件由舞台层写入）
+  const boardCanvas = document.createElement("canvas");
+  boardCanvas.width = 512;
+  boardCanvas.height = 288;
+  const boardCtx = boardCanvas.getContext("2d")!;
+  const boardTexture = new THREE.CanvasTexture(boardCanvas);
+  const drawBoard = (lines: string[]) => {
+    boardCtx.fillStyle = "#101722";
+    boardCtx.fillRect(0, 0, 512, 288);
+    boardCtx.fillStyle = "#39424e";
+    boardCtx.fillRect(0, 0, 512, 6);
+    boardCtx.textAlign = "left";
+    lines.slice(0, 5).forEach((line, li) => {
+      boardCtx.fillStyle = li === 0 ? "#8ecbff" : "#dbe6f2";
+      boardCtx.font = li === 0 ? "700 34px sans-serif" : "500 26px sans-serif";
+      boardCtx.fillText(line.slice(0, 18), 24, 58 + li * 50);
+    });
+    boardTexture.needsUpdate = true;
+  };
+  drawBoard(["角色巡演", "等待开演…"]);
+  const boardBezel = new THREE.Mesh(
+    new THREE.BoxGeometry(2.5, 1.42, 0.08),
+    new THREE.MeshStandardMaterial({ color: "#20242a" })
+  );
+  boardBezel.position.set(0, 2.5, wallZ + 0.16);
+  add(boardBezel);
+  const boardPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.34, 1.28),
+    new THREE.MeshBasicMaterial({ map: boardTexture })
+  );
+  boardPlane.position.set(0, 2.5, wallZ + 0.22);
+  add(boardPlane);
+
+  // 休息角（左前，填 iso 视角的前场空地）：沙发 + 咖啡桌 + 咖啡机 + 圆毯
+  const loungeX = -totalWidth / 2 + 2.0;
+  const loungeZ = floorZ + floorD / 2 - 2.2;
+  if (rugT) {
+    const rug = rugT.clone(true);
+    normalizeWidth(rug, 3.4);
+    rug.position.set(loungeX, 0.01, loungeZ);
+    add(rug);
+  }
+  if (sofaT) {
+    const sofa = sofaT.clone(true);
+    normalizeWidth(sofa, 1.9);
+    sofa.position.set(loungeX, 0, loungeZ - 0.8);
+    add(sofa);
+  }
+  if (coffeeTableT) {
+    const table = coffeeTableT.clone(true);
+    normalizeWidth(table, 1.1);
+    table.position.set(loungeX, 0, loungeZ + 0.55);
+    add(table);
+  }
+  if (sideTableT && coffeeMachineT) {
+    const side = sideTableT.clone(true);
+    normalizeWidth(side, 0.7);
+    side.position.set(loungeX + 1.5, 0, loungeZ - 0.8);
+    add(side);
+    const machine = coffeeMachineT.clone(true);
+    normalizeWidth(machine, 0.34);
+    machine.position.set(loungeX + 1.5, 0.5, loungeZ - 0.8);
+    add(machine);
+  }
+
+  // 右前盆栽（与左前休息角对角平衡）
+  if (pottedT) {
+    const potted = pottedT.clone(true);
+    normalizeWidth(potted, 0.7);
+    potted.position.set(totalWidth / 2 + 1.2, 0, floorZ + floorD / 2 - 2.0);
+    add(potted);
   }
 
   // ── 部门区 + 工位 ────────────────────────────────────────────
@@ -155,24 +275,31 @@ export async function buildOffice(
   zones.forEach((zone, zi) => {
     const zoneW = zoneWidths[zi];
     const centerX = cursorX + zoneW / 2;
-    // 区地毯（部门底色）
+    // 区地毯（部门底色，收深不显空）
     const plate = new THREE.Mesh(
-      new THREE.BoxGeometry(zoneW, 0.06, 7.4),
+      new THREE.BoxGeometry(zoneW, 0.06, 5.2),
       new THREE.MeshStandardMaterial({
         color: ZONE_COLORS[zi % ZONE_COLORS.length],
       })
     );
-    plate.position.set(centerX, 0.03, DESK_Z + 1.7);
+    plate.position.set(centerX, 0.03, DESK_Z + 1.4);
     add(plate);
-    // 部门名牌（墙上）
+    // 部门名牌（工位排上方）
     const zoneLabel = makeLabelSprite(zone.label, {
       width: 320,
       fontPx: 32,
       bg: "rgba(22,119,255,0.92)",
       fg: "#ffffff",
     });
-    zoneLabel.position.set(centerX, 2.55, DESK_Z - 1.6);
+    zoneLabel.position.set(centerX, 2.45, DESK_Z - 0.9);
     add(zoneLabel);
+    // 靠墙书柜（每区一个，环境密度）
+    if (bookcaseT) {
+      const bookcase = bookcaseT.clone(true);
+      normalizeWidth(bookcase, 1.5);
+      bookcase.position.set(centerX, 0, wallZ + 0.55);
+      add(bookcase);
+    }
     // 区间绿植
     if (zi > 0 && plantT) {
       const plant = plantT.clone(true);
@@ -208,6 +335,13 @@ export async function buildOffice(
         chair.position.set(x, 0, DESK_Z + 0.95);
         chair.rotation.y = Math.PI;
         add(chair);
+      }
+      // 工位尽头垃圾桶（每区最后一位）
+      if (trashT && si === n - 1) {
+        const trash = trashT.clone(true);
+        normalizeWidth(trash, 0.3);
+        trash.position.set(x + STATION_GAP / 2 - 0.35, 0, DESK_Z + 0.4);
+        add(trash);
       }
       // 显示器 + 可绘屏幕（ScreenRenderer 手法）
       const screenCanvas = document.createElement("canvas");
@@ -253,7 +387,8 @@ export async function buildOffice(
 
   return {
     stations: built,
-    totalWidth: floorW,
+    totalWidth,
+    drawBoard,
     dispose: () => {
       for (const o of objects) {
         scene.remove(o);
