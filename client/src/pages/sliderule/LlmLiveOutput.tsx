@@ -58,6 +58,7 @@ export function LlmLiveOutput({
   title,
   text,
   formatJson = false,
+  done = false,
   className = "",
 }: {
   /** 来源标题（"正在分析风险" / "五系统模型起草中"…） */
@@ -65,10 +66,14 @@ export function LlmLiveOutput({
   text: string;
   /** true = 流式 JSON（五系统起草）：容错解析美化 + 代码块外观 + 高亮 */
   formatJson?: boolean;
+  /** true = 归档态（推演结束后的留档）：灰点无光标，默认折叠（Claude
+   *  的"Thought for Xs"——留在对话里、要看点开） */
+  done?: boolean;
   className?: string;
 }) {
-  // Claude 分工：代码/JSON 默认收成摘要行（点开看面板）；纯文字流默认展开
-  const [collapsed, setCollapsed] = React.useState(formatJson);
+  // Claude 分工：代码/JSON 默认收成摘要行（点开看面板）；纯文字流默认展开；
+  // 归档态一律默认折叠
+  const [collapsed, setCollapsed] = React.useState(done || formatJson);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   // 贴底跟随：用户在底部才跟随；往上滚即接管（followRef 存意图，state 控胶囊）
   const followRef = React.useRef(true);
@@ -118,7 +123,11 @@ export function LlmLiveOutput({
         data-testid="sliderule-llm-draft-toggle"
         className="flex items-center gap-2 text-left text-[11px] font-medium text-stone-400 transition-colors hover:text-stone-600"
       >
-        <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[#1677ff]" />
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+            done ? "bg-stone-300" : "animate-pulse bg-[#1677ff]"
+          }`}
+        />
         <span className="min-w-0 truncate">
           {title} · {text.length} 字符
         </span>
@@ -134,7 +143,7 @@ export function LlmLiveOutput({
           className="mt-1.5 whitespace-pre-wrap break-all pl-3.5 font-sans text-[12.5px] leading-6 text-stone-500"
         >
           {body}
-          <span className="animate-pulse text-[#1677ff]">▊</span>
+          {!done && <span className="animate-pulse text-[#1677ff]">▊</span>}
         </pre>
       )}
       {/* 代码/JSON 面板：代码块外观 + 260px 尾窗（Claude 的工具活动行为） */}
@@ -151,7 +160,7 @@ export function LlmLiveOutput({
               className="whitespace-pre-wrap break-all px-3 py-2 font-mono text-[11.5px] leading-6 text-[#1f2329]"
             >
               {body}
-              <span className="animate-pulse text-[#1677ff]">▊</span>
+              {!done && <span className="animate-pulse text-[#1677ff]">▊</span>}
             </pre>
           </div>
           {/* 顶部渐隐：提示窗口上方还有已输出内容（可向上滚动回看） */}

@@ -30,7 +30,12 @@ export type TurnStep =
       label: string;
       realLlm: boolean;
       loopTurnId?: string;
-      progressType?: "thinking" | "acting" | "observing" | "completed" | "failed";
+      progressType?:
+        | "thinking"
+        | "acting"
+        | "observing"
+        | "completed"
+        | "failed";
     }
   | {
       id: string;
@@ -52,6 +57,17 @@ export type TurnStep =
       capabilityRunId: string;
       runIndex: number;
       message: string;
+    }
+  | {
+      /** 思考流留档（2026-07-10 用户裁决）：推演结束后 LLM 每步的完整
+       *  输出保留成可折叠记录（Claude 式），不再随 llmDraft 清空消失。 */
+      id: string;
+      kind: "llm_output";
+      /** 人话标题（"LLM 正在分析风险"→"分析风险"归档态） */
+      title: string;
+      text: string;
+      /** true = 五系统 JSON（代码块面板）；false = 纯文字思考流 */
+      formatJson: boolean;
     };
 
 /** Product page turn — progressive conversation (user bubble + step stream). */
@@ -71,7 +87,12 @@ export type UiTurn = {
   actions: ActionTrace[];
 };
 
-export type SlideRuleExecutorMode = "pilot" | "server-llm" | "default" | "demo" | "browser-llm";
+export type SlideRuleExecutorMode =
+  | "pilot"
+  | "server-llm"
+  | "default"
+  | "demo"
+  | "browser-llm";
 
 /** Extended persisted session state including publishClosure evidence (for frontend session store adapter).
  *  publishClosure?: PublishClosureSummary | null is carried explicitly by useSlideRuleSession adapter + python schema.

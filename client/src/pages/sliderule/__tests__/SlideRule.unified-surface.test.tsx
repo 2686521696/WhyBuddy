@@ -198,6 +198,44 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("持续推演");
   });
 
+  it("思考流留档：完成轮保留 llm_output 记录（默认折叠、无光标）", () => {
+    const doneTurn = {
+      ...streamingTurn,
+      id: "turn-done-1",
+      status: "complete" as const,
+      assistant: "推演完成，应用已闭环。",
+      steps: [
+        ...streamingTurn.steps,
+        {
+          id: "s-arch-1",
+          kind: "llm_output" as const,
+          title: "分析风险",
+          text: "主要风险是版本合并冲突的可视化成本较高，建议先做只读预览。",
+          formatJson: false,
+        },
+        {
+          id: "s-arch-2",
+          kind: "llm_output" as const,
+          title: "起草五系统模型",
+          text: '{"datamodel":{"entities":[]}}',
+          formatJson: true,
+        },
+      ],
+    };
+    const html = renderPage({
+      goal: "做一个采购审批应用",
+      uiTurns: [doneTurn],
+      isRunning: false,
+    });
+    expect(html).toContain('data-testid="sliderule-llm-archives"');
+    expect(html).toContain("分析风险");
+    expect(html).toContain("起草五系统模型");
+    // 归档默认折叠：正文不直接出现在 DOM（点开才渲染）
+    expect(html).not.toContain("版本合并冲突的可视化成本");
+    // 归档态无流式光标
+    expect(html).not.toContain("▊");
+  });
+
   it("会话在场但未运行（无模型）→ board：六系统缩略 + 证据看板", () => {
     const html = renderPage({
       goal: "做一个采购审批应用",

@@ -888,6 +888,21 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               },
             }
           );
+          // 思考流留档（2026-07-10 用户裁决）：推演结束后每步 LLM 的完整
+          // 输出保留成可折叠记录（Claude 的"Thought for Xs"），不随 llmDraft
+          // 清空消失。closure.summary 不留档——它本身就是本轮总结正文，留档
+          // 会和答案重复。
+          let archiveSeq = 0;
+          for (const [key, buf] of llmDraftBuffers) {
+            if (key === "closure.summary" || !buf.trim()) continue;
+            appendStep({
+              id: `${turnId}-llm-archive-${++archiveSeq}`,
+              kind: "llm_output",
+              title: humanLlmLabel(key).replace(/^LLM 正在/, ""),
+              text: buf,
+              formatJson: key === "five-system-model",
+            });
+          }
           setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
           drive = pythonDrive
             ? {

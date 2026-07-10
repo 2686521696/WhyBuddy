@@ -531,6 +531,23 @@ function ImAssistantMessage() {
               </span>
             )}
           </div>
+          {/* 思考流留档：推演中每步 LLM 的完整输出，完成后保留成可折叠
+              记录（Claude 式）——想法不消失，要看随时点开 */}
+          {turn.steps.some(s => s.kind === "llm_output") && (
+            <div className="space-y-1.5" data-testid="sliderule-llm-archives">
+              {turn.steps.map(s =>
+                s.kind === "llm_output" ? (
+                  <LlmLiveOutput
+                    key={s.id}
+                    title={s.title}
+                    text={s.text}
+                    formatJson={s.formatJson}
+                    done
+                  />
+                ) : null
+              )}
+            </div>
+          )}
           <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">
             {answer}
           </div>
