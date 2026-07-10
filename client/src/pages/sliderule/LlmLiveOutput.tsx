@@ -1,15 +1,15 @@
 /**
- * LlmLiveOutput — Claude 式 LLM 实时输出（2026-07-10 按用户裁决重做）。
+ * LlmLiveOutput — Claude 式 LLM 实时输出（2026-07-10 两轮用户裁决）。
  *
- * Claude 的关键做法（本组件对齐）：
- * 1. 尾窗而非无限生长——流式正文装在固定高度的窗口里（终端式），新内容
- *    在窗口内滚动，不再把整个对话列越顶越长；
- * 2. 窗口内贴底跟随 + 用户接管——用户在底部才跟随最新输出；往上滚动即
- *    停止跟随可自由回看已输出内容，右下角出现「↓ 最新」胶囊一键回底；
- * 3. 代码进代码块——五系统 JSON 流走代码块外观（圆角边框 + 浅底 + mono
- *    + 轻量语法高亮），不是灰色纯文本墙。
+ * Claude 的真实分工（第二轮用户观察修正）：
+ * - 自然语言的思考/叙事流 **自由流动**——不装窗、不折叠，像正文一样
+ *   随对话生长（外层聊天列贴底跟随负责滚动）；
+ * - 被折叠成一行摘要的是 **工具活动/代码**——五系统 JSON 起草属于这类：
+ *   默认收成摘要行（脉冲点 + 标题 + 字符数），点开是代码块面板
+ *   （圆角浅底 + mono + 轻量语法高亮 + 260px 尾窗）。
  *
- * 头部一行小字（脉冲点 + 来源标题 + 字符数 + 折叠箭头）点击折叠/展开。
+ * 尾窗内贴底跟随 + 用户接管：在底部才跟随最新输出；上滚即停、可自由
+ * 回看，右下角「↓ 最新」胶囊一键回底（JSON 面板专属；纯文字流不需要）。
  */
 
 import React from "react";
@@ -67,7 +67,8 @@ export function LlmLiveOutput({
   formatJson?: boolean;
   className?: string;
 }) {
-  const [collapsed, setCollapsed] = React.useState(false);
+  // Claude 分工：代码/JSON 默认收成摘要行（点开看面板）；纯文字流默认展开
+  const [collapsed, setCollapsed] = React.useState(formatJson);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   // 贴底跟随：用户在底部才跟随；往上滚即接管（followRef 存意图，state 控胶囊）
   const followRef = React.useRef(true);
@@ -125,14 +126,20 @@ export function LlmLiveOutput({
           className={`h-3.5 w-3.5 shrink-0 transition-transform ${collapsed ? "-rotate-90" : ""}`}
         />
       </button>
-      {!collapsed && (
-        <div
-          className={`relative mt-1.5 ${
-            formatJson
-              ? "overflow-hidden rounded-lg border border-[#e5e7eb] bg-[#fafbfc]"
-              : ""
-          }`}
+      {/* 纯文字思考流：自由流动，不装窗不折叠（Claude 的正文行为；
+          滚动与贴底跟随由外层聊天列统一负责） */}
+      {!collapsed && !formatJson && (
+        <pre
+          data-testid="sliderule-llm-draft-body"
+          className="mt-1.5 whitespace-pre-wrap break-all pl-3.5 font-sans text-[12.5px] leading-6 text-stone-500"
         >
+          {body}
+          <span className="animate-pulse text-[#1677ff]">▊</span>
+        </pre>
+      )}
+      {/* 代码/JSON 面板：代码块外观 + 260px 尾窗（Claude 的工具活动行为） */}
+      {!collapsed && formatJson && (
+        <div className="relative mt-1.5 overflow-hidden rounded-lg border border-[#e5e7eb] bg-[#fafbfc]">
           <div
             ref={scrollRef}
             onScroll={onScroll}
@@ -141,22 +148,14 @@ export function LlmLiveOutput({
           >
             <pre
               data-testid="sliderule-llm-draft-body"
-              className={`whitespace-pre-wrap break-all leading-6 ${
-                formatJson
-                  ? "px-3 py-2 font-mono text-[11.5px] text-[#1f2329]"
-                  : "pl-3.5 font-sans text-[12.5px] text-stone-500"
-              }`}
+              className="whitespace-pre-wrap break-all px-3 py-2 font-mono text-[11.5px] leading-6 text-[#1f2329]"
             >
               {body}
               <span className="animate-pulse text-[#1677ff]">▊</span>
             </pre>
           </div>
           {/* 顶部渐隐：提示窗口上方还有已输出内容（可向上滚动回看） */}
-          <div
-            className={`pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b ${
-              formatJson ? "from-[#fafbfc]" : "from-[#f7f8fa]"
-            } to-transparent`}
-          />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-[#fafbfc] to-transparent" />
           {/* 用户滚上去回看时：一键回到最新 */}
           {!following && (
             <button
