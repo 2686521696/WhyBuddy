@@ -36,14 +36,31 @@ Work 模式 = 三层，实用价值全部在前两层：
 
 ## 二、分期路线
 
-- **一期 · 2D 巡演最小闭环**：剧本层纯函数 + 执行层事件流 + 泳道令牌走位
-  （一条 workflow 链，六角色，真 instance 推进）+ 角色卡（点击看该角色的
-  权限/页面/职责——RBAC 的演员视角）。
-- **二期 · 测试价值收口**：权限拒绝可视化、不变式验收单逐条点亮、
-  巡演报告进交付物附录；多链路顺演。
+> **2026-07-10 用户改裁：一期直接上 3D**（"2D 版本的后续还要再修改"）。
+> 已落地（`client/src/pages/sliderule/work-mode/`）：呈现层走"自研最小
+> three.js 舞台 + 已采购角色"而非先整包移植 Agentshire——剧本/执行层
+> 无论如何要自建，事件词汇表 GameEvent 兼容，Agentshire 氛围器官
+> 二期可直接换皮加料。实测：三角色沿 workflow 三节点跑完（落库 1 行、
+> 3 步审批到终态、4 处 RBAC 拦截），浏览器零报错。
+
+- **一期 · 3D 巡演最小闭环（已落地）**：
+  - `tour-script.ts` 剧本层：model → 演员（角色→CC0 GLB）/工位（页面）/
+    幕次（集结→建单→审批链→权限审计→收幕），纯函数；
+  - `tour-driver.ts` 执行层：每步真调 live-runtime（addRow /
+    startInstance / advanceInstance byRole / RBAC 同源判定），
+    emit GameEvent 兼容事件（npc_spawn/move_to/anim/emoji/work_done/fx），
+    产出巡演报告；取消不回滚已落数据（诚实）；
+  - `TourStage3D.tsx` 演出层：three.js 懒加载分包（gzip ~24KB +
+    GLB 按需）、GLTFLoader+MeshoptDecoder、AnimationMixer 剪辑状态机
+    （Idle/Walk/PickUp/Interact/Victory/Defeat）、工位桌台 + CanvasTexture
+    名牌、reduce-motion 瞬移降级；模型加载失败给诚实立方体替身；
+  - CSP 增补 `blob:`（connect-src/img-src）——GLTFLoader 解 GLB 内嵌
+    贴图必需；blob 仅本页脚本可创建，zero-trust 姿态不变。
+- **二期 · 测试价值收口**：不变式验收单逐条点亮、巡演报告进交付物附录、
+  多链路顺演（chains）、角色卡（点击 NPC 看权限/页面/职责）；
+  可选：Agentshire 氛围器官换皮（昼夜/天气/编排细化）。
 - **三期 · LLM 入魂档（默认关）**：角色用 LLM 生成拟真业务数据与台词，
   走既有真通道 / BYOK，fail-closed。
-- **3D 阶段（独立裁决，见下）**：0 期解剖 → 器官移植 → 氛围系统。
 
 ## 三、Agentshire 借用方案（0 期解剖已完成：B 终裁成立，见本节末）
 

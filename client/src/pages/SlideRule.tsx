@@ -68,6 +68,8 @@ import {
 } from "./sliderule/derive-cross-runtime-summary";
 import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
 import {
+  mergeFiveSystemModels,
+  parseFiveSystemModelFromContents,
   parseFiveSystemModelFromPerSkillEvidence,
   summarizeClosureForChat,
 } from "./sliderule/system-screens/five-system-model";
@@ -77,6 +79,7 @@ import {
   type SlideRuleSurfaceMode,
 } from "./sliderule/SlideRuleTopHud";
 import { WorkModeSurface } from "./sliderule/WorkModeSurface";
+import { deriveAppRuntimeSchema } from "./sliderule/live-runtime/app-runtime-schema";
 import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
 import {
   ClarificationCard,
@@ -1007,6 +1010,24 @@ function SlideRuleUnified({
       localStorage.setItem("sliderule:surface-mode", mode);
     } catch {}
   }, []);
+
+  // Work 模式的五系统模型：与右舞台同源解析（闭环证据优先）——
+  // 巡演的剧本/工位/权限判定与运行应用共享同一份真相
+  const workModel = useMemo(
+    () =>
+      mergeFiveSystemModels(
+        parseFiveSystemModelFromContents(skillContents ?? {}),
+        parseFiveSystemModelFromPerSkillEvidence(
+          publishClosure?.perSkillEvidence
+        )
+      ),
+    [skillContents, publishClosure?.perSkillEvidence]
+  );
+  const workSchema = useMemo(
+    () =>
+      deriveAppRuntimeSchema(workModel, goal ? goal.slice(0, 24) : "推演应用"),
+    [workModel, goal]
+  );
   useEffect(() => {
     setClarifyHidden(false);
   }, [clarifyKey]);
@@ -1061,10 +1082,15 @@ function SlideRuleUnified({
       </div>
 
       {/* Studio body — left conversation column + right skill rail；
-          Work 模式：角色巡演占位面接管整个内容区（引擎在建，诚实占位） */}
+          Work 模式：3D 角色巡演面接管整个内容区（真跑运行时） */}
       {surfaceMode === "work" ? (
         <div className="relative z-0 min-h-0 flex-1">
-          <WorkModeSurface />
+          <WorkModeSurface
+            model={workModel}
+            schema={workSchema}
+            sessionId={sessionId}
+            appTitle={goal ? goal.slice(0, 24) : undefined}
+          />
         </div>
       ) : (
         <div className="relative z-0 min-h-0 flex-1 pb-[104px]">

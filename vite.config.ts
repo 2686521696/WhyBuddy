@@ -57,7 +57,7 @@ function writeToLogFile(source: LogSource, entries: unknown[]) {
   const logPath = path.join(LOG_DIR, `${source}.log`);
 
   // Format entries with timestamps
-  const lines = entries.map((entry) => {
+  const lines = entries.map(entry => {
     const ts = new Date().toISOString();
     return `[${ts}] ${JSON.stringify(entry)}`;
   });
@@ -131,7 +131,7 @@ function vitePluginManusDebugCollector(): Plugin {
         }
 
         let body = "";
-        req.on("data", (chunk) => {
+        req.on("data", chunk => {
           body += chunk.toString();
         });
 
@@ -167,7 +167,10 @@ export default defineConfig(() => {
   // Done via transform (instead of hardcoded in index.html) to prevent Vite html-proxy / transformIndexHtml
   // module resolution errors during `vite build` for GitHub Pages static export.
   // Also applies in dev for the demo.
-  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.openai.com https://api.deepseek.com https://openrouter.ai https://api.anthropic.com https://api.groq.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https:;" />`;
+  // blob: 允许同文档内 createObjectURL（three.js GLTFLoader 解 GLB 内嵌贴图
+  // 走 blob URL——Work 模式 3D 角色需要）；blob 只能由本页脚本创建，
+  // 不放开任何外联，zero-trust 姿态不变。
+  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' blob: https://api.openai.com https://api.deepseek.com https://openrouter.ai https://api.anthropic.com https://api.groq.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:;" />`;
   const vitePluginCspForByok = {
     name: "csp-for-byok-pages",
     transformIndexHtml(html) {

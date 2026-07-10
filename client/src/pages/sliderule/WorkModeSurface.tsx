@@ -1,71 +1,270 @@
 /**
- * WorkModeSurface — Work 模式（角色自动巡演）的诚实占位面。
+ * WorkModeSurface — Work 模式（角色自动巡演）一期主面。
  *
- * 顶栏 Work/Code 切换上线（用户裁决，TRAE 对标）时巡演引擎尚未动工——
- * 本面只陈述已成立的事实：路线已裁决（docs/WORK_MODE_PLAN.md）、素材已
- * 采购进仓、Agentshire 解剖已通过；不演任何假巡演。一期（2D 泳道）落地后
- * 由真实巡演面替换。
+ * 有五系统模型时：3D 巡演舞台（three.js 懒加载分包）+ 事件流侧栏 +
+ * 巡演报告。角色 NPC 按剧本真跑运行时（数据真落库、流程真推进、
+ * RBAC 真拦截）——诚实原则：每个演出事件绑一次真实运行时动作，
+ * 巡演结束切 Code 模式能在应用/数据表看到留痕。
+ * 无模型时：诚实空态（先去 Code 模式推演出应用）。
  */
 
 import React from "react";
-import { Users, Route, Boxes } from "lucide-react";
+import { CircleAlert, CircleCheck, Info, Play, Square } from "lucide-react";
+import type { FiveSystemModel } from "./system-screens/five-system-model";
+import type { AppRuntimeSchema } from "./live-runtime/app-runtime-schema";
+import { buildTourScript, type TourScript } from "./work-mode/tour-script";
+import {
+  runTour,
+  type TourEvent,
+  type TourReport,
+} from "./work-mode/tour-driver";
+import type { TourStageHandle } from "./work-mode/TourStage3D";
+import { isMotionReduced } from "./user-prefs";
 
-const READY_ITEMS = [
-  {
-    icon: <Route className="h-4 w-4 text-[#1677ff]" />,
-    title: "路线已裁决",
-    desc: "剧本层（五系统 → 分幕）→ 执行层（真跑流程实例/权限拦截）→ 呈现层（2D 泳道先行，3D 可换皮）",
-  },
-  {
-    icon: <Users className="h-4 w-4 text-[#1677ff]" />,
-    title: "角色演员已就位",
-    desc: "10 个 CC0 人形角色（西装/便装/工装/老绅士）+ 43 剪辑动画库，已压缩进仓（5.3MB）",
-  },
-  {
-    icon: <Boxes className="h-4 w-4 text-[#1677ff]" />,
-    title: "3D 引擎解剖已通过",
-    desc: "Agentshire（MIT）事件接口实测可脱离宿主独立驱动，办公场景资产增量约 3~4MB",
-  },
-];
+// three.js 舞台懒加载分包（three + GLTFLoader 不进主包）
+const TourStage3D = React.lazy(() => import("./work-mode/TourStage3D"));
 
-export function WorkModeSurface() {
-  return (
-    <div
-      className="flex h-full flex-col items-center justify-center gap-6 px-6"
-      data-testid="sliderule-work-mode"
-    >
-      <div className="text-center">
+interface FeedItem {
+  id: number;
+  text: string;
+  tone: "info" | "ok" | "blocked";
+}
+
+export function WorkModeSurface({
+  model,
+  schema,
+  sessionId,
+  appTitle,
+}: {
+  model: FiveSystemModel | null;
+  schema: AppRuntimeSchema | null;
+  sessionId: string;
+  appTitle?: string;
+}) {
+  const script: TourScript | null = React.useMemo(
+    () => buildTourScript(model, schema),
+    [model, schema]
+  );
+
+  const stageRef = React.useRef<TourStageHandle | null>(null);
+  const cancelRef = React.useRef(false);
+  const [running, setRunning] = React.useState(false);
+  const [feed, setFeed] = React.useState<FeedItem[]>([]);
+  const [progress, setProgress] = React.useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+  const [report, setReport] = React.useState<TourReport | null>(null);
+  const feedSeq = React.useRef(0);
+  const feedEndRef = React.useRef<HTMLDivElement | null>(null);
+
+  const onEvent = React.useCallback((event: TourEvent) => {
+    stageRef.current?.dispatch(event);
+    if (event.type === "narration") {
+      setFeed(prev => [
+        ...prev,
+        { id: ++feedSeq.current, text: event.text, tone: event.tone },
+      ]);
+    } else if (event.type === "progress") {
+      setProgress({ current: event.current, total: event.total });
+    }
+  }, []);
+
+  React.useEffect(() => {
+    feedEndRef.current?.scrollIntoView({ block: "end" });
+  }, [feed.length]);
+
+  const startTour = React.useCallback(async () => {
+    if (!script || !model || !schema || running) return;
+    cancelRef.current = false;
+    setFeed([]);
+    setReport(null);
+    setRunning(true);
+    try {
+      const result = await runTour(script, {
+        model,
+        schema,
+        sessionId,
+        onEvent,
+        // 减少动效偏好下巡演节奏更快（不空等演出）
+        pause: () =>
+          new Promise(r => setTimeout(r, isMotionReduced() ? 220 : 950)),
+        isCancelled: () => cancelRef.current,
+      });
+      setReport(result);
+    } finally {
+      setRunning(false);
+    }
+  }, [script, model, schema, sessionId, running, onEvent]);
+
+  // ── 无模型：诚实空态 ─────────────────────────────────────────
+  if (!script) {
+    return (
+      <div
+        className="flex h-full flex-col items-center justify-center gap-4 px-6"
+        data-testid="sliderule-work-mode"
+      >
         <div className="text-[17px] font-semibold text-stone-700">
           Work 模式 · 角色自动巡演
         </div>
-        <p className="mx-auto mt-2 max-w-[520px] text-[13px] leading-6 text-stone-500">
-          将来在这里：你推演出的应用会由各业务角色自动跑通完整流程——
-          数据真实落库、权限真实拦截、流程真实推进，最后产出一份角色巡演
-          报告。相当于把「这套系统各角色用起来顺不顺」可视化地测一遍。
+        <p className="max-w-[480px] text-center text-[13px] leading-6 text-stone-500">
+          这里会让各业务角色自动跑通你推演出的应用：数据真实落库、权限真实
+          拦截、流程真实推进，最后产出角色巡演报告。
+        </p>
+        <p
+          className="text-xs text-stone-400"
+          data-testid="sliderule-work-empty"
+        >
+          本话题还没有五系统模型——先切到 Code 模式发一句业务意图，推演出
+          应用后回来开演。
         </p>
       </div>
-      <div className="w-full max-w-[560px] space-y-2">
-        {READY_ITEMS.map(item => (
-          <div
-            key={item.title}
-            className="flex items-start gap-3 rounded-lg border border-[#e5e7eb] bg-white/80 px-4 py-3"
-          >
-            <span className="mt-0.5 shrink-0">{item.icon}</span>
-            <div className="min-w-0">
-              <div className="text-[13px] font-medium text-stone-700">
-                {item.title}
-              </div>
-              <div className="mt-0.5 text-xs leading-5 text-stone-400">
-                {item.desc}
-              </div>
-            </div>
-          </div>
-        ))}
+    );
+  }
+
+  // ── 有模型：巡演面 ──────────────────────────────────────────
+  return (
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-testid="sliderule-work-mode"
+    >
+      <div className="flex shrink-0 items-center gap-2 px-4 py-2">
+        <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
+          {appTitle || "推演应用"} · 角色巡演
+        </span>
+        <span className="text-[11px] text-stone-400">
+          {script.cast.length} 角色 · {script.stations.length} 工位 ·{" "}
+          {script.steps.length} 步
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {progress && running && (
+            <span className="font-mono text-[11px] text-stone-400">
+              {progress.current}/{progress.total}
+            </span>
+          )}
+          {running ? (
+            <button
+              type="button"
+              data-testid="sliderule-tour-stop"
+              onClick={() => {
+                cancelRef.current = true;
+              }}
+              className="flex h-8 items-center gap-1.5 rounded-full border border-[#e5e7eb] bg-white px-3.5 text-[12px] font-semibold text-stone-600 transition hover:bg-[#eef0f4]"
+            >
+              <Square className="h-3.5 w-3.5" />
+              停止
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-testid="sliderule-tour-start"
+              onClick={startTour}
+              className="flex h-8 items-center gap-1.5 rounded-full bg-[#1677ff] px-4 text-[12px] font-semibold text-white shadow-sm transition hover:bg-[#0958d9]"
+            >
+              <Play className="h-3.5 w-3.5" />
+              开始巡演
+            </button>
+          )}
+        </div>
       </div>
-      <p className="text-xs text-stone-400">
-        巡演引擎建设中——先到 Code 模式推演出你的应用，Work 模式一期上线后
-        即可让角色替你试跑它。
-      </p>
+
+      <div className="flex min-h-0 flex-1 gap-3 px-4 pb-4">
+        {/* 3D 舞台（SSR/测试环境不挂 WebGL） */}
+        <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-[#e5e7eb] bg-white">
+          {typeof window !== "undefined" ? (
+            <React.Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center text-xs text-stone-400">
+                  舞台装配中…
+                </div>
+              }
+            >
+              <TourStage3D
+                key={`${sessionId}-${script.cast.length}-${script.stations.length}`}
+                cast={script.cast}
+                stations={script.stations}
+                onReady={handle => {
+                  stageRef.current = handle;
+                }}
+              />
+            </React.Suspense>
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-stone-400">
+              3D 舞台需要浏览器环境
+            </div>
+          )}
+        </div>
+
+        {/* 事件流 + 报告 */}
+        <div className="flex w-[300px] shrink-0 flex-col gap-2">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-[#e5e7eb] bg-white/80 p-3">
+            {feed.length === 0 ? (
+              <p className="text-xs leading-5 text-stone-400">
+                点「开始巡演」：角色将按 workflow 链路真实跑一遍——录入数据、
+                发起并推进流程、演示权限拦截。全程真调运行时，留痕可在 Code
+                模式的应用里查验。
+              </p>
+            ) : (
+              <div className="space-y-1.5" data-testid="sliderule-tour-feed">
+                {feed.map(item => (
+                  <div
+                    key={item.id}
+                    className="flex items-start gap-1.5 text-xs leading-5"
+                  >
+                    {item.tone === "ok" ? (
+                      <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    ) : item.tone === "blocked" ? (
+                      <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+                    ) : (
+                      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-stone-300" />
+                    )}
+                    <span
+                      className={
+                        item.tone === "blocked"
+                          ? "text-rose-600"
+                          : "text-stone-600"
+                      }
+                    >
+                      {item.text}
+                    </span>
+                  </div>
+                ))}
+                <div ref={feedEndRef} />
+              </div>
+            )}
+          </div>
+          {report && (
+            <div
+              className="shrink-0 rounded-lg border border-[#e5e7eb] bg-white/80 p-3"
+              data-testid="sliderule-tour-report"
+            >
+              <div className="text-[12px] font-semibold text-stone-700">
+                巡演报告
+              </div>
+              <ul className="mt-1.5 space-y-1 text-xs leading-5 text-stone-500">
+                <li>
+                  真实落库 {report.rowsCreated} 行 · 流程实例{" "}
+                  {report.instancesStarted} 个
+                </li>
+                <li>
+                  审批通过 {report.approvals} 步 ·{" "}
+                  {report.instanceCompleted ? "流程走到终态" : "流程未到终态"}
+                </li>
+                <li className={report.denials.length ? "text-rose-600" : ""}>
+                  RBAC 拦截 {report.denials.length} 处
+                  {report.denials.length > 0 &&
+                    `（${[...new Set(report.denials.map(d => d.roleId))].join("、")}）`}
+                </li>
+                {report.errors.map((e, i) => (
+                  <li key={i} className="text-amber-700">
+                    {e}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
