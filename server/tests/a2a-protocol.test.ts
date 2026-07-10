@@ -56,7 +56,7 @@ const arbitraryA2AEnvelope: fc.Arbitrary<A2AEnvelope> = fc.record({
   method: fc.constantFrom(
     "a2a.invoke" as const,
     "a2a.stream" as const,
-    "a2a.cancel" as const,
+    "a2a.cancel" as const
   ),
   id: fc.uuid(),
   params: arbitraryA2AInvokeParams,
@@ -76,7 +76,7 @@ const arbitraryA2AResult: fc.Arbitrary<A2AResult> = fc.record({
   artifacts: fc.array(arbitraryA2AArtifact, { maxLength: 3 }),
   metadata: fc.dictionary(
     fc.string({ minLength: 1, maxLength: 10 }),
-    fc.string({ maxLength: 50 }),
+    fc.string({ maxLength: 50 })
   ),
 });
 
@@ -107,13 +107,13 @@ const arbitraryA2ASession: fc.Arbitrary<A2ASession> = fc.record({
     "running" as const,
     "completed" as const,
     "failed" as const,
-    "cancelled" as const,
+    "cancelled" as const
   ),
   frameworkType: fc.constantFrom(
     "crewai" as const,
     "langgraph" as const,
     "claude" as const,
-    "custom" as const,
+    "custom" as const
   ),
   startedAt: fc.nat(),
   completedAt: fc.option(fc.nat(), { nil: undefined }),
@@ -152,9 +152,13 @@ const arbitraryExternalAgentNode: fc.Arbitrary<ExternalAgentNode> = fc.record({
   title: fc.string({ minLength: 1, maxLength: 30 }),
   role: fc.constantFrom("ceo" as const, "manager" as const, "worker" as const),
   responsibility: fc.string({ minLength: 1, maxLength: 100 }),
-  responsibilities: fc.array(fc.string({ minLength: 1, maxLength: 50 }), { maxLength: 3 }),
+  responsibilities: fc.array(fc.string({ minLength: 1, maxLength: 50 }), {
+    maxLength: 3,
+  }),
   goals: fc.array(fc.string({ minLength: 1, maxLength: 50 }), { maxLength: 3 }),
-  summaryFocus: fc.array(fc.string({ minLength: 1, maxLength: 30 }), { maxLength: 3 }),
+  summaryFocus: fc.array(fc.string({ minLength: 1, maxLength: 30 }), {
+    maxLength: 3,
+  }),
   skills: fc.array(arbitraryWorkflowSkillBinding, { maxLength: 2 }),
   mcp: fc.array(arbitraryWorkflowMcpBinding, { maxLength: 2 }),
   model: fc.record({
@@ -164,38 +168,56 @@ const arbitraryExternalAgentNode: fc.Arbitrary<ExternalAgentNode> = fc.record({
   }),
   execution: fc.record({
     mode: fc.constantFrom(
-      "orchestrate" as const, "plan" as const, "execute" as const,
-      "review" as const, "audit" as const, "summary" as const,
+      "orchestrate" as const,
+      "plan" as const,
+      "execute" as const,
+      "review" as const,
+      "audit" as const,
+      "summary" as const
     ),
-    strategy: fc.constantFrom("parallel" as const, "sequential" as const, "batched" as const),
+    strategy: fc.constantFrom(
+      "parallel" as const,
+      "sequential" as const,
+      "batched" as const
+    ),
     maxConcurrency: fc.nat({ max: 10 }),
   }),
   // GuestAgentNode fields
   invitedBy: fc.uuid(),
   source: fc.constantFrom(
-    "manual" as const, "feishu" as const, "natural_language" as const, "a2a-protocol" as const,
+    "manual" as const,
+    "feishu" as const,
+    "natural_language" as const,
+    "a2a-protocol" as const
   ),
   expiresAt: fc.nat(),
   guestConfig: fc.record({
     model: fc.string({ minLength: 1, maxLength: 30 }),
     baseUrl: fc.string({ minLength: 1, maxLength: 50 }),
-    apiKey: fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+    apiKey: fc.option(fc.string({ minLength: 1, maxLength: 50 }), {
+      nil: undefined,
+    }),
     skills: fc.array(
       fc.record({
         name: fc.string({ minLength: 1, maxLength: 20 }),
         description: fc.string({ maxLength: 50 }),
       }),
-      { maxLength: 2 },
+      { maxLength: 2 }
     ),
     mcp: fc.array(arbitraryWorkflowMcpBinding, { maxLength: 2 }),
     avatarHint: fc.string({ minLength: 1, maxLength: 20 }),
   }),
   // ExternalAgentNode fields
   frameworkType: fc.constantFrom(
-    "crewai" as const, "langgraph" as const, "claude" as const, "custom" as const,
+    "crewai" as const,
+    "langgraph" as const,
+    "claude" as const,
+    "custom" as const
   ),
   a2aEndpoint: fc.string({ minLength: 1, maxLength: 100 }),
-  a2aAuth: fc.option(fc.string({ minLength: 1, maxLength: 100 }), { nil: undefined }),
+  a2aAuth: fc.option(fc.string({ minLength: 1, maxLength: 100 }), {
+    nil: undefined,
+  }),
 });
 
 // ─── Property Tests ──────────────────────────────────────────────────
@@ -205,12 +227,12 @@ describe("A2A Protocol Property Tests", () => {
   // **Validates: Requirements 1.6**
   it("Property 1: serializeEnvelope then deserializeEnvelope produces deep-equal result", () => {
     fc.assert(
-      fc.property(arbitraryA2AEnvelope, (envelope) => {
+      fc.property(arbitraryA2AEnvelope, envelope => {
         const serialized = serializeEnvelope(envelope);
         const deserialized = deserializeEnvelope(serialized);
         expect(deserialized).toEqual(envelope);
       }),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -218,12 +240,12 @@ describe("A2A Protocol Property Tests", () => {
   // **Validates: Requirements 9.5**
   it("Property 2: serializeSession then deserializeSession produces deep-equal result", () => {
     fc.assert(
-      fc.property(arbitraryA2ASession, (session) => {
+      fc.property(arbitraryA2ASession, session => {
         const serialized = serializeSession(session);
         const deserialized = deserializeSession(serialized);
         expect(deserialized).toEqual(session);
       }),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -231,14 +253,14 @@ describe("A2A Protocol Property Tests", () => {
   // **Validates: Requirements 1.2, 9.1**
   it("Property 3: validateContext returns true for strings <= 2000 chars and false for strings > 2000 chars", () => {
     fc.assert(
-      fc.property(fc.string(), (s) => {
+      fc.property(fc.string(), s => {
         if (s.length <= 2000) {
           expect(validateContext(s)).toBe(true);
         } else {
           expect(validateContext(s)).toBe(false);
         }
       }),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -246,7 +268,7 @@ describe("A2A Protocol Property Tests", () => {
   // **Validates: Requirements 6.3**
   it("Property 13: ExternalAgentNode added to WorkflowOrganizationSnapshot survives JSON round-trip", () => {
     fc.assert(
-      fc.property(arbitraryExternalAgentNode, (node) => {
+      fc.property(arbitraryExternalAgentNode, node => {
         const snapshot: WorkflowOrganizationSnapshot = {
           kind: "workflow_organization",
           version: 1,
@@ -263,12 +285,14 @@ describe("A2A Protocol Property Tests", () => {
         };
 
         const serialized = JSON.stringify(snapshot);
-        const deserialized = JSON.parse(serialized) as WorkflowOrganizationSnapshot;
+        const deserialized = JSON.parse(
+          serialized
+        ) as WorkflowOrganizationSnapshot;
 
         expect(deserialized.nodes).toHaveLength(1);
         expect(deserialized.nodes[0]).toEqual(node);
       }),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -309,9 +333,9 @@ describe("A2A Protocol Property Tests", () => {
             expect(body).toHaveProperty("messages");
             expect(Array.isArray(body.messages)).toBe(true);
           }
-        },
+        }
       ),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -321,7 +345,10 @@ describe("A2A Protocol Property Tests", () => {
     const testCases = [
       { adapter: new CrewAIAdapter(), response: { result: "test output" } },
       { adapter: new LangGraphAdapter(), response: { output: "test output" } },
-      { adapter: new ClaudeAdapter(), response: { content: [{ type: "text", text: "test output" }] } },
+      {
+        adapter: new ClaudeAdapter(),
+        response: { content: [{ type: "text", text: "test output" }] },
+      },
     ];
 
     fc.assert(
@@ -332,7 +359,7 @@ describe("A2A Protocol Property Tests", () => {
         expect(Array.isArray(result.artifacts)).toBe(true);
         expect(result.output).toBe("test output");
       }),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -343,14 +370,14 @@ describe("A2A Protocol Property Tests", () => {
 
     fc.assert(
       fc.property(
-        fc.string().filter((s) => !validTypes.includes(s)),
-        (invalidType) => {
+        fc.string().filter(s => !validTypes.includes(s)),
+        invalidType => {
           expect(() => getAdapter(invalidType as never)).toThrowError(
-            /Supported frameworks/,
+            /Supported frameworks/
           );
-        },
+        }
       ),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -387,23 +414,28 @@ describe("A2A Protocol Property Tests", () => {
           const client = new A2AClient({ defaultTimeoutMs: 1000 });
           seedA2ASessionStore([
             // timed-out sessions (startedAt far in the past)
-            ...Array.from({ length: timedOutCount }, () => makeSession(Date.now() - 2000)),
+            ...Array.from({ length: timedOutCount }, () =>
+              makeSession(Date.now() - 2000)
+            ),
             // active sessions (startedAt now)
-            ...Array.from({ length: activeCount }, () => makeSession(Date.now())),
+            ...Array.from({ length: activeCount }, () =>
+              makeSession(Date.now())
+            ),
           ]);
 
           const terminated = client.terminateTimedOutSessions();
           expect(terminated).toHaveLength(timedOutCount);
-          terminated.forEach((s) => expect(s.status).toBe("failed"));
+          terminated.forEach(s => expect(s.status).toBe("failed"));
 
           // Active sessions should still be running
           const active = client.getActiveSessions();
           expect(active).toHaveLength(activeCount);
-        },
+        }
       ),
-      { numRuns: 12 },
+      { numRuns: 12 }
     );
-  });
+    // 12 轮 × 每轮 Python 子进程 terminate+list ≈ 4-5s，贴默认 5s 线
+  }, 30000);
 
   // Feature: a2a-protocol, Property 5: 并发会话数量限制
   // **Validates: Requirements 2.6**
@@ -411,7 +443,7 @@ describe("A2A Protocol Property Tests", () => {
   // numRuns 收敛到 8（输入域仅 1..5，子进程调用较慢）。
   it("Property 5: A2AClient rejects new invocations when active sessions reach maxConcurrentSessions", async () => {
     await fc.assert(
-      fc.asyncProperty(fc.integer({ min: 1, max: 5 }), async (maxSessions) => {
+      fc.asyncProperty(fc.integer({ min: 1, max: 5 }), async maxSessions => {
         const client = new A2AClient({ maxConcurrentSessions: maxSessions });
 
         // Fill up to limit with running sessions
@@ -447,12 +479,12 @@ describe("A2A Protocol Property Tests", () => {
             streamMode: false,
           },
           "crewai",
-          "http://localhost:9999",
+          "http://localhost:9999"
         );
         expect(result.error).toBeDefined();
         expect(result.error!.message).toContain("Concurrent session limit");
       }),
-      { numRuns: 8 },
+      { numRuns: 8 }
     );
   });
 
@@ -466,9 +498,9 @@ describe("A2A Protocol Property Tests", () => {
         (params, authToken) => {
           const envelope = createEnvelope("a2a.invoke", params, authToken);
           expect(envelope.auth).toBe(authToken);
-        },
+        }
       ),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -477,12 +509,21 @@ describe("A2A Protocol Property Tests", () => {
   // adapter/fetch/response/permission/no-key/missing/provider-failure semantics.
   // Concurrent limit and stream retained in Node (explicit compat boundary).
   it("A2AClient external invoke missing-endpoint delegates to python provider (exact contract error)", async () => {
-    const client = new A2AClient({ maxConcurrentSessions: 100, defaultTimeoutMs: 1000 });
+    const client = new A2AClient({
+      maxConcurrentSessions: 100,
+      defaultTimeoutMs: 1000,
+    });
     const r = await client.invoke(
-      { targetAgent: "ext", task: "do", context: "c", capabilities: [], streamMode: false },
+      {
+        targetAgent: "ext",
+        task: "do",
+        context: "c",
+        capabilities: [],
+        streamMode: false,
+      },
       "custom",
       "", // missing -> py provider
-      "k",
+      "k"
     );
     expect(r.error).toBeDefined();
     expect(r.error!.message).toBe("Missing external agent endpoint");
@@ -490,25 +531,46 @@ describe("A2A Protocol Property Tests", () => {
   });
 
   it("A2AClient external invoke provider-failure delegates to python (visible error from contract)", async () => {
-    const client = new A2AClient({ maxConcurrentSessions: 100, defaultTimeoutMs: 1000 });
+    const client = new A2AClient({
+      maxConcurrentSessions: 100,
+      defaultTimeoutMs: 1000,
+    });
     const r = await client.invoke(
-      { targetAgent: "ext", task: "do", context: "c", capabilities: [], streamMode: false },
+      {
+        targetAgent: "ext",
+        task: "do",
+        context: "c",
+        capabilities: [],
+        streamMode: false,
+      },
       "custom",
       "http://127.0.0.1:1/bad", // will cause py urllib failure after endpoint check
-      "k",
+      "k"
     );
     expect(r.error).toBeDefined();
     const msg = r.error!.message || "";
-    expect(msg.includes("External provider failure") || msg.includes("python-external-invoke")).toBe(true);
+    expect(
+      msg.includes("External provider failure") ||
+        msg.includes("python-external-invoke")
+    ).toBe(true);
   });
 
   it("A2AClient external invoke no-key degraded delegates to python (permissionMetadata visible)", async () => {
-    const client = new A2AClient({ maxConcurrentSessions: 100, defaultTimeoutMs: 1000 });
+    const client = new A2AClient({
+      maxConcurrentSessions: 100,
+      defaultTimeoutMs: 1000,
+    });
     const r = await client.invoke(
-      { targetAgent: "ext", task: "do", context: "c", capabilities: [], streamMode: false },
+      {
+        targetAgent: "ext",
+        task: "do",
+        context: "c",
+        capabilities: [],
+        streamMode: false,
+      },
       "custom",
       "http://example.invalid/a2a",
-      "", // empty auth -> no-key degraded in py provider
+      "" // empty auth -> no-key degraded in py provider
     );
     // for no-key, py returns result (not error) + degraded
     expect(r.result).toBeDefined();
@@ -523,15 +585,28 @@ describe("A2A Protocol Property Tests", () => {
 
   const mockExecutor = {
     execute: async () => "mock output",
-    executeStream: async function* () { yield "chunk"; },
+    executeStream: async function* () {
+      yield "chunk";
+    },
   };
 
-  function createTestServer(opts?: { apiKeys?: string[]; rateLimitPerMinute?: number; agents?: ExposedAgentInfo[] }) {
+  function createTestServer(opts?: {
+    apiKeys?: string[];
+    rateLimitPerMinute?: number;
+    agents?: ExposedAgentInfo[];
+  }) {
     return new A2AServer({
       apiKeys: opts?.apiKeys ?? ["valid-key"],
       rateLimitPerMinute: opts?.rateLimitPerMinute ?? 60,
       agentExecutor: mockExecutor,
-      exposedAgents: opts?.agents ?? [{ id: "agent-1", name: "Test Agent", capabilities: ["test"], description: "A test agent" }],
+      exposedAgents: opts?.agents ?? [
+        {
+          id: "agent-1",
+          name: "Test Agent",
+          capabilities: ["test"],
+          description: "A test agent",
+        },
+      ],
     });
   }
 
@@ -543,13 +618,13 @@ describe("A2A Protocol Property Tests", () => {
     const server = createTestServer();
     fc.assert(
       fc.property(
-        fc.string().filter((s) => s !== "valid-key"),
-        (invalidKey) => {
+        fc.string().filter(s => s !== "valid-key"),
+        invalidKey => {
           expect(server.validateApiKey(invalidKey)).toBe(false);
           expect(server.validateApiKey("valid-key")).toBe(true);
-        },
+        }
       ),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -561,8 +636,8 @@ describe("A2A Protocol Property Tests", () => {
     const server = createTestServer({ rateLimitPerMinute: 100000 });
     await fc.assert(
       fc.asyncProperty(
-        fc.string({ minLength: 1, maxLength: 50 }).filter((s) => s !== "agent-1"),
-        async (nonExistentId) => {
+        fc.string({ minLength: 1, maxLength: 50 }).filter(s => s !== "agent-1"),
+        async nonExistentId => {
           const envelope = createEnvelope("a2a.invoke", {
             targetAgent: nonExistentId,
             task: "test",
@@ -573,9 +648,9 @@ describe("A2A Protocol Property Tests", () => {
           const result = await server.handleInvoke(envelope, "valid-key");
           expect(result.error).toBeDefined();
           expect(result.error!.code).toBe(A2A_ERROR_CODES.AGENT_NOT_FOUND);
-        },
+        }
       ),
-      { numRuns: 20 },
+      { numRuns: 20 }
     );
   }, 60000);
 
@@ -583,21 +658,21 @@ describe("A2A Protocol Property Tests", () => {
   // **Validates: Requirements 5.4, 5.5**
   it("Property 8: For any rate limit R (1-10), first R calls allowed, R+1th rejected with retryAfterSeconds > 0", () => {
     fc.assert(
-      fc.property(
-        fc.integer({ min: 1, max: 10 }),
-        (rateLimit) => {
-          // agents: [] —— 限流不涉及注册表，跳过构造期的 Python 种子进程
-          const server = createTestServer({ rateLimitPerMinute: rateLimit, agents: [] });
-          for (let i = 0; i < rateLimit; i++) {
-            const result = server.checkRateLimit("test-key");
-            expect(result.allowed).toBe(true);
-          }
-          const exceeded = server.checkRateLimit("test-key");
-          expect(exceeded.allowed).toBe(false);
-          expect(exceeded.retryAfterSeconds).toBeGreaterThan(0);
-        },
-      ),
-      { numRuns: 100 },
+      fc.property(fc.integer({ min: 1, max: 10 }), rateLimit => {
+        // agents: [] —— 限流不涉及注册表，跳过构造期的 Python 种子进程
+        const server = createTestServer({
+          rateLimitPerMinute: rateLimit,
+          agents: [],
+        });
+        for (let i = 0; i < rateLimit; i++) {
+          const result = server.checkRateLimit("test-key");
+          expect(result.allowed).toBe(true);
+        }
+        const exceeded = server.checkRateLimit("test-key");
+        expect(exceeded.allowed).toBe(false);
+        expect(exceeded.retryAfterSeconds).toBeGreaterThan(0);
+      }),
+      { numRuns: 100 }
     );
   });
 
@@ -606,7 +681,12 @@ describe("A2A Protocol Property Tests", () => {
   it("Property 14: A2A message metadata contains required a2a, frameworkType, and sessionId fields", () => {
     fc.assert(
       fc.property(
-        fc.constantFrom("crewai" as const, "langgraph" as const, "claude" as const, "custom" as const),
+        fc.constantFrom(
+          "crewai" as const,
+          "langgraph" as const,
+          "claude" as const,
+          "custom" as const
+        ),
         fc.uuid(),
         (frameworkType, sessionId) => {
           // Simulate the metadata construction logic from sendA2A
@@ -628,9 +708,9 @@ describe("A2A Protocol Property Tests", () => {
           expect(a2aMetadata.frameworkType).toBe(frameworkType);
           expect(a2aMetadata.sessionId).toBe(sessionId);
           expect(a2aMetadata.direction).toBe("outbound");
-        },
+        }
       ),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -640,7 +720,9 @@ describe("A2A Protocol Property Tests", () => {
     const arbitraryExposedAgent = fc.record({
       id: fc.uuid(),
       name: fc.string({ minLength: 1, maxLength: 30 }),
-      capabilities: fc.array(fc.string({ minLength: 1, maxLength: 20 }), { maxLength: 3 }),
+      capabilities: fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+        maxLength: 3,
+      }),
       description: fc.string({ maxLength: 100 }),
     });
 
@@ -649,14 +731,14 @@ describe("A2A Protocol Property Tests", () => {
     fc.assert(
       fc.property(
         fc.array(arbitraryExposedAgent, { minLength: 0, maxLength: 5 }),
-        (agents) => {
+        agents => {
           const server = createTestServer({ agents });
           const listed = server.listExposedAgents();
           expect(listed).toHaveLength(agents.length);
           expect(listed).toEqual(agents);
-        },
+        }
       ),
-      { numRuns: 10 },
+      { numRuns: 10 }
     );
   }, 60000);
 });
