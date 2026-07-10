@@ -43,7 +43,9 @@ function save(list: InstalledSkill[]): void {
 }
 
 /** 安装唯一键：技能包按包 id（一仓多技能各装各的），语义档案按仓库键。 */
-export function installKeyOf(skill: Pick<InstalledSkill, "repo" | "packageId">): string {
+export function installKeyOf(
+  skill: Pick<InstalledSkill, "repo" | "packageId">
+): string {
   return skill.packageId ?? skill.repo;
 }
 
@@ -53,29 +55,71 @@ export function installSkill(
   skill: Omit<InstalledSkill, "installedAt">
 ): InstalledSkill[] {
   const key = installKeyOf(skill);
-  if (list.some((s) => installKeyOf(s) === key)) return list;
+  if (list.some(s => installKeyOf(s) === key)) return list;
   const next = [...list, { ...skill, installedAt: new Date().toISOString() }];
   save(next);
   return next;
 }
 
-export function uninstallSkill(list: InstalledSkill[], key: string): InstalledSkill[] {
-  const next = list.filter((s) => installKeyOf(s) !== key);
+export function uninstallSkill(
+  list: InstalledSkill[],
+  key: string
+): InstalledSkill[] {
+  const next = list.filter(s => installKeyOf(s) !== key);
   save(next);
   return next;
 }
 
 export function isInstalled(list: InstalledSkill[], key: string): boolean {
-  return list.some((s) => installKeyOf(s) === key);
+  return list.some(s => installKeyOf(s) === key);
+}
+
+// --- 注入开关（输入条 + 菜单「从技能库选技能」的就地勾选） -----------------
+// 默认已安装即注入；用户可在菜单里按技能关掉（存"关"名单而非"开"名单，
+// 新装技能天生生效，与"装完即用"语义一致）。
+
+const INJECT_DISABLED_KEY = "sliderule:skill-inject-disabled";
+
+export function loadInjectDisabledKeys(): string[] {
+  try {
+    const raw = localStorage.getItem(INJECT_DISABLED_KEY);
+    const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter(k => typeof k === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 切换某技能是否注入推演，返回新的"关"名单。 */
+export function toggleInjectDisabled(key: string): string[] {
+  const cur = loadInjectDisabledKeys();
+  const next = cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key];
+  try {
+    localStorage.setItem(INJECT_DISABLED_KEY, JSON.stringify(next));
+  } catch {
+    /* 存储不可用 → 本次会话仍按返回值生效 */
+  }
+  return next;
 }
 
 /**
- * 推演注入载荷（技能库六期）：已安装技能瘦身为 {name, description}，
- * 上限 6 条（prompt 预算）——随 /drive-full 请求进服务端，生成契约要求
- * 每项落成一条 aigc.capabilities（字段绑定仍过门禁硬校验）。
+ * 推演注入载荷（技能库六期）：已安装且未被关掉的技能瘦身为
+ * {name, description}，上限 6 条（prompt 预算）——随 /drive-full 请求进
+ * 服务端，生成契约要求每项落成一条 aigc.capabilities（字段绑定仍过门禁
+ * 硬校验）。
  */
-export function installedSkillsDrivePayload(): Array<{ name: string; description: string }> {
+export function installedSkillsDrivePayload(): Array<{
+  name: string;
+  description: string;
+}> {
+  const disabled = new Set(loadInjectDisabledKeys());
   return loadInstalledSkills()
+    .filter(s => !disabled.has(installKeyOf(s)))
     .slice(0, 6)
-    .map((s) => ({ name: s.name.slice(0, 60), description: s.description.slice(0, 160) }));
+    .map(s => ({
+      name: s.name.slice(0, 60),
+      description: s.description.slice(0, 160),
+    }));
 }

@@ -191,7 +191,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="sliderule-actions-menu"');
     expect(html).toContain("添加文件或图片");
     expect(html).toContain("填入示例意图");
-    expect(html).toContain("从技能库选技能");
+    expect(html).toContain("选择注入的技能"); // 就地勾选（不再直接跳走）
     // 深思一轮/持续推演不再出现在产品面（引擎的马拉松能力保留在 Dev 面）
     expect(html).not.toContain("sliderule-mode-menu");
     expect(html).not.toContain("深思一轮");

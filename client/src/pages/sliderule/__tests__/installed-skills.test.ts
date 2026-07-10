@@ -79,3 +79,45 @@ describe("推演注入载荷（技能库六期）", () => {
     expect(Object.keys(payload[0])).toEqual(["name", "description"]);
   });
 });
+
+describe("注入开关（输入条 + 菜单就地勾选）", () => {
+  beforeEach(() => memStore.clear());
+
+  it("默认注入；toggle 关掉后载荷剔除；再 toggle 恢复", async () => {
+    const {
+      installedSkillsDrivePayload,
+      loadInjectDisabledKeys,
+      toggleInjectDisabled,
+    } = await import("../installed-skills");
+
+    let list: ReturnType<typeof loadInstalledSkills> = [];
+    list = installSkill(list, {
+      ...SKILL,
+      repo: "github.com/x/a",
+      name: "技能A",
+    });
+    list = installSkill(list, {
+      ...SKILL,
+      repo: "github.com/x/b",
+      name: "技能B",
+    });
+
+    expect(loadInjectDisabledKeys()).toEqual([]);
+    expect(installedSkillsDrivePayload().map(s => s.name)).toEqual([
+      "技能A",
+      "技能B",
+    ]);
+
+    // 关掉 A → 载荷只剩 B；关名单持久化
+    toggleInjectDisabled("github.com/x/a");
+    expect(loadInjectDisabledKeys()).toEqual(["github.com/x/a"]);
+    expect(installedSkillsDrivePayload().map(s => s.name)).toEqual(["技能B"]);
+
+    // 再 toggle → 恢复注入
+    toggleInjectDisabled("github.com/x/a");
+    expect(installedSkillsDrivePayload().map(s => s.name)).toEqual([
+      "技能A",
+      "技能B",
+    ]);
+  });
+});
