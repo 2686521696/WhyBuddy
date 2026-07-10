@@ -826,6 +826,83 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     }
 
 
+@router.post("/prompt-refine")
+def prompt_refine(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+    """输入条「优化提示词」：把一句话应用意图改写成信息更全的推演提示词。
+
+    payload: {text}
+    与 /aigc-tryrun 同一诚实契约：HTTP 恒 200，成败在 body：
+    {ok, text?|code+detail}；无 LLM 通道时不伪造输出。
+    改写只补全维度（实体/流程/角色/页面/AI 能力），必须忠实原意——
+    不发明用户没暗示的行业或功能。
+    """
+    import time as _time
+
+    from services.llm_error_text import humanize_llm_error
+    from services.v5_capability_executor import _llm_generate_enabled
+    from sliderule_llm.client import call_llm_with_retry
+
+    _auth(x_internal_key)
+
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "text required")
+
+    if not _llm_generate_enabled():
+        return {
+            "ok": False,
+            "code": "LLM_GENERATE_DISABLED",
+            "detail": "SLIDERULE_LLM_GENERATE_ENABLED 未开启（或运行时无 LLM key），"
+            "提示词优化不伪造输出",
+        }
+
+    system = (
+        "你是产品推演引擎 SlideRule 的提示词优化器。用户会给一句应用意图，"
+        "把它改写成一段信息更全的推演提示词：补上应用要服务谁、核心业务对象"
+        "（实体）、主业务流程与审批环节、涉及的角色与权限差异、关键页面形态"
+        "（列表/看板/日历/仪表盘）、哪些环节需要 AI 能力。"
+        "必须忠实用户原意，不发明用户没有暗示的行业或功能；"
+        "用简体中文输出一段话（80~150 字），不分点、不解释、不加引号，"
+        "直接输出改写后的提示词本身。"
+    )
+
+    timeout_ms = int(os.getenv(AIGC_TRYRUN_TIMEOUT_MS_ENV, str(DEFAULT_AIGC_TRYRUN_TIMEOUT_MS)))
+    started = _time.monotonic()
+    try:
+        result = call_llm_with_retry(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": text},
+            ],
+            max_attempts=3,
+            backoff_ms=1500,
+            temperature=0.5,
+            max_tokens=400,
+            timeout_ms=timeout_ms,
+        )
+    except LlmError as exc:
+        return {
+            "ok": False,
+            "code": "LLM_GENERATE_FAILED",
+            "detail": humanize_llm_error(str(exc))[:300],
+            "elapsedMs": int((_time.monotonic() - started) * 1000),
+        }
+
+    refined = (result.content or "").strip()
+    if not refined:
+        return {
+            "ok": False,
+            "code": "LLM_EMPTY_OUTPUT",
+            "detail": "LLM 返回了空内容，提示词未改动",
+            "elapsedMs": int((_time.monotonic() - started) * 1000),
+        }
+    return {
+        "ok": True,
+        "text": refined,
+        "elapsedMs": int((_time.monotonic() - started) * 1000),
+    }
+
+
 @router.get("/skill-packages")
 def skill_packages_list(x_internal_key: Optional[str] = Header(None)):
     """原版技能包清单（技能库四期）：完整 SKILL.md 的轻量元数据（不含正文）。"""
