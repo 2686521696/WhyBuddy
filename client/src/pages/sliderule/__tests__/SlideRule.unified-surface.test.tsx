@@ -182,6 +182,22 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-rail-process"');
   });
 
+  it("+ 菜单是实用动作（文件/示例/技能库），模式选择器已删（用户裁决 2026-07-10）", () => {
+    const html = renderPage({
+      goal: "做一个采购审批应用",
+      uiTurns: [streamingTurn],
+      isRunning: false,
+    });
+    expect(html).toContain('data-testid="sliderule-actions-menu"');
+    expect(html).toContain("添加文件或图片");
+    expect(html).toContain("填入示例意图");
+    expect(html).toContain("从技能库选技能");
+    // 深思一轮/持续推演不再出现在产品面（引擎的马拉松能力保留在 Dev 面）
+    expect(html).not.toContain("sliderule-mode-menu");
+    expect(html).not.toContain("深思一轮");
+    expect(html).not.toContain("持续推演");
+  });
+
   it("会话在场但未运行（无模型）→ board：六系统缩略 + 证据看板", () => {
     const html = renderPage({
       goal: "做一个采购审批应用",

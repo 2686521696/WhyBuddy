@@ -4,7 +4,7 @@
  * - Single header row: brand/topic + STATUS summary + actions (交付物/重置会话/Dev)
  * - Left column: conversation (single empty state: logo watermark + hero + chips)
  * - Right rail: SkillThumbnailBar + system screens ⟷ 推演过程 (execution timeline + skill linkage)
- * - Bottom center: single ComposerDock (深思一轮/持续推演), clarification cards above it
+ * - Bottom center: single ComposerDock (+ 实用动作菜单 / ✨优化提示词), clarification cards above it
  *
  * The old chat/reasoning/studio surface toggle was removed (2026-07): one page,
  * one mental model. The v4 pan/zoom reasoning canvas is gone from this page;
@@ -73,6 +73,7 @@ import {
 } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
+import { EXAMPLE_INTENT_TEXTS } from "./sliderule/example-intents";
 import { deriveComposerHintChips } from "./sliderule/derive-composer-hints";
 import type { UiTurn } from "./sliderule/types";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
@@ -367,8 +368,8 @@ function TurnPhaseTimeline({
   );
 }
 
-// 前两条为内置演示域（确定性 fixture，秒出、不调 LLM）；
-// 第三条为新颖域，走真实 LLM 五系统生成——用户从 chips 就能体验两条路径。
+// 文案单一来源 example-intents.ts（+ 菜单「填入示例意图」共用）；
+// 这里只补空态 chips 的图标配色。
 const EXAMPLE_PROMPTS: ReadonlyArray<{
   text: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -376,19 +377,19 @@ const EXAMPLE_PROMPTS: ReadonlyArray<{
   iconColor: string;
 }> = [
   {
-    text: "做一个采购审批应用，含采购单、经理审批、财务确认和字段权限",
+    text: EXAMPLE_INTENT_TEXTS[0],
     icon: ClipboardCheck,
     iconBg: "bg-[#e6f4ff]",
     iconColor: "text-[#0958d9]",
   },
   {
-    text: "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理",
+    text: EXAMPLE_INTENT_TEXTS[1],
     icon: Users,
     iconBg: "bg-[#E6F4FF]",
     iconColor: "text-[#1677ff]",
   },
   {
-    text: "做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养",
+    text: EXAMPLE_INTENT_TEXTS[2],
     icon: Dumbbell,
     iconBg: "bg-[#ECFDF3]",
     iconColor: "text-[#16a34a]",
@@ -623,7 +624,7 @@ export function ClaudeChatSurface({
     messages: items,
     isRunning,
     convertMessage: convertImMessage,
-    // 输入条是自定义 ComposerDock（语音/闪电/示例填充），不走 Thread 原语的
+    // 输入条是自定义 ComposerDock（语音/优化提示词/示例填充），不走 Thread 原语的
     // Composer——onNew 是适配器必填项，但当前没有 UI 会触发它。
     onNew: async () => {},
   });
@@ -849,7 +850,7 @@ export async function loadPythonRuntimeProjectionFromSession(
  * - 顶部单行 header：品牌/话题 + STATUS 摘要（待细化/话题/阶段）+ 动作（交付物/设置/重置会话/Dev）。
  * - 左栏：对话流（含唯一空态：古典 logo 水印 + hero 文案 + 示例 chips）。
  * - 右栏：SkillThumbnailBar + 内容区（六系统画面 ⟷「推演过程」执行时间线 + SKILL LINKAGE）。
- * - 底部：唯一 ComposerDock（深思一轮/持续推演），澄清卡片浮在其上。
+ * - 底部：唯一 ComposerDock（+ 实用动作菜单 / ✨优化提示词），澄清卡片浮在其上。
  *
  * 旧的 pan/zoom 推理画布（v4 面）已从本页移除；工程画布仍可经 ?im=dev 进入
  * SlideRuleSplitEngineering 查看。
@@ -1076,8 +1077,6 @@ function SlideRuleUnified({
             isRunning={isRunning}
             goal={goal}
             hintChips={composerHints}
-            driveMode={driveMode}
-            setDriveMode={setDriveMode}
             stop={stop}
           />
         </div>

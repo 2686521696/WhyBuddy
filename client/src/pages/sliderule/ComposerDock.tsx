@@ -1,22 +1,21 @@
 import React from "react";
 import {
-  Brain,
-  Check,
+  Blocks,
+  ChevronLeft,
   FileText,
+  ImagePlus,
+  Lightbulb,
   Loader2,
   Mic,
   Plus,
-  RefreshCw,
   SendHorizontal,
   Sparkles,
   Square,
 } from "lucide-react";
-
-function formatBudgetTokens(n: number): string {
-  if (n < 1000) return String(n);
-  const k = n / 1000;
-  return Number.isInteger(k) ? `${k}k` : `${k.toFixed(1)}k`;
-}
+// 用 navigate 函数而非 useLocation hook：hook 渲染期就读 window.location，
+// 会炸掉 node 环境的静态渲染测试；navigate 只在点击时触达 history。
+import { navigate } from "wouter/use-browser-location";
+import { EXAMPLE_INTENT_TEXTS } from "./example-intents";
 
 /** Returns true if the text looks like a URL. */
 function looksLikeUrl(text: string): boolean {
@@ -36,11 +35,6 @@ export function ComposerDock({
   sendMessage,
   isRunning,
   goal,
-
-  driveMode: outerDriveMode,
-  setDriveMode: outerSetDriveMode,
-  marathonBudget: outerMarathonBudget,
-  onBudgetChange,
   stop,
 }: {
   input: string;
@@ -50,72 +44,30 @@ export function ComposerDock({
   goal: string;
 
   hintChips?: string[];
-  driveMode?: "single" | "marathon";
-  setDriveMode?: (m: "single" | "marathon") => void;
-  marathonBudget?: { maxTokens: number; declaredAt: string };
-  onBudgetChange?: (b: { maxTokens: number; declaredAt: string }) => void;
   stop?: () => void;
 }) {
-  const [localMode, setLocalMode] = React.useState<"single" | "marathon">(
-    "single"
+  // 模式选择器已删（用户裁决 2026-07-10）：深思一轮就是唯一产品路径
+  // （Python drive-full-stream 一条消息推到闭环），持续推演是浏览器端
+  // 马拉松遗留、还会丢实时流——引擎能力保留在 Dev 面，不再出现在产品面。
+  // + 菜单改为 Claude 式实用动作：文件 / 示例意图 / 技能库。
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+  const [menuView, setMenuView] = React.useState<"actions" | "examples">(
+    "actions"
   );
-  const [isModeOpen, setIsModeOpen] = React.useState(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [attachmentHint, setAttachmentHint] = React.useState<string | null>(
     null
   );
-  const modeRef = React.useRef<HTMLDivElement | null>(null);
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
-  const driveMode = outerDriveMode || localMode;
-  const setDriveMode = outerSetDriveMode || setLocalMode;
-  let marathonBudget =
-    outerMarathonBudget ||
-    (() => {
-      try {
-        return JSON.parse(
-          localStorage.getItem("sliderule:marathonBudget") || "null"
-        );
-      } catch {
-        return null;
-      }
-    })();
-  if (outerMarathonBudget) marathonBudget = outerMarathonBudget;
-
-  const selectMode = (mode: "single" | "marathon") => {
-    if (mode === "marathon") {
-      let budget = { maxTokens: 12000, declaredAt: new Date().toISOString() };
-      try {
-        const raw = localStorage.getItem("sliderule:marathonBudget");
-        if (raw) budget = JSON.parse(raw);
-      } catch {}
-      const ans = window.prompt(
-        "持续推演预算\n输入本 session 最大 token 上限（默认 12000）",
-        String(budget.maxTokens)
-      );
-      if (ans) {
-        const n = Math.max(2000, Math.min(80000, parseInt(ans, 10) || 12000));
-        budget = { maxTokens: n, declaredAt: new Date().toISOString() };
-        try {
-          localStorage.setItem(
-            "sliderule:marathonBudget",
-            JSON.stringify(budget)
-          );
-        } catch {}
-        onBudgetChange?.(budget);
-      }
-      try {
-        (window as any).__slideruleMarathonBudget = budget;
-      } catch {}
-    }
-    setDriveMode(mode);
-    setIsModeOpen(false);
-  };
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      const refEl = modeRef.current;
+      const refEl = menuRef.current;
       if (refEl && !refEl.contains(event.target as Node)) {
-        setIsModeOpen(false);
+        setIsMenuOpen(false);
+        setMenuView("actions");
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -178,11 +130,9 @@ export function ComposerDock({
     setIsDragOver(false);
   }, []);
 
-  const handleDrop = React.useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragOver(false);
-      const files = Array.from(e.dataTransfer.files);
+  /** 拖拽与 + 菜单「添加文件或图片」共用：附件名进输入框 + 如实提示解析未接。 */
+  const appendAttachmentNames = React.useCallback(
+    (files: File[]) => {
       if (!files.length) return;
       const names = files.map(f => f.name).join(", ");
       const suffix = `[附件: ${names}]`;
@@ -191,6 +141,25 @@ export function ComposerDock({
       setInput(current ? `${current}\n${suffix}` : suffix);
       setAttachmentHint(`已添加附件提示：${names}（文件解析服务开发中）`);
       setTimeout(() => setAttachmentHint(null), 5000);
+    },
+    [setInput]
+  );
+
+  const handleDrop = React.useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      appendAttachmentNames(Array.from(e.dataTransfer.files));
+    },
+    [appendAttachmentNames]
+  );
+
+  const fillExample = React.useCallback(
+    (text: string) => {
+      setInput(text);
+      setIsMenuOpen(false);
+      setMenuView("actions");
+      setTimeout(() => textareaRef.current?.focus(), 50);
     },
     [setInput]
   );
@@ -249,7 +218,6 @@ export function ComposerDock({
           isDragOver ? "border-[#1677ff] bg-[#e6f4ff]/40" : "border-[#e5e7eb]"
         }`}
         data-testid="sliderule-composer-dock"
-        data-mode={driveMode}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -263,71 +231,127 @@ export function ComposerDock({
           </div>
         )}
         <div className="flex items-end gap-2">
-          <div className="relative shrink-0" ref={modeRef}>
+          <div className="relative shrink-0" ref={menuRef}>
             <button
               type="button"
-              onClick={() => setIsModeOpen(open => !open)}
+              onClick={() => {
+                setIsMenuOpen(open => !open);
+                setMenuView("actions");
+              }}
               disabled={isRunning}
               className="flex h-11 w-11 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#e9edf2] disabled:opacity-45"
-              title="选择推演模式"
+              title="更多动作"
+              data-testid="sliderule-composer-plus"
             >
               <Plus className="h-5 w-5" />
             </button>
+            {/* 隐藏文件选择器：与拖拽同一行为（appendAttachmentNames） */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              data-testid="sliderule-composer-file-input"
+              onChange={e => {
+                appendAttachmentNames(Array.from(e.target.files ?? []));
+                e.target.value = "";
+                setIsMenuOpen(false);
+              }}
+            />
 
             <div
-              data-testid="sliderule-mode-menu"
-              className={`absolute bottom-full left-0 z-[80] mb-2 w-[230px] origin-bottom-left rounded-[9px] border border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_48px_rgb(15_23_42/0.16)] transition-all duration-150 ${
-                isModeOpen
+              data-testid="sliderule-actions-menu"
+              className={`absolute bottom-full left-0 z-[80] mb-2 w-[300px] origin-bottom-left rounded-[9px] border border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_48px_rgb(15_23_42/0.16)] transition-all duration-150 ${
+                isMenuOpen
                   ? "translate-y-0 scale-100 opacity-100"
                   : "pointer-events-none translate-y-2 scale-95 opacity-0"
               }`}
             >
-              <button
-                type="button"
-                onClick={() => selectMode("single")}
-                className={`flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4] ${
-                  driveMode === "single" ? "bg-[#e9edf2]" : ""
-                }`}
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e9edf2] text-stone-700">
-                  <Brain className="h-3.5 w-3.5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-semibold text-stone-800">
-                    深思一轮
-                  </span>
-                  <span className="block truncate text-[10px] text-stone-500">
-                    想清楚一个问题后停下
-                  </span>
-                </span>
-                {driveMode === "single" && (
-                  <Check className="h-3.5 w-3.5 text-emerald-500" />
-                )}
-              </button>
+              {menuView === "actions" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    data-testid="sliderule-action-file"
+                    className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
+                  >
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e9edf2] text-stone-700">
+                      <ImagePlus className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold text-stone-800">
+                        添加文件或图片
+                      </span>
+                      <span className="block truncate text-[10px] text-stone-500">
+                        附件名进输入框（解析服务开发中）
+                      </span>
+                    </span>
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => selectMode("marathon")}
-                className={`mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4] ${
-                  driveMode === "marathon" ? "bg-[#e6f4ff]" : ""
-                }`}
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e6f4ff] text-[#0958d9]">
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-semibold text-stone-800">
-                    持续推演
-                  </span>
-                  <span className="block truncate text-[10px] text-stone-500">
-                    自动推进到需要确认 ·{" "}
-                    {formatBudgetTokens(marathonBudget?.maxTokens || 12000)}
-                  </span>
-                </span>
-                {driveMode === "marathon" && (
-                  <Check className="h-3.5 w-3.5 text-[#0958d9]" />
-                )}
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setMenuView("examples")}
+                    data-testid="sliderule-action-example"
+                    className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
+                  >
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#FDF6F1] text-[#C05621]">
+                      <Lightbulb className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold text-stone-800">
+                        填入示例意图
+                      </span>
+                      <span className="block truncate text-[10px] text-stone-500">
+                        三条示例应用，填进输入框可再编辑
+                      </span>
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      navigate("/agent-loop/skills");
+                    }}
+                    data-testid="sliderule-action-skills"
+                    className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
+                  >
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e6f4ff] text-[#0958d9]">
+                      <Blocks className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold text-stone-800">
+                        从技能库选技能
+                      </span>
+                      <span className="block truncate text-[10px] text-stone-500">
+                        已安装技能会自动注入推演
+                      </span>
+                    </span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setMenuView("actions")}
+                    className="flex w-full items-center gap-1.5 rounded-[7px] px-2.5 py-1.5 text-left text-[11px] text-stone-500 transition hover:bg-[#eef0f4]"
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                    返回
+                  </button>
+                  {EXAMPLE_INTENT_TEXTS.map(text => (
+                    <button
+                      key={text}
+                      type="button"
+                      onClick={() => fillExample(text)}
+                      data-testid="sliderule-example-intent"
+                      className="mt-1 block w-full rounded-[7px] px-2.5 py-2 text-left text-xs leading-5 text-stone-700 transition hover:bg-[#eef0f4]"
+                    >
+                      {text}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           </div>
 

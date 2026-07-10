@@ -1,22 +1,36 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import type { ActionTrace, LiveAction } from "@shared/blueprint/capability-process-labels";
+import type {
+  ActionTrace,
+  LiveAction,
+} from "@shared/blueprint/capability-process-labels";
 import * as SlideRuleRuntime from "@/lib/sliderule-runtime";
 import { fetchNarration } from "@/lib/sliderule-narrator";
 import { pickMainArtifactByKind } from "@shared/blueprint/sliderule-main-artifact";
-import type { UserIntervention, V5SessionState } from "@shared/blueprint/v5-reasoning-state";
+import type {
+  UserIntervention,
+  V5SessionState,
+} from "@shared/blueprint/v5-reasoning-state";
 import type { ClarificationItem } from "./ClarificationCard";
 import { deriveTurnRoute } from "@shared/blueprint/sliderule-turn-route";
 import { resolveImSurfaceMode } from "./im-surface-mode";
 import type { SchedulingDecision } from "@shared/blueprint/v5-reasoning-state";
 import { challengeTargetLabel } from "./challenge-target-label";
 import { buildTurnRoundsFromDrive } from "./turn-round-facts";
-import { createUiCapabilityExecutor, mapArtifactsToWhyArtifacts } from "./ui-capability-executor";
+import {
+  createUiCapabilityExecutor,
+  mapArtifactsToWhyArtifacts,
+} from "./ui-capability-executor";
 import { mergePublishClosureForPersistedTurn } from "./derive-persisted-turn";
 import { createHttpSlideRuleSessionStore } from "@/lib/sliderule-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { loadByokPool, validateByokPool } from "@/lib/sliderule-byok-config";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
-import type { TurnStep, UiTurn, WhyArtifact, SlideRuleExecutorMode } from "./types";
+import type {
+  TurnStep,
+  UiTurn,
+  WhyArtifact,
+  SlideRuleExecutorMode,
+} from "./types";
 import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import * as Marathon from "@/lib/sliderule-marathon-driver";
 import {
@@ -36,12 +50,16 @@ function createEmptySessionState(sessionId: string): V5SessionState {
     SlideRuleRuntime.EMPTY_SESSION_GOAL_TEXT,
     sessionId
   );
-  return SlideRuleRuntime.deriveNodeStatus ? SlideRuleRuntime.deriveNodeStatus(base) : base;
+  return SlideRuleRuntime.deriveNodeStatus
+    ? SlideRuleRuntime.deriveNodeStatus(base)
+    : base;
 }
 
 function sanitizeLegacyEmptySeed(state: V5SessionState): V5SessionState {
   if (!SlideRuleRuntime.isLegacyEmptySessionSeed(state)) return state;
-  const cleared = createEmptySessionState(state.sessionId || DEFAULT_SESSION_ID);
+  const cleared = createEmptySessionState(
+    state.sessionId || DEFAULT_SESSION_ID
+  );
   return { ...cleared, sessionId: state.sessionId || DEFAULT_SESSION_ID };
 }
 
@@ -53,7 +71,9 @@ function sanitizeLegacyEmptySeed(state: V5SessionState): V5SessionState {
  * Positive: when present on loaded or drive-final, preserved on persist.
  * Fail-closed negative: missing fields stay absent (preview may still apply).
  */
-function preservePythonEvidenceProjection(state: V5SessionState): V5SessionState {
+function preservePythonEvidenceProjection(
+  state: V5SessionState
+): V5SessionState {
   const pc = (state as any).publishClosure;
   const sg = (state as any).skillRuntimeGraph;
   if (pc === undefined && sg === undefined) return state;
@@ -71,7 +91,9 @@ async function persistSession(state: V5SessionState): Promise<V5SessionState> {
 async function prepareVisibleResetSessionState(
   sessionId: string,
   deleteSession?: (sessionId: string) => Promise<void>,
-  saveSession: (state: V5SessionState) => Promise<V5SessionState> = persistSession
+  saveSession: (
+    state: V5SessionState
+  ) => Promise<V5SessionState> = persistSession
 ): Promise<V5SessionState> {
   try {
     await deleteSession?.(sessionId);
@@ -92,7 +114,9 @@ function isClosedSessionState(state: V5SessionState): boolean {
   if (state.goal?.status === "clear") return true;
   if ((state as any).runtimePhase === "done") return true;
   const pc: any = (state as any).publishClosure;
-  return !!pc && pc.blocked === false && Number(pc.evidencePresentCount ?? 0) >= 6;
+  return (
+    !!pc && pc.blocked === false && Number(pc.evidencePresentCount ?? 0) >= 6
+  );
 }
 
 /**
@@ -108,16 +132,28 @@ export function looksLikeNewAppIntent(text: string): boolean {
   if (t.length < 6) return false;
   const noun = /(系统|应用|平台|工具|app|小程序|管理端|门户|网站)/i;
   if (!noun.test(t)) return false;
-  const verb = /(做一?个|搭建|设计一?个|构建|开发一?个|建一?个|来一?个|帮我做|我想要|我要做|create|build|design)/i;
+  const verb =
+    /(做一?个|搭建|设计一?个|构建|开发一?个|建一?个|来一?个|帮我做|我想要|我要做|create|build|design)/i;
   if (verb.test(t)) return true;
   // 裸名词短语：refine 动词开头的不算（那是对旧话题的修改指令）
-  if (/^(把|将|改|修改|调整|优化|完善|去掉|删除|增加|加上|补充|重新|再|请|帮我改)/.test(t)) return false;
-  return /^[一-龥A-Za-z0-9\s·\-]{3,38}(系统|应用|平台|门户|网站|小程序)$/.test(t);
+  if (
+    /^(把|将|改|修改|调整|优化|完善|去掉|删除|增加|加上|补充|重新|再|请|帮我改)/.test(
+      t
+    )
+  )
+    return false;
+  return /^[一-龥A-Za-z0-9\s·\-]{3,38}(系统|应用|平台|门户|网站|小程序)$/.test(
+    t
+  );
 }
 
 function hasReadyByokPool(): boolean {
   const pool = loadByokPool();
-  return !!(pool && validateByokPool(pool).ok && pool.entries.some((e) => e.enabled && e.apiKey));
+  return !!(
+    pool &&
+    validateByokPool(pool).ok &&
+    pool.entries.some(e => e.enabled && e.apiKey)
+  );
 }
 
 function resolveExecutorMode(): SlideRuleExecutorMode {
@@ -157,7 +193,11 @@ function latestDledgerForTurn(
 function pickMainArtifact(committed: WhyArtifact[]): UiTurn["main"] {
   const art = pickMainArtifactByKind(committed);
   if (art) {
-    return { artifactId: art.id, kind: art.kind, realLlm: Boolean(art.realLlm) };
+    return {
+      artifactId: art.id,
+      kind: art.kind,
+      realLlm: Boolean(art.realLlm),
+    };
   }
   return null;
 }
@@ -175,13 +215,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const [isRunning, setIsRunning] = useState(false);
   const [liveAction, setLiveAction] = useState<LiveAction | null>(null);
   const [nextGateShouldFail, setNextGateShouldFail] = useState(false);
-  const [executorMode, setExecutorMode] = useState<SlideRuleExecutorMode>("server-llm");
+  const [executorMode, setExecutorMode] =
+    useState<SlideRuleExecutorMode>("server-llm");
   const [sessionState, setSessionState] = useState(() =>
     createEmptySessionState(sessionId)
   );
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [driveFullStatus, setDriveFullStatus] = useState<
-    "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback"
+    | "idle"
+    | "loading"
+    | "python_success"
+    | "timeout"
+    | "python_unavailable"
+    | "fallback"
   >("idle");
 
   // SSE-driven: which of the 6 skill systems is currently executing on Python side.
@@ -189,7 +235,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const [activeSkillId, setActiveSkillId] = useState<SkillId | null>(null);
 
   // Accumulated per-skill content from SSE skill_result events (raw model/mermaid).
-  const [skillContents, setSkillContents] = useState<Partial<Record<SkillId, string>>>({});
+  const [skillContents, setSkillContents] = useState<
+    Partial<Record<SkillId, string>>
+  >({});
   const [latestMermaid, setLatestMermaid] = useState<string | null>(null);
   // LLM 实时草稿（llm_delta 累积）：运行中在左栏流式展示，新一轮开始时清空。
   // 每一步（risk.analyze / report.write / 五系统起草…）各自一份缓冲，展示最近
@@ -197,31 +245,34 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const [llmDraft, setLlmDraft] = useState<string>("");
   const [llmDraftLabel, setLlmDraftLabel] = useState<string | null>(null);
 
-  // M2: drive mode (persisted for session; default "single" per spec)
-  const [driveMode, setDriveMode] = useState<SlideRuleRuntime.SlideRuleDriveMode>(() => {
-    try {
-      return (localStorage.getItem("sliderule:driveMode") as any) || "single";
-    } catch {
-      return "single";
-    }
-  });
-
-  // persist on change
-  useEffect(() => {
-    try { localStorage.setItem("sliderule:driveMode", driveMode); } catch {}
-  }, [driveMode]);
+  // 产品面恒 single（用户裁决 2026-07-10：模式选择器已删——drive-full-stream
+  // 一条消息推到闭环，马拉松是浏览器端遗留且丢实时流）。初始化不再读
+  // localStorage：历史上选过 marathon 的用户回正，不会被无 UI 可退的旧偏好
+  // 困在马拉松分支。setDriveMode 保留给 Dev 工程面运行时切换。
+  const [driveMode, setDriveMode] =
+    useState<SlideRuleRuntime.SlideRuleDriveMode>("single");
 
   // M5: marathon budget (real costLedger + 强制 declared). Persisted.
-  const [marathonBudget, setMarathonBudget] = useState<{ maxTokens: number; declaredAt: string }>(() => {
+  const [marathonBudget, setMarathonBudget] = useState<{
+    maxTokens: number;
+    declaredAt: string;
+  }>(() => {
     try {
       const raw = localStorage.getItem("sliderule:marathonBudget");
-      return raw ? JSON.parse(raw) : { maxTokens: 12000, declaredAt: new Date().toISOString() };
+      return raw
+        ? JSON.parse(raw)
+        : { maxTokens: 12000, declaredAt: new Date().toISOString() };
     } catch {
       return { maxTokens: 12000, declaredAt: new Date().toISOString() };
     }
   });
   useEffect(() => {
-    try { localStorage.setItem("sliderule:marathonBudget", JSON.stringify(marathonBudget)); } catch {}
+    try {
+      localStorage.setItem(
+        "sliderule:marathonBudget",
+        JSON.stringify(marathonBudget)
+      );
+    } catch {}
   }, [marathonBudget]);
 
   // M1: per-turn abort controller for graceful stop.
@@ -230,7 +281,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const goal = useMemo(() => {
     const fromState = sessionState.goal?.text?.trim();
     if (fromState) return fromState;
-    const lastUser = [...uiTurns].reverse().find((t) => t.user.trim())?.user.trim();
+    const lastUser = [...uiTurns]
+      .reverse()
+      .find(t => t.user.trim())
+      ?.user.trim();
     return lastUser || "";
   }, [sessionState.goal?.text, uiTurns]);
 
@@ -241,9 +295,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setExecutorMode(mode);
 
     if (IS_GITHUB_PAGES && SlideRuleRuntime.setSlideRuleSessionStore) {
-      SlideRuleRuntime.setSlideRuleSessionStore(createGithubPagesSlideRuleSessionStore());
+      SlideRuleRuntime.setSlideRuleSessionStore(
+        createGithubPagesSlideRuleSessionStore()
+      );
       const pool = loadByokPool();
-      if (pool && validateByokPool(pool).ok && pool.entries.some((e) => e.enabled && e.apiKey)) {
+      if (
+        pool &&
+        validateByokPool(pool).ok &&
+        pool.entries.some(e => e.enabled && e.apiKey)
+      ) {
         SlideRuleRuntime.useBrowserLlmCapabilityExecutor?.();
       } else {
         SlideRuleRuntime.usePilotRealExecutor?.();
@@ -254,13 +314,21 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     ) {
       // B-5: product default uses durable Http store (survives refresh via server JSON file).
       // browser-llm on localhost only swaps the LLM executor; the durable store still applies.
-      SlideRuleRuntime.setSlideRuleSessionStore(createHttpSlideRuleSessionStore());
+      SlideRuleRuntime.setSlideRuleSessionStore(
+        createHttpSlideRuleSessionStore()
+      );
     }
 
     if (!IS_GITHUB_PAGES) {
-      if (mode === "browser-llm" && SlideRuleRuntime.useBrowserLlmCapabilityExecutor) {
+      if (
+        mode === "browser-llm" &&
+        SlideRuleRuntime.useBrowserLlmCapabilityExecutor
+      ) {
         SlideRuleRuntime.useBrowserLlmCapabilityExecutor?.();
-      } else if (mode === "server-llm" && SlideRuleRuntime.useServerLlmCapabilityExecutor) {
+      } else if (
+        mode === "server-llm" &&
+        SlideRuleRuntime.useServerLlmCapabilityExecutor
+      ) {
         SlideRuleRuntime.useServerLlmCapabilityExecutor?.();
       } else if (mode === "default") {
         SlideRuleRuntime.useDefaultExecutor?.();
@@ -288,9 +356,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       // Pages: browser-llm -> pilot demo; localhost: browser-llm -> server-llm.
       const mode = resolveExecutorMode();
       setExecutorMode(mode);
-      if (mode === "browser-llm" && SlideRuleRuntime.useBrowserLlmCapabilityExecutor) {
+      if (
+        mode === "browser-llm" &&
+        SlideRuleRuntime.useBrowserLlmCapabilityExecutor
+      ) {
         SlideRuleRuntime.useBrowserLlmCapabilityExecutor?.();
-      } else if (mode === "server-llm" && SlideRuleRuntime.useServerLlmCapabilityExecutor) {
+      } else if (
+        mode === "server-llm" &&
+        SlideRuleRuntime.useServerLlmCapabilityExecutor
+      ) {
         SlideRuleRuntime.useServerLlmCapabilityExecutor?.();
       } else {
         SlideRuleRuntime.usePilotRealExecutor?.();
@@ -361,8 +435,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setIsRunning(true);
 
     const appendStep = (step: TurnStep) => {
-      setUiTurns((prev) =>
-        prev.map((t) => (t.id === turnId ? { ...t, steps: [...t.steps, step] } : t))
+      setUiTurns(prev =>
+        prev.map(t =>
+          t.id === turnId ? { ...t, steps: [...t.steps, step] } : t
+        )
       );
     };
 
@@ -372,8 +448,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       patch: Partial<UiTurn["routeFacts"]>,
       litCount?: number
     ) => {
-      setUiTurns((prev) =>
-        prev.map((t) => {
+      setUiTurns(prev =>
+        prev.map(t => {
           if (t.id !== turnId) return t;
           const routeFacts = { ...t.routeFacts, ...patch };
           const derived = deriveTurnRoute(routeFacts);
@@ -386,7 +462,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       );
     };
 
-    setUiTurns((prev) => [
+    setUiTurns(prev => [
       ...prev,
       {
         id: turnId,
@@ -406,7 +482,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     try {
       const loadedState = preservePythonEvidenceProjection(
         sanitizeLegacyEmptySeed(
-          await SlideRuleRuntime.loadOrCreateSessionState(sessionState.sessionId || sessionId)
+          await SlideRuleRuntime.loadOrCreateSessionState(
+            sessionState.sessionId || sessionId
+          )
         )
       );
 
@@ -418,7 +496,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       let workingState = loadedState;
       let autoNewTopic = false;
       let closedTopicFollowUp = false;
-      if (!IS_GITHUB_PAGES && !intervention && isClosedSessionState(loadedState)) {
+      if (
+        !IS_GITHUB_PAGES &&
+        !intervention &&
+        isClosedSessionState(loadedState)
+      ) {
         if (
           looksLikeNewAppIntent(userText) &&
           userText.trim() !== (loadedState.goal?.text || "").trim()
@@ -445,11 +527,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         intervention,
       });
 
-      const activeGoalText = preparedState.goal?.text?.trim() || userText.trim();
+      const activeGoalText =
+        preparedState.goal?.text?.trim() || userText.trim();
       applyPersistedState(preparedState);
 
       const challengeArt = intervention?.targetArtifactId
-        ? (loadedState.artifacts || []).find((a) => a.id === intervention.targetArtifactId)
+        ? (loadedState.artifacts || []).find(
+            a => a.id === intervention.targetArtifactId
+          )
         : undefined;
 
       patchRoute(
@@ -479,21 +564,24 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
       const imMode = resolveImSurfaceMode();
       const actionsAcc: ActionTrace[] = [];
-      const uiExecutor = createUiCapabilityExecutor(SlideRuleRuntime.getCapabilityExecutor(), {
-        userText: userText.trim(),
-        goalText: activeGoalText,
-        emitImSteps: imMode !== "minimal",
-        onStep: appendStep,
-        onActionTrace: (trace) => {
-          actionsAcc.push(trace);
-          setUiTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId ? { ...t, actions: [...t.actions, trace] } : t
-            )
-          );
-        },
-        setLiveAction,
-      });
+      const uiExecutor = createUiCapabilityExecutor(
+        SlideRuleRuntime.getCapabilityExecutor(),
+        {
+          userText: userText.trim(),
+          goalText: activeGoalText,
+          emitImSteps: imMode !== "minimal",
+          onStep: appendStep,
+          onActionTrace: trace => {
+            actionsAcc.push(trace);
+            setUiTurns(prev =>
+              prev.map(t =>
+                t.id === turnId ? { ...t, actions: [...t.actions, trace] } : t
+              )
+            );
+          },
+          setLiveAction,
+        }
+      );
 
       // Immediate reaction so user sees something right after pressing send (before any network)
       if (autoNewTopic) {
@@ -514,7 +602,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           kind: "chip",
           capabilityId: "intent.parse" as any,
           roleId: "system",
-          label: "本话题已闭环，此轮按旧话题追问处理 · 要开始新应用请说「做一个××系统」或点右上角重置会话",
+          label:
+            "本话题已闭环，此轮按旧话题追问处理 · 要开始新应用请说「做一个××系统」或点右上角重置会话",
           realLlm: false,
           loopTurnId: turnId,
           progressType: "thinking",
@@ -564,7 +653,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           });
         },
         onLoopComplete: async (p: any) => {
-          const { state, plan, loopTurnId, committedArtifactIds, stopSignal } = p || {};
+          const { state, plan, loopTurnId, committedArtifactIds, stopSignal } =
+            p || {};
           driveLoopsRef.push({
             loopTurnId,
             plan,
@@ -579,10 +669,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           if (driveLoopsRef.length === 1) {
             firstLoopPlanCountRef.value = plan.selected.length;
           }
-          const partialRounds = buildTurnRoundsFromDrive(loopPersisted.decisionLedger, {
-            loops: driveLoopsRef,
-            stopReason: "budget_exhausted",
-          });
+          const partialRounds = buildTurnRoundsFromDrive(
+            loopPersisted.decisionLedger,
+            {
+              loops: driveLoopsRef,
+              stopReason: "budget_exhausted",
+            }
+          );
           const partialFacts = {
             turnId,
             timestamp: turnTimestamp,
@@ -612,17 +705,28 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       let driveErrored = false;
       try {
         if (driveMode === "marathon") {
-          const { driveMarathon } = await import("@/lib/sliderule-marathon-driver");
-          const marathonRes = await driveMarathon(preparedState, userText.trim(), {
-            stopSignal: controller.signal,
-            budget: { maxTokens: marathonBudget?.maxTokens || 12000, declaredAt: new Date().toISOString() },
-            policy: { autoConfirmRoute: "primary", autoWaiveNonBlockingGaps: true },
-            executor: driveOpts.executor,
-            onCapabilityRound: driveOpts.onCapabilityRound,
-            onLoopComplete: driveOpts.onLoopComplete,
-            router: driveOpts.router,
-            maxLoopsPerMessage: driveOpts.maxLoopsPerMessage,
-          });
+          const { driveMarathon } =
+            await import("@/lib/sliderule-marathon-driver");
+          const marathonRes = await driveMarathon(
+            preparedState,
+            userText.trim(),
+            {
+              stopSignal: controller.signal,
+              budget: {
+                maxTokens: marathonBudget?.maxTokens || 12000,
+                declaredAt: new Date().toISOString(),
+              },
+              policy: {
+                autoConfirmRoute: "primary",
+                autoWaiveNonBlockingGaps: true,
+              },
+              executor: driveOpts.executor,
+              onCapabilityRound: driveOpts.onCapabilityRound,
+              onLoopComplete: driveOpts.onLoopComplete,
+              router: driveOpts.router,
+              maxLoopsPerMessage: driveOpts.maxLoopsPerMessage,
+            }
+          );
           drive = {
             finalState: marathonRes.finalState,
             stopReason: marathonRes.stopReason,
@@ -631,7 +735,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           };
           usedMarathonDriver = true;
         } else {
-          const { classifyDriveFullStatus, driveFullViaPythonStream } = await import("@/lib/sliderule-marathon-driver");
+          const { classifyDriveFullStatus, driveFullViaPythonStream } =
+            await import("@/lib/sliderule-marathon-driver");
           setDriveFullStatus("loading");
           // PYTHON_AUTHORITY: /drive-full-stream 以已持久化会话为权威起点（防伪造，
           // 见 routes/sliderule_full.py drive_full_stream）。intake 后的 goal 必须先
@@ -639,9 +744,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           try {
             await persistSession(preparedState);
             // 话题刚落盘：通知侧栏重拉列表，标题从"新会话"实时变成话题
-            const { notifySessionsUpdated } = await import(
-              "@/pages/agent-loop/dashboard/SidebarSessions"
-            );
+            const { notifySessionsUpdated } =
+              await import("@/pages/agent-loop/dashboard/SidebarSessions");
             notifySessionsUpdated();
           } catch {
             // 持久化失败时仍继续驱动：请求体里的 state 会作为无持久化会话的兜底。
@@ -649,9 +753,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // Claude 式左栏实时叙事：把 SSE 事件翻成人话喂进本轮 steps
           // （TurnStepsDisclosure 流式显示最近几步，可展开全程）。
           // 此前这些事件只点亮右栏缩略图，左栏推演全程只有一枚 intake chip。
-          const { CAPABILITY_PROCESS_LABELS } = await import(
-            "@shared/blueprint/capability-process-labels"
-          );
+          const { CAPABILITY_PROCESS_LABELS } =
+            await import("@shared/blueprint/capability-process-labels");
           const SKILL_STREAM_LABELS: Record<string, string> = {
             dataModel: "数据模型",
             workflow: "工作流",
@@ -682,80 +785,109 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           const humanLlmLabel = (key: string): string => {
             if (key === "five-system-model") return "LLM 正在起草五系统模型";
             if (key === "closure.summary") return "LLM 正在整理推演总结";
-            const entry = (CAPABILITY_PROCESS_LABELS as Record<string, { liveLabel?: unknown }>)[key];
-            const live = typeof entry?.liveLabel === "function"
-              ? (entry.liveLabel as (ctx: object) => string)({})
-              : (entry?.liveLabel as string | undefined);
-            return live ? `LLM ${live.replace(/^⚡\s*/, "")}` : `LLM 正在执行 ${key}`;
+            const entry = (
+              CAPABILITY_PROCESS_LABELS as Record<
+                string,
+                { liveLabel?: unknown }
+              >
+            )[key];
+            const live =
+              typeof entry?.liveLabel === "function"
+                ? (entry.liveLabel as (ctx: object) => string)({})
+                : (entry?.liveLabel as string | undefined);
+            return live
+              ? `LLM ${live.replace(/^⚡\s*/, "")}`
+              : `LLM 正在执行 ${key}`;
           };
-          const pythonDrive = await driveFullViaPythonStream(preparedState, userText.trim(), {
-            stopSignal: controller.signal,
-            turnId,
-            onLlmDelta: (text, label) => {
-              const key = label || "five-system-model";
-              const firstSight = !llmDraftBuffers.has(key);
-              llmDraftBuffers.set(key, (llmDraftBuffers.get(key) || "") + text);
-              if (firstSight) {
-                const human = humanLlmLabel(key);
-                appendStreamStep(`🖋 ${human}（实时输出见下方）...`);
-                setLiveAction({ label: `${human}...`, external: false });
-              }
-              setLlmDraftLabel(key);
-              setLlmDraft(llmDraftBuffers.get(key) || "");
-            },
-            onReasoningStep: (capabilityId, loop) => {
-              const human =
-                (CAPABILITY_PROCESS_LABELS as Record<string, { liveLabel?: string }>)[
-                  capabilityId
-                ]?.liveLabel || `正在执行 ${capabilityId}`;
-              const label =
-                typeof loop === "number" ? `第 ${loop + 1} 轮 · ${human}` : human;
-              appendStreamStep(label);
-              setLiveAction({ label: human, external: false });
-            },
-            onSkillActivated: (skillId, _label) => {
-              setActiveSkillId(skillId);
-              const name = SKILL_STREAM_LABELS[skillId] || skillId;
-              appendStreamStep(`⚙ ${name} 系统画面生成中...`);
-              setLiveAction({ label: `${name} 系统生成中...`, external: false });
-            },
-            onSkillCompleted: (skillId, _hasError, detail) => {
-              const name = SKILL_STREAM_LABELS[skillId] || skillId;
-              appendStreamStep(
-                _hasError
-                  ? `✗ ${name} 证据缺失（fail-closed）`
-                  : `✓ ${name} 证据落地${
-                      detail?.artifactId?.startsWith("llm-linkage-") ? " · LLM 生成" : ""
-                    }`
-              );
-              // Accumulate per-skill content for the right-panel screens:
-              // mermaid (cross-skill edge projection) first, then the gate-PASSED
-              // five-system model section as a fenced JSON block. The screens'
-              // extractMermaid/extractFlow read the leading mermaid; the
-              // five-system-model parser reads the fenced JSON. Deterministic
-              // domains carry no modelSection — screens degrade honestly.
-              const mermaid = detail?.mermaid ?? null;
-              const modelSection = detail?.modelSection ?? null;
-              const parts: string[] = [];
-              if (mermaid) parts.push(mermaid);
-              if (modelSection && typeof modelSection === "object") {
-                // skillId → model key: dataModel→datamodel, appBundle→appbundle, rest identity.
-                const modelKey = skillId.toLowerCase();
-                try {
-                  parts.push("```json\n" + JSON.stringify({ [modelKey]: modelSection }) + "\n```");
-                } catch {
-                  // unserializable — keep mermaid-only content
+          const pythonDrive = await driveFullViaPythonStream(
+            preparedState,
+            userText.trim(),
+            {
+              stopSignal: controller.signal,
+              turnId,
+              onLlmDelta: (text, label) => {
+                const key = label || "five-system-model";
+                const firstSight = !llmDraftBuffers.has(key);
+                llmDraftBuffers.set(
+                  key,
+                  (llmDraftBuffers.get(key) || "") + text
+                );
+                if (firstSight) {
+                  const human = humanLlmLabel(key);
+                  appendStreamStep(`🖋 ${human}（实时输出见下方）...`);
+                  setLiveAction({ label: `${human}...`, external: false });
                 }
-              }
-              if (parts.length > 0) {
-                const content = parts.join("\n\n");
-                setSkillContents((prev) => ({ ...prev, [skillId]: content }));
-              }
-              if (mermaid) {
-                setLatestMermaid(mermaid);
-              }
-            },
-          });
+                setLlmDraftLabel(key);
+                setLlmDraft(llmDraftBuffers.get(key) || "");
+              },
+              onReasoningStep: (capabilityId, loop) => {
+                const human =
+                  (
+                    CAPABILITY_PROCESS_LABELS as Record<
+                      string,
+                      { liveLabel?: string }
+                    >
+                  )[capabilityId]?.liveLabel || `正在执行 ${capabilityId}`;
+                const label =
+                  typeof loop === "number"
+                    ? `第 ${loop + 1} 轮 · ${human}`
+                    : human;
+                appendStreamStep(label);
+                setLiveAction({ label: human, external: false });
+              },
+              onSkillActivated: (skillId, _label) => {
+                setActiveSkillId(skillId);
+                const name = SKILL_STREAM_LABELS[skillId] || skillId;
+                appendStreamStep(`⚙ ${name} 系统画面生成中...`);
+                setLiveAction({
+                  label: `${name} 系统生成中...`,
+                  external: false,
+                });
+              },
+              onSkillCompleted: (skillId, _hasError, detail) => {
+                const name = SKILL_STREAM_LABELS[skillId] || skillId;
+                appendStreamStep(
+                  _hasError
+                    ? `✗ ${name} 证据缺失（fail-closed）`
+                    : `✓ ${name} 证据落地${
+                        detail?.artifactId?.startsWith("llm-linkage-")
+                          ? " · LLM 生成"
+                          : ""
+                      }`
+                );
+                // Accumulate per-skill content for the right-panel screens:
+                // mermaid (cross-skill edge projection) first, then the gate-PASSED
+                // five-system model section as a fenced JSON block. The screens'
+                // extractMermaid/extractFlow read the leading mermaid; the
+                // five-system-model parser reads the fenced JSON. Deterministic
+                // domains carry no modelSection — screens degrade honestly.
+                const mermaid = detail?.mermaid ?? null;
+                const modelSection = detail?.modelSection ?? null;
+                const parts: string[] = [];
+                if (mermaid) parts.push(mermaid);
+                if (modelSection && typeof modelSection === "object") {
+                  // skillId → model key: dataModel→datamodel, appBundle→appbundle, rest identity.
+                  const modelKey = skillId.toLowerCase();
+                  try {
+                    parts.push(
+                      "```json\n" +
+                        JSON.stringify({ [modelKey]: modelSection }) +
+                        "\n```"
+                    );
+                  } catch {
+                    // unserializable — keep mermaid-only content
+                  }
+                }
+                if (parts.length > 0) {
+                  const content = parts.join("\n\n");
+                  setSkillContents(prev => ({ ...prev, [skillId]: content }));
+                }
+                if (mermaid) {
+                  setLatestMermaid(mermaid);
+                }
+              },
+            }
+          );
           setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
           drive = pythonDrive
             ? {
@@ -764,7 +896,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 loops: pythonDrive.loops || [],
                 publishClosure: pythonDrive.publishClosure,
               }
-            : await SlideRuleRuntime.driveReasoningSession(preparedState, driveOpts as any);
+            : await SlideRuleRuntime.driveReasoningSession(
+                preparedState,
+                driveOpts as any
+              );
           usedMarathonDriver = false;
         }
       } catch (driveErr: any) {
@@ -783,12 +918,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         });
         // Try to at least persist the intake state so graph has something
         try {
-          const snap = SlideRuleRuntime.deriveNodeStatus ? SlideRuleRuntime.deriveNodeStatus(preparedState) : preparedState;
+          const snap = SlideRuleRuntime.deriveNodeStatus
+            ? SlideRuleRuntime.deriveNodeStatus(preparedState)
+            : preparedState;
           await persistSession(snap);
           applyPersistedState(snap);
         } catch {}
-        setUiTurns((prev) =>
-          prev.map((t) =>
+        setUiTurns(prev =>
+          prev.map(t =>
             t.id === turnId
               ? {
                   ...t,
@@ -804,7 +941,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       }
 
       let final = (drive && drive.finalState) || preparedState;
-      final = mergePublishClosureForPersistedTurn(final, (drive as any)?.publishClosure);
+      final = mergePublishClosureForPersistedTurn(
+        final,
+        (drive as any)?.publishClosure
+      );
       try {
         final = await persistSession(final);
         applyPersistedState(final);
@@ -814,7 +954,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       }
       // 推演落定：侧栏列表刷新（话题/最近活跃时间）
       import("@/pages/agent-loop/dashboard/SidebarSessions")
-        .then((m) => m.notifySessionsUpdated())
+        .then(m => m.notifySessionsUpdated())
         .catch(() => {});
 
       // M1 cleanup
@@ -826,10 +966,17 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       // Here we call the pure helpers (exported) so UI sees prompt/rationale immediately, and auto-seed next if not exhausted.
       let marathonAutoSeed: string | null = null;
       let lastDigestNote = "";
-      if (driveMode === "marathon" && (drive.stopReason === "convergence_signal" || drive.stopReason === "coverage_sufficient")) {
+      if (
+        driveMode === "marathon" &&
+        (drive.stopReason === "convergence_signal" ||
+          drive.stopReason === "coverage_sufficient")
+      ) {
         try {
-          const recentIds = (final.artifacts || []).slice(-6).map((a: any) => a.id);
-          const { createRoundDigest, proposeFrontier } = await import("@/lib/sliderule-marathon-driver");
+          const recentIds = (final.artifacts || [])
+            .slice(-6)
+            .map((a: any) => a.id);
+          const { createRoundDigest, proposeFrontier } =
+            await import("@/lib/sliderule-marathon-driver");
           const digest = createRoundDigest(final, recentIds);
           const proposal = await proposeFrontier(final, digest, []);
           // Append visible evidence of real M3 (prompt + rationale + ledger) into last assistant for demo thickness
@@ -837,34 +984,63 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           marathonAutoSeed = proposal.seed;
           // M6 superseded sync + M4 policy attach (for hud + audit visibility)
           if (!final.supersededArtifactIds) final.supersededArtifactIds = [];
-          final.supersededArtifactIds = [...new Set([...(final.supersededArtifactIds || []), ...( (digest as any).supersededIds || recentIds )])];
-          (final as any).autopilotPolicy = { autoConfirmRoute: "primary", autoWaiveNonBlockingGaps: true, declaredAt: new Date().toISOString(), source: "hybrid-marathon-post" };
+          final.supersededArtifactIds = [
+            ...new Set([
+              ...(final.supersededArtifactIds || []),
+              ...((digest as any).supersededIds || recentIds),
+            ]),
+          ];
+          (final as any).autopilotPolicy = {
+            autoConfirmRoute: "primary",
+            autoWaiveNonBlockingGaps: true,
+            declaredAt: new Date().toISOString(),
+            source: "hybrid-marathon-post",
+          };
           final = await persistSession(final);
           applyPersistedState(final);
         } catch (e) {
           marathonAutoSeed = `auto-seed from convergence (M3 helper fallback)`;
         }
-        setUiTurns((prev) => {
+        setUiTurns(prev => {
           const last = prev[prev.length - 1];
           if (!last) return prev;
           return [
             ...prev.slice(0, -1),
             {
               ...last,
-              assistant: (last.assistant || "") + (lastDigestNote || `\n\n[M3/M6] 持续推演已自动生成下一条前沿线索（见 ledger）。`),
+              assistant:
+                (last.assistant || "") +
+                (lastDigestNote ||
+                  `\n\n[M3/M6] 持续推演已自动生成下一条前沿线索（见 ledger）。`),
             },
           ];
         });
       }
 
       // M4 demo complete: if marathon await_human (G_READY) or policy path, fire real Notification (user permission)
-      if (!driveErrored && driveMode === "marathon" && (drive.stopReason === "await_ready" || drive.stopReason === "coverage_sufficient" /* after auto */)) {
+      if (
+        !driveErrored &&
+        driveMode === "marathon" &&
+        (drive.stopReason === "await_ready" ||
+          drive.stopReason === "coverage_sufficient") /* after auto */
+      ) {
         try {
-          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-            new Notification("SlideRule 持续推演", { body: "本轮已收敛或需要人工确认。点击后可继续 marathon。" });
-          } else if (typeof Notification !== "undefined" && Notification.permission !== "denied") {
-            Notification.requestPermission().then((p) => {
-              if (p === "granted") new Notification("SlideRule Marathon", { body: "可以恢复自动驾驶。" });
+          if (
+            typeof Notification !== "undefined" &&
+            Notification.permission === "granted"
+          ) {
+            new Notification("SlideRule 持续推演", {
+              body: "本轮已收敛或需要人工确认。点击后可继续 marathon。",
+            });
+          } else if (
+            typeof Notification !== "undefined" &&
+            Notification.permission !== "denied"
+          ) {
+            Notification.requestPermission().then(p => {
+              if (p === "granted")
+                new Notification("SlideRule Marathon", {
+                  body: "可以恢复自动驾驶。",
+                });
             });
           }
         } catch {}
@@ -880,97 +1056,99 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
         const rounds = buildTurnRoundsFromDrive(final.decisionLedger, drive);
         const displayLoopId = firstLoop?.loopTurnId ?? turnId;
-        const dledger = latestDledgerForTurn(final.decisionLedger, displayLoopId);
+        const dledger = latestDledgerForTurn(
+          final.decisionLedger,
+          displayLoopId
+        );
         const planSource = dledger?.source ?? "local_heuristic";
         const planError = firstLoop?.plan?.error || lastLoop?.plan?.error;
         const planOrchestrateReason =
           planSource === "local_heuristic"
             ? "orchestrate_unreachable"
             : planError
-            ? `python_${planError}`
-            : null;
+              ? `python_${planError}`
+              : null;
         // planError / python_* from Python-owned degraded (planner_timeout etc) propagated for UI status visibility (allowed pages file)
-        const planReason = firstLoop?.plan.reason ?? lastLoop?.plan.reason ?? firstLoop?.plan?.message;
+        const planReason =
+          firstLoop?.plan.reason ??
+          lastLoop?.plan.reason ??
+          firstLoop?.plan?.message;
         const planSelectedCount = firstLoop?.plan.selected.length ?? 0;
 
-      // M4 complete resume demo: after real frontier (M3), auto-continue 1 round in marathon to show "持续推演" thickness (user aborts via stop anytime; M1 signal respected).
-      // Real digest/propose already injected above; this gives multi-round without extra clicks for video/demo.
-      if (driveMode === "marathon" && marathonAutoSeed && (drive.stopReason === "convergence_signal" || drive.stopReason === "coverage_sufficient") && !usedMarathonDriver) {
-        // schedule after current ui paint; isRunning will be re-set inside runTurn
-        setTimeout(() => {
-          runTurn(marathonAutoSeed!).catch(() => {});
-        }, 80);
-      }
+        // M4 complete resume demo: after real frontier (M3), auto-continue 1 round in marathon to show "持续推演" thickness (user aborts via stop anytime; M1 signal respected).
+        // Real digest/propose already injected above; this gives multi-round without extra clicks for video/demo.
+        if (
+          driveMode === "marathon" &&
+          marathonAutoSeed &&
+          (drive.stopReason === "convergence_signal" ||
+            drive.stopReason === "coverage_sufficient") &&
+          !usedMarathonDriver
+        ) {
+          // schedule after current ui paint; isRunning will be re-set inside runTurn
+          setTimeout(() => {
+            runTurn(marathonAutoSeed!).catch(() => {});
+          }, 80);
+        }
 
-      const committedIds = drive.loops.flatMap((l: any) => l.committedArtifactIds);
-      const committed = mapArtifactsToWhyArtifacts(final, committedIds);
+        const committedIds = drive.loops.flatMap(
+          (l: any) => l.committedArtifactIds
+        );
+        const committed = mapArtifactsToWhyArtifacts(final, committedIds);
 
-      const loopTurnIds = new Set(drive.loops.map((l: any) => l.loopTurnId));
-      const runsThisTurn = (final.capabilityRuns || []).filter((r: any) =>
-        loopTurnIds.has(r.turnId)
-      );
-      const trustTotalCount = runsThisTurn.length || committed.length;
-      const trustPassedCount =
-        runsThisTurn.length > 0
-          ? runsThisTurn.filter((r: any) =>
-              (r.gateResults || []).every((g: any) => g.status === "passed")
-            ).length
-          : committed.filter(
-              (a: any) => a.trustLevel === "gated_pass" || a.trustLevel === "audited"
-            ).length;
-      const trustGroundFailedCount = runsThisTurn.filter((r: any) =>
-        (r.gateResults || []).some(
-          (g: any) => g.gateId === "ground" && g.status === "failed"
-        )
-      ).length;
+        const loopTurnIds = new Set(drive.loops.map((l: any) => l.loopTurnId));
+        const runsThisTurn = (final.capabilityRuns || []).filter((r: any) =>
+          loopTurnIds.has(r.turnId)
+        );
+        const trustTotalCount = runsThisTurn.length || committed.length;
+        const trustPassedCount =
+          runsThisTurn.length > 0
+            ? runsThisTurn.filter((r: any) =>
+                (r.gateResults || []).every((g: any) => g.status === "passed")
+              ).length
+            : committed.filter(
+                (a: any) =>
+                  a.trustLevel === "gated_pass" || a.trustLevel === "audited"
+              ).length;
+        const trustGroundFailedCount = runsThisTurn.filter((r: any) =>
+          (r.gateResults || []).some(
+            (g: any) => g.gateId === "ground" && g.status === "failed"
+          )
+        ).length;
 
-      const selectedCapabilities = drive.loops.flatMap((l: any) =>
-        l.plan.selected.map((s: any) => ({
-          capabilityId: String(s.capabilityId),
-          roleId: String(s.roleId || "agent"),
-        }))
-      );
+        const selectedCapabilities = drive.loops.flatMap((l: any) =>
+          l.plan.selected.map((s: any) => ({
+            capabilityId: String(s.capabilityId),
+            roleId: String(s.roleId || "agent"),
+          }))
+        );
 
-      // Prefer the exact DLEDGER.chose list for selectedCapabilities. This ensures the
-      // final routeFacts (and thus the right-upper C_RISK/C_SYN/C_TOOL tree in TurnRouteTimeline)
-      // matches what ORCH actually scheduled, even for completed turns and after refresh.
-      const finalSelected = (dledger && Array.isArray(dledger.chose) && dledger.chose.length > 0)
-        ? dledger.chose.map((cid: any) => ({ capabilityId: String(cid), roleId: "agent" }))
-        : selectedCapabilities;
+        // Prefer the exact DLEDGER.chose list for selectedCapabilities. This ensures the
+        // final routeFacts (and thus the right-upper C_RISK/C_SYN/C_TOOL tree in TurnRouteTimeline)
+        // matches what ORCH actually scheduled, even for completed turns and after refresh.
+        const finalSelected =
+          dledger && Array.isArray(dledger.chose) && dledger.chose.length > 0
+            ? dledger.chose.map((cid: any) => ({
+                capabilityId: String(cid),
+                roleId: "agent",
+              }))
+            : selectedCapabilities;
 
-      const completeRouteFacts = {
-        turnId,
-        timestamp: turnTimestamp,
-        interventionIntent: intervention?.intent ?? null,
-        challengeTargetLabel: challengeTargetLabel(challengeArt),
-        goalStatusBefore,
-        goalStatusAfterInvalidate: preparedState.goal?.status,
-        staleArtifactIdsBefore,
-        staleArtifactIdsAfter: [...(final.staleArtifactIds || [])],
-        planReason,
-        planSelectedCount: finalSelected.length,
-        planSource,
-        planOrchestrateReason,
-        dledgerDecisionId: dledger?.id ?? null,
-        rounds,
-        selectedCapabilities: finalSelected,
-        committedCount: committed.length,
-        trustPassedCount,
-        trustTotalCount,
-        trustGroundFailedCount,
-        goalStatusAfter: final.goal?.status,
-        runtimePhase: final.runtimePhase,
-        closureReason: drive.stopReason,
-      };
-
-      patchRoute(
-        {
+        const completeRouteFacts = {
+          turnId,
+          timestamp: turnTimestamp,
+          interventionIntent: intervention?.intent ?? null,
+          challengeTargetLabel: challengeTargetLabel(challengeArt),
+          goalStatusBefore,
+          goalStatusAfterInvalidate: preparedState.goal?.status,
+          staleArtifactIdsBefore,
+          staleArtifactIdsAfter: [...(final.staleArtifactIds || [])],
           planReason,
-          planSelectedCount,
+          planSelectedCount: finalSelected.length,
           planSource,
           planOrchestrateReason,
           dledgerDecisionId: dledger?.id ?? null,
           rounds,
+          selectedCapabilities: finalSelected,
           committedCount: committed.length,
           trustPassedCount,
           trustTotalCount,
@@ -978,60 +1156,83 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           goalStatusAfter: final.goal?.status,
           runtimePhase: final.runtimePhase,
           closureReason: drive.stopReason,
-        },
-        deriveTurnRoute(completeRouteFacts).length
-      );
+        };
 
-      const main = pickMainArtifact(committed);
-      const mainArt = main ? committed.find((a) => a.id === main.artifactId) : undefined;
+        patchRoute(
+          {
+            planReason,
+            planSelectedCount,
+            planSource,
+            planOrchestrateReason,
+            dledgerDecisionId: dledger?.id ?? null,
+            rounds,
+            committedCount: committed.length,
+            trustPassedCount,
+            trustTotalCount,
+            trustGroundFailedCount,
+            goalStatusAfter: final.goal?.status,
+            runtimePhase: final.runtimePhase,
+            closureReason: drive.stopReason,
+          },
+          deriveTurnRoute(completeRouteFacts).length
+        );
 
-      let assistantText = "";
-      let assistantSource: UiTurn["assistantSource"] = "fallback";
-      let narrationReason: UiTurn["narrationReason"];
+        const main = pickMainArtifact(committed);
+        const mainArt = main
+          ? committed.find(a => a.id === main.artifactId)
+          : undefined;
 
-      if (imMode === "minimal") {
-        const narration = await fetchNarration({
-          state: final,
-          turnId,
-          userText: userText.trim(),
-          intervention: intervention ? { intent: intervention.intent } : null,
-          selected: drive.loops.flatMap((l: any) =>
-            l.plan.selected.map((s: any) => ({
-              capabilityId: s.capabilityId,
-              roleId: s.roleId,
-            }))
-          ),
-          artifacts: committed.map((a: any) => ({
-            kind: a.kind,
-            title: a.content.split("\n")[0]?.slice(0, 80),
-            summary: a.content.slice(0, 200),
-            realLlm: a.realLlm,
-          })),
-          mainArtifact: mainArt
-            ? { kind: mainArt.kind, title: mainArt.content.split("\n")[0], content: mainArt.content }
-            : null,
-          goalStatusBefore,
-          planReason: planReason ?? "",
-          skipped: dledger?.skipped,
-        });
-        assistantText = narration.text;
-        assistantSource = narration.source;
-        narrationReason = narration.reason;
-        appendStep({
-          id: `${turnId}-final`,
-          kind: "narration",
-          text: narration.text,
-          source: narration.source,
-          isFinal: true,
-        });
-      }
+        let assistantText = "";
+        let assistantSource: UiTurn["assistantSource"] = "fallback";
+        let narrationReason: UiTurn["narrationReason"];
 
-      if (lastDigestNote) {
-        assistantText = (assistantText || "") + lastDigestNote;
-      }
+        if (imMode === "minimal") {
+          const narration = await fetchNarration({
+            state: final,
+            turnId,
+            userText: userText.trim(),
+            intervention: intervention ? { intent: intervention.intent } : null,
+            selected: drive.loops.flatMap((l: any) =>
+              l.plan.selected.map((s: any) => ({
+                capabilityId: s.capabilityId,
+                roleId: s.roleId,
+              }))
+            ),
+            artifacts: committed.map((a: any) => ({
+              kind: a.kind,
+              title: a.content.split("\n")[0]?.slice(0, 80),
+              summary: a.content.slice(0, 200),
+              realLlm: a.realLlm,
+            })),
+            mainArtifact: mainArt
+              ? {
+                  kind: mainArt.kind,
+                  title: mainArt.content.split("\n")[0],
+                  content: mainArt.content,
+                }
+              : null,
+            goalStatusBefore,
+            planReason: planReason ?? "",
+            skipped: dledger?.skipped,
+          });
+          assistantText = narration.text;
+          assistantSource = narration.source;
+          narrationReason = narration.reason;
+          appendStep({
+            id: `${turnId}-final`,
+            kind: "narration",
+            text: narration.text,
+            source: narration.source,
+            isFinal: true,
+          });
+        }
 
-        setUiTurns((prev) =>
-          prev.map((t) => {
+        if (lastDigestNote) {
+          assistantText = (assistantText || "") + lastDigestNote;
+        }
+
+        setUiTurns(prev =>
+          prev.map(t => {
             if (t.id !== turnId) return t;
             return {
               ...t,
@@ -1052,7 +1253,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     } finally {
       setIsRunning(false);
       setLiveAction(null);
-      setActiveSkillId(null);  // clear highlighted skill thumbnail after run ends
+      setActiveSkillId(null); // clear highlighted skill thumbnail after run ends
     }
   };
 
@@ -1062,16 +1263,17 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setLiveAction(null);
   }, []);
 
-  const resolveInteractiveGate = useCallback((gateNodeId: string, choice: string | null) => {
-    // Pragmatic bridge to existing text-driven G_CONFIRM logic in intakeMessage.
-    // "选择方案 ..." triggers userPicksRoute (clears await_confirm, proceeds with choice).
-    // Reject text triggers userRejectsRouteSelection (stales route_options, re-compare).
-    const text = choice
-      ? "选择方案 A"
-      : "都不行，重新对比路线";
+  const resolveInteractiveGate = useCallback(
+    (gateNodeId: string, choice: string | null) => {
+      // Pragmatic bridge to existing text-driven G_CONFIRM logic in intakeMessage.
+      // "选择方案 ..." triggers userPicksRoute (clears await_confirm, proceeds with choice).
+      // Reject text triggers userRejectsRouteSelection (stales route_options, re-compare).
+      const text = choice ? "选择方案 A" : "都不行，重新对比路线";
 
-    runTurn(text);
-  }, [runTurn]);
+      runTurn(text);
+    },
+    [runTurn]
+  );
 
   // textOverride：迭代环（重新推演/编辑重跑）程序化重发用。typeof 守卫是刻意的——
   // 既有调用点 onClick={sendMessage} 会把 MouseEvent 当第一参传进来，不能误当文本。
@@ -1080,15 +1282,17 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       stop();
       return;
     }
-    const text = (typeof textOverride === "string" ? textOverride : input).trim();
+    const text = (
+      typeof textOverride === "string" ? textOverride : input
+    ).trim();
     if (!text) return;
     setInput("");
     await runTurn(text);
   };
 
   const toggleRouteExpanded = useCallback((turnId: string) => {
-    setUiTurns((prev) =>
-      prev.map((t) =>
+    setUiTurns(prev =>
+      prev.map(t =>
         t.id === turnId ? { ...t, routeExpanded: !t.routeExpanded } : t
       )
     );
@@ -1106,14 +1310,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     ) => {
       if (isRunning) return;
 
-      const turn = uiTurns.find((t) => t.id === turnId);
+      const turn = uiTurns.find(t => t.id === turnId);
       if (!turn) return;
 
       setIsRunning(true);
 
       const stripFailSteps = (steps: TurnStep[]) =>
         steps.filter(
-          (s) =>
+          s =>
             !(
               s.kind === "capability_fail" &&
               s.loopTurnId === params.loopTurnId &&
@@ -1123,8 +1327,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         );
 
       const appendStep = (step: TurnStep) => {
-        setUiTurns((prev) =>
-          prev.map((t) => {
+        setUiTurns(prev =>
+          prev.map(t => {
             if (t.id !== turnId) return t;
             const base = stripFailSteps(t.steps);
             return { ...t, steps: [...base, step] };
@@ -1136,7 +1340,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         let loaded = await SlideRuleRuntime.loadOrCreateSessionState(
           sessionState.sessionId || sessionId
         );
-        loaded = preservePythonEvidenceProjection(sanitizeLegacyEmptySeed(loaded));
+        loaded = preservePythonEvidenceProjection(
+          sanitizeLegacyEmptySeed(loaded)
+        );
 
         const goalText = loaded.goal?.text?.trim() || turn.user.trim();
         const uiExecutor = createUiCapabilityExecutor(
@@ -1146,9 +1352,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             goalText,
             emitImSteps: true,
             onStep: appendStep,
-            onActionTrace: (trace) => {
-              setUiTurns((prev) =>
-                prev.map((t) =>
+            onActionTrace: trace => {
+              setUiTurns(prev =>
+                prev.map(t =>
                   t.id === turnId ? { ...t, actions: [...t.actions, trace] } : t
                 )
               );
@@ -1166,7 +1372,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         applyPersistedState(final);
 
         const loopTurnIds = new Set(
-          (turn.routeFacts.rounds || []).map((r) => r.loopTurnId)
+          (turn.routeFacts.rounds || []).map(r => r.loopTurnId)
         );
         if (loopTurnIds.size === 0) {
           loopTurnIds.add(params.loopTurnId);
@@ -1187,14 +1393,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         const committedIds = (final.artifacts || [])
           .filter((a: any) => {
             const runId = a.producedBy?.capabilityRunId || "";
-            return [...loopTurnIds].some((lt: any) => runId.startsWith(`${lt}-run-`));
+            return [...loopTurnIds].some((lt: any) =>
+              runId.startsWith(`${lt}-run-`)
+            );
           })
           .map((a: any) => a.id);
         const committed = mapArtifactsToWhyArtifacts(final, committedIds);
         const main = pickMainArtifact(committed);
 
-        setUiTurns((prev) =>
-          prev.map((t) => {
+        setUiTurns(prev =>
+          prev.map(t => {
             if (t.id !== turnId) return t;
             const routeFacts = {
               ...t.routeFacts,
@@ -1225,7 +1433,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const challengeTurn = async (artifactId: string, reason?: string) => {
     const text =
       (reason && reason.trim()) ||
-      window.prompt("你想如何质疑这轮结论？", "这个结论的依据不够充分，请重新推演。") ||
+      window.prompt(
+        "你想如何质疑这轮结论？",
+        "这个结论的依据不够充分，请重新推演。"
+      ) ||
       "这个结论的依据不够充分，请重新推演。";
     await runTurn(text, {
       targetArtifactId: artifactId,
@@ -1261,11 +1472,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const pendingClarifications = useMemo<ClarificationItem[]>(() => {
     if (isRunning) return [];
     return (sessionState.coverageGaps || [])
-      .filter((g) => g.status === "open" && g.kind === "open_question")
-      .map((g) => ({
+      .filter(g => g.status === "open" && g.kind === "open_question")
+      .map(g => ({
         id: g.id,
         prompt: g.label,
-        kind: g.clarifyKind,  // V4 alignment
+        kind: g.clarifyKind, // V4 alignment
         type: g.clarifyType,
         options: g.options,
         defaultAnswer: g.defaultAnswer,
@@ -1276,23 +1487,28 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   // Generate deliverables by sending one intent through the existing S19 pipeline.
   const generateDeliverables = useCallback(() => {
     if (isRunning) return;
-    void runTurn("打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包", {
-      intent: "generate_plan",
-      text: "打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包",
-    });
+    void runTurn(
+      "打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包",
+      {
+        intent: "generate_plan",
+        text: "打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包",
+      }
+    );
   }, [isRunning, runTurn]);
 
   const answerClarifications = useCallback(
     (answers: Array<{ gapId: string; answer: string }>) => {
       if (!answers.length) return;
-      const byId = new Map((sessionState.coverageGaps || []).map((g) => [g.id, g.label] as const));
+      const byId = new Map(
+        (sessionState.coverageGaps || []).map(g => [g.id, g.label] as const)
+      );
       const supplement = answers
-        .map((a) => `「${byId.get(a.gapId) || a.gapId}」答：${a.answer}`)
+        .map(a => `「${byId.get(a.gapId) || a.gapId}」答：${a.answer}`)
         .join("\n");
       void runTurn(supplement, {
         intent: "clarify",
         text: supplement,
-        answeredGapIds: answers.map((a) => a.gapId),
+        answeredGapIds: answers.map(a => a.gapId),
       });
     },
     [sessionState.coverageGaps, runTurn]
@@ -1316,7 +1532,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     stop,
     // M5: real marathon budget, surfaced to the HUD for synchronization.
     marathonBudget,
-    setMarathonBudget: (b: { maxTokens: number; declaredAt: string }) => setMarathonBudget(b),
+    setMarathonBudget: (b: { maxTokens: number; declaredAt: string }) =>
+      setMarathonBudget(b),
     driveFullStatus,
     // SSE live skill highlight — which of the 6 systems is currently executing.
     activeSkillId,
