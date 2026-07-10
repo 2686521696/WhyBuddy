@@ -449,10 +449,12 @@ export default function TourStage3D({
           pendingEvents.push(event);
           return;
         }
-        if (event.type === "narration") {
-          // 台词气泡：narration 绑出演者时冒 Agentshire 式对话泡，随后自动隐去
-          if (event.npcId) {
-            const rig = rigs.get(event.npcId);
+        if (event.type === "narration" || event.type === "npc_line") {
+          // 台词气泡：narration 绑出演者 / LLM 台词（npc_line）都冒
+          // Agentshire 式对话泡，随后自动隐去
+          const npcId = event.npcId;
+          if (npcId) {
+            const rig = rigs.get(npcId);
             if (rig?.say) {
               if (rig.sayTimer) clearTimeout(rig.sayTimer);
               rig.say.draw(event.text);
@@ -464,8 +466,10 @@ export default function TourStage3D({
               );
             }
           }
-          boardNarration = event.text;
-          redrawBoard();
+          if (event.type === "narration") {
+            boardNarration = event.text;
+            redrawBoard();
+          }
           return;
         }
         if (event.type === "progress") {

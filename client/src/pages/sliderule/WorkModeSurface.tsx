@@ -16,6 +16,7 @@ import {
   Info,
   ListOrdered,
   Play,
+  Sparkles,
   Square,
   X,
 } from "lucide-react";
@@ -32,7 +33,8 @@ import {
   type TourReport,
 } from "./work-mode/tour-driver";
 import type { TourStageHandle } from "./work-mode/TourStage3D";
-import { isMotionReduced } from "./user-prefs";
+import { fetchTourFlavor, type TourFlavor } from "./work-mode/tour-flavor";
+import { isMotionReduced, loadTourLlmPref, setTourLlmPref } from "./user-prefs";
 
 // three.js 舞台懒加载分包（three + GLTFLoader 不进主包）
 const TourStage3D = React.lazy(() => import("./work-mode/TourStage3D"));
@@ -63,6 +65,11 @@ export function WorkModeSurface({
   // 舞台懒加载分包就绪前的演出事件先排队，就绪后按序补发（否则冷启动
   // 点「开始巡演」会丢掉开场的走位/气泡，白板停在等待开演）
   const pendingEventsRef = React.useRef<TourEvent[]>([]);
+  // onEvent 保持稳定引用（useCallback []），台词事件查角色名走 ref
+  const scriptRef = React.useRef<TourScript | null>(null);
+  React.useEffect(() => {
+    scriptRef.current = script;
+  }, [script]);
   const cancelRef = React.useRef(false);
   const [running, setRunning] = React.useState(false);
   const [feed, setFeed] = React.useState<FeedItem[]>([]);
@@ -74,6 +81,8 @@ export function WorkModeSurface({
   const [banner, setBanner] = React.useState<FeedItem | null>(null);
   const [report, setReport] = React.useState<TourReport | null>(null);
   const [profileNpcId, setProfileNpcId] = React.useState<string | null>(null);
+  // LLM 台词档（五期）：默认关，localStorage 持久化
+  const [llmEnabled, setLlmEnabled] = React.useState(() => loadTourLlmPref());
   const feedSeq = React.useRef(0);
   const feedEndRef = React.useRef<HTMLDivElement | null>(null);
   const bannerTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,11 +107,33 @@ export function WorkModeSurface({
     };
   }, [profileNpcId, script, model, schema]);
 
+  const pushFeed = React.useCallback(
+    (text: string, tone: "info" | "ok" | "blocked") => {
+      setFeed(prev => [...prev, { id: ++feedSeq.current, text, tone }]);
+    },
+    []
+  );
+
   const onEvent = React.useCallback((event: TourEvent) => {
     if (stageRef.current) {
       stageRef.current.dispatch(event);
     } else {
       pendingEventsRef.current.push(event);
+    }
+    if (event.type === "npc_line") {
+      // LLM 台词进事件流（✨ 标注来源，与事实性 narration 区分）
+      const roleId =
+        scriptRef.current?.cast.find(a => a.npcId === event.npcId)?.roleId ??
+        event.npcId;
+      setFeed(prev => [
+        ...prev,
+        {
+          id: ++feedSeq.current,
+          text: `✨ ${roleId}：「${event.text}」`,
+          tone: "info",
+        },
+      ]);
+      return;
     }
     if (event.type === "narration") {
       setFeed(prev => [
@@ -144,6 +175,25 @@ export function WorkModeSurface({
     setBanner(null);
     setRunning(true);
     try {
+      // LLM 入魂档（默认关）：开演前取台词/样例；任何失败回落确定性
+      // 样例并如实标注（fail-closed，不装作 LLM 参与过）
+      let flavor: TourFlavor | null = null;
+      if (llmEnabled) {
+        pushFeed("正在生成 LLM 台词与业务样例…", "info");
+        flavor = await fetchTourFlavor(model, script, appTitle || "推演应用");
+        if (flavor) {
+          pushFeed(
+            `LLM 台词就绪：${Object.keys(flavor.lines).length} 条台词 · ` +
+              `${Object.keys(flavor.rows).length} 个实体样例`,
+            "ok"
+          );
+        } else {
+          pushFeed(
+            "LLM 生成失败或通道未配置——本次巡演回退确定性样例（fail-closed）",
+            "info"
+          );
+        }
+      }
       const result = await runTour(script, {
         model,
         schema,
@@ -153,12 +203,28 @@ export function WorkModeSurface({
         pause: () =>
           new Promise(r => setTimeout(r, isMotionReduced() ? 220 : 950)),
         isCancelled: () => cancelRef.current,
+        flavor: flavor
+          ? {
+              valuesFor: entityId => flavor.rows[entityId] ?? null,
+              lineFor: stepIndex => flavor.lines[stepIndex] ?? null,
+            }
+          : undefined,
       });
       setReport(result);
     } finally {
       setRunning(false);
     }
-  }, [script, model, schema, sessionId, running, onEvent]);
+  }, [
+    script,
+    model,
+    schema,
+    sessionId,
+    running,
+    onEvent,
+    llmEnabled,
+    appTitle,
+    pushFeed,
+  ]);
 
   // ── 无模型：诚实空态 ─────────────────────────────────────────
   if (!script) {
@@ -272,6 +338,27 @@ export function WorkModeSurface({
 
       {/* 右上：控制钮 + 事件流开关 */}
       <div className="absolute right-4 top-3 flex items-center gap-2">
+        <button
+          type="button"
+          data-testid="sliderule-tour-llm-toggle"
+          onClick={() => {
+            setLlmEnabled(v => {
+              setTourLlmPref(!v);
+              return !v;
+            });
+          }}
+          disabled={running}
+          className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-[12px] font-semibold backdrop-blur transition disabled:opacity-50 ${
+            llmEnabled
+              ? "bg-[#7c3aed] text-white"
+              : "bg-black/55 text-white/80 hover:bg-black/70"
+          }`}
+          aria-pressed={llmEnabled}
+          title="LLM 台词档：角色台词与业务样例由 LLM 按模型语境生成；失败回退确定性样例"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          台词
+        </button>
         <button
           type="button"
           onClick={() => setFeedOpen(v => !v)}

@@ -41,6 +41,8 @@ export type TourEvent =
   | { type: "npc_anim"; npcId: string; anim: string }
   | { type: "npc_emoji"; npcId: string; emoji: string | null }
   | { type: "npc_status"; npcId: string; status: string | null }
+  /** LLM 生成的角色台词（五期入魂档；source 恒为 "llm"，如实标注来源） */
+  | { type: "npc_line"; npcId: string; text: string; source: "llm" }
   | {
       type: "npc_work_done";
       npcId: string;
@@ -78,6 +80,15 @@ export interface RunTourOptions {
   now?: () => string;
   /** 外部取消：返回 true 时提前收幕（已落的数据保留——诚实，不回滚真事实） */
   isCancelled?: () => boolean;
+  /**
+   * LLM 入魂档（五期，默认无）：建单样例值覆盖 + 每步角色台词。
+   * 值已由 tour-flavor 消毒（只含真实字段、number 已数字化）；缺省字段
+   * 仍由 sampleValuesFor 兜底——LLM 只能丰富数据，不能让建单缺字段。
+   */
+  flavor?: {
+    valuesFor?: (entityId: string) => Record<string, unknown> | null;
+    lineFor?: (stepIndex: number) => string | null;
+  };
 }
 
 /** 巡演样例值：按字段类型给可读的确定性值（不造假业务语义，标注来源） */
@@ -113,6 +124,7 @@ export async function runTour(
     pause = () => new Promise(r => setTimeout(r, 900)),
     now = () => new Date().toISOString(),
     isCancelled = () => false,
+    flavor,
   } = opts;
 
   let state: RuntimeState =
@@ -184,7 +196,11 @@ export async function runTour(
         break;
       }
       case "create_row": {
-        const values = sampleValuesFor(schema, step.entityId);
+        // LLM 样例只做覆盖：确定性样例兜底保证字段齐全（fail-closed）
+        const values = {
+          ...sampleValuesFor(schema, step.entityId),
+          ...(flavor?.valuesFor?.(step.entityId) ?? {}),
+        };
         const r = addRow(state, step.entityId, values, now());
         state = r.state;
         activeRowRef = { entityId: step.entityId, rowId: r.row.id };
@@ -284,6 +300,18 @@ export async function runTour(
         emit({ type: "fx", effect: "celebrate" });
         narrate(step.narration, "ok");
         break;
+      }
+    }
+    // LLM 台词（五期）：只给有出演者的步骤配音；narration 事实记录不动
+    if (flavor?.lineFor && "npcId" in step) {
+      const line = flavor.lineFor(index - 1);
+      if (line) {
+        emit({
+          type: "npc_line",
+          npcId: step.npcId,
+          text: line,
+          source: "llm",
+        });
       }
     }
     await pause();

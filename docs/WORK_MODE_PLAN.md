@@ -89,9 +89,20 @@ Work 模式 = 三层，实用价值全部在前两层：
   - 退役：`office-builder.ts`（自建场景）与 UACP 写实角色池——
     `client/public/work-mode-3d/` 已删（2026-07-10 用户裁决；git
     历史可找回，复采购流程存于该目录 README 的历史版本）。
-- **五期 · LLM 入魂档（默认关）**：角色用 LLM 生成拟真业务数据与台词，
-  走既有真通道 / BYOK，fail-closed。氛围器官候选：TimeOfDayLighting
-  昼夜光照、Effects/VFX 粒子、闲逛社交 DailyBehavior、BGM。
+- **五期 · LLM 入魂档（已落地一档，2026-07-10，默认关）**：
+  - python `/tour-flavor`（与 /prompt-refine 同一诚实契约：HTTP 恒 200，
+    flag 关/失败/不可解析都在 body 里如实报错，不伪造台词）；
+  - `tour-flavor.ts`：请求 + **消毒权威防线**（幻觉实体/字段/步骤丢弃、
+    number 强制数字化、台词截断）；任何失败返回 null → 巡演回落确定性
+    样例并在事件流如实标注（fail-closed）；
+  - driver `flavor` 注入：LLM 样例只覆盖不缺省（sampleValuesFor 兜底
+    字段齐全）；`npc_line` 事件带 `source:"llm"` 标注，舞台冒台词气泡，
+    事件流 ✨ 前缀与事实性 narration 区分；
+  - Work 面右上「✨ 台词」开关（localStorage `sliderule:tour-llm`，
+    默认关）。
+  - 后续档候选：指挥输入（"@财务 驳回试试" → 角色真执行）、
+    氛围器官（TimeOfDayLighting 昼夜、Effects/VFX 粒子、闲逛社交
+    DailyBehavior、BGM）。
 
 ## 三、Agentshire 借用方案（0 期解剖已完成：B 终裁成立，见本节末）
 
