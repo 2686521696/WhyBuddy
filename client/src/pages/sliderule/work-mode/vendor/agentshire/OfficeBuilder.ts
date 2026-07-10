@@ -213,24 +213,33 @@ export function buildAgentshireOffice(
 
     built.set(st.stationId, {
       stationId: st.stationId,
-      approach: new THREE.Vector3(x, 0, z + 1.7),
+      // 停靠点离桌远一点：z+1.7 会踩进椅子（用户实测人椅穿模）
+      approach: new THREE.Vector3(x, 0, z + 2.15),
       setScreen: state => sr.setState(state),
     });
   });
 
-  // 部门牌：悬于本区工位簇上方（RBAC menus 推导的真部门）
+  // 部门牌：按「区 × 排」分组，各自贴在本排工位簇正上方——双排布局时
+  // 一个区可能跨排，单块牌子取整区均值会悬空在过道上（用户实测）
+  const zoneRowGroups = new Map<string, number[]>();
   for (const zone of zones) {
-    const idxs = ordered
-      .map((st, i) => (st.zoneId === zone.zoneId ? i : -1))
-      .filter(i => i >= 0);
-    if (idxs.length === 0) continue;
+    ordered.forEach((st, i) => {
+      if (st.zoneId !== zone.zoneId) return;
+      const key = `${zone.zoneId}|${slotOf(i).z}`;
+      (zoneRowGroups.get(key) ?? zoneRowGroups.set(key, []).get(key)!).push(i);
+    });
+  }
+  for (const [key, idxs] of zoneRowGroups) {
+    const zoneId = key.split("|")[0];
+    const zone = zones.find(z => z.zoneId === zoneId);
+    if (!zone || idxs.length === 0) continue;
     const xs = idxs.map(i => slotOf(i).x);
-    const zs = idxs.map(i => slotOf(i).z);
+    const rowZ = slotOf(idxs[0]).z;
     const label = makeZoneLabel(zone.label);
     label.position.set(
       xs.reduce((a, b) => a + b, 0) / xs.length,
-      2.7,
-      Math.min(...zs) - 1.2
+      2.35,
+      rowZ - 1.0
     );
     add(label);
   }

@@ -71,6 +71,8 @@ export function WorkModeSurface({
     scriptRef.current = script;
   }, [script]);
   const cancelRef = React.useRef(false);
+  // 开演防重入的同步守卫（state 版 running 只管 UI 渲染）
+  const runningRef = React.useRef(false);
   const [running, setRunning] = React.useState(false);
   const [feed, setFeed] = React.useState<FeedItem[]>([]);
   const [feedOpen, setFeedOpen] = React.useState(false);
@@ -168,12 +170,16 @@ export function WorkModeSurface({
   );
 
   const startTour = React.useCallback(async () => {
-    if (!script || !model || !schema || running) return;
+    // 防重入必须走同步 ref：React state 的 running 提交前连点两下会把
+    // 两个巡演驱动并行开跑（所有事件双份交错——用户实测"开头重复"）
+    if (!script || !model || !schema || runningRef.current) return;
+    runningRef.current = true;
     cancelRef.current = false;
     setFeed([]);
     setReport(null);
     setBanner(null);
     setRunning(true);
+    stageRef.current?.reset();
     try {
       // LLM 入魂档（默认关）：开演前取台词/样例；任何失败回落确定性
       // 样例并如实标注（fail-closed，不装作 LLM 参与过）
@@ -212,6 +218,7 @@ export function WorkModeSurface({
       });
       setReport(result);
     } finally {
+      runningRef.current = false;
       setRunning(false);
     }
   }, [

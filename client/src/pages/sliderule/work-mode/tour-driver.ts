@@ -294,6 +294,8 @@ export async function runTour(
       }
       case "finale": {
         for (const actor of script.cast) {
+          // 清掉拦截演示留下的 🚫（收幕清场——用户实测残留）
+          emit({ type: "npc_emoji", npcId: actor.npcId, emoji: null });
           emit({ type: "npc_status", npcId: actor.npcId, status: "完成" });
           emit({ type: "npc_anim", npcId: actor.npcId, anim: "Victory" });
         }

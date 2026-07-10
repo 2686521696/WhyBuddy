@@ -24,6 +24,8 @@ import {
 
 export interface TourStageHandle {
   dispatch: (event: TourEvent) => void;
+  /** 开演清场：上一轮巡演的状态泡/台词泡/表情/工位屏/白板全部复位 */
+  reset: () => void;
 }
 
 const WALK_SPEED = 4.2; // 世界单位/秒（房间坐标系 30×25）
@@ -443,6 +445,29 @@ export default function TourStage3D({
 
     // 事件入口（父组件转发 driver 事件）
     const handle: TourStageHandle = {
+      reset: () => {
+        if (disposed) return;
+        pendingEvents.length = 0;
+        for (const rig of rigs.values()) {
+          if (rig.sayTimer) clearTimeout(rig.sayTimer);
+          rig.sayTimer = null;
+          rig.say?.draw(null);
+          rig.status?.draw(null);
+          if (rig.emoji) {
+            rig.group.remove(rig.emoji);
+            rig.emoji = null;
+          }
+          rig.stationId = null;
+        }
+        boardProgress = "开演…";
+        boardNarration = "";
+        redrawBoard();
+        for (const st of stations) {
+          office?.stations
+            .get(st.stationId)
+            ?.setScreen({ mode: "waiting", label: st.title.slice(0, 8) });
+        }
+      },
       dispatch: event => {
         if (disposed) return;
         if (!stageReady) {
