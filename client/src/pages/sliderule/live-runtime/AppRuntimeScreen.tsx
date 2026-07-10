@@ -1552,7 +1552,13 @@ export function AppRuntimeScreen({
       data-testid="app-runtime-screen"
     >
       {codeView ? (
-        <div className="absolute inset-0" data-testid="app-runtime-code-host">
+        // pt-11 给左上角浮动的档位胶囊让出一条头带，避免压住代码视图的说明条；
+        // 头带底色与说明条同色（#f7f8fa），视觉上连成一段头部。
+        <div
+          className="absolute inset-0 pt-11"
+          style={{ background: "#f7f8fa" }}
+          data-testid="app-runtime-code-host"
+        >
           <CodeProjectionView model={model} appName={appTitle} />
         </div>
       ) : null}
