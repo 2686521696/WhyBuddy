@@ -1,15 +1,198 @@
 /**
- * CodeProjectionView — 代码投影视图（代码视图一期）。
+ * CodeProjectionView — 代码投影视图（代码视图二期）。
  *
- * 左侧文件列表 + 右侧 mono 代码面板（零高亮依赖，一期先保内容与诚实性）。
+ * 左侧目录树（文件夹分层、可折叠）+ 右侧 CodeMirror 只读编辑器
+ * （懒加载分包；未就绪/测试态回退纯 <pre>）。
  * 顶部常驻说明：这是 schema 的确定性投影（只读），与运行应用同源。
  */
 
 import React from "react";
 import { Button, message } from "antd";
-import { CopyOutlined } from "@ant-design/icons";
+import {
+  CaretDownOutlined,
+  CaretRightOutlined,
+  CopyOutlined,
+  FileOutlined,
+  FolderOpenOutlined,
+  FolderOutlined,
+} from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
-import { deriveCodeProjection } from "./code-projection";
+import { deriveCodeProjection, type ProjectedFile } from "./code-projection";
+
+const LazyCodeMirrorPanel = React.lazy(() => import("./CodeMirrorPanel"));
+
+const LANGUAGE_ICON_COLOR: Record<ProjectedFile["language"], string> = {
+  typescript: "#3178c6",
+  tsx: "#3178c6",
+  sql: "#b45309",
+  json: "#ca8a04",
+  markdown: "#6b7280",
+};
+
+// --- 目录树（由文件路径确定性推导，文件夹在前 · 首现顺序） -----------------
+
+interface DirNode {
+  name: string;
+  path: string;
+  dirs: DirNode[];
+  files: ProjectedFile[];
+}
+
+function buildDirTree(files: ProjectedFile[]): DirNode {
+  const root: DirNode = { name: "", path: "", dirs: [], files: [] };
+  const dirMap = new Map<string, DirNode>([["", root]]);
+  for (const f of files) {
+    const parts = f.path.split("/");
+    let parentPath = "";
+    for (let i = 0; i < parts.length - 1; i++) {
+      const p = parentPath ? `${parentPath}/${parts[i]}` : parts[i];
+      if (!dirMap.has(p)) {
+        const node: DirNode = { name: parts[i], path: p, dirs: [], files: [] };
+        dirMap.get(parentPath)!.dirs.push(node);
+        dirMap.set(p, node);
+      }
+      parentPath = p;
+    }
+    dirMap.get(parentPath)!.files.push(f);
+  }
+  return root;
+}
+
+function FileRow({
+  file,
+  depth,
+  active,
+  onSelect,
+}: {
+  file: ProjectedFile;
+  depth: number;
+  active: boolean;
+  onSelect: (path: string) => void;
+}) {
+  const name = file.path.split("/").pop() ?? file.path;
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(file.path)}
+      data-testid={`code-file-${file.path}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        width: "100%",
+        textAlign: "left",
+        border: 0,
+        cursor: "pointer",
+        borderRadius: 6,
+        padding: `4px 8px 4px ${21 + depth * 14}px`,
+        fontSize: 12,
+        fontFamily: "ui-monospace, monospace",
+        background: active ? "#e6f4ff" : "transparent",
+        color: active ? "#1677ff" : "#40485a",
+      }}
+    >
+      <FileOutlined
+        style={{
+          fontSize: 12,
+          color: active ? "#1677ff" : LANGUAGE_ICON_COLOR[file.language],
+        }}
+      />
+      <span
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {name}
+      </span>
+    </button>
+  );
+}
+
+function DirRows({
+  node,
+  depth,
+  activePath,
+  collapsed,
+  onToggle,
+  onSelect,
+}: {
+  node: DirNode;
+  depth: number;
+  activePath: string;
+  collapsed: Set<string>;
+  onToggle: (path: string) => void;
+  onSelect: (path: string) => void;
+}) {
+  return (
+    <>
+      {node.dirs.map(dir => {
+        const isCollapsed = collapsed.has(dir.path);
+        return (
+          <React.Fragment key={dir.path}>
+            <button
+              type="button"
+              onClick={() => onToggle(dir.path)}
+              data-testid={`code-dir-${dir.path}`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                width: "100%",
+                textAlign: "left",
+                border: 0,
+                cursor: "pointer",
+                borderRadius: 6,
+                padding: `4px 8px 4px ${8 + depth * 14}px`,
+                fontSize: 12,
+                fontFamily: "ui-monospace, monospace",
+                background: "transparent",
+                color: "#40485a",
+                fontWeight: 500,
+              }}
+            >
+              {isCollapsed ? (
+                <CaretRightOutlined style={{ fontSize: 9, color: "#8c95a8" }} />
+              ) : (
+                <CaretDownOutlined style={{ fontSize: 9, color: "#8c95a8" }} />
+              )}
+              {isCollapsed ? (
+                <FolderOutlined style={{ fontSize: 12, color: "#8c95a8" }} />
+              ) : (
+                <FolderOpenOutlined
+                  style={{ fontSize: 12, color: "#8c95a8" }}
+                />
+              )}
+              <span>{dir.name}</span>
+            </button>
+            {!isCollapsed && (
+              <DirRows
+                node={dir}
+                depth={depth + 1}
+                activePath={activePath}
+                collapsed={collapsed}
+                onToggle={onToggle}
+                onSelect={onSelect}
+              />
+            )}
+          </React.Fragment>
+        );
+      })}
+      {node.files.map(f => (
+        <FileRow
+          key={f.path}
+          file={f}
+          depth={depth}
+          active={activePath === f.path}
+          onSelect={onSelect}
+        />
+      ))}
+    </>
+  );
+}
+
+// --- 主视图 -----------------------------------------------------------------
 
 export function CodeProjectionView({
   model,
@@ -22,10 +205,23 @@ export function CodeProjectionView({
     () => deriveCodeProjection(model, appName),
     [model, appName]
   );
+  const tree = React.useMemo(() => buildDirTree(files), [files]);
   const [activePath, setActivePath] = React.useState<string>(
     files[0]?.path ?? ""
   );
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(
+    () => new Set()
+  );
   const active = files.find(f => f.path === activePath) ?? files[0];
+
+  const toggleDir = React.useCallback((path: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
 
   if (files.length === 0) {
     return (
@@ -65,12 +261,12 @@ export function CodeProjectionView({
         }}
       >
         代码视图 = 五系统 schema 的确定性投影（只读，非 LLM
-        生成）——与左侧运行应用同源同真相；要改内容请回到意图重新推演。
+        生成）——与运行应用同源同真相；要改内容请回到意图重新推演。
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <div
           style={{
-            width: 190,
+            width: 210,
             flexShrink: 0,
             overflowY: "auto",
             borderRight: "1px solid #e5e7eb",
@@ -78,29 +274,14 @@ export function CodeProjectionView({
             background: "#fcfcfd",
           }}
         >
-          {files.map(f => (
-            <button
-              key={f.path}
-              type="button"
-              onClick={() => setActivePath(f.path)}
-              data-testid={`code-file-${f.path}`}
-              style={{
-                display: "block",
-                width: "100%",
-                textAlign: "left",
-                border: 0,
-                cursor: "pointer",
-                borderRadius: 6,
-                padding: "6px 10px",
-                fontSize: 12,
-                fontFamily: "ui-monospace, monospace",
-                background: active?.path === f.path ? "#e6f4ff" : "transparent",
-                color: active?.path === f.path ? "#1677ff" : "#40485a",
-              }}
-            >
-              {f.path}
-            </button>
-          ))}
+          <DirRows
+            node={tree}
+            depth={0}
+            activePath={active?.path ?? ""}
+            collapsed={collapsed}
+            onToggle={toggleDir}
+            onSelect={setActivePath}
+          />
         </div>
         <div
           style={{
@@ -151,23 +332,35 @@ export function CodeProjectionView({
               复制
             </Button>
           </div>
-          <pre
-            data-testid="code-content"
-            style={{
-              flex: 1,
-              minHeight: 0,
-              margin: 0,
-              overflow: "auto",
-              padding: "12px 16px",
-              fontSize: 12,
-              lineHeight: 1.7,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-              color: "#1f2329",
-              whiteSpace: "pre",
-            }}
+          <React.Suspense
+            fallback={
+              <pre
+                data-testid="code-content"
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  margin: 0,
+                  overflow: "auto",
+                  padding: "12px 16px",
+                  fontSize: 12,
+                  lineHeight: 1.7,
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  color: "#1f2329",
+                  whiteSpace: "pre",
+                }}
+              >
+                {active?.content}
+              </pre>
+            }
           >
-            {active?.content}
-          </pre>
+            {active ? (
+              <LazyCodeMirrorPanel
+                key={active.path}
+                language={active.language}
+                value={active.content}
+              />
+            ) : null}
+          </React.Suspense>
         </div>
       </div>
     </div>

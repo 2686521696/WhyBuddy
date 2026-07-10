@@ -1,8 +1,9 @@
 /**
- * 代码投影（代码视图一期）测试。
- * 锁：确定性投影内容——DDL 的 enum CHECK、TS union、状态机链路、RBAC 常量、
- * 页面范式骨架、AIGC 接口与编排、README 不变式清单；缺段文件如实缺席；
- * 中文 id 净化为合法标识符；CodeProjectionView 静态渲染。
+ * 代码投影（代码视图二期）测试。
+ * 锁：完整工程结构投影——工程清单/入口路由/每实体数据访问层/每页面一文件/
+ * 每能力一文件/范式组件契约；DDL 的 enum CHECK、TS union、状态机链路、
+ * RBAC 常量、README 不变式清单；缺段文件如实缺席；中文 id 净化为合法
+ * 标识符；CodeProjectionView 目录树静态渲染（编辑器懒加载回退 <pre>）。
  */
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -122,19 +123,33 @@ describe("deriveCodeProjection", () => {
   const files = deriveCodeProjection(MODEL, "轻量 CRM");
   const byPath = Object.fromEntries(files.map(f => [f.path, f.content]));
 
-  it("七个文件齐全，均带只读投影头注", () => {
+  it("完整工程结构齐全，均带只读投影头注", () => {
     expect(files.map(f => f.path)).toEqual([
       "README.md",
+      "package.json",
       "db/schema.sql",
+      "src/main.tsx",
       "src/types.ts",
-      "src/workflow.ts",
       "src/rbac.ts",
-      "src/pages.tsx",
-      "src/aigc.ts",
+      "src/workflow.ts",
+      "src/api/customer.ts",
+      "src/components/paradigms.tsx",
+      "src/pages/p_board.tsx",
+      "src/aigc/client.ts",
+      "src/aigc/cap_summary.ts",
+      "src/aigc/pipelines.ts",
     ]);
     for (const f of files) {
       expect(f.content).toContain("确定性投影");
     }
+  });
+
+  it("工程清单：npm 安全名 + 依赖/脚本（有页面才带 antd）", () => {
+    const pkg = JSON.parse(byPath["package.json"]);
+    expect(pkg.private).toBe(true);
+    expect(pkg.name).toMatch(/^[a-z][a-z0-9-]*$/);
+    expect(pkg.dependencies.antd).toBeTruthy();
+    expect(pkg.scripts.dev).toBe("vite");
   });
 
   it("DDL：enum 取值落成 CHECK；format/展示名进注释", () => {
@@ -150,6 +165,25 @@ describe("deriveCodeProjection", () => {
     expect(ts).toContain("export interface Customer {");
     expect(ts).toContain('status: "待跟进" | "已成交";');
     expect(ts).toContain("deal_amount: number;");
+  });
+
+  it("入口路由：每页面 import + 路由表", () => {
+    const main = byPath["src/main.tsx"];
+    expect(main).toContain('import { PBoardPage } from "./pages/p_board";');
+    expect(main).toContain('path: "/p_board"');
+    expect(main).toContain('name: "跟进看板"');
+  });
+
+  it("数据访问层：每实体一份 CRUD 契约（诚实骨架，不伪造实现）", () => {
+    const api = byPath["src/api/customer.ts"];
+    expect(api).toContain('import type { Customer } from "../types";');
+    expect(api).toContain(
+      "export async function listCustomer(): Promise<Customer[]> {"
+    );
+    expect(api).toContain(
+      'export async function createCustomer(input: Omit<Customer, "id">): Promise<Customer> {'
+    );
+    expect(api).toContain("投影骨架：待接入真实后端");
   });
 
   it("状态机：主链路 + 附加链路（kind/phase/condition 保留）", () => {
@@ -168,22 +202,38 @@ describe("deriveCodeProjection", () => {
     expect(rbac).toContain("export const MENUS");
   });
 
-  it("页面骨架：kanban 范式 + KPI 注释；AIGC：接口 + 编排", () => {
-    const pages = byPath["src/pages.tsx"];
-    expect(pages).toContain("范式：kanban");
-    expect(pages).toContain('<KanbanBoard statusField="customer.status" />');
-    expect(pages).toContain("KPI：成交总额");
-    const aigc = byPath["src/aigc.ts"];
-    expect(aigc).toContain("export async function cap_summary(");
-    expect(aigc).toContain('"customer.name": string;');
-    expect(aigc).toContain("写回目标：customer.status");
-    expect(aigc).toContain("export const pipe_1");
+  it("页面文件：范式组件 import + KPI 注释；范式契约文件存在", () => {
+    const page = byPath["src/pages/p_board.tsx"];
+    expect(page).toContain(
+      'import { KanbanBoard } from "../components/paradigms";'
+    );
+    expect(page).toContain("范式：kanban");
+    expect(page).toContain('<KanbanBoard statusField="customer.status" />');
+    expect(page).toContain("KPI：成交总额");
+    const paradigms = byPath["src/components/paradigms.tsx"];
+    expect(paradigms).toContain("export function KanbanBoard(");
+    expect(paradigms).toContain("export interface DataTableProps {");
   });
 
-  it("README：规模统计 + 不变式验收清单", () => {
+  it("AIGC：每能力一文件（契约签名）+ 通道占位 + 编排", () => {
+    const cap = byPath["src/aigc/cap_summary.ts"];
+    expect(cap).toContain("export async function cap_summary(input: {");
+    expect(cap).toContain('"customer.name": string;');
+    expect(cap).toContain("写回目标：customer.status");
+    expect(cap).toContain(
+      'import { callLlmExplain, type ExplainedOutput } from "./client";'
+    );
+    const client = byPath["src/aigc/client.ts"];
+    expect(client).toContain("export async function callLlmExplain(");
+    expect(client).toContain("投影骨架：待接入 LLM 通道");
+    expect(byPath["src/aigc/pipelines.ts"]).toContain("export const pipe_1");
+  });
+
+  it("README：规模统计 + 目录对照 + 不变式验收清单", () => {
     const readme = byPath["README.md"];
     expect(readme).toContain("# 轻量 CRM");
     expect(readme).toContain("1 实体 · 1 页面 · 1 项 AI 能力");
+    expect(readme).toContain("`src/api/`");
     expect(readme).toContain("- [ ] 成交金额只能由回款确认节点写入");
   });
 
@@ -194,8 +244,10 @@ describe("deriveCodeProjection", () => {
     } as FiveSystemModel);
     expect(partial.map(f => f.path)).toEqual([
       "README.md",
+      "package.json",
       "db/schema.sql",
       "src/types.ts",
+      "src/api/customer.ts",
     ]);
     expect(deriveCodeProjection(null)).toEqual([]);
     expect(deriveCodeProjection(MODEL, "轻量 CRM")).toEqual(files);
@@ -218,18 +270,24 @@ describe("deriveCodeProjection", () => {
     expect(sql).toMatch(/CREATE TABLE [A-Za-z_][A-Za-z0-9_]* \(/);
     expect(sql).not.toMatch(/CREATE TABLE 客户档案/);
     expect(sql).toContain("-- 客户档案");
+    const api = weird.find(f => f.path.startsWith("src/api/"))!;
+    expect(api.path).toMatch(/^src\/api\/[A-Za-z_][A-Za-z0-9_]*\.ts$/);
   });
 });
 
 describe("CodeProjectionView 渲染", () => {
-  it("文件列表 + 只读说明 + 代码面板", () => {
+  it("目录树（文件夹 + 文件）+ 只读说明 + 代码面板回退 <pre>", () => {
     const html = renderToStaticMarkup(
       <CodeProjectionView model={MODEL} appName="轻量 CRM" />
     );
     expect(html).toContain('data-testid="app-runtime-code"');
+    expect(html).toContain('data-testid="code-dir-src"');
+    expect(html).toContain('data-testid="code-dir-src/api"');
     expect(html).toContain('data-testid="code-file-db/schema.sql"');
+    expect(html).toContain('data-testid="code-file-src/pages/p_board.tsx"');
     expect(html).toContain("确定性投影（只读，非 LLM 生成）");
-    // 默认展示第一个文件（README）——代码面板里是它的内容
+    // 编辑器懒加载未就绪时回退 <pre>，内容为默认展示文件（README）
+    expect(html).toContain('data-testid="code-content"');
     expect(html).toContain("# 轻量 CRM");
   });
 
