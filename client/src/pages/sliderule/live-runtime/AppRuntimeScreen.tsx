@@ -1557,10 +1557,10 @@ export function AppRuntimeScreen({
       data-testid="app-runtime-screen"
     >
       {codeView ? (
-        // pt-11 给左上角浮动的档位胶囊让出一条头带，避免压住代码视图的说明条；
-        // 头带底色与说明条同色（#f7f8fa），视觉上连成一段头部。
+        // 档位胶囊浮在画布上（旧消费方）时才需要 pt-11 头带给它让位；
+        // 切换条已 portal 到顶条（studio）时代码区铺满、无多余留白（用户反馈）
         <div
-          className="absolute inset-0 pt-11"
+          className={`absolute inset-0 ${controlsContainer === undefined ? "pt-11" : ""}`}
           style={{ background: "#f7f8fa" }}
           data-testid="app-runtime-code-host"
         >
