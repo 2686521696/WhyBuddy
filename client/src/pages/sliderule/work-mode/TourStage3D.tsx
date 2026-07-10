@@ -45,6 +45,8 @@ const ANIM_MAP: Record<string, string> = {
 
 interface ActorRig {
   group: THREE.Group;
+  /** 集结区座次（开演清场时瞬移回位） */
+  home: THREE.Vector3;
   mixer: THREE.AnimationMixer | null;
   clips: THREE.AnimationClip[];
   current: THREE.AnimationAction | null;
@@ -306,11 +308,12 @@ export default function TourStage3D({
 
     for (const [i, actor] of cast.entries()) {
       const group = new THREE.Group();
-      group.position.set(
+      const home = new THREE.Vector3(
         HOME.x + (i - (cast.length - 1) / 2) * SPAWN_GAP,
         0,
         HOME.z
       );
+      group.position.copy(home);
       group.visible = false;
       group.userData.npcId = actor.npcId;
       scene.add(group);
@@ -322,6 +325,7 @@ export default function TourStage3D({
       group.add(say.sprite);
       rigs.set(actor.npcId, {
         group,
+        home,
         mixer: null,
         clips: [],
         current: null,
@@ -448,6 +452,7 @@ export default function TourStage3D({
       reset: () => {
         if (disposed) return;
         pendingEvents.length = 0;
+        spots.clear();
         for (const rig of rigs.values()) {
           if (rig.sayTimer) clearTimeout(rig.sayTimer);
           rig.sayTimer = null;
@@ -458,6 +463,11 @@ export default function TourStage3D({
             rig.emoji = null;
           }
           rig.stationId = null;
+          // 瞬移回集结区（清场要看得见：人不归位=没清场）
+          rig.target = null;
+          rig.group.position.copy(rig.home);
+          rig.group.rotation.y = 0;
+          playClip(rig, "Idle");
         }
         boardProgress = "开演…";
         boardNarration = "";
@@ -516,7 +526,9 @@ export default function TourStage3D({
             ? station.approach
             : new THREE.Vector3(HOME.x, 0, HOME.z);
           // 防重叠：同一工位多人停靠时环形让位
-          const spot = spots.allocate({ x: raw.x, z: raw.z }, event.npcId, 1.1);
+          // 间距按角色实际肩宽给：1.75 身高的小人肩宽约 0.9，
+          // 1.1 的环形半径等于贴身站（用户实测"重叠"）
+          const spot = spots.allocate({ x: raw.x, z: raw.z }, event.npcId, 1.7);
           const dest = new THREE.Vector3(spot.x, 0, spot.z);
           if (isMotionReduced()) {
             rig.group.position.copy(dest);
