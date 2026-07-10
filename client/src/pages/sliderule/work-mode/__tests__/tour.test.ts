@@ -146,6 +146,24 @@ describe("tour-script 剧本层（纯函数）", () => {
       ])
     );
   });
+
+  it("一人一桌（Agentshire 编排）：审批在出演者自己可见页面的工位办理，不共用工作流桌", () => {
+    const script = buildTourScript(MODEL, schema)!;
+    const advances = script.steps.filter(s => s.kind === "advance");
+    // creator 在自己的建单桌（p-ticket）办理，auditor 在自己可见的审核台（p-review）
+    expect(advances[0].stationId).toBe("station-p-ticket");
+    expect(advances[1].stationId).toBe("station-p-review");
+    // 不同出演者不共用一张桌
+    expect(new Set(advances.map(a => a.stationId)).size).toBe(2);
+    // 已在自己桌上不空走：creator 全程只有建单前那一次走向 p-ticket
+    const creatorWalks = script.steps.filter(
+      s =>
+        s.kind === "walk" &&
+        s.npcId.includes("creator") &&
+        s.stationId === "station-p-ticket"
+    );
+    expect(creatorWalks).toHaveLength(1);
+  });
 });
 
 describe("tour-driver 执行层（真调运行时）", () => {

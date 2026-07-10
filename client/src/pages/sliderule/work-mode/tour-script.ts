@@ -229,6 +229,12 @@ export function buildTourScript(
   // ── 第三幕 · 审批链（沿 workflow 主链路推进真实例）──────────────
   // 从起始节点沿 transitions 走单条路径（分支取第一条）；每个节点由
   // assigneeRole 出演（无角色 → 第一个演员代跑）。
+  //
+  // 工位编排移植 Agentshire 一人一桌（WorkflowHandler.allocateEmptyStation
+  // 同构）：每个出演者独占一张桌，审批在自己桌上办——全员轮流挤同一张
+  // "工作流桌"是此前画面拥挤的根源（用户四轮实测）。分配诚实推导：
+  // 优先该角色真实可见页面的工位，次选空桌，桌不够才共用（SpotAllocator
+  // 兜底站位）。
   const nodes = model.workflow?.nodes ?? [];
   const transitions = model.workflow?.transitions ?? [];
   if (nodes.length > 0 && creator) {
@@ -236,14 +242,33 @@ export function buildTourScript(
     let currentId: string | null =
       nodes.find(n => !hasInbound.has(n.id))?.id ?? nodes[0]?.id ?? null;
     const visited = new Set<string>();
-    // 工作流工位：优先 appbundle 绑定的页面，否则用建单页
-    const wfPageRef = (model.appbundle?.pageBindings ?? []).find(
-      b => b.workflowRef
-    )?.pageRef;
-    const wfStation =
-      stations.find(s => s.pageId === wfPageRef) ??
-      creationStation ??
-      stations[0];
+
+    const stationByActor = new Map<string, TourStation>();
+    const takenStations = new Set<string>();
+    if (creationStation) {
+      // 建单人已在建单桌上工作，这张桌就是他的
+      stationByActor.set(creator.npcId, creationStation);
+      takenStations.add(creationStation.stationId);
+    }
+    const stationForActor = (actor: TourActor): TourStation => {
+      const existing = stationByActor.get(actor.npcId);
+      if (existing) return existing;
+      const pageAccess = accessByRole.get(actor.roleId) ?? [];
+      let chosen = pageAccess
+        .filter(pa => pa.visible)
+        .map(pa => stations.find(s => s.pageId === pa.pageId))
+        .find((s): s is TourStation => !!s && !takenStations.has(s.stationId));
+      chosen ??= stations.find(s => !takenStations.has(s.stationId));
+      chosen ??= creationStation ?? stations[0];
+      stationByActor.set(actor.npcId, chosen);
+      takenStations.add(chosen.stationId);
+      return chosen;
+    };
+    // 已在自己桌上则不再空走一趟（同角色连续节点常见）
+    const lastStationByNpc = new Map<string, string>();
+    if (creationStation)
+      lastStationByNpc.set(creator.npcId, creationStation.stationId);
+
     while (currentId && !visited.has(currentId)) {
       visited.add(currentId);
       const node = nodes.find(n => n.id === currentId);
@@ -251,16 +276,20 @@ export function buildTourScript(
       const actor =
         (node.assigneeRole && actorByRole.get(node.assigneeRole)) || creator;
       const nodeName = node.name || node.id;
-      steps.push({
-        kind: "walk",
-        npcId: actor.npcId,
-        stationId: wfStation.stationId,
-        narration: `${actor.roleId} 前往「${nodeName}」节点`,
-      });
+      const station = stationForActor(actor);
+      if (lastStationByNpc.get(actor.npcId) !== station.stationId) {
+        steps.push({
+          kind: "walk",
+          npcId: actor.npcId,
+          stationId: station.stationId,
+          narration: `${actor.roleId} 前往「${nodeName}」节点`,
+        });
+        lastStationByNpc.set(actor.npcId, station.stationId);
+      }
       steps.push({
         kind: "advance",
         npcId: actor.npcId,
-        stationId: wfStation.stationId,
+        stationId: station.stationId,
         nodeName,
         narration: `${actor.roleId} 处理「${nodeName}」`,
       });
