@@ -233,7 +233,7 @@ async function parsePdfFile(file: File) {
   const document = await pdfjs.getDocument({
     data,
     useWorkerFetch: false,
-    isEvalSupported: false,
+    // pdfjs 5.x 移除 isEvalSupported 选项：eval 字体路径已默认禁用
   }).promise;
 
   const pageTexts: string[] = [];
