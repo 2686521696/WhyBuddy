@@ -14,6 +14,9 @@ import { deriveAppRuntimeSchema } from "../../live-runtime/app-runtime-schema";
 import { buildTourScript, CHARACTER_POOL } from "../tour-script";
 import { runTour, sampleValuesFor, type TourEvent } from "../tour-driver";
 import { loadRuntimeState } from "../../live-runtime/runtime-persistence";
+import { deriveTourReportMd, loadTourReport } from "../tour-report";
+import { serializeSlideRuleDeliveryMd } from "../../serialize-sliderule-delivery-md";
+import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 
 // node 环境 localStorage shim（runtime-persistence 读写）
 const mem = new Map<string, string>();
@@ -108,6 +111,16 @@ describe("tour-script 剧本层（纯函数）", () => {
     ]);
   });
 
+  it("部门分区来自 RBAC menus（真部门），工位按权限交集归属", () => {
+    const script = buildTourScript(MODEL, schema)!;
+    // 两个菜单 = 两个部门区：工单台、审核台
+    expect(script.zones.map(z => z.label)).toEqual(["工单台", "审核台"]);
+    const zoneOf = (pageId: string) =>
+      script.stations.find(s => s.pageId === pageId)?.zoneId;
+    expect(zoneOf("p-ticket")).toBe("zone-m1");
+    expect(zoneOf("p-review")).toBe("zone-m2");
+  });
+
   it("幕次：建单（有 create 权限者）→ 审批链（节点 assigneeRole 出演）→ 权限拦截 → 收幕", () => {
     const script = buildTourScript(MODEL, schema)!;
     const kinds = script.steps.map(s => s.kind);
@@ -164,13 +177,14 @@ describe("tour-driver 执行层（真调运行时）", () => {
     // 审批留痕记角色（byRole）——交付物快照同口径
     expect(state.instances[0].log.some(l => l.byRole === "auditor")).toBe(true);
 
-    // 事件词汇表 GameEvent 兼容
+    // 事件词汇表 GameEvent 兼容（二期含 npc_status 头顶状态）
     const types = new Set(events.map(e => e.type));
     for (const t of [
       "npc_spawn",
       "npc_move_to",
       "npc_anim",
       "npc_emoji",
+      "npc_status",
       "npc_work_done",
       "fx",
       "progress",
@@ -178,6 +192,37 @@ describe("tour-driver 执行层（真调运行时）", () => {
     ]) {
       expect(types).toContain(t);
     }
+    const statuses = events
+      .filter(e => e.type === "npc_status")
+      .map(e => (e as { status: string | null }).status);
+    for (const s of ["移动中", "录入中", "审批中", "被拦截", "完成"]) {
+      expect(statuses).toContain(s);
+    }
+
+    // 报告留档 + 交付物附录段（数字与事实一致，没跑过不出段）
+    const stored = loadTourReport("tour-test-1");
+    expect(stored?.rowsCreated).toBe(1);
+    expect(stored?.finishedAt).toBe("2026-07-10T00:00:00.000Z");
+    const md = deriveTourReportMd("tour-test-1")!;
+    expect(md).toContain("## 附录 · 角色巡演报告（Work 模式）");
+    expect(md).toContain("真实落库：1 行");
+    expect(md).toContain("| creator | p-review |");
+    expect(deriveTourReportMd("no-such-session")).toBeNull();
+
+    // 交付物 md 组装：带 tourReportMd 才出段
+    const fakeState = {
+      sessionId: "tour-test-1",
+      goal: { text: "测试", status: "clear" },
+      artifacts: [],
+      capabilityRuns: [],
+      coverageGaps: [],
+    } as unknown as V5SessionState;
+    const delivery = serializeSlideRuleDeliveryMd(fakeState, {
+      tourReportMd: md,
+    });
+    expect(delivery).toContain("角色巡演报告");
+    const deliveryWithout = serializeSlideRuleDeliveryMd(fakeState, {});
+    expect(deliveryWithout).not.toContain("角色巡演报告");
   });
 
   it("样例值按字段类型确定性生成", () => {

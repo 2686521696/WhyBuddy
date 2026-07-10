@@ -56,9 +56,20 @@ Work 模式 = 三层，实用价值全部在前两层：
     名牌、reduce-motion 瞬移降级；模型加载失败给诚实立方体替身；
   - CSP 增补 `blob:`（connect-src/img-src）——GLTFLoader 解 GLB 内嵌
     贴图必需；blob 仅本页脚本可创建，zero-trust 姿态不变。
-- **二期 · 测试价值收口**：不变式验收单逐条点亮、巡演报告进交付物附录、
-  多链路顺演（chains）、角色卡（点击 NPC 看权限/页面/职责）；
-  可选：Agentshire 氛围器官换皮（昼夜/天气/编排细化）。
+- **二期 · 办公室化（已落地，2026-07-10 用户裁决五件）**：
+  - `vendor/SpotAllocator.ts`：Agentshire 直搬（MIT 署名，环形探位防
+    NPC 站位重叠）；
+  - `office-builder.ts`：部门分区办公室——**部门 = RBAC menus（schema
+    真相）**，页面按权限交集归属；Kenney 家具工位三件套（桌/椅/显示器，
+    显示器 CanvasTexture 实时绘页面名与动作，ScreenRenderer 手法）+
+    分色地毯 + 墙面部门牌 + 绿植 + 墙体灯光；
+  - NPC 头顶实时状态气泡（npc_status 事件：移动中/录入中/审批中/
+    被拦截/完成），动作同步上工位显示器；
+  - 点击 NPC → 角色档案卡（权限/可见页/无权页/流程职责，全部 model
+    确定性推导，与运行应用同源判定）；
+  - 巡演报告留档（localStorage）→ 交付物 MD 附录段（没跑过不出段）。
+  - 遗留候选：不变式验收单逐条点亮、多链路顺演（chains）、
+    Agentshire 氛围器官换皮（昼夜/天气/闲逛社交 DailyBehavior）。
 - **三期 · LLM 入魂档（默认关）**：角色用 LLM 生成拟真业务数据与台词，
   走既有真通道 / BYOK，fail-closed。
 

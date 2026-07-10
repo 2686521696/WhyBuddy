@@ -27,6 +27,7 @@ import {
   saveRuntimeState,
 } from "../live-runtime/runtime-persistence";
 import type { TourScript, TourStep } from "./tour-script";
+import { saveTourReport } from "./tour-report";
 
 export type TourEvent =
   | {
@@ -39,6 +40,7 @@ export type TourEvent =
   | { type: "npc_move_to"; npcId: string; stationId: string }
   | { type: "npc_anim"; npcId: string; anim: string }
   | { type: "npc_emoji"; npcId: string; emoji: string | null }
+  | { type: "npc_status"; npcId: string; status: string | null }
   | {
       type: "npc_work_done";
       npcId: string;
@@ -163,6 +165,7 @@ export async function runTour(
       }
       case "walk": {
         narrate(step.narration);
+        emit({ type: "npc_status", npcId: step.npcId, status: "移动中" });
         emit({ type: "npc_anim", npcId: step.npcId, anim: "Walk" });
         emit({
           type: "npc_move_to",
@@ -178,6 +181,7 @@ export async function runTour(
         activeRowRef = { entityId: step.entityId, rowId: r.row.id };
         report.rowsCreated += 1;
         persist();
+        emit({ type: "npc_status", npcId: step.npcId, status: "录入中" });
         emit({ type: "npc_anim", npcId: step.npcId, anim: "PickUp" });
         narrate(`${step.narration}（row ${r.row.id} 已真实落库）`, "ok");
         break;
@@ -198,6 +202,7 @@ export async function runTour(
       }
       case "advance": {
         if (!activeInstanceId) break;
+        emit({ type: "npc_status", npcId: step.npcId, status: "审批中" });
         emit({ type: "npc_anim", npcId: step.npcId, anim: "Interact" });
         const actor = script.cast.find(a => a.npcId === step.npcId);
         const r = advanceInstance(
@@ -232,6 +237,7 @@ export async function runTour(
         break;
       }
       case "denied_demo": {
+        emit({ type: "npc_status", npcId: step.npcId, status: "被拦截" });
         emit({ type: "npc_emoji", npcId: step.npcId, emoji: "🚫" });
         emit({ type: "fx", effect: "denied", npcId: step.npcId });
         emit({
@@ -245,6 +251,7 @@ export async function runTour(
       }
       case "finale": {
         for (const actor of script.cast) {
+          emit({ type: "npc_status", npcId: actor.npcId, status: "完成" });
           emit({ type: "npc_anim", npcId: actor.npcId, anim: "Victory" });
         }
         emit({ type: "fx", effect: "celebrate" });
@@ -256,6 +263,8 @@ export async function runTour(
   }
 
   persist();
+  // 报告留档：交付物附录（最近一次巡演）从这里取——没跑过就没有段
+  saveTourReport(sessionId, report, now());
   return report;
 }
 

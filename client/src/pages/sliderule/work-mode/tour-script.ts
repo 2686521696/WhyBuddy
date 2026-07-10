@@ -44,6 +44,52 @@ export interface TourStation {
   pageId: string;
   title: string;
   entityId: string | null;
+  /** 所属部门区（来自 RBAC menus——schema 里真实的"台"，非造出来的分组） */
+  zoneId: string;
+}
+
+export interface TourZone {
+  zoneId: string;
+  label: string;
+}
+
+/**
+ * 部门分区（诚实推导）：RBAC menus 就是这套系统真实的"部门/台"
+ * （工单台/审核台…）。页面按 actionPermissions 与菜单 permissionRefs 的
+ * 交集归属到第一个命中的菜单；公共页（无权限声明）归「公共区」。
+ */
+export function deriveTourZones(
+  model: FiveSystemModel,
+  pages: Array<{ id: string; actions: string[] }>
+): { zones: TourZone[]; zoneByPageId: Map<string, string> } {
+  const menus = model.rbac?.menus ?? [];
+  const zones: TourZone[] = [];
+  const zoneByPageId = new Map<string, string>();
+  const used = new Set<string>();
+  let publicUsed = false;
+
+  for (const page of pages) {
+    const actions = page.actions ?? [];
+    const menu =
+      actions.length > 0
+        ? menus.find(m =>
+            (m.permissionRefs ?? []).some(p => actions.includes(p))
+          )
+        : undefined;
+    if (menu) {
+      const zoneId = `zone-${menu.id || menu.label || "menu"}`;
+      zoneByPageId.set(page.id, zoneId);
+      if (!used.has(zoneId)) {
+        used.add(zoneId);
+        zones.push({ zoneId, label: menu.label || menu.id || "部门" });
+      }
+    } else {
+      zoneByPageId.set(page.id, "zone-public");
+      publicUsed = true;
+    }
+  }
+  if (publicUsed) zones.push({ zoneId: "zone-public", label: "公共区" });
+  return { zones, zoneByPageId };
 }
 
 export type TourStep =
@@ -82,6 +128,8 @@ export type TourStep =
 export interface TourScript {
   cast: TourActor[];
   stations: TourStation[];
+  /** 部门区（RBAC menus 推导，演出层据此铺地板分区） */
+  zones: TourZone[];
   steps: TourStep[];
   /** 全量权限审计（报告用）：角色 × 不可见页面 */
   denials: Array<{ roleId: string; pageId: string; deniedActions: string[] }>;
@@ -112,11 +160,13 @@ export function buildTourScript(
   }));
   const actorByRole = new Map(cast.map(a => [a.roleId, a] as const));
 
+  const { zones, zoneByPageId } = deriveTourZones(model, pages);
   const stations: TourStation[] = pages.map(p => ({
     stationId: stationIdFor(p.id),
     pageId: p.id,
     title: p.title,
     entityId: p.entityId,
+    zoneId: zoneByPageId.get(p.id) ?? "zone-public",
   }));
 
   // 每角色的页面访问判定（与运行应用同一纯函数——巡演即测试）
@@ -249,5 +299,5 @@ export function buildTourScript(
     narration: "巡演完成——数据与流程留痕可在应用/数据表中查验",
   });
 
-  return { cast, stations, steps, denials };
+  return { cast, stations, zones, steps, denials };
 }

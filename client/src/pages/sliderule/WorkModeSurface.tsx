@@ -9,9 +9,13 @@
  */
 
 import React from "react";
-import { CircleAlert, CircleCheck, Info, Play, Square } from "lucide-react";
+import { CircleAlert, CircleCheck, Info, Play, Square, X } from "lucide-react";
 import type { FiveSystemModel } from "./system-screens/five-system-model";
 import type { AppRuntimeSchema } from "./live-runtime/app-runtime-schema";
+import {
+  deriveRoleAccess,
+  pageAccessForRole,
+} from "./live-runtime/rbac-preview";
 import { buildTourScript, type TourScript } from "./work-mode/tour-script";
 import {
   runTour,
@@ -55,8 +59,29 @@ export function WorkModeSurface({
     total: number;
   } | null>(null);
   const [report, setReport] = React.useState<TourReport | null>(null);
+  const [profileNpcId, setProfileNpcId] = React.useState<string | null>(null);
   const feedSeq = React.useRef(0);
   const feedEndRef = React.useRef<HTMLDivElement | null>(null);
+
+  // 角色档案（人事卡）：全部从五系统 model 确定性推导，与运行应用同源判定
+  const profile = React.useMemo(() => {
+    if (!profileNpcId || !script || !model || !schema) return null;
+    const actor = script.cast.find(a => a.npcId === profileNpcId);
+    if (!actor) return null;
+    const access = deriveRoleAccess(model).find(r => r.role === actor.roleId);
+    const pages = pageAccessForRole(schema.pages, access);
+    const nodes = (model.workflow?.nodes ?? []).filter(
+      n => n.assigneeRole === actor.roleId
+    );
+    return {
+      actor,
+      permissions: access?.permissions ?? [],
+      menuLabels: access?.menuLabels ?? [],
+      visiblePages: pages.filter(p => p.visible),
+      deniedPages: pages.filter(p => !p.visible),
+      nodes,
+    };
+  }, [profileNpcId, script, model, schema]);
 
   const onEvent = React.useCallback((event: TourEvent) => {
     stageRef.current?.dispatch(event);
@@ -169,8 +194,8 @@ export function WorkModeSurface({
       </div>
 
       <div className="flex min-h-0 flex-1 gap-3 px-4 pb-4">
-        {/* 3D 舞台（SSR/测试环境不挂 WebGL） */}
-        <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-[#e5e7eb] bg-white">
+        {/* 3D 舞台（SSR/测试环境不挂 WebGL）；点击角色出档案卡 */}
+        <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-[#e5e7eb] bg-white">
           {typeof window !== "undefined" ? (
             <React.Suspense
               fallback={
@@ -183,14 +208,85 @@ export function WorkModeSurface({
                 key={`${sessionId}-${script.cast.length}-${script.stations.length}`}
                 cast={script.cast}
                 stations={script.stations}
+                zones={script.zones}
                 onReady={handle => {
                   stageRef.current = handle;
                 }}
+                onActorClick={setProfileNpcId}
               />
             </React.Suspense>
           ) : (
             <div className="flex h-full items-center justify-center text-xs text-stone-400">
               3D 舞台需要浏览器环境
+            </div>
+          )}
+          {/* 角色档案卡（人事卡）——全部 schema 推导，与运行应用同源 */}
+          {profile && (
+            <div
+              className="absolute right-3 top-3 w-[264px] rounded-lg border border-[#e5e7eb] bg-white/95 p-3 shadow-lg backdrop-blur"
+              data-testid="sliderule-actor-profile"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-semibold text-stone-800">
+                    {profile.actor.roleId}
+                  </div>
+                  <div className="text-[11px] text-stone-400">
+                    {profile.menuLabels.join(" · ") || "未挂任何部门菜单"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setProfileNpcId(null)}
+                  className="shrink-0 rounded p-0.5 text-stone-400 hover:bg-[#eef0f4] hover:text-stone-600"
+                  aria-label="关闭档案卡"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="mt-2 space-y-2 text-xs leading-5">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">
+                    权限（{profile.permissions.length}）
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap gap-1">
+                    {profile.permissions.length === 0 ? (
+                      <span className="text-stone-400">无</span>
+                    ) : (
+                      profile.permissions.map(p => (
+                        <span
+                          key={p}
+                          className="rounded bg-[#e9edf2] px-1.5 py-0.5 font-mono text-[10px] text-stone-600"
+                        >
+                          {p}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">
+                    可见页面（{profile.visiblePages.length}）
+                  </div>
+                  <div className="text-stone-600">
+                    {profile.visiblePages.map(p => p.title).join("、") || "无"}
+                  </div>
+                  {profile.deniedPages.length > 0 && (
+                    <div className="text-rose-600">
+                      无权：{profile.deniedPages.map(p => p.title).join("、")}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">
+                    流程职责（{profile.nodes.length}）
+                  </div>
+                  <div className="text-stone-600">
+                    {profile.nodes.map(n => n.name || n.id).join(" → ") ||
+                      "不在任何审批节点上"}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
