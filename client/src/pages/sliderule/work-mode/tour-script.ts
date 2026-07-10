@@ -20,16 +20,24 @@ import {
   type PageAccess,
 } from "../live-runtime/rbac-preview";
 
-/** 已采购角色池（client/public/work-mode-3d/characters/*.glb，自带 16 动画） */
+/**
+ * 角色池：Agentshire 同款 Kenney 卡通小人（CC0，自带 32 动画剪辑），
+ * 资产在 client/public/agentshire-assets/models/characters/。
+ * 男女交替分配，与家具/房间同一画风（四期器官移植裁决）。
+ */
 export const CHARACTER_POOL = [
-  "Suit_Male",
-  "Casual_Female",
-  "Worker_Male",
-  "OldClassy_Female",
-  "Suit_Female",
-  "Casual_Male",
-  "Worker_Female",
-  "OldClassy_Male",
+  "char-female-a",
+  "char-male-a",
+  "char-female-b",
+  "char-male-b",
+  "char-female-c",
+  "char-male-c",
+  "char-female-d",
+  "char-male-d",
+  "char-female-e",
+  "char-male-e",
+  "char-female-f",
+  "char-male-f",
 ] as const;
 
 export interface TourActor {

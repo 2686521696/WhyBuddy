@@ -60,6 +60,9 @@ export function WorkModeSurface({
   );
 
   const stageRef = React.useRef<TourStageHandle | null>(null);
+  // 舞台懒加载分包就绪前的演出事件先排队，就绪后按序补发（否则冷启动
+  // 点「开始巡演」会丢掉开场的走位/气泡，白板停在等待开演）
+  const pendingEventsRef = React.useRef<TourEvent[]>([]);
   const cancelRef = React.useRef(false);
   const [running, setRunning] = React.useState(false);
   const [feed, setFeed] = React.useState<FeedItem[]>([]);
@@ -96,7 +99,11 @@ export function WorkModeSurface({
   }, [profileNpcId, script, model, schema]);
 
   const onEvent = React.useCallback((event: TourEvent) => {
-    stageRef.current?.dispatch(event);
+    if (stageRef.current) {
+      stageRef.current.dispatch(event);
+    } else {
+      pendingEventsRef.current.push(event);
+    }
     if (event.type === "narration") {
       setFeed(prev => [
         ...prev,
@@ -201,6 +208,9 @@ export function WorkModeSurface({
               zones={script.zones}
               onReady={handle => {
                 stageRef.current = handle;
+                const pending = pendingEventsRef.current;
+                pendingEventsRef.current = [];
+                for (const event of pending) handle.dispatch(event);
               }}
               onActorClick={setProfileNpcId}
             />

@@ -70,8 +70,27 @@ Work 模式 = 三层，实用价值全部在前两层：
   - 巡演报告留档（localStorage）→ 交付物 MD 附录段（没跑过不出段）。
   - 遗留候选：不变式验收单逐条点亮、多链路顺演（chains）、
     Agentshire 氛围器官换皮（昼夜/天气/闲逛社交 DailyBehavior）。
-- **三期 · LLM 入魂档（默认关）**：角色用 LLM 生成拟真业务数据与台词，
-  走既有真通道 / BYOK，fail-closed。
+- **三期 · 沉浸化（已落地，2026-07-10）**：舞台铺满内容区 + 悬浮 HUD
+  （进度胶囊/事件横幅/可折叠事件流）、台词气泡（narration 绑 npcId）、
+  名牌药丸化、环境密度。
+- **四期 · 器官移植（已落地，2026-07-10 用户裁决"达不到 shire 效果"后
+  换路）**：自建场景层退役，直接移植 Agentshire 视觉器官——
+  - `vendor/agentshire/`：AssetLoader（清单制 + SkeletonUtils 骨骼安全
+    克隆）、OfficeBuilder（30×25 房间/家具坐标/灯光配方逐字保留，工位
+    按 stations/zones 参数化 + 部门牌）、ScreenRenderer（打字机代码/
+    等待/完成/报错动态屏幕，绑 npc_status 真事件）；白板改画巡演进度
+    （绑 progress/narration）；
+  - 资产 `client/public/agentshire-assets/`（~4MB）：Kenney 卡通人类
+    12 角色（自带 32 剪辑，ANIM_MAP 映射 driver 词汇）+ 低多边形家具，
+    全 CC0，THIRD_PARTY_NOTICES 随目录；
+  - 相机换透视（南侧高位俯视白板墙，Agentshire 办公室观感）；
+  - 双层事件就绪队列（Surface 层等懒加载分包、舞台层等资产预载），
+    冷启动点开演不再丢演出事件；
+  - 退役：`office-builder.ts`（自建场景）与 UACP 写实角色池——
+    `client/public/work-mode-3d/` 资产暂留仓库未引用，去留待裁决。
+- **五期 · LLM 入魂档（默认关）**：角色用 LLM 生成拟真业务数据与台词，
+  走既有真通道 / BYOK，fail-closed。氛围器官候选：TimeOfDayLighting
+  昼夜光照、Effects/VFX 粒子、闲逛社交 DailyBehavior、BGM。
 
 ## 三、Agentshire 借用方案（0 期解剖已完成：B 终裁成立，见本节末）
 

@@ -1,30 +1,45 @@
 /**
- * TourStage3D — Work 模式 3D 巡演舞台（懒加载分包，二期办公室化）。
+ * TourStage3D — Work 模式 3D 巡演舞台（懒加载分包，四期器官移植）。
  *
  * 纯演出层：只订阅 TourEvent（GameEvent 兼容），不知道运行时存在。
- * 二期：部门分区办公室（office-builder，Kenney 家具 + RBAC menus 真部门）、
- * SpotAllocator 站位防重叠（Agentshire 直搬）、NPC 头顶实时状态气泡、
- * 点击角色上报 onActorClick（角色档案卡）。
- * 「减少动态效果」偏好：瞬移替代走位、不播过渡（诚实降级）。
+ * 四期：场景与画风整体换成 Agentshire 器官（vendor/agentshire：
+ * AssetLoader + OfficeBuilder 房间/家具/灯光配方 + ScreenRenderer 动态
+ * 屏幕），角色换 Kenney 卡通小人（自带 idle/walk/pick-up/emote 等 32
+ * 剪辑）；白板改画巡演进度（绑真 progress/narration 事件）。
+ * 保留：SpotAllocator 站位防重叠、台词气泡/状态泡/名牌、点击出档案卡、
+ * 「减少动态效果」偏好（瞬移替代走位、不播过渡——诚实降级）。
  */
 
 import React from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { isMotionReduced } from "../user-prefs";
 import type { TourActor, TourStation, TourZone } from "./tour-script";
 import type { TourEvent } from "./tour-driver";
 import { SpotAllocator } from "./vendor/SpotAllocator";
-import { buildOffice, type OfficeLayout } from "./office-builder";
+import { AssetLoader } from "./vendor/agentshire/AssetLoader";
+import {
+  buildAgentshireOffice,
+  type OfficeHandle,
+} from "./vendor/agentshire/OfficeBuilder";
 
 export interface TourStageHandle {
   dispatch: (event: TourEvent) => void;
 }
 
-const WALK_SPEED = 2.6; // 世界单位/秒
-const SPAWN_GAP = 1.1;
-const HOME_Z = 2.6;
+const WALK_SPEED = 4.2; // 世界单位/秒（房间坐标系 30×25）
+const SPAWN_GAP = 1.5;
+const HOME = { x: 15, z: 19 }; // 集结区（访客区旁的空地）
+const CHAR_HEIGHT = 1.7; // 角色身高归一化（与桌 0.96/墙 3 比例对齐）
+
+/** Kenney 角色剪辑名映射（driver 事件词汇 → 资产剪辑名） */
+const ANIM_MAP: Record<string, string> = {
+  Idle: "idle",
+  Walk: "walk",
+  PickUp: "pick-up",
+  Interact: "interact-right",
+  Victory: "emote-yes",
+  Defeat: "emote-no",
+};
 
 interface ActorRig {
   group: THREE.Group;
@@ -185,6 +200,43 @@ function nameSprite(text: string): THREE.Sprite {
   return sprite;
 }
 
+/** 白板巡演进度画布（白底马克笔风，贴 Agentshire 白板网格） */
+function makeBoardCanvas(): {
+  texture: THREE.CanvasTexture;
+  draw: (progress: string, narration: string) => void;
+} {
+  const W = 512;
+  const H = 320;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
+  const texture = new THREE.CanvasTexture(canvas);
+  const draw = (progress: string, narration: string) => {
+    ctx.fillStyle = "#fafaf7";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#1d4ed8";
+    ctx.font = "700 40px sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("角色巡演", 28, 62);
+    ctx.strokeStyle = "#c9c9c2";
+    ctx.beginPath();
+    ctx.moveTo(28, 82);
+    ctx.lineTo(W - 28, 82);
+    ctx.stroke();
+    ctx.fillStyle = "#333333";
+    ctx.font = "500 30px sans-serif";
+    ctx.fillText(progress.slice(0, 16), 28, 136);
+    ctx.fillStyle = "#555555";
+    ctx.font = "400 26px sans-serif";
+    ctx.fillText(narration.slice(0, 17), 28, 196);
+    if (narration.length > 17) ctx.fillText(narration.slice(17, 34), 28, 236);
+    texture.needsUpdate = true;
+  };
+  draw("等待开演…", "");
+  return { texture, draw };
+}
+
 export default function TourStage3D({
   cast,
   stations,
@@ -217,81 +269,56 @@ export default function TourStage3D({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     host.appendChild(renderer.domElement);
 
-    // 暖暗环境色（Agentshire 观感：暖木地板亮岛 + 周边暗场）
+    // 暖暗环境色（房间是亮岛，画布边缘暗场）
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#37322c");
 
-    // 等距俯视（参考图观感）：正交相机 45° 方位角 + 俯角
-    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
-    let sceneW = 14; // 工位排宽（世界单位），办公室装配后更新
-    let aspect = 1;
-    const frameCamera = () => {
-      // 横向框全工位排（含侧余量），纵向不低于房间深度需要
-      const viewSize = Math.max(8.4, (sceneW + 5) / Math.max(aspect, 0.8));
-      camera.left = (-viewSize * aspect) / 2;
-      camera.right = (viewSize * aspect) / 2;
-      camera.top = viewSize / 2;
-      camera.bottom = -viewSize / 2;
-      camera.updateProjectionMatrix();
-    };
-    camera.position.set(16, 14, 16);
-    camera.lookAt(3.0, 1.6, 1.6);
-    frameCamera();
+    // 透视相机（Agentshire 办公室观感：南侧高位俯视北墙白板）
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+    camera.position.set(15, 13, 28);
+    camera.lookAt(15, 0, 9.5);
 
-    scene.add(new THREE.HemisphereLight("#ffffff", "#e3e0d8", 1.65));
-    scene.add(new THREE.AmbientLight("#ffffff", 0.35));
-    const sun = new THREE.DirectionalLight("#ffffff", 1.7);
-    sun.position.set(6, 10, 4);
+    // 基础补光（室内点灯由 OfficeBuilder 配方提供）
+    scene.add(new THREE.HemisphereLight("#ffffff", "#8a8378", 0.85));
+    const sun = new THREE.DirectionalLight("#fff6e8", 0.9);
+    sun.position.set(20, 24, 26);
     scene.add(sun);
 
-    const loader = new GLTFLoader();
-    loader.setMeshoptDecoder(MeshoptDecoder);
+    // 白板巡演进度画布（绑真事件：progress + 最近一条 narration）
+    const board = makeBoardCanvas();
+    let boardProgress = "等待开演…";
+    let boardNarration = "";
+    const redrawBoard = () => board.draw(boardProgress, boardNarration);
 
-    // 办公室（异步装配：家具 GLB 到位前先有地板墙体不至于空场）
-    let office: OfficeLayout | null = null;
+    // Agentshire 器官装配：资产预载 → 办公室 →（同一批资产）角色
+    const assets = new AssetLoader();
+    let office: OfficeHandle | null = null;
     let disposed = false;
-    void buildOffice(
-      scene,
-      loader,
-      zones,
-      stations,
-      import.meta.env.BASE_URL
-    ).then(layout => {
-      if (disposed) {
-        layout.dispose();
-        return;
-      }
-      office = layout;
-      // 等距取景：只框工位区（totalWidth 为工位排宽），地板铺出画面外
-      sceneW = layout.totalWidth;
-      frameCamera();
-    });
 
     // 站位防重叠（Agentshire SpotAllocator 直搬）
     const spots = new SpotAllocator();
 
-    // 角色装配
+    // 角色装配（骨架容器先建好，模型资产到位后填充）
     const rigs = new Map<string, ActorRig>();
     const clickables: THREE.Object3D[] = [];
 
     for (const [i, actor] of cast.entries()) {
       const group = new THREE.Group();
-      const home = new THREE.Vector3(
-        (i - (cast.length - 1) / 2) * SPAWN_GAP,
+      group.position.set(
+        HOME.x + (i - (cast.length - 1) / 2) * SPAWN_GAP,
         0,
-        HOME_Z
+        HOME.z
       );
-      group.position.copy(home);
       group.visible = false;
       group.userData.npcId = actor.npcId;
       scene.add(group);
       const status = makeStatusSprite();
-      status.sprite.position.set(0, 2.12, 0);
+      status.sprite.position.set(0, 2.15, 0);
       group.add(status.sprite);
       const say = makeSaySprite();
       say.sprite.position.set(0, 2.95, 0);
       group.add(say.sprite);
-      const rig: ActorRig = {
+      rigs.set(actor.npcId, {
         group,
         mixer: null,
         clips: [],
@@ -302,51 +329,70 @@ export default function TourStage3D({
         say,
         sayTimer: null,
         stationId: null,
-      };
-      rigs.set(actor.npcId, rig);
+      });
+    }
 
-      loader.load(
-        `${import.meta.env.BASE_URL}work-mode-3d/characters/${actor.characterKey}.glb`,
-        gltf => {
-          if (disposed) return;
-          gltf.scene.rotation.y = Math.PI; // 面向观众
-          // 身高归一化到 1.75：与 Kenney 家具比例对齐、iso 视角下有存在感
-          const bbox = new THREE.Box3().setFromObject(gltf.scene);
+    // 资产预载完成前的事件先排队（office 未建时走位/屏幕都没有落点）
+    let stageReady = false;
+    const pendingEvents: TourEvent[] = [];
+
+    void assets.preload(["characters", "furniture"]).then(() => {
+      if (disposed) return;
+      office = buildAgentshireOffice(
+        scene,
+        assets,
+        zones,
+        stations,
+        board.texture
+      );
+      redrawBoard();
+
+      for (const actor of cast) {
+        const rig = rigs.get(actor.npcId);
+        if (!rig) continue;
+        const model = assets.getCharacterModel(actor.characterKey);
+        if (model) {
+          // 身高归一化（Kenney 小人与家具/房间比例对齐）
+          const bbox = new THREE.Box3().setFromObject(model);
           const height = bbox.getSize(new THREE.Vector3()).y || 1;
-          gltf.scene.scale.setScalar(1.75 / height);
-          gltf.scene.traverse(o => {
+          model.scale.setScalar(CHAR_HEIGHT / height);
+          model.traverse(o => {
             o.userData.npcId = actor.npcId;
           });
-          group.add(gltf.scene);
-          clickables.push(gltf.scene);
-          rig.clips = gltf.animations ?? [];
-          rig.mixer = new THREE.AnimationMixer(gltf.scene);
+          rig.group.add(model);
+          clickables.push(model);
+          rig.clips = assets.getAnimations("characters", actor.characterKey);
+          rig.mixer = new THREE.AnimationMixer(model);
           playClip(rig, "Idle");
-          const tag = nameSprite(actor.roleId);
-          tag.position.set(0, 1.82, 0);
-          group.add(tag);
-        },
-        undefined,
-        () => {
+        } else {
           // 模型加载失败 → 诚实立方体替身（不装作加载成功）
-          if (disposed) return;
           const stub = new THREE.Mesh(
             new THREE.BoxGeometry(0.6, 1.6, 0.4),
             new THREE.MeshStandardMaterial({ color: "#93a4bd" })
           );
           stub.position.y = 0.8;
           stub.userData.npcId = actor.npcId;
-          group.add(stub);
+          rig.group.add(stub);
           clickables.push(stub);
         }
-      );
-    }
+        const tag = nameSprite(actor.roleId);
+        tag.position.set(0, 1.88, 0);
+        rig.group.add(tag);
+      }
+
+      stageReady = true;
+      const pending = pendingEvents.splice(0, pendingEvents.length);
+      for (const event of pending) handle.dispatch(event);
+    });
 
     function playClip(rig: ActorRig, name: string, once = false) {
       if (!rig.mixer) return;
+      const mapped = ANIM_MAP[name] ?? name;
       const clip =
-        rig.clips.find(c => c.name === name) ??
-        rig.clips.find(c => c.name.toLowerCase().includes(name.toLowerCase()));
+        rig.clips.find(c => c.name === mapped) ??
+        rig.clips.find(c =>
+          c.name.toLowerCase().includes(mapped.toLowerCase())
+        );
       if (!clip) return;
       const action = rig.mixer.clipAction(clip);
       if (once) {
@@ -367,6 +413,20 @@ export default function TourStage3D({
       rig.current = action;
     }
 
+    // 工位屏幕状态映射（绑真事件：driver 的 npc_status 驱动 ScreenRenderer）
+    const screenFor = (rig: ActorRig, status: string) => {
+      if (!rig.stationId || !office) return;
+      const st = office.stations.get(rig.stationId);
+      const title =
+        stations.find(s => s.stationId === rig.stationId)?.title ?? "";
+      if (!st) return;
+      if (status === "移动中") st.setScreen({ mode: "waiting", label: title });
+      else if (status === "录入中" || status === "审批中")
+        st.setScreen({ mode: "coding", fileName: `${title}.flow` });
+      else if (status === "被拦截") st.setScreen({ mode: "error" });
+      else if (status === "完成") st.setScreen({ mode: "done" });
+    };
+
     // 点击角色 → 档案卡（raycaster）
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -381,23 +441,14 @@ export default function TourStage3D({
     };
     renderer.domElement.addEventListener("click", onClick);
 
-    // 侧墙进度大屏内容（绑真事件：progress + 最近一条 narration）
-    let boardProgress = "等待开演…";
-    let boardNarration = "";
-    const redrawBoard = () => {
-      const lines = ["角色巡演", boardProgress];
-      if (boardNarration) {
-        lines.push(boardNarration.slice(0, 18));
-        if (boardNarration.length > 18)
-          lines.push(boardNarration.slice(18, 36));
-      }
-      office?.drawBoard(lines);
-    };
-
     // 事件入口（父组件转发 driver 事件）
     const handle: TourStageHandle = {
       dispatch: event => {
         if (disposed) return;
+        if (!stageReady) {
+          pendingEvents.push(event);
+          return;
+        }
         if (event.type === "narration") {
           // 台词气泡：narration 绑出演者时冒 Agentshire 式对话泡，随后自动隐去
           if (event.npcId) {
@@ -434,16 +485,13 @@ export default function TourStage3D({
           rig.stationId = event.stationId;
           const raw = station
             ? station.approach
-            : new THREE.Vector3(0, 0, HOME_Z);
+            : new THREE.Vector3(HOME.x, 0, HOME.z);
           // 防重叠：同一工位多人停靠时环形让位
-          const spot = spots.allocate(
-            { x: raw.x, z: raw.z },
-            event.npcId,
-            1.05
-          );
+          const spot = spots.allocate({ x: raw.x, z: raw.z }, event.npcId, 1.1);
           const dest = new THREE.Vector3(spot.x, 0, spot.z);
           if (isMotionReduced()) {
             rig.group.position.copy(dest);
+            rig.group.rotation.y = Math.PI; // 面向工位（北）
             playClip(rig, "Idle");
           } else {
             rig.target = dest;
@@ -453,14 +501,8 @@ export default function TourStage3D({
         if (event.type === "npc_status") {
           const rig = rigs.get(event.npcId);
           rig?.status?.draw(event.status);
-          // 工位屏幕同步（录入/审批把动作写上显示器——ScreenRenderer 手法）
-          if (rig?.stationId && event.status && event.status !== "移动中") {
-            const station = office?.stations.get(rig.stationId);
-            const actor = cast.find(a => a.npcId === event.npcId);
-            station?.drawScreen([
-              stations.find(s => s.stationId === rig.stationId)?.title ?? "",
-              `${actor?.roleId ?? ""} · ${event.status}`,
-            ]);
+          if (rig && event.status && event.status !== "移动中") {
+            screenFor(rig, event.status);
           }
           return;
         }
@@ -508,14 +550,14 @@ export default function TourStage3D({
       const w = host.clientWidth || 1;
       const h = host.clientHeight || 1;
       renderer.setSize(w, h);
-      aspect = w / h;
-      frameCamera();
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
     };
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(host);
 
-    // 帧循环：走位插值 + 动画混合器推进
+    // 帧循环：走位插值 + 动画混合器 + 工位屏幕打字动画
     const clock = new THREE.Clock();
     let raf = 0;
     const tick = () => {
@@ -529,6 +571,7 @@ export default function TourStage3D({
           if (dist < 0.08) {
             rig.group.position.copy(rig.target);
             rig.target = null;
+            rig.group.rotation.y = Math.PI; // 到位后面向工位（北）
             playClip(rig, "Idle");
           } else {
             const stepLen = Math.min(dist, WALK_SPEED * dt);
@@ -538,6 +581,7 @@ export default function TourStage3D({
         }
         rig.mixer?.update(dt);
       }
+      office?.updateScreens(dt);
       renderer.render(scene, camera);
     };
     tick();
