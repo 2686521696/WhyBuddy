@@ -87,7 +87,8 @@ Work 模式 = 三层，实用价值全部在前两层：
   - 双层事件就绪队列（Surface 层等懒加载分包、舞台层等资产预载），
     冷启动点开演不再丢演出事件；
   - 退役：`office-builder.ts`（自建场景）与 UACP 写实角色池——
-    `client/public/work-mode-3d/` 资产暂留仓库未引用，去留待裁决。
+    `client/public/work-mode-3d/` 已删（2026-07-10 用户裁决；git
+    历史可找回，复采购流程存于该目录 README 的历史版本）。
 - **五期 · LLM 入魂档（默认关）**：角色用 LLM 生成拟真业务数据与台词，
   走既有真通道 / BYOK，fail-closed。氛围器官候选：TimeOfDayLighting
   昼夜光照、Effects/VFX 粒子、闲逛社交 DailyBehavior、BGM。
@@ -185,10 +186,12 @@ SlideRuleDirectorBridge 时零翻译成本。
 ## 五、素材采购清单
 
 > **2026-07-10 已采购**（任务 #87）：Quaternius 三包（UBC 角色、UAL 通用动画库、
-> UACP 办公角色）已验货压缩进仓——10 角色与 43 剪辑动画库共 5.3MB，
-> 见 [`client/public/work-mode-3d/`](../client/public/work-mode-3d/README.md)
-> （含骨架验证结论与复采购流程）。RG Poly 包已转 itch 付费（内容仍 CC0），
-> 未购；KayKit 免费包以奇幻题材为主，办公道具用仓库已有 Kenney 件，未采。
+> UACP 办公角色）曾验货压缩进仓（10 角色 + 43 剪辑共 5.3MB）；四期器官
+> 移植后画风统一改用 Agentshire 同源 Kenney 角色，该目录已删（git 历史
+> `client/public/work-mode-3d/` 可找回，README 历史版本含骨架验证结论与
+> 复采购流程）。RG Poly 包已转 itch 付费（内容仍 CC0），未购；KayKit
+> 免费包以奇幻题材为主，办公道具用仓库已有 Kenney 件，未采。
+> 现役资产：`client/public/agentshire-assets/`（见其 README 与 NOTICES）。
 
 ### 第一梯队：免费 CC0（可直接进开源仓库）
 
