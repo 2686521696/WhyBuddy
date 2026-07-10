@@ -7,9 +7,12 @@ import "./index.css";
 import "./styles/mirofish-tokens.css";
 import "./styles/mirofish-layer.css";
 import { migrateLegacyStorage } from "./lib/migrate-storage";
+import { initUserPrefs } from "./pages/sliderule/user-prefs";
 
 // WhyBuddy → SlideRule rename: move legacy localStorage entries before anything reads them.
 migrateLegacyStorage();
+// 偏好落地（减少动效 root class 等）——首帧前生效，避免动画闪现一下再静止
+initUserPrefs();
 
 createRoot(document.getElementById("root")!).render(<App />);
 

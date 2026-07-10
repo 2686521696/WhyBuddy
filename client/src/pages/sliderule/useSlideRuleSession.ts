@@ -21,6 +21,7 @@ import {
   mapArtifactsToWhyArtifacts,
 } from "./ui-capability-executor";
 import { mergePublishClosureForPersistedTurn } from "./derive-persisted-turn";
+import { notifyDriveComplete } from "./user-prefs";
 import { createHttpSlideRuleSessionStore } from "@/lib/sliderule-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { loadByokPool, validateByokPool } from "@/lib/sliderule-byok-config";
@@ -1263,6 +1264,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             };
           })
         );
+        // 推演完成通知：偏好开 + 已授权 + 用户切走标签页 才弹（user-prefs 内判定）
+        notifyDriveComplete(userText.trim());
       } // end of else (success path for live drive updates)
       setNextGateShouldFail(false);
     } finally {

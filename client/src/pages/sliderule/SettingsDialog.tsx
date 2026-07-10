@@ -1,6 +1,17 @@
 import React from "react";
 import { Cpu, Server, SlidersHorizontal, X } from "lucide-react";
+import { Switch } from "antd";
 import { toast } from "sonner";
+import {
+  enableCompletionNotify,
+  loadEnterBehavior,
+  loadNotifyCompletePref,
+  loadReduceMotionPref,
+  setEnterBehavior,
+  setNotifyCompletePref,
+  setReduceMotionPref,
+  type EnterBehavior,
+} from "./user-prefs";
 import {
   PROJECTION_DENSITY_STORAGE_KEY,
   type ProjectionDensity,
@@ -357,7 +368,7 @@ function Segmented<T extends string>({
   );
 }
 
-function SystemPrefs(props: SettingsSurfaceProps) {
+export function SystemPrefs(props: SettingsSurfaceProps) {
   const { projectionDensity, onProjectionDensityChange } = props;
   const labelClass = "mb-1.5 block text-[12px] font-semibold text-stone-600";
 
@@ -382,7 +393,135 @@ function SystemPrefs(props: SettingsSurfaceProps) {
         </p>
       </div>
 
+      <UserPrefsSection />
+
       <RuntimeDataSection sessionId={props.sessionId} />
+
+      <PrivacyFactsSection />
+    </div>
+  );
+}
+
+/** 偏好：减少动效 / 完成通知 / Enter 键行为（即改即生效，localStorage 持久化）。 */
+function UserPrefsSection() {
+  const [reduceMotion, setReduceMotion] = React.useState(loadReduceMotionPref);
+  const [notifyComplete, setNotifyComplete] = React.useState(
+    loadNotifyCompletePref
+  );
+  const [enterMode, setEnterMode] =
+    React.useState<EnterBehavior>(loadEnterBehavior);
+  const labelClass = "mb-1.5 block text-[12px] font-semibold text-stone-600";
+
+  const toggleNotify = async (next: boolean) => {
+    if (!next) {
+      setNotifyCompletePref(false);
+      setNotifyComplete(false);
+      return;
+    }
+    // 开启需要浏览器授权；被拒绝就如实保持关闭，不装作开了
+    const ok = await enableCompletionNotify();
+    setNotifyComplete(ok);
+    if (!ok) {
+      toast.error("浏览器未授权通知", {
+        description:
+          "通知权限被拒绝或不可用，开关保持关闭。可在浏览器地址栏的站点设置里重新允许通知后再开。",
+      });
+    }
+  };
+
+  return (
+    <div
+      className="space-y-5 border-t border-[#e5e7eb] pt-5"
+      data-testid="sliderule-settings-user-prefs"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <label className={labelClass}>减少动态效果</label>
+          <p className="text-[11px] leading-5 text-stone-400">
+            关闭思考点弹跳、文字翻滚、光标闪烁等界面动画；系统开启「减弱动态效果」时自动生效。
+          </p>
+        </div>
+        <Switch
+          checked={reduceMotion}
+          onChange={v => {
+            setReduceMotionPref(v);
+            setReduceMotion(v);
+          }}
+          data-testid="sliderule-pref-reduce-motion"
+        />
+      </div>
+
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <label className={labelClass}>推演完成通知</label>
+          <p className="text-[11px] leading-5 text-stone-400">
+            长推演时切到别的标签页也不会错过结果：完成时浏览器弹一条通知；停留在本页时不打扰。
+          </p>
+        </div>
+        <Switch
+          checked={notifyComplete}
+          onChange={toggleNotify}
+          data-testid="sliderule-pref-notify-complete"
+        />
+      </div>
+
+      <div>
+        <label className={labelClass}>Enter 键行为</label>
+        <Segmented
+          value={enterMode}
+          onChange={(v: EnterBehavior) => {
+            setEnterBehavior(v);
+            setEnterMode(v);
+          }}
+          options={[
+            {
+              value: "enter",
+              label: "Enter 发送",
+              hint: "Enter 发送，Shift+Enter 换行",
+            },
+            {
+              value: "ctrl-enter",
+              label: "Ctrl+Enter 发送",
+              hint: "Enter 换行，Ctrl/Cmd+Enter 发送",
+            },
+          ]}
+        />
+        <p className="mt-1.5 text-[11px] text-stone-400">
+          Shift+Enter 始终换行；改动即时生效。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** 隐私事实（人话版）：只陈述当前实现已成立的事实，不做承诺式营销。 */
+function PrivacyFactsSection() {
+  return (
+    <div
+      className="border-t border-[#e5e7eb] pt-5"
+      data-testid="sliderule-settings-privacy-facts"
+    >
+      <label className="mb-1.5 block text-[12px] font-semibold text-stone-600">
+        你的数据存在哪里
+      </label>
+      <ul className="space-y-1.5 text-[11px] leading-5 text-stone-400">
+        <li>
+          ·「浏览器直连」里填的 LLM 密钥只存在这台浏览器的本地存储里，
+          不会上传到 SlideRule 服务端；换浏览器或清站点数据后需要重填。
+        </li>
+        <li>
+          · 走「推演通道」（服务端）时，密钥配置在服务器环境变量里，
+          不经过你的浏览器。
+        </li>
+        <li>
+          · 话题会话（消息与五系统模型）保存在推演服务端，用于恢复历史会话；
+          在侧栏删除会话即删除。
+        </li>
+        <li>
+          · 运行应用的排练数据（实体行/流程实例/角色视角）只存浏览器本机，
+          可用上方「清空本话题运行时数据」随时清掉。
+        </li>
+      </ul>
     </div>
   );
 }

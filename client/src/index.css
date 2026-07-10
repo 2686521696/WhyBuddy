@@ -1128,3 +1128,16 @@
 .sr-caret {
   animation: sr-caret-blink 1.1s steps(1, end) infinite;
 }
+
+/* 减少动态效果（偏好开关 sr-reduce-motion + 系统 prefers-reduced-motion 双入口） */
+.sr-reduce-motion .sr-dot,
+.sr-reduce-motion .sr-caret,
+.sr-reduce-motion .animate-pulse {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sr-dot,
+  .sr-caret {
+    animation: none;
+  }
+}

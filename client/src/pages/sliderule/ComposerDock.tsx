@@ -19,6 +19,7 @@ import {
 // 会炸掉 node 环境的静态渲染测试；navigate 只在点击时触达 history。
 import { navigate } from "wouter/use-browser-location";
 import { EXAMPLE_INTENT_TEXTS } from "./example-intents";
+import { shouldSendOnKey } from "./user-prefs";
 import {
   installKeyOf,
   loadInjectDisabledKeys,
@@ -557,7 +558,8 @@ export function ComposerDock({
                 requestAnimationFrame(adjustTextareaHeight);
               }}
               onKeyDown={event => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                // Enter 行为偏好（设置页可切 Enter/Ctrl+Enter 发送）
+                if (shouldSendOnKey(event)) {
                   event.preventDefault();
                   doSend();
                 }

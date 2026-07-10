@@ -8,6 +8,7 @@
 
 import React from "react";
 import { animate } from "animejs";
+import { isMotionReduced } from "./user-prefs";
 
 export function RollingText({
   text,
@@ -23,7 +24,8 @@ export function RollingText({
 
   React.useEffect(() => {
     if (text === display) return;
-    setLeaving(display);
+    // 减少动效偏好/系统设置：直接换字，不挂翻滚动画
+    setLeaving(isMotionReduced() ? null : display);
     setDisplay(text);
   }, [text, display]);
 
