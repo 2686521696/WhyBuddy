@@ -25,17 +25,19 @@
 }
 
 .native-agent-sidebar {
-  /* 冷调壳体：侧栏白底与 #f7f8fa 主区分层（用户裁决：对齐 TRAE/Linear） */
+  /* 冷调壳体：侧栏白底与 #f7f8fa 主区分层（用户裁决：对齐 TRAE/Linear）。
+     252px：品牌字标与图标同高（25px 字号，2026-07-10 用户裁决）后
+     SlideRule.AI 实测画到 235px，220px 会溢出裁字。 */
   background: #fff;
   border-right: 1px solid #e5e7eb;
   display: flex;
-  flex: 0 0 220px;
+  flex: 0 0 252px;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
   padding: 16px 12px 14px;
-  width: 220px;
+  width: 252px;
 }
 
 /* 品牌区（可点击 → 推演视图）：矢量尺标（左）+ SlideRule.AI 单行字标（右）
@@ -58,21 +60,24 @@
 .native-agent-brand-icon {
   display: block;
   flex-shrink: 0;
+  height: 34px;
+  width: auto;
 }
 
 .native-agent-brand-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.1;
+  line-height: 1;
   min-width: 0;
 }
 
+/* 文字与图标同高（2026-07-10 用户裁决）：字号随图标撑满品牌行 */
 .native-agent-brand-name {
   color: #14295e;
   font-family: "DM Sans", system-ui, sans-serif;
-  font-size: 19px;
+  font-size: 25px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   white-space: nowrap;
 }
 

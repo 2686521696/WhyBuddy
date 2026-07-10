@@ -76,7 +76,6 @@ export function shouldRequestSettingsForView(view: ViewKey): boolean {
 import SlideRulePage from "@/pages/SlideRule";
 import { SettingsPage } from "@/pages/sliderule/SettingsDialog";
 import { SidebarSessions } from "./SidebarSessions";
-import { SlideRuleBrandMark } from "./SlideRuleBrandMark";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { MainlineWorkbench } from "./MainlineWorkbench";
 import type {
@@ -1175,8 +1174,8 @@ function AgentLoopSidebar({
 
   return (
     <aside className="native-agent-sidebar">
-      {/* 品牌区（可点击 → 推演视图）：矢量尺标（左）+ SlideRule.AI 单行字标（右）
-          —— 2026-07-10 用户参考图裁决：图标+文字形式，.AI 亮蓝点缀 */}
+      {/* 品牌区（可点击 → 推演视图）：官方尺标 svg（左）+ SlideRule.AI 单行字标（右）
+          —— 2026-07-10 用户裁决：图标用上传的 logo svg（已裁透明边距），文字与图标同高 */}
       <a
         className="native-agent-brand"
         data-testid="agent-brand"
@@ -1187,7 +1186,12 @@ function AgentLoopSidebar({
           onViewChange("sliderule");
         }}
       >
-        <SlideRuleBrandMark />
+        <img
+          className="native-agent-brand-icon"
+          // BASE_URL 前缀：GitHub Pages 子路径部署（/<repo>/）下绝对路径会 404
+          src={`${import.meta.env.BASE_URL}assets/sliderule-brand-mark.svg`}
+          alt="SlideRule"
+        />
         <span className="native-agent-brand-text">
           <span className="native-agent-brand-name">
             SlideRule<span className="native-agent-brand-ai">.AI</span>
