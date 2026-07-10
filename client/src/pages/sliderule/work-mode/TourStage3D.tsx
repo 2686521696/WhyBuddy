@@ -29,9 +29,13 @@ export interface TourStageHandle {
 }
 
 const WALK_SPEED = 4.2; // 世界单位/秒（房间坐标系 30×25）
-const SPAWN_GAP = 1.5;
+// Kenney 小人 A-pose 带臂宽约 1.5（1.7 身高），1.5 间距=胳膊插进邻居
+const SPAWN_GAP = 2.2;
 const HOME = { x: 15, z: 19 }; // 集结区（访客区旁的空地）
 const CHAR_HEIGHT = 1.7; // 角色身高归一化（与桌 0.96/墙 3 比例对齐）
+// 台词气泡基准高度；相邻角色同时说话时逐帧纵向错层（气泡宽 2.76）
+const SAY_BASE_Y = 2.95;
+const SAY_LIFT = 0.95;
 
 /** Kenney 角色剪辑名映射（driver 事件词汇 → 资产剪辑名） */
 const ANIM_MAP: Record<string, string> = {
@@ -321,7 +325,7 @@ export default function TourStage3D({
       status.sprite.position.set(0, 2.15, 0);
       group.add(status.sprite);
       const say = makeSaySprite();
-      say.sprite.position.set(0, 2.95, 0);
+      say.sprite.position.set(0, SAY_BASE_Y, 0);
       group.add(say.sprite);
       rigs.set(actor.npcId, {
         group,
@@ -621,6 +625,35 @@ export default function TourStage3D({
           }
         }
         rig.mixer?.update(dt);
+      }
+      // 台词气泡防叠：相邻角色同时说话（3.8s 自动隐去前的窗口期）时
+      // 后到者纵向抬一层——气泡宽 2.76，人距 1.7 时同高必然互压
+      const talking: ActorRig[] = [];
+      for (const rig of rigs.values()) {
+        if (rig.group.visible && rig.say?.sprite.visible) talking.push(rig);
+      }
+      talking.sort((a, b) => a.group.position.x - b.group.position.x);
+      const placedSays: Array<{ x: number; z: number; y: number }> = [];
+      for (const rig of talking) {
+        const px = rig.group.position.x;
+        const pz = rig.group.position.z;
+        let y = SAY_BASE_Y;
+        let lifted = true;
+        while (lifted) {
+          lifted = false;
+          for (const p of placedSays) {
+            if (
+              Math.abs(px - p.x) < 3.0 &&
+              Math.abs(pz - p.z) < 2.5 &&
+              Math.abs(y - p.y) < SAY_LIFT
+            ) {
+              y = p.y + SAY_LIFT;
+              lifted = true;
+            }
+          }
+        }
+        rig.say!.sprite.position.y = y;
+        placedSays.push({ x: px, z: pz, y });
       }
       office?.updateScreens(dt);
       renderer.render(scene, camera);
