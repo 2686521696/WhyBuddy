@@ -111,13 +111,15 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html.match(/data-testid="sliderule-status-bar"/g)?.length).toBe(1);
   });
 
-  it("single header row carries STATUS summary (待细化/话题/阶段) plus 交付物/重置会话/Dev actions", () => {
+  it("single header row：Work/Code 模式胶囊（STATUS 状态盒已退役）plus 交付物/重置会话/Dev actions", () => {
     const html = renderPage();
 
-    expect(html).toContain('data-testid="sliderule-conclusion-badge"');
-    expect(html).toContain("待细化");
-    expect(html).toContain("话题");
-    expect(html).toContain("阶段");
+    // 用户裁决（TRAE 对标）：STATUS/话题/阶段状态盒撤下，原位换模式切换
+    expect(html).toContain('data-testid="sliderule-surface-mode"');
+    expect(html).toContain('data-testid="sliderule-mode-work"');
+    expect(html).toContain('data-testid="sliderule-mode-code"');
+    expect(html).not.toContain('data-testid="sliderule-conclusion-badge"');
+    expect(html).not.toContain('data-testid="sliderule-goal-display"');
     expect(html).toContain('data-testid="sliderule-deliverables-open"');
     expect(html).toContain('data-testid="sliderule-reset-session"');
     expect(html).toContain('href="/sliderule/dev"');
@@ -315,9 +317,28 @@ describe("unified /sliderule surface (single mental model)", () => {
       },
     });
 
+    // 持久化状态重建成功的判据：不落回空态、恢复轮以对话形态回归
+    // （STATUS 头部摘要已随状态盒退役，不再作为恢复信号）
     expect(html).not.toContain('data-testid="sliderule-empty-state"');
-    // restored conclusion surfaces in the merged header
-    expect(html).toContain("已收敛");
+    expect(html).toContain("本轮已完成");
+  });
+
+  it("Work 模式：占位面接管内容区、输入条隐藏（偏好 localStorage 持久化）", () => {
+    const prev = (globalThis as { localStorage?: unknown }).localStorage;
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (k: string) => (k === "sliderule:surface-mode" ? "work" : null),
+      setItem: () => {},
+      removeItem: () => {},
+    };
+    try {
+      const html = renderPage();
+      expect(html).toContain('data-testid="sliderule-work-mode"');
+      expect(html).toContain("角色自动巡演");
+      // Work 模式不出输入条（避免误导"聊天能驱动巡演"）
+      expect(html).not.toContain('data-testid="sliderule-composer-dock"');
+    } finally {
+      (globalThis as { localStorage?: unknown }).localStorage = prev;
+    }
   });
 
   it("pending clarifications still surface above the composer", () => {

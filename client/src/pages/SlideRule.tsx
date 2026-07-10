@@ -72,7 +72,11 @@ import {
   summarizeClosureForChat,
 } from "./sliderule/system-screens/five-system-model";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
-import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
+import {
+  SlideRuleTopHud,
+  type SlideRuleSurfaceMode,
+} from "./sliderule/SlideRuleTopHud";
+import { WorkModeSurface } from "./sliderule/WorkModeSurface";
 import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
 import {
   ClarificationCard,
@@ -985,6 +989,24 @@ function SlideRuleUnified({
   const clarifications = pendingClarifications ?? [];
   const clarifyKey = clarifications.map(c => c.id).join("|");
   const [clarifyHidden, setClarifyHidden] = useState(false);
+
+  // 顶层产品模式（Work / Code，TRAE 对标）：Code = 推演主界面（默认），
+  // Work = 角色巡演（建设中占位）。偏好持久化，刷新不丢。
+  const [surfaceMode, setSurfaceMode] = useState<SlideRuleSurfaceMode>(() => {
+    try {
+      return localStorage.getItem("sliderule:surface-mode") === "work"
+        ? "work"
+        : "code";
+    } catch {
+      return "code";
+    }
+  });
+  const changeSurfaceMode = useCallback((mode: SlideRuleSurfaceMode) => {
+    setSurfaceMode(mode);
+    try {
+      localStorage.setItem("sliderule:surface-mode", mode);
+    } catch {}
+  }, []);
   useEffect(() => {
     setClarifyHidden(false);
   }, [clarifyKey]);
@@ -997,22 +1019,14 @@ function SlideRuleUnified({
   const conversationTurns =
     uiTurns.length > 0 ? uiTurns : latestTurn ? [latestTurn] : [];
 
-  const driveLoopCount =
-    latestTurn?.routeFacts.rounds?.length ??
-    (latestTurn && latestTurn.routeFacts.planSelectedCount ? 1 : 0);
-
   return (
     <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
-      {/* ONE header row — brand/topic + STATUS summary + actions */}
+      {/* ONE header row — brand + Work/Code 模式切换 + actions */}
       <div className="relative z-20 shrink-0 border-b border-[#e5e7eb]/70 bg-[#f7f8fa]/90 px-3 backdrop-blur sm:px-4">
         <SlideRuleTopHud
-          state={sessionState}
-          goal={goal}
-          turnCount={uiTurns.length}
           isRunning={isRunning}
-          driveLoopCount={driveLoopCount}
-          executorMode={executorMode}
-          publishClosure={publishClosure}
+          surfaceMode={surfaceMode}
+          onSurfaceModeChange={changeSurfaceMode}
           onResetSession={resetSession}
           onOpenDeliverables={openDeliverables}
           embedded={embedded}
@@ -1046,72 +1060,82 @@ function SlideRuleUnified({
         />
       </div>
 
-      {/* Studio body — left conversation column + right skill rail */}
-      <div className="relative z-0 min-h-0 flex-1 pb-[104px]">
-        <SlideRuleStudio
-          chatSlot={
-            <ClaudeChatSurface
-              uiTurns={conversationTurns}
-              isRunning={isRunning}
-              goalText={goal}
-              liveAction={liveAction}
-              latestTurn={latestTurn}
-              publishClosure={publishClosure}
-              llmDraft={isRunning ? llmDraft : ""}
-              llmDraftLabel={llmDraftLabel}
-              onChallenge={challengeTurn}
-            />
-          }
-          activeSkillId={activeSkillId}
-          publishClosure={publishClosure}
-          latestMermaid={latestMermaid}
-          skillContents={skillContents}
-          skillRuntimeGraph={
-            (
-              sessionState as {
-                skillRuntimeGraph?:
-                  | import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike
-                  | null;
-              }
-            ).skillRuntimeGraph ?? null
-          }
-          sessionId={sessionId}
-          appTitle={goal ? goal.slice(0, 24) : undefined}
-          // 用户还没输入时不显示右侧舞台：欢迎页独占全宽，首条消息后舞台登场
-          stageVisible={conversationTurns.length > 0 || isRunning}
-          // 推演中右侧实时渲染：部分五系统模型 → 应用实时长出来；没成形前只报"推演中"
-          isRunning={isRunning}
-          llmDraft={isRunning ? llmDraft : ""}
-          llmDraftLabel={llmDraftLabel}
-          liveActionLabel={isRunning ? (liveAction?.label ?? null) : null}
-          className="h-full"
-        />
-        {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程
-            （步骤流 + LLM 实时草稿），右栏只保留系统画面（用户反馈去重）。 */}
-      </div>
-
-      {/* Single bottom composer + clarification cards */}
-      <div className={autopilotTheme.immersionOverlayBottom}>
-        <div className="pointer-events-none flex w-full max-w-2xl flex-col items-center">
-          {showClarify && (
-            <ClarificationCard
-              questions={clarifications}
-              onSubmit={answers => answerClarifications?.(answers)}
-              onClose={() => setClarifyHidden(true)}
-            />
-          )}
-
-          <ComposerDock
-            input={input}
-            setInput={setInput}
-            sendMessage={sendMessage}
-            isRunning={isRunning}
-            goal={goal}
-            hintChips={composerHints}
-            stop={stop}
-          />
+      {/* Studio body — left conversation column + right skill rail；
+          Work 模式：角色巡演占位面接管整个内容区（引擎在建，诚实占位） */}
+      {surfaceMode === "work" ? (
+        <div className="relative z-0 min-h-0 flex-1">
+          <WorkModeSurface />
         </div>
-      </div>
+      ) : (
+        <div className="relative z-0 min-h-0 flex-1 pb-[104px]">
+          <SlideRuleStudio
+            chatSlot={
+              <ClaudeChatSurface
+                uiTurns={conversationTurns}
+                isRunning={isRunning}
+                goalText={goal}
+                liveAction={liveAction}
+                latestTurn={latestTurn}
+                publishClosure={publishClosure}
+                llmDraft={isRunning ? llmDraft : ""}
+                llmDraftLabel={llmDraftLabel}
+                onChallenge={challengeTurn}
+              />
+            }
+            activeSkillId={activeSkillId}
+            publishClosure={publishClosure}
+            latestMermaid={latestMermaid}
+            skillContents={skillContents}
+            skillRuntimeGraph={
+              (
+                sessionState as {
+                  skillRuntimeGraph?:
+                    | import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike
+                    | null;
+                }
+              ).skillRuntimeGraph ?? null
+            }
+            sessionId={sessionId}
+            appTitle={goal ? goal.slice(0, 24) : undefined}
+            // 用户还没输入时不显示右侧舞台：欢迎页独占全宽，首条消息后舞台登场
+            stageVisible={conversationTurns.length > 0 || isRunning}
+            // 推演中右侧实时渲染：部分五系统模型 → 应用实时长出来；没成形前只报"推演中"
+            isRunning={isRunning}
+            llmDraft={isRunning ? llmDraft : ""}
+            llmDraftLabel={llmDraftLabel}
+            liveActionLabel={isRunning ? (liveAction?.label ?? null) : null}
+            className="h-full"
+          />
+          {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程
+            （步骤流 + LLM 实时草稿），右栏只保留系统画面（用户反馈去重）。 */}
+        </div>
+      )}
+
+      {/* Single bottom composer + clarification cards（Code 模式专属：
+          Work 模式下不出输入条，避免误导"聊天能驱动巡演"） */}
+      {surfaceMode === "code" && (
+        <div className={autopilotTheme.immersionOverlayBottom}>
+          <div className="pointer-events-none flex w-full max-w-2xl flex-col items-center">
+            {showClarify && (
+              <ClarificationCard
+                questions={clarifications}
+                onSubmit={answers => answerClarifications?.(answers)}
+                onClose={() => setClarifyHidden(true)}
+              />
+            )}
+
+            <ComposerDock
+              input={input}
+              setInput={setInput}
+              sendMessage={sendMessage}
+              isRunning={isRunning}
+              goal={goal}
+              hintChips={composerHints}
+              stop={stop}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 设置弹窗已收敛到侧栏「设置」整页（SettingsPage），HUD 不再挂设置入口 */}
       <DeliverablesPanel

@@ -1,54 +1,38 @@
 import React from "react";
-import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
-import type { BrainstormGraphTelemetry } from "@shared/blueprint/brainstorm-reasoning-graph";
-import { deriveStatusBarFacts } from "./derive-status-bar";
 import { autopilotTheme } from "./autopilot-theme";
-import type { SlideRuleExecutorMode } from "./types";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { Layers, RotateCw } from "lucide-react";
-import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
+
+export type SlideRuleSurfaceMode = "work" | "code";
+
+const SURFACE_MODES: Array<{ id: SlideRuleSurfaceMode; label: string }> = [
+  { id: "work", label: "Work" },
+  { id: "code", label: "Code" },
+];
 
 export function SlideRuleTopHud({
-  state,
-  goal,
-  turnCount,
   isRunning,
-  driveLoopCount,
-  telemetry,
-  executorMode,
-  publishClosure,
+  surfaceMode = "code",
+  onSurfaceModeChange,
   onResetSession,
   onOpenDeliverables,
   embedded = false,
 }: {
-  state: V5SessionState;
-  goal: string;
-  turnCount: number;
   isRunning: boolean;
-  driveLoopCount?: number;
-  telemetry?: BrainstormGraphTelemetry | null;
-  executorMode?: SlideRuleExecutorMode;
-  publishClosure?: PublishClosureSummary | null;
+  /** 顶层产品模式（用户裁决：STATUS 状态盒退役，原位换 TRAE 式切换）——
+   *  Code = 推演主界面（默认）；Work = 角色巡演（建设中占位） */
+  surfaceMode?: SlideRuleSurfaceMode;
+  onSurfaceModeChange?: (mode: SlideRuleSurfaceMode) => void;
   onResetSession?: () => void;
   onOpenDeliverables?: () => void;
   embedded?: boolean;
 }) {
-  const facts = deriveStatusBarFacts(state, {
-    turnCount,
-    isRunning,
-    driveLoopCount,
-    immersion: true,
-    executorMode,
-    publishClosure,
-  });
-
   return (
     <header
       className={autopilotTheme.immersionOverlayHeader}
       data-testid="sliderule-status-bar"
     >
       <div className="flex w-full items-center justify-between gap-4">
-        {/* STATUS 组：装进描边圆角盒（样式版），信息项不变 */}
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {embedded ? null : (
             <img
@@ -58,33 +42,27 @@ export function SlideRuleTopHud({
               title="SlideRule"
             />
           )}
-          <div className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[#e5e7eb] bg-white/80 px-3.5 py-2 text-xs shadow-[0_1px_6px_rgb(15_23_42/0.05)]">
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-stone-400">
-              STATUS
-            </span>
-            <span
-              data-testid="sliderule-conclusion-badge"
-              className="text-[10px] text-stone-500"
-            >
-              {facts.conclusionLabel}
-            </span>
-            <span className="font-mono text-[10px] text-stone-400">话题</span>
-            <span
-              className={`min-w-0 max-w-[min(30vw,280px)] truncate font-medium text-stone-800 sm:max-w-[min(34vw,380px)] ${
-                !goal ? "text-stone-400" : ""
-              }`}
-              data-testid="sliderule-goal-display"
-              title={goal}
-            >
-              {goal || "尚未稳定话题"}
-            </span>
-            <span className="hidden h-3 w-px bg-[#e5e7eb] md:inline-block" aria-hidden />
-            <span className="hidden text-stone-400 sm:inline">
-              阶段{" "}
-              <span className="font-mono font-semibold text-stone-700">
-                {facts.phaseLabel || "就绪"}
-              </span>
-            </span>
+          {/* Work / Code 模式胶囊（话题与阶段信息已由左栏对话与右舞台承载） */}
+          <div
+            className="flex items-center gap-0.5 rounded-lg border border-[#e5e7eb] bg-white/80 p-1 shadow-[0_1px_6px_rgb(15_23_42/0.05)]"
+            data-testid="sliderule-surface-mode"
+          >
+            {SURFACE_MODES.map(m => (
+              <button
+                key={m.id}
+                type="button"
+                data-testid={`sliderule-mode-${m.id}`}
+                aria-pressed={surfaceMode === m.id}
+                onClick={() => onSurfaceModeChange?.(m.id)}
+                className={`rounded-md px-3.5 py-1 text-[13px] font-medium transition-colors ${
+                  surfaceMode === m.id
+                    ? "bg-[#e6f4ff] text-[#1677ff]"
+                    : "text-stone-500 hover:bg-[#eef0f4] hover:text-stone-700"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -112,7 +90,11 @@ export function SlideRuleTopHud({
               disabled={isRunning}
               data-testid="sliderule-reset-session"
               className="flex h-9 items-center gap-1.5 rounded-full border border-[#e5e7eb] bg-white px-4 text-[13px] font-medium text-stone-700 shadow-[0_1px_6px_rgb(15_23_42/0.06)] transition hover:border-[#d3d8e0] hover:bg-[#eef0f4] disabled:opacity-45"
-              title={isRunning ? "推演进行中，稍后再重置" : "清空本轮对话与持久化状态，重新开始"}
+              title={
+                isRunning
+                  ? "推演进行中，稍后再重置"
+                  : "清空本轮对话与持久化状态，重新开始"
+              }
             >
               <RotateCw className="h-4 w-4" />
               重置会话
@@ -129,7 +111,13 @@ export function SlideRuleTopHud({
   );
 }
 
-export function InlineMetric({ label, value }: { label: string; value: number }) {
+export function InlineMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
   return (
     <span className="tabular-nums text-stone-600">
       <span className="text-stone-400">{label} </span>
