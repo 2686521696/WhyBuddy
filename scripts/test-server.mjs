@@ -5,11 +5,7 @@ import { spawn } from "node:child_process";
 const ROOT = process.cwd();
 const VITEST_ENTRY = path.join(ROOT, "node_modules", "vitest", "vitest.mjs");
 
-const TEST_ROOTS = [
-  "server/tests",
-  "server/permission",
-  "shared",
-];
+const TEST_ROOTS = ["server/tests", "server/permission", "shared"];
 
 const TEST_FILE_PATTERN = /\.test\.ts$/;
 const DEFAULT_BATCH_SIZE = 20;
@@ -67,7 +63,10 @@ function isCiEnvironment() {
 }
 
 function getBatchTimeoutMs() {
-  const configured = Number.parseInt(process.env.TEST_SERVER_BATCH_TIMEOUT_MS ?? "", 10);
+  const configured = Number.parseInt(
+    process.env.TEST_SERVER_BATCH_TIMEOUT_MS ?? "",
+    10
+  );
   if (Number.isFinite(configured) && configured > 0) {
     return configured;
   }
@@ -76,7 +75,10 @@ function getBatchTimeoutMs() {
 }
 
 function getHeartbeatMs() {
-  const configured = Number.parseInt(process.env.TEST_SERVER_HEARTBEAT_MS ?? "", 10);
+  const configured = Number.parseInt(
+    process.env.TEST_SERVER_HEARTBEAT_MS ?? "",
+    10
+  );
   if (Number.isFinite(configured) && configured > 0) {
     return configured;
   }
@@ -85,7 +87,10 @@ function getHeartbeatMs() {
 }
 
 function getKillGraceMs() {
-  const configured = Number.parseInt(process.env.TEST_SERVER_KILL_GRACE_MS ?? "", 10);
+  const configured = Number.parseInt(
+    process.env.TEST_SERVER_KILL_GRACE_MS ?? "",
+    10
+  );
   if (Number.isFinite(configured) && configured > 0) {
     return configured;
   }
@@ -100,11 +105,12 @@ function buildVitestArgs(batch) {
     "--config",
     "vitest.config.server.ts",
     "--pool=forks",
-    "--silent",
+    // vitest 3 的 cac 解析器：裸 --silent 会把后面的文件参数当成它的值
+    "--silent=true",
   ];
 
   if (process.env.TEST_SERVER_SINGLE_FORK === "1") {
-    args.push("--poolOptions.forks.singleFork");
+    args.push("--poolOptions.forks.singleFork=true");
   }
 
   if (process.env.TEST_SERVER_FILE_PARALLELISM === "0") {
@@ -121,7 +127,7 @@ async function runBatch(batch, batchIndex, totalBatches, depth = 0) {
   const depthLabel = depth > 0 ? ` depth=${depth}` : "";
 
   console.log(
-    `[test:server] Running batch ${batchLabel} (${batch.length} files${depthLabel})`,
+    `[test:server] Running batch ${batchLabel} (${batch.length} files${depthLabel})`
   );
   console.log(`[test:server] Files ${firstFile} -> ${lastFile}`);
 
@@ -140,29 +146,28 @@ async function runBatch(batch, batchIndex, totalBatches, depth = 0) {
   let forceKilled = false;
 
   const heartbeat = setInterval(() => {
-    console.log(
-      `[test:server] Batch ${batchLabel} still running...`,
-    );
+    console.log(`[test:server] Batch ${batchLabel} still running...`);
   }, heartbeatMs);
 
   let forceKillHandle = null;
-  const timeoutHandle = batchTimeoutMs > 0
-    ? setTimeout(() => {
-        timedOut = true;
-        console.error(
-          `[test:server] Batch ${batchLabel} exceeded ${batchTimeoutMs}ms, terminating child process...`,
-        );
-        child.kill("SIGTERM");
-
-        forceKillHandle = setTimeout(() => {
-          forceKilled = true;
+  const timeoutHandle =
+    batchTimeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
           console.error(
-            `[test:server] Batch ${batchLabel} did not exit after ${killGraceMs}ms grace period, forcing kill...`,
+            `[test:server] Batch ${batchLabel} exceeded ${batchTimeoutMs}ms, terminating child process...`
           );
-          child.kill("SIGKILL");
-        }, killGraceMs);
-      }, batchTimeoutMs)
-    : null;
+          child.kill("SIGTERM");
+
+          forceKillHandle = setTimeout(() => {
+            forceKilled = true;
+            console.error(
+              `[test:server] Batch ${batchLabel} did not exit after ${killGraceMs}ms grace period, forcing kill...`
+            );
+            child.kill("SIGKILL");
+          }, killGraceMs);
+        }, batchTimeoutMs)
+      : null;
 
   return new Promise((resolve, reject) => {
     const clearTimers = () => {
@@ -175,7 +180,7 @@ async function runBatch(batch, batchIndex, totalBatches, depth = 0) {
       }
     };
 
-    child.on("error", (error) => {
+    child.on("error", error => {
       clearTimers();
       reject(error);
     });
@@ -197,7 +202,7 @@ async function runBatch(batch, batchIndex, totalBatches, depth = 0) {
         const right = batch.slice(midpoint);
 
         console.log(
-          `[test:server] Splitting timed out batch ${batchLabel} into ${left.length} + ${right.length} files`,
+          `[test:server] Splitting timed out batch ${batchLabel} into ${left.length} + ${right.length} files`
         );
 
         await runBatch(left, batchIndex, totalBatches, depth + 1);
@@ -229,19 +234,25 @@ function parseShard() {
   }
   const match = /^([1-9]\d*)\/([1-9]\d*)$/.exec(raw);
   if (!match) {
-    console.error(`[test:server] Invalid TEST_SERVER_SHARD "${raw}" (expected like "1/3").`);
+    console.error(
+      `[test:server] Invalid TEST_SERVER_SHARD "${raw}" (expected like "1/3").`
+    );
     process.exit(1);
   }
   const index = Number.parseInt(match[1], 10);
   const total = Number.parseInt(match[2], 10);
   if (index > total) {
-    console.error(`[test:server] Invalid TEST_SERVER_SHARD "${raw}" (index > total).`);
+    console.error(
+      `[test:server] Invalid TEST_SERVER_SHARD "${raw}" (index > total).`
+    );
     process.exit(1);
   }
   return { index, total };
 }
 
-const batchSize = Number.parseInt(process.env.TEST_SERVER_BATCH_SIZE ?? "", 10) || DEFAULT_BATCH_SIZE;
+const batchSize =
+  Number.parseInt(process.env.TEST_SERVER_BATCH_SIZE ?? "", 10) ||
+  DEFAULT_BATCH_SIZE;
 const allTestFiles = collectTestFiles();
 const shard = parseShard();
 const testFiles = shard
@@ -250,7 +261,7 @@ const testFiles = shard
 
 if (shard) {
   console.log(
-    `[test:server] Shard ${shard.index}/${shard.total}: ${testFiles.length} of ${allTestFiles.length} files.`,
+    `[test:server] Shard ${shard.index}/${shard.total}: ${testFiles.length} of ${allTestFiles.length} files.`
   );
 }
 
@@ -262,7 +273,10 @@ if (process.env.TEST_SERVER_FILE_PARALLELISM === undefined) {
   process.env.TEST_SERVER_FILE_PARALLELISM = "0";
 }
 
-if (process.env.TEST_SERVER_BATCH_TIMEOUT_MS === undefined && isCiEnvironment()) {
+if (
+  process.env.TEST_SERVER_BATCH_TIMEOUT_MS === undefined &&
+  isCiEnvironment()
+) {
   process.env.TEST_SERVER_BATCH_TIMEOUT_MS = "180000";
 }
 
@@ -282,4 +296,6 @@ for (const [index, batch] of batches.entries()) {
   await runBatch(batch, index, batches.length);
 }
 
-console.log(`[test:server] Completed ${testFiles.length} files across ${batches.length} batches.`);
+console.log(
+  `[test:server] Completed ${testFiles.length} files across ${batches.length} batches.`
+);
