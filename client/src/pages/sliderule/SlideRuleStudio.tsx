@@ -4,9 +4,11 @@
  * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：logo 水印 + hero 文案 + 示例 chips）。
  *
  * 右侧主舞台（方向 B：应用为主，五系统是游标透视层）——三态：
- *   theater — 推演进行中（SSE activeSkillId 驱动），系统屏生成剧场逐屏亮相；
+ *   theater — 五系统生成中（SSE activeSkillId 驱动），系统屏生成剧场逐屏亮相；
  *   app     — 闭环出应用后，运行应用整高铺满为默认舞台；「游标」开关透视
  *             当前页面背后的实体/流程/角色/AI，点任何一节侧滑抽屉深入系统屏；
+ *   live    — 推演已开始但应用未成形（澄清/路线/风险等早期轮次），占位报
+ *             "推演中 + 当前步骤"，不重复左栏直播流；
  *   board   — 尚无可运行应用（空会话/未闭环），保留六系统缩略 + 证据看板。
  * 六系统屏不再是并列切屏，而是应用的透视层（抽屉承载，全部保留）。
  */
@@ -69,6 +71,9 @@ interface SlideRuleStudioProps {
    *  "推演中"（实时想法由左栏流出，不重复）。 */
   llmDraft?: string;
   llmDraftLabel?: string | null;
+  /** 当前步骤的一句话状态（如"正在分析风险"）——live 态副标题，
+   *  给右侧一个"活着"的锚点，但不重复左栏的完整直播流。 */
+  liveActionLabel?: string | null;
 
   className?: string;
 }
@@ -86,6 +91,7 @@ export function SlideRuleStudio({
   isRunning = false,
   llmDraft = "",
   llmDraftLabel = null,
+  liveActionLabel = null,
   className = "",
 }: SlideRuleStudioProps) {
   // Allow manual override of the displayed screen (click thumbnail, board/theater 态)
@@ -103,15 +109,20 @@ export function SlideRuleStudio({
     () =>
       mergeFiveSystemModels(
         parseFiveSystemModelFromContents(skillContents ?? {}),
-        parseFiveSystemModelFromPerSkillEvidence(publishClosure?.perSkillEvidence)
+        parseFiveSystemModelFromPerSkillEvidence(
+          publishClosure?.perSkillEvidence
+        )
       ),
     [skillContents, publishClosure?.perSkillEvidence]
   );
 
   // 起草中的部分模型：五系统 JSON 还在流式生成时容错解析（每 +300 字符重解一次，
   // 避免逐 delta 重渲染）。仅实时预览——最终真实模型仍以闭环证据为准。
-  const isDraftingModel = isRunning && llmDraftLabel === "five-system-model" && !!llmDraft;
-  const draftParseKey = isDraftingModel ? Math.floor(llmDraft.length / 300) : -1;
+  const isDraftingModel =
+    isRunning && llmDraftLabel === "five-system-model" && !!llmDraft;
+  const draftParseKey = isDraftingModel
+    ? Math.floor(llmDraft.length / 300)
+    : -1;
   const draftModel = useMemo(
     () => (isDraftingModel ? parsePartialFiveSystemModel(llmDraft) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 按长度桶节流重解
@@ -125,12 +136,15 @@ export function SlideRuleStudio({
     [fiveSystemModel, appTitle]
   );
 
-  // 舞台：推演剧场 > 应用主舞台（含起草实时预览）> 推演想法直播 > 证据看板
+  // 舞台：推演剧场 > 应用主舞台（含起草实时预览）> 推演中占位 > 证据看板。
+  // 注意 live 态只看 isRunning：早期轮次（澄清/路线/风险）里 LLM 流可能
+  // 尚未开始或刚被重置（llmDraft 为空），若以 llmDraft 判定会闪回 board
+  // ——用户看到的就是"发了消息右侧还是老面板"。
   const stage: "theater" | "app" | "live" | "board" = activeSkillId
     ? "theater"
     : appSchema && fiveSystemModel
       ? "app"
-      : isRunning && llmDraft
+      : isRunning
         ? "live"
         : "board";
 
@@ -143,7 +157,7 @@ export function SlideRuleStudio({
     }
   });
   const toggleXray = useCallback(() => {
-    setXrayOn((v) => {
+    setXrayOn(v => {
       try {
         localStorage.setItem(XRAY_PREF_KEY, v ? "0" : "1");
       } catch {}
@@ -170,7 +184,9 @@ export function SlideRuleStudio({
   if (!stageVisible) {
     return (
       <div className={`flex h-full w-full overflow-hidden ${className}`}>
-        <div className="flex h-full w-full flex-col bg-[#f7f8fa]">{chatSlot}</div>
+        <div className="flex h-full w-full flex-col bg-[#f7f8fa]">
+          {chatSlot}
+        </div>
       </div>
     );
   }
@@ -178,8 +194,10 @@ export function SlideRuleStudio({
   return (
     <div className={`flex h-full w-full overflow-hidden ${className}`}>
       {/* Left panel — 38% — Chat（对话 + 实时推演过程） */}
-      <div className="flex h-full shrink-0 flex-col border-r border-[#e5e7eb] bg-[#f7f8fa]"
-           style={{ width: "38%" }}>
+      <div
+        className="flex h-full shrink-0 flex-col border-r border-[#e5e7eb] bg-[#f7f8fa]"
+        style={{ width: "38%" }}
+      >
         {chatSlot}
       </div>
 
@@ -189,7 +207,10 @@ export function SlideRuleStudio({
         {stage === "app" && fiveSystemModel ? (
           <>
             {/* 应用主舞台：细头条（话题 + 游标开关），其下应用整高铺满 */}
-            <div className="flex shrink-0 items-center gap-2" data-testid="sliderule-app-stage-bar">
+            <div
+              className="flex shrink-0 items-center gap-2"
+              data-testid="sliderule-app-stage-bar"
+            >
               <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
                 {appTitle || "推演应用"}
               </span>
@@ -219,7 +240,10 @@ export function SlideRuleStudio({
                 游标
               </button>
             </div>
-            <div className="flex min-h-0 flex-1 gap-3" data-testid="sliderule-app-stage">
+            <div
+              className="flex min-h-0 flex-1 gap-3"
+              data-testid="sliderule-app-stage"
+            >
               {/* 画布直接浮在奶油底上（自带投影），不再包白色卡框叠色 */}
               <div className="min-w-0 flex-1 overflow-hidden">
                 <AppRuntimeScreen
@@ -252,7 +276,7 @@ export function SlideRuleStudio({
             data-testid="sliderule-live-stage"
           >
             <span className="inline-flex gap-1">
-              {[0, 1, 2].map((i) => (
+              {[0, 1, 2].map(i => (
                 <span
                   key={i}
                   className="h-2 w-2 animate-pulse rounded-full bg-[#1677ff]/60"
@@ -261,7 +285,17 @@ export function SlideRuleStudio({
               ))}
             </span>
             <div className="text-[13px] font-medium text-stone-500">推演中</div>
-            <div className="text-[11px] text-stone-400">应用成形后将在这里实时渲染</div>
+            {liveActionLabel && (
+              <div
+                className="text-[12px] text-stone-500"
+                data-testid="sliderule-live-action"
+              >
+                {liveActionLabel}
+              </div>
+            )}
+            <div className="text-[11px] text-stone-400">
+              应用成形后将在这里实时渲染
+            </div>
           </div>
         ) : (
           <>
@@ -297,7 +331,9 @@ export function SlideRuleStudio({
               <span className="text-[13px] font-semibold text-stone-800">
                 {SKILL_LABELS[drawerSkill]}
               </span>
-              <span className="text-[11px] text-stone-400">游标透视 · 应用背后的声明</span>
+              <span className="text-[11px] text-stone-400">
+                游标透视 · 应用背后的声明
+              </span>
               <button
                 type="button"
                 onClick={() => setDrawerSkill(null)}
