@@ -26,6 +26,12 @@ export interface TourStageHandle {
   dispatch: (event: TourEvent) => void;
   /** 开演清场：上一轮巡演的状态泡/台词泡/表情/工位屏/白板全部复位 */
   reset: () => void;
+  /**
+   * 到位确认：该角色当前没有走位目标（已停稳/被清场/未曾出发）时立即
+   * 兑现，否则等他走到停靠点。执行层据此把"审批中"等工作状态压到
+   * 站定之后——人在半路滑行时打工作状态是穿模的根源（用户实测）。
+   */
+  waitForArrival: (npcId: string) => Promise<void>;
 }
 
 const WALK_SPEED = 4.2; // 世界单位/秒（房间坐标系 30×25）
@@ -454,12 +460,37 @@ export default function TourStage3D({
     };
     renderer.domElement.addEventListener("click", onClick);
 
+    // 到位确认等待者（npcId → resolve 列表）；到位/清场/卸载时兑现
+    const arrivalWaiters = new Map<string, Array<() => void>>();
+    const settleArrival = (npcId: string) => {
+      const waiters = arrivalWaiters.get(npcId);
+      if (!waiters) return;
+      arrivalWaiters.delete(npcId);
+      for (const resolve of waiters) resolve();
+    };
+    const settleAllArrivals = () => {
+      for (const npcId of [...arrivalWaiters.keys()]) settleArrival(npcId);
+    };
+
     // 事件入口（父组件转发 driver 事件）
     const handle: TourStageHandle = {
+      waitForArrival: npcId =>
+        new Promise<void>(resolve => {
+          const rig = rigs.get(npcId);
+          // 没有走位目标（已停稳/舞台未就绪/角色不存在）→ 不等
+          if (disposed || !rig || !rig.target) {
+            resolve();
+            return;
+          }
+          const waiters = arrivalWaiters.get(npcId) ?? [];
+          waiters.push(resolve);
+          arrivalWaiters.set(npcId, waiters);
+        }),
       reset: () => {
         if (disposed) return;
         pendingEvents.length = 0;
         spots.clear();
+        settleAllArrivals();
         for (const rig of rigs.values()) {
           if (rig.sayTimer) clearTimeout(rig.sayTimer);
           rig.sayTimer = null;
@@ -541,6 +572,7 @@ export default function TourStage3D({
             rig.group.position.copy(dest);
             rig.group.rotation.y = Math.PI; // 面向工位（北）
             playClip(rig, "Idle");
+            settleArrival(event.npcId); // 瞬移即到位
           } else {
             rig.target = dest;
           }
@@ -611,7 +643,7 @@ export default function TourStage3D({
     const tick = () => {
       raf = requestAnimationFrame(tick);
       const dt = Math.min(clock.getDelta(), 0.1);
-      for (const rig of rigs.values()) {
+      for (const [npcId, rig] of rigs) {
         if (rig.target) {
           const delta = rig.target.clone().sub(rig.group.position);
           delta.y = 0;
@@ -621,6 +653,7 @@ export default function TourStage3D({
             rig.target = null;
             rig.group.rotation.y = Math.PI; // 到位后面向工位（北）
             playClip(rig, "Idle");
+            settleArrival(npcId); // 执行层在等这一步（walk 到位确认）
           } else {
             const stepLen = Math.min(dist, WALK_SPEED * dt);
             const forward = delta.normalize().clone();
@@ -688,6 +721,7 @@ export default function TourStage3D({
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
+      settleAllArrivals(); // 卸载时兑现所有等待者（driver 不悬挂）
       for (const rig of rigs.values()) {
         if (rig.sayTimer) clearTimeout(rig.sayTimer);
       }

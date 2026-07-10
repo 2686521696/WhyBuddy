@@ -260,6 +260,46 @@ describe("tour-driver 执行层（真调运行时）", () => {
     expect(report.approvals).toBe(3);
   });
 
+  it("走位到位确认：每个 walk 步等 waitForArrival 兑现后才发后续事件（穿模根因回归）", async () => {
+    mem.clear();
+    const script = buildTourScript(MODEL, schema)!;
+    const log: string[] = [];
+    let pendingArrival: (() => void) | null = null;
+    await runTour(script, {
+      model: MODEL,
+      schema,
+      sessionId: "tour-test-arrival",
+      onEvent: e => {
+        if (e.type === "npc_move_to") log.push(`move:${e.npcId}`);
+        if (e.type === "npc_status" && e.status && e.status !== "移动中")
+          log.push(`work:${e.status}`);
+      },
+      pause: () => Promise.resolve(),
+      now: () => "2026-07-10T00:00:00.000Z",
+      waitForArrival: npcId => {
+        log.push(`wait:${npcId}`);
+        return new Promise<void>(resolve => {
+          pendingArrival = resolve;
+          // 模拟演出层异步到位（下一微任务兑现）
+          queueMicrotask(() => {
+            pendingArrival = null;
+            resolve();
+          });
+        });
+      },
+    });
+    // 每个 move 后紧跟同角色的 wait（先确认到位，再进下一步）
+    const walkCount = script.steps.filter(s => s.kind === "walk").length;
+    expect(log.filter(l => l.startsWith("wait:"))).toHaveLength(walkCount);
+    for (let i = 0; i < log.length; i++) {
+      if (log[i].startsWith("move:")) {
+        expect(log[i + 1]).toBe(`wait:${log[i].slice("move:".length)}`);
+      }
+    }
+    // 巡演结束时没有悬挂的到位等待
+    expect(pendingArrival).toBeNull();
+  });
+
   it("样例值按字段类型确定性生成", () => {
     const values = sampleValuesFor(schema, "ticket");
     expect(values.amount).toBe(1);

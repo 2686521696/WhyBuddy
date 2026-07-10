@@ -81,6 +81,12 @@ export interface RunTourOptions {
   /** 外部取消：返回 true 时提前收幕（已落的数据保留——诚实，不回滚真事实） */
   isCancelled?: () => boolean;
   /**
+   * 走位到位确认（演出层提供）：walk 步等角色真站定再进下一步。
+   * 不提供则不等（测试/无舞台场景）。没有它时"审批中"会打在角色
+   * 半路滑行的身上，同桌多人时表现为穿身叠站（用户三轮实测的根因）。
+   */
+  waitForArrival?: (npcId: string) => Promise<void>;
+  /**
    * LLM 入魂档（五期，默认无）：建单样例值覆盖 + 每步角色台词。
    * 值已由 tour-flavor 消毒（只含真实字段、number 已数字化）；缺省字段
    * 仍由 sampleValuesFor 兜底——LLM 只能丰富数据，不能让建单缺字段。
@@ -124,6 +130,7 @@ export async function runTour(
     pause = () => new Promise(r => setTimeout(r, 900)),
     now = () => new Date().toISOString(),
     isCancelled = () => false,
+    waitForArrival,
     flavor,
   } = opts;
 
@@ -193,6 +200,10 @@ export async function runTour(
           npcId: step.npcId,
           stationId: step.stationId,
         });
+        // 等真站定再进下一步：后续的录入/审批状态只打在到位的人身上
+        if (waitForArrival) {
+          await settleWalk(waitForArrival(step.npcId), isCancelled);
+        }
         break;
       }
       case "create_row": {
@@ -323,6 +334,33 @@ export async function runTour(
   // 报告留档：交付物附录（最近一次巡演）从这里取——没跑过就没有段
   saveTourReport(sessionId, report, now());
   return report;
+}
+
+/**
+ * 等走位到位，但不无限等：停止巡演即时打断（200ms 轮询），
+ * 10s 兜底超时（对角线走位 ~9s 封顶）——演出层出错也不卡死巡演。
+ */
+function settleWalk(
+  arrived: Promise<void>,
+  isCancelled: () => boolean
+): Promise<void> {
+  return new Promise<void>(resolve => {
+    let done = false;
+    let poll: ReturnType<typeof setInterval> | null = null;
+    let cap: ReturnType<typeof setTimeout> | null = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (poll) clearInterval(poll);
+      if (cap) clearTimeout(cap);
+      resolve();
+    };
+    poll = setInterval(() => {
+      if (isCancelled()) finish();
+    }, 200);
+    cap = setTimeout(finish, 10000);
+    void arrived.then(finish);
+  });
 }
 
 function stepLabel(step: TourStep): string {

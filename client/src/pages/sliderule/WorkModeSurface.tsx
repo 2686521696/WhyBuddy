@@ -209,6 +209,10 @@ export function WorkModeSurface({
         pause: () =>
           new Promise(r => setTimeout(r, isMotionReduced() ? 220 : 950)),
         isCancelled: () => cancelRef.current,
+        // 走位到位确认：等角色真站定再进下一步（舞台未就绪时立即兑现，
+        // 不阻塞开场）——工作状态只打在到位的人身上，同桌不再穿身
+        waitForArrival: npcId =>
+          stageRef.current?.waitForArrival(npcId) ?? Promise.resolve(),
         flavor: flavor
           ? {
               valuesFor: entityId => flavor.rows[entityId] ?? null,
