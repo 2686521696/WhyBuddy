@@ -1,9 +1,9 @@
 /**
  * 设置中心重构（推演通道 / 浏览器直连 / 系统设置）的结构回归。
  *
- * 约定：renderToStaticMarkup（不跑 effect，推演通道面板呈加载骨架，
- * 不发真实请求）。覆盖：三分类导航、默认落在推演通道、真通道面板
- * 与诚实横幅在场、底部保存不出现在推演通道分类（各自即时生效）。
+ * 约定：renderToStaticMarkup（不跑 effect，不发真实请求）。
+ * 覆盖：三分类导航（系统设置排第一且为默认落点，用户裁决）、
+ * 偏好/隐私说明在场、底部保存不出现在默认分类（各自即时生效）。
  */
 
 import { describe, it, expect } from "vitest";
@@ -22,7 +22,7 @@ import { SettingsDialog, SettingsPage, SystemPrefs } from "../SettingsDialog";
 } as unknown as Storage;
 
 describe("SettingsDialog（设置中心重构）", () => {
-  it("导航：推演通道（默认）+ 浏览器直连（常驻，自定义厂商重要）+ 系统设置", () => {
+  it("导航：系统设置（第一且默认）+ 推演通道 + 浏览器直连（常驻，自定义厂商重要）", () => {
     const html = renderToStaticMarkup(
       <SettingsDialog open onClose={() => {}} sessionId="s1" />
     );
@@ -31,9 +31,13 @@ describe("SettingsDialog（设置中心重构）", () => {
     expect(html).toContain("推演通道");
     // 用户反馈：浏览器直连的自定义厂商很重要——本地也常驻可见，不再按启用状态隐藏
     expect(html).toContain('data-testid="sliderule-settings-nav-llm"');
-    // 默认分类 = 推演通道：真通道面板在场
-    expect(html).toContain('data-testid="llm-channel-panel"');
-    expect(html).toContain("服务端真通道");
+    // 导航顺序：系统设置排第一（用户裁决：日常高频项放前面）
+    expect(html.indexOf("sliderule-settings-nav-system")).toBeLessThan(
+      html.indexOf("sliderule-settings-nav-channel")
+    );
+    // 默认分类 = 系统设置：偏好面板在场，真通道面板不渲染
+    expect(html).toContain('data-testid="sliderule-settings-user-prefs"');
+    expect(html).not.toContain('data-testid="llm-channel-panel"');
   });
 
   it("SettingsPage 整页形态：无遮罩/关闭按钮，三分类导航在场", () => {
@@ -47,7 +51,7 @@ describe("SettingsDialog（设置中心重构）", () => {
     expect(html).not.toContain('data-testid="sliderule-settings-close"');
   });
 
-  it("推演通道分类不渲染底部「保存」（面板各自即时生效）", () => {
+  it("默认分类（系统设置）不渲染底部「保存」（面板各自即时生效）", () => {
     const html = renderToStaticMarkup(
       <SettingsDialog open onClose={() => {}} sessionId="s1" />
     );

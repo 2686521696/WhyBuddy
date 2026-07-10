@@ -45,22 +45,25 @@ export type SettingsDialogProps = SettingsSurfaceProps & {
   onClose: () => void;
 };
 
+/* 系统设置排第一并作默认落点（用户裁决）：偏好/数据管理是日常高频项，
+   推演通道/浏览器直连是一次配好就少动的接线 */
 const NAV_ITEMS: Array<{
   id: CategoryId;
   label: string;
   icon: React.ReactNode;
 }> = [
-  { id: "channel", label: "推演通道", icon: <Server className="h-4 w-4" /> },
-  { id: "llm", label: "浏览器直连", icon: <Cpu className="h-4 w-4" /> },
   {
     id: "system",
     label: "系统设置",
     icon: <SlidersHorizontal className="h-4 w-4" />,
   },
+  { id: "channel", label: "推演通道", icon: <Server className="h-4 w-4" /> },
+  { id: "llm", label: "浏览器直连", icon: <Cpu className="h-4 w-4" /> },
 ];
 
 /**
  * SlideRule 设置中心（Cherry Studio 风格三栏）。
+ * 系统设置分类排第一且为默认落点（偏好 + 数据管理，日常高频）；
  * 推演通道分类 = 服务端真通道（五系统生成/评审/AI 写回实际走的 LLM）配置；
  * 浏览器直连分类 = provider-centric BYOK 备用池（仅无服务端时的直连路径消费，
  * 自定义厂商重要，常驻可见）；
@@ -125,7 +128,7 @@ function SettingsSurface(
 ) {
   const { mode, onClose } = props;
   const isDialog = mode === "dialog";
-  const [category, setCategory] = React.useState<CategoryId>("channel");
+  const [category, setCategory] = React.useState<CategoryId>("system");
   const [draft, setDraft] = React.useState<LlmProvidersConfig | null>(() =>
     loadProvidersConfig()
   );
