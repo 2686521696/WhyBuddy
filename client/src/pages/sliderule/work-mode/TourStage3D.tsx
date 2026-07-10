@@ -87,6 +87,8 @@ interface ActorRig {
   sayTimer: ReturnType<typeof setTimeout> | null;
   /** 最近走向的工位（录入/审批时把状态同步到该工位屏幕） */
   stationId: string | null;
+  /** 朝目标无进展的累计时长（卡死保护：超时原地收步，不振荡） */
+  stallTime: number;
 }
 
 /** Agentshire 式对话气泡：深色圆角 + 白字两行 + 底部小尖角 */
@@ -358,6 +360,7 @@ export default function TourStage3D({
         say,
         sayTimer: null,
         stationId: null,
+        stallTime: 0,
       });
     }
 
@@ -531,6 +534,7 @@ export default function TourStage3D({
           rig.stationId = null;
           // 瞬移回集结区（清场要看得见：人不归位=没清场）
           rig.target = null;
+          rig.stallTime = 0;
           rig.group.position.copy(rig.home);
           rig.group.rotation.y = 0;
           playClip(rig, "Idle");
@@ -588,14 +592,26 @@ export default function TourStage3D({
           const station = office?.stations.get(event.stationId);
           if (!rig) return;
           rig.stationId = event.stationId;
-          const raw = station
-            ? station.approach
-            : new THREE.Vector3(HOME.x, 0, HOME.z);
-          // 防重叠：同一工位多人停靠时环形让位
-          // 间距按角色实际肩宽给：1.75 身高的小人肩宽约 0.9，
-          // 1.1 的环形半径等于贴身站（用户实测"重叠"）
-          const spot = spots.allocate({ x: raw.x, z: raw.z }, event.npcId, 1.7);
-          const dest = new THREE.Vector3(spot.x, 0, spot.z);
+          let dest: THREE.Vector3;
+          if (station) {
+            // 防重叠：同一工位多人停靠时环形让位
+            // 间距按角色实际肩宽给：1.75 身高的小人肩宽约 0.9，
+            // 1.1 的环形半径等于贴身站（用户实测"重叠"）
+            const raw = station.approach;
+            const spot = spots.allocate(
+              { x: raw.x, z: raw.z },
+              event.npcId,
+              1.7
+            );
+            dest = new THREE.Vector3(spot.x, 0, spot.z);
+          } else {
+            // 未知工位（TOUR_HOME_STATION_ID 等）→ 回自己的集结区座位：
+            // 座位专属且间距 2.2，不做环形让位——此前退回集结区中心会
+            // 压在没登记过占位的站桩角色身上，走不进又不停，
+            // 就是用户看到的"跳来跳去/跑偏"（原地振荡）
+            spots.release(event.npcId);
+            dest = rig.home.clone();
+          }
           if (isMotionReduced()) {
             rig.group.position.copy(dest);
             rig.group.rotation.y = Math.PI; // 面向工位（北）
@@ -603,6 +619,7 @@ export default function TourStage3D({
             settleArrival(event.npcId); // 瞬移即到位
           } else {
             rig.target = dest;
+            rig.stallTime = 0;
           }
           return;
         }
@@ -679,6 +696,7 @@ export default function TourStage3D({
           if (dist < 0.08) {
             rig.group.position.copy(rig.target);
             rig.target = null;
+            rig.stallTime = 0;
             rig.group.rotation.y = Math.PI; // 到位后面向工位（北）
             playClip(rig, "Idle");
             settleArrival(npcId); // 执行层在等这一步（walk 到位确认）
@@ -710,6 +728,25 @@ export default function TourStage3D({
             dir.normalize();
             rig.group.position.add(dir.multiplyScalar(stepLen));
             rig.group.rotation.y = Math.atan2(dir.x, dir.z);
+            // 卡死保护：持续朝目标没有净进展（目标被人挡死等）就
+            // 原地收步——诚实地停在被挡处，不无限振荡
+            const newDist = rig.target
+              .clone()
+              .sub(rig.group.position)
+              .setY(0)
+              .length();
+            if (dist - newDist < stepLen * 0.2) {
+              rig.stallTime += dt;
+            } else {
+              rig.stallTime = 0;
+            }
+            if (rig.stallTime > 1.5) {
+              rig.target = null;
+              rig.stallTime = 0;
+              rig.group.rotation.y = Math.PI;
+              playClip(rig, "Idle");
+              settleArrival(npcId);
+            }
           }
         }
         rig.mixer?.update(dt);
