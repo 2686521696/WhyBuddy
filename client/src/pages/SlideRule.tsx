@@ -26,7 +26,13 @@ import {
   useMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { ChevronRight, ClipboardCheck, Dumbbell, Users } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  ClipboardCheck,
+  Dumbbell,
+  Users,
+} from "lucide-react";
 import type { BrainstormReasoningNode } from "@shared/blueprint";
 import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurface";
 import { useSlideRuleSession } from "./sliderule/useSlideRuleSession";
@@ -299,11 +305,10 @@ function TurnPhaseTimeline({
           className="flex items-center gap-1 text-xs text-stone-400 transition-colors hover:text-stone-600"
           data-testid="sliderule-turn-steps-toggle"
         >
-          <span
-            className={`inline-block transition-transform ${expanded ? "rotate-90" : ""}`}
-          >
-            ›
-          </span>
+          {/* 几何图标替代文字符号 `›`：与文字真正垂直居中（用户反馈） */}
+          <ChevronRight
+            className={`h-3 w-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+          />
           推演过程 · {phases.length} 阶段 · {totalSteps} 步
         </button>
       )}
@@ -325,7 +330,7 @@ function TurnPhaseTimeline({
                   {running ? (
                     <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[#1677ff]" />
                   ) : (
-                    <span className="shrink-0 text-emerald-500">✓</span>
+                    <Check className="h-3 w-3 shrink-0 text-emerald-500" />
                   )}
                   <span
                     className={
@@ -339,11 +344,9 @@ function TurnPhaseTimeline({
                   </span>
                   {/* 可展开暗示（用户反馈：完成阶段看不出能点开）——箭头随展开态旋转 */}
                   {!running && phase.lines.length > 0 && (
-                    <span
-                      className={`inline-block text-[10px] text-stone-300 transition-transform ${open ? "rotate-90" : ""}`}
-                    >
-                      ›
-                    </span>
+                    <ChevronRight
+                      className={`h-2.5 w-2.5 shrink-0 text-stone-300 transition-transform ${open ? "rotate-90" : ""}`}
+                    />
                   )}
                 </button>
                 {open && phase.lines.length > 0 && (
@@ -457,8 +460,9 @@ function ImUserMessage() {
   const text = item.turn.user;
   return (
     <div className="group mb-4 flex flex-col items-end">
-      {/* 品牌暖色点缀（用户裁决：冷调壳体下暖色只留 logo 与用户气泡） */}
-      <div className="max-w-[520px] rounded-lg bg-[#F7E7DE] px-4 py-2.5 text-[15px] leading-7 text-[#1f2329]">
+      {/* 用户气泡随壳体走冷调（用户反馈：旧暖色与中性冷调壳体不搭）——
+          取品牌蓝浅色，与侧栏选中态同源 */}
+      <div className="max-w-[520px] rounded-lg bg-[#e6f4ff] px-4 py-2.5 text-[15px] leading-7 text-[#1f2329]">
         {text}
       </div>
       {/* 迭代环：意图原文回填输入条，改半句再推（悬停显现，不抢注意力） */}
@@ -531,7 +535,9 @@ function ImAssistantMessage() {
           <div className="flex flex-wrap items-start gap-2 text-xs text-stone-400">
             <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
             {publishClosure && (
-              <span className="mt-1 rounded-full bg-[#e9edf2] px-2 py-0.5">
+              /* mt-0.5：胶囊比 12px 文字行高 4px（py-0.5×2），上边距少 2px
+                 才与「推演过程」首行光学垂直居中（用户反馈） */
+              <span className="mt-0.5 rounded-full bg-[#e9edf2] px-2 py-0.5">
                 {publishClosure.blocked ? "blocked" : "closed"}{" "}
                 {publishClosure.evidencePresentCount}/
                 {publishClosure.skillCount}

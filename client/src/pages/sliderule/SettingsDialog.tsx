@@ -434,7 +434,8 @@ function UserPrefsSection() {
       className="space-y-5 border-t border-[#e5e7eb] pt-5"
       data-testid="sliderule-settings-user-prefs"
     >
-      <div className="flex items-start justify-between gap-4">
+      {/* items-center：开关滑块相对左侧「标题+说明」块垂直居中（用户反馈） */}
+      <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <label className={labelClass}>减少动态效果</label>
           <p className="text-[11px] leading-5 text-stone-400">
@@ -451,7 +452,8 @@ function UserPrefsSection() {
         />
       </div>
 
-      <div className="flex items-start justify-between gap-4">
+      {/* items-center：开关滑块相对左侧「标题+说明」块垂直居中（用户反馈） */}
+      <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <label className={labelClass}>推演完成通知</label>
           <p className="text-[11px] leading-5 text-stone-400">
