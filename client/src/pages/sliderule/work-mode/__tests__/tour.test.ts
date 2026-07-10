@@ -155,14 +155,36 @@ describe("tour-script 剧本层（纯函数）", () => {
     expect(advances[1].stationId).toBe("station-p-review");
     // 不同出演者不共用一张桌
     expect(new Set(advances.map(a => a.stationId)).size).toBe(2);
-    // 已在自己桌上不空走：creator 全程只有建单前那一次走向 p-ticket
+    // 已在自己桌上不空走：creator 审批链上不再重复走向 p-ticket
+    // （建单前 1 次 + 第四幕被拦后退回 1 次）
     const creatorWalks = script.steps.filter(
       s =>
         s.kind === "walk" &&
         s.npcId.includes("creator") &&
         s.stationId === "station-p-ticket"
     );
-    expect(creatorWalks).toHaveLength(1);
+    expect(creatorWalks).toHaveLength(2);
+  });
+
+  it("权限演示编排：每次 denied_demo 后紧跟退场走位，退回自己的工位（收幕拥堆回归）", () => {
+    const script = buildTourScript(MODEL, schema)!;
+    const demos = script.steps
+      .map((s, i) => ({ s, i }))
+      .filter(({ s }) => s.kind === "denied_demo");
+    expect(demos.length).toBeGreaterThanOrEqual(2);
+    for (const { i } of demos) {
+      expect(script.steps[i + 1].kind).toBe("walk");
+    }
+    // creator 被拦在审核页后退回自己的建单桌；auditor 退回审核台
+    const backOf = (roleId: string) => {
+      const demoIdx = script.steps.findIndex(
+        s => s.kind === "denied_demo" && s.npcId.includes(roleId)
+      );
+      const back = script.steps[demoIdx + 1];
+      return back.kind === "walk" ? back.stationId : null;
+    };
+    expect(backOf("creator")).toBe("station-p-ticket");
+    expect(backOf("auditor")).toBe("station-p-review");
   });
 });
 

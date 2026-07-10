@@ -152,6 +152,12 @@ function stationIdFor(pageId: string): string {
   return `station-${pageId}`;
 }
 
+/**
+ * 集结区"工位"哨兵 id：不对应任何真实桌子。演出层对查不到的
+ * 工位 id 一律回落集结区（HOME）站位，正好承接"退回集结区"走位。
+ */
+export const TOUR_HOME_STATION_ID = "station-tour-home";
+
 export function buildTourScript(
   model: FiveSystemModel | null | undefined,
   schema: AppRuntimeSchema | null | undefined
@@ -237,33 +243,35 @@ export function buildTourScript(
   // 兜底站位）。
   const nodes = model.workflow?.nodes ?? [];
   const transitions = model.workflow?.transitions ?? [];
+
+  // 一人一桌分配表（第三幕分桌，第四幕"被拦后退回自己工位"复用）
+  const stationByActor = new Map<string, TourStation>();
+  const takenStations = new Set<string>();
+  if (creator && creationStation) {
+    // 建单人已在建单桌上工作，这张桌就是他的
+    stationByActor.set(creator.npcId, creationStation);
+    takenStations.add(creationStation.stationId);
+  }
+  const stationForActor = (actor: TourActor): TourStation => {
+    const existing = stationByActor.get(actor.npcId);
+    if (existing) return existing;
+    const pageAccess = accessByRole.get(actor.roleId) ?? [];
+    let chosen = pageAccess
+      .filter(pa => pa.visible)
+      .map(pa => stations.find(s => s.pageId === pa.pageId))
+      .find((s): s is TourStation => !!s && !takenStations.has(s.stationId));
+    chosen ??= stations.find(s => !takenStations.has(s.stationId));
+    chosen ??= creationStation ?? stations[0];
+    stationByActor.set(actor.npcId, chosen);
+    takenStations.add(chosen.stationId);
+    return chosen;
+  };
+
   if (nodes.length > 0 && creator) {
     const hasInbound = new Set(transitions.map(t => t.to));
     let currentId: string | null =
       nodes.find(n => !hasInbound.has(n.id))?.id ?? nodes[0]?.id ?? null;
     const visited = new Set<string>();
-
-    const stationByActor = new Map<string, TourStation>();
-    const takenStations = new Set<string>();
-    if (creationStation) {
-      // 建单人已在建单桌上工作，这张桌就是他的
-      stationByActor.set(creator.npcId, creationStation);
-      takenStations.add(creationStation.stationId);
-    }
-    const stationForActor = (actor: TourActor): TourStation => {
-      const existing = stationByActor.get(actor.npcId);
-      if (existing) return existing;
-      const pageAccess = accessByRole.get(actor.roleId) ?? [];
-      let chosen = pageAccess
-        .filter(pa => pa.visible)
-        .map(pa => stations.find(s => s.pageId === pa.pageId))
-        .find((s): s is TourStation => !!s && !takenStations.has(s.stationId));
-      chosen ??= stations.find(s => !takenStations.has(s.stationId));
-      chosen ??= creationStation ?? stations[0];
-      stationByActor.set(actor.npcId, chosen);
-      takenStations.add(chosen.stationId);
-      return chosen;
-    };
     // 已在自己桌上则不再空走一趟（同角色连续节点常见）
     const lastStationByNpc = new Map<string, string>();
     if (creationStation)
@@ -299,34 +307,59 @@ export function buildTourScript(
 
   // ── 第四幕 · 权限审计（真实拦截可视化）────────────────────────
   // 全量拦截入报告；演出上每角色最多演示一处（避免拖戏）。
+  // 编排两则（用户实测收幕拥堆的修正）：
+  //   ① 演示点错开——每处拦截都真实，但演示哪处是演出选择：优先挑
+  //     没被别人演示过的桌子，避免全员涌向同一张；
+  //   ② 被拦后退场——走回自己的工位（审批链上有桌的）或集结区
+  //     （TOUR_HOME_STATION_ID，演出层对未知工位回落集结区），
+  //     不在别人桌前站到收幕。
   const denials: TourScript["denials"] = [];
+  const demoedStations = new Set<string>();
   for (const actor of cast) {
     const pageAccess = accessByRole.get(actor.roleId) ?? [];
-    let demoed = false;
-    for (const pa of pageAccess) {
-      if (pa.visible) continue;
+    const invisible = pageAccess.filter(pa => !pa.visible);
+    for (const pa of invisible) {
       denials.push({
         roleId: actor.roleId,
         pageId: pa.pageId,
         deniedActions: pa.deniedActions,
       });
-      const station = stations.find(s => s.pageId === pa.pageId);
-      if (!demoed && station) {
-        demoed = true;
-        steps.push({
-          kind: "walk",
-          npcId: actor.npcId,
-          stationId: station.stationId,
-          narration: `${actor.roleId} 尝试进入「${station.title}」`,
-        });
-        steps.push({
-          kind: "denied_demo",
-          npcId: actor.npcId,
-          stationId: station.stationId,
-          deniedActions: pa.deniedActions,
-          narration: `RBAC 拦截：${actor.roleId} 无权访问「${station.title}」`,
-        });
-      }
+    }
+    const withStation = invisible
+      .map(pa => ({
+        pa,
+        station: stations.find(s => s.pageId === pa.pageId),
+      }))
+      .filter(
+        (c): c is { pa: PageAccess; station: TourStation } => !!c.station
+      );
+    const demo =
+      withStation.find(c => !demoedStations.has(c.station.stationId)) ??
+      withStation[0];
+    if (demo) {
+      demoedStations.add(demo.station.stationId);
+      steps.push({
+        kind: "walk",
+        npcId: actor.npcId,
+        stationId: demo.station.stationId,
+        narration: `${actor.roleId} 尝试进入「${demo.station.title}」`,
+      });
+      steps.push({
+        kind: "denied_demo",
+        npcId: actor.npcId,
+        stationId: demo.station.stationId,
+        deniedActions: demo.pa.deniedActions,
+        narration: `RBAC 拦截：${actor.roleId} 无权访问「${demo.station.title}」`,
+      });
+      const ownStation = stationByActor.get(actor.npcId);
+      steps.push({
+        kind: "walk",
+        npcId: actor.npcId,
+        stationId: ownStation?.stationId ?? TOUR_HOME_STATION_ID,
+        narration: ownStation
+          ? `${actor.roleId} 退回自己的工位`
+          : `${actor.roleId} 退回集结区`,
+      });
     }
   }
 
