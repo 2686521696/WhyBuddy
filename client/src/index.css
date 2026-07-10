@@ -1095,3 +1095,36 @@
   outline-color: #1677ff;
   background: rgba(217, 119, 87, 0.06);
 }
+
+/* --- SlideRule 流式指示动效（2026-07-10 用户裁决：点点动画要明显、光标别乱闪） --- */
+/* 思考点：弹跳 + 透明度呼吸，比 animate-pulse 醒目一个量级 */
+@keyframes sr-dot-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+.sr-dot {
+  animation: sr-dot-bounce 1.2s ease-in-out infinite;
+}
+
+/* 打字机光标：终端式阶跃闪烁（steps 硬切，不做平滑渐隐——平滑版看着"发虚"） */
+@keyframes sr-caret-blink {
+  0%,
+  54% {
+    opacity: 1;
+  }
+  55%,
+  100% {
+    opacity: 0;
+  }
+}
+.sr-caret {
+  animation: sr-caret-blink 1.1s steps(1, end) infinite;
+}

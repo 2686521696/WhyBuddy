@@ -28,6 +28,7 @@ import {
 import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
 import { AppRuntimeScreen } from "./live-runtime/AppRuntimeScreen";
 import { XrayPanel, type XrayTarget } from "./XrayPanel";
+import { RollingText } from "./RollingText";
 import { Crosshair, X } from "lucide-react";
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
@@ -275,27 +276,23 @@ export function SlideRuleStudio({
             className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
             data-testid="sliderule-live-stage"
           >
-            <span className="inline-flex gap-1">
+            <span className="inline-flex items-end gap-1.5">
               {[0, 1, 2].map(i => (
                 <span
                   key={i}
-                  className="h-2 w-2 animate-pulse rounded-full bg-[#1677ff]/60"
-                  style={{ animationDelay: `${i * 150}ms` }}
+                  className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]"
+                  style={{ animationDelay: `${i * 160}ms` }}
                 />
               ))}
             </span>
             <div className="text-[13px] font-medium text-stone-500">推演中</div>
+            {/* 一行步骤锚点即可（用户反馈：字太多）——文案翻滚过渡 */}
             {liveActionLabel && (
-              <div
-                className="text-[12px] text-stone-500"
-                data-testid="sliderule-live-action"
-              >
-                {liveActionLabel}
-              </div>
+              <RollingText
+                text={liveActionLabel}
+                className="max-w-[320px] text-[12px] text-stone-400"
+              />
             )}
-            <div className="text-[11px] text-stone-400">
-              应用成形后将在这里实时渲染
-            </div>
           </div>
         ) : (
           <>

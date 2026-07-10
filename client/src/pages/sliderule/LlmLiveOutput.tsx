@@ -143,7 +143,7 @@ export function LlmLiveOutput({
           className="mt-1.5 whitespace-pre-wrap break-all pl-3.5 font-sans text-[12.5px] leading-6 text-stone-500"
         >
           {body}
-          {!done && <span className="animate-pulse text-[#1677ff]">▊</span>}
+          {!done && <span className="sr-caret text-[#1677ff]">▊</span>}
         </pre>
       )}
       {/* 代码/JSON 面板：代码块外观 + 260px 尾窗（Claude 的工具活动行为） */}
@@ -153,14 +153,14 @@ export function LlmLiveOutput({
             ref={scrollRef}
             onScroll={onScroll}
             data-testid="sliderule-llm-draft-window"
-            className="max-h-[260px] overflow-y-auto"
+            className="max-h-[260px] overflow-y-auto [scrollbar-gutter:stable]"
           >
             <pre
               data-testid="sliderule-llm-draft-body"
               className="whitespace-pre-wrap break-all px-3 py-2 font-mono text-[11.5px] leading-6 text-[#1f2329]"
             >
               {body}
-              {!done && <span className="animate-pulse text-[#1677ff]">▊</span>}
+              {!done && <span className="sr-caret text-[#1677ff]">▊</span>}
             </pre>
           </div>
           {/* 顶部渐隐：提示窗口上方还有已输出内容（可向上滚动回看） */}

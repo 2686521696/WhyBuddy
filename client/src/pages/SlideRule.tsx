@@ -34,6 +34,7 @@ import { autopilotTheme } from "./sliderule/autopilot-theme";
 import type { LiveAction } from "@shared/blueprint/capability-process-labels";
 import { CAPABILITY_PROCESS_LABELS } from "@shared/blueprint/capability-process-labels";
 import { LlmLiveOutput } from "./sliderule/LlmLiveOutput";
+import { RollingText } from "./sliderule/RollingText";
 
 /** llm_delta 来源标签 → 实时块标题（能力 id / "five-system-model" / "closure.summary"）。 */
 function llmDraftTitle(label: string | null | undefined): string {
@@ -353,7 +354,12 @@ function TurnPhaseTimeline({
                           key={i}
                           className="text-xs leading-5 text-stone-400"
                         >
-                          {t}
+                          {/* 「最新定义」是原位持续更替的语义槽 → 翻滚过渡 */}
+                          {t.startsWith("最新定义：") ? (
+                            <RollingText text={t} className="max-w-full" />
+                          ) : (
+                            t
+                          )}
                         </div>
                       )
                     )}
@@ -491,16 +497,17 @@ function ImAssistantMessage() {
       {turn.status === "streaming" ? (
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm text-stone-500">
-            <span className="inline-flex gap-0.5">
+            <span className="inline-flex items-end gap-1">
               {Array.from({ length: 3 }).map((_, i) => (
                 <span
                   key={i}
-                  className="h-1.5 w-1.5 animate-pulse rounded-full bg-stone-300"
-                  style={{ animationDelay: `${i * 120}ms` }}
+                  className="sr-dot h-1.5 w-1.5 rounded-full bg-[#1677ff]"
+                  style={{ animationDelay: `${i * 160}ms` }}
                 />
               ))}
             </span>
-            {thinkingText}
+            {/* 状态文案翻滚过渡（anime.js）——不再生硬跳变 */}
+            <RollingText text={thinkingText} className="min-w-0 flex-1" />
           </div>
           <TurnPhaseTimeline
             turn={turn}
@@ -673,7 +680,7 @@ export function ClaudeChatSurface({
       <AssistantRuntimeProvider runtime={runtime}>
         <ImSurfaceContext.Provider value={ctxValue}>
           <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
-            <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[780px] flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4 sm:px-6">
+            <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[780px] flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4 [scrollbar-gutter:stable] sm:px-6">
               <ThreadPrimitive.Empty>
                 {/* THE single empty state — classical logo watermark + hero copy + 3 example prompts */}
                 <div
