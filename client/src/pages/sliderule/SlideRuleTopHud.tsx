@@ -3,26 +3,13 @@ import { autopilotTheme } from "./autopilot-theme";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { Layers, RotateCw } from "lucide-react";
 
-export type SlideRuleSurfaceMode = "work" | "code";
-
-const SURFACE_MODES: Array<{ id: SlideRuleSurfaceMode; label: string }> = [
-  { id: "work", label: "Work" },
-  { id: "code", label: "Code" },
-];
-
 export function SlideRuleTopHud({
   isRunning,
-  surfaceMode = "code",
-  onSurfaceModeChange,
   onResetSession,
   onOpenDeliverables,
   embedded = false,
 }: {
   isRunning: boolean;
-  /** 顶层产品模式（用户裁决：STATUS 状态盒退役，原位换 TRAE 式切换）——
-   *  Code = 推演主界面（默认）；Work = 角色巡演（建设中占位） */
-  surfaceMode?: SlideRuleSurfaceMode;
-  onSurfaceModeChange?: (mode: SlideRuleSurfaceMode) => void;
   onResetSession?: () => void;
   onOpenDeliverables?: () => void;
   embedded?: boolean;
@@ -42,28 +29,7 @@ export function SlideRuleTopHud({
               title="SlideRule"
             />
           )}
-          {/* Work / Code 模式胶囊（话题与阶段信息已由左栏对话与右舞台承载） */}
-          <div
-            className="flex items-center gap-0.5 rounded-lg border border-[#e5e7eb] bg-white/80 p-1 shadow-[0_1px_6px_rgb(15_23_42/0.05)]"
-            data-testid="sliderule-surface-mode"
-          >
-            {SURFACE_MODES.map(m => (
-              <button
-                key={m.id}
-                type="button"
-                data-testid={`sliderule-mode-${m.id}`}
-                aria-pressed={surfaceMode === m.id}
-                onClick={() => onSurfaceModeChange?.(m.id)}
-                className={`rounded-md px-3.5 py-1 text-[13px] font-medium transition-colors ${
-                  surfaceMode === m.id
-                    ? "bg-[#e6f4ff] text-[#1677ff]"
-                    : "text-stone-500 hover:bg-[#eef0f4] hover:text-stone-700"
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+          {/* Work 模式已迁至私有主仓 SlideRule（公开仓保留推演主线） */}
         </div>
 
         <div

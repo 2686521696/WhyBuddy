@@ -111,13 +111,12 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html.match(/data-testid="sliderule-status-bar"/g)?.length).toBe(1);
   });
 
-  it("single header row：Work/Code 模式胶囊（STATUS 状态盒已退役）plus 交付物/重置会话/Dev actions", () => {
+  it("single header row：交付物/重置会话/Dev actions（STATUS 与 Work/Code 胶囊均退役）", () => {
     const html = renderPage();
 
-    // 用户裁决（TRAE 对标）：STATUS/话题/阶段状态盒撤下，原位换模式切换
-    expect(html).toContain('data-testid="sliderule-surface-mode"');
-    expect(html).toContain('data-testid="sliderule-mode-work"');
-    expect(html).toContain('data-testid="sliderule-mode-code"');
+    // Work 模式迁私有主仓：公开仓不再有模式切换
+    expect(html).not.toContain('data-testid="sliderule-surface-mode"');
+    expect(html).not.toContain('data-testid="sliderule-mode-work"');
     expect(html).not.toContain('data-testid="sliderule-conclusion-badge"');
     expect(html).not.toContain('data-testid="sliderule-goal-display"');
     expect(html).toContain('data-testid="sliderule-deliverables-open"');
@@ -323,7 +322,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain("本轮已完成");
   });
 
-  it("Work 模式：占位面接管内容区、输入条隐藏（偏好 localStorage 持久化）", () => {
+  it("Work 模式已迁私有主仓：旧偏好残留也不再切走界面", () => {
     const prev = (globalThis as { localStorage?: unknown }).localStorage;
     (globalThis as { localStorage?: unknown }).localStorage = {
       getItem: (k: string) => (k === "sliderule:surface-mode" ? "work" : null),
@@ -332,10 +331,11 @@ describe("unified /sliderule surface (single mental model)", () => {
     };
     try {
       const html = renderPage();
-      expect(html).toContain('data-testid="sliderule-work-mode"');
-      expect(html).toContain("角色自动巡演");
-      // Work 模式不出输入条（避免误导"聊天能驱动巡演"）
-      expect(html).not.toContain('data-testid="sliderule-composer-dock"');
+      expect(html).not.toContain('data-testid="sliderule-work-mode"');
+      // 推演主界面照常（含输入条）
+      expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(
+        1
+      );
     } finally {
       (globalThis as { localStorage?: unknown }).localStorage = prev;
     }

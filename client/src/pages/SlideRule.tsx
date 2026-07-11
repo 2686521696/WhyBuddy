@@ -68,18 +68,11 @@ import {
 } from "./sliderule/derive-cross-runtime-summary";
 import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
 import {
-  mergeFiveSystemModels,
-  parseFiveSystemModelFromContents,
   parseFiveSystemModelFromPerSkillEvidence,
   summarizeClosureForChat,
 } from "./sliderule/system-screens/five-system-model";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
-import {
-  SlideRuleTopHud,
-  type SlideRuleSurfaceMode,
-} from "./sliderule/SlideRuleTopHud";
-import { WorkModeSurface } from "./sliderule/WorkModeSurface";
-import { deriveAppRuntimeSchema } from "./sliderule/live-runtime/app-runtime-schema";
+import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
 import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
 import {
   ClarificationCard,
@@ -993,41 +986,6 @@ function SlideRuleUnified({
   const clarifyKey = clarifications.map(c => c.id).join("|");
   const [clarifyHidden, setClarifyHidden] = useState(false);
 
-  // 顶层产品模式（Work / Code，TRAE 对标）：Code = 推演主界面（默认），
-  // Work = 角色巡演（建设中占位）。偏好持久化，刷新不丢。
-  const [surfaceMode, setSurfaceMode] = useState<SlideRuleSurfaceMode>(() => {
-    try {
-      return localStorage.getItem("sliderule:surface-mode") === "work"
-        ? "work"
-        : "code";
-    } catch {
-      return "code";
-    }
-  });
-  const changeSurfaceMode = useCallback((mode: SlideRuleSurfaceMode) => {
-    setSurfaceMode(mode);
-    try {
-      localStorage.setItem("sliderule:surface-mode", mode);
-    } catch {}
-  }, []);
-
-  // Work 模式的五系统模型：与右舞台同源解析（闭环证据优先）——
-  // 巡演的剧本/工位/权限判定与运行应用共享同一份真相
-  const workModel = useMemo(
-    () =>
-      mergeFiveSystemModels(
-        parseFiveSystemModelFromContents(skillContents ?? {}),
-        parseFiveSystemModelFromPerSkillEvidence(
-          publishClosure?.perSkillEvidence
-        )
-      ),
-    [skillContents, publishClosure?.perSkillEvidence]
-  );
-  const workSchema = useMemo(
-    () =>
-      deriveAppRuntimeSchema(workModel, goal ? goal.slice(0, 24) : "推演应用"),
-    [workModel, goal]
-  );
   useEffect(() => {
     setClarifyHidden(false);
   }, [clarifyKey]);
@@ -1046,8 +1004,6 @@ function SlideRuleUnified({
       <div className="relative z-20 shrink-0 border-b border-[#e5e7eb]/70 bg-[#f7f8fa]/90 px-3 backdrop-blur sm:px-4">
         <SlideRuleTopHud
           isRunning={isRunning}
-          surfaceMode={surfaceMode}
-          onSurfaceModeChange={changeSurfaceMode}
           onResetSession={resetSession}
           onOpenDeliverables={openDeliverables}
           embedded={embedded}
@@ -1081,18 +1037,8 @@ function SlideRuleUnified({
         />
       </div>
 
-      {/* Studio body — left conversation column + right skill rail；
-          Work 模式：3D 角色巡演面接管整个内容区（真跑运行时） */}
-      {surfaceMode === "work" ? (
-        <div className="relative z-0 min-h-0 flex-1">
-          <WorkModeSurface
-            model={workModel}
-            schema={workSchema}
-            sessionId={sessionId}
-            appTitle={goal ? goal.slice(0, 24) : undefined}
-          />
-        </div>
-      ) : (
+      {/* Studio body — left conversation column + right skill rail */}
+      {
         <div className="relative z-0 min-h-0 flex-1 pb-[104px]">
           <SlideRuleStudio
             chatSlot={
@@ -1135,11 +1081,10 @@ function SlideRuleUnified({
           {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程
             （步骤流 + LLM 实时草稿），右栏只保留系统画面（用户反馈去重）。 */}
         </div>
-      )}
+      }
 
-      {/* Single bottom composer + clarification cards（Code 模式专属：
-          Work 模式下不出输入条，避免误导"聊天能驱动巡演"） */}
-      {surfaceMode === "code" && (
+      {/* Single bottom composer + clarification cards */}
+      {
         <div className={autopilotTheme.immersionOverlayBottom}>
           <div className="pointer-events-none flex w-full max-w-2xl flex-col items-center">
             {showClarify && (
@@ -1161,7 +1106,7 @@ function SlideRuleUnified({
             />
           </div>
         </div>
-      )}
+      }
 
       {/* 设置弹窗已收敛到侧栏「设置」整页（SettingsPage），HUD 不再挂设置入口 */}
       <DeliverablesPanel

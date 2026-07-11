@@ -138,16 +138,6 @@ export function shouldSendOnKey(ev: {
 
 // --- Work 巡演 LLM 台词（五期入魂档，默认关）-----------------------------------
 
-const TOUR_LLM_KEY = "sliderule:tour-llm";
-
-export function loadTourLlmPref(): boolean {
-  return readFlag(TOUR_LLM_KEY, false);
-}
-
-export function setTourLlmPref(value: boolean): void {
-  writeFlag(TOUR_LLM_KEY, value);
-}
-
 /** 应用启动时调用一次：把持久化偏好落到 DOM。 */
 export function initUserPrefs(): void {
   applyReduceMotionClass();

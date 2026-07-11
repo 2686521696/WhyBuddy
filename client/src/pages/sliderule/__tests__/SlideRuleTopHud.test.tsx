@@ -22,18 +22,11 @@ describe("SlideRuleTopHud", () => {
     expect(html).toContain("sliderule_logo_wordmark_transparent.png");
   });
 
-  it("Work/Code 模式胶囊替代 STATUS 状态盒（用户裁决，TRAE 对标）", () => {
-    const html = renderToStaticMarkup(
-      <SlideRuleTopHud isRunning={false} surfaceMode="code" />
-    );
+  it("STATUS 状态盒与 Work/Code 胶囊均退役（Work 模式迁私有主仓）", () => {
+    const html = renderToStaticMarkup(<SlideRuleTopHud isRunning={false} />);
 
-    expect(html).toContain('data-testid="sliderule-surface-mode"');
-    expect(html).toContain('data-testid="sliderule-mode-work"');
-    expect(html).toContain('data-testid="sliderule-mode-code"');
-    // Code 档处于按压态（aria-pressed 语义可测）
-    expect(html).toMatch(
-      /data-testid="sliderule-mode-code"[^>]*aria-pressed="true"/
-    );
+    expect(html).not.toContain('data-testid="sliderule-surface-mode"');
+    expect(html).not.toContain('data-testid="sliderule-mode-work"');
     // 旧 STATUS 状态盒退役
     expect(html).not.toContain("STATUS");
     expect(html).not.toContain("sliderule-goal-display");

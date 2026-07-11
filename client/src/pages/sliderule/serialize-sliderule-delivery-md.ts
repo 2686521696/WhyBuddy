@@ -14,7 +14,6 @@ import {
   renderPublishClosureBlocker,
 } from "./derive-cross-runtime-summary";
 import { deriveRuntimeSnapshotMd } from "./live-runtime/runtime-snapshot";
-import { deriveTourReportMd } from "./work-mode/tour-report";
 import {
   loadRuntimeRole,
   loadRuntimeState,
@@ -24,8 +23,6 @@ import { parseFiveSystemModelFromPerSkillEvidence } from "./system-screens/five-
 export interface SerializeDeliveryOpts {
   /** 排练运行时快照 md（deriveRuntimeSnapshotMd 产出；null/缺省 → 不出段） */
   runtimeSnapshotMd?: string | null;
-  /** 角色巡演报告 md（deriveTourReportMd 产出；没跑过巡演 → 不出段） */
-  tourReportMd?: string | null;
 }
 
 /** Pure md serializer for Knife C delivery export — does not mutate state. */
@@ -160,13 +157,6 @@ export function serializeSlideRuleDeliveryMd(
   // 排练运行时快照（M3）：有数据才出段，交付物固定格式不变，只多一个附录
   if (opts.runtimeSnapshotMd) {
     lines.push(opts.runtimeSnapshotMd.trim());
-    lines.push("");
-  }
-
-  // 角色巡演报告（Work 模式二期）：跑过巡演才出段——数字全部来自
-  // 真实运行时动作计数与同源 RBAC 判定
-  if (opts.tourReportMd) {
-    lines.push(opts.tourReportMd.trim());
     lines.push("");
   }
 
@@ -502,7 +492,6 @@ export function downloadSlideRuleDeliveryMd(
 ): void {
   const md = serializeSlideRuleDeliveryMd(state, {
     runtimeSnapshotMd: assembleRuntimeSnapshotMdForState(state),
-    tourReportMd: deriveTourReportMd(state.sessionId || ""),
   });
   const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
