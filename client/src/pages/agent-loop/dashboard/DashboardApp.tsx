@@ -1239,7 +1239,11 @@ function AgentLoopSidebar({
               } catch {
                 /* 隐私模式下无存档可清 */
               }
-              window.location.reload();
+              // 整页跳回推演演示入口（带 Pages base 前缀）——不能原地 reload：
+              // 从技能库/设置等其他视图点「新建会话」时会留在当前视图回不去。
+              const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+              const path = getViewPath?.("sliderule") || "/agent-loop/sliderule";
+              window.location.href = base + path;
             }}
           >
             <span className="native-agent-session-new-plus">+</span>
