@@ -400,12 +400,21 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         const hydrated = preservePythonEvidenceProjection(loaded);
         setSessionState(hydrated);
         setSessionHydrated(true);
+        // 演示预填：空会话（未推演过）时输入框直接放好项目意图，
+        // 访客只需点「发送」即可看全程推演（模板回放）。
+        if (
+          options.initialGoal &&
+          !hydrated.goal?.text?.trim() &&
+          (hydrated.artifacts?.length ?? 0) === 0
+        ) {
+          setInput(current => current || options.initialGoal || "");
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, options.initialGoal]);
 
   useEffect(() => {
     if (!options.documentTitle) return;
@@ -800,7 +809,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               ? `LLM ${live.replace(/^⚡\s*/, "")}`
               : `LLM 正在执行 ${key}`;
           };
-          const pythonDrive = await driveFullViaPythonStream(
+          // GitHub Pages 静态演示：无 Python 后端，同一套 SSE 回调改走
+          // 模板回放（真实 LLM 推演一次性捕获，见 github-pages-demo-playback.ts），
+          // 避免必失败的 /drive-full-stream 请求 + 空结果收尾。
+          const driveStream = IS_GITHUB_PAGES
+            ? (await import("./github-pages-demo-playback"))
+                .driveGithubPagesDemoPlayback
+            : driveFullViaPythonStream;
+          const pythonDrive = await driveStream(
             preparedState,
             userText.trim(),
             {
@@ -1480,11 +1496,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       setSessionState(fresh);
     }
     setUiTurns([]);
-    setInput("");
+    // 演示模式重置后回到「预填意图 + 一键发送」的初始体验
+    setInput(IS_GITHUB_PAGES ? options.initialGoal || "" : "");
     setLiveAction(null);
     setNextGateShouldFail(false);
     setDriveFullStatus("idle");
-  }, [isRunning, sessionState.sessionId, sessionId]);
+  }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal]);
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.
   const pendingClarifications = useMemo<ClarificationItem[]>(() => {

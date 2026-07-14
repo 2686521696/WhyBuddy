@@ -1217,8 +1217,42 @@ function AgentLoopSidebar({
           </a>
         ))}
       </nav>
-      {/* Claude 式会话区：新建会话 + 最近列表（Pages 纯浏览器演示是单会话，不显示） */}
-      {!IS_GITHUB_PAGES && (
+      {/* Claude 式会话区：新建会话 + 最近列表。Pages 纯浏览器演示是单会话
+          （无后端会话库），提供本地「新建会话」：清空演示存档并回到
+          预填意图的初始体验。 */}
+      {IS_GITHUB_PAGES ? (
+        <div className="native-agent-sessions" data-testid="sidebar-sessions">
+          <button
+            type="button"
+            className="native-agent-session-new"
+            data-testid="sidebar-demo-new-session"
+            onClick={() => {
+              try {
+                const doomed: string[] = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                  const k = localStorage.key(i);
+                  if (k && k.startsWith("sliderule:github-pages-demo:")) {
+                    doomed.push(k);
+                  }
+                }
+                doomed.forEach(k => localStorage.removeItem(k));
+              } catch {
+                /* 隐私模式下无存档可清 */
+              }
+              window.location.reload();
+            }}
+          >
+            <span className="native-agent-session-new-plus">+</span>
+            新建会话
+          </button>
+          <div className="native-agent-sessions-label">最近</div>
+          <div className="native-agent-sessions-list">
+            <div className="native-agent-sessions-hint">
+              静态演示为单会话 · 完整版支持多会话并行
+            </div>
+          </div>
+        </div>
+      ) : (
         <SidebarSessions onOpenSliderule={() => onViewChange("sliderule")} />
       )}
       <button type="button" className="native-agent-help">
