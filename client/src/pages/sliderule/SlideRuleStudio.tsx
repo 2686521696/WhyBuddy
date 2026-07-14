@@ -306,14 +306,18 @@ export function SlideRuleStudio({
           </div>
         ) : (
           <>
-            {/* 推演剧场 / 证据看板：沿用六系统缩略 + 16:9 系统屏 */}
-            <div className="flex shrink-0 items-center">
-              <SkillThumbnailBar
-                activeSkillId={displaySkillId}
-                publishClosure={publishClosure}
-                onSelect={handleThumbnailSelect}
-              />
-            </div>
+            {/* 推演剧场 / 证据看板：六系统缩略 + 16:9 系统屏。
+                执行期隐藏 tab 切换栏（用户反馈：与"生成中"覆盖层重复、
+                且此时点击切换无意义），闭环后出现供浏览。 */}
+            {!isRunning && (
+              <div className="flex shrink-0 items-center">
+                <SkillThumbnailBar
+                  activeSkillId={displaySkillId}
+                  publishClosure={publishClosure}
+                  onSelect={handleThumbnailSelect}
+                />
+              </div>
+            )}
 
             <ActiveSystemScreen
               activeSkillId={displaySkillId}
