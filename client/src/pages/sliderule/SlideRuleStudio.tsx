@@ -137,16 +137,16 @@ export function SlideRuleStudio({
     [fiveSystemModel, appTitle]
   );
 
-  // 舞台：推演剧场 > 应用主舞台（含起草实时预览）> 推演中占位 > 证据看板。
-  // 注意 live 态只看 isRunning：早期轮次（澄清/路线/风险）里 LLM 流可能
-  // 尚未开始或刚被重置（llmDraft 为空），若以 llmDraft 判定会闪回 board
-  // ——用户看到的就是"发了消息右侧还是老面板"。
-  const stage: "theater" | "app" | "live" | "board" = activeSkillId
-    ? "theater"
+  // 舞台：推演中恒为 live 占位（用户裁决 2026-07-14：执行期不看中间过程
+  // ——系统屏/看板/起草预览一律不展示，只留"推演中 + 当前动作"极简态，
+  // 过程细节由左栏分阶段叙事承载）；推演完成直接呈现效果页：
+  // 应用主舞台 > 推演剧场（缩略图手动透视）> 证据看板。
+  const stage: "theater" | "app" | "live" | "board" = isRunning
+    ? "live"
     : appSchema && fiveSystemModel
       ? "app"
-      : isRunning
-        ? "live"
+      : activeSkillId
+        ? "theater"
         : "board";
 
   // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化）+ 跟随应用内当前页

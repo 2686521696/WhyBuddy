@@ -273,7 +273,9 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-empty-state"');
   });
 
-  it("SSE skill activation shows the active system screen", () => {
+  it("SSE skill activation keeps the minimal live stage (no mid-run system screens)", () => {
+    // 用户裁决 2026-07-14：执行期不看中间过程——即使 SSE 激活了某个系统，
+    // 右栏也只显示"推演中 + 当前动作"极简态；系统画面等闭环后随效果页呈现。
     const html = renderPage({
       goal: "做一个采购审批应用",
       uiTurns: [streamingTurn],
@@ -283,7 +285,9 @@ describe("unified /sliderule surface (single mental model)", () => {
     });
 
     expect(html).not.toContain('data-testid="sliderule-rail-process"');
-    expect(html).toContain("实体关系");
+    expect(html).toContain('data-testid="sliderule-live-stage"');
+    expect(html).toContain("DataModel 建模中");
+    expect(html).not.toContain("实体关系");
   });
 
   it("reload restores: persisted state rebuilds the latest turn instead of the empty state", () => {
