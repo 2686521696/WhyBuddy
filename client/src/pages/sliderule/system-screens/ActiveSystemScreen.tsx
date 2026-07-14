@@ -25,8 +25,21 @@ import { PageScreen } from "./PageScreen";
 import { AigcScreen } from "./AigcScreen";
 import { AppBundleScreen } from "./AppBundleScreen";
 
+/** 生成中覆盖层的系统名（与缩略图/步骤文案一致） */
+const GENERATING_SKILL_LABELS: Record<string, string> = {
+  dataModel: "数据模型",
+  workflow: "工作流",
+  rbac: "角色权限",
+  page: "页面",
+  aigc: "AI 能力",
+  appBundle: "应用装配",
+};
+
 interface ActiveSystemScreenProps {
   activeSkillId: SkillId | null;
+  /** 本轮推演是否进行中——运行中且当前系统内容未落地时盖"生成中"层，
+   *  避免空态文案（"发送意图并推演闭环后…"）在执行期被误读成旧页面 */
+  running?: boolean;
   publishClosure?: PublishClosureSummary | null;
   /** Latest mermaid source from skill_result events */
   latestMermaid?: string | null;
@@ -47,6 +60,7 @@ interface ActiveSystemScreenProps {
 
 export function ActiveSystemScreen({
   activeSkillId,
+  running = false,
   publishClosure,
   latestMermaid,
   skillContents = {},
@@ -73,6 +87,20 @@ export function ActiveSystemScreen({
   );
   const fiveSystemModel = model !== undefined ? model : parsedModel;
 
+  // 推演进行中且当前屏的证据尚未落地 → 还没有可渲染内容，用"生成中"
+  // 覆盖层替代静态空态（空态口吻是闭环后的，执行期会被误读成旧页面）。
+  // 无激活系统时默认屏是 AppBundle 看板，同样按其证据判断。
+  const overlaySkill = activeSkillId ?? ("appBundle" as SkillId);
+  const activeSkillHasContent = (() => {
+    if ((skillContents[overlaySkill] || "").trim()) return true;
+    const evidence = (publishClosure?.perSkillEvidence ?? {}) as Record<
+      string,
+      { modelSection?: unknown } | undefined
+    >;
+    return Boolean(evidence[overlaySkill.toLowerCase()]?.modelSection);
+  })();
+  const showGeneratingOverlay = running && !activeSkillHasContent;
+
   return (
     <div
       className={
@@ -83,6 +111,28 @@ export function ActiveSystemScreen({
       }
       style={fill ? undefined : { aspectRatio: "16 / 9" }}
     >
+      {showGeneratingOverlay && (
+        <div
+          className="absolute inset-0 z-10 flex items-center justify-center bg-white/75 backdrop-blur-[1px]"
+          data-testid="screen-generating-overlay"
+        >
+          <div className="flex flex-col items-center gap-3 text-center">
+            <span className="flex gap-1.5">
+              <span className="h-2 w-2 animate-bounce rounded-full bg-[#1677ff] [animation-delay:0ms]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-[#1677ff] [animation-delay:150ms]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-[#1677ff] [animation-delay:300ms]" />
+            </span>
+            <div className="text-[13px] font-medium text-stone-600">
+              {activeSkillId
+                ? `推演执行中 · ${GENERATING_SKILL_LABELS[activeSkillId] ?? activeSkillId} 系统画面生成中…`
+                : "推演执行中 · 六系统画面将逐个生成…"}
+            </div>
+            <div className="text-[11px] text-stone-400">
+              证据落地后此处将实时渲染
+            </div>
+          </div>
+        </div>
+      )}
       <div className="absolute inset-0">
         {/* Each screen is mounted but only the active one is fully visible.
             Keeping them all mounted avoids mermaid re-render flicker. */}

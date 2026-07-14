@@ -317,6 +317,7 @@ export function SlideRuleStudio({
 
             <ActiveSystemScreen
               activeSkillId={displaySkillId}
+              running={isRunning}
               publishClosure={publishClosure}
               latestMermaid={latestMermaid}
               skillContents={skillContents}
@@ -353,6 +354,7 @@ export function SlideRuleStudio({
             </div>
             <ActiveSystemScreen
               activeSkillId={drawerSkill}
+              running={isRunning}
               publishClosure={publishClosure}
               latestMermaid={latestMermaid}
               skillContents={skillContents}
