@@ -14,6 +14,8 @@
 
 import React from "react";
 
+import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
+
 // ---------------------------------------------------------------------------
 // 纯函数（可单测）
 // ---------------------------------------------------------------------------
@@ -186,6 +188,21 @@ export function MainlineWorkbench() {
   const [runtimeStores, setRuntimeStores] = React.useState<RuntimeStoreSummary[]>([]);
 
   const refresh = React.useCallback(() => {
+    if (IS_GITHUB_PAGES) {
+      // 静态演示无后端：全部标为不可用而不是发出必 404 的探测请求。
+      const offline = { kind: "error", detail: "GitHub Pages 静态演示无后端" } as const;
+      setNodeHealth(offline);
+      setPyHealth(offline);
+      setChannel(offline);
+      setSessions(offline);
+      setBaseline(offline);
+      try {
+        setRuntimeStores(summarizeRuntimeStores(window.localStorage));
+      } catch {
+        setRuntimeStores([]);
+      }
+      return;
+    }
     void fetchJson("/api/health").then(setNodeHealth);
     void fetchJson("/api/agent-loop/health").then(setPyHealth);
     void fetchJson<{ provider: string; model: string; keyPresent: boolean; keyMasked: string }>(

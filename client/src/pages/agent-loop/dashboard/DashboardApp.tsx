@@ -1389,6 +1389,9 @@ export function DashboardApp({
   }, [view]);
 
   useEffect(() => {
+    // GitHub Pages 静态演示无 Python 后端：健康探测必 404，直接跳过
+    // （对应的健康状态 UI 在 Pages 下也不渲染）。
+    if (IS_GITHUB_PAGES) return;
     let alive = true;
     fetchPythonHealth()
       .then(health => {
@@ -1410,6 +1413,7 @@ export function DashboardApp({
 
   // Probe + status/retry for Python backend failures visible (105); keep Node as thin proxy
   const probeAgentLoopPython = useCallback(async () => {
+    if (IS_GITHUB_PAGES) return;
     try {
       const r = await fetchJsonSafe<any>("/api/agent-loop/health");
       if (

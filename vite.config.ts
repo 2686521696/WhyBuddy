@@ -184,7 +184,10 @@ export default defineConfig(() => {
   const plugins = [
     react(),
     tailwindcss(),
-    vitePluginManusRuntime(),
+    // Manus 宿主运行时会向 index.html 内联 ~358KB 脚本（含整份 React 副本）。
+    // GitHub Pages 静态演示不在 Manus 宿主里运行，用不到它——排除后 HTML 从
+    // ~370KB 回到 ~12KB。本地 dev / 其他构建目标保持不变。
+    ...(isGitHubPagesBuild ? [] : [vitePluginManusRuntime()]),
     vitePluginManusDebugCollector(),
     vitePluginCspForByok,
   ];

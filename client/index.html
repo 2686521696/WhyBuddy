@@ -18,7 +18,52 @@
   </head>
 
   <body>
-    <div id="root"></div>
+    <!-- 首屏占位：JS 主包下载/执行期间显示品牌 + 加载动画（React 挂载后整体替换）。
+         内联样式保证零额外请求；GitHub Pages 弱网下避免长时间白屏。 -->
+    <div id="root">
+      <style>
+        .boot-splash {
+          position: fixed;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 16px;
+          background: #f7f8fa;
+          color: #334155;
+          font-family: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+        .boot-splash__brand {
+          font-size: 22px;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+          color: #1d4ed8;
+        }
+        .boot-splash__spinner {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          border: 3px solid #dbeafe;
+          border-top-color: #2563eb;
+          animation: boot-splash-spin 0.9s linear infinite;
+        }
+        .boot-splash__hint {
+          font-size: 13px;
+          color: #64748b;
+        }
+        @keyframes boot-splash-spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      </style>
+      <div class="boot-splash">
+        <div class="boot-splash__brand">SlideRule.AI</div>
+        <div class="boot-splash__spinner" role="status" aria-label="加载中"></div>
+        <div class="boot-splash__hint">正在加载产品推演引擎…</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
     <!-- Analytics bootstrap moved to client/src/main.tsx (cleaner index.html for Vite Pages build transforms; avoids html-proxy module resolution issues) -->
   </body>

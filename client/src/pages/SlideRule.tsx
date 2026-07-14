@@ -1598,6 +1598,9 @@ function SlideRuleSessionBody({
   const [pythonApiError, setPythonApiError] = useState<any>(null);
   const [pythonStatusMsg, setPythonStatusMsg] = useState<string>("");
   const probePythonBackend = useCallback(async () => {
+    // GitHub Pages 静态演示无后端：探测必 404（控制台噪音 + 无意义请求），
+    // 且状态条本就在 Pages 下不渲染（见 !IS_GITHUB_PAGES 分支），直接跳过。
+    if (IS_GITHUB_PAGES) return;
     try {
       const res = await fetchJsonSafe<{ status?: string }>(
         "/api/sliderule/health"
@@ -1718,6 +1721,8 @@ function SlideRuleSessionBody({
       pythonSkillRuntimeGraph
     )
       return;
+    // Pages 演示的会话全部在 localStorage，后端 sessions API 不存在，跳过投影回捞。
+    if (IS_GITHUB_PAGES) return;
     let cancelled = false;
     loadPythonRuntimeProjectionFromSession(
       sessionState.sessionId || "sliderule-v51-product"

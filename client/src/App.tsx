@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Router as WouterRouter, Switch, useLocation } from "wouter";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import {
   AUTOPILOT_PATH,
@@ -12,13 +12,9 @@ import {
   REPLAY_PATH_PREFIX,
   SLIDERULE_PATH,
 } from "@/components/navigation-config";
-import { ReplayPage } from "@/components/replay/ReplayPage";
-import DebugPage from "@/pages/debug/DebugPage";
 import AgentLoopPage, {
   getAgentLoopSliderulePath,
 } from "@/pages/agent-loop/AgentLoopPage";
-import LegacyCommandCenterPage from "@/pages/nl-command/LegacyCommandCenterPage";
-import LineagePage from "@/pages/lineage/LineagePage";
 
 import { AppSidebar } from "./components/AppSidebar";
 import { ConfigPanel } from "./components/ConfigPanel";
@@ -32,22 +28,65 @@ import { useAuthStore } from "./lib/auth-store";
 import { IS_GITHUB_PAGES } from "./lib/deploy-target";
 import { useProjectStore } from "./lib/project-store";
 import { useAppStore } from "./lib/store";
-import ProjectCockpitHome from "./pages/ProjectCockpitHome";
-import {
-  AdminAuditPage,
-  AdminFailuresPage,
-  AdminLayout,
-  AdminOverviewPage,
-  AdminProjectsPage,
-  AdminRunsPage,
-  AdminUsersPage,
-} from "./pages/admin/AdminLayout";
-import AutopilotRoutePage from "./pages/autopilot/AutopilotRoutePage";
-import AuthPage from "./pages/auth/AuthPage";
-import SpecCenterPage from "./pages/specs/SpecCenterPage";
-import { TaskDetailPage, TasksPage } from "./pages/tasks";
-import AutopilotSpecDocumentsWorkbenchFixturePage from "./pages/autopilot/right-rail/streaming-doc/workbench/WorkbenchFixturePage";
-import SlideRuleDevPage from "./pages/SlideRuleDev";
+
+// 路由级代码分割：AgentLoopPage（/agent-loop/sliderule 演示主入口）保持静态引入，
+// 其余页面全部懒加载——Replay 的 three.js、Autopilot、Admin、驾驶舱等重依赖
+// 不再进入首屏主包（GitHub Pages 静态演示首包从 ~8.9MB 压回按需加载）。
+const ReplayPage = lazy(() =>
+  import("@/components/replay/ReplayPage").then(m => ({ default: m.ReplayPage }))
+);
+const DebugPage = lazy(() => import("@/pages/debug/DebugPage"));
+const LegacyCommandCenterPage = lazy(
+  () => import("@/pages/nl-command/LegacyCommandCenterPage")
+);
+const LineagePage = lazy(() => import("@/pages/lineage/LineagePage"));
+const ProjectCockpitHome = lazy(() => import("./pages/ProjectCockpitHome"));
+const AdminAuditPage = lazy(() =>
+  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminAuditPage }))
+);
+const AdminFailuresPage = lazy(() =>
+  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminFailuresPage }))
+);
+const AdminLayout = lazy(() =>
+  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminLayout }))
+);
+const AdminOverviewPage = lazy(() =>
+  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminOverviewPage }))
+);
+const AdminProjectsPage = lazy(() =>
+  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminProjectsPage }))
+);
+const AdminRunsPage = lazy(() =>
+  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminRunsPage }))
+);
+const AdminUsersPage = lazy(() =>
+  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminUsersPage }))
+);
+const AutopilotRoutePage = lazy(
+  () => import("./pages/autopilot/AutopilotRoutePage")
+);
+const AuthPage = lazy(() => import("./pages/auth/AuthPage"));
+const SpecCenterPage = lazy(() => import("./pages/specs/SpecCenterPage"));
+const TaskDetailPage = lazy(() =>
+  import("./pages/tasks").then(m => ({ default: m.TaskDetailPage }))
+);
+const TasksPage = lazy(() =>
+  import("./pages/tasks").then(m => ({ default: m.TasksPage }))
+);
+const AutopilotSpecDocumentsWorkbenchFixturePage = lazy(
+  () =>
+    import("./pages/autopilot/right-rail/streaming-doc/workbench/WorkbenchFixturePage")
+);
+const SlideRuleDevPage = lazy(() => import("./pages/SlideRuleDev"));
+
+/** 懒加载路由 chunk 拉取期间的轻量占位（主入口 AgentLoopPage 不经过这里）。 */
+function RouteLoadingFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+      加载中…
+    </div>
+  );
+}
 
 const routerBase =
   import.meta.env.BASE_URL === "/"
@@ -430,7 +469,9 @@ export function AppShell() {
           } as React.CSSProperties
         }
       >
-        <Router />
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Router />
+        </Suspense>
       </div>
 
       {isMobile && !isAuth && !isChromeFree && <MobileTabBar />}

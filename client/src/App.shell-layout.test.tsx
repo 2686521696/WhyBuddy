@@ -191,6 +191,20 @@ vi.mock("./pages/NotFound", () => ({
   default: () => <main data-testid="not-found-page" />,
 }));
 
+/**
+ * 路由组件改为 React.lazy 之后，同步的 renderToStaticMarkup 首轮只能渲染出
+ * Suspense fallback（"加载中…"）。这里首轮渲染触发懒加载工厂（mock 的动态
+ * import 在 microtask 内 resolve），随后重渲拿到真实路由内容。
+ */
+async function renderShellMarkup() {
+  let markup = renderToStaticMarkup(<AppShell />);
+  for (let attempt = 0; attempt < 5 && markup.includes("加载中…"); attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    markup = renderToStaticMarkup(<AppShell />);
+  }
+  return markup;
+}
+
 describe("AppShell fixed sidebar layout", () => {
   beforeEach(() => {
     deployTargetState.isGitHubPages = false;
@@ -214,13 +228,13 @@ describe("AppShell fixed sidebar layout", () => {
     });
   }
 
-  it("offsets non-home desktop content by the fixed sidebar width", () => {
+  it("offsets non-home desktop content by the fixed sidebar width", async () => {
     signInForShell();
     locationState.current = "/tasks";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
-    const markup = renderToStaticMarkup(<AppShell />);
+    const markup = await renderShellMarkup();
     const shell = markup.match(/<div class="min-h-screen[^>]*>/)?.[0] ?? "";
 
     expect(markup).toContain('data-testid="app-sidebar"');
@@ -229,13 +243,13 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).toContain("padding-left:248px");
   });
 
-  it("keeps the app sidebar visible for project-scoped task center routes", () => {
+  it("keeps the app sidebar visible for project-scoped task center routes", async () => {
     signInForShell();
     locationState.current = "/projects/project-1/tasks";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
-    const markup = renderToStaticMarkup(<AppShell />);
+    const markup = await renderShellMarkup();
     const shell = markup.match(/<div class="min-h-screen[^>]*>/)?.[0] ?? "";
 
     expect(markup).toContain('data-testid="app-sidebar"');
@@ -244,13 +258,13 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).toContain("padding-left:248px");
   });
 
-  it("does not offset the home page because it uses embedded scene chrome", () => {
+  it("does not offset the home page because it uses embedded scene chrome", async () => {
     signInForShell();
     locationState.current = "/";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
-    const markup = renderToStaticMarkup(<AppShell />);
+    const markup = await renderShellMarkup();
     const shell = markup.match(/<div class="min-h-screen[^>]*>/)?.[0] ?? "";
 
     expect(markup).not.toContain('data-testid="app-sidebar"');
@@ -259,13 +273,13 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).toContain("padding-left:0");
   });
 
-  it("does not keep the task sidebar offset when the home URL has query or hash state", () => {
+  it("does not keep the task sidebar offset when the home URL has query or hash state", async () => {
     signInForShell();
     locationState.current = "/?from=tasks#autopilot";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
-    const markup = renderToStaticMarkup(<AppShell />);
+    const markup = await renderShellMarkup();
     const shell = markup.match(/<div class="min-h-screen[^>]*>/)?.[0] ?? "";
 
     expect(markup).not.toContain('data-testid="app-sidebar"');
@@ -274,12 +288,12 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).not.toContain("transition-[padding-left]");
   });
 
-  it("keeps the login page free of app chrome", () => {
+  it("keeps the login page free of app chrome", async () => {
     locationState.current = "/login";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
-    const markup = renderToStaticMarkup(<AppShell />);
+    const markup = await renderShellMarkup();
     const shell = markup.match(/<div class="min-h-screen[^>]*>/)?.[0] ?? "";
 
     expect(markup).not.toContain('data-testid="app-sidebar"');
@@ -290,19 +304,19 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).toContain("padding-left:0");
   });
 
-  it("redirects the login page to project space on GitHub Pages", () => {
+  it("redirects the login page to project space on GitHub Pages", async () => {
     deployTargetState.isGitHubPages = true;
     locationState.current = "/login";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
-    const markup = renderToStaticMarkup(<AppShell />);
+    const markup = await renderShellMarkup();
 
     expect(markup).not.toContain('data-testid="auth-page"');
     expect(markup).not.toContain("Sign in");
   });
 
-  it("classifies project workspace routes for unauthenticated redirect", () => {
+  it("classifies project workspace routes for unauthenticated redirect", async () => {
     expect(isProjectWorkspaceLocation("/")).toBe(true);
     expect(isProjectWorkspaceLocation("/tasks")).toBe(true);
     expect(isProjectWorkspaceLocation("/tasks/task-1")).toBe(true);
@@ -316,13 +330,13 @@ describe("AppShell fixed sidebar layout", () => {
     expect(isProjectWorkspaceLocation("/AgentLoop")).toBe(false);
   });
 
-  it("mounts AgentLoop as a chrome-free first-class route", () => {
+  it("mounts AgentLoop as a chrome-free first-class route", async () => {
     signInForShell();
     locationState.current = "/agent-loop/workbench";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
-    const markup = renderToStaticMarkup(<AppShell />);
+    const markup = await renderShellMarkup();
     const shell = markup.match(/<div class="min-h-screen[^>]*>/)?.[0] ?? "";
 
     expect(markup).toContain('data-testid="agent-loop-page"');
@@ -331,29 +345,29 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).toContain("padding-left:0");
   });
 
-  it("mounts the AgentLoop shell for SlideRule routes and redirects the legacy SlideRule URL", () => {
+  it("mounts the AgentLoop shell for SlideRule routes and redirects the legacy SlideRule URL", async () => {
     signInForShell();
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
     locationState.current = "/agent-loop";
-    let markup = renderToStaticMarkup(<AppShell />);
+    let markup = await renderShellMarkup();
     expect(markup).toContain('data-testid="agent-loop-page"');
     expect(markup).not.toContain('data-testid="sliderule-page"');
 
     locationState.current = "/agent-loop/sliderule";
-    markup = renderToStaticMarkup(<AppShell />);
+    markup = await renderShellMarkup();
     expect(markup).toContain('data-testid="agent-loop-page"');
     expect(markup).not.toContain('data-testid="sliderule-page"');
     expect(markup).not.toContain('data-testid="app-sidebar"');
 
     locationState.current = "/sliderule";
-    markup = renderToStaticMarkup(<AppShell />);
+    markup = await renderShellMarkup();
     expect(markup).not.toContain('data-testid="sliderule-page"');
     expect(markup).not.toContain('data-testid="agent-loop-page"');
   });
 
-  it("chrome-free logic + isAgentLoopLocation is case and slash tolerant", () => {
+  it("chrome-free logic + isAgentLoopLocation is case and slash tolerant", async () => {
     // even if user visits /AgentLoop or /agent-loop/ the main sidebar must be suppressed
     expect(isAgentLoopLocation("/agent-loop")).toBe(true);
     expect(isAgentLoopLocation("/agent-loop/sliderule")).toBe(true);
@@ -366,25 +380,25 @@ describe("AppShell fixed sidebar layout", () => {
     expect(isAgentLoopLocation("/something")).toBe(false);
   });
 
-  it("mounts the direct spec documents workbench fixture route before debug sections", () => {
+  it("mounts the direct spec documents workbench fixture route before debug sections", async () => {
     signInForShell();
     locationState.current = "/debug/autopilot-spec-documents-workbench";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
-    const markup = renderToStaticMarkup(<AppShell />);
+    const markup = await renderShellMarkup();
 
     expect(markup).toContain('data-testid="workbench-fixture-page"');
     expect(markup).not.toContain('data-testid="debug-page"');
   });
 
-  it("keeps authenticated project workspace access in place", () => {
+  it("keeps authenticated project workspace access in place", async () => {
     signInForShell();
     locationState.current = "/";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
-    renderToStaticMarkup(<AppShell />);
+    await renderShellMarkup();
 
     expect(locationState.setLocation).not.toHaveBeenCalledWith("/login");
   });
