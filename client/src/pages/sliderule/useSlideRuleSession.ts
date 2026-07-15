@@ -246,6 +246,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   // 更新的那份；label 记录当前来源。只是观测投影——真实模型仍以闭环证据为准。
   const [llmDraft, setLlmDraft] = useState<string>("");
   const [llmDraftLabel, setLlmDraftLabel] = useState<string | null>(null);
+  // E16.1 多流分窗：后端并行 LLM 子调用交错到达时，单槽展示会来回切换
+  // （用户实测"打架"）——按 label 保序分窗，各流独立生长
+  const [llmStreams, setLlmStreams] = useState<
+    Array<{ label: string; text: string }>
+  >([]);
 
   // 产品面恒 single（用户裁决 2026-07-10：模式选择器已删——drive-full-stream
   // 一条消息推到闭环，马拉松是浏览器端遗留且丢实时流）。初始化不再读
@@ -796,6 +801,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           };
           setLlmDraft("");
           setLlmDraftLabel(null);
+          setLlmStreams([]);
           // 每一步 LLM 想法各自缓冲：并行批里不同能力的增量交织到达，
           // 按标签分开累积，展示最近更新的那条（不互相覆盖内容）。
           const llmDraftBuffers = new Map<string, string>();
@@ -843,6 +849,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 }
                 setLlmDraftLabel(key);
                 setLlmDraft(llmDraftBuffers.get(key) || "");
+                setLlmStreams(
+                  Array.from(llmDraftBuffers, ([label, text]) => ({
+                    label,
+                    text,
+                  }))
+                );
               },
               onReasoningStep: (capabilityId, loop) => {
                 const human =
@@ -1602,6 +1614,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     //（能力 id 或 "five-system-model"，用于左栏实时块的动态标题）。
     llmDraft,
     llmDraftLabel,
+    llmStreams,
     sendMessage,
     runTurn,
     challengeTurn,
