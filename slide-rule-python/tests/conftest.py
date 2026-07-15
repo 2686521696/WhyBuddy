@@ -10,3 +10,6 @@ SLIDERULE_LIVE_WEB_TESTS=1 显式开。
 import os
 
 os.environ.setdefault("SLIDERULE_WEB_SEARCH", "off")
+# P2b 执行类工具同理全局关闭：测试不开真沙盒（活体验证用
+# SLIDERULE_LIVE_SANDBOX_TESTS=1 显式开，见 test_mcp_tools.py）
+os.environ.setdefault("SLIDERULE_CODE_RUN", "off")

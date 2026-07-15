@@ -234,6 +234,65 @@ def web_search(query: str, top_k: int = 6) -> Optional[list[dict[str, Any]]]:
     return None
 
 
+# ── code.run：执行类工具（P2b，readOnly=False → 必须进 E2B 沙盒）──────
+# 信任层海关对执行类的加码：宿主零执行——代码只在一次性云沙盒里跑，
+# 跑完即销毁；产物 provenance=sandbox:e2b 如实标注，门照常裁决。
+# fail-closed：E2B_API_KEY 缺失/开关关闭 → 工具不可用（返回 None），
+# 绝不回落到宿主 exec 之类的"方便通道"。
+
+_CODE_RUN_TIMEOUT_S = 60
+
+
+def code_run_enabled() -> bool:
+    if str(os.getenv("SLIDERULE_CODE_RUN", "on")).strip().lower() in ("off", "0", "false"):
+        return False
+    return bool((os.getenv("E2B_API_KEY") or "").strip())
+
+
+def _e2b_sandbox(timeout_s: int) -> Any:
+    """沙盒创建单独成函数：测试 monkeypatch 这里，SDK 惰性 import
+    （web.search-only 部署不需要装 e2b）。"""
+    from e2b_code_interpreter import Sandbox  # type: ignore[import-not-found]
+
+    return Sandbox.create(timeout=timeout_s + 30)
+
+
+def code_run(code: str, timeout_s: int = _CODE_RUN_TIMEOUT_S) -> Optional[dict[str, Any]]:
+    """在一次性 E2B 沙盒执行 Python 代码，返回带溯源的执行记录。
+
+    返回 dict：ok / stdout / stderr / result / error / sandboxId /
+    provenance="sandbox:e2b"。不可用（无 key、停用、空代码）→ None。
+    沙盒创建后无论执行成败都 kill（finally），不留悬挂沙盒计费。
+    """
+    if not code_run_enabled():
+        return None
+    code = (code or "").strip()
+    if not code:
+        return None
+    sandbox = _e2b_sandbox(timeout_s)
+    try:
+        execution = sandbox.run_code(code, timeout=timeout_s)
+        logs = getattr(execution, "logs", None)
+        stdout = "".join(getattr(logs, "stdout", None) or [])
+        stderr = "".join(getattr(logs, "stderr", None) or [])
+        error = getattr(execution, "error", None)
+        return {
+            "ok": error is None,
+            "stdout": stdout[:4000],
+            "stderr": stderr[:2000],
+            "result": str(getattr(execution, "text", None) or "")[:2000],
+            "error": f"{error.name}: {error.value}"[:500] if error else None,
+            "sandboxId": str(getattr(sandbox, "sandbox_id", "") or ""),
+            "provenance": "sandbox:e2b",
+            "retrieval": "sandbox:e2b",
+        }
+    finally:
+        try:
+            sandbox.kill()
+        except Exception:
+            pass  # 回收失败不挡产物返回（E2B 侧 timeout 兜底销毁）
+
+
 # ── MCP 兼容注册表（P2b 的外部 MCP 服务器与沙盒执行工具接到这里）──────
 
 MCP_TOOLS: dict[str, dict[str, Any]] = {
@@ -250,5 +309,20 @@ MCP_TOOLS: dict[str, dict[str, Any]] = {
         },
         "readOnly": True,  # P2a 只读工具；P2b 执行类工具 readOnly=False 且必须走沙盒
         "handler": web_search,
+    },
+    "code.run": {
+        "name": "code.run",
+        "description": "在一次性 E2B 云沙盒执行 Python 代码做验证取证（执行类，宿主零执行，用完即毁）",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "要执行的 Python 代码"},
+                "timeout_s": {"type": "integer", "default": _CODE_RUN_TIMEOUT_S},
+            },
+            "required": ["code"],
+        },
+        "readOnly": False,
+        "sandbox": "e2b",  # 执行类工具必须声明隔离面；无沙盒声明的执行工具不准注册
+        "handler": code_run,
     },
 }
