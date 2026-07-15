@@ -47,6 +47,10 @@ CAPABILITY_VOCAB: dict[str, str] = {
     "instruction.package": "打包提示词/指令包",
     "outcome.visualize": "可视化成果（图表/结构图）",
     "handoff.package": "打包最终交接物",
+    # 收口能力（agentic 独有解锁）：规则版 pick 从不产出它——真实产品里
+    # 装配闭环由前端流程触发；给 LLM 这个选项 = 让它自己判断「证据齐了
+    # 该收口了」。门保持 fail-closed：证据不齐装配照样 blocked，提案无法作弊
+    "appbundle.runtimeclosure": "装配运行时闭环（五系统证据齐备后收口出应用，证据不齐会被门拦下——收口前先确保证据充分）",
 }
 
 ROLE_VOCAB = ("产品", "架构", "工程", "综合")
@@ -99,7 +103,7 @@ def _artifact_kind_counts(state: V5SessionState) -> dict[str, int]:
     return counts
 
 
-def _state_digest(state: V5SessionState, user_text: str, loop_index: int) -> str:
+def _state_digest(state: V5SessionState, user_text: str, loop_index: int, max_loops: int = 6) -> str:
     goal = state.goal if isinstance(state.goal, dict) else {}
     kinds = _artifact_kind_counts(state)
     runs = getattr(state, "capabilityRuns", []) or []
@@ -118,7 +122,9 @@ def _state_digest(state: V5SessionState, user_text: str, loop_index: int) -> str
     lines = [
         f"【本轮用户输入】{(user_text or '').strip()[:300]}",
         f"【目标】{str(goal.get('text') or '')[:200]}（状态 {goal.get('status') or '未定'}）",
-        f"【第 {loop_index + 1} 轮】已执行能力序列（最近 8 步）：{' → '.join(recent) or '无'}",
+        f"【进度】第 {loop_index + 1}/{max_loops} 轮（收口感知：过半仍未装配闭环应认真考虑收口——"
+        "证据不齐门会拦下并如实标 blocked，提案收口没有惩罚，拖到轮次耗尽才有）",
+        f"【已执行能力序列（最近 8 步）】{' → '.join(recent) or '无'}",
         f"【健康产物】{kinds or '无'}；失效产物 {len(getattr(state, 'staleArtifactIds', []) or [])} 件",
         f"【未答问题】{open_qs or '无'}",
         f"【覆盖缺口】{gaps or '无'}",
@@ -168,6 +174,7 @@ def agentic_pick_next_capabilities(
     user_text: str,
     *,
     loop_index: int = 0,
+    max_loops: int = 6,
 ) -> Optional[dict]:
     """LLM 看全局提案下一批能力。返回 {"picks": [...], "rationale": str}；
     停用/失败/提案全被门剔除 → None（调用方回落规则版）。"""
@@ -193,7 +200,7 @@ def agentic_pick_next_capabilities(
                 "能力清单：\n" + vocab_lines
             ),
         },
-        {"role": "user", "content": _state_digest(state, user_text, loop_index)},
+        {"role": "user", "content": _state_digest(state, user_text, loop_index, max_loops)},
     ]
     parsed = None
     # 推理模型空正文偶发（transient=False 客户端不重试）+ 网关高载时

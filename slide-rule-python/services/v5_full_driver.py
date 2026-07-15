@@ -496,7 +496,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
             # 决策进台账（source="llm"）可审计可挑战。失败静默回落规则版。
             if picks:
                 from .v5_agentic_pick import agentic_pick_next_capabilities
-                _proposal = agentic_pick_next_capabilities(state, ui, loop_index=loop)
+                _proposal = agentic_pick_next_capabilities(state, ui, loop_index=loop, max_loops=max_loops)
                 if _proposal:
                     _now = datetime.now(timezone.utc).isoformat()
                     _dl = getattr(state, "decisionLedger", []) or []
@@ -871,7 +871,7 @@ async def drive_full_v5_session_stream(
             if picks:
                 from .v5_agentic_pick import agentic_pick_next_capabilities
                 _proposal = await asyncio.to_thread(
-                    agentic_pick_next_capabilities, state, ui, loop_index=loop
+                    agentic_pick_next_capabilities, state, ui, loop_index=loop, max_loops=max_loops
                 )
                 if _proposal:
                     _now = datetime.now(timezone.utc).isoformat()
