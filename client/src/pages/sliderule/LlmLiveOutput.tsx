@@ -147,8 +147,9 @@ export function LlmLiveOutput({
         <div
           data-testid="sliderule-llm-draft-body"
           aria-live="polite"
-          className="mt-1.5 pl-3.5 text-[12.5px] leading-6 text-stone-500"
+          className="mt-1.5 pl-3.5 text-[12.5px] leading-6 text-stone-500 [&_h1]:text-[13px] [&_h1]:font-semibold [&_h1]:text-stone-600 [&_h2]:text-[12.5px] [&_h2]:font-semibold [&_h2]:text-stone-600 [&_h3]:text-[12.5px] [&_h3]:font-medium [&_h3]:text-stone-600"
         >
+          {/* 思考流是配角：标题全部降到正文号（Claude 的 thinking 从不喧宾夺主） */}
           <Response parseIncompleteMarkdown={!done}>{smooth}</Response>
           {!done && <span className="sr-caret text-[#1677ff]">▊</span>}
         </div>

@@ -32,8 +32,15 @@ import {
   ChevronRight,
   ClipboardCheck,
   Dumbbell,
+  LoaderCircle,
   Users,
 } from "lucide-react";
+import {
+  ChainOfThought,
+  ChainOfThoughtHeader,
+  ChainOfThoughtContent,
+  ChainOfThoughtStep,
+} from "@/components/ai/chain-of-thought";
 import type { BrainstormReasoningNode } from "@shared/blueprint";
 import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurface";
 import { useSlideRuleSession } from "./sliderule/useSlideRuleSession";
@@ -297,47 +304,55 @@ function TurnPhaseTimeline({
   if (phases.length === 0) return null;
 
   const totalSteps = stepTexts.length;
-  const showBody = streaming || expanded;
 
+  // E16b：换装 ai-elements ChainOfThought（连接线 + 状态图标 + 开合动画）。
+  // 逻辑保持原样：流式恒展开、完成后折叠成收口句、已完成阶段点击展开。
   return (
-    <div className="mt-1" data-testid="sliderule-turn-phases">
+    <ChainOfThought
+      className="mt-1 max-w-none space-y-2"
+      data-testid="sliderule-turn-phases"
+      open={streaming || expanded}
+      onOpenChange={next => {
+        if (!streaming) setExpanded(next);
+      }}
+    >
       {!streaming && (
-        <button
-          type="button"
-          onClick={() => setExpanded(v => !v)}
-          className="flex items-center gap-1 text-xs text-stone-400 transition-colors hover:text-stone-600"
+        <ChainOfThoughtHeader
+          className="text-xs text-stone-400 hover:text-stone-600"
           data-testid="sliderule-turn-steps-toggle"
         >
-          {/* 几何图标替代文字符号 `›`：与文字真正垂直居中（用户反馈） */}
-          <ChevronRight
-            className={`h-3 w-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
-          />
           {/* E16 收口句：带量词（Claude 的"Thought for Xs"语感），时长来自
               本轮真实计时，没有就不编 */}
           推演过程 · {phases.length} 阶段 · {totalSteps} 步
-          {turn.durationMs ? ` · 用时 ${Math.max(1, Math.round(turn.durationMs / 1000))}s` : ""}
-        </button>
+          {turn.durationMs
+            ? ` · 用时 ${Math.max(1, Math.round(turn.durationMs / 1000))}s`
+            : ""}
+        </ChainOfThoughtHeader>
       )}
-      {showBody && (
-        <div className="mt-1.5 space-y-1.5">
-          {phases.map(phase => {
-            const running = phase.status === "running";
-            const open =
-              running || !!openPhases[phase.id] || (!streaming && expanded);
-            return (
-              <div key={phase.id} data-testid={`sliderule-phase-${phase.id}`}>
+      <ChainOfThoughtContent className="mt-1.5 space-y-2.5">
+        {phases.map(phase => {
+          const running = phase.status === "running";
+          const open =
+            running || !!openPhases[phase.id] || (!streaming && expanded);
+          return (
+            <ChainOfThoughtStep
+              key={phase.id}
+              data-testid={`sliderule-phase-${phase.id}`}
+              icon={running ? LoaderCircle : Check}
+              status={running ? "active" : "complete"}
+              className={
+                running
+                  ? "[&>div:first-child>svg]:animate-spin [&>div:first-child>svg]:text-[#1677ff]"
+                  : "[&>div:first-child>svg]:text-emerald-500"
+              }
+              label={
                 <button
                   type="button"
                   onClick={() =>
                     setOpenPhases(prev => ({ ...prev, [phase.id]: !open }))
                   }
-                  className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs transition-colors hover:bg-[#eef0f4] hover:text-stone-700"
+                  className="flex cursor-pointer items-center gap-2 rounded text-xs transition-colors hover:text-stone-700"
                 >
-                  {running ? (
-                    <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[#1677ff]" />
-                  ) : (
-                    <Check className="h-3 w-3 shrink-0 text-emerald-500" />
-                  )}
                   {/* E16 微动效纪律：只动"正在发生"的——进行中标题走
                       shimmer 微光，完成态纯静止 */}
                   {running ? (
@@ -357,31 +372,29 @@ function TurnPhaseTimeline({
                     />
                   )}
                 </button>
-                {open && phase.lines.length > 0 && (
-                  <div className="ml-1 mt-1 space-y-1 border-l border-[#e8eaee] pl-4">
-                    {(running ? phase.lines.slice(-4) : phase.lines).map(
-                      (t, i) => (
-                        <div
-                          key={i}
-                          className="text-xs leading-5 text-stone-400"
-                        >
-                          {/* 「最新定义」是原位持续更替的语义槽 → 翻滚过渡 */}
-                          {t.startsWith("最新定义：") ? (
-                            <RollingText text={t} className="max-w-full" />
-                          ) : (
-                            t
-                          )}
-                        </div>
-                      )
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+              }
+            >
+              {open && phase.lines.length > 0 && (
+                <div className="space-y-1">
+                  {(running ? phase.lines.slice(-4) : phase.lines).map(
+                    (t, i) => (
+                      <div key={i} className="text-xs leading-5 text-stone-400">
+                        {/* 「最新定义」是原位持续更替的语义槽 → 翻滚过渡 */}
+                        {t.startsWith("最新定义：") ? (
+                          <RollingText text={t} className="max-w-full" />
+                        ) : (
+                          t
+                        )}
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+            </ChainOfThoughtStep>
+          );
+        })}
+      </ChainOfThoughtContent>
+    </ChainOfThought>
   );
 }
 
