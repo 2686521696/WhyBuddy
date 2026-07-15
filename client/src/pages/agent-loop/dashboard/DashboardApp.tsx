@@ -60,12 +60,18 @@ export type ViewKey =
   | "workbench"
   | "workbench-legacy"
   | "skills"
+  | "help"
   | "settings"
   | "settings-legacy";
 
 // 技能库（索引 JSON 打在页面 chunk 里）：点开才加载，不占主包
 const LazySkillsLibraryPage = React.lazy(
   () => import("@/pages/sliderule/SkillsLibraryPage")
+);
+
+// 帮助中心（E15，markdown 文档打在独立 chunk）：点开才加载
+const LazyHelpCenterPage = React.lazy(
+  () => import("../help/HelpCenterPage")
 );
 
 export function shouldRequestSettingsForView(view: ViewKey): boolean {
@@ -1260,7 +1266,12 @@ function AgentLoopSidebar({
       ) : (
         <SidebarSessions onOpenSliderule={() => onViewChange("sliderule")} />
       )}
-      <button type="button" className="native-agent-help">
+      <button
+        type="button"
+        className="native-agent-help"
+        data-testid="sidebar-help-docs"
+        onClick={() => onViewChange("help")}
+      >
         <QuestionCircleOutlined />
         <span>帮助文档</span>
         <RightOutlined />
@@ -1300,7 +1311,9 @@ function AgentLoopTopbar({
           ? "SlideRule / 设置（legacy）"
           : view === "skills"
             ? "SlideRule / 技能库"
-            : view === "workbench-legacy"
+            : view === "help"
+              ? "SlideRule / 帮助文档"
+              : view === "workbench-legacy"
               ? "SlideRule / 任务队列（legacy）"
               : "SlideRule / 工作台";
 
@@ -1778,6 +1791,16 @@ export function DashboardApp({
               </>
             ) : view === "sliderule" ? (
               slideruleContent
+            ) : view === "help" ? (
+              <React.Suspense
+                fallback={
+                  <div style={{ padding: 24, fontSize: 12, color: "#999" }}>
+                    帮助文档加载中…
+                  </div>
+                }
+              >
+                <LazyHelpCenterPage />
+              </React.Suspense>
             ) : view === "skills" ? (
               <React.Suspense
                 fallback={
