@@ -582,7 +582,7 @@ export default function AgentLoopPage() {
       ) : null}
       {!mounted ? (
         <div data-testid="agent-loop-loading" className="agent-loop-loading">
-          AgentLoop 控制台加载中…
+          SlideRule 控制台加载中…
         </div>
       ) : view === "detail" && detail ? (
         <DashboardDetailApp payload={detail} />

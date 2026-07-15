@@ -1198,7 +1198,7 @@ function AgentLoopSidebar({
           </span>
         </span>
       </a>
-      <nav className="native-agent-nav" aria-label="AgentLoop">
+      <nav className="native-agent-nav" aria-label="SlideRule">
         {navItems.map(item => (
           <a
             href={getViewPath?.(item.key)}
@@ -1288,18 +1288,20 @@ function AgentLoopTopbar({
   showActions?: boolean;
   pythonHealth?: PythonHealthViewModel | null;
 }) {
+  // 品牌统一（用户裁决 2026-07-15）：系统对外叫 SlideRule，顶栏不再出现
+  // AgentLoop（内部路由/标识保留，不破链接）
   const title =
     view === "sliderule"
-      ? "AgentLoop / 推演"
+      ? "SlideRule / 推演"
       : view === "settings"
-        ? "AgentLoop / 设置"
+        ? "SlideRule / 设置"
         : view === "settings-legacy"
-          ? "AgentLoop / 设置（legacy）"
+          ? "SlideRule / 设置（legacy）"
           : view === "skills"
-            ? "AgentLoop / 技能库"
+            ? "SlideRule / 技能库"
             : view === "workbench-legacy"
-              ? "AgentLoop / 任务队列（legacy）"
-              : "AgentLoop / 工作台";
+              ? "SlideRule / 任务队列（legacy）"
+              : "SlideRule / 工作台";
 
   const pythonStatus = pythonHealth?.service?.status || "unknown";
   const pythonTone =
@@ -1321,7 +1323,7 @@ function AgentLoopTopbar({
           <span className="native-topbar-link">本地 Web 预览</span>
           <span className="native-topbar-link">刷新预览</span>
           <span className="native-topbar-runtime">
-            Python API • AgentLoop runtime
+            Python API • SlideRule runtime
           </span>
           <Button
             type="primary"
