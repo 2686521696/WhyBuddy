@@ -445,6 +445,8 @@ const ImSurfaceContext = React.createContext<{
   publishClosure?: PublishClosureSummary | null;
   llmDraft: string;
   llmDraftLabel: string | null;
+  /** E16.1 多流分窗：并行 LLM 子调用各占一个稳定窗口（修"打架来回切换"） */
+  llmStreams: Array<{ label: string; text: string }>;
   goalText?: string;
   thinkingText: string;
   isRunning: boolean;
@@ -452,6 +454,7 @@ const ImSurfaceContext = React.createContext<{
 }>({
   llmDraft: "",
   llmDraftLabel: null,
+  llmStreams: [],
   thinkingText: "",
   isRunning: false,
   onChallenge: () => {},
@@ -511,7 +514,7 @@ function ImAssistantMessage() {
   const {
     publishClosure,
     llmDraft,
-    llmDraftLabel,
+    llmStreams,
     goalText,
     thinkingText,
     onChallenge,
@@ -540,14 +543,17 @@ function ImAssistantMessage() {
             publishClosure={publishClosure}
           />
           {/* LLM 实时想法：每一步真 LLM 调用（risk.analyze / report.write /
-              五系统起草…）期间实时流出。随内容生长，滚动由 Viewport 统一负责 */}
-          {llmDraft && (
+              五系统起草…）期间实时流出。E16.1：后端并行子调用交错到达时
+              按 label 分窗——每条流一个稳定窗口（key 固定，平滑泵前缀
+              延续不断），不再共抢一个槽位来回切换 */}
+          {llmStreams.map(stream => (
             <LlmLiveOutput
-              title={llmDraftTitle(llmDraftLabel)}
-              text={llmDraft}
-              formatJson={llmDraftLabel === "five-system-model"}
+              key={stream.label}
+              title={llmDraftTitle(stream.label)}
+              text={stream.text}
+              formatJson={stream.label === "five-system-model"}
             />
-          )}
+          ))}
         </div>
       ) : (
         /* 14px 正文（用户裁决：再小一号，信息密度优先） */
@@ -642,6 +648,7 @@ export function ClaudeChatSurface({
   publishClosure,
   llmDraft = "",
   llmDraftLabel = null,
+  llmStreams = [],
   goalText,
   onChallenge,
 }: {
@@ -654,6 +661,8 @@ export function ClaudeChatSurface({
   llmDraft?: string;
   /** 当前草稿来源：能力 id 或 "five-system-model"（决定实时块标题）。 */
   llmDraftLabel?: string | null;
+  /** E16.1 多流分窗：活跃 LLM 子调用流（按首现顺序，运行中展示）。 */
+  llmStreams?: Array<{ label: string; text: string }>;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
@@ -695,6 +704,7 @@ export function ClaudeChatSurface({
       publishClosure,
       llmDraft,
       llmDraftLabel,
+      llmStreams,
       goalText,
       thinkingText,
       isRunning,
@@ -704,6 +714,7 @@ export function ClaudeChatSurface({
       publishClosure,
       llmDraft,
       llmDraftLabel,
+      llmStreams,
       goalText,
       thinkingText,
       isRunning,
@@ -963,6 +974,7 @@ function SlideRuleUnified({
   latestMermaid = null,
   llmDraft = "",
   llmDraftLabel = null,
+  llmStreams = [],
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -1013,6 +1025,7 @@ function SlideRuleUnified({
   /** LLM 实时草稿（llm_delta 累积）+ 当前来源标签。 */
   llmDraft?: string;
   llmDraftLabel?: string | null;
+  llmStreams?: Array<{ label: string; text: string }>;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const composerHints = useMemo(
@@ -1089,6 +1102,7 @@ function SlideRuleUnified({
                 latestTurn={latestTurn}
                 publishClosure={publishClosure}
                 llmDraft={isRunning ? llmDraft : ""}
+                llmStreams={isRunning ? llmStreams : []}
                 llmDraftLabel={llmDraftLabel}
                 onChallenge={challengeTurn}
               />
@@ -1606,6 +1620,7 @@ function SlideRuleSessionBody({
     latestMermaid,
     llmDraft,
     llmDraftLabel,
+    llmStreams,
   } = useSlideRuleSession({
     sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : activeSessionId,
     documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : undefined,
@@ -2048,6 +2063,7 @@ function SlideRuleSessionBody({
     latestMermaid,
     llmDraft,
     llmDraftLabel,
+    llmStreams,
   };
 
   if (isImmersion) {
