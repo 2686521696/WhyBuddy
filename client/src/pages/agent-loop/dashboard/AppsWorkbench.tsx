@@ -26,7 +26,6 @@ import {
   CircleCheck,
   MoreHorizontal,
   Trash2,
-  Activity,
   ArrowUpDown,
 } from "lucide-react";
 import {
@@ -35,7 +34,6 @@ import {
   type FiveSystemModel,
 } from "@/pages/sliderule/system-screens/five-system-model";
 import { activateSession, newSessionId } from "./SidebarSessions";
-import { MainlineWorkbench } from "./MainlineWorkbench";
 
 // ---------------------------------------------------------------------------
 // 纯函数（可单测）
@@ -242,12 +240,15 @@ export function AppsWorkbench() {
   const [sessions, setSessions] = React.useState<SessionListItem[] | null>(null);
   const [details, setDetails] = React.useState<Record<string, AppCardDetail | null>>({});
   const [listError, setListError] = React.useState<string | null>(null);
-  const [healthOk, setHealthOk] = React.useState<boolean | null>(null);
+  // 三服务健康（原观察台独有价值下放：点健康点展开分列详情）
+  const [nodeOk, setNodeOk] = React.useState<boolean | null>(null);
+  const [pyOk, setPyOk] = React.useState<boolean | null>(null);
+  const [llm, setLlm] = React.useState<{ provider: string; model: string; keyPresent: boolean } | null | false>(null);
+  const [healthOpen, setHealthOpen] = React.useState(false);
   const [filter, setFilter] = React.useState<GalleryFilter>("all");
   const [query, setQuery] = React.useState("");
   const [sortDesc, setSortDesc] = React.useState(true);
   const [menuFor, setMenuFor] = React.useState<string | null>(null);
-  const [showObservatory, setShowObservatory] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
@@ -283,8 +284,27 @@ export function AppsWorkbench() {
       })
       .catch(e => alive && setListError(String(e?.message ?? e)));
     fetch("/api/health")
-      .then(r => alive && setHealthOk(r.ok))
-      .catch(() => alive && setHealthOk(false));
+      .then(r => alive && setNodeOk(r.ok))
+      .catch(() => alive && setNodeOk(false));
+    fetch("/api/agent-loop/health")
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => alive && setPyOk(Boolean(d && d.status === "ok")))
+      .catch(() => alive && setPyOk(false));
+    fetch("/api/sliderule/llm-channel")
+      .then(r => (r.ok ? r.json() : null))
+      .then(d =>
+        alive &&
+        setLlm(
+          d
+            ? {
+                provider: String(d.provider ?? ""),
+                model: String(d.model ?? ""),
+                keyPresent: Boolean(d.keyPresent),
+              }
+            : false
+        )
+      )
+      .catch(() => alive && setLlm(false));
     return () => {
       alive = false;
     };
@@ -324,27 +344,22 @@ export function AppsWorkbench() {
     draft: paired.filter(p => p.detail && p.detail.status !== "runnable").length,
   };
 
-  if (showObservatory) {
-    return (
-      <div data-testid="apps-workbench-observatory">
-        <div className="px-6 pt-4">
-          <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-[12px] text-stone-600 shadow-sm hover:border-[#1677ff] hover:text-[#1677ff]"
-            onClick={() => setShowObservatory(false)}
-          >
-            <LayoutGrid size={13} /> 返回我的应用
-          </button>
-        </div>
-        <MainlineWorkbench />
-      </div>
-    );
-  }
+  const llmOk = llm === null ? null : llm !== false && llm.keyPresent;
+  const overall: boolean | null =
+    nodeOk === null || pyOk === null || llmOk === null
+      ? null
+      : Boolean(nodeOk && pyOk && llmOk);
+  const dotCls = (ok: boolean | null) =>
+    ok == null ? "bg-stone-300" : ok ? "bg-emerald-500" : "bg-red-500";
 
   return (
     <div
       data-testid="apps-workbench"
       className="min-h-full bg-[#f7f8fa] px-8 py-6"
-      onClick={() => menuFor && setMenuFor(null)}
+      onClick={() => {
+        if (menuFor) setMenuFor(null);
+        if (healthOpen) setHealthOpen(false);
+      }}
     >
       {/* 标题行 */}
       <div className="flex items-start justify-between">
@@ -396,16 +411,46 @@ export function AppsWorkbench() {
           active={filter === "runnable"}
           onClick={() => setFilter("runnable")}
         />
-        <span
-          data-testid="apps-health-chip"
-          className="inline-flex items-center gap-1.5 text-[12.5px] text-stone-500"
-        >
-          <span
-            className={`h-2 w-2 rounded-full ${
-              healthOk == null ? "bg-stone-300" : healthOk ? "bg-emerald-500" : "bg-red-500"
-            }`}
-          />
-          {healthOk == null ? "服务检查中…" : healthOk ? "推演服务正常" : "推演服务异常"}
+        {/* 服务健康：点开分列三服务详情（原观察台独有价值，下放到此） */}
+        <span className="relative">
+          <button
+            data-testid="apps-health-chip"
+            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12.5px] text-stone-500 transition hover:bg-stone-100"
+            onClick={e => {
+              e.stopPropagation();
+              setHealthOpen(v => !v);
+            }}
+          >
+            <span className={`h-2 w-2 rounded-full ${dotCls(overall)}`} />
+            {overall == null ? "服务检查中…" : overall ? "推演服务正常" : "推演服务异常"}
+          </button>
+          {healthOpen && (
+            <div
+              data-testid="apps-health-popover"
+              className="absolute left-0 top-9 z-20 w-64 rounded-xl border border-stone-200 bg-white p-3 shadow-lg"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="space-y-2 text-[12px]">
+                <div className="flex items-center gap-2">
+                  <span className={`h-1.5 w-1.5 rounded-full ${dotCls(nodeOk)}`} />
+                  <span className="text-stone-700">Node API</span>
+                  <span className="ml-auto text-[11px] text-stone-400">/api/health</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`h-1.5 w-1.5 rounded-full ${dotCls(pyOk)}`} />
+                  <span className="text-stone-700">Python 推演引擎</span>
+                  <span className="ml-auto text-[11px] text-stone-400">sliderule-python</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`h-1.5 w-1.5 rounded-full ${dotCls(llmOk)}`} />
+                  <span className="text-stone-700">LLM 推演通道</span>
+                  <span className="ml-auto truncate text-[11px] text-stone-400">
+                    {llm === null ? "…" : llm === false ? "不可用" : `${llm.provider} · ${llm.model}`}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </span>
         <div className="ml-auto flex items-center gap-2.5">
           <button
@@ -414,13 +459,6 @@ export function AppsWorkbench() {
           >
             <ArrowUpDown size={13} className="text-stone-400" />
             {sortDesc ? "最近更新" : "最早更新"}
-          </button>
-          <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-[12px] text-stone-500 shadow-sm hover:border-[#1677ff] hover:text-[#1677ff]"
-            onClick={() => setShowObservatory(true)}
-          >
-            <Activity size={13} />
-            系统观察台
           </button>
         </div>
       </div>

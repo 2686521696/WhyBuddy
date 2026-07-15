@@ -78,6 +78,7 @@ import { SettingsPage } from "@/pages/sliderule/SettingsDialog";
 import { SidebarSessions } from "./SidebarSessions";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { AppsWorkbench } from "./AppsWorkbench";
+import { MainlineWorkbench } from "./MainlineWorkbench";
 import type {
   AgentLoopSettingsViewModel,
   DetailPayload,
@@ -1769,7 +1770,12 @@ export function DashboardApp({
             {view === "workbench" ? (
               <AppsWorkbench />
             ) : view === "workbench-legacy" ? (
-              workbenchContent
+              // 观察台退役进 legacy（用户裁决 2026-07-15）：跟任务队列
+              // 驾驶舱做伴，URL 直达仍可用；产品面只剩画廊 + 健康浮层
+              <>
+                <MainlineWorkbench />
+                {workbenchContent}
+              </>
             ) : view === "sliderule" ? (
               slideruleContent
             ) : view === "skills" ? (
