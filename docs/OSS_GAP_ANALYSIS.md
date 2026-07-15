@@ -20,12 +20,17 @@
 | **只有我们有** | 多供应商故障转移链（`build_provider_configs :97-112`——instructor 不管这层，保留自研）；`v5_model_gate` 业务语义门（引用不悬挂）+ `v5_model_repair` 确定性修复（零 LLM）——**instructor 替代不了，保留** | — |
 | **只有它有** | ①**错误回喂**：校验失败时把上一次的坏输出 + 具体报错拼成纠正消息发回模型（`v2/core/retry.py:249-257`），模型自我修正——我们的 shape 重试是盲重采样，同样的 prompt 再抽一次奖 ②**完整 Pydantic 校验**：类型/嵌套/枚举/约束/自定义校验器，我们只查 key 存在性（还是 falsy 判定——空串/空列表误判缺失，`client.py:833`）③**截断不当重试**：`IncompleteOutputException` 单独抛出永不循环（`function_calls.py:39-49`）——我们把截断当普通解析失败 ④**括号配平提取器**：字符级扫描抠 JSON 段（`v2/core/json.py:9-45`），碾压正则剥围栏 ⑤模式注册表：每个供应商自动选原生结构化输出/工具调用/JSON 兜底（约 50 种 Mode）⑥流式部分解析（Partial/jiter）⑦重试全程 token 记账 + 失败历史完整携带 | |
 
-### 落地方案
-`call_llm_json_with_shape` 的消费方改走 instructor（MIT，1.1 万星，月下载 300 万），
-保留自研的供应商故障转移做外层、`v5_model_gate/repair` 做业务语义层：
-**instructor 管 schema 级（形状对不对），model_gate 管语义级（引用悬不悬空）**，
-分层不变，中间那层从手搓换成完全体。今天实测踩的「gpt-5.5 空正文手工重试」
-坑（scene_archetype 一役）就是这层缺失的直接代价。
+### 落地方案（2026-07-15 真机撞墙后修订：引库 → 借语义）
+原判「引库 instructor」，实际接入时撞了本仓网关的两堵墙：
+① WAF 按 User-Agent 拦——UA 含 "OpenAI/Python" 直接 403 "Your request
+was blocked"（X-Stainless 系头无害，实测隔离验证）；② Cloudflare 524——
+非流式响应 120 秒硬顶，五系统生成常超时，SDK 默认非流式必撞，而自研
+客户端的流式传输天然免疫。**修订裁决：SDK 栈不引入，把 instructor 的
+reask 核心语义（校验失败把「上次输出+具体报错」拼回消息让模型自我修正）
+移植到自研流式客户端上**——`sliderule_llm/structured.py`，五系统生成层
+首个消费方（无流式 sink 时优先走它，交互流式路径失败时由它救场）。
+真机 3/3 一次通过（改造前同样三连必踩空正文/524）。分层不变：
+本通道管 schema 级，`v5_model_gate/repair` 管业务语义级。
 
 ---
 
