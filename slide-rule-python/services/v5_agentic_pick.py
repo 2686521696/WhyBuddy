@@ -173,39 +173,54 @@ def agentic_pick_next_capabilities(
     停用/失败/提案全被门剔除 → None（调用方回落规则版）。"""
     if not agentic_pick_enabled():
         return None
-    vocab_lines = "\n".join(f"- {cap}：{desc}" for cap, desc in CAPABILITY_VOCAB.items())
-    try:
-        from sliderule_llm.client import call_llm_json
+    import sys as _sys
 
-        parsed, _res = call_llm_json(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "你是产品推演引擎的编排器。根据推演现场的仪表盘，"
-                        "提案下一批要执行的能力（1-5 个，按执行顺序）。原则：\n"
-                        "1. 缺证据先补证据，有分歧先红队质疑，结论未综合先综合，"
-                        "用户明确要交付物才走交付链\n"
-                        "2. 不要重复已充分执行的能力；每个提案说一句为什么\n"
-                        "3. capabilityId 只能从能力清单里选（原样抄写），"
-                        "roleId 只能是 产品|架构|工程|综合\n"
-                        "只输出 JSON：{\"rationale\":\"一句话总体策略\","
-                        "\"picks\":[{\"capabilityId\":\"\",\"roleId\":\"\","
-                        "\"why\":\"\"}]}\n"
-                        "能力清单：\n" + vocab_lines
-                    ),
-                },
-                {"role": "user", "content": _state_digest(state, user_text, loop_index)},
-            ],
-            temperature=0.2,
-            max_tokens=4000,
-            max_attempts=1,
-            reasoning_effort="low",
-        )
-    except Exception:
+    vocab_lines = "\n".join(f"- {cap}：{desc}" for cap, desc in CAPABILITY_VOCAB.items())
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是产品推演引擎的编排器。根据推演现场的仪表盘，"
+                "提案下一批要执行的能力（1-5 个，按执行顺序）。原则：\n"
+                "1. 缺证据先补证据，有分歧先红队质疑，结论未综合先综合，"
+                "用户明确要交付物才走交付链\n"
+                "2. 不要重复已充分执行的能力；每个提案说一句为什么\n"
+                "3. capabilityId 只能从能力清单里选（原样抄写），"
+                "roleId 只能是 产品|架构|工程|综合\n"
+                "只输出 JSON：{\"rationale\":\"一句话总体策略\","
+                "\"picks\":[{\"capabilityId\":\"\",\"roleId\":\"\","
+                "\"why\":\"\"}]}\n"
+                "能力清单：\n" + vocab_lines
+            ),
+        },
+        {"role": "user", "content": _state_digest(state, user_text, loop_index)},
+    ]
+    parsed = None
+    # 推理模型空正文偶发（transient=False 客户端不重试）+ 网关高载时
+    # 瞬时失败——本地重试一次（与 scene_archetype 同款实测处方）
+    for _attempt in range(2):
+        try:
+            from sliderule_llm.client import call_llm_json
+
+            parsed, _res = call_llm_json(
+                messages,
+                temperature=0.2,
+                max_tokens=4000,
+                max_attempts=1,
+                reasoning_effort="low",
+            )
+            break
+        except Exception as exc:
+            print(
+                f"[agentic-pick] loop {loop_index} attempt {_attempt + 1}/2 失败: {str(exc)[:160]}",
+                file=_sys.stderr, flush=True,
+            )
+    if parsed is None:
+        print(f"[agentic-pick] loop {loop_index}: 回落规则版", file=_sys.stderr, flush=True)
         return None
     picks = _validate_proposal(parsed, state)
     if not picks:
+        print(f"[agentic-pick] loop {loop_index}: 提案全被门剔除，回落规则版", file=_sys.stderr, flush=True)
         return None
     return {
         "picks": picks,

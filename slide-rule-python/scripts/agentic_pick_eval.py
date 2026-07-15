@@ -1,15 +1,18 @@
 """F2 agentic pick 对比评测：十话题 × 双模式（规则挑选 vs LLM 提案+门验收）。
 
 跑法（仓库根目录，需 .env 带 LLM key）：
-  cd slide-rule-python && .venv/bin/python scripts/agentic_pick_eval.py [--topics N]
+  cd slide-rule-python && .venv/bin/python scripts/agentic_pick_eval.py \
+      [--topics N] [--parallel 5]
+
+并发模型：每个 (话题, 模式) 用例一个独立子进程——模式开关
+（SLIDERULE_AGENTIC_PICK）是进程级 env、会话存储是共享文件，进程内
+并发必然串味/打架；子进程各带独立临时存储，父进程只做汇总。
+并发度默认 5（LLM 网关承受力实测口径；开太高 429 限流反而变慢）。
 
 对每个话题各跑两遍 drive_full_v5_session（同 max_loops），采集确定性指标：
   闭环证据 n/6、覆盖门、健康产物数/种类数、能力执行次数/去重数、
-  推演轮数、耗时、agentic 决策台账条数。结果落
-  data/agentic-pick-eval.{json,md}——用数据决定是否全面切换（北极星：
-  AI 声称好不算数，脚本跑过才算数）。
-
-隔离：会话存储指到临时目录（不污染真实 data/），LLM 生成开启。
+  耗时、agentic 决策台账条数。结果落 data/agentic-pick-eval.{json,md}
+  ——用数据决定是否全面切换（北极星：AI 声称好不算数，脚本跑过才算数）。
 """
 
 from __future__ import annotations
@@ -17,17 +20,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-# 会话存储隔离（必须在导入 services 前设好——persistence 读 env 定位存储）
+# 会话存储隔离（必须在导入 services 前设好——persistence 读 env 定位存储；
+# 子进程模式下会被 _spawn_case 的独立路径覆盖）
 _TMP = tempfile.mkdtemp(prefix="agentic-pick-eval-")
-os.environ["SLIDERULE_SESSIONS_FILE"] = str(Path(_TMP) / "sessions.json")
+os.environ.setdefault("SLIDERULE_SESSIONS_FILE", str(Path(_TMP) / "sessions.json"))
 os.environ.setdefault("SLIDERULE_LLM_GENERATE_ENABLED", "1")
 
 TOPICS = [
@@ -107,23 +113,72 @@ def run_one(topic: str, mode: str, max_loops: int) -> dict:
     return _metric_row(final, time.time() - t0)
 
 
+def _spawn_case(topic: str, mode: str, max_loops: int) -> dict:
+    """独立子进程跑单用例：模式开关/会话存储进程级隔离，互不串味。"""
+    env = {
+        **os.environ,
+        "SLIDERULE_AGENTIC_PICK": "on" if mode == "agentic" else "off",
+        "SLIDERULE_SESSIONS_FILE": str(
+            Path(tempfile.mkdtemp(prefix=f"ape-{mode}-")) / "sessions.json"
+        ),
+        "SLIDERULE_LLM_GENERATE_ENABLED": "1",
+    }
+    try:
+        proc = subprocess.run(
+            [sys.executable, __file__, "--one", f"{mode}::{topic}",
+             "--max-loops", str(max_loops)],
+            capture_output=True, text=True, env=env, cwd=str(ROOT),
+            timeout=1200,
+        )
+        # 子进程 stdout 最后一行是结果 JSON（前面可能有生成日志噪音）
+        for line in reversed((proc.stdout or "").strip().splitlines()):
+            line = line.strip()
+            if line.startswith("{"):
+                return json.loads(line)
+        return {"error": f"no result json (rc={proc.returncode}): {(proc.stderr or '')[-160:]}"}
+    except subprocess.TimeoutExpired:
+        return {"error": "case timeout (1200s)"}
+    except Exception as exc:
+        return {"error": str(exc)[:200]}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--topics", type=int, default=len(TOPICS))
     parser.add_argument("--max-loops", type=int, default=6)
+    parser.add_argument("--parallel", type=int, default=5)
+    parser.add_argument("--one", type=str, default=None, help="内部用：mode::topic 单用例")
     args = parser.parse_args()
-    topics = TOPICS[: args.topics]
 
-    results: dict[str, dict[str, dict]] = {}
-    for i, topic in enumerate(topics):
-        results[topic] = {}
-        for mode in MODES:
-            print(f"[{i + 1}/{len(topics)}] {mode:8s} {topic}", flush=True)
-            try:
-                results[topic][mode] = run_one(topic, mode, args.max_loops)
-            except Exception as exc:  # 单话题失败不废全场
-                results[topic][mode] = {"error": str(exc)[:200]}
-            print(f"    -> {results[topic][mode]}", flush=True)
+    # 子进程入口：跑单用例，结果 JSON 打到 stdout 最后一行
+    if args.one:
+        mode, topic = args.one.split("::", 1)
+        try:
+            row = run_one(topic, mode, args.max_loops)
+        except Exception as exc:
+            row = {"error": str(exc)[:200]}
+        print(json.dumps(row, ensure_ascii=False), flush=True)
+        return
+
+    topics = TOPICS[: args.topics]
+    cases = [(topic, mode) for topic in topics for mode in MODES]
+    results: dict[str, dict[str, dict]] = {t: {} for t in topics}
+    t0 = time.time()
+    with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
+        futures = {
+            pool.submit(_spawn_case, topic, mode, args.max_loops): (topic, mode)
+            for topic, mode in cases
+        }
+        done = 0
+        for fut in as_completed(futures):
+            topic, mode = futures[fut]
+            results[topic][mode] = fut.result()
+            done += 1
+            print(
+                f"[{done}/{len(cases)}] {mode:8s} {topic[:24]} -> {results[topic][mode]}",
+                flush=True,
+            )
+    print(f"total wall: {time.time() - t0:.0f}s", flush=True)
 
     out_json = ROOT / "data" / "agentic-pick-eval.json"
     out_json.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
