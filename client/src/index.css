@@ -2,6 +2,8 @@
 
 @import "tailwindcss";
 @import "tw-animate-css";
+/* E16: streamdown（流式 markdown 渲染）自带的工具类需要被 Tailwind 扫描 */
+@source "../../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
 

@@ -162,6 +162,7 @@ export interface V5SessionState {
     turnId: string;
     user?: string;
     steps: unknown[];
+    durationMs?: number;
   }>;
   lastTurnId?: string;
   /** P0: why the session is parked awaiting human input (distinct from trust-layer confirm gate). */

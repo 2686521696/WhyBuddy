@@ -107,6 +107,7 @@ export function deriveLatestTurnFromState(
     id: base,
     user: narration?.user || "",
     status: "complete",
+    durationMs: narration?.durationMs,
     steps: narration?.steps ?? [],
     routeFacts,
     routeExpanded: false,

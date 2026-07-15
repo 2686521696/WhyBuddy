@@ -27,6 +27,7 @@ import {
   type ThreadMessageLike,
 } from "@assistant-ui/react";
 import {
+  ArrowDown,
   Check,
   ChevronRight,
   ClipboardCheck,
@@ -110,6 +111,8 @@ import {
 } from "@/lib/api-client";
 import { deriveApplication, slideRule } from "@/lib/skills/slideRule";
 import { SlideRuleStudio } from "./sliderule/SlideRuleStudio";
+import { Response } from "@/components/ai/response";
+import { Shimmer } from "@/components/ai/shimmer";
 
 // Python full-path E2E wiring (105): /agent-loop/sliderule and /sliderule
 // render this component, while turn/evidence/report calls surface Python
@@ -309,7 +312,10 @@ function TurnPhaseTimeline({
           <ChevronRight
             className={`h-3 w-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
           />
+          {/* E16 收口句：带量词（Claude 的"Thought for Xs"语感），时长来自
+              本轮真实计时，没有就不编 */}
           推演过程 · {phases.length} 阶段 · {totalSteps} 步
+          {turn.durationMs ? ` · 用时 ${Math.max(1, Math.round(turn.durationMs / 1000))}s` : ""}
         </button>
       )}
       {showBody && (
@@ -332,13 +338,15 @@ function TurnPhaseTimeline({
                   ) : (
                     <Check className="h-3 w-3 shrink-0 text-emerald-500" />
                   )}
-                  <span
-                    className={
-                      running ? "font-medium text-stone-700" : "text-stone-500"
-                    }
-                  >
-                    {phase.title}
-                  </span>
+                  {/* E16 微动效纪律：只动"正在发生"的——进行中标题走
+                      shimmer 微光，完成态纯静止 */}
+                  {running ? (
+                    <Shimmer as="span" className="text-xs font-medium">
+                      {phase.title}
+                    </Shimmer>
+                  ) : (
+                    <span className="text-stone-500">{phase.title}</span>
+                  )}
                   <span className="text-[10px] text-stone-300">
                     {phase.lines.length} 步
                   </span>
@@ -562,9 +570,18 @@ function ImAssistantMessage() {
               )}
             </div>
           )}
-          <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">
-            {answer}
-          </div>
+          {/* E16 降级视觉词汇：中断/失败半成品带琥珀标记，不和正常回答长一个样 */}
+          {turn.assistantSource === "fallback" && answer.startsWith("推演中断") ? (
+            <div className="rounded-lg border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-[13px] leading-relaxed text-amber-800">
+              {answer}
+            </div>
+          ) : (
+            /* E16：正文走 streamdown——加粗、表格、代码块真渲染，
+               不再裸奔星号（此前 whitespace-pre-wrap 纯文本） */
+            <div className="max-w-none text-[13.5px] leading-[1.75] text-stone-700">
+              <Response parseIncompleteMarkdown={false}>{answer}</Response>
+            </div>
+          )}
           {(turn.main || turn.user) && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
               {turn.main && (
@@ -686,7 +703,16 @@ export function ClaudeChatSurface({
       {/* Chat area — Viewport 自带贴底跟随（增量到达自动滚底、回翻停住） */}
       <AssistantRuntimeProvider runtime={runtime}>
         <ImSurfaceContext.Provider value={ctxValue}>
-          <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
+          <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
+            {/* E16 智能滚动补件：用户上滚回看时出「回到底部」胶囊
+                （Viewport 本身已带贴底跟随；贴底时该按钮自动 disabled → 隐藏） */}
+            <ThreadPrimitive.ScrollToBottom
+              data-testid="sliderule-scroll-to-bottom"
+              className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-[12px] font-medium text-stone-600 shadow-md transition hover:bg-stone-50 disabled:hidden"
+            >
+              <ArrowDown className="h-3 w-3" />
+              回到底部
+            </ThreadPrimitive.ScrollToBottom>
             <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[780px] flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4 [scrollbar-gutter:stable] sm:px-6">
               <ThreadPrimitive.Empty>
                 {/* THE single empty state — classical logo watermark + hero copy + 3 example prompts */}

@@ -42,11 +42,13 @@ def _narr(turn_id: str, n_steps: int = 3, text: str = "正在分析风险"):
 def test_put_get_roundtrip_keeps_narrations(monkeypatch):
     client = _fresh_client(monkeypatch)
     sid = "narr-roundtrip"
+    entry = _narr("turn-7", 5)
+    entry["durationMs"] = 23456  # E16 收口句：真实用时随叙述持久化
     state = {
         "sessionId": sid,
         "goal": {"text": "宠物医院", "status": "clear"},
         "lastTurnId": "turn-7",
-        "turnNarrations": [_narr("turn-7", 5)],
+        "turnNarrations": [entry],
     }
     put = client.put(f"/api/sliderule/sessions/{sid}", json=state)
     assert put.status_code == 200
@@ -55,6 +57,14 @@ def test_put_get_roundtrip_keeps_narrations(monkeypatch):
     assert len(narrs) == 1 and narrs[0]["turnId"] == "turn-7"
     assert len(narrs[0]["steps"]) == 5
     assert narrs[0]["steps"][0]["text"].startswith("正在分析风险")
+    assert narrs[0]["durationMs"] == 23456
+    # 非数值用时被丢弃，不编数据
+    bad = _narr("turn-8", 1)
+    bad["durationMs"] = "not-a-number"
+    state2 = {**state, "lastTurnId": "turn-8", "turnNarrations": [bad]}
+    assert client.put(f"/api/sliderule/sessions/{sid}", json=state2).status_code == 200
+    got2 = client.get(f"/api/sliderule/sessions/{sid}").json()["state"]
+    assert "durationMs" not in (got2.get("turnNarrations") or [{}])[-1]
 
 
 def test_caps_three_turns_and_truncates_text(monkeypatch):
