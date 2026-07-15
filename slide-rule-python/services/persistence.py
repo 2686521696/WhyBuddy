@@ -333,6 +333,11 @@ def save_session_record(state: V5SessionState, store_file: Optional[StorePath] =
                         projection_updates["publishClosure"] = getattr(state, "publishClosure", None)
                     if getattr(state, "skillRuntimeGraph", None) is not None:
                         projection_updates["skillRuntimeGraph"] = getattr(state, "skillRuntimeGraph", None)
+                    # E13 turnNarrations 是展示投影（同 publishClosure 类）：客户端
+                    # 轮末回传时 lastTurnId 与驱动器终持久化相同且核心无增长，
+                    # 不豁免会被同轮守卫连快照一起丢掉
+                    if getattr(state, "turnNarrations", None):
+                        projection_updates["turnNarrations"] = getattr(state, "turnNarrations", None)
                     try:
                         write_state = prior.model_copy(
                             update={

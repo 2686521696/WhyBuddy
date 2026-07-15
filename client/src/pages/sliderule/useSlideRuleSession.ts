@@ -16,6 +16,7 @@ import { resolveImSurfaceMode } from "./im-surface-mode";
 import type { SchedulingDecision } from "@shared/blueprint/v5-reasoning-state";
 import { challengeTargetLabel } from "./challenge-target-label";
 import { buildTurnRoundsFromDrive } from "./turn-round-facts";
+import { stampTurnNarration } from "./turn-narration";
 import {
   createUiCapabilityExecutor,
   mapArtifactsToWhyArtifacts,
@@ -444,7 +445,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     abortControllerRef.current = controller;
     setIsRunning(true);
 
+    // E13：直播步骤同步攒进本地数组——轮次落定时随 PUT 写进
+    // state.turnNarrations（刷新后回放时间线；setUiTurns 是异步状态，
+    // 落定时刻从它读不到完整清单）
+    const collectedSteps: TurnStep[] = [];
     const appendStep = (step: TurnStep) => {
+      collectedSteps.push(step);
       setUiTurns(prev =>
         prev.map(t =>
           t.id === turnId ? { ...t, steps: [...t.steps, step] } : t
@@ -950,9 +956,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         });
         // Try to at least persist the intake state so graph has something
         try {
-          const snap = SlideRuleRuntime.deriveNodeStatus
+          let snap = SlideRuleRuntime.deriveNodeStatus
             ? SlideRuleRuntime.deriveNodeStatus(preparedState)
             : preparedState;
+          // E13：失败轮也留半程时间线（刷新后能看到断在哪一步）
+          snap = stampTurnNarration(snap, {
+            turnId,
+            user: userText,
+            steps: collectedSteps,
+          });
           await persistSession(snap);
           applyPersistedState(snap);
         } catch {}
@@ -977,6 +989,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         final,
         (drive as any)?.publishClosure
       );
+      // E13：轮次落定，把本轮直播叙述打进状态随 PUT 持久化（刷新可回放）
+      final = stampTurnNarration(final, {
+        turnId,
+        user: userText,
+        steps: collectedSteps,
+      });
       try {
         final = await persistSession(final);
         applyPersistedState(final);

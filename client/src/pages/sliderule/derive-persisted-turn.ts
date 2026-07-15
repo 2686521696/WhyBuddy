@@ -1,6 +1,7 @@
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute, type TurnRouteFacts } from "@shared/blueprint/sliderule-turn-route";
 import type { UiTurn } from "./types";
+import { narrationStepsFor } from "./turn-narration";
 
 /**
  * 刷新后内存 `uiTurns` 为空 → 右上角「架构执行记录」(依赖 latestTurn)整块消失,
@@ -95,11 +96,18 @@ export function deriveLatestTurnFromState(
     // (deriveTurnRoute only needs selectedCapabilities today, but future-proof)
   } as unknown as TurnRouteFacts;
 
+  // E13：直播叙述已随会话持久化（turnNarrations）——优先按 turnId 取本轮
+  // 步骤完整回放；没有（旧会话/持久化失败）再回落骨架轮次（steps 空）。
+  const narration =
+    narrationStepsFor(state, turnId) ??
+    narrationStepsFor(state, base) ??
+    narrationStepsFor(state, null);
+
   return {
     id: base,
-    user: "",
+    user: narration?.user || "",
     status: "complete",
-    steps: [],
+    steps: narration?.steps ?? [],
     routeFacts,
     routeExpanded: false,
     routeLitCount: deriveTurnRoute(routeFacts).length,

@@ -299,6 +299,31 @@ async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
         save_session(state)
     return {"state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
+def _cap_turn_narrations(state: V5SessionState) -> None:
+    """E13 展示数据封顶：turnNarrations 只留最近 3 轮，每轮 ≤300 步、
+    文本字段 ≤1200 字符——回放足够，状态文件不膨胀。"""
+    raw = getattr(state, "turnNarrations", None) or []
+    capped: List[Dict[str, Any]] = []
+    for entry in raw[-3:]:
+        if not isinstance(entry, dict) or not entry.get("turnId"):
+            continue
+        steps = []
+        for step in (entry.get("steps") or [])[:300]:
+            if not isinstance(step, dict):
+                continue
+            slim = dict(step)
+            for key in ("text", "message", "label", "title"):
+                if isinstance(slim.get(key), str) and len(slim[key]) > 1200:
+                    slim[key] = slim[key][:1200] + "…"
+            steps.append(slim)
+        capped.append({
+            "turnId": str(entry["turnId"]),
+            "user": str(entry.get("user") or "")[:600],
+            "steps": steps,
+        })
+    state.turnNarrations = capped
+
+
 @router.put("/sessions/{sid}")
 async def save_sess(sid: str, state: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
@@ -374,6 +399,7 @@ async def save_sess(sid: str, state: Dict[str, Any], x_internal_key: Optional[st
     # instead of the pre-save input state. Ensures route _sessions reflects service-forced authoritative
     # (consistent with "service forces reload authoritative into cache" and load_session behavior).
     # Fixes review finding 2.
+    _cap_turn_narrations(state)
     state, _ = sanitize_session_state(state)
     authoritative = save_session(state)
     authoritative, _ = sanitize_session_state(authoritative)
