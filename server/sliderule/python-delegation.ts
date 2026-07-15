@@ -87,6 +87,23 @@ export function resolvePythonSlideRuleRuntimeConfig(
   };
 }
 
+/**
+ * 携带上游 HTTP 状态码的委托错误（发布门修复 G1，2026-07-15）。
+ * 此前所有非 2xx 都压成普通 Error → 路由统一 502，丢失了前端
+ * session store 依赖的「404 => undefined」契约（sliderule-http-store.ts
+ * load() 对 404 返回 undefined，对 502 抛错）。路由层据 status 分流。
+ */
+export class PythonSlideRuleHttpError extends Error {
+  readonly status: number;
+  readonly bodyText: string;
+  constructor(message: string, status: number, bodyText: string) {
+    super(message);
+    this.name = "PythonSlideRuleHttpError";
+    this.status = status;
+    this.bodyText = bodyText;
+  }
+}
+
 async function fetchJsonWithTimeout(
   url: string,
   init: RequestInit,
@@ -102,7 +119,11 @@ async function fetchJsonWithTimeout(
     });
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
-      throw new Error(`${errorPrefix} failed: http ${response.status}${detail ? ` ${detail.slice(0, 200)}` : ""}`);
+      throw new PythonSlideRuleHttpError(
+        `${errorPrefix} failed: http ${response.status}${detail ? ` ${detail.slice(0, 200)}` : ""}`,
+        response.status,
+        detail.slice(0, 500),
+      );
     }
     try {
       return await response.json();

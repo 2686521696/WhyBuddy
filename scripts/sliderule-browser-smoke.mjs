@@ -4,6 +4,8 @@ import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const PORT = Number.parseInt(process.env.SLIDERULE_SMOKE_PORT ?? process.env.WHYBUDDY_SMOKE_PORT ?? "3000", 10);
+// 导航超时可调：Vite dev 模块图冷加载在慢环境实测可达 15s+，写死 10s 会让发布门假红
+const NAV_TIMEOUT = Number.parseInt(process.env.SLIDERULE_SMOKE_NAV_TIMEOUT ?? "45000", 10);
 const baseUrl = `http://localhost:${PORT}`;
 const dataRoot = resolve("tmp", "sliderule-browser-smoke");
 
@@ -218,12 +220,14 @@ async function runSmoke() {
 
   // Navigate to product paths: /agent-loop/sliderule is canonical; /sliderule redirects to it.
   // This exercises frontend integration + session load (http store) + turn/evidence/report via Python delegated paths.
-  await page.goto(`${baseUrl}/agent-loop/sliderule`, { waitUntil: "domcontentloaded", timeout: 20000 });
-  await page.waitForSelector('[data-testid="sliderule-composer-input"], text=重置会话, text=SlideRule', { timeout: 8000 });
+  await page.goto(`${baseUrl}/agent-loop/sliderule`, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT });
+  // 注意：css 与 text= 引擎不能混在同一个逗号并集里（playwright ≥1.5x 直接抛
+  // 解析错误，发布门全红）——用 css 引擎的 :text() 伪类表达同一语义
+  await page.waitForSelector('[data-testid="sliderule-composer-input"], :text("重置会话"), :text("SlideRule")', { timeout: 8000 });
   log("UI shell loaded (agent-loop/sliderule product immersion)");
 
   // Also verify /sliderule starts the same happy path surface (redirect check)
-  await page.goto(`${baseUrl}/sliderule`, { waitUntil: "domcontentloaded", timeout: 10000 });
+  await page.goto(`${baseUrl}/sliderule`, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT });
   await page.waitForTimeout(300);
   const currentUrl = page.url();
   if (!/agent-loop\/sliderule|\/sliderule/.test(currentUrl)) {
@@ -231,14 +235,14 @@ async function runSmoke() {
   }
   log(`/sliderule redirect landed: ${currentUrl}`);
   // Return to main target for flows
-  await page.goto(`${baseUrl}/agent-loop/sliderule`, { waitUntil: "domcontentloaded", timeout: 10000 });
-  await page.waitForSelector('[data-testid="sliderule-composer-input"], text=重置会话', { timeout: 8000 });
+  await page.goto(`${baseUrl}/agent-loop/sliderule`, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT });
+  await page.waitForSelector('[data-testid="sliderule-composer-input"], :text("重置会话")', { timeout: 8000 });
 
   // --- 1. combo 输入 → report 出现 (exercises session load + report.write/evidence -> Python) ---
   const combo = "权限系统 RBAC + 数据范围过滤，重点分析跨部门风险与反证";
   const input = page.locator('[data-testid="sliderule-composer-input"]');
   await input.fill(combo);
-  await page.getByRole("button", { name: "发送" }).click();
+  await page.getByRole("button", { name: "发送", exact: true }).click();
 
   // Wait for report-like content (Deliverables / 报告) driven by Python path.
   await page.waitForSelector('text=/报告|可行性报告|结论/', { timeout: 15000 }).catch(() => {});
@@ -251,7 +255,7 @@ async function runSmoke() {
   const reportHint = page.getByRole("button", { name: "生成可行性报告" });
   if (await reportHint.count() > 0) {
     await reportHint.click();
-    await page.getByRole("button", { name: "发送" }).click();
+    await page.getByRole("button", { name: "发送", exact: true }).click();
     await page.waitForSelector('text=/报告|可行性报告/', { timeout: 12000 }).catch(() => {});
     await page.waitForTimeout(300);
   }
@@ -286,13 +290,21 @@ async function runSmoke() {
   log(`4. interact → re-entry/drive-turn effect (clicked=${nodeClicked})`);
 
   // --- 5. reset → state clean (hits session reset) ---
+  // 真 LLM 推演可跑数分钟，期间重置钮 disabled（title=推演进行中）——先等
+  // 推演收尾（按钮恢复可用）再点，等待上限可用 SLIDERULE_SMOKE_TURN_TIMEOUT 调
+  const TURN_TIMEOUT = Number.parseInt(process.env.SLIDERULE_SMOKE_TURN_TIMEOUT ?? "240000", 10);
   const resetBtn = page.locator('[data-testid="sliderule-reset-session"], button:has-text("重置会话")').first();
   if (await resetBtn.count() > 0) {
+    await page
+      .locator('[data-testid="sliderule-reset-session"]:not([disabled])')
+      .first()
+      .waitFor({ timeout: TURN_TIMEOUT })
+      .catch(() => log("WARN: reset button still disabled after turn timeout; clicking anyway may fail"));
     await resetBtn.click();
   } else {
     await page.getByRole("button", { name: "重置会话" }).click().catch(() => {});
   }
-  await page.waitForSelector("text=欢迎来到 SlideRule, text=描述你想推演", { timeout: 6000 }).catch(() => {});
+  await page.waitForSelector(':text("欢迎来到 SlideRule"), :text("描述你想推演")', { timeout: 6000 }).catch(() => {});
   const turns = await page.locator('text=第 ').count();
   await page.screenshot({ path: join(dataRoot, "05-after-reset.png"), fullPage: false });
   log(`5. reset → clean state (welcome/empty, ~${turns} turns)`);

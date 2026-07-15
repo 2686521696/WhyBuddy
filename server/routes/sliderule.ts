@@ -34,6 +34,7 @@ import {
   delegateToPythonSlideRule,
   checkPythonSlideRuleHealth,
   resolvePythonSlideRuleRuntimeConfig,
+  PythonSlideRuleHttpError,
 } from "../sliderule/python-delegation.js";
 import * as fs from "fs";
 import * as path from "path";
@@ -217,6 +218,11 @@ router.get("/sessions/:sessionId", async (req: Request, res: Response) => {
     );
     return res.json(data);
   } catch (e) {
+    // 上游 404（会话不存在）原样透传：前端 store 契约是「404 => undefined」
+    // （sliderule-http-store.ts load()）；压成 502 会让缺失会话读取变成抛错
+    if (e instanceof PythonSlideRuleHttpError && e.status === 404) {
+      return res.status(404).json({ error: "not_found", sessionId: sid, backend: "python" });
+    }
     console.warn("[sliderule] python get session delegation failed", e);
     return res.status(502).json({ error: "python_unavailable", sessionId: sid, backend: "python" });
   }
@@ -258,6 +264,10 @@ router.delete("/sessions/:sessionId", async (req: Request, res: Response) => {
     );
     return res.status(204).end();
   } catch (e) {
+    // 删除不存在的会话（上游 404）幂等成功：与「删过再删」同语义
+    if (e instanceof PythonSlideRuleHttpError && e.status === 404) {
+      return res.status(204).end();
+    }
     console.warn("[sliderule] python delete session delegation failed", e);
     return res.status(502).end();
   }

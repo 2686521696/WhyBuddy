@@ -1,0 +1,72 @@
+# 最小 CI（发布门 G1，2026-07-15）——仓库此前零 CI，发布门腐化无人报警
+# （实例：server 段测试与薄代理架构脱节数周、venv 路径 Windows 专属，
+# 全靠一次 Linux 全新环境体检才暴露）。
+#
+# 分层原则：CI 跑「确定性层」（类型检查 / 客户端全量 / server 薄代理契约 /
+# Python 全量）——零外部依赖、无 LLM key 也能跑；真 LLM 端到端 smoke
+# （verify:sliderule-v5 的 smoke:sliderule 段）需要 LLM key 与长时推演，
+# 留在本地发布门执行（北极星：过了 verify 才能合入）。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client:
+    name: 客户端（tsc + vitest 全量）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # 版本取 package.json packageManager 字段
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+      - run: pnpm exec vitest run client/src --reporter=dot
+
+  server-contract:
+    name: Server 薄代理契约（发布门 server 段）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # 与 verify:sliderule-v5 的 server 段同清单（假 Python 夹具，hermetic）
+      - run: >
+          pnpm exec vitest run --config vitest.config.server.ts
+          server/routes/__tests__/sliderule.execute-capability.test.ts
+          server/routes/__tests__/sliderule.sessions-store.test.ts
+          server/routes/__tests__/sliderule.deliberation-exec.test.ts
+          server/routes/__tests__/sliderule.rename-compat.test.ts
+          --reporter=dot
+
+  python:
+    name: Python 全量（slide-rule-python）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: slide-rule-python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: slide-rule-python/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests/ -q

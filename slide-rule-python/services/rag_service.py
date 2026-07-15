@@ -24,16 +24,30 @@ KNOWLEDGE_BASE = [
 
 def retrieve_evidence(query: str, top_k: int = 6) -> List[Dict[str, Any]]:
     """RAG retrieval：向量优先（配置了 embedding 凭据时），关键词基线兜底。
-    每条结果带 retrieval 字段如实标注检索方式（vector / keyword）。
+    每条结果带 retrieval 字段如实标注检索方式（web:* / vector / keyword）。
+    P2a 升级：真外网搜索优先（web.search 工具，带真实 URL 溯源），命中
+    不足用本地结果补足——永不冒充外部证据，工具层失败绝不拦证据主路径。
     Always returns sources so tools/evidence bring '外部证据'.
     """
+    web_results = None
+    try:
+        from services.mcp_tools import web_search
+
+        web_results = web_search(query, top_k)
+    except Exception:
+        web_results = None
+
     from services.vector_rag import vector_search_or_none
 
-    vector_results = vector_search_or_none(query, top_k, seed_corpus=KNOWLEDGE_BASE)
-    if vector_results is not None:
-        return vector_results
+    local_results = vector_search_or_none(query, top_k, seed_corpus=KNOWLEDGE_BASE)
+    if local_results is None:
+        local_results = _retrieve_evidence_keyword(query, top_k)
 
-    return _retrieve_evidence_keyword(query, top_k)
+    if not web_results:
+        return local_results
+    if len(web_results) >= top_k:
+        return web_results[:top_k]
+    return (web_results + local_results)[:top_k]
 
 
 def _retrieve_evidence_keyword(query: str, top_k: int = 6) -> List[Dict[str, Any]]:

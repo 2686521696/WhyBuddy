@@ -278,8 +278,44 @@ def _build_user_content(goal: str) -> str:
     return "\n\n".join(parts)
 
 
+def _structured_llm_json_fn(messages: list) -> Optional[Dict[str, Any]]:
+    """P3 结构化通道（instructor 错误回喂）：校验失败把「上次输出+具体报错」
+    拼回消息让模型自我修正——替代盲重采样。失败返回 None（调用方回落/留痕）。"""
+    global _last_call_error
+    try:
+        from sliderule_llm.structured import (
+            StructuredLlmError,
+            structured_llm_enabled,
+            structured_llm_json,
+        )
+    except Exception:
+        return None
+    if not structured_llm_enabled():
+        return None
+    try:
+        parsed = structured_llm_json(
+            messages,
+            required_keys=_REQUIRED_SECTIONS,
+            temperature=0.2,
+            max_tokens=8000,
+            max_retries=2,
+        )
+        return parsed if isinstance(parsed, dict) else None
+    except StructuredLlmError as exc:
+        print(f"[v5_llm_generate] structured channel failed: {str(exc)[:200]}")
+        _last_call_error = f"structured: {str(exc)[:160]}"
+        return None
+
+
 def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
-    """Real LLM path — provider chain + JSON shape validation. None on any failure."""
+    """Real LLM path — provider chain + JSON shape validation. None on any failure.
+
+    P3（OSS_GAP_ANALYSIS）双通道互为救场：
+    - 无流式 sink（后台驱动/评测）：结构化通道优先（错误回喂重试，治
+      推理模型空正文/形状失败——F2 评测两模式闭环全 0 的元凶），失败回落旧通道；
+    - 有流式 sink（交互 UI 要 llm_delta 直播）：旧流式通道优先保直播，
+      失败用结构化通道救场（少看一段直播，换回一个能用的模型）。
+    """
     global _last_call_error
     _last_call_error = ""
     try:
@@ -291,6 +327,11 @@ def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
         {"role": "system", "content": _SCHEMA_INSTRUCTION},
         {"role": "user", "content": _build_user_content(goal)},
     ]
+    streaming = _delta_sink is not None
+    if not streaming:
+        parsed = _structured_llm_json_fn(messages)
+        if parsed is not None:
+            return parsed
     try:
         parsed, _result = call_llm_json_with_shape(
             messages,
@@ -308,8 +349,14 @@ def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
         )
         return parsed if isinstance(parsed, dict) else None
     except LlmError as exc:
-        # No key / rate limit / parse failure / shape failure — fail-closed，但留痕便于诊断。
+        # No key / rate limit / parse failure / shape failure — 流式主路失败先试
+        # 结构化通道救场，救不回再 fail-closed 留痕。
         # 展示层人话化：剥 HTML 错误页、5xx 标注瞬时故障（不改 fail-closed 语义）。
+        if streaming:
+            rescued = _structured_llm_json_fn(messages)
+            if rescued is not None:
+                print("[v5_llm_generate] legacy stream failed; structured channel rescued")
+                return rescued
         from services.llm_error_text import humanize_llm_error
 
         _last_call_error = f"LlmError: {humanize_llm_error(str(exc))[:180]}"

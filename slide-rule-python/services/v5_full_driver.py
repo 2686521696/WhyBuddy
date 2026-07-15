@@ -490,6 +490,28 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
             # PYTHON_AUTHORITY: use explicit pick_next_capabilities for V5.2 selection semantics + fallbacks
             # (pick is sole authority; empty means converge; no fallback to plan.selected)
             picks = pick_next_capabilities(state, ui)
+            # F2 agentic pick 实验（SLIDERULE_AGENTIC_PICK=on，默认 off）：
+            # LLM 看全局提案替换非空规则选材——收敛权仍归规则（规则版为空
+            # 照旧收敛，LLM 无权续命），词表封闭+重复护栏在提案侧验收，
+            # 决策进台账（source="llm"）可审计可挑战。失败静默回落规则版。
+            if picks:
+                from .v5_agentic_pick import agentic_pick_next_capabilities
+                _proposal = agentic_pick_next_capabilities(state, ui, loop_index=loop, max_loops=max_loops)
+                if _proposal:
+                    _now = datetime.now(timezone.utc).isoformat()
+                    _dl = getattr(state, "decisionLedger", []) or []
+                    _dl.append(SchedulingDecision(
+                        id=f"dec-{loop}-agentic-pick",
+                        turnId=f"loop-{loop}",
+                        saw=[p["capabilityId"] for p in picks],
+                        chose=[p["capabilityId"] for p in _proposal["picks"]],
+                        skipped=[],
+                        rationale=f"agentic pick: {_proposal['rationale']}",
+                        createdAt=_now,
+                        source="llm",
+                    ))
+                    state.decisionLedger = _dl
+                    picks = _proposal["picks"]
             state = reconcile_coverage(state)
             selected = picks
 
@@ -844,6 +866,28 @@ async def drive_full_v5_session_stream(
             ui = user_instruction or ""
             await asyncio.to_thread(orchestrate_plan, state, f"loop-{loop}", ui)
             picks = await asyncio.to_thread(pick_next_capabilities, state, ui)
+            # F2 agentic pick 实验：与同步驱动同一语义（LLM 提案替换非空
+            # 规则选材，收敛权归规则，台账 source="llm"，失败回落）
+            if picks:
+                from .v5_agentic_pick import agentic_pick_next_capabilities
+                _proposal = await asyncio.to_thread(
+                    agentic_pick_next_capabilities, state, ui, loop_index=loop, max_loops=max_loops
+                )
+                if _proposal:
+                    _now = datetime.now(timezone.utc).isoformat()
+                    _dl = getattr(state, "decisionLedger", []) or []
+                    _dl.append(SchedulingDecision(
+                        id=f"dec-{loop}-agentic-pick",
+                        turnId=f"loop-{loop}",
+                        saw=[p["capabilityId"] for p in picks],
+                        chose=[p["capabilityId"] for p in _proposal["picks"]],
+                        skipped=[],
+                        rationale=f"agentic pick: {_proposal['rationale']}",
+                        createdAt=_now,
+                        source="llm",
+                    ))
+                    state.decisionLedger = _dl
+                    picks = _proposal["picks"]
             state = await asyncio.to_thread(reconcile_coverage, state)
             selected = picks
 
