@@ -349,6 +349,10 @@ class V5SessionState(BaseModel):
     # No Node fallback; explicit minimal models for schema validation and roundtrips.
     sessionReplayLog: List[SlideRuleReplayEvent] = Field(default_factory=list)
     reasoningEvents: List[ReasoningEvent] = Field(default_factory=list)
+    # E13 直播时间线持久化：最近几轮左栏叙述步骤（纯展示数据，无信任语义，
+    # 客户端轮次落定时随 PUT 回传；刷新后前端据此完整回放推演时间线）。
+    # 封顶（3 轮 × 步数/字数）在 routes/sliderule_full.py PUT 落库前强制。
+    turnNarrations: List[Dict[str, Any]] = Field(default_factory=list)
     # additional durable V5.2 session fields (currentFocus, userIntervention, booleans, dirty) for full schema parity (sliderule-python-v52-state-ts-parity-golden-105)
     currentFocus: Optional[Dict[str, Any]] = None
     userIntervention: Optional[UserIntervention] = None

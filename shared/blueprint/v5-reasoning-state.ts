@@ -155,6 +155,14 @@ export interface V5SessionState {
   projectionDirtyNodeIds?: string[];
   /** S21 edge 117: append-only replay log (JOB→REPLAY→STORE, per sessionId). */
   sessionReplayLog?: SlideRuleReplayEvent[];
+  /** E13 直播时间线持久化：最近几轮的左栏叙述步骤（纯展示数据，无信任
+   *  语义；客户端在轮次落定时随 PUT 回传，刷新后完整回放推演过程）。
+   *  封顶策略在 Python 侧强制（最近 3 轮 × 每轮限步数/字数）。 */
+  turnNarrations?: Array<{
+    turnId: string;
+    user?: string;
+    steps: unknown[];
+  }>;
   lastTurnId?: string;
   /** P0: why the session is parked awaiting human input (distinct from trust-layer confirm gate). */
   awaitReason?: AwaitReason;
