@@ -77,7 +77,7 @@ import SlideRulePage from "@/pages/SlideRule";
 import { SettingsPage } from "@/pages/sliderule/SettingsDialog";
 import { SidebarSessions } from "./SidebarSessions";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
-import { MainlineWorkbench } from "./MainlineWorkbench";
+import { AppsWorkbench } from "./AppsWorkbench";
 import type {
   AgentLoopSettingsViewModel,
   DetailPayload,
@@ -1765,7 +1765,7 @@ export function DashboardApp({
           )}
           <Content className={contentClassName}>
             {view === "workbench" ? (
-              <MainlineWorkbench />
+              <AppsWorkbench />
             ) : view === "workbench-legacy" ? (
               workbenchContent
             ) : view === "sliderule" ? (

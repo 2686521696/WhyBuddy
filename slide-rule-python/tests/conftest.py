@@ -8,8 +8,17 @@ SLIDERULE_LIVE_WEB_TESTS=1 显式开。
 """
 
 import os
+import tempfile
+from pathlib import Path
 
 os.environ.setdefault("SLIDERULE_WEB_SEARCH", "off")
+# 会话存储全套件隔离（E14 揭出的老毛病）：不少路由/驱动测试不各自
+# monkeypatch 存储路径，跑一遍 pytest 就往开发库灌几十个 fixture 会话，
+# 工作台「我的应用」全是垃圾卡。默认落临时目录；显式设置的测试不受影响。
+os.environ.setdefault(
+    "SLIDERULE_SESSIONS_FILE",
+    str(Path(tempfile.mkdtemp(prefix="sliderule-tests-")) / "sessions.json"),
+)
 # P2b 执行类工具同理全局关闭：测试不开真沙盒（活体验证用
 # SLIDERULE_LIVE_SANDBOX_TESTS=1 显式开，见 test_mcp_tools.py）
 os.environ.setdefault("SLIDERULE_CODE_RUN", "off")
