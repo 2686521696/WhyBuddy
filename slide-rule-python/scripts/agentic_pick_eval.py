@@ -52,14 +52,14 @@ TOPICS = [
 MODES = ("rules", "agentic")
 
 
-def _metric_row(state, duration_s: float) -> dict:
+def _metric_row(state, duration_s: float, closure: dict | None = None) -> dict:
     from services.v5_publish_closure_response import derive_publish_closure_response
 
-    closure = derive_publish_closure_response(state) or {}
-    per_skill = closure.get("perSkillEvidence") or {}
-    evidence_n = sum(
-        1 for v in per_skill.values() if isinstance(v, dict) and v.get("status") == "ok"
-    ) if isinstance(per_skill, dict) else 0
+    if closure is None:
+        closure = derive_publish_closure_response(state) or {}
+    # 闭环摘要口径：evidencePresentCount（此前误数 status=="ok"——摘要里
+    # 根本没有该字段，量尺 bug 把闭环列钉死在 0，已修）
+    evidence_n = int(closure.get("evidencePresentCount") or 0)
     stales = set(getattr(state, "staleArtifactIds", []) or [])
     healthy = [
         a for a in (getattr(state, "artifacts", []) or [])
@@ -97,10 +97,85 @@ def _metric_row(state, duration_s: float) -> dict:
     }
 
 
-def run_one(topic: str, mode: str, max_loops: int) -> dict:
+def _open_questions(state) -> list[str]:
+    """待答问题清单：openQuestions + open_question 缺口标题（去重限量）。"""
+    qs: list[str] = []
+    for q in (getattr(state, "openQuestions", []) or []):
+        qs.append(str(q.get("text") if isinstance(q, dict) else q))
+    for g in (getattr(state, "coverageGaps", []) or []):
+        status = g.get("status") if isinstance(g, dict) else getattr(g, "status", None)
+        kind = g.get("kind") if isinstance(g, dict) else getattr(g, "kind", None)
+        if status == "open" and kind == "open_question":
+            title = g.get("title") if isinstance(g, dict) else getattr(g, "title", "")
+            if title:
+                qs.append(str(title))
+    seen: set[str] = set()
+    out: list[str] = []
+    for q in qs:
+        q = q.strip()
+        if q and q not in seen:
+            seen.add(q)
+            out.append(q)
+    return out[:6]
+
+
+def _simulated_owner_answer(topic: str, questions: list[str], closing: bool) -> str:
+    """G2 模拟业主：LLM 扮演需求方逐条作答；失败回退 canned 答案。
+    两版答案都刻意含 readiness 关键词（目标/范围/明确/补充——
+    interactive_gates.user_clears_readiness 的解锁词表）；收口轮附带
+    交付意图（激活规则版交付链，对两模式公平）。"""
+    fallback = (
+        f"补充明确：目标用户是「{topic}」的典型中小商家和个人用户，"
+        "范围先做单店/单人版核心流程，预算有限，数据量不大，不接第三方支付。"
+        + ("信息足够了，请综合结论并收口，出应用和交付报告。" if closing else "请继续深入推演。")
+    )
+    if not questions:
+        return fallback
+    try:
+        from sliderule_llm.client import call_llm_json
+
+        parsed, _res = call_llm_json(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "你扮演提出这个业务需求的业主。逐条、具体、果断地回答"
+                        "推演引擎的问题（每条一两句，可自行虚构合理细节），"
+                        "回答里自然带上目标用户、业务范围等明确信息。"
+                        '只输出 JSON：{"answer":"合并成一段话的回答"}'
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"业务：{topic}\n问题：\n"
+                    + "\n".join(f"- {q}" for q in questions)
+                    + ("\n（回答末尾请表达：信息够了，可以出应用和交付报告了）" if closing else ""),
+                },
+            ],
+            temperature=0.4,
+            max_tokens=2000,
+            max_attempts=1,
+            reasoning_effort="low",
+        )
+        answer = str(parsed.get("answer") or "").strip()
+        if len(answer) >= 14:
+            return answer
+    except Exception:
+        pass
+    return fallback
+
+
+def run_one(topic: str, mode: str, max_loops: int, max_turns: int = 3) -> dict:
+    """G2 多轮交互模拟：驱动 → 模拟业主答缺口（走产品 intake 同款
+    解缺口/清停泊入口）→ 再驱动，直到闭环或轮次用尽。"""
     os.environ["SLIDERULE_AGENTIC_PICK"] = "on" if mode == "agentic" else "off"
     from models.v5_state import V5SessionState
+    from services.slide_rule_interactive_gates import (
+        apply_resolve_and_clear_readiness,
+        apply_route_selection_resolution,
+    )
     from services.v5_full_driver import drive_full_v5_session
+    from services.v5_publish_closure_response import derive_publish_closure_response
 
     sid = f"eval-{mode}-{abs(hash(topic)) % 99999}"
     state = V5SessionState(
@@ -109,11 +184,55 @@ def run_one(topic: str, mode: str, max_loops: int) -> dict:
         runtimePhase="idle",
     )
     t0 = time.time()
-    final = drive_full_v5_session(state, max_loops=max_loops, user_instruction=topic)
-    return _metric_row(final, time.time() - t0)
+    text = topic
+    turns = 0
+    for turn in range(max_turns):
+        turns += 1
+        state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=text)
+        closure = derive_publish_closure_response(state) or {}
+        if int(closure.get("evidencePresentCount") or 0) >= 6 and not closure.get("blocked"):
+            break  # 模式自主收口成功，提前收工
+        if turn == max_turns - 1:
+            break
+        closing = turn + 1 >= max_turns - 1  # 倒数第二轮的答案附带交付意图
+        text = _simulated_owner_answer(topic, _open_questions(state), closing)
+        # 产品 intake 同款入口：答案先解缺口/清停泊，再进下一轮驱动
+        state = apply_resolve_and_clear_readiness(state, text)
+        state = apply_route_selection_resolution(state, text)
+    cap_ids = [
+        (r.get("capabilityId") if isinstance(r, dict) else getattr(r, "capabilityId", ""))
+        for r in (getattr(state, "capabilityRuns", []) or [])
+    ]
+    self_closed = any(
+        "appbundle" in c.lower() or "runtimeclosure" in c.lower() for c in cap_ids
+    )
+    closure_summary = None
+    if not self_closed:
+        # 终局装配（两模式统一，对齐产品：装配由流程触发而非 pick）——
+        # 闭环指标语义变为「本场推演攒下的证据够不够装配过门」
+        try:
+            from services.v5_capability_executor import execute_v5_capability
+            from services.v5_publish_closure_response import _to_publish_closure_summary
+
+            res = execute_v5_capability(
+                "appbundle.runtimeclosure", state, [], "综合", "eval-assembly"
+            )
+            res_d = res if isinstance(res, dict) else (
+                res.model_dump() if hasattr(res, "model_dump") else {}
+            )
+            closure_summary = (
+                _to_publish_closure_summary(res_d.get("runtimeClosure") or {})
+                or _to_publish_closure_summary(res_d)
+            )
+        except Exception as exc:
+            print(f"[eval] terminal assembly failed: {str(exc)[:160]}", file=sys.stderr)
+    row = _metric_row(state, time.time() - t0, closure=closure_summary)
+    row["turns"] = turns
+    row["selfClosed"] = self_closed
+    return row
 
 
-def _spawn_case(topic: str, mode: str, max_loops: int) -> dict:
+def _spawn_case(topic: str, mode: str, max_loops: int, max_turns: int) -> dict:
     """独立子进程跑单用例：模式开关/会话存储进程级隔离，互不串味。"""
     env = {
         **os.environ,
@@ -126,7 +245,7 @@ def _spawn_case(topic: str, mode: str, max_loops: int) -> dict:
     try:
         proc = subprocess.run(
             [sys.executable, __file__, "--one", f"{mode}::{topic}",
-             "--max-loops", str(max_loops)],
+             "--max-loops", str(max_loops), "--max-turns", str(max_turns)],
             capture_output=True, text=True, env=env, cwd=str(ROOT),
             timeout=1200,
         )
@@ -147,6 +266,7 @@ def main() -> None:
     parser.add_argument("--topics", type=int, default=len(TOPICS))
     parser.add_argument("--max-loops", type=int, default=6)
     parser.add_argument("--parallel", type=int, default=5)
+    parser.add_argument("--max-turns", type=int, default=3)
     parser.add_argument("--one", type=str, default=None, help="内部用：mode::topic 单用例")
     args = parser.parse_args()
 
@@ -154,7 +274,7 @@ def main() -> None:
     if args.one:
         mode, topic = args.one.split("::", 1)
         try:
-            row = run_one(topic, mode, args.max_loops)
+            row = run_one(topic, mode, args.max_loops, max_turns=args.max_turns)
         except Exception as exc:
             row = {"error": str(exc)[:200]}
         print(json.dumps(row, ensure_ascii=False), flush=True)
@@ -166,7 +286,7 @@ def main() -> None:
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
         futures = {
-            pool.submit(_spawn_case, topic, mode, args.max_loops): (topic, mode)
+            pool.submit(_spawn_case, topic, mode, args.max_loops, args.max_turns): (topic, mode)
             for topic, mode in cases
         }
         done = 0
@@ -186,11 +306,11 @@ def main() -> None:
     # 汇总表（markdown）
     keys = [
         "closureEvidence", "coverageGatePassed", "healthyArtifacts", "artifactKinds",
-        "capabilityRuns", "distinctCapabilities", "durationS",
+        "capabilityRuns", "distinctCapabilities", "durationS", "turns",
     ]
     lines = ["# F2 agentic pick 对比评测", "", f"话题 {len(topics)} 个 × 双模式，max_loops={args.max_loops}", ""]
-    lines.append("| 话题 | 模式 | 闭环证据 | 覆盖门 | 产物 | 种类 | 执行数 | 去重能力 | 耗时s |")
-    lines.append("|---|---|---|---|---|---|---|---|---|")
+    lines.append("| 话题 | 模式 | 闭环证据 | 覆盖门 | 产物 | 种类 | 执行数 | 去重能力 | 耗时s | 轮数 |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|")
     agg = {m: {k: 0.0 for k in keys} | {"n": 0} for m in MODES}
     for topic, by_mode in results.items():
         for mode in MODES:
@@ -202,15 +322,15 @@ def main() -> None:
                 f"| {topic[:18]} | {mode} | {row['closureEvidence']}/6 | "
                 f"{'过' if row['coverageGatePassed'] else '未过'} | {row['healthyArtifacts']} | "
                 f"{row['artifactKinds']} | {row['capabilityRuns']} | "
-                f"{row['distinctCapabilities']} | {row['durationS']} |"
+                f"{row['distinctCapabilities']} | {row['durationS']} | {row.get('turns', 1)} |"
             )
             for k in keys:
                 agg[mode][k] += float(row[k])
             agg[mode]["n"] += 1
     lines.append("")
     lines.append("## 均值")
-    lines.append("| 模式 | 闭环证据 | 覆盖门通过率 | 产物 | 种类 | 执行数 | 去重能力 | 耗时s |")
-    lines.append("|---|---|---|---|---|---|---|---|")
+    lines.append("| 模式 | 闭环证据 | 覆盖门通过率 | 产物 | 种类 | 执行数 | 去重能力 | 耗时s | 轮数 |")
+    lines.append("|---|---|---|---|---|---|---|---|---|")
     for mode in MODES:
         n = max(agg[mode]["n"], 1)
         lines.append(
@@ -218,7 +338,7 @@ def main() -> None:
             f"{agg[mode]['coverageGatePassed'] / n * 100:.0f}% | "
             f"{agg[mode]['healthyArtifacts'] / n:.1f} | {agg[mode]['artifactKinds'] / n:.1f} | "
             f"{agg[mode]['capabilityRuns'] / n:.1f} | {agg[mode]['distinctCapabilities'] / n:.1f} | "
-            f"{agg[mode]['durationS'] / n:.0f} |"
+            f"{agg[mode]['durationS'] / n:.0f} | {agg[mode]['turns'] / n:.1f} |"
         )
     out_md = ROOT / "data" / "agentic-pick-eval.md"
     out_md.write_text("\n".join(lines), encoding="utf-8")
