@@ -6,7 +6,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const pythonExe = path.resolve(process.cwd(), "slide-rule-python/.venv/Scripts/python.exe");
+// venv 解释器按平台取（a2a-client 等处同款三元）：写死 Scripts/python.exe
+// 会让本套件在 Linux/macOS 上整体假红（发布门 verify:sliderule-v5 含此文件）
+const pythonExe = path.resolve(
+  process.cwd(),
+  process.platform === "win32"
+    ? "slide-rule-python/.venv/Scripts/python.exe"
+    : "slide-rule-python/.venv/bin/python",
+);
 const pythonCwd = path.resolve(process.cwd(), "slide-rule-python");
 
 function runPythonPersistence(script: string, storeFile: string) {
