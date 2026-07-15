@@ -441,6 +441,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     }
 
     const turnId = `turn-${Date.now()}`;
+    const turnStartMs = Date.now(); // E16 收口句：本轮真实计时
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setIsRunning(true);
@@ -964,6 +965,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             turnId,
             user: userText,
             steps: collectedSteps,
+            durationMs: Date.now() - turnStartMs,
           });
           await persistSession(snap);
           applyPersistedState(snap);
@@ -974,6 +976,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               ? {
                   ...t,
                   status: "complete",
+                  durationMs: Date.now() - turnStartMs,
                   assistant: `推演中断：${errMsg.slice(0, 200)}（可重试或换指令）`,
                   assistantSource: "fallback",
                 }
@@ -994,6 +997,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         turnId,
         user: userText,
         steps: collectedSteps,
+        durationMs: Date.now() - turnStartMs,
       });
       try {
         final = await persistSession(final);
@@ -1287,6 +1291,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             return {
               ...t,
               status: "complete",
+              durationMs: Date.now() - turnStartMs,
               routeFacts: completeRouteFacts,
               routeExpanded: imMode !== "minimal",
               routeLitCount: deriveTurnRoute(completeRouteFacts).length,

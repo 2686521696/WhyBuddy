@@ -15,6 +15,8 @@
 import React from "react";
 import { ArrowDown, ChevronDown } from "lucide-react";
 import { repairPartialJson } from "./system-screens/five-system-model";
+import { Response } from "@/components/ai/response";
+import { useSmoothText } from "./use-smooth-text";
 
 /** 轻量 JSON 高亮：按 token 切成着色 span（不引编辑器，流式高频更新便宜）。 */
 const JSON_TOKEN_RE =
@@ -79,19 +81,22 @@ export function LlmLiveOutput({
   const followRef = React.useRef(true);
   const [following, setFollowing] = React.useState(true);
 
+  // E16 平滑缓冲：网关突发大块 → 展示层匀速放出（归档态直通）
+  const smooth = useSmoothText(text, { enabled: !done });
+
   // 流式 JSON 美化：每 +200 字符重解一次（容错解析未收尾 JSON）。
-  // 只有"美化/高亮结果"走节流 memo；原文本身必须每帧跟随 text——
+  // 只有"美化/高亮结果"走节流 memo；原文本身必须每帧跟随平滑流——
   // 否则非 JSON 流会冻结在第一帧（曾踩过：正文停住、字符数还在涨）。
-  const formatKey = formatJson ? Math.floor(text.length / 200) : -1;
+  const formatKey = formatJson ? Math.floor(smooth.length / 200) : -1;
   const prettyNodes = React.useMemo(() => {
-    if (!formatJson || !text) return null;
-    const parsed = repairPartialJson(text);
+    if (!formatJson || !smooth) return null;
+    const parsed = repairPartialJson(smooth);
     if (parsed === null) return null;
     return highlightJson(JSON.stringify(parsed, null, 2));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 按长度桶节流重解
   }, [formatJson, formatKey]);
   const body: React.ReactNode =
-    formatJson && prettyNodes !== null ? prettyNodes : text;
+    formatJson && prettyNodes !== null ? prettyNodes : smooth;
 
   // 新内容到达：仅当用户在底部时窗口内贴底（Claude/终端行为）
   React.useEffect(() => {
@@ -136,15 +141,17 @@ export function LlmLiveOutput({
         />
       </button>
       {/* 纯文字思考流：自由流动，不装窗不折叠（Claude 的正文行为；
-          滚动与贴底跟随由外层聊天列统一负责） */}
+          滚动与贴底跟随由外层聊天列统一负责）。E16：streamdown 渲染
+          markdown（未闭合语法容错 + 按块记忆化，选区不被打断） */}
       {!collapsed && !formatJson && (
-        <pre
+        <div
           data-testid="sliderule-llm-draft-body"
-          className="mt-1.5 whitespace-pre-wrap break-all pl-3.5 font-sans text-[12.5px] leading-6 text-stone-500"
+          aria-live="polite"
+          className="mt-1.5 pl-3.5 text-[12.5px] leading-6 text-stone-500"
         >
-          {body}
+          <Response parseIncompleteMarkdown={!done}>{smooth}</Response>
           {!done && <span className="sr-caret text-[#1677ff]">▊</span>}
-        </pre>
+        </div>
       )}
       {/* 代码/JSON 面板：代码块外观 + 260px 尾窗（Claude 的工具活动行为） */}
       {!collapsed && formatJson && (

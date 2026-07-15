@@ -316,11 +316,19 @@ def _cap_turn_narrations(state: V5SessionState) -> None:
                 if isinstance(slim.get(key), str) and len(slim[key]) > 1200:
                     slim[key] = slim[key][:1200] + "…"
             steps.append(slim)
-        capped.append({
+        slim_entry: Dict[str, Any] = {
             "turnId": str(entry["turnId"]),
             "user": str(entry.get("user") or "")[:600],
             "steps": steps,
-        })
+        }
+        # E16 收口句：本轮真实用时随叙述持久化（非数值丢弃，不编数据）
+        try:
+            duration = int(entry.get("durationMs") or 0)
+            if duration > 0:
+                slim_entry["durationMs"] = min(duration, 24 * 3600 * 1000)
+        except (TypeError, ValueError):
+            pass
+        capped.append(slim_entry)
     state.turnNarrations = capped
 
 

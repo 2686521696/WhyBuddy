@@ -74,6 +74,8 @@ export type TurnStep =
 export type UiTurn = {
   id: string;
   user: string;
+  /** E16 收口句：本轮真实用时（完成时打点；恢复轮取自 turnNarrations） */
+  durationMs?: number;
   status: "streaming" | "complete";
   steps: TurnStep[];
   /** S9: runtime-recorded facts for turn-route projection. */

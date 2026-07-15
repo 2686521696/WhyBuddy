@@ -15,6 +15,8 @@ export type TurnNarrationEntry = {
   turnId: string;
   user?: string;
   steps: TurnStep[];
+  /** 本轮真实用时（E16 收口句回放用） */
+  durationMs?: number;
 };
 
 const MAX_TURNS = 3;
@@ -48,6 +50,7 @@ export function stampTurnNarration(
       turnId: entry.turnId,
       user: (entry.user || "").slice(0, 600),
       steps: entry.steps.slice(0, MAX_STEPS).map(slimStep),
+      ...(entry.durationMs ? { durationMs: Math.round(entry.durationMs) } : {}),
     },
   ].slice(-MAX_TURNS);
   return { ...state, turnNarrations: stamped };
@@ -67,7 +70,7 @@ const KNOWN_KINDS = new Set([
 export function narrationStepsFor(
   state: V5SessionState | null | undefined,
   turnId?: string | null
-): { turnId: string; user: string; steps: TurnStep[] } | null {
+): { turnId: string; user: string; steps: TurnStep[]; durationMs?: number } | null {
   const all = (state?.turnNarrations || []).filter(
     (n): n is { turnId: string; user?: string; steps: unknown[] } =>
       !!n && typeof n.turnId === "string" && Array.isArray(n.steps)
@@ -83,5 +86,11 @@ export function narrationStepsFor(
       KNOWN_KINDS.has(String((s as { kind?: unknown }).kind))
   );
   if (steps.length === 0) return null;
-  return { turnId: entry.turnId, user: String(entry.user || ""), steps };
+  const durationMs = Number((entry as { durationMs?: unknown }).durationMs);
+  return {
+    turnId: entry.turnId,
+    user: String(entry.user || ""),
+    steps,
+    ...(Number.isFinite(durationMs) && durationMs > 0 ? { durationMs } : {}),
+  };
 }
