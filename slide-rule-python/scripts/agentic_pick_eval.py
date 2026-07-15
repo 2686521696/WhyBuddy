@@ -165,7 +165,37 @@ def _simulated_owner_answer(topic: str, questions: list[str], closing: bool) -> 
     return fallback
 
 
-def run_one(topic: str, mode: str, max_loops: int, max_turns: int = 3) -> dict:
+def _artifact_digest(state, per_limit: int = 900, max_items: int = 10) -> list[dict]:
+    """产物内容摘录（②内容质量评测取材面）：健康产物的 kind/title/
+    summary/content 截断版——judge 评的是内容本身，不是计数。"""
+    stales = set(getattr(state, "staleArtifactIds", []) or [])
+    out: list[dict] = []
+    for a in (getattr(state, "artifacts", []) or []):
+        d = a if isinstance(a, dict) else (a.model_dump() if hasattr(a, "model_dump") else {})
+        if d.get("id") in stales or d.get("status") in ("stale", "superseded"):
+            continue
+        if d.get("trustLevel") not in ("gated_pass", "audited"):
+            continue
+        content = d.get("content") or ""
+        if not isinstance(content, str):
+            content = json.dumps(content, ensure_ascii=False)
+        out.append(
+            {
+                "kind": str(d.get("kind") or ""),
+                "title": str(d.get("title") or "")[:80],
+                "summary": str(d.get("summary") or "")[:200],
+                "content": content[:per_limit],
+            }
+        )
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def run_one(
+    topic: str, mode: str, max_loops: int, max_turns: int = 3,
+    dump_artifacts: str | None = None,
+) -> dict:
     """G2 多轮交互模拟：驱动 → 模拟业主答缺口（走产品 intake 同款
     解缺口/清停泊入口）→ 再驱动，直到闭环或轮次用尽。"""
     os.environ["SLIDERULE_AGENTIC_PICK"] = "on" if mode == "agentic" else "off"
@@ -229,10 +259,21 @@ def run_one(topic: str, mode: str, max_loops: int, max_turns: int = 3) -> dict:
     row = _metric_row(state, time.time() - t0, closure=closure_summary)
     row["turns"] = turns
     row["selfClosed"] = self_closed
+    if dump_artifacts:
+        Path(dump_artifacts).write_text(
+            json.dumps(
+                {"topic": topic, "mode": mode, "artifacts": _artifact_digest(state)},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
     return row
 
 
-def _spawn_case(topic: str, mode: str, max_loops: int, max_turns: int) -> dict:
+def _spawn_case(
+    topic: str, mode: str, max_loops: int, max_turns: int,
+    dump_artifacts: str | None = None,
+) -> dict:
     """独立子进程跑单用例：模式开关/会话存储进程级隔离，互不串味。"""
     env = {
         **os.environ,
@@ -243,9 +284,12 @@ def _spawn_case(topic: str, mode: str, max_loops: int, max_turns: int) -> dict:
         "SLIDERULE_LLM_GENERATE_ENABLED": "1",
     }
     try:
+        cmd = [sys.executable, __file__, "--one", f"{mode}::{topic}",
+               "--max-loops", str(max_loops), "--max-turns", str(max_turns)]
+        if dump_artifacts:
+            cmd += ["--dump-artifacts", dump_artifacts]
         proc = subprocess.run(
-            [sys.executable, __file__, "--one", f"{mode}::{topic}",
-             "--max-loops", str(max_loops), "--max-turns", str(max_turns)],
+            cmd,
             capture_output=True, text=True, env=env, cwd=str(ROOT),
             timeout=1200,
         )
@@ -268,13 +312,20 @@ def main() -> None:
     parser.add_argument("--parallel", type=int, default=5)
     parser.add_argument("--max-turns", type=int, default=3)
     parser.add_argument("--one", type=str, default=None, help="内部用：mode::topic 单用例")
+    parser.add_argument(
+        "--dump-artifacts", type=str, default=None,
+        help="内部用：产物内容摘录落这个路径（②内容质量评测取材）",
+    )
     args = parser.parse_args()
 
     # 子进程入口：跑单用例，结果 JSON 打到 stdout 最后一行
     if args.one:
         mode, topic = args.one.split("::", 1)
         try:
-            row = run_one(topic, mode, args.max_loops, max_turns=args.max_turns)
+            row = run_one(
+                topic, mode, args.max_loops, max_turns=args.max_turns,
+                dump_artifacts=args.dump_artifacts,
+            )
         except Exception as exc:
             row = {"error": str(exc)[:200]}
         print(json.dumps(row, ensure_ascii=False), flush=True)
