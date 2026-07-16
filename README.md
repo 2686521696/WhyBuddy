@@ -317,6 +317,13 @@ Historical versions: [V5.2](<./docs/SlideRule V5.2 架构图.md>) · [v4 Skill c
 3. Before submitting: pnpm run check && pnpm run test
 ```
 
+**Branch model**: `main` is production (deploys build from it); `pre_main` is the daily integration branch. Merges go through the release gate script — the gate runs live and a red gate mechanically blocks the merge:
+
+```bash
+bash scripts/merge-gated.sh <your-branch> "<message>"            # daily → pre_main
+bash scripts/merge-gated.sh pre_main "<release message>" main    # release → main
+```
+
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
 
 ---
