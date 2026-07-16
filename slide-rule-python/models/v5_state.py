@@ -365,6 +365,11 @@ class V5SessionState(BaseModel):
     # Legacy sessions without key load with None (fail-closed compat, no breakage).
     # Pure schema + pass-through; derive logic stays in v5_publish_closure_response; no network/provider/DB here.
     publishClosure: Optional[Dict[str, Any]] = None
+    # E29 模型版本史（前进/回退按钮数据源）：每次五系统模型真实变化追加一条
+    # {id, turnId, instruction, createdAt, model}，上限 20 版。
+    modelVersions: List[Dict[str, Any]] = Field(default_factory=list)
+    # 当前生效版本指针（前进/回退移动它；精修追加新版本并指向之）
+    currentModelVersionId: Optional[str] = None
     # skillRuntimeGraph (cross-skill runtime evidence graph from python /drive-full and /drive-marathon):
     # Kept durable alongside publishClosure so browser reload can replay Skill linkage surfaces.
     skillRuntimeGraph: Optional[Dict[str, Any]] = None

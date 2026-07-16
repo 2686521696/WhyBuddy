@@ -976,6 +976,7 @@ function SlideRuleUnified({
   sessionState,
   sendMessage,
   challengeTurn,
+  restoreModelVersion,
   resetSession,
   retryCapability,
   toggleRouteExpanded,
@@ -1015,6 +1016,7 @@ function SlideRuleUnified({
   sessionState: ReturnType<typeof useSlideRuleSession>["sessionState"];
   sendMessage: () => void;
   challengeTurn: (id: string) => void;
+  restoreModelVersion: (versionId: string) => void;
   resetSession: () => void;
   retryCapability: ReturnType<typeof useSlideRuleSession>["retryCapability"];
   toggleRouteExpanded: (turnId: string) => void;
@@ -1159,6 +1161,9 @@ function SlideRuleUnified({
             llmDraft={isRunning ? llmDraft : ""}
             llmDraftLabel={llmDraftLabel}
             liveActionLabel={isRunning ? (liveAction?.label ?? null) : null}
+            modelVersions={(sessionState as { modelVersions?: Array<{ id: string; instruction?: string }> }).modelVersions ?? []}
+            currentModelVersionId={(sessionState as { currentModelVersionId?: string | null }).currentModelVersionId ?? null}
+            onRestoreVersion={restoreModelVersion}
             className="h-full"
           />
           {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程
@@ -1633,6 +1638,7 @@ function SlideRuleSessionBody({
     executorMode,
     sendMessage,
     repairGaps,
+    restoreModelVersion,
     challengeTurn,
     resetSession,
     toggleRouteExpanded,
@@ -2066,6 +2072,7 @@ function SlideRuleSessionBody({
     liveAction,
     sessionState,
     sendMessage,
+    restoreModelVersion,
     challengeTurn,
     resetSession,
     retryCapability,

@@ -391,7 +391,7 @@ async def save_sess(sid: str, state: Dict[str, Any], x_internal_key: Optional[st
         if client_contrib:
             # apply client-safe updates, exclude server-owned; never take client's artifacts/runs/gate/ledgers/replay
             # publishClosure intentionally NOT excluded: allows roundtrip persist of publish closure evidence into session state.
-            updates = client_contrib.model_dump(exclude={"sessionId", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents"})
+            updates = client_contrib.model_dump(exclude={"sessionId", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId"})
             for k, v in updates.items():
                 if hasattr(merged, k):
                     setattr(merged, k, v)
@@ -834,6 +834,55 @@ async def run_stream(
     if run is None:
         return JSONResponse(status_code=404, content={"error": "run_not_found"})
     return _run_sse_response(run, since=since)
+
+
+@router.post("/sessions/{sid}/model-versions/{version_id}/restore")
+async def restore_model_version(
+    sid: str,
+    version_id: str,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """E29 版本回退：把历史模型快照置为当前（追加式，不改写历史）。
+
+    快照经 set_model_override 直供生成层（不调 LLM），同一结构闸照常校验，
+    闭环/联动图重新推导，随后追加一条「回退」版本记录。"""
+    _auth(x_internal_key)
+    state = load_session(sid)
+    if state is None:
+        return JSONResponse(status_code=404, content={"error": "session_not_found"})
+    versions = list(getattr(state, "modelVersions", None) or [])
+    target = next((v for v in versions if isinstance(v, dict) and v.get("id") == version_id), None)
+    if target is None or not isinstance(target.get("model"), dict):
+        return JSONResponse(status_code=404, content={"error": "version_not_found"})
+    if getattr(state, "currentModelVersionId", None) == version_id:
+        # 已经就是当前版本：无操作（防前进/回退连点）
+        return {"restored": False, "reason": "already_current", "state": state.model_dump()}
+
+    from services.v5_llm_generate import set_model_override
+    from services.v5_full_driver import _ensure_runtime_closure_evidence, record_model_version
+    from services.v5_publish_closure_response import derive_publish_closure_response
+    from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
+
+    set_model_override(target["model"])
+    try:
+        # 直供 + 精修权威路径重建闭环证据（跳过旧产物匹配）
+        from services.v5_llm_generate import set_refine_context
+
+        set_refine_context(target["model"], f"回退到版本 {version_id}")
+        state = _ensure_runtime_closure_evidence(state, f"restore:{version_id}", 0)
+    finally:
+        set_model_override(None)
+        from services.v5_llm_generate import set_refine_context as _clear
+
+        _clear(None)
+    closure = derive_publish_closure_response(state)
+    if closure is not None:
+        state.publishClosure = closure
+        state.skillRuntimeGraph = derive_skill_runtime_graph_response(state)
+    # 指针移动，不追加副本（经典 undo/redo；精修会从当前指针的模型出发）
+    state.currentModelVersionId = version_id
+    state = save_session(state)
+    return {"restored": True, "state": state.model_dump()}
 
 
 @router.delete("/runs/{run_id}")
