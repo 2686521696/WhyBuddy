@@ -1483,6 +1483,27 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     await runTurn("补齐证据缺口", undefined, undefined, "repair");
   };
 
+  // E29 版本前进/回退：服务端移动版本指针并重建闭环（追加式历史，不改史），
+  // 返回的新状态直接应用；SSE 残留的 skillContents 清空，屏幕改读闭环里的模型。
+  const restoreModelVersion = async (versionId: string) => {
+    if (isRunning) return;
+    const sid = sessionState.sessionId || sessionId;
+    try {
+      const res = await fetch(
+        `/api/sliderule/sessions/${encodeURIComponent(sid)}/model-versions/${encodeURIComponent(versionId)}/restore`,
+        { method: "POST" }
+      );
+      const body = res.ok ? await res.json() : null;
+      if (body?.state) {
+        setSkillContents({});
+        setLatestMermaid(null);
+        applyPersistedState(body.state as V5SessionState);
+      }
+    } catch {
+      // 后端不可达：保持原样，用户可重试
+    }
+  };
+
   const toggleRouteExpanded = useCallback((turnId: string) => {
     setUiTurns(prev =>
       prev.map(t =>
@@ -1741,6 +1762,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     llmStreams,
     sendMessage,
     repairGaps,
+    restoreModelVersion,
     runTurn,
     challengeTurn,
     resetSession,

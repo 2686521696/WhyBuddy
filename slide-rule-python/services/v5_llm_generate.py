@@ -232,6 +232,30 @@ def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:
     _installed_skills = cleaned
 
 
+# E29 增量迭代：精修/回退上下文（与 _installed_skills 同一请求域模式）。
+# refine：带当前模型 + 补充指令，让 LLM 在现有设计上做增量修改；
+# override：直接以给定模型为生成结果（版本回退用，不调 LLM）。
+_refine_context: Optional[Dict[str, Any]] = None
+_model_override: Optional[Dict[str, Any]] = None
+
+
+def set_refine_context(model: "Optional[Dict[str, Any]]", instruction: str = "") -> None:
+    """设置本轮精修上下文：现有五系统模型 + 用户补充指令。传 None 清空。"""
+    global _refine_context
+    _refine_context = (
+        {"model": model, "instruction": str(instruction or "").strip()[:2000]}
+        if model
+        else None
+    )
+
+
+def set_model_override(model: "Optional[Dict[str, Any]]") -> None:
+    """设置模型直供（版本回退）：生成层原样返回该模型，不调 LLM；
+    结构闸照常校验。传 None 清空。"""
+    global _model_override
+    _model_override = model if isinstance(model, dict) else None
+
+
 def _emit_delta(chunk: str) -> None:
     sink = _delta_sink
     if sink is None:
@@ -274,6 +298,24 @@ def _build_user_content(goal: str) -> str:
             parts.append(block)
     except Exception:
         pass  # 参考语料是增强项，任何异常都不拦生成主路径
+    # E29 精修：把现有模型与补充指令给到 LLM——在现有设计上做最小增量修改，
+    # 与设计无关的指令要求原样返回（版本判等后不记新版本）。
+    if _refine_context:
+        import json as _json
+
+        try:
+            model_json = _json.dumps(_refine_context["model"], ensure_ascii=False)
+        except (TypeError, ValueError):
+            model_json = "{}"
+        parts.append(
+            "REFINE MODE — an approved five-system model for this app already "
+            "exists. Apply the user's follow-up instruction as a MINIMAL "
+            "incremental edit on top of it. Keep every id/field not affected "
+            "by the instruction byte-identical. If the instruction does not "
+            "ask for any design change, return the current model unchanged.\n"
+            f"Current model JSON:\n{model_json}\n"
+            f"Follow-up instruction:\n{_refine_context['instruction']}"
+        )
     parts.append("Produce the five-system JSON now.")
     return "\n\n".join(parts)
 
@@ -386,6 +428,10 @@ def generate_five_system_model(
     last_generate_diagnostic = {}
     if not (goal or "").strip():
         return None
+    # E29 版本回退：直供模型即生成结果（结构闸仍由调用方照常执行）
+    if _model_override is not None:
+        last_generate_diagnostic = {"outcome": "ok"}
+        return dict(_model_override)
     fn = llm_json_fn or _default_llm_json_fn
     # 一次有界重试：并发/限流下的瞬时失败不该直接变成永久 publish blocked
     # （fail-closed 语义保留：两次都失败仍返回 None）。注入 fn 的测试不受影响。

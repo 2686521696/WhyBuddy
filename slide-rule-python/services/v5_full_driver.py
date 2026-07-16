@@ -388,10 +388,34 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
     if not (user_instruction or "").strip():
         return state
     existing_closure = derive_publish_closure_response(state)
+    _refine_set = False
     if existing_closure is not None and derive_skill_runtime_graph_response(state) is not None:
         blocked = bool(existing_closure.get("blocked")) if isinstance(existing_closure, dict) else bool(getattr(existing_closure, "blocked", False))
         if not blocked:
-            return state
+            # E29 增量迭代：闭环已收口 + 用户带来新的补充指令 → 精修模式，
+            # 在现有五系统模型上做最小增量修改（同一结构闸把关），
+            # 不再整轮白跑/模型原地不动。指令与话题原文相同（重新推演）不精修。
+            goal_text = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal)
+            instruction = (user_instruction or "").strip()
+            current_model = extract_model_from_closure(existing_closure)
+            if (
+                instruction
+                and instruction != (goal_text or "").strip()
+                and current_model is not None
+            ):
+                from .v5_llm_generate import set_refine_context
+
+                # 老会话没有版本史：先把现有模型记为 v1，精修后的才是 v2，
+                # 否则「回退」无处可回
+                if not (getattr(state, "modelVersions", None) or []):
+                    record_model_version(
+                        state, existing_closure,
+                        goal_text or "初始版本",
+                    )
+                set_refine_context(current_model, instruction)
+                _refine_set = True
+            else:
+                return state
         # blocked 的闭环允许在新一轮重建（例如 LLM 瞬时失败导致 0/6）：
         # fail-closed 语义不变——证据真缺失时重建后依然 blocked。
 
@@ -460,7 +484,52 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
             order=2,
         )
         persist_state(state)
+    if _refine_set:
+        from .v5_llm_generate import set_refine_context
+
+        set_refine_context(None)
     return state
+
+
+def extract_model_from_closure(closure) -> "Optional[Dict[str, Any]]":
+    """从闭环 perSkillEvidence 的 modelSection 还原五系统模型（缺任一段返回 None）。"""
+    per_skill = (
+        closure.get("perSkillEvidence") if isinstance(closure, dict)
+        else getattr(closure, "perSkillEvidence", None)
+    ) or {}
+    model: Dict[str, Any] = {}
+    for skill in ("datamodel", "workflow", "rbac", "page", "aigc", "appbundle"):
+        ev = per_skill.get(skill) or {}
+        section = ev.get("modelSection") if isinstance(ev, dict) else getattr(ev, "modelSection", None)
+        if section is None:
+            return None
+        model[skill] = section
+    return model
+
+
+def record_model_version(state: "V5SessionState", publish_closure, instruction: str) -> None:
+    """E29 版本快照：闭环携带完整模型且与上一版本不同 → 追加 modelVersions。"""
+    model = extract_model_from_closure(publish_closure)
+    if model is None:
+        return
+    versions = list(getattr(state, "modelVersions", None) or [])
+    if versions:
+        last = versions[-1].get("model") if isinstance(versions[-1], dict) else None
+        if last == model:
+            # 模型没变：不记新版本，但指针对齐到该版本（可能刚从回退态回来）
+            state.currentModelVersionId = versions[-1].get("id")
+            return
+    new_id = f"mv-{len(versions) + 1}"
+    versions.append({
+        "id": new_id,
+        "turnId": str(getattr(state, "lastTurnId", "") or ""),
+        "instruction": str(instruction or "")[:300],
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "model": model,
+    })
+    state.modelVersions = versions[-20:]  # 上限 20 版，防状态无限膨胀
+    state.currentModelVersionId = new_id
+
 
 _TRANSIENT_ERROR_MARKERS = (
     "timeout", "timed out", "connection", "connect", "reset", "unreachable",
@@ -1228,6 +1297,9 @@ async def drive_full_v5_session_stream(
         # 注销模块级 sink：本次流之后的 LLM 调用不再往（已废弃的）队列里灌。
         _caps.set_capability_delta_sink(None)
         _gen.set_generate_delta_sink(None)
+        # E29：精修/直供上下文兜底清理（异常路径防泄漏到下一轮）
+        _gen.set_refine_context(None)
+        _gen.set_model_override(None)
 
     persist_state(state)
 
@@ -1294,6 +1366,8 @@ async def drive_full_v5_session_stream(
         state.publishClosure = publish_closure
         state.skillRuntimeGraph = skill_graph
         state.lastTurnId = f"turn-stream-{loop}-drive-full"
+        # E29：模型变化才追加版本快照（前进/回退按钮的数据源）
+        record_model_version(state, publish_closure, user_instruction)
         persist_state(state)
         yield {"type": "publish_closure", "data": publish_closure}
 

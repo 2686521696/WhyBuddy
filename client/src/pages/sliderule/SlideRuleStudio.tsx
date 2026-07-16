@@ -44,6 +44,10 @@ const SKILL_LABELS: Record<SkillId, string> = {
 };
 
 interface SlideRuleStudioProps {
+  /** E29 模型版本史（前进/回退按钮数据源） */
+  modelVersions?: Array<{ id: string; instruction?: string; createdAt?: string }>;
+  currentModelVersionId?: string | null;
+  onRestoreVersion?: (versionId: string) => void;
   // --- Chat panel (left) ---
   chatSlot: React.ReactNode;
 
@@ -94,6 +98,9 @@ export function SlideRuleStudio({
   llmDraftLabel = null,
   liveActionLabel = null,
   className = "",
+  modelVersions = [],
+  currentModelVersionId = null,
+  onRestoreVersion,
 }: SlideRuleStudioProps) {
   // Allow manual override of the displayed screen (click thumbnail, board/theater 态)
   const [manualSkill, setManualSkill] = useState<SkillId | null>(null);
@@ -183,6 +190,45 @@ export function SlideRuleStudio({
     return () => window.removeEventListener("keydown", onKey);
   }, [drawerSkill]);
 
+
+  // E29 版本前进/回退工具栏（app 主舞台头条与 board 缩略条行共用）
+  const versionToolbar = modelVersions.length > 1 ? (() => {
+    const i = modelVersions.findIndex(v => v.id === currentModelVersionId);
+    const idx = i >= 0 ? i : modelVersions.length - 1;
+    const prev = modelVersions[idx - 1];
+    const next = modelVersions[idx + 1];
+    return (
+      <div
+        className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-white/80 px-1.5 py-0.5 ring-1 ring-[#e5e7eb]"
+        data-testid="sliderule-version-toolbar"
+      >
+        <button
+          type="button"
+          data-testid="sliderule-version-back"
+          disabled={!prev}
+          onClick={() => prev && onRestoreVersion?.(prev.id)}
+          className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
+          title={prev ? `回退到 v${idx}${prev.instruction ? `（${prev.instruction.slice(0, 24)}）` : ""}` : "已是最早版本"}
+        >
+          ◀
+        </button>
+        <span className="text-[10px] font-medium text-stone-500" title={modelVersions[idx]?.instruction || ""}>
+          v{idx + 1}/{modelVersions.length}
+        </span>
+        <button
+          type="button"
+          data-testid="sliderule-version-forward"
+          disabled={!next}
+          onClick={() => next && onRestoreVersion?.(next.id)}
+          className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
+          title={next ? `前进到 v${idx + 2}${next.instruction ? `（${next.instruction.slice(0, 24)}）` : ""}` : "已是最新版本"}
+        >
+          ▶
+        </button>
+      </div>
+    );
+  })() : null;
+
   // 空会话：欢迎页独占全宽，右侧舞台整体不渲染（用户还没输入，没内容可看）
   if (!stageVisible) {
     return (
@@ -227,6 +273,7 @@ export function SlideRuleStudio({
                   运行中
                 </span>
               )}
+              {versionToolbar}
               {/* 设备/代码档位切换：AppRuntimeScreen portal 到这里
                   （用户裁决：显示在「游标」左侧，不再浮在画布上） */}
               <div
@@ -322,6 +369,7 @@ export function SlideRuleStudio({
                   publishClosure={publishClosure}
                   onSelect={handleThumbnailSelect}
                 />
+                {versionToolbar}
               </div>
             )}
 
