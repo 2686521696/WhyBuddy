@@ -38,6 +38,19 @@ Run the full local stack:
 pnpm run dev:all
 ```
 
+## Branch Model and Release Gate
+
+- `main` is the production branch. Deploy artifacts (GitHub Pages demo, ghcr.io images) are built from it automatically on every push.
+- `pre_main` is the daily integration branch. Feature branches merge here first.
+- All merges go through the release gate script — the full verification suite runs live inside the script, and a red gate mechanically blocks the merge:
+
+```bash
+bash scripts/merge-gated.sh <your-branch> "<message>"            # daily merge → pre_main
+bash scripts/merge-gated.sh pre_main "<release message>" main    # release → main (only pre_main is accepted)
+```
+
+Do not merge into `main` or `pre_main` by hand-chained `git merge && git push` — the gate script is the only entrance.
+
 ## Validation
 
 Before opening a pull request, run the checks that match the change:
