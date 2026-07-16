@@ -66,11 +66,8 @@ export function SlideRuleTopHud({
               重置会话
             </button>
           )}
-          {!IS_GITHUB_PAGES && (
-            <a href="/sliderule/dev" className={autopilotTheme.devLink}>
-              Dev
-            </a>
-          )}
+          {/* E28：右上角 Dev 入口移除（用户裁决）——工程驾驶舱直接访问
+              /sliderule/dev，不再占产品头部 */}
         </div>
       </div>
     </header>

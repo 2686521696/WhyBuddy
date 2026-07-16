@@ -599,8 +599,14 @@ function ImAssistantMessage() {
             </div>
           ) : (
             /* E16：正文走 streamdown——加粗、表格、代码块真渲染，
-               不再裸奔星号（此前 whitespace-pre-wrap 纯文本） */
-            <div className="max-w-none text-[13.5px] leading-[1.75] text-stone-700">
+               不再裸奔星号（此前 whitespace-pre-wrap 纯文本）。
+               data-answer-present：Response 在 SSR/静态渲染下产出为空
+               （客户端才填充），测试以此属性断言"回答已就位"。 */
+            <div
+              className="max-w-none text-[13.5px] leading-[1.75] text-stone-700"
+              data-testid="sliderule-turn-answer"
+              data-answer-present={answer ? "true" : "false"}
+            >
               <Response parseIncompleteMarkdown={false}>{answer}</Response>
             </div>
           )}
@@ -1374,13 +1380,7 @@ function SlideRuleSplitEngineering({
           >
             重置会话
           </button>
-          <a
-            href="/sliderule/dev"
-            className={autopilotTheme.devLink}
-            title="Open engineering cockpit"
-          >
-            Dev
-          </a>
+          {/* E28：Dev 入口移除（用户裁决），/sliderule/dev 仍可直接访问 */}
         </div>
       </header>
 

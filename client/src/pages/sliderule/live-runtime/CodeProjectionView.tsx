@@ -13,6 +13,7 @@ import {
   CaretDownOutlined,
   CaretRightOutlined,
   CopyOutlined,
+  DownloadOutlined,
   FileOutlined,
   FolderOpenOutlined,
   FolderOutlined,
@@ -320,6 +321,36 @@ export function CodeProjectionView({
               }}
             >
               复制
+            </Button>
+            {/* E28：整包下载——全部投影文件按目录结构打成 zip（用户裁决） */}
+            <Button
+              size="small"
+              type="link"
+              icon={<DownloadOutlined />}
+              data-testid="code-export-zip"
+              onClick={async () => {
+                try {
+                  const { default: JSZip } = await import("jszip");
+                  const zip = new JSZip();
+                  for (const f of files) zip.file(f.path, f.content);
+                  const blob = await zip.generateAsync({ type: "blob" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  const safe = (appName || "sliderule-app").replace(
+                    /[^a-zA-Z0-9_\-一-鿿]/g,
+                    "_"
+                  );
+                  a.href = url;
+                  a.download = `${safe}-code.zip`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  message.success(`已导出 ${files.length} 个文件`);
+                } catch {
+                  message.warning("打包失败，请重试");
+                }
+              }}
+            >
+              打包导出
             </Button>
           </div>
           <React.Suspense
