@@ -291,8 +291,10 @@ async function runSmoke() {
 
   // --- 5. reset → state clean (hits session reset) ---
   // 真 LLM 推演可跑数分钟，期间重置钮 disabled（title=推演进行中）——先等
-  // 推演收尾（按钮恢复可用）再点，等待上限可用 SLIDERULE_SMOKE_TURN_TIMEOUT 调
-  const TURN_TIMEOUT = Number.parseInt(process.env.SLIDERULE_SMOKE_TURN_TIMEOUT ?? "240000", 10);
+  // 推演收尾（按钮恢复可用）再点，等待上限可用 SLIDERULE_SMOKE_TURN_TIMEOUT 调。
+  // 2026-07-16 上调 240s→420s：E17 把综合/报告改为轮内屏障（串行等前段
+  // commit）+ 上游证据注入拉长 prompt，真实轮时上浮，240s 开始擦边假红
+  const TURN_TIMEOUT = Number.parseInt(process.env.SLIDERULE_SMOKE_TURN_TIMEOUT ?? "420000", 10);
   const resetBtn = page.locator('[data-testid="sliderule-reset-session"], button:has-text("重置会话")').first();
   if (await resetBtn.count() > 0) {
     await page
