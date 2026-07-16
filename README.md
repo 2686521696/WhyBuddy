@@ -132,13 +132,13 @@ flowchart LR
 
 What makes it different from "an LLM with a long prompt":
 
-| Mechanism                    | What it does                                                                                                                                             |
-| :--------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Evidence trust gate**      | Every artifact passes structural + grounding gates before it earns `gated_pass`; failed generations are retried with the validator errors fed back        |
-| **Evidence context pipeline** | Downstream reasoning (synthesis / report) is fed **only gated upstream artifacts**, priority-packed under budget with honest omission notes               |
-| **Publish closure**          | The app ships only when all six skills (dataModel · RBAC · workflow · page · AIGC · appBundle) hold evidence — otherwise it parks at AWAIT for clarification |
-| **Real tools**               | `web.search` (grounded evidence) and `code.run` (E2B sandbox, fail-closed without a key) via an MCP-style tool registry                                    |
-| **Blind-judged upgrades**    | Engine changes ship with paired blind evaluations (A/B, position-swapped, double verdict) — e.g. agentic pick 4:0, evidence pipeline 2:0                   |
+| Mechanism                     | What it does                                                                                                                                                 |
+| :---------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Evidence trust gate**       | Every artifact passes structural + grounding gates before it earns `gated_pass`; failed generations are retried with the validator errors fed back           |
+| **Evidence context pipeline** | Downstream reasoning (synthesis / report) is fed **only gated upstream artifacts**, priority-packed under budget with honest omission notes                  |
+| **Publish closure**           | The app ships only when all six skills (dataModel · RBAC · workflow · page · AIGC · appBundle) hold evidence — otherwise it parks at AWAIT for clarification |
+| **Real tools**                | `web.search` (grounded evidence) and `code.run` (E2B sandbox, fail-closed without a key) via an MCP-style tool registry                                      |
+| **Blind-judged upgrades**     | Engine changes ship with paired blind evaluations (A/B, position-swapped, double verdict) — e.g. agentic pick 4:0, evidence pipeline 2:0                     |
 
 Deep dives: [V5.3 architecture (Chinese)](<./docs/SlideRule V5.3 架构图.md>) · [five-system generation eval](./docs/five-system-generation-eval.md) · [live-runtime blueprint](./docs/LIVE_SYSTEMS_BLUEPRINT.md)
 
@@ -148,10 +148,10 @@ Deep dives: [V5.3 architecture (Chinese)](<./docs/SlideRule V5.3 架构图.md>) 
 
 The rehearsed model is not just diagrams — **the browser renders it into an operable system**, ECharts-style: the five-system JSON is the schema, zero backend, zero database.
 
-|                                                                                                                                                                                                                           |                                                                                                                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <img src="./docs/assets/live-runtime/home.png" alt="Studio home" /> <br/> <sub>Studio home — brand sidebar, session gallery, guided examples</sub>                                                              | <img src="./docs/assets/live-runtime/xray.png" alt="X-ray cursor panel" /> <br/> <sub>**X-ray cursor (游标)** — hover any element in the running app and read the five-system declarations behind it: bound fields, visible roles, workflow nodes</sub>                  |
-| <img src="./docs/assets/live-runtime/workflow-live.png" alt="Live workflow graph" /> <br/> <sub>**Live workflow** — role-colored nodes, condition edges; running instances light up their current node in real time</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="Runnable app, Pro shell" /> <br/> <sub>**Run the app** — Ant Design Pro shell rendered from the model: dashboard charts, tables, forms, approval submissions</sub> |
+|                                                                                                                                                                                                                           |                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <img src="./docs/assets/live-runtime/home.png" alt="Studio home" /> <br/> <sub>Studio home — brand sidebar, session gallery, guided examples</sub>                                                                        | <img src="./docs/assets/live-runtime/xray.png" alt="X-ray cursor panel" /> <br/> <sub>**X-ray cursor (游标)** — hover any element in the running app and read the five-system declarations behind it: bound fields, visible roles, workflow nodes</sub> |
+| <img src="./docs/assets/live-runtime/workflow-live.png" alt="Live workflow graph" /> <br/> <sub>**Live workflow** — role-colored nodes, condition edges; running instances light up their current node in real time</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="Runnable app, Pro shell" /> <br/> <sub>**Run the app** — Ant Design Pro shell rendered from the model: dashboard charts, tables, forms, approval submissions</sub>                               |
 
 What you can actually do after a topic closes (all state lives in the browser, per-session):
 
@@ -179,10 +179,10 @@ docker compose up -d --build
 # open http://localhost:3000/agent-loop/workbench
 ```
 
-| Service  | Port                     | Role                                                                                          |
-| :------- | :----------------------- | :--------------------------------------------------------------------------------------------- |
-| `app`    | `3000` (host) → `3001`   | Node server + bundled frontend; SlideRule API thin-proxies to Python                            |
-| `python` | `9700` (network-internal) | V5 rehearsal engine: five-system generation, evidence trust gates, evidence pipeline, closure   |
+| Service  | Port                      | Role                                                                                          |
+| :------- | :------------------------ | :-------------------------------------------------------------------------------------------- |
+| `app`    | `3000` (host) → `3001`    | Node server + bundled frontend; SlideRule API thin-proxies to Python                          |
+| `python` | `9700` (network-internal) | V5 rehearsal engine: five-system generation, evidence trust gates, evidence pipeline, closure |
 
 `mysql` is an **optional profile**, only needed by the legacy accounts feature (login / email codes / projects): `docker compose --profile accounts up -d`.
 
@@ -214,6 +214,7 @@ docker compose down -v              # stop and wipe data
   #   SLIDERULE_IMAGE_APP=docker.io/<hub-user>/whybuddy-app:latest
   #   SLIDERULE_IMAGE_PYTHON=docker.io/<hub-user>/whybuddy-python:latest
   ```
+
 - **Corporate networks (TLS-intercepting proxies)**: drop your root CA (`.crt` PEM) into `docker/certs/` before building — both images merge it into their trust chain (see `docker/certs/README.md`). Certificates are gitignored.
 - **Not in compose**: Lobster Executor (needs Docker-in-Docker, opt in separately), Redis (off by default), Feishu integration (mock by default).
 - `.env` is never baked into images (`.dockerignore`); it is injected at runtime via `env_file`.
@@ -258,11 +259,11 @@ Setup details, image-generation configuration, and the full output package layou
 
 > Every rehearsal is a shareable piece of content. The three below are live in the [static demo](https://xiaojilele-glitch.github.io/WhyBuddy/agent-loop/workbench) — captured from real end-to-end engine runs.
 
-| 💬 Input                                        | 📦 Output                                                                                     |
-| :----------------------------------------------- | :--------------------------------------------------------------------------------------------- |
-| "Community pet-clinic booking & triage system"    | Six-skill rehearsal playback · 6/6 publish closure · runnable booking/triage app               |
-| "Second-hand instrument consignment & appraisal"  | Closed rehearsal · consignment ledger, appraisal workbench, listing calendar, compliance audit |
-| "Script-murder venue scheduling & party matching" | Closed rehearsal · session board, store calendars, sign-up & carpool grouping                  |
+| 💬 Input                                            | 📦 Output                                                                                      |
+| :-------------------------------------------------- | :--------------------------------------------------------------------------------------------- |
+| "Community pet-clinic booking & triage system"      | Six-skill rehearsal playback · 6/6 publish closure · runnable booking/triage app               |
+| "Second-hand instrument consignment & appraisal"    | Closed rehearsal · consignment ledger, appraisal workbench, listing calendar, compliance audit |
+| "Script-murder venue scheduling & party matching"   | Closed rehearsal · session board, store calendars, sign-up & carpool grouping                  |
 | "Procurement approval with field-level permissions" | Five-system model · approval state machine · RBAC field locks · risk & counter-evidence report |
 
 ---
@@ -277,16 +278,16 @@ Historical versions: [V5.2](<./docs/SlideRule V5.2 架构图.md>) · [v4 Skill c
 
 ## 🛠️ Tech Stack
 
-| Layer     | Technology                                                                           |
-| :-------- | :------------------------------------------------------------------------------------ |
-| Frontend  | React 19 · Vite · TypeScript · Tailwind · streamdown / assistant-ui · Three.js (R3F)   |
-| Server    | Express · Socket.IO · TypeScript (thin proxy to the Python engine)                     |
-| Engine    | Python 3.11 · FastAPI · deterministic gates + LLM capability pool                      |
-| AI        | OpenAI-compatible APIs (any provider) · BYOK in the browser                            |
-| Tools     | `web.search` (grounded evidence) · `code.run` (E2B sandbox) via MCP-style registry     |
-| Testing   | Vitest · pytest · Playwright browser smokes · fast-check (PBT)                         |
-| Storage   | JSON session store (file / named volume) · MySQL 8 (accounts) · IndexedDB (browser)    |
-| Deploy    | Docker Compose (one command) · GitHub Pages static demo · GitHub Actions gate          |
+| Layer    | Technology                                                                           |
+| :------- | :----------------------------------------------------------------------------------- |
+| Frontend | React 19 · Vite · TypeScript · Tailwind · streamdown / assistant-ui · Three.js (R3F) |
+| Server   | Express · Socket.IO · TypeScript (thin proxy to the Python engine)                   |
+| Engine   | Python 3.11 · FastAPI · deterministic gates + LLM capability pool                    |
+| AI       | OpenAI-compatible APIs (any provider) · BYOK in the browser                          |
+| Tools    | `web.search` (grounded evidence) · `code.run` (E2B sandbox) via MCP-style registry   |
+| Testing  | Vitest · pytest · Playwright browser smokes · fast-check (PBT)                       |
+| Storage  | JSON session store (file / named volume) · MySQL 8 (accounts) · IndexedDB (browser)  |
+| Deploy   | Docker Compose (one command) · GitHub Pages static demo · GitHub Actions gate        |
 
 ---
 

@@ -33,7 +33,13 @@ import {
   parseFiveSystemModelFromPerSkillEvidence,
   type FiveSystemModel,
 } from "@/pages/sliderule/system-screens/five-system-model";
-import { activateSession, newSessionId } from "./SidebarSessions";
+import {
+  ACTIVE_SESSION_KEY,
+  SESSIONS_UPDATED_EVENT,
+  activateSession,
+  newSessionId,
+  notifySessionsUpdated,
+} from "./SidebarSessions";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import {
   GITHUB_PAGES_DEMO_GOAL,
@@ -256,6 +262,13 @@ export function AppsWorkbench() {
   const [query, setQuery] = React.useState("");
   const [sortDesc, setSortDesc] = React.useState(true);
   const [menuFor, setMenuFor] = React.useState<string | null>(null);
+  // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
+  const [reloadKey, setReloadKey] = React.useState(0);
+  React.useEffect(() => {
+    const bump = () => setReloadKey(k => k + 1);
+    window.addEventListener(SESSIONS_UPDATED_EVENT, bump);
+    return () => window.removeEventListener(SESSIONS_UPDATED_EVENT, bump);
+  }, []);
 
   React.useEffect(() => {
     let alive = true;
@@ -344,7 +357,9 @@ export function AppsWorkbench() {
     return () => {
       alive = false;
     };
-  }, []);
+    // reloadKey：会话库变更事件（侧栏删除/话题落盘）触发整体重拉，
+    // 工作台与左侧会话列表保持双向同步（E28）
+  }, [reloadKey]);
 
   const open = (sessionId: string) => {
     activateSession(sessionId);
@@ -359,7 +374,19 @@ export function AppsWorkbench() {
       await fetch(`/api/sliderule/sessions/${encodeURIComponent(sessionId)}`, {
         method: "DELETE",
       });
-      setSessions(prev => (prev ?? []).filter(s => s.sessionId !== sessionId));
+      const remaining = (sessions ?? []).filter(s => s.sessionId !== sessionId);
+      setSessions(remaining);
+      // E28：与左侧会话列表联动——广播更新事件让侧栏立即摘掉该会话；
+      // 删的是当前活跃会话时切到最近剩余会话（一个不剩就开新会话），
+      // 避免 active-session-id 悬空指向已删会话
+      notifySessionsUpdated();
+      try {
+        if (localStorage.getItem(ACTIVE_SESSION_KEY) === sessionId) {
+          activateSession(remaining[0]?.sessionId ?? newSessionId());
+        }
+      } catch {
+        /* 隐私模式无存储：跳过活跃会话纠正 */
+      }
     } catch {
       /* 网络失败保持原样，用户可重试 */
     }
