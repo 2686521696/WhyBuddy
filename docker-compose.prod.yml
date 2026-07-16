@@ -17,15 +17,19 @@
 #
 # 回滚：把下面两个 image 的 :latest 换成某次发版的 :<commit-sha> 再 up -d。
 #
-# 国内服务器拉 ghcr 慢/超时：.env 加一行切镜像站（或给 Docker daemon 配代理）
-#   SLIDERULE_REGISTRY=ghcr.nju.edu.cn
+# 国内服务器拉 ghcr 慢/超时，三选一：
+#   a) .env 加 SLIDERULE_REGISTRY=ghcr.nju.edu.cn（ghcr 镜像站）
+#   b) CI 配了 Docker Hub 双推后，.env 覆盖完整镜像地址（走 Hub 国内加速源）：
+#      SLIDERULE_IMAGE_APP=docker.io/<你的DockerHub用户名>/whybuddy-app:latest
+#      SLIDERULE_IMAGE_PYTHON=docker.io/<你的DockerHub用户名>/whybuddy-python:latest
+#   c) 给 Docker daemon 配代理
 #
 # 账号功能（可选，遗留登录/邮箱验证码/projects 才需要）：
 #   docker compose -f docker-compose.prod.yml --profile accounts up -d
 
 services:
   python:
-    image: ${SLIDERULE_REGISTRY:-ghcr.io}/xiaojilele-glitch/whybuddy-python:latest
+    image: ${SLIDERULE_IMAGE_PYTHON:-${SLIDERULE_REGISTRY:-ghcr.io}/xiaojilele-glitch/whybuddy-python:latest}
     container_name: sliderule-python
     env_file:
       - .env
@@ -49,7 +53,7 @@ services:
     restart: unless-stopped
 
   app:
-    image: ${SLIDERULE_REGISTRY:-ghcr.io}/xiaojilele-glitch/whybuddy-app:latest
+    image: ${SLIDERULE_IMAGE_APP:-${SLIDERULE_REGISTRY:-ghcr.io}/xiaojilele-glitch/whybuddy-app:latest}
     container_name: sliderule-app
     depends_on:
       python:
