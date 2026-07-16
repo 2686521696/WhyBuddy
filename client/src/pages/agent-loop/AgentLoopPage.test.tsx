@@ -55,7 +55,7 @@ describe("AgentLoopPage", () => {
     // is client-only and mounts after hydration, so SSR shows the loading placeholder.
     expect(html).toContain('data-testid="agent-loop-page"');
     expect(html).toContain('data-testid="agent-loop-loading"');
-    expect(html).toContain("AgentLoop 控制台加载中");
+    expect(html).toContain("SlideRule 控制台加载中");
   });
   it("maps AgentLoop workbench, settings, and run detail to first-class URL routes", () => {
     expect(getAgentLoopSliderulePath()).toBe("/agent-loop/sliderule");
@@ -316,9 +316,10 @@ describe("AgentLoopPage", () => {
     );
 
     expect(html).toContain('data-testid="agentloop-task-closure-status"');
-    expect(html).toContain("closure closed");
-    expect(html).toContain("6/6 evidence");
-    expect(html).toContain("deadbeef");
+    // E27：徽章说人话——哈希摘要不再上卡
+    expect(html).toContain("闭环已收口");
+    expect(html).toContain("证据 6/6");
+    expect(html).not.toContain("deadbeef");
   });
 
   it("keeps queue metrics scoped to queue entries while all tasks includes task files", () => {

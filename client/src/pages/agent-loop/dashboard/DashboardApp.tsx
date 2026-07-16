@@ -235,21 +235,18 @@ function statusLabel(task: OverviewTask): string {
 function closureStatusParts(task: OverviewTask): string[] {
   const closure = task.closureStatus;
   if (!closure) return [];
-  const parts = [closure.blocked ? "closure blocked" : "closure closed"];
+  // E27：徽章说人话——哈希摘要对用户是噪音，不再上卡
+  const parts = [closure.blocked ? "闭环被闸拦截" : "闭环已收口"];
   const evidence = Number(closure.evidencePresentCount);
   const skills = Number(closure.skillCount);
   if (Number.isFinite(evidence) && Number.isFinite(skills) && skills > 0) {
-    parts.push(`${evidence}/${skills} evidence`);
+    parts.push(`证据 ${evidence}/${skills}`);
   } else if (Number.isFinite(evidence) && evidence > 0) {
-    parts.push(`${evidence} evidence`);
-  }
-  const digest = closure.stableDigest || closure.closureHash;
-  if (digest) {
-    parts.push(String(digest).slice(0, 12));
+    parts.push(`证据 ${evidence} 项`);
   }
   const blockers = Number(closure.blockerCount);
   if (Number.isFinite(blockers) && blockers > 0) {
-    parts.push(`${blockers} blockers`);
+    parts.push(`阻塞 ${blockers} 项`);
   }
   return parts;
 }
