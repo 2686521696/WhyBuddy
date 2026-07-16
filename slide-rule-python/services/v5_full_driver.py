@@ -11,7 +11,7 @@ from typing import Dict, Any, AsyncGenerator, List, Optional
 from datetime import datetime, timezone
 from models.v5_state import V5SessionState, ProducedBy, SchedulingDecision
 from .slide_rule_orchestrator import orchestrate_plan
-from .slide_rule_session import pick_next_capabilities, commit_artifact, append_reasoning_event, append_replay_event
+from .slide_rule_session import pick_next_capabilities, pick_repair_capabilities, commit_artifact, append_reasoning_event, append_replay_event
 
 
 def _has_pending_delivery_picks(state, user_instruction: str) -> bool:
@@ -462,6 +462,46 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
         persist_state(state)
     return state
 
+_TRANSIENT_ERROR_MARKERS = (
+    "timeout", "timed out", "connection", "connect", "reset", "unreachable",
+    "dns", "proxy", "temporarily", "rate limit", "502", "503", "504",
+    "网络", "超时",
+)
+
+
+def transient_blocked_signal(state: "V5SessionState") -> bool:
+    """E26 自动补救判据：闭环 blocked 且失败样貌是「瞬时故障」（超时/连接类）
+    才值得自动补救一次。检索成功但结果不相关不算——重试救不回来，
+    交给用户点「补齐缺口」。看两处：本轮能力报错信息、闭环 blocker 的
+    LLM 生成诊断（网关超时也会落在这里）。"""
+    closure = getattr(state, "publishClosure", None)
+    if closure is None:
+        return False
+    blocked = bool(closure.get("blocked")) if isinstance(closure, dict) else bool(getattr(closure, "blocked", False))
+    if not blocked:
+        return False
+
+    def _is_transient(text: str) -> bool:
+        low = (text or "").lower()
+        return any(m in low for m in _TRANSIENT_ERROR_MARKERS)
+
+    for r in (getattr(state, "capabilityRuns", []) or [])[-12:]:
+        err = r.get("error") if isinstance(r, dict) else getattr(r, "error", None)
+        if not err:
+            continue
+        msg = err.get("message") if isinstance(err, dict) else getattr(err, "message", "")
+        if _is_transient(str(msg or "")):
+            return True
+
+    blockers = closure.get("blockers") if isinstance(closure, dict) else getattr(closure, "blockers", None)
+    for b in blockers or []:
+        code = str((b.get("code") if isinstance(b, dict) else getattr(b, "code", "")) or "")
+        ref = str((b.get("ref") if isinstance(b, dict) else getattr(b, "ref", "")) or "")
+        if code == "LLM_GENERATE_FAILED" and _is_transient(ref):
+            return True
+    return False
+
+
 def _advance_turn_version(state: "V5SessionState") -> None:
     """一次 drive = 一个 turn：把 state.lastTurnId 步进一格。
 
@@ -812,6 +852,7 @@ async def drive_full_v5_session_stream(
     initial_state: "V5SessionState",
     max_loops: int = 10,
     user_instruction: str = "",
+    repair: bool = False,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Async generator mirroring drive_full_v5_session but yielding SSE dicts.
 
@@ -822,6 +863,11 @@ async def drive_full_v5_session_stream(
                                   "modelSection": dict|None, "mermaid": str|None}
         {"type": "publish_closure", "data": dict}
         {"type": "complete",      "state": dict}
+
+    E26 repair=True（缺口修复轮）：选材换成 pick_repair_capabilities——只重跑
+    覆盖门标红的能力（开放缺口/合约缺失/接地不足），已 PASS 的产物与五系统
+    模型原样复用（闭环重建本就先匹配既有产物，非 blocked 闭环直接返回）。
+    agentic pick 不参与（修什么以门说了算），轮数收紧到 2。
     """
     import asyncio
     import queue as _queue
@@ -862,16 +908,18 @@ async def drive_full_v5_session_stream(
             await asyncio.sleep(0.15)
 
     state = initial_state
+    if repair:
+        max_loops = min(max_loops, 2)
     _advance_turn_version(state)
     state.runtimePhase = "orchestrating"
     append_replay_event(state, kind="decision", turnId="loop-0", decisionId="phase-orchestrating-full")
     append_reasoning_event(
         state, turnId="loop-0", capabilityRunId="phase-full-0",
         capabilityId="driver", kind="think",
-        text="phase_changed: orchestrating (full drive)", order=0,
+        text=f"phase_changed: orchestrating ({'repair drive' if repair else 'full drive'})", order=0,
     )
     persist_state(state)
-    yield {"type": "phase_change", "phase": "orchestrating"}
+    yield {"type": "phase_change", "phase": "orchestrating", "repair": repair}
 
     loop = 0
     picks: list = []
@@ -893,10 +941,14 @@ async def drive_full_v5_session_stream(
         while loop < max_loops:
             ui = user_instruction or ""
             await asyncio.to_thread(orchestrate_plan, state, f"loop-{loop}", ui)
-            picks = await asyncio.to_thread(pick_next_capabilities, state, ui)
+            picks = await asyncio.to_thread(
+                (lambda st, _ui: pick_repair_capabilities(st)) if repair else pick_next_capabilities,
+                state, ui,
+            )
             # F2 agentic pick 实验：与同步驱动同一语义（LLM 提案替换非空
-            # 规则选材，收敛权归规则，台账 source="llm"，失败回落）
-            if picks:
+            # 规则选材，收敛权归规则，台账 source="llm"，失败回落）。
+            # 修复轮不参与——修什么以覆盖门说了算，不给 LLM 扩范围的机会。
+            if picks and not repair:
                 from .v5_agentic_pick import agentic_pick_next_capabilities
                 _proposal = await asyncio.to_thread(
                     agentic_pick_next_capabilities, state, ui, loop_index=loop, max_loops=max_loops

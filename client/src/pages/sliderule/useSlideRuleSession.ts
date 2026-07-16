@@ -455,7 +455,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     userText: string,
     intervention?: UserIntervention,
     // E25 续播：附着到既有后台 run（刷新/断线后自动接回），不重新发起推演
-    resumeRun?: { runId: string }
+    resumeRun?: { runId: string },
+    // E26 缺口修复轮：只重跑覆盖门标红的能力，已 PASS 产物原样复用
+    mode?: "repair"
   ) => {
     if (!userText.trim()) return;
 
@@ -544,6 +546,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         !IS_GITHUB_PAGES &&
         !intervention &&
         !resumeRun &&
+        // E26 修复轮是对本话题缺口的补跑，永远不是新话题/闭环后追问
+        mode !== "repair" &&
         isClosedSessionState(loadedState)
       ) {
         if (
@@ -869,6 +873,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           const streamOpts = {
               stopSignal: controller.signal,
               turnId,
+              ...(mode === "repair" ? { mode } : {}),
               onRunId: (runId: string) => {
                 // 后端 run 书签：刷新/跳页回来据此续播接回
                 saveActiveRun(resolvedSid, {
@@ -1471,6 +1476,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     await runTurn(text);
   };
 
+  // E26 缺口修复轮：闭环被拦截后「哪里缺补哪里」——服务端只重跑覆盖门
+  // 标红的能力（evidence.search 等），已 PASS 的产物与五系统模型原样复用。
+  const repairGaps = async () => {
+    if (isRunning) return;
+    await runTurn("补齐证据缺口", undefined, undefined, "repair");
+  };
+
   const toggleRouteExpanded = useCallback((turnId: string) => {
     setUiTurns(prev =>
       prev.map(t =>
@@ -1728,6 +1740,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     llmDraftLabel,
     llmStreams,
     sendMessage,
+    repairGaps,
     runTurn,
     challengeTurn,
     resetSession,

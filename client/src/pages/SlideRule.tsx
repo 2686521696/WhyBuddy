@@ -451,6 +451,8 @@ const ImSurfaceContext = React.createContext<{
   thinkingText: string;
   isRunning: boolean;
   onChallenge: (id: string) => void;
+  /** E26：最新一轮的 id——「补齐缺口」只挂在被闸拦截的最新轮上 */
+  latestTurnId?: string | null;
 }>({
   llmDraft: "",
   llmDraftLabel: null,
@@ -458,6 +460,7 @@ const ImSurfaceContext = React.createContext<{
   thinkingText: "",
   isRunning: false,
   onChallenge: () => {},
+  latestTurnId: null,
 });
 
 const convertImMessage = (m: ImItem): ThreadMessageLike => ({
@@ -603,6 +606,25 @@ function ImAssistantMessage() {
           )}
           {(turn.main || turn.user) && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
+              {/* E26：闭环被闸拦截（证据缺口）→ 主动作是「哪里缺补哪里」——
+                  服务端只重跑覆盖门标红的能力，已 PASS 产物原样复用；
+                  旁边的「重新推演」保持整轮重推语义，两个按钮各说各话 */}
+              {publishClosure?.blocked && turn.id === ctx.latestTurnId && (
+                <button
+                  type="button"
+                  data-testid="sliderule-repair-gaps"
+                  disabled={ctx.isRunning}
+                  onClick={() => {
+                    window.dispatchEvent(
+                      new CustomEvent("sliderule:repair-gaps")
+                    );
+                  }}
+                  className="rounded-full bg-[#e6f4ff] px-2.5 py-0.5 font-medium text-[#1264a3] hover:bg-[#d5ebfc] disabled:cursor-not-allowed disabled:opacity-50"
+                  title="只重跑证据缺口对应的能力，已完成的产物原样保留"
+                >
+                  补齐缺口
+                </button>
+              )}
               {turn.main && (
                 <button
                   type="button"
@@ -626,7 +648,7 @@ function ImAssistantMessage() {
                     );
                   }}
                   className="rounded-full bg-[#e9edf2] px-2 py-0.5 hover:bg-[#e5e7eb] disabled:cursor-not-allowed disabled:opacity-50"
-                  title="以同一句意图基于当前推演状态再推一轮"
+                  title="以同一句意图基于当前推演状态整轮重推"
                 >
                   重新推演
                 </button>
@@ -709,6 +731,7 @@ export function ClaudeChatSurface({
       thinkingText,
       isRunning,
       onChallenge,
+      latestTurnId: latestTurn?.id ?? null,
     }),
     [
       publishClosure,
@@ -719,6 +742,7 @@ export function ClaudeChatSurface({
       thinkingText,
       isRunning,
       onChallenge,
+      latestTurn?.id,
     ]
   );
 
@@ -1608,6 +1632,7 @@ function SlideRuleSessionBody({
     sessionState,
     executorMode,
     sendMessage,
+    repairGaps,
     challengeTurn,
     resetSession,
     toggleRouteExpanded,
@@ -1659,6 +1684,15 @@ function SlideRuleSessionBody({
     };
     window.addEventListener("sliderule:resend-prompt", handler);
     return () => window.removeEventListener("sliderule:resend-prompt", handler);
+  }, []);
+
+  // E26：闭环被闸拦截后的「补齐缺口」——修复轮只重跑覆盖门标红的能力
+  const repairGapsRef = useRef(repairGaps);
+  repairGapsRef.current = repairGaps;
+  useEffect(() => {
+    const handler = () => void repairGapsRef.current();
+    window.addEventListener("sliderule:repair-gaps", handler);
+    return () => window.removeEventListener("sliderule:repair-gaps", handler);
   }, []);
 
   // Python backend error/timeout/degraded/legacy status + retry for core SlideRule workflow (105)
