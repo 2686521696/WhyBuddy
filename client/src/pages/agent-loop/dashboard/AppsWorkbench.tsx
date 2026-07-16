@@ -34,6 +34,13 @@ import {
   type FiveSystemModel,
 } from "@/pages/sliderule/system-screens/five-system-model";
 import { activateSession, newSessionId } from "./SidebarSessions";
+import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
+import {
+  GITHUB_PAGES_DEMO_GOAL,
+  GITHUB_PAGES_DEMO_SESSION_ID,
+  createGithubPagesSlideRuleSessionStore,
+  loadOrSeedGithubPagesDemoSession,
+} from "@/pages/sliderule/github-pages-sliderule-demo";
 
 // ---------------------------------------------------------------------------
 // 纯函数（可单测）
@@ -252,6 +259,26 @@ export function AppsWorkbench() {
 
   React.useEffect(() => {
     let alive = true;
+    if (IS_GITHUB_PAGES) {
+      // 静态演示（无后端）：画廊 = 本地种子会话单卡；健康点走"演示"态。
+      // 不打任何 /api/*——fail-closed 且不吓人（此前会红字"拉取失败"）。
+      void loadOrSeedGithubPagesDemoSession(
+        createGithubPagesSlideRuleSessionStore()
+      )
+        .then(state => {
+          if (!alive) return;
+          setSessions([
+            { sessionId: GITHUB_PAGES_DEMO_SESSION_ID, goal: GITHUB_PAGES_DEMO_GOAL },
+          ]);
+          setDetails({
+            [GITHUB_PAGES_DEMO_SESSION_ID]: deriveAppCardDetail(state),
+          });
+        })
+        .catch(() => alive && setSessions([]));
+      return () => {
+        alive = false;
+      };
+    }
     fetch("/api/sliderule/sessions")
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(data => {
@@ -283,6 +310,7 @@ export function AppsWorkbench() {
         void Promise.all(workers);
       })
       .catch(e => alive && setListError(String(e?.message ?? e)));
+    if (IS_GITHUB_PAGES) return () => { alive = false; }; // 演示态不探测
     fetch("/api/health")
       .then(r => alive && setNodeOk(r.ok))
       .catch(() => alive && setNodeOk(false));
@@ -312,7 +340,9 @@ export function AppsWorkbench() {
 
   const open = (sessionId: string) => {
     activateSession(sessionId);
-    window.location.href = "/agent-loop/sliderule";
+    // Pages 子路径部署（/<repo>/）下绝对路径 404——带 BASE_URL 前缀
+    const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+    window.location.href = `${base}/agent-loop/sliderule`;
   };
 
   const removeApp = async (sessionId: string) => {
@@ -421,8 +451,16 @@ export function AppsWorkbench() {
               setHealthOpen(v => !v);
             }}
           >
-            <span className={`h-2 w-2 rounded-full ${dotCls(overall)}`} />
-            {overall == null ? "服务检查中…" : overall ? "推演服务正常" : "推演服务异常"}
+            <span
+              className={`h-2 w-2 rounded-full ${IS_GITHUB_PAGES ? "bg-sky-400" : dotCls(overall)}`}
+            />
+            {IS_GITHUB_PAGES
+              ? "静态演示 · 无后端"
+              : overall == null
+                ? "服务检查中…"
+                : overall
+                  ? "推演服务正常"
+                  : "推演服务异常"}
           </button>
           {healthOpen && (
             <div
