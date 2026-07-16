@@ -168,7 +168,7 @@ What you can actually do after a topic closes (all state lives in the browser, p
 
 ### Option A — Docker, one command (recommended)
 
-Full stack (frontend + Node server + Python rehearsal engine + MySQL), no local Node/Python needed:
+Full stack (frontend + Node server + Python rehearsal engine), no local Node/Python needed — **and no database**: the rehearsal main line persists to a JSON file store:
 
 ```bash
 git clone https://github.com/xiaojilele-glitch/WhyBuddy.git && cd WhyBuddy
@@ -183,7 +183,8 @@ docker compose up -d --build
 | :------- | :----------------------- | :--------------------------------------------------------------------------------------------- |
 | `app`    | `3000` (host) → `3001`   | Node server + bundled frontend; SlideRule API thin-proxies to Python                            |
 | `python` | `9700` (network-internal) | V5 rehearsal engine: five-system generation, evidence trust gates, evidence pipeline, closure   |
-| `mysql`  | `3306`                   | Accounts / persistence (MySQL 8, named volume `sliderule-mysql-data`)                           |
+
+`mysql` is an **optional profile**, only needed by the legacy accounts feature (login / email codes / projects): `docker compose --profile accounts up -d`.
 
 Sessions and artifacts persist in the named volume `sliderule-python-data` — container rebuilds keep your data.
 
@@ -199,7 +200,8 @@ docker compose down -v              # stop and wipe data
 
 - **Required env**: `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` (any OpenAI-compatible provider) and `SESSION_SECRET` (use a 64-char random hex in production). Without an LLM key the stack still boots; rehearsals fall back to deterministic templates.
 - **Optional**: `WEB_SEARCH_API_KEY` (grounded web evidence) and `E2B_API_KEY` (sandboxed `code.run`) — missing keys fail closed, the tools simply stay unavailable.
-- **Port conflicts**: change `app`'s `ports` mapping in `docker-compose.yml` (e.g. `"8080:3001"`); the MySQL host mapping can be removed.
+- **Port conflicts**: change `app`'s `ports` mapping in `docker-compose.yml` (e.g. `"8080:3001"`).
+- **Accounts (optional)**: the rehearsal main line needs no database. Login / email-code / projects routes use MySQL lazily — enable with `docker compose --profile accounts up -d` (MySQL stays network-internal, no host port).
 - **Corporate networks (TLS-intercepting proxies)**: drop your root CA (`.crt` PEM) into `docker/certs/` before building — both images merge it into their trust chain (see `docker/certs/README.md`). Certificates are gitignored.
 - **Not in compose**: Lobster Executor (needs Docker-in-Docker, opt in separately), Redis (off by default), Feishu integration (mock by default).
 - `.env` is never baked into images (`.dockerignore`); it is injected at runtime via `env_file`.

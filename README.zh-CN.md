@@ -167,7 +167,7 @@ flowchart LR
 
 ### 方式 A——Docker 一键部署（推荐）
 
-全栈（前端 + Node 服务 + Python 推演引擎 + MySQL），无需本地 Node / Python：
+全栈（前端 + Node 服务 + Python 推演引擎），无需本地 Node / Python——**也不需要数据库**：推演主线持久化走 JSON 文件库：
 
 ```bash
 git clone https://github.com/xiaojilele-glitch/WhyBuddy.git && cd WhyBuddy
@@ -182,7 +182,8 @@ docker compose up -d --build
 | :------- | :---------------------- | :------------------------------------------------------------------ |
 | `app`    | `3000`（宿主）→ `3001`  | Node 服务 + 打包好的前端；SlideRule API 薄代理到 Python              |
 | `python` | `9700`（仅容器网络内）  | V5 推演引擎：五系统生成、证据信任门、证据上下文管道、发布闭环         |
-| `mysql`  | `3306`                  | 账号/持久化存储（MySQL 8，命名卷 `sliderule-mysql-data`）            |
+
+`mysql` 是**可选 profile**，只有遗留账号功能（登录/邮箱验证码/projects）用到：`docker compose --profile accounts up -d`。
 
 会话与推演产物持久化在命名卷 `sliderule-python-data`——容器重建不丢数据。
 
@@ -198,7 +199,8 @@ docker compose down -v              # 停止并清空数据
 
 - **必填环境变量**：`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（任意 OpenAI 兼容供应商）与 `SESSION_SECRET`（生产环境换成 64 位随机 hex）。不填 LLM key 服务也能启动，推演走确定性模板回退。
 - **可选能力**：`WEB_SEARCH_API_KEY`（全网证据检索）、`E2B_API_KEY`（`code.run` 沙盒执行）——不填对应工具自动不可用（fail-closed）。
-- **端口冲突**：改 `docker-compose.yml` 里 `app` 的 `ports` 映射（如 `"8080:3001"`）；MySQL 的宿主映射可删除。
+- **端口冲突**：改 `docker-compose.yml` 里 `app` 的 `ports` 映射（如 `"8080:3001"`）。
+- **账号功能（可选）**：推演主线不需要数据库。登录/邮箱验证码/projects 路由惰性使用 MySQL——需要时 `docker compose --profile accounts up -d` 启用（MySQL 只在容器网络内，不占宿主端口）。
 - **企业内网（TLS 拦截代理）**：把企业根证书（PEM，`.crt`）放进 `docker/certs/` 再构建，两个镜像会自动并入信任链（详见 `docker/certs/README.md`）；证书已被 .gitignore 排除。
 - **不包含在 compose 内**：Lobster Executor（需 Docker-in-Docker，单独 opt-in）、Redis（默认关闭）、飞书集成（默认 mock）。
 - `.env` 绝不会被打进镜像（`.dockerignore` 排除），运行时经 `env_file` 注入。
