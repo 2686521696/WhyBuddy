@@ -733,24 +733,52 @@ async def drive_full_stream(
     from services.v5_llm_generate import set_installed_skills
 
     installed_skills = payload.get("installedSkills")
+    from services import run_registry
 
-    async def event_generator():
+    # E25 推演断线重生：引擎跑在后台 run 里（与本连接解耦），事件进带
+    # 序号的日志；本响应只是 run 的一个订阅者——断连不再杀推演，刷新后
+    # 经 GET /runs/{id}/stream 续播。落库在 run 任务内完成（无人观看时
+    # 跑完也要落库）。同会话已有活跃 run 时附着既有 run（防重复发起）。
+    async def stream_factory():
         set_installed_skills(installed_skills)
         try:
             async for event in drive_full_v5_session_stream(
                 state, max_loops=max_loops, user_instruction=user_text
             ):
-                if isinstance(event, dict) and event.get("type") == "complete" and isinstance(event.get("state"), dict):
-                    final_state = V5SessionState.server_load(event["state"])
-                    final_state, _ = sanitize_session_state(final_state)
-                    final_state = save_session(final_state)
-                    event = {**event, "state": final_state.model_dump()}
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        except Exception as exc:
-            error_event = {"type": "error", "message": str(exc)[:300]}
-            yield f"data: {json.dumps(error_event)}\n\n"
+                yield event
         finally:
             set_installed_skills(None)
+
+    async def on_complete(event: Dict[str, Any]) -> Dict[str, Any]:
+        if isinstance(event.get("state"), dict):
+            final_state = V5SessionState.server_load(event["state"])
+            final_state, _ = sanitize_session_state(final_state)
+            final_state = save_session(final_state)
+            return {**event, "state": final_state.model_dump()}
+        return event
+
+    run = await run_registry.start_run(
+        sid or f"anon-{id(state)}",
+        stream_factory,
+        on_complete,
+        user_text=user_text,
+    )
+    return _run_sse_response(run, since=0)
+
+
+def _run_sse_response(run, since: int) -> StreamingResponse:
+    """把 run 日志（自 since 起）+ 实时尾流包成 SSE。`id:` 行遵循
+    Last-Event-ID 语义；data 内同样带 seq/runId（既有消费者只解 data 行，
+    向后兼容）。断连只是取消本订阅，run 照跑。"""
+    import json
+    from services import run_registry
+
+    async def event_generator():
+        async for event in run_registry.subscribe(run, since):
+            yield (
+                f"id: {event.get('seq', 0)}\n"
+                f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            )
 
     return StreamingResponse(
         event_generator(),
@@ -760,6 +788,47 @@ async def drive_full_stream(
             "X-Accel-Buffering": "no",  # disable nginx buffering
         },
     )
+
+
+@router.get("/runs/active")
+async def runs_active(
+    sessionId: str,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """会话当前活跃 run（刷新回来的客户端据此决定是否续播）。"""
+    _auth(x_internal_key)
+    from services import run_registry
+
+    run = run_registry.get_active_run(sessionId)
+    return {"active": run.snapshot() if run is not None else None}
+
+
+@router.get("/runs/{run_id}/stream")
+async def run_stream(
+    run_id: str,
+    since: int = 0,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """续播：从 since 序号补播事件日志，追平后接实时流。"""
+    _auth(x_internal_key)
+    from services import run_registry
+
+    run = run_registry.get_run(run_id)
+    if run is None:
+        return JSONResponse(status_code=404, content={"error": "run_not_found"})
+    return _run_sse_response(run, since=since)
+
+
+@router.delete("/runs/{run_id}")
+async def run_cancel(
+    run_id: str,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """显式取消（停止按钮的新语义：真正杀掉服务端推演）。"""
+    _auth(x_internal_key)
+    from services import run_registry
+
+    return {"cancelled": run_registry.cancel_run(run_id)}
 
 
 # ---------------------------------------------------------------------------
