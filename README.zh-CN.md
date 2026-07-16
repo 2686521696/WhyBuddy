@@ -201,6 +201,14 @@ docker compose down -v              # 停止并清空数据
 - **可选能力**：`WEB_SEARCH_API_KEY`（全网证据检索）、`E2B_API_KEY`（`code.run` 沙盒执行）——不填对应工具自动不可用（fail-closed）。
 - **端口冲突**：改 `docker-compose.yml` 里 `app` 的 `ports` 映射（如 `"8080:3001"`）。
 - **账号功能（可选）**：推演主线不需要数据库。登录/邮箱验证码/projects 路由惰性使用 MySQL——需要时 `docker compose --profile accounts up -d` 启用（MySQL 只在容器网络内，不占宿主端口）。
+- **生产服务器——只拉不建**：每次发版到 `main` 会自动构建镜像推 ghcr.io（`.github/workflows/deploy-images.yml`）。服务器用纯镜像 compose——不在生产机上构建，小内存机器也稳：
+
+  ```bash
+  docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+  # 全自动更新（Watchtower 每 5 分钟检查，档位三）：
+  docker compose -f docker-compose.prod.yml --profile auto up -d
+  # 回滚：把 docker-compose.prod.yml 里 :latest 换成某次发版的 :<commit-sha>
+  ```
 - **企业内网（TLS 拦截代理）**：把企业根证书（PEM，`.crt`）放进 `docker/certs/` 再构建，两个镜像会自动并入信任链（详见 `docker/certs/README.md`）；证书已被 .gitignore 排除。
 - **不包含在 compose 内**：Lobster Executor（需 Docker-in-Docker，单独 opt-in）、Redis（默认关闭）、飞书集成（默认 mock）。
 - `.env` 绝不会被打进镜像（`.dockerignore` 排除），运行时经 `env_file` 注入。

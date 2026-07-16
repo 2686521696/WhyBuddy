@@ -1,0 +1,128 @@
+# SlideRule — 生产服务器专用 compose（档位二/三：只拉镜像，永不本地构建）
+#
+# 前置：main 每次发版由 .github/workflows/deploy-images.yml 自动构建镜像
+# 推到 ghcr.io。服务器上：
+#
+#   cp .env.example .env    # 填 LLM_API_KEY + SESSION_SECRET
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#   → http://服务器IP:3000/agent-loop/workbench
+#
+# 更新（档位二，手动两条命令）：
+#   docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+#
+# 全自动更新（档位三，可选）：
+#   docker compose -f docker-compose.prod.yml --profile auto up -d
+#   （watchtower 每 5 分钟检查新镜像，自动拉取重启；回滚前记得先停它）
+#
+# 回滚：把下面两个 image 的 :latest 换成某次发版的 :<commit-sha> 再 up -d。
+#
+# 账号功能（可选，遗留登录/邮箱验证码/projects 才需要）：
+#   docker compose -f docker-compose.prod.yml --profile accounts up -d
+
+services:
+  python:
+    image: ghcr.io/xiaojilele-glitch/whybuddy-python:latest
+    container_name: sliderule-python
+    env_file:
+      - .env
+    environment:
+      PORT: 9700
+      SLIDE_RULE_INTERNAL_KEY: ${SLIDE_RULE_INTERNAL_KEY:-dev-slide-rule-internal}
+    volumes:
+      - sliderule-python-data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9700/health', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
+  app:
+    image: ghcr.io/xiaojilele-glitch/whybuddy-app:latest
+    container_name: sliderule-app
+    depends_on:
+      python:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-sliderule}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-sliderule_root_change_me}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      SLIDERULE_V5_BACKEND: python
+      PYTHON_SLIDE_RULE_BASE_URL: http://python:9700
+      PYTHON_SLIDE_RULE_INTERNAL_KEY: ${SLIDE_RULE_INTERNAL_KEY:-dev-slide-rule-internal}
+      PYTHON_API_TARGET: http://python:9700
+      AGENT_LOOP_API_TARGET: http://python:9700
+    ports:
+      - "3000:3001"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
+    restart: unless-stopped
+
+  # 档位三（可选）：自动更新小管家。发现 ghcr 有新镜像 → 自动 pull + 重启。
+  # 注意：回滚到旧 tag 期间要先停掉它，否则下个周期又被升回 latest。
+  watchtower:
+    image: containrrr/watchtower
+    container_name: sliderule-watchtower
+    profiles: ["auto"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 300 --cleanup sliderule-app sliderule-python
+    restart: unless-stopped
+
+  # 可选：遗留账号体系（登录/邮箱验证码/projects）才需要。
+  mysql:
+    image: mysql:8.0
+    container_name: sliderule-mysql
+    profiles: ["accounts"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-sliderule_root_change_me}
+      MYSQL_DATABASE: ${DB_NAME:-sliderule}
+    volumes:
+      - sliderule-mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "127.0.0.1",
+          "-uroot",
+          "-p${DB_PASSWORD:-sliderule_root_change_me}",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  sliderule-mysql-data:
+    name: sliderule-mysql-data
+  sliderule-python-data:
+    name: sliderule-python-data
