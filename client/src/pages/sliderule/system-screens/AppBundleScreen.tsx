@@ -127,7 +127,10 @@ export function AppBundleScreen({
       data-skill="appBundle"
       data-active={isActive}
     >
-      {/* Header */}
+      {/* Header —— 被闸拦截时整面让位给极简错误页（E27 用户定稿风格），
+          看板头条/进度条一并隐藏 */}
+      {!(publishClosure && blocked) && (
+      <>
       <div className="flex items-center gap-2 border-b border-[#e8eaee] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-emerald-400" />
         <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">AppBundle</span>
@@ -195,6 +198,8 @@ export function AppBundleScreen({
           style={{ width: `${totalSkills > 0 ? Math.round((totalPresent / totalSkills) * 100) : 0}%` }}
         />
       </div>
+      </>
+      )}
 
       {screenMode === "app" && canRunApp && model ? (
         <div className="min-h-0 flex-1">

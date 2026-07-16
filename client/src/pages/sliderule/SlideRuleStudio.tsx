@@ -308,8 +308,14 @@ export function SlideRuleStudio({
           <>
             {/* 推演剧场 / 证据看板：六系统缩略 + 16:9 系统屏。
                 执行期隐藏 tab 切换栏（用户反馈：与"生成中"覆盖层重复、
-                且此时点击切换无意义），闭环后出现供浏览。 */}
-            {!isRunning && (
+                且此时点击切换无意义），闭环后出现供浏览。
+                E27：被闸拦截且 0 证据时也隐藏——六个屏全是空态，切换无意义，
+                右侧只留极简错误页（用户定稿风格）。 */}
+            {!isRunning &&
+              !(
+                publishClosure?.blocked &&
+                (publishClosure?.evidencePresentCount ?? 0) === 0
+              ) && (
               <div className="flex shrink-0 items-center">
                 <SkillThumbnailBar
                   activeSkillId={displaySkillId}
