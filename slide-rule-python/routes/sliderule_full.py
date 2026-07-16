@@ -20,7 +20,7 @@ from models.v5_state import CapabilityRun, V5SessionState
 from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn, pick_next_capabilities
 from services.persistence import load_all
 from services.slide_rule_marathon import drive_marathon
-from services.v5_full_driver import drive_full_v5_session, drive_full_v5_session_stream, _result_to_dict
+from services.v5_full_driver import drive_full_v5_session, drive_full_v5_session_stream, transient_blocked_signal, _result_to_dict
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
@@ -728,6 +728,9 @@ async def drive_full_stream(
     user_text = sanitize_session_dict(
         {"text": payload.get("userText", "") or payload.get("user_text", "")}
     )[0].get("text", "")
+    # E26 缺口修复轮：mode="repair" 时只重跑覆盖门标红的能力（选材见
+    # pick_repair_capabilities），已 PASS 产物与五系统模型原样复用。
+    repair = str(payload.get("mode") or "").strip().lower() == "repair"
 
     # 技能库六期"推演注入"：已安装技能进生成契约（生成器全程生效，结束必清空）
     from services.v5_llm_generate import set_installed_skills
@@ -743,8 +746,22 @@ async def drive_full_stream(
         set_installed_skills(installed_skills)
         try:
             async for event in drive_full_v5_session_stream(
-                state, max_loops=max_loops, user_instruction=user_text
+                state, max_loops=max_loops, user_instruction=user_text, repair=repair
             ):
+                # E26 自动补救恰好一次：全量轮闭环被「瞬时故障」（超时/连接类）
+                # 拦截时，扣下 complete、同一条流上追加一个修复轮，修完再落定。
+                # 结果不相关等非瞬时拦截不自动重试——如实 blocked，把「补齐
+                # 缺口」按钮留给用户（有界，不烧钱）。
+                if (
+                    event.get("type") == "complete"
+                    and not repair
+                    and transient_blocked_signal(state)
+                ):
+                    async for repair_event in drive_full_v5_session_stream(
+                        state, max_loops=2, user_instruction=user_text, repair=True
+                    ):
+                        yield repair_event
+                    return
                 yield event
         finally:
             set_installed_skills(None)

@@ -744,6 +744,63 @@ def pick_next_capabilities(state: V5SessionState, user_text: str) -> list[dict]:
     return out[:5]
 
 
+_REPAIR_CAP_ROLES = {
+    "evidence.search": "接地",
+    "risk.analyze": "安全",
+    "counter.argue": "挑刺",
+    "critique.generate": "挑刺",
+    "synthesis.merge": "综合",
+    "report.write": "综合",
+    "intent.clarify": "产品",
+}
+
+
+def pick_repair_capabilities(state: V5SessionState) -> list[dict]:
+    """E26 缺口修复轮选材：只挑「缺什么」，绝不做启发式扩展。
+
+    来源三处（与覆盖门的判定同源，修什么以门说了算）：
+      1. 开放的 missing_capability 缺口 → 其 requiredCapabilityId；
+      2. 开放的 missing_evidence 缺口 / 接地证据不足 → evidence.search；
+      3. 覆盖门报告的 missingCapabilities（合约要求但未可信提交）。
+    已 PASS 的产物一概不碰——重跑范围就是门标红的那几项。
+    """
+    from .slide_rule_coverage import (
+        evaluate_coverage_gate,
+        has_grounded_external_evidence,
+    )
+
+    picks: list[dict] = []
+    seen: set[str] = set()
+
+    def _add(cap: Any) -> None:
+        cap_id = str(cap or "").strip()
+        if cap_id and cap_id not in seen:
+            seen.add(cap_id)
+            picks.append({
+                "capabilityId": cap_id,
+                "roleId": _REPAIR_CAP_ROLES.get(cap_id, "agent"),
+            })
+
+    for g in getattr(state, "coverageGaps", []) or []:
+        status = g.get("status") if isinstance(g, dict) else getattr(g, "status", "open")
+        if (status or "open") != "open":
+            continue
+        kind = g.get("kind") if isinstance(g, dict) else getattr(g, "kind", None)
+        if kind == "missing_capability":
+            _add(g.get("requiredCapabilityId") if isinstance(g, dict) else getattr(g, "requiredCapabilityId", None))
+        elif kind == "missing_evidence":
+            _add("evidence.search")
+
+    gate = evaluate_coverage_gate(state)
+    for cap in gate.get("missingCapabilities") or []:
+        _add(cap)
+
+    if not has_grounded_external_evidence(state):
+        _add("evidence.search")
+
+    return picks[:5]
+
+
 # Load on import
 _load_sessions()
 

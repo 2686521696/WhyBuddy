@@ -163,6 +163,8 @@ export interface DriveFullStreamOpts {
   stopSignal?: AbortSignal;
   maxLoops?: number;
   turnId?: string;
+  /** E26 缺口修复轮：只重跑覆盖门标红的能力，已 PASS 产物原样复用。 */
+  mode?: "repair";
   /** Called each time one of the 5 skill systems starts (post-closure sequence). */
   onSkillActivated?: (skillId: SkillId, label: string) => void;
   /** Called when a skill finishes, with its real closure evidence + graph. */
@@ -218,6 +220,7 @@ export async function driveFullViaPythonStream(
         max_loops: opts.maxLoops ?? 10,
         turnId: opts.turnId,
         installedSkills: installedSkillsDrivePayload(),
+        ...(opts.mode ? { mode: opts.mode } : {}),
       }),
     });
     if (!res.ok || !res.body) return null;
