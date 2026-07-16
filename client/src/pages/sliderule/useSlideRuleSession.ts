@@ -18,6 +18,11 @@ import { challengeTargetLabel } from "./challenge-target-label";
 import { buildTurnRoundsFromDrive } from "./turn-round-facts";
 import { stampTurnNarration } from "./turn-narration";
 import {
+  saveActiveRun,
+  loadActiveRun,
+  clearActiveRun,
+} from "./active-run-store";
+import {
   createUiCapabilityExecutor,
   mapArtifactsToWhyArtifacts,
 } from "./ui-capability-executor";
@@ -435,11 +440,28 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setSessionState(state);
   }, []);
 
-  const runTurn = async (userText: string, intervention?: UserIntervention) => {
+  // E25：显式取消 = 真正杀掉服务端后台 run（不再只是断开本地连接）
+  const cancelActiveRunOnServer = useCallback(() => {
+    const sid = sessionState.sessionId || sessionId;
+    const record = loadActiveRun(sid);
+    if (!record) return;
+    fetch(`/api/sliderule/runs/${encodeURIComponent(record.runId)}`, {
+      method: "DELETE",
+    }).catch(() => {});
+    clearActiveRun(sid);
+  }, [sessionState.sessionId, sessionId]);
+
+  const runTurn = async (
+    userText: string,
+    intervention?: UserIntervention,
+    // E25 续播：附着到既有后台 run（刷新/断线后自动接回），不重新发起推演
+    resumeRun?: { runId: string }
+  ) => {
     if (!userText.trim()) return;
 
     if (isRunning) {
-      // M1: stop instead of send when running
+      // M1: stop instead of send when running（E25：停止=真正杀掉服务端 run）
+      cancelActiveRunOnServer();
       abortControllerRef.current?.abort();
       setIsRunning(false);
       return;
@@ -521,6 +543,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       if (
         !IS_GITHUB_PAGES &&
         !intervention &&
+        !resumeRun &&
         isClosedSessionState(loadedState)
       ) {
         if (
@@ -543,11 +566,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       const goalStatusBefore = workingState.goal?.status;
       const staleArtifactIdsBefore = [...(workingState.staleArtifactIds || [])];
 
-      const { preparedState } = SlideRuleRuntime.intakeMessage(workingState, {
-        turnId,
-        userText: userText.trim(),
-        intervention,
-      });
+      // E25 续播：不重复 intake——该轮 intake 已在原发起时完成并落库，
+      // 以持久化状态原样为起点，事件补播负责重建本轮 UI。
+      const preparedState = resumeRun
+        ? workingState
+        : SlideRuleRuntime.intakeMessage(workingState, {
+            turnId,
+            userText: userText.trim(),
+            intervention,
+          }).preparedState;
 
       const activeGoalText =
         preparedState.goal?.text?.trim() || userText.trim();
@@ -763,14 +790,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // PYTHON_AUTHORITY: /drive-full-stream 以已持久化会话为权威起点（防伪造，
           // 见 routes/sliderule_full.py drive_full_stream）。intake 后的 goal 必须先
           // 落盘，否则 Python 侧以旧的空 goal 推演，闭环 fail-closed 成 0/6。
-          try {
-            await persistSession(preparedState);
-            // 话题刚落盘：通知侧栏重拉列表，标题从"新会话"实时变成话题
-            const { notifySessionsUpdated } =
-              await import("@/pages/agent-loop/dashboard/SidebarSessions");
-            notifySessionsUpdated();
-          } catch {
-            // 持久化失败时仍继续驱动：请求体里的 state 会作为无持久化会话的兜底。
+          if (!resumeRun) {
+            try {
+              await persistSession(preparedState);
+              // 话题刚落盘：通知侧栏重拉列表，标题从"新会话"实时变成话题
+              const { notifySessionsUpdated } =
+                await import("@/pages/agent-loop/dashboard/SidebarSessions");
+              notifySessionsUpdated();
+            } catch {
+              // 持久化失败时仍继续驱动：请求体里的 state 会作为无持久化会话的兜底。
+            }
           }
           // Claude 式左栏实时叙事：把 SSE 事件翻成人话喂进本轮 steps
           // （TurnStepsDisclosure 流式显示最近几步，可展开全程）。
@@ -829,13 +858,34 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             ? (await import("./github-pages-demo-playback"))
                 .driveGithubPagesDemoPlayback
             : driveFullViaPythonStream;
-          const pythonDrive = await driveStream(
-            preparedState,
-            userText.trim(),
-            {
+          // E25：发起与续播共用同一组回调——同一事件词表喂同一 UI
+          const resolvedSid =
+            preparedState.sessionId || sessionState.sessionId || sessionId;
+          let runSettledReason:
+            | "complete"
+            | "cancelled"
+            | "error"
+            | null = null;
+          const streamOpts = {
               stopSignal: controller.signal,
               turnId,
-              onLlmDelta: (text, label) => {
+              onRunId: (runId: string) => {
+                // 后端 run 书签：刷新/跳页回来据此续播接回
+                saveActiveRun(resolvedSid, {
+                  runId,
+                  userText: userText.trim(),
+                  startedAt: new Date().toISOString(),
+                });
+              },
+              onRunSettled: (
+                reason: "complete" | "cancelled" | "error"
+              ) => {
+                // 服务端宣布 run 终局才清书签；纯断连（刷新/跳页）不清——
+                // run 还在后台跑，书签是下次进入自动续播的唯一线索
+                runSettledReason = reason;
+                clearActiveRun(resolvedSid);
+              },
+              onLlmDelta: (text: string, label?: string) => {
                 const key = label || "five-system-model";
                 const firstSight = !llmDraftBuffers.has(key);
                 llmDraftBuffers.set(
@@ -922,8 +972,34 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   setLatestMermaid(mermaid);
                 }
               },
-            }
-          );
+          } satisfies import("@/lib/sliderule-marathon-driver").DriveFullStreamOpts;
+          const pythonDrive = resumeRun
+            ? await (
+                await import("@/lib/sliderule-marathon-driver")
+              ).resumeDriveFullStream(resumeRun.runId, streamOpts)
+            : await driveStream(preparedState, userText.trim(), streamOpts);
+          // 续播流断了但 run 未终局（网络抖动/代理超时，非本地停止）：
+          // 绝不能落进本地引擎兜底——那会把整轮在前端重跑一遍，与后台
+          // run 双开。如实报中断，书签还在，刷新可再次自动接回。
+          if (
+            resumeRun &&
+            !pythonDrive &&
+            runSettledReason === null &&
+            !controller.signal.aborted
+          ) {
+            throw new Error(
+              "续播连接中断，后台推演仍在进行——刷新页面可再次接回"
+            );
+          }
+          // 服务端宣布取消（他处停止/孤儿回收）且非本地主动停止：同样
+          // 不进本地兜底重跑，按中断收尾。
+          if (
+            !pythonDrive &&
+            runSettledReason === "cancelled" &&
+            !controller.signal.aborted
+          ) {
+            throw new Error("推演已在服务端停止");
+          }
           // 思考流留档（2026-07-10 用户裁决）：推演结束后每步 LLM 的完整
           // 输出保留成可折叠记录（Claude 的"Thought for Xs"），不随 llmDraft
           // 清空消失。closure.summary 不留档——它本身就是本轮总结正文，留档
@@ -1327,10 +1403,46 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   };
 
   const stop = useCallback(() => {
+    // E25：停止 = 杀服务端 run + 断本地流（否则后台照跑白烧 LLM）
+    cancelActiveRunOnServer();
     abortControllerRef.current?.abort();
     setIsRunning(false);
     setLiveAction(null);
-  }, []);
+  }, [cancelActiveRunOnServer]);
+
+  // E25 推演断线重生：刷新/跳页回来，若本会话仍有在跑的后台 run →
+  // 自动续播接回（事件日志从头补播重建本轮 UI，追平后接实时尾流）。
+  const resumeAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (!sessionHydrated || IS_GITHUB_PAGES || resumeAttemptedRef.current) {
+      return;
+    }
+    if (isRunning) return;
+    resumeAttemptedRef.current = true;
+    const sid = sessionState.sessionId || sessionId;
+    const record = loadActiveRun(sid);
+    if (!record) return;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/sliderule/runs/active?sessionId=${encodeURIComponent(sid)}`
+        );
+        const body = res.ok ? await res.json() : null;
+        const active = body?.active;
+        if (active && active.status === "running" && active.runId) {
+          await runTurn(record.userText || "（续播上一轮推演）", undefined, {
+            runId: String(active.runId),
+          });
+        } else {
+          // run 已完结/服务端已无此 run：清书签（终态已由轮边界落库覆盖）
+          clearActiveRun(sid);
+        }
+      } catch {
+        // 后端暂不可达：书签保留，下次进入再试
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionHydrated]);
 
   const resolveInteractiveGate = useCallback(
     (gateNodeId: string, choice: string | null) => {
