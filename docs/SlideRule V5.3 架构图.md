@@ -1,16 +1,17 @@
-# SlideRule V5.2 架构图 (Mermaid)
-
-V5.2 外环 (◆) + U* 修订 (●) 围绕 V5.1 脊柱 (零改动)。完整模型见下图。
-
-```mermaid
-%% SlideRule V5.2 架构图
-%% V5.1 脊柱 (CORE 控制平面 + POOL 能力池 + 基础 REENTRY/RUNTIME/OUT) 零改动
-%% V5.2 外环 (◆) + U* 修订 (●)：Drive/Marathon 外层、U1 信任修订、U2 执行器拓扑 (browser-llm + KEYPOOL)、U4 用户语言化表面
-%% 符号说明:
-%%   ◆ = V5.2 新增 / 外环元素
-%%   ● = Ux 修订点 (在 V5.1 基础上增强)
-%%   虚线/点线 = 跨层连接 或 部分实现 (待补，图中已自注)
-%% 布局提示: TB 纵向；外环 (DRIVE + SURF + EXEC/TRUST 部分) 建议在 Mermaid 中使用容器或分图查看以减少交叉边 spaghetti
+%% SlideRule V5.3 架构图（推演引擎规格 · 继承 V5.2 全图 + ■ 增量）
+%% 2026-07-16 结构审查：V5.2 图（07-09 落款"零结构变化"）之后两天出现四处
+%%   真结构变化 + 三处中型增量，本图升版收录。每个 ■ 都有提交与评测可溯：
+%%   ■1 TOOLS 工具层     — P2a/P2b（dd5fc99 web.search · 3eb8423 code.run/E2B）
+%%   ■2 证据回流环 ECTX  — E17（064d033）·A/B 签字 docs/evidence-context-ab-2026-07-16.md
+%%                         （piped 2胜0负8平，默认开维持）
+%%   ■3 轮内并行+屏障    — E17b（同上）·synthesis/report/appbundle 为屏障段
+%%   ■4 pick 双通道 APICK — F2（044e440）·终裁 docs/content-quality-eval-2026-07-15.md
+%%                         （闭环平·内容 4:0 胜·成本 2x → 默认关待切）
+%%   ■5 结构化生成通道   — P3（8b0e5c6）·校验错误回喂 reask（借 Instructor 语义）
+%%   ■6 直播时间线投影   — E13（b9f4500）·turnNarrations 展示投影+同轮守卫豁免
+%%   ■7 IM 输出编排      — E16/E16.1（82bca0c/492c161/1fe5a56）·多流分窗+平滑泵
+%% 符号: ■ = V5.3 新增/修订 ; ◆ = V5.2 外环 ; ● = Ux 修订 ; 虚线 = 跨层或待补
+%% 原 V5.2 图保留于 docs/SlideRule V5.2 架构图.md（本文件为其超集）
 
 flowchart TB
 
@@ -33,6 +34,7 @@ subgraph SURF["00 交互面 / Surface（◆ U4 用户语言化：出问题才说
   STATUS["状态条（唯一常驻）<br/>◆ 只说人话：推演中·第N步 / 已想清楚✓<br/>还差N个关键信息 / 已停止·随时继续"]:::surface
   AUDIT["◆ 审计抽屉 / Audit Drawer<br/>gate原文·台账·封条计数·baseline·分账 (M7: policy + ledger + superseded + baseline + cost)<br/>机制信息只搬家不删除"]:::surface
   BOARD["内联临时黑板<br/>讨论 · 图 · 报告段 · 方案 · 预览<br/>● 按轮分组折叠(马拉松, via routeExpanded + superseded)"]:::surface
+  IMORCH["■ IM 输出编排 / E16<br/>并行流按label分窗·平滑泵(积压/8匀速)<br/>ChainOfThought时间线·streamdown正文·收口句带真时长"]:::surface
 end
  
 subgraph CORE["01 控制平面 / Control Plane（V5.1 脊柱 · 零改动）"]
@@ -46,15 +48,18 @@ subgraph CORE["01 控制平面 / Control Plane（V5.1 脊柱 · 零改动）"]
   STATE[("常驻推演状态 / Reasoning State（唯一 authority）<br/>graph · artifacts · evidence · risks · decisions<br/>capabilityRuns · gates · dependencyGraph<br/>● + qualityBaseline声明 · ◆ + supersededIds")]:::state
   GOAL["目标 / 结论状态（ORCH 只读 · 写入仅经覆盖率闸）<br/>clear · needs_refinement · not_recommended"]:::core
   AWAIT["待续 / Awaiting（环上歇脚点）<br/>收敛 · 等人 · 超轮内预算<br/>◆ + 用户停止 · 等人补缺(马拉松) · 会话预算顶 · 前沿耗尽"]:::await
+  ECTX["■ 证据上下文管道 / evidence_context<br/>信任门准入(只喂过门的)·优先级装箱(priompt语义)<br/>预算截止·省略留痕 · A/B 签字 2胜0负8平"]:::ledger
+  PARBATCH["■ 轮内并行批 / batch parallel<br/>独立能力并行执行·屏障分段<br/>synthesis/report/appbundle=屏障(等前段commit)"]:::core
+  APICK["■ agentic pick / LLM提案+门验收<br/>词表封闭·重复守卫·台账source=llm<br/>默认关(闭环平·内容4:0胜·成本2x)"]:::core
 end
  
-subgraph ROLES["02 角色与协作 / Roles（● V5.2：多角色面板已真正接入 drive）"]
+subgraph ROLES["02 角色与协作 / Roles（V5.1 原样）"]
   direction TB
   RL["多角色 / Roles<br/>产品·架构·安全·合规·工程·挑刺·接地·综合·UI"]:::role
-  D_GATE{"● 决策门 / Decision Gate<br/>简单 or 复杂?<br/>resolveRoleMode：契约 complex / 产品搭建类目标 → 自动 complex<br/>(去掉旧的≥4产物硬门槛，brainstorm 不再形同虚设)"}:::gate
+  D_GATE{"决策门 / Decision Gate<br/>简单 or 复杂?"}:::gate
   D_SA["单 Agent / Single-Agent"]:::role
-  D_BO["● 头脑风暴 / Brainstorm（多角色面板）<br/>产品·架构·安全 三角色各出立场 → 轮转交叉质疑 → 裁决<br/>复用 executeDeliberation+adjudicator；payload: positions+critiques+收敛分+异议"]:::role
-  D_SYN["● 综合器 / Synthesizer<br/>读面板多角色立场聚合 · 信心分 · 分歧意见(收敛分/保留异议)<br/>结构化多视角上游 → 喂厚 report.write"]:::role
+  D_BO["头脑风暴 / Brainstorm<br/>讨论·投票·分工·审计"]:::role
+  D_SYN["综合器 / Synthesizer<br/>方案·信心分·分歧意见"]:::role
   FLOWB{"流边界守卫 / Flow Boundary<br/>剥离 critique · rebuttal · debate console"}:::gate
   D_DEG["降级兜底 / Degradation → 单 Agent"]:::fallback
   PAIR["调度单元 = (capability, role) 对"]:::role
@@ -115,6 +120,15 @@ subgraph EXEC["08 执行层 / Executor Topology（● U2 新增子图）"]
   KEYPOOL["● key池调度 / ByokDispatcher<br/>租约·least-busy·429冷却·401禁用<br/>raceMode默认false(成本诚实)<br/>◆ 待补:FIFO排队 · per-key计费"]:::core
   DEPLOY{"部署形态 / Deployment<br/>Pages纯浏览器BYOK / 自托管server"}:::gate
   KEYISO["● key零信任边界<br/>仅localStorage+闭包 · 不进STATE/台账/导出<br/>序列化隔离测试锁定"]:::trust
+  SREASK["■ 结构化生成通道 / structured_llm_json<br/>校验错误回喂 reask(借Instructor语义)<br/>强制流式免CF-524 · SLIDERULE_STRUCTURED_LLM"]:::core
+end
+ 
+
+subgraph TOOLS["08.5 工具层 / MCP Tool Registry（■ V5.3 新增 · 信任纪律随身）"]
+  direction TB
+  MCPREG["■ 工具注册表 / mcp_tools<br/>MCP 对齐描述符 name·inputSchema·readOnly<br/>纪律：执行类必须声明沙盒(测试锁定)"]:::core
+  WSEARCH["■ 真证据源 / web.search（只读）<br/>供应商链 Tavily→Serper→Wikipedia免key<br/>查询蒸馏·失败回落本地RAG(retrieval如实标注)"]:::cap
+  CODERUN["■ 沙盒执行 / code.run（readOnly=false）<br/>E2B 一次性沙盒·宿主零执行·用完即毁<br/>fail-closed：无 key 工具不可用"]:::cap
 end
  
 subgraph REENTRY["05 失效与重入 / Invalidation & Re-entry（单一回炉 · ◆ +superseded）"]
@@ -141,6 +155,7 @@ subgraph RUNTIME["06 运行时 / Runtime（P3 红利 · ● 投影层成果）"]
   TERMINAL["● 终端交付投影 / Terminal+TrustSeal<br/>虚拟节点·不入STATE.graph"]:::runtime
   ROW["节点行 / Node Row"]:::runtime
   REPLAY["回放 / Replay"]:::runtime
+  NARR["■ 直播时间线投影 / turnNarrations<br/>轮末随PUT持久化·3轮×300步封顶<br/>展示投影：同轮守卫豁免清单成员"]:::runtime
 end
  
 subgraph OUT["07 输出 / Output"]
@@ -213,24 +228,19 @@ BUS --- C_SYN
 BUS --- C_REP
 BUS --- C_PACK
  
-%% ===== 角色 + 流边界（● V5.2：多角色面板接入 drive）=====
-%% pickBrainstormChain(complex) 把面板链 critique.generate(面板) → synthesis.merge 前置到 report.write 之前；
-%% critique.generate 在 complex 下经 deliberation-exec-map.runPanelSession 跑成 3 角色面板（见 D_BO）。
+%% ===== 角色 + 流边界（V5.1 原样）=====
 RL --> D_GATE
-D_GATE -.简单·成对质疑.-> D_SA
-D_GATE -.复杂·多角色面板.-> D_BO
+D_GATE -.简单.-> D_SA
+D_GATE -.复杂.-> D_BO
 D_BO --> D_SYN
 D_GATE -.失败超时.-> D_DEG
 D_DEG -.兜底.-> D_SA
 ORCH -.选 capability×role.-> PAIR
-ORCH -.复杂·prime 面板链.-> D_BO
 D_SA -.视角.-> PAIR
 D_SYN --> FLOWB
-D_SYN -.● 多角色立场与投票分歧.-> C_REP
 FLOWB -.净化后视角.-> PAIR
 FLOWB -.断言进台账.-> T_LEDGER
 D_BO -.回灌·经守卫.-> FLOWB
-D_BO -.● 立场与收敛分投影为画布多角色子节点.-> BOARD
 PAIR -.接入.-> BUS
  
 %% ===== 池内链（V5.1 原样，节选）=====
@@ -311,6 +321,34 @@ DENSITY -.投影.-> BOARD
 TERMINAL -.投影.-> BOARD
 STORE --> REPLAY
  
+
+%% ===== ■ V5.3 接线 =====
+%% 工具层：证据能力真搜索优先，失败诚实回落；产物 provenance 全走信任层
+MCPREG --- WSEARCH
+MCPREG --- CODERUN
+C_EVID -.■ 真搜索优先.-> WSEARCH
+WSEARCH -.■ 全链失败/停用·回落本地RAG(标注keyword).-> C_EVID
+WSEARCH -.■ retrieval=web:* 标注.-> T_PROV
+CODERUN -.■ provenance=sandbox:e2b.-> T_PROV
+C_TOOL -.■ 经注册表调用.-> MCPREG
+%% 证据回流环（架构级新边）：STATE 产物受控回流进能力 prompt
+STATE -.■ 已过门产物(gated_pass/audited·非stale).-> ECTX
+ECTX -.■ UPSTREAM_EVIDENCE 注入.-> PROMPTS
+%% 轮内并行 + 屏障
+ORCH -.■ 选中批.-> PARBATCH
+PARBATCH <-.■ 并行执行·屏障段串行.-> BUS
+%% pick 双通道（实验位）
+ORCH -.■ SLIDERULE_AGENTIC_PICK=on.-> APICK
+APICK -.■ 提案·词表验收后替换.-> DLEDGER
+%% 结构化生成通道
+C_LLM -.■ 生成失败·错误回喂.-> SREASK
+SREASK -.■ 修复后回.-> G_SCHEMA
+%% 直播时间线投影 + IM 编排
+STATE --> NARR
+NARR -.■ 刷新完整回放.-> BOARD
+SOCK -.■ llm_delta 按label分流.-> IMORCH
+IMORCH -.■ 渲染.-> BOARD
+ 
 %% ===== 输出 =====
 C_REP ==> REPORT
 REPORT --> READER
@@ -341,167 +379,3 @@ classDef role fill:#fae8ff,stroke:#d946ef,color:#701a75
 classDef bus fill:#fef9c3,stroke:#eab308,color:#713f12
 classDef await fill:#e0f2fe,stroke:#38bdf8,color:#0c4a6e,stroke-dasharray: 5 5
 classDef runtime fill:#f5f5f4,stroke:#78716c,color:#292524
-```
-
----
-
-**V5.3 增量（执行可见性 #4）**：P1 数据底座（ReasoningEvent + 透传）· P2 后端 emit（panel/dialogue/fallback + route + 脱敏）· P3 协作视图（默认展开 + challenges 非-depends_on 边 + verdict）· P4 思考链（子步链 + overview 角标 + viewMode）· P5 UI（三态 + 渲染新节点边 + streaming + 点击）· P6 打磨 + 文档 + 验证 + 合并。
-
-详见 `docs/sliderule_v5.3_*` 三件套。红线全守，DoD 满足（collaboration 默认立场+质疑边+裁决；reasoning 子步；三态/实时/点击；无额外 LLM；脱敏；兼容）。
-
----
-
-## 完成度对账（2026-07-08 审查）
-
-上图是**推演引擎规格**（V5.1 脊柱 + V5.2 外环），逐块对照代码现状：
-
-| 图中区块 | 状态 | 备注 |
-|---|---|---|
-| DRIVE 驱动层（模式选择/马拉松/前沿/策略/会话预算/纪要） | ✅ 已落地 | marathon-driver + useSlideRuleSession 条件调用 |
-| SURF 交互面 | ✅ 已落地，**形态已大改** | 见下方 As-Built 全景：应用主舞台三态 + 游标 + 侧栏会话体系取代旧描述 |
-| CORE 控制平面（V5.1 脊柱） | ✅ 零改动保持 | |
-| ROLES 多角色面板接入 drive | ✅ 已落地 | resolveRoleMode + runPanelSession |
-| POOL 能力池 | ✅ 已落地 | |
-| TRUST 信任层（验真+验厚/基线/台账） | ✅ 已落地 | 生成侧另有 judge 量表 + 基线比对（图外，见全景） |
-| EXEC 执行层（执行器抽象/双端同源 prompt/KEYPOOL） | ✅ 已落地 | KEYPOOL 图注「待补：FIFO 排队 · per-key 计费」**仍未做**，标注继续有效 |
-| REENTRY / RUNTIME / OUT | ✅ 已落地 | |
-
-**引擎图未覆盖、已成为产品主线的部分**（本次审查新增下图补齐）：
-五系统生成主线（drive-full SSE → FiveSystemModel → 发布闭环 6/6 + closureHash）、
-浏览器运行时（schema 渲染真系统 + 角色联动 + AI 写回）、
-会话体系与持久化（Claude 式多会话 + 单条守卫式落盘，修复四个跨重启失忆 bug）、
-LLM 双通道（服务端真通道运行时覆盖 + 浏览器直连 BYOK 备用）、
-应用主舞台 + 游标透视（方向 B：五系统从并列切屏降为应用的透视层）。
-
-## 增量对账（2026-07-16 审查）
-
-引擎规格出现结构变化，架构图升版 **V5.3**（docs/SlideRule V5.3 架构图.md，
-V5.2 原图保留）。■ 七处增量及数据签字出处见 V5.3 图顶注释，摘要：
-
-1. **工具层 TOOLS**（P2a/P2b）：MCP 式注册表——web.search 真证据源
-   （供应商链，失败诚实回落）+ code.run E2B 沙盒执行（fail-closed，宿主零执行）。
-2. **证据回流环 ECTX**（E17，架构级新边）：STATE 已过门产物 → 信任门准入 +
-   优先级装箱 → 轮内能力 prompt。A/B 盲评 2胜0负8平签字，默认开。
-3. **轮内并行 + 屏障**（E17b）：独立能力并行批，synthesis/report/appbundle 屏障段。
-4. **pick 双通道 APICK**（F2）：LLM 提案+门验收实验位，内容质量 4:0 胜、
-   成本 2x，默认关待切。
-5. 结构化生成通道（P3 错误回喂 reask）、直播时间线投影 turnNarrations（E13）、
-   IM 输出编排（E16 多流分窗+平滑泵）。
-
-产品面同期增量（不动引擎图）：工作台「我的应用」画廊（E14）、站内帮助中心
-（E15）、品牌统一 SlideRule。
-
-## 增量对账（2026-07-09 审查）
-
-引擎规格图（上图）本轮**零结构变化**——以下增量全部落在产品主线，已并入下方全景图：
-
-| 增量 | 状态 | 落点 |
-|---|---|---|
-| 技能库六期全链路（索引 889 · 语义档案 543 · 原版技能包 855 · marketplace 安装 · 双通道试跑 · 推演注入） | ✅ 新子系统 | 全景图 SKILLS 子图 |
-| 加厚 schema 一期：字段语义（enum options+tone · money/percent/progress/score/rating/masked · page.stats KPI 卡） | ✅ 契约+门禁+运行时三件套 | GEN.CONTRACT + LIVERT.FIELDV |
-| 加厚 schema 二期：页面范式（kanban/calendar/dashboard，statusField/dateField 绑定门禁校验，绑不上诚实降级 workbench） | ✅ 同上 | LIVERT.PARADIGM |
-| 加厚 schema 三期：AI 可解释输出（/aigc-tryrun explain 通道 → {output, confidence, rationale}，解析不出诚实降级纯文本） | ✅ AI 写回从直写升级为建议式（确认才落行） | LIVERT.AIWB 改写 |
-| 执行健壮性：LLM 网关错误人话化（剥 HTML + 5xx 瞬时标注）+ tryrun 3 次退避重试 + 生成链路退避 200ms→2s | ✅ | PERSIST.CHANNEL 注记 |
-| 表格自带能力（排序/筛选/列设置）+ 低代码编辑器与自由画布**裁撤**（用户复盘：加厚 schema 直接，搭建工具不要） | ✅ 方向性裁决 | LIVERT.SCHEMA 注记 |
-| 壳体冷调换肤（换肤 D：中性冷灰+蓝，暖色降级 logo/用户气泡点缀） | ✅ 视觉层，不改架构 | — |
-| KEYPOOL「FIFO 排队 · per-key 计费」 | ⏸ 仍未做 | 图注继续有效 |
-
-## As-Built 产品全景（2026-07-09 刷新）
-
-```mermaid
-flowchart TB
-
-subgraph SHELL["产品外壳 / AgentLoop Shell"]
-  direction TB
-  SIDEBAR["侧栏：品牌(S型尺标) · 工作台 · 设置<br/>+ 新建会话 · 最近会话列表(两步删除)"]:::surface
-  SESSIONS_UI["会话壳：key=sessionId 整树重挂<br/>localStorage active-session-id + window 事件"]:::surface
-  SETTINGS["设置整页（三分类）<br/>推演通道(服务端) · 浏览器直连(BYOK+自定义) · 系统设置"]:::surface
-  WORKBENCH["工作台：服务健康 · 会话总览 · 质量基线"]:::surface
-end
-
-subgraph STAGE["右栏主舞台（方向 B：应用为主，五系统是游标透视层）"]
-  direction TB
-  THEATER["theater：推演剧场<br/>SSE 逐系统亮相（生成过程可见）"]:::runtime
-  APPSTAGE["app：运行应用整高主舞台<br/>AppRuntimeScreen（antd Pro 壳 · 多端画布缩放）"]:::runtime
-  BOARDF["board：证据看板回退<br/>（空会话/未闭环）"]:::runtime
-  CURSORP["游标透视栏（计算尺游标）<br/>页面级切片 + 元素级 AR 焦点<br/>(悬停列头/按钮/菜单 → 背后声明)"]:::surface
-  DRAWER["系统抽屉：单类别全幅<br/>DataModel/Workflow/RBAC/Page/AIGC/AppBundle 全保留"]:::surface
-end
-
-subgraph SKILLS["技能库 / Skills Marketplace（一~六期）"]
-  direction TB
-  SKIDX["索引+语义资产（合规：索引+回链，本体归原作者）<br/>论坛索引 889 · 语义档案 543 · 原版 SKILL.md 855"]:::state
-  SKMARKET["marketplace 三层：精选 72 / 社区 889 / 已安装<br/>安装=本地执行档案（localStorage，可卸载）"]:::surface
-  SKRUN["装完即用双通道试跑<br/>原版 /skill-package-tryrun(SKILL.md 全文+运行时边界 guard)<br/>语义档案 /aigc-tryrun"]:::cap
-  SKINJ["推演注入两路<br/>已安装→REQUIRED 块(必落 aigc.capabilities，门禁不豁免)<br/>业界语料→df 加权检索软参考(不复制)"]:::cap
-end
-
-subgraph GEN["五系统生成主线 / drive-full"]
-  direction TB
-  SSE["python /drive-full-stream (SSE)<br/>skill_activated · skill_result · llm_delta"]:::core
-  CONTRACT2["生成契约（加厚 schema 三期扩展）<br/>字段语义：enum options+tone · format(money/percent/…/masked)<br/>page.stats KPI · page.kind(kanban/calendar/dashboard)+绑定"]:::ledger
-  FSM["五系统模型 / FiveSystemModel<br/>datamodel·workflow(phase泳道+chains)·rbac·page·aigc(pipelines)·appbundle(invariants)"]:::state
-  MGATE{"结构门禁 v5_model_gate<br/>交叉引用闭包 + 新语义出现即校验缺省不罚<br/>(options/format/stats/kind 悬挂即拦)"}:::gate
-  CLOSURE{"发布闭环 6/6<br/>perSkillEvidence · closureHash 版本钉扎"}:::gate
-  LINKAGE["联动图：分组容器+语义捆扎边<br/>React Flow / Mermaid 双态"]:::cap
-  JUDGE["生成质量：LLM-as-judge 量表(重试)<br/>+ 5 域基线比对（回归即 fail）"]:::trust
-end
-
-subgraph LIVERT["浏览器运行时 / Live Runtime（零后端）"]
-  direction TB
-  SCHEMA["deriveAppRuntimeSchema<br/>菜单/表格/表单/详情/工作台 全 JSON 化<br/>(表格自带排序/筛选/列设置；低代码编辑器已裁撤)"]:::core
-  FIELDV["字段语义渲染 FieldValue<br/>tone 徽标 · ¥千分位 · 进度条 · 评估分档色 · 星级 · 脱敏<br/>+ 页面 KPI 卡带(count/sum/avg)"]:::cap
-  PARADIGM["页面范式视图<br/>kanban(声明列+tone 着色+未归类) · 自建月历(默认数据月)<br/>dashboard(图表主角) · 绑不上降级 workbench"]:::cap
-  RTSTATE["运行时状态 localStorage(按会话分键)<br/>实体行·流程实例·当前角色(跨屏事件同步)"]:::state
-  AIWB["AI 建议式写回（三期升级：不直改数据）<br/>/aigc-tryrun explain → 建议卡(置信度色条+依据)<br/>确认才落行 · 忽略/关抽屉即丢弃 · 解析不出诚实降级"]:::cap
-end
-
-subgraph PERSIST["会话体系与持久化 / Python 权威"]
-  direction TB
-  SSTORE[("sessions.json 会话库<br/>save_session_record 单条守卫式合并<br/>(lastTurnId 单调版本闸)")]:::state
-  FIXES["跨重启失忆四修复：驱动器推进版本 ·<br/>create 不整体抹盘 · 坏记录跳过保留 ·<br/>关停不回滚快照"]:::trust
-  CHANNEL["LLM 真通道 llm_channel<br/>运行时覆盖(.llm-override) · 掩码 · 测试连接<br/>+ 5xx 瞬时退避重试(试跑3次/生成2s) · 错误人话化(剥HTML)"]:::core
-end
-
-SIDEBAR --> SESSIONS_UI
-SESSIONS_UI -.整树重挂.-> STAGE
-SETTINGS -.通道配置.-> CHANNEL
-WORKBENCH -.只读拉取.-> SSTORE
-SKIDX --> SKMARKET
-SKMARKET -.安装.-> SKRUN
-SKMARKET -.已安装随 drive-full 请求.-> SKINJ
-SKINJ -.REQUIRED/参考块进生成 prompt.-> SSE
-SKRUN -.同一 LLM 通道.-> CHANNEL
-CONTRACT2 -.契约喂 prompt.-> SSE
-SSE --> FSM
-FSM --> MGATE
-MGATE -->|闭包通过| CLOSURE
-FSM --> LINKAGE
-JUDGE -.生成侧质量闸.-> FSM
-CLOSURE -.闭环后落幕开演.-> APPSTAGE
-THEATER -.推演中.-> SSE
-APPSTAGE <--> CURSORP
-CURSORP -.深入.-> DRAWER
-FSM --> SCHEMA
-SCHEMA --> APPSTAGE
-SCHEMA --> FIELDV
-SCHEMA --> PARADIGM
-FIELDV -.单元格/表单/KPI 渲染.-> APPSTAGE
-PARADIGM -.看板/月历/仪表盘骨架.-> APPSTAGE
-APPSTAGE <--> RTSTATE
-AIWB -.用户确认后.-> RTSTATE
-CHANNEL -.五系统生成/评审/AI建议 同一通道.-> SSE
-SSE -.守卫式落盘.-> SSTORE
-FIXES -.保障.-> SSTORE
-SSTORE -.重启完整恢复.-> SESSIONS_UI
-
-classDef surface fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
-classDef core fill:#e0e7ff,stroke:#6366f1,color:#312e81
-classDef cap fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
-classDef gate fill:#fef3c7,stroke:#f59e0b,color:#78350f
-classDef trust fill:#cffafe,stroke:#06b6d4,color:#164e63
-classDef state fill:#f1f5f9,stroke:#64748b,color:#0f172a
-classDef runtime fill:#f5f5f4,stroke:#78716c,color:#292524
-```
-
-> 分工：上方引擎图管"怎么想清楚"（推演/闸门/台账），本图管"想清楚之后长成什么产品"（生成主线 → 闭环 → 可运行应用 → 游标透视）。两图共用 STATE/会话库为同一 authority。
