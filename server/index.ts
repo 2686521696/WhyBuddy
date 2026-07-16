@@ -2460,6 +2460,14 @@ print(json.dumps(getattr(res, "model_dump", lambda: res)() if hasattr(res, "mode
   const { attachHealthProxy } = await import("./routes/health.js");
   attachHealthProxy(app);
 
+  // Agent-loop dashboard 薄代理（routes/agent-loop.ts 早已备好，此前只有
+  // vite dev 代理直达 Python，prod/Docker 下会掉进 SPA 兜底返回 HTML——
+  // 工作台健康点因此误报"推演服务异常"。挂上后 prod 与 dev 行为一致。
+  const { createAgentLoopPythonProxyRouter } = await import(
+    "./routes/agent-loop.js"
+  );
+  app.use("/api/agent-loop", createAgentLoopPythonProxyRouter());
+
   // --- Retirement task 55: server/index.ts backend API responsibilities ---
   // Classification for this task: ACTIVE_NODE_BUSINESS (Node still owns the mounting and execution of majority /api/* business surfaces: auth, projects, tasks, rag, a2a, blueprint-main, workflows, permissions, audit, knowledge, web-aigc longtail, chat, etc.).
   // PYTHON_FIRST_COMPAT shells present inside: sliderule (delegates to python when SLIDERULE_V5_BACKEND=python, default), health (attached above), agent-loop proxy prepared in routes/agent-loop.ts (not yet mounted here; see pending task 33).

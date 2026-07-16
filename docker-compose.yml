@@ -1,12 +1,17 @@
 # SlideRule — one-command bootstrap
 #
-#   docker compose up
+#   cp .env.example .env   # 填 LLM_API_KEY + SESSION_SECRET
+#   docker compose up -d --build
+#   → http://localhost:3000/agent-loop/workbench
 #
 # This boots:
-#   - app   → the SlideRule server + bundled frontend on http://localhost:3000
-#             (the container internally listens on 3001; we publish 3000:3001)
-#   - mysql → MySQL 8 with the sliderule schema (legacy DB name kept
-#             for backward compatibility; project name is sliderule)
+#   - app    → SlideRule server + bundled frontend on http://localhost:3000
+#              (the container internally listens on 3001; we publish 3000:3001)
+#   - python → SlideRule 推演引擎 (FastAPI :9700, V5 五系统推演 / E17 证据
+#              管道 / 发布闭环都在这里)。app 通过 SLIDERULE_V5_BACKEND=python
+#              薄代理到它；会话数据持久化在 sliderule-python-data 卷。
+#   - mysql  → MySQL 8 with the sliderule schema (legacy DB name kept
+#              for backward compatibility; project name is sliderule)
 #
 # What is NOT included in this compose:
 #   - Lobster Executor (Docker-in-Docker is messy; opt in separately)
@@ -14,7 +19,7 @@
 #   - Feishu integration (mock mode by default)
 #
 # Required env: copy .env.example to .env and fill at least LLM_API_KEY +
-# SESSION_SECRET. Compose passes the host's .env into the app container.
+# SESSION_SECRET. Compose passes the host's .env into both app containers.
 
 services:
   mysql:
@@ -44,6 +49,44 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  python:
+    build:
+      context: .
+      dockerfile: slide-rule-python/Dockerfile
+    image: sliderule-python:local
+    container_name: sliderule-python
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      PORT: 9700
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-sliderule}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-sliderule_root_change_me}
+      # app → python 内部调用的共享鉴权 key（与 app 的
+      # PYTHON_SLIDE_RULE_INTERNAL_KEY 必须一致）
+      SLIDE_RULE_INTERNAL_KEY: ${SLIDE_RULE_INTERNAL_KEY:-dev-slide-rule-internal}
+    volumes:
+      # 会话/推演产物持久化（data/sliderule-sessions.json 等）
+      - sliderule-python-data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9700/health', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
   app:
     build:
       context: .
@@ -52,6 +95,8 @@ services:
     container_name: sliderule-app
     depends_on:
       mysql:
+        condition: service_healthy
+      python:
         condition: service_healthy
     env_file:
       - .env
@@ -64,6 +109,13 @@ services:
       DB_USER: ${DB_USER:-root}
       DB_PASSWORD: ${DB_PASSWORD:-sliderule_root_change_me}
       CORS_ORIGIN: http://localhost:3000
+      # SlideRule V5 推演主线走 Python 后端（默认即 python，这里显式固定）
+      SLIDERULE_V5_BACKEND: python
+      PYTHON_SLIDE_RULE_BASE_URL: http://python:9700
+      PYTHON_SLIDE_RULE_INTERNAL_KEY: ${SLIDE_RULE_INTERNAL_KEY:-dev-slide-rule-internal}
+      # /api/health 与 agent-loop 薄代理指向 Python（与上面是两套历史变量名）
+      PYTHON_API_TARGET: http://python:9700
+      AGENT_LOOP_API_TARGET: http://python:9700
     ports:
       - "3000:3001"
     restart: unless-stopped
@@ -71,3 +123,5 @@ services:
 volumes:
   sliderule-mysql-data:
     name: sliderule-mysql-data
+  sliderule-python-data:
+    name: sliderule-python-data
