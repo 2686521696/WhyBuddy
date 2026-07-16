@@ -273,10 +273,13 @@ def run_one(
 def _spawn_case(
     topic: str, mode: str, max_loops: int, max_turns: int,
     dump_artifacts: str | None = None,
+    extra_env: dict | None = None,
 ) -> dict:
-    """独立子进程跑单用例：模式开关/会话存储进程级隔离，互不串味。"""
+    """独立子进程跑单用例：模式开关/会话存储进程级隔离，互不串味。
+    extra_env：额外进程级开关（E17 A/B 用它注入 SLIDERULE_EVIDENCE_CONTEXT）。"""
     env = {
         **os.environ,
+        **(extra_env or {}),
         "SLIDERULE_AGENTIC_PICK": "on" if mode == "agentic" else "off",
         "SLIDERULE_SESSIONS_FILE": str(
             Path(tempfile.mkdtemp(prefix=f"ape-{mode}-")) / "sessions.json"

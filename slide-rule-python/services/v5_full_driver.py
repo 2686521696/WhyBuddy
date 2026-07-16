@@ -153,7 +153,12 @@ def _is_commit_order_sensitive_cap(capability_id: str) -> bool:
     caps earlier in the same batch. Such caps must run as barriers.
     """
     cap = (capability_id or "").lower()
-    return "appbundle" in cap or "runtimeclosure" in cap
+    if "appbundle" in cap or "runtimeclosure" in cap:
+        return True
+    # E17：综合/报告类的 prompt 注入上游产物（build_evidence_context），
+    # 并行批里必须作为屏障段——等同轮前段 commit 后再执行，才能吃到
+    # 同轮的风险/证据产物
+    return "synthesis" in cap or "report" in cap
 
 
 def _split_parallel_segments(selected: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
@@ -202,12 +207,35 @@ def _execute_round_capability(cap: str, state: V5SessionState, role: str, turn_i
 
             if is_python_native_capability(cap):
                 goal = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal or "")
+                # E17 证据上下文管道：上游已过门产物注入 prompt（用户裁决
+                # 2026-07-16）。此前 payload 只送 goal——「综合各方结论」
+                # 综合的不是各方结论。失败/停用回落空串，不挡执行。
+                upstream = ""
+                try:
+                    from sliderule_llm.evidence_context import (
+                        build_evidence_context,
+                        evidence_context_enabled,
+                    )
+
+                    if evidence_context_enabled():
+                        artifact_dicts = [
+                            a if isinstance(a, dict) else a.model_dump()
+                            for a in (getattr(state, "artifacts", []) or [])
+                        ]
+                        upstream = build_evidence_context(
+                            artifact_dicts,
+                            set(getattr(state, "staleArtifactIds", []) or []),
+                            capability_id=cap,
+                        )
+                except Exception as ctx_exc:  # noqa: BLE001 — 注入失败不挡推演
+                    print(f"[v5_full_driver] evidence context skipped: {str(ctx_exc)[:120]}")
                 payload = {
                     "capabilityId": cap,
                     "state": {"goal": {"text": goal}},
                     "userText": goal,
                     "roleId": role,
                     "turnId": turn_id,
+                    "upstreamEvidence": upstream,
                 }
                 if cap == "evidence.search":
                     from sliderule_llm.evidence import execute_evidence_runtime

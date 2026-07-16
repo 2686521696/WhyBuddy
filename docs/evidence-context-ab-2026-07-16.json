@@ -1,0 +1,918 @@
+{
+  "arms": [
+    "baseline",
+    "piped"
+  ],
+  "topics": 10,
+  "strictWins": {
+    "baseline": 0,
+    "piped": 2
+  },
+  "ties": 8,
+  "verdict": "管道数据签字：默认开维持（piped 严格胜出）",
+  "judged": [
+    {
+      "topic": "社区宠物医院预约问诊系统",
+      "votes": [
+        "baseline",
+        "piped"
+      ],
+      "strictWinner": "平",
+      "avgScore": {
+        "baseline": 3.62,
+        "piped": 3.62
+      },
+      "rounds": [
+        {
+          "order": [
+            "piped",
+            "baseline"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 3,
+              "完整性": 3,
+              "一致性": 4,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在宠物档案字段、预约排班规则、MVP角色端功能和安全风险上更贴近社区宠物医院实际业务，落地性略强于甲。"
+        },
+        {
+          "order": [
+            "baseline",
+            "piped"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 3,
+              "一致性": 3,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在角色模块、风险边界和一期收敛建议上更贴合社区宠物医院预约问诊闭环，虽然仍有模板化和无效检索问题，但整体更完整可落地。"
+        }
+      ]
+    },
+    {
+      "topic": "连锁健身房私教课排期与核销平台",
+      "votes": [
+        "piped",
+        "baseline"
+      ],
+      "strictWinner": "平",
+      "avgScore": {
+        "baseline": 3.75,
+        "piped": 3.75
+      },
+      "rounds": [
+        {
+          "order": [
+            "baseline",
+            "piped"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 3,
+              "一致性": 4,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在私教课包、预约冲突、跨店核销、课酬绩效、异常流程和作弊风险等业务细节上更具体，MVP闭环也更清晰可落地。"
+        },
+        {
+          "order": [
+            "piped",
+            "baseline"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 3,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在同样贴合私教排期核销主流程的基础上，给出了更具体的核销码、时间窗口、并发锁、接口幂等等落地控制，整体更可执行。"
+        }
+      ]
+    },
+    {
+      "topic": "阳台农夫 Pro——城市家庭种植智能顾问与植物医生",
+      "votes": [
+        "piped",
+        "baseline"
+      ],
+      "strictWinner": "平",
+      "avgScore": {
+        "baseline": 3.75,
+        "piped": 3.5
+      },
+      "rounds": [
+        {
+          "order": [
+            "baseline",
+            "piped"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 3,
+              "一致性": 4,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙更明确收敛首期边界、植物范围、输入字段和诊断安全呈现方式，虽仍有模板化痕迹但比甲更贴近城市阳台种植产品落地。"
+        },
+        {
+          "order": [
+            "piped",
+            "baseline"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 3,
+              "完整性": 3,
+              "一致性": 3,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在阳台种植的环境字段、诊断路径、食用安全、自动浇水/补光风险和MVP输入输出上更具体可落地，甲虽方向正确但重复较多且更偏通用风险模板。"
+        }
+      ]
+    },
+    {
+      "topic": "二手乐器寄卖与鉴定平台",
+      "votes": [
+        "piped",
+        "平"
+      ],
+      "strictWinner": "平",
+      "avgScore": {
+        "baseline": 3.62,
+        "piped": 4.0
+      },
+      "rounds": [
+        {
+          "order": [
+            "baseline",
+            "piped"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 3,
+              "一致性": 3,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙比甲更贴合乐器寄卖鉴定的具体业务，补充了品类差异、特殊材质合规、资金结算、仓储物流和MVP闭环，虽仍有无关RAG噪音但整体更完整可落地。"
+        },
+        {
+          "order": [
+            "piped",
+            "baseline"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "平",
+          "reason": "两者都能围绕二手乐器寄卖、鉴定、担保交易、物流售后形成基本闭环，但外部证据检索均明显失准且整体仍偏规划模板，甲在合规材质与品类差异上略细，乙在调包防控和试点流程上略实，综合差距不足以分胜负。"
+        }
+      ]
+    },
+    {
+      "topic": "小型律所案件流程与文书协作系统",
+      "votes": [
+        "piped",
+        "baseline"
+      ],
+      "strictWinner": "平",
+      "avgScore": {
+        "baseline": 3.62,
+        "piped": 4.0
+      },
+      "rounds": [
+        {
+          "order": [
+            "baseline",
+            "piped"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 3,
+              "完整性": 3,
+              "一致性": 4,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在小型律所场景下补充了利益冲突检查、角色权限、文件上传/第三方服务风险、MVP暂缓项等更贴近业务且可落地的判断，虽同样存在无关RAG证据问题。"
+        },
+        {
+          "order": [
+            "piped",
+            "baseline"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在最终方案中给出了更贴近律所办案的具体字段、流程节点和提醒场景，虽整体与甲接近但产品落地感略强。"
+        }
+      ]
+    },
+    {
+      "topic": "校园失物招领与积分激励平台",
+      "votes": [
+        "piped",
+        "piped"
+      ],
+      "strictWinner": "piped",
+      "avgScore": {
+        "baseline": 3.12,
+        "piped": 3.75
+      },
+      "rounds": [
+        {
+          "order": [
+            "piped",
+            "baseline"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 3,
+              "可操作性": 4
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 3,
+              "一致性": 3,
+              "可操作性": 3
+            }
+          },
+          "winner": "甲",
+          "reason": "甲对防冒领、敏感物品、积分风控和MVP闭环的判断更具体，虽有无关RAG和重复内容但整体落地性强于乙。"
+        },
+        {
+          "order": [
+            "baseline",
+            "piped"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 3,
+              "完整性": 3,
+              "一致性": 3,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 3,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙对校园失物招领的闭环流程、敏感物品处理、防冒领和积分发放条件更具体，虽同样存在无关检索证据问题，但整体更贴近业务且更可落地。"
+        }
+      ]
+    },
+    {
+      "topic": "民宿房态管理与动态定价助手",
+      "votes": [
+        "baseline",
+        "piped"
+      ],
+      "strictWinner": "平",
+      "avgScore": {
+        "baseline": 3.75,
+        "piped": 3.88
+      },
+      "rounds": [
+        {
+          "order": [
+            "piped",
+            "baseline"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在房态数据来源、规则定价、MVP页面与操作闭环上更具体可落地，甲虽风险判断充分但整体更偏原则性总结。"
+        },
+        {
+          "order": [
+            "baseline",
+            "piped"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 3,
+              "一致性": 4,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在房态准确性、价格护栏、目标用户规模和MVP边界上更具体，较甲更能落到民宿经营场景的实际决策与执行。"
+        }
+      ]
+    },
+    {
+      "topic": "跨境电商退货逆向物流跟踪系统",
+      "votes": [
+        "piped",
+        "baseline"
+      ],
+      "strictWinner": "平",
+      "avgScore": {
+        "baseline": 3.38,
+        "piped": 3.75
+      },
+      "rounds": [
+        {
+          "order": [
+            "baseline",
+            "piped"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 3,
+              "完整性": 3,
+              "一致性": 3,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在跨境退货场景下补充了平台/承运商/RMA/欺诈/接口与MVP边界等更具体判断，虽仍有无关RAG证据，但整体比甲更贴合且可落地。"
+        },
+        {
+          "order": [
+            "piped",
+            "baseline"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 3,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 3,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在同等覆盖跨境退货链路与风险的基础上，更明确提出退货标签/运单、状态流、数据更新方式、指标和MVP落地路径，可操作性略优。"
+        }
+      ]
+    },
+    {
+      "topic": "社区团购团长供货对账平台",
+      "votes": [
+        "piped",
+        "baseline"
+      ],
+      "strictWinner": "平",
+      "avgScore": {
+        "baseline": 3.5,
+        "piped": 3.88
+      },
+      "rounds": [
+        {
+          "order": [
+            "baseline",
+            "piped"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 3,
+              "完整性": 3,
+              "一致性": 3,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙更聚焦社区团购供货对账的关键口径、差异场景、权限审计和MVP闭环，甲虽覆盖主流程但更偏通用模板且落地粒度略弱。"
+        },
+        {
+          "order": [
+            "piped",
+            "baseline"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙在同等贴合业务的基础上给出了更明确的MVP流程和字段清单，可落地性略强。"
+        }
+      ]
+    },
+    {
+      "topic": "剧本杀门店场次编排与拼车组局系统",
+      "votes": [
+        "piped",
+        "piped"
+      ],
+      "strictWinner": "piped",
+      "avgScore": {
+        "baseline": 3.38,
+        "piped": 4.0
+      },
+      "rounds": [
+        {
+          "order": [
+            "baseline",
+            "piped"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 3,
+              "一致性": 4,
+              "可操作性": 3
+            },
+            "乙": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            }
+          },
+          "winner": "乙",
+          "reason": "乙比甲更贴合剧本杀门店真实排期与拼车成局场景，补充了DM/房间冲突、候补、角色/性别限制、通知核销和MVP边界，行动路径更清晰。"
+        },
+        {
+          "order": [
+            "piped",
+            "baseline"
+          ],
+          "scores": {
+            "甲": {
+              "针对性": 4,
+              "完整性": 4,
+              "一致性": 4,
+              "可操作性": 4
+            },
+            "乙": {
+              "针对性": 3,
+              "完整性": 4,
+              "一致性": 3,
+              "可操作性": 3
+            }
+          },
+          "winner": "甲",
+          "reason": "甲更稳定地围绕剧本杀门店排期、DM/房间冲突、报名候补与成团流程展开，乙虽覆盖面广但多处把“拼车”偏向真实出行安全与费用分摊，业务贴合度略弱。"
+        }
+      ]
+    }
+  ],
+  "runs": {
+    "社区宠物医院预约问诊系统": {
+      "piped": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 277.6,
+        "turns": 1,
+        "selfClosed": true
+      },
+      "baseline": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 8,
+        "artifactKinds": 2,
+        "capabilityRuns": 8,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 298.3,
+        "turns": 2,
+        "selfClosed": true
+      }
+    },
+    "连锁健身房私教课排期与核销平台": {
+      "baseline": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 254.7,
+        "turns": 1,
+        "selfClosed": true
+      },
+      "piped": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 183.3,
+        "turns": 1,
+        "selfClosed": true
+      }
+    },
+    "阳台农夫 Pro——城市家庭种植智能顾问与植物医生": {
+      "piped": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 214.3,
+        "turns": 1,
+        "selfClosed": true
+      },
+      "baseline": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 284.4,
+        "turns": 1,
+        "selfClosed": true
+      }
+    },
+    "二手乐器寄卖与鉴定平台": {
+      "piped": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 208.3,
+        "turns": 1,
+        "selfClosed": true
+      },
+      "baseline": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 302.2,
+        "turns": 1,
+        "selfClosed": true
+      }
+    },
+    "小型律所案件流程与文书协作系统": {
+      "baseline": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 260.5,
+        "turns": 1,
+        "selfClosed": true
+      },
+      "piped": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 188.3,
+        "turns": 1,
+        "selfClosed": true
+      }
+    },
+    "校园失物招领与积分激励平台": {
+      "baseline": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 206.4,
+        "turns": 1,
+        "selfClosed": true
+      },
+      "piped": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 177.6,
+        "turns": 1,
+        "selfClosed": true
+      }
+    },
+    "民宿房态管理与动态定价助手": {
+      "baseline": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 255.5,
+        "turns": 1,
+        "selfClosed": true
+      },
+      "piped": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 254.8,
+        "turns": 1,
+        "selfClosed": true
+      }
+    },
+    "跨境电商退货逆向物流跟踪系统": {
+      "baseline": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 252.2,
+        "turns": 1,
+        "selfClosed": true
+      },
+      "piped": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 229.7,
+        "turns": 1,
+        "selfClosed": true
+      }
+    },
+    "社区团购团长供货对账平台": {
+      "baseline": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 257.2,
+        "turns": 1,
+        "selfClosed": true
+      },
+      "piped": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 267.8,
+        "turns": 1,
+        "selfClosed": true
+      }
+    },
+    "剧本杀门店场次编排与拼车组局系统": {
+      "baseline": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 235.6,
+        "turns": 1,
+        "selfClosed": true
+      },
+      "piped": {
+        "closureEvidence": 6,
+        "closureBlocked": false,
+        "coverageGatePassed": false,
+        "healthyArtifacts": 7,
+        "artifactKinds": 2,
+        "capabilityRuns": 7,
+        "distinctCapabilities": 6,
+        "staleArtifacts": 0,
+        "awaitReason": "max_repeat_guard",
+        "agenticDecisions": 0,
+        "durationS": 246.8,
+        "turns": 1,
+        "selfClosed": true
+      }
+    }
+  },
+  "wallS": 1895
+}

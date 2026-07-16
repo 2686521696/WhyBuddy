@@ -98,13 +98,14 @@ def _avg(scores: dict) -> float:
     return round(sum(vals) / len(vals), 2) if vals else 0.0
 
 
-def judge_topic(topic: str, dumps: dict[str, dict]) -> dict:
-    """双向复核：原序 + 换序各评一次，映射回真实模式后取一致判决。"""
-    swap = (hash(topic) % 2) == 1  # 确定性换位：约一半话题 agentic 在甲位
-    order1 = ("agentic", "rules") if swap else ("rules", "agentic")
-    votes: list[str] = []  # 每次评审映射回真实模式名（或 "平"）
+def judge_topic(topic: str, dumps: dict[str, dict], arms: tuple[str, str] = MODES) -> dict:
+    """双向复核：原序 + 换序各评一次，映射回真实臂名后取一致判决。
+    arms 缺省是 (rules, agentic)；E17 A/B 传 (baseline, piped)。"""
+    swap = (hash(topic) % 2) == 1  # 确定性换位：约一半话题后臂在甲位
+    order1 = (arms[1], arms[0]) if swap else (arms[0], arms[1])
+    votes: list[str] = []  # 每次评审映射回真实臂名（或 "平"）
     rounds: list[dict] = []
-    per_mode_scores: dict[str, list[float]] = {m: [] for m in MODES}
+    per_mode_scores: dict[str, list[float]] = {m: [] for m in arms}
     for order in (order1, tuple(reversed(order1))):
         verdict = _judge_once(topic, dumps[order[0]], dumps[order[1]])
         if verdict is None:
@@ -115,7 +116,7 @@ def judge_topic(topic: str, dumps: dict[str, dict]) -> dict:
         for label, mode in label_to_mode.items():
             per_mode_scores[mode].append(_avg(verdict["scores"].get(label) or {}))
         rounds.append({"order": order, **verdict})
-    strict = votes[0] if len(votes) == 2 and votes[0] == votes[1] and votes[0] in MODES else "平"
+    strict = votes[0] if len(votes) == 2 and votes[0] == votes[1] and votes[0] in arms else "平"
     return {
         "topic": topic,
         "votes": votes,
