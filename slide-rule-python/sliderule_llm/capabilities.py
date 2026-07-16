@@ -238,10 +238,20 @@ def build_messages(capability_id: str, body: dict[str, Any]) -> list[dict[str, s
     state = body.get("state") or {}
     goal = ((state.get("goal") or {}).get("text") or "").strip()
     user_text = (body.get("userText") or "").strip()
+    upstream = str(body.get("upstreamEvidence") or "").strip()
+    evidence_section = (
+        (
+            "\nUPSTREAM_EVIDENCE（上游已过信任门的产物，作为你的推理依据；"
+            "引用其中的结论/风险/证据，不要凭空另起炉灶）:\n" + upstream + "\n"
+        )
+        if upstream
+        else ""
+    )
     user = (
         f"GOAL: {goal or '(none stated)'}\n"
         f"USER_MESSAGE: {user_text or '(none)'}\n"
-        f"ROLE: {body.get('roleId', 'agent')}  TURN: {body.get('turnId', '')}\n\n"
+        f"ROLE: {body.get('roleId', 'agent')}  TURN: {body.get('turnId', '')}\n"
+        f"{evidence_section}\n"
         "Write the markdown now."
     )
     return [
@@ -277,10 +287,20 @@ def _goal_and_user(body: dict[str, Any]) -> tuple[str, str]:
 
 def build_report_write_messages(body: dict[str, Any]) -> list[dict[str, str]]:
     goal, user_text = _goal_and_user(body)
+    upstream = str(body.get("upstreamEvidence") or "").strip()
+    evidence_section = (
+        (
+            "\nUPSTREAM_EVIDENCE（上游已过信任门的产物；报告的结论/证据/"
+            "风险各节必须以此为依据并引用，不得凭空再推演）:\n" + upstream + "\n"
+        )
+        if upstream
+        else ""
+    )
     user = (
         f"GOAL: {goal or '(none stated)'}\n"
         f"USER_MESSAGE: {user_text or '(none)'}\n"
-        f"ROLE: {body.get('roleId', 'agent')}  TURN: {body.get('turnId', '')}\n\n"
+        f"ROLE: {body.get('roleId', 'agent')}  TURN: {body.get('turnId', '')}\n"
+        f"{evidence_section}\n"
         "Write the JSON report object now."
     )
     return [
