@@ -1555,13 +1555,20 @@ export default function SlideRule({
   embedded = false,
 }: { embedded?: boolean } = {}) {
   const [activeSessionId, setActiveSessionId] = useState<string>(() => {
-    if (IS_GITHUB_PAGES) return GITHUB_PAGES_DEMO_SESSION_ID;
     try {
-      return (
-        localStorage.getItem(ACTIVE_SESSION_KEY) || "sliderule-v51-product"
-      );
+      const stored = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (IS_GITHUB_PAGES) {
+        // 静态演示只认画廊示例种子（E18，pages-demo-*）；其余残留 id
+        // 一律回落主演示，防止演示被指到不存在的空会话上
+        return stored?.startsWith("pages-demo-")
+          ? stored
+          : GITHUB_PAGES_DEMO_SESSION_ID;
+      }
+      return stored || "sliderule-v51-product";
     } catch {
-      return "sliderule-v51-product";
+      return IS_GITHUB_PAGES
+        ? GITHUB_PAGES_DEMO_SESSION_ID
+        : "sliderule-v51-product";
     }
   });
 
@@ -1622,9 +1629,15 @@ function SlideRuleSessionBody({
     llmDraftLabel,
     llmStreams,
   } = useSlideRuleSession({
-    sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : activeSessionId,
+    // E18：Pages 下 activeSessionId 也可能是画廊示例（pages-demo-*，
+    // 会话壳已做过准入回落），不再钉死主演示
+    sessionId: activeSessionId,
     documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : undefined,
-    initialGoal: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_GOAL : undefined,
+    // 「点发送看回放」的预填只属于主演示空会话；画廊示例自带完整终态
+    initialGoal:
+      IS_GITHUB_PAGES && activeSessionId === GITHUB_PAGES_DEMO_SESSION_ID
+        ? GITHUB_PAGES_DEMO_GOAL
+        : undefined,
   });
 
   // 浏览器标签标题跟随当前会话话题（像 Claude 的标签页那样一眼识别会话）

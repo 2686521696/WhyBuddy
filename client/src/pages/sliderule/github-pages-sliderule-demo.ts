@@ -12,8 +12,10 @@ import {
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 
 export const GITHUB_PAGES_DEMO_SESSION_ID = "github-pages-sliderule-demo";
+// E18（2026-07-16）：演示话题随模板重录同步换新——新引擎（E17 证据管道
+// + P2a 真搜索）捕获的宠物医院题，实体/角色/流程都比权限系统展示得开
 export const GITHUB_PAGES_DEMO_GOAL =
-  "做一个权限管理系统（支持 RBAC + 数据范围）";
+  "社区宠物医院预约问诊系统——预约、分诊、复诊提醒一体化";
 
 // v4：演示改为「空会话 + 输入框预填项目意图」——访客点发送后现场看推演执行
 // （模板回放，数据来自真实 LLM 推演捕获），而不是落地在一个已完成的旧快照上。

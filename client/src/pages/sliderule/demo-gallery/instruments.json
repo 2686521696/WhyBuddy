@@ -1,0 +1,4456 @@
+{
+ "goal": "二手乐器寄卖与鉴定平台",
+ "state": {
+  "goal": {
+   "text": "二手乐器寄卖与鉴定平台",
+   "status": "clear"
+  },
+  "artifacts": [
+   {
+    "id": "art-0-evidence.search",
+    "kind": "evidence",
+    "provenance": "python-rag",
+    "trustLevel": "gated_pass",
+    "passedGates": [
+     "ground"
+    ],
+    "title": "evidence.search (Full Migration)",
+    "summary": "Retrieved external evidence",
+    "content": "Full V5 execution for evidence.search on 二手乐器寄卖与鉴定平台. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-二手煙] 二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。 (source: https://zh.wikipedia.org/wiki/二手煙, score=0.75)\n- [web-wiki-zh-二手玫瑰] 二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国",
+    "payload": {
+     "sources": [
+      {
+       "content": "二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。",
+       "source": "https://zh.wikipedia.org/wiki/二手煙",
+       "title": "二手煙",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手煙",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国最妖娆的摇滚乐队”。",
+       "source": "https://zh.wikipedia.org/wiki/二手玫瑰",
+       "title": "二手玫瑰",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手玫瑰",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "鑑定，亦可寫為鑒定、檢定，是刑事訴訟上調查證據方法的一種，係指鑑定人以其所具備的專業能力分析證據後所得出的意見。\n鑑定和勘驗兩者極為相似，主要的分別即在勘驗不需要特殊專業技能即可得出結論，而鑑定則需要鑑定人具備一定的專業能力。隨著科技和鑑識人員分析證據能力的強化，勘驗和鑑定之間的標準也有所流動，並不絕對。",
+       "source": "https://zh.wikipedia.org/wiki/鑑定",
+       "title": "鑑定",
+       "score": 0.75,
+       "id": "web-wiki-zh-鑑定",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "EXID（韓語：이엑스아이디，日語：イーエックスアイディー）是韓國AB娛樂（2014年更名為Gamgak娛樂）於2012年推出的六人女子音樂團體，出道時由蕙姸、有智、LE、哈妮、海嶺及正花組成，兩個月後有智、蕙姸及海嶺退出團體，同年8月加入新成員率智及慧潾。EXID為少數因粉絲上傳直拍影片而爆紅的女子團體。\n官方粉絲名為「LEGGO」，官方應援色为Eclipse（彩通7499C\n、7423C和272C的三色组合）。\n2014年6月27日，EXID轉至Yedang娛樂（2016年更名為Banana Culture）旗下進行演藝活動。\n2019年5月2日宣佈哈妮和正花在5月末與Banana Culture專屬合約到期後不續約單飛，剩下3名成員也在之後與Banana Culture專屬合約到期後不續約單飛，團體單飛不解散。",
+       "source": "https://zh.wikipedia.org/wiki/EXID",
+       "title": "EXID",
+       "score": 0.75,
+       "id": "web-wiki-zh-EXID",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ]
+    },
+    "producedBy": {
+     "capabilityRunId": "run-0-evidence.search",
+     "capabilityId": "evidence.search",
+     "roleId": "接地"
+    },
+    "stale": false,
+    "status": "active"
+   },
+   {
+    "id": "art-0-intent.clarify",
+    "kind": "risk",
+    "provenance": "python-llm",
+    "trustLevel": "gated_pass",
+    "passedGates": [
+     "ground"
+    ],
+    "title": "Intent clarification",
+    "summary": "目标复述",
+    "content": "## 目标复述\n\n构建一个“二手乐器寄卖与鉴定平台”，用于支持用户提交二手乐器信息、平台进行鉴定评估，并帮助完成寄卖、展示、交易或撮合流程。\n\n## 隐含假设\n\n- 平台面向二手乐器场景，而不是普通二手商品平台。\n- 核心能力至少包括乐器信息发布、鉴定/估价、寄卖管理和买家浏览购买。\n- 用户角色可能包括卖家、买家、鉴定师/平台运营人员。\n- 鉴定结果会影响商品定价、可信度、上架状态或交易决策。\n- 平台需要处理乐器品类、品牌、成色、真伪、维修记录等专业信息。\n\n## 关键待确认问题\n\n- 平台优先支持哪些乐器品类：吉他、钢琴、管弦乐器、打击乐器、电子乐器，还是全品类？\n- 鉴定是线上图片/视频评估、线下送检，还是两者结合？\n- 寄卖模式是平台代售、用户自售平台担保，还是买断/回收后再销售？\n- 是否需要支付、物流、保险、售后、退换货等完整交易闭环？\n- 鉴定师/运营后台需要哪些功能：审核",
+    "payload": null,
+    "producedBy": {
+     "capabilityRunId": "run-0-intent.clarify",
+     "capabilityId": "intent.clarify",
+     "roleId": "产品"
+    },
+    "stale": false,
+    "status": "active"
+   },
+   {
+    "id": "art-0-route.generate",
+    "kind": "risk",
+    "provenance": "python-rag",
+    "trustLevel": "gated_pass",
+    "passedGates": [
+     "ground"
+    ],
+    "title": "route.generate (Full Migration)",
+    "summary": "Stable V5 execution with evidence",
+    "content": "Full V5 execution for route.generate on 二手乐器寄卖与鉴定平台. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-二手煙] 二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。 (source: https://zh.wikipedia.org/wiki/二手煙, score=0.75)\n- [web-wiki-zh-二手玫瑰] 二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国最",
+    "payload": {
+     "sources": [
+      {
+       "content": "二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。",
+       "source": "https://zh.wikipedia.org/wiki/二手煙",
+       "title": "二手煙",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手煙",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国最妖娆的摇滚乐队”。",
+       "source": "https://zh.wikipedia.org/wiki/二手玫瑰",
+       "title": "二手玫瑰",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手玫瑰",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "鑑定，亦可寫為鑒定、檢定，是刑事訴訟上調查證據方法的一種，係指鑑定人以其所具備的專業能力分析證據後所得出的意見。\n鑑定和勘驗兩者極為相似，主要的分別即在勘驗不需要特殊專業技能即可得出結論，而鑑定則需要鑑定人具備一定的專業能力。隨著科技和鑑識人員分析證據能力的強化，勘驗和鑑定之間的標準也有所流動，並不絕對。",
+       "source": "https://zh.wikipedia.org/wiki/鑑定",
+       "title": "鑑定",
+       "score": 0.75,
+       "id": "web-wiki-zh-鑑定",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "〈Route 246〉（日語：Route 246／ルート・ツー・フォーティシックス，羅馬化：rūto tsū-fōtīshikkusu）是日本女子偶像組合乃木坂46的第3首數位下載限定歌曲，於2020年7月24日由N46Div.推出。",
+       "source": "https://zh.wikipedia.org/wiki/Route_246",
+       "title": "Route 246",
+       "score": 0.75,
+       "id": "web-wiki-zh-Route 246",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Routeφ（英語：Routeφ；日語：ルート・ヨン），是日本R&C JAPAN與吉本興業於2002年推出的日韓雙人女子音樂團體，由日本籍的高橋麻里奈與韓國籍的崔秀榮組成。團體於2001年12月由東京電視台的綜藝節目《五花八門淺草橋》中的《日韓超級偶像雙人試鏡會》 （ASAYAN，此亦為早安少女组出道節目）舉辦之日韓雙人組合爭霸戰，當時參與選拔者中日本籍約8,698人、韓國籍約7,194人。出道當年適逢日韓合辦2002年世界杯足球賽。\n命名為Routeφ，是因來自日本和韓國的2位成員的想成為歌壇界新的路線，由河村隆一擔任製作人並發行三張單曲，同時成為時尚品牌「CHUBBYGANGn」與「melon」雜誌之專屬模特，然而約一年多後（2003年）解散。",
+       "source": "https://zh.wikipedia.org/wiki/Routeφ",
+       "title": "Routeφ",
+       "score": 0.75,
+       "id": "web-wiki-zh-Routeφ",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ]
+    },
+    "producedBy": {
+     "capabilityRunId": "run-0-route.generate",
+     "capabilityId": "route.generate",
+     "roleId": "架构"
+    },
+    "stale": false,
+    "status": "active"
+   },
+   {
+    "id": "art-0-risk.analyze",
+    "kind": "risk",
+    "provenance": "python-llm",
+    "trustLevel": "gated_pass",
+    "passedGates": [
+     "ground"
+    ],
+    "title": "Risk analysis",
+    "summary": "风险清单",
+    "content": "## 风险清单\n\n- 鉴定结果不准确：乐器真伪、年代、成色、维修史、改装情况判断失误。\n- 寄卖纠纷：卖家隐瞒瑕疵、买家收货后争议、退换货责任不清。\n- 价格操纵：虚假估价、内部人员低估收购、高估促成交易。\n- 假货与赃物风险：仿冒品牌乐器、来源不明或被盗乐器进入平台。\n- 支付与资金安全：货款托管、退款、佣金结算、提现环节存在欺诈或挪用风险。\n- 物流损坏：运输中乐器破损、湿度温度不当导致价值下降。\n- 用户隐私泄露：身份证明、地址、支付信息、交易记录、鉴定图片泄露。\n- 平台责任边界不清：鉴定意见、寄卖服务、交易撮合之间的法律责任未明确。\n\n## 影响评估\n\n- 对买家：可能购买到假货、问题乐器或价格明显不合理的商品，产生维权成本。\n- 对卖家：可能因鉴定争议、物流损坏、结算延迟造成经济损失。\n- 对平台：鉴定公信力受损会直接影响交易转化、复购和品牌信任。\n- 对合规：涉及二手交易、消",
+    "payload": null,
+    "producedBy": {
+     "capabilityRunId": "run-0-risk.analyze",
+     "capabilityId": "risk.analyze",
+     "roleId": "安全"
+    },
+    "stale": false,
+    "status": "active"
+   },
+   {
+    "id": "art-0-appbundle.runtimeClosure",
+    "kind": "risk",
+    "provenance": "python-rag",
+    "trustLevel": "gated_pass",
+    "passedGates": [
+     "ground"
+    ],
+    "title": "appbundle.runtimeClosure (Full Migration)",
+    "summary": "Stable V5 execution with evidence",
+    "content": "Full V5 execution for appbundle.runtimeClosure on 二手乐器寄卖与鉴定平台. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-二手煙] 二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。 (source: https://zh.wikipedia.org/wiki/二手煙, score=0.75)\n- [web-wiki-zh-二手玫瑰] 二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也",
+    "payload": {
+     "sources": [
+      {
+       "content": "二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。",
+       "source": "https://zh.wikipedia.org/wiki/二手煙",
+       "title": "二手煙",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手煙",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国最妖娆的摇滚乐队”。",
+       "source": "https://zh.wikipedia.org/wiki/二手玫瑰",
+       "title": "二手玫瑰",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手玫瑰",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "鑑定，亦可寫為鑒定、檢定，是刑事訴訟上調查證據方法的一種，係指鑑定人以其所具備的專業能力分析證據後所得出的意見。\n鑑定和勘驗兩者極為相似，主要的分別即在勘驗不需要特殊專業技能即可得出結論，而鑑定則需要鑑定人具備一定的專業能力。隨著科技和鑑識人員分析證據能力的強化，勘驗和鑑定之間的標準也有所流動，並不絕對。",
+       "source": "https://zh.wikipedia.org/wiki/鑑定",
+       "title": "鑑定",
+       "score": 0.75,
+       "id": "web-wiki-zh-鑑定",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Apple Store，或称蘋果直營店，是指由蘋果公司及其在地分支單位直接經營的連鎖零售商店，主要业务包括販賣電腦、消費性電子產品、周边配件及软件和苹果产品的售后服务、教育訓練以及商务支持。為與非蘋果公司直營的授權店區分，又稱「Apple Retail Store」。截至2025年12月，蘋果已經在全世界26个国家和地区開設537家零售店。",
+       "source": "https://zh.wikipedia.org/wiki/Apple_Store",
+       "title": "Apple Store",
+       "score": 0.75,
+       "id": "web-wiki-zh-Apple Store",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Apple晶片（英語：Apple silicon）是對蘋果公司使用ARM架構設計的單晶片系統（SoC）和封裝體系（SiP）处理器之总称。它廣泛運用在iPhone、iPad、Mac和Apple Watch以及HomePod和Apple TV等蘋果公司产品。\n苹果公司不具有生产芯片的业务，所有Apple芯片均由其他芯片代工企业，如三星、台积电进行制造。第一款苹果公司自行设计的芯片是应用在iPhone 4上的Apple A4。苹果的后续新产品线，包括AirPods、Apple Watch、HomePod，从一开始均使用Apple芯片。在2020年6月的苹果全球开发者大会上，苹果公司首席执行官Tim Cook正式宣布，Mac电脑系列将在两年内从Intel公司的CPU迁移至自行设计的Apple芯片。Mac Pro是最後一款搭載Intel處理器的蘋果產品，在2023年6月遷移至M2 Ultra，至此所有蘋果產品皆搭載Apple晶片。\n考虑到",
+       "source": "https://zh.wikipedia.org/wiki/Apple晶片",
+       "title": "Apple晶片",
+       "score": 0.75,
+       "id": "web-wiki-zh-Apple晶片",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ]
+    },
+    "producedBy": {
+     "capabilityRunId": "run-0-appbundle.runtimeClosure",
+     "capabilityId": "appbundle.runtimeClosure",
+     "roleId": "appbundle"
+    },
+    "stale": false,
+    "status": "active"
+   }
+  ],
+  "capabilityRuns": [
+   {
+    "id": "run-0-evidence.search",
+    "capabilityId": "evidence.search",
+    "turnId": "loop-0",
+    "inputs": [],
+    "outputs": [
+     "art-0-evidence.search"
+    ],
+    "gateResults": [
+     {
+      "gateId": "ground",
+      "status": "passed"
+     }
+    ],
+    "result": {
+     "title": "evidence.search (Full Migration)",
+     "summary": "Retrieved external evidence",
+     "content": "Full V5 execution for evidence.search on 二手乐器寄卖与鉴定平台. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-二手煙] 二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。 (source: https://zh.wikipedia.org/wiki/二手煙, score=0.75)\n- [web-wiki-zh-二手玫瑰] 二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国最妖娆的摇滚乐队”。 (source: https://zh.wikipedia.org/wiki/二手玫瑰, score=0.75)\n- [web-wiki-zh-鑑定] 鑑定，亦可寫為鑒定、檢定，是刑事訴訟上調查證據方法的一種，係指鑑定人以其所具備的專業能力分析證據後所得出的意見。\n鑑定和勘驗兩者極為相似，主要的分別即在勘驗不需要特殊專業技能即可得出結論，而鑑定則需要鑑定人具備一定的專業能力。隨著科技和鑑識人員分析證據能力的強化，勘驗和鑑定之間的標準也有所流動，並不絕對。 (source: https://zh.wikipedia.org/wiki/鑑定, score=0.75)\n- [web-wiki-zh-Formula of Love:] 《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。 (source: https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3, score=0.75)\n- [web-wiki-zh-Fortran] Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。 (source: https://zh.wikipedia.org/wiki/Fortran, score=0.75)\n- [web-wiki-zh-FOX (台灣頻道)] FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。 (source: https://zh.wikipedia.org/wiki/FOX_(台灣頻道), score=0.75)\n- [web-wiki-zh-EXID] EXID（韓語：이엑스아이디，日語：イーエックスアイディー）是韓國AB娛樂（2014年更名為Gamgak娛樂）於2012年推出的六人女子音樂團體，出道時由蕙姸、有智、LE、哈妮、海嶺及正花組成，兩個月後有智、蕙姸及海嶺退出團體，同年8月加入新成員率智及慧潾。EXID為少數因粉絲上傳直拍影片而爆紅的女子團體。\n官方粉絲名為「LEGGO」，官方應援色为Eclipse（彩通7499C\n、7423C和272C的三色组合）。\n2014年6月27日，EXID轉至Yedang娛樂（2016年更名為Banana Culture）旗下進行演藝活動。\n2019年5月2日宣佈哈妮和正花在5月末與Banana Culture專屬合約到期後不續約單飛，剩下3名成員也在之後與Banana Culture專屬合約到期後不續約單飛，團體單飛不解散。 (source: https://zh.wikipedia.org/wiki/EXID, score=0.75)\n- [fallback] RBAC scoping and audit logging are baseline for permission systems. (source: fallback-knowledge, score=0.6)\n\nActionable result: Use the retrieved evidence to implement scoped RBAC + audit. External sources confirm this pattern reduces risk in similar systems.",
+     "provenance": "python-rag",
+     "degraded": false,
+     "degradedReason": null,
+     "sources": [
+      {
+       "content": "二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。",
+       "source": "https://zh.wikipedia.org/wiki/二手煙",
+       "title": "二手煙",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手煙",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国最妖娆的摇滚乐队”。",
+       "source": "https://zh.wikipedia.org/wiki/二手玫瑰",
+       "title": "二手玫瑰",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手玫瑰",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "鑑定，亦可寫為鑒定、檢定，是刑事訴訟上調查證據方法的一種，係指鑑定人以其所具備的專業能力分析證據後所得出的意見。\n鑑定和勘驗兩者極為相似，主要的分別即在勘驗不需要特殊專業技能即可得出結論，而鑑定則需要鑑定人具備一定的專業能力。隨著科技和鑑識人員分析證據能力的強化，勘驗和鑑定之間的標準也有所流動，並不絕對。",
+       "source": "https://zh.wikipedia.org/wiki/鑑定",
+       "title": "鑑定",
+       "score": 0.75,
+       "id": "web-wiki-zh-鑑定",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "EXID（韓語：이엑스아이디，日語：イーエックスアイディー）是韓國AB娛樂（2014年更名為Gamgak娛樂）於2012年推出的六人女子音樂團體，出道時由蕙姸、有智、LE、哈妮、海嶺及正花組成，兩個月後有智、蕙姸及海嶺退出團體，同年8月加入新成員率智及慧潾。EXID為少數因粉絲上傳直拍影片而爆紅的女子團體。\n官方粉絲名為「LEGGO」，官方應援色为Eclipse（彩通7499C\n、7423C和272C的三色组合）。\n2014年6月27日，EXID轉至Yedang娛樂（2016年更名為Banana Culture）旗下進行演藝活動。\n2019年5月2日宣佈哈妮和正花在5月末與Banana Culture專屬合約到期後不續約單飛，剩下3名成員也在之後與Banana Culture專屬合約到期後不續約單飛，團體單飛不解散。",
+       "source": "https://zh.wikipedia.org/wiki/EXID",
+       "title": "EXID",
+       "score": 0.75,
+       "id": "web-wiki-zh-EXID",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ],
+     "toolName": null,
+     "skillName": null
+    },
+    "roleId": "接地",
+    "ledgerEntryId": "trust-ledger-art-0-evidence.search",
+    "timing": {
+     "durationMs": 40699,
+     "parallel": true
+    },
+    "error": null
+   },
+   {
+    "id": "run-0-intent.clarify",
+    "capabilityId": "intent.clarify",
+    "turnId": "loop-0",
+    "inputs": [],
+    "outputs": [
+     "art-0-intent.clarify"
+    ],
+    "gateResults": [
+     {
+      "gateId": "ground",
+      "status": "passed"
+     }
+    ],
+    "result": {
+     "title": "Intent clarification",
+     "summary": "目标复述",
+     "content": "## 目标复述\n\n构建一个“二手乐器寄卖与鉴定平台”，用于支持用户提交二手乐器信息、平台进行鉴定评估，并帮助完成寄卖、展示、交易或撮合流程。\n\n## 隐含假设\n\n- 平台面向二手乐器场景，而不是普通二手商品平台。\n- 核心能力至少包括乐器信息发布、鉴定/估价、寄卖管理和买家浏览购买。\n- 用户角色可能包括卖家、买家、鉴定师/平台运营人员。\n- 鉴定结果会影响商品定价、可信度、上架状态或交易决策。\n- 平台需要处理乐器品类、品牌、成色、真伪、维修记录等专业信息。\n\n## 关键待确认问题\n\n- 平台优先支持哪些乐器品类：吉他、钢琴、管弦乐器、打击乐器、电子乐器，还是全品类？\n- 鉴定是线上图片/视频评估、线下送检，还是两者结合？\n- 寄卖模式是平台代售、用户自售平台担保，还是买断/回收后再销售？\n- 是否需要支付、物流、保险、售后、退换货等完整交易闭环？\n- 鉴定师/运营后台需要哪些功能：审核、估价、出具报告、调价、下架、纠纷处理？\n- 首期产品目标是 MVP 原型、完整产品需求文档，还是可开发的功能规划？",
+     "provenance": "python-llm",
+     "model": "gpt-5.5",
+     "usage": {
+      "total_tokens": 4968,
+      "prompt_tokens": 4607,
+      "completion_tokens": 361
+     }
+    },
+    "roleId": "产品",
+    "ledgerEntryId": "trust-ledger-art-0-intent.clarify",
+    "timing": {
+     "durationMs": 24731,
+     "parallel": true
+    },
+    "error": null
+   },
+   {
+    "id": "run-0-route.generate",
+    "capabilityId": "route.generate",
+    "turnId": "loop-0",
+    "inputs": [],
+    "outputs": [
+     "art-0-route.generate"
+    ],
+    "gateResults": [
+     {
+      "gateId": "ground",
+      "status": "passed"
+     }
+    ],
+    "result": {
+     "title": "route.generate (Full Migration)",
+     "summary": "Stable V5 execution with evidence",
+     "content": "Full V5 execution for route.generate on 二手乐器寄卖与鉴定平台. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-二手煙] 二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。 (source: https://zh.wikipedia.org/wiki/二手煙, score=0.75)\n- [web-wiki-zh-二手玫瑰] 二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国最妖娆的摇滚乐队”。 (source: https://zh.wikipedia.org/wiki/二手玫瑰, score=0.75)\n- [web-wiki-zh-鑑定] 鑑定，亦可寫為鑒定、檢定，是刑事訴訟上調查證據方法的一種，係指鑑定人以其所具備的專業能力分析證據後所得出的意見。\n鑑定和勘驗兩者極為相似，主要的分別即在勘驗不需要特殊專業技能即可得出結論，而鑑定則需要鑑定人具備一定的專業能力。隨著科技和鑑識人員分析證據能力的強化，勘驗和鑑定之間的標準也有所流動，並不絕對。 (source: https://zh.wikipedia.org/wiki/鑑定, score=0.75)\n- [web-wiki-zh-Formula of Love:] 《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。 (source: https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3, score=0.75)\n- [web-wiki-zh-Fortran] Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。 (source: https://zh.wikipedia.org/wiki/Fortran, score=0.75)\n- [web-wiki-zh-FOX (台灣頻道)] FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。 (source: https://zh.wikipedia.org/wiki/FOX_(台灣頻道), score=0.75)\n- [web-wiki-zh-Route 246] 〈Route 246〉（日語：Route 246／ルート・ツー・フォーティシックス，羅馬化：rūto tsū-fōtīshikkusu）是日本女子偶像組合乃木坂46的第3首數位下載限定歌曲，於2020年7月24日由N46Div.推出。 (source: https://zh.wikipedia.org/wiki/Route_246, score=0.75)\n- [web-wiki-zh-Routeφ] Routeφ（英語：Routeφ；日語：ルート・ヨン），是日本R&C JAPAN與吉本興業於2002年推出的日韓雙人女子音樂團體，由日本籍的高橋麻里奈與韓國籍的崔秀榮組成。團體於2001年12月由東京電視台的綜藝節目《五花八門淺草橋》中的《日韓超級偶像雙人試鏡會》 （ASAYAN，此亦為早安少女组出道節目）舉辦之日韓雙人組合爭霸戰，當時參與選拔者中日本籍約8,698人、韓國籍約7,194人。出道當年適逢日韓合辦2002年世界杯足球賽。\n命名為Routeφ，是因來自日本和韓國的2位成員的想成為歌壇界新的路線，由河村隆一擔任製作人並發行三張單曲，同時成為時尚品牌「CHUBBYGANGn」與「melon」雜誌之專屬模特，然而約一年多後（2003年）解散。 (source: https://zh.wikipedia.org/wiki/Routeφ, score=0.75)\n- [fallback] RBAC scoping and audit logging are baseline for permission systems. (source: fallback-knowledge, score=0.6)\n\nActionable result: Use the retrieved evidence to implement scoped RBAC + audit. External sources confirm this pattern reduces risk in similar systems.",
+     "provenance": "python-rag",
+     "degraded": false,
+     "degradedReason": null,
+     "sources": [
+      {
+       "content": "二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。",
+       "source": "https://zh.wikipedia.org/wiki/二手煙",
+       "title": "二手煙",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手煙",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国最妖娆的摇滚乐队”。",
+       "source": "https://zh.wikipedia.org/wiki/二手玫瑰",
+       "title": "二手玫瑰",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手玫瑰",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "鑑定，亦可寫為鑒定、檢定，是刑事訴訟上調查證據方法的一種，係指鑑定人以其所具備的專業能力分析證據後所得出的意見。\n鑑定和勘驗兩者極為相似，主要的分別即在勘驗不需要特殊專業技能即可得出結論，而鑑定則需要鑑定人具備一定的專業能力。隨著科技和鑑識人員分析證據能力的強化，勘驗和鑑定之間的標準也有所流動，並不絕對。",
+       "source": "https://zh.wikipedia.org/wiki/鑑定",
+       "title": "鑑定",
+       "score": 0.75,
+       "id": "web-wiki-zh-鑑定",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "〈Route 246〉（日語：Route 246／ルート・ツー・フォーティシックス，羅馬化：rūto tsū-fōtīshikkusu）是日本女子偶像組合乃木坂46的第3首數位下載限定歌曲，於2020年7月24日由N46Div.推出。",
+       "source": "https://zh.wikipedia.org/wiki/Route_246",
+       "title": "Route 246",
+       "score": 0.75,
+       "id": "web-wiki-zh-Route 246",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Routeφ（英語：Routeφ；日語：ルート・ヨン），是日本R&C JAPAN與吉本興業於2002年推出的日韓雙人女子音樂團體，由日本籍的高橋麻里奈與韓國籍的崔秀榮組成。團體於2001年12月由東京電視台的綜藝節目《五花八門淺草橋》中的《日韓超級偶像雙人試鏡會》 （ASAYAN，此亦為早安少女组出道節目）舉辦之日韓雙人組合爭霸戰，當時參與選拔者中日本籍約8,698人、韓國籍約7,194人。出道當年適逢日韓合辦2002年世界杯足球賽。\n命名為Routeφ，是因來自日本和韓國的2位成員的想成為歌壇界新的路線，由河村隆一擔任製作人並發行三張單曲，同時成為時尚品牌「CHUBBYGANGn」與「melon」雜誌之專屬模特，然而約一年多後（2003年）解散。",
+       "source": "https://zh.wikipedia.org/wiki/Routeφ",
+       "title": "Routeφ",
+       "score": 0.75,
+       "id": "web-wiki-zh-Routeφ",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ],
+     "toolName": null,
+     "skillName": null
+    },
+    "roleId": "架构",
+    "ledgerEntryId": "trust-ledger-art-0-route.generate",
+    "timing": {
+     "durationMs": 9161,
+     "parallel": true
+    },
+    "error": null
+   },
+   {
+    "id": "run-0-risk.analyze",
+    "capabilityId": "risk.analyze",
+    "turnId": "loop-0",
+    "inputs": [],
+    "outputs": [
+     "art-0-risk.analyze"
+    ],
+    "gateResults": [
+     {
+      "gateId": "ground",
+      "status": "passed"
+     }
+    ],
+    "result": {
+     "title": "Risk analysis",
+     "summary": "风险清单",
+     "content": "## 风险清单\n\n- 鉴定结果不准确：乐器真伪、年代、成色、维修史、改装情况判断失误。\n- 寄卖纠纷：卖家隐瞒瑕疵、买家收货后争议、退换货责任不清。\n- 价格操纵：虚假估价、内部人员低估收购、高估促成交易。\n- 假货与赃物风险：仿冒品牌乐器、来源不明或被盗乐器进入平台。\n- 支付与资金安全：货款托管、退款、佣金结算、提现环节存在欺诈或挪用风险。\n- 物流损坏：运输中乐器破损、湿度温度不当导致价值下降。\n- 用户隐私泄露：身份证明、地址、支付信息、交易记录、鉴定图片泄露。\n- 平台责任边界不清：鉴定意见、寄卖服务、交易撮合之间的法律责任未明确。\n\n## 影响评估\n\n- 对买家：可能购买到假货、问题乐器或价格明显不合理的商品，产生维权成本。\n- 对卖家：可能因鉴定争议、物流损坏、结算延迟造成经济损失。\n- 对平台：鉴定公信力受损会直接影响交易转化、复购和品牌信任。\n- 对合规：涉及二手交易、消费者权益、个人信息保护、资金托管和疑似赃物处置，若流程缺失可能引发监管或法律风险。\n- 对运营：高价值乐器纠纷处理成本高，单笔争议可能带来较大赔付和舆情压力。\n\n## 缓解路径\n\n- 建立标准化鉴定流程：多角度照片、序列号核验、品牌数据库比对、维修/改装记录说明、必要时线下复检。\n- 明确交易规则：成色分级、瑕疵披露、退换货条件、鉴定责任、寄卖佣金、结算周期写入协议。\n- 引入资金托管：买家确认收货或争议期结束后再放款，退款和赔付规则提前固定。\n- 做来源审查：高价值乐器要求购买凭证、身份认证、序列号登记，并设置疑似赃物冻结流程。\n- 加强物流保障：指定专业包装标准、保价运输、签收验货流程和损坏举证机制。\n- 防内部风险：鉴定师与交易撮合、定价、收购权限分离，关键操作留痕审计。\n- 保护数据安全：最小化收集用户信息，敏感资料加密存储，限制后台访问权限。\n- 建立争议处理机制：保留鉴定证据、交易沟通、物流记录，设置分级客服和专家复核通道。",
+     "provenance": "python-llm",
+     "model": "gpt-5.5",
+     "usage": {
+      "total_tokens": 5260,
+      "prompt_tokens": 4594,
+      "completion_tokens": 666
+     }
+    },
+    "roleId": "安全",
+    "ledgerEntryId": "trust-ledger-art-0-risk.analyze",
+    "timing": {
+     "durationMs": 17994,
+     "parallel": true
+    },
+    "error": null
+   },
+   {
+    "id": "run-0-appbundle.runtimeClosure",
+    "capabilityId": "appbundle.runtimeClosure",
+    "turnId": "loop-0-closure",
+    "inputs": [],
+    "outputs": [
+     "art-0-appbundle.runtimeClosure"
+    ],
+    "gateResults": [
+     {
+      "gateId": "ground",
+      "status": "passed"
+     }
+    ],
+    "result": {
+     "title": "appbundle.runtimeClosure (Full Migration)",
+     "summary": "Stable V5 execution with evidence",
+     "content": "Full V5 execution for appbundle.runtimeClosure on 二手乐器寄卖与鉴定平台. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-二手煙] 二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。 (source: https://zh.wikipedia.org/wiki/二手煙, score=0.75)\n- [web-wiki-zh-二手玫瑰] 二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国最妖娆的摇滚乐队”。 (source: https://zh.wikipedia.org/wiki/二手玫瑰, score=0.75)\n- [web-wiki-zh-鑑定] 鑑定，亦可寫為鑒定、檢定，是刑事訴訟上調查證據方法的一種，係指鑑定人以其所具備的專業能力分析證據後所得出的意見。\n鑑定和勘驗兩者極為相似，主要的分別即在勘驗不需要特殊專業技能即可得出結論，而鑑定則需要鑑定人具備一定的專業能力。隨著科技和鑑識人員分析證據能力的強化，勘驗和鑑定之間的標準也有所流動，並不絕對。 (source: https://zh.wikipedia.org/wiki/鑑定, score=0.75)\n- [web-wiki-zh-Formula of Love:] 《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。 (source: https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3, score=0.75)\n- [web-wiki-zh-Fortran] Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。 (source: https://zh.wikipedia.org/wiki/Fortran, score=0.75)\n- [web-wiki-zh-FOX (台灣頻道)] FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。 (source: https://zh.wikipedia.org/wiki/FOX_(台灣頻道), score=0.75)\n- [web-wiki-zh-Apple Store] Apple Store，或称蘋果直營店，是指由蘋果公司及其在地分支單位直接經營的連鎖零售商店，主要业务包括販賣電腦、消費性電子產品、周边配件及软件和苹果产品的售后服务、教育訓練以及商务支持。為與非蘋果公司直營的授權店區分，又稱「Apple Retail Store」。截至2025年12月，蘋果已經在全世界26个国家和地区開設537家零售店。 (source: https://zh.wikipedia.org/wiki/Apple_Store, score=0.75)\n- [web-wiki-zh-Apple晶片] Apple晶片（英語：Apple silicon）是對蘋果公司使用ARM架構設計的單晶片系統（SoC）和封裝體系（SiP）处理器之总称。它廣泛運用在iPhone、iPad、Mac和Apple Watch以及HomePod和Apple TV等蘋果公司产品。\n苹果公司不具有生产芯片的业务，所有Apple芯片均由其他芯片代工企业，如三星、台积电进行制造。第一款苹果公司自行设计的芯片是应用在iPhone 4上的Apple A4。苹果的后续新产品线，包括AirPods、Apple Watch、HomePod，从一开始均使用Apple芯片。在2020年6月的苹果全球开发者大会上，苹果公司首席执行官Tim Cook正式宣布，Mac电脑系列将在两年内从Intel公司的CPU迁移至自行设计的Apple芯片。Mac Pro是最後一款搭載Intel處理器的蘋果產品，在2023年6月遷移至M2 Ultra，至此所有蘋果產品皆搭載Apple晶片。\n考虑到 (source: https://zh.wikipedia.org/wiki/Apple晶片, score=0.75)\n- [fallback] RBAC scoping and audit logging are baseline for permission systems. (source: fallback-knowledge, score=0.6)\n\nActionable result: Use the retrieved evidence to implement scoped RBAC + audit. External sources confirm this pattern reduces risk in similar systems.",
+     "provenance": "python-rag",
+     "degraded": false,
+     "degradedReason": null,
+     "sources": [
+      {
+       "content": "二手菸，亦稱非自願性吸菸。是指在吸取燃點菸草時隨著煙霧釋放出來的物質，是一種被動吸菸（Passive smoking）方式。",
+       "source": "https://zh.wikipedia.org/wiki/二手煙",
+       "title": "二手煙",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手煙",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "二手玫瑰是由乐手梁龙于1999年在中国大陆建立的一只摇滚乐队。该乐队的音乐结合了东北二人转和现代摇滚乐，以独特雌雄难辨的嗓音，夸张的舞台造型和表演、朴实戏谑的唱词为特色。由于主唱梁龙男扮女装的造型，也有媒体称之为“中国最妖娆的摇滚乐队”。",
+       "source": "https://zh.wikipedia.org/wiki/二手玫瑰",
+       "title": "二手玫瑰",
+       "score": 0.75,
+       "id": "web-wiki-zh-二手玫瑰",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "鑑定，亦可寫為鑒定、檢定，是刑事訴訟上調查證據方法的一種，係指鑑定人以其所具備的專業能力分析證據後所得出的意見。\n鑑定和勘驗兩者極為相似，主要的分別即在勘驗不需要特殊專業技能即可得出結論，而鑑定則需要鑑定人具備一定的專業能力。隨著科技和鑑識人員分析證據能力的強化，勘驗和鑑定之間的標準也有所流動，並不絕對。",
+       "source": "https://zh.wikipedia.org/wiki/鑑定",
+       "title": "鑑定",
+       "score": 0.75,
+       "id": "web-wiki-zh-鑑定",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Apple Store，或称蘋果直營店，是指由蘋果公司及其在地分支單位直接經營的連鎖零售商店，主要业务包括販賣電腦、消費性電子產品、周边配件及软件和苹果产品的售后服务、教育訓練以及商务支持。為與非蘋果公司直營的授權店區分，又稱「Apple Retail Store」。截至2025年12月，蘋果已經在全世界26个国家和地区開設537家零售店。",
+       "source": "https://zh.wikipedia.org/wiki/Apple_Store",
+       "title": "Apple Store",
+       "score": 0.75,
+       "id": "web-wiki-zh-Apple Store",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Apple晶片（英語：Apple silicon）是對蘋果公司使用ARM架構設計的單晶片系統（SoC）和封裝體系（SiP）处理器之总称。它廣泛運用在iPhone、iPad、Mac和Apple Watch以及HomePod和Apple TV等蘋果公司产品。\n苹果公司不具有生产芯片的业务，所有Apple芯片均由其他芯片代工企业，如三星、台积电进行制造。第一款苹果公司自行设计的芯片是应用在iPhone 4上的Apple A4。苹果的后续新产品线，包括AirPods、Apple Watch、HomePod，从一开始均使用Apple芯片。在2020年6月的苹果全球开发者大会上，苹果公司首席执行官Tim Cook正式宣布，Mac电脑系列将在两年内从Intel公司的CPU迁移至自行设计的Apple芯片。Mac Pro是最後一款搭載Intel處理器的蘋果產品，在2023年6月遷移至M2 Ultra，至此所有蘋果產品皆搭載Apple晶片。\n考虑到",
+       "source": "https://zh.wikipedia.org/wiki/Apple晶片",
+       "title": "Apple晶片",
+       "score": 0.75,
+       "id": "web-wiki-zh-Apple晶片",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ],
+     "toolName": null,
+     "skillName": null,
+     "runtimeClosure": {
+      "skillsChecked": [
+       "datamodel",
+       "rbac",
+       "workflow",
+       "page",
+       "aigc",
+       "appbundle"
+      ],
+      "versionPinsChecked": true,
+      "crossSkillRuntimeEdges": [
+       {
+        "sourceSkill": "datamodel",
+        "targetSkill": "rbac",
+        "state": "allowed",
+        "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+       },
+       {
+        "sourceSkill": "datamodel",
+        "targetSkill": "page",
+        "state": "allowed",
+        "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+       },
+       {
+        "sourceSkill": "rbac",
+        "targetSkill": "workflow",
+        "state": "allowed",
+        "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "workflow",
+        "targetSkill": "page",
+        "state": "allowed",
+        "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "page",
+        "targetSkill": "appbundle",
+        "state": "allowed",
+        "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "aigc",
+        "targetSkill": "appbundle",
+        "state": "allowed",
+        "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+       }
+      ],
+      "perSkill": {}
+     },
+     "skillRuntimeGraph": {
+      "edges": [
+       {
+        "sourceSkill": "datamodel",
+        "targetSkill": "rbac",
+        "state": "allowed",
+        "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+       },
+       {
+        "sourceSkill": "datamodel",
+        "targetSkill": "page",
+        "state": "allowed",
+        "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+       },
+       {
+        "sourceSkill": "rbac",
+        "targetSkill": "workflow",
+        "state": "allowed",
+        "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "workflow",
+        "targetSkill": "page",
+        "state": "allowed",
+        "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "page",
+        "targetSkill": "appbundle",
+        "state": "allowed",
+        "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "aigc",
+        "targetSkill": "appbundle",
+        "state": "allowed",
+        "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+       }
+      ],
+      "bySkill": {
+       "datamodel": [
+        {
+         "sourceSkill": "datamodel",
+         "targetSkill": "rbac",
+         "state": "allowed",
+         "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+        },
+        {
+         "sourceSkill": "datamodel",
+         "targetSkill": "page",
+         "state": "allowed",
+         "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+        }
+       ],
+       "rbac": [
+        {
+         "sourceSkill": "datamodel",
+         "targetSkill": "rbac",
+         "state": "allowed",
+         "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+        },
+        {
+         "sourceSkill": "rbac",
+         "targetSkill": "workflow",
+         "state": "allowed",
+         "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+        }
+       ],
+       "workflow": [
+        {
+         "sourceSkill": "rbac",
+         "targetSkill": "workflow",
+         "state": "allowed",
+         "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+        },
+        {
+         "sourceSkill": "workflow",
+         "targetSkill": "page",
+         "state": "allowed",
+         "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+        }
+       ],
+       "page": [
+        {
+         "sourceSkill": "datamodel",
+         "targetSkill": "page",
+         "state": "allowed",
+         "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+        },
+        {
+         "sourceSkill": "workflow",
+         "targetSkill": "page",
+         "state": "allowed",
+         "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+        },
+        {
+         "sourceSkill": "page",
+         "targetSkill": "appbundle",
+         "state": "allowed",
+         "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+        }
+       ],
+       "aigc": [
+        {
+         "sourceSkill": "aigc",
+         "targetSkill": "appbundle",
+         "state": "allowed",
+         "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+        }
+       ],
+       "appbundle": [
+        {
+         "sourceSkill": "page",
+         "targetSkill": "appbundle",
+         "state": "allowed",
+         "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+        },
+        {
+         "sourceSkill": "aigc",
+         "targetSkill": "appbundle",
+         "state": "allowed",
+         "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+        }
+       ]
+      },
+      "evidenceBySkill": {
+       "datamodel": [
+        "DM_RBAC_FIELD_POLICY_EVIDENCE",
+        "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+       ],
+       "rbac": [
+        "DM_RBAC_FIELD_POLICY_EVIDENCE",
+        "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+       ],
+       "workflow": [
+        "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE",
+        "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+       ],
+       "page": [
+        "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+        "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE",
+        "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+       ],
+       "aigc": [
+        "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+       ],
+       "appbundle": [
+        "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE",
+        "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+       ]
+      }
+     },
+     "perSkillEvidence": {
+      "datamodel": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:datamodel:llm-linkage-datamodel",
+       "path": "skills/datamodel/closure-evidence.json",
+       "artifactId": "llm-linkage-datamodel",
+       "digest": "5b03ca8344295e4c",
+       "modelSection": {
+        "entities": [
+         {
+          "id": "consignor_profile",
+          "name": "寄卖人档案",
+          "fields": [
+           {
+            "id": "full_name",
+            "name": "姓名",
+            "type": "string"
+           },
+           {
+            "id": "phone",
+            "name": "手机号",
+            "type": "string",
+            "format": "masked"
+           },
+           {
+            "id": "id_number",
+            "name": "证件号",
+            "type": "string",
+            "format": "masked"
+           },
+           {
+            "id": "kyc_status",
+            "name": "实名状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "pending",
+              "label": "待认证",
+              "tone": "warning"
+             },
+             {
+              "id": "verified",
+              "label": "已认证",
+              "tone": "success"
+             },
+             {
+              "id": "rejected",
+              "label": "认证失败",
+              "tone": "danger"
+             }
+            ]
+           },
+           {
+            "id": "risk_level",
+            "name": "风险等级",
+            "type": "enum",
+            "options": [
+             {
+              "id": "low",
+              "label": "低风险",
+              "tone": "success"
+             },
+             {
+              "id": "medium",
+              "label": "中风险",
+              "tone": "warning"
+             },
+             {
+              "id": "high",
+              "label": "高风险",
+              "tone": "danger"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "id": "instrument",
+          "name": "二手乐器",
+          "fields": [
+           {
+            "id": "consignor_ref",
+            "name": "寄卖人",
+            "type": "ref"
+           },
+           {
+            "id": "category",
+            "name": "品类",
+            "type": "enum",
+            "options": [
+             {
+              "id": "guitar",
+              "label": "吉他",
+              "tone": "default"
+             },
+             {
+              "id": "piano",
+              "label": "钢琴",
+              "tone": "default"
+             },
+             {
+              "id": "violin",
+              "label": "小提琴",
+              "tone": "default"
+             },
+             {
+              "id": "wind",
+              "label": "管乐",
+              "tone": "default"
+             },
+             {
+              "id": "percussion",
+              "label": "打击乐",
+              "tone": "default"
+             }
+            ]
+           },
+           {
+            "id": "brand",
+            "name": "品牌",
+            "type": "string"
+           },
+           {
+            "id": "model",
+            "name": "型号",
+            "type": "string"
+           },
+           {
+            "id": "serial_number",
+            "name": "序列号",
+            "type": "string"
+           },
+           {
+            "id": "description",
+            "name": "寄卖描述",
+            "type": "string"
+           },
+           {
+            "id": "condition_grade",
+            "name": "成色等级",
+            "type": "enum",
+            "options": [
+             {
+              "id": "excellent",
+              "label": "极佳",
+              "tone": "success"
+             },
+             {
+              "id": "good",
+              "label": "良好",
+              "tone": "processing"
+             },
+             {
+              "id": "fair",
+              "label": "一般",
+              "tone": "warning"
+             },
+             {
+              "id": "poor",
+              "label": "较差",
+              "tone": "danger"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "id": "consignment_order",
+          "name": "寄卖单",
+          "fields": [
+           {
+            "id": "instrument_ref",
+            "name": "乐器",
+            "type": "ref"
+           },
+           {
+            "id": "consignor_ref",
+            "name": "寄卖人",
+            "type": "ref"
+           },
+           {
+            "id": "order_status",
+            "name": "寄卖状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "draft",
+              "label": "草稿",
+              "tone": "default"
+             },
+             {
+              "id": "submitted",
+              "label": "已提交",
+              "tone": "warning"
+             },
+             {
+              "id": "appraising",
+              "label": "鉴定中",
+              "tone": "processing"
+             },
+             {
+              "id": "listed",
+              "label": "已上架",
+              "tone": "success"
+             },
+             {
+              "id": "sold",
+              "label": "已售出",
+              "tone": "success"
+             },
+             {
+              "id": "returned",
+              "label": "已退回",
+              "tone": "danger"
+             }
+            ]
+           },
+           {
+            "id": "submitted_at",
+            "name": "提交时间",
+            "type": "date"
+           },
+           {
+            "id": "expected_price",
+            "name": "期望价",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "reserve_price",
+            "name": "保底价",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "commission_rate",
+            "name": "佣金比例",
+            "type": "number",
+            "format": "percent"
+           },
+           {
+            "id": "intake_notes",
+            "name": "收件备注",
+            "type": "string"
+           }
+          ]
+         },
+         {
+          "id": "appraisal_report",
+          "name": "鉴定报告",
+          "fields": [
+           {
+            "id": "consignment_ref",
+            "name": "寄卖单",
+            "type": "ref"
+           },
+           {
+            "id": "appraiser_ref",
+            "name": "鉴定师",
+            "type": "ref"
+           },
+           {
+            "id": "authenticity_status",
+            "name": "真伪结论",
+            "type": "enum",
+            "options": [
+             {
+              "id": "pending",
+              "label": "待确认",
+              "tone": "warning"
+             },
+             {
+              "id": "authentic",
+              "label": "正品",
+              "tone": "success"
+             },
+             {
+              "id": "suspicious",
+              "label": "存疑",
+              "tone": "warning"
+             },
+             {
+              "id": "fake",
+              "label": "仿品",
+              "tone": "danger"
+             }
+            ]
+           },
+           {
+            "id": "ai_condition_summary",
+            "name": "AI成色摘要",
+            "type": "string"
+           },
+           {
+            "id": "price_rationale",
+            "name": "定价依据",
+            "type": "string"
+           },
+           {
+            "id": "suggested_price",
+            "name": "建议售价",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "quality_score",
+            "name": "综合评分",
+            "type": "number",
+            "format": "score"
+           },
+           {
+            "id": "review_status",
+            "name": "复核状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "draft",
+              "label": "草稿",
+              "tone": "default"
+             },
+             {
+              "id": "submitted",
+              "label": "待复核",
+              "tone": "warning"
+             },
+             {
+              "id": "approved",
+              "label": "已通过",
+              "tone": "success"
+             },
+             {
+              "id": "rework",
+              "label": "需补充",
+              "tone": "danger"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "id": "listing",
+          "name": "商品上架",
+          "fields": [
+           {
+            "id": "consignment_ref",
+            "name": "寄卖单",
+            "type": "ref"
+           },
+           {
+            "id": "appraisal_ref",
+            "name": "鉴定报告",
+            "type": "ref"
+           },
+           {
+            "id": "listing_status",
+            "name": "上架状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "pending",
+              "label": "待上架",
+              "tone": "warning"
+             },
+             {
+              "id": "published",
+              "label": "销售中",
+              "tone": "processing"
+             },
+             {
+              "id": "reserved",
+              "label": "已锁定",
+              "tone": "warning"
+             },
+             {
+              "id": "sold",
+              "label": "已成交",
+              "tone": "success"
+             },
+             {
+              "id": "delisted",
+              "label": "已下架",
+              "tone": "danger"
+             }
+            ]
+           },
+           {
+            "id": "sale_price",
+            "name": "销售价",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "published_at",
+            "name": "上架时间",
+            "type": "date"
+           },
+           {
+            "id": "marketing_copy",
+            "name": "商品文案",
+            "type": "string"
+           },
+           {
+            "id": "photo_quality_score",
+            "name": "图片质量分",
+            "type": "number",
+            "format": "score"
+           }
+          ]
+         },
+         {
+          "id": "sale_order",
+          "name": "销售订单",
+          "fields": [
+           {
+            "id": "listing_ref",
+            "name": "商品上架",
+            "type": "ref"
+           },
+           {
+            "id": "buyer_phone",
+            "name": "买家手机号",
+            "type": "string",
+            "format": "masked"
+           },
+           {
+            "id": "order_status",
+            "name": "订单状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "created",
+              "label": "待付款",
+              "tone": "warning"
+             },
+             {
+              "id": "paid",
+              "label": "已付款",
+              "tone": "processing"
+             },
+             {
+              "id": "shipped",
+              "label": "已发货",
+              "tone": "processing"
+             },
+             {
+              "id": "completed",
+              "label": "已完成",
+              "tone": "success"
+             },
+             {
+              "id": "cancelled",
+              "label": "已取消",
+              "tone": "danger"
+             },
+             {
+              "id": "refunded",
+              "label": "已退款",
+              "tone": "danger"
+             }
+            ]
+           },
+           {
+            "id": "paid_amount",
+            "name": "实付金额",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "paid_at",
+            "name": "付款时间",
+            "type": "date"
+           },
+           {
+            "id": "completed_at",
+            "name": "完成时间",
+            "type": "date"
+           }
+          ]
+         },
+         {
+          "id": "payout",
+          "name": "寄卖结算",
+          "fields": [
+           {
+            "id": "sale_order_ref",
+            "name": "销售订单",
+            "type": "ref"
+           },
+           {
+            "id": "consignor_ref",
+            "name": "寄卖人",
+            "type": "ref"
+           },
+           {
+            "id": "payout_status",
+            "name": "结算状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "pending",
+              "label": "待结算",
+              "tone": "warning"
+             },
+             {
+              "id": "calculating",
+              "label": "计算中",
+              "tone": "processing"
+             },
+             {
+              "id": "paying",
+              "label": "打款中",
+              "tone": "processing"
+             },
+             {
+              "id": "paid",
+              "label": "已打款",
+              "tone": "success"
+             },
+             {
+              "id": "failed",
+              "label": "打款失败",
+              "tone": "danger"
+             },
+             {
+              "id": "held",
+              "label": "风控冻结",
+              "tone": "danger"
+             }
+            ]
+           },
+           {
+            "id": "gross_amount",
+            "name": "成交金额",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "commission_amount",
+            "name": "平台佣金",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "net_amount",
+            "name": "应付寄卖人",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "scheduled_date",
+            "name": "计划打款日",
+            "type": "date"
+           }
+          ]
+         },
+         {
+          "id": "audit_log",
+          "name": "审计日志",
+          "fields": [
+           {
+            "id": "business_ref",
+            "name": "业务对象",
+            "type": "ref"
+           },
+           {
+            "id": "actor_role",
+            "name": "操作角色",
+            "type": "enum",
+            "options": [
+             {
+              "id": "intake_specialist",
+              "label": "收件专员",
+              "tone": "default"
+             },
+             {
+              "id": "appraiser",
+              "label": "鉴定师",
+              "tone": "default"
+             },
+             {
+              "id": "appraisal_lead",
+              "label": "鉴定主管",
+              "tone": "default"
+             },
+             {
+              "id": "finance_ops",
+              "label": "财务运营",
+              "tone": "default"
+             },
+             {
+              "id": "ops_admin",
+              "label": "运营管理员",
+              "tone": "default"
+             }
+            ]
+           },
+           {
+            "id": "event_type",
+            "name": "事件类型",
+            "type": "enum",
+            "options": [
+             {
+              "id": "status_change",
+              "label": "状态变更",
+              "tone": "processing"
+             },
+             {
+              "id": "price_change",
+              "label": "价格调整",
+              "tone": "warning"
+             },
+             {
+              "id": "approval",
+              "label": "审批复核",
+              "tone": "success"
+             },
+             {
+              "id": "payment_callback",
+              "label": "支付回调",
+              "tone": "processing"
+             },
+             {
+              "id": "exception",
+              "label": "异常处理",
+              "tone": "danger"
+             }
+            ]
+           },
+           {
+            "id": "event_time",
+            "name": "事件时间",
+            "type": "date"
+           },
+           {
+            "id": "event_detail",
+            "name": "事件详情",
+            "type": "string"
+           }
+          ]
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:rbac:llm-linkage-rbac",
+       "path": "skills/rbac/closure-evidence.json",
+       "artifactId": "llm-linkage-rbac",
+       "digest": "522fe6a69e34fc20",
+       "modelSection": {
+        "roles": [
+         "consignor",
+         "intake_specialist",
+         "appraiser",
+         "appraisal_lead",
+         "listing_manager",
+         "buyer_support",
+         "finance_ops",
+         "ops_admin",
+         "compliance_auditor"
+        ],
+        "permissions": [
+         "consignment:create",
+         "consignment:read",
+         "consignment:update",
+         "consignment:submit",
+         "appraisal:read",
+         "appraisal:create",
+         "appraisal:update",
+         "appraisal:approve",
+         "listing:read",
+         "listing:update",
+         "listing:publish",
+         "sale:read",
+         "sale:create",
+         "sale:update",
+         "payout:read",
+         "payout:execute",
+         "payout:audit",
+         "audit:read",
+         "recovery:manage",
+         "ai:use"
+        ],
+        "menus": [
+         {
+          "id": "menu_consignor_portal",
+          "label": "寄卖人入口",
+          "roleRefs": [
+           "consignor"
+          ],
+          "permissionRefs": [
+           "consignment:create",
+           "consignment:read",
+           "consignment:submit"
+          ]
+         },
+         {
+          "id": "menu_intake",
+          "label": "收件工作台",
+          "roleRefs": [
+           "intake_specialist"
+          ],
+          "permissionRefs": [
+           "consignment:read",
+           "consignment:update",
+           "appraisal:read"
+          ]
+         },
+         {
+          "id": "menu_appraisal",
+          "label": "鉴定工作台",
+          "roleRefs": [
+           "appraiser"
+          ],
+          "permissionRefs": [
+           "appraisal:read",
+           "appraisal:create",
+           "appraisal:update",
+           "ai:use"
+          ]
+         },
+         {
+          "id": "menu_appraisal_review",
+          "label": "鉴定复核",
+          "roleRefs": [
+           "appraisal_lead"
+          ],
+          "permissionRefs": [
+           "appraisal:read",
+           "appraisal:approve",
+           "consignment:read"
+          ]
+         },
+         {
+          "id": "menu_listing",
+          "label": "上架运营",
+          "roleRefs": [
+           "listing_manager"
+          ],
+          "permissionRefs": [
+           "listing:read",
+           "listing:update",
+           "listing:publish",
+           "consignment:read",
+           "ai:use"
+          ]
+         },
+         {
+          "id": "menu_sales_support",
+          "label": "订单客服",
+          "roleRefs": [
+           "buyer_support"
+          ],
+          "permissionRefs": [
+           "sale:read",
+           "sale:create",
+           "sale:update",
+           "listing:read"
+          ]
+         },
+         {
+          "id": "menu_finance",
+          "label": "财务结算",
+          "roleRefs": [
+           "finance_ops"
+          ],
+          "permissionRefs": [
+           "payout:read",
+           "payout:execute",
+           "sale:read",
+           "audit:read"
+          ]
+         },
+         {
+          "id": "menu_ops_admin",
+          "label": "异常处理",
+          "roleRefs": [
+           "ops_admin"
+          ],
+          "permissionRefs": [
+           "recovery:manage",
+           "consignment:read",
+           "listing:read",
+           "sale:read",
+           "audit:read"
+          ]
+         },
+         {
+          "id": "menu_compliance_audit",
+          "label": "合规审计",
+          "roleRefs": [
+           "compliance_auditor"
+          ],
+          "permissionRefs": [
+           "audit:read",
+           "payout:audit",
+           "payout:read",
+           "appraisal:read"
+          ]
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:workflow:llm-linkage-workflow",
+       "path": "skills/workflow/closure-evidence.json",
+       "artifactId": "llm-linkage-workflow",
+       "digest": "2b54e8a4fd79e59f",
+       "modelSection": {
+        "id": "consignment_lifecycle",
+        "name": "寄卖单生命周期",
+        "nodes": [
+         {
+          "id": "co_draft",
+          "name": "创建寄卖草稿",
+          "assigneeRole": "consignor",
+          "phase": "申请"
+         },
+         {
+          "id": "co_submit",
+          "name": "提交寄卖申请",
+          "assigneeRole": "consignor",
+          "phase": "申请"
+         },
+         {
+          "id": "co_intake_check",
+          "name": "收件与资料核验",
+          "assigneeRole": "intake_specialist",
+          "phase": "核验"
+         },
+         {
+          "id": "co_appraisal",
+          "name": "乐器鉴定定价",
+          "assigneeRole": "appraiser",
+          "phase": "鉴定"
+         },
+         {
+          "id": "co_listing_prepare",
+          "name": "生成上架资料",
+          "assigneeRole": "listing_manager",
+          "phase": "上架"
+         },
+         {
+          "id": "co_published",
+          "name": "发布销售",
+          "assigneeRole": "listing_manager",
+          "phase": "上架"
+         },
+         {
+          "id": "co_returned",
+          "name": "退回寄卖人",
+          "assigneeRole": "intake_specialist",
+          "phase": "归档"
+         },
+         {
+          "id": "co_archived",
+          "name": "成交归档",
+          "assigneeRole": "buyer_support",
+          "phase": "归档"
+         }
+        ],
+        "transitions": [
+         {
+          "from": "co_draft",
+          "to": "co_submit",
+          "condition": "寄卖人提交完整资料"
+         },
+         {
+          "from": "co_submit",
+          "to": "co_intake_check",
+          "condition": "平台收到申请"
+         },
+         {
+          "from": "co_intake_check",
+          "to": "co_appraisal",
+          "condition": "资料与实物一致"
+         },
+         {
+          "from": "co_intake_check",
+          "to": "co_draft",
+          "condition": "资料缺失需补充"
+         },
+         {
+          "from": "co_intake_check",
+          "to": "co_returned",
+          "condition": "禁售品或无法收件"
+         },
+         {
+          "from": "co_appraisal",
+          "to": "co_listing_prepare",
+          "condition": "鉴定通过且价格确认"
+         },
+         {
+          "from": "co_appraisal",
+          "to": "co_returned",
+          "condition": "仿品或寄卖人拒绝定价"
+         },
+         {
+          "from": "co_listing_prepare",
+          "to": "co_published",
+          "condition": "图片文案与价格齐备"
+         },
+         {
+          "from": "co_listing_prepare",
+          "to": "co_appraisal",
+          "condition": "定价依据不足需重评"
+         },
+         {
+          "from": "co_published",
+          "to": "co_archived",
+          "condition": "订单完成"
+         },
+         {
+          "from": "co_published",
+          "to": "co_returned",
+          "condition": "寄卖期满未售出"
+         }
+        ],
+        "chains": [
+         {
+          "id": "appraisal_governance",
+          "name": "鉴定复核治理",
+          "kind": "governance",
+          "nodes": [
+           {
+            "id": "ag_report_draft",
+            "name": "撰写鉴定报告",
+            "assigneeRole": "appraiser",
+            "phase": "编制"
+           },
+           {
+            "id": "ag_submit_review",
+            "name": "提交主管复核",
+            "assigneeRole": "appraiser",
+            "phase": "编制"
+           },
+           {
+            "id": "ag_lead_review",
+            "name": "主管复核真伪与价格",
+            "assigneeRole": "appraisal_lead",
+            "phase": "复核"
+           },
+           {
+            "id": "ag_rework",
+            "name": "退回补充证据",
+            "assigneeRole": "appraiser",
+            "phase": "复核"
+           },
+           {
+            "id": "ag_approved",
+            "name": "复核通过",
+            "assigneeRole": "appraisal_lead",
+            "phase": "发布"
+           },
+           {
+            "id": "ag_rejected",
+            "name": "复核驳回",
+            "assigneeRole": "appraisal_lead",
+            "phase": "发布"
+           }
+          ],
+          "transitions": [
+           {
+            "from": "ag_report_draft",
+            "to": "ag_submit_review",
+            "condition": "报告字段完整"
+           },
+           {
+            "from": "ag_submit_review",
+            "to": "ag_lead_review",
+            "condition": "提交复核"
+           },
+           {
+            "from": "ag_lead_review",
+            "to": "ag_approved",
+            "condition": "真伪明确且定价合理"
+           },
+           {
+            "from": "ag_lead_review",
+            "to": "ag_rework",
+            "condition": "证据不足或价格偏离"
+           },
+           {
+            "from": "ag_rework",
+            "to": "ag_report_draft",
+            "condition": "补充检测照片与行情依据"
+           },
+           {
+            "from": "ag_lead_review",
+            "to": "ag_rejected",
+            "condition": "疑似仿品或重大争议"
+           }
+          ]
+         },
+         {
+          "id": "settlement_money",
+          "name": "成交结算资金链",
+          "kind": "money",
+          "nodes": [
+           {
+            "id": "sm_order_created",
+            "name": "创建销售订单",
+            "assigneeRole": "buyer_support",
+            "phase": "收款"
+           },
+           {
+            "id": "sm_wait_payment",
+            "name": "等待买家付款",
+            "assigneeRole": "buyer_support",
+            "phase": "收款"
+           },
+           {
+            "id": "sm_callback_verify",
+            "name": "服务端核验支付回调",
+            "assigneeRole": "finance_ops",
+            "phase": "确认"
+           },
+           {
+            "id": "sm_settlement_calc",
+            "name": "计算佣金与应付金额",
+            "assigneeRole": "finance_ops",
+            "phase": "结算"
+           },
+           {
+            "id": "sm_risk_hold",
+            "name": "风控冻结结算",
+            "assigneeRole": "finance_ops",
+            "phase": "结算"
+           },
+           {
+            "id": "sm_execute_payout",
+            "name": "执行寄卖人打款",
+            "assigneeRole": "finance_ops",
+            "phase": "打款"
+           },
+           {
+            "id": "sm_audit_record",
+            "name": "写入资金审计记录",
+            "assigneeRole": "compliance_auditor",
+            "phase": "打款"
+           },
+           {
+            "id": "sm_cancelled",
+            "name": "订单取消或退款",
+            "assigneeRole": "buyer_support",
+            "phase": "打款"
+           }
+          ],
+          "transitions": [
+           {
+            "from": "sm_order_created",
+            "to": "sm_wait_payment",
+            "condition": "订单锁定商品"
+           },
+           {
+            "from": "sm_wait_payment",
+            "to": "sm_callback_verify",
+            "condition": "收到支付渠道回调"
+           },
+           {
+            "from": "sm_wait_payment",
+            "to": "sm_cancelled",
+            "condition": "超时未支付"
+           },
+           {
+            "from": "sm_callback_verify",
+            "to": "sm_settlement_calc",
+            "condition": "签名与金额核验通过"
+           },
+           {
+            "from": "sm_callback_verify",
+            "to": "sm_cancelled",
+            "condition": "支付核验失败"
+           },
+           {
+            "from": "sm_settlement_calc",
+            "to": "sm_execute_payout",
+            "condition": "无风控命中且订单完成"
+           },
+           {
+            "from": "sm_settlement_calc",
+            "to": "sm_risk_hold",
+            "condition": "寄卖人高风险或订单争议"
+           },
+           {
+            "from": "sm_risk_hold",
+            "to": "sm_settlement_calc",
+            "condition": "风控解除后重新计算"
+           },
+           {
+            "from": "sm_execute_payout",
+            "to": "sm_audit_record",
+            "condition": "打款成功"
+           },
+           {
+            "from": "sm_execute_payout",
+            "to": "sm_risk_hold",
+            "condition": "打款失败或账户异常"
+           }
+          ]
+         },
+         {
+          "id": "listing_recovery",
+          "name": "上架与支付异常恢复",
+          "kind": "recovery",
+          "nodes": [
+           {
+            "id": "lr_detect_failure",
+            "name": "检测异步失败",
+            "assigneeRole": "ops_admin",
+            "phase": "发现"
+           },
+           {
+            "id": "lr_classify_failure",
+            "name": "分类图片同步或支付异常",
+            "assigneeRole": "ops_admin",
+            "phase": "诊断"
+           },
+           {
+            "id": "lr_retry_job",
+            "name": "重试上架同步任务",
+            "assigneeRole": "ops_admin",
+            "phase": "修复"
+           },
+           {
+            "id": "lr_manual_fix",
+            "name": "人工修复业务状态",
+            "assigneeRole": "ops_admin",
+            "phase": "修复"
+           },
+           {
+            "id": "lr_verify_recovered",
+            "name": "验证恢复结果",
+            "assigneeRole": "compliance_auditor",
+            "phase": "验证"
+           },
+           {
+            "id": "lr_close_incident",
+            "name": "关闭异常单",
+            "assigneeRole": "ops_admin",
+            "phase": "验证"
+           }
+          ],
+          "transitions": [
+           {
+            "from": "lr_detect_failure",
+            "to": "lr_classify_failure",
+            "condition": "发现上架同步或回调异常"
+           },
+           {
+            "from": "lr_classify_failure",
+            "to": "lr_retry_job",
+            "condition": "可自动重试"
+           },
+           {
+            "from": "lr_classify_failure",
+            "to": "lr_manual_fix",
+            "condition": "状态不一致需人工处理"
+           },
+           {
+            "from": "lr_retry_job",
+            "to": "lr_verify_recovered",
+            "condition": "重试成功"
+           },
+           {
+            "from": "lr_retry_job",
+            "to": "lr_manual_fix",
+            "condition": "重试三次仍失败"
+           },
+           {
+            "from": "lr_manual_fix",
+            "to": "lr_verify_recovered",
+            "condition": "人工修复完成"
+           },
+           {
+            "from": "lr_verify_recovered",
+            "to": "lr_close_incident",
+            "condition": "审计日志与业务状态一致"
+           },
+           {
+            "from": "lr_verify_recovered",
+            "to": "lr_classify_failure",
+            "condition": "验证失败需重新诊断"
+           }
+          ]
+         }
+        ]
+       }
+      },
+      "page": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:page:llm-linkage-page",
+       "path": "skills/page/closure-evidence.json",
+       "artifactId": "llm-linkage-page",
+       "digest": "6f3f92be15d2c1c5",
+       "modelSection": {
+        "pages": [
+         {
+          "id": "consignment_kanban",
+          "name": "寄卖进度看板",
+          "kind": "kanban",
+          "statusField": "consignment_order.order_status",
+          "fieldBindings": [
+           "consignment_order.instrument_ref",
+           "consignment_order.consignor_ref",
+           "consignment_order.order_status",
+           "consignment_order.expected_price",
+           "consignment_order.reserve_price",
+           "instrument.category",
+           "instrument.brand",
+           "instrument.model"
+          ],
+          "actionPermissions": [
+           "consignment:read",
+           "consignment:update",
+           "consignment:submit"
+          ],
+          "stats": [],
+          "charts": []
+         },
+         {
+          "id": "appraisal_workbench",
+          "name": "鉴定工作台",
+          "kind": "workbench",
+          "fieldBindings": [
+           "appraisal_report.consignment_ref",
+           "appraisal_report.authenticity_status",
+           "appraisal_report.ai_condition_summary",
+           "appraisal_report.price_rationale",
+           "appraisal_report.suggested_price",
+           "appraisal_report.quality_score",
+           "appraisal_report.review_status",
+           "instrument.serial_number",
+           "instrument.condition_grade"
+          ],
+          "actionPermissions": [
+           "appraisal:read",
+           "appraisal:create",
+           "appraisal:update",
+           "appraisal:approve",
+           "ai:use"
+          ],
+          "stats": [],
+          "charts": []
+         },
+         {
+          "id": "listing_calendar",
+          "name": "上架排期日历",
+          "kind": "calendar",
+          "dateField": "listing.published_at",
+          "colorBy": "listing.listing_status",
+          "fieldBindings": [
+           "listing.consignment_ref",
+           "listing.appraisal_ref",
+           "listing.listing_status",
+           "listing.sale_price",
+           "listing.published_at",
+           "listing.marketing_copy",
+           "listing.photo_quality_score"
+          ],
+          "actionPermissions": [
+           "listing:read",
+           "listing:update",
+           "listing:publish",
+           "ai:use"
+          ],
+          "stats": [],
+          "charts": []
+         },
+         {
+          "id": "sales_dashboard",
+          "name": "销售与结算仪表盘",
+          "kind": "dashboard",
+          "fieldBindings": [
+           "sale_order.listing_ref",
+           "sale_order.order_status",
+           "sale_order.paid_amount",
+           "sale_order.paid_at",
+           "payout.payout_status",
+           "payout.gross_amount",
+           "payout.commission_amount",
+           "payout.net_amount",
+           "payout.scheduled_date"
+          ],
+          "actionPermissions": [
+           "sale:read",
+           "payout:read",
+           "payout:execute"
+          ],
+          "stats": [
+           {
+            "id": "stat_paid_orders",
+            "name": "已付款订单数",
+            "entity": "sale_order",
+            "metric": "count",
+            "format": "number"
+           },
+           {
+            "id": "stat_paid_amount",
+            "name": "实付总额",
+            "entity": "sale_order",
+            "metric": "sum:sale_order.paid_amount",
+            "format": "money"
+           },
+           {
+            "id": "stat_pending_payout",
+            "name": "待结算笔数",
+            "entity": "payout",
+            "metric": "count",
+            "format": "number"
+           },
+           {
+            "id": "stat_net_payout",
+            "name": "应付寄卖人总额",
+            "entity": "payout",
+            "metric": "sum:payout.net_amount",
+            "format": "money"
+           }
+          ],
+          "charts": [
+           {
+            "id": "chart_order_status",
+            "name": "订单状态分布",
+            "type": "bar",
+            "dimension": "sale_order.order_status",
+            "metric": "count"
+           },
+           {
+            "id": "chart_payout_by_date",
+            "name": "计划打款金额趋势",
+            "type": "line",
+            "dimension": "payout.scheduled_date",
+            "metric": "sum:payout.net_amount"
+           }
+          ]
+         },
+         {
+          "id": "audit_center",
+          "name": "合规审计中心",
+          "kind": "dashboard",
+          "fieldBindings": [
+           "audit_log.business_ref",
+           "audit_log.actor_role",
+           "audit_log.event_type",
+           "audit_log.event_time",
+           "audit_log.event_detail",
+           "consignor_profile.full_name",
+           "consignor_profile.phone",
+           "consignor_profile.kyc_status",
+           "consignor_profile.risk_level"
+          ],
+          "actionPermissions": [
+           "audit:read",
+           "payout:audit",
+           "recovery:manage"
+          ],
+          "stats": [
+           {
+            "id": "stat_audit_events",
+            "name": "审计事件数",
+            "entity": "audit_log",
+            "metric": "count",
+            "format": "number"
+           },
+           {
+            "id": "stat_high_risk_consignors",
+            "name": "寄卖人风险档案数",
+            "entity": "consignor_profile",
+            "metric": "count",
+            "format": "number"
+           }
+          ],
+          "charts": [
+           {
+            "id": "chart_event_type",
+            "name": "事件类型占比",
+            "type": "pie",
+            "dimension": "audit_log.event_type",
+            "metric": "count"
+           },
+           {
+            "id": "chart_risk_level",
+            "name": "寄卖人风险分布",
+            "type": "bar",
+            "dimension": "consignor_profile.risk_level",
+            "metric": "count"
+           }
+          ]
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:aigc:llm-linkage-aigc",
+       "path": "skills/aigc/closure-evidence.json",
+       "artifactId": "llm-linkage-aigc",
+       "digest": "c7c312869c975413",
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "ai_condition_summary",
+          "name": "生成成色与瑕疵摘要",
+          "inputFields": [
+           "instrument.description",
+           "instrument.category",
+           "instrument.brand",
+           "instrument.model",
+           "instrument.condition_grade"
+          ],
+          "outputField": "appraisal_report.ai_condition_summary",
+          "roleRefs": [
+           "appraiser"
+          ]
+         },
+         {
+          "id": "ai_price_rationale",
+          "name": "生成行情定价依据",
+          "inputFields": [
+           "appraisal_report.ai_condition_summary",
+           "appraisal_report.suggested_price",
+           "instrument.category",
+           "instrument.brand",
+           "instrument.model"
+          ],
+          "outputField": "appraisal_report.price_rationale",
+          "roleRefs": [
+           "appraiser",
+           "appraisal_lead"
+          ]
+         },
+         {
+          "id": "ai_listing_copy",
+          "name": "生成商品上架文案",
+          "inputFields": [
+           "appraisal_report.price_rationale",
+           "appraisal_report.suggested_price",
+           "instrument.description",
+           "listing.sale_price"
+          ],
+          "outputField": "listing.marketing_copy",
+          "roleRefs": [
+           "listing_manager"
+          ]
+         }
+        ],
+        "pipelines": [
+         {
+          "id": "pipeline_appraisal_to_listing",
+          "name": "鉴定到上架文案生成",
+          "steps": [
+           "ai_condition_summary",
+           "ai_price_rationale",
+           "ai_listing_copy"
+          ]
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:appbundle:llm-linkage-appbundle",
+       "path": "skills/appbundle/closure-evidence.json",
+       "artifactId": "llm-linkage-appbundle",
+       "digest": "5a2cdd96073191bc",
+       "modelSection": {
+        "pageBindings": [
+         {
+          "pageRef": "consignment_kanban",
+          "workflowRef": "consignment_lifecycle"
+         },
+         {
+          "pageRef": "appraisal_workbench",
+          "workflowRef": "co_appraisal"
+         },
+         {
+          "pageRef": "listing_calendar",
+          "workflowRef": "co_listing_prepare"
+         },
+         {
+          "pageRef": "sales_dashboard",
+          "workflowRef": "sm_settlement_calc"
+         },
+         {
+          "pageRef": "audit_center",
+          "workflowRef": "lr_verify_recovered"
+         }
+        ],
+        "roleRefs": [
+         "consignor",
+         "intake_specialist",
+         "appraiser",
+         "appraisal_lead",
+         "listing_manager",
+         "buyer_support",
+         "finance_ops",
+         "ops_admin",
+         "compliance_auditor"
+        ],
+        "dataModelRefs": [
+         "consignor_profile",
+         "instrument",
+         "consignment_order",
+         "appraisal_report",
+         "listing",
+         "sale_order",
+         "payout",
+         "audit_log"
+        ],
+        "invariants": [
+         {
+          "id": "verified_consignor_before_listing",
+          "statement": "寄卖单进入上架前，寄卖人的实名状态必须为已认证且风险等级不得为高风险。",
+          "systems": [
+           "datamodel",
+           "workflow",
+           "page"
+          ],
+          "refs": [
+           "consignor_profile.kyc_status",
+           "consignor_profile.risk_level",
+           "co_listing_prepare",
+           "listing:publish"
+          ]
+         },
+         {
+          "id": "approved_appraisal_before_publish",
+          "statement": "商品发布销售必须依赖已通过复核的鉴定报告，且不得发布真伪结论为仿品的乐器。",
+          "systems": [
+           "datamodel",
+           "workflow",
+           "rbac"
+          ],
+          "refs": [
+           "appraisal_report.review_status",
+           "appraisal_report.authenticity_status",
+           "co_published",
+           "listing:publish"
+          ]
+         },
+         {
+          "id": "price_changes_are_audited",
+          "statement": "建议售价、销售价或保底价发生变更时必须写入价格调整审计日志。",
+          "systems": [
+           "datamodel",
+           "workflow",
+           "page"
+          ],
+          "refs": [
+           "appraisal_report.suggested_price",
+           "listing.sale_price",
+           "consignment_order.reserve_price",
+           "audit_log.event_type",
+           "audit:read"
+          ]
+         },
+         {
+          "id": "payment_callback_is_source_of_truth",
+          "statement": "销售订单付款状态只能由服务端核验通过的支付回调推进，客服不得手工标记已付款。",
+          "systems": [
+           "datamodel",
+           "rbac",
+           "workflow"
+          ],
+          "refs": [
+           "sale_order.order_status",
+           "sm_callback_verify",
+           "sale:update",
+           "finance_ops"
+          ]
+         },
+         {
+          "id": "payout_after_completed_order",
+          "statement": "寄卖人打款必须发生在销售订单已完成且佣金与应付金额计算完成之后。",
+          "systems": [
+           "datamodel",
+           "workflow",
+           "rbac"
+          ],
+          "refs": [
+           "sale_order.order_status",
+           "payout.net_amount",
+           "sm_settlement_calc",
+           "sm_execute_payout",
+           "payout:execute"
+          ]
+         },
+         {
+          "id": "every_payout_has_audit_log",
+          "statement": "每一次结算打款成功或失败都必须生成资金审计记录并可被合规审计查看。",
+          "systems": [
+           "datamodel",
+           "workflow",
+           "page"
+          ],
+          "refs": [
+           "payout.payout_status",
+           "audit_log.event_type",
+           "sm_audit_record",
+           "audit_center",
+           "payout:audit"
+          ]
+         },
+         {
+          "id": "ai_output_requires_human_review",
+          "statement": "AI生成的成色摘要、定价依据和商品文案必须经过鉴定师或上架运营确认后才能影响对外展示。",
+          "systems": [
+           "datamodel",
+           "aigc",
+           "workflow",
+           "rbac"
+          ],
+          "refs": [
+           "ai_condition_summary",
+           "ai_price_rationale",
+           "ai_listing_copy",
+           "ag_lead_review",
+           "co_listing_prepare",
+           "appraisal:update",
+           "listing:update"
+          ]
+         },
+         {
+          "id": "failed_async_work_reconciled_before_close",
+          "statement": "上架同步或支付异常关闭前，业务状态与审计日志必须在恢复验证节点保持一致。",
+          "systems": [
+           "datamodel",
+           "workflow",
+           "page"
+          ],
+          "refs": [
+           "listing.listing_status",
+           "sale_order.order_status",
+           "audit_log.event_detail",
+           "lr_verify_recovered",
+           "lr_close_incident",
+           "recovery:manage"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "blocked": false,
+     "blockers": [],
+     "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+     "closureHash": "c12a1a30",
+     "stableDigest": "8d4d4307",
+     "findingsByTier": {
+      "hard_blocker": [],
+      "warning": [],
+      "info": []
+     }
+    },
+    "roleId": "appbundle",
+    "ledgerEntryId": "trust-ledger-art-0-appbundle.runtimeClosure",
+    "timing": {
+     "durationMs": 172902
+    },
+    "error": null
+   }
+  ],
+  "coverageGaps": [
+   {
+    "id": "gap-evidence.search-turn-1",
+    "kind": "missing_capability",
+    "label": "Missing required capability: evidence.search",
+    "requiredCapabilityId": "evidence.search",
+    "status": "resolved",
+    "createdAt": "2026-07-16T01:36:19.607033"
+   },
+   {
+    "id": "gap-evidence-turn-1",
+    "kind": "missing_evidence",
+    "label": "Missing grounded external evidence (G-GROUND)",
+    "requiredCapabilityId": null,
+    "status": "resolved",
+    "createdAt": "2026-07-16T01:36:19.607033"
+   }
+  ],
+  "coverageContract": {
+   "id": "cov-turn-1",
+   "version": 1,
+   "mode": "simple",
+   "requiredCapabilities": [
+    "evidence.search",
+    "report.write"
+   ],
+   "minEvidencePerRequirement": 1,
+   "blockingGapIds": [
+    "gap-evidence.search-turn-1",
+    "gap-evidence-turn-1"
+   ]
+  },
+  "coverageGate": null,
+  "graph": {
+   "nodes": [],
+   "edges": []
+  },
+  "staleArtifactIds": [],
+  "supersededArtifactIds": [],
+  "conversation": [],
+  "openQuestions": [],
+  "evidence": [],
+  "decisions": [],
+  "risks": [],
+  "gates": [],
+  "dependencyGraph": [
+   {
+    "fromArtifactId": "art-0-evidence.search",
+    "toArtifactId": "art-0-intent.clarify",
+    "reason": "execution-chain"
+   },
+   {
+    "fromArtifactId": "art-0-intent.clarify",
+    "toArtifactId": "art-0-route.generate",
+    "reason": "execution-chain"
+   },
+   {
+    "fromArtifactId": "art-0-route.generate",
+    "toArtifactId": "art-0-risk.analyze",
+    "reason": "execution-chain"
+   },
+   {
+    "fromArtifactId": "art-0-risk.analyze",
+    "toArtifactId": "art-0-appbundle.runtimeClosure",
+    "reason": "execution-chain"
+   }
+  ],
+  "runtimePhase": "done",
+  "awaitReason": null,
+  "awaitDetail": null,
+  "lastTurnId": "turn-1",
+  "deliveryPhase": null,
+  "roleMode": null,
+  "decisionLedger": [],
+  "costLedger": [],
+  "flowBoundaryLedger": [],
+  "structureGateLedger": [],
+  "sessionReplayLog": [],
+  "reasoningEvents": [],
+  "turnNarrations": [],
+  "currentFocus": null,
+  "userIntervention": null,
+  "brainstormDegraded": false,
+  "escalated": false,
+  "projectionDirtyNodeIds": [],
+  "publishClosure": {
+   "blocked": false,
+   "blockerCount": 0,
+   "evidencePresentCount": 6,
+   "skillCount": 6,
+   "versionPinsChecked": true,
+   "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+   "closureHash": "c12a1a30",
+   "stableDigest": "8d4d4307",
+   "tierCounts": {
+    "hard_blocker": 0,
+    "warning": 0,
+    "info": 0
+   },
+   "perSkillEvidence": {
+    "datamodel": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:datamodel:llm-linkage-datamodel",
+     "path": "skills/datamodel/closure-evidence.json",
+     "artifactId": "llm-linkage-datamodel",
+     "digest": "5b03ca8344295e4c",
+     "modelSection": {
+      "entities": [
+       {
+        "id": "consignor_profile",
+        "name": "寄卖人档案",
+        "fields": [
+         {
+          "id": "full_name",
+          "name": "姓名",
+          "type": "string"
+         },
+         {
+          "id": "phone",
+          "name": "手机号",
+          "type": "string",
+          "format": "masked"
+         },
+         {
+          "id": "id_number",
+          "name": "证件号",
+          "type": "string",
+          "format": "masked"
+         },
+         {
+          "id": "kyc_status",
+          "name": "实名状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "pending",
+            "label": "待认证",
+            "tone": "warning"
+           },
+           {
+            "id": "verified",
+            "label": "已认证",
+            "tone": "success"
+           },
+           {
+            "id": "rejected",
+            "label": "认证失败",
+            "tone": "danger"
+           }
+          ]
+         },
+         {
+          "id": "risk_level",
+          "name": "风险等级",
+          "type": "enum",
+          "options": [
+           {
+            "id": "low",
+            "label": "低风险",
+            "tone": "success"
+           },
+           {
+            "id": "medium",
+            "label": "中风险",
+            "tone": "warning"
+           },
+           {
+            "id": "high",
+            "label": "高风险",
+            "tone": "danger"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "id": "instrument",
+        "name": "二手乐器",
+        "fields": [
+         {
+          "id": "consignor_ref",
+          "name": "寄卖人",
+          "type": "ref"
+         },
+         {
+          "id": "category",
+          "name": "品类",
+          "type": "enum",
+          "options": [
+           {
+            "id": "guitar",
+            "label": "吉他",
+            "tone": "default"
+           },
+           {
+            "id": "piano",
+            "label": "钢琴",
+            "tone": "default"
+           },
+           {
+            "id": "violin",
+            "label": "小提琴",
+            "tone": "default"
+           },
+           {
+            "id": "wind",
+            "label": "管乐",
+            "tone": "default"
+           },
+           {
+            "id": "percussion",
+            "label": "打击乐",
+            "tone": "default"
+           }
+          ]
+         },
+         {
+          "id": "brand",
+          "name": "品牌",
+          "type": "string"
+         },
+         {
+          "id": "model",
+          "name": "型号",
+          "type": "string"
+         },
+         {
+          "id": "serial_number",
+          "name": "序列号",
+          "type": "string"
+         },
+         {
+          "id": "description",
+          "name": "寄卖描述",
+          "type": "string"
+         },
+         {
+          "id": "condition_grade",
+          "name": "成色等级",
+          "type": "enum",
+          "options": [
+           {
+            "id": "excellent",
+            "label": "极佳",
+            "tone": "success"
+           },
+           {
+            "id": "good",
+            "label": "良好",
+            "tone": "processing"
+           },
+           {
+            "id": "fair",
+            "label": "一般",
+            "tone": "warning"
+           },
+           {
+            "id": "poor",
+            "label": "较差",
+            "tone": "danger"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "id": "consignment_order",
+        "name": "寄卖单",
+        "fields": [
+         {
+          "id": "instrument_ref",
+          "name": "乐器",
+          "type": "ref"
+         },
+         {
+          "id": "consignor_ref",
+          "name": "寄卖人",
+          "type": "ref"
+         },
+         {
+          "id": "order_status",
+          "name": "寄卖状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "draft",
+            "label": "草稿",
+            "tone": "default"
+           },
+           {
+            "id": "submitted",
+            "label": "已提交",
+            "tone": "warning"
+           },
+           {
+            "id": "appraising",
+            "label": "鉴定中",
+            "tone": "processing"
+           },
+           {
+            "id": "listed",
+            "label": "已上架",
+            "tone": "success"
+           },
+           {
+            "id": "sold",
+            "label": "已售出",
+            "tone": "success"
+           },
+           {
+            "id": "returned",
+            "label": "已退回",
+            "tone": "danger"
+           }
+          ]
+         },
+         {
+          "id": "submitted_at",
+          "name": "提交时间",
+          "type": "date"
+         },
+         {
+          "id": "expected_price",
+          "name": "期望价",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "reserve_price",
+          "name": "保底价",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "commission_rate",
+          "name": "佣金比例",
+          "type": "number",
+          "format": "percent"
+         },
+         {
+          "id": "intake_notes",
+          "name": "收件备注",
+          "type": "string"
+         }
+        ]
+       },
+       {
+        "id": "appraisal_report",
+        "name": "鉴定报告",
+        "fields": [
+         {
+          "id": "consignment_ref",
+          "name": "寄卖单",
+          "type": "ref"
+         },
+         {
+          "id": "appraiser_ref",
+          "name": "鉴定师",
+          "type": "ref"
+         },
+         {
+          "id": "authenticity_status",
+          "name": "真伪结论",
+          "type": "enum",
+          "options": [
+           {
+            "id": "pending",
+            "label": "待确认",
+            "tone": "warning"
+           },
+           {
+            "id": "authentic",
+            "label": "正品",
+            "tone": "success"
+           },
+           {
+            "id": "suspicious",
+            "label": "存疑",
+            "tone": "warning"
+           },
+           {
+            "id": "fake",
+            "label": "仿品",
+            "tone": "danger"
+           }
+          ]
+         },
+         {
+          "id": "ai_condition_summary",
+          "name": "AI成色摘要",
+          "type": "string"
+         },
+         {
+          "id": "price_rationale",
+          "name": "定价依据",
+          "type": "string"
+         },
+         {
+          "id": "suggested_price",
+          "name": "建议售价",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "quality_score",
+          "name": "综合评分",
+          "type": "number",
+          "format": "score"
+         },
+         {
+          "id": "review_status",
+          "name": "复核状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "draft",
+            "label": "草稿",
+            "tone": "default"
+           },
+           {
+            "id": "submitted",
+            "label": "待复核",
+            "tone": "warning"
+           },
+           {
+            "id": "approved",
+            "label": "已通过",
+            "tone": "success"
+           },
+           {
+            "id": "rework",
+            "label": "需补充",
+            "tone": "danger"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "id": "listing",
+        "name": "商品上架",
+        "fields": [
+         {
+          "id": "consignment_ref",
+          "name": "寄卖单",
+          "type": "ref"
+         },
+         {
+          "id": "appraisal_ref",
+          "name": "鉴定报告",
+          "type": "ref"
+         },
+         {
+          "id": "listing_status",
+          "name": "上架状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "pending",
+            "label": "待上架",
+            "tone": "warning"
+           },
+           {
+            "id": "published",
+            "label": "销售中",
+            "tone": "processing"
+           },
+           {
+            "id": "reserved",
+            "label": "已锁定",
+            "tone": "warning"
+           },
+           {
+            "id": "sold",
+            "label": "已成交",
+            "tone": "success"
+           },
+           {
+            "id": "delisted",
+            "label": "已下架",
+            "tone": "danger"
+           }
+          ]
+         },
+         {
+          "id": "sale_price",
+          "name": "销售价",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "published_at",
+          "name": "上架时间",
+          "type": "date"
+         },
+         {
+          "id": "marketing_copy",
+          "name": "商品文案",
+          "type": "string"
+         },
+         {
+          "id": "photo_quality_score",
+          "name": "图片质量分",
+          "type": "number",
+          "format": "score"
+         }
+        ]
+       },
+       {
+        "id": "sale_order",
+        "name": "销售订单",
+        "fields": [
+         {
+          "id": "listing_ref",
+          "name": "商品上架",
+          "type": "ref"
+         },
+         {
+          "id": "buyer_phone",
+          "name": "买家手机号",
+          "type": "string",
+          "format": "masked"
+         },
+         {
+          "id": "order_status",
+          "name": "订单状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "created",
+            "label": "待付款",
+            "tone": "warning"
+           },
+           {
+            "id": "paid",
+            "label": "已付款",
+            "tone": "processing"
+           },
+           {
+            "id": "shipped",
+            "label": "已发货",
+            "tone": "processing"
+           },
+           {
+            "id": "completed",
+            "label": "已完成",
+            "tone": "success"
+           },
+           {
+            "id": "cancelled",
+            "label": "已取消",
+            "tone": "danger"
+           },
+           {
+            "id": "refunded",
+            "label": "已退款",
+            "tone": "danger"
+           }
+          ]
+         },
+         {
+          "id": "paid_amount",
+          "name": "实付金额",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "paid_at",
+          "name": "付款时间",
+          "type": "date"
+         },
+         {
+          "id": "completed_at",
+          "name": "完成时间",
+          "type": "date"
+         }
+        ]
+       },
+       {
+        "id": "payout",
+        "name": "寄卖结算",
+        "fields": [
+         {
+          "id": "sale_order_ref",
+          "name": "销售订单",
+          "type": "ref"
+         },
+         {
+          "id": "consignor_ref",
+          "name": "寄卖人",
+          "type": "ref"
+         },
+         {
+          "id": "payout_status",
+          "name": "结算状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "pending",
+            "label": "待结算",
+            "tone": "warning"
+           },
+           {
+            "id": "calculating",
+            "label": "计算中",
+            "tone": "processing"
+           },
+           {
+            "id": "paying",
+            "label": "打款中",
+            "tone": "processing"
+           },
+           {
+            "id": "paid",
+            "label": "已打款",
+            "tone": "success"
+           },
+           {
+            "id": "failed",
+            "label": "打款失败",
+            "tone": "danger"
+           },
+           {
+            "id": "held",
+            "label": "风控冻结",
+            "tone": "danger"
+           }
+          ]
+         },
+         {
+          "id": "gross_amount",
+          "name": "成交金额",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "commission_amount",
+          "name": "平台佣金",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "net_amount",
+          "name": "应付寄卖人",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "scheduled_date",
+          "name": "计划打款日",
+          "type": "date"
+         }
+        ]
+       },
+       {
+        "id": "audit_log",
+        "name": "审计日志",
+        "fields": [
+         {
+          "id": "business_ref",
+          "name": "业务对象",
+          "type": "ref"
+         },
+         {
+          "id": "actor_role",
+          "name": "操作角色",
+          "type": "enum",
+          "options": [
+           {
+            "id": "intake_specialist",
+            "label": "收件专员",
+            "tone": "default"
+           },
+           {
+            "id": "appraiser",
+            "label": "鉴定师",
+            "tone": "default"
+           },
+           {
+            "id": "appraisal_lead",
+            "label": "鉴定主管",
+            "tone": "default"
+           },
+           {
+            "id": "finance_ops",
+            "label": "财务运营",
+            "tone": "default"
+           },
+           {
+            "id": "ops_admin",
+            "label": "运营管理员",
+            "tone": "default"
+           }
+          ]
+         },
+         {
+          "id": "event_type",
+          "name": "事件类型",
+          "type": "enum",
+          "options": [
+           {
+            "id": "status_change",
+            "label": "状态变更",
+            "tone": "processing"
+           },
+           {
+            "id": "price_change",
+            "label": "价格调整",
+            "tone": "warning"
+           },
+           {
+            "id": "approval",
+            "label": "审批复核",
+            "tone": "success"
+           },
+           {
+            "id": "payment_callback",
+            "label": "支付回调",
+            "tone": "processing"
+           },
+           {
+            "id": "exception",
+            "label": "异常处理",
+            "tone": "danger"
+           }
+          ]
+         },
+         {
+          "id": "event_time",
+          "name": "事件时间",
+          "type": "date"
+         },
+         {
+          "id": "event_detail",
+          "name": "事件详情",
+          "type": "string"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "rbac": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:rbac:llm-linkage-rbac",
+     "path": "skills/rbac/closure-evidence.json",
+     "artifactId": "llm-linkage-rbac",
+     "digest": "522fe6a69e34fc20",
+     "modelSection": {
+      "roles": [
+       "consignor",
+       "intake_specialist",
+       "appraiser",
+       "appraisal_lead",
+       "listing_manager",
+       "buyer_support",
+       "finance_ops",
+       "ops_admin",
+       "compliance_auditor"
+      ],
+      "permissions": [
+       "consignment:create",
+       "consignment:read",
+       "consignment:update",
+       "consignment:submit",
+       "appraisal:read",
+       "appraisal:create",
+       "appraisal:update",
+       "appraisal:approve",
+       "listing:read",
+       "listing:update",
+       "listing:publish",
+       "sale:read",
+       "sale:create",
+       "sale:update",
+       "payout:read",
+       "payout:execute",
+       "payout:audit",
+       "audit:read",
+       "recovery:manage",
+       "ai:use"
+      ],
+      "menus": [
+       {
+        "id": "menu_consignor_portal",
+        "label": "寄卖人入口",
+        "roleRefs": [
+         "consignor"
+        ],
+        "permissionRefs": [
+         "consignment:create",
+         "consignment:read",
+         "consignment:submit"
+        ]
+       },
+       {
+        "id": "menu_intake",
+        "label": "收件工作台",
+        "roleRefs": [
+         "intake_specialist"
+        ],
+        "permissionRefs": [
+         "consignment:read",
+         "consignment:update",
+         "appraisal:read"
+        ]
+       },
+       {
+        "id": "menu_appraisal",
+        "label": "鉴定工作台",
+        "roleRefs": [
+         "appraiser"
+        ],
+        "permissionRefs": [
+         "appraisal:read",
+         "appraisal:create",
+         "appraisal:update",
+         "ai:use"
+        ]
+       },
+       {
+        "id": "menu_appraisal_review",
+        "label": "鉴定复核",
+        "roleRefs": [
+         "appraisal_lead"
+        ],
+        "permissionRefs": [
+         "appraisal:read",
+         "appraisal:approve",
+         "consignment:read"
+        ]
+       },
+       {
+        "id": "menu_listing",
+        "label": "上架运营",
+        "roleRefs": [
+         "listing_manager"
+        ],
+        "permissionRefs": [
+         "listing:read",
+         "listing:update",
+         "listing:publish",
+         "consignment:read",
+         "ai:use"
+        ]
+       },
+       {
+        "id": "menu_sales_support",
+        "label": "订单客服",
+        "roleRefs": [
+         "buyer_support"
+        ],
+        "permissionRefs": [
+         "sale:read",
+         "sale:create",
+         "sale:update",
+         "listing:read"
+        ]
+       },
+       {
+        "id": "menu_finance",
+        "label": "财务结算",
+        "roleRefs": [
+         "finance_ops"
+        ],
+        "permissionRefs": [
+         "payout:read",
+         "payout:execute",
+         "sale:read",
+         "audit:read"
+        ]
+       },
+       {
+        "id": "menu_ops_admin",
+        "label": "异常处理",
+        "roleRefs": [
+         "ops_admin"
+        ],
+        "permissionRefs": [
+         "recovery:manage",
+         "consignment:read",
+         "listing:read",
+         "sale:read",
+         "audit:read"
+        ]
+       },
+       {
+        "id": "menu_compliance_audit",
+        "label": "合规审计",
+        "roleRefs": [
+         "compliance_auditor"
+        ],
+        "permissionRefs": [
+         "audit:read",
+         "payout:audit",
+         "payout:read",
+         "appraisal:read"
+        ]
+       }
+      ]
+     }
+    },
+    "workflow": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:workflow:llm-linkage-workflow",
+     "path": "skills/workflow/closure-evidence.json",
+     "artifactId": "llm-linkage-workflow",
+     "digest": "2b54e8a4fd79e59f",
+     "modelSection": {
+      "id": "consignment_lifecycle",
+      "name": "寄卖单生命周期",
+      "nodes": [
+       {
+        "id": "co_draft",
+        "name": "创建寄卖草稿",
+        "assigneeRole": "consignor",
+        "phase": "申请"
+       },
+       {
+        "id": "co_submit",
+        "name": "提交寄卖申请",
+        "assigneeRole": "consignor",
+        "phase": "申请"
+       },
+       {
+        "id": "co_intake_check",
+        "name": "收件与资料核验",
+        "assigneeRole": "intake_specialist",
+        "phase": "核验"
+       },
+       {
+        "id": "co_appraisal",
+        "name": "乐器鉴定定价",
+        "assigneeRole": "appraiser",
+        "phase": "鉴定"
+       },
+       {
+        "id": "co_listing_prepare",
+        "name": "生成上架资料",
+        "assigneeRole": "listing_manager",
+        "phase": "上架"
+       },
+       {
+        "id": "co_published",
+        "name": "发布销售",
+        "assigneeRole": "listing_manager",
+        "phase": "上架"
+       },
+       {
+        "id": "co_returned",
+        "name": "退回寄卖人",
+        "assigneeRole": "intake_specialist",
+        "phase": "归档"
+       },
+       {
+        "id": "co_archived",
+        "name": "成交归档",
+        "assigneeRole": "buyer_support",
+        "phase": "归档"
+       }
+      ],
+      "transitions": [
+       {
+        "from": "co_draft",
+        "to": "co_submit",
+        "condition": "寄卖人提交完整资料"
+       },
+       {
+        "from": "co_submit",
+        "to": "co_intake_check",
+        "condition": "平台收到申请"
+       },
+       {
+        "from": "co_intake_check",
+        "to": "co_appraisal",
+        "condition": "资料与实物一致"
+       },
+       {
+        "from": "co_intake_check",
+        "to": "co_draft",
+        "condition": "资料缺失需补充"
+       },
+       {
+        "from": "co_intake_check",
+        "to": "co_returned",
+        "condition": "禁售品或无法收件"
+       },
+       {
+        "from": "co_appraisal",
+        "to": "co_listing_prepare",
+        "condition": "鉴定通过且价格确认"
+       },
+       {
+        "from": "co_appraisal",
+        "to": "co_returned",
+        "condition": "仿品或寄卖人拒绝定价"
+       },
+       {
+        "from": "co_listing_prepare",
+        "to": "co_published",
+        "condition": "图片文案与价格齐备"
+       },
+       {
+        "from": "co_listing_prepare",
+        "to": "co_appraisal",
+        "condition": "定价依据不足需重评"
+       },
+       {
+        "from": "co_published",
+        "to": "co_archived",
+        "condition": "订单完成"
+       },
+       {
+        "from": "co_published",
+        "to": "co_returned",
+        "condition": "寄卖期满未售出"
+       }
+      ],
+      "chains": [
+       {
+        "id": "appraisal_governance",
+        "name": "鉴定复核治理",
+        "kind": "governance",
+        "nodes": [
+         {
+          "id": "ag_report_draft",
+          "name": "撰写鉴定报告",
+          "assigneeRole": "appraiser",
+          "phase": "编制"
+         },
+         {
+          "id": "ag_submit_review",
+          "name": "提交主管复核",
+          "assigneeRole": "appraiser",
+          "phase": "编制"
+         },
+         {
+          "id": "ag_lead_review",
+          "name": "主管复核真伪与价格",
+          "assigneeRole": "appraisal_lead",
+          "phase": "复核"
+         },
+         {
+          "id": "ag_rework",
+          "name": "退回补充证据",
+          "assigneeRole": "appraiser",
+          "phase": "复核"
+         },
+         {
+          "id": "ag_approved",
+          "name": "复核通过",
+          "assigneeRole": "appraisal_lead",
+          "phase": "发布"
+         },
+         {
+          "id": "ag_rejected",
+          "name": "复核驳回",
+          "assigneeRole": "appraisal_lead",
+          "phase": "发布"
+         }
+        ],
+        "transitions": [
+         {
+          "from": "ag_report_draft",
+          "to": "ag_submit_review",
+          "condition": "报告字段完整"
+         },
+         {
+          "from": "ag_submit_review",
+          "to": "ag_lead_review",
+          "condition": "提交复核"
+         },
+         {
+          "from": "ag_lead_review",
+          "to": "ag_approved",
+          "condition": "真伪明确且定价合理"
+         },
+         {
+          "from": "ag_lead_review",
+          "to": "ag_rework",
+          "condition": "证据不足或价格偏离"
+         },
+         {
+          "from": "ag_rework",
+          "to": "ag_report_draft",
+          "condition": "补充检测照片与行情依据"
+         },
+         {
+          "from": "ag_lead_review",
+          "to": "ag_rejected",
+          "condition": "疑似仿品或重大争议"
+         }
+        ]
+       },
+       {
+        "id": "settlement_money",
+        "name": "成交结算资金链",
+        "kind": "money",
+        "nodes": [
+         {
+          "id": "sm_order_created",
+          "name": "创建销售订单",
+          "assigneeRole": "buyer_support",
+          "phase": "收款"
+         },
+         {
+          "id": "sm_wait_payment",
+          "name": "等待买家付款",
+          "assigneeRole": "buyer_support",
+          "phase": "收款"
+         },
+         {
+          "id": "sm_callback_verify",
+          "name": "服务端核验支付回调",
+          "assigneeRole": "finance_ops",
+          "phase": "确认"
+         },
+         {
+          "id": "sm_settlement_calc",
+          "name": "计算佣金与应付金额",
+          "assigneeRole": "finance_ops",
+          "phase": "结算"
+         },
+         {
+          "id": "sm_risk_hold",
+          "name": "风控冻结结算",
+          "assigneeRole": "finance_ops",
+          "phase": "结算"
+         },
+         {
+          "id": "sm_execute_payout",
+          "name": "执行寄卖人打款",
+          "assigneeRole": "finance_ops",
+          "phase": "打款"
+         },
+         {
+          "id": "sm_audit_record",
+          "name": "写入资金审计记录",
+          "assigneeRole": "compliance_auditor",
+          "phase": "打款"
+         },
+         {
+          "id": "sm_cancelled",
+          "name": "订单取消或退款",
+          "assigneeRole": "buyer_support",
+          "phase": "打款"
+         }
+        ],
+        "transitions": [
+         {
+          "from": "sm_order_created",
+          "to": "sm_wait_payment",
+          "condition": "订单锁定商品"
+         },
+         {
+          "from": "sm_wait_payment",
+          "to": "sm_callback_verify",
+          "condition": "收到支付渠道回调"
+         },
+         {
+          "from": "sm_wait_payment",
+          "to": "sm_cancelled",
+          "condition": "超时未支付"
+         },
+         {
+          "from": "sm_callback_verify",
+          "to": "sm_settlement_calc",
+          "condition": "签名与金额核验通过"
+         },
+         {
+          "from": "sm_callback_verify",
+          "to": "sm_cancelled",
+          "condition": "支付核验失败"
+         },
+         {
+          "from": "sm_settlement_calc",
+          "to": "sm_execute_payout",
+          "condition": "无风控命中且订单完成"
+         },
+         {
+          "from": "sm_settlement_calc",
+          "to": "sm_risk_hold",
+          "condition": "寄卖人高风险或订单争议"
+         },
+         {
+          "from": "sm_risk_hold",
+          "to": "sm_settlement_calc",
+          "condition": "风控解除后重新计算"
+         },
+         {
+          "from": "sm_execute_payout",
+          "to": "sm_audit_record",
+          "condition": "打款成功"
+         },
+         {
+          "from": "sm_execute_payout",
+          "to": "sm_risk_hold",
+          "condition": "打款失败或账户异常"
+         }
+        ]
+       },
+       {
+        "id": "listing_recovery",
+        "name": "上架与支付异常恢复",
+        "kind": "recovery",
+        "nodes": [
+         {
+          "id": "lr_detect_failure",
+          "name": "检测异步失败",
+          "assigneeRole": "ops_admin",
+          "phase": "发现"
+         },
+         {
+          "id": "lr_classify_failure",
+          "name": "分类图片同步或支付异常",
+          "assigneeRole": "ops_admin",
+          "phase": "诊断"
+         },
+         {
+          "id": "lr_retry_job",
+          "name": "重试上架同步任务",
+          "assigneeRole": "ops_admin",
+          "phase": "修复"
+         },
+         {
+          "id": "lr_manual_fix",
+          "name": "人工修复业务状态",
+          "assigneeRole": "ops_admin",
+          "phase": "修复"
+         },
+         {
+          "id": "lr_verify_recovered",
+          "name": "验证恢复结果",
+          "assigneeRole": "compliance_auditor",
+          "phase": "验证"
+         },
+         {
+          "id": "lr_close_incident",
+          "name": "关闭异常单",
+          "assigneeRole": "ops_admin",
+          "phase": "验证"
+         }
+        ],
+        "transitions": [
+         {
+          "from": "lr_detect_failure",
+          "to": "lr_classify_failure",
+          "condition": "发现上架同步或回调异常"
+         },
+         {
+          "from": "lr_classify_failure",
+          "to": "lr_retry_job",
+          "condition": "可自动重试"
+         },
+         {
+          "from": "lr_classify_failure",
+          "to": "lr_manual_fix",
+          "condition": "状态不一致需人工处理"
+         },
+         {
+          "from": "lr_retry_job",
+          "to": "lr_verify_recovered",
+          "condition": "重试成功"
+         },
+         {
+          "from": "lr_retry_job",
+          "to": "lr_manual_fix",
+          "condition": "重试三次仍失败"
+         },
+         {
+          "from": "lr_manual_fix",
+          "to": "lr_verify_recovered",
+          "condition": "人工修复完成"
+         },
+         {
+          "from": "lr_verify_recovered",
+          "to": "lr_close_incident",
+          "condition": "审计日志与业务状态一致"
+         },
+         {
+          "from": "lr_verify_recovered",
+          "to": "lr_classify_failure",
+          "condition": "验证失败需重新诊断"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "page": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:page:llm-linkage-page",
+     "path": "skills/page/closure-evidence.json",
+     "artifactId": "llm-linkage-page",
+     "digest": "6f3f92be15d2c1c5",
+     "modelSection": {
+      "pages": [
+       {
+        "id": "consignment_kanban",
+        "name": "寄卖进度看板",
+        "kind": "kanban",
+        "statusField": "consignment_order.order_status",
+        "fieldBindings": [
+         "consignment_order.instrument_ref",
+         "consignment_order.consignor_ref",
+         "consignment_order.order_status",
+         "consignment_order.expected_price",
+         "consignment_order.reserve_price",
+         "instrument.category",
+         "instrument.brand",
+         "instrument.model"
+        ],
+        "actionPermissions": [
+         "consignment:read",
+         "consignment:update",
+         "consignment:submit"
+        ],
+        "stats": [],
+        "charts": []
+       },
+       {
+        "id": "appraisal_workbench",
+        "name": "鉴定工作台",
+        "kind": "workbench",
+        "fieldBindings": [
+         "appraisal_report.consignment_ref",
+         "appraisal_report.authenticity_status",
+         "appraisal_report.ai_condition_summary",
+         "appraisal_report.price_rationale",
+         "appraisal_report.suggested_price",
+         "appraisal_report.quality_score",
+         "appraisal_report.review_status",
+         "instrument.serial_number",
+         "instrument.condition_grade"
+        ],
+        "actionPermissions": [
+         "appraisal:read",
+         "appraisal:create",
+         "appraisal:update",
+         "appraisal:approve",
+         "ai:use"
+        ],
+        "stats": [],
+        "charts": []
+       },
+       {
+        "id": "listing_calendar",
+        "name": "上架排期日历",
+        "kind": "calendar",
+        "dateField": "listing.published_at",
+        "colorBy": "listing.listing_status",
+        "fieldBindings": [
+         "listing.consignment_ref",
+         "listing.appraisal_ref",
+         "listing.listing_status",
+         "listing.sale_price",
+         "listing.published_at",
+         "listing.marketing_copy",
+         "listing.photo_quality_score"
+        ],
+        "actionPermissions": [
+         "listing:read",
+         "listing:update",
+         "listing:publish",
+         "ai:use"
+        ],
+        "stats": [],
+        "charts": []
+       },
+       {
+        "id": "sales_dashboard",
+        "name": "销售与结算仪表盘",
+        "kind": "dashboard",
+        "fieldBindings": [
+         "sale_order.listing_ref",
+         "sale_order.order_status",
+         "sale_order.paid_amount",
+         "sale_order.paid_at",
+         "payout.payout_status",
+         "payout.gross_amount",
+         "payout.commission_amount",
+         "payout.net_amount",
+         "payout.scheduled_date"
+        ],
+        "actionPermissions": [
+         "sale:read",
+         "payout:read",
+         "payout:execute"
+        ],
+        "stats": [
+         {
+          "id": "stat_paid_orders",
+          "name": "已付款订单数",
+          "entity": "sale_order",
+          "metric": "count",
+          "format": "number"
+         },
+         {
+          "id": "stat_paid_amount",
+          "name": "实付总额",
+          "entity": "sale_order",
+          "metric": "sum:sale_order.paid_amount",
+          "format": "money"
+         },
+         {
+          "id": "stat_pending_payout",
+          "name": "待结算笔数",
+          "entity": "payout",
+          "metric": "count",
+          "format": "number"
+         },
+         {
+          "id": "stat_net_payout",
+          "name": "应付寄卖人总额",
+          "entity": "payout",
+          "metric": "sum:payout.net_amount",
+          "format": "money"
+         }
+        ],
+        "charts": [
+         {
+          "id": "chart_order_status",
+          "name": "订单状态分布",
+          "type": "bar",
+          "dimension": "sale_order.order_status",
+          "metric": "count"
+         },
+         {
+          "id": "chart_payout_by_date",
+          "name": "计划打款金额趋势",
+          "type": "line",
+          "dimension": "payout.scheduled_date",
+          "metric": "sum:payout.net_amount"
+         }
+        ]
+       },
+       {
+        "id": "audit_center",
+        "name": "合规审计中心",
+        "kind": "dashboard",
+        "fieldBindings": [
+         "audit_log.business_ref",
+         "audit_log.actor_role",
+         "audit_log.event_type",
+         "audit_log.event_time",
+         "audit_log.event_detail",
+         "consignor_profile.full_name",
+         "consignor_profile.phone",
+         "consignor_profile.kyc_status",
+         "consignor_profile.risk_level"
+        ],
+        "actionPermissions": [
+         "audit:read",
+         "payout:audit",
+         "recovery:manage"
+        ],
+        "stats": [
+         {
+          "id": "stat_audit_events",
+          "name": "审计事件数",
+          "entity": "audit_log",
+          "metric": "count",
+          "format": "number"
+         },
+         {
+          "id": "stat_high_risk_consignors",
+          "name": "寄卖人风险档案数",
+          "entity": "consignor_profile",
+          "metric": "count",
+          "format": "number"
+         }
+        ],
+        "charts": [
+         {
+          "id": "chart_event_type",
+          "name": "事件类型占比",
+          "type": "pie",
+          "dimension": "audit_log.event_type",
+          "metric": "count"
+         },
+         {
+          "id": "chart_risk_level",
+          "name": "寄卖人风险分布",
+          "type": "bar",
+          "dimension": "consignor_profile.risk_level",
+          "metric": "count"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "aigc": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:aigc:llm-linkage-aigc",
+     "path": "skills/aigc/closure-evidence.json",
+     "artifactId": "llm-linkage-aigc",
+     "digest": "c7c312869c975413",
+     "modelSection": {
+      "capabilities": [
+       {
+        "id": "ai_condition_summary",
+        "name": "生成成色与瑕疵摘要",
+        "inputFields": [
+         "instrument.description",
+         "instrument.category",
+         "instrument.brand",
+         "instrument.model",
+         "instrument.condition_grade"
+        ],
+        "outputField": "appraisal_report.ai_condition_summary",
+        "roleRefs": [
+         "appraiser"
+        ]
+       },
+       {
+        "id": "ai_price_rationale",
+        "name": "生成行情定价依据",
+        "inputFields": [
+         "appraisal_report.ai_condition_summary",
+         "appraisal_report.suggested_price",
+         "instrument.category",
+         "instrument.brand",
+         "instrument.model"
+        ],
+        "outputField": "appraisal_report.price_rationale",
+        "roleRefs": [
+         "appraiser",
+         "appraisal_lead"
+        ]
+       },
+       {
+        "id": "ai_listing_copy",
+        "name": "生成商品上架文案",
+        "inputFields": [
+         "appraisal_report.price_rationale",
+         "appraisal_report.suggested_price",
+         "instrument.description",
+         "listing.sale_price"
+        ],
+        "outputField": "listing.marketing_copy",
+        "roleRefs": [
+         "listing_manager"
+        ]
+       }
+      ],
+      "pipelines": [
+       {
+        "id": "pipeline_appraisal_to_listing",
+        "name": "鉴定到上架文案生成",
+        "steps": [
+         "ai_condition_summary",
+         "ai_price_rationale",
+         "ai_listing_copy"
+        ]
+       }
+      ]
+     }
+    },
+    "appbundle": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:appbundle:llm-linkage-appbundle",
+     "path": "skills/appbundle/closure-evidence.json",
+     "artifactId": "llm-linkage-appbundle",
+     "digest": "5a2cdd96073191bc",
+     "modelSection": {
+      "pageBindings": [
+       {
+        "pageRef": "consignment_kanban",
+        "workflowRef": "consignment_lifecycle"
+       },
+       {
+        "pageRef": "appraisal_workbench",
+        "workflowRef": "co_appraisal"
+       },
+       {
+        "pageRef": "listing_calendar",
+        "workflowRef": "co_listing_prepare"
+       },
+       {
+        "pageRef": "sales_dashboard",
+        "workflowRef": "sm_settlement_calc"
+       },
+       {
+        "pageRef": "audit_center",
+        "workflowRef": "lr_verify_recovered"
+       }
+      ],
+      "roleRefs": [
+       "consignor",
+       "intake_specialist",
+       "appraiser",
+       "appraisal_lead",
+       "listing_manager",
+       "buyer_support",
+       "finance_ops",
+       "ops_admin",
+       "compliance_auditor"
+      ],
+      "dataModelRefs": [
+       "consignor_profile",
+       "instrument",
+       "consignment_order",
+       "appraisal_report",
+       "listing",
+       "sale_order",
+       "payout",
+       "audit_log"
+      ],
+      "invariants": [
+       {
+        "id": "verified_consignor_before_listing",
+        "statement": "寄卖单进入上架前，寄卖人的实名状态必须为已认证且风险等级不得为高风险。",
+        "systems": [
+         "datamodel",
+         "workflow",
+         "page"
+        ],
+        "refs": [
+         "consignor_profile.kyc_status",
+         "consignor_profile.risk_level",
+         "co_listing_prepare",
+         "listing:publish"
+        ]
+       },
+       {
+        "id": "approved_appraisal_before_publish",
+        "statement": "商品发布销售必须依赖已通过复核的鉴定报告，且不得发布真伪结论为仿品的乐器。",
+        "systems": [
+         "datamodel",
+         "workflow",
+         "rbac"
+        ],
+        "refs": [
+         "appraisal_report.review_status",
+         "appraisal_report.authenticity_status",
+         "co_published",
+         "listing:publish"
+        ]
+       },
+       {
+        "id": "price_changes_are_audited",
+        "statement": "建议售价、销售价或保底价发生变更时必须写入价格调整审计日志。",
+        "systems": [
+         "datamodel",
+         "workflow",
+         "page"
+        ],
+        "refs": [
+         "appraisal_report.suggested_price",
+         "listing.sale_price",
+         "consignment_order.reserve_price",
+         "audit_log.event_type",
+         "audit:read"
+        ]
+       },
+       {
+        "id": "payment_callback_is_source_of_truth",
+        "statement": "销售订单付款状态只能由服务端核验通过的支付回调推进，客服不得手工标记已付款。",
+        "systems": [
+         "datamodel",
+         "rbac",
+         "workflow"
+        ],
+        "refs": [
+         "sale_order.order_status",
+         "sm_callback_verify",
+         "sale:update",
+         "finance_ops"
+        ]
+       },
+       {
+        "id": "payout_after_completed_order",
+        "statement": "寄卖人打款必须发生在销售订单已完成且佣金与应付金额计算完成之后。",
+        "systems": [
+         "datamodel",
+         "workflow",
+         "rbac"
+        ],
+        "refs": [
+         "sale_order.order_status",
+         "payout.net_amount",
+         "sm_settlement_calc",
+         "sm_execute_payout",
+         "payout:execute"
+        ]
+       },
+       {
+        "id": "every_payout_has_audit_log",
+        "statement": "每一次结算打款成功或失败都必须生成资金审计记录并可被合规审计查看。",
+        "systems": [
+         "datamodel",
+         "workflow",
+         "page"
+        ],
+        "refs": [
+         "payout.payout_status",
+         "audit_log.event_type",
+         "sm_audit_record",
+         "audit_center",
+         "payout:audit"
+        ]
+       },
+       {
+        "id": "ai_output_requires_human_review",
+        "statement": "AI生成的成色摘要、定价依据和商品文案必须经过鉴定师或上架运营确认后才能影响对外展示。",
+        "systems": [
+         "datamodel",
+         "aigc",
+         "workflow",
+         "rbac"
+        ],
+        "refs": [
+         "ai_condition_summary",
+         "ai_price_rationale",
+         "ai_listing_copy",
+         "ag_lead_review",
+         "co_listing_prepare",
+         "appraisal:update",
+         "listing:update"
+        ]
+       },
+       {
+        "id": "failed_async_work_reconciled_before_close",
+        "statement": "上架同步或支付异常关闭前，业务状态与审计日志必须在恢复验证节点保持一致。",
+        "systems": [
+         "datamodel",
+         "workflow",
+         "page"
+        ],
+        "refs": [
+         "listing.listing_status",
+         "sale_order.order_status",
+         "audit_log.event_detail",
+         "lr_verify_recovered",
+         "lr_close_incident",
+         "recovery:manage"
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "topBlockers": [],
+   "chatSummary": "闭环结论：**closed，证据 6/6**。当前推演已形成可落地的二手乐器寄卖与鉴定平台框架。\n\n现在这个应用可以支持：\n\n- 围绕 **寄卖人档案、二手乐器、寄卖单、鉴定报告、商品上架、销售订单、寄卖结算、审计日志** 管理全链路数据。\n- 让寄卖人提交乐器，平台人员完成收件、鉴定、复核、上架、销售、结算与审计。\n- 支持 **鉴定工作台、寄卖进度看板、上架排期、销售结算仪表盘、合规审计中心** 等页面。\n- AI 可辅助生成 **成色/瑕疵摘要、行情定价依据、商品上架文案**。\n\n关键风险与分歧：\n\n- 鉴定准确性与责任边界：真伪、年代、成色、维修史判断错误会直接影响信任与纠纷。\n- 交易与资金风险：退换货、托管、佣金结算、提现规则若不清晰，容易引发买卖双方争议。\n- 合规与来源风险：假货、赃物、隐私泄露、内部低估/高估等都需要审计和权限隔离。\n\n建议下一步：\n\n- 先明确首期模式：线上鉴定还是线下复检、平台代售还是担保撮合、是否包含支付物流闭环。\n- 制定标准化鉴定与交易规则：成色分级、瑕疵披露、序列号核验、结算周期、争议处理与审计留痕。"
+  },
+  "skillRuntimeGraph": {
+   "edges": [
+    {
+     "sourceSkill": "datamodel",
+     "targetSkill": "rbac",
+     "state": "allowed",
+     "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+    },
+    {
+     "sourceSkill": "datamodel",
+     "targetSkill": "page",
+     "state": "allowed",
+     "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+    },
+    {
+     "sourceSkill": "rbac",
+     "targetSkill": "workflow",
+     "state": "allowed",
+     "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+    },
+    {
+     "sourceSkill": "workflow",
+     "targetSkill": "page",
+     "state": "allowed",
+     "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+    },
+    {
+     "sourceSkill": "page",
+     "targetSkill": "appbundle",
+     "state": "allowed",
+     "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+    },
+    {
+     "sourceSkill": "aigc",
+     "targetSkill": "appbundle",
+     "state": "allowed",
+     "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+    }
+   ],
+   "bySkill": {
+    "datamodel": [
+     {
+      "sourceSkill": "datamodel",
+      "targetSkill": "rbac",
+      "state": "allowed",
+      "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+     },
+     {
+      "sourceSkill": "datamodel",
+      "targetSkill": "page",
+      "state": "allowed",
+      "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+     }
+    ],
+    "rbac": [
+     {
+      "sourceSkill": "datamodel",
+      "targetSkill": "rbac",
+      "state": "allowed",
+      "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+     },
+     {
+      "sourceSkill": "rbac",
+      "targetSkill": "workflow",
+      "state": "allowed",
+      "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+     }
+    ],
+    "workflow": [
+     {
+      "sourceSkill": "rbac",
+      "targetSkill": "workflow",
+      "state": "allowed",
+      "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+     },
+     {
+      "sourceSkill": "workflow",
+      "targetSkill": "page",
+      "state": "allowed",
+      "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+     }
+    ],
+    "page": [
+     {
+      "sourceSkill": "datamodel",
+      "targetSkill": "page",
+      "state": "allowed",
+      "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+     },
+     {
+      "sourceSkill": "workflow",
+      "targetSkill": "page",
+      "state": "allowed",
+      "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+     },
+     {
+      "sourceSkill": "page",
+      "targetSkill": "appbundle",
+      "state": "allowed",
+      "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+     }
+    ],
+    "aigc": [
+     {
+      "sourceSkill": "aigc",
+      "targetSkill": "appbundle",
+      "state": "allowed",
+      "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+     }
+    ],
+    "appbundle": [
+     {
+      "sourceSkill": "page",
+      "targetSkill": "appbundle",
+      "state": "allowed",
+      "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+     },
+     {
+      "sourceSkill": "aigc",
+      "targetSkill": "appbundle",
+      "state": "allowed",
+      "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+     }
+    ]
+   },
+   "evidenceBySkill": {
+    "datamodel": [
+     "DM_RBAC_FIELD_POLICY_EVIDENCE",
+     "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+    ],
+    "rbac": [
+     "DM_RBAC_FIELD_POLICY_EVIDENCE",
+     "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+    ],
+    "workflow": [
+     "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE",
+     "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+    ],
+    "page": [
+     "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+     "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE",
+     "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+    ],
+    "aigc": [
+     "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+    ],
+    "appbundle": [
+     "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE",
+     "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+    ]
+   }
+  },
+  "sessionId": "pages-demo-instruments"
+ }
+}
