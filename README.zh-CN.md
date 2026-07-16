@@ -316,6 +316,13 @@ unzip skills/sliderule.zip
 3. 提交前：pnpm run check && pnpm run test
 ```
 
+**分支模型**：`main` 是生产分支（部署构建以它为准）；`pre_main` 是日常集成分支。合并一律走发布门脚本——门现场跑，门红机械拦截合并：
+
+```bash
+bash scripts/merge-gated.sh <你的分支> "<说明>"            # 日常 → pre_main
+bash scripts/merge-gated.sh pre_main "<发版说明>" main     # 发版 → main
+```
+
 详见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ---
