@@ -202,6 +202,14 @@ docker compose down -v              # stop and wipe data
 - **Optional**: `WEB_SEARCH_API_KEY` (grounded web evidence) and `E2B_API_KEY` (sandboxed `code.run`) — missing keys fail closed, the tools simply stay unavailable.
 - **Port conflicts**: change `app`'s `ports` mapping in `docker-compose.yml` (e.g. `"8080:3001"`).
 - **Accounts (optional)**: the rehearsal main line needs no database. Login / email-code / projects routes use MySQL lazily — enable with `docker compose --profile accounts up -d` (MySQL stays network-internal, no host port).
+- **Production servers — pull, don't build**: every release to `main` auto-builds images to ghcr.io (`.github/workflows/deploy-images.yml`). On the server use the image-only compose — no source build, tiny memory footprint:
+
+  ```bash
+  docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+  # fully automatic updates (Watchtower checks every 5 min):
+  docker compose -f docker-compose.prod.yml --profile auto up -d
+  # rollback: change :latest to a release :<commit-sha> in docker-compose.prod.yml
+  ```
 - **Corporate networks (TLS-intercepting proxies)**: drop your root CA (`.crt` PEM) into `docker/certs/` before building — both images merge it into their trust chain (see `docker/certs/README.md`). Certificates are gitignored.
 - **Not in compose**: Lobster Executor (needs Docker-in-Docker, opt in separately), Redis (off by default), Feishu integration (mock by default).
 - `.env` is never baked into images (`.dockerignore`); it is injected at runtime via `env_file`.
