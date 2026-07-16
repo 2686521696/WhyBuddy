@@ -220,8 +220,16 @@ def _build_per_skill_evidence(
 ) -> Dict[str, Any]:
     global _llm_generate_diagnostic
     _llm_generate_diagnostic = {}
+    # E29 精修/回退：上下文在场时模型权威 = 生成层结果（精修版或直供版），
+    # 跳过旧产物 haystack 匹配——否则旧 linkage 产物会把新模型顶掉。
+    from . import v5_llm_generate as _gen_mod
+
+    _refine_active = bool(
+        getattr(_gen_mod, "_refine_context", None)
+        or getattr(_gen_mod, "_model_override", None)
+    )
     matches: Dict[str, Dict[str, Any]] = {}
-    for artifact in _artifact_dicts(state):
+    for artifact in ([] if _refine_active else _artifact_dicts(state)):
         haystack = " ".join(
             str(artifact.get(key, "") or "").lower()
             for key in ("id", "title", "kind", "summary")
@@ -230,8 +238,14 @@ def _build_per_skill_evidence(
             if skill in haystack and skill not in matches:
                 matches[skill] = artifact
 
-    recognized_domain = _recognize_domain(goal)
-    if not blocked_signal and recognized_domain is not None:
+    recognized_domain = None if _refine_active else _recognize_domain(goal)
+    if _refine_active and not blocked_signal:
+        # 精修/回退：走 LLM 生成分支（override 时生成层不调 LLM 直接返回快照）
+        llm_result = _try_llm_generate_evidence(goal, llm_json_fn)
+        if llm_result is not None:
+            for skill in REQUIRED_EVIDENCE_KEYS:
+                matches[skill] = llm_result[skill]
+    elif not blocked_signal and recognized_domain is not None:
         # Deterministic domain (purchase/leave/ticket/onboarding) — fast fixture path,
         # no LLM call. This is the T1 generality proof; unchanged.
         for skill in REQUIRED_EVIDENCE_KEYS:
