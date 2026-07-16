@@ -1,0 +1,3818 @@
+{
+ "goal": "剧本杀门店场次编排与拼车组局系统",
+ "state": {
+  "goal": {
+   "text": "剧本杀门店场次编排与拼车组局系统",
+   "status": "clear"
+  },
+  "artifacts": [
+   {
+    "id": "art-0-evidence.search",
+    "kind": "evidence",
+    "provenance": "python-rag",
+    "trustLevel": "gated_pass",
+    "passedGates": [
+     "ground"
+    ],
+    "title": "evidence.search (Full Migration)",
+    "summary": "Retrieved external evidence",
+    "content": "Full V5 execution for evidence.search on 剧本杀门店场次编排与拼车组局系统. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-剧本杀] 剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。 (source: https://zh.wikipedia.org/wiki/剧本杀, score=0.75)\n- [web-wiki-zh-剧本] 剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的",
+    "payload": {
+     "sources": [
+      {
+       "content": "剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。",
+       "source": "https://zh.wikipedia.org/wiki/剧本杀",
+       "title": "剧本杀",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本杀",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的具有设计图作用的文本。与小说形式不同。这些剧本可以是原创作品，也可以改编自现有的作品。其中还对人物的动作、行为、表情和对话进行了叙述。为电视剧写的剧本也被称为电视剧本（teleplay）。\n剧本的写作，最重要的是能够被舞台上搬演，戏剧文本不算是艺术的完成，只能說完成了一半，用於舞台演出才是最终艺术的呈现，稱為「腳本」（即「演出文本」或「演出本」）。历代文人中，也有人创作过不适合舞台演出，甚至根本不能演出的剧本，这类的戏剧文本则称为「案头戏」（也叫「书斋剧」）。而好的劇本，能夠具備適合閱讀，也可能創造傑出舞台表演的雙重價值。\n一部可以在舞台上搬演的劇本原著，還是需要在每一次不同舞台、不同表演者的需求下，做適度的修改，以符合實際的需要，因此，舞台工作者會修改出一份不同於原著，有著詳細註記、標出在劇本中某個段落應該如何演出",
+       "source": "https://zh.wikipedia.org/wiki/剧本",
+       "title": "剧本",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "共乘，是指两人或两人以上共乘汽车旅行的交通方式。\n由于多人共乘一辆交通工具的原因，拼车可以减少人均的旅行成本（比如油费、过路过桥费）和驾驶交通工具带来的压力。拼车还是一种对于环境友好的和可持续发展的交通方式，因为它减少了温室气体的排放，缓解了交通的堵塞和削减了停车位的需求。 有关部门经常鼓励民众以拼车的形式出行，尤其是在高污染和高油价的情况下。\n2009年，拼车旅行占到了美国人出游方式的43.5%，10%的美国人选择拼车通勤。拼车通勤的主要乘员（超过60%）是家庭成员为主。 \n拼车通勤主要流行于工作机会聚集和人口密集的地区。拼车还和交通的成本（包括油价、通勤时长和社会成本）有明显的相关性。但是，拼车的行为较少发生在工作中长时间相处的人、年纪较长的工作者和私房屋主身上。",
+       "source": "https://zh.wikipedia.org/wiki/拼车",
+       "title": "拼车",
+       "score": 0.75,
+       "id": "web-wiki-zh-拼车",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ]
+    },
+    "producedBy": {
+     "capabilityRunId": "run-0-evidence.search",
+     "capabilityId": "evidence.search",
+     "roleId": "接地"
+    },
+    "stale": false,
+    "status": "active"
+   },
+   {
+    "id": "art-0-intent.clarify",
+    "kind": "risk",
+    "provenance": "python-llm",
+    "trustLevel": "gated_pass",
+    "passedGates": [
+     "ground"
+    ],
+    "title": "Intent clarification",
+    "summary": "1. 目标复述",
+    "content": "## 1. 目标复述\n\n建设一个面向剧本杀门店的系统，用于管理门店场次编排，并支持玩家拼车、组局、报名与成局流程，帮助门店提升排场效率和玩家组局成功率。\n\n## 2. 隐含假设\n\n- 系统服务对象包括门店运营人员、主持人/DM、玩家。\n- 门店需要维护剧本、房间、DM、时间段、人数上限、价格等基础信息。\n- 玩家可以查看可报名场次，也可能发起或加入拼车组局。\n- 系统需要判断场次是否满足开局人数，并支持候补、取消、满员等状态。\n- 该系统更偏向业务运营工具，而不是单纯的信息展示页面。\n\n## 3. 规划前需确认的问题\n\n- 拼车组局是玩家自发发起，还是门店统一发布场次后玩家报名？\n- 是否需要支持支付、订金、退款、核销等交易流程？\n- 场次编排是否需要自动排班，还是只做人工创建与管理？\n- DM、房间、剧本之间是否存在冲突检测和资源占用规则？\n- 玩家端需要哪些能力：报名、邀请好友、聊天、",
+    "payload": null,
+    "producedBy": {
+     "capabilityRunId": "run-0-intent.clarify",
+     "capabilityId": "intent.clarify",
+     "roleId": "产品"
+    },
+    "stale": false,
+    "status": "active"
+   },
+   {
+    "id": "art-0-route.generate",
+    "kind": "risk",
+    "provenance": "python-rag",
+    "trustLevel": "gated_pass",
+    "passedGates": [
+     "ground"
+    ],
+    "title": "route.generate (Full Migration)",
+    "summary": "Stable V5 execution with evidence",
+    "content": "Full V5 execution for route.generate on 剧本杀门店场次编排与拼车组局系统. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-剧本杀] 剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。 (source: https://zh.wikipedia.org/wiki/剧本杀, score=0.75)\n- [web-wiki-zh-剧本] 剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的具",
+    "payload": {
+     "sources": [
+      {
+       "content": "剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。",
+       "source": "https://zh.wikipedia.org/wiki/剧本杀",
+       "title": "剧本杀",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本杀",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的具有设计图作用的文本。与小说形式不同。这些剧本可以是原创作品，也可以改编自现有的作品。其中还对人物的动作、行为、表情和对话进行了叙述。为电视剧写的剧本也被称为电视剧本（teleplay）。\n剧本的写作，最重要的是能够被舞台上搬演，戏剧文本不算是艺术的完成，只能說完成了一半，用於舞台演出才是最终艺术的呈现，稱為「腳本」（即「演出文本」或「演出本」）。历代文人中，也有人创作过不适合舞台演出，甚至根本不能演出的剧本，这类的戏剧文本则称为「案头戏」（也叫「书斋剧」）。而好的劇本，能夠具備適合閱讀，也可能創造傑出舞台表演的雙重價值。\n一部可以在舞台上搬演的劇本原著，還是需要在每一次不同舞台、不同表演者的需求下，做適度的修改，以符合實際的需要，因此，舞台工作者會修改出一份不同於原著，有著詳細註記、標出在劇本中某個段落應該如何演出",
+       "source": "https://zh.wikipedia.org/wiki/剧本",
+       "title": "剧本",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "共乘，是指两人或两人以上共乘汽车旅行的交通方式。\n由于多人共乘一辆交通工具的原因，拼车可以减少人均的旅行成本（比如油费、过路过桥费）和驾驶交通工具带来的压力。拼车还是一种对于环境友好的和可持续发展的交通方式，因为它减少了温室气体的排放，缓解了交通的堵塞和削减了停车位的需求。 有关部门经常鼓励民众以拼车的形式出行，尤其是在高污染和高油价的情况下。\n2009年，拼车旅行占到了美国人出游方式的43.5%，10%的美国人选择拼车通勤。拼车通勤的主要乘员（超过60%）是家庭成员为主。 \n拼车通勤主要流行于工作机会聚集和人口密集的地区。拼车还和交通的成本（包括油价、通勤时长和社会成本）有明显的相关性。但是，拼车的行为较少发生在工作中长时间相处的人、年纪较长的工作者和私房屋主身上。",
+       "source": "https://zh.wikipedia.org/wiki/拼车",
+       "title": "拼车",
+       "score": 0.75,
+       "id": "web-wiki-zh-拼车",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ]
+    },
+    "producedBy": {
+     "capabilityRunId": "run-0-route.generate",
+     "capabilityId": "route.generate",
+     "roleId": "架构"
+    },
+    "stale": false,
+    "status": "active"
+   },
+   {
+    "id": "art-0-risk.analyze",
+    "kind": "risk",
+    "provenance": "python-llm",
+    "trustLevel": "gated_pass",
+    "passedGates": [
+     "ground"
+    ],
+    "title": "Risk analysis",
+    "summary": "风险清单",
+    "content": "## 风险清单\n\n- 用户隐私风险：玩家手机号、微信、到店时间、拼车地址、同行关系等信息可能被过度收集或泄露。\n- 位置安全风险：拼车组局涉及出发地、目的地、行程时间，可能暴露用户住址或行动轨迹。\n- 线下人身安全风险：陌生玩家拼车、组局、夜间场次可能带来骚扰、纠纷或安全事件。\n- 订单与场次风险：恶意占座、刷场次、重复预约、临时退组可能影响门店排班和玩家体验。\n- 支付与退款风险：拼车费用、定金、场次费用若规则不清，容易产生争议或欺诈。\n- 内容与社交风险：玩家聊天、组局备注、评价区可能出现辱骂、骚扰、引流、诈骗信息。\n- 权限管理风险：店员、主持人、管理员若权限边界不清，可能误改场次、泄露玩家信息或滥用数据。\n\n## 影响评估\n\n- 对用户：隐私泄露、被骚扰、误入不安全拼车、退款纠纷会直接降低信任。\n- 对门店：场次被恶意占用、排班混乱、拼车纠纷会增加运营成本和投诉压力。\n- 对平台：",
+    "payload": null,
+    "producedBy": {
+     "capabilityRunId": "run-0-risk.analyze",
+     "capabilityId": "risk.analyze",
+     "roleId": "安全"
+    },
+    "stale": false,
+    "status": "active"
+   },
+   {
+    "id": "art-0-appbundle.runtimeClosure",
+    "kind": "risk",
+    "provenance": "python-rag",
+    "trustLevel": "gated_pass",
+    "passedGates": [
+     "ground"
+    ],
+    "title": "appbundle.runtimeClosure (Full Migration)",
+    "summary": "Stable V5 execution with evidence",
+    "content": "Full V5 execution for appbundle.runtimeClosure on 剧本杀门店场次编排与拼车组局系统. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-剧本杀] 剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。 (source: https://zh.wikipedia.org/wiki/剧本杀, score=0.75)\n- [web-wiki-zh-剧本] 剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时",
+    "payload": {
+     "sources": [
+      {
+       "content": "剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。",
+       "source": "https://zh.wikipedia.org/wiki/剧本杀",
+       "title": "剧本杀",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本杀",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的具有设计图作用的文本。与小说形式不同。这些剧本可以是原创作品，也可以改编自现有的作品。其中还对人物的动作、行为、表情和对话进行了叙述。为电视剧写的剧本也被称为电视剧本（teleplay）。\n剧本的写作，最重要的是能够被舞台上搬演，戏剧文本不算是艺术的完成，只能說完成了一半，用於舞台演出才是最终艺术的呈现，稱為「腳本」（即「演出文本」或「演出本」）。历代文人中，也有人创作过不适合舞台演出，甚至根本不能演出的剧本，这类的戏剧文本则称为「案头戏」（也叫「书斋剧」）。而好的劇本，能夠具備適合閱讀，也可能創造傑出舞台表演的雙重價值。\n一部可以在舞台上搬演的劇本原著，還是需要在每一次不同舞台、不同表演者的需求下，做適度的修改，以符合實際的需要，因此，舞台工作者會修改出一份不同於原著，有著詳細註記、標出在劇本中某個段落應該如何演出",
+       "source": "https://zh.wikipedia.org/wiki/剧本",
+       "title": "剧本",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "共乘，是指两人或两人以上共乘汽车旅行的交通方式。\n由于多人共乘一辆交通工具的原因，拼车可以减少人均的旅行成本（比如油费、过路过桥费）和驾驶交通工具带来的压力。拼车还是一种对于环境友好的和可持续发展的交通方式，因为它减少了温室气体的排放，缓解了交通的堵塞和削减了停车位的需求。 有关部门经常鼓励民众以拼车的形式出行，尤其是在高污染和高油价的情况下。\n2009年，拼车旅行占到了美国人出游方式的43.5%，10%的美国人选择拼车通勤。拼车通勤的主要乘员（超过60%）是家庭成员为主。 \n拼车通勤主要流行于工作机会聚集和人口密集的地区。拼车还和交通的成本（包括油价、通勤时长和社会成本）有明显的相关性。但是，拼车的行为较少发生在工作中长时间相处的人、年纪较长的工作者和私房屋主身上。",
+       "source": "https://zh.wikipedia.org/wiki/拼车",
+       "title": "拼车",
+       "score": 0.75,
+       "id": "web-wiki-zh-拼车",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ]
+    },
+    "producedBy": {
+     "capabilityRunId": "run-0-appbundle.runtimeClosure",
+     "capabilityId": "appbundle.runtimeClosure",
+     "roleId": "appbundle"
+    },
+    "stale": false,
+    "status": "active"
+   }
+  ],
+  "capabilityRuns": [
+   {
+    "id": "run-0-evidence.search",
+    "capabilityId": "evidence.search",
+    "turnId": "loop-0",
+    "inputs": [],
+    "outputs": [
+     "art-0-evidence.search"
+    ],
+    "gateResults": [
+     {
+      "gateId": "ground",
+      "status": "passed"
+     }
+    ],
+    "result": {
+     "title": "evidence.search (Full Migration)",
+     "summary": "Retrieved external evidence",
+     "content": "Full V5 execution for evidence.search on 剧本杀门店场次编排与拼车组局系统. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-剧本杀] 剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。 (source: https://zh.wikipedia.org/wiki/剧本杀, score=0.75)\n- [web-wiki-zh-剧本] 剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的具有设计图作用的文本。与小说形式不同。这些剧本可以是原创作品，也可以改编自现有的作品。其中还对人物的动作、行为、表情和对话进行了叙述。为电视剧写的剧本也被称为电视剧本（teleplay）。\n剧本的写作，最重要的是能够被舞台上搬演，戏剧文本不算是艺术的完成，只能說完成了一半，用於舞台演出才是最终艺术的呈现，稱為「腳本」（即「演出文本」或「演出本」）。历代文人中，也有人创作过不适合舞台演出，甚至根本不能演出的剧本，这类的戏剧文本则称为「案头戏」（也叫「书斋剧」）。而好的劇本，能夠具備適合閱讀，也可能創造傑出舞台表演的雙重價值。\n一部可以在舞台上搬演的劇本原著，還是需要在每一次不同舞台、不同表演者的需求下，做適度的修改，以符合實際的需要，因此，舞台工作者會修改出一份不同於原著，有著詳細註記、標出在劇本中某個段落應該如何演出 (source: https://zh.wikipedia.org/wiki/剧本, score=0.75)\n- [web-wiki-zh-拼车] 共乘，是指两人或两人以上共乘汽车旅行的交通方式。\n由于多人共乘一辆交通工具的原因，拼车可以减少人均的旅行成本（比如油费、过路过桥费）和驾驶交通工具带来的压力。拼车还是一种对于环境友好的和可持续发展的交通方式，因为它减少了温室气体的排放，缓解了交通的堵塞和削减了停车位的需求。 有关部门经常鼓励民众以拼车的形式出行，尤其是在高污染和高油价的情况下。\n2009年，拼车旅行占到了美国人出游方式的43.5%，10%的美国人选择拼车通勤。拼车通勤的主要乘员（超过60%）是家庭成员为主。 \n拼车通勤主要流行于工作机会聚集和人口密集的地区。拼车还和交通的成本（包括油价、通勤时长和社会成本）有明显的相关性。但是，拼车的行为较少发生在工作中长时间相处的人、年纪较长的工作者和私房屋主身上。 (source: https://zh.wikipedia.org/wiki/拼车, score=0.75)\n- [web-wiki-zh-Formula of Love:] 《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。 (source: https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3, score=0.75)\n- [web-wiki-zh-Fortran] Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。 (source: https://zh.wikipedia.org/wiki/Fortran, score=0.75)\n- [web-wiki-zh-FOX (台灣頻道)] FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。 (source: https://zh.wikipedia.org/wiki/FOX_(台灣頻道), score=0.75)\n- [fallback] RBAC scoping and audit logging are baseline for permission systems. (source: fallback-knowledge, score=0.6)\n\nActionable result: Use the retrieved evidence to implement scoped RBAC + audit. External sources confirm this pattern reduces risk in similar systems.",
+     "provenance": "python-rag",
+     "degraded": false,
+     "degradedReason": null,
+     "sources": [
+      {
+       "content": "剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。",
+       "source": "https://zh.wikipedia.org/wiki/剧本杀",
+       "title": "剧本杀",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本杀",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的具有设计图作用的文本。与小说形式不同。这些剧本可以是原创作品，也可以改编自现有的作品。其中还对人物的动作、行为、表情和对话进行了叙述。为电视剧写的剧本也被称为电视剧本（teleplay）。\n剧本的写作，最重要的是能够被舞台上搬演，戏剧文本不算是艺术的完成，只能說完成了一半，用於舞台演出才是最终艺术的呈现，稱為「腳本」（即「演出文本」或「演出本」）。历代文人中，也有人创作过不适合舞台演出，甚至根本不能演出的剧本，这类的戏剧文本则称为「案头戏」（也叫「书斋剧」）。而好的劇本，能夠具備適合閱讀，也可能創造傑出舞台表演的雙重價值。\n一部可以在舞台上搬演的劇本原著，還是需要在每一次不同舞台、不同表演者的需求下，做適度的修改，以符合實際的需要，因此，舞台工作者會修改出一份不同於原著，有著詳細註記、標出在劇本中某個段落應該如何演出",
+       "source": "https://zh.wikipedia.org/wiki/剧本",
+       "title": "剧本",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "共乘，是指两人或两人以上共乘汽车旅行的交通方式。\n由于多人共乘一辆交通工具的原因，拼车可以减少人均的旅行成本（比如油费、过路过桥费）和驾驶交通工具带来的压力。拼车还是一种对于环境友好的和可持续发展的交通方式，因为它减少了温室气体的排放，缓解了交通的堵塞和削减了停车位的需求。 有关部门经常鼓励民众以拼车的形式出行，尤其是在高污染和高油价的情况下。\n2009年，拼车旅行占到了美国人出游方式的43.5%，10%的美国人选择拼车通勤。拼车通勤的主要乘员（超过60%）是家庭成员为主。 \n拼车通勤主要流行于工作机会聚集和人口密集的地区。拼车还和交通的成本（包括油价、通勤时长和社会成本）有明显的相关性。但是，拼车的行为较少发生在工作中长时间相处的人、年纪较长的工作者和私房屋主身上。",
+       "source": "https://zh.wikipedia.org/wiki/拼车",
+       "title": "拼车",
+       "score": 0.75,
+       "id": "web-wiki-zh-拼车",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ],
+     "toolName": null,
+     "skillName": null
+    },
+    "roleId": "接地",
+    "ledgerEntryId": "trust-ledger-art-0-evidence.search",
+    "timing": {
+     "durationMs": 41092,
+     "parallel": true
+    },
+    "error": null
+   },
+   {
+    "id": "run-0-intent.clarify",
+    "capabilityId": "intent.clarify",
+    "turnId": "loop-0",
+    "inputs": [],
+    "outputs": [
+     "art-0-intent.clarify"
+    ],
+    "gateResults": [
+     {
+      "gateId": "ground",
+      "status": "passed"
+     }
+    ],
+    "result": {
+     "title": "Intent clarification",
+     "summary": "1. 目标复述",
+     "content": "## 1. 目标复述\n\n建设一个面向剧本杀门店的系统，用于管理门店场次编排，并支持玩家拼车、组局、报名与成局流程，帮助门店提升排场效率和玩家组局成功率。\n\n## 2. 隐含假设\n\n- 系统服务对象包括门店运营人员、主持人/DM、玩家。\n- 门店需要维护剧本、房间、DM、时间段、人数上限、价格等基础信息。\n- 玩家可以查看可报名场次，也可能发起或加入拼车组局。\n- 系统需要判断场次是否满足开局人数，并支持候补、取消、满员等状态。\n- 该系统更偏向业务运营工具，而不是单纯的信息展示页面。\n\n## 3. 规划前需确认的问题\n\n- 拼车组局是玩家自发发起，还是门店统一发布场次后玩家报名？\n- 是否需要支持支付、订金、退款、核销等交易流程？\n- 场次编排是否需要自动排班，还是只做人工创建与管理？\n- DM、房间、剧本之间是否存在冲突检测和资源占用规则？\n- 玩家端需要哪些能力：报名、邀请好友、聊天、候补、评价、拼车推荐？\n- 门店端是否需要数据统计，例如上座率、成局率、收入、热门剧本？",
+     "provenance": "python-llm",
+     "model": "gpt-5.5",
+     "usage": {
+      "total_tokens": 4952,
+      "prompt_tokens": 4619,
+      "completion_tokens": 333
+     }
+    },
+    "roleId": "产品",
+    "ledgerEntryId": "trust-ledger-art-0-intent.clarify",
+    "timing": {
+     "durationMs": 24423,
+     "parallel": true
+    },
+    "error": null
+   },
+   {
+    "id": "run-0-route.generate",
+    "capabilityId": "route.generate",
+    "turnId": "loop-0",
+    "inputs": [],
+    "outputs": [
+     "art-0-route.generate"
+    ],
+    "gateResults": [
+     {
+      "gateId": "ground",
+      "status": "passed"
+     }
+    ],
+    "result": {
+     "title": "route.generate (Full Migration)",
+     "summary": "Stable V5 execution with evidence",
+     "content": "Full V5 execution for route.generate on 剧本杀门店场次编排与拼车组局系统. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-剧本杀] 剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。 (source: https://zh.wikipedia.org/wiki/剧本杀, score=0.75)\n- [web-wiki-zh-剧本] 剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的具有设计图作用的文本。与小说形式不同。这些剧本可以是原创作品，也可以改编自现有的作品。其中还对人物的动作、行为、表情和对话进行了叙述。为电视剧写的剧本也被称为电视剧本（teleplay）。\n剧本的写作，最重要的是能够被舞台上搬演，戏剧文本不算是艺术的完成，只能說完成了一半，用於舞台演出才是最终艺术的呈现，稱為「腳本」（即「演出文本」或「演出本」）。历代文人中，也有人创作过不适合舞台演出，甚至根本不能演出的剧本，这类的戏剧文本则称为「案头戏」（也叫「书斋剧」）。而好的劇本，能夠具備適合閱讀，也可能創造傑出舞台表演的雙重價值。\n一部可以在舞台上搬演的劇本原著，還是需要在每一次不同舞台、不同表演者的需求下，做適度的修改，以符合實際的需要，因此，舞台工作者會修改出一份不同於原著，有著詳細註記、標出在劇本中某個段落應該如何演出 (source: https://zh.wikipedia.org/wiki/剧本, score=0.75)\n- [web-wiki-zh-拼车] 共乘，是指两人或两人以上共乘汽车旅行的交通方式。\n由于多人共乘一辆交通工具的原因，拼车可以减少人均的旅行成本（比如油费、过路过桥费）和驾驶交通工具带来的压力。拼车还是一种对于环境友好的和可持续发展的交通方式，因为它减少了温室气体的排放，缓解了交通的堵塞和削减了停车位的需求。 有关部门经常鼓励民众以拼车的形式出行，尤其是在高污染和高油价的情况下。\n2009年，拼车旅行占到了美国人出游方式的43.5%，10%的美国人选择拼车通勤。拼车通勤的主要乘员（超过60%）是家庭成员为主。 \n拼车通勤主要流行于工作机会聚集和人口密集的地区。拼车还和交通的成本（包括油价、通勤时长和社会成本）有明显的相关性。但是，拼车的行为较少发生在工作中长时间相处的人、年纪较长的工作者和私房屋主身上。 (source: https://zh.wikipedia.org/wiki/拼车, score=0.75)\n- [web-wiki-zh-Formula of Love:] 《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。 (source: https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3, score=0.75)\n- [web-wiki-zh-Fortran] Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。 (source: https://zh.wikipedia.org/wiki/Fortran, score=0.75)\n- [web-wiki-zh-FOX (台灣頻道)] FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。 (source: https://zh.wikipedia.org/wiki/FOX_(台灣頻道), score=0.75)\n- [fallback] RBAC scoping and audit logging are baseline for permission systems. (source: fallback-knowledge, score=0.6)\n\nActionable result: Use the retrieved evidence to implement scoped RBAC + audit. External sources confirm this pattern reduces risk in similar systems.",
+     "provenance": "python-rag",
+     "degraded": false,
+     "degradedReason": null,
+     "sources": [
+      {
+       "content": "剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。",
+       "source": "https://zh.wikipedia.org/wiki/剧本杀",
+       "title": "剧本杀",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本杀",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的具有设计图作用的文本。与小说形式不同。这些剧本可以是原创作品，也可以改编自现有的作品。其中还对人物的动作、行为、表情和对话进行了叙述。为电视剧写的剧本也被称为电视剧本（teleplay）。\n剧本的写作，最重要的是能够被舞台上搬演，戏剧文本不算是艺术的完成，只能說完成了一半，用於舞台演出才是最终艺术的呈现，稱為「腳本」（即「演出文本」或「演出本」）。历代文人中，也有人创作过不适合舞台演出，甚至根本不能演出的剧本，这类的戏剧文本则称为「案头戏」（也叫「书斋剧」）。而好的劇本，能夠具備適合閱讀，也可能創造傑出舞台表演的雙重價值。\n一部可以在舞台上搬演的劇本原著，還是需要在每一次不同舞台、不同表演者的需求下，做適度的修改，以符合實際的需要，因此，舞台工作者會修改出一份不同於原著，有著詳細註記、標出在劇本中某個段落應該如何演出",
+       "source": "https://zh.wikipedia.org/wiki/剧本",
+       "title": "剧本",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "共乘，是指两人或两人以上共乘汽车旅行的交通方式。\n由于多人共乘一辆交通工具的原因，拼车可以减少人均的旅行成本（比如油费、过路过桥费）和驾驶交通工具带来的压力。拼车还是一种对于环境友好的和可持续发展的交通方式，因为它减少了温室气体的排放，缓解了交通的堵塞和削减了停车位的需求。 有关部门经常鼓励民众以拼车的形式出行，尤其是在高污染和高油价的情况下。\n2009年，拼车旅行占到了美国人出游方式的43.5%，10%的美国人选择拼车通勤。拼车通勤的主要乘员（超过60%）是家庭成员为主。 \n拼车通勤主要流行于工作机会聚集和人口密集的地区。拼车还和交通的成本（包括油价、通勤时长和社会成本）有明显的相关性。但是，拼车的行为较少发生在工作中长时间相处的人、年纪较长的工作者和私房屋主身上。",
+       "source": "https://zh.wikipedia.org/wiki/拼车",
+       "title": "拼车",
+       "score": 0.75,
+       "id": "web-wiki-zh-拼车",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ],
+     "toolName": null,
+     "skillName": null
+    },
+    "roleId": "架构",
+    "ledgerEntryId": "trust-ledger-art-0-route.generate",
+    "timing": {
+     "durationMs": 10137,
+     "parallel": true
+    },
+    "error": null
+   },
+   {
+    "id": "run-0-risk.analyze",
+    "capabilityId": "risk.analyze",
+    "turnId": "loop-0",
+    "inputs": [],
+    "outputs": [
+     "art-0-risk.analyze"
+    ],
+    "gateResults": [
+     {
+      "gateId": "ground",
+      "status": "passed"
+     }
+    ],
+    "result": {
+     "title": "Risk analysis",
+     "summary": "风险清单",
+     "content": "## 风险清单\n\n- 用户隐私风险：玩家手机号、微信、到店时间、拼车地址、同行关系等信息可能被过度收集或泄露。\n- 位置安全风险：拼车组局涉及出发地、目的地、行程时间，可能暴露用户住址或行动轨迹。\n- 线下人身安全风险：陌生玩家拼车、组局、夜间场次可能带来骚扰、纠纷或安全事件。\n- 订单与场次风险：恶意占座、刷场次、重复预约、临时退组可能影响门店排班和玩家体验。\n- 支付与退款风险：拼车费用、定金、场次费用若规则不清，容易产生争议或欺诈。\n- 内容与社交风险：玩家聊天、组局备注、评价区可能出现辱骂、骚扰、引流、诈骗信息。\n- 权限管理风险：店员、主持人、管理员若权限边界不清，可能误改场次、泄露玩家信息或滥用数据。\n\n## 影响评估\n\n- 对用户：隐私泄露、被骚扰、误入不安全拼车、退款纠纷会直接降低信任。\n- 对门店：场次被恶意占用、排班混乱、拼车纠纷会增加运营成本和投诉压力。\n- 对平台：若缺少实名、风控、日志和申诉机制，安全事件后难以追责和复盘。\n- 对业务增长：拼车组局是转化工具，但安全感不足会抑制新玩家参与，尤其是单人玩家和夜场用户。\n\n## 缓解路径\n\n- 最小化收集信息：拼车地址只展示模糊区域，上车前由用户主动确认，不默认公开手机号或微信。\n- 建立组局安全机制：支持实名认证、黑名单、举报、拉黑、同行确认、异常用户限制组局。\n- 控制拼车暴露面：默认只展示人数、性别偏好可选、出发区域、时间窗口，不公开精确住址和完整行程。\n- 强化场次风控：限制频繁占座、重复退订、批量预约；关键操作保留日志。\n- 明确交易规则：定金、退款、迟到、爽约、拼车费用分摊规则在下单前确认。\n- 做好内容治理：聊天与备注支持敏感词、举报审核、诈骗引流识别。\n- 做权限分层：店员、DM、门店管理员、平台管理员分别配置最小权限，敏感数据访问可审计。",
+     "provenance": "python-llm",
+     "model": "gpt-5.5",
+     "usage": {
+      "total_tokens": 5235,
+      "prompt_tokens": 4606,
+      "completion_tokens": 629
+     }
+    },
+    "roleId": "安全",
+    "ledgerEntryId": "trust-ledger-art-0-risk.analyze",
+    "timing": {
+     "durationMs": 30996,
+     "parallel": true
+    },
+    "error": null
+   },
+   {
+    "id": "run-0-appbundle.runtimeClosure",
+    "capabilityId": "appbundle.runtimeClosure",
+    "turnId": "loop-0-closure",
+    "inputs": [],
+    "outputs": [
+     "art-0-appbundle.runtimeClosure"
+    ],
+    "gateResults": [
+     {
+      "gateId": "ground",
+      "status": "passed"
+     }
+    ],
+    "result": {
+     "title": "appbundle.runtimeClosure (Full Migration)",
+     "summary": "Stable V5 execution with evidence",
+     "content": "Full V5 execution for appbundle.runtimeClosure on 剧本杀门店场次编排与拼车组局系统. Must include external evidence from RAG.\n\nRetrieved external evidence (RAG):\n- [web-wiki-zh-剧本杀] 剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。 (source: https://zh.wikipedia.org/wiki/剧本杀, score=0.75)\n- [web-wiki-zh-剧本] 剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的具有设计图作用的文本。与小说形式不同。这些剧本可以是原创作品，也可以改编自现有的作品。其中还对人物的动作、行为、表情和对话进行了叙述。为电视剧写的剧本也被称为电视剧本（teleplay）。\n剧本的写作，最重要的是能够被舞台上搬演，戏剧文本不算是艺术的完成，只能說完成了一半，用於舞台演出才是最终艺术的呈现，稱為「腳本」（即「演出文本」或「演出本」）。历代文人中，也有人创作过不适合舞台演出，甚至根本不能演出的剧本，这类的戏剧文本则称为「案头戏」（也叫「书斋剧」）。而好的劇本，能夠具備適合閱讀，也可能創造傑出舞台表演的雙重價值。\n一部可以在舞台上搬演的劇本原著，還是需要在每一次不同舞台、不同表演者的需求下，做適度的修改，以符合實際的需要，因此，舞台工作者會修改出一份不同於原著，有著詳細註記、標出在劇本中某個段落應該如何演出 (source: https://zh.wikipedia.org/wiki/剧本, score=0.75)\n- [web-wiki-zh-拼车] 共乘，是指两人或两人以上共乘汽车旅行的交通方式。\n由于多人共乘一辆交通工具的原因，拼车可以减少人均的旅行成本（比如油费、过路过桥费）和驾驶交通工具带来的压力。拼车还是一种对于环境友好的和可持续发展的交通方式，因为它减少了温室气体的排放，缓解了交通的堵塞和削减了停车位的需求。 有关部门经常鼓励民众以拼车的形式出行，尤其是在高污染和高油价的情况下。\n2009年，拼车旅行占到了美国人出游方式的43.5%，10%的美国人选择拼车通勤。拼车通勤的主要乘员（超过60%）是家庭成员为主。 \n拼车通勤主要流行于工作机会聚集和人口密集的地区。拼车还和交通的成本（包括油价、通勤时长和社会成本）有明显的相关性。但是，拼车的行为较少发生在工作中长时间相处的人、年纪较长的工作者和私房屋主身上。 (source: https://zh.wikipedia.org/wiki/拼车, score=0.75)\n- [web-wiki-zh-Formula of Love:] 《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。 (source: https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3, score=0.75)\n- [web-wiki-zh-Fortran] Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。 (source: https://zh.wikipedia.org/wiki/Fortran, score=0.75)\n- [web-wiki-zh-FOX (台灣頻道)] FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。 (source: https://zh.wikipedia.org/wiki/FOX_(台灣頻道), score=0.75)\n- [fallback] RBAC scoping and audit logging are baseline for permission systems. (source: fallback-knowledge, score=0.6)\n\nActionable result: Use the retrieved evidence to implement scoped RBAC + audit. External sources confirm this pattern reduces risk in similar systems.",
+     "provenance": "python-rag",
+     "degraded": false,
+     "degradedReason": null,
+     "sources": [
+      {
+       "content": "剧本杀是一种玩家扮演剧本中的角色，来解决剧本中的谜题，从而达成游戏目标的真人角色扮演游戏与社交推理游戏，其发端于“谋杀推理游戏”（英語：Murder mystery game，又译“谋杀之谜”）；有线上与线下两种游玩方式。",
+       "source": "https://zh.wikipedia.org/wiki/剧本杀",
+       "title": "剧本杀",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本杀",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "剧本又称脚本（脚本／きゃくほん），是编剧为电影、电视节目或电子游戏所写的书面作品。剧本是由“何时、何地、谁”组成的具有设计图作用的文本。与小说形式不同。这些剧本可以是原创作品，也可以改编自现有的作品。其中还对人物的动作、行为、表情和对话进行了叙述。为电视剧写的剧本也被称为电视剧本（teleplay）。\n剧本的写作，最重要的是能够被舞台上搬演，戏剧文本不算是艺术的完成，只能說完成了一半，用於舞台演出才是最终艺术的呈现，稱為「腳本」（即「演出文本」或「演出本」）。历代文人中，也有人创作过不适合舞台演出，甚至根本不能演出的剧本，这类的戏剧文本则称为「案头戏」（也叫「书斋剧」）。而好的劇本，能夠具備適合閱讀，也可能創造傑出舞台表演的雙重價值。\n一部可以在舞台上搬演的劇本原著，還是需要在每一次不同舞台、不同表演者的需求下，做適度的修改，以符合實際的需要，因此，舞台工作者會修改出一份不同於原著，有著詳細註記、標出在劇本中某個段落應該如何演出",
+       "source": "https://zh.wikipedia.org/wiki/剧本",
+       "title": "剧本",
+       "score": 0.75,
+       "id": "web-wiki-zh-剧本",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "共乘，是指两人或两人以上共乘汽车旅行的交通方式。\n由于多人共乘一辆交通工具的原因，拼车可以减少人均的旅行成本（比如油费、过路过桥费）和驾驶交通工具带来的压力。拼车还是一种对于环境友好的和可持续发展的交通方式，因为它减少了温室气体的排放，缓解了交通的堵塞和削减了停车位的需求。 有关部门经常鼓励民众以拼车的形式出行，尤其是在高污染和高油价的情况下。\n2009年，拼车旅行占到了美国人出游方式的43.5%，10%的美国人选择拼车通勤。拼车通勤的主要乘员（超过60%）是家庭成员为主。 \n拼车通勤主要流行于工作机会聚集和人口密集的地区。拼车还和交通的成本（包括油价、通勤时长和社会成本）有明显的相关性。但是，拼车的行为较少发生在工作中长时间相处的人、年纪较长的工作者和私房屋主身上。",
+       "source": "https://zh.wikipedia.org/wiki/拼车",
+       "title": "拼车",
+       "score": 0.75,
+       "id": "web-wiki-zh-拼车",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "《Formula of Love: O+T=<3》是韓國女子團體TWICE的第三張韓語正規專輯，由JYP娛樂製作並於2021年11月12日發行，專輯共收錄了15首歌曲及两首數位限定單曲，主打歌為〈SCIENTIST〉。\n專輯名稱意涵：O為ONCE，T為TWICE，等號後的<3為愛心符號，並有意味著第三張正規專輯的阿拉伯數字3；愛的方程式：ONCE+TWICE=LOVE。",
+       "source": "https://zh.wikipedia.org/wiki/Formula_of_Love:_O+T=＜3",
+       "title": "Formula of Love: O+T=＜3",
+       "score": 0.75,
+       "id": "web-wiki-zh-Formula of Love:",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "Fortran，可音譯為福傳，源自於「公式翻译」（英語：Formula Translation）的縮寫，它是通用的编译型指令式编程语言，特别适用于数值计算和科学计算。它在1957年由IBM開發出来，是世界上第一个被正式采用並流传至今的高级编程語言。",
+       "source": "https://zh.wikipedia.org/wiki/Fortran",
+       "title": "Fortran",
+       "score": 0.75,
+       "id": "web-wiki-zh-Fortran",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "FOX（台灣頻道）是福斯傳媒集團旗下已停播的綜合娛樂頻道。",
+       "source": "https://zh.wikipedia.org/wiki/FOX_(台灣頻道)",
+       "title": "FOX (台灣頻道)",
+       "score": 0.75,
+       "id": "web-wiki-zh-FOX (台灣頻道)",
+       "retrieval": "web:wikipedia:zh"
+      },
+      {
+       "content": "RBAC scoping and audit logging are baseline for permission systems.",
+       "source": "fallback-knowledge",
+       "score": 0.6,
+       "id": "fallback",
+       "retrieval": "keyword"
+      }
+     ],
+     "toolName": null,
+     "skillName": null,
+     "runtimeClosure": {
+      "skillsChecked": [
+       "datamodel",
+       "rbac",
+       "workflow",
+       "page",
+       "aigc",
+       "appbundle"
+      ],
+      "versionPinsChecked": true,
+      "crossSkillRuntimeEdges": [
+       {
+        "sourceSkill": "datamodel",
+        "targetSkill": "rbac",
+        "state": "allowed",
+        "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+       },
+       {
+        "sourceSkill": "datamodel",
+        "targetSkill": "page",
+        "state": "allowed",
+        "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+       },
+       {
+        "sourceSkill": "rbac",
+        "targetSkill": "workflow",
+        "state": "allowed",
+        "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "workflow",
+        "targetSkill": "page",
+        "state": "allowed",
+        "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "page",
+        "targetSkill": "appbundle",
+        "state": "allowed",
+        "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "aigc",
+        "targetSkill": "appbundle",
+        "state": "allowed",
+        "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+       }
+      ],
+      "perSkill": {}
+     },
+     "skillRuntimeGraph": {
+      "edges": [
+       {
+        "sourceSkill": "datamodel",
+        "targetSkill": "rbac",
+        "state": "allowed",
+        "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+       },
+       {
+        "sourceSkill": "datamodel",
+        "targetSkill": "page",
+        "state": "allowed",
+        "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+       },
+       {
+        "sourceSkill": "rbac",
+        "targetSkill": "workflow",
+        "state": "allowed",
+        "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "workflow",
+        "targetSkill": "page",
+        "state": "allowed",
+        "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "page",
+        "targetSkill": "appbundle",
+        "state": "allowed",
+        "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+       },
+       {
+        "sourceSkill": "aigc",
+        "targetSkill": "appbundle",
+        "state": "allowed",
+        "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+       }
+      ],
+      "bySkill": {
+       "datamodel": [
+        {
+         "sourceSkill": "datamodel",
+         "targetSkill": "rbac",
+         "state": "allowed",
+         "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+        },
+        {
+         "sourceSkill": "datamodel",
+         "targetSkill": "page",
+         "state": "allowed",
+         "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+        }
+       ],
+       "rbac": [
+        {
+         "sourceSkill": "datamodel",
+         "targetSkill": "rbac",
+         "state": "allowed",
+         "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+        },
+        {
+         "sourceSkill": "rbac",
+         "targetSkill": "workflow",
+         "state": "allowed",
+         "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+        }
+       ],
+       "workflow": [
+        {
+         "sourceSkill": "rbac",
+         "targetSkill": "workflow",
+         "state": "allowed",
+         "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+        },
+        {
+         "sourceSkill": "workflow",
+         "targetSkill": "page",
+         "state": "allowed",
+         "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+        }
+       ],
+       "page": [
+        {
+         "sourceSkill": "datamodel",
+         "targetSkill": "page",
+         "state": "allowed",
+         "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+        },
+        {
+         "sourceSkill": "workflow",
+         "targetSkill": "page",
+         "state": "allowed",
+         "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+        },
+        {
+         "sourceSkill": "page",
+         "targetSkill": "appbundle",
+         "state": "allowed",
+         "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+        }
+       ],
+       "aigc": [
+        {
+         "sourceSkill": "aigc",
+         "targetSkill": "appbundle",
+         "state": "allowed",
+         "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+        }
+       ],
+       "appbundle": [
+        {
+         "sourceSkill": "page",
+         "targetSkill": "appbundle",
+         "state": "allowed",
+         "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+        },
+        {
+         "sourceSkill": "aigc",
+         "targetSkill": "appbundle",
+         "state": "allowed",
+         "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+        }
+       ]
+      },
+      "evidenceBySkill": {
+       "datamodel": [
+        "DM_RBAC_FIELD_POLICY_EVIDENCE",
+        "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+       ],
+       "rbac": [
+        "DM_RBAC_FIELD_POLICY_EVIDENCE",
+        "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+       ],
+       "workflow": [
+        "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE",
+        "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+       ],
+       "page": [
+        "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+        "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE",
+        "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+       ],
+       "aigc": [
+        "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+       ],
+       "appbundle": [
+        "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE",
+        "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+       ]
+      }
+     },
+     "perSkillEvidence": {
+      "datamodel": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:datamodel:llm-linkage-datamodel",
+       "path": "skills/datamodel/closure-evidence.json",
+       "artifactId": "llm-linkage-datamodel",
+       "digest": "5b03ca8344295e4c",
+       "modelSection": {
+        "entities": [
+         {
+          "id": "script",
+          "name": "剧本",
+          "fields": [
+           {
+            "id": "title",
+            "name": "剧本名称",
+            "type": "string"
+           },
+           {
+            "id": "theme",
+            "name": "题材",
+            "type": "enum",
+            "options": [
+             {
+              "id": "benge",
+              "label": "本格",
+              "tone": "default"
+             },
+             {
+              "id": "qinggan",
+              "label": "情感",
+              "tone": "processing"
+             },
+             {
+              "id": "kongbu",
+              "label": "恐怖",
+              "tone": "danger"
+             },
+             {
+              "id": "huanle",
+              "label": "欢乐",
+              "tone": "success"
+             }
+            ]
+           },
+           {
+            "id": "player_count",
+            "name": "标准人数",
+            "type": "number"
+           },
+           {
+            "id": "duration_hours",
+            "name": "时长小时",
+            "type": "number"
+           },
+           {
+            "id": "difficulty",
+            "name": "难度",
+            "type": "enum",
+            "options": [
+             {
+              "id": "easy",
+              "label": "新手",
+              "tone": "success"
+             },
+             {
+              "id": "medium",
+              "label": "进阶",
+              "tone": "processing"
+             },
+             {
+              "id": "hard",
+              "label": "硬核",
+              "tone": "warning"
+             }
+            ]
+           },
+           {
+            "id": "review_status",
+            "name": "上架审核状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "draft",
+              "label": "草稿",
+              "tone": "default"
+             },
+             {
+              "id": "pending",
+              "label": "待审核",
+              "tone": "warning"
+             },
+             {
+              "id": "approved",
+              "label": "已上架",
+              "tone": "success"
+             },
+             {
+              "id": "rejected",
+              "label": "已驳回",
+              "tone": "danger"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "id": "player",
+          "name": "玩家",
+          "fields": [
+           {
+            "id": "nickname",
+            "name": "昵称",
+            "type": "string"
+           },
+           {
+            "id": "phone",
+            "name": "手机号",
+            "type": "string",
+            "format": "masked"
+           },
+           {
+            "id": "experience_level",
+            "name": "经验等级",
+            "type": "enum",
+            "options": [
+             {
+              "id": "newbie",
+              "label": "新手",
+              "tone": "success"
+             },
+             {
+              "id": "regular",
+              "label": "熟客",
+              "tone": "processing"
+             },
+             {
+              "id": "expert",
+              "label": "硬核玩家",
+              "tone": "warning"
+             }
+            ]
+           },
+           {
+            "id": "preference_note",
+            "name": "偏好备注",
+            "type": "string"
+           },
+           {
+            "id": "credit_score",
+            "name": "履约分",
+            "type": "number",
+            "format": "score"
+           }
+          ]
+         },
+         {
+          "id": "session",
+          "name": "门店场次",
+          "fields": [
+           {
+            "id": "script_ref",
+            "name": "剧本",
+            "type": "ref"
+           },
+           {
+            "id": "store_room",
+            "name": "房间",
+            "type": "string"
+           },
+           {
+            "id": "host_ref",
+            "name": "DM主持",
+            "type": "ref"
+           },
+           {
+            "id": "start_time",
+            "name": "开场时间",
+            "type": "date"
+           },
+           {
+            "id": "end_time",
+            "name": "结束时间",
+            "type": "date"
+           },
+           {
+            "id": "capacity",
+            "name": "可容纳人数",
+            "type": "number"
+           },
+           {
+            "id": "booked_count",
+            "name": "已报名人数",
+            "type": "number"
+           },
+           {
+            "id": "seat_fill_rate",
+            "name": "满座率",
+            "type": "number",
+            "format": "percent"
+           },
+           {
+            "id": "ticket_price",
+            "name": "单人票价",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "session_status",
+            "name": "场次状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "draft",
+              "label": "草稿排期",
+              "tone": "default"
+             },
+             {
+              "id": "recruiting",
+              "label": "招募中",
+              "tone": "processing"
+             },
+             {
+              "id": "locked",
+              "label": "已成局",
+              "tone": "success"
+             },
+             {
+              "id": "playing",
+              "label": "进行中",
+              "tone": "processing"
+             },
+             {
+              "id": "completed",
+              "label": "已复盘",
+              "tone": "success"
+             },
+             {
+              "id": "cancelled",
+              "label": "已取消",
+              "tone": "danger"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "id": "booking",
+          "name": "报名订单",
+          "fields": [
+           {
+            "id": "session_ref",
+            "name": "场次",
+            "type": "ref"
+           },
+           {
+            "id": "player_ref",
+            "name": "玩家",
+            "type": "ref"
+           },
+           {
+            "id": "seat_role",
+            "name": "角色席位",
+            "type": "string"
+           },
+           {
+            "id": "booking_status",
+            "name": "报名状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "reserved",
+              "label": "已占位",
+              "tone": "warning"
+             },
+             {
+              "id": "paid",
+              "label": "已付款",
+              "tone": "success"
+             },
+             {
+              "id": "waitlisted",
+              "label": "候补中",
+              "tone": "processing"
+             },
+             {
+              "id": "checked_in",
+              "label": "已到店",
+              "tone": "success"
+             },
+             {
+              "id": "cancelled",
+              "label": "已取消",
+              "tone": "danger"
+             }
+            ]
+           },
+           {
+            "id": "deposit_amount",
+            "name": "定金金额",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "match_profile",
+            "name": "组局画像",
+            "type": "string"
+           },
+           {
+            "id": "created_at",
+            "name": "报名时间",
+            "type": "date"
+           }
+          ]
+         },
+         {
+          "id": "carpool_group",
+          "name": "拼车组局",
+          "fields": [
+           {
+            "id": "session_ref",
+            "name": "关联场次",
+            "type": "ref"
+           },
+           {
+            "id": "captain_player_ref",
+            "name": "车头玩家",
+            "type": "ref"
+           },
+           {
+            "id": "group_status",
+            "name": "组局状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "forming",
+              "label": "组局中",
+              "tone": "processing"
+             },
+             {
+              "id": "almost_full",
+              "label": "即将满车",
+              "tone": "warning"
+             },
+             {
+              "id": "confirmed",
+              "label": "已成车",
+              "tone": "success"
+             },
+             {
+              "id": "failed",
+              "label": "组局失败",
+              "tone": "danger"
+             }
+            ]
+           },
+           {
+            "id": "needed_players",
+            "name": "缺口人数",
+            "type": "number"
+           },
+           {
+            "id": "match_plan",
+            "name": "智能补位方案",
+            "type": "string"
+           },
+           {
+            "id": "announcement_copy",
+            "name": "招募文案",
+            "type": "string"
+           }
+          ]
+         },
+         {
+          "id": "payment",
+          "name": "支付流水",
+          "fields": [
+           {
+            "id": "booking_ref",
+            "name": "报名订单",
+            "type": "ref"
+           },
+           {
+            "id": "amount",
+            "name": "支付金额",
+            "type": "number",
+            "format": "money"
+           },
+           {
+            "id": "payment_status",
+            "name": "支付状态",
+            "type": "enum",
+            "options": [
+             {
+              "id": "created",
+              "label": "待支付",
+              "tone": "warning"
+             },
+             {
+              "id": "confirmed",
+              "label": "已确认",
+              "tone": "success"
+             },
+             {
+              "id": "refunding",
+              "label": "退款中",
+              "tone": "processing"
+             },
+             {
+              "id": "refunded",
+              "label": "已退款",
+              "tone": "success"
+             },
+             {
+              "id": "failed",
+              "label": "支付失败",
+              "tone": "danger"
+             }
+            ]
+           },
+           {
+            "id": "gateway_trade_no",
+            "name": "渠道交易号",
+            "type": "string"
+           },
+           {
+            "id": "paid_at",
+            "name": "支付时间",
+            "type": "date"
+           }
+          ]
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:rbac:llm-linkage-rbac",
+       "path": "skills/rbac/closure-evidence.json",
+       "artifactId": "llm-linkage-rbac",
+       "digest": "522fe6a69e34fc20",
+       "modelSection": {
+        "roles": [
+         "store_manager",
+         "scheduler",
+         "dm_host",
+         "front_desk",
+         "finance",
+         "marketing",
+         "ai_operator"
+        ],
+        "permissions": [
+         "script:review",
+         "script:read",
+         "session:create",
+         "session:update",
+         "session:publish",
+         "session:cancel",
+         "booking:create",
+         "booking:update",
+         "booking:checkin",
+         "carpool:manage",
+         "carpool:publish",
+         "payment:create",
+         "payment:confirm",
+         "payment:refund",
+         "dashboard:view",
+         "aigc:run"
+        ],
+        "menus": [
+         {
+          "id": "menu_script_library",
+          "label": "剧本库审核",
+          "roleRefs": [
+           "store_manager",
+           "dm_host"
+          ],
+          "permissionRefs": [
+           "script:read",
+           "script:review"
+          ]
+         },
+         {
+          "id": "menu_session_schedule",
+          "label": "场次排期",
+          "roleRefs": [
+           "scheduler",
+           "store_manager"
+          ],
+          "permissionRefs": [
+           "session:create",
+           "session:update",
+           "session:publish",
+           "session:cancel",
+           "script:read"
+          ]
+         },
+         {
+          "id": "menu_booking_frontdesk",
+          "label": "报名与到店",
+          "roleRefs": [
+           "front_desk",
+           "dm_host"
+          ],
+          "permissionRefs": [
+           "booking:create",
+           "booking:update",
+           "booking:checkin"
+          ]
+         },
+         {
+          "id": "menu_carpool_ops",
+          "label": "拼车组局运营",
+          "roleRefs": [
+           "marketing",
+           "ai_operator",
+           "scheduler"
+          ],
+          "permissionRefs": [
+           "carpool:manage",
+           "carpool:publish",
+           "aigc:run"
+          ]
+         },
+         {
+          "id": "menu_finance_counter",
+          "label": "收款退款",
+          "roleRefs": [
+           "finance",
+           "front_desk"
+          ],
+          "permissionRefs": [
+           "payment:create",
+           "payment:confirm",
+           "payment:refund"
+          ]
+         },
+         {
+          "id": "menu_store_dashboard",
+          "label": "经营看板",
+          "roleRefs": [
+           "store_manager",
+           "finance"
+          ],
+          "permissionRefs": [
+           "dashboard:view"
+          ]
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:workflow:llm-linkage-workflow",
+       "path": "skills/workflow/closure-evidence.json",
+       "artifactId": "llm-linkage-workflow",
+       "digest": "2b54e8a4fd79e59f",
+       "modelSection": {
+        "id": "session_lifecycle",
+        "name": "门店场次生命周期",
+        "nodes": [
+         {
+          "id": "session_draft",
+          "name": "创建草稿排期",
+          "assigneeRole": "scheduler",
+          "phase": "筹备"
+         },
+         {
+          "id": "session_resource_check",
+          "name": "校验剧本房间与DM",
+          "assigneeRole": "scheduler",
+          "phase": "筹备"
+         },
+         {
+          "id": "session_publish_recruiting",
+          "name": "发布招募",
+          "assigneeRole": "marketing",
+          "phase": "招募"
+         },
+         {
+          "id": "session_seat_lock",
+          "name": "人数达标锁车",
+          "assigneeRole": "front_desk",
+          "phase": "招募"
+         },
+         {
+          "id": "session_host_prepare",
+          "name": "DM开局准备",
+          "assigneeRole": "dm_host",
+          "phase": "开局"
+         },
+         {
+          "id": "session_playing",
+          "name": "门店开局进行",
+          "assigneeRole": "dm_host",
+          "phase": "开局"
+         },
+         {
+          "id": "session_close_review",
+          "name": "复盘归档",
+          "assigneeRole": "store_manager",
+          "phase": "复盘"
+         },
+         {
+          "id": "session_cancelled",
+          "name": "取消场次",
+          "assigneeRole": "store_manager",
+          "phase": "复盘"
+         }
+        ],
+        "transitions": [
+         {
+          "from": "session_draft",
+          "to": "session_resource_check",
+          "condition": "提交排期"
+         },
+         {
+          "from": "session_resource_check",
+          "to": "session_publish_recruiting",
+          "condition": "资源可用"
+         },
+         {
+          "from": "session_resource_check",
+          "to": "session_draft",
+          "condition": "剧本房间或DM冲突退回修改"
+         },
+         {
+          "from": "session_publish_recruiting",
+          "to": "session_seat_lock",
+          "condition": "报名人数达到开局线"
+         },
+         {
+          "from": "session_publish_recruiting",
+          "to": "session_cancelled",
+          "condition": "开场前仍未成局"
+         },
+         {
+          "from": "session_seat_lock",
+          "to": "session_host_prepare",
+          "condition": "定金全部确认"
+         },
+         {
+          "from": "session_seat_lock",
+          "to": "session_publish_recruiting",
+          "condition": "玩家取消导致人数不足"
+         },
+         {
+          "from": "session_host_prepare",
+          "to": "session_playing",
+          "condition": "玩家到齐"
+         },
+         {
+          "from": "session_host_prepare",
+          "to": "session_cancelled",
+          "condition": "临场缺席无法补位"
+         },
+         {
+          "from": "session_playing",
+          "to": "session_close_review",
+          "condition": "游戏结束"
+         }
+        ],
+        "chains": [
+         {
+          "id": "deposit_money_chain",
+          "name": "报名定金收退链",
+          "kind": "money",
+          "nodes": [
+           {
+            "id": "money_create_payment",
+            "name": "生成报名支付单",
+            "assigneeRole": "front_desk",
+            "phase": "下单"
+           },
+           {
+            "id": "money_wait_gateway",
+            "name": "等待玩家支付",
+            "assigneeRole": "front_desk",
+            "phase": "下单"
+           },
+           {
+            "id": "money_server_confirm",
+            "name": "服务端验签确认",
+            "assigneeRole": "finance",
+            "phase": "确认"
+           },
+           {
+            "id": "money_credit_booking",
+            "name": "写入报名已付款",
+            "assigneeRole": "finance",
+            "phase": "确认"
+           },
+           {
+            "id": "money_refund_review",
+            "name": "退款审核",
+            "assigneeRole": "store_manager",
+            "phase": "退款"
+           },
+           {
+            "id": "money_refund_execute",
+            "name": "执行原路退款",
+            "assigneeRole": "finance",
+            "phase": "退款"
+           },
+           {
+            "id": "money_failed",
+            "name": "支付失败关闭",
+            "assigneeRole": "finance",
+            "phase": "退款"
+           }
+          ],
+          "transitions": [
+           {
+            "from": "money_create_payment",
+            "to": "money_wait_gateway",
+            "condition": "支付单创建成功"
+           },
+           {
+            "from": "money_wait_gateway",
+            "to": "money_server_confirm",
+            "condition": "收到渠道回调"
+           },
+           {
+            "from": "money_wait_gateway",
+            "to": "money_failed",
+            "condition": "超时未支付"
+           },
+           {
+            "from": "money_server_confirm",
+            "to": "money_credit_booking",
+            "condition": "验签金额一致"
+           },
+           {
+            "from": "money_server_confirm",
+            "to": "money_failed",
+            "condition": "验签失败或金额不符"
+           },
+           {
+            "from": "money_credit_booking",
+            "to": "money_refund_review",
+            "condition": "玩家符合退款规则取消"
+           },
+           {
+            "from": "money_refund_review",
+            "to": "money_refund_execute",
+            "condition": "同意退款"
+           },
+           {
+            "from": "money_refund_review",
+            "to": "money_credit_booking",
+            "condition": "不符合退款规则退回"
+           }
+          ]
+         },
+         {
+          "id": "script_governance_chain",
+          "name": "剧本上架治理链",
+          "kind": "governance",
+          "nodes": [
+           {
+            "id": "gov_script_submit",
+            "name": "提交新剧本资料",
+            "assigneeRole": "dm_host",
+            "phase": "提交"
+           },
+           {
+            "id": "gov_content_review",
+            "name": "内容与禁忌审核",
+            "assigneeRole": "store_manager",
+            "phase": "审核"
+           },
+           {
+            "id": "gov_host_trial",
+            "name": "DM试讲试跑",
+            "assigneeRole": "dm_host",
+            "phase": "试跑"
+           },
+           {
+            "id": "gov_shelf_approve",
+            "name": "批准上架排期",
+            "assigneeRole": "store_manager",
+            "phase": "上架"
+           },
+           {
+            "id": "gov_script_rejected",
+            "name": "驳回补充资料",
+            "assigneeRole": "dm_host",
+            "phase": "上架"
+           }
+          ],
+          "transitions": [
+           {
+            "from": "gov_script_submit",
+            "to": "gov_content_review",
+            "condition": "资料完整"
+           },
+           {
+            "from": "gov_content_review",
+            "to": "gov_host_trial",
+            "condition": "内容通过"
+           },
+           {
+            "from": "gov_content_review",
+            "to": "gov_script_rejected",
+            "condition": "内容风险或资料缺失"
+           },
+           {
+            "from": "gov_script_rejected",
+            "to": "gov_script_submit",
+            "condition": "补充后重新提交"
+           },
+           {
+            "from": "gov_host_trial",
+            "to": "gov_shelf_approve",
+            "condition": "试跑达标"
+           },
+           {
+            "from": "gov_host_trial",
+            "to": "gov_script_rejected",
+            "condition": "试跑体验不达标"
+           }
+          ]
+         },
+         {
+          "id": "carpool_recovery_chain",
+          "name": "拼车失败补偿链",
+          "kind": "recovery",
+          "nodes": [
+           {
+            "id": "rec_detect_gap",
+            "name": "检测人数缺口",
+            "assigneeRole": "ai_operator",
+            "phase": "识别"
+           },
+           {
+            "id": "rec_generate_candidates",
+            "name": "生成候补名单",
+            "assigneeRole": "ai_operator",
+            "phase": "补位"
+           },
+           {
+            "id": "rec_invite_waitlist",
+            "name": "邀请候补补位",
+            "assigneeRole": "marketing",
+            "phase": "补位"
+           },
+           {
+            "id": "rec_restore_session",
+            "name": "恢复成局",
+            "assigneeRole": "scheduler",
+            "phase": "恢复"
+           },
+           {
+            "id": "rec_cancel_and_refund",
+            "name": "取消并触发退款",
+            "assigneeRole": "store_manager",
+            "phase": "恢复"
+           }
+          ],
+          "transitions": [
+           {
+            "from": "rec_detect_gap",
+            "to": "rec_generate_candidates",
+            "condition": "缺口小于等于2人"
+           },
+           {
+            "from": "rec_detect_gap",
+            "to": "rec_cancel_and_refund",
+            "condition": "缺口过大无法补位"
+           },
+           {
+            "from": "rec_generate_candidates",
+            "to": "rec_invite_waitlist",
+            "condition": "存在匹配候补"
+           },
+           {
+            "from": "rec_generate_candidates",
+            "to": "rec_cancel_and_refund",
+            "condition": "无匹配候补"
+           },
+           {
+            "from": "rec_invite_waitlist",
+            "to": "rec_restore_session",
+            "condition": "候补接受并付款"
+           },
+           {
+            "from": "rec_invite_waitlist",
+            "to": "rec_generate_candidates",
+            "condition": "候补拒绝继续生成"
+           },
+           {
+            "from": "rec_invite_waitlist",
+            "to": "rec_cancel_and_refund",
+            "condition": "截止前无人接受"
+           }
+          ]
+         }
+        ]
+       }
+      },
+      "page": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:page:llm-linkage-page",
+       "path": "skills/page/closure-evidence.json",
+       "artifactId": "llm-linkage-page",
+       "digest": "6f3f92be15d2c1c5",
+       "modelSection": {
+        "pages": [
+         {
+          "id": "page_session_kanban",
+          "name": "场次编排看板",
+          "kind": "kanban",
+          "statusField": "session.session_status",
+          "fieldBindings": [
+           "session.script_ref",
+           "session.store_room",
+           "session.host_ref",
+           "session.start_time",
+           "session.capacity",
+           "session.booked_count",
+           "session.seat_fill_rate",
+           "session.ticket_price",
+           "session.session_status",
+           "script.title",
+           "script.theme"
+          ],
+          "actionPermissions": [
+           "session:create",
+           "session:update",
+           "session:publish",
+           "session:cancel"
+          ],
+          "stats": [
+           {
+            "id": "stat_recruiting_sessions",
+            "name": "招募中场次",
+            "entity": "session",
+            "metric": "count",
+            "format": "number"
+           },
+           {
+            "id": "stat_avg_fill_rate",
+            "name": "平均满座率",
+            "entity": "session",
+            "metric": "avg:session.seat_fill_rate",
+            "format": "percent"
+           }
+          ],
+          "charts": []
+         },
+         {
+          "id": "page_session_calendar",
+          "name": "门店排期日历",
+          "kind": "calendar",
+          "dateField": "session.start_time",
+          "colorBy": "session.session_status",
+          "fieldBindings": [
+           "session.script_ref",
+           "session.store_room",
+           "session.host_ref",
+           "session.start_time",
+           "session.end_time",
+           "session.session_status",
+           "session.capacity"
+          ],
+          "actionPermissions": [
+           "session:create",
+           "session:update"
+          ],
+          "stats": [],
+          "charts": []
+         },
+         {
+          "id": "page_booking_workbench",
+          "name": "报名与到店工作台",
+          "kind": "workbench",
+          "fieldBindings": [
+           "booking.session_ref",
+           "booking.player_ref",
+           "booking.seat_role",
+           "booking.booking_status",
+           "booking.deposit_amount",
+           "booking.created_at",
+           "player.nickname",
+           "player.phone",
+           "player.experience_level",
+           "player.credit_score"
+          ],
+          "actionPermissions": [
+           "booking:create",
+           "booking:update",
+           "booking:checkin",
+           "payment:create"
+          ],
+          "stats": [],
+          "charts": []
+         },
+         {
+          "id": "page_carpool_workbench",
+          "name": "拼车组局工作台",
+          "kind": "workbench",
+          "fieldBindings": [
+           "carpool_group.session_ref",
+           "carpool_group.captain_player_ref",
+           "carpool_group.group_status",
+           "carpool_group.needed_players",
+           "carpool_group.match_plan",
+           "carpool_group.announcement_copy",
+           "booking.match_profile",
+           "player.preference_note"
+          ],
+          "actionPermissions": [
+           "carpool:manage",
+           "carpool:publish",
+           "aigc:run"
+          ],
+          "stats": [],
+          "charts": []
+         },
+         {
+          "id": "page_finance_dashboard",
+          "name": "定金收退看板",
+          "kind": "dashboard",
+          "fieldBindings": [
+           "payment.booking_ref",
+           "payment.amount",
+           "payment.payment_status",
+           "payment.gateway_trade_no",
+           "payment.paid_at",
+           "booking.booking_status"
+          ],
+          "actionPermissions": [
+           "payment:confirm",
+           "payment:refund",
+           "dashboard:view"
+          ],
+          "stats": [
+           {
+            "id": "stat_payment_count",
+            "name": "支付流水数",
+            "entity": "payment",
+            "metric": "count",
+            "format": "number"
+           },
+           {
+            "id": "stat_payment_amount",
+            "name": "收款总额",
+            "entity": "payment",
+            "metric": "sum:payment.amount",
+            "format": "money"
+           },
+           {
+            "id": "stat_booking_deposit",
+            "name": "报名定金总额",
+            "entity": "booking",
+            "metric": "sum:booking.deposit_amount",
+            "format": "money"
+           }
+          ],
+          "charts": [
+           {
+            "id": "chart_payment_status_share",
+            "name": "支付状态分布",
+            "type": "pie",
+            "dimension": "payment.payment_status",
+            "metric": "count"
+           },
+           {
+            "id": "chart_deposit_by_booking_status",
+            "name": "各报名状态定金",
+            "type": "bar",
+            "dimension": "booking.booking_status",
+            "metric": "sum:booking.deposit_amount"
+           }
+          ]
+         },
+         {
+          "id": "page_store_dashboard",
+          "name": "门店经营总览",
+          "kind": "dashboard",
+          "fieldBindings": [
+           "session.session_status",
+           "session.start_time",
+           "session.seat_fill_rate",
+           "session.ticket_price",
+           "carpool_group.group_status",
+           "script.difficulty",
+           "script.review_status"
+          ],
+          "actionPermissions": [
+           "dashboard:view",
+           "script:read"
+          ],
+          "stats": [
+           {
+            "id": "stat_total_sessions",
+            "name": "总场次数",
+            "entity": "session",
+            "metric": "count",
+            "format": "number"
+           },
+           {
+            "id": "stat_ticket_revenue_capacity",
+            "name": "票价规模",
+            "entity": "session",
+            "metric": "sum:session.ticket_price",
+            "format": "money"
+           },
+           {
+            "id": "stat_carpool_groups",
+            "name": "拼车组数",
+            "entity": "carpool_group",
+            "metric": "count",
+            "format": "number"
+           }
+          ],
+          "charts": [
+           {
+            "id": "chart_sessions_by_status",
+            "name": "场次状态分布",
+            "type": "bar",
+            "dimension": "session.session_status",
+            "metric": "count"
+           },
+           {
+            "id": "chart_carpool_by_status",
+            "name": "组局状态分布",
+            "type": "pie",
+            "dimension": "carpool_group.group_status",
+            "metric": "count"
+           }
+          ]
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:aigc:llm-linkage-aigc",
+       "path": "skills/aigc/closure-evidence.json",
+       "artifactId": "llm-linkage-aigc",
+       "digest": "c7c312869c975413",
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "cap_player_profile_extract",
+          "name": "玩家偏好画像提取",
+          "inputFields": [
+           "player.preference_note",
+           "player.experience_level",
+           "booking.seat_role"
+          ],
+          "outputField": "booking.match_profile",
+          "roleRefs": [
+           "ai_operator",
+           "marketing"
+          ]
+         },
+         {
+          "id": "cap_carpool_match_plan",
+          "name": "拼车补位方案生成",
+          "inputFields": [
+           "booking.match_profile",
+           "session.capacity",
+           "session.booked_count",
+           "carpool_group.needed_players"
+          ],
+          "outputField": "carpool_group.match_plan",
+          "roleRefs": [
+           "ai_operator",
+           "scheduler"
+          ]
+         },
+         {
+          "id": "cap_recruitment_copywrite",
+          "name": "组局招募文案生成",
+          "inputFields": [
+           "carpool_group.match_plan",
+           "script.title",
+           "script.theme",
+           "session.start_time"
+          ],
+          "outputField": "carpool_group.announcement_copy",
+          "roleRefs": [
+           "ai_operator",
+           "marketing"
+          ]
+         }
+        ],
+        "pipelines": [
+         {
+          "id": "pipeline_carpool_orchestration",
+          "name": "玩家画像到组局发布编排",
+          "steps": [
+           "cap_player_profile_extract",
+           "cap_carpool_match_plan",
+           "cap_recruitment_copywrite"
+          ]
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "evidencePresent": true,
+       "evidenceRef": "evidence:appbundle:llm-linkage-appbundle",
+       "path": "skills/appbundle/closure-evidence.json",
+       "artifactId": "llm-linkage-appbundle",
+       "digest": "5a2cdd96073191bc",
+       "modelSection": {
+        "pageBindings": [
+         {
+          "pageRef": "page_session_kanban",
+          "workflowRef": "session_lifecycle"
+         },
+         {
+          "pageRef": "page_session_calendar",
+          "workflowRef": "session_resource_check"
+         },
+         {
+          "pageRef": "page_booking_workbench",
+          "workflowRef": "session_seat_lock"
+         },
+         {
+          "pageRef": "page_carpool_workbench",
+          "workflowRef": "carpool_recovery_chain"
+         },
+         {
+          "pageRef": "page_finance_dashboard",
+          "workflowRef": "deposit_money_chain"
+         },
+         {
+          "pageRef": "page_store_dashboard",
+          "workflowRef": "session_close_review"
+         }
+        ],
+        "roleRefs": [
+         "store_manager",
+         "scheduler",
+         "dm_host",
+         "front_desk",
+         "finance",
+         "marketing",
+         "ai_operator"
+        ],
+        "dataModelRefs": [
+         "script",
+         "player",
+         "session",
+         "booking",
+         "carpool_group",
+         "payment"
+        ],
+        "invariants": [
+         {
+          "id": "approved_script_before_publish",
+          "statement": "场次发布招募前，关联剧本必须处于已上架审核状态。",
+          "systems": [
+           "datamodel",
+           "workflow",
+           "page"
+          ],
+          "refs": [
+           "script.review_status",
+           "session.script_ref",
+           "session_publish_recruiting",
+           "session:publish"
+          ]
+         },
+         {
+          "id": "room_host_conflict_checked",
+          "statement": "同一房间和同一DM在重叠时间内不得存在两个未取消场次，必须先经过资源校验节点。",
+          "systems": [
+           "datamodel",
+           "workflow"
+          ],
+          "refs": [
+           "session.store_room",
+           "session.host_ref",
+           "session.start_time",
+           "session.end_time",
+           "session_resource_check"
+          ]
+         },
+         {
+          "id": "server_callback_controls_payment_status",
+          "statement": "支付状态只能由服务端验签确认或退款执行节点变更，前台不得手工标记已确认。",
+          "systems": [
+           "datamodel",
+           "rbac",
+           "workflow"
+          ],
+          "refs": [
+           "payment.payment_status",
+           "money_server_confirm",
+           "money_refund_execute",
+           "payment:confirm"
+          ]
+         },
+         {
+          "id": "deposit_confirmed_before_seat_lock",
+          "statement": "锁车成局前所有已占位报名必须存在已确认支付流水或被转入候补。",
+          "systems": [
+           "datamodel",
+           "workflow"
+          ],
+          "refs": [
+           "booking.booking_status",
+           "payment.payment_status",
+           "session_seat_lock",
+           "money_credit_booking"
+          ]
+         },
+         {
+          "id": "carpool_ai_output_requires_human_publish",
+          "statement": "AI生成的补位方案和招募文案必须由运营确认后才可发布到玩家群。",
+          "systems": [
+           "datamodel",
+           "rbac",
+           "workflow",
+           "aigc"
+          ],
+          "refs": [
+           "carpool_group.match_plan",
+           "carpool_group.announcement_copy",
+           "cap_carpool_match_plan",
+           "cap_recruitment_copywrite",
+           "carpool:publish",
+           "marketing"
+          ]
+         },
+         {
+          "id": "refund_only_after_cancel_or_rule_review",
+          "statement": "退款只能在玩家取消且通过退款审核后执行，或在拼车失败取消链路触发后执行。",
+          "systems": [
+           "datamodel",
+           "workflow",
+           "rbac"
+          ],
+          "refs": [
+           "booking.booking_status",
+           "payment.payment_status",
+           "money_refund_review",
+           "rec_cancel_and_refund",
+           "payment:refund"
+          ]
+         },
+         {
+          "id": "masked_player_phone_on_pages",
+          "statement": "玩家手机号在所有报名和组局页面必须以脱敏字段展示，不得作为AI输出内容生成。",
+          "systems": [
+           "datamodel",
+           "page",
+           "aigc"
+          ],
+          "refs": [
+           "player.phone",
+           "page_booking_workbench",
+           "page_carpool_workbench",
+           "cap_player_profile_extract"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "blocked": false,
+     "blockers": [],
+     "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+     "closureHash": "8b17b34e",
+     "stableDigest": "798a3da5",
+     "findingsByTier": {
+      "hard_blocker": [],
+      "warning": [],
+      "info": []
+     }
+    },
+    "roleId": "appbundle",
+    "ledgerEntryId": "trust-ledger-art-0-appbundle.runtimeClosure",
+    "timing": {
+     "durationMs": 160473
+    },
+    "error": null
+   }
+  ],
+  "coverageGaps": [
+   {
+    "id": "gap-evidence.search-turn-1",
+    "kind": "missing_capability",
+    "label": "Missing required capability: evidence.search",
+    "requiredCapabilityId": "evidence.search",
+    "status": "resolved",
+    "createdAt": "2026-07-16T01:40:17.677211"
+   },
+   {
+    "id": "gap-evidence-turn-1",
+    "kind": "missing_evidence",
+    "label": "Missing grounded external evidence (G-GROUND)",
+    "requiredCapabilityId": null,
+    "status": "resolved",
+    "createdAt": "2026-07-16T01:40:17.677211"
+   }
+  ],
+  "coverageContract": {
+   "id": "cov-turn-1",
+   "version": 1,
+   "mode": "simple",
+   "requiredCapabilities": [
+    "evidence.search",
+    "report.write"
+   ],
+   "minEvidencePerRequirement": 1,
+   "blockingGapIds": [
+    "gap-evidence.search-turn-1",
+    "gap-evidence-turn-1"
+   ]
+  },
+  "coverageGate": null,
+  "graph": {
+   "nodes": [],
+   "edges": []
+  },
+  "staleArtifactIds": [],
+  "supersededArtifactIds": [],
+  "conversation": [],
+  "openQuestions": [],
+  "evidence": [],
+  "decisions": [],
+  "risks": [],
+  "gates": [],
+  "dependencyGraph": [
+   {
+    "fromArtifactId": "art-0-evidence.search",
+    "toArtifactId": "art-0-intent.clarify",
+    "reason": "execution-chain"
+   },
+   {
+    "fromArtifactId": "art-0-intent.clarify",
+    "toArtifactId": "art-0-route.generate",
+    "reason": "execution-chain"
+   },
+   {
+    "fromArtifactId": "art-0-route.generate",
+    "toArtifactId": "art-0-risk.analyze",
+    "reason": "execution-chain"
+   },
+   {
+    "fromArtifactId": "art-0-risk.analyze",
+    "toArtifactId": "art-0-appbundle.runtimeClosure",
+    "reason": "execution-chain"
+   }
+  ],
+  "runtimePhase": "done",
+  "awaitReason": null,
+  "awaitDetail": null,
+  "lastTurnId": "turn-1",
+  "deliveryPhase": null,
+  "roleMode": null,
+  "decisionLedger": [],
+  "costLedger": [],
+  "flowBoundaryLedger": [],
+  "structureGateLedger": [],
+  "sessionReplayLog": [],
+  "reasoningEvents": [],
+  "turnNarrations": [],
+  "currentFocus": null,
+  "userIntervention": null,
+  "brainstormDegraded": false,
+  "escalated": false,
+  "projectionDirtyNodeIds": [],
+  "publishClosure": {
+   "blocked": false,
+   "blockerCount": 0,
+   "evidencePresentCount": 6,
+   "skillCount": 6,
+   "versionPinsChecked": true,
+   "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+   "closureHash": "8b17b34e",
+   "stableDigest": "798a3da5",
+   "tierCounts": {
+    "hard_blocker": 0,
+    "warning": 0,
+    "info": 0
+   },
+   "perSkillEvidence": {
+    "datamodel": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:datamodel:llm-linkage-datamodel",
+     "path": "skills/datamodel/closure-evidence.json",
+     "artifactId": "llm-linkage-datamodel",
+     "digest": "5b03ca8344295e4c",
+     "modelSection": {
+      "entities": [
+       {
+        "id": "script",
+        "name": "剧本",
+        "fields": [
+         {
+          "id": "title",
+          "name": "剧本名称",
+          "type": "string"
+         },
+         {
+          "id": "theme",
+          "name": "题材",
+          "type": "enum",
+          "options": [
+           {
+            "id": "benge",
+            "label": "本格",
+            "tone": "default"
+           },
+           {
+            "id": "qinggan",
+            "label": "情感",
+            "tone": "processing"
+           },
+           {
+            "id": "kongbu",
+            "label": "恐怖",
+            "tone": "danger"
+           },
+           {
+            "id": "huanle",
+            "label": "欢乐",
+            "tone": "success"
+           }
+          ]
+         },
+         {
+          "id": "player_count",
+          "name": "标准人数",
+          "type": "number"
+         },
+         {
+          "id": "duration_hours",
+          "name": "时长小时",
+          "type": "number"
+         },
+         {
+          "id": "difficulty",
+          "name": "难度",
+          "type": "enum",
+          "options": [
+           {
+            "id": "easy",
+            "label": "新手",
+            "tone": "success"
+           },
+           {
+            "id": "medium",
+            "label": "进阶",
+            "tone": "processing"
+           },
+           {
+            "id": "hard",
+            "label": "硬核",
+            "tone": "warning"
+           }
+          ]
+         },
+         {
+          "id": "review_status",
+          "name": "上架审核状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "draft",
+            "label": "草稿",
+            "tone": "default"
+           },
+           {
+            "id": "pending",
+            "label": "待审核",
+            "tone": "warning"
+           },
+           {
+            "id": "approved",
+            "label": "已上架",
+            "tone": "success"
+           },
+           {
+            "id": "rejected",
+            "label": "已驳回",
+            "tone": "danger"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "id": "player",
+        "name": "玩家",
+        "fields": [
+         {
+          "id": "nickname",
+          "name": "昵称",
+          "type": "string"
+         },
+         {
+          "id": "phone",
+          "name": "手机号",
+          "type": "string",
+          "format": "masked"
+         },
+         {
+          "id": "experience_level",
+          "name": "经验等级",
+          "type": "enum",
+          "options": [
+           {
+            "id": "newbie",
+            "label": "新手",
+            "tone": "success"
+           },
+           {
+            "id": "regular",
+            "label": "熟客",
+            "tone": "processing"
+           },
+           {
+            "id": "expert",
+            "label": "硬核玩家",
+            "tone": "warning"
+           }
+          ]
+         },
+         {
+          "id": "preference_note",
+          "name": "偏好备注",
+          "type": "string"
+         },
+         {
+          "id": "credit_score",
+          "name": "履约分",
+          "type": "number",
+          "format": "score"
+         }
+        ]
+       },
+       {
+        "id": "session",
+        "name": "门店场次",
+        "fields": [
+         {
+          "id": "script_ref",
+          "name": "剧本",
+          "type": "ref"
+         },
+         {
+          "id": "store_room",
+          "name": "房间",
+          "type": "string"
+         },
+         {
+          "id": "host_ref",
+          "name": "DM主持",
+          "type": "ref"
+         },
+         {
+          "id": "start_time",
+          "name": "开场时间",
+          "type": "date"
+         },
+         {
+          "id": "end_time",
+          "name": "结束时间",
+          "type": "date"
+         },
+         {
+          "id": "capacity",
+          "name": "可容纳人数",
+          "type": "number"
+         },
+         {
+          "id": "booked_count",
+          "name": "已报名人数",
+          "type": "number"
+         },
+         {
+          "id": "seat_fill_rate",
+          "name": "满座率",
+          "type": "number",
+          "format": "percent"
+         },
+         {
+          "id": "ticket_price",
+          "name": "单人票价",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "session_status",
+          "name": "场次状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "draft",
+            "label": "草稿排期",
+            "tone": "default"
+           },
+           {
+            "id": "recruiting",
+            "label": "招募中",
+            "tone": "processing"
+           },
+           {
+            "id": "locked",
+            "label": "已成局",
+            "tone": "success"
+           },
+           {
+            "id": "playing",
+            "label": "进行中",
+            "tone": "processing"
+           },
+           {
+            "id": "completed",
+            "label": "已复盘",
+            "tone": "success"
+           },
+           {
+            "id": "cancelled",
+            "label": "已取消",
+            "tone": "danger"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "id": "booking",
+        "name": "报名订单",
+        "fields": [
+         {
+          "id": "session_ref",
+          "name": "场次",
+          "type": "ref"
+         },
+         {
+          "id": "player_ref",
+          "name": "玩家",
+          "type": "ref"
+         },
+         {
+          "id": "seat_role",
+          "name": "角色席位",
+          "type": "string"
+         },
+         {
+          "id": "booking_status",
+          "name": "报名状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "reserved",
+            "label": "已占位",
+            "tone": "warning"
+           },
+           {
+            "id": "paid",
+            "label": "已付款",
+            "tone": "success"
+           },
+           {
+            "id": "waitlisted",
+            "label": "候补中",
+            "tone": "processing"
+           },
+           {
+            "id": "checked_in",
+            "label": "已到店",
+            "tone": "success"
+           },
+           {
+            "id": "cancelled",
+            "label": "已取消",
+            "tone": "danger"
+           }
+          ]
+         },
+         {
+          "id": "deposit_amount",
+          "name": "定金金额",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "match_profile",
+          "name": "组局画像",
+          "type": "string"
+         },
+         {
+          "id": "created_at",
+          "name": "报名时间",
+          "type": "date"
+         }
+        ]
+       },
+       {
+        "id": "carpool_group",
+        "name": "拼车组局",
+        "fields": [
+         {
+          "id": "session_ref",
+          "name": "关联场次",
+          "type": "ref"
+         },
+         {
+          "id": "captain_player_ref",
+          "name": "车头玩家",
+          "type": "ref"
+         },
+         {
+          "id": "group_status",
+          "name": "组局状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "forming",
+            "label": "组局中",
+            "tone": "processing"
+           },
+           {
+            "id": "almost_full",
+            "label": "即将满车",
+            "tone": "warning"
+           },
+           {
+            "id": "confirmed",
+            "label": "已成车",
+            "tone": "success"
+           },
+           {
+            "id": "failed",
+            "label": "组局失败",
+            "tone": "danger"
+           }
+          ]
+         },
+         {
+          "id": "needed_players",
+          "name": "缺口人数",
+          "type": "number"
+         },
+         {
+          "id": "match_plan",
+          "name": "智能补位方案",
+          "type": "string"
+         },
+         {
+          "id": "announcement_copy",
+          "name": "招募文案",
+          "type": "string"
+         }
+        ]
+       },
+       {
+        "id": "payment",
+        "name": "支付流水",
+        "fields": [
+         {
+          "id": "booking_ref",
+          "name": "报名订单",
+          "type": "ref"
+         },
+         {
+          "id": "amount",
+          "name": "支付金额",
+          "type": "number",
+          "format": "money"
+         },
+         {
+          "id": "payment_status",
+          "name": "支付状态",
+          "type": "enum",
+          "options": [
+           {
+            "id": "created",
+            "label": "待支付",
+            "tone": "warning"
+           },
+           {
+            "id": "confirmed",
+            "label": "已确认",
+            "tone": "success"
+           },
+           {
+            "id": "refunding",
+            "label": "退款中",
+            "tone": "processing"
+           },
+           {
+            "id": "refunded",
+            "label": "已退款",
+            "tone": "success"
+           },
+           {
+            "id": "failed",
+            "label": "支付失败",
+            "tone": "danger"
+           }
+          ]
+         },
+         {
+          "id": "gateway_trade_no",
+          "name": "渠道交易号",
+          "type": "string"
+         },
+         {
+          "id": "paid_at",
+          "name": "支付时间",
+          "type": "date"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "rbac": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:rbac:llm-linkage-rbac",
+     "path": "skills/rbac/closure-evidence.json",
+     "artifactId": "llm-linkage-rbac",
+     "digest": "522fe6a69e34fc20",
+     "modelSection": {
+      "roles": [
+       "store_manager",
+       "scheduler",
+       "dm_host",
+       "front_desk",
+       "finance",
+       "marketing",
+       "ai_operator"
+      ],
+      "permissions": [
+       "script:review",
+       "script:read",
+       "session:create",
+       "session:update",
+       "session:publish",
+       "session:cancel",
+       "booking:create",
+       "booking:update",
+       "booking:checkin",
+       "carpool:manage",
+       "carpool:publish",
+       "payment:create",
+       "payment:confirm",
+       "payment:refund",
+       "dashboard:view",
+       "aigc:run"
+      ],
+      "menus": [
+       {
+        "id": "menu_script_library",
+        "label": "剧本库审核",
+        "roleRefs": [
+         "store_manager",
+         "dm_host"
+        ],
+        "permissionRefs": [
+         "script:read",
+         "script:review"
+        ]
+       },
+       {
+        "id": "menu_session_schedule",
+        "label": "场次排期",
+        "roleRefs": [
+         "scheduler",
+         "store_manager"
+        ],
+        "permissionRefs": [
+         "session:create",
+         "session:update",
+         "session:publish",
+         "session:cancel",
+         "script:read"
+        ]
+       },
+       {
+        "id": "menu_booking_frontdesk",
+        "label": "报名与到店",
+        "roleRefs": [
+         "front_desk",
+         "dm_host"
+        ],
+        "permissionRefs": [
+         "booking:create",
+         "booking:update",
+         "booking:checkin"
+        ]
+       },
+       {
+        "id": "menu_carpool_ops",
+        "label": "拼车组局运营",
+        "roleRefs": [
+         "marketing",
+         "ai_operator",
+         "scheduler"
+        ],
+        "permissionRefs": [
+         "carpool:manage",
+         "carpool:publish",
+         "aigc:run"
+        ]
+       },
+       {
+        "id": "menu_finance_counter",
+        "label": "收款退款",
+        "roleRefs": [
+         "finance",
+         "front_desk"
+        ],
+        "permissionRefs": [
+         "payment:create",
+         "payment:confirm",
+         "payment:refund"
+        ]
+       },
+       {
+        "id": "menu_store_dashboard",
+        "label": "经营看板",
+        "roleRefs": [
+         "store_manager",
+         "finance"
+        ],
+        "permissionRefs": [
+         "dashboard:view"
+        ]
+       }
+      ]
+     }
+    },
+    "workflow": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:workflow:llm-linkage-workflow",
+     "path": "skills/workflow/closure-evidence.json",
+     "artifactId": "llm-linkage-workflow",
+     "digest": "2b54e8a4fd79e59f",
+     "modelSection": {
+      "id": "session_lifecycle",
+      "name": "门店场次生命周期",
+      "nodes": [
+       {
+        "id": "session_draft",
+        "name": "创建草稿排期",
+        "assigneeRole": "scheduler",
+        "phase": "筹备"
+       },
+       {
+        "id": "session_resource_check",
+        "name": "校验剧本房间与DM",
+        "assigneeRole": "scheduler",
+        "phase": "筹备"
+       },
+       {
+        "id": "session_publish_recruiting",
+        "name": "发布招募",
+        "assigneeRole": "marketing",
+        "phase": "招募"
+       },
+       {
+        "id": "session_seat_lock",
+        "name": "人数达标锁车",
+        "assigneeRole": "front_desk",
+        "phase": "招募"
+       },
+       {
+        "id": "session_host_prepare",
+        "name": "DM开局准备",
+        "assigneeRole": "dm_host",
+        "phase": "开局"
+       },
+       {
+        "id": "session_playing",
+        "name": "门店开局进行",
+        "assigneeRole": "dm_host",
+        "phase": "开局"
+       },
+       {
+        "id": "session_close_review",
+        "name": "复盘归档",
+        "assigneeRole": "store_manager",
+        "phase": "复盘"
+       },
+       {
+        "id": "session_cancelled",
+        "name": "取消场次",
+        "assigneeRole": "store_manager",
+        "phase": "复盘"
+       }
+      ],
+      "transitions": [
+       {
+        "from": "session_draft",
+        "to": "session_resource_check",
+        "condition": "提交排期"
+       },
+       {
+        "from": "session_resource_check",
+        "to": "session_publish_recruiting",
+        "condition": "资源可用"
+       },
+       {
+        "from": "session_resource_check",
+        "to": "session_draft",
+        "condition": "剧本房间或DM冲突退回修改"
+       },
+       {
+        "from": "session_publish_recruiting",
+        "to": "session_seat_lock",
+        "condition": "报名人数达到开局线"
+       },
+       {
+        "from": "session_publish_recruiting",
+        "to": "session_cancelled",
+        "condition": "开场前仍未成局"
+       },
+       {
+        "from": "session_seat_lock",
+        "to": "session_host_prepare",
+        "condition": "定金全部确认"
+       },
+       {
+        "from": "session_seat_lock",
+        "to": "session_publish_recruiting",
+        "condition": "玩家取消导致人数不足"
+       },
+       {
+        "from": "session_host_prepare",
+        "to": "session_playing",
+        "condition": "玩家到齐"
+       },
+       {
+        "from": "session_host_prepare",
+        "to": "session_cancelled",
+        "condition": "临场缺席无法补位"
+       },
+       {
+        "from": "session_playing",
+        "to": "session_close_review",
+        "condition": "游戏结束"
+       }
+      ],
+      "chains": [
+       {
+        "id": "deposit_money_chain",
+        "name": "报名定金收退链",
+        "kind": "money",
+        "nodes": [
+         {
+          "id": "money_create_payment",
+          "name": "生成报名支付单",
+          "assigneeRole": "front_desk",
+          "phase": "下单"
+         },
+         {
+          "id": "money_wait_gateway",
+          "name": "等待玩家支付",
+          "assigneeRole": "front_desk",
+          "phase": "下单"
+         },
+         {
+          "id": "money_server_confirm",
+          "name": "服务端验签确认",
+          "assigneeRole": "finance",
+          "phase": "确认"
+         },
+         {
+          "id": "money_credit_booking",
+          "name": "写入报名已付款",
+          "assigneeRole": "finance",
+          "phase": "确认"
+         },
+         {
+          "id": "money_refund_review",
+          "name": "退款审核",
+          "assigneeRole": "store_manager",
+          "phase": "退款"
+         },
+         {
+          "id": "money_refund_execute",
+          "name": "执行原路退款",
+          "assigneeRole": "finance",
+          "phase": "退款"
+         },
+         {
+          "id": "money_failed",
+          "name": "支付失败关闭",
+          "assigneeRole": "finance",
+          "phase": "退款"
+         }
+        ],
+        "transitions": [
+         {
+          "from": "money_create_payment",
+          "to": "money_wait_gateway",
+          "condition": "支付单创建成功"
+         },
+         {
+          "from": "money_wait_gateway",
+          "to": "money_server_confirm",
+          "condition": "收到渠道回调"
+         },
+         {
+          "from": "money_wait_gateway",
+          "to": "money_failed",
+          "condition": "超时未支付"
+         },
+         {
+          "from": "money_server_confirm",
+          "to": "money_credit_booking",
+          "condition": "验签金额一致"
+         },
+         {
+          "from": "money_server_confirm",
+          "to": "money_failed",
+          "condition": "验签失败或金额不符"
+         },
+         {
+          "from": "money_credit_booking",
+          "to": "money_refund_review",
+          "condition": "玩家符合退款规则取消"
+         },
+         {
+          "from": "money_refund_review",
+          "to": "money_refund_execute",
+          "condition": "同意退款"
+         },
+         {
+          "from": "money_refund_review",
+          "to": "money_credit_booking",
+          "condition": "不符合退款规则退回"
+         }
+        ]
+       },
+       {
+        "id": "script_governance_chain",
+        "name": "剧本上架治理链",
+        "kind": "governance",
+        "nodes": [
+         {
+          "id": "gov_script_submit",
+          "name": "提交新剧本资料",
+          "assigneeRole": "dm_host",
+          "phase": "提交"
+         },
+         {
+          "id": "gov_content_review",
+          "name": "内容与禁忌审核",
+          "assigneeRole": "store_manager",
+          "phase": "审核"
+         },
+         {
+          "id": "gov_host_trial",
+          "name": "DM试讲试跑",
+          "assigneeRole": "dm_host",
+          "phase": "试跑"
+         },
+         {
+          "id": "gov_shelf_approve",
+          "name": "批准上架排期",
+          "assigneeRole": "store_manager",
+          "phase": "上架"
+         },
+         {
+          "id": "gov_script_rejected",
+          "name": "驳回补充资料",
+          "assigneeRole": "dm_host",
+          "phase": "上架"
+         }
+        ],
+        "transitions": [
+         {
+          "from": "gov_script_submit",
+          "to": "gov_content_review",
+          "condition": "资料完整"
+         },
+         {
+          "from": "gov_content_review",
+          "to": "gov_host_trial",
+          "condition": "内容通过"
+         },
+         {
+          "from": "gov_content_review",
+          "to": "gov_script_rejected",
+          "condition": "内容风险或资料缺失"
+         },
+         {
+          "from": "gov_script_rejected",
+          "to": "gov_script_submit",
+          "condition": "补充后重新提交"
+         },
+         {
+          "from": "gov_host_trial",
+          "to": "gov_shelf_approve",
+          "condition": "试跑达标"
+         },
+         {
+          "from": "gov_host_trial",
+          "to": "gov_script_rejected",
+          "condition": "试跑体验不达标"
+         }
+        ]
+       },
+       {
+        "id": "carpool_recovery_chain",
+        "name": "拼车失败补偿链",
+        "kind": "recovery",
+        "nodes": [
+         {
+          "id": "rec_detect_gap",
+          "name": "检测人数缺口",
+          "assigneeRole": "ai_operator",
+          "phase": "识别"
+         },
+         {
+          "id": "rec_generate_candidates",
+          "name": "生成候补名单",
+          "assigneeRole": "ai_operator",
+          "phase": "补位"
+         },
+         {
+          "id": "rec_invite_waitlist",
+          "name": "邀请候补补位",
+          "assigneeRole": "marketing",
+          "phase": "补位"
+         },
+         {
+          "id": "rec_restore_session",
+          "name": "恢复成局",
+          "assigneeRole": "scheduler",
+          "phase": "恢复"
+         },
+         {
+          "id": "rec_cancel_and_refund",
+          "name": "取消并触发退款",
+          "assigneeRole": "store_manager",
+          "phase": "恢复"
+         }
+        ],
+        "transitions": [
+         {
+          "from": "rec_detect_gap",
+          "to": "rec_generate_candidates",
+          "condition": "缺口小于等于2人"
+         },
+         {
+          "from": "rec_detect_gap",
+          "to": "rec_cancel_and_refund",
+          "condition": "缺口过大无法补位"
+         },
+         {
+          "from": "rec_generate_candidates",
+          "to": "rec_invite_waitlist",
+          "condition": "存在匹配候补"
+         },
+         {
+          "from": "rec_generate_candidates",
+          "to": "rec_cancel_and_refund",
+          "condition": "无匹配候补"
+         },
+         {
+          "from": "rec_invite_waitlist",
+          "to": "rec_restore_session",
+          "condition": "候补接受并付款"
+         },
+         {
+          "from": "rec_invite_waitlist",
+          "to": "rec_generate_candidates",
+          "condition": "候补拒绝继续生成"
+         },
+         {
+          "from": "rec_invite_waitlist",
+          "to": "rec_cancel_and_refund",
+          "condition": "截止前无人接受"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "page": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:page:llm-linkage-page",
+     "path": "skills/page/closure-evidence.json",
+     "artifactId": "llm-linkage-page",
+     "digest": "6f3f92be15d2c1c5",
+     "modelSection": {
+      "pages": [
+       {
+        "id": "page_session_kanban",
+        "name": "场次编排看板",
+        "kind": "kanban",
+        "statusField": "session.session_status",
+        "fieldBindings": [
+         "session.script_ref",
+         "session.store_room",
+         "session.host_ref",
+         "session.start_time",
+         "session.capacity",
+         "session.booked_count",
+         "session.seat_fill_rate",
+         "session.ticket_price",
+         "session.session_status",
+         "script.title",
+         "script.theme"
+        ],
+        "actionPermissions": [
+         "session:create",
+         "session:update",
+         "session:publish",
+         "session:cancel"
+        ],
+        "stats": [
+         {
+          "id": "stat_recruiting_sessions",
+          "name": "招募中场次",
+          "entity": "session",
+          "metric": "count",
+          "format": "number"
+         },
+         {
+          "id": "stat_avg_fill_rate",
+          "name": "平均满座率",
+          "entity": "session",
+          "metric": "avg:session.seat_fill_rate",
+          "format": "percent"
+         }
+        ],
+        "charts": []
+       },
+       {
+        "id": "page_session_calendar",
+        "name": "门店排期日历",
+        "kind": "calendar",
+        "dateField": "session.start_time",
+        "colorBy": "session.session_status",
+        "fieldBindings": [
+         "session.script_ref",
+         "session.store_room",
+         "session.host_ref",
+         "session.start_time",
+         "session.end_time",
+         "session.session_status",
+         "session.capacity"
+        ],
+        "actionPermissions": [
+         "session:create",
+         "session:update"
+        ],
+        "stats": [],
+        "charts": []
+       },
+       {
+        "id": "page_booking_workbench",
+        "name": "报名与到店工作台",
+        "kind": "workbench",
+        "fieldBindings": [
+         "booking.session_ref",
+         "booking.player_ref",
+         "booking.seat_role",
+         "booking.booking_status",
+         "booking.deposit_amount",
+         "booking.created_at",
+         "player.nickname",
+         "player.phone",
+         "player.experience_level",
+         "player.credit_score"
+        ],
+        "actionPermissions": [
+         "booking:create",
+         "booking:update",
+         "booking:checkin",
+         "payment:create"
+        ],
+        "stats": [],
+        "charts": []
+       },
+       {
+        "id": "page_carpool_workbench",
+        "name": "拼车组局工作台",
+        "kind": "workbench",
+        "fieldBindings": [
+         "carpool_group.session_ref",
+         "carpool_group.captain_player_ref",
+         "carpool_group.group_status",
+         "carpool_group.needed_players",
+         "carpool_group.match_plan",
+         "carpool_group.announcement_copy",
+         "booking.match_profile",
+         "player.preference_note"
+        ],
+        "actionPermissions": [
+         "carpool:manage",
+         "carpool:publish",
+         "aigc:run"
+        ],
+        "stats": [],
+        "charts": []
+       },
+       {
+        "id": "page_finance_dashboard",
+        "name": "定金收退看板",
+        "kind": "dashboard",
+        "fieldBindings": [
+         "payment.booking_ref",
+         "payment.amount",
+         "payment.payment_status",
+         "payment.gateway_trade_no",
+         "payment.paid_at",
+         "booking.booking_status"
+        ],
+        "actionPermissions": [
+         "payment:confirm",
+         "payment:refund",
+         "dashboard:view"
+        ],
+        "stats": [
+         {
+          "id": "stat_payment_count",
+          "name": "支付流水数",
+          "entity": "payment",
+          "metric": "count",
+          "format": "number"
+         },
+         {
+          "id": "stat_payment_amount",
+          "name": "收款总额",
+          "entity": "payment",
+          "metric": "sum:payment.amount",
+          "format": "money"
+         },
+         {
+          "id": "stat_booking_deposit",
+          "name": "报名定金总额",
+          "entity": "booking",
+          "metric": "sum:booking.deposit_amount",
+          "format": "money"
+         }
+        ],
+        "charts": [
+         {
+          "id": "chart_payment_status_share",
+          "name": "支付状态分布",
+          "type": "pie",
+          "dimension": "payment.payment_status",
+          "metric": "count"
+         },
+         {
+          "id": "chart_deposit_by_booking_status",
+          "name": "各报名状态定金",
+          "type": "bar",
+          "dimension": "booking.booking_status",
+          "metric": "sum:booking.deposit_amount"
+         }
+        ]
+       },
+       {
+        "id": "page_store_dashboard",
+        "name": "门店经营总览",
+        "kind": "dashboard",
+        "fieldBindings": [
+         "session.session_status",
+         "session.start_time",
+         "session.seat_fill_rate",
+         "session.ticket_price",
+         "carpool_group.group_status",
+         "script.difficulty",
+         "script.review_status"
+        ],
+        "actionPermissions": [
+         "dashboard:view",
+         "script:read"
+        ],
+        "stats": [
+         {
+          "id": "stat_total_sessions",
+          "name": "总场次数",
+          "entity": "session",
+          "metric": "count",
+          "format": "number"
+         },
+         {
+          "id": "stat_ticket_revenue_capacity",
+          "name": "票价规模",
+          "entity": "session",
+          "metric": "sum:session.ticket_price",
+          "format": "money"
+         },
+         {
+          "id": "stat_carpool_groups",
+          "name": "拼车组数",
+          "entity": "carpool_group",
+          "metric": "count",
+          "format": "number"
+         }
+        ],
+        "charts": [
+         {
+          "id": "chart_sessions_by_status",
+          "name": "场次状态分布",
+          "type": "bar",
+          "dimension": "session.session_status",
+          "metric": "count"
+         },
+         {
+          "id": "chart_carpool_by_status",
+          "name": "组局状态分布",
+          "type": "pie",
+          "dimension": "carpool_group.group_status",
+          "metric": "count"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "aigc": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:aigc:llm-linkage-aigc",
+     "path": "skills/aigc/closure-evidence.json",
+     "artifactId": "llm-linkage-aigc",
+     "digest": "c7c312869c975413",
+     "modelSection": {
+      "capabilities": [
+       {
+        "id": "cap_player_profile_extract",
+        "name": "玩家偏好画像提取",
+        "inputFields": [
+         "player.preference_note",
+         "player.experience_level",
+         "booking.seat_role"
+        ],
+        "outputField": "booking.match_profile",
+        "roleRefs": [
+         "ai_operator",
+         "marketing"
+        ]
+       },
+       {
+        "id": "cap_carpool_match_plan",
+        "name": "拼车补位方案生成",
+        "inputFields": [
+         "booking.match_profile",
+         "session.capacity",
+         "session.booked_count",
+         "carpool_group.needed_players"
+        ],
+        "outputField": "carpool_group.match_plan",
+        "roleRefs": [
+         "ai_operator",
+         "scheduler"
+        ]
+       },
+       {
+        "id": "cap_recruitment_copywrite",
+        "name": "组局招募文案生成",
+        "inputFields": [
+         "carpool_group.match_plan",
+         "script.title",
+         "script.theme",
+         "session.start_time"
+        ],
+        "outputField": "carpool_group.announcement_copy",
+        "roleRefs": [
+         "ai_operator",
+         "marketing"
+        ]
+       }
+      ],
+      "pipelines": [
+       {
+        "id": "pipeline_carpool_orchestration",
+        "name": "玩家画像到组局发布编排",
+        "steps": [
+         "cap_player_profile_extract",
+         "cap_carpool_match_plan",
+         "cap_recruitment_copywrite"
+        ]
+       }
+      ]
+     }
+    },
+    "appbundle": {
+     "evidencePresent": true,
+     "evidenceRef": "evidence:appbundle:llm-linkage-appbundle",
+     "path": "skills/appbundle/closure-evidence.json",
+     "artifactId": "llm-linkage-appbundle",
+     "digest": "5a2cdd96073191bc",
+     "modelSection": {
+      "pageBindings": [
+       {
+        "pageRef": "page_session_kanban",
+        "workflowRef": "session_lifecycle"
+       },
+       {
+        "pageRef": "page_session_calendar",
+        "workflowRef": "session_resource_check"
+       },
+       {
+        "pageRef": "page_booking_workbench",
+        "workflowRef": "session_seat_lock"
+       },
+       {
+        "pageRef": "page_carpool_workbench",
+        "workflowRef": "carpool_recovery_chain"
+       },
+       {
+        "pageRef": "page_finance_dashboard",
+        "workflowRef": "deposit_money_chain"
+       },
+       {
+        "pageRef": "page_store_dashboard",
+        "workflowRef": "session_close_review"
+       }
+      ],
+      "roleRefs": [
+       "store_manager",
+       "scheduler",
+       "dm_host",
+       "front_desk",
+       "finance",
+       "marketing",
+       "ai_operator"
+      ],
+      "dataModelRefs": [
+       "script",
+       "player",
+       "session",
+       "booking",
+       "carpool_group",
+       "payment"
+      ],
+      "invariants": [
+       {
+        "id": "approved_script_before_publish",
+        "statement": "场次发布招募前，关联剧本必须处于已上架审核状态。",
+        "systems": [
+         "datamodel",
+         "workflow",
+         "page"
+        ],
+        "refs": [
+         "script.review_status",
+         "session.script_ref",
+         "session_publish_recruiting",
+         "session:publish"
+        ]
+       },
+       {
+        "id": "room_host_conflict_checked",
+        "statement": "同一房间和同一DM在重叠时间内不得存在两个未取消场次，必须先经过资源校验节点。",
+        "systems": [
+         "datamodel",
+         "workflow"
+        ],
+        "refs": [
+         "session.store_room",
+         "session.host_ref",
+         "session.start_time",
+         "session.end_time",
+         "session_resource_check"
+        ]
+       },
+       {
+        "id": "server_callback_controls_payment_status",
+        "statement": "支付状态只能由服务端验签确认或退款执行节点变更，前台不得手工标记已确认。",
+        "systems": [
+         "datamodel",
+         "rbac",
+         "workflow"
+        ],
+        "refs": [
+         "payment.payment_status",
+         "money_server_confirm",
+         "money_refund_execute",
+         "payment:confirm"
+        ]
+       },
+       {
+        "id": "deposit_confirmed_before_seat_lock",
+        "statement": "锁车成局前所有已占位报名必须存在已确认支付流水或被转入候补。",
+        "systems": [
+         "datamodel",
+         "workflow"
+        ],
+        "refs": [
+         "booking.booking_status",
+         "payment.payment_status",
+         "session_seat_lock",
+         "money_credit_booking"
+        ]
+       },
+       {
+        "id": "carpool_ai_output_requires_human_publish",
+        "statement": "AI生成的补位方案和招募文案必须由运营确认后才可发布到玩家群。",
+        "systems": [
+         "datamodel",
+         "rbac",
+         "workflow",
+         "aigc"
+        ],
+        "refs": [
+         "carpool_group.match_plan",
+         "carpool_group.announcement_copy",
+         "cap_carpool_match_plan",
+         "cap_recruitment_copywrite",
+         "carpool:publish",
+         "marketing"
+        ]
+       },
+       {
+        "id": "refund_only_after_cancel_or_rule_review",
+        "statement": "退款只能在玩家取消且通过退款审核后执行，或在拼车失败取消链路触发后执行。",
+        "systems": [
+         "datamodel",
+         "workflow",
+         "rbac"
+        ],
+        "refs": [
+         "booking.booking_status",
+         "payment.payment_status",
+         "money_refund_review",
+         "rec_cancel_and_refund",
+         "payment:refund"
+        ]
+       },
+       {
+        "id": "masked_player_phone_on_pages",
+        "statement": "玩家手机号在所有报名和组局页面必须以脱敏字段展示，不得作为AI输出内容生成。",
+        "systems": [
+         "datamodel",
+         "page",
+         "aigc"
+        ],
+        "refs": [
+         "player.phone",
+         "page_booking_workbench",
+         "page_carpool_workbench",
+         "cap_player_profile_extract"
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "topBlockers": [],
+   "chatSummary": "闭环结论：**closed**，证据 **6/6**。本轮已完成从业务意图、外部证据、五系统模型到风险分析的闭环推演。\n\n现在这个应用可定位为“剧本杀门店排场 + 报名成局 + 拼车组局”的运营系统：\n\n- **管数据**：维护剧本、玩家、门店场次、报名订单、拼车组局、支付流水等核心对象。\n- **跑流程**：支持从排期、报名、候补/满员、到店、成局、支付收退等运营流转。\n- **分角色协作**：门店管理、排期、DM、前台、财务、营销等角色按权限处理场次、订单、玩家和经营数据。\n- **看页面办事**：有场次编排看板、排期日历、报名到店工作台、拼车工作台、定金收退看板、经营总览。\n- **用 AI 辅助**：可提取玩家偏好画像、生成拼车补位方案和组局招募文案。\n\n关键风险与分歧：\n\n- 拼车涉及地址、时间、同行关系，存在隐私、位置与线下安全风险。\n- 定金、退款、爽约、拼车费用规则不清会引发交易纠纷。\n- 权限边界不清可能导致误改场次、泄露玩家信息或滥用数据。\n\n建议下一步：\n\n- 先明确拼车是玩家自发还是门店发布，并固化报名、候补、取消、成局、退款规则。\n- 优先补齐安全与风控设计：信息最小化、模糊地址、举报拉黑、操作日志、敏感权限审计。"
+  },
+  "skillRuntimeGraph": {
+   "edges": [
+    {
+     "sourceSkill": "datamodel",
+     "targetSkill": "rbac",
+     "state": "allowed",
+     "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+    },
+    {
+     "sourceSkill": "datamodel",
+     "targetSkill": "page",
+     "state": "allowed",
+     "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+    },
+    {
+     "sourceSkill": "rbac",
+     "targetSkill": "workflow",
+     "state": "allowed",
+     "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+    },
+    {
+     "sourceSkill": "workflow",
+     "targetSkill": "page",
+     "state": "allowed",
+     "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+    },
+    {
+     "sourceSkill": "page",
+     "targetSkill": "appbundle",
+     "state": "allowed",
+     "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+    },
+    {
+     "sourceSkill": "aigc",
+     "targetSkill": "appbundle",
+     "state": "allowed",
+     "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+    }
+   ],
+   "bySkill": {
+    "datamodel": [
+     {
+      "sourceSkill": "datamodel",
+      "targetSkill": "rbac",
+      "state": "allowed",
+      "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+     },
+     {
+      "sourceSkill": "datamodel",
+      "targetSkill": "page",
+      "state": "allowed",
+      "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+     }
+    ],
+    "rbac": [
+     {
+      "sourceSkill": "datamodel",
+      "targetSkill": "rbac",
+      "state": "allowed",
+      "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+     },
+     {
+      "sourceSkill": "rbac",
+      "targetSkill": "workflow",
+      "state": "allowed",
+      "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+     }
+    ],
+    "workflow": [
+     {
+      "sourceSkill": "rbac",
+      "targetSkill": "workflow",
+      "state": "allowed",
+      "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+     },
+     {
+      "sourceSkill": "workflow",
+      "targetSkill": "page",
+      "state": "allowed",
+      "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+     }
+    ],
+    "page": [
+     {
+      "sourceSkill": "datamodel",
+      "targetSkill": "page",
+      "state": "allowed",
+      "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+     },
+     {
+      "sourceSkill": "workflow",
+      "targetSkill": "page",
+      "state": "allowed",
+      "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+     },
+     {
+      "sourceSkill": "page",
+      "targetSkill": "appbundle",
+      "state": "allowed",
+      "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+     }
+    ],
+    "aigc": [
+     {
+      "sourceSkill": "aigc",
+      "targetSkill": "appbundle",
+      "state": "allowed",
+      "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+     }
+    ],
+    "appbundle": [
+     {
+      "sourceSkill": "page",
+      "targetSkill": "appbundle",
+      "state": "allowed",
+      "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+     },
+     {
+      "sourceSkill": "aigc",
+      "targetSkill": "appbundle",
+      "state": "allowed",
+      "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+     }
+    ]
+   },
+   "evidenceBySkill": {
+    "datamodel": [
+     "DM_RBAC_FIELD_POLICY_EVIDENCE",
+     "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+    ],
+    "rbac": [
+     "DM_RBAC_FIELD_POLICY_EVIDENCE",
+     "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+    ],
+    "workflow": [
+     "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE",
+     "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+    ],
+    "page": [
+     "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+     "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE",
+     "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+    ],
+    "aigc": [
+     "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+    ],
+    "appbundle": [
+     "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE",
+     "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+    ]
+   }
+  },
+  "sessionId": "pages-demo-scriptclub"
+ }
+}

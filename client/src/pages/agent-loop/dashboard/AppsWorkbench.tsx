@@ -260,18 +260,26 @@ export function AppsWorkbench() {
   React.useEffect(() => {
     let alive = true;
     if (IS_GITHUB_PAGES) {
-      // 静态演示（无后端）：画廊 = 本地种子会话单卡；健康点走"演示"态。
-      // 不打任何 /api/*——fail-closed 且不吓人（此前会红字"拉取失败"）。
-      void loadOrSeedGithubPagesDemoSession(
-        createGithubPagesSlideRuleSessionStore()
-      )
-        .then(state => {
+      // 静态演示（无后端）：画廊 = 主演示会话 + 画廊示例种子（E18：新引擎
+      // 真实推演的闭环终态，懒加载不进主包）。不打任何 /api/*。
+      const store = createGithubPagesSlideRuleSessionStore();
+      void Promise.all([
+        loadOrSeedGithubPagesDemoSession(store),
+        import("@/pages/sliderule/demo-gallery").then(m =>
+          m.seedGalleryExamples(store)
+        ),
+      ])
+        .then(([demoState, examples]) => {
           if (!alive) return;
           setSessions([
             { sessionId: GITHUB_PAGES_DEMO_SESSION_ID, goal: GITHUB_PAGES_DEMO_GOAL },
+            ...examples.map(e => ({ sessionId: e.sessionId, goal: e.goal })),
           ]);
           setDetails({
-            [GITHUB_PAGES_DEMO_SESSION_ID]: deriveAppCardDetail(state),
+            [GITHUB_PAGES_DEMO_SESSION_ID]: deriveAppCardDetail(demoState),
+            ...Object.fromEntries(
+              examples.map(e => [e.sessionId, deriveAppCardDetail(e.state)])
+            ),
           });
         })
         .catch(() => alive && setSessions([]));

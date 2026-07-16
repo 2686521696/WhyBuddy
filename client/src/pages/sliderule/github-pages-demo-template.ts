@@ -1,16 +1,10 @@
 /**
- * GitHub Pages 演示模板 — 由真实 LLM 全程推演一次性捕获（2026-07-14，
- * gpt-5.5 · /api/sliderule/drive-full-stream 完整事件流），非手写数据。
+ * GitHub Pages 演示模板 — 由真实 LLM 全程推演一次性捕获（2026-07-16，
+ * gpt-5.5 · 新引擎：E17 证据上下文管道 + P2a 真搜索 + 轮内并行屏障），
+ * 非手写数据。生成器：scripts/capture-pages-demo.mjs（一条命令重录）。
  *
  * 用途：Pages 静态演示没有后端，访客点「发送」后由
- * github-pages-demo-playback.ts 按本模板回放推演过程与发布闭环，
- * 展示与完整版一致的画面（六系统证据、可运行数字孪生、推演总结）。
- *
- * 重新捕获：本地起完整栈后
- *   curl -sN http://localhost:9700/api/sliderule/drive-full-stream \
- *     -H 'Content-Type: application/json' \
- *     -d '{"sessionId":"<sid>","userText":"<意图>"}' > stream.sse
- * 再用 scripts 里的解析逻辑重新生成本文件。
+ * github-pages-demo-playback.ts 按本模板回放推演过程与发布闭环。
  */
 
 export type GithubPagesDemoSkillCapture = {
@@ -28,7 +22,7 @@ export type GithubPagesDemoTemplate = {
 };
 
 export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
-  "goal": "做一个权限管理系统（支持 RBAC + 数据范围）",
+  "goal": "社区宠物医院预约问诊系统——预约、分诊、复诊提醒一体化",
   "skills": [
     {
       "skill": "dataModel",
@@ -37,466 +31,173 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
       "modelSection": {
         "entities": [
           {
-            "id": "user_account",
-            "name": "用户账号",
+            "id": "pet_owner",
+            "name": "宠物主人",
             "fields": [
               {
-                "id": "username",
-                "name": "登录名",
+                "id": "name",
+                "name": "主人姓名",
                 "type": "string"
               },
               {
-                "id": "display_name",
-                "name": "姓名",
-                "type": "string"
-              },
-              {
-                "id": "mobile",
-                "name": "手机号",
+                "id": "phone",
+                "name": "联系电话",
                 "type": "string",
                 "format": "masked"
               },
               {
-                "id": "department",
-                "name": "所属部门",
-                "type": "string"
+                "id": "wechat_id",
+                "name": "微信号",
+                "type": "string",
+                "format": "masked"
               },
               {
-                "id": "account_status",
-                "name": "账号状态",
+                "id": "membership_level",
+                "name": "会员等级",
                 "type": "enum",
                 "options": [
                   {
-                    "id": "active",
-                    "label": "启用",
-                    "tone": "success"
-                  },
-                  {
-                    "id": "locked",
-                    "label": "锁定",
-                    "tone": "danger"
-                  },
-                  {
-                    "id": "disabled",
-                    "label": "停用",
+                    "id": "normal",
+                    "label": "普通",
                     "tone": "default"
-                  }
-                ]
-              },
-              {
-                "id": "last_login_at",
-                "name": "最后登录时间",
-                "type": "date"
-              }
-            ]
-          },
-          {
-            "id": "role_profile",
-            "name": "角色",
-            "fields": [
-              {
-                "id": "role_code",
-                "name": "角色编码",
-                "type": "string"
-              },
-              {
-                "id": "role_name",
-                "name": "角色名称",
-                "type": "string"
-              },
-              {
-                "id": "role_type",
-                "name": "角色类型",
-                "type": "enum",
-                "options": [
+                  },
                   {
-                    "id": "business",
-                    "label": "业务角色",
+                    "id": "silver",
+                    "label": "银卡",
                     "tone": "processing"
                   },
                   {
-                    "id": "admin",
-                    "label": "管理角色",
-                    "tone": "warning"
-                  },
-                  {
-                    "id": "audit",
-                    "label": "审计角色",
-                    "tone": "default"
-                  }
-                ]
-              },
-              {
-                "id": "owner_department",
-                "name": "归属部门",
-                "type": "string"
-              },
-              {
-                "id": "role_status",
-                "name": "角色状态",
-                "type": "enum",
-                "options": [
-                  {
-                    "id": "draft",
-                    "label": "草稿",
-                    "tone": "default"
-                  },
-                  {
-                    "id": "pending",
-                    "label": "待审批",
-                    "tone": "warning"
-                  },
-                  {
-                    "id": "active",
-                    "label": "已生效",
+                    "id": "gold",
+                    "label": "金卡",
                     "tone": "success"
-                  },
-                  {
-                    "id": "suspended",
-                    "label": "已暂停",
-                    "tone": "danger"
                   }
                 ]
               }
             ]
           },
           {
-            "id": "permission_item",
-            "name": "权限点",
+            "id": "pet",
+            "name": "宠物档案",
             "fields": [
               {
-                "id": "permission_code",
-                "name": "权限编码",
+                "id": "owner_ref",
+                "name": "所属主人",
+                "type": "ref"
+              },
+              {
+                "id": "pet_name",
+                "name": "宠物名",
                 "type": "string"
               },
               {
-                "id": "permission_name",
-                "name": "权限名称",
-                "type": "string"
-              },
-              {
-                "id": "resource_type",
-                "name": "资源类型",
+                "id": "species",
+                "name": "物种",
                 "type": "enum",
                 "options": [
                   {
-                    "id": "menu",
-                    "label": "菜单",
+                    "id": "cat",
+                    "label": "猫",
                     "tone": "default"
                   },
                   {
-                    "id": "button",
-                    "label": "按钮",
-                    "tone": "processing"
+                    "id": "dog",
+                    "label": "狗",
+                    "tone": "default"
                   },
                   {
-                    "id": "api",
-                    "label": "接口",
+                    "id": "rabbit",
+                    "label": "兔",
+                    "tone": "default"
+                  },
+                  {
+                    "id": "other",
+                    "label": "其他",
                     "tone": "warning"
-                  },
-                  {
-                    "id": "data",
-                    "label": "数据权限",
-                    "tone": "success"
                   }
                 ]
               },
               {
-                "id": "sensitivity_level",
-                "name": "敏感级别",
-                "type": "enum",
-                "options": [
-                  {
-                    "id": "low",
-                    "label": "低",
-                    "tone": "success"
-                  },
-                  {
-                    "id": "medium",
-                    "label": "中",
-                    "tone": "warning"
-                  },
-                  {
-                    "id": "high",
-                    "label": "高",
-                    "tone": "danger"
-                  }
-                ]
+                "id": "breed",
+                "name": "品种",
+                "type": "string"
               },
               {
-                "id": "permission_status",
-                "name": "权限状态",
+                "id": "age_years",
+                "name": "年龄",
+                "type": "number"
+              },
+              {
+                "id": "neuter_status",
+                "name": "绝育状态",
                 "type": "enum",
                 "options": [
                   {
-                    "id": "enabled",
-                    "label": "启用",
-                    "tone": "success"
+                    "id": "unknown",
+                    "label": "未知",
+                    "tone": "default"
                   },
                   {
-                    "id": "deprecated",
-                    "label": "废弃",
+                    "id": "not_neutered",
+                    "label": "未绝育",
                     "tone": "warning"
                   },
                   {
-                    "id": "disabled",
-                    "label": "停用",
-                    "tone": "default"
+                    "id": "neutered",
+                    "label": "已绝育",
+                    "tone": "success"
                   }
                 ]
               }
             ]
           },
           {
-            "id": "menu_resource",
-            "name": "菜单资源",
+            "id": "appointment",
+            "name": "预约问诊",
             "fields": [
               {
-                "id": "menu_code",
-                "name": "菜单编码",
-                "type": "string"
-              },
-              {
-                "id": "menu_name",
-                "name": "菜单名称",
-                "type": "string"
-              },
-              {
-                "id": "parent_menu",
-                "name": "上级菜单",
+                "id": "owner_ref",
+                "name": "预约主人",
                 "type": "ref"
               },
               {
-                "id": "bound_permission",
-                "name": "绑定权限点",
+                "id": "pet_ref",
+                "name": "就诊宠物",
                 "type": "ref"
               },
               {
-                "id": "menu_status",
-                "name": "菜单状态",
-                "type": "enum",
-                "options": [
-                  {
-                    "id": "visible",
-                    "label": "可见",
-                    "tone": "success"
-                  },
-                  {
-                    "id": "hidden",
-                    "label": "隐藏",
-                    "tone": "default"
-                  },
-                  {
-                    "id": "retired",
-                    "label": "下线",
-                    "tone": "danger"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "id": "data_scope_policy",
-            "name": "数据范围策略",
-            "fields": [
-              {
-                "id": "policy_name",
-                "name": "策略名称",
-                "type": "string"
-              },
-              {
-                "id": "scope_type",
-                "name": "范围类型",
-                "type": "enum",
-                "options": [
-                  {
-                    "id": "self",
-                    "label": "仅本人",
-                    "tone": "default"
-                  },
-                  {
-                    "id": "department",
-                    "label": "本部门",
-                    "tone": "processing"
-                  },
-                  {
-                    "id": "department_tree",
-                    "label": "本部门及下级",
-                    "tone": "warning"
-                  },
-                  {
-                    "id": "all",
-                    "label": "全部数据",
-                    "tone": "danger"
-                  },
-                  {
-                    "id": "custom",
-                    "label": "自定义",
-                    "tone": "processing"
-                  }
-                ]
-              },
-              {
-                "id": "scope_rule",
-                "name": "范围规则",
-                "type": "string"
-              },
-              {
-                "id": "risk_score",
-                "name": "风险评分",
-                "type": "number",
-                "format": "score"
-              },
-              {
-                "id": "policy_status",
-                "name": "策略状态",
-                "type": "enum",
-                "options": [
-                  {
-                    "id": "draft",
-                    "label": "草稿",
-                    "tone": "default"
-                  },
-                  {
-                    "id": "reviewing",
-                    "label": "审核中",
-                    "tone": "processing"
-                  },
-                  {
-                    "id": "effective",
-                    "label": "已生效",
-                    "tone": "success"
-                  },
-                  {
-                    "id": "rejected",
-                    "label": "已驳回",
-                    "tone": "danger"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "id": "role_assignment",
-            "name": "角色授权",
-            "fields": [
-              {
-                "id": "user_ref",
-                "name": "授权用户",
-                "type": "ref"
-              },
-              {
-                "id": "role_ref",
-                "name": "授权角色",
-                "type": "ref"
-              },
-              {
-                "id": "data_scope_ref",
-                "name": "数据范围",
-                "type": "ref"
-              },
-              {
-                "id": "valid_from",
-                "name": "生效日期",
+                "id": "scheduled_at",
+                "name": "预约时间",
                 "type": "date"
               },
               {
-                "id": "valid_to",
-                "name": "失效日期",
-                "type": "date"
-              },
-              {
-                "id": "assignment_status",
-                "name": "授权状态",
-                "type": "enum",
-                "options": [
-                  {
-                    "id": "pending",
-                    "label": "待生效",
-                    "tone": "warning"
-                  },
-                  {
-                    "id": "active",
-                    "label": "生效中",
-                    "tone": "success"
-                  },
-                  {
-                    "id": "expired",
-                    "label": "已过期",
-                    "tone": "default"
-                  },
-                  {
-                    "id": "revoked",
-                    "label": "已撤销",
-                    "tone": "danger"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "id": "access_request",
-            "name": "权限申请单",
-            "fields": [
-              {
-                "id": "request_no",
-                "name": "申请单号",
-                "type": "string"
-              },
-              {
-                "id": "requester_ref",
-                "name": "申请人",
-                "type": "ref"
-              },
-              {
-                "id": "target_user_ref",
-                "name": "目标用户",
-                "type": "ref"
-              },
-              {
-                "id": "requested_role_ref",
-                "name": "申请角色",
-                "type": "ref"
-              },
-              {
-                "id": "requested_scope_ref",
-                "name": "申请数据范围",
-                "type": "ref"
-              },
-              {
-                "id": "business_reason",
-                "name": "申请理由",
-                "type": "string"
-              },
-              {
-                "id": "risk_summary",
-                "name": "风险摘要",
-                "type": "string"
-              },
-              {
-                "id": "approval_note",
-                "name": "审批意见",
+                "id": "reason",
+                "name": "主诉原因",
                 "type": "string"
               },
               {
                 "id": "status",
-                "name": "申请状态",
+                "name": "预约状态",
                 "type": "enum",
                 "options": [
                   {
                     "id": "draft",
-                    "label": "草稿",
+                    "label": "待确认",
                     "tone": "default"
                   },
                   {
-                    "id": "reviewing",
-                    "label": "审核中",
+                    "id": "confirmed",
+                    "label": "已确认",
                     "tone": "processing"
                   },
                   {
-                    "id": "provisioning",
-                    "label": "生效中",
-                    "tone": "warning"
+                    "id": "triaged",
+                    "label": "已分诊",
+                    "tone": "processing"
+                  },
+                  {
+                    "id": "consulting",
+                    "label": "问诊中",
+                    "tone": "processing"
                   },
                   {
                     "id": "completed",
@@ -504,101 +205,338 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
                     "tone": "success"
                   },
                   {
-                    "id": "rejected",
-                    "label": "已驳回",
+                    "id": "cancelled",
+                    "label": "已取消",
                     "tone": "danger"
                   }
                 ]
               },
               {
-                "id": "created_at",
-                "name": "创建时间",
-                "type": "date"
+                "id": "triage_level",
+                "name": "分诊等级",
+                "type": "enum",
+                "options": [
+                  {
+                    "id": "routine",
+                    "label": "常规",
+                    "tone": "default"
+                  },
+                  {
+                    "id": "priority",
+                    "label": "优先",
+                    "tone": "warning"
+                  },
+                  {
+                    "id": "emergency",
+                    "label": "急诊",
+                    "tone": "danger"
+                  }
+                ]
+              },
+              {
+                "id": "consult_fee",
+                "name": "问诊费",
+                "type": "number",
+                "format": "money"
+              },
+              {
+                "id": "wait_minutes",
+                "name": "等待分钟",
+                "type": "number"
               }
             ]
           },
           {
-            "id": "audit_log",
-            "name": "权限审计日志",
+            "id": "triage_record",
+            "name": "分诊记录",
             "fields": [
               {
-                "id": "actor_ref",
-                "name": "操作人",
+                "id": "appointment_ref",
+                "name": "关联预约",
                 "type": "ref"
               },
               {
-                "id": "target_entity",
-                "name": "对象类型",
+                "id": "temperature",
+                "name": "体温",
+                "type": "number"
+              },
+              {
+                "id": "weight_kg",
+                "name": "体重公斤",
+                "type": "number"
+              },
+              {
+                "id": "symptom_notes",
+                "name": "症状记录",
                 "type": "string"
               },
               {
-                "id": "target_id",
-                "name": "对象标识",
+                "id": "ai_triage_suggestion",
+                "name": "AI分诊建议",
                 "type": "string"
               },
               {
-                "id": "operation",
-                "name": "操作动作",
+                "id": "risk_level",
+                "name": "风险等级",
                 "type": "enum",
                 "options": [
                   {
-                    "id": "create",
-                    "label": "创建",
-                    "tone": "processing"
-                  },
-                  {
-                    "id": "approve",
-                    "label": "审批",
+                    "id": "low",
+                    "label": "低风险",
                     "tone": "success"
                   },
                   {
-                    "id": "reject",
-                    "label": "驳回",
-                    "tone": "danger"
-                  },
-                  {
-                    "id": "grant",
-                    "label": "授权",
+                    "id": "medium",
+                    "label": "中风险",
                     "tone": "warning"
                   },
                   {
-                    "id": "revoke",
-                    "label": "撤权",
+                    "id": "high",
+                    "label": "高风险",
                     "tone": "danger"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "medical_record",
+            "name": "门诊病例",
+            "fields": [
+              {
+                "id": "appointment_ref",
+                "name": "关联预约",
+                "type": "ref"
+              },
+              {
+                "id": "veterinarian_ref",
+                "name": "接诊兽医",
+                "type": "ref"
+              },
+              {
+                "id": "transcript_text",
+                "name": "问诊转写文本",
+                "type": "string"
+              },
+              {
+                "id": "soap_summary",
+                "name": "SOAP结构化病例",
+                "type": "string"
+              },
+              {
+                "id": "diagnosis",
+                "name": "诊断结论",
+                "type": "string"
+              },
+              {
+                "id": "audit_status",
+                "name": "病例审核状态",
+                "type": "enum",
+                "options": [
+                  {
+                    "id": "draft",
+                    "label": "草稿",
+                    "tone": "default"
                   },
                   {
-                    "id": "sync",
-                    "label": "同步",
-                    "tone": "default"
+                    "id": "submitted",
+                    "label": "待审核",
+                    "tone": "warning"
+                  },
+                  {
+                    "id": "approved",
+                    "label": "已通过",
+                    "tone": "success"
+                  },
+                  {
+                    "id": "returned",
+                    "label": "已退回",
+                    "tone": "danger"
                   }
                 ]
               },
               {
-                "id": "result",
-                "name": "操作结果",
+                "id": "quality_score",
+                "name": "病例质量分",
+                "type": "number",
+                "format": "score"
+              }
+            ]
+          },
+          {
+            "id": "followup_plan",
+            "name": "复诊提醒计划",
+            "fields": [
+              {
+                "id": "appointment_ref",
+                "name": "来源预约",
+                "type": "ref"
+              },
+              {
+                "id": "pet_ref",
+                "name": "复诊宠物",
+                "type": "ref"
+              },
+              {
+                "id": "due_date",
+                "name": "复诊日期",
+                "type": "date"
+              },
+              {
+                "id": "reminder_content",
+                "name": "提醒内容",
+                "type": "string"
+              },
+              {
+                "id": "reminder_status",
+                "name": "提醒状态",
                 "type": "enum",
                 "options": [
                   {
-                    "id": "success",
-                    "label": "成功",
+                    "id": "pending",
+                    "label": "待发送",
+                    "tone": "warning"
+                  },
+                  {
+                    "id": "sent",
+                    "label": "已发送",
                     "tone": "success"
                   },
                   {
                     "id": "failed",
-                    "label": "失败",
+                    "label": "发送失败",
                     "tone": "danger"
                   },
                   {
-                    "id": "partial",
-                    "label": "部分成功",
+                    "id": "confirmed",
+                    "label": "已确认复诊",
+                    "tone": "success"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "payment",
+            "name": "问诊支付",
+            "fields": [
+              {
+                "id": "appointment_ref",
+                "name": "关联预约",
+                "type": "ref"
+              },
+              {
+                "id": "amount",
+                "name": "支付金额",
+                "type": "number",
+                "format": "money"
+              },
+              {
+                "id": "payment_status",
+                "name": "支付状态",
+                "type": "enum",
+                "options": [
+                  {
+                    "id": "unpaid",
+                    "label": "未支付",
                     "tone": "warning"
+                  },
+                  {
+                    "id": "paid",
+                    "label": "已支付",
+                    "tone": "success"
+                  },
+                  {
+                    "id": "refunding",
+                    "label": "退款中",
+                    "tone": "processing"
+                  },
+                  {
+                    "id": "refunded",
+                    "label": "已退款",
+                    "tone": "default"
+                  },
+                  {
+                    "id": "failed",
+                    "label": "支付失败",
+                    "tone": "danger"
                   }
                 ]
               },
               {
-                "id": "occurred_at",
-                "name": "发生时间",
+                "id": "paid_at",
+                "name": "支付时间",
                 "type": "date"
+              },
+              {
+                "id": "gateway_trade_no",
+                "name": "支付网关单号",
+                "type": "string"
+              }
+            ]
+          },
+          {
+            "id": "reminder_log",
+            "name": "提醒发送日志",
+            "fields": [
+              {
+                "id": "followup_plan_ref",
+                "name": "关联复诊计划",
+                "type": "ref"
+              },
+              {
+                "id": "sent_at",
+                "name": "发送时间",
+                "type": "date"
+              },
+              {
+                "id": "channel",
+                "name": "发送渠道",
+                "type": "enum",
+                "options": [
+                  {
+                    "id": "sms",
+                    "label": "短信",
+                    "tone": "default"
+                  },
+                  {
+                    "id": "wechat",
+                    "label": "微信",
+                    "tone": "success"
+                  },
+                  {
+                    "id": "phone",
+                    "label": "电话",
+                    "tone": "processing"
+                  }
+                ]
+              },
+              {
+                "id": "delivery_status",
+                "name": "送达状态",
+                "type": "enum",
+                "options": [
+                  {
+                    "id": "queued",
+                    "label": "排队中",
+                    "tone": "processing"
+                  },
+                  {
+                    "id": "delivered",
+                    "label": "已送达",
+                    "tone": "success"
+                  },
+                  {
+                    "id": "bounced",
+                    "label": "退信",
+                    "tone": "danger"
+                  }
+                ]
+              },
+              {
+                "id": "retry_count",
+                "name": "重试次数",
+                "type": "number"
               }
             ]
           }
@@ -611,103 +549,120 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
       "mermaid": "flowchart LR\n  datamodel[\"datamodel\"] -->|DM_RBAC_FIELD_POLICY_EVIDENCE| rbac[\"rbac\"]\n  rbac[\"rbac\"] -->|RBAC_WORKFLOW_ASSIGNEE_EVIDENCE| workflow[\"workflow\"]",
       "modelSection": {
         "roles": [
-          "requester",
-          "org_admin",
-          "security_admin",
-          "approver",
-          "auditor"
+          "receptionist",
+          "triage_nurse",
+          "veterinarian",
+          "finance_clerk",
+          "clinic_manager",
+          "ops_staff"
         ],
         "permissions": [
-          "access_request:create",
-          "access_request:read",
-          "access_request:review",
-          "access_request:provision",
-          "role_profile:read",
-          "role_profile:manage",
-          "permission_item:read",
-          "permission_item:manage",
-          "menu_resource:read",
-          "menu_resource:manage",
-          "data_scope_policy:read",
-          "data_scope_policy:manage",
-          "role_assignment:read",
-          "role_assignment:revoke",
-          "audit_log:read",
-          "audit_log:export"
+          "owner:read",
+          "pet:read",
+          "appointment:create",
+          "appointment:read",
+          "appointment:update",
+          "appointment:cancel",
+          "triage:read",
+          "triage:update",
+          "record:read",
+          "record:write",
+          "record:audit",
+          "followup:read",
+          "followup:create",
+          "followup:update",
+          "payment:read",
+          "payment:confirm",
+          "payment:refund",
+          "reminder:retry",
+          "dashboard:view",
+          "ai:run"
         ],
         "menus": [
           {
-            "id": "menu_requester_workspace",
-            "label": "我的权限申请",
+            "id": "front_desk_menu",
+            "label": "前台预约台",
             "roleRefs": [
-              "requester"
+              "receptionist"
             ],
             "permissionRefs": [
-              "access_request:create",
-              "access_request:read",
-              "role_profile:read",
-              "data_scope_policy:read"
+              "owner:read",
+              "pet:read",
+              "appointment:create",
+              "appointment:read",
+              "appointment:update",
+              "appointment:cancel",
+              "payment:read"
             ]
           },
           {
-            "id": "menu_org_admin_assignment",
-            "label": "组织授权管理",
+            "id": "triage_menu",
+            "label": "护士分诊台",
             "roleRefs": [
-              "org_admin"
+              "triage_nurse"
             ],
             "permissionRefs": [
-              "access_request:read",
-              "access_request:review",
-              "role_assignment:read",
-              "role_assignment:revoke",
-              "role_profile:read",
-              "data_scope_policy:read"
+              "appointment:read",
+              "triage:read",
+              "triage:update",
+              "ai:run"
             ]
           },
           {
-            "id": "menu_security_admin_config",
-            "label": "权限模型配置",
+            "id": "doctor_menu",
+            "label": "兽医问诊台",
             "roleRefs": [
-              "security_admin"
+              "veterinarian"
             ],
             "permissionRefs": [
-              "access_request:read",
-              "access_request:provision",
-              "role_profile:manage",
-              "permission_item:manage",
-              "menu_resource:manage",
-              "data_scope_policy:manage",
-              "role_assignment:read"
+              "appointment:read",
+              "triage:read",
+              "record:read",
+              "record:write",
+              "followup:read",
+              "followup:create",
+              "followup:update",
+              "ai:run"
             ]
           },
           {
-            "id": "menu_approver_review",
-            "label": "权限审批中心",
+            "id": "finance_menu",
+            "label": "财务支付台",
             "roleRefs": [
-              "approver"
+              "finance_clerk"
             ],
             "permissionRefs": [
-              "access_request:read",
-              "access_request:review",
-              "permission_item:read",
-              "menu_resource:read",
-              "data_scope_policy:read"
+              "payment:read",
+              "payment:confirm",
+              "payment:refund"
             ]
           },
           {
-            "id": "menu_auditor_console",
-            "label": "权限审计看板",
+            "id": "manager_menu",
+            "label": "院长质控台",
             "roleRefs": [
-              "auditor"
+              "clinic_manager"
             ],
             "permissionRefs": [
-              "audit_log:read",
-              "audit_log:export",
-              "role_assignment:read",
-              "permission_item:read",
-              "menu_resource:read",
-              "role_profile:read",
-              "data_scope_policy:read"
+              "record:read",
+              "record:audit",
+              "dashboard:view",
+              "appointment:read",
+              "followup:read",
+              "payment:read"
+            ]
+          },
+          {
+            "id": "ops_menu",
+            "label": "运营提醒台",
+            "roleRefs": [
+              "ops_staff"
+            ],
+            "permissionRefs": [
+              "followup:read",
+              "followup:update",
+              "reminder:retry",
+              "dashboard:view"
             ]
           }
         ]
@@ -718,234 +673,320 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
       "label": "workflow",
       "mermaid": "flowchart LR\n  rbac[\"rbac\"] -->|RBAC_WORKFLOW_ASSIGNEE_EVIDENCE| workflow[\"workflow\"]\n  workflow[\"workflow\"] -->|WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE| page[\"page\"]",
       "modelSection": {
-        "id": "access_request_lifecycle",
-        "name": "权限申请单生命周期",
+        "id": "appointment_lifecycle",
+        "name": "预约问诊生命周期",
         "nodes": [
           {
-            "id": "ar_draft",
-            "name": "填写权限申请",
-            "assigneeRole": "requester",
-            "phase": "提交"
+            "id": "appt_submit",
+            "name": "提交预约",
+            "assigneeRole": "receptionist",
+            "phase": "预约"
           },
           {
-            "id": "ar_org_review",
-            "name": "部门管理员核验",
-            "assigneeRole": "org_admin",
-            "phase": "校验"
+            "id": "appt_confirm",
+            "name": "确认档期与宠物信息",
+            "assigneeRole": "receptionist",
+            "phase": "预约"
           },
           {
-            "id": "ar_security_review",
-            "name": "安全审批",
-            "assigneeRole": "approver",
-            "phase": "校验"
+            "id": "appt_cancelled",
+            "name": "取消预约",
+            "assigneeRole": "receptionist",
+            "phase": "预约"
           },
           {
-            "id": "ar_provision",
-            "name": "执行授权生效",
-            "assigneeRole": "security_admin",
-            "phase": "生效"
+            "id": "triage_assess",
+            "name": "护士分诊评估",
+            "assigneeRole": "triage_nurse",
+            "phase": "分诊"
           },
           {
-            "id": "ar_completed",
-            "name": "归档完成",
-            "assigneeRole": "auditor",
-            "phase": "归档"
+            "id": "vet_consult",
+            "name": "兽医问诊",
+            "assigneeRole": "veterinarian",
+            "phase": "问诊"
           },
           {
-            "id": "ar_rejected",
-            "name": "驳回关闭",
-            "assigneeRole": "requester",
-            "phase": "归档"
+            "id": "emergency_transfer",
+            "name": "急诊转处置",
+            "assigneeRole": "veterinarian",
+            "phase": "问诊"
+          },
+          {
+            "id": "record_complete",
+            "name": "完成病例",
+            "assigneeRole": "veterinarian",
+            "phase": "问诊"
+          },
+          {
+            "id": "followup_schedule",
+            "name": "制定复诊提醒",
+            "assigneeRole": "veterinarian",
+            "phase": "复诊"
+          },
+          {
+            "id": "case_closed",
+            "name": "问诊归档",
+            "assigneeRole": "receptionist",
+            "phase": "复诊"
           }
         ],
         "transitions": [
           {
-            "from": "ar_draft",
-            "to": "ar_org_review",
-            "condition": "申请资料完整"
+            "from": "appt_submit",
+            "to": "appt_confirm",
+            "condition": "资料完整"
           },
           {
-            "from": "ar_org_review",
-            "to": "ar_draft",
-            "condition": "业务理由不充分，退回补充"
+            "from": "appt_confirm",
+            "to": "appt_cancelled",
+            "condition": "主人取消或档期不可用"
           },
           {
-            "from": "ar_org_review",
-            "to": "ar_security_review",
-            "condition": "部门核验通过"
+            "from": "appt_confirm",
+            "to": "triage_assess",
+            "condition": "到院或线上签到"
           },
           {
-            "from": "ar_org_review",
-            "to": "ar_rejected",
-            "condition": "申请人与岗位不匹配"
+            "from": "triage_assess",
+            "to": "appt_confirm",
+            "condition": "宠物信息缺失需补充"
           },
           {
-            "from": "ar_security_review",
-            "to": "ar_provision",
-            "condition": "风险可接受"
+            "from": "triage_assess",
+            "to": "vet_consult",
+            "condition": "常规或优先问诊"
           },
           {
-            "from": "ar_security_review",
-            "to": "ar_rejected",
-            "condition": "高敏权限或数据范围过大"
+            "from": "triage_assess",
+            "to": "emergency_transfer",
+            "condition": "急诊等级"
           },
           {
-            "from": "ar_provision",
-            "to": "ar_completed",
-            "condition": "角色与数据范围写入成功"
+            "from": "emergency_transfer",
+            "to": "vet_consult",
+            "condition": "生命体征稳定后补问诊"
           },
           {
-            "from": "ar_provision",
-            "to": "ar_security_review",
-            "condition": "授权写入失败需复核"
+            "from": "vet_consult",
+            "to": "record_complete",
+            "condition": "问诊结束"
+          },
+          {
+            "from": "record_complete",
+            "to": "vet_consult",
+            "condition": "病例信息不完整"
+          },
+          {
+            "from": "record_complete",
+            "to": "followup_schedule",
+            "condition": "需要复诊"
+          },
+          {
+            "from": "record_complete",
+            "to": "case_closed",
+            "condition": "无需复诊"
+          },
+          {
+            "from": "followup_schedule",
+            "to": "case_closed",
+            "condition": "提醒计划已生成"
           }
         ],
         "chains": [
           {
-            "id": "role_policy_governance",
-            "name": "角色与数据范围治理审批",
-            "kind": "governance",
+            "id": "consult_payment_chain",
+            "name": "问诊费支付入账链",
+            "kind": "money",
             "nodes": [
               {
-                "id": "gov_submit_change",
-                "name": "提交角色或策略变更",
-                "assigneeRole": "security_admin",
-                "phase": "提交"
+                "id": "pay_order_create",
+                "name": "生成问诊费账单",
+                "assigneeRole": "receptionist",
+                "phase": "计费"
               },
               {
-                "id": "gov_business_review",
-                "name": "业务负责人评审",
-                "assigneeRole": "approver",
-                "phase": "评审"
+                "id": "pay_owner_pay",
+                "name": "主人支付",
+                "assigneeRole": "receptionist",
+                "phase": "支付"
               },
               {
-                "id": "gov_audit_review",
-                "name": "审计合规复核",
-                "assigneeRole": "auditor",
-                "phase": "评审"
+                "id": "pay_callback_verify",
+                "name": "服务端核验回调",
+                "assigneeRole": "finance_clerk",
+                "phase": "支付"
               },
               {
-                "id": "gov_publish",
-                "name": "发布权限模型",
-                "assigneeRole": "security_admin",
-                "phase": "发布"
+                "id": "pay_failed",
+                "name": "支付失败处理",
+                "assigneeRole": "finance_clerk",
+                "phase": "支付"
               },
               {
-                "id": "gov_rejected",
-                "name": "治理变更驳回",
-                "assigneeRole": "security_admin",
-                "phase": "关闭"
+                "id": "pay_ledger_post",
+                "name": "入账留痕",
+                "assigneeRole": "finance_clerk",
+                "phase": "入账"
+              },
+              {
+                "id": "pay_refund_review",
+                "name": "退款复核",
+                "assigneeRole": "clinic_manager",
+                "phase": "入账"
               }
             ],
             "transitions": [
               {
-                "from": "gov_submit_change",
-                "to": "gov_business_review",
-                "condition": "变更说明完整"
+                "from": "pay_order_create",
+                "to": "pay_owner_pay",
+                "condition": "账单金额确认"
               },
               {
-                "from": "gov_business_review",
-                "to": "gov_submit_change",
-                "condition": "影响范围不清退回修订"
+                "from": "pay_owner_pay",
+                "to": "pay_callback_verify",
+                "condition": "收到支付网关通知"
               },
               {
-                "from": "gov_business_review",
-                "to": "gov_audit_review",
-                "condition": "业务评审通过"
+                "from": "pay_callback_verify",
+                "to": "pay_ledger_post",
+                "condition": "签名与金额一致"
               },
               {
-                "from": "gov_audit_review",
-                "to": "gov_publish",
-                "condition": "符合最小权限要求"
+                "from": "pay_callback_verify",
+                "to": "pay_failed",
+                "condition": "签名错误或金额不一致"
               },
               {
-                "from": "gov_audit_review",
-                "to": "gov_rejected",
-                "condition": "存在越权或职责冲突"
+                "from": "pay_failed",
+                "to": "pay_owner_pay",
+                "condition": "允许重新支付"
               },
               {
-                "from": "gov_publish",
-                "to": "gov_audit_review",
-                "condition": "发布校验失败回审"
+                "from": "pay_ledger_post",
+                "to": "pay_refund_review",
+                "condition": "预约取消且符合退款规则"
               },
               {
-                "from": "gov_publish",
-                "to": "gov_submit_change",
-                "condition": "需重新拆分权限包"
+                "from": "pay_refund_review",
+                "to": "pay_ledger_post",
+                "condition": "退款完成后补记负向流水"
               }
             ]
           },
           {
-            "id": "permission_sync_recovery",
-            "name": "权限缓存与同步恢复",
-            "kind": "recovery",
+            "id": "record_governance_chain",
+            "name": "病例质控审核链",
+            "kind": "governance",
             "nodes": [
               {
-                "id": "rec_detect_failure",
-                "name": "发现授权同步异常",
-                "assigneeRole": "security_admin",
-                "phase": "发现"
+                "id": "record_submit_audit",
+                "name": "提交病例审核",
+                "assigneeRole": "veterinarian",
+                "phase": "提交"
               },
               {
-                "id": "rec_retry_sync",
-                "name": "重试同步权限缓存",
-                "assigneeRole": "security_admin",
-                "phase": "修复"
+                "id": "record_quality_review",
+                "name": "院长质控审核",
+                "assigneeRole": "clinic_manager",
+                "phase": "审核"
               },
               {
-                "id": "rec_manual_reconcile",
-                "name": "人工核对授权差异",
-                "assigneeRole": "auditor",
-                "phase": "修复"
+                "id": "record_return_fix",
+                "name": "退回修订病例",
+                "assigneeRole": "veterinarian",
+                "phase": "审核"
               },
               {
-                "id": "rec_restore_service",
-                "name": "恢复访问控制服务",
-                "assigneeRole": "security_admin",
-                "phase": "恢复"
-              },
-              {
-                "id": "rec_close_incident",
-                "name": "关闭恢复工单",
-                "assigneeRole": "auditor",
-                "phase": "关闭"
+                "id": "record_approved_archive",
+                "name": "病例审核归档",
+                "assigneeRole": "clinic_manager",
+                "phase": "归档"
               }
             ],
             "transitions": [
               {
-                "from": "rec_detect_failure",
-                "to": "rec_retry_sync",
-                "condition": "异常可自动重试"
+                "from": "record_submit_audit",
+                "to": "record_quality_review",
+                "condition": "病例质量分达到提交线"
               },
               {
-                "from": "rec_detect_failure",
-                "to": "rec_manual_reconcile",
-                "condition": "发现授权账实不一致"
+                "from": "record_quality_review",
+                "to": "record_approved_archive",
+                "condition": "审核通过"
               },
               {
-                "from": "rec_retry_sync",
-                "to": "rec_restore_service",
-                "condition": "缓存重建成功"
+                "from": "record_quality_review",
+                "to": "record_return_fix",
+                "condition": "诊断或用药记录不完整"
               },
               {
-                "from": "rec_retry_sync",
-                "to": "rec_manual_reconcile",
-                "condition": "重试仍失败"
+                "from": "record_return_fix",
+                "to": "record_submit_audit",
+                "condition": "兽医修订后重新提交"
+              }
+            ]
+          },
+          {
+            "id": "reminder_recovery_chain",
+            "name": "复诊提醒失败恢复链",
+            "kind": "recovery",
+            "nodes": [
+              {
+                "id": "reminder_detect_failure",
+                "name": "检测提醒失败",
+                "assigneeRole": "ops_staff",
+                "phase": "检测"
               },
               {
-                "from": "rec_manual_reconcile",
-                "to": "rec_retry_sync",
-                "condition": "差异修正后再次同步"
+                "id": "reminder_auto_retry",
+                "name": "自动切换渠道重试",
+                "assigneeRole": "ops_staff",
+                "phase": "重试"
               },
               {
-                "from": "rec_restore_service",
-                "to": "rec_close_incident",
-                "condition": "访问校验通过"
+                "id": "reminder_manual_call",
+                "name": "人工电话确认",
+                "assigneeRole": "receptionist",
+                "phase": "重试"
               },
               {
-                "from": "rec_restore_service",
-                "to": "rec_manual_reconcile",
-                "condition": "仍存在漏授权或越权"
+                "id": "reminder_closed",
+                "name": "关闭提醒工单",
+                "assigneeRole": "ops_staff",
+                "phase": "闭环"
+              }
+            ],
+            "transitions": [
+              {
+                "from": "reminder_detect_failure",
+                "to": "reminder_auto_retry",
+                "condition": "重试次数小于3次"
+              },
+              {
+                "from": "reminder_detect_failure",
+                "to": "reminder_manual_call",
+                "condition": "连续退信或电话优先客户"
+              },
+              {
+                "from": "reminder_auto_retry",
+                "to": "reminder_closed",
+                "condition": "送达成功"
+              },
+              {
+                "from": "reminder_auto_retry",
+                "to": "reminder_manual_call",
+                "condition": "重试后仍失败"
+              },
+              {
+                "from": "reminder_manual_call",
+                "to": "reminder_detect_failure",
+                "condition": "号码错误需回到检测更新资料"
+              },
+              {
+                "from": "reminder_manual_call",
+                "to": "reminder_closed",
+                "condition": "主人已确认复诊"
               }
             ]
           }
@@ -959,158 +1000,250 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
       "modelSection": {
         "pages": [
           {
-            "id": "page_access_request_kanban",
-            "name": "权限申请看板",
+            "id": "appointment_kanban",
+            "name": "预约流转看板",
             "kind": "kanban",
-            "statusField": "access_request.status",
+            "statusField": "appointment.status",
             "fieldBindings": [
-              "access_request.request_no",
-              "access_request.requester_ref",
-              "access_request.target_user_ref",
-              "access_request.requested_role_ref",
-              "access_request.requested_scope_ref",
-              "access_request.business_reason",
-              "access_request.risk_summary",
-              "access_request.approval_note",
-              "access_request.status",
-              "access_request.created_at"
+              "appointment.owner_ref",
+              "appointment.pet_ref",
+              "appointment.scheduled_at",
+              "appointment.reason",
+              "appointment.status",
+              "appointment.triage_level",
+              "appointment.consult_fee"
             ],
             "actionPermissions": [
-              "access_request:create",
-              "access_request:read",
-              "access_request:review",
-              "access_request:provision"
+              "appointment:create",
+              "appointment:read",
+              "appointment:update",
+              "appointment:cancel"
             ]
           },
           {
-            "id": "page_role_permission_workbench",
-            "name": "角色权限配置台",
+            "id": "schedule_calendar",
+            "name": "预约排班日历",
+            "kind": "calendar",
+            "dateField": "appointment.scheduled_at",
+            "colorBy": "appointment.triage_level",
+            "fieldBindings": [
+              "appointment.scheduled_at",
+              "appointment.status",
+              "appointment.triage_level",
+              "pet.pet_name",
+              "pet.species",
+              "pet_owner.name",
+              "pet_owner.phone"
+            ],
+            "actionPermissions": [
+              "appointment:read",
+              "appointment:update",
+              "owner:read",
+              "pet:read"
+            ]
+          },
+          {
+            "id": "triage_workbench",
+            "name": "护士分诊工作台",
             "kind": "workbench",
             "fieldBindings": [
-              "role_profile.role_code",
-              "role_profile.role_name",
-              "role_profile.role_type",
-              "role_profile.owner_department",
-              "role_profile.role_status",
-              "permission_item.permission_code",
-              "permission_item.permission_name",
-              "permission_item.resource_type",
-              "permission_item.sensitivity_level",
-              "permission_item.permission_status",
-              "menu_resource.menu_code",
-              "menu_resource.menu_name",
-              "menu_resource.parent_menu",
-              "menu_resource.bound_permission",
-              "menu_resource.menu_status"
+              "triage_record.appointment_ref",
+              "triage_record.temperature",
+              "triage_record.weight_kg",
+              "triage_record.symptom_notes",
+              "triage_record.ai_triage_suggestion",
+              "triage_record.risk_level",
+              "appointment.reason",
+              "appointment.triage_level"
             ],
             "actionPermissions": [
-              "role_profile:read",
-              "role_profile:manage",
-              "permission_item:read",
-              "permission_item:manage",
-              "menu_resource:read",
-              "menu_resource:manage"
+              "triage:read",
+              "triage:update",
+              "appointment:read",
+              "ai:run"
             ]
           },
           {
-            "id": "page_data_scope_workbench",
-            "name": "数据范围策略台",
+            "id": "doctor_consult_workbench",
+            "name": "兽医问诊工作台",
             "kind": "workbench",
             "fieldBindings": [
-              "data_scope_policy.policy_name",
-              "data_scope_policy.scope_type",
-              "data_scope_policy.scope_rule",
-              "data_scope_policy.risk_score",
-              "data_scope_policy.policy_status",
-              "role_assignment.user_ref",
-              "role_assignment.role_ref",
-              "role_assignment.data_scope_ref",
-              "role_assignment.valid_from",
-              "role_assignment.valid_to",
-              "role_assignment.assignment_status"
+              "medical_record.appointment_ref",
+              "medical_record.transcript_text",
+              "medical_record.soap_summary",
+              "medical_record.diagnosis",
+              "medical_record.audit_status",
+              "medical_record.quality_score",
+              "followup_plan.due_date",
+              "followup_plan.reminder_content"
             ],
             "actionPermissions": [
-              "data_scope_policy:read",
-              "data_scope_policy:manage",
-              "role_assignment:read",
-              "role_assignment:revoke"
+              "record:read",
+              "record:write",
+              "followup:read",
+              "followup:create",
+              "followup:update",
+              "ai:run"
             ]
           },
           {
-            "id": "page_user_account_workbench",
-            "name": "用户账号管理",
+            "id": "followup_ops_workbench",
+            "name": "复诊提醒运营台",
             "kind": "workbench",
             "fieldBindings": [
-              "user_account.username",
-              "user_account.display_name",
-              "user_account.mobile",
-              "user_account.department",
-              "user_account.account_status",
-              "user_account.last_login_at"
+              "followup_plan.appointment_ref",
+              "followup_plan.pet_ref",
+              "followup_plan.due_date",
+              "followup_plan.reminder_content",
+              "followup_plan.reminder_status",
+              "reminder_log.channel",
+              "reminder_log.delivery_status",
+              "reminder_log.retry_count"
             ],
             "actionPermissions": [
-              "role_assignment:read",
-              "access_request:create",
-              "access_request:read"
+              "followup:read",
+              "followup:update",
+              "reminder:retry"
             ]
           },
           {
-            "id": "page_audit_dashboard",
-            "name": "权限审计看板",
+            "id": "finance_workbench",
+            "name": "问诊收费台",
             "kind": "dashboard",
             "fieldBindings": [
-              "audit_log.actor_ref",
-              "audit_log.target_entity",
-              "audit_log.target_id",
-              "audit_log.operation",
-              "audit_log.result",
-              "audit_log.occurred_at",
-              "role_assignment.assignment_status",
-              "data_scope_policy.scope_type"
+              "payment.appointment_ref",
+              "payment.amount",
+              "payment.payment_status",
+              "payment.paid_at",
+              "payment.gateway_trade_no",
+              "appointment.consult_fee"
             ],
             "actionPermissions": [
-              "audit_log:read",
-              "audit_log:export",
-              "role_assignment:read"
+              "payment:read",
+              "payment:confirm",
+              "payment:refund"
             ],
             "stats": [
               {
-                "id": "stat_audit_events",
-                "name": "审计事件数",
-                "entity": "audit_log",
+                "id": "paid_amount",
+                "name": "已收问诊费",
+                "entity": "payment",
+                "metric": "sum:payment.amount",
+                "format": "money"
+              },
+              {
+                "id": "payment_orders",
+                "name": "支付单数",
+                "entity": "payment",
                 "metric": "count",
                 "format": "number"
               },
               {
-                "id": "stat_active_assignments",
-                "name": "授权记录数",
-                "entity": "role_assignment",
+                "id": "avg_fee",
+                "name": "平均问诊费",
+                "entity": "appointment",
+                "metric": "avg:appointment.consult_fee",
+                "format": "money"
+              }
+            ],
+            "charts": [
+              {
+                "id": "payment_status_share",
+                "name": "支付状态分布",
+                "type": "pie",
+                "dimension": "payment.payment_status",
+                "metric": "count"
+              },
+              {
+                "id": "fee_by_triage",
+                "name": "分诊等级收入",
+                "type": "bar",
+                "dimension": "appointment.triage_level",
+                "metric": "sum:appointment.consult_fee"
+              }
+            ]
+          },
+          {
+            "id": "clinic_dashboard",
+            "name": "医院运营总览",
+            "kind": "dashboard",
+            "fieldBindings": [
+              "appointment.status",
+              "appointment.wait_minutes",
+              "triage_record.risk_level",
+              "medical_record.audit_status",
+              "followup_plan.reminder_status",
+              "reminder_log.delivery_status"
+            ],
+            "actionPermissions": [
+              "dashboard:view",
+              "appointment:read",
+              "record:read",
+              "followup:read",
+              "payment:read"
+            ],
+            "stats": [
+              {
+                "id": "today_appointments",
+                "name": "预约总量",
+                "entity": "appointment",
                 "metric": "count",
                 "format": "number"
               },
               {
-                "id": "stat_avg_scope_risk",
-                "name": "平均范围风险",
-                "entity": "data_scope_policy",
-                "metric": "avg:data_scope_policy.risk_score",
+                "id": "avg_wait",
+                "name": "平均等待分钟",
+                "entity": "appointment",
+                "metric": "avg:appointment.wait_minutes",
+                "format": "number"
+              },
+              {
+                "id": "followup_pending",
+                "name": "复诊计划数",
+                "entity": "followup_plan",
+                "metric": "count",
+                "format": "number"
+              },
+              {
+                "id": "record_quality",
+                "name": "平均病例质量分",
+                "entity": "medical_record",
+                "metric": "avg:medical_record.quality_score",
                 "format": "number"
               }
             ],
             "charts": [
               {
-                "id": "chart_operations_by_type",
-                "name": "操作动作分布",
+                "id": "appointment_status_bar",
+                "name": "预约状态对比",
                 "type": "bar",
-                "dimension": "audit_log.operation",
+                "dimension": "appointment.status",
                 "metric": "count"
               },
               {
-                "id": "chart_scope_type_share",
-                "name": "数据范围类型占比",
+                "id": "risk_level_pie",
+                "name": "分诊风险占比",
                 "type": "pie",
-                "dimension": "data_scope_policy.scope_type",
+                "dimension": "triage_record.risk_level",
                 "metric": "count"
               }
+            ]
+          },
+          {
+            "id": "record_audit_workbench",
+            "name": "病例质控审核台",
+            "kind": "workbench",
+            "fieldBindings": [
+              "medical_record.appointment_ref",
+              "medical_record.veterinarian_ref",
+              "medical_record.soap_summary",
+              "medical_record.diagnosis",
+              "medical_record.audit_status",
+              "medical_record.quality_score"
+            ],
+            "actionPermissions": [
+              "record:read",
+              "record:audit"
             ]
           }
         ]
@@ -1123,69 +1256,67 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
       "modelSection": {
         "capabilities": [
           {
-            "id": "cap_analyze_access_risk",
-            "name": "权限申请风险摘要生成",
+            "id": "ai_triage_suggestion",
+            "name": "主诉智能分诊建议",
             "inputFields": [
-              "access_request.business_reason",
-              "access_request.requested_role_ref",
-              "access_request.requested_scope_ref"
+              "appointment.reason",
+              "pet.species",
+              "pet.age_years",
+              "triage_record.symptom_notes"
             ],
-            "outputField": "access_request.risk_summary",
+            "outputField": "triage_record.ai_triage_suggestion",
             "roleRefs": [
-              "approver",
-              "security_admin"
+              "triage_nurse",
+              "veterinarian"
             ]
           },
           {
-            "id": "cap_recommend_scope_rule",
-            "name": "数据范围规则建议",
+            "id": "ai_dialog_transcription",
+            "name": "问诊对话转写",
             "inputFields": [
-              "access_request.risk_summary",
-              "data_scope_policy.scope_type",
-              "data_scope_policy.risk_score"
+              "appointment.reason",
+              "triage_record.symptom_notes"
             ],
-            "outputField": "data_scope_policy.scope_rule",
+            "outputField": "medical_record.transcript_text",
             "roleRefs": [
-              "security_admin",
-              "org_admin"
+              "veterinarian"
             ]
           },
           {
-            "id": "cap_generate_approval_note",
-            "name": "审批意见草拟",
+            "id": "ai_soap_summary",
+            "name": "生成SOAP结构化病例",
             "inputFields": [
-              "data_scope_policy.scope_rule",
-              "access_request.risk_summary",
-              "access_request.business_reason"
+              "medical_record.transcript_text",
+              "triage_record.ai_triage_suggestion"
             ],
-            "outputField": "access_request.approval_note",
+            "outputField": "medical_record.soap_summary",
             "roleRefs": [
-              "approver",
-              "org_admin"
+              "veterinarian"
             ]
           },
           {
-            "id": "cap_summarize_audit_log",
-            "name": "审计日志异常摘要",
+            "id": "ai_followup_reminder",
+            "name": "生成复诊提醒文案",
             "inputFields": [
-              "audit_log.operation",
-              "audit_log.result",
-              "audit_log.target_entity"
+              "medical_record.soap_summary",
+              "medical_record.diagnosis",
+              "followup_plan.due_date"
             ],
-            "outputField": "access_request.risk_summary",
+            "outputField": "followup_plan.reminder_content",
             "roleRefs": [
-              "auditor"
+              "veterinarian",
+              "ops_staff"
             ]
           }
         ],
         "pipelines": [
           {
-            "id": "pipeline_access_request_review",
-            "name": "权限申请智能评审编排",
+            "id": "consult_record_pipeline",
+            "name": "问诊转写到病例生成",
             "steps": [
-              "cap_analyze_access_risk",
-              "cap_recommend_scope_rule",
-              "cap_generate_approval_note"
+              "ai_dialog_transcription",
+              "ai_soap_summary",
+              "ai_followup_reminder"
             ]
           }
         ]
@@ -1198,156 +1329,161 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
       "modelSection": {
         "pageBindings": [
           {
-            "pageRef": "page_access_request_kanban",
-            "workflowRef": "access_request_lifecycle"
+            "pageRef": "appointment_kanban",
+            "workflowRef": "appointment_lifecycle"
           },
           {
-            "pageRef": "page_role_permission_workbench",
-            "workflowRef": "gov_submit_change"
+            "pageRef": "schedule_calendar",
+            "workflowRef": "appt_confirm"
           },
           {
-            "pageRef": "page_data_scope_workbench",
-            "workflowRef": "role_policy_governance"
+            "pageRef": "triage_workbench",
+            "workflowRef": "triage_assess"
           },
           {
-            "pageRef": "page_user_account_workbench",
-            "workflowRef": "ar_draft"
+            "pageRef": "doctor_consult_workbench",
+            "workflowRef": "vet_consult"
           },
           {
-            "pageRef": "page_audit_dashboard",
-            "workflowRef": "rec_close_incident"
+            "pageRef": "followup_ops_workbench",
+            "workflowRef": "reminder_detect_failure"
+          },
+          {
+            "pageRef": "finance_workbench",
+            "workflowRef": "pay_callback_verify"
+          },
+          {
+            "pageRef": "clinic_dashboard",
+            "workflowRef": "case_closed"
+          },
+          {
+            "pageRef": "record_audit_workbench",
+            "workflowRef": "record_quality_review"
           }
         ],
         "roleRefs": [
-          "requester",
-          "org_admin",
-          "security_admin",
-          "approver",
-          "auditor"
+          "receptionist",
+          "triage_nurse",
+          "veterinarian",
+          "finance_clerk",
+          "clinic_manager",
+          "ops_staff"
         ],
         "dataModelRefs": [
-          "user_account",
-          "role_profile",
-          "permission_item",
-          "menu_resource",
-          "data_scope_policy",
-          "role_assignment",
-          "access_request",
-          "audit_log"
+          "pet_owner",
+          "pet",
+          "appointment",
+          "triage_record",
+          "medical_record",
+          "followup_plan",
+          "payment",
+          "reminder_log"
         ],
         "invariants": [
           {
-            "id": "assignment_requires_completed_request",
-            "statement": "任何角色授权记录变为生效中之前，必须存在已完成的权限申请单审批链路。",
+            "id": "triage_before_consult",
+            "statement": "除急诊转处置外，兽医问诊必须在护士完成分诊评估之后开始。",
+            "systems": [
+              "workflow",
+              "datamodel"
+            ],
+            "refs": [
+              "triage_assess",
+              "vet_consult",
+              "emergency_transfer",
+              "appointment.triage_level"
+            ]
+          },
+          {
+            "id": "payment_callback_source_of_truth",
+            "statement": "支付状态只能由服务端核验回调或财务退款复核节点改变，前台页面不得直接标记为已支付。",
+            "systems": [
+              "datamodel",
+              "workflow",
+              "rbac",
+              "page"
+            ],
+            "refs": [
+              "payment.payment_status",
+              "pay_callback_verify",
+              "pay_refund_review",
+              "payment:confirm",
+              "payment:refund"
+            ]
+          },
+          {
+            "id": "record_requires_appointment",
+            "statement": "每份门诊病例必须关联一个已进入问诊或已完成状态的预约。",
+            "systems": [
+              "datamodel",
+              "workflow"
+            ],
+            "refs": [
+              "medical_record.appointment_ref",
+              "appointment.status",
+              "vet_consult",
+              "record_complete"
+            ]
+          },
+          {
+            "id": "followup_requires_diagnosis",
+            "statement": "复诊提醒计划必须在病例存在诊断结论后才能生成并发送。",
+            "systems": [
+              "datamodel",
+              "workflow",
+              "aigc"
+            ],
+            "refs": [
+              "followup_plan.reminder_content",
+              "medical_record.diagnosis",
+              "followup_schedule",
+              "ai_followup_reminder"
+            ]
+          },
+          {
+            "id": "failed_reminder_must_have_log",
+            "statement": "任何发送失败的复诊提醒都必须保留提醒发送日志并进入失败恢复链。",
             "systems": [
               "datamodel",
               "workflow",
               "page"
             ],
             "refs": [
-              "role_assignment.assignment_status",
-              "access_request.status",
-              "ar_completed"
+              "followup_plan.reminder_status",
+              "reminder_log.delivery_status",
+              "reminder_detect_failure",
+              "reminder:retry"
             ]
           },
           {
-            "id": "high_scope_requires_security_review",
-            "statement": "申请全部数据或高风险数据范围时，必须经过安全审批节点且不得由申请人直接生效。",
+            "id": "audit_before_archive",
+            "statement": "病例归档前必须经过院长质控审核通过，不得直接从草稿归档。",
             "systems": [
               "datamodel",
               "workflow",
               "rbac"
             ],
             "refs": [
-              "data_scope_policy.scope_type",
-              "data_scope_policy.risk_score",
-              "ar_security_review",
-              "requester",
-              "security_admin"
+              "medical_record.audit_status",
+              "record_quality_review",
+              "record_approved_archive",
+              "clinic_manager",
+              "record:audit"
             ]
           },
           {
-            "id": "permission_model_changes_governed",
-            "statement": "角色、权限点、菜单资源和数据范围策略的管理操作必须先通过治理审批后才能发布。",
+            "id": "owner_contact_masked",
+            "statement": "宠物主人手机号和微信号在非联系场景必须以脱敏格式展示。",
             "systems": [
               "datamodel",
-              "rbac",
-              "workflow"
+              "page",
+              "rbac"
             ],
             "refs": [
-              "role_profile",
-              "permission_item",
-              "menu_resource",
-              "data_scope_policy",
-              "role_profile:manage",
-              "permission_item:manage",
-              "menu_resource:manage",
-              "data_scope_policy:manage",
-              "gov_publish"
-            ]
-          },
-          {
-            "id": "data_scope_not_broader_than_role",
-            "statement": "授权记录绑定的数据范围不得宽于被授权角色在数据范围策略台中配置的范围规则。",
-            "systems": [
-              "datamodel",
-              "page"
-            ],
-            "refs": [
-              "role_assignment.role_ref",
-              "role_assignment.data_scope_ref",
-              "data_scope_policy.scope_rule",
-              "page_data_scope_workbench"
-            ]
-          },
-          {
-            "id": "audit_log_for_every_grant_or_revoke",
-            "statement": "每一次授权生效或撤权操作都必须产生一条成功或失败的权限审计日志。",
-            "systems": [
-              "datamodel",
-              "rbac",
-              "workflow"
-            ],
-            "refs": [
-              "role_assignment.assignment_status",
-              "audit_log.operation",
-              "audit_log.result",
-              "access_request:provision",
-              "role_assignment:revoke",
-              "ar_provision"
-            ]
-          },
-          {
-            "id": "ai_generated_review_is_not_final_approval",
-            "statement": "AIGC 生成的风险摘要和审批意见只能作为辅助输入，最终审批必须由审批人角色在工作流节点上确认。",
-            "systems": [
-              "aigc",
-              "workflow",
-              "rbac",
-              "datamodel"
-            ],
-            "refs": [
-              "cap_analyze_access_risk",
-              "cap_generate_approval_note",
-              "access_request.risk_summary",
-              "access_request.approval_note",
-              "approver",
-              "ar_security_review"
-            ]
-          },
-          {
-            "id": "sync_failure_requires_recovery_closure",
-            "statement": "权限缓存同步失败后，只有恢复链路关闭并完成审计核对，相关异常申请才能再次进入生效节点。",
-            "systems": [
-              "workflow",
-              "datamodel"
-            ],
-            "refs": [
-              "rec_detect_failure",
-              "rec_manual_reconcile",
-              "rec_close_incident",
-              "ar_provision",
-              "audit_log.result"
+              "pet_owner.phone",
+              "pet_owner.wechat_id",
+              "owner:read",
+              "schedule_calendar"
             ]
           }
         ]
@@ -1361,8 +1497,8 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
     "skillCount": 6,
     "versionPinsChecked": true,
     "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
-    "closureHash": "3ce79ac0",
-    "stableDigest": "1fe65032",
+    "closureHash": "dcebe941",
+    "stableDigest": "9c98fbec",
     "tierCounts": {
       "hard_blocker": 0,
       "warning": 0,
@@ -1378,466 +1514,173 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
         "modelSection": {
           "entities": [
             {
-              "id": "user_account",
-              "name": "用户账号",
+              "id": "pet_owner",
+              "name": "宠物主人",
               "fields": [
                 {
-                  "id": "username",
-                  "name": "登录名",
+                  "id": "name",
+                  "name": "主人姓名",
                   "type": "string"
                 },
                 {
-                  "id": "display_name",
-                  "name": "姓名",
-                  "type": "string"
-                },
-                {
-                  "id": "mobile",
-                  "name": "手机号",
+                  "id": "phone",
+                  "name": "联系电话",
                   "type": "string",
                   "format": "masked"
                 },
                 {
-                  "id": "department",
-                  "name": "所属部门",
-                  "type": "string"
+                  "id": "wechat_id",
+                  "name": "微信号",
+                  "type": "string",
+                  "format": "masked"
                 },
                 {
-                  "id": "account_status",
-                  "name": "账号状态",
+                  "id": "membership_level",
+                  "name": "会员等级",
                   "type": "enum",
                   "options": [
                     {
-                      "id": "active",
-                      "label": "启用",
-                      "tone": "success"
-                    },
-                    {
-                      "id": "locked",
-                      "label": "锁定",
-                      "tone": "danger"
-                    },
-                    {
-                      "id": "disabled",
-                      "label": "停用",
+                      "id": "normal",
+                      "label": "普通",
                       "tone": "default"
-                    }
-                  ]
-                },
-                {
-                  "id": "last_login_at",
-                  "name": "最后登录时间",
-                  "type": "date"
-                }
-              ]
-            },
-            {
-              "id": "role_profile",
-              "name": "角色",
-              "fields": [
-                {
-                  "id": "role_code",
-                  "name": "角色编码",
-                  "type": "string"
-                },
-                {
-                  "id": "role_name",
-                  "name": "角色名称",
-                  "type": "string"
-                },
-                {
-                  "id": "role_type",
-                  "name": "角色类型",
-                  "type": "enum",
-                  "options": [
+                    },
                     {
-                      "id": "business",
-                      "label": "业务角色",
+                      "id": "silver",
+                      "label": "银卡",
                       "tone": "processing"
                     },
                     {
-                      "id": "admin",
-                      "label": "管理角色",
-                      "tone": "warning"
-                    },
-                    {
-                      "id": "audit",
-                      "label": "审计角色",
-                      "tone": "default"
-                    }
-                  ]
-                },
-                {
-                  "id": "owner_department",
-                  "name": "归属部门",
-                  "type": "string"
-                },
-                {
-                  "id": "role_status",
-                  "name": "角色状态",
-                  "type": "enum",
-                  "options": [
-                    {
-                      "id": "draft",
-                      "label": "草稿",
-                      "tone": "default"
-                    },
-                    {
-                      "id": "pending",
-                      "label": "待审批",
-                      "tone": "warning"
-                    },
-                    {
-                      "id": "active",
-                      "label": "已生效",
+                      "id": "gold",
+                      "label": "金卡",
                       "tone": "success"
-                    },
-                    {
-                      "id": "suspended",
-                      "label": "已暂停",
-                      "tone": "danger"
                     }
                   ]
                 }
               ]
             },
             {
-              "id": "permission_item",
-              "name": "权限点",
+              "id": "pet",
+              "name": "宠物档案",
               "fields": [
                 {
-                  "id": "permission_code",
-                  "name": "权限编码",
+                  "id": "owner_ref",
+                  "name": "所属主人",
+                  "type": "ref"
+                },
+                {
+                  "id": "pet_name",
+                  "name": "宠物名",
                   "type": "string"
                 },
                 {
-                  "id": "permission_name",
-                  "name": "权限名称",
-                  "type": "string"
-                },
-                {
-                  "id": "resource_type",
-                  "name": "资源类型",
+                  "id": "species",
+                  "name": "物种",
                   "type": "enum",
                   "options": [
                     {
-                      "id": "menu",
-                      "label": "菜单",
+                      "id": "cat",
+                      "label": "猫",
                       "tone": "default"
                     },
                     {
-                      "id": "button",
-                      "label": "按钮",
-                      "tone": "processing"
+                      "id": "dog",
+                      "label": "狗",
+                      "tone": "default"
                     },
                     {
-                      "id": "api",
-                      "label": "接口",
+                      "id": "rabbit",
+                      "label": "兔",
+                      "tone": "default"
+                    },
+                    {
+                      "id": "other",
+                      "label": "其他",
                       "tone": "warning"
-                    },
-                    {
-                      "id": "data",
-                      "label": "数据权限",
-                      "tone": "success"
                     }
                   ]
                 },
                 {
-                  "id": "sensitivity_level",
-                  "name": "敏感级别",
-                  "type": "enum",
-                  "options": [
-                    {
-                      "id": "low",
-                      "label": "低",
-                      "tone": "success"
-                    },
-                    {
-                      "id": "medium",
-                      "label": "中",
-                      "tone": "warning"
-                    },
-                    {
-                      "id": "high",
-                      "label": "高",
-                      "tone": "danger"
-                    }
-                  ]
+                  "id": "breed",
+                  "name": "品种",
+                  "type": "string"
                 },
                 {
-                  "id": "permission_status",
-                  "name": "权限状态",
+                  "id": "age_years",
+                  "name": "年龄",
+                  "type": "number"
+                },
+                {
+                  "id": "neuter_status",
+                  "name": "绝育状态",
                   "type": "enum",
                   "options": [
                     {
-                      "id": "enabled",
-                      "label": "启用",
-                      "tone": "success"
+                      "id": "unknown",
+                      "label": "未知",
+                      "tone": "default"
                     },
                     {
-                      "id": "deprecated",
-                      "label": "废弃",
+                      "id": "not_neutered",
+                      "label": "未绝育",
                       "tone": "warning"
                     },
                     {
-                      "id": "disabled",
-                      "label": "停用",
-                      "tone": "default"
+                      "id": "neutered",
+                      "label": "已绝育",
+                      "tone": "success"
                     }
                   ]
                 }
               ]
             },
             {
-              "id": "menu_resource",
-              "name": "菜单资源",
+              "id": "appointment",
+              "name": "预约问诊",
               "fields": [
                 {
-                  "id": "menu_code",
-                  "name": "菜单编码",
-                  "type": "string"
-                },
-                {
-                  "id": "menu_name",
-                  "name": "菜单名称",
-                  "type": "string"
-                },
-                {
-                  "id": "parent_menu",
-                  "name": "上级菜单",
+                  "id": "owner_ref",
+                  "name": "预约主人",
                   "type": "ref"
                 },
                 {
-                  "id": "bound_permission",
-                  "name": "绑定权限点",
+                  "id": "pet_ref",
+                  "name": "就诊宠物",
                   "type": "ref"
                 },
                 {
-                  "id": "menu_status",
-                  "name": "菜单状态",
-                  "type": "enum",
-                  "options": [
-                    {
-                      "id": "visible",
-                      "label": "可见",
-                      "tone": "success"
-                    },
-                    {
-                      "id": "hidden",
-                      "label": "隐藏",
-                      "tone": "default"
-                    },
-                    {
-                      "id": "retired",
-                      "label": "下线",
-                      "tone": "danger"
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "id": "data_scope_policy",
-              "name": "数据范围策略",
-              "fields": [
-                {
-                  "id": "policy_name",
-                  "name": "策略名称",
-                  "type": "string"
-                },
-                {
-                  "id": "scope_type",
-                  "name": "范围类型",
-                  "type": "enum",
-                  "options": [
-                    {
-                      "id": "self",
-                      "label": "仅本人",
-                      "tone": "default"
-                    },
-                    {
-                      "id": "department",
-                      "label": "本部门",
-                      "tone": "processing"
-                    },
-                    {
-                      "id": "department_tree",
-                      "label": "本部门及下级",
-                      "tone": "warning"
-                    },
-                    {
-                      "id": "all",
-                      "label": "全部数据",
-                      "tone": "danger"
-                    },
-                    {
-                      "id": "custom",
-                      "label": "自定义",
-                      "tone": "processing"
-                    }
-                  ]
-                },
-                {
-                  "id": "scope_rule",
-                  "name": "范围规则",
-                  "type": "string"
-                },
-                {
-                  "id": "risk_score",
-                  "name": "风险评分",
-                  "type": "number",
-                  "format": "score"
-                },
-                {
-                  "id": "policy_status",
-                  "name": "策略状态",
-                  "type": "enum",
-                  "options": [
-                    {
-                      "id": "draft",
-                      "label": "草稿",
-                      "tone": "default"
-                    },
-                    {
-                      "id": "reviewing",
-                      "label": "审核中",
-                      "tone": "processing"
-                    },
-                    {
-                      "id": "effective",
-                      "label": "已生效",
-                      "tone": "success"
-                    },
-                    {
-                      "id": "rejected",
-                      "label": "已驳回",
-                      "tone": "danger"
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "id": "role_assignment",
-              "name": "角色授权",
-              "fields": [
-                {
-                  "id": "user_ref",
-                  "name": "授权用户",
-                  "type": "ref"
-                },
-                {
-                  "id": "role_ref",
-                  "name": "授权角色",
-                  "type": "ref"
-                },
-                {
-                  "id": "data_scope_ref",
-                  "name": "数据范围",
-                  "type": "ref"
-                },
-                {
-                  "id": "valid_from",
-                  "name": "生效日期",
+                  "id": "scheduled_at",
+                  "name": "预约时间",
                   "type": "date"
                 },
                 {
-                  "id": "valid_to",
-                  "name": "失效日期",
-                  "type": "date"
-                },
-                {
-                  "id": "assignment_status",
-                  "name": "授权状态",
-                  "type": "enum",
-                  "options": [
-                    {
-                      "id": "pending",
-                      "label": "待生效",
-                      "tone": "warning"
-                    },
-                    {
-                      "id": "active",
-                      "label": "生效中",
-                      "tone": "success"
-                    },
-                    {
-                      "id": "expired",
-                      "label": "已过期",
-                      "tone": "default"
-                    },
-                    {
-                      "id": "revoked",
-                      "label": "已撤销",
-                      "tone": "danger"
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "id": "access_request",
-              "name": "权限申请单",
-              "fields": [
-                {
-                  "id": "request_no",
-                  "name": "申请单号",
-                  "type": "string"
-                },
-                {
-                  "id": "requester_ref",
-                  "name": "申请人",
-                  "type": "ref"
-                },
-                {
-                  "id": "target_user_ref",
-                  "name": "目标用户",
-                  "type": "ref"
-                },
-                {
-                  "id": "requested_role_ref",
-                  "name": "申请角色",
-                  "type": "ref"
-                },
-                {
-                  "id": "requested_scope_ref",
-                  "name": "申请数据范围",
-                  "type": "ref"
-                },
-                {
-                  "id": "business_reason",
-                  "name": "申请理由",
-                  "type": "string"
-                },
-                {
-                  "id": "risk_summary",
-                  "name": "风险摘要",
-                  "type": "string"
-                },
-                {
-                  "id": "approval_note",
-                  "name": "审批意见",
+                  "id": "reason",
+                  "name": "主诉原因",
                   "type": "string"
                 },
                 {
                   "id": "status",
-                  "name": "申请状态",
+                  "name": "预约状态",
                   "type": "enum",
                   "options": [
                     {
                       "id": "draft",
-                      "label": "草稿",
+                      "label": "待确认",
                       "tone": "default"
                     },
                     {
-                      "id": "reviewing",
-                      "label": "审核中",
+                      "id": "confirmed",
+                      "label": "已确认",
                       "tone": "processing"
                     },
                     {
-                      "id": "provisioning",
-                      "label": "生效中",
-                      "tone": "warning"
+                      "id": "triaged",
+                      "label": "已分诊",
+                      "tone": "processing"
+                    },
+                    {
+                      "id": "consulting",
+                      "label": "问诊中",
+                      "tone": "processing"
                     },
                     {
                       "id": "completed",
@@ -1845,101 +1688,338 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
                       "tone": "success"
                     },
                     {
-                      "id": "rejected",
-                      "label": "已驳回",
+                      "id": "cancelled",
+                      "label": "已取消",
                       "tone": "danger"
                     }
                   ]
                 },
                 {
-                  "id": "created_at",
-                  "name": "创建时间",
-                  "type": "date"
+                  "id": "triage_level",
+                  "name": "分诊等级",
+                  "type": "enum",
+                  "options": [
+                    {
+                      "id": "routine",
+                      "label": "常规",
+                      "tone": "default"
+                    },
+                    {
+                      "id": "priority",
+                      "label": "优先",
+                      "tone": "warning"
+                    },
+                    {
+                      "id": "emergency",
+                      "label": "急诊",
+                      "tone": "danger"
+                    }
+                  ]
+                },
+                {
+                  "id": "consult_fee",
+                  "name": "问诊费",
+                  "type": "number",
+                  "format": "money"
+                },
+                {
+                  "id": "wait_minutes",
+                  "name": "等待分钟",
+                  "type": "number"
                 }
               ]
             },
             {
-              "id": "audit_log",
-              "name": "权限审计日志",
+              "id": "triage_record",
+              "name": "分诊记录",
               "fields": [
                 {
-                  "id": "actor_ref",
-                  "name": "操作人",
+                  "id": "appointment_ref",
+                  "name": "关联预约",
                   "type": "ref"
                 },
                 {
-                  "id": "target_entity",
-                  "name": "对象类型",
+                  "id": "temperature",
+                  "name": "体温",
+                  "type": "number"
+                },
+                {
+                  "id": "weight_kg",
+                  "name": "体重公斤",
+                  "type": "number"
+                },
+                {
+                  "id": "symptom_notes",
+                  "name": "症状记录",
                   "type": "string"
                 },
                 {
-                  "id": "target_id",
-                  "name": "对象标识",
+                  "id": "ai_triage_suggestion",
+                  "name": "AI分诊建议",
                   "type": "string"
                 },
                 {
-                  "id": "operation",
-                  "name": "操作动作",
+                  "id": "risk_level",
+                  "name": "风险等级",
                   "type": "enum",
                   "options": [
                     {
-                      "id": "create",
-                      "label": "创建",
-                      "tone": "processing"
-                    },
-                    {
-                      "id": "approve",
-                      "label": "审批",
+                      "id": "low",
+                      "label": "低风险",
                       "tone": "success"
                     },
                     {
-                      "id": "reject",
-                      "label": "驳回",
-                      "tone": "danger"
-                    },
-                    {
-                      "id": "grant",
-                      "label": "授权",
+                      "id": "medium",
+                      "label": "中风险",
                       "tone": "warning"
                     },
                     {
-                      "id": "revoke",
-                      "label": "撤权",
+                      "id": "high",
+                      "label": "高风险",
                       "tone": "danger"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "medical_record",
+              "name": "门诊病例",
+              "fields": [
+                {
+                  "id": "appointment_ref",
+                  "name": "关联预约",
+                  "type": "ref"
+                },
+                {
+                  "id": "veterinarian_ref",
+                  "name": "接诊兽医",
+                  "type": "ref"
+                },
+                {
+                  "id": "transcript_text",
+                  "name": "问诊转写文本",
+                  "type": "string"
+                },
+                {
+                  "id": "soap_summary",
+                  "name": "SOAP结构化病例",
+                  "type": "string"
+                },
+                {
+                  "id": "diagnosis",
+                  "name": "诊断结论",
+                  "type": "string"
+                },
+                {
+                  "id": "audit_status",
+                  "name": "病例审核状态",
+                  "type": "enum",
+                  "options": [
+                    {
+                      "id": "draft",
+                      "label": "草稿",
+                      "tone": "default"
                     },
                     {
-                      "id": "sync",
-                      "label": "同步",
-                      "tone": "default"
+                      "id": "submitted",
+                      "label": "待审核",
+                      "tone": "warning"
+                    },
+                    {
+                      "id": "approved",
+                      "label": "已通过",
+                      "tone": "success"
+                    },
+                    {
+                      "id": "returned",
+                      "label": "已退回",
+                      "tone": "danger"
                     }
                   ]
                 },
                 {
-                  "id": "result",
-                  "name": "操作结果",
+                  "id": "quality_score",
+                  "name": "病例质量分",
+                  "type": "number",
+                  "format": "score"
+                }
+              ]
+            },
+            {
+              "id": "followup_plan",
+              "name": "复诊提醒计划",
+              "fields": [
+                {
+                  "id": "appointment_ref",
+                  "name": "来源预约",
+                  "type": "ref"
+                },
+                {
+                  "id": "pet_ref",
+                  "name": "复诊宠物",
+                  "type": "ref"
+                },
+                {
+                  "id": "due_date",
+                  "name": "复诊日期",
+                  "type": "date"
+                },
+                {
+                  "id": "reminder_content",
+                  "name": "提醒内容",
+                  "type": "string"
+                },
+                {
+                  "id": "reminder_status",
+                  "name": "提醒状态",
                   "type": "enum",
                   "options": [
                     {
-                      "id": "success",
-                      "label": "成功",
+                      "id": "pending",
+                      "label": "待发送",
+                      "tone": "warning"
+                    },
+                    {
+                      "id": "sent",
+                      "label": "已发送",
                       "tone": "success"
                     },
                     {
                       "id": "failed",
-                      "label": "失败",
+                      "label": "发送失败",
                       "tone": "danger"
                     },
                     {
-                      "id": "partial",
-                      "label": "部分成功",
+                      "id": "confirmed",
+                      "label": "已确认复诊",
+                      "tone": "success"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "payment",
+              "name": "问诊支付",
+              "fields": [
+                {
+                  "id": "appointment_ref",
+                  "name": "关联预约",
+                  "type": "ref"
+                },
+                {
+                  "id": "amount",
+                  "name": "支付金额",
+                  "type": "number",
+                  "format": "money"
+                },
+                {
+                  "id": "payment_status",
+                  "name": "支付状态",
+                  "type": "enum",
+                  "options": [
+                    {
+                      "id": "unpaid",
+                      "label": "未支付",
                       "tone": "warning"
+                    },
+                    {
+                      "id": "paid",
+                      "label": "已支付",
+                      "tone": "success"
+                    },
+                    {
+                      "id": "refunding",
+                      "label": "退款中",
+                      "tone": "processing"
+                    },
+                    {
+                      "id": "refunded",
+                      "label": "已退款",
+                      "tone": "default"
+                    },
+                    {
+                      "id": "failed",
+                      "label": "支付失败",
+                      "tone": "danger"
                     }
                   ]
                 },
                 {
-                  "id": "occurred_at",
-                  "name": "发生时间",
+                  "id": "paid_at",
+                  "name": "支付时间",
                   "type": "date"
+                },
+                {
+                  "id": "gateway_trade_no",
+                  "name": "支付网关单号",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "id": "reminder_log",
+              "name": "提醒发送日志",
+              "fields": [
+                {
+                  "id": "followup_plan_ref",
+                  "name": "关联复诊计划",
+                  "type": "ref"
+                },
+                {
+                  "id": "sent_at",
+                  "name": "发送时间",
+                  "type": "date"
+                },
+                {
+                  "id": "channel",
+                  "name": "发送渠道",
+                  "type": "enum",
+                  "options": [
+                    {
+                      "id": "sms",
+                      "label": "短信",
+                      "tone": "default"
+                    },
+                    {
+                      "id": "wechat",
+                      "label": "微信",
+                      "tone": "success"
+                    },
+                    {
+                      "id": "phone",
+                      "label": "电话",
+                      "tone": "processing"
+                    }
+                  ]
+                },
+                {
+                  "id": "delivery_status",
+                  "name": "送达状态",
+                  "type": "enum",
+                  "options": [
+                    {
+                      "id": "queued",
+                      "label": "排队中",
+                      "tone": "processing"
+                    },
+                    {
+                      "id": "delivered",
+                      "label": "已送达",
+                      "tone": "success"
+                    },
+                    {
+                      "id": "bounced",
+                      "label": "退信",
+                      "tone": "danger"
+                    }
+                  ]
+                },
+                {
+                  "id": "retry_count",
+                  "name": "重试次数",
+                  "type": "number"
                 }
               ]
             }
@@ -1954,103 +2034,120 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
         "digest": "522fe6a69e34fc20",
         "modelSection": {
           "roles": [
-            "requester",
-            "org_admin",
-            "security_admin",
-            "approver",
-            "auditor"
+            "receptionist",
+            "triage_nurse",
+            "veterinarian",
+            "finance_clerk",
+            "clinic_manager",
+            "ops_staff"
           ],
           "permissions": [
-            "access_request:create",
-            "access_request:read",
-            "access_request:review",
-            "access_request:provision",
-            "role_profile:read",
-            "role_profile:manage",
-            "permission_item:read",
-            "permission_item:manage",
-            "menu_resource:read",
-            "menu_resource:manage",
-            "data_scope_policy:read",
-            "data_scope_policy:manage",
-            "role_assignment:read",
-            "role_assignment:revoke",
-            "audit_log:read",
-            "audit_log:export"
+            "owner:read",
+            "pet:read",
+            "appointment:create",
+            "appointment:read",
+            "appointment:update",
+            "appointment:cancel",
+            "triage:read",
+            "triage:update",
+            "record:read",
+            "record:write",
+            "record:audit",
+            "followup:read",
+            "followup:create",
+            "followup:update",
+            "payment:read",
+            "payment:confirm",
+            "payment:refund",
+            "reminder:retry",
+            "dashboard:view",
+            "ai:run"
           ],
           "menus": [
             {
-              "id": "menu_requester_workspace",
-              "label": "我的权限申请",
+              "id": "front_desk_menu",
+              "label": "前台预约台",
               "roleRefs": [
-                "requester"
+                "receptionist"
               ],
               "permissionRefs": [
-                "access_request:create",
-                "access_request:read",
-                "role_profile:read",
-                "data_scope_policy:read"
+                "owner:read",
+                "pet:read",
+                "appointment:create",
+                "appointment:read",
+                "appointment:update",
+                "appointment:cancel",
+                "payment:read"
               ]
             },
             {
-              "id": "menu_org_admin_assignment",
-              "label": "组织授权管理",
+              "id": "triage_menu",
+              "label": "护士分诊台",
               "roleRefs": [
-                "org_admin"
+                "triage_nurse"
               ],
               "permissionRefs": [
-                "access_request:read",
-                "access_request:review",
-                "role_assignment:read",
-                "role_assignment:revoke",
-                "role_profile:read",
-                "data_scope_policy:read"
+                "appointment:read",
+                "triage:read",
+                "triage:update",
+                "ai:run"
               ]
             },
             {
-              "id": "menu_security_admin_config",
-              "label": "权限模型配置",
+              "id": "doctor_menu",
+              "label": "兽医问诊台",
               "roleRefs": [
-                "security_admin"
+                "veterinarian"
               ],
               "permissionRefs": [
-                "access_request:read",
-                "access_request:provision",
-                "role_profile:manage",
-                "permission_item:manage",
-                "menu_resource:manage",
-                "data_scope_policy:manage",
-                "role_assignment:read"
+                "appointment:read",
+                "triage:read",
+                "record:read",
+                "record:write",
+                "followup:read",
+                "followup:create",
+                "followup:update",
+                "ai:run"
               ]
             },
             {
-              "id": "menu_approver_review",
-              "label": "权限审批中心",
+              "id": "finance_menu",
+              "label": "财务支付台",
               "roleRefs": [
-                "approver"
+                "finance_clerk"
               ],
               "permissionRefs": [
-                "access_request:read",
-                "access_request:review",
-                "permission_item:read",
-                "menu_resource:read",
-                "data_scope_policy:read"
+                "payment:read",
+                "payment:confirm",
+                "payment:refund"
               ]
             },
             {
-              "id": "menu_auditor_console",
-              "label": "权限审计看板",
+              "id": "manager_menu",
+              "label": "院长质控台",
               "roleRefs": [
-                "auditor"
+                "clinic_manager"
               ],
               "permissionRefs": [
-                "audit_log:read",
-                "audit_log:export",
-                "role_assignment:read",
-                "permission_item:read",
-                "menu_resource:read",
-                "role_profile:read",
-                "data_scope_policy:read"
+                "record:read",
+                "record:audit",
+                "dashboard:view",
+                "appointment:read",
+                "followup:read",
+                "payment:read"
+              ]
+            },
+            {
+              "id": "ops_menu",
+              "label": "运营提醒台",
+              "roleRefs": [
+                "ops_staff"
+              ],
+              "permissionRefs": [
+                "followup:read",
+                "followup:update",
+                "reminder:retry",
+                "dashboard:view"
               ]
             }
           ]
@@ -2063,234 +2160,320 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
         "artifactId": "llm-linkage-workflow",
         "digest": "2b54e8a4fd79e59f",
         "modelSection": {
-          "id": "access_request_lifecycle",
-          "name": "权限申请单生命周期",
+          "id": "appointment_lifecycle",
+          "name": "预约问诊生命周期",
           "nodes": [
             {
-              "id": "ar_draft",
-              "name": "填写权限申请",
-              "assigneeRole": "requester",
-              "phase": "提交"
+              "id": "appt_submit",
+              "name": "提交预约",
+              "assigneeRole": "receptionist",
+              "phase": "预约"
             },
             {
-              "id": "ar_org_review",
-              "name": "部门管理员核验",
-              "assigneeRole": "org_admin",
-              "phase": "校验"
+              "id": "appt_confirm",
+              "name": "确认档期与宠物信息",
+              "assigneeRole": "receptionist",
+              "phase": "预约"
             },
             {
-              "id": "ar_security_review",
-              "name": "安全审批",
-              "assigneeRole": "approver",
-              "phase": "校验"
+              "id": "appt_cancelled",
+              "name": "取消预约",
+              "assigneeRole": "receptionist",
+              "phase": "预约"
             },
             {
-              "id": "ar_provision",
-              "name": "执行授权生效",
-              "assigneeRole": "security_admin",
-              "phase": "生效"
+              "id": "triage_assess",
+              "name": "护士分诊评估",
+              "assigneeRole": "triage_nurse",
+              "phase": "分诊"
             },
             {
-              "id": "ar_completed",
-              "name": "归档完成",
-              "assigneeRole": "auditor",
-              "phase": "归档"
+              "id": "vet_consult",
+              "name": "兽医问诊",
+              "assigneeRole": "veterinarian",
+              "phase": "问诊"
             },
             {
-              "id": "ar_rejected",
-              "name": "驳回关闭",
-              "assigneeRole": "requester",
-              "phase": "归档"
+              "id": "emergency_transfer",
+              "name": "急诊转处置",
+              "assigneeRole": "veterinarian",
+              "phase": "问诊"
+            },
+            {
+              "id": "record_complete",
+              "name": "完成病例",
+              "assigneeRole": "veterinarian",
+              "phase": "问诊"
+            },
+            {
+              "id": "followup_schedule",
+              "name": "制定复诊提醒",
+              "assigneeRole": "veterinarian",
+              "phase": "复诊"
+            },
+            {
+              "id": "case_closed",
+              "name": "问诊归档",
+              "assigneeRole": "receptionist",
+              "phase": "复诊"
             }
           ],
           "transitions": [
             {
-              "from": "ar_draft",
-              "to": "ar_org_review",
-              "condition": "申请资料完整"
+              "from": "appt_submit",
+              "to": "appt_confirm",
+              "condition": "资料完整"
             },
             {
-              "from": "ar_org_review",
-              "to": "ar_draft",
-              "condition": "业务理由不充分，退回补充"
+              "from": "appt_confirm",
+              "to": "appt_cancelled",
+              "condition": "主人取消或档期不可用"
             },
             {
-              "from": "ar_org_review",
-              "to": "ar_security_review",
-              "condition": "部门核验通过"
+              "from": "appt_confirm",
+              "to": "triage_assess",
+              "condition": "到院或线上签到"
             },
             {
-              "from": "ar_org_review",
-              "to": "ar_rejected",
-              "condition": "申请人与岗位不匹配"
+              "from": "triage_assess",
+              "to": "appt_confirm",
+              "condition": "宠物信息缺失需补充"
             },
             {
-              "from": "ar_security_review",
-              "to": "ar_provision",
-              "condition": "风险可接受"
+              "from": "triage_assess",
+              "to": "vet_consult",
+              "condition": "常规或优先问诊"
             },
             {
-              "from": "ar_security_review",
-              "to": "ar_rejected",
-              "condition": "高敏权限或数据范围过大"
+              "from": "triage_assess",
+              "to": "emergency_transfer",
+              "condition": "急诊等级"
             },
             {
-              "from": "ar_provision",
-              "to": "ar_completed",
-              "condition": "角色与数据范围写入成功"
+              "from": "emergency_transfer",
+              "to": "vet_consult",
+              "condition": "生命体征稳定后补问诊"
             },
             {
-              "from": "ar_provision",
-              "to": "ar_security_review",
-              "condition": "授权写入失败需复核"
+              "from": "vet_consult",
+              "to": "record_complete",
+              "condition": "问诊结束"
+            },
+            {
+              "from": "record_complete",
+              "to": "vet_consult",
+              "condition": "病例信息不完整"
+            },
+            {
+              "from": "record_complete",
+              "to": "followup_schedule",
+              "condition": "需要复诊"
+            },
+            {
+              "from": "record_complete",
+              "to": "case_closed",
+              "condition": "无需复诊"
+            },
+            {
+              "from": "followup_schedule",
+              "to": "case_closed",
+              "condition": "提醒计划已生成"
             }
           ],
           "chains": [
             {
-              "id": "role_policy_governance",
-              "name": "角色与数据范围治理审批",
-              "kind": "governance",
+              "id": "consult_payment_chain",
+              "name": "问诊费支付入账链",
+              "kind": "money",
               "nodes": [
                 {
-                  "id": "gov_submit_change",
-                  "name": "提交角色或策略变更",
-                  "assigneeRole": "security_admin",
-                  "phase": "提交"
+                  "id": "pay_order_create",
+                  "name": "生成问诊费账单",
+                  "assigneeRole": "receptionist",
+                  "phase": "计费"
                 },
                 {
-                  "id": "gov_business_review",
-                  "name": "业务负责人评审",
-                  "assigneeRole": "approver",
-                  "phase": "评审"
+                  "id": "pay_owner_pay",
+                  "name": "主人支付",
+                  "assigneeRole": "receptionist",
+                  "phase": "支付"
                 },
                 {
-                  "id": "gov_audit_review",
-                  "name": "审计合规复核",
-                  "assigneeRole": "auditor",
-                  "phase": "评审"
+                  "id": "pay_callback_verify",
+                  "name": "服务端核验回调",
+                  "assigneeRole": "finance_clerk",
+                  "phase": "支付"
                 },
                 {
-                  "id": "gov_publish",
-                  "name": "发布权限模型",
-                  "assigneeRole": "security_admin",
-                  "phase": "发布"
+                  "id": "pay_failed",
+                  "name": "支付失败处理",
+                  "assigneeRole": "finance_clerk",
+                  "phase": "支付"
                 },
                 {
-                  "id": "gov_rejected",
-                  "name": "治理变更驳回",
-                  "assigneeRole": "security_admin",
-                  "phase": "关闭"
+                  "id": "pay_ledger_post",
+                  "name": "入账留痕",
+                  "assigneeRole": "finance_clerk",
+                  "phase": "入账"
+                },
+                {
+                  "id": "pay_refund_review",
+                  "name": "退款复核",
+                  "assigneeRole": "clinic_manager",
+                  "phase": "入账"
                 }
               ],
               "transitions": [
                 {
-                  "from": "gov_submit_change",
-                  "to": "gov_business_review",
-                  "condition": "变更说明完整"
+                  "from": "pay_order_create",
+                  "to": "pay_owner_pay",
+                  "condition": "账单金额确认"
                 },
                 {
-                  "from": "gov_business_review",
-                  "to": "gov_submit_change",
-                  "condition": "影响范围不清退回修订"
+                  "from": "pay_owner_pay",
+                  "to": "pay_callback_verify",
+                  "condition": "收到支付网关通知"
                 },
                 {
-                  "from": "gov_business_review",
-                  "to": "gov_audit_review",
-                  "condition": "业务评审通过"
+                  "from": "pay_callback_verify",
+                  "to": "pay_ledger_post",
+                  "condition": "签名与金额一致"
                 },
                 {
-                  "from": "gov_audit_review",
-                  "to": "gov_publish",
-                  "condition": "符合最小权限要求"
+                  "from": "pay_callback_verify",
+                  "to": "pay_failed",
+                  "condition": "签名错误或金额不一致"
                 },
                 {
-                  "from": "gov_audit_review",
-                  "to": "gov_rejected",
-                  "condition": "存在越权或职责冲突"
+                  "from": "pay_failed",
+                  "to": "pay_owner_pay",
+                  "condition": "允许重新支付"
                 },
                 {
-                  "from": "gov_publish",
-                  "to": "gov_audit_review",
-                  "condition": "发布校验失败回审"
+                  "from": "pay_ledger_post",
+                  "to": "pay_refund_review",
+                  "condition": "预约取消且符合退款规则"
                 },
                 {
-                  "from": "gov_publish",
-                  "to": "gov_submit_change",
-                  "condition": "需重新拆分权限包"
+                  "from": "pay_refund_review",
+                  "to": "pay_ledger_post",
+                  "condition": "退款完成后补记负向流水"
                 }
               ]
             },
             {
-              "id": "permission_sync_recovery",
-              "name": "权限缓存与同步恢复",
-              "kind": "recovery",
+              "id": "record_governance_chain",
+              "name": "病例质控审核链",
+              "kind": "governance",
               "nodes": [
                 {
-                  "id": "rec_detect_failure",
-                  "name": "发现授权同步异常",
-                  "assigneeRole": "security_admin",
-                  "phase": "发现"
+                  "id": "record_submit_audit",
+                  "name": "提交病例审核",
+                  "assigneeRole": "veterinarian",
+                  "phase": "提交"
                 },
                 {
-                  "id": "rec_retry_sync",
-                  "name": "重试同步权限缓存",
-                  "assigneeRole": "security_admin",
-                  "phase": "修复"
+                  "id": "record_quality_review",
+                  "name": "院长质控审核",
+                  "assigneeRole": "clinic_manager",
+                  "phase": "审核"
                 },
                 {
-                  "id": "rec_manual_reconcile",
-                  "name": "人工核对授权差异",
-                  "assigneeRole": "auditor",
-                  "phase": "修复"
+                  "id": "record_return_fix",
+                  "name": "退回修订病例",
+                  "assigneeRole": "veterinarian",
+                  "phase": "审核"
                 },
                 {
-                  "id": "rec_restore_service",
-                  "name": "恢复访问控制服务",
-                  "assigneeRole": "security_admin",
-                  "phase": "恢复"
-                },
-                {
-                  "id": "rec_close_incident",
-                  "name": "关闭恢复工单",
-                  "assigneeRole": "auditor",
-                  "phase": "关闭"
+                  "id": "record_approved_archive",
+                  "name": "病例审核归档",
+                  "assigneeRole": "clinic_manager",
+                  "phase": "归档"
                 }
               ],
               "transitions": [
                 {
-                  "from": "rec_detect_failure",
-                  "to": "rec_retry_sync",
-                  "condition": "异常可自动重试"
+                  "from": "record_submit_audit",
+                  "to": "record_quality_review",
+                  "condition": "病例质量分达到提交线"
                 },
                 {
-                  "from": "rec_detect_failure",
-                  "to": "rec_manual_reconcile",
-                  "condition": "发现授权账实不一致"
+                  "from": "record_quality_review",
+                  "to": "record_approved_archive",
+                  "condition": "审核通过"
                 },
                 {
-                  "from": "rec_retry_sync",
-                  "to": "rec_restore_service",
-                  "condition": "缓存重建成功"
+                  "from": "record_quality_review",
+                  "to": "record_return_fix",
+                  "condition": "诊断或用药记录不完整"
                 },
                 {
-                  "from": "rec_retry_sync",
-                  "to": "rec_manual_reconcile",
-                  "condition": "重试仍失败"
+                  "from": "record_return_fix",
+                  "to": "record_submit_audit",
+                  "condition": "兽医修订后重新提交"
+                }
+              ]
+            },
+            {
+              "id": "reminder_recovery_chain",
+              "name": "复诊提醒失败恢复链",
+              "kind": "recovery",
+              "nodes": [
+                {
+                  "id": "reminder_detect_failure",
+                  "name": "检测提醒失败",
+                  "assigneeRole": "ops_staff",
+                  "phase": "检测"
                 },
                 {
-                  "from": "rec_manual_reconcile",
-                  "to": "rec_retry_sync",
-                  "condition": "差异修正后再次同步"
+                  "id": "reminder_auto_retry",
+                  "name": "自动切换渠道重试",
+                  "assigneeRole": "ops_staff",
+                  "phase": "重试"
                 },
                 {
-                  "from": "rec_restore_service",
-                  "to": "rec_close_incident",
-                  "condition": "访问校验通过"
+                  "id": "reminder_manual_call",
+                  "name": "人工电话确认",
+                  "assigneeRole": "receptionist",
+                  "phase": "重试"
                 },
                 {
-                  "from": "rec_restore_service",
-                  "to": "rec_manual_reconcile",
-                  "condition": "仍存在漏授权或越权"
+                  "id": "reminder_closed",
+                  "name": "关闭提醒工单",
+                  "assigneeRole": "ops_staff",
+                  "phase": "闭环"
+                }
+              ],
+              "transitions": [
+                {
+                  "from": "reminder_detect_failure",
+                  "to": "reminder_auto_retry",
+                  "condition": "重试次数小于3次"
+                },
+                {
+                  "from": "reminder_detect_failure",
+                  "to": "reminder_manual_call",
+                  "condition": "连续退信或电话优先客户"
+                },
+                {
+                  "from": "reminder_auto_retry",
+                  "to": "reminder_closed",
+                  "condition": "送达成功"
+                },
+                {
+                  "from": "reminder_auto_retry",
+                  "to": "reminder_manual_call",
+                  "condition": "重试后仍失败"
+                },
+                {
+                  "from": "reminder_manual_call",
+                  "to": "reminder_detect_failure",
+                  "condition": "号码错误需回到检测更新资料"
+                },
+                {
+                  "from": "reminder_manual_call",
+                  "to": "reminder_closed",
+                  "condition": "主人已确认复诊"
                 }
               ]
             }
@@ -2306,158 +2489,250 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
         "modelSection": {
           "pages": [
             {
-              "id": "page_access_request_kanban",
-              "name": "权限申请看板",
+              "id": "appointment_kanban",
+              "name": "预约流转看板",
               "kind": "kanban",
-              "statusField": "access_request.status",
+              "statusField": "appointment.status",
               "fieldBindings": [
-                "access_request.request_no",
-                "access_request.requester_ref",
-                "access_request.target_user_ref",
-                "access_request.requested_role_ref",
-                "access_request.requested_scope_ref",
-                "access_request.business_reason",
-                "access_request.risk_summary",
-                "access_request.approval_note",
-                "access_request.status",
-                "access_request.created_at"
+                "appointment.owner_ref",
+                "appointment.pet_ref",
+                "appointment.scheduled_at",
+                "appointment.reason",
+                "appointment.status",
+                "appointment.triage_level",
+                "appointment.consult_fee"
               ],
               "actionPermissions": [
-                "access_request:create",
-                "access_request:read",
-                "access_request:review",
-                "access_request:provision"
+                "appointment:create",
+                "appointment:read",
+                "appointment:update",
+                "appointment:cancel"
               ]
             },
             {
-              "id": "page_role_permission_workbench",
-              "name": "角色权限配置台",
+              "id": "schedule_calendar",
+              "name": "预约排班日历",
+              "kind": "calendar",
+              "dateField": "appointment.scheduled_at",
+              "colorBy": "appointment.triage_level",
+              "fieldBindings": [
+                "appointment.scheduled_at",
+                "appointment.status",
+                "appointment.triage_level",
+                "pet.pet_name",
+                "pet.species",
+                "pet_owner.name",
+                "pet_owner.phone"
+              ],
+              "actionPermissions": [
+                "appointment:read",
+                "appointment:update",
+                "owner:read",
+                "pet:read"
+              ]
+            },
+            {
+              "id": "triage_workbench",
+              "name": "护士分诊工作台",
               "kind": "workbench",
               "fieldBindings": [
-                "role_profile.role_code",
-                "role_profile.role_name",
-                "role_profile.role_type",
-                "role_profile.owner_department",
-                "role_profile.role_status",
-                "permission_item.permission_code",
-                "permission_item.permission_name",
-                "permission_item.resource_type",
-                "permission_item.sensitivity_level",
-                "permission_item.permission_status",
-                "menu_resource.menu_code",
-                "menu_resource.menu_name",
-                "menu_resource.parent_menu",
-                "menu_resource.bound_permission",
-                "menu_resource.menu_status"
+                "triage_record.appointment_ref",
+                "triage_record.temperature",
+                "triage_record.weight_kg",
+                "triage_record.symptom_notes",
+                "triage_record.ai_triage_suggestion",
+                "triage_record.risk_level",
+                "appointment.reason",
+                "appointment.triage_level"
               ],
               "actionPermissions": [
-                "role_profile:read",
-                "role_profile:manage",
-                "permission_item:read",
-                "permission_item:manage",
-                "menu_resource:read",
-                "menu_resource:manage"
+                "triage:read",
+                "triage:update",
+                "appointment:read",
+                "ai:run"
               ]
             },
             {
-              "id": "page_data_scope_workbench",
-              "name": "数据范围策略台",
+              "id": "doctor_consult_workbench",
+              "name": "兽医问诊工作台",
               "kind": "workbench",
               "fieldBindings": [
-                "data_scope_policy.policy_name",
-                "data_scope_policy.scope_type",
-                "data_scope_policy.scope_rule",
-                "data_scope_policy.risk_score",
-                "data_scope_policy.policy_status",
-                "role_assignment.user_ref",
-                "role_assignment.role_ref",
-                "role_assignment.data_scope_ref",
-                "role_assignment.valid_from",
-                "role_assignment.valid_to",
-                "role_assignment.assignment_status"
+                "medical_record.appointment_ref",
+                "medical_record.transcript_text",
+                "medical_record.soap_summary",
+                "medical_record.diagnosis",
+                "medical_record.audit_status",
+                "medical_record.quality_score",
+                "followup_plan.due_date",
+                "followup_plan.reminder_content"
               ],
               "actionPermissions": [
-                "data_scope_policy:read",
-                "data_scope_policy:manage",
-                "role_assignment:read",
-                "role_assignment:revoke"
+                "record:read",
+                "record:write",
+                "followup:read",
+                "followup:create",
+                "followup:update",
+                "ai:run"
               ]
             },
             {
-              "id": "page_user_account_workbench",
-              "name": "用户账号管理",
+              "id": "followup_ops_workbench",
+              "name": "复诊提醒运营台",
               "kind": "workbench",
               "fieldBindings": [
-                "user_account.username",
-                "user_account.display_name",
-                "user_account.mobile",
-                "user_account.department",
-                "user_account.account_status",
-                "user_account.last_login_at"
+                "followup_plan.appointment_ref",
+                "followup_plan.pet_ref",
+                "followup_plan.due_date",
+                "followup_plan.reminder_content",
+                "followup_plan.reminder_status",
+                "reminder_log.channel",
+                "reminder_log.delivery_status",
+                "reminder_log.retry_count"
               ],
               "actionPermissions": [
-                "role_assignment:read",
-                "access_request:create",
-                "access_request:read"
+                "followup:read",
+                "followup:update",
+                "reminder:retry"
               ]
             },
             {
-              "id": "page_audit_dashboard",
-              "name": "权限审计看板",
+              "id": "finance_workbench",
+              "name": "问诊收费台",
               "kind": "dashboard",
               "fieldBindings": [
-                "audit_log.actor_ref",
-                "audit_log.target_entity",
-                "audit_log.target_id",
-                "audit_log.operation",
-                "audit_log.result",
-                "audit_log.occurred_at",
-                "role_assignment.assignment_status",
-                "data_scope_policy.scope_type"
+                "payment.appointment_ref",
+                "payment.amount",
+                "payment.payment_status",
+                "payment.paid_at",
+                "payment.gateway_trade_no",
+                "appointment.consult_fee"
               ],
               "actionPermissions": [
-                "audit_log:read",
-                "audit_log:export",
-                "role_assignment:read"
+                "payment:read",
+                "payment:confirm",
+                "payment:refund"
               ],
               "stats": [
                 {
-                  "id": "stat_audit_events",
-                  "name": "审计事件数",
-                  "entity": "audit_log",
+                  "id": "paid_amount",
+                  "name": "已收问诊费",
+                  "entity": "payment",
+                  "metric": "sum:payment.amount",
+                  "format": "money"
+                },
+                {
+                  "id": "payment_orders",
+                  "name": "支付单数",
+                  "entity": "payment",
                   "metric": "count",
                   "format": "number"
                 },
                 {
-                  "id": "stat_active_assignments",
-                  "name": "授权记录数",
-                  "entity": "role_assignment",
+                  "id": "avg_fee",
+                  "name": "平均问诊费",
+                  "entity": "appointment",
+                  "metric": "avg:appointment.consult_fee",
+                  "format": "money"
+                }
+              ],
+              "charts": [
+                {
+                  "id": "payment_status_share",
+                  "name": "支付状态分布",
+                  "type": "pie",
+                  "dimension": "payment.payment_status",
+                  "metric": "count"
+                },
+                {
+                  "id": "fee_by_triage",
+                  "name": "分诊等级收入",
+                  "type": "bar",
+                  "dimension": "appointment.triage_level",
+                  "metric": "sum:appointment.consult_fee"
+                }
+              ]
+            },
+            {
+              "id": "clinic_dashboard",
+              "name": "医院运营总览",
+              "kind": "dashboard",
+              "fieldBindings": [
+                "appointment.status",
+                "appointment.wait_minutes",
+                "triage_record.risk_level",
+                "medical_record.audit_status",
+                "followup_plan.reminder_status",
+                "reminder_log.delivery_status"
+              ],
+              "actionPermissions": [
+                "dashboard:view",
+                "appointment:read",
+                "record:read",
+                "followup:read",
+                "payment:read"
+              ],
+              "stats": [
+                {
+                  "id": "today_appointments",
+                  "name": "预约总量",
+                  "entity": "appointment",
                   "metric": "count",
                   "format": "number"
                 },
                 {
-                  "id": "stat_avg_scope_risk",
-                  "name": "平均范围风险",
-                  "entity": "data_scope_policy",
-                  "metric": "avg:data_scope_policy.risk_score",
+                  "id": "avg_wait",
+                  "name": "平均等待分钟",
+                  "entity": "appointment",
+                  "metric": "avg:appointment.wait_minutes",
+                  "format": "number"
+                },
+                {
+                  "id": "followup_pending",
+                  "name": "复诊计划数",
+                  "entity": "followup_plan",
+                  "metric": "count",
+                  "format": "number"
+                },
+                {
+                  "id": "record_quality",
+                  "name": "平均病例质量分",
+                  "entity": "medical_record",
+                  "metric": "avg:medical_record.quality_score",
                   "format": "number"
                 }
               ],
               "charts": [
                 {
-                  "id": "chart_operations_by_type",
-                  "name": "操作动作分布",
+                  "id": "appointment_status_bar",
+                  "name": "预约状态对比",
                   "type": "bar",
-                  "dimension": "audit_log.operation",
+                  "dimension": "appointment.status",
                   "metric": "count"
                 },
                 {
-                  "id": "chart_scope_type_share",
-                  "name": "数据范围类型占比",
+                  "id": "risk_level_pie",
+                  "name": "分诊风险占比",
                   "type": "pie",
-                  "dimension": "data_scope_policy.scope_type",
+                  "dimension": "triage_record.risk_level",
                   "metric": "count"
                 }
+              ]
+            },
+            {
+              "id": "record_audit_workbench",
+              "name": "病例质控审核台",
+              "kind": "workbench",
+              "fieldBindings": [
+                "medical_record.appointment_ref",
+                "medical_record.veterinarian_ref",
+                "medical_record.soap_summary",
+                "medical_record.diagnosis",
+                "medical_record.audit_status",
+                "medical_record.quality_score"
+              ],
+              "actionPermissions": [
+                "record:read",
+                "record:audit"
               ]
             }
           ]
@@ -2472,69 +2747,67 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
         "modelSection": {
           "capabilities": [
             {
-              "id": "cap_analyze_access_risk",
-              "name": "权限申请风险摘要生成",
+              "id": "ai_triage_suggestion",
+              "name": "主诉智能分诊建议",
               "inputFields": [
-                "access_request.business_reason",
-                "access_request.requested_role_ref",
-                "access_request.requested_scope_ref"
+                "appointment.reason",
+                "pet.species",
+                "pet.age_years",
+                "triage_record.symptom_notes"
               ],
-              "outputField": "access_request.risk_summary",
+              "outputField": "triage_record.ai_triage_suggestion",
               "roleRefs": [
-                "approver",
-                "security_admin"
+                "triage_nurse",
+                "veterinarian"
               ]
             },
             {
-              "id": "cap_recommend_scope_rule",
-              "name": "数据范围规则建议",
+              "id": "ai_dialog_transcription",
+              "name": "问诊对话转写",
               "inputFields": [
-                "access_request.risk_summary",
-                "data_scope_policy.scope_type",
-                "data_scope_policy.risk_score"
+                "appointment.reason",
+                "triage_record.symptom_notes"
               ],
-              "outputField": "data_scope_policy.scope_rule",
+              "outputField": "medical_record.transcript_text",
               "roleRefs": [
-                "security_admin",
-                "org_admin"
+                "veterinarian"
               ]
             },
             {
-              "id": "cap_generate_approval_note",
-              "name": "审批意见草拟",
+              "id": "ai_soap_summary",
+              "name": "生成SOAP结构化病例",
               "inputFields": [
-                "data_scope_policy.scope_rule",
-                "access_request.risk_summary",
-                "access_request.business_reason"
+                "medical_record.transcript_text",
+                "triage_record.ai_triage_suggestion"
               ],
-              "outputField": "access_request.approval_note",
+              "outputField": "medical_record.soap_summary",
               "roleRefs": [
-                "approver",
-                "org_admin"
+                "veterinarian"
               ]
             },
             {
-              "id": "cap_summarize_audit_log",
-              "name": "审计日志异常摘要",
+              "id": "ai_followup_reminder",
+              "name": "生成复诊提醒文案",
               "inputFields": [
-                "audit_log.operation",
-                "audit_log.result",
-                "audit_log.target_entity"
+                "medical_record.soap_summary",
+                "medical_record.diagnosis",
+                "followup_plan.due_date"
               ],
-              "outputField": "access_request.risk_summary",
+              "outputField": "followup_plan.reminder_content",
               "roleRefs": [
-                "auditor"
+                "veterinarian",
+                "ops_staff"
               ]
             }
           ],
           "pipelines": [
             {
-              "id": "pipeline_access_request_review",
-              "name": "权限申请智能评审编排",
+              "id": "consult_record_pipeline",
+              "name": "问诊转写到病例生成",
               "steps": [
-                "cap_analyze_access_risk",
-                "cap_recommend_scope_rule",
-                "cap_generate_approval_note"
+                "ai_dialog_transcription",
+                "ai_soap_summary",
+                "ai_followup_reminder"
               ]
             }
           ]
@@ -2549,156 +2822,161 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
         "modelSection": {
           "pageBindings": [
             {
-              "pageRef": "page_access_request_kanban",
-              "workflowRef": "access_request_lifecycle"
+              "pageRef": "appointment_kanban",
+              "workflowRef": "appointment_lifecycle"
             },
             {
-              "pageRef": "page_role_permission_workbench",
-              "workflowRef": "gov_submit_change"
+              "pageRef": "schedule_calendar",
+              "workflowRef": "appt_confirm"
             },
             {
-              "pageRef": "page_data_scope_workbench",
-              "workflowRef": "role_policy_governance"
+              "pageRef": "triage_workbench",
+              "workflowRef": "triage_assess"
             },
             {
-              "pageRef": "page_user_account_workbench",
-              "workflowRef": "ar_draft"
+              "pageRef": "doctor_consult_workbench",
+              "workflowRef": "vet_consult"
             },
             {
-              "pageRef": "page_audit_dashboard",
-              "workflowRef": "rec_close_incident"
+              "pageRef": "followup_ops_workbench",
+              "workflowRef": "reminder_detect_failure"
+            },
+            {
+              "pageRef": "finance_workbench",
+              "workflowRef": "pay_callback_verify"
+            },
+            {
+              "pageRef": "clinic_dashboard",
+              "workflowRef": "case_closed"
+            },
+            {
+              "pageRef": "record_audit_workbench",
+              "workflowRef": "record_quality_review"
             }
           ],
           "roleRefs": [
-            "requester",
-            "org_admin",
-            "security_admin",
-            "approver",
-            "auditor"
+            "receptionist",
+            "triage_nurse",
+            "veterinarian",
+            "finance_clerk",
+            "clinic_manager",
+            "ops_staff"
           ],
           "dataModelRefs": [
-            "user_account",
-            "role_profile",
-            "permission_item",
-            "menu_resource",
-            "data_scope_policy",
-            "role_assignment",
-            "access_request",
-            "audit_log"
+            "pet_owner",
+            "pet",
+            "appointment",
+            "triage_record",
+            "medical_record",
+            "followup_plan",
+            "payment",
+            "reminder_log"
           ],
           "invariants": [
             {
-              "id": "assignment_requires_completed_request",
-              "statement": "任何角色授权记录变为生效中之前，必须存在已完成的权限申请单审批链路。",
+              "id": "triage_before_consult",
+              "statement": "除急诊转处置外，兽医问诊必须在护士完成分诊评估之后开始。",
+              "systems": [
+                "workflow",
+                "datamodel"
+              ],
+              "refs": [
+                "triage_assess",
+                "vet_consult",
+                "emergency_transfer",
+                "appointment.triage_level"
+              ]
+            },
+            {
+              "id": "payment_callback_source_of_truth",
+              "statement": "支付状态只能由服务端核验回调或财务退款复核节点改变，前台页面不得直接标记为已支付。",
+              "systems": [
+                "datamodel",
+                "workflow",
+                "rbac",
+                "page"
+              ],
+              "refs": [
+                "payment.payment_status",
+                "pay_callback_verify",
+                "pay_refund_review",
+                "payment:confirm",
+                "payment:refund"
+              ]
+            },
+            {
+              "id": "record_requires_appointment",
+              "statement": "每份门诊病例必须关联一个已进入问诊或已完成状态的预约。",
+              "systems": [
+                "datamodel",
+                "workflow"
+              ],
+              "refs": [
+                "medical_record.appointment_ref",
+                "appointment.status",
+                "vet_consult",
+                "record_complete"
+              ]
+            },
+            {
+              "id": "followup_requires_diagnosis",
+              "statement": "复诊提醒计划必须在病例存在诊断结论后才能生成并发送。",
+              "systems": [
+                "datamodel",
+                "workflow",
+                "aigc"
+              ],
+              "refs": [
+                "followup_plan.reminder_content",
+                "medical_record.diagnosis",
+                "followup_schedule",
+                "ai_followup_reminder"
+              ]
+            },
+            {
+              "id": "failed_reminder_must_have_log",
+              "statement": "任何发送失败的复诊提醒都必须保留提醒发送日志并进入失败恢复链。",
               "systems": [
                 "datamodel",
                 "workflow",
                 "page"
               ],
               "refs": [
-                "role_assignment.assignment_status",
-                "access_request.status",
-                "ar_completed"
+                "followup_plan.reminder_status",
+                "reminder_log.delivery_status",
+                "reminder_detect_failure",
+                "reminder:retry"
               ]
             },
             {
-              "id": "high_scope_requires_security_review",
-              "statement": "申请全部数据或高风险数据范围时，必须经过安全审批节点且不得由申请人直接生效。",
+              "id": "audit_before_archive",
+              "statement": "病例归档前必须经过院长质控审核通过，不得直接从草稿归档。",
               "systems": [
                 "datamodel",
                 "workflow",
                 "rbac"
               ],
               "refs": [
-                "data_scope_policy.scope_type",
-                "data_scope_policy.risk_score",
-                "ar_security_review",
-                "requester",
-                "security_admin"
+                "medical_record.audit_status",
+                "record_quality_review",
+                "record_approved_archive",
+                "clinic_manager",
+                "record:audit"
               ]
             },
             {
-              "id": "permission_model_changes_governed",
-              "statement": "角色、权限点、菜单资源和数据范围策略的管理操作必须先通过治理审批后才能发布。",
+              "id": "owner_contact_masked",
+              "statement": "宠物主人手机号和微信号在非联系场景必须以脱敏格式展示。",
               "systems": [
                 "datamodel",
-                "rbac",
-                "workflow"
+                "page",
+                "rbac"
               ],
               "refs": [
-                "role_profile",
-                "permission_item",
-                "menu_resource",
-                "data_scope_policy",
-                "role_profile:manage",
-                "permission_item:manage",
-                "menu_resource:manage",
-                "data_scope_policy:manage",
-                "gov_publish"
-              ]
-            },
-            {
-              "id": "data_scope_not_broader_than_role",
-              "statement": "授权记录绑定的数据范围不得宽于被授权角色在数据范围策略台中配置的范围规则。",
-              "systems": [
-                "datamodel",
-                "page"
-              ],
-              "refs": [
-                "role_assignment.role_ref",
-                "role_assignment.data_scope_ref",
-                "data_scope_policy.scope_rule",
-                "page_data_scope_workbench"
-              ]
-            },
-            {
-              "id": "audit_log_for_every_grant_or_revoke",
-              "statement": "每一次授权生效或撤权操作都必须产生一条成功或失败的权限审计日志。",
-              "systems": [
-                "datamodel",
-                "rbac",
-                "workflow"
-              ],
-              "refs": [
-                "role_assignment.assignment_status",
-                "audit_log.operation",
-                "audit_log.result",
-                "access_request:provision",
-                "role_assignment:revoke",
-                "ar_provision"
-              ]
-            },
-            {
-              "id": "ai_generated_review_is_not_final_approval",
-              "statement": "AIGC 生成的风险摘要和审批意见只能作为辅助输入，最终审批必须由审批人角色在工作流节点上确认。",
-              "systems": [
-                "aigc",
-                "workflow",
-                "rbac",
-                "datamodel"
-              ],
-              "refs": [
-                "cap_analyze_access_risk",
-                "cap_generate_approval_note",
-                "access_request.risk_summary",
-                "access_request.approval_note",
-                "approver",
-                "ar_security_review"
-              ]
-            },
-            {
-              "id": "sync_failure_requires_recovery_closure",
-              "statement": "权限缓存同步失败后，只有恢复链路关闭并完成审计核对，相关异常申请才能再次进入生效节点。",
-              "systems": [
-                "workflow",
-                "datamodel"
-              ],
-              "refs": [
-                "rec_detect_failure",
-                "rec_manual_reconcile",
-                "rec_close_incident",
-                "ar_provision",
-                "audit_log.result"
+                "pet_owner.phone",
+                "pet_owner.wechat_id",
+                "owner:read",
+                "schedule_calendar"
               ]
             }
           ]
@@ -2706,7 +2984,7 @@ export const GITHUB_PAGES_DEMO_TEMPLATE: GithubPagesDemoTemplate = {
       }
     },
     "topBlockers": [],
-    "chatSummary": "闭环结论：**closed**，证据 **6/6**。当前方案已形成一版可落地的权限管理系统轮廓。\n\n现在这个应用能做：\n\n- 管理 **用户账号、角色、权限点、菜单资源、数据范围策略、角色授权、权限申请单、权限审计日志** 等 8 类核心对象。\n- 支持 **权限申请、审批、授权配置、数据范围配置、审计查看** 等流程。\n- 覆盖 5 类角色：申请人、组织管理员、安全管理员、审批人、审计员。\n- 提供 5 个页面：权限申请看板、角色权限配置台、数据范围策略台、用户账号管理、权限审计看板。\n- AI 可辅助生成权限申请风险摘要、数据范围规则建议、审批意见草稿、审计日志异常摘要。\n\n关键风险与分歧：\n\n- **权限粒度和模型边界仍需定准**：菜单、按钮、API、数据行是否都管，决定后续复杂度。\n- **数据范围是高风险点**：若只靠前端或零散 SQL 过滤，导出、批量接口、统计接口可能绕过限制。\n- **多角色数据范围规则未完全定案**：并集、交集或优先级会直接影响越权风险和用户体验。\n\n建议下一步：\n\n1. 先落地最小表结构与枚举：user、role、permission、department、user_role、role_permission、role_data_scope；数据范围先用 ALL、DEPT、DEPT_AND_CHILD、SELF、CUSTOM。\n2. 选一个真实业务列表接口做闭环验证：完成 RBAC 判断、数据范围过滤、无权限/跨部门访问拒绝、权限变更后的缓存生效测试。"
+    "chatSummary": "闭环结论：**closed，证据 6/6**。当前方案已形成较完整的社区宠物医院预约问诊闭环，覆盖预约、分诊、问诊、收费、复诊提醒与运营质控。\n\n现在这个应用能做：\n- 管理 **8 类核心数据**：宠物主人、宠物档案、预约问诊、分诊记录、门诊病例、复诊提醒计划、支付与提醒日志。\n- 支撑 **9 节点/12 转移** 的就诊流程，从预约到复诊提醒可流转。\n- 提供 **6 类角色权限**：前台、分诊护士、兽医、财务、医院经理、运营人员各司其职。\n- 配套 **8 个医院端页面**：排班日历、分诊台、兽医工作台、收费台、提醒运营台、运营总览、病例质控等。\n- 引入 **4 项 AI 能力**：分诊建议、问诊转写、SOAP 病例生成、复诊提醒文案生成。\n\n关键风险与分歧：\n- 隐私与权限：主人信息、宠物档案、病例、支付记录需防泄露和越权访问。\n- 流程可靠性：错误分诊、重复预约、漏发提醒会影响就诊秩序与复诊率。\n- 第三方通知依赖：短信/微信/电话接口可能误发、中断或被滥用。\n\n建议下一步：\n- 先固化预约、分诊、问诊、复诊提醒的状态校验、审计日志与失败重试机制。\n- 明确提醒触发规则、角色权限边界和第三方通知接入安全要求，再进入原型/开发。"
   },
-  "chatSummary": "闭环结论：**closed**，证据 **6/6**。当前方案已形成一版可落地的权限管理系统轮廓。\n\n现在这个应用能做：\n\n- 管理 **用户账号、角色、权限点、菜单资源、数据范围策略、角色授权、权限申请单、权限审计日志** 等 8 类核心对象。\n- 支持 **权限申请、审批、授权配置、数据范围配置、审计查看** 等流程。\n- 覆盖 5 类角色：申请人、组织管理员、安全管理员、审批人、审计员。\n- 提供 5 个页面：权限申请看板、角色权限配置台、数据范围策略台、用户账号管理、权限审计看板。\n- AI 可辅助生成权限申请风险摘要、数据范围规则建议、审批意见草稿、审计日志异常摘要。\n\n关键风险与分歧：\n\n- **权限粒度和模型边界仍需定准**：菜单、按钮、API、数据行是否都管，决定后续复杂度。\n- **数据范围是高风险点**：若只靠前端或零散 SQL 过滤，导出、批量接口、统计接口可能绕过限制。\n- **多角色数据范围规则未完全定案**：并集、交集或优先级会直接影响越权风险和用户体验。\n\n建议下一步：\n\n1. 先落地最小表结构与枚举：user、role、permission、department、user_role、role_permission、role_data_scope；数据范围先用 ALL、DEPT、DEPT_AND_CHILD、SELF、CUSTOM。\n2. 选一个真实业务列表接口做闭环验证：完成 RBAC 判断、数据范围过滤、无权限/跨部门访问拒绝、权限变更后的缓存生效测试。"
+  "chatSummary": "闭环结论：**closed，证据 6/6**。当前方案已形成较完整的社区宠物医院预约问诊闭环，覆盖预约、分诊、问诊、收费、复诊提醒与运营质控。\n\n现在这个应用能做：\n- 管理 **8 类核心数据**：宠物主人、宠物档案、预约问诊、分诊记录、门诊病例、复诊提醒计划、支付与提醒日志。\n- 支撑 **9 节点/12 转移** 的就诊流程，从预约到复诊提醒可流转。\n- 提供 **6 类角色权限**：前台、分诊护士、兽医、财务、医院经理、运营人员各司其职。\n- 配套 **8 个医院端页面**：排班日历、分诊台、兽医工作台、收费台、提醒运营台、运营总览、病例质控等。\n- 引入 **4 项 AI 能力**：分诊建议、问诊转写、SOAP 病例生成、复诊提醒文案生成。\n\n关键风险与分歧：\n- 隐私与权限：主人信息、宠物档案、病例、支付记录需防泄露和越权访问。\n- 流程可靠性：错误分诊、重复预约、漏发提醒会影响就诊秩序与复诊率。\n- 第三方通知依赖：短信/微信/电话接口可能误发、中断或被滥用。\n\n建议下一步：\n- 先固化预约、分诊、问诊、复诊提醒的状态校验、审计日志与失败重试机制。\n- 明确提醒触发规则、角色权限边界和第三方通知接入安全要求，再进入原型/开发。"
 };
