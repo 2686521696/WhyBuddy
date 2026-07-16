@@ -515,18 +515,17 @@ describe("AppBundleScreen", () => {
     expect(html).not.toContain('data-testid="appbundle-blockers"');
   });
 
-  it("blocked 闭环（E27）：整面人话错误页 + 修复 CTA + 技术详情收纳", () => {
+  it("blocked 闭环（E27 定稿）：极简错误页——图标 + 标题 + 一行人话，杂项全收纳", () => {
     const html = renderToStaticMarkup(
       <AppBundleScreen publishClosure={CLOSURE_BLOCKED} />
     );
-    expect(html).toContain("blocked 2/6");
     expect(html).toContain('data-testid="appbundle-gate-blocked"');
-    expect(html).toContain("发布闭环被闸拦截");
-    // 主 CTA 直达 E26 缺口修复轮
-    expect(html).toContain('data-testid="appbundle-repair-cta"');
-    expect(html).toContain("补齐缺口");
-    // 只有通用 blocker 时给默认人话原因（不裸奔工程码）
-    expect(html).toContain("部分系统还没有可信证据支撑");
+    expect(html).toContain("发布检查未通过");
+    // 默认副标题：讲证据缺口数（2/6 到位 → 缺 4 项）
+    expect(html).toContain("当前缺少 4 项系统证据，补齐后即可继续发布。");
+    // 极简：看板头条/进度条/blocked 徽章整体让位
+    expect(html).not.toContain("发布证据看板");
+    expect(html).not.toContain("blocked 2/6");
     // 工程字段进「技术详情」折叠区（如实保留，不再当正文）
     expect(html).toContain("技术详情");
     expect(html).toContain("APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
@@ -535,7 +534,7 @@ describe("AppBundleScreen", () => {
     expect(html).not.toContain('data-testid="appbundle-blockers"');
   });
 
-  it("blocked 闭环（E27）：LLM 生成诊断类 blocker 翻译成人话原因卡", () => {
+  it("blocked 闭环（E27 定稿）：副标题按拦截原因自适应说人话", () => {
     const html = renderToStaticMarkup(
       <AppBundleScreen
         publishClosure={{
@@ -552,9 +551,8 @@ describe("AppBundleScreen", () => {
         }}
       />
     );
+    expect(html).toContain("发布检查未通过");
     expect(html).toContain("五系统模型生成开关未开启");
-    expect(html).toContain("SLIDERULE_LLM_GENERATE_ENABLED=1");
-    expect(html).toContain("部署配置");
   });
 
   it("模型 appbundle 段绑定：页面↔流程/角色/实体 交叉解析", () => {
