@@ -322,7 +322,13 @@ unzip skills/sliderule.zip
 
 > 引擎生成的每一次预演，都是帮他人发现新可能的内容。Star 本仓库，让更多人找到它。
 
-[![Star History Chart](https://api.star-history.com/svg?repos=xiaojilele-glitch/WhyBuddy&type=Date)](https://star-history.com/#xiaojilele-glitch/WhyBuddy&Date)
+<p>
+  <a href="https://github.com/xiaojilele-glitch/WhyBuddy/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/xiaojilele-glitch/WhyBuddy?style=for-the-badge&logo=github&color=d97706" /></a>
+  <a href="https://github.com/xiaojilele-glitch/WhyBuddy/forks"><img alt="forks" src="https://img.shields.io/github/forks/xiaojilele-glitch/WhyBuddy?style=for-the-badge&logo=github&color=0f766e" /></a>
+  <a href="https://github.com/xiaojilele-glitch/WhyBuddy/watchers"><img alt="watchers" src="https://img.shields.io/github/watchers/xiaojilele-glitch/WhyBuddy?style=for-the-badge&logo=github&color=2563eb" /></a>
+</p>
+
+📈 [在 star-history.com 查看 Star 增长曲线 →](https://star-history.com/#xiaojilele-glitch/WhyBuddy&Date)
 
 ---
 
