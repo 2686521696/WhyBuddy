@@ -4,14 +4,19 @@
 #   docker compose up -d --build
 #   → http://localhost:3000/agent-loop/workbench
 #
-# This boots:
+# This boots (default profile — 推演主线不需要数据库):
 #   - app    → SlideRule server + bundled frontend on http://localhost:3000
 #              (the container internally listens on 3001; we publish 3000:3001)
 #   - python → SlideRule 推演引擎 (FastAPI :9700, V5 五系统推演 / E17 证据
 #              管道 / 发布闭环都在这里)。app 通过 SLIDERULE_V5_BACKEND=python
-#              薄代理到它；会话数据持久化在 sliderule-python-data 卷。
-#   - mysql  → MySQL 8 with the sliderule schema (legacy DB name kept
-#              for backward compatibility; project name is sliderule)
+#              薄代理到它；会话数据持久化在 sliderule-python-data 卷（JSON
+#              文件库，不走数据库）。
+#
+# Optional profile:
+#   - mysql  → 只有遗留账号体系（登录/邮箱验证码/projects 路由）用到，且为
+#              惰性连接——不登录永远不会碰它。需要账号功能时：
+#                docker compose --profile accounts up -d
+#              （mysql 不对宿主暴露端口；数据在 sliderule-mysql-data 卷）
 #
 # What is NOT included in this compose:
 #   - Lobster Executor (Docker-in-Docker is messy; opt in separately)
@@ -22,56 +27,21 @@
 # SESSION_SECRET. Compose passes the host's .env into both app containers.
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: sliderule-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-sliderule_root_change_me}
-      MYSQL_DATABASE: ${DB_NAME:-sliderule}
-    ports:
-      - "${DB_PORT:-3306}:3306"
-    volumes:
-      - sliderule-mysql-data:/var/lib/mysql
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "mysqladmin",
-          "ping",
-          "-h",
-          "127.0.0.1",
-          "-uroot",
-          "-p${DB_PASSWORD:-sliderule_root_change_me}",
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-      start_period: 30s
-    restart: unless-stopped
-
   python:
     build:
       context: .
       dockerfile: slide-rule-python/Dockerfile
     image: sliderule-python:local
     container_name: sliderule-python
-    depends_on:
-      mysql:
-        condition: service_healthy
     env_file:
       - .env
     environment:
       PORT: 9700
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_NAME: ${DB_NAME:-sliderule}
-      DB_USER: ${DB_USER:-root}
-      DB_PASSWORD: ${DB_PASSWORD:-sliderule_root_change_me}
       # app → python 内部调用的共享鉴权 key（与 app 的
       # PYTHON_SLIDE_RULE_INTERNAL_KEY 必须一致）
       SLIDE_RULE_INTERNAL_KEY: ${SLIDE_RULE_INTERNAL_KEY:-dev-slide-rule-internal}
     volumes:
-      # 会话/推演产物持久化（data/sliderule-sessions.json 等）
+      # 会话/推演产物持久化（data/sliderule-sessions.json 等，JSON 文件库）
       - sliderule-python-data:/app/data
     healthcheck:
       test:
@@ -94,8 +64,6 @@ services:
     image: sliderule:local
     container_name: sliderule-app
     depends_on:
-      mysql:
-        condition: service_healthy
       python:
         condition: service_healthy
     env_file:
@@ -103,6 +71,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
+      # 遗留账号体系的数据库指向（惰性连接；默认不起 mysql，登录接口才会用到。
+      # 开账号功能: docker compose --profile accounts up -d）
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: ${DB_NAME:-sliderule}
@@ -118,6 +88,48 @@ services:
       AGENT_LOOP_API_TARGET: http://python:9700
     ports:
       - "3000:3001"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
+    restart: unless-stopped
+
+  # 可选：遗留账号体系（登录/邮箱验证码/projects）才需要。
+  #   docker compose --profile accounts up -d
+  mysql:
+    image: mysql:8.0
+    container_name: sliderule-mysql
+    profiles: ["accounts"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-sliderule_root_change_me}
+      MYSQL_DATABASE: ${DB_NAME:-sliderule}
+    # 不对宿主暴露 3306（容器网络内 app 经 DB_HOST=mysql 直达）；
+    # 需要宿主直连调试时自行加 ports 映射。
+    volumes:
+      - sliderule-mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "127.0.0.1",
+          "-uroot",
+          "-p${DB_PASSWORD:-sliderule_root_change_me}",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
     restart: unless-stopped
 
 volumes:
