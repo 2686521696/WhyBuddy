@@ -1079,6 +1079,64 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
   }
 });
 
+// ── E19 Docker/prod 兜底薄代理（2026-07-16）──────────────────────────────
+// dev 下 vite 把 /api/sliderule 直接代理到 Python，所以 drive-full-stream
+// (SSE)、llm-channel 等端点从未经过 Node；prod/Docker 里它们掉进 SPA 兜底
+// 返回 HTML/404——一键部署的主推演流直接断。把未被上面显式路由接住的
+// /api/sliderule/* 一律流式转发 Python：SSE 逐块透传不缓冲，Node 不碰
+// 业务语义（与 index.ts 退役方向一致，thin proxy only）。
+router.use(async (req: Request, res: Response) => {
+  // 生产守卫契约：测试专用助手路径（__clear/__reload 等 __ 前缀段）
+  // 不注册也不转发，保持 404（见 sliderule-runtime.test.ts 生产守卫用例）
+  if (/(^|\/)__/.test(req.path)) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const runtime = resolvePythonSlideRuleRuntimeConfig();
+  const url = `${runtime.baseUrl}/api/sliderule${req.url}`;
+  try {
+    const method = req.method.toUpperCase();
+    const headers: Record<string, string> = {
+      "X-Internal-Key": runtime.internalKey,
+      accept: String(req.headers["accept"] || "*/*"),
+    };
+    let body: string | undefined;
+    if (method !== "GET" && method !== "HEAD") {
+      headers["content-type"] = String(
+        req.headers["content-type"] || "application/json"
+      );
+      body = typeof req.body === "string" ? req.body : JSON.stringify(req.body ?? {});
+    }
+    const upstream = await fetch(url, { method, headers, body });
+    res.status(upstream.status);
+    const contentType = upstream.headers.get("content-type");
+    if (contentType) res.setHeader("content-type", contentType);
+    if (!upstream.body) {
+      res.end();
+      return;
+    }
+    const reader = upstream.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(Buffer.from(value));
+      (res as { flush?: () => void }).flush?.();
+    }
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(502).json({
+        error: "python_proxy_failed",
+        path: req.url,
+        backend: "python",
+        detail: String((err as Error)?.message || err).slice(0, 200),
+      });
+      return;
+    }
+    res.end();
+  }
+});
+
 export default router;
 
 /**

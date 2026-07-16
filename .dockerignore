@@ -16,3 +16,7 @@ tmp
 client/dist
 services/lobster-executor/dist
 services/lobster-executor/node_modules
+slide-rule-python/.venv
+slide-rule-python/data
+slide-rule-python/.pytest_cache
+**/__pycache__
