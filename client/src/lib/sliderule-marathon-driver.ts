@@ -185,6 +185,12 @@ export interface DriveFullStreamOpts {
   /** LLM 实时内容增量。label 标注来源：能力 id（risk.analyze / report.write…）
    *  或 "five-system-model"（五系统起草）。旧后端不带 label 时为 undefined。 */
   onLlmDelta?: (text: string, label?: string) => void;
+  /** E25：后端 run id（事件里首见即回调一次）——客户端记书签供刷新后续播。 */
+  onRunId?: (runId: string) => void;
+  /** E25：仅当服务端亲口宣布 run 终局（complete / run_cancelled / error
+   *  事件到达）时回调一次。纯连接断开（刷新/跳页/网络抖动）不触发——
+   *  run 仍在后台跑，续播书签必须保留。 */
+  onRunSettled?: (reason: "complete" | "cancelled" | "error") => void;
 }
 
 /**
@@ -215,7 +221,42 @@ export async function driveFullViaPythonStream(
       }),
     });
     if (!res.ok || !res.body) return null;
+    return await consumeDriveStreamResponse(res, opts);
+  } catch {
+    return null;
+  }
+}
 
+/**
+ * E25 续播：附着到既有后台 run 的事件流（刷新/断线后接回）。
+ * 恒从 since=0 全量补播——正在进行的这一轮 UI 据同一事件流原样重建，
+ * 已产出的文字瞬间填充（drainStep 随积压自适应），之后接实时尾流。
+ */
+export async function resumeDriveFullStream(
+  runId: string,
+  opts: DriveFullStreamOpts = {}
+): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
+  if (typeof fetch !== "function") return null;
+  try {
+    const res = await fetch(
+      `/api/sliderule/runs/${encodeURIComponent(runId)}/stream?since=0`,
+      { signal: opts.stopSignal }
+    );
+    if (!res.ok || !res.body) return null;
+    return await consumeDriveStreamResponse(res, opts);
+  } catch {
+    return null;
+  }
+}
+
+/** POST 发起与 GET 续播共用的 SSE 消费循环（同一事件词表 → 同一 UI）。 */
+async function consumeDriveStreamResponse(
+  res: Response,
+  opts: DriveFullStreamOpts
+): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
+  try {
+    if (!res.body) return null;
+    let runIdSeen = false;
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -240,6 +281,12 @@ export async function driveFullViaPythonStream(
 
         let event: any;
         try { event = JSON.parse(jsonStr); } catch { continue; }
+
+        // E25：事件携带后端 run id——首见即回调（客户端记续播书签）
+        if (!runIdSeen && typeof event.runId === "string" && event.runId) {
+          runIdSeen = true;
+          opts.onRunId?.(event.runId);
+        }
 
         switch (event.type) {
           case "reasoning_step":
@@ -273,8 +320,14 @@ export async function driveFullViaPythonStream(
                 (finalState as any).publishClosure = publishClosure;
               }
             }
+            opts.onRunSettled?.("complete");
             break outer;
+          case "run_cancelled":
+            // 显式取消（停止按钮 / 孤儿看门狗）——如实按中断收尾
+            opts.onRunSettled?.("cancelled");
+            return null;
           case "error":
+            opts.onRunSettled?.("error");
             return null;
         }
       }
