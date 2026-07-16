@@ -209,7 +209,10 @@ docker compose down -v              # stop and wipe data
   # fully automatic updates (Watchtower checks every 5 min):
   docker compose -f docker-compose.prod.yml --profile auto up -d
   # rollback: change :latest to a release :<commit-sha> in docker-compose.prod.yml
-  # slow ghcr pulls (e.g. servers in China): add SLIDERULE_REGISTRY=ghcr.nju.edu.cn to .env, or configure a proxy for the Docker daemon
+  # slow ghcr pulls (e.g. servers in China): add SLIDERULE_REGISTRY=ghcr.nju.edu.cn to .env,
+  # or (with DOCKERHUB_USERNAME/DOCKERHUB_TOKEN secrets configured, CI dual-pushes to Docker Hub):
+  #   SLIDERULE_IMAGE_APP=docker.io/<hub-user>/whybuddy-app:latest
+  #   SLIDERULE_IMAGE_PYTHON=docker.io/<hub-user>/whybuddy-python:latest
   ```
 - **Corporate networks (TLS-intercepting proxies)**: drop your root CA (`.crt` PEM) into `docker/certs/` before building — both images merge it into their trust chain (see `docker/certs/README.md`). Certificates are gitignored.
 - **Not in compose**: Lobster Executor (needs Docker-in-Docker, opt in separately), Redis (off by default), Feishu integration (mock by default).

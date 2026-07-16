@@ -208,7 +208,10 @@ docker compose down -v              # 停止并清空数据
   # 全自动更新（Watchtower 每 5 分钟检查，档位三）：
   docker compose -f docker-compose.prod.yml --profile auto up -d
   # 回滚：把 docker-compose.prod.yml 里 :latest 换成某次发版的 :<commit-sha>
-  # 国内服务器拉 ghcr 慢：.env 加 SLIDERULE_REGISTRY=ghcr.nju.edu.cn 切镜像站，或给 Docker daemon 配代理
+  # 国内服务器拉 ghcr 慢：.env 加 SLIDERULE_REGISTRY=ghcr.nju.edu.cn 切镜像站；
+  # 或（仓库配好 DOCKERHUB_USERNAME/DOCKERHUB_TOKEN secrets 后 CI 自动双推 Docker Hub）：
+  #   SLIDERULE_IMAGE_APP=docker.io/<你的Hub用户名>/whybuddy-app:latest
+  #   SLIDERULE_IMAGE_PYTHON=docker.io/<你的Hub用户名>/whybuddy-python:latest
   ```
 - **企业内网（TLS 拦截代理）**：把企业根证书（PEM，`.crt`）放进 `docker/certs/` 再构建，两个镜像会自动并入信任链（详见 `docker/certs/README.md`）；证书已被 .gitignore 排除。
 - **不包含在 compose 内**：Lobster Executor（需 Docker-in-Docker，单独 opt-in）、Redis（默认关闭）、飞书集成（默认 mock）。

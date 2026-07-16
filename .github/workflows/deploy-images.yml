@@ -24,6 +24,11 @@ concurrency:
 jobs:
   build-push:
     runs-on: ubuntu-latest
+    # 双推开关：仓库配了 DOCKERHUB_USERNAME/DOCKERHUB_TOKEN secrets 时，
+    # 镜像同时推 Docker Hub（docker.io/<用户名>/whybuddy-*）——国内服务器
+    # 走 Docker Hub 加速源拉取，绕开 ghcr 直连超时。没配则只推 ghcr。
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     strategy:
       fail-fast: false
       matrix:
@@ -43,17 +48,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ghcr 仓库名必须全小写；github.repository 带大写（WhyBuddy）
-      - id: repo
-        run: echo "lc=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        if: env.DOCKERHUB_USERNAME != ''
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ghcr 仓库名必须全小写；github.repository 带大写（WhyBuddy）。
+      # tags 在这里拼：ghcr 恒推，Docker Hub 按 secrets 有无追加。
+      - id: meta
+        run: |
+          LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          TAGS="ghcr.io/${LC}-${{ matrix.name }}:latest
+          ghcr.io/${LC}-${{ matrix.name }}:${{ github.sha }}"
+          if [ -n "${DOCKERHUB_USERNAME}" ]; then
+            TAGS="${TAGS}
+          docker.io/${DOCKERHUB_USERNAME}/whybuddy-${{ matrix.name }}:latest
+          docker.io/${DOCKERHUB_USERNAME}/whybuddy-${{ matrix.name }}:${{ github.sha }}"
+          fi
+          {
+            echo "tags<<TAGS_EOF"
+            echo "${TAGS}"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
-          tags: |
-            ghcr.io/${{ steps.repo.outputs.lc }}-${{ matrix.name }}:latest
-            ghcr.io/${{ steps.repo.outputs.lc }}-${{ matrix.name }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
