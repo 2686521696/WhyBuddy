@@ -515,15 +515,46 @@ describe("AppBundleScreen", () => {
     expect(html).not.toContain('data-testid="appbundle-blockers"');
   });
 
-  it("blocked 闭环：阻塞项如实展示 code/path/affectedSkill", () => {
+  it("blocked 闭环（E27）：整面人话错误页 + 修复 CTA + 技术详情收纳", () => {
     const html = renderToStaticMarkup(
       <AppBundleScreen publishClosure={CLOSURE_BLOCKED} />
     );
     expect(html).toContain("blocked 2/6");
-    expect(html).toContain('data-testid="appbundle-blockers"');
+    expect(html).toContain('data-testid="appbundle-gate-blocked"');
+    expect(html).toContain("发布闭环被闸拦截");
+    // 主 CTA 直达 E26 缺口修复轮
+    expect(html).toContain('data-testid="appbundle-repair-cta"');
+    expect(html).toContain("补齐缺口");
+    // 只有通用 blocker 时给默认人话原因（不裸奔工程码）
+    expect(html).toContain("部分系统还没有可信证据支撑");
+    // 工程字段进「技术详情」折叠区（如实保留，不再当正文）
+    expect(html).toContain("技术详情");
     expect(html).toContain("APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
-    expect(html).toContain("skill=aigc");
     expect(html).toContain("runtimeClosure.perSkillEvidence");
+    // 老的生肉阻塞盒不复存在
+    expect(html).not.toContain('data-testid="appbundle-blockers"');
+  });
+
+  it("blocked 闭环（E27）：LLM 生成诊断类 blocker 翻译成人话原因卡", () => {
+    const html = renderToStaticMarkup(
+      <AppBundleScreen
+        publishClosure={{
+          ...CLOSURE_BLOCKED,
+          topBlockers: [
+            ...CLOSURE_BLOCKED.topBlockers!,
+            {
+              code: "LLM_GENERATE_DISABLED",
+              path: "llmGenerate.fiveSystemModel",
+              affectedSkill: "",
+              ref: "SLIDERULE_LLM_GENERATE_ENABLED 未开启：新颖意图不会调用 LLM 生成五系统模型",
+            },
+          ],
+        }}
+      />
+    );
+    expect(html).toContain("五系统模型生成开关未开启");
+    expect(html).toContain("SLIDERULE_LLM_GENERATE_ENABLED=1");
+    expect(html).toContain("部署配置");
   });
 
   it("模型 appbundle 段绑定：页面↔流程/角色/实体 交叉解析", () => {

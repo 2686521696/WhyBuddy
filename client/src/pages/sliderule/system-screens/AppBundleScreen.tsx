@@ -3,7 +3,7 @@
  *
  * 无激活 Skill 时展示，汇总所有系统的证据状态：
  *   - 六系统证据卡片（evidencePresent + evidenceRef/artifactId 证据链接）
- *   - 发布阻塞项（topBlockers：code/path/affectedSkill，fail-closed 如实展示）
+ *   - 被闸拦截时整面切 GateBlockedPanel（人话原因 + 修复 CTA，E27）
  *   - 闭环元信息（closureHash · stableDigest · generatedAt · versionPins）
  *   - 五系统模型 appbundle 段的绑定（pageBindings/roleRefs/dataModelRefs，
  *     交叉引用解析到 page/workflow/rbac/datamodel，未解析引用标红）
@@ -13,6 +13,7 @@
 import React, { useMemo, useState } from "react";
 import { AppRuntimeScreen } from "../live-runtime/AppRuntimeScreen";
 import { SystemLinkageGraph } from "./SystemLinkageGraph";
+import { GateBlockedPanel } from "./GateBlockedPanel";
 import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import {
@@ -94,7 +95,6 @@ export function AppBundleScreen({
   const totalSkills = publishClosure?.skillCount ?? 6;
   const blocked = publishClosure?.blocked ?? true;
   const allDone = !blocked && totalPresent >= totalSkills;
-  const topBlockers = publishClosure?.topBlockers ?? [];
 
   const bundle = model?.appbundle;
   const bindings = useMemo(() => {
@@ -250,47 +250,14 @@ export function AppBundleScreen({
             <SystemLinkageGraph model={model} />
           )}
         </div>
+      ) : publishClosure && blocked ? (
+        // E27：被闸拦截 → 整面人话错误页（原因翻译 + 修复 CTA + 技术详情收纳），
+        // 不再裸奔工程码。fail-closed 语义不变，只是讲清楚。
+        <div className="min-h-0 flex-1 overflow-auto">
+          <GateBlockedPanel publishClosure={publishClosure} />
+        </div>
       ) : (
       <div className="min-h-0 flex-1 overflow-auto p-4">
-        {/* Blockers — fail-closed 如实展示 */}
-        {blocked && topBlockers.length > 0 && (
-          <div
-            className="mb-3 rounded-md border border-red-200 bg-red-50/60 p-3"
-            data-testid="appbundle-blockers"
-          >
-            <div className="text-[11px] font-semibold text-red-700">
-              发布阻塞项 · {publishClosure?.blockerCount ?? topBlockers.length}
-            </div>
-            <ul className="mt-1.5 space-y-1">
-              {topBlockers.map((b, i) => {
-                // LLM 生成诊断类 blocker：ref 是给人读的失败原因，用正文体渲染
-                const isLlmDiag =
-                  b.code === "LLM_GENERATE_DISABLED" ||
-                  b.code === "LLM_GENERATE_FAILED" ||
-                  b.code === "MODEL_GATE_BLOCKED";
-                return (
-                  <li key={`${b.code}-${i}`} className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                    <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium text-red-700">
-                      {b.code}
-                    </span>
-                    {b.affectedSkill && (
-                      <span className="rounded bg-white px-1.5 py-0.5 text-red-600 ring-1 ring-red-200">
-                        skill={b.affectedSkill}
-                      </span>
-                    )}
-                    {!isLlmDiag && b.path && <span className="font-mono text-red-400">{b.path}</span>}
-                    {isLlmDiag && b.ref ? (
-                      <span className="text-red-600">{b.ref}</span>
-                    ) : (
-                      b.ref && <span className="font-mono text-red-400">ref={b.ref}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
-
         {/* Six skill cards */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {SKILL_META.map(({ key, label, desc, color, dot }) => {
