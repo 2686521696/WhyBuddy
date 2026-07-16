@@ -34,6 +34,51 @@ interface ComposerAttachment {
   name: string;
   size: number;
   previewUrl: string | null;
+  /** E28：保留原始 File——发送时文本类附件读内容注入指令上下文 */
+  file?: File;
+}
+
+// E28 附件上下文注入（第一刀，纯浏览器）：文本类附件直接读内容并入指令。
+// 图片/PDF 等二进制留待 E2B 提取管线（下一期），当前仍如实只带文件名。
+const TEXT_ATTACHMENT_EXT =
+  /\.(txt|md|markdown|csv|tsv|json|yaml|yml|xml|html?|css|js|jsx|ts|tsx|py|java|go|rs|rb|php|sql|sh|toml|ini|conf|log)$/i;
+const MAX_TEXT_ATTACHMENT_BYTES = 200 * 1024;
+const MAX_CHARS_PER_ATTACHMENT = 6000;
+const MAX_TOTAL_ATTACHMENT_CHARS = 12000;
+
+function isTextAttachment(att: ComposerAttachment): boolean {
+  if (!att.file) return false;
+  if (att.file.type.startsWith("text/")) return true;
+  return TEXT_ATTACHMENT_EXT.test(att.name);
+}
+
+/** 读文本类附件并拼成注入块；二进制/超限附件如实标注"仅文件名"。 */
+async function buildAttachmentContext(
+  attachments: ComposerAttachment[]
+): Promise<string> {
+  const parts: string[] = [];
+  let budget = MAX_TOTAL_ATTACHMENT_CHARS;
+  for (const att of attachments) {
+    if (budget <= 0) break;
+    if (!isTextAttachment(att) || !att.file) continue;
+    if (att.size > MAX_TEXT_ATTACHMENT_BYTES) {
+      parts.push(`【附件 ${att.name}】文件过大（>200KB），未读取内容。`);
+      continue;
+    }
+    try {
+      const raw = await att.file.text();
+      const limit = Math.min(MAX_CHARS_PER_ATTACHMENT, budget);
+      const clipped = raw.length > limit;
+      const body = raw.slice(0, limit).trim();
+      budget -= body.length;
+      parts.push(
+        `【附件内容 · ${att.name}】\n${body}${clipped ? "\n…（内容过长已截断）" : ""}`
+      );
+    } catch {
+      parts.push(`【附件 ${att.name}】读取失败，仅携带文件名。`);
+    }
+  }
+  return parts.join("\n\n");
 }
 
 function formatFileSize(bytes: number): string {
@@ -157,7 +202,7 @@ export function ComposerDock({
   }, []);
 
   // 附件预览卡（Claude 式）：图片出缩略图、其他文件出文件卡，可逐个移除。
-  // 解析服务未接——发送时只把附件名并进消息文本（诚实：不装能读内容）。
+  // E28：文本类附件发送时读内容注入指令；二进制仍如实只带文件名。
   const [attachments, setAttachments] = React.useState<ComposerAttachment[]>(
     []
   );
@@ -172,6 +217,7 @@ export function ComposerDock({
         name: f.name,
         size: f.size,
         previewUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : null,
+        file: f,
       })),
     ]);
   }, []);
@@ -205,20 +251,25 @@ export function ComposerDock({
     [addAttachments]
   );
 
-  /** 发送：有附件时把附件名并进消息（textOverride），发完清预览卡。 */
+  /** 发送：有附件时把附件名 + 文本类附件内容并进消息，发完清预览卡。 */
   const doSend = React.useCallback(() => {
     if (isRunning) return;
     const text = input.trim();
     if (!text && attachments.length === 0) return;
     if (attachments.length > 0) {
-      const names = attachments.map(a => a.name).join(", ");
-      sendMessage(text ? `${text}\n[附件: ${names}]` : `[附件: ${names}]`);
+      const snapshot = attachments;
       setAttachments(prev => {
         for (const a of prev) {
           if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
         }
         return [];
       });
+      void (async () => {
+        const names = snapshot.map(a => a.name).join(", ");
+        const context = await buildAttachmentContext(snapshot);
+        const head = text ? `${text}\n[附件: ${names}]` : `[附件: ${names}]`;
+        sendMessage(context ? `${head}\n\n${context}` : head);
+      })();
     } else {
       sendMessage();
     }
@@ -408,7 +459,7 @@ export function ComposerDock({
                         添加文件或图片
                       </span>
                       <span className="block truncate text-[10px] text-stone-500">
-                        预览卡进输入条，附件名随消息发送
+                        预览卡进输入条，文本类附件内容随消息注入
                       </span>
                     </span>
                   </button>

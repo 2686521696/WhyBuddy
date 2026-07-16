@@ -127,7 +127,20 @@ export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => v
         type="button"
         className="native-agent-session-new"
         data-testid="sidebar-session-new"
-        onClick={() => pick(newSessionId())}
+        onClick={() => {
+          // E28 防双开：已经站在空会话上（不在列表=刚建未落盘，或在列表但
+          // 无话题）→ 复用当前；列表里已有空的「新会话」→ 复用它；
+          // 都没有才真正铸新 id。用户实测连点会叠出多个空会话。
+          const list = sessions ?? [];
+          const activeMeta = list.find((s) => s.sessionId === activeId);
+          const activeIsBlank = activeMeta ? !activeMeta.goal : true;
+          if (activeIsBlank) {
+            pick(activeId);
+            return;
+          }
+          const blank = list.find((s) => !s.goal);
+          pick(blank ? blank.sessionId : newSessionId());
+        }}
       >
         <span className="native-agent-session-new-plus">+</span>
         新建会话

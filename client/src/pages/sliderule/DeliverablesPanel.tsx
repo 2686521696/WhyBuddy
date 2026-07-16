@@ -15,7 +15,7 @@ import {
  * clear 后一键生成 → 左侧交付物分类导航 + 右侧查看器(报告分段/规格树/文档/提示词包/架构图/交接包)。
  * 报告分类即第②项的结构化阅读器(分段 + 证据链)。
  */
-type CategoryId = "report" | "spec_tree" | "docs" | "prompt" | "arch" | "handoff";
+type CategoryId = "report" | "spec_tree" | "docs" | "prompt" | "arch" | "handoff" | "analysis";
 
 const CATEGORY_META: Record<CategoryId, { label: string; icon: React.ReactNode }> = {
   report: { label: "推演报告", icon: <ScrollText className="h-4 w-4" /> },
@@ -24,8 +24,11 @@ const CATEGORY_META: Record<CategoryId, { label: string; icon: React.ReactNode }
   prompt: { label: "提示词包", icon: <Sparkles className="h-4 w-4" /> },
   arch: { label: "架构图", icon: <Workflow className="h-4 w-4" /> },
   handoff: { label: "工程交接", icon: <PackageCheck className="h-4 w-4" /> },
+  // E28：普通推演轮只产出分析类产物（证据/风险/综合…），此前六分类全接不住
+  // → 抽屉必空（用户实测「跑完看不到内容」）。这一类把它们全兜住。
+  analysis: { label: "推演产物", icon: <Layers className="h-4 w-4" /> },
 };
-const CATEGORY_ORDER: CategoryId[] = ["report", "spec_tree", "docs", "prompt", "arch", "handoff"];
+const CATEGORY_ORDER: CategoryId[] = ["report", "spec_tree", "docs", "prompt", "arch", "handoff", "analysis"];
 
 function trustedArtifacts(state: V5SessionState): Artifact[] {
   const stale = new Set(state.staleArtifactIds || []);
@@ -42,6 +45,9 @@ function categoryOf(a: Artifact): CategoryId | null {
   if (cap === "handoff.package") return "handoff";
   if (cap === "outcome.visualize") return "arch";
   if (cap === "document.draft" || cap === "task.write" || a.kind === "doc") return "docs";
+  // 其余可信产物（evidence/risk/synthesis/critique…）归「推演产物」，
+  // 有正文才收——抽屉不再对普通闭环轮显示成空的
+  if (String(a.content || "").trim()) return "analysis";
   return null;
 }
 
@@ -189,7 +195,29 @@ export function DeliverablesPanel({
                 ))}
               </nav>
               <div className="min-w-0 flex-1 overflow-y-auto px-6 py-5" data-testid="sliderule-deliverables-content">
-                {activeArtifact ? (
+                {active === "analysis" ? (
+                  // 推演产物：全部堆叠展示（证据/风险/综合各是独立产物，只看最后
+                  // 一个会丢内容）
+                  <div className="space-y-6" data-testid="sliderule-deliverables-analysis">
+                    {(grouped.get("analysis") ?? []).map((a) => (
+                      <section key={a.id} className="border-b border-[#e8eaee] pb-5 last:border-0">
+                        <h3 className="font-display text-[15px] font-semibold text-[#1f2329]">
+                          {a.title || a.id}
+                        </h3>
+                        {a.summary && (
+                          <p className="mt-1 text-xs text-stone-400">{a.summary}</p>
+                        )}
+                        <div className="mt-2 text-[13px] leading-relaxed text-stone-700">
+                          <MarkdownRenderer
+                            markdown={String(a.content || "").trim()}
+                            isStreaming={false}
+                            locale={DEFAULT_LOCALE}
+                          />
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                ) : activeArtifact ? (
                   <DeliverableViewer
                     category={active}
                     artifact={activeArtifact}

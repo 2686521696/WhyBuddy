@@ -111,7 +111,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html.match(/data-testid="sliderule-status-bar"/g)?.length).toBe(1);
   });
 
-  it("single header row：交付物/重置会话/Dev actions（STATUS 与 Work/Code 胶囊均退役）", () => {
+  it("single header row：交付物/重置会话（STATUS、Work/Code 胶囊与 Dev 入口均退役）", () => {
     const html = renderPage();
 
     // Work 模式迁私有主仓：公开仓不再有模式切换
@@ -121,7 +121,8 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-goal-display"');
     expect(html).toContain('data-testid="sliderule-deliverables-open"');
     expect(html).toContain('data-testid="sliderule-reset-session"');
-    expect(html).toContain('href="/sliderule/dev"');
+    // E28：Dev 入口移除（用户裁决）——工程驾驶舱直接访问 /sliderule/dev
+    expect(html).not.toContain('href="/sliderule/dev"');
   });
 
   it("empty session shows THE single empty state: logo watermark + hero copy + 3 suggestion chips + composer", () => {
@@ -320,10 +321,12 @@ describe("unified /sliderule surface (single mental model)", () => {
       },
     });
 
-    // 持久化状态重建成功的判据：不落回空态、恢复轮以对话形态回归
-    // （STATUS 头部摘要已随状态盒退役，不再作为恢复信号）
+    // 持久化状态重建成功的判据：不落回空态、恢复轮以对话形态回归且回答就位
+    // （STATUS 头部摘要已随状态盒退役；E16 起正文由 streamdown Response 在
+    // 客户端填充，SSR 静态渲染为空——以容器属性断言回答存在，不再钉文案）
     expect(html).not.toContain('data-testid="sliderule-empty-state"');
-    expect(html).toContain("本轮已完成");
+    expect(html).toContain('data-testid="sliderule-turn-answer"');
+    expect(html).toContain('data-answer-present="true"');
   });
 
   it("Work 模式已迁私有主仓：旧偏好残留也不再切走界面", () => {
