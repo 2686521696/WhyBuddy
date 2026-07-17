@@ -12,7 +12,7 @@ import asyncio
 import os
 import re
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 from typing import Dict, Any, List, Optional
@@ -1070,6 +1070,37 @@ def prompt_refine(payload: Dict[str, Any], x_internal_key: Optional[str] = Heade
         "text": refined,
         "elapsedMs": int((_time.monotonic() - started) * 1000),
     }
+
+
+@router.post("/attachments/extract")
+async def attachments_extract(
+    request: Request,
+    name: str = "",
+    x_internal_key: Optional[str] = Header(None),
+):
+    """E31 附件内容提取：图片走视觉 LLM，PDF 走 E2B 沙盒 pypdf（超长再蒸馏）。
+
+    请求：raw bytes body（application/octet-stream）+ ?name=文件名——
+    不引 multipart 依赖，前端 fetch 直接把 File 当 body 发。
+    与 /aigc-tryrun 同一诚实契约：HTTP 恒 200，成败在 body：
+    {ok, kind, context?, chars?, detail}；任何一步失败如实说原因，
+    前端退回「仅随消息带文件名」，绝不粉饰成已解析。
+    """
+    import time as _time
+
+    _auth(x_internal_key)
+    name = (name or "").strip()
+    if not name:
+        raise HTTPException(400, "name query param required")
+    data = await request.body()
+
+    from services.attachment_extract import extract_attachment
+
+    started = _time.monotonic()
+    # 提取是长活（视觉 LLM 实测可到 100s+、沙盒冷启数秒）——丢线程池，
+    # 不堵事件循环（SSE 续播/其他会话不受影响）
+    result = await asyncio.to_thread(extract_attachment, name, data)
+    return {**result, "name": name, "elapsedMs": int((_time.monotonic() - started) * 1000)}
 
 
 @router.get("/skill-packages")

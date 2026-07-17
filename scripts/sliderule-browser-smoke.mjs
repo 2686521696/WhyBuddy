@@ -294,7 +294,9 @@ async function runSmoke() {
   // 推演收尾（按钮恢复可用）再点，等待上限可用 SLIDERULE_SMOKE_TURN_TIMEOUT 调。
   // 2026-07-16 上调 240s→420s：E17 把综合/报告改为轮内屏障（串行等前段
   // commit）+ 上游证据注入拉长 prompt，真实轮时上浮，240s 开始擦边假红
-  const TURN_TIMEOUT = Number.parseInt(process.env.SLIDERULE_SMOKE_TURN_TIMEOUT ?? "420000", 10);
+  // 2026-07-17 上调 420s→600s：E32 agentic pick 转正（每轮多一次编排 LLM
+  // 调用，pick 侧已加 60s 硬顶）+ 门内冒烟与静态检查并行的负载，420s 擦边
+  const TURN_TIMEOUT = Number.parseInt(process.env.SLIDERULE_SMOKE_TURN_TIMEOUT ?? "600000", 10);
   const resetBtn = page.locator('[data-testid="sliderule-reset-session"], button:has-text("重置会话")').first();
   if (await resetBtn.count() > 0) {
     await page

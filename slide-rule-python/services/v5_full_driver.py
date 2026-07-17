@@ -627,7 +627,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
             # PYTHON_AUTHORITY: use explicit pick_next_capabilities for V5.2 selection semantics + fallbacks
             # (pick is sole authority; empty means converge; no fallback to plan.selected)
             picks = pick_next_capabilities(state, ui)
-            # F2 agentic pick 实验（SLIDERULE_AGENTIC_PICK=on，默认 off）：
+            # E32 agentic pick（默认 on，SLIDERULE_AGENTIC_PICK=off 关）：
             # LLM 看全局提案替换非空规则选材——收敛权仍归规则（规则版为空
             # 照旧收敛，LLM 无权续命），词表封闭+重复护栏在提案侧验收，
             # 决策进台账（source="llm"）可审计可挑战。失败静默回落规则版。
@@ -1014,7 +1014,7 @@ async def drive_full_v5_session_stream(
                 (lambda st, _ui: pick_repair_capabilities(st)) if repair else pick_next_capabilities,
                 state, ui,
             )
-            # F2 agentic pick 实验：与同步驱动同一语义（LLM 提案替换非空
+            # E32 agentic pick（默认 on）：与同步驱动同一语义（LLM 提案替换非空
             # 规则选材，收敛权归规则，台账 source="llm"，失败回落）。
             # 修复轮不参与——修什么以覆盖门说了算，不给 LLM 扩范围的机会。
             if picks and not repair:
