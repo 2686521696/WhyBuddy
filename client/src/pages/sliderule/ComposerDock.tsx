@@ -221,10 +221,12 @@ export function ComposerDock({
   }, [input, adjustTextareaHeight]);
 
   // Listen for example prompt clicks from ClaudeChatSurface empty state.
+  // E34：模板可为空串（「应用推演」模式卡）——空串也生效（清空回纯输入），
+  // 都聚焦输入框让用户接着打字。
   React.useEffect(() => {
     const handler = (e: Event) => {
       const text = (e as CustomEvent<{ text: string }>).detail?.text;
-      if (text) {
+      if (typeof text === "string") {
         setInput(text);
         setTimeout(() => textareaRef.current?.focus(), 50);
       }
@@ -232,6 +234,14 @@ export function ComposerDock({
     window.addEventListener("sliderule:fill-prompt", handler);
     return () => window.removeEventListener("sliderule:fill-prompt", handler);
   }, [setInput]);
+
+  // E34 快速开始「从需求文档开始」：空态卡片直接拉起附件选择器
+  React.useEffect(() => {
+    const handler = () => fileInputRef.current?.click();
+    window.addEventListener("sliderule:open-file-picker", handler);
+    return () =>
+      window.removeEventListener("sliderule:open-file-picker", handler);
+  }, []);
 
   /** Handle text paste — detect URLs and surface a hint. */
   const handlePaste = React.useCallback(
