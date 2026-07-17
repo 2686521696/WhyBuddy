@@ -26,17 +26,20 @@ async function stopWindowsProjectProcesses() {
   const command = [
     `$root = '${escapedRoot}'`,
     `$selfPid = ${escapedPid}`,
-    `function Test-ProjectProcess([string] $name, [string] $commandLine) {`,
-    `  if (-not $commandLine) { return $false }`,
+    `function Test-ProjectProcess([string] $name, [string] $commandLine, [string] $exePath) {`,
     `  if ($name -like 'python*') {`,
     `    # slide-rule-python 的 uvicorn dev server。注意 --reload 的 worker 是`,
-    `    # multiprocessing spawn 出来的：命令行里没有 'uvicorn' 字样（真实事故：`,
-    `    # 按命令行杀 uvicorn 全部漏掉 worker，死掉的 reloader 留下孤儿监听套接字，`,
-    `    # netstat 报一个已不存在的属主 PID）。按可执行文件路径兜底识别。`,
+    `    # multiprocessing spawn 出来的：命令行里没有 'uvicorn' 字样、可能也没有`,
+    `    # 项目路径（真实事故：reloader 父进程死了，worker 孤儿继承监听套接字，`,
+    `    # netstat 报一个已不存在的父 PID，按命令行匹配全部漏掉）。`,
+    `    # 按可执行文件路径兜底：venv 解释器一定在 slide-rule-python 目录下。`,
+    `    if ($exePath -and $exePath -like '*slide-rule-python*') { return $true }`,
+    `    if (-not $commandLine) { return $false }`,
     `    if ($commandLine -match 'uvicorn\\s+app:app' -and $commandLine -like '*slide-rule-python*') { return $true }`,
     `    if ($commandLine -match 'spawn_main' -and $commandLine -like '*slide-rule-python*') { return $true }`,
     `    return $false`,
     `  }`,
+    `  if (-not $commandLine) { return $false }`,
     `  if ($commandLine -like "*$root*") { return $true }`,
     `  if ($commandLine -match 'scripts[\\\\/]dev-all\\.mjs') { return $true }`,
     `  # Keep server patterns so dev:stop also catches manual "npm run dev:server".`,
@@ -48,19 +51,41 @@ async function stopWindowsProjectProcesses() {
     `  if ($commandLine -match 'npm(?:\\.cmd)?\"?\\s+run\\s+dev(?::server|:all|:frontend|:advanced|:sliderule)?') { return $true }`,
     `  return $false`,
     `}`,
-    `$all = Get-CimInstance Win32_Process | Where-Object {`,
+    `$all = Get-CimInstance Win32_Process`,
+    `$candidates = $all | Where-Object {`,
     `  $_.ProcessId -ne $selfPid -and`,
     `  (@('node.exe', 'npm.exe', 'cmd.exe') -contains $_.Name -or $_.Name -like 'python*')`,
     `}`,
-    `$matched = $all | Where-Object { Test-ProjectProcess $_.Name $_.CommandLine }`,
-    `$processes = @($matched)`,
-    `if (-not $processes) {`,
+    `$matched = @($candidates | Where-Object { Test-ProjectProcess $_.Name $_.CommandLine $_.ExecutablePath })`,
+    `# 后代闭包：被匹配进程 spawn 的子进程一并收编（父被杀、子漏杀 = 孤儿`,
+    `# 继续占端口的根因）。全表建 ParentProcessId 索引再 BFS。`,
+    `$byParent = @{}`,
+    `foreach ($p in $all) {`,
+    `  $key = [int]$p.ParentProcessId`,
+    `  if (-not $byParent.ContainsKey($key)) { $byParent[$key] = @() }`,
+    `  $byParent[$key] += $p`,
+    `}`,
+    `$seen = @{}`,
+    `$queue = New-Object System.Collections.Queue`,
+    `foreach ($m in $matched) { if (-not $seen.ContainsKey([int]$m.ProcessId)) { $seen[[int]$m.ProcessId] = $true; $queue.Enqueue($m) } }`,
+    `$kill = @()`,
+    `while ($queue.Count -gt 0) {`,
+    `  $p = $queue.Dequeue()`,
+    `  $kill += $p`,
+    `  if ($byParent.ContainsKey([int]$p.ProcessId)) {`,
+    `    foreach ($c in $byParent[[int]$p.ProcessId]) {`,
+    `      $cid = [int]$c.ProcessId`,
+    `      if ($cid -ne $selfPid -and -not $seen.ContainsKey($cid)) { $seen[$cid] = $true; $queue.Enqueue($c) }`,
+    `    }`,
+    `  }`,
+    `}`,
+    `if (-not $kill) {`,
     `  Write-Output 'No project dev processes found.'`,
     `  exit 0`,
     `}`,
-    `$processes | Sort-Object ProcessId -Unique | Sort-Object ProcessId -Descending | ForEach-Object {`,
+    `$kill | Sort-Object ProcessId -Unique | Sort-Object ProcessId -Descending | ForEach-Object {`,
     `  Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue`,
-    `  Write-Output ("Stopped PID {0}" -f $_.ProcessId)`,
+    `  Write-Output ("Stopped PID {0} ({1})" -f $_.ProcessId, $_.Name)`,
     `}`,
   ].join("\n");
 
@@ -88,7 +113,12 @@ async function stopUnixProjectProcesses() {
     .filter((entry) => {
       if (!entry || entry.pid === process.pid || !entry.command.includes(projectRoot)) return false;
       if (entry.command.includes("node")) return true;   // catches vite, executor, and any manual dev:server
-      // Only the slide-rule-python uvicorn dev server; never a stray pytest / worker.
+      // slide-rule-python 的 uvicorn dev server 及其 --reload spawn worker
+      // （worker 命令行只有 "python -c ...spawn_main..."，但解释器路径在项目
+      // venv 下所以过了 projectRoot 过滤；父死子活会留孤儿监听套接字）。
+      if (entry.command.includes("slide-rule-python") && entry.command.includes("spawn_main")) {
+        return true;
+      }
       return (
         entry.command.includes("uvicorn") &&
         entry.command.includes("app:app") &&
@@ -107,42 +137,87 @@ async function stopUnixProjectProcesses() {
   }
 }
 
-async function sweepWindowsDevPorts() {
-  const names = DEV_PROCESS_NAMES.map((n) => `'${n}'`).join(",");
-  const command = [
-    `$selfPid = ${process.pid}`,
-    `$devNames = @(${names})`,
-    `foreach ($port in @(${DEV_PORTS.join(",")})) {`,
-    `  Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {`,
-    `    $ownerPid = $_.OwningProcess`,
-    `    if (-not $ownerPid -or $ownerPid -eq $selfPid) { return }`,
-    `    $proc = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue`,
-    `    if (-not $proc) {`,
-    `      # 属主查不到（tasklist 也看不见）= 多半是 WSL 端口转发或提权进程。`,
-    `      # 强杀尝试一次；端口若仍被占，只有 wsl --shutdown / 管理员能解。`,
-    `      Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue`,
-    `      Write-Output ("Port {0} owner PID {1} is UNRESOLVABLE (likely WSL relay or elevated process). Tried force-stop; if the port stays busy run: wsl --shutdown" -f $port, $ownerPid)`,
-    `      return`,
-    `    }`,
-    `    if ($devNames -contains $proc.ProcessName) {`,
-    `      Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue`,
-    `      Write-Output ("Stopped PID {0} (port {1}, {2})" -f $ownerPid, $port, $proc.ProcessName)`,
-    `    } else {`,
-    `      Write-Output ("Port {0} held by PID {1} ({2}) - not a dev process, left running" -f $port, $ownerPid, $proc.ProcessName)`,
-    `    }`,
-    `  }`,
-    `}`,
-  ].join("\n");
+/** netstat -ano 找某端口的 LISTENING 属主 PID（不依赖 Get-NetTCPConnection——
+ *  真实事故：NetTCPIP 模块在部分机器上整段抛错，sweep 一个进程都没扫到）。 */
+async function listWindowsListeningPids(port) {
   try {
-    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", command], {
-      cwd: projectRoot,
-    });
-    if (stdout.trim()) process.stdout.write(stdout);
-  } catch (error) {
-    // 清扫失败必须出声（真实事故：这里静默吞错，幽灵端口占用零提示）。
-    console.warn(
-      `[dev:stop] port sweep failed: ${error instanceof Error ? error.message : String(error)}`
+    const { stdout } = await execFileAsync("netstat", ["-ano", "-p", "TCP"], { cwd: projectRoot });
+    const pids = new Set();
+    for (const line of stdout.split(/\r?\n/)) {
+      const m = line.trim().match(/^TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)$/i);
+      if (m && Number(m[1]) === port) pids.add(Number(m[2]));
+    }
+    return [...pids];
+  } catch {
+    return [];
+  }
+}
+
+/** tasklist 解析进程名；返回 null = PID 查不到（幽灵：属主已死、端口表未刷新，
+ *  或 WSL 端口转发/提权进程）。 */
+async function resolveWindowsProcessName(pid) {
+  try {
+    const { stdout } = await execFileAsync(
+      "tasklist",
+      ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"],
+      { cwd: projectRoot }
     );
+    const m = stdout.match(/^"([^"]+)"/m);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+async function sweepWindowsDevPorts() {
+  let sawGhost = false;
+  for (const port of DEV_PORTS) {
+    for (const pid of await listWindowsListeningPids(port)) {
+      if (pid === process.pid) continue;
+      const name = await resolveWindowsProcessName(pid);
+      if (name === null) {
+        // 幽灵 PID：真实事故里这是"已退出的父进程"——监听套接字被它 spawn 的
+        // 子进程继承着，端口表还挂着死父 PID。真正的持有者（孤儿 python worker）
+        // 由 stopWindowsProjectProcesses 的可执行路径匹配 + 后代闭包负责收掉，
+        // 这里只把真相喊出来，最后统一复查端口是否解放。
+        console.log(
+          `Port ${port} owner PID ${pid} is UNRESOLVABLE (dead parent with orphaned child, ` +
+            `WSL relay, or elevated process). Orphan cleanup already ran; re-checking below.`
+        );
+        sawGhost = true;
+        continue;
+      }
+      const base = name.toLowerCase().replace(/\.exe$/, "");
+      if (DEV_PROCESS_NAMES.includes(base)) {
+        // /T 连子进程树一起收：父进程单杀会把继承了套接字的子进程留成下一个幽灵
+        try {
+          await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"], { cwd: projectRoot });
+          console.log(`Stopped PID ${pid} tree (port ${port}, ${name})`);
+        } catch (error) {
+          console.warn(`[dev:stop] taskkill PID ${pid} (port ${port}) failed: ${error?.message ?? error}`);
+        }
+      } else {
+        console.log(`Port ${port} held by PID ${pid} (${name}) - not a dev process, left running`);
+      }
+    }
+  }
+  // 终局复查：清扫完端口必须真的空了，否则大声说出来（静默失败 = 下一次
+  // "重启没生效" 的幽灵现场）。
+  await new Promise((r) => setTimeout(r, 500));
+  const stillBusy = [];
+  for (const port of DEV_PORTS) {
+    const pids = (await listWindowsListeningPids(port)).filter((p) => p !== process.pid);
+    if (pids.length) stillBusy.push({ port, pids });
+  }
+  if (stillBusy.length) {
+    for (const { port, pids } of stillBusy) {
+      console.warn(
+        `[dev:stop] !!! Port ${port} is STILL occupied after cleanup (PID ${pids.join(",")}). ` +
+          `If the PID is unresolvable it is likely a WSL relay - run "wsl --shutdown" (Windows) and retry.`
+      );
+    }
+  } else if (sawGhost) {
+    console.log("Ghost owner cleared - all dev ports are free now.");
   }
 }
 
