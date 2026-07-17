@@ -16,17 +16,12 @@ initUserPrefs();
 
 createRoot(document.getElementById("root")!).render(<App />);
 
-// E33.2 启动占位页早摘（非推演路由）：占位页画的是推演工作台骨架——帮助
-// 中心/技能库等页面没人负责摘它。推演页挂载即认领所有权（水合完成才摘，
-// 整个加载期只有这一层）；600ms 后无人认领 = 当前不是推演页，立即摘。
-// html 里另有 20s 自毁兜底。推演页是静态引入，挂载在首帧内，600ms 富余。
-window.setTimeout(() => {
-  const w = window as unknown as {
-    __slideruleBootSplashOwned?: boolean;
-    __slideruleDismissBootSplash?: () => void;
-  };
-  if (!w.__slideruleBootSplashOwned) w.__slideruleDismissBootSplash?.();
-}, 600);
+// E33.5 启动占位页交棒：占位页只负责 React 挂载前的空窗（纯 CSS 转圈，
+// 零字体依赖不变形）——挂载完成立即摘，水合期由推演页的 antd Spin
+// fullscreen 接管。html 里另有 45s 自毁兜底。
+(
+  window as unknown as { __slideruleDismissBootSplash?: () => void }
+).__slideruleDismissBootSplash?.();
 
 // Analytics bootstrap (moved from index.html for cleaner Vite HTML processing during `build:pages` / GITHUB_PAGES builds;
 // avoids internal html-proxy resolution errors with multiple inline module scripts + custom transforms).
