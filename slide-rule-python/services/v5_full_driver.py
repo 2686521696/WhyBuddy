@@ -385,7 +385,11 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
     This keeps the route fail-closed: if AppBundle reports missing skill evidence, the
     derived publishClosure is blocked rather than fabricated green.
     """
-    if not (user_instruction or "").strip():
+    goal_text = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal or "")
+    # E37：指令为空但话题在场时不再静默跳过——一轮跑完却连 blocked 闭环都
+    # 没有，右侧是一块假装无事发生的空看板。空指令回落 goal 原文照常收口。
+    instruction = (user_instruction or "").strip() or (goal_text or "").strip()
+    if not instruction:
         return state
     existing_closure = derive_publish_closure_response(state)
     _refine_set = False
@@ -395,8 +399,6 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
             # E29 增量迭代：闭环已收口 + 用户带来新的补充指令 → 精修模式，
             # 在现有五系统模型上做最小增量修改（同一结构闸把关），
             # 不再整轮白跑/模型原地不动。指令与话题原文相同（重新推演）不精修。
-            goal_text = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal)
-            instruction = (user_instruction or "").strip()
             current_model = extract_model_from_closure(existing_closure)
             if (
                 instruction
@@ -465,6 +467,17 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
     except Exception as cap_exc:
         from .slide_rule_session import record_capability_run_error
 
+        # E37 fail-closed 兜底：闭环重建炸掉也要落一个确定性 blocked 闭环
+        # （挂在 error run 的 result 上，derive 能扫到）——回合结束后
+        # publishClosure 不允许为 null，用户看到的是「发布检查未通过 +
+        # 真实失败原因」，不是一块空看板。
+        fallback_result = None
+        try:
+            from .v5_capability_executor import build_fallback_blocked_closure
+
+            fallback_result = build_fallback_blocked_closure(state, goal_text, str(cap_exc)[:200])
+        except Exception as fb_exc:  # noqa: BLE001 — 兜底失败不遮蔽原始错误
+            print(f"[v5_full_driver] fallback blocked closure failed: {str(fb_exc)[:120]}")
         record_capability_run_error(
             state,
             capabilityId=capability_id,
@@ -472,6 +485,7 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
             error={"code": "capability_execution_failed", "message": str(cap_exc)[:200], "capabilityId": capability_id},
             roleId=role_id,
             timing={"durationMs": int((_time.time() - t0) * 1000)},
+            result=fallback_result,
         )
         append_reasoning_event(
             state,

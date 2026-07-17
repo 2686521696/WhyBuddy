@@ -349,7 +349,7 @@ def _structured_llm_json_fn(messages: list) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
+def _default_llm_json_fn(goal: str, gate_feedback: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Real LLM path — provider chain + JSON shape validation. None on any failure.
 
     P3（OSS_GAP_ANALYSIS）双通道互为救场：
@@ -365,9 +365,19 @@ def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
     except Exception as exc:
         _last_call_error = f"llm client unavailable: {str(exc)[:160]}"
         return None
+    user_content = _build_user_content(goal)
+    if gate_feedback:
+        # E37 门裁决回喂：上一版模型被结构门拦截时，把门的具体 findings
+        # 原文喂回（错哪改哪）——比盲重试命中率高一个量级，与 P3 的
+        # JSON 形状回喂互补（那层治缺段，这层治悬空引用/枚举违规）。
+        user_content += (
+            "\n\nIMPORTANT — your previous model FAILED the deterministic structural "
+            "gate. Fix EXACTLY these violations and keep everything else unchanged:\n"
+            + gate_feedback
+        )
     messages = [
         {"role": "system", "content": _SCHEMA_INSTRUCTION},
-        {"role": "user", "content": _build_user_content(goal)},
+        {"role": "user", "content": user_content},
     ]
     streaming = _delta_sink is not None
     if not streaming:
@@ -414,6 +424,7 @@ def generate_five_system_model(
     goal: str,
     *,
     llm_json_fn: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None,
+    gate_feedback: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Generate a five-system model candidate for `goal`.
 
@@ -423,6 +434,9 @@ def generate_five_system_model(
 
     `llm_json_fn(goal) -> dict|None` is injectable for tests (fake LLM),
     keeping generality proof decoupled from LLM reliability.
+
+    `gate_feedback`（E37）：上一版模型的结构门裁决文本。只作用于默认 LLM
+    通道（注入 fn 的测试路径不受影响）——喂回后 LLM 定向改错重生成。
     """
     global last_generate_diagnostic
     last_generate_diagnostic = {}
@@ -432,7 +446,12 @@ def generate_five_system_model(
     if _model_override is not None:
         last_generate_diagnostic = {"outcome": "ok"}
         return dict(_model_override)
-    fn = llm_json_fn or _default_llm_json_fn
+    if llm_json_fn is None and gate_feedback:
+        fn: Callable[[str], Optional[Dict[str, Any]]] = (
+            lambda g: _default_llm_json_fn(g, gate_feedback=gate_feedback)
+        )
+    else:
+        fn = llm_json_fn or _default_llm_json_fn
     # 一次有界重试：并发/限流下的瞬时失败不该直接变成永久 publish blocked
     # （fail-closed 语义保留：两次都失败仍返回 None）。注入 fn 的测试不受影响。
     attempts = 2 if llm_json_fn is None else 1

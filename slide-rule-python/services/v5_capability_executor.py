@@ -188,6 +188,19 @@ def _runtime_linkage_artifact_for_skill(skill: str, goal: str, domain: str = "pu
     return artifact
 
 
+def _format_gate_findings(findings: List[Dict[str, Any]], limit: int = 10) -> str:
+    """把结构门 findings 压成回喂文本（path: message 逐条，封顶 limit 条）。"""
+    lines = [
+        f"- {f.get('path', '')}: {f.get('message', '')}"
+        for f in findings[:limit]
+        if isinstance(f, dict)
+    ]
+    rest = len(findings) - limit
+    if rest > 0:
+        lines.append(f"- ...and {rest} more findings of the same kinds")
+    return "\n".join(lines)
+
+
 def _try_llm_generate_evidence(
     goal: str,
     llm_json_fn: Optional[Callable[[str], Any]],
@@ -208,6 +221,17 @@ def _try_llm_generate_evidence(
         }
         return None
 
+    def _repair(candidate: Dict[str, Any]) -> Dict[str, Any]:
+        # 门禁前确定性修复：不变式/展示层引用近邻修复 + 修不好的整条剔除
+        # （零 LLM，留痕）。骨架五段不修——悬挂仍由下面的门禁硬拦。
+        try:
+            from .v5_model_repair import repair_five_system_model
+
+            return repair_five_system_model(candidate)["model"]
+        except Exception as exc:  # noqa: BLE001 — 修复器故障不得放行未修模型，也不该炸管线
+            print(f"[v5_capability_executor] model repair skipped: {str(exc)[:120]}")
+            return candidate
+
     model = generate_five_system_model(goal, llm_json_fn=llm_json_fn)
     if model is None:
         from .v5_llm_generate import last_generate_diagnostic as _diag
@@ -217,15 +241,25 @@ def _try_llm_generate_evidence(
             "detail": str((_diag or {}).get("detail") or "LLM 未返回完整五系统模型")[:200],
         }
         return None
-    # 门禁前确定性修复：不变式引用近邻修复 + 修不好的整条剔除（零 LLM，留痕）。
-    # 骨架五段不修——悬挂仍由下面的门禁硬拦。
-    try:
-        from .v5_model_repair import repair_five_system_model
-
-        model = repair_five_system_model(model)["model"]
-    except Exception as exc:  # noqa: BLE001 — 修复器故障不得放行未修模型，也不该炸管线
-        print(f"[v5_capability_executor] model repair skipped: {str(exc)[:120]}")
+    model = _repair(model)
     gate = validate_five_system_model(model)
+    if not gate.get("passed"):
+        # E37 门裁决回喂：确定性修复兜不住的裁决（骨架级悬空引用等），把门的
+        # 具体 findings 喂回 LLM 有界重生成一次——错哪改哪，比盲重试/直接
+        # fail-closed 都对。仍然失败才落 MODEL_GATE_BLOCKED（fail-closed 不变）。
+        try:
+            feedback = _format_gate_findings(gate.get("findings") or [])
+            retry_model = generate_five_system_model(
+                goal, llm_json_fn=llm_json_fn, gate_feedback=feedback
+            )
+        except Exception as exc:  # noqa: BLE001 — 回喂重试是增强项，失败不改变主路径语义
+            print(f"[v5_capability_executor] gate-feedback retry skipped: {str(exc)[:120]}")
+            retry_model = None
+        if retry_model is not None:
+            retry_model = _repair(retry_model)
+            retry_gate = validate_five_system_model(retry_model)
+            if retry_gate.get("passed"):
+                model, gate = retry_model, retry_gate
     if not gate.get("passed"):
         # Gate blocked — do NOT inject evidence. Caller stays fail-closed.
         findings = gate.get("findings") or []
@@ -234,7 +268,7 @@ def _try_llm_generate_evidence(
         first_text = f"{first.get('path', '')}：{first.get('message', '')}".strip("：")
         _llm_generate_diagnostic = {
             "code": "MODEL_GATE_BLOCKED",
-            "detail": f"结构闸拦截（{len(findings)} 项）：{first_text[:160]}",
+            "detail": f"结构闸拦截（{len(findings)} 项，已回喂裁决重试仍未过门）：{first_text[:160]}",
         }
         return None
     _llm_generate_diagnostic = {}
@@ -349,6 +383,82 @@ def _stable_closure_hash(per_skill: Dict[str, Any], blocked: bool, goal: str) ->
         hashlib.sha256(source.encode("utf-8")).hexdigest()[:8],
         hashlib.sha256(f"stable|{source}".encode("utf-8")).hexdigest()[:8],
     )
+
+
+def _skill_runtime_graph_payload() -> Dict[str, Any]:
+    """闭环结果里的跨系统运行时图（确定性，闭环成败共用同一份结构）。"""
+    return {
+        "edges": RUNTIME_CLOSURE_EDGES[:],
+        "bySkill": {
+            skill: [
+                edge
+                for edge in RUNTIME_CLOSURE_EDGES
+                if edge["sourceSkill"] == skill or edge["targetSkill"] == skill
+            ]
+            for skill in REQUIRED_EVIDENCE_KEYS
+        },
+        "evidenceBySkill": {
+            skill: [
+                edge["evidenceKey"]
+                for edge in RUNTIME_CLOSURE_EDGES
+                if edge["sourceSkill"] == skill or edge["targetSkill"] == skill
+            ]
+            for skill in REQUIRED_EVIDENCE_KEYS
+        },
+    }
+
+
+def build_fallback_blocked_closure(state: V5SessionState, goal: str, error_message: str) -> Dict[str, Any]:
+    """E37 fail-closed 兜底：闭环重建能力执行炸掉时的确定性 blocked 闭环。
+
+    此前 execute 抛异常只记 error run、不落闭环产物——回合"正常完成"却
+    publishClosure 为 null，右侧是一块假装什么都没发生的空看板（用户实测
+    案例）。无声无闭环比诚实 blocked 更糟：这里零 LLM 构造一个 0/n blocked
+    闭环，blocker 带上真实失败原因，UI 走既有的「发布检查未通过」通道。
+    """
+    per_skill = _build_per_skill_evidence(state, True, goal)
+    closure_hash, stable_digest = _stable_closure_hash(per_skill, True, goal)
+    return {
+        "title": "appbundle.runtimeClosure (fallback)",
+        "summary": "runtime closure rebuild failed; deterministic blocked closure recorded",
+        "content": f"closure rebuild failed: {error_message[:200]}",
+        "provenance": "python-deterministic",
+        "sources": [],
+        "runtimeClosure": {
+            "skillsChecked": REQUIRED_EVIDENCE_KEYS[:],
+            "versionPinsChecked": True,
+            "crossSkillRuntimeEdges": RUNTIME_CLOSURE_EDGES[:],
+            "perSkill": {},
+        },
+        "skillRuntimeGraph": _skill_runtime_graph_payload(),
+        "perSkillEvidence": per_skill,
+        "blocked": True,
+        "blockers": [
+            {
+                "code": "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
+                "path": "runtimeClosure.perSkillEvidence",
+                "affectedSkill": "",
+                "ref": "",
+            },
+            {
+                "code": "CLOSURE_REBUILD_FAILED",
+                "path": "runtimeClosure.rebuild",
+                "affectedSkill": "",
+                "ref": str(error_message or "")[:200],
+            },
+        ],
+        "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+        "closureHash": closure_hash,
+        "stableDigest": stable_digest,
+        "findingsByTier": {
+            "hard_blocker": [
+                {"code": "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED"},
+                {"code": "CLOSURE_REBUILD_FAILED"},
+            ],
+            "warning": [],
+            "info": [],
+        },
+    }
 
 
 def execute_v5_capability(capability_id: str, state: V5SessionState, input_ids: List[str], role_id: str, turn_id: str) -> Any:
