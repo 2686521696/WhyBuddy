@@ -92,6 +92,8 @@ Required shape (use these exact keys):
     "pageBindings": [{"pageRef": "<page_id>", "workflowRef": "<workflow_id_or_node_id>"}],
     "roleRefs": ["<role_id>"],
     "dataModelRefs": ["<entity_id>"],
+    "appIdentity": {"productName": "<2-6字产品名>", "theme": "__IDENTITY_THEMES__",
+                    "icon": "__IDENTITY_ICONS__", "nav": "__IDENTITY_NAVS__"},
     "invariants": [
       {"id": "<snake_case>", "statement": "<one-sentence declarative constraint>",
        "systems": ["datamodel|rbac|workflow|page|aigc"],
@@ -111,6 +113,20 @@ Rules:
 - PHASES (swimlanes): give EVERY workflow node a "phase" — a short stage label
   in the intent's language (e.g. 申请 / 审核 / 执行 / 验收). Use 2-4 phases
   total; nodes of the same phase must be consecutive along the main flow.
+
+- APP IDENTITY (every app gets its own face): appbundle.appIdentity is
+  REQUIRED. "productName" is a REAL product name in the intent's language
+  (2-6 chars/words, brandable — e.g. 舆情智采, 采买通, IncomeBoard), NEVER a
+  copy of the user's raw sentence. "theme" picks the visual temperament:
+  azure = universal enterprise blue, forest = operations/production green,
+  graphite = neutral professional gray, tangerine = consumer-facing energy,
+  violet = creative/AI intelligence, amber = finance/audit warmth,
+  clay = warm humanistic terracotta, indigo = data-dense analytical.
+  "icon" picks the brand mark from the closed set (cart=procurement,
+  users=HR/CRM, shield=audit/security, chart=analytics, calendar=scheduling,
+  wrench=service/ops, spark=AI tools, globe=cross-region, heart=health/care,
+  book=learning, file=docs, boxes=generic platform). "nav" = side (management
+  consoles, many menus) or top (monitoring/overview products, few menus).
 
 Content-quality rules (checked by a deterministic regression gate):
 - REACHABILITY: every permission listed in a page's actionPermissions MUST be
@@ -220,6 +236,9 @@ def _render_schema_instruction(template: str) -> str:
         .replace("__CHART_TYPES__", enum_str("chartTypes"))
         .replace("__STAT_METRIC_FORMS__", stat_metrics)
         .replace("__CHART_METRIC_FORMS__", chart_metrics)
+        .replace("__IDENTITY_THEMES__", enum_str("identityThemes"))
+        .replace("__IDENTITY_ICONS__", enum_str("identityIcons"))
+        .replace("__IDENTITY_NAVS__", enum_str("identityNavs"))
     )
 
 

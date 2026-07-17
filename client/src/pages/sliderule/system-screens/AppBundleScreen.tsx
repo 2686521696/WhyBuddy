@@ -420,7 +420,8 @@ export function AppBundleScreen({
           ((bundle.presentationNotes.repaired?.length ?? 0) > 0 ||
             (bundle.presentationNotes.droppedCharts?.length ?? 0) > 0 ||
             (bundle.presentationNotes.droppedStats?.length ?? 0) > 0 ||
-            (bundle.presentationNotes.clearedFormats?.length ?? 0) > 0) && (
+            (bundle.presentationNotes.clearedFormats?.length ?? 0) > 0 ||
+            (bundle.presentationNotes.clearedIdentity?.length ?? 0) > 0) && (
             <div
               className="mt-3 rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-700 ring-1 ring-amber-200"
               data-testid="appbundle-presentation-notes"
@@ -455,6 +456,11 @@ export function AppBundleScreen({
               {(bundle.presentationNotes.clearedFormats?.length ?? 0) > 0 && (
                 <span className="ml-1">
                   清除 {bundle.presentationNotes.clearedFormats!.length} 个非法格式声明（回默认渲染）
+                </span>
+              )}
+              {(bundle.presentationNotes.clearedIdentity?.length ?? 0) > 0 && (
+                <span className="ml-1">
+                  清除 {bundle.presentationNotes.clearedIdentity!.length} 个非法身份声明（回默认主题）
                 </span>
               )}
             </div>

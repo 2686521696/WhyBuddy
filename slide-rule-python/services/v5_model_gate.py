@@ -545,6 +545,33 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                 f"appbundle dataModelRef '{ref}' not found in datamodel entities", ref=ref, skill="appbundle",
             ))
 
+    # 6.5 appbundle.appIdentity（E40.2，可选）：应用身份段——产品名 + 主题 +
+    #    图标 + 导航形态。老模型没有该字段 → 不罚；出现即校验：三个枚举必须
+    #    在真相源账本内（渲染层只认账本值，非法值 = 渲染不出来的假承诺）。
+    from .schema_legal import IDENTITY_ICONS, IDENTITY_NAVS, IDENTITY_THEMES
+
+    identity = _as_dict(appbundle.get("appIdentity"))
+    if identity:
+        for key, legal, label in (
+            ("theme", IDENTITY_THEMES, "identity theme"),
+            ("icon", IDENTITY_ICONS, "identity icon"),
+            ("nav", IDENTITY_NAVS, "identity nav"),
+        ):
+            value = str(identity.get(key) or "").strip()
+            if value and value not in legal:
+                findings.append(_finding(
+                    DANGLING, f"appbundle.appIdentity.{key}",
+                    f"{label} '{value}' is not one of {'/'.join(legal)}",
+                    ref=value, skill="appbundle",
+                ))
+        name = identity.get("productName")
+        if name is not None and not str(name).strip():
+            findings.append(_finding(
+                DANGLING, "appbundle.appIdentity.productName",
+                "identity productName must be a non-empty string when declared",
+                ref="", skill="appbundle",
+            ))
+
     # 7. appbundle.invariants（改进②，可选）：老模型没有该字段 → 不罚；出现即校验——
     #    refs 必须解析到本模型内的实体/字段/角色/权限/流程节点，systems 必须是已知系统名。
     #    宽泛口号（无 refs）也算失败：不变式的价值就在于可对照模型检查。
