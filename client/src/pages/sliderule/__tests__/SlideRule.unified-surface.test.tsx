@@ -125,22 +125,23 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('href="/sliderule/dev"');
   });
 
-  it("empty session shows THE single empty state: logo watermark + hero copy + 3 suggestion chips + composer", () => {
+  it("empty session shows THE single empty state: hero + 4 mode cards + quick starts + composer (E34)", () => {
     const html = renderPage();
 
     expect(html.match(/data-testid="sliderule-empty-state"/g)?.length).toBe(1);
-    expect(html).toContain("/assets/sliderule-logo.png");
-    expect(html).toContain("我能帮你把意图推演成应用闭环");
-    expect(html).toContain("发一句业务目标，SlideRule 串起五系统");
+    expect(html).toContain("把一句模糊想法，快速推演成可执行的完整应用");
+    expect(html).toContain("能跑起来");
+    // 四张模式模板卡（同一推演管线的起手式，不是假功能入口）
+    for (const key of ["app", "model", "verify", "clone"]) {
+      expect(html).toContain(`data-testid="sliderule-home-mode-${key}"`);
+    }
+    expect(html).toContain("应用推演");
+    expect(html).toContain("页面复刻");
+    // 快速开始 chips（含「从需求文档开始」拉起附件选择器）
+    expect(html).toContain("快速开始");
+    expect(html).toContain('data-testid="sliderule-quick-start-采购审批"');
     expect(html).toContain(
-      "做一个采购审批应用，含采购单、经理审批、财务确认和字段权限"
-    );
-    expect(html).toContain(
-      "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理"
-    );
-    // 第三条 chip 是新颖域（非内置演示域）——用户从 chips 就能体验真实 LLM 路径
-    expect(html).toContain(
-      "做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养"
+      'data-testid="sliderule-quick-start-从需求文档开始"'
     );
     // single bottom composer, unchanged
     expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(
