@@ -27,7 +27,19 @@ import {
   MoreHorizontal,
   Trash2,
   ArrowUpDown,
+  Boxes,
+  BarChart3,
+  ShieldCheck,
+  ShoppingCart,
+  Calendar,
+  FileText as FileIcon,
+  Sparkles,
+  Globe,
+  Wrench,
+  Heart,
+  BookOpen,
 } from "lucide-react";
+import { resolveIdentityTheme } from "@/pages/sliderule/live-runtime/identity-themes";
 import {
   mergeFiveSystemModels,
   parseFiveSystemModelFromPerSkillEvidence,
@@ -71,8 +83,12 @@ export interface AppCardDetail {
   pages: number;
   flowNodes: number;
   roles: number;
+  /** AI 能力数（model.aigc.capabilities，E41 指标行） */
+  aiCaps: number;
   pageNames: string[];
   entityNames: string[];
+  /** 应用身份（E40.2）：产品名/主题/图标——工作台卡片的"脸" */
+  identity: { productName: string; theme: string; icon: string } | null;
 }
 
 /** 从持久化会话状态推导卡片详情（不发明数据：模型缺失就是 draft）。 */
@@ -89,6 +105,16 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
   const pagesArr = model?.page?.pages ?? [];
   const nodesArr = (model?.workflow as any)?.nodes ?? [];
   const rolesArr = model?.rbac?.roles ?? [];
+  const capsArr = model?.aigc?.capabilities ?? [];
+  const rawIdentity = (model?.appbundle as any)?.appIdentity;
+  const identity =
+    rawIdentity && (rawIdentity.productName || rawIdentity.theme)
+      ? {
+          productName: String(rawIdentity.productName ?? "").trim(),
+          theme: String(rawIdentity.theme ?? "azure").trim() || "azure",
+          icon: String(rawIdentity.icon ?? "boxes").trim() || "boxes",
+        }
+      : null;
   const status: AppCardStatus =
     evidenceCount >= 6 && !blocked && model
       ? "runnable"
@@ -103,13 +129,16 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
     pages: pagesArr.length,
     flowNodes: Array.isArray(nodesArr) ? nodesArr.length : 0,
     roles: rolesArr.length,
+    aiCaps: capsArr.length,
+    identity,
     pageNames: pagesArr.map((p: any) => String(p?.name ?? p?.id ?? "")).filter(Boolean).slice(0, 6),
     entityNames: entitiesArr.map((e: any) => String(e?.name ?? e?.id ?? "")).filter(Boolean).slice(0, 4),
   };
 }
 
-export type GalleryFilter = "all" | "runnable" | "draft";
+export type GalleryFilter = "all" | "runnable" | "draft" | "blocked";
 
+/** 筛选口径 = 门语言（E41）：closed 6/6（runnable）/ blocked / 推演中（其余）。 */
 export function filterCards(
   items: Array<{ item: SessionListItem; detail: AppCardDetail | null }>,
   filter: GalleryFilter,
@@ -121,7 +150,8 @@ export function filterCards(
     if (filter === "all") return true;
     if (!detail) return false; // 详情未到不武断归类
     if (filter === "runnable") return detail.status === "runnable";
-    return detail.status !== "runnable";
+    if (filter === "blocked") return detail.blocked && detail.status !== "runnable";
+    return detail.status !== "runnable" && !detail.blocked;
   });
 }
 
@@ -137,9 +167,31 @@ export function formatUpdatedAt(iso?: string | null): string {
 // 组件
 // ---------------------------------------------------------------------------
 
+// E41 品牌图标封闭集（id 合法域 = @legal identityIcons，与运行时同套语义）
+const BRAND_LUCIDE: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  boxes: Boxes,
+  chart: BarChart3,
+  shield: ShieldCheck,
+  cart: ShoppingCart,
+  users: Users,
+  calendar: Calendar,
+  file: FileIcon,
+  spark: Sparkles,
+  globe: Globe,
+  wrench: Wrench,
+  heart: Heart,
+  book: BookOpen,
+};
+
+function themePrimary(themeId: string): string {
+  return resolveIdentityTheme(themeId).primary;
+}
+
+// E41：徽标 = 全线统一的门语言（closed 6/6 / blocked / 推演中），
+// 不再另造"运行中/待补充"一套。
 const STATUS_META: Record<AppCardStatus, { label: string; cls: string; dot: string }> = {
-  runnable: { label: "运行中", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
-  awaiting: { label: "待补充", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500" },
+  runnable: { label: "closed 6/6", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
+  awaiting: { label: "blocked", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500" },
   draft: { label: "推演中", cls: "bg-blue-50 text-[#1677ff]", dot: "bg-[#1677ff]" },
 };
 
@@ -249,6 +301,24 @@ function StatChip({
   );
 }
 
+/** 官方示例（E41）：E35 冻结过门模型的摘要投影（API 返回，全真数据）。 */
+export interface BuiltinExample {
+  domain: string;
+  productName: string;
+  theme: string;
+  icon: string;
+  nav: string;
+  intent: string;
+  category: string;
+  pages: number;
+  roles: number;
+  aiCapabilities: number;
+  tags: string[];
+}
+
+/** 点模板 = 新会话 + 暂存起手意图（SlideRule 页挂载时消费预填输入框）。 */
+export const PENDING_TEMPLATE_INTENT_KEY = "sliderule:pending-template-intent";
+
 export function AppsWorkbench() {
   const [sessions, setSessions] = React.useState<SessionListItem[] | null>(null);
   const [details, setDetails] = React.useState<Record<string, AppCardDetail | null>>({});
@@ -264,6 +334,9 @@ export function AppsWorkbench() {
   const [menuFor, setMenuFor] = React.useState<string | null>(null);
   // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
   const [reloadKey, setReloadKey] = React.useState(0);
+  // E41 官方示例库（静态演示无后端 → 不拉不显示，如实为空）
+  const [examples, setExamples] = React.useState<BuiltinExample[]>([]);
+  const [exampleCat, setExampleCat] = React.useState("全部");
   React.useEffect(() => {
     const bump = () => setReloadKey(k => k + 1);
     window.addEventListener(SESSIONS_UPDATED_EVENT, bump);
@@ -332,6 +405,10 @@ export function AppsWorkbench() {
       })
       .catch(e => alive && setListError(String(e?.message ?? e)));
     if (IS_GITHUB_PAGES) return () => { alive = false; }; // 演示态不探测
+    fetch("/api/sliderule/builtin-examples")
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => alive && setExamples(Array.isArray(d?.examples) ? d.examples : []))
+      .catch(() => alive && setExamples([]));
     fetch("/api/health")
       .then(r => alive && setNodeOk(r.ok))
       .catch(() => alive && setNodeOk(false));
@@ -366,6 +443,15 @@ export function AppsWorkbench() {
     // Pages 子路径部署（/<repo>/）下绝对路径 404——带 BASE_URL 前缀
     const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
     window.location.href = `${base}/agent-loop/sliderule`;
+  };
+
+  const useTemplate = (example: BuiltinExample) => {
+    try {
+      localStorage.setItem(PENDING_TEMPLATE_INTENT_KEY, example.intent);
+    } catch {
+      /* 隐私模式无存储：仍然打开新会话，用户手动输入 */
+    }
+    open(newSessionId());
   };
 
   const removeApp = async (sessionId: string) => {
@@ -406,7 +492,8 @@ export function AppsWorkbench() {
   const counts = {
     all: paired.length,
     runnable: paired.filter(p => p.detail?.status === "runnable").length,
-    draft: paired.filter(p => p.detail && p.detail.status !== "runnable").length,
+    blocked: paired.filter(p => p.detail && p.detail.blocked && p.detail.status !== "runnable").length,
+    draft: paired.filter(p => p.detail && p.detail.status !== "runnable" && !p.detail.blocked).length,
   };
 
   const llmOk = llm === null ? null : llm !== false && llm.keyPresent;
@@ -471,10 +558,17 @@ export function AppsWorkbench() {
         />
         <StatChip
           icon={<CircleCheck size={14} className="text-emerald-500" />}
-          label="可运行"
+          label="closed 6/6"
           count={counts.runnable}
           active={filter === "runnable"}
           onClick={() => setFilter("runnable")}
+        />
+        <StatChip
+          icon={<Hourglass size={14} className="text-orange-400" />}
+          label="blocked"
+          count={counts.blocked}
+          active={filter === "blocked"}
+          onClick={() => setFilter("blocked")}
         />
         {/* 服务健康：点开分列三服务详情（原观察台独有价值，下放到此） */}
         <span className="relative">
@@ -591,8 +685,22 @@ export function AppsWorkbench() {
                   )}
                 </div>
                 <div className="px-2.5 pb-2 pt-2">
-                  <div className="truncate text-[12.5px] font-semibold leading-snug text-stone-800">
-                    {item.goal || "（未命名话题）"}
+                  <div className="flex items-center gap-1.5">
+                    {detail?.identity && (
+                      <span
+                        className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] text-white"
+                        style={{ background: themePrimary(detail.identity.theme) }}
+                        title={`主题 ${detail.identity.theme}`}
+                      >
+                        {React.createElement(
+                          BRAND_LUCIDE[detail.identity.icon] ?? Boxes,
+                          { size: 11 }
+                        )}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold leading-snug text-stone-800">
+                      {detail?.identity?.productName || item.goal || "（未命名话题）"}
+                    </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5">
                     <span className="min-w-0 flex-1 truncate text-[10.5px] text-stone-400">
@@ -607,21 +715,17 @@ export function AppsWorkbench() {
                   <div className="mt-1.5 flex items-center gap-2 border-t border-stone-100 pt-1.5 text-[10.5px] text-stone-500">
                     {detail ? (
                       <>
-                        <span className="inline-flex items-center gap-0.5" title="实体">
-                          <LayoutGrid size={11} className="text-stone-300" />
-                          {detail.entities}
-                        </span>
-                        <span className="inline-flex items-center gap-0.5" title="页面">
+                        <span className="inline-flex items-center gap-0.5" title="页面数">
                           <FileText size={11} className="text-stone-300" />
-                          {detail.pages}
+                          页面 {detail.pages}
                         </span>
-                        <span className="inline-flex items-center gap-0.5" title="流程">
-                          <GitBranch size={11} className="text-stone-300" />
-                          {detail.flowNodes}
-                        </span>
-                        <span className="inline-flex items-center gap-0.5" title="角色">
+                        <span className="inline-flex items-center gap-0.5" title="角色数">
                           <Users size={11} className="text-stone-300" />
-                          {detail.roles}
+                          角色 {detail.roles}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5" title="AI 能力数">
+                          <GitBranch size={11} className="text-stone-300" />
+                          AI {detail.aiCaps}
                         </span>
                         <span
                           className={`ml-auto font-semibold ${
@@ -640,6 +744,105 @@ export function AppsWorkbench() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* 官方示例库（E41）：每张卡背后是一个过了结构门的冻结五系统模型——
+          真产品名/真主题/真指标/真截图，数量如实（有几个过门模型摆几张）。
+          点卡 = 新会话预填起手意图，走同一条推演管线（不是复制死模板）。 */}
+      {examples.length > 0 && (
+        <div className="mt-10" data-testid="example-gallery">
+          <h2 className="text-[20px] font-bold text-stone-800">官方示例库</h2>
+          <div className="mt-1 text-[13px] text-stone-400">
+            每个示例都是过了发布门的真应用——点卡即以该场景起手推演
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {["全部", ...Array.from(new Set(examples.map(e => e.category)))].map(cat => (
+              <button
+                key={cat}
+                data-testid={`example-cat-${cat}`}
+                className={`rounded-lg border px-3 py-1.5 text-[12.5px] transition ${
+                  exampleCat === cat
+                    ? "border-[#1677ff] bg-white text-[#1677ff]"
+                    : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
+                }`}
+                onClick={() => setExampleCat(cat)}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-4">
+            {examples
+              .filter(e => exampleCat === "全部" || e.category === exampleCat)
+              .map(example => {
+                const theme = resolveIdentityTheme(example.theme);
+                const Icon = BRAND_LUCIDE[example.icon] ?? Boxes;
+                const shot = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/examples/${example.domain}.png`;
+                return (
+                  <div
+                    key={example.domain}
+                    data-testid={`example-card-${example.domain}`}
+                    className="group cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/50 hover:shadow-md"
+                    onClick={() => useTemplate(example)}
+                    title={example.intent}
+                  >
+                    {/* 主题色带（身份系统派生，与生成应用同一套 token） */}
+                    <div
+                      className="flex items-center gap-2 px-3 py-2"
+                      style={{
+                        background: `linear-gradient(135deg, ${theme.primary}, ${theme.gradTo})`,
+                      }}
+                    >
+                      <Icon size={13} className="text-white" />
+                      <span className="truncate text-[11.5px] font-medium text-white/95">
+                        {example.productName}
+                      </span>
+                      <span className="ml-auto rounded bg-white/20 px-1.5 py-[1px] text-[9.5px] font-semibold text-white">
+                        closed 6/6
+                      </span>
+                    </div>
+                    {/* 真应用截图（playwright 实跑闭环后拍摄；缺图诚实显示占位说明） */}
+                    <div className="relative h-[120px] overflow-hidden border-b border-stone-100 bg-[#f4f6f9]">
+                      <img
+                        src={shot}
+                        alt={`${example.productName} 真实截图`}
+                        className="h-full w-full object-cover object-top"
+                        loading="lazy"
+                        onError={e => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                          (e.currentTarget.nextElementSibling as HTMLElement | null)?.classList.remove("hidden");
+                        }}
+                      />
+                      <div className="hidden absolute inset-0 items-center justify-center text-[11px] text-stone-400">
+                        截图生成中
+                      </div>
+                    </div>
+                    <div className="px-3 pb-2.5 pt-2">
+                      <div className="flex flex-wrap gap-1">
+                        {example.tags.slice(0, 3).map(tag => (
+                          <span
+                            key={tag}
+                            className="rounded px-1.5 py-[2px] text-[10px]"
+                            style={{ background: theme.accentBg, color: theme.accentFg }}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-2 text-[10.5px] text-stone-500">
+                        <span>页面 {example.pages}</span>
+                        <span>角色 {example.roles}</span>
+                        <span>AI {example.aiCapabilities}</span>
+                        <span className="ml-auto text-[10px] text-stone-300 opacity-0 transition group-hover:opacity-100">
+                          点卡起手 →
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
         </div>
       )}
     </div>

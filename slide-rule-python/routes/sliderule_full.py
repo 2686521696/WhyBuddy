@@ -1072,6 +1072,15 @@ def prompt_refine(payload: Dict[str, Any], x_internal_key: Optional[str] = Heade
     }
 
 
+@router.get("/builtin-examples")
+def builtin_examples():
+    """官方示例库（E41）：E35 冻结过门模型的摘要投影——真身份、真指标、
+    起手意图。没有过门模型就没有示例（数量如实）。"""
+    from services.builtin_examples import list_builtin_examples
+
+    return {"examples": list_builtin_examples()}
+
+
 @router.post("/attachments/extract")
 async def attachments_extract(
     request: Request,
