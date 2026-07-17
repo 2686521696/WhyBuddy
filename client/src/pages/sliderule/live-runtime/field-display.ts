@@ -2,12 +2,15 @@
  * field-display — 字段语义（加厚 schema 一期）的纯函数层。
  *
  * 生成契约允许字段声明 enum options（取值 + tone 颜色语义）与 format
- * （money/percent/progress/score/rating/masked）。合法域与
- * slide-rule-python/services/v5_model_gate.py 的 FIELD_TONES / *_FORMATS
- * 逐字对齐——门禁在生成侧拦非法声明，这里对"已经进来的模型"做防御性
- * 归一化：非法 tone 降级 default、类型不匹配的 format 丢弃（门禁负责标红，
- * 运行应用不渲染坏声明）。无 React 依赖，渲染组件消费归一化结果。
+ * （money/percent/progress/score/rating/masked）。合法域来自单一真相源
+ * @legal（slide-rule-python/services/data/five_system_legal.json，E40.1）——
+ * 与门/修复器/生成契约同一本账，运行时数组直接派生，TS 联合类型与账本的
+ * 一致性由 legal-domains parity 测试锁死。门禁在生成侧拦非法声明，这里对
+ * "已经进来的模型"做防御性归一化：非法 tone 降级 default、类型不匹配的
+ * format 丢弃（门禁负责标红，运行应用不渲染坏声明）。无 React 依赖。
  */
+
+import legalDomains from "@legal";
 
 export type FieldTone =
   | "success"
@@ -16,13 +19,8 @@ export type FieldTone =
   | "danger"
   | "default";
 
-export const FIELD_TONES: readonly FieldTone[] = [
-  "success",
-  "processing",
-  "warning",
-  "danger",
-  "default",
-];
+export const FIELD_TONES: readonly FieldTone[] =
+  legalDomains.fieldTones as FieldTone[];
 
 export type FieldFormat =
   | "money"
@@ -32,14 +30,10 @@ export type FieldFormat =
   | "rating"
   | "masked";
 
-const NUMBER_FORMATS: readonly FieldFormat[] = [
-  "money",
-  "percent",
-  "progress",
-  "score",
-  "rating",
-];
-const STRING_FORMATS: readonly FieldFormat[] = ["masked"];
+const NUMBER_FORMATS: readonly FieldFormat[] =
+  legalDomains.numberFormats as FieldFormat[];
+const STRING_FORMATS: readonly FieldFormat[] =
+  legalDomains.stringFormats as FieldFormat[];
 
 export interface NormalizedFieldOption {
   id: string;

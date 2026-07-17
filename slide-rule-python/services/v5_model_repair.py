@@ -59,7 +59,8 @@ def _unique_near_match(ref: str, known: set) -> str | None:
     return close[0] if len(close) == 1 else None
 
 
-_CHART_TYPES = ("bar", "line", "pie")
+# 合法域来自单一真相源（经 gate re-export，E40.1）——与门永远同一本账
+from .v5_model_gate import CHART_TYPES as _CHART_TYPES
 
 
 def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:

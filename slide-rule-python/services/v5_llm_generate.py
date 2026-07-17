@@ -24,7 +24,9 @@ _REQUIRED_SECTIONS = ("datamodel", "rbac", "workflow", "page", "aigc", "appbundl
 
 # The JSON contract handed to the LLM. Kept explicit so the model emits exactly
 # the shape the gate validates (cross-refs must be internally consistent).
-_SCHEMA_INSTRUCTION = """\
+# E40.1：契约里的合法域枚举段由单一真相源渲染（__TOKEN__ 占位，文件底部
+# 统一替换）——账本加值，LLM 看到的菜单自动跟上，不再手抄漂移。
+_SCHEMA_INSTRUCTION_TEMPLATE = """\
 You are an enterprise-application metamodel designer. Given a business intent,
 produce a SINGLE JSON object modelling FIVE interlocking systems. Output ONLY
 valid JSON (no prose, no markdown fences). Every cross-system reference MUST
@@ -37,8 +39,8 @@ Required shape (use these exact keys):
     "entities": [
       {"id": "<snake_case>", "name": "<label>", "fields": [
         {"id": "<snake_case>", "name": "<label>", "type": "string|number|date|ref|enum",
-         "options": [{"id": "<value>", "label": "<label>", "tone": "success|processing|warning|danger|default"}],
-         "format": "money|percent|progress|score|rating|masked"}
+         "options": [{"id": "<value>", "label": "<label>", "tone": "__FIELD_TONES__"}],
+         "format": "__FIELD_FORMATS__"}
       ]}
     ]
   },
@@ -60,7 +62,7 @@ Required shape (use these exact keys):
   },
   "page": {
     "pages": [{"id": "<id>", "name": "<label>",
-               "kind": "workbench|kanban|calendar|dashboard",
+               "kind": "__PAGE_KINDS__",
                "statusField": "<entity_id>.<field_id> (kanban only)",
                "dateField": "<entity_id>.<field_id> (calendar only)",
                "colorBy": "<entity_id>.<field_id> (calendar only, optional)",
@@ -68,13 +70,13 @@ Required shape (use these exact keys):
                "actionPermissions": ["<resource>:<action>"],
                "stats": [
                  {"id": "<id>", "name": "<label>", "entity": "<entity_id>",
-                  "metric": "count|sum:<entity_id>.<field_id>|avg:<entity_id>.<field_id>",
-                  "format": "number|money|percent"}
+                  "metric": "__STAT_METRIC_FORMS__",
+                  "format": "__STAT_FORMATS__"}
                ],
                "charts": [
-                 {"id": "<id>", "name": "<label>", "type": "bar|line|pie",
+                 {"id": "<id>", "name": "<label>", "type": "__CHART_TYPES__",
                   "dimension": "<entity_id>.<field_id>",
-                  "metric": "count|sum:<entity_id>.<field_id>"}
+                  "metric": "__CHART_METRIC_FORMS__"}
                ]}]
   },
   "aigc": {
@@ -190,6 +192,38 @@ Content-quality rules (checked by a deterministic regression gate):
   it constrains. Write statements in the intent's language. No vague platitudes
   ("system should be secure") — each must be checkable against the model.
 """
+
+
+def _render_schema_instruction(template: str) -> str:
+    """E40.1：把契约模板里的 __TOKEN__ 占位换成真相源账本渲染的枚举串。
+
+    metric 形态按 bare + 前缀拼装（"count|sum:<entity_id>.<field_id>|…"），
+    与门/修复器的判定规则同一来源。渲染后的契约不含任何残留占位——
+    parity 测试锁死。
+    """
+    from .schema_legal import (
+        CHART_METRIC_PREFIXES,
+        METRIC_BARE,
+        STAT_METRIC_PREFIXES,
+        enum_str,
+    )
+
+    field_ref = "<entity_id>.<field_id>"
+    chart_metrics = "|".join(list(METRIC_BARE) + [f"{p}{field_ref}" for p in CHART_METRIC_PREFIXES])
+    stat_metrics = "|".join(list(METRIC_BARE) + [f"{p}{field_ref}" for p in STAT_METRIC_PREFIXES])
+    return (
+        template
+        .replace("__FIELD_TONES__", enum_str("fieldTones"))
+        .replace("__FIELD_FORMATS__", enum_str("numberFormats", "stringFormats"))
+        .replace("__PAGE_KINDS__", enum_str("pageKinds"))
+        .replace("__STAT_FORMATS__", enum_str("statFormats"))
+        .replace("__CHART_TYPES__", enum_str("chartTypes"))
+        .replace("__STAT_METRIC_FORMS__", stat_metrics)
+        .replace("__CHART_METRIC_FORMS__", chart_metrics)
+    )
+
+
+_SCHEMA_INSTRUCTION = _render_schema_instruction(_SCHEMA_INSTRUCTION_TEMPLATE)
 
 
 # 最近一次生成的诊断（供 publish closure 的 blocker 面向用户透出失败原因；
