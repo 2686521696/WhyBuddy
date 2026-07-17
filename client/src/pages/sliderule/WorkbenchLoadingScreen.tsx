@@ -114,7 +114,9 @@ export function WorkbenchLoadingScreen({ visible }: { visible: boolean }) {
           </div>
         </div>
 
-        <div className="relative flex flex-col items-center">
+        {/* 加载主块对「视口」绝对居中（用户裁决：水平+垂直居中），
+            不随左右骨架列的宽度偏移——与启动占位页同一几何 */}
+        <div className="pointer-events-none fixed inset-0 flex flex-col items-center justify-center">
           {/* 三蓝条品牌图形（视觉稿样式）：官方尺标 logo 小尺寸发糊，改内联绘制 */}
           <svg width="46" height="46" viewBox="0 0 46 46" aria-label="SlideRule">
             <rect x="6" y="18" width="9" height="22" rx="2.5" fill="#69a9ff" />
