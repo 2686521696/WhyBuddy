@@ -398,16 +398,24 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     let cancelled = false;
     (async () => {
       let loaded: V5SessionState;
-      if (IS_GITHUB_PAGES) {
-        const store = SlideRuleRuntime.getSlideRuleSessionStore();
-        loaded = await loadOrSeedGithubPagesDemoSession(store, sessionId);
-      } else {
-        loaded = await SlideRuleRuntime.loadOrCreateSessionState(sessionId);
-        if (SlideRuleRuntime.isLegacyEmptySessionSeed(loaded)) {
-          // E30 惰性创建：空种子只在内存清洗，不落库——否则每个新 id 都
-          // 往会话库塞一条「新会话」空壳（用户实测 bug）。首条消息才建档。
-          loaded = sanitizeLegacyEmptySeed(loaded);
+      try {
+        if (IS_GITHUB_PAGES) {
+          const store = SlideRuleRuntime.getSlideRuleSessionStore();
+          loaded = await loadOrSeedGithubPagesDemoSession(store, sessionId);
+        } else {
+          loaded = await SlideRuleRuntime.loadOrCreateSessionState(sessionId);
+          if (SlideRuleRuntime.isLegacyEmptySessionSeed(loaded)) {
+            // E30 惰性创建：空种子只在内存清洗，不落库——否则每个新 id 都
+            // 往会话库塞一条「新会话」空壳（用户实测 bug）。首条消息才建档。
+            loaded = sanitizeLegacyEmptySeed(loaded);
+          }
         }
+      } catch (e) {
+        // E33 水合失败兜底：如实落回空会话态并宣布水合结束——加载幕布
+        // 挂在 sessionHydrated 上，绝不能因加载链路异常而永远盖着屏
+        console.warn("[sliderule] session hydration failed:", e);
+        if (!cancelled) setSessionHydrated(true);
+        return;
       }
       if (!cancelled) {
         const hydrated = preservePythonEvidenceProjection(loaded);
