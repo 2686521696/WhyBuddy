@@ -35,7 +35,9 @@
     "workbench",
     "kanban",
     "calendar",
-    "dashboard"
+    "dashboard",
+    "wizard",
+    "monitor"
   ],
   "chartTypes": [
     "bar",

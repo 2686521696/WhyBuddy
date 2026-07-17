@@ -610,6 +610,25 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                 f"appbundle dataModelRef '{ref}' not found in datamodel entities", ref=ref, skill="appbundle",
             ))
 
+    # 6.4 wizard 范式（E40.5）：向导页的步骤骨架来自其绑定的 workflow——
+    #    kind=wizard 的页必须出现在 appbundle.pageBindings 且带 workflowRef，
+    #    否则渲染器没有步骤可画（诚实拦截，不给假向导）。
+    flow_bound_pages = {
+        str(_as_dict(pb).get("pageRef") or "").strip()
+        for pb in _as_list(appbundle.get("pageBindings"))
+        if str(_as_dict(pb).get("workflowRef") or "").strip()
+    }
+    for pd_raw in _as_list(page.get("pages")):
+        pd2 = _as_dict(pd_raw)
+        if str(pd2.get("kind") or "").strip() == "wizard":
+            pid2 = str(pd2.get("id") or pd2.get("name") or "<unnamed>")
+            if pid2 not in flow_bound_pages:
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid2}].kind",
+                    "wizard page must be bound to a workflow via appbundle.pageBindings (workflowRef)",
+                    ref=pid2, skill="page",
+                ))
+
     # 6.5 appbundle.appIdentity（E40.2，可选）：应用身份段——产品名 + 主题 +
     #    图标 + 导航形态。老模型没有该字段 → 不罚；出现即校验：三个枚举必须
     #    在真相源账本内（渲染层只认账本值，非法值 = 渲染不出来的假承诺）。
