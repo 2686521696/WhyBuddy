@@ -153,7 +153,9 @@ export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => v
         )}
         {error && <div className="native-agent-sessions-hint">会话列表不可用</div>}
         {sessions?.length === 0 && <div className="native-agent-sessions-hint">暂无历史会话</div>}
-        {sessions?.map((s) => {
+        {/* E30：空会话（无话题）不进列表——它们只是还没说话的壳，显示成
+            一排「新会话」是纯噪音（冒烟遗留的空会话同样隐藏） */}
+        {sessions?.filter((s) => (s.goal || "").trim()).map((s) => {
           const active = s.sessionId === activeId;
           const confirming = confirmDeleteId === s.sessionId;
           return (
