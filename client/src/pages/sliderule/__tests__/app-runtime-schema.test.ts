@@ -422,6 +422,32 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     expect(pageSchema.charts[0].type).toBe("donut");
   });
 
+  it("wizard/monitor 范式（E40.5）：monitor 直通，wizard 未挂流程降级 workbench", () => {
+    const base = {
+      ...MODEL,
+      page: {
+        pages: [
+          { id: "p_mon", name: "监控", kind: "monitor", fieldBindings: ["order.amount"] },
+          { id: "p_wiz", name: "向导", kind: "wizard", fieldBindings: ["order.amount"] },
+        ],
+      },
+    };
+    // p_wiz 未在 pageBindings 挂 workflowRef → 降级 workbench
+    const schema = deriveAppRuntimeSchema(base)!;
+    expect(schema.pages.find(p => p.id === "p_mon")!.view.kind).toBe("monitor");
+    expect(schema.pages.find(p => p.id === "p_wiz")!.view.kind).toBe("workbench");
+
+    const bound = {
+      ...base,
+      appbundle: {
+        ...base.appbundle,
+        pageBindings: [{ pageRef: "p_wiz", workflowRef: "wf_order" }],
+      },
+    };
+    const schema2 = deriveAppRuntimeSchema(bound)!;
+    expect(schema2.pages.find(p => p.id === "p_wiz")!.view.kind).toBe("wizard");
+  });
+
   it("应用身份段（E40.2）：产品名权威 > 会话标题，枚举缺省回退与历史一致", () => {
     // 无身份段（老模型）：缺省 azure/boxes/side，appName = 会话标题
     const legacy = deriveAppRuntimeSchema(MODEL, "健身房系统")!;

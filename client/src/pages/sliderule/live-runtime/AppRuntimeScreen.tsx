@@ -28,6 +28,7 @@ import {
   InputNumber,
   Select,
   Tag,
+  Steps,
   Space,
   Card,
   Statistic,
@@ -1141,57 +1142,10 @@ export function AppRuntimeScreen({
     </>
   );
 
-  const defaultPageContent = page && (
-    <Card
-      size="small"
-      title={page.title}
-      extra={
-        <Space size="small">
-          {page.actions.slice(0, 3).map(a => (
-            <Tag key={a} color="blue" style={{ marginInlineEnd: 0 }}>
-              {a}
-            </Tag>
-          ))}
-          {columnSettings}
-          <span
-            {...probe({
-              kind: "action",
-              label: "新建",
-              pageId: page.id,
-              permission: pageAccess.get(page.id)?.createPermission ?? null,
-              granted: pageAccess.get(page.id)?.canCreate !== false,
-              role,
-            })}
-          >
-            <Button
-              type="primary"
-              icon={
-                pageAccess.get(page.id)?.canCreate === false ? (
-                  <LockOutlined />
-                ) : (
-                  <PlusOutlined />
-                )
-              }
-              onClick={() => {
-                setFormValues({});
-                setFormOpen(true);
-              }}
-              disabled={
-                !page.entityId || pageAccess.get(page.id)?.canCreate === false
-              }
-              title={
-                pageAccess.get(page.id)?.canCreate === false
-                  ? `当前角色（${role ?? "-"}）未持有 ${pageAccess.get(page.id)?.createPermission ?? ""}`
-                  : undefined
-              }
-              data-testid="app-runtime-create"
-            >
-              新建
-            </Button>
-          </span>
-        </Space>
-      }
-    >
+  // E40.5：三条数据带抽成积木——monitor 骨架把图表与榜/流排成主侧两栏，
+  // 其余范式保持历史堆叠顺序（stats → widgets → charts）。
+  const statsBand = page && (
+    <>
       {page.stats.length > 0 && (
         <div
           style={{
@@ -1230,6 +1184,11 @@ export function AppRuntimeScreen({
           })}
         </div>
       )}
+    </>
+  );
+
+  const widgetsBand = page && (
+    <>
       {(page.rankings.length > 0 || page.feeds.length > 0) && (
         <div
           style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}
@@ -1379,6 +1338,11 @@ export function AppRuntimeScreen({
           })}
         </div>
       )}
+    </>
+  );
+
+  const chartsBand = page && (
+    <>
       {page.charts.length > 0 && (
         <div
           style={{
@@ -1439,6 +1403,90 @@ export function AppRuntimeScreen({
             );
           })}
         </div>
+      )}
+    </>
+  );
+
+  const defaultPageContent = page && (
+    <Card
+      size="small"
+      title={page.title}
+      extra={
+        <Space size="small">
+          {page.actions.slice(0, 3).map(a => (
+            <Tag key={a} color="blue" style={{ marginInlineEnd: 0 }}>
+              {a}
+            </Tag>
+          ))}
+          {columnSettings}
+          <span
+            {...probe({
+              kind: "action",
+              label: "新建",
+              pageId: page.id,
+              permission: pageAccess.get(page.id)?.createPermission ?? null,
+              granted: pageAccess.get(page.id)?.canCreate !== false,
+              role,
+            })}
+          >
+            <Button
+              type="primary"
+              icon={
+                pageAccess.get(page.id)?.canCreate === false ? (
+                  <LockOutlined />
+                ) : (
+                  <PlusOutlined />
+                )
+              }
+              onClick={() => {
+                setFormValues({});
+                setFormOpen(true);
+              }}
+              disabled={
+                !page.entityId || pageAccess.get(page.id)?.canCreate === false
+              }
+              title={
+                pageAccess.get(page.id)?.canCreate === false
+                  ? `当前角色（${role ?? "-"}）未持有 ${pageAccess.get(page.id)?.createPermission ?? ""}`
+                  : undefined
+              }
+              data-testid="app-runtime-create"
+            >
+              新建
+            </Button>
+          </span>
+        </Space>
+      }
+    >
+      {page.view.kind === "wizard" && (model?.workflow?.nodes?.length ?? 0) > 0 && (
+        <Steps
+          size="small"
+          current={0}
+          items={(model?.workflow?.nodes ?? []).slice(0, 8).map(n => ({
+            title: n.name || n.id,
+            description: n.phase,
+          }))}
+          style={{ marginBottom: 14 }}
+          data-testid="app-runtime-wizard-steps"
+        />
+      )}
+      {page.view.kind === "monitor" ? (
+        <>
+          {statsBand}
+          <div
+            style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+            data-testid="app-runtime-monitor-split"
+          >
+            <div style={{ flex: 2, minWidth: 0 }}>{chartsBand}</div>
+            <div style={{ flex: 1, minWidth: 220 }}>{widgetsBand}</div>
+          </div>
+        </>
+      ) : (
+        <>
+          {statsBand}
+          {widgetsBand}
+          {chartsBand}
+        </>
       )}
       {isTablet ? (
         // 平板范式：紧凑双栏（iPad 式主从视图）——左列表右详情，详情不走 Drawer
