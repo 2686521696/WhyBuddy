@@ -10,8 +10,12 @@
   2. 词表封闭：提案里的 capabilityId 必须在 V5.2 能力词表内，roleId
      必须在四角色内——幻觉能力/角色直接剔除。
   3. fail-open 回落：LLM 停用/失败/提案全被剔除 → 返回 None，调用方
-     沿用规则版结果。实验开关 SLIDERULE_AGENTIC_PICK=on（默认 off，
-     不影响现有全部行为与测试）。
+     沿用规则版结果。
+
+E32 转正（2026-07-17，用户拍板）：十话题双模式对比 + LLM judge 内容
+质量评测 4:0 胜出后，SLIDERULE_AGENTIC_PICK 默认从 off 切到 on——
+未设置 = 开；显式 off/0/false/no = 回到纯规则版。三条不变量不动，
+LLM 不可用时行为与老规则版逐字节一致（fail-open）。
 
 对比评测跑法见 scripts/agentic_pick_eval.py（十话题双模式指标对比）。
 """
@@ -75,11 +79,12 @@ _MAX_PICKS = 5  # 与规则版 cap<=5 同口径
 
 
 def agentic_pick_enabled() -> bool:
-    return str(os.getenv("SLIDERULE_AGENTIC_PICK", "")).strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
+    # E32 默认 on（评测 4:0 转正）；显式 off 才回纯规则版
+    return str(os.getenv("SLIDERULE_AGENTIC_PICK", "on")).strip().lower() not in (
+        "off",
+        "0",
+        "false",
+        "no",
     )
 
 
@@ -215,6 +220,9 @@ def agentic_pick_next_capabilities(
                 max_tokens=4000,
                 max_attempts=1,
                 reasoning_effort="low",
+                # E32 转正后 pick 在每轮主路径上：选材是快决策，不给它
+                # 全局 600s 的深思预算——60s 答不上来就回落规则版（fail-open）
+                timeout_ms=60_000,
             )
             break
         except Exception as exc:

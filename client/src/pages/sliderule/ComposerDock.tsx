@@ -28,7 +28,15 @@ import {
   type InstalledSkill,
 } from "./installed-skills";
 
-/** 附件预览卡的数据形态（图片带 objectURL 缩略图；解析服务未接，发送时只随消息带附件名）。 */
+/** E31 图片/PDF 提取结果（后端 /attachments/extract 的诚实回执）。 */
+interface AttachmentExtractOutcome {
+  ok: boolean;
+  context?: string;
+  detail?: string;
+  chars?: number;
+}
+
+/** 附件预览卡的数据形态（图片带 objectURL 缩略图）。 */
 interface ComposerAttachment {
   id: string;
   name: string;
@@ -36,30 +44,82 @@ interface ComposerAttachment {
   previewUrl: string | null;
   /** E28：保留原始 File——发送时文本类附件读内容注入指令上下文 */
   file?: File;
+  /** E31：图片/PDF 服务端提取状态（上传即解析，发送时注入缓存结果） */
+  extractStatus?: "pending" | "ready" | "failed";
+  extractDetail?: string;
+  extractChars?: number;
 }
 
 // E28 附件上下文注入（第一刀，纯浏览器）：文本类附件直接读内容并入指令。
-// 图片/PDF 等二进制留待 E2B 提取管线（下一期），当前仍如实只带文件名。
+// E31（本期）：图片走视觉 LLM、PDF 走 E2B 沙盒提取——上传即发服务端解析，
+// 发送时注入缓存结果；解析失败如实只带文件名。
 const TEXT_ATTACHMENT_EXT =
   /\.(txt|md|markdown|csv|tsv|json|yaml|yml|xml|html?|css|js|jsx|ts|tsx|py|java|go|rs|rb|php|sql|sh|toml|ini|conf|log)$/i;
+const EXTRACTABLE_ATTACHMENT_EXT = /\.(png|jpe?g|webp|gif|pdf)$/i;
 const MAX_TEXT_ATTACHMENT_BYTES = 200 * 1024;
 const MAX_CHARS_PER_ATTACHMENT = 6000;
 const MAX_TOTAL_ATTACHMENT_CHARS = 12000;
 
 function isTextAttachment(att: ComposerAttachment): boolean {
   if (!att.file) return false;
+  if (EXTRACTABLE_ATTACHMENT_EXT.test(att.name)) return false;
   if (att.file.type.startsWith("text/")) return true;
   return TEXT_ATTACHMENT_EXT.test(att.name);
 }
 
-/** 读文本类附件并拼成注入块；二进制/超限附件如实标注"仅文件名"。 */
+/** E31：该附件是否走服务端提取（图片/PDF）。 */
+export function isExtractableAttachment(name: string): boolean {
+  return EXTRACTABLE_ATTACHMENT_EXT.test(name);
+}
+
+/** E31：上传附件给后端提取内容（图片→视觉 LLM，PDF→E2B 沙盒）。
+ *  网络/服务异常一律归一成 ok:false + 人话 detail（诚实降级）。 */
+export async function extractAttachmentRemote(
+  file: File
+): Promise<AttachmentExtractOutcome> {
+  try {
+    const res = await fetch(
+      `/api/sliderule/attachments/extract?name=${encodeURIComponent(file.name)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file,
+      }
+    );
+    if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };
+    const body = (await res.json()) as AttachmentExtractOutcome;
+    if (body.ok && (body.context || "").trim()) return body;
+    return { ok: false, detail: body.detail || "服务返回空内容" };
+  } catch (e) {
+    return { ok: false, detail: `网络异常：${String(e)}` };
+  }
+}
+
+/** 读文本类附件 + 服务端提取结果拼成注入块；失败/超限附件如实标注"仅文件名"。 */
 async function buildAttachmentContext(
-  attachments: ComposerAttachment[]
+  attachments: ComposerAttachment[],
+  extractionOf: (att: ComposerAttachment) => Promise<AttachmentExtractOutcome> | null
 ): Promise<string> {
   const parts: string[] = [];
   let budget = MAX_TOTAL_ATTACHMENT_CHARS;
   for (const att of attachments) {
     if (budget <= 0) break;
+    // E31：图片/PDF 用服务端提取缓存（发送时若还在解析则等它落定）
+    const pending = extractionOf(att);
+    if (pending) {
+      const outcome = await pending;
+      if (outcome.ok && outcome.context) {
+        const limit = Math.min(MAX_CHARS_PER_ATTACHMENT, budget);
+        const body = outcome.context.slice(0, limit).trim();
+        budget -= body.length;
+        parts.push(`【附件内容 · ${att.name}】\n${body}`);
+      } else {
+        parts.push(
+          `【附件 ${att.name}】内容提取失败（${outcome.detail || "未知原因"}），仅携带文件名。`
+        );
+      }
+      continue;
+    }
     if (!isTextAttachment(att) || !att.file) continue;
     if (att.size > MAX_TEXT_ATTACHMENT_BYTES) {
       parts.push(`【附件 ${att.name}】文件过大（>200KB），未读取内容。`);
@@ -207,22 +267,51 @@ export function ComposerDock({
     []
   );
   const attachmentSeq = React.useRef(0);
+  // E31：附件 id → 服务端提取 promise（上传即解析；发送时 doSend 等它落定。
+  // 移除附件不取消请求——结果落定后 setAttachments 找不到卡片就自然丢弃）
+  const extractPromises = React.useRef(
+    new Map<string, Promise<AttachmentExtractOutcome>>()
+  );
 
   const addAttachments = React.useCallback((files: File[]) => {
     if (!files.length) return;
-    setAttachments(prev => [
-      ...prev,
-      ...files.map(f => ({
-        id: `att-${++attachmentSeq.current}`,
-        name: f.name,
-        size: f.size,
-        previewUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : null,
-        file: f,
-      })),
-    ]);
+    const items = files.map(f => ({
+      id: `att-${++attachmentSeq.current}`,
+      name: f.name,
+      size: f.size,
+      previewUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : null,
+      file: f,
+      extractStatus: isExtractableAttachment(f.name)
+        ? ("pending" as const)
+        : undefined,
+    }));
+    setAttachments(prev => [...prev, ...items]);
+    // E31：图片/PDF 上传即解析（视觉 LLM 实测可到 100s+，藏进等待期）
+    for (const item of items) {
+      if (item.extractStatus !== "pending" || !item.file) continue;
+      const promise = extractAttachmentRemote(item.file);
+      extractPromises.current.set(item.id, promise);
+      void promise.then(outcome => {
+        setAttachments(prev =>
+          prev.map(a =>
+            a.id === item.id
+              ? {
+                  ...a,
+                  extractStatus: outcome.ok ? "ready" : "failed",
+                  extractDetail: outcome.detail,
+                  extractChars: outcome.ok
+                    ? (outcome.context || "").length
+                    : undefined,
+                }
+              : a
+          )
+        );
+      });
+    }
   }, []);
 
   const removeAttachment = React.useCallback((id: string) => {
+    extractPromises.current.delete(id);
     setAttachments(prev => {
       const hit = prev.find(a => a.id === id);
       if (hit?.previewUrl) URL.revokeObjectURL(hit.previewUrl);
@@ -264,9 +353,13 @@ export function ComposerDock({
         }
         return [];
       });
+      const promiseMap = extractPromises.current;
+      extractPromises.current = new Map();
       void (async () => {
         const names = snapshot.map(a => a.name).join(", ");
-        const context = await buildAttachmentContext(snapshot);
+        const context = await buildAttachmentContext(snapshot, att =>
+          promiseMap.get(att.id) ?? null
+        );
         const head = text ? `${text}\n[附件: ${names}]` : `[附件: ${names}]`;
         sendMessage(context ? `${head}\n\n${context}` : head);
       })();
@@ -389,8 +482,21 @@ export function ComposerDock({
                   <span className="block max-w-[160px] truncate text-[11px] font-medium text-stone-700">
                     {att.name}
                   </span>
-                  <span className="block text-[10px] text-stone-400">
-                    {formatFileSize(att.size)} · 解析开发中，仅随消息带文件名
+                  {/* E31 提取状态如实展示：解析中/已解析/失败（失败悬停看原因） */}
+                  <span
+                    className="block text-[10px] text-stone-400"
+                    title={att.extractStatus === "failed" ? att.extractDetail : undefined}
+                    data-testid={`sliderule-attachment-status-${att.extractStatus ?? "none"}`}
+                  >
+                    {formatFileSize(att.size)}
+                    {att.extractStatus === "pending" && " · 解析中…"}
+                    {att.extractStatus === "ready" &&
+                      ` · 已解析 ${att.extractChars ?? 0} 字`}
+                    {att.extractStatus === "failed" && " · 解析失败，仅带文件名"}
+                    {!att.extractStatus &&
+                      (isTextAttachment(att)
+                        ? " · 发送时注入内容"
+                        : " · 仅随消息带文件名")}
                   </span>
                 </span>
                 <button
