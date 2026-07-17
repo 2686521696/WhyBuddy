@@ -12,6 +12,10 @@ import { describe, expect, it } from "vitest";
 
 import legal from "@legal";
 import { FIELD_TONES } from "../live-runtime/field-display";
+import {
+  LEGAL_THEME_IDS,
+  allIdentityThemes,
+} from "../live-runtime/identity-themes";
 
 // 渲染器当前已实现的集合（app-runtime-schema.ts 的 switch/联合类型覆盖面）。
 // 账本加值 → 此清单不含 → 测试红 → 去补渲染实现，再更新清单。
@@ -43,5 +47,14 @@ describe("legal-domains parity（四方同账，E40.1）", () => {
 
   it("账本统计卡格式 = 渲染器已实现格式", () => {
     expect(legal.statFormats).toEqual(RENDERER_STAT_FORMATS);
+  });
+
+  it("账本身份主题 = identity-themes 实现清单（E40.2 绊线）", () => {
+    expect(LEGAL_THEME_IDS).toEqual(legal.identityThemes);
+    expect(allIdentityThemes().map(t => t.id)).toEqual(legal.identityThemes);
+  });
+
+  it("账本导航形态 = 渲染器已实现形态（side/top）", () => {
+    expect(legal.identityNavs).toEqual(["side", "top"]);
   });
 });

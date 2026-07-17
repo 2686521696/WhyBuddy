@@ -48,6 +48,10 @@ CHART_TYPES = _tuple("chartTypes")
 METRIC_BARE = _tuple("metricBare")
 CHART_METRIC_PREFIXES = _tuple("chartMetricPrefixes")
 STAT_METRIC_PREFIXES = _tuple("statMetricPrefixes")
+# E40.2 应用身份段：主题/图标/导航形态的封闭枚举
+IDENTITY_THEMES = _tuple("identityThemes")
+IDENTITY_ICONS = _tuple("identityIcons")
+IDENTITY_NAVS = _tuple("identityNavs")
 
 
 def enum_str(*keys: str) -> str:

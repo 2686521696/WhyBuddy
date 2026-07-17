@@ -153,6 +153,8 @@ export interface AppHomeSchema {
 
 export interface AppRuntimeSchema {
   appName: string;
+  /** 应用身份（E40.2）：主题/图标/导航形态（productName 已并入 appName） */
+  identity: { themeId: string; icon: string; nav: "side" | "top" };
   roles: string[];
   home: AppHomeSchema;
   menus: Array<{ id: string; label: string; pageId: string }>;
@@ -457,8 +459,21 @@ export function deriveAppRuntimeSchema(
     ],
   };
 
+  // E40.2 应用身份：产品名权威 > 会话标题；枚举已过门/修复器，这里只做
+  // 缺省回退（老模型无身份段 → 与历史渲染完全一致）
+  const rawIdentity = model?.appbundle?.appIdentity;
+  const productName = String(rawIdentity?.productName ?? "").trim();
+  const identity = {
+    themeId: String(rawIdentity?.theme ?? "").trim() || "azure",
+    icon: String(rawIdentity?.icon ?? "").trim() || "boxes",
+    nav: (String(rawIdentity?.nav ?? "").trim() === "top" ? "top" : "side") as
+      | "side"
+      | "top",
+  };
+
   return {
-    appName,
+    appName: productName || appName,
+    identity,
     roles: model?.rbac?.roles ?? [],
     home,
     menus: [

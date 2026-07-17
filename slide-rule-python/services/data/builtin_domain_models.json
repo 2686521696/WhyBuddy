@@ -1,3861 +1,3885 @@
 {
-  "purchase_approval": {
-    "datamodel": {
-      "entities": [
+ "purchase_approval": {
+  "datamodel": {
+   "entities": [
+    {
+     "id": "purchase_order",
+     "name": "采购单",
+     "fields": [
+      {
+       "id": "order_no",
+       "name": "采购单号",
+       "type": "string"
+      },
+      {
+       "id": "requester",
+       "name": "申请人",
+       "type": "string"
+      },
+      {
+       "id": "department",
+       "name": "申请部门",
+       "type": "string"
+      },
+      {
+       "id": "supplier_id",
+       "name": "供应商",
+       "type": "ref"
+      },
+      {
+       "id": "total_amount",
+       "name": "采购金额",
+       "type": "number",
+       "format": "money"
+      },
+      {
+       "id": "required_date",
+       "name": "期望到货日期",
+       "type": "date"
+      },
+      {
+       "id": "purpose",
+       "name": "采购用途",
+       "type": "string"
+      },
+      {
+       "id": "priority",
+       "name": "优先级",
+       "type": "enum",
+       "options": [
         {
-          "id": "purchase_order",
-          "name": "采购单",
-          "fields": [
-            {
-              "id": "order_no",
-              "name": "采购单号",
-              "type": "string"
-            },
-            {
-              "id": "requester",
-              "name": "申请人",
-              "type": "string"
-            },
-            {
-              "id": "department",
-              "name": "申请部门",
-              "type": "string"
-            },
-            {
-              "id": "supplier_id",
-              "name": "供应商",
-              "type": "ref"
-            },
-            {
-              "id": "total_amount",
-              "name": "采购金额",
-              "type": "number",
-              "format": "money"
-            },
-            {
-              "id": "required_date",
-              "name": "期望到货日期",
-              "type": "date"
-            },
-            {
-              "id": "purpose",
-              "name": "采购用途",
-              "type": "string"
-            },
-            {
-              "id": "priority",
-              "name": "优先级",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "normal",
-                  "label": "普通",
-                  "tone": "default"
-                },
-                {
-                  "id": "urgent",
-                  "label": "紧急",
-                  "tone": "warning"
-                },
-                {
-                  "id": "critical",
-                  "label": "特急",
-                  "tone": "danger"
-                }
-              ]
-            },
-            {
-              "id": "approval_status",
-              "name": "审批状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "draft",
-                  "label": "草稿",
-                  "tone": "default"
-                },
-                {
-                  "id": "pending_manager",
-                  "label": "待经理审批",
-                  "tone": "warning"
-                },
-                {
-                  "id": "pending_finance",
-                  "label": "待财务确认",
-                  "tone": "processing"
-                },
-                {
-                  "id": "approved",
-                  "label": "已通过",
-                  "tone": "success"
-                },
-                {
-                  "id": "rejected",
-                  "label": "已驳回",
-                  "tone": "danger"
-                }
-              ]
-            },
-            {
-              "id": "risk_level",
-              "name": "风险等级",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "low",
-                  "label": "低风险",
-                  "tone": "success"
-                },
-                {
-                  "id": "medium",
-                  "label": "中风险",
-                  "tone": "warning"
-                },
-                {
-                  "id": "high",
-                  "label": "高风险",
-                  "tone": "danger"
-                }
-              ]
-            },
-            {
-              "id": "risk_reason",
-              "name": "风险说明",
-              "type": "string"
-            }
-          ]
+         "id": "normal",
+         "label": "普通",
+         "tone": "default"
         },
         {
-          "id": "supplier",
-          "name": "供应商",
-          "fields": [
-            {
-              "id": "supplier_name",
-              "name": "供应商名称",
-              "type": "string"
-            },
-            {
-              "id": "contact_name",
-              "name": "联系人",
-              "type": "string"
-            },
-            {
-              "id": "contact_phone",
-              "name": "联系电话",
-              "type": "string",
-              "format": "masked"
-            },
-            {
-              "id": "qualification_status",
-              "name": "资质状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "pending",
-                  "label": "待审核",
-                  "tone": "warning"
-                },
-                {
-                  "id": "valid",
-                  "label": "有效",
-                  "tone": "success"
-                },
-                {
-                  "id": "expired",
-                  "label": "已过期",
-                  "tone": "danger"
-                }
-              ]
-            }
-          ]
+         "id": "urgent",
+         "label": "紧急",
+         "tone": "warning"
         },
         {
-          "id": "approval_record",
-          "name": "审批记录",
-          "fields": [
-            {
-              "id": "purchase_order_id",
-              "name": "采购单",
-              "type": "ref"
-            },
-            {
-              "id": "approver",
-              "name": "审批人",
-              "type": "string"
-            },
-            {
-              "id": "decision",
-              "name": "审批决定",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "pending",
-                  "label": "待处理",
-                  "tone": "warning"
-                },
-                {
-                  "id": "approved",
-                  "label": "已通过",
-                  "tone": "success"
-                },
-                {
-                  "id": "rejected",
-                  "label": "已驳回",
-                  "tone": "danger"
-                }
-              ]
-            },
-            {
-              "id": "comment",
-              "name": "审批意见",
-              "type": "string"
-            },
-            {
-              "id": "decided_at",
-              "name": "审批时间",
-              "type": "date"
-            }
-          ]
-        },
-        {
-          "id": "payment_record",
-          "name": "付款确认记录",
-          "fields": [
-            {
-              "id": "purchase_order_id",
-              "name": "采购单",
-              "type": "ref"
-            },
-            {
-              "id": "payment_amount",
-              "name": "确认金额",
-              "type": "number",
-              "format": "money"
-            },
-            {
-              "id": "payment_status",
-              "name": "财务确认状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "pending",
-                  "label": "待确认",
-                  "tone": "warning"
-                },
-                {
-                  "id": "confirmed",
-                  "label": "已确认",
-                  "tone": "success"
-                },
-                {
-                  "id": "rejected",
-                  "label": "已退回",
-                  "tone": "danger"
-                }
-              ]
-            },
-            {
-              "id": "confirmed_by",
-              "name": "确认人",
-              "type": "string"
-            },
-            {
-              "id": "confirmed_at",
-              "name": "确认时间",
-              "type": "date"
-            }
-          ]
+         "id": "critical",
+         "label": "特急",
+         "tone": "danger"
         }
-      ]
-    },
-    "rbac": {
-      "roles": [
-        "requester",
-        "manager",
-        "finance",
-        "procurement_admin"
-      ],
-      "permissions": [
-        "purchase_order:create",
-        "purchase_order:view",
-        "purchase_order:view_amount",
-        "purchase_order:submit",
-        "purchase_order:approve",
-        "purchase_order:reject",
-        "approval_record:view",
-        "approval_record:create",
-        "payment_record:view",
-        "payment_record:confirm",
-        "supplier:view",
-        "supplier:manage",
-        "purchase_order:export"
-      ],
-      "menus": [
+       ]
+      },
+      {
+       "id": "approval_status",
+       "name": "审批状态",
+       "type": "enum",
+       "options": [
         {
-          "id": "requester_menu",
-          "label": "采购申请",
-          "roleRefs": [
-            "requester"
-          ],
-          "permissionRefs": [
-            "purchase_order:create",
-            "purchase_order:view",
-            "purchase_order:submit",
-            "supplier:view"
-          ]
+         "id": "draft",
+         "label": "草稿",
+         "tone": "default"
         },
         {
-          "id": "manager_menu",
-          "label": "经理审批",
-          "roleRefs": [
-            "manager"
-          ],
-          "permissionRefs": [
-            "purchase_order:view",
-            "purchase_order:view_amount",
-            "purchase_order:approve",
-            "purchase_order:reject",
-            "approval_record:view",
-            "approval_record:create"
-          ]
+         "id": "pending_manager",
+         "label": "待经理审批",
+         "tone": "warning"
         },
         {
-          "id": "finance_menu",
-          "label": "财务确认",
-          "roleRefs": [
-            "finance"
-          ],
-          "permissionRefs": [
-            "purchase_order:view",
-            "purchase_order:view_amount",
-            "payment_record:view",
-            "payment_record:confirm"
-          ]
+         "id": "pending_finance",
+         "label": "待财务确认",
+         "tone": "processing"
         },
         {
-          "id": "admin_menu",
-          "label": "采购管理",
-          "roleRefs": [
-            "procurement_admin"
-          ],
-          "permissionRefs": [
-            "purchase_order:view",
-            "purchase_order:view_amount",
-            "purchase_order:export",
-            "supplier:view",
-            "supplier:manage",
-            "approval_record:view",
-            "payment_record:view"
-          ]
+         "id": "approved",
+         "label": "已通过",
+         "tone": "success"
+        },
+        {
+         "id": "rejected",
+         "label": "已驳回",
+         "tone": "danger"
         }
-      ]
-    },
-    "workflow": {
-      "id": "purchase_order_lifecycle",
-      "name": "采购单生命周期",
-      "nodes": [
+       ]
+      },
+      {
+       "id": "risk_level",
+       "name": "风险等级",
+       "type": "enum",
+       "options": [
         {
-          "id": "po_draft",
-          "name": "填写采购单",
-          "assigneeRole": "requester",
-          "phase": "申请"
+         "id": "low",
+         "label": "低风险",
+         "tone": "success"
         },
         {
-          "id": "po_submitted",
-          "name": "提交采购单",
-          "assigneeRole": "requester",
-          "phase": "申请"
+         "id": "medium",
+         "label": "中风险",
+         "tone": "warning"
         },
         {
-          "id": "manager_review",
-          "name": "经理审批",
-          "assigneeRole": "manager",
-          "phase": "审核"
-        },
-        {
-          "id": "manager_rejected",
-          "name": "经理驳回",
-          "assigneeRole": "requester",
-          "phase": "审核"
-        },
-        {
-          "id": "finance_confirmation",
-          "name": "财务确认",
-          "assigneeRole": "finance",
-          "phase": "执行"
-        },
-        {
-          "id": "purchase_completed",
-          "name": "采购完成",
-          "assigneeRole": "procurement_admin",
-          "phase": "执行"
-        },
-        {
-          "id": "po_closed",
-          "name": "采购单归档",
-          "assigneeRole": "procurement_admin",
-          "phase": "执行"
+         "id": "high",
+         "label": "高风险",
+         "tone": "danger"
         }
-      ],
-      "transitions": [
-        {
-          "from": "po_draft",
-          "to": "po_submitted",
-          "condition": "必填字段完整且提交人有提交权限"
-        },
-        {
-          "from": "po_submitted",
-          "to": "manager_review"
-        },
-        {
-          "from": "manager_review",
-          "to": "manager_rejected",
-          "condition": "采购金额或用途不符合审批要求"
-        },
-        {
-          "from": "manager_review",
-          "to": "finance_confirmation",
-          "condition": "经理审批通过"
-        },
-        {
-          "from": "manager_rejected",
-          "to": "po_draft",
-          "condition": "申请人修改后重新提交"
-        },
-        {
-          "from": "finance_confirmation",
-          "to": "purchase_completed",
-          "condition": "财务确认金额与采购单金额一致"
-        },
-        {
-          "from": "finance_confirmation",
-          "to": "manager_review",
-          "condition": "金额不一致或财务退回"
-        },
-        {
-          "from": "purchase_completed",
-          "to": "po_closed"
-        }
-      ],
-      "chains": [
-        {
-          "id": "purchase_governance_chain",
-          "name": "采购审批治理链",
-          "kind": "governance",
-          "nodes": [
-            {
-              "id": "governance_waiting",
-              "name": "等待经理审批",
-              "assigneeRole": "manager",
-              "phase": "审核"
-            },
-            {
-              "id": "governance_reviewing",
-              "name": "审查采购依据",
-              "assigneeRole": "manager",
-              "phase": "审核"
-            },
-            {
-              "id": "governance_approved",
-              "name": "审批通过",
-              "assigneeRole": "manager",
-              "phase": "审核"
-            },
-            {
-              "id": "governance_returned",
-              "name": "退回补充材料",
-              "assigneeRole": "requester",
-              "phase": "审核"
-            }
-          ],
-          "transitions": [
-            {
-              "from": "governance_waiting",
-              "to": "governance_reviewing"
-            },
-            {
-              "from": "governance_reviewing",
-              "to": "governance_approved",
-              "condition": "材料完整且采购必要性成立"
-            },
-            {
-              "from": "governance_reviewing",
-              "to": "governance_returned",
-              "condition": "材料缺失或需要补充说明"
-            },
-            {
-              "from": "governance_returned",
-              "to": "governance_reviewing",
-              "condition": "申请人补充材料后重新提交"
-            }
-          ]
-        },
-        {
-          "id": "purchase_money_chain",
-          "name": "采购付款确认链",
-          "kind": "money",
-          "nodes": [
-            {
-              "id": "money_pending",
-              "name": "待财务确认",
-              "assigneeRole": "finance",
-              "phase": "财务"
-            },
-            {
-              "id": "money_validating",
-              "name": "核对金额与预算",
-              "assigneeRole": "finance",
-              "phase": "财务"
-            },
-            {
-              "id": "money_confirmed",
-              "name": "付款确认完成",
-              "assigneeRole": "finance",
-              "phase": "完成"
-            },
-            {
-              "id": "money_rejected",
-              "name": "付款确认退回",
-              "assigneeRole": "finance",
-              "phase": "财务"
-            }
-          ],
-          "transitions": [
-            {
-              "from": "money_pending",
-              "to": "money_validating"
-            },
-            {
-              "from": "money_validating",
-              "to": "money_confirmed",
-              "condition": "付款金额等于审批通过金额且预算充足"
-            },
-            {
-              "from": "money_validating",
-              "to": "money_rejected",
-              "condition": "金额不一致或预算不足"
-            },
-            {
-              "from": "money_rejected",
-              "to": "money_pending",
-              "condition": "采购单修正或预算补充后重新确认"
-            }
-          ]
-        }
-      ]
-    },
-    "page": {
-      "pages": [
-        {
-          "id": "purchase_workbench",
-          "name": "采购申请工作台",
-          "kind": "workbench",
-          "fieldBindings": [
-            "purchase_order.order_no",
-            "purchase_order.requester",
-            "purchase_order.department",
-            "purchase_order.supplier_id",
-            "purchase_order.total_amount",
-            "purchase_order.required_date",
-            "purchase_order.purpose",
-            "purchase_order.priority",
-            "purchase_order.approval_status"
-          ],
-          "actionPermissions": [
-            "purchase_order:create",
-            "purchase_order:view",
-            "purchase_order:submit",
-            "supplier:view"
-          ]
-        },
-        {
-          "id": "approval_kanban",
-          "name": "经理审批看板",
-          "kind": "kanban",
-          "statusField": "purchase_order.approval_status",
-          "fieldBindings": [
-            "purchase_order.order_no",
-            "purchase_order.requester",
-            "purchase_order.department",
-            "purchase_order.total_amount",
-            "purchase_order.purpose",
-            "purchase_order.approval_status",
-            "approval_record.decision",
-            "approval_record.comment",
-            "approval_record.decided_at"
-          ],
-          "actionPermissions": [
-            "purchase_order:view",
-            "purchase_order:view_amount",
-            "purchase_order:approve",
-            "purchase_order:reject",
-            "approval_record:view",
-            "approval_record:create"
-          ]
-        },
-        {
-          "id": "finance_dashboard",
-          "name": "财务确认总览",
-          "kind": "dashboard",
-          "fieldBindings": [
-            "purchase_order.order_no",
-            "purchase_order.total_amount",
-            "purchase_order.approval_status",
-            "payment_record.payment_amount",
-            "payment_record.payment_status",
-            "payment_record.confirmed_at"
-          ],
-          "actionPermissions": [
-            "purchase_order:view",
-            "purchase_order:view_amount",
-            "payment_record:view",
-            "payment_record:confirm"
-          ],
-          "stats": [
-            {
-              "id": "pending_order_count",
-              "name": "待财务确认采购单",
-              "entity": "purchase_order",
-              "metric": "count",
-              "format": "number"
-            },
-            {
-              "id": "approved_amount",
-              "name": "已审批采购金额",
-              "entity": "purchase_order",
-              "metric": "sum:purchase_order.total_amount",
-              "format": "money"
-            },
-            {
-              "id": "confirmed_payment_amount",
-              "name": "已确认付款金额",
-              "entity": "payment_record",
-              "metric": "sum:payment_record.payment_amount",
-              "format": "money"
-            }
-          ],
-          "charts": [
-            {
-              "id": "order_status_distribution",
-              "name": "采购单审批状态分布",
-              "type": "pie",
-              "dimension": "purchase_order.approval_status",
-              "metric": "count"
-            },
-            {
-              "id": "amount_by_priority",
-              "name": "各优先级采购金额",
-              "type": "bar",
-              "dimension": "purchase_order.priority",
-              "metric": "sum:purchase_order.total_amount"
-            }
-          ]
-        },
-        {
-          "id": "supplier_directory",
-          "name": "供应商目录",
-          "kind": "workbench",
-          "fieldBindings": [
-            "supplier.supplier_name",
-            "supplier.contact_name",
-            "supplier.contact_phone",
-            "supplier.qualification_status"
-          ],
-          "actionPermissions": [
-            "supplier:view",
-            "supplier:manage"
-          ]
-        }
-      ]
-    },
-    "aigc": {
-      "capabilities": [
-        {
-          "id": "purchase_risk_assessment",
-          "name": "采购风险评估",
-          "inputFields": [
-            "purchase_order.total_amount",
-            "purchase_order.purpose",
-            "purchase_order.priority",
-            "supplier.qualification_status"
-          ],
-          "outputField": "purchase_order.risk_level",
-          "roleRefs": [
-            "procurement_admin",
-            "manager"
-          ]
-        },
-        {
-          "id": "risk_explanation_generation",
-          "name": "生成风险说明",
-          "inputFields": [
-            "purchase_order.risk_level",
-            "purchase_order.total_amount",
-            "purchase_order.purpose"
-          ],
-          "outputField": "purchase_order.risk_reason",
-          "roleRefs": [
-            "procurement_admin",
-            "manager"
-          ]
-        },
-        {
-          "id": "approval_comment_draft",
-          "name": "生成审批意见草稿",
-          "inputFields": [
-            "purchase_order.risk_reason",
-            "purchase_order.priority",
-            "purchase_order.total_amount"
-          ],
-          "outputField": "approval_record.comment",
-          "roleRefs": [
-            "manager"
-          ]
-        }
-      ],
-      "pipelines": [
-        {
-          "id": "purchase_risk_review_pipeline",
-          "name": "采购风险审批辅助流程",
-          "steps": [
-            "purchase_risk_assessment",
-            "risk_explanation_generation",
-            "approval_comment_draft"
-          ]
-        }
-      ]
-    },
-    "appbundle": {
-      "pageBindings": [
-        {
-          "pageRef": "purchase_workbench",
-          "workflowRef": "purchase_order_lifecycle"
-        },
-        {
-          "pageRef": "approval_kanban",
-          "workflowRef": "manager_review"
-        },
-        {
-          "pageRef": "finance_dashboard",
-          "workflowRef": "finance_confirmation"
-        },
-        {
-          "pageRef": "supplier_directory",
-          "workflowRef": "po_draft"
-        }
-      ],
-      "roleRefs": [
-        "requester",
-        "manager",
-        "finance",
-        "procurement_admin"
-      ],
-      "dataModelRefs": [
-        "purchase_order",
-        "supplier",
-        "approval_record",
-        "payment_record"
-      ],
-      "invariants": [
-        {
-          "id": "approval_required_before_finance",
-          "statement": "采购单只有在经理审批通过后才能进入财务确认。",
-          "systems": [
-            "workflow",
-            "datamodel"
-          ],
-          "refs": [
-            "manager_review",
-            "finance_confirmation",
-            "purchase_order.approval_status"
-          ]
-        },
-        {
-          "id": "amount_visibility_by_duty",
-          "statement": "采购金额仅对经理、财务和采购管理员开放，申请人不能查看采购金额字段。",
-          "systems": [
-            "rbac",
-            "page"
-          ],
-          "refs": [
-            "purchase_order",
-            "manager",
-            "finance",
-            "procurement_admin"
-          ]
-        },
-        {
-          "id": "finance_confirmation_amount_match",
-          "statement": "财务确认金额必须与经理审批通过的采购金额一致。",
-          "systems": [
-            "workflow",
-            "datamodel"
-          ],
-          "refs": [
-            "money_validating",
-            "purchase_order.total_amount",
-            "payment_record.payment_amount"
-          ]
-        },
-        {
-          "id": "rejected_order_return",
-          "statement": "被经理驳回的采购单必须退回申请人修改后才能重新提交。",
-          "systems": [
-            "workflow",
-            "page"
-          ],
-          "refs": [
-            "manager_rejected",
-            "po_draft",
-            "purchase_order:submit"
-          ]
-        },
-        {
-          "id": "approval_record_traceability",
-          "statement": "每次经理审批决定都必须生成包含审批人、决定、意见和时间的审批记录。",
-          "systems": [
-            "datamodel",
-            "workflow"
-          ],
-          "refs": [
-            "approval_record",
-            "approval_record.decision",
-            "approval_record.approver",
-            "approval_record.decided_at",
-            "manager_review"
-          ]
-        },
-        {
-          "id": "supplier_qualification_required",
-          "statement": "采购单只能选择资质状态为有效的供应商提交审批。",
-          "systems": [
-            "datamodel",
-            "workflow"
-          ],
-          "refs": [
-            "supplier.qualification_status",
-            "po_submitted",
-            "purchase_order.supplier_id"
-          ]
-        },
-        {
-          "id": "risk_assessment_before_approval",
-          "statement": "采购单进入经理审批前必须完成风险等级评估和风险说明生成。",
-          "systems": [
-            "aigc",
-            "workflow",
-            "datamodel"
-          ],
-          "refs": [
-            "purchase_risk_assessment",
-            "risk_explanation_generation",
-            "purchase_order.risk_level",
-            "purchase_order.risk_reason",
-            "manager_review"
-          ]
-        }
-      ],
-      "invariantNotes": {
-        "repaired": [
-          {
-            "invariantId": "amount_visibility_by_duty",
-            "from": "purchase_order.view_amount",
-            "to": "purchase_order"
-          }
-        ],
-        "dropped": []
+       ]
+      },
+      {
+       "id": "risk_reason",
+       "name": "风险说明",
+       "type": "string"
       }
+     ]
+    },
+    {
+     "id": "supplier",
+     "name": "供应商",
+     "fields": [
+      {
+       "id": "supplier_name",
+       "name": "供应商名称",
+       "type": "string"
+      },
+      {
+       "id": "contact_name",
+       "name": "联系人",
+       "type": "string"
+      },
+      {
+       "id": "contact_phone",
+       "name": "联系电话",
+       "type": "string",
+       "format": "masked"
+      },
+      {
+       "id": "qualification_status",
+       "name": "资质状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "pending",
+         "label": "待审核",
+         "tone": "warning"
+        },
+        {
+         "id": "valid",
+         "label": "有效",
+         "tone": "success"
+        },
+        {
+         "id": "expired",
+         "label": "已过期",
+         "tone": "danger"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "approval_record",
+     "name": "审批记录",
+     "fields": [
+      {
+       "id": "purchase_order_id",
+       "name": "采购单",
+       "type": "ref"
+      },
+      {
+       "id": "approver",
+       "name": "审批人",
+       "type": "string"
+      },
+      {
+       "id": "decision",
+       "name": "审批决定",
+       "type": "enum",
+       "options": [
+        {
+         "id": "pending",
+         "label": "待处理",
+         "tone": "warning"
+        },
+        {
+         "id": "approved",
+         "label": "已通过",
+         "tone": "success"
+        },
+        {
+         "id": "rejected",
+         "label": "已驳回",
+         "tone": "danger"
+        }
+       ]
+      },
+      {
+       "id": "comment",
+       "name": "审批意见",
+       "type": "string"
+      },
+      {
+       "id": "decided_at",
+       "name": "审批时间",
+       "type": "date"
+      }
+     ]
+    },
+    {
+     "id": "payment_record",
+     "name": "付款确认记录",
+     "fields": [
+      {
+       "id": "purchase_order_id",
+       "name": "采购单",
+       "type": "ref"
+      },
+      {
+       "id": "payment_amount",
+       "name": "确认金额",
+       "type": "number",
+       "format": "money"
+      },
+      {
+       "id": "payment_status",
+       "name": "财务确认状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "pending",
+         "label": "待确认",
+         "tone": "warning"
+        },
+        {
+         "id": "confirmed",
+         "label": "已确认",
+         "tone": "success"
+        },
+        {
+         "id": "rejected",
+         "label": "已退回",
+         "tone": "danger"
+        }
+       ]
+      },
+      {
+       "id": "confirmed_by",
+       "name": "确认人",
+       "type": "string"
+      },
+      {
+       "id": "confirmed_at",
+       "name": "确认时间",
+       "type": "date"
+      }
+     ]
     }
+   ]
   },
-  "leave_approval": {
-    "datamodel": {
-      "entities": [
-        {
-          "id": "employee",
-          "name": "员工",
-          "fields": [
-            {
-              "id": "employee_no",
-              "name": "工号",
-              "type": "string"
-            },
-            {
-              "id": "name",
-              "name": "姓名",
-              "type": "string"
-            },
-            {
-              "id": "department",
-              "name": "部门",
-              "type": "string"
-            },
-            {
-              "id": "manager_id",
-              "name": "直属主管",
-              "type": "ref"
-            },
-            {
-              "id": "phone",
-              "name": "手机号",
-              "type": "string",
-              "format": "masked"
-            },
-            {
-              "id": "employment_status",
-              "name": "在职状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "在职",
-                  "label": "在职",
-                  "tone": "success"
-                },
-                {
-                  "id": "试用期",
-                  "label": "试用期",
-                  "tone": "processing"
-                },
-                {
-                  "id": "离职",
-                  "label": "离职",
-                  "tone": "danger"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "leave_balance",
-          "name": "假期余额",
-          "fields": [
-            {
-              "id": "employee_id",
-              "name": "员工",
-              "type": "ref"
-            },
-            {
-              "id": "leave_type",
-              "name": "假期类型",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "年假",
-                  "label": "年假",
-                  "tone": "success"
-                },
-                {
-                  "id": "调休",
-                  "label": "调休",
-                  "tone": "processing"
-                },
-                {
-                  "id": "病假",
-                  "label": "病假",
-                  "tone": "warning"
-                },
-                {
-                  "id": "事假",
-                  "label": "事假",
-                  "tone": "default"
-                }
-              ]
-            },
-            {
-              "id": "total_days",
-              "name": "年度额度",
-              "type": "number",
-              "format": "progress"
-            },
-            {
-              "id": "used_days",
-              "name": "已使用天数",
-              "type": "number",
-              "format": "progress"
-            },
-            {
-              "id": "remaining_days",
-              "name": "剩余天数",
-              "type": "number",
-              "format": "progress"
-            },
-            {
-              "id": "balance_status",
-              "name": "余额状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "充足",
-                  "label": "充足",
-                  "tone": "success"
-                },
-                {
-                  "id": "即将用尽",
-                  "label": "即将用尽",
-                  "tone": "warning"
-                },
-                {
-                  "id": "已用尽",
-                  "label": "已用尽",
-                  "tone": "danger"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "leave_request",
-          "name": "请假单",
-          "fields": [
-            {
-              "id": "request_no",
-              "name": "请假单号",
-              "type": "string"
-            },
-            {
-              "id": "employee_id",
-              "name": "申请员工",
-              "type": "ref"
-            },
-            {
-              "id": "leave_type",
-              "name": "假期类型",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "年假",
-                  "label": "年假",
-                  "tone": "success"
-                },
-                {
-                  "id": "调休",
-                  "label": "调休",
-                  "tone": "processing"
-                },
-                {
-                  "id": "病假",
-                  "label": "病假",
-                  "tone": "warning"
-                },
-                {
-                  "id": "事假",
-                  "label": "事假",
-                  "tone": "default"
-                }
-              ]
-            },
-            {
-              "id": "start_date",
-              "name": "开始日期",
-              "type": "date"
-            },
-            {
-              "id": "end_date",
-              "name": "结束日期",
-              "type": "date"
-            },
-            {
-              "id": "duration_days",
-              "name": "请假天数",
-              "type": "number",
-              "format": "progress"
-            },
-            {
-              "id": "reason",
-              "name": "请假事由",
-              "type": "string"
-            },
-            {
-              "id": "status",
-              "name": "审批状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "草稿",
-                  "label": "草稿",
-                  "tone": "default"
-                },
-                {
-                  "id": "待主管审批",
-                  "label": "待主管审批",
-                  "tone": "warning"
-                },
-                {
-                  "id": "主管已通过",
-                  "label": "主管已通过",
-                  "tone": "processing"
-                },
-                {
-                  "id": "已驳回",
-                  "label": "已驳回",
-                  "tone": "danger"
-                },
-                {
-                  "id": "HR已备案",
-                  "label": "HR已备案",
-                  "tone": "success"
-                },
-                {
-                  "id": "已完成",
-                  "label": "已完成",
-                  "tone": "success"
-                }
-              ]
-            },
-            {
-              "id": "risk_level",
-              "name": "风险等级",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "低",
-                  "label": "低",
-                  "tone": "success"
-                },
-                {
-                  "id": "中",
-                  "label": "中",
-                  "tone": "warning"
-                },
-                {
-                  "id": "高",
-                  "label": "高",
-                  "tone": "danger"
-                }
-              ]
-            },
-            {
-              "id": "manager_comment",
-              "name": "主管意见",
-              "type": "string"
-            },
-            {
-              "id": "hr_comment",
-              "name": "HR备案备注",
-              "type": "string"
-            }
-          ]
-        },
-        {
-          "id": "approval_record",
-          "name": "审批记录",
-          "fields": [
-            {
-              "id": "leave_request_id",
-              "name": "请假单",
-              "type": "ref"
-            },
-            {
-              "id": "approver_id",
-              "name": "审批人",
-              "type": "ref"
-            },
-            {
-              "id": "decision",
-              "name": "审批结果",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "通过",
-                  "label": "通过",
-                  "tone": "success"
-                },
-                {
-                  "id": "驳回",
-                  "label": "驳回",
-                  "tone": "danger"
-                },
-                {
-                  "id": "退回修改",
-                  "label": "退回修改",
-                  "tone": "warning"
-                }
-              ]
-            },
-            {
-              "id": "comment",
-              "name": "审批意见",
-              "type": "string"
-            },
-            {
-              "id": "decision_date",
-              "name": "审批日期",
-              "type": "date"
-            }
-          ]
-        }
-      ]
+  "rbac": {
+   "roles": [
+    "requester",
+    "manager",
+    "finance",
+    "procurement_admin"
+   ],
+   "permissions": [
+    "purchase_order:create",
+    "purchase_order:view",
+    "purchase_order:view_amount",
+    "purchase_order:submit",
+    "purchase_order:approve",
+    "purchase_order:reject",
+    "approval_record:view",
+    "approval_record:create",
+    "payment_record:view",
+    "payment_record:confirm",
+    "supplier:view",
+    "supplier:manage",
+    "purchase_order:export"
+   ],
+   "menus": [
+    {
+     "id": "requester_menu",
+     "label": "采购申请",
+     "roleRefs": [
+      "requester"
+     ],
+     "permissionRefs": [
+      "purchase_order:create",
+      "purchase_order:view",
+      "purchase_order:submit",
+      "supplier:view"
+     ]
     },
-    "rbac": {
-      "roles": [
-        "employee",
-        "manager",
-        "hr_specialist",
-        "hr_admin"
-      ],
-      "permissions": [
-        "leave_request:create",
-        "leave_request:read_own",
-        "leave_request:update_own",
-        "leave_request:submit",
-        "leave_request:approve",
-        "leave_request:read_department",
-        "leave_request:record",
-        "leave_balance:read_own",
-        "leave_balance:manage",
-        "approval_record:create",
-        "approval_record:read",
-        "employee:read"
-      ],
-      "menus": [
-        {
-          "id": "employee_leave_menu",
-          "label": "我的请假",
-          "roleRefs": [
-            "employee"
-          ],
-          "permissionRefs": [
-            "leave_request:create",
-            "leave_request:read_own",
-            "leave_request:update_own",
-            "leave_request:submit",
-            "leave_balance:read_own"
-          ]
-        },
-        {
-          "id": "manager_approval_menu",
-          "label": "主管审批",
-          "roleRefs": [
-            "manager"
-          ],
-          "permissionRefs": [
-            "leave_request:read_department",
-            "leave_request:approve",
-            "approval_record:create",
-            "approval_record:read"
-          ]
-        },
-        {
-          "id": "hr_filing_menu",
-          "label": "HR备案",
-          "roleRefs": [
-            "hr_specialist"
-          ],
-          "permissionRefs": [
-            "leave_request:read_department",
-            "leave_request:record",
-            "approval_record:read",
-            "employee:read"
-          ]
-        },
-        {
-          "id": "leave_balance_admin_menu",
-          "label": "假期余额管理",
-          "roleRefs": [
-            "hr_admin"
-          ],
-          "permissionRefs": [
-            "leave_balance:manage",
-            "leave_balance:read_own",
-            "employee:read"
-          ]
-        }
-      ]
+    {
+     "id": "manager_menu",
+     "label": "经理审批",
+     "roleRefs": [
+      "manager"
+     ],
+     "permissionRefs": [
+      "purchase_order:view",
+      "purchase_order:view_amount",
+      "purchase_order:approve",
+      "purchase_order:reject",
+      "approval_record:view",
+      "approval_record:create"
+     ]
     },
-    "workflow": {
-      "id": "leave_request_lifecycle",
-      "name": "请假单生命周期",
-      "nodes": [
-        {
-          "id": "leave_draft",
-          "name": "填写请假单",
-          "assigneeRole": "employee",
-          "phase": "申请"
-        },
-        {
-          "id": "leave_submitted",
-          "name": "提交申请",
-          "assigneeRole": "employee",
-          "phase": "申请"
-        },
-        {
-          "id": "manager_review",
-          "name": "主管审核",
-          "assigneeRole": "manager",
-          "phase": "审核"
-        },
-        {
-          "id": "manager_approved",
-          "name": "主管通过",
-          "assigneeRole": "manager",
-          "phase": "审核"
-        },
-        {
-          "id": "manager_rejected",
-          "name": "主管驳回",
-          "assigneeRole": "manager",
-          "phase": "审核"
-        },
-        {
-          "id": "hr_filing",
-          "name": "HR备案",
-          "assigneeRole": "hr_specialist",
-          "phase": "备案"
-        },
-        {
-          "id": "leave_completed",
-          "name": "请假完成",
-          "assigneeRole": "hr_specialist",
-          "phase": "完成"
-        }
-      ],
-      "transitions": [
-        {
-          "from": "leave_draft",
-          "to": "leave_submitted"
-        },
-        {
-          "from": "leave_submitted",
-          "to": "manager_review",
-          "condition": "请假天数和假期余额校验通过"
-        },
-        {
-          "from": "manager_review",
-          "to": "manager_approved",
-          "condition": "主管同意"
-        },
-        {
-          "from": "manager_review",
-          "to": "manager_rejected",
-          "condition": "主管驳回"
-        },
-        {
-          "from": "manager_rejected",
-          "to": "leave_draft",
-          "condition": "申请人修改后重新提交"
-        },
-        {
-          "from": "manager_approved",
-          "to": "hr_filing"
-        },
-        {
-          "from": "hr_filing",
-          "to": "leave_completed",
-          "condition": "HR完成备案并扣减假期余额"
-        }
-      ],
-      "chains": [
-        {
-          "id": "leave_governance",
-          "name": "请假审批与备案链",
-          "kind": "governance",
-          "nodes": [
-            {
-              "id": "governance_pending",
-              "name": "待审批",
-              "assigneeRole": "manager",
-              "phase": "审核"
-            },
-            {
-              "id": "governance_decision",
-              "name": "主管决策",
-              "assigneeRole": "manager",
-              "phase": "审核"
-            },
-            {
-              "id": "governance_returned",
-              "name": "退回补充",
-              "assigneeRole": "employee",
-              "phase": "审核"
-            },
-            {
-              "id": "governance_confirmed",
-              "name": "HR确认备案",
-              "assigneeRole": "hr_specialist",
-              "phase": "备案"
-            },
-            {
-              "id": "governance_closed",
-              "name": "审批链关闭",
-              "assigneeRole": "hr_specialist",
-              "phase": "完成"
-            }
-          ],
-          "transitions": [
-            {
-              "from": "governance_pending",
-              "to": "governance_decision"
-            },
-            {
-              "from": "governance_decision",
-              "to": "governance_confirmed",
-              "condition": "主管通过"
-            },
-            {
-              "from": "governance_decision",
-              "to": "governance_returned",
-              "condition": "材料不足或需要修改"
-            },
-            {
-              "from": "governance_returned",
-              "to": "governance_pending",
-              "condition": "申请人补充材料"
-            },
-            {
-              "from": "governance_confirmed",
-              "to": "governance_closed"
-            }
-          ]
-        },
-        {
-          "id": "leave_recovery",
-          "name": "请假撤回与余额恢复链",
-          "kind": "recovery",
-          "nodes": [
-            {
-              "id": "leave_cancel_requested",
-              "name": "申请撤回",
-              "assigneeRole": "employee",
-              "phase": "申请"
-            },
-            {
-              "id": "leave_cancel_review",
-              "name": "撤回审核",
-              "assigneeRole": "manager",
-              "phase": "审核"
-            },
-            {
-              "id": "leave_cancel_rejected",
-              "name": "撤回驳回",
-              "assigneeRole": "manager",
-              "phase": "审核"
-            },
-            {
-              "id": "leave_balance_restored",
-              "name": "恢复假期余额",
-              "assigneeRole": "hr_admin",
-              "phase": "备案"
-            },
-            {
-              "id": "leave_cancel_closed",
-              "name": "撤回完成",
-              "assigneeRole": "hr_specialist",
-              "phase": "完成"
-            }
-          ],
-          "transitions": [
-            {
-              "from": "leave_cancel_requested",
-              "to": "leave_cancel_review"
-            },
-            {
-              "from": "leave_cancel_review",
-              "to": "leave_balance_restored",
-              "condition": "主管同意撤回"
-            },
-            {
-              "from": "leave_cancel_review",
-              "to": "leave_cancel_rejected",
-              "condition": "已进入不可撤回阶段"
-            },
-            {
-              "from": "leave_cancel_rejected",
-              "to": "leave_cancel_requested",
-              "condition": "重新提交撤回申请"
-            },
-            {
-              "from": "leave_balance_restored",
-              "to": "leave_cancel_closed"
-            }
-          ]
-        }
-      ]
+    {
+     "id": "finance_menu",
+     "label": "财务确认",
+     "roleRefs": [
+      "finance"
+     ],
+     "permissionRefs": [
+      "purchase_order:view",
+      "purchase_order:view_amount",
+      "payment_record:view",
+      "payment_record:confirm"
+     ]
     },
-    "page": {
-      "pages": [
-        {
-          "id": "my_leave_workbench",
-          "name": "我的请假单",
-          "kind": "workbench",
-          "fieldBindings": [
-            "leave_request.request_no",
-            "leave_request.leave_type",
-            "leave_request.start_date",
-            "leave_request.end_date",
-            "leave_request.duration_days",
-            "leave_request.status",
-            "leave_request.manager_comment",
-            "leave_balance.remaining_days"
-          ],
-          "actionPermissions": [
-            "leave_request:create",
-            "leave_request:read_own",
-            "leave_request:update_own",
-            "leave_request:submit",
-            "leave_balance:read_own"
-          ]
-        },
-        {
-          "id": "manager_leave_kanban",
-          "name": "主管审批看板",
-          "kind": "kanban",
-          "statusField": "leave_request.status",
-          "fieldBindings": [
-            "leave_request.request_no",
-            "leave_request.employee_id",
-            "leave_request.leave_type",
-            "leave_request.start_date",
-            "leave_request.end_date",
-            "leave_request.duration_days",
-            "leave_request.reason",
-            "leave_request.risk_level",
-            "leave_request.status"
-          ],
-          "actionPermissions": [
-            "leave_request:read_department",
-            "leave_request:approve",
-            "approval_record:create"
-          ]
-        },
-        {
-          "id": "leave_calendar",
-          "name": "团队请假日历",
-          "kind": "calendar",
-          "dateField": "leave_request.start_date",
-          "colorBy": "leave_request.leave_type",
-          "fieldBindings": [
-            "leave_request.employee_id",
-            "leave_request.leave_type",
-            "leave_request.start_date",
-            "leave_request.end_date",
-            "leave_request.status"
-          ],
-          "actionPermissions": [
-            "leave_request:read_department"
-          ]
-        },
-        {
-          "id": "hr_leave_dashboard",
-          "name": "HR假勤概览",
-          "kind": "dashboard",
-          "fieldBindings": [
-            "leave_request.leave_type",
-            "leave_request.duration_days",
-            "leave_request.status",
-            "leave_request.start_date",
-            "leave_balance.leave_type",
-            "leave_balance.remaining_days",
-            "approval_record.decision"
-          ],
-          "actionPermissions": [
-            "leave_request:read_department",
-            "leave_request:record",
-            "approval_record:read",
-            "employee:read",
-            "leave_balance:manage"
-          ],
-          "stats": [
-            {
-              "id": "total_leave_requests",
-              "name": "请假单总数",
-              "entity": "leave_request",
-              "metric": "count",
-              "format": "number"
-            },
-            {
-              "id": "total_leave_days",
-              "name": "请假总天数",
-              "entity": "leave_request",
-              "metric": "sum:leave_request.duration_days",
-              "format": "number"
-            },
-            {
-              "id": "remaining_leave_days",
-              "name": "剩余假期天数",
-              "entity": "leave_balance",
-              "metric": "sum:leave_balance.remaining_days",
-              "format": "number"
-            }
-          ],
-          "charts": [
-            {
-              "id": "leave_type_distribution",
-              "name": "假期类型分布",
-              "type": "pie",
-              "dimension": "leave_request.leave_type",
-              "metric": "count"
-            },
-            {
-              "id": "leave_status_comparison",
-              "name": "审批状态分布",
-              "type": "bar",
-              "dimension": "leave_request.status",
-              "metric": "count"
-            }
-          ]
-        },
-        {
-          "id": "approval_audit_page",
-          "name": "审批记录",
-          "kind": "workbench",
-          "fieldBindings": [
-            "approval_record.leave_request_id",
-            "approval_record.approver_id",
-            "approval_record.decision",
-            "approval_record.comment",
-            "approval_record.decision_date"
-          ],
-          "actionPermissions": [
-            "approval_record:read"
-          ]
-        }
-      ]
-    },
-    "aigc": {
-      "capabilities": [
-        {
-          "id": "calculate_leave_duration",
-          "name": "计算请假天数",
-          "inputFields": [
-            "leave_request.start_date",
-            "leave_request.end_date"
-          ],
-          "outputField": "leave_request.duration_days",
-          "roleRefs": [
-            "employee",
-            "hr_specialist"
-          ]
-        },
-        {
-          "id": "assess_leave_risk",
-          "name": "评估请假风险",
-          "inputFields": [
-            "leave_request.leave_type",
-            "leave_request.duration_days",
-            "leave_balance.remaining_days"
-          ],
-          "outputField": "leave_request.risk_level",
-          "roleRefs": [
-            "manager",
-            "hr_specialist"
-          ]
-        },
-        {
-          "id": "draft_manager_comment",
-          "name": "生成主管审批建议",
-          "inputFields": [
-            "leave_request.reason",
-            "leave_request.risk_level",
-            "leave_request.duration_days"
-          ],
-          "outputField": "leave_request.manager_comment",
-          "roleRefs": [
-            "manager"
-          ]
-        }
-      ],
-      "pipelines": [
-        {
-          "id": "leave_review_assistant_pipeline",
-          "name": "请假审核辅助流程",
-          "steps": [
-            "calculate_leave_duration",
-            "assess_leave_risk",
-            "draft_manager_comment"
-          ]
-        }
-      ]
-    },
-    "appbundle": {
-      "pageBindings": [
-        {
-          "pageRef": "my_leave_workbench",
-          "workflowRef": "leave_draft"
-        },
-        {
-          "pageRef": "manager_leave_kanban",
-          "workflowRef": "manager_review"
-        },
-        {
-          "pageRef": "leave_calendar",
-          "workflowRef": "leave_request_lifecycle"
-        },
-        {
-          "pageRef": "hr_leave_dashboard",
-          "workflowRef": "hr_filing"
-        },
-        {
-          "pageRef": "approval_audit_page",
-          "workflowRef": "leave_governance"
-        }
-      ],
-      "roleRefs": [
-        "employee",
-        "manager",
-        "hr_specialist",
-        "hr_admin"
-      ],
-      "dataModelRefs": [
-        "employee",
-        "leave_balance",
-        "leave_request",
-        "approval_record"
-      ],
-      "invariants": [
-        {
-          "id": "balance_must_cover_leave",
-          "statement": "提交请假单前请假天数不得超过员工对应假期类型的剩余余额。",
-          "systems": [
-            "datamodel",
-            "workflow",
-            "aigc"
-          ],
-          "refs": [
-            "leave_request.duration_days",
-            "leave_balance.remaining_days",
-            "leave_submitted",
-            "assess_leave_risk"
-          ]
-        },
-        {
-          "id": "manager_must_approve_before_hr_filing",
-          "statement": "HR只有在主管明确通过后才能进行请假备案。",
-          "systems": [
-            "workflow",
-            "rbac"
-          ],
-          "refs": [
-            "manager_approved",
-            "hr_filing",
-            "leave_request:approve",
-            "leave_request:record"
-          ]
-        },
-        {
-          "id": "approval_requires_record",
-          "statement": "每一次主管通过、驳回或退回修改都必须生成一条审批记录。",
-          "systems": [
-            "datamodel",
-            "workflow"
-          ],
-          "refs": [
-            "approval_record",
-            "approval_record:create",
-            "manager_review",
-            "governance_decision"
-          ]
-        },
-        {
-          "id": "balance_changes_only_after_filing",
-          "statement": "假期余额只能在HR完成备案时扣减，撤回批准后才能恢复。",
-          "systems": [
-            "datamodel",
-            "workflow"
-          ],
-          "refs": [
-            "leave_balance",
-            "hr_filing",
-            "leave_completed",
-            "leave_balance_restored"
-          ]
-        },
-        {
-          "id": "employee_can_edit_only_before_approval",
-          "statement": "员工只能修改草稿或被主管驳回的请假单，主管通过后不得修改申请内容。",
-          "systems": [
-            "rbac",
-            "workflow"
-          ],
-          "refs": [
-            "employee",
-            "leave_request:update_own",
-            "leave_draft",
-            "manager_rejected",
-            "manager_approved"
-          ]
-        },
-        {
-          "id": "hr_filing_requires_audit_trail",
-          "statement": "所有已备案请假单必须关联主管审批记录并保留HR备案备注。",
-          "systems": [
-            "datamodel",
-            "workflow"
-          ],
-          "refs": [
-            "approval_record.leave_request_id",
-            "leave_request.hr_comment",
-            "hr_filing",
-            "approval_record:read"
-          ]
-        },
-        {
-          "id": "risk_requires_manager_attention",
-          "statement": "风险等级为高的请假单必须由主管查看风险评估后才能作出审批决定。",
-          "systems": [
-            "datamodel",
-            "workflow",
-            "aigc"
-          ],
-          "refs": [
-            "leave_request.risk_level",
-            "assess_leave_risk",
-            "manager_review",
-            "leave_request:approve"
-          ]
-        }
-      ]
+    {
+     "id": "admin_menu",
+     "label": "采购管理",
+     "roleRefs": [
+      "procurement_admin"
+     ],
+     "permissionRefs": [
+      "purchase_order:view",
+      "purchase_order:view_amount",
+      "purchase_order:export",
+      "supplier:view",
+      "supplier:manage",
+      "approval_record:view",
+      "payment_record:view"
+     ]
     }
+   ]
   },
-  "service_ticket": {
-    "datamodel": {
-      "entities": [
-        {
-          "id": "customer",
-          "name": "客户",
-          "fields": [
-            {
-              "id": "name",
-              "name": "客户名称",
-              "type": "string"
-            },
-            {
-              "id": "phone",
-              "name": "联系电话",
-              "type": "string",
-              "format": "masked"
-            },
-            {
-              "id": "customer_level",
-              "name": "客户等级",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "普通",
-                  "label": "普通",
-                  "tone": "default"
-                },
-                {
-                  "id": "重要",
-                  "label": "重要",
-                  "tone": "warning"
-                },
-                {
-                  "id": "vip",
-                  "label": "VIP",
-                  "tone": "success"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "sla_policy",
-          "name": "SLA策略",
-          "fields": [
-            {
-              "id": "name",
-              "name": "策略名称",
-              "type": "string"
-            },
-            {
-              "id": "response_hours",
-              "name": "首次响应时限",
-              "type": "number"
-            },
-            {
-              "id": "resolution_hours",
-              "name": "解决时限",
-              "type": "number"
-            },
-            {
-              "id": "priority_scope",
-              "name": "适用优先级",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "低",
-                  "label": "低",
-                  "tone": "default"
-                },
-                {
-                  "id": "中",
-                  "label": "中",
-                  "tone": "processing"
-                },
-                {
-                  "id": "高",
-                  "label": "高",
-                  "tone": "warning"
-                },
-                {
-                  "id": "紧急",
-                  "label": "紧急",
-                  "tone": "danger"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "ticket",
-          "name": "服务工单",
-          "fields": [
-            {
-              "id": "title",
-              "name": "工单标题",
-              "type": "string"
-            },
-            {
-              "id": "description",
-              "name": "问题描述",
-              "type": "string"
-            },
-            {
-              "id": "customer_id",
-              "name": "客户",
-              "type": "ref"
-            },
-            {
-              "id": "sla_policy_id",
-              "name": "SLA策略",
-              "type": "ref"
-            },
-            {
-              "id": "category",
-              "name": "问题分类",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "账户",
-                  "label": "账户",
-                  "tone": "default"
-                },
-                {
-                  "id": "产品",
-                  "label": "产品",
-                  "tone": "processing"
-                },
-                {
-                  "id": "技术",
-                  "label": "技术",
-                  "tone": "warning"
-                },
-                {
-                  "id": "投诉",
-                  "label": "投诉",
-                  "tone": "danger"
-                }
-              ]
-            },
-            {
-              "id": "priority",
-              "name": "优先级",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "低",
-                  "label": "低",
-                  "tone": "default"
-                },
-                {
-                  "id": "中",
-                  "label": "中",
-                  "tone": "processing"
-                },
-                {
-                  "id": "高",
-                  "label": "高",
-                  "tone": "warning"
-                },
-                {
-                  "id": "紧急",
-                  "label": "紧急",
-                  "tone": "danger"
-                }
-              ]
-            },
-            {
-              "id": "status",
-              "name": "工单状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "草稿",
-                  "label": "草稿",
-                  "tone": "default"
-                },
-                {
-                  "id": "待分派",
-                  "label": "待分派",
-                  "tone": "warning"
-                },
-                {
-                  "id": "处理中",
-                  "label": "处理中",
-                  "tone": "processing"
-                },
-                {
-                  "id": "待客户确认",
-                  "label": "待客户确认",
-                  "tone": "warning"
-                },
-                {
-                  "id": "已解决",
-                  "label": "已解决",
-                  "tone": "success"
-                },
-                {
-                  "id": "已驳回",
-                  "label": "已驳回",
-                  "tone": "danger"
-                }
-              ]
-            },
-            {
-              "id": "assignee_id",
-              "name": "处理客服",
-              "type": "ref"
-            },
-            {
-              "id": "created_at",
-              "name": "提交时间",
-              "type": "date"
-            },
-            {
-              "id": "first_response_at",
-              "name": "首次响应时间",
-              "type": "date"
-            },
-            {
-              "id": "due_at",
-              "name": "SLA截止时间",
-              "type": "date"
-            },
-            {
-              "id": "resolved_at",
-              "name": "解决时间",
-              "type": "date"
-            },
-            {
-              "id": "sla_progress",
-              "name": "SLA完成进度",
-              "type": "number",
-              "format": "progress"
-            },
-            {
-              "id": "ai_summary",
-              "name": "AI问题摘要",
-              "type": "string"
-            },
-            {
-              "id": "reply_draft",
-              "name": "AI回复草稿",
-              "type": "string"
-            },
-            {
-              "id": "reply_review_status",
-              "name": "回复审核状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "待审核",
-                  "label": "待审核",
-                  "tone": "warning"
-                },
-                {
-                  "id": "已通过",
-                  "label": "已通过",
-                  "tone": "success"
-                },
-                {
-                  "id": "需修改",
-                  "label": "需修改",
-                  "tone": "danger"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "ticket_message",
-          "name": "工单沟通记录",
-          "fields": [
-            {
-              "id": "ticket_id",
-              "name": "所属工单",
-              "type": "ref"
-            },
-            {
-              "id": "sender_role",
-              "name": "发送方",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "客户",
-                  "label": "客户",
-                  "tone": "default"
-                },
-                {
-                  "id": "客服",
-                  "label": "客服",
-                  "tone": "processing"
-                },
-                {
-                  "id": "主管",
-                  "label": "主管",
-                  "tone": "warning"
-                }
-              ]
-            },
-            {
-              "id": "content",
-              "name": "沟通内容",
-              "type": "string"
-            },
-            {
-              "id": "sent_at",
-              "name": "发送时间",
-              "type": "date"
-            }
-          ]
-        },
-        {
-          "id": "escalation",
-          "name": "升级记录",
-          "fields": [
-            {
-              "id": "ticket_id",
-              "name": "关联工单",
-              "type": "ref"
-            },
-            {
-              "id": "reason",
-              "name": "升级原因",
-              "type": "string"
-            },
-            {
-              "id": "status",
-              "name": "升级状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "待审核",
-                  "label": "待审核",
-                  "tone": "warning"
-                },
-                {
-                  "id": "已批准",
-                  "label": "已批准",
-                  "tone": "success"
-                },
-                {
-                  "id": "已退回",
-                  "label": "已退回",
-                  "tone": "danger"
-                }
-              ]
-            },
-            {
-              "id": "created_at",
-              "name": "申请时间",
-              "type": "date"
-            }
-          ]
-        }
-      ]
+  "workflow": {
+   "id": "purchase_order_lifecycle",
+   "name": "采购单生命周期",
+   "nodes": [
+    {
+     "id": "po_draft",
+     "name": "填写采购单",
+     "assigneeRole": "requester",
+     "phase": "申请"
     },
-    "rbac": {
-      "roles": [
-        "customer",
-        "support_agent",
-        "support_supervisor",
-        "sla_manager",
-        "system_admin"
-      ],
-      "permissions": [
-        "ticket:create",
-        "ticket:view",
-        "ticket:update",
-        "ticket:assign",
-        "ticket:escalate",
-        "ticket:close",
-        "message:create",
-        "sla:view",
-        "sla:manage",
-        "report:view",
-        "ai:use"
-      ],
-      "menus": [
-        {
-          "id": "customer_portal",
-          "label": "客户服务中心",
-          "roleRefs": [
-            "customer"
-          ],
-          "permissionRefs": [
-            "ticket:create",
-            "ticket:view",
-            "message:create"
-          ]
-        },
-        {
-          "id": "agent_workbench",
-          "label": "客服工单工作台",
-          "roleRefs": [
-            "support_agent"
-          ],
-          "permissionRefs": [
-            "ticket:view",
-            "ticket:update",
-            "ticket:escalate",
-            "ticket:close",
-            "message:create",
-            "sla:view",
-            "ai:use"
-          ]
-        },
-        {
-          "id": "supervisor_console",
-          "label": "主管升级与分派",
-          "roleRefs": [
-            "support_supervisor"
-          ],
-          "permissionRefs": [
-            "ticket:view",
-            "ticket:assign",
-            "ticket:escalate",
-            "ticket:close",
-            "message:create",
-            "sla:view",
-            "report:view"
-          ]
-        },
-        {
-          "id": "sla_management",
-          "label": "SLA管理",
-          "roleRefs": [
-            "sla_manager"
-          ],
-          "permissionRefs": [
-            "sla:view",
-            "sla:manage",
-            "report:view"
-          ]
-        },
-        {
-          "id": "system_administration",
-          "label": "系统管理",
-          "roleRefs": [
-            "system_admin"
-          ],
-          "permissionRefs": [
-            "sla:manage",
-            "report:view"
-          ]
-        }
-      ]
+    {
+     "id": "po_submitted",
+     "name": "提交采购单",
+     "assigneeRole": "requester",
+     "phase": "申请"
     },
-    "workflow": {
-      "id": "ticket_lifecycle",
-      "name": "服务工单生命周期",
-      "nodes": [
-        {
-          "id": "ticket_submitted",
-          "name": "提交工单",
-          "assigneeRole": "customer",
-          "phase": "提交"
-        },
-        {
-          "id": "ticket_validating",
-          "name": "工单审核",
-          "assigneeRole": "support_agent",
-          "phase": "审核"
-        },
-        {
-          "id": "ticket_assigned",
-          "name": "分派客服",
-          "assigneeRole": "support_supervisor",
-          "phase": "处理"
-        },
-        {
-          "id": "ticket_in_progress",
-          "name": "客服处理",
-          "assigneeRole": "support_agent",
-          "phase": "处理"
-        },
-        {
-          "id": "ticket_pending_customer",
-          "name": "等待客户确认",
-          "assigneeRole": "customer",
-          "phase": "处理"
-        },
-        {
-          "id": "ticket_resolved",
-          "name": "确认解决",
-          "assigneeRole": "support_agent",
-          "phase": "验收"
-        },
-        {
-          "id": "ticket_rejected",
-          "name": "驳回工单",
-          "assigneeRole": "support_agent",
-          "phase": "验收"
-        },
-        {
-          "id": "ticket_closed",
-          "name": "关闭归档",
-          "assigneeRole": "support_agent",
-          "phase": "归档"
-        }
-      ],
-      "transitions": [
-        {
-          "from": "ticket_submitted",
-          "to": "ticket_validating"
-        },
-        {
-          "from": "ticket_validating",
-          "to": "ticket_assigned",
-          "condition": "资料完整且问题有效"
-        },
-        {
-          "from": "ticket_validating",
-          "to": "ticket_rejected",
-          "condition": "资料缺失或问题无效"
-        },
-        {
-          "from": "ticket_rejected",
-          "to": "ticket_submitted",
-          "condition": "客户补充资料后重新提交"
-        },
-        {
-          "from": "ticket_assigned",
-          "to": "ticket_in_progress"
-        },
-        {
-          "from": "ticket_in_progress",
-          "to": "ticket_pending_customer",
-          "condition": "需要客户确认处理方案"
-        },
-        {
-          "from": "ticket_in_progress",
-          "to": "ticket_resolved",
-          "condition": "问题已解决且无需客户补充"
-        },
-        {
-          "from": "ticket_pending_customer",
-          "to": "ticket_in_progress",
-          "condition": "客户反馈未解决"
-        },
-        {
-          "from": "ticket_pending_customer",
-          "to": "ticket_resolved",
-          "condition": "客户确认解决"
-        },
-        {
-          "from": "ticket_resolved",
-          "to": "ticket_closed",
-          "condition": "客户确认或超过确认期限"
-        }
-      ],
-      "chains": [
-        {
-          "id": "ticket_escalation_governance",
-          "name": "工单升级审批链",
-          "kind": "governance",
-          "nodes": [
-            {
-              "id": "escalation_requested",
-              "name": "发起升级",
-              "assigneeRole": "support_agent",
-              "phase": "申请"
-            },
-            {
-              "id": "escalation_reviewing",
-              "name": "主管审核",
-              "assigneeRole": "support_supervisor",
-              "phase": "审核"
-            },
-            {
-              "id": "escalation_approved",
-              "name": "升级批准",
-              "assigneeRole": "support_supervisor",
-              "phase": "执行"
-            },
-            {
-              "id": "escalation_returned",
-              "name": "升级退回",
-              "assigneeRole": "support_agent",
-              "phase": "执行"
-            }
-          ],
-          "transitions": [
-            {
-              "from": "escalation_requested",
-              "to": "escalation_reviewing"
-            },
-            {
-              "from": "escalation_reviewing",
-              "to": "escalation_approved",
-              "condition": "高风险或跨团队问题"
-            },
-            {
-              "from": "escalation_reviewing",
-              "to": "escalation_returned",
-              "condition": "升级理由不足"
-            },
-            {
-              "from": "escalation_returned",
-              "to": "escalation_requested",
-              "condition": "客服补充升级理由"
-            }
-          ]
-        },
-        {
-          "id": "sla_breach_recovery",
-          "name": "SLA超时恢复链",
-          "kind": "recovery",
-          "nodes": [
-            {
-              "id": "sla_warning_detected",
-              "name": "SLA预警",
-              "assigneeRole": "sla_manager",
-              "phase": "监控"
-            },
-            {
-              "id": "sla_recovery_assigned",
-              "name": "加急分派",
-              "assigneeRole": "support_supervisor",
-              "phase": "处理"
-            },
-            {
-              "id": "sla_recovery_in_progress",
-              "name": "加急处理",
-              "assigneeRole": "support_agent",
-              "phase": "处理"
-            },
-            {
-              "id": "sla_recovery_closed",
-              "name": "恢复完成",
-              "assigneeRole": "sla_manager",
-              "phase": "复盘"
-            },
-            {
-              "id": "sla_recovery_failed",
-              "name": "恢复失败",
-              "assigneeRole": "support_supervisor",
-              "phase": "复盘"
-            }
-          ],
-          "transitions": [
-            {
-              "from": "sla_warning_detected",
-              "to": "sla_recovery_assigned",
-              "condition": "距离SLA截止少于2小时"
-            },
-            {
-              "from": "sla_recovery_assigned",
-              "to": "sla_recovery_in_progress"
-            },
-            {
-              "from": "sla_recovery_in_progress",
-              "to": "sla_recovery_closed",
-              "condition": "工单恢复并完成响应"
-            },
-            {
-              "from": "sla_recovery_in_progress",
-              "to": "sla_recovery_failed",
-              "condition": "继续超时或客户升级投诉"
-            },
-            {
-              "from": "sla_recovery_failed",
-              "to": "sla_recovery_assigned",
-              "condition": "重新指定负责人"
-            }
-          ]
-        }
-      ]
+    {
+     "id": "manager_review",
+     "name": "经理审批",
+     "assigneeRole": "manager",
+     "phase": "审核"
     },
-    "page": {
-      "pages": [
-        {
-          "id": "customer_ticket_submit",
-          "name": "提交服务工单",
-          "kind": "workbench",
-          "fieldBindings": [
-            "ticket.title",
-            "ticket.description",
-            "ticket.category",
-            "ticket.priority",
-            "ticket.created_at",
-            "ticket.status",
-            "ticket.customer_id",
-            "ticket_message.content"
-          ],
-          "actionPermissions": [
-            "ticket:create",
-            "message:create"
-          ]
-        },
-        {
-          "id": "agent_ticket_kanban",
-          "name": "客服处理看板",
-          "kind": "kanban",
-          "statusField": "ticket.status",
-          "fieldBindings": [
-            "ticket.title",
-            "ticket.category",
-            "ticket.priority",
-            "ticket.status",
-            "ticket.assignee_id",
-            "ticket.due_at",
-            "ticket.sla_progress",
-            "ticket.ai_summary",
-            "ticket.reply_draft",
-            "ticket.reply_review_status",
-            "ticket_message.content"
-          ],
-          "actionPermissions": [
-            "ticket:view",
-            "ticket:update",
-            "ticket:escalate",
-            "ticket:close",
-            "message:create",
-            "ai:use"
-          ]
-        },
-        {
-          "id": "supervisor_escalation_workbench",
-          "name": "主管升级流转",
-          "kind": "workbench",
-          "fieldBindings": [
-            "ticket.title",
-            "ticket.priority",
-            "ticket.status",
-            "ticket.assignee_id",
-            "escalation.ticket_id",
-            "escalation.reason",
-            "escalation.status",
-            "escalation.created_at"
-          ],
-          "actionPermissions": [
-            "ticket:view",
-            "ticket:assign",
-            "ticket:escalate",
-            "ticket:close",
-            "message:create"
-          ]
-        },
-        {
-          "id": "sla_calendar",
-          "name": "SLA到期日历",
-          "kind": "calendar",
-          "dateField": "ticket.due_at",
-          "colorBy": "ticket.priority",
-          "fieldBindings": [
-            "ticket.title",
-            "ticket.due_at",
-            "ticket.priority",
-            "ticket.status",
-            "ticket.sla_progress",
-            "ticket.assignee_id"
-          ],
-          "actionPermissions": [
-            "sla:view",
-            "ticket:view"
-          ]
-        },
-        {
-          "id": "service_dashboard",
-          "name": "客户服务运营看板",
-          "kind": "dashboard",
-          "fieldBindings": [
-            "ticket.status",
-            "ticket.priority",
-            "ticket.category",
-            "ticket.created_at",
-            "ticket.resolved_at",
-            "ticket.sla_progress",
-            "escalation.status"
-          ],
-          "actionPermissions": [
-            "report:view",
-            "ticket:view",
-            "sla:view"
-          ],
-          "stats": [
-            {
-              "id": "total_tickets",
-              "name": "工单总量",
-              "entity": "ticket",
-              "metric": "count",
-              "format": "number"
-            },
-            {
-              "id": "open_tickets",
-              "name": "处理中工单",
-              "entity": "ticket",
-              "metric": "count",
-              "format": "number"
-            },
-            {
-              "id": "avg_sla_progress",
-              "name": "平均SLA完成度",
-              "entity": "ticket",
-              "metric": "avg:ticket.sla_progress",
-              "format": "percent"
-            },
-            {
-              "id": "escalated_tickets",
-              "name": "升级工单数",
-              "entity": "escalation",
-              "metric": "count",
-              "format": "number"
-            }
-          ],
-          "charts": [
-            {
-              "id": "tickets_by_status",
-              "name": "工单状态分布",
-              "type": "pie",
-              "dimension": "ticket.status",
-              "metric": "count"
-            },
-            {
-              "id": "tickets_by_priority",
-              "name": "优先级工单数量",
-              "type": "bar",
-              "dimension": "ticket.priority",
-              "metric": "count"
-            }
-          ]
-        }
-      ]
+    {
+     "id": "manager_rejected",
+     "name": "经理驳回",
+     "assigneeRole": "requester",
+     "phase": "审核"
     },
-    "aigc": {
-      "capabilities": [
-        {
-          "id": "ticket_classification",
-          "name": "工单智能分类",
-          "inputFields": [
-            "ticket.description"
-          ],
-          "outputField": "ticket.category",
-          "roleRefs": [
-            "support_agent"
-          ]
-        },
-        {
-          "id": "ticket_summary",
-          "name": "工单问题摘要",
-          "inputFields": [
-            "ticket.description",
-            "ticket.category"
-          ],
-          "outputField": "ticket.ai_summary",
-          "roleRefs": [
-            "support_agent"
-          ]
-        },
-        {
-          "id": "reply_drafting",
-          "name": "客服回复草拟",
-          "inputFields": [
-            "ticket.ai_summary",
-            "ticket.description"
-          ],
-          "outputField": "ticket.reply_draft",
-          "roleRefs": [
-            "support_agent"
-          ]
-        },
-        {
-          "id": "reply_compliance_review",
-          "name": "回复合规审核",
-          "inputFields": [
-            "ticket.reply_draft"
-          ],
-          "outputField": "ticket.reply_review_status",
-          "roleRefs": [
-            "support_agent",
-            "support_supervisor"
-          ]
-        }
-      ],
-      "pipelines": [
-        {
-          "id": "ticket_response_assistance",
-          "name": "工单回复辅助流水线",
-          "steps": [
-            "ticket_summary",
-            "reply_drafting",
-            "reply_compliance_review"
-          ]
-        }
-      ]
+    {
+     "id": "finance_confirmation",
+     "name": "财务确认",
+     "assigneeRole": "finance",
+     "phase": "执行"
     },
-    "appbundle": {
-      "pageBindings": [
-        {
-          "pageRef": "customer_ticket_submit",
-          "workflowRef": "ticket_submitted"
-        },
-        {
-          "pageRef": "agent_ticket_kanban",
-          "workflowRef": "ticket_lifecycle"
-        },
-        {
-          "pageRef": "supervisor_escalation_workbench",
-          "workflowRef": "ticket_escalation_governance"
-        },
-        {
-          "pageRef": "sla_calendar",
-          "workflowRef": "sla_breach_recovery"
-        },
-        {
-          "pageRef": "service_dashboard",
-          "workflowRef": "ticket_lifecycle"
-        }
-      ],
-      "roleRefs": [
-        "customer",
-        "support_agent",
-        "support_supervisor",
-        "sla_manager",
-        "system_admin"
-      ],
-      "dataModelRefs": [
-        "customer",
-        "sla_policy",
-        "ticket",
-        "ticket_message",
-        "escalation"
-      ],
-      "invariants": [
-        {
-          "id": "ticket_requires_customer",
-          "statement": "每张服务工单必须关联一个已登记客户后才能进入审核。",
-          "systems": [
-            "datamodel",
-            "workflow"
-          ],
-          "refs": [
-            "ticket.customer_id",
-            "customer",
-            "ticket_validating"
-          ]
-        },
-        {
-          "id": "ticket_requires_sla_policy",
-          "statement": "每张进入处理阶段的工单必须绑定SLA策略并计算截止时间。",
-          "systems": [
-            "datamodel",
-            "workflow"
-          ],
-          "refs": [
-            "ticket.sla_policy_id",
-            "sla_policy",
-            "ticket_assigned"
-          ]
-        },
-        {
-          "id": "assignment_requires_supervisor",
-          "statement": "工单负责人只能由客服主管分派或调整。",
-          "systems": [
-            "rbac",
-            "workflow"
-          ],
-          "refs": [
-            "ticket.assignee_id",
-            "support_supervisor",
-            "ticket:assign",
-            "ticket_assigned"
-          ]
-        },
-        {
-          "id": "status_changes_follow_lifecycle",
-          "statement": "工单状态只能通过服务工单生命周期节点推进，不能由普通页面直接跳过审核或验收。",
-          "systems": [
-            "workflow",
-            "page"
-          ],
-          "refs": [
-            "ticket.status",
-            "ticket_lifecycle",
-            "ticket_validating",
-            "ticket_resolved"
-          ]
-        },
-        {
-          "id": "escalation_requires_reason",
-          "statement": "升级流转必须填写升级原因并经过客服主管审核后才能批准。",
-          "systems": [
-            "datamodel",
-            "workflow"
-          ],
-          "refs": [
-            "escalation.reason",
-            "escalation_reviewing",
-            "escalation_approved"
-          ]
-        },
-        {
-          "id": "sla_breach_triggers_recovery",
-          "statement": "工单接近或超过SLA时限必须进入SLA超时恢复链并重新分派处理。",
-          "systems": [
-            "workflow",
-            "page"
-          ],
-          "refs": [
-            "ticket.due_at",
-            "ticket.sla_progress",
-            "sla_warning_detected",
-            "sla_recovery_assigned"
-          ]
-        },
-        {
-          "id": "ai_reply_requires_review",
-          "statement": "AI生成的客服回复必须完成合规审核通过后才能发送给客户。",
-          "systems": [
-            "aigc",
-            "workflow",
-            "datamodel"
-          ],
-          "refs": [
-            "reply_drafting",
-            "reply_compliance_review",
-            "ticket.reply_draft",
-            "ticket.reply_review_status"
-          ]
-        }
-      ]
+    {
+     "id": "purchase_completed",
+     "name": "采购完成",
+     "assigneeRole": "procurement_admin",
+     "phase": "执行"
+    },
+    {
+     "id": "po_closed",
+     "name": "采购单归档",
+     "assigneeRole": "procurement_admin",
+     "phase": "执行"
     }
+   ],
+   "transitions": [
+    {
+     "from": "po_draft",
+     "to": "po_submitted",
+     "condition": "必填字段完整且提交人有提交权限"
+    },
+    {
+     "from": "po_submitted",
+     "to": "manager_review"
+    },
+    {
+     "from": "manager_review",
+     "to": "manager_rejected",
+     "condition": "采购金额或用途不符合审批要求"
+    },
+    {
+     "from": "manager_review",
+     "to": "finance_confirmation",
+     "condition": "经理审批通过"
+    },
+    {
+     "from": "manager_rejected",
+     "to": "po_draft",
+     "condition": "申请人修改后重新提交"
+    },
+    {
+     "from": "finance_confirmation",
+     "to": "purchase_completed",
+     "condition": "财务确认金额与采购单金额一致"
+    },
+    {
+     "from": "finance_confirmation",
+     "to": "manager_review",
+     "condition": "金额不一致或财务退回"
+    },
+    {
+     "from": "purchase_completed",
+     "to": "po_closed"
+    }
+   ],
+   "chains": [
+    {
+     "id": "purchase_governance_chain",
+     "name": "采购审批治理链",
+     "kind": "governance",
+     "nodes": [
+      {
+       "id": "governance_waiting",
+       "name": "等待经理审批",
+       "assigneeRole": "manager",
+       "phase": "审核"
+      },
+      {
+       "id": "governance_reviewing",
+       "name": "审查采购依据",
+       "assigneeRole": "manager",
+       "phase": "审核"
+      },
+      {
+       "id": "governance_approved",
+       "name": "审批通过",
+       "assigneeRole": "manager",
+       "phase": "审核"
+      },
+      {
+       "id": "governance_returned",
+       "name": "退回补充材料",
+       "assigneeRole": "requester",
+       "phase": "审核"
+      }
+     ],
+     "transitions": [
+      {
+       "from": "governance_waiting",
+       "to": "governance_reviewing"
+      },
+      {
+       "from": "governance_reviewing",
+       "to": "governance_approved",
+       "condition": "材料完整且采购必要性成立"
+      },
+      {
+       "from": "governance_reviewing",
+       "to": "governance_returned",
+       "condition": "材料缺失或需要补充说明"
+      },
+      {
+       "from": "governance_returned",
+       "to": "governance_reviewing",
+       "condition": "申请人补充材料后重新提交"
+      }
+     ]
+    },
+    {
+     "id": "purchase_money_chain",
+     "name": "采购付款确认链",
+     "kind": "money",
+     "nodes": [
+      {
+       "id": "money_pending",
+       "name": "待财务确认",
+       "assigneeRole": "finance",
+       "phase": "财务"
+      },
+      {
+       "id": "money_validating",
+       "name": "核对金额与预算",
+       "assigneeRole": "finance",
+       "phase": "财务"
+      },
+      {
+       "id": "money_confirmed",
+       "name": "付款确认完成",
+       "assigneeRole": "finance",
+       "phase": "完成"
+      },
+      {
+       "id": "money_rejected",
+       "name": "付款确认退回",
+       "assigneeRole": "finance",
+       "phase": "财务"
+      }
+     ],
+     "transitions": [
+      {
+       "from": "money_pending",
+       "to": "money_validating"
+      },
+      {
+       "from": "money_validating",
+       "to": "money_confirmed",
+       "condition": "付款金额等于审批通过金额且预算充足"
+      },
+      {
+       "from": "money_validating",
+       "to": "money_rejected",
+       "condition": "金额不一致或预算不足"
+      },
+      {
+       "from": "money_rejected",
+       "to": "money_pending",
+       "condition": "采购单修正或预算补充后重新确认"
+      }
+     ]
+    }
+   ]
   },
-  "employee_onboarding": {
-    "datamodel": {
-      "entities": [
-        {
-          "id": "employee",
-          "name": "员工",
-          "fields": [
-            {
-              "id": "employee_id",
-              "name": "员工编号",
-              "type": "string"
-            },
-            {
-              "id": "employee_name",
-              "name": "姓名",
-              "type": "string"
-            },
-            {
-              "id": "phone",
-              "name": "手机号",
-              "type": "string",
-              "format": "masked"
-            },
-            {
-              "id": "email",
-              "name": "企业邮箱",
-              "type": "string"
-            },
-            {
-              "id": "department_id",
-              "name": "所属部门",
-              "type": "ref"
-            },
-            {
-              "id": "position",
-              "name": "职位",
-              "type": "string"
-            },
-            {
-              "id": "hire_date",
-              "name": "入职日期",
-              "type": "date"
-            },
-            {
-              "id": "onboarding_status",
-              "name": "入职状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "draft",
-                  "label": "草稿",
-                  "tone": "default"
-                },
-                {
-                  "id": "submitted",
-                  "label": "待审核",
-                  "tone": "warning"
-                },
-                {
-                  "id": "reviewing",
-                  "label": "审核中",
-                  "tone": "processing"
-                },
-                {
-                  "id": "approved",
-                  "label": "已通过",
-                  "tone": "success"
-                },
-                {
-                  "id": "rejected",
-                  "label": "已驳回",
-                  "tone": "danger"
-                },
-                {
-                  "id": "completed",
-                  "label": "已完成",
-                  "tone": "success"
-                }
-              ]
-            },
-            {
-              "id": "completion_percent",
-              "name": "入职完成度",
-              "type": "number",
-              "format": "progress"
-            },
-            {
-              "id": "risk_level",
-              "name": "入职风险等级",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "low",
-                  "label": "低风险",
-                  "tone": "success"
-                },
-                {
-                  "id": "medium",
-                  "label": "中风险",
-                  "tone": "warning"
-                },
-                {
-                  "id": "high",
-                  "label": "高风险",
-                  "tone": "danger"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "department",
-          "name": "部门",
-          "fields": [
-            {
-              "id": "department_id",
-              "name": "部门编号",
-              "type": "string"
-            },
-            {
-              "id": "department_name",
-              "name": "部门名称",
-              "type": "string"
-            },
-            {
-              "id": "manager_id",
-              "name": "部门负责人",
-              "type": "ref"
-            },
-            {
-              "id": "headcount_limit",
-              "name": "编制上限",
-              "type": "number"
-            },
-            {
-              "id": "department_status",
-              "name": "部门状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "active",
-                  "label": "启用",
-                  "tone": "success"
-                },
-                {
-                  "id": "frozen",
-                  "label": "已冻结",
-                  "tone": "warning"
-                },
-                {
-                  "id": "closed",
-                  "label": "已停用",
-                  "tone": "default"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "onboarding_task",
-          "name": "入职任务",
-          "fields": [
-            {
-              "id": "task_id",
-              "name": "任务编号",
-              "type": "string"
-            },
-            {
-              "id": "employee_id",
-              "name": "关联员工",
-              "type": "ref"
-            },
-            {
-              "id": "task_type",
-              "name": "任务类型",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "document_submission",
-                  "label": "材料提交",
-                  "tone": "warning"
-                },
-                {
-                  "id": "account_setup",
-                  "label": "账号开通",
-                  "tone": "processing"
-                },
-                {
-                  "id": "equipment_preparation",
-                  "label": "设备准备",
-                  "tone": "processing"
-                },
-                {
-                  "id": "orientation",
-                  "label": "入职培训",
-                  "tone": "default"
-                }
-              ]
-            },
-            {
-              "id": "assignee_role",
-              "name": "执行角色",
-              "type": "string"
-            },
-            {
-              "id": "due_date",
-              "name": "截止日期",
-              "type": "date"
-            },
-            {
-              "id": "task_status",
-              "name": "任务状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "pending",
-                  "label": "待处理",
-                  "tone": "warning"
-                },
-                {
-                  "id": "in_progress",
-                  "label": "进行中",
-                  "tone": "processing"
-                },
-                {
-                  "id": "completed",
-                  "label": "已完成",
-                  "tone": "success"
-                },
-                {
-                  "id": "blocked",
-                  "label": "已阻塞",
-                  "tone": "danger"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "onboarding_document",
-          "name": "入职材料",
-          "fields": [
-            {
-              "id": "document_id",
-              "name": "材料编号",
-              "type": "string"
-            },
-            {
-              "id": "employee_id",
-              "name": "关联员工",
-              "type": "ref"
-            },
-            {
-              "id": "document_type",
-              "name": "材料类型",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "id_card",
-                  "label": "身份证",
-                  "tone": "default"
-                },
-                {
-                  "id": "education_certificate",
-                  "label": "学历证明",
-                  "tone": "default"
-                },
-                {
-                  "id": "employment_contract",
-                  "label": "劳动合同",
-                  "tone": "default"
-                },
-                {
-                  "id": "bank_account",
-                  "label": "银行卡信息",
-                  "tone": "default"
-                }
-              ]
-            },
-            {
-              "id": "file_url",
-              "name": "文件地址",
-              "type": "string"
-            },
-            {
-              "id": "extracted_info",
-              "name": "识别信息",
-              "type": "string"
-            },
-            {
-              "id": "verification_status",
-              "name": "核验状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "pending",
-                  "label": "待核验",
-                  "tone": "warning"
-                },
-                {
-                  "id": "verified",
-                  "label": "已核验",
-                  "tone": "success"
-                },
-                {
-                  "id": "rejected",
-                  "label": "核验不通过",
-                  "tone": "danger"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "user_account",
-          "name": "系统账号",
-          "fields": [
-            {
-              "id": "user_id",
-              "name": "账号编号",
-              "type": "string"
-            },
-            {
-              "id": "employee_id",
-              "name": "关联员工",
-              "type": "ref"
-            },
-            {
-              "id": "role_id",
-              "name": "系统角色",
-              "type": "string"
-            },
-            {
-              "id": "account_status",
-              "name": "账号状态",
-              "type": "enum",
-              "options": [
-                {
-                  "id": "pending",
-                  "label": "待激活",
-                  "tone": "warning"
-                },
-                {
-                  "id": "active",
-                  "label": "已启用",
-                  "tone": "success"
-                },
-                {
-                  "id": "disabled",
-                  "label": "已停用",
-                  "tone": "danger"
-                }
-              ]
-            }
-          ]
-        }
-      ]
+  "page": {
+   "pages": [
+    {
+     "id": "purchase_workbench",
+     "name": "采购申请工作台",
+     "kind": "workbench",
+     "fieldBindings": [
+      "purchase_order.order_no",
+      "purchase_order.requester",
+      "purchase_order.department",
+      "purchase_order.supplier_id",
+      "purchase_order.total_amount",
+      "purchase_order.required_date",
+      "purchase_order.purpose",
+      "purchase_order.priority",
+      "purchase_order.approval_status"
+     ],
+     "actionPermissions": [
+      "purchase_order:create",
+      "purchase_order:view",
+      "purchase_order:submit",
+      "supplier:view"
+     ]
     },
-    "rbac": {
-      "roles": [
-        "employee",
-        "hr_specialist",
-        "department_manager",
-        "hr_admin",
-        "it_support"
-      ],
-      "permissions": [
-        "employee:read",
-        "employee:create",
-        "employee:update",
-        "onboarding:approve",
-        "department:assign",
-        "document:verify",
-        "task:update",
-        "user:manage",
-        "dashboard:view"
-      ],
-      "menus": [
-        {
-          "id": "employee_self_service",
-          "label": "员工入职填报",
-          "roleRefs": [
-            "employee"
-          ],
-          "permissionRefs": [
-            "employee:read",
-            "employee:update"
-          ]
-        },
-        {
-          "id": "hr_onboarding",
-          "label": "HR入职工作台",
-          "roleRefs": [
-            "hr_specialist"
-          ],
-          "permissionRefs": [
-            "employee:read",
-            "employee:create",
-            "employee:update",
-            "onboarding:approve",
-            "document:verify",
-            "task:update"
-          ]
-        },
-        {
-          "id": "department_assignment",
-          "label": "部门分配确认",
-          "roleRefs": [
-            "department_manager"
-          ],
-          "permissionRefs": [
-            "employee:read",
-            "department:assign",
-            "onboarding:approve"
-          ]
-        },
-        {
-          "id": "permission_management",
-          "label": "HR权限管理",
-          "roleRefs": [
-            "hr_admin"
-          ],
-          "permissionRefs": [
-            "user:manage",
-            "employee:read",
-            "dashboard:view"
-          ]
-        },
-        {
-          "id": "it_onboarding_tasks",
-          "label": "IT入职任务",
-          "roleRefs": [
-            "it_support"
-          ],
-          "permissionRefs": [
-            "employee:read",
-            "task:update"
-          ]
-        },
-        {
-          "id": "hr_dashboard",
-          "label": "入职数据看板",
-          "roleRefs": [
-            "hr_specialist",
-            "hr_admin"
-          ],
-          "permissionRefs": [
-            "dashboard:view"
-          ]
-        }
-      ]
+    {
+     "id": "approval_kanban",
+     "name": "经理审批看板",
+     "kind": "kanban",
+     "statusField": "purchase_order.approval_status",
+     "fieldBindings": [
+      "purchase_order.order_no",
+      "purchase_order.requester",
+      "purchase_order.department",
+      "purchase_order.total_amount",
+      "purchase_order.purpose",
+      "purchase_order.approval_status",
+      "approval_record.decision",
+      "approval_record.comment",
+      "approval_record.decided_at"
+     ],
+     "actionPermissions": [
+      "purchase_order:view",
+      "purchase_order:view_amount",
+      "purchase_order:approve",
+      "purchase_order:reject",
+      "approval_record:view",
+      "approval_record:create"
+     ]
     },
-    "workflow": {
-      "id": "employee_onboarding_workflow",
-      "name": "员工入职生命周期",
-      "nodes": [
-        {
-          "id": "onboarding_draft",
-          "name": "创建入职档案",
-          "assigneeRole": "hr_specialist",
-          "phase": "申请"
-        },
-        {
-          "id": "onboarding_submitted",
-          "name": "提交入职申请",
-          "assigneeRole": "employee",
-          "phase": "申请"
-        },
-        {
-          "id": "onboarding_hr_review",
-          "name": "HR资料审核",
-          "assigneeRole": "hr_specialist",
-          "phase": "审核"
-        },
-        {
-          "id": "onboarding_department_review",
-          "name": "部门分配确认",
-          "assigneeRole": "department_manager",
-          "phase": "审核"
-        },
-        {
-          "id": "onboarding_rejected",
-          "name": "驳回补正",
-          "assigneeRole": "employee",
-          "phase": "审核"
-        },
-        {
-          "id": "onboarding_execution",
-          "name": "执行入职任务",
-          "assigneeRole": "it_support",
-          "phase": "执行"
-        },
-        {
-          "id": "onboarding_completed",
-          "name": "完成入职",
-          "assigneeRole": "hr_specialist",
-          "phase": "完成"
-        }
-      ],
-      "transitions": [
-        {
-          "from": "onboarding_draft",
-          "to": "onboarding_submitted"
-        },
-        {
-          "from": "onboarding_submitted",
-          "to": "onboarding_hr_review"
-        },
-        {
-          "from": "onboarding_hr_review",
-          "to": "onboarding_department_review",
-          "condition": "材料完整且核验通过"
-        },
-        {
-          "from": "onboarding_hr_review",
-          "to": "onboarding_rejected",
-          "condition": "材料缺失或核验不通过"
-        },
-        {
-          "from": "onboarding_rejected",
-          "to": "onboarding_draft",
-          "condition": "员工补正材料"
-        },
-        {
-          "from": "onboarding_department_review",
-          "to": "onboarding_execution",
-          "condition": "部门确认接收"
-        },
-        {
-          "from": "onboarding_department_review",
-          "to": "onboarding_rejected",
-          "condition": "部门无编制或拒绝接收"
-        },
-        {
-          "from": "onboarding_execution",
-          "to": "onboarding_completed",
-          "condition": "必需入职任务全部完成"
-        },
-        {
-          "from": "onboarding_execution",
-          "to": "onboarding_execution",
-          "condition": "存在未完成任务，继续执行"
-        }
-      ],
-      "chains": [
-        {
-          "id": "onboarding_governance_chain",
-          "name": "入职审批治理链",
-          "kind": "governance",
-          "nodes": [
-            {
-              "id": "governance_submit",
-              "name": "发起审批",
-              "assigneeRole": "hr_specialist",
-              "phase": "申请"
-            },
-            {
-              "id": "governance_hr_check",
-              "name": "HR合规检查",
-              "assigneeRole": "hr_specialist",
-              "phase": "审核"
-            },
-            {
-              "id": "governance_manager_check",
-              "name": "部门负责人确认",
-              "assigneeRole": "department_manager",
-              "phase": "审核"
-            },
-            {
-              "id": "governance_approved",
-              "name": "审批通过",
-              "assigneeRole": "hr_specialist",
-              "phase": "完成"
-            },
-            {
-              "id": "governance_returned",
-              "name": "退回修改",
-              "assigneeRole": "employee",
-              "phase": "审核"
-            }
-          ],
-          "transitions": [
-            {
-              "from": "governance_submit",
-              "to": "governance_hr_check"
-            },
-            {
-              "from": "governance_hr_check",
-              "to": "governance_manager_check",
-              "condition": "合规检查通过"
-            },
-            {
-              "from": "governance_hr_check",
-              "to": "governance_returned",
-              "condition": "需要补充材料"
-            },
-            {
-              "from": "governance_returned",
-              "to": "governance_submit",
-              "condition": "修改后重新提交"
-            },
-            {
-              "from": "governance_manager_check",
-              "to": "governance_approved",
-              "condition": "部门负责人确认"
-            },
-            {
-              "from": "governance_manager_check",
-              "to": "governance_returned",
-              "condition": "部门提出修改意见"
-            }
-          ]
-        },
-        {
-          "id": "onboarding_recovery_chain",
-          "name": "入职任务异常恢复链",
-          "kind": "recovery",
-          "nodes": [
-            {
-              "id": "recovery_detected",
-              "name": "检测任务异常",
-              "assigneeRole": "it_support",
-              "phase": "执行"
-            },
-            {
-              "id": "recovery_retry",
-              "name": "重试入职任务",
-              "assigneeRole": "it_support",
-              "phase": "执行"
-            },
-            {
-              "id": "recovery_resolved",
-              "name": "恢复完成",
-              "assigneeRole": "hr_specialist",
-              "phase": "完成"
-            },
-            {
-              "id": "recovery_escalated",
-              "name": "升级人工处理",
-              "assigneeRole": "hr_admin",
-              "phase": "审核"
-            }
-          ],
-          "transitions": [
-            {
-              "from": "recovery_detected",
-              "to": "recovery_retry",
-              "condition": "可自动重试"
-            },
-            {
-              "from": "recovery_detected",
-              "to": "recovery_escalated",
-              "condition": "超过自动重试次数"
-            },
-            {
-              "from": "recovery_retry",
-              "to": "recovery_resolved",
-              "condition": "任务执行成功"
-            },
-            {
-              "from": "recovery_retry",
-              "to": "recovery_detected",
-              "condition": "任务再次失败"
-            },
-            {
-              "from": "recovery_escalated",
-              "to": "recovery_resolved",
-              "condition": "人工处理完成"
-            }
-          ]
-        }
-      ]
+    {
+     "id": "finance_dashboard",
+     "name": "财务确认总览",
+     "kind": "dashboard",
+     "fieldBindings": [
+      "purchase_order.order_no",
+      "purchase_order.total_amount",
+      "purchase_order.approval_status",
+      "payment_record.payment_amount",
+      "payment_record.payment_status",
+      "payment_record.confirmed_at"
+     ],
+     "actionPermissions": [
+      "purchase_order:view",
+      "purchase_order:view_amount",
+      "payment_record:view",
+      "payment_record:confirm"
+     ],
+     "stats": [
+      {
+       "id": "pending_order_count",
+       "name": "待财务确认采购单",
+       "entity": "purchase_order",
+       "metric": "count",
+       "format": "number"
+      },
+      {
+       "id": "approved_amount",
+       "name": "已审批采购金额",
+       "entity": "purchase_order",
+       "metric": "sum:purchase_order.total_amount",
+       "format": "money"
+      },
+      {
+       "id": "confirmed_payment_amount",
+       "name": "已确认付款金额",
+       "entity": "payment_record",
+       "metric": "sum:payment_record.payment_amount",
+       "format": "money"
+      }
+     ],
+     "charts": [
+      {
+       "id": "order_status_distribution",
+       "name": "采购单审批状态分布",
+       "type": "pie",
+       "dimension": "purchase_order.approval_status",
+       "metric": "count"
+      },
+      {
+       "id": "amount_by_priority",
+       "name": "各优先级采购金额",
+       "type": "bar",
+       "dimension": "purchase_order.priority",
+       "metric": "sum:purchase_order.total_amount"
+      }
+     ]
     },
-    "page": {
-      "pages": [
-        {
-          "id": "onboarding_workbench",
-          "name": "入职工作台",
-          "kind": "kanban",
-          "statusField": "employee.onboarding_status",
-          "fieldBindings": [
-            "employee.employee_id",
-            "employee.employee_name",
-            "employee.department_id",
-            "employee.hire_date",
-            "employee.onboarding_status",
-            "employee.completion_percent",
-            "employee.risk_level"
-          ],
-          "actionPermissions": [
-            "employee:read",
-            "employee:create",
-            "employee:update",
-            "onboarding:approve",
-            "department:assign"
-          ]
-        },
-        {
-          "id": "onboarding_calendar",
-          "name": "入职排期日历",
-          "kind": "calendar",
-          "dateField": "employee.hire_date",
-          "colorBy": "employee.onboarding_status",
-          "fieldBindings": [
-            "employee.employee_name",
-            "employee.department_id",
-            "employee.hire_date",
-            "employee.onboarding_status",
-            "employee.completion_percent"
-          ],
-          "actionPermissions": [
-            "employee:read",
-            "employee:update"
-          ]
-        },
-        {
-          "id": "onboarding_dashboard",
-          "name": "入职运营看板",
-          "kind": "dashboard",
-          "fieldBindings": [
-            "employee.onboarding_status",
-            "employee.completion_percent",
-            "employee.risk_level",
-            "employee.hire_date",
-            "onboarding_task.task_status",
-            "onboarding_document.verification_status"
-          ],
-          "actionPermissions": [
-            "dashboard:view"
-          ],
-          "stats": [
-            {
-              "id": "total_employees",
-              "name": "入职员工总数",
-              "entity": "employee",
-              "metric": "count",
-              "format": "number"
-            },
-            {
-              "id": "average_completion",
-              "name": "平均入职完成度",
-              "entity": "employee",
-              "metric": "avg:employee.completion_percent",
-              "format": "percent"
-            },
-            {
-              "id": "pending_tasks",
-              "name": "待处理任务",
-              "entity": "onboarding_task",
-              "metric": "count",
-              "format": "number"
-            },
-            {
-              "id": "high_risk_employees",
-              "name": "高风险员工",
-              "entity": "employee",
-              "metric": "count",
-              "format": "number"
-            }
-          ],
-          "charts": [
-            {
-              "id": "status_distribution",
-              "name": "入职状态分布",
-              "type": "pie",
-              "dimension": "employee.onboarding_status",
-              "metric": "count"
-            },
-            {
-              "id": "department_headcount",
-              "name": "部门入职人数",
-              "type": "bar",
-              "dimension": "employee.department_id",
-              "metric": "count"
-            }
-          ]
-        },
-        {
-          "id": "onboarding_document_workbench",
-          "name": "入职材料核验",
-          "kind": "workbench",
-          "fieldBindings": [
-            "onboarding_document.document_id",
-            "onboarding_document.employee_id",
-            "onboarding_document.document_type",
-            "onboarding_document.file_url",
-            "onboarding_document.extracted_info",
-            "onboarding_document.verification_status"
-          ],
-          "actionPermissions": [
-            "document:verify",
-            "employee:read"
-          ]
-        },
-        {
-          "id": "hr_role_management",
-          "name": "HR权限管理",
-          "kind": "workbench",
-          "fieldBindings": [
-            "user_account.user_id",
-            "user_account.employee_id",
-            "user_account.role_id",
-            "user_account.account_status"
-          ],
-          "actionPermissions": [
-            "user:manage",
-            "employee:read"
-          ]
-        },
-        {
-          "id": "onboarding_task_workbench",
-          "name": "入职任务执行",
-          "kind": "workbench",
-          "fieldBindings": [
-            "onboarding_task.task_id",
-            "onboarding_task.employee_id",
-            "onboarding_task.task_type",
-            "onboarding_task.assignee_role",
-            "onboarding_task.due_date",
-            "onboarding_task.task_status"
-          ],
-          "actionPermissions": [
-            "task:update",
-            "employee:read"
-          ]
-        }
-      ]
-    },
-    "aigc": {
-      "capabilities": [
-        {
-          "id": "document_ocr_extraction",
-          "name": "入职材料智能识别",
-          "inputFields": [
-            "onboarding_document.file_url",
-            "onboarding_document.document_type"
-          ],
-          "outputField": "onboarding_document.extracted_info",
-          "roleRefs": [
-            "hr_specialist"
-          ]
-        },
-        {
-          "id": "onboarding_risk_assessment",
-          "name": "入职风险智能评估",
-          "inputFields": [
-            "onboarding_document.extracted_info",
-            "employee.employee_name",
-            "employee.department_id"
-          ],
-          "outputField": "employee.risk_level",
-          "roleRefs": [
-            "hr_specialist",
-            "hr_admin"
-          ]
-        },
-        {
-          "id": "onboarding_task_recommendation",
-          "name": "入职任务智能推荐",
-          "inputFields": [
-            "employee.department_id",
-            "employee.position",
-            "employee.hire_date"
-          ],
-          "outputField": "onboarding_task.task_type",
-          "roleRefs": [
-            "hr_specialist"
-          ]
-        }
-      ],
-      "pipelines": [
-        {
-          "id": "document_risk_pipeline",
-          "name": "材料识别与风险评估",
-          "steps": [
-            "document_ocr_extraction",
-            "onboarding_risk_assessment"
-          ]
-        }
-      ]
-    },
-    "appbundle": {
-      "pageBindings": [
-        {
-          "pageRef": "onboarding_workbench",
-          "workflowRef": "employee_onboarding_workflow"
-        },
-        {
-          "pageRef": "onboarding_calendar",
-          "workflowRef": "onboarding_execution"
-        },
-        {
-          "pageRef": "onboarding_dashboard",
-          "workflowRef": "employee_onboarding_workflow"
-        },
-        {
-          "pageRef": "onboarding_document_workbench",
-          "workflowRef": "onboarding_hr_review"
-        },
-        {
-          "pageRef": "hr_role_management",
-          "workflowRef": "governance_approved"
-        },
-        {
-          "pageRef": "onboarding_task_workbench",
-          "workflowRef": "onboarding_execution"
-        }
-      ],
-      "roleRefs": [
-        "employee",
-        "hr_specialist",
-        "department_manager",
-        "hr_admin",
-        "it_support"
-      ],
-      "dataModelRefs": [
-        "employee",
-        "department",
-        "onboarding_task",
-        "onboarding_document",
-        "user_account"
-      ],
-      "invariants": [
-        {
-          "id": "department_required_before_approval",
-          "statement": "员工入职申请在部门分配确认前必须已有有效的所属部门。",
-          "systems": [
-            "datamodel",
-            "workflow"
-          ],
-          "refs": [
-            "employee.department_id",
-            "onboarding_department_review",
-            "department:assign"
-          ]
-        },
-        {
-          "id": "documents_verified_before_execution",
-          "statement": "所有必需入职材料核验通过后才能进入入职任务执行阶段。",
-          "systems": [
-            "datamodel",
-            "workflow",
-            "page"
-          ],
-          "refs": [
-            "onboarding_document.verification_status",
-            "document:verify",
-            "onboarding_execution"
-          ]
-        },
-        {
-          "id": "rejected_application_requires_correction",
-          "statement": "被驳回的入职申请必须返回补正并重新提交，不能直接标记为已完成。",
-          "systems": [
-            "datamodel",
-            "workflow"
-          ],
-          "refs": [
-            "employee.onboarding_status",
-            "onboarding_rejected",
-            "onboarding_draft",
-            "onboarding_completed"
-          ]
-        },
-        {
-          "id": "risk_requires_hr_review",
-          "statement": "高风险员工必须由HR专员审核后才能由部门确认接收。",
-          "systems": [
-            "datamodel",
-            "workflow",
-            "rbac"
-          ],
-          "refs": [
-            "employee.risk_level",
-            "onboarding_hr_review",
-            "onboarding_department_review",
-            "hr_specialist"
-          ]
-        },
-        {
-          "id": "role_changes_only_by_hr_admin",
-          "statement": "系统账号的角色和启停状态只能由HR管理员维护。",
-          "systems": [
-            "datamodel",
-            "rbac",
-            "page"
-          ],
-          "refs": [
-            "user_account.role_id",
-            "user_account.account_status",
-            "user:manage",
-            "hr_admin"
-          ]
-        },
-        {
-          "id": "task_completion_requires_assignee",
-          "statement": "入职任务只有在明确执行角色并由执行角色更新后才能标记为已完成。",
-          "systems": [
-            "datamodel",
-            "rbac",
-            "workflow"
-          ],
-          "refs": [
-            "onboarding_task.assignee_role",
-            "onboarding_task.task_status",
-            "task:update",
-            "onboarding_completed"
-          ]
-        },
-        {
-          "id": "ai_output_requires_human_verification",
-          "statement": "智能识别和风险评估结果只能作为辅助信息，材料核验和最终审批必须由授权HR人员完成。",
-          "systems": [
-            "aigc",
-            "page",
-            "rbac"
-          ],
-          "refs": [
-            "document_ocr_extraction",
-            "onboarding_risk_assessment",
-            "document:verify",
-            "onboarding:approve",
-            "hr_specialist"
-          ]
-        }
-      ]
+    {
+     "id": "supplier_directory",
+     "name": "供应商目录",
+     "kind": "workbench",
+     "fieldBindings": [
+      "supplier.supplier_name",
+      "supplier.contact_name",
+      "supplier.contact_phone",
+      "supplier.qualification_status"
+     ],
+     "actionPermissions": [
+      "supplier:view",
+      "supplier:manage"
+     ]
     }
+   ]
+  },
+  "aigc": {
+   "capabilities": [
+    {
+     "id": "purchase_risk_assessment",
+     "name": "采购风险评估",
+     "inputFields": [
+      "purchase_order.total_amount",
+      "purchase_order.purpose",
+      "purchase_order.priority",
+      "supplier.qualification_status"
+     ],
+     "outputField": "purchase_order.risk_level",
+     "roleRefs": [
+      "procurement_admin",
+      "manager"
+     ]
+    },
+    {
+     "id": "risk_explanation_generation",
+     "name": "生成风险说明",
+     "inputFields": [
+      "purchase_order.risk_level",
+      "purchase_order.total_amount",
+      "purchase_order.purpose"
+     ],
+     "outputField": "purchase_order.risk_reason",
+     "roleRefs": [
+      "procurement_admin",
+      "manager"
+     ]
+    },
+    {
+     "id": "approval_comment_draft",
+     "name": "生成审批意见草稿",
+     "inputFields": [
+      "purchase_order.risk_reason",
+      "purchase_order.priority",
+      "purchase_order.total_amount"
+     ],
+     "outputField": "approval_record.comment",
+     "roleRefs": [
+      "manager"
+     ]
+    }
+   ],
+   "pipelines": [
+    {
+     "id": "purchase_risk_review_pipeline",
+     "name": "采购风险审批辅助流程",
+     "steps": [
+      "purchase_risk_assessment",
+      "risk_explanation_generation",
+      "approval_comment_draft"
+     ]
+    }
+   ]
+  },
+  "appbundle": {
+   "pageBindings": [
+    {
+     "pageRef": "purchase_workbench",
+     "workflowRef": "purchase_order_lifecycle"
+    },
+    {
+     "pageRef": "approval_kanban",
+     "workflowRef": "manager_review"
+    },
+    {
+     "pageRef": "finance_dashboard",
+     "workflowRef": "finance_confirmation"
+    },
+    {
+     "pageRef": "supplier_directory",
+     "workflowRef": "po_draft"
+    }
+   ],
+   "roleRefs": [
+    "requester",
+    "manager",
+    "finance",
+    "procurement_admin"
+   ],
+   "dataModelRefs": [
+    "purchase_order",
+    "supplier",
+    "approval_record",
+    "payment_record"
+   ],
+   "invariants": [
+    {
+     "id": "approval_required_before_finance",
+     "statement": "采购单只有在经理审批通过后才能进入财务确认。",
+     "systems": [
+      "workflow",
+      "datamodel"
+     ],
+     "refs": [
+      "manager_review",
+      "finance_confirmation",
+      "purchase_order.approval_status"
+     ]
+    },
+    {
+     "id": "amount_visibility_by_duty",
+     "statement": "采购金额仅对经理、财务和采购管理员开放，申请人不能查看采购金额字段。",
+     "systems": [
+      "rbac",
+      "page"
+     ],
+     "refs": [
+      "purchase_order",
+      "manager",
+      "finance",
+      "procurement_admin"
+     ]
+    },
+    {
+     "id": "finance_confirmation_amount_match",
+     "statement": "财务确认金额必须与经理审批通过的采购金额一致。",
+     "systems": [
+      "workflow",
+      "datamodel"
+     ],
+     "refs": [
+      "money_validating",
+      "purchase_order.total_amount",
+      "payment_record.payment_amount"
+     ]
+    },
+    {
+     "id": "rejected_order_return",
+     "statement": "被经理驳回的采购单必须退回申请人修改后才能重新提交。",
+     "systems": [
+      "workflow",
+      "page"
+     ],
+     "refs": [
+      "manager_rejected",
+      "po_draft",
+      "purchase_order:submit"
+     ]
+    },
+    {
+     "id": "approval_record_traceability",
+     "statement": "每次经理审批决定都必须生成包含审批人、决定、意见和时间的审批记录。",
+     "systems": [
+      "datamodel",
+      "workflow"
+     ],
+     "refs": [
+      "approval_record",
+      "approval_record.decision",
+      "approval_record.approver",
+      "approval_record.decided_at",
+      "manager_review"
+     ]
+    },
+    {
+     "id": "supplier_qualification_required",
+     "statement": "采购单只能选择资质状态为有效的供应商提交审批。",
+     "systems": [
+      "datamodel",
+      "workflow"
+     ],
+     "refs": [
+      "supplier.qualification_status",
+      "po_submitted",
+      "purchase_order.supplier_id"
+     ]
+    },
+    {
+     "id": "risk_assessment_before_approval",
+     "statement": "采购单进入经理审批前必须完成风险等级评估和风险说明生成。",
+     "systems": [
+      "aigc",
+      "workflow",
+      "datamodel"
+     ],
+     "refs": [
+      "purchase_risk_assessment",
+      "risk_explanation_generation",
+      "purchase_order.risk_level",
+      "purchase_order.risk_reason",
+      "manager_review"
+     ]
+    }
+   ],
+   "invariantNotes": {
+    "repaired": [
+     {
+      "invariantId": "amount_visibility_by_duty",
+      "from": "purchase_order.view_amount",
+      "to": "purchase_order"
+     }
+    ],
+    "dropped": []
+   },
+   "appIdentity": {
+    "productName": "采买通",
+    "theme": "azure",
+    "icon": "cart",
+    "nav": "side"
+   }
   }
+ },
+ "leave_approval": {
+  "datamodel": {
+   "entities": [
+    {
+     "id": "employee",
+     "name": "员工",
+     "fields": [
+      {
+       "id": "employee_no",
+       "name": "工号",
+       "type": "string"
+      },
+      {
+       "id": "name",
+       "name": "姓名",
+       "type": "string"
+      },
+      {
+       "id": "department",
+       "name": "部门",
+       "type": "string"
+      },
+      {
+       "id": "manager_id",
+       "name": "直属主管",
+       "type": "ref"
+      },
+      {
+       "id": "phone",
+       "name": "手机号",
+       "type": "string",
+       "format": "masked"
+      },
+      {
+       "id": "employment_status",
+       "name": "在职状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "在职",
+         "label": "在职",
+         "tone": "success"
+        },
+        {
+         "id": "试用期",
+         "label": "试用期",
+         "tone": "processing"
+        },
+        {
+         "id": "离职",
+         "label": "离职",
+         "tone": "danger"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "leave_balance",
+     "name": "假期余额",
+     "fields": [
+      {
+       "id": "employee_id",
+       "name": "员工",
+       "type": "ref"
+      },
+      {
+       "id": "leave_type",
+       "name": "假期类型",
+       "type": "enum",
+       "options": [
+        {
+         "id": "年假",
+         "label": "年假",
+         "tone": "success"
+        },
+        {
+         "id": "调休",
+         "label": "调休",
+         "tone": "processing"
+        },
+        {
+         "id": "病假",
+         "label": "病假",
+         "tone": "warning"
+        },
+        {
+         "id": "事假",
+         "label": "事假",
+         "tone": "default"
+        }
+       ]
+      },
+      {
+       "id": "total_days",
+       "name": "年度额度",
+       "type": "number",
+       "format": "progress"
+      },
+      {
+       "id": "used_days",
+       "name": "已使用天数",
+       "type": "number",
+       "format": "progress"
+      },
+      {
+       "id": "remaining_days",
+       "name": "剩余天数",
+       "type": "number",
+       "format": "progress"
+      },
+      {
+       "id": "balance_status",
+       "name": "余额状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "充足",
+         "label": "充足",
+         "tone": "success"
+        },
+        {
+         "id": "即将用尽",
+         "label": "即将用尽",
+         "tone": "warning"
+        },
+        {
+         "id": "已用尽",
+         "label": "已用尽",
+         "tone": "danger"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "leave_request",
+     "name": "请假单",
+     "fields": [
+      {
+       "id": "request_no",
+       "name": "请假单号",
+       "type": "string"
+      },
+      {
+       "id": "employee_id",
+       "name": "申请员工",
+       "type": "ref"
+      },
+      {
+       "id": "leave_type",
+       "name": "假期类型",
+       "type": "enum",
+       "options": [
+        {
+         "id": "年假",
+         "label": "年假",
+         "tone": "success"
+        },
+        {
+         "id": "调休",
+         "label": "调休",
+         "tone": "processing"
+        },
+        {
+         "id": "病假",
+         "label": "病假",
+         "tone": "warning"
+        },
+        {
+         "id": "事假",
+         "label": "事假",
+         "tone": "default"
+        }
+       ]
+      },
+      {
+       "id": "start_date",
+       "name": "开始日期",
+       "type": "date"
+      },
+      {
+       "id": "end_date",
+       "name": "结束日期",
+       "type": "date"
+      },
+      {
+       "id": "duration_days",
+       "name": "请假天数",
+       "type": "number",
+       "format": "progress"
+      },
+      {
+       "id": "reason",
+       "name": "请假事由",
+       "type": "string"
+      },
+      {
+       "id": "status",
+       "name": "审批状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "草稿",
+         "label": "草稿",
+         "tone": "default"
+        },
+        {
+         "id": "待主管审批",
+         "label": "待主管审批",
+         "tone": "warning"
+        },
+        {
+         "id": "主管已通过",
+         "label": "主管已通过",
+         "tone": "processing"
+        },
+        {
+         "id": "已驳回",
+         "label": "已驳回",
+         "tone": "danger"
+        },
+        {
+         "id": "HR已备案",
+         "label": "HR已备案",
+         "tone": "success"
+        },
+        {
+         "id": "已完成",
+         "label": "已完成",
+         "tone": "success"
+        }
+       ]
+      },
+      {
+       "id": "risk_level",
+       "name": "风险等级",
+       "type": "enum",
+       "options": [
+        {
+         "id": "低",
+         "label": "低",
+         "tone": "success"
+        },
+        {
+         "id": "中",
+         "label": "中",
+         "tone": "warning"
+        },
+        {
+         "id": "高",
+         "label": "高",
+         "tone": "danger"
+        }
+       ]
+      },
+      {
+       "id": "manager_comment",
+       "name": "主管意见",
+       "type": "string"
+      },
+      {
+       "id": "hr_comment",
+       "name": "HR备案备注",
+       "type": "string"
+      }
+     ]
+    },
+    {
+     "id": "approval_record",
+     "name": "审批记录",
+     "fields": [
+      {
+       "id": "leave_request_id",
+       "name": "请假单",
+       "type": "ref"
+      },
+      {
+       "id": "approver_id",
+       "name": "审批人",
+       "type": "ref"
+      },
+      {
+       "id": "decision",
+       "name": "审批结果",
+       "type": "enum",
+       "options": [
+        {
+         "id": "通过",
+         "label": "通过",
+         "tone": "success"
+        },
+        {
+         "id": "驳回",
+         "label": "驳回",
+         "tone": "danger"
+        },
+        {
+         "id": "退回修改",
+         "label": "退回修改",
+         "tone": "warning"
+        }
+       ]
+      },
+      {
+       "id": "comment",
+       "name": "审批意见",
+       "type": "string"
+      },
+      {
+       "id": "decision_date",
+       "name": "审批日期",
+       "type": "date"
+      }
+     ]
+    }
+   ]
+  },
+  "rbac": {
+   "roles": [
+    "employee",
+    "manager",
+    "hr_specialist",
+    "hr_admin"
+   ],
+   "permissions": [
+    "leave_request:create",
+    "leave_request:read_own",
+    "leave_request:update_own",
+    "leave_request:submit",
+    "leave_request:approve",
+    "leave_request:read_department",
+    "leave_request:record",
+    "leave_balance:read_own",
+    "leave_balance:manage",
+    "approval_record:create",
+    "approval_record:read",
+    "employee:read"
+   ],
+   "menus": [
+    {
+     "id": "employee_leave_menu",
+     "label": "我的请假",
+     "roleRefs": [
+      "employee"
+     ],
+     "permissionRefs": [
+      "leave_request:create",
+      "leave_request:read_own",
+      "leave_request:update_own",
+      "leave_request:submit",
+      "leave_balance:read_own"
+     ]
+    },
+    {
+     "id": "manager_approval_menu",
+     "label": "主管审批",
+     "roleRefs": [
+      "manager"
+     ],
+     "permissionRefs": [
+      "leave_request:read_department",
+      "leave_request:approve",
+      "approval_record:create",
+      "approval_record:read"
+     ]
+    },
+    {
+     "id": "hr_filing_menu",
+     "label": "HR备案",
+     "roleRefs": [
+      "hr_specialist"
+     ],
+     "permissionRefs": [
+      "leave_request:read_department",
+      "leave_request:record",
+      "approval_record:read",
+      "employee:read"
+     ]
+    },
+    {
+     "id": "leave_balance_admin_menu",
+     "label": "假期余额管理",
+     "roleRefs": [
+      "hr_admin"
+     ],
+     "permissionRefs": [
+      "leave_balance:manage",
+      "leave_balance:read_own",
+      "employee:read"
+     ]
+    }
+   ]
+  },
+  "workflow": {
+   "id": "leave_request_lifecycle",
+   "name": "请假单生命周期",
+   "nodes": [
+    {
+     "id": "leave_draft",
+     "name": "填写请假单",
+     "assigneeRole": "employee",
+     "phase": "申请"
+    },
+    {
+     "id": "leave_submitted",
+     "name": "提交申请",
+     "assigneeRole": "employee",
+     "phase": "申请"
+    },
+    {
+     "id": "manager_review",
+     "name": "主管审核",
+     "assigneeRole": "manager",
+     "phase": "审核"
+    },
+    {
+     "id": "manager_approved",
+     "name": "主管通过",
+     "assigneeRole": "manager",
+     "phase": "审核"
+    },
+    {
+     "id": "manager_rejected",
+     "name": "主管驳回",
+     "assigneeRole": "manager",
+     "phase": "审核"
+    },
+    {
+     "id": "hr_filing",
+     "name": "HR备案",
+     "assigneeRole": "hr_specialist",
+     "phase": "备案"
+    },
+    {
+     "id": "leave_completed",
+     "name": "请假完成",
+     "assigneeRole": "hr_specialist",
+     "phase": "完成"
+    }
+   ],
+   "transitions": [
+    {
+     "from": "leave_draft",
+     "to": "leave_submitted"
+    },
+    {
+     "from": "leave_submitted",
+     "to": "manager_review",
+     "condition": "请假天数和假期余额校验通过"
+    },
+    {
+     "from": "manager_review",
+     "to": "manager_approved",
+     "condition": "主管同意"
+    },
+    {
+     "from": "manager_review",
+     "to": "manager_rejected",
+     "condition": "主管驳回"
+    },
+    {
+     "from": "manager_rejected",
+     "to": "leave_draft",
+     "condition": "申请人修改后重新提交"
+    },
+    {
+     "from": "manager_approved",
+     "to": "hr_filing"
+    },
+    {
+     "from": "hr_filing",
+     "to": "leave_completed",
+     "condition": "HR完成备案并扣减假期余额"
+    }
+   ],
+   "chains": [
+    {
+     "id": "leave_governance",
+     "name": "请假审批与备案链",
+     "kind": "governance",
+     "nodes": [
+      {
+       "id": "governance_pending",
+       "name": "待审批",
+       "assigneeRole": "manager",
+       "phase": "审核"
+      },
+      {
+       "id": "governance_decision",
+       "name": "主管决策",
+       "assigneeRole": "manager",
+       "phase": "审核"
+      },
+      {
+       "id": "governance_returned",
+       "name": "退回补充",
+       "assigneeRole": "employee",
+       "phase": "审核"
+      },
+      {
+       "id": "governance_confirmed",
+       "name": "HR确认备案",
+       "assigneeRole": "hr_specialist",
+       "phase": "备案"
+      },
+      {
+       "id": "governance_closed",
+       "name": "审批链关闭",
+       "assigneeRole": "hr_specialist",
+       "phase": "完成"
+      }
+     ],
+     "transitions": [
+      {
+       "from": "governance_pending",
+       "to": "governance_decision"
+      },
+      {
+       "from": "governance_decision",
+       "to": "governance_confirmed",
+       "condition": "主管通过"
+      },
+      {
+       "from": "governance_decision",
+       "to": "governance_returned",
+       "condition": "材料不足或需要修改"
+      },
+      {
+       "from": "governance_returned",
+       "to": "governance_pending",
+       "condition": "申请人补充材料"
+      },
+      {
+       "from": "governance_confirmed",
+       "to": "governance_closed"
+      }
+     ]
+    },
+    {
+     "id": "leave_recovery",
+     "name": "请假撤回与余额恢复链",
+     "kind": "recovery",
+     "nodes": [
+      {
+       "id": "leave_cancel_requested",
+       "name": "申请撤回",
+       "assigneeRole": "employee",
+       "phase": "申请"
+      },
+      {
+       "id": "leave_cancel_review",
+       "name": "撤回审核",
+       "assigneeRole": "manager",
+       "phase": "审核"
+      },
+      {
+       "id": "leave_cancel_rejected",
+       "name": "撤回驳回",
+       "assigneeRole": "manager",
+       "phase": "审核"
+      },
+      {
+       "id": "leave_balance_restored",
+       "name": "恢复假期余额",
+       "assigneeRole": "hr_admin",
+       "phase": "备案"
+      },
+      {
+       "id": "leave_cancel_closed",
+       "name": "撤回完成",
+       "assigneeRole": "hr_specialist",
+       "phase": "完成"
+      }
+     ],
+     "transitions": [
+      {
+       "from": "leave_cancel_requested",
+       "to": "leave_cancel_review"
+      },
+      {
+       "from": "leave_cancel_review",
+       "to": "leave_balance_restored",
+       "condition": "主管同意撤回"
+      },
+      {
+       "from": "leave_cancel_review",
+       "to": "leave_cancel_rejected",
+       "condition": "已进入不可撤回阶段"
+      },
+      {
+       "from": "leave_cancel_rejected",
+       "to": "leave_cancel_requested",
+       "condition": "重新提交撤回申请"
+      },
+      {
+       "from": "leave_balance_restored",
+       "to": "leave_cancel_closed"
+      }
+     ]
+    }
+   ]
+  },
+  "page": {
+   "pages": [
+    {
+     "id": "my_leave_workbench",
+     "name": "我的请假单",
+     "kind": "workbench",
+     "fieldBindings": [
+      "leave_request.request_no",
+      "leave_request.leave_type",
+      "leave_request.start_date",
+      "leave_request.end_date",
+      "leave_request.duration_days",
+      "leave_request.status",
+      "leave_request.manager_comment",
+      "leave_balance.remaining_days"
+     ],
+     "actionPermissions": [
+      "leave_request:create",
+      "leave_request:read_own",
+      "leave_request:update_own",
+      "leave_request:submit",
+      "leave_balance:read_own"
+     ]
+    },
+    {
+     "id": "manager_leave_kanban",
+     "name": "主管审批看板",
+     "kind": "kanban",
+     "statusField": "leave_request.status",
+     "fieldBindings": [
+      "leave_request.request_no",
+      "leave_request.employee_id",
+      "leave_request.leave_type",
+      "leave_request.start_date",
+      "leave_request.end_date",
+      "leave_request.duration_days",
+      "leave_request.reason",
+      "leave_request.risk_level",
+      "leave_request.status"
+     ],
+     "actionPermissions": [
+      "leave_request:read_department",
+      "leave_request:approve",
+      "approval_record:create"
+     ]
+    },
+    {
+     "id": "leave_calendar",
+     "name": "团队请假日历",
+     "kind": "calendar",
+     "dateField": "leave_request.start_date",
+     "colorBy": "leave_request.leave_type",
+     "fieldBindings": [
+      "leave_request.employee_id",
+      "leave_request.leave_type",
+      "leave_request.start_date",
+      "leave_request.end_date",
+      "leave_request.status"
+     ],
+     "actionPermissions": [
+      "leave_request:read_department"
+     ]
+    },
+    {
+     "id": "hr_leave_dashboard",
+     "name": "HR假勤概览",
+     "kind": "dashboard",
+     "fieldBindings": [
+      "leave_request.leave_type",
+      "leave_request.duration_days",
+      "leave_request.status",
+      "leave_request.start_date",
+      "leave_balance.leave_type",
+      "leave_balance.remaining_days",
+      "approval_record.decision"
+     ],
+     "actionPermissions": [
+      "leave_request:read_department",
+      "leave_request:record",
+      "approval_record:read",
+      "employee:read",
+      "leave_balance:manage"
+     ],
+     "stats": [
+      {
+       "id": "total_leave_requests",
+       "name": "请假单总数",
+       "entity": "leave_request",
+       "metric": "count",
+       "format": "number"
+      },
+      {
+       "id": "total_leave_days",
+       "name": "请假总天数",
+       "entity": "leave_request",
+       "metric": "sum:leave_request.duration_days",
+       "format": "number"
+      },
+      {
+       "id": "remaining_leave_days",
+       "name": "剩余假期天数",
+       "entity": "leave_balance",
+       "metric": "sum:leave_balance.remaining_days",
+       "format": "number"
+      }
+     ],
+     "charts": [
+      {
+       "id": "leave_type_distribution",
+       "name": "假期类型分布",
+       "type": "pie",
+       "dimension": "leave_request.leave_type",
+       "metric": "count"
+      },
+      {
+       "id": "leave_status_comparison",
+       "name": "审批状态分布",
+       "type": "bar",
+       "dimension": "leave_request.status",
+       "metric": "count"
+      }
+     ]
+    },
+    {
+     "id": "approval_audit_page",
+     "name": "审批记录",
+     "kind": "workbench",
+     "fieldBindings": [
+      "approval_record.leave_request_id",
+      "approval_record.approver_id",
+      "approval_record.decision",
+      "approval_record.comment",
+      "approval_record.decision_date"
+     ],
+     "actionPermissions": [
+      "approval_record:read"
+     ]
+    }
+   ]
+  },
+  "aigc": {
+   "capabilities": [
+    {
+     "id": "calculate_leave_duration",
+     "name": "计算请假天数",
+     "inputFields": [
+      "leave_request.start_date",
+      "leave_request.end_date"
+     ],
+     "outputField": "leave_request.duration_days",
+     "roleRefs": [
+      "employee",
+      "hr_specialist"
+     ]
+    },
+    {
+     "id": "assess_leave_risk",
+     "name": "评估请假风险",
+     "inputFields": [
+      "leave_request.leave_type",
+      "leave_request.duration_days",
+      "leave_balance.remaining_days"
+     ],
+     "outputField": "leave_request.risk_level",
+     "roleRefs": [
+      "manager",
+      "hr_specialist"
+     ]
+    },
+    {
+     "id": "draft_manager_comment",
+     "name": "生成主管审批建议",
+     "inputFields": [
+      "leave_request.reason",
+      "leave_request.risk_level",
+      "leave_request.duration_days"
+     ],
+     "outputField": "leave_request.manager_comment",
+     "roleRefs": [
+      "manager"
+     ]
+    }
+   ],
+   "pipelines": [
+    {
+     "id": "leave_review_assistant_pipeline",
+     "name": "请假审核辅助流程",
+     "steps": [
+      "calculate_leave_duration",
+      "assess_leave_risk",
+      "draft_manager_comment"
+     ]
+    }
+   ]
+  },
+  "appbundle": {
+   "pageBindings": [
+    {
+     "pageRef": "my_leave_workbench",
+     "workflowRef": "leave_draft"
+    },
+    {
+     "pageRef": "manager_leave_kanban",
+     "workflowRef": "manager_review"
+    },
+    {
+     "pageRef": "leave_calendar",
+     "workflowRef": "leave_request_lifecycle"
+    },
+    {
+     "pageRef": "hr_leave_dashboard",
+     "workflowRef": "hr_filing"
+    },
+    {
+     "pageRef": "approval_audit_page",
+     "workflowRef": "leave_governance"
+    }
+   ],
+   "roleRefs": [
+    "employee",
+    "manager",
+    "hr_specialist",
+    "hr_admin"
+   ],
+   "dataModelRefs": [
+    "employee",
+    "leave_balance",
+    "leave_request",
+    "approval_record"
+   ],
+   "invariants": [
+    {
+     "id": "balance_must_cover_leave",
+     "statement": "提交请假单前请假天数不得超过员工对应假期类型的剩余余额。",
+     "systems": [
+      "datamodel",
+      "workflow",
+      "aigc"
+     ],
+     "refs": [
+      "leave_request.duration_days",
+      "leave_balance.remaining_days",
+      "leave_submitted",
+      "assess_leave_risk"
+     ]
+    },
+    {
+     "id": "manager_must_approve_before_hr_filing",
+     "statement": "HR只有在主管明确通过后才能进行请假备案。",
+     "systems": [
+      "workflow",
+      "rbac"
+     ],
+     "refs": [
+      "manager_approved",
+      "hr_filing",
+      "leave_request:approve",
+      "leave_request:record"
+     ]
+    },
+    {
+     "id": "approval_requires_record",
+     "statement": "每一次主管通过、驳回或退回修改都必须生成一条审批记录。",
+     "systems": [
+      "datamodel",
+      "workflow"
+     ],
+     "refs": [
+      "approval_record",
+      "approval_record:create",
+      "manager_review",
+      "governance_decision"
+     ]
+    },
+    {
+     "id": "balance_changes_only_after_filing",
+     "statement": "假期余额只能在HR完成备案时扣减，撤回批准后才能恢复。",
+     "systems": [
+      "datamodel",
+      "workflow"
+     ],
+     "refs": [
+      "leave_balance",
+      "hr_filing",
+      "leave_completed",
+      "leave_balance_restored"
+     ]
+    },
+    {
+     "id": "employee_can_edit_only_before_approval",
+     "statement": "员工只能修改草稿或被主管驳回的请假单，主管通过后不得修改申请内容。",
+     "systems": [
+      "rbac",
+      "workflow"
+     ],
+     "refs": [
+      "employee",
+      "leave_request:update_own",
+      "leave_draft",
+      "manager_rejected",
+      "manager_approved"
+     ]
+    },
+    {
+     "id": "hr_filing_requires_audit_trail",
+     "statement": "所有已备案请假单必须关联主管审批记录并保留HR备案备注。",
+     "systems": [
+      "datamodel",
+      "workflow"
+     ],
+     "refs": [
+      "approval_record.leave_request_id",
+      "leave_request.hr_comment",
+      "hr_filing",
+      "approval_record:read"
+     ]
+    },
+    {
+     "id": "risk_requires_manager_attention",
+     "statement": "风险等级为高的请假单必须由主管查看风险评估后才能作出审批决定。",
+     "systems": [
+      "datamodel",
+      "workflow",
+      "aigc"
+     ],
+     "refs": [
+      "leave_request.risk_level",
+      "assess_leave_risk",
+      "manager_review",
+      "leave_request:approve"
+     ]
+    }
+   ],
+   "appIdentity": {
+    "productName": "假期无忧",
+    "theme": "forest",
+    "icon": "calendar",
+    "nav": "side"
+   }
+  }
+ },
+ "service_ticket": {
+  "datamodel": {
+   "entities": [
+    {
+     "id": "customer",
+     "name": "客户",
+     "fields": [
+      {
+       "id": "name",
+       "name": "客户名称",
+       "type": "string"
+      },
+      {
+       "id": "phone",
+       "name": "联系电话",
+       "type": "string",
+       "format": "masked"
+      },
+      {
+       "id": "customer_level",
+       "name": "客户等级",
+       "type": "enum",
+       "options": [
+        {
+         "id": "普通",
+         "label": "普通",
+         "tone": "default"
+        },
+        {
+         "id": "重要",
+         "label": "重要",
+         "tone": "warning"
+        },
+        {
+         "id": "vip",
+         "label": "VIP",
+         "tone": "success"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "sla_policy",
+     "name": "SLA策略",
+     "fields": [
+      {
+       "id": "name",
+       "name": "策略名称",
+       "type": "string"
+      },
+      {
+       "id": "response_hours",
+       "name": "首次响应时限",
+       "type": "number"
+      },
+      {
+       "id": "resolution_hours",
+       "name": "解决时限",
+       "type": "number"
+      },
+      {
+       "id": "priority_scope",
+       "name": "适用优先级",
+       "type": "enum",
+       "options": [
+        {
+         "id": "低",
+         "label": "低",
+         "tone": "default"
+        },
+        {
+         "id": "中",
+         "label": "中",
+         "tone": "processing"
+        },
+        {
+         "id": "高",
+         "label": "高",
+         "tone": "warning"
+        },
+        {
+         "id": "紧急",
+         "label": "紧急",
+         "tone": "danger"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "ticket",
+     "name": "服务工单",
+     "fields": [
+      {
+       "id": "title",
+       "name": "工单标题",
+       "type": "string"
+      },
+      {
+       "id": "description",
+       "name": "问题描述",
+       "type": "string"
+      },
+      {
+       "id": "customer_id",
+       "name": "客户",
+       "type": "ref"
+      },
+      {
+       "id": "sla_policy_id",
+       "name": "SLA策略",
+       "type": "ref"
+      },
+      {
+       "id": "category",
+       "name": "问题分类",
+       "type": "enum",
+       "options": [
+        {
+         "id": "账户",
+         "label": "账户",
+         "tone": "default"
+        },
+        {
+         "id": "产品",
+         "label": "产品",
+         "tone": "processing"
+        },
+        {
+         "id": "技术",
+         "label": "技术",
+         "tone": "warning"
+        },
+        {
+         "id": "投诉",
+         "label": "投诉",
+         "tone": "danger"
+        }
+       ]
+      },
+      {
+       "id": "priority",
+       "name": "优先级",
+       "type": "enum",
+       "options": [
+        {
+         "id": "低",
+         "label": "低",
+         "tone": "default"
+        },
+        {
+         "id": "中",
+         "label": "中",
+         "tone": "processing"
+        },
+        {
+         "id": "高",
+         "label": "高",
+         "tone": "warning"
+        },
+        {
+         "id": "紧急",
+         "label": "紧急",
+         "tone": "danger"
+        }
+       ]
+      },
+      {
+       "id": "status",
+       "name": "工单状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "草稿",
+         "label": "草稿",
+         "tone": "default"
+        },
+        {
+         "id": "待分派",
+         "label": "待分派",
+         "tone": "warning"
+        },
+        {
+         "id": "处理中",
+         "label": "处理中",
+         "tone": "processing"
+        },
+        {
+         "id": "待客户确认",
+         "label": "待客户确认",
+         "tone": "warning"
+        },
+        {
+         "id": "已解决",
+         "label": "已解决",
+         "tone": "success"
+        },
+        {
+         "id": "已驳回",
+         "label": "已驳回",
+         "tone": "danger"
+        }
+       ]
+      },
+      {
+       "id": "assignee_id",
+       "name": "处理客服",
+       "type": "ref"
+      },
+      {
+       "id": "created_at",
+       "name": "提交时间",
+       "type": "date"
+      },
+      {
+       "id": "first_response_at",
+       "name": "首次响应时间",
+       "type": "date"
+      },
+      {
+       "id": "due_at",
+       "name": "SLA截止时间",
+       "type": "date"
+      },
+      {
+       "id": "resolved_at",
+       "name": "解决时间",
+       "type": "date"
+      },
+      {
+       "id": "sla_progress",
+       "name": "SLA完成进度",
+       "type": "number",
+       "format": "progress"
+      },
+      {
+       "id": "ai_summary",
+       "name": "AI问题摘要",
+       "type": "string"
+      },
+      {
+       "id": "reply_draft",
+       "name": "AI回复草稿",
+       "type": "string"
+      },
+      {
+       "id": "reply_review_status",
+       "name": "回复审核状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "待审核",
+         "label": "待审核",
+         "tone": "warning"
+        },
+        {
+         "id": "已通过",
+         "label": "已通过",
+         "tone": "success"
+        },
+        {
+         "id": "需修改",
+         "label": "需修改",
+         "tone": "danger"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "ticket_message",
+     "name": "工单沟通记录",
+     "fields": [
+      {
+       "id": "ticket_id",
+       "name": "所属工单",
+       "type": "ref"
+      },
+      {
+       "id": "sender_role",
+       "name": "发送方",
+       "type": "enum",
+       "options": [
+        {
+         "id": "客户",
+         "label": "客户",
+         "tone": "default"
+        },
+        {
+         "id": "客服",
+         "label": "客服",
+         "tone": "processing"
+        },
+        {
+         "id": "主管",
+         "label": "主管",
+         "tone": "warning"
+        }
+       ]
+      },
+      {
+       "id": "content",
+       "name": "沟通内容",
+       "type": "string"
+      },
+      {
+       "id": "sent_at",
+       "name": "发送时间",
+       "type": "date"
+      }
+     ]
+    },
+    {
+     "id": "escalation",
+     "name": "升级记录",
+     "fields": [
+      {
+       "id": "ticket_id",
+       "name": "关联工单",
+       "type": "ref"
+      },
+      {
+       "id": "reason",
+       "name": "升级原因",
+       "type": "string"
+      },
+      {
+       "id": "status",
+       "name": "升级状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "待审核",
+         "label": "待审核",
+         "tone": "warning"
+        },
+        {
+         "id": "已批准",
+         "label": "已批准",
+         "tone": "success"
+        },
+        {
+         "id": "已退回",
+         "label": "已退回",
+         "tone": "danger"
+        }
+       ]
+      },
+      {
+       "id": "created_at",
+       "name": "申请时间",
+       "type": "date"
+      }
+     ]
+    }
+   ]
+  },
+  "rbac": {
+   "roles": [
+    "customer",
+    "support_agent",
+    "support_supervisor",
+    "sla_manager",
+    "system_admin"
+   ],
+   "permissions": [
+    "ticket:create",
+    "ticket:view",
+    "ticket:update",
+    "ticket:assign",
+    "ticket:escalate",
+    "ticket:close",
+    "message:create",
+    "sla:view",
+    "sla:manage",
+    "report:view",
+    "ai:use"
+   ],
+   "menus": [
+    {
+     "id": "customer_portal",
+     "label": "客户服务中心",
+     "roleRefs": [
+      "customer"
+     ],
+     "permissionRefs": [
+      "ticket:create",
+      "ticket:view",
+      "message:create"
+     ]
+    },
+    {
+     "id": "agent_workbench",
+     "label": "客服工单工作台",
+     "roleRefs": [
+      "support_agent"
+     ],
+     "permissionRefs": [
+      "ticket:view",
+      "ticket:update",
+      "ticket:escalate",
+      "ticket:close",
+      "message:create",
+      "sla:view",
+      "ai:use"
+     ]
+    },
+    {
+     "id": "supervisor_console",
+     "label": "主管升级与分派",
+     "roleRefs": [
+      "support_supervisor"
+     ],
+     "permissionRefs": [
+      "ticket:view",
+      "ticket:assign",
+      "ticket:escalate",
+      "ticket:close",
+      "message:create",
+      "sla:view",
+      "report:view"
+     ]
+    },
+    {
+     "id": "sla_management",
+     "label": "SLA管理",
+     "roleRefs": [
+      "sla_manager"
+     ],
+     "permissionRefs": [
+      "sla:view",
+      "sla:manage",
+      "report:view"
+     ]
+    },
+    {
+     "id": "system_administration",
+     "label": "系统管理",
+     "roleRefs": [
+      "system_admin"
+     ],
+     "permissionRefs": [
+      "sla:manage",
+      "report:view"
+     ]
+    }
+   ]
+  },
+  "workflow": {
+   "id": "ticket_lifecycle",
+   "name": "服务工单生命周期",
+   "nodes": [
+    {
+     "id": "ticket_submitted",
+     "name": "提交工单",
+     "assigneeRole": "customer",
+     "phase": "提交"
+    },
+    {
+     "id": "ticket_validating",
+     "name": "工单审核",
+     "assigneeRole": "support_agent",
+     "phase": "审核"
+    },
+    {
+     "id": "ticket_assigned",
+     "name": "分派客服",
+     "assigneeRole": "support_supervisor",
+     "phase": "处理"
+    },
+    {
+     "id": "ticket_in_progress",
+     "name": "客服处理",
+     "assigneeRole": "support_agent",
+     "phase": "处理"
+    },
+    {
+     "id": "ticket_pending_customer",
+     "name": "等待客户确认",
+     "assigneeRole": "customer",
+     "phase": "处理"
+    },
+    {
+     "id": "ticket_resolved",
+     "name": "确认解决",
+     "assigneeRole": "support_agent",
+     "phase": "验收"
+    },
+    {
+     "id": "ticket_rejected",
+     "name": "驳回工单",
+     "assigneeRole": "support_agent",
+     "phase": "验收"
+    },
+    {
+     "id": "ticket_closed",
+     "name": "关闭归档",
+     "assigneeRole": "support_agent",
+     "phase": "归档"
+    }
+   ],
+   "transitions": [
+    {
+     "from": "ticket_submitted",
+     "to": "ticket_validating"
+    },
+    {
+     "from": "ticket_validating",
+     "to": "ticket_assigned",
+     "condition": "资料完整且问题有效"
+    },
+    {
+     "from": "ticket_validating",
+     "to": "ticket_rejected",
+     "condition": "资料缺失或问题无效"
+    },
+    {
+     "from": "ticket_rejected",
+     "to": "ticket_submitted",
+     "condition": "客户补充资料后重新提交"
+    },
+    {
+     "from": "ticket_assigned",
+     "to": "ticket_in_progress"
+    },
+    {
+     "from": "ticket_in_progress",
+     "to": "ticket_pending_customer",
+     "condition": "需要客户确认处理方案"
+    },
+    {
+     "from": "ticket_in_progress",
+     "to": "ticket_resolved",
+     "condition": "问题已解决且无需客户补充"
+    },
+    {
+     "from": "ticket_pending_customer",
+     "to": "ticket_in_progress",
+     "condition": "客户反馈未解决"
+    },
+    {
+     "from": "ticket_pending_customer",
+     "to": "ticket_resolved",
+     "condition": "客户确认解决"
+    },
+    {
+     "from": "ticket_resolved",
+     "to": "ticket_closed",
+     "condition": "客户确认或超过确认期限"
+    }
+   ],
+   "chains": [
+    {
+     "id": "ticket_escalation_governance",
+     "name": "工单升级审批链",
+     "kind": "governance",
+     "nodes": [
+      {
+       "id": "escalation_requested",
+       "name": "发起升级",
+       "assigneeRole": "support_agent",
+       "phase": "申请"
+      },
+      {
+       "id": "escalation_reviewing",
+       "name": "主管审核",
+       "assigneeRole": "support_supervisor",
+       "phase": "审核"
+      },
+      {
+       "id": "escalation_approved",
+       "name": "升级批准",
+       "assigneeRole": "support_supervisor",
+       "phase": "执行"
+      },
+      {
+       "id": "escalation_returned",
+       "name": "升级退回",
+       "assigneeRole": "support_agent",
+       "phase": "执行"
+      }
+     ],
+     "transitions": [
+      {
+       "from": "escalation_requested",
+       "to": "escalation_reviewing"
+      },
+      {
+       "from": "escalation_reviewing",
+       "to": "escalation_approved",
+       "condition": "高风险或跨团队问题"
+      },
+      {
+       "from": "escalation_reviewing",
+       "to": "escalation_returned",
+       "condition": "升级理由不足"
+      },
+      {
+       "from": "escalation_returned",
+       "to": "escalation_requested",
+       "condition": "客服补充升级理由"
+      }
+     ]
+    },
+    {
+     "id": "sla_breach_recovery",
+     "name": "SLA超时恢复链",
+     "kind": "recovery",
+     "nodes": [
+      {
+       "id": "sla_warning_detected",
+       "name": "SLA预警",
+       "assigneeRole": "sla_manager",
+       "phase": "监控"
+      },
+      {
+       "id": "sla_recovery_assigned",
+       "name": "加急分派",
+       "assigneeRole": "support_supervisor",
+       "phase": "处理"
+      },
+      {
+       "id": "sla_recovery_in_progress",
+       "name": "加急处理",
+       "assigneeRole": "support_agent",
+       "phase": "处理"
+      },
+      {
+       "id": "sla_recovery_closed",
+       "name": "恢复完成",
+       "assigneeRole": "sla_manager",
+       "phase": "复盘"
+      },
+      {
+       "id": "sla_recovery_failed",
+       "name": "恢复失败",
+       "assigneeRole": "support_supervisor",
+       "phase": "复盘"
+      }
+     ],
+     "transitions": [
+      {
+       "from": "sla_warning_detected",
+       "to": "sla_recovery_assigned",
+       "condition": "距离SLA截止少于2小时"
+      },
+      {
+       "from": "sla_recovery_assigned",
+       "to": "sla_recovery_in_progress"
+      },
+      {
+       "from": "sla_recovery_in_progress",
+       "to": "sla_recovery_closed",
+       "condition": "工单恢复并完成响应"
+      },
+      {
+       "from": "sla_recovery_in_progress",
+       "to": "sla_recovery_failed",
+       "condition": "继续超时或客户升级投诉"
+      },
+      {
+       "from": "sla_recovery_failed",
+       "to": "sla_recovery_assigned",
+       "condition": "重新指定负责人"
+      }
+     ]
+    }
+   ]
+  },
+  "page": {
+   "pages": [
+    {
+     "id": "customer_ticket_submit",
+     "name": "提交服务工单",
+     "kind": "workbench",
+     "fieldBindings": [
+      "ticket.title",
+      "ticket.description",
+      "ticket.category",
+      "ticket.priority",
+      "ticket.created_at",
+      "ticket.status",
+      "ticket.customer_id",
+      "ticket_message.content"
+     ],
+     "actionPermissions": [
+      "ticket:create",
+      "message:create"
+     ]
+    },
+    {
+     "id": "agent_ticket_kanban",
+     "name": "客服处理看板",
+     "kind": "kanban",
+     "statusField": "ticket.status",
+     "fieldBindings": [
+      "ticket.title",
+      "ticket.category",
+      "ticket.priority",
+      "ticket.status",
+      "ticket.assignee_id",
+      "ticket.due_at",
+      "ticket.sla_progress",
+      "ticket.ai_summary",
+      "ticket.reply_draft",
+      "ticket.reply_review_status",
+      "ticket_message.content"
+     ],
+     "actionPermissions": [
+      "ticket:view",
+      "ticket:update",
+      "ticket:escalate",
+      "ticket:close",
+      "message:create",
+      "ai:use"
+     ]
+    },
+    {
+     "id": "supervisor_escalation_workbench",
+     "name": "主管升级流转",
+     "kind": "workbench",
+     "fieldBindings": [
+      "ticket.title",
+      "ticket.priority",
+      "ticket.status",
+      "ticket.assignee_id",
+      "escalation.ticket_id",
+      "escalation.reason",
+      "escalation.status",
+      "escalation.created_at"
+     ],
+     "actionPermissions": [
+      "ticket:view",
+      "ticket:assign",
+      "ticket:escalate",
+      "ticket:close",
+      "message:create"
+     ]
+    },
+    {
+     "id": "sla_calendar",
+     "name": "SLA到期日历",
+     "kind": "calendar",
+     "dateField": "ticket.due_at",
+     "colorBy": "ticket.priority",
+     "fieldBindings": [
+      "ticket.title",
+      "ticket.due_at",
+      "ticket.priority",
+      "ticket.status",
+      "ticket.sla_progress",
+      "ticket.assignee_id"
+     ],
+     "actionPermissions": [
+      "sla:view",
+      "ticket:view"
+     ]
+    },
+    {
+     "id": "service_dashboard",
+     "name": "客户服务运营看板",
+     "kind": "dashboard",
+     "fieldBindings": [
+      "ticket.status",
+      "ticket.priority",
+      "ticket.category",
+      "ticket.created_at",
+      "ticket.resolved_at",
+      "ticket.sla_progress",
+      "escalation.status"
+     ],
+     "actionPermissions": [
+      "report:view",
+      "ticket:view",
+      "sla:view"
+     ],
+     "stats": [
+      {
+       "id": "total_tickets",
+       "name": "工单总量",
+       "entity": "ticket",
+       "metric": "count",
+       "format": "number"
+      },
+      {
+       "id": "open_tickets",
+       "name": "处理中工单",
+       "entity": "ticket",
+       "metric": "count",
+       "format": "number"
+      },
+      {
+       "id": "avg_sla_progress",
+       "name": "平均SLA完成度",
+       "entity": "ticket",
+       "metric": "avg:ticket.sla_progress",
+       "format": "percent"
+      },
+      {
+       "id": "escalated_tickets",
+       "name": "升级工单数",
+       "entity": "escalation",
+       "metric": "count",
+       "format": "number"
+      }
+     ],
+     "charts": [
+      {
+       "id": "tickets_by_status",
+       "name": "工单状态分布",
+       "type": "pie",
+       "dimension": "ticket.status",
+       "metric": "count"
+      },
+      {
+       "id": "tickets_by_priority",
+       "name": "优先级工单数量",
+       "type": "bar",
+       "dimension": "ticket.priority",
+       "metric": "count"
+      }
+     ]
+    }
+   ]
+  },
+  "aigc": {
+   "capabilities": [
+    {
+     "id": "ticket_classification",
+     "name": "工单智能分类",
+     "inputFields": [
+      "ticket.description"
+     ],
+     "outputField": "ticket.category",
+     "roleRefs": [
+      "support_agent"
+     ]
+    },
+    {
+     "id": "ticket_summary",
+     "name": "工单问题摘要",
+     "inputFields": [
+      "ticket.description",
+      "ticket.category"
+     ],
+     "outputField": "ticket.ai_summary",
+     "roleRefs": [
+      "support_agent"
+     ]
+    },
+    {
+     "id": "reply_drafting",
+     "name": "客服回复草拟",
+     "inputFields": [
+      "ticket.ai_summary",
+      "ticket.description"
+     ],
+     "outputField": "ticket.reply_draft",
+     "roleRefs": [
+      "support_agent"
+     ]
+    },
+    {
+     "id": "reply_compliance_review",
+     "name": "回复合规审核",
+     "inputFields": [
+      "ticket.reply_draft"
+     ],
+     "outputField": "ticket.reply_review_status",
+     "roleRefs": [
+      "support_agent",
+      "support_supervisor"
+     ]
+    }
+   ],
+   "pipelines": [
+    {
+     "id": "ticket_response_assistance",
+     "name": "工单回复辅助流水线",
+     "steps": [
+      "ticket_summary",
+      "reply_drafting",
+      "reply_compliance_review"
+     ]
+    }
+   ]
+  },
+  "appbundle": {
+   "pageBindings": [
+    {
+     "pageRef": "customer_ticket_submit",
+     "workflowRef": "ticket_submitted"
+    },
+    {
+     "pageRef": "agent_ticket_kanban",
+     "workflowRef": "ticket_lifecycle"
+    },
+    {
+     "pageRef": "supervisor_escalation_workbench",
+     "workflowRef": "ticket_escalation_governance"
+    },
+    {
+     "pageRef": "sla_calendar",
+     "workflowRef": "sla_breach_recovery"
+    },
+    {
+     "pageRef": "service_dashboard",
+     "workflowRef": "ticket_lifecycle"
+    }
+   ],
+   "roleRefs": [
+    "customer",
+    "support_agent",
+    "support_supervisor",
+    "sla_manager",
+    "system_admin"
+   ],
+   "dataModelRefs": [
+    "customer",
+    "sla_policy",
+    "ticket",
+    "ticket_message",
+    "escalation"
+   ],
+   "invariants": [
+    {
+     "id": "ticket_requires_customer",
+     "statement": "每张服务工单必须关联一个已登记客户后才能进入审核。",
+     "systems": [
+      "datamodel",
+      "workflow"
+     ],
+     "refs": [
+      "ticket.customer_id",
+      "customer",
+      "ticket_validating"
+     ]
+    },
+    {
+     "id": "ticket_requires_sla_policy",
+     "statement": "每张进入处理阶段的工单必须绑定SLA策略并计算截止时间。",
+     "systems": [
+      "datamodel",
+      "workflow"
+     ],
+     "refs": [
+      "ticket.sla_policy_id",
+      "sla_policy",
+      "ticket_assigned"
+     ]
+    },
+    {
+     "id": "assignment_requires_supervisor",
+     "statement": "工单负责人只能由客服主管分派或调整。",
+     "systems": [
+      "rbac",
+      "workflow"
+     ],
+     "refs": [
+      "ticket.assignee_id",
+      "support_supervisor",
+      "ticket:assign",
+      "ticket_assigned"
+     ]
+    },
+    {
+     "id": "status_changes_follow_lifecycle",
+     "statement": "工单状态只能通过服务工单生命周期节点推进，不能由普通页面直接跳过审核或验收。",
+     "systems": [
+      "workflow",
+      "page"
+     ],
+     "refs": [
+      "ticket.status",
+      "ticket_lifecycle",
+      "ticket_validating",
+      "ticket_resolved"
+     ]
+    },
+    {
+     "id": "escalation_requires_reason",
+     "statement": "升级流转必须填写升级原因并经过客服主管审核后才能批准。",
+     "systems": [
+      "datamodel",
+      "workflow"
+     ],
+     "refs": [
+      "escalation.reason",
+      "escalation_reviewing",
+      "escalation_approved"
+     ]
+    },
+    {
+     "id": "sla_breach_triggers_recovery",
+     "statement": "工单接近或超过SLA时限必须进入SLA超时恢复链并重新分派处理。",
+     "systems": [
+      "workflow",
+      "page"
+     ],
+     "refs": [
+      "ticket.due_at",
+      "ticket.sla_progress",
+      "sla_warning_detected",
+      "sla_recovery_assigned"
+     ]
+    },
+    {
+     "id": "ai_reply_requires_review",
+     "statement": "AI生成的客服回复必须完成合规审核通过后才能发送给客户。",
+     "systems": [
+      "aigc",
+      "workflow",
+      "datamodel"
+     ],
+     "refs": [
+      "reply_drafting",
+      "reply_compliance_review",
+      "ticket.reply_draft",
+      "ticket.reply_review_status"
+     ]
+    }
+   ],
+   "appIdentity": {
+    "productName": "工单飞驰",
+    "theme": "tangerine",
+    "icon": "wrench",
+    "nav": "top"
+   }
+  }
+ },
+ "employee_onboarding": {
+  "datamodel": {
+   "entities": [
+    {
+     "id": "employee",
+     "name": "员工",
+     "fields": [
+      {
+       "id": "employee_id",
+       "name": "员工编号",
+       "type": "string"
+      },
+      {
+       "id": "employee_name",
+       "name": "姓名",
+       "type": "string"
+      },
+      {
+       "id": "phone",
+       "name": "手机号",
+       "type": "string",
+       "format": "masked"
+      },
+      {
+       "id": "email",
+       "name": "企业邮箱",
+       "type": "string"
+      },
+      {
+       "id": "department_id",
+       "name": "所属部门",
+       "type": "ref"
+      },
+      {
+       "id": "position",
+       "name": "职位",
+       "type": "string"
+      },
+      {
+       "id": "hire_date",
+       "name": "入职日期",
+       "type": "date"
+      },
+      {
+       "id": "onboarding_status",
+       "name": "入职状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "draft",
+         "label": "草稿",
+         "tone": "default"
+        },
+        {
+         "id": "submitted",
+         "label": "待审核",
+         "tone": "warning"
+        },
+        {
+         "id": "reviewing",
+         "label": "审核中",
+         "tone": "processing"
+        },
+        {
+         "id": "approved",
+         "label": "已通过",
+         "tone": "success"
+        },
+        {
+         "id": "rejected",
+         "label": "已驳回",
+         "tone": "danger"
+        },
+        {
+         "id": "completed",
+         "label": "已完成",
+         "tone": "success"
+        }
+       ]
+      },
+      {
+       "id": "completion_percent",
+       "name": "入职完成度",
+       "type": "number",
+       "format": "progress"
+      },
+      {
+       "id": "risk_level",
+       "name": "入职风险等级",
+       "type": "enum",
+       "options": [
+        {
+         "id": "low",
+         "label": "低风险",
+         "tone": "success"
+        },
+        {
+         "id": "medium",
+         "label": "中风险",
+         "tone": "warning"
+        },
+        {
+         "id": "high",
+         "label": "高风险",
+         "tone": "danger"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "department",
+     "name": "部门",
+     "fields": [
+      {
+       "id": "department_id",
+       "name": "部门编号",
+       "type": "string"
+      },
+      {
+       "id": "department_name",
+       "name": "部门名称",
+       "type": "string"
+      },
+      {
+       "id": "manager_id",
+       "name": "部门负责人",
+       "type": "ref"
+      },
+      {
+       "id": "headcount_limit",
+       "name": "编制上限",
+       "type": "number"
+      },
+      {
+       "id": "department_status",
+       "name": "部门状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "active",
+         "label": "启用",
+         "tone": "success"
+        },
+        {
+         "id": "frozen",
+         "label": "已冻结",
+         "tone": "warning"
+        },
+        {
+         "id": "closed",
+         "label": "已停用",
+         "tone": "default"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "onboarding_task",
+     "name": "入职任务",
+     "fields": [
+      {
+       "id": "task_id",
+       "name": "任务编号",
+       "type": "string"
+      },
+      {
+       "id": "employee_id",
+       "name": "关联员工",
+       "type": "ref"
+      },
+      {
+       "id": "task_type",
+       "name": "任务类型",
+       "type": "enum",
+       "options": [
+        {
+         "id": "document_submission",
+         "label": "材料提交",
+         "tone": "warning"
+        },
+        {
+         "id": "account_setup",
+         "label": "账号开通",
+         "tone": "processing"
+        },
+        {
+         "id": "equipment_preparation",
+         "label": "设备准备",
+         "tone": "processing"
+        },
+        {
+         "id": "orientation",
+         "label": "入职培训",
+         "tone": "default"
+        }
+       ]
+      },
+      {
+       "id": "assignee_role",
+       "name": "执行角色",
+       "type": "string"
+      },
+      {
+       "id": "due_date",
+       "name": "截止日期",
+       "type": "date"
+      },
+      {
+       "id": "task_status",
+       "name": "任务状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "pending",
+         "label": "待处理",
+         "tone": "warning"
+        },
+        {
+         "id": "in_progress",
+         "label": "进行中",
+         "tone": "processing"
+        },
+        {
+         "id": "completed",
+         "label": "已完成",
+         "tone": "success"
+        },
+        {
+         "id": "blocked",
+         "label": "已阻塞",
+         "tone": "danger"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "onboarding_document",
+     "name": "入职材料",
+     "fields": [
+      {
+       "id": "document_id",
+       "name": "材料编号",
+       "type": "string"
+      },
+      {
+       "id": "employee_id",
+       "name": "关联员工",
+       "type": "ref"
+      },
+      {
+       "id": "document_type",
+       "name": "材料类型",
+       "type": "enum",
+       "options": [
+        {
+         "id": "id_card",
+         "label": "身份证",
+         "tone": "default"
+        },
+        {
+         "id": "education_certificate",
+         "label": "学历证明",
+         "tone": "default"
+        },
+        {
+         "id": "employment_contract",
+         "label": "劳动合同",
+         "tone": "default"
+        },
+        {
+         "id": "bank_account",
+         "label": "银行卡信息",
+         "tone": "default"
+        }
+       ]
+      },
+      {
+       "id": "file_url",
+       "name": "文件地址",
+       "type": "string"
+      },
+      {
+       "id": "extracted_info",
+       "name": "识别信息",
+       "type": "string"
+      },
+      {
+       "id": "verification_status",
+       "name": "核验状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "pending",
+         "label": "待核验",
+         "tone": "warning"
+        },
+        {
+         "id": "verified",
+         "label": "已核验",
+         "tone": "success"
+        },
+        {
+         "id": "rejected",
+         "label": "核验不通过",
+         "tone": "danger"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "user_account",
+     "name": "系统账号",
+     "fields": [
+      {
+       "id": "user_id",
+       "name": "账号编号",
+       "type": "string"
+      },
+      {
+       "id": "employee_id",
+       "name": "关联员工",
+       "type": "ref"
+      },
+      {
+       "id": "role_id",
+       "name": "系统角色",
+       "type": "string"
+      },
+      {
+       "id": "account_status",
+       "name": "账号状态",
+       "type": "enum",
+       "options": [
+        {
+         "id": "pending",
+         "label": "待激活",
+         "tone": "warning"
+        },
+        {
+         "id": "active",
+         "label": "已启用",
+         "tone": "success"
+        },
+        {
+         "id": "disabled",
+         "label": "已停用",
+         "tone": "danger"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "rbac": {
+   "roles": [
+    "employee",
+    "hr_specialist",
+    "department_manager",
+    "hr_admin",
+    "it_support"
+   ],
+   "permissions": [
+    "employee:read",
+    "employee:create",
+    "employee:update",
+    "onboarding:approve",
+    "department:assign",
+    "document:verify",
+    "task:update",
+    "user:manage",
+    "dashboard:view"
+   ],
+   "menus": [
+    {
+     "id": "employee_self_service",
+     "label": "员工入职填报",
+     "roleRefs": [
+      "employee"
+     ],
+     "permissionRefs": [
+      "employee:read",
+      "employee:update"
+     ]
+    },
+    {
+     "id": "hr_onboarding",
+     "label": "HR入职工作台",
+     "roleRefs": [
+      "hr_specialist"
+     ],
+     "permissionRefs": [
+      "employee:read",
+      "employee:create",
+      "employee:update",
+      "onboarding:approve",
+      "document:verify",
+      "task:update"
+     ]
+    },
+    {
+     "id": "department_assignment",
+     "label": "部门分配确认",
+     "roleRefs": [
+      "department_manager"
+     ],
+     "permissionRefs": [
+      "employee:read",
+      "department:assign",
+      "onboarding:approve"
+     ]
+    },
+    {
+     "id": "permission_management",
+     "label": "HR权限管理",
+     "roleRefs": [
+      "hr_admin"
+     ],
+     "permissionRefs": [
+      "user:manage",
+      "employee:read",
+      "dashboard:view"
+     ]
+    },
+    {
+     "id": "it_onboarding_tasks",
+     "label": "IT入职任务",
+     "roleRefs": [
+      "it_support"
+     ],
+     "permissionRefs": [
+      "employee:read",
+      "task:update"
+     ]
+    },
+    {
+     "id": "hr_dashboard",
+     "label": "入职数据看板",
+     "roleRefs": [
+      "hr_specialist",
+      "hr_admin"
+     ],
+     "permissionRefs": [
+      "dashboard:view"
+     ]
+    }
+   ]
+  },
+  "workflow": {
+   "id": "employee_onboarding_workflow",
+   "name": "员工入职生命周期",
+   "nodes": [
+    {
+     "id": "onboarding_draft",
+     "name": "创建入职档案",
+     "assigneeRole": "hr_specialist",
+     "phase": "申请"
+    },
+    {
+     "id": "onboarding_submitted",
+     "name": "提交入职申请",
+     "assigneeRole": "employee",
+     "phase": "申请"
+    },
+    {
+     "id": "onboarding_hr_review",
+     "name": "HR资料审核",
+     "assigneeRole": "hr_specialist",
+     "phase": "审核"
+    },
+    {
+     "id": "onboarding_department_review",
+     "name": "部门分配确认",
+     "assigneeRole": "department_manager",
+     "phase": "审核"
+    },
+    {
+     "id": "onboarding_rejected",
+     "name": "驳回补正",
+     "assigneeRole": "employee",
+     "phase": "审核"
+    },
+    {
+     "id": "onboarding_execution",
+     "name": "执行入职任务",
+     "assigneeRole": "it_support",
+     "phase": "执行"
+    },
+    {
+     "id": "onboarding_completed",
+     "name": "完成入职",
+     "assigneeRole": "hr_specialist",
+     "phase": "完成"
+    }
+   ],
+   "transitions": [
+    {
+     "from": "onboarding_draft",
+     "to": "onboarding_submitted"
+    },
+    {
+     "from": "onboarding_submitted",
+     "to": "onboarding_hr_review"
+    },
+    {
+     "from": "onboarding_hr_review",
+     "to": "onboarding_department_review",
+     "condition": "材料完整且核验通过"
+    },
+    {
+     "from": "onboarding_hr_review",
+     "to": "onboarding_rejected",
+     "condition": "材料缺失或核验不通过"
+    },
+    {
+     "from": "onboarding_rejected",
+     "to": "onboarding_draft",
+     "condition": "员工补正材料"
+    },
+    {
+     "from": "onboarding_department_review",
+     "to": "onboarding_execution",
+     "condition": "部门确认接收"
+    },
+    {
+     "from": "onboarding_department_review",
+     "to": "onboarding_rejected",
+     "condition": "部门无编制或拒绝接收"
+    },
+    {
+     "from": "onboarding_execution",
+     "to": "onboarding_completed",
+     "condition": "必需入职任务全部完成"
+    },
+    {
+     "from": "onboarding_execution",
+     "to": "onboarding_execution",
+     "condition": "存在未完成任务，继续执行"
+    }
+   ],
+   "chains": [
+    {
+     "id": "onboarding_governance_chain",
+     "name": "入职审批治理链",
+     "kind": "governance",
+     "nodes": [
+      {
+       "id": "governance_submit",
+       "name": "发起审批",
+       "assigneeRole": "hr_specialist",
+       "phase": "申请"
+      },
+      {
+       "id": "governance_hr_check",
+       "name": "HR合规检查",
+       "assigneeRole": "hr_specialist",
+       "phase": "审核"
+      },
+      {
+       "id": "governance_manager_check",
+       "name": "部门负责人确认",
+       "assigneeRole": "department_manager",
+       "phase": "审核"
+      },
+      {
+       "id": "governance_approved",
+       "name": "审批通过",
+       "assigneeRole": "hr_specialist",
+       "phase": "完成"
+      },
+      {
+       "id": "governance_returned",
+       "name": "退回修改",
+       "assigneeRole": "employee",
+       "phase": "审核"
+      }
+     ],
+     "transitions": [
+      {
+       "from": "governance_submit",
+       "to": "governance_hr_check"
+      },
+      {
+       "from": "governance_hr_check",
+       "to": "governance_manager_check",
+       "condition": "合规检查通过"
+      },
+      {
+       "from": "governance_hr_check",
+       "to": "governance_returned",
+       "condition": "需要补充材料"
+      },
+      {
+       "from": "governance_returned",
+       "to": "governance_submit",
+       "condition": "修改后重新提交"
+      },
+      {
+       "from": "governance_manager_check",
+       "to": "governance_approved",
+       "condition": "部门负责人确认"
+      },
+      {
+       "from": "governance_manager_check",
+       "to": "governance_returned",
+       "condition": "部门提出修改意见"
+      }
+     ]
+    },
+    {
+     "id": "onboarding_recovery_chain",
+     "name": "入职任务异常恢复链",
+     "kind": "recovery",
+     "nodes": [
+      {
+       "id": "recovery_detected",
+       "name": "检测任务异常",
+       "assigneeRole": "it_support",
+       "phase": "执行"
+      },
+      {
+       "id": "recovery_retry",
+       "name": "重试入职任务",
+       "assigneeRole": "it_support",
+       "phase": "执行"
+      },
+      {
+       "id": "recovery_resolved",
+       "name": "恢复完成",
+       "assigneeRole": "hr_specialist",
+       "phase": "完成"
+      },
+      {
+       "id": "recovery_escalated",
+       "name": "升级人工处理",
+       "assigneeRole": "hr_admin",
+       "phase": "审核"
+      }
+     ],
+     "transitions": [
+      {
+       "from": "recovery_detected",
+       "to": "recovery_retry",
+       "condition": "可自动重试"
+      },
+      {
+       "from": "recovery_detected",
+       "to": "recovery_escalated",
+       "condition": "超过自动重试次数"
+      },
+      {
+       "from": "recovery_retry",
+       "to": "recovery_resolved",
+       "condition": "任务执行成功"
+      },
+      {
+       "from": "recovery_retry",
+       "to": "recovery_detected",
+       "condition": "任务再次失败"
+      },
+      {
+       "from": "recovery_escalated",
+       "to": "recovery_resolved",
+       "condition": "人工处理完成"
+      }
+     ]
+    }
+   ]
+  },
+  "page": {
+   "pages": [
+    {
+     "id": "onboarding_workbench",
+     "name": "入职工作台",
+     "kind": "kanban",
+     "statusField": "employee.onboarding_status",
+     "fieldBindings": [
+      "employee.employee_id",
+      "employee.employee_name",
+      "employee.department_id",
+      "employee.hire_date",
+      "employee.onboarding_status",
+      "employee.completion_percent",
+      "employee.risk_level"
+     ],
+     "actionPermissions": [
+      "employee:read",
+      "employee:create",
+      "employee:update",
+      "onboarding:approve",
+      "department:assign"
+     ]
+    },
+    {
+     "id": "onboarding_calendar",
+     "name": "入职排期日历",
+     "kind": "calendar",
+     "dateField": "employee.hire_date",
+     "colorBy": "employee.onboarding_status",
+     "fieldBindings": [
+      "employee.employee_name",
+      "employee.department_id",
+      "employee.hire_date",
+      "employee.onboarding_status",
+      "employee.completion_percent"
+     ],
+     "actionPermissions": [
+      "employee:read",
+      "employee:update"
+     ]
+    },
+    {
+     "id": "onboarding_dashboard",
+     "name": "入职运营看板",
+     "kind": "dashboard",
+     "fieldBindings": [
+      "employee.onboarding_status",
+      "employee.completion_percent",
+      "employee.risk_level",
+      "employee.hire_date",
+      "onboarding_task.task_status",
+      "onboarding_document.verification_status"
+     ],
+     "actionPermissions": [
+      "dashboard:view"
+     ],
+     "stats": [
+      {
+       "id": "total_employees",
+       "name": "入职员工总数",
+       "entity": "employee",
+       "metric": "count",
+       "format": "number"
+      },
+      {
+       "id": "average_completion",
+       "name": "平均入职完成度",
+       "entity": "employee",
+       "metric": "avg:employee.completion_percent",
+       "format": "percent"
+      },
+      {
+       "id": "pending_tasks",
+       "name": "待处理任务",
+       "entity": "onboarding_task",
+       "metric": "count",
+       "format": "number"
+      },
+      {
+       "id": "high_risk_employees",
+       "name": "高风险员工",
+       "entity": "employee",
+       "metric": "count",
+       "format": "number"
+      }
+     ],
+     "charts": [
+      {
+       "id": "status_distribution",
+       "name": "入职状态分布",
+       "type": "pie",
+       "dimension": "employee.onboarding_status",
+       "metric": "count"
+      },
+      {
+       "id": "department_headcount",
+       "name": "部门入职人数",
+       "type": "bar",
+       "dimension": "employee.department_id",
+       "metric": "count"
+      }
+     ]
+    },
+    {
+     "id": "onboarding_document_workbench",
+     "name": "入职材料核验",
+     "kind": "workbench",
+     "fieldBindings": [
+      "onboarding_document.document_id",
+      "onboarding_document.employee_id",
+      "onboarding_document.document_type",
+      "onboarding_document.file_url",
+      "onboarding_document.extracted_info",
+      "onboarding_document.verification_status"
+     ],
+     "actionPermissions": [
+      "document:verify",
+      "employee:read"
+     ]
+    },
+    {
+     "id": "hr_role_management",
+     "name": "HR权限管理",
+     "kind": "workbench",
+     "fieldBindings": [
+      "user_account.user_id",
+      "user_account.employee_id",
+      "user_account.role_id",
+      "user_account.account_status"
+     ],
+     "actionPermissions": [
+      "user:manage",
+      "employee:read"
+     ]
+    },
+    {
+     "id": "onboarding_task_workbench",
+     "name": "入职任务执行",
+     "kind": "workbench",
+     "fieldBindings": [
+      "onboarding_task.task_id",
+      "onboarding_task.employee_id",
+      "onboarding_task.task_type",
+      "onboarding_task.assignee_role",
+      "onboarding_task.due_date",
+      "onboarding_task.task_status"
+     ],
+     "actionPermissions": [
+      "task:update",
+      "employee:read"
+     ]
+    }
+   ]
+  },
+  "aigc": {
+   "capabilities": [
+    {
+     "id": "document_ocr_extraction",
+     "name": "入职材料智能识别",
+     "inputFields": [
+      "onboarding_document.file_url",
+      "onboarding_document.document_type"
+     ],
+     "outputField": "onboarding_document.extracted_info",
+     "roleRefs": [
+      "hr_specialist"
+     ]
+    },
+    {
+     "id": "onboarding_risk_assessment",
+     "name": "入职风险智能评估",
+     "inputFields": [
+      "onboarding_document.extracted_info",
+      "employee.employee_name",
+      "employee.department_id"
+     ],
+     "outputField": "employee.risk_level",
+     "roleRefs": [
+      "hr_specialist",
+      "hr_admin"
+     ]
+    },
+    {
+     "id": "onboarding_task_recommendation",
+     "name": "入职任务智能推荐",
+     "inputFields": [
+      "employee.department_id",
+      "employee.position",
+      "employee.hire_date"
+     ],
+     "outputField": "onboarding_task.task_type",
+     "roleRefs": [
+      "hr_specialist"
+     ]
+    }
+   ],
+   "pipelines": [
+    {
+     "id": "document_risk_pipeline",
+     "name": "材料识别与风险评估",
+     "steps": [
+      "document_ocr_extraction",
+      "onboarding_risk_assessment"
+     ]
+    }
+   ]
+  },
+  "appbundle": {
+   "pageBindings": [
+    {
+     "pageRef": "onboarding_workbench",
+     "workflowRef": "employee_onboarding_workflow"
+    },
+    {
+     "pageRef": "onboarding_calendar",
+     "workflowRef": "onboarding_execution"
+    },
+    {
+     "pageRef": "onboarding_dashboard",
+     "workflowRef": "employee_onboarding_workflow"
+    },
+    {
+     "pageRef": "onboarding_document_workbench",
+     "workflowRef": "onboarding_hr_review"
+    },
+    {
+     "pageRef": "hr_role_management",
+     "workflowRef": "governance_approved"
+    },
+    {
+     "pageRef": "onboarding_task_workbench",
+     "workflowRef": "onboarding_execution"
+    }
+   ],
+   "roleRefs": [
+    "employee",
+    "hr_specialist",
+    "department_manager",
+    "hr_admin",
+    "it_support"
+   ],
+   "dataModelRefs": [
+    "employee",
+    "department",
+    "onboarding_task",
+    "onboarding_document",
+    "user_account"
+   ],
+   "invariants": [
+    {
+     "id": "department_required_before_approval",
+     "statement": "员工入职申请在部门分配确认前必须已有有效的所属部门。",
+     "systems": [
+      "datamodel",
+      "workflow"
+     ],
+     "refs": [
+      "employee.department_id",
+      "onboarding_department_review",
+      "department:assign"
+     ]
+    },
+    {
+     "id": "documents_verified_before_execution",
+     "statement": "所有必需入职材料核验通过后才能进入入职任务执行阶段。",
+     "systems": [
+      "datamodel",
+      "workflow",
+      "page"
+     ],
+     "refs": [
+      "onboarding_document.verification_status",
+      "document:verify",
+      "onboarding_execution"
+     ]
+    },
+    {
+     "id": "rejected_application_requires_correction",
+     "statement": "被驳回的入职申请必须返回补正并重新提交，不能直接标记为已完成。",
+     "systems": [
+      "datamodel",
+      "workflow"
+     ],
+     "refs": [
+      "employee.onboarding_status",
+      "onboarding_rejected",
+      "onboarding_draft",
+      "onboarding_completed"
+     ]
+    },
+    {
+     "id": "risk_requires_hr_review",
+     "statement": "高风险员工必须由HR专员审核后才能由部门确认接收。",
+     "systems": [
+      "datamodel",
+      "workflow",
+      "rbac"
+     ],
+     "refs": [
+      "employee.risk_level",
+      "onboarding_hr_review",
+      "onboarding_department_review",
+      "hr_specialist"
+     ]
+    },
+    {
+     "id": "role_changes_only_by_hr_admin",
+     "statement": "系统账号的角色和启停状态只能由HR管理员维护。",
+     "systems": [
+      "datamodel",
+      "rbac",
+      "page"
+     ],
+     "refs": [
+      "user_account.role_id",
+      "user_account.account_status",
+      "user:manage",
+      "hr_admin"
+     ]
+    },
+    {
+     "id": "task_completion_requires_assignee",
+     "statement": "入职任务只有在明确执行角色并由执行角色更新后才能标记为已完成。",
+     "systems": [
+      "datamodel",
+      "rbac",
+      "workflow"
+     ],
+     "refs": [
+      "onboarding_task.assignee_role",
+      "onboarding_task.task_status",
+      "task:update",
+      "onboarding_completed"
+     ]
+    },
+    {
+     "id": "ai_output_requires_human_verification",
+     "statement": "智能识别和风险评估结果只能作为辅助信息，材料核验和最终审批必须由授权HR人员完成。",
+     "systems": [
+      "aigc",
+      "page",
+      "rbac"
+     ],
+     "refs": [
+      "document_ocr_extraction",
+      "onboarding_risk_assessment",
+      "document:verify",
+      "onboarding:approve",
+      "hr_specialist"
+     ]
+    }
+   ],
+   "appIdentity": {
+    "productName": "入职之旅",
+    "theme": "violet",
+    "icon": "users",
+    "nav": "side"
+   }
+  }
+ }
 }

@@ -144,7 +144,7 @@ export function WorkflowRuntimePanel({
               type="button"
               onClick={() => handleAdvance("approve")}
               data-testid="runtime-approve"
-              className="rounded bg-[#1677ff] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#0958d9]"
+              className="rounded bg-[var(--app-primary,#1677ff)] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[var(--app-primary-hover,#0958d9)]"
             >
               通过（{currentNode.assigneeRole || "当前角色"}）
             </button>
@@ -167,7 +167,7 @@ export function WorkflowRuntimePanel({
             type="button"
             onClick={handleStart}
             data-testid="runtime-start"
-            className="rounded bg-[#1677ff] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#0958d9]"
+            className="rounded bg-[var(--app-primary,#1677ff)] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[var(--app-primary-hover,#0958d9)]"
           >
             发起实例
           </button>
