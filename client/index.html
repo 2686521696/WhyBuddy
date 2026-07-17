@@ -97,9 +97,17 @@
           flex: 1;
           min-width: 0;
           flex-direction: column;
+        }
+        /* 加载主块对「视口」绝对居中（用户裁决：水平+垂直居中），
+           不随左右骨架列的宽度偏移 */
+        .boot-splash__focus {
+          position: fixed;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 0;
+          pointer-events: none;
         }
         .boot-splash__title {
           margin-top: 20px;
@@ -216,7 +224,8 @@
           <div class="boot-splash__row"><div class="bb" style="width:24px;height:24px"></div><div class="bb" style="width:128px;height:12px"></div></div>
           <div class="boot-splash__row"><div class="bb" style="width:24px;height:24px"></div><div class="bb" style="width:144px;height:12px"></div></div>
         </aside>
-        <main class="boot-splash__center">
+        <main class="boot-splash__center"></main>
+        <div class="boot-splash__focus">
           <svg width="46" height="46" viewBox="0 0 46 46" role="img" aria-label="SlideRule">
             <rect x="6" y="18" width="9" height="22" rx="2.5" fill="#69a9ff" />
             <rect x="18.5" y="10" width="9" height="30" rx="2.5" fill="#1677ff" />
@@ -226,7 +235,7 @@
           <div class="boot-splash__subtitle">加载推演引擎与最近会话</div>
           <div class="boot-splash__track"><div class="boot-splash__sweep"></div></div>
           <div class="boot-splash__hint" role="status">请稍候，马上就好</div>
-        </main>
+        </div>
         <div class="boot-splash__right">
           <div class="boot-splash__panel">
             <div class="boot-splash__panel-head">
