@@ -170,14 +170,30 @@ export function buildEchartsOption(
     tooltip: { confine: true, textStyle: { color: INK.value, fontSize: 11 } },
   };
 
-  if (spec.type === "pie") {
+  if (spec.type === "pie" || spec.type === "donut") {
     const folded = foldForPie(grouped);
+    // donut（E40.4）：份额环 + 中心合计主数字——"总量本身就是主角"的分布图
+    const total = folded.values.reduce((sum, v) => sum + v, 0);
+    const donutTitle =
+      spec.type === "donut"
+        ? {
+            title: {
+              text: String(Number.isInteger(total) ? total : total.toFixed(1)),
+              subtext: spec.metricLabel,
+              left: "center",
+              top: "36%",
+              textStyle: { fontSize: 22, fontWeight: 600, color: INK.value },
+              subtextStyle: { fontSize: 11, color: INK.label },
+            },
+          }
+        : {};
     return {
       ...base,
+      ...donutTitle,
       series: [
         {
           type: "pie",
-          radius: ["45%", "72%"],
+          radius: spec.type === "donut" ? ["58%", "80%"] : ["45%", "72%"],
           data: folded.categories.map((name, i) => ({
             name,
             value: folded.values[i],
