@@ -479,8 +479,16 @@ const QUICK_STARTS: ReadonlyArray<{
   { label: "从需求文档开始", icon: ClipboardCheck, openFilePicker: true },
 ];
 
-/** E34 空态首页：主张标题 + 模式模板卡（单选高亮）+ 快速开始 chips。 */
-function HomeEmptyState({ isRunning }: { isRunning: boolean }) {
+/** E34 空态首页（借鉴墨刀首页版式）：主张标题 + 模式模板卡（单选高亮）+
+ *  hero 输入区 + 快速开始 chips。 */
+function HomeEmptyState({
+  isRunning,
+  composerSlot,
+}: {
+  isRunning: boolean;
+  /** 空态时唯一的 ComposerDock 挪进首页流（开聊后回底部停靠，二选一渲染） */
+  composerSlot?: React.ReactNode;
+}) {
   const [mode, setMode] = useState("app");
   const fillPrompt = (text: string) => {
     window.dispatchEvent(
@@ -545,6 +553,17 @@ function HomeEmptyState({ isRunning }: { isRunning: boolean }) {
           );
         })}
       </div>
+
+      {/* hero 输入区（墨刀式多行大框）：空态时唯一的 ComposerDock 就在这里，
+          与模式卡/快速开始同宽对齐（对称性用户裁决） */}
+      {composerSlot && (
+        <div
+          className="w-full max-w-[720px]"
+          data-testid="sliderule-hero-composer"
+        >
+          {composerSlot}
+        </div>
+      )}
 
       {/* 快速开始：场景 chips（填意图 / 拉起附件选择器） */}
       <div className="w-full max-w-[720px]">
@@ -833,6 +852,7 @@ export function ClaudeChatSurface({
   llmStreams = [],
   goalText,
   onChallenge,
+  composerSlot,
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -848,6 +868,8 @@ export function ClaudeChatSurface({
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
+  /** E34.1 空态时嵌进首页流的 ComposerDock（墨刀式 hero 输入区） */
+  composerSlot?: React.ReactNode;
 }) {
   const latestStepText = latestTurn
     ? textFromStep(latestTurn.steps.at(-1))
@@ -926,7 +948,10 @@ export function ClaudeChatSurface({
                 {/* E34 空态首页（用户视觉稿 2026-07-17）：品牌主张 + 模式模板卡 +
                     快速开始。模式卡与 chips 都走 fill-prompt 填输入框——同一条
                     推演管线的不同起手式，不造假功能入口。 */}
-                <HomeEmptyState isRunning={isRunning} />
+                <HomeEmptyState
+                  isRunning={isRunning}
+                  composerSlot={composerSlot}
+                />
               </ThreadPrimitive.Empty>
               <div className="py-2">
                 <ThreadPrimitive.Messages
@@ -1186,6 +1211,10 @@ function SlideRuleUnified({
   const conversationTurns =
     uiTurns.length > 0 ? uiTurns : latestTurn ? [latestTurn] : [];
 
+  // E34.1 墨刀式首页：空态（无轮次且未在跑）时 ComposerDock 渲染在首页
+  // hero 里；否则回底部停靠。二选一，永远只有一个输入条实例。
+  const isHomeEmpty = conversationTurns.length === 0 && !isRunning;
+
   return (
     <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
       {/* ONE header row — brand + Work/Code 模式切换 + actions */}
@@ -1241,6 +1270,21 @@ function SlideRuleUnified({
                 llmStreams={isRunning ? llmStreams : []}
                 llmDraftLabel={llmDraftLabel}
                 onChallenge={challengeTurn}
+                composerSlot={
+                  isHomeEmpty ? (
+                    <ComposerDock
+                      input={input}
+                      setInput={setInput}
+                      sendMessage={sendMessage}
+                      isRunning={isRunning}
+                      goal={goal}
+                      hintChips={composerHints}
+                      stop={stop}
+                      placeholder="描述你想构建的业务系统，也可以上传需求文档或现有页面……"
+                      hero
+                    />
+                  ) : undefined
+                }
               />
             }
             activeSkillId={activeSkillId}
@@ -1275,7 +1319,9 @@ function SlideRuleUnified({
         </div>
       }
 
-      {/* Single bottom composer + clarification cards */}
+      {/* Single bottom composer + clarification cards（E34.1 墨刀式：空态时
+          唯一的 ComposerDock 渲染在首页 hero 里，这里只留澄清卡；开聊后
+          回到底部停靠——同一受控组件二选一渲染，input 状态在页面层不丢） */}
       {
         <div className={autopilotTheme.immersionOverlayBottom}>
           <div className="pointer-events-none flex w-full max-w-2xl flex-col items-center">
@@ -1287,15 +1333,17 @@ function SlideRuleUnified({
               />
             )}
 
-            <ComposerDock
-              input={input}
-              setInput={setInput}
-              sendMessage={sendMessage}
-              isRunning={isRunning}
-              goal={goal}
-              hintChips={composerHints}
-              stop={stop}
-            />
+            {!isHomeEmpty && (
+              <ComposerDock
+                input={input}
+                setInput={setInput}
+                sendMessage={sendMessage}
+                isRunning={isRunning}
+                goal={goal}
+                hintChips={composerHints}
+                stop={stop}
+              />
+            )}
           </div>
         </div>
       }

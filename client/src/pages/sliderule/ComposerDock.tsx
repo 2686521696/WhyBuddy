@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Blocks,
+  Paperclip,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -166,6 +167,8 @@ export function ComposerDock({
   isRunning,
   goal,
   stop,
+  placeholder,
+  hero = false,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -176,6 +179,10 @@ export function ComposerDock({
 
   hintChips?: string[];
   stop?: () => void;
+  /** E34.1 空态首页嵌入时的占位文案（墨刀式 hero 输入区） */
+  placeholder?: string;
+  /** E34.2 hero 变体（墨刀式多行大框）：文字区在上、操作排在底行 */
+  hero?: boolean;
 }) {
   // 模式选择器已删（用户裁决 2026-07-10）：深思一轮就是唯一产品路径
   // （Python drive-full-stream 一条消息推到闭环），持续推演是浏览器端
@@ -208,13 +215,15 @@ export function ComposerDock({
   const adjustTextareaHeight = React.useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
+    const minH = hero ? 96 : 44;
+    const maxH = hero ? 200 : 112;
     if (!ta.value.trim()) {
-      ta.style.height = "44px";
+      ta.style.height = `${minH}px`;
       return;
     }
     ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 112)}px`;
-  }, []);
+    ta.style.height = `${Math.max(minH, Math.min(ta.scrollHeight, maxH))}px`;
+  }, [hero]);
 
   React.useEffect(() => {
     adjustTextareaHeight();
@@ -434,10 +443,10 @@ export function ComposerDock({
     }
   }, [isRefining, setInput]);
 
-  const placeholderText = "畅所欲问";
+  const placeholderText = placeholder || "畅所欲问";
 
   return (
-    <div className="pointer-events-none flex w-[min(820px,calc(100vw-32px))] flex-col items-center gap-2">
+    <div className={`pointer-events-none flex flex-col items-center gap-2 ${hero ? "w-full" : "w-[min(820px,calc(100vw-32px))]"}`}>
       {/* 「本轮 · ...」浮标已移除：话题在顶栏 STATUS 常驻，这里只是重复噪声
           （用户反馈：分散注意力，且与交付物按钮在完成态重叠）。 */}
       {attachmentHint && (
@@ -449,7 +458,7 @@ export function ComposerDock({
         </div>
       )}
       <div
-        className={`pointer-events-auto relative w-full rounded-[14px] border bg-white px-3 py-2.5 shadow-[0_10px_36px_rgb(15_23_42/0.12)] transition-colors ${
+        className={`pointer-events-auto relative w-full border bg-white shadow-[0_10px_36px_rgb(15_23_42/0.12)] transition-colors ${hero ? "rounded-[16px] px-4 py-3.5" : "rounded-[14px] px-3 py-2.5"} ${
           isDragOver ? "border-[#1677ff] bg-[#e6f4ff]/40" : "border-[#e5e7eb]"
         }`}
         data-testid="sliderule-composer-dock"
@@ -522,7 +531,7 @@ export function ComposerDock({
             ))}
           </div>
         )}
-        <div className="flex items-end gap-2">
+        <div className={hero ? "flex flex-wrap items-center gap-2" : "flex items-end gap-2"}>
           <div className="relative shrink-0" ref={menuRef}>
             <button
               type="button"
@@ -716,7 +725,22 @@ export function ComposerDock({
             </div>
           </div>
 
-          <div className="min-w-0 flex-1 pb-0.5">
+          {/* E34.2 hero 底行：显式「上传资料」按钮（与 + 菜单里的文件入口
+              同一 fileInputRef，效果图的主入口位） */}
+          {hero && (
+            <button
+              type="button"
+              disabled={isRunning}
+              onClick={() => fileInputRef.current?.click()}
+              data-testid="sliderule-hero-upload"
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-[9px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-stone-600 transition hover:border-[#d3d8e0] hover:bg-[#eef0f4] disabled:opacity-45"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+              上传资料
+            </button>
+          )}
+
+          <div className={hero ? "order-first basis-full" : "min-w-0 flex-1 pb-0.5"}>
             <textarea
               ref={textareaRef}
               value={input}
@@ -736,7 +760,7 @@ export function ComposerDock({
               aria-label={placeholderText}
               rows={1}
               disabled={isRunning}
-              className="block max-h-28 min-h-11 w-full resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-[#1f2329] outline-none placeholder:text-stone-400 disabled:opacity-60"
+              className={`block w-full resize-none bg-transparent text-[15px] leading-6 text-[#1f2329] outline-none placeholder:text-stone-400 disabled:opacity-60 ${hero ? "max-h-[200px] min-h-24 px-1 py-1" : "max-h-28 min-h-11 px-1 py-2.5"}`}
               data-testid="sliderule-composer-input"
             />
           </div>
@@ -744,7 +768,7 @@ export function ComposerDock({
           {/* 优化提示词（用户裁决：原模式切换与左侧 + 菜单重复，改为提示词优化器） */}
           <button
             type="button"
-            className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#e9edf2] disabled:opacity-45 sm:flex"
+            className={`hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#e9edf2] disabled:opacity-45 sm:flex ${hero ? "ml-auto" : ""}`}
             title="优化提示词：把意图改写得更完整（实体/流程/角色/页面/AI）"
             data-testid="sliderule-prompt-refine"
             onClick={refinePrompt}
