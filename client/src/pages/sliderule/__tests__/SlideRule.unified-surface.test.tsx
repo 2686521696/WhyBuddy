@@ -125,25 +125,24 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('href="/sliderule/dev"');
   });
 
-  it("empty session shows THE single empty state: hero + 4 mode cards + quick starts + composer (E34)", () => {
+  it("empty session shows THE single empty state: hero + 3 quick chips + Enter hint (E39 简约稿)", () => {
     const html = renderPage();
 
     expect(html.match(/data-testid="sliderule-empty-state"/g)?.length).toBe(1);
     expect(html).toContain("把一句模糊想法，快速推演成可执行的完整应用");
     expect(html).toContain("能跑起来");
-    // 四张模式模板卡（同一推演管线的起手式，不是假功能入口）
-    for (const key of ["app", "model", "verify", "clone"]) {
-      expect(html).toContain(`data-testid="sliderule-home-mode-${key}"`);
-    }
-    expect(html).toContain("应用推演");
-    expect(html).toContain("页面复刻");
-    // 快速开始 chips（含「从需求文档开始」拉起附件选择器）
-    expect(html).toContain("快速开始");
-    expect(html).toContain('data-testid="sliderule-quick-start-采购审批"');
-    expect(html).toContain(
-      'data-testid="sliderule-quick-start-从需求文档开始"'
-    );
-    // single bottom composer, unchanged
+    // E39：模式模板卡整块移除（用户裁决：右侧密度做减法）
+    expect(html).not.toContain('data-testid="sliderule-home-mode-');
+    // 三个快速开始 chips（完整场景名，无小标题）
+    expect(html).toContain('data-testid="sliderule-quick-start-采购审批应用"');
+    expect(html).toContain('data-testid="sliderule-quick-start-员工入职流程"');
+    expect(html).toContain('data-testid="sliderule-quick-start-客户管理系统"');
+    expect(html).not.toContain("从需求文档开始");
+    expect(html).not.toContain(">快速开始<");
+    // 回车提示（视觉稿底部一行）
+    expect(html).toContain("Shift + Enter 换行");
+    // hero composer 仍在首页流里，且全页仍只有一个 ComposerDock
+    expect(html).toContain('data-testid="sliderule-hero-composer"');
     expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(
       1
     );
