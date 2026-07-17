@@ -430,6 +430,71 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                     f"stat format '{sfmt}' is not one of {'/'.join(STAT_FORMATS)}",
                     ref=sfmt, skill="page",
                 ))
+        # 排行榜声明（E40.4，可选）：entity 真实存在；sortBy 必须解析到 number
+        # 字段（榜单按数值排序——date/enum 排不出"第一名"的语义）。
+        for rank in _as_list(pd.get("rankings")):
+            rd = _as_dict(rank)
+            rid = rd.get("id") or rd.get("name") or "<unnamed>"
+            entity_ref = str(rd.get("entity") or "").strip()
+            if not entity_ref or entity_ref not in entity_ids:
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].rankings[{rid}].entity",
+                    f"ranking entity '{entity_ref or '<missing>'}' not found in datamodel entities",
+                    ref=entity_ref, skill="page",
+                ))
+            sort_ref = str(rd.get("sortBy") or "").strip()
+            if not sort_ref or sort_ref not in field_refs:
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].rankings[{rid}].sortBy",
+                    f"ranking sortBy '{sort_ref or '<missing>'}' not found in datamodel fields",
+                    ref=sort_ref, skill="page",
+                ))
+            elif field_types.get(sort_ref) != "number":
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].rankings[{rid}].sortBy",
+                    f"ranking sortBy '{sort_ref}' must be a number field (got '{field_types.get(sort_ref)}')",
+                    ref=sort_ref, skill="page",
+                ))
+        # 动态流声明（E40.4，可选）：entity 真实存在；timeField 必须是 date
+        # 字段（按时间倒序的流）；levelField 出现时必须是 enum 字段（级别
+        # 标签的颜色语义来自其 options.tone）。
+        for feed in _as_list(pd.get("feeds")):
+            fd2 = _as_dict(feed)
+            fid = fd2.get("id") or fd2.get("name") or "<unnamed>"
+            entity_ref = str(fd2.get("entity") or "").strip()
+            if not entity_ref or entity_ref not in entity_ids:
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].feeds[{fid}].entity",
+                    f"feed entity '{entity_ref or '<missing>'}' not found in datamodel entities",
+                    ref=entity_ref, skill="page",
+                ))
+            time_ref = str(fd2.get("timeField") or "").strip()
+            if not time_ref or time_ref not in field_refs:
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].feeds[{fid}].timeField",
+                    f"feed timeField '{time_ref or '<missing>'}' not found in datamodel fields",
+                    ref=time_ref, skill="page",
+                ))
+            elif field_types.get(time_ref) != "date":
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].feeds[{fid}].timeField",
+                    f"feed timeField '{time_ref}' must be a date field (got '{field_types.get(time_ref)}')",
+                    ref=time_ref, skill="page",
+                ))
+            level_ref = str(fd2.get("levelField") or "").strip()
+            if level_ref:
+                if level_ref not in field_refs:
+                    findings.append(_finding(
+                        DANGLING, f"page.pages[{pid}].feeds[{fid}].levelField",
+                        f"feed levelField '{level_ref}' not found in datamodel fields",
+                        ref=level_ref, skill="page",
+                    ))
+                elif field_types.get(level_ref) != "enum":
+                    findings.append(_finding(
+                        DANGLING, f"page.pages[{pid}].feeds[{fid}].levelField",
+                        f"feed levelField '{level_ref}' must be an enum field (got '{field_types.get(level_ref)}')",
+                        ref=level_ref, skill="page",
+                    ))
 
     # 4. aigc inputFields/outputField ∈ datamodel fields; roleRefs ∈ rbac.roles
     for cap in _as_list(aigc.get("capabilities")):

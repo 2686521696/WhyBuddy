@@ -363,6 +363,65 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     ).toBeNull();
   });
 
+  it("排行榜/动态流/donut（E40.4）：合法声明派生，悬空引用诚实丢弃", () => {
+    const model: FiveSystemModel = {
+      ...MODEL,
+      datamodel: {
+        entities: [
+          {
+            id: "task",
+            name: "任务",
+            fields: [
+              { id: "title", name: "标题", type: "string" },
+              { id: "score", name: "评分", type: "number" },
+              { id: "due", name: "截止", type: "date" },
+              {
+                id: "level",
+                name: "级别",
+                type: "enum",
+                options: [{ id: "high", label: "高", tone: "danger" }],
+              },
+            ],
+          },
+        ],
+      },
+      page: {
+        pages: [
+          {
+            id: "p_monitor",
+            name: "监控",
+            fieldBindings: ["task.title"],
+            rankings: [
+              { id: "rk_ok", name: "评分榜", entity: "task", sortBy: "task.score", limit: 5 },
+              { id: "rk_bad", name: "坏榜", entity: "task", sortBy: "task.ghost" },
+            ],
+            feeds: [
+              { id: "fd_ok", name: "动态", entity: "task", timeField: "task.due", levelField: "task.level" },
+              { id: "fd_bad", name: "坏流", entity: "task", timeField: "task.title" },
+            ],
+            charts: [
+              { id: "ch_donut", name: "环", type: "donut", dimension: "task.level", metric: "count" },
+            ],
+          },
+        ],
+      },
+    };
+    const schema = deriveAppRuntimeSchema(model)!;
+    const pageSchema = schema.pages.find(p => p.id === "p_monitor")!;
+    expect(pageSchema.rankings.map(r => r.id)).toEqual(["rk_ok"]);
+    expect(pageSchema.rankings[0]).toMatchObject({
+      sortFieldId: "score",
+      sortLabel: "评分",
+      limit: 5,
+    });
+    expect(pageSchema.feeds.map(f => f.id)).toEqual(["fd_ok"]);
+    expect(pageSchema.feeds[0]).toMatchObject({
+      timeFieldId: "due",
+      levelFieldId: "level",
+    });
+    expect(pageSchema.charts[0].type).toBe("donut");
+  });
+
   it("应用身份段（E40.2）：产品名权威 > 会话标题，枚举缺省回退与历史一致", () => {
     // 无身份段（老模型）：缺省 azure/boxes/side，appName = 会话标题
     const legacy = deriveAppRuntimeSchema(MODEL, "健身房系统")!;

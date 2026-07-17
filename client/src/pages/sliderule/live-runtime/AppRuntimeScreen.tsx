@@ -1230,6 +1230,155 @@ export function AppRuntimeScreen({
           })}
         </div>
       )}
+      {(page.rankings.length > 0 || page.feeds.length > 0) && (
+        <div
+          style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}
+          data-testid="app-runtime-page-widgets"
+        >
+          {page.rankings.map(ranking => {
+            const rankRows = [...(state.entities[ranking.entityId] ?? [])]
+              .map(row => ({ row, v: Number(row.values[ranking.sortFieldId]) }))
+              .filter(({ v }) => Number.isFinite(v))
+              .sort((a, b) => b.v - a.v)
+              .slice(0, ranking.limit);
+            const titleFieldId =
+              page.detailFields.find(
+                f => f.type === "string" && f.id !== "id"
+              )?.id ?? "id";
+            return (
+              <Card
+                key={ranking.id}
+                size="small"
+                title={ranking.label}
+                style={{ flex: 1, minWidth: 240 }}
+                data-testid={`app-runtime-ranking-${ranking.id}`}
+              >
+                {rankRows.length === 0 ? (
+                  <div style={{ color: "#999", fontSize: 12 }}>
+                    暂无数据 — 录入带「{ranking.sortLabel}」的记录后自动上榜
+                  </div>
+                ) : (
+                  rankRows.map(({ row, v }, i) => (
+                    <div
+                      key={row.id || String(i)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "5px 0",
+                        borderBottom: i < rankRows.length - 1 ? "1px solid #f5f5f5" : "none",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: 6,
+                          textAlign: "center",
+                          lineHeight: "20px",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          flexShrink: 0,
+                          background: i < 3 ? "var(--app-primary,#1677ff)" : "#f0f0f0",
+                          color: i < 3 ? "#fff" : "#8c8c8c",
+                        }}
+                      >
+                        {i + 1}
+                      </span>
+                      <span
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          fontSize: 13,
+                        }}
+                      >
+                        {String(row.values[titleFieldId] ?? "—")}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#262626" }}>
+                        {v.toLocaleString("zh-CN")}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </Card>
+            );
+          })}
+          {page.feeds.map(feed => {
+            const levelField = page.detailFields.find(f => f.id === feed.levelFieldId);
+            const feedRows = [...(state.entities[feed.entityId] ?? [])]
+              .filter(row => row.values[feed.timeFieldId])
+              .sort((a, b) =>
+                String(b.values[feed.timeFieldId] ?? "").localeCompare(
+                  String(a.values[feed.timeFieldId] ?? "")
+                )
+              )
+              .slice(0, 6);
+            const titleFieldId =
+              page.detailFields.find(
+                f => f.type === "string" && f.id !== "id"
+              )?.id ?? "id";
+            return (
+              <Card
+                key={feed.id}
+                size="small"
+                title={feed.label}
+                style={{ flex: 1, minWidth: 240 }}
+                data-testid={`app-runtime-feed-${feed.id}`}
+              >
+                {feedRows.length === 0 ? (
+                  <div style={{ color: "#999", fontSize: 12 }}>
+                    暂无动态 — 新记录会按时间倒序流入这里
+                  </div>
+                ) : (
+                  feedRows.map((row, i) => {
+                    const levelValue = String(row.values[feed.levelFieldId ?? ""] ?? "");
+                    const option = levelField?.options?.find(o => o.id === levelValue);
+                    return (
+                      <div
+                        key={row.id || String(i)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "5px 0",
+                          borderBottom: i < feedRows.length - 1 ? "1px solid #f5f5f5" : "none",
+                        }}
+                      >
+                        {option && (
+                          <Tag
+                            color={option.tone === "danger" ? "error" : option.tone}
+                            style={{ marginInlineEnd: 0 }}
+                          >
+                            {option.label}
+                          </Tag>
+                        )}
+                        <span
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            fontSize: 13,
+                          }}
+                        >
+                          {String(row.values[titleFieldId] ?? "—")}
+                        </span>
+                        <span style={{ fontSize: 11, color: "#8c8c8c", flexShrink: 0 }}>
+                          {String(row.values[feed.timeFieldId] ?? "")}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
       {page.charts.length > 0 && (
         <div
           style={{

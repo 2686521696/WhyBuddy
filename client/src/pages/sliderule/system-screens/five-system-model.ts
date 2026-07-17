@@ -112,6 +112,24 @@ export interface PageStatSpec {
   format?: string;
 }
 
+/** 排行榜声明（E40.4）：entity 行来源，sortBy 必须是 number 字段，limit 3-10。 */
+export interface PageRankingSpec {
+  id?: string;
+  name?: string;
+  entity?: string;
+  sortBy?: string;
+  limit?: number;
+}
+
+/** 动态流声明（E40.4）：timeField 必须是 date 字段（倒序流），levelField 可选 enum。 */
+export interface PageFeedSpec {
+  id?: string;
+  name?: string;
+  entity?: string;
+  timeField?: string;
+  levelField?: string;
+}
+
 export interface PageModelDef {
   id?: string;
   name?: string;
@@ -127,6 +145,8 @@ export interface PageModelDef {
   actionPermissions?: string[];
   stats?: PageStatSpec[];
   charts?: PageChartSpec[];
+  rankings?: PageRankingSpec[];
+  feeds?: PageFeedSpec[];
 }
 
 export interface AigcCapability {

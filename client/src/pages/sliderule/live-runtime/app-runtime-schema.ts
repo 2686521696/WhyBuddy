@@ -51,7 +51,7 @@ export interface AppAiActionSchema {
 export interface AppPageChartSchema {
   id: string;
   label: string;
-  type: "bar" | "line" | "pie";
+  type: "bar" | "line" | "pie" | "donut";
   /** 分组维度所在实体（= 取行数据的实体） */
   entityId: string;
   /** 分组维度字段 id */
@@ -79,6 +79,25 @@ export interface AppPageStatSchema {
   /** metric 为 sum/avg 时的取数字段 id */
   metricFieldId?: string;
   format: "number" | "money" | "percent";
+}
+
+/** 排行榜（E40.4）：行按 sortBy 数值倒序取 top-limit（前三名徽标高亮）。 */
+export interface AppPageRankingSchema {
+  id: string;
+  label: string;
+  entityId: string;
+  sortFieldId: string;
+  sortLabel: string;
+  limit: number;
+}
+
+/** 动态流（E40.4）：行按 timeField 倒序；levelField 的 option tone 给级别上色。 */
+export interface AppPageFeedSchema {
+  id: string;
+  label: string;
+  entityId: string;
+  timeFieldId: string;
+  levelFieldId?: string;
 }
 
 /**
@@ -117,6 +136,10 @@ export interface AppPageSchema {
   aiActions: AppAiActionSchema[];
   /** 模型声明的页面级 KPI 统计卡（表格上方的指标带） */
   stats: AppPageStatSchema[];
+  /** 模型声明的排行榜（E40.4，悬空引用派生时丢弃） */
+  rankings: AppPageRankingSchema[];
+  /** 模型声明的动态流（E40.4，悬空引用派生时丢弃） */
+  feeds: AppPageFeedSchema[];
   /** 模型声明的页面级图表（库无关声明 → 运行应用用 ECharts 渲染） */
   charts: AppPageChartSchema[];
   /** 页面范式（视图骨架；绑定失效已降级 workbench） */
@@ -351,7 +374,10 @@ export function deriveAppRuntimeSchema(
       charts.push({
         id: chart.id || `chart-${id}-${ci}`,
         label: chart.name || chart.id || `图表 ${ci + 1}`,
-        type: rawType === "line" || rawType === "pie" ? rawType : "bar",
+        type:
+          rawType === "line" || rawType === "pie" || rawType === "donut"
+            ? rawType
+            : "bar",
         entityId: dimEntityId,
         dimensionFieldId: dimFieldId,
         dimensionLabel: dimField.name || dimFieldId,
@@ -392,6 +418,60 @@ export function deriveAppRuntimeSchema(
       view = { kind: "dashboard" };
     }
 
+    // E40.4 排行榜/动态流：引用解析失败的整条丢弃（门禁负责标红，
+    // 运行应用不渲染坏声明）——与 stats/charts 同一诚实降级纪律。
+    const rankings: AppPageRankingSchema[] = [];
+    for (const [ri, rank] of (page.rankings ?? []).entries()) {
+      const sortRef = String(rank.sortBy ?? "");
+      const sdot = sortRef.indexOf(".");
+      if (sdot <= 0) continue;
+      const sEntityId = sortRef.slice(0, sdot);
+      const sField = entityById
+        .get(sEntityId)
+        ?.fields?.find(f => f.id === sortRef.slice(sdot + 1));
+      if (!sField || String(sField.type).toLowerCase() !== "number") continue;
+      const rawLimit = Number(rank.limit ?? 5);
+      rankings.push({
+        id: rank.id || `ranking-${id}-${ri}`,
+        label: rank.name || rank.id || `排行 ${ri + 1}`,
+        entityId: sEntityId,
+        sortFieldId: sField.id,
+        sortLabel: sField.name || sField.id,
+        limit: Number.isFinite(rawLimit) ? Math.min(10, Math.max(3, rawLimit)) : 5,
+      });
+    }
+
+    const feeds: AppPageFeedSchema[] = [];
+    for (const [fi, feed] of (page.feeds ?? []).entries()) {
+      const timeRef = String(feed.timeField ?? "");
+      const tdot = timeRef.indexOf(".");
+      if (tdot <= 0) continue;
+      const tEntityId = timeRef.slice(0, tdot);
+      const tField = entityById
+        .get(tEntityId)
+        ?.fields?.find(f => f.id === timeRef.slice(tdot + 1));
+      if (!tField || String(tField.type).toLowerCase() !== "date") continue;
+      const levelRef = String(feed.levelField ?? "");
+      const ldot = levelRef.indexOf(".");
+      const lField =
+        ldot > 0 && levelRef.slice(0, ldot) === tEntityId
+          ? entityById
+              .get(tEntityId)
+              ?.fields?.find(
+                f =>
+                  f.id === levelRef.slice(ldot + 1) &&
+                  String(f.type).toLowerCase() === "enum"
+              )
+          : undefined;
+      feeds.push({
+        id: feed.id || `feed-${id}-${fi}`,
+        label: feed.name || feed.id || `动态 ${fi + 1}`,
+        entityId: tEntityId,
+        timeFieldId: tField.id,
+        levelFieldId: lField?.id,
+      });
+    }
+
     return {
       id,
       title: page.name || id,
@@ -404,6 +484,8 @@ export function deriveAppRuntimeSchema(
         workflowLinkedPages.has(id) || workflowLinkedPages.has(page.id ?? ""),
       aiActions: entityId ? (aiActionsByEntity.get(entityId) ?? []) : [],
       stats,
+      rankings,
+      feeds,
       charts,
       view,
     };

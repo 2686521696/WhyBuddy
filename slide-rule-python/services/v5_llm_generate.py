@@ -77,6 +77,15 @@ Required shape (use these exact keys):
                  {"id": "<id>", "name": "<label>", "type": "__CHART_TYPES__",
                   "dimension": "<entity_id>.<field_id>",
                   "metric": "__CHART_METRIC_FORMS__"}
+               ],
+               "rankings": [
+                 {"id": "<id>", "name": "<label>", "entity": "<entity_id>",
+                  "sortBy": "<entity_id>.<number_field_id>", "limit": 5}
+               ],
+               "feeds": [
+                 {"id": "<id>", "name": "<label>", "entity": "<entity_id>",
+                  "timeField": "<entity_id>.<date_field_id>",
+                  "levelField": "<entity_id>.<enum_field_id> (optional)"}
                ]}]
   },
   "aigc": {
@@ -168,7 +177,19 @@ Content-quality rules (checked by a deterministic regression gate):
   over a number field. Both MUST reference real datamodel fields. "type" picks
   the form by the data's job: bar = compare magnitudes across categories,
   line = change over an ordered/date dimension, pie = share of a whole with
-  FEW (≤5) categories. Pure CRUD pages need no charts.
+  FEW (≤5) categories, donut = share of a whole with the TOTAL as the hero
+  number in the center (pick donut when the total itself matters). Pure CRUD
+  pages need no charts.
+- RANKINGS (leaderboard, optional): monitoring/analytics pages where "who is
+  top-N" matters (hot content, top spenders, best performers) may declare ONE
+  ranking: "entity" is the row source, "sortBy" MUST be a real NUMBER field
+  (rank by score/amount/count-like values), "limit" 3-10. Skip when ranking
+  carries no business meaning.
+- FEEDS (activity/alert stream, optional): overview pages that watch things
+  happen (alerts, submissions, escalations) may declare ONE feed: "entity" is
+  the row source, "timeField" MUST be a real DATE field (stream orders by it,
+  newest first), "levelField" (optional) MUST be an enum field — its options'
+  tones color the level tag (danger=红/warning=橙…). Skip on pure CRUD pages.
 - ENUM OPTIONS (status semantics): EVERY enum field MUST declare "options" —
   2-6 concrete values in the intent's language, each with a "tone" carrying
   its color semantics: success = positive/done (已通过/已完成), processing =

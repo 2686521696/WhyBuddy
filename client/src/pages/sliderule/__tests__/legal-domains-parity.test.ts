@@ -20,7 +20,7 @@ import {
 // 渲染器当前已实现的集合（app-runtime-schema.ts 的 switch/联合类型覆盖面）。
 // 账本加值 → 此清单不含 → 测试红 → 去补渲染实现，再更新清单。
 const RENDERER_PAGE_KINDS = ["workbench", "kanban", "calendar", "dashboard"];
-const RENDERER_CHART_TYPES = ["bar", "line", "pie"];
+const RENDERER_CHART_TYPES = ["bar", "line", "pie", "donut"];
 const RENDERER_STAT_FORMATS = ["number", "money", "percent"];
 
 describe("legal-domains parity（四方同账，E40.1）", () => {
