@@ -105,7 +105,13 @@ export interface AppPageFeedSchema {
  * 字段绑定必须解析到本页主实体的对应类型字段——绑不上时诚实降级
  * workbench（门禁负责标红，运行应用不渲染坏视图）。
  */
-export type AppPageKind = "workbench" | "kanban" | "calendar" | "dashboard";
+export type AppPageKind =
+  | "workbench"
+  | "kanban"
+  | "calendar"
+  | "dashboard"
+  | "wizard"
+  | "monitor";
 
 export interface AppPageViewSchema {
   kind: AppPageKind;
@@ -416,6 +422,13 @@ export function deriveAppRuntimeSchema(
       }
     } else if (rawKind === "dashboard") {
       view = { kind: "dashboard" };
+    } else if (rawKind === "monitor") {
+      view = { kind: "monitor" };
+    } else if (rawKind === "wizard") {
+      // 向导范式需要流程步骤作骨架——未挂 workflow 的页诚实降级 workbench
+      const linked =
+        workflowLinkedPages.has(id) || workflowLinkedPages.has(page.id ?? "");
+      if (linked) view = { kind: "wizard" };
     }
 
     // E40.4 排行榜/动态流：引用解析失败的整条丢弃（门禁负责标红，

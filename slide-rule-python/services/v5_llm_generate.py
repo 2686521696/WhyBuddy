@@ -185,6 +185,14 @@ Content-quality rules (checked by a deterministic regression gate):
   ranking: "entity" is the row source, "sortBy" MUST be a real NUMBER field
   (rank by score/amount/count-like values), "limit" 3-10. Skip when ranking
   carries no business meaning.
+- PAGE KINDS: workbench = CRUD console (default), kanban = status board
+  (needs statusField), calendar = date-driven (needs dateField), dashboard =
+  chart-first analytics, monitor = ops overview (KPI row on top + main charts
+  left + rankings/feeds side column — declare stats AND charts AND a ranking
+  or feed to fill the skeleton), wizard = step-by-step guided flow (the page
+  MUST be bound to the workflow via appbundle.pageBindings workflowRef —
+  its steps ARE the workflow nodes). Pick by the page's job, vary across
+  pages — real products mix kinds.
 - FEEDS (activity/alert stream, optional): overview pages that watch things
   happen (alerts, submissions, escalations) may declare ONE feed: "entity" is
   the row source, "timeField" MUST be a real DATE field (stream orders by it,
