@@ -173,6 +173,14 @@ export interface InvariantNotes {
   }>;
 }
 
+/** 展示层声明修复留痕（E37：page.charts/stats 的近邻改写与枚举违规剔除） */
+export interface PresentationNotes {
+  repaired?: Array<{ pageId?: string; path?: string; from?: string; to?: string }>;
+  droppedCharts?: Array<{ pageId?: string; chartId?: string; reason?: string }>;
+  droppedStats?: Array<{ pageId?: string; statId?: string; reason?: string }>;
+  clearedFormats?: Array<{ pageId?: string; statId?: string; format?: string }>;
+}
+
 export interface AppBundleSection {
   pageBindings?: AppBundlePageBinding[];
   roleRefs?: string[];
@@ -181,6 +189,8 @@ export interface AppBundleSection {
   invariants?: ModelInvariant[];
   /** 不变式引用修复/剔除留痕（AppBundle 屏如实展示） */
   invariantNotes?: InvariantNotes;
+  /** 展示层声明修复/剔除留痕（E37，AppBundle 屏如实展示） */
+  presentationNotes?: PresentationNotes;
 }
 
 export interface FiveSystemModel {

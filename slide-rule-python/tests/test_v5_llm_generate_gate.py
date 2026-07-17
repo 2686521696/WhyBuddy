@@ -629,6 +629,118 @@ def test_diagnostic_never_affects_closure_hash(monkeypatch):
     assert r1["closureHash"] == r2["closureHash"]
 
 
+# ---------------------------------------------------------------------------
+# E37：展示层声明修复（page.charts/stats）+ 门裁决回喂重试
+# 用户实测案例：chart.metric 写 avg:*（stats 合法、charts 非法的枚举陷阱）
+# → 门禁硬拦 → 整模型 0/6 报废 → 右侧无应用。
+# ---------------------------------------------------------------------------
+
+
+def test_repair_drops_illegal_chart_metric_and_model_passes_gate():
+    """avg: 图表指标剔除留痕（不改写撒谎），其余图表保留，模型照常过门。"""
+    from services.v5_model_repair import repair_five_system_model
+
+    m = _valid_library_model()
+    m["page"]["pages"][0]["charts"] = [
+        {"id": "ch_ok", "type": "bar", "dimension": "loan.status", "metric": "count"},
+        {"id": "ch_avg", "type": "pie", "dimension": "loan.status", "metric": "avg:loan.due_date"},
+    ]
+    result = repair_five_system_model(m)
+    fixed = result["model"]
+    assert [c["id"] for c in fixed["page"]["pages"][0]["charts"]] == ["ch_ok"]
+    notes = fixed["appbundle"]["presentationNotes"]
+    assert notes["droppedCharts"][0]["chartId"] == "ch_avg"
+    # 原模型不被修改（纯函数）
+    assert len(m["page"]["pages"][0]["charts"]) == 2
+    gate = validate_five_system_model(fixed)
+    assert gate["passed"] is True, gate["findings"]
+
+
+def test_repair_presentation_near_match_and_format_clear():
+    """图表维度拼错近邻修复；统计卡实体拼错修复、非法 format 清除、
+    无解引用整卡剔除——全部留痕，修完过门。"""
+    from services.v5_model_repair import repair_five_system_model
+
+    m = _valid_library_model()
+    m["page"]["pages"][0]["charts"] = [
+        {"id": "ch_typo", "type": "bar", "dimension": "loan.statu", "metric": "count"},
+    ]
+    m["page"]["pages"][1]["stats"] = [
+        {"id": "st_typo", "entity": "loans", "metric": "count", "format": "number"},
+        {"id": "st_badfmt", "entity": "loan", "metric": "count", "format": "fancy"},
+        {"id": "st_hopeless", "entity": "quantum_ledger", "metric": "count"},
+    ]
+    result = repair_five_system_model(m)
+    fixed = result["model"]
+    assert fixed["page"]["pages"][0]["charts"][0]["dimension"] == "loan.status"
+    stats = {s["id"]: s for s in fixed["page"]["pages"][1]["stats"]}
+    assert stats["st_typo"]["entity"] == "loan"
+    assert "format" not in stats["st_badfmt"]
+    assert "st_hopeless" not in stats
+    notes = fixed["appbundle"]["presentationNotes"]
+    assert {r["from"] for r in notes["repaired"]} == {"loan.statu", "loans"}
+    assert notes["clearedFormats"][0]["statId"] == "st_badfmt"
+    assert notes["droppedStats"][0]["statId"] == "st_hopeless"
+    gate = validate_five_system_model(fixed)
+    assert gate["passed"] is True, gate["findings"]
+
+
+def test_repair_presentation_noop_for_clean_model():
+    """无 charts/stats 或全合法 → 零变化、无 presentationNotes（老模型不受扰）。"""
+    from services.v5_model_repair import repair_five_system_model
+
+    clean = _valid_library_model()
+    r = repair_five_system_model(clean)
+    assert "presentationNotes" not in r["model"]["appbundle"]
+    assert r["model"]["page"] == clean["page"]
+
+
+def test_gate_feedback_retry_recovers_blocked_model():
+    """门裁决回喂（E37）：第一版骨架级悬空引用被门拦（修复器不管骨架）→
+    findings 喂回重生成一次 → 第二版过门 → 证据照常产出（不再 0/6）。"""
+    from services.v5_capability_executor import _try_llm_generate_evidence
+
+    calls: list = []
+
+    def fake(_goal):
+        calls.append(_goal)
+        return _broken_model() if len(calls) == 1 else _valid_library_model()
+
+    artifacts = _try_llm_generate_evidence("宠物美容预约平台", fake)
+    assert artifacts is not None, "回喂重试过门后不应 fail-closed"
+    assert len(calls) == 2, "应恰好重试一次"
+    assert set(artifacts.keys()) == set(REQUIRED_EVIDENCE_KEYS)
+
+
+def test_gate_feedback_retry_still_fail_closed_when_both_blocked():
+    """两版都被门拦 → 仍 fail-closed（回喂是增强，不是放行通道）。"""
+    import services.v5_capability_executor as executor
+    from services.v5_capability_executor import _try_llm_generate_evidence
+
+    artifacts = _try_llm_generate_evidence("宠物美容预约平台", lambda g: _broken_model())
+    assert artifacts is None
+    assert executor._llm_generate_diagnostic["code"] == "MODEL_GATE_BLOCKED"
+
+
+def test_default_llm_fn_appends_gate_feedback_to_prompt(monkeypatch):
+    """gate_feedback 只作用于默认 LLM 通道：喂回文本必须进 user prompt。"""
+    import services.v5_llm_generate as gen
+
+    captured = {}
+
+    def fake_call(messages, **kwargs):
+        captured["user"] = messages[-1]["content"]
+        raise RuntimeError("stop here")  # 只验 prompt 装配，不真调 LLM
+
+    import sliderule_llm.client as llm_client
+
+    monkeypatch.setattr(llm_client, "call_llm_json_with_shape", fake_call)
+    monkeypatch.setattr(gen, "_structured_llm_json_fn", lambda messages: None)
+    gen._default_llm_json_fn("测试意图", gate_feedback="- page.charts[x].metric: bad")
+    assert "page.charts[x].metric: bad" in captured.get("user", "")
+    assert "FAILED the deterministic structural gate" in captured["user"]
+
+
 if __name__ == "__main__":
     # Allow running directly without pytest (fixture-taking tests are pytest-only).
     import inspect
