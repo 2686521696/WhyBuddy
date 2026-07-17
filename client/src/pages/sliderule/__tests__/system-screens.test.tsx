@@ -633,6 +633,36 @@ describe("AppBundleScreen", () => {
     expect(html).toContain("blocked 0/6");
     expect(html).not.toContain('data-testid="appbundle-bindings"');
   });
+
+  it("presentationNotes 留痕如实展示（E37：图表/统计卡自动修复与剔除）", () => {
+    const model: FiveSystemModel = {
+      ...MODEL,
+      appbundle: {
+        ...MODEL.appbundle,
+        presentationNotes: {
+          repaired: [{ pageId: "p_dash", path: "dimension", from: "loan.statu", to: "loan.status" }],
+          droppedCharts: [{ pageId: "p_dash", chartId: "ch_avg", reason: "图表指标 'avg:x' 只能是 count 或 sum" }],
+          clearedFormats: [{ pageId: "p_dash", statId: "st_bad", format: "fancy" }],
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <AppBundleScreen model={model} publishClosure={CLOSURE_CLOSED} />
+    );
+    expect(html).toContain('data-testid="appbundle-presentation-notes"');
+    expect(html).toContain("修复 1 处字段引用");
+    expect(html).toContain("loan.statu → loan.status");
+    expect(html).toContain("剔除 1 个无法渲染的图表");
+    expect(html).toContain("ch_avg");
+    expect(html).toContain("清除 1 个非法格式声明");
+  });
+
+  it("无 presentationNotes → 不渲染该留痕块（老模型零变化）", () => {
+    const html = renderToStaticMarkup(
+      <AppBundleScreen model={MODEL} publishClosure={CLOSURE_CLOSED} />
+    );
+    expect(html).not.toContain('data-testid="appbundle-presentation-notes"');
+  });
 });
 
 // ---------------------------------------------------------------------------

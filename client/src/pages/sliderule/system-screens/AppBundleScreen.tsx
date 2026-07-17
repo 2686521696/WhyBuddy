@@ -414,6 +414,52 @@ export function AppBundleScreen({
           </div>
         )}
 
+        {/* 展示层修复留痕（E37，v5_model_repair）：图表/统计卡声明的近邻改写
+            与枚举违规剔除——诚实透出，不静默。 */}
+        {bundle?.presentationNotes &&
+          ((bundle.presentationNotes.repaired?.length ?? 0) > 0 ||
+            (bundle.presentationNotes.droppedCharts?.length ?? 0) > 0 ||
+            (bundle.presentationNotes.droppedStats?.length ?? 0) > 0 ||
+            (bundle.presentationNotes.clearedFormats?.length ?? 0) > 0) && (
+            <div
+              className="mt-3 rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-700 ring-1 ring-amber-200"
+              data-testid="appbundle-presentation-notes"
+            >
+              <span className="font-semibold">展示层自动修复：</span>
+              {(bundle.presentationNotes.repaired?.length ?? 0) > 0 && (
+                <span>
+                  修复 {bundle.presentationNotes.repaired!.length} 处字段引用
+                  （{bundle.presentationNotes.repaired!
+                    .map((r) => `${r.from} → ${r.to}`)
+                    .join("；")}）
+                </span>
+              )}
+              {(bundle.presentationNotes.droppedCharts?.length ?? 0) > 0 && (
+                <span className="ml-1">
+                  剔除 {bundle.presentationNotes.droppedCharts!.length} 个无法渲染的图表
+                  （{bundle.presentationNotes.droppedCharts!
+                    .map((d) => d.chartId || "")
+                    .filter(Boolean)
+                    .join("；")}）
+                </span>
+              )}
+              {(bundle.presentationNotes.droppedStats?.length ?? 0) > 0 && (
+                <span className="ml-1">
+                  剔除 {bundle.presentationNotes.droppedStats!.length} 个无法渲染的统计卡
+                  （{bundle.presentationNotes.droppedStats!
+                    .map((d) => d.statId || "")
+                    .filter(Boolean)
+                    .join("；")}）
+                </span>
+              )}
+              {(bundle.presentationNotes.clearedFormats?.length ?? 0) > 0 && (
+                <span className="ml-1">
+                  清除 {bundle.presentationNotes.clearedFormats!.length} 个非法格式声明（回默认渲染）
+                </span>
+              )}
+            </div>
+          )}
+
         {/* Closure meta */}
         {publishClosure && (publishClosure.closureHash || publishClosure.stableDigest || publishClosure.generatedAt) && (
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono text-stone-400">
