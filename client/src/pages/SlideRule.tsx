@@ -118,6 +118,7 @@ import {
 } from "@/lib/api-client";
 import { deriveApplication, slideRule } from "@/lib/skills/slideRule";
 import { SlideRuleStudio } from "./sliderule/SlideRuleStudio";
+import { WorkbenchLoadingScreen } from "./sliderule/WorkbenchLoadingScreen";
 import { Response } from "@/components/ai/response";
 import { Shimmer } from "@/components/ai/shimmer";
 
@@ -1659,6 +1660,7 @@ function SlideRuleSessionBody({
     llmDraft,
     llmDraftLabel,
     llmStreams,
+    sessionHydrated,
   } = useSlideRuleSession({
     // E18：Pages 下 activeSessionId 也可能是画廊示例（pages-demo-*，
     // 会话壳已做过准入回落），不再钉死主演示
@@ -2134,6 +2136,8 @@ function SlideRuleSessionBody({
           visibleCrossRuntimeGraph ? "present" : "absent"
         }
       >
+        {/* E33 加载幕布：会话水合期间盖全屏（骨架+品牌+进度），完成即淡出 */}
+        <WorkbenchLoadingScreen visible={!sessionHydrated} />
         <SlideRuleUnified {...shared} />
       </div>
     );
