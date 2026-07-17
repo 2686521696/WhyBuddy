@@ -18,50 +18,233 @@
   </head>
 
   <body>
-    <!-- 首屏占位：JS 主包下载/执行期间显示品牌 + 加载动画（React 挂载后整体替换）。
-         内联样式保证零额外请求；GitHub Pages 弱网下避免长时间白屏。 -->
+    <!-- 首屏占位（E33 视觉稿版）：JS 主包下载/执行期间显示骨架屏 + 品牌 +
+         进度条，与 React 挂载后的水合幕布（WorkbenchLoadingScreen）同一套
+         设计——三段加载（启动占位→水合幕布→真实界面）视觉连续无跳变。
+         全内联零额外请求；GitHub Pages 弱网下避免长时间白屏。 -->
     <div id="root">
       <style>
         .boot-splash {
           position: fixed;
           inset: 0;
           display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 16px;
           background: #f7f8fa;
           color: #334155;
           font-family: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
         }
-        .boot-splash__brand {
-          font-size: 22px;
-          font-weight: 700;
-          letter-spacing: 0.02em;
-          color: #1d4ed8;
+        .boot-splash .bb {
+          background: #e9edf2;
+          border-radius: 4px;
+          animation: boot-splash-pulse 1.8s ease-in-out infinite;
         }
-        .boot-splash__spinner {
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          border: 3px solid #dbeafe;
-          border-top-color: #2563eb;
-          animation: boot-splash-spin 0.9s linear infinite;
+        .boot-splash__side {
+          display: none;
+          width: 248px;
+          flex-shrink: 0;
+          flex-direction: column;
+          gap: 14px;
+          border-right: 1px solid #eceef2;
+          background: rgba(255, 255, 255, 0.7);
+          padding: 20px 16px;
+        }
+        @media (min-width: 640px) {
+          .boot-splash__side { display: flex; }
+        }
+        .boot-splash__side-brand {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 6px;
+          font-size: 15px;
+          font-weight: 600;
+          color: #1f2329;
+        }
+        .boot-splash__side-brand span { color: #1677ff; }
+        .boot-splash__row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 2px 4px;
+        }
+        .boot-splash__new {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 6px;
+          border: 1px solid #eceef2;
+          background: #fff;
+          border-radius: 9px;
+          padding: 10px 12px;
+          color: #c8ccd4;
+          font-size: 14px;
+        }
+        .boot-splash__label {
+          margin-top: 10px;
+          padding: 0 4px;
+          font-size: 12px;
+          color: #9aa1ab;
+        }
+        .boot-splash__center {
+          position: relative;
+          display: flex;
+          flex: 1;
+          min-width: 0;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 0;
+        }
+        .boot-splash__title {
+          margin-top: 20px;
+          font-size: 19px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          color: #1f2329;
+        }
+        .boot-splash__subtitle {
+          margin-top: 8px;
+          font-size: 13px;
+          color: #9aa1ab;
+        }
+        .boot-splash__track {
+          margin-top: 24px;
+          width: 256px;
+          height: 3px;
+          overflow: hidden;
+          border-radius: 999px;
+          background: #e9edf2;
+        }
+        .boot-splash__sweep {
+          height: 100%;
+          width: 40%;
+          border-radius: 999px;
+          background: #1677ff;
+          animation: boot-splash-sweep 1.6s ease-in-out infinite;
         }
         .boot-splash__hint {
-          font-size: 13px;
-          color: #64748b;
+          margin-top: 16px;
+          font-size: 12px;
+          color: #9aa1ab;
         }
-        @keyframes boot-splash-spin {
-          to {
-            transform: rotate(360deg);
-          }
+        .boot-splash__right {
+          display: none;
+          width: 40%;
+          align-items: center;
+          overflow: hidden;
+          padding: 40px 0;
+        }
+        @media (min-width: 1024px) {
+          .boot-splash__right { display: flex; }
+        }
+        .boot-splash__panel {
+          height: 86%;
+          width: 112%;
+          transform: translateX(24px);
+          border: 1px solid #eceef2;
+          border-radius: 16px 0 0 16px;
+          background: rgba(255, 255, 255, 0.8);
+          opacity: 0.6;
+          padding: 20px;
+          box-shadow: 0 10px 40px rgb(15 23 42 / 0.05);
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .boot-splash__panel-head {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          border-bottom: 1px solid #f0f1f4;
+          padding-bottom: 16px;
+        }
+        .boot-splash__cards {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 12px;
+        }
+        .boot-splash__card {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          border: 1px solid #f0f1f4;
+          border-radius: 10px;
+          padding: 12px;
+        }
+        .boot-splash__table {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          border: 1px solid #f0f1f4;
+          border-radius: 10px;
+          padding: 16px;
+        }
+        @keyframes boot-splash-sweep {
+          0% { transform: translateX(-100%); }
+          55% { transform: translateX(160%); }
+          100% { transform: translateX(160%); }
+        }
+        @keyframes boot-splash-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.55; }
         }
       </style>
       <div class="boot-splash">
-        <div class="boot-splash__brand">SlideRule.AI</div>
-        <div class="boot-splash__spinner" role="status" aria-label="加载中"></div>
-        <div class="boot-splash__hint">正在加载产品推演引擎…</div>
+        <aside class="boot-splash__side">
+          <div class="boot-splash__side-brand">
+            <svg width="22" height="22" viewBox="0 0 46 46" aria-hidden="true">
+              <rect x="6" y="18" width="9" height="22" rx="2.5" fill="#69a9ff" />
+              <rect x="18.5" y="10" width="9" height="30" rx="2.5" fill="#1677ff" />
+              <rect x="31" y="14" width="9" height="26" rx="2.5" fill="#3d8bff" />
+            </svg>
+            SlideRule<span>.AI</span>
+          </div>
+          <div class="boot-splash__row"><div class="bb" style="width:20px;height:20px"></div><div class="bb" style="width:112px;height:12px"></div></div>
+          <div class="boot-splash__row"><div class="bb" style="width:20px;height:20px"></div><div class="bb" style="width:112px;height:12px"></div></div>
+          <div class="boot-splash__row"><div class="bb" style="width:20px;height:20px"></div><div class="bb" style="width:112px;height:12px"></div></div>
+          <div class="boot-splash__new">+<div class="bb" style="width:128px;height:12px"></div></div>
+          <div class="boot-splash__label">最近会话</div>
+          <div class="boot-splash__row"><div class="bb" style="width:24px;height:24px"></div><div class="bb" style="width:144px;height:12px"></div></div>
+          <div class="boot-splash__row"><div class="bb" style="width:24px;height:24px"></div><div class="bb" style="width:128px;height:12px"></div></div>
+          <div class="boot-splash__row"><div class="bb" style="width:24px;height:24px"></div><div class="bb" style="width:144px;height:12px"></div></div>
+          <div class="boot-splash__row"><div class="bb" style="width:24px;height:24px"></div><div class="bb" style="width:128px;height:12px"></div></div>
+          <div class="boot-splash__row"><div class="bb" style="width:24px;height:24px"></div><div class="bb" style="width:144px;height:12px"></div></div>
+        </aside>
+        <main class="boot-splash__center">
+          <svg width="46" height="46" viewBox="0 0 46 46" role="img" aria-label="SlideRule">
+            <rect x="6" y="18" width="9" height="22" rx="2.5" fill="#69a9ff" />
+            <rect x="18.5" y="10" width="9" height="30" rx="2.5" fill="#1677ff" />
+            <rect x="31" y="14" width="9" height="26" rx="2.5" fill="#3d8bff" />
+          </svg>
+          <div class="boot-splash__title">正在准备工作台</div>
+          <div class="boot-splash__subtitle">加载推演引擎与最近会话</div>
+          <div class="boot-splash__track"><div class="boot-splash__sweep"></div></div>
+          <div class="boot-splash__hint" role="status">请稍候，马上就好</div>
+        </main>
+        <div class="boot-splash__right">
+          <div class="boot-splash__panel">
+            <div class="boot-splash__panel-head">
+              <div class="bb" style="width:32px;height:32px;border-radius:50%"></div>
+              <div class="bb" style="width:96px;height:12px"></div>
+              <div class="bb" style="width:64px;height:12px"></div>
+              <div class="bb" style="width:80px;height:24px;margin-left:auto;border-radius:6px"></div>
+            </div>
+            <div class="boot-splash__cards">
+              <div class="boot-splash__card"><div class="bb" style="width:40px;height:8px"></div><div class="bb" style="width:64px;height:14px"></div></div>
+              <div class="boot-splash__card"><div class="bb" style="width:40px;height:8px"></div><div class="bb" style="width:64px;height:14px"></div></div>
+              <div class="boot-splash__card"><div class="bb" style="width:40px;height:8px"></div><div class="bb" style="width:64px;height:14px"></div></div>
+              <div class="boot-splash__card"><div class="bb" style="width:40px;height:8px"></div><div class="bb" style="width:64px;height:14px"></div></div>
+            </div>
+            <div class="boot-splash__table">
+              <div class="bb" style="width:100%;height:96px"></div>
+            </div>
+            <div class="boot-splash__table">
+              <div class="bb" style="width:70%;height:10px"></div>
+              <div class="bb" style="width:90%;height:10px"></div>
+              <div class="bb" style="width:80%;height:10px"></div>
+              <div class="bb" style="width:85%;height:10px"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
