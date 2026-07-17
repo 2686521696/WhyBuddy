@@ -1681,6 +1681,28 @@ function SlideRuleSessionBody({
       : "新会话 · SlideRule";
   }, [goal]);
 
+  // E33.2 启动占位页单层化（用户实拍：两层同风格加载页仍看得出切换）：
+  // index.html 的占位页在 #root 外，从首字节一直活到这里水合完成才摘——
+  // 首屏加载全程只有一层。挂载即认领所有权（main.tsx 600ms 后无人认领
+  // 会早摘，那是给非推演路由的）；水合幕布只在占位页缺席时兜场（切换
+  // 会话的整树重挂）。
+  const [bootSplashAtMount] = useState(
+    () =>
+      typeof document !== "undefined" &&
+      !!document.getElementById("sliderule-boot-splash")
+  );
+  useEffect(() => {
+    (
+      window as unknown as { __slideruleBootSplashOwned?: boolean }
+    ).__slideruleBootSplashOwned = true;
+  }, []);
+  useEffect(() => {
+    if (!sessionHydrated) return;
+    (
+      window as unknown as { __slideruleDismissBootSplash?: () => void }
+    ).__slideruleDismissBootSplash?.();
+  }, [sessionHydrated]);
+
   // 迭代环：消息上的「重新推演」经事件总线把该轮意图原文程序化重发
   // （与空态示例卡的 fill-prompt 同一套事件模式，免去跨层 prop 钻孔）。
   const sendMessageRef = useRef(sendMessage);
@@ -2136,8 +2158,11 @@ function SlideRuleSessionBody({
           visibleCrossRuntimeGraph ? "present" : "absent"
         }
       >
-        {/* E33 加载幕布：会话水合期间盖全屏（骨架+品牌+进度），完成即淡出 */}
-        <WorkbenchLoadingScreen visible={!sessionHydrated} />
+        {/* E33 加载幕布：会话水合期间盖全屏——但首屏由 index.html 占位页
+            独占（E33.2 单层化），幕布只服务切换会话的整树重挂 */}
+        <WorkbenchLoadingScreen
+          visible={!sessionHydrated && !bootSplashAtMount}
+        />
         <SlideRuleUnified {...shared} />
       </div>
     );
