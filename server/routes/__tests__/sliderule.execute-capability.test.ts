@@ -82,7 +82,9 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     expect(body.error).toBe('bad_request');
   });
 
-  it('returns 400/422 for unsupported capability (not 500)', async () => {
+  // 20s：断言的是契约（400/422 而非 500），不是延迟——发布门里本套件与
+  // 浏览器冒烟并行跑，高载时本用例被拉过 vitest 默认 5s（实测 6082ms 红过一次门）
+  it('returns 400/422 for unsupported capability (not 500)', { timeout: 20000 }, async () => {
     vi.stubEnv('SLIDERULE_V5_BACKEND', 'legacy');
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 

@@ -220,6 +220,9 @@ def agentic_pick_next_capabilities(
                 max_tokens=4000,
                 max_attempts=1,
                 reasoning_effort="low",
+                # E32 转正后 pick 在每轮主路径上：选材是快决策，不给它
+                # 全局 600s 的深思预算——60s 答不上来就回落规则版（fail-open）
+                timeout_ms=60_000,
             )
             break
         except Exception as exc:
