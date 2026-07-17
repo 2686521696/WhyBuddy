@@ -166,6 +166,7 @@ export function ComposerDock({
   isRunning,
   goal,
   stop,
+  placeholder,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -176,6 +177,8 @@ export function ComposerDock({
 
   hintChips?: string[];
   stop?: () => void;
+  /** E34.1 空态首页嵌入时的占位文案（墨刀式 hero 输入区） */
+  placeholder?: string;
 }) {
   // 模式选择器已删（用户裁决 2026-07-10）：深思一轮就是唯一产品路径
   // （Python drive-full-stream 一条消息推到闭环），持续推演是浏览器端
@@ -434,7 +437,7 @@ export function ComposerDock({
     }
   }, [isRefining, setInput]);
 
-  const placeholderText = "畅所欲问";
+  const placeholderText = placeholder || "畅所欲问";
 
   return (
     <div className="pointer-events-none flex w-[min(820px,calc(100vw-32px))] flex-col items-center gap-2">
