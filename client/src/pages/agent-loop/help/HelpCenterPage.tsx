@@ -18,6 +18,9 @@ import workbench from "./docs/03-workbench.md?raw";
 import reasoningPage from "./docs/04-reasoning-page.md?raw";
 import faq from "./docs/05-faq.md?raw";
 import config from "./docs/06-config.md?raw";
+import fullFlow from "./docs/07-full-flow.md?raw";
+import glossary from "./docs/08-glossary.md?raw";
+import changelog from "./docs/09-changelog.md?raw";
 
 export interface HelpDoc {
   id: string;
@@ -31,6 +34,11 @@ export const HELP_DOCS: HelpDoc[] = [
   { id: "core-concepts", title: "核心概念", group: "开始", body: coreConcepts },
   { id: "workbench", title: "工作台指南", group: "使用", body: workbench },
   { id: "reasoning-page", title: "推演页指南", group: "使用", body: reasoningPage },
+  // E36（用户需求）：发布全流程 + 术语表 + 更新日志（更新日志由
+  // scripts/gen-help-changelog.mjs 从「发版：」提交历史生成，发版后重跑）
+  { id: "full-flow", title: "发布全流程", group: "使用", body: fullFlow },
+  { id: "glossary", title: "术语表", group: "支持", body: glossary },
+  { id: "changelog", title: "更新日志", group: "支持", body: changelog },
   { id: "faq", title: "常见问题", group: "支持", body: faq },
   { id: "config", title: "环境与配置", group: "支持", body: config },
 ];
