@@ -28,11 +28,17 @@ import {
 } from "@assistant-ui/react";
 import {
   ArrowDown,
+  Boxes,
   Check,
   ChevronRight,
   ClipboardCheck,
   Dumbbell,
+  FileText,
   LoaderCircle,
+  ScanLine,
+  ShieldCheck,
+  ShoppingCart,
+  UserPlus,
   Users,
 } from "lucide-react";
 import {
@@ -399,33 +405,180 @@ function TurnPhaseTimeline({
   );
 }
 
-// 文案单一来源 example-intents.ts（+ 菜单「填入示例意图」共用）；
-// 这里只补空态 chips 的图标配色。
-const EXAMPLE_PROMPTS: ReadonlyArray<{
-  text: string;
+// E34 首页模式卡（用户视觉稿）：四种「起手模板」——点击把对应指令模板填进
+// 输入框（与示例意图同一 fill-prompt 机制），不是四个独立引擎。诚实边界：
+// 页面复刻走 E31 附件提取（截图→视觉 LLM→注入指令），其余是推演指令的
+// 不同起手式，最终都进同一条五系统推演管线。
+const HOME_MODES: ReadonlyArray<{
+  key: string;
+  title: string;
+  sub: string;
   icon: React.ComponentType<{ className?: string }>;
   iconBg: string;
   iconColor: string;
+  /** 点击填入输入框的起手模板（空 = 只聚焦输入框） */
+  template: string;
 }> = [
   {
-    text: EXAMPLE_INTENT_TEXTS[0],
-    icon: ClipboardCheck,
+    key: "app",
+    title: "应用推演",
+    sub: "从意图到应用",
+    icon: Boxes,
     iconBg: "bg-[#e6f4ff]",
-    iconColor: "text-[#0958d9]",
-  },
-  {
-    text: EXAMPLE_INTENT_TEXTS[1],
-    icon: Users,
-    iconBg: "bg-[#E6F4FF]",
     iconColor: "text-[#1677ff]",
+    template: "",
   },
   {
-    text: EXAMPLE_INTENT_TEXTS[2],
-    icon: Dumbbell,
-    iconBg: "bg-[#ECFDF3]",
+    key: "model",
+    title: "需求建模",
+    sub: "梳理业务闭环",
+    icon: FileText,
+    iconBg: "bg-[#f3ecff]",
+    iconColor: "text-[#7c3aed]",
+    template:
+      "帮我梳理业务需求并建模：核心实体、角色分工、审批流转、关键页面与 AI 能力。业务是：",
+  },
+  {
+    key: "verify",
+    title: "架构校验",
+    sub: "检查引用关系",
+    icon: ShieldCheck,
+    iconBg: "bg-[#ecfdf3]",
     iconColor: "text-[#16a34a]",
+    template:
+      "校验以下系统设计的结构一致性：实体引用是否闭合、角色权限是否覆盖全流程、页面与流程是否成环。设计如下：",
+  },
+  {
+    key: "clone",
+    title: "页面复刻",
+    sub: "从截图生成页面",
+    icon: ScanLine,
+    iconBg: "bg-[#fff7e6]",
+    iconColor: "text-[#d97706]",
+    template:
+      "复刻这张页面截图：请点左下角 + 上传截图（图片内容会自动提取），并说明要保留和调整的部分：",
   },
 ];
+
+// E34 快速开始 chips：短标签 + 完整意图（前三条与 example-intents.ts 同源），
+// 「从需求文档开始」直接拉起附件选择器（E28/E31 文档内容注入管线）。
+const QUICK_STARTS: ReadonlyArray<{
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  fill?: string;
+  openFilePicker?: boolean;
+}> = [
+  { label: "采购审批", icon: ShoppingCart, fill: EXAMPLE_INTENT_TEXTS[0] },
+  { label: "员工入职", icon: UserPlus, fill: EXAMPLE_INTENT_TEXTS[1] },
+  { label: "健身房管理", icon: Dumbbell, fill: EXAMPLE_INTENT_TEXTS[2] },
+  {
+    label: "客户管理",
+    icon: Users,
+    fill: "做一个客户管理系统，包含客户档案、跟进记录、销售漏斗和分级权限",
+  },
+  { label: "从需求文档开始", icon: ClipboardCheck, openFilePicker: true },
+];
+
+/** E34 空态首页：主张标题 + 模式模板卡（单选高亮）+ 快速开始 chips。 */
+function HomeEmptyState({ isRunning }: { isRunning: boolean }) {
+  const [mode, setMode] = useState("app");
+  const fillPrompt = (text: string) => {
+    window.dispatchEvent(
+      new CustomEvent("sliderule:fill-prompt", { detail: { text } })
+    );
+  };
+  return (
+    <div
+      className="flex h-full flex-col items-center justify-center gap-7 text-center"
+      data-testid="sliderule-empty-state"
+    >
+      <div className="flex flex-col items-center gap-3">
+        <div className="flex items-center gap-3.5">
+          <img
+            src={`${import.meta.env.BASE_URL}assets/sliderule-brand-mark.svg`}
+            alt="SlideRule"
+            className="h-10 w-10 shrink-0"
+          />
+          <h1 className="font-display text-[clamp(22px,2.4vw,30px)] font-semibold tracking-tight text-[#1f2329]">
+            把一句模糊想法，快速推演成可执行的完整应用
+          </h1>
+        </div>
+        <p className="text-[14px] text-stone-500">
+          SlideRule「产品推演引擎」——一句话把业务意图推演成「能跑起来」的企业应用数字孪生
+        </p>
+      </div>
+
+      {/* 模式模板卡：单选高亮，点击把起手模板填进输入框 */}
+      <div className="grid w-full max-w-[720px] grid-cols-2 gap-3 sm:grid-cols-4">
+        {HOME_MODES.map(({ key, title, sub, icon: Icon, iconBg, iconColor, template }) => {
+          const active = mode === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              disabled={isRunning}
+              data-testid={`sliderule-home-mode-${key}`}
+              onClick={() => {
+                setMode(key);
+                fillPrompt(template);
+              }}
+              className={`flex items-center gap-2.5 rounded-[12px] border bg-white px-3.5 py-3 text-left transition-all disabled:opacity-50 ${
+                active
+                  ? "border-[#1677ff] shadow-[0_4px_16px_rgb(22_119_255/0.14)]"
+                  : "border-[#e5e7eb] shadow-[0_2px_10px_rgb(15_23_42/0.05)] hover:border-[#d3d8e0] hover:shadow-[0_4px_16px_rgb(15_23_42/0.09)]"
+              }`}
+            >
+              <span
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] ${iconBg}`}
+              >
+                <Icon className={`h-5 w-5 ${iconColor}`} />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[13px] font-semibold text-[#1f2329]">
+                  {title}
+                </span>
+                <span className="block truncate text-[11px] text-stone-400">
+                  {sub}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 快速开始：场景 chips（填意图 / 拉起附件选择器） */}
+      <div className="w-full max-w-[720px]">
+        <div className="mb-2.5 text-left text-[13px] font-medium text-stone-500">
+          快速开始
+        </div>
+        <div className="flex flex-wrap gap-2.5">
+          {QUICK_STARTS.map(({ label, icon: Icon, fill, openFilePicker }) => (
+            <button
+              key={label}
+              type="button"
+              disabled={isRunning}
+              data-testid={`sliderule-quick-start-${label}`}
+              title={fill || "上传需求文档，内容自动注入推演指令"}
+              onClick={() => {
+                if (openFilePicker) {
+                  window.dispatchEvent(
+                    new CustomEvent("sliderule:open-file-picker")
+                  );
+                } else if (fill) {
+                  fillPrompt(fill);
+                }
+              }}
+              className="flex items-center gap-2 rounded-[10px] border border-[#e5e7eb] bg-white px-4 py-2.5 text-[13px] text-stone-700 shadow-[0_2px_10px_rgb(15_23_42/0.04)] transition hover:border-[#d3d8e0] hover:shadow-[0_4px_14px_rgb(15_23_42/0.08)] disabled:opacity-50"
+            >
+              <Icon className="h-4 w-4 text-stone-500" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * ClaudeChatSurface — 统一页左栏对话区（Claude 风格轻量 prose 布局）。
@@ -770,60 +923,10 @@ export function ClaudeChatSurface({
             </ThreadPrimitive.ScrollToBottom>
             <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[780px] flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4 [scrollbar-gutter:stable] sm:px-6">
               <ThreadPrimitive.Empty>
-                {/* THE single empty state — classical logo watermark + hero copy + 3 example prompts */}
-                <div
-                  className="flex h-full flex-col items-center justify-center gap-6 text-center"
-                  data-testid="sliderule-empty-state"
-                >
-                  <img
-                    src={`${import.meta.env.BASE_URL}assets/sliderule-logo.png`}
-                    alt="SlideRule"
-                    className="w-[min(56%,220px)] object-contain opacity-[0.9] drop-shadow-[0_14px_30px_rgb(15_23_42/0.12)]"
-                    title="SlideRule"
-                  />
-                  <div>
-                    <div className="font-display text-[26px] font-medium tracking-tight text-[#1f2329]">
-                      我能帮你把意图推演成应用闭环
-                    </div>
-                    <div className="mt-2 text-sm text-stone-500">
-                      发一句业务目标，SlideRule
-                      串起五系统，输出可校验的企业应用数字孪生。
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2.5 w-full max-w-[560px]">
-                    {EXAMPLE_PROMPTS.map(
-                      ({ text, icon: Icon, iconBg, iconColor }) => (
-                        <button
-                          key={text}
-                          type="button"
-                          disabled={isRunning}
-                          onClick={() => {
-                            // Dispatch a custom event so ComposerDock can pick it up
-                            window.dispatchEvent(
-                              new CustomEvent("sliderule:fill-prompt", {
-                                detail: { text },
-                              })
-                            );
-                          }}
-                          className="group flex w-full items-center gap-3 rounded-lg border border-[#e5e7eb] bg-white px-4 py-3 text-left text-sm text-stone-700 shadow-[0_2px_10px_rgb(15_23_42/0.05)] transition-all hover:border-[#d3d8e0] hover:shadow-[0_4px_16px_rgb(15_23_42/0.09)] disabled:opacity-50"
-                        >
-                          <span
-                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconBg}`}
-                          >
-                            <Icon className={`h-4 w-4 ${iconColor}`} />
-                          </span>
-                          <span
-                            className="min-w-0 flex-1 truncate"
-                            title={text}
-                          >
-                            {text}
-                          </span>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-stone-300 transition-transform group-hover:translate-x-0.5" />
-                        </button>
-                      )
-                    )}
-                  </div>
-                </div>
+                {/* E34 空态首页（用户视觉稿 2026-07-17）：品牌主张 + 模式模板卡 +
+                    快速开始。模式卡与 chips 都走 fill-prompt 填输入框——同一条
+                    推演管线的不同起手式，不造假功能入口。 */}
+                <HomeEmptyState isRunning={isRunning} />
               </ThreadPrimitive.Empty>
               <div className="py-2">
                 <ThreadPrimitive.Messages
