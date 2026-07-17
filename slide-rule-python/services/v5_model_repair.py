@@ -74,8 +74,12 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
     field_refs = _collect_datamodel_field_refs(_as_dict(m.get("datamodel")))
     entity_ids = {r for r in field_refs if "." not in r}
     dotted_refs = field_refs - entity_ids
+    from .v5_model_gate import _collect_field_types
+
+    field_types = _collect_field_types(_as_dict(m.get("datamodel")))
     notes: Dict[str, List[Dict[str, Any]]] = {
         "repaired": [], "droppedCharts": [], "droppedStats": [],
+        "droppedRankings": [], "droppedFeeds": [],
         "clearedFormats": [], "clearedIdentity": [],
     }
 
@@ -174,6 +178,62 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
                 kept_stats.append(sd)
         if "stats" in pd:
             pd["stats"] = kept_stats
+
+        # E40.4 排行榜/动态流：与图表同款处方——引用近邻修复（唯一命中），
+        # 修不好整条剔除留痕。类型不匹配（sortBy 非 number / timeField 非
+        # date / levelField 非 enum）由门硬拦，这里只治悬空引用。
+        number_refs = {r for r, t in field_types.items() if t == "number"}
+        date_refs = {r for r, t in field_types.items() if t == "date"}
+        enum_refs = {r for r, t in field_types.items() if t == "enum"}
+
+        kept_rankings: List[Any] = []
+        for rank in _as_list(pd.get("rankings")):
+            rd = dict(_as_dict(rank))
+            rid = str(rd.get("id") or rd.get("name") or "<unnamed>")
+            drop_reason = ""
+            if not isinstance(rank, dict):
+                drop_reason = "声明不是对象"
+            if not drop_reason:
+                entity_ref = str(rd.get("entity") or "").strip()
+                if (not entity_ref or entity_ref not in entity_ids) and not _fix_ref(rd, "entity", entity_ref, entity_ids, pid):
+                    drop_reason = f"实体 '{entity_ref or '<缺失>'}' 无法解析到数据模型"
+            if not drop_reason:
+                sort_ref = str(rd.get("sortBy") or "").strip()
+                if (sort_ref not in number_refs) and not _fix_ref(rd, "sortBy", sort_ref, number_refs, pid):
+                    drop_reason = f"排序字段 '{sort_ref or '<缺失>'}' 无法解析到数值字段"
+            if drop_reason:
+                notes["droppedRankings"].append({"pageId": pid, "rankingId": rid, "reason": drop_reason})
+            else:
+                kept_rankings.append(rd)
+        if "rankings" in pd:
+            pd["rankings"] = kept_rankings
+
+        kept_feeds: List[Any] = []
+        for feed in _as_list(pd.get("feeds")):
+            fd2 = dict(_as_dict(feed))
+            fid = str(fd2.get("id") or fd2.get("name") or "<unnamed>")
+            drop_reason = ""
+            if not isinstance(feed, dict):
+                drop_reason = "声明不是对象"
+            if not drop_reason:
+                entity_ref = str(fd2.get("entity") or "").strip()
+                if (not entity_ref or entity_ref not in entity_ids) and not _fix_ref(fd2, "entity", entity_ref, entity_ids, pid):
+                    drop_reason = f"实体 '{entity_ref or '<缺失>'}' 无法解析到数据模型"
+            if not drop_reason:
+                time_ref = str(fd2.get("timeField") or "").strip()
+                if (time_ref not in date_refs) and not _fix_ref(fd2, "timeField", time_ref, date_refs, pid):
+                    drop_reason = f"时间字段 '{time_ref or '<缺失>'}' 无法解析到日期字段"
+            if not drop_reason:
+                level_ref = str(fd2.get("levelField") or "").strip()
+                if level_ref and level_ref not in enum_refs and not _fix_ref(fd2, "levelField", level_ref, enum_refs, pid):
+                    fd2.pop("levelField", None)  # 级别是可选增强——修不好清掉，流本体保留
+                    notes["clearedFormats"].append({"pageId": pid, "statId": fid, "format": f"levelField:{level_ref}"})
+            if drop_reason:
+                notes["droppedFeeds"].append({"pageId": pid, "feedId": fid, "reason": drop_reason})
+            else:
+                kept_feeds.append(fd2)
+        if "feeds" in pd:
+            pd["feeds"] = kept_feeds
 
         new_pages.append(pd)
 
