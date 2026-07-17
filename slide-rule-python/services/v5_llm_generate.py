@@ -351,6 +351,16 @@ def _build_user_content(goal: str) -> str:
             parts.append(block)
     except Exception:
         pass  # 参考语料是增强项，任何异常都不拦生成主路径
+    # ③设计菜谱（E40.3 软参考）：按域命中的导航/开门页/组件/主题气质配方
+    #（owner 视觉稿蒸馏冻结语料）——只给风格灵感，门照常裁决，无命中零变化
+    try:
+        from .v5_design_reference import design_reference_block
+
+        design_block = design_reference_block(goal)
+        if design_block:
+            parts.append(design_block)
+    except Exception:
+        pass
     # E29 精修：把现有模型与补充指令给到 LLM——在现有设计上做最小增量修改，
     # 与设计无关的指令要求原样返回（版本判等后不记新版本）。
     if _refine_context:
