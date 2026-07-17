@@ -404,7 +404,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       } else {
         loaded = await SlideRuleRuntime.loadOrCreateSessionState(sessionId);
         if (SlideRuleRuntime.isLegacyEmptySessionSeed(loaded)) {
-          loaded = await persistSession(sanitizeLegacyEmptySeed(loaded));
+          // E30 惰性创建：空种子只在内存清洗，不落库——否则每个新 id 都
+          // 往会话库塞一条「新会话」空壳（用户实测 bug）。首条消息才建档。
+          loaded = sanitizeLegacyEmptySeed(loaded);
         }
       }
       if (!cancelled) {
