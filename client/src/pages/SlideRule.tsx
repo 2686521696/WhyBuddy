@@ -554,10 +554,11 @@ function HomeEmptyState({
         })}
       </div>
 
-      {/* hero 输入区（墨刀式）：空态时唯一的 ComposerDock 就在这里 */}
+      {/* hero 输入区（墨刀式多行大框）：空态时唯一的 ComposerDock 就在这里，
+          与模式卡/快速开始同宽对齐（对称性用户裁决） */}
       {composerSlot && (
         <div
-          className="flex w-full max-w-[720px] justify-center"
+          className="w-full max-w-[720px]"
           data-testid="sliderule-hero-composer"
         >
           {composerSlot}
@@ -1280,6 +1281,7 @@ function SlideRuleUnified({
                       hintChips={composerHints}
                       stop={stop}
                       placeholder="描述你想构建的业务系统，也可以上传需求文档或现有页面……"
+                      hero
                     />
                   ) : undefined
                 }
