@@ -879,7 +879,9 @@ export async function loadOrCreateSessionState(
 
   const created = createInitialSessionState(goalText, sessionId);
   const withReplay = applyReplayOnSave(undefined, created);
-  await currentSlideRuleSessionStore.save(stripProjectionForPersist(withReplay));
+  // E30 惰性创建（用户实测 bug）：空壳不落库——否则每次以新 id 打开页面
+  // 都会往会话库塞一条「新会话」，点任意标题触发列表刷新就冒出来。
+  // 首条消息的轮内持久化（PUT 对不存在会话直接建档）才是会话的出生证。
   return deriveNodeStatus(withReplay);
 }
 
