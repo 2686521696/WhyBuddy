@@ -422,13 +422,15 @@ def test_llm_path_per_skill_evidence_carries_model_sections():
         assert per_skill[skill]["modelSection"] == model[skill], skill
 
 
-def test_deterministic_domain_has_no_model_section():
-    """Fixture domains have no LLM model — the key must be absent (never fabricated)."""
+def test_deterministic_domain_carries_builtin_model_section():
+    """E35 反转旧设计：演示域现在带冻结的内置模型段（用户实测：闭环后右侧
+    必须能长出应用）。模型是 LLM 一次性生成、过门后冻结的夹具——仍然
+    不是运行时捏造。"""
     state = _empty_state("采购审批平台")
     per_skill = _build_per_skill_evidence(state, blocked_signal=False, goal="采购审批平台")
     for skill in REQUIRED_EVIDENCE_KEYS:
         assert per_skill[skill]["evidencePresent"] is True
-        assert "modelSection" not in per_skill[skill], skill
+        assert isinstance(per_skill[skill].get("modelSection"), dict), skill
 
 
 def test_model_section_never_participates_in_closure_hash():
@@ -508,8 +510,8 @@ def test_stream_skill_result_emits_model_section_for_llm_path(monkeypatch):
         assert isinstance(event.get("mermaid"), str)  # edge projection still present
 
 
-def test_stream_skill_result_model_section_none_for_deterministic_domain():
-    """Deterministic fixture domain: skill_result still closes 6/6 but modelSection is None."""
+def test_stream_skill_result_model_section_present_for_deterministic_domain():
+    """E35：演示域 skill_result 闭 6/6 且 modelSection 为冻结夹具段（dict）。"""
     import asyncio
 
     from services.v5_full_driver import drive_full_v5_session_stream
@@ -532,7 +534,7 @@ def test_stream_skill_result_model_section_none_for_deterministic_domain():
     assert len(skill_results) == 6
     for event in skill_results:
         assert "modelSection" in event  # field always present in the SSE contract
-        assert event["modelSection"] is None  # no LLM model — never fabricated
+        assert isinstance(event["modelSection"], dict)  # E35 冻结夹具段
 
 
 def _closure_result_for(goal: str, monkey_env=None):

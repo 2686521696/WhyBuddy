@@ -139,6 +139,34 @@ def _is_purchase_approval_intent(goal: str) -> bool:
     return _recognize_domain(goal) == "purchase_approval"
 
 
+_BUILTIN_DOMAIN_MODELS: "Dict[str, Any] | None" = None
+
+
+def _builtin_domain_model_section(domain: str, skill: str) -> "Dict[str, Any] | None":
+    """E35：确定性演示域的内置五系统模型段（LLM 一次性生成、过结构门后
+    冻结的静态夹具，见 services/data/builtin_domain_models.json）。
+
+    用户实测 bug：演示域闭环 6/6 后右侧只有证据看板、长不出应用——因为
+    夹具证据历史上不带 modelSection。夹具是确定性的，模型也理应确定：
+    随证据以 payload 形式挂上（与 LLM 路径同一机制，不进 haystack、不进
+    闭环 hash）。文件缺失/损坏时如实返回 None（老行为，诚实降级）。"""
+    global _BUILTIN_DOMAIN_MODELS
+    if _BUILTIN_DOMAIN_MODELS is None:
+        import json as _json
+        from pathlib import Path as _Path
+
+        path = _Path(__file__).resolve().parent / "data" / "builtin_domain_models.json"
+        try:
+            _BUILTIN_DOMAIN_MODELS = _json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _BUILTIN_DOMAIN_MODELS = {}
+    model = _BUILTIN_DOMAIN_MODELS.get(domain)
+    if not isinstance(model, dict):
+        return None
+    section = model.get(skill)
+    return section if isinstance(section, dict) else None
+
+
 def _runtime_linkage_artifact_for_skill(skill: str, goal: str, domain: str = "purchase_approval") -> Dict[str, Any]:
     evidence_keys = [
         edge["evidenceKey"]
@@ -146,7 +174,7 @@ def _runtime_linkage_artifact_for_skill(skill: str, goal: str, domain: str = "pu
         if edge["sourceSkill"] == skill or edge["targetSkill"] == skill
     ]
     label = DOMAIN_LABELS.get(domain, domain)
-    return {
+    artifact = {
         "id": f"runtime-linkage-{skill}",
         "title": f"{skill} runtime linkage evidence",
         "kind": "runtimeClosureEvidence",
@@ -154,6 +182,10 @@ def _runtime_linkage_artifact_for_skill(skill: str, goal: str, domain: str = "pu
         "content": f"{skill} evidence for {label} runtime closure: {','.join(evidence_keys)}",
         "provenance": "python-runtime-linkage",
     }
+    section = _builtin_domain_model_section(domain, skill)
+    if section is not None:
+        artifact["_model_section"] = section
+    return artifact
 
 
 def _try_llm_generate_evidence(
@@ -285,11 +317,12 @@ def _build_per_skill_evidence(
             "artifactId": artifact_id,
             "digest": digest,
         }
-        # Gate-PASSED LLM model section rides along as PAYLOAD ONLY: it is not part
+        # Gate-PASSED model section rides along as PAYLOAD ONLY: it is not part
         # of the evidence-match haystack, and _stable_closure_hash reads named trust
         # fields only — modelSection can never flip evidencePresent/blocked/hash.
-        # Deterministic domains (purchase/leave/ticket/onboarding) have no LLM model,
-        # so the key is simply absent there (screens degrade honestly; never fabricate).
+        # E35: deterministic domains (purchase/leave/ticket/onboarding) now carry a
+        # frozen gate-PASSED builtin model (services/data/builtin_domain_models.json)
+        # so the app stage renders after closure; missing fixture degrades honestly.
         model_section = artifact.get("_model_section") if isinstance(artifact, dict) else None
         if evidence_present and model_section is not None:
             per_skill[skill]["modelSection"] = model_section
