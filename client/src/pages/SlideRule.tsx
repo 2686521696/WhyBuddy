@@ -117,6 +117,7 @@ import {
   getLegacyFallbackReason,
 } from "@/lib/api-client";
 import { deriveApplication, slideRule } from "@/lib/skills/slideRule";
+import { Spin } from "antd";
 import { SlideRuleStudio } from "./sliderule/SlideRuleStudio";
 import { Response } from "@/components/ai/response";
 import { Shimmer } from "@/components/ai/shimmer";
@@ -1680,21 +1681,9 @@ function SlideRuleSessionBody({
       : "新会话 · SlideRule";
   }, [goal]);
 
-  // E33.4 加载单层化终版（用户裁决：E33 那层 React 水合幕布是第一遍改错
-  // 的产物，整个移除）：唯一的加载页 = index.html 启动占位页，在 #root 外
-  // 从首字节一直活到这里水合完成才摘。挂载即认领所有权（main.tsx 600ms
-  // 后无人认领会早摘，那是给非推演路由的）。
-  useEffect(() => {
-    (
-      window as unknown as { __slideruleBootSplashOwned?: boolean }
-    ).__slideruleBootSplashOwned = true;
-  }, []);
-  useEffect(() => {
-    if (!sessionHydrated) return;
-    (
-      window as unknown as { __slideruleDismissBootSplash?: () => void }
-    ).__slideruleDismissBootSplash?.();
-  }, [sessionHydrated]);
+  // E33.5 加载官方组件化（用户裁决：弃自定义骨架屏，用 antd 官方 Spin）：
+  // index.html 纯 CSS 转圈只盖 React 挂载前的空窗（main.tsx 挂载即摘），
+  // 会话水合期由下方 Spin fullscreen 接管——两段都是圆环转圈，视觉连续。
 
   // 迭代环：消息上的「重新推演」经事件总线把该轮意图原文程序化重发
   // （与空态示例卡的 fill-prompt 同一套事件模式，免去跨层 prop 钻孔）。
@@ -2151,6 +2140,15 @@ function SlideRuleSessionBody({
           visibleCrossRuntimeGraph ? "present" : "absent"
         }
       >
+        {/* E33.5 水合期加载：antd 官方 Spin（用户裁决，不用自定义骨架） */}
+        {!sessionHydrated && (
+          <Spin
+            fullscreen
+            size="large"
+            tip="正在准备工作台"
+            data-testid="sliderule-hydration-spin"
+          />
+        )}
         <SlideRuleUnified {...shared} />
       </div>
     );
