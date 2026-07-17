@@ -41,16 +41,17 @@ DANGLING = "PUBLISH_DANGLING_CROSSREF"
 MISSING_SECTION = "PUBLISH_MISSING_SKILL_SECTION"
 EMPTY_SECTION = "PUBLISH_EMPTY_SKILL_SECTION"
 
-# 字段语义（加厚 schema 一期）的合法域。与客户端 field-display.ts 对齐——
-# 渲染层只认这些值；门禁在生成侧就把非法声明拦下（出现即校验，缺省不罚）。
-FIELD_TONES = ("success", "processing", "warning", "danger", "default")
-NUMBER_FORMATS = ("money", "percent", "progress", "score", "rating")
-STRING_FORMATS = ("masked",)
-STAT_FORMATS = ("number", "money", "percent")
-
-# 页面范式（加厚 schema 二期）：kind 决定运行时视图骨架。
-# kanban 需 statusField（enum 字段）、calendar 需 dateField（date 字段）。
-PAGE_KINDS = ("workbench", "kanban", "calendar", "dashboard")
+# 合法域一律来自单一真相源 services/data/five_system_legal.json（E40.1）——
+# 此处 re-export 保持历史名字，修复器/测试的既有 import 零改动。
+# 加枚举改 JSON，不改这里；四方一致性由 parity 测试锁死。
+from .schema_legal import (  # noqa: F401 — re-export 即接口
+    CHART_TYPES,
+    FIELD_TONES,
+    NUMBER_FORMATS,
+    PAGE_KINDS,
+    STAT_FORMATS,
+    STRING_FORMATS,
+)
 
 
 def _as_list(value: Any) -> List[Any]:
@@ -367,10 +368,10 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
             cd = _as_dict(chart)
             cid = cd.get("id") or cd.get("name") or "<unnamed>"
             ctype = str(cd.get("type") or "").strip()
-            if ctype and ctype not in ("bar", "line", "pie"):
+            if ctype and ctype not in CHART_TYPES:
                 findings.append(_finding(
                     DANGLING, f"page.pages[{pid}].charts[{cid}].type",
-                    f"chart type '{ctype}' is not one of bar/line/pie",
+                    f"chart type '{ctype}' is not one of {'/'.join(CHART_TYPES)}",
                     ref=ctype, skill="page",
                 ))
             dim = str(cd.get("dimension") or "").strip()

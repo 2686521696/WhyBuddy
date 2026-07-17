@@ -211,6 +211,8 @@ export default defineConfig(() => {
       alias: {
         "@": path.resolve(import.meta.dirname, "client", "src"),
         "@shared": path.resolve(import.meta.dirname, "shared"),
+        // E40.1 合法域单一真相源：客户端与 python 门/修复器/生成契约同读一份账本
+        "@legal": path.resolve(import.meta.dirname, "slide-rule-python/services/data/five_system_legal.json"),
         "@assets": path.resolve(import.meta.dirname, "attached_assets"),
       },
     },
