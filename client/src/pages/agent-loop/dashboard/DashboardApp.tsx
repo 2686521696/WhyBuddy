@@ -1171,7 +1171,7 @@ function AgentLoopSidebar({
     label: string;
     icon: React.ReactNode;
   }> = [
-    { key: "workbench", label: "工作台", icon: <AppstoreOutlined /> },
+    { key: "workbench", label: "应用中心", icon: <AppstoreOutlined /> },
     { key: "skills", label: "技能库", icon: <ReadOutlined /> },
     { key: "settings", label: "设置", icon: <SettingOutlined /> },
   ];
@@ -1312,7 +1312,7 @@ function AgentLoopTopbar({
               ? "SlideRule / 帮助文档"
               : view === "workbench-legacy"
               ? "SlideRule / 任务队列（legacy）"
-              : "SlideRule / 工作台";
+              : "SlideRule / 应用中心";
 
   const pythonStatus = pythonHealth?.service?.status || "unknown";
   const pythonTone =
@@ -1419,7 +1419,7 @@ export function DashboardApp({
     if (view === "sliderule") return;
     const label =
       view === "workbench"
-        ? "工作台"
+        ? "应用中心"
         : view === "skills"
           ? "技能库"
           : view === "settings"

@@ -861,7 +861,7 @@ it("agentloop setting shell 112 renders standalone route without duplicate sideb
 
   // settings entry remains reachable via local top action/segmented control (appears in header)
   // workbench/detail reachable (initial is workbench content)
-  expect(html).toContain("工作台");
+  expect(html).toContain("应用中心");
   expect(html).toContain("设置");
 
   // full route width: content area not constrained by internal sidebar layout
@@ -1434,7 +1434,7 @@ it("agentloop setting center visual shell matches SlideRule reference", () => {
   expect(html).toContain("native-settings-panel");
   expect(html).toContain("native-cli-form");
 
-  expect(html).toContain("工作台");
+  expect(html).toContain("应用中心");
   expect(html).toContain("设置");
   expect(html).toContain("帮助文档");
   expect(html).toContain("AgentLoop 设置中心");

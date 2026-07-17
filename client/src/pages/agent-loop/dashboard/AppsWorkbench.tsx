@@ -1,21 +1,23 @@
 /**
- * AppsWorkbench — 工作台首页「我的应用」画廊（E14，按用户效果图重构）。
+ * AppsWorkbench — 「应用中心」（E42，按用户定稿要求重构）。
  *
- * 每张卡片 = 一个推演会话生成的可运行系统。北极星纪律：全部真数据、
- * fail-closed——
+ * 布局定稿（用户三条硬性要求，2026-07-17）：
+ *   1. 卡片一律 16:9，字段内容以底部浮层压在图上（不再图上字下两段式）；
+ *   2. 「我的应用 / 官方示例库」tab 切换——筛选口径不同，卡片样式相同；
+ *   3. 一行 4 张、每页最多三行（12 张），超出走分页器。
+ *
+ * 北极星纪律不变：全部真数据、fail-closed——
  *   列表     — GET /api/sliderule/sessions（话题/时间/阶段）
  *   卡片详情 — GET /api/sliderule/sessions/:id 渐进拉取，
  *              五系统模型解析自持久化 perSkillEvidence（同应用舞台同源）
- *   缩略图   — 按真实模型示意渲染（导航=真实页面名，块=真实实体名），
- *              不闭环不摆假截图
- *   质量位   — 不发明"质量分"：显示发布闭环证据 n/6（产品的信任货币）
- *   服务健康 — GET /api/health，失败如实显示
- *
- * v3 布局（用户五条反馈，2026-07-15）：单排工具行（搜索 + 图标筛选卡 +
- * 排序 + 观察台按钮，tab 不再两排重复）；卡片紧凑化，一行最多 6 个。
+ *   我的应用缩略 — 按真实模型示意渲染（导航=真实页面名），不闭环不摆假截图
+ *   示例库   — GET /api/sliderule/builtin-examples（E35 冻结过门模型投影）
+ *              + 真截图资产；拉不到就如实空态
+ *   状态     — 门语言（closed 6/6 / blocked / 推演中），不发明"质量分"
  */
 
 import React from "react";
+import { Pagination } from "antd";
 import {
   LayoutGrid,
   FileText,
@@ -87,7 +89,7 @@ export interface AppCardDetail {
   aiCaps: number;
   pageNames: string[];
   entityNames: string[];
-  /** 应用身份（E40.2）：产品名/主题/图标——工作台卡片的"脸" */
+  /** 应用身份（E40.2）：产品名/主题/图标——应用中心卡片的"脸" */
   identity: { productName: string; theme: string; icon: string } | null;
 }
 
@@ -188,12 +190,15 @@ function themePrimary(themeId: string): string {
 }
 
 // E41：徽标 = 全线统一的门语言（closed 6/6 / blocked / 推演中），
-// 不再另造"运行中/待补充"一套。
+// 不再另造"运行中/待补充"一套。dot 色在深色浮层上仍可辨。
 const STATUS_META: Record<AppCardStatus, { label: string; cls: string; dot: string }> = {
-  runnable: { label: "closed 6/6", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
-  awaiting: { label: "blocked", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500" },
-  draft: { label: "推演中", cls: "bg-blue-50 text-[#1677ff]", dot: "bg-[#1677ff]" },
+  runnable: { label: "closed 6/6", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-400" },
+  awaiting: { label: "blocked", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-400" },
+  draft: { label: "推演中", cls: "bg-blue-50 text-[#1677ff]", dot: "bg-[#4d9aff]" },
 };
+
+/** 每页 12 张 = 一行 4 × 最多三行（用户硬性要求），超出走分页器。 */
+const PAGE_SIZE = 12;
 
 /** 缩略图：全部由真实模型渲染——不是截图，是「按声明重演的迷你应用」。 */
 function MiniAppThumb({
@@ -216,7 +221,7 @@ function MiniAppThumb({
               />
             ))}
           </span>
-          <div className="mt-1 text-[10px] text-stone-400">
+          <div className="mt-1 text-[11px] text-stone-400">
             {detail?.blocked ? "待补充信息" : "推演未闭环"}
           </div>
           {detail && (
@@ -233,15 +238,15 @@ function MiniAppThumb({
   }
   return (
     <div className="flex h-full w-full overflow-hidden bg-[#f4f6f9]">
-      <div className="flex w-[32%] shrink-0 flex-col gap-[2px] bg-[#0d1b2e] px-1 py-1.5">
-        <div className="mb-0.5 flex items-center gap-1 px-0.5">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-sm bg-[#1677ff]" />
-          <span className="truncate text-[7px] font-semibold text-white/90">{goal}</span>
+      <div className="flex w-[26%] shrink-0 flex-col gap-[3px] bg-[#0d1b2e] px-1.5 py-2">
+        <div className="mb-1 flex items-center gap-1 px-0.5">
+          <span className="h-2 w-2 shrink-0 rounded-sm bg-[#1677ff]" />
+          <span className="truncate text-[8px] font-semibold text-white/90">{goal}</span>
         </div>
-        {detail.pageNames.slice(0, 4).map((name, i) => (
+        {detail.pageNames.slice(0, 5).map((name, i) => (
           <div
             key={name}
-            className={`truncate rounded px-1 py-[2px] text-[7px] ${
+            className={`truncate rounded px-1.5 py-[3px] text-[8px] ${
               i === 0 ? "bg-[#1677ff] text-white" : "text-white/55"
             }`}
           >
@@ -250,21 +255,21 @@ function MiniAppThumb({
         ))}
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center justify-between border-b border-stone-200/70 bg-white px-1.5 py-[3px]">
-          <span className="truncate text-[6px] text-stone-400">{detail.pageNames[0]}</span>
-          <span className="h-1.5 w-1.5 rounded-full bg-[#1677ff]/80" />
+        <div className="flex items-center justify-between border-b border-stone-200/70 bg-white px-2 py-[4px]">
+          <span className="truncate text-[7px] text-stone-400">{detail.pageNames[0]}</span>
+          <span className="h-2 w-2 rounded-full bg-[#1677ff]/80" />
         </div>
-        <div className="grid grid-cols-2 gap-1 px-1 pt-1">
+        <div className="grid grid-cols-2 gap-1.5 px-1.5 pt-1.5">
           {detail.entityNames.slice(0, 2).map(name => (
-            <div key={name} className="rounded border border-stone-200/60 bg-white px-1 py-[3px]">
-              <div className="truncate text-[6px] text-stone-400">{name}</div>
-              <div className="text-[8px] font-semibold text-stone-600">0</div>
+            <div key={name} className="rounded border border-stone-200/60 bg-white px-1.5 py-[4px]">
+              <div className="truncate text-[7px] text-stone-400">{name}</div>
+              <div className="text-[9px] font-semibold text-stone-600">0</div>
             </div>
           ))}
         </div>
-        <div className="mx-1 mt-1 flex-1 rounded-t border border-stone-200/60 bg-white p-1">
-          {[1, 0.75, 0.5].map((op, i) => (
-            <div key={i} className="mb-1 h-[3px] w-full rounded-sm bg-stone-100" style={{ opacity: op }} />
+        <div className="mx-1.5 mt-1.5 flex-1 rounded-t border border-stone-200/60 bg-white p-1.5">
+          {[1, 0.75, 0.5, 0.35].map((op, i) => (
+            <div key={i} className="mb-1.5 h-[4px] w-full rounded-sm bg-stone-100" style={{ opacity: op }} />
           ))}
         </div>
       </div>
@@ -301,6 +306,72 @@ function StatChip({
   );
 }
 
+/**
+ * 应用中心统一卡片壳（E42 硬性要求）：16:9 画面铺满整卡，字段内容
+ * 以底部渐变浮层压在图上——我的应用与官方示例库共用同一张壳，
+ * 只有 media / 指标 / 状态注入不同。
+ */
+function CenterCard({
+  testid,
+  title,
+  titleAttr,
+  iconBg,
+  Icon,
+  media,
+  metrics,
+  statusDot,
+  statusLabel,
+  onClick,
+  topRight,
+}: {
+  testid: string;
+  title: string;
+  titleAttr?: string;
+  iconBg?: string;
+  Icon?: React.ComponentType<{ size?: number; className?: string }>;
+  media: React.ReactNode;
+  metrics: React.ReactNode;
+  statusDot: string;
+  statusLabel: string;
+  onClick: () => void;
+  topRight?: React.ReactNode;
+}) {
+  return (
+    <div
+      data-testid={testid}
+      title={titleAttr}
+      className="group relative aspect-video cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
+      onClick={onClick}
+    >
+      <div className="absolute inset-0">{media}</div>
+      {/* 底部浮层：字段内容压在画面上（16:9 定稿要求） */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-3.5 pb-2.5 pt-12">
+        <div className="flex items-center gap-1.5">
+          {Icon && (
+            <span
+              className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-[6px] text-white"
+              style={{ background: iconBg }}
+            >
+              <Icon size={12} />
+            </span>
+          )}
+          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-white">
+            {title}
+          </span>
+        </div>
+        <div className="mt-1 flex items-center gap-2.5 text-[11px] text-white/80">
+          {metrics}
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium text-white/95">
+            <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
+            {statusLabel}
+          </span>
+        </div>
+      </div>
+      {topRight}
+    </div>
+  );
+}
+
 /** 官方示例（E41）：E35 冻结过门模型的摘要投影（API 返回，全真数据）。 */
 export interface BuiltinExample {
   domain: string;
@@ -328,10 +399,12 @@ export function AppsWorkbench() {
   const [pyOk, setPyOk] = React.useState<boolean | null>(null);
   const [llm, setLlm] = React.useState<{ provider: string; model: string; keyPresent: boolean } | null | false>(null);
   const [healthOpen, setHealthOpen] = React.useState(false);
+  const [tab, setTab] = React.useState<"mine" | "examples">("mine");
   const [filter, setFilter] = React.useState<GalleryFilter>("all");
   const [query, setQuery] = React.useState("");
   const [sortDesc, setSortDesc] = React.useState(true);
   const [menuFor, setMenuFor] = React.useState<string | null>(null);
+  const [page, setPage] = React.useState(1);
   // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
   const [reloadKey, setReloadKey] = React.useState(0);
   // E41 官方示例库（静态演示无后端 → 不拉不显示，如实为空）
@@ -342,6 +415,10 @@ export function AppsWorkbench() {
     window.addEventListener(SESSIONS_UPDATED_EVENT, bump);
     return () => window.removeEventListener(SESSIONS_UPDATED_EVENT, bump);
   }, []);
+  // 筛选口径变化 → 回第一页（分页器与筛选联动）
+  React.useEffect(() => {
+    setPage(1);
+  }, [tab, filter, query, exampleCat, sortDesc]);
 
   React.useEffect(() => {
     let alive = true;
@@ -435,7 +512,7 @@ export function AppsWorkbench() {
       alive = false;
     };
     // reloadKey：会话库变更事件（侧栏删除/话题落盘）触发整体重拉，
-    // 工作台与左侧会话列表保持双向同步（E28）
+    // 应用中心与左侧会话列表保持双向同步（E28）
   }, [reloadKey]);
 
   const open = (sessionId: string) => {
@@ -495,6 +572,21 @@ export function AppsWorkbench() {
     blocked: paired.filter(p => p.detail && p.detail.blocked && p.detail.status !== "runnable").length,
     draft: paired.filter(p => p.detail && p.detail.status !== "runnable" && !p.detail.blocked).length,
   };
+  // 示例库筛选：分类 chips + 共享搜索框（搜产品名/意图/分类）
+  const q = query.trim().toLowerCase();
+  const visibleExamples = examples.filter(e => {
+    if (exampleCat !== "全部" && e.category !== exampleCat) return false;
+    if (!q) return true;
+    return (
+      e.productName.toLowerCase().includes(q) ||
+      e.intent.toLowerCase().includes(q) ||
+      e.category.toLowerCase().includes(q)
+    );
+  });
+  // 分页（每页 12 = 4 × 3，用户硬性要求）
+  const totalItems = tab === "mine" ? visible.length : visibleExamples.length;
+  const pagedMine = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pagedExamples = visibleExamples.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const llmOk = llm === null ? null : llm !== false && llm.keyPresent;
   const overall: boolean | null =
@@ -516,9 +608,9 @@ export function AppsWorkbench() {
       {/* 标题行 */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-[24px] font-bold text-stone-800">我的应用</h1>
+          <h1 className="text-[24px] font-bold text-stone-800">应用中心</h1>
           <div className="mt-1 text-[13px] text-stone-400">
-            由 SlideRule 推演并生成的可运行系统
+            由 SlideRule 推演并生成的可运行系统与官方示例
           </div>
         </div>
         <button
@@ -530,48 +622,36 @@ export function AppsWorkbench() {
         </button>
       </div>
 
-      {/* 单排工具行：搜索 + 图标筛选卡（即 tab，不再两排重复）+ 排序 + 观察台 */}
-      <div className="mt-5 flex flex-wrap items-center gap-2.5">
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" />
-          <input
-            data-testid="apps-search"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="搜索应用"
-            className="w-60 rounded-lg border border-stone-200 bg-white py-2 pl-8 pr-3 text-[12.5px] text-stone-700 shadow-sm outline-none placeholder:text-stone-300 focus:border-[#1677ff]"
-          />
-        </div>
-        <StatChip
-          icon={<LayoutGrid size={14} className="text-stone-400" />}
-          label="全部"
-          count={counts.all}
-          active={filter === "all"}
-          onClick={() => setFilter("all")}
-        />
-        <StatChip
-          icon={<Hourglass size={14} className="text-amber-500" />}
-          label="推演中"
-          count={counts.draft}
-          active={filter === "draft"}
-          onClick={() => setFilter("draft")}
-        />
-        <StatChip
-          icon={<CircleCheck size={14} className="text-emerald-500" />}
-          label="closed 6/6"
-          count={counts.runnable}
-          active={filter === "runnable"}
-          onClick={() => setFilter("runnable")}
-        />
-        <StatChip
-          icon={<Hourglass size={14} className="text-orange-400" />}
-          label="blocked"
-          count={counts.blocked}
-          active={filter === "blocked"}
-          onClick={() => setFilter("blocked")}
-        />
+      {/* tab 行：我的应用 / 官方示例库（筛选不同、卡片样式相同）＋ 服务健康 */}
+      <div className="mt-4 flex items-center gap-1 border-b border-stone-200">
+        {(
+          [
+            { key: "mine", label: "我的应用", count: paired.length },
+            { key: "examples", label: "官方示例库", count: examples.length },
+          ] as const
+        ).map(t => (
+          <button
+            key={t.key}
+            data-testid={`apps-tab-${t.key}`}
+            className={`relative -mb-px flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-[14px] transition ${
+              tab === t.key
+                ? "border-[#1677ff] font-semibold text-[#1677ff]"
+                : "border-transparent text-stone-500 hover:text-stone-700"
+            }`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+            <span
+              className={`rounded-full px-1.5 py-[1px] text-[11px] ${
+                tab === t.key ? "bg-blue-50 text-[#1677ff]" : "bg-stone-100 text-stone-500"
+              }`}
+            >
+              {t.count}
+            </span>
+          </button>
+        ))}
         {/* 服务健康：点开分列三服务详情（原观察台独有价值，下放到此） */}
-        <span className="relative">
+        <span className="relative ml-auto">
           <button
             data-testid="apps-health-chip"
             className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12.5px] text-stone-500 transition hover:bg-stone-100"
@@ -594,7 +674,7 @@ export function AppsWorkbench() {
           {healthOpen && (
             <div
               data-testid="apps-health-popover"
-              className="absolute left-0 top-9 z-20 w-64 rounded-xl border border-stone-200 bg-white p-3 shadow-lg"
+              className="absolute right-0 top-9 z-20 w-64 rounded-xl border border-stone-200 bg-white p-3 shadow-lg"
               onClick={e => e.stopPropagation()}
             >
               <div className="space-y-2 text-[12px]">
@@ -619,191 +699,188 @@ export function AppsWorkbench() {
             </div>
           )}
         </span>
-        <div className="ml-auto flex items-center gap-2.5">
-          <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-[12px] text-stone-500 shadow-sm hover:border-stone-300"
-            onClick={() => setSortDesc(v => !v)}
-          >
-            <ArrowUpDown size={13} className="text-stone-400" />
-            {sortDesc ? "最近更新" : "最早更新"}
-          </button>
-        </div>
       </div>
 
-      {/* 卡片栅格：紧凑卡，一行最多 6 个 */}
-      {listError ? (
-        <div className="mt-8 text-[13px] text-red-500">会话列表拉取失败：{listError}</div>
-      ) : sessions == null ? (
-        <div className="mt-8 text-[13px] text-stone-400">加载中…</div>
-      ) : visible.length === 0 ? (
-        <div className="mt-8 text-[13px] text-stone-400">
-          {paired.length === 0 ? "还没有应用——点右上角「创建新应用」开始推演" : "没有匹配的应用"}
+      {/* 工具行：搜索共享；我的应用 = 门语言筛选 + 排序，示例库 = 分类 chips */}
+      <div className="mt-4 flex flex-wrap items-center gap-2.5">
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" />
+          <input
+            data-testid="apps-search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder={tab === "mine" ? "搜索应用" : "搜索示例"}
+            className="w-60 rounded-lg border border-stone-200 bg-white py-2 pl-8 pr-3 text-[12.5px] text-stone-700 shadow-sm outline-none placeholder:text-stone-300 focus:border-[#1677ff]"
+          />
         </div>
-      ) : (
-        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-          {visible.map(({ item, detail }) => {
-            const meta = detail ? STATUS_META[detail.status] : null;
-            return (
-              <div
-                key={item.sessionId}
-                data-testid={`app-card-${item.sessionId}`}
-                className="group relative cursor-pointer overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-md"
-                onClick={() => open(item.sessionId)}
+        {tab === "mine" ? (
+          <>
+            <StatChip
+              icon={<LayoutGrid size={14} className="text-stone-400" />}
+              label="全部"
+              count={counts.all}
+              active={filter === "all"}
+              onClick={() => setFilter("all")}
+            />
+            <StatChip
+              icon={<Hourglass size={14} className="text-amber-500" />}
+              label="推演中"
+              count={counts.draft}
+              active={filter === "draft"}
+              onClick={() => setFilter("draft")}
+            />
+            <StatChip
+              icon={<CircleCheck size={14} className="text-emerald-500" />}
+              label="closed 6/6"
+              count={counts.runnable}
+              active={filter === "runnable"}
+              onClick={() => setFilter("runnable")}
+            />
+            <StatChip
+              icon={<Hourglass size={14} className="text-orange-400" />}
+              label="blocked"
+              count={counts.blocked}
+              active={filter === "blocked"}
+              onClick={() => setFilter("blocked")}
+            />
+            <div className="ml-auto flex items-center gap-2.5">
+              <button
+                className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-[12px] text-stone-500 shadow-sm hover:border-stone-300"
+                onClick={() => setSortDesc(v => !v)}
               >
-                <div className="relative h-[104px] border-b border-stone-100">
-                  <MiniAppThumb goal={item.goal} detail={detail} />
-                  {meta && (
-                    <span
-                      className={`absolute left-2 top-2 inline-flex items-center gap-1 rounded px-1.5 py-[2px] text-[10px] font-medium shadow-sm ${meta.cls}`}
-                    >
-                      <span className={`h-1 w-1 rounded-full ${meta.dot}`} />
-                      {meta.label}
-                    </span>
-                  )}
-                  <button
-                    data-testid={`app-menu-${item.sessionId}`}
-                    className="absolute right-1.5 top-1.5 rounded bg-white/85 p-0.5 text-stone-400 opacity-0 shadow-sm transition hover:text-stone-600 group-hover:opacity-100"
-                    onClick={e => {
-                      e.stopPropagation();
-                      setMenuFor(prev => (prev === item.sessionId ? null : item.sessionId));
-                    }}
-                  >
-                    <MoreHorizontal size={14} />
-                  </button>
-                  {menuFor === item.sessionId && (
-                    <div
-                      className="absolute right-1.5 top-7 z-10 rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
-                      onClick={e => e.stopPropagation()}
-                    >
-                      <button
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-50"
-                        onClick={() => void removeApp(item.sessionId)}
-                      >
-                        <Trash2 size={13} /> 删除应用
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div className="px-2.5 pb-2 pt-2">
-                  <div className="flex items-center gap-1.5">
-                    {detail?.identity && (
-                      <span
-                        className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] text-white"
-                        style={{ background: themePrimary(detail.identity.theme) }}
-                        title={`主题 ${detail.identity.theme}`}
-                      >
-                        {React.createElement(
-                          BRAND_LUCIDE[detail.identity.icon] ?? Boxes,
-                          { size: 11 }
-                        )}
-                      </span>
-                    )}
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold leading-snug text-stone-800">
-                      {detail?.identity?.productName || item.goal || "（未命名话题）"}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5">
-                    <span className="min-w-0 flex-1 truncate text-[10.5px] text-stone-400">
-                      {detail && detail.pageNames.length > 0
-                        ? detail.pageNames.slice(0, 3).join(" · ")
-                        : "推演中"}
-                    </span>
-                    <span className="shrink-0 text-[9.5px] text-stone-300">
-                      {formatUpdatedAt(item.lastActive ?? item.createdAt).slice(5) || "—"}
-                    </span>
-                  </div>
-                  <div className="mt-1.5 flex items-center gap-2 border-t border-stone-100 pt-1.5 text-[10.5px] text-stone-500">
-                    {detail ? (
+                <ArrowUpDown size={13} className="text-stone-400" />
+                {sortDesc ? "最近更新" : "最早更新"}
+              </button>
+            </div>
+          </>
+        ) : (
+          ["全部", ...Array.from(new Set(examples.map(e => e.category)))].map(cat => (
+            <button
+              key={cat}
+              data-testid={`example-cat-${cat}`}
+              className={`rounded-lg border px-3 py-1.5 text-[12.5px] transition ${
+                exampleCat === cat
+                  ? "border-[#1677ff] bg-white text-[#1677ff]"
+                  : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
+              }`}
+              onClick={() => setExampleCat(cat)}
+            >
+              {cat}
+            </button>
+          ))
+        )}
+      </div>
+
+      {/* ===== 我的应用 tab ===== */}
+      {tab === "mine" &&
+        (listError ? (
+          <div className="mt-8 text-[13px] text-red-500">会话列表拉取失败：{listError}</div>
+        ) : sessions == null ? (
+          <div className="mt-8 text-[13px] text-stone-400">加载中…</div>
+        ) : visible.length === 0 ? (
+          <div className="mt-8 text-[13px] text-stone-400">
+            {paired.length === 0 ? "还没有应用——点右上角「创建新应用」开始推演" : "没有匹配的应用"}
+          </div>
+        ) : (
+          <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
+            {pagedMine.map(({ item, detail }) => {
+              const meta = detail ? STATUS_META[detail.status] : null;
+              const BrandIcon = detail?.identity
+                ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
+                : undefined;
+              return (
+                <CenterCard
+                  key={item.sessionId}
+                  testid={`app-card-${item.sessionId}`}
+                  title={detail?.identity?.productName || item.goal || "（未命名话题）"}
+                  titleAttr={item.goal}
+                  Icon={BrandIcon}
+                  iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
+                  media={<MiniAppThumb goal={item.goal} detail={detail} />}
+                  metrics={
+                    detail ? (
                       <>
-                        <span className="inline-flex items-center gap-0.5" title="页面数">
-                          <FileText size={11} className="text-stone-300" />
+                        <span className="inline-flex items-center gap-1" title="页面数">
+                          <FileText size={11} className="opacity-60" />
                           页面 {detail.pages}
                         </span>
-                        <span className="inline-flex items-center gap-0.5" title="角色数">
-                          <Users size={11} className="text-stone-300" />
+                        <span className="inline-flex items-center gap-1" title="角色数">
+                          <Users size={11} className="opacity-60" />
                           角色 {detail.roles}
                         </span>
-                        <span className="inline-flex items-center gap-0.5" title="AI 能力数">
-                          <GitBranch size={11} className="text-stone-300" />
+                        <span className="inline-flex items-center gap-1" title="AI 能力数">
+                          <GitBranch size={11} className="opacity-60" />
                           AI {detail.aiCaps}
-                        </span>
-                        <span
-                          className={`ml-auto font-semibold ${
-                            detail.evidenceCount >= 6 ? "text-emerald-600" : "text-stone-400"
-                          }`}
-                          title="发布闭环证据"
-                        >
-                          {detail.evidenceCount}/6
                         </span>
                       </>
                     ) : (
-                      <span className="text-stone-300">加载中…</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                      <span className="opacity-70">加载中…</span>
+                    )
+                  }
+                  statusDot={meta?.dot ?? "bg-stone-300"}
+                  statusLabel={meta?.label ?? "…"}
+                  onClick={() => open(item.sessionId)}
+                  topRight={
+                    <>
+                      <button
+                        data-testid={`app-menu-${item.sessionId}`}
+                        className="absolute right-2 top-2 rounded bg-white/85 p-1 text-stone-400 opacity-0 shadow-sm transition hover:text-stone-600 group-hover:opacity-100"
+                        onClick={e => {
+                          e.stopPropagation();
+                          setMenuFor(prev => (prev === item.sessionId ? null : item.sessionId));
+                        }}
+                      >
+                        <MoreHorizontal size={14} />
+                      </button>
+                      {menuFor === item.sessionId && (
+                        <div
+                          className="absolute right-2 top-8 z-10 rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <button
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-50"
+                            onClick={() => void removeApp(item.sessionId)}
+                          >
+                            <Trash2 size={13} /> 删除应用
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  }
+                />
+              );
+            })}
+          </div>
+        ))}
 
-      {/* 官方示例库（E41）：每张卡背后是一个过了结构门的冻结五系统模型——
-          真产品名/真主题/真指标/真截图，数量如实（有几个过门模型摆几张）。
+      {/* ===== 官方示例库 tab =====
+          每张卡背后是一个过了结构门的冻结五系统模型——真产品名/真主题/
+          真指标/真截图，数量如实（有几个过门模型摆几张）。
           点卡 = 新会话预填起手意图，走同一条推演管线（不是复制死模板）。 */}
-      {examples.length > 0 && (
-        <div className="mt-10" data-testid="example-gallery">
-          <h2 className="text-[20px] font-bold text-stone-800">官方示例库</h2>
-          <div className="mt-1 text-[13px] text-stone-400">
-            每个示例都是过了发布门的真应用——点卡即以该场景起手推演
+      {tab === "examples" &&
+        (examples.length === 0 ? (
+          <div className="mt-8 text-[13px] text-stone-400" data-testid="example-gallery-empty">
+            示例库暂不可用——需要 Python 推演服务在线（/api/sliderule/builtin-examples）
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {["全部", ...Array.from(new Set(examples.map(e => e.category)))].map(cat => (
-              <button
-                key={cat}
-                data-testid={`example-cat-${cat}`}
-                className={`rounded-lg border px-3 py-1.5 text-[12.5px] transition ${
-                  exampleCat === cat
-                    ? "border-[#1677ff] bg-white text-[#1677ff]"
-                    : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
-                }`}
-                onClick={() => setExampleCat(cat)}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-4">
-            {examples
-              .filter(e => exampleCat === "全部" || e.category === exampleCat)
-              .map(example => {
-                const theme = resolveIdentityTheme(example.theme);
-                const Icon = BRAND_LUCIDE[example.icon] ?? Boxes;
-                const shot = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/examples/${example.domain}.png`;
-                return (
-                  <div
-                    key={example.domain}
-                    data-testid={`example-card-${example.domain}`}
-                    className="group cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/50 hover:shadow-md"
-                    onClick={() => useTemplate(example)}
-                    title={example.intent}
-                  >
-                    {/* 主题色带（身份系统派生，与生成应用同一套 token） */}
-                    <div
-                      className="flex items-center gap-2 px-3 py-2"
-                      style={{
-                        background: `linear-gradient(135deg, ${theme.primary}, ${theme.gradTo})`,
-                      }}
-                    >
-                      <Icon size={13} className="text-white" />
-                      <span className="truncate text-[11.5px] font-medium text-white/95">
-                        {example.productName}
-                      </span>
-                      <span className="ml-auto rounded bg-white/20 px-1.5 py-[1px] text-[9.5px] font-semibold text-white">
-                        closed 6/6
-                      </span>
-                    </div>
-                    {/* 真应用截图（playwright 实跑闭环后拍摄；缺图诚实显示占位说明） */}
-                    <div className="relative h-[120px] overflow-hidden border-b border-stone-100 bg-[#f4f6f9]">
+        ) : visibleExamples.length === 0 ? (
+          <div className="mt-8 text-[13px] text-stone-400">没有匹配的示例</div>
+        ) : (
+          <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4" data-testid="example-gallery">
+            {pagedExamples.map(example => {
+              const theme = resolveIdentityTheme(example.theme);
+              const Icon = BRAND_LUCIDE[example.icon] ?? Boxes;
+              const shot = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/examples/${example.domain}.png`;
+              return (
+                <CenterCard
+                  key={example.domain}
+                  testid={`example-card-${example.domain}`}
+                  title={example.productName}
+                  titleAttr={example.intent}
+                  Icon={Icon}
+                  iconBg={theme.primary}
+                  media={
+                    <div className="relative h-full w-full bg-[#f4f6f9]">
+                      {/* 真应用截图（playwright 实跑闭环后拍摄；缺图诚实显示占位说明） */}
                       <img
                         src={shot}
                         alt={`${example.productName} 真实截图`}
@@ -818,31 +895,36 @@ export function AppsWorkbench() {
                         截图生成中
                       </div>
                     </div>
-                    <div className="px-3 pb-2.5 pt-2">
-                      <div className="flex flex-wrap gap-1">
-                        {example.tags.slice(0, 3).map(tag => (
-                          <span
-                            key={tag}
-                            className="rounded px-1.5 py-[2px] text-[10px]"
-                            style={{ background: theme.accentBg, color: theme.accentFg }}
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="mt-1.5 flex items-center gap-2 text-[10.5px] text-stone-500">
-                        <span>页面 {example.pages}</span>
-                        <span>角色 {example.roles}</span>
-                        <span>AI {example.aiCapabilities}</span>
-                        <span className="ml-auto text-[10px] text-stone-300 opacity-0 transition group-hover:opacity-100">
-                          点卡起手 →
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                  }
+                  metrics={
+                    <>
+                      <span>页面 {example.pages}</span>
+                      <span>角色 {example.roles}</span>
+                      <span>AI {example.aiCapabilities}</span>
+                      <span className="text-white/60 opacity-0 transition group-hover:opacity-100">
+                        点卡起手 →
+                      </span>
+                    </>
+                  }
+                  statusDot="bg-emerald-400"
+                  statusLabel="closed 6/6"
+                  onClick={() => useTemplate(example)}
+                />
+              );
+            })}
           </div>
+        ))}
+
+      {/* 分页器：一页 12 张（4 × 3），两个 tab 共用（用户定稿） */}
+      {totalItems > PAGE_SIZE && (
+        <div className="mt-6 flex justify-center" data-testid="apps-pagination">
+          <Pagination
+            current={page}
+            pageSize={PAGE_SIZE}
+            total={totalItems}
+            onChange={p => setPage(p)}
+            showSizeChanger={false}
+          />
         </div>
       )}
     </div>
