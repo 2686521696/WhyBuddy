@@ -1,14 +1,83 @@
 {
   "$comment": "五系统模型合法域——单一真相源（E40.1）。四方消费：结构门(v5_model_gate)、确定性修复器(v5_model_repair)、生成契约(v5_llm_generate)、客户端渲染器(client/src/pages/sliderule/live-runtime)。改这里 = 四方同步；任何一方私自扩枚举都是 E37 复刻。放在 python 包内是因为 python 容器只拷 slide-rule-python/，客户端构建是全仓上下文跨目录可达。",
   "version": 1,
-  "fieldTypes": ["string", "number", "date", "ref", "enum", "text"],
-  "fieldTones": ["success", "processing", "warning", "danger", "default"],
-  "numberFormats": ["money", "percent", "progress", "score", "rating"],
-  "stringFormats": ["masked"],
-  "statFormats": ["number", "money", "percent"],
-  "pageKinds": ["workbench", "kanban", "calendar", "dashboard"],
-  "chartTypes": ["bar", "line", "pie"],
-  "metricBare": ["count"],
-  "chartMetricPrefixes": ["sum:"],
-  "statMetricPrefixes": ["sum:", "avg:"]
+  "fieldTypes": [
+    "string",
+    "number",
+    "date",
+    "ref",
+    "enum",
+    "text"
+  ],
+  "fieldTones": [
+    "success",
+    "processing",
+    "warning",
+    "danger",
+    "default"
+  ],
+  "numberFormats": [
+    "money",
+    "percent",
+    "progress",
+    "score",
+    "rating"
+  ],
+  "stringFormats": [
+    "masked"
+  ],
+  "statFormats": [
+    "number",
+    "money",
+    "percent"
+  ],
+  "pageKinds": [
+    "workbench",
+    "kanban",
+    "calendar",
+    "dashboard"
+  ],
+  "chartTypes": [
+    "bar",
+    "line",
+    "pie"
+  ],
+  "metricBare": [
+    "count"
+  ],
+  "chartMetricPrefixes": [
+    "sum:"
+  ],
+  "statMetricPrefixes": [
+    "sum:",
+    "avg:"
+  ],
+  "identityThemes": [
+    "azure",
+    "forest",
+    "graphite",
+    "tangerine",
+    "violet",
+    "amber",
+    "clay",
+    "indigo"
+  ],
+  "identityIcons": [
+    "boxes",
+    "chart",
+    "shield",
+    "cart",
+    "users",
+    "calendar",
+    "file",
+    "spark",
+    "globe",
+    "wrench",
+    "heart",
+    "book"
+  ],
+  "identityNavs": [
+    "side",
+    "top"
+  ]
 }

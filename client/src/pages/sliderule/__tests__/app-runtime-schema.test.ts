@@ -362,4 +362,38 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
       deriveAppRuntimeSchema({ ...MODEL, page: { pages: [] } })
     ).toBeNull();
   });
+
+  it("应用身份段（E40.2）：产品名权威 > 会话标题，枚举缺省回退与历史一致", () => {
+    // 无身份段（老模型）：缺省 azure/boxes/side，appName = 会话标题
+    const legacy = deriveAppRuntimeSchema(MODEL, "健身房系统")!;
+    expect(legacy.identity).toEqual({
+      themeId: "azure",
+      icon: "boxes",
+      nav: "side",
+    });
+    expect(legacy.appName).toBe("健身房系统");
+
+    // 带身份段：产品名顶掉会话标题，主题/图标/导航生效
+    const branded = deriveAppRuntimeSchema(
+      {
+        ...MODEL,
+        appbundle: {
+          ...MODEL.appbundle,
+          appIdentity: {
+            productName: "健身魔方",
+            theme: "tangerine",
+            icon: "heart",
+            nav: "top",
+          },
+        },
+      },
+      "健身房系统"
+    )!;
+    expect(branded.appName).toBe("健身魔方");
+    expect(branded.identity).toEqual({
+      themeId: "tangerine",
+      icon: "heart",
+      nav: "top",
+    });
+  });
 });

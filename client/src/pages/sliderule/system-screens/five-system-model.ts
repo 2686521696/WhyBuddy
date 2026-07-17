@@ -179,6 +179,7 @@ export interface PresentationNotes {
   droppedCharts?: Array<{ pageId?: string; chartId?: string; reason?: string }>;
   droppedStats?: Array<{ pageId?: string; statId?: string; reason?: string }>;
   clearedFormats?: Array<{ pageId?: string; statId?: string; format?: string }>;
+  clearedIdentity?: Array<{ key?: string; value?: string }>;
 }
 
 export interface AppBundleSection {
@@ -191,6 +192,20 @@ export interface AppBundleSection {
   invariantNotes?: InvariantNotes;
   /** 展示层声明修复/剔除留痕（E37，AppBundle 屏如实展示） */
   presentationNotes?: PresentationNotes;
+  /** 应用身份段（E40.2）：产品名 + 主题 + 图标 + 导航形态（合法域在 @legal） */
+  appIdentity?: AppIdentitySection;
+}
+
+/** 应用身份段（E40.2）：千人千面的第一层——每个应用自己的"脸"。 */
+export interface AppIdentitySection {
+  /** 产品名（LLM 起的品牌名，不是用户原话） */
+  productName?: string;
+  /** 主题 id（identity-themes 的 8 套 token 之一） */
+  theme?: string;
+  /** 品牌图标 id（封闭图标集） */
+  icon?: string;
+  /** 导航形态：side 管理台侧栏 / top 监控型顶栏 */
+  nav?: string;
 }
 
 export interface FiveSystemModel {

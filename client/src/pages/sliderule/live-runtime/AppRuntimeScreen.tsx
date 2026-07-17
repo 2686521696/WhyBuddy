@@ -53,8 +53,20 @@ import {
   PlusOutlined,
   LockOutlined,
   SettingOutlined,
+  BarChartOutlined,
+  BookOutlined,
+  CalendarOutlined,
+  FileTextOutlined,
+  GlobalOutlined,
+  HeartOutlined,
+  SafetyOutlined,
+  ShoppingCartOutlined,
+  TeamOutlined,
+  ThunderboltOutlined,
+  ToolOutlined,
 } from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
+import { resolveIdentityTheme } from "./identity-themes";
 import {
   buildAiActionInputs,
   deriveAppRuntimeSchema,
@@ -154,6 +166,22 @@ const MENU_ICONS = [
   FormOutlined,
   AppstoreOutlined,
 ];
+
+// E40.2 品牌图标封闭集（id 合法域在 @legal identityIcons；未知 id 回退 boxes）
+const BRAND_ICONS: Record<string, React.ComponentType<{ style?: React.CSSProperties }>> = {
+  boxes: AppstoreOutlined,
+  chart: BarChartOutlined,
+  shield: SafetyOutlined,
+  cart: ShoppingCartOutlined,
+  users: TeamOutlined,
+  calendar: CalendarOutlined,
+  file: FileTextOutlined,
+  spark: ThunderboltOutlined,
+  globe: GlobalOutlined,
+  wrench: ToolOutlined,
+  heart: HeartOutlined,
+  book: BookOutlined,
+};
 
 // --- 图表（dataviz 规范：墨色文字、细标记、状态色已校验） --------------------
 const INK = { label: "#595959", value: "#262626", faint: "#bfbfbf" };
@@ -1360,6 +1388,33 @@ export function AppRuntimeScreen({
 
   const pageContent = defaultPageContent;
 
+  // E40.2 应用身份：主题 token 决定品牌区/主色/内容底色；菜单项抽出来给
+  // side/top 两种导航形态共用。缺省 = azure（老模型渲染与历史一致）。
+  const identityTheme = resolveIdentityTheme(schema.identity.themeId);
+  const brandGradient = `linear-gradient(135deg,${identityTheme.primary},${identityTheme.gradTo})`;
+  const BrandIcon = BRAND_ICONS[schema.identity.icon] ?? AppstoreOutlined;
+  const navMenuItems = schema.menus.map((m, i) => {
+    const locked =
+      m.pageId !== "home" && pageAccess.get(m.pageId)?.visible === false;
+    const Icon =
+      m.pageId === "home"
+        ? DashboardOutlined
+        : locked
+          ? LockOutlined
+          : MENU_ICONS[(i - 1 + MENU_ICONS.length) % MENU_ICONS.length];
+    return {
+      key: m.pageId,
+      icon: <Icon />,
+      label: (
+        <span {...probe({ kind: "menu", pageId: m.pageId, label: m.label })}>
+          {m.label}
+        </span>
+      ),
+      disabled: locked,
+      title: locked ? `当前角色（${role ?? "-"}）无本页权限` : m.label,
+    };
+  });
+
   const desktopShell = (
     <Layout style={{ height: "100%" }}>
       <Layout.Sider width={device === "tablet" ? 176 : 208} theme="dark">
@@ -1378,9 +1433,15 @@ export function AppRuntimeScreen({
               height: 28,
               borderRadius: 7,
               flexShrink: 0,
-              background: "linear-gradient(135deg,#1677ff,#69b1ff)",
+              background: brandGradient,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
-          />
+            data-testid="app-brand-mark"
+          >
+            <BrandIcon style={{ color: "#fff", fontSize: 15 }} />
+          </div>
           <span
             style={{
               color: "#fff",
@@ -1400,30 +1461,7 @@ export function AppRuntimeScreen({
           mode="inline"
           selectedKeys={[activePageId]}
           onClick={({ key }) => setActivePageId(String(key))}
-          items={schema.menus.map((m, i) => {
-            const locked =
-              m.pageId !== "home" &&
-              pageAccess.get(m.pageId)?.visible === false;
-            const Icon =
-              m.pageId === "home"
-                ? DashboardOutlined
-                : locked
-                  ? LockOutlined
-                  : MENU_ICONS[(i - 1 + MENU_ICONS.length) % MENU_ICONS.length];
-            return {
-              key: m.pageId,
-              icon: <Icon />,
-              label: (
-                <span
-                  {...probe({ kind: "menu", pageId: m.pageId, label: m.label })}
-                >
-                  {m.label}
-                </span>
-              ),
-              disabled: locked,
-              title: locked ? `当前角色（${role ?? "-"}）无本页权限` : m.label,
-            };
-          })}
+          items={navMenuItems}
         />
       </Layout.Sider>
       <Layout>
@@ -1455,7 +1493,7 @@ export function AppRuntimeScreen({
           />
           <Avatar
             size={30}
-            style={{ background: "#1677ff" }}
+            style={{ background: identityTheme.primary }}
             icon={<UserOutlined />}
           />
         </Layout.Header>
@@ -1463,6 +1501,81 @@ export function AppRuntimeScreen({
           {isHome ? homeContent : pageContent}
         </Layout.Content>
       </Layout>
+    </Layout>
+  );
+
+  // E40.2 nav=top：监控/总览型产品的顶栏形态——品牌区 + 横向主菜单 +
+  // 角色切换收在同一条深色 Header，内容区独占全宽（菜单少的域更开阔）。
+  const topShell = (
+    <Layout style={{ height: "100%" }} data-testid="app-shell-top">
+      <Layout.Header
+        style={{
+          background: "#001529",
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          padding: "0 16px",
+          height: 52,
+          lineHeight: "52px",
+        }}
+      >
+        <div
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 7,
+            flexShrink: 0,
+            background: brandGradient,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          data-testid="app-brand-mark"
+        >
+          <BrandIcon style={{ color: "#fff", fontSize: 14 }} />
+        </div>
+        <span
+          style={{
+            color: "#fff",
+            fontWeight: 600,
+            fontSize: 15,
+            whiteSpace: "nowrap",
+            maxWidth: 220,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+          title={schema.appName}
+        >
+          {schema.appName}
+        </span>
+        <Menu
+          theme="dark"
+          mode="horizontal"
+          selectedKeys={[activePageId]}
+          onClick={({ key }) => setActivePageId(String(key))}
+          items={navMenuItems}
+          style={{ flex: 1, minWidth: 0, background: "transparent" }}
+        />
+        <span style={{ fontSize: 13, color: "rgba(255,255,255,0.65)" }}>
+          当前角色
+        </span>
+        <Select
+          size="small"
+          style={{ minWidth: 140 }}
+          value={role}
+          onChange={changeRole}
+          options={schema.roles.map(r => ({ value: r, label: r }))}
+          data-testid="app-runtime-role"
+        />
+        <Avatar
+          size={28}
+          style={{ background: identityTheme.primary }}
+          icon={<UserOutlined />}
+        />
+      </Layout.Header>
+      <Layout.Content style={{ padding: 20, overflow: "auto" }}>
+        {isHome ? homeContent : pageContent}
+      </Layout.Content>
     </Layout>
   );
 
@@ -1493,10 +1606,15 @@ export function AppRuntimeScreen({
             width: 22,
             height: 22,
             borderRadius: 6,
-            background: "linear-gradient(135deg,#1677ff,#69b1ff)",
+            background: brandGradient,
             flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
-        />
+        >
+          <BrandIcon style={{ color: "#fff", fontSize: 12 }} />
+        </div>
         <span
           style={{
             fontWeight: 600,
@@ -1583,7 +1701,10 @@ export function AppRuntimeScreen({
             height: spec.h,
             transform: `scale(${scale})`,
             transformOrigin: "top left",
-            background: "#f0f2f5",
+            // E40.2：主题变量下发（非 antd 的裸元素经 var(--app-primary) 吃主题）
+            ["--app-primary" as string]: identityTheme.primary,
+            ["--app-primary-hover" as string]: identityTheme.primaryHover,
+            background: identityTheme.contentBg,
             borderRadius: isPhone ? 12 : 5,
             overflow: "hidden",
             boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
@@ -1591,11 +1712,17 @@ export function AppRuntimeScreen({
         >
           <ConfigProvider
             getPopupContainer={() => canvasEl ?? document.body}
-            theme={
-              isTablet ? { algorithm: antdTheme.compactAlgorithm } : undefined
-            }
+            theme={{
+              // E40.2：身份主题的主色一把翻全部 antd 组件（按钮/选中态/链接…）
+              token: { colorPrimary: identityTheme.primary },
+              algorithm: isTablet ? antdTheme.compactAlgorithm : undefined,
+            }}
           >
-            {isPhone ? phoneShell : desktopShell}
+            {isPhone
+              ? phoneShell
+              : schema.identity.nav === "top"
+                ? topShell
+                : desktopShell}
 
             <Modal
               title={`新建 · ${page?.title ?? ""}`}

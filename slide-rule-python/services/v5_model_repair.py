@@ -75,7 +75,8 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
     entity_ids = {r for r in field_refs if "." not in r}
     dotted_refs = field_refs - entity_ids
     notes: Dict[str, List[Dict[str, Any]]] = {
-        "repaired": [], "droppedCharts": [], "droppedStats": [], "clearedFormats": [],
+        "repaired": [], "droppedCharts": [], "droppedStats": [],
+        "clearedFormats": [], "clearedIdentity": [],
     }
 
     def _fix_ref(container: Dict[str, Any], key: str, ref: str, known: set, pid: str) -> bool:
@@ -180,6 +181,27 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
         page = dict(page)
         page["pages"] = new_pages
         m["page"] = page
+
+    # E40.2 应用身份段：非法枚举值清除回默认（渲染层会用缺省主题/图标/导航），
+    # 产品名空串清除。身份是纯展示增强层——与 format 同款处方，绝不株连。
+    from .schema_legal import IDENTITY_ICONS, IDENTITY_NAVS, IDENTITY_THEMES
+
+    appbundle_i = _as_dict(m.get("appbundle"))
+    identity = appbundle_i.get("appIdentity")
+    if isinstance(identity, dict):
+        fixed_identity = dict(identity)
+        for key, legal in (("theme", IDENTITY_THEMES), ("icon", IDENTITY_ICONS), ("nav", IDENTITY_NAVS)):
+            value = str(fixed_identity.get(key) or "").strip()
+            if key in fixed_identity and (not value or value not in legal):
+                fixed_identity.pop(key, None)
+                notes["clearedIdentity"].append({"key": key, "value": value})
+        if "productName" in fixed_identity and not str(fixed_identity.get("productName") or "").strip():
+            fixed_identity.pop("productName", None)
+            notes["clearedIdentity"].append({"key": "productName", "value": ""})
+        if fixed_identity != identity:
+            appbundle_i = dict(appbundle_i)
+            appbundle_i["appIdentity"] = fixed_identity
+            m["appbundle"] = appbundle_i
     return notes
 
 
