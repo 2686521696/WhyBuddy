@@ -18,19 +18,26 @@
   </head>
 
   <body>
-    <!-- 首屏占位（E33 视觉稿版）：JS 主包下载/执行期间显示骨架屏 + 品牌 +
-         进度条，与 React 挂载后的水合幕布（WorkbenchLoadingScreen）同一套
-         设计——三段加载（启动占位→水合幕布→真实界面）视觉连续无跳变。
-         全内联零额外请求；GitHub Pages 弱网下避免长时间白屏。 -->
-    <div id="root">
+    <!-- 首屏占位（E33.2 单层版）：放在 #root 外面——React 挂载不会把它抹掉，
+         它从首字节一直活到会话水合完成才由页面调 __slideruleDismissBootSplash
+         摘除。整个加载期间只有这一层（用户实拍反馈：两层同风格加载页仍看得出
+         切换）。全内联零额外请求；20s 自毁兜底绝不无限盖屏。 -->
+    <div id="root"></div>
+    <div id="sliderule-boot-splash">
       <style>
         .boot-splash {
           position: fixed;
           inset: 0;
+          z-index: 999;
           display: flex;
           background: #f7f8fa;
           color: #334155;
           font-family: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+          transition: opacity 450ms ease;
+        }
+        .boot-splash--done {
+          opacity: 0;
+          pointer-events: none;
         }
         .boot-splash .bb {
           background: #e9edf2;
@@ -247,6 +254,24 @@
         </div>
       </div>
     </div>
+    <script>
+      // 占位页摘除助手（幂等）：推演页水合完成时调用；React 挂载后 main.tsx
+      // 对非推演路由早摘。45s 自毁兜底——挂载失败也绝不无限盖屏
+      // （dev 冷编译实测可到 20s，兜底须显著高于正常加载的最坏情况）。
+      (function () {
+        var dismissed = false;
+        window.__slideruleDismissBootSplash = function () {
+          if (dismissed) return;
+          dismissed = true;
+          var wrap = document.getElementById("sliderule-boot-splash");
+          if (!wrap) return;
+          var splash = wrap.querySelector(".boot-splash");
+          if (splash) splash.classList.add("boot-splash--done");
+          setTimeout(function () { wrap.remove(); }, 500);
+        };
+        setTimeout(window.__slideruleDismissBootSplash, 45000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
     <!-- Analytics bootstrap moved to client/src/main.tsx (cleaner index.html for Vite Pages build transforms; avoids html-proxy module resolution issues) -->
   </body>
