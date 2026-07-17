@@ -515,32 +515,71 @@ process.on("SIGTERM", () => shutdown(0));
 /**
  * 启动前哨检查：dev 端口若已被占用，页面实际打到的会是那个"旧进程"，
  * 而不是本次启动的新代码——这曾造成"源码已修好、HTTP 行为还是旧的"的
- * 幽灵现场（占 9700 的 PID 甚至在 tasklist 里查不到 = 可能是 WSL 端口
- * 转发或提权进程）。这里不代杀（dev:stop 负责），只把真相喊出来。
+ * 幽灵现场（占 9700 的端口表属主甚至已经退出 = 监听套接字被孤儿子进程
+ * 继承）。策略升级（真实事故：只警告继续跑，起了一套影子服务，用户按
+ * "重启"排查了半天）：先自动跑一遍 dev:stop 清场，复查仍被占则拒绝启动
+ * （DEV_ALL_ALLOW_BUSY_PORTS=1 可强行放行）。
  */
-async function warnOnOccupiedDevPorts() {
+async function preflightDevPorts() {
   const ports = [
     { port: Number(process.env.VITE_PORT || 3000), name: "vite" },
     { port: 3001, name: "node server" },
     { port: Number(process.env.SLIDE_RULE_PYTHON_PORT || 9700), name: "slide-rule-python" },
     { port: Number(process.env.LOBSTER_EXECUTOR_PORT || 3031), name: "lobster-executor" },
   ];
-  for (const { port, name } of ports) {
-    if (await waitForPortListening(port, { timeoutMs: 350 })) {
-      console.warn(
-        `[dev:all] !!! Port ${port} (${name}) is ALREADY occupied before startup. ` +
-          `Requests will hit that pre-existing process, NOT the one dev:all starts — ` +
-          `your code changes will appear to have no effect. ` +
-          `Run "npm run dev:stop" first; if the port stays busy and the owner PID is ` +
-          `unresolvable, it is likely a WSL relay — run "wsl --shutdown" (Windows) and retry.`
-      );
-    }
+  const busy = [];
+  for (const entry of ports) {
+    if (await waitForPortListening(entry.port, { timeoutMs: 350 })) busy.push(entry);
   }
+  if (!busy.length) return;
+
+  const busyLabel = busy.map(({ port, name }) => `${port} (${name})`).join(", ");
+  console.warn(
+    `[dev:all] Ports already occupied before startup: ${busyLabel} — running dev:stop to clear them.`
+  );
+  await new Promise((resolveDone) => {
+    const child = spawn(process.execPath, [resolve(__projectRoot, "scripts", "dev-stop.mjs")], {
+      cwd: __projectRoot,
+      stdio: "inherit",
+    });
+    child.on("close", () => resolveDone());
+    child.on("error", (error) => {
+      console.warn(`[dev:all] auto dev:stop failed to run: ${error?.message ?? error}`);
+      resolveDone();
+    });
+  });
+
+  // 清完复查：给内核半秒释放监听套接字
+  await new Promise((r) => setTimeout(r, 600));
+  const still = [];
+  for (const entry of busy) {
+    if (await waitForPortListening(entry.port, { timeoutMs: 350 })) still.push(entry);
+  }
+  if (!still.length) {
+    console.log("[dev:all] ports cleared - starting fresh stack.");
+    return;
+  }
+
+  const stillLabel = still.map(({ port, name }) => `${port} (${name})`).join(", ");
+  if (process.env.DEV_ALL_ALLOW_BUSY_PORTS === "1") {
+    console.warn(
+      `[dev:all] !!! Ports STILL occupied after cleanup: ${stillLabel}. ` +
+        `Starting anyway because DEV_ALL_ALLOW_BUSY_PORTS=1 — requests may hit the stale process.`
+    );
+    return;
+  }
+  console.error(
+    `[dev:all] !!! Ports STILL occupied after dev:stop: ${stillLabel}. ` +
+      `Refusing to start a shadowed stack (your new code would never receive requests). ` +
+      `If the owner PID is unresolvable in tasklist it is likely a WSL relay — run "wsl --shutdown" ` +
+      `(Windows) and retry. To force-start anyway: set DEV_ALL_ALLOW_BUSY_PORTS=1.`
+  );
+  process.exit(1);
 }
 
 async function main() {
   loadDevDotenv();
-  await warnOnOccupiedDevPorts();
+  await preflightDevPorts();
   const sharedDevEnv = await resolveDevEnvironment();
 
   // Explicit visibility: the server child will receive the resolved proxy env (if any).
