@@ -119,6 +119,7 @@ import {
   resolveVisiblePageId,
   type PageAccess,
 } from "./rbac-preview";
+import { ExperienceBlockBoundary } from "./block-registry";
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
@@ -1468,6 +1469,16 @@ export function AppRuntimeScreen({
         </Space>
       }
     >
+      {page.experienceBlocks.length > 0 && (
+        <div
+          className="mb-3 grid gap-2"
+          data-testid="app-runtime-experience-block-scaffold"
+        >
+          {page.experienceBlocks.map(block => (
+            <ExperienceBlockBoundary key={block.id} block={block} />
+          ))}
+        </div>
+      )}
       {page.view.kind === "wizard" && (model?.workflow?.nodes?.length ?? 0) > 0 && (
         <Steps
           size="small"

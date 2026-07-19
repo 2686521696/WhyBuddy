@@ -20,7 +20,8 @@
     "paths": {
       "@/*": ["./client/src/*"],
       "@shared/*": ["./shared/*"],
-      "@legal": ["./slide-rule-python/services/data/five_system_legal.json"]
+      "@legal": ["./slide-rule-python/services/data/five_system_legal.json"],
+      "@experience-blocks": ["./slide-rule-python/services/data/experience_block_catalog.json"]
     }
   }
 }

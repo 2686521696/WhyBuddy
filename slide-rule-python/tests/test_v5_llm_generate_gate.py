@@ -726,6 +726,37 @@ def test_repair_landing_page_near_match_or_clear_with_trace():
     assert validate_five_system_model(cleared)["passed"] is True
 
 
+def test_experience_block_catalog_gate_and_repair():
+    """二阶段只锁区块 id/type：目录内通过，目录外拦截或诚实修复/剔除。"""
+    from services.v5_model_repair import repair_five_system_model
+
+    valid = _valid_library_model()
+    valid["page"]["pages"][0]["blocks"] = [
+        {"id": "loan_metrics", "type": "MetricGrid"},
+    ]
+    assert validate_five_system_model(valid)["passed"] is True
+
+    invalid = _valid_library_model()
+    invalid["page"]["pages"][0]["blocks"] = [
+        {"id": "typo", "type": "MetricGri"},
+        {"id": "fantasy", "type": "MagicWall"},
+    ]
+    verdict = validate_five_system_model(invalid)
+    assert verdict["passed"] is False
+    assert {f.get("ref") for f in verdict["findings"]} >= {"MetricGri", "MagicWall"}
+
+    fixed = repair_five_system_model(invalid)["model"]
+    blocks = fixed["page"]["pages"][0]["blocks"]
+    assert blocks == [{"id": "typo", "type": "MetricGrid"}]
+    notes = fixed["appbundle"]["presentationNotes"]
+    assert any(
+        note.get("from") == "MetricGri" and note.get("to") == "MetricGrid"
+        for note in notes["repaired"]
+    )
+    assert notes["droppedBlocks"][0]["type"] == "MagicWall"
+    assert validate_five_system_model(fixed)["passed"] is True
+
+
 def test_repair_presentation_noop_for_clean_model():
     """无 charts/stats 或全合法 → 零变化、无 presentationNotes（老模型不受扰）。"""
     from services.v5_model_repair import repair_five_system_model

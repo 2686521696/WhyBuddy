@@ -646,6 +646,7 @@ describe("AppBundleScreen", () => {
           droppedCharts: [{ pageId: "p_dash", chartId: "ch_avg", reason: "图表指标 'avg:x' 只能是 count 或 sum" }],
           clearedFormats: [{ pageId: "p_dash", statId: "st_bad", format: "fancy" }],
           clearedLandingPage: [{ value: "missing_home", reason: "无法唯一解析" }],
+          droppedBlocks: [{ pageId: "p_dash", blockId: "magic", type: "MagicWall", reason: "目录外" }],
         },
       },
     };
@@ -659,6 +660,8 @@ describe("AppBundleScreen", () => {
     expect(html).toContain("ch_avg");
     expect(html).toContain("清除 1 个非法格式声明");
     expect(html).toContain("清除 1 个无效首屏引用");
+    expect(html).toContain("剔除 1 个目录外区块");
+    expect(html).toContain("MagicWall");
   });
 
   it("无 presentationNotes → 不渲染该留痕块（老模型零变化）", () => {

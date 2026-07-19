@@ -1,0 +1,97 @@
+{
+  "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；本版只建立目录和渲染边界，不改变旧页面效果。",
+  "version": 1,
+  "allowedSlots": ["summary", "primary", "secondary", "activity", "content"],
+  "dataKinds": [
+    "aggregate",
+    "series",
+    "rankedRows",
+    "timelineRows",
+    "entityRows"
+  ],
+  "eventTypes": [
+    "metricSelect",
+    "pointSelect",
+    "itemSelect",
+    "rowSelect",
+    "createRequest",
+    "editRequest"
+  ],
+  "blocks": [
+    {
+      "type": "MetricGrid",
+      "description": "一组关键指标卡，用于页面摘要区域。",
+      "rendererKey": "metric-grid",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" }
+        }
+      },
+      "dataKinds": ["aggregate"],
+      "allowedSlots": ["summary", "primary"],
+      "events": ["metricSelect"]
+    },
+    {
+      "type": "TrendChart",
+      "description": "按时间或有序维度展示变化趋势。",
+      "rendererKey": "trend-chart",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" }
+        }
+      },
+      "dataKinds": ["series"],
+      "allowedSlots": ["primary", "secondary"],
+      "events": ["pointSelect"]
+    },
+    {
+      "type": "RankedList",
+      "description": "按数值排序的业务排行。",
+      "rendererKey": "ranked-list",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" }
+        }
+      },
+      "dataKinds": ["rankedRows"],
+      "allowedSlots": ["primary", "secondary"],
+      "events": ["itemSelect"]
+    },
+    {
+      "type": "ActivityFeed",
+      "description": "按时间倒序展示动态、提醒或风险事件。",
+      "rendererKey": "activity-feed",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" }
+        }
+      },
+      "dataKinds": ["timelineRows"],
+      "allowedSlots": ["activity", "secondary"],
+      "events": ["itemSelect"]
+    },
+    {
+      "type": "DataTable",
+      "description": "展示实体记录并承接行级业务操作。",
+      "rendererKey": "data-table",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" }
+        }
+      },
+      "dataKinds": ["entityRows"],
+      "allowedSlots": ["primary", "content"],
+      "events": ["rowSelect", "createRequest", "editRequest"]
+    }
+  ]
+}

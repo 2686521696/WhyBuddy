@@ -130,6 +130,17 @@ export interface PageFeedSpec {
   levelField?: string;
 }
 
+/**
+ * 体验区块实例（二阶段目录骨架）。本阶段只锁 id/type 合法域；binding、
+ * triggers 与 layout 在后续步骤补齐。旧页面仍由 stats/charts 等字段渲染。
+ */
+export interface PageExperienceBlockSpec {
+  id?: string;
+  type?: string;
+  props?: Record<string, unknown>;
+  binding?: Record<string, unknown>;
+}
+
 export interface PageModelDef {
   id?: string;
   name?: string;
@@ -147,6 +158,8 @@ export interface PageModelDef {
   charts?: PageChartSpec[];
   rankings?: PageRankingSpec[];
   feeds?: PageFeedSpec[];
+  /** 过渡期可读取但暂不直接渲染；type 必须来自体验区块目录。 */
+  blocks?: PageExperienceBlockSpec[];
 }
 
 export interface AigcCapability {
@@ -201,6 +214,12 @@ export interface PresentationNotes {
   clearedFormats?: Array<{ pageId?: string; statId?: string; format?: string }>;
   clearedIdentity?: Array<{ key?: string; value?: string }>;
   clearedLandingPage?: Array<{ value?: string; reason?: string }>;
+  droppedBlocks?: Array<{
+    pageId?: string;
+    blockId?: string;
+    type?: string;
+    reason?: string;
+  }>;
 }
 
 export interface AppBundleSection {

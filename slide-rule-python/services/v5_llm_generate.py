@@ -275,7 +275,16 @@ def _render_schema_instruction(template: str) -> str:
     )
 
 
-_SCHEMA_INSTRUCTION = _render_schema_instruction(_SCHEMA_INSTRUCTION_TEMPLATE)
+def _append_experience_block_catalog(instruction: str) -> str:
+    """二阶段：从同一目录注入过渡说明，不让 Prompt 另写一份区块清单。"""
+    from .schema_legal import experience_block_prompt_block
+
+    return f"{instruction.rstrip()}\n\n{experience_block_prompt_block()}\n"
+
+
+_SCHEMA_INSTRUCTION = _append_experience_block_catalog(
+    _render_schema_instruction(_SCHEMA_INSTRUCTION_TEMPLATE)
+)
 
 
 # 最近一次生成的诊断（供 publish closure 的 blocker 面向用户透出失败原因；

@@ -434,7 +434,8 @@ export function AppBundleScreen({
             (bundle.presentationNotes.droppedStats?.length ?? 0) > 0 ||
             (bundle.presentationNotes.clearedFormats?.length ?? 0) > 0 ||
             (bundle.presentationNotes.clearedIdentity?.length ?? 0) > 0 ||
-            (bundle.presentationNotes.clearedLandingPage?.length ?? 0) > 0) && (
+            (bundle.presentationNotes.clearedLandingPage?.length ?? 0) > 0 ||
+            (bundle.presentationNotes.droppedBlocks?.length ?? 0) > 0) && (
             <div
               className="mt-3 rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-700 ring-1 ring-amber-200"
               data-testid="appbundle-presentation-notes"
@@ -479,6 +480,14 @@ export function AppBundleScreen({
               {(bundle.presentationNotes.clearedLandingPage?.length ?? 0) > 0 && (
                 <span className="ml-1">
                   清除 {bundle.presentationNotes.clearedLandingPage!.length} 个无效首屏引用（回旧工作台）
+                </span>
+              )}
+              {(bundle.presentationNotes.droppedBlocks?.length ?? 0) > 0 && (
+                <span className="ml-1">
+                  剔除 {bundle.presentationNotes.droppedBlocks!.length} 个目录外区块
+                  （{bundle.presentationNotes.droppedBlocks!
+                    .map(item => item.type || item.blockId || "未命名")
+                    .join("；")}）
                 </span>
               )}
             </div>

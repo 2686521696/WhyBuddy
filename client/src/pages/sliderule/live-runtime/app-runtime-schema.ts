@@ -100,6 +100,12 @@ export interface AppPageFeedSchema {
   levelFieldId?: string;
 }
 
+/** 二阶段体验区块骨架：只保留目录选材所需 id/type，内容绑定第三阶段接入。 */
+export interface AppExperienceBlockSchema {
+  id: string;
+  type: string;
+}
+
 /**
  * 页面范式（加厚 schema 二期）：kind 决定视图骨架。kanban/calendar 的
  * 字段绑定必须解析到本页主实体的对应类型字段——绑不上时诚实降级
@@ -150,6 +156,8 @@ export interface AppPageSchema {
   charts: AppPageChartSchema[];
   /** 页面范式（视图骨架；绑定失效已降级 workbench） */
   view: AppPageViewSchema;
+  /** 体验区块过渡声明；旧页面为空，不参与现有内容渲染。 */
+  experienceBlocks: AppExperienceBlockSchema[];
 }
 
 export interface AppStatCardSchema {
@@ -503,6 +511,10 @@ export function deriveAppRuntimeSchema(
       feeds,
       charts,
       view,
+      experienceBlocks: (page.blocks ?? []).map((block, blockIndex) => ({
+        id: String(block.id ?? "").trim() || `block-${id}-${blockIndex + 1}`,
+        type: String(block.type ?? "").trim(),
+      })),
     };
   });
 

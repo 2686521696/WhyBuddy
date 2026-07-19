@@ -143,6 +143,20 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     expect(fallback.menus[0].pageId).toBe("home");
   });
 
+  it("体验区块骨架只透传 id/type；旧页面保持空数组", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.page!.pages![0].blocks = [
+      { id: "metric_overview", type: "MetricGrid", props: { title: "概览" } },
+      { id: "unknown", type: "MagicWall" },
+    ];
+    const schema = deriveAppRuntimeSchema(model)!;
+    expect(schema.pages[0].experienceBlocks).toEqual([
+      { id: "metric_overview", type: "MetricGrid" },
+      { id: "unknown", type: "MagicWall" },
+    ]);
+    expect(schema.pages[1].experienceBlocks).toEqual([]);
+  });
+
   it("详情抽屉字段 = 主实体全字段（不截断）", () => {
     const schema = deriveAppRuntimeSchema(MODEL)!;
     expect(schema.pages[0].detailFields.map(f => f.id)).toEqual([

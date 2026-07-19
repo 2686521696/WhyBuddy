@@ -41,11 +41,12 @@ DANGLING = "PUBLISH_DANGLING_CROSSREF"
 MISSING_SECTION = "PUBLISH_MISSING_SKILL_SECTION"
 EMPTY_SECTION = "PUBLISH_EMPTY_SKILL_SECTION"
 
-# 合法域一律来自单一真相源 services/data/five_system_legal.json（E40.1）——
-# 此处 re-export 保持历史名字，修复器/测试的既有 import 零改动。
-# 加枚举改 JSON，不改这里；四方一致性由 parity 测试锁死。
+# 合法域一律来自 schema_legal 加载的 JSON 账本（E40.1）——五系统枚举在
+# five_system_legal.json，体验区块在 experience_block_catalog.json。
+# 此处 re-export 保持历史名字；加合法值只改对应账本，四方一致性由测试锁死。
 from .schema_legal import (  # noqa: F401 — re-export 即接口
     CHART_TYPES,
+    EXPERIENCE_BLOCK_TYPES,
     FIELD_TONES,
     NUMBER_FORMATS,
     PAGE_KINDS,
@@ -361,6 +362,47 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                     DANGLING, f"page.pages[{pid}].actionPermissions",
                     f"page action permission '{ref}' not found in rbac.permissions",
                     ref=ref, skill="page",
+                ))
+        # 体验区块目录（二阶段骨架）：blocks 尚未进入生成契约，但若精修或
+        # 外部模型提前带入，只允许目录内 type；id 必须存在且页内唯一。
+        # 绑定/布局/动作的深校验分别在后续步骤增加，本步不偷跑。
+        seen_block_ids: set = set()
+        if "blocks" in pd and not isinstance(pd.get("blocks"), list):
+            findings.append(_finding(
+                EMPTY_SECTION, f"page.pages[{pid}].blocks",
+                "experience blocks must be an array",
+                skill="page",
+            ))
+        for block in _as_list(pd.get("blocks")):
+            bd = _as_dict(block)
+            bid = str(bd.get("id") or "").strip()
+            btype = str(bd.get("type") or "").strip()
+            block_path = f"page.pages[{pid}].blocks[{bid or '<unnamed>'}]"
+            if not bid:
+                findings.append(_finding(
+                    EMPTY_SECTION, f"{block_path}.id",
+                    "experience block requires a non-empty id",
+                    skill="page",
+                ))
+            elif bid in seen_block_ids:
+                findings.append(_finding(
+                    DANGLING, f"{block_path}.id",
+                    f"duplicate experience block id '{bid}' in page '{pid}'",
+                    ref=bid, skill="page",
+                ))
+            else:
+                seen_block_ids.add(bid)
+            if not btype:
+                findings.append(_finding(
+                    EMPTY_SECTION, f"{block_path}.type",
+                    "experience block requires a type from the catalog",
+                    skill="page",
+                ))
+            elif btype not in EXPERIENCE_BLOCK_TYPES:
+                findings.append(_finding(
+                    DANGLING, f"{block_path}.type",
+                    f"experience block type '{btype}' is not in the closed catalog",
+                    ref=btype, skill="page",
                 ))
         # 库无关图表声明（schema 丰富一期，可选字段）：dimension / sum 指标
         # 必须解析到 datamodel 字段；type 限定在渲染层支持的形态集合。

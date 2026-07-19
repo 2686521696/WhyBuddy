@@ -82,6 +82,7 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
         "repaired": [], "droppedCharts": [], "droppedStats": [],
         "droppedRankings": [], "droppedFeeds": [],
         "clearedFormats": [], "clearedIdentity": [], "clearedLandingPage": [],
+        "droppedBlocks": [],
     }
 
     def _fix_ref(container: Dict[str, Any], key: str, ref: str, known: set, pid: str) -> bool:
@@ -108,6 +109,45 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
             continue
         pd = dict(p)
         pid = str(pd.get("id") or pd.get("name") or "<unnamed>")
+
+        # 二阶段体验区块目录：type 拼写近邻唯一命中才修；无法解析的整块
+        # 剔除并留痕。绑定/布局/动作仍属后续步骤，本步只守住选材合法域。
+        from .schema_legal import EXPERIENCE_BLOCK_TYPES
+
+        kept_blocks: List[Any] = []
+        if "blocks" in pd and not isinstance(pd.get("blocks"), list):
+            notes["droppedBlocks"].append({
+                "pageId": pid,
+                "blockId": "<collection>",
+                "type": "<invalid>",
+                "reason": "blocks 不是数组，已清空",
+            })
+        for block in _as_list(pd.get("blocks")):
+            bd = dict(_as_dict(block))
+            bid = str(bd.get("id") or "<unnamed>")
+            block_type = str(bd.get("type") or "").strip()
+            if block_type in EXPERIENCE_BLOCK_TYPES:
+                kept_blocks.append(bd)
+                continue
+            fixed_type = _unique_near_match(block_type, set(EXPERIENCE_BLOCK_TYPES))
+            if fixed_type:
+                bd["type"] = fixed_type
+                notes["repaired"].append({
+                    "pageId": pid,
+                    "path": f"blocks[{bid}].type",
+                    "from": block_type,
+                    "to": fixed_type,
+                })
+                kept_blocks.append(bd)
+            else:
+                notes["droppedBlocks"].append({
+                    "pageId": pid,
+                    "blockId": bid,
+                    "type": block_type,
+                    "reason": "区块类型不在体验区块目录，且无法唯一修复",
+                })
+        if "blocks" in pd:
+            pd["blocks"] = kept_blocks
 
         kept_charts: List[Any] = []
         for chart in _as_list(pd.get("charts")):

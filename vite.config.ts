@@ -213,6 +213,8 @@ export default defineConfig(() => {
         "@shared": path.resolve(import.meta.dirname, "shared"),
         // E40.1 合法域单一真相源：客户端与 python 门/修复器/生成契约同读一份账本
         "@legal": path.resolve(import.meta.dirname, "slide-rule-python/services/data/five_system_legal.json"),
+        // 体验区块目录：Gate/Repair/Prompt/前端 Registry 共用，不在 TS 手抄区块清单
+        "@experience-blocks": path.resolve(import.meta.dirname, "slide-rule-python/services/data/experience_block_catalog.json"),
         "@assets": path.resolve(import.meta.dirname, "attached_assets"),
       },
     },
