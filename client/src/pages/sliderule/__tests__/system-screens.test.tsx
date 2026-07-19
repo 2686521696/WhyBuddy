@@ -111,6 +111,7 @@ const MODEL: FiveSystemModel = {
     ],
   },
   appbundle: {
+    landingPageRef: "enroll_page",
     pageBindings: [
       { pageRef: "enroll_page", workflowRef: "wf_enroll" },
       { pageRef: "missing_page", workflowRef: "missing_wf" },
@@ -555,11 +556,12 @@ describe("AppBundleScreen", () => {
     expect(html).toContain("五系统模型生成开关未开启");
   });
 
-  it("模型 appbundle 段绑定：页面↔流程/角色/实体 交叉解析", () => {
+  it("模型 appbundle 段绑定：首屏/页面↔流程/角色/实体 交叉解析", () => {
     const html = renderToStaticMarkup(
       <AppBundleScreen publishClosure={CLOSURE_CLOSED} model={MODEL} />
     );
     expect(html).toContain('data-testid="appbundle-bindings"');
+    expect(html).toContain("打开后首屏");
     // resolved：pageRef → 页面名，workflowRef → workflow id
     expect(html).toContain("选课页");
     expect(html).toContain("wf_enroll");
@@ -643,6 +645,7 @@ describe("AppBundleScreen", () => {
           repaired: [{ pageId: "p_dash", path: "dimension", from: "loan.statu", to: "loan.status" }],
           droppedCharts: [{ pageId: "p_dash", chartId: "ch_avg", reason: "图表指标 'avg:x' 只能是 count 或 sum" }],
           clearedFormats: [{ pageId: "p_dash", statId: "st_bad", format: "fancy" }],
+          clearedLandingPage: [{ value: "missing_home", reason: "无法唯一解析" }],
         },
       },
     };
@@ -650,11 +653,12 @@ describe("AppBundleScreen", () => {
       <AppBundleScreen model={model} publishClosure={CLOSURE_CLOSED} />
     );
     expect(html).toContain('data-testid="appbundle-presentation-notes"');
-    expect(html).toContain("修复 1 处字段引用");
+    expect(html).toContain("修复 1 处展示引用");
     expect(html).toContain("loan.statu → loan.status");
     expect(html).toContain("剔除 1 个无法渲染的图表");
     expect(html).toContain("ch_avg");
     expect(html).toContain("清除 1 个非法格式声明");
+    expect(html).toContain("清除 1 个无效首屏引用");
   });
 
   it("无 presentationNotes → 不渲染该留痕块（老模型零变化）", () => {

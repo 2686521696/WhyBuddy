@@ -595,6 +595,18 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                 DANGLING, "appbundle.pageBindings.workflowRef",
                 f"appbundle workflowRef '{wref}' not found in workflow", ref=wref, skill="appbundle",
             ))
+    landing_ref = str(appbundle.get("landingPageRef") or "").strip()
+    landing_page_ids = {
+        str(_as_dict(pd).get("id") or "").strip()
+        for pd in _as_list(page.get("pages"))
+        if str(_as_dict(pd).get("id") or "").strip()
+    }
+    if landing_ref and landing_ref not in landing_page_ids:
+        findings.append(_finding(
+            DANGLING, "appbundle.landingPageRef",
+            f"appbundle landingPageRef '{landing_ref}' not found in page.pages",
+            ref=landing_ref, skill="appbundle",
+        ))
     for rr in _as_list(appbundle.get("roleRefs")):
         ref = str(rr).strip()
         if ref and ref not in role_ids:

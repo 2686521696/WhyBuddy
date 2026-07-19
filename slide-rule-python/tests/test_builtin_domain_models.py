@@ -33,6 +33,15 @@ def test_fixture_models_pass_structural_gate():
         assert verdict.get("passed"), f"{domain} 夹具未过门: {verdict.get('findings')[:2]}"
 
 
+def test_fixture_models_choose_a_real_landing_page():
+    """内置应用也不再统一打开旧工作台；首屏引用必须落到自身页面。"""
+    models = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    for domain, model in models.items():
+        page_ids = {page["id"] for page in model["page"]["pages"]}
+        landing = model["appbundle"].get("landingPageRef")
+        assert landing in page_ids, f"{domain} 首屏引用无效: {landing}"
+
+
 def test_builtin_section_lookup():
     assert _builtin_domain_model_section("employee_onboarding", "datamodel") is not None
     assert _builtin_domain_model_section("no_such_domain", "datamodel") is None

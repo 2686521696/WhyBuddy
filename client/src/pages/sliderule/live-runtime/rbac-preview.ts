@@ -77,3 +77,27 @@ export function accessForRole(
   if (!role) return undefined;
   return deriveRoleAccess(model).find((r) => r.role === role);
 }
+
+/**
+ * 解析当前角色真正能打开的页面：指定页可见就用指定页；否则选第一个
+ * 可见业务页；一个都没有才回退旧工作台。纯函数供运行时与回归测试共用。
+ */
+export function resolveVisiblePageId(
+  pages: AppPageSchema[],
+  accessByPage: ReadonlyMap<string, PageAccess>,
+  requestedPageId: string,
+  legacyHomeId = "home"
+): string {
+  if (requestedPageId === legacyHomeId) return legacyHomeId;
+  const requestedExists = pages.some(page => page.id === requestedPageId);
+  if (
+    requestedExists &&
+    accessByPage.get(requestedPageId)?.visible !== false
+  ) {
+    return requestedPageId;
+  }
+  return (
+    pages.find(page => accessByPage.get(page.id)?.visible !== false)?.id ??
+    legacyHomeId
+  );
+}

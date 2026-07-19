@@ -99,6 +99,7 @@ Required shape (use these exact keys):
   },
   "appbundle": {
     "pageBindings": [{"pageRef": "<page_id>", "workflowRef": "<workflow_id_or_node_id>"}],
+    "landingPageRef": "<page_id shown first when the app opens>",
     "roleRefs": ["<role_id>"],
     "dataModelRefs": ["<entity_id>"],
     "appIdentity": {"productName": "<2-6字产品名>", "theme": "__IDENTITY_THEMES__",
@@ -117,6 +118,9 @@ Rules:
 - Every page actionPermission MUST be in rbac.permissions.
 - Every aigc input/output field MUST be from datamodel; roleRefs from rbac.roles.
 - appbundle pageRef∈pages, workflowRef∈workflow, roleRefs∈roles, dataModelRefs∈entities.
+- appbundle.landingPageRef is REQUIRED and MUST equal one page.pages[].id. Pick
+  the page that best represents the user's main job when the app opens (for
+  example a monitor/dashboard/calendar page), not a generic approval home.
 - Model the SPECIFIC business the intent describes (entities, roles, approval
   steps, pages that fit that domain). Do not emit a generic template.
 - PHASES (swimlanes): give EVERY workflow node a "phase" — a short stage label

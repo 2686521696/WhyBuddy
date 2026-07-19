@@ -200,10 +200,13 @@ export interface PresentationNotes {
   droppedStats?: Array<{ pageId?: string; statId?: string; reason?: string }>;
   clearedFormats?: Array<{ pageId?: string; statId?: string; format?: string }>;
   clearedIdentity?: Array<{ key?: string; value?: string }>;
+  clearedLandingPage?: Array<{ value?: string; reason?: string }>;
 }
 
 export interface AppBundleSection {
   pageBindings?: AppBundlePageBinding[];
+  /** 应用打开后的落地页；必须引用 page.pages[].id。缺省时保留旧工作台。 */
+  landingPageRef?: string;
   roleRefs?: string[];
   dataModelRefs?: string[];
   /** 系统不变式（总装约束层，改进②） */

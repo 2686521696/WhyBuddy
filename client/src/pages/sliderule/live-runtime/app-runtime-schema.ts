@@ -185,6 +185,8 @@ export interface AppRuntimeSchema {
   /** 应用身份（E40.2）：主题/图标/导航形态（productName 已并入 appName） */
   identity: { themeId: string; icon: string; nav: "side" | "top" };
   roles: string[];
+  /** 应用首次打开的页面；老模型缺省为 home。 */
+  landingPageId: string;
   home: AppHomeSchema;
   menus: Array<{ id: string; label: string; pageId: string }>;
   pages: AppPageSchema[];
@@ -554,6 +556,15 @@ export function deriveAppRuntimeSchema(
     ],
   };
 
+  // 新模型可以直接指定一个真实业务页作为落地页；旧模型没有该字段时仍用
+  // 固定工作台。Gate/Repair 负责上游引用质量，这里仍做最后一道诚实回退。
+  const requestedLandingPageId = String(
+    model?.appbundle?.landingPageRef ?? ""
+  ).trim();
+  const landingPageId = pageSchemas.some(p => p.id === requestedLandingPageId)
+    ? requestedLandingPageId
+    : home.id;
+
   // E40.2 应用身份：产品名权威 > 会话标题；枚举已过门/修复器，这里只做
   // 缺省回退（老模型无身份段 → 与历史渲染完全一致）
   const rawIdentity = model?.appbundle?.appIdentity;
@@ -570,9 +581,12 @@ export function deriveAppRuntimeSchema(
     appName: productName || appName,
     identity,
     roles: model?.rbac?.roles ?? [],
+    landingPageId,
     home,
     menus: [
-      { id: "menu-home", label: home.title, pageId: home.id },
+      ...(landingPageId === home.id
+        ? [{ id: "menu-home", label: home.title, pageId: home.id }]
+        : []),
       ...pageSchemas.map(p => ({
         id: `menu-${p.id}`,
         label: p.title,

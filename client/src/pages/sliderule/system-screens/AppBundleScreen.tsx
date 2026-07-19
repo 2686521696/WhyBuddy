@@ -5,7 +5,7 @@
  *   - 六系统证据卡片（evidencePresent + evidenceRef/artifactId 证据链接）
  *   - 被闸拦截时整面切 GateBlockedPanel（人话原因 + 修复 CTA，E27）
  *   - 闭环元信息（closureHash · stableDigest · generatedAt · versionPins）
- *   - 五系统模型 appbundle 段的绑定（pageBindings/roleRefs/dataModelRefs，
+ *   - 五系统模型 appbundle 段的绑定（landingPageRef/pageBindings/roleRefs/dataModelRefs，
  *     交叉引用解析到 page/workflow/rbac/datamodel，未解析引用标红）
  * 是整个 SlideRuleStudio 的"主页"进度锚点。
  */
@@ -100,6 +100,9 @@ export function AppBundleScreen({
   const bindings = useMemo(() => {
     if (!bundle) return null;
     return {
+      landing: bundle.landingPageRef
+        ? resolvePageRef(bundle.landingPageRef, model)
+        : null,
       pages: (bundle.pageBindings ?? []).map((b) => ({
         page: resolvePageRef(b.pageRef, model),
         workflow: resolveWorkflowRef(b.workflowRef, model),
@@ -110,7 +113,10 @@ export function AppBundleScreen({
   }, [bundle, model]);
   const hasBindings =
     !!bindings &&
-    (bindings.pages.length > 0 || bindings.roles.length > 0 || bindings.entities.length > 0);
+    (!!bindings.landing ||
+      bindings.pages.length > 0 ||
+      bindings.roles.length > 0 ||
+      bindings.entities.length > 0);
 
   // 看板级来源徽章：取首个可识别来源的证据条目（同一话题六证据同路径产出）。
   const boardSource = useMemo(() => {
@@ -314,6 +320,12 @@ export function AppBundleScreen({
           >
             <div className="text-[11px] font-semibold text-stone-600">应用装配绑定</div>
             <div className="mt-2 space-y-2 text-[11px]">
+              {bindings.landing && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="w-24 shrink-0 text-stone-400">打开后首屏</span>
+                  <BindingChip res={bindings.landing} />
+                </div>
+              )}
               {bindings.pages.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="w-24 shrink-0 text-stone-400">页面 ↔ 流程</span>
@@ -421,7 +433,8 @@ export function AppBundleScreen({
             (bundle.presentationNotes.droppedCharts?.length ?? 0) > 0 ||
             (bundle.presentationNotes.droppedStats?.length ?? 0) > 0 ||
             (bundle.presentationNotes.clearedFormats?.length ?? 0) > 0 ||
-            (bundle.presentationNotes.clearedIdentity?.length ?? 0) > 0) && (
+            (bundle.presentationNotes.clearedIdentity?.length ?? 0) > 0 ||
+            (bundle.presentationNotes.clearedLandingPage?.length ?? 0) > 0) && (
             <div
               className="mt-3 rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-700 ring-1 ring-amber-200"
               data-testid="appbundle-presentation-notes"
@@ -429,7 +442,7 @@ export function AppBundleScreen({
               <span className="font-semibold">展示层自动修复：</span>
               {(bundle.presentationNotes.repaired?.length ?? 0) > 0 && (
                 <span>
-                  修复 {bundle.presentationNotes.repaired!.length} 处字段引用
+                  修复 {bundle.presentationNotes.repaired!.length} 处展示引用
                   （{bundle.presentationNotes.repaired!
                     .map((r) => `${r.from} → ${r.to}`)
                     .join("；")}）
@@ -461,6 +474,11 @@ export function AppBundleScreen({
               {(bundle.presentationNotes.clearedIdentity?.length ?? 0) > 0 && (
                 <span className="ml-1">
                   清除 {bundle.presentationNotes.clearedIdentity!.length} 个非法身份声明（回默认主题）
+                </span>
+              )}
+              {(bundle.presentationNotes.clearedLandingPage?.length ?? 0) > 0 && (
+                <span className="ml-1">
+                  清除 {bundle.presentationNotes.clearedLandingPage!.length} 个无效首屏引用（回旧工作台）
                 </span>
               )}
             </div>

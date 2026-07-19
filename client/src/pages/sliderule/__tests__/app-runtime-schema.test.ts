@@ -106,6 +106,7 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
 
   it("工作台（home）JSON 化：统计卡声明来源，菜单首项指向 home", () => {
     const schema = deriveAppRuntimeSchema(MODEL)!;
+    expect(schema.landingPageId).toBe("home");
     expect(schema.home.id).toBe("home");
     expect(schema.home.title).toBe("工作台");
     expect(schema.menus[0].pageId).toBe("home");
@@ -121,6 +122,25 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
       "bar:entities:rowcount",
       "donut:instances:status",
     ]);
+  });
+
+  it("landingPageRef：真实业务页成为首屏且不再额外插入工作台；坏引用诚实回退", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.appbundle!.landingPageRef = "card_page";
+    const schema = deriveAppRuntimeSchema(model)!;
+    expect(schema.landingPageId).toBe("card_page");
+    expect(schema.menus.map(m => m.pageId)).toEqual([
+      "card_page",
+      "empty_page",
+    ]);
+    expect(schema.menus.some(m => m.pageId === "home")).toBe(false);
+    // home 仍保留为老模型/无可见页面的兼容回退，不出现在新应用菜单中。
+    expect(schema.home.id).toBe("home");
+
+    model.appbundle!.landingPageRef = "ghost_page";
+    const fallback = deriveAppRuntimeSchema(model)!;
+    expect(fallback.landingPageId).toBe("home");
+    expect(fallback.menus[0].pageId).toBe("home");
   });
 
   it("详情抽屉字段 = 主实体全字段（不截断）", () => {

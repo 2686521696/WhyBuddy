@@ -865,6 +865,7 @@
     ],
     "dropped": []
    },
+   "landingPageRef": "purchase_workbench",
    "appIdentity": {
     "productName": "采买通",
     "theme": "azure",
@@ -1809,6 +1810,7 @@
      ]
     }
    ],
+   "landingPageRef": "my_leave_workbench",
    "appIdentity": {
     "productName": "假期无忧",
     "theme": "forest",
@@ -2840,6 +2842,7 @@
      ]
     }
    ],
+   "landingPageRef": "customer_ticket_submit",
    "appIdentity": {
     "productName": "工单飞驰",
     "theme": "tangerine",
@@ -3874,6 +3877,7 @@
      ]
     }
    ],
+   "landingPageRef": "onboarding_workbench",
    "appIdentity": {
     "productName": "入职之旅",
     "theme": "violet",

@@ -116,6 +116,7 @@ import {
 import {
   accessForRole,
   pageAccessForRole,
+  resolveVisiblePageId,
   type PageAccess,
 } from "./rbac-preview";
 import { buildColumnFeatures } from "./table-features";
@@ -378,7 +379,9 @@ export function AppRuntimeScreen({
   const [state, setState] = React.useState<RuntimeState>(() => {
     return loadRuntimeState(sessionId) ?? initRuntimeState(model);
   });
-  const [activePageId, setActivePageId] = React.useState<string>("home");
+  const [activePageId, setActivePageId] = React.useState<string>(
+    () => schema?.landingPageId ?? "home"
+  );
   const [device, setDevice] = React.useState<DeviceKey>("desktop");
   // 代码视图档（代码视图一期）：schema 的确定性代码投影——与设备档并列的
   // 观察视角切换，开着时替换缩放画布（代码要整幅面积，不做 16:9 缩放）
@@ -451,15 +454,22 @@ export function AppRuntimeScreen({
     return map;
   }, [schema, model, role]);
 
-  // 当前页对该角色不可见时回工作台（角色切换的直观反馈）
+  // 会话或模型换了一套时，从新模型声明的落地页重新进入；旧模型仍是 home。
   React.useEffect(() => {
-    if (
-      activePageId !== "home" &&
-      pageAccess.get(activePageId)?.visible === false
-    ) {
-      setActivePageId("home");
-    }
-  }, [activePageId, pageAccess]);
+    if (schema) setActivePageId(schema.landingPageId);
+  }, [sessionId, schema?.landingPageId]);
+
+  // 当前页对该角色不可见时，降级到第一个可见业务页；一个都没有才回旧工作台。
+  React.useEffect(() => {
+    if (!schema) return;
+    const resolved = resolveVisiblePageId(
+      schema.pages,
+      pageAccess,
+      activePageId,
+      schema.home.id
+    );
+    if (resolved !== activePageId) setActivePageId(resolved);
+  }, [activePageId, pageAccess, schema]);
 
   React.useEffect(() => {
     onActivePageChange?.(activePageId);
@@ -1590,6 +1600,7 @@ export function AppRuntimeScreen({
   const identityTheme = resolveIdentityTheme(schema.identity.themeId);
   const brandGradient = `linear-gradient(135deg,${identityTheme.primary},${identityTheme.gradTo})`;
   const BrandIcon = BRAND_ICONS[schema.identity.icon] ?? AppstoreOutlined;
+  const hasLegacyHomeMenu = schema.menus[0]?.pageId === schema.home.id;
   const navMenuItems = schema.menus.map((m, i) => {
     const locked =
       m.pageId !== "home" && pageAccess.get(m.pageId)?.visible === false;
@@ -1598,7 +1609,10 @@ export function AppRuntimeScreen({
         ? DashboardOutlined
         : locked
           ? LockOutlined
-          : MENU_ICONS[(i - 1 + MENU_ICONS.length) % MENU_ICONS.length];
+          : MENU_ICONS[
+              (i - (hasLegacyHomeMenu ? 1 : 0) + MENU_ICONS.length) %
+                MENU_ICONS.length
+            ];
     return {
       key: m.pageId,
       icon: <Icon />,

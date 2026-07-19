@@ -12,8 +12,9 @@ docs/reverse-eval-ai-artist-saas.md 实验 A 与线上截图案例
      （词干包含 / difflib 相似度），唯一命中才改写并留痕；歧义不猜。
   2. 剔除降级：修不好的不变式整条剔除并留痕——坏引用不展示（诚实性不丢），
      但一条注释级内容不再株连骨架六系统。
-骨架五段（datamodel/rbac/workflow/page/aigc/appbundle 绑定）不在修复范围，
-悬挂仍由门禁硬拦——fail-closed 语义只对不变式/展示层降级。
+骨架五段（datamodel/rbac/workflow/page/aigc/appbundle 业务绑定）不在修复范围，
+悬挂仍由门禁硬拦；唯一例外是纯展示入口 `landingPageRef`，修不好就清除并
+回退旧工作台——fail-closed 语义只对不变式/展示层降级。
 
 E37 扩展：page.charts / page.stats（图表与统计卡声明）与不变式同理——
 可选的展示增强层，不是结构骨架。用户实测案例：LLM 在 chart.metric 写了
@@ -80,7 +81,7 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
     notes: Dict[str, List[Dict[str, Any]]] = {
         "repaired": [], "droppedCharts": [], "droppedStats": [],
         "droppedRankings": [], "droppedFeeds": [],
-        "clearedFormats": [], "clearedIdentity": [],
+        "clearedFormats": [], "clearedIdentity": [], "clearedLandingPage": [],
     }
 
     def _fix_ref(container: Dict[str, Any], key: str, ref: str, known: set, pid: str) -> bool:
@@ -242,6 +243,35 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
         page["pages"] = new_pages
         m["page"] = page
 
+    # 落地页是可选展示增强：拼错时只在 page id 中做唯一近邻修复；无唯一
+    # 候选时清除并回退旧工作台，不让一个首页引用株连整个五系统模型。
+    appbundle_i = _as_dict(m.get("appbundle"))
+    landing_ref = str(appbundle_i.get("landingPageRef") or "").strip()
+    if landing_ref:
+        page_ids = {
+            str(_as_dict(p).get("id") or "").strip()
+            for p in new_pages
+            if str(_as_dict(p).get("id") or "").strip()
+        }
+        if landing_ref not in page_ids:
+            fixed_ref = _unique_near_match(landing_ref, page_ids)
+            appbundle_i = dict(appbundle_i)
+            if fixed_ref:
+                appbundle_i["landingPageRef"] = fixed_ref
+                notes["repaired"].append({
+                    "pageId": "appbundle",
+                    "path": "landingPageRef",
+                    "from": landing_ref,
+                    "to": fixed_ref,
+                })
+            else:
+                appbundle_i.pop("landingPageRef", None)
+                notes["clearedLandingPage"].append({
+                    "value": landing_ref,
+                    "reason": "无法唯一解析到已有页面，已回退旧工作台",
+                })
+            m["appbundle"] = appbundle_i
+
     # E40.2 应用身份段：非法枚举值清除回默认（渲染层会用缺省主题/图标/导航），
     # 产品名空串清除。身份是纯展示增强层——与 format 同款处方，绝不株连。
     from .schema_legal import IDENTITY_ICONS, IDENTITY_NAVS, IDENTITY_THEMES
@@ -270,7 +300,7 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
     "presentation": {...}}。
 
     动两层：appbundle.invariants（refs 近邻修复，修不好的整条剔除）与
-    page.charts/stats 展示层声明（E37 同款处方）。两层都没内容时原样返回
+    page.charts/stats 与 landingPageRef 展示层声明（E37 同款处方）。都没内容时原样返回
     （老模型零变化）。纯函数。
     """
     m = copy.deepcopy(_as_dict(model))

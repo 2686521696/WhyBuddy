@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
-import { accessForRole, deriveRoleAccess, pageAccessForRole } from "../live-runtime/rbac-preview";
+import {
+  accessForRole,
+  deriveRoleAccess,
+  pageAccessForRole,
+  resolveVisiblePageId,
+} from "../live-runtime/rbac-preview";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 
 const MODEL: FiveSystemModel = {
@@ -87,5 +92,27 @@ describe("rbac-preview（角色 → 页面可见性/操作权）", () => {
     const ghost = pageAccessForRole(schema.pages, accessForRole(MODEL, "ghost"));
     expect(ghost.find((p) => p.pageId === "leave_page")!.visible).toBe(false);
     expect(ghost.find((p) => p.pageId === "public_page")!.visible).toBe(true);
+  });
+
+  it("落地页无权访问时选第一个可见业务页；全部锁定才回旧工作台", () => {
+    const schema = deriveAppRuntimeSchema({
+      ...MODEL,
+      appbundle: { landingPageRef: "audit_page" },
+    })!;
+    const employeeAccess = pageAccessForRole(
+      schema.pages,
+      accessForRole(MODEL, "employee")
+    );
+    const employeeMap = new Map(employeeAccess.map(a => [a.pageId, a]));
+    expect(
+      resolveVisiblePageId(schema.pages, employeeMap, schema.landingPageId)
+    ).toBe("leave_page");
+
+    const allLocked = new Map(
+      employeeAccess.map(a => [a.pageId, { ...a, visible: false }])
+    );
+    expect(
+      resolveVisiblePageId(schema.pages, allLocked, schema.landingPageId)
+    ).toBe("home");
   });
 });

@@ -104,6 +104,24 @@ def test_broken_model_blocked_with_precise_findings():
     assert "p_missing" in refs
 
 
+def test_landing_page_ref_must_resolve_to_a_page():
+    m = _valid_library_model()
+    m["appbundle"]["landingPageRef"] = "p_missing"
+    result = validate_five_system_model(m)
+    assert result["passed"] is False
+    assert any(
+        f["path"] == "appbundle.landingPageRef" and f["ref"] == "p_missing"
+        for f in result["findings"]
+    )
+
+
+def test_generation_contract_requires_a_real_landing_page():
+    from services.v5_llm_generate import _SCHEMA_INSTRUCTION
+
+    assert '"landingPageRef": "<page_id shown first when the app opens>"' in _SCHEMA_INSTRUCTION
+    assert "appbundle.landingPageRef is REQUIRED" in _SCHEMA_INSTRUCTION
+
+
 def test_missing_section_blocked():
     m = _valid_library_model()
     del m["aigc"]
@@ -683,6 +701,29 @@ def test_repair_presentation_near_match_and_format_clear():
     assert notes["droppedStats"][0]["statId"] == "st_hopeless"
     gate = validate_five_system_model(fixed)
     assert gate["passed"] is True, gate["findings"]
+
+
+def test_repair_landing_page_near_match_or_clear_with_trace():
+    from services.v5_model_repair import repair_five_system_model
+
+    near = _valid_library_model()
+    near["appbundle"]["landingPageRef"] = "p_appl"
+    repaired = repair_five_system_model(near)["model"]
+    assert repaired["appbundle"]["landingPageRef"] == "p_apply"
+    assert any(
+        note.get("path") == "landingPageRef"
+        and note.get("from") == "p_appl"
+        and note.get("to") == "p_apply"
+        for note in repaired["appbundle"]["presentationNotes"]["repaired"]
+    )
+    assert validate_five_system_model(repaired)["passed"] is True
+
+    hopeless = _valid_library_model()
+    hopeless["appbundle"]["landingPageRef"] = "quantum_console"
+    cleared = repair_five_system_model(hopeless)["model"]
+    assert "landingPageRef" not in cleared["appbundle"]
+    assert cleared["appbundle"]["presentationNotes"]["clearedLandingPage"][0]["value"] == "quantum_console"
+    assert validate_five_system_model(cleared)["passed"] is True
 
 
 def test_repair_presentation_noop_for_clean_model():
