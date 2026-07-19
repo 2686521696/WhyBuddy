@@ -72,6 +72,23 @@ appName + identity(theme/icon/nav:side|top) + roles + home(工作台) + menus + 
 
 上一轮讨论的 json-render(扁平 Spec / Catalog 派生)、A2UI(增量协议)、tweakcn(designRecipe)都属于**下游工程**——等形态多起来、组件种类爆炸时才需要。**当前卡点不在那,在"顶层只有一个模子"。** 先补 archetype + Shell,再谈下游。
 
+## 开源参照(三刀分别抄谁)
+
+**关键结论:"AI 判定应用形态 → 渲染完全不同的外壳"这件事,开源界没有现成完整轮子。** 几乎所有 SDUI/低代码工具都默认"应用只有一种形态(后台/仪表盘)"——这正是当前千人一面的行业默认假设。所以三刀各自抄成熟机制,**archetype 判定这一层是 SlideRule 自己的差异化(护城河)**。
+
+| 刀 | 抄什么 | 项目 | 许可/活跃 |
+|---|---|---|---|
+| 第一刀 合法域 catalog | `defineCatalog` 单一真相源 + Zod enum 派生(prompt/validate/schema 同源) | `vercel-labs/json-render` | MIT · 活跃 ★★★★★ |
+| 第二刀 选形态 gate | 结构化输出约束到枚举 + devtools 的 Pick/Catalog/Stream 面板调试 | `vercel-labs/json-render` | MIT · 活跃 ★★★★★ |
+| 第三刀 分渲染器 | 按 type 的渲染器注册表 + 诚实降级(你 `view.kind` 已是页面级雏形,抬到应用级即第一刀) | **Grafana** panel registry | AGPL(只读思路)★★★★☆ |
+| 第三刀 跨端(以后) | 一份 spec → 多渲染器、增量更新、给 agent 而非给人 | `google/A2UI`(> DivKit) | v0.8 · 只抄思想 ★★★★☆ |
+| 第四刀 换皮(backlog) | designRecipeRef:一整套 token/圆角/阴影/字体配方引用 + registry 分发 | tweakcn / shadcn GitHub Registries | 活跃 · 现在别碰 ★★★☆☆ |
+
+**A2UI / tweakcn 核实结论(2026-07-19 复核)**:
+- **tweakcn**(`jnsahaj/tweakcn`,活跃到 2026-06):只做"换皮"(颜色/圆角/阴影/字体/Light-Dark),**不碰形态**。放进来只会让所有应用还是同一后台骨架、只换配色——正是当前问题。归第四刀 backlog,现在别碰。shadcn 官方 2026-06 上线 GitHub Registries(分发 token/模板/页面),才是 `designRecipeRef` 该抄的机制。
+- **A2UI**(`google/A2UI`,v0.8):secure-by-design(LLM 只能用严格 schema、不能生任意代码)+ 流式增量 + 平台无关多渲染器(web/mobile/desktop)。**精确对应第三刀,比 DivKit 更贴 LLM 生成**。两个硬伤:① 还是 v0.8,拿思想别拿依赖;② 组件级协议,**没有 app-archetype 概念**,archetype 判定这层它帮不了。
+- **立刻能动手抄的只有 json-render(第一、二刀)**;A2UI 等要做移动壳/画布壳真渲染时再深读。
+
 ## 相关文档
 
 - 北极星:`docs/NORTH_STAR.md`(黄金路径、决策清单)
