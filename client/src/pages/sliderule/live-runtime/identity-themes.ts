@@ -2,7 +2,7 @@
  * identity-themes — 应用身份段的 8 套主题 token（E40.2）。
  *
  * 千人千面的第一层：同一套运行时组件，换一份 token = 完全不同的产品气质
- * （机制参照 tweakcn 的 design token 层，MIT，数值提炼自其预设并按企业
+ * （机制参照 tweakcn 的 design token 层，Apache-2.0，数值提炼自其预设并按企业
  * 应用调校：主色对比度达标、色相彼此拉开、radius 收敛到企业档）。
  * 主题 id 的合法域在 @legal（identityThemes）——门/修复器/生成契约同账，
  * parity 测试锁死这里的实现清单与账本一致。
