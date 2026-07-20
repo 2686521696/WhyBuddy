@@ -3,11 +3,19 @@
 </p>
 
 <p align="center">
-  <strong>简洁通用的产品推演引擎，推演万物。<br/>A Simple and Universal Product Rehearsal Engine, Speccing Anything.</strong>
+  <strong>SlideRule</strong> · 产品推演引擎<br/>
+  <em>把想法问清楚，把产品跑起来</em><br/>
+  <sub>Clarify ideas, ship a runnable product.</sub>
 </p>
 
 <p align="center">
-  <sub>TRAE Skill 挑战赛作品 / 社区展示项目 · 产品名 <strong>SlideRule</strong> · 托管于 <a href="https://github.com/xiaojilele-glitch/WhyBuddy">xiaojilele-glitch/WhyBuddy</a>（仓库沿用项目原名）</sub>
+  <sub>
+    TRAE Skill 挑战赛作品 / 社区展示项目 ·
+    产品名 <strong>SlideRule</strong> ·
+    <a href="https://sliderule.ai">sliderule.ai</a> ·
+    托管于 <a href="https://github.com/xiaojilele-glitch/WhyBuddy">xiaojilele-glitch/WhyBuddy</a>
+    （仓库沿用项目原名）
+  </sub>
 </p>
 
 <p align="center">
@@ -19,7 +27,8 @@
 </p>
 
 <blockquote>
-<strong>🧭 北极星：</strong>"AI 声称完成不算数，过了确定性门的产物才算数。"唯一主线是 <strong>SlideRule</strong>（意图 → 证据过门的应用推演）；<code>/autopilot</code> 是已归档的 v4 演示。详见<a href="./docs/NORTH_STAR.md">北极星文档</a>。
+<strong>🧭 北极星：</strong><em>「AI 声称完成不算数，过了确定性门的产物才算数。」</em><br/>
+唯一产品主线是 <strong>SlideRule</strong>——意图 → 证据过门的应用推演。<code>/autopilot</code> 是已归档的 v4 演示。详见 <a href="./docs/NORTH_STAR.md">北极星文档</a>。
 </blockquote>
 
 <p align="center">
@@ -45,15 +54,27 @@
 
 ---
 
+## 为什么叫这个名字
+
+**计算尺（slide rule）** 是工程师的模拟计算工具：刻度、游标，先对齐再相信读数。
+
+**SlideRule** 把同一套思路用在产品决策上——不是魔法式的「一键 App 工厂」，而是一台**推演仪器**：
+
+- 每一步都可见
+- 每件产物必须过确定性门
+- 只有过门之后，才长出可运行的应用
+
+模型说「做完了」仍然不算数。**门过了才算数。**
+
+---
+
 ## ⚡ 30 秒了解
 
-> **你输入一句话，系统为你推演一套完整的产品方案。**
+> **你输入一句话。SlideRule 推演完整产品方案——并让你直接跑起来。**
 >
-> 五系统模型 · 证据过门的产物 · 发布闭环 · 浏览器里可运行的应用
+> 五系统模型 · 证据过门的产物 · 发布闭环 · 浏览器运行时
 >
-> 全程可见，全部可导出，处处有证据链。
-
-<br/>
+> 全程可见 · 全部可导出 · 处处有证据链
 
 <table>
 <tr>
@@ -68,11 +89,21 @@
 
 ### 💡 解法
 
-输入一个想法 → **一杯咖啡的真实 LLM 推演，每一步都看得见** → 完整预演 → 判断值不值得做 → 不值得就换下一个想法。
+输入一个想法 → **一杯咖啡的真实多轮推演，每一步都看得见** → 完整预演 → 判断值不值得做 → 不值得就换下一个，不必沉没数月。
 
 </td>
 </tr>
 </table>
+
+### 它是什么 / 不是什么
+
+| SlideRule **是** | SlideRule **不是** |
+| :--------------- | :----------------- |
+| **产品推演引擎**（意图 → 过门方案 → 可预览应用） | 纯 **写代码 Agent**（Devin / Cursor 式改仓库劳动力） |
+| **业务结构生成器**（数据 · RBAC · 工作流 · 页面 · AIGC） | 单独的 **聊天机器人 / 工作流搭建器**（Dify / n8n） |
+| **信任优先**系统：门、证据、工具 fail-closed | 无发布门槛的「随缘 UI 生成」 |
+
+别人常用的心智锚点：*「生成面像 v0/Lovable，业务结构像 Power Platform，长推演像 Manus——终点是过门的应用模型，不是 git 仓库。」*
 
 ---
 
@@ -85,13 +116,13 @@
 
 在里面你可以：
 
-- **看一场完整推演**——主演示卡预填了真实项目意图（社区宠物医院预约问诊系统），点发送即可看引擎经六技能推演到 6/6 发布闭环。回放数据来自真实 LLM 全程推演捕获，不是手写的。
-- **打开完成态示例**——两张画廊卡（二手乐器寄卖与鉴定平台 · 剧本杀门店场次编排系统）是已闭环的完整推演：读报告、运行生成的应用、切换角色、驱动审批流。
-- 填入你自己的 OpenAI 兼容 key（BYOK，只存在你的浏览器里），即可对新话题做真实推演。
+- **看一场完整推演**——主演示卡预填真实项目意图（社区宠物医院预约问诊），点发送看引擎经六技能推到 **6/6 发布闭环**。回放来自真实 LLM 端到端捕获，不是手写脚本。
+- **打开完成态示例**——画廊卡（二手乐器寄卖鉴定 · 剧本杀场次编排）是已闭环推演：读报告、**运行生成的应用**、切换角色、驱动审批。
+- **BYOK**——填入你自己的 OpenAI 兼容 key（只存在浏览器），即可对新话题真跑推演。
 
 ---
 
-## 🖼️ 产品界面
+## 产品界面
 
 SlideRule 示例推演的 16 屏照片墙。
 
@@ -109,7 +140,7 @@ SlideRule 示例推演的 16 屏照片墙。
 
 ## ⚙️ V5 推演引擎
 
-一句话进来 → 引擎在**能力池**上做多轮推理（证据检索、风险分析、反证、综合、报告……），落成**五系统模型**（数据模型 · RBAC · 工作流 · 页面 · AIGC），只有**发布闭环**拿满 6/6 证据才交付。贯穿始终的纪律：
+一句话进来 → 在**能力池**上多轮推理（证据检索、风险分析、反证、综合、报告……）→ 落成**五系统模型**（数据模型 · RBAC · 工作流 · 页面 · AIGC）→ 只有**发布闭环**拿满 **6/6** 证据才交付。
 
 > **AI 声称完成不算数，过了确定性门的产物才算数。**
 
@@ -129,15 +160,15 @@ flowchart LR
   AWAIT --> ORCH
 ```
 
-它和"套着长 prompt 的 LLM"的区别：
+它和「套着长 prompt 的 LLM」的区别：
 
-| 机制               | 作用                                                                                        |
-| :----------------- | :------------------------------------------------------------------------------------------- |
-| **证据信任门**     | 每件产物先过结构门 + 接地门才拿到 `gated_pass`；生成失败把校验错误回喂重试，不做盲重试        |
-| **证据上下文管道** | 下游推理（综合/报告）只吃**过了门的上游产物**，按优先级在预算内装箱，被省略的如实留痕          |
-| **发布闭环**       | 六技能（数据模型 · RBAC · 工作流 · 页面 · AIGC · 应用包）证据齐全才发布，否则停泊在 AWAIT 等澄清 |
-| **真实工具**       | MCP 式工具注册表接入 `web.search`（接地证据）与 `code.run`（E2B 沙盒，无 key 则 fail-closed）  |
-| **盲评签字上线**   | 引擎改动配对盲评（A/B · 换位 · 双向复核）拿数据签字——如 agentic pick 4:0、证据管道 2:0        |
+| 机制 | 作用 |
+| :--- | :--- |
+| **证据信任门** | 每件产物先过结构门 + 接地门才拿 `gated_pass`；失败把校验错误回喂重试 |
+| **证据上下文管道** | 下游推理只吃**过了门的上游产物**，按优先级装箱，省略如实留痕 |
+| **发布闭环** | 六技能（数据模型 · RBAC · 工作流 · 页面 · AIGC · 应用包）证据齐全才发布，否则停在 AWAIT |
+| **真实工具** | `web.search` 与 `code.run`（E2B 沙盒，无 key 则 fail-closed），经 MCP 式注册表接入 |
+| **盲评签字上线** | 引擎改动配对盲评（A/B · 换位）——如 agentic pick 4:0、证据管道 2:0 |
 
 深入阅读：[V5.3 架构图](<./docs/SlideRule V5.3 架构图.md>) · [五系统生成评测](./docs/five-system-generation-eval.md) · [运行时蓝图](./docs/LIVE_SYSTEMS_BLUEPRINT.md)
 
@@ -145,21 +176,21 @@ flowchart LR
 
 ## 🕹️ 浏览器运行时
 
-推演出来的模型不只是图——**浏览器把它渲染成可操作的系统**，ECharts 式：五系统 JSON 即 schema，零后端、零数据库。
+推演出来的模型不只是图——**浏览器把它渲染成可操作的系统**。五系统 JSON 即 schema：预览运行时零后端、零数据库。
 
-|                                                                                                                                                            |                                                                                                                                                              |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <img src="./docs/assets/live-runtime/home.png" alt="工作室主页" /> <br/> <sub>工作室首屏——品牌侧栏、会话列表、示例引导</sub>                                | <img src="./docs/assets/live-runtime/xray.png" alt="游标透视面板" /> <br/> <sub>**游标透视**——悬停运行中应用的任意元素，读出它背后的五系统声明：绑定字段、可见角色、工作流节点</sub>              |
-| <img src="./docs/assets/live-runtime/workflow-live.png" alt="工作流实况图" /> <br/> <sub>**工作流实况**——角色着色节点、条件边；运行中的实例实时点亮当前节点</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="可运行应用 Pro 壳" /> <br/> <sub>**运行应用**——由模型渲染出的 Ant Design Pro 壳：仪表盘、表格、表单、审批</sub> |
+| | |
+| --- | --- |
+| <img src="./docs/assets/live-runtime/home.png" alt="工作室主页" /> <br/> <sub>工作室首屏——品牌侧栏、会话列表、示例引导</sub> | <img src="./docs/assets/live-runtime/xray.png" alt="游标透视面板" /> <br/> <sub>**游标透视**——悬停任意元素，读出绑定字段、可见角色、工作流节点</sub> |
+| <img src="./docs/assets/live-runtime/workflow-live.png" alt="工作流实况图" /> <br/> <sub>**工作流实况**——角色着色节点；运行中的实例实时点亮当前节点</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="可运行应用 Pro 壳" /> <br/> <sub>**运行应用**——由模型渲染的 Pro 壳：图表、表格、表单、审批</sub> |
 
-话题闭环后你可以（全部状态在浏览器内、按会话隔离）：
+话题闭环后你可以（状态在浏览器内、按会话隔离）：
 
-- **运行应用**——桌面/平板/手机三种机身，用带类型的表单建记录，点行进详情抽屉，提交进审批流。
-- **切换角色**——RBAC 模型实时锁定菜单和按钮；RBAC 页的角色预览和运行中的应用双向同步。
-- **驱动审批**——在工作流状态机上发起/通过/驳回/分支；工作流图同时就是实况监视器。
-- **就地改数据**——数据模型页的数据表写的就是应用读的同一份运行时行。
-- **真跑 AIGC**——声明的 AI 能力经生成时同一条 LLM 通道真跑一次；失败如实呈现。
-- **带证据导出**——交付包附带推演运行时快照（实体行、实例日志、导出角色）。
+- **运行应用**——桌面/平板/手机机身，类型化表单、详情抽屉、提交审批
+- **切换角色**——RBAC 实时锁菜单与按钮；角色预览双向同步
+- **驱动审批**——发起/通过/驳回/分支；工作流图即实况监视器
+- **就地改数据**——数据模型表写的就是应用读的同一份行
+- **真跑 AIGC**——声明能力走同一 LLM 通道；失败如实呈现
+- **带证据导出**——交付包附带推演运行时快照
 
 ---
 
@@ -167,7 +198,7 @@ flowchart LR
 
 ### 方式 A——Docker 一键部署（推荐）
 
-全栈（前端 + Node 服务 + Python 推演引擎），无需本地 Node / Python——**也不需要数据库**：推演主线持久化走 JSON 文件库：
+全栈（前端 + Node 服务 + Python 推演引擎），无需本地 Node/Python——主线**也不需要数据库**（JSON 文件库）：
 
 ```bash
 git clone https://github.com/xiaojilele-glitch/WhyBuddy.git && cd WhyBuddy
@@ -178,18 +209,18 @@ docker compose up -d --build
 # 打开 http://localhost:3000/agent-loop/workbench
 ```
 
-| 服务     | 端口                    | 职责                                                              |
-| :------- | :---------------------- | :------------------------------------------------------------------ |
-| `app`    | `3000`（宿主）→ `3001`  | Node 服务 + 打包好的前端；SlideRule API 薄代理到 Python              |
-| `python` | `9700`（仅容器网络内）  | V5 推演引擎：五系统生成、证据信任门、证据上下文管道、发布闭环         |
+| 服务 | 端口 | 职责 |
+| :--- | :--- | :--- |
+| `app` | `3000`（宿主）→ `3001` | Node 服务 + 打包前端；SlideRule API 薄代理到 Python |
+| `python` | `9700`（仅容器网络内） | V5 推演引擎：五系统生成、证据信任门、证据管道、发布闭环 |
 
-`mysql` 是**可选 profile**，只有遗留账号功能（登录/邮箱验证码/projects）用到：`docker compose --profile accounts up -d`。
+`mysql` 是**可选 profile**，仅遗留账号功能（登录/邮箱验证码/projects）：`docker compose --profile accounts up -d`。
 
-会话与推演产物持久化在命名卷 `sliderule-python-data`——容器重建不丢数据。
+会话与产物持久化在命名卷 `sliderule-python-data`——容器重建不丢数据。
 
 ```bash
 docker compose logs -f app python   # 跟日志
-docker compose up -d --build        # 代码更新后重建
+docker compose up -d --build        # 更新后重建
 docker compose down                 # 停止（保留数据卷）
 docker compose down -v              # 停止并清空数据
 ```
@@ -197,25 +228,26 @@ docker compose down -v              # 停止并清空数据
 <details>
 <summary>📌 <strong>部署须知</strong></summary>
 
-- **必填环境变量**：`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（任意 OpenAI 兼容供应商）与 `SESSION_SECRET`（生产环境换成 64 位随机 hex）。不填 LLM key 服务也能启动，推演走确定性模板回退。
-- **可选能力**：`WEB_SEARCH_API_KEY`（全网证据检索）、`E2B_API_KEY`（`code.run` 沙盒执行）——不填对应工具自动不可用（fail-closed）。
-- **端口冲突**：改 `docker-compose.yml` 里 `app` 的 `ports` 映射（如 `"8080:3001"`）。
-- **账号功能（可选）**：推演主线不需要数据库。登录/邮箱验证码/projects 路由惰性使用 MySQL——需要时 `docker compose --profile accounts up -d` 启用（MySQL 只在容器网络内，不占宿主端口）。
-- **生产服务器——只拉不建**：每次发版到 `main` 会自动构建镜像推 ghcr.io（`.github/workflows/deploy-images.yml`）。服务器用纯镜像 compose——不在生产机上构建，小内存机器也稳：
+- **必填环境变量**：`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（任意 OpenAI 兼容供应商）与 `SESSION_SECRET`（生产用 64 位随机 hex）。不填 LLM key 也能启动，推演走确定性模板回退。
+- **可选能力**：`WEB_SEARCH_API_KEY`（全网证据）、`E2B_API_KEY`（`code.run` 沙盒）——不填则对应工具 fail-closed 不可用。
+- **端口冲突**：改 `docker-compose.yml` 里 `app` 的 `ports`（如 `"8080:3001"`）。
+- **账号功能（可选）**：推演主线不需要数据库。需要时 `docker compose --profile accounts up -d`。
+- **生产服务器——只拉不建**：发版到 `main` 会构建镜像推 ghcr.io（`.github/workflows/deploy-images.yml`）。服务器上：
 
   ```bash
   docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
-  # 全自动更新（Watchtower 每 5 分钟检查，档位三）：
+  # 全自动更新（Watchtower 每 5 分钟）：
   docker compose -f docker-compose.prod.yml --profile auto up -d
-  # 回滚：把 docker-compose.prod.yml 里 :latest 换成某次发版的 :<commit-sha>
-  # 国内服务器拉 ghcr 慢：.env 加 SLIDERULE_REGISTRY=ghcr.nju.edu.cn 切镜像站；
-  # 或（仓库配好 DOCKERHUB_USERNAME/DOCKERHUB_TOKEN secrets 后 CI 自动双推 Docker Hub）：
-  #   SLIDERULE_IMAGE_APP=docker.io/<你的Hub用户名>/whybuddy-app:latest
-  #   SLIDERULE_IMAGE_PYTHON=docker.io/<你的Hub用户名>/whybuddy-python:latest
+  # 回滚：把 :latest 换成某次发版的 :<commit-sha>
+  # 国内拉 ghcr 慢：.env 加 SLIDERULE_REGISTRY=ghcr.nju.edu.cn
+  # 或 Docker Hub 双推（配好 secrets 后）：
+  #   SLIDERULE_IMAGE_APP=docker.io/<Hub用户名>/whybuddy-app:latest
+  #   SLIDERULE_IMAGE_PYTHON=docker.io/<Hub用户名>/whybuddy-python:latest
   ```
-- **企业内网（TLS 拦截代理）**：把企业根证书（PEM，`.crt`）放进 `docker/certs/` 再构建，两个镜像会自动并入信任链（详见 `docker/certs/README.md`）；证书已被 .gitignore 排除。
-- **不包含在 compose 内**：Lobster Executor（需 Docker-in-Docker，单独 opt-in）、Redis（默认关闭）、飞书集成（默认 mock）。
-- `.env` 绝不会被打进镜像（`.dockerignore` 排除），运行时经 `env_file` 注入。
+
+- **企业 TLS 拦截代理**：根证书（PEM `.crt`）放进 `docker/certs/` 再构建（见 `docker/certs/README.md`）。证书已 gitignore。
+- **不在 compose 内**：Lobster Executor（DinD，单独 opt-in）、Redis（默认关）、飞书（默认 mock）。
+- `.env` 不进镜像，运行时经 `env_file` 注入。
 
 </details>
 
@@ -239,36 +271,36 @@ pnpm run dev:frontend     # 打开 http://localhost:3000
 
 ---
 
-## 🧩 `sliderule` 技能包（便携 · 可嵌入任意 Agent）
+## 🧩 `sliderule` 技能包
 
-除完整应用外，SlideRule 还提供一个**自包含的 Skill 包**，可装进 Trae、Claude 或任何支持 Agent Skills 的宿主。一句话进 → 可评审、可交付的规格包出（需求/设计/任务/可追溯矩阵/UI 预览），每道门**由脚本真实跑过**而非模型口头声称——`checks_ledger.json` 记录每个脚本、退出码与输出。
+除完整应用外，SlideRule 还提供**自包含 Skill 包**，可装进 Trae、Claude 或任何支持 Agent Skills 的宿主。一句话进 → 可评审规格包出（需求/设计/任务/可追溯矩阵/UI 预览）。每道门由**脚本真实跑过**——`checks_ledger.json` 记录脚本、退出码与输出。
 
 ```bash
 unzip skills/sliderule.zip
-# 把解出的 sliderule/ 文件夹放进宿主的技能目录
+# 把解出的 sliderule/ 放进宿主技能目录
 #（Trae：Skills · Claude：skill），然后给它一句话想法
 ```
 
-安装细节、生图配置与完整产物结构：[`skills/README.md`](./skills/README.md)。
+安装与产物结构：[`skills/README.md`](./skills/README.md)。
 
 ---
 
 ## 📝 预演示例
 
-> 每一次预演都是一份可分享的内容。下面前三个就在[静态演示](https://xiaojilele-glitch.github.io/WhyBuddy/agent-loop/workbench)里——全部来自引擎端到端真跑捕获。
+> 每一次预演都是可分享内容。下面前三个就在[静态演示](https://xiaojilele-glitch.github.io/WhyBuddy/agent-loop/workbench)里——全部来自引擎端到端真跑。
 
-| 💬 输入                          | 📦 输出                                                          |
-| :-------------------------------- | :----------------------------------------------------------------- |
-| "社区宠物医院预约问诊系统"         | 六技能推演回放 · 6/6 发布闭环 · 可运行的预约分诊应用                 |
-| "二手乐器寄卖与鉴定平台"           | 已闭环推演 · 寄卖台账、鉴定工作台、上架排期、合规审计                |
-| "剧本杀门店场次编排与拼车组局"     | 已闭环推演 · 场次看板、门店排期日历、报名与拼车组局                  |
-| "采购审批 + 字段级权限"            | 五系统模型 · 审批状态机 · RBAC 字段锁 · 风险与反证报告               |
+| 💬 输入 | 📦 输出 |
+| :------ | :------ |
+| 「社区宠物医院预约问诊系统」 | 六技能回放 · 6/6 发布闭环 · 可运行预约分诊应用 |
+| 「二手乐器寄卖与鉴定平台」 | 已闭环 · 寄卖台账、鉴定工作台、上架排期、合规审计 |
+| 「剧本杀门店场次编排与拼车组局」 | 已闭环 · 场次看板、门店排期、报名与拼车 |
+| 「采购审批 + 字段级权限」 | 五系统模型 · 审批状态机 · RBAC 字段锁 · 风险与反证报告 |
 
 ---
 
 ## 🏗️ 系统架构
 
-当前引擎架构（V5.3，每处增量标注提交出处）：[docs/SlideRule V5.3 架构图.md](<./docs/SlideRule V5.3 架构图.md>)
+当前引擎（V5.3，增量可溯提交）：[docs/SlideRule V5.3 架构图.md](<./docs/SlideRule V5.3 架构图.md>)
 
 历史版本：[V5.2](<./docs/SlideRule V5.2 架构图.md>) · [v4 Skill 闭环总图](./docs/assets/SlideRuleArc/SlideRuleSkill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE_%E6%94%B9%E8%BF%9B%E7%89%88v4.md)（获奖技能包背后的架构）
 
@@ -276,47 +308,49 @@ unzip skills/sliderule.zip
 
 ## 🛠️ 技术栈
 
-| 层次     | 技术                                                                                 |
-| :------- | :------------------------------------------------------------------------------------ |
-| 前端     | React 19 · Vite · TypeScript · Tailwind · streamdown / assistant-ui · Three.js (R3F)   |
-| 服务端   | Express · Socket.IO · TypeScript（薄代理到 Python 引擎）                               |
-| 引擎     | Python 3.11 · FastAPI · 确定性门 + LLM 能力池                                          |
-| AI       | OpenAI 兼容 API（任意供应商）· 浏览器 BYOK                                             |
-| 工具     | `web.search`（接地证据）· `code.run`（E2B 沙盒）· MCP 式注册表                          |
-| 测试     | Vitest · pytest · Playwright 浏览器冒烟 · fast-check（PBT）                            |
-| 存储     | JSON 会话库（文件/命名卷）· MySQL 8（账号）· IndexedDB（浏览器）                        |
-| 部署     | Docker Compose 一键部署 · GitHub Pages 静态演示 · GitHub Actions 发布门                |
+| 层次 | 技术 |
+| :--- | :--- |
+| 前端 | React 19 · Vite · TypeScript · Tailwind · streamdown / assistant-ui · Three.js (R3F) |
+| 服务端 | Express · Socket.IO · TypeScript（薄代理到 Python 引擎） |
+| 引擎 | Python 3.11 · FastAPI · 确定性门 + LLM 能力池 |
+| AI | OpenAI 兼容 API（任意供应商）· 浏览器 BYOK |
+| 工具 | `web.search` · `code.run`（E2B）· MCP 式注册表 |
+| 测试 | Vitest · pytest · Playwright 浏览器冒烟 · fast-check（PBT） |
+| 存储 | JSON 会话库 · MySQL 8（账号）· IndexedDB（浏览器） |
+| 部署 | Docker Compose · GitHub Pages 静态演示 · GitHub Actions 发布门 |
 
 ---
 
 ## 📊 项目规模
 
-| 指标                |    数量 |
-| :------------------ | ------: |
-| 项目文件            |   8,194 |
-| TypeScript/TSX 文件 |   2,926 |
-| TypeScript 行数     | 835,305 |
-| Python 行数         |  92,137 |
-| 测试文件            |   1,322 |
-| Spec 目录           |     316 |
+| 指标 | 数量 |
+| :--- | ---: |
+| 项目文件 | 8,194 |
+| TypeScript/TSX 文件 | 2,926 |
+| TypeScript 行数 | 835,305 |
+| Python 行数 | 92,137 |
+| 测试文件 | 1,322 |
+| Spec 目录 | 316 |
 
 ---
 
-## ⚔️ 与其他平台对比
+## ⚔️ 怎么安放 SlideRule
 
-| 特性                               | Dify | n8n | CrewAI | LangGraph | **SlideRule** |
-| :---------------------------------- | :--: | :-: | :----: | :-------: | :-----------: |
-| 开源                                |  ✅  | ✅  |   ✅   |    ✅     |      ✅       |
-| 一句话到完整产品                    |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| 规格文档生成（需求+设计+任务）      |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| 证据过门的发布闭环                  |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| 多角色 Agent 编排                   |  ❌  | ❌  |   ✅   |    ✅     |      ✅       |
-| 推演模型直接在浏览器跑成应用        |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| 人工接管治理                        |  ⚠️  | ⚠️  |   ❌   |    ❌     |      ✅       |
-| 回放与审计                          |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| 沙盒代码执行                        |  ❌  | ⚠️  |   ❌   |    ❌     |      ✅       |
-| 导出 Markdown/ZIP                   |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| 纯浏览器演示                        |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
+这些工具解决的是**不同工作**。下表不是「我们全面替代它们」，而是标出推演主线独特的位置。
+
+| 能力 | Agent 框架<br/>（CrewAI / LangGraph） | 工作流搭建<br/>（Dify / n8n） | **SlideRule** |
+| :--- | :-----------------------------------: | :--------------------------: | :-----------: |
+| 开源 | ✅ | ✅ | ✅ |
+| 多 Agent / 长编排 | ✅ | ⚠️ | ✅ |
+| 一句话 → **产品结构**（数据 · RBAC · 流程 · 页面） | ❌ | ❌ | ✅ |
+| 规格包（需求 · 设计 · 任务 · 追溯） | ❌ | ❌ | ✅ |
+| **证据过门的发布闭环** | ❌ | ❌ | ✅ |
+| 推演模型在浏览器**跑成应用** | ❌ | ❌ | ✅ |
+| 回放、审计、人工停泊 / 再入 | ⚠️ | ⚠️ | ✅ |
+| 沙盒代码工具 | ⚠️ | ⚠️ | ✅ |
+| 纯浏览器零安装演示 | ❌ | ❌ | ✅ |
+
+生成体验上人们常比 **v0 / Lovable / Bolt**；长推演可见性常比 **Manus 类 Agent**；企业应用结构常比 **Power Platform / 低代码**。SlideRule 押注的是**交汇点**：*在门下推演业务系统，再跑模型——不只吐代码，也不只聊 Bot。*
 
 ---
 
@@ -328,7 +362,7 @@ unzip skills/sliderule.zip
 3. 提交前：pnpm run check && pnpm run test
 ```
 
-**分支模型**：`main` 是生产分支（部署构建以它为准）；`pre_main` 是日常集成分支。合并一律走发布门脚本——门现场跑，门红机械拦截合并：
+**分支模型**：`main` 是生产分支；`pre_main` 是日常集成。合并一律走发布门——门红机械拦截：
 
 ```bash
 bash scripts/merge-gated.sh <你的分支> "<说明>"            # 日常 → pre_main
@@ -341,7 +375,7 @@ bash scripts/merge-gated.sh pre_main "<发版说明>" main     # 发版 → main
 
 ## ⭐ Star History
 
-> 引擎生成的每一次预演，都是帮他人发现新可能的内容。Star 本仓库，让更多人找到它。
+> 每一次预演，都是帮他人发现新可能的内容。Star 本仓库，让更多人找到它。
 
 <p>
   <a href="https://github.com/xiaojilele-glitch/WhyBuddy/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/xiaojilele-glitch/WhyBuddy?style=for-the-badge&logo=github&color=d97706" /></a>
@@ -349,10 +383,12 @@ bash scripts/merge-gated.sh pre_main "<发版说明>" main     # 发版 → main
   <a href="https://github.com/xiaojilele-glitch/WhyBuddy/watchers"><img alt="watchers" src="https://img.shields.io/github/watchers/xiaojilele-glitch/WhyBuddy?style=for-the-badge&logo=github&color=2563eb" /></a>
 </p>
 
-📈 [在 star-history.com 查看 Star 增长曲线 →](https://star-history.com/#xiaojilele-glitch/WhyBuddy&Date)
+📈 [查看 Star 增长曲线 →](https://star-history.com/#xiaojilele-glitch/WhyBuddy&Date)
 
 ---
 
 <p align="center">
-  <a href="./LICENSE"><strong>MIT License</strong></a> · 托管于 <a href="https://github.com/xiaojilele-glitch/WhyBuddy">xiaojilele-glitch/WhyBuddy</a>
+  <strong>SlideRule</strong> · <a href="https://sliderule.ai">sliderule.ai</a><br/>
+  <a href="./LICENSE"><strong>MIT License</strong></a> ·
+  源码：<a href="https://github.com/xiaojilele-glitch/WhyBuddy">xiaojilele-glitch/WhyBuddy</a>
 </p>

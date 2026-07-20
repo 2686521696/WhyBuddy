@@ -3,12 +3,19 @@
 </p>
 
 <p align="center">
-  <strong>A Simple and Universal Product Rehearsal Engine, Speccing Anything.
-简洁通用的产品推演引擎，推演万物。</strong>
+  <strong>SlideRule</strong> · product rehearsal engine<br/>
+  <em>Clarify ideas, ship a runnable product.</em><br/>
+  <sub>把想法问清楚，把产品跑起来</sub>
 </p>
 
 <p align="center">
-  <sub>TRAE Skill Challenge / Community Showcase Project · product name <strong>SlideRule</strong> · hosted at <a href="https://github.com/xiaojilele-glitch/WhyBuddy">xiaojilele-glitch/WhyBuddy</a> (the repo keeps the project's original name)</sub>
+  <sub>
+    TRAE Skill Challenge / Community Showcase Project ·
+    product name <strong>SlideRule</strong> ·
+    <a href="https://sliderule.ai">sliderule.ai</a> ·
+    hosted at <a href="https://github.com/xiaojilele-glitch/WhyBuddy">xiaojilele-glitch/WhyBuddy</a>
+    (the repo keeps the project's original name)
+  </sub>
 </p>
 
 <p align="center">
@@ -20,7 +27,8 @@
 </p>
 
 <blockquote>
-<strong>🧭 North Star:</strong> "An AI claiming something is done does not count. Only artifacts that pass deterministic gates count." The single main line is <strong>SlideRule</strong> (intent → evidence-gated application rehearsal); <code>/autopilot</code> is the archived v4 demo. See the <a href="./docs/NORTH_STAR.md">North Star doc</a>.
+<strong>🧭 North Star:</strong> <em>"An AI claiming something is done does not count. Only artifacts that pass deterministic gates count."</em><br/>
+The single product main line is <strong>SlideRule</strong> — intent → evidence-gated application rehearsal. <code>/autopilot</code> is the archived v4 demo. See <a href="./docs/NORTH_STAR.md">NORTH_STAR.md</a>.
 </blockquote>
 
 <p align="center">
@@ -46,15 +54,27 @@
 
 ---
 
+## Why the name
+
+A **slide rule** is an engineer’s analog calculator: scales, a cursor, and alignment before you trust a number.
+
+**SlideRule** is the same idea for product decisions — not a magic “one-click app factory,” but a **rehearsal instrument**:
+
+- every step is visible
+- every artifact must pass deterministic gates
+- only then does a runnable application appear
+
+If AI says “done,” that still does not count. **The gate has to pass.**
+
+---
+
 ## ⚡ 30 Second Overview
 
-> **You enter one sentence. The system rehearses a complete product plan for you.**
+> **You enter one sentence. SlideRule rehearses a complete product plan — then lets you run it.**
 >
-> Five-system model · Evidence-gated artifacts · Publish closure · A runnable app in the browser
+> Five-system model · Evidence-gated artifacts · Publish closure · Browser live runtime
 >
-> Fully visible. Fully exportable. Fully backed by an evidence trail.
-
-<br/>
+> Fully visible · Fully exportable · Fully backed by an evidence trail
 
 <table>
 <tr>
@@ -62,18 +82,28 @@
 
 ### 🎯 Pain
 
-You spend **days** writing a PRD, **weeks** aligning the team, and **months** before you know whether the direction is right.
+You spend **days** writing a PRD, **weeks** aligning the team, and **months** before you know whether the direction is even right.
 
 </td>
 <td width="50%">
 
 ### 💡 Solution
 
-Enter an idea → **one coffee's worth of real LLM deliberation, every step visible** → full rehearsal → decide whether it is worth building → if not, move to the next idea.
+Enter an idea → **one coffee’s worth of real multi-loop deliberation, every step visible** → full rehearsal → decide whether it is worth building → if not, move on without months of sunk cost.
 
 </td>
 </tr>
 </table>
+
+### What it is / is not
+
+| SlideRule **is** | SlideRule **is not** |
+| :--------------- | :------------------- |
+| A **product rehearsal engine** (intent → gated plan → previewable app) | A pure **code agent** (Devin / Cursor-style repo labor) |
+| A **business-structure generator** (data · RBAC · workflow · pages · AIGC) | A **chatbot / workflow builder** alone (Dify / n8n) |
+| A **trust-first** system: gates, evidence, fail-closed tools | An unconstrained “vibe UI” generator with no publish bar |
+
+Closest mental models people use: *“v0/Lovable for the generation surface, Power Platform–like business structure, Manus-like long deliberation — ending in a gated app model, not a git repo.”*
 
 ---
 
@@ -86,9 +116,9 @@ The static demo runs entirely in your browser — no backend, no key, nothing to
 
 What you can do there:
 
-- **Watch a full rehearsal** — the main demo card pre-fills a real project intent (community pet-clinic booking & triage system); press send and watch the engine reason through six skills to a 6/6 publish closure. The playback data was captured from a real end-to-end LLM run, not hand-written.
-- **Open finished examples** — two gallery cards (second-hand instrument consignment & appraisal platform · script-murder venue scheduling system) open as fully closed rehearsals: read the report, run the generated app, switch roles, drive approvals.
-- Bring your own OpenAI-compatible key (BYOK, stays in your browser) to run live rehearsals on new topics.
+- **Watch a full rehearsal** — the main demo card pre-fills a real project intent (community pet-clinic booking & triage); press send and watch the engine reason through six skills to a **6/6 publish closure**. Playback is captured from a real end-to-end LLM run, not hand-written.
+- **Open finished examples** — gallery cards (second-hand instrument consignment · script-murder venue scheduling) open as fully closed rehearsals: read the report, **run the generated app**, switch roles, drive approvals.
+- **BYOK** — bring an OpenAI-compatible key (stays in your browser) to run live rehearsals on new topics.
 
 ---
 
@@ -110,7 +140,7 @@ Click the video cover above to open the Bilibili demo.
 
 ## ⚙️ The V5 Rehearsal Engine
 
-One sentence in → the engine drives multi-loop reasoning over a **capability pool** (evidence search, risk analysis, counter-arguments, synthesis, reporting…), materializes a **five-system model** (data model · RBAC · workflow · pages · AIGC), and only ships when the **publish closure** holds 6/6 evidence. The core discipline, everywhere:
+One sentence in → multi-loop reasoning over a **capability pool** (evidence search, risk analysis, counter-arguments, synthesis, reporting…) → a **five-system model** (data model · RBAC · workflow · pages · AIGC) → ships only when **publish closure** holds **6/6** evidence.
 
 > **An AI claiming something is done does not count. Only artifacts that pass deterministic gates count.**
 
@@ -130,15 +160,15 @@ flowchart LR
   AWAIT --> ORCH
 ```
 
-What makes it different from "an LLM with a long prompt":
+What makes it different from “an LLM with a long prompt”:
 
-| Mechanism                     | What it does                                                                                                                                                 |
-| :---------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Evidence trust gate**       | Every artifact passes structural + grounding gates before it earns `gated_pass`; failed generations are retried with the validator errors fed back           |
-| **Evidence context pipeline** | Downstream reasoning (synthesis / report) is fed **only gated upstream artifacts**, priority-packed under budget with honest omission notes                  |
-| **Publish closure**           | The app ships only when all six skills (dataModel · RBAC · workflow · page · AIGC · appBundle) hold evidence — otherwise it parks at AWAIT for clarification |
-| **Real tools**                | `web.search` (grounded evidence) and `code.run` (E2B sandbox, fail-closed without a key) via an MCP-style tool registry                                      |
-| **Blind-judged upgrades**     | Engine changes ship with paired blind evaluations (A/B, position-swapped, double verdict) — e.g. agentic pick 4:0, evidence pipeline 2:0                     |
+| Mechanism | What it does |
+| :-------- | :----------- |
+| **Evidence trust gate** | Every artifact passes structural + grounding gates before it earns `gated_pass`; failures re-ask with validator errors |
+| **Evidence context pipeline** | Downstream reasoning is fed **only gated** upstream artifacts, priority-packed under budget with honest omission notes |
+| **Publish closure** | Ships only when all six skills (dataModel · RBAC · workflow · page · AIGC · appBundle) hold evidence — otherwise parks at AWAIT |
+| **Real tools** | `web.search` and `code.run` (E2B sandbox, fail-closed without a key) via an MCP-style registry |
+| **Blind-judged upgrades** | Engine changes ship with paired blind evals (A/B, position-swapped) — e.g. agentic pick 4:0, evidence pipeline 2:0 |
 
 Deep dives: [V5.3 architecture (Chinese)](<./docs/SlideRule V5.3 架构图.md>) · [five-system generation eval](./docs/five-system-generation-eval.md) · [live-runtime blueprint](./docs/LIVE_SYSTEMS_BLUEPRINT.md)
 
@@ -146,21 +176,21 @@ Deep dives: [V5.3 architecture (Chinese)](<./docs/SlideRule V5.3 架构图.md>) 
 
 ## 🕹️ Browser Live Runtime
 
-The rehearsed model is not just diagrams — **the browser renders it into an operable system**, ECharts-style: the five-system JSON is the schema, zero backend, zero database.
+The rehearsed model is not just diagrams — **the browser renders it into an operable system**. The five-system JSON is the schema: zero backend, zero database for the runtime preview.
 
-|                                                                                                                                                                                                                           |                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <img src="./docs/assets/live-runtime/home.png" alt="Studio home" /> <br/> <sub>Studio home — brand sidebar, session gallery, guided examples</sub>                                                                        | <img src="./docs/assets/live-runtime/xray.png" alt="X-ray cursor panel" /> <br/> <sub>**X-ray cursor (游标)** — hover any element in the running app and read the five-system declarations behind it: bound fields, visible roles, workflow nodes</sub> |
-| <img src="./docs/assets/live-runtime/workflow-live.png" alt="Live workflow graph" /> <br/> <sub>**Live workflow** — role-colored nodes, condition edges; running instances light up their current node in real time</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="Runnable app, Pro shell" /> <br/> <sub>**Run the app** — Ant Design Pro shell rendered from the model: dashboard charts, tables, forms, approval submissions</sub>                               |
+| | |
+| --- | --- |
+| <img src="./docs/assets/live-runtime/home.png" alt="Studio home" /> <br/> <sub>Studio home — brand sidebar, session gallery, guided examples</sub> | <img src="./docs/assets/live-runtime/xray.png" alt="X-ray cursor panel" /> <br/> <sub>**X-ray cursor (游标)** — hover any element and read five-system declarations: fields, roles, workflow nodes</sub> |
+| <img src="./docs/assets/live-runtime/workflow-live.png" alt="Live workflow graph" /> <br/> <sub>**Live workflow** — role-colored nodes; running instances light up their current node</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="Runnable app, Pro shell" /> <br/> <sub>**Run the app** — Pro shell from the model: charts, tables, forms, approvals</sub> |
 
-What you can actually do after a topic closes (all state lives in the browser, per-session):
+After a topic closes (all state in the browser, per-session):
 
-- **Run the app** — desktop / tablet / phone frames, create records with typed forms, click a row for the detail drawer, submit it into the approval flow.
-- **Switch roles** — the RBAC model locks menus and buttons live; the RBAC screen's role preview and the running app stay in sync both ways.
-- **Drive approvals** — start / approve / reject / branch on the workflow state machine; the workflow diagram doubles as a live monitor.
-- **Edit data in place** — the DataModel screen's data table writes the same runtime rows the app reads.
-- **Try AIGC for real** — declared AI capabilities run once through the same LLM channel used for generation; failures surface honestly.
-- **Export with evidence** — the delivery package appends a rehearsal-runtime snapshot (entity rows, instance logs, exporting role).
+- **Run the app** — desktop / tablet / phone frames, typed forms, detail drawers, approval submissions
+- **Switch roles** — RBAC locks menus and buttons live; role preview stays in sync both ways
+- **Drive approvals** — start / approve / reject / branch; the workflow diagram is a live monitor
+- **Edit data in place** — DataModel table writes the same rows the app reads
+- **Try AIGC for real** — declared AI capabilities run on the same LLM channel; failures surface honestly
+- **Export with evidence** — delivery package includes a rehearsal-runtime snapshot
 
 ---
 
@@ -168,7 +198,7 @@ What you can actually do after a topic closes (all state lives in the browser, p
 
 ### Option A — Docker, one command (recommended)
 
-Full stack (frontend + Node server + Python rehearsal engine), no local Node/Python needed — **and no database**: the rehearsal main line persists to a JSON file store:
+Full stack (frontend + Node server + Python rehearsal engine), no local Node/Python needed — **and no database** for the main line (JSON file store):
 
 ```bash
 git clone https://github.com/xiaojilele-glitch/WhyBuddy.git && cd WhyBuddy
@@ -184,9 +214,9 @@ docker compose up -d --build
 | `app`    | `3000` (host) → `3001`    | Node server + bundled frontend; SlideRule API thin-proxies to Python                          |
 | `python` | `9700` (network-internal) | V5 rehearsal engine: five-system generation, evidence trust gates, evidence pipeline, closure |
 
-`mysql` is an **optional profile**, only needed by the legacy accounts feature (login / email codes / projects): `docker compose --profile accounts up -d`.
+`mysql` is an **optional profile**, only for legacy accounts (login / email codes / projects): `docker compose --profile accounts up -d`.
 
-Sessions and artifacts persist in the named volume `sliderule-python-data` — container rebuilds keep your data.
+Sessions and artifacts persist in the named volume `sliderule-python-data` — rebuilds keep your data.
 
 ```bash
 docker compose logs -f app python   # follow logs
@@ -199,25 +229,25 @@ docker compose down -v              # stop and wipe data
 <summary>📌 <strong>Deployment notes</strong></summary>
 
 - **Required env**: `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` (any OpenAI-compatible provider) and `SESSION_SECRET` (use a 64-char random hex in production). Without an LLM key the stack still boots; rehearsals fall back to deterministic templates.
-- **Optional**: `WEB_SEARCH_API_KEY` (grounded web evidence) and `E2B_API_KEY` (sandboxed `code.run`) — missing keys fail closed, the tools simply stay unavailable.
-- **Port conflicts**: change `app`'s `ports` mapping in `docker-compose.yml` (e.g. `"8080:3001"`).
-- **Accounts (optional)**: the rehearsal main line needs no database. Login / email-code / projects routes use MySQL lazily — enable with `docker compose --profile accounts up -d` (MySQL stays network-internal, no host port).
-- **Production servers — pull, don't build**: every release to `main` auto-builds images to ghcr.io (`.github/workflows/deploy-images.yml`). On the server use the image-only compose — no source build, tiny memory footprint:
+- **Optional**: `WEB_SEARCH_API_KEY` (grounded web evidence) and `E2B_API_KEY` (sandboxed `code.run`) — missing keys fail closed; tools stay unavailable.
+- **Port conflicts**: change `app`’s `ports` mapping in `docker-compose.yml` (e.g. `"8080:3001"`).
+- **Accounts (optional)**: the rehearsal main line needs no database. Enable accounts with `docker compose --profile accounts up -d`.
+- **Production servers — pull, don’t build**: releases to `main` build images to ghcr.io (`.github/workflows/deploy-images.yml`). On the server:
 
   ```bash
   docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
-  # fully automatic updates (Watchtower checks every 5 min):
+  # auto-updates (Watchtower every 5 min):
   docker compose -f docker-compose.prod.yml --profile auto up -d
-  # rollback: change :latest to a release :<commit-sha> in docker-compose.prod.yml
-  # slow ghcr pulls (e.g. servers in China): add SLIDERULE_REGISTRY=ghcr.nju.edu.cn to .env,
-  # or (with DOCKERHUB_USERNAME/DOCKERHUB_TOKEN secrets configured, CI dual-pushes to Docker Hub):
+  # rollback: pin :latest to a release :<commit-sha> in docker-compose.prod.yml
+  # slow ghcr (e.g. China): SLIDERULE_REGISTRY=ghcr.nju.edu.cn in .env
+  # or Docker Hub dual-push (with secrets configured):
   #   SLIDERULE_IMAGE_APP=docker.io/<hub-user>/whybuddy-app:latest
   #   SLIDERULE_IMAGE_PYTHON=docker.io/<hub-user>/whybuddy-python:latest
   ```
 
-- **Corporate networks (TLS-intercepting proxies)**: drop your root CA (`.crt` PEM) into `docker/certs/` before building — both images merge it into their trust chain (see `docker/certs/README.md`). Certificates are gitignored.
-- **Not in compose**: Lobster Executor (needs Docker-in-Docker, opt in separately), Redis (off by default), Feishu integration (mock by default).
-- `.env` is never baked into images (`.dockerignore`); it is injected at runtime via `env_file`.
+- **Corporate TLS-intercepting proxies**: drop your root CA (`.crt` PEM) into `docker/certs/` before building (see `docker/certs/README.md`). Certificates are gitignored.
+- **Not in compose**: Lobster Executor (DinD, opt-in), Redis (off by default), Feishu (mock by default).
+- `.env` is never baked into images; it is injected at runtime via `env_file`.
 
 </details>
 
@@ -237,13 +267,13 @@ Requirements: Node.js 22+ · pnpm · (optional) Python 3.11+ for the rehearsal e
 pnpm run dev:frontend     # open http://localhost:3000
 ```
 
-Or just use the [hosted static demo](https://xiaojilele-glitch.github.io/WhyBuddy/agent-loop/workbench).
+Or use the [hosted static demo](https://xiaojilele-glitch.github.io/WhyBuddy/agent-loop/workbench).
 
 ---
 
-## 🧩 The `sliderule` Skill Package (Portable · Embeddable in Any Agent)
+## 🧩 The `sliderule` Skill Package
 
-Besides the full app, SlideRule ships a **self-contained Skill package** for Trae, Claude, or any host that supports Agent Skills. One sentence in → a reviewable spec package out (requirements / design / tasks / traceability matrix / UI previews), with every gate **actually run by scripts** instead of merely claimed by the model — `checks_ledger.json` records each script, exit code, and output.
+Besides the full app, SlideRule ships a **self-contained Skill package** for Trae, Claude, or any host that supports Agent Skills. One sentence in → a reviewable spec package out (requirements / design / tasks / traceability matrix / UI previews). Every gate is **actually run by scripts** — `checks_ledger.json` records each script, exit code, and output.
 
 ```bash
 unzip skills/sliderule.zip
@@ -251,74 +281,76 @@ unzip skills/sliderule.zip
 # (Trae: Skills · Claude: skill), then give it a one-sentence idea
 ```
 
-Setup details, image-generation configuration, and the full output package layout: [`skills/README.md`](./skills/README.md).
+Setup and package layout: [`skills/README.md`](./skills/README.md).
 
 ---
 
 ## 📝 Rehearsal Examples
 
-> Every rehearsal is a shareable piece of content. The three below are live in the [static demo](https://xiaojilele-glitch.github.io/WhyBuddy/agent-loop/workbench) — captured from real end-to-end engine runs.
+> Every rehearsal is shareable content. The first three are live in the [static demo](https://xiaojilele-glitch.github.io/WhyBuddy/agent-loop/workbench) — captured from real end-to-end engine runs.
 
-| 💬 Input                                            | 📦 Output                                                                                      |
-| :-------------------------------------------------- | :--------------------------------------------------------------------------------------------- |
-| "Community pet-clinic booking & triage system"      | Six-skill rehearsal playback · 6/6 publish closure · runnable booking/triage app               |
-| "Second-hand instrument consignment & appraisal"    | Closed rehearsal · consignment ledger, appraisal workbench, listing calendar, compliance audit |
-| "Script-murder venue scheduling & party matching"   | Closed rehearsal · session board, store calendars, sign-up & carpool grouping                  |
+| 💬 Input | 📦 Output |
+| :------- | :-------- |
+| "Community pet-clinic booking & triage system" | Six-skill playback · 6/6 publish closure · runnable booking/triage app |
+| "Second-hand instrument consignment & appraisal" | Closed rehearsal · consignment ledger, appraisal workbench, listing calendar, compliance audit |
+| "Script-murder venue scheduling & party matching" | Closed rehearsal · session board, store calendars, sign-up & carpool grouping |
 | "Procurement approval with field-level permissions" | Five-system model · approval state machine · RBAC field locks · risk & counter-evidence report |
 
 ---
 
 ## 🏗️ System Architecture
 
-Current engine architecture (V5.3, with per-increment commit provenance): [docs/SlideRule V5.3 架构图.md](<./docs/SlideRule V5.3 架构图.md>)
+Current engine (V5.3, per-increment commit provenance): [docs/SlideRule V5.3 架构图.md](<./docs/SlideRule V5.3 架构图.md>)
 
-Historical versions: [V5.2](<./docs/SlideRule V5.2 架构图.md>) · [v4 Skill closed-loop diagram](./docs/assets/SlideRuleArc/SlideRuleSkill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE_%E6%94%B9%E8%BF%9B%E7%89%88v4.md) (the architecture behind the award-winning Skill package)
+Historical: [V5.2](<./docs/SlideRule V5.2 架构图.md>) · [v4 Skill closed-loop diagram](./docs/assets/SlideRuleArc/SlideRuleSkill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE_%E6%94%B9%E8%BF%9B%E7%89%88v4.md) (architecture behind the award-winning Skill package)
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Layer    | Technology                                                                           |
-| :------- | :----------------------------------------------------------------------------------- |
+| Layer | Technology |
+| :---- | :--------- |
 | Frontend | React 19 · Vite · TypeScript · Tailwind · streamdown / assistant-ui · Three.js (R3F) |
-| Server   | Express · Socket.IO · TypeScript (thin proxy to the Python engine)                   |
-| Engine   | Python 3.11 · FastAPI · deterministic gates + LLM capability pool                    |
-| AI       | OpenAI-compatible APIs (any provider) · BYOK in the browser                          |
-| Tools    | `web.search` (grounded evidence) · `code.run` (E2B sandbox) via MCP-style registry   |
-| Testing  | Vitest · pytest · Playwright browser smokes · fast-check (PBT)                       |
-| Storage  | JSON session store (file / named volume) · MySQL 8 (accounts) · IndexedDB (browser)  |
-| Deploy   | Docker Compose (one command) · GitHub Pages static demo · GitHub Actions gate        |
+| Server | Express · Socket.IO · TypeScript (thin proxy to the Python engine) |
+| Engine | Python 3.11 · FastAPI · deterministic gates + LLM capability pool |
+| AI | OpenAI-compatible APIs (any provider) · BYOK in the browser |
+| Tools | `web.search` · `code.run` (E2B) via MCP-style registry |
+| Testing | Vitest · pytest · Playwright browser smokes · fast-check (PBT) |
+| Storage | JSON session store · MySQL 8 (accounts) · IndexedDB (browser) |
+| Deploy | Docker Compose · GitHub Pages static demo · GitHub Actions gate |
 
 ---
 
 ## 📊 Project Scale
 
-| Metric               |   Count |
-| :------------------- | ------: |
-| Project files        |   8,194 |
-| TypeScript/TSX files |   2,926 |
-| TypeScript lines     | 835,305 |
-| Python lines         |  92,137 |
-| Test files           |   1,322 |
-| Spec directories     |     316 |
+| Metric | Count |
+| :----- | ----: |
+| Project files | 8,194 |
+| TypeScript/TSX files | 2,926 |
+| TypeScript lines | 835,305 |
+| Python lines | 92,137 |
+| Test files | 1,322 |
+| Spec directories | 316 |
 
 ---
 
-## ⚔️ Comparison With Other Platforms
+## ⚔️ How to place SlideRule
 
-| Feature                                                  | Dify | n8n | CrewAI | LangGraph | **SlideRule** |
-| :------------------------------------------------------- | :--: | :-: | :----: | :-------: | :-----------: |
-| Open source                                              |  ✅  | ✅  |   ✅   |    ✅     |      ✅       |
-| One sentence to a complete product                       |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| Spec document generation (requirements + design + tasks) |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| Evidence-gated publish closure                           |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| Multi-role agent orchestration                           |  ❌  | ❌  |   ✅   |    ✅     |      ✅       |
-| Rehearsed model runs as an app in the browser            |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| Human takeover governance                                |  ⚠️  | ⚠️  |   ❌   |    ❌     |      ✅       |
-| Replay and audit                                         |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| Sandboxed code execution                                 |  ❌  | ⚠️  |   ❌   |    ❌     |      ✅       |
-| Export Markdown/ZIP                                      |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
-| Browser-only demo                                        |  ❌  | ❌  |   ❌   |    ❌     |      ✅       |
+These tools solve **different jobs**. The table is not “we replace them all” — it shows where the rehearsal main line is unique.
+
+| Capability | Agent frameworks<br/>(CrewAI / LangGraph) | Workflow builders<br/>(Dify / n8n) | **SlideRule** |
+| :--------- | :----------------------------------------: | :--------------------------------: | :-----------: |
+| Open source | ✅ | ✅ | ✅ |
+| Multi-agent / long orchestration | ✅ | ⚠️ | ✅ |
+| One sentence → **product structure** (data · RBAC · flow · pages) | ❌ | ❌ | ✅ |
+| Spec package (requirements · design · tasks · traceability) | ❌ | ❌ | ✅ |
+| **Evidence-gated publish closure** | ❌ | ❌ | ✅ |
+| Rehearsed model **runs as an app** in the browser | ❌ | ❌ | ✅ |
+| Replay, audit, human park / re-enter | ⚠️ | ⚠️ | ✅ |
+| Sandboxed code tools | ⚠️ | ⚠️ | ✅ |
+| Browser-only demo (zero install) | ❌ | ❌ | ✅ |
+
+For generation UX people often compare **v0 / Lovable / Bolt**; for long visible deliberation, **Manus-class agents**; for enterprise app structure, **Power Platform / low-code**. SlideRule’s bet is the **intersection**: *rehearse the business system under gates, then run the model — not only emit code or a chat bot.*
 
 ---
 
@@ -330,20 +362,20 @@ Historical versions: [V5.2](<./docs/SlideRule V5.2 架构图.md>) · [v4 Skill c
 3. Before submitting: pnpm run check && pnpm run test
 ```
 
-**Branch model**: `main` is production (deploys build from it); `pre_main` is the daily integration branch. Merges go through the release gate script — the gate runs live and a red gate mechanically blocks the merge:
+**Branch model**: `main` is production; `pre_main` is daily integration. Merges go through the release gate — a red gate mechanically blocks the merge:
 
 ```bash
 bash scripts/merge-gated.sh <your-branch> "<message>"            # daily → pre_main
 bash scripts/merge-gated.sh pre_main "<release message>" main    # release → main
 ```
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ---
 
 ## ⭐ Star History
 
-> Every rehearsal generated by the engine is content that helps others discover new possibilities. Star this repository to help more people find it.
+> Every rehearsal is content that helps others discover what is possible. Star this repository to help more people find it.
 
 <p>
   <a href="https://github.com/xiaojilele-glitch/WhyBuddy/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/xiaojilele-glitch/WhyBuddy?style=for-the-badge&logo=github&color=d97706" /></a>
@@ -351,10 +383,12 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
   <a href="https://github.com/xiaojilele-glitch/WhyBuddy/watchers"><img alt="watchers" src="https://img.shields.io/github/watchers/xiaojilele-glitch/WhyBuddy?style=for-the-badge&logo=github&color=2563eb" /></a>
 </p>
 
-📈 [View the star growth curve on star-history.com →](https://star-history.com/#xiaojilele-glitch/WhyBuddy&Date)
+📈 [Star growth curve →](https://star-history.com/#xiaojilele-glitch/WhyBuddy&Date)
 
 ---
 
 <p align="center">
-  <a href="./LICENSE"><strong>MIT License</strong></a> · Hosted at <a href="https://github.com/xiaojilele-glitch/WhyBuddy">xiaojilele-glitch/WhyBuddy</a>
+  <strong>SlideRule</strong> · <a href="https://sliderule.ai">sliderule.ai</a><br/>
+  <a href="./LICENSE"><strong>MIT License</strong></a> ·
+  Source: <a href="https://github.com/xiaojilele-glitch/WhyBuddy">xiaojilele-glitch/WhyBuddy</a>
 </p>

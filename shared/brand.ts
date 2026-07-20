@@ -19,14 +19,15 @@ export const BRAND_NAME_FULL = "SlideRule";
 export const BRAND_DOMAIN = "sliderule.ai";
 
 export const BRAND_TAGLINE_ZH = "把想法问清楚，把产品跑起来";
-export const BRAND_TAGLINE_EN = "Clarify ideas, preview products, and move faster.";
+/** English mirror of the Chinese tagline — keep short and parallel. */
+export const BRAND_TAGLINE_EN = "Clarify ideas, ship a runnable product.";
 
 /**
  * One-line product tagline that combines display name + tagline. Used by the
  * HTML <title> and the login subtitle.
  */
-export const BRAND_HEADLINE_ZH = `${BRAND_NAME_DISPLAY} · 任务自动驾驶`;
-export const BRAND_HEADLINE_EN = `${BRAND_NAME_LATIN} · Task Autopilot`;
+export const BRAND_HEADLINE_ZH = `${BRAND_NAME_DISPLAY} · 产品推演引擎`;
+export const BRAND_HEADLINE_EN = `${BRAND_NAME_LATIN} · Product Rehearsal Engine`;
 
 /**
  * Legacy package name — kept for places that still need to reference the
