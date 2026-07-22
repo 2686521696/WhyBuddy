@@ -239,7 +239,13 @@ export interface AppHomeSchema {
 export interface AppRuntimeSchema {
   appName: string;
   /** 应用身份（E40.2）：主题/图标/导航形态（productName 已并入 appName） */
-  identity: { themeId: string; icon: string; nav: "side" | "top" };
+  identity: {
+    themeId: string;
+    icon: string;
+    nav: "side" | "top";
+    /** Step 8：默认设备视口偏好；老模型缺省不指定，运行时按现有默认值走。 */
+    preferredDevice?: "desktop" | "tablet" | "phone";
+  };
   roles: string[];
   /** 应用首次打开的页面；老模型缺省为 home。 */
   landingPageId: string;
@@ -682,12 +688,23 @@ export function deriveAppRuntimeSchema(
   // 缺省回退（老模型无身份段 → 与历史渲染完全一致）
   const rawIdentity = model?.appbundle?.appIdentity;
   const productName = String(rawIdentity?.productName ?? "").trim();
+  // Step 8：experienceShell 是 nav 的新权威来源（仅 navigation 模式下生效；
+  // focus 模式暂不改变导航渲染，留给后续全屏容器实现）。旧模型没有该字段时
+  // 仍读 appIdentity.nav，保证历史渲染不变。
+  const rawShell = model?.appbundle?.experienceShell;
+  const shellNav =
+    rawShell?.mode === "navigation"
+      ? String(rawShell?.navigation ?? "").trim()
+      : "";
+  const legacyNav = String(rawIdentity?.nav ?? "").trim();
+  const preferredDeviceRaw = String(model?.appbundle?.preferredDevice ?? "").trim();
   const identity = {
     themeId: String(rawIdentity?.theme ?? "").trim() || "azure",
     icon: String(rawIdentity?.icon ?? "").trim() || "boxes",
-    nav: (String(rawIdentity?.nav ?? "").trim() === "top" ? "top" : "side") as
-      | "side"
-      | "top",
+    nav: ((shellNav || legacyNav) === "top" ? "top" : "side") as "side" | "top",
+    preferredDevice: (["desktop", "tablet", "phone"].includes(preferredDeviceRaw)
+      ? preferredDeviceRaw
+      : undefined) as "desktop" | "tablet" | "phone" | undefined,
   };
 
   return {

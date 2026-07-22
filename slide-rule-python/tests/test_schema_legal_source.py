@@ -72,7 +72,7 @@ def test_schema_instruction_renders_from_ledger():
     # metric 形态按 bare+前缀拼装（与门/修复器判定同源）
     assert "count|sum:<entity_id>.<field_id>|avg:<entity_id>.<field_id>" in _SCHEMA_INSTRUCTION
     assert '"metric": "count|sum:<entity_id>.<field_id>"' in _SCHEMA_INSTRUCTION
-    assert "You MAY now emit page.blocks for new-style pages" in _SCHEMA_INSTRUCTION
+    assert "DO NOT emit page.blocks for production pages" in _SCHEMA_INSTRUCTION
     for block_type in schema_legal.EXPERIENCE_BLOCK_TYPES:
         assert f"- {block_type}:" in _SCHEMA_INSTRUCTION
 
