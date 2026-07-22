@@ -159,9 +159,11 @@ def experience_block_prompt_block() -> str:
     """把目录压成给 LLM 的封闭选材说明；不另写第二份区块清单。"""
     lines = [
         "EXPERIENCE BLOCK CATALOG (closed set):",
-        "You MAY now emit page.blocks for new-style pages. When you do, every block type MUST be one of the catalog entries below.",
-        "The existing stats/charts/rankings/feeds fields still work for backward compatibility.",
-        "Prefer emitting page.blocks when building new pages; keep stats/charts for pages that already use them.",
+        "The page.blocks schema below is validated end-to-end, but the client-side renderer for it is NOT shipped yet — "
+        "any block emitted via page.blocks currently displays as an inert placeholder to real users. "
+        "DO NOT emit page.blocks for production pages. ALWAYS use the existing stats/charts/rankings/feeds fields instead; "
+        "this catalog exists for schema/gate testing only until the renderer lands.",
+        "If you emit page.blocks anyway (e.g. explicitly requested for schema testing), every block type MUST be one of the catalog entries below.",
     ]
     for block in EXPERIENCE_BLOCKS:
         lines.append(

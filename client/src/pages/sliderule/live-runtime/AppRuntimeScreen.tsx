@@ -384,7 +384,12 @@ export function AppRuntimeScreen({
   const [activePageId, setActivePageId] = React.useState<string>(
     () => schema?.landingPageId ?? "home"
   );
-  const [device, setDevice] = React.useState<DeviceKey>("desktop");
+  // Step 8：preferredDevice 只定默认打开视图，用户仍可手动切换设备档。
+  // 平板档已从切换条下架（见下方档位切换注释），declared "tablet" 时按
+  // 未声明处理，回落 desktop，避免初始态落进一个切换条选不中的档位。
+  const [device, setDevice] = React.useState<DeviceKey>(() =>
+    schema?.identity.preferredDevice === "phone" ? "phone" : "desktop"
+  );
   // 代码视图档（代码视图一期）：schema 的确定性代码投影——与设备档并列的
   // 观察视角切换，开着时替换缩放画布（代码要整幅面积，不做 16:9 缩放）
   const [codeView, setCodeView] = React.useState(false);
