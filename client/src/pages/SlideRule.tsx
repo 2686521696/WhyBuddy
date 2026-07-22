@@ -1044,6 +1044,8 @@ function SlideRuleUnified({
   llmDraft = "",
   llmDraftLabel = null,
   llmStreams = [],
+  viewMode = "overview" as const,
+  onViewModeChange,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -1096,6 +1098,9 @@ function SlideRuleUnified({
   llmDraft?: string;
   llmDraftLabel?: string | null;
   llmStreams?: Array<{ label: string; text: string }>;
+  /** P5.1 三态视图切换 */
+  viewMode?: "overview" | "collaboration" | "reasoning";
+  onViewModeChange?: (m: "overview" | "collaboration" | "reasoning") => void;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const composerHints = useMemo(
@@ -1133,6 +1138,8 @@ function SlideRuleUnified({
           onResetSession={resetSession}
           onOpenDeliverables={openDeliverables}
           embedded={embedded}
+          viewMode={viewMode}
+          onViewModeChange={onViewModeChange}
         />
         {/* Python backend failure visible + recoverable status/retry for core SlideRule workflows (105 req 2)。
             GitHub Pages 静态演示本就无后端：降级横幅是预期内噪音，不展示。 */}
@@ -2184,6 +2191,8 @@ function SlideRuleSessionBody({
     llmDraft,
     llmDraftLabel,
     llmStreams,
+    viewMode,
+    onViewModeChange,
   };
 
   if (isImmersion) {

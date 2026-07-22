@@ -126,6 +126,7 @@ import { KanbanBoard, CalendarBoard } from "./PageViews";
 import { AiSuggestionCard } from "./AiSuggestionCard";
 import { CodeProjectionView } from "./CodeProjectionView";
 import type { AppPageStatSchema } from "./app-runtime-schema";
+import { generatePreviewSeedRows, computePreviewStat } from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
 // 多端设计分辨率（固定渲染 + 等比缩放）
@@ -1168,7 +1169,27 @@ export function AppRuntimeScreen({
           data-testid="app-runtime-page-stats"
         >
           {page.stats.map(stat => {
-            const v = pageStatValue(stat, state.entities[stat.entityId] ?? []);
+            const realRows = state.entities[stat.entityId] ?? [];
+            const v = pageStatValue(stat, realRows);
+            // Phase B: 真实数据为零时用预览种子数据填充，加"示例"标注
+            const entity = model?.datamodel?.entities?.find(e => e.id === stat.entityId);
+            const seedRows = (v === 0 || v === null) && entity
+              ? generatePreviewSeedRows(
+                  {
+                    id: entity.id,
+                    fields: entity.fields?.map(f => ({
+                      id: f.id,
+                      type: f.type,
+                      options: f.options?.map(o => o.label ?? o.id),
+                    })),
+                  },
+                  6
+                )
+              : null;
+            const displayVal = seedRows
+              ? computePreviewStat(stat.metric, stat.metricFieldId, seedRows)
+              : v;
+            const isPreview = seedRows !== null && displayVal !== null && displayVal > 0;
             return (
               <Card
                 key={stat.id}
@@ -1177,18 +1198,23 @@ export function AppRuntimeScreen({
                 styles={{ body: { padding: "12px 16px" } }}
                 data-testid={`app-runtime-page-stat-${stat.id}`}
               >
-                {v === null ? (
+                {displayVal === null ? (
                   <Statistic title={stat.label} value="—" />
                 ) : (
-                  <Statistic
-                    title={stat.label}
-                    value={v}
-                    precision={
-                      Number.isInteger(v) ? 0 : stat.format === "money" ? 2 : 1
-                    }
-                    prefix={stat.format === "money" ? "¥" : undefined}
-                    suffix={stat.format === "percent" ? "%" : undefined}
-                  />
+                  <>
+                    <Statistic
+                      title={stat.label}
+                      value={displayVal}
+                      precision={Number.isInteger(displayVal) ? 0 : stat.format === "money" ? 2 : 1}
+                      prefix={stat.format === "money" ? "¥" : undefined}
+                      suffix={stat.format === "percent" ? "%" : undefined}
+                    />
+                    {isPreview && (
+                      <span style={{ fontSize: 10, color: "#adb5bd", marginTop: 2, display: "block" }}>
+                        示例数据
+                      </span>
+                    )}
+                  </>
                 )}
               </Card>
             );
@@ -1469,16 +1495,58 @@ export function AppRuntimeScreen({
         </Space>
       }
     >
-      {page.experienceBlocks.length > 0 && (
-        <div
-          className="mb-3 grid gap-2"
-          data-testid="app-runtime-experience-block-scaffold"
-        >
-          {page.experienceBlocks.map(block => (
-            <ExperienceBlockBoundary key={block.id} block={block} />
-          ))}
-        </div>
-      )}
+      {(() => {
+        // 保守策略：_fromLegacy 区块只是转换占位，渲染仍走旧路径（statsBand 等）。
+        // 真正的新模型 blocks 不带 _fromLegacy，走 ExperienceBlockBoundary。
+        const directBlocks = page.experienceBlocks.filter(
+          b => !(b as import("./block-registry").ExperienceBlockInstance)._fromLegacy
+        );
+        if (directBlocks.length === 0) return null;
+
+        // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
+        const handleBlockAction = (
+          actionId: string,
+          eventData?: Record<string, unknown>
+        ) => {
+          const action = page.pageActions.find(a => a.id === actionId);
+          if (!action) return;
+          // 实际权限检查：permissionRef 须在当前角色 grantedActions 里。
+          const pa = pageAccess.get(page.id);
+          const permitted =
+            !action.permissionRef ||
+            (pa?.grantedActions ?? []).includes(action.permissionRef);
+          if (!permitted) return;
+          switch (action.type) {
+            case "navigate":
+              if (action.targetPageRef) setActivePageId(action.targetPageRef);
+              break;
+            case "changeFilter":
+              console.log("[action:changeFilter]", actionId, eventData);
+              break;
+            default:
+              console.log(`[action:${action.type}]`, actionId, eventData);
+          }
+        };
+
+        return (
+          <div
+            className="mb-3 grid gap-2"
+            data-testid="app-runtime-experience-block-scaffold"
+          >
+            {directBlocks.map(block => (
+              <ExperienceBlockBoundary
+                key={block.id}
+                block={block}
+                onAction={
+                  block.eventBindings && Object.keys(block.eventBindings).length > 0
+                    ? handleBlockAction
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        );
+      })()}
       {page.view.kind === "wizard" && (model?.workflow?.nodes?.length ?? 0) > 0 && (
         <Steps
           size="small"
@@ -1628,7 +1696,10 @@ export function AppRuntimeScreen({
       key: m.pageId,
       icon: <Icon />,
       label: (
-        <span {...probe({ kind: "menu", pageId: m.pageId, label: m.label })}>
+        <span
+          data-testid={`app-runtime-menu-${m.pageId}`}
+          {...probe({ kind: "menu", pageId: m.pageId, label: m.label })}
+        >
           {m.label}
         </span>
       ),
@@ -1638,7 +1709,7 @@ export function AppRuntimeScreen({
   });
 
   const desktopShell = (
-    <Layout style={{ height: "100%" }}>
+    <Layout style={{ height: "100%" }} data-testid="app-shell-side">
       <Layout.Sider width={device === "tablet" ? 176 : 208} theme="dark">
         <div
           style={{
@@ -1803,6 +1874,7 @@ export function AppRuntimeScreen({
 
   const phoneShell = (
     <div
+      data-testid="app-shell-phone"
       style={{
         height: "100%",
         display: "flex",
@@ -1861,7 +1933,7 @@ export function AppRuntimeScreen({
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 10 }}>
         {isHome ? homeContent : phonePageContent}
       </div>
-      <div style={{ flexShrink: 0 }} data-testid="app-runtime-tabbar">
+      <div style={{ flexShrink: 0 }}>
         <React.Suspense
           fallback={
             <div
@@ -1895,6 +1967,8 @@ export function AppRuntimeScreen({
       className="relative flex h-full w-full items-center justify-center overflow-hidden"
       style={{ background: "transparent" }}
       data-testid="app-runtime-screen"
+      data-landing-page-id={schema.landingPageId ?? ""}
+      data-active-page-id={activePageId ?? ""}
     >
       {codeView ? (
         // 档位胶囊浮在画布上（旧消费方）时才需要 pt-11 头带给它让位；

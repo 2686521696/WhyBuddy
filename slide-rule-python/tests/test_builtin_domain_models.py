@@ -47,7 +47,23 @@ def test_builtin_section_lookup():
     assert _builtin_domain_model_section("no_such_domain", "datamodel") is None
 
 
-def test_deterministic_evidence_carries_model_section():
+def test_builtin_domain_models_pass_strict_gate():
+    """leave_approval 和 service_ticket 内置模型在 strict Gate 下仍通过。
+
+    这两个模型已声明真实业务首屏（landingPageRef 指向自身 page.pages 内有效页面），
+    strict Gate 不应拦截。此测试锁住该事实：如果哪次修改不小心清掉了 landingPageRef，
+    此测试立即变红。
+    """
+    import json
+    import pathlib
+    models_path = pathlib.Path(__file__).parent.parent / "services/data/builtin_domain_models.json"
+    data = json.loads(models_path.read_text(encoding="utf-8"))
+    for name in ["leave_approval", "service_ticket"]:
+        model = data.get(name)
+        assert model is not None, f"{name} not found in builtin_domain_models.json"
+        findings_result = validate_five_system_model(model, require_landing_page_ref=True)
+        blocking = [f for f in findings_result["findings"] if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD"]
+        assert len(blocking) == 0, f"{name} failed strict gate: {blocking}"
     """演示域闭环证据六段全挂 modelSection（app 主舞台的数据源）。"""
     from models.v5_state import V5SessionState
 

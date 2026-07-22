@@ -40,6 +40,9 @@ SKILL_KEYS = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
 DANGLING = "PUBLISH_DANGLING_CROSSREF"
 MISSING_SECTION = "PUBLISH_MISSING_SKILL_SECTION"
 EMPTY_SECTION = "PUBLISH_EMPTY_SKILL_SECTION"
+MISSING_REQUIRED = "PUBLISH_MISSING_REQUIRED_FIELD"
+PUBLISH_INVALID_FIELD = "PUBLISH_INVALID_FIELD"
+PUBLISH_ENUM_VIOLATION = "PUBLISH_ENUM_VIOLATION"
 
 # 合法域一律来自 schema_legal 加载的 JSON 账本（E40.1）——五系统枚举在
 # five_system_legal.json，体验区块在 experience_block_catalog.json。
@@ -190,11 +193,19 @@ def collect_invariant_ref_ids(model: Any) -> set:
     )
 
 
-def validate_five_system_model(model: Any) -> Dict[str, Any]:
+def validate_five_system_model(
+    model: Any,
+    *,
+    require_landing_page_ref: bool = False,
+) -> Dict[str, Any]:
     """Structural closure gate. Returns {'passed': bool, 'findings': [...]}.
 
     passed=True iff all six sections exist + are non-empty AND every cross-system
     reference resolves. Fail-closed: any problem => passed=False with precise findings.
+
+    require_landing_page_ref=True (strict mode): appbundle.landingPageRef must be
+    present, non-None, and non-blank. Use for LLM-generated and LLM-refined models.
+    Defaults to False for backward-compat (old snapshots without the field still pass).
     """
     findings: List[Dict[str, Any]] = []
     m = _as_dict(model)
@@ -363,6 +374,39 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                     f"page action permission '{ref}' not found in rbac.permissions",
                     ref=ref, skill="page",
                 ))
+        # actions 实例校验（Step 5）
+        ALLOWED_ACTION_TYPES = {"navigate", "openDetail", "createRecord", "updateRecord", "changeFilter", "drillDown"}
+        for ai, action in enumerate(_as_list(pd.get("actions"))):
+            action_dict = _as_dict(action)
+            action_path = f"page.pages[{pid}].actions[{ai}]"
+            action_type = action_dict.get("type")
+            if action_type and action_type not in ALLOWED_ACTION_TYPES:
+                findings.append(_finding(
+                    "PUBLISH_ENUM_VIOLATION", f"{action_path}.type",
+                    f"action type '{action_type}' not in allowed set",
+                    ref=action_type, skill="page",
+                ))
+            # permissionRef 若非空，检查它存在于 page.actionPermissions
+            perm_ref = action_dict.get("permissionRef")
+            if perm_ref:
+                action_perms = set(str(x).strip() for x in _as_list(pd.get("actionPermissions")))
+                if perm_ref not in action_perms:
+                    findings.append(_finding(
+                        "PUBLISH_DANGLING_CROSSREF", f"{action_path}.permissionRef",
+                        f"permissionRef '{perm_ref}' not found in page.actionPermissions",
+                        ref=perm_ref, skill="page",
+                    ))
+            # navigate 的 targetPageRef 若非空，检查存在于 page.pages
+            if action_type == "navigate":
+                target = action_dict.get("targetPageRef")
+                if target:
+                    page_ids = {p.get("id") for p in _as_list(model.get("page", {}).get("pages")) if p.get("id")}
+                    if target not in page_ids:
+                        findings.append(_finding(
+                            "PUBLISH_DANGLING_CROSSREF", f"{action_path}.targetPageRef",
+                            f"targetPageRef '{target}' not found in page.pages",
+                            ref=target, skill="page",
+                        ))
         # 体验区块目录（二阶段骨架）：blocks 尚未进入生成契约，但若精修或
         # 外部模型提前带入，只允许目录内 type；id 必须存在且页内唯一。
         # 绑定/布局/动作的深校验分别在后续步骤增加，本步不偷跑。
@@ -404,6 +448,43 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                     f"experience block type '{btype}' is not in the closed catalog",
                     ref=btype, skill="page",
                 ))
+            # binding 强类型校验（第一批）
+            binding = bd.get("binding")
+            if binding is not None:
+                if not isinstance(binding, dict):
+                    findings.append(_finding(
+                        PUBLISH_INVALID_FIELD, f"{block_path}.binding",
+                        "binding must be an object",
+                        skill="page",
+                    ))
+                else:
+                    entity_ref = binding.get("entityRef")
+                    if entity_ref:
+                        known_entity_ids = {
+                            e.get("id")
+                            for e in _as_list(model.get("datamodel", {}).get("entities"))
+                            if e.get("id")
+                        }
+                        if entity_ref not in known_entity_ids:
+                            findings.append(_finding(
+                                DANGLING, f"{block_path}.binding.entityRef",
+                                f"entityRef '{entity_ref}' not found in datamodel.entities",
+                                ref=entity_ref, skill="page",
+                            ))
+                    time_grain = binding.get("timeGrain")
+                    if time_grain and time_grain not in ("day", "week", "month"):
+                        findings.append(_finding(
+                            PUBLISH_ENUM_VIOLATION, f"{block_path}.binding.timeGrain",
+                            f"timeGrain must be day/week/month, got '{time_grain}'",
+                            ref=time_grain, skill="page",
+                        ))
+                    sort_order = binding.get("sortOrder")
+                    if sort_order and sort_order not in ("asc", "desc"):
+                        findings.append(_finding(
+                            PUBLISH_ENUM_VIOLATION, f"{block_path}.binding.sortOrder",
+                            f"sortOrder must be asc/desc, got '{sort_order}'",
+                            ref=sort_order, skill="page",
+                        ))
         # 库无关图表声明（schema 丰富一期，可选字段）：dimension / sum 指标
         # 必须解析到 datamodel 字段；type 限定在渲染层支持的形态集合。
         for chart in _as_list(pd.get("charts")):
@@ -686,7 +767,7 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
     # 6.5 appbundle.appIdentity（E40.2，可选）：应用身份段——产品名 + 主题 +
     #    图标 + 导航形态。老模型没有该字段 → 不罚；出现即校验：三个枚举必须
     #    在真相源账本内（渲染层只认账本值，非法值 = 渲染不出来的假承诺）。
-    from .schema_legal import IDENTITY_ICONS, IDENTITY_NAVS, IDENTITY_THEMES
+    from .schema_legal import IDENTITY_ICONS, IDENTITY_NAVS, IDENTITY_THEMES, DESIGN_RECIPES
 
     identity = _as_dict(appbundle.get("appIdentity"))
     if identity:
@@ -709,6 +790,68 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                 "identity productName must be a non-empty string when declared",
                 ref="", skill="appbundle",
             ))
+        # Step 9: designRecipeRef 合法域
+        design_recipe = str(identity.get("designRecipeRef") or "").strip()
+        if design_recipe and design_recipe not in DESIGN_RECIPES:
+            findings.append(_finding(
+                DANGLING, "appbundle.appIdentity.designRecipeRef",
+                f"designRecipeRef '{design_recipe}' is not in allowed recipes: {'/'.join(DESIGN_RECIPES)}",
+                ref=design_recipe, skill="appbundle",
+            ))
+
+    # Step 8: experienceShell 校验（可选，出现即校验 mode 和 navigation 枚举）
+    exp_shell = _as_dict(appbundle.get("experienceShell"))
+    if exp_shell:
+        shell_mode = str(exp_shell.get("mode") or "").strip()
+        if shell_mode and shell_mode not in ("navigation", "focus"):
+            findings.append(_finding(
+                DANGLING, "appbundle.experienceShell.mode",
+                f"experienceShell.mode '{shell_mode}' must be navigation or focus",
+                ref=shell_mode, skill="appbundle",
+            ))
+        shell_nav = str(exp_shell.get("navigation") or "").strip()
+        if shell_nav and shell_nav not in ("side", "top"):
+            findings.append(_finding(
+                DANGLING, "appbundle.experienceShell.navigation",
+                f"experienceShell.navigation '{shell_nav}' must be side or top",
+                ref=shell_nav, skill="appbundle",
+            ))
+
+    # Step 8: preferredDevice 合法域
+    pref_device = str(appbundle.get("preferredDevice") or "").strip()
+    if pref_device and pref_device not in ("desktop", "tablet", "phone"):
+        findings.append(_finding(
+            DANGLING, "appbundle.preferredDevice",
+            f"preferredDevice '{pref_device}' must be desktop/tablet/phone",
+            ref=pref_device, skill="appbundle",
+        ))
+
+    # Step 7: page layout 校验（可选，出现即校验 slot 合法性 + block 引用）
+    LAYOUT_SLOTS = {"summary", "primary", "secondary", "activity", "content"}
+    for pi, pg in enumerate(_as_list(m.get("page", {}).get("pages"))):
+        pd = _as_dict(pg)
+        layout = _as_dict(pd.get("layout"))
+        if not layout:
+            continue
+        page_block_ids = {str(b.get("id") or "").strip() for b in _as_list(pd.get("blocks")) if b.get("id")}
+        layout_page = f"page.pages[{pd.get('id') or pi}].layout"
+        for slot_key, block_refs in layout.items():
+            if slot_key == "mobile":
+                continue
+            if slot_key not in LAYOUT_SLOTS:
+                findings.append(_finding(
+                    DANGLING, f"{layout_page}.{slot_key}",
+                    f"layout slot '{slot_key}' is not in allowed slots: {'/'.join(sorted(LAYOUT_SLOTS))}",
+                    ref=slot_key, skill="page",
+                ))
+            for ref in _as_list(block_refs):
+                ref_str = str(ref or "").strip()
+                if ref_str and ref_str not in page_block_ids:
+                    findings.append(_finding(
+                        DANGLING, f"{layout_page}.{slot_key}",
+                        f"layout block ref '{ref_str}' not found in page.blocks",
+                        ref=ref_str, skill="page",
+                    ))
 
     # 7. appbundle.invariants（改进②，可选）：老模型没有该字段 → 不罚；出现即校验——
     #    refs 必须解析到本模型内的实体/字段/角色/权限/流程节点，systems 必须是已知系统名。
@@ -745,5 +888,16 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                     f"invariant system '{sname}' is not one of {SKILL_KEYS}",
                     ref=sname, skill="invariants",
                 ))
+
+    # 8. strict Gate：LLM 生成/精修路径要求 landingPageRef 非空存在。
+    #    require_landing_page_ref=False（默认）时跳过此检查以保持旧模型兼容。
+    if require_landing_page_ref:
+        landing = (m.get("appbundle") or {}).get("landingPageRef")
+        if not landing or not str(landing).strip():
+            findings.append(_finding(
+                MISSING_REQUIRED,
+                "appbundle.landingPageRef",
+                "landingPageRef is required for LLM-generated models but is missing or blank",
+            ))
 
     return {"passed": len(findings) == 0, "findings": findings}

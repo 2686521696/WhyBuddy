@@ -36,6 +36,7 @@
     "smoke:agent-executor-skill": "node scripts/agent-sandbox-executor-skill-smoke.mjs",
     "smoke:mission": "node scripts/mission-integration-smoke.mjs",
     "smoke:restart": "node scripts/mission-restart-smoke.mjs",
+    "smoke:generated-app": "node scripts/generated-app-browser-smoke.mjs",
     "smoke:sliderule": "node scripts/sliderule-browser-smoke.mjs",
     "smoke:sliderule-store": "node scripts/sliderule-store-api-smoke.mjs",
     "smoke:live-delegation": "LIVE_NODE_TO_PYTHON_SLIDERULE=1 vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.live-delegation.test.ts",

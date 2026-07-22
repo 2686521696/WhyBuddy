@@ -131,14 +131,93 @@ export interface PageFeedSpec {
 }
 
 /**
- * 体验区块实例（二阶段目录骨架）。本阶段只锁 id/type 合法域；binding、
- * triggers 与 layout 在后续步骤补齐。旧页面仍由 stats/charts 等字段渲染。
+ * 体验区块数据绑定（Step 4 强类型版本）。
+ * 第一批支持 count/sum/avg 聚合、等于筛选、时间粒度和枚举分组。
+ */
+export interface BlockBindingSpec {
+  /** 主数据实体 id（必填，对应 datamodel.entities[].id） */
+  entityRef: string;
+  /** 聚合方式：count = 行数，sum:<fieldId> = 求和，avg:<fieldId> = 均值 */
+  aggregate?: string;
+  /** 时间维度字段 id（date 类型，用于趋势图 X 轴） */
+  timeDimensionRef?: string;
+  /** 时间粒度：day / week / month（默认 day） */
+  timeGrain?: "day" | "week" | "month";
+  /** 按枚举字段分组（用于多系列趋势或饼图分布） */
+  seriesBy?: string;
+  /** 等于筛选：fieldRef = value */
+  filter?: { fieldRef: string; operator: "eq"; value: string | number | boolean };
+  /** 排序字段 id（number 类型，RankedList 用） */
+  sortByRef?: string;
+  /** 排序方向（默认 desc） */
+  sortOrder?: "asc" | "desc";
+  /** 结果条数上限（RankedList 用，3-20） */
+  limit?: number;
+  /** 时间倒序字段（ActivityFeed 用，date 类型） */
+  timeFieldRef?: string;
+  /** 事件等级字段（ActivityFeed 用，enum 类型，可选） */
+  levelFieldRef?: string;
+}
+
+/**
+ * 区块事件绑定：区块的交互触发哪个动作（Step 5）。
+ * key 是事件类型（onRowClick / onMetricClick / onItemClick 等），value 是 actionId。
+ */
+export type BlockEventBindings = Record<string, string>;
+
+/**
+ * 页面级动作实例（Step 5）。
+ * permissionRef 引用 actionPermissions 里的权限标签（决定谁能做）。
+ * type 决定具体做什么。
+ * 第一批：navigate / openDetail / createRecord / updateRecord / changeFilter / drillDown
+ */
+export interface PageActionSpec {
+  id: string;
+  type: "navigate" | "openDetail" | "createRecord" | "updateRecord" | "changeFilter" | "drillDown";
+  /** 引用 page.actionPermissions 里的权限标签（如 "risk:view"）；空串=无权限要求 */
+  permissionRef?: string;
+  /** navigate：目标页面 id */
+  targetPageRef?: string;
+  /** openDetail：目标实体 id（打开记录详情） */
+  entityRef?: string;
+  /** changeFilter/drillDown：目标区块 id */
+  targetBlockRef?: string;
+  /** payload 模板（事件变量用 $event.xxx 引用） */
+  payload?: Record<string, unknown>;
+}
+
+/**
+ * 体验区块实例（Step 4 强类型绑定）。binding 已升级为 BlockBindingSpec；
+ * 旧页面仍由 stats/charts 等字段渲染，无 binding 时继续正常工作。
  */
 export interface PageExperienceBlockSpec {
   id?: string;
   type?: string;
   props?: Record<string, unknown>;
-  binding?: Record<string, unknown>;
+  binding?: BlockBindingSpec;
+  /** 事件 → 动作 id 绑定（Step 5） */
+  eventBindings?: BlockEventBindings;
+}
+
+/**
+ * 页面区块布局（Step 7）。
+ * 控制区块放在哪个槽位、顺序和响应式覆盖。
+ * 合法槽位来自 experience_block_catalog.json 的 allowedSlots。
+ * 不允许自由写 CSS——只能在有限槽位里排布。
+ */
+export interface PageLayoutSpec {
+  /** 摘要区（页面顶部 KPI / 筛选）：区块 id 列表，顺序即渲染顺序 */
+  summary?: string[];
+  /** 主内容区（趋势图 / 看板）：区块 id 列表 */
+  primary?: string[];
+  /** 次要区（侧边榜单 / 动态流）：区块 id 列表 */
+  secondary?: string[];
+  /** 活动流区（专用于 ActivityFeed）：区块 id 列表 */
+  activity?: string[];
+  /** 内容区（全宽表格 / 文档）：区块 id 列表 */
+  content?: string[];
+  /** 手机端槽位覆盖（可选，不填则与桌面相同）：槽位名 → 区块 id 列表 */
+  mobile?: Partial<Omit<PageLayoutSpec, "mobile">>;
 }
 
 export interface PageModelDef {
@@ -160,6 +239,10 @@ export interface PageModelDef {
   feeds?: PageFeedSpec[];
   /** 过渡期可读取但暂不直接渲染；type 必须来自体验区块目录。 */
   blocks?: PageExperienceBlockSpec[];
+  /** 页面级动作实例（Step 5），与 actionPermissions 的权限字符串独立 */
+  actions?: PageActionSpec[];
+  /** 区块布局声明（Step 7）；未填时由渲染器按 kind 默认排布 */
+  layout?: PageLayoutSpec;
 }
 
 export interface AigcCapability {
@@ -222,6 +305,17 @@ export interface PresentationNotes {
   }>;
 }
 
+/**
+ * 应用外壳（Step 8）：取代 appIdentity.nav 成为导航形态的单一真相源。
+ * 老模型 appIdentity.nav 继续兼容；运行时按 nav→shell 自动编译。
+ */
+export interface ExperienceShellSpec {
+  /** 外壳模式：navigation（侧/顶导航）| focus（全屏沉浸，canvas 暂不进枚举） */
+  mode: "navigation" | "focus";
+  /** navigation 模式下的导航形态：side（侧栏）| top（顶栏） */
+  navigation?: "side" | "top";
+}
+
 export interface AppBundleSection {
   pageBindings?: AppBundlePageBinding[];
   /** 应用打开后的落地页；必须引用 page.pages[].id。缺省时保留旧工作台。 */
@@ -236,6 +330,13 @@ export interface AppBundleSection {
   presentationNotes?: PresentationNotes;
   /** 应用身份段（E40.2）：产品名 + 主题 + 图标 + 导航形态（合法域在 @legal） */
   appIdentity?: AppIdentitySection;
+  /**
+   * 应用外壳（Step 8）：取代 appIdentity.nav 成为导航单一真相源。
+   * 新模型填此字段；老模型由 appIdentity.nav 自动编译，不影响旧快照。
+   */
+  experienceShell?: ExperienceShellSpec;
+  /** 默认设备视口偏好（Step 8）：desktop | tablet | phone；只控制首次打开默认视图 */
+  preferredDevice?: "desktop" | "tablet" | "phone";
 }
 
 /** 应用身份段（E40.2）：千人千面的第一层——每个应用自己的"脸"。 */
@@ -246,8 +347,10 @@ export interface AppIdentitySection {
   theme?: string;
   /** 品牌图标 id（封闭图标集） */
   icon?: string;
-  /** 导航形态：side 管理台侧栏 / top 监控型顶栏 */
+  /** 导航形态：side 管理台侧栏 / top 监控型顶栏（Step 8 后由 experienceShell 接管，保留向后兼容） */
   nav?: string;
+  /** 视觉配方引用（Step 9）：指向配方 id（compact-dark / warm-orange / …）；不填时使用 theme 默认配方 */
+  designRecipeRef?: string;
 }
 
 export interface FiveSystemModel {

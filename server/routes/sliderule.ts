@@ -1079,6 +1079,110 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
   }
 });
 
+// ── Phase A：生成应用缩略图截图（Playwright 离线，无 LLM/Python 调用）──────
+// POST  /api/sliderule/sessions/:sessionId/screenshot  { modelHash? }
+//   → 首次：启动 Playwright 截图，缓存到 tmp/app-thumbnails/
+//   → 已有缓存：直接返回 PNG
+// DELETE /api/sliderule/sessions/:sessionId/screenshot
+//   → 删除该 session 全部缓存截图（模型变化时调用）
+router.post("/sessions/:sessionId/screenshot", express.json({ limit: "512kb" }), async (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  const { modelHash } = (req.body ?? {}) as { modelHash?: string };
+
+  const fs = await import("node:fs/promises");
+  const nodePath = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const __routeDir = nodePath.dirname(fileURLToPath(import.meta.url));
+  const screenshotDir = nodePath.resolve(__routeDir, "../../tmp/app-thumbnails");
+  await fs.mkdir(screenshotDir, { recursive: true });
+
+  const slug = `${sessionId.slice(0, 32)}-${(modelHash ?? "nohash").slice(0, 16)}`;
+  const screenshotPath = nodePath.join(screenshotDir, `${slug}.png`);
+
+  // 已有缓存直接返回
+  try {
+    await fs.access(screenshotPath);
+    const buf = await fs.readFile(screenshotPath);
+    res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(buf);
+    return;
+  } catch {}
+
+  // 无缓存：用 Playwright 截图
+  let chromium: any;
+  try {
+    const pw = await import("@playwright/test");
+    chromium = pw.chromium ?? (pw as any).default?.chromium;
+  } catch {
+    res.status(503).json({ error: "playwright_unavailable" });
+    return;
+  }
+
+  const port = Number(process.env.SLIDERULE_SMOKE_PORT ?? process.env.VITE_DEV_PORT ?? 3000);
+  const appUrl = `http://localhost:${port}/agent-loop/sliderule`;
+
+  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+
+    // 注入 localStorage session id（与 generated-app-browser-smoke 相同机制）
+    await page.addInitScript((sid: string) => {
+      try { localStorage.setItem("sliderule:active-session-id", sid); } catch {}
+    }, sessionId);
+
+    // 拦截 session 加载（透传真实会话状态，不触发推演）
+    await page.route(`**/api/sliderule/sessions/${sessionId}`, async (route: any) => {
+      try {
+        const r = await fetch(`http://localhost:${port}/api/sliderule/sessions/${encodeURIComponent(sessionId)}`);
+        const body = r.ok ? await r.text() : "{}";
+        await route.fulfill({ status: 200, contentType: "application/json", body });
+      } catch {
+        await route.fulfill({ status: 200, contentType: "application/json", body: '{"state":null}' });
+      }
+    });
+    await page.route("**/api/sliderule/health", async (route: any) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"ok"}' });
+    });
+
+    await page.goto(appUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
+
+    // 等待应用舞台（或超时降级全页截图）
+    try {
+      await page.waitForSelector('[data-testid="app-runtime-screen"]', { timeout: 12000 });
+    } catch {}
+
+    const appEl = await page.$('[data-testid="app-runtime-screen"]');
+    if (appEl) {
+      await appEl.screenshot({ path: screenshotPath });
+    } else {
+      await page.screenshot({ path: screenshotPath, clip: { x: 0, y: 0, width: 900, height: 520 } });
+    }
+    await ctx.close();
+
+    const buf = await fs.readFile(screenshotPath);
+    res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(buf);
+  } finally {
+    await browser.close();
+  }
+});
+
+router.delete("/sessions/:sessionId/screenshot", async (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  try {
+    const fs = await import("node:fs/promises");
+    const nodePath = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const __routeDir = nodePath.dirname(fileURLToPath(import.meta.url));
+    const screenshotDir = nodePath.resolve(__routeDir, "../../tmp/app-thumbnails");
+    const files = await fs.readdir(screenshotDir).catch(() => [] as string[]);
+    const slug = sessionId.slice(0, 32);
+    await Promise.all(files.filter(f => f.startsWith(slug)).map(f =>
+      fs.unlink(nodePath.join(screenshotDir, f)).catch(() => {})
+    ));
+  } catch {}
+  res.status(204).end();
+});
+
 // ── E19 Docker/prod 兜底薄代理（2026-07-16）──────────────────────────────
 // dev 下 vite 把 /api/sliderule 直接代理到 Python，所以 drive-full-stream
 // (SSE)、llm-channel 等端点从未经过 Node；prod/Docker 里它们掉进 SPA 兜底

@@ -143,7 +143,7 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     expect(fallback.menus[0].pageId).toBe("home");
   });
 
-  it("体验区块骨架只透传 id/type；旧页面保持空数组", () => {
+  it("体验区块：page.blocks 直接声明时透传 id/type/props；旧页面保持空数组", () => {
     const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
     model.page!.pages![0].blocks = [
       { id: "metric_overview", type: "MetricGrid", props: { title: "概览" } },
@@ -151,10 +151,52 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     ];
     const schema = deriveAppRuntimeSchema(model)!;
     expect(schema.pages[0].experienceBlocks).toEqual([
-      { id: "metric_overview", type: "MetricGrid" },
+      { id: "metric_overview", type: "MetricGrid", props: { title: "概览" } },
       { id: "unknown", type: "MagicWall" },
     ]);
     expect(schema.pages[1].experienceBlocks).toEqual([]);
+  });
+
+  it("legacy 转换器：无 page.blocks 时 stats/charts/rankings/feeds 转为 _fromLegacy 区块", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.page!.pages![0].stats = [
+      { id: "s1", name: "会员卡总数", entity: "member_card", metric: "count" },
+    ];
+    model.page!.pages![0].charts = [
+      {
+        id: "c1",
+        name: "余额分布",
+        type: "bar",
+        dimension: "member_card.holder",
+        metric: "count",
+      },
+    ];
+    const schema = deriveAppRuntimeSchema(model)!;
+    const blocks = schema.pages[0].experienceBlocks;
+    const statBlock = blocks.find(b => b.id === "legacy-stat-s1");
+    expect(statBlock).toBeDefined();
+    expect(statBlock!.type).toBe("MetricGrid");
+    expect(statBlock!._fromLegacy).toBe(true);
+    expect(statBlock!._legacyStat).toMatchObject({ id: "s1", metric: "count" });
+    const chartBlock = blocks.find(b => b.id === "legacy-chart-c1");
+    expect(chartBlock).toBeDefined();
+    expect(chartBlock!.type).toBe("TrendChart");
+    expect(chartBlock!._fromLegacy).toBe(true);
+  });
+
+  it("legacy 转换器：有 page.blocks 时不走 legacy 转换", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.page!.pages![0].stats = [
+      { id: "s1", name: "会员卡总数", entity: "member_card", metric: "count" },
+    ];
+    model.page!.pages![0].blocks = [
+      { id: "b1", type: "MetricGrid" },
+    ];
+    const schema = deriveAppRuntimeSchema(model)!;
+    const blocks = schema.pages[0].experienceBlocks;
+    // 直接用 page.blocks，不生成 legacy 区块
+    expect(blocks.every(b => !b._fromLegacy)).toBe(true);
+    expect(blocks.map(b => b.id)).toEqual(["b1"]);
   });
 
   it("详情抽屉字段 = 主实体全字段（不截断）", () => {

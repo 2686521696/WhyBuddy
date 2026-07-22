@@ -15,7 +15,9 @@
     "itemSelect",
     "rowSelect",
     "createRequest",
-    "editRequest"
+    "editRequest",
+    "actionTrigger",
+    "filterChange"
   ],
   "blocks": [
     {
@@ -31,7 +33,8 @@
       },
       "dataKinds": ["aggregate"],
       "allowedSlots": ["summary", "primary"],
-      "events": ["metricSelect"]
+      "events": ["metricSelect"],
+      "bindingHints": "entityRef必填，aggregate支持 count/sum:<fieldId>/avg:<fieldId>，可选filter"
     },
     {
       "type": "TrendChart",
@@ -46,7 +49,8 @@
       },
       "dataKinds": ["series"],
       "allowedSlots": ["primary", "secondary"],
-      "events": ["pointSelect"]
+      "events": ["pointSelect"],
+      "bindingHints": "entityRef+timeDimensionRef必填，timeGrain=day/week/month，可选seriesBy分多系列"
     },
     {
       "type": "RankedList",
@@ -61,7 +65,8 @@
       },
       "dataKinds": ["rankedRows"],
       "allowedSlots": ["primary", "secondary"],
-      "events": ["itemSelect"]
+      "events": ["itemSelect"],
+      "bindingHints": "entityRef+sortByRef必填（number字段），limit 3-20，sortOrder=desc/asc"
     },
     {
       "type": "ActivityFeed",
@@ -76,7 +81,8 @@
       },
       "dataKinds": ["timelineRows"],
       "allowedSlots": ["activity", "secondary"],
-      "events": ["itemSelect"]
+      "events": ["itemSelect"],
+      "bindingHints": "entityRef+timeFieldRef必填（date字段），可选levelFieldRef（enum字段）"
     },
     {
       "type": "DataTable",
@@ -91,7 +97,42 @@
       },
       "dataKinds": ["entityRows"],
       "allowedSlots": ["primary", "content"],
-      "events": ["rowSelect", "createRequest", "editRequest"]
+      "events": ["rowSelect", "createRequest", "editRequest"],
+      "bindingHints": "entityRef必填，其余字段由页面columns派生，binding可省略"
+    },
+    {
+      "type": "QuickActionPanel",
+      "description": "CRM/任务工作台的快捷业务操作按钮组，适合工作台首页的常用动作入口。",
+      "rendererKey": "quick-action-panel",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "columns": { "type": "number", "minimum": 1, "maximum": 4 }
+        }
+      },
+      "bindingHints": "无需 entityRef。actions 数组里的 createRecord/navigate 类型动作作为入口按钮。",
+      "dataKinds": [],
+      "allowedSlots": ["summary", "primary"],
+      "events": ["actionTrigger"]
+    },
+    {
+      "type": "FilterBar",
+      "description": "时间范围和枚举条件筛选栏，适合经营大盘、舆情监控等需要全局筛选的页面顶部。",
+      "rendererKey": "filter-bar",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "showDateRange": { "type": "boolean" }
+        }
+      },
+      "bindingHints": "entityRef 可选。filterFields 列出可筛选的枚举字段 id。触发 changeFilter 动作刷新同页面其他区块。",
+      "dataKinds": ["aggregate"],
+      "allowedSlots": ["summary"],
+      "events": ["filterChange"]
     }
   ]
 }

@@ -91,6 +91,8 @@ export interface AppCardDetail {
   entityNames: string[];
   /** 应用身份（E40.2）：产品名/主题/图标——应用中心卡片的"脸" */
   identity: { productName: string; theme: string; icon: string } | null;
+  /** Phase A：用于缩略图缓存失效的稳定摘要（stableDigest from publishClosure） */
+  stableDigest?: string;
 }
 
 /** 从持久化会话状态推导卡片详情（不发明数据：模型缺失就是 draft）。 */
@@ -135,6 +137,7 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
     identity,
     pageNames: pagesArr.map((p: any) => String(p?.name ?? p?.id ?? "")).filter(Boolean).slice(0, 6),
     entityNames: entitiesArr.map((e: any) => String(e?.name ?? e?.id ?? "")).filter(Boolean).slice(0, 4),
+    stableDigest: String(closure.stableDigest ?? closure.closureHash ?? "").slice(0, 32) || undefined,
   };
 }
 
@@ -277,6 +280,69 @@ function MiniAppThumb({
   );
 }
 
+/**
+ * Phase A：真实截图缩略图。
+ * 从服务端截图端点拉取 PNG；失败或不可用时降级到 MiniAppThumb。
+ * 只对 runnable（closed 6/6）且有 stableDigest 的应用尝试截图。
+ */
+function RealAppThumb({
+  sessionId,
+  stableDigest,
+  goal,
+  detail,
+}: {
+  sessionId: string;
+  stableDigest?: string;
+  goal: string;
+  detail: AppCardDetail | null;
+}) {
+  const [src, setSrc] = React.useState<string | null>(null);
+  const [failed, setFailed] = React.useState(false);
+  const prevDigestRef = React.useRef(stableDigest);
+
+  // 失效旧截图缓存（modelHash 变化时）
+  React.useEffect(() => {
+    if (prevDigestRef.current !== stableDigest && prevDigestRef.current) {
+      fetch(`/api/sliderule/sessions/${encodeURIComponent(sessionId)}/screenshot`, { method: "DELETE" }).catch(() => {});
+    }
+    prevDigestRef.current = stableDigest;
+  }, [sessionId, stableDigest]);
+
+  // 拉取截图
+  React.useEffect(() => {
+    if (!sessionId || !stableDigest || detail?.status !== "runnable" || IS_GITHUB_PAGES) return;
+    let alive = true;
+    setSrc(null);
+    setFailed(false);
+    fetch(`/api/sliderule/sessions/${encodeURIComponent(sessionId)}/screenshot`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modelHash: stableDigest }),
+    })
+      .then(async res => {
+        if (!alive) return;
+        if (!res.ok) { setFailed(true); return; }
+        const blob = await res.blob();
+        if (!alive) return;
+        setSrc(URL.createObjectURL(blob));
+      })
+      .catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; };
+  }, [sessionId, stableDigest, detail?.status]);
+
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt={goal}
+        className="h-full w-full object-cover object-top"
+        data-testid="app-thumb-real"
+      />
+    );
+  }
+  return <MiniAppThumb goal={goal} detail={detail} />;
+}
+
 function StatChip({
   icon,
   label,
@@ -290,18 +356,25 @@ function StatChip({
   active: boolean;
   onClick: () => void;
 }) {
+  // 扁平筛选 chip：圆角收成 lg，避免全圆胶囊过圆
   return (
     <button
-      className={`flex items-center gap-1.5 rounded-lg border bg-white px-3 py-2 text-[12.5px] shadow-sm transition ${
+      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
         active
-          ? "border-[#1677ff] text-[#1677ff]"
-          : "border-stone-200 text-stone-600 hover:border-stone-300"
+          ? "bg-[#e8eeff] text-[#3b5bdb]"
+          : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
       }`}
       onClick={onClick}
     >
-      {icon}
+      <span className={active ? "opacity-100" : "opacity-70"}>{icon}</span>
       <span>{label}</span>
-      <span className={`font-semibold ${active ? "text-[#1677ff]" : "text-stone-800"}`}>{count}</span>
+      <span
+        className={`tabular-nums text-[11px] ${
+          active ? "text-[#3b5bdb]/80" : "text-slate-400"
+        }`}
+      >
+        {count}
+      </span>
     </button>
   );
 }
@@ -599,156 +672,181 @@ export function AppsWorkbench() {
   return (
     <div
       data-testid="apps-workbench"
-      className="min-h-full bg-[#f7f8fa] px-8 py-6"
+      className="min-h-full bg-[var(--sr-shell-bg,#eef2f7)] px-6 py-5 md:px-8 md:py-6"
       onClick={() => {
         if (menuFor) setMenuFor(null);
         if (healthOpen) setHealthOpen(false);
       }}
     >
-      {/* 标题行 */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-[24px] font-bold text-stone-800">应用中心</h1>
-          <div className="mt-1 text-[13px] text-stone-400">
-            由 SlideRule 推演并生成的可运行系统与官方示例
-          </div>
+      {/*
+        顶栏扁平化（对标参考稿）：无白底卡片/无阴影底板；
+        第一行 标题 | 搜索 | 健康+创建；第二行 筛选 chip 直接铺在页面灰底上。
+      */}
+      {/*
+        顶栏：标题 | 搜索 | 健康+创建。
+        DOM 顺序与视觉/焦点顺序一致，不用 order-* 重排可聚焦控件。
+      */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex min-w-0 shrink-0 items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[#5b6cff]">
+            <LayoutGrid size={18} strokeWidth={2.2} />
+          </span>
+          <h1 className="text-[18px] font-bold tracking-tight text-slate-900 md:text-[20px]">
+            应用中心
+          </h1>
         </div>
-        <button
-          data-testid="apps-create-new"
-          className="rounded-lg bg-[#1677ff] px-4 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-[#1668e3]"
-          onClick={() => open(newSessionId())}
-        >
-          + 创建新应用
-        </button>
+
+        <div className="relative w-full min-w-[200px] flex-1 sm:mx-4 sm:max-w-xl md:max-w-2xl">
+          <Search
+            size={15}
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+          <input
+            data-testid="apps-search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder={
+              tab === "mine" ? "搜索应用、功能或解决方案…" : "搜索官方示例…"
+            }
+            className="w-full rounded-lg border-0 bg-white/70 py-2.5 pl-10 pr-4 text-[13px] text-slate-800 outline-none ring-1 ring-slate-200/60 placeholder:text-slate-400 transition focus:bg-white focus:ring-2 focus:ring-[#5b6cff]/25"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <span className="relative">
+            <button
+              type="button"
+              data-testid="apps-health-chip"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white/70 px-3 py-2 text-[12px] font-medium text-slate-600 ring-1 ring-slate-200/60 transition hover:bg-white"
+              onClick={e => {
+                e.stopPropagation();
+                setHealthOpen(v => !v);
+              }}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${IS_GITHUB_PAGES ? "bg-sky-400" : dotCls(overall)}`}
+              />
+              {IS_GITHUB_PAGES
+                ? "静态演示 · 无后端"
+                : overall == null
+                  ? "服务检查中…"
+                  : overall
+                    ? "推演服务正常"
+                    : "推演服务异常"}
+            </button>
+            {healthOpen && (
+              <div
+                data-testid="apps-health-popover"
+                className="absolute right-0 top-11 z-20 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="space-y-2 text-[12px]">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-1.5 w-1.5 rounded-full ${dotCls(nodeOk)}`} />
+                    <span className="text-slate-700">Node API</span>
+                    <span className="ml-auto text-[11px] text-slate-400">/api/health</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`h-1.5 w-1.5 rounded-full ${dotCls(pyOk)}`} />
+                    <span className="text-slate-700">Python 推演引擎</span>
+                    <span className="ml-auto text-[11px] text-slate-400">sliderule-python</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`h-1.5 w-1.5 rounded-full ${dotCls(llmOk)}`} />
+                    <span className="text-slate-700">LLM 推演通道</span>
+                    <span className="ml-auto truncate text-[11px] text-slate-400">
+                      {llm === null
+                        ? "…"
+                        : llm === false
+                          ? "不可用"
+                          : `${llm.provider} · ${llm.model}`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </span>
+          <button
+            type="button"
+            data-testid="apps-create-new"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_14px_rgba(91,108,255,0.28)] transition hover:bg-[#4a5aef] active:scale-[0.98]"
+            onClick={() => open(newSessionId())}
+          >
+            <span className="text-[15px] leading-none">+</span>
+            创建新应用
+          </button>
+        </div>
       </div>
 
-      {/* tab 行：我的应用 / 官方示例库（筛选不同、卡片样式相同）＋ 服务健康 */}
-      <div className="mt-4 flex items-center gap-1 border-b border-stone-200">
+      {/* 第二行：库切换 + 门语言筛选 / 分类 — 无底板 */}
+      <div className="mt-4 flex flex-wrap items-center gap-1.5">
         {(
           [
-            { key: "mine", label: "我的应用", count: paired.length },
-            { key: "examples", label: "官方示例库", count: examples.length },
-          ] as const
+            { key: "mine" as const, label: "我的应用", count: paired.length },
+            { key: "examples" as const, label: "官方示例", count: examples.length },
+          ]
         ).map(t => (
           <button
             key={t.key}
+            type="button"
+            aria-pressed={tab === t.key}
             data-testid={`apps-tab-${t.key}`}
-            className={`relative -mb-px flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-[14px] transition ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
               tab === t.key
-                ? "border-[#1677ff] font-semibold text-[#1677ff]"
-                : "border-transparent text-stone-500 hover:text-stone-700"
+                ? "bg-[#e8eeff] text-[#3b5bdb]"
+                : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
             }`}
             onClick={() => setTab(t.key)}
           >
             {t.label}
             <span
-              className={`rounded-full px-1.5 py-[1px] text-[11px] ${
-                tab === t.key ? "bg-blue-50 text-[#1677ff]" : "bg-stone-100 text-stone-500"
+              className={`tabular-nums text-[11px] ${
+                tab === t.key ? "text-[#3b5bdb]/80" : "text-slate-400"
               }`}
             >
               {t.count}
             </span>
           </button>
         ))}
-        {/* 服务健康：点开分列三服务详情（原观察台独有价值，下放到此） */}
-        <span className="relative ml-auto">
-          <button
-            data-testid="apps-health-chip"
-            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12.5px] text-stone-500 transition hover:bg-stone-100"
-            onClick={e => {
-              e.stopPropagation();
-              setHealthOpen(v => !v);
-            }}
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${IS_GITHUB_PAGES ? "bg-sky-400" : dotCls(overall)}`}
-            />
-            {IS_GITHUB_PAGES
-              ? "静态演示 · 无后端"
-              : overall == null
-                ? "服务检查中…"
-                : overall
-                  ? "推演服务正常"
-                  : "推演服务异常"}
-          </button>
-          {healthOpen && (
-            <div
-              data-testid="apps-health-popover"
-              className="absolute right-0 top-9 z-20 w-64 rounded-xl border border-stone-200 bg-white p-3 shadow-lg"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="space-y-2 text-[12px]">
-                <div className="flex items-center gap-2">
-                  <span className={`h-1.5 w-1.5 rounded-full ${dotCls(nodeOk)}`} />
-                  <span className="text-stone-700">Node API</span>
-                  <span className="ml-auto text-[11px] text-stone-400">/api/health</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`h-1.5 w-1.5 rounded-full ${dotCls(pyOk)}`} />
-                  <span className="text-stone-700">Python 推演引擎</span>
-                  <span className="ml-auto text-[11px] text-stone-400">sliderule-python</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`h-1.5 w-1.5 rounded-full ${dotCls(llmOk)}`} />
-                  <span className="text-stone-700">LLM 推演通道</span>
-                  <span className="ml-auto truncate text-[11px] text-stone-400">
-                    {llm === null ? "…" : llm === false ? "不可用" : `${llm.provider} · ${llm.model}`}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-        </span>
-      </div>
 
-      {/* 工具行：搜索共享；我的应用 = 门语言筛选 + 排序，示例库 = 分类 chips */}
-      <div className="mt-4 flex flex-wrap items-center gap-2.5">
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" />
-          <input
-            data-testid="apps-search"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder={tab === "mine" ? "搜索应用" : "搜索示例"}
-            className="w-60 rounded-lg border border-stone-200 bg-white py-2 pl-8 pr-3 text-[12.5px] text-stone-700 shadow-sm outline-none placeholder:text-stone-300 focus:border-[#1677ff]"
-          />
-        </div>
+        <span className="mx-1 hidden h-4 w-px bg-slate-200 sm:inline-block" />
+
         {tab === "mine" ? (
           <>
             <StatChip
-              icon={<LayoutGrid size={14} className="text-stone-400" />}
+              icon={<LayoutGrid size={13} />}
               label="全部"
               count={counts.all}
               active={filter === "all"}
               onClick={() => setFilter("all")}
             />
             <StatChip
-              icon={<Hourglass size={14} className="text-amber-500" />}
+              icon={<Hourglass size={13} className="text-amber-500" />}
               label="推演中"
               count={counts.draft}
               active={filter === "draft"}
               onClick={() => setFilter("draft")}
             />
             <StatChip
-              icon={<CircleCheck size={14} className="text-emerald-500" />}
+              icon={<CircleCheck size={13} className="text-emerald-500" />}
               label="closed 6/6"
               count={counts.runnable}
               active={filter === "runnable"}
               onClick={() => setFilter("runnable")}
             />
             <StatChip
-              icon={<Hourglass size={14} className="text-orange-400" />}
+              icon={<Hourglass size={13} className="text-orange-400" />}
               label="blocked"
               count={counts.blocked}
               active={filter === "blocked"}
               onClick={() => setFilter("blocked")}
             />
-            <div className="ml-auto flex items-center gap-2.5">
+            <div className="ml-auto flex items-center gap-2">
               <button
-                className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-[12px] text-stone-500 shadow-sm hover:border-stone-300"
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-slate-500 transition hover:bg-white/60 hover:text-slate-700"
                 onClick={() => setSortDesc(v => !v)}
               >
-                <ArrowUpDown size={13} className="text-stone-400" />
+                <ArrowUpDown size={13} className="text-slate-400" />
                 {sortDesc ? "最近更新" : "最早更新"}
               </button>
             </div>
@@ -758,10 +856,10 @@ export function AppsWorkbench() {
             <button
               key={cat}
               data-testid={`example-cat-${cat}`}
-              className={`rounded-lg border px-3 py-1.5 text-[12.5px] transition ${
+              className={`rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
                 exampleCat === cat
-                  ? "border-[#1677ff] bg-white text-[#1677ff]"
-                  : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
+                  ? "bg-[#e8eeff] text-[#3b5bdb]"
+                  : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
               }`}
               onClick={() => setExampleCat(cat)}
             >
@@ -796,7 +894,7 @@ export function AppsWorkbench() {
                   titleAttr={item.goal}
                   Icon={BrandIcon}
                   iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
-                  media={<MiniAppThumb goal={item.goal} detail={detail} />}
+                  media={<RealAppThumb sessionId={item.sessionId} stableDigest={detail?.stableDigest} goal={item.goal} detail={detail} />}
                   metrics={
                     detail ? (
                       <>

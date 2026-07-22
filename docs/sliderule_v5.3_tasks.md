@@ -28,74 +28,74 @@ pnpm run verify:sliderule-v5                             # 全回归(收尾 Phas
 ## P1 · 数据底座：ReasoningEvent 模型 + 透传（无 UI）
 
 ### 类型与工具（shared）
-- [ ] **P1.1** 新建 `shared/blueprint/sliderule-reasoning-events.ts`：定义 `ReasoningEventKind`、`ReasoningEvent`（字段见规格 §4.1）。
-- [ ] **P1.2** 同文件加 `sanitizeReasoningText(text: string): string`：移除/替换内部 token（G_*, T_*, DLEDGER, baseline, F1_/F2_ sourceTag → "外部检索"）。禁词集从 `assertRouteCopySanitized` 抽取为共享常量 `FORBIDDEN_INTERNAL_TOKENS`，两处共用。
-- [ ] **P1.3** 同文件加 `foldEventsForOverview(events: ReasoningEvent[]): { think: number; observe: number; tool: number; role: number }`（overview 角标用）。
-- [ ] **P1.4** 同文件加 `eventsByRun(state): Map<string, ReasoningEvent[]>`（按 capabilityRunId 分组并按 `order` 排序）。
-- [ ] **P1.5** 同文件加 `makeEvent(partial): ReasoningEvent` 工厂（补 id=`${runId}-ev-${order}`、ts、跑 sanitize）。
+- [x] **P1.1** 新建 `shared/blueprint/sliderule-reasoning-events.ts`：定义 `ReasoningEventKind`、`ReasoningEvent`（字段见规格 §4.1）。
+- [x] **P1.2** 同文件加 `sanitizeReasoningText(text: string): string`：移除/替换内部 token（G_*, T_*, DLEDGER, baseline, F1_/F2_ sourceTag → "外部检索"）。禁词集从 `assertRouteCopySanitized` 抽取为共享常量 `FORBIDDEN_INTERNAL_TOKENS`，两处共用。
+- [x] **P1.3** 同文件加 `foldEventsForOverview(events: ReasoningEvent[]): { think: number; observe: number; tool: number; role: number }`（overview 角标用）。
+- [x] **P1.4** 同文件加 `eventsByRun(state): Map<string, ReasoningEvent[]>`（按 capabilityRunId 分组并按 `order` 排序）。
+- [x] **P1.5** 同文件加 `makeEvent(partial): ReasoningEvent` 工厂（补 id=`${runId}-ev-${order}`、ts、跑 sanitize）。
 
 ### STATE / 执行器接口（追加字段）
-- [ ] **P1.6** `shared/blueprint/v5-reasoning-state.ts`：`V5SessionState` 追加 `reasoningEvents?: ReasoningEvent[]`（import 类型；写注释"投影源，可截断，向后兼容可选"）。
-- [ ] **P1.7** 执行器结果类型追加 `events?: ReasoningEvent[]`：`server/sliderule/capability-exec-map.ts` 的 `RawExecutorResult`，以及 `sliderule-runtime.ts` 里 `CapabilityExecutor` 接口 + `LlmCapabilityExecutor`/`PilotRealCapabilityExecutor`/`DefaultCapabilityExecutor` 的返回类型（与现有 `payload?` 并列追加）。
+- [x] **P1.6** `shared/blueprint/v5-reasoning-state.ts`：`V5SessionState` 追加 `reasoningEvents?: ReasoningEvent[]`（import 类型；写注释"投影源，可截断，向后兼容可选"）。
+- [x] **P1.7** 执行器结果类型追加 `events?: ReasoningEvent[]`：`server/sliderule/capability-exec-map.ts` 的 `RawExecutorResult`，以及 `sliderule-runtime.ts` 里 `CapabilityExecutor` 接口 + `LlmCapabilityExecutor`/`PilotRealCapabilityExecutor`/`DefaultCapabilityExecutor` 的返回类型（与现有 `payload?` 并列追加）。
 
 ### drive 合并 + 模拟器补事件（runtime，不动 gates）
-- [ ] **P1.8** `sliderule-runtime.ts` drive 主循环（现 `exec.payload` 合并处，约 4360 行附近）：把 `exec.events`（执行器返回的、已绑定 runId/order）追加进 `working.reasoningEvents`。注意 runId 用该轮 `${loopTurnId}-run-${i}`，与 capability 节点 `capabilityRunId` 一致。
-- [ ] **P1.9** `sliderule-runtime.ts` 模拟器 `DefaultCapabilityExecutor.executeCapability`：对每个 cap 产 2-3 条确定性事件（capability_start + 1-2 think/observe + capability_complete），保证无 LLM 也有思考链。gap.ask 复用 #1 已有的 clarifyQuestions 文案做 think。
-- [ ] **P1.10** `sliderule-projection-persist.ts` `stripProjectionForPersist`：`reasoningEvents` 截断到最近 N=200 条（更早的丢弃或折叠计数），避免持久化体积膨胀。
+- [x] **P1.8** `sliderule-runtime.ts` drive 主循环（现 `exec.payload` 合并处，约 4360 行附近）：把 `exec.events`（执行器返回的、已绑定 runId/order）追加进 `working.reasoningEvents`。注意 runId 用该轮 `${loopTurnId}-run-${i}`，与 capability 节点 `capabilityRunId` 一致。
+- [x] **P1.9** `sliderule-runtime.ts` 模拟器 `DefaultCapabilityExecutor.executeCapability`：对每个 cap 产 2-3 条确定性事件（capability_start + 1-2 think/observe + capability_complete），保证无 LLM 也有思考链。gap.ask 复用 #1 已有的 clarifyQuestions 文案做 think。
+- [x] **P1.10** `sliderule-projection-persist.ts` `stripProjectionForPersist`：`reasoningEvents` 截断到最近 N=200 条（更早的丢弃或折叠计数），避免持久化体积膨胀。
 
 ### 验证 P1
-- [ ] **P1.V1** 新测 `shared/blueprint/__tests__/sliderule-reasoning-events.test.ts`：类型构造、`sanitizeReasoningText` 去禁词、`foldEventsForOverview` 计数、`eventsByRun` 分组排序。
-- [ ] **P1.V2** runtime 单测（加到现有 fullpath 或新文件）：模拟器跑一个 turn 后 `state.reasoningEvents` 非空，每条 `capabilityRunId` 能在 `state.capabilityRuns` 找到。
-- [ ] **P1.V3** `pnpm exec tsc --noEmit` 0 错；既有 `verify:sliderule-v5` 全绿（events 可选不影响旧断言）。
-- [ ] **P1.C** 提交 P1。
+- [x] **P1.V1** 新测 `shared/blueprint/__tests__/sliderule-reasoning-events.test.ts`：类型构造、`sanitizeReasoningText` 去禁词、`foldEventsForOverview` 计数、`eventsByRun` 分组排序。
+- [x] **P1.V2** runtime 单测（加到现有 fullpath 或新文件）：模拟器跑一个 turn 后 `state.reasoningEvents` 非空，每条 `capabilityRunId` 能在 `state.capabilityRuns` 找到。
+- [x] **P1.V3** `pnpm exec tsc --noEmit` 0 错；既有 `verify:sliderule-v5` 全绿（events 可选不影响旧断言）。
+- [x] **P1.C** 提交 P1。
 
 ---
 
 ## P2 · 后端真实 emit（panel + dialogue + fallback）
 
-- [ ] **P2.1** `deliberation-exec-map.ts` `runPanelSession`：返回结果加 `events`——每个 `positions[i]` → `role_position`（roleId/text）；每个 `critiques[i]` → `role_critique`（roleId=fromRole, targetRoleId=targetRole, text）；收敛 → `panel_converge`（meta: convergenceScore/consensusReached/dissent）。order 递增。
-- [ ] **P2.2** `deliberation-exec-map.ts` `runSynthesisMerge`：若消费 panel，转发同样的 panel events（或在合并产出处 emit `panel_converge`）。
-- [ ] **P2.3** `dialogue-exec-map.ts`（gap.ask / intent.clarify / route.* / question.expand）：在 LLM 调用前后 emit `capability_start` → `think`（"正在理解目标…"）→（若检索）`observe`/`tool_call` → `capability_complete`。文案取自现有 THINKING/OBSERVING/COMPLETED 语义。
-- [ ] **P2.4** `capability-llm-fallback.ts`：降级路径 emit 1-2 条 think 事件，meta 标注"模板兜底"，保证降级也有过程。
-- [ ] **P2.5** `server/routes/sliderule.ts` execute-capability 响应：把 exec 的 `events` 原样放进 JSON（与 title/summary/content/payload 并列）。
-- [ ] **P2.6** server emit 前统一过 `sanitizeReasoningText`（在 exec-map 出口或 route 出口集中做一次）。
+- [x] **P2.1** `deliberation-exec-map.ts` `runPanelSession`：返回结果加 `events`——每个 `positions[i]` → `role_position`（roleId/text）；每个 `critiques[i]` → `role_critique`（roleId=fromRole, targetRoleId=targetRole, text）；收敛 → `panel_converge`（meta: convergenceScore/consensusReached/dissent）。order 递增。
+- [x] **P2.2** `deliberation-exec-map.ts` `runSynthesisMerge`：若消费 panel，转发同样的 panel events（或在合并产出处 emit `panel_converge`）。
+- [x] **P2.3** `dialogue-exec-map.ts`（gap.ask / intent.clarify / route.* / question.expand）：在 LLM 调用前后 emit `capability_start` → `think`（"正在理解目标…"）→（若检索）`observe`/`tool_call` → `capability_complete`。文案取自现有 THINKING/OBSERVING/COMPLETED 语义。
+- [x] **P2.4** `capability-llm-fallback.ts`：降级路径 emit 1-2 条 think 事件，meta 标注"模板兜底"，保证降级也有过程。
+- [x] **P2.5** `server/routes/sliderule.ts` execute-capability 响应：把 exec 的 `events` 原样放进 JSON（与 title/summary/content/payload 并列）。
+- [x] **P2.6** server emit 前统一过 `sanitizeReasoningText`（在 exec-map 出口或 route 出口集中做一次）。
 
 ### 验证 P2
-- [ ] **P2.V1** `server/sliderule/__tests__/deliberation-exec-map.test.ts` 扩展：panel 输入 → 返回 events 含 ≥1 `role_position` + 1 `panel_converge`，`meta.convergenceScore` 透传正确。
-- [ ] **P2.V2** dialogue / fallback exec-map 测试：返回 events 首 `capability_start`、末 `capability_complete`。
-- [ ] **P2.V3** route 测试（`sliderule.execute-capability.test.ts`）：响应含 `events` 数组。
-- [ ] **P2.V4** 脱敏测试：构造含禁词的 text，断言 emit 后不含。
-- [ ] **P2.V5** tsc 0 + 相关 server 套件绿。
-- [ ] **P2.C** 提交 P2。
+- [x] **P2.V1** `server/sliderule/__tests__/deliberation-exec-map.test.ts` 扩展：panel 输入 → 返回 events 含 ≥1 `role_position` + 1 `panel_converge`，`meta.convergenceScore` 透传正确。
+- [x] **P2.V2** dialogue / fallback exec-map 测试：返回 events 首 `capability_start`、末 `capability_complete`。
+- [x] **P2.V3** route 测试（`sliderule.execute-capability.test.ts`）：响应含 `events` 数组。
+- [x] **P2.V4** 脱敏测试：构造含禁词的 text，断言 emit 后不含。
+- [x] **P2.V5** tsc 0 + 相关 server 套件绿。
+- [x] **P2.C** 提交 P2。
 
 ---
 
 ## P3 · 多角色辩论投影（collaboration 视图）
 
-- [ ] **P3.1** `expand-projection-nodes.ts` `expandPanelRoleChildren`：加参数 `{ defaultExpanded: boolean }`；collaboration 模式默认展开 positions → `::role-{roleId}` 节点（保留 `MAX_PANEL_ROLES`）。
-- [ ] **P3.2** 同函数：用 `role_critique` 事件（或 payload.critiques）生成**角色间边**，`type: "challenges"`（**非 `depends_on`**，规避 G-ROOT-2），label "质疑"，source/target 为对应 role 子节点 id。
-- [ ] **P3.3** verdict 子节点升级：展示 `convergenceScore`（如"收敛 0.82"）+ 共识/异议（dissent 列表），文案脱敏。
-- [ ] **P3.4** `derive-reasoning-view-model.ts`：新增 `viewMode: "overview"|"collaboration"|"reasoning"` 入参；collaboration 模式调用上面默认展开；输出 critique 边、角色配色（复用 `roleIdToDisplayLabel` + 现有 role 色板）给 surface。
+- [x] **P3.1** `expand-projection-nodes.ts` `expandPanelRoleChildren`：加参数 `{ defaultExpanded: boolean }`；collaboration 模式默认展开 positions → `::role-{roleId}` 节点（保留 `MAX_PANEL_ROLES`）。
+- [x] **P3.2** 同函数：用 `role_critique` 事件（或 payload.critiques）生成**角色间边**，`type: "challenges"`（**非 `depends_on`**，规避 G-ROOT-2），label "质疑"，source/target 为对应 role 子节点 id。
+- [x] **P3.3** verdict 子节点升级：展示 `convergenceScore`（如"收敛 0.82"）+ 共识/异议（dissent 列表），文案脱敏。
+- [x] **P3.4** `derive-reasoning-view-model.ts`：新增 `viewMode: "overview"|"collaboration"|"reasoning"` 入参；collaboration 模式调用上面默认展开；输出 critique 边、角色配色（复用 `roleIdToDisplayLabel` + 现有 role 色板）给 surface。
 
 ### 验证 P3
-- [ ] **P3.V1** 投影单测 `reasoning-chain-projection.test.ts`（新）：给含 panel events 的 state + `viewMode:"collaboration"`，输出含 N 个 role_position 节点 + ≥1 `challenges` 边 + 1 verdict（含 convergenceScore）。
-- [ ] **P3.V2** G-ROOT 不变量测试仍过（`fullpath-invariants` / knife-b-projection 不回归）；确认 `challenges` 边不进 `depends_on` 单父校验。
-- [ ] **P3.V3** 向后兼容：`reasoningEvents` undefined / 无 panel 时，collaboration 模式退回基础 turn 视图，不报错。
-- [ ] **P3.C** 提交 P3。
+- [x] **P3.V1** 投影单测 `reasoning-chain-projection.test.ts`（新）：给含 panel events 的 state + `viewMode:"collaboration"`，输出含 N 个 role_position 节点 + ≥1 `challenges` 边 + 1 verdict（含 convergenceScore）。
+- [x] **P3.V2** G-ROOT 不变量测试仍过（`fullpath-invariants` / knife-b-projection 不回归）；确认 `challenges` 边不进 `depends_on` 单父校验。
+- [x] **P3.V3** 向后兼容：`reasoningEvents` undefined / 无 panel 时，collaboration 模式退回基础 turn 视图，不报错。
+- [x] **P3.C** 提交 P3。
 
 ---
 
 ## P4 · 思考链投影（reasoning 视图）
 
-- [ ] **P4.1** `expand-projection-nodes.ts` 新增 `expandReasoningChain(parent, events)`：把某 cap 的 think/observe/tool/subtask 事件按 order 展成子步节点链（`type: "reasoning_step"`，挂在该 cap 节点下，边 `type: "step"` 非 `depends_on`）。
-- [ ] **P4.2** `derive-reasoning-view-model.ts` `reasoning` 模式：对每个 capability 节点调用 `expandReasoningChain`；`overview` 模式调用 `foldEventsForOverview` 把事件折成节点角标（如 `💭3 · 🔍2`），节点数回到 turn 视图水平。
-- [ ] **P4.3** 节点上挂渲染所需字段（投影内部类型）：`eventKind`、`roleStance`、`convergence`、`overviewBadge`。
+- [x] **P4.1** `expand-projection-nodes.ts` 新增 `expandReasoningChain(parent, events)`：把某 cap 的 think/observe/tool/subtask 事件按 order 展成子步节点链（`type: "reasoning_step"`，挂在该 cap 节点下，边 `type: "step"` 非 `depends_on`）。
+- [x] **P4.2** `derive-reasoning-view-model.ts` `reasoning` 模式：对每个 capability 节点调用 `expandReasoningChain`；`overview` 模式调用 `foldEventsForOverview` 把事件折成节点角标（如 `💭3 · 🔍2`），节点数回到 turn 视图水平。
+- [x] **P4.3** 节点上挂渲染所需字段（投影内部类型）：`eventKind`、`roleStance`、`convergence`、`overviewBadge`。
 
 ### 验证 P4
-- [ ] **P4.V1** 投影单测：reasoning 模式下 cap 节点子步数 == 该 run 的 think/observe/tool 事件数；overview 模式节点数 == turn 视图节点数且带角标。
-- [ ] **P4.V2** 切换 viewMode 是纯函数：同一 state 三次调用三模式，`state` 引用不变（不 mutate）。
-- [ ] **P4.V3** tsc 0 + 投影套件绿。
-- [ ] **P4.C** 提交 P4。
+- [x] **P4.V1** 投影单测：reasoning 模式下 cap 节点子步数 == 该 run 的 think/observe/tool 事件数；overview 模式节点数 == turn 视图节点数且带角标。
+- [x] **P4.V2** 切换 viewMode 是纯函数：同一 state 三次调用三模式，`state` 引用不变（不 mutate）。
+- [x] **P4.V3** tsc 0 + 投影套件绿。
+- [x] **P4.C** 提交 P4。
 
 ---
 

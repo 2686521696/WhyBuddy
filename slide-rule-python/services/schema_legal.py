@@ -56,6 +56,15 @@ STAT_METRIC_PREFIXES = _tuple("statMetricPrefixes")
 IDENTITY_THEMES = _tuple("identityThemes")
 IDENTITY_ICONS = _tuple("identityIcons")
 IDENTITY_NAVS = _tuple("identityNavs")
+# Step 9：视觉配方封闭集（人工调好的配方，模型只选不自由生成）
+DESIGN_RECIPES = (
+    "default",          # 各主题自带默认配方
+    "compact-dark",     # 深色高密度（经营大盘、监控）
+    "warm-orange",      # 橙色活泼（CRM、消费类）
+    "cool-blue",        # 蓝色专业（政务、金融）
+    "soft-neutral",     # 柔和中性（内容创作、知识库）
+    "high-contrast",    # 高对比度无障碍
+)
 
 
 def _catalog_tuple(key: str) -> tuple:
@@ -98,8 +107,14 @@ def _load_experience_blocks() -> tuple:
             ("events", legal_events),
         ):
             values = raw.get(key)
-            if not isinstance(values, list) or not values:
-                raise ValueError(f"experience_block_catalog.json {block_type}.{key} 缺失或为空")
+            # dataKinds may be empty for action-only blocks (e.g. QuickActionPanel)
+            # that require no entity data; allowedSlots and events must be non-empty.
+            if key == "dataKinds":
+                if not isinstance(values, list):
+                    raise ValueError(f"experience_block_catalog.json {block_type}.{key} 缺失或为空")
+            else:
+                if not isinstance(values, list) or not values:
+                    raise ValueError(f"experience_block_catalog.json {block_type}.{key} 缺失或为空")
             unknown = {str(v) for v in values} - legal
             if unknown:
                 raise ValueError(
@@ -143,10 +158,10 @@ def experience_block_catalog_snapshot() -> Dict[str, object]:
 def experience_block_prompt_block() -> str:
     """把目录压成给 LLM 的封闭选材说明；不另写第二份区块清单。"""
     lines = [
-        "EXPERIENCE BLOCK CATALOG (closed set, transition scaffold):",
-        "This release still renders existing stats/charts/rankings/feeds fields. Do not emit page.blocks yet;",
-        "if refining a model that already contains page.blocks, every block",
-        "type MUST be one of the catalog entries below:",
+        "EXPERIENCE BLOCK CATALOG (closed set):",
+        "You MAY now emit page.blocks for new-style pages. When you do, every block type MUST be one of the catalog entries below.",
+        "The existing stats/charts/rankings/feeds fields still work for backward compatibility.",
+        "Prefer emitting page.blocks when building new pages; keep stats/charts for pages that already use them.",
     ]
     for block in EXPERIENCE_BLOCKS:
         lines.append(
@@ -154,4 +169,36 @@ def experience_block_prompt_block() -> str:
             f"data={','.join(block['dataKinds'])}; slots={','.join(block['allowedSlots'])}; "
             f"events={','.join(block['events'])}"
         )
+    lines.append(
+        "When emitting page.blocks, include a binding object specifying entityRef (required), "
+        "aggregate (count/sum:<fieldId>/avg:<fieldId>), timeDimensionRef+timeGrain for trends, "
+        "sortByRef+limit for rankings, timeFieldRef for feeds. "
+        "entityRef MUST match a datamodel entity id exactly."
+    )
+    lines.append(
+        "Pages MAY include an actions array with instances of: "
+        "navigate (targetPageRef), openDetail (entityRef), createRecord (entityRef), "
+        "updateRecord (entityRef), changeFilter (targetBlockRef), drillDown (targetBlockRef). "
+        "Each action MUST have a permissionRef matching an entry in page.actionPermissions. "
+        "Blocks MAY include eventBindings mapping event names to action ids defined in the same page."
+    )
+    lines.append(
+        "Step 7 — Page layout: pages MAY declare a layout object with slots "
+        "summary/primary/secondary/activity/content, each containing an ordered list of block ids. "
+        "Every block id in layout MUST exist in page.blocks. "
+        "Use layout to differentiate dashboards (large primary chart) from workbenches (summary+content table)."
+    )
+    lines.append(
+        "Step 8 — Shell and device: appbundle MAY include experienceShell "
+        "{mode: 'navigation'|'focus', navigation: 'side'|'top'} and preferredDevice 'desktop'|'tablet'|'phone'. "
+        "Use experienceShell instead of appIdentity.nav for new models. "
+        "focus mode is for full-screen single-purpose tools (report viewer, document editor)."
+    )
+    lines.append(
+        f"Step 9 — Design recipe: appbundle.appIdentity MAY include designRecipeRef "
+        f"from: {', '.join(DESIGN_RECIPES)}. "
+        "compact-dark = dense dark analytics; warm-orange = CRM/consumer; "
+        "cool-blue = finance/gov; soft-neutral = content/knowledge; high-contrast = accessibility. "
+        "Do not free-generate colors or CSS — only reference a recipe by id."
+    )
     return "\n".join(lines)

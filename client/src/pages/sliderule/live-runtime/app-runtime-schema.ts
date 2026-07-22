@@ -100,10 +100,56 @@ export interface AppPageFeedSchema {
   levelFieldId?: string;
 }
 
-/** 二阶段体验区块骨架：只保留目录选材所需 id/type，内容绑定第三阶段接入。 */
+/**
+ * 页面级动作实例运行时声明（Step 5）。
+ * permitted：当前角色是否有权执行此动作（permissionRef 对应的权限在当前角色权限集中）。
+ */
+export interface AppPageActionSchema {
+  id: string;
+  type: "navigate" | "openDetail" | "createRecord" | "updateRecord" | "changeFilter" | "drillDown";
+  permissionRef?: string;
+  targetPageRef?: string;
+  entityRef?: string;
+  targetBlockRef?: string;
+  payload?: Record<string, unknown>;
+  /** 当前角色有执行权限 */
+  permitted: boolean;
+}
+
+/**
+ * 体验区块运行时声明：id/type 必填；三阶段起 props 携带模型声明属性。
+ * _legacy* 字段是 schema→renderer 内部通道，不进入模型协议或 Gate 校验；
+ * _fromLegacy=true 表示此区块由旧字段自动转换而非模型直接声明。
+ */
 export interface AppExperienceBlockSchema {
   id: string;
   type: string;
+  props?: Record<string, unknown>;
+  binding?: {
+    entityRef?: string;
+    aggregate?: string;
+    timeDimensionRef?: string;
+    timeGrain?: "day" | "week" | "month";
+    seriesBy?: string;
+    filter?: { fieldRef: string; operator: "eq"; value: unknown };
+    sortByRef?: string;
+    sortOrder?: "asc" | "desc";
+    limit?: number;
+    timeFieldRef?: string;
+    levelFieldRef?: string;
+  };
+  /** 事件 → 动作 id 绑定（Step 5） */
+  eventBindings?: Record<string, string>;
+  /** true 表示此区块来自 legacy 转换（stats/charts/rankings/feeds） */
+  _fromLegacy?: boolean;
+  /** MetricGrid 转换来源 */
+  _legacyStat?: AppPageStatSchema;
+  /** TrendChart 转换来源 */
+  _legacyChart?: AppPageChartSchema;
+  /** RankedList 转换来源 */
+  _legacyRanking?: AppPageRankingSchema;
+  /** ActivityFeed 转换来源 */
+  _legacyFeed?: AppPageFeedSchema;
 }
 
 /**
@@ -158,6 +204,8 @@ export interface AppPageSchema {
   view: AppPageViewSchema;
   /** 体验区块过渡声明；旧页面为空，不参与现有内容渲染。 */
   experienceBlocks: AppExperienceBlockSchema[];
+  /** 页面级动作实例（Step 5）；空数组对旧模型兼容 */
+  pageActions: AppPageActionSchema[];
 }
 
 export interface AppStatCardSchema {
@@ -511,10 +559,63 @@ export function deriveAppRuntimeSchema(
       feeds,
       charts,
       view,
-      experienceBlocks: (page.blocks ?? []).map((block, blockIndex) => ({
-        id: String(block.id ?? "").trim() || `block-${id}-${blockIndex + 1}`,
-        type: String(block.type ?? "").trim(),
-      })),
+      // 体验区块：优先用模型直接声明的 page.blocks；若无声明，从现有
+      // stats/charts/rankings/feeds 自动转换（零视觉变化路径，三阶段接入前
+      // AppRuntimeScreen 会过滤掉 _fromLegacy 块，仍走旧渲染路径）。
+      experienceBlocks: (() => {
+        const directBlocks: AppExperienceBlockSchema[] = (
+          page.blocks ?? []
+        ).map((block, blockIndex) => ({
+          id: String(block.id ?? "").trim() || `block-${id}-${blockIndex + 1}`,
+          type: String(block.type ?? "").trim(),
+          props: block.props as Record<string, unknown> | undefined,
+          binding: block.binding as AppExperienceBlockSchema["binding"],
+          eventBindings: block.eventBindings as Record<string, string> | undefined,
+        }));
+        if (directBlocks.length > 0) return directBlocks;
+        // 无 page.blocks 时从旧字段生成 legacy 占位区块（渲染层过滤）
+        return [
+          ...stats.map(s => ({
+            id: `legacy-stat-${s.id}`,
+            type: "MetricGrid" as const,
+            _fromLegacy: true as const,
+            _legacyStat: s,
+          })),
+          ...charts.map(c => ({
+            id: `legacy-chart-${c.id}`,
+            type: "TrendChart" as const,
+            _fromLegacy: true as const,
+            _legacyChart: c,
+          })),
+          ...rankings.map(r => ({
+            id: `legacy-ranking-${r.id}`,
+            type: "RankedList" as const,
+            _fromLegacy: true as const,
+            _legacyRanking: r,
+          })),
+          ...feeds.map(f => ({
+            id: `legacy-feed-${f.id}`,
+            type: "ActivityFeed" as const,
+            _fromLegacy: true as const,
+            _legacyFeed: f,
+          })),
+        ];
+      })(),
+      // 页面级动作实例（Step 5）。deriveAppRuntimeSchema 无角色上下文，
+      // permitted 默认 true；AppRuntimeScreen 的 handleBlockAction 用 pageAccess
+      // 做实际权限检查，二次守门。
+      pageActions: (page.actions ?? []).map(
+        (action): AppPageActionSchema => ({
+          id: action.id,
+          type: action.type,
+          permissionRef: action.permissionRef,
+          targetPageRef: action.targetPageRef,
+          entityRef: action.entityRef,
+          targetBlockRef: action.targetBlockRef,
+          payload: action.payload,
+          permitted: true,
+        })
+      ),
     };
   });
 
@@ -607,4 +708,62 @@ export function deriveAppRuntimeSchema(
     ],
     pages: pageSchemas,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Phase B：预览种子数据（确定性、只读、仅供展示，绝不写入正式存储）
+// ─────────────────────────────────────────────────────────────────
+
+export interface PreviewSeedRow {
+  __previewSeed: true;
+  id: string;
+  values: Record<string, unknown>;
+}
+
+/**
+ * 根据实体字段类型确定性生成 N 条预览行。
+ * 输入相同参数输出完全相同，不依赖随机数。
+ */
+export function generatePreviewSeedRows(
+  entity: { id: string; fields?: Array<{ id: string; type?: string; options?: string[] }> },
+  count = 6
+): PreviewSeedRow[] {
+  const fields = entity.fields ?? [];
+  return Array.from({ length: count }, (_, i): PreviewSeedRow => {
+    const values: Record<string, unknown> = {};
+    for (const field of fields) {
+      const type = field.type ?? "text";
+      const seed = (field.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0) + i * 7) % 97;
+      if (type === "number") {
+        values[field.id] = Math.round(seed * 15.3 + 12);
+      } else if (type === "date") {
+        const d = new Date(2026, 3, 1 + (i * 4) % 28);
+        values[field.id] = d.toISOString().slice(0, 10);
+      } else if (type === "enum" && field.options?.length) {
+        values[field.id] = field.options[i % field.options.length];
+      } else if (type === "boolean") {
+        values[field.id] = i % 3 !== 0;
+      } else {
+        values[field.id] = `示例 ${i + 1}`;
+      }
+    }
+    return { __previewSeed: true, id: `preview-${entity.id}-${i + 1}`, values };
+  });
+}
+
+/**
+ * 对预览行计算指标值（与 pageStatValue 同逻辑，用于确认非零）。
+ */
+export function computePreviewStat(
+  metric: string,
+  metricFieldId: string | null | undefined,
+  rows: PreviewSeedRow[]
+): number {
+  if (metric === "count") return rows.length;
+  const nums = rows
+    .map(r => Number(r.values[metricFieldId ?? ""]))
+    .filter(n => Number.isFinite(n) && n > 0);
+  if (metric === "sum") return nums.reduce((a, b) => a + b, 0) || rows.length * 42;
+  if (nums.length > 0) return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
+  return rows.length * 7;
 }

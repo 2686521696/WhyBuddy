@@ -5,8 +5,9 @@
 }
 
 .native-dashboard {
-  background: #f7f8fa;
-  color: rgba(0, 0, 0, 0.88);
+  /* 与应用中心内容区同冷灰，侧栏白浮起分层 */
+  background: #eef2f7;
+  color: rgba(15, 23, 42, 0.88);
   height: 100%;
   min-height: 100vh;
   display: flex;
@@ -17,7 +18,7 @@
 }
 
 .native-agent-shell {
-  background: #f7f8fa;
+  background: #eef2f7;
   flex-direction: row;
   height: 100%;
   min-height: 0;
@@ -25,36 +26,35 @@
 }
 
 .native-agent-sidebar {
-  /* 冷调壳体：侧栏白底与 #f7f8fa 主区分层（用户裁决：对齐 TRAE/Linear）。
-     252px：品牌字标与图标同高（25px 字号，2026-07-10 用户裁决）后
-     SlideRule.AI 实测画到 235px，220px 会溢出裁字。 */
-  background: #fff;
-  border-right: 1px solid #e5e7eb;
+  /* 与主内容区同色 #eef2f7，去掉白侧栏割裂感；右边线保留极轻分隔 */
+  background: #eef2f7;
+  border-right: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: none;
   display: flex;
   flex: 0 0 252px;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  padding: 16px 12px 14px;
+  padding: 14px 12px 12px;
   width: 252px;
 }
 
-/* 品牌区（可点击 → 推演视图）：矢量尺标（左）+ SlideRule.AI 单行字标（右）
-   —— 2026-07-10 用户参考图裁决 */
+/* 品牌区（可点击 → 推演视图）：矢量尺标（左）+ SlideRule.AI 单行字标（右） */
 .native-agent-brand {
   align-items: center;
-  border-radius: 5px;
+  border-radius: 12px;
   cursor: pointer;
   display: flex;
   gap: 9px;
-  margin: 2px 2px 14px;
-  padding: 4px;
+  margin: 0 0 12px;
+  padding: 8px 8px;
   text-decoration: none;
+  transition: background 0.15s ease;
 }
 
 .native-agent-brand:hover {
-  background: #eef1f5;
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .native-agent-brand-icon {
@@ -73,17 +73,17 @@
 
 /* 文字与图标同高（2026-07-10 用户裁决）：字号随图标撑满品牌行 */
 .native-agent-brand-name {
-  color: #14295e;
+  color: #0f172a;
   font-family: "DM Sans", system-ui, sans-serif;
   font-size: 25px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   white-space: nowrap;
 }
 
 /* .AI 亮蓝渐变点缀（与图标滑杆同一渐变） */
 .native-agent-brand-ai {
-  background: linear-gradient(90deg, #1677ff, #45c6ff);
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -92,7 +92,7 @@
 .native-agent-nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .native-agent-nav-item,
@@ -100,37 +100,39 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 4px;
-  color: #262626;
+  border-radius: 12px;
+  color: #475569;
   cursor: pointer;
   display: flex;
   font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
   gap: 10px;
   height: 40px;
-  padding: 0 10px;
+  padding: 0 12px;
   text-align: left;
   text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease;
   width: 100%;
 }
 
 .native-agent-nav-item:hover,
 .native-agent-help:hover {
-  background: #eef1f5;
-  color: #1677ff;
+  background: rgba(255, 255, 255, 0.65);
+  color: #0f172a;
 }
 
 .native-agent-nav-item-active {
-  /* 激活态只靠背景胶囊 + 文字色；左缘竖条去除（用户反馈：不需要） */
-  background: #e6f4ff;
-  color: #1677ff;
-  font-weight: 700;
+  /* 激活态：白底胶囊，在同色灰底上仍可辨 */
+  background: #ffffff;
+  color: #1d4ed8;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.native-agent-help {
-  border-top: 1px solid #e8eaee;
-  border-radius: 0;
-  margin-top: auto;
-  padding-top: 10px;
+.native-agent-nav-item-active:hover {
+  background: #ffffff;
+  color: #1d4ed8;
 }
 
 /* --- Claude 式会话区：新建会话 + 最近列表（占据侧栏弹性空间，内部滚动） --- */
@@ -138,43 +140,59 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  margin-top: 14px;
+  margin-top: 12px;
   min-height: 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .native-agent-session-new {
   align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: 5px;
-  color: #1677ff;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px dashed rgba(37, 99, 235, 0.35);
+  border-radius: 12px;
+  box-sizing: border-box;
+  color: #2563eb;
   cursor: pointer;
-  display: flex;
-  font: inherit;
-  font-size: 14px;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 13px;
   font-weight: 600;
-  gap: 10px;
+  gap: 6px;
   height: 38px;
+  justify-content: center;
+  line-height: 1;
   padding: 0 12px;
-  text-align: left;
+  text-align: center;
+  transition: background 0.12s ease, border-color 0.12s ease;
   width: 100%;
 }
 
 .native-agent-session-new:hover {
-  background: #e6f4ff;
+  background: #ffffff;
+  border-color: rgba(37, 99, 235, 0.55);
 }
 
 .native-agent-session-new-plus {
-  font-size: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  font-size: 15px;
+  font-weight: 600;
   line-height: 1;
 }
 
 .native-agent-sessions-label {
-  color: #9a938a;
-  font-size: 12px;
+  color: #94a3b8;
+  font-size: 11px;
   font-weight: 600;
-  margin: 12px 0 4px;
-  padding: 0 12px;
+  letter-spacing: 0.04em;
+  margin: 12px 0 6px;
+  padding: 0 10px;
+  text-transform: none;
 }
 
 .native-agent-sessions-list {
@@ -184,48 +202,57 @@
   gap: 2px;
   min-height: 0;
   overflow-y: auto;
+  padding-right: 2px;
 }
 
 .native-agent-sessions-hint {
-  color: #b1b7c0;
+  color: #94a3b8;
   font-size: 12px;
-  padding: 6px 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
 }
 
 .native-agent-session-row {
   align-items: center;
-  border-radius: 4px;
+  border-radius: 10px;
   display: flex;
   min-width: 0;
+  transition: background 0.12s ease;
 }
 
 .native-agent-session-row:hover {
-  background: #eef1f5;
+  background: rgba(255, 255, 255, 0.65);
 }
 
 .native-agent-session-row-active {
-  background: #e6f4ff;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.native-agent-session-row-active:hover {
+  background: #ffffff;
 }
 
 .native-agent-session-item {
   background: transparent;
   border: 0;
-  color: #4a453d;
+  color: #475569;
   cursor: pointer;
   display: block;
   flex: 1;
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
+  line-height: 1.35;
   min-width: 0;
   overflow: hidden;
-  padding: 7px 4px 7px 12px;
+  padding: 8px 4px 8px 10px;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .native-agent-session-row-active .native-agent-session-item {
-  color: #1677ff;
+  color: #1d4ed8;
   font-weight: 600;
 }
 
@@ -234,17 +261,17 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 3px;
-  color: #b1b7c0;
+  border-radius: 8px;
+  color: #94a3b8;
   cursor: pointer;
   display: none;
   flex-shrink: 0;
   font: inherit;
   font-size: 11px;
-  height: 24px;
+  height: 26px;
   justify-content: center;
   margin-right: 6px;
-  min-width: 24px;
+  min-width: 26px;
   padding: 0 4px;
 }
 
@@ -254,13 +281,13 @@
 }
 
 .native-agent-session-delete:hover {
-  background: #ece7dd;
-  color: #667085;
+  background: #e2e8f0;
+  color: #64748b;
 }
 
 .native-agent-session-delete-confirm,
 .native-agent-session-delete-confirm:hover {
-  background: #fde8e8;
+  background: #fee2e2;
   color: #dc2626;
   font-weight: 700;
 }
@@ -268,6 +295,8 @@
 .native-agent-help .anticon-right,
 .native-agent-help .agent-anticon-right {
   margin-left: auto;
+  color: #94a3b8;
+  font-size: 10px;
 }
 
 .native-agent-main {
@@ -285,14 +314,39 @@
   overflow: hidden;
 }
 
+/* 页面壳统一底色（顶栏 / 内容 / Layout 必须同 token，否则 antd 默认 #fff 会露馅） */
+.native-agent-shell,
+.native-dashboard {
+  --sr-shell-bg: #eef2f7;
+}
+
 .native-header {
   align-items: center;
-  background: #f7f8fa;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--sr-shell-bg, #eef2f7) !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
   display: flex;
   flex: 0 0 auto;
   height: 48px;
-  padding: 0 16px;
+  line-height: 48px;
+  padding: 0 24px;
+}
+
+/* antd Layout 默认底色会冲掉同色；prefixCls=agent-ant */
+.native-main.agent-ant-layout,
+.native-agent-main.agent-ant-layout,
+.native-main.agent-ant-layout .agent-ant-layout {
+  background: var(--sr-shell-bg, #eef2f7) !important;
+}
+
+.native-header.agent-ant-layout-header,
+.agent-ant-layout-header.native-header {
+  background: var(--sr-shell-bg, #eef2f7) !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+  line-height: 48px;
+  height: 48px;
+  padding-inline: 24px;
 }
 
 .native-agent-topbar {
@@ -308,17 +362,24 @@
   min-height: 0;
   overflow: auto;
   overflow-x: hidden;
+  background: var(--sr-shell-bg, #eef2f7) !important;
   /* padding: 12px; */
+}
+
+.native-content.agent-ant-layout-content,
+.agent-ant-layout-content.native-content {
+  background: var(--sr-shell-bg, #eef2f7) !important;
 }
 
 .native-agent-main > .native-settings-content,
 .native-agent-main > .native-workbench-content {
   padding: 0;
+  background: var(--sr-shell-bg, #eef2f7) !important;
 }
 
-/* Detail uses same scroll container; specificity overrides padding/bg only */
+/* Detail uses same scroll container; must beat shell bg !important above */
 .native-detail-dashboard .native-content {
-  background: linear-gradient(180deg, #fff 0%, #f7fbff 260px, #f6f9fd 100%);
+  background: linear-gradient(180deg, #fff 0%, #f7fbff 260px, #f6f9fd 100%) !important;
   padding: 16px 24px;
 }
 
@@ -2410,25 +2471,40 @@
 
 .native-agent-user {
   align-items: center;
-  border-top: 1px solid #e8eaee;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 14px;
   display: flex;
   gap: 10px;
-  margin-top: 10px;
-  padding: 12px 6px 2px;
+  margin-top: 8px;
+  padding: 10px 10px;
+  transition: background 0.12s ease;
+}
+
+.native-agent-user:hover {
+  background: #ffffff;
 }
 
 .native-agent-user-avatar {
   align-items: center;
-  background: #e9edf2;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
   border-radius: 50%;
-  color: #667085;
+  color: #fff;
   display: inline-flex;
   flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 700;
-  height: 34px;
+  font-size: 15px;
+  height: 32px;
   justify-content: center;
-  width: 34px;
+  line-height: 1;
+  width: 32px;
+}
+
+.native-agent-user-avatar .anticon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
 }
 
 .native-agent-user-meta {
@@ -2440,8 +2516,8 @@
 }
 
 .native-agent-user-name {
-  color: #262626;
-  font-size: 13px;
+  color: #0f172a;
+  font-size: 12.5px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2449,19 +2525,23 @@
 }
 
 .native-agent-user-plan {
-  color: #98a2b3;
+  color: #94a3b8;
   font-size: 11px;
 }
 
 .native-agent-user-caret {
-  color: #98a2b3;
+  color: #94a3b8;
   font-size: 10px;
 }
 
-/* 帮助文档行：分隔线以下内容严格垂直居中（10px 上间距进 padding，内容盒 44px 居中） */
+/* 帮助文档行：底部分隔后独立圆角行（勿再写 display:flex，否则会压过 ≤900px 的 display:none） */
 .native-agent-help {
-  border-radius: 0;
-  border-top: 1px solid #e8eaee;
-  height: 54px;
-  padding: 10px 12px 0;
+  align-items: center;
+  border-radius: 12px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  box-sizing: border-box;
+  height: 44px;
+  line-height: 1;
+  margin-top: 8px;
+  padding: 0 12px;
 }

@@ -31,6 +31,8 @@ interface PhoneTabBarProps {
 
 export default function PhoneTabBar({ items, activeId, onChange }: PhoneTabBarProps) {
   return (
+    // Wrapper div carries the stable testid — antd-mobile TabBar does not forward data-testid to DOM
+    <div data-testid="app-runtime-tabbar" style={{ background: "#fff" }}>
     <TabBar
       activeKey={activeId}
       onChange={(key) => {
@@ -39,7 +41,6 @@ export default function PhoneTabBar({ items, activeId, onChange }: PhoneTabBarPr
       }}
       safeArea={false}
       style={{ background: "#fff", borderTop: "1px solid #f0f0f0" }}
-      data-testid="app-runtime-tabbar"
     >
       {items.map((item, i) => {
         const Icon =
@@ -61,5 +62,6 @@ export default function PhoneTabBar({ items, activeId, onChange }: PhoneTabBarPr
         );
       })}
     </TabBar>
+    </div>
   );
 }

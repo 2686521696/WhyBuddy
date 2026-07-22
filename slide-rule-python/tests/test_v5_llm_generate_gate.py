@@ -74,6 +74,7 @@ def _valid_library_model():
                              {"pageRef": "p_review", "workflowRef": "review"}],
             "roleRefs": ["member", "librarian", "admin"],
             "dataModelRefs": ["loan", "book"],
+            "landingPageRef": "p_apply",
         },
     }
 
@@ -395,6 +396,40 @@ def test_wiring_novel_intent_closes_with_valid_fake_llm():
         llm_json_fn=lambda g: _valid_library_model(),
     )
     assert all(per_skill[k]["evidencePresent"] for k in REQUIRED_EVIDENCE_KEYS), per_skill
+
+
+def test_action_type_enum_violation():
+    """Step 5：非法 action type 被门禁拦截。"""
+    m = _valid_library_model()
+    pages = m.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["actions"] = [{"id": "a1", "type": "INVALID_TYPE"}]
+    result = validate_five_system_model(m)
+    findings = [f for f in result["findings"] if "type" in f.get("path", "") and "actions" in f.get("path", "")]
+    assert len(findings) >= 1
+
+
+def test_action_permissionRef_dangling():
+    """Step 5：permissionRef 不在 page.actionPermissions 里被拦截。"""
+    m = _valid_library_model()
+    pages = m.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["actionPermissions"] = ["loan:view"]
+        pages[0]["actions"] = [{"id": "a1", "type": "navigate", "permissionRef": "nonexistent:perm"}]
+    result = validate_five_system_model(m)
+    findings = [f for f in result["findings"] if "permissionRef" in f.get("path", "")]
+    assert len(findings) >= 1
+
+
+def test_action_navigate_targetPageRef_dangling():
+    """Step 5：navigate 的 targetPageRef 不存在于 page.pages 被拦截。"""
+    m = _valid_library_model()
+    pages = m.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["actions"] = [{"id": "a1", "type": "navigate", "targetPageRef": "ghost_page_xyz"}]
+    result = validate_five_system_model(m)
+    findings = [f for f in result["findings"] if "targetPageRef" in f.get("path", "")]
+    assert len(findings) >= 1
 
 
 def test_wiring_novel_intent_fail_closed_with_broken_fake_llm():
@@ -813,6 +848,165 @@ def test_default_llm_fn_appends_gate_feedback_to_prompt(monkeypatch):
     assert "FAILED the deterministic structural gate" in captured["user"]
 
 
+# ---------- strict Gate 测试 ----------
+
+
+def _make_model_with_landing(page_id: str = "p_apply") -> dict:
+    """构造一个带有有效 landingPageRef 的最小合法模型（用于 strict 模式正常通过）。
+
+    基于 _valid_library_model()：page.pages 里第一个页面 id 是 p_apply，
+    所以 landingPageRef 默认设为 p_apply。
+    """
+    m = _valid_library_model()
+    m["appbundle"]["landingPageRef"] = page_id
+    return m
+
+
+def _make_model_without_landing() -> dict:
+    """构造一个缺少 landingPageRef 的最小合法模型（用于验证 strict 拦截）。
+
+    _valid_library_model() 现在带 landingPageRef（代表正常生成产物），
+    这里显式移除以模拟旧快照或 Repair 清除后的状态。
+    """
+    m = _valid_library_model()
+    m["appbundle"].pop("landingPageRef", None)
+    return m
+
+
+def test_strict_gate_passes_with_landing_page_ref():
+    """strict=True 时有效 landingPageRef 应通过。"""
+    model = _make_model_with_landing()
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD"]
+    assert len(findings) == 0, f"should pass but got findings: {findings}"
+
+
+def test_strict_gate_fails_missing_landing_page_ref():
+    """strict=True 时缺少 landingPageRef 应产生 PUBLISH_MISSING_REQUIRED_FIELD。"""
+    model = _make_model_without_landing()
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD"]
+    assert len(findings) == 1
+    assert findings[0]["path"] == "appbundle.landingPageRef"
+
+
+# ---------- Step 4：binding 强类型校验 ----------
+
+
+def test_binding_entityRef_passes_gate_with_known_entity():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        entity_id = entities[0]["id"]
+        pages[0]["blocks"] = [{"id": "b1", "type": "MetricGrid", "binding": {"entityRef": entity_id, "aggregate": "count"}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    blocking = [f for f in result["findings"] if f.get("code") in ("PUBLISH_DANGLING_CROSSREF", "PUBLISH_INVALID_FIELD") and "binding" in f.get("path", "")]
+    assert len(blocking) == 0, f"unexpected binding findings: {blocking}"
+
+
+def test_binding_entityRef_fails_gate_with_unknown_entity():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "MetricGrid", "binding": {"entityRef": "nonexistent_entity_xyz"}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "entityRef" in f.get("path", "")]
+    assert len(findings) >= 1, f"expected entityRef finding but got: {result}"
+
+
+def test_binding_timeGrain_enum_violation():
+    model = _make_model_with_landing()
+    pages = model.get("page", ).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        pages[0]["blocks"] = [{"id": "b1", "type": "TrendChart", "binding": {"entityRef": entities[0]["id"], "timeGrain": "invalid"}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "timeGrain" in f.get("path", "")]
+    assert len(findings) >= 1
+
+
+def test_strict_gate_fails_none_landing_page_ref():
+    """strict=True 时 landingPageRef=None 应产生 PUBLISH_MISSING_REQUIRED_FIELD。"""
+    model = _make_model_with_landing()
+    model.setdefault("appbundle", {})["landingPageRef"] = None
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD"]
+    assert len(findings) == 1
+
+
+def test_strict_gate_fails_empty_landing_page_ref():
+    """strict=True 时 landingPageRef="" 或纯空白应产生 PUBLISH_MISSING_REQUIRED_FIELD。"""
+    for bad_val in ["", "   "]:
+        model = _make_model_with_landing()
+        model.setdefault("appbundle", {})["landingPageRef"] = bad_val
+        from services.v5_model_gate import validate_five_system_model
+        result = validate_five_system_model(model, require_landing_page_ref=True)
+        findings = [f for f in result["findings"] if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD"]
+        assert len(findings) == 1, f"bad_val={repr(bad_val)} should fail"
+
+
+def test_compat_gate_passes_missing_landing_page_ref():
+    """默认（strict=False）时缺少 landingPageRef 是合法旧模型，应通过。"""
+    model = _make_model_without_landing()
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model)   # 不传 require_landing_page_ref
+    findings = [f for f in result["findings"] if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD"]
+    assert len(findings) == 0, f"compat mode should pass but got: {findings}"
+
+
+def test_page_blocks_pass_gate_with_valid_catalog_type():
+    """page.blocks 里的合法目录类型应通过 Gate。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "MetricGrid"}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model)
+    block_findings = [f for f in result["findings"] if "block" in f.get("path", "").lower()]
+    assert len(block_findings) == 0, f"unexpected block findings: {block_findings}"
+
+
+def test_page_blocks_fail_gate_with_invalid_type():
+    """page.blocks 里的非目录类型应产生 finding。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "NonExistentBlockType"}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model)
+    assert len(result["findings"]) > 0, "expected Gate to reject unknown block type"
+    assert any("NonExistentBlockType" in f.get("ref", "") for f in result["findings"])
+
+
+def test_quick_action_panel_passes_gate():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "qap1", "type": "QuickActionPanel"}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model)
+    type_findings = [f for f in result["findings"] if "QuickActionPanel" in str(f) or ("blocks" in f.get("path","") and "type" in f.get("path",""))]
+    assert len(type_findings) == 0, f"QuickActionPanel should pass gate: {type_findings}"
+
+
+def test_filter_bar_passes_gate():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "fb1", "type": "FilterBar"}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model)
+    type_findings = [f for f in result["findings"] if "FilterBar" in str(f) or ("blocks" in f.get("path","") and "type" in f.get("path",""))]
+    assert len(type_findings) == 0, f"FilterBar should pass gate: {type_findings}"
+
+
 if __name__ == "__main__":
     # Allow running directly without pytest (fixture-taking tests are pytest-only).
     import inspect
@@ -834,3 +1028,87 @@ if __name__ == "__main__":
             print(f"ERROR {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{passed}/{len(fns)} passed")
     sys.exit(0 if passed == len(fns) else 1)
+
+
+# ---------- Steps 7-9 测试 ----------
+
+def test_layout_dangling_block_ref_fails():
+    """layout 引用不存在的 block id 应产生 DANGLING finding。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "MetricGrid"}]
+        pages[0]["layout"] = {"primary": ["nonexistent_block"]}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "layout" in f.get("path", "")]
+    assert len(findings) >= 1, f"expected layout dangling ref finding: {result}"
+
+def test_layout_valid_block_ref_passes():
+    """layout 引用已声明的 block id 应通过。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "MetricGrid"}]
+        pages[0]["layout"] = {"summary": ["b1"]}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    layout_findings = [f for f in result["findings"] if "layout" in f.get("path", "")]
+    assert len(layout_findings) == 0, f"valid layout should pass: {layout_findings}"
+
+def test_layout_invalid_slot_fails():
+    """layout 使用不在合法域的槽位应产生 finding。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "MetricGrid"}]
+        pages[0]["layout"] = {"invalid_slot_xyz": ["b1"]}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "layout" in f.get("path", "")]
+    assert len(findings) >= 1, f"invalid slot should fail: {result}"
+
+def test_experience_shell_mode_enum_violation():
+    """experienceShell.mode 非法值应产生 finding。"""
+    model = _make_model_with_landing()
+    model.setdefault("appbundle", {})["experienceShell"] = {"mode": "canvas"}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model)
+    findings = [f for f in result["findings"] if "experienceShell.mode" in f.get("path", "")]
+    assert len(findings) >= 1
+
+def test_experience_shell_valid_navigation_passes():
+    """experienceShell 合法声明应通过。"""
+    model = _make_model_with_landing()
+    model.setdefault("appbundle", {})["experienceShell"] = {"mode": "navigation", "navigation": "side"}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "experienceShell" in f.get("path", "")]
+    assert len(findings) == 0
+
+def test_preferred_device_enum_violation():
+    """preferredDevice 非法值应产生 finding。"""
+    model = _make_model_with_landing()
+    model.setdefault("appbundle", {})["preferredDevice"] = "wearable"
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model)
+    findings = [f for f in result["findings"] if "preferredDevice" in f.get("path", "")]
+    assert len(findings) >= 1
+
+def test_design_recipe_ref_valid_passes():
+    """合法的 designRecipeRef 应通过。"""
+    model = _make_model_with_landing()
+    model.setdefault("appbundle", {}).setdefault("appIdentity", {})["designRecipeRef"] = "compact-dark"
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "designRecipeRef" in f.get("path", "")]
+    assert len(findings) == 0
+
+def test_design_recipe_ref_invalid_fails():
+    """非法的 designRecipeRef 应产生 DANGLING finding。"""
+    model = _make_model_with_landing()
+    model.setdefault("appbundle", {}).setdefault("appIdentity", {})["designRecipeRef"] = "neon-rainbow-custom"
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model)
+    findings = [f for f in result["findings"] if "designRecipeRef" in f.get("path", "")]
+    assert len(findings) >= 1

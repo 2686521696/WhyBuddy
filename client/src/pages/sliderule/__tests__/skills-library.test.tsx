@@ -1,8 +1,9 @@
 /**
  * 技能库 marketplace 静态渲染回归。
  * 锁：合规标注（来源回链 + 版权说明 + 采集时间）必须在页面上；
- * 双 tab（技能市场/已安装）；渠道分档筛选齐全；表格出真实索引数据
+ * 三 tab（精选/社区/已安装）；渠道分档筛选齐全；表格出真实索引数据
  * （标题即原帖外链）；带语义档案的行出「安装」、纯图文行诚实禁用。
+ * 另锁：已安装 tab 不展示搜索框（避免无效搜索与条件泄漏）。
  */
 import { describe, it, expect } from "vitest";
 import React from "react";
@@ -17,6 +18,9 @@ describe("SkillsLibraryPage", () => {
   // 市场层断言用 initialTab 直开（静态渲染切不了 tab）；精选层用默认渲染
   const html = renderToStaticMarkup(<SkillsLibraryPage initialTab="market" />);
   const featuredHtml = renderToStaticMarkup(<SkillsLibraryPage />);
+  const installedHtml = renderToStaticMarkup(
+    <SkillsLibraryPage initialTab="installed" />
+  );
 
   it("精选层（默认 tab）：官方技能卡片网格 + 分类 chips + 统计卡真数据", () => {
     expect(featuredHtml).toContain('data-testid="skills-featured-grid"');
@@ -27,6 +31,7 @@ describe("SkillsLibraryPage", () => {
     // 统计卡：精选/社区/已安装为真数据
     expect(featuredHtml).toContain('data-testid="skills-stat-精选技能"');
     expect(featuredHtml).toContain('data-testid="skills-stat-社区技能"');
+    expect(featuredHtml).toContain('data-testid="skills-search"');
   });
 
   it("合规标注齐全：来源回链、版权说明、采集时间、总数", () => {
@@ -50,11 +55,16 @@ describe("SkillsLibraryPage", () => {
     expect(html).toContain(`href="${top.url}"`);
   });
 
-  it("marketplace 双 tab + 安装动作：有语义档案出安装钮，纯图文诚实禁用", () => {
+  it("marketplace 三 tab + 安装动作：有语义档案出安装钮，纯图文诚实禁用", () => {
     expect(html).toContain('data-testid="skills-tab"');
-    expect(html).toContain("精选技能");
-    expect(html).toContain("社区技能");
-    expect(html).toContain("已安装 0");
+    expect(html).toContain('data-testid="skills-tab-featured"');
+    expect(html).toContain('data-testid="skills-tab-market"');
+    expect(html).toContain('data-testid="skills-tab-installed"');
+    // tab 上的数量必须挂在 tab 按钮 testid 上，不能只靠统计卡里的「已安装」文本
+    expect(html).toMatch(
+      /data-testid="skills-tab-count-installed"[^>]*>\s*0\s*</
+    );
+    expect(html).toContain('data-testid="skills-stat-已安装"');
     expect(html).toContain('data-testid="skills-community-grid"');
     // 首页 20 行（按浏览量降序）里既有可安装项也有纯图文项
     const semTopicIds = new Set(
@@ -72,5 +82,12 @@ describe("SkillsLibraryPage", () => {
     if (notInstallable.length > 0) {
       expect(html).toContain(`data-testid="skill-install-disabled-${notInstallable[0].topicId}"`);
     }
+  });
+
+  it("已安装 tab：展示列表区，不展示搜索框（避免无效搜索与条件泄漏）", () => {
+    expect(installedHtml).toContain('data-testid="skills-installed-list"');
+    expect(installedHtml).not.toContain('data-testid="skills-search"');
+    expect(installedHtml).toContain('aria-pressed="true"');
+    expect(installedHtml).toContain('data-testid="skills-tab-installed"');
   });
 });

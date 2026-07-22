@@ -204,11 +204,17 @@ def _format_gate_findings(findings: List[Dict[str, Any]], limit: int = 10) -> st
 def _try_llm_generate_evidence(
     goal: str,
     llm_json_fn: Optional[Callable[[str], Any]],
+    *,
+    require_landing_page_ref: bool = True,
 ) -> Optional[Dict[str, Dict[str, Any]]]:
     """Generate + gate a five-system model for a novel intent.
 
     Returns {skill: artifact} for all 6 skills if the LLM model PASSES the
     structural gate; otherwise None (fail-closed). Never raises.
+
+    require_landing_page_ref=True (default): strict gate for LLM-generated/refined
+    models — landingPageRef must be present. Set to False for historic override
+    (old snapshots without the field must still restore).
     """
     global _llm_generate_diagnostic
     try:
@@ -242,7 +248,7 @@ def _try_llm_generate_evidence(
         }
         return None
     model = _repair(model)
-    gate = validate_five_system_model(model)
+    gate = validate_five_system_model(model, require_landing_page_ref=require_landing_page_ref)
     if not gate.get("passed"):
         # E37 门裁决回喂：确定性修复兜不住的裁决（骨架级悬空引用等），把门的
         # 具体 findings 喂回 LLM 有界重生成一次——错哪改哪，比盲重试/直接
@@ -257,7 +263,7 @@ def _try_llm_generate_evidence(
             retry_model = None
         if retry_model is not None:
             retry_model = _repair(retry_model)
-            retry_gate = validate_five_system_model(retry_model)
+            retry_gate = validate_five_system_model(retry_model, require_landing_page_ref=require_landing_page_ref)
             if retry_gate.get("passed"):
                 model, gate = retry_model, retry_gate
     if not gate.get("passed"):
@@ -294,6 +300,9 @@ def _build_per_skill_evidence(
         getattr(_gen_mod, "_refine_context", None)
         or getattr(_gen_mod, "_model_override", None)
     )
+    # override 是直供历史快照，旧模型无 landingPageRef 仍应恢复；
+    # refine 是首次生成/精修，严格要求 landingPageRef。
+    _is_override = bool(getattr(_gen_mod, "_model_override", None))
     matches: Dict[str, Dict[str, Any]] = {}
     for artifact in ([] if _refine_active else _artifact_dicts(state)):
         haystack = " ".join(
@@ -307,7 +316,12 @@ def _build_per_skill_evidence(
     recognized_domain = None if _refine_active else _recognize_domain(goal)
     if _refine_active and not blocked_signal:
         # 精修/回退：走 LLM 生成分支（override 时生成层不调 LLM 直接返回快照）
-        llm_result = _try_llm_generate_evidence(goal, llm_json_fn)
+        # override 路径传 False（历史快照无 landingPageRef 仍可恢复）；
+        # refine 路径传 True（精修是新产物，必须声明首屏）。
+        llm_result = _try_llm_generate_evidence(
+            goal, llm_json_fn,
+            require_landing_page_ref=not _is_override,
+        )
         if llm_result is not None:
             for skill in REQUIRED_EVIDENCE_KEYS:
                 matches[skill] = llm_result[skill]

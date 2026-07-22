@@ -1,18 +1,30 @@
 import React from "react";
 import { autopilotTheme } from "./autopilot-theme";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
-import { Layers, RotateCw } from "lucide-react";
+import { Layers, RotateCw, GitBranch, Brain, LayoutList } from "lucide-react";
+
+export type SlideRuleViewMode = "overview" | "collaboration" | "reasoning";
+
+const VIEW_MODE_LABELS: Record<SlideRuleViewMode, { label: string; icon: React.ReactNode; title: string }> = {
+  overview: { label: "总览", icon: <LayoutList className="h-3.5 w-3.5" />, title: "总览 — 推演轮次与节点" },
+  collaboration: { label: "协作", icon: <GitBranch className="h-3.5 w-3.5" />, title: "协作 — 多角色立场与质疑" },
+  reasoning: { label: "推理", icon: <Brain className="h-3.5 w-3.5" />, title: "推理 — 每步思考链" },
+};
 
 export function SlideRuleTopHud({
   isRunning,
   onResetSession,
   onOpenDeliverables,
   embedded = false,
+  viewMode,
+  onViewModeChange,
 }: {
   isRunning: boolean;
   onResetSession?: () => void;
   onOpenDeliverables?: () => void;
   embedded?: boolean;
+  viewMode?: SlideRuleViewMode;
+  onViewModeChange?: (mode: SlideRuleViewMode) => void;
 }) {
   return (
     <header
@@ -36,6 +48,38 @@ export function SlideRuleTopHud({
           className="flex shrink-0 items-center justify-end gap-2 py-1"
           data-testid="sliderule-header-actions"
         >
+          {/* P5.1 三态视图切换：总览 / 协作 / 推理 */}
+          {onViewModeChange && (
+            <div
+              className="flex items-center rounded-full border border-[#e5e7eb] bg-white shadow-[0_1px_6px_rgb(15_23_42/0.06)] overflow-hidden"
+              data-testid="sliderule-viewmode-toggle"
+              role="group"
+              aria-label="视图模式"
+            >
+              {(["overview", "collaboration", "reasoning"] as const).map((mode) => {
+                const meta = VIEW_MODE_LABELS[mode];
+                const active = viewMode === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => onViewModeChange(mode)}
+                    data-testid={`sliderule-viewmode-${mode}`}
+                    aria-pressed={active}
+                    title={meta.title}
+                    className={`flex h-8 items-center gap-1 px-3 text-[12px] font-medium transition ${
+                      active
+                        ? "bg-[#e8eeff] text-[#3b5bdb]"
+                        : "text-stone-500 hover:bg-[#f7f8fa] hover:text-stone-700"
+                    }`}
+                  >
+                    {meta.icon}
+                    <span className="hidden sm:inline">{meta.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {onOpenDeliverables && (
             <button
               type="button"

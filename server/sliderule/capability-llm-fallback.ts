@@ -7,6 +7,7 @@
 import type { V5CapabilityId } from "../../shared/blueprint/contracts.js";
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";
 import type { ReasoningEvent } from "../../shared/blueprint/sliderule-reasoning-events.js";
+import { makeEventSequence } from "../../shared/blueprint/sliderule-reasoning-events.js";
 import { buildStructuredReport } from "../../shared/blueprint/sliderule-report-builder.js";
 import { goalStatusUserLabel } from "../../shared/blueprint/sliderule-turn-route.js";
 import { isDialogueCapability, type DialogueCapabilityId } from "./dialogue-exec-map.js";
@@ -134,12 +135,6 @@ function dialogueFallback(
   };
 
   const block = bodies[cap];
-  // V5.3 P2.4: emit think events for fallback with "模板兜底" meta
-  const fbRunId = `fb-${Date.now()}`;
-  // (simple 1-2 think; full makeEventSequence imported in caller if needed; here return shape)
-  const fbEvents: any[] = [
-    { kind: "think", text: "使用模板兜底生成结果", meta: { source: "template_fallback", reason: reason || "llm_unavailable" } },
-  ];
   return {
     title: block.title,
     summary: `${block.summary} ${tag(reason)}`,
@@ -147,7 +142,6 @@ function dialogueFallback(
     provenance: "llm_fallback",
     degraded: true,
     degradedReason: reason || "llm_unavailable",
-    events: fbEvents,
   };
 }
 
@@ -194,21 +188,21 @@ function deliberationFallback(
 export function buildCapabilityLlmFallback(
   args: CapabilityFallbackArgs
 ): CapabilityFallbackResult | null {
-  const { capabilityId, state, roleId, reason } = args;
+  const { capabilityId, state, roleId, reason, turnId } = args;
+
+  let result: Omit<CapabilityFallbackResult, "events"> | null = null;
 
   if (isDialogueCapability(capabilityId)) {
-    return dialogueFallback(capabilityId, state, roleId, reason);
-  }
-  if (capabilityId === "risk.analyze") {
-    return riskFallback(state, roleId, reason);
-  }
-  if (capabilityId === "report.write") {
+    result = dialogueFallback(capabilityId, state, roleId, reason);
+  } else if (capabilityId === "risk.analyze") {
+    result = riskFallback(state, roleId, reason);
+  } else if (capabilityId === "report.write") {
     const built = buildStructuredReport({
       state,
       inputArtifactIds: args.inputArtifactIds || [],
       roleId,
     });
-    return {
+    result = {
       title: built.title,
       summary: `${built.summary} ${tag(reason)}`,
       content: built.content,
@@ -216,11 +210,23 @@ export function buildCapabilityLlmFallback(
       degraded: true,
       degradedReason: reason || "report_template",
     };
+  } else if (isDeliberationCapability(capabilityId)) {
+    result = deliberationFallback(capabilityId as V5CapabilityId, state, reason);
   }
-  if (isDeliberationCapability(capabilityId)) {
-    return deliberationFallback(capabilityId as V5CapabilityId, state, reason);
-  }
-  return null;
+
+  if (!result) return null;
+
+  // V5.3 P2.4: all fallback paths emit proper ReasoningEvent sequence via makeEventSequence.
+  // turnId comes from args; capabilityRunId follows `${turnId}-run-${capabilityId}` convention.
+  const fbRunId = `${turnId}-run-${capabilityId}`;
+  const fbBase = { turnId, capabilityRunId: fbRunId, capabilityId };
+  const fbEvents = makeEventSequence(fbBase, [
+    { kind: "capability_start" as const, text: `开始 ${capabilityId} (fallback)` },
+    { kind: "think" as const, text: "使用模板兜底生成结果", meta: { source: "template_fallback", reason: reason || "llm_unavailable" } },
+    { kind: "capability_complete" as const, text: "完成执行 (fallback)" },
+  ]);
+
+  return { ...result, events: fbEvents };
 }
 
 export function isLlmContentHijackError(message: string): boolean {

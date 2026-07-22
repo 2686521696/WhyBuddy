@@ -24,11 +24,18 @@ export interface ExperienceBlockInstance {
   type: string;
   props?: Record<string, unknown>;
   binding?: Record<string, unknown>;
+  _fromLegacy?: boolean;
+  _legacyStat?: unknown;
+  _legacyChart?: unknown;
+  _legacyRanking?: unknown;
+  _legacyFeed?: unknown;
 }
 
 export interface ExperienceBlockRendererProps {
   block: ExperienceBlockInstance;
   children?: React.ReactNode;
+  /** Step 5：区块事件触发动作时的回调（actionId, eventData）。 */
+  onAction?: (actionId: string, eventData?: Record<string, unknown>) => void;
 }
 
 export type ExperienceBlockRenderer =
@@ -69,6 +76,9 @@ export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   "ranked-list": ExistingContentAdapter,
   "activity-feed": ExistingContentAdapter,
   "data-table": ExistingContentAdapter,
+  // Step 6: QuickActionPanel (action-only, no data binding) and FilterBar (global filter)
+  "quick-action-panel": ExistingContentAdapter,
+  "filter-bar": ExistingContentAdapter,
 });
 
 export function experienceBlockEntry(
@@ -81,6 +91,7 @@ export function experienceBlockEntry(
 export function ExperienceBlockBoundary({
   block,
   children,
+  onAction,
 }: ExperienceBlockRendererProps) {
   const entry = experienceBlockEntry(block.type);
   const Renderer = entry
@@ -97,5 +108,5 @@ export function ExperienceBlockBoundary({
       </div>
     );
   }
-  return <Renderer block={block}>{children}</Renderer>;
+  return <Renderer block={block} onAction={onAction}>{children}</Renderer>;
 }

@@ -14,6 +14,7 @@ import {
   RobotOutlined,
   SettingOutlined,
   SnippetsOutlined,
+  TeamOutlined,
   UploadOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -1277,7 +1278,9 @@ function AgentLoopSidebar({
         className="native-agent-user"
         title="工作区（占位，账号体系接入后可切换）"
       >
-        <span className="native-agent-user-avatar">SR</span>
+        <span className="native-agent-user-avatar" aria-hidden>
+          <TeamOutlined />
+        </span>
         <span className="native-agent-user-meta">
           <span className="native-agent-user-name">SlideRule 团队</span>
           <span className="native-agent-user-plan">企业版</span>
@@ -1324,7 +1327,14 @@ function AgentLoopTopbar({
   const pythonLabel = pythonHealth?.service?.label || "Python health";
 
   return (
-    <Header className="native-header native-agent-topbar">
+    <Header
+      className="native-header native-agent-topbar"
+      style={{
+        background: "#eef2f7",
+        borderBottom: "none",
+        boxShadow: "none",
+      }}
+    >
       <div className="native-topbar-left">
         <span className="native-topbar-brand">{title}</span>
       </div>
@@ -1766,16 +1776,8 @@ export function DashboardApp({
           getViewPath={getViewPath}
         />
         <Layout className="native-main native-agent-main">
-          {/* 推演视图不渲染顶部栏（用户反馈：纯冗余，SlideRule HUD 已含话题/操作） */}
-          {view !== "sliderule" && (
-            <AgentLoopTopbar
-              view={view}
-              showActions={
-                view === "workbench-legacy" || view === "settings-legacy"
-              }
-              pythonHealth={pythonHealth}
-            />
-          )}
+          {/* 顶栏/面包屑整段移除（用户裁决）：应用中心等页自带标题，推演页有 HUD；
+              legacy 任务队列若仍需「运行队列」等操作，走页面内按钮而非全局 header。 */}
           <Content className={contentClassName}>
             {view === "workbench" ? (
               <AppsWorkbench />

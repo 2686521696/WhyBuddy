@@ -67,6 +67,23 @@ def test_model_override_supplies_generate_without_llm():
     assert out == MODEL  # 直供：不调 LLM 原样返回（回退路径）
 
 
+def test_version_override_compat_gate_passes_missing_landing():
+    """model_override 路径不使用 strict，旧快照无 landingPageRef 仍可恢复。"""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from services.v5_capability_executor import _try_llm_generate_evidence
+
+    # 模型无 landingPageRef（旧快照）
+    old_model = {**MODEL}  # MODEL 已无 landingPageRef
+    gen.set_model_override(old_model)
+    # override 模式：_try_llm_generate_evidence 以 require_landing_page_ref=False 调用
+    artifacts = _try_llm_generate_evidence("任意意图", None, require_landing_page_ref=False)
+    assert artifacts is not None, "override 路径（无 landingPageRef）应通过 compat gate，得到 6 段证据"
+    assert set(artifacts.keys()) == {"datamodel", "rbac", "workflow", "page", "aigc", "appbundle"}
+    gen.set_model_override(None)
+
+
 def test_refine_context_lands_in_prompt():
     gen.set_refine_context(MODEL, "把角色系统加一个家长端")
     content = gen._build_user_content("做一个课后托管系统")

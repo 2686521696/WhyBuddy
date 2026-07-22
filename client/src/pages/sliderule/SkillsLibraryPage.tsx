@@ -166,11 +166,11 @@ function SkillCard({
 }) {
   return (
     <div
-      className="flex gap-3 rounded-lg border border-stone-200 bg-white p-3.5"
+      className="flex gap-3 rounded-lg border border-slate-200/80 bg-white p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-slate-300/90 hover:shadow-[0_4px_14px_rgba(15,23,42,0.06)]"
       data-testid={testid}
     >
       <div
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold ${avatarToneOf(name)}`}
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold ${avatarToneOf(name)}`}
       >
         {name
           .replace(/[^\p{L}\p{N}]/gu, "")
@@ -184,23 +184,23 @@ function SkillCard({
               href={titleHref}
               target="_blank"
               rel="noreferrer"
-              className="truncate text-sm font-semibold text-[#14295E]! hover:text-[#1677ff]!"
+              className="truncate text-sm font-semibold text-slate-900! hover:text-[#3b5bdb]!"
               title="打开原帖（技能获取以原帖为准）"
             >
               {name}
             </a>
           ) : (
-            <span className="truncate text-sm font-semibold text-[#14295E]">
+            <span className="truncate text-sm font-semibold text-slate-900">
               {name}
             </span>
           )}
           {tags}
         </div>
-        <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-stone-500">
+        <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-slate-500">
           {description || "（无摘要）"}
         </div>
         {/* 底行：作者/统计信息 + 右下角动作（用户反馈：按钮与信息同一行，右下角） */}
-        <div className="mt-1 flex items-center gap-2 text-[10px] text-stone-400">
+        <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
           <span>by {author}</span>
           {meta}
           <span className="ml-auto shrink-0">{action}</span>
@@ -276,7 +276,7 @@ function InstalledSkillCard({
 
   return (
     <div
-      className="flex flex-col rounded-lg border border-stone-200 bg-white p-3.5"
+      className="flex flex-col rounded-lg border border-slate-200/80 bg-white p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
       data-testid={`installed-skill-${skill.repo}`}
     >
       <div className="flex gap-3">
@@ -689,213 +689,256 @@ export function SkillsLibraryPage({
       label: "精选技能",
       value: FEATURED.length,
       sub: "官方/大厂出品",
-      tone: "bg-blue-50 text-blue-600",
+      tone: "bg-[#e8eeff] text-[#3b5bdb]",
     },
     {
       icon: <TeamOutlined />,
       label: "社区技能",
       value: INDEX.count,
       sub: "SOLO 创作赛索引",
-      tone: "bg-emerald-50 text-emerald-600",
+      tone: "bg-emerald-50 text-emerald-700",
     },
     {
       icon: <FileMarkdownOutlined />,
       label: "可执行 SKILL.md",
       value: packages.length > 0 ? packages.length : "—",
       sub: packages.length > 0 ? "装完即按原指令执行" : "需 Python 服务在线",
-      tone: "bg-purple-50 text-purple-600",
+      tone: "bg-violet-50 text-violet-700",
     },
     {
       icon: <SafetyCertificateOutlined />,
       label: "已安装",
       value: installed.length,
       sub: "本地环境可用技能",
-      tone: "bg-orange-50 text-orange-600",
+      tone: "bg-amber-50 text-amber-700",
     },
   ];
 
+  const chipClass = (active: boolean) =>
+    `inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition ${
+      active
+        ? "bg-[#e8eeff] text-[#3b5bdb]"
+        : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
+    }`;
+
   return (
     <div
-      className="h-full space-y-3.5 overflow-auto px-6 pb-6"
+      // 壳：顶栏固定 + 列表单独滚动（彻底告别 sticky/padding 露缝）
+      className="flex h-full flex-col overflow-hidden bg-[#eef2f7]"
       data-testid="skills-library"
     >
-      {/* 头部：标题 + 真实投稿指南直链（滚动容器已去顶部 padding，这里补 pt-6） */}
-      <div className="flex items-start justify-between gap-3 pt-6">
-        <div>
-          <div className="flex items-baseline gap-3">
-            <h1 className="text-lg font-semibold text-stone-800">技能库</h1>
-            <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-500">
+      <div className="shrink-0 space-y-3 px-6 pt-5 md:px-8">
+        {/*
+          顶栏扁平：标题 | 搜索 | 指南。
+          DOM 顺序与视觉/焦点顺序一致（禁止 order-* 重排可聚焦控件）。
+          「已安装」不展示搜索——该列表不参与 query 过滤，避免条件泄漏到其他 tab。
+        */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex min-w-0 shrink-0 items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[#5b6cff]">
+              <BookOutlined className="text-[18px]" />
+            </span>
+            <h1 className="text-[18px] font-bold tracking-tight text-slate-900 md:text-[20px]">
+              技能库
+            </h1>
+            <span className="rounded-md bg-white/70 px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/60">
               {FEATURED.length + INDEX.count} 项
             </span>
           </div>
-          <div className="mt-0.5 text-xs text-stone-400">
-            来自官方技能市场与 TRAE 社区「SOLO 技能创作赛」的优质
-            Skill，覆盖产品、研发、设计、运营等多个领域。
-          </div>
-        </div>
-        <Button icon={<BookOutlined />} href={guideUrl} target="_blank">
-          技能提交指南
-        </Button>
-      </div>
 
-      {/* 统计卡（全部真数据，不造假指标） */}
-      <div className="flex flex-wrap gap-2.5">
-        {STATS.map(s => (
-          <div
-            key={s.label}
-            className="min-w-[160px] flex-1 rounded-lg border border-stone-200 bg-white px-3.5 py-2.5"
-            data-testid={`skills-stat-${s.label}`}
-          >
-            <div
-              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${s.tone}`}
-            >
-              {s.icon}
-              {s.label}
-            </div>
-            <div className="mt-1 text-xl font-semibold text-stone-800">
-              {s.value}
-            </div>
-            <div className="text-[10px] text-stone-400">{s.sub}</div>
-          </div>
-        ))}
-        <div className="min-w-[240px] flex-[1.4] rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5">
-          <div className="text-[11px] font-semibold text-amber-700">
-            ✦ 合规说明
-          </div>
-          <div className="mt-1 text-[10px] leading-4 text-amber-700/90">
-            {INDEX.license_note} 采集于 {INDEX.fetchedAt.slice(0, 10)}，
-            <a
-              href={INDEX.source}
-              target="_blank"
-              rel="noreferrer"
-              className="underline"
-            >
-              来源论坛
-            </a>
-            。
-          </div>
-        </div>
-      </div>
-
-      {/* 三层 tab（下划线风格）：滚动吸顶（用户反馈：随滚常驻，方便切换）。
-          结构性防漏缝：滚动容器不留顶部 padding（sticky top 相对 padding 边，
-          有 padding 就有歧义缝）+ !mt-0 清 space-y 的透明 margin，top-0 天然贴死；
-          -mx-6/px-6 底色铺满整宽。tab 高度保持紧凑（用户反馈：别加高） */}
-      <div
-        className="sticky top-0 z-20 -mx-6 !mt-0 flex items-center gap-5 border-b border-stone-200 bg-[#f7f8fa] px-6 pb-0 pt-3"
-        data-testid="skills-tab"
-      >
-        {(
-          [
-            { key: "featured", label: `精选技能 ${FEATURED.length}` },
-            { key: "market", label: `社区技能 ${INDEX.count}` },
-            { key: "installed", label: `已安装 ${installed.length}` },
-          ] as const
-        ).map(t => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-0.5 pb-2 text-[13px] transition-colors ${
-              tab === t.key
-                ? "border-blue-600 font-semibold text-blue-600"
-                : "border-transparent text-stone-500 hover:text-stone-700"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* 筛选行（精选/社区共用搜索；分档各自出） */}
-      {tab !== "installed" && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Input.Search
-            allowClear
-            placeholder="搜索技能名称 / 关键词 / 作者"
-            style={{ maxWidth: 340 }}
-            onSearch={setQuery}
-            onChange={e => {
-              if (!e.target.value) setQuery("");
-            }}
-            data-testid="skills-search"
-          />
-          {tab === "featured" ? (
-            <div
-              className="flex flex-wrap items-center gap-1.5"
-              data-testid="skills-featured-cats"
-            >
-              {FEATURED_CATEGORIES.map(cat => {
-                const count =
-                  cat === "全部"
-                    ? FEATURED.length
-                    : FEATURED.filter(f => f.category === cat).length;
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setFeaturedCat(cat)}
-                    className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
-                      featuredCat === cat
-                        ? "bg-stone-800 text-white"
-                        : "bg-white text-stone-500 ring-1 ring-stone-200 hover:text-stone-700"
-                    }`}
-                  >
-                    {cat} {count}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <>
-              <div
-                className="flex flex-wrap items-center gap-1.5"
-                data-testid="skills-kind-filter"
-              >
-                {KIND_FILTERS.map(f => {
-                  const count =
-                    f.value === "all"
-                      ? INDEX.count
-                      : INDEX.items.filter(it => it.sourceKind === f.value)
-                          .length;
-                  return (
-                    <button
-                      key={f.value}
-                      type="button"
-                      onClick={() => {
-                        setKind(f.value);
-                        setPage(1);
-                      }}
-                      className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
-                        kind === f.value
-                          ? "bg-stone-800 text-white"
-                          : "bg-white text-stone-500 ring-1 ring-stone-200 hover:text-stone-700"
-                      }`}
-                    >
-                      {f.label} {count}
-                    </button>
-                  );
-                })}
-              </div>
-              <Select
-                size="small"
-                value={sort}
-                style={{ width: 116 }}
-                onChange={v => {
-                  setSort(v);
-                  setPage(1);
+          {tab !== "installed" && (
+            <div className="w-full min-w-[200px] flex-1 sm:mx-2 sm:max-w-md md:max-w-lg">
+              <Input.Search
+                allowClear
+                placeholder="搜索技能名称 / 关键词 / 作者"
+                onSearch={setQuery}
+                onChange={e => {
+                  if (!e.target.value) setQuery("");
                 }}
-                options={[
-                  { value: "views", label: "按浏览量" },
-                  { value: "likes", label: "按点赞" },
-                  { value: "latest", label: "按最新发布" },
-                ]}
+                data-testid="skills-search"
+                className="skills-library-search w-full"
               />
-            </>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 sm:ml-auto">
+            <Button
+              icon={<BookOutlined />}
+              href={guideUrl}
+              target="_blank"
+              className="!rounded-lg !border-slate-200/80 !bg-white/70 !text-slate-600 hover:!border-slate-300 hover:!text-slate-800"
+            >
+              技能提交指南
+            </Button>
+          </div>
+        </div>
+
+        {/* 统计条：轻量卡，真数据 */}
+        <div className="flex flex-wrap gap-2.5">
+          {STATS.map(s => (
+            <div
+              key={s.label}
+              className="min-w-[140px] flex-1 rounded-lg border border-slate-200/70 bg-white/80 px-3.5 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
+              data-testid={`skills-stat-${s.label}`}
+            >
+              <div
+                className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${s.tone}`}
+              >
+                {s.icon}
+                {s.label}
+              </div>
+              <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
+                {s.value}
+              </div>
+              <div className="text-[10px] text-slate-400">{s.sub}</div>
+            </div>
+          ))}
+          <div className="min-w-[220px] flex-[1.3] rounded-lg border border-amber-200/80 bg-amber-50/90 px-3.5 py-2.5">
+            <div className="text-[11px] font-semibold text-amber-800">
+              合规说明
+            </div>
+            <div className="mt-1 text-[10px] leading-4 text-amber-800/85">
+              {INDEX.license_note} 采集于 {INDEX.fetchedAt.slice(0, 10)}，
+              <a
+                href={INDEX.source}
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                来源论坛
+              </a>
+              。
+            </div>
+          </div>
+        </div>
+
+        {/* Tab + 筛选：固定在壳顶，不参与列表滚动 */}
+        <div
+          className="flex flex-col gap-2.5 border-b border-slate-200/80 pb-3"
+          data-testid="skills-tab"
+        >
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                { key: "featured", label: "精选技能", count: FEATURED.length },
+                { key: "market", label: "社区技能", count: INDEX.count },
+                { key: "installed", label: "已安装", count: installed.length },
+              ] as const
+            ).map(t => (
+              <button
+                key={t.key}
+                type="button"
+                data-testid={`skills-tab-${t.key}`}
+                aria-pressed={tab === t.key}
+                onClick={() => setTab(t.key)}
+                className={chipClass(tab === t.key)}
+              >
+                {t.label}
+                <span
+                  data-testid={`skills-tab-count-${t.key}`}
+                  className={`tabular-nums text-[11px] ${
+                    tab === t.key ? "text-[#3b5bdb]/80" : "text-slate-400"
+                  }`}
+                >
+                  {t.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {tab !== "installed" && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {tab === "featured" ? (
+                <div
+                  className="flex flex-wrap items-center gap-1.5"
+                  data-testid="skills-featured-cats"
+                >
+                  {FEATURED_CATEGORIES.map(cat => {
+                    const count =
+                      cat === "全部"
+                        ? FEATURED.length
+                        : FEATURED.filter(f => f.category === cat).length;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setFeaturedCat(cat)}
+                        className={chipClass(featuredCat === cat)}
+                      >
+                        {cat}
+                        <span
+                          className={`tabular-nums text-[11px] ${
+                            featuredCat === cat
+                              ? "text-[#3b5bdb]/80"
+                              : "text-slate-400"
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <>
+                  <div
+                    className="flex flex-wrap items-center gap-1.5"
+                    data-testid="skills-kind-filter"
+                  >
+                    {KIND_FILTERS.map(f => {
+                      const count =
+                        f.value === "all"
+                          ? INDEX.count
+                          : INDEX.items.filter(it => it.sourceKind === f.value)
+                              .length;
+                      return (
+                        <button
+                          key={f.value}
+                          type="button"
+                          onClick={() => {
+                            setKind(f.value);
+                            setPage(1);
+                          }}
+                          className={chipClass(kind === f.value)}
+                        >
+                          {f.label}
+                          <span
+                            className={`tabular-nums text-[11px] ${
+                              kind === f.value
+                                ? "text-[#3b5bdb]/80"
+                                : "text-slate-400"
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <Select
+                    size="small"
+                    value={sort}
+                    style={{ width: 120 }}
+                    className="ml-1"
+                    onChange={v => {
+                      setSort(v);
+                      setPage(1);
+                    }}
+                    options={[
+                      { value: "views", label: "按浏览量" },
+                      { value: "likes", label: "按点赞" },
+                      { value: "latest", label: "按最新发布" },
+                    ]}
+                  />
+                </>
+              )}
+            </div>
           )}
         </div>
-      )}
+      </div>
 
+      {/* 仅列表区滚动 */}
+      <div className="min-h-0 flex-1 space-y-4 overflow-auto px-6 pb-6 pt-3 md:px-8">
       {/* 精选层：三列卡片 */}
       {tab === "featured" && (
         <div
@@ -1052,6 +1095,7 @@ export function SkillsLibraryPage({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

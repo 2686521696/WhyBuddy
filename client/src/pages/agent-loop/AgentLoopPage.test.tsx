@@ -209,7 +209,7 @@ describe("AgentLoopPage", () => {
     expect(html).not.toContain("native-settings-shell");
   });
 
-  it("hides duplicate chrome from the embedded SlideRule view only", () => {
+  it("does not render global topbar chrome (header/breadcrumb removed)", () => {
     const slideruleHtml = renderToStaticMarkup(
       <DashboardApp
         payload={{ tasks: [], counts: {} }}
@@ -221,13 +221,23 @@ describe("AgentLoopPage", () => {
     const workbenchHtml = renderToStaticMarkup(
       <DashboardApp
         payload={{ tasks: [], counts: {} }}
+        view="workbench"
+        onViewChange={vi.fn()}
+      />,
+    );
+    const legacyHtml = renderToStaticMarkup(
+      <DashboardApp
+        payload={{ tasks: [], counts: {} }}
         view="workbench-legacy"
         onViewChange={vi.fn()}
       />,
     );
 
-    expect(slideruleHtml).not.toContain("native-agent-topbar-actions");
-    expect(workbenchHtml).toContain("native-agent-topbar-actions");
+    for (const html of [slideruleHtml, workbenchHtml, legacyHtml]) {
+      expect(html).not.toContain("native-agent-topbar");
+      expect(html).not.toContain("native-agent-topbar-actions");
+      expect(html).not.toContain("native-topbar-brand");
+    }
   });
 
   it("renders task detail entries as first-class run route links", () => {
@@ -1735,7 +1745,8 @@ it("agentloop diagnostics panel renders python health states for ready offline d
   expect(html).toContain("missing-config");
 });
 
-it("agentloop dashboard topbar renders normalized python health status", () => {
+it("agentloop python health adapter normalizes ready status (topbar removed)", () => {
+  // 全局 header/面包屑已移除；健康态仅保留适配器契约（应用中心壳内另有服务 chip）
   const pythonHealth = api.normalizePythonHealthViewModel({
     status: "ready",
     checkedAt: "2026-06-30T10:00:00.000Z",
@@ -1745,15 +1756,8 @@ it("agentloop dashboard topbar renders normalized python health status", () => {
     },
   });
 
-  const html = renderToStaticMarkup(
-    <DashboardApp
-      payload={{ tasks: [], counts: {} }}
-      view="workbench-legacy"
-    />,
-  );
-
   expect(pythonHealth.service.label).toBe("Python ready");
-  expect(html).toContain("Python health");
+  expect(pythonHealth.service.status).toBe("ready");
 });
 
 it("agentloop python health adapter preserves degraded and missing config states", () => {

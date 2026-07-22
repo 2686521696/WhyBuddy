@@ -64,6 +64,40 @@ def _unique_near_match(ref: str, known: set) -> str | None:
 from .v5_model_gate import CHART_TYPES as _CHART_TYPES
 
 
+def _repair_block_binding(block: dict, model: dict) -> dict:
+    """修复 block.binding.entityRef 的近邻拼写错误。
+
+    若 entityRef 在已知实体 id 集中找到唯一近邻则自动改写；歧义或无近邻则
+    原样保留（留给 gate 硬拦）。纯函数——返回新 dict，不修改入参。
+    """
+    binding = block.get("binding")
+    if not isinstance(binding, dict):
+        return block
+    entity_ref = binding.get("entityRef")
+    if not entity_ref:
+        return block
+    known_ids = [
+        e.get("id", "")
+        for e in _as_list(model.get("datamodel", {}).get("entities"))
+        if e.get("id")
+    ]
+    if entity_ref in known_ids:
+        return block
+    # 近邻匹配：词干包含 或 长度差 ≤ 2
+    close = [
+        eid for eid in known_ids
+        if eid and (
+            entity_ref in eid or eid in entity_ref or
+            abs(len(entity_ref) - len(eid)) <= 2
+        )
+    ]
+    if len(close) == 1:
+        block = dict(block)
+        block["binding"] = dict(binding)
+        block["binding"]["entityRef"] = close[0]
+    return block
+
+
 def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
     """page.charts / page.stats 的确定性修复（E37，与门禁同一套合法域）。
 
@@ -127,6 +161,7 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
             bid = str(bd.get("id") or "<unnamed>")
             block_type = str(bd.get("type") or "").strip()
             if block_type in EXPERIENCE_BLOCK_TYPES:
+                bd = _repair_block_binding(bd, m)
                 kept_blocks.append(bd)
                 continue
             fixed_type = _unique_near_match(block_type, set(EXPERIENCE_BLOCK_TYPES))
@@ -138,6 +173,7 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
                     "from": block_type,
                     "to": fixed_type,
                 })
+                bd = _repair_block_binding(bd, m)
                 kept_blocks.append(bd)
             else:
                 notes["droppedBlocks"].append({
