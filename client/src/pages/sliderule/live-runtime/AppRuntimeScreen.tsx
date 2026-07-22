@@ -67,6 +67,7 @@ import {
   ToolOutlined,
 } from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
+import { resolveEntityRef } from "../system-screens/five-system-model";
 import { resolveIdentityTheme } from "./identity-themes";
 import {
   buildAiActionInputs,
@@ -119,7 +120,12 @@ import {
   resolveVisiblePageId,
   type PageAccess,
 } from "./rbac-preview";
-import { ExperienceBlockBoundary } from "./block-registry";
+import {
+  ExperienceBlockBoundary,
+  type PageFilterState,
+  type FilterFieldOption,
+  type QuickActionButtonSpec,
+} from "./block-registry";
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
@@ -333,6 +339,41 @@ function pageStatValue(
   return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
+/**
+ * Step 6 FilterBar：本页主实体行数据过滤（枚举精确匹配 AND 日期范围）。
+ * 只作用于与 page.entityId 直接绑定的视图（Table/看板/日历）——stats/
+ * rankings/feeds 各自可能引用不同实体（state.entities[其他 entityId]），
+ * 语义上不归这份"本页主实体"过滤态管，不在这里处理。
+ */
+function applyPageFilter(
+  rows: RuntimeRow[],
+  filterState: PageFilterState | undefined,
+  dateFieldId: string | null | undefined
+): RuntimeRow[] {
+  if (!filterState) return rows;
+  let out = rows;
+  const activeEnumEntries = Object.entries(filterState.enumFilters ?? {}).filter(
+    ([, v]) => Boolean(v)
+  );
+  for (const [fieldId, value] of activeEnumEntries) {
+    out = out.filter(r => String(r.values[fieldId] ?? "") === value);
+  }
+  if (filterState.dateRange && dateFieldId) {
+    const [from, to] = filterState.dateRange;
+    const fromMs = new Date(from).getTime();
+    const toMs = new Date(to).getTime();
+    if (Number.isFinite(fromMs) && Number.isFinite(toMs)) {
+      out = out.filter(r => {
+        const raw = r.values[dateFieldId];
+        if (!raw) return false;
+        const t = new Date(String(raw)).getTime();
+        return Number.isFinite(t) && t >= fromMs && t <= toMs;
+      });
+    }
+  }
+  return out;
+}
+
 /** 工作台统计卡取值：对着运行时状态求值 schema 声明的 source。 */
 function statValue(
   state: RuntimeState,
@@ -397,6 +438,10 @@ export function AppRuntimeScreen({
   const [role, setRole] = React.useState<string | undefined>(
     () => loadRuntimeRole(sessionId) ?? schema?.roles[0]
   );
+  // Step 6 FilterBar：按 pageId 存一份本地过滤态（视图态，不进 STATE/门禁）。
+  const [pageFilters, setPageFilters] = React.useState<
+    Record<string, PageFilterState>
+  >({});
   const [formOpen, setFormOpen] = React.useState(false);
   const [formValues, setFormValues] = React.useState<Record<string, unknown>>(
     {}
@@ -500,7 +545,79 @@ export function AppRuntimeScreen({
       schema.pages[0] ??
       null);
   const currentTitle = isHome ? schema.home.title : (page?.title ?? "");
-  const rows = page?.entityId ? (state.entities[page.entityId] ?? []) : [];
+  const allRows = page?.entityId ? (state.entities[page.entityId] ?? []) : [];
+
+  // Step 6 FilterBar：本页可筛的枚举字段（有声明选项的 enum 字段）+
+  // 可选日期范围字段（主实体第一个 date/datetime 字段）。
+  const filterableEnumFields: FilterFieldOption[] = page
+    ? page.detailFields
+        .filter(f => f.type === "enum" && (f.options?.length ?? 0) > 0)
+        .map(f => ({
+          id: f.id,
+          label: f.label,
+          options: (f.options ?? []).map(o => ({
+            value: o.id,
+            label: o.label,
+          })),
+        }))
+    : [];
+  const dateRangeField = page
+    ? (() => {
+        const f = page.detailFields.find(
+          fi => fi.type === "date" || fi.type === "datetime"
+        );
+        return f ? { id: f.id, label: f.label } : null;
+      })()
+    : null;
+  const activePageFilter: PageFilterState = page
+    ? (pageFilters[page.id] ?? { enumFilters: {} })
+    : { enumFilters: {} };
+  const rows = applyPageFilter(allRows, activePageFilter, dateRangeField?.id);
+
+  const handlePageFilterChange = (patch: Partial<PageFilterState>) => {
+    if (!page) return;
+    const pageId = page.id;
+    setPageFilters(prev => {
+      const cur = prev[pageId] ?? { enumFilters: {} };
+      return {
+        ...prev,
+        [pageId]: {
+          enumFilters: { ...cur.enumFilters, ...(patch.enumFilters ?? {}) },
+          dateRange:
+            patch.dateRange !== undefined ? patch.dateRange : (cur.dateRange ?? null),
+        },
+      };
+    });
+  };
+
+  // Step 6 QuickActionPanel：本页 navigate/createRecord 候选动作，标签现拼
+  // （navigate→目标页标题；createRecord→目标实体名）。pageActions[].permitted
+  // 派生时恒 true（deriveAppRuntimeSchema 没有角色上下文），真实权限判定和
+  // handleBlockAction 点击时同一套公式（pageAccess.grantedActions），这里
+  // 重算是为了按钮态本身就诚实——不能显示可点、点了却因权限被吞。
+  const quickActionButtons: QuickActionButtonSpec[] = page
+    ? page.pageActions
+        .filter(a => a.type === "navigate" || a.type === "createRecord")
+        .map(a => {
+          const pa = pageAccess.get(page.id);
+          const permitted =
+            !a.permissionRef || (pa?.grantedActions ?? []).includes(a.permissionRef);
+          if (a.type === "navigate") {
+            const target = schema.pages.find(p => p.id === a.targetPageRef);
+            return {
+              id: a.id,
+              label: target ? `前往 ${target.title}` : "跳转",
+              permitted,
+            };
+          }
+          const entity = resolveEntityRef(a.entityRef, model);
+          return {
+            id: a.id,
+            label: entity.resolved ? `新建 ${entity.label}` : "新建",
+            permitted,
+          };
+        })
+    : [];
 
   const apply = (next: RuntimeState) => {
     setState(next);
@@ -687,7 +804,9 @@ export function AppRuntimeScreen({
       dataIndex: ["values", c.id],
       key: c.id,
       ellipsis: true,
-      ...buildColumnFeatures(c, rows),
+      // 列头过滤下拉的候选值取全量 allRows（不随 FilterBar 收窄），避免选项
+      // 随筛选结果消失。
+      ...buildColumnFeatures(c, allRows),
       onHeaderCell: () =>
         page?.entityId
           ? probe({
@@ -1525,6 +1644,16 @@ export function AppRuntimeScreen({
             case "navigate":
               if (action.targetPageRef) setActivePageId(action.targetPageRef);
               break;
+            case "createRecord":
+              // 复用既有「新建」表单：只支持目标实体=本页主实体的场景（表单
+              // 字段就是照本页主实体拼的）；指向别的实体如实拒绝，不假装能建。
+              if (action.entityRef && action.entityRef === page.entityId) {
+                setFormValues({});
+                setFormOpen(true);
+              } else {
+                message.info("该操作指向的实体暂不支持在此页创建");
+              }
+              break;
             case "changeFilter":
               console.log("[action:changeFilter]", actionId, eventData);
               break;
@@ -1542,11 +1671,12 @@ export function AppRuntimeScreen({
               <ExperienceBlockBoundary
                 key={block.id}
                 block={block}
-                onAction={
-                  block.eventBindings && Object.keys(block.eventBindings).length > 0
-                    ? handleBlockAction
-                    : undefined
-                }
+                onAction={handleBlockAction}
+                pageActions={quickActionButtons}
+                filterState={activePageFilter}
+                filterFieldOptions={filterableEnumFields}
+                dateRangeField={dateRangeField}
+                onFilterChange={handlePageFilterChange}
               />
             ))}
           </div>
