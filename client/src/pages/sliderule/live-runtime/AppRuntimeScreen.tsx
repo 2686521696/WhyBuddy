@@ -1662,23 +1662,98 @@ export function AppRuntimeScreen({
           }
         };
 
+        const renderBlock = (block: (typeof directBlocks)[number]) => (
+          <ExperienceBlockBoundary
+            key={block.id}
+            block={block}
+            onAction={handleBlockAction}
+            pageActions={quickActionButtons}
+            filterState={activePageFilter}
+            filterFieldOptions={filterableEnumFields}
+            dateRangeField={dateRangeField}
+            onFilterChange={handlePageFilterChange}
+          />
+        );
+
+        // Step 7：未声明 layout（或声明后 5 槽位全空，schema 层已判定并回 null）
+        // 时保留原顺序平铺，视觉零变化。
+        if (!page.layout) {
+          return (
+            <div
+              className="mb-3 grid gap-2"
+              data-testid="app-runtime-experience-block-scaffold"
+            >
+              {directBlocks.map(renderBlock)}
+            </div>
+          );
+        }
+
+        const blockById = new Map(directBlocks.map(b => [b.id, b]));
+        // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
+        const slotSource = isPhone && page.layout.mobile
+          ? { ...page.layout, ...page.layout.mobile }
+          : page.layout;
+        const slotBlocks = (ids: string[]) =>
+          ids.map(bid => blockById.get(bid)).filter((b): b is NonNullable<typeof b> => !!b);
+        const summaryBlocks = slotBlocks(slotSource.summary ?? []);
+        const primaryBlocks = slotBlocks(slotSource.primary ?? []);
+        const secondaryBlocks = slotBlocks(slotSource.secondary ?? []);
+        const activityBlocks = slotBlocks(slotSource.activity ?? []);
+        const contentBlocks = slotBlocks(slotSource.content ?? []);
+        const placedIds = new Set(
+          [...summaryBlocks, ...primaryBlocks, ...secondaryBlocks, ...activityBlocks, ...contentBlocks].map(
+            b => b.id
+          )
+        );
+        // 声明了 layout 但没被任何槽位引用到的区块：如实照样渲染，不能因为
+        // 没排进槽位就悄悄丢内容——排在末尾，视觉上标为"未分配槽位"。
+        const orphanBlocks = directBlocks.filter(b => !placedIds.has(b.id));
+
         return (
           <div
-            className="mb-3 grid gap-2"
-            data-testid="app-runtime-experience-block-scaffold"
+            className="mb-3 flex flex-col gap-2"
+            data-testid="app-runtime-experience-block-layout"
           >
-            {directBlocks.map(block => (
-              <ExperienceBlockBoundary
-                key={block.id}
-                block={block}
-                onAction={handleBlockAction}
-                pageActions={quickActionButtons}
-                filterState={activePageFilter}
-                filterFieldOptions={filterableEnumFields}
-                dateRangeField={dateRangeField}
-                onFilterChange={handlePageFilterChange}
-              />
-            ))}
+            {summaryBlocks.length > 0 && (
+              <div className="flex flex-wrap gap-2" data-testid="app-runtime-layout-summary">
+                {summaryBlocks.map(renderBlock)}
+              </div>
+            )}
+            {(primaryBlocks.length > 0 || secondaryBlocks.length > 0) && (
+              <div className="flex flex-col gap-2 md:flex-row md:items-start">
+                {primaryBlocks.length > 0 && (
+                  <div
+                    className="flex min-w-0 flex-[2] flex-col gap-2"
+                    data-testid="app-runtime-layout-primary"
+                  >
+                    {primaryBlocks.map(renderBlock)}
+                  </div>
+                )}
+                {secondaryBlocks.length > 0 && (
+                  <div
+                    className="flex min-w-0 flex-1 flex-col gap-2"
+                    data-testid="app-runtime-layout-secondary"
+                  >
+                    {secondaryBlocks.map(renderBlock)}
+                  </div>
+                )}
+              </div>
+            )}
+            {activityBlocks.length > 0 && (
+              <div className="flex flex-col gap-2" data-testid="app-runtime-layout-activity">
+                {activityBlocks.map(renderBlock)}
+              </div>
+            )}
+            {contentBlocks.length > 0 && (
+              <div className="flex flex-col gap-2" data-testid="app-runtime-layout-content">
+                {contentBlocks.map(renderBlock)}
+              </div>
+            )}
+            {orphanBlocks.length > 0 && (
+              <div className="grid gap-2" data-testid="app-runtime-layout-unassigned">
+                {orphanBlocks.map(renderBlock)}
+              </div>
+            )}
           </div>
         );
       })()}
