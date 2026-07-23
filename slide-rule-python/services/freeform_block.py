@@ -194,7 +194,7 @@ def generate_freeform_block(
     *,
     max_retries: int = 2,
     temperature: float = 0.7,
-    max_tokens: int = 7000,
+    max_tokens: int = 10000,
     use_reference_image: bool = True,
 ) -> dict[str, Any]:
     """生成 + 深校验一个 FreeformInsight 区块的内容树。校验失败时把「上次
@@ -206,6 +206,9 @@ def generate_freeform_block(
     use_reference_image=True（默认）时先生一张干净原型图当视觉参照，喂给
     视觉 LLM 一起看（需要网关声明 LLM_SUPPORTS_IMAGE_CONTENT_PARTS=1，未声明
     或生图不可用时自动降级为纯文字生成，行为与加这段之前完全一致）。
+
+    max_tokens 默认从 7000 提到 10000：实测视觉参照会让模型描述更细（节点数
+    明显变多），7000 真实撞过截断（JSON 半截被切断解析失败）；10000 一次过。
     """
     design_brief = (design_brief or "").strip()
     if not design_brief:
