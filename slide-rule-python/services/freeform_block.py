@@ -144,6 +144,13 @@ def build_freeform_prompt(design_brief: str, datamodel: dict[str, Any]) -> str:
 图标引用只能用这些：{json.dumps(list(FREEFORM_ALLOWED_ICON_REFS), ensure_ascii=False)}；
 颜色用具体十六进制值，背景可用 linear-gradient(...)，不能出现 url(...)。
 
+需要环形图/圆环占比这类可视化时，纯 CSS 就能画（不需要 svg 标签，这套安全
+积木里没有 svg）：一个 div 设 width/height 相等 + borderRadius: "50%" +
+background: "conic-gradient(#3E84F1 0% 40%, #8478E2 40% 65%, #E8EDF5 65%
+100%)"（按份额分段给角度百分比），中间叠一个稍小的纯色（如 #FFFFFF）圆形
+div（同样 borderRadius: "50%"，用 position: "absolute" + top/left 居中）
+盖出圆环的镂空，圆环中心可以放文字。
+
 下面是这个应用真实的数据模型，唯一可以引用的数据来源：
 {json.dumps(datamodel, ensure_ascii=False, indent=2)}
 

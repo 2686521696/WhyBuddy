@@ -10,7 +10,20 @@
  */
 import React from "react";
 import { Button, Select } from "antd";
-import { ArrowRightOutlined } from "@ant-design/icons";
+import {
+  ArrowRightOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  WarningOutlined,
+  UserOutlined,
+  MessageOutlined,
+  FlagOutlined,
+  ThunderboltOutlined,
+  InfoCircleOutlined,
+  RightOutlined,
+  StarOutlined,
+  RiseOutlined,
+} from "@ant-design/icons";
 
 import catalogJson from "@experience-blocks";
 import type { WorkflowSection } from "../system-screens/five-system-model";
@@ -358,72 +371,22 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
  */
 const FREEFORM_DANGEROUS_VALUE_RE = /url\(|javascript:|expression\(|import\b|@import/i;
 
+// 2026-07-23：改用 @ant-design/icons（本文件其它渲染器、AppRuntimeScreen 顶栏/
+// 侧栏早就在用同一套），跟应用其它地方的图标语言一致，线宽/比例也比手绘 SVG
+// 路径更精细——手绘版视觉粗糙的问题就出在这批 path 数据本身。
 const FREEFORM_ICONS: Record<string, React.ReactNode> = {
-  "check-circle": (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M8.5 12.5l2.5 2.5 5-5" />
-    </svg>
-  ),
-  clock: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3.5 2" />
-    </svg>
-  ),
-  "alert-triangle": (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path d="M12 4l9 16H3z" />
-      <path d="M12 10v4" />
-      <circle cx="12" cy="17" r="0.5" fill="currentColor" />
-    </svg>
-  ),
-  "arrow-right": (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path d="M4 12h16M14 6l6 6-6 6" />
-    </svg>
-  ),
-  user: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
-    </svg>
-  ),
-  "message-circle": (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path d="M21 12a8 8 0 1 1-3.2-6.4L21 4l-1 4.5A7.9 7.9 0 0 1 21 12z" />
-    </svg>
-  ),
-  flag: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path d="M5 3v18M5 4h12l-3 4 3 4H5" />
-    </svg>
-  ),
-  zap: (
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <path d="M13 2L4 14h6l-1 8 9-12h-6z" />
-    </svg>
-  ),
-  circle: (
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <circle cx="12" cy="12" r="8" />
-    </svg>
-  ),
-  "chevron-right": (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path d="M9 6l6 6-6 6" />
-    </svg>
-  ),
-  star: (
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21 7.5 13.5 2 9h7z" />
-    </svg>
-  ),
-  "trending-up": (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />
-    </svg>
-  ),
+  "check-circle": <CheckCircleOutlined />,
+  clock: <ClockCircleOutlined />,
+  "alert-triangle": <WarningOutlined />,
+  "arrow-right": <ArrowRightOutlined />,
+  user: <UserOutlined />,
+  "message-circle": <MessageOutlined />,
+  flag: <FlagOutlined />,
+  zap: <ThunderboltOutlined />,
+  circle: <InfoCircleOutlined />,
+  "chevron-right": <RightOutlined />,
+  star: <StarOutlined />,
+  "trending-up": <RiseOutlined />,
 };
 
 function sanitizeFreeformStyle(
@@ -455,7 +418,16 @@ function renderFreeformNode(node: unknown, key: React.Key): React.ReactNode {
     tag,
     { key, style: sanitizeFreeformStyle(n.style) },
     icon ? (
-      <span key="icon" style={{ display: "inline-flex", width: "1em", height: "1em" }}>
+      <span
+        key="icon"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: "1em",
+          height: "1em",
+        }}
+      >
         {icon}
       </span>
     ) : null,
