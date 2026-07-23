@@ -194,7 +194,9 @@ def experience_block_prompt_block() -> str:
         "Step 8 — Shell and device: appbundle MAY include experienceShell "
         "{mode: 'navigation'|'focus', navigation: 'side'|'top'} and preferredDevice 'desktop'|'tablet'|'phone'. "
         "Use experienceShell instead of appIdentity.nav for new models. "
-        "focus mode is for full-screen single-purpose tools (report viewer, document editor)."
+        "mode MUST be 'navigation' for now — 'focus' (full-screen single-purpose tools like a report "
+        "viewer or document editor) is schema-legal but has NO client renderer yet; declaring it renders "
+        "as an ordinary navigation shell, not the immersive full-screen layout the name implies."
     )
     lines.append(
         f"Step 9 — Design recipe: appbundle.appIdentity MAY include designRecipeRef "
