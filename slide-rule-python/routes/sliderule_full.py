@@ -1338,3 +1338,32 @@ def eval_baseline(x_internal_key: Optional[str] = Header(None)):
     if not isinstance(payload, dict):
         return JSONResponse({"error": "BASELINE_NOT_FOUND"}, status_code=404)
     return payload
+
+
+# ---------------------------------------------------------------------------
+# 应用缩略图真实截图（2026-07-23 修复）：Node 侧本地 chromium.launch() 在生产
+# Alpine 镜像里必然失败（musl libc + @playwright/test 只在 devDependencies，
+# `pnpm install --prod` 排除），一直静默回退假占位卡。改到 E2B 沙盒执行
+# Playwright（沙盒是 Debian，glibc 兼容），宿主 Node 镜像零 Chromium 依赖。
+# Node 的 /sessions/:sessionId/screenshot 路由代理到这里，缓存逻辑仍在 Node。
+# ---------------------------------------------------------------------------
+
+
+@router.post("/sessions/{sid}/e2b-screenshot")
+def capture_session_screenshot(sid: str, x_internal_key: Optional[str] = Header(None)):
+    """在 E2B 沙盒截图 sid 对应的已闭环应用；不可用/失败 → 404，Node 侧照实转 503。
+
+    fail-closed：E2B_API_KEY 缺失或 SLIDERULE_PUBLIC_APP_URL 未配置时不尝试，
+    不用本地兜底掩盖——这两个条件任一没配，说明这套环境本来就截不了图。
+    """
+    _auth(x_internal_key)
+    from services.app_screenshot import capture_app_screenshot, e2b_screenshot_available
+
+    if not e2b_screenshot_available():
+        return JSONResponse({"error": "screenshot_unavailable"}, status_code=404)
+    png_bytes = capture_app_screenshot(sid)
+    if not png_bytes:
+        return JSONResponse({"error": "screenshot_failed"}, status_code=404)
+    from fastapi import Response
+
+    return Response(content=png_bytes, media_type="image/png")
