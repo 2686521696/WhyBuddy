@@ -931,6 +931,122 @@ def test_binding_timeGrain_enum_violation():
     assert len(findings) >= 1
 
 
+# ---------- bindingSchema 深校验（单一真相源延伸到 binding 层，见 schema_legal） ----------
+
+
+def test_binding_trendchart_missing_required_timeDimensionRef():
+    """TrendChart 的 bindingHints 一直要求 timeDimensionRef 必填，但重构前 Gate
+    从不检查它——漏填也能通过。这条锁死"必填字段查表校验"这个新能力。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        pages[0]["blocks"] = [{"id": "b1", "type": "TrendChart", "binding": {"entityRef": entities[0]["id"]}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [
+        f for f in result["findings"]
+        if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD" and "timeDimensionRef" in f.get("path", "")
+    ]
+    assert len(findings) >= 1, f"expected timeDimensionRef required-field finding but got: {result['findings']}"
+
+
+def test_binding_rankedlist_missing_required_sortByRef():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        pages[0]["blocks"] = [{"id": "b1", "type": "RankedList", "binding": {"entityRef": entities[0]["id"]}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [
+        f for f in result["findings"]
+        if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD" and "sortByRef" in f.get("path", "")
+    ]
+    assert len(findings) >= 1
+
+
+def test_binding_rankedlist_sortByRef_wrong_field_type():
+    """sortByRef 指向一个非 number 字段——按数值排名排不出"第一名"，之前完全不检查字段类型。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        string_field = next(f["id"] for f in entities[0]["fields"] if f.get("type") == "string")
+        pages[0]["blocks"] = [{
+            "id": "b1", "type": "RankedList",
+            "binding": {"entityRef": entities[0]["id"], "sortByRef": string_field},
+        }]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "sortByRef" in f.get("path", "")]
+    assert len(findings) >= 1, f"expected sortByRef type-mismatch finding but got: {result['findings']}"
+
+
+def test_binding_metricgrid_aggregate_sum_wrong_field_type():
+    """aggregate='sum:<fieldId>' 指向非 number 字段——之前 Gate 完全不解析 aggregate 表达式。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        string_field = next(f["id"] for f in entities[0]["fields"] if f.get("type") == "string")
+        pages[0]["blocks"] = [{
+            "id": "b1", "type": "MetricGrid",
+            "binding": {"entityRef": entities[0]["id"], "aggregate": f"sum:{string_field}"},
+        }]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "aggregate" in f.get("path", "")]
+    assert len(findings) >= 1, f"expected aggregate type-mismatch finding but got: {result['findings']}"
+
+
+def test_binding_metricgrid_aggregate_invalid_syntax():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        pages[0]["blocks"] = [{
+            "id": "b1", "type": "MetricGrid",
+            "binding": {"entityRef": entities[0]["id"], "aggregate": "bogus"},
+        }]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if f.get("code") == "PUBLISH_INVALID_FIELD" and "aggregate" in f.get("path", "")]
+    assert len(findings) >= 1
+
+
+def test_binding_rankedlist_limit_out_of_range():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        pages[0]["blocks"] = [{
+            "id": "b1", "type": "RankedList",
+            "binding": {"entityRef": entities[0]["id"], "sortByRef": entities[0]["fields"][0]["id"], "limit": 500},
+        }]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "limit" in f.get("path", "")]
+    assert len(findings) >= 1
+
+
+def test_binding_trendchart_valid_binding_passes_clean():
+    """正确的 binding（entityRef + timeDimensionRef 都对得上真实字段与类型）不应产生 binding 相关 finding——防止新校验误报。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        date_field = next(f["id"] for f in entities[0]["fields"] if f.get("type") == "date")
+        pages[0]["blocks"] = [{
+            "id": "b1", "type": "TrendChart",
+            "binding": {"entityRef": entities[0]["id"], "timeDimensionRef": date_field, "timeGrain": "week"},
+        }]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "binding" in f.get("path", "")]
+    assert len(findings) == 0, f"unexpected binding findings on a valid binding: {findings}"
+
+
 def test_strict_gate_fails_none_landing_page_ref():
     """strict=True 时 landingPageRef=None 应产生 PUBLISH_MISSING_REQUIRED_FIELD。"""
     model = _make_model_with_landing()
