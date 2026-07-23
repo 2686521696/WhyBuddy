@@ -2016,7 +2016,7 @@ export function AppRuntimeScreen({
     <Layout style={{ height: "100%" }} data-testid="app-shell-top">
       <Layout.Header
         style={{
-          background: "#001529",
+          background: identityTheme.sidebarBg,
           display: "flex",
           alignItems: "center",
           gap: 14,
@@ -2236,6 +2236,24 @@ export function AppRuntimeScreen({
                   : {}),
               },
               algorithm: designRecipeAlgorithms(designRecipe, isTablet),
+              // 8 套身份主题此前只染了头像/图标这些边角元素——Sider/Menu 的
+              // theme="dark" 是 antd 内置深蓝 #001529，跟 identityTheme 完全无关，
+              // 导致 8 套主题的侧栏永远长一个样。这里用 antd v5 的组件级 token
+              // 把侧栏底色/文字接到 identityTheme.sidebarBg/sidebarText；选中态
+              // 直接复用 primary/primaryFg（对齐 tweakcn 真实预设的
+              // sidebar-primary 惯例：选中态就是主色本身，不用另起一套配色）。
+              components: {
+                Layout: { siderBg: identityTheme.sidebarBg },
+                Menu: {
+                  darkItemBg: identityTheme.sidebarBg,
+                  darkSubMenuItemBg: identityTheme.sidebarBg,
+                  darkItemColor: identityTheme.sidebarText,
+                  darkItemHoverBg: "rgba(255,255,255,0.08)",
+                  darkItemHoverColor: "#ffffff",
+                  darkItemSelectedBg: identityTheme.primary,
+                  darkItemSelectedColor: identityTheme.primaryFg,
+                },
+              },
             }}
           >
             {isPhone
