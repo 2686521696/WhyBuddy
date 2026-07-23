@@ -164,6 +164,27 @@
         "optional": ["entityRef"],
         "note": "可筛选字段在 props.filterFields 里声明（不是 binding）；entityRef 仅在需要按实体过滤时填写。触发 changeFilter 动作刷新同页面其他区块。"
       }
+    },
+    {
+      "type": "WorkflowTimeline",
+      "description": "横向连接的流程阶段条，把 workflow 系统的节点顺序可视化。",
+      "rendererKey": "workflow-timeline",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "chainRef": { "type": "string" }
+        }
+      },
+      "dataKinds": [],
+      "allowedSlots": ["primary", "content"],
+      "events": ["itemSelect"],
+      "bindingSchema": {
+        "required": [],
+        "optional": [],
+        "note": "不使用 binding；展示哪条流程链路由 props.chainRef 声明（留空=workflow 主链路，填值必须是 workflow.chains[].id 之一）。节点、顺序、条件全部从 workflow 系统机械派生，不接受自由文案。"
+      }
     }
   ]
 }

@@ -2,15 +2,18 @@
  * 体验区块渲染表。
  *
  * 目录定义在 experience_block_catalog.json；这里登记可信的 React 渲染边界。
- * Phase 1（Step 6）起 QuickActionPanel/FilterBar 接了真实渲染；其余类型
+ * Phase 1（Step 6）起 QuickActionPanel/FilterBar 接了真实渲染；WorkflowTimeline
+ * （2026-07-23）接了真实渲染，绑定 workflow 系统数据。其余类型
  * （MetricGrid/TrendChart/RankedList/ActivityFeed/DataTable）仍是占位，
  * 留给后续阶段接入。legacy 转换来的区块（_fromLegacy）不进这条渲染路径，
  * 视觉零变化。
  */
 import React from "react";
 import { Button, Select } from "antd";
+import { ArrowRightOutlined } from "@ant-design/icons";
 
 import catalogJson from "@experience-blocks";
+import type { WorkflowSection } from "../system-screens/five-system-model";
 
 export interface ExperienceBlockCatalogEntry {
   type: string;
@@ -69,6 +72,9 @@ export interface ExperienceBlockRendererProps {
   dateRangeField?: { id: string; label: string } | null;
   /** Step 6 FilterBar 专用：过滤态变更回调（局部合并）。 */
   onFilterChange?: (patch: Partial<PageFilterState>) => void;
+  /** WorkflowTimeline 专用：整份 workflow 系统数据，chainRef 从这里解析节点/连线，
+   * 不接受自由文案——Gate 已校验 chainRef 能在这里面查到（留空=主链路）。 */
+  workflow?: WorkflowSection | null;
 }
 
 export type ExperienceBlockRenderer =
@@ -247,6 +253,77 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
   );
 };
 
+/**
+ * 横向连接的流程阶段条——节点/顺序/条件全部从 workflow 系统机械派生，
+ * 不接受自由文案。props.chainRef 留空指主链路（workflow.nodes/transitions），
+ * 填值时必须能在 workflow.chains 里查到（Gate 已校验，这里直接信）。
+ */
+const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) => {
+  const title = String(block.props?.title ?? "").trim();
+  const chainRef = String(block.props?.chainRef ?? "").trim();
+  const chain = chainRef
+    ? workflow?.chains?.find(c => c.id === chainRef || c.name === chainRef)
+    : undefined;
+  const nodes = (chainRef ? chain?.nodes : workflow?.nodes) ?? [];
+  const transitions = (chainRef ? chain?.transitions : workflow?.transitions) ?? [];
+
+  if (!workflow || nodes.length === 0) {
+    return (
+      <div
+        data-testid="workflow-timeline-empty"
+        className="rounded border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-400"
+      >
+        流程步骤条：暂无可展示的流程节点
+      </div>
+    );
+  }
+
+  const conditionByFrom = new Map(
+    transitions.filter(t => t.condition).map(t => [t.from, t.condition])
+  );
+
+  return (
+    <div
+      data-testid="workflow-timeline"
+      className="rounded border border-stone-200 bg-white px-3 py-3"
+    >
+      {title && (
+        <div className="mb-2 text-xs font-medium text-stone-500">{title}</div>
+      )}
+      <div className="flex flex-wrap items-stretch gap-1.5">
+        {nodes.map((node, i) => (
+          <React.Fragment key={node.id || i}>
+            <div
+              data-testid="workflow-timeline-node"
+              className="flex min-w-[120px] flex-1 flex-col gap-1 rounded border border-stone-200 bg-stone-50 px-2.5 py-2"
+            >
+              <span className="text-[10px] font-mono text-stone-400">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <span className="text-xs font-medium text-stone-700">
+                {node.name || node.id}
+              </span>
+              {node.assigneeRole && (
+                <span className="text-[10px] text-stone-400">
+                  {node.assigneeRole}
+                </span>
+              )}
+              {conditionByFrom.get(node.id) && (
+                <span className="text-[10px] text-amber-600">
+                  {conditionByFrom.get(node.id)}
+                </span>
+              )}
+            </div>
+            {i < nodes.length - 1 && (
+              <ArrowRightOutlined className="self-center text-stone-300" />
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   Record<string, ExperienceBlockRenderer>
 > = Object.freeze({
@@ -258,6 +335,7 @@ export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   // Step 6：QuickActionPanel/FilterBar 真渲染（Phase 1）
   "quick-action-panel": QuickActionPanelRenderer,
   "filter-bar": FilterBarRenderer,
+  "workflow-timeline": WorkflowTimelineRenderer,
 });
 
 export function experienceBlockEntry(
@@ -276,6 +354,7 @@ export function ExperienceBlockBoundary({
   filterFieldOptions,
   dateRangeField,
   onFilterChange,
+  workflow,
 }: ExperienceBlockRendererProps) {
   const entry = experienceBlockEntry(block.type);
   const Renderer = entry
@@ -301,6 +380,7 @@ export function ExperienceBlockBoundary({
       filterFieldOptions={filterFieldOptions}
       dateRangeField={dateRangeField}
       onFilterChange={onFilterChange}
+      workflow={workflow}
     >
       {children}
     </Renderer>

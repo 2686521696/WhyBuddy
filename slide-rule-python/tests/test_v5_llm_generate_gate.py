@@ -1215,6 +1215,58 @@ def test_layout_block_type_allowed_in_declared_slot_passes():
     assert len(layout_findings) == 0, f"valid slot placement should pass: {layout_findings}"
 
 
+# ---------- WorkflowTimeline（2026-07-23）：props.chainRef 深校验 ----------
+
+
+def _model_with_workflow_chain():
+    model = _make_model_with_landing()
+    model["workflow"] = model.get("workflow") or {}
+    model["workflow"]["nodes"] = [{"id": "n1", "name": "Step 1"}, {"id": "n2", "name": "Step 2"}]
+    model["workflow"]["transitions"] = [{"from": "n1", "to": "n2"}]
+    model["workflow"]["chains"] = [
+        {"id": "money_chain", "name": "Money", "nodes": [{"id": "m1"}], "transitions": []}
+    ]
+    return model
+
+
+def test_workflow_timeline_empty_chainref_passes():
+    """chainRef 留空 = 主链路，永远合法。"""
+    model = _model_with_workflow_chain()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "WorkflowTimeline", "props": {"title": "Flow"}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "chainRef" in f.get("path", "")]
+    assert len(findings) == 0, f"unexpected chainRef findings: {findings}"
+
+
+def test_workflow_timeline_valid_chainref_passes():
+    model = _model_with_workflow_chain()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "WorkflowTimeline", "props": {"chainRef": "money_chain"}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "chainRef" in f.get("path", "")]
+    assert len(findings) == 0, f"unexpected chainRef findings: {findings}"
+
+
+def test_workflow_timeline_unknown_chainref_fails():
+    """chainRef 指向不存在的链路——不能瞎编，必须报错。"""
+    model = _model_with_workflow_chain()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "WorkflowTimeline", "props": {"chainRef": "nonexistent"}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [
+        f for f in result["findings"]
+        if f.get("code") == "PUBLISH_DANGLING_CROSSREF" and "chainRef" in f.get("path", "")
+    ]
+    assert len(findings) >= 1, f"expected chainRef dangling finding but got: {result['findings']}"
+
+
 def test_experience_shell_mode_enum_violation():
     """experienceShell.mode 非法值应产生 finding。"""
     model = _make_model_with_landing()

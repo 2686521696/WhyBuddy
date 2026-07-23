@@ -1673,6 +1673,7 @@ export function AppRuntimeScreen({
             filterFieldOptions={filterableEnumFields}
             dateRangeField={dateRangeField}
             onFilterChange={handlePageFilterChange}
+            workflow={model.workflow}
           />
         );
 

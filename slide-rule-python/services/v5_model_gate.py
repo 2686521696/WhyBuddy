@@ -254,6 +254,19 @@ def _iter_workflow_chains(workflow: Dict[str, Any]):
         yield f"workflow.chains[{label}]", cd
 
 
+def _collect_workflow_chain_ids(workflow: Dict[str, Any]) -> set:
+    """workflow.chains[] 的 id/name 集合（不含主链路、不含节点 id）——
+    WorkflowTimeline 的 props.chainRef 只认这个集合，跟悬挂引用检查用的
+    "chain+node 混一起"那份 _collect_workflow_ids 是两回事，不能共用。"""
+    ids: set = set()
+    for chain in _as_list(workflow.get("chains")):
+        cd = _as_dict(chain)
+        cid = str(cd.get("id") or cd.get("name") or "").strip()
+        if cid:
+            ids.add(cid)
+    return ids
+
+
 def _collect_workflow_ids(workflow: Dict[str, Any]) -> set:
     """Workflow is referenced by its top-level id, chain ids, and/or node ids."""
     ids: set = set()
@@ -562,6 +575,16 @@ def validate_five_system_model(
                     ))
                 elif btype:
                     _validate_block_binding(block_path, btype, binding, entity_ids, field_types, findings)
+            # WorkflowTimeline 深校验：props.chainRef 留空=主链路（永远合法），
+            # 填值必须是 workflow.chains[] 里真实存在的链路 id，不能瞎编。
+            if btype == "WorkflowTimeline":
+                chain_ref = str(_as_dict(bd.get("props")).get("chainRef") or "").strip()
+                if chain_ref and chain_ref not in _collect_workflow_chain_ids(workflow):
+                    findings.append(_finding(
+                        DANGLING, f"{block_path}.props.chainRef",
+                        f"chainRef '{chain_ref}' not found in workflow.chains",
+                        ref=chain_ref, skill="page",
+                    ))
         # 库无关图表声明（schema 丰富一期，可选字段）：dimension / sum 指标
         # 必须解析到 datamodel 字段；type 限定在渲染层支持的形态集合。
         for chart in _as_list(pd.get("charts")):
