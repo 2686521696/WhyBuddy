@@ -49,6 +49,7 @@ PUBLISH_ENUM_VIOLATION = "PUBLISH_ENUM_VIOLATION"
 # 此处 re-export 保持历史名字；加合法值只改对应账本，四方一致性由测试锁死。
 from .schema_legal import (  # noqa: F401 — re-export 即接口
     CHART_TYPES,
+    EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE,
     EXPERIENCE_BLOCK_BINDING_SCHEMAS,
     EXPERIENCE_BLOCK_TYPES,
     FIELD_TONES,
@@ -909,7 +910,10 @@ def validate_five_system_model(
         layout = _as_dict(pd.get("layout"))
         if not layout:
             continue
-        page_block_ids = {str(b.get("id") or "").strip() for b in _as_list(pd.get("blocks")) if b.get("id")}
+        page_block_types = {
+            str(b.get("id") or "").strip(): str(b.get("type") or "").strip()
+            for b in _as_list(pd.get("blocks")) if b.get("id")
+        }
         layout_page = f"page.pages[{pd.get('id') or pi}].layout"
         for slot_key, block_refs in layout.items():
             if slot_key == "mobile":
@@ -922,10 +926,26 @@ def validate_five_system_model(
                 ))
             for ref in _as_list(block_refs):
                 ref_str = str(ref or "").strip()
-                if ref_str and ref_str not in page_block_ids:
+                if not ref_str:
+                    continue
+                if ref_str not in page_block_types:
                     findings.append(_finding(
                         DANGLING, f"{layout_page}.{slot_key}",
                         f"layout block ref '{ref_str}' not found in page.blocks",
+                        ref=ref_str, skill="page",
+                    ))
+                    continue
+                # 槽位 x 区块类型搭配校验（Puck DropZone allow 思路）：目录里
+                # 每个区块类型早就声明了自己能放哪些槽位（allowedSlots），此前
+                # 这里只查"槽位名合法 + 区块 id 存在"，从没拿这份数据交叉核对
+                # 过——一个 RankedList 塞进 activity 槽也不会被拦。
+                btype = page_block_types[ref_str]
+                allowed_slots_for_type = EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE.get(btype)
+                if allowed_slots_for_type and slot_key not in allowed_slots_for_type:
+                    findings.append(_finding(
+                        PUBLISH_ENUM_VIOLATION, f"{layout_page}.{slot_key}",
+                        f"block '{ref_str}' (type {btype}) is not allowed in slot '{slot_key}'; "
+                        f"catalog allows: {'/'.join(allowed_slots_for_type)}",
                         ref=ref_str, skill="page",
                     ))
 

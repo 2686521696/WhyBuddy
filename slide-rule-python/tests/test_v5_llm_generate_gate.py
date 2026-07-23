@@ -1184,6 +1184,37 @@ def test_layout_invalid_slot_fails():
     findings = [f for f in result["findings"] if "layout" in f.get("path", "")]
     assert len(findings) >= 1, f"invalid slot should fail: {result}"
 
+def test_layout_block_type_not_allowed_in_slot_fails():
+    """RankedList 的目录 allowedSlots 是 primary/secondary；塞进 activity 槽
+    此前只查"id 存不存在"，不查"类型放得对不对"，能悄悄通过。这条锁死
+    "槽位 x 区块类型"交叉校验（Puck DropZone allow 思路）。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "RankedList"}]
+        pages[0]["layout"] = {"activity": ["b1"]}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [
+        f for f in result["findings"]
+        if f.get("code") == "PUBLISH_ENUM_VIOLATION" and "activity" in f.get("path", "")
+    ]
+    assert len(findings) >= 1, f"expected slot-type mismatch finding but got: {result['findings']}"
+
+
+def test_layout_block_type_allowed_in_declared_slot_passes():
+    """同一个 RankedList 放进目录允许的 secondary 槽应该干净通过——防止新校验误报。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "RankedList"}]
+        pages[0]["layout"] = {"secondary": ["b1"]}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    layout_findings = [f for f in result["findings"] if "layout" in f.get("path", "")]
+    assert len(layout_findings) == 0, f"valid slot placement should pass: {layout_findings}"
+
+
 def test_experience_shell_mode_enum_violation():
     """experienceShell.mode 非法值应产生 finding。"""
     model = _make_model_with_landing()

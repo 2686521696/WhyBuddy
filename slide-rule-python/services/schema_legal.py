@@ -192,6 +192,13 @@ EXPERIENCE_BLOCK_RENDERER_KEYS = tuple(
 EXPERIENCE_BLOCK_BINDING_SCHEMAS: Dict[str, Dict[str, Any]] = {
     str(block["type"]): block["bindingSchema"] for block in EXPERIENCE_BLOCKS
 }
+# type -> allowedSlots；Gate 校验 page.layout 时按类型查表，确认区块放的槽位是
+# 目录里给它开放的槽位，而不只是"槽位名合法 + 区块 id 存在"（此前 layout 深
+# 校验只查这两条，槽位与区块类型的搭配完全没人管，见 Puck DropZone 的
+# allow/disallow 思路——目录数据其实早就够用，只是没人拿它去查 layout）。
+EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE: Dict[str, tuple] = {
+    str(block["type"]): tuple(block["allowedSlots"]) for block in EXPERIENCE_BLOCKS
+}
 
 
 def enum_str(*keys: str) -> str:
@@ -280,8 +287,11 @@ def experience_block_prompt_block() -> str:
     lines.append(
         "Step 7 — Page layout: pages MAY declare a layout object with slots "
         "summary/primary/secondary/activity/content, each containing an ordered list of block ids. "
-        "Every block id in layout MUST exist in page.blocks. "
-        "Use layout to differentiate dashboards (large primary chart) from workbenches (summary+content table)."
+        "Every block id in layout MUST exist in page.blocks, AND each block MUST be placed only in one "
+        "of the slots listed for its type above (slots=... in the catalog entry) — e.g. a RankedList "
+        "(slots=primary,secondary) placed in the activity slot is a violation, even though the block id "
+        "itself exists. Use layout to differentiate dashboards (large primary chart) from workbenches "
+        "(summary+content table)."
     )
     lines.append(
         "Step 8 — Shell and device: appbundle MAY include experienceShell "
