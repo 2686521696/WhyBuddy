@@ -1267,6 +1267,36 @@ def test_workflow_timeline_unknown_chainref_fails():
     assert len(findings) >= 1, f"expected chainRef dangling finding but got: {result['findings']}"
 
 
+# ---------- FreeformInsight（2026-07-23）：主模型只需交出非空 designBrief ----------
+
+
+def test_freeform_insight_missing_designbrief_fails():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "f1", "type": "FreeformInsight", "props": {}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [
+        f for f in result["findings"]
+        if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD" and "designBrief" in f.get("path", "")
+    ]
+    assert len(findings) >= 1, f"expected designBrief required finding but got: {result['findings']}"
+
+
+def test_freeform_insight_with_designbrief_passes():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [
+            {"id": "f1", "type": "FreeformInsight", "props": {"designBrief": "客户增长趋势总览"}}
+        ]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "designBrief" in f.get("path", "")]
+    assert len(findings) == 0, f"unexpected designBrief findings: {findings}"
+
+
 def test_experience_shell_mode_enum_violation():
     """experienceShell.mode 非法值应产生 finding。"""
     model = _make_model_with_landing()

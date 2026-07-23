@@ -19,6 +19,25 @@
     "actionTrigger",
     "filterChange"
   ],
+  "freeformAllowedTags": [
+    "div", "span", "p", "strong", "em", "small", "h1", "h2", "h3", "ul", "li"
+  ],
+  "freeformAllowedIconRefs": [
+    "check-circle", "clock", "alert-triangle", "arrow-right", "user",
+    "message-circle", "flag", "zap", "circle", "chevron-right", "star", "trending-up"
+  ],
+  "freeformAllowedStyleProps": [
+    "color", "backgroundColor", "background", "fontSize", "fontWeight", "lineHeight",
+    "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "margin", "marginTop", "marginRight", "marginBottom", "marginLeft",
+    "border", "borderRadius", "borderColor", "borderWidth", "borderStyle",
+    "borderTop", "borderBottom", "borderLeft", "borderRight",
+    "display", "flexDirection", "alignItems", "justifyContent", "gap", "flexWrap",
+    "flex", "flexGrow", "flexShrink", "flexBasis", "alignSelf",
+    "width", "height", "minWidth", "minHeight", "maxWidth",
+    "boxShadow", "textAlign", "letterSpacing", "opacity", "gridTemplateColumns",
+    "position", "top", "left", "right", "bottom", "zIndex", "overflow", "boxSizing"
+  ],
   "blocks": [
     {
       "type": "MetricGrid",
@@ -184,6 +203,28 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；展示哪条流程链路由 props.chainRef 声明（留空=workflow 主链路，填值必须是 workflow.chains[].id 之一）。节点、顺序、条件全部从 workflow 系统机械派生，不接受自由文案。"
+      }
+    },
+    {
+      "type": "FreeformInsight",
+      "description": "AI 自由设计的洞察卡片——结构和样式由二段生成按 designBrief 现场设计，不是固定模板；数字/统计类内容必须挂 dataRef 指向真实数据，编不出来的不画。",
+      "rendererKey": "freeform-insight",
+      "freeformGenerated": true,
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "designBrief": { "type": "string" },
+          "title": { "type": "string" }
+        }
+      },
+      "dataKinds": [],
+      "allowedSlots": ["primary", "secondary", "content"],
+      "events": [],
+      "bindingSchema": {
+        "required": [],
+        "optional": [],
+        "note": "不使用 binding；本次调用只需要给 props.designBrief（一句话说清楚这个区块该展示什么，必填，不能空），具体结构/样式/数据绑定由二段生成流程另外产出，不在这次输出里。"
       }
     }
   ]

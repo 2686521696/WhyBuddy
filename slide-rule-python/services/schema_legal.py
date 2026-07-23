@@ -113,8 +113,10 @@ def _load_experience_blocks() -> tuple:
         ):
             values = raw.get(key)
             # dataKinds may be empty for action-only blocks (e.g. QuickActionPanel)
-            # that require no entity data; allowedSlots and events must be non-empty.
-            if key == "dataKinds":
+            # that require no entity data; events may be empty for blocks with no
+            # interactive events yet (e.g. FreeformInsight，静态展示卡)；
+            # allowedSlots must always be non-empty.
+            if key in ("dataKinds", "events"):
                 if not isinstance(values, list):
                     raise ValueError(f"experience_block_catalog.json {block_type}.{key} 缺失或为空")
             else:
@@ -183,6 +185,11 @@ EXPERIENCE_BLOCK_CATALOG_VERSION: int = int(_BLOCK_CATALOG.get("version", 0))
 EXPERIENCE_BLOCK_ALLOWED_SLOTS = _catalog_tuple("allowedSlots")
 EXPERIENCE_BLOCK_DATA_KINDS = _catalog_tuple("dataKinds")
 EXPERIENCE_BLOCK_EVENT_TYPES = _catalog_tuple("eventTypes")
+# FreeformInsight（2026-07-23）的安全原子积木白名单——Python 深校验、Prompt、
+# 前端渲染器共用同一份，见 freeform_block.py / block-registry.tsx。
+FREEFORM_ALLOWED_TAGS = _catalog_tuple("freeformAllowedTags")
+FREEFORM_ALLOWED_ICON_REFS = _catalog_tuple("freeformAllowedIconRefs")
+FREEFORM_ALLOWED_STYLE_PROPS = _catalog_tuple("freeformAllowedStyleProps")
 EXPERIENCE_BLOCKS = _load_experience_blocks()
 EXPERIENCE_BLOCK_TYPES = tuple(str(block["type"]) for block in EXPERIENCE_BLOCKS)
 EXPERIENCE_BLOCK_RENDERER_KEYS = tuple(

@@ -197,6 +197,8 @@ export interface PageExperienceBlockSpec {
   binding?: BlockBindingSpec;
   /** 事件 → 动作 id 绑定（Step 5） */
   eventBindings?: BlockEventBindings;
+  /** FreeformInsight（2026-07-23）：Python 二段生成回填，Pydantic 深校验过。 */
+  freeformContent?: { root: Record<string, unknown> };
 }
 
 /**

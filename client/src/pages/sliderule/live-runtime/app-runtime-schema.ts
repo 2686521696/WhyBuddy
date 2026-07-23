@@ -151,6 +151,10 @@ export interface AppExperienceBlockSchema {
   _legacyRanking?: AppPageRankingSchema;
   /** ActivityFeed 转换来源 */
   _legacyFeed?: AppPageFeedSchema;
+  /** FreeformInsight（2026-07-23）：二段生成回填的内容树，Python 侧
+   * freeform_block.py 已用 Pydantic 深校验过；生成失败的区块在回填前就已
+   * 被整体摘掉，不会出现"有 block 没内容"的悬空态。 */
+  freeformContent?: { root: Record<string, unknown> };
 }
 
 /**
@@ -628,6 +632,7 @@ export function deriveAppRuntimeSchema(
           props: block.props as Record<string, unknown> | undefined,
           binding: block.binding as AppExperienceBlockSchema["binding"],
           eventBindings: block.eventBindings as Record<string, string> | undefined,
+          freeformContent: block.freeformContent,
         })
       );
       if (directBlocks.length > 0) return directBlocks;

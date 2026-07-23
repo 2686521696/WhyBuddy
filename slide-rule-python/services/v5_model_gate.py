@@ -585,6 +585,19 @@ def validate_five_system_model(
                         f"chainRef '{chain_ref}' not found in workflow.chains",
                         ref=chain_ref, skill="page",
                     ))
+            # FreeformInsight（2026-07-23）：这一轮主模型只需要交出
+            # designBrief——真正的结构/样式/dataRef 由二段生成产出，那层深
+            # 校验在 freeform_block.generate_freeform_block 里，这里只管
+            # "主模型有没有老实交出一句非空简介"，没交出的直接打回重生成，
+            # 不能让二段生成拿着空简介现场编。
+            if btype == "FreeformInsight":
+                design_brief = str(_as_dict(bd.get("props")).get("designBrief") or "").strip()
+                if not design_brief:
+                    findings.append(_finding(
+                        MISSING_REQUIRED, f"{block_path}.props.designBrief",
+                        "FreeformInsight block requires a non-empty props.designBrief",
+                        skill="page",
+                    ))
         # 库无关图表声明（schema 丰富一期，可选字段）：dimension / sum 指标
         # 必须解析到 datamodel 字段；type 限定在渲染层支持的形态集合。
         for chart in _as_list(pd.get("charts")):

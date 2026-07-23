@@ -25,11 +25,33 @@ export interface ExperienceBlockCatalogEntry {
   events: string[];
 }
 
+/** FreeformInsight（2026-07-23）：二段生成产出的内容树，Python
+ * freeform_block.py 用 Pydantic 深校验过（标签/样式/图标白名单 + dataRef
+ * 强类型引用），前端渲染器仍然二次过滤，不单方面信任上游。 */
+export interface FreeformDataRef {
+  entityRef: string;
+  aggregate?: string;
+}
+export interface FreeformNode {
+  tag: string;
+  style?: Record<string, string>;
+  text?: string;
+  iconRef?: string;
+  dataRef?: FreeformDataRef;
+  children?: FreeformNode[];
+}
+
 export interface ExperienceBlockInstance {
   id: string;
   type: string;
   props?: Record<string, unknown>;
   binding?: Record<string, unknown>;
+  /** FreeformInsight 专用：二段生成回填的内容树（生成失败时区块已被整体
+   * 摘掉，不会出现"有 block 没内容"的悬空态，这里仍按 optional 处理是
+   * 防御性的，不代表这是正常态）。类型收窄成 FreeformNode 在渲染器内部做
+   * （renderFreeformNode 本来就要逐节点跑白名单校验，不能只在类型层面假装
+   * 收窄过就信任内容）。 */
+  freeformContent?: { root: Record<string, unknown> };
   _fromLegacy?: boolean;
   _legacyStat?: unknown;
   _legacyChart?: unknown;
@@ -85,6 +107,9 @@ interface ExperienceBlockCatalogFile {
   allowedSlots: string[];
   dataKinds: string[];
   eventTypes: string[];
+  freeformAllowedTags: string[];
+  freeformAllowedIconRefs: string[];
+  freeformAllowedStyleProps: string[];
   blocks: ExperienceBlockCatalogEntry[];
 }
 
@@ -324,6 +349,140 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
   );
 };
 
+/**
+ * FreeformInsight（2026-07-23）安全渲染——只用 React.createElement 安全 API
+ * 拼装，绝不 dangerouslySetInnerHTML/eval 任何 LLM 产出内容。白名单跟
+ * Python 侧的 freeform_block.py 读同一份目录数据（@experience-blocks），
+ * 改一处两边同步。这里是纵深防御的第二道：Python 已经用 Pydantic 深校验过
+ * 才会落进 block.freeformContent，前端仍然过一遍白名单，不单方面信任上游。
+ */
+const FREEFORM_DANGEROUS_VALUE_RE = /url\(|javascript:|expression\(|import\b|@import/i;
+
+const FREEFORM_ICONS: Record<string, React.ReactNode> = {
+  "check-circle": (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 12.5l2.5 2.5 5-5" />
+    </svg>
+  ),
+  clock: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.5 2" />
+    </svg>
+  ),
+  "alert-triangle": (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M12 4l9 16H3z" />
+      <path d="M12 10v4" />
+      <circle cx="12" cy="17" r="0.5" fill="currentColor" />
+    </svg>
+  ),
+  "arrow-right": (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M4 12h16M14 6l6 6-6 6" />
+    </svg>
+  ),
+  user: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" />
+    </svg>
+  ),
+  "message-circle": (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M21 12a8 8 0 1 1-3.2-6.4L21 4l-1 4.5A7.9 7.9 0 0 1 21 12z" />
+    </svg>
+  ),
+  flag: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M5 3v18M5 4h12l-3 4 3 4H5" />
+    </svg>
+  ),
+  zap: (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M13 2L4 14h6l-1 8 9-12h-6z" />
+    </svg>
+  ),
+  circle: (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="12" cy="12" r="8" />
+    </svg>
+  ),
+  "chevron-right": (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  ),
+  star: (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21 7.5 13.5 2 9h7z" />
+    </svg>
+  ),
+  "trending-up": (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />
+    </svg>
+  ),
+};
+
+function sanitizeFreeformStyle(
+  style: Record<string, string> | undefined
+): React.CSSProperties {
+  const allowed = new Set(EXPERIENCE_BLOCK_CATALOG.freeformAllowedStyleProps);
+  const out: Record<string, string> = {};
+  if (!style) return out;
+  for (const [k, v] of Object.entries(style)) {
+    if (!allowed.has(k)) continue;
+    if (FREEFORM_DANGEROUS_VALUE_RE.test(String(v))) continue;
+    out[k] = v;
+  }
+  return out as React.CSSProperties;
+}
+
+function renderFreeformNode(node: unknown, key: React.Key): React.ReactNode {
+  if (!node || typeof node !== "object") return null;
+  const n = node as FreeformNode;
+  const allowedTags = new Set(EXPERIENCE_BLOCK_CATALOG.freeformAllowedTags);
+  const tag = typeof n.tag === "string" && allowedTags.has(n.tag) ? n.tag : "div";
+  const allowedIcons = new Set(EXPERIENCE_BLOCK_CATALOG.freeformAllowedIconRefs);
+  const icon =
+    n.iconRef && allowedIcons.has(n.iconRef) ? FREEFORM_ICONS[n.iconRef] : null;
+  const children = (Array.isArray(n.children) ? n.children : []).map((child, i) =>
+    renderFreeformNode(child, i)
+  );
+  return React.createElement(
+    tag,
+    { key, style: sanitizeFreeformStyle(n.style) },
+    icon ? (
+      <span key="icon" style={{ display: "inline-flex", width: "1em", height: "1em" }}>
+        {icon}
+      </span>
+    ) : null,
+    typeof n.text === "string" ? n.text : null,
+    ...children
+  );
+}
+
+const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block }) => {
+  const root = block.freeformContent?.root;
+  if (!root) {
+    return (
+      <div
+        data-testid="freeform-insight-empty"
+        className="rounded border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-400"
+      >
+        洞察卡片：内容生成中或暂不可用
+      </div>
+    );
+  }
+  return (
+    <div data-testid="freeform-insight" className="overflow-hidden rounded">
+      {renderFreeformNode(root, "root")}
+    </div>
+  );
+};
+
 export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   Record<string, ExperienceBlockRenderer>
 > = Object.freeze({
@@ -336,6 +495,7 @@ export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   "quick-action-panel": QuickActionPanelRenderer,
   "filter-bar": FilterBarRenderer,
   "workflow-timeline": WorkflowTimelineRenderer,
+  "freeform-insight": FreeformInsightRenderer,
 });
 
 export function experienceBlockEntry(
