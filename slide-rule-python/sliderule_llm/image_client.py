@@ -56,10 +56,14 @@ def generate_image_png(
     prompt: str,
     *,
     cfg: ImageGenConfig | None = None,
-    size: str = "2K",
-    aspect_ratio: str = "16:9",
+    size: str = "1024x1024",
 ) -> bytes:
-    """调生图接口，返回 PNG 原始字节。三项配置缺失或多次重试后仍失败均抛 ImageGenError。"""
+    """调生图接口，返回 PNG 原始字节。三项配置缺失或多次重试后仍失败均抛 ImageGenError。
+
+    size 用标准 OpenAI images 接口格式（如 "1024x1024"）——实测 image_size/
+    aspect_ratio 那套（skill 包默认模板给另一家走 chat/completions 的服务商用的）
+    在这个 /v1/images/generations 端点上会挂起直到网关 504，换成 size 才通。
+    """
     resolved = cfg or get_image_gen_config()
     if resolved is None:
         raise ImageGenError("IMAGE_API_KEY / IMAGE_API_URL / IMAGE_MODEL 未完整配置，生图能力不可用")
@@ -68,8 +72,7 @@ def generate_image_png(
         "model": resolved.model,
         "prompt": prompt,
         "response_format": "b64_json",
-        "image_size": size,
-        "aspect_ratio": aspect_ratio,
+        "size": size,
         "n": 1,
     }
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {resolved.key}"}
