@@ -67,6 +67,7 @@ import {
   ToolOutlined,
 } from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
+import { resolveEntityRef } from "../system-screens/five-system-model";
 import { resolveIdentityTheme } from "./identity-themes";
 import {
   buildAiActionInputs,
@@ -119,7 +120,13 @@ import {
   resolveVisiblePageId,
   type PageAccess,
 } from "./rbac-preview";
-import { ExperienceBlockBoundary } from "./block-registry";
+import {
+  ExperienceBlockBoundary,
+  type PageFilterState,
+  type FilterFieldOption,
+  type QuickActionButtonSpec,
+} from "./block-registry";
+import { resolveDesignRecipe, designRecipeAlgorithms, DARK_CANVAS_BG } from "./design-recipes";
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
@@ -333,6 +340,41 @@ function pageStatValue(
   return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
+/**
+ * Step 6 FilterBar：本页主实体行数据过滤（枚举精确匹配 AND 日期范围）。
+ * 只作用于与 page.entityId 直接绑定的视图（Table/看板/日历）——stats/
+ * rankings/feeds 各自可能引用不同实体（state.entities[其他 entityId]），
+ * 语义上不归这份"本页主实体"过滤态管，不在这里处理。
+ */
+function applyPageFilter(
+  rows: RuntimeRow[],
+  filterState: PageFilterState | undefined,
+  dateFieldId: string | null | undefined
+): RuntimeRow[] {
+  if (!filterState) return rows;
+  let out = rows;
+  const activeEnumEntries = Object.entries(filterState.enumFilters ?? {}).filter(
+    ([, v]) => Boolean(v)
+  );
+  for (const [fieldId, value] of activeEnumEntries) {
+    out = out.filter(r => String(r.values[fieldId] ?? "") === value);
+  }
+  if (filterState.dateRange && dateFieldId) {
+    const [from, to] = filterState.dateRange;
+    const fromMs = new Date(from).getTime();
+    const toMs = new Date(to).getTime();
+    if (Number.isFinite(fromMs) && Number.isFinite(toMs)) {
+      out = out.filter(r => {
+        const raw = r.values[dateFieldId];
+        if (!raw) return false;
+        const t = new Date(String(raw)).getTime();
+        return Number.isFinite(t) && t >= fromMs && t <= toMs;
+      });
+    }
+  }
+  return out;
+}
+
 /** 工作台统计卡取值：对着运行时状态求值 schema 声明的 source。 */
 function statValue(
   state: RuntimeState,
@@ -384,7 +426,12 @@ export function AppRuntimeScreen({
   const [activePageId, setActivePageId] = React.useState<string>(
     () => schema?.landingPageId ?? "home"
   );
-  const [device, setDevice] = React.useState<DeviceKey>("desktop");
+  // Step 8：preferredDevice 只定默认打开视图，用户仍可手动切换设备档。
+  // 平板档已从切换条下架（见下方档位切换注释），declared "tablet" 时按
+  // 未声明处理，回落 desktop，避免初始态落进一个切换条选不中的档位。
+  const [device, setDevice] = React.useState<DeviceKey>(() =>
+    schema?.identity.preferredDevice === "phone" ? "phone" : "desktop"
+  );
   // 代码视图档（代码视图一期）：schema 的确定性代码投影——与设备档并列的
   // 观察视角切换，开着时替换缩放画布（代码要整幅面积，不做 16:9 缩放）
   const [codeView, setCodeView] = React.useState(false);
@@ -392,6 +439,10 @@ export function AppRuntimeScreen({
   const [role, setRole] = React.useState<string | undefined>(
     () => loadRuntimeRole(sessionId) ?? schema?.roles[0]
   );
+  // Step 6 FilterBar：按 pageId 存一份本地过滤态（视图态，不进 STATE/门禁）。
+  const [pageFilters, setPageFilters] = React.useState<
+    Record<string, PageFilterState>
+  >({});
   const [formOpen, setFormOpen] = React.useState(false);
   const [formValues, setFormValues] = React.useState<Record<string, unknown>>(
     {}
@@ -495,7 +546,79 @@ export function AppRuntimeScreen({
       schema.pages[0] ??
       null);
   const currentTitle = isHome ? schema.home.title : (page?.title ?? "");
-  const rows = page?.entityId ? (state.entities[page.entityId] ?? []) : [];
+  const allRows = page?.entityId ? (state.entities[page.entityId] ?? []) : [];
+
+  // Step 6 FilterBar：本页可筛的枚举字段（有声明选项的 enum 字段）+
+  // 可选日期范围字段（主实体第一个 date/datetime 字段）。
+  const filterableEnumFields: FilterFieldOption[] = page
+    ? page.detailFields
+        .filter(f => f.type === "enum" && (f.options?.length ?? 0) > 0)
+        .map(f => ({
+          id: f.id,
+          label: f.label,
+          options: (f.options ?? []).map(o => ({
+            value: o.id,
+            label: o.label,
+          })),
+        }))
+    : [];
+  const dateRangeField = page
+    ? (() => {
+        const f = page.detailFields.find(
+          fi => fi.type === "date" || fi.type === "datetime"
+        );
+        return f ? { id: f.id, label: f.label } : null;
+      })()
+    : null;
+  const activePageFilter: PageFilterState = page
+    ? (pageFilters[page.id] ?? { enumFilters: {} })
+    : { enumFilters: {} };
+  const rows = applyPageFilter(allRows, activePageFilter, dateRangeField?.id);
+
+  const handlePageFilterChange = (patch: Partial<PageFilterState>) => {
+    if (!page) return;
+    const pageId = page.id;
+    setPageFilters(prev => {
+      const cur = prev[pageId] ?? { enumFilters: {} };
+      return {
+        ...prev,
+        [pageId]: {
+          enumFilters: { ...cur.enumFilters, ...(patch.enumFilters ?? {}) },
+          dateRange:
+            patch.dateRange !== undefined ? patch.dateRange : (cur.dateRange ?? null),
+        },
+      };
+    });
+  };
+
+  // Step 6 QuickActionPanel：本页 navigate/createRecord 候选动作，标签现拼
+  // （navigate→目标页标题；createRecord→目标实体名）。pageActions[].permitted
+  // 派生时恒 true（deriveAppRuntimeSchema 没有角色上下文），真实权限判定和
+  // handleBlockAction 点击时同一套公式（pageAccess.grantedActions），这里
+  // 重算是为了按钮态本身就诚实——不能显示可点、点了却因权限被吞。
+  const quickActionButtons: QuickActionButtonSpec[] = page
+    ? page.pageActions
+        .filter(a => a.type === "navigate" || a.type === "createRecord")
+        .map(a => {
+          const pa = pageAccess.get(page.id);
+          const permitted =
+            !a.permissionRef || (pa?.grantedActions ?? []).includes(a.permissionRef);
+          if (a.type === "navigate") {
+            const target = schema.pages.find(p => p.id === a.targetPageRef);
+            return {
+              id: a.id,
+              label: target ? `前往 ${target.title}` : "跳转",
+              permitted,
+            };
+          }
+          const entity = resolveEntityRef(a.entityRef, model);
+          return {
+            id: a.id,
+            label: entity.resolved ? `新建 ${entity.label}` : "新建",
+            permitted,
+          };
+        })
+    : [];
 
   const apply = (next: RuntimeState) => {
     setState(next);
@@ -682,7 +805,9 @@ export function AppRuntimeScreen({
       dataIndex: ["values", c.id],
       key: c.id,
       ellipsis: true,
-      ...buildColumnFeatures(c, rows),
+      // 列头过滤下拉的候选值取全量 allRows（不随 FilterBar 收窄），避免选项
+      // 随筛选结果消失。
+      ...buildColumnFeatures(c, allRows),
       onHeaderCell: () =>
         page?.entityId
           ? probe({
@@ -1520,6 +1645,16 @@ export function AppRuntimeScreen({
             case "navigate":
               if (action.targetPageRef) setActivePageId(action.targetPageRef);
               break;
+            case "createRecord":
+              // 复用既有「新建」表单：只支持目标实体=本页主实体的场景（表单
+              // 字段就是照本页主实体拼的）；指向别的实体如实拒绝，不假装能建。
+              if (action.entityRef && action.entityRef === page.entityId) {
+                setFormValues({});
+                setFormOpen(true);
+              } else {
+                message.info("该操作指向的实体暂不支持在此页创建");
+              }
+              break;
             case "changeFilter":
               console.log("[action:changeFilter]", actionId, eventData);
               break;
@@ -1528,22 +1663,98 @@ export function AppRuntimeScreen({
           }
         };
 
+        const renderBlock = (block: (typeof directBlocks)[number]) => (
+          <ExperienceBlockBoundary
+            key={block.id}
+            block={block}
+            onAction={handleBlockAction}
+            pageActions={quickActionButtons}
+            filterState={activePageFilter}
+            filterFieldOptions={filterableEnumFields}
+            dateRangeField={dateRangeField}
+            onFilterChange={handlePageFilterChange}
+          />
+        );
+
+        // Step 7：未声明 layout（或声明后 5 槽位全空，schema 层已判定并回 null）
+        // 时保留原顺序平铺，视觉零变化。
+        if (!page.layout) {
+          return (
+            <div
+              className="mb-3 grid gap-2"
+              data-testid="app-runtime-experience-block-scaffold"
+            >
+              {directBlocks.map(renderBlock)}
+            </div>
+          );
+        }
+
+        const blockById = new Map(directBlocks.map(b => [b.id, b]));
+        // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
+        const slotSource = isPhone && page.layout.mobile
+          ? { ...page.layout, ...page.layout.mobile }
+          : page.layout;
+        const slotBlocks = (ids: string[]) =>
+          ids.map(bid => blockById.get(bid)).filter((b): b is NonNullable<typeof b> => !!b);
+        const summaryBlocks = slotBlocks(slotSource.summary ?? []);
+        const primaryBlocks = slotBlocks(slotSource.primary ?? []);
+        const secondaryBlocks = slotBlocks(slotSource.secondary ?? []);
+        const activityBlocks = slotBlocks(slotSource.activity ?? []);
+        const contentBlocks = slotBlocks(slotSource.content ?? []);
+        const placedIds = new Set(
+          [...summaryBlocks, ...primaryBlocks, ...secondaryBlocks, ...activityBlocks, ...contentBlocks].map(
+            b => b.id
+          )
+        );
+        // 声明了 layout 但没被任何槽位引用到的区块：如实照样渲染，不能因为
+        // 没排进槽位就悄悄丢内容——排在末尾，视觉上标为"未分配槽位"。
+        const orphanBlocks = directBlocks.filter(b => !placedIds.has(b.id));
+
         return (
           <div
-            className="mb-3 grid gap-2"
-            data-testid="app-runtime-experience-block-scaffold"
+            className="mb-3 flex flex-col gap-2"
+            data-testid="app-runtime-experience-block-layout"
           >
-            {directBlocks.map(block => (
-              <ExperienceBlockBoundary
-                key={block.id}
-                block={block}
-                onAction={
-                  block.eventBindings && Object.keys(block.eventBindings).length > 0
-                    ? handleBlockAction
-                    : undefined
-                }
-              />
-            ))}
+            {summaryBlocks.length > 0 && (
+              <div className="flex flex-wrap gap-2" data-testid="app-runtime-layout-summary">
+                {summaryBlocks.map(renderBlock)}
+              </div>
+            )}
+            {(primaryBlocks.length > 0 || secondaryBlocks.length > 0) && (
+              <div className="flex flex-col gap-2 md:flex-row md:items-start">
+                {primaryBlocks.length > 0 && (
+                  <div
+                    className="flex min-w-0 flex-[2] flex-col gap-2"
+                    data-testid="app-runtime-layout-primary"
+                  >
+                    {primaryBlocks.map(renderBlock)}
+                  </div>
+                )}
+                {secondaryBlocks.length > 0 && (
+                  <div
+                    className="flex min-w-0 flex-1 flex-col gap-2"
+                    data-testid="app-runtime-layout-secondary"
+                  >
+                    {secondaryBlocks.map(renderBlock)}
+                  </div>
+                )}
+              </div>
+            )}
+            {activityBlocks.length > 0 && (
+              <div className="flex flex-col gap-2" data-testid="app-runtime-layout-activity">
+                {activityBlocks.map(renderBlock)}
+              </div>
+            )}
+            {contentBlocks.length > 0 && (
+              <div className="flex flex-col gap-2" data-testid="app-runtime-layout-content">
+                {contentBlocks.map(renderBlock)}
+              </div>
+            )}
+            {orphanBlocks.length > 0 && (
+              <div className="grid gap-2" data-testid="app-runtime-layout-unassigned">
+                {orphanBlocks.map(renderBlock)}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -1677,6 +1888,8 @@ export function AppRuntimeScreen({
   // E40.2 应用身份：主题 token 决定品牌区/主色/内容底色；菜单项抽出来给
   // side/top 两种导航形态共用。缺省 = azure（老模型渲染与历史一致）。
   const identityTheme = resolveIdentityTheme(schema.identity.themeId);
+  // Step 9：视觉配方——只管密度/深色开关/圆角，主色仍归 identityTheme；两者叠加。
+  const designRecipe = resolveDesignRecipe(schema.identity.designRecipeRef);
   const brandGradient = `linear-gradient(135deg,${identityTheme.primary},${identityTheme.gradTo})`;
   const BrandIcon = BRAND_ICONS[schema.identity.icon] ?? AppstoreOutlined;
   const hasLegacyHomeMenu = schema.menus[0]?.pageId === schema.home.id;
@@ -2000,7 +2213,9 @@ export function AppRuntimeScreen({
             // E40.2：主题变量下发（非 antd 的裸元素经 var(--app-primary) 吃主题）
             ["--app-primary" as string]: identityTheme.primary,
             ["--app-primary-hover" as string]: identityTheme.primaryHover,
-            background: identityTheme.contentBg,
+            // Step 9：深色配方覆盖 canvas 底色（不读 identityTheme.contentBg，
+            // 避免深色配方叠浅色主题时底色反而变浅）。
+            background: designRecipe.dark ? DARK_CANVAS_BG : identityTheme.contentBg,
             borderRadius: isPhone ? 12 : 5,
             overflow: "hidden",
             boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
@@ -2010,8 +2225,17 @@ export function AppRuntimeScreen({
             getPopupContainer={() => canvasEl ?? document.body}
             theme={{
               // E40.2：身份主题的主色一把翻全部 antd 组件（按钮/选中态/链接…）
-              token: { colorPrimary: identityTheme.primary },
-              algorithm: isTablet ? antdTheme.compactAlgorithm : undefined,
+              // Step 9：配方叠加圆角 + 深色/紧凑 algorithm；高对比额外加深边框、
+              // 略增字号（无障碍场景，antd token 全局生效，不用逐组件改）。
+              token: {
+                colorPrimary: identityTheme.primary,
+                borderRadius: designRecipe.borderRadius,
+                padding: designRecipe.padding,
+                ...(designRecipe.highContrast
+                  ? { colorBorder: "#000000", colorBorderSecondary: "#00000040", fontSize: 15 }
+                  : {}),
+              },
+              algorithm: designRecipeAlgorithms(designRecipe, isTablet),
             }}
           >
             {isPhone

@@ -17,6 +17,7 @@ import {
   type FieldFormat,
   type NormalizedFieldOption,
 } from "./field-display";
+import { DESIGN_RECIPE_IDS } from "./design-recipes";
 
 export interface AppFormFieldSchema {
   id: string;
@@ -206,6 +207,24 @@ export interface AppPageSchema {
   experienceBlocks: AppExperienceBlockSchema[];
   /** 页面级动作实例（Step 5）；空数组对旧模型兼容 */
   pageActions: AppPageActionSchema[];
+  /** Step 7：区块布局 5 槽位；未声明或声明后全空为 null，渲染层回退顺序平铺。 */
+  layout: AppPageLayoutSchema | null;
+}
+
+/** Step 7：页面布局 5 槽位——每个槽位是有序区块 id 列表；mobile 为手机端覆盖。 */
+export interface AppPageLayoutSchema {
+  summary: string[];
+  primary: string[];
+  secondary: string[];
+  activity: string[];
+  content: string[];
+  mobile?: {
+    summary?: string[];
+    primary?: string[];
+    secondary?: string[];
+    activity?: string[];
+    content?: string[];
+  };
 }
 
 export interface AppStatCardSchema {
@@ -239,7 +258,15 @@ export interface AppHomeSchema {
 export interface AppRuntimeSchema {
   appName: string;
   /** 应用身份（E40.2）：主题/图标/导航形态（productName 已并入 appName） */
-  identity: { themeId: string; icon: string; nav: "side" | "top" };
+  identity: {
+    themeId: string;
+    icon: string;
+    nav: "side" | "top";
+    /** Step 8：默认设备视口偏好；老模型缺省不指定，运行时按现有默认值走。 */
+    preferredDevice?: "desktop" | "tablet" | "phone";
+    /** Step 9：视觉配方引用；老模型/未声明为 undefined，运行时按 "default" 处理。 */
+    designRecipeRef?: string;
+  };
   roles: string[];
   /** 应用首次打开的页面；老模型缺省为 home。 */
   landingPageId: string;
@@ -302,6 +329,53 @@ export function buildAiActionInputs(
     inputs[ref] = v === undefined || v === null ? "" : String(v);
   }
   return inputs;
+}
+
+const LAYOUT_SLOT_KEYS = [
+  "summary",
+  "primary",
+  "secondary",
+  "activity",
+  "content",
+] as const;
+type LayoutSlotKey = (typeof LAYOUT_SLOT_KEYS)[number];
+
+function normalizeLayoutSlotMap(
+  raw: unknown,
+  validBlockIds: Set<string>
+): Record<LayoutSlotKey, string[]> {
+  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const out = {} as Record<LayoutSlotKey, string[]>;
+  for (const slot of LAYOUT_SLOT_KEYS) {
+    const ids = Array.isArray(obj[slot]) ? (obj[slot] as unknown[]) : [];
+    out[slot] = ids.map(v => String(v)).filter(idStr => validBlockIds.has(idStr));
+  }
+  return out;
+}
+
+/**
+ * Step 7：页面布局 5 槽位派生。Gate 已校验槽位合法 + 引用不悬空，这里仍做
+ * 防御性二次过滤（悬空引用/非法槽位如实丢弃，不炸渲染，只信任模型直接
+ * 声明的 page.blocks——legacy 转换来的合成块不参与布局）。未声明 layout
+ * 或过滤后 5 槽位全空时返回 null，渲染层回退旧的顺序平铺。
+ */
+function deriveLayout(
+  rawLayout: unknown,
+  experienceBlocks: AppExperienceBlockSchema[]
+): AppPageLayoutSchema | null {
+  if (!rawLayout || typeof rawLayout !== "object") return null;
+  const directIds = new Set(
+    experienceBlocks.filter(b => !b._fromLegacy).map(b => b.id)
+  );
+  if (directIds.size === 0) return null;
+  const slots = normalizeLayoutSlotMap(rawLayout, directIds);
+  const mobileRaw = (rawLayout as Record<string, unknown>).mobile;
+  const mobile = mobileRaw
+    ? normalizeLayoutSlotMap(mobileRaw, directIds)
+    : undefined;
+  const hasAny = LAYOUT_SLOT_KEYS.some(k => slots[k].length > 0);
+  if (!hasAny) return null;
+  return { ...slots, mobile };
 }
 
 export function deriveAppRuntimeSchema(
@@ -543,6 +617,49 @@ export function deriveAppRuntimeSchema(
       });
     }
 
+    // 体验区块：优先用模型直接声明的 page.blocks；若无声明，从现有
+    // stats/charts/rankings/feeds 自动转换（零视觉变化路径，三阶段接入前
+    // AppRuntimeScreen 会过滤掉 _fromLegacy 块，仍走旧渲染路径）。
+    const experienceBlocks: AppExperienceBlockSchema[] = (() => {
+      const directBlocks: AppExperienceBlockSchema[] = (page.blocks ?? []).map(
+        (block, blockIndex) => ({
+          id: String(block.id ?? "").trim() || `block-${id}-${blockIndex + 1}`,
+          type: String(block.type ?? "").trim(),
+          props: block.props as Record<string, unknown> | undefined,
+          binding: block.binding as AppExperienceBlockSchema["binding"],
+          eventBindings: block.eventBindings as Record<string, string> | undefined,
+        })
+      );
+      if (directBlocks.length > 0) return directBlocks;
+      // 无 page.blocks 时从旧字段生成 legacy 占位区块（渲染层过滤）
+      return [
+        ...stats.map(s => ({
+          id: `legacy-stat-${s.id}`,
+          type: "MetricGrid" as const,
+          _fromLegacy: true as const,
+          _legacyStat: s,
+        })),
+        ...charts.map(c => ({
+          id: `legacy-chart-${c.id}`,
+          type: "TrendChart" as const,
+          _fromLegacy: true as const,
+          _legacyChart: c,
+        })),
+        ...rankings.map(r => ({
+          id: `legacy-ranking-${r.id}`,
+          type: "RankedList" as const,
+          _fromLegacy: true as const,
+          _legacyRanking: r,
+        })),
+        ...feeds.map(f => ({
+          id: `legacy-feed-${f.id}`,
+          type: "ActivityFeed" as const,
+          _fromLegacy: true as const,
+          _legacyFeed: f,
+        })),
+      ];
+    })();
+
     return {
       id,
       title: page.name || id,
@@ -562,45 +679,9 @@ export function deriveAppRuntimeSchema(
       // 体验区块：优先用模型直接声明的 page.blocks；若无声明，从现有
       // stats/charts/rankings/feeds 自动转换（零视觉变化路径，三阶段接入前
       // AppRuntimeScreen 会过滤掉 _fromLegacy 块，仍走旧渲染路径）。
-      experienceBlocks: (() => {
-        const directBlocks: AppExperienceBlockSchema[] = (
-          page.blocks ?? []
-        ).map((block, blockIndex) => ({
-          id: String(block.id ?? "").trim() || `block-${id}-${blockIndex + 1}`,
-          type: String(block.type ?? "").trim(),
-          props: block.props as Record<string, unknown> | undefined,
-          binding: block.binding as AppExperienceBlockSchema["binding"],
-          eventBindings: block.eventBindings as Record<string, string> | undefined,
-        }));
-        if (directBlocks.length > 0) return directBlocks;
-        // 无 page.blocks 时从旧字段生成 legacy 占位区块（渲染层过滤）
-        return [
-          ...stats.map(s => ({
-            id: `legacy-stat-${s.id}`,
-            type: "MetricGrid" as const,
-            _fromLegacy: true as const,
-            _legacyStat: s,
-          })),
-          ...charts.map(c => ({
-            id: `legacy-chart-${c.id}`,
-            type: "TrendChart" as const,
-            _fromLegacy: true as const,
-            _legacyChart: c,
-          })),
-          ...rankings.map(r => ({
-            id: `legacy-ranking-${r.id}`,
-            type: "RankedList" as const,
-            _fromLegacy: true as const,
-            _legacyRanking: r,
-          })),
-          ...feeds.map(f => ({
-            id: `legacy-feed-${f.id}`,
-            type: "ActivityFeed" as const,
-            _fromLegacy: true as const,
-            _legacyFeed: f,
-          })),
-        ];
-      })(),
+      experienceBlocks,
+      /** Step 7：页面布局 5 槽位；无声明或声明后全空时为 null，渲染层回退顺序平铺。 */
+      layout: deriveLayout(page.layout, experienceBlocks),
       // 页面级动作实例（Step 5）。deriveAppRuntimeSchema 无角色上下文，
       // permitted 默认 true；AppRuntimeScreen 的 handleBlockAction 用 pageAccess
       // 做实际权限检查，二次守门。
@@ -682,12 +763,28 @@ export function deriveAppRuntimeSchema(
   // 缺省回退（老模型无身份段 → 与历史渲染完全一致）
   const rawIdentity = model?.appbundle?.appIdentity;
   const productName = String(rawIdentity?.productName ?? "").trim();
+  // Step 8：experienceShell 是 nav 的新权威来源（仅 navigation 模式下生效；
+  // focus 模式暂不改变导航渲染，留给后续全屏容器实现）。旧模型没有该字段时
+  // 仍读 appIdentity.nav，保证历史渲染不变。
+  const rawShell = model?.appbundle?.experienceShell;
+  const shellNav =
+    rawShell?.mode === "navigation"
+      ? String(rawShell?.navigation ?? "").trim()
+      : "";
+  const legacyNav = String(rawIdentity?.nav ?? "").trim();
+  const preferredDeviceRaw = String(model?.appbundle?.preferredDevice ?? "").trim();
+  const designRecipeRefRaw = String(rawIdentity?.designRecipeRef ?? "").trim();
   const identity = {
     themeId: String(rawIdentity?.theme ?? "").trim() || "azure",
     icon: String(rawIdentity?.icon ?? "").trim() || "boxes",
-    nav: (String(rawIdentity?.nav ?? "").trim() === "top" ? "top" : "side") as
-      | "side"
-      | "top",
+    nav: ((shellNav || legacyNav) === "top" ? "top" : "side") as "side" | "top",
+    preferredDevice: (["desktop", "tablet", "phone"].includes(preferredDeviceRaw)
+      ? preferredDeviceRaw
+      : undefined) as "desktop" | "tablet" | "phone" | undefined,
+    // Step 9：门禁已校验合法域；这里防御性二次过滤，悬空/非法值当未声明处理。
+    designRecipeRef: DESIGN_RECIPE_IDS.includes(designRecipeRefRaw)
+      ? designRecipeRefRaw
+      : undefined,
   };
 
   return {

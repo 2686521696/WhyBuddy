@@ -1098,7 +1098,7 @@ def test_preferred_device_enum_violation():
 def test_design_recipe_ref_valid_passes():
     """合法的 designRecipeRef 应通过。"""
     model = _make_model_with_landing()
-    model.setdefault("appbundle", {}).setdefault("appIdentity", {})["designRecipeRef"] = "compact-dark"
+    model.setdefault("appbundle", {}).setdefault("appIdentity", {})["designRecipeRef"] = "compact-dense"
     from services.v5_model_gate import validate_five_system_model
     result = validate_five_system_model(model, require_landing_page_ref=True)
     findings = [f for f in result["findings"] if "designRecipeRef" in f.get("path", "")]

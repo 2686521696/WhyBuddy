@@ -56,14 +56,18 @@ STAT_METRIC_PREFIXES = _tuple("statMetricPrefixes")
 IDENTITY_THEMES = _tuple("identityThemes")
 IDENTITY_ICONS = _tuple("identityIcons")
 IDENTITY_NAVS = _tuple("identityNavs")
-# Step 9：视觉配方封闭集（人工调好的配方，模型只选不自由生成）
+# Step 9：视觉配方封闭集（人工调好的配方，模型只选不自由生成）。
+# 配方只管密度/布局/深浅色，不选主色——主色由 identity.theme（8 套）独立决定，
+# 两者叠加使用。id/取值来自对一批真实产品原型截图的视觉聚类（2026-07-23 校订，
+# 原先 compact-dark/warm-orange/cool-blue/soft-neutral 几个名字实际在挑颜色，
+# 和 identity.theme 职责重叠，已废弃改名）。
 DESIGN_RECIPES = (
-    "default",          # 各主题自带默认配方
-    "compact-dark",     # 深色高密度（经营大盘、监控）
-    "warm-orange",      # 橙色活泼（CRM、消费类）
-    "cool-blue",        # 蓝色专业（政务、金融）
-    "soft-neutral",     # 柔和中性（内容创作、知识库）
-    "high-contrast",    # 高对比度无障碍
+    "default",           # 跟随主题默认密度，不做覆盖
+    "spacious-guided",   # 宽松留白、分步引导（AI 工具/向导式产品）
+    "compact-dense",     # 紧凑高密度、浅色（数据监控/竞品分析类）
+    "content-cards",     # 圆角卡片感更强（内容创作/知识管理类）
+    "dark-monitoring",   # 深色 + 紧凑（运维大屏/监控场景）
+    "high-contrast",     # 边框加深、字号略增（无障碍场景）
 )
 
 
@@ -159,9 +163,11 @@ def experience_block_prompt_block() -> str:
     """把目录压成给 LLM 的封闭选材说明；不另写第二份区块清单。"""
     lines = [
         "EXPERIENCE BLOCK CATALOG (closed set):",
-        "You MAY now emit page.blocks for new-style pages. When you do, every block type MUST be one of the catalog entries below.",
-        "The existing stats/charts/rankings/feeds fields still work for backward compatibility.",
-        "Prefer emitting page.blocks when building new pages; keep stats/charts for pages that already use them.",
+        "The page.blocks schema below is validated end-to-end, but the client-side renderer for it is NOT shipped yet — "
+        "any block emitted via page.blocks currently displays as an inert placeholder to real users. "
+        "DO NOT emit page.blocks for production pages. ALWAYS use the existing stats/charts/rankings/feeds fields instead; "
+        "this catalog exists for schema/gate testing only until the renderer lands.",
+        "If you emit page.blocks anyway (e.g. explicitly requested for schema testing), every block type MUST be one of the catalog entries below.",
     ]
     for block in EXPERIENCE_BLOCKS:
         lines.append(
@@ -192,13 +198,21 @@ def experience_block_prompt_block() -> str:
         "Step 8 — Shell and device: appbundle MAY include experienceShell "
         "{mode: 'navigation'|'focus', navigation: 'side'|'top'} and preferredDevice 'desktop'|'tablet'|'phone'. "
         "Use experienceShell instead of appIdentity.nav for new models. "
-        "focus mode is for full-screen single-purpose tools (report viewer, document editor)."
+        "mode MUST be 'navigation' for now — 'focus' (full-screen single-purpose tools like a report "
+        "viewer or document editor) is schema-legal but has NO client renderer yet; declaring it renders "
+        "as an ordinary navigation shell, not the immersive full-screen layout the name implies."
     )
     lines.append(
         f"Step 9 — Design recipe: appbundle.appIdentity MAY include designRecipeRef "
         f"from: {', '.join(DESIGN_RECIPES)}. "
-        "compact-dark = dense dark analytics; warm-orange = CRM/consumer; "
-        "cool-blue = finance/gov; soft-neutral = content/knowledge; high-contrast = accessibility. "
+        "Recipes control density/layout/dark-mode ONLY — they do NOT pick colors; "
+        "primary color is a separate, independent choice via appIdentity.theme. "
+        "spacious-guided = generous spacing for step-by-step wizard tools; "
+        "compact-dense = tight spacing for monitoring/competitive-analysis dashboards; "
+        "content-cards = larger rounded cards for content/knowledge tools; "
+        "dark-monitoring = dark background + compact spacing for ops dashboards; "
+        "high-contrast = darker borders and larger text for accessibility. "
+        "default = no override, follows the theme's own spacing. "
         "Do not free-generate colors or CSS — only reference a recipe by id."
     )
     return "\n".join(lines)
