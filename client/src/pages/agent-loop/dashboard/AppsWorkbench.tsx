@@ -93,6 +93,9 @@ export interface AppCardDetail {
   identity: { productName: string; theme: string; icon: string } | null;
   /** Phase A：用于缩略图缓存失效的稳定摘要（stableDigest from publishClosure） */
   stableDigest?: string;
+  /** 2026-07-23：完整五系统模型——「活渲染缩略图」直接拿它挂 AppRuntimeScreen，
+   *  不再截图。null 表示模型不完整（非 runnable），缩略图走占位态。 */
+  model: FiveSystemModel | null;
 }
 
 /** 从持久化会话状态推导卡片详情（不发明数据：模型缺失就是 draft）。 */
@@ -138,6 +141,7 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
     pageNames: pagesArr.map((p: any) => String(p?.name ?? p?.id ?? "")).filter(Boolean).slice(0, 6),
     entityNames: entitiesArr.map((e: any) => String(e?.name ?? e?.id ?? "")).filter(Boolean).slice(0, 4),
     stableDigest: String(closure.stableDigest ?? closure.closureHash ?? "").slice(0, 32) || undefined,
+    model,
   };
 }
 
@@ -203,144 +207,106 @@ const STATUS_META: Record<AppCardStatus, { label: string; cls: string; dot: stri
 /** 每页 12 张 = 一行 4 × 最多三行（用户硬性要求），超出走分页器。 */
 const PAGE_SIZE = 12;
 
-/** 缩略图：全部由真实模型渲染——不是截图，是「按声明重演的迷你应用」。 */
-function MiniAppThumb({
-  goal,
-  detail,
-}: {
-  goal: string;
-  detail: AppCardDetail | null;
-}) {
-  if (!detail || detail.status !== "runnable" || detail.pageNames.length === 0) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#eef4ff] to-[#f7f8fa]">
-        <div className="text-center">
-          <span className="inline-flex items-end gap-1">
-            {[0, 1, 2].map(i => (
-              <span
-                key={i}
-                className="h-1 w-1 animate-pulse rounded-full bg-[#1677ff]"
-                style={{ animationDelay: `${i * 160}ms` }}
-              />
-            ))}
-          </span>
-          <div className="mt-1 text-[11px] text-stone-400">
-            {detail?.blocked ? "待补充信息" : "推演未闭环"}
-          </div>
-          {detail && (
-            <div className="mx-auto mt-1.5 h-[3px] w-16 overflow-hidden rounded-full bg-stone-200">
-              <div
-                className="h-full rounded-full bg-[#1677ff]"
-                style={{ width: `${Math.min(100, (detail.evidenceCount / 6) * 100)}%` }}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+/** 未闭环/无模型时的占位态（推演中 / blocked）——不是缩略图失败兜底，是诚实展示进度。 */
+function PendingAppThumb({ detail }: { detail: AppCardDetail | null }) {
   return (
-    <div className="flex h-full w-full overflow-hidden bg-[#f4f6f9]">
-      <div className="flex w-[26%] shrink-0 flex-col gap-[3px] bg-[#0d1b2e] px-1.5 py-2">
-        <div className="mb-1 flex items-center gap-1 px-0.5">
-          <span className="h-2 w-2 shrink-0 rounded-sm bg-[#1677ff]" />
-          <span className="truncate text-[8px] font-semibold text-white/90">{goal}</span>
+    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#eef4ff] to-[#f7f8fa]">
+      <div className="text-center">
+        <span className="inline-flex items-end gap-1">
+          {[0, 1, 2].map(i => (
+            <span
+              key={i}
+              className="h-1 w-1 animate-pulse rounded-full bg-[#1677ff]"
+              style={{ animationDelay: `${i * 160}ms` }}
+            />
+          ))}
+        </span>
+        <div className="mt-1 text-[11px] text-stone-400">
+          {detail?.blocked ? "待补充信息" : "推演未闭环"}
         </div>
-        {detail.pageNames.slice(0, 5).map((name, i) => (
-          <div
-            key={name}
-            className={`truncate rounded px-1.5 py-[3px] text-[8px] ${
-              i === 0 ? "bg-[#1677ff] text-white" : "text-white/55"
-            }`}
-          >
-            {name}
+        {detail && (
+          <div className="mx-auto mt-1.5 h-[3px] w-16 overflow-hidden rounded-full bg-stone-200">
+            <div
+              className="h-full rounded-full bg-[#1677ff]"
+              style={{ width: `${Math.min(100, (detail.evidenceCount / 6) * 100)}%` }}
+            />
           </div>
-        ))}
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center justify-between border-b border-stone-200/70 bg-white px-2 py-[4px]">
-          <span className="truncate text-[7px] text-stone-400">{detail.pageNames[0]}</span>
-          <span className="h-2 w-2 rounded-full bg-[#1677ff]/80" />
-        </div>
-        <div className="grid grid-cols-2 gap-1.5 px-1.5 pt-1.5">
-          {detail.entityNames.slice(0, 2).map(name => (
-            <div key={name} className="rounded border border-stone-200/60 bg-white px-1.5 py-[4px]">
-              <div className="truncate text-[7px] text-stone-400">{name}</div>
-              <div className="text-[9px] font-semibold text-stone-600">0</div>
-            </div>
-          ))}
-        </div>
-        <div className="mx-1.5 mt-1.5 flex-1 rounded-t border border-stone-200/60 bg-white p-1.5">
-          {[1, 0.75, 0.5, 0.35].map((op, i) => (
-            <div key={i} className="mb-1.5 h-[4px] w-full rounded-sm bg-stone-100" style={{ opacity: op }} />
-          ))}
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
+// AppRuntimeScreen 很重（antd 表格/echarts 懒 chunk）——App Center 一页最多
+// 12 张卡，独立分包 + 视口内才挂载，避免把这份重量压进应用中心首屏包。
+const LazyAppRuntimeScreen = React.lazy(() =>
+  import("@/pages/sliderule/live-runtime/AppRuntimeScreen").then(m => ({
+    default: m.AppRuntimeScreen,
+  }))
+);
+
 /**
- * Phase A：真实截图缩略图。
- * 从服务端截图端点拉取 PNG；失败或不可用时降级到 MiniAppThumb。
- * 只对 runnable（closed 6/6）且有 stableDigest 的应用尝试截图。
+ * 活渲染缩略图（2026-07-23，取代 Phase A 的服务端截图方案）。
+ *
+ * 应用本来就是拿 five-system 模型实时渲染出来的（AppRuntimeScreen），缩略图
+ * 没必要额外截一张图存起来——直接把同一个组件按卡片尺寸挂载、禁用交互即可：
+ * 永远最新、零缓存失效问题、不用额外的存储/沙盒基建。
+ *
+ * AppRuntimeScreen 自己的 useScaleToFit 会把 1440×810 画布按容器实际尺寸
+ * 等比缩小，这里只需要给够 h-full w-full 的容器；设备切换条经 controlsContainer
+ * portal 到一个隐藏节点，缩略图里不需要看见它。
  */
-function RealAppThumb({
+function LiveAppThumb({
   sessionId,
-  stableDigest,
+  model,
   goal,
-  detail,
 }: {
   sessionId: string;
-  stableDigest?: string;
+  model: FiveSystemModel;
   goal: string;
-  detail: AppCardDetail | null;
 }) {
-  const [src, setSrc] = React.useState<string | null>(null);
-  const [failed, setFailed] = React.useState(false);
-  const prevDigestRef = React.useRef(stableDigest);
+  const wrapRef = React.useRef<HTMLDivElement | null>(null);
+  const [hiddenControls, setHiddenControls] = React.useState<HTMLDivElement | null>(null);
+  const [visible, setVisible] = React.useState(false);
 
-  // 失效旧截图缓存（modelHash 变化时）
   React.useEffect(() => {
-    if (prevDigestRef.current !== stableDigest && prevDigestRef.current) {
-      fetch(`/api/sliderule/sessions/${encodeURIComponent(sessionId)}/screenshot`, { method: "DELETE" }).catch(() => {});
+    const el = wrapRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
     }
-    prevDigestRef.current = stableDigest;
-  }, [sessionId, stableDigest]);
-
-  // 拉取截图
-  React.useEffect(() => {
-    if (!sessionId || !stableDigest || detail?.status !== "runnable" || IS_GITHUB_PAGES) return;
-    let alive = true;
-    setSrc(null);
-    setFailed(false);
-    fetch(`/api/sliderule/sessions/${encodeURIComponent(sessionId)}/screenshot`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ modelHash: stableDigest }),
-    })
-      .then(async res => {
-        if (!alive) return;
-        if (!res.ok) { setFailed(true); return; }
-        const blob = await res.blob();
-        if (!alive) return;
-        setSrc(URL.createObjectURL(blob));
-      })
-      .catch(() => { if (alive) setFailed(true); });
-    return () => { alive = false; };
-  }, [sessionId, stableDigest, detail?.status]);
-
-  if (src && !failed) {
-    return (
-      <img
-        src={src}
-        alt={goal}
-        className="h-full w-full object-cover object-top"
-        data-testid="app-thumb-real"
-      />
+    const io = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting)) {
+          setVisible(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "200px" }
     );
-  }
-  return <MiniAppThumb goal={goal} detail={detail} />;
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={wrapRef}
+      className="pointer-events-none h-full w-full overflow-hidden bg-[#f0f2f5]"
+      data-testid="app-thumb-live"
+    >
+      <div ref={setHiddenControls} style={{ display: "none" }} />
+      {visible && (
+        <React.Suspense fallback={<div className="h-full w-full bg-[#f0f2f5]" />}>
+          <LazyAppRuntimeScreen
+            model={model}
+            sessionId={sessionId}
+            appTitle={goal}
+            controlsContainer={hiddenControls}
+          />
+        </React.Suspense>
+      )}
+    </div>
+  );
 }
 
 function StatChip({
@@ -894,7 +860,13 @@ export function AppsWorkbench() {
                   titleAttr={item.goal}
                   Icon={BrandIcon}
                   iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
-                  media={<RealAppThumb sessionId={item.sessionId} stableDigest={detail?.stableDigest} goal={item.goal} detail={detail} />}
+                  media={
+                    detail?.status === "runnable" && detail.model ? (
+                      <LiveAppThumb sessionId={item.sessionId} model={detail.model} goal={item.goal} />
+                    ) : (
+                      <PendingAppThumb detail={detail} />
+                    )
+                  }
                   metrics={
                     detail ? (
                       <>
