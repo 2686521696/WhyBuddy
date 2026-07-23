@@ -17,6 +17,7 @@ import {
   type FieldFormat,
   type NormalizedFieldOption,
 } from "./field-display";
+import { DESIGN_RECIPE_IDS } from "./design-recipes";
 
 export interface AppFormFieldSchema {
   id: string;
@@ -263,6 +264,8 @@ export interface AppRuntimeSchema {
     nav: "side" | "top";
     /** Step 8：默认设备视口偏好；老模型缺省不指定，运行时按现有默认值走。 */
     preferredDevice?: "desktop" | "tablet" | "phone";
+    /** Step 9：视觉配方引用；老模型/未声明为 undefined，运行时按 "default" 处理。 */
+    designRecipeRef?: string;
   };
   roles: string[];
   /** 应用首次打开的页面；老模型缺省为 home。 */
@@ -770,6 +773,7 @@ export function deriveAppRuntimeSchema(
       : "";
   const legacyNav = String(rawIdentity?.nav ?? "").trim();
   const preferredDeviceRaw = String(model?.appbundle?.preferredDevice ?? "").trim();
+  const designRecipeRefRaw = String(rawIdentity?.designRecipeRef ?? "").trim();
   const identity = {
     themeId: String(rawIdentity?.theme ?? "").trim() || "azure",
     icon: String(rawIdentity?.icon ?? "").trim() || "boxes",
@@ -777,6 +781,10 @@ export function deriveAppRuntimeSchema(
     preferredDevice: (["desktop", "tablet", "phone"].includes(preferredDeviceRaw)
       ? preferredDeviceRaw
       : undefined) as "desktop" | "tablet" | "phone" | undefined,
+    // Step 9：门禁已校验合法域；这里防御性二次过滤，悬空/非法值当未声明处理。
+    designRecipeRef: DESIGN_RECIPE_IDS.includes(designRecipeRefRaw)
+      ? designRecipeRefRaw
+      : undefined,
   };
 
   return {

@@ -126,6 +126,7 @@ import {
   type FilterFieldOption,
   type QuickActionButtonSpec,
 } from "./block-registry";
+import { resolveDesignRecipe, designRecipeAlgorithms, DARK_CANVAS_BG } from "./design-recipes";
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
@@ -1887,6 +1888,8 @@ export function AppRuntimeScreen({
   // E40.2 应用身份：主题 token 决定品牌区/主色/内容底色；菜单项抽出来给
   // side/top 两种导航形态共用。缺省 = azure（老模型渲染与历史一致）。
   const identityTheme = resolveIdentityTheme(schema.identity.themeId);
+  // Step 9：视觉配方——只管密度/深色开关/圆角，主色仍归 identityTheme；两者叠加。
+  const designRecipe = resolveDesignRecipe(schema.identity.designRecipeRef);
   const brandGradient = `linear-gradient(135deg,${identityTheme.primary},${identityTheme.gradTo})`;
   const BrandIcon = BRAND_ICONS[schema.identity.icon] ?? AppstoreOutlined;
   const hasLegacyHomeMenu = schema.menus[0]?.pageId === schema.home.id;
@@ -2210,7 +2213,9 @@ export function AppRuntimeScreen({
             // E40.2：主题变量下发（非 antd 的裸元素经 var(--app-primary) 吃主题）
             ["--app-primary" as string]: identityTheme.primary,
             ["--app-primary-hover" as string]: identityTheme.primaryHover,
-            background: identityTheme.contentBg,
+            // Step 9：深色配方覆盖 canvas 底色（不读 identityTheme.contentBg，
+            // 避免深色配方叠浅色主题时底色反而变浅）。
+            background: designRecipe.dark ? DARK_CANVAS_BG : identityTheme.contentBg,
             borderRadius: isPhone ? 12 : 5,
             overflow: "hidden",
             boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
@@ -2220,8 +2225,17 @@ export function AppRuntimeScreen({
             getPopupContainer={() => canvasEl ?? document.body}
             theme={{
               // E40.2：身份主题的主色一把翻全部 antd 组件（按钮/选中态/链接…）
-              token: { colorPrimary: identityTheme.primary },
-              algorithm: isTablet ? antdTheme.compactAlgorithm : undefined,
+              // Step 9：配方叠加圆角 + 深色/紧凑 algorithm；高对比额外加深边框、
+              // 略增字号（无障碍场景，antd token 全局生效，不用逐组件改）。
+              token: {
+                colorPrimary: identityTheme.primary,
+                borderRadius: designRecipe.borderRadius,
+                padding: designRecipe.padding,
+                ...(designRecipe.highContrast
+                  ? { colorBorder: "#000000", colorBorderSecondary: "#00000040", fontSize: 15 }
+                  : {}),
+              },
+              algorithm: designRecipeAlgorithms(designRecipe, isTablet),
             }}
           >
             {isPhone

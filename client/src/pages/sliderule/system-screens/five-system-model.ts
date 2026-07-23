@@ -349,7 +349,9 @@ export interface AppIdentitySection {
   icon?: string;
   /** 导航形态：side 管理台侧栏 / top 监控型顶栏（Step 8 后由 experienceShell 接管，保留向后兼容） */
   nav?: string;
-  /** 视觉配方引用（Step 9）：指向配方 id（compact-dark / warm-orange / …）；不填时使用 theme 默认配方 */
+  /** 视觉配方引用（Step 9）：指向配方 id（spacious-guided / compact-dense / content-cards /
+   * dark-monitoring / high-contrast）；只管密度/深浅色，不选主色（主色是 theme 的职责）；
+   * 不填时为 default，跟随主题默认密度。 */
   designRecipeRef?: string;
 }
 
