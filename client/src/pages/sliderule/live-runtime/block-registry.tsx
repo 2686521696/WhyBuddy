@@ -482,6 +482,42 @@ function renderFreeformChart(
   );
 }
 
+/** dataRef 聚合 → 真实数字（2026-07-24 修复真实撞到的坑）：dataRef 之前
+ * 只在 Python 侧校验过"entityRef/字段是否真实存在"，从没真正驱动过显示
+ * 内容——渲染的其实是 LLM 自己写的 text 字面量，"数字必须真实、不能编"
+ * 这个贯穿全链路的承诺在渲染这最后一步从没兑现：校验通过不等于数字是真
+ * 的，LLM 写死一个假数字、只要字段名对得上一样能过 Pydantic 校验。这里
+ * 直接从 entityRows 现算，不信任 LLM 写的 text。
+ *
+ * 只在 aggregate 存在时接管——aggregate 为空表示"纯引用实体、不声称具体
+ * 数值"（Python 侧允许省略），那种场景本来就没有"数字对不对"的问题，
+ * 留给 text 自己处理。 */
+function computeDataRefText(
+  dataRef: FreeformDataRef | undefined,
+  entityRows: Record<string, RuntimeRow[]> | undefined
+): string | null {
+  if (!dataRef?.aggregate) return null;
+  const rows = (entityRows ?? {})[dataRef.entityRef];
+  if (!rows) return null;
+  if (dataRef.aggregate === "count") {
+    return rows.length.toLocaleString("zh-CN");
+  }
+  const m = /^(sum|avg):(.+)$/.exec(dataRef.aggregate);
+  if (!m) return null;
+  const [, kind, fieldId] = m;
+  const nums = rows
+    .map(r => Number(r.values[fieldId]))
+    .filter(v => Number.isFinite(v));
+  if (kind === "sum") {
+    return nums
+      .reduce((a, b) => a + b, 0)
+      .toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  }
+  if (nums.length === 0) return null;
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+  return avg.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+}
+
 function renderFreeformNode(
   node: unknown,
   key: React.Key,
@@ -503,6 +539,13 @@ function renderFreeformNode(
     : (Array.isArray(n.children) ? n.children : []).map((child, i) =>
         renderFreeformNode(child, i, entityRows, chartPalette)
       );
+  // dataRef 声明了 aggregate 就是"这是个数字承诺"——现算不出来（实体在
+  // entityRows 里查不到/avg 没有合法数值行）也不能退回 LLM 写的 text 掩盖
+  // 过去，如实显示「—」，跟别处"暂无数据"占位是同一套诚实原则。
+  const hasNumericClaim = Boolean(n.dataRef?.aggregate);
+  const dataRefText = hasNumericClaim
+    ? (computeDataRefText(n.dataRef, entityRows) ?? "—")
+    : null;
   return React.createElement(
     tag,
     { key, style: sanitizeFreeformStyle(n.style) },
@@ -520,7 +563,7 @@ function renderFreeformNode(
         {icon}
       </span>
     ) : null,
-    typeof n.text === "string" ? n.text : null,
+    dataRefText ?? (typeof n.text === "string" ? n.text : null),
     chartNode,
     ...children
   );
