@@ -96,6 +96,19 @@ _DEVICE_CONTAINER_HINTS: dict[str, str] = {
 }
 _DEFAULT_DEVICE = "desktop"
 
+# 生图尺寸按设备走真实宽高比，不是每次都拿方形凑合——之前 desktop/phone
+# 都硬编码 "1024x1024"，跟真实容器形状不搭（桌面该是宽屏，手机该是竖屏），
+# 实测这两个尺寸这个服务商都支持（活体探针 2026-07-24）。
+_DEVICE_IMAGE_SIZE: dict[str, str] = {
+    "phone": "1024x1792",
+    "desktop": "1792x1024",
+    "tablet": "1792x1024",
+}
+
+
+def _image_size_for_device(device: str) -> str:
+    return _DEVICE_IMAGE_SIZE.get(device) or _DEVICE_IMAGE_SIZE[_DEFAULT_DEVICE]
+
 
 def _theme_palette(theme_id: str) -> dict[str, Any]:
     return _THEME_COLOR_HINTS.get(theme_id) or _THEME_COLOR_HINTS[_DEFAULT_THEME_ID]
@@ -415,7 +428,7 @@ def _generate_reference_image_b64(
         return None
     try:
         prompt = _build_reference_image_prompt(design_brief, datamodel, theme_id=theme_id, device=device)
-        png_bytes = generate_image_png(prompt, size="1024x1024")
+        png_bytes = generate_image_png(prompt, size=_image_size_for_device(device))
     except ImageGenError as exc:
         print(f"[freeform_block] reference image skipped: {str(exc)[:160]}")
         return None

@@ -104,9 +104,12 @@ const THEMES: Record<string, IdentityTheme> = {
 export const LEGAL_THEME_IDS: readonly string[] = legalDomains.identityThemes;
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+// sidebarBg 允许两段式线性渐变（跟 Python identity_theme_gen.py 的
+// _GRADIENT_RE 同一个格式，不是放开随便写 CSS background）。
+const GRADIENT_RE = /^linear-gradient\(\s*\d{1,3}deg\s*,\s*#[0-9a-fA-F]{6}\s*,\s*#[0-9a-fA-F]{6}\s*\)$/;
 const GENERATED_THEME_HEX_KEYS = [
   "primary", "primaryHover", "gradTo", "primaryFg", "contentBg",
-  "accentBg", "accentFg", "sidebarBg", "sidebarText",
+  "accentBg", "accentFg", "sidebarText",
 ] as const;
 
 /** 生图驱动生成的身份主题（2026-07-24）——Python 侧 identity_theme_gen.py
@@ -119,6 +122,12 @@ function isValidGeneratedTheme(v: unknown): v is IdentityTheme {
   const t = v as Record<string, unknown>;
   for (const key of GENERATED_THEME_HEX_KEYS) {
     if (typeof t[key] !== "string" || !HEX_RE.test(t[key] as string)) return false;
+  }
+  if (
+    typeof t.sidebarBg !== "string" ||
+    !(HEX_RE.test(t.sidebarBg) || GRADIENT_RE.test(t.sidebarBg))
+  ) {
+    return false;
   }
   if (
     !Array.isArray(t.charts) ||

@@ -22,6 +22,12 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+# sidebarBg 允许两段式线性渐变（比如深藏蓝到品牌蓝），但格式收紧成固定
+# 模式——只能是 "linear-gradient(<角度>deg, #rrggbb, #rrggbb)"，不是放开
+# 随便写 CSS background；两个色标都要过下面同一套十六进制+对比度校验。
+_GRADIENT_RE = re.compile(
+    r"^linear-gradient\(\s*(\d{1,3})deg\s*,\s*(#[0-9a-fA-F]{6})\s*,\s*(#[0-9a-fA-F]{6})\s*\)$"
+)
 
 
 class IdentityThemeGenerationError(RuntimeError):
@@ -54,6 +60,16 @@ def _contrast_ratio(hex_a: str, hex_b: str) -> float:
 _MIN_CONTRAST = 3.0
 
 
+def _bg_colors_for_contrast(bg: str) -> list[str]:
+    """把 sidebarBg（可能是纯色也可能是渐变）拆成用来做对比度校验的色值
+    列表——渐变取两个色标，文字色要在两端都保持可读，不是只在浅的那端读得清。
+    """
+    m = _GRADIENT_RE.match(bg)
+    if m:
+        return [m.group(2), m.group(3)]
+    return [bg]
+
+
 class IdentityThemeSpec(BaseModel):
     """跟前端 identity-themes.ts 的 IdentityTheme 接口逐字段对应。字段本身
     只做客观可查的校验（十六进制格式、可读性对比度），不对"好不好看"这种
@@ -73,13 +89,23 @@ class IdentityThemeSpec(BaseModel):
 
     @field_validator(
         "primary", "primaryHover", "gradTo", "primaryFg", "contentBg",
-        "accentBg", "accentFg", "sidebarBg", "sidebarText",
+        "accentBg", "accentFg", "sidebarText",
     )
     @classmethod
     def check_hex(cls, v: str) -> str:
         if not _HEX_RE.match(v):
             raise ValueError(f"'{v}' is not a valid 6-digit hex color (e.g. #1677ff)")
         return v
+
+    @field_validator("sidebarBg")
+    @classmethod
+    def check_sidebar_bg(cls, v: str) -> str:
+        if _HEX_RE.match(v) or _GRADIENT_RE.match(v):
+            return v
+        raise ValueError(
+            f"'{v}' must be a 6-digit hex color (e.g. #0f2138) or a two-stop "
+            "linear-gradient(<deg>deg, #rrggbb, #rrggbb)"
+        )
 
     @field_validator("charts")
     @classmethod
@@ -92,17 +118,18 @@ class IdentityThemeSpec(BaseModel):
     @model_validator(mode="after")
     def check_contrast(self) -> "IdentityThemeSpec":
         pairs = [
-            ("primaryFg on primary", self.primaryFg, self.primary),
-            ("sidebarText on sidebarBg", self.sidebarText, self.sidebarBg),
-            ("accentFg on accentBg", self.accentFg, self.accentBg),
+            ("primaryFg on primary", self.primaryFg, [self.primary]),
+            ("sidebarText on sidebarBg", self.sidebarText, _bg_colors_for_contrast(self.sidebarBg)),
+            ("accentFg on accentBg", self.accentFg, [self.accentBg]),
         ]
-        for label, fg, bg in pairs:
-            ratio = _contrast_ratio(fg, bg)
-            if ratio < _MIN_CONTRAST:
-                raise ValueError(
-                    f"{label} contrast ratio {ratio:.2f} is too low (need >= {_MIN_CONTRAST}); "
-                    "pick a lighter/darker foreground so text stays readable"
-                )
+        for label, fg, bgs in pairs:
+            for bg in bgs:
+                ratio = _contrast_ratio(fg, bg)
+                if ratio < _MIN_CONTRAST:
+                    raise ValueError(
+                        f"{label} ({bg}) contrast ratio {ratio:.2f} is too low (need >= {_MIN_CONTRAST}); "
+                        "pick a lighter/darker foreground so text stays readable against every color it sits on"
+                    )
         return self
 
 
@@ -127,8 +154,12 @@ def build_identity_theme_prompt(app_name: str, goal_text: str, datamodel_summary
 - accentBg: 强调浅底（选中菜单浅底/高亮块）
 - accentFg: accentBg 上的文字颜色（必须跟 accentBg 对比度足够）
 - charts: 3 个颜色组成的数组，用于图表多类别区分，要跟主色协调但彼此能区分开
-- sidebarBg: 侧边栏/顶栏底色（可以是深色也可以是浅色，你自己判断跟主色最搭的方案）
-- sidebarText: sidebarBg 上的文字颜色（必须跟 sidebarBg 对比度足够，能看清）
+- sidebarBg: 侧边栏/顶栏底色，可以是深色也可以是浅色；也可以是两段式渐变，
+  想要更有质感的侧边栏（比如深藏蓝过渡到品牌蓝）就用渐变，格式必须严格是
+  "linear-gradient(<0-360的整数>deg, #rrggbb, #rrggbb)"，比如
+  "linear-gradient(180deg, #0F172A, #1E3A8A)"；纯色就直接写 #rrggbb
+- sidebarText: sidebarBg 上的文字颜色（如果 sidebarBg 是渐变，必须在两个
+  颜色端都保持可读，不能只在浅的那端读得清）
 
 文字类颜色（primaryFg/accentFg/sidebarText）必须选得让文字在对应底色上
 清晰可读，不要为了好看牺牲可读性。
@@ -139,27 +170,36 @@ def build_identity_theme_prompt(app_name: str, goal_text: str, datamodel_summary
 "charts": ["#......", "#......", "#......"], "sidebarBg": "#......", "sidebarText": "#......"}}"""
 
 
-def _build_reference_image_prompt(app_name: str, goal_text: str, datamodel_summary: str) -> str:
+_SHELL_SHAPE_NOTE: dict[str, str] = {
+    "phone": "画手机端形态——上方一条窄标题栏、下方一条底部 Tab 导航栏，中间是内容区，整体竖屏比例。",
+    "desktop": "画桌面端形态——左侧一条侧边栏、上方一条顶部导航条、右侧是内容区，整体宽屏比例。",
+    "tablet": "画平板端形态——左侧一条比桌面窄一些的侧边栏、上方顶部导航条、右侧内容区。",
+}
+
+
+def _build_reference_image_prompt(app_name: str, goal_text: str, datamodel_summary: str, device: str) -> str:
+    shape_note = _SHELL_SHAPE_NOTE.get(device) or _SHELL_SHAPE_NOTE["desktop"]
     return (
         f"为一个企业应用生成一张品牌配色参考图（干净原型图）。应用名称：{app_name}。"
         f"产品目标：{goal_text}。"
         f"背后的真实数据领域：{datamodel_summary}。"
-        "要求：画一个简洁的应用主界面草样——左侧侧边栏 + 顶部导航条 + 一小块内容"
-        "区示意，重点展示整体配色方案（侧边栏底色、主色、内容区底色如何协调）。"
+        f"要求：{shape_note}重点展示整体配色方案（导航区底色、主色、内容区底色"
+        "如何协调），一小块内容区示意即可，不用画满。"
         "配色完全自由发挥，不要套用任何标准配色模板，可以大胆、有个性，只要整体"
         "协调专业。只示意版式与配色，不要写任何具体数字/真实数据，占位文案用"
         "「示例XX」这类通用字样；不要出现任何多余的装饰性水印或品牌字样。"
     )
 
 
-def _generate_reference_image_b64(app_name: str, goal_text: str, datamodel_summary: str) -> Optional[str]:
+def _generate_reference_image_b64(app_name: str, goal_text: str, datamodel_summary: str, device: str) -> Optional[str]:
     try:
         from sliderule_llm.image_client import ImageGenError, generate_image_png
+        from .freeform_block import _image_size_for_device
     except Exception:
         return None
     try:
-        prompt = _build_reference_image_prompt(app_name, goal_text, datamodel_summary)
-        png_bytes = generate_image_png(prompt, size="1024x1024")
+        prompt = _build_reference_image_prompt(app_name, goal_text, datamodel_summary, device)
+        png_bytes = generate_image_png(prompt, size=_image_size_for_device(device))
     except ImageGenError as exc:
         print(f"[identity_theme_gen] reference image skipped: {str(exc)[:160]}")
         return None
@@ -174,6 +214,7 @@ def generate_identity_theme(
     goal_text: str,
     datamodel: dict[str, Any],
     *,
+    device: str = "",
     max_retries: int = 2,
     temperature: float = 0.9,
     max_tokens: int = 2000,
@@ -199,7 +240,7 @@ def generate_identity_theme(
 
     reference_image_b64: Optional[str] = None
     if use_reference_image and get_llm_config().supports_image_content_parts:
-        reference_image_b64 = _generate_reference_image_b64(app_name, goal_text, datamodel_summary)
+        reference_image_b64 = _generate_reference_image_b64(app_name, goal_text, datamodel_summary, device)
 
     if reference_image_b64:
         first_content: Any = [
@@ -286,8 +327,9 @@ def enrich_identity_theme(model: dict[str, Any], goal: str = "") -> dict[str, An
     app_name = str(identity.get("productName") or model.get("appName") or "").strip()
     goal_text = str(goal or app_name).strip()
     datamodel = model.get("datamodel") or {}
+    device = str(appbundle.get("preferredDevice") or "").strip()
     try:
-        theme = generate_identity_theme(app_name, goal_text, datamodel)
+        theme = generate_identity_theme(app_name, goal_text, datamodel, device=device)
         identity["generatedTheme"] = theme
     except IdentityThemeGenerationError as exc:
         print(f"[identity_theme_gen] generation failed, falling back to preset theme: {str(exc)[:200]}")
