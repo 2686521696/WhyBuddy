@@ -882,6 +882,14 @@ export function AppRuntimeScreen({
 
   const recentInstances = [...state.instances].slice(-5).reverse();
 
+  // E40.2 应用身份：主题 token 决定品牌区/主色/内容底色/图表配色；缺省 = azure（老模型渲染与历史一致）。
+  // 声明必须在 chartCard 之前——homeContent 是即时求值的 JSX（非函数），
+  // 里面 .map(chartCard) 在这一行就会同步执行，晚声明会触发 TDZ 报错。
+  const identityTheme = resolveIdentityTheme(
+    schema.identity.themeId,
+    schema.identity.generatedTheme
+  );
+
   // 工作台内置图：ECharts 基建（与页面级声明图表同一 lazy chunk / 同一套 dataviz 约定）
   const chartCard = (chart: AppChartSchema) => {
     let option: Record<string, unknown> | null = null;
@@ -1892,12 +1900,7 @@ export function AppRuntimeScreen({
 
   const pageContent = defaultPageContent;
 
-  // E40.2 应用身份：主题 token 决定品牌区/主色/内容底色；菜单项抽出来给
-  // side/top 两种导航形态共用。缺省 = azure（老模型渲染与历史一致）。
-  const identityTheme = resolveIdentityTheme(
-    schema.identity.themeId,
-    schema.identity.generatedTheme
-  );
+  // identityTheme 已在上面 chartCard 之前声明（菜单项抽出来给 side/top 两种导航形态共用）。
   // Step 9：视觉配方——只管密度/深色开关/圆角，主色仍归 identityTheme；两者叠加。
   const designRecipe = resolveDesignRecipe(schema.identity.designRecipeRef);
   const brandGradient = `linear-gradient(135deg,${identityTheme.primary},${identityTheme.gradTo})`;
