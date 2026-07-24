@@ -1928,7 +1928,16 @@ export function AppRuntimeScreen({
 
   const desktopShell = (
     <Layout style={{ height: "100%" }} data-testid="app-shell-side">
-      <Layout.Sider width={device === "tablet" ? 176 : 208} theme="dark">
+      <Layout.Sider
+        width={device === "tablet" ? 176 : 208}
+        theme="dark"
+        // antd 的 Layout.siderBg token 是当 background-color 用的，塞一个
+        // linear-gradient(...) 字符串进去会被静默吃掉、退化成纯色（实测
+        // 2026-07-24）。渐变必须走这条原生 style.background，token 仍然
+        //留着当纯色场景的默认值（generatedTheme 没给渐变时两条路径同值，
+        // 互不冲突）。
+        style={{ background: identityTheme.sidebarBg }}
+      >
         <div
           style={{
             height: 56,
