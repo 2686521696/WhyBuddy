@@ -1631,8 +1631,17 @@ export function AppRuntimeScreen({
     }
 
     return (
+      // alignItems: "stretch"（不是 flex-start）——列与列之间高度天然不同步
+      // （比如这一列就 1 张图表卡，隔壁摞了排行+动态两张），flex-start 会让
+      // 矮的那列在自己内容结束处直接停住，下面空出一块没有任何元素的白底，
+      // 用户截图圈过的就是这个（真去查过 DOM，那块确实不是渲染了个空
+      // Card，就是纯背景）。改 stretch 后每一列都撑到最高列那么高，列内
+      // 卡片本来就带的 flex:1（renderChartCard/renderRankingCard/
+      // renderFeedCard 三处都设了）会把卡片自己的边框/背景撑满这段高度——
+      // 富余空间留在卡片"内部"（看起来是留白排版），不再是卡片外面一块
+      // 没有归属的裸白背景。
       <div
-        style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+        style={{ display: "flex", gap: 12, alignItems: "stretch" }}
         data-testid="app-runtime-monitor-combined"
       >
         {columns.map((ids, colIdx) => (
