@@ -76,6 +76,8 @@ import {
   type AppChartSchema,
   type AppFormFieldSchema,
   type AppPageChartSchema,
+  type AppPageFeedSchema,
+  type AppPageRankingSchema,
   type AppPageSchema,
   type AppRuntimeSchema,
 } from "./app-runtime-schema";
@@ -1358,6 +1360,156 @@ export function AppRuntimeScreen({
     </>
   );
 
+  // E40.6 修复：monitor 骨架之前把 chartsBand（主列）和 widgetsBand（侧列）
+  // 拆成两个各自独立宽度的 flex 列——rankings+feeds 摞起来比 charts 那一行
+  // 高时，主列下方就会空出一块（真实撞到：2 图表 114px 高 vs 排行+动态摞起来
+  // 233px 高，主列下方净空 120px 左右什么都没有）。抽成下面这三个纯函数，
+  // monitorCombinedCards 把图表/排行/动态卡片放进同一个 flex-wrap 流里，
+  // 不再按列预分宽度，卡片跟着内容高度自然排布，不会再留出这种空档。
+  const renderRankingCard = (ranking: AppPageRankingSchema) => {
+    if (!page) return null;
+    {
+      const rankRows = [...(state.entities[ranking.entityId] ?? [])]
+        .map(row => ({ row, v: Number(row.values[ranking.sortFieldId]) }))
+        .filter(({ v }) => Number.isFinite(v))
+        .sort((a, b) => b.v - a.v)
+        .slice(0, ranking.limit);
+      const titleFieldId =
+        page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ?? "id";
+      return (
+        <Card
+          key={ranking.id}
+          size="small"
+          title={ranking.label}
+          style={{ flex: 1, minWidth: 240 }}
+          data-testid={`app-runtime-ranking-${ranking.id}`}
+        >
+          {rankRows.length === 0 ? (
+            <div style={{ color: "#999", fontSize: 12 }}>
+              暂无数据 — 录入带「{ranking.sortLabel}」的记录后自动上榜
+            </div>
+          ) : (
+            rankRows.map(({ row, v }, i) => (
+              <div
+                key={row.id || String(i)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "5px 0",
+                  borderBottom: i < rankRows.length - 1 ? "1px solid #f5f5f5" : "none",
+                }}
+              >
+                <span
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 6,
+                    textAlign: "center",
+                    lineHeight: "20px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    flexShrink: 0,
+                    background: i < 3 ? "var(--app-primary,#1677ff)" : "#f0f0f0",
+                    color: i < 3 ? "#fff" : "#8c8c8c",
+                  }}
+                >
+                  {i + 1}
+                </span>
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontSize: 13,
+                  }}
+                >
+                  {String(row.values[titleFieldId] ?? "—")}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#262626" }}>
+                  {v.toLocaleString("zh-CN")}
+                </span>
+              </div>
+            ))
+          )}
+        </Card>
+      );
+    }
+  };
+
+  const renderFeedCard = (feed: AppPageFeedSchema) => {
+    if (!page) return null;
+    const levelField = page.detailFields.find(f => f.id === feed.levelFieldId);
+    const feedRows = [...(state.entities[feed.entityId] ?? [])]
+      .filter(row => row.values[feed.timeFieldId])
+      .sort((a, b) =>
+        String(b.values[feed.timeFieldId] ?? "").localeCompare(
+          String(a.values[feed.timeFieldId] ?? "")
+        )
+      )
+      .slice(0, 6);
+    const titleFieldId =
+      page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ?? "id";
+    return (
+      <Card
+        key={feed.id}
+        size="small"
+        title={feed.label}
+        style={{ flex: 1, minWidth: 240 }}
+        data-testid={`app-runtime-feed-${feed.id}`}
+      >
+        {feedRows.length === 0 ? (
+          <div style={{ color: "#999", fontSize: 12 }}>
+            暂无动态 — 新记录会按时间倒序流入这里
+          </div>
+        ) : (
+          feedRows.map((row, i) => {
+            const levelValue = String(row.values[feed.levelFieldId ?? ""] ?? "");
+            const option = levelField?.options?.find(o => o.id === levelValue);
+            return (
+              <div
+                key={row.id || String(i)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "5px 0",
+                  borderBottom: i < feedRows.length - 1 ? "1px solid #f5f5f5" : "none",
+                }}
+              >
+                {option && (
+                  <Tag
+                    color={option.tone === "danger" ? "error" : option.tone}
+                    style={{ marginInlineEnd: 0 }}
+                  >
+                    {option.label}
+                  </Tag>
+                )}
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontSize: 13,
+                  }}
+                >
+                  {String(row.values[titleFieldId] ?? "—")}
+                </span>
+                <span style={{ fontSize: 11, color: "#8c8c8c", flexShrink: 0 }}>
+                  {String(row.values[feed.timeFieldId] ?? "")}
+                </span>
+              </div>
+            );
+          })
+        )}
+      </Card>
+    );
+  };
+
   const widgetsBand = page && (
     <>
       {(page.rankings.length > 0 || page.feeds.length > 0) && (
@@ -1365,152 +1517,54 @@ export function AppRuntimeScreen({
           style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}
           data-testid="app-runtime-page-widgets"
         >
-          {page.rankings.map(ranking => {
-            const rankRows = [...(state.entities[ranking.entityId] ?? [])]
-              .map(row => ({ row, v: Number(row.values[ranking.sortFieldId]) }))
-              .filter(({ v }) => Number.isFinite(v))
-              .sort((a, b) => b.v - a.v)
-              .slice(0, ranking.limit);
-            const titleFieldId =
-              page.detailFields.find(
-                f => f.type === "string" && f.id !== "id"
-              )?.id ?? "id";
-            return (
-              <Card
-                key={ranking.id}
-                size="small"
-                title={ranking.label}
-                style={{ flex: 1, minWidth: 240 }}
-                data-testid={`app-runtime-ranking-${ranking.id}`}
-              >
-                {rankRows.length === 0 ? (
-                  <div style={{ color: "#999", fontSize: 12 }}>
-                    暂无数据 — 录入带「{ranking.sortLabel}」的记录后自动上榜
-                  </div>
-                ) : (
-                  rankRows.map(({ row, v }, i) => (
-                    <div
-                      key={row.id || String(i)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "5px 0",
-                        borderBottom: i < rankRows.length - 1 ? "1px solid #f5f5f5" : "none",
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 20,
-                          height: 20,
-                          borderRadius: 6,
-                          textAlign: "center",
-                          lineHeight: "20px",
-                          fontSize: 11,
-                          fontWeight: 600,
-                          flexShrink: 0,
-                          background: i < 3 ? "var(--app-primary,#1677ff)" : "#f0f0f0",
-                          color: i < 3 ? "#fff" : "#8c8c8c",
-                        }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          fontSize: 13,
-                        }}
-                      >
-                        {String(row.values[titleFieldId] ?? "—")}
-                      </span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "#262626" }}>
-                        {v.toLocaleString("zh-CN")}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </Card>
-            );
-          })}
-          {page.feeds.map(feed => {
-            const levelField = page.detailFields.find(f => f.id === feed.levelFieldId);
-            const feedRows = [...(state.entities[feed.entityId] ?? [])]
-              .filter(row => row.values[feed.timeFieldId])
-              .sort((a, b) =>
-                String(b.values[feed.timeFieldId] ?? "").localeCompare(
-                  String(a.values[feed.timeFieldId] ?? "")
-                )
-              )
-              .slice(0, 6);
-            const titleFieldId =
-              page.detailFields.find(
-                f => f.type === "string" && f.id !== "id"
-              )?.id ?? "id";
-            return (
-              <Card
-                key={feed.id}
-                size="small"
-                title={feed.label}
-                style={{ flex: 1, minWidth: 240 }}
-                data-testid={`app-runtime-feed-${feed.id}`}
-              >
-                {feedRows.length === 0 ? (
-                  <div style={{ color: "#999", fontSize: 12 }}>
-                    暂无动态 — 新记录会按时间倒序流入这里
-                  </div>
-                ) : (
-                  feedRows.map((row, i) => {
-                    const levelValue = String(row.values[feed.levelFieldId ?? ""] ?? "");
-                    const option = levelField?.options?.find(o => o.id === levelValue);
-                    return (
-                      <div
-                        key={row.id || String(i)}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "5px 0",
-                          borderBottom: i < feedRows.length - 1 ? "1px solid #f5f5f5" : "none",
-                        }}
-                      >
-                        {option && (
-                          <Tag
-                            color={option.tone === "danger" ? "error" : option.tone}
-                            style={{ marginInlineEnd: 0 }}
-                          >
-                            {option.label}
-                          </Tag>
-                        )}
-                        <span
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            fontSize: 13,
-                          }}
-                        >
-                          {String(row.values[titleFieldId] ?? "—")}
-                        </span>
-                        <span style={{ fontSize: 11, color: "#8c8c8c", flexShrink: 0 }}>
-                          {String(row.values[feed.timeFieldId] ?? "")}
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </Card>
-            );
-          })}
+          {page.rankings.map(renderRankingCard)}
+          {page.feeds.map(renderFeedCard)}
         </div>
       )}
     </>
   );
+
+  const renderChartCard = (chart: AppPageChartSchema) => {
+    if (!page) return null;
+    const chartRows = state.entities[chart.entityId] ?? [];
+    const option = buildEchartsOption(chart, chartRows, {
+      primary: identityTheme.primary,
+      categorical: identityTheme.charts,
+    });
+    return (
+      <Card
+        key={chart.id}
+        size="small"
+        title={chart.label}
+        style={{
+          flex: 1,
+          // dashboard 范式：图表升主角，两列铺开（表格退居下方小表）
+          minWidth: page.view.kind === "dashboard" ? "45%" : 220,
+        }}
+        data-testid={`app-runtime-page-chart-${chart.id}`}
+      >
+        {option ? (
+          <React.Suspense
+            fallback={
+              <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
+                图表加载中…
+              </div>
+            }
+          >
+            <LazyEchartsChart
+              option={option}
+              height={180}
+              ariaLabel={`${chart.label}：按${chart.dimensionLabel}统计${chart.metricLabel}`}
+            />
+          </React.Suspense>
+        ) : (
+          <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
+            暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
+          </div>
+        )}
+      </Card>
+    );
+  };
 
   const chartsBand = page && (
     <>
@@ -1524,61 +1578,27 @@ export function AppRuntimeScreen({
           }}
           data-testid="app-runtime-page-charts"
         >
-          {page.charts.map((chart: AppPageChartSchema) => {
-            const chartRows = state.entities[chart.entityId] ?? [];
-            const option = buildEchartsOption(chart, chartRows, {
-              primary: identityTheme.primary,
-              categorical: identityTheme.charts,
-            });
-            return (
-              <Card
-                key={chart.id}
-                size="small"
-                title={chart.label}
-                style={{
-                  flex: 1,
-                  // dashboard 范式：图表升主角，两列铺开（表格退居下方小表）
-                  minWidth: page.view.kind === "dashboard" ? "45%" : 220,
-                }}
-                data-testid={`app-runtime-page-chart-${chart.id}`}
-              >
-                {option ? (
-                  <React.Suspense
-                    fallback={
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: INK.faint,
-                          padding: "16px 0",
-                        }}
-                      >
-                        图表加载中…
-                      </div>
-                    }
-                  >
-                    <LazyEchartsChart
-                      option={option}
-                      height={180}
-                      ariaLabel={`${chart.label}：按${chart.dimensionLabel}统计${chart.metricLabel}`}
-                    />
-                  </React.Suspense>
-                ) : (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: INK.faint,
-                      padding: "16px 0",
-                    }}
-                  >
-                    暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+          {page.charts.map(renderChartCard)}
         </div>
       )}
     </>
+  );
+
+  // E40.6 修复：monitor 骨架的 chartsBand/widgetsBand 之前拆成两个各自独立
+  // 宽度的 flex 列（图表主列 + 排行/动态侧列），排行+动态摞起来比图表那一行
+  // 高时，主列下方就会净空出一块（真实撞到：2 图表 114px 高 vs 排行+动态
+  // 233px 高，主列下方空出 120px 左右）。改成图表+排行+动态卡片全部放进
+  // 同一个 flex-wrap 流里，不再按列预分宽度，卡片跟着内容高度自然排布，
+  // 不会再留出这种空档。
+  const monitorCombinedRow = page && (
+    <div
+      style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}
+      data-testid="app-runtime-monitor-combined"
+    >
+      {page.charts.map(renderChartCard)}
+      {page.rankings.map(renderRankingCard)}
+      {page.feeds.map(renderFeedCard)}
+    </div>
   );
 
   const defaultPageContent = page && (
@@ -1788,13 +1808,7 @@ export function AppRuntimeScreen({
       {page.view.kind === "monitor" ? (
         <>
           {statsBand}
-          <div
-            style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
-            data-testid="app-runtime-monitor-split"
-          >
-            <div style={{ flex: 2, minWidth: 0 }}>{chartsBand}</div>
-            <div style={{ flex: 1, minWidth: 220 }}>{widgetsBand}</div>
-          </div>
+          {monitorCombinedRow}
         </>
       ) : (
         <>
