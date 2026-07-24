@@ -70,6 +70,7 @@ import type { FiveSystemModel } from "../system-screens/five-system-model";
 import { resolveEntityRef } from "../system-screens/five-system-model";
 import { resolveIdentityTheme, hexToRgba } from "./identity-themes";
 import { autoPlaceGrid } from "./grid-compact";
+import { deriveLayoutTokens } from "./design-tokens";
 import {
   buildAiActionInputs,
   deriveAppRuntimeSchema,
@@ -414,6 +415,12 @@ export function AppRuntimeScreen({
    *  不再浮在画布左上角：元素就绪前不渲染切换条（避免闪跳）。 */
   controlsContainer?: HTMLElement | null;
 }) {
+  // 2026-07-24：间距/圆角/阴影刻度——直接吃 antd 自己的 Design Token（见
+  // design-tokens.ts 头部注释），不是另起一套静态数字。卡片族（KPI/图表/
+  // 排行/动态）的 padding/margin/gap 统一从这里取，不再各处手写数字。
+  const { token: antdToken } = antdTheme.useToken();
+  const layout = React.useMemo(() => deriveLayoutTokens(antdToken), [antdToken]);
+
   // 表格列设置（表格自带能力）：按 pageId 记用户勾选的列；undefined = 默认列
   const [tableColPrefs, setTableColPrefs] = React.useState<
     Record<string, string[]>
@@ -1299,8 +1306,8 @@ export function AppRuntimeScreen({
         <div
           style={{
             display: "flex",
-            gap: 12,
-            marginBottom: 12,
+            gap: layout.space.sm,
+            marginBottom: layout.space.sm,
             flexWrap: "wrap",
           }}
           data-testid="app-runtime-page-stats"
@@ -1332,7 +1339,7 @@ export function AppRuntimeScreen({
                 key={stat.id}
                 size="small"
                 style={{ flex: 1, minWidth: 140 }}
-                styles={{ body: { padding: "12px 16px" } }}
+                styles={{ body: { padding: `${layout.space.sm}px ${layout.space.md}px` } }}
                 data-testid={`app-runtime-page-stat-${stat.id}`}
               >
                 {displayVal === null ? (
@@ -1396,8 +1403,8 @@ export function AppRuntimeScreen({
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
-                  padding: "5px 0",
+                  gap: layout.space.xs,
+                  padding: `${layout.space.xxs}px 0`,
                   borderBottom: i < rankRows.length - 1 ? "1px solid #f5f5f5" : "none",
                 }}
               >
@@ -1405,7 +1412,7 @@ export function AppRuntimeScreen({
                   style={{
                     width: 20,
                     height: 20,
-                    borderRadius: 6,
+                    borderRadius: layout.radius.md,
                     textAlign: "center",
                     lineHeight: "20px",
                     fontSize: 11,
@@ -1475,8 +1482,8 @@ export function AppRuntimeScreen({
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
-                  padding: "5px 0",
+                  gap: layout.space.xs,
+                  padding: `${layout.space.xxs}px 0`,
                   borderBottom: i < feedRows.length - 1 ? "1px solid #f5f5f5" : "none",
                 }}
               >
@@ -1515,7 +1522,7 @@ export function AppRuntimeScreen({
     <>
       {(page.rankings.length > 0 || page.feeds.length > 0) && (
         <div
-          style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}
+          style={{ display: "flex", gap: layout.space.sm, marginBottom: layout.space.sm, flexWrap: "wrap" }}
           data-testid="app-runtime-page-widgets"
         >
           {page.rankings.map(renderRankingCard)}
@@ -1542,24 +1549,35 @@ export function AppRuntimeScreen({
           // dashboard 范式：图表升主角，两列铺开（表格退居下方小表）
           minWidth: page.view.kind === "dashboard" ? "45%" : 220,
         }}
+        // 试过 Tremor 的"图表 height:100% 跟着卡片拉伸"思路，真机验证是反面
+        // 案例：卡片被 monitorCombinedRow 的 alignItems:"stretch" 拉高是个
+        // 多轮布局才收敛的过程，ECharts 的 ResizeObserver 在中间某次尺寸
+        // （355×264）上调用了 resize()，最终容器收敛到 246×202 后再没收到
+        // 新的 resize，画布跟容器错位、图表整个看起来是空的——这正是 shadcn
+        // ChartContainer 讨论里"图表必须有明确高度锚点，不能指望流式百分比
+        // 高度在容器还在变化时也能测准"的真实反面教材。改回图表固定高度
+        // （不跟着卡片拉伸），卡片被拉高时用 justifyContent:"center" 把
+        // 固定高度的图表在多出来的空间里居中，而不是让图表本身去追一个
+        // 还没稳定下来的容器尺寸。
+        styles={{ body: { display: "flex", flexDirection: "column", justifyContent: "center" } }}
         data-testid={`app-runtime-page-chart-${chart.id}`}
       >
         {option ? (
           <React.Suspense
             fallback={
-              <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
+              <div style={{ fontSize: 11, color: INK.faint, padding: `${layout.space.md}px 0` }}>
                 图表加载中…
               </div>
             }
           >
             <LazyEchartsChart
               option={option}
-              height={180}
+              height={200}
               ariaLabel={`${chart.label}：按${chart.dimensionLabel}统计${chart.metricLabel}`}
             />
           </React.Suspense>
         ) : (
-          <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
+          <div style={{ fontSize: 11, color: INK.faint, padding: `${layout.space.md}px 0` }}>
             暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
           </div>
         )}
@@ -1573,8 +1591,8 @@ export function AppRuntimeScreen({
         <div
           style={{
             display: "flex",
-            gap: 12,
-            marginBottom: 12,
+            gap: layout.space.sm,
+            marginBottom: layout.space.sm,
             flexWrap: "wrap",
           }}
           data-testid="app-runtime-page-charts"
@@ -1641,13 +1659,13 @@ export function AppRuntimeScreen({
       // 富余空间留在卡片"内部"（看起来是留白排版），不再是卡片外面一块
       // 没有归属的裸白背景。
       <div
-        style={{ display: "flex", gap: 12, alignItems: "stretch" }}
+        style={{ display: "flex", gap: layout.space.sm, alignItems: "stretch" }}
         data-testid="app-runtime-monitor-combined"
       >
         {columns.map((ids, colIdx) => (
           <div
             key={colIdx}
-            style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}
+            style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: layout.space.sm }}
           >
             {ids.map(id => (
               <React.Fragment key={id}>{nodeById.get(id)}</React.Fragment>
@@ -1691,7 +1709,7 @@ export function AppRuntimeScreen({
   const monitorDynamicLists =
     page && (page.rankings.length > 0 || page.feeds.length > 0) ? (
       <div
-        style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}
+        style={{ display: "flex", gap: layout.space.sm, flexWrap: "wrap", marginTop: layout.space.sm }}
         data-testid="app-runtime-monitor-dynamic-lists"
       >
         {page.rankings.map(renderRankingCard)}

@@ -26,7 +26,11 @@ echarts.use([
 
 interface EchartsChartProps {
   option: Record<string, unknown>;
-  height?: number;
+  /** 数字按 px 处理；也接受 "100%" 这类字符串——卡片被拉伸到统一高度时
+   * （见 AppRuntimeScreen 的 monitorCombinedRow），图表应该跟着填满卡片
+   * 剩余空间，而不是永远钉死在一个固定像素高度、卡片里多出一截空白
+   * （借鉴 Tremor 的"卡片管 padding、图表 100% 填满"分工）。 */
+  height?: number | string;
   ariaLabel?: string;
 }
 

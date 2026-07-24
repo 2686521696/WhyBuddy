@@ -10,7 +10,15 @@
  *   cyan/orange 对白底对比不足 → 以每片"名称 数值"直标补偿）；
  *   >5 类折叠进「其他」，2px 白缝分片；
  * - 网格/轴线退后（#f0f0f0），tooltip 默认开。
+ *
+ * 2026-07-24：grid 的自适应留白改用 outerBoundsMode/outerBoundsContain，
+ * 不用已废弃的 containLabel——ECharts 官方类型定义里 containLabel 已标
+ * @deprecated（"这个方法估算标签尺寸，多数情况下够用，但不能严格保证所有
+ * 标签都被包住"），社区也有真实的截断反馈（apache/echarts#16875、#15562）。
+ * outerBoundsContain:"all" 比 containLabel 隐含的 "axisLabel" 多包一层
+ * 轴名称，对"图表卡片里文字被裁掉一角"这类问题是更强的兜底，不是同义替换。
  */
+const GRID_ANTI_CLIP = { outerBoundsMode: "same", outerBoundsContain: "all" } as const;
 
 import type { AppPageChartSchema } from "./app-runtime-schema";
 import type { RuntimeRow } from "./live-runtime";
@@ -102,7 +110,7 @@ export function buildEntityRowcountOption(
   return {
     animation: false,
     tooltip: { confine: true, textStyle: { color: INK.value, fontSize: 11 } },
-    grid: { left: 8, right: 32, top: 8, bottom: 8, containLabel: true },
+    grid: { left: 8, right: 32, top: 8, bottom: 8, ...GRID_ANTI_CLIP },
     xAxis: {
       type: "value",
       axisLabel: { show: false },
@@ -244,7 +252,7 @@ export function buildEchartsOption(
     return {
       ...base,
       tooltip: { ...base.tooltip, trigger: "axis" },
-      grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 16, top: 24, bottom: 8, ...GRID_ANTI_CLIP },
       xAxis: categoryAxis,
       yAxis: valueAxis,
       series: [
@@ -265,7 +273,7 @@ export function buildEchartsOption(
   return {
     ...base,
     tooltip: { ...base.tooltip, trigger: "axis" },
-    grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true },
+    grid: { left: 8, right: 16, top: 24, bottom: 8, ...GRID_ANTI_CLIP },
     xAxis: categoryAxis,
     yAxis: valueAxis,
     series: [
