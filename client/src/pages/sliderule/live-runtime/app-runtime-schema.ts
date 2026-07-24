@@ -270,6 +270,9 @@ export interface AppRuntimeSchema {
     preferredDevice?: "desktop" | "tablet" | "phone";
     /** Step 9：视觉配方引用；老模型/未声明为 undefined，运行时按 "default" 处理。 */
     designRecipeRef?: string;
+    /** 2026-07-24：生图驱动生成的身份主题 token；未声明/校验不过时降级到
+     * themeId 对应的 8 预设之一（resolveIdentityTheme 内部处理）。 */
+    generatedTheme?: Record<string, unknown>;
   };
   roles: string[];
   /** 应用首次打开的页面；老模型缺省为 home。 */
@@ -790,6 +793,11 @@ export function deriveAppRuntimeSchema(
     designRecipeRef: DESIGN_RECIPE_IDS.includes(designRecipeRefRaw)
       ? designRecipeRefRaw
       : undefined,
+    // 2026-07-24：生图驱动生成的身份主题（identity_theme_gen.py 写回），
+    // 未声明或校验不过时 resolveIdentityTheme 自己会降级到 8 预设，这里
+    // 原样透传不做类型收窄（跟 freeformContent 同一个"渲染器内部再校验"
+    // 的处理方式）。
+    generatedTheme: rawIdentity?.generatedTheme as Record<string, unknown> | undefined,
   };
 
   return {

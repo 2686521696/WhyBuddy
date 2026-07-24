@@ -1889,7 +1889,10 @@ export function AppRuntimeScreen({
 
   // E40.2 应用身份：主题 token 决定品牌区/主色/内容底色；菜单项抽出来给
   // side/top 两种导航形态共用。缺省 = azure（老模型渲染与历史一致）。
-  const identityTheme = resolveIdentityTheme(schema.identity.themeId);
+  const identityTheme = resolveIdentityTheme(
+    schema.identity.themeId,
+    schema.identity.generatedTheme
+  );
   // Step 9：视觉配方——只管密度/深色开关/圆角，主色仍归 identityTheme；两者叠加。
   const designRecipe = resolveDesignRecipe(schema.identity.designRecipeRef);
   const brandGradient = `linear-gradient(135deg,${identityTheme.primary},${identityTheme.gradTo})`;

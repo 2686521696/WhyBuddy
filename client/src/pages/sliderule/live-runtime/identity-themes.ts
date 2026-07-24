@@ -103,8 +103,43 @@ const THEMES: Record<string, IdentityTheme> = {
 /** 账本里声明的主题 id（parity 测试对照 THEMES 实现清单）。 */
 export const LEGAL_THEME_IDS: readonly string[] = legalDomains.identityThemes;
 
-/** 解析主题：未知/缺省 → azure（老模型渲染零变化）。 */
-export function resolveIdentityTheme(themeId?: string): IdentityTheme {
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+const GENERATED_THEME_HEX_KEYS = [
+  "primary", "primaryHover", "gradTo", "primaryFg", "contentBg",
+  "accentBg", "accentFg", "sidebarBg", "sidebarText",
+] as const;
+
+/** 生图驱动生成的身份主题（2026-07-24）——Python 侧 identity_theme_gen.py
+ * 已经过 Pydantic 十六进制格式 + WCAG 对比度校验，这里仍然二次校验，不
+ * 单方面信任上游（跟 FreeformNode 的"不单方面信任"是同一个原则）。 */
+export type GeneratedIdentityTheme = Partial<IdentityTheme> & { charts?: unknown };
+
+function isValidGeneratedTheme(v: unknown): v is IdentityTheme {
+  if (!v || typeof v !== "object") return false;
+  const t = v as Record<string, unknown>;
+  for (const key of GENERATED_THEME_HEX_KEYS) {
+    if (typeof t[key] !== "string" || !HEX_RE.test(t[key] as string)) return false;
+  }
+  if (
+    !Array.isArray(t.charts) ||
+    t.charts.length !== 3 ||
+    !t.charts.every((c) => typeof c === "string" && HEX_RE.test(c))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** 解析主题：优先用生图生成的主题（校验通过才用），否则按 themeId 查 8 套
+ * 预设，未知/缺省 → azure（老模型渲染零变化）。generatedTheme 校验不通过
+ * 时静默降级到预设，不抛错、不让一套坏配色拖垮渲染。 */
+export function resolveIdentityTheme(
+  themeId?: string,
+  generatedTheme?: unknown
+): IdentityTheme {
+  if (isValidGeneratedTheme(generatedTheme)) {
+    return { ...generatedTheme, id: "generated" };
+  }
   return THEMES[String(themeId || "").trim()] ?? THEMES[DEFAULT_THEME_ID];
 }
 

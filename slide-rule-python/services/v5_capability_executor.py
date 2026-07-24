@@ -284,6 +284,12 @@ def _try_llm_generate_evidence(
         model = enrich_freeform_blocks(model)
     except Exception as exc:  # noqa: BLE001 — 二段生成是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] freeform block enrichment skipped: {str(exc)[:160]}")
+    try:
+        from .identity_theme_gen import enrich_identity_theme
+
+        model = enrich_identity_theme(model, goal)
+    except Exception as exc:  # noqa: BLE001 — 主题生成是增强项，故障不改变主路径语义
+        print(f"[v5_capability_executor] identity theme enrichment skipped: {str(exc)[:160]}")
     artifacts = model_to_linkage_artifacts(model, goal)
     return {a["id"].replace("llm-linkage-", ""): a for a in artifacts}
 

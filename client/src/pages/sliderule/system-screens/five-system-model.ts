@@ -355,6 +355,9 @@ export interface AppIdentitySection {
    * dark-monitoring / high-contrast）；只管密度/深浅色，不选主色（主色是 theme 的职责）；
    * 不填时为 default，跟随主题默认密度。 */
   designRecipeRef?: string;
+  /** 2026-07-24：生图驱动生成的身份主题 token（Python identity_theme_gen.py
+   * 生成后写回），未声明/校验不过时降级到 theme 对应的 8 预设之一。 */
+  generatedTheme?: Record<string, unknown>;
 }
 
 export interface FiveSystemModel {
