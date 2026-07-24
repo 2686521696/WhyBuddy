@@ -538,6 +538,117 @@ def _generate_reference_image_b64(
     return base64.b64encode(png_bytes).decode("ascii")
 
 
+def _render_preview_screenshot_b64(
+    design_dump: dict[str, Any],
+    *,
+    theme_id: str,
+    device: str,
+    generated_theme: Optional[dict[str, Any]],
+) -> Optional[str]:
+    """把校验通过的候选内容真实渲染一次、截图，供下面的自我校验步骤跟参考图
+    比对（借鉴 abi/screenshot-to-code 的 screenshot_preview 思路：生成→截图→
+    自己看→改，不是纯一次性生成完就当定稿）。
+
+    这一步这时候还没有真实运行时行数据（generate_freeform_block 只有
+    datamodel schema，没有实例数据）——chart 节点会渲染成"暂无数据"占位，
+    截图主要用来检验版式/密度/图标使用/留白这些跟真实数据无关的部分，不能
+    验证图表配色/形状本身。跟生参考图一样，任何一步不可用/失败都返回 None，
+    调用方必须当作"这一步跳过"处理，不能让这个增强项拖垮主生成路径。
+    """
+    try:
+        from services.app_screenshot import (
+            capture_freeform_preview_screenshot,
+            e2b_screenshot_available,
+        )
+        from services.freeform_preview_store import put_preview
+    except Exception:
+        return None
+    if not e2b_screenshot_available():
+        return None
+    try:
+        pid = put_preview(
+            {
+                "freeformContent": design_dump,
+                "themeId": theme_id,
+                "generatedTheme": generated_theme,
+                "device": device or _DEFAULT_DEVICE,
+            }
+        )
+        png_bytes = capture_freeform_preview_screenshot(pid)
+    except Exception:
+        return None
+    if not png_bytes:
+        return None
+    return base64.b64encode(png_bytes).decode("ascii")
+
+
+def _critique_against_reference(
+    design_dump: dict[str, Any],
+    *,
+    reference_image_b64: str,
+    preview_screenshot_b64: str,
+    design_brief: str,
+    FreeformDesign: type[BaseModel],
+) -> Optional[dict[str, Any]]:
+    """把参考图和真实渲染截图一起喂给 LLM，让它自己判断这版结构是不是明显
+    比参考图单薄/有版式问题；如果是，让它直接产出一版修订过的完整 JSON。
+
+    只做一轮，不递归再校验一次修订结果的截图——那样成本会失控。修订结果
+    仍然要过同一套 Pydantic 深校验，校验不过就放弃这轮修订、用原版本，不能
+    因为"想变得更好"反而引入一个没校验过的坏结果。任何失败（LLM 报错/
+    JSON 解析失败/校验不过）都静默回退到原始 design_dump。
+    """
+    from sliderule_llm.client import LlmError, call_llm_with_retry
+
+    critique_prompt = (
+        f"设计需求是：{design_brief}\n\n"
+        "第一张图是这个区块的配色/版式参考图（生成用的草稿参照，不是真实数据）。"
+        "第二张图是刚才生成的结构 JSON 真实渲染出来的样子（图表部分因为还没有"
+        "真实数据会显示「暂无数据」占位，这是正常的，不算问题，不用因此改动）。\n\n"
+        "对比这两张图，只看版式密度、留白节奏、图标使用、色彩克制程度这些跟"
+        "具体数据无关的方面：如果第二张明显比第一张单薄（卡片数量少很多/"
+        "大片空白/完全没用图标/结构过于简单），请输出一版修订后的完整 JSON，"
+        "在现有基础上补充更多卡片/分组/图标，让密度更接近参考图，其它规则"
+        "（安全标签白名单、dataRef 必须指向真实字段、chart 字段格式）完全不变。"
+        "如果已经足够接近，不需要改，直接回复严格的 JSON 字符串 \"GOOD\"，"
+        "不要输出别的文字。"
+    )
+    convo: list[dict[str, Any]] = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": critique_prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{reference_image_b64}"}},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{preview_screenshot_b64}"}},
+            ],
+        }
+    ]
+    try:
+        result = call_llm_with_retry(
+            convo,
+            max_attempts=2,
+            backoff_ms=2000,
+            temperature=0.5,
+            max_tokens=10000,
+            on_delta=lambda _chunk: None,
+        )
+    except LlmError:
+        return None
+
+    raw = (result.content or "").strip()
+    if raw.strip('"').strip() == "GOOD" or not raw:
+        return None
+    try:
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE)
+        if not text.startswith("{"):
+            return None
+        payload = json.loads(text)
+        revised = FreeformDesign.model_validate(payload)
+    except (ValueError, json.JSONDecodeError, ValidationError):
+        return None
+    return revised.model_dump()
+
+
 def generate_freeform_block(
     design_brief: str,
     datamodel: dict[str, Any],
@@ -641,7 +752,6 @@ def generate_freeform_block(
 
         try:
             design = FreeformDesign.model_validate(payload)
-            return design.model_dump()
         except ValidationError as exc:
             last_error = str(exc)[:1200]
             convo = convo + [
@@ -659,6 +769,32 @@ def generate_freeform_block(
                     ),
                 },
             ]
+            continue
+
+        design_dump = design.model_dump()
+        # 自我校验闭环（借鉴 abi/screenshot-to-code 的 screenshot_preview 思路：
+        # 生成→截图→自己看→改，不是纯一次性生成完就当定稿）。只在真的生了
+        # 参考图时才做——没有参照物就没法判断"够不够密"。这整块包在自己的
+        # try/except 里，任何异常（哪怕是我没预料到的 bug）都不能让一次已经
+        # 校验通过的生成结果因为这个增强步骤而报废。
+        if reference_image_b64:
+            try:
+                preview_b64 = _render_preview_screenshot_b64(
+                    design_dump, theme_id=theme_id, device=device, generated_theme=generated_theme
+                )
+                if preview_b64:
+                    revised_dump = _critique_against_reference(
+                        design_dump,
+                        reference_image_b64=reference_image_b64,
+                        preview_screenshot_b64=preview_b64,
+                        design_brief=design_brief,
+                        FreeformDesign=FreeformDesign,
+                    )
+                    if revised_dump is not None:
+                        design_dump = revised_dump
+            except Exception as exc:  # noqa: BLE001 — 增强步骤绝不能拖垮已校验通过的主结果
+                print(f"[freeform_block] self-verify skipped (unexpected): {str(exc)[:160]}")
+        return design_dump
 
     raise FreeformGenerationError(f"exhausted {max_retries + 1} attempts, last error: {last_error}")
 

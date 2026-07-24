@@ -1367,3 +1367,24 @@ def capture_session_screenshot(sid: str, x_internal_key: Optional[str] = Header(
     from fastapi import Response
 
     return Response(content=png_bytes, media_type="image/png")
+
+
+# ---------------------------------------------------------------------------
+# FreeformInsight 自我校验闭环用的临时预览接口（2026-07-24）：generate_freeform_
+# block 生成出候选 JSON 后、写入任何 session 之前，想真实渲染一次截图跟参考图
+# 比对。候选内容这时还没有 session_id，走不了上面按 session 截图的路子——
+# 存一份到内存里给个随机 id，E2B 沙盒里的浏览器拿这个 id 来问内容、渲染。
+# 未鉴权（GET，无 x_internal_key 校验）：内容本身是几分钟内过期的一次性预览
+# 负载，不是敏感数据，鉴权反而会挡住 E2B 沙盒里浏览器的直接 fetch。
+# ---------------------------------------------------------------------------
+
+
+@router.get("/freeform-preview/{pid}")
+def get_freeform_preview(pid: str):
+    """按 id 取一份临时预览负载；不存在/已过期 → 404，不伪造内容。"""
+    from services.freeform_preview_store import get_preview
+
+    payload = get_preview(pid)
+    if payload is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(payload)

@@ -74,6 +74,87 @@ def _public_app_base_url() -> Optional[str]:
     return url or None
 
 
+_FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE = """
+const { chromium } = require("playwright");
+(async () => {
+  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 1400 } });
+    const page = await ctx.newPage();
+    await page.goto(%(preview_url_json)s, { waitUntil: "domcontentloaded", timeout: 25000 });
+    await page.waitForSelector('[data-testid="freeform-preview-root"]', { timeout: 15000 });
+    // 给图表/图标这些懒加载 chunk 一点时间稳定下来，避免截到半渲染的过渡态。
+    await page.waitForTimeout(1500);
+    const el = await page.$('[data-testid="freeform-preview-root"]');
+    await el.screenshot({ path: "/tmp/freeform-preview.png" });
+    console.log("SCREENSHOT_OK");
+  } finally {
+    await browser.close();
+  }
+})().catch((e) => {
+  console.error("SCREENSHOT_FAIL:", e && e.message);
+  process.exit(1);
+});
+"""
+
+
+def capture_freeform_preview_screenshot(preview_id: str, timeout_s: int = 90) -> Optional[bytes]:
+    """FreeformInsight 自我校验闭环用：在一次性 E2B 沙盒里截图一份还没写入
+    任何 session 的候选内容（generate_freeform_block 生成中途调用）。
+
+    跟 capture_app_screenshot 同一套 fail-closed 语义、同一个 E2B 沙盒安装
+    步骤，区别只是目标 URL——这里打的是隔离预览页
+    （/sliderule/freeform-preview/:pid），不是某个真实 session 的完整应用。
+    """
+    if not e2b_screenshot_available():
+        return None
+    base_url = _public_app_base_url()
+    preview_url = f"{base_url}/sliderule/freeform-preview/{preview_id}"
+
+    from e2b_code_interpreter import Sandbox
+
+    sandbox = Sandbox.create(timeout=timeout_s + 30)
+    try:
+        install = sandbox.run_code(
+            "import subprocess, json\n"
+            f"r1 = subprocess.run(['npm','install','playwright@{_PLAYWRIGHT_VERSION}'], "
+            "capture_output=True, text=True, timeout=90, cwd='/tmp')\n"
+            "r2 = subprocess.run(['npx','playwright','install','--with-deps','chromium'], "
+            "capture_output=True, text=True, timeout=150, cwd='/tmp')\n"
+            "print(json.dumps({'install_rc': r1.returncode, 'browser_rc': r2.returncode}))",
+            timeout=timeout_s,
+        )
+        if install.error is not None:
+            return None
+
+        js_code = _FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE % {
+            "preview_url_json": json.dumps(preview_url),
+        }
+        run = sandbox.run_code(
+            "open('/tmp/shot.js', 'w').write(" + repr(js_code) + ")\n"
+            "import subprocess\n"
+            "res = subprocess.run(['node', '/tmp/shot.js'], capture_output=True, text=True, "
+            "timeout=40, cwd='/tmp')\n"
+            "print('RC:', res.returncode)\n"
+            "print(res.stdout)\n"
+            "print(res.stderr[-1000:])",
+            timeout=timeout_s,
+        )
+        stdout_text = "\n".join(run.logs.stdout)
+        if "SCREENSHOT_OK" not in stdout_text:
+            return None
+
+        content = sandbox.files.read("/tmp/freeform-preview.png", format="bytes")
+        return bytes(content) if content else None
+    except Exception:
+        return None
+    finally:
+        try:
+            sandbox.kill()
+        except Exception:
+            pass
+
+
 def capture_app_screenshot(session_id: str, timeout_s: int = 90) -> Optional[bytes]:
     """在一次性 E2B 沙盒里截图 session_id 对应的已闭环应用主舞台。
 

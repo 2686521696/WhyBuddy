@@ -78,6 +78,9 @@ const AutopilotSpecDocumentsWorkbenchFixturePage = lazy(
     import("./pages/autopilot/right-rail/streaming-doc/workbench/WorkbenchFixturePage")
 );
 const SlideRuleDevPage = lazy(() => import("./pages/SlideRuleDev"));
+const FreeformPreviewPage = lazy(
+  () => import("./pages/sliderule/live-runtime/FreeformPreviewScreen")
+);
 
 /** 懒加载路由 chunk 拉取期间的轻量占位（主入口 AgentLoopPage 不经过这里）。 */
 function RouteLoadingFallback() {
@@ -180,6 +183,11 @@ function Router() {
       <Route path={"/debug"} component={DebugPage} />
       <Route path={"/debug/:section"} component={DebugPage} />
       <Route path={`${SLIDERULE_PATH}/dev`} component={SlideRuleDevPage} />
+      {/* FreeformInsight 自我校验闭环专用隔离预览页（无聊天面板/应用外壳噪音，
+          只渲染内容区本身）——E2B 沙盒里的 Playwright 截图目标。 */}
+      <Route path={`${SLIDERULE_PATH}/freeform-preview/:pid`}>
+        {params => <FreeformPreviewPage pid={params.pid} />}
+      </Route>
       <Route path={SLIDERULE_PATH}>
         {() => <RedirectRoute to={getAgentLoopSliderulePath()} />}
       </Route>
