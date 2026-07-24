@@ -174,7 +174,9 @@ Content-quality rules (checked by a deterministic regression gate):
   not loose prose). Do NOT force pipelines when capabilities are unrelated;
   omit "pipelines" entirely in that case.
 - CHARTS (library-agnostic): pages whose job includes monitoring/analytics
-  (dashboards, finance, audit, ops) should declare 1-2 "charts". A chart is a
+  (dashboards, finance, audit, ops) declare "charts" — how many depends on
+  what this operation genuinely needs to see visualized (a single decisive
+  trend, or several breakdowns), not a fixed quota. A chart is a
   SEMANTIC declaration — what to visualize, never which UI library renders it:
   "dimension" is the grouping field (enum/status/category/date fields work
   best), "metric" is either "count" (rows per group) or "sum:<entity.field>"
@@ -191,12 +193,18 @@ Content-quality rules (checked by a deterministic regression gate):
   carries no business meaning.
 - PAGE KINDS: workbench = CRUD console (default), kanban = status board
   (needs statusField), calendar = date-driven (needs dateField), dashboard =
-  chart-first analytics, monitor = ops overview (KPI row on top + main charts
-  left + rankings/feeds side column — declare stats AND charts AND a ranking
-  or feed to fill the skeleton), wizard = step-by-step guided flow (the page
-  MUST be bound to the workflow via appbundle.pageBindings workflowRef —
-  its steps ARE the workflow nodes). Pick by the page's job, vary across
-  pages — real products mix kinds.
+  chart-first analytics, monitor = ops overview — its headline metrics and
+  charts are the operational numbers THIS business actually watches, so the
+  MIX and COUNT must follow the domain, not a fixed template: some overviews
+  live on one hero metric plus a couple of trend charts, others on a wall of
+  small KPIs with a single breakdown. Do NOT reflexively emit the same
+  "N stats + M charts + a ranking + a feed" shape for every app — that makes
+  every product's home page look identical. Declare only what this business
+  genuinely surfaces first (a ranking/feed only when top-N or a live activity
+  stream is a real part of THIS operation, not as a slot to fill). wizard =
+  step-by-step guided flow (the page MUST be bound to the workflow via
+  appbundle.pageBindings workflowRef — its steps ARE the workflow nodes).
+  Pick by the page's job, vary across pages — real products mix kinds.
 - FEEDS (activity/alert stream, optional): overview pages that watch things
   happen (alerts, submissions, escalations) may declare ONE feed: "entity" is
   the row source, "timeField" MUST be a real DATE field (stream orders by it,
@@ -216,10 +224,13 @@ Content-quality rules (checked by a deterministic regression gate):
   "score" (0-100 evaluation), "rating" (1-5 stars); string fields: "masked"
   (phone/ID-card — sensitive, rendered partially hidden). Omit for plain
   values; NEVER put a format on date/ref/enum fields.
-- STATS (KPI cards): pages whose job includes overview/monitoring should
-  declare 2-4 "stats" — headline metric cards rendered above the page table.
-  "entity" scopes count; sum/avg must target a number field. Same
-  field-existence rules as charts. Pure CRUD pages need none.
+- STATS (KPI cards): pages whose job includes overview/monitoring declare
+  "stats" — headline metric cards. Let the count follow what this business
+  actually leads with: it can be a single decisive number, a tight pair, or a
+  denser row of six — pick by the domain, don't default to the same count
+  every time (a monitor that always has exactly 4 stats reads as a template,
+  not a design). "entity" scopes count; sum/avg must target a number field.
+  Same field-existence rules as charts. Pure CRUD pages need none.
 - PAGE KIND (view paradigm): pick each page's "kind" by its job — omit or
   "workbench" (default) for CRUD tables; "kanban" when the core object flows
   through stages (跟进/审批/生产状态) — REQUIRES "statusField" naming an enum
@@ -227,7 +238,9 @@ Content-quality rules (checked by a deterministic regression gate):
   "calendar" when rows live on dates (排期/预约/计划) — REQUIRES "dateField"
   naming a date field of this page's entity, optional "colorBy" naming an
   enum field for event coloring; "dashboard" for overview/monitoring pages —
-  give those 2-4 stats and 1-2 charts (charts render wide, table shrinks).
+  give those the stats and charts the domain actually leads with, count set by
+  the business's real focus rather than a fixed quota (charts render wide,
+  table shrinks).
   Use at most one kanban and one calendar page; never force a paradigm the
   domain doesn't need.
 - INVARIANTS: emit 5-8 entries in "appbundle.invariants" — declarative constraints that
