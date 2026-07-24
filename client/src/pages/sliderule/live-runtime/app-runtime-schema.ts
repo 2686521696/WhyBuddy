@@ -213,6 +213,11 @@ export interface AppPageSchema {
   pageActions: AppPageActionSchema[];
   /** Step 7：区块布局 5 槽位；未声明或声明后全空为 null，渲染层回退顺序平铺。 */
   layout: AppPageLayoutSchema | null;
+  /** 2026-07-24：kind=monitor 页面额外生成的 FreeformInsight 总览区块——
+   * 有就优先渲染，生成失败/未声明时 AppRuntimeScreen 回退固定的
+   * stats/charts/rankings/feeds 骨架，不是互相替代关系。原样透传不做
+   * 类型收窄（跟 identity.generatedTheme 同一个"渲染器内部再校验"套路）。 */
+  freeformOverview?: { root: Record<string, unknown> };
 }
 
 /** Step 7：页面布局 5 槽位——每个槽位是有序区块 id 列表；mobile 为手机端覆盖。 */
@@ -684,6 +689,7 @@ export function deriveAppRuntimeSchema(
       feeds,
       charts,
       view,
+      freeformOverview: page.freeformOverview,
       // 体验区块：优先用模型直接声明的 page.blocks；若无声明，从现有
       // stats/charts/rankings/feeds 自动转换（零视觉变化路径，三阶段接入前
       // AppRuntimeScreen 会过滤掉 _fromLegacy 块，仍走旧渲染路径）。

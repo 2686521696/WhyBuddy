@@ -844,3 +844,124 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
                     if isinstance(refs, list):
                         layout[slot_key] = [r for r in refs if r not in dropped_ids]
     return model
+
+
+def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, Any]) -> str:
+    """monitor 页面（首页/运营总览）的总览设计需求文案——不是让 LLM 凭空
+    发挥内容范围，而是把这个页面自己已经声明、已经过 Gate 校验的
+    stats/charts 当成"必须覆盖的内容清单"喂给它，LLM 只负责这批内容的
+    视觉设计（版式/分组/颜色/图标），不负责决定"该不该有"。这样首页既能
+    有 FreeformInsight 的设计自由度（不再是每个 app 都长一样的固定网格
+    骨架），又不会漂出这个页面本来经过内容质量门校验过的信息架构——真实
+    数字仍然要靠 generate_freeform_block 内部的 dataRef 校验兜底，这里只
+    提供"画面上该出现哪些卡片"的自然语言线索，不直接摆 entityRef/字段 id
+    这种结构化内容，那是 build_freeform_prompt 已经在做的事（完整数据
+    模型 + 图表候选枚举），这里重复会互相打架。
+
+    故意不把 rankings/feeds 塞进这份清单：FreeformInsight 的 dataRef 只能
+    表达聚合值（count/sum/avg），没有"枚举真实的第 N 行记录"这种能力——
+    真机测试过一次，LLM 收到"必须包含排行榜/动态流"的要求后，只能画出
+    表头+空表身（没有任何一行数据，因为它没有合法的方式引用具体某一行），
+    比留白还难看。排行榜/动态流这类"必须是真实逐行记录"的内容，继续走
+    AppRuntimeScreen 里原有的 renderRankingCard/renderFeedCard 动态渲染
+    （直接读 state.entities 真实行数据），不归 freeformOverview 管。
+    """
+    entities = {e.get("id"): e for e in datamodel.get("entities") or [] if e.get("id")}
+
+    def entity_label(entity_id: str) -> str:
+        e = entities.get(entity_id) or {}
+        return str(e.get("name") or entity_id or "")
+
+    def field_label(qualified: str) -> str:
+        entity_id, _, field_id = qualified.partition(".")
+        e = entities.get(entity_id) or {}
+        for f in e.get("fields") or []:
+            if f.get("id") == field_id:
+                return str(f.get("name") or field_id)
+        return field_id or qualified
+
+    name = page.get("name") or page.get("id") or "总览"
+    lines = [f"「{name}」——这个应用打开后看到的首页/运营总览区块。"]
+
+    stats = page.get("stats") or []
+    if stats:
+        bits = []
+        for s in stats:
+            metric = str(s.get("metric") or "count")
+            if metric == "count":
+                metric_desc = f"{entity_label(str(s.get('entity') or ''))}数量"
+            else:
+                prefix, _, mref = metric.partition(":")
+                metric_desc = f"{field_label(mref)}{'总和' if prefix == 'sum' else '平均值'}"
+            bits.append(f"{s.get('name') or s.get('id')}（{metric_desc}）")
+        lines.append("必须包含的 KPI 统计卡：" + "、".join(bits) + "。")
+
+    charts = page.get("charts") or []
+    if charts:
+        bits = []
+        for c in charts:
+            dim = field_label(str(c.get("dimension") or ""))
+            metric = str(c.get("metric") or "count")
+            metric_desc = "数量分布" if metric == "count" else f"{field_label(metric.partition(':')[2])}总和分布"
+            bits.append(f"{c.get('name') or c.get('id')}（按「{dim}」的{metric_desc}，用{c.get('type') or 'bar'}图）")
+        lines.append("必须包含的图表：" + "、".join(bits) + "。")
+
+    lines.append(
+        "这份清单是这个页面已经审核通过的真实内容范围，不能新增清单之外的统计"
+        "指标/图表，也不能遗漏清单里的任何一项；具体每一项用什么颜色、图标、"
+        "分组方式、卡片大小关系、整体版式，由你自由设计，做出比标准网格骨架"
+        "更有设计感的呈现——这正是这次设计要解决的问题。"
+    )
+    lines.append(
+        "只设计这个页面的 KPI 统计卡+图表这部分（一个完整、自洽的视觉区块），"
+        "不要画排行榜/动态流/数据列表这类需要逐行展示具体记录的内容——这类内容"
+        "在你的设计之外由另一套机制单独渲染真实逐行数据，你这里画了也没有真实"
+        "数据可填，只会出现空表格/占位行，不要画。"
+    )
+    return "\n".join(lines)
+
+
+def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
+    """首页/monitor 页面的总览区块也交给 FreeformInsight 设计，不再永远
+    套同一套固定骨架（KPI 行 + 图表主列 + 排行/动态流侧列）——那套骨架
+    此前是唯一选项，所以所有生成出来的应用首页看起来都一个模子，且列
+    高度不一致时还得靠 grid-compact.ts 去补洞。
+
+    跟 enrich_freeform_blocks 同一套 fail-open 纪律：只在这里追加写入
+    freeformOverview，从不删除页面已有的 stats/charts/rankings/feeds 声明
+    ——AppRuntimeScreen 渲染时优先用 freeformOverview，没有（未声明/生成
+    失败）就照旧走固定骨架兜底，两者是"有更好的就用更好的，没有就诚实
+    退回骨架"，不是互相替代关系。原地修改并返回同一个 model，方便调用方
+    链式使用。
+    """
+    datamodel = model.get("datamodel") or {}
+    appbundle = model.get("appbundle") or {}
+    identity = appbundle.get("appIdentity") or {}
+    theme_id = str(identity.get("theme") or "").strip()
+    device = str(appbundle.get("preferredDevice") or "").strip()
+    generated_theme_raw = identity.get("generatedTheme")
+    generated_theme = generated_theme_raw if isinstance(generated_theme_raw, dict) else None
+
+    for page in (model.get("page") or {}).get("pages") or []:
+        if str(page.get("kind") or "").strip() != "monitor":
+            continue
+        # 只看 stats/charts——rankings/feeds 不进设计文案（见
+        # _monitor_overview_design_brief 的说明），一个页面如果只声明了
+        # rankings/feeds、没有 stats/charts，freeformOverview 没有东西可画，
+        # 生成了也是空区块，不如不生成，直接走原有固定骨架（那套骨架的
+        # renderRankingCard/renderFeedCard 本来就能正确渲染这种页面）。
+        has_content = bool(page.get("stats")) or bool(page.get("charts"))
+        if not has_content:
+            continue
+        brief = _monitor_overview_design_brief(page, datamodel)
+        try:
+            content = generate_freeform_block(
+                brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+            )
+            page["freeformOverview"] = content
+        except FreeformGenerationError as exc:
+            print(
+                f"[freeform_block] {page.get('id')} monitor overview generation failed, "
+                f"keeping fixed skeleton: {str(exc)[:200]}"
+            )
+    return model

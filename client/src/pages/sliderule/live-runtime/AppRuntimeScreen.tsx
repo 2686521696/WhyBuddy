@@ -1658,6 +1658,47 @@ export function AppRuntimeScreen({
     );
   })();
 
+  // 2026-07-24：monitor 页面的总览区块——freeformOverview 是 Python
+  // enrich_monitor_page_overviews 按这个页面已声明的 stats/charts 当内容
+  // 清单、交给 FreeformInsight 设计出来的 KPI+图表版式（不再是所有 app
+  // 首页都长一样的固定网格骨架）。数字仍然经 ExperienceBlockBoundary →
+  // renderFreeformNode 的 dataRef 现算校验，不会因为换了渲染路径就失去
+  // "不能编数字"这层保证。未声明（老快照/生成失败）时下面的
+  // monitorCombinedRow 固定骨架原样兜底。
+  //
+  // 故意不包含 rankings/feeds——FreeformInsight 的 dataRef 只能表达聚合值
+  // （count/sum/avg），没有"枚举真实第 N 行记录"的能力（真机测试过：LLM
+  // 收到这个要求后只能画出表头+空表身）。排行榜/动态流这类必须逐行展示
+  // 真实记录的内容，固定走 monitorDynamicLists 下面的动态渲染。
+  const monitorFreeformOverview = page?.freeformOverview ? (
+    <div data-testid="app-runtime-monitor-freeform-overview">
+      <ExperienceBlockBoundary
+        block={{
+          id: `${page.id}:freeform-overview`,
+          type: "FreeformInsight",
+          freeformContent: page.freeformOverview,
+        }}
+        entityRows={state.entities}
+        chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
+      />
+    </div>
+  ) : null;
+
+  // freeformOverview 只负责 KPI+图表；排行榜/动态流这类"必须是真实逐行
+  // 记录"的内容永远走这条真实动态渲染路径（renderRankingCard/
+  // renderFeedCard 直接读 state.entities 真实行数据），跟 freeformOverview
+  // 是否存在无关——两者并列渲染，不是互斥关系。
+  const monitorDynamicLists =
+    page && (page.rankings.length > 0 || page.feeds.length > 0) ? (
+      <div
+        style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}
+        data-testid="app-runtime-monitor-dynamic-lists"
+      >
+        {page.rankings.map(renderRankingCard)}
+        {page.feeds.map(renderFeedCard)}
+      </div>
+    ) : null;
+
   const defaultPageContent = page && (
     <Card
       size="small"
@@ -1863,10 +1904,17 @@ export function AppRuntimeScreen({
         />
       )}
       {page.view.kind === "monitor" ? (
-        <>
-          {statsBand}
-          {monitorCombinedRow}
-        </>
+        monitorFreeformOverview ? (
+          <>
+            {monitorFreeformOverview}
+            {monitorDynamicLists}
+          </>
+        ) : (
+          <>
+            {statsBand}
+            {monitorCombinedRow}
+          </>
+        )
       ) : (
         <>
           {statsBand}
