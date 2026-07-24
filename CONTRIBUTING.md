@@ -66,7 +66,7 @@ For release-sensitive changes, use the aggregate release path:
 pnpm run test:release
 ```
 
-If a repo-wide command fails because of unrelated existing issues, mention that clearly in the pull request and include the focused checks you did run.
+If a repo-wide command fails because of unrelated existing issues, mention that clearly in the pull request and include the focused checks you ran.
 
 ## Pull Request Guidelines
 
