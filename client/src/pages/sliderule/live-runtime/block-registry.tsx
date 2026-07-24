@@ -27,6 +27,12 @@ import {
 
 import catalogJson from "@experience-blocks";
 import type { WorkflowSection } from "../system-screens/five-system-model";
+import type { RuntimeRow } from "./live-runtime";
+import { buildEchartsOption } from "./build-echarts-option";
+
+// ECharts 基建走独立 chunk（跟 AppRuntimeScreen 里那份同一个组件/同一个
+// import()，Vite 按 module 去重成一个 chunk，不会重复打包）。
+const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
 
 export interface ExperienceBlockCatalogEntry {
   type: string;
@@ -45,12 +51,24 @@ export interface FreeformDataRef {
   entityRef: string;
   aggregate?: string;
 }
+/** 真图表声明（2026-07-24）——不是 CSS 画的近似形状，是运行时拿真实行
+ * 数据现算的 ECharts option，复用 build-echarts-option.ts 那套已经在用
+ * 的确定性配色/分组逻辑，数据随真实数据变化自动更新。 */
+export interface FreeformChartSpec {
+  type: "bar" | "line" | "pie" | "donut";
+  entityRef: string;
+  dimensionFieldId: string;
+  metric: "count" | "sum";
+  metricFieldId?: string;
+  metricLabel: string;
+}
 export interface FreeformNode {
   tag: string;
   style?: Record<string, string>;
   text?: string;
   iconRef?: string;
   dataRef?: FreeformDataRef;
+  chart?: FreeformChartSpec;
   children?: FreeformNode[];
 }
 
@@ -110,6 +128,10 @@ export interface ExperienceBlockRendererProps {
   /** WorkflowTimeline 专用：整份 workflow 系统数据，chainRef 从这里解析节点/连线，
    * 不接受自由文案——Gate 已校验 chainRef 能在这里面查到（留空=主链路）。 */
   workflow?: WorkflowSection | null;
+  /** FreeformInsight chart 节点专用：entityId → 运行时真实行数据，key 是否
+   * 存在本身就是"这个实体是否真实存在"的校验（initRuntimeState 会给数据
+   * 模型里每个真实实体建 key，哪怕值是空数组）。 */
+  entityRows?: Record<string, RuntimeRow[]>;
 }
 
 export type ExperienceBlockRenderer =
@@ -403,7 +425,61 @@ function sanitizeFreeformStyle(
   return out as React.CSSProperties;
 }
 
-function renderFreeformNode(node: unknown, key: React.Key): React.ReactNode {
+const FREEFORM_CHART_TYPES = new Set(["bar", "line", "pie", "donut"]);
+
+/** chart 节点二次校验（不单方面信任 Python 端 Pydantic 已经查过）：type
+ * 在允许集合内、entityRef 在真实运行时行数据里存在这个 key（数据模型没有
+ * 的实体，entityRows 里不会有这个 key）、dimensionFieldId 非空、metric 是
+ * sum 时 metricFieldId 必须非空。任一条不满足就不渲染图表（不猜测、不
+ * 崩溃），交回上层显示"内容生成中或暂不可用"同款诚实占位。 */
+function renderFreeformChart(
+  chart: FreeformChartSpec | undefined,
+  entityRows: Record<string, RuntimeRow[]> | undefined,
+  key: React.Key
+): React.ReactNode {
+  if (!chart || typeof chart !== "object") return null;
+  if (!FREEFORM_CHART_TYPES.has(chart.type)) return null;
+  if (!chart.entityRef || !entityRows || !(chart.entityRef in entityRows)) return null;
+  if (!chart.dimensionFieldId) return null;
+  if (chart.metric !== "count" && chart.metric !== "sum") return null;
+  if (chart.metric === "sum" && !chart.metricFieldId) return null;
+
+  const option = buildEchartsOption(
+    {
+      id: `freeform-chart-${key}`,
+      label: chart.metricLabel || "",
+      type: chart.type,
+      entityId: chart.entityRef,
+      dimensionFieldId: chart.dimensionFieldId,
+      dimensionLabel: chart.dimensionFieldId,
+      metric: chart.metric,
+      metricFieldId: chart.metricFieldId,
+      metricLabel: chart.metricLabel || "",
+    },
+    entityRows[chart.entityRef] ?? []
+  );
+  if (!option) {
+    return (
+      <div key={key} className="px-2 py-6 text-center text-xs text-stone-400">
+        暂无数据 — 图表将在有真实记录后显示
+      </div>
+    );
+  }
+  return (
+    <React.Suspense
+      key={key}
+      fallback={<div style={{ height: 200 }} className="animate-pulse bg-stone-50" />}
+    >
+      <LazyEchartsChart option={option} height={200} ariaLabel={chart.metricLabel} />
+    </React.Suspense>
+  );
+}
+
+function renderFreeformNode(
+  node: unknown,
+  key: React.Key,
+  entityRows?: Record<string, RuntimeRow[]>
+): React.ReactNode {
   if (!node || typeof node !== "object") return null;
   const n = node as FreeformNode;
   const allowedTags = new Set(EXPERIENCE_BLOCK_CATALOG.freeformAllowedTags);
@@ -411,9 +487,14 @@ function renderFreeformNode(node: unknown, key: React.Key): React.ReactNode {
   const allowedIcons = new Set(EXPERIENCE_BLOCK_CATALOG.freeformAllowedIconRefs);
   const icon =
     n.iconRef && allowedIcons.has(n.iconRef) ? FREEFORM_ICONS[n.iconRef] : null;
-  const children = (Array.isArray(n.children) ? n.children : []).map((child, i) =>
-    renderFreeformNode(child, i)
-  );
+  const chartNode = n.chart ? renderFreeformChart(n.chart, entityRows, "chart") : null;
+  // chart 节点接管这块区域的内容，不再渲染 children/text（跟 Python 侧 prompt
+  // 的约定一致：有 chart 字段的节点不该再让模型塞 children 进来画图表本身）。
+  const children = chartNode
+    ? []
+    : (Array.isArray(n.children) ? n.children : []).map((child, i) =>
+        renderFreeformNode(child, i, entityRows)
+      );
   return React.createElement(
     tag,
     { key, style: sanitizeFreeformStyle(n.style) },
@@ -432,11 +513,12 @@ function renderFreeformNode(node: unknown, key: React.Key): React.ReactNode {
       </span>
     ) : null,
     typeof n.text === "string" ? n.text : null,
+    chartNode,
     ...children
   );
 }
 
-const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block }) => {
+const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows }) => {
   const root = block.freeformContent?.root;
   if (!root) {
     return (
@@ -450,7 +532,7 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block }) => {
   }
   return (
     <div data-testid="freeform-insight" className="overflow-hidden rounded">
-      {renderFreeformNode(root, "root")}
+      {renderFreeformNode(root, "root", entityRows)}
     </div>
   );
 };
@@ -487,6 +569,7 @@ export function ExperienceBlockBoundary({
   dateRangeField,
   onFilterChange,
   workflow,
+  entityRows,
 }: ExperienceBlockRendererProps) {
   const entry = experienceBlockEntry(block.type);
   const Renderer = entry
@@ -513,6 +596,7 @@ export function ExperienceBlockBoundary({
       dateRangeField={dateRangeField}
       onFilterChange={onFilterChange}
       workflow={workflow}
+      entityRows={entityRows}
     >
       {children}
     </Renderer>

@@ -1674,6 +1674,7 @@ export function AppRuntimeScreen({
             dateRangeField={dateRangeField}
             onFilterChange={handlePageFilterChange}
             workflow={model.workflow}
+            entityRows={state.entities}
           />
         );
 
