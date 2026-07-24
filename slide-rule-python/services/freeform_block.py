@@ -177,6 +177,78 @@ def _datamodel_summary_lines(datamodel: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _enumerate_chart_candidates(datamodel: dict[str, Any]) -> list[dict[str, Any]]:
+    """按 Metabase X-Ray 的思路，机械枚举数据模型里所有"数学上合法"的图表
+    组合——每个 enum 字段的分布计数、每个 number 字段按 enum 字段分组求和——
+    而不是完全指望 LLM 自己去猜哪些字段组合能撑起一张图。这些候选本身已经
+    保证 entityRef/dimensionFieldId/metricFieldId 都是真实存在的字段，LLM
+    从这批候选里选/组合，可用真实候选一目了然，用不用、用几个，仍然是 LLM
+    自己的设计判断，这里只负责穷举"有哪些合法选项"。
+
+    不设候选数量上限——候选多少取决于数据模型本身有多少 enum/number 字段，
+    跟 _datamodel_summary_lines 的"不设实体数上限"是同一个原则：密度由真实
+    数据模型的厚度决定，不是开发者手工定一个候选数天花板。
+    """
+    candidates: list[dict[str, Any]] = []
+    for e in datamodel.get("entities") or []:
+        eid = e.get("id")
+        if not eid:
+            continue
+        ename = e.get("name") or eid
+        fields = e.get("fields") or []
+        enum_fields = [f for f in fields if f.get("type") == "enum" and f.get("id")]
+        number_fields = [f for f in fields if f.get("type") == "number" and f.get("id")]
+        for ef in enum_fields:
+            efname = ef.get("name") or ef.get("id")
+            candidates.append(
+                {
+                    "entityRef": eid,
+                    "dimensionFieldId": ef["id"],
+                    "metric": "count",
+                    "metricFieldId": None,
+                    "metricLabel": f"{ename}数量",
+                    "note": f"{ename}按「{efname}」分布计数",
+                }
+            )
+            for nf in number_fields:
+                nfname = nf.get("name") or nf.get("id")
+                candidates.append(
+                    {
+                        "entityRef": eid,
+                        "dimensionFieldId": ef["id"],
+                        "metric": "sum",
+                        "metricFieldId": nf["id"],
+                        "metricLabel": f"{nfname}总和",
+                        "note": f"{ename}按「{efname}」分组的「{nfname}」总和",
+                    }
+                )
+    return candidates
+
+
+def _chart_candidates_prompt_fragment(datamodel: dict[str, Any]) -> str:
+    candidates = _enumerate_chart_candidates(datamodel)
+    if not candidates:
+        return ""
+    lines = []
+    for c in candidates:
+        metric_bit = (
+            'metric="count"'
+            if c["metric"] == "count"
+            else f'metric="sum", metricFieldId="{c["metricFieldId"]}"'
+        )
+        lines.append(
+            f'- {c["note"]}：entityRef="{c["entityRef"]}", '
+            f'dimensionFieldId="{c["dimensionFieldId"]}", {metric_bit}, '
+            f'metricLabel 建议"{c["metricLabel"]}"'
+        )
+    return (
+        "\n下面是这个数据模型里机械枚举出来的所有合法图表候选（每一条的字段组合"
+        "都已验证过真实存在，可以直接拿来填 chart 字段，type 自己按设计需要挑 "
+        "bar/line/pie/donut）——不要求全部用上，但可以更多地利用这些真实候选去"
+        "撑画面密度，而不是只挑一两个：\n" + "\n".join(lines) + "\n"
+    )
+
+
 def _entity_index(datamodel: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     entities = {e.get("id"): e for e in datamodel.get("entities", []) if e.get("id")}
     field_types: dict[str, str] = {}
@@ -367,7 +439,7 @@ listStyle）会被直接判失败：{", ".join(FREEFORM_ALLOWED_STYLE_PROPS)}。
 （图表引擎会接管这块区域），但节点本身的 style 仍然控制这块区域的宽高/
 外边距/背景。柱状图/饼图/环形图的分组字段（dimensionFieldId）优先选 enum
 类型的字段——这样图表的类别数量和名字直接来自真实数据，不需要你去猜。
-
+{_chart_candidates_prompt_fragment(datamodel)}
 下面是这个应用真实的数据模型，唯一可以引用的数据来源：
 {json.dumps(datamodel, ensure_ascii=False, indent=2)}
 
