@@ -132,6 +132,11 @@ export interface ExperienceBlockRendererProps {
    * 存在本身就是"这个实体是否真实存在"的校验（initRuntimeState 会给数据
    * 模型里每个真实实体建 key，哪怕值是空数组）。 */
   entityRows?: Record<string, RuntimeRow[]>;
+  /** FreeformInsight chart 节点专用：身份主题的图表配色（2026-07-24）——
+   * 之前图表颜色是 build-echarts-option.ts 写死的几个常量，跟侧边栏/按钮
+   * 用的身份主题完全无关；现在传主题自己的 primary/charts，颜色才能跟壳
+   * 统一。不传时 buildEchartsOption 落到它自己的默认值，不会崩。 */
+  chartPalette?: { primary: string; categorical: readonly string[] };
 }
 
 export type ExperienceBlockRenderer =
@@ -435,6 +440,7 @@ const FREEFORM_CHART_TYPES = new Set(["bar", "line", "pie", "donut"]);
 function renderFreeformChart(
   chart: FreeformChartSpec | undefined,
   entityRows: Record<string, RuntimeRow[]> | undefined,
+  chartPalette: { primary: string; categorical: readonly string[] } | undefined,
   key: React.Key
 ): React.ReactNode {
   if (!chart || typeof chart !== "object") return null;
@@ -456,7 +462,8 @@ function renderFreeformChart(
       metricFieldId: chart.metricFieldId,
       metricLabel: chart.metricLabel || "",
     },
-    entityRows[chart.entityRef] ?? []
+    entityRows[chart.entityRef] ?? [],
+    chartPalette
   );
   if (!option) {
     return (
@@ -478,7 +485,8 @@ function renderFreeformChart(
 function renderFreeformNode(
   node: unknown,
   key: React.Key,
-  entityRows?: Record<string, RuntimeRow[]>
+  entityRows?: Record<string, RuntimeRow[]>,
+  chartPalette?: { primary: string; categorical: readonly string[] }
 ): React.ReactNode {
   if (!node || typeof node !== "object") return null;
   const n = node as FreeformNode;
@@ -487,13 +495,13 @@ function renderFreeformNode(
   const allowedIcons = new Set(EXPERIENCE_BLOCK_CATALOG.freeformAllowedIconRefs);
   const icon =
     n.iconRef && allowedIcons.has(n.iconRef) ? FREEFORM_ICONS[n.iconRef] : null;
-  const chartNode = n.chart ? renderFreeformChart(n.chart, entityRows, "chart") : null;
+  const chartNode = n.chart ? renderFreeformChart(n.chart, entityRows, chartPalette, "chart") : null;
   // chart 节点接管这块区域的内容，不再渲染 children/text（跟 Python 侧 prompt
   // 的约定一致：有 chart 字段的节点不该再让模型塞 children 进来画图表本身）。
   const children = chartNode
     ? []
     : (Array.isArray(n.children) ? n.children : []).map((child, i) =>
-        renderFreeformNode(child, i, entityRows)
+        renderFreeformNode(child, i, entityRows, chartPalette)
       );
   return React.createElement(
     tag,
@@ -518,7 +526,7 @@ function renderFreeformNode(
   );
 }
 
-const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows }) => {
+const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows, chartPalette }) => {
   const root = block.freeformContent?.root;
   if (!root) {
     return (
@@ -532,7 +540,7 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows })
   }
   return (
     <div data-testid="freeform-insight" className="overflow-hidden rounded">
-      {renderFreeformNode(root, "root", entityRows)}
+      {renderFreeformNode(root, "root", entityRows, chartPalette)}
     </div>
   );
 };
@@ -570,6 +578,7 @@ export function ExperienceBlockBoundary({
   onFilterChange,
   workflow,
   entityRows,
+  chartPalette,
 }: ExperienceBlockRendererProps) {
   const entry = experienceBlockEntry(block.type);
   const Renderer = entry
@@ -597,6 +606,7 @@ export function ExperienceBlockBoundary({
       onFilterChange={onFilterChange}
       workflow={workflow}
       entityRows={entityRows}
+      chartPalette={chartPalette}
     >
       {children}
     </Renderer>

@@ -110,12 +110,24 @@ def _image_size_for_device(device: str) -> str:
     return _DEVICE_IMAGE_SIZE.get(device) or _DEVICE_IMAGE_SIZE[_DEFAULT_DEVICE]
 
 
-def _theme_palette(theme_id: str) -> dict[str, Any]:
+_GENERATED_THEME_REQUIRED_KEYS = (
+    "label", "primary", "primaryHover", "gradTo", "contentBg", "accentBg", "accentFg", "charts",
+)
+
+
+def _theme_palette(theme_id: str, generated_theme: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """身份主题现在可能不是 8 预设之一，而是 identity_theme_gen.py 生成的
+    自定义主题——优先用这个（同一个 app 的侧边栏/顶栏就是照它来的，颜色要
+    统一），传了但形状不对就落回 8 预设，不让一个坏字典拖垮整个生成。"""
+    if isinstance(generated_theme, dict) and all(
+        k in generated_theme for k in _GENERATED_THEME_REQUIRED_KEYS
+    ):
+        return generated_theme
     return _THEME_COLOR_HINTS.get(theme_id) or _THEME_COLOR_HINTS[_DEFAULT_THEME_ID]
 
 
-def _theme_prompt_fragment(theme_id: str) -> str:
-    hint = _theme_palette(theme_id)
+def _theme_prompt_fragment(theme_id: str, generated_theme: Optional[dict[str, Any]] = None) -> str:
+    hint = _theme_palette(theme_id, generated_theme)
     charts = ", ".join(hint["charts"])
     return (
         f"这个应用当前用的身份主题是「{hint['label']}」，下面这套色板已经用在真实"
@@ -325,11 +337,12 @@ def build_freeform_prompt(
     *,
     theme_id: str = "",
     device: str = "",
+    generated_theme: Optional[dict[str, Any]] = None,
 ) -> str:
     return f"""你是一名前端视觉设计师。设计一个可视化组件：{design_brief}
 要有视觉创意和现代感，大胆用间距、层次、颜色对比、图标去表达内容。
 
-{_theme_prompt_fragment(theme_id)}
+{_theme_prompt_fragment(theme_id, generated_theme)}
 {_device_prompt_fragment(device)}
 
 只能用安全原子积木拼：{", ".join(FREEFORM_ALLOWED_TAGS)} 标签；
@@ -385,8 +398,9 @@ def _build_reference_image_prompt(
     *,
     theme_id: str = "",
     device: str = "",
+    generated_theme: Optional[dict[str, Any]] = None,
 ) -> str:
-    hint = _theme_palette(theme_id)
+    hint = _theme_palette(theme_id, generated_theme)
     charts = "、".join(hint["charts"])
     device_note = {
         "phone": "这是手机端内容区里的一张卡片（上方标题栏、下方 Tab 导航另有画面，不用你画），窄幅单列布局，比例偏竖长。",
@@ -416,6 +430,7 @@ def _generate_reference_image_b64(
     *,
     theme_id: str = "",
     device: str = "",
+    generated_theme: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
     """生图当参照——加分项，不是必需项。未配置 IMAGE_API_KEY 或生图失败都
     静默降级为 None，绝不能让这一步拖垮 FreeformInsight 主生成路径。图片
@@ -427,7 +442,9 @@ def _generate_reference_image_b64(
     except Exception:
         return None
     try:
-        prompt = _build_reference_image_prompt(design_brief, datamodel, theme_id=theme_id, device=device)
+        prompt = _build_reference_image_prompt(
+            design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+        )
         png_bytes = generate_image_png(prompt, size=_image_size_for_device(device))
     except ImageGenError as exc:
         print(f"[freeform_block] reference image skipped: {str(exc)[:160]}")
@@ -444,6 +461,7 @@ def generate_freeform_block(
     *,
     theme_id: str = "",
     device: str = "",
+    generated_theme: Optional[dict[str, Any]] = None,
     max_retries: int = 2,
     temperature: float = 0.7,
     max_tokens: int = 10000,
@@ -460,6 +478,11 @@ def generate_freeform_block(
     走，否则配色会跟真实壳脱节、版式也不知道自己是塞进桌面宽内容区还是手机
     窄内容区。留空按 azure/desktop 兜底，不是必填——老调用方不传也不炸。
 
+    generated_theme：如果这个 app 的身份主题是 identity_theme_gen.py 生图
+    生成的（不是 8 预设之一），把那份完整主题对象传进来，优先级高于
+    theme_id——否则 FreeformInsight 的配色还是照着 8 预设走，跟侧边栏/顶栏
+    真实用的自定义主题对不上。
+
     use_reference_image=True（默认）时先生一张干净原型图当视觉参照，喂给
     视觉 LLM 一起看（需要网关声明 LLM_SUPPORTS_IMAGE_CONTENT_PARTS=1，未声明
     或生图不可用时自动降级为纯文字生成，行为与加这段之前完全一致）。
@@ -475,11 +498,15 @@ def generate_freeform_block(
     from sliderule_llm.config import get_llm_config
 
     FreeformDesign = build_freeform_models(datamodel)
-    prompt_text = build_freeform_prompt(design_brief, datamodel, theme_id=theme_id, device=device)
+    prompt_text = build_freeform_prompt(
+        design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+    )
 
     reference_image_b64: Optional[str] = None
     if use_reference_image and get_llm_config().supports_image_content_parts:
-        reference_image_b64 = _generate_reference_image_b64(design_brief, datamodel, theme_id=theme_id, device=device)
+        reference_image_b64 = _generate_reference_image_b64(
+            design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+        )
 
     if reference_image_b64:
         first_content: Any = [
@@ -563,8 +590,14 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
     """
     datamodel = model.get("datamodel") or {}
     appbundle = model.get("appbundle") or {}
-    theme_id = str((appbundle.get("appIdentity") or {}).get("theme") or "").strip()
+    identity = appbundle.get("appIdentity") or {}
+    theme_id = str(identity.get("theme") or "").strip()
     device = str(appbundle.get("preferredDevice") or "").strip()
+    # identity_theme_gen.enrich_identity_theme 如果已经跑过（在这之前调用），
+    # appIdentity.generatedTheme 会有一份自定义主题——FreeformInsight 的配色
+    # 要照它走，不能还停在 8 预设，不然侧边栏和内容卡片颜色对不上。
+    generated_theme_raw = identity.get("generatedTheme")
+    generated_theme = generated_theme_raw if isinstance(generated_theme_raw, dict) else None
     for page in (model.get("page") or {}).get("pages") or []:
         blocks = page.get("blocks")
         if not isinstance(blocks, list):
@@ -576,7 +609,9 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
             brief = str((block.get("props") or {}).get("designBrief") or "").strip()
             bid = str(block.get("id") or "").strip()
             try:
-                content = generate_freeform_block(brief, datamodel, theme_id=theme_id, device=device)
+                content = generate_freeform_block(
+                    brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+                )
                 block["freeformContent"] = content
             except FreeformGenerationError as exc:
                 print(f"[freeform_block] {page.get('id')}.{bid} generation failed, dropping block: {str(exc)[:200]}")

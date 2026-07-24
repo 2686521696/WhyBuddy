@@ -892,7 +892,8 @@ export function AppRuntimeScreen({
         (model.datamodel?.entities ?? []).slice(0, 6).map(e => ({
           label: e.name || e.id,
           value: (state.entities[e.id] ?? []).length,
-        }))
+        })),
+        { primary: identityTheme.primary, categorical: identityTheme.charts }
       );
       emptyHint = "暂无数据 — 到业务页面「新建」写入";
     } else if (chart.source === "instances:status") {
@@ -1517,7 +1518,10 @@ export function AppRuntimeScreen({
         >
           {page.charts.map((chart: AppPageChartSchema) => {
             const chartRows = state.entities[chart.entityId] ?? [];
-            const option = buildEchartsOption(chart, chartRows);
+            const option = buildEchartsOption(chart, chartRows, {
+              primary: identityTheme.primary,
+              categorical: identityTheme.charts,
+            });
             return (
               <Card
                 key={chart.id}
@@ -1675,6 +1679,7 @@ export function AppRuntimeScreen({
             onFilterChange={handlePageFilterChange}
             workflow={model.workflow}
             entityRows={state.entities}
+            chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
           />
         );
 
