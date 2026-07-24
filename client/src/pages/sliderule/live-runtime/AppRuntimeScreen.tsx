@@ -2418,6 +2418,15 @@ export function AppRuntimeScreen({
                   darkItemHoverColor: identityTheme.sidebarText,
                   darkItemSelectedBg: identityTheme.primary,
                   darkItemSelectedColor: identityTheme.primaryFg,
+                  // 2026-07-24 修复真实撞到的坑：antd 的 darkItemDisabledColor
+                  // 默认值是"白色 25% 透明度"（colorTextLightSolid 打折），
+                  // 这个默认值假设侧边栏永远是深色——生成主题给了纯白侧边栏
+                  // （sidebarBg:"#FFFFFF"）时，无权限菜单项的文字/锁图标变成
+                  // 白底白字，直接隐形（真机截图核实：8 个菜单项里 5 个被
+                  // 锁的位置只剩一段空白，肉眼看不出还有内容）。改成跟
+                  // sidebarText 同色但打透明度，深浅侧边栏都能读出"这项被
+                  // 锁住了"而不是凭空消失。
+                  darkItemDisabledColor: hexToRgba(identityTheme.sidebarText, 0.35),
                 },
               },
             }}
