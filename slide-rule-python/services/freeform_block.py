@@ -201,6 +201,8 @@ def build_freeform_prompt(
 
 只能用安全原子积木拼：{", ".join(FREEFORM_ALLOWED_TAGS)} 标签；
 图标引用只能用这些：{json.dumps(list(FREEFORM_ALLOWED_ICON_REFS), ensure_ascii=False)}；
+style 对象的 key 只能用这些 CSS 属性名，写了列表之外的属性（比如 fontFamily、
+listStyle）会被直接判失败：{", ".join(FREEFORM_ALLOWED_STYLE_PROPS)}。
 颜色用具体十六进制值，背景可用 linear-gradient(...)，不能出现 url(...)。
 
 需要环形图/圆环占比这类可视化时，纯 CSS 就能画（不需要 svg 标签，这套安全
@@ -214,8 +216,12 @@ div（同样 borderRadius: "50%"，用 position: "absolute" + top/left 居中）
 {json.dumps(datamodel, ensure_ascii=False, indent=2)}
 
 凡是设计里出现的具体数字/统计类文字，必须挂 dataRef 指向真实存在的
-entity+field。数据模型里没有合适字段支撑的数字就不要画，不能编。
-纯装饰性文案不需要 dataRef。
+entity+field，JSON 形状严格是这样，key 名必须一字不差（不能写成 entity/
+field 这种猜测的名字，必须是 entityRef/aggregate）：
+{{"dataRef": {{"entityRef": "<上面数据模型里真实的实体 id>", "aggregate": "count"}}}}
+aggregate 只能是 "count"、"sum:<字段id>"、"avg:<字段id>" 三种之一，或者不填
+这个键（没有聚合、只是引用实体本身时可以省略 aggregate）。
+数据模型里没有合适字段支撑的数字就不要画，不能编。纯装饰性文案不需要 dataRef。
 
 注意：children 数组里每一项都必须是完整的节点对象（有 tag 字段），
 不能直接放字符串当子节点——文字内容一律放在节点的 text 字段里。
@@ -366,7 +372,10 @@ def generate_freeform_block(
                         f"你上次的输出没有通过校验，具体错误：\n{last_error}\n"
                         "请仔细检查：children 数组每一项必须是完整节点对象（不能是裸字符串）、"
                         "tag/style 属性/iconRef 必须在允许的白名单内、dataRef 引用的实体和字段"
-                        "必须真实存在且类型对得上。重新输出完整的 JSON，只要一个 JSON 对象。"
+                        "必须真实存在且类型对得上。如果报错是 dataRef 相关的 'Field required' 或"
+                        "缺 entityRef，最常见原因是 key 名写错了（比如写成 entity/field），"
+                        "dataRef 的 key 必须严格是 entityRef 和 aggregate，不是别的名字。"
+                        "重新输出完整的 JSON，只要一个 JSON 对象。"
                     ),
                 },
             ]
