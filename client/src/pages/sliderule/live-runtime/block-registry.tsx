@@ -24,6 +24,9 @@ import {
   StarOutlined,
   RiseOutlined,
 } from "@ant-design/icons";
+// 全量图标命名空间——FreeformInsight 的 iconRef 按名字动态解析成任意 Ant
+// Design 图标，不再限定在一个手维护的小集合里（2026-07-24）。
+import * as AntdIcons from "@ant-design/icons";
 
 import catalogJson from "@experience-blocks";
 import type { WorkflowSection } from "../system-screens/five-system-model";
@@ -398,10 +401,10 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
  */
 const FREEFORM_DANGEROUS_VALUE_RE = /url\(|javascript:|expression\(|import\b|@import/i;
 
-// 2026-07-23：改用 @ant-design/icons（本文件其它渲染器、AppRuntimeScreen 顶栏/
-// 侧栏早就在用同一套），跟应用其它地方的图标语言一致，线宽/比例也比手绘 SVG
-// 路径更精细——手绘版视觉粗糙的问题就出在这批 path 数据本身。
-const FREEFORM_ICONS: Record<string, React.ReactNode> = {
+// 老的 kebab 语义名 → Ant Design 组件（放开图标白名单之前用的 12 个，历史
+// 生成产物里可能还有，保留兼容）。新产物直接用 Ant Design 组件名（见下面
+// resolveFreeformIcon 的动态解析）。
+const LEGACY_FREEFORM_ICONS: Record<string, React.ReactNode> = {
   "check-circle": <CheckCircleOutlined />,
   clock: <ClockCircleOutlined />,
   "alert-triangle": <WarningOutlined />,
@@ -415,6 +418,31 @@ const FREEFORM_ICONS: Record<string, React.ReactNode> = {
   star: <StarOutlined />,
   "trending-up": <RiseOutlined />,
 };
+
+// 合法的 Ant Design 图标组件名形状：PascalCase + Outlined/Filled/TwoTone 结尾。
+// 这个正则同时是安全边界——只让"图标组件名"形状的字符串进来，挡掉
+// @ant-design/icons 里那些非图标导出（createFromIconfontCN / getTwoToneColor
+// 之类工具函数，它们不以这三个后缀结尾），也挡掉 __proto__/constructor 这类
+// 原型链名字（首字符要求大写字母、且整体匹配）。
+const ANTD_ICON_NAME_RE = /^[A-Z][A-Za-z0-9]*(Outlined|Filled|TwoTone)$/;
+
+/** iconRef → React 节点：老 kebab 别名走静态表，其余按 Ant Design 组件名
+ * 动态解析。名字非法/在包里查不到（拼错、编造、非图标导出）一律返回 null，
+ * 渲染成空、优雅降级——图标名永远只当组件名查表，从不被当代码执行。 */
+function resolveFreeformIcon(iconRef: string | undefined): React.ReactNode {
+  if (!iconRef) return null;
+  // hasOwnProperty 保护：普通对象取键会落到原型链上（"__proto__" 会取到
+  // Object.prototype、"constructor" 取到 Object），不 guard 的话这些名字会
+  // 返回一个非 React 元素的对象、渲染时崩。别名表和命名空间取值都要 guard。
+  if (Object.prototype.hasOwnProperty.call(LEGACY_FREEFORM_ICONS, iconRef)) {
+    return LEGACY_FREEFORM_ICONS[iconRef];
+  }
+  if (!ANTD_ICON_NAME_RE.test(iconRef)) return null;
+  if (!Object.prototype.hasOwnProperty.call(AntdIcons, iconRef)) return null;
+  const Cmp = (AntdIcons as Record<string, unknown>)[iconRef];
+  if (typeof Cmp !== "object" && typeof Cmp !== "function") return null;
+  return React.createElement(Cmp as React.ComponentType);
+}
 
 function sanitizeFreeformStyle(
   style: Record<string, string> | undefined
@@ -528,9 +556,10 @@ function renderFreeformNode(
   const n = node as FreeformNode;
   const allowedTags = new Set(EXPERIENCE_BLOCK_CATALOG.freeformAllowedTags);
   const tag = typeof n.tag === "string" && allowedTags.has(n.tag) ? n.tag : "div";
-  const allowedIcons = new Set(EXPERIENCE_BLOCK_CATALOG.freeformAllowedIconRefs);
-  const icon =
-    n.iconRef && allowedIcons.has(n.iconRef) ? FREEFORM_ICONS[n.iconRef] : null;
+  // 图标不再查 catalog 白名单，改成按 Ant Design 组件名动态解析（老 kebab
+  // 名走别名表）——放开图标集，非法/查不到的名字 resolveFreeformIcon 返回
+  // null，渲染成空、优雅降级。
+  const icon = resolveFreeformIcon(typeof n.iconRef === "string" ? n.iconRef : undefined);
   const chartNode = n.chart ? renderFreeformChart(n.chart, entityRows, chartPalette, "chart") : null;
   // chart 节点接管这块区域的内容，不再渲染 children/text（跟 Python 侧 prompt
   // 的约定一致：有 chart 字段的节点不该再让模型塞 children 进来画图表本身）。

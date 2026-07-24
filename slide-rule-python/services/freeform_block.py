@@ -36,6 +36,17 @@ from .schema_legal import (
 
 _DANGEROUS_VALUE_RE = re.compile(r"url\(|javascript:|expression\(|import\b|@import", re.I)
 
+# 合法的 Ant Design 图标组件名形状：PascalCase + Outlined/Filled/TwoTone 结尾
+# （@ant-design/icons 全部图标都遵循这个命名，前端按名字动态解析）。校验只看
+# 形状不看具体名字——编造/拼错的名字前端解析不到会渲染成空，优雅降级。
+_ANTD_ICON_NAME_RE = re.compile(r"^[A-Z][A-Za-z0-9]*(Outlined|Filled|TwoTone)$")
+# 老模型里可能还有这批 kebab 语义名（放开之前的 12 个白名单），前端保留了
+# 同名别名映射，这里也一并放行，历史产物不炸。
+_LEGACY_ICON_ALIASES = frozenset({
+    "check-circle", "clock", "alert-triangle", "arrow-right", "user",
+    "message-circle", "flag", "zap", "circle", "chevron-right", "star", "trending-up",
+})
+
 
 class FreeformGenerationError(RuntimeError):
     """FreeformInsight 内容生成/校验失败（调用方应把这个区块降级/拿掉）。"""
@@ -391,9 +402,22 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
         @field_validator("iconRef")
         @classmethod
         def check_icon(cls, v: Optional[str]) -> Optional[str]:
-            if v is not None and v not in FREEFORM_ALLOWED_ICON_REFS:
-                raise ValueError(f"iconRef '{v}' is not in the allowed list")
-            return v
+            # 2026-07-24：不再限定在一个手维护的十几个图标里——Ant Design 图标
+            # 有上百个，硬卡一个小集合会逼着 LLM 拿语义不搭的图标凑合（真机
+            # 撞到：订单销售额配了 trending-up、补货任务配了 alert-triangle）。
+            # 改成"形状校验"：只要是合法的 Ant Design 图标组件名（PascalCase +
+            # Outlined/Filled/TwoTone 结尾）就放行，前端按名字动态解析成真实
+            # 组件。安全性不靠这个白名单兜底——图标名永远只当组件名查表，从不
+            # 被当代码执行，且前端解析不到（拼错/编造的名字）就渲染成空、优雅
+            # 降级，不会崩。老的 kebab 别名（check-circle 等）仍兼容。
+            if v is None:
+                return v
+            if v in _LEGACY_ICON_ALIASES or _ANTD_ICON_NAME_RE.match(v):
+                return v
+            raise ValueError(
+                f"iconRef '{v}' 不是合法的 Ant Design 图标名"
+                "（应为 PascalCase 且以 Outlined/Filled/TwoTone 结尾，如 WalletOutlined）"
+            )
 
     FreeformNode.model_rebuild()
 
@@ -417,10 +441,30 @@ def build_freeform_prompt(
 {_theme_prompt_fragment(theme_id, generated_theme)}
 {_device_prompt_fragment(device)}
 
-只能用安全原子积木拼：{", ".join(FREEFORM_ALLOWED_TAGS)} 标签；
-图标引用只能用这些：{json.dumps(list(FREEFORM_ALLOWED_ICON_REFS), ensure_ascii=False)}——
+只能用安全原子积木拼：{", ".join(FREEFORM_ALLOWED_TAGS)} 标签。
+
+图标（iconRef）：直接用 Ant Design 图标组件名，PascalCase、以 Outlined 结尾
+（也可以是 Filled/TwoTone），比如 WalletOutlined、ShoppingCartOutlined、
+PieChartOutlined。Ant Design 有上百个图标，**按语义挑最贴切的那个**，不要
+将就：金额/营收用 DollarOutlined/WalletOutlined/AccountBookOutlined，订单/
+购物用 ShoppingCartOutlined/ShoppingOutlined，库存/补货用 InboxOutlined/
+DropboxOutlined/ContainerOutlined，任务/清单用 ProfileOutlined/
+CarryOutOutlined，图表/分析用 PieChartOutlined/BarChartOutlined/
+LineChartOutlined，用户/会员用 UserOutlined/TeamOutlined/CrownOutlined，
+时间/排期用 ClockCircleOutlined/CalendarOutlined，告警/风险用
+WarningOutlined/AlertOutlined/FireOutlined。下面是一批常用示例，但不限于
+这些，任何合法的 Ant Design 图标名都可以用：
+{json.dumps(list(FREEFORM_ALLOWED_ICON_REFS), ensure_ascii=False)}
 每张统计卡/列表项/小节标题旁边，尽量都配一个贴切的 iconRef，图标是这类信息
-卡片天然该有的视觉锚点，不要整份设计一个图标都不用；
+卡片天然该有的视觉锚点，不要整份设计一个图标都不用。
+图标要做得醒目、有存在感：统计卡（KPI 卡）的图标别做成一个跟正文一样大的
+小字符，做成一个 40~48px 的圆角色块当图标底座（给这个图标节点设
+backgroundColor 一块主题色/浅色底 + borderRadius + 居中），图标本身用
+fontSize 22~28px（图标大小 = 所在节点的 fontSize，想让图标大就把这个节点的
+fontSize 调大，不是设 width/height），色块配色跟这张卡的主色系呼应——参考
+现代仪表盘里"每张 KPI 卡左上角一个醒目图标方块"的做法，不要缩成一个灰扑扑
+的小图标。
+
 style 对象的 key 只能用这些 CSS 属性名，写了列表之外的属性（比如 fontFamily、
 listStyle）会被直接判失败：{", ".join(FREEFORM_ALLOWED_STYLE_PROPS)}。
 颜色用具体十六进制值，背景可用 linear-gradient(...)，不能出现 url(...)。

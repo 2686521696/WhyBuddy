@@ -23,8 +23,26 @@
     "div", "span", "p", "strong", "em", "small", "h1", "h2", "h3", "ul", "li"
   ],
   "freeformAllowedIconRefs": [
-    "check-circle", "clock", "alert-triangle", "arrow-right", "user",
-    "message-circle", "flag", "zap", "circle", "chevron-right", "star", "trending-up"
+    "DollarOutlined", "WalletOutlined", "PayCircleOutlined", "AccountBookOutlined",
+    "CreditCardOutlined", "TransactionOutlined", "BankOutlined", "FundOutlined",
+    "MoneyCollectOutlined", "ShoppingCartOutlined", "ShoppingOutlined", "ShopOutlined",
+    "TagOutlined", "GiftOutlined", "AppstoreOutlined", "InboxOutlined", "DropboxOutlined",
+    "ContainerOutlined", "CarOutlined", "RocketOutlined", "ClusterOutlined",
+    "ProfileOutlined", "FileTextOutlined", "FileDoneOutlined", "ScheduleOutlined",
+    "CarryOutOutlined", "AuditOutlined", "SolutionOutlined", "SnippetsOutlined",
+    "PieChartOutlined", "BarChartOutlined", "LineChartOutlined", "AreaChartOutlined",
+    "DashboardOutlined", "FundProjectionScreenOutlined", "RiseOutlined", "FallOutlined",
+    "StockOutlined", "UserOutlined", "TeamOutlined", "UsergroupAddOutlined",
+    "ContactsOutlined", "IdcardOutlined", "CustomerServiceOutlined", "SmileOutlined",
+    "ClockCircleOutlined", "CalendarOutlined", "HistoryOutlined", "FieldTimeOutlined",
+    "CheckCircleOutlined", "CloseCircleOutlined", "WarningOutlined", "ExclamationCircleOutlined",
+    "InfoCircleOutlined", "BellOutlined", "AlertOutlined", "SafetyOutlined", "FireOutlined",
+    "ThunderboltOutlined", "HomeOutlined", "EnvironmentOutlined", "GlobalOutlined",
+    "PhoneOutlined", "MailOutlined", "StarOutlined", "HeartOutlined", "TrophyOutlined",
+    "CrownOutlined", "FlagOutlined", "ToolOutlined", "SettingOutlined", "ExperimentOutlined",
+    "BulbOutlined", "ApiOutlined", "DatabaseOutlined", "CloudOutlined", "MedicineBoxOutlined",
+    "ReadOutlined", "BookOutlined", "CoffeeOutlined", "ArrowRightOutlined", "RightOutlined",
+    "MessageOutlined"
   ],
   "freeformAllowedStyleProps": [
     "color", "backgroundColor", "background", "fontSize", "fontWeight", "lineHeight",
