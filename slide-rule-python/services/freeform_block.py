@@ -418,10 +418,18 @@ def build_freeform_prompt(
 {_device_prompt_fragment(device)}
 
 只能用安全原子积木拼：{", ".join(FREEFORM_ALLOWED_TAGS)} 标签；
-图标引用只能用这些：{json.dumps(list(FREEFORM_ALLOWED_ICON_REFS), ensure_ascii=False)}；
+图标引用只能用这些：{json.dumps(list(FREEFORM_ALLOWED_ICON_REFS), ensure_ascii=False)}——
+每张统计卡/列表项/小节标题旁边，尽量都配一个贴切的 iconRef，图标是这类信息
+卡片天然该有的视觉锚点，不要整份设计一个图标都不用；
 style 对象的 key 只能用这些 CSS 属性名，写了列表之外的属性（比如 fontFamily、
 listStyle）会被直接判失败：{", ".join(FREEFORM_ALLOWED_STYLE_PROPS)}。
 颜色用具体十六进制值，背景可用 linear-gradient(...)，不能出现 url(...)。
+
+根节点（也就是最外层那个 "root"）会被直接放进页面已有的内容区容器里，那层
+容器本身已经带了背景色和内边距——根节点的 style 不要再设置 backgroundColor
+或 padding，会跟外层容器套出"卡片里嵌卡片"的多余边框感；根节点只负责整体
+排布（display/flexDirection/gap/width 这类）就够了。想要的卡片感、分组感，
+放到内部子块（比如每张统计卡/图表卡自己）上去做。
 
 需要柱状图/折线图/饼图/环形图这类真正的图表时，不要用 CSS 画近似的形状——
 节点上加一个 chart 字段，交给真实图表引擎按运行时的真实数据现算，会随数据

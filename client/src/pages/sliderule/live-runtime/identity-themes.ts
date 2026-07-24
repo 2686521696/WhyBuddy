@@ -156,3 +156,16 @@ export function resolveIdentityTheme(
 export function allIdentityThemes(): IdentityTheme[] {
   return Object.values(THEMES);
 }
+
+/** 6 位十六进制转 rgba() 字符串——菜单 hover 态要跟主色调一层半透明叠色，
+ * 不能像之前那样写死 rgba(255,255,255,0.08)：那个假设侧边栏永远是深色，
+ * 生成主题给了浅色侧边栏时，hover 反馈基本看不见。非法输入原样返回，
+ * 不抛错（调用方本来就该传合法 hex，这里只是防御）。 */
+export function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex);
+  if (!m) return hex;
+  const r = parseInt(m[1].slice(0, 2), 16);
+  const g = parseInt(m[1].slice(2, 4), 16);
+  const b = parseInt(m[1].slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}

@@ -68,7 +68,7 @@ import {
 } from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 import { resolveEntityRef } from "../system-screens/five-system-model";
-import { resolveIdentityTheme } from "./identity-themes";
+import { resolveIdentityTheme, hexToRgba } from "./identity-themes";
 import {
   buildAiActionInputs,
   deriveAppRuntimeSchema,
@@ -1972,7 +1972,10 @@ export function AppRuntimeScreen({
           </div>
           <span
             style={{
-              color: "#fff",
+              // 标题文字直接落在 identityTheme.sidebarBg 上（跟图标不一样，图标
+              // 在小色块徽标里，背景永远是 brandGradient）——之前写死白字，主题
+              // 生成出浅色/近白侧边栏时标题就看不见了，改跟 sidebarText 走。
+              color: identityTheme.sidebarText,
               fontWeight: 600,
               fontSize: 15,
               whiteSpace: "nowrap",
@@ -2064,7 +2067,8 @@ export function AppRuntimeScreen({
         </div>
         <span
           style={{
-            color: "#fff",
+            // 同上：文字直接落在 identityTheme.sidebarBg 上，不能写死白色。
+            color: identityTheme.sidebarText,
             fontWeight: 600,
             fontSize: 15,
             whiteSpace: "nowrap",
@@ -2084,7 +2088,7 @@ export function AppRuntimeScreen({
           items={navMenuItems}
           style={{ flex: 1, minWidth: 0, background: "transparent" }}
         />
-        <span style={{ fontSize: 13, color: "rgba(255,255,255,0.65)" }}>
+        <span style={{ fontSize: 13, color: identityTheme.sidebarText, opacity: 0.65 }}>
           当前角色
         </span>
         <Select
@@ -2270,8 +2274,11 @@ export function AppRuntimeScreen({
                   darkItemBg: identityTheme.sidebarBg,
                   darkSubMenuItemBg: identityTheme.sidebarBg,
                   darkItemColor: identityTheme.sidebarText,
-                  darkItemHoverBg: "rgba(255,255,255,0.08)",
-                  darkItemHoverColor: "#ffffff",
+                  // 之前写死白底白字假设侧边栏永远深色——生成主题给浅色侧边栏
+                  // 时这层 hover 反馈直接消失/文字不可读，改成跟主色调一层
+                  // 半透明叠色，深浅侧边栏都看得见、且跟品牌色呼应。
+                  darkItemHoverBg: hexToRgba(identityTheme.primary, 0.12),
+                  darkItemHoverColor: identityTheme.sidebarText,
                   darkItemSelectedBg: identityTheme.primary,
                   darkItemSelectedColor: identityTheme.primaryFg,
                 },
