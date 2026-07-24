@@ -122,15 +122,20 @@ def _device_prompt_fragment(device: str) -> str:
     return _DEVICE_CONTAINER_HINTS.get(device) or _DEVICE_CONTAINER_HINTS[_DEFAULT_DEVICE]
 
 
-def _datamodel_summary_lines(datamodel: dict[str, Any], *, max_entities: int = 6) -> str:
+def _datamodel_summary_lines(datamodel: dict[str, Any]) -> str:
     """把数据模型压成生图 prompt 用得上的自然语言摘要——不是甩一整段原始
     JSON 进去（生图模型不是在做结构化解析，喂太长的原始 JSON 对画面构图没
     帮助），只挑「画面里该出现几类/叫什么名字」这种直接影响构图的信息：
     实体名 + 字段名/类型，enum 字段展开真实选项（比如状态有几种、分别叫
     什么），这样生成的图不会凭空编一个"看起来对"但跟真实字段对不上的阶段数。
+
+    不设实体数/选项数上限——密度应该由真实数据模型本身有多厚来决定，不是
+    开发者手工定一个"最多给你看 6 个实体"的天花板；有多少真实字段/关系，
+    就让生图/结构生成看见多少，让画面的丰富程度自己长出来，而不是靠 prompt
+    里写死"多来点分组/多来点标签"这种指令去撑密度。
     """
     lines: list[str] = []
-    for e in (datamodel.get("entities") or [])[:max_entities]:
+    for e in datamodel.get("entities") or []:
         ename = e.get("name") or e.get("id") or ""
         bits: list[str] = []
         for f in e.get("fields") or []:
@@ -138,7 +143,7 @@ def _datamodel_summary_lines(datamodel: dict[str, Any], *, max_entities: int = 6
             ftype = f.get("type") or ""
             opts = f.get("options")
             if ftype == "enum" and isinstance(opts, list) and opts:
-                labels = "/".join(str(o.get("label") or o.get("id") or "") for o in opts[:8])
+                labels = "/".join(str(o.get("label") or o.get("id") or "") for o in opts)
                 bits.append(f"{fname}（{len(opts)}类：{labels}）")
             else:
                 bits.append(f"{fname}[{ftype}]")
