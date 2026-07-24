@@ -69,6 +69,7 @@ import {
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 import { resolveEntityRef } from "../system-screens/five-system-model";
 import { resolveIdentityTheme, hexToRgba } from "./identity-themes";
+import { autoPlaceGrid } from "./grid-compact";
 import {
   buildAiActionInputs,
   deriveAppRuntimeSchema,
@@ -1587,19 +1588,66 @@ export function AppRuntimeScreen({
   // E40.6 修复：monitor 骨架的 chartsBand/widgetsBand 之前拆成两个各自独立
   // 宽度的 flex 列（图表主列 + 排行/动态侧列），排行+动态摞起来比图表那一行
   // 高时，主列下方就会净空出一块（真实撞到：2 图表 114px 高 vs 排行+动态
-  // 233px 高，主列下方空出 120px 左右）。改成图表+排行+动态卡片全部放进
-  // 同一个 flex-wrap 流里，不再按列预分宽度，卡片跟着内容高度自然排布，
-  // 不会再留出这种空档。
-  const monitorCombinedRow = page && (
-    <div
-      style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}
-      data-testid="app-runtime-monitor-combined"
-    >
-      {page.charts.map(renderChartCard)}
-      {page.rankings.map(renderRankingCard)}
-      {page.feeds.map(renderFeedCard)}
-    </div>
-  );
+  // 233px 高，主列下方空出 120px 左右）。第一版临时改成单条 flex-wrap 流
+  // 绕开了这一次，但卡片一多、高度差异一大，从左到右顺序换行不会往回找
+  // 空位，还是会留白——现在接上 grid-compact.ts（搬自 GitHub 上
+  // react-grid-layout 的核心压实算法，见该文件头部）："最短列优先"贪心
+  // 摆放 + 竖直压实兜底，卡片按估算高度自动分列、列内紧贴堆叠，不会再
+  // 留出空档。高度是估算值（图表固定/排行动态按真实行数算），不追求
+  // 像素级精确，只保证不留白。
+  const monitorCombinedRow = page && (() => {
+    const CHART_HEIGHT_ESTIMATE = 230; // 卡片头(40) + echarts 固定 180 + 内边距
+    const ROW_HEIGHT_ESTIMATE = 30; // 排行/动态每行的实测行高（padding 5px*2 + 内容）
+    const LIST_CHROME_ESTIMATE = 56; // 卡片头(40) + 上下内边距
+
+    const cardHeights: Array<{ i: string; h: number }> = [
+      ...page.charts.map(c => ({ i: `chart:${c.id}`, h: CHART_HEIGHT_ESTIMATE })),
+      ...page.rankings.map(r => {
+        const rowCount = Math.min(
+          (state.entities[r.entityId] ?? []).length,
+          r.limit
+        );
+        return { i: `ranking:${r.id}`, h: LIST_CHROME_ESTIMATE + Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE };
+      }),
+      ...page.feeds.map(f => {
+        const rowCount = Math.min((state.entities[f.entityId] ?? []).length, 6);
+        return { i: `feed:${f.id}`, h: LIST_CHROME_ESTIMATE + Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE };
+      }),
+    ];
+    if (cardHeights.length === 0) return null;
+
+    const cols = Math.min(3, cardHeights.length);
+    const placed = autoPlaceGrid(cardHeights, cols);
+
+    const nodeById = new Map<string, React.ReactNode>([
+      ...page.charts.map(c => [`chart:${c.id}`, renderChartCard(c)] as const),
+      ...page.rankings.map(r => [`ranking:${r.id}`, renderRankingCard(r)] as const),
+      ...page.feeds.map(f => [`feed:${f.id}`, renderFeedCard(f)] as const),
+    ]);
+
+    const columns: string[][] = Array.from({ length: cols }, () => []);
+    for (const item of [...placed].sort((a, b) => a.y - b.y)) {
+      columns[item.x]?.push(item.i);
+    }
+
+    return (
+      <div
+        style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+        data-testid="app-runtime-monitor-combined"
+      >
+        {columns.map((ids, colIdx) => (
+          <div
+            key={colIdx}
+            style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}
+          >
+            {ids.map(id => (
+              <React.Fragment key={id}>{nodeById.get(id)}</React.Fragment>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  })();
 
   const defaultPageContent = page && (
     <Card
