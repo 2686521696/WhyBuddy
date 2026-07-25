@@ -1443,6 +1443,17 @@ async def fork_generated_app(app_id: str, x_internal_key: Optional[str] = Header
     return {"id": new_id}
 
 
+@router.delete("/apps/{app_id}")
+async def delete_generated_app(app_id: str, x_internal_key: Optional[str] = Header(None)):
+    """从画廊移除一个生成应用记录（只删记录，不动对应推演会话）。"""
+    _auth(x_internal_key)
+    from services import app_store
+
+    if not app_store.delete_app(app_id):
+        raise HTTPException(404, "app not found")
+    return {"ok": True}
+
+
 @router.get("/apps-export")
 async def export_generated_apps(x_internal_key: Optional[str] = Header(None)):
     """导出全部应用记录（备份/迁移）——无论后端在哪，手上永远有一份可迁移真数据。"""

@@ -107,6 +107,18 @@ def test_dedup_key_new_record_when_model_changes(configured_store):
     assert len(store.list_apps()) == 2
 
 
+def test_delete_removes_record(configured_store):
+    a = store.save_app(_model("咖营通"), session_id="s1")
+    store.save_app(_model("宠医云"), session_id="s2")
+    assert store.delete_app(a) is True
+    assert store.get_app(a) is None
+    assert len(store.list_apps()) == 1, "删掉一条后列表只剩另一条"
+
+
+def test_delete_missing_returns_false(configured_store):
+    assert store.delete_app("does-not-exist") is False
+
+
 def test_export_all_returns_full_records(configured_store):
     store.save_app(_model("咖营通"))
     store.save_app(_model("宠医云"))

@@ -128,6 +128,9 @@ class AppStoreBackend:
     def find_by_dedup_key(self, dedup_key: str) -> Optional[dict[str, Any]]:  # pragma: no cover
         raise NotImplementedError
 
+    def delete(self, app_id: str) -> bool:  # pragma: no cover
+        raise NotImplementedError
+
     def export_all(self) -> list[dict[str, Any]]:  # pragma: no cover
         raise NotImplementedError
 
@@ -202,6 +205,15 @@ class JsonFileAppStore(AppStoreBackend):
                 if r.get("dedup_key") == dedup_key:
                     return r
         return None
+
+    def delete(self, app_id: str) -> bool:
+        with self._lock:
+            rows = self._read()
+            remaining = [r for r in rows if r.get("id") != app_id]
+            if len(remaining) == len(rows):
+                return False
+            self._write(remaining)
+        return True
 
     def export_all(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -380,6 +392,15 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 ).first()
                 return row.to_record() if row else None
 
+        def delete(self, app_id: str) -> bool:
+            with Session(engine) as s:
+                row = s.get(GeneratedApp, app_id)
+                if row is None:
+                    return False
+                s.delete(row)
+                s.commit()
+            return True
+
         def export_all(self) -> list[dict[str, Any]]:
             with Session(engine) as s:
                 return [r.to_record() for r in s.scalars(select(GeneratedApp))]
@@ -506,6 +527,12 @@ def list_apps(*, limit: int = 50, offset: int = 0, latest_per_root: bool = True)
 
 def list_versions(root_id: str) -> list[dict[str, Any]]:
     return get_backend().versions(root_id)
+
+
+def delete_app(app_id: str) -> bool:
+    """从画廊移除一个应用记录。返回是否真删到（不存在返回 False）。
+    只删这一条记录，不动它对应的推演会话（会话另有独立生命周期）。"""
+    return get_backend().delete(app_id)
 
 
 def export_all() -> list[dict[str, Any]]:
