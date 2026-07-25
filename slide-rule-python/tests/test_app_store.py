@@ -124,6 +124,34 @@ def test_no_db_url_falls_back_to_jsonfile(tmp_path, monkeypatch):
     store.reset_backend_cache()
 
 
+class _FakeNullPool:
+    """占位——只需身份可比对，_sql_engine_config 不实例化它。"""
+
+
+def test_postgres_engine_config_follows_neon_best_practices():
+    """Neon（-pooler = PgBouncer transaction 模式）最佳实践锁死：
+    psycopg 关预处理语句 + NullPool（不双层池）+ 连接超时。"""
+    connect_args, engine_kwargs = store._sql_engine_config(
+        "postgresql+psycopg://u:p@ep-x-pooler.neon.tech/db?sslmode=require", _FakeNullPool
+    )
+    # ① 关掉客户端预处理语句（否则 transaction 池并发抛 prepared statement 错）
+    assert connect_args["prepare_threshold"] is None
+    # ② 用 NullPool，不让 SQLAlchemy 再套一层池跟 PgBouncer 打架
+    assert engine_kwargs["poolclass"] is _FakeNullPool
+    # ③ 连不上快速失败
+    assert connect_args["connect_timeout"] == 4
+    # postgres 不该用 pre_ping（NullPool 无长连可 ping）
+    assert "pool_pre_ping" not in engine_kwargs
+
+
+def test_sqlite_engine_config_no_pgbouncer_tweaks():
+    """SQLite 本地库：不该带 postgres 专属的 NullPool/prepare_threshold。"""
+    connect_args, engine_kwargs = store._sql_engine_config("sqlite:///x.db", _FakeNullPool)
+    assert "prepare_threshold" not in connect_args
+    assert "poolclass" not in engine_kwargs
+    assert engine_kwargs.get("pool_pre_ping") is True
+
+
 def test_bad_db_url_fails_open_to_jsonfile(tmp_path, monkeypatch):
     """DB 初始化失败（无法解析的连接串）时 fail-open 落回 JSON 文件，不崩。"""
     monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", "not-a-valid-url://xxx")

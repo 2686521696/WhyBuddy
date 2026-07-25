@@ -210,6 +210,31 @@ class JsonFileAppStore(AppStoreBackend):
 
 # ────────────────────────── SQLAlchemy 后端（Postgres / SQLite）──────────────
 
+def _sql_engine_config(url: str, null_pool: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    """按后端方言产出 (connect_args, engine_kwargs)——Postgres 走 Neon 最佳
+    实践，SQLite 走本地默认。抽成纯函数是为了能离线单测这套配置（不真连库）。
+
+    Neon 最佳实践（连接串是 -pooler 端点 = PgBouncer transaction 模式）：
+    - prepare_threshold=None：关掉 psycopg 客户端自动预处理语句。预处理语句活在
+      session 层、跨事务不保留，transaction 池并发下会抛 "prepared statement
+      does not exist"（psycopg#1151 / Crunchy Data / Neon 官方一致建议）。
+    - poolclass=NullPool：用了 Neon 自带 PgBouncer 就别让 SQLAlchemy 再套一层
+      连接池（两层打架 + 长连遇 scale-to-zero 挂起变陈旧）。NullPool 每次开新
+      连接、用完即还给 PgBouncer，是 SQLAlchemy 官方对"外部池"的推荐。
+    - connect_timeout=4：连不上快速失败 → fail-open 回退 JSON。
+    """
+    connect_args: dict[str, Any] = {}
+    engine_kwargs: dict[str, Any] = {"future": True}
+    if url.startswith("postgresql"):
+        connect_args["connect_timeout"] = 4
+        connect_args["prepare_threshold"] = None
+        engine_kwargs["poolclass"] = null_pool
+    else:
+        # 本地 SQLite：无外部池，保留 pre_ping（文件库无 scale-to-zero 问题，无害）。
+        engine_kwargs["pool_pre_ping"] = True
+    return connect_args, engine_kwargs
+
+
 def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
     """延迟导入 SQLAlchemy——只在真配了连接串时才 import，没配就完全不碰
     这条依赖（保持"无 DB 也能启动"）。"""
@@ -218,6 +243,7 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
     )
     from sqlalchemy.dialects.postgresql import JSONB
     from sqlalchemy.orm import Session, declarative_base
+    from sqlalchemy.pool import NullPool
 
     # 生产 Neon/自建 PG 给的是 postgresql://…，SQLAlchemy + psycopg v3 需要
     # postgresql+psycopg:// 前缀；sqlite://… 原样。只补驱动前缀，不动别的。
@@ -269,18 +295,19 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
     # 服务挂了）时快速失败 → get_backend 捕获后 fail-open 回退 JSON 文件，绝不
     # 让存储层把主链路吊死（真实撞到：沙盒封了 5432；且 Neon pooler 解析成多个
     # IP，psycopg 会逐个重试，不先探针的话超时叠加到十几秒）。sqlite 跳过探针。
-    connect_args: dict[str, Any] = {}
+    connect_args, engine_kwargs = _sql_engine_config(url, NullPool)
     if url.startswith("postgresql"):
-        connect_args["connect_timeout"] = 4
         from sqlalchemy.engine.url import make_url
 
         parsed = make_url(url)
         if parsed.host:
             import socket
 
-            # 只解析 + 试连第一个 IPv4 地址、硬超时 2s——不用 create_connection
-            # 的多地址轮询（Neon pooler 解析出多个 IP + IPv6，逐个 2s 会叠成十几
-            # 秒；沙盒还不支持 IPv6 family）。探针只验端口可达，握手交给 SQLAlchemy。
+            # 连不上快速失败：只解析 + 试连第一个 IPv4 地址、硬超时 2s——不用
+            # create_connection 的多地址轮询（Neon pooler 解析出多个 IP + IPv6，
+            # 逐个 2s 会叠成十几秒；沙盒还不支持 IPv6 family）。探针只验端口可达，
+            # 真正握手交给 SQLAlchemy。失败 → get_backend 捕获后 fail-open 回退
+            # JSON 文件，绝不让存储层把主链路吊死。sqlite 跳过探针。
             infos = socket.getaddrinfo(parsed.host, parsed.port or 5432, socket.AF_INET, socket.SOCK_STREAM)
             if not infos:
                 raise OSError(f"no IPv4 address for {parsed.host}")
@@ -291,7 +318,7 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 probe.connect(sa)
             finally:
                 probe.close()
-    engine = create_engine(url, pool_pre_ping=True, future=True, connect_args=connect_args)
+    engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
     Base.metadata.create_all(engine)
 
     class SqlAppStore(AppStoreBackend):
