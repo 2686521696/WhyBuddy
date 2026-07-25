@@ -572,6 +572,9 @@ export function AppsWorkbench() {
   const [query, setQuery] = React.useState("");
   const [sortDesc, setSortDesc] = React.useState(true);
   const [menuFor, setMenuFor] = React.useState<string | null>(null);
+  // 复刻改名弹框（对标 Budibase duplicateApp：预填「源名 副本」让用户改名）
+  const [forkModal, setForkModal] = React.useState<{ item: GalleryItem; name: string } | null>(null);
+  const [forkBusy, setForkBusy] = React.useState(false);
   const [page, setPage] = React.useState(1);
   // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
   const [reloadKey, setReloadKey] = React.useState(0);
@@ -768,10 +771,26 @@ export function AppsWorkbench() {
    * 以某个 App Store 应用为起点分出一条新血缘（新 root·v1·parent 指向源），
    * 成功后重拉画廊——新卡出现在列表里，用户可点开继续改。后端 fork_app 现成。
    */
-  const forkAppCard = async (gi: GalleryItem) => {
+  /** 点「复刻」→ 开改名弹框，预填「源名 副本」（不再一键复刻出同名孪生卡）。 */
+  const openForkModal = (gi: GalleryItem) => {
     setMenuFor(null);
     if (gi.source !== "app" || !gi.appId) return;
-    const newId = await forkApp(gi.appId);
+    const baseName =
+      details[gi.key]?.identity?.productName ||
+      gi.summary?.product_name ||
+      gi.goal ||
+      "应用";
+    setForkModal({ item: gi, name: `${baseName} 副本` });
+  };
+
+  /** 确认复刻：带新名调 fork_app 分新血缘（不继承源会话），成功后重拉画廊。 */
+  const confirmFork = async () => {
+    const fm = forkModal;
+    if (!fm?.item.appId || forkBusy) return;
+    setForkBusy(true);
+    const newId = await forkApp(fm.item.appId, fm.name);
+    setForkBusy(false);
+    setForkModal(null);
     if (newId) setReloadKey(k => k + 1);
   };
 
@@ -1113,7 +1132,7 @@ export function AppsWorkbench() {
                             <button
                               data-testid={`app-fork-${item.appId}`}
                               className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
-                              onClick={() => void forkAppCard(item)}
+                              onClick={() => openForkModal(item)}
                             >
                               <GitBranch size={13} /> 复刻应用
                             </button>
@@ -1206,6 +1225,58 @@ export function AppsWorkbench() {
             onChange={p => setPage(p)}
             showSizeChanger={false}
           />
+        </div>
+      )}
+
+      {/* 复刻改名弹框（对标 Budibase duplicateApp）：预填「源名 副本」，改名后确认。
+          fork 分新血缘、不继承源会话——点开副本不会误进源应用的会话。 */}
+      {forkModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          data-testid="fork-modal"
+          onClick={() => !forkBusy && setForkModal(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
+              <GitBranch size={16} className="text-[#5b6cff]" /> 复刻应用
+            </div>
+            <div className="mt-1 text-[12px] text-slate-500">
+              复制一份为新应用（记着从谁复刻而来），给它起个名：
+            </div>
+            <input
+              autoFocus
+              data-testid="fork-name-input"
+              value={forkModal.name}
+              disabled={forkBusy}
+              onChange={e => setForkModal(m => (m ? { ...m, name: e.target.value } : m))}
+              onKeyDown={e => {
+                if (e.key === "Enter") void confirmFork();
+                if (e.key === "Escape") setForkModal(null);
+              }}
+              className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-800 outline-none transition focus:border-[#5b6cff] focus:ring-2 focus:ring-[#5b6cff]/20"
+              placeholder="副本名称"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-slate-100"
+                disabled={forkBusy}
+                onClick={() => setForkModal(null)}
+              >
+                取消
+              </button>
+              <button
+                data-testid="fork-confirm"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-4 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-60"
+                disabled={forkBusy || !forkModal.name.trim()}
+                onClick={() => void confirmFork()}
+              >
+                {forkBusy ? "复刻中…" : "复刻"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

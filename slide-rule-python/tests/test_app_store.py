@@ -89,6 +89,25 @@ def test_fork_missing_source_returns_none(configured_store):
     assert store.fork_app("nope") is None
 
 
+def test_fork_with_new_name_renames_copy(configured_store):
+    """复刻改名（对标 Budibase）：副本的 productName + product_name 元数据都跟着改，
+    源应用不受影响。"""
+    a = store.save_app(_model("咖营通"), session_id="s1")
+    fk = store.fork_app(a, new_name="奶茶版")
+    rec = store.get_app(fk)
+    assert rec["product_name"] == "奶茶版"
+    assert rec["model_json"]["appbundle"]["appIdentity"]["productName"] == "奶茶版"
+    assert rec["parent_id"] == a and rec["root_id"] == fk, "仍是新血缘、parent 指源"
+    assert store.get_app(a)["product_name"] == "咖营通", "源应用名不受影响"
+
+
+def test_fork_default_does_not_inherit_source_session(configured_store):
+    """默认不继承源会话——避免点开副本却进了源应用的会话。"""
+    a = store.save_app(_model("咖营通"), session_id="s1")
+    fk = store.fork_app(a)  # 不传 session_id
+    assert store.get_app(fk)["session_id"] is None
+
+
 def test_dedup_key_is_idempotent(configured_store):
     model = _model("咖营通")
     sig = store.model_signature("s1", model)

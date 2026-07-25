@@ -500,16 +500,35 @@ def save_version(root_id: str, parent_id: str, model: dict[str, Any], *, goal: s
     return get_backend().save(record)
 
 
-def fork_app(source_id: str, *, session_id: Optional[str] = None) -> Optional[str]:
+def fork_app(
+    source_id: str,
+    *,
+    session_id: Optional[str] = None,
+    new_name: Optional[str] = None,
+) -> Optional[str]:
     """从现有应用分出一条新血缘：新 root·v1·parent 指向源，model_json 拷贝一份。
-    源不存在返回 None。用于"以某个生成应用为起点，改成一个新应用"。"""
+    源不存在返回 None。用于"以某个生成应用为起点，改成一个新应用"。
+
+    - new_name：给副本改名（写进模型身份 appIdentity.productName，product_name
+      元数据会自动跟着 re-derive）。对标 Budibase duplicateApp 的"预填 X 副本"——
+      避免复刻出同名孪生卡。
+    - session_id：不再默认继承源应用的会话（那会导致点开副本却进了源会话）。
+      只在显式传入时才带；默认 None = 副本是独立设计快照，不绑任何会话。
+    """
     source = get_backend().get(source_id)
     if source is None:
         return None
+    import copy
+
+    model = copy.deepcopy(source.get("model_json") or {})
+    if new_name and isinstance(model, dict):
+        appbundle = model.setdefault("appbundle", {})
+        identity = appbundle.setdefault("appIdentity", {})
+        identity["productName"] = str(new_name)[:120]
     app_id = _new_id()
     record = _build_record(
-        source.get("model_json") or {}, goal=source.get("goal") or "",
-        session_id=session_id or source.get("session_id"),
+        model, goal=source.get("goal") or "",
+        session_id=session_id,
         gate_passed=bool(source.get("gate_passed")),
         app_id=app_id, root_id=app_id, parent_id=source_id, version=1,
     )

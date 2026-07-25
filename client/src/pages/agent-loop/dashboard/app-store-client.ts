@@ -88,13 +88,15 @@ export async function listVersions(rootId: string): Promise<AppStoreSummary[]> {
 
 /**
  * 以某个生成应用为起点分出一条新血缘（新 root · v1 · parent 指向源）。
- * 对标 ToolJet clone / Budibase duplicateApp：成功返回新 app id，失败返回 null。
+ * 对标 ToolJet clone / Budibase duplicateApp：传 name 给副本改名（避免同名孪生卡）。
+ * 成功返回新 app id，失败返回 null。
  */
-export async function forkApp(id: string): Promise<string | null> {
+export async function forkApp(id: string, name?: string): Promise<string | null> {
   try {
     const res = await fetch(`${BASE}/apps/${encodeURIComponent(id)}/fork`, {
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(name && name.trim() ? { name: name.trim() } : {}),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { id?: string };
