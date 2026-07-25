@@ -1,0 +1,66 @@
+# Render 蓝图（Blueprint）—— SlideRule / WhyBuddy 两服务一键部署
+#
+# 用法：Render → New → Blueprint → 选这个仓库（分支 main）→ Apply。
+# Render 会照这份文件自动建好两个服务、把内部地址和共享密钥接好、挂好数据盘，
+# 你只需在 Apply 时手填几个标了 sync:false 的密钥（LLM_API_KEY 等）。
+#
+# 拓扑（跟 docker-compose.prod.yml 一致）：
+#   whybuddy-python  —— FastAPI 推演后端，私有服务（只给 Node 内部调，不公开）
+#   whybuddy         —— Node（前端 + API），公开 Web 服务，代理 /api/sliderule 到 Python
+#
+# 说明：
+# - dockerContext 必须是仓库根（.），否则 Python Dockerfile 里的
+#   COPY docker/certs / COPY slide-rule-python 会找不到。
+# - 两个服务同 region，私网才通。
+# - 端口：Render 默认注入 $PORT=10000，两个镜像的启动命令都已改成听 $PORT，
+#   所以 Python 监听 10000、Node 用 http://whybuddy-python:10000 连它。
+#   （若在面板看到 Python 实际内部端口不是 10000，把下面三个 URL 的端口改一致即可。）
+
+services:
+  # ── Python 推演后端（私有服务）──────────────────────────────────
+  - type: pserv
+    name: whybuddy-python
+    runtime: docker
+    branch: main
+    region: singapore
+    plan: starter                 # 私有服务 + 挂盘需付费档（$7/月起）
+    dockerfilePath: ./slide-rule-python/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    disk:
+      name: whybuddy-python-data
+      mountPath: /app/data        # 会话 / 生成应用落这儿，挂盘后重启不丢
+      sizeGB: 1
+    envVars:
+      - key: SLIDE_RULE_INTERNAL_KEY
+        generateValue: true        # Render 随机生成；Node 那边引用同一个值
+      - key: LLM_API_KEY
+        sync: false                # Apply 时在面板填（推演必需）
+      # 如不用默认 provider，再在面板补 LLM_BASE_URL / LLM_MODEL
+
+  # ── Node（前端 + API，公开）──────────────────────────────────────
+  - type: web
+    name: whybuddy
+    runtime: docker
+    branch: main
+    region: singapore
+    plan: starter                 # 展会不想冷启动就用付费档；平时可改 free（会休眠）
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SLIDERULE_V5_BACKEND
+        value: python
+      - key: PYTHON_SLIDE_RULE_BASE_URL
+        value: http://whybuddy-python:10000
+      - key: PYTHON_API_TARGET
+        value: http://whybuddy-python:10000
+      - key: AGENT_LOOP_API_TARGET
+        value: http://whybuddy-python:10000
+      - key: PYTHON_SLIDE_RULE_INTERNAL_KEY
+        fromService:               # 引用 Python 服务生成的同一把密钥
+          type: pserv
+          name: whybuddy-python
+          envVarKey: SLIDE_RULE_INTERNAL_KEY
