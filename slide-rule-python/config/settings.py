@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     RAG_VECTOR_ENABLED: bool = True
     RAG_VECTOR_INDEX_PATH: str = "data/rag-vector-index.json"
 
+    # 生成应用存储 / App Store（推演出来的应用「设计层」持久化 → 组建库地基）。
+    # 填了连接串（任意 SQLAlchemy URL：Neon/自建 Postgres 用 postgresql://…，
+    # 也接受 sqlite:///data/apps.db 这种本地库）就落库；不填 fail-open 回退
+    # 本地 JSON 文件（APP_STORE_FILE），行为与"没有 DB"时完全一致。跟账号功能
+    # 的 MySQL DATABASE_URL（DB_* 那套）是两个独立子系统，互不影响。
+    APP_STORE_DATABASE_URL: Optional[str] = None
+    APP_STORE_FILE: str = "data/sliderule-generated-apps.json"
+
     # AgentLoop worker bridge (108): builds commands for existing Node queue runner.
     # Node remains execution owner; Python owns command construction + receipts.
     # Safe defaults; do not assume node present in dry-run.

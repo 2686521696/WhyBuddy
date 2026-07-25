@@ -1,0 +1,164 @@
+"""生成应用存储 / App Store（2026-07-24）的单测覆盖。
+
+同一套 SQLAlchemy 代码在 SQLite（本地/CI，离线）和 Postgres（生产 Neon）上
+跑，所以这里用 SQLite 内存/临时库把落库逻辑全测通，等于间接验证了生产
+Postgres 路径；再单独测 JSON 文件兜底。两条后端跑同一批断言（参数化），
+证明"有 DB 用 DB、没 DB 回退文件"两条路行为一致。
+"""
+
+import os
+import tempfile
+
+import pytest
+
+import services.app_store as store
+
+
+def _model(name: str, entities: int = 2, pages: int = 2, theme: str = "forest") -> dict:
+    return {
+        "datamodel": {"entities": [{"id": f"e{i}", "name": f"E{i}", "fields": []} for i in range(entities)]},
+        "page": {"pages": [{"id": f"p{i}", "kind": "monitor" if i == 0 else "workbench"} for i in range(pages)]},
+        "appbundle": {
+            "landingPageRef": "p0",
+            "preferredDevice": "desktop",
+            "appIdentity": {"productName": name, "theme": theme, "generatedTheme": {"label": f"{theme}·测试"}},
+        },
+    }
+
+
+@pytest.fixture(params=["jsonfile", "sqlite"])
+def configured_store(request, tmp_path, monkeypatch):
+    """同一批断言在两个后端各跑一遍。"""
+    if request.param == "jsonfile":
+        monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", None)
+        monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    else:
+        monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", f"sqlite:///{tmp_path / 'apps.db'}")
+    store.reset_backend_cache()
+    yield request.param
+    store.reset_backend_cache()
+
+
+def test_save_and_get_roundtrip(configured_store):
+    app_id = store.save_app(_model("咖营通"), goal="咖啡店", session_id="s1", gate_passed=True)
+    rec = store.get_app(app_id)
+    assert rec is not None
+    assert rec["product_name"] == "咖营通"
+    assert rec["theme_id"] == "forest" and rec["theme_label"] == "forest·测试"
+    assert rec["entity_count"] == 2 and rec["page_count"] == 2
+    assert rec["gate_passed"] is True
+    assert rec["model_json"]["appbundle"]["landingPageRef"] == "p0"  # 完整模型回读得到
+
+
+def test_get_missing_returns_none(configured_store):
+    assert store.get_app("does-not-exist") is None
+
+
+def test_list_is_summary_and_latest_per_root(configured_store):
+    a = store.save_app(_model("咖营通"), session_id="s1")
+    store.save_app(_model("宠医云"), session_id="s2")
+    store.save_version(root_id=a, parent_id=a, model=_model("咖营通", entities=3))
+    apps = store.list_apps()
+    assert len(apps) == 2, "每个应用只出最新版"
+    assert all("model_json" not in a for a in apps), "列表是摘要，不含大模型载荷"
+    ka = next(a for a in apps if a["product_name"] == "咖营通")
+    assert ka["version"] == 2 and ka["entity_count"] == 3, "出的应是最新版"
+
+
+def test_versions_chain(configured_store):
+    a = store.save_app(_model("咖营通"))
+    store.save_version(root_id=a, parent_id=a, model=_model("咖营通"))
+    store.save_version(root_id=a, parent_id=a, model=_model("咖营通"))
+    versions = store.list_versions(a)
+    assert [v["version"] for v in versions] == [1, 2, 3]
+    assert all(v["root_id"] == a for v in versions)
+
+
+def test_fork_creates_new_lineage(configured_store):
+    a = store.save_app(_model("咖营通"), session_id="s1")
+    fk = store.fork_app(a, session_id="s9")
+    assert fk is not None and fk != a
+    rec = store.get_app(fk)
+    assert rec["parent_id"] == a, "fork 的 parent 指向源"
+    assert rec["root_id"] == fk and rec["version"] == 1, "fork 是新血缘根、v1"
+    assert rec["model_json"]["appbundle"]["appIdentity"]["productName"] == "咖营通", "model 拷贝了一份"
+    assert len(store.list_apps()) == 2, "fork 后是两个独立根"
+
+
+def test_fork_missing_source_returns_none(configured_store):
+    assert store.fork_app("nope") is None
+
+
+def test_dedup_key_is_idempotent(configured_store):
+    model = _model("咖营通")
+    sig = store.model_signature("s1", model)
+    id1 = store.save_app(model, session_id="s1", dedup_key=sig)
+    id2 = store.save_app(model, session_id="s1", dedup_key=sig)
+    assert id1 == id2, "同 dedup_key → 幂等更新同一条"
+    assert len(store.list_apps()) == 1, "同会话反复落同一模型不堆重复"
+
+
+def test_dedup_key_new_record_when_model_changes(configured_store):
+    id1 = store.save_app(_model("咖营通", entities=2), session_id="s1",
+                         dedup_key=store.model_signature("s1", _model("咖营通", entities=2)))
+    id2 = store.save_app(_model("咖营通", entities=5), session_id="s1",
+                         dedup_key=store.model_signature("s1", _model("咖营通", entities=5)))
+    assert id1 != id2, "模型内容变了 → 签名变 → 落新记录"
+    assert len(store.list_apps()) == 2
+
+
+def test_export_all_returns_full_records(configured_store):
+    store.save_app(_model("咖营通"))
+    store.save_app(_model("宠医云"))
+    dump = store.export_all()
+    assert len(dump) == 2
+    assert all("model_json" in r for r in dump), "导出是完整记录（可迁移备份）"
+
+
+def test_no_db_url_falls_back_to_jsonfile(tmp_path, monkeypatch):
+    """没配连接串时后端就是 JSON 文件——'有 DB 用 DB、没 DB 兜底'。"""
+    monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", None)
+    monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    store.reset_backend_cache()
+    assert type(store.get_backend()).__name__ == "JsonFileAppStore"
+    store.reset_backend_cache()
+
+
+class _FakeNullPool:
+    """占位——只需身份可比对，_sql_engine_config 不实例化它。"""
+
+
+def test_postgres_engine_config_follows_neon_best_practices():
+    """Neon（-pooler = PgBouncer transaction 模式）最佳实践锁死：
+    psycopg 关预处理语句 + NullPool（不双层池）+ 连接超时。"""
+    connect_args, engine_kwargs = store._sql_engine_config(
+        "postgresql+psycopg://u:p@ep-x-pooler.neon.tech/db?sslmode=require", _FakeNullPool
+    )
+    # ① 关掉客户端预处理语句（否则 transaction 池并发抛 prepared statement 错）
+    assert connect_args["prepare_threshold"] is None
+    # ② 用 NullPool，不让 SQLAlchemy 再套一层池跟 PgBouncer 打架
+    assert engine_kwargs["poolclass"] is _FakeNullPool
+    # ③ 连不上快速失败
+    assert connect_args["connect_timeout"] == 4
+    # postgres 不该用 pre_ping（NullPool 无长连可 ping）
+    assert "pool_pre_ping" not in engine_kwargs
+
+
+def test_sqlite_engine_config_no_pgbouncer_tweaks():
+    """SQLite 本地库：不该带 postgres 专属的 NullPool/prepare_threshold。"""
+    connect_args, engine_kwargs = store._sql_engine_config("sqlite:///x.db", _FakeNullPool)
+    assert "prepare_threshold" not in connect_args
+    assert "poolclass" not in engine_kwargs
+    assert engine_kwargs.get("pool_pre_ping") is True
+
+
+def test_bad_db_url_fails_open_to_jsonfile(tmp_path, monkeypatch):
+    """DB 初始化失败（无法解析的连接串）时 fail-open 落回 JSON 文件，不崩。"""
+    monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", "not-a-valid-url://xxx")
+    monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    store.reset_backend_cache()
+    assert type(store.get_backend()).__name__ == "JsonFileAppStore"
+    # 仍能正常存取（走了兜底）
+    app_id = store.save_app(_model("咖营通"))
+    assert store.get_app(app_id) is not None
+    store.reset_backend_cache()
