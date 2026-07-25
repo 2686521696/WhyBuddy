@@ -29,4 +29,9 @@ COPY slide-rule-python/ ./
 
 EXPOSE 9700
 
-CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "9700"]
+# 绑 :: = IPv4+IPv6 双栈（Railway 等平台的服务间私网是 IPv6-only，只绑 0.0.0.0
+# 会导致 Node 侧走 *.railway.internal 连不进来 → 502；:: 同时兼容 compose 的
+# IPv4 桥接网，两边都能用）。端口听平台注入的 $PORT，没有就回落 9700（compose
+# 里设了 PORT=9700，健康检查照旧命中）。用 sh -c + exec 保证 uvicorn 是 PID 1、
+# 正常接收 SIGTERM 优雅退出。
+CMD ["sh", "-c", "exec python -m uvicorn app:app --host :: --port ${PORT:-9700}"]
