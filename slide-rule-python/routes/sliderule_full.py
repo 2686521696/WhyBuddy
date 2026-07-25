@@ -1388,3 +1388,65 @@ def get_freeform_preview(pid: str):
     if payload is None:
         return JSONResponse({"error": "not_found"}, status_code=404)
     return JSONResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# 生成应用存储 / App Store（2026-07-24）——推演出来的应用（设计层）持久化，
+# 后续「组建库」的地基。有 APP_STORE_DATABASE_URL 落托管 Postgres，无则回退
+# 本地 JSON 文件（见 services/app_store.py）。列表/详情/fork/版本/导出。
+# ---------------------------------------------------------------------------
+
+
+@router.get("/apps")
+async def list_generated_apps(
+    limit: int = 50,
+    offset: int = 0,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """应用画廊列表——默认每个应用只出最新版，摘要不含大模型载荷。"""
+    _auth(x_internal_key)
+    from services import app_store
+
+    return {"apps": app_store.list_apps(limit=limit, offset=offset)}
+
+
+@router.get("/apps/{app_id}")
+async def get_generated_app(app_id: str, x_internal_key: Optional[str] = Header(None)):
+    """取一个生成应用的完整记录（含 model_json，可直接重开渲染）。"""
+    _auth(x_internal_key)
+    from services import app_store
+
+    record = app_store.get_app(app_id)
+    if record is None:
+        raise HTTPException(404, "app not found")
+    return record
+
+
+@router.get("/apps/{root_id}/versions")
+async def list_generated_app_versions(root_id: str, x_internal_key: Optional[str] = Header(None)):
+    """一个应用的改版历史（同 root 的所有版本，按 version 升序，摘要）。"""
+    _auth(x_internal_key)
+    from services import app_store
+
+    return {"versions": app_store.list_versions(root_id)}
+
+
+@router.post("/apps/{app_id}/fork")
+async def fork_generated_app(app_id: str, x_internal_key: Optional[str] = Header(None)):
+    """以某个生成应用为起点分出一条新血缘（新 root·v1·parent 指向源）。"""
+    _auth(x_internal_key)
+    from services import app_store
+
+    new_id = app_store.fork_app(app_id)
+    if new_id is None:
+        raise HTTPException(404, "source app not found")
+    return {"id": new_id}
+
+
+@router.get("/apps-export")
+async def export_generated_apps(x_internal_key: Optional[str] = Header(None)):
+    """导出全部应用记录（备份/迁移）——无论后端在哪，手上永远有一份可迁移真数据。"""
+    _auth(x_internal_key)
+    from services import app_store
+
+    return {"apps": app_store.export_all()}

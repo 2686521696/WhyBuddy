@@ -206,6 +206,7 @@ def _try_llm_generate_evidence(
     llm_json_fn: Optional[Callable[[str], Any]],
     *,
     require_landing_page_ref: bool = True,
+    session_id: Optional[str] = None,
 ) -> Optional[Dict[str, Dict[str, Any]]]:
     """Generate + gate a five-system model for a novel intent.
 
@@ -302,6 +303,19 @@ def _try_llm_generate_evidence(
         model = enrich_monitor_page_overviews(model)
     except Exception as exc:  # noqa: BLE001 — 首页设计是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] monitor overview enrichment skipped: {str(exc)[:160]}")
+    # 过门 + 增强完的完整设计模型持久化进 App Store（组建库地基）。fail-open：
+    # 存储层任何异常（DB 连不上/建表失败/序列化问题）都不能拖垮闭环发布——
+    # 跟上面几段增强一个纪律。dedup_key = 会话+模型内容签名，同会话反复落同一
+    # 模型只更新一条、不堆重复。
+    try:
+        from . import app_store
+
+        app_store.save_app(
+            model, goal=goal, session_id=session_id, gate_passed=True,
+            dedup_key=app_store.model_signature(session_id, model),
+        )
+    except Exception as exc:  # noqa: BLE001 — 存储是增强项，故障不改变主路径语义
+        print(f"[v5_capability_executor] app store save skipped: {str(exc)[:160]}")
     artifacts = model_to_linkage_artifacts(model, goal)
     return {a["id"].replace("llm-linkage-", ""): a for a in artifacts}
 
@@ -345,6 +359,7 @@ def _build_per_skill_evidence(
         llm_result = _try_llm_generate_evidence(
             goal, llm_json_fn,
             require_landing_page_ref=not _is_override,
+            session_id=getattr(state, "sessionId", None),
         )
         if llm_result is not None:
             for skill in REQUIRED_EVIDENCE_KEYS:
@@ -359,7 +374,9 @@ def _build_per_skill_evidence(
         # T3: novel intent — ask the LLM to generate a five-system model, then run
         # it through the structural gate. Only gate-PASSED models inject evidence;
         # gate failure / LLM unavailable stays fail-closed (0/6). "失败由 gate 拦截而非静默".
-        llm_result = _try_llm_generate_evidence(goal, llm_json_fn)
+        llm_result = _try_llm_generate_evidence(
+            goal, llm_json_fn, session_id=getattr(state, "sessionId", None)
+        )
         if llm_result is not None:
             for skill in REQUIRED_EVIDENCE_KEYS:
                 if skill not in matches:

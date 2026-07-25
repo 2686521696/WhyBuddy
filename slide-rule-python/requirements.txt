@@ -17,6 +17,10 @@ openai>=1.50.0  # for LLM calls in stable style (reference project uses similar)
 # Persistence (sessions, like reference)
 sqlalchemy>=2.0.0
 pymysql>=1.1.0
+# App Store（生成应用持久化 → 组建库地基）：配了 APP_STORE_DATABASE_URL 指向
+# Postgres（Neon/自建）时用 psycopg v3 连（支持 Neon 的 channel_binding）；不配
+# 走本地 JSON 文件兜底，这条依赖也不会被 import。
+psycopg[binary]>=3.2
 
 # P2b execution tools: code.run runs ONLY inside E2B sandbox (fail-closed without key)
 e2b-code-interpreter>=2.8.0
