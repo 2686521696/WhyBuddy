@@ -26,7 +26,7 @@ services:
     plan: starter                 # 私有服务 + 挂盘需付费档（$7/月起）
     dockerfilePath: ./slide-rule-python/Dockerfile
     dockerContext: .
-    healthCheckPath: /health
+    # 私有服务（pserv）不支持 healthCheckPath——Render 会拒绝蓝图，故不设。
     disk:
       name: whybuddy-python-data
       mountPath: /app/data        # 会话 / 生成应用落这儿，挂盘后重启不丢
