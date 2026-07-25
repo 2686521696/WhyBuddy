@@ -10,17 +10,39 @@
  *   cyan/orange 对白底对比不足 → 以每片"名称 数值"直标补偿）；
  *   >5 类折叠进「其他」，2px 白缝分片；
  * - 网格/轴线退后（#f0f0f0），tooltip 默认开。
+ *
+ * 2026-07-24：grid 的自适应留白改用 outerBoundsMode/outerBoundsContain，
+ * 不用已废弃的 containLabel——ECharts 官方类型定义里 containLabel 已标
+ * @deprecated（"这个方法估算标签尺寸，多数情况下够用，但不能严格保证所有
+ * 标签都被包住"），社区也有真实的截断反馈（apache/echarts#16875、#15562）。
+ * outerBoundsContain:"all" 比 containLabel 隐含的 "axisLabel" 多包一层
+ * 轴名称，对"图表卡片里文字被裁掉一角"这类问题是更强的兜底，不是同义替换。
  */
+const GRID_ANTI_CLIP = { outerBoundsMode: "same", outerBoundsContain: "all" } as const;
 
 import type { AppPageChartSchema } from "./app-runtime-schema";
 import type { RuntimeRow } from "./live-runtime";
 
 const INK = { label: "#595959", value: "#262626", faint: "#bfbfbf" };
 const SINGLE_HUE = "#1677ff";
-/** 固定次序分类色（validate_palette.js 全查通过；只按序取用，不循环生成） */
+/** 固定次序分类色（validate_palette.js 全查通过；只按序取用，不循环生成）
+ * ——没传身份主题色板时的兜底默认值，老调用方不传 palette 视觉零变化。 */
 export const CATEGORICAL_ORDER = ["#1677ff", "#13c2c2", "#fa8c16", "#722ed1", "#eb2f96"];
 const OTHER_GRAY = "#bfbfbf";
 const MAX_PIE_SLICES = 5;
+
+/** 图表配色来源（2026-07-24）——之前 bar/line/pie 的颜色是这个文件写死的
+ * 几个常量，跟身份主题（可能是 8 预设、也可能是生图生成的自定义主题）完全
+ * 无关，图表配色跟侧边栏/按钮对不上。现在改成可传入，默认值不变（向后
+ * 兼容），传了就用主题自己的 primary/charts。 */
+export interface ChartPalette {
+  primary: string;
+  categorical: readonly string[];
+}
+export const DEFAULT_CHART_PALETTE: ChartPalette = {
+  primary: SINGLE_HUE,
+  categorical: CATEGORICAL_ORDER,
+};
 
 export interface ChartGroupedData {
   categories: string[];
@@ -79,7 +101,8 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
  * 全零/空返回 null（调用方渲染诚实空态文案）。
  */
 export function buildEntityRowcountOption(
-  items: Array<{ label: string; value: number }>
+  items: Array<{ label: string; value: number }>,
+  palette: ChartPalette = DEFAULT_CHART_PALETTE
 ): Record<string, unknown> | null {
   if (items.length === 0 || items.every((i) => i.value === 0)) return null;
   // ECharts 纵轴类目自下而上排布 → 倒序让最大值在最上面
@@ -87,7 +110,7 @@ export function buildEntityRowcountOption(
   return {
     animation: false,
     tooltip: { confine: true, textStyle: { color: INK.value, fontSize: 11 } },
-    grid: { left: 8, right: 32, top: 8, bottom: 8, containLabel: true },
+    grid: { left: 8, right: 32, top: 8, bottom: 8, ...GRID_ANTI_CLIP },
     xAxis: {
       type: "value",
       axisLabel: { show: false },
@@ -106,7 +129,7 @@ export function buildEntityRowcountOption(
         name: "行数",
         data: ordered.map((i) => i.value),
         barMaxWidth: 14, // 细条
-        itemStyle: { color: SINGLE_HUE, borderRadius: [0, 4, 4, 0] }, // 数据端 4px 圆角
+        itemStyle: { color: palette.primary, borderRadius: [0, 4, 4, 0] }, // 数据端 4px 圆角
         label: { show: true, position: "right", color: INK.value, fontSize: 11 },
       },
     ],
@@ -158,7 +181,8 @@ export function buildInstanceStatusOption(
  */
 export function buildEchartsOption(
   spec: AppPageChartSchema,
-  rows: RuntimeRow[]
+  rows: RuntimeRow[],
+  palette: ChartPalette = DEFAULT_CHART_PALETTE
 ): Record<string, unknown> | null {
   if (rows.length === 0) return null;
   const grouped = groupRowsForChart(spec, rows);
@@ -198,7 +222,7 @@ export function buildEchartsOption(
             name,
             value: folded.values[i],
             itemStyle: {
-              color: name === "其他" ? OTHER_GRAY : CATEGORICAL_ORDER[i % CATEGORICAL_ORDER.length],
+              color: name === "其他" ? OTHER_GRAY : palette.categorical[i % palette.categorical.length],
               borderColor: "#fff",
               borderWidth: 2, // 2px 白缝分片，不靠颜色分界
             },
@@ -228,7 +252,7 @@ export function buildEchartsOption(
     return {
       ...base,
       tooltip: { ...base.tooltip, trigger: "axis" },
-      grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 16, top: 24, bottom: 8, ...GRID_ANTI_CLIP },
       xAxis: categoryAxis,
       yAxis: valueAxis,
       series: [
@@ -236,8 +260,8 @@ export function buildEchartsOption(
           type: "line",
           name: spec.metricLabel,
           data: grouped.values,
-          lineStyle: { width: 2, color: SINGLE_HUE },
-          itemStyle: { color: SINGLE_HUE, borderColor: "#fff", borderWidth: 2 },
+          lineStyle: { width: 2, color: palette.primary },
+          itemStyle: { color: palette.primary, borderColor: "#fff", borderWidth: 2 },
           symbolSize: 8,
           // 端点直标（选择性直标，不逐点标数）
           endLabel: { show: true, color: INK.value, fontSize: 11 },
@@ -249,7 +273,7 @@ export function buildEchartsOption(
   return {
     ...base,
     tooltip: { ...base.tooltip, trigger: "axis" },
-    grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true },
+    grid: { left: 8, right: 16, top: 24, bottom: 8, ...GRID_ANTI_CLIP },
     xAxis: categoryAxis,
     yAxis: valueAxis,
     series: [
@@ -258,7 +282,7 @@ export function buildEchartsOption(
         name: spec.metricLabel,
         data: grouped.values,
         barMaxWidth: 22, // 细柱
-        itemStyle: { color: SINGLE_HUE, borderRadius: [4, 4, 0, 0] },
+        itemStyle: { color: palette.primary, borderRadius: [4, 4, 0, 0] },
         label: { show: true, position: "top", color: INK.value, fontSize: 11 },
       },
     ],

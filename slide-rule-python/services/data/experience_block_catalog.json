@@ -1,6 +1,6 @@
 {
-  "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；本版只建立目录和渲染边界，不改变旧页面效果。",
-  "version": 1,
+  "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；本版只建立目录和渲染边界，不改变旧页面效果。bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。",
+  "version": 2,
   "allowedSlots": ["summary", "primary", "secondary", "activity", "content"],
   "dataKinds": [
     "aggregate",
@@ -19,6 +19,43 @@
     "actionTrigger",
     "filterChange"
   ],
+  "freeformAllowedTags": [
+    "div", "span", "p", "strong", "em", "small", "h1", "h2", "h3", "ul", "li"
+  ],
+  "freeformAllowedIconRefs": [
+    "DollarOutlined", "WalletOutlined", "PayCircleOutlined", "AccountBookOutlined",
+    "CreditCardOutlined", "TransactionOutlined", "BankOutlined", "FundOutlined",
+    "MoneyCollectOutlined", "ShoppingCartOutlined", "ShoppingOutlined", "ShopOutlined",
+    "TagOutlined", "GiftOutlined", "AppstoreOutlined", "InboxOutlined", "DropboxOutlined",
+    "ContainerOutlined", "CarOutlined", "RocketOutlined", "ClusterOutlined",
+    "ProfileOutlined", "FileTextOutlined", "FileDoneOutlined", "ScheduleOutlined",
+    "CarryOutOutlined", "AuditOutlined", "SolutionOutlined", "SnippetsOutlined",
+    "PieChartOutlined", "BarChartOutlined", "LineChartOutlined", "AreaChartOutlined",
+    "DashboardOutlined", "FundProjectionScreenOutlined", "RiseOutlined", "FallOutlined",
+    "StockOutlined", "UserOutlined", "TeamOutlined", "UsergroupAddOutlined",
+    "ContactsOutlined", "IdcardOutlined", "CustomerServiceOutlined", "SmileOutlined",
+    "ClockCircleOutlined", "CalendarOutlined", "HistoryOutlined", "FieldTimeOutlined",
+    "CheckCircleOutlined", "CloseCircleOutlined", "WarningOutlined", "ExclamationCircleOutlined",
+    "InfoCircleOutlined", "BellOutlined", "AlertOutlined", "SafetyOutlined", "FireOutlined",
+    "ThunderboltOutlined", "HomeOutlined", "EnvironmentOutlined", "GlobalOutlined",
+    "PhoneOutlined", "MailOutlined", "StarOutlined", "HeartOutlined", "TrophyOutlined",
+    "CrownOutlined", "FlagOutlined", "ToolOutlined", "SettingOutlined", "ExperimentOutlined",
+    "BulbOutlined", "ApiOutlined", "DatabaseOutlined", "CloudOutlined", "MedicineBoxOutlined",
+    "ReadOutlined", "BookOutlined", "CoffeeOutlined", "ArrowRightOutlined", "RightOutlined",
+    "MessageOutlined"
+  ],
+  "freeformAllowedStyleProps": [
+    "color", "backgroundColor", "background", "fontSize", "fontWeight", "lineHeight",
+    "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "margin", "marginTop", "marginRight", "marginBottom", "marginLeft",
+    "border", "borderRadius", "borderColor", "borderWidth", "borderStyle",
+    "borderTop", "borderBottom", "borderLeft", "borderRight",
+    "display", "flexDirection", "alignItems", "justifyContent", "gap", "flexWrap",
+    "flex", "flexGrow", "flexShrink", "flexBasis", "alignSelf",
+    "width", "height", "minWidth", "minHeight", "maxWidth",
+    "boxShadow", "textAlign", "letterSpacing", "opacity", "gridTemplateColumns",
+    "position", "top", "left", "right", "bottom", "zIndex", "overflow", "boxSizing"
+  ],
   "blocks": [
     {
       "type": "MetricGrid",
@@ -34,7 +71,11 @@
       "dataKinds": ["aggregate"],
       "allowedSlots": ["summary", "primary"],
       "events": ["metricSelect"],
-      "bindingHints": "entityRef必填，aggregate支持 count/sum:<fieldId>/avg:<fieldId>，可选filter"
+      "bindingSchema": {
+        "required": ["entityRef"],
+        "optional": ["aggregate", "filter"],
+        "aggregateFields": ["aggregate"]
+      }
     },
     {
       "type": "TrendChart",
@@ -50,7 +91,12 @@
       "dataKinds": ["series"],
       "allowedSlots": ["primary", "secondary"],
       "events": ["pointSelect"],
-      "bindingHints": "entityRef+timeDimensionRef必填，timeGrain=day/week/month，可选seriesBy分多系列"
+      "bindingSchema": {
+        "required": ["entityRef", "timeDimensionRef"],
+        "optional": ["timeGrain", "seriesBy"],
+        "enums": { "timeGrain": ["day", "week", "month"] },
+        "entityFieldRefs": { "timeDimensionRef": "date", "seriesBy": "enum" }
+      }
     },
     {
       "type": "RankedList",
@@ -66,7 +112,13 @@
       "dataKinds": ["rankedRows"],
       "allowedSlots": ["primary", "secondary"],
       "events": ["itemSelect"],
-      "bindingHints": "entityRef+sortByRef必填（number字段），limit 3-20，sortOrder=desc/asc"
+      "bindingSchema": {
+        "required": ["entityRef", "sortByRef"],
+        "optional": ["sortOrder", "limit"],
+        "enums": { "sortOrder": ["asc", "desc"] },
+        "entityFieldRefs": { "sortByRef": "number" },
+        "ranges": { "limit": [3, 20] }
+      }
     },
     {
       "type": "ActivityFeed",
@@ -82,7 +134,11 @@
       "dataKinds": ["timelineRows"],
       "allowedSlots": ["activity", "secondary"],
       "events": ["itemSelect"],
-      "bindingHints": "entityRef+timeFieldRef必填（date字段），可选levelFieldRef（enum字段）"
+      "bindingSchema": {
+        "required": ["entityRef", "timeFieldRef"],
+        "optional": ["levelFieldRef"],
+        "entityFieldRefs": { "timeFieldRef": "date", "levelFieldRef": "enum" }
+      }
     },
     {
       "type": "DataTable",
@@ -98,7 +154,11 @@
       "dataKinds": ["entityRows"],
       "allowedSlots": ["primary", "content"],
       "events": ["rowSelect", "createRequest", "editRequest"],
-      "bindingHints": "entityRef必填，其余字段由页面columns派生，binding可省略"
+      "bindingSchema": {
+        "required": ["entityRef"],
+        "optional": [],
+        "note": "其余列由页面 columns 派生；binding 对象整体可省略，省略时不受 required 约束。"
+      }
     },
     {
       "type": "QuickActionPanel",
@@ -112,10 +172,14 @@
           "columns": { "type": "number", "minimum": 1, "maximum": 4 }
         }
       },
-      "bindingHints": "无需 entityRef。actions 数组里的 createRecord/navigate 类型动作作为入口按钮。",
       "dataKinds": [],
       "allowedSlots": ["summary", "primary"],
-      "events": ["actionTrigger"]
+      "events": ["actionTrigger"],
+      "bindingSchema": {
+        "required": [],
+        "optional": [],
+        "note": "不使用 binding；入口按钮由 actions[] 里的 createRecord/navigate 类型动作声明。"
+      }
     },
     {
       "type": "FilterBar",
@@ -129,10 +193,57 @@
           "showDateRange": { "type": "boolean" }
         }
       },
-      "bindingHints": "entityRef 可选。filterFields 列出可筛选的枚举字段 id。触发 changeFilter 动作刷新同页面其他区块。",
       "dataKinds": ["aggregate"],
       "allowedSlots": ["summary"],
-      "events": ["filterChange"]
+      "events": ["filterChange"],
+      "bindingSchema": {
+        "required": [],
+        "optional": ["entityRef"],
+        "note": "可筛选字段在 props.filterFields 里声明（不是 binding）；entityRef 仅在需要按实体过滤时填写。触发 changeFilter 动作刷新同页面其他区块。"
+      }
+    },
+    {
+      "type": "WorkflowTimeline",
+      "description": "横向连接的流程阶段条，把 workflow 系统的节点顺序可视化。",
+      "rendererKey": "workflow-timeline",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "chainRef": { "type": "string" }
+        }
+      },
+      "dataKinds": [],
+      "allowedSlots": ["primary", "content"],
+      "events": ["itemSelect"],
+      "bindingSchema": {
+        "required": [],
+        "optional": [],
+        "note": "不使用 binding；展示哪条流程链路由 props.chainRef 声明（留空=workflow 主链路，填值必须是 workflow.chains[].id 之一）。节点、顺序、条件全部从 workflow 系统机械派生，不接受自由文案。"
+      }
+    },
+    {
+      "type": "FreeformInsight",
+      "description": "AI 自由设计的洞察卡片——结构和样式由二段生成按 designBrief 现场设计，不是固定模板；数字/统计类内容必须挂 dataRef 指向真实数据，编不出来的不画。",
+      "rendererKey": "freeform-insight",
+      "freeformGenerated": true,
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "designBrief": { "type": "string" },
+          "title": { "type": "string" }
+        }
+      },
+      "dataKinds": [],
+      "allowedSlots": ["primary", "secondary", "content"],
+      "events": [],
+      "bindingSchema": {
+        "required": [],
+        "optional": [],
+        "note": "不使用 binding；本次调用只需要给 props.designBrief（一句话说清楚这个区块该展示什么，必填，不能空），具体结构/样式/数据绑定由二段生成流程另外产出，不在这次输出里。"
+      }
     }
   ]
 }

@@ -87,6 +87,7 @@ def _load_experience_blocks() -> tuple:
     legal_slots = set(_catalog_tuple("allowedSlots"))
     legal_data_kinds = set(_catalog_tuple("dataKinds"))
     legal_events = set(_catalog_tuple("eventTypes"))
+    legal_field_types = set(_tuple("fieldTypes"))
     blocks: List[Dict[str, Any]] = []
     seen_types: set = set()
     seen_renderers: set = set()
@@ -112,8 +113,10 @@ def _load_experience_blocks() -> tuple:
         ):
             values = raw.get(key)
             # dataKinds may be empty for action-only blocks (e.g. QuickActionPanel)
-            # that require no entity data; allowedSlots and events must be non-empty.
-            if key == "dataKinds":
+            # that require no entity data; events may be empty for blocks with no
+            # interactive events yet (e.g. FreeformInsight，静态展示卡)；
+            # allowedSlots must always be non-empty.
+            if key in ("dataKinds", "events"):
                 if not isinstance(values, list):
                     raise ValueError(f"experience_block_catalog.json {block_type}.{key} 缺失或为空")
             else:
@@ -124,21 +127,85 @@ def _load_experience_blocks() -> tuple:
                 raise ValueError(
                     f"experience_block_catalog.json {block_type}.{key} 含目录外值: {sorted(unknown)}"
                 )
+        binding_schema = raw.get("bindingSchema")
+        if not isinstance(binding_schema, dict):
+            raise ValueError(f"experience_block_catalog.json {block_type} 缺 bindingSchema")
+        _validate_binding_schema(block_type, binding_schema, legal_field_types)
         seen_types.add(block_type)
         seen_renderers.add(renderer_key)
         blocks.append(json.loads(json.dumps(raw)))
     return tuple(blocks)
 
 
+def _validate_binding_schema(
+    block_type: str, schema: Dict[str, Any], legal_field_types: set
+) -> None:
+    """bindingSchema 自检：坏账本在服务启动时直接失败，不带病进入 Gate/Prompt。"""
+    required = schema.get("required", [])
+    optional = schema.get("optional", [])
+    if not isinstance(required, list) or not isinstance(optional, list):
+        raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.required/optional 必须是数组")
+    known_fields = set(required) | set(optional)
+    enums = schema.get("enums", {})
+    if not isinstance(enums, dict):
+        raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.enums 必须是对象")
+    for field, values in enums.items():
+        if field not in known_fields:
+            raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.enums 引用了未声明字段: {field}")
+        if not isinstance(values, list) or not values:
+            raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.enums.{field} 缺失或为空")
+    entity_field_refs = schema.get("entityFieldRefs", {})
+    if not isinstance(entity_field_refs, dict):
+        raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefs 必须是对象")
+    for field, field_type in entity_field_refs.items():
+        if field not in known_fields:
+            raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefs 引用了未声明字段: {field}")
+        if field_type not in legal_field_types:
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefs.{field} "
+                f"字段类型 '{field_type}' 不在合法域内"
+            )
+    ranges = schema.get("ranges", {})
+    if not isinstance(ranges, dict):
+        raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.ranges 必须是对象")
+    for field, bounds in ranges.items():
+        if field not in known_fields:
+            raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.ranges 引用了未声明字段: {field}")
+        if not isinstance(bounds, list) or len(bounds) != 2:
+            raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.ranges.{field} 必须是 [min, max]")
+    aggregate_fields = schema.get("aggregateFields", [])
+    if not isinstance(aggregate_fields, list):
+        raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.aggregateFields 必须是数组")
+    for field in aggregate_fields:
+        if field not in known_fields:
+            raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.aggregateFields 引用了未声明字段: {field}")
+
+
 EXPERIENCE_BLOCK_CATALOG_VERSION: int = int(_BLOCK_CATALOG.get("version", 0))
 EXPERIENCE_BLOCK_ALLOWED_SLOTS = _catalog_tuple("allowedSlots")
 EXPERIENCE_BLOCK_DATA_KINDS = _catalog_tuple("dataKinds")
 EXPERIENCE_BLOCK_EVENT_TYPES = _catalog_tuple("eventTypes")
+# FreeformInsight（2026-07-23）的安全原子积木白名单——Python 深校验、Prompt、
+# 前端渲染器共用同一份，见 freeform_block.py / block-registry.tsx。
+FREEFORM_ALLOWED_TAGS = _catalog_tuple("freeformAllowedTags")
+FREEFORM_ALLOWED_ICON_REFS = _catalog_tuple("freeformAllowedIconRefs")
+FREEFORM_ALLOWED_STYLE_PROPS = _catalog_tuple("freeformAllowedStyleProps")
 EXPERIENCE_BLOCKS = _load_experience_blocks()
 EXPERIENCE_BLOCK_TYPES = tuple(str(block["type"]) for block in EXPERIENCE_BLOCKS)
 EXPERIENCE_BLOCK_RENDERER_KEYS = tuple(
     str(block["rendererKey"]) for block in EXPERIENCE_BLOCKS
 )
+# type -> bindingSchema；Gate 的 binding 深校验按类型查表用（同一份账本，见 v5_model_gate）。
+EXPERIENCE_BLOCK_BINDING_SCHEMAS: Dict[str, Dict[str, Any]] = {
+    str(block["type"]): block["bindingSchema"] for block in EXPERIENCE_BLOCKS
+}
+# type -> allowedSlots；Gate 校验 page.layout 时按类型查表，确认区块放的槽位是
+# 目录里给它开放的槽位，而不只是"槽位名合法 + 区块 id 存在"（此前 layout 深
+# 校验只查这两条，槽位与区块类型的搭配完全没人管，见 Puck DropZone 的
+# allow/disallow 思路——目录数据其实早就够用，只是没人拿它去查 layout）。
+EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE: Dict[str, tuple] = {
+    str(block["type"]): tuple(block["allowedSlots"]) for block in EXPERIENCE_BLOCKS
+}
 
 
 def enum_str(*keys: str) -> str:
@@ -159,6 +226,42 @@ def experience_block_catalog_snapshot() -> Dict[str, object]:
     return json.loads(json.dumps(_BLOCK_CATALOG))
 
 
+def _format_binding_schema(schema: Dict[str, Any]) -> str:
+    """把一个 block 的 bindingSchema 结构渲染成给 LLM 看的一行说明；
+    Gate 校验用的是同一份 schema（见 v5_model_gate），改一处两边同步。"""
+    required = list(schema.get("required", []))
+    optional = list(schema.get("optional", []))
+    if not required and not optional:
+        note = schema.get("note")
+        return f"none ({note})" if note else "none"
+    enums = schema.get("enums", {})
+    entity_field_refs = schema.get("entityFieldRefs", {})
+    ranges = schema.get("ranges", {})
+    aggregate_fields = set(schema.get("aggregateFields", []))
+
+    def annotate(field: str) -> str:
+        if field in aggregate_fields:
+            return f"{field}(count|sum:<fieldId>|avg:<fieldId>)"
+        if field in enums:
+            return f"{field}({'|'.join(enums[field])})"
+        if field in entity_field_refs:
+            return f"{field}({entity_field_refs[field]} field)"
+        if field in ranges:
+            lo, hi = ranges[field]
+            return f"{field}({lo}-{hi})"
+        return field
+
+    parts = []
+    if required:
+        parts.append(f"required={','.join(annotate(f) for f in required)}")
+    if optional:
+        parts.append(f"optional={','.join(annotate(f) for f in optional)}")
+    note = schema.get("note")
+    if note:
+        parts.append(f"note={note}")
+    return "; ".join(parts)
+
+
 def experience_block_prompt_block() -> str:
     """把目录压成给 LLM 的封闭选材说明；不另写第二份区块清单。"""
     lines = [
@@ -173,13 +276,13 @@ def experience_block_prompt_block() -> str:
         lines.append(
             f"- {block['type']}: {block['description']} "
             f"data={','.join(block['dataKinds'])}; slots={','.join(block['allowedSlots'])}; "
-            f"events={','.join(block['events'])}"
+            f"events={','.join(block['events'])}; "
+            f"binding={_format_binding_schema(block['bindingSchema'])}"
         )
     lines.append(
-        "When emitting page.blocks, include a binding object specifying entityRef (required), "
-        "aggregate (count/sum:<fieldId>/avg:<fieldId>), timeDimensionRef+timeGrain for trends, "
-        "sortByRef+limit for rankings, timeFieldRef for feeds. "
-        "entityRef MUST match a datamodel entity id exactly."
+        "binding.entityRef (when required or provided) MUST match a datamodel entity id exactly; "
+        "every other *Ref field in binding is a bare field id scoped to that same entity "
+        "(datamodel.entities[entityRef].fields[].id), not an 'entity.field' qualified string."
     )
     lines.append(
         "Pages MAY include an actions array with instances of: "
@@ -191,8 +294,11 @@ def experience_block_prompt_block() -> str:
     lines.append(
         "Step 7 — Page layout: pages MAY declare a layout object with slots "
         "summary/primary/secondary/activity/content, each containing an ordered list of block ids. "
-        "Every block id in layout MUST exist in page.blocks. "
-        "Use layout to differentiate dashboards (large primary chart) from workbenches (summary+content table)."
+        "Every block id in layout MUST exist in page.blocks, AND each block MUST be placed only in one "
+        "of the slots listed for its type above (slots=... in the catalog entry) — e.g. a RankedList "
+        "(slots=primary,secondary) placed in the activity slot is a violation, even though the block id "
+        "itself exists. Use layout to differentiate dashboards (large primary chart) from workbenches "
+        "(summary+content table)."
     )
     lines.append(
         "Step 8 — Shell and device: appbundle MAY include experienceShell "

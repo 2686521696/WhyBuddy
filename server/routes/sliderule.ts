@@ -1107,62 +1107,38 @@ router.post("/sessions/:sessionId/screenshot", express.json({ limit: "512kb" }),
     return;
   } catch {}
 
-  // 无缓存：用 Playwright 截图
-  let chromium: any;
+  // 无缓存：转发到 Python，在 E2B 沙盒里跑 Playwright 截图。
+  //
+  // 2026-07-23 修复：这里原来是本地 chromium.launch()，但生产运行时镜像是
+  // node:22-alpine（musl libc）+ @playwright/test 只在 devDependencies（生产
+  // `pnpm install --prod` 排除）——这条路径在生产环境从未真正跑通过，
+  // import("@playwright/test") 必然失败，截图接口恒 503，前端一直静默回退
+  // 到 MiniAppThumb 假占位卡（应用中心卡片跟设计效果图差距的根子在这）。
+  // 改走 Python 侧的 E2B 沙盒（services/app_screenshot.py）：沙盒是真机
+  // Debian（glibc 兼容），宿主 Node/Python 镜像都不用装 Chromium。
+  // fail-closed：Python 侧 E2B_API_KEY / SLIDERULE_PUBLIC_APP_URL 任一未配置
+  // 时直接 404，这里照实转 503，前端行为和过去的失败态一致（无假装成功）。
+  const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
   try {
-    const pw = await import("@playwright/test");
-    chromium = pw.chromium ?? (pw as any).default?.chromium;
-  } catch {
-    res.status(503).json({ error: "playwright_unavailable" });
-    return;
-  }
-
-  const port = Number(process.env.SLIDERULE_SMOKE_PORT ?? process.env.VITE_DEV_PORT ?? 3000);
-  const appUrl = `http://localhost:${port}/agent-loop/sliderule`;
-
-  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
-  try {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-    const page = await ctx.newPage();
-
-    // 注入 localStorage session id（与 generated-app-browser-smoke 相同机制）
-    await page.addInitScript((sid: string) => {
-      try { localStorage.setItem("sliderule:active-session-id", sid); } catch {}
-    }, sessionId);
-
-    // 拦截 session 加载（透传真实会话状态，不触发推演）
-    await page.route(`**/api/sliderule/sessions/${sessionId}`, async (route: any) => {
-      try {
-        const r = await fetch(`http://localhost:${port}/api/sliderule/sessions/${encodeURIComponent(sessionId)}`);
-        const body = r.ok ? await r.text() : "{}";
-        await route.fulfill({ status: 200, contentType: "application/json", body });
-      } catch {
-        await route.fulfill({ status: 200, contentType: "application/json", body: '{"state":null}' });
+    const upstream = await fetch(
+      `${pythonRuntime.baseUrl}/api/sliderule/sessions/${encodeURIComponent(sessionId)}/e2b-screenshot`,
+      {
+        method: "POST",
+        headers: { "X-Internal-Key": pythonRuntime.internalKey },
+        // E2B 沙盒 cache-miss 冷启动（现装 playwright+chromium）实测约
+        // 30-90s，给足超时；命中 Node 侧文件缓存的请求走不到这里。
+        signal: AbortSignal.timeout(120_000),
       }
-    });
-    await page.route("**/api/sliderule/health", async (route: any) => {
-      await route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"ok"}' });
-    });
-
-    await page.goto(appUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
-
-    // 等待应用舞台（或超时降级全页截图）
-    try {
-      await page.waitForSelector('[data-testid="app-runtime-screen"]', { timeout: 12000 });
-    } catch {}
-
-    const appEl = await page.$('[data-testid="app-runtime-screen"]');
-    if (appEl) {
-      await appEl.screenshot({ path: screenshotPath });
-    } else {
-      await page.screenshot({ path: screenshotPath, clip: { x: 0, y: 0, width: 900, height: 520 } });
+    );
+    if (!upstream.ok) {
+      res.status(503).json({ error: "screenshot_unavailable" });
+      return;
     }
-    await ctx.close();
-
-    const buf = await fs.readFile(screenshotPath);
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    await fs.writeFile(screenshotPath, buf);
     res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(buf);
-  } finally {
-    await browser.close();
+  } catch {
+    res.status(503).json({ error: "screenshot_unavailable" });
   }
 });
 

@@ -49,6 +49,8 @@ PUBLISH_ENUM_VIOLATION = "PUBLISH_ENUM_VIOLATION"
 # 此处 re-export 保持历史名字；加合法值只改对应账本，四方一致性由测试锁死。
 from .schema_legal import (  # noqa: F401 — re-export 即接口
     CHART_TYPES,
+    EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE,
+    EXPERIENCE_BLOCK_BINDING_SCHEMAS,
     EXPERIENCE_BLOCK_TYPES,
     FIELD_TONES,
     NUMBER_FORMATS,
@@ -85,6 +87,107 @@ def _collect_datamodel_field_refs(datamodel: Dict[str, Any]) -> set:
             if fid:
                 refs.add(f"{eid}.{fid}")
     return refs
+
+
+def _validate_block_binding(
+    block_path: str,
+    btype: str,
+    binding: Dict[str, Any],
+    entity_ids: set,
+    field_types: Dict[str, str],
+    findings: List[Dict[str, Any]],
+) -> None:
+    """按 experience_block_catalog.json 的 bindingSchema 校验一个区块的 binding：
+    必填字段、枚举取值、引用字段的实体归属与类型、聚合表达式、数值范围。
+    同一份账本驱动 Prompt 文案（schema_legal._format_binding_schema）和这里的
+    校验——改账本两边自动同步，不再各写一份（E40.1 单一真相源延伸到 binding 层）。
+    区块类型不在合法域内时上层已经报过，这里直接跳过不重复报。"""
+    schema = EXPERIENCE_BLOCK_BINDING_SCHEMAS.get(btype)
+    if schema is None:
+        return
+
+    entity_ref = str(binding.get("entityRef") or "").strip()
+    if entity_ref and entity_ref not in entity_ids:
+        findings.append(_finding(
+            DANGLING, f"{block_path}.binding.entityRef",
+            f"entityRef '{entity_ref}' not found in datamodel.entities",
+            ref=entity_ref, skill="page",
+        ))
+
+    for field in schema.get("required", []):
+        value = binding.get(field)
+        if value is None or value == "":
+            findings.append(_finding(
+                MISSING_REQUIRED, f"{block_path}.binding.{field}",
+                f"{btype} binding requires '{field}'",
+                ref=field, skill="page",
+            ))
+
+    for field, legal_values in schema.get("enums", {}).items():
+        value = binding.get(field)
+        if value and value not in legal_values:
+            findings.append(_finding(
+                PUBLISH_ENUM_VIOLATION, f"{block_path}.binding.{field}",
+                f"{field} must be one of {'/'.join(legal_values)}, got '{value}'",
+                ref=str(value), skill="page",
+            ))
+
+    for field, bounds in schema.get("ranges", {}).items():
+        value = binding.get(field)
+        if value is not None:
+            lo, hi = bounds
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not (lo <= value <= hi):
+                findings.append(_finding(
+                    PUBLISH_INVALID_FIELD, f"{block_path}.binding.{field}",
+                    f"{field} must be a number in [{lo}, {hi}], got '{value}'",
+                    ref=str(value), skill="page",
+                ))
+
+    # entityRef 本身缺失/悬挂已经报过；没有实体锚点无法解析字段归属，不重复报噪音
+    if entity_ref and entity_ref in entity_ids:
+        for field, expected_type in schema.get("entityFieldRefs", {}).items():
+            value = binding.get(field)
+            if not value:
+                continue
+            qualified = f"{entity_ref}.{value}"
+            if qualified not in field_types:
+                findings.append(_finding(
+                    DANGLING, f"{block_path}.binding.{field}",
+                    f"{field} '{value}' not found in entity '{entity_ref}' fields",
+                    ref=str(value), skill="page",
+                ))
+            elif field_types[qualified] != expected_type:
+                findings.append(_finding(
+                    DANGLING, f"{block_path}.binding.{field}",
+                    f"{field} '{value}' must be a {expected_type} field (got '{field_types[qualified]}')",
+                    ref=str(value), skill="page",
+                ))
+
+        for field in schema.get("aggregateFields", []):
+            value = binding.get(field)
+            if not value or value == "count":
+                continue
+            prefix, sep, field_ref = str(value).partition(":")
+            if sep and prefix in ("sum", "avg"):
+                qualified = f"{entity_ref}.{field_ref}"
+                if qualified not in field_types:
+                    findings.append(_finding(
+                        DANGLING, f"{block_path}.binding.{field}",
+                        f"{field} '{value}' references unknown field '{field_ref}' on entity '{entity_ref}'",
+                        ref=field_ref, skill="page",
+                    ))
+                elif field_types[qualified] != "number":
+                    findings.append(_finding(
+                        DANGLING, f"{block_path}.binding.{field}",
+                        f"{field} '{value}' must reference a number field (got '{field_types[qualified]}')",
+                        ref=field_ref, skill="page",
+                    ))
+            else:
+                findings.append(_finding(
+                    PUBLISH_INVALID_FIELD, f"{block_path}.binding.{field}",
+                    f"{field} must be 'count', 'sum:<fieldId>', or 'avg:<fieldId>', got '{value}'",
+                    ref=str(value), skill="page",
+                ))
 
 
 def _collect_field_types(datamodel: Dict[str, Any]) -> Dict[str, str]:
@@ -149,6 +252,19 @@ def _iter_workflow_chains(workflow: Dict[str, Any]):
         cd = _as_dict(chain)
         label = str(cd.get("id") or cd.get("name") or i)
         yield f"workflow.chains[{label}]", cd
+
+
+def _collect_workflow_chain_ids(workflow: Dict[str, Any]) -> set:
+    """workflow.chains[] 的 id/name 集合（不含主链路、不含节点 id）——
+    WorkflowTimeline 的 props.chainRef 只认这个集合，跟悬挂引用检查用的
+    "chain+node 混一起"那份 _collect_workflow_ids 是两回事，不能共用。"""
+    ids: set = set()
+    for chain in _as_list(workflow.get("chains")):
+        cd = _as_dict(chain)
+        cid = str(cd.get("id") or cd.get("name") or "").strip()
+        if cid:
+            ids.add(cid)
+    return ids
 
 
 def _collect_workflow_ids(workflow: Dict[str, Any]) -> set:
@@ -448,7 +564,7 @@ def validate_five_system_model(
                     f"experience block type '{btype}' is not in the closed catalog",
                     ref=btype, skill="page",
                 ))
-            # binding 强类型校验（第一批）
+            # binding 深校验（按 bindingSchema 逐类型查表，见 _validate_block_binding）
             binding = bd.get("binding")
             if binding is not None:
                 if not isinstance(binding, dict):
@@ -457,34 +573,31 @@ def validate_five_system_model(
                         "binding must be an object",
                         skill="page",
                     ))
-                else:
-                    entity_ref = binding.get("entityRef")
-                    if entity_ref:
-                        known_entity_ids = {
-                            e.get("id")
-                            for e in _as_list(model.get("datamodel", {}).get("entities"))
-                            if e.get("id")
-                        }
-                        if entity_ref not in known_entity_ids:
-                            findings.append(_finding(
-                                DANGLING, f"{block_path}.binding.entityRef",
-                                f"entityRef '{entity_ref}' not found in datamodel.entities",
-                                ref=entity_ref, skill="page",
-                            ))
-                    time_grain = binding.get("timeGrain")
-                    if time_grain and time_grain not in ("day", "week", "month"):
-                        findings.append(_finding(
-                            PUBLISH_ENUM_VIOLATION, f"{block_path}.binding.timeGrain",
-                            f"timeGrain must be day/week/month, got '{time_grain}'",
-                            ref=time_grain, skill="page",
-                        ))
-                    sort_order = binding.get("sortOrder")
-                    if sort_order and sort_order not in ("asc", "desc"):
-                        findings.append(_finding(
-                            PUBLISH_ENUM_VIOLATION, f"{block_path}.binding.sortOrder",
-                            f"sortOrder must be asc/desc, got '{sort_order}'",
-                            ref=sort_order, skill="page",
-                        ))
+                elif btype:
+                    _validate_block_binding(block_path, btype, binding, entity_ids, field_types, findings)
+            # WorkflowTimeline 深校验：props.chainRef 留空=主链路（永远合法），
+            # 填值必须是 workflow.chains[] 里真实存在的链路 id，不能瞎编。
+            if btype == "WorkflowTimeline":
+                chain_ref = str(_as_dict(bd.get("props")).get("chainRef") or "").strip()
+                if chain_ref and chain_ref not in _collect_workflow_chain_ids(workflow):
+                    findings.append(_finding(
+                        DANGLING, f"{block_path}.props.chainRef",
+                        f"chainRef '{chain_ref}' not found in workflow.chains",
+                        ref=chain_ref, skill="page",
+                    ))
+            # FreeformInsight（2026-07-23）：这一轮主模型只需要交出
+            # designBrief——真正的结构/样式/dataRef 由二段生成产出，那层深
+            # 校验在 freeform_block.generate_freeform_block 里，这里只管
+            # "主模型有没有老实交出一句非空简介"，没交出的直接打回重生成，
+            # 不能让二段生成拿着空简介现场编。
+            if btype == "FreeformInsight":
+                design_brief = str(_as_dict(bd.get("props")).get("designBrief") or "").strip()
+                if not design_brief:
+                    findings.append(_finding(
+                        MISSING_REQUIRED, f"{block_path}.props.designBrief",
+                        "FreeformInsight block requires a non-empty props.designBrief",
+                        skill="page",
+                    ))
         # 库无关图表声明（schema 丰富一期，可选字段）：dimension / sum 指标
         # 必须解析到 datamodel 字段；type 限定在渲染层支持的形态集合。
         for chart in _as_list(pd.get("charts")):
@@ -833,7 +946,10 @@ def validate_five_system_model(
         layout = _as_dict(pd.get("layout"))
         if not layout:
             continue
-        page_block_ids = {str(b.get("id") or "").strip() for b in _as_list(pd.get("blocks")) if b.get("id")}
+        page_block_types = {
+            str(b.get("id") or "").strip(): str(b.get("type") or "").strip()
+            for b in _as_list(pd.get("blocks")) if b.get("id")
+        }
         layout_page = f"page.pages[{pd.get('id') or pi}].layout"
         for slot_key, block_refs in layout.items():
             if slot_key == "mobile":
@@ -846,10 +962,26 @@ def validate_five_system_model(
                 ))
             for ref in _as_list(block_refs):
                 ref_str = str(ref or "").strip()
-                if ref_str and ref_str not in page_block_ids:
+                if not ref_str:
+                    continue
+                if ref_str not in page_block_types:
                     findings.append(_finding(
                         DANGLING, f"{layout_page}.{slot_key}",
                         f"layout block ref '{ref_str}' not found in page.blocks",
+                        ref=ref_str, skill="page",
+                    ))
+                    continue
+                # 槽位 x 区块类型搭配校验（Puck DropZone allow 思路）：目录里
+                # 每个区块类型早就声明了自己能放哪些槽位（allowedSlots），此前
+                # 这里只查"槽位名合法 + 区块 id 存在"，从没拿这份数据交叉核对
+                # 过——一个 RankedList 塞进 activity 槽也不会被拦。
+                btype = page_block_types[ref_str]
+                allowed_slots_for_type = EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE.get(btype)
+                if allowed_slots_for_type and slot_key not in allowed_slots_for_type:
+                    findings.append(_finding(
+                        PUBLISH_ENUM_VIOLATION, f"{layout_page}.{slot_key}",
+                        f"block '{ref_str}' (type {btype}) is not allowed in slot '{slot_key}'; "
+                        f"catalog allows: {'/'.join(allowed_slots_for_type)}",
                         ref=ref_str, skill="page",
                     ))
 

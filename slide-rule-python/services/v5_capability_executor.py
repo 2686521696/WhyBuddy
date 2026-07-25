@@ -278,6 +278,30 @@ def _try_llm_generate_evidence(
         }
         return None
     _llm_generate_diagnostic = {}
+    # 身份主题要先生成——FreeformInsight 的配色会读 appIdentity.generatedTheme，
+    # 顺序反了就只能落回 8 预设，侧边栏和内容卡片颜色对不上。
+    try:
+        from .identity_theme_gen import enrich_identity_theme
+
+        model = enrich_identity_theme(model, goal)
+    except Exception as exc:  # noqa: BLE001 — 主题生成是增强项，故障不改变主路径语义
+        print(f"[v5_capability_executor] identity theme enrichment skipped: {str(exc)[:160]}")
+    try:
+        from .freeform_block import enrich_freeform_blocks
+
+        model = enrich_freeform_blocks(model)
+    except Exception as exc:  # noqa: BLE001 — 二段生成是增强项，故障不改变主路径语义
+        print(f"[v5_capability_executor] freeform block enrichment skipped: {str(exc)[:160]}")
+    # 首页/monitor 页面的总览区块也交给 FreeformInsight 设计——同样是增强项，
+    # 放在 identity 主题之后（配色要照 generatedTheme 走）；失败/未声明就照旧
+    # 落回 AppRuntimeScreen 里固定的 stats/charts/rankings/feeds 骨架，不影响
+    # 主路径。
+    try:
+        from .freeform_block import enrich_monitor_page_overviews
+
+        model = enrich_monitor_page_overviews(model)
+    except Exception as exc:  # noqa: BLE001 — 首页设计是增强项，故障不改变主路径语义
+        print(f"[v5_capability_executor] monitor overview enrichment skipped: {str(exc)[:160]}")
     artifacts = model_to_linkage_artifacts(model, goal)
     return {a["id"].replace("llm-linkage-", ""): a for a in artifacts}
 

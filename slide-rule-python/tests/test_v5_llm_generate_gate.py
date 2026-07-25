@@ -931,6 +931,122 @@ def test_binding_timeGrain_enum_violation():
     assert len(findings) >= 1
 
 
+# ---------- bindingSchema 深校验（单一真相源延伸到 binding 层，见 schema_legal） ----------
+
+
+def test_binding_trendchart_missing_required_timeDimensionRef():
+    """TrendChart 的 bindingHints 一直要求 timeDimensionRef 必填，但重构前 Gate
+    从不检查它——漏填也能通过。这条锁死"必填字段查表校验"这个新能力。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        pages[0]["blocks"] = [{"id": "b1", "type": "TrendChart", "binding": {"entityRef": entities[0]["id"]}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [
+        f for f in result["findings"]
+        if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD" and "timeDimensionRef" in f.get("path", "")
+    ]
+    assert len(findings) >= 1, f"expected timeDimensionRef required-field finding but got: {result['findings']}"
+
+
+def test_binding_rankedlist_missing_required_sortByRef():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        pages[0]["blocks"] = [{"id": "b1", "type": "RankedList", "binding": {"entityRef": entities[0]["id"]}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [
+        f for f in result["findings"]
+        if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD" and "sortByRef" in f.get("path", "")
+    ]
+    assert len(findings) >= 1
+
+
+def test_binding_rankedlist_sortByRef_wrong_field_type():
+    """sortByRef 指向一个非 number 字段——按数值排名排不出"第一名"，之前完全不检查字段类型。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        string_field = next(f["id"] for f in entities[0]["fields"] if f.get("type") == "string")
+        pages[0]["blocks"] = [{
+            "id": "b1", "type": "RankedList",
+            "binding": {"entityRef": entities[0]["id"], "sortByRef": string_field},
+        }]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "sortByRef" in f.get("path", "")]
+    assert len(findings) >= 1, f"expected sortByRef type-mismatch finding but got: {result['findings']}"
+
+
+def test_binding_metricgrid_aggregate_sum_wrong_field_type():
+    """aggregate='sum:<fieldId>' 指向非 number 字段——之前 Gate 完全不解析 aggregate 表达式。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        string_field = next(f["id"] for f in entities[0]["fields"] if f.get("type") == "string")
+        pages[0]["blocks"] = [{
+            "id": "b1", "type": "MetricGrid",
+            "binding": {"entityRef": entities[0]["id"], "aggregate": f"sum:{string_field}"},
+        }]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "aggregate" in f.get("path", "")]
+    assert len(findings) >= 1, f"expected aggregate type-mismatch finding but got: {result['findings']}"
+
+
+def test_binding_metricgrid_aggregate_invalid_syntax():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        pages[0]["blocks"] = [{
+            "id": "b1", "type": "MetricGrid",
+            "binding": {"entityRef": entities[0]["id"], "aggregate": "bogus"},
+        }]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if f.get("code") == "PUBLISH_INVALID_FIELD" and "aggregate" in f.get("path", "")]
+    assert len(findings) >= 1
+
+
+def test_binding_rankedlist_limit_out_of_range():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        pages[0]["blocks"] = [{
+            "id": "b1", "type": "RankedList",
+            "binding": {"entityRef": entities[0]["id"], "sortByRef": entities[0]["fields"][0]["id"], "limit": 500},
+        }]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "limit" in f.get("path", "")]
+    assert len(findings) >= 1
+
+
+def test_binding_trendchart_valid_binding_passes_clean():
+    """正确的 binding（entityRef + timeDimensionRef 都对得上真实字段与类型）不应产生 binding 相关 finding——防止新校验误报。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    entities = model.get("datamodel", {}).get("entities", [])
+    if pages and entities:
+        date_field = next(f["id"] for f in entities[0]["fields"] if f.get("type") == "date")
+        pages[0]["blocks"] = [{
+            "id": "b1", "type": "TrendChart",
+            "binding": {"entityRef": entities[0]["id"], "timeDimensionRef": date_field, "timeGrain": "week"},
+        }]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "binding" in f.get("path", "")]
+    assert len(findings) == 0, f"unexpected binding findings on a valid binding: {findings}"
+
+
 def test_strict_gate_fails_none_landing_page_ref():
     """strict=True 时 landingPageRef=None 应产生 PUBLISH_MISSING_REQUIRED_FIELD。"""
     model = _make_model_with_landing()
@@ -1067,6 +1183,119 @@ def test_layout_invalid_slot_fails():
     result = validate_five_system_model(model, require_landing_page_ref=True)
     findings = [f for f in result["findings"] if "layout" in f.get("path", "")]
     assert len(findings) >= 1, f"invalid slot should fail: {result}"
+
+def test_layout_block_type_not_allowed_in_slot_fails():
+    """RankedList 的目录 allowedSlots 是 primary/secondary；塞进 activity 槽
+    此前只查"id 存不存在"，不查"类型放得对不对"，能悄悄通过。这条锁死
+    "槽位 x 区块类型"交叉校验（Puck DropZone allow 思路）。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "RankedList"}]
+        pages[0]["layout"] = {"activity": ["b1"]}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [
+        f for f in result["findings"]
+        if f.get("code") == "PUBLISH_ENUM_VIOLATION" and "activity" in f.get("path", "")
+    ]
+    assert len(findings) >= 1, f"expected slot-type mismatch finding but got: {result['findings']}"
+
+
+def test_layout_block_type_allowed_in_declared_slot_passes():
+    """同一个 RankedList 放进目录允许的 secondary 槽应该干净通过——防止新校验误报。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "RankedList"}]
+        pages[0]["layout"] = {"secondary": ["b1"]}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    layout_findings = [f for f in result["findings"] if "layout" in f.get("path", "")]
+    assert len(layout_findings) == 0, f"valid slot placement should pass: {layout_findings}"
+
+
+# ---------- WorkflowTimeline（2026-07-23）：props.chainRef 深校验 ----------
+
+
+def _model_with_workflow_chain():
+    model = _make_model_with_landing()
+    model["workflow"] = model.get("workflow") or {}
+    model["workflow"]["nodes"] = [{"id": "n1", "name": "Step 1"}, {"id": "n2", "name": "Step 2"}]
+    model["workflow"]["transitions"] = [{"from": "n1", "to": "n2"}]
+    model["workflow"]["chains"] = [
+        {"id": "money_chain", "name": "Money", "nodes": [{"id": "m1"}], "transitions": []}
+    ]
+    return model
+
+
+def test_workflow_timeline_empty_chainref_passes():
+    """chainRef 留空 = 主链路，永远合法。"""
+    model = _model_with_workflow_chain()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "WorkflowTimeline", "props": {"title": "Flow"}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "chainRef" in f.get("path", "")]
+    assert len(findings) == 0, f"unexpected chainRef findings: {findings}"
+
+
+def test_workflow_timeline_valid_chainref_passes():
+    model = _model_with_workflow_chain()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "WorkflowTimeline", "props": {"chainRef": "money_chain"}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "chainRef" in f.get("path", "")]
+    assert len(findings) == 0, f"unexpected chainRef findings: {findings}"
+
+
+def test_workflow_timeline_unknown_chainref_fails():
+    """chainRef 指向不存在的链路——不能瞎编，必须报错。"""
+    model = _model_with_workflow_chain()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "WorkflowTimeline", "props": {"chainRef": "nonexistent"}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [
+        f for f in result["findings"]
+        if f.get("code") == "PUBLISH_DANGLING_CROSSREF" and "chainRef" in f.get("path", "")
+    ]
+    assert len(findings) >= 1, f"expected chainRef dangling finding but got: {result['findings']}"
+
+
+# ---------- FreeformInsight（2026-07-23）：主模型只需交出非空 designBrief ----------
+
+
+def test_freeform_insight_missing_designbrief_fails():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "f1", "type": "FreeformInsight", "props": {}}]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [
+        f for f in result["findings"]
+        if f.get("code") == "PUBLISH_MISSING_REQUIRED_FIELD" and "designBrief" in f.get("path", "")
+    ]
+    assert len(findings) >= 1, f"expected designBrief required finding but got: {result['findings']}"
+
+
+def test_freeform_insight_with_designbrief_passes():
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [
+            {"id": "f1", "type": "FreeformInsight", "props": {"designBrief": "客户增长趋势总览"}}
+        ]
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if "designBrief" in f.get("path", "")]
+    assert len(findings) == 0, f"unexpected designBrief findings: {findings}"
+
 
 def test_experience_shell_mode_enum_violation():
     """experienceShell.mode 非法值应产生 finding。"""

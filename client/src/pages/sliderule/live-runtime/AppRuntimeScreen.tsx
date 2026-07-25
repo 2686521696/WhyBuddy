@@ -68,7 +68,9 @@ import {
 } from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 import { resolveEntityRef } from "../system-screens/five-system-model";
-import { resolveIdentityTheme } from "./identity-themes";
+import { resolveIdentityTheme, hexToRgba } from "./identity-themes";
+import { autoPlaceGrid } from "./grid-compact";
+import { deriveLayoutTokens } from "./design-tokens";
 import {
   buildAiActionInputs,
   deriveAppRuntimeSchema,
@@ -76,6 +78,8 @@ import {
   type AppChartSchema,
   type AppFormFieldSchema,
   type AppPageChartSchema,
+  type AppPageFeedSchema,
+  type AppPageRankingSchema,
   type AppPageSchema,
   type AppRuntimeSchema,
 } from "./app-runtime-schema";
@@ -411,6 +415,12 @@ export function AppRuntimeScreen({
    *  不再浮在画布左上角：元素就绪前不渲染切换条（避免闪跳）。 */
   controlsContainer?: HTMLElement | null;
 }) {
+  // 2026-07-24：间距/圆角/阴影刻度——直接吃 antd 自己的 Design Token（见
+  // design-tokens.ts 头部注释），不是另起一套静态数字。卡片族（KPI/图表/
+  // 排行/动态）的 padding/margin/gap 统一从这里取，不再各处手写数字。
+  const { token: antdToken } = antdTheme.useToken();
+  const layout = React.useMemo(() => deriveLayoutTokens(antdToken), [antdToken]);
+
   // 表格列设置（表格自带能力）：按 pageId 记用户勾选的列；undefined = 默认列
   const [tableColPrefs, setTableColPrefs] = React.useState<
     Record<string, string[]>
@@ -882,6 +892,14 @@ export function AppRuntimeScreen({
 
   const recentInstances = [...state.instances].slice(-5).reverse();
 
+  // E40.2 应用身份：主题 token 决定品牌区/主色/内容底色/图表配色；缺省 = azure（老模型渲染与历史一致）。
+  // 声明必须在 chartCard 之前——homeContent 是即时求值的 JSX（非函数），
+  // 里面 .map(chartCard) 在这一行就会同步执行，晚声明会触发 TDZ 报错。
+  const identityTheme = resolveIdentityTheme(
+    schema.identity.themeId,
+    schema.identity.generatedTheme
+  );
+
   // 工作台内置图：ECharts 基建（与页面级声明图表同一 lazy chunk / 同一套 dataviz 约定）
   const chartCard = (chart: AppChartSchema) => {
     let option: Record<string, unknown> | null = null;
@@ -892,7 +910,8 @@ export function AppRuntimeScreen({
         (model.datamodel?.entities ?? []).slice(0, 6).map(e => ({
           label: e.name || e.id,
           value: (state.entities[e.id] ?? []).length,
-        }))
+        })),
+        { primary: identityTheme.primary, categorical: identityTheme.charts }
       );
       emptyHint = "暂无数据 — 到业务页面「新建」写入";
     } else if (chart.source === "instances:status") {
@@ -1287,8 +1306,8 @@ export function AppRuntimeScreen({
         <div
           style={{
             display: "flex",
-            gap: 12,
-            marginBottom: 12,
+            gap: layout.space.sm,
+            marginBottom: layout.space.sm,
             flexWrap: "wrap",
           }}
           data-testid="app-runtime-page-stats"
@@ -1320,7 +1339,7 @@ export function AppRuntimeScreen({
                 key={stat.id}
                 size="small"
                 style={{ flex: 1, minWidth: 140 }}
-                styles={{ body: { padding: "12px 16px" } }}
+                styles={{ body: { padding: `${layout.space.sm}px ${layout.space.md}px` } }}
                 data-testid={`app-runtime-page-stat-${stat.id}`}
               >
                 {displayVal === null ? (
@@ -1349,159 +1368,222 @@ export function AppRuntimeScreen({
     </>
   );
 
+  // E40.6 修复：monitor 骨架之前把 chartsBand（主列）和 widgetsBand（侧列）
+  // 拆成两个各自独立宽度的 flex 列——rankings+feeds 摞起来比 charts 那一行
+  // 高时，主列下方就会空出一块（真实撞到：2 图表 114px 高 vs 排行+动态摞起来
+  // 233px 高，主列下方净空 120px 左右什么都没有）。抽成下面这三个纯函数，
+  // monitorCombinedCards 把图表/排行/动态卡片放进同一个 flex-wrap 流里，
+  // 不再按列预分宽度，卡片跟着内容高度自然排布，不会再留出这种空档。
+  const renderRankingCard = (ranking: AppPageRankingSchema) => {
+    if (!page) return null;
+    {
+      const rankRows = [...(state.entities[ranking.entityId] ?? [])]
+        .map(row => ({ row, v: Number(row.values[ranking.sortFieldId]) }))
+        .filter(({ v }) => Number.isFinite(v))
+        .sort((a, b) => b.v - a.v)
+        .slice(0, ranking.limit);
+      const titleFieldId =
+        page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ?? "id";
+      return (
+        <Card
+          key={ranking.id}
+          size="small"
+          title={ranking.label}
+          style={{ flex: 1, minWidth: 240 }}
+          data-testid={`app-runtime-ranking-${ranking.id}`}
+        >
+          {rankRows.length === 0 ? (
+            <div style={{ color: "#999", fontSize: 12 }}>
+              暂无数据 — 录入带「{ranking.sortLabel}」的记录后自动上榜
+            </div>
+          ) : (
+            rankRows.map(({ row, v }, i) => (
+              <div
+                key={row.id || String(i)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: layout.space.xs,
+                  padding: `${layout.space.xxs}px 0`,
+                  borderBottom: i < rankRows.length - 1 ? "1px solid #f5f5f5" : "none",
+                }}
+              >
+                <span
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: layout.radius.md,
+                    textAlign: "center",
+                    lineHeight: "20px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    flexShrink: 0,
+                    background: i < 3 ? "var(--app-primary,#1677ff)" : "#f0f0f0",
+                    color: i < 3 ? "#fff" : "#8c8c8c",
+                  }}
+                >
+                  {i + 1}
+                </span>
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontSize: 13,
+                  }}
+                >
+                  {String(row.values[titleFieldId] ?? "—")}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#262626" }}>
+                  {v.toLocaleString("zh-CN")}
+                </span>
+              </div>
+            ))
+          )}
+        </Card>
+      );
+    }
+  };
+
+  const renderFeedCard = (feed: AppPageFeedSchema) => {
+    if (!page) return null;
+    const levelField = page.detailFields.find(f => f.id === feed.levelFieldId);
+    const feedRows = [...(state.entities[feed.entityId] ?? [])]
+      .filter(row => row.values[feed.timeFieldId])
+      .sort((a, b) =>
+        String(b.values[feed.timeFieldId] ?? "").localeCompare(
+          String(a.values[feed.timeFieldId] ?? "")
+        )
+      )
+      .slice(0, 6);
+    const titleFieldId =
+      page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ?? "id";
+    return (
+      <Card
+        key={feed.id}
+        size="small"
+        title={feed.label}
+        style={{ flex: 1, minWidth: 240 }}
+        data-testid={`app-runtime-feed-${feed.id}`}
+      >
+        {feedRows.length === 0 ? (
+          <div style={{ color: "#999", fontSize: 12 }}>
+            暂无动态 — 新记录会按时间倒序流入这里
+          </div>
+        ) : (
+          feedRows.map((row, i) => {
+            const levelValue = String(row.values[feed.levelFieldId ?? ""] ?? "");
+            const option = levelField?.options?.find(o => o.id === levelValue);
+            return (
+              <div
+                key={row.id || String(i)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: layout.space.xs,
+                  padding: `${layout.space.xxs}px 0`,
+                  borderBottom: i < feedRows.length - 1 ? "1px solid #f5f5f5" : "none",
+                }}
+              >
+                {option && (
+                  <Tag
+                    color={option.tone === "danger" ? "error" : option.tone}
+                    style={{ marginInlineEnd: 0 }}
+                  >
+                    {option.label}
+                  </Tag>
+                )}
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontSize: 13,
+                  }}
+                >
+                  {String(row.values[titleFieldId] ?? "—")}
+                </span>
+                <span style={{ fontSize: 11, color: "#8c8c8c", flexShrink: 0 }}>
+                  {String(row.values[feed.timeFieldId] ?? "")}
+                </span>
+              </div>
+            );
+          })
+        )}
+      </Card>
+    );
+  };
+
   const widgetsBand = page && (
     <>
       {(page.rankings.length > 0 || page.feeds.length > 0) && (
         <div
-          style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}
+          style={{ display: "flex", gap: layout.space.sm, marginBottom: layout.space.sm, flexWrap: "wrap" }}
           data-testid="app-runtime-page-widgets"
         >
-          {page.rankings.map(ranking => {
-            const rankRows = [...(state.entities[ranking.entityId] ?? [])]
-              .map(row => ({ row, v: Number(row.values[ranking.sortFieldId]) }))
-              .filter(({ v }) => Number.isFinite(v))
-              .sort((a, b) => b.v - a.v)
-              .slice(0, ranking.limit);
-            const titleFieldId =
-              page.detailFields.find(
-                f => f.type === "string" && f.id !== "id"
-              )?.id ?? "id";
-            return (
-              <Card
-                key={ranking.id}
-                size="small"
-                title={ranking.label}
-                style={{ flex: 1, minWidth: 240 }}
-                data-testid={`app-runtime-ranking-${ranking.id}`}
-              >
-                {rankRows.length === 0 ? (
-                  <div style={{ color: "#999", fontSize: 12 }}>
-                    暂无数据 — 录入带「{ranking.sortLabel}」的记录后自动上榜
-                  </div>
-                ) : (
-                  rankRows.map(({ row, v }, i) => (
-                    <div
-                      key={row.id || String(i)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "5px 0",
-                        borderBottom: i < rankRows.length - 1 ? "1px solid #f5f5f5" : "none",
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 20,
-                          height: 20,
-                          borderRadius: 6,
-                          textAlign: "center",
-                          lineHeight: "20px",
-                          fontSize: 11,
-                          fontWeight: 600,
-                          flexShrink: 0,
-                          background: i < 3 ? "var(--app-primary,#1677ff)" : "#f0f0f0",
-                          color: i < 3 ? "#fff" : "#8c8c8c",
-                        }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          fontSize: 13,
-                        }}
-                      >
-                        {String(row.values[titleFieldId] ?? "—")}
-                      </span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "#262626" }}>
-                        {v.toLocaleString("zh-CN")}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </Card>
-            );
-          })}
-          {page.feeds.map(feed => {
-            const levelField = page.detailFields.find(f => f.id === feed.levelFieldId);
-            const feedRows = [...(state.entities[feed.entityId] ?? [])]
-              .filter(row => row.values[feed.timeFieldId])
-              .sort((a, b) =>
-                String(b.values[feed.timeFieldId] ?? "").localeCompare(
-                  String(a.values[feed.timeFieldId] ?? "")
-                )
-              )
-              .slice(0, 6);
-            const titleFieldId =
-              page.detailFields.find(
-                f => f.type === "string" && f.id !== "id"
-              )?.id ?? "id";
-            return (
-              <Card
-                key={feed.id}
-                size="small"
-                title={feed.label}
-                style={{ flex: 1, minWidth: 240 }}
-                data-testid={`app-runtime-feed-${feed.id}`}
-              >
-                {feedRows.length === 0 ? (
-                  <div style={{ color: "#999", fontSize: 12 }}>
-                    暂无动态 — 新记录会按时间倒序流入这里
-                  </div>
-                ) : (
-                  feedRows.map((row, i) => {
-                    const levelValue = String(row.values[feed.levelFieldId ?? ""] ?? "");
-                    const option = levelField?.options?.find(o => o.id === levelValue);
-                    return (
-                      <div
-                        key={row.id || String(i)}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "5px 0",
-                          borderBottom: i < feedRows.length - 1 ? "1px solid #f5f5f5" : "none",
-                        }}
-                      >
-                        {option && (
-                          <Tag
-                            color={option.tone === "danger" ? "error" : option.tone}
-                            style={{ marginInlineEnd: 0 }}
-                          >
-                            {option.label}
-                          </Tag>
-                        )}
-                        <span
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            fontSize: 13,
-                          }}
-                        >
-                          {String(row.values[titleFieldId] ?? "—")}
-                        </span>
-                        <span style={{ fontSize: 11, color: "#8c8c8c", flexShrink: 0 }}>
-                          {String(row.values[feed.timeFieldId] ?? "")}
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </Card>
-            );
-          })}
+          {page.rankings.map(renderRankingCard)}
+          {page.feeds.map(renderFeedCard)}
         </div>
       )}
     </>
   );
+
+  const renderChartCard = (chart: AppPageChartSchema) => {
+    if (!page) return null;
+    const chartRows = state.entities[chart.entityId] ?? [];
+    const option = buildEchartsOption(chart, chartRows, {
+      primary: identityTheme.primary,
+      categorical: identityTheme.charts,
+    });
+    return (
+      <Card
+        key={chart.id}
+        size="small"
+        title={chart.label}
+        style={{
+          flex: 1,
+          // dashboard 范式：图表升主角，两列铺开（表格退居下方小表）
+          minWidth: page.view.kind === "dashboard" ? "45%" : 220,
+        }}
+        // 试过 Tremor 的"图表 height:100% 跟着卡片拉伸"思路，真机验证是反面
+        // 案例：卡片被 monitorCombinedRow 的 alignItems:"stretch" 拉高是个
+        // 多轮布局才收敛的过程，ECharts 的 ResizeObserver 在中间某次尺寸
+        // （355×264）上调用了 resize()，最终容器收敛到 246×202 后再没收到
+        // 新的 resize，画布跟容器错位、图表整个看起来是空的——这正是 shadcn
+        // ChartContainer 讨论里"图表必须有明确高度锚点，不能指望流式百分比
+        // 高度在容器还在变化时也能测准"的真实反面教材。改回图表固定高度
+        // （不跟着卡片拉伸），卡片被拉高时用 justifyContent:"center" 把
+        // 固定高度的图表在多出来的空间里居中，而不是让图表本身去追一个
+        // 还没稳定下来的容器尺寸。
+        styles={{ body: { display: "flex", flexDirection: "column", justifyContent: "center" } }}
+        data-testid={`app-runtime-page-chart-${chart.id}`}
+      >
+        {option ? (
+          <React.Suspense
+            fallback={
+              <div style={{ fontSize: 11, color: INK.faint, padding: `${layout.space.md}px 0` }}>
+                图表加载中…
+              </div>
+            }
+          >
+            <LazyEchartsChart
+              option={option}
+              height={200}
+              ariaLabel={`${chart.label}：按${chart.dimensionLabel}统计${chart.metricLabel}`}
+            />
+          </React.Suspense>
+        ) : (
+          <div style={{ fontSize: 11, color: INK.faint, padding: `${layout.space.md}px 0` }}>
+            暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
+          </div>
+        )}
+      </Card>
+    );
+  };
 
   const chartsBand = page && (
     <>
@@ -1509,65 +1591,131 @@ export function AppRuntimeScreen({
         <div
           style={{
             display: "flex",
-            gap: 12,
-            marginBottom: 12,
+            gap: layout.space.sm,
+            marginBottom: layout.space.sm,
             flexWrap: "wrap",
           }}
           data-testid="app-runtime-page-charts"
         >
-          {page.charts.map((chart: AppPageChartSchema) => {
-            const chartRows = state.entities[chart.entityId] ?? [];
-            const option = buildEchartsOption(chart, chartRows);
-            return (
-              <Card
-                key={chart.id}
-                size="small"
-                title={chart.label}
-                style={{
-                  flex: 1,
-                  // dashboard 范式：图表升主角，两列铺开（表格退居下方小表）
-                  minWidth: page.view.kind === "dashboard" ? "45%" : 220,
-                }}
-                data-testid={`app-runtime-page-chart-${chart.id}`}
-              >
-                {option ? (
-                  <React.Suspense
-                    fallback={
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: INK.faint,
-                          padding: "16px 0",
-                        }}
-                      >
-                        图表加载中…
-                      </div>
-                    }
-                  >
-                    <LazyEchartsChart
-                      option={option}
-                      height={180}
-                      ariaLabel={`${chart.label}：按${chart.dimensionLabel}统计${chart.metricLabel}`}
-                    />
-                  </React.Suspense>
-                ) : (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: INK.faint,
-                      padding: "16px 0",
-                    }}
-                  >
-                    暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+          {page.charts.map(renderChartCard)}
         </div>
       )}
     </>
   );
+
+  // E40.6 修复：monitor 骨架的 chartsBand/widgetsBand 之前拆成两个各自独立
+  // 宽度的 flex 列（图表主列 + 排行/动态侧列），排行+动态摞起来比图表那一行
+  // 高时，主列下方就会净空出一块（真实撞到：2 图表 114px 高 vs 排行+动态
+  // 233px 高，主列下方空出 120px 左右）。第一版临时改成单条 flex-wrap 流
+  // 绕开了这一次，但卡片一多、高度差异一大，从左到右顺序换行不会往回找
+  // 空位，还是会留白——现在接上 grid-compact.ts（搬自 GitHub 上
+  // react-grid-layout 的核心压实算法，见该文件头部）："最短列优先"贪心
+  // 摆放 + 竖直压实兜底，卡片按估算高度自动分列、列内紧贴堆叠，不会再
+  // 留出空档。高度是估算值（图表固定/排行动态按真实行数算），不追求
+  // 像素级精确，只保证不留白。
+  const monitorCombinedRow = page && (() => {
+    const CHART_HEIGHT_ESTIMATE = 230; // 卡片头(40) + echarts 固定 180 + 内边距
+    const ROW_HEIGHT_ESTIMATE = 30; // 排行/动态每行的实测行高（padding 5px*2 + 内容）
+    const LIST_CHROME_ESTIMATE = 56; // 卡片头(40) + 上下内边距
+
+    const cardHeights: Array<{ i: string; h: number }> = [
+      ...page.charts.map(c => ({ i: `chart:${c.id}`, h: CHART_HEIGHT_ESTIMATE })),
+      ...page.rankings.map(r => {
+        const rowCount = Math.min(
+          (state.entities[r.entityId] ?? []).length,
+          r.limit
+        );
+        return { i: `ranking:${r.id}`, h: LIST_CHROME_ESTIMATE + Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE };
+      }),
+      ...page.feeds.map(f => {
+        const rowCount = Math.min((state.entities[f.entityId] ?? []).length, 6);
+        return { i: `feed:${f.id}`, h: LIST_CHROME_ESTIMATE + Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE };
+      }),
+    ];
+    if (cardHeights.length === 0) return null;
+
+    const cols = Math.min(3, cardHeights.length);
+    const placed = autoPlaceGrid(cardHeights, cols);
+
+    const nodeById = new Map<string, React.ReactNode>([
+      ...page.charts.map(c => [`chart:${c.id}`, renderChartCard(c)] as const),
+      ...page.rankings.map(r => [`ranking:${r.id}`, renderRankingCard(r)] as const),
+      ...page.feeds.map(f => [`feed:${f.id}`, renderFeedCard(f)] as const),
+    ]);
+
+    const columns: string[][] = Array.from({ length: cols }, () => []);
+    for (const item of [...placed].sort((a, b) => a.y - b.y)) {
+      columns[item.x]?.push(item.i);
+    }
+
+    return (
+      // alignItems: "stretch"（不是 flex-start）——列与列之间高度天然不同步
+      // （比如这一列就 1 张图表卡，隔壁摞了排行+动态两张），flex-start 会让
+      // 矮的那列在自己内容结束处直接停住，下面空出一块没有任何元素的白底，
+      // 用户截图圈过的就是这个（真去查过 DOM，那块确实不是渲染了个空
+      // Card，就是纯背景）。改 stretch 后每一列都撑到最高列那么高，列内
+      // 卡片本来就带的 flex:1（renderChartCard/renderRankingCard/
+      // renderFeedCard 三处都设了）会把卡片自己的边框/背景撑满这段高度——
+      // 富余空间留在卡片"内部"（看起来是留白排版），不再是卡片外面一块
+      // 没有归属的裸白背景。
+      <div
+        style={{ display: "flex", gap: layout.space.sm, alignItems: "stretch" }}
+        data-testid="app-runtime-monitor-combined"
+      >
+        {columns.map((ids, colIdx) => (
+          <div
+            key={colIdx}
+            style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: layout.space.sm }}
+          >
+            {ids.map(id => (
+              <React.Fragment key={id}>{nodeById.get(id)}</React.Fragment>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  })();
+
+  // 2026-07-24：monitor 页面的总览区块——freeformOverview 是 Python
+  // enrich_monitor_page_overviews 按这个页面已声明的 stats/charts 当内容
+  // 清单、交给 FreeformInsight 设计出来的 KPI+图表版式（不再是所有 app
+  // 首页都长一样的固定网格骨架）。数字仍然经 ExperienceBlockBoundary →
+  // renderFreeformNode 的 dataRef 现算校验，不会因为换了渲染路径就失去
+  // "不能编数字"这层保证。未声明（老快照/生成失败）时下面的
+  // monitorCombinedRow 固定骨架原样兜底。
+  //
+  // 故意不包含 rankings/feeds——FreeformInsight 的 dataRef 只能表达聚合值
+  // （count/sum/avg），没有"枚举真实第 N 行记录"的能力（真机测试过：LLM
+  // 收到这个要求后只能画出表头+空表身）。排行榜/动态流这类必须逐行展示
+  // 真实记录的内容，固定走 monitorDynamicLists 下面的动态渲染。
+  const monitorFreeformOverview = page?.freeformOverview ? (
+    <div data-testid="app-runtime-monitor-freeform-overview">
+      <ExperienceBlockBoundary
+        block={{
+          id: `${page.id}:freeform-overview`,
+          type: "FreeformInsight",
+          freeformContent: page.freeformOverview,
+        }}
+        entityRows={state.entities}
+        chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
+      />
+    </div>
+  ) : null;
+
+  // freeformOverview 只负责 KPI+图表；排行榜/动态流这类"必须是真实逐行
+  // 记录"的内容永远走这条真实动态渲染路径（renderRankingCard/
+  // renderFeedCard 直接读 state.entities 真实行数据），跟 freeformOverview
+  // 是否存在无关——两者并列渲染，不是互斥关系。
+  const monitorDynamicLists =
+    page && (page.rankings.length > 0 || page.feeds.length > 0) ? (
+      <div
+        style={{ display: "flex", gap: layout.space.sm, flexWrap: "wrap", marginTop: layout.space.sm }}
+        data-testid="app-runtime-monitor-dynamic-lists"
+      >
+        {page.rankings.map(renderRankingCard)}
+        {page.feeds.map(renderFeedCard)}
+      </div>
+    ) : null;
 
   const defaultPageContent = page && (
     <Card
@@ -1673,6 +1821,9 @@ export function AppRuntimeScreen({
             filterFieldOptions={filterableEnumFields}
             dateRangeField={dateRangeField}
             onFilterChange={handlePageFilterChange}
+            workflow={model.workflow}
+            entityRows={state.entities}
+            chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
           />
         );
 
@@ -1771,16 +1922,17 @@ export function AppRuntimeScreen({
         />
       )}
       {page.view.kind === "monitor" ? (
-        <>
-          {statsBand}
-          <div
-            style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
-            data-testid="app-runtime-monitor-split"
-          >
-            <div style={{ flex: 2, minWidth: 0 }}>{chartsBand}</div>
-            <div style={{ flex: 1, minWidth: 220 }}>{widgetsBand}</div>
-          </div>
-        </>
+        monitorFreeformOverview ? (
+          <>
+            {monitorFreeformOverview}
+            {monitorDynamicLists}
+          </>
+        ) : (
+          <>
+            {statsBand}
+            {monitorCombinedRow}
+          </>
+        )
       ) : (
         <>
           {statsBand}
@@ -1885,9 +2037,7 @@ export function AppRuntimeScreen({
 
   const pageContent = defaultPageContent;
 
-  // E40.2 应用身份：主题 token 决定品牌区/主色/内容底色；菜单项抽出来给
-  // side/top 两种导航形态共用。缺省 = azure（老模型渲染与历史一致）。
-  const identityTheme = resolveIdentityTheme(schema.identity.themeId);
+  // identityTheme 已在上面 chartCard 之前声明（菜单项抽出来给 side/top 两种导航形态共用）。
   // Step 9：视觉配方——只管密度/深色开关/圆角，主色仍归 identityTheme；两者叠加。
   const designRecipe = resolveDesignRecipe(schema.identity.designRecipeRef);
   const brandGradient = `linear-gradient(135deg,${identityTheme.primary},${identityTheme.gradTo})`;
@@ -1923,7 +2073,16 @@ export function AppRuntimeScreen({
 
   const desktopShell = (
     <Layout style={{ height: "100%" }} data-testid="app-shell-side">
-      <Layout.Sider width={device === "tablet" ? 176 : 208} theme="dark">
+      <Layout.Sider
+        width={device === "tablet" ? 176 : 208}
+        theme="dark"
+        // antd 的 Layout.siderBg token 是当 background-color 用的，塞一个
+        // linear-gradient(...) 字符串进去会被静默吃掉、退化成纯色（实测
+        // 2026-07-24）。渐变必须走这条原生 style.background，token 仍然
+        //留着当纯色场景的默认值（generatedTheme 没给渐变时两条路径同值，
+        // 互不冲突）。
+        style={{ background: identityTheme.sidebarBg }}
+      >
         <div
           style={{
             height: 56,
@@ -1950,7 +2109,10 @@ export function AppRuntimeScreen({
           </div>
           <span
             style={{
-              color: "#fff",
+              // 标题文字直接落在 identityTheme.sidebarBg 上（跟图标不一样，图标
+              // 在小色块徽标里，背景永远是 brandGradient）——之前写死白字，主题
+              // 生成出浅色/近白侧边栏时标题就看不见了，改跟 sidebarText 走。
+              color: identityTheme.sidebarText,
               fontWeight: 600,
               fontSize: 15,
               whiteSpace: "nowrap",
@@ -2016,7 +2178,7 @@ export function AppRuntimeScreen({
     <Layout style={{ height: "100%" }} data-testid="app-shell-top">
       <Layout.Header
         style={{
-          background: "#001529",
+          background: identityTheme.sidebarBg,
           display: "flex",
           alignItems: "center",
           gap: 14,
@@ -2042,7 +2204,8 @@ export function AppRuntimeScreen({
         </div>
         <span
           style={{
-            color: "#fff",
+            // 同上：文字直接落在 identityTheme.sidebarBg 上，不能写死白色。
+            color: identityTheme.sidebarText,
             fontWeight: 600,
             fontSize: 15,
             whiteSpace: "nowrap",
@@ -2062,7 +2225,7 @@ export function AppRuntimeScreen({
           items={navMenuItems}
           style={{ flex: 1, minWidth: 0, background: "transparent" }}
         />
-        <span style={{ fontSize: 13, color: "rgba(255,255,255,0.65)" }}>
+        <span style={{ fontSize: 13, color: identityTheme.sidebarText, opacity: 0.65 }}>
           当前角色
         </span>
         <Select
@@ -2236,6 +2399,36 @@ export function AppRuntimeScreen({
                   : {}),
               },
               algorithm: designRecipeAlgorithms(designRecipe, isTablet),
+              // 8 套身份主题此前只染了头像/图标这些边角元素——Sider/Menu 的
+              // theme="dark" 是 antd 内置深蓝 #001529，跟 identityTheme 完全无关，
+              // 导致 8 套主题的侧栏永远长一个样。这里用 antd v5 的组件级 token
+              // 把侧栏底色/文字接到 identityTheme.sidebarBg/sidebarText；选中态
+              // 直接复用 primary/primaryFg（对齐 tweakcn 真实预设的
+              // sidebar-primary 惯例：选中态就是主色本身，不用另起一套配色）。
+              components: {
+                Layout: { siderBg: identityTheme.sidebarBg },
+                Menu: {
+                  darkItemBg: identityTheme.sidebarBg,
+                  darkSubMenuItemBg: identityTheme.sidebarBg,
+                  darkItemColor: identityTheme.sidebarText,
+                  // 之前写死白底白字假设侧边栏永远深色——生成主题给浅色侧边栏
+                  // 时这层 hover 反馈直接消失/文字不可读，改成跟主色调一层
+                  // 半透明叠色，深浅侧边栏都看得见、且跟品牌色呼应。
+                  darkItemHoverBg: hexToRgba(identityTheme.primary, 0.12),
+                  darkItemHoverColor: identityTheme.sidebarText,
+                  darkItemSelectedBg: identityTheme.primary,
+                  darkItemSelectedColor: identityTheme.primaryFg,
+                  // 2026-07-24 修复真实撞到的坑：antd 的 darkItemDisabledColor
+                  // 默认值是"白色 25% 透明度"（colorTextLightSolid 打折），
+                  // 这个默认值假设侧边栏永远是深色——生成主题给了纯白侧边栏
+                  // （sidebarBg:"#FFFFFF"）时，无权限菜单项的文字/锁图标变成
+                  // 白底白字，直接隐形（真机截图核实：8 个菜单项里 5 个被
+                  // 锁的位置只剩一段空白，肉眼看不出还有内容）。改成跟
+                  // sidebarText 同色但打透明度，深浅侧边栏都能读出"这项被
+                  // 锁住了"而不是凭空消失。
+                  darkItemDisabledColor: hexToRgba(identityTheme.sidebarText, 0.35),
+                },
+              },
             }}
           >
             {isPhone

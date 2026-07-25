@@ -1338,3 +1338,53 @@ def eval_baseline(x_internal_key: Optional[str] = Header(None)):
     if not isinstance(payload, dict):
         return JSONResponse({"error": "BASELINE_NOT_FOUND"}, status_code=404)
     return payload
+
+
+# ---------------------------------------------------------------------------
+# 应用缩略图真实截图（2026-07-23 修复）：Node 侧本地 chromium.launch() 在生产
+# Alpine 镜像里必然失败（musl libc + @playwright/test 只在 devDependencies，
+# `pnpm install --prod` 排除），一直静默回退假占位卡。改到 E2B 沙盒执行
+# Playwright（沙盒是 Debian，glibc 兼容），宿主 Node 镜像零 Chromium 依赖。
+# Node 的 /sessions/:sessionId/screenshot 路由代理到这里，缓存逻辑仍在 Node。
+# ---------------------------------------------------------------------------
+
+
+@router.post("/sessions/{sid}/e2b-screenshot")
+def capture_session_screenshot(sid: str, x_internal_key: Optional[str] = Header(None)):
+    """在 E2B 沙盒截图 sid 对应的已闭环应用；不可用/失败 → 404，Node 侧照实转 503。
+
+    fail-closed：E2B_API_KEY 缺失或 SLIDERULE_PUBLIC_APP_URL 未配置时不尝试，
+    不用本地兜底掩盖——这两个条件任一没配，说明这套环境本来就截不了图。
+    """
+    _auth(x_internal_key)
+    from services.app_screenshot import capture_app_screenshot, e2b_screenshot_available
+
+    if not e2b_screenshot_available():
+        return JSONResponse({"error": "screenshot_unavailable"}, status_code=404)
+    png_bytes = capture_app_screenshot(sid)
+    if not png_bytes:
+        return JSONResponse({"error": "screenshot_failed"}, status_code=404)
+    from fastapi import Response
+
+    return Response(content=png_bytes, media_type="image/png")
+
+
+# ---------------------------------------------------------------------------
+# FreeformInsight 自我校验闭环用的临时预览接口（2026-07-24）：generate_freeform_
+# block 生成出候选 JSON 后、写入任何 session 之前，想真实渲染一次截图跟参考图
+# 比对。候选内容这时还没有 session_id，走不了上面按 session 截图的路子——
+# 存一份到内存里给个随机 id，E2B 沙盒里的浏览器拿这个 id 来问内容、渲染。
+# 未鉴权（GET，无 x_internal_key 校验）：内容本身是几分钟内过期的一次性预览
+# 负载，不是敏感数据，鉴权反而会挡住 E2B 沙盒里浏览器的直接 fetch。
+# ---------------------------------------------------------------------------
+
+
+@router.get("/freeform-preview/{pid}")
+def get_freeform_preview(pid: str):
+    """按 id 取一份临时预览负载；不存在/已过期 → 404，不伪造内容。"""
+    from services.freeform_preview_store import get_preview
+
+    payload = get_preview(pid)
+    if payload is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(payload)
