@@ -1432,15 +1432,37 @@ async def list_generated_app_versions(root_id: str, x_internal_key: Optional[str
 
 
 @router.post("/apps/{app_id}/fork")
-async def fork_generated_app(app_id: str, x_internal_key: Optional[str] = Header(None)):
-    """以某个生成应用为起点分出一条新血缘（新 root·v1·parent 指向源）。"""
+async def fork_generated_app(
+    app_id: str, request: Request, x_internal_key: Optional[str] = Header(None)
+):
+    """以某个生成应用为起点分出一条新血缘（新 root·v1·parent 指向源）。
+    可选 body {name}：给副本改名（避免同名孪生卡，对标 Budibase duplicateApp）。"""
     _auth(x_internal_key)
     from services import app_store
 
-    new_id = app_store.fork_app(app_id)
+    new_name: Optional[str] = None
+    try:
+        body = await request.json()
+        if isinstance(body, dict) and isinstance(body.get("name"), str) and body["name"].strip():
+            new_name = body["name"].strip()
+    except Exception:
+        pass  # 无 body / 非 JSON → 不改名
+
+    new_id = app_store.fork_app(app_id, new_name=new_name)
     if new_id is None:
         raise HTTPException(404, "source app not found")
     return {"id": new_id}
+
+
+@router.delete("/apps/{app_id}")
+async def delete_generated_app(app_id: str, x_internal_key: Optional[str] = Header(None)):
+    """从画廊移除一个生成应用记录（只删记录，不动对应推演会话）。"""
+    _auth(x_internal_key)
+    from services import app_store
+
+    if not app_store.delete_app(app_id):
+        raise HTTPException(404, "app not found")
+    return {"ok": True}
 
 
 @router.get("/apps-export")

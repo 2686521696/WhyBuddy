@@ -89,6 +89,25 @@ def test_fork_missing_source_returns_none(configured_store):
     assert store.fork_app("nope") is None
 
 
+def test_fork_with_new_name_renames_copy(configured_store):
+    """复刻改名（对标 Budibase）：副本的 productName + product_name 元数据都跟着改，
+    源应用不受影响。"""
+    a = store.save_app(_model("咖营通"), session_id="s1")
+    fk = store.fork_app(a, new_name="奶茶版")
+    rec = store.get_app(fk)
+    assert rec["product_name"] == "奶茶版"
+    assert rec["model_json"]["appbundle"]["appIdentity"]["productName"] == "奶茶版"
+    assert rec["parent_id"] == a and rec["root_id"] == fk, "仍是新血缘、parent 指源"
+    assert store.get_app(a)["product_name"] == "咖营通", "源应用名不受影响"
+
+
+def test_fork_default_does_not_inherit_source_session(configured_store):
+    """默认不继承源会话——避免点开副本却进了源应用的会话。"""
+    a = store.save_app(_model("咖营通"), session_id="s1")
+    fk = store.fork_app(a)  # 不传 session_id
+    assert store.get_app(fk)["session_id"] is None
+
+
 def test_dedup_key_is_idempotent(configured_store):
     model = _model("咖营通")
     sig = store.model_signature("s1", model)
@@ -105,6 +124,18 @@ def test_dedup_key_new_record_when_model_changes(configured_store):
                          dedup_key=store.model_signature("s1", _model("咖营通", entities=5)))
     assert id1 != id2, "模型内容变了 → 签名变 → 落新记录"
     assert len(store.list_apps()) == 2
+
+
+def test_delete_removes_record(configured_store):
+    a = store.save_app(_model("咖营通"), session_id="s1")
+    store.save_app(_model("宠医云"), session_id="s2")
+    assert store.delete_app(a) is True
+    assert store.get_app(a) is None
+    assert len(store.list_apps()) == 1, "删掉一条后列表只剩另一条"
+
+
+def test_delete_missing_returns_false(configured_store):
+    assert store.delete_app("does-not-exist") is False
 
 
 def test_export_all_returns_full_records(configured_store):
