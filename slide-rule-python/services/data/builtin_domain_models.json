@@ -870,7 +870,24 @@
     "productName": "采买通",
     "theme": "azure",
     "icon": "cart",
-    "nav": "side"
+    "nav": "side",
+    "generatedTheme": {
+     "label": "湛蓝·严谨采购",
+     "primary": "#1267A5",
+     "primaryHover": "#0B4F82",
+     "gradTo": "#4A9AC7",
+     "primaryFg": "#FFFFFF",
+     "contentBg": "#F7FAFC",
+     "accentBg": "#E8F3F9",
+     "accentFg": "#164A6B",
+     "charts": [
+      "#1678B5",
+      "#4D97BF",
+      "#285574"
+     ],
+     "sidebarBg": "linear-gradient(180deg, #172B3A, #1B4C6B)",
+     "sidebarText": "#F5FAFC"
+    }
    }
   }
  },
@@ -1815,7 +1832,24 @@
     "productName": "假期无忧",
     "theme": "forest",
     "icon": "calendar",
-    "nav": "side"
+    "nav": "side",
+    "generatedTheme": {
+     "label": "松绿·稳序办公",
+     "primary": "#176B55",
+     "primaryHover": "#125443",
+     "gradTo": "#6FAF9B",
+     "primaryFg": "#FFFFFF",
+     "contentBg": "#F7FAF8",
+     "accentBg": "#E5F2ED",
+     "accentFg": "#174C3E",
+     "charts": [
+      "#236F5B",
+      "#579184",
+      "#8A9B65"
+     ],
+     "sidebarBg": "linear-gradient(180deg, #183A32, #244A3F)",
+     "sidebarText": "#F3F8F5"
+    }
    }
   }
  },
@@ -2847,7 +2881,24 @@
     "productName": "工单飞驰",
     "theme": "tangerine",
     "icon": "wrench",
-    "nav": "top"
+    "nav": "top",
+    "generatedTheme": {
+     "label": "暖橙·服务效能",
+     "primary": "#C45118",
+     "primaryHover": "#A94312",
+     "gradTo": "#F6A56D",
+     "primaryFg": "#FFFFFF",
+     "contentBg": "#FFFCF8",
+     "accentBg": "#FFF1E6",
+     "accentFg": "#713313",
+     "charts": [
+      "#C45118",
+      "#A56B16",
+      "#9B4435"
+     ],
+     "sidebarBg": "#2E2925",
+     "sidebarText": "#FFF8F1"
+    }
    }
   }
  },
@@ -3882,7 +3933,24 @@
     "productName": "入职之旅",
     "theme": "violet",
     "icon": "users",
-    "nav": "side"
+    "nav": "side",
+    "generatedTheme": {
+     "label": "创意紫·入职",
+     "primary": "#6D4BC3",
+     "primaryHover": "#5937AB",
+     "gradTo": "#A98BE8",
+     "primaryFg": "#FFFFFF",
+     "contentBg": "#FAF9FC",
+     "accentBg": "#F0ECF8",
+     "accentFg": "#49336F",
+     "charts": [
+      "#6D4BC3",
+      "#9B6BA8",
+      "#554A8F"
+     ],
+     "sidebarBg": "linear-gradient(180deg, #211D2B, #35294B)",
+     "sidebarText": "#F7F4FA"
+    }
    }
   }
  }

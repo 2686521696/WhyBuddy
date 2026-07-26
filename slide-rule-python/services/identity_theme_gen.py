@@ -17,16 +17,27 @@ from __future__ import annotations
 import base64
 import json
 import re
+from pathlib import Path
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
-_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+# 格式正则从 data/identity_theme_presets.json 的 generatedThemeContract 派生
+# ——前端 isValidGeneratedTheme 与 freeform_block.is_valid_generated_theme
+# 同读同一份，格式定义只此一处。
+_THEME_PRESETS_PATH = Path(__file__).resolve().parent / "data" / "identity_theme_presets.json"
+_THEME_CONTRACT: dict = json.loads(_THEME_PRESETS_PATH.read_text(encoding="utf-8")).get(
+    "generatedThemeContract"
+) or {}
+_HEX_RE = re.compile(str(_THEME_CONTRACT.get("hexPattern") or r"^#[0-9a-fA-F]{6}$"))
 # sidebarBg 允许两段式线性渐变（比如深藏蓝到品牌蓝），但格式收紧成固定
 # 模式——只能是 "linear-gradient(<角度>deg, #rrggbb, #rrggbb)"，不是放开
 # 随便写 CSS background；两个色标都要过下面同一套十六进制+对比度校验。
 _GRADIENT_RE = re.compile(
-    r"^linear-gradient\(\s*(\d{1,3})deg\s*,\s*(#[0-9a-fA-F]{6})\s*,\s*(#[0-9a-fA-F]{6})\s*\)$"
+    str(
+        _THEME_CONTRACT.get("sidebarBgGradientPattern")
+        or r"^linear-gradient\(\s*(\d{1,3})deg\s*,\s*(#[0-9a-fA-F]{6})\s*,\s*(#[0-9a-fA-F]{6})\s*\)$"
+    )
 )
 
 
@@ -131,6 +142,18 @@ class IdentityThemeSpec(BaseModel):
                         "pick a lighter/darker foreground so text stays readable against every color it sits on"
                     )
         return self
+
+
+# 启动漂移哨兵（schema_legal 同款纪律）：Spec 的字段必须覆盖契约的
+# requiredKeys——否则生成出来的主题必然被前端 isValidGeneratedTheme 弃用，
+# 与其运行时静默失效，不如 import 期直接炸出来。
+_SPEC_FIELDS = set(IdentityThemeSpec.model_fields.keys())
+_MISSING_CONTRACT_KEYS = set(_THEME_CONTRACT.get("requiredKeys") or ()) - _SPEC_FIELDS
+if _MISSING_CONTRACT_KEYS:
+    raise RuntimeError(
+        "identity_theme_gen.IdentityThemeSpec 缺契约必填字段（生成的主题会被前端整套弃用）: "
+        f"{sorted(_MISSING_CONTRACT_KEYS)}"
+    )
 
 
 def build_identity_theme_prompt(app_name: str, goal_text: str, datamodel_summary: str) -> str:

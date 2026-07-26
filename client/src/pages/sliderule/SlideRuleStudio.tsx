@@ -27,6 +27,7 @@ import {
 } from "./system-screens/five-system-model";
 import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
 import { AppRuntimeScreen } from "./live-runtime/AppRuntimeScreen";
+import { AppStageErrorBoundary } from "./live-runtime/AppStageErrorBoundary";
 import { XrayPanel, type XrayTarget } from "./XrayPanel";
 import { RollingText } from "./RollingText";
 import { Crosshair, X } from "lucide-react";
@@ -303,17 +304,22 @@ export function SlideRuleStudio({
             >
               {/* 画布直接浮在奶油底上（自带投影），不再包白色卡框叠色 */}
               <div className="min-w-0 flex-1 overflow-hidden">
-                <AppRuntimeScreen
-                  // 起草预览：模型每 +300 字符长一截，重挂让新页面/字段即刻上屏
-                  key={modelIsDraft ? `draft-${draftParseKey}` : "settled"}
-                  model={fiveSystemModel}
-                  sessionId={sessionId ?? "sliderule-v51-product"}
-                  appTitle={appTitle}
-                  onActivePageChange={setAppActivePageId}
-                  xrayActive={xrayOn}
-                  onXrayTarget={setXrayTarget}
-                  controlsContainer={gearSlot}
-                />
+                <AppStageErrorBoundary
+                  // 新模型/新会话到来自动复位（渲染炸过的坏树被替换后无需手动重试）
+                  resetKeys={[fiveSystemModel, sessionId]}
+                >
+                  <AppRuntimeScreen
+                    // 起草预览：模型每 +300 字符长一截，重挂让新页面/字段即刻上屏
+                    key={modelIsDraft ? `draft-${draftParseKey}` : "settled"}
+                    model={fiveSystemModel}
+                    sessionId={sessionId ?? "sliderule-v51-product"}
+                    appTitle={appTitle}
+                    onActivePageChange={setAppActivePageId}
+                    xrayActive={xrayOn}
+                    onXrayTarget={setXrayTarget}
+                    controlsContainer={gearSlot}
+                  />
+                </AppStageErrorBoundary>
               </div>
               {xrayOn && appSchema && (
                 <XrayPanel

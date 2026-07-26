@@ -10,22 +10,13 @@
  */
 import React from "react";
 import { Button, Select } from "antd";
-import {
-  ArrowRightOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  WarningOutlined,
-  UserOutlined,
-  MessageOutlined,
-  FlagOutlined,
-  ThunderboltOutlined,
-  InfoCircleOutlined,
-  RightOutlined,
-  StarOutlined,
-  RiseOutlined,
-} from "@ant-design/icons";
+// WorkflowTimeline 自己的节点箭头（组件 UI，用静态 import；freeform 的
+// 动态图标解析走下面的 AntdIcons 命名空间 + 目录别名表，两回事）。
+import { ArrowRightOutlined } from "@ant-design/icons";
 // 全量图标命名空间——FreeformInsight 的 iconRef 按名字动态解析成任意 Ant
-// Design 图标，不再限定在一个手维护的小集合里（2026-07-24）。
+// Design 图标，不再限定在一个手维护的小集合里（2026-07-24）。legacy kebab
+// 别名也走这条动态解析（映射表在目录 JSON 里，与 Python 侧同源），不再
+// 静态 import 单个图标。
 import * as AntdIcons from "@ant-design/icons";
 
 import catalogJson from "@experience-blocks";
@@ -152,6 +143,10 @@ interface ExperienceBlockCatalogFile {
   eventTypes: string[];
   freeformAllowedTags: string[];
   freeformAllowedIconRefs: string[];
+  /** 图标组件名形状正则（与 Python freeform_block.py 同源派生） */
+  freeformIconNamePattern: string;
+  /** 老 kebab 语义名 → Ant Design 组件名（与 Python 侧同源派生） */
+  freeformLegacyIconAliases: Record<string, string>;
   freeformAllowedStyleProps: string[];
   blocks: ExperienceBlockCatalogEntry[];
 }
@@ -401,30 +396,22 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
  */
 const FREEFORM_DANGEROUS_VALUE_RE = /url\(|javascript:|expression\(|import\b|@import/i;
 
-// 老的 kebab 语义名 → Ant Design 组件（放开图标白名单之前用的 12 个，历史
-// 生成产物里可能还有，保留兼容）。新产物直接用 Ant Design 组件名（见下面
-// resolveFreeformIcon 的动态解析）。
-const LEGACY_FREEFORM_ICONS: Record<string, React.ReactNode> = {
-  "check-circle": <CheckCircleOutlined />,
-  clock: <ClockCircleOutlined />,
-  "alert-triangle": <WarningOutlined />,
-  "arrow-right": <ArrowRightOutlined />,
-  user: <UserOutlined />,
-  "message-circle": <MessageOutlined />,
-  flag: <FlagOutlined />,
-  zap: <ThunderboltOutlined />,
-  circle: <InfoCircleOutlined />,
-  "chevron-right": <RightOutlined />,
-  star: <StarOutlined />,
-  "trending-up": <RiseOutlined />,
-};
+// 老的 kebab 语义名 → Ant Design 组件名（放开图标白名单之前用的 12 个，历史
+// 生成产物里可能还有，保留兼容）。2026-07-26 起映射表不再在 TS 手抄——从
+// 目录 JSON 派生（Python freeform_block.py 用同一份的键集合做校验），改目录
+// 一处两端同步。新产物直接用 Ant Design 组件名（见 resolveFreeformIcon）。
+const LEGACY_FREEFORM_ICONS: Record<string, string> =
+  EXPERIENCE_BLOCK_CATALOG.freeformLegacyIconAliases;
 
 // 合法的 Ant Design 图标组件名形状：PascalCase + Outlined/Filled/TwoTone 结尾。
 // 这个正则同时是安全边界——只让"图标组件名"形状的字符串进来，挡掉
 // @ant-design/icons 里那些非图标导出（createFromIconfontCN / getTwoToneColor
 // 之类工具函数，它们不以这三个后缀结尾），也挡掉 __proto__/constructor 这类
-// 原型链名字（首字符要求大写字母、且整体匹配）。
-const ANTD_ICON_NAME_RE = /^[A-Z][A-Za-z0-9]*(Outlined|Filled|TwoTone)$/;
+// 原型链名字（首字符要求大写字母、且整体匹配）。定义在目录 JSON 里，与
+// Python 侧 _ANTD_ICON_NAME_RE 同源派生。
+export const FREEFORM_ICON_NAME_RE = new RegExp(
+  EXPERIENCE_BLOCK_CATALOG.freeformIconNamePattern
+);
 
 /** iconRef → React 节点：老 kebab 别名走静态表，其余按 Ant Design 组件名
  * 动态解析。名字非法/在包里查不到（拼错、编造、非图标导出）一律返回 null，
@@ -434,12 +421,13 @@ function resolveFreeformIcon(iconRef: string | undefined): React.ReactNode {
   // hasOwnProperty 保护：普通对象取键会落到原型链上（"__proto__" 会取到
   // Object.prototype、"constructor" 取到 Object），不 guard 的话这些名字会
   // 返回一个非 React 元素的对象、渲染时崩。别名表和命名空间取值都要 guard。
+  let componentName = iconRef;
   if (Object.prototype.hasOwnProperty.call(LEGACY_FREEFORM_ICONS, iconRef)) {
-    return LEGACY_FREEFORM_ICONS[iconRef];
+    componentName = LEGACY_FREEFORM_ICONS[iconRef];
   }
-  if (!ANTD_ICON_NAME_RE.test(iconRef)) return null;
-  if (!Object.prototype.hasOwnProperty.call(AntdIcons, iconRef)) return null;
-  const Cmp = (AntdIcons as Record<string, unknown>)[iconRef];
+  if (!FREEFORM_ICON_NAME_RE.test(componentName)) return null;
+  if (!Object.prototype.hasOwnProperty.call(AntdIcons, componentName)) return null;
+  const Cmp = (AntdIcons as Record<string, unknown>)[componentName];
   if (typeof Cmp !== "object" && typeof Cmp !== "function") return null;
   return React.createElement(Cmp as React.ComponentType);
 }
@@ -536,23 +524,46 @@ function computeDataRefText(
   const nums = rows
     .map(r => Number(r.values[fieldId]))
     .filter(v => Number.isFinite(v));
+  // SQL/pandas 语义（SUM over 空集 = NULL；pandas sum(min_count=1) = NaN）：
+  // 一行合法数值都没有时 sum 不能显 "0" 冒充真值——用户分不清"真的是 0"
+  // 和"根本没数据"。sum/avg 统一：无合法数值 → null → 上层如实显「—」。
+  if (nums.length === 0) return null;
   if (kind === "sum") {
     return nums
       .reduce((a, b) => a + b, 0)
       .toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   }
-  if (nums.length === 0) return null;
   const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
   return avg.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+}
+
+/** 不可信内容树的硬上限（micromark/cmark 同款纪律：解析不可信输入必须带
+ * 嵌套/规模上限，超限截断降级，而不是任由深树把递归栈打爆、整个应用舞台
+ * 白屏）。Python 生成侧 freeform_block.py 有同值的校验拦在 reask 环里；
+ * 这里是纵深防御第二道——持久化快照恢复、历史产物同样走这条路径。 */
+export const FREEFORM_MAX_DEPTH = 12;
+export const FREEFORM_MAX_NODES = 300;
+
+interface FreeformRenderBudget {
+  remaining: number;
+  truncated: boolean;
 }
 
 function renderFreeformNode(
   node: unknown,
   key: React.Key,
   entityRows?: Record<string, RuntimeRow[]>,
-  chartPalette?: { primary: string; categorical: readonly string[] }
+  chartPalette?: { primary: string; categorical: readonly string[] },
+  depth = 0,
+  budget?: FreeformRenderBudget
 ): React.ReactNode {
   if (!node || typeof node !== "object") return null;
+  if (!budget) budget = { remaining: FREEFORM_MAX_NODES, truncated: false };
+  if (depth > FREEFORM_MAX_DEPTH || budget.remaining <= 0) {
+    budget.truncated = true;
+    return null;
+  }
+  budget.remaining -= 1;
   const n = node as FreeformNode;
   const allowedTags = new Set(EXPERIENCE_BLOCK_CATALOG.freeformAllowedTags);
   const tag = typeof n.tag === "string" && allowedTags.has(n.tag) ? n.tag : "div";
@@ -566,7 +577,7 @@ function renderFreeformNode(
   const children = chartNode
     ? []
     : (Array.isArray(n.children) ? n.children : []).map((child, i) =>
-        renderFreeformNode(child, i, entityRows, chartPalette)
+        renderFreeformNode(child, i, entityRows, chartPalette, depth + 1, budget)
       );
   // dataRef 声明了 aggregate 就是"这是个数字承诺"——现算不出来（实体在
   // entityRows 里查不到/avg 没有合法数值行）也不能退回 LLM 写的 text 掩盖
@@ -610,9 +621,22 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows, c
       </div>
     );
   }
+  const budget: FreeformRenderBudget = {
+    remaining: FREEFORM_MAX_NODES,
+    truncated: false,
+  };
+  const rendered = renderFreeformNode(root, "root", entityRows, chartPalette, 0, budget);
   return (
     <div data-testid="freeform-insight" className="overflow-hidden rounded">
-      {renderFreeformNode(root, "root", entityRows, chartPalette)}
+      {rendered}
+      {budget.truncated ? (
+        <div
+          data-testid="freeform-insight-truncated"
+          className="px-3 py-1 text-[11px] text-stone-400"
+        >
+          内容超出安全渲染上限，已截断
+        </div>
+      ) : null}
     </div>
   );
 };

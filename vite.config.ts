@@ -215,6 +215,8 @@ export default defineConfig(() => {
         "@legal": path.resolve(import.meta.dirname, "slide-rule-python/services/data/five_system_legal.json"),
         // 体验区块目录：Gate/Repair/Prompt/前端 Registry 共用，不在 TS 手抄区块清单
         "@experience-blocks": path.resolve(import.meta.dirname, "slide-rule-python/services/data/experience_block_catalog.json"),
+        // 身份主题预设 + 生成主题契约：前端 THEMES 与 Python 色板提示/使用判定同读一份
+        "@identity-themes": path.resolve(import.meta.dirname, "slide-rule-python/services/data/identity_theme_presets.json"),
         "@assets": path.resolve(import.meta.dirname, "attached_assets"),
       },
     },
