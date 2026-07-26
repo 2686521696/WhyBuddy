@@ -23,11 +23,11 @@ services:
     plan: free
     dockerfilePath: ./slide-rule-python/Dockerfile
     dockerContext: .
-    # 不设 healthCheckPath：Render 靠 TCP 端口探测判活即可。之前设 /health 时，
-    # uvicorn 默认绑 :: (IPv6)、而 Render 健康检查走 IPv4 → 连不上超时、部署失败。
+    # 健康检查指向 /health（返回 200）。不能留空/默认——Render 默认会探根路径 /，
+    # 而本应用 / 没有路由、返回 404，Render 一看非成功码就判失败超时。
+    # 绑定保持 :: 默认：实测 Render 探针从 ::1(IPv6 本地) 打进来，:: 能收到、能响应。
+    healthCheckPath: /health
     envVars:
-      - key: UVICORN_HOST
-        value: "0.0.0.0"           # Render 私网/健康检查走 IPv4，绑 0.0.0.0（不是 ::）
       - key: SLIDE_RULE_INTERNAL_KEY
         generateValue: true        # 随机生成；Node 那边引用同一个值（内部 API 靠它挡）
       - key: LLM_API_KEY
@@ -42,8 +42,8 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    # 不设 healthCheckPath：靠 TCP 端口探测判活，避开健康检查门的绑定/时序坑。
-    # Node server.listen(port) 默认双栈、收 IPv4；公网路由由 Render 边缘负责，不受影响。
+    # Node 在 / 提供前端页面（返回 200），健康检查指向 / 即可。
+    healthCheckPath: /
     envVars:
       - key: NODE_ENV
         value: production
