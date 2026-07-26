@@ -49,12 +49,15 @@ services:
         value: production
       - key: SLIDERULE_V5_BACKEND
         value: python
+      # 走 Python 的公网地址（不是私网 whybuddy-python:10000）——Render 服务间私网对
+      # 绑定/端口有坑（跨服务是 IPv4，:: 绑定 v6only 时收不到），走公网让 Render 边缘
+      # 处理连接，最稳；内部 API 仍靠 SLIDE_RULE_INTERNAL_KEY 挡。
       - key: PYTHON_SLIDE_RULE_BASE_URL
-        value: http://whybuddy-python:10000
+        value: https://whybuddy-python.onrender.com
       - key: PYTHON_API_TARGET
-        value: http://whybuddy-python:10000
+        value: https://whybuddy-python.onrender.com
       - key: AGENT_LOOP_API_TARGET
-        value: http://whybuddy-python:10000
+        value: https://whybuddy-python.onrender.com
       - key: PYTHON_SLIDE_RULE_INTERNAL_KEY
         fromService:               # 引用 Python 服务生成的同一把密钥
           type: web
