@@ -1933,6 +1933,16 @@ export function AppRuntimeScreen({
             {monitorCombinedRow}
           </>
         )
+      ) : page.view.kind === "dashboard" && monitorFreeformOverview ? (
+        // 2026-07-27：dashboard 页也吃 freeformOverview——此前只有 monitor
+        // 一个 kind 走得到设计版式，LLM 把总览页写成 dashboard 时整条
+        // "照参考图设计"的产出送不到页面上（首页恒回固定骨架的根因之一）。
+        // dashboard 特有的 widgetsBand（快速入口等）保留，不被设计版式吞掉。
+        <>
+          {monitorFreeformOverview}
+          {widgetsBand}
+          {monitorDynamicLists}
+        </>
       ) : (
         <>
           {statsBand}

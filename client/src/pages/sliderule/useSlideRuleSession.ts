@@ -137,18 +137,22 @@ function isClosedSessionState(state: V5SessionState): boolean {
 export function looksLikeNewAppIntent(text: string): boolean {
   const t = (text || "").trim();
   if (t.length < 6) return false;
+  // D5 修复（2026-07-27 迭代体验审查）：增量修饰排除必须先于动词判定——
+  // 此前"给工单系统做一个统计报表页面"因命中 动词+载体名词 被当成新应用,
+  // 直接删会话重开(含全部改版史,不可恢复)。任何以增量介词/修改动词开头,
+  // 或明确"在现有基础上"的表述,都是对旧话题的迭代,绝不能当新意图。
+  if (
+    /^(给|为|在|把|将|改|修改|调整|优化|完善|去掉|删除|增加|加上|补充|重新|再|请|帮我改|基于)/.test(
+      t
+    )
+  )
+    return false;
+  if (/(基础上|现有|这个应用|这个系统|当前版本|刚才|上面)/.test(t)) return false;
   const noun = /(系统|应用|平台|工具|app|小程序|管理端|门户|网站)/i;
   if (!noun.test(t)) return false;
   const verb =
     /(做一?个|搭建|设计一?个|构建|开发一?个|建一?个|来一?个|帮我做|我想要|我要做|create|build|design)/i;
   if (verb.test(t)) return true;
-  // 裸名词短语：refine 动词开头的不算（那是对旧话题的修改指令）
-  if (
-    /^(把|将|改|修改|调整|优化|完善|去掉|删除|增加|加上|补充|重新|再|请|帮我改)/.test(
-      t
-    )
-  )
-    return false;
   return /^[一-龥A-Za-z0-9\s·\-]{3,38}(系统|应用|平台|门户|网站|小程序)$/.test(
     t
   );
@@ -1503,15 +1507,49 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         `/api/sliderule/sessions/${encodeURIComponent(sid)}/model-versions/${encodeURIComponent(versionId)}/restore`,
         { method: "POST" }
       );
-      const body = res.ok ? await res.json() : null;
-      if (body?.state) {
+      let body: { state?: unknown; reason?: string; detail?: string } | null = null;
+      try {
+        body = await res.json();
+      } catch {
+        body = null;
+      }
+      if (res.ok && body?.state) {
         setSkillContents({});
         setLatestMermaid(null);
         applyPersistedState(body.state as V5SessionState);
+        return;
       }
+      // D11 修复（2026-07-27）：失败不再静默——404/409/already_current 都
+      // 给用户一句人话，点了没反应还不知道为什么是最差的体验。
+      const reason =
+        body?.reason === "already_current"
+          ? "已经是当前版本"
+          : body?.detail || body?.reason || `回退失败（HTTP ${res.status}）`;
+      notifyRestoreFailure(reason);
     } catch {
-      // 后端不可达：保持原样，用户可重试
+      notifyRestoreFailure("后端不可达，请稍后重试");
     }
+  };
+
+  /** 版本切换失败的可见反馈：在对话流末尾追加一条系统提示 turn。 */
+  const notifyRestoreFailure = (reason: string) => {
+    const noticeId = `restore-fail-${Date.now()}`;
+    setUiTurns(prev => [
+      ...prev,
+      {
+        id: noticeId,
+        user: "",
+        status: "complete" as const,
+        steps: [],
+        routeFacts: { turnId: noticeId, timestamp: new Date().toISOString() },
+        routeExpanded: false,
+        routeLitCount: 0,
+        assistant: `⚠ 版本切换未生效：${reason}`,
+        assistantSource: "fallback" as const,
+        main: null,
+        actions: [],
+      },
+    ]);
   };
 
   const toggleRouteExpanded = useCallback((turnId: string) => {

@@ -649,7 +649,892 @@
        "dimension": "purchase_order.priority",
        "metric": "sum:purchase_order.total_amount"
       }
-     ]
+     ],
+     "freeformOverview": {
+      "root": {
+       "tag": "div",
+       "style": {
+        "display": "flex",
+        "flexDirection": "column",
+        "gap": "24px",
+        "width": "100%",
+        "boxSizing": "border-box"
+       },
+       "text": null,
+       "iconRef": null,
+       "dataRef": null,
+       "chart": null,
+       "children": [
+        {
+         "tag": "div",
+         "style": {
+          "display": "flex",
+          "alignItems": "center",
+          "justifyContent": "space-between",
+          "gap": "24px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "alignItems": "center",
+            "gap": "12px"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "span",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "justifyContent": "center",
+              "width": "40px",
+              "height": "40px",
+              "fontSize": "22px",
+              "color": "#F7FAFE",
+              "backgroundColor": "#0969DA",
+              "borderRadius": "8px",
+              "flexShrink": "0"
+             },
+             "text": null,
+             "iconRef": "DashboardOutlined",
+             "dataRef": null,
+             "chart": null,
+             "children": []
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "flexDirection": "column",
+              "gap": "4px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "h1",
+               "style": {
+                "margin": "0",
+                "color": "#124A8A",
+                "fontSize": "24px",
+                "fontWeight": "700",
+                "lineHeight": "1.4",
+                "letterSpacing": "1px"
+               },
+               "text": "财务确认总览",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "p",
+               "style": {
+                "margin": "0",
+                "color": "#124A8A",
+                "fontSize": "13px",
+                "fontWeight": "400",
+                "lineHeight": "1.5",
+                "opacity": "0.64"
+               },
+               "text": "聚焦采购审批与付款确认",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "alignItems": "center",
+            "gap": "8px",
+            "paddingTop": "4px",
+            "paddingRight": "12px",
+            "paddingBottom": "4px",
+            "paddingLeft": "12px",
+            "backgroundColor": "#EAF3FF",
+            "borderRadius": "4px"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "span",
+             "style": {
+              "color": "#0969DA",
+              "fontSize": "16px"
+             },
+             "text": null,
+             "iconRef": "SafetyOutlined",
+             "dataRef": null,
+             "chart": null,
+             "children": []
+            },
+            {
+             "tag": "small",
+             "style": {
+              "color": "#124A8A",
+              "fontSize": "12px",
+              "fontWeight": "600",
+              "lineHeight": "1.5"
+             },
+             "text": "湛蓝·采购智序",
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": []
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "tag": "div",
+         "style": {
+          "display": "grid",
+          "gridTemplateColumns": "1.2fr 1fr 1fr",
+          "gap": "24px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "176px",
+            "padding": "24px",
+            "background": "linear-gradient(135deg, #0969DA 0%, #0757B8 100%)",
+            "borderRadius": "8px",
+            "boxShadow": "0 6px 16px 0 rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12), 0 9px 28px 8px rgba(0,0,0,0.05)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-start",
+              "justifyContent": "space-between",
+              "gap": "16px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "4px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "h2",
+                 "style": {
+                  "margin": "0",
+                  "color": "#F7FAFE",
+                  "fontSize": "17px",
+                  "fontWeight": "700",
+                  "lineHeight": "1.5"
+                 },
+                 "text": "待财务确认采购单",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "p",
+                 "style": {
+                  "margin": "0",
+                  "color": "#EAF3FF",
+                  "fontSize": "13px",
+                  "fontWeight": "400",
+                  "lineHeight": "1.5",
+                  "opacity": "0.8"
+                 },
+                 "text": "采购单数量",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "fontSize": "26px",
+                "color": "#0969DA",
+                "backgroundColor": "#EAF3FF",
+                "borderRadius": "8px",
+                "flexShrink": "0"
+               },
+               "text": null,
+               "iconRef": "AuditOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-end",
+              "gap": "8px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#F7FAFE",
+                "fontSize": "40px",
+                "fontWeight": "700",
+                "lineHeight": "1.1",
+                "letterSpacing": "1px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "purchase_order",
+                "aggregate": "count"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "color": "#EAF3FF",
+                "fontSize": "14px",
+                "fontWeight": "600",
+                "lineHeight": "1.8",
+                "opacity": "0.8"
+               },
+               "text": "笔",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "176px",
+            "padding": "24px",
+            "background": "linear-gradient(135deg, #F7FAFE 0%, #EAF3FF 100%)",
+            "border": "1px solid #EAF3FF",
+            "borderTop": "4px solid #168AAD",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-start",
+              "justifyContent": "space-between",
+              "gap": "16px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "4px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "h2",
+                 "style": {
+                  "margin": "0",
+                  "color": "#124A8A",
+                  "fontSize": "17px",
+                  "fontWeight": "700",
+                  "lineHeight": "1.5"
+                 },
+                 "text": "已审批采购金额",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "p",
+                 "style": {
+                  "margin": "0",
+                  "color": "#124A8A",
+                  "fontSize": "13px",
+                  "fontWeight": "400",
+                  "lineHeight": "1.5",
+                  "opacity": "0.6"
+                 },
+                 "text": "采购金额总和",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "fontSize": "25px",
+                "color": "#168AAD",
+                "backgroundColor": "#EAF3FF",
+                "borderRadius": "8px",
+                "flexShrink": "0"
+               },
+               "text": null,
+               "iconRef": "AccountBookOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-end",
+              "gap": "8px",
+              "flexWrap": "wrap"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#168AAD",
+                "fontSize": "32px",
+                "fontWeight": "700",
+                "lineHeight": "1.2",
+                "letterSpacing": "1px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "purchase_order",
+                "aggregate": "sum:total_amount"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "color": "#124A8A",
+                "fontSize": "14px",
+                "fontWeight": "600",
+                "lineHeight": "1.8",
+                "opacity": "0.6"
+               },
+               "text": "元",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "176px",
+            "padding": "24px",
+            "background": "linear-gradient(135deg, #F7FAFE 0%, #EAF3FF 100%)",
+            "border": "1px solid #EAF3FF",
+            "borderTop": "4px solid #5B6FD8",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-start",
+              "justifyContent": "space-between",
+              "gap": "16px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "4px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "h2",
+                 "style": {
+                  "margin": "0",
+                  "color": "#124A8A",
+                  "fontSize": "17px",
+                  "fontWeight": "700",
+                  "lineHeight": "1.5"
+                 },
+                 "text": "已确认付款金额",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "p",
+                 "style": {
+                  "margin": "0",
+                  "color": "#124A8A",
+                  "fontSize": "13px",
+                  "fontWeight": "400",
+                  "lineHeight": "1.5",
+                  "opacity": "0.6"
+                 },
+                 "text": "确认金额总和",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              },
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "fontSize": "25px",
+                "color": "#5B6FD8",
+                "backgroundColor": "#EAF3FF",
+                "borderRadius": "8px",
+                "flexShrink": "0"
+               },
+               "text": null,
+               "iconRef": "CreditCardOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-end",
+              "gap": "8px",
+              "flexWrap": "wrap"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#5B6FD8",
+                "fontSize": "32px",
+                "fontWeight": "700",
+                "lineHeight": "1.2",
+                "letterSpacing": "1px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "payment_record",
+                "aggregate": "sum:payment_amount"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "color": "#124A8A",
+                "fontSize": "14px",
+                "fontWeight": "600",
+                "lineHeight": "1.8",
+                "opacity": "0.6"
+               },
+               "text": "元",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "tag": "div",
+         "style": {
+          "display": "grid",
+          "gridTemplateColumns": "1fr 1.2fr",
+          "gap": "24px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "gap": "24px",
+            "minWidth": "0",
+            "padding": "24px",
+            "backgroundColor": "#F7FAFE",
+            "border": "1px solid #EAF3FF",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "40px",
+                "height": "40px",
+                "fontSize": "22px",
+                "color": "#0969DA",
+                "backgroundColor": "#EAF3FF",
+                "borderRadius": "6px",
+                "flexShrink": "0"
+               },
+               "text": null,
+               "iconRef": "PieChartOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "4px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "h2",
+                 "style": {
+                  "margin": "0",
+                  "color": "#124A8A",
+                  "fontSize": "18px",
+                  "fontWeight": "700",
+                  "lineHeight": "1.5"
+                 },
+                 "text": "采购单审批状态分布",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "p",
+                 "style": {
+                  "margin": "0",
+                  "color": "#124A8A",
+                  "fontSize": "13px",
+                  "fontWeight": "400",
+                  "lineHeight": "1.5",
+                  "opacity": "0.6"
+                 },
+                 "text": "按「审批状态」的数量分布",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "width": "100%",
+              "height": "224px",
+              "minHeight": "224px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": {
+              "type": "pie",
+              "entityRef": "purchase_order",
+              "dimensionFieldId": "approval_status",
+              "metric": "count",
+              "metricFieldId": null,
+              "metricLabel": "采购单数量"
+             },
+             "children": []
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "gap": "24px",
+            "minWidth": "0",
+            "padding": "24px",
+            "backgroundColor": "#F7FAFE",
+            "border": "1px solid #EAF3FF",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "40px",
+                "height": "40px",
+                "fontSize": "22px",
+                "color": "#5B6FD8",
+                "backgroundColor": "#EAF3FF",
+                "borderRadius": "6px",
+                "flexShrink": "0"
+               },
+               "text": null,
+               "iconRef": "BarChartOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "4px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "h2",
+                 "style": {
+                  "margin": "0",
+                  "color": "#124A8A",
+                  "fontSize": "18px",
+                  "fontWeight": "700",
+                  "lineHeight": "1.5"
+                 },
+                 "text": "各优先级采购金额",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "p",
+                 "style": {
+                  "margin": "0",
+                  "color": "#124A8A",
+                  "fontSize": "13px",
+                  "fontWeight": "400",
+                  "lineHeight": "1.5",
+                  "opacity": "0.6"
+                 },
+                 "text": "按「优先级」的采购金额总和分布",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "width": "100%",
+              "height": "224px",
+              "minHeight": "224px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": {
+              "type": "bar",
+              "entityRef": "purchase_order",
+              "dimensionFieldId": "priority",
+              "metric": "sum",
+              "metricFieldId": "total_amount",
+              "metricLabel": "采购金额总和"
+             },
+             "children": []
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     }
     },
     {
      "id": "supplier_directory",
@@ -865,7 +1750,7 @@
     ],
     "dropped": []
    },
-   "landingPageRef": "purchase_workbench",
+   "landingPageRef": "finance_dashboard",
    "appIdentity": {
     "productName": "采买通",
     "theme": "azure",
@@ -1615,7 +2500,841 @@
        "dimension": "leave_request.status",
        "metric": "count"
       }
-     ]
+     ],
+     "freeformOverview": {
+      "root": {
+       "tag": "div",
+       "style": {
+        "display": "flex",
+        "flexDirection": "column",
+        "gap": "24px",
+        "width": "100%",
+        "boxSizing": "border-box"
+       },
+       "text": null,
+       "iconRef": null,
+       "dataRef": null,
+       "chart": null,
+       "children": [
+        {
+         "tag": "div",
+         "style": {
+          "display": "flex",
+          "alignItems": "center",
+          "gap": "12px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "span",
+           "style": {
+            "display": "flex",
+            "alignItems": "center",
+            "justifyContent": "center",
+            "width": "48px",
+            "height": "48px",
+            "backgroundColor": "#237A5A",
+            "color": "#F7FAF8",
+            "fontSize": "26px",
+            "lineHeight": "48px",
+            "borderRadius": "8px",
+            "flexShrink": "0"
+           },
+           "text": null,
+           "iconRef": "DashboardOutlined",
+           "dataRef": null,
+           "chart": null,
+           "children": []
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "gap": "4px"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "h1",
+             "style": {
+              "color": "#18563F",
+              "fontSize": "24px",
+              "fontWeight": "700",
+              "lineHeight": "32px",
+              "margin": "0",
+              "letterSpacing": "0"
+             },
+             "text": "HR假勤概览",
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": []
+            },
+            {
+             "tag": "p",
+             "style": {
+              "color": "#6678A8",
+              "fontSize": "14px",
+              "lineHeight": "24px",
+              "margin": "0",
+              "letterSpacing": "0"
+             },
+             "text": "假勤规模与审批状态总览",
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": []
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "tag": "div",
+         "style": {
+          "display": "grid",
+          "gridTemplateColumns": "1.2fr 1fr 1fr",
+          "gap": "16px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "176px",
+            "padding": "24px",
+            "background": "linear-gradient(135deg, #18563F 0%, #237A5A 68%, #45A17B 100%)",
+            "borderRadius": "8px",
+            "boxShadow": "0 6px 16px 0 rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12), 0 9px 28px 8px rgba(0,0,0,0.05)",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "justifyContent": "space-between",
+              "gap": "16px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "backgroundColor": "#E7F3EC",
+                "color": "#18563F",
+                "fontSize": "26px",
+                "lineHeight": "48px",
+                "borderRadius": "8px",
+                "flexShrink": "0"
+               },
+               "text": null,
+               "iconRef": "FileDoneOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "color": "#E7F3EC",
+                "fontSize": "12px",
+                "fontWeight": "600",
+                "lineHeight": "24px",
+                "paddingLeft": "12px",
+                "paddingRight": "12px",
+                "border": "1px solid #45A17B",
+                "borderRadius": "4px",
+                "letterSpacing": "0"
+               },
+               "text": "请假单数量",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "flexDirection": "column",
+              "gap": "4px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "p",
+               "style": {
+                "color": "#E7F3EC",
+                "fontSize": "15px",
+                "fontWeight": "600",
+                "lineHeight": "24px",
+                "margin": "0",
+                "letterSpacing": "0"
+               },
+               "text": "请假单总数",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "alignItems": "flex-end",
+                "gap": "8px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "strong",
+                 "style": {
+                  "color": "#F7FAF8",
+                  "fontSize": "36px",
+                  "fontWeight": "700",
+                  "lineHeight": "40px",
+                  "letterSpacing": "0"
+                 },
+                 "text": null,
+                 "iconRef": null,
+                 "dataRef": {
+                  "entityRef": "leave_request",
+                  "aggregate": "count"
+                 },
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "span",
+                 "style": {
+                  "color": "#E7F3EC",
+                  "fontSize": "14px",
+                  "fontWeight": "600",
+                  "lineHeight": "24px",
+                  "letterSpacing": "0"
+                 },
+                 "text": "单",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "176px",
+            "padding": "24px",
+            "backgroundColor": "#F7FAF8",
+            "border": "1px solid #E7F3EC",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "justifyContent": "space-between",
+              "gap": "16px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "backgroundColor": "#E7F3EC",
+                "color": "#237A5A",
+                "fontSize": "26px",
+                "lineHeight": "48px",
+                "borderRadius": "8px",
+                "flexShrink": "0"
+               },
+               "text": null,
+               "iconRef": "CalendarOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "color": "#18563F",
+                "backgroundColor": "#E7F3EC",
+                "fontSize": "12px",
+                "fontWeight": "600",
+                "lineHeight": "24px",
+                "paddingLeft": "12px",
+                "paddingRight": "12px",
+                "borderRadius": "4px",
+                "letterSpacing": "0"
+               },
+               "text": "请假天数总和",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "flexDirection": "column",
+              "gap": "4px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "p",
+               "style": {
+                "color": "#6678A8",
+                "fontSize": "15px",
+                "fontWeight": "600",
+                "lineHeight": "24px",
+                "margin": "0",
+                "letterSpacing": "0"
+               },
+               "text": "请假总天数",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "alignItems": "flex-end",
+                "gap": "8px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "strong",
+                 "style": {
+                  "color": "#18563F",
+                  "fontSize": "32px",
+                  "fontWeight": "700",
+                  "lineHeight": "40px",
+                  "letterSpacing": "0"
+                 },
+                 "text": null,
+                 "iconRef": null,
+                 "dataRef": {
+                  "entityRef": "leave_request",
+                  "aggregate": "sum:duration_days"
+                 },
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "span",
+                 "style": {
+                  "color": "#237A5A",
+                  "fontSize": "14px",
+                  "fontWeight": "600",
+                  "lineHeight": "24px",
+                  "letterSpacing": "0"
+                 },
+                 "text": "天",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "176px",
+            "padding": "24px",
+            "backgroundColor": "#F7FAF8",
+            "border": "1px solid #E7F3EC",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "justifyContent": "space-between",
+              "gap": "16px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "backgroundColor": "#E7F3EC",
+                "color": "#D58A18",
+                "fontSize": "26px",
+                "lineHeight": "48px",
+                "borderRadius": "8px",
+                "flexShrink": "0"
+               },
+               "text": null,
+               "iconRef": "FieldTimeOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "color": "#18563F",
+                "backgroundColor": "#E7F3EC",
+                "fontSize": "12px",
+                "fontWeight": "600",
+                "lineHeight": "24px",
+                "paddingLeft": "12px",
+                "paddingRight": "12px",
+                "borderRadius": "4px",
+                "letterSpacing": "0"
+               },
+               "text": "剩余天数总和",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "flexDirection": "column",
+              "gap": "4px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "p",
+               "style": {
+                "color": "#6678A8",
+                "fontSize": "15px",
+                "fontWeight": "600",
+                "lineHeight": "24px",
+                "margin": "0",
+                "letterSpacing": "0"
+               },
+               "text": "剩余假期天数",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "alignItems": "flex-end",
+                "gap": "8px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "strong",
+                 "style": {
+                  "color": "#18563F",
+                  "fontSize": "32px",
+                  "fontWeight": "700",
+                  "lineHeight": "40px",
+                  "letterSpacing": "0"
+                 },
+                 "text": null,
+                 "iconRef": null,
+                 "dataRef": {
+                  "entityRef": "leave_balance",
+                  "aggregate": "sum:remaining_days"
+                 },
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "span",
+                 "style": {
+                  "color": "#D58A18",
+                  "fontSize": "14px",
+                  "fontWeight": "600",
+                  "lineHeight": "24px",
+                  "letterSpacing": "0"
+                 },
+                 "text": "天",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "tag": "div",
+         "style": {
+          "display": "grid",
+          "gridTemplateColumns": "1fr 1.6fr",
+          "gap": "16px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "gap": "16px",
+            "minHeight": "320px",
+            "padding": "24px",
+            "backgroundColor": "#F7FAF8",
+            "border": "1px solid #E7F3EC",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "40px",
+                "height": "40px",
+                "backgroundColor": "#E7F3EC",
+                "color": "#237A5A",
+                "fontSize": "24px",
+                "lineHeight": "40px",
+                "borderRadius": "6px",
+                "flexShrink": "0"
+               },
+               "text": null,
+               "iconRef": "PieChartOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "4px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "h2",
+                 "style": {
+                  "color": "#18563F",
+                  "fontSize": "18px",
+                  "fontWeight": "700",
+                  "lineHeight": "24px",
+                  "margin": "0",
+                  "letterSpacing": "0"
+                 },
+                 "text": "假期类型分布",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "p",
+                 "style": {
+                  "color": "#6678A8",
+                  "fontSize": "13px",
+                  "lineHeight": "24px",
+                  "margin": "0",
+                  "letterSpacing": "0"
+                 },
+                 "text": "按「假期类型」的数量分布",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "width": "100%",
+              "height": "224px",
+              "minHeight": "224px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": {
+              "type": "pie",
+              "entityRef": "leave_request",
+              "dimensionFieldId": "leave_type",
+              "metric": "count",
+              "metricFieldId": null,
+              "metricLabel": "请假单数量"
+             },
+             "children": []
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "gap": "16px",
+            "minHeight": "320px",
+            "padding": "24px",
+            "backgroundColor": "#F7FAF8",
+            "border": "1px solid #E7F3EC",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "40px",
+                "height": "40px",
+                "backgroundColor": "#E7F3EC",
+                "color": "#6678A8",
+                "fontSize": "24px",
+                "lineHeight": "40px",
+                "borderRadius": "6px",
+                "flexShrink": "0"
+               },
+               "text": null,
+               "iconRef": "BarChartOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "4px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "h2",
+                 "style": {
+                  "color": "#18563F",
+                  "fontSize": "18px",
+                  "fontWeight": "700",
+                  "lineHeight": "24px",
+                  "margin": "0",
+                  "letterSpacing": "0"
+                 },
+                 "text": "审批状态分布",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "p",
+                 "style": {
+                  "color": "#6678A8",
+                  "fontSize": "13px",
+                  "lineHeight": "24px",
+                  "margin": "0",
+                  "letterSpacing": "0"
+                 },
+                 "text": "按「审批状态」的数量分布",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "width": "100%",
+              "height": "224px",
+              "minHeight": "224px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": {
+              "type": "bar",
+              "entityRef": "leave_request",
+              "dimensionFieldId": "status",
+              "metric": "count",
+              "metricFieldId": null,
+              "metricLabel": "请假单数量"
+             },
+             "children": []
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     }
     },
     {
      "id": "approval_audit_page",
@@ -1827,7 +3546,7 @@
      ]
     }
    ],
-   "landingPageRef": "my_leave_workbench",
+   "landingPageRef": "hr_leave_dashboard",
    "appIdentity": {
     "productName": "假期无忧",
     "theme": "forest",
@@ -2675,7 +4394,953 @@
        "dimension": "ticket.priority",
        "metric": "count"
       }
-     ]
+     ],
+     "freeformOverview": {
+      "root": {
+       "tag": "div",
+       "style": {
+        "display": "flex",
+        "flexDirection": "column",
+        "gap": "24px",
+        "width": "100%",
+        "boxSizing": "border-box"
+       },
+       "text": null,
+       "iconRef": null,
+       "dataRef": null,
+       "chart": null,
+       "children": [
+        {
+         "tag": "div",
+         "style": {
+          "display": "grid",
+          "gridTemplateColumns": "1.3fr 1fr 1fr 1fr",
+          "gap": "16px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "184px",
+            "padding": "24px",
+            "borderRadius": "8px",
+            "background": "linear-gradient(135deg, #C2410C 0%, #9A3412 100%)",
+            "boxShadow": "0 6px 16px 0 rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12), 0 9px 28px 8px rgba(0,0,0,0.05)",
+            "overflow": "hidden",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-start",
+              "justifyContent": "space-between",
+              "gap": "16px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "gap": "12px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "span",
+                 "style": {
+                  "display": "flex",
+                  "alignItems": "center",
+                  "justifyContent": "center",
+                  "width": "48px",
+                  "height": "48px",
+                  "flexShrink": "0",
+                  "borderRadius": "8px",
+                  "backgroundColor": "#FFF1E6",
+                  "color": "#C2410C",
+                  "fontSize": "26px"
+                 },
+                 "text": null,
+                 "iconRef": "CustomerServiceOutlined",
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "div",
+                 "style": {
+                  "display": "flex",
+                  "flexDirection": "column",
+                  "gap": "4px"
+                 },
+                 "text": null,
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": [
+                  {
+                   "tag": "strong",
+                   "style": {
+                    "color": "#FFFCF8",
+                    "fontSize": "18px",
+                    "fontWeight": "600",
+                    "lineHeight": "1.4"
+                   },
+                   "text": "工单总量",
+                   "iconRef": null,
+                   "dataRef": null,
+                   "chart": null,
+                   "children": []
+                  },
+                  {
+                   "tag": "small",
+                   "style": {
+                    "color": "#FFF1E6",
+                    "fontSize": "13px",
+                    "lineHeight": "1.4",
+                    "opacity": "0.8"
+                   },
+                   "text": "服务工单数量",
+                   "iconRef": null,
+                   "dataRef": null,
+                   "chart": null,
+                   "children": []
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "tag": "span",
+               "style": {
+                "color": "#FFF1E6",
+                "fontSize": "20px",
+                "opacity": "0.7"
+               },
+               "text": null,
+               "iconRef": "ArrowRightOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-end",
+              "justifyContent": "space-between",
+              "gap": "16px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#FFFCF8",
+                "fontSize": "38px",
+                "fontWeight": "700",
+                "lineHeight": "1.1"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "ticket",
+                "aggregate": "count"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "width": "32px",
+                "height": "4px",
+                "borderRadius": "4px",
+                "backgroundColor": "#F97316"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "184px",
+            "padding": "24px",
+            "borderRadius": "8px",
+            "backgroundColor": "#FFFCF8",
+            "border": "1px solid #FFF1E6",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "flexShrink": "0",
+                "borderRadius": "8px",
+                "backgroundColor": "#FFF1E6",
+                "color": "#B45309",
+                "fontSize": "25px"
+               },
+               "text": null,
+               "iconRef": "ClockCircleOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "4px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "strong",
+                 "style": {
+                  "color": "#7C2D12",
+                  "fontSize": "17px",
+                  "fontWeight": "600",
+                  "lineHeight": "1.4"
+                 },
+                 "text": "处理中工单",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "small",
+                 "style": {
+                  "color": "#7C2D12",
+                  "fontSize": "13px",
+                  "lineHeight": "1.4",
+                  "opacity": "0.65"
+                 },
+                 "text": "服务工单数量",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-end",
+              "justifyContent": "space-between",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#B45309",
+                "fontSize": "34px",
+                "fontWeight": "700",
+                "lineHeight": "1.1"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "ticket",
+                "aggregate": "count"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "width": "24px",
+                "height": "4px",
+                "borderRadius": "4px",
+                "backgroundColor": "#B45309",
+                "opacity": "0.7"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "184px",
+            "padding": "24px",
+            "borderRadius": "8px",
+            "backgroundColor": "#FFFCF8",
+            "border": "1px solid #FFF1E6",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "flexShrink": "0",
+                "borderRadius": "8px",
+                "backgroundColor": "#FFF1E6",
+                "color": "#C2410C",
+                "fontSize": "26px"
+               },
+               "text": null,
+               "iconRef": "DashboardOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "4px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "strong",
+                 "style": {
+                  "color": "#7C2D12",
+                  "fontSize": "17px",
+                  "fontWeight": "600",
+                  "lineHeight": "1.4"
+                 },
+                 "text": "平均SLA完成度",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "small",
+                 "style": {
+                  "color": "#7C2D12",
+                  "fontSize": "13px",
+                  "lineHeight": "1.4",
+                  "opacity": "0.65"
+                 },
+                 "text": "SLA完成进度平均值",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-end",
+              "justifyContent": "space-between",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#C2410C",
+                "fontSize": "34px",
+                "fontWeight": "700",
+                "lineHeight": "1.1"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "ticket",
+                "aggregate": "avg:sla_progress"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "width": "24px",
+                "height": "4px",
+                "borderRadius": "4px",
+                "backgroundColor": "#F97316"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "184px",
+            "padding": "24px",
+            "borderRadius": "8px",
+            "backgroundColor": "#FFFCF8",
+            "border": "1px solid #FFF1E6",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "flexShrink": "0",
+                "borderRadius": "8px",
+                "backgroundColor": "#FFF1E6",
+                "color": "#BE3A34",
+                "fontSize": "26px"
+               },
+               "text": null,
+               "iconRef": "AlertOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "4px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "strong",
+                 "style": {
+                  "color": "#7C2D12",
+                  "fontSize": "17px",
+                  "fontWeight": "600",
+                  "lineHeight": "1.4"
+                 },
+                 "text": "升级工单数",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "small",
+                 "style": {
+                  "color": "#7C2D12",
+                  "fontSize": "13px",
+                  "lineHeight": "1.4",
+                  "opacity": "0.65"
+                 },
+                 "text": "升级记录数量",
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-end",
+              "justifyContent": "space-between",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#BE3A34",
+                "fontSize": "34px",
+                "fontWeight": "700",
+                "lineHeight": "1.1"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "escalation",
+                "aggregate": "count"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "width": "24px",
+                "height": "4px",
+                "borderRadius": "4px",
+                "backgroundColor": "#BE3A34"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "tag": "div",
+         "style": {
+          "display": "grid",
+          "gridTemplateColumns": "1fr 1.35fr",
+          "gap": "24px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "gap": "24px",
+            "minHeight": "336px",
+            "padding": "24px",
+            "borderRadius": "8px",
+            "backgroundColor": "#FFFCF8",
+            "border": "1px solid #FFF1E6",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "justifyContent": "space-between",
+              "gap": "16px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "gap": "12px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "span",
+                 "style": {
+                  "display": "flex",
+                  "alignItems": "center",
+                  "justifyContent": "center",
+                  "width": "40px",
+                  "height": "40px",
+                  "flexShrink": "0",
+                  "borderRadius": "6px",
+                  "backgroundColor": "#FFF1E6",
+                  "color": "#C2410C",
+                  "fontSize": "23px"
+                 },
+                 "text": null,
+                 "iconRef": "PieChartOutlined",
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "div",
+                 "style": {
+                  "display": "flex",
+                  "flexDirection": "column",
+                  "gap": "4px"
+                 },
+                 "text": null,
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": [
+                  {
+                   "tag": "strong",
+                   "style": {
+                    "color": "#7C2D12",
+                    "fontSize": "20px",
+                    "fontWeight": "600",
+                    "lineHeight": "1.4"
+                   },
+                   "text": "工单状态分布",
+                   "iconRef": null,
+                   "dataRef": null,
+                   "chart": null,
+                   "children": []
+                  },
+                  {
+                   "tag": "small",
+                   "style": {
+                    "color": "#7C2D12",
+                    "fontSize": "13px",
+                    "lineHeight": "1.4",
+                    "opacity": "0.65"
+                   },
+                   "text": "按「工单状态」的数量分布",
+                   "iconRef": null,
+                   "dataRef": null,
+                   "chart": null,
+                   "children": []
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "tag": "span",
+               "style": {
+                "width": "32px",
+                "height": "4px",
+                "borderRadius": "4px",
+                "backgroundColor": "#C2410C"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "width": "100%",
+              "height": "224px",
+              "boxSizing": "border-box"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": {
+              "type": "pie",
+              "entityRef": "ticket",
+              "dimensionFieldId": "status",
+              "metric": "count",
+              "metricFieldId": null,
+              "metricLabel": "服务工单数量"
+             },
+             "children": []
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "gap": "24px",
+            "minHeight": "336px",
+            "padding": "24px",
+            "borderRadius": "8px",
+            "background": "linear-gradient(180deg, #FFFCF8 0%, #FFF1E6 100%)",
+            "border": "1px solid #FFF1E6",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "justifyContent": "space-between",
+              "gap": "16px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "gap": "12px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "span",
+                 "style": {
+                  "display": "flex",
+                  "alignItems": "center",
+                  "justifyContent": "center",
+                  "width": "40px",
+                  "height": "40px",
+                  "flexShrink": "0",
+                  "borderRadius": "6px",
+                  "backgroundColor": "#C2410C",
+                  "color": "#FFFCF8",
+                  "fontSize": "23px"
+                 },
+                 "text": null,
+                 "iconRef": "BarChartOutlined",
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "div",
+                 "style": {
+                  "display": "flex",
+                  "flexDirection": "column",
+                  "gap": "4px"
+                 },
+                 "text": null,
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": [
+                  {
+                   "tag": "strong",
+                   "style": {
+                    "color": "#7C2D12",
+                    "fontSize": "20px",
+                    "fontWeight": "600",
+                    "lineHeight": "1.4"
+                   },
+                   "text": "优先级工单数量",
+                   "iconRef": null,
+                   "dataRef": null,
+                   "chart": null,
+                   "children": []
+                  },
+                  {
+                   "tag": "small",
+                   "style": {
+                    "color": "#7C2D12",
+                    "fontSize": "13px",
+                    "lineHeight": "1.4",
+                    "opacity": "0.65"
+                   },
+                   "text": "按「优先级」的数量分布",
+                   "iconRef": null,
+                   "dataRef": null,
+                   "chart": null,
+                   "children": []
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "tag": "span",
+               "style": {
+                "color": "#BE3A34",
+                "fontSize": "24px",
+                "opacity": "0.75"
+               },
+               "text": null,
+               "iconRef": "FundProjectionScreenOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "width": "100%",
+              "height": "224px",
+              "boxSizing": "border-box"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": {
+              "type": "bar",
+              "entityRef": "ticket",
+              "dimensionFieldId": "priority",
+              "metric": "count",
+              "metricFieldId": null,
+              "metricLabel": "服务工单数量"
+             },
+             "children": []
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     }
     }
    ]
   },
@@ -2876,7 +5541,7 @@
      ]
     }
    ],
-   "landingPageRef": "customer_ticket_submit",
+   "landingPageRef": "service_dashboard",
    "appIdentity": {
     "productName": "工单飞驰",
     "theme": "tangerine",
@@ -3677,7 +6342,1014 @@
        "dimension": "employee.department_id",
        "metric": "count"
       }
-     ]
+     ],
+     "freeformOverview": {
+      "root": {
+       "tag": "div",
+       "style": {
+        "display": "flex",
+        "flexDirection": "column",
+        "gap": "24px",
+        "width": "100%",
+        "boxSizing": "border-box"
+       },
+       "text": null,
+       "iconRef": null,
+       "dataRef": null,
+       "chart": null,
+       "children": [
+        {
+         "tag": "div",
+         "style": {
+          "display": "flex",
+          "alignItems": "flex-end",
+          "justifyContent": "space-between",
+          "gap": "16px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "gap": "4px"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "span",
+             "style": {
+              "color": "#6D36D9",
+              "fontSize": "12px",
+              "fontWeight": "600",
+              "lineHeight": "16px",
+              "letterSpacing": "4px"
+             },
+             "text": "ONBOARDING",
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": []
+            },
+            {
+             "tag": "h1",
+             "style": {
+              "color": "#48247F",
+              "fontSize": "24px",
+              "fontWeight": "700",
+              "lineHeight": "32px",
+              "margin": "0px"
+             },
+             "text": "入职运营看板",
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": []
+            },
+            {
+             "tag": "p",
+             "style": {
+              "color": "#7041D7",
+              "fontSize": "14px",
+              "fontWeight": "400",
+              "lineHeight": "24px",
+              "margin": "0px",
+              "opacity": "0.8"
+             },
+             "text": "员工入职进程与任务风险总览",
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": []
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "alignItems": "center",
+            "gap": "8px",
+            "padding": "8px 12px",
+            "backgroundColor": "#F0EBFA",
+            "borderRadius": "6px"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "span",
+             "style": {
+              "color": "#6D36D9",
+              "fontSize": "18px",
+              "lineHeight": "24px"
+             },
+             "text": null,
+             "iconRef": "DashboardOutlined",
+             "dataRef": null,
+             "chart": null,
+             "children": []
+            },
+            {
+             "tag": "span",
+             "style": {
+              "color": "#48247F",
+              "fontSize": "13px",
+              "fontWeight": "600",
+              "lineHeight": "16px"
+             },
+             "text": "运营总览",
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": []
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "tag": "div",
+         "style": {
+          "display": "grid",
+          "gridTemplateColumns": "repeat(4, minmax(0px, 1fr))",
+          "gap": "16px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "176px",
+            "padding": "16px",
+            "background": "linear-gradient(135deg, #6D36D9 0%, #5828BC 100%)",
+            "borderRadius": "8px",
+            "boxShadow": "0 6px 16px 0 rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12), 0 9px 28px 8px rgba(0,0,0,0.05)",
+            "overflow": "hidden",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-start",
+              "justifyContent": "space-between",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "flexShrink": "0",
+                "backgroundColor": "#F0EBFA",
+                "borderRadius": "8px",
+                "color": "#6D36D9",
+                "fontSize": "26px"
+               },
+               "text": null,
+               "iconRef": "TeamOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "width": "32px",
+                "height": "4px",
+                "marginTop": "8px",
+                "backgroundColor": "#A78BE8",
+                "borderRadius": "4px",
+                "opacity": "0.8"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "flexDirection": "column",
+              "gap": "4px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "p",
+               "style": {
+                "color": "#F0EBFA",
+                "fontSize": "14px",
+                "fontWeight": "500",
+                "lineHeight": "24px",
+                "margin": "0px",
+                "opacity": "0.9"
+               },
+               "text": "入职员工总数",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#FBFAFD",
+                "fontSize": "32px",
+                "fontWeight": "700",
+                "lineHeight": "32px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "employee",
+                "aggregate": "count"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "small",
+               "style": {
+                "color": "#F0EBFA",
+                "fontSize": "12px",
+                "fontWeight": "400",
+                "lineHeight": "16px",
+                "opacity": "0.72"
+               },
+               "text": "员工数量",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "176px",
+            "padding": "16px",
+            "backgroundColor": "#FBFAFD",
+            "border": "1px solid #F0EBFA",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-start",
+              "justifyContent": "space-between",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "flexShrink": "0",
+                "backgroundColor": "#F0EBFA",
+                "borderRadius": "8px",
+                "color": "#596BC7",
+                "fontSize": "26px"
+               },
+               "text": null,
+               "iconRef": "DashboardOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "width": "32px",
+                "height": "4px",
+                "marginTop": "8px",
+                "backgroundColor": "#596BC7",
+                "borderRadius": "4px",
+                "opacity": "0.6"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "flexDirection": "column",
+              "gap": "4px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "p",
+               "style": {
+                "color": "#48247F",
+                "fontSize": "14px",
+                "fontWeight": "500",
+                "lineHeight": "24px",
+                "margin": "0px",
+                "opacity": "0.78"
+               },
+               "text": "平均入职完成度",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#48247F",
+                "fontSize": "32px",
+                "fontWeight": "700",
+                "lineHeight": "32px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "employee",
+                "aggregate": "avg:completion_percent"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "small",
+               "style": {
+                "color": "#596BC7",
+                "fontSize": "12px",
+                "fontWeight": "400",
+                "lineHeight": "16px"
+               },
+               "text": "入职完成度平均值",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "176px",
+            "padding": "16px",
+            "backgroundColor": "#FBFAFD",
+            "border": "1px solid #F0EBFA",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-start",
+              "justifyContent": "space-between",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "flexShrink": "0",
+                "backgroundColor": "#F0EBFA",
+                "borderRadius": "8px",
+                "color": "#7041D7",
+                "fontSize": "26px"
+               },
+               "text": null,
+               "iconRef": "CarryOutOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "width": "32px",
+                "height": "4px",
+                "marginTop": "8px",
+                "backgroundColor": "#7041D7",
+                "borderRadius": "4px",
+                "opacity": "0.6"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "flexDirection": "column",
+              "gap": "4px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "p",
+               "style": {
+                "color": "#48247F",
+                "fontSize": "14px",
+                "fontWeight": "500",
+                "lineHeight": "24px",
+                "margin": "0px",
+                "opacity": "0.78"
+               },
+               "text": "待处理任务",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#48247F",
+                "fontSize": "32px",
+                "fontWeight": "700",
+                "lineHeight": "32px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "onboarding_task",
+                "aggregate": "count"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "small",
+               "style": {
+                "color": "#7041D7",
+                "fontSize": "12px",
+                "fontWeight": "400",
+                "lineHeight": "16px"
+               },
+               "text": "入职任务数量",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-between",
+            "gap": "24px",
+            "minHeight": "176px",
+            "padding": "16px",
+            "background": "linear-gradient(135deg, #FBFAFD 0%, #F0EBFA 100%)",
+            "border": "1px solid #A78BE8",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "flex-start",
+              "justifyContent": "space-between",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "span",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "48px",
+                "height": "48px",
+                "flexShrink": "0",
+                "backgroundColor": "#A4519D",
+                "borderRadius": "8px",
+                "color": "#FBFAFD",
+                "fontSize": "26px"
+               },
+               "text": null,
+               "iconRef": "WarningOutlined",
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "span",
+               "style": {
+                "width": "32px",
+                "height": "4px",
+                "marginTop": "8px",
+                "backgroundColor": "#A4519D",
+                "borderRadius": "4px",
+                "opacity": "0.6"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "flexDirection": "column",
+              "gap": "4px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "p",
+               "style": {
+                "color": "#48247F",
+                "fontSize": "14px",
+                "fontWeight": "500",
+                "lineHeight": "24px",
+                "margin": "0px",
+                "opacity": "0.78"
+               },
+               "text": "高风险员工",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "strong",
+               "style": {
+                "color": "#A4519D",
+                "fontSize": "32px",
+                "fontWeight": "700",
+                "lineHeight": "32px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": {
+                "entityRef": "employee",
+                "aggregate": "count"
+               },
+               "chart": null,
+               "children": []
+              },
+              {
+               "tag": "small",
+               "style": {
+                "color": "#A4519D",
+                "fontSize": "12px",
+                "fontWeight": "400",
+                "lineHeight": "16px"
+               },
+               "text": "员工数量",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "tag": "div",
+         "style": {
+          "display": "grid",
+          "gridTemplateColumns": "minmax(0px, 2fr) minmax(0px, 3fr)",
+          "gap": "16px",
+          "width": "100%"
+         },
+         "text": null,
+         "iconRef": null,
+         "dataRef": null,
+         "chart": null,
+         "children": [
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "gap": "16px",
+            "minWidth": "0px",
+            "padding": "24px",
+            "backgroundColor": "#FBFAFD",
+            "border": "1px solid #F0EBFA",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "justifyContent": "space-between",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "gap": "12px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "span",
+                 "style": {
+                  "display": "flex",
+                  "alignItems": "center",
+                  "justifyContent": "center",
+                  "width": "40px",
+                  "height": "40px",
+                  "flexShrink": "0",
+                  "backgroundColor": "#F0EBFA",
+                  "borderRadius": "6px",
+                  "color": "#6D36D9",
+                  "fontSize": "22px"
+                 },
+                 "text": null,
+                 "iconRef": "PieChartOutlined",
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "div",
+                 "style": {
+                  "display": "flex",
+                  "flexDirection": "column",
+                  "gap": "4px"
+                 },
+                 "text": null,
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": [
+                  {
+                   "tag": "h2",
+                   "style": {
+                    "color": "#48247F",
+                    "fontSize": "18px",
+                    "fontWeight": "700",
+                    "lineHeight": "24px",
+                    "margin": "0px"
+                   },
+                   "text": "入职状态分布",
+                   "iconRef": null,
+                   "dataRef": null,
+                   "chart": null,
+                   "children": []
+                  },
+                  {
+                   "tag": "small",
+                   "style": {
+                    "color": "#7041D7",
+                    "fontSize": "12px",
+                    "fontWeight": "400",
+                    "lineHeight": "16px",
+                    "opacity": "0.72"
+                   },
+                   "text": "按入职状态统计员工数量",
+                   "iconRef": null,
+                   "dataRef": null,
+                   "chart": null,
+                   "children": []
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "tag": "span",
+               "style": {
+                "padding": "4px 8px",
+                "backgroundColor": "#F0EBFA",
+                "borderRadius": "4px",
+                "color": "#6D36D9",
+                "fontSize": "12px",
+                "fontWeight": "600",
+                "lineHeight": "16px"
+               },
+               "text": "状态结构",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "width": "100%",
+              "minHeight": "200px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": {
+              "type": "pie",
+              "entityRef": "employee",
+              "dimensionFieldId": "onboarding_status",
+              "metric": "count",
+              "metricFieldId": null,
+              "metricLabel": "员工数量"
+             },
+             "children": []
+            }
+           ]
+          },
+          {
+           "tag": "div",
+           "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "gap": "16px",
+            "minWidth": "0px",
+            "padding": "24px",
+            "backgroundColor": "#FBFAFD",
+            "border": "1px solid #F0EBFA",
+            "borderRadius": "8px",
+            "boxShadow": "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)",
+            "boxSizing": "border-box",
+            "overflow": "hidden"
+           },
+           "text": null,
+           "iconRef": null,
+           "dataRef": null,
+           "chart": null,
+           "children": [
+            {
+             "tag": "div",
+             "style": {
+              "display": "flex",
+              "alignItems": "center",
+              "justifyContent": "space-between",
+              "gap": "12px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": null,
+             "children": [
+              {
+               "tag": "div",
+               "style": {
+                "display": "flex",
+                "alignItems": "center",
+                "gap": "12px"
+               },
+               "text": null,
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": [
+                {
+                 "tag": "span",
+                 "style": {
+                  "display": "flex",
+                  "alignItems": "center",
+                  "justifyContent": "center",
+                  "width": "40px",
+                  "height": "40px",
+                  "flexShrink": "0",
+                  "backgroundColor": "#F0EBFA",
+                  "borderRadius": "6px",
+                  "color": "#596BC7",
+                  "fontSize": "22px"
+                 },
+                 "text": null,
+                 "iconRef": "BarChartOutlined",
+                 "dataRef": null,
+                 "chart": null,
+                 "children": []
+                },
+                {
+                 "tag": "div",
+                 "style": {
+                  "display": "flex",
+                  "flexDirection": "column",
+                  "gap": "4px"
+                 },
+                 "text": null,
+                 "iconRef": null,
+                 "dataRef": null,
+                 "chart": null,
+                 "children": [
+                  {
+                   "tag": "h2",
+                   "style": {
+                    "color": "#48247F",
+                    "fontSize": "18px",
+                    "fontWeight": "700",
+                    "lineHeight": "24px",
+                    "margin": "0px"
+                   },
+                   "text": "部门入职人数",
+                   "iconRef": null,
+                   "dataRef": null,
+                   "chart": null,
+                   "children": []
+                  },
+                  {
+                   "tag": "small",
+                   "style": {
+                    "color": "#596BC7",
+                    "fontSize": "12px",
+                    "fontWeight": "400",
+                    "lineHeight": "16px",
+                    "opacity": "0.72"
+                   },
+                   "text": "按所属部门统计员工数量",
+                   "iconRef": null,
+                   "dataRef": null,
+                   "chart": null,
+                   "children": []
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "tag": "span",
+               "style": {
+                "padding": "4px 8px",
+                "backgroundColor": "#F0EBFA",
+                "borderRadius": "4px",
+                "color": "#596BC7",
+                "fontSize": "12px",
+                "fontWeight": "600",
+                "lineHeight": "16px"
+               },
+               "text": "部门分布",
+               "iconRef": null,
+               "dataRef": null,
+               "chart": null,
+               "children": []
+              }
+             ]
+            },
+            {
+             "tag": "div",
+             "style": {
+              "width": "100%",
+              "minHeight": "200px"
+             },
+             "text": null,
+             "iconRef": null,
+             "dataRef": null,
+             "chart": {
+              "type": "bar",
+              "entityRef": "employee",
+              "dimensionFieldId": "department_id",
+              "metric": "count",
+              "metricFieldId": null,
+              "metricLabel": "员工数量"
+             },
+             "children": []
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     }
     },
     {
      "id": "onboarding_document_workbench",
@@ -3928,7 +7600,7 @@
      ]
     }
    ],
-   "landingPageRef": "onboarding_workbench",
+   "landingPageRef": "onboarding_dashboard",
    "appIdentity": {
     "productName": "入职之旅",
     "theme": "violet",

@@ -358,9 +358,11 @@ def _try_llm_generate_evidence(
     try:
         from . import app_store
 
-        app_store.save_app(
+        # 2026-07-27（审查修复 #3/D10）：同会话模型有变 → 同 root 新版本
+        # （血缘/版本链/v2 徽标由此激活），不再每次精修都新建孤儿 root、
+        # 画廊堆同名重复卡。模型未变仍走 dedup 幂等更新。
+        app_store.save_app_or_version(
             model, goal=goal, session_id=session_id, gate_passed=True,
-            dedup_key=app_store.model_signature(session_id, model),
         )
     except Exception as exc:  # noqa: BLE001 — 存储是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] app store save skipped: {str(exc)[:160]}")
@@ -383,12 +385,11 @@ def _build_per_skill_evidence(
     from . import v5_llm_generate as _gen_mod
 
     _refine_active = bool(
-        getattr(_gen_mod, "_refine_context", None)
-        or getattr(_gen_mod, "_model_override", None)
+        _gen_mod.get_refine_context() or _gen_mod.get_model_override()
     )
     # override 是直供历史快照，旧模型无 landingPageRef 仍应恢复；
     # refine 是首次生成/精修，严格要求 landingPageRef。
-    _is_override = bool(getattr(_gen_mod, "_model_override", None))
+    _is_override = bool(_gen_mod.get_model_override())
     matches: Dict[str, Dict[str, Any]] = {}
     for artifact in ([] if _refine_active else _artifact_dicts(state)):
         haystack = " ".join(
@@ -412,6 +413,29 @@ def _build_per_skill_evidence(
         if llm_result is not None:
             for skill in REQUIRED_EVIDENCE_KEYS:
                 matches[skill] = llm_result[skill]
+        else:
+            # D2 修复（2026-07-27 迭代体验审查）：精修失败（LLM 网关抖动/
+            # 输出截断/过不了闸）不得摧毁已收口的 6/6 闭环——此前六段证据
+            # 全空 → blocked 0/6 覆盖 publishClosure，能跑的应用直接消失且
+            # 无 UI 恢复入口。退路：用精修前的现有模型原样重建证据，等价
+            # "本轮修改未生效"，诊断照留（用户能看到失败原因），应用照跑。
+            ctx = _gen_mod.get_refine_context()
+            base_model = (ctx or {}).get("model") if isinstance(ctx, dict) else None
+            if not isinstance(base_model, dict):
+                base_model = _gen_mod.get_model_override()
+            if isinstance(base_model, dict):
+                from .v5_llm_generate import model_to_linkage_artifacts
+
+                keep = model_to_linkage_artifacts(base_model, goal)
+                keep_by_skill = {a["id"].replace("llm-linkage-", ""): a for a in keep}
+                for skill in REQUIRED_EVIDENCE_KEYS:
+                    if skill in keep_by_skill:
+                        matches[skill] = keep_by_skill[skill]
+                detail = str((_llm_generate_diagnostic or {}).get("detail") or "")[:160]
+                print(
+                    "[v5_capability_executor] refine failed, keeping previous model "
+                    f"(本轮修改未生效): {detail}"
+                )
     elif not blocked_signal and recognized_domain is not None:
         # Deterministic domain (purchase/leave/ticket/onboarding) — fast fixture path,
         # no LLM call. This is the T1 generality proof.

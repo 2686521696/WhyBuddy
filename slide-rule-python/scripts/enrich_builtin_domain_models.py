@@ -69,7 +69,17 @@ def main() -> int:
         print(f"=== {domain}: enriching (goal: {goal[:30]}…)")
         candidate = json.loads(json.dumps(model))  # 深拷贝，失败不污染原件
         try:
-            candidate = enrich_identity_theme(candidate, goal)
+            # 幂等：已有合格生成主题就不重生（golden diff 稳定、省生图配额）。
+            # 想强制换一批主题：--refresh-theme。
+            existing_theme = (
+                (candidate.get("appbundle") or {}).get("appIdentity") or {}
+            ).get("generatedTheme")
+            from services.freeform_block import is_valid_generated_theme
+
+            if "--refresh-theme" in sys.argv or not is_valid_generated_theme(existing_theme):
+                candidate = enrich_identity_theme(candidate, goal)
+            else:
+                print("    theme: kept existing generatedTheme")
             candidate = enrich_monitor_page_overviews(candidate)
         except Exception as exc:  # noqa: BLE001 — 单域失败不拖垮其余域
             print(f"    enrich failed ({str(exc)[:160]}), keeping original")

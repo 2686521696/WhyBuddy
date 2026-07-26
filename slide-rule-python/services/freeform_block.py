@@ -1027,6 +1027,12 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
         for block in blocks:
             if not isinstance(block, dict) or block.get("type") != "FreeformInsight":
                 continue
+            # 幂等（2026-07-27 D1）：已有内容树的区块不重生成——精修/回退
+            # 时未被指令触及的区块必须原样保留（REFINE prompt 已要求逐字节
+            # 保留,这里是第二道保险),否则加一个字段整页设计全部重掷。
+            existing_content = block.get("freeformContent")
+            if isinstance(existing_content, dict) and existing_content.get("root"):
+                continue
             brief = str((block.get("props") or {}).get("designBrief") or "").strip()
             bid = str(block.get("id") or "").strip()
             # 成本预算：参考图/截图自检按"尝试"计费（参考图在 generate 开头
@@ -1173,7 +1179,10 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
     shot_used = 0
     capped_pages = 0
     for page in (model.get("page") or {}).get("pages") or []:
-        if str(page.get("kind") or "").strip() != "monitor":
+        # 2026-07-27：dashboard 也纳入——此前只认 monitor,LLM 把总览页写成
+        # dashboard(prompt 曾反向引导)或夹具用 dashboard 时,设计版式整条
+        # 生成不出来,首页恒回固定骨架。渲染端 AppRuntimeScreen 同步放宽。
+        if str(page.get("kind") or "").strip() not in ("monitor", "dashboard"):
             continue
         # 只看 stats/charts——rankings/feeds 不进设计文案（见
         # _monitor_overview_design_brief 的说明），一个页面如果只声明了
@@ -1182,6 +1191,10 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
         # renderRankingCard/renderFeedCard 本来就能正确渲染这种页面）。
         has_content = bool(page.get("stats")) or bool(page.get("charts"))
         if not has_content:
+            continue
+        # 幂等（2026-07-27 D1）：已有总览设计的页不重生成（同上区块级注释）。
+        existing_overview = page.get("freeformOverview")
+        if isinstance(existing_overview, dict) and existing_overview.get("root"):
             continue
         brief = _monitor_overview_design_brief(page, datamodel)
         # 与 enrich_freeform_blocks 同一预算语义：按尝试计费（见彼处注释）。
