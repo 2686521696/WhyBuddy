@@ -190,6 +190,14 @@ EXPERIENCE_BLOCK_EVENT_TYPES = _catalog_tuple("eventTypes")
 FREEFORM_ALLOWED_TAGS = _catalog_tuple("freeformAllowedTags")
 FREEFORM_ALLOWED_ICON_REFS = _catalog_tuple("freeformAllowedIconRefs")
 FREEFORM_ALLOWED_STYLE_PROPS = _catalog_tuple("freeformAllowedStyleProps")
+# 图标合法域（2026-07-26 收编）：形状正则 + legacy kebab 别名映射此前在
+# freeform_block.py 与前端 block-registry.tsx 各手抄一份、无对账哨兵——
+# 目录里的 freeformAllowedIconRefs 早已退化成 prompt 建议清单，真正的合法
+# 域漂在两份平行实现里。现在两侧都从目录这两个字段派生，改一处两端同步。
+FREEFORM_ICON_NAME_PATTERN: str = str(_BLOCK_CATALOG.get("freeformIconNamePattern") or "")
+FREEFORM_LEGACY_ICON_ALIASES: Dict[str, str] = dict(
+    _BLOCK_CATALOG.get("freeformLegacyIconAliases") or {}
+)
 EXPERIENCE_BLOCKS = _load_experience_blocks()
 EXPERIENCE_BLOCK_TYPES = tuple(str(block["type"]) for block in EXPERIENCE_BLOCKS)
 EXPERIENCE_BLOCK_RENDERER_KEYS = tuple(

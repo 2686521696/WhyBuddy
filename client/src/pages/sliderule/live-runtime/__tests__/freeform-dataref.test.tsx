@@ -91,4 +91,42 @@ describe("FreeformInsight dataRef → 真实渲染（不信任 LLM 写的 text�
     });
     expect(html).toContain("4");
   });
+
+  /** 2026-07-26 修复：sum 对"无合法数值"此前显 "0" 冒充真值——SQL SUM over
+   * 空集是 NULL、pandas sum(min_count=1) 是 NaN，"没有数据"和"真的是 0"
+   * 必须区分。sum/avg 统一：无合法数值 → 「—」。 */
+  it("sum 聚合：实体有行但无合法数值 → 显「—」不显 0", () => {
+    const root: FreeformNode = {
+      tag: "div",
+      text: "999",
+      dataRef: { entityRef: "order", aggregate: "sum:amount" },
+    };
+    const html = renderWithRows(root, {
+      order: rows(3, () => "不是数字" as unknown as number),
+    });
+    expect(html).toContain("—");
+    expect(html).not.toContain("999");
+    expect(html).not.toContain(">0<");
+  });
+
+  it("sum 聚合：实体行为空数组 → 显「—」不显 0", () => {
+    const root: FreeformNode = {
+      tag: "div",
+      text: "999",
+      dataRef: { entityRef: "order", aggregate: "sum:amount" },
+    };
+    const html = renderWithRows(root, { order: [] });
+    expect(html).toContain("—");
+  });
+
+  it("count 聚合：空行数组是货真价实的 0，照常显示（SQL COUNT 语义）", () => {
+    const root: FreeformNode = {
+      tag: "div",
+      text: "999",
+      dataRef: { entityRef: "ticket", aggregate: "count" },
+    };
+    const html = renderWithRows(root, { ticket: [] });
+    expect(html).toContain("0");
+    expect(html).not.toContain("999");
+  });
 });

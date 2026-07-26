@@ -10,6 +10,7 @@ No Node LLM, no pool, no su8, no proxy issues, no template/degraded.
 from typing import Dict, Any, List, Callable, Optional
 import hashlib
 import os
+import re
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
 
@@ -80,17 +81,33 @@ PURCHASE_APPROVAL_INTENT_MARKERS = [
 # domain-agnostic); only the evidence flavour text differs. Unknown intents
 # stay fail-closed (0/6) until LLM generate() lands (T3). This proves the
 # five-system closure generalizes beyond purchase, without coupling to LLM.
-DOMAIN_INTENT_MARKERS: Dict[str, List[str]] = {
-    "purchase_approval": PURCHASE_APPROVAL_INTENT_MARKERS,
-    "leave_approval": [
-        "leave approval", "leave request", "请假审批", "请假单", "请假", "休假",
-    ],
-    "service_ticket": [
-        "service ticket", "工单", "客户服务", "客服", "服务台", "ticket", "sla", "升级",
-    ],
-    "employee_onboarding": [
-        "onboarding", "employee onboarding", "入职", "员工入职", "新员工", "报到",
-    ],
+#
+# 匹配纪律（真实事故修复）：此前是裸子串匹配，"sla" 命中了
+# translation/island/slack/slash/legislation，"升级" 命中了任意提到升级的
+# 意图——用户要翻译平台、拿到冻结工单系统，且全程无痕。修法借
+# RapidFuzz score_cutoff / Rasa FallbackClassifier 的语义：
+# - 拉丁 marker 一律词边界匹配（"sla" 只认独立的 SLA 一词）；
+# - marker 分强/弱两级：strong 是领域专属词，独立命中即认；weak 是
+#   泛词（ticket/sla/升级/onboarding），单独命中不认域，需 ≥2 个不同
+#   弱词同现才认——认不出就返回 None，fail-closed 交给 LLM 生成，
+#   绝不硬塞一个猜的域。
+DOMAIN_INTENT_MARKERS: Dict[str, Dict[str, List[str]]] = {
+    "purchase_approval": {
+        "strong": PURCHASE_APPROVAL_INTENT_MARKERS,
+        "weak": [],
+    },
+    "leave_approval": {
+        "strong": ["leave approval", "leave request", "请假审批", "请假单", "请假", "休假"],
+        "weak": [],
+    },
+    "service_ticket": {
+        "strong": ["service ticket", "工单", "客户服务", "客服", "服务台"],
+        "weak": ["ticket", "sla", "升级"],
+    },
+    "employee_onboarding": {
+        "strong": ["employee onboarding", "入职", "员工入职", "新员工", "报到"],
+        "weak": ["onboarding"],
+    },
 }
 
 # Human-readable domain names for evidence flavour text (deterministic).
@@ -102,8 +119,31 @@ DOMAIN_LABELS: Dict[str, str] = {
 }
 
 
+def _marker_matches(marker: str, text: str) -> bool:
+    """单个 marker 是否命中（marker 与 text 均已 lower）。
+
+    含拉丁字母的 marker 按词边界匹配——裸子串会让 "sla" 命中
+    translation/island/slack（真实事故）；CJK marker 保持包含匹配
+    （中文没有词边界）。marker 内的空格放宽为任意空白。
+    """
+    if re.search(r"[a-z]", marker):
+        # 末尾允许可选复数后缀（tickets/approvals/requests 是极自然的英文
+        # 表述，词边界一刀切会把它们全打成"认不出"——终检实测的召回回归）。
+        pattern = (
+            r"(?<![a-z0-9])"
+            + re.escape(marker).replace(r"\ ", r"\s+")
+            + r"(?:e?s)?(?![a-z0-9])"
+        )
+        return re.search(pattern, text) is not None
+    return marker in text
+
+
 def _recognize_domain(goal: str) -> "str | None":
     """Return the recognized deterministic domain key, or None (fail-closed).
+
+    强词独立命中即认；弱词需 ≥2 个不同弱词同现才认（见
+    DOMAIN_INTENT_MARKERS 头注）。认不出返回 None——宁可走 LLM 生成，
+    不硬塞一个猜的演示域。
 
     Handles the latin1->utf8 mojibake repair the same way the legacy purchase
     check did, so garbled Windows-shell goals still match.
@@ -116,8 +156,14 @@ def _recognize_domain(goal: str) -> "str | None":
     except (UnicodeEncodeError, UnicodeDecodeError):
         pass
     for domain, markers in DOMAIN_INTENT_MARKERS.items():
-        if any(marker.lower() in variant for variant in variants for marker in markers):
-            return domain
+        strong = markers.get("strong") or []
+        weak = markers.get("weak") or []
+        for variant in variants:
+            if any(_marker_matches(m.lower(), variant) for m in strong):
+                return domain
+            weak_hits = {m for m in weak if _marker_matches(m.lower(), variant)}
+            if len(weak_hits) >= 2:
+                return domain
     return None
 
 
@@ -178,9 +224,11 @@ def _runtime_linkage_artifact_for_skill(skill: str, goal: str, domain: str = "pu
         "id": f"runtime-linkage-{skill}",
         "title": f"{skill} runtime linkage evidence",
         "kind": "runtimeClosureEvidence",
-        "summary": f"deterministic {label} six-Skill linkage evidence",
+        "summary": f"deterministic {label} six-Skill linkage evidence (builtin demo-domain fixture)",
         "content": f"{skill} evidence for {label} runtime closure: {','.join(evidence_keys)}",
-        "provenance": "python-runtime-linkage",
+        # 走了演示域近路必须可见（此前对用户全程无痕，误判时无从排查）：
+        # provenance 带上 builtin-domain:<域>，审计抽屉/交付物里能看到。
+        "provenance": f"python-runtime-linkage:builtin-domain:{domain}",
     }
     section = _builtin_domain_model_section(domain, skill)
     if section is not None:
@@ -366,9 +414,16 @@ def _build_per_skill_evidence(
                 matches[skill] = llm_result[skill]
     elif not blocked_signal and recognized_domain is not None:
         # Deterministic domain (purchase/leave/ticket/onboarding) — fast fixture path,
-        # no LLM call. This is the T1 generality proof; unchanged.
+        # no LLM call. This is the T1 generality proof.
+        # 修复（07-27 实测事故）：haystack 只按关键词认产物，推演自产的
+        # "appbundle.runtimeClosure" 这类壳产物 id 里含 "appbundle"，会抢占
+        # skill 槽位，把真正携带模型段（_model_section）的夹具产物挡在门外
+        # ——appIdentity/generatedTheme 因此从未到达前端（六系统唯 appbundle
+        # 丢 modelSection，右栏主题恒回落 azure 默认）。规则：携带模型段的
+        # 产物优先于不带模型段的 haystack 壳。
         for skill in REQUIRED_EVIDENCE_KEYS:
-            if skill not in matches:
+            existing = matches.get(skill)
+            if existing is None or "_model_section" not in existing:
                 matches[skill] = _runtime_linkage_artifact_for_skill(skill, goal, recognized_domain)
     elif not blocked_signal and recognized_domain is None and (force_llm or _llm_generate_enabled() or llm_json_fn is not None):
         # T3: novel intent — ask the LLM to generate a five-system model, then run
@@ -378,8 +433,11 @@ def _build_per_skill_evidence(
             goal, llm_json_fn, session_id=getattr(state, "sessionId", None)
         )
         if llm_result is not None:
+            # 同上：LLM 生成的产物携带 _model_section，不能被 haystack 壳
+            # 产物（如自产的 appbundle.runtimeClosure）抢占槽位。
             for skill in REQUIRED_EVIDENCE_KEYS:
-                if skill not in matches:
+                existing = matches.get(skill)
+                if existing is None or "_model_section" not in existing:
                     matches[skill] = llm_result[skill]
     elif not blocked_signal and recognized_domain is None and (goal or "").strip():
         # 新颖意图但 LLM 生成未开启 → 注定 0/6。把原因留痕给 blocker，

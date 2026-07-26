@@ -28,6 +28,43 @@ from typing import Optional
 # 版本钉死跟仓库 package.json 的 @playwright/test 一致，行为可预期。
 _PLAYWRIGHT_VERSION = "1.61.1"
 
+# 2026-07-26 成本优化：现装 playwright+chromium 是整条截图链最大的浪费
+# （每个一次性沙盒 ~2 分钟安装）。配了 SLIDERULE_E2B_TEMPLATE（用 e2b CLI
+# 把 playwright+chromium 烤进自定义沙盒模板，做法同仓内 AGENTSHIRE_E2B_TEMPLATE
+# 先例）即跳过现装、秒级启动；未配走原路径，行为不变。
+_E2B_TEMPLATE_ENV = "SLIDERULE_E2B_TEMPLATE"
+
+
+def _e2b_template() -> Optional[str]:
+    tpl = (os.getenv(_E2B_TEMPLATE_ENV) or "").strip()
+    return tpl or None
+
+
+def _create_sandbox(timeout_s: int):
+    from e2b_code_interpreter import Sandbox
+
+    template = _e2b_template()
+    if template:
+        return Sandbox.create(template, timeout=timeout_s + 30)
+    return Sandbox.create(timeout=timeout_s + 30)
+
+
+def _ensure_playwright(sandbox, timeout_s: int) -> bool:
+    """确保沙盒里有 playwright+chromium。自定义模板已烤进去 → 直接 True；
+    默认模板现装（原行为）。安装失败返回 False（调用方 fail-closed）。"""
+    if _e2b_template():
+        return True
+    install = sandbox.run_code(
+        "import subprocess, json\n"
+        f"r1 = subprocess.run(['npm','install','playwright@{_PLAYWRIGHT_VERSION}'], "
+        "capture_output=True, text=True, timeout=90, cwd='/tmp')\n"
+        "r2 = subprocess.run(['npx','playwright','install','--with-deps','chromium'], "
+        "capture_output=True, text=True, timeout=150, cwd='/tmp')\n"
+        "print(json.dumps({'install_rc': r1.returncode, 'browser_rc': r2.returncode}))",
+        timeout=timeout_s,
+    )
+    return install.error is None
+
 _SCREENSHOT_JS_TEMPLATE = """
 const { chromium } = require("playwright");
 (async () => {
@@ -111,20 +148,9 @@ def capture_freeform_preview_screenshot(preview_id: str, timeout_s: int = 90) ->
     base_url = _public_app_base_url()
     preview_url = f"{base_url}/sliderule/freeform-preview/{preview_id}"
 
-    from e2b_code_interpreter import Sandbox
-
-    sandbox = Sandbox.create(timeout=timeout_s + 30)
+    sandbox = _create_sandbox(timeout_s)
     try:
-        install = sandbox.run_code(
-            "import subprocess, json\n"
-            f"r1 = subprocess.run(['npm','install','playwright@{_PLAYWRIGHT_VERSION}'], "
-            "capture_output=True, text=True, timeout=90, cwd='/tmp')\n"
-            "r2 = subprocess.run(['npx','playwright','install','--with-deps','chromium'], "
-            "capture_output=True, text=True, timeout=150, cwd='/tmp')\n"
-            "print(json.dumps({'install_rc': r1.returncode, 'browser_rc': r2.returncode}))",
-            timeout=timeout_s,
-        )
-        if install.error is not None:
+        if not _ensure_playwright(sandbox, timeout_s):
             return None
 
         js_code = _FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE % {
@@ -166,20 +192,9 @@ def capture_app_screenshot(session_id: str, timeout_s: int = 90) -> Optional[byt
     base_url = _public_app_base_url()
     app_url = f"{base_url}/agent-loop/sliderule"
 
-    from e2b_code_interpreter import Sandbox
-
-    sandbox = Sandbox.create(timeout=timeout_s + 30)
+    sandbox = _create_sandbox(timeout_s)
     try:
-        install = sandbox.run_code(
-            "import subprocess, json\n"
-            f"r1 = subprocess.run(['npm','install','playwright@{_PLAYWRIGHT_VERSION}'], "
-            "capture_output=True, text=True, timeout=90, cwd='/tmp')\n"
-            "r2 = subprocess.run(['npx','playwright','install','--with-deps','chromium'], "
-            "capture_output=True, text=True, timeout=150, cwd='/tmp')\n"
-            "print(json.dumps({'install_rc': r1.returncode, 'browser_rc': r2.returncode}))",
-            timeout=timeout_s,
-        )
-        if install.error is not None:
+        if not _ensure_playwright(sandbox, timeout_s):
             return None
 
         js_code = _SCREENSHOT_JS_TEMPLATE % {

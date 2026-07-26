@@ -9,6 +9,7 @@
  */
 
 import legalDomains from "@legal";
+import themePresets from "@identity-themes";
 
 export interface IdentityTheme {
   id: string;
@@ -39,78 +40,30 @@ export interface IdentityTheme {
 }
 
 /** 缺省主题：与历史渲染完全一致的品牌蓝（老模型/无身份段零变化）。 */
-export const DEFAULT_THEME_ID = "azure";
+export const DEFAULT_THEME_ID: string = themePresets.defaultThemeId;
 
-const THEMES: Record<string, IdentityTheme> = {
-  azure: {
-    id: "azure", label: "湛蓝 · 通用企业",
-    primary: "#1677ff", primaryHover: "#0958d9", gradTo: "#69b1ff", primaryFg: "#ffffff",
-    contentBg: "#f0f2f5", accentBg: "#e6f4ff", accentFg: "#0958d9",
-    charts: ["#1677ff", "#69b1ff", "#003eb3"],
-    sidebarBg: "#0f2138", sidebarText: "#c9d6e6",
-  },
-  forest: {
-    id: "forest", label: "松绿 · 生产运营",
-    primary: "#2e7d32", primaryHover: "#1b5e20", gradTo: "#81c784", primaryFg: "#ffffff",
-    contentBg: "#f4f7f2", accentBg: "#e8f5e9", accentFg: "#1b5e20",
-    charts: ["#2e7d32", "#558b2f", "#8bc34a"],
-    sidebarBg: "#13241a", sidebarText: "#cbdccf",
-  },
-  graphite: {
-    id: "graphite", label: "石墨 · 专业中性",
-    primary: "#525252", primaryHover: "#3d3d3d", gradTo: "#9e9e9e", primaryFg: "#ffffff",
-    contentBg: "#f0f0f0", accentBg: "#e5e5e5", accentFg: "#333333",
-    charts: ["#606060", "#476780", "#909090"],
-    sidebarBg: "#1f1f1f", sidebarText: "#d4d4d4",
-  },
-  tangerine: {
-    id: "tangerine", label: "橘橙 · 消费活力",
-    primary: "#e05d38", primaryHover: "#c2410c", gradTo: "#fdba74", primaryFg: "#ffffff",
-    contentBg: "#f8fafc", accentBg: "#fff0eb", accentFg: "#b23c17",
-    charts: ["#e05d38", "#f59e0b", "#3b82f6"],
-    sidebarBg: "#271a15", sidebarText: "#e8d9d1",
-  },
-  violet: {
-    id: "violet", label: "紫罗兰 · 创意智能",
-    primary: "#7033ff", primaryHover: "#5b21b6", gradTo: "#c4b5fd", primaryFg: "#ffffff",
-    contentBg: "#f7f7f8", accentBg: "#ede9fe", accentFg: "#5b21b6",
-    charts: ["#7033ff", "#a78bfa", "#22d3ee"],
-    sidebarBg: "#1d1633", sidebarText: "#d9d3ec",
-  },
-  amber: {
-    id: "amber", label: "琥珀 · 财务审计",
-    primary: "#d97706", primaryHover: "#b45309", gradTo: "#fcd34d", primaryFg: "#ffffff",
-    contentBg: "#fffdf7", accentBg: "#fffbeb", accentFg: "#92400e",
-    charts: ["#f59e0b", "#d97706", "#78716c"],
-    sidebarBg: "#261d0e", sidebarText: "#e6dcc4",
-  },
-  clay: {
-    id: "clay", label: "陶土 · 温暖人文",
-    primary: "#c96442", primaryHover: "#a34a2e", gradTo: "#e7bba4", primaryFg: "#ffffff",
-    contentBg: "#faf9f5", accentBg: "#f5e8df", accentFg: "#8d4a2f",
-    charts: ["#c96442", "#b8a07a", "#6b8e6f"],
-    sidebarBg: "#241812", sidebarText: "#e3d5c8",
-  },
-  indigo: {
-    id: "indigo", label: "靛蓝 · 数据密集",
-    primary: "#6366f1", primaryHover: "#4f46e5", gradTo: "#a5b4fc", primaryFg: "#ffffff",
-    contentBg: "#f8fafc", accentBg: "#e0e7ff", accentFg: "#3730a3",
-    charts: ["#6366f1", "#818cf8", "#38bdf8"],
-    sidebarBg: "#171b38", sidebarText: "#d2d6f0",
-  },
-};
+/** 2026-07-26 起 8 套预设不再在 TS 手写——与 Python 侧同读
+ * slide-rule-python/services/data/identity_theme_presets.json（@identity-themes
+ * alias 直读同一份文件；此前 Python freeform_block.py 手抄这份色板、"两边
+ * 独立维护要记得同步"，现在物理上只有一份）。 */
+const THEMES: Record<string, IdentityTheme> = Object.fromEntries(
+  Object.entries(themePresets.themes).map(([id, theme]) => [
+    id,
+    theme as unknown as IdentityTheme,
+  ])
+);
 
 /** 账本里声明的主题 id（parity 测试对照 THEMES 实现清单）。 */
 export const LEGAL_THEME_IDS: readonly string[] = legalDomains.identityThemes;
 
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-// sidebarBg 允许两段式线性渐变（跟 Python identity_theme_gen.py 的
-// _GRADIENT_RE 同一个格式，不是放开随便写 CSS background）。
-const GRADIENT_RE = /^linear-gradient\(\s*\d{1,3}deg\s*,\s*#[0-9a-fA-F]{6}\s*,\s*#[0-9a-fA-F]{6}\s*\)$/;
-const GENERATED_THEME_HEX_KEYS = [
-  "primary", "primaryHover", "gradTo", "primaryFg", "contentBg",
-  "accentBg", "accentFg", "sidebarText",
-] as const;
+// 生成主题合格契约——与 Python identity_theme_gen.py（格式正则）、
+// freeform_block.is_valid_generated_theme（使用判定）同读 presets JSON 里的
+// generatedThemeContract，判定规则只此一处，不存在两端标准打架的窗口。
+const THEME_CONTRACT = themePresets.generatedThemeContract;
+const HEX_RE = new RegExp(THEME_CONTRACT.hexPattern);
+const GRADIENT_RE = new RegExp(THEME_CONTRACT.sidebarBgGradientPattern);
+const GENERATED_THEME_HEX_KEYS: readonly string[] = THEME_CONTRACT.hexKeys;
+const GENERATED_THEME_CHARTS_LENGTH: number = THEME_CONTRACT.chartsLength;
 
 /** 生图驱动生成的身份主题（2026-07-24）——Python 侧 identity_theme_gen.py
  * 已经过 Pydantic 十六进制格式 + WCAG 对比度校验，这里仍然二次校验，不
@@ -131,7 +84,7 @@ function isValidGeneratedTheme(v: unknown): v is IdentityTheme {
   }
   if (
     !Array.isArray(t.charts) ||
-    t.charts.length !== 3 ||
+    t.charts.length !== GENERATED_THEME_CHARTS_LENGTH ||
     !t.charts.every((c) => typeof c === "string" && HEX_RE.test(c))
   ) {
     return false;

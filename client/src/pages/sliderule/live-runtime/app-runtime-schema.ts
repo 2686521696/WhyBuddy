@@ -343,7 +343,10 @@ export function buildAiActionInputs(
   return inputs;
 }
 
-const LAYOUT_SLOT_KEYS = [
+/** 5 槽位键。用字面量元组是为了保住 Record<LayoutSlotKey, …> 的类型推导
+ * ——直接从目录 JSON 导入会退化成 string。与目录 allowedSlots 的一致性由
+ * __tests__/ssot-parity.test.ts 哨兵锁死（谁改目录不改这里，CI 立刻红）。 */
+export const LAYOUT_SLOT_KEYS = [
   "summary",
   "primary",
   "secondary",
