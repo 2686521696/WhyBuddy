@@ -127,7 +127,13 @@ def _marker_matches(marker: str, text: str) -> bool:
     （中文没有词边界）。marker 内的空格放宽为任意空白。
     """
     if re.search(r"[a-z]", marker):
-        pattern = r"(?<![a-z0-9])" + re.escape(marker).replace(r"\ ", r"\s+") + r"(?![a-z0-9])"
+        # 末尾允许可选复数后缀（tickets/approvals/requests 是极自然的英文
+        # 表述，词边界一刀切会把它们全打成"认不出"——终检实测的召回回归）。
+        pattern = (
+            r"(?<![a-z0-9])"
+            + re.escape(marker).replace(r"\ ", r"\s+")
+            + r"(?:e?s)?(?![a-z0-9])"
+        )
         return re.search(pattern, text) is not None
     return marker in text
 

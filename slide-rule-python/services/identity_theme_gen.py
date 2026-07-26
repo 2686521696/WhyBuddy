@@ -104,14 +104,14 @@ class IdentityThemeSpec(BaseModel):
     )
     @classmethod
     def check_hex(cls, v: str) -> str:
-        if not _HEX_RE.match(v):
+        if not _HEX_RE.fullmatch(v):
             raise ValueError(f"'{v}' is not a valid 6-digit hex color (e.g. #1677ff)")
         return v
 
     @field_validator("sidebarBg")
     @classmethod
     def check_sidebar_bg(cls, v: str) -> str:
-        if _HEX_RE.match(v) or _GRADIENT_RE.match(v):
+        if _HEX_RE.fullmatch(v) or _GRADIENT_RE.fullmatch(v):
             return v
         raise ValueError(
             f"'{v}' must be a 6-digit hex color (e.g. #0f2138) or a two-stop "
@@ -122,7 +122,7 @@ class IdentityThemeSpec(BaseModel):
     @classmethod
     def check_chart_hexes(cls, v: list[str]) -> list[str]:
         for c in v:
-            if not _HEX_RE.match(c):
+            if not _HEX_RE.fullmatch(c):
                 raise ValueError(f"chart color '{c}' is not a valid 6-digit hex color")
         return v
 

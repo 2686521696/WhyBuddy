@@ -60,6 +60,22 @@ class FreeformGenerationError(RuntimeError):
     """FreeformInsight 内容生成/校验失败（调用方应把这个区块降级/拿掉）。"""
 
 
+# "数据声明"形状的数字——check_numbers_grounded 只拦这些，不拦结构性数字
+# （近7天/Top 5/2026年度/24小时这类标题词，终检实测过的误伤面）：
+_NUMERIC_CLAIM_RES = (
+    re.compile(r"^\W*[¥$€]?\d[\d,\.]*\s*%?\W*$"),          # 整段就是一个数（"128" "1,234.5%"）
+    re.compile(r"[¥$€]\s*\d"),                              # 货币（"¥128,000"）
+    re.compile(r"\d+(\.\d+)?\s*%"),                         # 百分比（"3.5%"）
+    re.compile(r"\d{1,3}(,\d{3})+"),                        # 千分位（"12,345"）
+    re.compile(r"(共|合计|总计|累计)\s*\d"),                 # 计数句式（"共 42 条"）
+    re.compile(r"\d[\d,\.]*\s*(条|单|件|个|笔|人|次|元|万|亿)"),  # 数+量词（"328 单"；时间单位天/小时/年不在列）
+)
+
+
+def _NUMERIC_CLAIM_RES_MATCH(text: str) -> bool:
+    return any(p.search(text) for p in _NUMERIC_CLAIM_RES)
+
+
 # 内容树硬上限（micromark/cmark 同款纪律：不可信输入必须带嵌套/规模上限）。
 # 超限在这里被 Pydantic 拦下、错误回喂 reask；前端 block-registry.tsx 用同
 # 值做纵深防御第二道（持久化快照恢复也走渲染那条路径）。改值两侧要一起改。
@@ -148,20 +164,23 @@ def is_valid_generated_theme(v: Any) -> bool:
     """
     if not isinstance(v, dict):
         return False
+    # fullmatch 不是 match：Python 的 $ 会豁免尾随换行（"#123456\n" 能过），
+    # JS 的 $ 不豁免——用 match 就给"两端同源"留了一道换行错配窗口
+    # （Python 判合格拿去配卡片色、前端整套弃用回落预设）。
     for key in _CONTRACT_HEX_KEYS:
         val = v.get(key)
-        if not isinstance(val, str) or not _CONTRACT_HEX_RE.match(val):
+        if not isinstance(val, str) or not _CONTRACT_HEX_RE.fullmatch(val):
             return False
     sidebar_bg = v.get("sidebarBg")
     if not isinstance(sidebar_bg, str) or not (
-        _CONTRACT_HEX_RE.match(sidebar_bg) or _CONTRACT_GRADIENT_RE.match(sidebar_bg)
+        _CONTRACT_HEX_RE.fullmatch(sidebar_bg) or _CONTRACT_GRADIENT_RE.fullmatch(sidebar_bg)
     ):
         return False
     charts = v.get("charts")
     if (
         not isinstance(charts, list)
         or len(charts) != _CONTRACT_CHARTS_LEN
-        or not all(isinstance(c, str) and _CONTRACT_HEX_RE.match(c) for c in charts)
+        or not all(isinstance(c, str) and _CONTRACT_HEX_RE.fullmatch(c) for c in charts)
     ):
         return False
     return True
@@ -202,9 +221,15 @@ def _theme_palette(theme_id: str, generated_theme: Optional[dict[str, Any]] = No
     自定义主题——优先用这个（同一个 app 的侧边栏/顶栏就是照它来的，颜色要
     统一），传了但不合契约就落回 8 预设，不让一个坏字典拖垮整个生成。
     判定用 is_valid_generated_theme——与前端同一契约，前端会弃用的主题这里
-    绝不拿来配色（否则卡片一个色系、侧栏另一个色系）。"""
+    绝不拿来配色（否则卡片一个色系、侧栏另一个色系）。
+
+    label 不在契约必填集里（前端渲染也不校验它），但本文件的两个 prompt
+    消费方都要读 hint['label']——这里出口兜底，缺了给个中性名，不让一个
+    可选字段把整层增强炸成 KeyError（终检实测过的事故路径）。"""
     if is_valid_generated_theme(generated_theme):
-        return generated_theme  # type: ignore[return-value]
+        theme = dict(generated_theme)  # type: ignore[arg-type]
+        theme.setdefault("label", "自定义主题")
+        return theme
     return _THEME_COLOR_HINTS.get(theme_id) or _THEME_COLOR_HINTS[_DEFAULT_THEME_ID]
 
 
@@ -493,17 +518,19 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
         @model_validator(mode="after")
         def check_numbers_grounded(self) -> "FreeformNode":
             # "数字不能编"的生成侧强制（此前只靠 prompt 约束，模块 docstring
-            # 自称有这条校验但代码里没有——guardrails 声明式 validator 思路）：
-            # text 里出现数字，本节点就必须挂 dataRef 聚合，渲染端会用真实
-            # 数据现算替换；不想挂就把数字从文案里去掉。宁可 reask 多一轮，
-            # 不让编造的数字直达用户。
-            if self.text and re.search(r"\d", self.text):
+            # 自称有这条校验但代码里没有——guardrails 声明式 validator 思路）。
+            # 只拦"数据声明"形状的数字（裸数值/货币/百分比/千分位/量词计数），
+            # 不拦结构性数字（"近 7 天趋势"/"Top 5 客户"/"2026 年度"这类标题
+            # ——终检实测过的一批误伤，prompt 也明说装饰性文案不需要 dataRef）。
+            # 拦下即校验错误回喂 reask；建议把数值拆成独立节点挂 dataRef，
+            # 因为渲染端 dataRefText 会整段替换 text（标签与数值要分节点写）。
+            if self.text and _NUMERIC_CLAIM_RES_MATCH(self.text):
                 if not (self.dataRef and self.dataRef.aggregate):
                     raise ValueError(
-                        f"text 含数字（'{self.text[:40]}'）但没有挂 dataRef 聚合——"
-                        "数字必须来自真实数据现算，不能手写。要么给本节点挂 "
-                        "dataRef（aggregate=count / sum:<fieldId> / avg:<fieldId>），"
-                        "要么改写文案去掉数字（如 '128 单' → '订单总量'+dataRef）"
+                        f"text 是数据声明（'{self.text[:40]}'）但没有挂 dataRef 聚合——"
+                        "具体数值必须来自真实数据现算，不能手写。把数值拆成独立节点并挂 "
+                        "dataRef（aggregate=count / sum:<fieldId> / avg:<fieldId>，"
+                        "标签文字放在相邻节点），或改写文案去掉具体数值"
                     )
             return self
 
@@ -1002,10 +1029,17 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
                 continue
             brief = str((block.get("props") or {}).get("designBrief") or "").strip()
             bid = str(block.get("id") or "").strip()
-            # 成本预算：参考图/截图自检按次计费（一张参考图=一次生图调用，
-            # 一次自检=一个一次性 E2B 沙盒），超出预算退化为纯文字生成。
+            # 成本预算：参考图/截图自检按"尝试"计费（参考图在 generate 开头
+            # 就生成了——失败的区块钱照样花了，必须扣预算；只在成功分支计数
+            # 会让网关抖动时笼子完全失效，生图次数退化为区块数×1，终检实测）。
             use_ref = ref_used < max_ref_images
             allow_shot = use_ref and shot_used < max_screenshot_verify
+            if use_ref:
+                ref_used += 1
+            else:
+                capped_blocks += 1
+            if allow_shot:
+                shot_used += 1
             try:
                 content = generate_freeform_block(
                     brief, datamodel, theme_id=theme_id, device=device,
@@ -1014,12 +1048,6 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
                     allow_screenshot_verify=allow_shot,
                 )
                 block["freeformContent"] = content
-                if use_ref:
-                    ref_used += 1
-                else:
-                    capped_blocks += 1
-                if allow_shot:
-                    shot_used += 1
             except FreeformGenerationError as exc:
                 print(f"[freeform_block] {page.get('id')}.{bid} generation failed, dropping block: {str(exc)[:200]}")
                 if bid:
@@ -1156,8 +1184,15 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
         if not has_content:
             continue
         brief = _monitor_overview_design_brief(page, datamodel)
+        # 与 enrich_freeform_blocks 同一预算语义：按尝试计费（见彼处注释）。
         use_ref = ref_used < max_ref_images
         allow_shot = use_ref and shot_used < max_screenshot_verify
+        if use_ref:
+            ref_used += 1
+        else:
+            capped_pages += 1
+        if allow_shot:
+            shot_used += 1
         try:
             content = generate_freeform_block(
                 brief, datamodel, theme_id=theme_id, device=device,
@@ -1166,12 +1201,6 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
                 allow_screenshot_verify=allow_shot,
             )
             page["freeformOverview"] = content
-            if use_ref:
-                ref_used += 1
-            else:
-                capped_pages += 1
-            if allow_shot:
-                shot_used += 1
         except FreeformGenerationError as exc:
             print(
                 f"[freeform_block] {page.get('id')} monitor overview generation failed, "

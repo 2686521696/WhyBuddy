@@ -90,7 +90,11 @@ VALID_THEME = {
 
 def test_generated_theme_contract_accepts_valid():
     assert is_valid_generated_theme(VALID_THEME)
-    assert _theme_palette("forest", VALID_THEME) is VALID_THEME
+    palette = _theme_palette("forest", VALID_THEME)
+    assert palette["primary"] == VALID_THEME["primary"]
+    # label 不在契约必填集里，但 prompt 消费方要读——出口必须兜底，
+    # 缺 label 的合格主题不能把增强层炸成 KeyError（终检实测事故）。
+    assert palette["label"]
 
 
 def test_generated_theme_contract_rejects_partial():
@@ -99,6 +103,13 @@ def test_generated_theme_contract_rejects_partial():
     missing_sidebar = {k: v for k, v in VALID_THEME.items() if k != "sidebarBg"}
     assert not is_valid_generated_theme(missing_sidebar)
     assert _theme_palette("forest", missing_sidebar) == freeform_block._THEME_COLOR_HINTS["forest"]
+
+
+def test_generated_theme_contract_rejects_trailing_newline():
+    """Python 的 $ 豁免尾随换行、JS 不豁免——必须用 fullmatch 堵住这道
+    "后端判合格、前端整套弃用"的换行错配窗口。"""
+    sneaky = dict(VALID_THEME, primary="#123456\n")
+    assert not is_valid_generated_theme(sneaky)
 
 
 def test_generated_theme_contract_rejects_bad_shapes():

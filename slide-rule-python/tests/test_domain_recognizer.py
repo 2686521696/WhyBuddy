@@ -46,6 +46,19 @@ def test_two_weak_markers_together_recognized():
     assert _recognize_domain("ticket triage with SLA tracking") == "service_ticket"
 
 
+def test_plural_forms_recognized():
+    """词边界允许可选复数后缀——tickets/approvals/requests 是极自然的英文
+    表述，一刀切词边界会把它们全打成认不出（终检实测的召回回归）。"""
+    cases = {
+        "service tickets system": "service_ticket",
+        "build purchase approvals workflow": "purchase_approval",
+        "build a purchase_requests system": "purchase_approval",
+        "leave requests approval app": "leave_approval",
+    }
+    for goal, expected in cases.items():
+        assert _recognize_domain(goal) == expected, goal
+
+
 # ── 不该认的坚决不认（历史误伤全量回归）────────────────────
 
 FALSE_POSITIVE_GOALS = [

@@ -100,6 +100,24 @@ def test_monitor_overview_budget(monkeypatch):
         assert page.get("freeformOverview")  # 超预算仍然生成（纯文字），不丢内容
 
 
+def test_budget_counts_failed_attempts(monkeypatch):
+    """预算按尝试计费——参考图在 generate 开头就生成了，失败的区块钱照样
+    花了；只在成功分支计数会让网关抖动时笼子完全失效（终检实测:12 区块
+    全带参考图）。"""
+    from services.freeform_block import FreeformGenerationError
+
+    calls = []
+
+    def fake_generate(brief, datamodel, **kwargs):
+        calls.append(kwargs.get("use_reference_image"))
+        raise FreeformGenerationError("simulated gateway flake")
+
+    monkeypatch.setattr(freeform_block, "generate_freeform_block", fake_generate)
+    enrich_freeform_blocks(_model_with_blocks(8))
+    # 默认上限 4：失败也扣预算，第 5 个起必须不再带参考图
+    assert calls == [True, True, True, True, False, False, False, False]
+
+
 def test_budget_env_garbage_falls_back_to_default(monkeypatch):
     monkeypatch.setenv("SLIDERULE_ENRICH_MAX_REF_IMAGES", "not-a-number")
     assert freeform_block._env_budget("SLIDERULE_ENRICH_MAX_REF_IMAGES", 4) == 4

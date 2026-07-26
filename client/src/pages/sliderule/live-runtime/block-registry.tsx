@@ -554,7 +554,9 @@ function renderFreeformNode(
   key: React.Key,
   entityRows?: Record<string, RuntimeRow[]>,
   chartPalette?: { primary: string; categorical: readonly string[] },
-  depth = 0,
+  // 根节点记 depth=1（与 Python _freeform_tree_bounds 同一计法——两侧
+  // 上限必须真同值，root=0 会让前端多放一层）。
+  depth = 1,
   budget?: FreeformRenderBudget
 ): React.ReactNode {
   if (!node || typeof node !== "object") return null;
@@ -625,7 +627,7 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows, c
     remaining: FREEFORM_MAX_NODES,
     truncated: false,
   };
-  const rendered = renderFreeformNode(root, "root", entityRows, chartPalette, 0, budget);
+  const rendered = renderFreeformNode(root, "root", entityRows, chartPalette, 1, budget);
   return (
     <div data-testid="freeform-insight" className="overflow-hidden rounded">
       {rendered}
