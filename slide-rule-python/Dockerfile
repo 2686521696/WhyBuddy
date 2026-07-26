@@ -29,9 +29,11 @@ COPY slide-rule-python/ ./
 
 EXPOSE 9700
 
-# 绑 :: = IPv4+IPv6 双栈（Railway 等平台的服务间私网是 IPv6-only，只绑 0.0.0.0
-# 会导致 Node 侧走 *.railway.internal 连不进来 → 502；:: 同时兼容 compose 的
-# IPv4 桥接网，两边都能用）。端口听平台注入的 $PORT，没有就回落 9700（compose
-# 里设了 PORT=9700，健康检查照旧命中）。用 sh -c + exec 保证 uvicorn 是 PID 1、
-# 正常接收 SIGTERM 优雅退出。
-CMD ["sh", "-c", "exec python -m uvicorn app:app --host :: --port ${PORT:-9700}"]
+# 监听地址可配（UVICORN_HOST），默认 :: = IPv4+IPv6 双栈：
+#   - Railway 服务间私网是 IPv6-only（*.railway.internal），需要 :: 才连得进；
+#   - compose 的 IPv4 桥接网 :: 也兼容（Linux 默认 v6only=0，收 IPv4-mapped）。
+# 但有些平台（如 Render）私网/健康检查走 IPv4，且容器可能 v6only=1，:: 会收不到
+# IPv4 连接 → 健康检查超时。这类平台把 UVICORN_HOST 设成 0.0.0.0 即可。
+# 端口听平台注入的 $PORT，没有回落 9700（compose 设了 PORT=9700）。
+# sh -c + exec 保证 uvicorn 是 PID 1、正常收 SIGTERM 优雅退出。
+CMD ["sh", "-c", "exec python -m uvicorn app:app --host ${UVICORN_HOST:-::} --port ${PORT:-9700}"]

@@ -128,6 +128,9 @@ class AppStoreBackend:
     def find_by_dedup_key(self, dedup_key: str) -> Optional[dict[str, Any]]:  # pragma: no cover
         raise NotImplementedError
 
+    def delete(self, app_id: str) -> bool:  # pragma: no cover
+        raise NotImplementedError
+
     def export_all(self) -> list[dict[str, Any]]:  # pragma: no cover
         raise NotImplementedError
 
@@ -202,6 +205,15 @@ class JsonFileAppStore(AppStoreBackend):
                 if r.get("dedup_key") == dedup_key:
                     return r
         return None
+
+    def delete(self, app_id: str) -> bool:
+        with self._lock:
+            rows = self._read()
+            remaining = [r for r in rows if r.get("id") != app_id]
+            if len(remaining) == len(rows):
+                return False
+            self._write(remaining)
+        return True
 
     def export_all(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -380,6 +392,15 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 ).first()
                 return row.to_record() if row else None
 
+        def delete(self, app_id: str) -> bool:
+            with Session(engine) as s:
+                row = s.get(GeneratedApp, app_id)
+                if row is None:
+                    return False
+                s.delete(row)
+                s.commit()
+            return True
+
         def export_all(self) -> list[dict[str, Any]]:
             with Session(engine) as s:
                 return [r.to_record() for r in s.scalars(select(GeneratedApp))]
@@ -479,16 +500,35 @@ def save_version(root_id: str, parent_id: str, model: dict[str, Any], *, goal: s
     return get_backend().save(record)
 
 
-def fork_app(source_id: str, *, session_id: Optional[str] = None) -> Optional[str]:
+def fork_app(
+    source_id: str,
+    *,
+    session_id: Optional[str] = None,
+    new_name: Optional[str] = None,
+) -> Optional[str]:
     """从现有应用分出一条新血缘：新 root·v1·parent 指向源，model_json 拷贝一份。
-    源不存在返回 None。用于"以某个生成应用为起点，改成一个新应用"。"""
+    源不存在返回 None。用于"以某个生成应用为起点，改成一个新应用"。
+
+    - new_name：给副本改名（写进模型身份 appIdentity.productName，product_name
+      元数据会自动跟着 re-derive）。对标 Budibase duplicateApp 的"预填 X 副本"——
+      避免复刻出同名孪生卡。
+    - session_id：不再默认继承源应用的会话（那会导致点开副本却进了源会话）。
+      只在显式传入时才带；默认 None = 副本是独立设计快照，不绑任何会话。
+    """
     source = get_backend().get(source_id)
     if source is None:
         return None
+    import copy
+
+    model = copy.deepcopy(source.get("model_json") or {})
+    if new_name and isinstance(model, dict):
+        appbundle = model.setdefault("appbundle", {})
+        identity = appbundle.setdefault("appIdentity", {})
+        identity["productName"] = str(new_name)[:120]
     app_id = _new_id()
     record = _build_record(
-        source.get("model_json") or {}, goal=source.get("goal") or "",
-        session_id=session_id or source.get("session_id"),
+        model, goal=source.get("goal") or "",
+        session_id=session_id,
         gate_passed=bool(source.get("gate_passed")),
         app_id=app_id, root_id=app_id, parent_id=source_id, version=1,
     )
@@ -506,6 +546,12 @@ def list_apps(*, limit: int = 50, offset: int = 0, latest_per_root: bool = True)
 
 def list_versions(root_id: str) -> list[dict[str, Any]]:
     return get_backend().versions(root_id)
+
+
+def delete_app(app_id: str) -> bool:
+    """从画廊移除一个应用记录。返回是否真删到（不存在返回 False）。
+    只删这一条记录，不动它对应的推演会话（会话另有独立生命周期）。"""
+    return get_backend().delete(app_id)
 
 
 def export_all() -> list[dict[str, Any]]:

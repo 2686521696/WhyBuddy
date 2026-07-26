@@ -54,6 +54,13 @@ import {
   newSessionId,
   notifySessionsUpdated,
 } from "./SidebarSessions";
+import {
+  listApps,
+  getApp,
+  forkApp,
+  deleteApp,
+  type AppStoreSummary,
+} from "./app-store-client";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import {
   GITHUB_PAGES_DEMO_GOAL,
@@ -98,16 +105,14 @@ export interface AppCardDetail {
   model: FiveSystemModel | null;
 }
 
-/** 从持久化会话状态推导卡片详情（不发明数据：模型缺失就是 draft）。 */
-export function deriveAppCardDetail(state: unknown): AppCardDetail {
-  const s = (state ?? {}) as Record<string, any>;
-  const closure = s.publishClosure ?? {};
-  const evidenceCount = Number(closure.evidencePresentCount ?? 0) || 0;
-  const blocked = Boolean(closure.blocked);
-  const model: FiveSystemModel | null = mergeFiveSystemModels(
-    null,
-    parseFiveSystemModelFromPerSkillEvidence(closure.perSkillEvidence)
-  );
+/**
+ * 五系统模型 → 卡片详情的核心（会话态与 App Store 记录共用同一套读法：
+ * 都是从同一份 five-system 模型抽指标，保证两条数据源的卡片指标口径一致）。
+ */
+export function buildDetailFromModel(
+  model: FiveSystemModel | null,
+  opts: { evidenceCount: number; blocked: boolean; awaitReason?: unknown; stableDigest?: string }
+): AppCardDetail {
   const entitiesArr = model?.datamodel?.entities ?? [];
   const pagesArr = model?.page?.pages ?? [];
   const nodesArr = (model?.workflow as any)?.nodes ?? [];
@@ -123,15 +128,15 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
         }
       : null;
   const status: AppCardStatus =
-    evidenceCount >= 6 && !blocked && model
+    opts.evidenceCount >= 6 && !opts.blocked && model
       ? "runnable"
-      : s.awaitReason
+      : opts.awaitReason
         ? "awaiting"
         : "draft";
   return {
     status,
-    evidenceCount,
-    blocked,
+    evidenceCount: opts.evidenceCount,
+    blocked: opts.blocked,
     entities: entitiesArr.length,
     pages: pagesArr.length,
     flowNodes: Array.isArray(nodesArr) ? nodesArr.length : 0,
@@ -140,19 +145,139 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
     identity,
     pageNames: pagesArr.map((p: any) => String(p?.name ?? p?.id ?? "")).filter(Boolean).slice(0, 6),
     entityNames: entitiesArr.map((e: any) => String(e?.name ?? e?.id ?? "")).filter(Boolean).slice(0, 4),
-    stableDigest: String(closure.stableDigest ?? closure.closureHash ?? "").slice(0, 32) || undefined,
+    stableDigest: opts.stableDigest,
     model,
   };
+}
+
+/** 从持久化会话状态推导卡片详情（不发明数据：模型缺失就是 draft）。 */
+export function deriveAppCardDetail(state: unknown): AppCardDetail {
+  const s = (state ?? {}) as Record<string, any>;
+  const closure = s.publishClosure ?? {};
+  const model: FiveSystemModel | null = mergeFiveSystemModels(
+    null,
+    parseFiveSystemModelFromPerSkillEvidence(closure.perSkillEvidence)
+  );
+  return buildDetailFromModel(model, {
+    evidenceCount: Number(closure.evidencePresentCount ?? 0) || 0,
+    blocked: Boolean(closure.blocked),
+    awaitReason: s.awaitReason,
+    stableDigest: String(closure.stableDigest ?? closure.closureHash ?? "").slice(0, 32) || undefined,
+  });
+}
+
+/**
+ * App Store 完整记录（含 model_json）→ 卡片详情。App Store 只存闭环应用，
+ * model_json 就是那份 five-system 模型，直接喂 buildDetailFromModel（证据满 6、
+ * 不 blocked），得到的指标/身份/活渲染模型跟会话卡完全同源。
+ */
+export function deriveDetailFromAppRecord(modelJson: unknown): AppCardDetail {
+  const model = (modelJson && typeof modelJson === "object"
+    ? (modelJson as FiveSystemModel)
+    : null);
+  return buildDetailFromModel(model, { evidenceCount: 6, blocked: false });
+}
+
+/**
+ * App Store 列表摘要 → 卡片「即时」详情（模型加载前的占位）。摘要不含完整模型，
+ * 所以 model=null、roles/aiCaps 暂 0，进视口懒拉到 model 后由 deriveDetailFromAppRecord
+ * 升级。产品名/主题/页面数/实体数摘要里就有，先渲染出来。
+ */
+export function deriveDetailFromAppSummary(s: AppStoreSummary): AppCardDetail {
+  return {
+    status: "runnable", // App Store 只存闭环应用
+    evidenceCount: 6,
+    blocked: false,
+    entities: s.entity_count || 0,
+    pages: s.page_count || 0,
+    flowNodes: 0,
+    roles: 0,
+    aiCaps: 0,
+    identity:
+      s.product_name || s.theme_id
+        ? {
+            productName: s.product_name || "",
+            theme: s.theme_id || "azure",
+            icon: "boxes", // 摘要不含 icon，默认；模型加载后升级
+          }
+        : null,
+    pageNames: [],
+    entityNames: [],
+    stableDigest: undefined,
+    model: null, // 懒加载：卡进视口再 getApp 拉完整模型
+  };
+}
+
+/**
+ * 画廊统一条目（两条数据源合流）：
+ *   - source "app"     ── App Store 闭环应用（有血缘/版本，可复刻、可删记录）
+ *   - source "session" ── 尚未落库的在推演会话草稿（推演中/blocked）
+ * 卡片 UI 一套壳，只按 source 分派封面来源 / 菜单动作。
+ */
+export interface GalleryItem {
+  key: string;
+  source: "app" | "session";
+  goal: string;
+  createdAt?: string | null;
+  lastActive?: string | null;
+  /** session 源必有；app 源 = 记录里的 session_id（可能为空） */
+  sessionId?: string;
+  /** app 源必有：App Store 记录 id（复刻/删记录/按 id 拉模型） */
+  appId?: string;
+  rootId?: string;
+  parentId?: string | null;
+  version?: number;
+  /** app 源必有：列表摘要（模型加载前即时渲染卡片） */
+  summary?: AppStoreSummary;
+  phase?: string | null;
+}
+
+/**
+ * 合并两条数据源：App Store 闭环应用（主）∪ 未落库的在推演会话草稿。
+ * 按 session_id 去重——某个会话已闭环落库（App Store 里有），就不再把它的会话
+ * 草稿卡重复摆出来（App Store 卡取代之，因为它带血缘/版本/可复刻）。
+ * 保证零回退：当前所有会话卡仍在，只是闭环的那些改由 App Store 卡承载。
+ */
+export function mergeGalleryItems(
+  apps: AppStoreSummary[],
+  sessions: SessionListItem[]
+): GalleryItem[] {
+  const appItems: GalleryItem[] = apps.map(a => ({
+    key: `app:${a.id}`,
+    source: "app",
+    goal: a.goal || a.product_name || "",
+    createdAt: a.created_at,
+    lastActive: a.created_at,
+    sessionId: a.session_id || undefined,
+    appId: a.id,
+    rootId: a.root_id,
+    parentId: a.parent_id,
+    version: a.version,
+    summary: a,
+  }));
+  const claimed = new Set(
+    apps.map(a => a.session_id).filter((x): x is string => Boolean(x))
+  );
+  const sessionItems: GalleryItem[] = sessions
+    .filter(s => s.sessionId && !claimed.has(s.sessionId))
+    .map(s => ({
+      key: `session:${s.sessionId}`,
+      source: "session",
+      goal: s.goal,
+      createdAt: s.createdAt,
+      lastActive: s.lastActive,
+      sessionId: s.sessionId,
+      phase: s.phase,
+    }));
+  return [...appItems, ...sessionItems];
 }
 
 export type GalleryFilter = "all" | "runnable" | "draft" | "blocked";
 
 /** 筛选口径 = 门语言（E41）：closed 6/6（runnable）/ blocked / 推演中（其余）。 */
-export function filterCards(
-  items: Array<{ item: SessionListItem; detail: AppCardDetail | null }>,
-  filter: GalleryFilter,
-  query: string
-) {
+export function filterCards<
+  T extends { item: { goal: string }; detail: AppCardDetail | null },
+>(items: T[], filter: GalleryFilter, query: string): T[] {
   const q = query.trim().toLowerCase();
   return items.filter(({ item, detail }) => {
     if (q && !item.goal.toLowerCase().includes(q)) return false;
@@ -170,6 +295,31 @@ export function formatUpdatedAt(iso?: string | null): string {
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * 相对时间「3 分钟前 / 2 小时前 / 昨天 …」（对标 moment().fromNow()，不引新依赖）。
+ * 画廊看的是"新不新、活跃不活跃"，相对时间比绝对时间戳直观。绝对时间由调用方
+ * 放进 title 悬浮兜底。now 参数注入便于确定性单测。坏输入回空串。
+ */
+export function formatRelativeTime(iso?: string | null, now: number = Date.now()): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const sec = Math.floor((now - t) / 1000);
+  if (sec < 60) return "刚刚";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} 分钟前`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} 小时前`;
+  const day = Math.floor(hr / 24);
+  if (day === 1) return "昨天";
+  if (day < 7) return `${day} 天前`;
+  const week = Math.floor(day / 7);
+  if (week < 5) return `${week} 周前`;
+  const month = Math.floor(day / 30);
+  if (month < 12) return `${month} 个月前`;
+  return `${Math.floor(day / 365)} 年前`;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +384,47 @@ function PendingAppThumb({ detail }: { detail: AppCardDetail | null }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * 骨架卡（对标 ToolJet AppList 的 react-loading-skeleton）：加载时铺等尺寸的
+ * 16:9 灰块占位——结构跟真卡片一致，数据到了直接"填进去"不跳版。用 animate-pulse
+ * 做呼吸微光，不引新依赖。
+ */
+function SkeletonCard() {
+  return (
+    <div className="aspect-video overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
+      <div className="flex h-full w-full animate-pulse flex-col justify-end bg-gradient-to-br from-stone-100 to-stone-50 p-3.5">
+        <div className="flex items-center gap-1.5">
+          <div className="h-5 w-5 shrink-0 rounded-[6px] bg-stone-200" />
+          <div className="h-3 w-2/5 rounded bg-stone-200" />
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <div className="h-2.5 w-12 rounded bg-stone-200" />
+          <div className="h-2.5 w-12 rounded bg-stone-200" />
+          <div className="h-2.5 w-10 rounded bg-stone-200" />
+          <div className="ml-auto h-2.5 w-14 rounded bg-stone-200" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 空态插画（内联 SVG，无外部资产、离线可用、跟随主题）：叠放的卡片 + 一点星光。 */
+function EmptyGalleryArt() {
+  return (
+    <svg width="132" height="104" viewBox="0 0 132 104" fill="none" aria-hidden="true">
+      <rect x="26" y="30" width="80" height="52" rx="8" fill="#eef2ff" />
+      <rect x="34" y="20" width="80" height="52" rx="8" fill="#e0e7ff" />
+      <rect x="42" y="10" width="80" height="52" rx="8" fill="#fff" stroke="#c7d2fe" strokeWidth="2" />
+      <rect x="50" y="20" width="30" height="6" rx="3" fill="#c7d2fe" />
+      <rect x="50" y="32" width="64" height="4" rx="2" fill="#e0e7ff" />
+      <rect x="50" y="42" width="52" height="4" rx="2" fill="#e0e7ff" />
+      <path d="M18 16l2.2 5.3L25.5 23l-5.3 2.2L18 30.5l-2.2-5.3L10.5 23l5.3-1.7L18 16z" fill="#5b6cff" opacity="0.9" />
+      <circle cx="112" cy="86" r="3" fill="#5b6cff" opacity="0.55" />
+      <circle cx="24" cy="72" r="2.5" fill="#5b6cff" opacity="0.4" />
+    </svg>
   );
 }
 
@@ -430,7 +621,11 @@ export interface BuiltinExample {
 export const PENDING_TEMPLATE_INTENT_KEY = "sliderule:pending-template-intent";
 
 export function AppsWorkbench() {
+  // 两条数据源：apps = App Store 闭环应用（摘要，有血缘/版本/可复刻）；
+  // sessions = 会话（含尚未落库的在推演草稿）。合并成画廊条目（mergeGalleryItems）。
+  const [apps, setApps] = React.useState<AppStoreSummary[] | null>(null);
   const [sessions, setSessions] = React.useState<SessionListItem[] | null>(null);
+  // 详情按画廊条目 key（app:<id> / session:<id>）索引——两条源共用一张 map。
   const [details, setDetails] = React.useState<Record<string, AppCardDetail | null>>({});
   const [listError, setListError] = React.useState<string | null>(null);
   // 三服务健康（原观察台独有价值下放：点健康点展开分列详情）
@@ -443,6 +638,9 @@ export function AppsWorkbench() {
   const [query, setQuery] = React.useState("");
   const [sortDesc, setSortDesc] = React.useState(true);
   const [menuFor, setMenuFor] = React.useState<string | null>(null);
+  // 复刻改名弹框（对标 Budibase duplicateApp：预填「源名 副本」让用户改名）
+  const [forkModal, setForkModal] = React.useState<{ item: GalleryItem; name: string } | null>(null);
+  const [forkBusy, setForkBusy] = React.useState(false);
   const [page, setPage] = React.useState(1);
   // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
   const [reloadKey, setReloadKey] = React.useState(0);
@@ -463,7 +661,8 @@ export function AppsWorkbench() {
     let alive = true;
     if (IS_GITHUB_PAGES) {
       // 静态演示（无后端）：画廊 = 主演示会话 + 画廊示例种子（E18：新引擎
-      // 真实推演的闭环终态，懒加载不进主包）。不打任何 /api/*。
+      // 真实推演的闭环终态，懒加载不进主包）。不打任何 /api/*。App Store 无后端 → 空。
+      setApps([]);
       const store = createGithubPagesSlideRuleSessionStore();
       void Promise.all([
         loadOrSeedGithubPagesDemoSession(store),
@@ -473,54 +672,86 @@ export function AppsWorkbench() {
       ])
         .then(([demoState, examples]) => {
           if (!alive) return;
-          setSessions([
+          const sessionList: SessionListItem[] = [
             { sessionId: GITHUB_PAGES_DEMO_SESSION_ID, goal: GITHUB_PAGES_DEMO_GOAL },
             ...examples.map(e => ({ sessionId: e.sessionId, goal: e.goal })),
-          ]);
+          ];
+          setSessions(sessionList);
+          // 演示态详情按合并后的条目 key（session:<id>）索引，跟真实态口径一致。
           setDetails({
-            [GITHUB_PAGES_DEMO_SESSION_ID]: deriveAppCardDetail(demoState),
+            [`session:${GITHUB_PAGES_DEMO_SESSION_ID}`]: deriveAppCardDetail(demoState),
             ...Object.fromEntries(
-              examples.map(e => [e.sessionId, deriveAppCardDetail(e.state)])
+              examples.map(e => [`session:${e.sessionId}`, deriveAppCardDetail(e.state)])
             ),
           });
         })
-        .catch(() => alive && setSessions([]));
+        .catch(() => alive && (setSessions([]), setApps([])));
       return () => {
         alive = false;
       };
     }
-    fetch("/api/sliderule/sessions")
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(data => {
+    // 真实态：并行拉两条源（App Store 摘要 + 会话列表），合并后按卡渐进拉详情。
+    // App Store 失败 fail-open 空数组（画廊退化成纯会话卡，零回退）。
+    const loadDetail = async (gi: GalleryItem) => {
+      try {
+        if (gi.source === "app" && gi.appId) {
+          const rec = await getApp(gi.appId);
+          if (!alive) return;
+          setDetails(prev => ({
+            ...prev,
+            [gi.key]: rec
+              ? deriveDetailFromAppRecord(rec.model_json) // 完整模型 → 活渲染 + 全指标
+              : gi.summary
+                ? deriveDetailFromAppSummary(gi.summary) // 拉不到详情退摘要占位
+                : null,
+          }));
+        } else if (gi.sessionId) {
+          const res = await fetch(`/api/sliderule/sessions/${encodeURIComponent(gi.sessionId)}`);
+          const body = res.ok ? await res.json() : null;
+          if (!alive) return;
+          setDetails(prev => ({
+            ...prev,
+            [gi.key]: body?.state ? deriveAppCardDetail(body.state) : null,
+          }));
+        }
+      } catch {
         if (!alive) return;
-        const list: SessionListItem[] = (data?.sessions ?? []).filter(
+        setDetails(prev => ({
+          ...prev,
+          [gi.key]: gi.source === "app" && gi.summary ? deriveDetailFromAppSummary(gi.summary) : null,
+        }));
+      }
+    };
+    void Promise.allSettled([
+      listApps(),
+      fetch("/api/sliderule/sessions").then(r =>
+        r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))
+      ),
+    ]).then(([appsRes, sessRes]) => {
+      if (!alive) return;
+      const appList = appsRes.status === "fulfilled" ? appsRes.value : [];
+      setApps(appList);
+      let sessionList: SessionListItem[] = [];
+      if (sessRes.status === "fulfilled") {
+        sessionList = ((sessRes.value?.sessions ?? []) as SessionListItem[]).filter(
           (s: SessionListItem) => s.sessionId
         );
-        setSessions(list);
-        // 渐进拉详情（并发 4；失败标 null 不武断）
-        const queue = [...list];
-        const workers = Array.from({ length: 4 }, async () => {
-          for (;;) {
-            const item = queue.shift();
-            if (!item || !alive) return;
-            try {
-              const res = await fetch(`/api/sliderule/sessions/${encodeURIComponent(item.sessionId)}`);
-              const body = res.ok ? await res.json() : null;
-              if (!alive) return;
-              setDetails(prev => ({
-                ...prev,
-                [item.sessionId]: body?.state ? deriveAppCardDetail(body.state) : null,
-              }));
-            } catch {
-              if (!alive) return;
-              setDetails(prev => ({ ...prev, [item.sessionId]: null }));
-            }
-          }
-        });
-        void Promise.all(workers);
-      })
-      .catch(e => alive && setListError(String(e?.message ?? e)));
-    if (IS_GITHUB_PAGES) return () => { alive = false; }; // 演示态不探测
+        setSessions(sessionList);
+      } else {
+        setSessions([]);
+        setListError(String((sessRes.reason as Error)?.message ?? sessRes.reason));
+      }
+      // 渐进拉详情（并发 4；app→getApp 完整模型 / session→会话态；失败退占位/ null）
+      const queue = mergeGalleryItems(appList, sessionList);
+      const workers = Array.from({ length: 4 }, async () => {
+        for (;;) {
+          const gi = queue.shift();
+          if (!gi || !alive) return;
+          await loadDetail(gi);
+        }
+      });
+      void Promise.all(workers);
+    });
     fetch("/api/sliderule/builtin-examples")
       .then(r => (r.ok ? r.json() : null))
       .then(d => alive && setExamples(Array.isArray(d?.examples) ? d.examples : []))
@@ -570,24 +801,30 @@ export function AppsWorkbench() {
     open(newSessionId());
   };
 
-  const removeApp = async (sessionId: string) => {
-    // DELETE 幂等（G1 契约）；成功后本地摘卡，不整页刷新
+  /** 删卡：App Store 卡删记录（DELETE /apps/{id}，不动会话）；会话草稿卡删会话。 */
+  const removeCard = async (gi: GalleryItem) => {
     try {
-      await fetch(`/api/sliderule/sessions/${encodeURIComponent(sessionId)}`, {
-        method: "DELETE",
-      });
-      const remaining = (sessions ?? []).filter(s => s.sessionId !== sessionId);
-      setSessions(remaining);
-      // E28：与左侧会话列表联动——广播更新事件让侧栏立即摘掉该会话；
-      // 删的是当前活跃会话时切到最近剩余会话（一个不剩就开新会话），
-      // 避免 active-session-id 悬空指向已删会话
-      notifySessionsUpdated();
-      try {
-        if (localStorage.getItem(ACTIVE_SESSION_KEY) === sessionId) {
-          activateSession(remaining[0]?.sessionId ?? newSessionId());
+      if (gi.source === "app" && gi.appId) {
+        const ok = await deleteApp(gi.appId);
+        if (ok) setApps(prev => (prev ?? []).filter(a => a.id !== gi.appId));
+      } else if (gi.sessionId) {
+        // DELETE 幂等（G1 契约）；成功后本地摘卡，不整页刷新
+        await fetch(`/api/sliderule/sessions/${encodeURIComponent(gi.sessionId)}`, {
+          method: "DELETE",
+        });
+        const remaining = (sessions ?? []).filter(s => s.sessionId !== gi.sessionId);
+        setSessions(remaining);
+        // E28：与左侧会话列表联动——广播更新事件让侧栏立即摘掉该会话；
+        // 删的是当前活跃会话时切到最近剩余会话（一个不剩就开新会话），
+        // 避免 active-session-id 悬空指向已删会话
+        notifySessionsUpdated();
+        try {
+          if (localStorage.getItem(ACTIVE_SESSION_KEY) === gi.sessionId) {
+            activateSession(remaining[0]?.sessionId ?? newSessionId());
+          }
+        } catch {
+          /* 隐私模式无存储：跳过活跃会话纠正 */
         }
-      } catch {
-        /* 隐私模式无存储：跳过活跃会话纠正 */
       }
     } catch {
       /* 网络失败保持原样，用户可重试 */
@@ -595,9 +832,46 @@ export function AppsWorkbench() {
     setMenuFor(null);
   };
 
-  const paired = (sessions ?? []).map(item => ({
+  /**
+   * 复刻（②，对标 Budibase duplicateApp / Appsmith fork / ToolJet clone）：
+   * 以某个 App Store 应用为起点分出一条新血缘（新 root·v1·parent 指向源），
+   * 成功后重拉画廊——新卡出现在列表里，用户可点开继续改。后端 fork_app 现成。
+   */
+  /** 点「复刻」→ 开改名弹框，预填「源名 副本」（不再一键复刻出同名孪生卡）。 */
+  const openForkModal = (gi: GalleryItem) => {
+    setMenuFor(null);
+    if (gi.source !== "app" || !gi.appId) return;
+    const baseName =
+      details[gi.key]?.identity?.productName ||
+      gi.summary?.product_name ||
+      gi.goal ||
+      "应用";
+    setForkModal({ item: gi, name: `${baseName} 副本` });
+  };
+
+  /** 确认复刻：带新名调 fork_app 分新血缘（不继承源会话），成功后重拉画廊。 */
+  const confirmFork = async () => {
+    const fm = forkModal;
+    if (!fm?.item.appId || forkBusy) return;
+    setForkBusy(true);
+    const newId = await forkApp(fm.item.appId, fm.name);
+    setForkBusy(false);
+    setForkModal(null);
+    if (newId) setReloadKey(k => k + 1);
+  };
+
+  // 合并两条数据源为画廊条目；详情按条目 key 索引，app 卡在模型加载前用摘要占位。
+  const items: GalleryItem[] | null =
+    apps === null && sessions === null
+      ? null
+      : mergeGalleryItems(apps ?? [], sessions ?? []);
+  const paired = (items ?? []).map(item => ({
     item,
-    detail: details[item.sessionId] ?? null,
+    detail:
+      details[item.key] ??
+      (item.source === "app" && item.summary
+        ? deriveDetailFromAppSummary(item.summary)
+        : null),
   }));
   paired.sort((a, b) => {
     const ka = String(a.item.lastActive ?? a.item.createdAt ?? "");
@@ -839,12 +1113,76 @@ export function AppsWorkbench() {
       {tab === "mine" &&
         (listError ? (
           <div className="mt-8 text-[13px] text-red-500">会话列表拉取失败：{listError}</div>
-        ) : sessions == null ? (
-          <div className="mt-8 text-[13px] text-stone-400">加载中…</div>
-        ) : visible.length === 0 ? (
-          <div className="mt-8 text-[13px] text-stone-400">
-            {paired.length === 0 ? "还没有应用——点右上角「创建新应用」开始推演" : "没有匹配的应用"}
+        ) : items == null ? (
+          // 骨架屏（对标 ToolJet AppList skeleton）：铺等尺寸占位卡，不跳版
+          <div
+            className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4"
+            data-testid="apps-skeleton"
+          >
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
           </div>
+        ) : visible.length === 0 ? (
+          paired.length === 0 ? (
+            // 首次空态（对标 ToolJet BlankPage）：插画 + 引导 + 创建 CTA + 官方示例起手卡
+            <div className="mt-10 flex flex-col items-center text-center" data-testid="apps-empty-first">
+              <EmptyGalleryArt />
+              <div className="mt-4 text-[15px] font-semibold text-slate-800">还没有应用</div>
+              <div className="mt-1 text-[13px] text-slate-500">
+                描述你想要的系统，让 AI 推演出你的第一个应用
+              </div>
+              <button
+                data-testid="apps-empty-create"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_14px_rgba(91,108,255,0.28)] transition hover:bg-[#4a5aef] active:scale-[0.98]"
+                onClick={() => open(newSessionId())}
+              >
+                <span className="text-[15px] leading-none">+</span> 创建新应用
+              </button>
+              {examples.length > 0 && (
+                <div className="mt-8 w-full max-w-lg">
+                  <div className="mb-2.5 text-[12px] text-slate-400">或从官方示例起手</div>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {examples.slice(0, 4).map(ex => {
+                      const th = resolveIdentityTheme(ex.theme);
+                      return (
+                        <button
+                          key={ex.domain}
+                          data-testid={`empty-starter-${ex.domain}`}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-slate-700 shadow-sm transition hover:border-[#5b6cff]/50 hover:shadow"
+                          onClick={() => useTemplate(ex)}
+                        >
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ background: th.primary }}
+                          />
+                          {ex.productName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            // 搜不到（有应用，但当前搜索/筛选无匹配）
+            <div className="mt-10 flex flex-col items-center text-center" data-testid="apps-empty-search">
+              <EmptyGalleryArt />
+              <div className="mt-4 text-[14px] font-medium text-slate-600">没有匹配的应用</div>
+              <div className="mt-1 text-[12.5px] text-slate-400">换个关键词，或清空筛选看看</div>
+              {(query || filter !== "all") && (
+                <button
+                  className="mt-3 rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-[#5b6cff] transition hover:bg-[#eef2ff]"
+                  onClick={() => {
+                    setQuery("");
+                    setFilter("all");
+                  }}
+                >
+                  清空筛选
+                </button>
+              )}
+            </div>
+          )
         ) : (
           <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
             {pagedMine.map(({ item, detail }) => {
@@ -852,17 +1190,23 @@ export function AppsWorkbench() {
               const BrandIcon = detail?.identity
                 ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
                 : undefined;
+              // 活渲染缩略图的稳定 id：会话卡用 sessionId，App Store 卡无会话时用 appId。
+              const thumbId = item.sessionId || item.appId || item.key;
+              const canOpen = Boolean(item.sessionId);
+              const isApp = item.source === "app";
+              const version = item.version ?? 1;
+              const rel = formatRelativeTime(item.lastActive ?? item.createdAt);
               return (
                 <CenterCard
-                  key={item.sessionId}
-                  testid={`app-card-${item.sessionId}`}
+                  key={item.key}
+                  testid={`app-card-${item.sessionId || item.appId}`}
                   title={detail?.identity?.productName || item.goal || "（未命名话题）"}
                   titleAttr={item.goal}
                   Icon={BrandIcon}
                   iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
                   media={
                     detail?.status === "runnable" && detail.model ? (
-                      <LiveAppThumb sessionId={item.sessionId} model={detail.model} goal={item.goal} />
+                      <LiveAppThumb sessionId={thumbId} model={detail.model} goal={item.goal} />
                     ) : (
                       <PendingAppThumb detail={detail} />
                     )
@@ -882,6 +1226,22 @@ export function AppsWorkbench() {
                           <GitBranch size={11} className="opacity-60" />
                           AI {detail.aiCaps}
                         </span>
+                        {isApp && version > 1 && (
+                          <span
+                            className="inline-flex items-center rounded bg-white/20 px-1.5 text-[10px] font-semibold text-white/95"
+                            title="改版次数（App Store 血缘）"
+                          >
+                            v{version}
+                          </span>
+                        )}
+                        {rel && (
+                          <span
+                            className="inline-flex items-center text-white/65"
+                            title={formatUpdatedAt(item.lastActive ?? item.createdAt)}
+                          >
+                            {rel}
+                          </span>
+                        )}
                       </>
                     ) : (
                       <span className="opacity-70">加载中…</span>
@@ -889,27 +1249,36 @@ export function AppsWorkbench() {
                   }
                   statusDot={meta?.dot ?? "bg-stone-300"}
                   statusLabel={meta?.label ?? "…"}
-                  onClick={() => open(item.sessionId)}
+                  onClick={() => (canOpen ? open(item.sessionId!) : undefined)}
                   topRight={
                     <>
                       <button
-                        data-testid={`app-menu-${item.sessionId}`}
+                        data-testid={`app-menu-${item.sessionId || item.appId}`}
                         className="absolute right-2 top-2 rounded bg-white/85 p-1 text-stone-400 opacity-0 shadow-sm transition hover:text-stone-600 group-hover:opacity-100"
                         onClick={e => {
                           e.stopPropagation();
-                          setMenuFor(prev => (prev === item.sessionId ? null : item.sessionId));
+                          setMenuFor(prev => (prev === item.key ? null : item.key));
                         }}
                       >
                         <MoreHorizontal size={14} />
                       </button>
-                      {menuFor === item.sessionId && (
+                      {menuFor === item.key && (
                         <div
                           className="absolute right-2 top-8 z-10 rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
                           onClick={e => e.stopPropagation()}
                         >
+                          {isApp && (
+                            <button
+                              data-testid={`app-fork-${item.appId}`}
+                              className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
+                              onClick={() => openForkModal(item)}
+                            >
+                              <GitBranch size={13} /> 复刻应用
+                            </button>
+                          )}
                           <button
                             className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-50"
-                            onClick={() => void removeApp(item.sessionId)}
+                            onClick={() => void removeCard(item)}
                           >
                             <Trash2 size={13} /> 删除应用
                           </button>
@@ -995,6 +1364,58 @@ export function AppsWorkbench() {
             onChange={p => setPage(p)}
             showSizeChanger={false}
           />
+        </div>
+      )}
+
+      {/* 复刻改名弹框（对标 Budibase duplicateApp）：预填「源名 副本」，改名后确认。
+          fork 分新血缘、不继承源会话——点开副本不会误进源应用的会话。 */}
+      {forkModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          data-testid="fork-modal"
+          onClick={() => !forkBusy && setForkModal(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
+              <GitBranch size={16} className="text-[#5b6cff]" /> 复刻应用
+            </div>
+            <div className="mt-1 text-[12px] text-slate-500">
+              复制一份为新应用（记着从谁复刻而来），给它起个名：
+            </div>
+            <input
+              autoFocus
+              data-testid="fork-name-input"
+              value={forkModal.name}
+              disabled={forkBusy}
+              onChange={e => setForkModal(m => (m ? { ...m, name: e.target.value } : m))}
+              onKeyDown={e => {
+                if (e.key === "Enter") void confirmFork();
+                if (e.key === "Escape") setForkModal(null);
+              }}
+              className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-800 outline-none transition focus:border-[#5b6cff] focus:ring-2 focus:ring-[#5b6cff]/20"
+              placeholder="副本名称"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-slate-100"
+                disabled={forkBusy}
+                onClick={() => setForkModal(null)}
+              >
+                取消
+              </button>
+              <button
+                data-testid="fork-confirm"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-4 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-60"
+                disabled={forkBusy || !forkModal.name.trim()}
+                onClick={() => void confirmFork()}
+              >
+                {forkBusy ? "复刻中…" : "复刻"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

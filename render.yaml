@@ -1,0 +1,65 @@
+# Render 蓝图（Blueprint）—— SlideRule / WhyBuddy【全免费版】
+#
+# 用法：Render → New → Blueprint → 选这个仓库（分支 main）→ Apply，
+# Apply 时填一个 LLM_API_KEY 即可。
+#
+# 免费版取舍（Render 免费档只覆盖「公开 Web 服务」，私有服务/数据盘都要付费）：
+#   - Python 从「私有服务」改成「公开 Web 服务」（有内部密钥挡着，但暴露在公网）；
+#   - 去掉数据盘 → 数据落临时文件系统，服务重启/重部署会丢（仅用于跑通验证；
+#     要持久我再给你加个免费 Postgres）；
+#   - 两个服务闲置 ~15 分钟休眠，首个访客要等 30~60 秒冷启动。
+#   - 免费实例全账号共享 750 小时/月（休眠时不计），够断续测试。
+#
+# 端口：Render 注入 $PORT=10000，两个镜像启动命令都听 $PORT；
+# Node 用内部地址 http://whybuddy-python:10000 连 Python。
+
+services:
+  # ── Python 推演后端（免费公开 Web 服务）─────────────────────────
+  - type: web
+    name: whybuddy-python
+    runtime: docker
+    branch: main
+    region: singapore
+    plan: free
+    dockerfilePath: ./slide-rule-python/Dockerfile
+    dockerContext: .
+    # 健康检查指向 /health（返回 200）。不能留空/默认——Render 默认会探根路径 /，
+    # 而本应用 / 没有路由、返回 404，Render 一看非成功码就判失败超时。
+    # 绑定保持 :: 默认：实测 Render 探针从 ::1(IPv6 本地) 打进来，:: 能收到、能响应。
+    healthCheckPath: /health
+    envVars:
+      - key: SLIDE_RULE_INTERNAL_KEY
+        generateValue: true        # 随机生成；Node 那边引用同一个值（内部 API 靠它挡）
+      - key: LLM_API_KEY
+        sync: false                # Apply 时在面板填（推演必需）
+
+  # ── Node（前端 + API，免费公开 Web 服务）─────────────────────────
+  - type: web
+    name: whybuddy
+    runtime: docker
+    branch: main
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Node 在 / 提供前端页面（返回 200），健康检查指向 / 即可。
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SLIDERULE_V5_BACKEND
+        value: python
+      # 走 Python 的公网地址（不是私网 whybuddy-python:10000）——Render 服务间私网对
+      # 绑定/端口有坑（跨服务是 IPv4，:: 绑定 v6only 时收不到），走公网让 Render 边缘
+      # 处理连接，最稳；内部 API 仍靠 SLIDE_RULE_INTERNAL_KEY 挡。
+      - key: PYTHON_SLIDE_RULE_BASE_URL
+        value: https://whybuddy-python.onrender.com
+      - key: PYTHON_API_TARGET
+        value: https://whybuddy-python.onrender.com
+      - key: AGENT_LOOP_API_TARGET
+        value: https://whybuddy-python.onrender.com
+      - key: PYTHON_SLIDE_RULE_INTERNAL_KEY
+        fromService:               # 引用 Python 服务生成的同一把密钥
+          type: web
+          name: whybuddy-python
+          envVarKey: SLIDE_RULE_INTERNAL_KEY
