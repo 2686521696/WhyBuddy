@@ -1,3 +1,31 @@
+%% SlideRule V5.5 架构图（推演引擎规格 · 继承 V5.4 全图 + ✦ 07-26 审查修复升版）
+%% ✦ 2026-07-26 升版：对 V5.4 图（07-24）做了一轮"图码对照审查 + 九项修复 +
+%%   终检对抗复核"（提交 b9a3e26 / 150c694 / aa5cc4f，决策留档 docs/adr/）。
+%%   本版两类变化：其一，代码真实长出的新结构；其二，V5.4 图上与代码不符的
+%%   表述按现实修正（措辞修正不是新功能，逐条见节点内 07-26 标注）：
+%%   ✦1 演示域识别纪律 — 裸子串匹配误伤修复（"sla"命中 translation/island/
+%%                        slack 的真实事故）：词边界+复数后缀+强弱词分级，泛词
+%%                        单独不认域，认不出 fail-closed 走 LLM 生成；夹具产物
+%%                        provenance 标注 builtin-domain（ADR-0002）
+%%   ✦2 渲染防崩溃气囊 — AppStageErrorBoundary 兜渲染异常（诚实降级卡+
+%%                        resetKeys 自动复位）· freeform 树深度/节点上限双侧
+%%                        同值（micromark 纪律：超限截断降级不炸栈）
+%%   ✦3 数据诚实收紧   — sum 空数据显「—」（SQL/pandas 语义，不再显 0 冒充
+%%                        真值）· "数字必须挂 dataRef"生成侧真实强制（只拦
+%%                        数据声明形状，不误伤 近7天/Top5 这类结构性数字）
+%%   ✦4 SSOT 收编      — identity_theme_presets.json 新共享源（8 套主题+生成
+%%                        主题合格契约，前后端物理同读）· 图标形状正则/legacy
+%%                        别名收进 experience_block_catalog.json 双侧派生 ·
+%%                        gate 槽位从账本派生 · parity 哨兵双侧锁死（ADR-0003）
+%%   ✦5 体验层成本预算 — 参考图/截图自检每次 enrich 限额（env 可调·按尝试
+%%                        计费·超限退纯文字有日志）· SLIDERULE_E2B_TEMPLATE
+%%                        预烤沙盒模板免现装 playwright
+%%   ✦6 演示域夹具预增强 — golden-file 再生成脚本离线跑主题增强、重新过门后
+%%                        冻结（四域生成主题各按预设色相锚点差异化），运行时
+%%                        仍零 LLM；ENRICH 子图补画 APPSTORE 入库节点（原缺失）
+%% ★ 以下为 V5.4（07-24）图，节点区含 ✦/07-26 标注的修正；V5.4 未修订原文
+%%   逐字保留于 docs/SlideRule V5.4 架构图.md（本文件为其修正超集）：
+%% ---------------------------------------------------------------------------
 %% SlideRule V5.4 架构图（推演引擎规格 · 继承 V5.3 全图 + ★ 07-24 体验层升版）
 %% ★ 2026-07-24 升版：V5.3 图（07-17）之后一周，结构门下游长出一整层「体验层
 %%   生成 / Experience Enrichment」——此前图上从结构门直接跳到 app 主舞台，中间
@@ -173,7 +201,7 @@ subgraph CLOSURE["09 五系统闭环装配层 / Five-System Closure（▲ 07-17 
   DREPAIR["▲ 确定性修复 / v5_model_repair（零LLM·留痕）<br/>不变式refs近邻改写(唯一命中)·修不好整条剔除<br/>E37 展示层charts/stats同款处方(枚举违规剔除·非法format清除)<br/>骨架六系统不修——仍由门硬拦"]:::core
   MGATE{"▲ 结构门 / v5_model_gate<br/>跨系统引用全解析·枚举合法域·页面范式绑定<br/>二元机械·任何悬空=拦"}:::gate
   REASK5["▲ 门裁决回喂 / gate-feedback retry (E37)<br/>findings原文喂回·有界重生成一次<br/>错哪改哪·两版都拦仍fail-closed"]:::fallback
-  DOMFIX["▲ 内置演示域夹具 / builtin_domain_models (E35)<br/>采购·请假·工单·入职四域冻结过门模型<br/>运行时零LLM·门规则演进时测试哨兵报警"]:::state
+  DOMFIX["▲ 内置演示域夹具 / builtin_domain_models (E35)<br/>采购·请假·工单·入职四域冻结过门模型·运行时零LLM<br/>★07-26:识别改词边界+强弱词分级(泛词单独不认·认不出走LLM生成·ADR-0002)<br/>产物provenance标注builtin-domain·夹具离线预增强生成主题(golden-file再生成)"]:::state
   CLOSEV["▲ 闭环证据 / appbundle.runtimeClosure<br/>六段 perSkillEvidence·closureHash/stableDigest指纹<br/>modelSection纯载荷(不进指纹/信任判定)"]:::ledger
   FAILSAFE["▲ 闭环兜底 / fail-closed failsafe (E37)<br/>重建异常→确定性blocked闭环(CLOSURE_REBUILD_FAILED带因)<br/>空指令回落goal收口·publishClosure永不为null"]:::fallback
   APPSTAGE["▲ app 主舞台 / App Stage<br/>closed 6/6 → 右栏长出可操作应用<br/>切角色·录数据·走流程·桌面/手机/代码三视图"]:::done
@@ -181,12 +209,13 @@ end
 
 subgraph ENRICH["10 体验层生成 / Experience Enrichment（★ 07-24 新增子图 · 过门后·装配前·全程 fail-open）"]
   direction TB
-  THEME["★ 身份主题生成 / enrich_identity_theme<br/>生图参照→视觉LLM取色·写回 appIdentity.generatedTheme<br/>8套预设降级为兜底·侧栏/顶栏/图表/区块全链路配色统一"]:::cap
-  FREEFORM["★ FreeformInsight 内容生成 / enrich_freeform_blocks<br/>Pydantic深校验+reask·图表候选机械枚举(Metabase X-Ray)<br/>视觉参照自校验闭环(生成→截图→比参考图→按需改一版)<br/>chart节点→真ECharts·dataRef现算真值(数字不能编·查不到显—)"]:::cap
+  THEME["★ 身份主题生成 / enrich_identity_theme<br/>生图参照→视觉LLM取色(条件:生图key+图片parts声明·缺则纯文本取色)<br/>写回 appIdentity.generatedTheme·8套预设降级为兜底<br/>合格契约两端同源(identity_theme_presets.json·07-26)"]:::cap
+  FREEFORM["★ FreeformInsight 内容生成 / enrich_freeform_blocks<br/>Pydantic深校验+reask(07-26:+数字必须挂dataRef·树深度/节点上限)<br/>视觉参照自校验闭环(条件:生图+E2B key+公网地址·缺则纯文字生成)<br/>chart节点→真ECharts·dataRef现算真值(数字不能编·查不到显—)<br/>07-26成本预算:参考图/截图自检每次enrich限额(env可调·超限退纯文字有日志)"]:::cap
   MONITOROV["★ 首页设计 / enrich_monitor_page_overviews<br/>monitor/首页交给FreeformInsight排版·不再永远固定骨架<br/>内容数量随领域浮动·排行/动态流仍走真实逐行渲染(dataRef表达不了)"]:::cap
-  BLOCKCAT["★ 体验区块目录 / experience_block_catalog<br/>安全原语白名单:标签·样式属性·图标(任意antd名·形状校验)·槽位·bindingSchema<br/>四方单一真相源(Gate深校验/prompt/Python Pydantic/前端渲染同源派生)"]:::ledger
-  SAFEREND["★ 前端安全渲染器 / block-registry（纵深防御第二道）<br/>只React.createElement·绝不dangerouslySetInnerHTML/eval<br/>图标按名动态解析任意antd(hasOwnProperty挡原型链)·dataRef现算·白名单再校验"]:::trust
-  DEVSHELL["★ 设备壳+视觉刻度 / device shell & design tokens<br/>桌面/平板/手机原生壳(preferredDevice)·design-token间距圆角阴影(接antd)<br/>grid-compact压实(搬自react-grid-layout核心算法·MIT)·layout 5槽位·designRecipe"]:::core
+  BLOCKCAT["★ 体验区块目录 / experience_block_catalog<br/>单一真相源(同一JSON跨语言直读):类型·槽位·binding·标签·样式·图标正则/别名<br/>07-26修正:约束链=Gate浅校验(designBrief)+生成时Pydantic深校验+前端再校验<br/>(Gate不看freeform内容树·有意分工见代码注释)"]:::ledger
+  SAFEREND["★ 前端安全渲染器 / block-registry（纵深防御第二道）<br/>只React.createElement·绝不dangerouslySetInnerHTML/eval<br/>图标按名动态解析任意antd(hasOwnProperty挡原型链)·dataRef现算·白名单再校验<br/>07-26:+渲染预算(深度/节点上限截断降级)·AppStageErrorBoundary兜渲染异常"]:::trust
+  APPSTORE["★ App Store 入库 / app_store.save_app（07-26补画·此前图上缺失）<br/>过门+增强完的设计模型持久化(Neon PG/SQLite/JSON兜底)<br/>fail-open·dedup_key去重·组建库地基"]:::ledger
+  DEVSHELL["★ 设备壳+视觉刻度 / device shell & design tokens<br/>桌面/手机按preferredDevice切换·平板范式代码保留已下架(ADR-0001)<br/>design-token间距/圆角接antd(阴影档定义未消费)·grid-compact压实(react-grid-layout核心·MIT)<br/>layout 5槽位·designRecipe"]:::core
 end
 
 subgraph REENTRY["05 失效与重入 / Invalidation & Re-entry（单一回炉 · ◆ +superseded）"]
@@ -444,7 +473,8 @@ MGATE -.★ 过门后·先增强再装配.-> THEME
 THEME ==>|★ 主题先行·区块读generatedTheme| FREEFORM
 FREEFORM ==>|★ 再逐块逐页设计| MONITOROV
 MONITOROV -.★ 增强完的模型入闭环装配.-> CLOSEV
-THEME -.★ 任一步失败·静默降级(固定骨架/8预设·不拦闭环).-> CLOSEV
+MONITOROV -.★ 07-26补画:过门+增强模型入库(fail-open·存不进不拦发布).-> APPSTORE
+THEME -.★ 任一步失败·静默降级(固定骨架/8预设·不拦闭环)·fail-open保险丝在executor调用方.-> CLOSEV
 %% 体验区块目录=四方单一真相源：既约束生成，又驱动渲染（改一处四方同步）
 BLOCKCAT -.★ 安全原语约束生成.-> FREEFORM
 BLOCKCAT -.★ 同源白名单驱动渲染.-> SAFEREND
@@ -468,13 +498,18 @@ end
 %% ===== 改进后的图例 (应用审查 Issue 1 + 6) =====
 %% V5.2 外环 (◆) 容器包裹了 DRIVE/Marathon + SURF(U4) + EXEC(U2 browser-llm/KEYPOOL) + TRUST(U1 quality) 部分
 %% 内层 CORE/POOL/REENTRY/RUNTIME/OUT 为 V5.1 脊柱 (零改动)
-%% 符号: ★ = 07-24 体验层升版 ; ▲ = 07-17 升版 ; ■ = V5.3 新增/修订 ; ◆ = V5.2 新增/外环 ; ● = Ux 修订 ; 虚线 = 跨层或待补
-%% ★ 升版后的产品主轴：SURF 一句话/附件 → CORE 推演循环(APICK 默认开·ECTX 装箱)
+%% 符号: ✦ = 07-26 审查修复升版 ; ★ = 07-24 体验层升版 ; ▲ = 07-17 升版 ; ■ = V5.3 新增/修订 ; ◆ = V5.2 新增/外环 ; ● = Ux 修订 ; 虚线 = 跨层或待补
+%% ★ 升版后的产品主轴（07-26 修正：主轴有一条演示域旁路，不是所有路径都过体验层）：
+%%   新颖意图：SURF 一句话/附件 → CORE 推演循环(APICK 默认开·ECTX 装箱)
 %%   → CLOSURE 五系统起草→确定性修复→结构门→回喂
-%%   → ENRICH 体验层生成(过门后·装配前·fail-open：身份主题→FreeformInsight区块→首页设计)
+%%   → ENRICH 体验层生成(过门后·装配前·fail-open：身份主题→FreeformInsight区块→首页设计→App Store入库)
 %%   → CLOSURE 闭环装配(证据 6/6) → APPSTAGE 应用接管右栏(安全渲染器×设备壳)
+%%   演示域意图(采购/请假/工单/入职·词边界+强弱词识别·ADR-0002)：走 DOMFIX 冻结夹具旁路，
+%%   零 LLM 直达闭环——运行时跳过 ENRICH 整层与 App Store 入库；夹具的生成主题由离线
+%%   再生成脚本(scripts/enrich_builtin_domain_models.py)预增强后冻结进 JSON（golden-file 套路）。
 %%   两条纪律并存：闭环装配 fail-closed(任一环失败→blocked 闭环+人话 blocker，publishClosure 永不为 null)；
-%%   体验层增强 fail-open(任一步失败→固定骨架/8 预设兜底，绝不拦闭环发布)
+%%   体验层增强 fail-open(任一步失败→固定骨架/8 预设兜底，绝不拦闭环发布；
+%%   保险丝实现在 v5_capability_executor 调用方的 try/except，不是 ENRICH 节点自身属性)
 %% 建议: Mermaid 渲染时使用 "View as code" 或折叠外容器以减少交叉边 spaghetti；或拆分为 "核心脊柱" + "V5.2 delta" 两个图
 
 classDef surface fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
