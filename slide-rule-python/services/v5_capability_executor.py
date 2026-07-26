@@ -414,9 +414,16 @@ def _build_per_skill_evidence(
                 matches[skill] = llm_result[skill]
     elif not blocked_signal and recognized_domain is not None:
         # Deterministic domain (purchase/leave/ticket/onboarding) — fast fixture path,
-        # no LLM call. This is the T1 generality proof; unchanged.
+        # no LLM call. This is the T1 generality proof.
+        # 修复（07-27 实测事故）：haystack 只按关键词认产物，推演自产的
+        # "appbundle.runtimeClosure" 这类壳产物 id 里含 "appbundle"，会抢占
+        # skill 槽位，把真正携带模型段（_model_section）的夹具产物挡在门外
+        # ——appIdentity/generatedTheme 因此从未到达前端（六系统唯 appbundle
+        # 丢 modelSection，右栏主题恒回落 azure 默认）。规则：携带模型段的
+        # 产物优先于不带模型段的 haystack 壳。
         for skill in REQUIRED_EVIDENCE_KEYS:
-            if skill not in matches:
+            existing = matches.get(skill)
+            if existing is None or "_model_section" not in existing:
                 matches[skill] = _runtime_linkage_artifact_for_skill(skill, goal, recognized_domain)
     elif not blocked_signal and recognized_domain is None and (force_llm or _llm_generate_enabled() or llm_json_fn is not None):
         # T3: novel intent — ask the LLM to generate a five-system model, then run
@@ -426,8 +433,11 @@ def _build_per_skill_evidence(
             goal, llm_json_fn, session_id=getattr(state, "sessionId", None)
         )
         if llm_result is not None:
+            # 同上：LLM 生成的产物携带 _model_section，不能被 haystack 壳
+            # 产物（如自产的 appbundle.runtimeClosure）抢占槽位。
             for skill in REQUIRED_EVIDENCE_KEYS:
-                if skill not in matches:
+                existing = matches.get(skill)
+                if existing is None or "_model_section" not in existing:
                     matches[skill] = llm_result[skill]
     elif not blocked_signal and recognized_domain is None and (goal or "").strip():
         # 新颖意图但 LLM 生成未开启 → 注定 0/6。把原因留痕给 blocker，
