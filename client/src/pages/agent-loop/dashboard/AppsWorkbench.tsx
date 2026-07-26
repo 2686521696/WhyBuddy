@@ -297,6 +297,31 @@ export function formatUpdatedAt(iso?: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * 相对时间「3 分钟前 / 2 小时前 / 昨天 …」（对标 moment().fromNow()，不引新依赖）。
+ * 画廊看的是"新不新、活跃不活跃"，相对时间比绝对时间戳直观。绝对时间由调用方
+ * 放进 title 悬浮兜底。now 参数注入便于确定性单测。坏输入回空串。
+ */
+export function formatRelativeTime(iso?: string | null, now: number = Date.now()): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const sec = Math.floor((now - t) / 1000);
+  if (sec < 60) return "刚刚";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} 分钟前`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} 小时前`;
+  const day = Math.floor(hr / 24);
+  if (day === 1) return "昨天";
+  if (day < 7) return `${day} 天前`;
+  const week = Math.floor(day / 7);
+  if (week < 5) return `${week} 周前`;
+  const month = Math.floor(day / 30);
+  if (month < 12) return `${month} 个月前`;
+  return `${Math.floor(day / 365)} 年前`;
+}
+
 // ---------------------------------------------------------------------------
 // 组件
 // ---------------------------------------------------------------------------
@@ -359,6 +384,47 @@ function PendingAppThumb({ detail }: { detail: AppCardDetail | null }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * 骨架卡（对标 ToolJet AppList 的 react-loading-skeleton）：加载时铺等尺寸的
+ * 16:9 灰块占位——结构跟真卡片一致，数据到了直接"填进去"不跳版。用 animate-pulse
+ * 做呼吸微光，不引新依赖。
+ */
+function SkeletonCard() {
+  return (
+    <div className="aspect-video overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
+      <div className="flex h-full w-full animate-pulse flex-col justify-end bg-gradient-to-br from-stone-100 to-stone-50 p-3.5">
+        <div className="flex items-center gap-1.5">
+          <div className="h-5 w-5 shrink-0 rounded-[6px] bg-stone-200" />
+          <div className="h-3 w-2/5 rounded bg-stone-200" />
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <div className="h-2.5 w-12 rounded bg-stone-200" />
+          <div className="h-2.5 w-12 rounded bg-stone-200" />
+          <div className="h-2.5 w-10 rounded bg-stone-200" />
+          <div className="ml-auto h-2.5 w-14 rounded bg-stone-200" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 空态插画（内联 SVG，无外部资产、离线可用、跟随主题）：叠放的卡片 + 一点星光。 */
+function EmptyGalleryArt() {
+  return (
+    <svg width="132" height="104" viewBox="0 0 132 104" fill="none" aria-hidden="true">
+      <rect x="26" y="30" width="80" height="52" rx="8" fill="#eef2ff" />
+      <rect x="34" y="20" width="80" height="52" rx="8" fill="#e0e7ff" />
+      <rect x="42" y="10" width="80" height="52" rx="8" fill="#fff" stroke="#c7d2fe" strokeWidth="2" />
+      <rect x="50" y="20" width="30" height="6" rx="3" fill="#c7d2fe" />
+      <rect x="50" y="32" width="64" height="4" rx="2" fill="#e0e7ff" />
+      <rect x="50" y="42" width="52" height="4" rx="2" fill="#e0e7ff" />
+      <path d="M18 16l2.2 5.3L25.5 23l-5.3 2.2L18 30.5l-2.2-5.3L10.5 23l5.3-1.7L18 16z" fill="#5b6cff" opacity="0.9" />
+      <circle cx="112" cy="86" r="3" fill="#5b6cff" opacity="0.55" />
+      <circle cx="24" cy="72" r="2.5" fill="#5b6cff" opacity="0.4" />
+    </svg>
   );
 }
 
@@ -1048,11 +1114,75 @@ export function AppsWorkbench() {
         (listError ? (
           <div className="mt-8 text-[13px] text-red-500">会话列表拉取失败：{listError}</div>
         ) : items == null ? (
-          <div className="mt-8 text-[13px] text-stone-400">加载中…</div>
-        ) : visible.length === 0 ? (
-          <div className="mt-8 text-[13px] text-stone-400">
-            {paired.length === 0 ? "还没有应用——点右上角「创建新应用」开始推演" : "没有匹配的应用"}
+          // 骨架屏（对标 ToolJet AppList skeleton）：铺等尺寸占位卡，不跳版
+          <div
+            className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4"
+            data-testid="apps-skeleton"
+          >
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
           </div>
+        ) : visible.length === 0 ? (
+          paired.length === 0 ? (
+            // 首次空态（对标 ToolJet BlankPage）：插画 + 引导 + 创建 CTA + 官方示例起手卡
+            <div className="mt-10 flex flex-col items-center text-center" data-testid="apps-empty-first">
+              <EmptyGalleryArt />
+              <div className="mt-4 text-[15px] font-semibold text-slate-800">还没有应用</div>
+              <div className="mt-1 text-[13px] text-slate-500">
+                描述你想要的系统，让 AI 推演出你的第一个应用
+              </div>
+              <button
+                data-testid="apps-empty-create"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_14px_rgba(91,108,255,0.28)] transition hover:bg-[#4a5aef] active:scale-[0.98]"
+                onClick={() => open(newSessionId())}
+              >
+                <span className="text-[15px] leading-none">+</span> 创建新应用
+              </button>
+              {examples.length > 0 && (
+                <div className="mt-8 w-full max-w-lg">
+                  <div className="mb-2.5 text-[12px] text-slate-400">或从官方示例起手</div>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {examples.slice(0, 4).map(ex => {
+                      const th = resolveIdentityTheme(ex.theme);
+                      return (
+                        <button
+                          key={ex.domain}
+                          data-testid={`empty-starter-${ex.domain}`}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-slate-700 shadow-sm transition hover:border-[#5b6cff]/50 hover:shadow"
+                          onClick={() => useTemplate(ex)}
+                        >
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ background: th.primary }}
+                          />
+                          {ex.productName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            // 搜不到（有应用，但当前搜索/筛选无匹配）
+            <div className="mt-10 flex flex-col items-center text-center" data-testid="apps-empty-search">
+              <EmptyGalleryArt />
+              <div className="mt-4 text-[14px] font-medium text-slate-600">没有匹配的应用</div>
+              <div className="mt-1 text-[12.5px] text-slate-400">换个关键词，或清空筛选看看</div>
+              {(query || filter !== "all") && (
+                <button
+                  className="mt-3 rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-[#5b6cff] transition hover:bg-[#eef2ff]"
+                  onClick={() => {
+                    setQuery("");
+                    setFilter("all");
+                  }}
+                >
+                  清空筛选
+                </button>
+              )}
+            </div>
+          )
         ) : (
           <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
             {pagedMine.map(({ item, detail }) => {
@@ -1065,6 +1195,7 @@ export function AppsWorkbench() {
               const canOpen = Boolean(item.sessionId);
               const isApp = item.source === "app";
               const version = item.version ?? 1;
+              const rel = formatRelativeTime(item.lastActive ?? item.createdAt);
               return (
                 <CenterCard
                   key={item.key}
@@ -1101,6 +1232,14 @@ export function AppsWorkbench() {
                             title="改版次数（App Store 血缘）"
                           >
                             v{version}
+                          </span>
+                        )}
+                        {rel && (
+                          <span
+                            className="inline-flex items-center text-white/65"
+                            title={formatUpdatedAt(item.lastActive ?? item.createdAt)}
+                          >
+                            {rel}
                           </span>
                         )}
                       </>

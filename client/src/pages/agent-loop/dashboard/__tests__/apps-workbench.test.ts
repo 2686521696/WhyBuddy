@@ -10,6 +10,7 @@ import {
   mergeGalleryItems,
   filterCards,
   formatUpdatedAt,
+  formatRelativeTime,
   type SessionListItem,
 } from "../AppsWorkbench";
 import type { AppStoreSummary } from "../app-store-client";
@@ -195,5 +196,27 @@ describe("formatUpdatedAt", () => {
     expect(formatUpdatedAt("2026-07-15T06:17:00Z")).toMatch(/^2026-07-15 \d{2}:\d{2}$/);
     expect(formatUpdatedAt("garbage")).toBe("");
     expect(formatUpdatedAt(null)).toBe("");
+  });
+});
+
+describe("formatRelativeTime", () => {
+  const now = new Date("2026-07-26T12:00:00Z").getTime();
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+  const S = 1000, M = 60 * S, H = 60 * M, D = 24 * H;
+
+  it("按跨度给人话，绝对时间由调用方兜底", () => {
+    expect(formatRelativeTime(ago(10 * S), now)).toBe("刚刚");
+    expect(formatRelativeTime(ago(5 * M), now)).toBe("5 分钟前");
+    expect(formatRelativeTime(ago(3 * H), now)).toBe("3 小时前");
+    expect(formatRelativeTime(ago(1 * D), now)).toBe("昨天");
+    expect(formatRelativeTime(ago(4 * D), now)).toBe("4 天前");
+    expect(formatRelativeTime(ago(2 * 7 * D), now)).toBe("2 周前");
+    expect(formatRelativeTime(ago(90 * D), now)).toBe("3 个月前");
+    expect(formatRelativeTime(ago(400 * D), now)).toBe("1 年前");
+  });
+
+  it("空/坏输入回空串", () => {
+    expect(formatRelativeTime(null, now)).toBe("");
+    expect(formatRelativeTime("garbage", now)).toBe("");
   });
 });
