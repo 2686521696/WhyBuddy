@@ -237,12 +237,18 @@ Content-quality rules (checked by a deterministic regression gate):
   field (with options) of this page's entity, columns come from its options;
   "calendar" when rows live on dates (排期/预约/计划) — REQUIRES "dateField"
   naming a date field of this page's entity, optional "colorBy" naming an
-  enum field for event coloring; "dashboard" for overview/monitoring pages —
-  give those the stats and charts the domain actually leads with, count set by
-  the business's real focus rather than a fixed quota (charts render wide,
-  table shrinks).
+  enum field for event coloring; "monitor" for the app's HOME/ops overview —
+  the page users open first to see how the business is doing (KPI + trends +
+  activity), there is usually exactly ONE such page per app; "dashboard" only
+  for a SECONDARY chart-first analytics page beyond the home overview (深钻
+  分析页), not for the home page itself. Give overview pages the stats and
+  charts the domain actually leads with, count set by the business's real
+  focus rather than a fixed quota.
   Use at most one kanban and one calendar page; never force a paradigm the
   domain doesn't need.
+- LANDING PAGE: appbundle.landingPageRef SHOULD point to the monitor/overview
+  page (打开应用第一眼看到经营全貌) — unless this business genuinely opens on
+  an action page (e.g. a submit-first tool with no meaningful overview).
 - INVARIANTS: emit 5-8 entries in "appbundle.invariants" — declarative constraints that
   must always hold, the kind an architect writes after a production incident
   (ordering: "charge before calling the upstream provider"; source of truth:
@@ -343,25 +349,43 @@ def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:
 # E29 增量迭代：精修/回退上下文（与 _installed_skills 同一请求域模式）。
 # refine：带当前模型 + 补充指令，让 LLM 在现有设计上做增量修改；
 # override：直接以给定模型为生成结果（版本回退用，不调 LLM）。
-_refine_context: Optional[Dict[str, Any]] = None
-_model_override: Optional[Dict[str, Any]] = None
+#
+# 2026-07-27 并发修复（迭代体验审查 D4）：此前是模块级普通全局——E25 后台
+# run 用 asyncio.create_task 并发驱动多会话时，A 会话的精修上下文/直供模型
+# 会被 B 会话读到、B 的 finally 会清掉 A 正在用的上下文，最坏情况 A 的应用
+# 被换成 B 的模型（跨会话数据泄露）。改 ContextVar：asyncio 任务创建/线程
+# 池调用都会拷贝上下文,每个 run 天然隔离,setter/getter API 不变。
+from contextvars import ContextVar
+
+_refine_context_var: "ContextVar[Optional[Dict[str, Any]]]" = ContextVar(
+    "sliderule_refine_context", default=None
+)
+_model_override_var: "ContextVar[Optional[Dict[str, Any]]]" = ContextVar(
+    "sliderule_model_override", default=None
+)
 
 
 def set_refine_context(model: "Optional[Dict[str, Any]]", instruction: str = "") -> None:
     """设置本轮精修上下文：现有五系统模型 + 用户补充指令。传 None 清空。"""
-    global _refine_context
-    _refine_context = (
+    _refine_context_var.set(
         {"model": model, "instruction": str(instruction or "").strip()[:2000]}
         if model
         else None
     )
 
 
+def get_refine_context() -> "Optional[Dict[str, Any]]":
+    return _refine_context_var.get()
+
+
 def set_model_override(model: "Optional[Dict[str, Any]]") -> None:
     """设置模型直供（版本回退）：生成层原样返回该模型，不调 LLM；
     结构闸照常校验。传 None 清空。"""
-    global _model_override
-    _model_override = model if isinstance(model, dict) else None
+    _model_override_var.set(model if isinstance(model, dict) else None)
+
+
+def get_model_override() -> "Optional[Dict[str, Any]]":
+    return _model_override_var.get()
 
 
 def _emit_delta(chunk: str) -> None:
@@ -418,11 +442,12 @@ def _build_user_content(goal: str) -> str:
         pass
     # E29 精修：把现有模型与补充指令给到 LLM——在现有设计上做最小增量修改，
     # 与设计无关的指令要求原样返回（版本判等后不记新版本）。
-    if _refine_context:
+    refine_ctx = get_refine_context()
+    if refine_ctx:
         import json as _json
 
         try:
-            model_json = _json.dumps(_refine_context["model"], ensure_ascii=False)
+            model_json = _json.dumps(refine_ctx["model"], ensure_ascii=False)
         except (TypeError, ValueError):
             model_json = "{}"
         parts.append(
@@ -432,7 +457,7 @@ def _build_user_content(goal: str) -> str:
             "by the instruction byte-identical. If the instruction does not "
             "ask for any design change, return the current model unchanged.\n"
             f"Current model JSON:\n{model_json}\n"
-            f"Follow-up instruction:\n{_refine_context['instruction']}"
+            f"Follow-up instruction:\n{refine_ctx['instruction']}"
         )
     parts.append("Produce the five-system JSON now.")
     return "\n\n".join(parts)
@@ -561,9 +586,10 @@ def generate_five_system_model(
     if not (goal or "").strip():
         return None
     # E29 版本回退：直供模型即生成结果（结构闸仍由调用方照常执行）
-    if _model_override is not None:
+    model_override = get_model_override()
+    if model_override is not None:
         last_generate_diagnostic = {"outcome": "ok"}
-        return dict(_model_override)
+        return dict(model_override)
     if llm_json_fn is None and gate_feedback:
         fn: Callable[[str], Optional[Dict[str, Any]]] = (
             lambda g: _default_llm_json_fn(g, gate_feedback=gate_feedback)

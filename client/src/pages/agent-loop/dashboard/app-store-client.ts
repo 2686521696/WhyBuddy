@@ -91,7 +91,13 @@ export async function listVersions(rootId: string): Promise<AppStoreSummary[]> {
  * 对标 ToolJet clone / Budibase duplicateApp：传 name 给副本改名（避免同名孪生卡）。
  * 成功返回新 app id，失败返回 null。
  */
-export async function forkApp(id: string, name?: string): Promise<string | null> {
+export interface ForkResult {
+  id: string;
+  /** 2026-07-27：后端 fork 时同步创建的绑定会话——副本点开即可运行/继续迭代 */
+  sessionId?: string;
+}
+
+export async function forkApp(id: string, name?: string): Promise<ForkResult | null> {
   try {
     const res = await fetch(`${BASE}/apps/${encodeURIComponent(id)}/fork`, {
       method: "POST",
@@ -99,8 +105,9 @@ export async function forkApp(id: string, name?: string): Promise<string | null>
       body: JSON.stringify(name && name.trim() ? { name: name.trim() } : {}),
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { id?: string };
-    return typeof data?.id === "string" ? data.id : null;
+    const data = (await res.json()) as { id?: string; sessionId?: string };
+    if (typeof data?.id !== "string") return null;
+    return { id: data.id, sessionId: typeof data.sessionId === "string" ? data.sessionId : undefined };
   } catch {
     return null;
   }

@@ -378,6 +378,17 @@ export function SlideRuleStudio({
                 {versionToolbar}
               </div>
             )}
+            {/* D3 修复（2026-07-27）：0 证据 blocked 态缩略条整行隐藏是对的
+                （六屏全空），但版本工具栏必须逆势可见——这正是用户唯一的
+                恢复入口（回退到还能跑的版本），藏起来等于"失败即失去作品"。 */}
+            {!isRunning &&
+              publishClosure?.blocked &&
+              (publishClosure?.evidencePresentCount ?? 0) === 0 &&
+              versionToolbar && (
+                <div className="flex shrink-0 items-center justify-end">
+                  {versionToolbar}
+                </div>
+              )}
 
             <ActiveSystemScreen
               activeSkillId={displaySkillId}

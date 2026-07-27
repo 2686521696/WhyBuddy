@@ -359,6 +359,14 @@ def enrich_identity_theme(model: dict[str, Any], goal: str = "") -> dict[str, An
     identity = appbundle.get("appIdentity")
     if not isinstance(identity, dict):
         return model
+    # 幂等（2026-07-27 迭代体验审查 D1）：已有合格生成主题就不重生。此前
+    # 精修/版本回退每次都无条件重掷一套 temperature=0.9 的新配色——用户加
+    # 一个字段,整个应用视觉全变;回退到 v1,配色却不是 v1 的。品牌身份一旦
+    # 确立应当稳定,想换主题应是显式动作,不是任何一次迭代的副作用。
+    from services.freeform_block import is_valid_generated_theme
+
+    if is_valid_generated_theme(identity.get("generatedTheme")):
+        return model
     app_name = str(identity.get("productName") or model.get("appName") or "").strip()
     goal_text = str(goal or app_name).strip()
     datamodel = model.get("datamodel") or {}

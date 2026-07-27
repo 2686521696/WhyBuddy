@@ -630,6 +630,13 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
     skill_graph = derive_skill_runtime_graph_response(new_state)
     new_state.publishClosure = publish_closure
     new_state.skillRuntimeGraph = skill_graph
+    # D7 修复（2026-07-27）：非流式路径此前从不记版本快照——精修生效了、
+    # modelVersions 却停在旧版（指针指着精修前的 mv-1），回退按钮被
+    # already_current 误拒。与流式路径同一时机、同一函数。
+    if publish_closure is not None:
+        from services.v5_full_driver import record_model_version
+
+        record_model_version(new_state, publish_closure, user_text)
     new_state.lastTurnId = _advance_drive_full_turn_id(getattr(new_state, "lastTurnId", None))
     save_session(new_state)
     return {
@@ -876,9 +883,31 @@ async def restore_model_version(
 
         _clear(None)
     closure = derive_publish_closure_response(state)
-    if closure is not None:
-        state.publishClosure = closure
-        state.skillRuntimeGraph = derive_skill_runtime_graph_response(state)
+    # D8 修复（2026-07-27 迭代体验审查）：重建可能静默空转（现有闭环任一段缺
+    # modelSection 时 _ensure_runtime_closure_evidence 直接 return）或重建出
+    # blocked——此前无论如何都移动指针并报 restored:true，UI 显示回到 v1、
+    # 实际跑的还是 v3。诚实判定：重建后的闭环必须真的承载目标版本模型。
+    from services.v5_full_driver import extract_model_from_closure
+
+    restored_model = extract_model_from_closure(closure) if closure is not None else None
+
+    def _core_sections(m):
+        # 只比增强层不触碰的核心段——enrich 会合法地给老快照补
+        # generatedTheme/freeformOverview（page/appbundle 因此可能有增量），
+        # 逐字节比较会把正常回退误判成失败。
+        return {k: (m or {}).get(k) for k in ("datamodel", "rbac", "workflow", "aigc")}
+
+    if restored_model is None or _core_sections(restored_model) != _core_sections(target["model"]):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "restored": False,
+                "reason": "closure_rebuild_mismatch",
+                "detail": "回退重建未生效（闭环未承载目标版本模型），指针未移动",
+            },
+        )
+    state.publishClosure = closure
+    state.skillRuntimeGraph = derive_skill_runtime_graph_response(state)
     # 指针移动，不追加副本（经典 undo/redo；精修会从当前指针的模型出发）
     state.currentModelVersionId = version_id
     state = save_session(state)
@@ -1448,10 +1477,54 @@ async def fork_generated_app(
     except Exception:
         pass  # 无 body / 非 JSON → 不改名
 
-    new_id = app_store.fork_app(app_id, new_name=new_name)
+    # 2026-07-27 修复（workbench 审查 #1）：fork 出的卡此前是死卡——副本
+    # 有意不继承源会话（防"点开副本进了源会话"），但也没有补上"为副本建
+    # 新会话"这一步，前端 canOpen 恒 false，点了没反应。现在 fork 时同步
+    # 创建一个绑定会话：模型直供重建闭环（restore 同款路径，零 LLM——
+    # enrich 层幂等，已有主题/设计原样保留），副本点开即是可运行应用，
+    # 且能在自己的会话里继续迭代。
+    import uuid as _uuid
+
+    fork_sid = f"sliderule-fork-{_uuid.uuid4().hex[:10]}"
+    new_id = app_store.fork_app(app_id, new_name=new_name, session_id=fork_sid)
     if new_id is None:
         raise HTTPException(404, "source app not found")
-    return {"id": new_id}
+
+    session_error: Optional[str] = None
+    try:
+        record = app_store.get_app(new_id) or {}
+        model = record.get("model_json") or {}
+        goal_text = str(record.get("goal") or new_name or "复刻应用")
+        from models.v5_state import V5SessionState
+        from services.v5_full_driver import (
+            _ensure_runtime_closure_evidence,
+            record_model_version,
+        )
+        from services.v5_llm_generate import set_model_override, set_refine_context
+
+        fork_state = V5SessionState(
+            sessionId=fork_sid,
+            goal={"text": goal_text, "status": "clear"},
+        )
+        fork_state.runtimePhase = "done"
+        set_model_override(model)
+        set_refine_context(model, f"fork 初始化：{new_name or goal_text}")
+        try:
+            fork_state = _ensure_runtime_closure_evidence(fork_state, f"fork:{new_id}", 0)
+        finally:
+            set_model_override(None)
+            set_refine_context(None)
+        closure = derive_publish_closure_response(fork_state)
+        if closure is not None:
+            fork_state.publishClosure = closure
+            fork_state.skillRuntimeGraph = derive_skill_runtime_graph_response(fork_state)
+            record_model_version(fork_state, closure, f"复刻自 {app_id}")
+        save_session(fork_state)
+    except Exception as exc:  # noqa: BLE001 — 会话初始化失败不吞掉 fork 本身
+        session_error = str(exc)[:200]
+        print(f"[sliderule_full] fork session init failed: {session_error}")
+
+    return {"id": new_id, "sessionId": fork_sid, "sessionError": session_error}
 
 
 @router.delete("/apps/{app_id}")

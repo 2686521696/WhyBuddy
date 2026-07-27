@@ -172,9 +172,12 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
  * 不 blocked），得到的指标/身份/活渲染模型跟会话卡完全同源。
  */
 export function deriveDetailFromAppRecord(modelJson: unknown): AppCardDetail {
-  const model = (modelJson && typeof modelJson === "object"
-    ? (modelJson as FiveSystemModel)
-    : null);
+  // 空对象 {} 不算可运行模型——truthy 判定会让 LiveAppThumb 挂载空模型
+  // 渲染（2026-07-27 审查修复 #14）。
+  const model =
+    modelJson && typeof modelJson === "object" && Object.keys(modelJson).length > 0
+      ? (modelJson as FiveSystemModel)
+      : null;
   return buildDetailFromModel(model, { evidenceCount: 6, blocked: false });
 }
 
@@ -276,11 +279,19 @@ export type GalleryFilter = "all" | "runnable" | "draft" | "blocked";
 
 /** 筛选口径 = 门语言（E41）：closed 6/6（runnable）/ blocked / 推演中（其余）。 */
 export function filterCards<
-  T extends { item: { goal: string }; detail: AppCardDetail | null },
+  T extends {
+    item: { goal: string; summary?: { product_name?: string } | null };
+    detail: AppCardDetail | null;
+  },
 >(items: T[], filter: GalleryFilter, query: string): T[] {
   const q = query.trim().toLowerCase();
   return items.filter(({ item, detail }) => {
-    if (q && !item.goal.toLowerCase().includes(q)) return false;
+    // 搜索同时匹配目标文本与产品名——复刻改名后卡片标题是新产品名,
+    // 只搜 goal 会"按新名搜不到"（2026-07-27 审查修复）。
+    const haystack = `${item.goal} ${detail?.identity?.productName ?? ""} ${
+      item.summary?.product_name ?? ""
+    }`.toLowerCase();
+    if (q && !haystack.includes(q)) return false;
     if (filter === "all") return true;
     if (!detail) return false; // 详情未到不武断归类
     if (filter === "runnable") return detail.status === "runnable";
@@ -641,6 +652,7 @@ export function AppsWorkbench() {
   // 复刻改名弹框（对标 Budibase duplicateApp：预填「源名 副本」让用户改名）
   const [forkModal, setForkModal] = React.useState<{ item: GalleryItem; name: string } | null>(null);
   const [forkBusy, setForkBusy] = React.useState(false);
+  const [forkError, setForkError] = React.useState<string | null>(null);
   const [page, setPage] = React.useState(1);
   // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
   const [reloadKey, setReloadKey] = React.useState(0);
@@ -846,18 +858,25 @@ export function AppsWorkbench() {
       gi.summary?.product_name ||
       gi.goal ||
       "应用";
+    setForkError(null);
     setForkModal({ item: gi, name: `${baseName} 副本` });
   };
 
-  /** 确认复刻：带新名调 fork_app 分新血缘（不继承源会话），成功后重拉画廊。 */
+  /** 确认复刻：带新名调 fork_app 分新血缘（后端同步创建绑定会话，副本
+   * 点开即可运行）。失败不再静默——弹框保持打开并显示原因（2026-07-27）。 */
   const confirmFork = async () => {
     const fm = forkModal;
     if (!fm?.item.appId || forkBusy) return;
     setForkBusy(true);
-    const newId = await forkApp(fm.item.appId, fm.name);
+    const result = await forkApp(fm.item.appId, fm.name);
     setForkBusy(false);
+    if (!result) {
+      setForkError("复刻失败：源应用不存在或服务暂不可用，请稍后重试");
+      return;
+    }
+    setForkError(null);
     setForkModal(null);
-    if (newId) setReloadKey(k => k + 1);
+    setReloadKey(k => k + 1);
   };
 
   // 合并两条数据源为画廊条目；详情按条目 key 索引，app 卡在模型加载前用摘要占位。
@@ -1398,6 +1417,14 @@ export function AppsWorkbench() {
               className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-800 outline-none transition focus:border-[#5b6cff] focus:ring-2 focus:ring-[#5b6cff]/20"
               placeholder="副本名称"
             />
+            {forkError && (
+              <div
+                data-testid="fork-error"
+                className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600"
+              >
+                {forkError}
+              </div>
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-slate-100"
