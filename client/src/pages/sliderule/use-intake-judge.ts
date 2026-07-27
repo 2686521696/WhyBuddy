@@ -103,21 +103,29 @@ export function useIntakeJudge(
   hasApp: boolean,
   enabled = true
 ): IntakeJudgement | null {
-  const [judgement, setJudgement] = React.useState<IntakeJudgement | null>(null);
+  // 连同"这条判定是判的哪句话"一起存。判定在途时输入已经变了的话，旧判定
+  // 对新输入就是一句错话——真机验证时点了改写建议（回填的是一句完全合格的
+  // 需求），界面还在说"你这句太模糊"，持续到新判定回来为止。宁可这几秒什么
+  // 都不显示，也不显示一句已经不成立的话。
+  const [state, setState] = React.useState<{
+    judgedFor: string;
+    judgement: IntakeJudgement | null;
+  }>({ judgedFor: "", judgement: null });
   // 单调递增的请求号：只有最新一次请求的结果能落盘，防止慢响应盖掉新判定。
   const latestRef = React.useRef(0);
 
   React.useEffect(() => {
     const trimmed = text.trim();
     if (!enabled || trimmed.length < MIN_JUDGE_CHARS) {
-      setJudgement(null);
+      setState({ judgedFor: "", judgement: null });
       return;
     }
     const seq = ++latestRef.current;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       void judgeIntake(trimmed, hasApp, controller.signal).then(result => {
-        if (seq === latestRef.current) setJudgement(result);
+        if (seq === latestRef.current)
+          setState({ judgedFor: trimmed, judgement: result });
       });
     }, JUDGE_DEBOUNCE_MS);
     return () => {
@@ -126,5 +134,6 @@ export function useIntakeJudge(
     };
   }, [text, hasApp, enabled]);
 
-  return judgement;
+  // 判的不是当前这句话就不给——输入一变，旧提示立刻消失。
+  return state.judgedFor === text.trim() ? state.judgement : null;
 }

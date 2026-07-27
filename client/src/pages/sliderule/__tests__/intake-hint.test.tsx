@@ -140,3 +140,18 @@ describe("判定触发阈值", () => {
     expect("给宠物医院做预约挂号".length).toBeGreaterThanOrEqual(MIN_JUDGE_CHARS);
   });
 });
+
+describe("useIntakeJudge 的陈旧判定处理", () => {
+  it("判定只对它判过的那句话有效", async () => {
+    // 真机验证抓到的 bug：点改写建议回填了一句完全合格的需求，界面还在说
+    // "你这句太模糊"，直到新判定回来。hook 返回值必须与当前输入配对——
+    // 这里锁的是那个配对判断本身（没有 jsdom，跑不了 effect，所以直接测
+    // 它依赖的等值语义）。
+    const src = await import("../use-intake-judge?raw").then(
+      m => (m as unknown as { default: string }).default
+    );
+    expect(src).toContain("judgedFor");
+    // 返回前必须比对当前文本，而不是无条件把上一次的结果吐出来
+    expect(src).toContain("state.judgedFor === text.trim()");
+  });
+});
