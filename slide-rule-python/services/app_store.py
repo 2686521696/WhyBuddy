@@ -438,6 +438,201 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
     return SqlAppStore()
 
 
+# ─────────────── Neon SQL over HTTP 后端（受限网络：只有 443 出得去）───────────────
+#
+# 为什么要这条路：Neon 的常规连接走 TCP 5432，但很多环境只放行 HTTPS——
+# 无服务器/边缘运行时（Vercel Edge、Cloudflare Workers 那类）没有原始 TCP，
+# 受限的容器/沙盒也常只开 443。Neon 官方为此提供 SQL-over-HTTP 端点
+# （https://<endpoint-host>/sql，就是官方 JS serverless driver 用的那个），
+# 我们这里用同一套协议做一个 Python 侧的薄适配：只依赖已有的 httpx，不引新依赖，
+# 也不依赖任何第三方 Neon 库（社区 Python 封装还很小众，不值得押上生产）。
+#
+# 定位是「TCP 不通时的第二选择」，不是默认路径：能走 TCP 就走 TCP（连接复用、
+# 延迟低、事务语义完整）。本后端每条语句一次 HTTPS 往返，够画廊这种低频读写用。
+
+_NEON_HTTP_TIMEOUT_S = 15
+
+
+def neon_http_endpoint(database_url: str) -> Optional[str]:
+    """从 Postgres 连接串派生 Neon 的 SQL-over-HTTP 端点；非 Neon 主机返回 None。
+
+    只对 *.neon.tech 生效——别的 Postgres（自建/RDS）没有这个 HTTP 端点，
+    盲目拼一个地址去打只会得到一串困惑的连接错误。"""
+    try:
+        from sqlalchemy.engine.url import make_url
+
+        host = make_url(re.sub(r"^postgresql\+\w+://", "postgresql://", database_url)).host
+    except Exception:  # noqa: BLE001 — 连接串解析不了就不是我们能处理的
+        return None
+    if not host or not host.lower().endswith(".neon.tech"):
+        return None
+    return f"https://{host}/sql"
+
+
+def _neon_normalize_row(row: dict[str, Any]) -> dict[str, Any]:
+    """把 HTTP 返回的一行归一化成跟另外两个后端完全一致的记录形状。
+
+    实测（2026-07-26）HTTP 端点的类型映射已经很干净：varchar→str、integer→int、
+    boolean→bool、jsonb→dict（自动解析）、NULL→None，都不用动。唯一要修的是
+    timestamptz：它给 '2026-07-26 12:34:56+00' 这种带空格的写法，而另外两个后端
+    产出的是 isoformat()——不统一的话，画廊排序/相对时间会在不同后端下不一致。"""
+    out = dict(row)
+    ts = out.get("created_at")
+    if isinstance(ts, str) and ts:
+        try:
+            out["created_at"] = datetime.fromisoformat(ts).isoformat()
+        except ValueError:
+            pass  # 解析不了就原样留着，不编造时间
+    if not isinstance(out.get("model_json"), dict):
+        out["model_json"] = out.get("model_json") or {}
+    return out
+
+
+# 记录字段顺序——INSERT 的列序与占位符序绑定在这里，改字段只改这一处
+_NEON_COLUMNS = (
+    "id", "root_id", "parent_id", "version", "session_id", "goal",
+    "product_name", "theme_id", "theme_label", "device", "landing_page_ref",
+    "entity_count", "page_count", "gate_passed", "dedup_key", "created_at", "model_json",
+)
+
+
+class NeonHttpAppStore(AppStoreBackend):
+    """Neon SQL-over-HTTP 后端。与 SQLAlchemy 后端共用同一张 generated_app 表，
+    行为（含 list 的「同 root 按 version 挑最新」语义）与另外两个后端严格对齐。"""
+
+    def __init__(self, database_url: str, endpoint: str) -> None:
+        import httpx
+
+        self._endpoint = endpoint
+        self._client = httpx.Client(
+            timeout=_NEON_HTTP_TIMEOUT_S,
+            headers={
+                # 端点靠这个头拿到库/角色/密码——凭据只在头里，不进 URL 也不进日志
+                "Neon-Connection-String": database_url,
+                "Content-Type": "application/json",
+            },
+        )
+        self._ensure_table()
+
+    # ── 底层：一次 HTTPS 往返 ────────────────────────────────
+    def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
+        resp = self._client.post(self._endpoint, json={"query": sql, "params": params or []})
+        if resp.status_code >= 400:
+            # 带上响应体前若干字符——Neon 的 SQL 报错信息都在里面，光看状态码没法诊断
+            raise RuntimeError(f"neon http {resp.status_code}: {resp.text[:200]}")
+        return resp.json().get("rows") or []
+
+    def _ensure_table(self) -> None:
+        """IF NOT EXISTS：SQLAlchemy 后端可能已经建过同一张表，这里不覆盖它。
+        列定义与 SQLAlchemy 模型保持一致，两个后端可以读写同一份数据。"""
+        self._q(
+            """
+            create table if not exists generated_app (
+                id varchar(36) primary key,
+                root_id varchar(36),
+                parent_id varchar(36),
+                version integer,
+                session_id varchar(64),
+                goal text,
+                product_name varchar(120),
+                theme_id varchar(64),
+                theme_label varchar(120),
+                device varchar(16),
+                landing_page_ref varchar(64),
+                entity_count integer,
+                page_count integer,
+                gate_passed boolean,
+                dedup_key varchar(80),
+                created_at timestamptz,
+                model_json jsonb
+            )
+            """
+        )
+        for col in ("root_id", "product_name", "dedup_key"):
+            self._q(f"create index if not exists ix_generated_app_{col} on generated_app ({col})")
+
+    # ── 接口实现 ────────────────────────────────────────────
+    def save(self, record: dict[str, Any]) -> str:
+        params: list[Any] = []
+        for col in _NEON_COLUMNS:
+            val = record.get(col)
+            if col == "model_json":
+                # jsonb 参数按 JSON 文本传，SQL 里再 ::jsonb 转——直接塞 dict 会被
+                # 当成未知类型
+                val = json.dumps(val or {}, ensure_ascii=False)
+            elif col == "version":
+                val = int(val or 1)
+            elif col in ("entity_count", "page_count"):
+                val = int(val or 0)
+            elif col == "gate_passed":
+                val = bool(val)
+            params.append(val)
+        placeholders = ", ".join(
+            f"${i + 1}::jsonb" if col == "model_json" else f"${i + 1}"
+            for i, col in enumerate(_NEON_COLUMNS)
+        )
+        updates = ", ".join(f"{c} = excluded.{c}" for c in _NEON_COLUMNS if c != "id")
+        self._q(
+            f"insert into generated_app ({', '.join(_NEON_COLUMNS)}) values ({placeholders}) "
+            f"on conflict (id) do update set {updates}",
+            params,
+        )
+        return record["id"]
+
+    def get(self, app_id: str) -> Optional[dict[str, Any]]:
+        rows = self._q("select * from generated_app where id = $1", [app_id])
+        return _neon_normalize_row(rows[0]) if rows else None
+
+    def list(self, *, limit: int, offset: int, latest_per_root: bool) -> list[dict[str, Any]]:
+        # 排序/去重语义与另外两个后端逐字对齐（见 JSON 后端 list 注释）：
+        # 同 root 内以 version 为准挑最新，卡片之间再按时间倒序。
+        rows = [
+            _neon_normalize_row(r)
+            for r in self._q(
+                "select * from generated_app order by version desc, created_at desc"
+            )
+        ]
+        if latest_per_root:
+            seen: set[str] = set()
+            latest: list[dict[str, Any]] = []
+            for r in rows:
+                root = r.get("root_id") or r.get("id")
+                if root in seen:
+                    continue
+                seen.add(root)
+                latest.append(r)
+            rows = latest
+            rows.sort(key=lambda r: (r.get("created_at") or ""), reverse=True)
+        return [_summary(r) for r in rows[offset:offset + limit]]
+
+    def versions(self, root_id: str) -> list[dict[str, Any]]:
+        rows = self._q(
+            "select * from generated_app where root_id = $1 order by version", [root_id]
+        )
+        return [_summary(_neon_normalize_row(r)) for r in rows]
+
+    def find_by_dedup_key(self, dedup_key: str) -> Optional[dict[str, Any]]:
+        rows = self._q(
+            "select * from generated_app where dedup_key = $1 limit 1", [dedup_key]
+        )
+        return _neon_normalize_row(rows[0]) if rows else None
+
+    def find_latest_by_session(self, session_id: str) -> Optional[dict[str, Any]]:
+        rows = self._q(
+            "select * from generated_app where session_id = $1 "
+            "order by version desc, created_at desc limit 1",
+            [session_id],
+        )
+        return _neon_normalize_row(rows[0]) if rows else None
+
+    def delete(self, app_id: str) -> bool:
+        rows = self._q("delete from generated_app where id = $1 returning id", [app_id])
+        return bool(rows)
+
+    def export_all(self) -> list[dict[str, Any]]:
+        return [_neon_normalize_row(r) for r in self._q("select * from generated_app")]
+
+
 # ────────────────────────── 后端单例选择 ──────────────────────────
 
 _backend_lock = threading.Lock()
@@ -453,9 +648,17 @@ def _current_signature() -> str:
 
 
 def get_backend() -> AppStoreBackend:
-    """按当前配置返回后端单例。配了 APP_STORE_DATABASE_URL 走 SQLAlchemy，
-    否则走 JSON 文件。签名变了（比如测试里改环境）就重建。DB 初始化失败
-    （连不上/建表失败）时 fail-open 落回 JSON 文件，绝不让存储层拖垮主链路。"""
+    """按当前配置返回后端单例，三级 fail-open：
+
+        TCP（SQLAlchemy/psycopg）→ Neon SQL over HTTP → 本地 JSON 文件
+
+    首选 TCP：连接复用、延迟低、事务语义完整。TCP 不通（受限网络只放行 443、
+    无服务器/边缘运行时没有原始 TCP）且连接串指向 Neon 时，自动改走官方
+    SQL-over-HTTP 端点——同一个 APP_STORE_DATABASE_URL，无需改配置：生产环境
+    照旧走 TCP，受限环境自动降级但仍然是真库。两条都不通才回退 JSON 文件。
+
+    签名变了（比如测试里改环境）就重建。任何一级失败都不抛给调用方——存储层
+    绝不拖垮主链路。"""
     global _backend_instance, _backend_signature
     with _backend_lock:
         sig = _current_signature()
@@ -466,9 +669,25 @@ def get_backend() -> AppStoreBackend:
             try:
                 _backend_instance = _sqlalchemy_backend(db_url)
             except Exception as exc:  # noqa: BLE001 — 连不上/驱动缺失时诚实降级
-                print(f"[app_store] DB 初始化失败，回退 JSON 文件兜底: {str(exc)[:200]}")
-                _failed_db_urls.add(db_url)  # 本进程不再重试这个 URL
-                _backend_instance = JsonFileAppStore()
+                tcp_err = str(exc)[:200]
+                endpoint = neon_http_endpoint(db_url)
+                if endpoint:
+                    try:
+                        _backend_instance = NeonHttpAppStore(db_url, endpoint)
+                        print(
+                            f"[app_store] TCP 不可用（{tcp_err}），已改走 Neon SQL over HTTP"
+                        )
+                    except Exception as http_exc:  # noqa: BLE001
+                        print(
+                            f"[app_store] TCP 与 HTTP 均不可用，回退 JSON 文件兜底: "
+                            f"TCP={tcp_err} / HTTP={str(http_exc)[:200]}"
+                        )
+                        _failed_db_urls.add(db_url)
+                        _backend_instance = JsonFileAppStore()
+                else:
+                    print(f"[app_store] DB 初始化失败，回退 JSON 文件兜底: {tcp_err}")
+                    _failed_db_urls.add(db_url)  # 本进程不再重试这个 URL
+                    _backend_instance = JsonFileAppStore()
         else:
             _backend_instance = JsonFileAppStore()
         _backend_signature = sig

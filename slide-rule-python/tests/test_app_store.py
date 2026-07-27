@@ -193,3 +193,47 @@ def test_bad_db_url_fails_open_to_jsonfile(tmp_path, monkeypatch):
     app_id = store.save_app(_model("咖营通"))
     assert store.get_app(app_id) is not None
     store.reset_backend_cache()
+
+
+# ── Neon SQL over HTTP 后端（受限网络第二选择）────────────────────────
+# 真实往返需要出网，CI 里跑不了；这里锁的是不依赖网络的纯逻辑：端点派生
+# 与类型归一化。二者错了，HTTP 后端会静默给出与另两个后端不一致的数据。
+
+def test_neon_http_endpoint_derived_only_for_neon_hosts():
+    """只有 *.neon.tech 才派生 HTTP 端点——别的 Postgres 没这个口，
+    盲拼地址只会换来一串困惑的连接错误。"""
+    assert store.neon_http_endpoint(
+        "postgresql://u:p@ep-x-pooler.c-4.us-east-2.aws.neon.tech/db?sslmode=require"
+    ) == "https://ep-x-pooler.c-4.us-east-2.aws.neon.tech/sql"
+    # 驱动前缀（psycopg）也要能解析
+    assert store.neon_http_endpoint("postgresql+psycopg://u:p@ep-y.neon.tech/db") == (
+        "https://ep-y.neon.tech/sql"
+    )
+    # 非 Neon / 本地库 / 垃圾串 → None（不派生）
+    assert store.neon_http_endpoint("postgresql://u:p@my-rds.amazonaws.com/db") is None
+    assert store.neon_http_endpoint("sqlite:///data/apps.db") is None
+    assert store.neon_http_endpoint("not-a-url") is None
+
+
+def test_neon_row_normalization_matches_other_backends():
+    """HTTP 端点的 timestamptz 是 '2026-07-26 12:34:56+00' 这种带空格写法，
+    另外两个后端产出的是 isoformat()——不归一化的话，画廊排序/相对时间
+    会因后端而异。"""
+    row = store._neon_normalize_row({
+        "id": "a1",
+        "created_at": "2026-07-26 12:34:56+00",
+        "model_json": {"appbundle": {}},
+        "gate_passed": True,
+        "version": 2,
+    })
+    assert row["created_at"] == "2026-07-26T12:34:56+00:00"
+    # 已是原生类型的字段不该被动
+    assert row["gate_passed"] is True and row["version"] == 2
+    assert isinstance(row["model_json"], dict)
+
+
+def test_neon_row_normalization_tolerates_bad_shapes():
+    """坏时间戳原样留着（不编造时间）；model_json 缺失/非 dict 归一成 {}。"""
+    assert store._neon_normalize_row({"created_at": "garbage"})["created_at"] == "garbage"
+    assert store._neon_normalize_row({"model_json": None})["model_json"] == {}
+    assert store._neon_normalize_row({})["model_json"] == {}
