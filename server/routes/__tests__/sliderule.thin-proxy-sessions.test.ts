@@ -85,6 +85,16 @@ describe('Node sliderule routes thin proxy (sessions CRUD + execute prove no bus
     expect(delegation.callPythonSlideRuleGet).toHaveBeenCalled();
   });
 
+  it('GET /sessions/:id preserves Python 404 not_found contract instead of collapsing to 502', async () => {
+    (delegation.callPythonSlideRuleGet as any).mockRejectedValueOnce(
+      new Error('python GET /api/sliderule/sessions/missing-1 failed: http 404 {"error":"not_found","sessionId":"missing-1"}')
+    );
+
+    const res = await fetch(`${base}/sessions/missing-1`, { method: 'GET' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not_found', sessionId: 'missing-1' });
+  });
+
   it('PUT /sessions/:id + DELETE hit real route handlers and delegateToPythonSlideRule (no sanitize/replay/strip/persist in Node)', async () => {
     (delegation.delegateToPythonSlideRule as any).mockResolvedValueOnce({ ok: true, backend: 'python' });
     (delegation.delegateToPythonSlideRule as any).mockResolvedValueOnce({ ok: true, backend: 'python' });

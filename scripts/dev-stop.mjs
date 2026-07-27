@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -15,6 +17,23 @@ const DEV_PORTS = [
   Number(process.env.LOBSTER_EXECUTOR_PORT || 3031),
 ];
 const DEV_PROCESS_NAMES = ["node", "npm", "cmd", "python", "python3", "uvicorn"];
+
+export function findOrphanedPythonWorkerPids(processes, ghostOwnerPids) {
+  const owners = new Set(ghostOwnerPids.map(Number));
+
+  return processes
+    .filter((processInfo) => {
+      const name = String(processInfo?.Name ?? "").toLowerCase();
+      const commandLine = String(processInfo?.CommandLine ?? "");
+      return (
+        owners.has(Number(processInfo?.ParentProcessId)) &&
+        name.startsWith("python") &&
+        commandLine.includes("spawn_main")
+      );
+    })
+    .map((processInfo) => Number(processInfo.ProcessId))
+    .filter(Number.isInteger);
+}
 
 function escapeForPowerShell(value) {
   return value.replace(/'/g, "''");
@@ -193,6 +212,27 @@ async function resolveWindowsProcessName(pid) {
   }
 }
 
+async function listWindowsChildProcesses(parentPid) {
+  const command = [
+    `$items = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=${Number(parentPid)}" -ErrorAction SilentlyContinue | Select-Object ProcessId,ParentProcessId,Name,CommandLine)`,
+    `if ($items.Count -gt 0) { ConvertTo-Json -InputObject $items -Compress }`,
+  ].join("\n");
+
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", command],
+      { cwd: projectRoot }
+    );
+    const text = stdout.trim();
+    if (!text) return [];
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
+}
+
 async function sweepWindowsDevPorts() {
   let sawGhost = false;
   for (const port of DEV_PORTS) {
@@ -215,6 +255,31 @@ async function sweepWindowsDevPorts() {
             `child, or elevated/cross-session process) — attempting kill anyway.`
         );
         sawGhost = true;
+        const childProcesses = await listWindowsChildProcesses(pid);
+        const orphanWorkerPids = findOrphanedPythonWorkerPids(childProcesses, [
+          pid,
+        ]);
+        if (orphanWorkerPids.length) {
+          for (const workerPid of orphanWorkerPids) {
+            try {
+              await execFileAsync(
+                "taskkill",
+                ["/PID", String(workerPid), "/T", "/F"],
+                {
+                  cwd: projectRoot,
+                }
+              );
+              console.log(
+                `Stopped orphaned Python worker PID ${workerPid} whose dead parent ${pid} owns port ${port}`
+              );
+            } catch (error) {
+              console.warn(
+                `[dev:stop] taskkill orphan worker PID ${workerPid} (port ${port}) failed: ${error?.message ?? error}`
+              );
+            }
+          }
+          continue;
+        }
         try {
           await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"], { cwd: projectRoot });
           console.log(`Stopped unresolvable PID ${pid} tree (port ${port})`);
@@ -303,12 +368,21 @@ async function sweepUnixDevPorts() {
   }
 }
 
-if (process.platform === "win32") {
-  await stopWindowsProjectProcesses();
-  await sweepWindowsDevPorts();
-} else {
-  await stopUnixProjectProcesses();
-  await sweepUnixDevPorts();
+async function main() {
+  if (process.platform === "win32") {
+    await stopWindowsProjectProcesses();
+    await sweepWindowsDevPorts();
+  } else {
+    await stopUnixProjectProcesses();
+    await sweepUnixDevPorts();
+  }
+
+  console.log("dev:stop complete.");
 }
 
-console.log("dev:stop complete.");
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  await main();
+}
