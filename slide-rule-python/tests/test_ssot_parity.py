@@ -128,3 +128,53 @@ def test_generated_theme_contract_rejects_bad_shapes():
 def test_spec_fields_cover_contract():
     contract = PRESETS["generatedThemeContract"]
     assert set(contract["requiredKeys"]) <= set(IdentityThemeSpec.model_fields.keys())
+
+
+# ── 区块生成放开名单从目录派生（2026-07-27）──────────────────
+# 历史事故：渲染器 07-22/07-23 陆续接上，prompt 里那句"渲染器还没上线，
+# 不要输出 page.blocks"却留在原地五天——WorkflowTimeline 这类已经能用的
+# 区块一次都没被渲染过。放开名单现在由 generationEnabled 决定，改目录即
+# 改 prompt；前端侧的 rendererStatus 对账见 ssot-parity.test.ts。
+
+def test_generation_enabled_requires_real_renderer():
+    """放开生成的前提是渲染器是真的——占位渲染器放开=用户看到死卡片。"""
+    for block in CATALOG["blocks"]:
+        if block.get("generationEnabled"):
+            assert block.get("rendererStatus") == "real", (
+                f"{block['type']} 放开了生成但 rendererStatus="
+                f"{block.get('rendererStatus')}"
+            )
+
+
+def test_catalog_rejects_enabling_placeholder_block(monkeypatch):
+    """坏组合必须在加载期 fail-fast，不能带病进 prompt。"""
+    import copy
+
+    import pytest
+
+    bad = copy.deepcopy(CATALOG)
+    for block in bad["blocks"]:
+        if block["rendererStatus"] == "placeholder":
+            block["generationEnabled"] = True
+            break
+    monkeypatch.setattr(schema_legal, "_BLOCK_CATALOG", bad)
+    with pytest.raises(ValueError, match="放开了生成"):
+        schema_legal._load_experience_blocks()
+
+
+def test_prompt_allowlist_derived_from_catalog():
+    """prompt 的放开名单逐字来自目录，不是手写的第二份清单。"""
+    prompt = schema_legal.experience_block_prompt_block()
+    enabled = [b["type"] for b in CATALOG["blocks"] if b.get("generationEnabled")]
+    assert enabled, "目录里一个可生成区块都没有——放开名单退化了？"
+    assert "ONLY these types are renderable today: " + ", ".join(enabled) in prompt
+    for block in CATALOG["blocks"]:
+        if not block.get("generationEnabled"):
+            assert f"renderable today: {block['type']}" not in prompt
+
+
+def test_prompt_no_longer_carries_blanket_ban():
+    """那句一刀切禁令必须消失，否则放开名单等于白写（真实事故复现哨兵）。"""
+    prompt = schema_legal.experience_block_prompt_block()
+    assert "DO NOT emit page.blocks for production pages" not in prompt
+    assert "renderer for it is NOT shipped yet" not in prompt

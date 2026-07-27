@@ -3,10 +3,15 @@
  *
  * 目录定义在 experience_block_catalog.json；这里登记可信的 React 渲染边界。
  * Phase 1（Step 6）起 QuickActionPanel/FilterBar 接了真实渲染；WorkflowTimeline
- * （2026-07-23）接了真实渲染，绑定 workflow 系统数据。其余类型
+ * 与 FreeformInsight（2026-07-23）接了真实渲染。其余类型
  * （MetricGrid/TrendChart/RankedList/ActivityFeed/DataTable）仍是占位，
  * 留给后续阶段接入。legacy 转换来的区块（_fromLegacy）不进这条渲染路径，
  * 视觉零变化。
+ *
+ * 这张表是「渲染器到底有没有」的唯一事实源。目录里每个区块的
+ * rendererStatus 必须与这里一致，__tests__/ssot-parity.test.ts 对账——
+ * 因为生成侧的放开名单（generationEnabled）以 rendererStatus 为前提，
+ * 两边说法一旦分家，就会重演"放开了却渲染成惰性占位卡"的事故。
  */
 import React from "react";
 import { Button, Select } from "antd";
@@ -32,6 +37,10 @@ export interface ExperienceBlockCatalogEntry {
   type: string;
   description: string;
   rendererKey: string;
+  /** 事实：本文件的渲染表登记的是真渲染器还是 ExistingContentAdapter 占位。 */
+  rendererStatus: "real" | "placeholder";
+  /** 灰度决定：准不准让 LLM 往 page.blocks 里写这个类型（前提是 real）。 */
+  generationEnabled: boolean;
   propsSchema: Record<string, unknown>;
   dataKinds: string[];
   allowedSlots: string[];
@@ -155,7 +164,8 @@ export const EXPERIENCE_BLOCK_CATALOG =
   catalogJson as unknown as ExperienceBlockCatalogFile;
 
 // 本阶段先把现有页面内容包进可信边界；真实区块内容在第三阶段接入。
-const ExistingContentAdapter: ExperienceBlockRenderer = ({
+// 导出仅为 SSOT 对账：测试据此判定某个 rendererKey 登记的是真渲染器还是占位。
+export const ExistingContentAdapter: ExperienceBlockRenderer = ({
   block,
   children,
 }) =>

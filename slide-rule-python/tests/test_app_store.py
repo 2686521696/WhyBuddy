@@ -193,3 +193,105 @@ def test_bad_db_url_fails_open_to_jsonfile(tmp_path, monkeypatch):
     app_id = store.save_app(_model("咖营通"))
     assert store.get_app(app_id) is not None
     store.reset_backend_cache()
+
+
+# ── Neon SQL over HTTP 后端（受限网络第二选择）────────────────────────
+# 真实往返需要出网，CI 里跑不了；这里锁的是不依赖网络的纯逻辑：端点派生
+# 与类型归一化。二者错了，HTTP 后端会静默给出与另两个后端不一致的数据。
+
+def test_neon_http_endpoint_derived_only_for_neon_hosts():
+    """只有 *.neon.tech 才派生 HTTP 端点——别的 Postgres 没这个口，
+    盲拼地址只会换来一串困惑的连接错误。"""
+    assert store.neon_http_endpoint(
+        "postgresql://u:p@ep-x-pooler.c-4.us-east-2.aws.neon.tech/db?sslmode=require"
+    ) == "https://ep-x-pooler.c-4.us-east-2.aws.neon.tech/sql"
+    # 驱动前缀（psycopg）也要能解析
+    assert store.neon_http_endpoint("postgresql+psycopg://u:p@ep-y.neon.tech/db") == (
+        "https://ep-y.neon.tech/sql"
+    )
+    # 非 Neon / 本地库 / 垃圾串 → None（不派生）
+    assert store.neon_http_endpoint("postgresql://u:p@my-rds.amazonaws.com/db") is None
+    assert store.neon_http_endpoint("sqlite:///data/apps.db") is None
+    assert store.neon_http_endpoint("not-a-url") is None
+
+
+def test_neon_row_normalization_matches_other_backends():
+    """HTTP 端点的 timestamptz 是 '2026-07-26 12:34:56+00' 这种带空格写法，
+    另外两个后端产出的是 isoformat()——不归一化的话，画廊排序/相对时间
+    会因后端而异。"""
+    row = store._neon_normalize_row({
+        "id": "a1",
+        "created_at": "2026-07-26 12:34:56+00",
+        "model_json": {"appbundle": {}},
+        "gate_passed": True,
+        "version": 2,
+    })
+    assert row["created_at"] == "2026-07-26T12:34:56+00:00"
+    # 已是原生类型的字段不该被动
+    assert row["gate_passed"] is True and row["version"] == 2
+    assert isinstance(row["model_json"], dict)
+
+
+def test_neon_row_normalization_tolerates_bad_shapes():
+    """坏时间戳原样留着（不编造时间）；model_json 缺失/非 dict 归一成 {}。"""
+    assert store._neon_normalize_row({"created_at": "garbage"})["created_at"] == "garbage"
+    assert store._neon_normalize_row({"model_json": None})["model_json"] == {}
+    assert store._neon_normalize_row({})["model_json"] == {}
+
+
+# ── HTTP 错误的结构化解析（2026-07-27）──────────────────────────────
+# 此前只截响应体前 200 字符：唯一键冲突这种只想知道 code/constraint 的场景，
+# 截断还可能正好切掉关键部分。现在按官方 JS 驱动（@neondatabase/serverless
+# httpQuery.ts 的 errorFields）同款把字段提出来，另加官方没读但端点确实返回
+# 的 neon:retryable。下面的响应形状取自对真库触发真实错误的实测记录。
+
+
+class _FakeResp:
+    def __init__(self, status: int, payload=None, text: str = ""):
+        self.status_code = status
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("not json")
+        return self._payload
+
+
+def test_neon_error_extracts_structured_fields():
+    """唯一键冲突：code/constraint/detail 必须能直接取到，并出现在摘要里。"""
+    err = store._neon_http_error(_FakeResp(400, {
+        "message": 'duplicate key value violates unique constraint "generated_app_pkey"',
+        "code": "23505",
+        "constraint": "generated_app_pkey",
+        "detail": "Key (id)=(abc) already exists.",
+        "severity": "ERROR",
+        "neon:retryable": False,
+    }))
+    assert isinstance(err, store.NeonHttpError)
+    assert err.code == "23505"
+    assert err.retryable is False
+    assert err.fields["constraint"] == "generated_app_pkey"
+    text = str(err)
+    assert "code=23505" in text and "constraint=generated_app_pkey" in text
+
+
+def test_neon_error_falls_back_to_text_for_non_json():
+    """网关 5xx 常返回 HTML——解析不了就回落文本截断，绝不因此再抛一个异常。"""
+    err = store._neon_http_error(_FakeResp(502, None, "<html>Bad Gateway</html>"))
+    assert isinstance(err, store.NeonHttpError)
+    assert err.status == 502
+    assert "Bad Gateway" in str(err)
+    assert err.code is None and err.retryable is None
+
+
+def test_neon_error_fields_cover_official_driver_list():
+    """字段清单与官方 errorFields 对齐（16 项）+ neon:retryable。
+    官方少了 retryable 这项，但端点真的会返回，实测确认。"""
+    official = {
+        "severity", "code", "detail", "hint", "position", "internalPosition",
+        "internalQuery", "where", "schema", "table", "column", "dataType",
+        "constraint", "file", "line", "routine",
+    }
+    assert official <= set(store._NEON_ERROR_FIELDS)
+    assert "neon:retryable" in store._NEON_ERROR_FIELDS
