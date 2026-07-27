@@ -55,8 +55,13 @@ VERDICTS = ("keep", "reroute", "drop", "unknown")
 _DROP_PATTERNS = [
     (r"\b(git|gh)-|\bgit\b|提交规范", "版本控制/Git 工具"),
     (r"\b(cli|sdk|npm|pnpm|webpack|vite)\b", "命令行/构建工具链"),
-    (r"部署|deploy|cdn|serverless|pages\b", "部署/发布"),
-    (r"\bmcp\b|mcp-builder", "MCP 服务器开发"),
+    # 收紧：裸 pages\b 会把散文里的"document pages""presentation pages"
+    # 当成 GitHub Pages 部署，误伤 doc-page/ppt-page/report-page 三条真的
+    # 内容产出技能。要求 pages 前面带托管平台名；真部署技能自带"部署/cdn"。
+    (r"部署|deploy|cdn|serverless|\b(github|gh|cloudflare|vercel|edge)[ -]pages\b", "部署/发布"),
+    # 收紧：裸 \bmcp\b 会命中"通过 MCP 获取…"这种把 MCP 当传输层用的技能
+    # （figma），而规则想抓的是"开发 MCP 服务器"本身。
+    (r"mcp-builder|构建.{0,6}mcp|mcp\s*服务器|building\s+mcp", "MCP 服务器开发"),
     # 收紧：光一个"测试"字会误伤需求分析类技能（edge-case-hunter 的描述里
     # 有"输出测试清单"，它是设计期辅助不是开发工具）。要求出现测试框架/
     # 工程语境才算。
@@ -86,8 +91,14 @@ _KEEP_PATTERNS = [
     (r"筛选|匹配度|推荐理由", "筛选匹配类"),
     (r"评估|评分|打分|风险等级", "评估打分类"),
     (r"预测|预警|异常检测", "预测预警类"),
-    (r"抽取|提取|结构化", "信息抽取类"),
-    (r"摘要|归纳|总结.*记录", "摘要类"),
+    # 收紧：裸"结构化"命中的是"结构化计划""结构化协作流程""结构化缺陷
+    # 报告"这类修饰语，把 writing-plans/executing-plans/dogfood 误判成业务
+    # 能力——它们读的是开发流程或运行中的应用，不是业务实体字段。要求
+    # 抽取/提取的对象出现在同一句里。
+    (r"(抽取|提取)(信息|字段|要素|数据|内容|实体)|信息抽取|字段提取", "信息抽取类"),
+    # 收紧：裸"摘要"会命中"支持视图、过滤、公式和摘要"（obsidian-bases 的
+    # 功能罗列）。要求摘要的对象是记录/数据/内容。
+    (r"(摘要|归纳|总结).{0,6}(记录|数据|内容|报告|周期)|自动写成.*摘要", "摘要类"),
 ]
 
 

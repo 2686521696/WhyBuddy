@@ -31,6 +31,15 @@ describe("SkillsLibraryPage", () => {
     expect(featuredHtml).toContain('data-testid="skills-search"');
   });
 
+  it("每张卡都标出消费通道 —— 装之前就该知道装了会发生什么", () => {
+    // 三种通道在目录里都有存量，卡片上都要能看见
+    expect(featuredHtml).toContain('data-testid="skill-channel-aigc"');
+    expect(featuredHtml).toContain('data-testid="skill-channel-experience"');
+    expect(featuredHtml).toContain('data-testid="skill-channel-unbound"');
+    // 「精选」金标只说来源不说用途，已被通道标替掉
+    expect(featuredHtml).not.toContain(">精选<");
+  });
+
   it("只剩两个 tab，社区层的入口与统计卡都不复存在", () => {
     expect(featuredHtml).toContain('data-testid="skills-tab-featured"');
     expect(featuredHtml).toContain('data-testid="skills-tab-installed"');

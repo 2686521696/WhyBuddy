@@ -7,6 +7,33 @@
  * 不改任何服务端状态。
  */
 
+/**
+ * 消费通道（2026-07-27）——决定这条技能进推演时走哪条 prompt 路径。
+ *
+ * 此前所有已安装技能走同一条："必须落成一条 aigc.capabilities，字段绑定到
+ * 真实实体"。对设计指导类技能（配色/版式/空态）这是必然的门禁失败：它们
+ * 产出的是"这一页该长什么样"，不是某个实体字段的值。
+ *
+ * - aigc       读写业务实体字段，落成 aigc.capabilities（硬要求，门禁硬校验）
+ * - experience 生成期设计指导，喂体验层（主题/版式），不要求产出能力
+ * - unbound    没验证出字段绑定，只当软参考，不作任何硬要求
+ */
+export type SkillChannel = "aigc" | "experience" | "unbound";
+
+export const SKILL_CHANNELS: readonly SkillChannel[] = [
+  "aigc",
+  "experience",
+  "unbound",
+];
+
+/** 未标注 channel 的存量安装记录按 unbound 处理——宁可不提要求，也不发一条注定绑不上的硬要求。 */
+export function channelOf(skill: { channel?: string }): SkillChannel {
+  const c = skill.channel;
+  return (SKILL_CHANNELS as readonly string[]).includes(c ?? "")
+    ? (c as SkillChannel)
+    : "unbound";
+}
+
 export interface InstalledSkill {
   /** 安装唯一键：语义档案 = 仓库键；原版技能包 = 包 id（一仓可装多技能） */
   repo: string;
@@ -20,6 +47,14 @@ export interface InstalledSkill {
   kind?: "package" | "semantic";
   /** kind=package 时的技能包 id（/skill-package-tryrun 用） */
   packageId?: string;
+  /** 消费通道；缺省（存量安装记录）按 unbound 处理，见 channelOf */
+  channel?: SkillChannel;
+  /**
+   * 绑定形状（仅 channel=aigc）：技能目录里的条目不知道目标应用有哪些实体，
+   * 所以声明的不是字段名而是形状——读几个什么类型的字段、写回什么类型。
+   * 类型取自 five_system_legal.json 的 fieldTypes 闭集，服务端会再校验一次。
+   */
+  binding?: { inputTypes: string[]; outputType: string };
 }
 
 const KEY = "sliderule:installed-skills";
@@ -106,13 +141,18 @@ export function toggleInjectDisabled(key: string): string[] {
 
 /**
  * 推演注入载荷（技能库六期）：已安装且未被关掉的技能瘦身为
- * {name, description}，上限 6 条（prompt 预算）——随 /drive-full 请求进
- * 服务端，生成契约要求每项落成一条 aigc.capabilities（字段绑定仍过门禁
- * 硬校验）。
+ * {name, description, channel}，上限 6 条（prompt 预算）——随 /drive-full
+ * 请求进服务端。
+ *
+ * channel 决定服务端把它拼进哪个 prompt 块：只有 aigc 通道的技能才会变成
+ * "必须落成一条 aigc.capabilities" 的硬要求（字段绑定照旧过门禁硬校验）；
+ * experience/unbound 走软参考，不会因为绑不上字段把整轮推演拖进门禁失败。
  */
 export function installedSkillsDrivePayload(): Array<{
   name: string;
   description: string;
+  channel: SkillChannel;
+  binding?: { inputTypes: string[]; outputType: string };
 }> {
   const disabled = new Set(loadInjectDisabledKeys());
   return loadInstalledSkills()
@@ -121,5 +161,7 @@ export function installedSkillsDrivePayload(): Array<{
     .map(s => ({
       name: s.name.slice(0, 60),
       description: s.description.slice(0, 160),
+      channel: channelOf(s),
+      ...(s.binding ? { binding: s.binding } : {}),
     }));
 }

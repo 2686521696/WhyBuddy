@@ -156,6 +156,31 @@ if _MISSING_CONTRACT_KEYS:
     )
 
 
+def experience_skill_guidance_block() -> str:
+    """已安装的 experience 通道技能拼成的设计指导块（2026-07-27）。
+
+    这批技能（配色/版式/空态/导航/动效）产出的是"这一页该长什么样"，不是
+    某个实体字段的值。从前它们跟能力类技能挤在同一条 "必须落成一条
+    aigc.capabilities" 的硬要求里，装了就是把整轮推演推向门禁失败；现在改到
+    这里消费——真正用得上它们的地方。
+
+    没有已安装的 experience 技能时返回空串，prompt 与从前逐字节一致。
+    """
+    try:
+        from .v5_llm_generate import installed_skills_for_channel
+
+        skills = installed_skills_for_channel("experience")
+    except Exception:
+        return ""  # 增强项，任何异常都不拦主题生成
+    if not skills:
+        return ""
+    lines = ["", "用户装了这些设计技能，配色时把它们的主张纳入考虑（有冲突时以上面的克制淡雅基调为准）："]
+    for s in skills:
+        desc = f" — {s['description']}" if s.get("description") else ""
+        lines.append(f"- {s['name']}{desc}")
+    return "\n".join(lines)
+
+
 def build_identity_theme_prompt(app_name: str, goal_text: str, datamodel_summary: str) -> str:
     return f"""你是一名产品视觉设计师。给这个应用设计一套完整的品牌配色方案：
 应用名称：{app_name}
@@ -173,6 +198,7 @@ def build_identity_theme_prompt(app_name: str, goal_text: str, datamodel_summary
 藏青、深灰蓝这类），不要选高饱和度的深色（比如饱和的深紫红）——深不等于艳。
 
 色相本身自由发挥，不受任何预设色板限制，只要整体偏淡雅克制、专业耐看。
+{experience_skill_guidance_block()}
 
 输出这些字段，全部是标准 6 位十六进制颜色值（如 #1677ff）：
 - label: 给这套配色起一个简短的气质名（如"湛蓝·通用企业"这种格式，4-8字）

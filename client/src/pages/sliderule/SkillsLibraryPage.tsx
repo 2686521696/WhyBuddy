@@ -33,12 +33,14 @@ import {
 } from "@ant-design/icons";
 import featuredSkills from "@/data/featured-skills.json";
 import {
+  channelOf,
   installKeyOf,
   installSkill,
   isInstalled,
   loadInstalledSkills,
   uninstallSkill,
   type InstalledSkill,
+  type SkillChannel,
 } from "./installed-skills";
 
 interface FeaturedSkill {
@@ -47,9 +49,53 @@ interface FeaturedSkill {
   description: string;
   author: string;
   category: string;
+  /** 消费通道（见 installed-skills.ts）：决定装进推演后走哪条 prompt 路径 */
+  channel?: SkillChannel;
+  /** 绑定形状（仅 aigc 通道）：读写字段的类型，不是字段名 */
+  binding?: { inputTypes: string[]; outputType: string };
 }
 
 const FEATURED = (featuredSkills as { items: FeaturedSkill[] }).items;
+
+/**
+ * 通道标（2026-07-27）：装之前就说清这条技能装了会发生什么，别让用户装完
+ * 才发现它绑不上任何字段。「精选」那个金标只说明来源，不说明用途，替掉。
+ */
+const CHANNEL_META: Record<
+  SkillChannel,
+  { label: string; color: string; title: string }
+> = {
+  aigc: {
+    label: "可绑字段",
+    color: "green",
+    title: "装进推演后会落成一条 AIGC 能力，读写你这个应用里真实的实体字段",
+  },
+  experience: {
+    label: "设计指导",
+    color: "blue",
+    title: "装进推演后影响生成的视觉与版式（配色/布局），不产出业务能力",
+  },
+  unbound: {
+    label: "仅作参考",
+    color: "default",
+    title: "没验证出它能绑到哪个实体字段，只作为生成时的软参考，不发硬要求",
+  },
+};
+
+function ChannelTag({ skill }: { skill: { channel?: SkillChannel } }) {
+  const meta = CHANNEL_META[channelOf(skill)];
+  return (
+    <Tooltip title={meta.title}>
+      <Tag
+        color={meta.color}
+        style={{ fontSize: 10, marginInlineEnd: 0 }}
+        data-testid={`skill-channel-${channelOf(skill)}`}
+      >
+        {meta.label}
+      </Tag>
+    </Tooltip>
+  );
+}
 const FEATURED_CATEGORIES = ["全部", ...new Set(FEATURED.map(f => f.category))];
 
 // 字母头像统一浅冷色（用户反馈：多彩色轮太刺眼，对齐效果图的柔和图标底）
@@ -336,6 +382,8 @@ export function SkillsLibraryPage({
         description: f.description,
         ioHints: [],
         kind: "semantic",
+        channel: channelOf(f),
+        ...(f.binding ? { binding: f.binding } : {}),
       });
       if (next !== prev)
         message.success(`已安装「${f.name}」，到「已安装」里直接试跑`);
@@ -537,12 +585,7 @@ export function SkillsLibraryPage({
                     <Tag style={{ fontSize: 10, marginInlineEnd: 0 }}>
                       {f.category}
                     </Tag>
-                    <Tag
-                      color="gold"
-                      style={{ fontSize: 10, marginInlineEnd: 0 }}
-                    >
-                      精选
-                    </Tag>
+                    <ChannelTag skill={f} />
                   </>
                 }
                 description={f.description}
