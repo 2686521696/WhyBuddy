@@ -153,8 +153,16 @@ async function listWindowsListeningPids(port) {
   }
 }
 
-/** tasklist 解析进程名；返回 null = PID 查不到（幽灵：属主已死、端口表未刷新，
- *  或 WSL 端口转发/提权进程）。 */
+/** WSL 的端口转发中继：taskkill 掉它没用（wslhost 会被重新拉起，端口还在
+ *  Linux 侧监听），真正的出路是 wsl --shutdown。单独认出来才能给对的建议。 */
+const WSL_RELAY_NAMES = ["wslrelay", "wslhost", "wslservice", "vmmem", "vmmemwsl"];
+
+/** 解析 PID → 进程名。两级：
+ *  1. tasklist（快）
+ *  2. CIM 兜底——tasklist 的 /FI 过滤器在跨会话/提权进程上会查不到，而
+ *     Get-CimInstance 通常还能返回。真实事故：9700 的属主 tasklist 报
+ *     "查不到"，于是 sweep 直接放弃，端口永远清不掉。
+ *  返回 null = 两条路都查不到（进程确实已消失，或权限完全不够）。 */
 async function resolveWindowsProcessName(pid) {
   try {
     const { stdout } = await execFileAsync(
@@ -163,7 +171,23 @@ async function resolveWindowsProcessName(pid) {
       { cwd: projectRoot }
     );
     const m = stdout.match(/^"([^"]+)"/m);
-    return m ? m[1] : null;
+    if (m) return m[1];
+  } catch {
+    /* 落到 CIM 兜底 */
+  }
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `(Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}" -ErrorAction SilentlyContinue).Name`,
+      ],
+      { cwd: projectRoot }
+    );
+    const name = stdout.trim();
+    return name || null;
   } catch {
     return null;
   }
@@ -176,18 +200,43 @@ async function sweepWindowsDevPorts() {
       if (pid === process.pid) continue;
       const name = await resolveWindowsProcessName(pid);
       if (name === null) {
-        // 幽灵 PID：真实事故里这是"已退出的父进程"——监听套接字被它 spawn 的
-        // 子进程继承着，端口表还挂着死父 PID。真正的持有者（孤儿 python worker）
-        // 由 stopWindowsProjectProcesses 的可执行路径匹配 + 后代闭包负责收掉，
-        // 这里只把真相喊出来，最后统一复查端口是否解放。
+        // 幽灵 PID：属主已退出但监听套接字被它 spawn 的子进程继承着，端口表
+        // 还挂着死父 PID。
+        //
+        // 此前这里只打印一行就 continue，从不尝试 taskkill——真实事故：用户
+        // 反复 dev:stop，每次都看到 "UNRESOLVABLE"，端口永远清不掉，dev:all
+        // 也就永远起不来。查不到名字 ≠ 杀不掉：tasklist 的过滤器与 taskkill
+        // 走的是不同路径，权限也未必相同。这里改成照杀。
+        //
+        // 敢杀的依据：DEV_PORTS 是本项目自己的端口，且此刻 project-process
+        // 清扫已经跑完（真正属于别人的进程会在下面按名字被认出来并放行）。
         console.log(
-          `Port ${port} owner PID ${pid} is UNRESOLVABLE (dead parent with orphaned child, ` +
-            `WSL relay, or elevated process). Orphan cleanup already ran; re-checking below.`
+          `Port ${port} owner PID ${pid} is unresolvable by name (dead parent with orphaned ` +
+            `child, or elevated/cross-session process) — attempting kill anyway.`
+        );
+        sawGhost = true;
+        try {
+          await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"], { cwd: projectRoot });
+          console.log(`Stopped unresolvable PID ${pid} tree (port ${port})`);
+        } catch (error) {
+          console.warn(
+            `[dev:stop] taskkill PID ${pid} (port ${port}) failed: ${error?.message ?? error}`
+          );
+        }
+        continue;
+      }
+      const base = name.toLowerCase().replace(/\.exe$/, "");
+      if (WSL_RELAY_NAMES.includes(base)) {
+        // WSL 端口转发：端口实际在 Linux 侧监听，杀掉 Windows 这边的中继没用
+        // （wslhost 会被重新拉起）。说清楚，别让用户以为 dev:stop 失灵了。
+        console.warn(
+          `[dev:stop] Port ${port} is held by WSL port-forward relay ${name} (PID ${pid}). ` +
+            `taskkill won't free it — the listener lives inside WSL. Stop the process in your ` +
+            `WSL shell, or run "wsl --shutdown" from Windows, then retry.`
         );
         sawGhost = true;
         continue;
       }
-      const base = name.toLowerCase().replace(/\.exe$/, "");
       if (DEV_PROCESS_NAMES.includes(base)) {
         // /T 连子进程树一起收：父进程单杀会把继承了套接字的子进程留成下一个幽灵
         try {
