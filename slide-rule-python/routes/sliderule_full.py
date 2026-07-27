@@ -1545,3 +1545,29 @@ async def export_generated_apps(x_internal_key: Optional[str] = Header(None)):
     from services import app_store
 
     return {"apps": app_store.export_all()}
+
+
+# ---------------------------------------------------------------------------
+# 入站判定闸门（2026-07-27）
+# ---------------------------------------------------------------------------
+
+
+@router.post("/intake-judge")
+async def intake_judge_turn(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+    """判这一轮输入是真需求 / 真迭代，还是闲聊、产品咨询、太模糊。
+
+    第一版只提示不阻断：返回的 action 恒为 proceed|hint，前端据此在输入框
+    上方给一句引导，用户永远能"仍然推演"。判定本身 fail-open——出任何问题
+    都返回 proceed，闸门坏了不能变成产品坏了。
+    """
+    _auth(x_internal_key)
+    from services.intake_judge import judge_turn
+
+    return {
+        "judgement": judge_turn(
+            str(payload.get("text") or ""),
+            has_app=bool(payload.get("hasApp")),
+            app_summary=str(payload.get("appSummary") or ""),
+        ).to_dict(),
+        "backend": PYTHON_BACKEND,
+    }

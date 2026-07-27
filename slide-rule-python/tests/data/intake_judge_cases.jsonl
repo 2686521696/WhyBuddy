@@ -1,0 +1,36 @@
+{"id":"real_001","text":"精品咖啡烘焙工坊的生豆库存、烘焙批次与杯测品鉴记录管理","hasApp":false,"expect":"real","note":"实跑成功过的原话；looksLikeNewAppIntent 对它返回 false（漏判）"}
+{"id":"real_002","text":"做一个社区宠物诊所预约系统","hasApp":false,"expect":"real","note":"标准形态：动词+载体名词"}
+{"id":"real_003","text":"我想要一个二手乐器寄售平台","hasApp":false,"expect":"real"}
+{"id":"real_004","text":"帮我把公司报销流程数字化，能审批能对账","hasApp":false,"expect":"real","note":"无载体名词；旧启发式漏判"}
+{"id":"real_005","text":"我们店里排班总是乱，想弄个东西管一管","hasApp":false,"expect":"real","note":"纯口语，无载体名词；旧启发式漏判"}
+{"id":"real_006","text":"剧本杀门店排期与拼场匹配","hasApp":false,"expect":"real"}
+{"id":"real_007","text":"社区宠物友好餐厅的探店打卡与评分推荐","hasApp":false,"expect":"real"}
+{"id":"real_008","text":"多语言翻译平台，要能管术语库和译员分配","hasApp":false,"expect":"real","note":"含 sla 子串（translation），域识别器曾误判为工单"}
+{"id":"real_009","text":"独立书店的选书、库存与读书会活动管理","hasApp":false,"expect":"real"}
+{"id":"real_010","text":"想做个工具，把客户的售后工单和回访排期串起来","hasApp":false,"expect":"real","note":"真含工单二字，但确实是新需求"}
+{"id":"iter_001","text":"把侧栏改成深色","hasApp":true,"expect":"iteration","note":"极短祈使句，不像需求描述"}
+{"id":"iter_002","text":"给工单系统做一个统计报表页面","hasApp":true,"expect":"iteration","note":"D5 真实事故：曾被误判为新应用，直接删了会话与全部改版史"}
+{"id":"iter_003","text":"这个配色太素了","hasApp":true,"expect":"iteration","note":"纯评价，无动词无名词"}
+{"id":"iter_004","text":"回到上一版","hasApp":true,"expect":"iteration","note":"版本操作"}
+{"id":"iter_005","text":"杯测记录那页加一个评分分布图","hasApp":true,"expect":"iteration"}
+{"id":"iter_006","text":"仓管这个角色不该看到成本字段","hasApp":true,"expect":"iteration","note":"权限调整"}
+{"id":"iter_007","text":"在现有基础上再加一个供应商对账流程","hasApp":true,"expect":"iteration","note":"含增量表述"}
+{"id":"iter_008","text":"首页太空了，能不能多放点东西","hasApp":true,"expect":"iteration"}
+{"id":"meta_001","text":"介绍一下你们这个系统怎么收费","hasApp":false,"expect":"meta","note":"含「系统」二字但不是要造系统"}
+{"id":"meta_002","text":"你是谁","hasApp":false,"expect":"meta"}
+{"id":"meta_003","text":"你能做什么","hasApp":false,"expect":"meta"}
+{"id":"meta_004","text":"推演一次大概要多久","hasApp":true,"expect":"meta","note":"已有应用时问产品本身"}
+{"id":"meta_005","text":"生成的应用能导出代码吗","hasApp":true,"expect":"meta"}
+{"id":"off_001","text":"今天天气怎么样","hasApp":false,"expect":"off_topic"}
+{"id":"off_002","text":"1+1等于几","hasApp":false,"expect":"off_topic"}
+{"id":"off_003","text":"给我讲个笑话","hasApp":false,"expect":"off_topic"}
+{"id":"off_004","text":"帮我写一首关于秋天的诗","hasApp":false,"expect":"off_topic"}
+{"id":"off_005","text":"哈哈哈哈哈哈","hasApp":false,"expect":"off_topic","note":"precheck 可能先命中"}
+{"id":"off_006","text":"翻译一下 how are you","hasApp":true,"expect":"off_topic","note":"已有应用时的无关请求"}
+{"id":"vague_001","text":"做个系统","hasApp":false,"expect":"vague"}
+{"id":"vague_002","text":"帮我搞个东西","hasApp":false,"expect":"vague"}
+{"id":"vague_003","text":"改一下","hasApp":true,"expect":"vague","note":"有应用但没说改什么"}
+{"id":"pre_001","text":"你好","hasApp":false,"expect":"meta","note":"precheck 确定性命中"}
+{"id":"pre_002","text":"在吗","hasApp":false,"expect":"meta","note":"precheck 确定性命中"}
+{"id":"pre_003","text":"？？？","hasApp":false,"expect":"vague","note":"precheck：纯标点"}
+{"id":"pre_004","text":"   ","hasApp":false,"expect":"vague","note":"precheck：空输入"}
