@@ -574,7 +574,21 @@ async function preflightDevPorts() {
       `If the owner PID is unresolvable in tasklist it is likely a WSL relay — run "wsl --shutdown" ` +
       `(Windows) and retry. To force-start anyway: set DEV_ALL_ALLOW_BUSY_PORTS=1.`
   );
-  process.exit(1);
+  // 不能用 process.exit()：Windows 上 stdout/stderr 走管道是异步写，exit() 不等
+  // 缓冲区刷完就终止进程，上面这条 console.error 会被整条吞掉——真实现场是用户
+  // 只看到 "Ports already occupied…" 然后直接回到提示符，既没启动也没有任何原因，
+  // 完全无从排查。设 exitCode 让事件循环自然退出，消息才保得住。
+  process.exitCode = 1;
+  throw new PreflightAbort(stillLabel);
+}
+
+/** 端口未清干净时中止启动。单独一个类型，好让 main() 区分"预检拒绝"（已经
+ *  打印过原因，静默收场即可）和真异常（需要打印堆栈）。 */
+class PreflightAbort extends Error {
+  constructor(label) {
+    super(`preflight aborted: ports busy (${label})`);
+    this.name = "PreflightAbort";
+  }
 }
 
 async function main() {
@@ -708,5 +722,11 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  void main();
+  main().catch((error) => {
+    // 预检拒绝：原因已经打印过，别再糊一屏堆栈盖住它。其余异常照常抛详情。
+    if (!(error instanceof PreflightAbort)) {
+      console.error(`[dev:all] ${error?.stack || error}`);
+    }
+    process.exitCode = 1;
+  });
 }
