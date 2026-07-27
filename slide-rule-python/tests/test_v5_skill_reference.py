@@ -60,6 +60,17 @@ def test_prompt_block_has_no_copy_instruction() -> None:
         assert block.startswith("Industry reference skills")
 
 
+def test_corpus_absent_degrades_to_empty_not_exception() -> None:
+    """2026-07-27 社区技能层下架后 data/skill_semantics.json 已删，这是
+    现在的常态而非异常路径：检索必须静默返回空、prompt 块返回空串，
+    让生成链路退回原始 prompt，而不是抛异常把整条推演带崩。"""
+    from services import v5_skill_reference as mod
+
+    assert mod._load_items() == []
+    assert pick_reference_skills("给咖啡烘焙工坊做生豆库存与烘焙批次管理", k=4) == []
+    assert reference_prompt_block("给咖啡烘焙工坊做生豆库存与烘焙批次管理") == ""
+
+
 def test_build_user_content_fallback_identical_when_no_hit() -> None:
     goal = "qqxxyyzz zkqjwp vvbnmr"
     content = _build_user_content(goal)

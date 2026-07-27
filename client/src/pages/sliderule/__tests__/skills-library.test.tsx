@@ -1,22 +1,19 @@
 /**
- * 技能库 marketplace 静态渲染回归。
- * 锁：合规标注（来源回链 + 版权说明 + 采集时间）必须在页面上；
- * 三 tab（精选/社区/已安装）；渠道分档筛选齐全；表格出真实索引数据
- * （标题即原帖外链）；带语义档案的行出「安装」、纯图文行诚实禁用。
- * 另锁：已安装 tab 不展示搜索框（避免无效搜索与条件泄漏）。
+ * 技能库静态渲染回归（2026-07-27 起为「精选 / 已安装」两层）。
+ *
+ * 原本这里有 5 条断言锁的是「社区技能」层：合规标注、渠道分档筛选、
+ * 索引表格行、语义档案安装钮。该层连同 889 条论坛索引、855 份完整
+ * SKILL.md 正文、543 份语义档案一并下架（协议敞口 + 装了绑不上 aigc
+ * 硬契约），断言随之移除，并留一条哨兵防止数据被重新引入。
  */
 import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SkillsLibraryPage } from "../SkillsLibraryPage";
-import skillsIndex from "@/data/trae-skills-index.json";
-import skillSemantics from "@/data/skill-semantics.json";
 
 import featuredSkills from "@/data/featured-skills.json";
 
 describe("SkillsLibraryPage", () => {
-  // 市场层断言用 initialTab 直开（静态渲染切不了 tab）；精选层用默认渲染
-  const html = renderToStaticMarkup(<SkillsLibraryPage initialTab="market" />);
   const featuredHtml = renderToStaticMarkup(<SkillsLibraryPage />);
   const installedHtml = renderToStaticMarkup(
     <SkillsLibraryPage initialTab="installed" />
@@ -25,69 +22,44 @@ describe("SkillsLibraryPage", () => {
   it("精选层（默认 tab）：官方技能卡片网格 + 分类 chips + 统计卡真数据", () => {
     expect(featuredHtml).toContain('data-testid="skills-featured-grid"');
     expect(featuredHtml).toContain('data-testid="skills-featured-cats"');
-    const first = (featuredSkills as { items: Array<{ id: string; author: string }> }).items[0];
+    const first = (
+      featuredSkills as { items: Array<{ id: string; author: string }> }
+    ).items[0];
     expect(featuredHtml).toContain(`data-testid="featured-skill-${first.id}"`);
     expect(featuredHtml).toContain(`by ${first.author}`);
-    // 统计卡：精选/社区/已安装为真数据
     expect(featuredHtml).toContain('data-testid="skills-stat-精选技能"');
-    expect(featuredHtml).toContain('data-testid="skills-stat-社区技能"');
     expect(featuredHtml).toContain('data-testid="skills-search"');
   });
 
-  it("合规标注齐全：来源回链、版权说明、采集时间、总数", () => {
-    expect(html).toContain("forum.trae.cn/c/37-category/37");
-    expect(html).toContain("技能本体归原作者所有");
-    expect(html).toContain(String(skillsIndex.count));
-    expect(html).toContain(skillsIndex.fetchedAt.slice(0, 10));
+  it("只剩两个 tab，社区层的入口与统计卡都不复存在", () => {
+    expect(featuredHtml).toContain('data-testid="skills-tab-featured"');
+    expect(featuredHtml).toContain('data-testid="skills-tab-installed"');
+    expect(featuredHtml).not.toContain('data-testid="skills-tab-market"');
+    // 两个 tab 的可见文案都不能再提「社区技能」——空态引导曾漏改，故两边都锁
+    expect(featuredHtml).not.toContain("社区技能");
+    expect(installedHtml).not.toContain("社区技能");
+    // 合规说明卡是随索引一起存在的，索引没了它也不该再出现
+    expect(featuredHtml).not.toContain("技能本体归原作者所有");
+    expect(featuredHtml).not.toContain("forum.trae.cn");
   });
 
-  it("渠道分档筛选四类齐全", () => {
-    for (const label of ["开源仓库", "网盘分发", "论坛附件", "图文介绍"]) {
-      expect(html).toContain(label);
-    }
-    expect(html).toContain('data-testid="skills-kind-filter"');
-    expect(html).toContain('data-testid="skills-search"');
-  });
-
-  it("表格行是真实索引数据：标题渲染为原帖外链", () => {
-    // 默认按浏览量降序，首页 20 行里必有浏览量最高的条目
-    const top = [...skillsIndex.items].sort((a, b) => b.views - a.views)[0];
-    expect(html).toContain(`href="${top.url}"`);
-  });
-
-  it("marketplace 三 tab + 安装动作：有语义档案出安装钮，纯图文诚实禁用", () => {
-    expect(html).toContain('data-testid="skills-tab"');
-    expect(html).toContain('data-testid="skills-tab-featured"');
-    expect(html).toContain('data-testid="skills-tab-market"');
-    expect(html).toContain('data-testid="skills-tab-installed"');
-    // tab 上的数量必须挂在 tab 按钮 testid 上，不能只靠统计卡里的「已安装」文本
-    expect(html).toMatch(
-      /data-testid="skills-tab-count-installed"[^>]*>\s*0\s*</
-    );
-    expect(html).toContain('data-testid="skills-stat-已安装"');
-    expect(html).toContain('data-testid="skills-community-grid"');
-    // 首页 20 行（按浏览量降序）里既有可安装项也有纯图文项
-    const semTopicIds = new Set(
-      (skillSemantics as { items: Array<{ description: string; topicIds: number[] }> }).items
-        .filter((s) => s.description)
-        .flatMap((s) => s.topicIds)
-    );
-    const top20 = [...skillsIndex.items].sort((a, b) => b.views - a.views).slice(0, 20);
-    const installable = top20.filter((it) => semTopicIds.has(it.topicId));
-    const notInstallable = top20.filter((it) => !semTopicIds.has(it.topicId));
-    if (installable.length > 0) {
-      expect(html).toContain(`data-testid="skill-install-${installable[0].topicId}"`);
-    }
-    // 纯图文帖：安装钮禁用（诚实——没有可执行定义就不装样子）
-    if (notInstallable.length > 0) {
-      expect(html).toContain(`data-testid="skill-install-disabled-${notInstallable[0].topicId}"`);
-    }
+  it("标题计数只统计精选，不再把社区索引加进去", () => {
+    const count = (featuredSkills as { items: unknown[] }).items.length;
+    expect(featuredHtml).toContain(`${count} 项`);
   });
 
   it("已安装 tab：展示列表区，不展示搜索框（避免无效搜索与条件泄漏）", () => {
-    expect(installedHtml).toContain('data-testid="skills-installed-list"');
+    expect(installedHtml).toContain('data-testid="skills-installed"');
     expect(installedHtml).not.toContain('data-testid="skills-search"');
-    expect(installedHtml).toContain('aria-pressed="true"');
-    expect(installedHtml).toContain('data-testid="skills-tab-installed"');
+  });
+
+  it("哨兵：社区技能的四份数据不得被重新引入", async () => {
+    // 直接 import 已删的 JSON 会在编译期失败，这里断言源码不再引用它们——
+    // 重新加回来必须是显式决定（连带重新承担协议敞口），不能悄悄回归。
+    const src = await import("../SkillsLibraryPage?raw").then(
+      m => (m as unknown as { default: string }).default
+    );
+    expect(src).not.toContain("trae-skills-index.json");
+    expect(src).not.toContain("skill-semantics.json");
   });
 });
