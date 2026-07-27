@@ -72,7 +72,17 @@ def test_schema_instruction_renders_from_ledger():
     # metric 形态按 bare+前缀拼装（与门/修复器判定同源）
     assert "count|sum:<entity_id>.<field_id>|avg:<entity_id>.<field_id>" in _SCHEMA_INSTRUCTION
     assert '"metric": "count|sum:<entity_id>.<field_id>"' in _SCHEMA_INSTRUCTION
-    assert "DO NOT emit page.blocks for production pages" in _SCHEMA_INSTRUCTION
+    # page.blocks 的放开名单由目录 generationEnabled 派生（2026-07-27）。
+    # 此前这里断言的是一刀切禁令 "DO NOT emit page.blocks for production
+    # pages"——那句话在渲染器陆续落地后过期了五天，把已经能用的区块一直
+    # 关在门外，所以断言随语义一起换成"名单来自目录"。
+    _enabled = [
+        str(b["type"]) for b in schema_legal.EXPERIENCE_BLOCKS if b.get("generationEnabled")
+    ]
+    if _enabled:
+        assert "ONLY these types are renderable today: " + ", ".join(_enabled) in _SCHEMA_INSTRUCTION
+    else:
+        assert "DO NOT emit page.blocks for production pages" in _SCHEMA_INSTRUCTION
     for block_type in schema_legal.EXPERIENCE_BLOCK_TYPES:
         assert f"- {block_type}:" in _SCHEMA_INSTRUCTION
 

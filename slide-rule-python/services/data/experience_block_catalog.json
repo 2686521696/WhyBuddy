@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；本版只建立目录和渲染边界，不改变旧页面效果。bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。",
-  "version": 2,
+  "version": 3,
   "allowedSlots": [
     "summary",
     "primary",
@@ -199,6 +199,8 @@
       "type": "MetricGrid",
       "description": "一组关键指标卡，用于页面摘要区域。",
       "rendererKey": "metric-grid",
+      "rendererStatus": "placeholder",
+      "generationEnabled": false,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -235,6 +237,8 @@
       "type": "TrendChart",
       "description": "按时间或有序维度展示变化趋势。",
       "rendererKey": "trend-chart",
+      "rendererStatus": "placeholder",
+      "generationEnabled": false,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -280,6 +284,8 @@
       "type": "RankedList",
       "description": "按数值排序的业务排行。",
       "rendererKey": "ranked-list",
+      "rendererStatus": "placeholder",
+      "generationEnabled": false,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -329,6 +335,8 @@
       "type": "ActivityFeed",
       "description": "按时间倒序展示动态、提醒或风险事件。",
       "rendererKey": "activity-feed",
+      "rendererStatus": "placeholder",
+      "generationEnabled": false,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -366,6 +374,8 @@
       "type": "DataTable",
       "description": "展示实体记录并承接行级业务操作。",
       "rendererKey": "data-table",
+      "rendererStatus": "placeholder",
+      "generationEnabled": false,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -399,6 +409,8 @@
       "type": "QuickActionPanel",
       "description": "CRM/任务工作台的快捷业务操作按钮组，适合工作台首页的常用动作入口。",
       "rendererKey": "quick-action-panel",
+      "rendererStatus": "real",
+      "generationEnabled": false,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -431,6 +443,8 @@
       "type": "FilterBar",
       "description": "时间范围和枚举条件筛选栏，适合经营大盘、舆情监控等需要全局筛选的页面顶部。",
       "rendererKey": "filter-bar",
+      "rendererStatus": "real",
+      "generationEnabled": false,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -464,6 +478,8 @@
       "type": "WorkflowTimeline",
       "description": "横向连接的流程阶段条，把 workflow 系统的节点顺序可视化。",
       "rendererKey": "workflow-timeline",
+      "rendererStatus": "real",
+      "generationEnabled": true,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -494,6 +510,8 @@
       "type": "FreeformInsight",
       "description": "AI 自由设计的洞察卡片——结构和样式由二段生成按 designBrief 现场设计，不是固定模板；数字/统计类内容必须挂 dataRef 指向真实数据，编不出来的不画。",
       "rendererKey": "freeform-insight",
+      "rendererStatus": "real",
+      "generationEnabled": false,
       "freeformGenerated": true,
       "propsSchema": {
         "type": "object",

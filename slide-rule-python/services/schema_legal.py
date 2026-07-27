@@ -106,6 +106,28 @@ def _load_experience_blocks() -> tuple:
             raise ValueError(f"experience_block_catalog.json {block_type} 缺 description")
         if not isinstance(raw.get("propsSchema"), dict):
             raise ValueError(f"experience_block_catalog.json {block_type} 缺 propsSchema")
+        # rendererStatus = 事实（前端 block-registry.tsx 登记的是真渲染器还是
+        # ExistingContentAdapter 惰性占位）；generationEnabled = 灰度决定（准不准
+        # 让 LLM 往 page.blocks 里写这个类型）。分两个字段是因为它们会各自独立
+        # 变化：渲染器先落地、放开是后一步的决定。
+        renderer_status = raw.get("rendererStatus")
+        if renderer_status not in ("real", "placeholder"):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.rendererStatus 必须是 real/placeholder"
+            )
+        generation_enabled = raw.get("generationEnabled")
+        if not isinstance(generation_enabled, bool):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.generationEnabled 必须是布尔值"
+            )
+        # 不变式：占位渲染器绝不能放开生成。这正是历史上那条一刀切禁令要
+        # 挡的事故——放开了，用户看到的是"区块已登记，内容将在下一阶段接入"
+        # 的死卡片。宁可 fail-fast 在启动期，也不要带病进 prompt。
+        if generation_enabled and renderer_status != "real":
+            raise ValueError(
+                f"experience_block_catalog.json {block_type} 放开了生成但渲染器仍是"
+                f" {renderer_status}——会渲染成惰性占位卡"
+            )
         for key, legal in (
             ("dataKinds", legal_data_kinds),
             ("allowedSlots", legal_slots),
@@ -274,12 +296,32 @@ def experience_block_prompt_block() -> str:
     """把目录压成给 LLM 的封闭选材说明；不另写第二份区块清单。"""
     lines = [
         "EXPERIENCE BLOCK CATALOG (closed set):",
-        "The page.blocks schema below is validated end-to-end, but the client-side renderer for it is NOT shipped yet — "
-        "any block emitted via page.blocks currently displays as an inert placeholder to real users. "
-        "DO NOT emit page.blocks for production pages. ALWAYS use the existing stats/charts/rankings/feeds fields instead; "
-        "this catalog exists for schema/gate testing only until the renderer lands.",
-        "If you emit page.blocks anyway (e.g. explicitly requested for schema testing), every block type MUST be one of the catalog entries below.",
     ]
+    # 放开名单从目录派生，不在这里手写——历史事故：渲染器 07-22/07-23 陆续
+    # 接上了，prompt 里那句"渲染器还没上线，不要输出 page.blocks"却留在原地，
+    # 于是 WorkflowTimeline 这类已经能用的区块一次都没被渲染过。现在这句话
+    # 由 generationEnabled 决定，改目录即改 prompt，不会再各说各话。
+    enabled = [b for b in EXPERIENCE_BLOCKS if b.get("generationEnabled")]
+    if enabled:
+        lines.append(
+            "You MAY emit page.blocks, but ONLY these types are renderable today: "
+            + ", ".join(str(b["type"]) for b in enabled)
+            + ". Emit them only where they genuinely fit the page's job — an unnecessary "
+            "block is worse than none."
+        )
+        lines.append(
+            "Every OTHER type in this catalog is schema-only: its renderer is not shipped, so emitting it "
+            "would show real users an inert placeholder. Use the existing stats/charts/rankings/feeds "
+            "fields for those needs instead."
+        )
+    else:
+        lines.append(
+            "No block type is renderable yet — DO NOT emit page.blocks for production pages. "
+            "ALWAYS use the existing stats/charts/rankings/feeds fields instead."
+        )
+    lines.append(
+        "Whenever you do emit page.blocks, every block type MUST be one of the catalog entries below."
+    )
     for block in EXPERIENCE_BLOCKS:
         lines.append(
             f"- {block['type']}: {block['description']} "
