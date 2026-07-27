@@ -237,3 +237,61 @@ def test_neon_row_normalization_tolerates_bad_shapes():
     assert store._neon_normalize_row({"created_at": "garbage"})["created_at"] == "garbage"
     assert store._neon_normalize_row({"model_json": None})["model_json"] == {}
     assert store._neon_normalize_row({})["model_json"] == {}
+
+
+# ── HTTP 错误的结构化解析（2026-07-27）──────────────────────────────
+# 此前只截响应体前 200 字符：唯一键冲突这种只想知道 code/constraint 的场景，
+# 截断还可能正好切掉关键部分。现在按官方 JS 驱动（@neondatabase/serverless
+# httpQuery.ts 的 errorFields）同款把字段提出来，另加官方没读但端点确实返回
+# 的 neon:retryable。下面的响应形状取自对真库触发真实错误的实测记录。
+
+
+class _FakeResp:
+    def __init__(self, status: int, payload=None, text: str = ""):
+        self.status_code = status
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("not json")
+        return self._payload
+
+
+def test_neon_error_extracts_structured_fields():
+    """唯一键冲突：code/constraint/detail 必须能直接取到，并出现在摘要里。"""
+    err = store._neon_http_error(_FakeResp(400, {
+        "message": 'duplicate key value violates unique constraint "generated_app_pkey"',
+        "code": "23505",
+        "constraint": "generated_app_pkey",
+        "detail": "Key (id)=(abc) already exists.",
+        "severity": "ERROR",
+        "neon:retryable": False,
+    }))
+    assert isinstance(err, store.NeonHttpError)
+    assert err.code == "23505"
+    assert err.retryable is False
+    assert err.fields["constraint"] == "generated_app_pkey"
+    text = str(err)
+    assert "code=23505" in text and "constraint=generated_app_pkey" in text
+
+
+def test_neon_error_falls_back_to_text_for_non_json():
+    """网关 5xx 常返回 HTML——解析不了就回落文本截断，绝不因此再抛一个异常。"""
+    err = store._neon_http_error(_FakeResp(502, None, "<html>Bad Gateway</html>"))
+    assert isinstance(err, store.NeonHttpError)
+    assert err.status == 502
+    assert "Bad Gateway" in str(err)
+    assert err.code is None and err.retryable is None
+
+
+def test_neon_error_fields_cover_official_driver_list():
+    """字段清单与官方 errorFields 对齐（16 项）+ neon:retryable。
+    官方少了 retryable 这项，但端点真的会返回，实测确认。"""
+    official = {
+        "severity", "code", "detail", "hint", "position", "internalPosition",
+        "internalQuery", "where", "schema", "table", "column", "dataType",
+        "constraint", "file", "line", "routine",
+    }
+    assert official <= set(store._NEON_ERROR_FIELDS)
+    assert "neon:retryable" in store._NEON_ERROR_FIELDS

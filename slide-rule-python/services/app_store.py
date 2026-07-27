@@ -475,7 +475,17 @@ def _neon_normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     实测（2026-07-26）HTTP 端点的类型映射已经很干净：varchar→str、integer→int、
     boolean→bool、jsonb→dict（自动解析）、NULL→None，都不用动。唯一要修的是
     timestamptz：它给 '2026-07-26 12:34:56+00' 这种带空格的写法，而另外两个后端
-    产出的是 isoformat()——不统一的话，画廊排序/相对时间会在不同后端下不一致。"""
+    产出的是 isoformat()——不统一的话，画廊排序/相对时间会在不同后端下不一致。
+
+    ⚠ 加字段前必读（2026-07-27 对真库逐类型实测）：端点对 **int8/bigint 和
+    numeric 返回的是字符串**，不是数字——`count(*)` 拿到的是 "5" 而非 5。
+    本表当前所有数值列都是 integer(int4，返回 int)，且代码里没有 count(*)，
+    所以现在是安全的；将来谁加 bigint/numeric 列或写聚合查询，必须在这里
+    显式转型，否则 TCP 后端返回 int、HTTP 后端返回 str，同一份数据在两个
+    后端下行为不一致（排序、比较、算术全会悄悄错）。
+    官方 JS 驱动绕开这个坑的办法是设 `Neon-Raw-Text-Output: true` 全部取
+    文本再自己解析——那是因为 JS 的 number 是双精度、int8 会丢精度；Python
+    的 int 任意精度，没这个必要，让服务端解析反而省事。"""
     out = dict(row)
     ts = out.get("created_at")
     if isinstance(ts, str) and ts:
@@ -486,6 +496,60 @@ def _neon_normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(out.get("model_json"), dict):
         out["model_json"] = out.get("model_json") or {}
     return out
+
+
+# Postgres 错误的结构化字段。与官方 JS 驱动 @neondatabase/serverless 的
+# httpQuery.ts `errorFields` 对齐（16 项），外加 `neon:retryable`——那一项
+# 官方没读，但端点确实会返回（2026-07-27 对真库触发唯一键冲突/语法错误
+# /列不存在实测确认），它直接回答"重试有没有意义"，比自己猜错误码靠谱。
+_NEON_ERROR_FIELDS = (
+    "severity", "code", "detail", "hint", "position", "internalPosition",
+    "internalQuery", "where", "schema", "table", "column", "dataType",
+    "constraint", "file", "line", "routine", "neon:retryable",
+)
+
+
+class NeonHttpError(RuntimeError):
+    """带 Postgres 结构化错误字段的 HTTP 后端异常。
+
+    此前只截响应体前 200 字符，诊断信息虽然在文本里但要靠人眼捞——唯一键
+    冲突这种只想知道 `code=23505 constraint=xxx` 的场景，截断还可能正好把
+    关键部分切掉。现在按官方驱动同款把字段提出来挂在异常上。
+
+    注意：调用方（get_backend）仍然是 fail-open——出错就降级，不因为拿到了
+    结构化字段就改成重试或抛给主链路。这里只提升可诊断性，不动控制流。"""
+
+    def __init__(self, message: str, status: int, fields: Optional[dict[str, Any]] = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.fields = fields or {}
+
+    @property
+    def code(self) -> Optional[str]:
+        return self.fields.get("code") or None
+
+    @property
+    def retryable(self) -> Optional[bool]:
+        value = self.fields.get("neon:retryable")
+        return value if isinstance(value, bool) else None
+
+
+def _neon_http_error(resp: Any) -> NeonHttpError:
+    """把一个失败响应解析成带结构化字段的异常；非 JSON 响应回落到文本截断。"""
+    try:
+        payload = resp.json()
+        if not isinstance(payload, dict):
+            raise ValueError("payload not an object")
+    except Exception:  # noqa: BLE001 — 网关 5xx 常返回 HTML，回落文本即可
+        return NeonHttpError(f"neon http {resp.status_code}: {resp.text[:200]}", resp.status_code)
+    fields = {k: payload[k] for k in _NEON_ERROR_FIELDS if payload.get(k) not in (None, "")}
+    message = str(payload.get("message") or "").strip() or resp.text[:200]
+    # 摘要里带上最常用来定位的三项，日志一眼能看出是什么错
+    summary = ", ".join(
+        f"{k}={fields[k]}" for k in ("code", "constraint", "detail") if k in fields
+    )
+    text = f"neon http {resp.status_code}: {message}" + (f" ({summary})" if summary else "")
+    return NeonHttpError(text, resp.status_code, fields)
 
 
 # 记录字段顺序——INSERT 的列序与占位符序绑定在这里，改字段只改这一处
@@ -518,8 +582,9 @@ class NeonHttpAppStore(AppStoreBackend):
     def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
         resp = self._client.post(self._endpoint, json={"query": sql, "params": params or []})
         if resp.status_code >= 400:
-            # 带上响应体前若干字符——Neon 的 SQL 报错信息都在里面，光看状态码没法诊断
-            raise RuntimeError(f"neon http {resp.status_code}: {resp.text[:200]}")
+            # 结构化解析：code/constraint/detail 等字段直接提出来，比截 200 字符
+            # 好定位（见 _neon_http_error）。仍然抛异常，fail-open 语义不变。
+            raise _neon_http_error(resp)
         return resp.json().get("rows") or []
 
     def _ensure_table(self) -> None:
