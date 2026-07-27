@@ -404,7 +404,13 @@ router.post("/orchestrate-plan", express.json({ limit: "2mb" }), async (req: Req
 // Python returns top-level publishClosure + skillRuntimeGraph (cross-runtime closure fields).
 // Node forwards the entire response body verbatim (no schema filtering, no drop of extra keys).
 router.post("/drive-full", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
-  const body = (req.body || {}) as { state?: any; max_loops?: number; userText?: string; user_text?: string };
+  const body = (req.body || {}) as {
+    state?: any;
+    max_loops?: number;
+    userText?: string;
+    user_text?: string;
+    installedSkills?: unknown;
+  };
   if (!body.state) {
     return res.status(400).json({ error: "bad_request", message: "state is required" });
   }
@@ -420,6 +426,10 @@ router.post("/drive-full", express.json({ limit: "2mb" }), async (req: Request, 
           state: body.state,
           max_loops: body.max_loops ?? 10,
           userText: body.userText ?? body.user_text ?? '',
+          // 2026-07-27 修复：此前手工重组 body 时漏掉 installedSkills——
+          // 回退到非流式驱动时技能注入静默失效（流式走 catch-all 全量透传
+          // 所以正常）。
+          installedSkills: body.installedSkills,
         },
         pythonRuntime.internalKey,
         { timeoutMs: pythonRuntime.timeoutMs },

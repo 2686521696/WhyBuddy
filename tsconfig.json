@@ -21,7 +21,8 @@
       "@/*": ["./client/src/*"],
       "@shared/*": ["./shared/*"],
       "@legal": ["./slide-rule-python/services/data/five_system_legal.json"],
-      "@experience-blocks": ["./slide-rule-python/services/data/experience_block_catalog.json"]
+      "@experience-blocks": ["./slide-rule-python/services/data/experience_block_catalog.json"],
+      "@identity-themes": ["./slide-rule-python/services/data/identity_theme_presets.json"]
     }
   }
 }

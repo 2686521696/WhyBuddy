@@ -49,6 +49,7 @@ PUBLISH_ENUM_VIOLATION = "PUBLISH_ENUM_VIOLATION"
 # 此处 re-export 保持历史名字；加合法值只改对应账本，四方一致性由测试锁死。
 from .schema_legal import (  # noqa: F401 — re-export 即接口
     CHART_TYPES,
+    EXPERIENCE_BLOCK_ALLOWED_SLOTS,
     EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE,
     EXPERIENCE_BLOCK_BINDING_SCHEMAS,
     EXPERIENCE_BLOCK_TYPES,
@@ -939,8 +940,10 @@ def validate_five_system_model(
             ref=pref_device, skill="appbundle",
         ))
 
-    # Step 7: page layout 校验（可选，出现即校验 slot 合法性 + block 引用）
-    LAYOUT_SLOTS = {"summary", "primary", "secondary", "activity", "content"}
+    # Step 7: page layout 校验（可选，出现即校验 slot 合法性 + block 引用）。
+    # 槽位合法域从目录账本派生（此前这里手抄一份，往目录加槽位时 per-type
+    # 校验放行、这里却拒绝，会产出自相矛盾的 finding）。
+    LAYOUT_SLOTS = set(EXPERIENCE_BLOCK_ALLOWED_SLOTS)
     for pi, pg in enumerate(_as_list(m.get("page", {}).get("pages"))):
         pd = _as_dict(pg)
         layout = _as_dict(pd.get("layout"))

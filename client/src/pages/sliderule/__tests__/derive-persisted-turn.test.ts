@@ -235,4 +235,13 @@ describe("looksLikeNewAppIntent (自动新话题启发式)", () => {
     expect(looksLikeNewAppIntent("好的")).toBe(false);
     expect(looksLikeNewAppIntent("")).toBe(false);
   });
+
+  it("D5 回归：含新建动词的迭代表述不得判为新应用（曾触发无确认删会话）", () => {
+    expect(looksLikeNewAppIntent("给工单系统做一个统计报表页面")).toBe(false);
+    expect(looksLikeNewAppIntent("为这个应用做一个移动端小程序版本")).toBe(false);
+    expect(looksLikeNewAppIntent("在现有系统基础上帮我做个导出工具")).toBe(false);
+    expect(looksLikeNewAppIntent("基于当前平台设计一个审批看板")).toBe(false);
+    // 真正的新应用表述不受影响
+    expect(looksLikeNewAppIntent("做一个博物馆门票预订系统")).toBe(true);
+  });
 });

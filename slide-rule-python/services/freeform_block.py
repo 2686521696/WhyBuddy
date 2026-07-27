@@ -8,6 +8,10 @@ HTTP 客户端，两条都会撞。改成在 sliderule_llm.structured 的流式 
 （call_llm_with_retry + on_delta 强制流式）上，加一层 Pydantic 深校验——原来
 structured_llm_json 只做 shape 级校验（JSON 能解析 + 必需字段非空），这里补
 到"标签/样式/图标在白名单内 + 数字类内容必须挂 dataRef 指向真实数据"。
+（"数字必须挂 dataRef"这条 2026-07-26 前只写在本段注释里、代码从没真正
+执行——LLM 把编造数字写进普通 text 就一路直达渲染。现在由 FreeformNode 的
+check_numbers_grounded 校验器真实拦截、错误回喂 reask，guardrails 声明式
+validator 同款思路。）
 
 安全边界：LLM 只产出数据（标签/样式/文字/图标引用/dataRef），永远不会被当
 代码执行；渲染端只用安全 API 拼装（React createElement），不用 dangerouslySet
@@ -23,15 +27,20 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from pathlib import Path
+
 from .schema_legal import (
     FREEFORM_ALLOWED_ICON_REFS,
     FREEFORM_ALLOWED_STYLE_PROPS,
     FREEFORM_ALLOWED_TAGS,
+    FREEFORM_ICON_NAME_PATTERN,
+    FREEFORM_LEGACY_ICON_ALIASES,
 )
 
 _DANGEROUS_VALUE_RE = re.compile(r"url\(|javascript:|expression\(|import\b|@import", re.I)
@@ -39,56 +48,142 @@ _DANGEROUS_VALUE_RE = re.compile(r"url\(|javascript:|expression\(|import\b|@impo
 # 合法的 Ant Design 图标组件名形状：PascalCase + Outlined/Filled/TwoTone 结尾
 # （@ant-design/icons 全部图标都遵循这个命名，前端按名字动态解析）。校验只看
 # 形状不看具体名字——编造/拼错的名字前端解析不到会渲染成空，优雅降级。
-_ANTD_ICON_NAME_RE = re.compile(r"^[A-Z][A-Za-z0-9]*(Outlined|Filled|TwoTone)$")
+# 2026-07-26：正则与 legacy 别名不再手抄——从 experience_block_catalog.json
+# 派生（前端 block-registry.tsx 同源），改目录一处两端同步。
+_ANTD_ICON_NAME_RE = re.compile(FREEFORM_ICON_NAME_PATTERN)
 # 老模型里可能还有这批 kebab 语义名（放开之前的 12 个白名单），前端保留了
 # 同名别名映射，这里也一并放行，历史产物不炸。
-_LEGACY_ICON_ALIASES = frozenset({
-    "check-circle", "clock", "alert-triangle", "arrow-right", "user",
-    "message-circle", "flag", "zap", "circle", "chevron-right", "star", "trending-up",
-})
+_LEGACY_ICON_ALIASES = frozenset(FREEFORM_LEGACY_ICON_ALIASES.keys())
 
 
 class FreeformGenerationError(RuntimeError):
     """FreeformInsight 内容生成/校验失败（调用方应把这个区块降级/拿掉）。"""
 
 
-# 8 套身份主题的完整色板——数值抄自
-# client/src/pages/sliderule/live-runtime/identity-themes.ts 的 THEMES（前端
-# 才是真正的渲染源，这里是复制，两边独立维护，改一边要记得同步改另一边；
-# 万一漏改，最坏结果是色板提示不够准，不影响安全边界——颜色值本身仍然过
-# Pydantic 白名单+危险模式校验）。
-# 之前只搬了 3 个锚点色（主色/内容底/强调底），生图/结构生成各自还有很大
-# 空间自己发明颜色，同一个 app 生两次图配色会漂移；这次把 11 个字段全搬
-# 过来，尤其是 charts 三色——那本来就是"给多类别/多序列视觉区分用的调色
-# 板"，比如 5 段流程图这种需要好几个不同色块的场景，应该从这 3 色（含深浅
-# 变体）里选，不是每次自己现编一套糖果色。
+# "数据声明"形状的数字——check_numbers_grounded 只拦这些，不拦结构性数字
+# （近7天/Top 5/2026年度/24小时这类标题词，终检实测过的误伤面）：
+_NUMERIC_CLAIM_RES = (
+    re.compile(r"^\W*[¥$€]?\d[\d,\.]*\s*%?\W*$"),          # 整段就是一个数（"128" "1,234.5%"）
+    re.compile(r"[¥$€]\s*\d"),                              # 货币（"¥128,000"）
+    re.compile(r"\d+(\.\d+)?\s*%"),                         # 百分比（"3.5%"）
+    re.compile(r"\d{1,3}(,\d{3})+"),                        # 千分位（"12,345"）
+    re.compile(r"(共|合计|总计|累计)\s*\d"),                 # 计数句式（"共 42 条"）
+    re.compile(r"\d[\d,\.]*\s*(条|单|件|个|笔|人|次|元|万|亿)"),  # 数+量词（"328 单"；时间单位天/小时/年不在列）
+)
+
+
+def _NUMERIC_CLAIM_RES_MATCH(text: str) -> bool:
+    return any(p.search(text) for p in _NUMERIC_CLAIM_RES)
+
+
+# 内容树硬上限（micromark/cmark 同款纪律：不可信输入必须带嵌套/规模上限）。
+# 超限在这里被 Pydantic 拦下、错误回喂 reask；前端 block-registry.tsx 用同
+# 值做纵深防御第二道（持久化快照恢复也走渲染那条路径）。改值两侧要一起改。
+FREEFORM_MAX_DEPTH = 12
+FREEFORM_MAX_NODES = 300
+
+
+def _env_budget(name: str, default: int) -> int:
+    """读一个非负整数预算 env；不合法/未设走默认。0 = 完全关闭该项开销。"""
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return default
+
+
+# 体验层成本笼子（2026-07-26）：每个区块/每个 monitor 页此前都各自独立生一张
+# 参考图 + 各起一个一次性 E2B 沙盒截图自检，无缓存、无上限、全部串行——
+# 区块多的应用把"过门 → 发布"拖到分钟级。上限按"每次 enrich 调用"计，
+# 超出预算的区块退化为纯文字生成（行为与未配生图/沙盒时完全一致，不是
+# 静默丢内容）；命中即打日志（no silent caps）。
+_ENRICH_MAX_REF_IMAGES_ENV = "SLIDERULE_ENRICH_MAX_REF_IMAGES"
+_ENRICH_MAX_SCREENSHOT_VERIFY_ENV = "SLIDERULE_ENRICH_MAX_SCREENSHOT_VERIFY"
+_ENRICH_MAX_REF_IMAGES_DEFAULT = 4
+_ENRICH_MAX_SCREENSHOT_VERIFY_DEFAULT = 2
+
+
+def _freeform_tree_bounds(root: Any) -> "tuple[int, int]":
+    """迭代遍历（不递归——校验器自己先栈爆就本末倒置了），返回 (最大深度, 节点总数)。
+
+    节点数越过上限两倍就提前止损返回，不为一棵注定被拒的树白遍历到底。
+    """
+    max_depth = 0
+    count = 0
+    stack: list[tuple[Any, int]] = [(root, 1)]
+    while stack:
+        node, depth = stack.pop()
+        count += 1
+        if depth > max_depth:
+            max_depth = depth
+        if count > FREEFORM_MAX_NODES * 2:
+            break
+        children = getattr(node, "children", None) or []
+        for child in children:
+            stack.append((child, depth + 1))
+    return max_depth, count
+
+
+# 8 套身份主题的色板提示——2026-07-26 起不再手抄前端 identity-themes.ts：
+# 与前端同读 data/identity_theme_presets.json（前端经 @identity-themes alias
+# 直读同一份文件构建 THEMES），改预设一处两端同步。这里按需挑字段做 prompt
+# 色板提示（不含 primaryFg/sidebarText——那两个是渲染细节，提示里用不上）。
+_THEME_PRESETS_PATH = Path(__file__).resolve().parent / "data" / "identity_theme_presets.json"
+_THEME_PRESETS: dict[str, Any] = json.loads(_THEME_PRESETS_PATH.read_text(encoding="utf-8"))
+_HINT_FIELDS = (
+    "label", "primary", "primaryHover", "gradTo",
+    "contentBg", "accentBg", "accentFg", "charts", "sidebarBg",
+)
 _THEME_COLOR_HINTS: dict[str, dict[str, Any]] = {
-    "azure": {"label": "湛蓝·通用企业", "primary": "#1677ff", "primaryHover": "#0958d9", "gradTo": "#69b1ff",
-              "contentBg": "#f0f2f5", "accentBg": "#e6f4ff", "accentFg": "#0958d9",
-              "charts": ["#1677ff", "#69b1ff", "#003eb3"], "sidebarBg": "#0f2138"},
-    "forest": {"label": "松绿·生产运营", "primary": "#2e7d32", "primaryHover": "#1b5e20", "gradTo": "#81c784",
-               "contentBg": "#f4f7f2", "accentBg": "#e8f5e9", "accentFg": "#1b5e20",
-               "charts": ["#2e7d32", "#558b2f", "#8bc34a"], "sidebarBg": "#13241a"},
-    "graphite": {"label": "石墨·专业中性", "primary": "#525252", "primaryHover": "#3d3d3d", "gradTo": "#9e9e9e",
-                 "contentBg": "#f0f0f0", "accentBg": "#e5e5e5", "accentFg": "#333333",
-                 "charts": ["#606060", "#476780", "#909090"], "sidebarBg": "#1f1f1f"},
-    "tangerine": {"label": "橘橙·消费活力", "primary": "#e05d38", "primaryHover": "#c2410c", "gradTo": "#fdba74",
-                  "contentBg": "#f8fafc", "accentBg": "#fff0eb", "accentFg": "#b23c17",
-                  "charts": ["#e05d38", "#f59e0b", "#3b82f6"], "sidebarBg": "#271a15"},
-    "violet": {"label": "紫罗兰·创意智能", "primary": "#7033ff", "primaryHover": "#5b21b6", "gradTo": "#c4b5fd",
-               "contentBg": "#f7f7f8", "accentBg": "#ede9fe", "accentFg": "#5b21b6",
-               "charts": ["#7033ff", "#a78bfa", "#22d3ee"], "sidebarBg": "#1d1633"},
-    "amber": {"label": "琥珀·财务审计", "primary": "#d97706", "primaryHover": "#b45309", "gradTo": "#fcd34d",
-              "contentBg": "#fffdf7", "accentBg": "#fffbeb", "accentFg": "#92400e",
-              "charts": ["#f59e0b", "#d97706", "#78716c"], "sidebarBg": "#261d0e"},
-    "clay": {"label": "陶土·温暖人文", "primary": "#c96442", "primaryHover": "#a34a2e", "gradTo": "#e7bba4",
-             "contentBg": "#faf9f5", "accentBg": "#f5e8df", "accentFg": "#8d4a2f",
-             "charts": ["#c96442", "#b8a07a", "#6b8e6f"], "sidebarBg": "#241812"},
-    "indigo": {"label": "靛蓝·数据密集", "primary": "#6366f1", "primaryHover": "#4f46e5", "gradTo": "#a5b4fc",
-               "contentBg": "#f8fafc", "accentBg": "#e0e7ff", "accentFg": "#3730a3",
-               "charts": ["#6366f1", "#818cf8", "#38bdf8"], "sidebarBg": "#171b38"},
+    theme_id: {k: theme[k] for k in _HINT_FIELDS if k in theme}
+    for theme_id, theme in (_THEME_PRESETS.get("themes") or {}).items()
 }
-_DEFAULT_THEME_ID = "azure"
+_DEFAULT_THEME_ID = str(_THEME_PRESETS.get("defaultThemeId") or "azure")
+
+# 生成主题（appIdentity.generatedTheme）的合格契约——与前端
+# isValidGeneratedTheme 同读 presets JSON 里的 generatedThemeContract。
+# 此前这里只查 8 个键是否存在（不含 sidebarBg/sidebarText/primaryFg、不查
+# 格式），前端却是 11 项严校验：错配窗口下 Python 拿生成主题配了卡片色、
+# 前端整套弃用回落预设——卡片和侧栏配色对不上，正是升版要治的病。
+_GENERATED_THEME_CONTRACT: dict[str, Any] = _THEME_PRESETS.get("generatedThemeContract") or {}
+_CONTRACT_HEX_RE = re.compile(str(_GENERATED_THEME_CONTRACT.get("hexPattern") or r"^#[0-9a-fA-F]{6}$"))
+_CONTRACT_GRADIENT_RE = re.compile(
+    str(_GENERATED_THEME_CONTRACT.get("sidebarBgGradientPattern") or r"$^")
+)
+_CONTRACT_HEX_KEYS: tuple = tuple(_GENERATED_THEME_CONTRACT.get("hexKeys") or ())
+_CONTRACT_CHARTS_LEN = int(_GENERATED_THEME_CONTRACT.get("chartsLength") or 3)
+
+
+def is_valid_generated_theme(v: Any) -> bool:
+    """生成主题合格判定（与前端 isValidGeneratedTheme 同一契约、同一份 JSON）。
+
+    合格才拿来配卡片色；不合格这里不用、前端也必然回落预设——两端判定
+    物理同源，不存在"后端用了前端弃用"的错配窗口。
+    """
+    if not isinstance(v, dict):
+        return False
+    # fullmatch 不是 match：Python 的 $ 会豁免尾随换行（"#123456\n" 能过），
+    # JS 的 $ 不豁免——用 match 就给"两端同源"留了一道换行错配窗口
+    # （Python 判合格拿去配卡片色、前端整套弃用回落预设）。
+    for key in _CONTRACT_HEX_KEYS:
+        val = v.get(key)
+        if not isinstance(val, str) or not _CONTRACT_HEX_RE.fullmatch(val):
+            return False
+    sidebar_bg = v.get("sidebarBg")
+    if not isinstance(sidebar_bg, str) or not (
+        _CONTRACT_HEX_RE.fullmatch(sidebar_bg) or _CONTRACT_GRADIENT_RE.fullmatch(sidebar_bg)
+    ):
+        return False
+    charts = v.get("charts")
+    if (
+        not isinstance(charts, list)
+        or len(charts) != _CONTRACT_CHARTS_LEN
+        or not all(isinstance(c, str) and _CONTRACT_HEX_RE.fullmatch(c) for c in charts)
+    ):
+        return False
+    return True
 
 _DEVICE_CONTAINER_HINTS: dict[str, str] = {
     "phone": (
@@ -121,19 +216,20 @@ def _image_size_for_device(device: str) -> str:
     return _DEVICE_IMAGE_SIZE.get(device) or _DEVICE_IMAGE_SIZE[_DEFAULT_DEVICE]
 
 
-_GENERATED_THEME_REQUIRED_KEYS = (
-    "label", "primary", "primaryHover", "gradTo", "contentBg", "accentBg", "accentFg", "charts",
-)
-
-
 def _theme_palette(theme_id: str, generated_theme: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """身份主题现在可能不是 8 预设之一，而是 identity_theme_gen.py 生成的
     自定义主题——优先用这个（同一个 app 的侧边栏/顶栏就是照它来的，颜色要
-    统一），传了但形状不对就落回 8 预设，不让一个坏字典拖垮整个生成。"""
-    if isinstance(generated_theme, dict) and all(
-        k in generated_theme for k in _GENERATED_THEME_REQUIRED_KEYS
-    ):
-        return generated_theme
+    统一），传了但不合契约就落回 8 预设，不让一个坏字典拖垮整个生成。
+    判定用 is_valid_generated_theme——与前端同一契约，前端会弃用的主题这里
+    绝不拿来配色（否则卡片一个色系、侧栏另一个色系）。
+
+    label 不在契约必填集里（前端渲染也不校验它），但本文件的两个 prompt
+    消费方都要读 hint['label']——这里出口兜底，缺了给个中性名，不让一个
+    可选字段把整层增强炸成 KeyError（终检实测过的事故路径）。"""
+    if is_valid_generated_theme(generated_theme):
+        theme = dict(generated_theme)  # type: ignore[arg-type]
+        theme.setdefault("label", "自定义主题")
+        return theme
     return _THEME_COLOR_HINTS.get(theme_id) or _THEME_COLOR_HINTS[_DEFAULT_THEME_ID]
 
 
@@ -419,10 +515,44 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
                 "（应为 PascalCase 且以 Outlined/Filled/TwoTone 结尾，如 WalletOutlined）"
             )
 
+        @model_validator(mode="after")
+        def check_numbers_grounded(self) -> "FreeformNode":
+            # "数字不能编"的生成侧强制（此前只靠 prompt 约束，模块 docstring
+            # 自称有这条校验但代码里没有——guardrails 声明式 validator 思路）。
+            # 只拦"数据声明"形状的数字（裸数值/货币/百分比/千分位/量词计数），
+            # 不拦结构性数字（"近 7 天趋势"/"Top 5 客户"/"2026 年度"这类标题
+            # ——终检实测过的一批误伤，prompt 也明说装饰性文案不需要 dataRef）。
+            # 拦下即校验错误回喂 reask；建议把数值拆成独立节点挂 dataRef，
+            # 因为渲染端 dataRefText 会整段替换 text（标签与数值要分节点写）。
+            if self.text and _NUMERIC_CLAIM_RES_MATCH(self.text):
+                if not (self.dataRef and self.dataRef.aggregate):
+                    raise ValueError(
+                        f"text 是数据声明（'{self.text[:40]}'）但没有挂 dataRef 聚合——"
+                        "具体数值必须来自真实数据现算，不能手写。把数值拆成独立节点并挂 "
+                        "dataRef（aggregate=count / sum:<fieldId> / avg:<fieldId>，"
+                        "标签文字放在相邻节点），或改写文案去掉具体数值"
+                    )
+            return self
+
     FreeformNode.model_rebuild()
 
     class FreeformDesign(BaseModel):
         root: FreeformNode
+
+        @model_validator(mode="after")
+        def check_tree_bounds(self) -> "FreeformDesign":
+            depth, nodes = _freeform_tree_bounds(self.root)
+            if depth > FREEFORM_MAX_DEPTH:
+                raise ValueError(
+                    f"内容树嵌套过深（{depth} 层，上限 {FREEFORM_MAX_DEPTH}）——"
+                    "请压平结构，减少不必要的嵌套容器"
+                )
+            if nodes > FREEFORM_MAX_NODES:
+                raise ValueError(
+                    f"内容树节点过多（≥{nodes} 个，上限 {FREEFORM_MAX_NODES}）——"
+                    "请精简内容，只保留关键信息"
+                )
+            return self
 
     return FreeformDesign
 
@@ -724,6 +854,7 @@ def generate_freeform_block(
     temperature: float = 0.7,
     max_tokens: int = 10000,
     use_reference_image: bool = True,
+    allow_screenshot_verify: bool = True,
 ) -> dict[str, Any]:
     """生成 + 深校验一个 FreeformInsight 区块的内容树。校验失败时把「上次
     输出 + 具体报错」拼回消息重问（跟 structured_llm_json 同一套 reask 语义，
@@ -841,7 +972,7 @@ def generate_freeform_block(
         # 参考图时才做——没有参照物就没法判断"够不够密"。这整块包在自己的
         # try/except 里，任何异常（哪怕是我没预料到的 bug）都不能让一次已经
         # 校验通过的生成结果因为这个增强步骤而报废。
-        if reference_image_b64:
+        if reference_image_b64 and allow_screenshot_verify:
             try:
                 preview_b64 = _render_preview_screenshot_b64(
                     design_dump, theme_id=theme_id, device=device, generated_theme=generated_theme
@@ -881,6 +1012,13 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
     # 要照它走，不能还停在 8 预设，不然侧边栏和内容卡片颜色对不上。
     generated_theme_raw = identity.get("generatedTheme")
     generated_theme = generated_theme_raw if isinstance(generated_theme_raw, dict) else None
+    max_ref_images = _env_budget(_ENRICH_MAX_REF_IMAGES_ENV, _ENRICH_MAX_REF_IMAGES_DEFAULT)
+    max_screenshot_verify = _env_budget(
+        _ENRICH_MAX_SCREENSHOT_VERIFY_ENV, _ENRICH_MAX_SCREENSHOT_VERIFY_DEFAULT
+    )
+    ref_used = 0
+    shot_used = 0
+    capped_blocks = 0
     for page in (model.get("page") or {}).get("pages") or []:
         blocks = page.get("blocks")
         if not isinstance(blocks, list):
@@ -889,11 +1027,31 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
         for block in blocks:
             if not isinstance(block, dict) or block.get("type") != "FreeformInsight":
                 continue
+            # 幂等（2026-07-27 D1）：已有内容树的区块不重生成——精修/回退
+            # 时未被指令触及的区块必须原样保留（REFINE prompt 已要求逐字节
+            # 保留,这里是第二道保险),否则加一个字段整页设计全部重掷。
+            existing_content = block.get("freeformContent")
+            if isinstance(existing_content, dict) and existing_content.get("root"):
+                continue
             brief = str((block.get("props") or {}).get("designBrief") or "").strip()
             bid = str(block.get("id") or "").strip()
+            # 成本预算：参考图/截图自检按"尝试"计费（参考图在 generate 开头
+            # 就生成了——失败的区块钱照样花了，必须扣预算；只在成功分支计数
+            # 会让网关抖动时笼子完全失效，生图次数退化为区块数×1，终检实测）。
+            use_ref = ref_used < max_ref_images
+            allow_shot = use_ref and shot_used < max_screenshot_verify
+            if use_ref:
+                ref_used += 1
+            else:
+                capped_blocks += 1
+            if allow_shot:
+                shot_used += 1
             try:
                 content = generate_freeform_block(
-                    brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+                    brief, datamodel, theme_id=theme_id, device=device,
+                    generated_theme=generated_theme,
+                    use_reference_image=use_ref,
+                    allow_screenshot_verify=allow_shot,
                 )
                 block["freeformContent"] = content
             except FreeformGenerationError as exc:
@@ -907,6 +1065,13 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
                 for slot_key, refs in list(layout.items()):
                     if isinstance(refs, list):
                         layout[slot_key] = [r for r in refs if r not in dropped_ids]
+    if capped_blocks:
+        # no silent caps：预算截断必须可见，静默截断会被当成"全覆盖了"。
+        print(
+            f"[freeform_block] enrich budget hit: {capped_blocks} block(s) generated "
+            f"text-only (ref-image cap {max_ref_images}, screenshot cap {max_screenshot_verify}; "
+            f"raise {_ENRICH_MAX_REF_IMAGES_ENV} / {_ENRICH_MAX_SCREENSHOT_VERIFY_ENV} to widen)"
+        )
     return model
 
 
@@ -1006,8 +1171,18 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
     generated_theme_raw = identity.get("generatedTheme")
     generated_theme = generated_theme_raw if isinstance(generated_theme_raw, dict) else None
 
+    max_ref_images = _env_budget(_ENRICH_MAX_REF_IMAGES_ENV, _ENRICH_MAX_REF_IMAGES_DEFAULT)
+    max_screenshot_verify = _env_budget(
+        _ENRICH_MAX_SCREENSHOT_VERIFY_ENV, _ENRICH_MAX_SCREENSHOT_VERIFY_DEFAULT
+    )
+    ref_used = 0
+    shot_used = 0
+    capped_pages = 0
     for page in (model.get("page") or {}).get("pages") or []:
-        if str(page.get("kind") or "").strip() != "monitor":
+        # 2026-07-27：dashboard 也纳入——此前只认 monitor,LLM 把总览页写成
+        # dashboard(prompt 曾反向引导)或夹具用 dashboard 时,设计版式整条
+        # 生成不出来,首页恒回固定骨架。渲染端 AppRuntimeScreen 同步放宽。
+        if str(page.get("kind") or "").strip() not in ("monitor", "dashboard"):
             continue
         # 只看 stats/charts——rankings/feeds 不进设计文案（见
         # _monitor_overview_design_brief 的说明），一个页面如果只声明了
@@ -1017,10 +1192,26 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
         has_content = bool(page.get("stats")) or bool(page.get("charts"))
         if not has_content:
             continue
+        # 幂等（2026-07-27 D1）：已有总览设计的页不重生成（同上区块级注释）。
+        existing_overview = page.get("freeformOverview")
+        if isinstance(existing_overview, dict) and existing_overview.get("root"):
+            continue
         brief = _monitor_overview_design_brief(page, datamodel)
+        # 与 enrich_freeform_blocks 同一预算语义：按尝试计费（见彼处注释）。
+        use_ref = ref_used < max_ref_images
+        allow_shot = use_ref and shot_used < max_screenshot_verify
+        if use_ref:
+            ref_used += 1
+        else:
+            capped_pages += 1
+        if allow_shot:
+            shot_used += 1
         try:
             content = generate_freeform_block(
-                brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+                brief, datamodel, theme_id=theme_id, device=device,
+                generated_theme=generated_theme,
+                use_reference_image=use_ref,
+                allow_screenshot_verify=allow_shot,
             )
             page["freeformOverview"] = content
         except FreeformGenerationError as exc:
@@ -1028,4 +1219,9 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
                 f"[freeform_block] {page.get('id')} monitor overview generation failed, "
                 f"keeping fixed skeleton: {str(exc)[:200]}"
             )
+    if capped_pages:
+        print(
+            f"[freeform_block] monitor overview budget hit: {capped_pages} page(s) generated "
+            f"text-only (ref-image cap {max_ref_images}; raise {_ENRICH_MAX_REF_IMAGES_ENV} to widen)"
+        )
     return model

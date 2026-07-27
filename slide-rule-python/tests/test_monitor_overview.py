@@ -190,3 +190,23 @@ def test_enrich_fails_open_on_generation_error(monkeypatch):
     page = result["page"]["pages"][0]
     assert "freeformOverview" not in page
     assert page["stats"]  # 固定骨架数据没被动过
+
+
+def test_enrich_covers_dashboard_pages(monkeypatch):
+    """2026-07-27:dashboard 页也纳入设计版式——此前只认 monitor,LLM 把总览
+    页写成 dashboard 或夹具用 dashboard 时,首页恒回固定骨架(用户实测)。"""
+    called = []
+
+    def fake_generate(*args, **kwargs):
+        called.append(True)
+        return {"root": {"tag": "div", "style": {}, "children": []}}
+
+    monkeypatch.setattr("services.freeform_block.generate_freeform_block", fake_generate)
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"appIdentity": {"theme": "azure"}},
+        "page": {"pages": [{"id": "d1", "kind": "dashboard", "stats": [{"id": "s"}]}]},
+    }
+    result = enrich_monitor_page_overviews(model)
+    assert called == [True]
+    assert "freeformOverview" in result["page"]["pages"][0]

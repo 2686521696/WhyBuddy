@@ -533,7 +533,18 @@ def record_model_version(state: "V5SessionState", publish_closure, instruction: 
             # 模型没变：不记新版本，但指针对齐到该版本（可能刚从回退态回来）
             state.currentModelVersionId = versions[-1].get("id")
             return
-    new_id = f"mv-{len(versions) + 1}"
+    # ID 必须单调递增、与截断解耦——旧实现 len(versions)+1 配合下面的 [-20:]
+    # 截断,从第 22 版起恒生成 "mv-21":restore/findIndex 命中第一个同名旧
+    # 快照,◀▶ 错乱(审查实锤)。取"历史最大序号+1",截断也不回卷。
+    max_seq = 0
+    for v in versions:
+        vid = str(v.get("id") or "") if isinstance(v, dict) else ""
+        if vid.startswith("mv-"):
+            try:
+                max_seq = max(max_seq, int(vid[3:]))
+            except ValueError:
+                pass
+    new_id = f"mv-{max_seq + 1}"
     versions.append({
         "id": new_id,
         "turnId": str(getattr(state, "lastTurnId", "") or ""),

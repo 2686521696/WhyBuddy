@@ -128,6 +128,9 @@ class AppStoreBackend:
     def find_by_dedup_key(self, dedup_key: str) -> Optional[dict[str, Any]]:  # pragma: no cover
         raise NotImplementedError
 
+    def find_latest_by_session(self, session_id: str) -> Optional[dict[str, Any]]:  # pragma: no cover
+        raise NotImplementedError
+
     def delete(self, app_id: str) -> bool:  # pragma: no cover
         raise NotImplementedError
 
@@ -178,11 +181,14 @@ class JsonFileAppStore(AppStoreBackend):
     def list(self, *, limit: int, offset: int, latest_per_root: bool) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._read()
-        rows.sort(key=lambda r: (r.get("created_at") or ""), reverse=True)
+        # 排序键 (version, created_at) 双降序——同 root 内"最新"以 version 为准
+        # （created_at 在 dedup 幂等更新时可能被保留为旧值，单靠时间会把 v1
+        # 排到 v2 前面，画廊展示旧版当最新）。
+        rows.sort(key=lambda r: (r.get("version") or 0, r.get("created_at") or ""), reverse=True)
         if latest_per_root:
             seen: set[str] = set()
             latest: list[dict[str, Any]] = []
-            # rows 已按时间倒序 → 每个 root 第一次遇到就是最新版
+            # rows 已按 (version, 时间) 倒序 → 每个 root 第一次遇到就是最新版
             for r in rows:
                 root = r.get("root_id") or r.get("id")
                 if root in seen:
@@ -190,7 +196,17 @@ class JsonFileAppStore(AppStoreBackend):
                 seen.add(root)
                 latest.append(r)
             rows = latest
+            # 卡片间仍按时间倒序展示（跨应用之间 version 没有可比性）
+            rows.sort(key=lambda r: (r.get("created_at") or ""), reverse=True)
         return [_summary(r) for r in rows[offset:offset + limit]]
+
+    def find_latest_by_session(self, session_id: str) -> Optional[dict[str, Any]]:
+        with self._lock:
+            rows = [r for r in self._read() if r.get("session_id") == session_id]
+        if not rows:
+            return None
+        rows.sort(key=lambda r: (r.get("version") or 0, r.get("created_at") or ""), reverse=True)
+        return rows[0]
 
     def versions(self, root_id: str) -> list[dict[str, Any]]:
         with self._lock:
@@ -366,7 +382,11 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
 
         def list(self, *, limit: int, offset: int, latest_per_root: bool) -> list[dict[str, Any]]:
             with Session(engine) as s:
-                rows = list(s.scalars(select(GeneratedApp).order_by(GeneratedApp.created_at.desc())))
+                # 同 root 内以 version 为准挑最新（created_at 在 dedup 幂等更新
+                # 时可能保留旧值，见 JSON 后端同注释）。
+                rows = list(s.scalars(select(GeneratedApp).order_by(
+                    GeneratedApp.version.desc(), GeneratedApp.created_at.desc()
+                )))
             if latest_per_root:
                 seen: set[str] = set()
                 latest: list[GeneratedApp] = []
@@ -376,7 +396,17 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                     seen.add(r.root_id)
                     latest.append(r)
                 rows = latest
+                rows.sort(key=lambda r: (r.created_at or ""), reverse=True)
             return [_summary(r.to_record()) for r in rows[offset:offset + limit]]
+
+        def find_latest_by_session(self, session_id: str) -> Optional[dict[str, Any]]:
+            with Session(engine) as s:
+                row = s.scalars(
+                    select(GeneratedApp).where(GeneratedApp.session_id == session_id)
+                    .order_by(GeneratedApp.version.desc(), GeneratedApp.created_at.desc())
+                    .limit(1)
+                ).first()
+                return row.to_record() if row else None
 
         def versions(self, root_id: str) -> list[dict[str, Any]]:
             with Session(engine) as s:
@@ -486,6 +516,45 @@ def save_app(
         app_id=app_id, root_id=app_id, parent_id=None, version=1, dedup_key=dedup_key,
     )
     return backend.save(record)
+
+
+def save_app_or_version(
+    model: dict[str, Any],
+    *,
+    goal: str = "",
+    session_id: Optional[str] = None,
+    gate_passed: bool = True,
+) -> str:
+    """闭环落库的正确入口（2026-07-27，审查修复）：
+
+    - 模型一字未变（同 dedup_key）→ 幂等更新既有记录；
+    - 同一会话、模型有变 → **同 root 的新版本**（save_version，version 递增，
+      卡片长出 v2 徽标、版本链可查）；
+    - 该会话首次落库 → 新应用（save_app，root=自己·v1）。
+
+    此前闭环路径只调 save_app(dedup_key=会话+模型签名)：模型一变签名就变
+    → miss → 每次精修都新建 root——版本链永远不产生（save_version 是全仓
+    零调用的死代码），画廊里同一会话堆同名重复卡，v2 徽标恒为死代码。
+    """
+    dedup_key = model_signature(session_id, model)
+    backend = get_backend()
+    existing_same = backend.find_by_dedup_key(dedup_key)
+    if existing_same is not None:
+        return save_app(
+            model, goal=goal, session_id=session_id,
+            gate_passed=gate_passed, dedup_key=dedup_key,
+        )
+    prior = backend.find_latest_by_session(session_id) if session_id else None
+    if prior is not None:
+        return save_version(
+            prior.get("root_id") or prior["id"], prior["id"], model,
+            goal=goal or (prior.get("goal") or ""),
+            session_id=session_id, gate_passed=gate_passed,
+        )
+    return save_app(
+        model, goal=goal, session_id=session_id,
+        gate_passed=gate_passed, dedup_key=dedup_key,
+    )
 
 
 def save_version(root_id: str, parent_id: str, model: dict[str, Any], *, goal: str = "", session_id: Optional[str] = None, gate_passed: bool = True) -> str:
