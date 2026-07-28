@@ -194,3 +194,10 @@ slide-rule-python/data/rag-vector-index.json
 # 企业根证书只进本地构建，绝不入库（docker/certs/README.md）
 docker/certs/*.crt
 docs/skills-triage.partial.jsonl
+
+# 本地真机截图脚本（临时，不入库）
+.phone-lib.mjs
+.shot-*.mjs
+.verify-*.mjs
+.audit-*.mjs
+.probe.mjs

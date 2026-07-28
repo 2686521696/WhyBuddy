@@ -117,6 +117,9 @@ const LazyPhoneDetailFields = React.lazy(
 const LazyPhoneActionButton = React.lazy(
   () => import("./phone-mobile/PhoneActionButton")
 );
+const LazyPhonePageSections = React.lazy(
+  () => import("./phone-mobile/PhonePageSections")
+);
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -1399,13 +1402,146 @@ export function AppRuntimeScreen({
         );
   };
 
+  // 页面级 KPI 的取数（含"真实数据为零时用预览种子填充"那套）抽成一处，
+  // 桌面 statsBand 与手机档共用——两边各算一遍的话，同一个指标在两个档位
+  // 会出现一个有示例数据、一个是"—"。只有摆法分档，取数不分。
+  const pageStatDisplay = (stat: AppPageStatSchema) => {
+    const realRows = state.entities[stat.entityId] ?? [];
+    const v = pageStatValue(stat, realRows);
+    const entity = model?.datamodel?.entities?.find(e => e.id === stat.entityId);
+    const seedRows =
+      (v === 0 || v === null) && entity
+        ? generatePreviewSeedRows(
+            {
+              id: entity.id,
+              fields: entity.fields?.map(f => ({
+                id: f.id,
+                type: f.type,
+                options: f.options?.map(o => o.label ?? o.id),
+              })),
+            },
+            6
+          )
+        : null;
+    const value = seedRows
+      ? computePreviewStat(stat.metric, stat.metricFieldId, seedRows)
+      : v;
+    return {
+      value,
+      isPreview: seedRows !== null && value !== null && value > 0,
+    };
+  };
+
+  // 页面图表的手机形态：取数与桌面 renderChartCard 完全一致
+  //（同一个 buildEchartsOption + 同一份主题色），只把高度压到 140，
+  // 空态文案也照搬——两个档位不能对同一份数据给出不同说法。
+  const phoneChartNode = (chart: AppPageChartSchema) => {
+    const chartRows = state.entities[chart.entityId] ?? [];
+    if (chartRows.length === 0)
+      return (
+        <div style={{ fontSize: 11, color: INK.faint, padding: "12px 0" }}>
+          暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
+        </div>
+      );
+    const option = buildEchartsOption(chart, chartRows, {
+      primary: identityTheme.primary,
+      categorical: identityTheme.charts,
+    });
+    // 维度取不到值时 buildEchartsOption 返回 null —— 如实给空态，不画空图
+    if (!option)
+      return (
+        <div style={{ fontSize: 11, color: INK.faint, padding: "12px 0" }}>
+          暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
+        </div>
+      );
+    return (
+      <React.Suspense
+        fallback={
+          <div style={{ fontSize: 11, color: INK.faint, padding: "12px 0" }}>
+            图表加载中…
+          </div>
+        }
+      >
+        <LazyEchartsChart
+          option={option}
+          height={140}
+          ariaLabel={`${chart.label}：按${chart.dimensionLabel}统计${chart.metricLabel}`}
+        />
+      </React.Suspense>
+    );
+  };
+
+  // 手机档按 pageKind 决定出哪几段。取数与桌面共用（pageStatDisplay /
+  // phoneChartNode），只有摆法分档——同一个指标不能在两个档位算出不同的数。
+  const phoneSectionData = (() => {
+    if (!page) return null;
+    const kind = page.view.kind;
+    const wantsMetrics =
+      kind === "dashboard" || kind === "monitor" || kind === "workbench";
+    const wantsSteps = kind === "wizard";
+    const stats =
+      wantsMetrics && page.stats.length > 0
+        ? page.stats.map(stat => {
+            const { value, isPreview } = pageStatDisplay(stat);
+            return {
+              id: stat.id,
+              label: stat.label,
+              value,
+              isPreview,
+              prefix: stat.format === "money" ? "¥" : undefined,
+              suffix: stat.format === "percent" ? "%" : undefined,
+              precision:
+                value !== null && Number.isInteger(value)
+                  ? 0
+                  : stat.format === "money"
+                    ? 2
+                    : 1,
+            };
+          })
+        : [];
+    const charts =
+      wantsMetrics && page.charts.length > 0
+        ? page.charts.map(c => ({
+            id: c.id,
+            label: c.label,
+            node: phoneChartNode(c),
+          }))
+        : [];
+    // wizard：流程节点即步骤条。桌面用横向 Steps，手机竖排更读得下来。
+    const steps =
+      wantsSteps && (model?.workflow?.nodes?.length ?? 0) > 0
+        ? (model?.workflow?.nodes ?? []).slice(0, 8).map(n => ({
+            id: n.id,
+            title: n.name || n.id,
+            description: n.phase,
+          }))
+        : [];
+    if (stats.length === 0 && charts.length === 0 && steps.length === 0)
+      return null;
+    return { stats, charts, steps };
+  })();
+
   // 手机端业务页：体验区块 + 卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
   const phonePageContent = page && (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    // data-page-kind：手机档按 pageKind 出不同骨架，把 kind 摆到 DOM 上，
+    // 测试和真机排查都能直接看出"这页该长什么样"，不用去翻模型。
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: 8 }}
+      data-testid="phone-page-content"
+      data-page-kind={page.view.kind}
+    >
       {/* 体验区块：与桌面壳同一份摆法逻辑，槽位走 layout.mobile（未声明则退回
           桌面槽位）。从前手机档只有一个裸列表——桌面有的 KPI/图表/筛选条/流程
           时间线，手机一个都拿不到。 */}
       {renderExperienceBlockScaffold(true)}
+      {/* pageKind 骨架：schema 有 6 种，手机档此前一种都没有（无论什么 kind
+          都渲染成同一个裸列表）。dashboard/monitor 出 KPI + 图表，wizard 出
+          流程步骤——形态复用首页那套（Grid 两列 / Steps 竖排）。 */}
+      {phoneSectionData && (
+        <React.Suspense fallback={null}>
+          <LazyPhonePageSections {...phoneSectionData} />
+        </React.Suspense>
+      )}
       <React.Suspense
         fallback={
           <div
@@ -1673,31 +1809,8 @@ export function AppRuntimeScreen({
           data-testid="app-runtime-page-stats"
         >
           {page.stats.map(stat => {
-            const realRows = state.entities[stat.entityId] ?? [];
-            const v = pageStatValue(stat, realRows);
             // Phase B: 真实数据为零时用预览种子数据填充，加"示例"标注
-            const entity = model?.datamodel?.entities?.find(
-              e => e.id === stat.entityId
-            );
-            const seedRows =
-              (v === 0 || v === null) && entity
-                ? generatePreviewSeedRows(
-                    {
-                      id: entity.id,
-                      fields: entity.fields?.map(f => ({
-                        id: f.id,
-                        type: f.type,
-                        options: f.options?.map(o => o.label ?? o.id),
-                      })),
-                    },
-                    6
-                  )
-                : null;
-            const displayVal = seedRows
-              ? computePreviewStat(stat.metric, stat.metricFieldId, seedRows)
-              : v;
-            const isPreview =
-              seedRows !== null && displayVal !== null && displayVal > 0;
+            const { value: displayVal, isPreview } = pageStatDisplay(stat);
             return (
               <Card
                 key={stat.id}
