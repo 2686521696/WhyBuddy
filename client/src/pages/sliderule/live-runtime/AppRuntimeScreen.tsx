@@ -97,6 +97,15 @@ const LazyPhonePageList = React.lazy(
   () => import("./phone-mobile/PhonePageList")
 );
 const LazyPhoneTabBar = React.lazy(() => import("./phone-mobile/PhoneTabBar"));
+const LazyPhoneFormPopup = React.lazy(
+  () => import("./phone-mobile/PhoneFormPopup")
+);
+const LazyPhoneDetailPopup = React.lazy(
+  () => import("./phone-mobile/PhoneDetailPopup")
+);
+const LazyPhoneRolePicker = React.lazy(
+  () => import("./phone-mobile/PhoneRolePicker")
+);
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -136,6 +145,7 @@ import { FieldValue } from "./FieldValue";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
 import { AiSuggestionCard } from "./AiSuggestionCard";
 import { CodeProjectionView } from "./CodeProjectionView";
+import { notify } from "./phone-mobile/phone-feedback";
 import type { AppPageStatSchema } from "./app-runtime-schema";
 import { generatePreviewSeedRows, computePreviewStat } from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
@@ -683,11 +693,30 @@ export function AppRuntimeScreen({
     }));
   };
 
+  /** 关详情：未确认的 AI 建议随之丢弃（不悄悄写回）。两个设备档共用。 */
+  const closeDetail = () => {
+    setDetailRow(null);
+    setAiError(null);
+    setAiSuggestion(null);
+  };
+
+  /** enum 字段的历史取值（已写入行里出现过的，去重）——无声明取值时的候选来源。 */
+  const enumOptionsFor = (field: AppFormFieldSchema) => {
+    if (field.type !== "enum" || !page?.entityId) return [];
+    return [
+      ...new Set(
+        (state.entities[page.entityId] ?? [])
+          .map(r => String(r.values[field.id] ?? "").trim())
+          .filter(Boolean)
+      ),
+    ];
+  };
+
   const handleCreate = () => {
     if (!page?.entityId) return;
     const problems = validateRowValues(model, page.entityId, formValues);
     if (problems.length > 0) {
-      message.warning(problems.join("；"));
+      notify(isPhone, "warning", problems.join("；"));
       return;
     }
     const { state: next } = addRow(
@@ -699,7 +728,7 @@ export function AppRuntimeScreen({
     apply(next);
     setFormOpen(false);
     setFormValues({});
-    message.success("已保存");
+    notify(isPhone, "success", "已保存");
   };
 
   /**
@@ -770,7 +799,7 @@ export function AppRuntimeScreen({
     const updated = (next.entities[entityId] ?? []).find(r => r.id === rowId);
     if (updated) setDetailRow(updated);
     setAiSuggestion(null);
-    message.success(`已应用 AI 建议 →「${action.outputLabel}」`);
+    notify(isPhone, "success", `已应用 AI 建议 →「${action.outputLabel}」`);
   };
 
   const handleSubmitToWorkflow = (rowId: string, rowLabel: string) => {
@@ -784,7 +813,9 @@ export function AppRuntimeScreen({
     );
     if (instance) {
       apply(next);
-      message.success(
+      notify(
+        isPhone,
+        "success",
         `已提交审批：${instance.title}（到 Workflow 试运行里推进）`
       );
     }
@@ -1829,7 +1860,7 @@ export function AppRuntimeScreen({
                 setFormValues({});
                 setFormOpen(true);
               } else {
-                message.info("该操作指向的实体暂不支持在此页创建");
+                notify(isPhone, "info", "该操作指向的实体暂不支持在此页创建");
               }
               break;
             case "changeFilter":
@@ -2336,14 +2367,18 @@ export function AppRuntimeScreen({
           {currentTitle}
         </span>
         <span style={{ flex: 1 }} />
-        <Select
-          size="small"
-          style={{ minWidth: 104 }}
-          value={role}
-          onChange={changeRole}
-          options={schema.roles.map(r => ({ value: r, label: r }))}
-          data-testid="app-runtime-role"
-        />
+        {/* 角色切换：手机档用 antd-mobile Picker（整屏滚轮，手指点得准），
+            不用 antd Select——它的下拉浮层在缩放过的画布里定位会飘。 */}
+        <React.Suspense
+          fallback={<span style={{ width: 96, height: 24 }} />}
+        >
+          <LazyPhoneRolePicker
+            roles={schema.roles}
+            value={role}
+            onChange={changeRole}
+            getContainer={() => canvasEl ?? document.body}
+          />
+        </React.Suspense>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 10 }}>
         {isHome ? homeContent : phonePageContent}
@@ -2476,93 +2511,127 @@ export function AppRuntimeScreen({
                 ? topShell
                 : desktopShell}
 
-            <Modal
-              title={`新建 · ${page?.title ?? ""}`}
-              open={formOpen}
-              onOk={handleCreate}
-              onCancel={() => setFormOpen(false)}
-              okText="保存"
-              cancelText="取消"
-              destroyOnHidden
-              width={modalSizing.width}
-              centered={modalSizing.centered}
-              styles={{
-                body: {
-                  maxHeight: modalSizing.bodyMaxHeight,
-                  overflowY: "auto",
-                },
-              }}
-              getContainer={() => canvasEl ?? document.body}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                  paddingTop: 8,
-                }}
-              >
-                {(page?.formFields ?? []).map(f => (
-                  <div
-                    key={f.id}
-                    {...(page?.entityId
+            {/* 新建表单：手机档走 antd-mobile Popup（底部弹起），桌面档留 antd
+                Modal。同一份 formFields / formValues / handleCreate，只换容器
+                和录入控件——PC 弹框塞进 390 画布会顶穿两边，实测过。 */}
+            {isPhone ? (
+              <React.Suspense fallback={null}>
+                <LazyPhoneFormPopup
+                  open={formOpen}
+                  title={`新建 · ${page?.title ?? ""}`}
+                  fields={page?.formFields ?? []}
+                  values={formValues}
+                  onChange={(fieldId, v) =>
+                    setFormValues(prev => ({ ...prev, [fieldId]: v }))
+                  }
+                  onCancel={() => setFormOpen(false)}
+                  onSubmit={handleCreate}
+                  refRowsFor={refRowsFor}
+                  enumOptionsFor={enumOptionsFor}
+                  fieldProbeProps={f =>
+                    page?.entityId
                       ? probe({
                           kind: "field",
                           entityId: page.entityId,
                           fieldId: f.id,
                           label: f.label,
                         })
-                      : {})}
-                  >
+                      : {}
+                  }
+                  getContainer={() => canvasEl ?? document.body}
+                />
+              </React.Suspense>
+            ) : (
+              <Modal
+                title={`新建 · ${page?.title ?? ""}`}
+                open={formOpen}
+                onOk={handleCreate}
+                onCancel={() => setFormOpen(false)}
+                okText="保存"
+                cancelText="取消"
+                destroyOnHidden
+                width={modalSizing.width}
+                centered={modalSizing.centered}
+                styles={{
+                  body: {
+                    maxHeight: modalSizing.bodyMaxHeight,
+                    overflowY: "auto",
+                  },
+                }}
+                getContainer={() => canvasEl ?? document.body}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    paddingTop: 8,
+                  }}
+                >
+                  {(page?.formFields ?? []).map(f => (
                     <div
-                      style={{ fontSize: 12, color: "#666", marginBottom: 4 }}
+                      key={f.id}
+                      {...(page?.entityId
+                        ? probe({
+                            kind: "field",
+                            entityId: page.entityId,
+                            fieldId: f.id,
+                            label: f.label,
+                          })
+                        : {})}
                     >
-                      {f.label}
-                      <span style={{ color: "#bbb", marginLeft: 6 }}>
-                        {f.type}
-                      </span>
+                      <div
+                        style={{ fontSize: 12, color: "#666", marginBottom: 4 }}
+                      >
+                        {f.label}
+                        <span style={{ color: "#bbb", marginLeft: 6 }}>
+                          {f.type}
+                        </span>
+                      </div>
+                      <FieldInput
+                        field={f}
+                        value={formValues[f.id]}
+                        refRows={refRowsFor(f)}
+                        enumOptions={enumOptionsFor(f)}
+                        onChange={v =>
+                          setFormValues(prev => ({ ...prev, [f.id]: v }))
+                        }
+                      />
                     </div>
-                    <FieldInput
-                      field={f}
-                      value={formValues[f.id]}
-                      refRows={refRowsFor(f)}
-                      enumOptions={
-                        f.type === "enum" && page?.entityId
-                          ? [
-                              ...new Set(
-                                (state.entities[page.entityId] ?? [])
-                                  .map(r => String(r.values[f.id] ?? "").trim())
-                                  .filter(Boolean)
-                              ),
-                            ]
-                          : []
-                      }
-                      onChange={v =>
-                        setFormValues(prev => ({ ...prev, [f.id]: v }))
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-            </Modal>
+                  ))}
+                </div>
+              </Modal>
+            )}
 
-            <Drawer
-              title={`详情 · ${page?.title ?? currentTitle}`}
-              open={detailRow !== null && !isTablet}
-              onClose={() => {
-                setDetailRow(null);
-                setAiError(null);
-                setAiSuggestion(null); // 未确认的建议随抽屉关闭丢弃（不悄悄写回）
-              }}
-              placement={isPhone ? "bottom" : "right"}
-              height={isPhone ? "72%" : undefined}
-              width={isPhone ? undefined : 420}
-              destroyOnHidden
-              getContainer={() => canvasEl ?? document.body}
-              data-testid="app-runtime-detail"
-            >
-              {detailBody}
-            </Drawer>
+            {/* 行详情：手机档走 antd-mobile Popup，桌面档留 antd Drawer。
+                原来是把桌面 Drawer 掰成 placement="bottom" 冒充移动端；
+                Popup 才是移动端原生形态（圆角/拖拽条/遮罩关闭都是默认行为）。
+                正文 detailBody 跨设备共用，这里只换容器。 */}
+            {isPhone ? (
+              <React.Suspense fallback={null}>
+                <LazyPhoneDetailPopup
+                  open={detailRow !== null}
+                  title={`详情 · ${page?.title ?? currentTitle}`}
+                  onClose={closeDetail}
+                  getContainer={() => canvasEl ?? document.body}
+                >
+                  {detailBody}
+                </LazyPhoneDetailPopup>
+              </React.Suspense>
+            ) : (
+              <Drawer
+                title={`详情 · ${page?.title ?? currentTitle}`}
+                open={detailRow !== null && !isTablet}
+                onClose={closeDetail}
+                placement="right"
+                width={420}
+                destroyOnHidden
+                getContainer={() => canvasEl ?? document.body}
+                data-testid="app-runtime-detail"
+              >
+                {detailBody}
+              </Drawer>
+            )}
           </ConfigProvider>
         </div>
       </div>
