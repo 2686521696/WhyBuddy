@@ -4,6 +4,30 @@
 
 更细的任务拆分、阶段规划和未完成项请看 [ROADMAP.md](./ROADMAP.md)。
 
+## 2026-07-28（下午）
+
+**PC 端组件层：不再自造，全部换成 Ant Design 现成组件**
+
+参考 `ant-design/pro-components` 的 valueType 机制（一个 valueType 对应一个组件、
+组件内部按 mode 分 read/edit 两支），把「字段声明 → 控件」收敛成一张读写共用的
+判定表。此前读侧、写侧、表格列三处各判各的，后果是日期读出来是纯文本、写进去
+用的却是原生 `<input type="date">`，枚举无论 2 个取值还是 20 个一律下拉框。
+
+- 日期/时间 → DatePicker；枚举按取值个数分三档 → Segmented（≤3）/
+  Radio.Group（≤6）/ Select；百分比与进度 → Slider + InputNumber；金额 →
+  InputNumber 千分位；脱敏字段 → Input.Password；长文本 → TextArea。
+- 新建表单外壳从手写 div 换成 Form + Form.Item（竖排 label、对齐、错误态位），
+  并去掉了标签旁给开发看的 `string` `number` 类型角标。
+- 删除记录套 Popconfirm（此前一点就没了）；提示条从静态 `message.xxx()` 换成
+  hook 版，身份主色/深色档/圆角配方才下发得到。
+- 崩溃降级卡 → Result，AI 报错红框 → Alert，加载态 → Skeleton，空态 → Empty，
+  侧栏菜单项挂 Badge 行数。
+
+真实业务场景验收（连锁健身房会员与私教管理，19.3 分钟闭环 6/6，12 实体 /
+7 节点流程 / 6 角色 / 6 页面）：全站用到 16 种 antd 组件，录入控件累计
+Form.Item 33 · DatePicker 7 · Radio.Group 7 · InputNumber 6 · Select 6 ·
+Segmented 1，原生 `input[type=date]` 0 个，「暂无数据」0 处。
+
 ## 2026-07-28
 
 这一轮集中在「闭环产出的应用，打开之后是不是真的能看、能用」。
