@@ -60,6 +60,15 @@ export function dateKeyOf(value: unknown): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
 
+/** Date → "YYYY-MM-DD"（与 dateKeyOf 同一种键）。
+ *  用本地时区而不是 toISOString——后者按 UTC 切，东八区晚上的记录会被算到
+ *  第二天，日历上的圆点就和列表对不上号。 */
+export function localDateKey(d: Date): string {
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 /** 行按日期键归组；无法解析日期的行不入历（表格视图仍可见）。 */
 export function rowsByDateKey(
   rows: RuntimeRow[],

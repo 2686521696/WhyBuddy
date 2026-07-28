@@ -120,6 +120,12 @@ const LazyPhoneActionButton = React.lazy(
 const LazyPhonePageSections = React.lazy(
   () => import("./phone-mobile/PhonePageSections")
 );
+const LazyPhoneKanban = React.lazy(
+  () => import("./phone-mobile/PhoneKanban")
+);
+const LazyPhoneCalendar = React.lazy(
+  () => import("./phone-mobile/PhoneCalendar")
+);
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -161,6 +167,14 @@ import {
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
+// 看板分组是纯函数，桌面与手机共用同一份——两档各分各的会让同一条记录
+// 在两个档位落进不同的列。
+import {
+  groupRowsForKanban,
+  localDateKey,
+  rowsByDateKey,
+  type KanbanColumn,
+} from "./page-views";
 import { AiSuggestionCard } from "./AiSuggestionCard";
 import { CodeProjectionView } from "./CodeProjectionView";
 import { notify } from "./phone-mobile/phone-feedback";
@@ -527,6 +541,10 @@ export function AppRuntimeScreen({
     {}
   );
   const [detailRow, setDetailRow] = React.useState<RuntimeRow | null>(null);
+  // 手机档看板当前选中的状态列（桌面档并排显示所有列，不需要这个 state）
+  const [phoneKanbanKey, setPhoneKanbanKey] = React.useState("");
+  // 手机档日历选中的那一天（null = 不筛，显示全部）
+  const [phoneCalDate, setPhoneCalDate] = React.useState<Date | null>(null);
   // AI 生成：正在跑的能力 id + 最近一次失败诊断（fail-closed，不冒充输出）
   const [aiRunningCapId, setAiRunningCapId] = React.useState<string | null>(
     null
@@ -1471,6 +1489,29 @@ export function AppRuntimeScreen({
     );
   };
 
+  // 手机档看板：列分组复用桌面同一个纯函数 groupRowsForKanban——两档如果各分
+  // 各的，同一条记录可能在桌面归 A 列、手机归"未归类"。这里只决定"当前看哪
+  // 一列"，分组本身不重写。
+  const phoneKanban =
+    page && page.view.kind === "kanban" && kanbanStatusField
+      ? groupRowsForKanban(
+          rows,
+          kanbanStatusField.id,
+          kanbanStatusField.options ?? []
+        )
+      : null;
+  // 选中列：默认第一列。列集合变了（换页/状态取值变化）时回到第一列，
+  // 而不是卡在一个已经不存在的 key 上显示空白。
+  const phoneKanbanKeys = (phoneKanban ?? [])
+    .map((c: KanbanColumn) => c.id)
+    .join("|");
+  React.useEffect(() => {
+    setPhoneKanbanKey(phoneKanban?.[0]?.id ?? "");
+  }, [phoneKanbanKeys]);
+  const phoneKanbanRows =
+    phoneKanban?.find((c: KanbanColumn) => c.id === phoneKanbanKey)?.rows ??
+    rows;
+
   // 手机档按 pageKind 决定出哪几段。取数与桌面共用（pageStatDisplay /
   // phoneChartNode），只有摆法分档——同一个指标不能在两个档位算出不同的数。
   const phoneSectionData = (() => {
@@ -1521,6 +1562,81 @@ export function AppRuntimeScreen({
     return { stats, charts, steps };
   })();
 
+  // 手机档日历：只算"哪些天有数据"和"选中那天有哪些行"。归组复用桌面
+  // CalendarBoard 同一个 rowsByDateKey——两档对同一个值算出不同的天，
+  // 会让日历上的圆点和下面的列表自己打架。
+  const phoneCalendar =
+    page && page.view.kind === "calendar" && page.view.dateFieldId
+      ? (() => {
+          const byKey = rowsByDateKey(rows, page.view.dateFieldId);
+          const marked = new Set(byKey.keys());
+          const selKey = phoneCalDate ? localDateKey(phoneCalDate) : null;
+          // 选中日无记录时给空数组（不是回退全量）——用户点了 3 号就该看到
+          // 3 号的情况，"这天没有"本身是答案。
+          const filtered = selKey ? (byKey.get(selKey) ?? []) : rows;
+          return { marked, filtered };
+        })()
+      : null;
+
+  // 日历壳：非日历页直接透传（同 PhoneKanbanShell 的理由）。
+  const PhoneCalendarShell = ({
+    data,
+    children,
+  }: {
+    data: { marked: Set<string>; filtered: unknown[] } | null;
+    children: React.ReactNode;
+  }) => {
+    if (!data) return <>{children}</>;
+    return (
+      <React.Suspense fallback={<>{children}</>}>
+        <LazyPhoneCalendar
+          markedDates={data.marked}
+          value={phoneCalDate}
+          onChange={setPhoneCalDate}
+        >
+          {children}
+        </LazyPhoneCalendar>
+      </React.Suspense>
+    );
+  };
+
+  // 手机档列表最终喂什么行：看板页给选中列、日历页给选中日、其余全量。
+  // 两种范式不会同时出现（view.kind 是单选），所以这里是顺序取第一个命中的。
+  const phoneListRows = phoneKanban
+    ? phoneKanbanRows
+    : (phoneCalendar?.filtered as typeof rows | undefined) ?? rows;
+
+  // 看板壳：非看板页（columns 为 null/空）直接透传 children，省得在 JSX 里
+  // 写"条件包裹"那种两份几乎一样的分支。
+  const PhoneKanbanShell = ({
+    columns,
+    activeKey,
+    onChange,
+    children,
+  }: {
+    columns: KanbanColumn[] | null;
+    activeKey: string;
+    onChange: (k: string) => void;
+    children: React.ReactNode;
+  }) => {
+    if (!columns || columns.length === 0) return <>{children}</>;
+    return (
+      <React.Suspense fallback={<>{children}</>}>
+        <LazyPhoneKanban
+          columns={columns.map(c => ({
+            key: c.id,
+            label: c.label,
+            count: c.rows.length,
+          }))}
+          activeKey={activeKey}
+          onChange={onChange}
+        >
+          {children}
+        </LazyPhoneKanban>
+      </React.Suspense>
+    );
+  };
+
   // 手机端业务页：体验区块 + 卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
   const phonePageContent = page && (
     // data-page-kind：手机档按 pageKind 出不同骨架，把 kind 摆到 DOM 上，
@@ -1556,8 +1672,17 @@ export function AppRuntimeScreen({
           </div>
         }
       >
+        {/* 看板：桌面并排的状态列在手机上改成按状态分页（CapsuleTabs 横向
+            可滚，状态多时下一个露一角，不用自己拼滚动提示）。非看板页
+            phoneKanban 为 null，PhoneKanban 直接透传 children。 */}
+        <PhoneKanbanShell
+          columns={phoneKanban}
+          activeKey={phoneKanbanKey}
+          onChange={setPhoneKanbanKey}
+        >
+        <PhoneCalendarShell data={phoneCalendar}>
         <LazyPhonePageList
-          rows={rows}
+          rows={phoneListRows}
           descFields={page.detailFields
             .slice(1, 4)
             .map(f => ({ id: f.id, label: f.label }))}
@@ -1584,7 +1709,38 @@ export function AppRuntimeScreen({
           }}
           onOpenRow={row => setDetailRow(row as RuntimeRow)}
           renderRowActions={row => rowActions(row as RuntimeRow)}
+          // 左滑动作：与行内按钮同一套 handler，只换触发方式。给了 swipeActions
+          // 之后 PhonePageList 不再渲染行内按钮，行高省一截。
+          swipeActions={row => {
+            const r = row as RuntimeRow;
+            const acts: Array<{
+              key: string;
+              text: string;
+              color?: "primary" | "warning" | "danger";
+              onClick: () => void;
+            }> = [];
+            if (page.workflowLinked)
+              acts.push({
+                key: "submit",
+                text: "提交审批",
+                color: "primary",
+                onClick: () =>
+                  handleSubmitToWorkflow(
+                    r.id,
+                    String(Object.values(r.values)[0] ?? r.id)
+                  ),
+              });
+            acts.push({
+              key: "delete",
+              text: "删除",
+              color: "danger",
+              onClick: () => apply(deleteRow(state, page.entityId!, r.id)),
+            });
+            return acts;
+          }}
         />
+        </PhoneCalendarShell>
+        </PhoneKanbanShell>
       </React.Suspense>
     </div>
   );
