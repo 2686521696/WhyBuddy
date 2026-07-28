@@ -9,9 +9,21 @@
  * 延迟对提示语无所谓（用户不会 100ms 内做下一个动作）。
  */
 
-import { message } from "antd";
+import { message as staticMessage } from "antd";
+import type { MessageInstance } from "antd/es/message/interface";
 
 export type FeedbackKind = "success" | "warning" | "info" | "error";
+
+/**
+ * 桌面档的 message 实例。
+ *
+ * antd v5 的静态 `message.xxx()` 拿不到 ConfigProvider 的上下文，控制台会警告
+ * 「Static function can not consume context like dynamic theme」——运行应用的
+ * 主题（身份主色 / 深色档 / 紧凑档 / 圆角配方）全都下发不到提示条上，
+ * 琥珀色的应用弹出来的还是默认蓝。调用方用 `message.useMessage()` 拿到
+ * 带上下文的实例传进来即可；不传时退回静态调用（提示总比没有强）。
+ */
+export type MessageApi = Pick<MessageInstance, FeedbackKind>;
 
 /**
  * 手机档：Toast；桌面档：message。同一套调用点，形态按设备分。
@@ -25,10 +37,12 @@ export function notify(
   isPhone: boolean,
   kind: FeedbackKind,
   content: string,
-  getContainer?: () => HTMLElement | null
+  getContainer?: () => HTMLElement | null,
+  messageApi?: MessageApi
 ): void {
+  const desktop = messageApi ?? staticMessage;
   if (!isPhone) {
-    message[kind](content);
+    desktop[kind](content);
     return;
   }
   void import("antd-mobile").then(({ Toast }) => {
@@ -42,6 +56,6 @@ export function notify(
     });
   }).catch(() => {
     // chunk 拉不下来也得让用户看见提示——退回桌面档的 message，不静默吞掉
-    message[kind](content);
+    desktop[kind](content);
   });
 }

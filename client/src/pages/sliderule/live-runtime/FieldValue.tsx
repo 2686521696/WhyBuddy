@@ -21,6 +21,7 @@ import {
   scoreColor,
   toneToTagColor,
 } from "./field-display";
+import { resolveValueType } from "./field-value-type";
 
 export function FieldValue({
   field,
@@ -51,7 +52,10 @@ export function FieldValue({
     return <>{text}</>;
   }
 
-  switch (field.format) {
+  // 2026-07-28：分支条件从 field.format 换成共用的档位表（field-value-type.ts）。
+  // 写侧 FieldEditor 读的是同一张表——此前两边各判各的，日期在读侧掉进
+  // default 出纯文本、在写侧用的是原生 input[type=date]，谁都没发现。
+  switch (resolveValueType(field)) {
     case "money": {
       const money = formatMoney(value);
       return money ? (
@@ -99,7 +103,7 @@ export function FieldValue({
         </span>
       );
     }
-    case "rating": {
+    case "rate": {
       const n = clampNumber(value, 0, 5);
       return n === null ? (
         <>{text}</>
@@ -107,11 +111,28 @@ export function FieldValue({
         <Rate disabled allowHalf value={n} style={{ fontSize: 13 }} />
       );
     }
-    case "masked":
+    case "password":
       return (
         <span style={{ fontVariantNumeric: "tabular-nums" }}>
           {maskValue(value)}
         </span>
+      );
+    case "date":
+    case "dateTime": {
+      // 日期此前掉进 default 出原始串。写侧 DatePicker 存的就是
+      // YYYY-MM-DD / YYYY-MM-DD HH:mm，读侧等宽数字对齐即可，不再二次格式化
+      //（模型/导入的脏值原样显示，不猜它是什么格式）。
+      return (
+        <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+          {text}
+        </span>
+      );
+    }
+    case "switch":
+      return (
+        <Tag color={value ? "success" : "default"} style={{ marginInlineEnd: 0 }}>
+          {value ? "是" : "否"}
+        </Tag>
       );
     default:
       return <>{text}</>;

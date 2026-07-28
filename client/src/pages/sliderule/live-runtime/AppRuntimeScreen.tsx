@@ -41,9 +41,10 @@ import {
   theme as antdTheme,
   message,
   Popover,
+  Popconfirm,
   Tooltip,
   Checkbox,
-  Rate,
+  Form,
 } from "antd";
 import {
   DashboardOutlined,
@@ -174,6 +175,7 @@ import {
 } from "./design-recipes";
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
+import { FieldEditor } from "./FieldEditor";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
 // 看板分组是纯函数，桌面与手机共用同一份——两档各分各的会让同一条记录
 // 在两个档位落进不同的列。
@@ -289,126 +291,6 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
   completed: { color: "#52c41a", label: "已完成" },
   rejected: { color: "#ff4d4f", label: "已驳回" },
 };
-
-function FieldInput({
-  field,
-  value,
-  refRows,
-  enumOptions = [],
-  onChange,
-}: {
-  field: AppFormFieldSchema;
-  value: unknown;
-  refRows: Array<{ id: string; label: string }>;
-  /** enum 字段的既有取值（来自已写入的行，去重）——有历史值时变成真下拉 */
-  enumOptions?: string[];
-  onChange: (v: unknown) => void;
-}) {
-  if (field.type === "number") {
-    // format 富化（加厚 schema 一期）：星级用 Rate；金额/百分比/进度/评分
-    // 给量纲前后缀与合理边界——录入界面直接长出字段语义。
-    if (field.format === "rating") {
-      return (
-        <Rate
-          allowHalf
-          value={Number(value) || 0}
-          onChange={v => onChange(v)}
-        />
-      );
-    }
-    const bounded =
-      field.format === "percent" ||
-      field.format === "progress" ||
-      field.format === "score";
-    return (
-      <InputNumber
-        style={{ width: "100%" }}
-        value={value as number | undefined}
-        onChange={v => onChange(v)}
-        placeholder={field.label}
-        prefix={field.format === "money" ? "¥" : undefined}
-        suffix={
-          field.format === "percent" || field.format === "progress"
-            ? "%"
-            : undefined
-        }
-        min={bounded ? 0 : undefined}
-        max={bounded ? 100 : undefined}
-      />
-    );
-  }
-  if (field.type === "date" || field.type === "datetime") {
-    return (
-      <Input
-        type={field.type === "date" ? "date" : "datetime-local"}
-        value={(value as string) ?? ""}
-        onChange={e => onChange(e.target.value)}
-      />
-    );
-  }
-  if (field.type === "enum") {
-    // 声明取值（加厚 schema 一期）→ 严格下拉（schema 即真相，不再自由输入）
-    if (field.options && field.options.length > 0) {
-      return (
-        <Select
-          style={{ width: "100%" }}
-          value={(value as string) || undefined}
-          onChange={v => onChange(v ?? "")}
-          options={field.options.map(o => ({ value: o.id, label: o.label }))}
-          placeholder={`选择${field.label}`}
-          allowClear
-        />
-      );
-    }
-    // 无声明：已有历史取值 → 真枚举下拉（仍允许输入新值）；无数据时保持自由输入
-    return (
-      <Select
-        style={{ width: "100%" }}
-        mode="tags"
-        maxCount={1}
-        value={value ? [String(value)] : []}
-        onChange={v => onChange(v.at(-1) ?? "")}
-        options={enumOptions.map(o => ({ value: o, label: o }))}
-        placeholder={
-          enumOptions.length > 0
-            ? `选择或输入${field.label}`
-            : `${field.label}（输入后回车）`
-        }
-      />
-    );
-  }
-  if (field.type === "ref" && refRows.length > 0) {
-    return (
-      <Select
-        style={{ width: "100%" }}
-        value={(value as string) || undefined}
-        onChange={v => onChange(v)}
-        options={refRows.map(r => ({ value: r.id, label: r.label }))}
-        placeholder={`选择${field.label}`}
-        showSearch
-        optionFilterProp="label"
-      />
-    );
-  }
-  if (field.type === "text") {
-    // 长文本（描述/备注/正文类）→ 多行输入
-    return (
-      <Input.TextArea
-        value={(value as string) ?? ""}
-        onChange={e => onChange(e.target.value)}
-        placeholder={field.label}
-        autoSize={{ minRows: 2, maxRows: 5 }}
-      />
-    );
-  }
-  return (
-    <Input
-      value={(value as string) ?? ""}
-      onChange={e => onChange(e.target.value)}
-      placeholder={field.label}
-    />
-  );
-}
 
 /**
  * 页面级 KPI 卡取值（加厚 schema 一期）：对着运行时行数据求值声明的
@@ -768,6 +650,18 @@ export function AppRuntimeScreen({
     [model]
   );
 
+  // antd v5 的静态 message.xxx() 拿不到 ConfigProvider 上下文（控制台明写着
+  // 「Static function can not consume context like dynamic theme」）——身份主色、
+  // 深色/紧凑档、圆角配方全都下发不到提示条上。改用 hook 版拿带上下文的实例，
+  // messageHolder 挂在 ConfigProvider 里面（见下方渲染处）。
+  const [messageApi, messageHolder] = message.useMessage();
+  /** 提示的统一出口：设备分流 + 落在画布内 + 带主题上下文，调用点只给档位和文案。 */
+  const toast = React.useCallback(
+    (kind: "success" | "warning" | "info" | "error", content: string) =>
+      notify(isPhone, kind, content, () => canvasEl, messageApi),
+    [isPhone, canvasEl, messageApi]
+  );
+
   const apply = (next: RuntimeState) => {
     setState(next);
     saveRuntimeState(sessionId, next);
@@ -815,7 +709,7 @@ export function AppRuntimeScreen({
     if (!page?.entityId) return;
     const problems = validateRowValues(model, page.entityId, formValues);
     if (problems.length > 0) {
-      notify(isPhone, "warning", problems.join("；"), () => canvasEl);
+      toast("warning", problems.join("；"));
       return;
     }
     // 第一条真实数据落地前，先把这张表的演示种子整批清掉——种子和真实数据
@@ -829,7 +723,7 @@ export function AppRuntimeScreen({
     apply(next);
     setFormOpen(false);
     setFormValues({});
-    notify(isPhone, "success", "已保存", () => canvasEl);
+    toast("success", "已保存");
   };
 
   /**
@@ -900,7 +794,7 @@ export function AppRuntimeScreen({
     const updated = (next.entities[entityId] ?? []).find(r => r.id === rowId);
     if (updated) setDetailRow(updated);
     setAiSuggestion(null);
-    notify(isPhone, "success", `已应用 AI 建议 →「${action.outputLabel}」`, () => canvasEl);
+    toast("success", `已应用 AI 建议 →「${action.outputLabel}」`);
   };
 
   const handleSubmitToWorkflow = (rowId: string, rowLabel: string) => {
@@ -914,12 +808,7 @@ export function AppRuntimeScreen({
     );
     if (instance) {
       apply(next);
-      notify(
-        isPhone,
-        "success",
-        `已提交审批：${instance.title}（到 Workflow 试运行里推进）`,
-        () => canvasEl
-      );
+      toast("success", `已提交审批：${instance.title}（到 Workflow 试运行里推进）`);
     }
   };
 
@@ -971,9 +860,31 @@ export function AppRuntimeScreen({
             </Button>
           </span>
         )}
-        <Button size="small" type="link" danger onClick={remove}>
-          删除
-        </Button>
+        {/* 删除是不可逆的，此前一点就没了——展会上访客手一滑就把演示数据
+            删掉，还不知道自己干了什么。antd Popconfirm 是这个场景的标准解，
+            不用自己搭一个确认弹框。手机档不套：那边是左滑出删除键，
+            滑动本身已经是"不会误触"的确认动作。 */}
+        <Popconfirm
+          title="删除这条记录？"
+          description="删掉之后无法恢复。"
+          okText="删除"
+          okButtonProps={{ danger: true }}
+          cancelText="取消"
+          getPopupContainer={() => canvasEl ?? document.body}
+          onConfirm={() => {
+            apply(deleteRow(state, page!.entityId!, row.id));
+            toast("success", "已删除");
+          }}
+        >
+          <Button
+            size="small"
+            type="link"
+            danger
+            onClick={e => e.stopPropagation()}
+          >
+            删除
+          </Button>
+        </Popconfirm>
       </Space>
     );
   };
@@ -1372,7 +1283,7 @@ export function AppRuntimeScreen({
                 setFormValues({});
                 setFormOpen(true);
               } else {
-                notify(isPhone, "info", "该操作指向的实体暂不支持在此页创建", () => canvasEl);
+                toast("info", "该操作指向的实体暂不支持在此页创建");
               }
               break;
             case "changeFilter":
@@ -3182,6 +3093,9 @@ export function AppRuntimeScreen({
               },
             }}
           >
+            {/* message 的挂载点必须在 ConfigProvider 里面，提示条才吃得到
+                身份主色/深色档/圆角配方；挂外面等于白用 hook 版。 */}
+            {messageHolder}
             {isPhone
               ? phoneShell
               : schema.identity.nav === "top"
@@ -3237,46 +3151,52 @@ export function AppRuntimeScreen({
                 }}
                 getContainer={() => canvasEl ?? document.body}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 10,
-                    paddingTop: 8,
-                  }}
+                {/* antd Form：此前是手写 div + 12px 灰字当 label，没有必填
+                    标记、没有错误态、label 也不对齐，右边还挂着 `string`
+                    `number` 这种给开发看的类型名。改用 Form 之后这些是白送的——
+                    手机档早就在用 antd-mobile 的 Form，PC 反倒落在后面。
+                    Form.Item 一律**不给 name**：值仍由 formValues 这个受控
+                    state 持有（handleCreate 照旧读它）。不带 name 的 Form.Item
+                    在 antd 里就是纯布局容器（form-item.js:213 直接走
+                    renderLayout），跟父级受控的值兼容，不会来抢数据。 */}
+                <Form
+                  layout="vertical"
+                  size="small"
+                  requiredMark
+                  style={{ paddingTop: 8 }}
                 >
                   {(page?.formFields ?? []).map(f => (
-                    <div
+                    <Form.Item
                       key={f.id}
-                      {...(page?.entityId
-                        ? probe({
-                            kind: "field",
-                            entityId: page.entityId,
-                            fieldId: f.id,
-                            label: f.label,
-                          })
-                        : {})}
+                      label={f.label}
+                      style={{ marginBottom: 14 }}
                     >
+                      {/* 游标探针挂在内层 div，不挂 Form.Item——Form.Item 的
+                          props 是它自己的一套（onReset 等签名跟 DOM 事件不兼容），
+                          它也不会把陌生 prop 透传到 DOM 上。 */}
                       <div
-                        style={{ fontSize: 12, color: "#666", marginBottom: 4 }}
+                        {...(page?.entityId
+                          ? probe({
+                              kind: "field",
+                              entityId: page.entityId,
+                              fieldId: f.id,
+                              label: f.label,
+                            })
+                          : {})}
                       >
-                        {f.label}
-                        <span style={{ color: "#bbb", marginLeft: 6 }}>
-                          {f.type}
-                        </span>
+                        <FieldEditor
+                          field={f}
+                          value={formValues[f.id]}
+                          refRows={refRowsFor(f)}
+                          enumOptions={enumOptionsFor(f)}
+                          onChange={v =>
+                            setFormValues(prev => ({ ...prev, [f.id]: v }))
+                          }
+                        />
                       </div>
-                      <FieldInput
-                        field={f}
-                        value={formValues[f.id]}
-                        refRows={refRowsFor(f)}
-                        enumOptions={enumOptionsFor(f)}
-                        onChange={v =>
-                          setFormValues(prev => ({ ...prev, [f.id]: v }))
-                        }
-                      />
-                    </div>
+                    </Form.Item>
                   ))}
-                </div>
+                </Form>
               </Modal>
             )}
 

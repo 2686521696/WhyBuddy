@@ -198,6 +198,9 @@ importers:
       dagre:
         specifier: ^0.8.5
         version: 0.8.5
+      dayjs:
+        specifier: 1.11.21
+        version: 1.11.21
       dockerode:
         specifier: ^4.0.12
         version: 4.0.12
@@ -3283,9 +3286,6 @@ packages:
 
   date-fns@4.1.0:
     resolution: {integrity: sha512-Ukq0owbQXxa/U3EGtsdVBkR1w7KOQ5gIBqdH2hkvknzZPYvBxb/aa6E8L7tmjFtkwZBu3UXBbjIgPo/Ez4xaNg==}
-
-  dayjs@1.11.18:
-    resolution: {integrity: sha512-zFBQ7WFRvVRhKcWoUh+ZA1g2HVgUbsZm9sbddh8EC5iv93sui8DVVz1Npvz+r6meo9VKfa8NyLWBsQK1VvIKPA==}
 
   dayjs@1.11.21:
     resolution: {integrity: sha512-98IT+HOahAisibz/yjKbzuOBwYcjJ7BCLPzARyHiyEBmRz4fatF+KPJszEHXsGYjUG234aH/cOjW1wwTbKUZlA==}
@@ -8187,7 +8187,7 @@ snapshots:
     dependencies:
       '@babel/runtime': 7.28.4
       '@types/js-cookie': 3.0.6
-      dayjs: 1.11.18
+      dayjs: 1.11.21
       intersection-observer: 0.12.2
       js-cookie: 3.0.8
       lodash: 4.18.1
@@ -8223,7 +8223,7 @@ snapshots:
       antd-mobile-icons: 0.3.0
       antd-mobile-v5-count: 1.0.1
       classnames: 2.5.1
-      dayjs: 1.11.18
+      dayjs: 1.11.21
       deepmerge: 4.3.1
       nano-memoize: 3.0.16
       rc-field-form: 1.44.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -8254,7 +8254,7 @@ snapshots:
       '@rc-component/trigger': 2.3.1(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       classnames: 2.5.1
       copy-to-clipboard: 3.3.3
-      dayjs: 1.11.18
+      dayjs: 1.11.21
       rc-cascader: 3.34.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-checkbox: 3.5.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-collapse: 3.9.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -8270,7 +8270,7 @@ snapshots:
       rc-motion: 2.9.5(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-notification: 5.6.4(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-pagination: 5.1.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
-      rc-picker: 4.11.3(date-fns@4.1.0)(dayjs@1.11.18)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
+      rc-picker: 4.11.3(date-fns@4.1.0)(dayjs@1.11.21)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-progress: 4.0.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-rate: 2.13.1(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-resize-observer: 1.4.3(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -8792,8 +8792,6 @@ snapshots:
   date-fns-jalali@4.1.0-0: {}
 
   date-fns@4.1.0: {}
-
-  dayjs@1.11.18: {}
 
   dayjs@1.11.21: {}
 
@@ -10504,7 +10502,7 @@ snapshots:
       react: 19.2.1
       react-dom: 19.2.1(react@19.2.1)
 
-  rc-picker@4.11.3(date-fns@4.1.0)(dayjs@1.11.18)(react-dom@19.2.1(react@19.2.1))(react@19.2.1):
+  rc-picker@4.11.3(date-fns@4.1.0)(dayjs@1.11.21)(react-dom@19.2.1(react@19.2.1))(react@19.2.1):
     dependencies:
       '@babel/runtime': 7.28.4
       '@rc-component/trigger': 2.3.1(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -10516,7 +10514,7 @@ snapshots:
       react-dom: 19.2.1(react@19.2.1)
     optionalDependencies:
       date-fns: 4.1.0
-      dayjs: 1.11.18
+      dayjs: 1.11.21
 
   rc-progress@4.0.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1):
     dependencies:
