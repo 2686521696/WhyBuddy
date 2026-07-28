@@ -45,6 +45,10 @@ import {
   Tooltip,
   Checkbox,
   Form,
+  Alert,
+  Skeleton,
+  Empty,
+  Badge,
 } from "antd";
 import {
   DashboardOutlined,
@@ -1167,16 +1171,7 @@ export function AppRuntimeScreen({
   const phoneHomeContent = (
     <React.Suspense
       fallback={
-        <div
-          style={{
-            textAlign: "center",
-            fontSize: 12,
-            color: INK.faint,
-            padding: "24px 0",
-          }}
-        >
-          移动端组件加载中…
-        </div>
+        <Skeleton active paragraph={{ rows: 4 }} style={{ padding: "12px 4px" }} />
       }
     >
       <LazyPhoneHome
@@ -1675,16 +1670,7 @@ export function AppRuntimeScreen({
       )}
       <React.Suspense
         fallback={
-          <div
-            style={{
-              textAlign: "center",
-              fontSize: 12,
-              color: INK.faint,
-              padding: "24px 0",
-            }}
-          >
-            移动端组件加载中…
-          </div>
+          <Skeleton active paragraph={{ rows: 4 }} style={{ padding: "12px 4px" }} />
         }
       >
         {/* 看板：桌面并排的状态列在手机上改成按状态分页（CapsuleTabs 横向
@@ -1901,23 +1887,20 @@ export function AppRuntimeScreen({
             />
           )}
           {aiError && (
-            <div
+            // 此前是手写的红框（#fff2f0/#ffccc7 写死），深色档下红底红字读不出来，
+            // 也不跟主题的 colorError 走。antd Alert 就是干这个的。
+            <Alert
               data-testid="app-ai-error"
-              style={{
-                marginTop: 8,
-                padding: "6px 10px",
-                borderRadius: 8,
-                background: "#fff2f0",
-                border: "1px solid #ffccc7",
-                fontSize: 11,
-                color: "#cf1322",
-              }}
-            >
-              <span style={{ fontFamily: "monospace", fontWeight: 600 }}>
-                {aiError.code}
-              </span>
-              <span style={{ marginLeft: 6 }}>{aiError.detail}</span>
-            </div>
+              type="error"
+              showIcon
+              style={{ marginTop: 8 }}
+              message={
+                <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11 }}>
+                  {aiError.code}
+                </span>
+              }
+              description={<span style={{ fontSize: 11 }}>{aiError.detail}</span>}
+            />
           )}
         </>
       )}
@@ -2250,15 +2233,7 @@ export function AppRuntimeScreen({
         {option ? (
           <React.Suspense
             fallback={
-              <div
-                style={{
-                  fontSize: 11,
-                  color: INK.faint,
-                  padding: `${layout.space.md}px 0`,
-                }}
-              >
-                图表加载中…
-              </div>
+              <Skeleton.Node active style={{ width: "100%", height: 200 }} />
             }
           >
             <LazyEchartsChart
@@ -2268,15 +2243,11 @@ export function AppRuntimeScreen({
             />
           </React.Suspense>
         ) : (
-          <div
-            style={{
-              fontSize: 11,
-              color: INK.faint,
-              padding: `${layout.space.md}px 0`,
-            }}
-          >
-            暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
-          </div>
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={`写入「${chart.dimensionLabel}」后自动出图`}
+            style={{ margin: `${layout.space.md}px 0` }}
+          />
         )}
       </Card>
     );
@@ -2610,16 +2581,11 @@ export function AppRuntimeScreen({
             {detailRow ? (
               detailBody
             ) : (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: INK.faint,
-                  padding: "24px 0",
-                  textAlign: "center",
-                }}
-              >
-                点击左侧行查看详情与 AI 能力
-              </div>
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="点击左侧行查看详情与 AI 能力"
+                style={{ padding: "16px 0" }}
+              />
             )}
           </Card>
         </div>
@@ -2686,6 +2652,15 @@ export function AppRuntimeScreen({
               (i - (hasLegacyHomeMenu ? 1 : 0) + MENU_ICONS.length) %
                 MENU_ICONS.length
             ];
+    // 菜单项右侧挂本页主实体的行数（antd Badge）。此前侧栏只有一列文字，
+    // 哪一页有货、哪一页是空的要挨个点进去才知道；有了计数，应用一打开就
+    // 有"这套系统里已经有数据在跑"的实感。锁住的页不显示——那是权限信息，
+    // 不该从计数里泄出去。
+    const rowCount = (() => {
+      if (locked || m.pageId === "home") return 0;
+      const entityId = schema.pages.find(p => p.id === m.pageId)?.entityId;
+      return entityId ? (state.entities[entityId]?.length ?? 0) : 0;
+    })();
     return {
       key: m.pageId,
       icon: <Icon />,
@@ -2693,8 +2668,17 @@ export function AppRuntimeScreen({
         <span
           data-testid={`app-runtime-menu-${m.pageId}`}
           {...probe({ kind: "menu", pageId: m.pageId, label: m.label })}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
         >
           {m.label}
+          {rowCount > 0 && (
+            <Badge
+              count={rowCount}
+              overflowCount={99}
+              color={hexToRgba(identityTheme.primaryFg, 0.22)}
+              style={{ color: identityTheme.sidebarText, fontSize: 10, boxShadow: "none" }}
+            />
+          )}
         </span>
       ),
       disabled: locked,
