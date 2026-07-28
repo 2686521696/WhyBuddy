@@ -322,6 +322,22 @@ def experience_block_prompt_block() -> str:
     lines.append(
         "Whenever you do emit page.blocks, every block type MUST be one of the catalog entries below."
     )
+    # 归属划分（2026-07-28）：KPI/图表在一页里只能由一条路负责，否则同一个指标
+    # 会被画两次。总览页的 stats/charts 会被后续增强步骤重新设计成一块整体版式
+    # （每个应用长得不一样，是展示面的主角）；业务页没有那一步，走积木更整齐
+    # 可预期。渲染层已经硬隔离（写错了也不会画两遍），这里说清楚是为了让模型
+    # 一开始就写对通道，而不是靠下游兜。
+    lines.append(
+        "CHANNEL OWNERSHIP for KPIs and charts — one page, one channel:\n"
+        "  - monitor / dashboard pages: declare page.stats and page.charts as usual. "
+        "Do NOT emit MetricGrid or TrendChart blocks there; they would duplicate the "
+        "same numbers the overview already shows.\n"
+        "  - all other page kinds (workbench / kanban / calendar / wizard): use "
+        "MetricGrid / TrendChart blocks when the page needs KPIs or trends, and leave "
+        "page.stats / page.charts empty on those pages.\n"
+        "  - RankedList / ActivityFeed / DataTable are not affected by this split; "
+        "they may be used on any page kind where they fit."
+    )
     for block in EXPERIENCE_BLOCKS:
         lines.append(
             f"- {block['type']}: {block['description']} "

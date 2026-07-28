@@ -106,10 +106,32 @@ describe("体验区块渲染器状态 SSOT", () => {
     }
   });
 
-  it("本阶段只放开 WorkflowTimeline（灰度哨兵，扩量时同步改这里）", () => {
+  it("放开名单是显式的（灰度哨兵，扩量时同步改这里）", () => {
+    // 2026-07-28 扩量：五个数据区块补上真渲染器后，连同两个早就就绪的辅助
+    // 区块一起放开。这条哨兵的价值就是逼这次改动变成一次显式决定——改目录
+    // 时它会红，必须回来把新名字写进这里，不会有人"顺手"多开一个。
     const enabled = EXPERIENCE_BLOCK_CATALOG.blocks
       .filter(b => b.generationEnabled)
       .map(b => b.type);
-    expect(enabled).toEqual(["WorkflowTimeline"]);
+    expect(enabled).toEqual([
+      "MetricGrid",
+      "TrendChart",
+      "RankedList",
+      "ActivityFeed",
+      "DataTable",
+      "QuickActionPanel",
+      "FilterBar",
+      "WorkflowTimeline",
+    ]);
+  });
+
+  it("FreeformInsight 仍不放开 —— 它不是 LLM 往 page.blocks 里写的东西", () => {
+    // 总览版式由 enrich_monitor_page_overviews 读 page.stats/charts 之后合成，
+    // 属于过门之后的增强步骤。放开它等于允许 LLM 绕过那条流程直接塞版式，
+    // 方案 C 的归属划分会立刻失效（总览页会同时有两份设计）。
+    const ff = EXPERIENCE_BLOCK_CATALOG.blocks.find(
+      b => b.type === "FreeformInsight"
+    );
+    expect(ff?.generationEnabled).toBe(false);
   });
 });

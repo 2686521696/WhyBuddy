@@ -1249,17 +1249,33 @@ export function AppRuntimeScreen({
     </React.Suspense>
   );
 
+  // 方案 C 的两张名单：哪些 kind 属于"总览页"、哪些区块类型属于"KPI/图表类"。
+  // 总览页归 freeformOverview（AI 现场设计，每个应用长得不一样）；
+  // 业务页归积木（模板渲染，整齐可预期）。
+  const OVERVIEW_KINDS = new Set(["monitor", "dashboard"]);
+  const KPI_BLOCK_TYPES = new Set(["MetricGrid", "TrendChart"]);
+
   // 体验区块渲染：桌面壳与手机壳共用同一份摆法逻辑，只有槽位来源分档。
   // 抽成函数之前它内联在 defaultPageContent 里，于是手机档一个区块都渲染不到。
   const renderExperienceBlockScaffold = (forPhone: boolean) => {
     if (!page) return null;
         // 保守策略：_fromLegacy 区块只是转换占位，渲染仍走旧路径（statsBand 等）。
         // 真正的新模型 blocks 不带 _fromLegacy，走 ExperienceBlockBoundary。
-        const directBlocks = page.experienceBlocks.filter(
-          b =>
-            !(b as import("./block-registry").ExperienceBlockInstance)
-              ._fromLegacy
-        );
+        const directBlocks = page.experienceBlocks
+          .filter(
+            b =>
+              !(b as import("./block-registry").ExperienceBlockInstance)
+                ._fromLegacy
+          )
+          // 归属划分（2026-07-28）：KPI/图表在一页里只能由一条路负责。
+          //
+          // 总览页（monitor/dashboard）的 stats/charts 会被 ENRICH 重新设计成
+          // freeformOverview——那是同一份声明的美化版，不是另一份内容。这类页
+          // 上再出 MetricGrid/TrendChart 积木，就会和总览区画出两张说同一件事
+          // 的卡。这里直接把它们摘掉：不指望 LLM 一定守规矩，渲染层兜死。
+          //
+          // 反方向在下面（statsBand/chartsBand 让位给积木）。
+          .filter(b => !(OVERVIEW_KINDS.has(page.view.kind) && KPI_BLOCK_TYPES.has(b.type)));
         if (directBlocks.length === 0) return null;
 
         // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
@@ -1637,6 +1653,18 @@ export function AppRuntimeScreen({
       </React.Suspense>
     );
   };
+
+  // 本页有没有 KPI/图表类积木——决定固定骨架要不要让位（方案 C 反方向）。
+  // 只看非 legacy 的真区块：_fromLegacy 是转换占位，本来就走旧路径渲染。
+  const pageHasKpiBlocks = Boolean(
+    page &&
+      !OVERVIEW_KINDS.has(page.view.kind) &&
+      page.experienceBlocks.some(
+        b =>
+          !(b as import("./block-registry").ExperienceBlockInstance)._fromLegacy &&
+          KPI_BLOCK_TYPES.has(b.type)
+      )
+  );
 
   // 手机端业务页：体验区块 + 卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
   const phonePageContent = page && (
@@ -2526,6 +2554,11 @@ export function AppRuntimeScreen({
           {widgetsBand}
           {monitorDynamicLists}
         </>
+      ) : pageHasKpiBlocks ? (
+        // 方案 C 反方向：业务页声明了 MetricGrid/TrendChart 积木时，固定骨架的
+        // statsBand/chartsBand 让位——两条路画的是同一份指标，都渲染就是两张
+        // 说同一件事的卡。widgetsBand（快速入口等）不属于 KPI/图表，照常保留。
+        <>{widgetsBand}</>
       ) : (
         <>
           {statsBand}
