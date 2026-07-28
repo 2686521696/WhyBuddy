@@ -23,6 +23,11 @@ export type RuntimeRow = {
   id: string;
   values: Record<string, unknown>;
   createdAt: string;
+  /**
+   * 演示种子行标记（见 demo-seed.ts）。真实写入的行永远没有这个字段——
+   * 渲染层据此出「示例数据」徽标，用户写第一条真实数据时按它整批清掉。
+   */
+  seed?: true;
 };
 
 export interface WorkflowInstanceLog {
@@ -89,9 +94,13 @@ export function updateRow(
   rowId: string,
   values: Record<string, unknown>
 ): RuntimeState {
-  const rows = (state.entities[entityId] ?? []).map((r) =>
-    r.id === rowId ? { ...r, values: { ...r.values, ...values } } : r
-  );
+  // 被编辑过的演示种子行不再算种子（seed 标记去掉）——里面已经有用户真写的
+  // 值了，继续挂「示例数据」徽标是在谎报。见 demo-seed.ts。
+  const rows = (state.entities[entityId] ?? []).map((r) => {
+    if (r.id !== rowId) return r;
+    const { seed: _seed, ...rest } = r;
+    return { ...rest, values: { ...r.values, ...values } };
+  });
   return { ...state, entities: { ...state.entities, [entityId]: rows } };
 }
 

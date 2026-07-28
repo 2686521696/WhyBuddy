@@ -23,6 +23,7 @@ import {
   notifyRuntimeChanged,
   subscribeRuntimeChanged,
 } from "./runtime-persistence";
+import { seedRuntimeState, dropSeedRowsFor, isSeedRow } from "./demo-seed";
 
 function EditableCell({
   value,
@@ -54,9 +55,12 @@ export function EntityDataPanel({
   sessionId: string;
 }) {
   const entities = model.datamodel?.entities ?? [];
-  const [state, setState] = React.useState<RuntimeState>(
-    () => loadRuntimeState(sessionId) ?? initRuntimeState(model)
+  // 与运行应用共享同一份状态，也共享同一套演示种子（只铺空实体，幂等）
+  const hydrate = React.useCallback(
+    () => seedRuntimeState(loadRuntimeState(sessionId) ?? initRuntimeState(model), model),
+    [sessionId, model]
   );
+  const [state, setState] = React.useState<RuntimeState>(hydrate);
   const [activeEntityId, setActiveEntityId] = React.useState<string | null>(
     entities[0]?.id ?? null
   );
@@ -65,10 +69,8 @@ export function EntityDataPanel({
   // 运行应用/工作流侧变更时重载（同一份状态）
   React.useEffect(
     () =>
-      subscribeRuntimeChanged(sessionId, () =>
-        setState(loadRuntimeState(sessionId) ?? initRuntimeState(model))
-      ),
-    [sessionId, model]
+      subscribeRuntimeChanged(sessionId, () => setState(hydrate())),
+    [sessionId, hydrate]
   );
 
   const apply = (next: RuntimeState) => {
@@ -108,6 +110,15 @@ export function EntityDataPanel({
       <div className="rounded bg-blue-50 px-3 py-2 text-[11px] text-blue-700 ring-1 ring-blue-200">
         单元格即改即存 —— 与「运行应用」「工作流试运行」共享同一份运行时数据
       </div>
+      {rows.some(isSeedRow) && (
+        <div
+          className="rounded bg-amber-50 px-3 py-2 text-[11px] text-amber-700 ring-1 ring-amber-200"
+          data-testid="datamodel-seed-notice"
+        >
+          示例数据 —— 当前 {rows.length} 行里有 {rows.filter(isSeedRow).length}{" "}
+          行是自动铺的演示行；「新增一行」会把它们整批清掉，直接改某一格则只有那一行转为真实数据
+        </div>
+      )}
 
       {/* 实体切页 */}
       <div className="flex flex-wrap gap-1.5">
@@ -189,7 +200,15 @@ export function EntityDataPanel({
           data-testid="datamodel-add-row"
           onClick={() => {
             if (!entity) return;
-            apply(addRow(state, entity.id, {}, new Date().toISOString()).state);
+            // 同运行应用：写第一条真实行前先清掉这张表的演示种子
+            apply(
+              addRow(
+                dropSeedRowsFor(state, entity.id),
+                entity.id,
+                {},
+                new Date().toISOString()
+              ).state
+            );
           }}
           className="rounded-full bg-blue-500 px-3 py-1 text-[11px] font-medium text-white hover:bg-blue-600"
         >

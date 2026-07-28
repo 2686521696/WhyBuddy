@@ -41,6 +41,7 @@ import {
   theme as antdTheme,
   message,
   Popover,
+  Tooltip,
   Checkbox,
   Rate,
 } from "antd";
@@ -138,6 +139,12 @@ import {
   nodeById,
 } from "./live-runtime";
 import {
+  seedRuntimeState,
+  dropSeedRowsFor,
+  entityShowsSeed,
+  seedRowCount,
+} from "./demo-seed";
+import {
   loadRuntimeState,
   saveRuntimeState,
   notifyRuntimeChanged,
@@ -179,10 +186,6 @@ import { AiSuggestionCard } from "./AiSuggestionCard";
 import { CodeProjectionView } from "./CodeProjectionView";
 import { notify } from "./phone-mobile/phone-feedback";
 import type { AppPageStatSchema } from "./app-runtime-schema";
-import {
-  generatePreviewSeedRows,
-  computePreviewStat,
-} from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
 // 多端设计分辨率（固定渲染 + 等比缩放）
@@ -513,9 +516,14 @@ export function AppRuntimeScreen({
     () => deriveAppRuntimeSchema(model, appTitle || "推演应用"),
     [model, appTitle]
   );
-  const [state, setState] = React.useState<RuntimeState>(() => {
-    return loadRuntimeState(sessionId) ?? initRuntimeState(model);
-  });
+  // hydrate 后统一过一遍 seedRuntimeState：只给"完全为空的实体"铺演示行，
+  // 幂等且不碰已有真实数据（见 demo-seed.ts 的三条边界）。放在 load 之后
+  // 而不是只在 init 里，是因为别的面板可能先存过一份没种子的状态。
+  const hydrate = React.useCallback(
+    () => seedRuntimeState(loadRuntimeState(sessionId) ?? initRuntimeState(model), model),
+    [sessionId, model]
+  );
+  const [state, setState] = React.useState<RuntimeState>(hydrate);
   const [activePageId, setActivePageId] = React.useState<string>(
     () => schema?.landingPageId ?? "home"
   );
@@ -571,10 +579,8 @@ export function AppRuntimeScreen({
   // 与工作流试运行面共享一份状态：对方变更时重载
   React.useEffect(
     () =>
-      subscribeRuntimeChanged(sessionId, () =>
-        setState(loadRuntimeState(sessionId) ?? initRuntimeState(model))
-      ),
-    [sessionId, model]
+      subscribeRuntimeChanged(sessionId, () => setState(hydrate())),
+    [sessionId, hydrate]
   );
   React.useEffect(
     () =>
@@ -645,6 +651,14 @@ export function AppRuntimeScreen({
       null);
   const currentTitle = isHome ? schema.home.title : (page?.title ?? "");
   const allRows = page?.entityId ? (state.entities[page.entityId] ?? []) : [];
+  /**
+   * 本页主表里还剩几行演示种子（0 = 展示的全是真实数据）。
+   *
+   * 一页里的表格、图表、KPI、体验区块吃的都是这同一批行，所以标注也只需要
+   * 这一处——不给每个渲染器各挂一个徽标（那样一页能挂出七八个"示例数据"，
+   * 反而没人看）。用户往这张表写第一条真实数据时种子整批清掉，徽标随之消失。
+   */
+  const pageSeedCount = seedRowCount(state, page?.entityId);
 
   // Step 6 FilterBar：本页可筛的枚举字段（有声明选项的 enum 字段）+
   // 可选日期范围字段（主实体第一个 date/datetime 字段）。
@@ -771,8 +785,10 @@ export function AppRuntimeScreen({
       notify(isPhone, "warning", problems.join("；"), () => canvasEl);
       return;
     }
+    // 第一条真实数据落地前，先把这张表的演示种子整批清掉——种子和真实数据
+    // 不混表，否则用户找不到自己刚写的那条，「示例数据」徽标也不再准确。
     const { state: next } = addRow(
-      state,
+      dropSeedRowsFor(state, page.entityId),
       page.entityId,
       formValues,
       new Date().toISOString()
@@ -1437,33 +1453,19 @@ export function AppRuntimeScreen({
         );
   };
 
-  // 页面级 KPI 的取数（含"真实数据为零时用预览种子填充"那套）抽成一处，
-  // 桌面 statsBand 与手机档共用——两边各算一遍的话，同一个指标在两个档位
-  // 会出现一个有示例数据、一个是"—"。只有摆法分档，取数不分。
+  // 页面级 KPI 的取数抽成一处，桌面 statsBand 与手机档共用——两边各算一遍的
+  // 话，同一个指标在两个档位会出现一个有值、一个是"—"。只有摆法分档，取数不分。
+  //
+  // 2026-07-28：这里原本在"真实值为 0/null 时"临时造一批预览行算个数出来，
+  // 那是只给 KPI 打的补丁——同一页的表格、图表、体验区块照样空着，一页里
+  // 半边有数半边空。现在种子行已经在**运行时状态**这一层铺好了
+  //（demo-seed.ts），所有取数口径共用同一批行，这里只需照常算，
+  // 外加如实标一句"这些行是示例"。
   const pageStatDisplay = (stat: AppPageStatSchema) => {
-    const realRows = state.entities[stat.entityId] ?? [];
-    const v = pageStatValue(stat, realRows);
-    const entity = model?.datamodel?.entities?.find(e => e.id === stat.entityId);
-    const seedRows =
-      (v === 0 || v === null) && entity
-        ? generatePreviewSeedRows(
-            {
-              id: entity.id,
-              fields: entity.fields?.map(f => ({
-                id: f.id,
-                type: f.type,
-                options: f.options?.map(o => o.label ?? o.id),
-              })),
-            },
-            6
-          )
-        : null;
-    const value = seedRows
-      ? computePreviewStat(stat.metric, stat.metricFieldId, seedRows)
-      : v;
+    const rows = state.entities[stat.entityId] ?? [];
     return {
-      value,
-      isPreview: seedRows !== null && value !== null && value > 0,
+      value: pageStatValue(stat, rows),
+      isPreview: entityShowsSeed(state, stat.entityId),
     };
   };
 
@@ -1675,6 +1677,23 @@ export function AppRuntimeScreen({
       data-testid="phone-page-content"
       data-page-kind={page.view.kind}
     >
+      {/* 演示种子的如实标注，与桌面页卡上那个 Tag 同源（pageShowsSeed），
+          一页只标一处。手机档没有 Card title 的位置，摆成一条窄提示带。 */}
+      {pageSeedCount > 0 && (
+        <div
+          style={{
+            fontSize: 11,
+            lineHeight: 1.5,
+            padding: "6px 10px",
+            borderRadius: 6,
+            color: "var(--adm-color-warning, #ff8f1f)",
+            background: "var(--adm-color-box, #f5f5f5)",
+          }}
+          data-testid="phone-seed-notice"
+        >
+          示例数据 · {pageSeedCount} 条，点「新建」写入第一条真实记录后即被取代
+        </div>
+      )}
       {/* 体验区块：与桌面壳同一份摆法逻辑，槽位走 layout.mobile（未声明则退回
           桌面槽位）。从前手机档只有一个裸列表——桌面有的 KPI/图表/筛选条/流程
           时间线，手机一个都拿不到。 */}
@@ -2470,7 +2489,24 @@ export function AppRuntimeScreen({
   const defaultPageContent = page && (
     <Card
       size="small"
-      title={page.title}
+      title={
+        <Space size={6}>
+          <span>{page.title}</span>
+          {pageSeedCount > 0 && (
+            <Tooltip
+              title={`本页 ${allRows.length} 条记录里有 ${pageSeedCount} 条是自动铺的演示数据；点「新建」写入第一条真实记录后即被整批取代`}
+            >
+              <Tag
+                color="orange"
+                style={{ marginInlineEnd: 0, fontWeight: 400 }}
+                data-testid="app-runtime-seed-tag"
+              >
+                示例数据 {pageSeedCount}
+              </Tag>
+            </Tooltip>
+          )}
+        </Space>
+      }
       extra={
         <Space size="small">
           {page.actions.slice(0, 3).map(a => (

@@ -1114,13 +1114,19 @@ describe("浏览器运行时（试运行）入口", () => {
     expect(html).toContain("课程"); // resolveFieldRef 解析出实体名
   });
 
-  it("EntityDataPanel 按实体切页并提供「新增一行」（空表如实提示）", () => {
+  it("EntityDataPanel 按实体切页并提供「新增一行」（空表铺演示种子并如实标注）", () => {
     const html = renderToStaticMarkup(<EntityDataPanel model={MODEL} sessionId="t-dm" />);
     expect(html).toContain('data-testid="datamodel-data-panel"');
     expect(html).toContain('data-testid="datamodel-entity-course"');
     expect(html).toContain('data-testid="datamodel-entity-enrollment"');
     expect(html).toContain('data-testid="datamodel-add-row"');
-    expect(html).toContain("暂无数据");
     expect(html).toContain("容量"); // 字段列头来自实体定义
+    // 2026-07-28：零行的实体不再是一句"暂无数据"，而是铺一批演示种子
+    //（demo-seed.ts）。种子必须带标注——没有这条断言，哪天标注被删掉
+    // 就变成不打招呼的假数据了。
+    expect(html).not.toContain("暂无数据");
+    expect(html).toContain('data-testid="datamodel-seed-notice"');
+    expect(html).toContain("示例数据");
+    expect(html).toContain("课程名 1"); // 种子值可读、确定性
   });
 });
