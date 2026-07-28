@@ -303,17 +303,31 @@ def experience_block_prompt_block() -> str:
     # 由 generationEnabled 决定，改目录即改 prompt，不会再各说各话。
     enabled = [b for b in EXPERIENCE_BLOCKS if b.get("generationEnabled")]
     if enabled:
+        # 措辞是祈使式，不是许可式（2026-07-28 实测定的）。此前写的是
+        # "You MAY emit page.blocks ... an unnecessary block is worse than none"
+        # 外加一句"Use the existing stats/charts/rankings/feeds fields instead"，
+        # 通电了七个区块，模型仍然一个都不用——同一目标连跑三次，全是 0。
+        # 排除过的其它假设：往 JSON 骨架里补 blocks 键（补了照样 0）、
+        # CHANNEL OWNERSHIP 规则挤掉了积木（拿掉也是 0）。只把这两句换成
+        # 下面的祈使式，其余一字未动，同目标跑两次得到 9 个 / 8 个积木，
+        # 业务页覆盖 3/3、4/4，方案 C 零越界。
+        # 关窍在于说清"不用的代价"：模型默认走它熟悉的 stats/charts 老路，
+        # 除非明确告诉它空着的业务页是残次交付。
         lines.append(
-            "You MAY emit page.blocks, but ONLY these types are renderable today: "
+            "page.blocks is how you compose a page beyond its table. Renderable today: "
             + ", ".join(str(b["type"]) for b in enabled)
-            + ". Emit them only where they genuinely fit the page's job — an unnecessary "
-            "block is worse than none."
+            + ". Compose each page with the blocks it needs. A workbench / kanban / "
+            "calendar / wizard page that ships with NO blocks renders as a bare table — "
+            "that is an incomplete deliverable, not a safe default. Typically 1-3 blocks "
+            "per business page."
         )
-        lines.append(
-            "Every OTHER type in this catalog is schema-only: its renderer is not shipped, so emitting it "
-            "would show real users an inert placeholder. Use the existing stats/charts/rankings/feeds "
-            "fields for those needs instead."
-        )
+        schema_only = [b for b in EXPERIENCE_BLOCKS if not b.get("generationEnabled")]
+        if schema_only:
+            lines.append(
+                "Only these are schema-only (renderer not shipped) — never emit them: "
+                + ", ".join(str(b["type"]) for b in schema_only)
+                + ". Everything else listed above is live and SHOULD be used where it fits."
+            )
     else:
         lines.append(
             "No block type is renderable yet — DO NOT emit page.blocks for production pages. "

@@ -175,14 +175,23 @@ def test_catalog_rejects_enabling_placeholder_block(monkeypatch):
 
 
 def test_prompt_allowlist_derived_from_catalog():
-    """prompt 的放开名单逐字来自目录，不是手写的第二份清单。"""
+    """prompt 的放开名单逐字来自目录，不是手写的第二份清单。
+
+    只锁「名单派生自目录」这个契约，不锁包着它的那句话怎么写——2026-07-28
+    把措辞从许可式（You MAY emit…）改成祈使式时，这条曾因为断言里钉死了
+    "ONLY these types are renderable today: " 而误报。措辞是要随实测调的，
+    名单来源才是不能漂的那一头。
+    """
     prompt = schema_legal.experience_block_prompt_block()
     enabled = [b["type"] for b in CATALOG["blocks"] if b.get("generationEnabled")]
+    disabled = [b["type"] for b in CATALOG["blocks"] if not b.get("generationEnabled")]
     assert enabled, "目录里一个可生成区块都没有——放开名单退化了？"
-    assert "ONLY these types are renderable today: " + ", ".join(enabled) in prompt
-    for block in CATALOG["blocks"]:
-        if not block.get("generationEnabled"):
-            assert f"renderable today: {block['type']}" not in prompt
+    # 通电名单必须整串出现（顺序也来自目录，防止有人另手写一份）
+    assert ", ".join(enabled) in prompt
+    # 未通电的必须被点名禁止，且不能混进通电名单那一串里
+    for t in disabled:
+        assert t in prompt, f"{t} 未通电，prompt 必须明确点名禁止它"
+        assert t not in ", ".join(enabled)
 
 
 def test_prompt_no_longer_carries_blanket_ban():

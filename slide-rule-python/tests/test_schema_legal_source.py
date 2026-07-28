@@ -80,7 +80,10 @@ def test_schema_instruction_renders_from_ledger():
         str(b["type"]) for b in schema_legal.EXPERIENCE_BLOCKS if b.get("generationEnabled")
     ]
     if _enabled:
-        assert "ONLY these types are renderable today: " + ", ".join(_enabled) in _SCHEMA_INSTRUCTION
+        # 2026-07-28：只锁"名单整串来自目录"，不锁包着它的措辞。措辞从许可式
+        # 改成祈使式那次（实测：0 个积木 → 8~9 个），这条曾因为钉死了
+        # "ONLY these types are renderable today: " 这句话而误报。
+        assert ", ".join(_enabled) in _SCHEMA_INSTRUCTION
     else:
         assert "DO NOT emit page.blocks for production pages" in _SCHEMA_INSTRUCTION
     for block_type in schema_legal.EXPERIENCE_BLOCK_TYPES:
