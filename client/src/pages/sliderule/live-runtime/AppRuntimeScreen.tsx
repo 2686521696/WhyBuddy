@@ -148,6 +148,34 @@ const DEVICE_SPECS = {
 } as const;
 type DeviceKey = keyof typeof DEVICE_SPECS;
 
+/**
+ * 弹层在各设备画布里的尺寸。
+ *
+ * antd Modal 是桌面组件：不给 width 默认 520px、垂直偏移 top:100。手机画布
+ * 才 390 宽，520 直接顶穿两边——展会上访客点「新建」就能看见。旁边的详情
+ * Drawer 早就按 isPhone 改成了底部弹起，Modal 这块漏了。
+ *
+ * 手机上按原生表单页的做法处理：左右各留 16 边距、垂直居中、内容超高自己
+ * 滚（画布是固定 390×844 的等比缩放渲染，不是真实视口，所以这里按设计分辨率
+ * 算死值而不是用 vh）。
+ */
+export function deviceModalSizing(device: DeviceKey): {
+  width: number;
+  centered: boolean;
+  bodyMaxHeight: number;
+} {
+  const spec = DEVICE_SPECS[device];
+  if (device === "phone") {
+    return {
+      width: spec.w - 32,
+      centered: true,
+      // 减掉标题栏 + 按钮栏 + 上下留白，剩下的给表单内容
+      bodyMaxHeight: Math.round(spec.h * 0.6),
+    };
+  }
+  return { width: 520, centered: false, bodyMaxHeight: Math.round(spec.h * 0.7) };
+}
+
 /** 容器实测尺寸 → 等比缩放系数（min(宽比, 高比)，letterbox 居中）。 */
 function useScaleToFit(
   designW: number,
@@ -549,6 +577,7 @@ export function AppRuntimeScreen({
 
   const isPhone = device === "phone";
   const isTablet = device === "tablet";
+  const modalSizing = deviceModalSizing(device);
   const isHome = activePageId === "home";
   const page: AppPageSchema | null = isHome
     ? null
@@ -2455,6 +2484,14 @@ export function AppRuntimeScreen({
               okText="保存"
               cancelText="取消"
               destroyOnHidden
+              width={modalSizing.width}
+              centered={modalSizing.centered}
+              styles={{
+                body: {
+                  maxHeight: modalSizing.bodyMaxHeight,
+                  overflowY: "auto",
+                },
+              }}
               getContainer={() => canvasEl ?? document.body}
             >
               <div
