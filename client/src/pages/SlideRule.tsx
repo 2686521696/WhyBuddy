@@ -1124,6 +1124,14 @@ function SlideRuleUnified({
   // hero 里；否则回底部停靠。二选一，永远只有一个输入条实例。
   const isHomeEmpty = conversationTurns.length === 0 && !isRunning;
 
+  // 喂给输入条入站判定的「当前应用是什么」。有了它，判成 iteration 时的引导
+  // 话术会具体到这个应用（"补充预算校验、调整审批流程"），而不是泛泛的
+  // "指出当前应用要怎么改"。首页空态压根没有应用，给空串。
+  const appSummary = useMemo(() => {
+    if (isHomeEmpty) return "";
+    return publishClosure?.chatSummary?.trim() || goal.trim();
+  }, [isHomeEmpty, publishClosure, goal]);
+
   return (
     <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
       {/* ONE header row — brand + Work/Code 模式切换 + actions */}
@@ -1249,6 +1257,7 @@ function SlideRuleUnified({
                 sendMessage={sendMessage}
                 isRunning={isRunning}
                 goal={goal}
+                appSummary={appSummary}
                 hintChips={composerHints}
                 stop={stop}
               />

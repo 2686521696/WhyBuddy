@@ -76,13 +76,14 @@ export function parseJudgement(body: unknown): IntakeJudgement | null {
 export async function judgeIntake(
   text: string,
   hasApp: boolean,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  appSummary = ""
 ): Promise<IntakeJudgement | null> {
   try {
     const res = await fetch("/api/sliderule/intake-judge", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, hasApp }),
+      body: JSON.stringify({ text, hasApp, appSummary }),
       signal,
     });
     if (!res.ok) return null;
@@ -97,11 +98,17 @@ export async function judgeIntake(
  *
  * `hasApp` 变化会重判：同一句话在"还没有应用"和"已有应用"两种语境下
  * 判决不同（后端按 scope 分规则域），语境变了旧判决就不再成立。
+ *
+ * `appSummary`（可选）把当前应用是什么告诉后端，引导话术会具体到这个应用
+ * 而不是泛泛而谈——真机对比：不传时说"指出当前应用要怎么改"，传了会说
+ * "指出当前采购审批应用要怎么改…例如补充预算校验、调整审批流程"。改的是
+ * 话术质量不是判定结果，所以缺了也只是话术泛一点，不影响放行/拦截。
  */
 export function useIntakeJudge(
   text: string,
   hasApp: boolean,
-  enabled = true
+  enabled = true,
+  appSummary = ""
 ): IntakeJudgement | null {
   // 连同"这条判定是判的哪句话"一起存。判定在途时输入已经变了的话，旧判定
   // 对新输入就是一句错话——真机验证时点了改写建议（回填的是一句完全合格的
@@ -123,7 +130,7 @@ export function useIntakeJudge(
     const seq = ++latestRef.current;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      void judgeIntake(trimmed, hasApp, controller.signal).then(result => {
+      void judgeIntake(trimmed, hasApp, controller.signal, appSummary).then(result => {
         if (seq === latestRef.current)
           setState({ judgedFor: trimmed, judgement: result });
       });
@@ -132,6 +139,9 @@ export function useIntakeJudge(
       clearTimeout(timer);
       controller.abort();
     };
+    // appSummary 不进依赖：它随应用摘要刷新而变，但同一个应用换个措辞不该
+    // 重判一次（每次重判都是一次 LLM 调用）。hasApp 翻转才是真语境切换。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, hasApp, enabled]);
 
   // 判的不是当前这句话就不给——输入一变，旧提示立刻消失。

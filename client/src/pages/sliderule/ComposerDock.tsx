@@ -171,6 +171,7 @@ export function ComposerDock({
   stop,
   placeholder,
   hero = false,
+  appSummary = "",
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -178,6 +179,10 @@ export function ComposerDock({
   sendMessage: (textOverride?: string) => void;
   isRunning: boolean;
   goal: string;
+
+  /** 当前应用摘要，喂给入站判定让引导话术具体到这个应用（缺省则话术泛化，
+   *  不影响判定结果本身）。 */
+  appSummary?: string;
 
   hintChips?: string[];
   stop?: () => void;
@@ -448,7 +453,9 @@ export function ComposerDock({
   const placeholderText = placeholder || "畅所欲问";
 
   // 入站判定：推演中不判（用户这会儿打的字多半是下一轮的草稿，判了也没用）。
-  const judgement = useIntakeJudge(input, Boolean(goal), !isRunning);
+  // 带上当前应用摘要，引导话术才会具体到这个应用（"补充预算校验、调整审批
+  // 流程"）而不是泛泛的"指出当前应用要怎么改"。
+  const judgement = useIntakeJudge(input, Boolean(goal), !isRunning, appSummary);
 
   return (
     <div className={`pointer-events-none flex flex-col items-center gap-2 ${hero ? "w-full" : "w-[min(820px,calc(100vw-32px))]"}`}>

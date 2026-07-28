@@ -89,7 +89,22 @@ describe("judgeIntake", () => {
     vi.stubGlobal("fetch", fetchMock);
     await judgeIntake("再加一个退款流程", true);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body).toEqual({ text: "再加一个退款流程", hasApp: true });
+    expect(body).toEqual({
+      text: "再加一个退款流程",
+      hasApp: true,
+      appSummary: "",
+    });
+  });
+
+  it("带上应用摘要一起发（引导话术据此具体到当前应用）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ judgement: { ...HINT, action: "proceed" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await judgeIntake("再加一个退款流程", true, undefined, "采购审批系统");
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.appSummary).toBe("采购审批系统");
   });
 });
 
