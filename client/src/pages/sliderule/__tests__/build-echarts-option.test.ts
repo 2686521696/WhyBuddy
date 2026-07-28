@@ -61,6 +61,69 @@ describe("groupRowsForChart", () => {
     expect(g.values[g.categories.indexOf("b")]).toBe(0);
   });
 
+  // 2026-07-28：真跑截图逮到的——环图图例上写着 `refunded 2` / `unpaid 3`，
+  // 那是模型内部的取值 id，不是给用户看的词。表单 Select 存的就是 id，
+  // 一路原样送进图例。
+  it("enum 维度：图例出声明的 label，不是取值 id", () => {
+    const spec: AppPageChartSchema = {
+      ...countSpec,
+      dimensionOptions: [
+        { id: "paid", label: "已缴费", tone: "success" },
+        { id: "unpaid", label: "待缴费", tone: "warning" },
+      ],
+    };
+    const g = groupRowsForChart(spec, [
+      row({ status: "paid" }),
+      row({ status: "paid" }),
+      row({ status: "unpaid" }),
+    ]);
+    expect(g.categories).toEqual(["已缴费", "待缴费"]);
+    expect(g.values).toEqual([2, 1]);
+  });
+
+  it("声明里查不到的取值原样显示（不猜不藏，与 FieldValue 同约定）", () => {
+    const spec: AppPageChartSchema = {
+      ...countSpec,
+      dimensionOptions: [{ id: "paid", label: "已缴费", tone: "success" }],
+    };
+    const g = groupRowsForChart(spec, [row({ status: "paid" }), row({ status: "legacy_x" })]);
+    expect(g.categories).toContain("已缴费");
+    expect(g.categories).toContain("legacy_x");
+  });
+
+  it("先分组后换名：两个取值共用一个 label 时不合并、数字不虚高", () => {
+    // 退化声明（label 撞车）本身是模型的问题，但渲染层不能因此把两类静默
+    // 并成一类——那会让计数凭空变大。分组键始终是原值。
+    const spec: AppPageChartSchema = {
+      ...countSpec,
+      dimensionOptions: [
+        { id: "a", label: "待办", tone: "default" },
+        { id: "b", label: "待办", tone: "default" },
+      ],
+    };
+    const g = groupRowsForChart(spec, [row({ status: "a" }), row({ status: "b" })]);
+    expect(g.categories).toEqual(["待办", "待办"]);
+    expect(g.values).toEqual([1, 1]);
+  });
+
+  it("排序按原值不按 label —— enum id 常自带业务次序", () => {
+    const spec: AppPageChartSchema = {
+      ...countSpec,
+      type: "line",
+      dimensionOptions: [
+        { id: "s1_draft", label: "草稿", tone: "default" },
+        { id: "s2_review", label: "审核中", tone: "processing" },
+        { id: "s3_done", label: "已完成", tone: "success" },
+      ],
+    };
+    const g = groupRowsForChart(spec, [
+      row({ status: "s3_done" }),
+      row({ status: "s1_draft" }),
+      row({ status: "s2_review" }),
+    ]);
+    expect(g.categories).toEqual(["草稿", "审核中", "已完成"]);
+  });
+
   it("line：按维度值排序（日期/阶段有序维度）", () => {
     const spec: AppPageChartSchema = { ...countSpec, type: "line" };
     const g = groupRowsForChart(spec, [

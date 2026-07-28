@@ -65,6 +65,12 @@ export interface AppPageChartSchema {
   metricFieldId?: string;
   /** 指标展示名（count → "数量"；sum → 字段名） */
   metricLabel: string;
+  /**
+   * 维度字段是 enum 时的取值声明（已归一化）。图例/轴类目照这个把存进行里的
+   * 取值 id 换成中文 label——不给的话环图图例直接写 `refunded` `unpaid`，
+   * 那是模型内部的标识符，不是给用户看的词。非 enum 维度不给。
+   */
+  dimensionOptions?: NormalizedFieldOption[];
 }
 
 /**
@@ -524,6 +530,7 @@ export function deriveAppRuntimeSchema(
         metricLabel = mField.name || mField.id;
       }
       const rawType = String(chart.type ?? "bar");
+      const dimensionOptions = normalizeFieldOptions(dimField.type, dimField.options);
       charts.push({
         id: chart.id || `chart-${id}-${ci}`,
         label: chart.name || chart.id || `图表 ${ci + 1}`,
@@ -537,6 +544,7 @@ export function deriveAppRuntimeSchema(
         metric,
         metricFieldId,
         metricLabel,
+        ...(dimensionOptions.length > 0 ? { dimensionOptions } : {}),
       });
     }
 

@@ -27,7 +27,14 @@ import * as AntdIcons from "@ant-design/icons";
 import catalogJson from "@experience-blocks";
 import type { WorkflowSection } from "../system-screens/five-system-model";
 import type { RuntimeRow } from "./live-runtime";
+import type { NormalizedFieldOption } from "./field-display";
 import { buildEchartsOption } from "./build-echarts-option";
+
+/** enum 字段取值声明的按需查询（entityId + fieldId → 归一化 options）。 */
+export type EnumOptionsLookup = (
+  entityId: string,
+  fieldId: string
+) => NormalizedFieldOption[];
 import {
   buildFeedRows,
   buildRankedRows,
@@ -148,6 +155,14 @@ export interface ExperienceBlockRendererProps {
    * 用的身份主题完全无关；现在传主题自己的 primary/charts，颜色才能跟壳
    * 统一。不传时 buildEchartsOption 落到它自己的默认值，不会崩。 */
   chartPalette?: { primary: string; categorical: readonly string[] };
+  /**
+   * FreeformInsight chart 节点专用：enum 字段的取值声明查询（2026-07-28）。
+   * 页面图表的 options 在 schema 派生时就带上了，但 freeform 的 chart 节点
+   * 是 LLM 现写的 `{entityRef, dimensionFieldId}`，手里没有字段定义——不给
+   * 这个查询，环图图例就只能写取值 id（`refunded` / `unpaid`）。查不到返回
+   * 空数组，图例回落原值。
+   */
+  enumOptionsOf?: EnumOptionsLookup;
 }
 
 export type ExperienceBlockRenderer =
@@ -475,6 +490,7 @@ function renderFreeformChart(
   chart: FreeformChartSpec | undefined,
   entityRows: Record<string, RuntimeRow[]> | undefined,
   chartPalette: { primary: string; categorical: readonly string[] } | undefined,
+  enumOptionsOf: EnumOptionsLookup | undefined,
   key: React.Key
 ): React.ReactNode {
   if (!chart || typeof chart !== "object") return null;
@@ -495,6 +511,8 @@ function renderFreeformChart(
       metric: chart.metric,
       metricFieldId: chart.metricFieldId,
       metricLabel: chart.metricLabel || "",
+      // 维度是 enum 时，图例照声明的 label 显示，不写取值 id
+      dimensionOptions: enumOptionsOf?.(chart.entityRef, chart.dimensionFieldId),
     },
     entityRows[chart.entityRef] ?? [],
     chartPalette
@@ -572,6 +590,7 @@ function renderFreeformNode(
   key: React.Key,
   entityRows?: Record<string, RuntimeRow[]>,
   chartPalette?: { primary: string; categorical: readonly string[] },
+  enumOptionsOf?: EnumOptionsLookup,
   // 根节点记 depth=1（与 Python _freeform_tree_bounds 同一计法——两侧
   // 上限必须真同值，root=0 会让前端多放一层）。
   depth = 1,
@@ -591,13 +610,23 @@ function renderFreeformNode(
   // 名走别名表）——放开图标集，非法/查不到的名字 resolveFreeformIcon 返回
   // null，渲染成空、优雅降级。
   const icon = resolveFreeformIcon(typeof n.iconRef === "string" ? n.iconRef : undefined);
-  const chartNode = n.chart ? renderFreeformChart(n.chart, entityRows, chartPalette, "chart") : null;
+  const chartNode = n.chart
+    ? renderFreeformChart(n.chart, entityRows, chartPalette, enumOptionsOf, "chart")
+    : null;
   // chart 节点接管这块区域的内容，不再渲染 children/text（跟 Python 侧 prompt
   // 的约定一致：有 chart 字段的节点不该再让模型塞 children 进来画图表本身）。
   const children = chartNode
     ? []
     : (Array.isArray(n.children) ? n.children : []).map((child, i) =>
-        renderFreeformNode(child, i, entityRows, chartPalette, depth + 1, budget)
+        renderFreeformNode(
+          child,
+          i,
+          entityRows,
+          chartPalette,
+          enumOptionsOf,
+          depth + 1,
+          budget
+        )
       );
   // dataRef 声明了 aggregate 就是"这是个数字承诺"——现算不出来（实体在
   // entityRows 里查不到/avg 没有合法数值行）也不能退回 LLM 写的 text 掩盖
@@ -629,7 +658,12 @@ function renderFreeformNode(
   );
 }
 
-const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows, chartPalette }) => {
+const FreeformInsightRenderer: ExperienceBlockRenderer = ({
+  block,
+  entityRows,
+  chartPalette,
+  enumOptionsOf,
+}) => {
   const root = block.freeformContent?.root;
   if (!root) {
     return (
@@ -645,7 +679,15 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows, c
     remaining: FREEFORM_MAX_NODES,
     truncated: false,
   };
-  const rendered = renderFreeformNode(root, "root", entityRows, chartPalette, 1, budget);
+  const rendered = renderFreeformNode(
+    root,
+    "root",
+    entityRows,
+    chartPalette,
+    enumOptionsOf,
+    1,
+    budget
+  );
   return (
     <div data-testid="freeform-insight" className="overflow-hidden rounded">
       {rendered}
@@ -1045,19 +1087,16 @@ export function experienceBlockEntry(
 }
 
 /** 未知 type 或漏登记 renderer 时明确报不支持，不能白屏或假装成功。 */
-export function ExperienceBlockBoundary({
-  block,
-  children,
-  onAction,
-  pageActions,
-  filterState,
-  filterFieldOptions,
-  dateRangeField,
-  onFilterChange,
-  workflow,
-  entityRows,
-  chartPalette,
-}: ExperienceBlockRendererProps) {
+/**
+ * 区块渲染分发口。
+ *
+ * 这里**整包透传 props**，不逐个列举。2026-07-28 之前是把每个 prop 解构出来
+ * 再手写一遍转发，于是新增 enumOptionsOf 时漏了这一处——类型全绿、单测全绿，
+ * 环图图例照样写着取值 id，只有真跑截图才看得出来。逐个列举等于每加一个
+ * prop 就埋一次同样的雷，改成 {...props} 之后这一类漏传不可能再发生。
+ */
+export function ExperienceBlockBoundary(props: ExperienceBlockRendererProps) {
+  const { block } = props;
   const entry = experienceBlockEntry(block.type);
   const Renderer = entry
     ? EXPERIENCE_BLOCK_RENDERERS[entry.rendererKey]
@@ -1073,20 +1112,5 @@ export function ExperienceBlockBoundary({
       </div>
     );
   }
-  return (
-    <Renderer
-      block={block}
-      onAction={onAction}
-      pageActions={pageActions}
-      filterState={filterState}
-      filterFieldOptions={filterFieldOptions}
-      dateRangeField={dateRangeField}
-      onFilterChange={onFilterChange}
-      workflow={workflow}
-      entityRows={entityRows}
-      chartPalette={chartPalette}
-    >
-      {children}
-    </Renderer>
-  );
+  return <Renderer {...props} />;
 }

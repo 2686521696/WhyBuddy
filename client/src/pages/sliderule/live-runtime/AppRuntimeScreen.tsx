@@ -144,6 +144,7 @@ import {
   entityShowsSeed,
   seedRowCount,
 } from "./demo-seed";
+import { normalizeFieldOptions } from "./field-display";
 import {
   loadRuntimeState,
   saveRuntimeState,
@@ -734,6 +735,23 @@ export function AppRuntimeScreen({
           };
         })
     : [];
+
+  /**
+   * enum 字段取值声明的查询（entityId + fieldId → 归一化 options）。
+   *
+   * 页面图表的 options 在 schema 派生时就带上了，freeform 的 chart 节点是
+   * LLM 现写的 `{entityRef, dimensionFieldId}`，手里没有字段定义——不给它
+   * 这个查询，环图图例就只能写取值 id（`refunded` / `unpaid`）。
+   */
+  const enumOptionsOf = React.useCallback(
+    (entityId: string, fieldId: string) => {
+      const field = model?.datamodel?.entities
+        ?.find(e => e.id === entityId)
+        ?.fields?.find(f => f.id === fieldId);
+      return normalizeFieldOptions(field?.type, field?.options);
+    },
+    [model]
+  );
 
   const apply = (next: RuntimeState) => {
     setState(next);
@@ -1345,6 +1363,7 @@ export function AppRuntimeScreen({
               primary: identityTheme.primary,
               categorical: identityTheme.charts,
             }}
+            enumOptionsOf={enumOptionsOf}
           />
         );
 
@@ -2461,6 +2480,7 @@ export function AppRuntimeScreen({
           primary: identityTheme.primary,
           categorical: identityTheme.charts,
         }}
+        enumOptionsOf={enumOptionsOf}
       />
     </div>
   ) : null;
