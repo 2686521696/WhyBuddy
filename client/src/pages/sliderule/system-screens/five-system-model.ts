@@ -656,6 +656,32 @@ export function mergeFiveSystemModels(
   return Object.keys(merged).length > 0 ? merged : null;
 }
 
+/**
+ * 「这个会话到底有没有一个成形的应用」的唯一判据。
+ *
+ * 两个来源合并：本轮 SSE 的 skill 原文（skillContents）+ 持久化闭环证据里的
+ * modelSection（刷新/重载路径）。非空即意味着舞台能真的跑起应用——
+ * SlideRuleStudio 的 stage === "app" 就是这么判的。
+ *
+ * 注意它跟"有没有目标文案"不是一回事：用户敲完目标、推演还没出模型时，
+ * goal 已经有值但应用并不存在。凡是要区分"还没应用" / "已有应用"的地方
+ * （入站判定的 hasApp 语境、舞台判定）都该用这个，别用 Boolean(goal)。
+ *
+ * 起草中的部分模型（llmDraft 流式解析）不算——那是预览，不是成品。
+ */
+export function deriveSettledFiveSystemModel(
+  skillContents: Partial<Record<string, string>> | null | undefined,
+  perSkillEvidence:
+    | Partial<Record<string, { modelSection?: unknown } | undefined>>
+    | null
+    | undefined
+): FiveSystemModel | null {
+  return mergeFiveSystemModels(
+    parseFiveSystemModelFromContents(skillContents ?? {}),
+    parseFiveSystemModelFromPerSkillEvidence(perSkillEvidence)
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Evidence source (honest path labeling)
 // ---------------------------------------------------------------------------

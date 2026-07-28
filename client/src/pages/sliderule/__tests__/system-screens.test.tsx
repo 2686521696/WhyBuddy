@@ -25,6 +25,7 @@ import { EntityDataPanel } from "../live-runtime/EntityDataPanel";
 import { AigcTryRunPanel } from "../live-runtime/AigcTryRunPanel";
 import {
   parseFiveSystemModel,
+  deriveSettledFiveSystemModel,
   parseFiveSystemModelFromContents,
   parseFiveSystemModelFromPerSkillEvidence,
   mergeFiveSystemModels,
@@ -247,6 +248,30 @@ describe("five-system-model 解析", () => {
     expect(merged?.rbac?.roles).toContain("student"); // fallback 补齐缺段
     expect(mergeFiveSystemModels(null, null)).toBeNull();
     expect(mergeFiveSystemModels({}, undefined)).toBeNull();
+  });
+
+  it("deriveSettledFiveSystemModel：两源合并，都空则 null（=会话里还没有应用）", () => {
+    // 本轮 SSE 原文优先，缺的段由持久化闭环证据补齐
+    const model = deriveSettledFiveSystemModel(
+      { workflow: JSON.stringify({ workflow: MODEL.workflow }) },
+      { rbac: { modelSection: MODEL.rbac } }
+    );
+    expect(model?.workflow?.id).toBe("wf_enroll");
+    expect(model?.rbac?.roles).toContain("student");
+
+    // 刷新后只剩持久化证据：照样判定为"有应用"
+    expect(
+      deriveSettledFiveSystemModel({}, { workflow: { modelSection: MODEL.workflow } })
+    ).not.toBeNull();
+
+    // 关键用例：用户敲了目标、推演还没出模型 —— 此时应用并不存在。
+    // 入站判定的 hasApp 就靠这个跟 Boolean(goal) 区分开。
+    expect(deriveSettledFiveSystemModel({}, undefined)).toBeNull();
+    expect(deriveSettledFiveSystemModel(null, null)).toBeNull();
+    // 非 JSON 的 mermaid 原文不构成模型
+    expect(
+      deriveSettledFiveSystemModel({ workflow: "flowchart LR\n a --> b" }, {})
+    ).toBeNull();
   });
 
   it("workflowModelToMermaid 输出 nodes/transitions/条件/角色", () => {

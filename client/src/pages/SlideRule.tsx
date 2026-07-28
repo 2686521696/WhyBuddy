@@ -76,6 +76,7 @@ import {
 } from "./sliderule/derive-cross-runtime-summary";
 import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
 import {
+  deriveSettledFiveSystemModel,
   parseFiveSystemModelFromPerSkillEvidence,
   summarizeClosureForChat,
 } from "./sliderule/system-screens/five-system-model";
@@ -1124,13 +1125,26 @@ function SlideRuleUnified({
   // hero 里；否则回底部停靠。二选一，永远只有一个输入条实例。
   const isHomeEmpty = conversationTurns.length === 0 && !isRunning;
 
-  // 喂给输入条入站判定的「当前应用是什么」。有了它，判成 iteration 时的引导
-  // 话术会具体到这个应用（"补充预算校验、调整审批流程"），而不是泛泛的
-  // "指出当前应用要怎么改"。首页空态压根没有应用，给空串。
+  // 入站判定的语境：「这个会话里到底有没有一个成形的应用」。
+  //
+  // 判据是解析得到的五系统模型（跟右侧舞台能否跑起应用同一个判据），不是
+  // Boolean(goal)——用户敲完目标、推演还没出模型时 goal 已经有值，但应用并
+  // 不存在；那会儿把语境报成"已有应用"，后端就会拿 iteration 那套规则域去判
+  // 一句其实是首轮真需求的话。
+  const settledModel = useMemo(
+    () =>
+      deriveSettledFiveSystemModel(skillContents, publishClosure?.perSkillEvidence),
+    [skillContents, publishClosure?.perSkillEvidence]
+  );
+  const hasApp = !!settledModel;
+
+  // 「当前应用是什么」。有了它，判成 iteration 时的引导话术会具体到这个应用
+  // （"补充预算校验、调整审批流程"），而不是泛泛的"指出当前应用要怎么改"。
+  // 没应用就给空串——摘要只影响话术，判定结果不靠它。
   const appSummary = useMemo(() => {
-    if (isHomeEmpty) return "";
+    if (!hasApp) return "";
     return publishClosure?.chatSummary?.trim() || goal.trim();
-  }, [isHomeEmpty, publishClosure, goal]);
+  }, [hasApp, publishClosure, goal]);
 
   return (
     <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
@@ -1257,6 +1271,7 @@ function SlideRuleUnified({
                 sendMessage={sendMessage}
                 isRunning={isRunning}
                 goal={goal}
+                hasApp={hasApp}
                 appSummary={appSummary}
                 hintChips={composerHints}
                 stop={stop}
