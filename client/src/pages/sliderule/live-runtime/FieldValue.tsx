@@ -7,7 +7,11 @@
  * 非数值挂了数字格式也渲染原文。
  */
 
+import React from "react";
 import { Progress, Rate, Tag } from "antd";
+
+// 懒加载：静态引 antd-mobile 会让 node 环境的测试在收集期炸掉。
+const LazyPhoneProgress = React.lazy(() => import("./phone-mobile/PhoneProgress"));
 import type { AppFormFieldSchema } from "./app-runtime-schema";
 import {
   clampNumber,
@@ -21,9 +25,13 @@ import {
 export function FieldValue({
   field,
   value,
+  phone = false,
 }: {
   field: Pick<AppFormFieldSchema, "type" | "options" | "format">;
   value: unknown;
+  /** 手机档：进度条换 antd-mobile ProgressBar（antd Progress 是桌面组件，
+   *  它的 minWidth 90 在窄屏列表里会把整行撑开）。其余类型跨设备一致。 */
+  phone?: boolean;
 }) {
   if (value === undefined || value === null || value === "") {
     return <span style={{ color: "#bbb" }}>—</span>;
@@ -62,8 +70,11 @@ export function FieldValue({
     }
     case "progress": {
       const n = clampNumber(value, 0, 100);
-      return n === null ? (
-        <>{text}</>
+      if (n === null) return <>{text}</>;
+      return phone ? (
+        <React.Suspense fallback={<span>{text}</span>}>
+          <LazyPhoneProgress percent={n} />
+        </React.Suspense>
       ) : (
         <Progress
           percent={n}

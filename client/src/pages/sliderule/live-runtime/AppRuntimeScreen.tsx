@@ -111,6 +111,12 @@ const LazyPhoneRolePicker = React.lazy(
   () => import("./phone-mobile/PhoneRolePicker")
 );
 const LazyPhoneHome = React.lazy(() => import("./phone-mobile/PhoneHome"));
+const LazyPhoneDetailFields = React.lazy(
+  () => import("./phone-mobile/PhoneDetailFields")
+);
+const LazyPhoneActionButton = React.lazy(
+  () => import("./phone-mobile/PhoneActionButton")
+);
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -846,40 +852,60 @@ export function AppRuntimeScreen({
     }
   };
 
-  const rowActions = (row: RuntimeRow) => (
-    <Space size="small">
-      {page?.workflowLinked && (
-        <span
-          {...probe({ kind: "workflow", label: "提交审批", pageId: page.id })}
-        >
-          <Button
-            size="small"
-            type="link"
-            onClick={e => {
-              e.stopPropagation();
-              handleSubmitToWorkflow(
-                row.id,
-                String(Object.values(row.values)[0] ?? row.id)
-              );
-            }}
+  // 行操作跨设备共用同一套 onClick，只换按钮壳：手机档 antd-mobile Button
+  // （触摸目标够大、按下有原生反馈），桌面档 antd type="link"。外层容器也分档
+  // ——antd Space 是桌面组件，手机上直接用 flex，少一层 PC DOM。
+  const rowActions = (row: RuntimeRow) => {
+    const submit = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      handleSubmitToWorkflow(
+        row.id,
+        String(Object.values(row.values)[0] ?? row.id)
+      );
+    };
+    const remove = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      apply(deleteRow(state, page!.entityId!, row.id));
+    };
+    if (isPhone) {
+      return (
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {page?.workflowLinked && (
+            <span
+              {...probe({ kind: "workflow", label: "提交审批", pageId: page.id })}
+            >
+              <React.Suspense fallback={null}>
+                <LazyPhoneActionButton color="primary" onClick={submit}>
+                  提交审批
+                </LazyPhoneActionButton>
+              </React.Suspense>
+            </span>
+          )}
+          <React.Suspense fallback={null}>
+            <LazyPhoneActionButton color="danger" onClick={remove}>
+              删除
+            </LazyPhoneActionButton>
+          </React.Suspense>
+        </div>
+      );
+    }
+    return (
+      <Space size="small">
+        {page?.workflowLinked && (
+          <span
+            {...probe({ kind: "workflow", label: "提交审批", pageId: page.id })}
           >
-            提交审批
-          </Button>
-        </span>
-      )}
-      <Button
-        size="small"
-        type="link"
-        danger
-        onClick={e => {
-          e.stopPropagation();
-          apply(deleteRow(state, page!.entityId!, row.id));
-        }}
-      >
-        删除
-      </Button>
-    </Space>
-  );
+            <Button size="small" type="link" onClick={submit}>
+              提交审批
+            </Button>
+          </span>
+        )}
+        <Button size="small" type="link" danger onClick={remove}>
+          删除
+        </Button>
+      </Space>
+    );
+  };
 
   // 表格列：列设置勾选优先（从实体全字段挑），否则默认列；
   // 每列自带排序（按字段类型）与筛选（enum/低基数真实取值）——表格自带能力，不走设计面板。
@@ -1201,9 +1227,185 @@ export function AppRuntimeScreen({
     </React.Suspense>
   );
 
-  // 手机端业务页：卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
+  // 体验区块渲染：桌面壳与手机壳共用同一份摆法逻辑，只有槽位来源分档。
+  // 抽成函数之前它内联在 defaultPageContent 里，于是手机档一个区块都渲染不到。
+  const renderExperienceBlockScaffold = (forPhone: boolean) => {
+    if (!page) return null;
+        // 保守策略：_fromLegacy 区块只是转换占位，渲染仍走旧路径（statsBand 等）。
+        // 真正的新模型 blocks 不带 _fromLegacy，走 ExperienceBlockBoundary。
+        const directBlocks = page.experienceBlocks.filter(
+          b =>
+            !(b as import("./block-registry").ExperienceBlockInstance)
+              ._fromLegacy
+        );
+        if (directBlocks.length === 0) return null;
+
+        // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
+        const handleBlockAction = (
+          actionId: string,
+          eventData?: Record<string, unknown>
+        ) => {
+          const action = page.pageActions.find(a => a.id === actionId);
+          if (!action) return;
+          // 实际权限检查：permissionRef 须在当前角色 grantedActions 里。
+          const pa = pageAccess.get(page.id);
+          const permitted =
+            !action.permissionRef ||
+            (pa?.grantedActions ?? []).includes(action.permissionRef);
+          if (!permitted) return;
+          switch (action.type) {
+            case "navigate":
+              if (action.targetPageRef) setActivePageId(action.targetPageRef);
+              break;
+            case "createRecord":
+              // 复用既有「新建」表单：只支持目标实体=本页主实体的场景（表单
+              // 字段就是照本页主实体拼的）；指向别的实体如实拒绝，不假装能建。
+              if (action.entityRef && action.entityRef === page.entityId) {
+                setFormValues({});
+                setFormOpen(true);
+              } else {
+                notify(isPhone, "info", "该操作指向的实体暂不支持在此页创建");
+              }
+              break;
+            case "changeFilter":
+              console.log("[action:changeFilter]", actionId, eventData);
+              break;
+            default:
+              console.log(`[action:${action.type}]`, actionId, eventData);
+          }
+        };
+
+        const renderBlock = (block: (typeof directBlocks)[number]) => (
+          <ExperienceBlockBoundary
+            key={block.id}
+            block={block}
+            onAction={handleBlockAction}
+            pageActions={quickActionButtons}
+            filterState={activePageFilter}
+            filterFieldOptions={filterableEnumFields}
+            dateRangeField={dateRangeField}
+            onFilterChange={handlePageFilterChange}
+            workflow={model.workflow}
+            entityRows={state.entities}
+            chartPalette={{
+              primary: identityTheme.primary,
+              categorical: identityTheme.charts,
+            }}
+          />
+        );
+
+        // Step 7：未声明 layout（或声明后 5 槽位全空，schema 层已判定并回 null）
+        // 时保留原顺序平铺，视觉零变化。
+        if (!page.layout) {
+          return (
+            <div
+              className="mb-3 grid gap-2"
+              data-testid="app-runtime-experience-block-scaffold"
+            >
+              {directBlocks.map(renderBlock)}
+            </div>
+          );
+        }
+
+        const blockById = new Map(directBlocks.map(b => [b.id, b]));
+        // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
+        // forPhone 由调用方传入——从前这里读的是 isPhone，而这段代码只在桌面
+        // 壳里跑（手机壳走 phonePageContent），isPhone 恒 false，layout.mobile
+        // 是死字段：LLM 在生成它、Gate 在校验它，运行时永远读不到。
+        const slotSource =
+          forPhone && page.layout.mobile
+            ? { ...page.layout, ...page.layout.mobile }
+            : page.layout;
+        const slotBlocks = (ids: string[]) =>
+          ids
+            .map(bid => blockById.get(bid))
+            .filter((b): b is NonNullable<typeof b> => !!b);
+        const summaryBlocks = slotBlocks(slotSource.summary ?? []);
+        const primaryBlocks = slotBlocks(slotSource.primary ?? []);
+        const secondaryBlocks = slotBlocks(slotSource.secondary ?? []);
+        const activityBlocks = slotBlocks(slotSource.activity ?? []);
+        const contentBlocks = slotBlocks(slotSource.content ?? []);
+        const placedIds = new Set(
+          [
+            ...summaryBlocks,
+            ...primaryBlocks,
+            ...secondaryBlocks,
+            ...activityBlocks,
+            ...contentBlocks,
+          ].map(b => b.id)
+        );
+        // 声明了 layout 但没被任何槽位引用到的区块：如实照样渲染，不能因为
+        // 没排进槽位就悄悄丢内容——排在末尾，视觉上标为"未分配槽位"。
+        const orphanBlocks = directBlocks.filter(b => !placedIds.has(b.id));
+
+        return (
+          <div
+            className="mb-3 flex flex-col gap-2"
+            data-testid="app-runtime-experience-block-layout"
+          >
+            {summaryBlocks.length > 0 && (
+              <div
+                className="flex flex-wrap gap-2"
+                data-testid="app-runtime-layout-summary"
+              >
+                {summaryBlocks.map(renderBlock)}
+              </div>
+            )}
+            {(primaryBlocks.length > 0 || secondaryBlocks.length > 0) && (
+              <div className="flex flex-col gap-2 md:flex-row md:items-start">
+                {primaryBlocks.length > 0 && (
+                  <div
+                    className="flex min-w-0 flex-[2] flex-col gap-2"
+                    data-testid="app-runtime-layout-primary"
+                  >
+                    {primaryBlocks.map(renderBlock)}
+                  </div>
+                )}
+                {secondaryBlocks.length > 0 && (
+                  <div
+                    className="flex min-w-0 flex-1 flex-col gap-2"
+                    data-testid="app-runtime-layout-secondary"
+                  >
+                    {secondaryBlocks.map(renderBlock)}
+                  </div>
+                )}
+              </div>
+            )}
+            {activityBlocks.length > 0 && (
+              <div
+                className="flex flex-col gap-2"
+                data-testid="app-runtime-layout-activity"
+              >
+                {activityBlocks.map(renderBlock)}
+              </div>
+            )}
+            {contentBlocks.length > 0 && (
+              <div
+                className="flex flex-col gap-2"
+                data-testid="app-runtime-layout-content"
+              >
+                {contentBlocks.map(renderBlock)}
+              </div>
+            )}
+            {orphanBlocks.length > 0 && (
+              <div
+                className="grid gap-2"
+                data-testid="app-runtime-layout-unassigned"
+              >
+                {orphanBlocks.map(renderBlock)}
+              </div>
+            )}
+          </div>
+        );
+  };
+
+  // 手机端业务页：体验区块 + 卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
   const phonePageContent = page && (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* 体验区块：与桌面壳同一份摆法逻辑，槽位走 layout.mobile（未声明则退回
+          桌面槽位）。从前手机档只有一个裸列表——桌面有的 KPI/图表/筛选条/流程
+          时间线，手机一个都拿不到。 */}
+      {renderExperienceBlockScaffold(true)}
       <React.Suspense
         fallback={
           <div
@@ -1256,13 +1458,12 @@ export function AppRuntimeScreen({
     : [];
 
   // 详情内容块：桌面/手机走 Drawer，平板走右栏主从面板（同一 JSX 两处挂载）
-  const detailBody = detailRow && page && (
-    <>
-      <Descriptions
-        size="small"
-        column={1}
-        items={page.detailFields.map(f => ({
-          key: f.id,
+  // 字段标签（带 X 光探针）与值的渲染跨设备共用，只有「摆法」分档：
+  // 手机走 antd-mobile List（一行一字段），桌面留 antd Descriptions。
+  const detailFieldNodes =
+    detailRow && page
+      ? page.detailFields.map(f => ({
+          id: f.id,
           label: page.entityId ? (
             <span
               {...probe({
@@ -1277,9 +1478,33 @@ export function AppRuntimeScreen({
           ) : (
             f.label
           ),
-          children: <FieldValue field={f} value={detailRow.values[f.id]} />,
-        }))}
-      />
+          value: (
+            <FieldValue
+              field={f}
+              value={detailRow.values[f.id]}
+              phone={isPhone}
+            />
+          ),
+        }))
+      : [];
+
+  const detailBody = detailRow && page && (
+    <>
+      {isPhone ? (
+        <React.Suspense fallback={null}>
+          <LazyPhoneDetailFields fields={detailFieldNodes} />
+        </React.Suspense>
+      ) : (
+        <Descriptions
+          size="small"
+          column={1}
+          items={detailFieldNodes.map(f => ({
+            key: f.id,
+            label: f.label,
+            children: f.value,
+          }))}
+        />
+      )}
       {page.aiActions.length > 0 && (
         <>
           <div
@@ -1312,19 +1537,40 @@ export function AppRuntimeScreen({
                     label: action.label,
                   })}
                 >
-                  <Button
-                    size="small"
-                    type="primary"
-                    ghost
-                    data-testid={`app-ai-action-${action.capId}`}
-                    loading={aiRunningCapId === action.capId}
-                    disabled={
-                      aiRunningCapId !== null && aiRunningCapId !== action.capId
-                    }
-                    onClick={() => runAiAction(action)}
-                  >
-                    ✨ {action.label}
-                  </Button>
+                  {isPhone ? (
+                    // 手机档用 antd-mobile Button：触摸目标更大、按下有原生
+                    // 反馈；antd 的 size="small" ghost 在指尖下太小太轻。
+                    <React.Suspense fallback={null}>
+                      <LazyPhoneActionButton
+                        size="small"
+                        color="primary"
+                        testId={`app-ai-action-${action.capId}`}
+                        loading={aiRunningCapId === action.capId}
+                        disabled={
+                          aiRunningCapId !== null &&
+                          aiRunningCapId !== action.capId
+                        }
+                        onClick={() => runAiAction(action)}
+                      >
+                        ✨ {action.label}
+                      </LazyPhoneActionButton>
+                    </React.Suspense>
+                  ) : (
+                    <Button
+                      size="small"
+                      type="primary"
+                      ghost
+                      data-testid={`app-ai-action-${action.capId}`}
+                      loading={aiRunningCapId === action.capId}
+                      disabled={
+                        aiRunningCapId !== null &&
+                        aiRunningCapId !== action.capId
+                      }
+                      onClick={() => runAiAction(action)}
+                    >
+                      ✨ {action.label}
+                    </Button>
+                  )}
                 </span>
                 <span style={{ fontSize: 11, color: INK.faint }}>
                   → 写回「{action.outputLabel}」
@@ -1922,6 +2168,7 @@ export function AppRuntimeScreen({
       </div>
     ) : null;
 
+
   const defaultPageContent = page && (
     <Card
       size="small"
@@ -1973,171 +2220,7 @@ export function AppRuntimeScreen({
         </Space>
       }
     >
-      {(() => {
-        // 保守策略：_fromLegacy 区块只是转换占位，渲染仍走旧路径（statsBand 等）。
-        // 真正的新模型 blocks 不带 _fromLegacy，走 ExperienceBlockBoundary。
-        const directBlocks = page.experienceBlocks.filter(
-          b =>
-            !(b as import("./block-registry").ExperienceBlockInstance)
-              ._fromLegacy
-        );
-        if (directBlocks.length === 0) return null;
-
-        // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
-        const handleBlockAction = (
-          actionId: string,
-          eventData?: Record<string, unknown>
-        ) => {
-          const action = page.pageActions.find(a => a.id === actionId);
-          if (!action) return;
-          // 实际权限检查：permissionRef 须在当前角色 grantedActions 里。
-          const pa = pageAccess.get(page.id);
-          const permitted =
-            !action.permissionRef ||
-            (pa?.grantedActions ?? []).includes(action.permissionRef);
-          if (!permitted) return;
-          switch (action.type) {
-            case "navigate":
-              if (action.targetPageRef) setActivePageId(action.targetPageRef);
-              break;
-            case "createRecord":
-              // 复用既有「新建」表单：只支持目标实体=本页主实体的场景（表单
-              // 字段就是照本页主实体拼的）；指向别的实体如实拒绝，不假装能建。
-              if (action.entityRef && action.entityRef === page.entityId) {
-                setFormValues({});
-                setFormOpen(true);
-              } else {
-                notify(isPhone, "info", "该操作指向的实体暂不支持在此页创建");
-              }
-              break;
-            case "changeFilter":
-              console.log("[action:changeFilter]", actionId, eventData);
-              break;
-            default:
-              console.log(`[action:${action.type}]`, actionId, eventData);
-          }
-        };
-
-        const renderBlock = (block: (typeof directBlocks)[number]) => (
-          <ExperienceBlockBoundary
-            key={block.id}
-            block={block}
-            onAction={handleBlockAction}
-            pageActions={quickActionButtons}
-            filterState={activePageFilter}
-            filterFieldOptions={filterableEnumFields}
-            dateRangeField={dateRangeField}
-            onFilterChange={handlePageFilterChange}
-            workflow={model.workflow}
-            entityRows={state.entities}
-            chartPalette={{
-              primary: identityTheme.primary,
-              categorical: identityTheme.charts,
-            }}
-          />
-        );
-
-        // Step 7：未声明 layout（或声明后 5 槽位全空，schema 层已判定并回 null）
-        // 时保留原顺序平铺，视觉零变化。
-        if (!page.layout) {
-          return (
-            <div
-              className="mb-3 grid gap-2"
-              data-testid="app-runtime-experience-block-scaffold"
-            >
-              {directBlocks.map(renderBlock)}
-            </div>
-          );
-        }
-
-        const blockById = new Map(directBlocks.map(b => [b.id, b]));
-        // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
-        const slotSource =
-          isPhone && page.layout.mobile
-            ? { ...page.layout, ...page.layout.mobile }
-            : page.layout;
-        const slotBlocks = (ids: string[]) =>
-          ids
-            .map(bid => blockById.get(bid))
-            .filter((b): b is NonNullable<typeof b> => !!b);
-        const summaryBlocks = slotBlocks(slotSource.summary ?? []);
-        const primaryBlocks = slotBlocks(slotSource.primary ?? []);
-        const secondaryBlocks = slotBlocks(slotSource.secondary ?? []);
-        const activityBlocks = slotBlocks(slotSource.activity ?? []);
-        const contentBlocks = slotBlocks(slotSource.content ?? []);
-        const placedIds = new Set(
-          [
-            ...summaryBlocks,
-            ...primaryBlocks,
-            ...secondaryBlocks,
-            ...activityBlocks,
-            ...contentBlocks,
-          ].map(b => b.id)
-        );
-        // 声明了 layout 但没被任何槽位引用到的区块：如实照样渲染，不能因为
-        // 没排进槽位就悄悄丢内容——排在末尾，视觉上标为"未分配槽位"。
-        const orphanBlocks = directBlocks.filter(b => !placedIds.has(b.id));
-
-        return (
-          <div
-            className="mb-3 flex flex-col gap-2"
-            data-testid="app-runtime-experience-block-layout"
-          >
-            {summaryBlocks.length > 0 && (
-              <div
-                className="flex flex-wrap gap-2"
-                data-testid="app-runtime-layout-summary"
-              >
-                {summaryBlocks.map(renderBlock)}
-              </div>
-            )}
-            {(primaryBlocks.length > 0 || secondaryBlocks.length > 0) && (
-              <div className="flex flex-col gap-2 md:flex-row md:items-start">
-                {primaryBlocks.length > 0 && (
-                  <div
-                    className="flex min-w-0 flex-[2] flex-col gap-2"
-                    data-testid="app-runtime-layout-primary"
-                  >
-                    {primaryBlocks.map(renderBlock)}
-                  </div>
-                )}
-                {secondaryBlocks.length > 0 && (
-                  <div
-                    className="flex min-w-0 flex-1 flex-col gap-2"
-                    data-testid="app-runtime-layout-secondary"
-                  >
-                    {secondaryBlocks.map(renderBlock)}
-                  </div>
-                )}
-              </div>
-            )}
-            {activityBlocks.length > 0 && (
-              <div
-                className="flex flex-col gap-2"
-                data-testid="app-runtime-layout-activity"
-              >
-                {activityBlocks.map(renderBlock)}
-              </div>
-            )}
-            {contentBlocks.length > 0 && (
-              <div
-                className="flex flex-col gap-2"
-                data-testid="app-runtime-layout-content"
-              >
-                {contentBlocks.map(renderBlock)}
-              </div>
-            )}
-            {orphanBlocks.length > 0 && (
-              <div
-                className="grid gap-2"
-                data-testid="app-runtime-layout-unassigned"
-              >
-                {orphanBlocks.map(renderBlock)}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {renderExperienceBlockScaffold(false)}
       {page.view.kind === "wizard" &&
         (model?.workflow?.nodes?.length ?? 0) > 0 && (
           <Steps
