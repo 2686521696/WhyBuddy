@@ -14,7 +14,7 @@
  * 两边说法一旦分家，就会重演"放开了却渲染成惰性占位卡"的事故。
  */
 import React from "react";
-import { Button, Select } from "antd";
+import { Button, Select, Statistic } from "antd";
 // WorkflowTimeline 自己的节点箭头（组件 UI，用静态 import；freeform 的
 // 动态图标解析走下面的 AntdIcons 命名空间 + 目录别名表，两回事）。
 import { ArrowRightOutlined } from "@ant-design/icons";
@@ -28,6 +28,14 @@ import catalogJson from "@experience-blocks";
 import type { WorkflowSection } from "../system-screens/five-system-model";
 import type { RuntimeRow } from "./live-runtime";
 import { buildEchartsOption } from "./build-echarts-option";
+import {
+  buildFeedRows,
+  buildRankedRows,
+  buildTrendSeries,
+  computeAggregate,
+  parseAggregate,
+  type TimeGrain,
+} from "./block-data";
 
 // ECharts 基建走独立 chunk（跟 AppRuntimeScreen 里那份同一个组件/同一个
 // import()，Vite 按 module 去重成一个 chunk，不会重复打包）。
@@ -653,14 +661,376 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows, c
   );
 };
 
+
+// ── 五个数据区块的真渲染器（2026-07-28）─────────────────────────────
+// 此前它们登记的是 ExistingContentAdapter：页面上画一个灰框写"下一阶段接入"。
+//
+// 共同纪律（三条都来自这套代码库既有的诚实降级传统）：
+// 1. binding 已经过门禁校验，但运行时**再判一次**——门禁看的是模型声明，
+//    这里拿到的是用户真写进去的行，两者可能对不上（迭代改了字段名、
+//    那一列全是空的）。判不了就出诚实空态，不猜也不崩。
+// 2. "没有数据"和"算不出来"要显示成不同的东西，不能都糊成 0 或 —。
+// 3. 数字格式化一律交给 antd Statistic，不自己拼（参考 ProComponents 的
+//    Statistic：它本身就是 antd Statistic 的薄包装，只加 icon/描述/趋势，
+//    格式化从不自己写）。
+
+/** 区块外壳：统一标题与留白，让五个区块在槽位里排起来是一套东西。 */
+function BlockShell({
+  title,
+  testid,
+  extra,
+  children,
+}: {
+  title?: string;
+  testid: string;
+  extra?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      data-testid={testid}
+      className="rounded border border-stone-200 bg-white px-3 py-2"
+    >
+      {(title || extra) && (
+        <div className="mb-2 flex items-center gap-2">
+          {title && (
+            <span className="text-xs font-medium text-stone-500">{title}</span>
+          )}
+          {extra && <span className="ml-auto">{extra}</span>}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/** 空态：说清楚"为什么没有"，不是一句冷冰冰的暂无数据。 */
+function BlockEmpty({ hint }: { hint: string }) {
+  return (
+    <div className="px-2 py-5 text-center text-xs text-stone-400">{hint}</div>
+  );
+}
+
+/** binding 里取实体行；实体在运行时不存在（被迭代删掉等）时返回 null 而不是空数组，
+ *  好让渲染器区分"这个实体没了"和"这个实体一条数据都没有"。 */
+function rowsOfBinding(
+  block: ExperienceBlockInstance,
+  entityRows: Record<string, RuntimeRow[]> | undefined
+): { entityRef: string; rows: RuntimeRow[] } | null {
+  const entityRef = String(block.binding?.entityRef ?? "").trim();
+  if (!entityRef || !entityRows || !(entityRef in entityRows)) return null;
+  return { entityRef, rows: entityRows[entityRef] ?? [] };
+}
+
+const MetricGridRenderer: ExperienceBlockRenderer = ({ children, block, entityRows }) => {
+  // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
+  // 现行 renderBlock 不传 children，走下面的 binding 取数。
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell title={title} testid="metric-grid">
+        <BlockEmpty hint="指标未绑定到有效实体" />
+      </BlockShell>
+    );
+  const spec = parseAggregate(block.binding?.aggregate);
+  const value = computeAggregate(bound.rows, spec);
+  const label =
+    spec.kind === "count"
+      ? "记录数"
+      : `${spec.kind === "sum" ? "合计" : "平均"} · ${spec.fieldId}`;
+  return (
+    <BlockShell title={title} testid="metric-grid">
+      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))" }}>
+        <div data-testid="metric-grid-item" className="rounded bg-stone-50 px-3 py-2">
+          {value === null ? (
+            // 算不出来（该字段一行都没有效值）≠ 0，如实说
+            <>
+              <div className="text-[11px] text-stone-400">{label}</div>
+              <div className="text-lg font-semibold text-stone-400">—</div>
+              <div className="text-[10px] text-stone-400">该字段暂无有效数值</div>
+            </>
+          ) : (
+            <Statistic
+              title={<span className="text-[11px] text-stone-400">{label}</span>}
+              value={value}
+              precision={Number.isInteger(value) ? 0 : 1}
+              valueStyle={{ fontSize: 20, fontWeight: 600 }}
+            />
+          )}
+        </div>
+      </div>
+    </BlockShell>
+  );
+};
+
+const TrendChartRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  chartPalette,
+}) => {
+  // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
+  // 现行 renderBlock 不传 children，走下面的 binding 取数。
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const timeField = String(block.binding?.timeDimensionRef ?? "").trim();
+  if (!bound || !timeField)
+    return (
+      <BlockShell title={title} testid="trend-chart">
+        <BlockEmpty hint="趋势未绑定到有效的时间字段" />
+      </BlockShell>
+    );
+  const rawGrain = String(block.binding?.timeGrain ?? "day");
+  const grain: TimeGrain =
+    rawGrain === "week" || rawGrain === "month" ? rawGrain : "day";
+  const series = buildTrendSeries(
+    bound.rows,
+    timeField,
+    grain,
+    parseAggregate(block.binding?.aggregate)
+  );
+  if (!series)
+    return (
+      <BlockShell title={title} testid="trend-chart">
+        <BlockEmpty hint={`暂无数据 — 写入「${timeField}」后自动出图`} />
+      </BlockShell>
+    );
+  const GRAIN_LABEL: Record<TimeGrain, string> = {
+    day: "按天",
+    week: "按周",
+    month: "按月",
+  };
+  const option = {
+    animation: false,
+    tooltip: { confine: true, trigger: "axis" },
+    grid: { left: 8, right: 8, top: 16, bottom: 4, containLabel: true },
+    xAxis: {
+      type: "category",
+      data: series.categories,
+      axisLabel: { fontSize: 10, color: "#8c8c8c" },
+    },
+    yAxis: { type: "value", axisLabel: { fontSize: 10, color: "#8c8c8c" } },
+    series: [
+      {
+        type: "line",
+        smooth: false,
+        showSymbol: series.categories.length <= 20,
+        data: series.values,
+        itemStyle: { color: chartPalette?.primary ?? "#1677ff" },
+        areaStyle: { opacity: 0.08 },
+      },
+    ],
+  };
+  return (
+    <BlockShell
+      title={title}
+      testid="trend-chart"
+      extra={
+        <span className="text-[10px] text-stone-400" data-testid="trend-chart-grain">
+          {GRAIN_LABEL[series.grain]}
+          {/* 粒度是被自动放粗的就说出来，否则用户会以为自己声明的粒度生效了 */}
+          {series.coarsened ? "（区间过长已自动放粗）" : ""}
+        </span>
+      }
+    >
+      <React.Suspense
+        fallback={<div className="px-2 py-6 text-center text-xs text-stone-400">图表加载中…</div>}
+      >
+        <LazyEchartsChart option={option} height={160} ariaLabel={title || "趋势"} />
+      </React.Suspense>
+    </BlockShell>
+  );
+};
+
+const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRows, onAction }) => {
+  // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
+  // 现行 renderBlock 不传 children，走下面的 binding 取数。
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const sortField = String(block.binding?.sortByRef ?? "").trim();
+  if (!bound || !sortField)
+    return (
+      <BlockShell title={title} testid="ranked-list">
+        <BlockEmpty hint="排行未绑定到有效的数值字段" />
+      </BlockShell>
+    );
+  const order = block.binding?.sortOrder === "asc" ? "asc" : "desc";
+  const items = buildRankedRows(
+    bound.rows,
+    sortField,
+    undefined,
+    order,
+    Number(block.binding?.limit ?? 5)
+  );
+  if (items.length === 0)
+    return (
+      <BlockShell title={title} testid="ranked-list">
+        <BlockEmpty hint={`暂无数据 — 写入「${sortField}」后自动排名`} />
+      </BlockShell>
+    );
+  const max = Math.max(...items.map(i => Math.abs(i.value)), 1);
+  return (
+    <BlockShell title={title} testid="ranked-list">
+      <div className="flex flex-col gap-1.5">
+        {items.map((item, i) => (
+          <div
+            key={item.row.id}
+            data-testid="ranked-list-item"
+            className="flex items-center gap-2 text-xs"
+            onClick={() => onAction?.("itemSelect", { rowId: item.row.id })}
+          >
+            <span
+              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-semibold ${
+                i < 3 ? "bg-[#e8eeff] text-[#3b5bdb]" : "bg-stone-100 text-stone-400"
+              }`}
+            >
+              {i + 1}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-stone-700">{item.label}</span>
+            {/* 条形只是相对长度，真值仍然写在右边——只给条不给数看不出量级 */}
+            <span className="h-1.5 w-16 shrink-0 overflow-hidden rounded bg-stone-100">
+              <span
+                className="block h-full rounded bg-[#5b6cff]"
+                style={{ width: `${Math.round((Math.abs(item.value) / max) * 100)}%` }}
+              />
+            </span>
+            <span className="w-12 shrink-0 text-right tabular-nums text-stone-500">
+              {Number.isInteger(item.value) ? item.value : item.value.toFixed(1)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </BlockShell>
+  );
+};
+
+const ActivityFeedRenderer: ExperienceBlockRenderer = ({ children, block, entityRows, onAction }) => {
+  // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
+  // 现行 renderBlock 不传 children，走下面的 binding 取数。
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const timeField = String(block.binding?.timeFieldRef ?? "").trim();
+  if (!bound || !timeField)
+    return (
+      <BlockShell title={title} testid="activity-feed">
+        <BlockEmpty hint="动态未绑定到有效的时间字段" />
+      </BlockShell>
+    );
+  const items = buildFeedRows(
+    bound.rows,
+    timeField,
+    String(block.binding?.levelFieldRef ?? "").trim() || undefined
+  );
+  if (items.length === 0)
+    return (
+      <BlockShell title={title} testid="activity-feed">
+        <BlockEmpty hint={`暂无动态 — 写入「${timeField}」后按时间倒序展示`} />
+      </BlockShell>
+    );
+  return (
+    <BlockShell title={title} testid="activity-feed">
+      <div className="flex flex-col gap-2">
+        {items.map(item => (
+          <div
+            key={item.row.id}
+            data-testid="activity-feed-item"
+            className="flex items-start gap-2 text-xs"
+            onClick={() => onAction?.("itemSelect", { rowId: item.row.id })}
+          >
+            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5b6cff]" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-stone-700">{item.title}</span>
+              <span className="text-[10px] text-stone-400">{item.dateKey}</span>
+            </span>
+            {item.level && (
+              <span className="shrink-0 rounded bg-stone-100 px-1.5 py-0.5 text-[10px] text-stone-500">
+                {item.level}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </BlockShell>
+  );
+};
+
+const DataTableRenderer: ExperienceBlockRenderer = ({ children, block, entityRows, onAction }) => {
+  // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
+  // 现行 renderBlock 不传 children，走下面的 binding 取数。
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell title={title} testid="data-table">
+        <BlockEmpty hint="表格未绑定到有效实体" />
+      </BlockShell>
+    );
+  if (bound.rows.length === 0)
+    return (
+      <BlockShell title={title} testid="data-table">
+        <BlockEmpty hint="暂无数据 — 点「新建」写入第一条真实数据" />
+      </BlockShell>
+    );
+  // 列取自真实行的键（binding 只声明 entityRef，其余列由页面派生——
+  // 见 catalog 里 DataTable 的 bindingSchema note）。最多 5 列，够看不挤。
+  const cols = [...new Set(bound.rows.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 5);
+  return (
+    <BlockShell title={title} testid="data-table">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-[10px] text-stone-400">
+              {cols.map(c => (
+                <th key={c} className="border-b border-stone-100 px-2 py-1 font-normal">
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {bound.rows.slice(0, 8).map(r => (
+              <tr
+                key={r.id}
+                data-testid="data-table-row"
+                className="text-stone-700"
+                onClick={() => onAction?.("rowSelect", { rowId: r.id })}
+              >
+                {cols.map(c => (
+                  <td key={c} className="border-b border-stone-50 px-2 py-1">
+                    <span className="block max-w-[160px] truncate">
+                      {String(r.values?.[c] ?? "—")}
+                    </span>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {bound.rows.length > 8 && (
+          <div className="px-2 py-1 text-[10px] text-stone-400">
+            共 {bound.rows.length} 条，此处显示前 8 条
+          </div>
+        )}
+      </div>
+    </BlockShell>
+  );
+};
+
 export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   Record<string, ExperienceBlockRenderer>
 > = Object.freeze({
-  "metric-grid": ExistingContentAdapter,
-  "trend-chart": ExistingContentAdapter,
-  "ranked-list": ExistingContentAdapter,
-  "activity-feed": ExistingContentAdapter,
-  "data-table": ExistingContentAdapter,
+  // 2026-07-28：五个数据区块接真渲染（此前是 ExistingContentAdapter 占位）
+  "metric-grid": MetricGridRenderer,
+  "trend-chart": TrendChartRenderer,
+  "ranked-list": RankedListRenderer,
+  "activity-feed": ActivityFeedRenderer,
+  "data-table": DataTableRenderer,
   // Step 6：QuickActionPanel/FilterBar 真渲染（Phase 1）
   "quick-action-panel": QuickActionPanelRenderer,
   "filter-bar": FilterBarRenderer,

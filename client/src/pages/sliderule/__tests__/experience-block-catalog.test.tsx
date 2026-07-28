@@ -51,9 +51,14 @@ describe("Experience Block Catalog（二阶段目录骨架）", () => {
     expect(known).toContain("原有指标内容");
     expect(known).not.toContain("暂不支持");
 
-    const pending = renderToStaticMarkup(
+    // 2026-07-28：MetricGrid 等五个区块接了真渲染器（此前是 ExistingContentAdapter
+    // 占位，画一个"下一阶段接入"的灰框）。没 children 时不再是占位提示，而是
+    // 按 binding 取数；binding 缺失/绑不上就出诚实空态，说清楚缺的是什么。
+    const noBinding = renderToStaticMarkup(
       <ExperienceBlockBoundary block={{ id: "m", type: "MetricGrid" }} />
     );
-    expect(pending).toContain("区块已登记，内容将在下一阶段接入：MetricGrid");
+    expect(noBinding).toContain('data-testid="metric-grid"');
+    expect(noBinding).toContain("指标未绑定到有效实体");
+    expect(noBinding).not.toContain("下一阶段接入");
   });
 });

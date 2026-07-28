@@ -147,16 +147,28 @@ def test_generation_enabled_requires_real_renderer():
 
 
 def test_catalog_rejects_enabling_placeholder_block(monkeypatch):
-    """坏组合必须在加载期 fail-fast，不能带病进 prompt。"""
+    """坏组合必须在加载期 fail-fast，不能带病进 prompt。
+
+    2026-07-28：原来这里是"从真实目录里挑一个 placeholder 再打开开关"来造
+    坏数据。五个占位区块补上真渲染器之后目录里一个 placeholder 都没有了，
+    循环挑不到东西、坏组合根本没造出来，测试就变成了永远通过的空壳
+    （DID NOT RAISE 时才暴露）。改成显式合成一条坏区块——不变式的测试不该
+    依赖真实数据里恰好存在一个反例。
+    """
     import copy
 
     import pytest
 
     bad = copy.deepcopy(CATALOG)
-    for block in bad["blocks"]:
-        if block["rendererStatus"] == "placeholder":
-            block["generationEnabled"] = True
-            break
+    bad["blocks"].append(
+        {
+            **copy.deepcopy(bad["blocks"][0]),
+            "type": "__SyntheticPlaceholder__",
+            "rendererKey": "__synthetic-placeholder__",
+            "rendererStatus": "placeholder",
+            "generationEnabled": True,
+        }
+    )
     monkeypatch.setattr(schema_legal, "_BLOCK_CATALOG", bad)
     with pytest.raises(ValueError, match="放开了生成"):
         schema_legal._load_experience_blocks()
