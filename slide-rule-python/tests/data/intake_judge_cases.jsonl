@@ -34,3 +34,21 @@
 {"id":"pre_002","text":"在吗","hasApp":false,"expect":"meta","note":"precheck 确定性命中"}
 {"id":"pre_003","text":"？？？","hasApp":false,"expect":"vague","note":"precheck：纯标点"}
 {"id":"pre_004","text":"   ","hasApp":false,"expect":"vague","note":"precheck：空输入"}
+{"id":"cross_001","text":"另外再给我做一套幼儿园的接送打卡和过敏原管理","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real","note":"跨语境：已有应用但提的是完全无关的新领域。2026-07-28 真机复现——hasApp=true 时 real 不在候选判定里，模型只能判成 iteration"}
+{"id":"cross_002","text":"帮我做个农机租赁的调度系统，机主挂单、农户下单、作业验收","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real","note":"跨语境：信息完整的新需求，实测被判 vague 并弹提示条——误拦真需求"}
+{"id":"cross_003","text":"再帮我搭一个殡葬服务的治丧流程管理，家属对接和场地档期","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real"}
+{"id":"cross_004","text":"这个先放着，我想另外做个渔船出海报备和返港销号的系统","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real","note":"显式表示要换一件事做"}
+{"id":"cross_005","text":"想弄个把工地上的材料进场、领用和退料串起来的东西","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real","note":"跨语境 + 无载体名词双重难点"}
+{"id":"cross_006","text":"给牙科诊所做个种植牙病例跟踪，从面诊到复查提醒","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real"}
+{"id":"cross_007","text":"我们做无人机测绘的，想要一个飞手排期加空域申请的平台","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real"}
+{"id":"cross_008","text":"新开个话题：社区食堂订餐，老人预订、营养师配餐、志愿者配送","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real"}
+{"id":"cross_009","text":"废品回收站的过磅、分类计价和结算，能不能也做一套","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real"}
+{"id":"cross_iter_001","text":"现在这个审批链太长了，能不能金额小于5000的直接免审","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"iteration","note":"对照：加了跨语境规则后，真迭代不能被带偏成 real"}
+{"id":"cross_iter_002","text":"列表页每次都要重新筛一遍，加个保存筛选条件的功能","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"iteration","note":"对照"}
+{"id":"cross_iter_003","text":"现在只能看当月数据，想加个按季度和年度切换","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"iteration","note":"对照"}
+{"id":"cross_iter_004","text":"把导出的表格加上门店维度的小计","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"iteration","note":"对照：短祈使句"}
+{"id":"cross_iter_005","text":"再加一个中药饮片的批号追溯","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"iteration","note":"边界：同领域的新增能力，是迭代不是新应用——跟 cross_001~009 恰好相反"}
+{"id":"cross_meta_001","text":"你们这个引擎一次推演大概要多久","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"meta","note":"对照：已有应用时产品咨询仍要判 meta"}
+{"id":"cross_off_001","text":"顺便问下明天上海下雨吗","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"off_topic","note":"对照"}
+{"id":"cross_vague_001","text":"再搞个别的","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"vague","note":"对照：确实想做新的，但没说做什么——这才是该判 vague 的"}
+{"id":"cross_sym_001","text":"帮我做个农机租赁的调度系统，机主挂单、农户下单、作业验收","hasApp":false,"expect":"real","note":"对称对照：跟 cross_002 同一句话，空会话下必须判 real（用来隔离「是语境导致的还是句子本身导致的」）"}

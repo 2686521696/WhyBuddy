@@ -80,12 +80,40 @@ def test_precheck_catches_obvious_noise(text, verdict):
 
 # ── 判决与会话状态一致 ────────────────────────────────────────────
 
-def test_verdict_reconciled_with_session_state():
-    """空会话不可能是 iteration，有应用不可能是 real——模型判反了以状态为准。"""
+def test_empty_session_cannot_be_iteration():
+    """空会话判成 iteration 一定是错的——没有"现有应用"可改，这个方向安全收敛。"""
     payload = {"verdict": "iteration", "reason": "x", "confidence": 0.9}
     assert ij.judge_turn("社区宠物诊所预约系统", has_app=False, llm_json_fn=lambda _m: payload).verdict == "real"
-    payload2 = {"verdict": "real", "reason": "x", "confidence": 0.9}
-    assert ij.judge_turn("给这个应用加个报表页", has_app=True, llm_json_fn=lambda _m: payload2).verdict == "iteration"
+
+
+def test_has_app_does_not_force_real_into_iteration():
+    """有应用时判 real 必须原样保留。
+
+    回归（2026-07-28）：_coerce 里原本有一句 `real and has_app → iteration`，
+    假设"已经有应用就不可能再提新需求"。可用户完全可以在药店进销存应用旁边说
+    「另外再给我做一套幼儿园接送打卡」。实测 9/9 跨领域新需求被这行改写掉，
+    模型 reason 写着「属于全新需求」而 verdict 是 iteration，自相矛盾；其中 8 条
+    进一步退化成 vague 并弹提示条 —— 误拦真需求，本项目最贵的一类错。
+    """
+    payload = {"verdict": "real", "reason": "另一个业务领域", "confidence": 0.9}
+    j = ij.judge_turn(
+        "另外再给我做一套幼儿园的接送打卡和过敏原管理",
+        has_app=True,
+        app_summary="连锁药店进销存系统",
+        llm_json_fn=lambda _m: payload,
+    )
+    assert j.verdict == "real"
+    assert j.action == "proceed"  # 真需求不许弹提示条
+
+
+def test_cross_domain_rule_offered_only_when_app_exists():
+    """跨领域新需求这条规则只在"已有应用"时才需要——空会话本来就能判 real。"""
+    new_ids = {r.id for r in ij._applicable_rules(has_app=False)}
+    app_ids = {r.id for r in ij._applicable_rules(has_app=True)}
+    assert "new_unrelated_need" in app_ids and "new_unrelated_need" not in new_ids
+    # 两种语境下 real 都必须是可选判定，否则模型无从表达"这是个全新需求"
+    assert "real" in {r.verdict for r in ij._applicable_rules(has_app=True)}
+    assert "real" in {r.verdict for r in ij._applicable_rules(has_app=False)}
 
 
 def test_rules_are_scoped_to_session_state():
@@ -102,7 +130,12 @@ def test_prompt_carries_app_summary_when_present():
     """判「是不是真迭代」必须知道当前应用是什么，否则「加个杯测记录」无从判断。"""
     msgs = ij.build_messages("加个评分分布图", has_app=True, app_summary="焙鉴工坊：生豆库存与杯测")
     assert "焙鉴工坊" in msgs[0]["content"]
-    assert "iteration" in msgs[0]["content"] and "real" not in msgs[0]["content"].split("判定类别")[1][:200]
+    body = msgs[0]["content"]
+    # 有应用时 iteration 与 real 都得在候选里：只给 iteration 的话，用户提了个
+    # 全新领域的需求，模型连表达它的标签都没有（2026-07-28 实测根因之一）。
+    assert "iteration" in body and "real" in body
+    # 并且必须给出领域比对这一步，否则模型默认什么都往 iteration 靠
+    assert "业务领域" in body and "焙鉴工坊" in body
 
 
 # ── 第一版不阻断 ──────────────────────────────────────────────────

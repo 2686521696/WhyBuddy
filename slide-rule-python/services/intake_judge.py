@@ -164,16 +164,38 @@ _RULES: tuple[JudgeRule, ...] = (
         verdict="real",
     ),
     JudgeRule(
+        # 2026-07-28：已有应用时 real 压根不在候选判定里——模型只能在
+        # iteration/vague/meta/off_topic 里选，于是「另外再做一套幼儿园接送打卡」
+        # 这种全新领域的需求要么被塞进 iteration，要么被判 vague 弹提示条
+        # （误拦真需求）。实测 9/9 全错，8 条判 vague；模型自己在 reason 里写
+        # 「当前判定类别中没有"新建系统"选项」。这条规则就是把那个选项补回来。
+        # 优先级高于 iteration：先问"是不是同一件事"，再谈"是不是在改它"。
+        id="new_unrelated_need", scope="has_app", priority=75,
+        condition="虽然已经有一个应用，但这句话描述的是**另一个业务领域**的新需求"
+                  "（换了行业/换了对象/明说「另外做一套」「新开个话题」「这个先放着」）。"
+                  "判据是业务领域相不相干，不是句子长短：「再给我做一套幼儿园接送打卡」"
+                  "对一个药店进销存应用来说就是全新需求。"
+                  "注意与 iteration 的边界：同一领域内加功能（药店应用里「再加中药饮片"
+                  "批号追溯」）仍是 iteration，不是新需求。",
+        verdict="real",
+    ),
+    JudgeRule(
         id="iteration_on_current_app", scope="has_app", priority=70,
         condition="针对当前已生成的应用提修改、增删、追问或反馈。包括很短的祈使句"
                   "（「把侧栏改成深色」）、纯评价（「这个配色太素了」）、版本操作"
-                  "（「回到上一版」）——它们都不像需求描述，但都是有效迭代。",
+                  "（「回到上一版」）——它们都不像需求描述，但都是有效迭代。"
+                  "**前提是说的还是当前这个应用**：换了业务领域的走上面那条 real，"
+                  "不要因为「会话里已经有应用」就默认什么都算迭代。",
         verdict="iteration",
     ),
     JudgeRule(
         id="too_vague", scope="always", priority=40,
-        condition="确实是想做点什么，但信息少到无法开始（「做个系统」「帮我搞个东西」）。"
-                  "只有在既判不出具体业务、也判不出要改什么时才用这条。",
+        condition="确实是想做点什么，但信息少到无法开始（「做个系统」「帮我搞个东西」"
+                  "「再搞个别的」）。只有在既判不出具体业务、也判不出要改什么时才用这条。"
+                  "**说清了业务领域和主要环节就不算 vague**——角色、字段、页面这些细节"
+                  "本来就是推演过程要问的，不是入站门槛。实测教训：「农机租赁调度，机主"
+                  "挂单、农户下单、作业验收」被判 vague，理由是「缺少角色权限和验收流程」"
+                  "——那是推演的活，不是拦人的理由。",
         verdict="vague",
     ),
 )
@@ -204,11 +226,23 @@ def build_messages(text: str, *, has_app: bool, app_summary: str = "") -> list[d
         if has_app
         else "用户还没有任何应用，这是一轮全新的开始。"
     )
+    # 已有应用时先做一次领域比对再选类别。只把 real 加进候选还不够——实测
+    # 模型拿到候选后仍以 0.99 的置信度全判 iteration，因为"会话里已经有应用"
+    # 这句铺垫压过了一切。必须把比对写成一个显式步骤，模型才会真去比。
+    domain_step = (
+        "\n\n判之前先做一步：把用户这句话说的**业务领域**跟上面那个应用比一比。\n"
+        "  - 不是同一个领域（换了行业、换了服务对象、或明说「另外做一套」「新开个话题」）"
+        "→ 这是 real，一个全新需求，跟现有应用无关。\n"
+        "  - 是同一个领域（在现有应用上加功能、改规则、调页面）→ 这才是 iteration。\n"
+        f"当前应用的领域是：{app_summary or '（未提供摘要，此时按语义判断）'}"
+        if has_app
+        else ""
+    )
     system = (
         "你是一个推演产品的入站判定器。这个产品把用户一句话的业务需求推演成"
         "可运行的系统（含数据模型、权限、流程、页面）。一轮推演成本很高，"
         "所以要先判断这一轮输入属于哪一类。\n\n"
-        f"当前会话状态：{context}\n\n"
+        f"当前会话状态：{context}{domain_step}\n\n"
         f"判定类别（只能选其一）：\n{_rules_block(has_app)}\n\n"
         "输出严格的 JSON，不要任何解释文字或代码块标记：\n"
         "{\n"
@@ -239,11 +273,16 @@ def _coerce(payload: dict[str, Any], *, has_app: bool) -> Judgement:
     verdict = str(payload.get("verdict") or "").strip()
     if verdict not in _VALID_VERDICTS:
         raise ValueError(f"verdict 非法: {verdict[:40]!r}")
-    # 判决与会话状态矛盾时以状态为准：空会话不可能是 iteration，反之亦然。
+    # 空会话不可能是 iteration——没有"现有应用"可改，这个方向的收敛是安全的。
     if verdict == "iteration" and not has_app:
         verdict = "real"
-    elif verdict == "real" and has_app:
-        verdict = "iteration"
+    # 反方向**不能**收敛（2026-07-28 移除）：原来这里有一句
+    #     elif verdict == "real" and has_app: verdict = "iteration"
+    # 它假设"已经有应用了就不可能再提新需求"，可用户完全可以在一个药店进销存
+    # 应用旁边说「另外再给我做一套幼儿园接送打卡」。实测 9/9 跨领域新需求全被
+    # 这行改写掉——模型 reason 里明明白白写着「属于全新需求」，verdict 却被
+    # 覆盖成 iteration，理由和标签自相矛盾。规则表把 real 加回候选也没用，
+    # 因为改写发生在模型输出之后。判"是不是同一件事"是模型的活，不是这里的。
     try:
         confidence = float(payload.get("confidence"))
     except (TypeError, ValueError):

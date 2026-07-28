@@ -75,7 +75,13 @@ def main() -> int:
     for case in cases:
         for _ in range(args.repeat):
             t0 = time.time()
-            j = judge_turn(case["text"], has_app=bool(case.get("hasApp")))
+            # appSummary 必须跟着传：跨语境用例（已有应用 + 全新领域需求）
+            # 判的就是"这句话跟当前应用是不是一回事"，不给摘要就无从比较。
+            j = judge_turn(
+                case["text"],
+                has_app=bool(case.get("hasApp")),
+                app_summary=str(case.get("appSummary") or ""),
+            )
             dt = time.time() - t0
             elapsed.append(dt)
             total += 1
