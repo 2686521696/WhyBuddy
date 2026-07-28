@@ -1,6 +1,9 @@
 // antd v5 官方 React 19 兼容补丁（message/Modal 静态方法、wave 效果等
 // 依赖的 ReactDOM render 适配）——必须在任何 antd 组件渲染前引入一次。
 import "@ant-design/v5-patch-for-react-19";
+// antd-mobile 的同类补丁。官方补丁包只覆盖 antd，antd-mobile 是另一套
+// unstableSetRender registry，盖不到——手机档 Picker/Dialog 会真的抛错。
+import "./lib/antd-mobile-react19-patch";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
