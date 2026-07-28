@@ -23,11 +23,13 @@ function render(
   rendererKey: string,
   block: ExperienceBlockInstance,
   entityRows?: Record<string, RuntimeRow[]>,
-  children?: React.ReactNode
+  children?: React.ReactNode,
+  /** 额外的渲染器入参（enumOptionsOf / fieldLabelOf 这类查询函数） */
+  extra?: Record<string, unknown>
 ) {
   const R = EXPERIENCE_BLOCK_RENDERERS[rendererKey];
   return renderToStaticMarkup(
-    <R block={block} entityRows={entityRows}>
+    <R block={block} entityRows={entityRows} {...extra}>
       {children}
     </R>
   );
@@ -201,6 +203,69 @@ describe("DataTable", () => {
       binding: { entityRef: "order" },
     }, { order: [] });
     expect(html).toContain("点「新建」写入第一条真实数据");
+  });
+});
+
+describe("接 antd 之后的三条不许退回去（2026-07-28 重构）", () => {
+  // 这三条都是对照台（/block-gallery.html）上肉眼逮到的，不是想出来的：
+  // 手写样式时它们全都"看着能跑"，但颜色跟应用主题无关、枚举出的是取值 id。
+  const src = () =>
+    import("../block-registry.tsx?raw").then(
+      m => (m as unknown as { default: string }).default
+    );
+
+  it("ActivityFeed 的等级出声明里的 label，不是取值 id", () => {
+    const html = render(
+      "activity-feed",
+      {
+        id: "b",
+        type: "ActivityFeed",
+        binding: { entityRef: "order", timeFieldRef: "at", levelFieldRef: "level" },
+      },
+      { order: [row("o1", { name: "甲", at: "2026-07-01", level: "frozen" })] },
+      undefined,
+      { enumOptionsOf: () => [{ id: "frozen", label: "已冻结", tone: "danger" }] }
+    );
+    expect(html).toContain("已冻结");
+    expect(html).not.toContain("frozen");
+  });
+
+  it("DataTable 列头出中文显示名，枚举列出标签", () => {
+    const html = render(
+      "data-table",
+      { id: "b", type: "DataTable", binding: { entityRef: "order" } },
+      { order: [row("o1", { lot_code: "RR-1", status: "frozen" })] },
+      undefined,
+      {
+        fieldLabelOf: (_e: string, f: string) =>
+          ({ lot_code: "批次编码", status: "库存状态" })[f],
+        enumOptionsOf: (_e: string, f: string) =>
+          f === "status" ? [{ id: "frozen", label: "已冻结", tone: "danger" }] : [],
+      }
+    );
+    expect(html).toContain("批次编码");
+    expect(html).toContain("已冻结");
+  });
+
+  it("排行的条与名次标签取主题 token，不写死颜色", async () => {
+    const s = await src();
+    // Progress 在 percent>=100 时会自动变 success 绿，必须显式给 strokeColor，
+    // 否则第一名永远是绿的、跟应用主题无关
+    expect(s).toContain("strokeColor={token.colorPrimary}");
+    // color="processing" 是 antd 固定语义蓝，不跟 colorPrimary
+    expect(s).not.toContain('color={i < 3 ? "processing"');
+    // 手写时代残留的靛蓝硬编色值不许回来。只查**用法**不查散文——注释里
+    // 还留着这两个色值在讲当年为什么要换掉，一刀切会把那段历史也禁了
+    expect(s).not.toMatch(/(bg|text|border)-\[#5b6cff\]/);
+    expect(s).not.toMatch(/(bg|text|border)-\[#3b5bdb\]/);
+  });
+
+  it("等级颜色走声明的 tone，不靠关键词猜", async () => {
+    const s = await src();
+    expect(s).toContain("toneTimelineColor");
+    // 第一版那个中英文关键词猜测器：枚举是 available/frozen 这种英文 id 时
+    // 一条都命中不了，八个节点全同色
+    expect(s).not.toContain("levelTimelineColor");
   });
 });
 

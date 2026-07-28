@@ -14,7 +14,20 @@
  * 两边说法一旦分家，就会重演"放开了却渲染成惰性占位卡"的事故。
  */
 import React from "react";
-import { Button, Select, Statistic } from "antd";
+import {
+  Button,
+  Card,
+  Empty,
+  List,
+  Progress,
+  Select,
+  Statistic,
+  Table,
+  Tag,
+  theme as antdTheme,
+  Timeline,
+  Typography,
+} from "antd";
 // WorkflowTimeline 自己的节点箭头（组件 UI，用静态 import；freeform 的
 // 动态图标解析走下面的 AntdIcons 命名空间 + 目录别名表，两回事）。
 import { ArrowRightOutlined } from "@ant-design/icons";
@@ -35,6 +48,18 @@ export type EnumOptionsLookup = (
   entityId: string,
   fieldId: string
 ) => NormalizedFieldOption[];
+
+/**
+ * 字段显示名的按需查询（entityId + fieldId → 中文名）。
+ *
+ * DataTable 的列头本来直接打印字段 id（`lot_code` / `supplier_id`），跟同页
+ * 其它表格的中文列名坐在一起格外刺眼。列定义在模型里，区块渲染器手里没有，
+ * 所以跟 enumOptionsOf 一样按需查。查不到回落字段 id（不猜、不留空）。
+ */
+export type FieldLabelLookup = (
+  entityId: string,
+  fieldId: string
+) => string | undefined;
 import {
   buildFeedRows,
   buildRankedRows,
@@ -163,6 +188,8 @@ export interface ExperienceBlockRendererProps {
    * 空数组，图例回落原值。
    */
   enumOptionsOf?: EnumOptionsLookup;
+  /** DataTable 专用：字段 id → 显示名，用于列头（2026-07-28）。 */
+  fieldLabelOf?: FieldLabelLookup;
 }
 
 export type ExperienceBlockRenderer =
@@ -716,7 +743,20 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = ({
 //    Statistic：它本身就是 antd Statistic 的薄包装，只加 icon/描述/趋势，
 //    格式化从不自己写）。
 
-/** 区块外壳：统一标题与留白，让五个区块在槽位里排起来是一套东西。 */
+/**
+ * 区块外壳：统一标题与留白，让区块在槽位里排起来是一套东西。
+ *
+ * 用 antd Card 而不是手写 div（原来是
+ * `rounded border border-stone-200 bg-white px-3 py-2`，本质就是个简陋版
+ * Card）。换过来的实际收益不是"少写几行"，是三件手写版做不到的事：
+ *
+ * 1. **吃主题**。外层 ConfigProvider 把 colorPrimary 设成了这个应用的身份
+ *    主题色，antd 组件自动跟随；手写的 stone-200/白底不认这套，于是琥珀色
+ *    的咖啡应用里混着一堆中性灰卡片。
+ * 2. **吃 algorithm**。深色/紧凑/高对比是通过 antd 的 theme algorithm 全局
+ *    切的，手写色值在深色模式下就是一块白斑。
+ * 3. 头部/描边/圆角/hover 跟页面里其余 antd 组件严丝合缝，不用手动对齐。
+ */
 function BlockShell({
   title,
   testid,
@@ -728,28 +768,39 @@ function BlockShell({
   extra?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const hasHeader = Boolean(title || extra);
   return (
-    <div
+    <Card
       data-testid={testid}
-      className="rounded border border-stone-200 bg-white px-3 py-2"
+      size="small"
+      title={title ? <span style={{ fontSize: 13 }}>{title}</span> : undefined}
+      extra={extra}
+      // 没标题时去掉 body 的额外内边距，免得纯图表区块上下各空一截
+      styles={{ body: { padding: hasHeader ? 12 : 10 } }}
+      style={{ height: "100%" }}
     >
-      {(title || extra) && (
-        <div className="mb-2 flex items-center gap-2">
-          {title && (
-            <span className="text-xs font-medium text-stone-500">{title}</span>
-          )}
-          {extra && <span className="ml-auto">{extra}</span>}
-        </div>
-      )}
       {children}
-    </div>
+    </Card>
   );
 }
 
-/** 空态：说清楚"为什么没有"，不是一句冷冰冰的暂无数据。 */
+/**
+ * 空态：说清楚"为什么没有"，不是一句冷冰冰的暂无数据。
+ *
+ * 用 antd Empty 拿到统一的插画与留白；description 仍然是我们自己写的那句
+ * 具体原因——Empty 默认文案是「暂无数据」，正是这里最不该出现的话。
+ */
 function BlockEmpty({ hint }: { hint: string }) {
   return (
-    <div className="px-2 py-5 text-center text-xs text-stone-400">{hint}</div>
+    <Empty
+      image={Empty.PRESENTED_IMAGE_SIMPLE}
+      styles={{ image: { height: 40 } }}
+      description={
+        <span style={{ fontSize: 12, color: "var(--sr-text-muted, #8c8c8c)" }}>
+          {hint}
+        </span>
+      }
+    />
   );
 }
 
@@ -888,6 +939,8 @@ const TrendChartRenderer: ExperienceBlockRenderer = ({
 };
 
 const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRows, onAction }) => {
+  // 取当前生效的主题 token：区块要跟应用的身份主题同色，写死色值做不到
+  const { token } = antdTheme.useToken();
   // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
   // 现行 renderBlock 不传 children，走下面的 binding 取数。
   if (children !== undefined && children !== null) return <>{children}</>;
@@ -917,40 +970,78 @@ const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
   const max = Math.max(...items.map(i => Math.abs(i.value)), 1);
   return (
     <BlockShell title={title} testid="ranked-list">
-      <div className="flex flex-col gap-1.5">
-        {items.map((item, i) => (
-          <div
-            key={item.row.id}
+      <List
+        size="small"
+        split={false}
+        dataSource={items}
+        renderItem={(item, i) => (
+          <List.Item
             data-testid="ranked-list-item"
-            className="flex items-center gap-2 text-xs"
+            style={{ padding: "4px 0", cursor: onAction ? "pointer" : undefined }}
             onClick={() => onAction?.("itemSelect", { rowId: item.row.id })}
           >
-            <span
-              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-semibold ${
-                i < 3 ? "bg-[#e8eeff] text-[#3b5bdb]" : "bg-stone-100 text-stone-400"
-              }`}
-            >
-              {i + 1}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-stone-700">{item.label}</span>
-            {/* 条形只是相对长度，真值仍然写在右边——只给条不给数看不出量级 */}
-            <span className="h-1.5 w-16 shrink-0 overflow-hidden rounded bg-stone-100">
-              <span
-                className="block h-full rounded bg-[#5b6cff]"
-                style={{ width: `${Math.round((Math.abs(item.value) / max) * 100)}%` }}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
+              {/* 前三名用主题色实心徽标，其余中性——名次的强弱靠颜色区分，
+                  但颜色取自 token，不再是写死的靛蓝（那会跟应用主题色打架） */}
+              {/* 前三名用主题色，其余中性。
+                  不能用 color="processing"——那是 antd 的固定语义蓝，不跟
+                  colorPrimary 走；对照台上切成琥珀主题后名次标签仍然是蓝的。 */}
+              <Tag
+                color={i < 3 ? token.colorPrimary : undefined}
+                style={{
+                  marginInlineEnd: 0,
+                  minWidth: 22,
+                  textAlign: "center",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {i + 1}
+              </Tag>
+              <Typography.Text
+                ellipsis={{ tooltip: item.label }}
+                style={{ flex: 1, minWidth: 0, fontSize: 12 }}
+              >
+                {item.label}
+              </Typography.Text>
+              {/* 条形只是相对长度，真值仍然写在右边——只给条不给数看不出量级。
+                  Progress 自带主题色与无障碍语义，比手写的 span 条强。 */}
+              {/* strokeColor 必须显式给：Progress 在 percent>=100 时会自动切成
+                  success 绿，于是排行第一名的条永远是绿的、其余是默认蓝，
+                  跟应用主题色全无关系（对照台上一眼看得出）。 */}
+              <Progress
+                percent={Math.round((Math.abs(item.value) / max) * 100)}
+                showInfo={false}
+                size={["small", 6]}
+                strokeColor={token.colorPrimary}
+                trailColor={token.colorFillSecondary}
+                style={{ width: 72, marginBottom: 0 }}
               />
-            </span>
-            <span className="w-12 shrink-0 text-right tabular-nums text-stone-500">
-              {Number.isInteger(item.value) ? item.value : item.value.toFixed(1)}
-            </span>
-          </div>
-        ))}
-      </div>
+              <Typography.Text
+                type="secondary"
+                style={{
+                  width: 52,
+                  textAlign: "right",
+                  fontSize: 12,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {Number.isInteger(item.value) ? item.value : item.value.toFixed(1)}
+              </Typography.Text>
+            </div>
+          </List.Item>
+        )}
+      />
     </BlockShell>
   );
 };
 
-const ActivityFeedRenderer: ExperienceBlockRenderer = ({ children, block, entityRows, onAction }) => {
+const ActivityFeedRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  enumOptionsOf,
+}) => {
   // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
   // 现行 renderBlock 不传 children，走下面的 binding 取数。
   if (children !== undefined && children !== null) return <>{children}</>;
@@ -963,11 +1054,15 @@ const ActivityFeedRenderer: ExperienceBlockRenderer = ({ children, block, entity
         <BlockEmpty hint="动态未绑定到有效的时间字段" />
       </BlockShell>
     );
-  const items = buildFeedRows(
-    bound.rows,
-    timeField,
-    String(block.binding?.levelFieldRef ?? "").trim() || undefined
-  );
+  const levelField = String(block.binding?.levelFieldRef ?? "").trim() || undefined;
+  const items = buildFeedRows(bound.rows, timeField, levelField);
+  // 等级字段的取值声明：拿它把 `available` 显示成「可用」，并用声明里的 tone
+  // 决定节点颜色。查不到就原样显示取值，不猜。
+  const levelDecl = levelField
+    ? new Map(
+        (enumOptionsOf?.(bound.entityRef, levelField) ?? []).map(o => [o.id, o])
+      )
+    : null;
   if (items.length === 0)
     return (
       <BlockShell title={title} testid="activity-feed">
@@ -976,32 +1071,90 @@ const ActivityFeedRenderer: ExperienceBlockRenderer = ({ children, block, entity
     );
   return (
     <BlockShell title={title} testid="activity-feed">
-      <div className="flex flex-col gap-2">
-        {items.map(item => (
-          <div
-            key={item.row.id}
-            data-testid="activity-feed-item"
-            className="flex items-start gap-2 text-xs"
-            onClick={() => onAction?.("itemSelect", { rowId: item.row.id })}
-          >
-            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5b6cff]" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-stone-700">{item.title}</span>
-              <span className="text-[10px] text-stone-400">{item.dateKey}</span>
-            </span>
-            {item.level && (
-              <span className="shrink-0 rounded bg-stone-100 px-1.5 py-0.5 text-[10px] text-stone-500">
-                {item.level}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* 动态流就是 Timeline 的原型用法：一条时间轴串起按时间倒序的事件。
+          手写版是"小圆点 + 两行字"，横向 90% 是空白、圆点还写死 #5b6cff，
+          在琥珀色主题的应用里格外扎眼。Timeline 的轴线与节点都吃主题 token。 */}
+      {/* Timeline 默认每项 padding-bottom:20px，8 条动态就有 480px 高，把总览页
+          首屏吃光。收紧到 10px 后既保留时间轴的形态，密度又跟旧版相当。
+
+          用**逐项 inline style**而不是 Tailwind 的 `[&_.ant-timeline-item]:pb-2.5`：
+          试过了，不生效——antd v5 的 CSS-in-JS 在运行时往 head 注样式，
+          跟 Tailwind 工具类同为 (0,2,0) 特异性，注入顺序又在后面，于是赢的
+          是 antd。inline style 直接压过样式表，不用跟特异性较劲。 */}
+      <Timeline
+        style={{ marginTop: 4, marginBottom: 0 }}
+        items={items.map((item, i) => {
+          const decl = item.level ? levelDecl?.get(item.level) : undefined;
+          return {
+          // 最后一项去掉底部 padding，免得卡片底下空一截
+          style: { paddingBottom: i === items.length - 1 ? 0 : 10 },
+          key: item.row.id,
+          // 用声明里的 tone 着色，把"这条是什么性质"直接画在轴上
+          color: toneTimelineColor(decl?.tone),
+          children: (
+            <div
+              data-testid="activity-feed-item"
+              style={{ cursor: onAction ? "pointer" : undefined }}
+              onClick={() => onAction?.("itemSelect", { rowId: item.row.id })}
+            >
+              {/* 标签紧跟在标题后面。第一版给标题加了 flex:1 又限了 maxWidth，
+                  结果标签被推到 520px 那个边界上，孤零零飘在行中间——比原来
+                  贴右边还怪。这里不给 flex，标题按内容宽度收缩（长了才省略），
+                  标签自然紧随其后。 */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Typography.Text
+                  ellipsis={{ tooltip: item.title }}
+                  style={{ maxWidth: 320, fontSize: 12 }}
+                >
+                  {item.title}
+                </Typography.Text>
+                {item.level && (
+                  // 出声明里的 label（「可用」），不是取值 id（`available`）
+                  <Tag style={{ marginInlineEnd: 0, fontSize: 11 }}>
+                    {decl?.label ?? item.level}
+                  </Tag>
+                )}
+              </div>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                {item.dateKey}
+              </Typography.Text>
+            </div>
+          ),
+          };
+        })}
+      />
     </BlockShell>
   );
 };
 
-const DataTableRenderer: ExperienceBlockRenderer = ({ children, block, entityRows, onAction }) => {
+/**
+ * 枚举 tone → Timeline 节点颜色。
+ *
+ * 第一版在这里写了个**关键词猜测器**（匹配「冻结/异常/warn/pending」之类），
+ * 对照台一跑就露馅：枚举取值是 `available` / `frozen` 这种英文 id，中文规则
+ * 一条都没命中，八个节点全是同一个颜色，等于白写。
+ *
+ * 真正的问题是不该猜——模型声明里每个枚举取值本来就带 `tone`
+ *（success/processing/warning/danger/default，见 five_system_legal.json，
+ * 而且门禁校验过）。同一份 tone 已经在驱动表格里的彩色标签，这里直接复用，
+ * 颜色语义天然跟页面其它地方一致。
+ */
+function toneTimelineColor(tone: string | undefined): string {
+  if (tone === "danger") return "red";
+  if (tone === "warning") return "orange";
+  if (tone === "success") return "green";
+  // processing / default / 查不到 → 主题色（antd 的 "blue" 走 colorPrimary）
+  return "blue";
+}
+
+const DataTableRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+}) => {
   // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
   // 现行 renderBlock 不传 children，走下面的 binding 取数。
   if (children !== undefined && children !== null) return <>{children}</>;
@@ -1022,44 +1175,55 @@ const DataTableRenderer: ExperienceBlockRenderer = ({ children, block, entityRow
   // 列取自真实行的键（binding 只声明 entityRef，其余列由页面派生——
   // 见 catalog 里 DataTable 的 bindingSchema note）。最多 5 列，够看不挤。
   const cols = [...new Set(bound.rows.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 5);
+  const columns = cols.map(c => {
+    // 枚举列出标签不出取值 id：同一份数据在页面自带表格里是「已冻结」，
+    // 在区块里却是 `frozen`，坐在一起就露馅了
+    const options = enumOptionsOf?.(bound.entityRef, c) ?? [];
+    const labelOf = new Map(options.map(o => [o.id, o.label]));
+    return {
+      key: c,
+      dataIndex: c,
+      title: fieldLabelOf?.(bound.entityRef, c) ?? c,
+      ellipsis: true,
+      render: (_: unknown, row: RuntimeRow) => {
+        const raw = row.values?.[c];
+        const s = String(raw ?? "").trim();
+        if (!s) return <Typography.Text type="secondary">—</Typography.Text>;
+        return labelOf.get(s) ?? s;
+      },
+    };
+  });
   return (
-    <BlockShell title={title} testid="data-table">
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-left text-[10px] text-stone-400">
-              {cols.map(c => (
-                <th key={c} className="border-b border-stone-100 px-2 py-1 font-normal">
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {bound.rows.slice(0, 8).map(r => (
-              <tr
-                key={r.id}
-                data-testid="data-table-row"
-                className="text-stone-700"
-                onClick={() => onAction?.("rowSelect", { rowId: r.id })}
-              >
-                {cols.map(c => (
-                  <td key={c} className="border-b border-stone-50 px-2 py-1">
-                    <span className="block max-w-[160px] truncate">
-                      {String(r.values?.[c] ?? "—")}
-                    </span>
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {bound.rows.length > 8 && (
-          <div className="px-2 py-1 text-[10px] text-stone-400">
-            共 {bound.rows.length} 条，此处显示前 8 条
-          </div>
-        )}
-      </div>
+    <BlockShell
+      title={title}
+      testid="data-table"
+      // 截断如实说在标题栏，不再是表格底下一行灰字（那行容易被当成数据）
+      extra={
+        bound.rows.length > 8 ? (
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            共 {bound.rows.length} 条，显示前 8 条
+          </Typography.Text>
+        ) : undefined
+      }
+    >
+      {/* 换 antd Table：拿到省略号 tooltip、粘性表头、紧凑尺寸与主题描边，
+          手写 <table> 这些都得自己补，而且列头字号/颜色跟同页别的表格对不齐 */}
+      <Table
+        size="small"
+        rowKey="id"
+        columns={columns}
+        dataSource={bound.rows.slice(0, 8)}
+        pagination={false}
+        // 不给 scroll.x：区块是页面里的一块，横向滚动条藏在卡片里没人会去拉，
+        // 对照台上表格直接被卡片右边缘切掉、最后一列看不见。列共享可用宽度 +
+        // 省略号（有 tooltip）才是这个尺寸下该有的行为。
+        tableLayout="fixed"
+        onRow={row => ({
+          "data-testid": "data-table-row",
+          onClick: () => onAction?.("rowSelect", { rowId: row.id }),
+          style: { cursor: onAction ? "pointer" : undefined },
+        })}
+      />
     </BlockShell>
   );
 };

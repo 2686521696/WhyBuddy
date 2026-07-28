@@ -753,6 +753,21 @@ export function AppRuntimeScreen({
     [model]
   );
 
+  /**
+   * 字段显示名查询，给 DataTable 区块的列头用（2026-07-28）。
+   *
+   * 区块渲染器手里只有 binding.entityRef 和运行时行数据，没有字段定义，
+   * 于是列头一直在打印字段 id（`lot_code`），跟同页其它表格的中文列名
+   * 坐在一起格外刺眼。查不到回落 undefined，渲染器自己退回字段 id。
+   */
+  const fieldLabelOf = React.useCallback(
+    (entityId: string, fieldId: string) =>
+      model?.datamodel?.entities
+        ?.find(e => e.id === entityId)
+        ?.fields?.find(f => f.id === fieldId)?.name || undefined,
+    [model]
+  );
+
   const apply = (next: RuntimeState) => {
     setState(next);
     saveRuntimeState(sessionId, next);
@@ -1385,6 +1400,7 @@ export function AppRuntimeScreen({
               categorical: identityTheme.charts,
             }}
             enumOptionsOf={enumOptionsOf}
+            fieldLabelOf={fieldLabelOf}
           />
         );
 
@@ -2502,6 +2518,7 @@ export function AppRuntimeScreen({
           categorical: identityTheme.charts,
         }}
         enumOptionsOf={enumOptionsOf}
+        fieldLabelOf={fieldLabelOf}
       />
     </div>
   ) : null;
