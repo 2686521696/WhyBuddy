@@ -1,31 +1,7 @@
 {
   "source": "TRAE 官方技能市场精选（用户提供清单，2026-07-09）",
-  "note": "官方/大厂出品的开源 Skill，安装后按语义档案（名称+描述）驱动本产品 LLM 通道试跑 ｜ 2026-07-27：下架 18 条开发者工具类技能（部署/CLI/Git/技术栈规范/MCP 开发），并给每条标注消费通道 channel——aigc=能绑到真实实体字段、experience=生成期设计指导走体验层、unbound=未验证出字段绑定只作软参考。依据 docs/skills-triage.jsonl。",
+  "note": "官方/大厂出品的开源 Skill，安装后按语义档案（名称+描述）驱动本产品 LLM 通道试跑 ｜ 2026-07-27：下架 18 条开发者工具类技能（部署/CLI/Git/技术栈规范/MCP 开发），并给每条标注消费通道 channel——aigc=能绑到真实实体字段、experience=生成期设计指导走体验层。依据 docs/skills-triage.jsonl。 另下架 31 条 unbound（开发者/Agent 工具、本地硬件工具、开发流程辅助）：装了不产出任何东西，只在 prompt 里留一句软参考，占着精选位却帮不上用户。",
   "items": [
-    {
-      "id": "alipay-payment-integration",
-      "name": "alipay-payment-integration",
-      "description": "支付宝支付产品接入最佳实践指南，涵盖从线下到线上的全场景支付。",
-      "author": "Alipay",
-      "category": "开发工具",
-      "channel": "unbound"
-    },
-    {
-      "id": "douyin-interact-creation",
-      "name": "douyin-interact-creation",
-      "description": "辅助创作符合平台标准的互动空间作品，保证产物可顺利上传以及在抖音的运行效果。",
-      "author": "Douyin",
-      "category": "开发工具",
-      "channel": "unbound"
-    },
-    {
-      "id": "douyin-interactive-content-publish",
-      "name": "douyin-interactive-content-publish",
-      "description": "Supports the full publishing workflow of interactive space creations on Douyin, with automatic configuration parsing and completion upon user confirmation for simplified operation.",
-      "author": "Douyin",
-      "category": "开发工具",
-      "channel": "unbound"
-    },
     {
       "id": "frontend-design",
       "name": "frontend-design",
@@ -55,14 +31,6 @@
         ],
         "outputType": "text"
       }
-    },
-    {
-      "id": "data-analysis",
-      "name": "data-analysis",
-      "description": "分析 Excel 和 CSV 文件，支持多工作表、聚合、过滤、关联查询及导出为 CSV/JSON/Markdown。",
-      "author": "Bytedance",
-      "category": "数据分析",
-      "channel": "unbound"
     },
     {
       "id": "hook-analyzer-skill",
@@ -232,30 +200,6 @@
       "channel": "experience"
     },
     {
-      "id": "hyperframes-media",
-      "name": "hyperframes-media",
-      "description": "视频资产预处理，包括用 Kokoro 生成 TTS 旁白音频、用 Whisper 转录字幕、用 u2net 去除视频或图片背景。",
-      "author": "Heygen",
-      "category": "内容创作",
-      "channel": "unbound"
-    },
-    {
-      "id": "hyperframes-registry",
-      "name": "hyperframes-registry",
-      "description": "通过 hyperframes add 安装并接入官方预制的 block 和 component，快速复用标准化视觉模块。",
-      "author": "Heygen",
-      "category": "内容创作",
-      "channel": "unbound"
-    },
-    {
-      "id": "json-canvas",
-      "name": "json-canvas",
-      "description": "创建和编辑包含节点、边、分组和连接的 JSON Canvas 文件，用于可视化画布和思维导图。",
-      "author": "Obsidian",
-      "category": "内容创作",
-      "channel": "unbound"
-    },
-    {
       "id": "knowledge-capture",
       "name": "knowledge-capture",
       "description": "将对话和讨论转化为结构化的 Notion 文档页面，并有序保存至 Wiki 或数据库，便于检索。",
@@ -285,23 +229,6 @@
       }
     },
     {
-      "id": "obsidian-bases",
-      "name": "obsidian-bases",
-      "description": "创建和编辑 Obsidian Bases（.base 文件），支持视图、过滤、公式和摘要，实现类数据库的笔记管理。",
-      "author": "Obsidian",
-      "category": "内容创作",
-      "channel": "unbound",
-      "channelNote": "管理 .base 笔记文件，读写的是文件不是业务实体字段"
-    },
-    {
-      "id": "obsidian-markdown",
-      "name": "obsidian-markdown",
-      "description": "编写和编辑 Obsidian 风格的 Markdown，支持 wikilinks、嵌入、callout、属性等 Obsidian 专有语法。",
-      "author": "Obsidian",
-      "category": "内容创作",
-      "channel": "unbound"
-    },
-    {
       "id": "ppt-page",
       "name": "ppt-page",
       "description": "Create polished scrollable HTML presentation pages from outlines, articles, screenshots, or deck content, with slide cards, captions, fullscreen review, validation, and optional PPTX/PDF export on request.",
@@ -318,62 +245,12 @@
       "channel": "experience"
     },
     {
-      "id": "research-documentation",
-      "name": "research-documentation",
-      "description": "搜索整个 Notion 工作区，整合研究结果，并将综合报告保存为新的 Notion 页面。",
-      "author": "Notion",
-      "category": "内容创作",
-      "channel": "unbound"
-    },
-    {
       "id": "slides",
       "name": "slides",
       "description": "使用布局辅助和验证工具构建与编辑 PowerPoint 演示文稿（.pptx），支持图表、视觉元素及布局问题诊断。",
       "author": "OpenAI",
       "category": "内容创作",
       "channel": "experience"
-    },
-    {
-      "id": "spec-to-implementation",
-      "name": "spec-to-implementation",
-      "description": "将产品或技术规格拆解为带验收标准和进度追踪的详细 Notion 实施任务。",
-      "author": "Notion",
-      "category": "内容创作",
-      "channel": "unbound"
-    },
-    {
-      "id": "brainstorming",
-      "name": "brainstorming",
-      "description": "在任何创作、功能开发或行为修改前，先探索用户意图、需求和设计方向。",
-      "author": "obra",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
-      "id": "dogfood",
-      "name": "dogfood",
-      "description": "系统化地对 Web 应用进行内部试用和质量测试，输出含截图、复现视频和详细步骤的结构化缺陷报告。",
-      "author": "Vercel",
-      "category": "效率提升",
-      "channel": "unbound",
-      "channelNote": "输入是运行中的 Web 应用（点击/截图），不是实体字段"
-    },
-    {
-      "id": "electron",
-      "name": "electron",
-      "description": "通过 Chrome DevTools Protocol 使用 agent-browser 自动化 Electron 桌面应用（VS Code、Slack、Discord、Figma 等）。",
-      "author": "Vercel",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
-      "id": "executing-plans",
-      "name": "executing-plans",
-      "description": "在独立会话中按书面实施计划执行，并设有结构化的阶段审查节点。",
-      "author": "obra",
-      "category": "效率提升",
-      "channel": "unbound",
-      "channelNote": "按实施计划在独立会话里干活，是流程编排不是字段读写"
     },
     {
       "id": "internal-comms",
@@ -404,30 +281,6 @@
       }
     },
     {
-      "id": "local-computer-use",
-      "name": "local-computer-use",
-      "description": "Utilize local computing power to control your Windows system (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
-      "id": "local-img2img",
-      "name": "local-img2img",
-      "description": "Image modification based on local AI large model (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
-      "id": "local-mineru",
-      "name": "local-mineru",
-      "description": "Document parsing of PDFs and images based on local AI large model (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
       "id": "local-ocr-npu",
       "name": "local-ocr-npu",
       "description": "High-speed text extraction from images using local Intel NPU computing power (Support for mixing Chinese and English)",
@@ -442,22 +295,6 @@
       }
     },
     {
-      "id": "local-realtime-translator",
-      "name": "local-realtime-translator",
-      "description": "Real-time translation between Chinese and English based on local AI large model (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
-      "id": "local-screenshot-qa",
-      "name": "local-screenshot-qa",
-      "description": "Image understanding and answering image-related questions based on local AI large model (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
       "id": "local-tts",
       "name": "local-tts",
       "description": "Text-to-speech conversion with cloned accents such as Northeastern and Sichuanese dialects based on local AI large model (Intel AIPC Platform Only)",
@@ -470,47 +307,6 @@
         ],
         "outputType": "string"
       }
-    },
-    {
-      "id": "local-txt2img",
-      "name": "local-txt2img",
-      "description": "Text-to-image generation based on local AI large model (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
-      "id": "local-vram",
-      "name": "local-vram",
-      "description": "Adjust the maximum limit of integrated graphics shared memory (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
-      "id": "screenshot",
-      "name": "screenshot",
-      "description": "在工具级截图不可用时，对全屏、应用窗口或指定区域进行系统级截图。",
-      "author": "OpenAI",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
-      "id": "test-driven-development",
-      "name": "test-driven-development",
-      "description": "在编写实现代码前，为功能开发或缺陷修复制定清晰的实施方案。",
-      "author": "obra",
-      "category": "效率提升",
-      "channel": "unbound"
-    },
-    {
-      "id": "writing-plans",
-      "name": "writing-plans",
-      "description": "在动手写代码前，将规格和多步骤需求拆解为结构化计划。",
-      "author": "obra",
-      "category": "效率提升",
-      "channel": "unbound",
-      "channelNote": "把开发规格拆成计划，产出物属于开发流程不是业务实体"
     },
     {
       "id": "color-palette-architect",
@@ -721,60 +517,12 @@
       "channel": "experience"
     },
     {
-      "id": "requirement-decomposer",
-      "name": "requirement-decomposer",
-      "description": "把一句话需求拆成可交付的功能清单:实体、角色、流程、页面与验收点,标注推断与待确认项。",
-      "author": "WhyBuddy",
-      "category": "需求分析",
-      "channel": "unbound"
-    },
-    {
-      "id": "user-story-writer",
-      "name": "user-story-writer",
-      "description": "按「作为…我想要…以便…」格式产出用户故事,附 INVEST 检查与故事间依赖标注。",
-      "author": "WhyBuddy",
-      "category": "需求分析",
-      "channel": "unbound"
-    },
-    {
-      "id": "acceptance-criteria-generator",
-      "name": "acceptance-criteria-generator",
-      "description": "为功能生成 EARS 格式验收标准:正常流/边界/异常/权限四类场景全覆盖。",
-      "author": "WhyBuddy",
-      "category": "需求分析",
-      "channel": "unbound"
-    },
-    {
-      "id": "edge-case-hunter",
-      "name": "edge-case-hunter",
-      "description": "系统性枚举边界情况:空值/超长/并发/权限越界/网络中断/重复提交,输出测试清单。",
-      "author": "WhyBuddy",
-      "category": "需求分析",
-      "channel": "unbound"
-    },
-    {
-      "id": "scope-guardian",
-      "name": "scope-guardian",
-      "description": "识别需求蔓延:标出哪些是 MVP 必需、哪些可延后、哪些与目标冲突,给出裁剪建议。",
-      "author": "WhyBuddy",
-      "category": "需求分析",
-      "channel": "unbound"
-    },
-    {
       "id": "persona-synthesizer",
       "name": "persona-synthesizer",
       "description": "从业务描述推导关键用户画像:目标、痛点、使用场景与技术水平,驱动角色权限设计。",
       "author": "WhyBuddy",
       "category": "需求分析",
       "channel": "experience"
-    },
-    {
-      "id": "kpi-definer",
-      "name": "kpi-definer",
-      "description": "为业务定义可度量的北极星指标与过程指标,明确统计口径、分母与反作弊注意项。",
-      "author": "WhyBuddy",
-      "category": "需求分析",
-      "channel": "unbound"
     },
     {
       "id": "workflow-gap-finder",

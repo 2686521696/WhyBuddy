@@ -65,16 +65,31 @@ describe("技能目录的消费通道", () => {
     }
   });
 
-  it("哨兵：已下架的开发者工具类技能不得回流", () => {
+  it("目录里只剩 aigc / experience —— 装了不产出东西的一律不占精选位", () => {
+    // unbound 的定义就是"装了只在 prompt 里留一句软参考"，对用户没有交付。
+    // 通道本身保留（存量安装记录靠它兜底），但目录里不该再有。
+    const unbound = ITEMS.filter(i => i.channel === "unbound").map(i => i.id);
+    expect(unbound, `这些技能装了不产出任何东西：${unbound.join("、")}`).toEqual(
+      []
+    );
+  });
+
+  it("哨兵：已下架的技能不得回流", () => {
     const ids = new Set(ITEMS.map(i => i.id));
-    // 抽查下架清单里最典型的几条（部署/Git/CLI/技术栈规范/MCP 开发）
     for (const gone of [
+      // 开发者工具（规则层判定）
       "gh-cli",
       "git-commit",
       "mcp-builder",
       "react-best-practices",
       "webapp-testing",
       "obsidian-cli",
+      // unbound（装了不产出东西）
+      "local-vram",
+      "screenshot",
+      "test-driven-development",
+      "user-story-writer",
+      "kpi-definer",
     ]) {
       expect(ids.has(gone), `${gone} 又回到技能目录里了`).toBe(false);
     }
