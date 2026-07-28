@@ -1,17 +1,22 @@
 /**
- * PhoneFormPopup — 手机档「新建」表单（antd-mobile Popup，④）。
+ * PhoneFormPopup — 手机档「新建」表单（antd-mobile Popup + Form，④）。
  *
- * 替掉桌面档的 antd Modal。Modal 是桌面组件：默认 520 宽、居中浮层，
- * 塞进 390 的手机画布会顶穿两边（真机量过右侧溢出 130 设计像素，
- * 「保存」整个按钮在画布外，填完了提交不了）。
+ * 替掉桌面档的 antd Modal。Modal 是桌面组件：默认 520 宽、居中浮层，塞进
+ * 390 的手机画布会顶穿两边（真机量过右侧溢出 130 设计像素，「保存」整个
+ * 按钮在画布外，填完了提交不了）。
  *
- * 移动端范式是底部弹起、圆角、占屏高一截、内容自己滚——就是 Popup 的
- * bodyStyle + 内部 flex 布局。头部左取消右保存，跟 iOS/Android 表单页一致。
+ * 内部用 antd-mobile 的 Form 而不是手搓 <div>标签</div>+<控件>：官方那套
+ * 长相（标签在左、整行、行间细分隔线、右侧 › 箭头）全由 Form/Form.Item
+ * 提供，手搓拿不到，看着就像"PC 表单塞进手机"。字段各自是一个
+ * PhoneFormField（浮层开关状态得落在每个字段自己身上）。
+ *
+ * Form 只借布局，不借状态：Form.Item 不传 name 就走纯布局分支，值仍由
+ * 父层 formValues 受控，写库逻辑一行不用改。
  */
 
 import React from "react";
-import { Popup } from "antd-mobile";
-import PhoneFieldInput from "./PhoneFieldInput";
+import { Popup, Form } from "antd-mobile";
+import PhoneFormField from "./PhoneFormField";
 import type { AppFormFieldSchema } from "../app-runtime-schema";
 
 export interface PhoneFormPopupProps {
@@ -22,7 +27,6 @@ export interface PhoneFormPopupProps {
   onChange: (fieldId: string, v: unknown) => void;
   onCancel: () => void;
   onSubmit: () => void;
-  /** 字段的候选来源（父层按当前实体算好） */
   refRowsFor: (f: AppFormFieldSchema) => Array<{ id: string; label: string }>;
   enumOptionsFor: (f: AppFormFieldSchema) => string[];
   /** 逐字段的 X 光埋点属性（父层 probe() 产出） */
@@ -62,18 +66,19 @@ export default function PhoneFormPopup({
       }}
       data-testid="phone-form-popup"
     >
+      {/* 顶栏左取消右保存 —— iOS/Android 表单页的通用形态 */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           padding: "12px 16px",
-          borderBottom: "1px solid #eee",
+          borderBottom: "1px solid var(--adm-color-border, #eeeeee)",
           flexShrink: 0,
         }}
       >
         <a
           onClick={onCancel}
-          style={{ color: "#999", fontSize: 15 }}
+          style={{ color: "var(--adm-color-weak, #999999)", fontSize: 15 }}
           data-testid="phone-form-cancel"
         >
           取消
@@ -94,45 +99,44 @@ export default function PhoneFormPopup({
         </span>
         <a
           onClick={onSubmit}
-          style={{ color: "var(--app-primary, #1677ff)", fontSize: 15, fontWeight: 600 }}
+          style={{
+            color: "var(--adm-color-primary, #1677ff)",
+            fontSize: 15,
+            fontWeight: 600,
+          }}
           data-testid="phone-form-submit"
         >
           保存
         </a>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: "auto",
-          padding: "12px 16px 20px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 14,
-        }}
-      >
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 12 }}>
         {fields.length === 0 ? (
-          <div style={{ color: "#bfbfbf", fontSize: 13, textAlign: "center", padding: "20px 0" }}>
+          <div
+            style={{
+              color: "var(--adm-color-light, #cccccc)",
+              fontSize: 13,
+              textAlign: "center",
+              padding: "24px 0",
+            }}
+          >
             本页没有可录入字段
           </div>
         ) : (
-          fields.map(f => (
-            <div key={f.id} {...(fieldProbeProps?.(f) ?? {})}>
-              <div style={{ fontSize: 12, color: "#666", marginBottom: 6 }}>
-                {f.label}
-                <span style={{ color: "#bbb", marginLeft: 6 }}>{f.type}</span>
+          <Form layout="horizontal" mode="card">
+            {fields.map(f => (
+              <div key={f.id} {...(fieldProbeProps?.(f) ?? {})}>
+                <PhoneFormField
+                  field={f}
+                  value={values[f.id]}
+                  refRows={refRowsFor(f)}
+                  enumOptions={enumOptionsFor(f)}
+                  onChange={v => onChange(f.id, v)}
+                  getContainer={getContainer}
+                />
               </div>
-              <PhoneFieldInput
-                field={f}
-                value={values[f.id]}
-                refRows={refRowsFor(f)}
-                enumOptions={enumOptionsFor(f)}
-                onChange={v => onChange(f.id, v)}
-                getContainer={getContainer}
-              />
-            </div>
-          ))
+            ))}
+          </Form>
         )}
       </div>
     </Popup>
