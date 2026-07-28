@@ -22,6 +22,12 @@ from services import app_store
 def store(tmp_path, monkeypatch):
     monkeypatch.setattr(app_store.settings, "APP_STORE_DATABASE_URL", None)
     monkeypatch.setattr(app_store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    # 本地 SQLite 兜底（2026-07-28 起在 JSON 之前）也必须指到 tmp_path：
+    # 不指的话会落到默认的 data/sliderule-apps.db，用例之间互相看见对方的
+    # 数据，幂等/版本这些断言会莫名其妙地红。
+    monkeypatch.setattr(
+        app_store.settings, "APP_STORE_LOCAL_SQLITE", f"sqlite:///{tmp_path / 'local.db'}"
+    )
     app_store.reset_backend_cache()
     yield
     app_store.reset_backend_cache()
