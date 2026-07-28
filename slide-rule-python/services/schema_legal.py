@@ -349,8 +349,14 @@ def experience_block_prompt_block() -> str:
         "  - all other page kinds (workbench / kanban / calendar / wizard): use "
         "MetricGrid / TrendChart blocks when the page needs KPIs or trends, and leave "
         "page.stats / page.charts empty on those pages.\n"
-        "  - RankedList / ActivityFeed / DataTable are not affected by this split; "
-        "they may be used on any page kind where they fit."
+        "  - RankedList / ActivityFeed are not affected by this split; "
+        "they may be used on any page kind where they fit.\n"
+        "  - DataTable: every page ALREADY renders its own primary entity as a full "
+        "table (localized column headers, enum tags, sorting, filtering, paging, row "
+        "actions). Do NOT emit a DataTable bound to the page's own primary entity — it "
+        "renders the very same rows a second time, and worse. Emit DataTable ONLY for a "
+        "DIFFERENT entity than the page's primary one (e.g. a supplier table on an "
+        "inventory page)."
     )
     for block in EXPERIENCE_BLOCKS:
         lines.append(

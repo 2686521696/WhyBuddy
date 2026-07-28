@@ -52,6 +52,20 @@ describe("渲染层硬隔离", () => {
     expect(screenSrc).toContain("<>{widgetsBand}</>");
   });
 
+  it("绑主实体的 DataTable 被摘掉（同一批行不画两遍）", () => {
+    // 真跑发现：放开 DataTable 生成后五个业务页全中——模型不知道"这一页已经
+    // 自带主实体表"，于是同样的数据出现两遍，积木那遍还只有裸字段名、没有
+    // 枚举标签和行内操作。删掉这条过滤编译能过、测试能过，只有真机上看得出。
+    expect(screenSrc).toContain('b.type === "DataTable"');
+    expect(screenSrc).toMatch(/entityRef\s*===\s*[\s\S]{0,40}page\.entityId/);
+  });
+
+  it("绑别的实体的 DataTable 必须留着 —— 那是真新增内容", () => {
+    // 条件里必须带 entityRef 与 page.entityId 的相等判断；写成"凡 DataTable
+    // 一律摘掉"会把库存页上那张供应商表也一起吞了
+    expect(screenSrc).not.toMatch(/filter\([^)]*b\.type === "DataTable"\s*\)/);
+  });
+
   it("pageHasKpiBlocks 只看非 legacy 的真区块", () => {
     // _fromLegacy 是转换占位，本来就走旧路径渲染；把它算进来会让固定骨架
     // 被一个"其实还是走固定骨架"的占位区块顶掉，页面直接空一块

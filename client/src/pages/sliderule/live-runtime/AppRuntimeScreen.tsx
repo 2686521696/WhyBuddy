@@ -1309,7 +1309,28 @@ export function AppRuntimeScreen({
           // 的卡。这里直接把它们摘掉：不指望 LLM 一定守规矩，渲染层兜死。
           //
           // 反方向在下面（statsBand/chartsBand 让位给积木）。
-          .filter(b => !(OVERVIEW_KINDS.has(page.view.kind) && KPI_BLOCK_TYPES.has(b.type)));
+          .filter(b => !(OVERVIEW_KINDS.has(page.view.kind) && KPI_BLOCK_TYPES.has(b.type)))
+          // 同一条"一页一个主人"的规矩，用在表格上（2026-07-28 真跑发现）。
+          //
+          // 每一页本来就会把自己的主实体渲染成一张表——带中文列名、枚举彩色标签、
+          // 排序/筛选/分页/行内操作。DataTable 积木绑同一个实体时画的是**同一批行**，
+          // 却只有裸字段名（lot_code / supplier_id）、没有枚举标签、没有操作，
+          // 于是一页里同样的数据出现两遍，上面那遍还更难看。
+          //
+          // 实测：放开 DataTable 生成后，五个业务页全中——模型不知道"这一页已经
+          // 自带主实体表"，只当页面是张白纸。所以跟 KPI 一样在渲染层兜死。
+          //
+          // 只摘"绑主实体"的那些；绑**别的**实体的 DataTable 是真新增内容
+          //（例如库存页上挂一张供应商表），必须留着。
+          .filter(
+            b =>
+              !(
+                b.type === "DataTable" &&
+                page.entityId &&
+                (b.binding as { entityRef?: string } | undefined)?.entityRef ===
+                  page.entityId
+              )
+          );
         if (directBlocks.length === 0) return null;
 
         // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
