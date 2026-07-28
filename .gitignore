@@ -201,3 +201,5 @@ docs/skills-triage.partial.jsonl
 .verify-*.mjs
 .audit-*.mjs
 .probe.mjs
+.gen-*.mjs
+.dbg.mjs
