@@ -122,3 +122,26 @@ export function hexToRgba(hex: string, alpha: number): string {
   const b = parseInt(m[1].slice(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+/**
+ * 身份主题 → antd-mobile 的 CSS 变量。
+ *
+ * 换肤机制两边不是一套：antd v5 走 cssinjs token（ConfigProvider theme），
+ * antd-mobile 走 CSS 变量（--adm-*）。所以 ConfigProvider 配好主色，手机档
+ * 那些 antd-mobile 组件一个字都吃不到——实测过：生成主题是 #C2410C，
+ * adm 按钮实际背景仍是 rgb(22,119,255)，也就是 antd-mobile 自带的默认蓝。
+ * 每个生成应用的手机档主色都跟应用主题不搭。
+ *
+ * 只覆盖跟品牌色相关的几个，中性色（text/border/background）留给
+ * antd-mobile 自己 —— 那套是按移动端可读性调过的，没必要跟着主题乱动。
+ */
+export function admThemeVars(theme: IdentityTheme): Record<string, string> {
+  return {
+    "--adm-color-primary": theme.primary,
+    // 主色上的前景（Button color=primary 的文字、Toast 图标等）
+    "--adm-color-text-light-solid": theme.primaryFg,
+    // 主色的浅色底（选中项浅底、Tag 底色）—— 用主题自己的强调底，
+    // 不用 antd-mobile 默认那个跟蓝色配的 #e7f1ff
+    "--adm-color-wathet": theme.accentBg,
+  };
+}

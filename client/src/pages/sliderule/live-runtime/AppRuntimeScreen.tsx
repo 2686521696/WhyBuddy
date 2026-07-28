@@ -68,7 +68,11 @@ import {
 } from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 import { resolveEntityRef } from "../system-screens/five-system-model";
-import { resolveIdentityTheme, hexToRgba } from "./identity-themes";
+import {
+  resolveIdentityTheme,
+  hexToRgba,
+  admThemeVars,
+} from "./identity-themes";
 import { autoPlaceGrid } from "./grid-compact";
 import { deriveLayoutTokens } from "./design-tokens";
 import {
@@ -106,6 +110,7 @@ const LazyPhoneDetailPopup = React.lazy(
 const LazyPhoneRolePicker = React.lazy(
   () => import("./phone-mobile/PhoneRolePicker")
 );
+const LazyPhoneHome = React.lazy(() => import("./phone-mobile/PhoneHome"));
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -139,7 +144,11 @@ import {
   type FilterFieldOption,
   type QuickActionButtonSpec,
 } from "./block-registry";
-import { resolveDesignRecipe, designRecipeAlgorithms, DARK_CANVAS_BG } from "./design-recipes";
+import {
+  resolveDesignRecipe,
+  designRecipeAlgorithms,
+  DARK_CANVAS_BG,
+} from "./design-recipes";
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
@@ -147,7 +156,10 @@ import { AiSuggestionCard } from "./AiSuggestionCard";
 import { CodeProjectionView } from "./CodeProjectionView";
 import { notify } from "./phone-mobile/phone-feedback";
 import type { AppPageStatSchema } from "./app-runtime-schema";
-import { generatePreviewSeedRows, computePreviewStat } from "./app-runtime-schema";
+import {
+  generatePreviewSeedRows,
+  computePreviewStat,
+} from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
 // 多端设计分辨率（固定渲染 + 等比缩放）
@@ -183,7 +195,11 @@ export function deviceModalSizing(device: DeviceKey): {
       bodyMaxHeight: Math.round(spec.h * 0.6),
     };
   }
-  return { width: 520, centered: false, bodyMaxHeight: Math.round(spec.h * 0.7) };
+  return {
+    width: 520,
+    centered: false,
+    bodyMaxHeight: Math.round(spec.h * 0.7),
+  };
 }
 
 /** 容器实测尺寸 → 等比缩放系数（min(宽比, 高比)，letterbox 居中）。 */
@@ -221,7 +237,10 @@ const MENU_ICONS = [
 ];
 
 // E40.2 品牌图标封闭集（id 合法域在 @legal identityIcons；未知 id 回退 boxes）
-const BRAND_ICONS: Record<string, React.ComponentType<{ style?: React.CSSProperties }>> = {
+const BRAND_ICONS: Record<
+  string,
+  React.ComponentType<{ style?: React.CSSProperties }>
+> = {
   boxes: AppstoreOutlined,
   chart: BarChartOutlined,
   shield: SafetyOutlined,
@@ -395,9 +414,9 @@ function applyPageFilter(
 ): RuntimeRow[] {
   if (!filterState) return rows;
   let out = rows;
-  const activeEnumEntries = Object.entries(filterState.enumFilters ?? {}).filter(
-    ([, v]) => Boolean(v)
-  );
+  const activeEnumEntries = Object.entries(
+    filterState.enumFilters ?? {}
+  ).filter(([, v]) => Boolean(v));
   for (const [fieldId, value] of activeEnumEntries) {
     out = out.filter(r => String(r.values[fieldId] ?? "") === value);
   }
@@ -457,7 +476,10 @@ export function AppRuntimeScreen({
   // design-tokens.ts 头部注释），不是另起一套静态数字。卡片族（KPI/图表/
   // 排行/动态）的 padding/margin/gap 统一从这里取，不再各处手写数字。
   const { token: antdToken } = antdTheme.useToken();
-  const layout = React.useMemo(() => deriveLayoutTokens(antdToken), [antdToken]);
+  const layout = React.useMemo(
+    () => deriveLayoutTokens(antdToken),
+    [antdToken]
+  );
 
   // 表格列设置（表格自带能力）：按 pageId 记用户勾选的列；undefined = 默认列
   const [tableColPrefs, setTableColPrefs] = React.useState<
@@ -634,7 +656,9 @@ export function AppRuntimeScreen({
         [pageId]: {
           enumFilters: { ...cur.enumFilters, ...(patch.enumFilters ?? {}) },
           dateRange:
-            patch.dateRange !== undefined ? patch.dateRange : (cur.dateRange ?? null),
+            patch.dateRange !== undefined
+              ? patch.dateRange
+              : (cur.dateRange ?? null),
         },
       };
     });
@@ -651,7 +675,8 @@ export function AppRuntimeScreen({
         .map(a => {
           const pa = pageAccess.get(page.id);
           const permitted =
-            !a.permissionRef || (pa?.grantedActions ?? []).includes(a.permissionRef);
+            !a.permissionRef ||
+            (pa?.grantedActions ?? []).includes(a.permissionRef);
           if (a.type === "navigate") {
             const target = schema.pages.find(p => p.id === a.targetPageRef);
             return {
@@ -961,10 +986,11 @@ export function AppRuntimeScreen({
   );
 
   // 工作台内置图：ECharts 基建（与页面级声明图表同一 lazy chunk / 同一套 dataviz 约定）
-  const chartCard = (chart: AppChartSchema) => {
+  /** 图表正文（真图 or 诚实空态）——两个设备档共用，只有外面那层卡片不同。 */
+  const chartBody = (chart: AppChartSchema, height: number) => {
     let option: Record<string, unknown> | null = null;
     let emptyHint = "";
-    let ariaLabel = chart.label;
+    const ariaLabel = chart.label;
     if (chart.source === "entities:rowcount") {
       option = buildEntityRowcountOption(
         (model.datamodel?.entities ?? []).slice(0, 6).map(e => ({
@@ -981,38 +1007,40 @@ export function AppRuntimeScreen({
       option = buildInstanceStatusOption(counts);
       emptyHint = "暂无流程实例 — 到业务页面「提交审批」发起";
     }
+    if (!option)
+      return (
+        <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
+          {emptyHint}
+        </div>
+      );
     return (
-      <Card
-        key={chart.id}
-        title={chart.label}
-        size="small"
-        style={{ flex: 1, minWidth: 0 }}
-        data-testid={`app-runtime-${chart.id}`}
-      >
-        {option ? (
-          <React.Suspense
-            fallback={
-              <div
-                style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}
-              >
-                图表加载中…
-              </div>
-            }
-          >
-            <LazyEchartsChart
-              option={option}
-              height={168}
-              ariaLabel={ariaLabel}
-            />
-          </React.Suspense>
-        ) : (
+      <React.Suspense
+        fallback={
           <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
-            {emptyHint}
+            图表加载中…
           </div>
-        )}
-      </Card>
+        }
+      >
+        <LazyEchartsChart
+          option={option}
+          height={height}
+          ariaLabel={ariaLabel}
+        />
+      </React.Suspense>
     );
   };
+
+  const chartCard = (chart: AppChartSchema) => (
+    <Card
+      key={chart.id}
+      title={chart.label}
+      size="small"
+      style={{ flex: 1, minWidth: 0 }}
+      data-testid={`app-runtime-${chart.id}`}
+    >
+      {chartBody(chart, 168)}
+    </Card>
+  );
 
   const timelineCard = (
     <Card title="审批动态" size="small" style={{ flex: 1.2, minWidth: 0 }}>
@@ -1069,21 +1097,17 @@ export function AppRuntimeScreen({
     </Card>
   );
 
+  // 桌面/平板档首页。手机档走 phoneHomeContent（antd-mobile），所以这里
+  // 不再有 isPhone 分支——留着会让人以为手机还走这条路。
   const homeContent = (
     <>
-      <div
-        style={{
-          display: isPhone ? "grid" : "flex",
-          gridTemplateColumns: "1fr 1fr",
-          gap: isPhone ? 8 : 16,
-        }}
-      >
+      <div style={{ display: "flex", gap: 16 }}>
         {schema.home.stats.map(s => (
           <Card
             key={s.id}
             size="small"
             style={{ flex: 1 }}
-            styles={{ body: { padding: isPhone ? "10px 14px" : "16px 20px" } }}
+            styles={{ body: { padding: "16px 20px" } }}
           >
             <Statistic
               title={s.label}
@@ -1093,58 +1117,88 @@ export function AppRuntimeScreen({
           </Card>
         ))}
       </div>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: isPhone ? "column" : "row",
-          gap: isPhone ? 8 : 16,
-          marginTop: isPhone ? 8 : 16,
-        }}
-      >
+      <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
         {schema.home.charts.map(chartCard)}
       </div>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: isPhone ? "column" : "row",
-          gap: isPhone ? 8 : 16,
-          marginTop: isPhone ? 8 : 16,
-        }}
-      >
-        {!isPhone && (
-          <Card title="快速入口" size="small" style={{ flex: 1 }}>
-            <Space wrap>
-              {schema.pages.map(p => {
-                const locked = pageAccess.get(p.id)?.visible === false;
-                return (
-                  <Button
-                    key={p.id}
-                    icon={locked ? <LockOutlined /> : undefined}
-                    disabled={locked}
-                    title={
-                      locked
-                        ? `当前角色（${role ?? "-"}）无本页权限`
-                        : undefined
-                    }
-                    onClick={() => setActivePageId(p.id)}
-                  >
-                    {p.title}
-                  </Button>
-                );
-              })}
-            </Space>
-            {[...pageAccess.values()].some(a => !a.visible) && (
-              <div style={{ marginTop: 10, fontSize: 12, color: "#999" }}>
-                <LockOutlined /> 当前角色不可见{" "}
-                {[...pageAccess.values()].filter(a => !a.visible).length} 个页面
-                — 右上角切换角色试试（RBAC 权限实时生效）
-              </div>
-            )}
-          </Card>
-        )}
+      <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
+        <Card title="快速入口" size="small" style={{ flex: 1 }}>
+          <Space wrap>
+            {schema.pages.map(p => {
+              const locked = pageAccess.get(p.id)?.visible === false;
+              return (
+                <Button
+                  key={p.id}
+                  icon={locked ? <LockOutlined /> : undefined}
+                  disabled={locked}
+                  title={
+                    locked ? `当前角色（${role ?? "-"}）无本页权限` : undefined
+                  }
+                  onClick={() => setActivePageId(p.id)}
+                >
+                  {p.title}
+                </Button>
+              );
+            })}
+          </Space>
+          {[...pageAccess.values()].some(a => !a.visible) && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "#999" }}>
+              <LockOutlined /> 当前角色不可见{" "}
+              {[...pageAccess.values()].filter(a => !a.visible).length} 个页面 —
+              右上角切换角色试试（RBAC 权限实时生效）
+            </div>
+          )}
+        </Card>
         {timelineCard}
       </div>
     </>
+  );
+
+  // 手机端首页：同一份数据（统计/图表/审批动态）交给 antd-mobile 渲染。
+  // 桌面档那版是 antd 的 Card+Statistic+Timeline —— 之前手机档跟着复用，
+  // 只加了几个 isPhone 三元调间距：间距对了，组件还是 PC 的。
+  const phoneHomeContent = (
+    <React.Suspense
+      fallback={
+        <div
+          style={{
+            textAlign: "center",
+            fontSize: 12,
+            color: INK.faint,
+            padding: "24px 0",
+          }}
+        >
+          移动端组件加载中…
+        </div>
+      }
+    >
+      <LazyPhoneHome
+        stats={schema.home.stats.map(s => ({
+          id: s.id,
+          label: s.label,
+          value: statValue(state, schema, s.source),
+          suffix: s.suffix,
+        }))}
+        charts={schema.home.charts.map(c => ({
+          id: c.id,
+          label: c.label,
+          node: chartBody(c, 148),
+        }))}
+        timeline={recentInstances.map(inst => ({
+          id: inst.id,
+          title: inst.title,
+          nodeLabel:
+            nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId,
+          statusLabel: (STATUS_META[inst.status] ?? STATUS_META.running).label,
+          status:
+            inst.status === "completed"
+              ? "completed"
+              : inst.status === "rejected"
+                ? "rejected"
+                : "running",
+        }))}
+        timelineEmptyHint="暂无流程实例 — 到业务页面「提交审批」发起"
+      />
+    </React.Suspense>
   );
 
   // 手机端业务页：卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
@@ -1376,30 +1430,38 @@ export function AppRuntimeScreen({
             const realRows = state.entities[stat.entityId] ?? [];
             const v = pageStatValue(stat, realRows);
             // Phase B: 真实数据为零时用预览种子数据填充，加"示例"标注
-            const entity = model?.datamodel?.entities?.find(e => e.id === stat.entityId);
-            const seedRows = (v === 0 || v === null) && entity
-              ? generatePreviewSeedRows(
-                  {
-                    id: entity.id,
-                    fields: entity.fields?.map(f => ({
-                      id: f.id,
-                      type: f.type,
-                      options: f.options?.map(o => o.label ?? o.id),
-                    })),
-                  },
-                  6
-                )
-              : null;
+            const entity = model?.datamodel?.entities?.find(
+              e => e.id === stat.entityId
+            );
+            const seedRows =
+              (v === 0 || v === null) && entity
+                ? generatePreviewSeedRows(
+                    {
+                      id: entity.id,
+                      fields: entity.fields?.map(f => ({
+                        id: f.id,
+                        type: f.type,
+                        options: f.options?.map(o => o.label ?? o.id),
+                      })),
+                    },
+                    6
+                  )
+                : null;
             const displayVal = seedRows
               ? computePreviewStat(stat.metric, stat.metricFieldId, seedRows)
               : v;
-            const isPreview = seedRows !== null && displayVal !== null && displayVal > 0;
+            const isPreview =
+              seedRows !== null && displayVal !== null && displayVal > 0;
             return (
               <Card
                 key={stat.id}
                 size="small"
                 style={{ flex: 1, minWidth: 140 }}
-                styles={{ body: { padding: `${layout.space.sm}px ${layout.space.md}px` } }}
+                styles={{
+                  body: {
+                    padding: `${layout.space.sm}px ${layout.space.md}px`,
+                  },
+                }}
                 data-testid={`app-runtime-page-stat-${stat.id}`}
               >
                 {displayVal === null ? (
@@ -1409,12 +1471,25 @@ export function AppRuntimeScreen({
                     <Statistic
                       title={stat.label}
                       value={displayVal}
-                      precision={Number.isInteger(displayVal) ? 0 : stat.format === "money" ? 2 : 1}
+                      precision={
+                        Number.isInteger(displayVal)
+                          ? 0
+                          : stat.format === "money"
+                            ? 2
+                            : 1
+                      }
                       prefix={stat.format === "money" ? "¥" : undefined}
                       suffix={stat.format === "percent" ? "%" : undefined}
                     />
                     {isPreview && (
-                      <span style={{ fontSize: 10, color: "#adb5bd", marginTop: 2, display: "block" }}>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "#adb5bd",
+                          marginTop: 2,
+                          display: "block",
+                        }}
+                      >
                         示例数据
                       </span>
                     )}
@@ -1443,7 +1518,8 @@ export function AppRuntimeScreen({
         .sort((a, b) => b.v - a.v)
         .slice(0, ranking.limit);
       const titleFieldId =
-        page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ?? "id";
+        page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ??
+        "id";
       return (
         <Card
           key={ranking.id}
@@ -1465,7 +1541,8 @@ export function AppRuntimeScreen({
                   alignItems: "center",
                   gap: layout.space.xs,
                   padding: `${layout.space.xxs}px 0`,
-                  borderBottom: i < rankRows.length - 1 ? "1px solid #f5f5f5" : "none",
+                  borderBottom:
+                    i < rankRows.length - 1 ? "1px solid #f5f5f5" : "none",
                 }}
               >
                 <span
@@ -1478,7 +1555,8 @@ export function AppRuntimeScreen({
                     fontSize: 11,
                     fontWeight: 600,
                     flexShrink: 0,
-                    background: i < 3 ? "var(--app-primary,#1677ff)" : "#f0f0f0",
+                    background:
+                      i < 3 ? "var(--app-primary,#1677ff)" : "#f0f0f0",
                     color: i < 3 ? "#fff" : "#8c8c8c",
                   }}
                 >
@@ -1496,7 +1574,9 @@ export function AppRuntimeScreen({
                 >
                   {String(row.values[titleFieldId] ?? "—")}
                 </span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#262626" }}>
+                <span
+                  style={{ fontSize: 13, fontWeight: 600, color: "#262626" }}
+                >
                   {v.toLocaleString("zh-CN")}
                 </span>
               </div>
@@ -1519,7 +1599,8 @@ export function AppRuntimeScreen({
       )
       .slice(0, 6);
     const titleFieldId =
-      page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ?? "id";
+      page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ??
+      "id";
     return (
       <Card
         key={feed.id}
@@ -1534,7 +1615,9 @@ export function AppRuntimeScreen({
           </div>
         ) : (
           feedRows.map((row, i) => {
-            const levelValue = String(row.values[feed.levelFieldId ?? ""] ?? "");
+            const levelValue = String(
+              row.values[feed.levelFieldId ?? ""] ?? ""
+            );
             const option = levelField?.options?.find(o => o.id === levelValue);
             return (
               <div
@@ -1544,7 +1627,8 @@ export function AppRuntimeScreen({
                   alignItems: "center",
                   gap: layout.space.xs,
                   padding: `${layout.space.xxs}px 0`,
-                  borderBottom: i < feedRows.length - 1 ? "1px solid #f5f5f5" : "none",
+                  borderBottom:
+                    i < feedRows.length - 1 ? "1px solid #f5f5f5" : "none",
                 }}
               >
                 {option && (
@@ -1582,7 +1666,12 @@ export function AppRuntimeScreen({
     <>
       {(page.rankings.length > 0 || page.feeds.length > 0) && (
         <div
-          style={{ display: "flex", gap: layout.space.sm, marginBottom: layout.space.sm, flexWrap: "wrap" }}
+          style={{
+            display: "flex",
+            gap: layout.space.sm,
+            marginBottom: layout.space.sm,
+            flexWrap: "wrap",
+          }}
           data-testid="app-runtime-page-widgets"
         >
           {page.rankings.map(renderRankingCard)}
@@ -1619,13 +1708,25 @@ export function AppRuntimeScreen({
         // （不跟着卡片拉伸），卡片被拉高时用 justifyContent:"center" 把
         // 固定高度的图表在多出来的空间里居中，而不是让图表本身去追一个
         // 还没稳定下来的容器尺寸。
-        styles={{ body: { display: "flex", flexDirection: "column", justifyContent: "center" } }}
+        styles={{
+          body: {
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+          },
+        }}
         data-testid={`app-runtime-page-chart-${chart.id}`}
       >
         {option ? (
           <React.Suspense
             fallback={
-              <div style={{ fontSize: 11, color: INK.faint, padding: `${layout.space.md}px 0` }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: INK.faint,
+                  padding: `${layout.space.md}px 0`,
+                }}
+              >
                 图表加载中…
               </div>
             }
@@ -1637,7 +1738,13 @@ export function AppRuntimeScreen({
             />
           </React.Suspense>
         ) : (
-          <div style={{ fontSize: 11, color: INK.faint, padding: `${layout.space.md}px 0` }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: INK.faint,
+              padding: `${layout.space.md}px 0`,
+            }}
+          >
             暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
           </div>
         )}
@@ -1673,68 +1780,98 @@ export function AppRuntimeScreen({
   // 摆放 + 竖直压实兜底，卡片按估算高度自动分列、列内紧贴堆叠，不会再
   // 留出空档。高度是估算值（图表固定/排行动态按真实行数算），不追求
   // 像素级精确，只保证不留白。
-  const monitorCombinedRow = page && (() => {
-    const CHART_HEIGHT_ESTIMATE = 230; // 卡片头(40) + echarts 固定 180 + 内边距
-    const ROW_HEIGHT_ESTIMATE = 30; // 排行/动态每行的实测行高（padding 5px*2 + 内容）
-    const LIST_CHROME_ESTIMATE = 56; // 卡片头(40) + 上下内边距
+  const monitorCombinedRow =
+    page &&
+    (() => {
+      const CHART_HEIGHT_ESTIMATE = 230; // 卡片头(40) + echarts 固定 180 + 内边距
+      const ROW_HEIGHT_ESTIMATE = 30; // 排行/动态每行的实测行高（padding 5px*2 + 内容）
+      const LIST_CHROME_ESTIMATE = 56; // 卡片头(40) + 上下内边距
 
-    const cardHeights: Array<{ i: string; h: number }> = [
-      ...page.charts.map(c => ({ i: `chart:${c.id}`, h: CHART_HEIGHT_ESTIMATE })),
-      ...page.rankings.map(r => {
-        const rowCount = Math.min(
-          (state.entities[r.entityId] ?? []).length,
-          r.limit
-        );
-        return { i: `ranking:${r.id}`, h: LIST_CHROME_ESTIMATE + Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE };
-      }),
-      ...page.feeds.map(f => {
-        const rowCount = Math.min((state.entities[f.entityId] ?? []).length, 6);
-        return { i: `feed:${f.id}`, h: LIST_CHROME_ESTIMATE + Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE };
-      }),
-    ];
-    if (cardHeights.length === 0) return null;
+      const cardHeights: Array<{ i: string; h: number }> = [
+        ...page.charts.map(c => ({
+          i: `chart:${c.id}`,
+          h: CHART_HEIGHT_ESTIMATE,
+        })),
+        ...page.rankings.map(r => {
+          const rowCount = Math.min(
+            (state.entities[r.entityId] ?? []).length,
+            r.limit
+          );
+          return {
+            i: `ranking:${r.id}`,
+            h:
+              LIST_CHROME_ESTIMATE +
+              Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE,
+          };
+        }),
+        ...page.feeds.map(f => {
+          const rowCount = Math.min(
+            (state.entities[f.entityId] ?? []).length,
+            6
+          );
+          return {
+            i: `feed:${f.id}`,
+            h:
+              LIST_CHROME_ESTIMATE +
+              Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE,
+          };
+        }),
+      ];
+      if (cardHeights.length === 0) return null;
 
-    const cols = Math.min(3, cardHeights.length);
-    const placed = autoPlaceGrid(cardHeights, cols);
+      const cols = Math.min(3, cardHeights.length);
+      const placed = autoPlaceGrid(cardHeights, cols);
 
-    const nodeById = new Map<string, React.ReactNode>([
-      ...page.charts.map(c => [`chart:${c.id}`, renderChartCard(c)] as const),
-      ...page.rankings.map(r => [`ranking:${r.id}`, renderRankingCard(r)] as const),
-      ...page.feeds.map(f => [`feed:${f.id}`, renderFeedCard(f)] as const),
-    ]);
+      const nodeById = new Map<string, React.ReactNode>([
+        ...page.charts.map(c => [`chart:${c.id}`, renderChartCard(c)] as const),
+        ...page.rankings.map(
+          r => [`ranking:${r.id}`, renderRankingCard(r)] as const
+        ),
+        ...page.feeds.map(f => [`feed:${f.id}`, renderFeedCard(f)] as const),
+      ]);
 
-    const columns: string[][] = Array.from({ length: cols }, () => []);
-    for (const item of [...placed].sort((a, b) => a.y - b.y)) {
-      columns[item.x]?.push(item.i);
-    }
+      const columns: string[][] = Array.from({ length: cols }, () => []);
+      for (const item of [...placed].sort((a, b) => a.y - b.y)) {
+        columns[item.x]?.push(item.i);
+      }
 
-    return (
-      // alignItems: "stretch"（不是 flex-start）——列与列之间高度天然不同步
-      // （比如这一列就 1 张图表卡，隔壁摞了排行+动态两张），flex-start 会让
-      // 矮的那列在自己内容结束处直接停住，下面空出一块没有任何元素的白底，
-      // 用户截图圈过的就是这个（真去查过 DOM，那块确实不是渲染了个空
-      // Card，就是纯背景）。改 stretch 后每一列都撑到最高列那么高，列内
-      // 卡片本来就带的 flex:1（renderChartCard/renderRankingCard/
-      // renderFeedCard 三处都设了）会把卡片自己的边框/背景撑满这段高度——
-      // 富余空间留在卡片"内部"（看起来是留白排版），不再是卡片外面一块
-      // 没有归属的裸白背景。
-      <div
-        style={{ display: "flex", gap: layout.space.sm, alignItems: "stretch" }}
-        data-testid="app-runtime-monitor-combined"
-      >
-        {columns.map((ids, colIdx) => (
-          <div
-            key={colIdx}
-            style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: layout.space.sm }}
-          >
-            {ids.map(id => (
-              <React.Fragment key={id}>{nodeById.get(id)}</React.Fragment>
-            ))}
-          </div>
-        ))}
-      </div>
-    );
-  })();
+      return (
+        // alignItems: "stretch"（不是 flex-start）——列与列之间高度天然不同步
+        // （比如这一列就 1 张图表卡，隔壁摞了排行+动态两张），flex-start 会让
+        // 矮的那列在自己内容结束处直接停住，下面空出一块没有任何元素的白底，
+        // 用户截图圈过的就是这个（真去查过 DOM，那块确实不是渲染了个空
+        // Card，就是纯背景）。改 stretch 后每一列都撑到最高列那么高，列内
+        // 卡片本来就带的 flex:1（renderChartCard/renderRankingCard/
+        // renderFeedCard 三处都设了）会把卡片自己的边框/背景撑满这段高度——
+        // 富余空间留在卡片"内部"（看起来是留白排版），不再是卡片外面一块
+        // 没有归属的裸白背景。
+        <div
+          style={{
+            display: "flex",
+            gap: layout.space.sm,
+            alignItems: "stretch",
+          }}
+          data-testid="app-runtime-monitor-combined"
+        >
+          {columns.map((ids, colIdx) => (
+            <div
+              key={colIdx}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: layout.space.sm,
+              }}
+            >
+              {ids.map(id => (
+                <React.Fragment key={id}>{nodeById.get(id)}</React.Fragment>
+              ))}
+            </div>
+          ))}
+        </div>
+      );
+    })();
 
   // 2026-07-24：monitor 页面的总览区块——freeformOverview 是 Python
   // enrich_monitor_page_overviews 按这个页面已声明的 stats/charts 当内容
@@ -1757,7 +1894,10 @@ export function AppRuntimeScreen({
           freeformContent: page.freeformOverview,
         }}
         entityRows={state.entities}
-        chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
+        chartPalette={{
+          primary: identityTheme.primary,
+          categorical: identityTheme.charts,
+        }}
       />
     </div>
   ) : null;
@@ -1769,7 +1909,12 @@ export function AppRuntimeScreen({
   const monitorDynamicLists =
     page && (page.rankings.length > 0 || page.feeds.length > 0) ? (
       <div
-        style={{ display: "flex", gap: layout.space.sm, flexWrap: "wrap", marginTop: layout.space.sm }}
+        style={{
+          display: "flex",
+          gap: layout.space.sm,
+          flexWrap: "wrap",
+          marginTop: layout.space.sm,
+        }}
         data-testid="app-runtime-monitor-dynamic-lists"
       >
         {page.rankings.map(renderRankingCard)}
@@ -1832,7 +1977,9 @@ export function AppRuntimeScreen({
         // 保守策略：_fromLegacy 区块只是转换占位，渲染仍走旧路径（statsBand 等）。
         // 真正的新模型 blocks 不带 _fromLegacy，走 ExperienceBlockBoundary。
         const directBlocks = page.experienceBlocks.filter(
-          b => !(b as import("./block-registry").ExperienceBlockInstance)._fromLegacy
+          b =>
+            !(b as import("./block-registry").ExperienceBlockInstance)
+              ._fromLegacy
         );
         if (directBlocks.length === 0) return null;
 
@@ -1883,7 +2030,10 @@ export function AppRuntimeScreen({
             onFilterChange={handlePageFilterChange}
             workflow={model.workflow}
             entityRows={state.entities}
-            chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
+            chartPalette={{
+              primary: identityTheme.primary,
+              categorical: identityTheme.charts,
+            }}
           />
         );
 
@@ -1902,20 +2052,27 @@ export function AppRuntimeScreen({
 
         const blockById = new Map(directBlocks.map(b => [b.id, b]));
         // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
-        const slotSource = isPhone && page.layout.mobile
-          ? { ...page.layout, ...page.layout.mobile }
-          : page.layout;
+        const slotSource =
+          isPhone && page.layout.mobile
+            ? { ...page.layout, ...page.layout.mobile }
+            : page.layout;
         const slotBlocks = (ids: string[]) =>
-          ids.map(bid => blockById.get(bid)).filter((b): b is NonNullable<typeof b> => !!b);
+          ids
+            .map(bid => blockById.get(bid))
+            .filter((b): b is NonNullable<typeof b> => !!b);
         const summaryBlocks = slotBlocks(slotSource.summary ?? []);
         const primaryBlocks = slotBlocks(slotSource.primary ?? []);
         const secondaryBlocks = slotBlocks(slotSource.secondary ?? []);
         const activityBlocks = slotBlocks(slotSource.activity ?? []);
         const contentBlocks = slotBlocks(slotSource.content ?? []);
         const placedIds = new Set(
-          [...summaryBlocks, ...primaryBlocks, ...secondaryBlocks, ...activityBlocks, ...contentBlocks].map(
-            b => b.id
-          )
+          [
+            ...summaryBlocks,
+            ...primaryBlocks,
+            ...secondaryBlocks,
+            ...activityBlocks,
+            ...contentBlocks,
+          ].map(b => b.id)
         );
         // 声明了 layout 但没被任何槽位引用到的区块：如实照样渲染，不能因为
         // 没排进槽位就悄悄丢内容——排在末尾，视觉上标为"未分配槽位"。
@@ -1927,7 +2084,10 @@ export function AppRuntimeScreen({
             data-testid="app-runtime-experience-block-layout"
           >
             {summaryBlocks.length > 0 && (
-              <div className="flex flex-wrap gap-2" data-testid="app-runtime-layout-summary">
+              <div
+                className="flex flex-wrap gap-2"
+                data-testid="app-runtime-layout-summary"
+              >
                 {summaryBlocks.map(renderBlock)}
               </div>
             )}
@@ -1952,35 +2112,45 @@ export function AppRuntimeScreen({
               </div>
             )}
             {activityBlocks.length > 0 && (
-              <div className="flex flex-col gap-2" data-testid="app-runtime-layout-activity">
+              <div
+                className="flex flex-col gap-2"
+                data-testid="app-runtime-layout-activity"
+              >
                 {activityBlocks.map(renderBlock)}
               </div>
             )}
             {contentBlocks.length > 0 && (
-              <div className="flex flex-col gap-2" data-testid="app-runtime-layout-content">
+              <div
+                className="flex flex-col gap-2"
+                data-testid="app-runtime-layout-content"
+              >
                 {contentBlocks.map(renderBlock)}
               </div>
             )}
             {orphanBlocks.length > 0 && (
-              <div className="grid gap-2" data-testid="app-runtime-layout-unassigned">
+              <div
+                className="grid gap-2"
+                data-testid="app-runtime-layout-unassigned"
+              >
                 {orphanBlocks.map(renderBlock)}
               </div>
             )}
           </div>
         );
       })()}
-      {page.view.kind === "wizard" && (model?.workflow?.nodes?.length ?? 0) > 0 && (
-        <Steps
-          size="small"
-          current={0}
-          items={(model?.workflow?.nodes ?? []).slice(0, 8).map(n => ({
-            title: n.name || n.id,
-            description: n.phase,
-          }))}
-          style={{ marginBottom: 14 }}
-          data-testid="app-runtime-wizard-steps"
-        />
-      )}
+      {page.view.kind === "wizard" &&
+        (model?.workflow?.nodes?.length ?? 0) > 0 && (
+          <Steps
+            size="small"
+            current={0}
+            items={(model?.workflow?.nodes ?? []).slice(0, 8).map(n => ({
+              title: n.name || n.id,
+              description: n.phase,
+            }))}
+            style={{ marginBottom: 14 }}
+            data-testid="app-runtime-wizard-steps"
+          />
+        )}
       {page.view.kind === "monitor" ? (
         monitorFreeformOverview ? (
           <>
@@ -2295,7 +2465,13 @@ export function AppRuntimeScreen({
           items={navMenuItems}
           style={{ flex: 1, minWidth: 0, background: "transparent" }}
         />
-        <span style={{ fontSize: 13, color: identityTheme.sidebarText, opacity: 0.65 }}>
+        <span
+          style={{
+            fontSize: 13,
+            color: identityTheme.sidebarText,
+            opacity: 0.65,
+          }}
+        >
           当前角色
         </span>
         <Select
@@ -2369,9 +2545,7 @@ export function AppRuntimeScreen({
         <span style={{ flex: 1 }} />
         {/* 角色切换：手机档用 antd-mobile Picker（整屏滚轮，手指点得准），
             不用 antd Select——它的下拉浮层在缩放过的画布里定位会飘。 */}
-        <React.Suspense
-          fallback={<span style={{ width: 96, height: 24 }} />}
-        >
+        <React.Suspense fallback={<span style={{ width: 96, height: 24 }} />}>
           <LazyPhoneRolePicker
             roles={schema.roles}
             value={role}
@@ -2381,7 +2555,7 @@ export function AppRuntimeScreen({
         </React.Suspense>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 10 }}>
-        {isHome ? homeContent : phonePageContent}
+        {isHome ? phoneHomeContent : phonePageContent}
       </div>
       <div style={{ flexShrink: 0 }}>
         <React.Suspense
@@ -2450,9 +2624,15 @@ export function AppRuntimeScreen({
             // E40.2：主题变量下发（非 antd 的裸元素经 var(--app-primary) 吃主题）
             ["--app-primary" as string]: identityTheme.primary,
             ["--app-primary-hover" as string]: identityTheme.primaryHover,
+            // 手机档的 antd-mobile 组件不吃 ConfigProvider 的 token，只认
+            // --adm-* 变量。挂在画布上（而不是 :root），生成主题就只染这个
+            // 应用，不会漏到 SlideRule 自己的界面上。
+            ...admThemeVars(identityTheme),
             // Step 9：深色配方覆盖 canvas 底色（不读 identityTheme.contentBg，
             // 避免深色配方叠浅色主题时底色反而变浅）。
-            background: designRecipe.dark ? DARK_CANVAS_BG : identityTheme.contentBg,
+            background: designRecipe.dark
+              ? DARK_CANVAS_BG
+              : identityTheme.contentBg,
             borderRadius: isPhone ? 12 : 5,
             overflow: "hidden",
             boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
@@ -2469,7 +2649,11 @@ export function AppRuntimeScreen({
                 borderRadius: designRecipe.borderRadius,
                 padding: designRecipe.padding,
                 ...(designRecipe.highContrast
-                  ? { colorBorder: "#000000", colorBorderSecondary: "#00000040", fontSize: 15 }
+                  ? {
+                      colorBorder: "#000000",
+                      colorBorderSecondary: "#00000040",
+                      fontSize: 15,
+                    }
                   : {}),
               },
               algorithm: designRecipeAlgorithms(designRecipe, isTablet),
@@ -2500,7 +2684,10 @@ export function AppRuntimeScreen({
                   // 锁的位置只剩一段空白，肉眼看不出还有内容）。改成跟
                   // sidebarText 同色但打透明度，深浅侧边栏都能读出"这项被
                   // 锁住了"而不是凭空消失。
-                  darkItemDisabledColor: hexToRgba(identityTheme.sidebarText, 0.35),
+                  darkItemDisabledColor: hexToRgba(
+                    identityTheme.sidebarText,
+                    0.35
+                  ),
                 },
               },
             }}
