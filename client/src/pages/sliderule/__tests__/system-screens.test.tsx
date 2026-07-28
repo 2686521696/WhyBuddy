@@ -1127,6 +1127,11 @@ describe("浏览器运行时（试运行）入口", () => {
     expect(html).not.toContain("暂无数据");
     expect(html).toContain('data-testid="datamodel-seed-notice"');
     expect(html).toContain("示例数据");
-    expect(html).toContain("课程名 1"); // 种子值可读、确定性
+    // 种子值可读且确定性。原来钉的是字面量「课程名 1」，那是按类型出值时代的
+    // 朴素形态；现在「课程名」会先摘掉元词「名」再修饰成「高原课程」这类
+    // 词——钉死字面量等于把"不许变好"也一起钉住了。这里只锁真正要保的两点：
+    // 表里确实铺出了带实体词的可读值，且不是原封不动的字段名加序号。
+    expect(html).toMatch(/value="[^"]*课程"/);
+    expect(html).not.toContain("课程名 1");
   });
 });
