@@ -768,7 +768,7 @@ export function AppRuntimeScreen({
     if (!page?.entityId) return;
     const problems = validateRowValues(model, page.entityId, formValues);
     if (problems.length > 0) {
-      notify(isPhone, "warning", problems.join("；"));
+      notify(isPhone, "warning", problems.join("；"), () => canvasEl);
       return;
     }
     const { state: next } = addRow(
@@ -780,7 +780,7 @@ export function AppRuntimeScreen({
     apply(next);
     setFormOpen(false);
     setFormValues({});
-    notify(isPhone, "success", "已保存");
+    notify(isPhone, "success", "已保存", () => canvasEl);
   };
 
   /**
@@ -851,7 +851,7 @@ export function AppRuntimeScreen({
     const updated = (next.entities[entityId] ?? []).find(r => r.id === rowId);
     if (updated) setDetailRow(updated);
     setAiSuggestion(null);
-    notify(isPhone, "success", `已应用 AI 建议 →「${action.outputLabel}」`);
+    notify(isPhone, "success", `已应用 AI 建议 →「${action.outputLabel}」`, () => canvasEl);
   };
 
   const handleSubmitToWorkflow = (rowId: string, rowLabel: string) => {
@@ -868,7 +868,8 @@ export function AppRuntimeScreen({
       notify(
         isPhone,
         "success",
-        `已提交审批：${instance.title}（到 Workflow 试运行里推进）`
+        `已提交审批：${instance.title}（到 Workflow 试运行里推进）`,
+        () => canvasEl
       );
     }
   };
@@ -1285,7 +1286,7 @@ export function AppRuntimeScreen({
                 setFormValues({});
                 setFormOpen(true);
               } else {
-                notify(isPhone, "info", "该操作指向的实体暂不支持在此页创建");
+                notify(isPhone, "info", "该操作指向的实体暂不支持在此页创建", () => canvasEl);
               }
               break;
             case "changeFilter":
@@ -2931,6 +2932,16 @@ export function AppRuntimeScreen({
             }))}
             activeId={activePageId}
             onChange={setActivePageId}
+            // 锁定 tab 点了要出声：灰图标 + title 在触屏上等于没有提示，
+            // 用户只会以为点不动是应用卡了。走同一个 notify（手机档=Toast）。
+            onLockedTap={item =>
+              notify(
+                true,
+                "warning",
+                `当前角色（${role ?? "-"}）无「${item.label}」权限`,
+                () => canvasEl
+              )
+            }
           />
         </React.Suspense>
       </div>

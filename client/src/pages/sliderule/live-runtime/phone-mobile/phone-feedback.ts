@@ -13,8 +13,20 @@ import { message } from "antd";
 
 export type FeedbackKind = "success" | "warning" | "info" | "error";
 
-/** 手机档：Toast；桌面档：message。同一套调用点，形态按设备分。 */
-export function notify(isPhone: boolean, kind: FeedbackKind, content: string): void {
+/**
+ * 手机档：Toast；桌面档：message。同一套调用点，形态按设备分。
+ *
+ * getContainer：手机档是在一个缩放过的画布里预览的，Toast 默认 portal 到
+ * document.body——提示会飘到整个浏览器窗口中央，压根不在手机框里，用户在
+ * 手机预览里什么也看不到（真机验证过：Toast 节点存在，画面上找不到）。
+ * 传入画布元素后提示落在框内，跟真机形态一致。
+ */
+export function notify(
+  isPhone: boolean,
+  kind: FeedbackKind,
+  content: string,
+  getContainer?: () => HTMLElement | null
+): void {
   if (!isPhone) {
     message[kind](content);
     return;
@@ -22,6 +34,7 @@ export function notify(isPhone: boolean, kind: FeedbackKind, content: string): v
   void import("antd-mobile").then(({ Toast }) => {
     Toast.show({
       content,
+      getContainer: getContainer ? () => getContainer() ?? document.body : undefined,
       // Toast 没有 warning/error 的语义档，用图标区分：出错给感叹号，
       // 成功给对勾，其余不给图标（纯文字提示）。
       icon: kind === "success" ? "success" : kind === "error" || kind === "warning" ? "fail" : undefined,

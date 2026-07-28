@@ -27,9 +27,23 @@ interface PhoneTabBarProps {
   items: PhoneTabItem[];
   activeId: string;
   onChange: (pageId: string) => void;
+  /**
+   * 点了当前角色无权限的 tab。
+   *
+   * 原本这里是静默 no-op：图标灰掉、挂一个 title 提示。但 title 是鼠标悬停
+   * 才出的东西，触屏上根本不存在——手机用户点一下，什么都不发生，也没有
+   * 任何说明，只会以为应用卡了。灰掉是"看得出来不能点"，点了之后还得告诉
+   * 他为什么不能点。
+   */
+  onLockedTap?: (item: PhoneTabItem) => void;
 }
 
-export default function PhoneTabBar({ items, activeId, onChange }: PhoneTabBarProps) {
+export default function PhoneTabBar({
+  items,
+  activeId,
+  onChange,
+  onLockedTap,
+}: PhoneTabBarProps) {
   return (
     // Wrapper div carries the stable testid — antd-mobile TabBar does not forward data-testid to DOM
     <div data-testid="app-runtime-tabbar" style={{ background: "#fff" }}>
@@ -37,7 +51,12 @@ export default function PhoneTabBar({ items, activeId, onChange }: PhoneTabBarPr
       activeKey={activeId}
       onChange={(key) => {
         const item = items.find((i) => i.pageId === key);
-        if (item && !item.locked) onChange(key);
+        if (!item) return;
+        if (item.locked) {
+          onLockedTap?.(item);
+          return;
+        }
+        onChange(key);
       }}
       safeArea={false}
       style={{ background: "#fff", borderTop: "1px solid #f0f0f0" }}
