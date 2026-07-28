@@ -4,6 +4,47 @@
 
 更细的任务拆分、阶段规划和未完成项请看 [ROADMAP.md](./ROADMAP.md)。
 
+## 2026-07-28
+
+这一轮集中在「闭环产出的应用，打开之后是不是真的能看、能用」。
+
+**生成的应用不再是空壳**
+
+- 新增演示种子数据：闭环产出的应用第一次打开时每个实体都是零行，表格、图表、KPI 全线出「暂无数据」。现在按字段类型/语义确定性地铺一批示例行，页面打开即有内容。
+- 三条边界保证它不会跟真实数据混淆：每个实体只在首次遇见时铺一次（后续删空也不会自己长回来）、每行都带标记、用户写入第一条真实数据时该表种子整批清掉。界面上始终挂「示例数据 N」徽标。
+- 取值按语义走词表：人名出「卢展鹏」、机构出「长沙金穗生物有限公司」、编号出「RR-2026-2879」、产地出真实城市名；认不出语义的字段才退回「字段名 + 序号」。随机源用 pure-rand（与 drizzle-seed / fast-check 同款），同一个模型每次打开看到的示例完全一致。
+
+**体验区块从占位变成真渲染**
+
+- MetricGrid / TrendChart / RankedList / ActivityFeed / DataTable 五个区块接上真实渲染器并放开生成，页面不再只有一张光秃秃的表格。
+- 按页面类型划分 KPI 与图表的归属：总览页（monitor/dashboard）走 `page.stats`/`page.charts` 由 ENRICH 重新设计版式，业务页走 MetricGrid/TrendChart 积木。渲染层双向硬隔离，同一个指标不会被画两遍。
+- 同理，绑到页面主实体的 DataTable 区块会被摘掉——那一页本来就自带一张带中文列名、彩色状态标签、排序筛选与行内操作的表。
+
+**PC 端固定组件改用 Ant Design 组件**
+
+- 区块渲染器此前是手写 div + 写死的十六进制色值，不跟随应用的身份主题（琥珀色的应用里动态流圆点是靛蓝的），深色/紧凑/高对比档位也失效。现已换成 Card / Empty / Timeline / List + Progress / Table，颜色全部走主题 token。
+- 表格列头出中文显示名、枚举列出标签（不再是 `lot_code` 与 `frozen`）。
+- 新增 dev-only 的区块视觉对照台 `/block-gallery.html`（`vite dev` 下可达，不进生产产物），九个区块连同空态一次铺开、可切换主题色，用于视觉回归。
+
+**移动端全面改用 antd-mobile**
+
+- 手机档交互层不再套用 PC 组件：表单、详情、行操作、首页、主题下发全部换成 antd-mobile。
+- 按 pageKind 出骨架，补齐 dashboard / monitor / wizard / kanban / calendar；列表支持搜索与左滑操作。
+- 修复 antd-mobile 与 React 19 的兼容问题（`react-dom` 主入口不再导出 `createRoot`/`unmountComponentAtNode`，导致 Toast 抛错）。
+- 无权限的底部 tab 点击后会给出说明，提示落在手机框内而不是整个浏览器窗口。
+
+**技能库瘦身**
+
+- 下架社区技能层，只保留「精选 / 已安装」两层。
+- 128 条技能逐条判定后按消费通道分流（`aigc` 绑定实体字段 / `experience` 提供设计指引 / `unbound` 仅作软引用），并下架 49 条装了不产出任何东西的条目。
+
+**其它**
+
+- 入站判定：已有应用时也能提全新需求（此前会被硬判成迭代）；输入变化后立刻撤下已不成立的旧提示。
+- 应用存储降级改为四级：远端 TCP → 远端 SQL over HTTP → 本地 SQLite → JSON 文件。
+- 图表维度的枚举取值出标签而不是取值 id。
+- `dev:stop` 修复 Windows 下清不掉端口、`dev:all` 拒绝启动时静默无输出的问题。
+
 ## 2026-06-13
 
 - **产品改名：WhyBuddy → SlideRule（全量迁移）。** 173+ 个文件名、全部内部标识符（类型 / 函数 / 常量 / data-testid / env 名 / localStorage key / API 路由）一次性切换为 SlideRule 系命名。
