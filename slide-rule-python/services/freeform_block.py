@@ -36,9 +36,12 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 from pathlib import Path
 
 from .schema_legal import (
+    EXPERIENCE_BLOCKS,
+    EXPERIENCE_BLOCK_BINDING_SCHEMAS,
     FREEFORM_ALLOWED_ICON_REFS,
     FREEFORM_ALLOWED_STYLE_PROPS,
     FREEFORM_ALLOWED_TAGS,
+    FREEFORM_EMBEDDABLE_BLOCK_TYPES,
     FREEFORM_ICON_NAME_PATTERN,
     FREEFORM_LEGACY_ICON_ALIASES,
 )
@@ -476,6 +479,109 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
                     )
             return self
 
+    class BlockRef(BaseModel):
+        """把一个**现成的体验积木**摆进设计树里（2026-07-29）。
+
+        动机：freeform 的 dataRef 只能表达聚合值（count/sum/avg），没有"枚举
+        真实第 N 行"的能力——排行榜/动态流这类逐行内容它画不出来，真机试过
+        一次只能画出表头 + 空表身。与其让它硬画，不如让它**挑一个现成积木摆进
+        自己的版式里**，渲染仍走那个积木经过测试的真渲染器（主题联动、诚实
+        空态、真实行数据都是白送的）。
+
+        这是 chart 节点的泛化：那边是"节点上挂 chart，渲染委托给 ECharts"，
+        这边是"节点上挂 blockRef，渲染委托给 ExperienceBlockBoundary"。同一个
+        口子，从只能嵌图表放宽到能嵌名单内的任何积木。
+
+        名单语义抄 Puck 的 DropZone allow（packages/core/lib/data/
+        is-component-allowed.ts）：**allow 设了就只放行名单内的**，名单外一律
+        拒。名单从 experience_block_catalog.json 的 freeformEmbeddable 派生。
+
+        binding 的深校验直接吃目录里那份 bindingSchema——跟 Gate 校验
+        page.blocks 用的是同一本账（EXPERIENCE_BLOCK_BINDING_SCHEMAS），
+        不另写一套判定，免得两处对同一个绑定给出不同结论。
+        """
+
+        type: str
+        binding: dict[str, Any] = Field(default_factory=dict)
+        props: dict[str, Any] = Field(default_factory=dict)
+
+        @field_validator("type")
+        @classmethod
+        def check_type(cls, v: str) -> str:
+            if v not in FREEFORM_EMBEDDABLE_BLOCK_TYPES:
+                raise ValueError(
+                    f"blockRef.type '{v}' can not be embedded in a freeform design. "
+                    f"Embeddable types are: {list(FREEFORM_EMBEDDABLE_BLOCK_TYPES)}"
+                )
+            return v
+
+        @model_validator(mode="after")
+        def check_binding(self) -> "BlockRef":
+            schema = EXPERIENCE_BLOCK_BINDING_SCHEMAS.get(self.type) or {}
+            required = [str(k) for k in (schema.get("required") or [])]
+            optional = [str(k) for k in (schema.get("optional") or [])]
+            if not required and not optional:
+                # 这类积木不吃 binding（QuickActionPanel / WorkflowTimeline）。
+                if self.binding:
+                    raise ValueError(
+                        f"blockRef.type '{self.type}' does not take a binding "
+                        f"(got keys: {sorted(self.binding)})"
+                    )
+                return self
+
+            allowed = set(required) | set(optional)
+            unknown = sorted(set(self.binding) - allowed)
+            if unknown:
+                raise ValueError(
+                    f"blockRef.binding for '{self.type}' has unknown keys {unknown}. "
+                    f"Allowed: {sorted(allowed)}"
+                )
+            missing = [k for k in required if not str(self.binding.get(k) or "").strip()]
+            if missing:
+                raise ValueError(
+                    f"blockRef.binding for '{self.type}' is missing required keys {missing}"
+                )
+
+            entity_ref = str(self.binding.get("entityRef") or "").strip()
+            if entity_ref and entity_ref not in entities:
+                raise ValueError(
+                    f"blockRef.binding.entityRef '{entity_ref}' does not exist. "
+                    f"Real entities are: {list(entities.keys())}"
+                )
+            # 字段引用必须落在同一个实体上、类型对得上（date 的位置不能塞
+            # number）——判定标准与 Gate 的 _validate_block_binding 同源。
+            for ref_key, want_type in (schema.get("entityFieldRefs") or {}).items():
+                field_id = str(self.binding.get(ref_key) or "").strip()
+                if not field_id:
+                    continue
+                qualified = f"{entity_ref}.{field_id}"
+                if qualified not in field_types:
+                    raise ValueError(
+                        f"blockRef.binding.{ref_key} '{field_id}' does not exist on entity "
+                        f"'{entity_ref}'"
+                    )
+                if field_types[qualified] != want_type:
+                    raise ValueError(
+                        f"blockRef.binding.{ref_key} '{field_id}' on '{entity_ref}' is type "
+                        f"'{field_types[qualified]}', {self.type} requires a {want_type} field"
+                    )
+            for key, choices in (schema.get("enums") or {}).items():
+                val = self.binding.get(key)
+                if val is not None and val not in choices:
+                    raise ValueError(
+                        f"blockRef.binding.{key} '{val}' is not one of {list(choices)}"
+                    )
+            for key, bounds in (schema.get("ranges") or {}).items():
+                val = self.binding.get(key)
+                if val is None:
+                    continue
+                lo, hi = bounds[0], bounds[1]
+                if not isinstance(val, int) or isinstance(val, bool) or not (lo <= val <= hi):
+                    raise ValueError(
+                        f"blockRef.binding.{key} must be an integer in [{lo}, {hi}], got {val!r}"
+                    )
+            return self
+
     class FreeformNode(BaseModel):
         tag: str
         style: dict[str, str] = Field(default_factory=dict)
@@ -483,6 +589,7 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
         iconRef: Optional[str] = None
         dataRef: Optional[DataRef] = None
         chart: Optional[ChartSpec] = None
+        blockRef: Optional[BlockRef] = None
         children: list["FreeformNode"] = Field(default_factory=list)
 
         @field_validator("tag")
@@ -596,6 +703,76 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
     return FreeformDesign
 
 
+def _blockref_prompt_fragment() -> str:
+    """可嵌积木清单——从目录的 freeformEmbeddable 派生（2026-07-29）。
+
+    名单语义抄 Puck 的 DropZone allow：allow 设了就只放行名单内的。改目录
+    一处，Pydantic 校验/这段 prompt/前端渲染三处同步。绑定字段说明直接吃
+    bindingSchema，与 Gate 校验 page.blocks 同一本账。
+    """
+    if not FREEFORM_EMBEDDABLE_BLOCK_TYPES:
+        return ""
+    by_type = {str(b["type"]): b for b in EXPERIENCE_BLOCKS}
+    lines = [
+        "",
+        "有些内容你**画不出来**：需要逐行列出真实记录的那类（排行榜、动态流、",
+        "流程时间线、入口按钮组）。dataRef 只能取聚合值（count/sum/avg），没有",
+        "\"引用第 N 行\"的表达方式，硬画只会得到一个表头加一片空白。",
+        "",
+        "遇到这种内容，不要硬画，也不要跳过——**在你的版式里摆一个现成积木**：",
+        "节点上加一个 blockRef 字段，运行时会把那个积木真实渲染进这块区域",
+        "（真实行数据、主题配色、空态文案都由积木自己负责，你只决定它摆在哪、",
+        "占多大）。这跟 chart 字段是同一个机制，只是换成了积木。",
+        "",
+        "可以嵌的积木只有这几个，名单之外的一律不接受：",
+    ]
+    for block_type in FREEFORM_EMBEDDABLE_BLOCK_TYPES:
+        block = by_type.get(block_type) or {}
+        schema = block.get("bindingSchema") or {}
+        required = list(schema.get("required") or [])
+        optional = list(schema.get("optional") or [])
+        desc = str(block.get("description") or "").strip()
+        if not required and not optional:
+            bind_desc = "不需要 binding（省略这个字段）"
+        else:
+            parts = []
+            field_refs = schema.get("entityFieldRefs") or {}
+            for key in required:
+                want = field_refs.get(key)
+                parts.append(f"{key}（必填{'，同实体下的 ' + want + ' 字段' if want else ''}）")
+            for key in optional:
+                want = field_refs.get(key)
+                extra = ""
+                if want:
+                    extra = f"，同实体下的 {want} 字段"
+                elif key in (schema.get("enums") or {}):
+                    extra = "，取值：" + "/".join(map(str, schema["enums"][key]))
+                elif key in (schema.get("ranges") or {}):
+                    lo, hi = schema["ranges"][key]
+                    extra = f"，{lo}-{hi} 的整数"
+                parts.append(f"{key}（可选{extra}）")
+            bind_desc = "binding: " + "、".join(parts)
+        lines.append(f"- {block_type}：{desc[:60]}　{bind_desc}")
+    lines += [
+        "",
+        "写法（binding 里的 limit/sortOrder 这类可选项也写在 binding 里，不要写进 props）：",
+        '{"tag": "div", "style": {"flex": "1"}, "blockRef": {',
+        '  "type": "<上面名单里的一个>",',
+        '  "binding": {"entityRef": "<真实实体 id>", "...": "<按上面说明填>"}',
+        "}}",
+        "",
+        "跟 chart 一样：有 blockRef 的节点不要再写 children/text（积木会接管这块",
+        "区域的内容），节点自己的 style 仍然控制它在版式里占多大、周围留多少白。",
+        "积木自带卡片外观（标题栏 + 白底 + 内边距），所以**不要再给这个节点套一层",
+        "自己画的卡片**（不要设 backgroundColor / border / boxShadow / padding），",
+        "否则又是卡片套卡片。",
+        "",
+        "这些积木是**可选的**：这一页确实需要展示逐行记录才摆，用不上就完全不用，",
+        "不要为了凑数硬塞一个跟这页业务无关的排行榜。",
+    ]
+    return "\n".join(lines)
+
+
 def build_freeform_prompt(
     design_brief: str,
     datamodel: dict[str, Any],
@@ -681,6 +858,7 @@ listStyle）会被直接判失败：{", ".join(FREEFORM_ALLOWED_STYLE_PROPS)}。
 想要图表视觉上更突出，用外层包一层更宽的容器（比如让它独占一整行）或
 调整周围留白，而不是在 chart 节点自己身上加一个不会生效的 height 期望。
 {_chart_candidates_prompt_fragment(datamodel)}
+{_blockref_prompt_fragment()}
 下面是这个应用真实的数据模型，唯一可以引用的数据来源：
 {json.dumps(datamodel, ensure_ascii=False, indent=2)}
 
@@ -862,7 +1040,7 @@ def _critique_against_reference(
             max_attempts=2,
             backoff_ms=2000,
             temperature=0.5,
-            max_tokens=10000,
+            max_tokens=14000,
             on_delta=lambda _chunk: None,
         )
     except LlmError:
@@ -891,7 +1069,7 @@ def generate_freeform_block(
     generated_theme: Optional[dict[str, Any]] = None,
     max_retries: int = 2,
     temperature: float = 0.7,
-    max_tokens: int = 10000,
+    max_tokens: int = 14000,
     use_reference_image: bool = True,
     allow_screenshot_verify: bool = True,
 ) -> dict[str, Any]:
@@ -915,8 +1093,11 @@ def generate_freeform_block(
     视觉 LLM 一起看（需要网关声明 LLM_SUPPORTS_IMAGE_CONTENT_PARTS=1，未声明
     或生图不可用时自动降级为纯文字生成，行为与加这段之前完全一致）。
 
-    max_tokens 默认从 7000 提到 10000：实测视觉参照会让模型描述更细（节点数
-    明显变多），7000 真实撞过截断（JSON 半截被切断解析失败）；10000 一次过。
+    max_tokens 默认 7000 → 10000 → 14000：每次都是被真实截断推上去的。
+    10000 那次是加了视觉参照（模型描述更细、节点数变多）；14000 这次是加了
+    blockRef（可嵌积木清单进 prompt、逐行内容清单进 brief，输出又长一截，
+    实测在 6580 字符处被切断、三次重试全挂在同一个位置）。截断表现为
+    "invalid JSON: Expecting ',' delimiter"，不是模型写错了 JSON，是话没说完。
     """
     design_brief = (design_brief or "").strip()
     if not design_brief:
@@ -1190,11 +1371,91 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
         "分组方式、卡片大小关系、整体版式，由你自由设计，做出比标准网格骨架"
         "更有设计感的呈现——这正是这次设计要解决的问题。"
     )
+    # 这一页已经声明的**逐行内容**：以 blockRef 的形状给出，binding 直接照抄
+    # 即可。2026-07-29 第一版只给了一句"适合的话就摆一个"的泛泛引导，真跑
+    # 生成出来 blockRef 一个都没有——模型压根不知道这一页有哪些逐行内容可摆
+    #（"必须包含"清单里刻意只放了 stats/charts）。给了具体清单和现成绑定，
+    # 它才有得挑。仍然是可选项：清单为空就不出这段。
+    # 同一份逐行内容常被声明两遍（page.feeds 一份、page.blocks 一份，绑定
+    # 逐字段相同只有名字不同——真跑逮到过）。喂给模型之前先按内容指纹去重，
+    # 否则等于让它把同一张卡摆两次。指纹口径与前端 page-panel-dedupe.ts 的
+    # blockPanelKey 一致：类型 + 实体 + 关键字段，不含 id / 名字 / 条数。
+    row_bits: list[str] = []
+    seen_row_keys: set[str] = set()
+
+    def _take(key: str) -> bool:
+        if key in seen_row_keys:
+            return False
+        seen_row_keys.add(key)
+        return True
+
+    for r in page.get("rankings") or []:
+        entity = str(r.get("entity") or "").strip()
+        sort_by = str(r.get("sortBy") or "").rpartition(".")[2]
+        if not entity or not sort_by:
+            continue
+        if not _take(f"RankedList|{entity}|{sort_by}"):
+            continue
+        limit = r.get("limit")
+        extra = f', "limit": {limit}' if isinstance(limit, int) else ""
+        row_bits.append(
+            f'{r.get("name") or r.get("id")}：{{"type": "RankedList", "binding": '
+            f'{{"entityRef": "{entity}", "sortByRef": "{sort_by}"{extra}}}}}'
+        )
+    for f in page.get("feeds") or []:
+        entity = str(f.get("entity") or "").strip()
+        time_field = str(f.get("timeField") or "").rpartition(".")[2]
+        if not entity or not time_field:
+            continue
+        level = str(f.get("levelField") or "").rpartition(".")[2]
+        if not _take(f"ActivityFeed|{entity}|{time_field}|{level}"):
+            continue
+        extra = f', "levelFieldRef": "{level}"' if level else ""
+        row_bits.append(
+            f'{f.get("name") or f.get("id")}：{{"type": "ActivityFeed", "binding": '
+            f'{{"entityRef": "{entity}", "timeFieldRef": "{time_field}"{extra}}}}}'
+        )
+    for b in page.get("blocks") or []:
+        block_type = str(b.get("type") or "")
+        if block_type not in FREEFORM_EMBEDDABLE_BLOCK_TYPES:
+            continue
+        binding = b.get("binding") or {}
+        ent = str(binding.get("entityRef") or "")
+        if block_type == "RankedList":
+            key = f"RankedList|{ent}|{binding.get('sortByRef') or ''}"
+        elif block_type == "ActivityFeed":
+            key = (
+                f"ActivityFeed|{ent}|{binding.get('timeFieldRef') or ''}"
+                f"|{binding.get('levelFieldRef') or ''}"
+            )
+        else:
+            key = f"{block_type}|{b.get('id')}"
+        if not _take(key):
+            continue
+        row_bits.append(
+            f'{b.get("id")}：{{"type": "{block_type}", "binding": '
+            f"{json.dumps(binding, ensure_ascii=False)}}}"
+        )
+    if row_bits:
+        lines.append(
+            "这一页还声明了下面这些**逐行内容**，请把它们用 blockRef 摆进你的版式里"
+            "（binding 照抄，由你决定各自放哪一格、占多宽）：\n- " + "\n- ".join(row_bits)
+        )
+
+    # 2026-07-29：这里原来是一句硬禁令——"不要画排行榜/动态流/数据列表"，
+    # 理由是 dataRef 取不到逐行记录、硬画只会出空表头。禁令本身没错，但代价是
+    # 那些内容被赶到设计之外单独渲染成外挂卡，首页变成"AI 设计区 + 两张外挂
+    # 卡"，主次和留白都由不得设计者。
+    #
+    # 现在有 blockRef 了（见 _blockref_prompt_fragment）：逐行内容仍然不由它
+    # 画，但**由它决定摆在哪、占多大**，渲染交给积木自己的真渲染器。所以这里
+    # 从"不许"改成"要用就摆一个"。
     lines.append(
-        "只设计这个页面的 KPI 统计卡+图表这部分（一个完整、自洽的视觉区块），"
-        "不要画排行榜/动态流/数据列表这类需要逐行展示具体记录的内容——这类内容"
-        "在你的设计之外由另一套机制单独渲染真实逐行数据，你这里画了也没有真实"
-        "数据可填，只会出现空表格/占位行，不要画。"
+        "除了 KPI 统计卡和图表，如果这一页还适合展示逐行记录（比如排行榜、"
+        "最近动态/提醒、流程阶段条、常用操作入口），就在你的版式里用 blockRef "
+        "摆一个现成积木（用法见下方说明），由你决定它放在哪一格、占多宽——"
+        "不要自己用 CSS 去画这类内容（画出来只有表头没有行），也不要因为画不了"
+        "就当它不存在。用不上就完全不用，不必凑数。"
     )
     return "\n".join(lines)
 

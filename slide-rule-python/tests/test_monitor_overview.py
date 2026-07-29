@@ -82,12 +82,67 @@ def test_design_brief_covers_stats_and_charts():
 
 
 def test_design_brief_excludes_rankings_and_feeds():
+    """rankings/feeds 不进「必须包含」清单——身份是"可摆的积木"，不是"必须画的内容"。
+
+    2026-07-29 语义分成了两层，这条断言也跟着分层：
+    - **不在**必须清单里：dataRef 表达不了逐行记录，把它们写成"必须画出来"
+      只会逼模型画空表身（这一条没变，是这个函数原本的用意）；
+    - **在**可选的 blockRef 候选清单里：见下一个用例。
+    """
     brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
-    # rankings/feeds 的具体名字不能出现在"必须包含"清单里——dataRef 表达不了
-    # 逐行真实记录，画了也是空表身
-    assert "金额排行" not in brief
-    assert "工单动态" not in brief
-    assert "不要画排行榜" in brief or "不要画" in brief
+    required_section = brief.split("这一页还声明了下面这些")[0]
+    assert "金额排行" not in required_section
+    assert "工单动态" not in required_section
+
+
+def test_design_brief_offers_row_content_as_blockref_candidates():
+    """逐行内容以**现成绑定**的形式给出来，模型照抄就能摆。
+
+    第一版只写了一句泛泛的"适合的话就摆一个"，真跑生成出来 blockRef 一个都
+    没有——模型压根不知道这一页有哪些逐行内容可摆（必须清单里刻意只放了
+    stats/charts）。补上具体清单和现成 binding 之后，同一个模型立刻摆了两个。
+    """
+    brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
+    assert "这一页还声明了下面这些" in brief
+    # 给的是可直接照抄的 blockRef 形状，不是自然语言描述
+    assert '"type": "RankedList"' in brief
+    assert '"type": "ActivityFeed"' in brief
+    assert '"entityRef": "order"' in brief
+    assert '"sortByRef": "amount"' in brief
+
+
+def test_design_brief_dedupes_row_content_candidates():
+    """同一份逐行内容常被 feeds 和 blocks 各声明一遍（真跑逮到过）——
+    喂给模型之前先按内容指纹去重，否则等于让它把同一张卡摆两次。"""
+    page = _monitor_page()
+    page["blocks"] = [
+        {
+            "id": "dup_feed",
+            "type": "ActivityFeed",
+            # 与 feeds[0] 绑定逐字段相同，只有 id/名字不同
+            "binding": {"entityRef": "ticket", "timeFieldRef": "created_at"},
+        }
+    ]
+    brief = _monitor_overview_design_brief(page, _datamodel())
+    candidates = [l for l in brief.split("\n") if l.startswith("- ")]
+    assert sum(1 for l in candidates if "ActivityFeed" in l) == 1, candidates
+
+
+def test_design_brief_points_row_content_at_blockref():
+    """2026-07-29：这里原来断言的是一句硬禁令「不要画排行榜/动态流」。
+
+    禁令本身没错（模型确实画不了逐行），但代价是那些内容被赶到设计之外
+    单独渲染成外挂卡，首页变成"AI 设计区 + 两张外挂卡"，主次和留白都由不得
+    设计者。有了 blockRef 之后语义改成：逐行内容仍然不由它画，但**由它决定
+    摆在哪、占多大**，渲染交给积木自己的真渲染器。所以断言从"不许"改成
+    "指向 blockRef"。
+    """
+    brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
+    assert "blockRef" in brief
+    # 仍然要拦住"自己用 CSS 画"这条歧路
+    assert "不要自己用 CSS 去画这类内容" in brief
+    # 可选语义：用不上就别凑数
+    assert "用不上就完全不用" in brief
 
 
 def test_design_brief_omits_empty_sections():

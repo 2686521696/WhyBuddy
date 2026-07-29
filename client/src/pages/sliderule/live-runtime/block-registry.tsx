@@ -105,6 +105,20 @@ export interface FreeformChartSpec {
   metricFieldId?: string;
   metricLabel: string;
 }
+/**
+ * 把一个现成积木摆进 freeform 设计树（2026-07-29）。
+ *
+ * freeform 的 dataRef 只能取聚合值，画不了逐行记录（排行榜/动态流）。与其
+ * 让它硬画出一个空表头，不如让它挑一个积木、决定摆在哪占多大，渲染仍走那个
+ * 积木经过测试的真渲染器。Python 侧 Pydantic 已按目录的 bindingSchema 深校验
+ * 过，这里照 chart 的规矩再自查一遍——不单方面信任上游。
+ */
+export interface FreeformBlockRef {
+  type: string;
+  binding?: Record<string, unknown>;
+  props?: Record<string, unknown>;
+}
+
 export interface FreeformNode {
   tag: string;
   style?: Record<string, string>;
@@ -112,6 +126,7 @@ export interface FreeformNode {
   iconRef?: string;
   dataRef?: FreeformDataRef;
   chart?: FreeformChartSpec;
+  blockRef?: FreeformBlockRef;
   children?: FreeformNode[];
 }
 
@@ -561,6 +576,50 @@ function renderFreeformChart(
   );
 }
 
+/**
+ * 可嵌积木白名单——从目录的 freeformEmbeddable 派生（Puck DropZone 的 allow
+ * 语义：allow 设了就只放行名单内的，见 packages/core/lib/data/
+ * is-component-allowed.ts）。改目录一处，Python 校验 / prompt / 这里三处同步。
+ */
+const FREEFORM_EMBEDDABLE_BLOCK_TYPES = new Set(
+  EXPERIENCE_BLOCK_CATALOG.blocks
+    .filter(entry => (entry as { freeformEmbeddable?: boolean }).freeformEmbeddable)
+    .map(entry => entry.type)
+);
+
+/**
+ * blockRef 节点 → 真实积木渲染。
+ *
+ * 二次校验跟 renderFreeformChart 同一套纪律（不单方面信任 Python 端已经查过）：
+ * 类型必须在白名单内、必须有登记的渲染器。任一条不满足就不渲染这个节点，
+ * 交回上层显示诚实占位——绝不能因为一个引用坏了让整页设计降级。
+ *
+ * 走的是 ExperienceBlockBoundary，跟 page.blocks 完全同一条渲染路径：同一个
+ * 组件、同一套主题 token、同一份空态文案。这正是这个机制的意义——嵌进来的
+ * 积木不是"另画一个像它的东西"，就是它本身。
+ */
+function renderFreeformBlockRef(
+  ref: FreeformBlockRef | undefined,
+  props: ExperienceBlockRendererProps,
+  key: React.Key
+): React.ReactNode {
+  if (!ref || typeof ref !== "object") return null;
+  const type = String(ref.type ?? "").trim();
+  if (!FREEFORM_EMBEDDABLE_BLOCK_TYPES.has(type)) return null;
+  if (!experienceBlockEntry(type)) return null;
+  const instance: ExperienceBlockInstance = {
+    id: `freeform-block-${key}`,
+    type,
+    binding: (ref.binding ?? {}) as ExperienceBlockInstance["binding"],
+    props: (ref.props ?? {}) as ExperienceBlockInstance["props"],
+  };
+  return (
+    <div key={key} data-testid="freeform-block-ref" data-block-type={type}>
+      <ExperienceBlockBoundary {...props} block={instance} />
+    </div>
+  );
+}
+
 /** dataRef 聚合 → 真实数字（2026-07-24 修复真实撞到的坑）：dataRef 之前
  * 只在 Python 侧校验过"entityRef/字段是否真实存在"，从没真正驱动过显示
  * 内容——渲染的其实是 LLM 自己写的 text 字面量，"数字必须真实、不能编"
@@ -612,17 +671,30 @@ interface FreeformRenderBudget {
   truncated: boolean;
 }
 
+/**
+ * 渲染 freeform 子树需要的全套上下文。
+ *
+ * 2026-07-29 从三个散参（entityRows / chartPalette / enumOptionsOf）改成一个
+ * 对象：blockRef 节点要把**完整的区块渲染 props** 转交给
+ * ExperienceBlockBoundary（onAction / workflow / pageActions 一个都不能少），
+ * 继续加散参会让这个函数的位置参数上到十个，漏传一个又是一次
+ * "类型全绿、真跑没效果"（enumOptionsOf 刚这么栽过）。
+ */
+interface FreeformRenderCtx {
+  /** 转交给嵌入积木的完整 props（block 字段由 blockRef 现场填） */
+  blockProps: ExperienceBlockRendererProps;
+}
+
 function renderFreeformNode(
   node: unknown,
   key: React.Key,
-  entityRows?: Record<string, RuntimeRow[]>,
-  chartPalette?: { primary: string; categorical: readonly string[] },
-  enumOptionsOf?: EnumOptionsLookup,
+  ctx: FreeformRenderCtx,
   // 根节点记 depth=1（与 Python _freeform_tree_bounds 同一计法——两侧
   // 上限必须真同值，root=0 会让前端多放一层）。
   depth = 1,
   budget?: FreeformRenderBudget
 ): React.ReactNode {
+  const { entityRows, chartPalette, enumOptionsOf } = ctx.blockProps;
   if (!node || typeof node !== "object") return null;
   if (!budget) budget = { remaining: FREEFORM_MAX_NODES, truncated: false };
   if (depth > FREEFORM_MAX_DEPTH || budget.remaining <= 0) {
@@ -640,20 +712,17 @@ function renderFreeformNode(
   const chartNode = n.chart
     ? renderFreeformChart(n.chart, entityRows, chartPalette, enumOptionsOf, "chart")
     : null;
-  // chart 节点接管这块区域的内容，不再渲染 children/text（跟 Python 侧 prompt
-  // 的约定一致：有 chart 字段的节点不该再让模型塞 children 进来画图表本身）。
-  const children = chartNode
+  // blockRef 与 chart 同级：都是"这个节点的内容交给别人渲染"。
+  // chart 交给 ECharts，blockRef 交给积木自己的渲染器。
+  const blockRefNode = n.blockRef
+    ? renderFreeformBlockRef(n.blockRef, ctx.blockProps, "blockRef")
+    : null;
+  // chart / blockRef 节点接管这块区域的内容，不再渲染 children/text（跟 Python
+  // 侧 prompt 的约定一致：挂了这两个字段的节点不该再塞 children 进来自己画）。
+  const children = chartNode || blockRefNode
     ? []
     : (Array.isArray(n.children) ? n.children : []).map((child, i) =>
-        renderFreeformNode(
-          child,
-          i,
-          entityRows,
-          chartPalette,
-          enumOptionsOf,
-          depth + 1,
-          budget
-        )
+        renderFreeformNode(child, i, ctx, depth + 1, budget)
       );
   // dataRef 声明了 aggregate 就是"这是个数字承诺"——现算不出来（实体在
   // entityRows 里查不到/avg 没有合法数值行）也不能退回 LLM 写的 text 掩盖
@@ -681,16 +750,13 @@ function renderFreeformNode(
     ) : null,
     dataRefText ?? (typeof n.text === "string" ? n.text : null),
     chartNode,
+    blockRefNode,
     ...children
   );
 }
 
-const FreeformInsightRenderer: ExperienceBlockRenderer = ({
-  block,
-  entityRows,
-  chartPalette,
-  enumOptionsOf,
-}) => {
+const FreeformInsightRenderer: ExperienceBlockRenderer = props => {
+  const { block } = props;
   const root = block.freeformContent?.root;
   if (!root) {
     return (
@@ -706,15 +772,9 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = ({
     remaining: FREEFORM_MAX_NODES,
     truncated: false,
   };
-  const rendered = renderFreeformNode(
-    root,
-    "root",
-    entityRows,
-    chartPalette,
-    enumOptionsOf,
-    1,
-    budget
-  );
+  // 整包透传：嵌进来的积木要拿到跟 page.blocks 一模一样的 props，
+  // 逐个列举等于每加一个 prop 就埋一次漏传（见 ExperienceBlockBoundary 那次）。
+  const rendered = renderFreeformNode(root, "root", { blockProps: props }, 1, budget);
   return (
     <div data-testid="freeform-insight" className="overflow-hidden rounded">
       {rendered}

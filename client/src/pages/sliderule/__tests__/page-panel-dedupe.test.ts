@@ -10,6 +10,7 @@
 import { describe, it, expect } from "vitest";
 import {
   blockPanelKey,
+  collectFreeformBlockRefKeys,
   dedupeBlocksByPanelKey,
   dropLegacyPanelsCoveredByBlocks,
 } from "../live-runtime/page-panel-dedupe";
@@ -147,5 +148,79 @@ describe("dedupeBlocksByPanelKey · 积木内部也可能重复", () => {
     const bar = { id: "b1", type: "FilterBar", binding: { entityRef: "e" } } as ExperienceBlockInstance;
     const bar2 = { ...bar, id: "b2" } as ExperienceBlockInstance;
     expect(dedupeBlocksByPanelKey([bar, bar2])).toHaveLength(2);
+  });
+});
+
+describe("collectFreeformBlockRefKeys · 嵌了就外面不画", () => {
+  /** 设计树：根 → 两列 → 其中一列里摆了个动态流积木 */
+  const design = {
+    root: {
+      tag: "div",
+      children: [
+        { tag: "div", children: [{ tag: "div", chart: { type: "bar" } }] },
+        {
+          tag: "div",
+          children: [
+            {
+              tag: "div",
+              blockRef: {
+                type: "ActivityFeed",
+                binding: {
+                  entityRef: "attendance_record",
+                  timeFieldRef: "check_in_time",
+                  levelFieldRef: "status",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  it("能从嵌套的设计树里把 blockRef 指纹挖出来", () => {
+    const keys = collectFreeformBlockRefKeys(design);
+    expect(keys.size).toBe(1);
+    expect([...keys][0]).toBe(blockPanelKey(feedBlock));
+  });
+
+  it("摆进设计里之后，外层积木脚手架不再画同一份", () => {
+    const keys = collectFreeformBlockRefKeys(design);
+    const out = dedupeBlocksByPanelKey([feedBlock, rankBlock], keys);
+    expect(out.map(b => b.id)).toEqual(["expiry_members"]); // 动态流已在设计里，只剩排行榜
+  });
+
+  it("摆进设计里之后，固定骨架也不再画同一份", () => {
+    const keys = collectFreeformBlockRefKeys(design);
+    const out = dropLegacyPanelsCoveredByBlocks(
+      { rankings: [], feeds: [legacyFeed] },
+      [],
+      keys
+    );
+    expect(out.feeds).toHaveLength(0);
+  });
+
+  it("没有 freeformOverview / 树里没有 blockRef 时返回空集，什么都不影响", () => {
+    expect(collectFreeformBlockRefKeys(null).size).toBe(0);
+    expect(collectFreeformBlockRefKeys(undefined).size).toBe(0);
+    expect(collectFreeformBlockRefKeys({ root: { tag: "div", children: [] } }).size).toBe(0);
+  });
+
+  it("坏形状不抛：children 不是数组、blockRef 缺 type、深度超限都安静跳过", () => {
+    expect(() =>
+      collectFreeformBlockRefKeys({ root: { tag: "div", children: "不是数组" } } as never)
+    ).not.toThrow();
+    expect(
+      collectFreeformBlockRefKeys({
+        root: { tag: "div", children: [{ tag: "div", blockRef: { binding: {} } }] },
+      } as never).size
+    ).toBe(0);
+    // 深度 12 层的合法 blockRef 应被上限挡住（防坏数据把遍历转晕）
+    let deep: Record<string, unknown> = {
+      tag: "div",
+      blockRef: { type: "ActivityFeed", binding: feedBlock.binding },
+    };
+    for (let i = 0; i < 12; i++) deep = { tag: "div", children: [deep] };
+    expect(collectFreeformBlockRefKeys({ root: deep }).size).toBe(0);
   });
 });

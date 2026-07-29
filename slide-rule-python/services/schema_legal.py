@@ -128,6 +128,20 @@ def _load_experience_blocks() -> tuple:
                 f"experience_block_catalog.json {block_type} 放开了生成但渲染器仍是"
                 f" {renderer_status}——会渲染成惰性占位卡"
             )
+        # freeformEmbeddable = 这块能不能被 FreeformInsight 的设计树用 blockRef
+        # 嵌进去（Puck DropZone 的 allow 语义：只放行名单内的）。
+        freeform_embeddable = raw.get("freeformEmbeddable")
+        if not isinstance(freeform_embeddable, bool):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.freeformEmbeddable 必须是布尔值"
+            )
+        # 同一条不变式的延伸：能被嵌 ⊆ 能被生成。放开嵌入却没放开生成，等于
+        # 从侧门绕过灰度决定，把一个还没准备好的区块塞进用户看得见的首页。
+        if freeform_embeddable and not generation_enabled:
+            raise ValueError(
+                f"experience_block_catalog.json {block_type} 放开了 freeform 嵌入却没放开生成"
+                "——嵌入是生成的一个入口，不能绕过灰度决定"
+            )
         for key, legal in (
             ("dataKinds", legal_data_kinds),
             ("allowedSlots", legal_slots),
@@ -236,6 +250,19 @@ EXPERIENCE_BLOCK_BINDING_SCHEMAS: Dict[str, Dict[str, Any]] = {
 EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE: Dict[str, tuple] = {
     str(block["type"]): tuple(block["allowedSlots"]) for block in EXPERIENCE_BLOCKS
 }
+# FreeformInsight 的设计树能用 blockRef 嵌哪些积木（2026-07-29）。
+#
+# 语义抄 Puck 的 DropZone allow（packages/core/lib/data/is-component-allowed.ts）：
+# **allow 设了就只放行名单内的**，名单外一律拒。这里名单从目录派生，改目录
+# 一处，Pydantic 校验、prompt 文案、前端渲染三处同步。
+#
+# 为什么要这个口子：freeform 的 dataRef 只能表达聚合值（count/sum/avg），
+# 没有"枚举真实第 N 行"的能力——排行榜/动态流这类逐行内容它画不出来，真机
+# 试过一次只能画出表头+空表身。与其让它硬画，不如让它**挑一个现成的积木摆
+# 进自己的版式里**，渲染仍走那个积木经过测试的真渲染器。
+FREEFORM_EMBEDDABLE_BLOCK_TYPES = tuple(
+    str(block["type"]) for block in EXPERIENCE_BLOCKS if block.get("freeformEmbeddable")
+)
 
 
 def enum_str(*keys: str) -> str:

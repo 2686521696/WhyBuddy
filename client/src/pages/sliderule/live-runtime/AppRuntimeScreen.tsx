@@ -181,6 +181,7 @@ import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { FieldEditor } from "./FieldEditor";
 import {
+  collectFreeformBlockRefKeys,
   dedupeBlocksByPanelKey,
   dropLegacyPanelsCoveredByBlocks,
 } from "./page-panel-dedupe";
@@ -1214,6 +1215,14 @@ export function AppRuntimeScreen({
   const OVERVIEW_KINDS = new Set(["monitor", "dashboard"]);
   const KPI_BLOCK_TYPES = new Set(["MetricGrid", "TrendChart"]);
 
+  // 2026-07-29：设计者可以用 blockRef 把排行榜/动态流直接摆进 freeform 版式里
+  //（见 page-panel-dedupe.ts）。摆进去了，外面的脚手架和固定骨架就都不再画
+  // 同一份——否则又是一份数据两张卡，而且破坏它设计的留白节奏。
+  const freeformPlacedKeys = React.useMemo(
+    () => collectFreeformBlockRefKeys(page?.freeformOverview),
+    [page?.freeformOverview]
+  );
+
   // 体验区块渲染：桌面壳与手机壳共用同一份摆法逻辑，只有槽位来源分档。
   // 抽成函数之前它内联在 defaultPageContent 里，于是手机档一个区块都渲染不到。
   const renderExperienceBlockScaffold = (forPhone: boolean) => {
@@ -1265,7 +1274,7 @@ export function AppRuntimeScreen({
           .filter(b => !(OVERVIEW_KINDS.has(page.view.kind) && b.type === "FilterBar"));
         // 积木内部的自我去重：模型偶尔把同一份榜/流声明两次（见
         // page-panel-dedupe.ts 的内容指纹判定）。
-        const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks);
+        const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks, freeformPlacedKeys);
         if (dedupedBlocks.length === 0) return null;
 
         // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
@@ -2431,7 +2440,8 @@ export function AppRuntimeScreen({
   const dedupedLists = page
     ? dropLegacyPanelsCoveredByBlocks(
         { rankings: page.rankings, feeds: page.feeds },
-        page.experienceBlocks
+        page.experienceBlocks,
+        freeformPlacedKeys
       )
     : { rankings: [], feeds: [] };
   const monitorDynamicLists =
