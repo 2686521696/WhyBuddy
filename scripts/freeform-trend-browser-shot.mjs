@@ -149,7 +149,12 @@ async function main() {
 
   const chromium = await resolveChromium();
   const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  // deviceScaleFactor 3：舞台把应用缩到 ~49% 显示，1x 截出来的环比小字和
+  // 走势线糊成一团，看不出这两层到底长成什么样——而这正是要验的东西。
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+    deviceScaleFactor: 3,
+  });
   const page = await context.newPage();
   const { sessionId, fixtureState } = buildFixture();
 
@@ -209,6 +214,24 @@ async function main() {
   const closeup = join(outDir, "overview-closeup.png");
   await page.locator('[data-testid="freeform-insight"]').first().screenshot({ path: closeup });
   log(`closeup: ${closeup}`);
+
+  // 再单独截 KPI 那一行——三层结构（大数字 / 环比徽标 / 走势线）的验收面
+  const firstTrend = page.locator('[data-testid="dataref-trend"]').first();
+  const box = await firstTrend.boundingBox();
+  const insightBox = await page.locator('[data-testid="freeform-insight"]').first().boundingBox();
+  if (box && insightBox) {
+    const kpiRow = join(outDir, "kpi-row.png");
+    await page.screenshot({
+      path: kpiRow,
+      clip: {
+        x: insightBox.x,
+        y: box.y - 60,
+        width: insightBox.width,
+        height: 120,
+      },
+    });
+    log(`kpi row: ${kpiRow}`);
+  }
 
   await browser.close();
   cleanup();
