@@ -7,12 +7,10 @@ import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   KANBAN_UNASSIGNED,
-  buildMonthGrid,
   dateKeyOf,
   dominantMonth,
   groupRowsForKanban,
   rowsByDateKey,
-  shiftMonth,
 } from "../live-runtime/page-views";
 import { KanbanBoard, CalendarBoard } from "../live-runtime/PageViews";
 import type { RuntimeRow } from "../live-runtime/live-runtime";
@@ -85,29 +83,8 @@ describe("月历纯函数", () => {
     expect(dominantMonth(new Map())).toBeNull();
   });
 
-  it("buildMonthGrid：周一起始、整周补位；2026-07 首格是 6/29、末格 8/2", () => {
-    const weeks = buildMonthGrid("2026-07");
-    expect(weeks.length).toBe(5);
-    expect(weeks.every(w => w.length === 7)).toBe(true);
-    expect(weeks[0][0]).toMatchObject({
-      dateKey: "2026-06-29",
-      inMonth: false,
-    });
-    expect(weeks[0][2]).toMatchObject({
-      dateKey: "2026-07-01",
-      day: 1,
-      inMonth: true,
-    });
-    const last = weeks.at(-1)!.at(-1)!;
-    expect(last).toMatchObject({ dateKey: "2026-08-02", inMonth: false });
+  
   });
-
-  it("shiftMonth：跨年进退位", () => {
-    expect(shiftMonth("2026-01", -1)).toBe("2025-12");
-    expect(shiftMonth("2026-12", 1)).toBe("2027-01");
-    expect(shiftMonth("2026-07", 0)).toBe("2026-07");
-  });
-});
 
 describe("视图组件静态渲染", () => {
   const STATUS_FIELD = {
@@ -149,14 +126,33 @@ describe("视图组件静态渲染", () => {
       />
     );
     expect(html).toContain('data-testid="app-runtime-calendar"');
-    expect(html).toContain("2026 年 07 月");
+    // dayjs 的 M 不补零（"7 月" 不是 "07 月"）；自建版是手拼字符串才有前导零
+    expect(html).toContain("2026 年 7 月");
     expect(html).toContain('data-testid="app-calendar-event-r1"');
     expect(html).toContain("张三");
     expect(html).toContain("李四");
     expect(html).toContain("共 2 条排期");
-    // 着色点：已成交 success 绿 / 待跟进 warning 金
-    expect(html).toContain("#52c41a");
-    expect(html).toContain("#faad14");
+    // 着色改走 Badge 的 status 档，不再自己写死十六进制：
+    // 已成交 success / 待跟进 warning，颜色由主题 token 出，跟着身份主色走
+    expect(html).toContain("ant-badge-status-success");
+    expect(html).toContain("ant-badge-status-warning");
+    expect(html).not.toContain("#52c41a");
+  });
+
+  it("CalendarBoard：换成 antd Calendar 后白拿到的两样东西", () => {
+    const html = renderToStaticMarkup(
+      <CalendarBoard
+        rows={[row("r1", { d: "2026-07-09", status: "已成交", title: "张三" })]}
+        dateFieldId="d"
+        colorByField={STATUS_FIELD}
+        titleFieldId="title"
+        onOpenRow={() => {}}
+      />
+    );
+    // 1. 今天的高亮 —— 自建版一直没有
+    expect(html).toContain("ant-picker-cell-today");
+    // 2. 每格带 title（无障碍/悬停可读的完整日期）
+    expect(html).toContain('title="2026-07-09"');
   });
 
   it("CalendarBoard：无可解析日期时如实空态", () => {

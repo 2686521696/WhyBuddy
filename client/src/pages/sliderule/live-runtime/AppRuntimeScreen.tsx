@@ -129,6 +129,7 @@ const LazyPhonePageSections = React.lazy(
 const LazyPhoneKanban = React.lazy(
   () => import("./phone-mobile/PhoneKanban")
 );
+const LazyPhoneNavBar = React.lazy(() => import("./phone-mobile/PhoneNavBar"));
 const LazyPhoneSeedNotice = React.lazy(
   () => import("./phone-mobile/PhoneSeedNotice")
 );
@@ -199,7 +200,16 @@ import {
 } from "./page-views";
 import { AiSuggestionCard } from "./AiSuggestionCard";
 import { CodeProjectionView } from "./CodeProjectionView";
+import zhCN from "antd/locale/zh_CN";
+// dayjs 的 locale 是**独立于 antd 的第二套**：antd 的 locale 管按钮/占位这些
+// 文案，星期几的短名（一二三…）和「周一起周」是 dayjs 给的。只设一边的话
+// 面板会一半中文一半 Su/Mo——两行都得有。
+import dayjs from "dayjs";
+import "dayjs/locale/zh-cn";
 import { confirmDestructive, notify } from "./phone-mobile/phone-feedback";
+
+// 模块级设一次。放在组件里会每次渲染都调，dayjs.locale 是全局副作用。
+dayjs.locale("zh-cn");
 import type { AppPageStatSchema } from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
@@ -2940,56 +2950,46 @@ export function AppRuntimeScreen({
         background: "#f0f2f5",
       }}
     >
-      <div
-        style={{
-          height: 48,
-          flexShrink: 0,
-          background: "#fff",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "0 12px",
-          boxShadow: "0 1px 4px rgba(0,21,41,0.08)",
-          zIndex: 1,
-        }}
+      {/* 顶栏走 antd-mobile NavBar（左 品牌 / 中 标题 / 右 角色）。此前是手搓的
+          48px flex div，自己摆 logo、自己 flex:1 顶右、自己加投影——三段布局
+          本来就是 NavBar 的事。fallback 给一条等高空白，避免加载那一拍内容区
+          往上跳。 */}
+      <React.Suspense
+        fallback={
+          <div style={{ height: 48, flexShrink: 0, background: "#fff" }} />
+        }
       >
-        <div
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: 6,
-            background: brandGradient,
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <BrandIcon style={{ color: "#fff", fontSize: 12 }} />
-        </div>
-        <span
-          style={{
-            fontWeight: 600,
-            fontSize: 14,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {currentTitle}
-        </span>
-        <span style={{ flex: 1 }} />
-        {/* 角色切换：手机档用 antd-mobile Picker（整屏滚轮，手指点得准），
-            不用 antd Select——它的下拉浮层在缩放过的画布里定位会飘。 */}
-        <React.Suspense fallback={<span style={{ width: 96, height: 24 }} />}>
-          <LazyPhoneRolePicker
-            roles={schema.roles}
-            value={role}
-            onChange={changeRole}
-            getContainer={() => canvasEl ?? document.body}
-          />
-        </React.Suspense>
-      </div>
+        <LazyPhoneNavBar
+          title={currentTitle}
+          brand={
+            <span
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 6,
+                background: brandGradient,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <BrandIcon style={{ color: "#fff", fontSize: 12 }} />
+            </span>
+          }
+          right={
+            // 角色切换：手机档用 antd-mobile Picker（整屏滚轮，手指点得准），
+            // 不用 antd Select——它的下拉浮层在缩放过的画布里定位会飘。
+            <React.Suspense fallback={<span style={{ width: 96, height: 24 }} />}>
+              <LazyPhoneRolePicker
+                roles={schema.roles}
+                value={role}
+                onChange={changeRole}
+                getContainer={() => canvasEl ?? document.body}
+              />
+            </React.Suspense>
+          }
+        />
+      </React.Suspense>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 10 }}>
         {isHome ? phoneHomeContent : phonePageContent}
       </div>
@@ -3085,6 +3085,11 @@ export function AppRuntimeScreen({
           }}
         >
           <ConfigProvider
+            // 生成的应用通篇中文，日期组件却一直是英文的——实测过：新建表单里
+            // 点开日期字段，星期表头是 "Su Mo Tu We Th Fr Sa"、月份是 "Jul"，
+            // 而且**周日起周**（中文习惯是周一起）。antd 不配 locale 时默认
+            // en_US，这一条漏了就等于每个生成出来的应用都带着一个英文日历。
+            locale={zhCN}
             getPopupContainer={() => canvasEl ?? document.body}
             theme={{
               // E40.2：身份主题的主色一把翻全部 antd 组件（按钮/选中态/链接…）
@@ -3092,6 +3097,16 @@ export function AppRuntimeScreen({
               // 略增字号（无障碍场景，antd token 全局生效，不用逐组件改）。
               token: {
                 colorPrimary: identityTheme.primary,
+                // 「选中项的浅底」交给主题自己声明的 accentBg，不吃 antd 从
+                // colorPrimary 派生的那个。派生值对常规亮色主色没问题，但主色
+                // 一旦是**低饱和深色**（生成主题很容易挑到，比如咖啡那套的
+                // #3F7656），派生出来是中灰绿 rgb(170,181,173)——配上同样深绿的
+                // 文字，实测对比度只有 2.6:1，低于 WCAG AA 的 4.5:1，日历选中格
+                // 的日号几乎看不清。accentBg 本来就是主题为"强调浅底"声明的，
+                // 用它既保证是浅的，又跟侧栏/标签的浅底同源。
+                // 这一个 token 同时管住 Calendar 选中格 / Select 选中项 /
+                // Menu 选中项，不用逐组件打补丁。
+                controlItemBgActive: identityTheme.accentBg,
                 borderRadius: designRecipe.borderRadius,
                 padding: designRecipe.padding,
                 ...(designRecipe.highContrast
