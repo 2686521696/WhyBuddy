@@ -129,6 +129,9 @@ const LazyPhonePageSections = React.lazy(
 const LazyPhoneKanban = React.lazy(
   () => import("./phone-mobile/PhoneKanban")
 );
+const LazyPhoneSeedNotice = React.lazy(
+  () => import("./phone-mobile/PhoneSeedNotice")
+);
 const LazyPhoneCalendar = React.lazy(
   () => import("./phone-mobile/PhoneCalendar")
 );
@@ -196,7 +199,7 @@ import {
 } from "./page-views";
 import { AiSuggestionCard } from "./AiSuggestionCard";
 import { CodeProjectionView } from "./CodeProjectionView";
-import { notify } from "./phone-mobile/phone-feedback";
+import { confirmDestructive, notify } from "./phone-mobile/phone-feedback";
 import type { AppPageStatSchema } from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
@@ -1663,21 +1666,13 @@ export function AppRuntimeScreen({
       data-page-kind={page.view.kind}
     >
       {/* 演示种子的如实标注，与桌面页卡上那个 Tag 同源（pageShowsSeed），
-          一页只标一处。手机档没有 Card title 的位置，摆成一条窄提示带。 */}
+          一页只标一处。手机档没有 Card title 的位置，用 antd-mobile 的
+          NoticeBar——此前这里是手搓的一个橙字小方块，跟旁边的移动端组件
+          不是一套观感（见 PhoneSeedNotice 的注释）。 */}
       {pageSeedCount > 0 && (
-        <div
-          style={{
-            fontSize: 11,
-            lineHeight: 1.5,
-            padding: "6px 10px",
-            borderRadius: 6,
-            color: "var(--adm-color-warning, #ff8f1f)",
-            background: "var(--adm-color-box, #f5f5f5)",
-          }}
-          data-testid="phone-seed-notice"
-        >
-          示例数据 · {pageSeedCount} 条，点「新建」写入第一条真实记录后即被取代
-        </div>
+        <React.Suspense fallback={null}>
+          <LazyPhoneSeedNotice count={pageSeedCount} />
+        </React.Suspense>
       )}
       {/* 体验区块：与桌面壳同一份摆法逻辑，槽位走 layout.mobile（未声明则退回
           桌面槽位）。从前手机档只有一个裸列表——桌面有的 KPI/图表/筛选条/流程
@@ -1758,7 +1753,20 @@ export function AppRuntimeScreen({
               key: "delete",
               text: "删除",
               color: "danger",
-              onClick: () => apply(deleteRow(state, page.entityId!, r.id)),
+              // 删除不可逆，桌面档早就套了 Popconfirm；手机档此前是滑开一点
+              // 就没了、连提示都没有。Dialog.confirm 返回 Promise<boolean>，
+              // 确认了才真删，删完给一句 Toast。
+              onClick: () => {
+                void confirmDestructive(
+                  "删除这条记录？",
+                  "删掉之后无法恢复。",
+                  () => canvasEl
+                ).then(ok => {
+                  if (!ok) return;
+                  apply(deleteRow(state, page.entityId!, r.id));
+                  toast("success", "已删除");
+                });
+              },
             });
             return acts;
           }}

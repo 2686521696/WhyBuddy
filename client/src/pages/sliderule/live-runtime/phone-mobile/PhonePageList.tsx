@@ -14,6 +14,8 @@ import {
   SearchBar,
   SwipeAction,
   PullToRefresh,
+  ErrorBlock,
+  Ellipsis,
 } from "antd-mobile";
 // 图标复用 @ant-design/icons（已在主包），省掉 antd-mobile-icons 依赖
 import { PlusOutlined, LockOutlined } from "@ant-design/icons";
@@ -130,18 +132,29 @@ export default function PhonePageList({
           data-testid="phone-list-search"
         />
       )}
+      {/* 两处空态都用 ErrorBlock，不再手搓灰字 div——插画/标题/描述的层级与
+          留白是它给的，手搓的那两行在手机上就是一句飘在中间的小灰字。
+          用 ErrorBlock 而不是 Empty：源码里 Empty 挂着
+          `@deprecated ... will be removed in the next major version`，
+          ErrorBlock 的 status='empty' 就是这个场景的档位。
+          标题/描述仍然是我们自己写的那两句——ErrorBlock 的默认文案是
+          「暂无数据」，正是这里最不该出现的话（说不清为什么没有）。 */}
       {rows.length === 0 ? (
-        <div style={{ textAlign: "center", fontSize: 12, color: "#bfbfbf", padding: "24px 0" }}>
-          暂无数据 — 点「新建」写入第一条真实数据
-        </div>
+        <ErrorBlock
+          status="empty"
+          title="还没有数据"
+          description="点上面的「新建」写入第一条真实数据"
+          style={{ padding: "16px 0", "--image-height": "64px" } as React.CSSProperties}
+        />
       ) : shown.length === 0 ? (
         // 搜没了 ≠ 没有数据，文案必须分开——否则用户以为数据丢了
-        <div
-          style={{ textAlign: "center", fontSize: 12, color: "#bfbfbf", padding: "24px 0" }}
+        <ErrorBlock
+          status="empty"
+          title={`没有匹配「${query}」的记录`}
+          description={`清空搜索可看全部 ${rows.length} 条`}
           data-testid="phone-list-no-match"
-        >
-          没有匹配「{query}」的记录 — 清空搜索可看全部 {rows.length} 条
-        </div>
+          style={{ padding: "16px 0", "--image-height": "64px" } as React.CSSProperties}
+        />
       ) : (
         <PullToRefresh
           onRefresh={async () => {
@@ -165,7 +178,22 @@ export default function PhonePageList({
                   {descFields.map((f) => (
                     <div key={f.id} style={{ display: "flex", fontSize: 12, marginTop: 2 }}>
                       <span style={{ color: "#999", width: 84, flexShrink: 0 }}>{f.label}</span>
-                      <span style={{ color: "#262626" }}>{String(row.values[f.id] ?? "—")}</span>
+                      {/* 长文本字段（备注/AI 摘要）会把行撑成一大段，整屏只
+                          剩两三条记录。Ellipsis 按真实渲染宽度测量后截断，
+                          比 CSS 的 text-overflow 稳（后者在 flex 子项里要靠
+                          min-width:0 才生效，这里嵌了三层容易漏）。
+
+                          **不给 expandText/collapseText**：那对文案会渲染成
+                          一个 <a>，而 antd-mobile 的 List.Item 本身就是
+                          <a class="adm-list-item adm-plain-anchor">——<a> 套
+                          <a> 是非法嵌套，React 真跑就报 validateDOMNesting。
+                          原地展开在这儿也是多余的：点这一行本来就打开详情，
+                          那里有完整值。 */}
+                      <Ellipsis
+                        content={String(row.values[f.id] ?? "—")}
+                        rows={1}
+                        style={{ color: "#262626", minWidth: 0 }}
+                      />
                     </div>
                   ))}
                   {renderRowActions && !swipeActions && (

@@ -59,3 +59,40 @@ export function notify(
     desktop[kind](content);
   });
 }
+
+/**
+ * 手机档的破坏性操作确认（2026-07-29）。
+ *
+ * 桌面档的删除早就套了 Popconfirm，手机档一直是**左滑出按钮、一点就没了，
+ * 连提示都不给**。当时留的理由是「滑动本身已经是不会误触的确认动作」——
+ * 站不住：滑开之后那个红按钮就贴在拇指底下，误触比桌面还容易，而且删完
+ * 界面上一点反馈都没有，用户不确定是删掉了还是没点中。
+ *
+ * antd-mobile 的标准解是 `Dialog.confirm`，它返回 `Promise<boolean>`
+ *（confirm.tsx 里 `new Promise<boolean>` + actions 决议），所以调用方可以
+ * `if (await confirmDestructive(...))` 这样写，不用自己搭状态机。
+ *
+ * getContainer 的道理跟 Toast 一样：手机档是在一个缩放过的画布里预览的，
+ * 不传的话弹框会盖住整个浏览器窗口，而不是落在手机框里。
+ *
+ * chunk 拉不下来时**返回 false**（当作用户取消），不是 true——加载失败绝不能
+ * 变成"没问确认就把数据删了"。
+ */
+export async function confirmDestructive(
+  title: string,
+  description: string,
+  getContainer?: () => HTMLElement | null
+): Promise<boolean> {
+  try {
+    const { Dialog } = await import("antd-mobile");
+    return await Dialog.confirm({
+      title,
+      content: description,
+      confirmText: "删除",
+      cancelText: "取消",
+      getContainer: getContainer ? () => getContainer() ?? document.body : undefined,
+    });
+  } catch {
+    return false;
+  }
+}

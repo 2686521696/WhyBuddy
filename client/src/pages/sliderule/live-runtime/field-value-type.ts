@@ -91,6 +91,33 @@ export function resolveValueType(field: FieldLike): RuntimeValueType {
   return "text";
 }
 
+/**
+ * 同一张表，但把「已经写进去的行里出现过的取值」也算成候选（2026-07-29）。
+ *
+ * 手机档一直有这条兜底：模型没声明 options 时，用历史值当选择器候选。不把
+ * 这批值喂进判定表的话，一个实际只有两三种取值的字段会被判成 tags 档
+ *（自由输入），白白丢掉选择器。
+ *
+ * ref **不合成**候选——它的候选是「另一张表的行」，不是枚举取值；判定表里
+ * ref 本来就是独立一档，合成了会被当成枚举、走错取候选的分支。
+ *
+ * 放在这个文件而不是手机档那边：判定表的意义就是"只有一处"，多一个入口也
+ * 得在同一个门里，否则又是两套判定各自演化（这次改的就是这个病）。
+ */
+export function resolveValueTypeWithObservedOptions(
+  field: FieldLike,
+  observed: string[]
+): RuntimeValueType {
+  if (String(field.type ?? "").toLowerCase() === "ref") return "ref";
+  if (!field.options?.length && observed.length > 0) {
+    return resolveValueType({
+      ...field,
+      options: observed.map(o => ({ id: o, label: o, tone: "default" as const })),
+    });
+  }
+  return resolveValueType(field);
+}
+
 /** 这一档是不是 0-100 的有界数值（percent/progress/score 共用边界与滑杆）。 */
 export function isBounded100(valueType: RuntimeValueType): boolean {
   return valueType === "percent" || valueType === "progress" || valueType === "score";

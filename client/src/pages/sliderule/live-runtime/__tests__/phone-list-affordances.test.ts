@@ -20,11 +20,21 @@ const screenSrc = await import("../AppRuntimeScreen.tsx?raw").then(
 
 describe("搜索", () => {
   it("空态分两种：本来没有 vs 搜没了", () => {
-    expect(listSrc).toContain("暂无数据 — 点「新建」写入第一条真实数据");
+    // 2026-07-29 两处都从手搓灰字 div 换成了 ErrorBlock（插画 + 标题 + 描述）。
+    // 文案本身是这条约定的实质，跟着组件一起搬，不能在换组件时丢掉。
+    expect(listSrc).toContain("还没有数据");
+    expect(listSrc).toContain("写入第一条真实数据");
     expect(listSrc).toContain('data-testid="phone-list-no-match"');
     expect(listSrc).toContain("没有匹配");
     // 搜没了的文案要告诉用户总共有多少条，否则"没有匹配"看着像数据没了
     expect(listSrc).toContain("可看全部");
+  });
+
+  it("空态用 ErrorBlock 不用 Empty —— 源码里 Empty 已标 @deprecated", () => {
+    expect(listSrc).toContain("ErrorBlock");
+    expect(listSrc).toMatch(/status="empty"/);
+    // 默认文案是「暂无数据」，说不清为什么没有；两处都必须自带 title
+    expect(listSrc).toMatch(/title=/);
   });
 
   it("行数少时不出搜索框（3 行配一个搜索框是噪声）", () => {
