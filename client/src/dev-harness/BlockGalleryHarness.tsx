@@ -147,6 +147,31 @@ export function BlockGalleryHarness() {
             <Block rendererKey="activity-feed" block={{ id: "b8", type: "ActivityFeed", props: { title: "近期动态" }, binding: { entityRef: "empty_entity", timeFieldRef: "at" } }} />
           </Cell>
 
+          {/* 宽行档（2026-07-29）：时间轴形态撑不满整行，右边三分之二是空的。
+              variant=row 摊成一条满宽信息行，中段明细由 detailFieldRefs 声明。
+              这一格给双倍宽度，否则看不出"宽行"的意义。 */}
+          <div style={{ width: 856 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              ActivityFeed · 宽行档 variant=row（对比上面的时间轴档）
+            </Typography.Text>
+            <div style={{ marginTop: 4 }}>
+              <Block
+                rendererKey="activity-feed"
+                block={{
+                  id: "b11",
+                  type: "ActivityFeed",
+                  props: { title: "近期动态", variant: "row" },
+                  binding: {
+                    entityRef: E,
+                    timeFieldRef: "at",
+                    levelFieldRef: "status",
+                    detailFieldRefs: ["supplier", "origin", "weight"],
+                  },
+                }}
+              />
+            </div>
+          </div>
+
           <Cell label="DataTable · 有数据（列头应出中文、枚举应出标签）">
             <Block rendererKey="data-table" block={{ id: "b9", type: "DataTable", props: { title: "生豆批次" }, binding: { entityRef: E } }} />
           </Cell>
