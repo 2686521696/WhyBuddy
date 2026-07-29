@@ -113,6 +113,24 @@ def test_binding_free_block_prompt_says_omit_not_none():
     assert not line.startswith("none")
 
 
+def test_layout_prompt_forbids_the_slots_wrapper():
+    """Step 7 的措辞不能再让"槽位"读起来像个叫 slots 的键。
+
+    原文是 "a layout object with slots summary/primary/..."，真跑一轮里 6 个
+    页面全写成了 `layout: {"slots": {...}}`——跟上面那条 binding=none 是同
+    一类事故：prompt 里长得像键名的词会被当成键名。这里锁两件事：给了字面
+    例子、并且明确点名 `slots` 包装是错的。
+    """
+    from services.schema_legal import experience_block_prompt_block
+
+    prompt = experience_block_prompt_block()
+    step7 = [ln for ln in prompt.splitlines() if "Step 7 — Page layout" in ln]
+    assert len(step7) == 1, "Step 7 那行找不到（或重复了）"
+    line = step7[0]
+    assert '"summary": ["kpi_grid"]' in line, "缺少摊平写法的字面例子"
+    assert '{"slots": {...}} is WRONG' in line, "没点名 slots 包装是错的"
+
+
 def test_gate_reports_binding_on_a_binding_free_block():
     """塞了 binding 要直说"这块不该有 binding"，别报成 entityRef 悬挂。
 

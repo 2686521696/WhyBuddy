@@ -1028,6 +1028,20 @@ def validate_five_system_model(
         for slot_key, block_refs in layout.items():
             if slot_key == "mobile":
                 continue
+            # 槽位表被多包了一层 `slots`。真跑撞过一次 6/6 页全中：prompt 里
+            # 那句 "a layout object with slots summary/primary/..." 会被读成
+            # "有个叫 slots 的键"（跟 binding=none 是同一类哨兵词事故）。
+            # 泛化的 "slot 'slots' 不合法" 那条不足以让 reask 知道要怎么改，
+            # 这里直接说"把它摊平"。识别是确定的：slots 不是合法槽位名，且
+            # 合法槽位的值是数组、这里是对象。
+            if slot_key == "slots" and isinstance(block_refs, dict):
+                findings.append(_finding(
+                    DANGLING, f"{layout_page}.slots",
+                    "layout slot map must not be nested under a 'slots' key; hoist its "
+                    'entries onto layout itself (layout: {"summary": [...], "content": [...]})',
+                    ref=slot_key, skill="page",
+                ))
+                continue
             if slot_key not in LAYOUT_SLOTS:
                 findings.append(_finding(
                     DANGLING, f"{layout_page}.{slot_key}",

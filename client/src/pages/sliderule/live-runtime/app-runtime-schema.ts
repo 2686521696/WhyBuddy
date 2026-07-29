@@ -373,6 +373,25 @@ export const LAYOUT_SLOT_KEYS = [
 ] as const;
 type LayoutSlotKey = (typeof LAYOUT_SLOT_KEYS)[number];
 
+/**
+ * 槽位表偶发被模型多包一层 `slots`（`layout: { slots: { summary: [...] } }`）。
+ * 生成侧的 prompt 和 Gate 都已经按"摊平"来管了，但**已经落库的模型改不动**，
+ * 而这层包装漏过来的后果是静默的：5 个槽位一个都读不到 → hasAny=false →
+ * deriveLayout 返回 null → 渲染层判定为"没声明 layout"退回顺序平铺，模型的
+ * 排版意图全丢，页面照常渲染、没有任何报错。
+ *
+ * 解包的判定是确定的，不是猜：`slots` 不在合法槽位名里，而合法槽位的值是
+ * 数组、这里是对象——两条同时成立时不存在别的解释。
+ */
+function unwrapNestedSlots(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const nested = (raw as Record<string, unknown>).slots;
+  if (!nested || typeof nested !== "object" || Array.isArray(nested)) return raw;
+  const hasRealSlot = LAYOUT_SLOT_KEYS.some(k => Array.isArray((raw as Record<string, unknown>)[k]));
+  // 外层已经有真槽位时以外层为准，不拿包装层去覆盖它。
+  return hasRealSlot ? raw : { ...(raw as Record<string, unknown>), ...nested };
+}
+
 function normalizeLayoutSlotMap(
   raw: unknown,
   validBlockIds: Set<string>
@@ -401,10 +420,11 @@ function deriveLayout(
     experienceBlocks.filter(b => !b._fromLegacy).map(b => b.id)
   );
   if (directIds.size === 0) return null;
-  const slots = normalizeLayoutSlotMap(rawLayout, directIds);
-  const mobileRaw = (rawLayout as Record<string, unknown>).mobile;
+  const layout = unwrapNestedSlots(rawLayout);
+  const slots = normalizeLayoutSlotMap(layout, directIds);
+  const mobileRaw = (layout as Record<string, unknown>).mobile;
   const mobile = mobileRaw
-    ? normalizeLayoutSlotMap(mobileRaw, directIds)
+    ? normalizeLayoutSlotMap(unwrapNestedSlots(mobileRaw), directIds)
     : undefined;
   const hasAny = LAYOUT_SLOT_KEYS.some(k => slots[k].length > 0);
   if (!hasAny) return null;

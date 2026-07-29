@@ -450,8 +450,11 @@ def experience_block_prompt_block() -> str:
         "Blocks MAY include eventBindings mapping event names to action ids defined in the same page."
     )
     lines.append(
-        "Step 7 — Page layout: pages MAY declare a layout object with slots "
-        "summary/primary/secondary/activity/content, each containing an ordered list of block ids. "
+        "Step 7 — Page layout: pages MAY declare a layout object whose OWN KEYS ARE THE SLOT NAMES — "
+        "summary/primary/secondary/activity/content — each mapping to an ordered list of block ids, "
+        'exactly like "layout": {"summary": ["kpi_grid"], "content": ["order_table"]}. '
+        'Do NOT nest them under a wrapper key: "layout": {"slots": {...}} is WRONG and the whole layout '
+        "will be discarded. "
         "Every block id in layout MUST exist in page.blocks, AND each block MUST be placed only in one "
         "of the slots listed for its type above (slots=... in the catalog entry) — e.g. a RankedList "
         "(slots=primary,secondary) placed in the activity slot is a violation, even though the block id "
