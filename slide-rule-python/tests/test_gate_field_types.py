@@ -92,3 +92,57 @@ def test_missing_type_still_passes():
     verdict = validate_five_system_model(_with_first_field_type(None))
     assert verdict["passed"]
     assert not _type_findings(verdict)
+
+
+# ── 不吃 binding 的积木（2026-07-29 真跑撞到）────────────────────────
+
+
+def test_binding_free_block_prompt_says_omit_not_none():
+    """prompt 里不能用裸的 "none" 当哨兵——模型会把它当成要填的值。
+
+    真跑撞过：`binding=none (不使用 binding；…)` 这行，四个 QuickActionPanel
+    全部产出 `"binding": {"entityRef": "none"}`，门禁报 4 条 entityRef 悬挂。
+    哨兵词长得像值就会被当成值，必须写成祈使句。
+    """
+    from services.schema_legal import EXPERIENCE_BLOCK_BINDING_SCHEMAS, _format_binding_schema
+
+    line = _format_binding_schema(EXPERIENCE_BLOCK_BINDING_SCHEMAS["QuickActionPanel"])
+    assert line.startswith("OMIT")
+    assert "do NOT emit a `binding` key" in line
+    # 裸 none 不能出现在开头（note 正文里出现"不使用 binding"是可以的）
+    assert not line.startswith("none")
+
+
+def test_gate_reports_binding_on_a_binding_free_block():
+    """塞了 binding 要直说"这块不该有 binding"，别报成 entityRef 悬挂。
+
+    报"实体找不到"会把人引去查数据模型，而真正该做的是把整个 binding 删掉。
+    freeform 的 BlockRef 深校验早就有这条规则，page.blocks 这边漏了。
+    """
+    from test_v5_llm_generate_gate import _valid_library_model
+    from services.v5_model_gate import validate_five_system_model
+
+    model = _valid_library_model()
+    model["page"]["pages"][0]["blocks"] = [
+        {"id": "qa1", "type": "QuickActionPanel", "binding": {"entityRef": "none"}}
+    ]
+    findings = [
+        f for f in validate_five_system_model(model)["findings"]
+        if "qa1" in str(f.get("path", ""))
+    ]
+    assert findings, "塞了 binding 却没报"
+    assert "takes no binding" in findings[0]["message"]
+    # 只报这一条，不再顺带报 entityRef 悬挂（那条会误导排查方向）
+    assert not any("not found in datamodel.entities" in f["message"] for f in findings)
+
+
+def test_gate_still_accepts_binding_free_block_without_binding():
+    from test_v5_llm_generate_gate import _valid_library_model
+    from services.v5_model_gate import validate_five_system_model
+
+    model = _valid_library_model()
+    model["page"]["pages"][0]["blocks"] = [{"id": "qa1", "type": "QuickActionPanel"}]
+    assert not [
+        f for f in validate_five_system_model(model)["findings"]
+        if "qa1" in str(f.get("path", ""))
+    ]

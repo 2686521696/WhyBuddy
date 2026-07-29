@@ -320,8 +320,13 @@ def _format_binding_schema(schema: Dict[str, Any]) -> str:
     required = list(schema.get("required", []))
     optional = list(schema.get("optional", []))
     if not required and not optional:
+        # 不能写成裸的 "none"。真跑撞过：prompt 里那行长成
+        # `binding=none (不使用 binding；…)`，模型把 "none" 当成**要填的值**，
+        # 产出 `"binding": {"entityRef": "none"}`，四个 QuickActionPanel 全中，
+        # 门禁报 4 条 entityRef 悬挂。哨兵词长得像值就会被当成值——改成祈使句。
         note = schema.get("note")
-        return f"none ({note})" if note else "none"
+        omit = "OMIT — this block takes no binding; do NOT emit a `binding` key at all"
+        return f"{omit}. ({note})" if note else omit
     enums = schema.get("enums", {})
     entity_field_refs = schema.get("entityFieldRefs", {})
     ranges = schema.get("ranges", {})

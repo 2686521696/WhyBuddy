@@ -108,6 +108,19 @@ def _validate_block_binding(
     if schema is None:
         return
 
+    # 这类积木压根不吃 binding（QuickActionPanel / WorkflowTimeline）。塞了就
+    # 直说"它不该有 binding"，别让它掉到下面按 entityRef 悬挂去报——那条报错
+    # 说的是"实体找不到"，会把人引去查数据模型，而真正该做的是把整个 binding
+    # 删掉。freeform 的 BlockRef 深校验早就有这条规则，page.blocks 这边漏了。
+    if not schema.get("required") and not schema.get("optional") and binding:
+        findings.append(_finding(
+            PUBLISH_INVALID_FIELD, f"{block_path}.binding",
+            f"{btype} takes no binding; remove the binding object "
+            f"(got keys: {sorted(binding)})",
+            ref=btype, skill="page",
+        ))
+        return
+
     entity_ref = str(binding.get("entityRef") or "").strip()
     if entity_ref and entity_ref not in entity_ids:
         findings.append(_finding(
