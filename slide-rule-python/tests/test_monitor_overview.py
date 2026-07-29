@@ -311,3 +311,36 @@ def test_sheet_prompt_carries_density_budget():
     assert "最多 3 行" in prompt        # 手机动态列表
     assert "6 个就够" in prompt         # 图标样例
     assert "宁可留白也不要塞满" in prompt
+
+
+def test_sheet_prompt_anchors_component_look_to_the_real_libraries():
+    """参照板的控件长相要锚到**真实渲染用的那两个库**。
+
+    此前只写「卡片白底细边框、图标简洁线性」这类形容词，模型每次自己发挥一版，
+    而运行时是拿 antd / antd-mobile 渲染的——参照图画个大圆角胶囊按钮、真实
+    渲染是小圆角方按钮，设计 LLM 照图排版就会算错尺寸。
+
+    配色必须**明令排除**：Ant Design 的品牌蓝跟这个词绑得太死，不写这句实测
+    会把整张板画成蓝的，主题色板白给。
+    """
+    from services.freeform_block import _build_overview_sheet_prompt
+
+    prompt = _build_overview_sheet_prompt("测试", {"entities": []}, theme_id="tangerine")
+    assert "Ant Design" in prompt and "Ant Design Mobile" in prompt
+    assert "不要用 Ant Design 默认的蓝色" in prompt
+    assert "不许出现 Ant Design / antd 字样" in prompt
+
+
+def test_sheet_prompt_has_a_checkable_min_glyph_height():
+    """密度约束必须是**能判定的下限**，不能只写「宁可留白」这种形容词。
+
+    实测：加了 Ant Design 形态指令后模型画得更充实（表格 6 列 + 进度条 +
+    多一张 KPI 卡），密度预算被抵消，小字糊成乱码（「按钮样例」→「栎钮样例」、
+    手机区环图图例整片认不出）。改成字高下限之后，模型自己砍密度换清晰度，
+    同一档画布上小字恢复可读。
+    """
+    from services.freeform_block import _build_overview_sheet_prompt
+
+    prompt = _build_overview_sheet_prompt("测试", {"entities": []}, theme_id="tangerine")
+    assert "1.5%" in prompt
+    assert "不许靠缩小字号" in prompt

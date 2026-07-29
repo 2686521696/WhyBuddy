@@ -96,8 +96,10 @@ def main() -> int:
     path.write_bytes(png)
     print(f"[probe] 实收 {w}x{h}  {len(png) / 1024:.0f}KB  {elapsed:.1f}s")
     print(f"[probe] 落盘 {path}")
-    if (w, h) != (1672, 941):
-        print(f"[probe] ⚠️ 实收尺寸不是预期的 1672x941 —— 端点档位可能变了")
+    # 容 ±2px：同一个请求尺寸实测返回过 1672x941 和 1671x941，端点自己有
+    # 一个像素的抖动。卡死等值会天天误报，真正要看的是"有没有换档"。
+    if abs(w - 1672) > 2 or abs(h - 941) > 2:
+        print("[probe] ⚠️ 实收尺寸偏离预期的 1672x941 —— 端点档位可能变了")
     return 0
 
 
