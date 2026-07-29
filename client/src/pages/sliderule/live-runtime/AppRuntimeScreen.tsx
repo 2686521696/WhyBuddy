@@ -180,6 +180,10 @@ import {
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { FieldEditor } from "./FieldEditor";
+import {
+  dedupeBlocksByPanelKey,
+  dropLegacyPanelsCoveredByBlocks,
+} from "./page-panel-dedupe";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
 // 看板分组是纯函数，桌面与手机共用同一份——两档各分各的会让同一条记录
 // 在两个档位落进不同的列。
@@ -1251,8 +1255,18 @@ export function AppRuntimeScreen({
                 (b.binding as { entityRef?: string } | undefined)?.entityRef ===
                   page.entityId
               )
-          );
-        if (directBlocks.length === 0) return null;
+          )
+          // 同一条规矩的第三例（2026-07-28）：总览页不要筛选条。
+          //
+          // FilterBar 筛的是"本页主实体行"，可总览页压根不逐行展示数据，
+          // 筛了看不出任何变化；更糟的是它绑单个实体，而总览页的 KPI/图表
+          // 通常跨好几个实体（真跑那次跨了 4 个），筛一个也管不着另外三个。
+          // 也就是说它在这类页面上是**功能性无效**的，不只是难看。
+          .filter(b => !(OVERVIEW_KINDS.has(page.view.kind) && b.type === "FilterBar"));
+        // 积木内部的自我去重：模型偶尔把同一份榜/流声明两次（见
+        // page-panel-dedupe.ts 的内容指纹判定）。
+        const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks);
+        if (dedupedBlocks.length === 0) return null;
 
         // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
         const handleBlockAction = (
@@ -1289,7 +1303,7 @@ export function AppRuntimeScreen({
           }
         };
 
-        const renderBlock = (block: (typeof directBlocks)[number]) => (
+        const renderBlock = (block: (typeof dedupedBlocks)[number]) => (
           <ExperienceBlockBoundary
             key={block.id}
             block={block}
@@ -1318,12 +1332,12 @@ export function AppRuntimeScreen({
               className="mb-3 grid gap-2"
               data-testid="app-runtime-experience-block-scaffold"
             >
-              {directBlocks.map(renderBlock)}
+              {dedupedBlocks.map(renderBlock)}
             </div>
           );
         }
 
-        const blockById = new Map(directBlocks.map(b => [b.id, b]));
+        const blockById = new Map(dedupedBlocks.map(b => [b.id, b]));
         // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
         // forPhone 由调用方传入——从前这里读的是 isPhone，而这段代码只在桌面
         // 壳里跑（手机壳走 phonePageContent），isPhone 恒 false，layout.mobile
@@ -1352,7 +1366,7 @@ export function AppRuntimeScreen({
         );
         // 声明了 layout 但没被任何槽位引用到的区块：如实照样渲染，不能因为
         // 没排进槽位就悄悄丢内容——排在末尾，视觉上标为"未分配槽位"。
-        const orphanBlocks = directBlocks.filter(b => !placedIds.has(b.id));
+        const orphanBlocks = dedupedBlocks.filter(b => !placedIds.has(b.id));
 
         return (
           <div
@@ -2409,8 +2423,19 @@ export function AppRuntimeScreen({
   // 记录"的内容永远走这条真实动态渲染路径（renderRankingCard/
   // renderFeedCard 直接读 state.entities 真实行数据），跟 freeformOverview
   // 是否存在无关——两者并列渲染，不是互斥关系。
+  //
+  // 2026-07-28 去重：模型会把同一份动态流在 blocks 和 feeds 两条通道里各
+  // 声明一遍（真跑逮到：绑定逐字段相同、只有 id 和名字不同），于是首页出
+  // 现两张一模一样的卡。撞车时保留积木那份（它带槽位摆放 + 新渲染器），
+  // 这里只渲染没被积木覆盖的。判定见 page-panel-dedupe.ts。
+  const dedupedLists = page
+    ? dropLegacyPanelsCoveredByBlocks(
+        { rankings: page.rankings, feeds: page.feeds },
+        page.experienceBlocks
+      )
+    : { rankings: [], feeds: [] };
   const monitorDynamicLists =
-    page && (page.rankings.length > 0 || page.feeds.length > 0) ? (
+    page && (dedupedLists.rankings.length > 0 || dedupedLists.feeds.length > 0) ? (
       <div
         style={{
           display: "flex",
@@ -2420,11 +2445,14 @@ export function AppRuntimeScreen({
         }}
         data-testid="app-runtime-monitor-dynamic-lists"
       >
-        {page.rankings.map(renderRankingCard)}
-        {page.feeds.map(renderFeedCard)}
+        {dedupedLists.rankings.map(renderRankingCard)}
+        {dedupedLists.feeds.map(renderFeedCard)}
       </div>
     ) : null;
 
+
+  // 一次求值、多处摆位（见下方 D1 注释）
+  const blockScaffold = renderExperienceBlockScaffold(false);
 
   const defaultPageContent = page && (
     <Card
@@ -2494,7 +2522,15 @@ export function AppRuntimeScreen({
         </Space>
       }
     >
-      {renderExperienceBlockScaffold(false)}
+      {/* D1（2026-07-28）：总览页的积木脚手架挪到设计版式**后面**去渲染。
+          此前它固定排在最前，于是首页第一眼看到的是排行榜/动态流这两张
+          外挂卡，AI 现场设计的总览区反倒被压到下面——顺序把主次颠倒了。
+          非总览页保持原样（那些页的积木本来就是页面主角）。
+
+          脚手架只求值一次、在下面每个分支里显式摆位——不这么写就得在
+          "总览页"那个条件外面再判一次 kind，dashboard 没有 freeformOverview
+          时会掉进最末的兜底分支、积木一个都渲染不出来（第一版就是这个洞）。 */}
+      {!OVERVIEW_KINDS.has(page.view.kind) && blockScaffold}
       {page.view.kind === "wizard" &&
         (model?.workflow?.nodes?.length ?? 0) > 0 && (
           <Steps
@@ -2512,10 +2548,12 @@ export function AppRuntimeScreen({
         monitorFreeformOverview ? (
           <>
             {monitorFreeformOverview}
+            {blockScaffold}
             {monitorDynamicLists}
           </>
         ) : (
           <>
+            {blockScaffold}
             {statsBand}
             {monitorCombinedRow}
           </>
@@ -2527,6 +2565,7 @@ export function AppRuntimeScreen({
         // dashboard 特有的 widgetsBand（快速入口等）保留，不被设计版式吞掉。
         <>
           {monitorFreeformOverview}
+          {blockScaffold}
           {widgetsBand}
           {monitorDynamicLists}
         </>
@@ -2537,6 +2576,10 @@ export function AppRuntimeScreen({
         <>{widgetsBand}</>
       ) : (
         <>
+          {/* dashboard 页没有 freeformOverview 时会走到这里（pageHasKpiBlocks
+              要求非总览页，所以 dashboard 永远不满足上一支）。总览页的脚手架
+              在上面被跳过了，得在这里补回来，否则积木整页消失。 */}
+          {OVERVIEW_KINDS.has(page.view.kind) ? blockScaffold : null}
           {statsBand}
           {widgetsBand}
           {chartsBand}

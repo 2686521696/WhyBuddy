@@ -777,6 +777,15 @@ function BlockShell({
       extra={extra}
       // 没标题时去掉 body 的额外内边距，免得纯图表区块上下各空一截
       styles={{ body: { padding: hasHeader ? 12 : 10 } }}
+      // 2026-07-28：去掉边框。区块永远渲染在页卡（defaultPageContent 的
+      // 那张 Card）里面，两层都画边框就是圆角套圆角——真跑截图上很扎眼。
+      //
+      // 解法照 ant-design/pro-components 的 ProCard `ghost`
+      //（src/card/components/Card/style.ts 的 '&&-ghost'：backgroundColor
+      // transparent / border none / boxShadow none）：**卡片表面由最外层容器
+      // 提供一次，内层只保留结构**。这里比 ghost 保守一档——只去边框，留白底
+      // 和内边距，区块之间仍有分块感，不至于糊成一片。
+      variant="borderless"
       style={{ height: "100%" }}
     >
       {children}

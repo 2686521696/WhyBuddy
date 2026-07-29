@@ -45,6 +45,15 @@ from .schema_legal import (
 
 _DANGEROUS_VALUE_RE = re.compile(r"url\(|javascript:|expression\(|import\b|@import", re.I)
 
+# 无单位数字属性——数字值原样输出，不补 px。名单取自 React 源码
+# shared/CSSProperty.js 的 isUnitlessNumber（只保留本仓库
+# freeformAllowedStyleProps 里真实存在的那些；React 那份还有一堆 SVG/
+# 老式 box-flex 属性，我们的白名单里没有，列了也用不上）。
+_UNITLESS_STYLE_PROPS = frozenset({
+    "flex", "flexGrow", "flexShrink", "fontWeight", "lineHeight",
+    "opacity", "zIndex",
+})
+
 # 合法的 Ant Design 图标组件名形状：PascalCase + Outlined/Filled/TwoTone 结尾
 # （@ant-design/icons 全部图标都遵循这个命名，前端按名字动态解析）。校验只看
 # 形状不看具体名字——编造/拼错的名字前端解析不到会渲染成空，优雅降级。
@@ -484,6 +493,36 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
                     f"tag '{v}' is not allowed. Allowed tags: {list(FREEFORM_ALLOWED_TAGS)}"
                 )
             return v
+
+        @field_validator("style", mode="before")
+        @classmethod
+        def coerce_style_numbers(cls, v: Any) -> Any:
+            """数字样式值补单位——照 React 的做法，不比 React 还严。
+
+            2026-07-28 真跑逮到：模型写 `{"gap": 24, "padding": 16}`（数字），
+            而 style 的类型标注是 dict[str, str]，Pydantic 在下面那个白名单
+            校验之前就整批拒了——一次 89 条错误、三次重试全耗在同一类问题上，
+            最后整个 freeformOverview 生成失败、首页回落固定骨架。
+
+            React 本身是接受数字的：`style={{gap: 24}}` 渲染成 `gap: 24px`，
+            只有一批"无单位属性"（flex/fontWeight/opacity/lineHeight/zIndex…）
+            原样输出（见 React 源码 shared/CSSProperty.js 的 isUnitlessNumber）。
+            这里照抄那份名单——渲染层最终就是交给 React，判定标准跟它一致才
+            不会出现"Pydantic 拒了但 React 其实画得出来"的错杀。
+
+            只做数字 → 字符串这一步；属性白名单和危险值拦截仍由下面那个
+            校验器负责，安全边界没有放松。
+            """
+            if not isinstance(v, dict):
+                return v
+            out: dict[str, Any] = {}
+            for k, val in v.items():
+                if isinstance(val, bool) or not isinstance(val, (int, float)):
+                    out[k] = val
+                    continue
+                num = int(val) if float(val).is_integer() else val
+                out[k] = f"{num}" if k in _UNITLESS_STYLE_PROPS else f"{num}px"
+            return out
 
         @field_validator("style")
         @classmethod
@@ -1111,6 +1150,16 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
 
     name = page.get("name") or page.get("id") or "总览"
     lines = [f"「{name}」——这个应用打开后看到的首页/运营总览区块。"]
+    # 2026-07-28 真跑发现：上面这句话里带了页面名，模型就照着写了个 <h1>「经营监控」，
+    # 而外层页卡（AppRuntimeScreen 的 defaultPageContent）本来就以 page.name 当标题，
+    # 于是同一个词在一屏里出现三次（面包屑 / 页卡标题 / 你写的 h1）。
+    # 这是「容器拥有标题」的惯例问题——ProCard 那类容器组件里，标题归外层，内容
+    # 区不再自报家门。模型不知道自己被嵌在一张已有标题的卡片里，得明说。
+    lines.append(
+        f"注意：你的设计会被嵌进一张**已经有标题「{name}」的卡片**里，"
+        "所以不要再写页面级大标题/副标题（不要出现 h1，也不要在最上面重复一遍页面名）——"
+        "直接从内容开始画。区块内部每张小卡自己的标题照常写。"
+    )
 
     stats = page.get("stats") or []
     if stats:

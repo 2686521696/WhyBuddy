@@ -31,7 +31,11 @@ function render(field: Partial<AppFormFieldSchema>, value: unknown = undefined) 
 }
 
 const opts = (n: number) =>
-  Array.from({ length: n }, (_, i) => ({ id: `o${i}`, label: `选项${i}`, tone: "default" }));
+  Array.from({ length: n }, (_, i) => ({
+    id: `o${i}`,
+    label: `选项${i}`,
+    tone: "default" as const,
+  }));
 
 describe("FieldEditor · 日期不再用原生 input", () => {
   it("date → antd DatePicker", () => {
@@ -90,7 +94,7 @@ describe("FieldEditor · 数值按 format 落到对应控件", () => {
   });
 
   it("progress / score 同样有界 0-100", () => {
-    for (const format of ["progress", "score"]) {
+    for (const format of ["progress", "score"] as const) {
       const html = render({ type: "number", format }, 40);
       expect(html).toContain("agent-ant-slider");
     }
