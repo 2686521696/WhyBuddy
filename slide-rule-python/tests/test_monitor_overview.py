@@ -276,3 +276,38 @@ def test_enrich_covers_dashboard_pages(monkeypatch):
     # 一页两次：默认档（未声明 preferredDevice → 空串）+ 手机档（方案 B）
     assert called == ["", "phone"]
     assert "freeformOverview" in result["page"]["pages"][0]
+
+
+# ── 参照板尺寸与密度预算（2026-07-29 从 4K 改回 1672x941）──────────────
+
+
+def test_sheet_size_matches_prompt_canvas():
+    """请求尺寸与 prompt 里写的画布尺寸必须对得上。
+
+    这两处分开写在两个地方（常量 + prompt 文案），改一处忘一处的话，模型会
+    按一个尺寸构图、实际画布是另一个尺寸，比例直接歪掉。这里钉住它们同步。
+
+    注意端点会**降档**：传 1792x1024 实收 1672x941（活体探针记录见
+    _SHEET_IMAGE_SIZE 上方）。prompt 里要写的是**实收**尺寸——模型按它构图。
+    """
+    from services.freeform_block import _SHEET_IMAGE_SIZE, _build_overview_sheet_prompt
+
+    assert _SHEET_IMAGE_SIZE == "1792x1024"
+    prompt = _build_overview_sheet_prompt("测试", {"entities": []}, theme_id="tangerine")
+    assert "1672x941" in prompt
+    assert "3840" not in prompt
+
+
+def test_sheet_prompt_carries_density_budget():
+    """降分辨率必须同步收密度，否则元素挤成一团、中文糊掉。
+
+    真正让参照失效的不是像素总数不够，是**每个元素分到的像素**不够——
+    所以三处上限（图表/动态行/图标）跟画布尺寸是一组，不能只改一个。
+    """
+    from services.freeform_block import _build_overview_sheet_prompt
+
+    prompt = _build_overview_sheet_prompt("测试", {"entities": []}, theme_id="tangerine")
+    assert "最多 2 张图" in prompt      # 桌面图表区
+    assert "最多 3 行" in prompt        # 手机动态列表
+    assert "6 个就够" in prompt         # 图标样例
+    assert "宁可留白也不要塞满" in prompt
