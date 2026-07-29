@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from pathlib import Path
 
+from .palette_guard import extract_hex_colors, palette_report, repair_colors
 from .schema_legal import (
     EXPERIENCE_BLOCKS,
     EXPERIENCE_BLOCK_BINDING_SCHEMAS,
@@ -389,8 +390,33 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
     entities, field_types = _entity_index(datamodel)
 
     class DataRef(BaseModel):
+        """一个数字的真实来源。
+
+        2026-07-29 加了 trendFieldRef/trendGrain：参考图上的 KPI 卡都是
+        「大数字 + 较昨日↑12% + 卡底一条迷你走势线」三层，我们只出得了第一层，
+        对比下来就是"少了两层信息"。形状对标 ant-design/pro-components 的
+        StatisticCard（Statistic 的 trend: up|down + description 文案，
+        StatisticCard 的 chart 槽位 + chartPlacement）——那是这类卡片的成熟
+        长相，不自己发明一套。
+
+        **一个字段同时驱动两层**：给了 trendFieldRef 就既算环比、也出走势线。
+        分成两个声明的话模型要多记一套规则，而这两层本来就靠同一份时间分桶，
+        没有"只要其一"的实际场景。
+        """
+
         entityRef: str
         aggregate: Optional[str] = None
+        #: 时间字段（同实体下的 date 字段）。给了就出环比 + 迷你走势线。
+        trendFieldRef: Optional[str] = None
+        #: 分桶粒度，默认按天。
+        trendGrain: Optional[str] = None
+
+        @field_validator("trendGrain")
+        @classmethod
+        def check_grain(cls, v: Optional[str]) -> Optional[str]:
+            if v is not None and v not in ("day", "week", "month"):
+                raise ValueError("trendGrain must be one of: day, week, month")
+            return v
 
         @field_validator("entityRef")
         @classmethod
@@ -419,6 +445,20 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
                         f"field '{field_id}' on '{self.entityRef}' is type "
                         f"'{field_types[qualified]}', aggregate requires a number field"
                     )
+            if self.trendFieldRef:
+                qualified_trend = f"{self.entityRef}.{self.trendFieldRef}"
+                if qualified_trend not in field_types:
+                    raise ValueError(
+                        f"dataRef.trendFieldRef '{self.trendFieldRef}' does not exist on "
+                        f"entity '{self.entityRef}'"
+                    )
+                if field_types[qualified_trend] != "date":
+                    raise ValueError(
+                        f"dataRef.trendFieldRef '{self.trendFieldRef}' on '{self.entityRef}' "
+                        f"is type '{field_types[qualified_trend]}', 环比与走势线需要 date 字段"
+                    )
+            elif self.trendGrain:
+                raise ValueError("dataRef.trendGrain 需要同时给 trendFieldRef")
             return self
 
     class ChartSpec(BaseModel):
@@ -876,6 +916,17 @@ aggregate 只能是 "count"、"sum:<字段id>"、"avg:<字段id>" 三种之一�
 这个键（没有聚合、只是引用实体本身时可以省略 aggregate）。
 数据模型里没有合适字段支撑的数字就不要画，不能编。纯装饰性文案不需要 dataRef。
 
+KPI 数字想带「环比 + 迷你走势线」时，在同一个 dataRef 里再加两个键：
+{{"dataRef": {{"entityRef": "<实体 id>", "aggregate": "count",
+  "trendFieldRef": "<同一个实体下 type 为 date 的字段 id>", "trendGrain": "day"}}}}
+trendFieldRef 必须是**同一个实体**下的 date 字段（不是 number、不是 string），
+trendGrain 只能是 "day"、"week"、"month"，不填按 day 算。给了这两个键之后，
+渲染端会按这个时间字段自动分桶，在大数字下面渲染出「较前一日 ↑12%」和一条
+迷你走势线——**这两层是渲染端算的，你不要自己再写一个写死的百分比文字节点，
+也不要为它画额外的图**。走势的取值口径跟 aggregate 一致（aggregate 是
+sum:金额，走势线画的就是每期金额之和）。
+这是 KPI 卡片最该用的地方：数据模型里有日期字段的核心指标，都值得带上。
+
 注意：children 数组里每一项都必须是完整的节点对象（有 tag 字段），
 不能直接放字符串当子节点——文字内容一律放在节点的 text 字段里。
 
@@ -1179,7 +1230,8 @@ def generate_freeform_block(
                         "tag/style 属性/iconRef 必须在允许的白名单内、dataRef 引用的实体和字段"
                         "必须真实存在且类型对得上。如果报错是 dataRef 相关的 'Field required' 或"
                         "缺 entityRef，最常见原因是 key 名写错了（比如写成 entity/field），"
-                        "dataRef 的 key 必须严格是 entityRef 和 aggregate，不是别的名字。"
+                        "dataRef 的 key 只有 entityRef / aggregate / trendFieldRef / "
+                        "trendGrain 四个，不是别的名字。"
                         "重新输出完整的 JSON，只要一个 JSON 对象。"
                     ),
                 },
@@ -1187,6 +1239,61 @@ def generate_freeform_block(
             continue
 
         design_dump = design.model_dump()
+
+        # 配色合规的机械防线（2026-07-29，见 palette_guard.py）。
+        #
+        # 色板约束此前**只写在 prompt 里**，而且写得很清楚（连"暖橙系不要通篇
+        # 上蓝紫"都写了）。真跑一看模型一字不差地干了那句话警告的事：tangerine
+        # 主题的应用主色一次没出现、蓝色占 60%、还自己发明了一套绿。参考图给
+        # 对了、文字约束给对了，但没有任何一层去查。这里补上。
+        #
+        # 违规先 reask（跟 Pydantic 校验失败走同一条路，把具体哪几个色、偏了
+        # 多少度告诉它）；重试耗尽时**机械纠偏后放行**，绝不因为配色问题抛错
+        # ——抛了调用方就回落固定骨架，那正是这一整条链路一直在治的病。
+        palette_hint = _theme_palette(theme_id, generated_theme)
+        palette_list = [
+            c
+            for c in [palette_hint.get("primary"), *(palette_hint.get("charts") or [])]
+            if isinstance(c, str) and c.startswith("#")
+        ]
+        primary_color = str(palette_hint.get("primary") or "")
+        if palette_list and primary_color:
+            report = palette_report(
+                extract_hex_colors(design_dump), palette_list, primary_color
+            )
+            if not report.ok:
+                is_last = _attempt >= max_retries
+                if not is_last:
+                    last_error = "palette non-compliance"
+                    convo = convo + [
+                        {"role": "assistant", "content": raw[:6000]},
+                        {
+                            "role": "user",
+                            "content": report.reask_message(palette_list, primary_color)
+                            + "\n其余内容（版式、节点结构、dataRef、chart、blockRef）保持不变，"
+                            "重新输出完整的 JSON，只要一个 JSON 对象。",
+                        },
+                    ]
+                    continue
+                repaired, changed = repair_colors(
+                    json.dumps(design_dump, ensure_ascii=False), palette_list, primary_color
+                )
+                if changed:
+                    try:
+                        design_dump = json.loads(repaired)
+                        print(
+                            f"[freeform_block] palette repaired mechanically: {changed} color(s) "
+                            "snapped to the nearest palette hue"
+                        )
+                    except json.JSONDecodeError:
+                        pass  # 纠偏后解析不了就用原样，配色问题不值得丢掉整份设计
+                if not report.primary_ok:
+                    print(
+                        "[freeform_block] palette warning: primary hue used "
+                        f"{report.primary_uses}x vs dominant family {report.dominant_uses}x "
+                        "(kept as-is; proportion is a design call, not mechanically repairable)"
+                    )
+
         # 自我校验闭环（借鉴 abi/screenshot-to-code 的 screenshot_preview 思路：
         # 生成→截图→自己看→改，不是纯一次性生成完就当定稿）。只在真的生了
         # 参考图时才做——没有参照物就没法判断"够不够密"。这整块包在自己的

@@ -42,6 +42,12 @@ import type { WorkflowSection } from "../system-screens/five-system-model";
 import type { RuntimeRow } from "./live-runtime";
 import type { NormalizedFieldOption } from "./field-display";
 import { buildEchartsOption } from "./build-echarts-option";
+import {
+  buildSparklineOption,
+  computeDataRefTrend,
+  formatTrendLabel,
+  type DataRefTrend,
+} from "./dataref-trend";
 
 /** enum 字段取值声明的按需查询（entityId + fieldId → 归一化 options）。 */
 export type EnumOptionsLookup = (
@@ -93,6 +99,10 @@ export interface ExperienceBlockCatalogEntry {
 export interface FreeformDataRef {
   entityRef: string;
   aggregate?: string;
+  /** 同实体下的日期字段。给了就在大数字下面出环比 + 迷你走势线（2026-07-29）。 */
+  trendFieldRef?: string;
+  /** 分桶粒度 day|week|month，默认 day。 */
+  trendGrain?: string;
 }
 /** 真图表声明（2026-07-24）——不是 CSS 画的近似形状，是运行时拿真实行
  * 数据现算的 ECharts option，复用 build-echarts-option.ts 那套已经在用
@@ -659,6 +669,76 @@ function computeDataRefText(
   return avg.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
 }
 
+/** 环比方向 → 颜色。用的是 antd 的状态色，跟 PageViews 的 TONE_COLORS 同一组。
+ *
+ * 按**方向**上色而不是按好坏——"涨了是不是好事"取决于这个指标是营收还是
+ * 退款率，schema 里没有这个信息，我们也不该猜。参考图和 antd Statistic 文档
+ * 都是这个做法（涨绿跌红），这是这类卡片的既定读法，不另发明一套。 */
+const TREND_COLORS: Record<DataRefTrend["direction"], string> = {
+  up: "#52c41a",
+  down: "#ff4d4f",
+  flat: "#8c8c8c",
+};
+const TREND_ARROWS: Record<DataRefTrend["direction"], string> = {
+  up: "↑",
+  down: "↓",
+  flat: "→",
+};
+
+/**
+ * KPI 数字的第二、三层：环比文案 + 迷你走势线（2026-07-29）。
+ *
+ * 形状对标 ant-design/pro-components 的 StatisticCard——Statistic 出
+ * `trend: 'up' | 'down'` + `description`，StatisticCard 出 `chart` 槽位
+ * （`chartPlacement: 'bottom'`）。参考图上每张 KPI 卡都是这三层，我们此前
+ * 只有第一层，schema 也表达不了后两层。
+ *
+ * 字号/字重/行高**显式重置**：挂 dataRef 的那个节点通常自带 `fontSize: 32`
+ * `fontWeight: 700`（它是大数字本体），环比小字若继承下来会变成第二个大数字。
+ * 外层一律用 `display: block` 的 span：dataRef 节点可能是 `<span>`，往里塞
+ * `<div>` 是非法嵌套。
+ */
+function renderDataRefTrend(
+  dataRef: FreeformDataRef | undefined,
+  entityRows: Record<string, RuntimeRow[]> | undefined,
+  chartPalette: { primary: string; categorical: readonly string[] } | undefined
+): React.ReactNode {
+  if (!dataRef?.trendFieldRef) return null;
+  const trend = computeDataRefTrend((entityRows ?? {})[dataRef.entityRef], dataRef);
+  if (!trend) return null;
+  const color = TREND_COLORS[trend.direction];
+  const sparkOption = buildSparklineOption(trend.spark, chartPalette?.primary || "#1677ff");
+  return (
+    <span key="dataref-trend" data-testid="dataref-trend" style={{ display: "block" }}>
+      <span
+        data-testid="dataref-trend-delta"
+        data-direction={trend.direction}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          marginTop: 4,
+          fontSize: 12,
+          fontWeight: 400,
+          lineHeight: 1.4,
+          letterSpacing: 0,
+          color,
+        }}
+      >
+        <span aria-hidden="true">{TREND_ARROWS[trend.direction]}</span>
+        {formatTrendLabel(trend)}
+      </span>
+      {sparkOption ? (
+        <span data-testid="dataref-sparkline" style={{ display: "block", marginTop: 6 }}>
+          <React.Suspense fallback={<span style={{ display: "block", height: 32 }} />}>
+            <LazyEchartsChart option={sparkOption} height={32} ariaLabel="走势" />
+          </React.Suspense>
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 /** 不可信内容树的硬上限（micromark/cmark 同款纪律：解析不可信输入必须带
  * 嵌套/规模上限，超限截断降级，而不是任由深树把递归栈打爆、整个应用舞台
  * 白屏）。Python 生成侧 freeform_block.py 有同值的校验拦在 reask 环里；
@@ -731,6 +811,12 @@ function renderFreeformNode(
   const dataRefText = hasNumericClaim
     ? (computeDataRefText(n.dataRef, entityRows) ?? "—")
     : null;
+  // 环比/走势线只在数字真算出来时才挂：主数字都是「—」还配一条走势线，
+  // 等于用图形给一个不存在的数字背书。
+  const trendNode =
+    dataRefText && dataRefText !== "—"
+      ? renderDataRefTrend(n.dataRef, entityRows, chartPalette)
+      : null;
   return React.createElement(
     tag,
     { key, style: sanitizeFreeformStyle(n.style) },
@@ -749,6 +835,7 @@ function renderFreeformNode(
       </span>
     ) : null,
     dataRefText ?? (typeof n.text === "string" ? n.text : null),
+    trendNode,
     chartNode,
     blockRefNode,
     ...children

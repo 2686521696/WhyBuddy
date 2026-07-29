@@ -5,6 +5,10 @@
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.9.0
+# 配色合规校验（services/palette_guard.py）：OKLCh 转换与色差。手搓 OKLab
+# 矩阵能省这个依赖，但色彩空间转换是那种"差一点点就全错、还很难发现"的活，
+# 用成熟库更稳。
+coloraide>=4.0
 pydantic-settings>=2.5.0
 python-dotenv>=1.0.0
 httpx>=0.27.0
