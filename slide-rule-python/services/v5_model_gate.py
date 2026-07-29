@@ -54,6 +54,7 @@ from .schema_legal import (  # noqa: F401 — re-export 即接口
     EXPERIENCE_BLOCK_BINDING_SCHEMAS,
     EXPERIENCE_BLOCK_TYPES,
     FIELD_TONES,
+    FIELD_TYPES,
     NUMBER_FORMATS,
     PAGE_KINDS,
     STAT_FORMATS,
@@ -409,6 +410,25 @@ def validate_five_system_model(
             fid = fd.get("id") or fd.get("name") or "<unnamed>"
             fpath = f"datamodel.entities[{eid}].fields[{fid}]"
             ftype = str(fd.get("type") or "string").strip().lower()
+            # 字段类型必须落在封闭合法域内。
+            #
+            # 这条以前是漏的：FIELD_TYPES 只在技能 binding 那里用过，实体字段的
+            # type 一路没人查。实测喂 boolean/datetime/file 三个进来，findings
+            # 一条都没有、全放行——所谓"合法域"其实只是 prompt 里的一句约定。
+            #
+            # 漏掉的代价不是"模型写错了没人说"，而是**静默降级**：前端
+            # field-value-type 对认不出的类型一律 `return "text"`，于是一个
+            # `file` 字段会安安静静变成普通文本输入框。用户以为这儿能传附件，
+            # 实际只能打字；不报错、不提示，测试也全绿。
+            #
+            # 缺省不罚（上面 `or "string"`）：老模型不写 type 的照旧当 string，
+            # 与本段"出现即校验、缺省不罚"的口径一致。
+            if fd.get("type") is not None and ftype not in FIELD_TYPES:
+                findings.append(_finding(
+                    PUBLISH_ENUM_VIOLATION, f"{fpath}.type",
+                    f"field type '{ftype}' is not one of {'/'.join(FIELD_TYPES)}",
+                    ref=ftype, skill="datamodel",
+                ))
             if "options" in fd:
                 if ftype != "enum":
                     findings.append(_finding(

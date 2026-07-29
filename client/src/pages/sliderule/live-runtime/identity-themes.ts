@@ -143,5 +143,10 @@ export function admThemeVars(theme: IdentityTheme): Record<string, string> {
     // 主色的浅色底（选中项浅底、Tag 底色）—— 用主题自己的强调底，
     // 不用 antd-mobile 默认那个跟蓝色配的 #e7f1ff
     "--adm-color-wathet": theme.accentBg,
+    // 徽标底色。默认是 --adm-color-highlight（红），那是"未读/紧急"的语义；
+    // 我们挂在 TabBar 上的是**本页行数**（这页有 12 条数据），不是告警。
+    // 红色数字会让人以为有 12 件事待处理。桌面侧栏那版本来就用的主题色浅底，
+    // 这里跟齐。官方定制入口就是这个变量（见 badge.css 的 --color 链）。
+    "--adm-badge-color": theme.primary,
   };
 }

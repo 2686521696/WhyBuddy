@@ -3040,13 +3040,25 @@ export function AppRuntimeScreen({
           }
         >
           <LazyPhoneTabBar
-            items={schema.menus.map(m => ({
-              pageId: m.pageId,
-              label: m.label,
-              locked:
+            items={schema.menus.map(m => {
+              const locked =
                 m.pageId !== "home" &&
-                pageAccess.get(m.pageId)?.visible === false,
-            }))}
+                pageAccess.get(m.pageId)?.visible === false;
+              // 行数徽标与桌面侧栏同源同口径（见 menuItems 里那段）：
+              // 锁住的页和首页不计数，锁住的那条是权限信息、不能从计数里泄出去。
+              const entityId =
+                locked || m.pageId === "home"
+                  ? undefined
+                  : schema.pages.find(p => p.id === m.pageId)?.entityId;
+              return {
+                pageId: m.pageId,
+                label: m.label,
+                locked,
+                rowCount: entityId
+                  ? (state.entities[entityId]?.length ?? 0)
+                  : 0,
+              };
+            })}
             activeId={activePageId}
             onChange={setActivePageId}
             // 锁定 tab 点了要出声：灰图标 + title 在触屏上等于没有提示，

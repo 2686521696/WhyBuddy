@@ -21,6 +21,14 @@ export interface PhoneTabItem {
   pageId: string;
   label: string;
   locked: boolean;
+  /**
+   * 本页主实体的行数。
+   *
+   * 桌面侧栏早就挂了这个计数（应用一打开就有"系统里已经有数据在跑"的实感），
+   * 手机档一直没有——同一套模型、同一份数据，换个档位信息就少一截。
+   * 锁住的页传 0：那是权限信息，不该从计数里泄出去。
+   */
+  rowCount?: number;
 }
 
 interface PhoneTabBarProps {
@@ -71,6 +79,12 @@ export default function PhoneTabBar({
         return (
           <TabBar.Item
             key={item.pageId}
+            // TabBar 自带 badge 槽位，不用自己在 icon 上叠个绝对定位的小圆点
+            badge={
+              !item.locked && (item.rowCount ?? 0) > 0
+                ? String(Math.min(item.rowCount ?? 0, 99))
+                : undefined
+            }
             icon={<Icon style={item.locked ? { color: "#bfbfbf" } : undefined} />}
             title={
               <span style={item.locked ? { color: "#bfbfbf" } : undefined} title={item.locked ? "当前角色无本页权限" : item.label}>

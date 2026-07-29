@@ -74,3 +74,18 @@ describe("手机档角色切换的自动化抓手", () => {
     expect(rolePickerSrc).toContain('aria-label="切换角色"');
   });
 });
+
+describe("手机档 TabBar 的行数徽标", () => {
+  it("TabBar 用自带 badge 槽位，不自己叠绝对定位小圆点", () => {
+    expect(tabBarSrc).toContain("badge={");
+  });
+
+  it("锁住的页不显示计数 —— 那是权限信息，不能从计数里泄出去", () => {
+    // 无权限的页显示「3」等于告诉用户"这里有三条你看不到的数据"
+    expect(tabBarSrc).toMatch(/!item\.locked\s*&&\s*\(item\.rowCount/);
+  });
+
+  it("父层的口径与桌面侧栏同源：锁住的页与首页不计数", () => {
+    expect(screenSrc).toMatch(/locked \|\| m\.pageId === "home"[\s\S]{0,120}entityId/);
+  });
+});
