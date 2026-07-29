@@ -54,12 +54,19 @@ export default function PhoneRolePicker({
         </span>
         <DownOutlined style={{ fontSize: 9, color: "#999", flexShrink: 0 }} />
       </a>
+      {/* 弹层给一个 testid：触发器与桌面档同名（app-runtime-role），但弹层内容
+          是 antd-mobile 内部结构，没有抓手。缺了它，手机档换角色只能去点
+          `.adm-picker-*` 这类内部类名——版本一升就断，而且脚本作者根本不知道
+          该点哪里：真实教训是巡检脚本照搬桌面档的 Select 选项选择器，弹层被
+          撑开挡住整屏，截出来是一张被盖住的假图，六个页面只覆盖到两个。 */}
       <Picker
         columns={columns}
         visible={open}
         onClose={() => setOpen(false)}
         value={value ? [value] : []}
         getContainer={getContainer}
+        aria-label="切换角色"
+        data-testid="app-runtime-role-picker"
         onConfirm={v => {
           const next = v[0];
           if (typeof next === "string") onChange(next);

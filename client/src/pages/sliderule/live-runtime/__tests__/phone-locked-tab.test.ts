@@ -23,6 +23,9 @@ const tabBarSrc = await import("../phone-mobile/PhoneTabBar.tsx?raw").then(
 const feedbackSrc = await import("../phone-mobile/phone-feedback.ts?raw").then(
   m => (m as unknown as { default: string }).default
 );
+const rolePickerSrc = await import("../phone-mobile/PhoneRolePicker.tsx?raw").then(
+  m => (m as unknown as { default: string }).default
+);
 const screenSrc = await import("../AppRuntimeScreen.tsx?raw").then(
   m => (m as unknown as { default: string }).default
 );
@@ -52,5 +55,22 @@ describe("手机档提示的落点", () => {
     const withContainer = screenSrc.match(/\(\)\s*=>\s*canvasEl/g) ?? [];
     expect(calls.length).toBeGreaterThan(0);
     expect(withContainer.length).toBeGreaterThanOrEqual(calls.length);
+  });
+});
+
+describe("手机档角色切换的自动化抓手", () => {
+  it("Picker 弹层带 testid —— 缺了它手机档换角色就没法自动点", () => {
+    // 触发器跟桌面档同名（app-runtime-role），但弹层内容是 antd-mobile 的
+    // 内部结构。没有这个 testid，脚本只能去猜 `.adm-picker-*` 内部类名，
+    // 版本一升就断。
+    //
+    // 真实代价（2026-07-29 巡检时踩到）：脚本照搬桌面档的 Select 选项选择器，
+    // 弹层被撑开挡住整屏，截出来是一张被盖住的假图；六个页面只覆盖到两个，
+    // 而日志看着一切正常——少报的覆盖率是不会自己喊疼的。
+    expect(rolePickerSrc).toContain('data-testid="app-runtime-role-picker"');
+  });
+
+  it("弹层带 aria-label，读屏用户知道这是干什么的", () => {
+    expect(rolePickerSrc).toContain('aria-label="切换角色"');
   });
 });
