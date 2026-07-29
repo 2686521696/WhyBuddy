@@ -28,6 +28,7 @@ import {
   Timeline,
   Typography,
 } from "antd";
+import type { TableColumnsType } from "antd";
 // WorkflowTimeline 自己的节点箭头（组件 UI，用静态 import；freeform 的
 // 动态图标解析走下面的 AntdIcons 命名空间 + 目录别名表，两回事）。
 import { ArrowRightOutlined } from "@ant-design/icons";
@@ -1199,13 +1200,20 @@ const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
  *（状态 | 单号 | 描述 | 关联单据 | 时间），真实渲染是一条窄时间轴，右边三分之二
  * 全空。宽度不是 bug——积木拿到的就是满宽，是时间轴这个形态本身撑不满。
  *
- * 形状对标 ant-design/pro-components 的 ProList 列表模式（src/list/Item.tsx 的
- * "列表模式渲染"分支 + ProListBase 的 ProListItem）：`List.Item` 里左边
- * `List.Item.Meta`（avatar / title / description）吃掉 flex:1，右边 `extra` 靠右
- * 收口。这是这类宽行的成熟长相，不自己发明一套 grid。
+ * 用 **antd Table**，不是 List 里手拼 flex 行。前两版都是 flex（先 List.Item.Meta
+ * 两层、后单行 flex 分栏），真跑截图上露了同一个馅：每行的状态标签宽度不一样
+ *（待审核/烘焙中/已退回），后面几列的起点就**逐行错开**几像素，一眼能看出来歪。
+ * flex 行没有跨行约束，每行各算各的宽度，对齐只能靠内容碰巧一样长。
  *
- * 中段的 description 由 binding.detailFieldRefs 声明——只加 variant 不加字段的话，
- * 宽行只是把同样三条信息摊开，比时间轴更空。
+ * Table 靠 `<colgroup>` 从结构上解决：rc-table 的 ColGroup 按列发一个
+ * `<col style={{width}}>`（es/ColGroup.js），所有行共享同一组列宽，对不齐这件事
+ * 在这个方案里不可能发生。而且只要有一列声明 `ellipsis`，rc-table 就把
+ * `tableLayout` 切到 `fixed`（es/Table.js:447-463），没写宽度的列均分剩余空间——
+ * 正好是"明细列铺满整行"要的行为，不用自己算百分比。
+ *
+ * 列构成：状态点 | 单号+标签 | 明细列… | 时间，跟参考图那条 feed 行一一对应。
+ * 中段明细由 binding.detailFieldRefs 声明——只加 variant 不加字段的话，宽行只是
+ * 把同样三条信息摊开，比时间轴更空。
  */
 function FeedRowList({
   items,
@@ -1233,97 +1241,102 @@ function FeedRowList({
       new Map((enumOptionsOf?.(entityRef, f) ?? []).map(o => [o.id, o.label])),
     ])
   );
-  return (
-    <List
-      size="small"
-      split
-      dataSource={items}
-      renderItem={item => {
+
+  const columns: TableColumnsType<FeedItem> = [
+    {
+      key: "__tone",
+      width: 20,
+      render: (_, item) => {
         const decl = item.level ? levelDecl?.get(item.level) : undefined;
-        const details = detailFields
-          .map(f => {
-            const raw = String(item.row.values?.[f] ?? "").trim();
-            if (!raw) return null;
-            const label = fieldLabelOf?.(entityRef, f) ?? f;
-            const value = detailLabelOf.get(f)?.get(raw) ?? raw;
-            return {
-              field: f,
-              // 值本身已经以字段名开头时不再重复标签——「使用生豆 使用生豆 1」
-              // 读起来像口吃。演示种子数据正是这个形状（string/ref 字段的种子
-              // 值就是「字段名 序号」），真实数据里也有「状态：状态待定」这类。
-              label: value.startsWith(label) ? "" : label,
-              value,
-            };
-          })
-          .filter((d): d is { field: string; label: string; value: string } => d !== null);
+        // 时间轴的节点色在宽行里退化成一个小圆点：颜色语义（tone）保留，
+        // 但不再画那条竖线——一行一行的表里画竖轴反而干扰阅读。
         return (
-          <List.Item
-            data-testid="activity-feed-row"
-            style={{ cursor: onAction ? "pointer" : undefined, paddingInline: 0 }}
-            onClick={() => onAction?.("itemSelect", { rowId: item.row.id })}
-          >
-            {/* 单行分栏，不用 List.Item.Meta 的「标题在上、描述在下」两层结构。
-                参考图上这一行就是一条表行：状态点 | 单号+标签 | 明细列… | 时间，
-                两层结构会把明细挤到第二行、右边留一大片空。ProList 的列表模式
-                本身也是往 List.Item 里塞一个自定义的 `-header` flex 行
-                （src/list/Item.tsx），这里是同一个做法。 */}
-            <div
-              style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", minWidth: 0 }}
-            >
-              {/* 时间轴的节点色在宽行里退化成一个小圆点：颜色语义（tone）保留，
-                  但不再画那条竖线——一行一行的表里画竖轴反而干扰阅读。 */}
-              <span
-                style={{
-                  flex: "0 0 auto",
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: toneDotColor(decl?.tone, token.colorPrimary),
-                }}
-              />
-              <span
-                style={{
-                  flex: "0 0 auto",
-                  maxWidth: 240,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  minWidth: 0,
-                }}
-              >
-                <Typography.Text ellipsis={{ tooltip: item.title }} style={{ fontSize: 12 }}>
-                  {item.title}
-                </Typography.Text>
-                {item.level && (
-                  <Tag style={{ marginInlineEnd: 0, fontSize: 11 }}>
-                    {decl?.label ?? item.level}
-                  </Tag>
-                )}
-              </span>
-              {/* 明细列**等分**剩余宽度：不等分的话它们会全挤在左边，日期孤零零
-                  贴在右边缘，中间空一大段——第一版就是这样。 */}
-              {details.map(d => (
-                <span key={d.field} style={{ flex: "1 1 0", minWidth: 0 }}>
-                  <Typography.Text
-                    type="secondary"
-                    ellipsis={{ tooltip: `${d.label} ${d.value}`.trim() }}
-                    style={{ fontSize: 11 }}
-                  >
-                    {d.label ? `${d.label} ` : ""}
-                    <Typography.Text style={{ fontSize: 11 }}>{d.value}</Typography.Text>
-                  </Typography.Text>
-                </span>
-              ))}
-              <Typography.Text
-                type="secondary"
-                style={{ flex: "0 0 auto", fontSize: 11, whiteSpace: "nowrap" }}
-              >
-                {item.dateKey}
-              </Typography.Text>
-            </div>
-          </List.Item>
+          <span
+            style={{
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: toneDotColor(decl?.tone, token.colorPrimary),
+            }}
+          />
         );
-      }}
+      },
+    },
+    {
+      key: "__title",
+      width: 220,
+      ellipsis: true,
+      render: (_, item) => {
+        const decl = item.level ? levelDecl?.get(item.level) : undefined;
+        return (
+          <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <Typography.Text ellipsis={{ tooltip: item.title }} style={{ fontSize: 12 }}>
+              {item.title}
+            </Typography.Text>
+            {item.level && (
+              // 出声明里的 label（「可用」），不是取值 id（`available`）
+              <Tag style={{ marginInlineEnd: 0, fontSize: 11 }}>{decl?.label ?? item.level}</Tag>
+            )}
+          </span>
+        );
+      },
+    },
+    // 明细列不给 width：table-layout:fixed 下没写宽度的列**均分剩余空间**，
+    // 于是几列自然铺满整行，不用自己算百分比。
+    ...detailFields.map(f => ({
+      key: f,
+      ellipsis: true,
+      render: (_: unknown, item: FeedItem) => {
+        const raw = String(item.row.values?.[f] ?? "").trim();
+        if (!raw) return <Typography.Text type="secondary">—</Typography.Text>;
+        const label = fieldLabelOf?.(entityRef, f) ?? f;
+        const value = detailLabelOf.get(f)?.get(raw) ?? raw;
+        // 值本身已经以字段名开头时不再重复标签——「使用生豆 使用生豆 1」读起来
+        // 像口吃。演示种子数据正是这个形状（string/ref 字段的种子值就是
+        // 「字段名 序号」），真实数据里也有「状态：状态待定」这类。
+        const prefix = value.startsWith(label) ? "" : `${label} `;
+        return (
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            {prefix}
+            <Typography.Text style={{ fontSize: 11 }}>{value}</Typography.Text>
+          </Typography.Text>
+        );
+      },
+    })),
+    {
+      key: "__date",
+      width: 92,
+      align: "right" as const,
+      render: (_: unknown, item: FeedItem) => (
+        <Typography.Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+          {item.dateKey}
+        </Typography.Text>
+      ),
+    },
+  ];
+
+  return (
+    <Table
+      size="small"
+      rowKey={item => item.row.id}
+      // 动态流不是数据表：参考图上这块也没有表头，一行就是一条动态。列头交给
+      // 单元格里那个灰色小标签（「出豆重量 136」），比一整条表头更轻。
+      // showHeader=false 不影响 <colgroup>——rc-table 的 bodyColGroup 是独立
+      // 渲染的（es/Table.js:583），列宽照样逐列对齐。
+      showHeader={false}
+      columns={columns}
+      dataSource={items}
+      pagination={false}
+      onRow={item => ({
+        onClick: () => onAction?.("itemSelect", { rowId: item.row.id }),
+        style: { cursor: onAction ? "pointer" : undefined },
+        // onRow 的返回值原样摊到 <tr> 上（rc-table GetComponentProps），
+        // data-* 一并透传，测试和截图脚本靠它数行数
+        "data-testid": "activity-feed-row",
+      })}
+      // 不给 scroll.x，理由同 DataTable：区块是页面里的一块，横向滚动条藏在
+      // 卡片里没人会去拉。列共享可用宽度 + 省略号（带 tooltip）才对。
     />
   );
 }
