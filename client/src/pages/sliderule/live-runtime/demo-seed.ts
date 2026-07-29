@@ -176,7 +176,14 @@ function seedColumn(
       // 随机散布、**允许同一天有多条**。第一版用互质步长保证 12 行落 12 天，
       // 但那样 count 型趋势图每根柱子都是 1，整条线是平的。真实数据本来就
       // 有疏有密，随机散布 + 渲染层补零画出来才有形状。
-      const back = r.int(0, SEED_DATE_SPAN_DAYS - 1);
+      //
+      // 但**最近两天必须有数据**（i < 2 时钉死 back=i）。原因是 KPI 卡的环比
+      // 比的就是最后两个桶：纯随机散布下"昨天"落空的概率是 (13/14)^12 ≈ 41%，
+      // 而一页的 KPI 通常共用同一个日期字段——一空全空，四成机会整屏「较前
+      // 一日 —」。那不是渲染坏了（除零时如实给 null 是对的），是种子把演示
+      // 数据铺成了没法比较的形状。钉住两天只占 12 行里的 2 行，趋势图的疏密
+      // 形状照旧。
+      const back = i < 2 ? i : r.int(0, SEED_DATE_SPAN_DAYS - 1);
       const d = new Date(nowMs);
       d.setDate(d.getDate() - back);
       out.push(localDateKey(d));

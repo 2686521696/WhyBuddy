@@ -342,3 +342,61 @@ describe("demo-seed · 删空之后不复活", () => {
     expect(seedRuntimeState(legacy, MODEL, NOW).entities.plot).toHaveLength(SEED_ROW_COUNT);
   });
 });
+
+describe("日期铺法：最近两天必须有数据（2026-07-29）", () => {
+  it("KPI 环比要能比出来 —— 最后两个桶都不能是空的", () => {
+    // 纯随机散布下"昨天"落空的概率是 (13/14)^12 ≈ 41%，而一页的 KPI 通常
+    // 共用同一个日期字段，一空全空——真跑的口腔诊所那版就是三张卡全显示
+    //「较前一日 —」。不是渲染坏了（除零如实给 null 是对的），是种子把演示
+    // 数据铺成了没法比较的形状。
+    const model = {
+      entities: [
+        {
+          id: "e",
+          name: "实体",
+          fields: [
+            { id: "n", name: "名称", type: "string" },
+            { id: "d", name: "日期", type: "date" },
+          ],
+        },
+      ],
+    } as never;
+    const now = new Date("2026-07-29T10:00:00").getTime();
+    // 签名是 (entity, nowMs, count)——不是 (entity, allEntities, nowMs)。
+    // demo-seed.ts 里专门为这个写了防御性夹取，因为传错会把时间戳当行数。
+    const rows = buildSeedRows(
+      (model as { entities: unknown[] }).entities[0] as never,
+      now
+    );
+    const keys = new Set(rows.map(r => String(r.values.d)));
+    expect(keys.has("2026-07-29")).toBe(true); // 今天
+    expect(keys.has("2026-07-28")).toBe(true); // 昨天 —— 环比的另一端
+  });
+
+  it("只钉两天，其余仍随机散布（趋势图要有疏密形状，不是一条平线）", () => {
+    const model = {
+      entities: [
+        {
+          id: "e",
+          name: "实体",
+          fields: [
+            { id: "n", name: "名称", type: "string" },
+            { id: "d", name: "日期", type: "date" },
+          ],
+        },
+      ],
+    } as never;
+    const now = new Date("2026-07-29T10:00:00").getTime();
+    // 签名是 (entity, nowMs, count)——不是 (entity, allEntities, nowMs)。
+    // demo-seed.ts 里专门为这个写了防御性夹取，因为传错会把时间戳当行数。
+    const rows = buildSeedRows(
+      (model as { entities: unknown[] }).entities[0] as never,
+      now
+    );
+    const distinct = new Set(rows.map(r => String(r.values.d))).size;
+    // 12 行落在 14 天里：全钉死会是 12 天，全随机通常 8-10 天。
+    // 只要不是"每行各占一天"（那就退回第一版的平线）就说明随机还在。
+    expect(distinct).toBeLessThan(rows.length);
+    expect(distinct).toBeGreaterThan(2);
+  });
+});
