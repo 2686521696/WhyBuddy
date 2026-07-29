@@ -201,6 +201,37 @@ def _validate_binding_schema(
                 f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefs.{field} "
                 f"字段类型 '{field_type}' 不在合法域内"
             )
+    # entityFieldRefLists：值是**字段 id 数组**的绑定键（如 ActivityFeed 宽行档
+    # 的 detailFieldRefs）。跟 entityFieldRefs 的区别只有两条——值是数组、且不限
+    # 定字段类型（明细列展示什么都行，数字/日期/枚举都是合法的一列）。类型收窄
+    # 交给 fieldType 可选键，没写就是"任意类型"。
+    ref_lists = schema.get("entityFieldRefLists", {})
+    if not isinstance(ref_lists, dict):
+        raise ValueError(
+            f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists 必须是对象"
+        )
+    for field, spec in ref_lists.items():
+        if field not in known_fields:
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists "
+                f"引用了未声明字段: {field}"
+            )
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists.{field} 必须是对象"
+            )
+        max_items = spec.get("maxItems")
+        if max_items is not None and (not isinstance(max_items, int) or max_items < 1):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists.{field}"
+                ".maxItems 必须是正整数"
+            )
+        field_type = spec.get("fieldType")
+        if field_type is not None and field_type not in legal_field_types:
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists.{field}"
+                f".fieldType '{field_type}' 不在合法域内"
+            )
     ranges = schema.get("ranges", {})
     if not isinstance(ranges, dict):
         raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.ranges 必须是对象")
@@ -294,6 +325,7 @@ def _format_binding_schema(schema: Dict[str, Any]) -> str:
     enums = schema.get("enums", {})
     entity_field_refs = schema.get("entityFieldRefs", {})
     ranges = schema.get("ranges", {})
+    ref_lists = schema.get("entityFieldRefLists", {})
     aggregate_fields = set(schema.get("aggregateFields", []))
 
     def annotate(field: str) -> str:
@@ -303,6 +335,14 @@ def _format_binding_schema(schema: Dict[str, Any]) -> str:
             return f"{field}({'|'.join(enums[field])})"
         if field in entity_field_refs:
             return f"{field}({entity_field_refs[field]} field)"
+        if field in ref_lists:
+            spec = ref_lists[field]
+            want = spec.get("fieldType")
+            cap = spec.get("maxItems")
+            bits = [f"{want} fieldId" if want else "fieldId"]
+            if cap:
+                bits.append(f"max {cap}")
+            return f"{field}([{', '.join(bits)}])"
         if field in ranges:
             lo, hi = ranges[field]
             return f"{field}({lo}-{hi})"

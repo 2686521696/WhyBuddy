@@ -164,6 +164,44 @@ def _validate_block_binding(
                     ref=str(value), skill="page",
                 ))
 
+        # 数组型字段引用（ActivityFeed 宽行档的 detailFieldRefs）：逐个落到同
+        # 一实体上。写成非数组、或超出 maxItems 都拦——渲染端只能画声明得清楚
+        # 的列，模糊的声明到了运行时只能猜，猜出来的列是编的。
+        for field, spec in (schema.get("entityFieldRefLists") or {}).items():
+            value = binding.get(field)
+            if value is None:
+                continue
+            if not isinstance(value, list):
+                findings.append(_finding(
+                    PUBLISH_INVALID_FIELD, f"{block_path}.binding.{field}",
+                    f"{field} must be an array of field ids, got '{value}'",
+                    ref=str(value), skill="page",
+                ))
+                continue
+            max_items = spec.get("maxItems")
+            if max_items and len(value) > max_items:
+                findings.append(_finding(
+                    PUBLISH_INVALID_FIELD, f"{block_path}.binding.{field}",
+                    f"{field} accepts at most {max_items} field(s), got {len(value)}",
+                    ref=str(len(value)), skill="page",
+                ))
+            want_type = spec.get("fieldType")
+            for field_ref in value:
+                qualified = f"{entity_ref}.{field_ref}"
+                if qualified not in field_types:
+                    findings.append(_finding(
+                        DANGLING, f"{block_path}.binding.{field}",
+                        f"{field} '{field_ref}' not found in entity '{entity_ref}' fields",
+                        ref=str(field_ref), skill="page",
+                    ))
+                elif want_type and field_types[qualified] != want_type:
+                    findings.append(_finding(
+                        DANGLING, f"{block_path}.binding.{field}",
+                        f"{field} '{field_ref}' must be a {want_type} field "
+                        f"(got '{field_types[qualified]}')",
+                        ref=str(field_ref), skill="page",
+                    ))
+
         for field in schema.get("aggregateFields", []):
             value = binding.get(field)
             if not value or value == "count":

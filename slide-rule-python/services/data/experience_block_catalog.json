@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；本版只建立目录和渲染边界，不改变旧页面效果。bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | freeformEmbeddable：这块能不能被 FreeformInsight 的设计树用 blockRef 嵌进去（Puck DropZone 的 allow 语义：只放行名单内的）。逐行记录类给 True——freeform 的 dataRef 只能出聚合值，画不了逐行；跟 freeform 自画内容撞车的、会撑爆版面的、以及自己嵌自己的给 False。",
-  "version": 5,
+  "version": 6,
   "allowedSlots": [
     "summary",
     "primary",
@@ -346,6 +346,13 @@
         "properties": {
           "title": {
             "type": "string"
+          },
+          "variant": {
+            "type": "string",
+            "enum": [
+              "timeline",
+              "row"
+            ]
           }
         }
       },
@@ -365,11 +372,18 @@
           "timeFieldRef"
         ],
         "optional": [
-          "levelFieldRef"
+          "levelFieldRef",
+          "detailFieldRefs"
         ],
         "entityFieldRefs": {
           "timeFieldRef": "date",
           "levelFieldRef": "enum"
+        },
+        "entityFieldRefLists": {
+          "detailFieldRefs": {
+            "maxItems": 3,
+            "note": "宽行档（variant=row）中段展示的明细字段，同实体下任意类型"
+          }
         }
       },
       "freeformEmbeddable": true

@@ -72,6 +72,7 @@ import {
   buildTrendSeries,
   computeAggregate,
   parseAggregate,
+  type FeedItem,
   type TimeGrain,
 } from "./block-data";
 
@@ -1191,11 +1192,148 @@ const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
   );
 };
 
+/**
+ * 动态流的宽行档（2026-07-29）。
+ *
+ * 起因是拿参考图跟真实渲染对照：参考图把动态流画成一条满宽的信息行
+ *（状态 | 单号 | 描述 | 关联单据 | 时间），真实渲染是一条窄时间轴，右边三分之二
+ * 全空。宽度不是 bug——积木拿到的就是满宽，是时间轴这个形态本身撑不满。
+ *
+ * 形状对标 ant-design/pro-components 的 ProList 列表模式（src/list/Item.tsx 的
+ * "列表模式渲染"分支 + ProListBase 的 ProListItem）：`List.Item` 里左边
+ * `List.Item.Meta`（avatar / title / description）吃掉 flex:1，右边 `extra` 靠右
+ * 收口。这是这类宽行的成熟长相，不自己发明一套 grid。
+ *
+ * 中段的 description 由 binding.detailFieldRefs 声明——只加 variant 不加字段的话，
+ * 宽行只是把同样三条信息摊开，比时间轴更空。
+ */
+function FeedRowList({
+  items,
+  entityRef,
+  detailFields,
+  levelDecl,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+}: {
+  items: FeedItem[];
+  entityRef: string;
+  detailFields: string[];
+  levelDecl: Map<string, NormalizedFieldOption> | null;
+  onAction?: ExperienceBlockRendererProps["onAction"];
+  fieldLabelOf?: FieldLabelLookup;
+  enumOptionsOf?: EnumOptionsLookup;
+}) {
+  const { token } = antdTheme.useToken();
+  // 明细列的枚举取值表一次建好：跟 DataTable 同一条纪律——同一份数据在别处
+  // 显示「已冻结」，这里不能显示 `frozen`。
+  const detailLabelOf = new Map(
+    detailFields.map(f => [
+      f,
+      new Map((enumOptionsOf?.(entityRef, f) ?? []).map(o => [o.id, o.label])),
+    ])
+  );
+  return (
+    <List
+      size="small"
+      split
+      dataSource={items}
+      renderItem={item => {
+        const decl = item.level ? levelDecl?.get(item.level) : undefined;
+        const details = detailFields
+          .map(f => {
+            const raw = String(item.row.values?.[f] ?? "").trim();
+            if (!raw) return null;
+            const label = fieldLabelOf?.(entityRef, f) ?? f;
+            const value = detailLabelOf.get(f)?.get(raw) ?? raw;
+            return {
+              field: f,
+              // 值本身已经以字段名开头时不再重复标签——「使用生豆 使用生豆 1」
+              // 读起来像口吃。演示种子数据正是这个形状（string/ref 字段的种子
+              // 值就是「字段名 序号」），真实数据里也有「状态：状态待定」这类。
+              label: value.startsWith(label) ? "" : label,
+              value,
+            };
+          })
+          .filter((d): d is { field: string; label: string; value: string } => d !== null);
+        return (
+          <List.Item
+            data-testid="activity-feed-row"
+            style={{ cursor: onAction ? "pointer" : undefined, paddingInline: 0 }}
+            onClick={() => onAction?.("itemSelect", { rowId: item.row.id })}
+          >
+            {/* 单行分栏，不用 List.Item.Meta 的「标题在上、描述在下」两层结构。
+                参考图上这一行就是一条表行：状态点 | 单号+标签 | 明细列… | 时间，
+                两层结构会把明细挤到第二行、右边留一大片空。ProList 的列表模式
+                本身也是往 List.Item 里塞一个自定义的 `-header` flex 行
+                （src/list/Item.tsx），这里是同一个做法。 */}
+            <div
+              style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", minWidth: 0 }}
+            >
+              {/* 时间轴的节点色在宽行里退化成一个小圆点：颜色语义（tone）保留，
+                  但不再画那条竖线——一行一行的表里画竖轴反而干扰阅读。 */}
+              <span
+                style={{
+                  flex: "0 0 auto",
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: toneDotColor(decl?.tone, token.colorPrimary),
+                }}
+              />
+              <span
+                style={{
+                  flex: "0 0 auto",
+                  maxWidth: 240,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  minWidth: 0,
+                }}
+              >
+                <Typography.Text ellipsis={{ tooltip: item.title }} style={{ fontSize: 12 }}>
+                  {item.title}
+                </Typography.Text>
+                {item.level && (
+                  <Tag style={{ marginInlineEnd: 0, fontSize: 11 }}>
+                    {decl?.label ?? item.level}
+                  </Tag>
+                )}
+              </span>
+              {/* 明细列**等分**剩余宽度：不等分的话它们会全挤在左边，日期孤零零
+                  贴在右边缘，中间空一大段——第一版就是这样。 */}
+              {details.map(d => (
+                <span key={d.field} style={{ flex: "1 1 0", minWidth: 0 }}>
+                  <Typography.Text
+                    type="secondary"
+                    ellipsis={{ tooltip: `${d.label} ${d.value}`.trim() }}
+                    style={{ fontSize: 11 }}
+                  >
+                    {d.label ? `${d.label} ` : ""}
+                    <Typography.Text style={{ fontSize: 11 }}>{d.value}</Typography.Text>
+                  </Typography.Text>
+                </span>
+              ))}
+              <Typography.Text
+                type="secondary"
+                style={{ flex: "0 0 auto", fontSize: 11, whiteSpace: "nowrap" }}
+              >
+                {item.dateKey}
+              </Typography.Text>
+            </div>
+          </List.Item>
+        );
+      }}
+    />
+  );
+}
+
 const ActivityFeedRenderer: ExperienceBlockRenderer = ({
   children,
   block,
   entityRows,
   onAction,
+  fieldLabelOf,
   enumOptionsOf,
 }) => {
   // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
@@ -1225,6 +1363,33 @@ const ActivityFeedRenderer: ExperienceBlockRenderer = ({
         <BlockEmpty hint={`暂无动态 — 写入「${timeField}」后按时间倒序展示`} />
       </BlockShell>
     );
+  // 表现档位：宽行 vs 时间轴。未声明/写了个不认识的值一律回默认时间轴——
+  // 档位是长相不是数据，认不出来时给个能看的形态，不能白屏。
+  if (String(block.props?.variant ?? "").trim() === "row") {
+    const detailFields = (
+      Array.isArray(block.binding?.detailFieldRefs) ? block.binding.detailFieldRefs : []
+    )
+      .map(f => String(f ?? "").trim())
+      // 运行时再判一次字段是否真的在行里（门禁看的是模型声明，这里拿到的是
+      // 用户真写进去的行）；顺带排掉已经在标题/标签/时间位置露过面的字段，
+      // 同一个值在一行里出现两次比不显示更糟。
+      .filter(f => f && f !== timeField && f !== levelField)
+      .filter(f => items.some(it => String(it.row.values?.[f] ?? "").trim() !== ""))
+      .slice(0, 3);
+    return (
+      <BlockShell title={title} testid="activity-feed">
+        <FeedRowList
+          items={items}
+          entityRef={bound.entityRef}
+          detailFields={detailFields}
+          levelDecl={levelDecl}
+          onAction={onAction}
+          fieldLabelOf={fieldLabelOf}
+          enumOptionsOf={enumOptionsOf}
+        />
+      </BlockShell>
+    );
+  }
   return (
     <BlockShell title={title} testid="activity-feed">
       {/* 动态流就是 Timeline 的原型用法：一条时间轴串起按时间倒序的事件。
@@ -1301,6 +1466,25 @@ function toneTimelineColor(tone: string | undefined): string {
   if (tone === "success") return "green";
   // processing / default / 查不到 → 主题色（antd 的 "blue" 走 colorPrimary）
   return "blue";
+}
+
+/**
+ * 同样的 tone，宽行档要的是**真 CSS 色值**。
+ *
+ * 不能直接复用 toneTimelineColor：那个返回的是 antd Timeline 的预设名
+ *（"red"/"green"/"blue"），只有 Timeline 认得，塞进 background 是个非法值，
+ * 圆点会渲染成透明。状态三色跟 PageViews 的 TONE_COLORS 同一组。
+ *
+ * processing/default 落到主题色，由调用方从 `theme.useToken()` 传进来——
+ * 第一版写的是 `var(--sr-primary, #1677ff)`，那个变量**整个代码库里没人定义**
+ * （连隔壁的 --sr-text-muted 也一直在吃 fallback），等于把"跟随主题"写成了
+ * 永远的品牌蓝，在这次的墨绿主题里就是一个突兀的蓝点。
+ */
+function toneDotColor(tone: string | undefined, primary: string): string {
+  if (tone === "danger") return "#ff4d4f";
+  if (tone === "warning") return "#faad14";
+  if (tone === "success") return "#52c41a";
+  return primary;
 }
 
 const DataTableRenderer: ExperienceBlockRenderer = ({

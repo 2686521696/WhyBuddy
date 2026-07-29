@@ -605,6 +605,34 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
                         f"blockRef.binding.{ref_key} '{field_id}' on '{entity_ref}' is type "
                         f"'{field_types[qualified]}', {self.type} requires a {want_type} field"
                     )
+            # 数组型字段引用（ActivityFeed 宽行档的 detailFieldRefs）——校验口径
+            # 与 Gate 的 _validate_block_binding 同源。
+            for key, spec in (schema.get("entityFieldRefLists") or {}).items():
+                val = self.binding.get(key)
+                if val is None:
+                    continue
+                if not isinstance(val, list):
+                    raise ValueError(
+                        f"blockRef.binding.{key} must be an array of field ids, got {val!r}"
+                    )
+                cap = spec.get("maxItems")
+                if cap and len(val) > cap:
+                    raise ValueError(
+                        f"blockRef.binding.{key} accepts at most {cap} field(s), got {len(val)}"
+                    )
+                want = spec.get("fieldType")
+                for field_id in val:
+                    qualified = f"{entity_ref}.{field_id}"
+                    if qualified not in field_types:
+                        raise ValueError(
+                            f"blockRef.binding.{key} '{field_id}' does not exist on entity "
+                            f"'{entity_ref}'"
+                        )
+                    if want and field_types[qualified] != want:
+                        raise ValueError(
+                            f"blockRef.binding.{key} '{field_id}' on '{entity_ref}' is type "
+                            f"'{field_types[qualified]}', {self.type} requires a {want} field"
+                        )
             for key, choices in (schema.get("enums") or {}).items():
                 val = self.binding.get(key)
                 if val is not None and val not in choices:
@@ -780,11 +808,20 @@ def _blockref_prompt_fragment() -> str:
             for key in required:
                 want = field_refs.get(key)
                 parts.append(f"{key}（必填{'，同实体下的 ' + want + ' 字段' if want else ''}）")
+            ref_lists = schema.get("entityFieldRefLists") or {}
             for key in optional:
                 want = field_refs.get(key)
                 extra = ""
                 if want:
                     extra = f"，同实体下的 {want} 字段"
+                elif key in ref_lists:
+                    spec = ref_lists[key]
+                    cap = spec.get("maxItems")
+                    want_type = spec.get("fieldType")
+                    extra = "，同实体下的{}字段 id **数组**{}".format(
+                        f" {want_type} " if want_type else "",
+                        f"，最多 {cap} 个" if cap else "",
+                    )
                 elif key in (schema.get("enums") or {}):
                     extra = "，取值：" + "/".join(map(str, schema["enums"][key]))
                 elif key in (schema.get("ranges") or {}):
@@ -793,13 +830,31 @@ def _blockref_prompt_fragment() -> str:
                 parts.append(f"{key}（可选{extra}）")
             bind_desc = "binding: " + "、".join(parts)
         lines.append(f"- {block_type}：{desc[:60]}　{bind_desc}")
+        # 表现档位（props.variant）——同一个积木的两种长相，由设计者按版面挑。
+        # 从 propsSchema 派生而不是在这写死，加档位改目录一处即可。
+        variants = (
+            ((block.get("propsSchema") or {}).get("properties") or {})
+            .get("variant", {})
+            .get("enum")
+        )
+        if variants:
+            lines.append(
+                f"  ↳ 这个积木有 props.variant 可选：{'/'.join(map(str, variants))}"
+                "（不写按第一个算）"
+            )
     lines += [
         "",
-        "写法（binding 里的 limit/sortOrder 这类可选项也写在 binding 里，不要写进 props）：",
+        "写法（binding 里的 limit/sortOrder 这类可选项也写在 binding 里，不要写进 props；",
+        "props 只放上面标了 ↳ 的表现档位）：",
         '{"tag": "div", "style": {"flex": "1"}, "blockRef": {',
         '  "type": "<上面名单里的一个>",',
-        '  "binding": {"entityRef": "<真实实体 id>", "...": "<按上面说明填>"}',
+        '  "binding": {"entityRef": "<真实实体 id>", "...": "<按上面说明填>"},',
+        '  "props": {"variant": "<有 ↳ 才写，没有就整个省掉 props>"}',
         "}}",
+        "",
+        "**积木摆在哪，就挑对应的长相**：占满整行的位置用宽行档（ActivityFeed 的",
+        "variant=row），这时一定要用 detailFieldRefs 补 1-3 个明细字段，否则一整行",
+        "只有标题和日期，右边三分之二全是空的；挤在窄侧栏里才用默认的时间轴档。",
         "",
         "跟 chart 一样：有 blockRef 的节点不要再写 children/text（积木会接管这块",
         "区域的内容），节点自己的 style 仍然控制它在版式里占多大、周围留多少白。",
