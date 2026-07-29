@@ -16,6 +16,7 @@ docstring 写得很清楚：图上的"数字"都是占位假象，不能当真�
 
 import base64
 import json
+import struct
 import os
 import sys
 import time
@@ -56,22 +57,34 @@ def main() -> int:
     from services.v5_llm_generate import generate_five_system_model
     from services.v5_model_gate import validate_five_system_model
 
-    # ── 参考图落盘钩子（只在本脚本内生效）──────────────────────────
+    # ── 生图落盘钩子（只在本脚本内生效）────────────────────────────
+    # 两个入口都要钩：
+    #   _generate_overview_sheet_b64   → 三区参照板（桌面+手机+样式，两档共用）
+    #   _generate_reference_image_b64  → 单个区块的参照图
+    # 只钩后者会漏掉参照板，而那正是最近改动集中的地方。
     shots: list[Path] = []
-    original = freeform_block._generate_reference_image_b64
 
-    def _capture(*args, **kwargs):
-        b64 = original(*args, **kwargs)
-        if b64:
-            p = out_dir / f"reference-{len(shots) + 1}.png"
-            p.write_bytes(base64.b64decode(b64))
-            shots.append(p)
-            print(f"[fresh] reference image saved: {p}")
-        else:
-            print("[fresh] reference image unavailable (生图降级，主链路继续)")
-        return b64
+    def _hook(name: str, tag: str):
+        original = getattr(freeform_block, name)
 
-    freeform_block._generate_reference_image_b64 = _capture
+        def _capture(*args, **kwargs):
+            b64 = original(*args, **kwargs)
+            if b64:
+                data = base64.b64decode(b64)
+                p = out_dir / f"{tag}-{len([x for x in shots if x.name.startswith(tag)]) + 1}.png"
+                p.write_bytes(data)
+                shots.append(p)
+                # 从 PNG 头读真实宽高——请求尺寸不等于返回尺寸
+                w, h = struct.unpack(">II", data[16:24])
+                print(f"[fresh] {tag} saved: {p}  {w}x{h}  {len(data) // 1024}KB")
+            else:
+                print(f"[fresh] {tag} unavailable (生图降级，主链路继续)")
+            return b64
+
+        setattr(freeform_block, name, _capture)
+
+    _hook("_generate_overview_sheet_b64", "sheet")
+    _hook("_generate_reference_image_b64", "reference")
 
     print(f"[fresh] intent: {intent}")
     t0 = time.time()
