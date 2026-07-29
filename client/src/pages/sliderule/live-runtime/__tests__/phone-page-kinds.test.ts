@@ -12,6 +12,12 @@ import { describe, it, expect } from "vitest";
 
 import { deriveAppRuntimeSchema } from "../app-runtime-schema";
 
+// ?raw 源码断言用。必须在模块顶层 await：放进 describe 回调里 esbuild 直接
+// 报错（回调不是 async，顶层 await 只在模块作用域合法）。
+const screenSrc = await import("../AppRuntimeScreen.tsx?raw").then(
+  m => (m as unknown as { default: string }).default
+);
+
 /** 最小可用模型：一个实体 + 一个页面，页面的 kind/绑定由参数决定。 */
 function modelWith(pageExtra: Record<string, unknown>) {
   return {
@@ -118,5 +124,41 @@ describe("主实体的确定方式", () => {
     )?.pages[0]?.view;
     // 主实体被算成 other_entity → roast_batch.status 不再属于本页实体 → 降级
     expect(view?.kind).toBe("workbench");
+  });
+});
+
+describe("手机档也渲染 AI 设计的总览版式（2026-07-29）", () => {
+  it("phonePageContent 里挂了 monitorFreeformOverview", () => {
+    // 此前只有桌面壳渲染它：同一个总览页换个档位就从"每个应用长得不一样"
+    // 退回"所有应用长一样"。更别扭的是 preferredDevice=phone 的应用——
+    // 那份版式**本来就是照手机单列生成的**，却只有桌面壳看得到。
+    expect(screenSrc).toContain('<div className="phone-freeform-scope">');
+    expect(screenSrc).toMatch(
+      /phone-freeform-scope">\{monitorFreeformOverview\}/
+    );
+  });
+
+  it("声明必须在手机路径之前 —— 否则 TDZ 直接炸", () => {
+    // 原来它挨着桌面的 defaultPageContent 放（2400 行开外），手机路径引用
+    // 会 "used before its declaration"。这条锁住顺序，免得日后有人搬回去。
+    const decl = screenSrc.indexOf("const monitorFreeformOverview =");
+    const phoneUse = screenSrc.indexOf('className="phone-freeform-scope"');
+    expect(decl).toBeGreaterThan(-1);
+    expect(phoneUse).toBeGreaterThan(decl);
+  });
+
+  it("设计版式在场时，手机固定骨架的 KPI/图表让位", () => {
+    // freeformOverview 就是拿这页 stats/charts 重新设计出来的版式——
+    // 同一份声明的美化版。两个都画就是同样的数字在一屏里出现两遍。
+    expect(screenSrc).toContain("const freeformTookOver");
+    expect(screenSrc).toMatch(/wantsMetrics\s*=\s*\n?\s*!freeformTookOver/);
+  });
+
+  it("让位只针对总览页 —— workbench 的 KPI 不受影响", () => {
+    // freeformOverview 只在 monitor/dashboard 上生成；把 workbench 也算进去
+    // 会让业务页的指标凭空消失
+    expect(screenSrc).toMatch(
+      /freeformTookOver[\s\S]{0,160}kind === "monitor" \|\| kind === "dashboard"/
+    );
   });
 });

@@ -236,6 +236,48 @@
 }
 
 @layer components {
+  /**
+   * 手机档渲染 freeformOverview 时的收窄作用域（2026-07-29）。
+   *
+   * 总览页的版式是 AI 按 appbundle.preferredDevice 那一档设计的。desktop 档
+   * 允许多列与固定宽度（生成侧 _DEVICE_CONTAINER_HINTS 明写"内容区较宽，
+   * 可以用横向排布/多列"），那份设计塞进 390px 的手机内容区会横向撑爆。
+   *
+   * 这里不是跟设计较劲——phone 档的生成提示词本来就要求"必须单列纵向排布"，
+   * 这几条只是把同一条规矩对 desktop 档设计补执行一遍，让手机上至少读得下来。
+   *
+   * 用 !important：设计树的样式是**内联**的（renderFreeformNode 逐节点下发），
+   * 普通样式表规则一律压不过内联，跟特异性较劲没用。
+   */
+  .phone-freeform-scope * {
+    max-width: 100% !important;
+  }
+  .phone-freeform-scope [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+  /**
+   * 横排卡片改成一行一张。
+   *
+   * 判据是「子元素既 flex-grow 又有 min-height」——那是"卡片"的形状（有固有
+   * 高度、平分宽度）。**不能对所有 flex 容器一刀切换行**：卡片内部的
+   * 图标+标题也是一条 flex 行，一起换行就会把图标甩到标题上面去。
+   * 第一版就是一刀切的，实测三张 KPI 卡挤成 2+1、中文标题被折成
+   * 「可用生／豆库存」。
+   *
+   * 这仍然是**启发式**，靠的是当前设计树的形状特征，不是什么保证。
+   * 真正的解法是按设备生成对应版式（生成侧本来就支持 device=phone），
+   * 而不是在渲染层把桌面版式掰弯——见 AppRuntimeScreen 里那段注释。
+   */
+  .phone-freeform-scope
+    [style*="display: flex"]:has(> [style*="min-height"][style*="flex:"]) {
+    flex-wrap: wrap !important;
+  }
+  .phone-freeform-scope
+    [style*="display: flex"]
+    > [style*="min-height"][style*="flex:"] {
+    flex-basis: 100% !important;
+  }
+
   .container {
     width: 100%;
     margin-left: auto;

@@ -1536,11 +1536,55 @@ export function AppRuntimeScreen({
 
   // 手机档按 pageKind 决定出哪几段。取数与桌面共用（pageStatDisplay /
   // phoneChartNode），只有摆法分档——同一个指标不能在两个档位算出不同的数。
+  // 声明位置：必须在 phoneSectionData / phonePageContent 之前——手机档
+  // 2026-07-29 起也渲染这份设计版式，而且 phoneSectionData 要据它决定
+  // 固定骨架让不让位。原来它挨着桌面的 defaultPageContent 放（2400 行开外），
+  // 手机路径引用会直接 TDZ 报错。
+  //
+  // 2026-07-24：monitor 页面的总览区块——freeformOverview 是 Python
+  // enrich_monitor_page_overviews 按这个页面已声明的 stats/charts 当内容
+  // 清单、交给 FreeformInsight 设计出来的 KPI+图表版式（不再是所有 app
+  // 首页都长一样的固定网格骨架）。数字仍然经 ExperienceBlockBoundary →
+  // renderFreeformNode 的 dataRef 现算校验，不会因为换了渲染路径就失去
+  // "不能编数字"这层保证。未声明（老快照/生成失败）时下面的
+  // monitorCombinedRow 固定骨架原样兜底。
+  //
+  // 故意不包含 rankings/feeds——FreeformInsight 的 dataRef 只能表达聚合值
+  // （count/sum/avg），没有"枚举真实第 N 行记录"的能力（真机测试过：LLM
+  // 收到这个要求后只能画出表头+空表身）。排行榜/动态流这类必须逐行展示
+  // 真实记录的内容，固定走 monitorDynamicLists 下面的动态渲染。
+  const monitorFreeformOverview = page?.freeformOverview ? (
+    <div data-testid="app-runtime-monitor-freeform-overview">
+      <ExperienceBlockBoundary
+        block={{
+          id: `${page.id}:freeform-overview`,
+          type: "FreeformInsight",
+          freeformContent: page.freeformOverview,
+        }}
+        entityRows={state.entities}
+        chartPalette={{
+          primary: identityTheme.primary,
+          categorical: identityTheme.charts,
+        }}
+        enumOptionsOf={enumOptionsOf}
+        fieldLabelOf={fieldLabelOf}
+      />
+    </div>
+  ) : null;
+
   const phoneSectionData = (() => {
     if (!page) return null;
     const kind = page.view.kind;
+    // freeformOverview 就是拿这一页的 stats/charts 重新设计出来的版式——
+    // 同一份声明的美化版，不是另一份内容。它渲染了，固定骨架的 KPI/图表
+    // 就必须让位，否则同样的数字在一屏里出现两遍（桌面档早就是这个规矩，
+    // 见 defaultPageContent 里 monitorFreeformOverview 的分支）。
+    const freeformTookOver =
+      Boolean(page.freeformOverview) &&
+      (kind === "monitor" || kind === "dashboard");
     const wantsMetrics =
-      kind === "dashboard" || kind === "monitor" || kind === "workbench";
+      !freeformTookOver &&
+      (kind === "dashboard" || kind === "monitor" || kind === "workbench");
     const wantsSteps = kind === "wizard";
     const stats =
       wantsMetrics && page.stats.length > 0
@@ -1692,6 +1736,21 @@ export function AppRuntimeScreen({
       {/* 体验区块：与桌面壳同一份摆法逻辑，槽位走 layout.mobile（未声明则退回
           桌面槽位）。从前手机档只有一个裸列表——桌面有的 KPI/图表/筛选条/流程
           时间线，手机一个都拿不到。 */}
+      {/* 总览页的 AI 设计版式（2026-07-29）。
+          此前只有桌面壳渲染它，手机档一直只有固定骨架——同一个总览页，
+          换个档位就从"每个应用长得不一样"退回"所有应用长一样"。
+
+          更别扭的是 preferredDevice=phone 的应用：那份 freeform **本来就是
+          照手机单列生成的**（生成侧 _DEVICE_CONTAINER_HINTS 里 phone 档明确
+          要求"内容区窄、必须单列纵向排布、字号图标间距收紧一档"），结果只有
+          桌面壳会渲染它——专为手机做的版式送不到手机上。
+
+          外面套 phone-freeform-scope：设计树是照 preferredDevice 那一档生成的，
+          desktop 档的多列/固定宽度进了 390px 会横向撑爆。强制单列不是跟设计
+          较劲，正是把 phone 档提示词里那条规矩补执行一遍。 */}
+      {monitorFreeformOverview && (
+        <div className="phone-freeform-scope">{monitorFreeformOverview}</div>
+      )}
       {renderExperienceBlockScaffold(true)}
       {/* pageKind 骨架：schema 有 6 种，手机档此前一种都没有（无论什么 kind
           都渲染成同一个裸列表）。dashboard/monitor 出 KPI + 图表，wizard 出
@@ -2449,36 +2508,6 @@ export function AppRuntimeScreen({
       );
     })();
 
-  // 2026-07-24：monitor 页面的总览区块——freeformOverview 是 Python
-  // enrich_monitor_page_overviews 按这个页面已声明的 stats/charts 当内容
-  // 清单、交给 FreeformInsight 设计出来的 KPI+图表版式（不再是所有 app
-  // 首页都长一样的固定网格骨架）。数字仍然经 ExperienceBlockBoundary →
-  // renderFreeformNode 的 dataRef 现算校验，不会因为换了渲染路径就失去
-  // "不能编数字"这层保证。未声明（老快照/生成失败）时下面的
-  // monitorCombinedRow 固定骨架原样兜底。
-  //
-  // 故意不包含 rankings/feeds——FreeformInsight 的 dataRef 只能表达聚合值
-  // （count/sum/avg），没有"枚举真实第 N 行记录"的能力（真机测试过：LLM
-  // 收到这个要求后只能画出表头+空表身）。排行榜/动态流这类必须逐行展示
-  // 真实记录的内容，固定走 monitorDynamicLists 下面的动态渲染。
-  const monitorFreeformOverview = page?.freeformOverview ? (
-    <div data-testid="app-runtime-monitor-freeform-overview">
-      <ExperienceBlockBoundary
-        block={{
-          id: `${page.id}:freeform-overview`,
-          type: "FreeformInsight",
-          freeformContent: page.freeformOverview,
-        }}
-        entityRows={state.entities}
-        chartPalette={{
-          primary: identityTheme.primary,
-          categorical: identityTheme.charts,
-        }}
-        enumOptionsOf={enumOptionsOf}
-        fieldLabelOf={fieldLabelOf}
-      />
-    </div>
-  ) : null;
 
   // freeformOverview 只负责 KPI+图表；排行榜/动态流这类"必须是真实逐行
   // 记录"的内容永远走这条真实动态渲染路径（renderRankingCard/
