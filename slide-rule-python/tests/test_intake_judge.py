@@ -12,6 +12,7 @@ scripts/eval_intake_judge.py 对真网关跑 JSONL 用例集来量（当前 35/3
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -170,3 +171,93 @@ def test_eval_cases_are_wellformed():
     by = {v: sum(1 for r in rows if r["expect"] == v) for v in ij._VALID_VERDICTS}
     assert all(by[v] >= 3 for v in by), f"某类样本不足: {by}"
     assert by["real"] + by["iteration"] >= 15, f"放行侧样本不足: {by}"
+
+
+# ── 拒绝档：说清楚了，但这个形态推演不出来（2026-07-29）──────────────
+
+def test_capability_surface_is_derived_not_handwritten():
+    """能力面必须现算自合法域账本。手抄一份的后果是：账本加了新页面形态，
+    判定器还按旧能力面拒绝本来已经做得到的东西——而且不会有任何报错。"""
+    from services.schema_legal import CHART_TYPES, FIELD_TYPES, PAGE_KINDS
+
+    block = ij._capability_block()
+    for value in (*FIELD_TYPES, *PAGE_KINDS, *CHART_TYPES):
+        assert value in block, f"能力面漏了合法域里的 {value}"
+
+
+def test_prompt_carries_both_halves_of_the_boundary():
+    """判"做不做得了"要两半都在场：做得了什么 + 做不了什么。少任何一半，
+    模型都只能凭"听起来像不像正经需求"来判——那正是它给「3D 竞速游戏」
+    打 0.95 置信度的原因。"""
+    body = ij.build_messages("随便一句", has_app=False)[0]["content"]
+    assert "能力边界" in body
+    assert "workbench" in body, "能表达的那一半没进 prompt"
+    assert "游戏" in body and "硬件" in body, "做不了的那一半没进 prompt"
+
+
+def test_out_of_scope_ranks_below_real():
+    """优先级刻意压在 real 之下。TriageSQL 的数据：超纲是最好判的一类
+    （F1 0.90），真需求最难（0.53）——风险在误伤，不在漏判。这条顺序被
+    改反了，误伤真需求的概率会立刻上去。"""
+    by_id = {r.id: r for r in ij._RULES}
+    assert by_id["out_of_scope_form"].priority < by_id["new_business_need"].priority
+    assert by_id["out_of_scope_form"].priority < by_id["iteration_on_current_app"].priority
+    assert by_id["out_of_scope_form"].priority > by_id["too_vague"].priority
+
+
+def test_out_of_scope_rule_teaches_the_keyword_trap():
+    """这条规则最容易被判错的方式是"看见领域词就往里塞"。硬负样本必须写在
+    规则正文里——不是写在注释里，注释进不了 prompt。"""
+    cond = {r.id: r for r in ij._RULES}["out_of_scope_form"].condition
+    assert "不是关键词" in cond
+    assert "录音棚" in cond and "密室逃脱" in cond, "缺硬负样本，模型学不到边界"
+
+
+def test_out_of_scope_guidance_must_offer_a_way_out():
+    """跟别的判词不同：这一类不能说"再多说两句"——用户补再多细节也变不出
+    一个游戏引擎。必须给出周边真做得了的那个系统。"""
+    body = ij.build_messages("随便一句", has_app=False)[0]["content"]
+    assert "out_of_scope" in body
+    assert "周边真做得了" in body
+
+
+def test_out_of_scope_never_blocks():
+    """新判词照样只提示不阻断，跟其余判词一个待遇。"""
+    assert ij._resolve_action("out_of_scope", 1.0) == "hint"
+    assert ij._resolve_action("out_of_scope", 0.2) == "proceed"
+
+
+def test_frontend_verdict_set_stays_in_sync():
+    """前端 VALID_VERDICTS 是个闭集，后端加了判词而前端没加时
+    parseJudgement 返回 null → 提示条一个字都不显示，而且**不报错**
+    （fail-open 在这里会把功能悄悄吞掉）。所以两侧必须钉在一起。"""
+    ts = (Path(__file__).resolve().parents[2]
+          / "client" / "src" / "pages" / "sliderule" / "use-intake-judge.ts")
+    src = ts.read_text(encoding="utf-8")
+    block = src.split("VALID_VERDICTS", 1)[1].split("]", 1)[0]
+    front = set(re.findall(r'"([a-z_]+)"', block))
+    assert front == ij._VALID_VERDICTS, f"前后端判词不一致: 前端 {front} 后端 {ij._VALID_VERDICTS}"
+
+
+def test_prompt_does_not_leak_the_cases_it_is_measured_on():
+    """prompt 里的例句不许出现在评测集的 oos_* / real_hard_* 用例里。
+
+    这两组是拒绝档的**成绩单**：oos_* 量召回，real_hard_* 量误伤。例句一旦
+    跟用例重合，评测测的就是"背没背过这道题"，不是"判得准不准"——第一版
+    实测 100%/100% 就是这么来的（当时规则正文里直接写着「3D 打印工厂的订单
+    排产」「电竞俱乐部的选手合同」，而它们正是 real_hard_005 / real_hard_002）。
+
+    只管这两组：更早的规则里有几处跟 vague/real 用例重合（「做个系统」「再搞
+    个别的」这类通用短句），那是这套规则写出来时就有的，且短到不构成"泄题"。
+    真要收紧应该连那几条一起改，但那是另一件事，不该混在拒绝档这一轮里。
+    """
+    body = ij.build_messages("随便一句", has_app=False)[0]["content"]
+    path = Path(__file__).parent / "data" / "intake_judge_cases.jsonl"
+    rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    graded = [r for r in rows if r["id"].startswith(("oos_", "real_hard_"))]
+    assert graded, "评测集里没有拒绝档用例，这条测试就没有意义了"
+    quoted = re.findall(r"「([^」]{4,})」", body)
+    for r in graded:
+        assert r["text"] not in body, f"{r['id']} 整句出现在 prompt 里"
+        for q in quoted:
+            assert q not in r["text"], f"{r['id']} 与 prompt 例句「{q}」重合"

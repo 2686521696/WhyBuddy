@@ -20,7 +20,12 @@ export type IntakeVerdict =
   | "iteration"
   | "vague"
   | "off_topic"
-  | "meta";
+  | "meta"
+  // 2026-07-29：说清楚了、但这个形态推演不出来（游戏/硬件/端侧原生/内容
+  // 创作/实时信号）。跟 vague 分开是照 TriageSQL 的分法——"说不清"和"说清
+  // 了但表达不了"是两回事，给用户的话也完全不同：前者是"再多说两句"，后者
+  // 是"这件事做不了，但旁边这件做得了"。
+  | "out_of_scope";
 
 export interface IntakeJudgement {
   verdict: IntakeVerdict;
@@ -33,12 +38,16 @@ export interface IntakeJudgement {
   degradedReason: string;
 }
 
+// 这个集合是**闭集**：后端加了判词而这里没加，parseJudgement 会返回 null，
+// 于是新判词的提示条一个字都不会显示——fail-open 在这里会把功能悄悄吞掉，
+// 不会报错。所以两侧必须同步，intake-verdict-parity 测试钉住了这一点。
 const VALID_VERDICTS: ReadonlySet<string> = new Set([
   "real",
   "iteration",
   "vague",
   "off_topic",
   "meta",
+  "out_of_scope",
 ]);
 
 /** 低于这个长度不发请求：后端 precheck 也会判 vague，但没必要为半个字往返。 */

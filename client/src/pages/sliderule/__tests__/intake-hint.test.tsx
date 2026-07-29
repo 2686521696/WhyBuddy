@@ -51,6 +51,23 @@ describe("parseJudgement", () => {
     expect(j!.reason).toBe("");
   });
 
+  it("接受 out_of_scope——后端加了判词而这里的闭集没加，提示条会一个字都不显示", () => {
+    // 这不是形式主义：VALID_VERDICTS 漏一个判词，parseJudgement 返回 null，
+    // fail-open 把它当成"没判过"，界面上什么都不出现，而且**不报任何错**。
+    // 拒绝档整条功能会这么悄无声息地失效，所以单独钉一条。
+    const j = parseJudgement({
+      judgement: {
+        verdict: "out_of_scope",
+        action: "hint",
+        guidance: "做不了游戏画面本身，但赛事报名与成绩管理做得了。",
+        rewrite: ["赛事报名、成绩登记与排行榜管理"],
+        confidence: 0.98,
+      },
+    });
+    expect(j?.verdict).toBe("out_of_scope");
+    expect(j?.rewrite).toHaveLength(1);
+  });
+
   it("畸形返回体一律 null（当作没判过）", () => {
     expect(parseJudgement(null)).toBeNull();
     expect(parseJudgement({})).toBeNull();

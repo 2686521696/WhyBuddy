@@ -6,6 +6,25 @@
 "新话题 vs 迭代"的路由，从不拒绝任何东西，而且它的 `false` 语义重载：
 "这是迭代"和"这我没认出来"返回值一模一样，二分类装不下这个问题。
 
+设计取舍（2026-07-29 追加：拒绝档的来源）：
+- 判定类别原本只有 real/iteration/vague/off_topic/meta，缺一档：**说清楚了，
+  但这个产品的形态五系统模型根本表达不了**。实测「3D 像素竞速游戏」「基于
+  ESP32-S3 的桌面硬件」这类输入被判 real、置信度 0.93~0.98，然后照常烧掉
+  一整轮推演，最后交给用户一个不伦不类的表单系统。
+- 这一档在学界有成熟先例。TriageSQL（Zhang et al. 2020, arXiv:2010.12634）
+  把 text-to-SQL 的问题意图分成五类，其中 `ambiguous`（说不清）与
+  `unanswerable by sql`（说清了但 SQL 表达不了）是**分开的两类**——正对应
+  本文件的 vague 与 out_of_scope。它的实验数据还给了两个可直接用的结论：
+  `unanswerable by sql` 是五类里最好判的（F1 0.90），而 `answerable`
+  反倒最难（0.53）——所以风险不在"能不能认出超纲"，在"会不会误伤真需求"。
+- Query Carefully（arXiv:2512.21345，JasminSaxer/QueryCarefully）在 LLM 时代
+  复现了同一结论：schema-aware prompt + 明写的 No-Answer Rules + 正反例各给
+  几条，超纲检出 0.8；而且**加反例不会拉低正例的表现**。
+- 两篇的共同做法是把**能力面**（schema）写进 prompt——判"做不做得了"必须
+  先知道"做得了什么"。本判定器此前一个字的能力面都没有，这才是模型敢用
+  0.98 置信度说"永动机管理系统是真需求"的根因。所以 _capability_block()
+  从 five_system_legal.json 现算（不手抄，避免账本改了这里不跟）。
+
 设计取舍（2026-07-27 调研三个开源方案后的结论）：
 - NeMo Guardrails / semantic-router 的话题围栏靠向量匹配少样本例句，
   Parlant 的规则匹配也走向量（nano-vectordb）——但本项目的 LLM 网关
@@ -35,7 +54,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
 
-Verdict = Literal["real", "iteration", "vague", "off_topic", "meta"]
+Verdict = Literal["real", "iteration", "vague", "off_topic", "meta", "out_of_scope"]
 Action = Literal["proceed", "hint"]
 
 _ENABLED_ENV = "SLIDERULE_INTAKE_JUDGE_ENABLED"
@@ -129,6 +148,57 @@ def precheck(text: str) -> Optional[Judgement]:
     return None
 
 
+# ── 能力面：判"做不做得了"之前，先让模型知道"做得了什么"──────────────
+# TriageSQL / QueryCarefully 两篇都把 schema 写进 prompt——判可行性必须
+# 有个可行性的参照物。此前这里一个字都没有，模型只能凭"听起来像不像个正
+# 经需求"来判，于是「3D 像素竞速游戏」以 0.95 的置信度过关。
+#
+# 能表达的那一半从 five_system_legal.json 现算：账本是这些枚举的唯一真相
+# 源（见 schema_legal 的模块注释），手抄一份必然漂移——加一种页面形态却
+# 忘了改这里，判定器就会继续按旧能力面拒绝本来已经做得到的东西。
+
+
+def _capability_block() -> str:
+    """能表达什么：直接由合法域账本渲染，不手抄。"""
+    from services.schema_legal import CHART_TYPES, FIELD_TYPES, PAGE_KINDS
+
+    return (
+        "这个产品能推演出来的，是**记录 / 流转 / 查看**类的业务系统，具体由五个部分组成：\n"
+        f"  · 数据模型：若干实体，每个实体的字段只有这几种类型——{'、'.join(FIELD_TYPES)}\n"
+        "  · 角色与权限：角色、菜单、按权限决定谁看得到哪些页、能不能新建\n"
+        "  · 流程：节点与流转（提交 → 审核 → 完成这类）\n"
+        f"  · 页面：只有这几种形态——{'、'.join(PAGE_KINDS)}\n"
+        f"  · 图表：只有这几种——{'、'.join(CHART_TYPES)}\n"
+        "换句话说：能被做成「一张张表单 + 一条条记录 + 一个流程 + 几张列表和图表」"
+        "的东西，都做得了。"
+    )
+
+
+# 表达不了的那一半**不在账本里**——账本记的是"合法枚举"，不是"产品边界"。
+# 这五类是 2026-07-29 从 250 条真实参赛作品标题里聚类出来的（其中 96 条超纲，
+# 见 tests/data/intake_judge_cases.jsonl 的 oos_* 用例，id 前缀就是这里的分类）。
+# 五类的共同点：产品核心不是"记录与流转"，而是实时渲染 / 设备 IO / 信号处理 /
+# 内容生成 / 模型推断——这些东西不是"字段不够用"，是**根本不在这个形态里**。
+_OUT_OF_SCOPE_KINDS = (
+    ("game", "游戏与实时互动：任何有游戏循环、实时对战、体感互动、剧情推进的东西"
+             "（竞速/卡牌/战棋/消除/模拟器/互动叙事）。做成生成器也一样——产物仍是游戏。"),
+    ("hw", "硬件与设备：单片机固件、传感器、外设、机械结构（ESP32/Arduino/雕刻机/"
+           "智能药盒/拐棍/乐器）。"),
+    ("native", "端侧原生与系统级能力：iOS/Android/Mac 原生应用、屏幕共享、系统面板、"
+               "调摄像头麦克风、语音操控手机。"),
+    ("media", "图形与内容创作工具：3D 建模、动画、绘本、写作台、剪辑、字帖、"
+              "可视化播放器——产品核心是生成内容本身。"),
+    ("signal_algo", "实时信号处理与算法产品：实时音频、助听、空间音频、姿态识别、"
+                    "录像分析教练、发育监测、防火墙——产品核心是模型推断。"),
+)
+
+
+def _out_of_scope_block() -> str:
+    return "下面这五类做不了（不是字段不够用，是产品形态根本不在上面那五个部分里）：\n" + "\n".join(
+        f"  · {desc}" for _, desc in _OUT_OF_SCOPE_KINDS
+    )
+
+
 # ── 第 1 层：规则表（Parlant 式 condition/action + 适用域 + 优先级）──
 # 不写成一个巨型 prompt 的原因：规则一多就会互相干扰，而这个项目已经在
 # 域识别器上踩过"规则太糙导致误判"的坑（"sla" 命中 translation）。这里每
@@ -189,6 +259,26 @@ _RULES: tuple[JudgeRule, ...] = (
         verdict="iteration",
     ),
     JudgeRule(
+        # 2026-07-29 新增。优先级刻意压在 real/iteration **之下**：
+        # TriageSQL 的数据说超纲是最好判的一类（F1 0.90）、真需求反倒最难
+        # （0.53），所以风险从来不在"认不出超纲"，在"误伤真需求"。让 real
+        # 先手，这一条只在真需求这条路走不通时才轮到。
+        id="out_of_scope_form", scope="always", priority=60,
+        condition="说的是什么很清楚（不是 vague），但**产品的核心形态**不是"
+                  "「记录 + 流转 + 查看」，落在上面列的五类做不了的东西里。\n"
+                  "     判的是产品核心，**不是关键词**——这条最容易判错的方式就是"
+                  "看见某个技术领域的词就往这里塞。反例（这些全都是 real）：\n"
+                  "     「录音棚的档期预订与设备租借」有「录音」但本体是预订与租借；\n"
+                  "     「密室逃脱门店的场次排班与客诉处理」有「密室逃脱」但本体是排班；\n"
+                  "     「机器人竞赛的报名、分组与评分登记」有「机器人」但本体是报名与评分；\n"
+                  "     「短视频 MCN 的达人签约与分成结算」有「短视频」但本体是签约与结算。\n"
+                  "     反过来，「智能水杯提醒喝水」听着像业务，核心却是硬件；"
+                  "「教小孩认字的闯关小程序」听着像学习工具，产物却是游戏——这两个是 out_of_scope。\n"
+                  "     一句话判据：**去掉那个领域名词，剩下的还是不是「谁在什么时候"
+                  "记一笔、谁来审、在哪儿看」？** 是就 real，不是才 out_of_scope。",
+        verdict="out_of_scope",
+    ),
+    JudgeRule(
         id="too_vague", scope="always", priority=40,
         condition="确实是想做点什么，但信息少到无法开始（「做个系统」「帮我搞个东西」"
                   "「再搞个别的」）。只有在既判不出具体业务、也判不出要改什么时才用这条。"
@@ -242,6 +332,8 @@ def build_messages(text: str, *, has_app: bool, app_summary: str = "") -> list[d
         "你是一个推演产品的入站判定器。这个产品把用户一句话的业务需求推演成"
         "可运行的系统（含数据模型、权限、流程、页面）。一轮推演成本很高，"
         "所以要先判断这一轮输入属于哪一类。\n\n"
+        # 能力面必须在判定类别之前给：判"做不做得了"要先知道"做得了什么"。
+        f"这个产品的能力边界：\n{_capability_block()}\n\n{_out_of_scope_block()}\n\n"
         f"当前会话状态：{context}{domain_step}\n\n"
         f"判定类别（只能选其一）：\n{_rules_block(has_app)}\n\n"
         "输出严格的 JSON，不要任何解释文字或代码块标记：\n"
@@ -257,7 +349,17 @@ def build_messages(text: str, *, has_app: bool, app_summary: str = "") -> list[d
         "- 拿不准就往宽了判（real/iteration）。误拦一个真需求的代价，远大于"
         "放过一句闲聊。\n"
         "- confidence 要诚实：模棱两可就给 0.5 以下，不要为了显得确定而虚高。\n"
-        "- guidance 要针对用户这句话本身说，不要套模板。"
+        "- guidance 要针对用户这句话本身说，不要套模板。\n"
+        # out_of_scope 的话术要求跟别的类不一样：别的类是"你说得不够清楚，
+        # 再说说"，这一类是"你说得很清楚，但这件事我做不了"。后者如果也写成
+        # "再多说两句"就是在骗人——用户补再多细节也变不出一个游戏引擎。
+        "- 判成 out_of_scope 时，guidance 必须做到三件事：①一句话直说这个"
+        "形态做不了，别绕弯子也别道歉三行；②说清做不了的是**哪一部分**"
+        "（是实时画面？是硬件？是内容生成？）；③给出这件事**周边真做得了**"
+        "的那个系统。rewrite 就填那个周边需求的完整说法，用户点一下就能改过去。\n"
+        "  举例：「横版闯关小游戏」→ 做不了游戏画面本身，但「关卡素材与"
+        "版本发布的审批流程」做得了；「智能水杯」→ 做不了硬件，但「饮水"
+        "计划与每日打卡记录」做得了。"
     )
     return [
         {"role": "system", "content": system},
@@ -265,7 +367,7 @@ def build_messages(text: str, *, has_app: bool, app_summary: str = "") -> list[d
     ]
 
 
-_VALID_VERDICTS = {"real", "iteration", "vague", "off_topic", "meta"}
+_VALID_VERDICTS = {"real", "iteration", "vague", "off_topic", "meta", "out_of_scope"}
 
 
 def _coerce(payload: dict[str, Any], *, has_app: bool) -> Judgement:
@@ -310,6 +412,11 @@ def _resolve_action(verdict: Verdict, confidence: float) -> Action:
     阻断动作，blocking 开关留给误判率收敛之后。"""
     if verdict in ("real", "iteration"):
         return "proceed"
+    # out_of_scope 走的是跟 off_topic/meta/vague 同一条路，共用同一个置信度地板。
+    # 想过给它单独调低地板（漏掉一个超纲的代价是白烧一整轮，比漏掉一句闲聊贵），
+    # 但没这么做：地板调低，被误伤的就是那批"带技术领域词的真需求"（设备巡检、
+    # 电竞报名、3D 打印排产），而误伤真需求才是这条链路最贵的错误。地板要动，
+    # 得先在评测台上看到误伤为 0。
     if confidence < _HINT_CONFIDENCE_FLOOR:
         return "proceed"  # 判不准就别提示，宁可放过
     return "hint"
