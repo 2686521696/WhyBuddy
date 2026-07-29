@@ -35,8 +35,10 @@ import {
   Breadcrumb,
   Avatar,
   Timeline,
+  Collapse,
   Drawer,
   Descriptions,
+  Flex,
   ConfigProvider,
   theme as antdTheme,
   message,
@@ -117,6 +119,9 @@ const LazyPhoneRolePicker = React.lazy(
   () => import("./phone-mobile/PhoneRolePicker")
 );
 const LazyPhoneHome = React.lazy(() => import("./phone-mobile/PhoneHome"));
+const LazyPhoneDetailSections = React.lazy(
+  () => import("./phone-mobile/PhoneDetailSections")
+);
 const LazyPhoneDetailFields = React.lazy(
   () => import("./phone-mobile/PhoneDetailFields")
 );
@@ -1822,6 +1827,160 @@ export function AppRuntimeScreen({
         }))
       : [];
 
+  // 详情面板的次级分区（AI 能力 / 关联审批）。此前每段都是手搓的
+  // 「marginTop:16 + fontWeight:600 的一行小标题 + 一坨内容」，竖着堆，
+  // 面板一开就要往下滚才看得到审批。官方对 Collapse 的定位正是这件事：
+  // 「对复杂区域进行分组和隐藏，保持页面的整洁」。
+  //
+  // 不用 Tabs：官方说 Tabs 提供的是「**平级**的区域」，而这里字段是主、
+  // AI/审批是次，不是平级；Tabs 还会在切走时把字段藏起来，反而更糟。
+  //
+  // 数据在这里算一次，**壳按设备分档**：桌面 antd Collapse、手机
+  // antd-mobile Collapse。第一版只换了桌面的，结果 antd 的 Collapse 被渲染
+  // 进 antd-mobile 的 Popup 里，成了新的跨库混用——字段部分早就分档了，
+  // 分区的壳没道理不分。
+  const detailSectionItems = detailRow && page
+    ? [
+        ...(page.aiActions.length > 0
+        ? [
+            {
+              key: "ai",
+              label: (
+                <span style={{ fontSize: 12, fontWeight: 600, color: INK.value }}>
+                  AI 能力 · {page.aiActions.length}
+                </span>
+              ),
+              children: (
+                <>
+        <Flex vertical gap={6}>
+        {page.aiActions.map(action => (
+          <Flex key={action.capId} align="center" gap={8}>
+            <span
+              {...probe({
+                kind: "ai",
+                capId: action.capId,
+                label: action.label,
+              })}
+            >
+              {isPhone ? (
+                // 手机档用 antd-mobile Button：触摸目标更大、按下有原生
+                // 反馈；antd 的 size="small" ghost 在指尖下太小太轻。
+                <React.Suspense fallback={null}>
+                  <LazyPhoneActionButton
+                    size="small"
+                    color="primary"
+                    testId={`app-ai-action-${action.capId}`}
+                    loading={aiRunningCapId === action.capId}
+                    disabled={
+                      aiRunningCapId !== null &&
+                      aiRunningCapId !== action.capId
+                    }
+                    onClick={() => runAiAction(action)}
+                  >
+                    ✨ {action.label}
+                  </LazyPhoneActionButton>
+                </React.Suspense>
+              ) : (
+                <Button
+                  size="small"
+                  type="primary"
+                  ghost
+                  data-testid={`app-ai-action-${action.capId}`}
+                  loading={aiRunningCapId === action.capId}
+                  disabled={
+                    aiRunningCapId !== null &&
+                    aiRunningCapId !== action.capId
+                  }
+                  onClick={() => runAiAction(action)}
+                >
+                  ✨ {action.label}
+                </Button>
+              )}
+            </span>
+            <span style={{ fontSize: 11, color: INK.faint }}>
+              → 写回「{action.outputLabel}」
+            </span>
+          </Flex>
+        ))}
+        </Flex>
+        {aiRunningCapId && (
+        <div style={{ marginTop: 8, fontSize: 11, color: INK.faint }}>
+          真 LLM 生成中……（与五系统生成同一通道）
+        </div>
+        )}
+        {aiSuggestion && aiSuggestion.rowId === detailRow.id && (
+        <AiSuggestionCard
+          outputLabel={aiSuggestion.action.outputLabel}
+          output={aiSuggestion.output}
+          confidence={aiSuggestion.confidence}
+          rationale={aiSuggestion.rationale}
+          onApply={applyAiSuggestion}
+          onDismiss={() => setAiSuggestion(null)}
+        />
+        )}
+        {aiError && (
+        // 此前是手写的红框（#fff2f0/#ffccc7 写死），深色档下红底红字读不出来，
+        // 也不跟主题的 colorError 走。antd Alert 就是干这个的。
+        <Alert
+          data-testid="app-ai-error"
+          type="error"
+          showIcon
+          style={{ marginTop: 8 }}
+          message={
+            <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11 }}>
+              {aiError.code}
+            </span>
+          }
+          description={<span style={{ fontSize: 11 }}>{aiError.detail}</span>}
+        />
+        )}
+                </>
+              ),
+            },
+          ]
+        : []),
+        {
+        key: "workflow",
+        label: (
+          <span style={{ fontSize: 12, fontWeight: 600, color: INK.value }}>
+            关联审批实例 · {detailInstances.length}
+          </span>
+        ),
+        children:
+          detailInstances.length === 0 ? (
+            <span style={{ fontSize: 12, color: INK.faint }}>
+              本行尚未提交审批
+            </span>
+          ) : (
+            detailInstances.map(inst => {
+        const meta = STATUS_META[inst.status] ?? STATUS_META.running;
+        return (
+        <div
+          key={inst.id}
+          style={{ marginTop: 8, fontSize: 12, color: INK.label }}
+        >
+          {inst.title} ·{" "}
+          {nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId}
+          <Tag
+            style={{ marginLeft: 8 }}
+            color={
+              inst.status === "running"
+                ? "processing"
+                : inst.status === "completed"
+                  ? "success"
+                  : "error"
+            }
+          >
+            {meta.label}
+          </Tag>
+        </div>
+        );
+            })
+          ),
+        },
+          ]
+    : [];
+
   const detailBody = detailRow && page && (
     <>
       {isPhone ? (
@@ -1839,152 +1998,27 @@ export function AppRuntimeScreen({
           }))}
         />
       )}
-      {page.aiActions.length > 0 && (
-        <>
-          <div
-            style={{
-              marginTop: 16,
-              fontSize: 12,
-              fontWeight: 600,
-              color: INK.value,
-            }}
-          >
-            AI 能力 · {page.aiActions.length}
-          </div>
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-            }}
-          >
-            {page.aiActions.map(action => (
-              <div
-                key={action.capId}
-                style={{ display: "flex", alignItems: "center", gap: 8 }}
-              >
-                <span
-                  {...probe({
-                    kind: "ai",
-                    capId: action.capId,
-                    label: action.label,
-                  })}
-                >
-                  {isPhone ? (
-                    // 手机档用 antd-mobile Button：触摸目标更大、按下有原生
-                    // 反馈；antd 的 size="small" ghost 在指尖下太小太轻。
-                    <React.Suspense fallback={null}>
-                      <LazyPhoneActionButton
-                        size="small"
-                        color="primary"
-                        testId={`app-ai-action-${action.capId}`}
-                        loading={aiRunningCapId === action.capId}
-                        disabled={
-                          aiRunningCapId !== null &&
-                          aiRunningCapId !== action.capId
-                        }
-                        onClick={() => runAiAction(action)}
-                      >
-                        ✨ {action.label}
-                      </LazyPhoneActionButton>
-                    </React.Suspense>
-                  ) : (
-                    <Button
-                      size="small"
-                      type="primary"
-                      ghost
-                      data-testid={`app-ai-action-${action.capId}`}
-                      loading={aiRunningCapId === action.capId}
-                      disabled={
-                        aiRunningCapId !== null &&
-                        aiRunningCapId !== action.capId
-                      }
-                      onClick={() => runAiAction(action)}
-                    >
-                      ✨ {action.label}
-                    </Button>
-                  )}
-                </span>
-                <span style={{ fontSize: 11, color: INK.faint }}>
-                  → 写回「{action.outputLabel}」
-                </span>
-              </div>
-            ))}
-          </div>
-          {aiRunningCapId && (
-            <div style={{ marginTop: 8, fontSize: 11, color: INK.faint }}>
-              真 LLM 生成中……（与五系统生成同一通道）
-            </div>
-          )}
-          {aiSuggestion && aiSuggestion.rowId === detailRow.id && (
-            <AiSuggestionCard
-              outputLabel={aiSuggestion.action.outputLabel}
-              output={aiSuggestion.output}
-              confidence={aiSuggestion.confidence}
-              rationale={aiSuggestion.rationale}
-              onApply={applyAiSuggestion}
-              onDismiss={() => setAiSuggestion(null)}
-            />
-          )}
-          {aiError && (
-            // 此前是手写的红框（#fff2f0/#ffccc7 写死），深色档下红底红字读不出来，
-            // 也不跟主题的 colorError 走。antd Alert 就是干这个的。
-            <Alert
-              data-testid="app-ai-error"
-              type="error"
-              showIcon
-              style={{ marginTop: 8 }}
-              message={
-                <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11 }}>
-                  {aiError.code}
-                </span>
-              }
-              description={<span style={{ fontSize: 11 }}>{aiError.detail}</span>}
-            />
-          )}
-        </>
-      )}
-
-      <div
-        style={{
-          marginTop: 16,
-          fontSize: 12,
-          fontWeight: 600,
-          color: INK.value,
-        }}
-      >
-        关联审批实例 · {detailInstances.length}
-      </div>
-      {detailInstances.length === 0 ? (
-        <div style={{ fontSize: 12, color: INK.faint, marginTop: 6 }}>
-          本行尚未提交审批
-        </div>
+      {/* 壳按设备分档，数据同源（见 detailSectionItems 上的说明）。
+          桌面用 ghost 档（无边框无底色）——抽屉本身已经是一层容器面，
+          再套一层描边就是卡片套卡片。 */}
+      {isPhone ? (
+        <React.Suspense fallback={null}>
+          <LazyPhoneDetailSections
+            sections={detailSectionItems.map(it => ({
+              key: it.key,
+              title: it.label,
+              content: it.children,
+            }))}
+          />
+        </React.Suspense>
       ) : (
-        detailInstances.map(inst => {
-          const meta = STATUS_META[inst.status] ?? STATUS_META.running;
-          return (
-            <div
-              key={inst.id}
-              style={{ marginTop: 8, fontSize: 12, color: INK.label }}
-            >
-              {inst.title} ·{" "}
-              {nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId}
-              <Tag
-                style={{ marginLeft: 8 }}
-                color={
-                  inst.status === "running"
-                    ? "processing"
-                    : inst.status === "completed"
-                      ? "success"
-                      : "error"
-                }
-              >
-                {meta.label}
-              </Tag>
-            </div>
-          );
-        })
+        <Collapse
+          ghost
+          size="small"
+          defaultActiveKey={["ai", "workflow"]}
+          style={{ marginTop: 8 }}
+          items={detailSectionItems}
+        />
       )}
     </>
   );

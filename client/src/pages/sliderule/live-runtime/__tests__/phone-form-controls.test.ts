@@ -30,6 +30,12 @@ const fieldSrc = await import("../phone-mobile/PhoneFormField.tsx?raw").then(
 const noticeSrc = await import("../phone-mobile/PhoneSeedNotice.tsx?raw").then(
   m => (m as unknown as { default: string }).default
 );
+const screenSrc = await import("../AppRuntimeScreen.tsx?raw").then(
+  m => (m as unknown as { default: string }).default
+);
+const sectionsSrc = await import("../phone-mobile/PhoneDetailSections.tsx?raw").then(
+  m => (m as unknown as { default: string }).default
+);
 
 describe("档位判定与桌面档同源", () => {
   it("boolean → switch（此前掉进字符串输入框，让人手打 true）", () => {
@@ -138,5 +144,24 @@ describe("示例数据标注（NoticeBar）", () => {
     const literal = m![1].replace(/\$\{[^}]+\}/g, "99");
     const weight = [...literal].reduce((n, ch) => n + (/[一-龥]/.test(ch) ? 1 : 0.5), 0);
     expect(weight).toBeLessThanOrEqual(19);
+  });
+});
+
+describe("详情分区的壳按设备分档（跨库纪律）", () => {
+  it("手机档用 antd-mobile 的 Collapse，不是 antd 的", () => {
+    expect(sectionsSrc).toContain('from "antd-mobile"');
+    expect(sectionsSrc).not.toContain('from "antd"');
+  });
+
+  it("AppRuntimeScreen 里 antd Collapse 只在非手机分支渲染", () => {
+    // detailBody 是跨设备共用的一段 JSX。第一版把分区收进 Collapse 时只换了
+    // 桌面的，结果 antd 的 Collapse 被渲染进 antd-mobile 的 Popup 里——
+    // 字段部分早就分档了（PhoneDetailFields / Descriptions），分区的壳没道理不分。
+    const i = screenSrc.indexOf("detailSectionItems.map");
+    expect(i).toBeGreaterThan(0);
+    // 分档写法：isPhone ? <LazyPhoneDetailSections/> : <Collapse/>
+    const seg = screenSrc.slice(i - 400, i + 900);
+    expect(seg).toContain("LazyPhoneDetailSections");
+    expect(seg).toMatch(/isPhone \?/);
   });
 });
