@@ -1553,24 +1553,44 @@ export function AppRuntimeScreen({
   // （count/sum/avg），没有"枚举真实第 N 行记录"的能力（真机测试过：LLM
   // 收到这个要求后只能画出表头+空表身）。排行榜/动态流这类必须逐行展示
   // 真实记录的内容，固定走 monitorDynamicLists 下面的动态渲染。
-  const monitorFreeformOverview = page?.freeformOverview ? (
-    <div data-testid="app-runtime-monitor-freeform-overview">
-      <ExperienceBlockBoundary
-        block={{
-          id: `${page.id}:freeform-overview`,
-          type: "FreeformInsight",
-          freeformContent: page.freeformOverview,
-        }}
-        entityRows={state.entities}
-        chartPalette={{
-          primary: identityTheme.primary,
-          categorical: identityTheme.charts,
-        }}
-        enumOptionsOf={enumOptionsOf}
-        fieldLabelOf={fieldLabelOf}
-      />
-    </div>
-  ) : null;
+  /**
+   * 按设备档取设计版式（2026-07-29，方案 B）。
+   *
+   * 回退语义照 react-grid-layout 的 findOrGenerateResponsiveLayout：
+   * **有本档就用本档，没有就往更大的档回退**。这里只有两档，所以手机档
+   * 取不到 mobile 就退回 root（桌面那份）——老快照、以及手机那版生成失败的
+   * 页面都走这条路，配合 .phone-freeform-scope 的收窄仍然读得下来。
+   */
+  const renderFreeformOverview = (forPhone: boolean) => {
+    if (!page?.freeformOverview) return null;
+    const picked =
+      (forPhone && page.freeformOverview.mobile) || page.freeformOverview;
+    return (
+      <div
+        data-testid="app-runtime-monitor-freeform-overview"
+        // 手机上到底用的是哪一档，真机排查时一眼看得出，不用去翻模型
+        data-freeform-variant={
+          forPhone && page.freeformOverview.mobile ? "mobile" : "root"
+        }
+      >
+        <ExperienceBlockBoundary
+          block={{
+            id: `${page.id}:freeform-overview`,
+            type: "FreeformInsight",
+            freeformContent: picked,
+          }}
+          entityRows={state.entities}
+          chartPalette={{
+            primary: identityTheme.primary,
+            categorical: identityTheme.charts,
+          }}
+          enumOptionsOf={enumOptionsOf}
+          fieldLabelOf={fieldLabelOf}
+        />
+      </div>
+    );
+  };
+  const monitorFreeformOverview = renderFreeformOverview(false);
 
   const phoneSectionData = (() => {
     if (!page) return null;
@@ -1748,8 +1768,10 @@ export function AppRuntimeScreen({
           外面套 phone-freeform-scope：设计树是照 preferredDevice 那一档生成的，
           desktop 档的多列/固定宽度进了 390px 会横向撑爆。强制单列不是跟设计
           较劲，正是把 phone 档提示词里那条规矩补执行一遍。 */}
-      {monitorFreeformOverview && (
-        <div className="phone-freeform-scope">{monitorFreeformOverview}</div>
+      {page.freeformOverview && (
+        <div className="phone-freeform-scope">
+          {renderFreeformOverview(true)}
+        </div>
       )}
       {renderExperienceBlockScaffold(true)}
       {/* pageKind 骨架：schema 有 6 种，手机档此前一种都没有（无论什么 kind

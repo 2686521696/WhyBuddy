@@ -133,8 +133,11 @@ describe("手机档也渲染 AI 设计的总览版式（2026-07-29）", () => {
     // 退回"所有应用长一样"。更别扭的是 preferredDevice=phone 的应用——
     // 那份版式**本来就是照手机单列生成的**，却只有桌面壳看得到。
     expect(screenSrc).toContain('<div className="phone-freeform-scope">');
+    // 钉的是"手机路径确实渲染了设计版式"，不是某个具体写法——2026-07-29
+    // 这里从直接塞 {monitorFreeformOverview} 改成了按设备档取用
+    // renderFreeformOverview(true)，钉字面量会把改进也一起钉死。
     expect(screenSrc).toMatch(
-      /phone-freeform-scope">\{monitorFreeformOverview\}/
+      /phone-freeform-scope">[\s\S]{0,80}renderFreeformOverview\(true\)/
     );
   });
 
@@ -160,5 +163,25 @@ describe("手机档也渲染 AI 设计的总览版式（2026-07-29）", () => {
     expect(screenSrc).toMatch(
       /freeformTookOver[\s\S]{0,160}kind === "monitor" \|\| kind === "dashboard"/
     );
+  });
+});
+
+describe("设计版式按设备分档取用（方案 B，2026-07-29）", () => {
+  it("手机档优先取 mobile，取不到回退 root", () => {
+    // 回退语义照 react-grid-layout 的 findOrGenerateResponsiveLayout：
+    // 有本档用本档、没有就往更大的档回退。这里只有两档，所以 mobile 缺失
+    // 就退回 root（老快照 + 手机那版生成失败的页都走这条路）。
+    expect(screenSrc).toMatch(
+      /forPhone && page\.freeformOverview\.mobile\) \|\| page\.freeformOverview/
+    );
+  });
+
+  it("桌面档永远取 root —— 手机那份不能漏到桌面上", () => {
+    expect(screenSrc).toContain("renderFreeformOverview(false)");
+    expect(screenSrc).toContain("renderFreeformOverview(true)");
+  });
+
+  it("DOM 上标出用的是哪一档，真机排查不用翻模型", () => {
+    expect(screenSrc).toContain("data-freeform-variant");
   });
 });

@@ -223,7 +223,19 @@ export interface AppPageSchema {
    * 有就优先渲染，生成失败/未声明时 AppRuntimeScreen 回退固定的
    * stats/charts/rankings/feeds 骨架，不是互相替代关系。原样透传不做
    * 类型收窄（跟 identity.generatedTheme 同一个"渲染器内部再校验"套路）。 */
-  freeformOverview?: { root: Record<string, unknown> };
+  /**
+   * 总览页的 AI 设计版式。默认那份按 appbundle.preferredDevice 生成
+   * （通常是桌面），`mobile` 是手机档的覆盖（2026-07-29 起 Python 侧会
+   * 多设计一版单列的）。
+   *
+   * 形状照 react-grid-layout 的 `layouts={{lg,md,sm}}`：同一份内容、每档
+   * 一份布局，取用时"有本档用本档、没有就往更大的档回退"。老快照只有 root，
+   * 手机自动回退到它——与 RGL 的回退语义一致。
+   */
+  freeformOverview?: {
+    root: Record<string, unknown>;
+    mobile?: { root: Record<string, unknown> };
+  };
 }
 
 /** Step 7：页面布局 5 槽位——每个槽位是有序区块 id 列表；mobile 为手机端覆盖。 */

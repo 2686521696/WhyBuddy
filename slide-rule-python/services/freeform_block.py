@@ -1024,6 +1024,61 @@ def _build_reference_image_prompt(
     )
 
 
+def _build_overview_sheet_prompt(
+    design_brief: str,
+    datamodel: dict[str, Any],
+    *,
+    theme_id: str = "",
+    generated_theme: Optional[dict[str, Any]] = None,
+) -> str:
+    """总览页的**一张三区参照板**：样式风格 + 桌面版式 + 手机版式。
+
+    为什么是一张而不是三张：桌面与手机两档版式要出自同一套视觉语言。分开生
+    三张图，三张各自随机，两档设计参照的是三种不同风格，拼起来就不像一个产品。
+    一张板上并排画，模型自己会保证三区同色同调——这也正是设计行业「Style
+    Tile」这个交付物的用法（Samantha Warren 2011）：色板、字体层级、按钮/
+    标签/图标样例摆在同一块板上，先定调性再谈具体页面。
+
+    三区的内容分工照 Style Tile 的老规矩来：
+      左窄栏 = 调性（色板色块 / 图标集 / 按钮标签徽标样例 / 字号层级）
+      中间   = 桌面首页版式（宽幅，可多列横排）
+      右窄栏 = 手机首页版式（窄幅单列，手机比例）
+
+    注意跟单区块参照图（_build_reference_image_prompt）的一个关键差别：那张
+    明令"不要画外框/浏览器窗口 mockup，这张图本身就是内容区局部"；这张恰恰
+    相反——三个区要能看出边界，手机那区还需要一个手机轮廓才说得清是哪一档。
+    """
+    hint = _theme_palette(theme_id, generated_theme)
+    charts = "、".join(hint["charts"])
+    datamodel_summary = _datamodel_summary_lines(datamodel)
+    datamodel_note = (
+        f"\n背后真实的数据字段长这样（画面里出现的分类/阶段/条目的数量和名字要"
+        f"照着这些字段来，尤其是括号里展开的 enum 选项，不要凭空编一个"
+        f"'看起来差不多但对不上'的数量；只示意版式，不用写具体数值）：\n{datamodel_summary}\n"
+        if datamodel_summary else ""
+    )
+    return (
+        "生成一张横向的 UI 设计参照板（design style sheet），16:9，"
+        "用细分隔线把画布**从左到右分成三个区**，三区共用同一套视觉语言：\n"
+        "① 左侧窄栏「样式风格」：主色/辅色的色板色块、一组简洁线性图标（6-10 个）、"
+        "按钮与标签与徽标的样例、两三级字号层级示意。\n"
+        "② 中间宽区「桌面首页」：桌面端内容区的总览版式——顶部一行指标卡、"
+        "下方图表区，可以多列横向排布。不要画左侧侧边栏和顶栏（那部分另有画面）。\n"
+        "③ 右侧窄栏「手机首页」：同一个总览，改成手机端的窄幅**单列纵向**排布，"
+        "指标卡一行一张、图表压扁；画一个简洁的手机轮廓把这一区框起来，"
+        "好看出它是手机档。\n"
+        f"设计需求：{design_brief}。"
+        f"配色基调用「{hint['label']}」这套主题——主色 {hint['primary']}，"
+        f"背景浅色（贴近 {hint['contentBg']} 或纯白），强调浅底可参考 {hint['accentBg']}，"
+        "克制使用不要满屏铺色；"
+        f"需要多色区分类别时优先从这几个里选：{charts}，不要另配一套糖果色。"
+        "只示意版式与配色，不要写任何具体数字或真实数据，占位文案用「示例XX」这类通用字样；"
+        "卡片白底细边框、图标简洁线性、留白舒展；不要出现水印或品牌字样；"
+        "画面撑满画布，四周不留空白底色。"
+        f"{datamodel_note}"
+    )
+
+
 def _generate_reference_image_b64(
     design_brief: str,
     datamodel: dict[str, Any],
@@ -1051,6 +1106,54 @@ def _generate_reference_image_b64(
         return None
     except Exception as exc:  # noqa: BLE001 — 生图失败绝不能拖垮主链路
         print(f"[freeform_block] reference image skipped (unexpected): {str(exc)[:160]}")
+        return None
+    return base64.b64encode(png_bytes).decode("ascii")
+
+
+def _supports_image_content_parts() -> bool:
+    """通道支不支持多模态 content parts。
+
+    单独抽出来是因为 get_llm_config 在 generate_freeform_block 里是**函数内
+    导入**的（那是为了不让 LLM 配置在模块导入期就被拉起），
+    enrich_monitor_page_overviews 用不到那个局部名字。配置读不出来时按
+    "不支持"处理——宁可退回纯文字生成，也不要在生图上白等一轮。
+    """
+    try:
+        from sliderule_llm.config import get_llm_config
+
+        return bool(get_llm_config().supports_image_content_parts)
+    except Exception:  # noqa: BLE001 — 配置异常不该拖垮主链路
+        return False
+
+
+def _generate_overview_sheet_b64(
+    design_brief: str,
+    datamodel: dict[str, Any],
+    *,
+    theme_id: str = "",
+    generated_theme: Optional[dict[str, Any]] = None,
+) -> Optional[str]:
+    """生成三区参照板。跟 _generate_reference_image_b64 一样是**加分项**：
+    任何失败都静默返回 None，调用方退回纯文字生成，绝不拖垮主链路。
+
+    尺寸用 16:9 的 1792x1024——不是 1920x1080：这一档的图像接口只认固定几个
+    尺寸档（1024x1024 / 1792x1024 / 1024x1792），1920x1080 不在其中，传进去
+    会被拒。1792x1024 是同一个 16:9 家族里它认的那一档。
+    """
+    try:
+        from sliderule_llm.image_client import ImageGenError, generate_image_png
+    except Exception:
+        return None
+    try:
+        prompt = _build_overview_sheet_prompt(
+            design_brief, datamodel, theme_id=theme_id, generated_theme=generated_theme
+        )
+        png_bytes = generate_image_png(prompt, size=_DEVICE_IMAGE_SIZE["desktop"])
+    except ImageGenError as exc:
+        print(f"[freeform_block] overview sheet skipped: {str(exc)[:160]}")
+        return None
+    except Exception as exc:  # noqa: BLE001 — 生图失败绝不能拖垮主链路
+        print(f"[freeform_block] overview sheet skipped (unexpected): {str(exc)[:160]}")
         return None
     return base64.b64encode(png_bytes).decode("ascii")
 
@@ -1178,6 +1281,7 @@ def generate_freeform_block(
     max_tokens: int = 14000,
     use_reference_image: bool = True,
     allow_screenshot_verify: bool = True,
+    reference_image_b64: Optional[str] = None,
 ) -> dict[str, Any]:
     """生成 + 深校验一个 FreeformInsight 区块的内容树。校验失败时把「上次
     输出 + 具体报错」拼回消息重问（跟 structured_llm_json 同一套 reask 语义，
@@ -1217,8 +1321,10 @@ def generate_freeform_block(
         design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
     )
 
-    reference_image_b64: Optional[str] = None
-    if use_reference_image and get_llm_config().supports_image_content_parts:
+    # 调用方可以把现成的参照图传进来（reference_image_b64）——总览页就是这么用的：
+    # 一张三区参照板同时喂给桌面档和手机档两次设计，两档才出自同一套视觉语言，
+    # 也省掉一次生图。没传才自己生一张。
+    if reference_image_b64 is None and use_reference_image and get_llm_config().supports_image_content_parts:
         reference_image_b64 = _generate_reference_image_b64(
             design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
         )
@@ -1678,13 +1784,61 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
             capped_pages += 1
         if allow_shot:
             shot_used += 1
+        # 一张三区参照板（样式风格 + 桌面首页 + 手机首页），两档设计共用。
+        # 分开生两张图的话两档各随机各的，拼起来不像一个产品；共用一张，
+        # 模型看到的是"这两档本来就该长成一家人"。生图失败返回 None，
+        # 下面照旧退回纯文字生成。
+        sheet_b64 = (
+            _generate_overview_sheet_b64(
+                brief, datamodel, theme_id=theme_id, generated_theme=generated_theme
+            )
+            if use_ref and _supports_image_content_parts()
+            else None
+        )
         try:
             content = generate_freeform_block(
                 brief, datamodel, theme_id=theme_id, device=device,
                 generated_theme=generated_theme,
                 use_reference_image=use_ref,
                 allow_screenshot_verify=allow_shot,
+                reference_image_b64=sheet_b64,
             )
+            # 手机档再设计一版（方案 B）。
+            #
+            # 形状照两处成熟先例：react-grid-layout 的 layouts={{lg,md,sm}}
+            # ——同一份内容、每个断点一份布局，取用时"有本档用本档、没有就往
+            # 更大的档回退"；以及本仓库自己 page.layout + layout.mobile 的
+            # 覆盖约定。这里定为 freeformOverview = {root, mobile:{root}}：
+            # 默认那份是 device 档（通常桌面），mobile 是手机档覆盖。
+            #
+            # 为什么值得多花一次调用：设计是按 device 生成的，phone 档的提示词
+            # 明确要求"内容区窄、必须单列纵向、字号图标间距收紧一档"。此前只
+            # 生一份，手机上看到的是桌面版式被 CSS 掰弯的结果——能读，但不是
+            # 为手机规划的。
+            #
+            # 失败不影响主产物：手机那份生不出来就不挂 mobile 键，前端自动
+            # 回退到 root（与 RGL 的"往更大的档回退"同一语义）。
+            if device != "phone":
+                try:
+                    mobile_content = generate_freeform_block(
+                        brief, datamodel, theme_id=theme_id, device="phone",
+                        generated_theme=generated_theme,
+                        use_reference_image=use_ref,
+                        # 手机那份不再单独截图自检：那一步是"渲染出来再让视觉
+                        # 模型跟参照图比一遍"，成本高且收益递减，两档都做等于
+                        # 把总览页的生成时间再翻一倍。
+                        allow_screenshot_verify=False,
+                        reference_image_b64=sheet_b64,
+                    )
+                    # 复制一份而不是原地改：生成器返回的对象不该被调用方
+                    # 就地改写。真被咬过——测试里 fake 两次返回同一个 dict，
+                    # `content["mobile"] = mobile_content` 直接造出自引用结构。
+                    content = {**content, "mobile": mobile_content}
+                except FreeformGenerationError as exc:
+                    print(
+                        f"[freeform_block] {page.get('id')} mobile overview generation failed, "
+                        f"falling back to the desktop design on phone: {str(exc)[:160]}"
+                    )
             page["freeformOverview"] = content
         except FreeformGenerationError as exc:
             print(

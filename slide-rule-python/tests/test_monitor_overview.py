@@ -212,10 +212,16 @@ def test_enrich_writes_freeform_overview_on_success(monkeypatch):
     fake_content = {"root": {"tag": "div", "style": {}, "children": []}}
     captured_kwargs = {}
 
+    # 2026-07-29（方案 B）：一个总览页现在设计两版——先按 preferredDevice
+    # 那一档，再补一版 phone。所以这里逐次记录，不能只看最后一次的 kwargs。
+    calls = []
+
     def fake_generate(brief, datamodel, **kwargs):
         captured_kwargs.update(kwargs)
+        calls.append(kwargs.get("device"))
         assert "订单总数" in brief
-        return fake_content
+        # 每次返回**新对象**：返回同一个 dict 的话，挂 mobile 时会造出自引用
+        return {"root": dict(fake_content["root"])}
 
     monkeypatch.setattr("services.freeform_block.generate_freeform_block", fake_generate)
     model = {
@@ -224,9 +230,13 @@ def test_enrich_writes_freeform_overview_on_success(monkeypatch):
         "page": {"pages": [_monitor_page()]},
     }
     result = enrich_monitor_page_overviews(model)
-    assert result["page"]["pages"][0]["freeformOverview"] == fake_content
+    overview = result["page"]["pages"][0]["freeformOverview"]
+    # 默认那份仍是 preferredDevice 档的设计
+    assert overview["root"] == fake_content["root"]
+    # 手机档另挂一份（形状照 react-grid-layout 的 layouts 键控回退）
+    assert overview["mobile"]["root"] == fake_content["root"]
+    assert calls == ["desktop", "phone"]
     assert captured_kwargs["theme_id"] == "forest"
-    assert captured_kwargs["device"] == "desktop"
     # 原有固定骨架字段必须原样保留——freeformOverview 是追加，不是替换
     assert result["page"]["pages"][0]["stats"]
 
@@ -253,7 +263,7 @@ def test_enrich_covers_dashboard_pages(monkeypatch):
     called = []
 
     def fake_generate(*args, **kwargs):
-        called.append(True)
+        called.append(kwargs.get("device"))
         return {"root": {"tag": "div", "style": {}, "children": []}}
 
     monkeypatch.setattr("services.freeform_block.generate_freeform_block", fake_generate)
@@ -263,5 +273,6 @@ def test_enrich_covers_dashboard_pages(monkeypatch):
         "page": {"pages": [{"id": "d1", "kind": "dashboard", "stats": [{"id": "s"}]}]},
     }
     result = enrich_monitor_page_overviews(model)
-    assert called == [True]
+    # 一页两次：默认档（未声明 preferredDevice → 空串）+ 手机档（方案 B）
+    assert called == ["", "phone"]
     assert "freeformOverview" in result["page"]["pages"][0]
