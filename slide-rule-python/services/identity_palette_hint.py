@@ -46,15 +46,20 @@ _TONE = {
     "sidebarBg": 0.22,
     "sidebarText": 0.92,
 }
-_HOVER_DELTA = -0.08  # HCT -8 / 100
-_GRAD_DELTA = -0.18  # HCT -18 / 100
+# 2026-07-30：跟前端 identity-palette.ts 同步调轻（人工视觉核对反馈"整体
+# 偏重"）——hover/渐变深度收窄，图表色调亮、彩度下限降低并加了上限。
+_HOVER_DELTA = -0.06  # HCT -6 / 100
+_GRAD_DELTA = -0.14  # HCT -14 / 100
 _GRAD_HUE_SHIFT = 12.0
 _CHART_HUE_SHIFTS = (0.0, 62.0, 145.0, 210.0, 285.0, 330.0)
-_CHART_LIGHTNESS = 0.48  # HCT tone 48 / 100
-# 图表色相的彩度下限——OKLCh 尺度下 0.12 大致对应"看得出彩度、不发灰"，
-# 是照 #1677ff（chroma 0.22）等真实品牌色的量级估的，不追求精确复刻
-# TonalPalette 的 max(chroma, 36)那条 HCT 尺度规则。
-_CHART_CHROMA_FLOOR = 0.12
+_CHART_LIGHTNESS = 0.58  # HCT tone 58 / 100
+# 图表色相的彩度下限/上限——OKLCh 尺度下的量级估计，不追求精确复刻前端
+# TonalPalette 的 HCT 尺度数值，只要方向一致（下限降低、封了上限）。
+_CHART_CHROMA_FLOOR = 0.07
+_CHART_CHROMA_CEIL = 0.16
+# 强调浅底/强调字的彩度打七折，跟前端 ACCENT_CHROMA_SCALE 同一个值——
+# 全彩度铺在大面积浅底上比想要的"水洗"质感重得多。
+_ACCENT_CHROMA_SCALE = 0.7
 
 
 def _clamp01(v: float) -> float:
@@ -93,7 +98,10 @@ def derive_prompt_palette(seed_hex: str, *, id_: str = "generated", label: str =
         if shift == 0.0:
             charts.append(seed)  # 第一条必须是主色本身，理由同前端注释
         else:
-            charts.append(_to_hex(_CHART_LIGHTNESS, max(chroma, _CHART_CHROMA_FLOOR), hue + shift))
+            chart_chroma = min(max(chroma, _CHART_CHROMA_FLOOR), _CHART_CHROMA_CEIL)
+            charts.append(_to_hex(_CHART_LIGHTNESS, chart_chroma, hue + shift))
+
+    accent_chroma = chroma * _ACCENT_CHROMA_SCALE
 
     return {
         "id": id_,
@@ -103,8 +111,8 @@ def derive_prompt_palette(seed_hex: str, *, id_: str = "generated", label: str =
         "gradTo": _to_hex(_clamp01(lightness + _GRAD_DELTA), chroma, grad_hue),
         "primaryFg": _foreground_for(lightness),
         "contentBg": _to_hex(_TONE["contentBg"], neutral_chroma, hue),
-        "accentBg": _to_hex(_TONE["accentBg"], chroma, hue),
-        "accentFg": _to_hex(_TONE["accentFg"], chroma, hue),
+        "accentBg": _to_hex(_TONE["accentBg"], accent_chroma, hue),
+        "accentFg": _to_hex(_TONE["accentFg"], accent_chroma, hue),
         "charts": charts,
         "sidebarBg": _to_hex(_TONE["sidebarBg"], neutral_chroma, hue),
         "sidebarText": _to_hex(_TONE["sidebarText"], neutral_chroma, hue),

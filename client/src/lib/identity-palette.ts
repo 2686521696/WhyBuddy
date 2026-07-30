@@ -84,14 +84,26 @@ const TONE = {
 } as const;
 
 /**
+ * 强调浅底/强调字的彩度打七折——2026-07-30 调轻：全彩度铺在 accentBg 这种
+ * 大面积浅底上，视觉上比想要的"淡淡一层色"（类似半透明白叠加的水洗质感）
+ * 重得多。压彩度而不是提 tone：tone 已经很高（94），再提就要撞 sRGB 色域
+ * 边界被裁成一个数，压彩度才是真正让它"淡"下去的那一维。
+ */
+const ACCENT_CHROMA_SCALE = 0.7;
+
+/**
  * 主色系上做 hover：往**更深**走一档。
  *
  * 不用"更浅"：浅色底上的按钮 hover 变浅会看起来像失效（disabled 的通行视觉
  * 就是变浅）。antd 自己的 colorPrimaryHover 也是往深走。
+ *
+ * 2026-07-30：深度从 -8/-18 调到 -6/-14——原幅度配上 8 套手挑主题那种偏
+ * 克制的种子色还好，但种子色一旦选得稍微艳一点，hover/渐变跳深的这一步
+ * 会把"重"感再放大一层，调轻一点更稳。
  */
-const HOVER_TONE_DELTA = -8;
+const HOVER_TONE_DELTA = -6;
 /** 渐变终点：再深一档 + 色相微旋，避免纯明度渐变显得脏 */
-const GRAD_TONE_DELTA = -18;
+const GRAD_TONE_DELTA = -14;
 const GRAD_HUE_SHIFT = 12;
 
 /**
@@ -102,9 +114,16 @@ const GRAD_HUE_SHIFT = 12;
  * "主色用量不得少于任何其他色系"，图表不带主色最容易触发它）。
  *
  * 只旋色相不动 tone/chroma：同 tone 的分类色在一起才不会有"某一条特别跳"。
+ *
+ * 2026-07-30：tone 48→58（更亮）、彩度下限 36→22、封顶 48（原来没有上限，
+ * 种子色本身彩度很高时图表色会跟着一路冲上去）——这一组是实测"整体偏重"
+ * 反馈里权重最大的一块：6 块实色图表色块并排，视觉分量比其它字段都大，
+ * 原来的下限 36 意味着哪怕种子色选得很克制，图表色也会被强行拉回高彩度。
  */
 const CHART_HUE_SHIFTS = [0, 62, 145, 210, 285, 330];
-const CHART_TONE = 48;
+const CHART_TONE = 58;
+const CHART_CHROMA_FLOOR = 22;
+const CHART_CHROMA_CEIL = 48;
 
 const hex = (argb: number): string =>
   `#${(argb & 0x00ffffff).toString(16).padStart(6, "0")}`;
@@ -141,6 +160,9 @@ export function deriveIdentityPalette(
   const primaryP = TonalPalette.fromHueAndChroma(src.hue, src.chroma);
   // ← scheme_cmf.ts 的那一行：中性色带主色色相、彩度压两成
   const neutralP = TonalPalette.fromHueAndChroma(src.hue, src.chroma * 0.2);
+  // 强调浅底/强调字打七折彩度（ACCENT_CHROMA_SCALE 见上）——独立于
+  // primaryP，不影响 primary/hover/gradTo 这几个还是要用足彩度的字段。
+  const accentP = TonalPalette.fromHueAndChroma(src.hue, src.chroma * ACCENT_CHROMA_SCALE);
 
   const primaryTone = src.tone;
   const hoverTone = clampTone(primaryTone + HOVER_TONE_DELTA);
@@ -159,15 +181,15 @@ export function deriveIdentityPalette(
     gradTo: hex(gradP.tone(gradTone)),
     primaryFg: foregroundFor(primaryTone),
     contentBg: hex(neutralP.tone(TONE.contentBg)),
-    accentBg: hex(primaryP.tone(TONE.accentBg)),
-    accentFg: hex(primaryP.tone(TONE.accentFg)),
+    accentBg: hex(accentP.tone(TONE.accentBg)),
+    accentFg: hex(accentP.tone(TONE.accentFg)),
     charts: CHART_HUE_SHIFTS.map(shift =>
       shift === 0
         ? hex(argb) // 第一条必须是主色本身（见 CHART_HUE_SHIFTS 的说明）
         : hex(
             TonalPalette.fromHueAndChroma(
               (src.hue + shift) % 360,
-              Math.max(src.chroma, 36)
+              Math.min(Math.max(src.chroma, CHART_CHROMA_FLOOR), CHART_CHROMA_CEIL)
             ).tone(CHART_TONE)
           )
     ),
