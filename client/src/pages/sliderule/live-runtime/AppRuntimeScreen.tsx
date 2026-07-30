@@ -227,6 +227,43 @@ const DEVICE_SPECS = {
 type DeviceKey = keyof typeof DEVICE_SPECS;
 
 /**
+ * 这个应用**实际有设计的**档位（2026-07-30）。
+ *
+ * 起因：07-30 起明说 preferredDevice=desktop 的应用不再多花一次调用去设计手机
+ * 版式（省约 67s/总览页）。那样一来切换条上的「手机」就成了一个通往没设计过
+ * 的档位的入口——点进去看到的是桌面版式被 CSS 掰弯的样子。**与其想办法把回退
+ * 做得好看，不如不给这个入口。**
+ *
+ * 形状照 Appsmith 的 LayoutSystemFeatures（`useLayoutSystemFeatures()` 按当前
+ * 布局系统类型回答"这个能力开不开"，其中 ENABLE_CANVAS_LAYOUT_CONTROL 管的
+ * 正是"要不要显示档位控件"）。抄的是**用一处派生回答、各处只管问**这个结构：
+ * 不在每个用到档位的地方各写一遍 `preferredDevice === 'desktop' ? …`，否则
+ * 迟早出现"切换条显示手机档、渲染层却没有手机设计"的错位。
+ *
+ * 判据是**真有没有那份设计**，不只是 preferredDevice 说了什么：
+ *   · 声明 phone → 只有手机档
+ *   · 声明 desktop → 只有桌面档
+ *   · 未声明/tablet（平板已下架 ADR-0001）→ 看总览页有没有挂 mobile 设计；
+ *     挂了就两档都给，没挂就只给桌面档
+ * 最后那条兜的是老数据：07-30 之前生成的应用 preferredDevice 一律 desktop
+ * （那时这个字段没判据、9/9 都是它），但它们**确实有** mobile 设计——按声明
+ * 判会把已有的设计藏起来，按"有没有"判才对。
+ */
+export function availableDeviceTiers(
+  schema: { identity?: { preferredDevice?: string }; pages?: unknown[] } | null | undefined
+): DeviceKey[] {
+  const declared = schema?.identity?.preferredDevice;
+  if (declared === "phone") return ["phone"];
+  const hasMobileDesign = (schema?.pages ?? []).some(
+    p =>
+      !!(p as { freeformOverview?: { mobile?: { root?: unknown } } })?.freeformOverview?.mobile
+        ?.root
+  );
+  if (hasMobileDesign) return ["desktop", "phone"];
+  return ["desktop"];
+}
+
+/**
  * 弹层在各设备画布里的尺寸。
  *
  * antd Modal 是桌面组件：不给 width 默认 520px、垂直偏移 top:100。手机画布
@@ -443,6 +480,15 @@ export function AppRuntimeScreen({
   const [device, setDevice] = React.useState<DeviceKey>(() =>
     schema?.identity.preferredDevice === "phone" ? "phone" : "desktop"
   );
+  // 这个应用有设计的档位。切换条、代码视图旁的档位按钮都问它，不各自判
+  // （见 availableDeviceTiers 的说明）。
+  const deviceTiers = React.useMemo(() => availableDeviceTiers(schema), [schema]);
+  // 只有一档时把当前档钉在那一档上：老会话可能把 device 存成了一个现在
+  // 不再提供的档（比如之前切到过手机、这次的应用只有桌面档），不纠回来
+  // 就会渲染一个切换条上选不中的视图。
+  React.useEffect(() => {
+    if (!deviceTiers.includes(device)) setDevice(deviceTiers[0]);
+  }, [deviceTiers, device]);
   // 代码视图档（代码视图一期）：schema 的确定性代码投影——与设备档并列的
   // 观察视角切换，开着时替换缩放画布（代码要整幅面积，不做 16:9 缩放）
   const [codeView, setCodeView] = React.useState(false);
@@ -3403,7 +3449,9 @@ export function AppRuntimeScreen({
                 : "absolute left-3 top-2 flex items-center gap-0.5 rounded-full bg-black/25 p-0.5"
             }
           >
-            {(["desktop", "phone"] as DeviceKey[]).map(key => (
+            {/* 只列这个应用真有设计的档。只剩一档时整条切换器不出现——留一个
+                点了没反应的单选按钮，比不留更让人疑心。 */}
+            {deviceTiers.map(key => (
               <button
                 key={key}
                 type="button"

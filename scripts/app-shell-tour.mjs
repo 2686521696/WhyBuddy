@@ -201,14 +201,28 @@ try {
 
   log("── 手机档 ──");
   // 坑②：设备切换器在 stage 外层，必须 page 级定位
-  await page.locator('[data-testid="app-device-phone"]').first().click();
-  await page.waitForTimeout(2500);
-  if ((await page.locator('[data-testid="app-shell-phone"]').count()) === 0)
-    fail("点了 app-device-phone 但没进手机壳");
-  const mobile = await tour(page, { phone: true, roles, pages, prefix: "mobile" });
+  //
+  // 2026-07-30：手机档按钮**可能压根不存在**了——明说 preferredDevice=desktop
+  // 的应用不再设计手机版式，切换条也就不给那个入口（见 availableDeviceTiers）。
+  // 这不是故障，是预期行为，所以这里区分"没有那一档"和"有但点不进去"：
+  // 前者跳过并如实说明，后者仍然 fail。此前无条件 click 会在桌面档应用上
+  // 直接超时挂掉，报错还只说找不到元素——正是坑①那类误导性失败。
+  const phoneBtn = page.locator('[data-testid="app-device-phone"]');
+  const hasPhoneTier = (await phoneBtn.count()) > 0;
+  let mobile = { shot: 0 };
+  if (!hasPhoneTier) {
+    log("这个应用只有桌面档（切换条无手机入口），跳过手机档巡检");
+  } else {
+    await phoneBtn.first().click();
+    await page.waitForTimeout(2500);
+    if ((await page.locator('[data-testid="app-shell-phone"]').count()) === 0)
+      fail("点了 app-device-phone 但没进手机壳");
+    mobile = await tour(page, { phone: true, roles, pages, prefix: "mobile" });
+  }
 
   log(`产物目录: ${outDir}`);
-  if (desktop.shot === 0 || mobile.shot === 0) fail("有一档一张都没截到");
+  if (desktop.shot === 0) fail("桌面档一张都没截到");
+  if (hasPhoneTier && mobile.shot === 0) fail("有手机档但一张都没截到");
   log("PASS");
 } finally {
   await browser.close();
