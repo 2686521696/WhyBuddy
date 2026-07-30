@@ -387,18 +387,23 @@ def test_sheet_prompt_drops_the_unused_zone_when_device_is_declared():
     """
     from services.freeform_block import _build_overview_sheet_prompt
 
+    # 只查"版式区"这个概念本身在不在，不要用「手机」/「桌面」这种裸词做
+    # not-in 断言——占位文案示例里正当地出现过「手机号写成 138-…」，裸词一撞
+    # 就误判（2026-07-30 真踩过一次）。
     desktop_prompt = _build_overview_sheet_prompt(
         "测试", {"entities": []}, theme_id="tangerine", device="desktop"
     )
-    assert "手机" not in desktop_prompt.replace("不要画手机版式", ""), \
-        "明说桌面档，参照板不该再画手机 mockup"
+    for phone_zone_marker in ("手机首页", "手机屏", "手机端总览界面", "手机轮廓"):
+        assert phone_zone_marker not in desktop_prompt, \
+            f"明说桌面档，参照板不该再画手机 mockup（命中「{phone_zone_marker}」）"
     assert "桌面端总览界面" in desktop_prompt
 
     phone_prompt = _build_overview_sheet_prompt(
         "测试", {"entities": []}, theme_id="tangerine", device="phone"
     )
-    assert "桌面" not in phone_prompt.replace("不要画桌面版式", ""), \
-        "明说手机档，参照板不该再画桌面 mockup"
+    for desktop_zone_marker in ("桌面首页", "PC 内容区", "桌面端的总览版式"):
+        assert desktop_zone_marker not in phone_prompt, \
+            f"明说手机档，参照板不该再画桌面 mockup（命中「{desktop_zone_marker}」）"
     assert "手机端总览界面" in phone_prompt
 
     unspecified_prompt = _build_overview_sheet_prompt(
