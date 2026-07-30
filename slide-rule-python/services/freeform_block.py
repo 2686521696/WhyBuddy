@@ -1405,16 +1405,40 @@ def _generate_overview_sheet_b64(
     尺寸走 _SHEET_IMAGE_SIZE（传 1792x1024，实收 1672x941）——这张
     图上要同时容纳版式和一堆样例，小了字就糊。可用尺寸是白名单，见
     _SHEET_IMAGE_SIZE 上方那份活体探针记录，别凭直觉改。
+
+    **首页参照板可以单独指到另一家服务商**（2026-07-30）：配齐
+    SHEET_IMAGE_API_URL / SHEET_IMAGE_MODEL / SHEET_IMAGE_API_KEY 三项就走那家，
+    缺任意一项自动回落到默认端点、行为与从前逐字节一致。
+
+    为什么只给这一处开这个口子：审查一份第三方技能包的产出时量到，它的图是
+    7.3MP 而我们 1.6MP，观感差距主要来自**端点给的像素档位**，不是提示词
+    （同一 prompt 在我们端点传 3840x2160 也只回 1672x941，实测 85s vs 90s）。
+    而这张首页参照板是当前**唯一驱动版式的图**——FreeformInsight 没放开
+    （见 experience_block_catalog 那条 generationEnabled:false 与它的哨兵测试），
+    单区块参照图只在这张失败时兜底触发。所以把口子开在这一处，等于用最小
+    改动面换到那份观感，其余路径完全不动。
+
+    SHEET_IMAGE_SIZE / SHEET_IMAGE_BODY_STYLE / SHEET_IMAGE_ASPECT_RATIO 一并
+    可配：有的服务商用 {"size":"1792x1024"}，有的用 {"image_size":"2K",
+    "aspect_ratio":"16:9"}，形态由 body_style 决定（见 image_client）。
     """
     try:
-        from sliderule_llm.image_client import ImageGenError, generate_image_png
+        from sliderule_llm.image_client import (
+            ImageGenError,
+            generate_image_png,
+            get_image_gen_config,
+        )
     except Exception:
         return None
     try:
         prompt = _build_overview_sheet_prompt(
             design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
         )
-        png_bytes = generate_image_png(prompt, size=_SHEET_IMAGE_SIZE)
+        sheet_cfg = get_image_gen_config("SHEET_")
+        size = (os.environ.get("SHEET_IMAGE_SIZE") or "").strip() if sheet_cfg else ""
+        png_bytes = generate_image_png(
+            prompt, cfg=sheet_cfg, size=size or _SHEET_IMAGE_SIZE
+        )
     except ImageGenError as exc:
         print(f"[freeform_block] overview sheet skipped: {str(exc)[:160]}")
         return None
