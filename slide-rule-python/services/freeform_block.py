@@ -31,6 +31,7 @@ import os
 import re
 from typing import Any, Optional
 
+import json_repair
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from pathlib import Path
@@ -1353,6 +1354,39 @@ def _critique_against_reference(
     return revised.model_dump()
 
 
+def _prune_non_dict_list_items(node: Any) -> Any:
+    """递归丢弃 list 里非 dict 的元素——json_repair 修复过程中,原始文本里
+    多出来的孤立字符/字符串（真机复现过：一份坏 JSON 结尾多了一个孤立的
+    句号 "."）有时会被它当成"数组里的一项"塞进去,而不是当噪声丢掉。这些
+    杂质在我们的 schema 里必然是非法值（FreeformNode 只能是 dict），
+    下面这道清理只删"不是字典的数组项"这一种确定性的垃圾，不改任何
+    看起来像合法节点的内容，不做结构性猜测。"""
+    if isinstance(node, dict):
+        return {k: _prune_non_dict_list_items(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_prune_non_dict_list_items(x) for x in node if isinstance(x, dict)]
+    return node
+
+
+def _repair_freeform_json_or_none(text: str) -> Optional[dict[str, Any]]:
+    """LLM 一次性吐深层嵌套 JSON 时偶发数错括号层数（真机复现：{}/[] 各差
+    1、结尾多一个孤立句号，且不是 token 截断——那份输出结尾收得完整）。
+    这类"语法错但结构基本对"的输出，用成熟的 json-repair 库机械修一次，
+    比重新问一轮 LLM 更快更稳；手搓的"数括号数、线性补全"式修补容易把
+    内容拼出语法合法但结构错位的树，不如让一个专门为这个问题写的解析器
+    来做。修复失败或者输出形状不对（不是 dict）都返回 None，调用方照旧
+    落回原有的 reask 流程——这一步只在能省一轮重问时才生效，不改变任何
+    失败路径的行为。"""
+    try:
+        repaired = json_repair.repair_json(text)
+        payload = json.loads(repaired)
+    except Exception:  # noqa: BLE001 — 修复库本身的异常不该拖垮已有的 reask 兜底
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return _prune_non_dict_list_items(payload)
+
+
 def generate_freeform_block(
     design_brief: str,
     datamodel: dict[str, Any],
@@ -1455,11 +1489,18 @@ def generate_freeform_block(
             payload = json.loads(text)
         except (ValueError, json.JSONDecodeError) as exc:
             last_error = f"invalid JSON: {str(exc)[:200]}"
-            convo = convo + [
-                {"role": "assistant", "content": raw[:6000]},
-                {"role": "user", "content": f"你上次的输出不是合法 JSON：{last_error}。请重新输出，只要一个 JSON 对象。"},
-            ]
-            continue
+            # 先试机械修复，成功就直接往下走验证——省一轮重问；修不好或者
+            # 修完还是校验不过，就照旧落回 reask（见 _repair_freeform_json_or_none
+            # 的说明）。
+            repaired_payload = _repair_freeform_json_or_none(text)
+            if repaired_payload is None:
+                convo = convo + [
+                    {"role": "assistant", "content": raw[:6000]},
+                    {"role": "user", "content": f"你上次的输出不是合法 JSON：{last_error}。请重新输出，只要一个 JSON 对象。"},
+                ]
+                continue
+            print("[freeform_block] JSON repaired mechanically (json-repair), reask 轮次被省下")
+            payload = repaired_payload
 
         try:
             design = FreeformDesign.model_validate(payload)
