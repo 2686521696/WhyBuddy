@@ -304,15 +304,43 @@ def test_sheet_prompt_carries_density_budget():
     """降分辨率必须同步收密度，否则元素挤成一团、中文糊掉。
 
     真正让参照失效的不是像素总数不够，是**每个元素分到的像素**不够——
-    所以三处上限（图表/动态行/图标）跟画布尺寸是一组，不能只改一个。
+    两处上限（图表/动态行）跟画布尺寸是一组，不能只改一个。
+    （图标样例那条上限随「样式风格」区一起去掉了，见
+    test_sheet_prompt_draws_only_real_layouts_no_style_tile。）
     """
     from services.freeform_block import _build_overview_sheet_prompt
 
     prompt = _build_overview_sheet_prompt("测试", {"entities": []}, theme_id="tangerine")
     assert "最多 2 张图" in prompt      # 桌面图表区
     assert "最多 3 行" in prompt        # 手机动态列表
-    assert "6 个就够" in prompt         # 图标样例
-    assert "宁可留白也不要塞满" in prompt
+    assert "上限不是目标" in prompt
+    assert "1.5%" in prompt             # 字高下限——密度换清晰度的判定线
+
+
+def test_sheet_prompt_draws_only_real_layouts_no_style_tile():
+    """参照板不再画「样式风格」区（色板色块/图标样例/字号层级示意）。
+
+    Style Tile（Samantha Warren 2011）那套交付物是给**人**看的——先定调性
+    再谈页面。但这张图的读者是设计 LLM，而调性信息它已经以**文字**形式拿到
+    了（build_freeform_prompt 里 _theme_prompt_fragment 直接把主色/背景/图表
+    色列给它），图上再画一遍色块是重复信息，却实打实吃掉画布面积和密度预算。
+    参照一份已验证过的第三方技能包提示词写法：整张只画一页真实界面，没有任何
+    色板拼贴（同一结论也是 c425911 改单区块参照图的依据）。
+
+    三档都要干净——只要有一档漏了，那一档的画布就又被样例吃回去。
+    """
+    from services.freeform_block import _build_overview_sheet_prompt
+
+    for device in ("desktop", "phone", ""):
+        prompt = _build_overview_sheet_prompt(
+            "测试", {"entities": []}, theme_id="tangerine", device=device
+        )
+        assert "样式风格" not in prompt, f"{device!r} 档还在画样式风格区"
+        assert "色板色块" not in prompt, f"{device!r} 档还在画色板样例"
+        assert "字号层级" not in prompt, f"{device!r} 档还在画字号层级示意"
+        # "style sheet" 这个词本身就在把模型往色板拼贴上引，一并去掉。
+        assert "style sheet" not in prompt, f"{device!r} 档措辞还在自称 style sheet"
+        assert "不是色板拼贴" in prompt, f"{device!r} 档缺少明令：不要画成色板拼贴"
 
 
 def test_sheet_prompt_anchors_component_look_to_the_real_libraries():
@@ -354,31 +382,30 @@ def test_sheet_prompt_drops_the_unused_zone_when_device_is_declared():
     `enrich_monitor_page_overviews` 判定 preferredDevice 明说桌面时，压根
     不会再跑手机档那次 freeform 设计生成（见上面 test_declared_desktop_
     skips_the_phone_design），但参照板 prompt 此前没接 device 参数，一直
-    无条件画三区——等于让生图模型白画一块永远用不到的手机 mockup，还挤占
-    了桌面区本该有的画布份额。这里钉住：明说的那档参照板只画两区。
+    无条件画所有档——等于让生图模型白画一块永远用不到的 mockup，还挤占了
+    真正要用的那档的画布份额。这里钉住：明说哪档就只画哪档。
     """
     from services.freeform_block import _build_overview_sheet_prompt
 
     desktop_prompt = _build_overview_sheet_prompt(
         "测试", {"entities": []}, theme_id="tangerine", device="desktop"
     )
-    assert "手机首页" not in desktop_prompt, "明说桌面档，参照板不该再画手机 mockup"
-    assert "桌面首页" in desktop_prompt
-    assert "两块" in desktop_prompt and "三块" not in desktop_prompt
+    assert "手机" not in desktop_prompt.replace("不要画手机版式", ""), \
+        "明说桌面档，参照板不该再画手机 mockup"
+    assert "桌面端总览界面" in desktop_prompt
 
     phone_prompt = _build_overview_sheet_prompt(
         "测试", {"entities": []}, theme_id="tangerine", device="phone"
     )
-    assert "桌面首页" not in phone_prompt, "明说手机档，参照板不该再画桌面 mockup"
-    assert "手机首页" in phone_prompt
-    assert "两块" in phone_prompt and "三块" not in phone_prompt
+    assert "桌面" not in phone_prompt.replace("不要画桌面版式", ""), \
+        "明说手机档，参照板不该再画桌面 mockup"
+    assert "手机端总览界面" in phone_prompt
 
     unspecified_prompt = _build_overview_sheet_prompt(
         "测试", {"entities": []}, theme_id="tangerine", device=""
     )
     assert "桌面首页" in unspecified_prompt and "手机首页" in unspecified_prompt, \
         "判不出来时仍要保守地两档都画（同一条只在明确时才砍的纪律）"
-    assert "三块" in unspecified_prompt
 
 
 def test_declared_desktop_skips_the_phone_design(monkeypatch):
