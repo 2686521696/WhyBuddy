@@ -103,6 +103,23 @@ def test_phone_only_overview_sheet_also_asks_for_one_portrait_screen():
         assert "整张图要画成手机竖屏比例" not in sheet
 
 
+def test_block_reference_prompt_forbids_drawing_technical_identifiers():
+    """单区块参照图也必须禁画 blockRef / 字段 id 这类技术标识。
+
+    这条明令原本只写在总览参照板那支里，单区块这支漏了——而两边**会吃到同一
+    份 brief**：总览页正常走参照板，但 _generate_overview_sheet_b64 任何一步
+    失败都静默返回 None，generate_freeform_block 随即退回来自己生一张
+    （见其 reference_image_b64 is None 分支），把带 blockRef JSON 的总览 brief
+    原样喂进这里。真机复现过两次：轻则画面里印出「blockRef / ActivityFeed」
+    徽标，重则整块 JSON 被当成代码块画进图里。
+    """
+    prompt = _build_reference_image_prompt(
+        "测试区块", _EMPTY_DATAMODEL, theme_id="tangerine", device="desktop"
+    )
+    assert "技术标识" in prompt
+    assert "blockRef" in prompt, "要点名 blockRef，模型才知道那串东西不是文案"
+
+
 def test_both_devices_still_fill_the_canvas():
     """"铺满画布"对两档都成立——画布本身会是对的形状，不需要靠留白去凑比例。"""
     for device in ("phone", "desktop"):
