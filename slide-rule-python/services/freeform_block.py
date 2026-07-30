@@ -59,6 +59,31 @@ _UNITLESS_STYLE_PROPS = frozenset({
     "opacity", "zIndex",
 })
 
+# lineHeight 不带单位时是"字号的倍数"（CSS 规范特例，React 的
+# isUnitlessNumber 原样保留这条），不是像素值——真机逮到过 LLM 把它当成
+# "字号 28px 配一个稍大的行高 32" 来写，写成 lineHeight: 32（或强转后的
+# "32"），结果渲染成 32 倍字号 = 896px 的行高，一整行 KPI 卡被撑到
+# 1000+px，图表/列表全被挤到一屏之外——版式看着"稀疏"，其实是这一个属性
+# 把后面的内容全推没了。正常行高倍数很少超过 3（宽松排版顶格用到 2），
+# 超过这个阈值基本可以断定是"把像素值当倍数写"的手误，拦下来逼它改用带
+# 单位的写法（比如 "32px"），不做静默纠偏——纠偏会把"该用多大行高"这个
+#设计判断替它做了，交回 reask 让它自己选一个合理值更稳妥。
+_LINE_HEIGHT_RATIO_MAX = 4.0
+
+
+def _check_plausible_line_height(value: str) -> None:
+    try:
+        ratio = float(value)
+    except (TypeError, ValueError):
+        return  # 带单位（"32px"/"150%"）或其它形式，不是这条要拦的情况
+    if ratio > _LINE_HEIGHT_RATIO_MAX:
+        raise ValueError(
+            f"lineHeight '{value}' 不带单位时表示字号的倍数（1.5 = 1.5 倍字号），"
+            f"不是像素值——{value} 倍字号会把行高撑到离谱的高度，把同一行/同一页"
+            "后面的内容挤出可视区域。如果想要更宽松的行距，用 1.2~2 之间的倍数；"
+            "如果确实需要一个固定像素值，必须带单位写成比如 '32px'。"
+        )
+
 # 合法的 Ant Design 图标组件名形状：PascalCase + Outlined/Filled/TwoTone 结尾
 # （@ant-design/icons 全部图标都遵循这个命名，前端按名字动态解析）。校验只看
 # 形状不看具体名字——编造/拼错的名字前端解析不到会渲染成空，优雅降级。
@@ -702,6 +727,8 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
                     raise ValueError(f"style property '{k}' is not in the allowed list")
                 if _DANGEROUS_VALUE_RE.search(str(val)):
                     raise ValueError(f"style value for '{k}' contains a disallowed pattern: {val}")
+                if k == "lineHeight":
+                    _check_plausible_line_height(val)
             return v
 
         @field_validator("iconRef")

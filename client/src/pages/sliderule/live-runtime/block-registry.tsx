@@ -483,6 +483,17 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
  */
 const FREEFORM_DANGEROUS_VALUE_RE = /url\(|javascript:|expression\(|import\b|@import/i;
 
+/** lineHeight 不带单位时是字号的倍数（CSS 规范特例），不是像素值——真机
+ * 逮到过 LLM 把它当像素写（比如给 28px 字号配 lineHeight: 32，本意是"行高
+ * 32px"），结果渲染成 32 倍字号 = 896px 的行高，整行 KPI 卡被撑到 1000+px，
+ * 后面的图表/列表全被挤出可视区域。Python 侧 freeform_block.py 的
+ * check_style 已经在生成时拦这个模式，但持久化的历史产物/快照恢复不走那
+ * 条校验，这里是渲染层的第二道防线：裸数字倍数超过这个阈值直接丢弃该
+ * 属性（回退浏览器默认行高），不静默"纠正"成某个猜测值——安全，但不会
+ * 把版式挤爆。 */
+const LINE_HEIGHT_RATIO_MAX = 4;
+const BARE_NUMBER_RE = /^-?\d+(\.\d+)?$/;
+
 // 老的 kebab 语义名 → Ant Design 组件名（放开图标白名单之前用的 12 个，历史
 // 生成产物里可能还有，保留兼容）。2026-07-26 起映射表不再在 TS 手抄——从
 // 目录 JSON 派生（Python freeform_block.py 用同一份的键集合做校验），改目录
@@ -528,6 +539,9 @@ function sanitizeFreeformStyle(
   for (const [k, v] of Object.entries(style)) {
     if (!allowed.has(k)) continue;
     if (FREEFORM_DANGEROUS_VALUE_RE.test(String(v))) continue;
+    if (k === "lineHeight" && BARE_NUMBER_RE.test(String(v)) && Number(v) > LINE_HEIGHT_RATIO_MAX) {
+      continue; // 裸数字倍数离谱地大——多半是把像素值当倍数写，丢弃回退默认行高
+    }
     out[k] = v;
   }
   return out as React.CSSProperties;
