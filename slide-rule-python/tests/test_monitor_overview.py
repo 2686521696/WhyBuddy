@@ -396,7 +396,7 @@ def test_sheet_prompt_drops_the_unused_zone_when_device_is_declared():
     for phone_zone_marker in ("手机首页", "手机屏", "手机端总览界面", "手机轮廓"):
         assert phone_zone_marker not in desktop_prompt, \
             f"明说桌面档，参照板不该再画手机 mockup（命中「{phone_zone_marker}」）"
-    assert "桌面端后台界面" in desktop_prompt
+    assert "桌面端总览界面" in desktop_prompt
 
     phone_prompt = _build_overview_sheet_prompt(
         "测试", {"entities": []}, theme_id="tangerine", device="phone"
@@ -441,18 +441,16 @@ def test_declared_desktop_skips_the_phone_design(monkeypatch):
         "桌面档不该挂 mobile 键——挂了前端会去渲一个没设计过的档"
 
 
-def test_desktop_sheet_draws_the_shell_and_design_llm_is_told_it_is_background():
-    """参照图画完整外壳（方案 A），但必须同时告诉设计 LLM 那是背景。
+def test_desktop_sheet_does_not_draw_the_app_shell():
+    """参照图**不画外壳**——试过画、又撤回（2026-07-30）。
 
-    A/B 实测（同一份 brief，只换固定尾巴）：照第三方技能包那样把外壳件逐个
-    点名（顶部导航 + 主操作区 + 列表/卡片/侧栏），出图是一个**完整产品**；
-    我们原来那句"不要画侧边栏和顶栏"出的是光秃秃一块内容区。人工反馈的
-    "整体质量高一大截"，很大一部分就是这个"有壳"。
+    曾照第三方技能包那样把外壳件逐个点名（顶部导航 + 侧栏），出图确实像个
+    "完整产品"、观感更整。但人工核对后决定不要壳：参照图的职责是交代**内容区**
+    该长什么样，外壳由运行时 AppRuntimeScreen 用 antd 固定渲染；画进参照图只会
+    让设计 LLM 有样学样往内容树里塞导航。
 
-    但外壳在真实运行时是 AppRuntimeScreen 用 antd 画的固定壳，不归 freeform
-    设计管。**这两处必须成对存在**：参照图里有壳、而图片说明里没写"壳是背景"，
-    设计 LLM 就会照着图把导航搭进内容树，等于在内容区里又画一遍侧栏。
-    这条测试就是钉住这一对，防止将来只改一处。
+    这条钉住撤回后的状态，免得下次看到"有壳观感更好"又顺手加回去——加之前
+    先看这段注释和它的代价。
     """
     import inspect
 
@@ -461,14 +459,12 @@ def test_desktop_sheet_draws_the_shell_and_design_llm_is_told_it_is_background()
     sheet = _build_overview_sheet_prompt(
         "测试", {"entities": []}, theme_id="tangerine", device="desktop"
     )
-    assert "左侧一条竖向导航栏" in sheet, "参照图该画外壳了"
-    assert "主内容区是画面的主角" in sheet, "外壳不能喧宾夺主"
-    assert "不要画左侧侧边栏和顶栏" not in sheet, "旧的禁画外壳措辞该撤掉"
+    assert "不要画左侧侧边栏和顶栏" in sheet, "参照图不该画外壳"
+    assert "左侧一条竖向导航栏" not in sheet
 
-    # 配套那半：图片说明里必须写清楚外壳是背景、不归设计 LLM 管。
+    # 禁令那半保留：它防的是设计 LLM 自作主张加外壳，跟参照图画不画壳无关。
     src = inspect.getsource(generate_freeform_block)
-    assert "只是背景" in src, "参照图画了壳，就必须告诉设计 LLM 那是背景"
-    assert "不要在你的内容树里搭导航菜单" in src, "要明令禁止把外壳搭进内容树"
+    assert "不要在你的内容树里搭这些" in src, "要明令禁止把外壳搭进内容树"
 
 
 def test_sheet_generation_receives_the_declared_device(monkeypatch):
