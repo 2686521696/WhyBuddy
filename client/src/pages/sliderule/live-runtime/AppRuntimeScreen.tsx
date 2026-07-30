@@ -296,9 +296,31 @@ export function deviceModalSizing(device: DeviceKey): {
 }
 
 /** 容器实测尺寸 → 等比缩放系数（min(宽比, 高比)，letterbox 居中）。 */
+/**
+ * 缩放模式（2026-07-30 补 "width"）。
+ *
+ *   contain — min(w/W, h/H)：保证整个应用可见，代价是宽高比不匹配时留边。
+ *             应用舞台要这个：用户要看全。
+ *   width   — w/W：**只按宽度算，高度由内容推导**。缩略图墙要这个。
+ *
+ * 为什么加这一档：作品墙那版设计里卡片大中小交错、宽高比五花八门，用 contain
+ * 的结果是每张卡两侧一大片灰（实测 778×272 的卡里应用只有 484px 宽，
+ * 383×130 的卡里只有 230px）。
+ *
+ * 做法照 WordPress Gutenberg 的 ScaledBlockPreview
+ * （packages/block-editor/src/components/block-preview/auto.js）：
+ *     const scale = containerWidth / viewportWidth;
+ *     const aspectRatio = containerWidth / (contentHeight * scale);
+ * 它也是缩放真实渲染的组件树（不是 iframe、不是截图），跟这里同一个问题。
+ * 关键在**宽度定缩放、高度跟着内容走**，而不是把内容塞进一个固定尺寸的盒子
+ * ——后者必然要么留边要么裁切。调用方据此把容器高度设成 designH×scale。
+ */
+export type ScaleFitMode = "contain" | "width";
+
 function useScaleToFit(
   designW: number,
-  designH: number
+  designH: number,
+  mode: ScaleFitMode = "contain"
 ): {
   ref: React.RefObject<HTMLDivElement | null>;
   scale: number;
@@ -311,14 +333,19 @@ function useScaleToFit(
     const measure = () => {
       const w = el.clientWidth;
       const h = el.clientHeight;
-      if (w > 0 && h > 0) setScale(Math.min(w / designW, h / designH));
+      if (w <= 0) return;
+      if (mode === "width") {
+        setScale(w / designW);
+        return;
+      }
+      if (h > 0) setScale(Math.min(w / designW, h / designH));
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [designW, designH]);
+  }, [designW, designH, mode]);
   return { ref, scale };
 }
 
@@ -432,6 +459,7 @@ export function AppRuntimeScreen({
   xrayActive = false,
   onXrayTarget,
   controlsContainer,
+  scaleFit = "contain",
 }: {
   model: FiveSystemModel;
   sessionId: string;
@@ -444,6 +472,9 @@ export function AppRuntimeScreen({
   /** 档位切换条的外部挂载点（studio 顶条「游标」左侧）。传了本 prop 就
    *  不再浮在画布左上角：元素就绪前不渲染切换条（避免闪跳）。 */
   controlsContainer?: HTMLElement | null;
+  /** 画布缩放口径。缩略图墙传 "width"（宽度定缩放、高度跟内容），
+   *  应用舞台用默认 "contain"（要看全）。见 ScaleFitMode 的说明。 */
+  scaleFit?: ScaleFitMode;
 }) {
   // 2026-07-24：间距/圆角/阴影刻度——直接吃 antd 自己的 Design Token（见
   // design-tokens.ts 头部注释），不是另起一套静态数字。卡片族（KPI/图表/
@@ -528,7 +559,7 @@ export function AppRuntimeScreen({
     rationale: string | null;
   } | null>(null);
   const spec = DEVICE_SPECS[device];
-  const { ref: fitRef, scale } = useScaleToFit(spec.w, spec.h);
+  const { ref: fitRef, scale } = useScaleToFit(spec.w, spec.h, scaleFit);
   // 弹层（Modal/Select/Drawer）挂进画布，跟随 transform 缩放
   const [canvasEl, setCanvasEl] = React.useState<HTMLDivElement | null>(null);
 

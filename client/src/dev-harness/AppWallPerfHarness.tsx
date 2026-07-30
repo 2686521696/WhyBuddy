@@ -42,12 +42,37 @@ const LazyAppRuntimeScreen = React.lazy(() =>
 
 type Tier = "lg" | "md" | "sm";
 
-/** 交错版式里每档卡占的栅格数（12 列）。lg 6 列 / md 4 列 / sm 3 列。 */
-const SPAN: Record<Tier, { col: number; row: number }> = {
-  lg: { col: 6, row: 2 },
-  md: { col: 4, row: 2 },
-  sm: { col: 3, row: 1 },
-};
+/**
+ * 交错版式里每档卡占几列（12 栅格）。**只定宽度，不定高度。**
+ *
+ * 第一版给每档同时定了 col 和 row，结果是卡片宽高比（2.86 / 1.89 / 2.95）跟
+ * 应用的 16:9（1.78）对不上，contain 缩放一律按高度收，每张卡两侧留一大片灰
+ * ——实测 778×272 的卡里应用只有 484px 宽，383×130 的卡里只有 230px。
+ *
+ * 改成照 Gutenberg 的 ScaledBlockPreview：宽度定缩放、**高度由内容推导**
+ * （见 AppRuntimeScreen 的 ScaleFitMode）。行数在运行时按实测宽度算，
+ * gridAutoRows 给一个小步长让它逼近连续值。
+ */
+const SPAN_COL: Record<Tier, number> = { lg: 6, md: 4, sm: 3 };
+
+/** 行步长。8px 足够细，算出来的高度误差最多 7px，肉眼看不出。 */
+const ROW_STEP = 8;
+/** 栅格间距。行数换算必须把它算进去，见 rowSpanFor 的说明。 */
+const GRID_GAP = 12;
+
+/**
+ * 目标高度 → 该占几行。
+ *
+ * 这里有个 grid 做 masonry 的经典坑，第一版就栽了：跨 n 行的实际高度**不是**
+ * n × 行高，而是 n × 行高 + (n−1) × 行间距——间距会累加进跨度内部。行步长取
+ * 得越细，跨的行数越多，累积的间距就越离谱：778px 宽的卡目标高 438px，按
+ * 438/8 = 55 行算，实际高度变成 55×8 + 54×12 = 1088px，足足 2.5 倍。
+ *
+ * 所以要反解：n × R + (n−1) × G = H  ⇒  n = (H + G) / (R + G)
+ */
+function rowSpanFor(targetHeight: number): number {
+  return Math.max(1, Math.round((targetHeight + GRID_GAP) / (ROW_STEP + GRID_GAP)));
+}
 
 /**
  * 档位分配。刻意**不随机**：设计稿写的是"随机但间距统一"，但缩放是硬的
@@ -126,7 +151,21 @@ function PerfCard({
     return () => io.disconnect();
   }, [lazy]);
 
-  const span = SPAN[tier];
+  // 高度跟着宽度走：量到自己多宽，按应用的设计宽高比反推该占几行。
+  const [rowSpan, setRowSpan] = React.useState(2);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const w = el.clientWidth;
+      if (w > 0) setRowSpan(rowSpanFor(w * (810 / 1440)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <div
       ref={ref}
@@ -134,9 +173,8 @@ function PerfCard({
       data-tier={tier}
       data-index={index}
       style={{
-        gridColumn: `span ${span.col}`,
-        gridRow: `span ${span.row}`,
-        minHeight: tier === "sm" ? 130 : 260,
+        gridColumn: `span ${SPAN_COL[tier]}`,
+        gridRow: `span ${rowSpan}`,
       }}
       className="pointer-events-none relative overflow-hidden rounded-xl border border-stone-200 bg-[#f0f2f5] shadow-sm"
     >
@@ -148,6 +186,7 @@ function PerfCard({
             model={item.model}
             sessionId={`${item.sessionId}#perf${index}`}
             appTitle={item.goal}
+            scaleFit="width"
             controlsContainer={
               (typeof document !== "undefined"
                 ? (document.getElementById(`wall-controls-${index}`) as HTMLDivElement | null)
@@ -156,8 +195,10 @@ function PerfCard({
           />
         </React.Suspense>
       )}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1 text-[10px] text-white">
-        {tier} · {item.goal.slice(0, 18)}
+      {/* 标签缩成右下角小角标：第一版是整条渐变浮层压在图上，把每张卡最下面
+          一行内容盖掉了，看效果时误以为是渲染缺内容。 */}
+      <div className="absolute bottom-1 right-1 rounded bg-black/55 px-1.5 py-0.5 text-[9px] leading-none text-white">
+        {tier}
       </div>
     </div>
   );
@@ -267,10 +308,10 @@ export function AppWallPerfHarness() {
             ? {
                 display: "grid",
                 gridTemplateColumns: "repeat(12, 1fr)",
-                gridAutoRows: 130,
+                gridAutoRows: ROW_STEP,
                 // 「小卡填补大卡产生的空间」原生就有，不需要 masonry 库
                 gridAutoFlow: "row dense",
-                gap: 12,
+                gap: GRID_GAP,
               }
             : {
                 display: "grid",
