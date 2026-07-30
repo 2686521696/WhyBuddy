@@ -300,42 +300,21 @@ def test_sheet_size_matches_prompt_canvas():
     assert "3840" not in prompt
 
 
-def test_sheet_prompt_keeps_only_what_the_model_cannot_do_itself():
-    """2026-07-30 精简后的取舍：砍四类、留四类，这条把边界钉住。
+def test_sheet_prompt_carries_density_budget():
+    """降分辨率必须同步收密度，否则元素挤成一团、中文糊掉。
 
-    做法是减法实验（逐类拿掉、真出图、看哪个 bug 复发），按"这条约束在替模型
-    做什么"分类：
-
-      砍掉 = 替模型做它已经会做的事
-        密度预算(字高下限) / 控件形态(点名 antd) / 信息层级清单 / 配色使用规则
-      保留 = 模型自己产生不了、或本能会做反的事
-        版式要求 / 技术标识禁令 / 占位写法 / 主题色板(事实)
-
-    验证规模：5 题材 × 5 主题种子，四项检查 20/20 通过。**这个结论依赖当前
-    生图模型的能力**——换模型或换端点后要按 _build_overview_sheet_prompt
-    docstring 里那张表重测，砍掉的四条可能重新变成必需。
-
-    这条测试不是在说"砍了就永远别加回来"，而是让加回来时必须是**显式决定**
-    ——就像 ssot-parity 那条 FreeformInsight 哨兵一样。
+    真正让参照失效的不是像素总数不够，是**每个元素分到的像素**不够——
+    两处上限（图表/动态行）跟画布尺寸是一组，不能只改一个。
+    （图标样例那条上限随「样式风格」区一起去掉了，见
+    test_sheet_prompt_draws_only_real_layouts_no_style_tile。）
     """
     from services.freeform_block import _build_overview_sheet_prompt
 
-    prompt = _build_overview_sheet_prompt(
-        "测试", {"entities": []}, theme_id="tangerine", device="desktop"
-    )
-
-    # 版式要求：画布形状与卡/图排布是我们的产品决定，模型猜不出来
-    assert "最多 2 张图" in prompt
-    assert "一整页桌面端总览界面" in prompt
-    # 主题色板：只给事实。砍掉之后三个不同业务的出图配色会趋同，各应用视觉
-    # 身份消失，而运行时外壳仍按种子渲染 → 内容区跟外壳撞色。
-    assert "配色基调用" in prompt
-
-    # 砍掉的四类不该再出现——加回来请先读 docstring 里的取舍记录
-    assert "1.5%" not in prompt, "密度预算已砍（砍后字并没有糊）"
-    assert "Ant Design" not in prompt, "控件形态已砍（砍后长相仍是 antd 那套）"
-    assert "信息层级必须画满" not in prompt, "信息层级清单已砍（砍后图例/坐标轴仍在）"
-    assert "KPI 指标卡要有设计感" not in prompt, "配色使用规则已砍（砍后仍跟主题种子走）"
+    prompt = _build_overview_sheet_prompt("测试", {"entities": []}, theme_id="tangerine")
+    assert "最多 2 张图" in prompt      # 桌面图表区
+    assert "最多 3 行" in prompt        # 手机动态列表
+    assert "上限不是目标" in prompt
+    assert "1.5%" in prompt             # 字高下限——密度换清晰度的判定线
 
 
 def test_sheet_prompt_draws_only_real_layouts_no_style_tile():
@@ -362,6 +341,39 @@ def test_sheet_prompt_draws_only_real_layouts_no_style_tile():
         # "style sheet" 这个词本身就在把模型往色板拼贴上引，一并去掉。
         assert "style sheet" not in prompt, f"{device!r} 档措辞还在自称 style sheet"
         assert "不是色板拼贴" in prompt, f"{device!r} 档缺少明令：不要画成色板拼贴"
+
+
+def test_sheet_prompt_anchors_component_look_to_the_real_libraries():
+    """参照板的控件长相要锚到**真实渲染用的那两个库**。
+
+    此前只写「卡片白底细边框、图标简洁线性」这类形容词，模型每次自己发挥一版，
+    而运行时是拿 antd / antd-mobile 渲染的——参照图画个大圆角胶囊按钮、真实
+    渲染是小圆角方按钮，设计 LLM 照图排版就会算错尺寸。
+
+    配色必须**明令排除**：Ant Design 的品牌蓝跟这个词绑得太死，不写这句实测
+    会把整张板画成蓝的，主题色板白给。
+    """
+    from services.freeform_block import _build_overview_sheet_prompt
+
+    prompt = _build_overview_sheet_prompt("测试", {"entities": []}, theme_id="tangerine")
+    assert "Ant Design" in prompt and "Ant Design Mobile" in prompt
+    assert "不要用 Ant Design 默认的蓝色" in prompt
+    assert "不许出现 Ant Design / antd 字样" in prompt
+
+
+def test_sheet_prompt_has_a_checkable_min_glyph_height():
+    """密度约束必须是**能判定的下限**，不能只写「宁可留白」这种形容词。
+
+    实测：加了 Ant Design 形态指令后模型画得更充实（表格 6 列 + 进度条 +
+    多一张 KPI 卡），密度预算被抵消，小字糊成乱码（「按钮样例」→「栎钮样例」、
+    手机区环图图例整片认不出）。改成字高下限之后，模型自己砍密度换清晰度，
+    同一档画布上小字恢复可读。
+    """
+    from services.freeform_block import _build_overview_sheet_prompt
+
+    prompt = _build_overview_sheet_prompt("测试", {"entities": []}, theme_id="tangerine")
+    assert "1.5%" in prompt
+    assert "不许靠缩小字号" in prompt
 
 
 def test_sheet_prompt_drops_the_unused_zone_when_device_is_declared():
