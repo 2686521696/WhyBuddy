@@ -67,7 +67,8 @@ async function runOnce(n, layout) {
       }
     });
 
-    const url = `${BASE}/app-wall-perf.html?n=${n}&layout=${layout}&lazy=0`;
+    const batch = process.env.WALL_BATCH === "1" ? 1 : 0;
+    const url = `${BASE}/app-wall-perf.html?n=${n}&layout=${layout}&lazy=0&batch=${batch}${process.env.WALL_YIELD ? `&yield=${process.env.WALL_YIELD}` : ""}`;
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
 
     if (await page.locator('[data-testid="wall-error"]').count()) {

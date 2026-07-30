@@ -41,6 +41,7 @@ import {
   Heart,
   BookOpen,
 } from "lucide-react";
+import { requestMountPermit } from "@/lib/mount-scheduler";
 import { resolveIdentityTheme } from "@/pages/sliderule/live-runtime/identity-themes";
 import {
   mergeFiveSystemModels,
@@ -457,6 +458,15 @@ const LazyAppRuntimeScreen = React.lazy(() =>
  * AppRuntimeScreen 自己的 useScaleToFit 会把 1440×810 画布按容器实际尺寸
  * 等比缩小，这里只需要给够 h-full w-full 的容器；设备切换条经 controlsContainer
  * portal 到一个隐藏节点，缩略图里不需要看见它。
+ *
+ * 2026-07-30 追加**分批挂载**（requestMountPermit）。进视口只是拿到"该挂了"，
+ * 真正挂哪一批由全局排队器决定。理由是实测：生产构建下同屏 14 张卡，最长
+ * 单任务 4106ms——主线程连续堵四秒，这四秒里页面点不动滚不动。滚动本身全档
+ * 稳在 60fps、20 张堆内存才 93MB，所以问题只在首屏挂载这一处，分批就能治，
+ * 不需要虚拟化。详见 lib/mount-scheduler.ts 与 scripts/app-wall-perf.mjs。
+ *
+ * 两道闸串联的顺序要对：**先进视口、再排队**。反过来（先排队再看视口）会把
+ * 滚动到很远处的卡也排进队里，白占许可名额。
  */
 function LiveAppThumb({
   sessionId,
@@ -469,18 +479,20 @@ function LiveAppThumb({
 }) {
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const [hiddenControls, setHiddenControls] = React.useState<HTMLDivElement | null>(null);
-  const [visible, setVisible] = React.useState(false);
+  // 闸一：进视口了吗。闸二：排到我了吗。两个都过才挂。
+  const [inView, setInView] = React.useState(false);
+  const [granted, setGranted] = React.useState(false);
 
   React.useEffect(() => {
     const el = wrapRef.current;
     if (!el || typeof IntersectionObserver === "undefined") {
-      setVisible(true);
+      setInView(true);
       return;
     }
     const io = new IntersectionObserver(
       entries => {
         if (entries.some(e => e.isIntersecting)) {
-          setVisible(true);
+          setInView(true);
           io.disconnect();
         }
       },
@@ -489,6 +501,15 @@ function LiveAppThumb({
     io.observe(el);
     return () => io.disconnect();
   }, []);
+
+  // 进了视口才排队（顺序见文件头）。清理函数必须取消排队——卡片在拿到许可前
+  // 被卸载是常态（改搜索、翻页、切库），不取消就会对已卸载组件 setState。
+  React.useEffect(() => {
+    if (!inView) return;
+    return requestMountPermit(() => setGranted(true));
+  }, [inView]);
+
+  const visible = inView && granted;
 
   return (
     <div

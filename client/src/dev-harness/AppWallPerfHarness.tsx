@@ -16,6 +16,7 @@
  *   &layout=dense    dense（12 栅格 + grid-auto-flow:row dense，大中小交错）
  *                    | uniform（现状：等宽 16:9 四列）
  *   &lazy=0          关掉 IntersectionObserver（强制全部立刻挂载，测最坏情况）
+ *   &batch=1         走分批挂载排队器（lib/mount-scheduler），默认 0=一起挂
  *
  * 纪律：模型一律取**真实会话**的五系统模型（GET /api/sliderule/sessions）。
  * 张数不够就把已有模型循环复用——压测要的是"N 个同时渲染"，不是 N 个不同
@@ -25,6 +26,7 @@
 
 import React from "react";
 
+import { requestMountPermit } from "@/lib/mount-scheduler";
 import {
   parseFiveSystemModelFromPerSkillEvidence,
   type FiveSystemModel,
@@ -68,7 +70,7 @@ interface Loaded {
 declare global {
   interface Window {
     __wallPerf?: {
-      config: { n: number; layout: string; lazy: boolean };
+      config: { n: number; layout: string; lazy: boolean; batch: boolean };
       /** 真实拿到的模型数（不足 n 时会循环复用） */
       distinctModels: number;
       /** 全部卡片挂载完成的时刻（performance.now()），未完成为 null */
@@ -84,16 +86,25 @@ function PerfCard({
   tier,
   index,
   lazy,
+  batch,
   onMounted,
 }: {
   item: Loaded;
   tier: Tier;
   index: number;
   lazy: boolean;
+  batch: boolean;
   onMounted: () => void;
 }) {
   const ref = React.useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = React.useState(!lazy);
+  const [visible, setVisible] = React.useState(!lazy && !batch);
+
+  // 分批档：不各自计时，统一向全局排队器领许可（每张自己 setTimeout 等于
+  // 没排队——十几个定时器同一帧到期，还是一起挂）。
+  React.useEffect(() => {
+    if (!batch) return;
+    return requestMountPermit(() => setVisible(true));
+  }, [batch]);
 
   React.useEffect(() => {
     if (!lazy) return;
@@ -165,6 +176,10 @@ export function AppWallPerfHarness() {
   const n = Math.max(1, Math.min(60, Number(params.get("n") || 14)));
   const layout = params.get("layout") === "uniform" ? "uniform" : "dense";
   const lazy = params.get("lazy") !== "0";
+  const batch = params.get("batch") === "1";
+  // 压测用：让出主线程的方式（postTask 默认 / timer 强制真实间隔）
+  const yieldMode = params.get("yield") || "";
+  if (yieldMode) (globalThis as { __mountYieldMode?: string }).__mountYieldMode = yieldMode;
 
   const [items, setItems] = React.useState<Loaded[] | null>(null);
   const [error, setError] = React.useState("");
@@ -172,12 +187,12 @@ export function AppWallPerfHarness() {
 
   React.useEffect(() => {
     window.__wallPerf = {
-      config: { n, layout, lazy },
+      config: { n, layout, lazy, batch },
       distinctModels: 0,
       mountedAt: null,
       startedAt: null,
     };
-  }, [n, layout, lazy]);
+  }, [n, layout, lazy, batch]);
 
   React.useEffect(() => {
     let alive = true;
@@ -271,6 +286,7 @@ export function AppWallPerfHarness() {
             index={i}
             tier={layout === "dense" ? tierOf(i) : "md"}
             lazy={lazy}
+            batch={batch}
             onMounted={onMounted}
           />
         ))}
