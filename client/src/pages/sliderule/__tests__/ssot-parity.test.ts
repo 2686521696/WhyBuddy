@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import catalogJson from "@experience-blocks";
-import themePresets from "@identity-themes";
 import legalDomains from "@legal";
+import { FALLBACK_SEED } from "@/lib/identity-palette";
 import {
   EXPERIENCE_BLOCK_CATALOG,
   EXPERIENCE_BLOCK_RENDERERS,
@@ -9,11 +9,7 @@ import {
   FREEFORM_ICON_NAME_RE,
 } from "../live-runtime/block-registry";
 import { LAYOUT_SLOT_KEYS } from "../live-runtime/app-runtime-schema";
-import {
-  DEFAULT_THEME_ID,
-  allIdentityThemes,
-  resolveIdentityTheme,
-} from "../live-runtime/identity-themes";
+import { LEGAL_THEME_IDS, resolveIdentityTheme } from "../live-runtime/identity-themes";
 
 /** 2026-07-26 手抄清单收编哨兵。
  *
@@ -43,37 +39,44 @@ describe("SSOT parity（手抄清单收编）", () => {
     );
   });
 
-  it("8 套主题从 presets JSON 构建，id 清单与合法域账本一致", () => {
-    const themes = allIdentityThemes();
-    expect(themes.map(t => t.id).sort()).toEqual(
-      [...(legalDomains as { identityThemes: string[] }).identityThemes].sort()
+  // 2026-07-30 起不再有"8 套主题从 presets JSON 构建"这件事——presets JSON
+  // 不再有 themes 键（手工色值收到 1 个 FALLBACK_SEED），这条哨兵锁的结构
+  // 已经不存在了。identityThemes 的 8 个合法 id 仍在账本里、仍被 gate/repair
+  // 校验（那两处没有改），下面这条只锁"导出的合法 id 清单跟账本一致"，
+  // 不再要求它们各自对应一套色板。
+  it("LEGAL_THEME_IDS 与合法域账本一致", () => {
+    expect(LEGAL_THEME_IDS).toEqual(
+      (legalDomains as { identityThemes: string[] }).identityThemes
     );
-    expect(Object.keys(themePresets.themes).sort()).toEqual(
-      themes.map(t => t.id).sort()
-    );
-    expect(DEFAULT_THEME_ID).toBe(themePresets.defaultThemeId);
   });
 
-  it("生成主题契约生效：缺 sidebarBg 的主题被弃用回落预设（与 Python 同判定）", () => {
-    const almostValid: Record<string, unknown> = {
-      primary: "#123456", primaryHover: "#123456", gradTo: "#123456",
-      primaryFg: "#ffffff", contentBg: "#f0f0f0", accentBg: "#eeeeee",
-      accentFg: "#333333", sidebarText: "#cccccc",
-      charts: ["#111111", "#222222", "#333333"],
-      // sidebarBg 缺失
-    };
-    const resolved = resolveIdentityTheme("forest", almostValid);
-    expect(resolved.id).toBe("forest"); // 回落到 themeId 预设，不是 "generated"
+  it("生成主题契约生效：缺 seed 的主题被弃用回落 FALLBACK_SEED（与 Python 同判定）", () => {
+    const invalid: Record<string, unknown> = { label: "只有标签没有种子色" };
+    const resolved = resolveIdentityTheme("azure", invalid);
+    expect(resolved.id).toBe("fallback");
+    expect(resolved.primary).toBe(FALLBACK_SEED);
   });
 
-  it("生成主题契约生效：完整合法主题被采用", () => {
-    const valid: Record<string, unknown> = {
-      primary: "#123456", primaryHover: "#123456", gradTo: "#123456",
-      primaryFg: "#ffffff", contentBg: "#f0f0f0", accentBg: "#eeeeee",
-      accentFg: "#333333", sidebarText: "#cccccc", sidebarBg: "#101820",
-      charts: ["#111111", "#222222", "#333333"],
+  it("生成主题契约生效：合法种子色被采用", () => {
+    const valid: Record<string, unknown> = { label: "测试主题", seed: "#123456" };
+    const resolved = resolveIdentityTheme("azure", valid);
+    expect(resolved.id).toBe("generated");
+    expect(resolved.primary).toBe("#123456");
+  });
+
+  it("旧格式（11 字段）生成主题仍可用：primary 当种子色读", () => {
+    // 2026-07-30 之前生成的存量会话没有 seed 字段，只有 primary——见
+    // identity-themes.ts 的 extractSeed 注释：这不是兼容层，primary 本来
+    // 就是"原样保留的种子色"，拿它当新种子色语义上是同一件事。
+    const legacy: Record<string, unknown> = {
+      primary: "#e05d38", primaryHover: "#c2410c", gradTo: "#fdba74",
+      primaryFg: "#ffffff", contentBg: "#f8fafc", accentBg: "#fff0eb",
+      accentFg: "#b23c17", sidebarText: "#e8d9d1", sidebarBg: "#271a15",
+      charts: ["#e05d38", "#f59e0b", "#3b82f6"],
     };
-    expect(resolveIdentityTheme("forest", valid).id).toBe("generated");
+    const resolved = resolveIdentityTheme("tangerine", legacy);
+    expect(resolved.id).toBe("generated");
+    expect(resolved.primary).toBe("#e05d38");
   });
 });
 

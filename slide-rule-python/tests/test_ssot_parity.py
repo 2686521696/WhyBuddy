@@ -19,7 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services import freeform_block, schema_legal
 from services.freeform_block import _theme_palette, is_valid_generated_theme
-from services.identity_theme_gen import IdentityThemeSpec
+from services.identity_palette_hint import FALLBACK_SEED
+from services.identity_theme_gen import IdentityThemeSeedSpec
 from services.v5_model_gate import validate_five_system_model  # noqa: F401 — import 即哨兵
 
 _DATA = Path(__file__).resolve().parent.parent / "services" / "data"
@@ -55,79 +56,48 @@ def test_gate_layout_slots_derived_from_catalog():
     assert "LAYOUT_SLOTS = set(EXPERIENCE_BLOCK_ALLOWED_SLOTS)" in gate_src
 
 
-# ── 主题预设单一真相源 ─────────────────────────────────────
+# ── 生成主题契约：与前端同一判定（2026-07-30 起只有 seed 一个必填字段）──
+#
+# 此前这里还有三条测主题预设的（test_theme_hints_derived_from_presets /
+# test_preset_ids_match_legal_ledger / test_presets_pass_generation_spec）：
+# 那三条锁的是"8 套手挑色板"这个东西本身的一致性，而这次改动的目的正是
+# 删掉那套东西——presets JSON 不再有 themes 键，锁一个已经不存在的结构
+# 没有意义。appIdentity.theme 的 8 个合法 id 仍然在 five_system_legal.json
+# 里、仍然被 gate/repair 校验（v5_model_gate.py/v5_model_repair.py 那两处
+# 没有改），但它们不再对应任何色板，两边不再需要"id 清单一致"这条哨兵。
 
-def test_theme_hints_derived_from_presets():
-    themes = PRESETS["themes"]
-    assert set(freeform_block._THEME_COLOR_HINTS.keys()) == set(themes.keys())
-    for theme_id, hints in freeform_block._THEME_COLOR_HINTS.items():
-        for key, value in hints.items():
-            assert value == themes[theme_id][key], (theme_id, key)
-    assert freeform_block._DEFAULT_THEME_ID == PRESETS["defaultThemeId"]
-
-
-def test_preset_ids_match_legal_ledger():
-    assert sorted(PRESETS["themes"].keys()) == sorted(LEGAL["identityThemes"])
-
-
-def test_presets_pass_generation_spec():
-    """预设本身必须过生成侧同一套校验（hex 格式 + WCAG 对比度）——预设是
-    生成主题的兜底，兜底自己不合格就说不过去。"""
-    for theme_id, theme in PRESETS["themes"].items():
-        payload = {k: v for k, v in theme.items() if k != "id"}
-        IdentityThemeSpec.model_validate(payload)
-
-
-# ── 生成主题契约：与前端同一判定 ───────────────────────────
-
-VALID_THEME = {
-    "primary": "#123456", "primaryHover": "#123456", "gradTo": "#123456",
-    "primaryFg": "#ffffff", "contentBg": "#f0f0f0", "accentBg": "#eeeeee",
-    "accentFg": "#333333", "sidebarText": "#cccccc", "sidebarBg": "#101820",
-    "charts": ["#111111", "#222222", "#333333"],
-}
+VALID_THEME = {"seed": "#123456", "label": "测试主题"}
 
 
 def test_generated_theme_contract_accepts_valid():
     assert is_valid_generated_theme(VALID_THEME)
-    palette = _theme_palette("forest", VALID_THEME)
-    assert palette["primary"] == VALID_THEME["primary"]
-    # label 不在契约必填集里，但 prompt 消费方要读——出口必须兜底，
-    # 缺 label 的合格主题不能把增强层炸成 KeyError（终检实测事故）。
-    assert palette["label"]
+    palette = _theme_palette("azure", VALID_THEME)
+    assert palette["primary"] == VALID_THEME["seed"]
+    assert palette["label"] == VALID_THEME["label"]
 
 
-def test_generated_theme_contract_rejects_partial():
-    """此前的 8 键弱检查会放行缺 sidebarBg/primaryFg 的主题（前端却弃用）——
-    错配窗口下卡片配色与侧栏对不上。现在必须整套拒绝、回落预设。"""
-    missing_sidebar = {k: v for k, v in VALID_THEME.items() if k != "sidebarBg"}
-    assert not is_valid_generated_theme(missing_sidebar)
-    assert _theme_palette("forest", missing_sidebar) == freeform_block._THEME_COLOR_HINTS["forest"]
+def test_generated_theme_contract_rejects_missing_seed():
+    assert not is_valid_generated_theme({"label": "只有标签没有种子色"})
+    # 落回 FALLBACK_SEED 派生的中性色板，不是某个预设 id
+    fallback = _theme_palette("azure", {"label": "只有标签没有种子色"})
+    assert fallback["primary"] == FALLBACK_SEED
 
 
 def test_generated_theme_contract_rejects_trailing_newline():
     """Python 的 $ 豁免尾随换行、JS 不豁免——必须用 fullmatch 堵住这道
     "后端判合格、前端整套弃用"的换行错配窗口。"""
-    sneaky = dict(VALID_THEME, primary="#123456\n")
+    sneaky = dict(VALID_THEME, seed="#123456\n")
     assert not is_valid_generated_theme(sneaky)
 
 
-def test_generated_theme_contract_rejects_bad_shapes():
-    bad_hex = dict(VALID_THEME, primary="red")
-    assert not is_valid_generated_theme(bad_hex)
-    bad_charts = dict(VALID_THEME, charts=["#111111", "#222222"])
-    assert not is_valid_generated_theme(bad_charts)
-    gradient_ok = dict(
-        VALID_THEME, sidebarBg="linear-gradient(180deg, #101820, #203040)"
-    )
-    assert is_valid_generated_theme(gradient_ok)
-    gradient_bad = dict(VALID_THEME, sidebarBg="linear-gradient(red, blue)")
-    assert not is_valid_generated_theme(gradient_bad)
+def test_generated_theme_contract_rejects_bad_hex():
+    assert not is_valid_generated_theme(dict(VALID_THEME, seed="red"))
+    assert not is_valid_generated_theme(dict(VALID_THEME, seed="#12345"))
 
 
 def test_spec_fields_cover_contract():
     contract = PRESETS["generatedThemeContract"]
-    assert set(contract["requiredKeys"]) <= set(IdentityThemeSpec.model_fields.keys())
+    assert set(contract["requiredKeys"]) <= set(IdentityThemeSeedSpec.model_fields.keys())
 
 
 # ── 区块生成放开名单从目录派生（2026-07-27）──────────────────

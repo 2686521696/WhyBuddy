@@ -5,11 +5,8 @@
  * rgb(22,119,255)，也就是 antd-mobile 自带的默认蓝。
  */
 import { describe, it, expect } from "vitest";
-import {
-  admThemeVars,
-  allIdentityThemes,
-  resolveIdentityTheme,
-} from "../identity-themes";
+import { admThemeVars, resolveIdentityTheme } from "../identity-themes";
+import { fallbackIdentityPalette } from "@/lib/identity-palette";
 
 describe("admThemeVars", () => {
   it("主色/前景/强调底都取自主题，不留 antd-mobile 默认值", () => {
@@ -23,8 +20,17 @@ describe("admThemeVars", () => {
     expect(Object.values(vars)).not.toContain("#e7f1ff");
   });
 
-  it("8 套预设逐个都能产出合法色值（没有 undefined 漏进 style）", () => {
-    for (const theme of allIdentityThemes()) {
+  it("任意种子色派生出的主题都能产出合法色值（没有 undefined 漏进 style）", () => {
+    // 2026-07-30 起没有"8 套预设"了，覆盖面换成：兜底色板 + 几个有代表性
+    // 的种子色（跟 identity-palette.test.ts 的 OLD_SEEDS 同源，都是原来
+    // 8 套预设的主色，用来确认派生管线接住这些真实色相时不产出坏值）。
+    const themes = [
+      fallbackIdentityPalette(),
+      resolveIdentityTheme(undefined, { seed: "#1677ff", label: "湛蓝" }),
+      resolveIdentityTheme(undefined, { seed: "#e05d38", label: "橘橙" }),
+      resolveIdentityTheme(undefined, { seed: "#525252", label: "石墨" }),
+    ];
+    for (const theme of themes) {
       for (const [name, value] of Object.entries(admThemeVars(theme))) {
         expect(value, `${theme.id} 的 ${name}`).toMatch(
           /^(#[0-9a-fA-F]{3,8}|rgba?\(.+\))$/

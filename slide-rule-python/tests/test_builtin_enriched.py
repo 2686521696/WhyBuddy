@@ -38,10 +38,10 @@ def test_all_domains_carry_generated_theme():
 
 
 def test_generated_themes_visually_distinct():
-    """四域主色两两不同——演示矩阵的视觉差异是这次增强的目的本身，
+    """四域种子色两两不同——演示矩阵的视觉差异是这次增强的目的本身，
     全收敛到同一色值等于白做（纯文字取色实测会发生，靠色相锚点保住）。"""
-    primaries = [_theme(m).get("primary") for m in MODELS.values()]
-    assert len(set(primaries)) == len(primaries), f"主色出现重复: {primaries}"
+    seeds = [_theme(m).get("seed") for m in MODELS.values()]
+    assert len(set(seeds)) == len(seeds), f"种子色出现重复: {seeds}"
 
 
 def test_preset_theme_id_untouched():

@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from pathlib import Path
 
+from .identity_palette_hint import FALLBACK_SEED, derive_prompt_palette
 from .palette_guard import extract_hex_colors, palette_report, repair_colors
 from .schema_legal import (
     EXPERIENCE_BLOCKS,
@@ -139,64 +140,31 @@ def _freeform_tree_bounds(root: Any) -> "tuple[int, int]":
     return max_depth, count
 
 
-# 8 套身份主题的色板提示——2026-07-26 起不再手抄前端 identity-themes.ts：
-# 与前端同读 data/identity_theme_presets.json（前端经 @identity-themes alias
-# 直读同一份文件构建 THEMES），改预设一处两端同步。这里按需挑字段做 prompt
-# 色板提示（不含 primaryFg/sidebarText——那两个是渲染细节，提示里用不上）。
-_THEME_PRESETS_PATH = Path(__file__).resolve().parent / "data" / "identity_theme_presets.json"
-_THEME_PRESETS: dict[str, Any] = json.loads(_THEME_PRESETS_PATH.read_text(encoding="utf-8"))
-_HINT_FIELDS = (
-    "label", "primary", "primaryHover", "gradTo",
-    "contentBg", "accentBg", "accentFg", "charts", "sidebarBg",
-)
-_THEME_COLOR_HINTS: dict[str, dict[str, Any]] = {
-    theme_id: {k: theme[k] for k in _HINT_FIELDS if k in theme}
-    for theme_id, theme in (_THEME_PRESETS.get("themes") or {}).items()
-}
-_DEFAULT_THEME_ID = str(_THEME_PRESETS.get("defaultThemeId") or "azure")
-
 # 生成主题（appIdentity.generatedTheme）的合格契约——与前端
 # isValidGeneratedTheme 同读 presets JSON 里的 generatedThemeContract。
-# 此前这里只查 8 个键是否存在（不含 sidebarBg/sidebarText/primaryFg、不查
-# 格式），前端却是 11 项严校验：错配窗口下 Python 拿生成主题配了卡片色、
-# 前端整套弃用回落预设——卡片和侧栏配色对不上，正是升版要治的病。
+# 2026-07-30 起契约只剩一个必填字段 seed（路线丙：LLM 只选种子色，其余
+# 字段由 identity_palette_hint.derive_prompt_palette / 前端 deriveIdentityPalette
+# 派生），不再是 11 项严校验。
+_THEME_PRESETS_PATH = Path(__file__).resolve().parent / "data" / "identity_theme_presets.json"
+_THEME_PRESETS: dict[str, Any] = json.loads(_THEME_PRESETS_PATH.read_text(encoding="utf-8"))
 _GENERATED_THEME_CONTRACT: dict[str, Any] = _THEME_PRESETS.get("generatedThemeContract") or {}
 _CONTRACT_HEX_RE = re.compile(str(_GENERATED_THEME_CONTRACT.get("hexPattern") or r"^#[0-9a-fA-F]{6}$"))
-_CONTRACT_GRADIENT_RE = re.compile(
-    str(_GENERATED_THEME_CONTRACT.get("sidebarBgGradientPattern") or r"$^")
-)
-_CONTRACT_HEX_KEYS: tuple = tuple(_GENERATED_THEME_CONTRACT.get("hexKeys") or ())
-_CONTRACT_CHARTS_LEN = int(_GENERATED_THEME_CONTRACT.get("chartsLength") or 3)
 
 
 def is_valid_generated_theme(v: Any) -> bool:
     """生成主题合格判定（与前端 isValidGeneratedTheme 同一契约、同一份 JSON）。
 
-    合格才拿来配卡片色；不合格这里不用、前端也必然回落预设——两端判定
-    物理同源，不存在"后端用了前端弃用"的错配窗口。
+    合格才拿来配卡片色；不合格这里不用、前端也必然回落 FALLBACK_SEED 派生
+    的中性色板——两端判定物理同源，不存在"后端用了前端弃用"的错配窗口。
+
+    fullmatch 不是 match：Python 的 $ 会豁免尾随换行（"#123456\\n" 能过），
+    JS 的 $ 不豁免——用 match 就给"两端同源"留了一道换行错配窗口
+    （Python 判合格拿去配卡片色、前端整套弃用回落预设）。
     """
     if not isinstance(v, dict):
         return False
-    # fullmatch 不是 match：Python 的 $ 会豁免尾随换行（"#123456\n" 能过），
-    # JS 的 $ 不豁免——用 match 就给"两端同源"留了一道换行错配窗口
-    # （Python 判合格拿去配卡片色、前端整套弃用回落预设）。
-    for key in _CONTRACT_HEX_KEYS:
-        val = v.get(key)
-        if not isinstance(val, str) or not _CONTRACT_HEX_RE.fullmatch(val):
-            return False
-    sidebar_bg = v.get("sidebarBg")
-    if not isinstance(sidebar_bg, str) or not (
-        _CONTRACT_HEX_RE.fullmatch(sidebar_bg) or _CONTRACT_GRADIENT_RE.fullmatch(sidebar_bg)
-    ):
-        return False
-    charts = v.get("charts")
-    if (
-        not isinstance(charts, list)
-        or len(charts) != _CONTRACT_CHARTS_LEN
-        or not all(isinstance(c, str) and _CONTRACT_HEX_RE.fullmatch(c) for c in charts)
-    ):
-        return False
-    return True
+    seed = v.get("seed")
+    return isinstance(seed, str) and bool(_CONTRACT_HEX_RE.fullmatch(seed))
 
 _DEVICE_CONTAINER_HINTS: dict[str, str] = {
     "phone": (
@@ -251,20 +219,26 @@ def _image_size_for_device(device: str) -> str:
 
 
 def _theme_palette(theme_id: str, generated_theme: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-    """身份主题现在可能不是 8 预设之一，而是 identity_theme_gen.py 生成的
-    自定义主题——优先用这个（同一个 app 的侧边栏/顶栏就是照它来的，颜色要
-    统一），传了但不合契约就落回 8 预设，不让一个坏字典拖垮整个生成。
+    """身份主题现在可能是 identity_theme_gen.py 生成的种子色——优先用这个
+    （同一个 app 的侧边栏/顶栏就是照它来的，颜色要统一），传了但不合契约
+    就落回 FALLBACK_SEED 派生的中性色板，不让一个坏字典拖垮整个生成。
     判定用 is_valid_generated_theme——与前端同一契约，前端会弃用的主题这里
     绝不拿来配色（否则卡片一个色系、侧栏另一个色系）。
 
-    label 不在契约必填集里（前端渲染也不校验它），但本文件的两个 prompt
-    消费方都要读 hint['label']——这里出口兜底，缺了给个中性名，不让一个
-    可选字段把整层增强炸成 KeyError（终检实测过的事故路径）。"""
+    theme_id（appIdentity.theme 那 8 选 1 的分类字段）2026-07-30 起不再参与
+    颜色决定——它仍然是 gate 校验的合法分类值，但不再对应任何手挑色板；
+    这里保留参数只是为了不动调用方的签名，函数体内不读它。真正的颜色只有
+    两个来源：LLM 选的种子色，或者 FALLBACK_SEED。
+
+    derive_prompt_palette 返回的色板是 OKLCh 近似（不是前端渲染用的权威
+    HCT 派生），只用于这里的 prompt 拼接和下面 palette_guard 的色相参照——
+    见 identity_palette_hint.py 顶部说明，为什么这里不需要跟前端数值一致。"""
+    del theme_id
     if is_valid_generated_theme(generated_theme):
-        theme = dict(generated_theme)  # type: ignore[arg-type]
-        theme.setdefault("label", "自定义主题")
-        return theme
-    return _THEME_COLOR_HINTS.get(theme_id) or _THEME_COLOR_HINTS[_DEFAULT_THEME_ID]
+        seed = str(generated_theme.get("seed"))  # type: ignore[union-attr]
+        label = str(generated_theme.get("label") or "自定义主题")  # type: ignore[union-attr]
+        return derive_prompt_palette(seed, id_="generated", label=label)
+    return derive_prompt_palette(FALLBACK_SEED, id_="fallback", label="中性 · 降级")
 
 
 def _theme_prompt_fragment(theme_id: str, generated_theme: Optional[dict[str, Any]] = None) -> str:
