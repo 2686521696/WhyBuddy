@@ -13,8 +13,15 @@
  *
  * URL 参数：
  *   ?n=14            卡片张数（默认 14，对齐设计稿一屏的密度）
- *   &layout=dense    dense（12 栅格 + grid-auto-flow:row dense，大中小交错）
+ *   &layout=justified  两端对齐行布局（设计稿那种排布，见 lib/justified-rows）
+ *                    | dense（12 栅格 + grid-auto-flow:row dense）
  *                    | uniform（现状：等宽 16:9 四列）
+ *   &rowh=260        justified 档的目标行高
+ *   &boxes=1         **只画方框不挂应用**：用一批混合宽高比演示行布局的几何。
+ *                    为什么需要这一档：真实会话里 9/9 都是 desktop（宽高比全
+ *                    是 1.778），justified 排出来就是等宽卡，看不出"手机档变
+ *                    窄竖条"的效果。而把桌面应用硬塞进手机形状的卡去演示，
+ *                    出来的图是假的。所以几何单独看方框，应用照真实比例排。
  *   &lazy=0          关掉 IntersectionObserver（强制全部立刻挂载，测最坏情况）
  *   &batch=1         走分批挂载排队器（lib/mount-scheduler），默认 0=一起挂
  *
@@ -26,6 +33,7 @@
 
 import React from "react";
 
+import { justifiedRows } from "@/lib/justified-rows";
 import { requestMountPermit } from "@/lib/mount-scheduler";
 import {
   parseFiveSystemModelFromPerSkillEvidence,
@@ -89,6 +97,23 @@ interface Loaded {
   sessionId: string;
   goal: string;
   model: FiveSystemModel;
+  /** 这个应用的画布宽高比——由它自己的 preferredDevice 决定，不是写死 16:9。
+   *  justified 行布局吃的就是这个数：手机档 0.462 会自动变窄竖条。 */
+  aspectRatio: number;
+}
+
+/** 与 AppRuntimeScreen 的 DEVICE_SPECS 同源。平板已下架但比例留着。 */
+const DEVICE_ASPECT: Record<string, number> = {
+  desktop: 1440 / 810,
+  tablet: 1112 / 834,
+  phone: 390 / 844,
+};
+
+function aspectOf(model: FiveSystemModel): number {
+  const pref = String(
+    (model as { appbundle?: { preferredDevice?: unknown } }).appbundle?.preferredDevice ?? ""
+  ).trim();
+  return DEVICE_ASPECT[pref] ?? DEVICE_ASPECT.desktop;
 }
 
 /** 驱动脚本读的那份数据。挂在 window 上，避免让脚本去猜 DOM。 */
@@ -108,18 +133,21 @@ declare global {
 
 function PerfCard({
   item,
-  tier,
+  tier = "md",
   index,
   lazy,
   batch,
   onMounted,
+  absolute,
 }: {
   item: Loaded;
-  tier: Tier;
+  tier?: Tier;
   index: number;
   lazy: boolean;
   batch: boolean;
   onMounted: () => void;
+  /** justified 档：算法算好的绝对坐标。传了就不走栅格跨度那套。 */
+  absolute?: { top: number; left: number; width: number; height: number };
 }) {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = React.useState(!lazy && !batch);
@@ -172,10 +200,17 @@ function PerfCard({
       data-testid="wall-card"
       data-tier={tier}
       data-index={index}
-      style={{
-        gridColumn: `span ${SPAN_COL[tier]}`,
-        gridRow: `span ${rowSpan}`,
-      }}
+      style={
+        absolute
+          ? {
+              position: "absolute",
+              top: absolute.top,
+              left: absolute.left,
+              width: absolute.width,
+              height: absolute.height,
+            }
+          : { gridColumn: `span ${SPAN_COL[tier]}`, gridRow: `span ${rowSpan}` }
+      }
       className="pointer-events-none relative overflow-hidden rounded-xl border border-stone-200 bg-[#f0f2f5] shadow-sm"
     >
       <div style={{ display: "none" }} id={`wall-controls-${index}`} />
@@ -215,12 +250,32 @@ function MountReporter({ onMounted }: { onMounted: () => void }) {
 export function AppWallPerfHarness() {
   const params = new URLSearchParams(window.location.search);
   const n = Math.max(1, Math.min(60, Number(params.get("n") || 14)));
-  const layout = params.get("layout") === "uniform" ? "uniform" : "dense";
+  const layoutParam = params.get("layout") || "justified";
+  const layout: "justified" | "dense" | "uniform" =
+    layoutParam === "uniform" ? "uniform" : layoutParam === "dense" ? "dense" : "justified";
+  const targetRowHeight = Math.max(120, Number(params.get("rowh") || 260));
+  const boxesOnly = params.get("boxes") === "1";
   const lazy = params.get("lazy") !== "0";
   const batch = params.get("batch") === "1";
   // 压测用：让出主线程的方式（postTask 默认 / timer 强制真实间隔）
   const yieldMode = params.get("yield") || "";
   if (yieldMode) (globalThis as { __mountYieldMode?: string }).__mountYieldMode = yieldMode;
+
+  const wrapRef = React.useRef<HTMLDivElement | null>(null);
+  // justified 需要真实容器宽度（算法按宽度铺行）。先给个合理初值避免首帧塌成 0。
+  const [containerW, setContainerW] = React.useState(1400);
+  React.useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const w = el.clientWidth - 32; // 减掉 padding
+      if (w > 0) setContainerW(w);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const [items, setItems] = React.useState<Loaded[] | null>(null);
   const [error, setError] = React.useState("");
@@ -258,6 +313,7 @@ export function AppWallPerfHarness() {
               sessionId: id,
               goal: String(pickGoal(detail) || id),
               model,
+              aspectRatio: aspectOf(model),
             });
           }
         }
@@ -299,39 +355,103 @@ export function AppWallPerfHarness() {
   // 张数不够就循环复用（见文件头说明）
   const cards = Array.from({ length: n }, (_, i) => items[i % items.length]);
 
+  // 几何演示档：混合宽高比 = 桌面 1.778 与手机 0.462 交替出现，比例参照设计稿
+  // （14 张里 4 张手机档）。只画方框，不挂应用——见文件头 &boxes=1 的说明。
+  const demoAspects = Array.from({ length: n }, (_, i) =>
+    [2, 5, 8, 11].includes(i % 12) ? DEVICE_ASPECT.phone : DEVICE_ASPECT.desktop
+  );
+
+  // justified 档：算法给出绝对坐标，容器只负责定位（见 lib/justified-rows）
+  const jl =
+    layout === "justified"
+      ? justifiedRows(
+          (boxesOnly ? demoAspects : cards.map(c => c.aspectRatio)).map(a => ({
+            aspectRatio: a,
+          })),
+          { containerWidth: containerW, targetRowHeight, spacing: GRID_GAP }
+        )
+      : null;
+
   return (
-    <div style={{ padding: 16, background: "#f6f7f9", minHeight: "100vh" }}>
-      <div
-        data-testid="wall-grid"
-        style={
-          layout === "dense"
-            ? {
-                display: "grid",
-                gridTemplateColumns: "repeat(12, 1fr)",
-                gridAutoRows: ROW_STEP,
-                // 「小卡填补大卡产生的空间」原生就有，不需要 masonry 库
-                gridAutoFlow: "row dense",
-                gap: GRID_GAP,
-              }
-            : {
-                display: "grid",
-                gridTemplateColumns: "repeat(4, 1fr)",
-                gap: 16,
-              }
-        }
-      >
-        {cards.map((item, i) => (
-          <PerfCard
-            key={i}
-            item={item}
-            index={i}
-            tier={layout === "dense" ? tierOf(i) : "md"}
-            lazy={lazy}
-            batch={batch}
-            onMounted={onMounted}
-          />
-        ))}
-      </div>
+    <div
+      ref={wrapRef}
+      style={{ padding: 16, background: "#f6f7f9", minHeight: "100vh" }}
+    >
+      {jl ? (
+        <div
+          data-testid="wall-grid"
+          style={{ position: "relative", height: jl.containerHeight }}
+        >
+          {boxesOnly
+            ? jl.boxes.map(box => (
+                <div
+                  key={box.index}
+                  data-testid="wall-card"
+                  data-tier={box.aspectRatio < 1 ? "phone" : "desktop"}
+                  data-index={box.index}
+                  style={{
+                    position: "absolute",
+                    top: box.top,
+                    left: box.left,
+                    width: box.width,
+                    height: box.height,
+                    background: box.aspectRatio < 1 ? "#dbeafe" : "#e7ecf3",
+                    border: "1px solid #c7d2de",
+                    borderRadius: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    font: "12px system-ui",
+                    color: "#475569",
+                  }}
+                >
+                  {box.aspectRatio < 1 ? "手机 0.46" : "桌面 1.78"}
+                  <span style={{ opacity: 0.5, marginLeft: 6 }}>
+                    {Math.round(box.width)}×{Math.round(box.height)}
+                  </span>
+                </div>
+              ))
+            : jl.boxes.map(box => (
+            <PerfCard
+              key={box.index}
+              item={cards[box.index]}
+              index={box.index}
+              lazy={lazy}
+              batch={batch}
+              onMounted={onMounted}
+              absolute={box}
+            />
+          ))}
+        </div>
+      ) : (
+        <div
+          data-testid="wall-grid"
+          style={
+            layout === "dense"
+              ? {
+                  display: "grid",
+                  gridTemplateColumns: "repeat(12, 1fr)",
+                  gridAutoRows: ROW_STEP,
+                  // 「小卡填补大卡产生的空间」原生就有，不需要 masonry 库
+                  gridAutoFlow: "row dense",
+                  gap: GRID_GAP,
+                }
+              : { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }
+          }
+        >
+          {cards.map((item, i) => (
+            <PerfCard
+              key={i}
+              item={item}
+              index={i}
+              tier={layout === "dense" ? tierOf(i) : "md"}
+              lazy={lazy}
+              batch={batch}
+              onMounted={onMounted}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
