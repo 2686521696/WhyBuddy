@@ -348,6 +348,39 @@ def test_sheet_prompt_has_a_checkable_min_glyph_height():
     assert "不许靠缩小字号" in prompt
 
 
+def test_sheet_prompt_drops_the_unused_zone_when_device_is_declared():
+    """07-30 补漏：明说 desktop/phone 时参照板不该再画那个不会用到的档。
+
+    `enrich_monitor_page_overviews` 判定 preferredDevice 明说桌面时，压根
+    不会再跑手机档那次 freeform 设计生成（见上面 test_declared_desktop_
+    skips_the_phone_design），但参照板 prompt 此前没接 device 参数，一直
+    无条件画三区——等于让生图模型白画一块永远用不到的手机 mockup，还挤占
+    了桌面区本该有的画布份额。这里钉住：明说的那档参照板只画两区。
+    """
+    from services.freeform_block import _build_overview_sheet_prompt
+
+    desktop_prompt = _build_overview_sheet_prompt(
+        "测试", {"entities": []}, theme_id="tangerine", device="desktop"
+    )
+    assert "手机首页" not in desktop_prompt, "明说桌面档，参照板不该再画手机 mockup"
+    assert "桌面首页" in desktop_prompt
+    assert "两块" in desktop_prompt and "三块" not in desktop_prompt
+
+    phone_prompt = _build_overview_sheet_prompt(
+        "测试", {"entities": []}, theme_id="tangerine", device="phone"
+    )
+    assert "桌面首页" not in phone_prompt, "明说手机档，参照板不该再画桌面 mockup"
+    assert "手机首页" in phone_prompt
+    assert "两块" in phone_prompt and "三块" not in phone_prompt
+
+    unspecified_prompt = _build_overview_sheet_prompt(
+        "测试", {"entities": []}, theme_id="tangerine", device=""
+    )
+    assert "桌面首页" in unspecified_prompt and "手机首页" in unspecified_prompt, \
+        "判不出来时仍要保守地两档都画（同一条只在明确时才砍的纪律）"
+    assert "三块" in unspecified_prompt
+
+
 def test_declared_desktop_skips_the_phone_design(monkeypatch):
     """明说 preferredDevice=desktop 时不再多花一次调用去设计手机版式。
 
@@ -374,6 +407,30 @@ def test_declared_desktop_skips_the_phone_design(monkeypatch):
     assert calls == ["desktop"], f"明说桌面档却还生成了别的档: {calls}"
     assert "mobile" not in result["page"]["pages"][0]["freeformOverview"], \
         "桌面档不该挂 mobile 键——挂了前端会去渲一个没设计过的档"
+
+
+def test_sheet_generation_receives_the_declared_device(monkeypatch):
+    """`enrich_monitor_page_overviews` 必须把 device 转给参照板生成函数，
+    不能只转给版式 JSON 生成——两处漏一处，参照板就会继续白画多余的档。"""
+    sheet_calls = []
+
+    def fake_sheet(brief, datamodel, **kwargs):
+        sheet_calls.append(kwargs.get("device"))
+        return None
+
+    monkeypatch.setattr("services.freeform_block._generate_overview_sheet_b64", fake_sheet)
+    monkeypatch.setattr("services.freeform_block._supports_image_content_parts", lambda: True)
+    monkeypatch.setattr(
+        "services.freeform_block.generate_freeform_block",
+        lambda brief, datamodel, **kw: {"root": {"tag": "div", "children": []}},
+    )
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"appIdentity": {"theme": "forest"}, "preferredDevice": "desktop"},
+        "page": {"pages": [_monitor_page()]},
+    }
+    enrich_monitor_page_overviews(model)
+    assert sheet_calls == ["desktop"], f"参照板生成没收到 device: {sheet_calls}"
 
 
 def test_declared_phone_designs_only_the_phone_layout(monkeypatch):
