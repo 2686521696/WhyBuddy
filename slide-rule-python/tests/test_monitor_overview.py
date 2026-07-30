@@ -331,10 +331,16 @@ def test_sheet_prompt_keeps_only_what_the_model_cannot_do_itself():
     # 身份消失，而运行时外壳仍按种子渲染 → 内容区跟外壳撞色。
     assert "配色基调用" in prompt
 
-    # 砍掉的四类不该再出现——加回来请先读 docstring 里的取舍记录
+    # 信息层级清单：砍过又加回来了。砍掉当轮出图的图例/坐标轴/单位都还在，
+    # 看着不需要；但"再砍版式要求"那轮暴露了更隐蔽的失败——**漏内容**（采购
+    # 那张少画一张 KPI 卡、整块 blockRef 表格没了）。这条逐项点名每张卡/每个
+    # 图表要有哪几层，是针对漏内容最直接的正面约束，所以留着。
+    assert "信息层级必须画满" in prompt
+    assert "一项都不许漏" in prompt
+
+    # 砍掉的三类不该再出现——加回来请先读 docstring 里的取舍记录
     assert "1.5%" not in prompt, "密度预算已砍（砍后字并没有糊）"
     assert "Ant Design" not in prompt, "控件形态已砍（砍后长相仍是 antd 那套）"
-    assert "信息层级必须画满" not in prompt, "信息层级清单已砍（砍后图例/坐标轴仍在）"
     assert "KPI 指标卡要有设计感" not in prompt, "配色使用规则已砍（砍后仍跟主题种子走）"
 
 
