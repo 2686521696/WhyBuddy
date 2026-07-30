@@ -3449,8 +3449,10 @@ export function AppRuntimeScreen({
                 : "absolute left-3 top-2 flex items-center gap-0.5 rounded-full bg-black/25 p-0.5"
             }
           >
-            {/* 只列这个应用真有设计的档。只剩一档时整条切换器不出现——留一个
-                点了没反应的单选按钮，比不留更让人疑心。 */}
+            {/* 只列这个应用真有设计的档（见 availableDeviceTiers）。
+                只剩一档时**这一档的按钮仍然要在**：它同时是「从代码视图回到
+                应用视图」的唯一入口（旁边的「代码」按钮只负责进去）。一度想
+                过一档就把整条收起来，那会把人留在代码视图里出不来。 */}
             {deviceTiers.map(key => (
               <button
                 key={key}
