@@ -27,6 +27,8 @@ const HINT: IntakeJudgement = {
   confidence: 0.8,
   source: "llm",
   degradedReason: "",
+  device: "unspecified",
+  deviceReason: "",
 };
 
 afterEach(() => {

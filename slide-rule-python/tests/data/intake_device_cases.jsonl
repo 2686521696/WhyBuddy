@@ -1,0 +1,40 @@
+{"id": "dev_phone_001", "text": "运动场馆预订小程序，用户选场地时段下单", "expect": "phone", "note": "Trae 语料 A 组；小程序 + 个人下单"}
+{"id": "dev_phone_002", "text": "此物有期——家庭物品到期收纳管理小程序", "expect": "phone", "note": "Trae 语料 A 组；随手记、个人日常"}
+{"id": "dev_phone_003", "text": "FocusFlow 时间管理 APP", "expect": "phone", "note": "Trae 语料 A 组；明说 APP"}
+{"id": "dev_phone_004", "text": "做个情绪管理 App，随时记一下当下的情绪和触发事件", "expect": "phone", "note": "Trae 语料 A 组；随时记 = 走动中单手"}
+{"id": "dev_phone_005", "text": "拍照识别故障、AI 带着一步步排查，修完自动出工单——工业现场运维", "expect": "phone", "note": "Trae 语料 A 组；拍照 + 现场，姿态是站着走动"}
+{"id": "dev_phone_006", "text": "康复小助理，脑梗出院后在家按计划做康复动作并记录完成情况", "expect": "phone", "note": "Trae 语料 A 组；家里、患者本人操作"}
+{"id": "dev_phone_007", "text": "大学生电动车一站式服务，扫码取车、报修、缴费", "expect": "phone", "note": "Trae 语料 A 组；扫码 = 站在车旁"}
+{"id": "dev_phone_008", "text": "校园即时互助，发个求助别人就近接单", "expect": "phone", "note": "Trae 语料 A 组；即时 + 就近"}
+{"id": "dev_phone_009", "text": "闲置会员卡转让撮合，拍张卡面就能挂出去", "expect": "phone", "note": "Trae 语料 A 组；C2C + 拍照"}
+{"id": "dev_phone_010", "text": "城市旅行规划助手，边逛边调整今天的行程", "expect": "phone", "note": "Trae 语料 A 组；边逛边用"}
+{"id": "dev_desktop_001", "text": "网络智能运维中台，网络架构师看拓扑和告警", "expect": "desktop", "note": "Trae 语料 A 组；中台 + 多列对照 + 长时段坐姿"}
+{"id": "dev_desktop_002", "text": "人机混编组织的 HR 管理平台，管人员、编制与考核", "expect": "desktop", "note": "Trae 语料 A 组；后台管理"}
+{"id": "dev_desktop_003", "text": "跨境电商直播数据分析系统，看各场次转化与选品表现", "expect": "desktop", "note": "Trae 语料 A 组；分析 + 多指标对照"}
+{"id": "dev_desktop_004", "text": "黑灰产分析系统，关联查询与线索归并", "expect": "desktop", "note": "Trae 语料 A 组；关联查询要大屏"}
+{"id": "dev_desktop_005", "text": "智能仓库全流程作业管理，收货上架拣货复核发运", "expect": "desktop", "note": "Trae 语料 A 组；全流程管理侧（作业执行侧才是手机）"}
+{"id": "dev_desktop_006", "text": "税务合规智能体系统，规则库、申报底稿与风险清单", "expect": "desktop", "note": "Trae 语料 A 组；底稿类工作坐着做"}
+{"id": "dev_desktop_007", "text": "自媒体素材管理 Web 平台，素材入库打标与批量检索", "expect": "desktop", "note": "Trae 语料 A 组；明说 Web + 批量"}
+{"id": "dev_desktop_008", "text": "企业级私人关系信息库，条目录入、关系图与权限分级", "expect": "desktop", "note": "Trae 语料 A 组；关系图 + 权限分级"}
+{"id": "dev_desktop_009", "text": "铜排加工智能辅助系统，工艺参数与排产", "expect": "desktop", "note": "Trae 语料 A 组；参数与排产"}
+{"id": "dev_desktop_010", "text": "高考志愿填报推荐与交付平台，院校专业对比与方案生成", "expect": "desktop", "note": "Trae 语料 A 组；多列对比是桌面强项"}
+{"id": "dev_hard_phone_001", "text": "巡检工单，工人到现场拍照上传、勾选检查项、当场提交", "expect": "phone", "note": "硬负样本：有「工单」这种后台词，但姿态是站着走动 → 手机"}
+{"id": "dev_hard_phone_002", "text": "仓库盘点，扫码逐箱核对数量并当场登记差异", "expect": "phone", "note": "硬负样本：有「仓库」，但扫码逐箱是走动作业 → 手机"}
+{"id": "dev_hard_phone_003", "text": "门店导购的到店接待记录与试穿反馈登记", "expect": "phone", "note": "硬负样本：有「记录/登记」，但导购站在客人旁边 → 手机"}
+{"id": "dev_hard_phone_004", "text": "护工上门服务的到岗打卡、服务项目勾选与家属签字", "expect": "phone", "note": "硬负样本：有「服务项目管理」味，但上门 + 签字 → 手机"}
+{"id": "dev_hard_phone_005", "text": "农机手在地里领取作业单、拍照留证、提交作业量", "expect": "phone", "note": "硬负样本：有「作业单管理」味，但在地里 → 手机"}
+{"id": "dev_hard_desk_001", "text": "外卖骑手运力调度看板，看各区域在线骑手与超时单", "expect": "desktop", "note": "硬负样本：有「骑手」这种现场词，但用的人是调度员坐在后台 → 桌面"}
+{"id": "dev_hard_desk_002", "text": "员工打卡数据的月度汇总、异常判定与补卡审批", "expect": "desktop", "note": "硬负样本：有「打卡」，但汇总审批是 HR 坐着做 → 桌面"}
+{"id": "dev_hard_desk_003", "text": "配送轨迹回放与异常路线分析", "expect": "desktop", "note": "硬负样本：有「配送/轨迹」，但回放分析要大屏 → 桌面"}
+{"id": "dev_hard_desk_004", "text": "现场巡检结果的汇总看板与整改率统计", "expect": "desktop", "note": "硬负样本：句子里就有「现场巡检」，但这一页是汇总统计 → 桌面"}
+{"id": "dev_hard_desk_005", "text": "扫码枪采集的入库数据对账与差异处理", "expect": "desktop", "note": "硬负样本：有「扫码」，但对账处理是坐着做 → 桌面"}
+{"id": "dev_unspec_001", "text": "精品咖啡烘焙工坊的生豆库存、烘焙批次与杯测品鉴记录管理", "expect": "unspecified", "note": "真实跑过的原话；既可能是店里手机随手记，也可能是后台管理，没有姿态信号"}
+{"id": "dev_unspec_002", "text": "社区宠物诊所的预约与分诊", "expect": "unspecified", "note": "前台坐着接待 vs 医生走动，两说"}
+{"id": "dev_unspec_003", "text": "二手乐器寄售与鉴定平台", "expect": "unspecified", "note": "没有任何设备或姿态信号"}
+{"id": "dev_unspec_004", "text": "把公司的差旅申请流程数字化", "expect": "unspecified", "note": "提交侧像手机、审批侧像桌面，整体没定。原用例「把公司报销流程数字化」与 new_business_need 规则正文的例句逐字重合，换掉（泄题）"}
+{"id": "dev_unspec_005", "text": "我们仓库交接班总是对不上，想弄个东西管一管", "expect": "unspecified", "note": "口语化需求没提设备。原用例与 new_business_need 规则正文例句逐字重合，换掉（泄题）"}
+{"id": "dev_unspec_006", "text": "摊位租赁调度，摊主挂位、商户申租、验收交接", "expect": "unspecified", "note": "三个角色姿态不同，整体判不出主档。原用例「农机租赁调度…」与 too_vague 规则正文的实测教训例句逐字重合，换掉（泄题）"}
+{"id": "dev_explicit_001", "text": "给外卖骑手做个接单 App", "expect": "phone", "note": "明说 App"}
+{"id": "dev_explicit_002", "text": "做个手机端的巡店打分工具", "expect": "phone", "note": "明说手机端"}
+{"id": "dev_explicit_003", "text": "做个 PC 端的合同管理后台", "expect": "desktop", "note": "明说 PC 端"}
+{"id": "dev_explicit_004", "text": "网页版的客户跟进管理，销售在电脑上用", "expect": "desktop", "note": "明说网页版 + 电脑"}

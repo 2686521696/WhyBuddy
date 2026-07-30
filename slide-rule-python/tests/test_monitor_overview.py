@@ -226,7 +226,9 @@ def test_enrich_writes_freeform_overview_on_success(monkeypatch):
     monkeypatch.setattr("services.freeform_block.generate_freeform_block", fake_generate)
     model = {
         "datamodel": _datamodel(),
-        "appbundle": {"appIdentity": {"theme": "forest"}, "preferredDevice": "desktop"},
+        # 2026-07-30：这条测的是「两档都设计」，所以**不能**声明 preferredDevice
+        # ——明说 desktop 现在会跳过手机档（那条路径由下面两条新测试覆盖）。
+        "appbundle": {"appIdentity": {"theme": "forest"}},
         "page": {"pages": [_monitor_page()]},
     }
     result = enrich_monitor_page_overviews(model)
@@ -235,7 +237,7 @@ def test_enrich_writes_freeform_overview_on_success(monkeypatch):
     assert overview["root"] == fake_content["root"]
     # 手机档另挂一份（形状照 react-grid-layout 的 layouts 键控回退）
     assert overview["mobile"]["root"] == fake_content["root"]
-    assert calls == ["desktop", "phone"]
+    assert calls == ["", "phone"]  # 未声明设备档 → 默认档 + 手机档
     assert captured_kwargs["theme_id"] == "forest"
     # 原有固定骨架字段必须原样保留——freeformOverview 是追加，不是替换
     assert result["page"]["pages"][0]["stats"]
@@ -344,3 +346,89 @@ def test_sheet_prompt_has_a_checkable_min_glyph_height():
     prompt = _build_overview_sheet_prompt("测试", {"entities": []}, theme_id="tangerine")
     assert "1.5%" in prompt
     assert "不许靠缩小字号" in prompt
+
+
+def test_declared_desktop_skips_the_phone_design(monkeypatch):
+    """明说 preferredDevice=desktop 时不再多花一次调用去设计手机版式。
+
+    这是 07-30 的省时点。此前是无条件两档都生成，而扫过真实数据后发现 9 个
+    应用的 preferredDevice **全是 desktop**——不是它们真都是桌面应用，是生成
+    契约里这个字段只声明了合法域、没给判据，模型无从选择。于是那次调用几乎
+    每轮都在为一个没人做过的判断买单（约 67s/总览页）。契约补了姿态判据之后
+    这个字段有意义了，就该用它省掉这次调用。
+    """
+    calls = []
+
+    def fake_generate(brief, datamodel, **kwargs):
+        calls.append(kwargs.get("device"))
+        return {"root": {"tag": "div", "style": {}, "children": []}}
+
+    monkeypatch.setattr("services.freeform_block.generate_freeform_block", fake_generate)
+    monkeypatch.setattr("services.freeform_block._generate_overview_sheet_b64", lambda *a, **k: None)
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"appIdentity": {"theme": "forest"}, "preferredDevice": "desktop"},
+        "page": {"pages": [_monitor_page()]},
+    }
+    result = enrich_monitor_page_overviews(model)
+    assert calls == ["desktop"], f"明说桌面档却还生成了别的档: {calls}"
+    assert "mobile" not in result["page"]["pages"][0]["freeformOverview"], \
+        "桌面档不该挂 mobile 键——挂了前端会去渲一个没设计过的档"
+
+
+def test_declared_phone_designs_only_the_phone_layout(monkeypatch):
+    """明说手机档时也只生成一次（原本就是这样，这条把它钉住）。"""
+    calls = []
+    monkeypatch.setattr(
+        "services.freeform_block.generate_freeform_block",
+        lambda brief, datamodel, **kw: (calls.append(kw.get("device")),
+                                        {"root": {"tag": "div", "children": []}})[1],
+    )
+    monkeypatch.setattr("services.freeform_block._generate_overview_sheet_b64", lambda *a, **k: None)
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"appIdentity": {"theme": "forest"}, "preferredDevice": "phone"},
+        "page": {"pages": [_monitor_page()]},
+    }
+    enrich_monitor_page_overviews(model)
+    assert calls == ["phone"], f"明说手机档却生成了别的档: {calls}"
+
+
+def test_unspecified_device_still_designs_both(monkeypatch):
+    """判不出来时仍然两档都生成——**只在明确的时候才砍**。
+
+    宁可多花一分钟，也不要让用户切到手机档看见一个被 CSS 掰弯的桌面版式。
+    这条纪律跟入站判定那侧同源（device 缺省是 unspecified 而不是 desktop）。
+    """
+    calls = []
+    monkeypatch.setattr(
+        "services.freeform_block.generate_freeform_block",
+        lambda brief, datamodel, **kw: (calls.append(kw.get("device")),
+                                        {"root": {"tag": "div", "children": []}})[1],
+    )
+    monkeypatch.setattr("services.freeform_block._generate_overview_sheet_b64", lambda *a, **k: None)
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"appIdentity": {"theme": "forest"}},
+        "page": {"pages": [_monitor_page()]},
+    }
+    enrich_monitor_page_overviews(model)
+    assert "phone" in calls, f"未声明设备档时应仍设计手机版式: {calls}"
+
+
+def test_generation_contract_teaches_how_to_pick_the_device():
+    """契约里必须有「怎么选 preferredDevice」这段判据，而且必须是姿态口径。
+
+    只声明合法域不给判据的后果是实测出来的：9 个真实应用 9 个 desktop，字段是
+    死的，下游那个省时判断（明说桌面就跳过手机档）也就无从做起。两个方向的
+    坑也要在正文里——只教一个方向，模型会把所有现场词都往那一边推。
+    """
+    from services.schema_legal import experience_block_prompt_block
+
+    body = experience_block_prompt_block()
+    assert "preferredDevice" in body
+    assert "POSTURE" in body.upper(), "判据必须是姿态，不是关键词"
+    assert "courier" in body and "dispatcher" in body, "缺「带现场词的后台需求」这一向"
+    assert "inspection work order" in body and "walking around" in body, \
+        "缺「带后台词的现场需求」这一向"
+    assert "OMIT the field" in body, "没告诉模型判不出来就别写——那才是默认两档都生成的入口"

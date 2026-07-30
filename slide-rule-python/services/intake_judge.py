@@ -56,6 +56,11 @@ from typing import Any, Literal, Optional
 
 Verdict = Literal["real", "iteration", "vague", "off_topic", "meta", "out_of_scope"]
 Action = Literal["proceed", "hint"]
+# 设备档。**只有三个取值，没有 tablet**——appbundle.preferredDevice 的合法域是
+# desktop/tablet/phone 三档，但平板范式的渲染代码已下架（ADR-0001），这里判出
+# tablet 下游也没有对应的设计与外壳，不如不给这个选项（能力面纪律：不许判出
+# 系统做不到的东西）。unspecified 见 Judgement.device 的说明。
+Device = Literal["desktop", "phone", "unspecified"]
 
 _ENABLED_ENV = "SLIDERULE_INTAKE_JUDGE_ENABLED"
 _BLOCKING_ENV = "SLIDERULE_INTAKE_JUDGE_BLOCKING"
@@ -103,6 +108,12 @@ class Judgement:
     confidence: float = 1.0
     source: str = "llm"  # precheck | llm | degraded
     degraded_reason: str = ""
+    # 2026-07-30：设备档随判定一起出。**刻意不新开一次 LLM 调用**——入站判定
+    # 每次输入都已经在调一次了，多抽一个槽位成本是 0；单独加一次"判设备"是
+    # 一次完整往返。unspecified 是一等取值，不是 None 的别名：判不出来跟
+    # "判出来是桌面"必须能区分开，否则下游没法决定该不该两档都生成。
+    device: Device = "unspecified"
+    device_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -114,6 +125,8 @@ class Judgement:
             "confidence": self.confidence,
             "source": self.source,
             "degradedReason": self.degraded_reason,
+            "device": self.device,
+            "deviceReason": self.device_reason,
         }
 
 
@@ -197,6 +210,40 @@ def _out_of_scope_block() -> str:
     return "下面这五类做不了（不是字段不够用，是产品形态根本不在上面那五个部分里）：\n" + "\n".join(
         f"  · {desc}" for _, desc in _OUT_OF_SCOPE_KINDS
     )
+
+
+# ── 设备档判据（2026-07-30）───────────────────────────────────────────
+# 为什么值得单独判：此前 appbundle.preferredDevice 虽然在生成契约里、门禁也校验
+# 合法域，但契约只写了一句"MAY include preferredDevice 'desktop'|'tablet'|'phone'"，
+# **没给任何该怎么选的判据**。实测扫了会话库与产出库：9 个应用 9 个 desktop，
+# 这个字段是死的。于是总览页两档版式永远都得生成一遍手机版——不是因为需要，
+# 是因为没人知道要不要。
+#
+# 判据用**姿态**而不是关键词。这是设计行业的老概念（Alan Cooper《About Face》的
+# posture：sovereign 长时段独占屏幕 vs transient 短暂打断式），也是 Flutter 官方
+# adaptive/responsive 那篇的落点——它明确说判据应该是"可用空间与是否好用"，
+# 而不是设备型号。关键词判会立刻栽在两个方向上：
+#   「骑手运力调度看板」有"骑手"但用的人是调度员坐在后台 → 桌面
+#   「巡检工单现场拍照上传」有"工单"但人站着走动 → 手机
+# 所以规则正文里两个方向的硬负样本都写上（跟拒绝档同一套办法）。
+_DEVICE_RUBRIC = (
+    "顺带判一件事：这个系统主要该在**哪种设备**上用。判据是**使用姿态**"
+    "（人在什么状态下操作），不是句子里出现了什么词。\n"
+    "  · phone —— 站着、走动、单手、在现场、即时上报：扫码/拍照/打卡/签字/"
+    "随手记一笔，或者使用者是个人在日常生活里用（记账、日程、情绪、预约、下单）。\n"
+    "  · desktop —— 坐着、长时段、多列对照、批量操作、审批与配置：看板/中台/"
+    "后台/分析/汇总/对账/排产/关系图/权限分级，使用者是在工位上处理一批事的人。\n"
+    "  · unspecified —— **没有姿态信号就必须选这个**。别硬猜。\n"
+    "两个方向的坑（这两组最容易判错，判的是谁在什么状态下用，不是词）：\n"
+    "  「外卖骑手运力调度看板」有「骑手」，但用的人是调度员坐在后台 → desktop\n"
+    "  「员工打卡的月度汇总与补卡审批」有「打卡」，但汇总审批是 HR 坐着做 → desktop\n"
+    "  「巡检工单，工人到现场拍照上传当场提交」有「工单」，但人站着走动 → phone\n"
+    "  「仓库盘点，扫码逐箱核对」有「仓库」，但扫码逐箱是走动作业 → phone\n"
+    "用户明说了「App」「手机端」「小程序」「PC 端」「网页版」「电脑上用」就直接照办，"
+    "不用再推姿态。\n"
+    "拿不准、或者一句话里几个角色姿态不同（提交侧像手机、审批侧像桌面）→ "
+    "unspecified。**判 unspecified 不丢人，硬猜错了下游会按错的档去设计版式。**"
+)
 
 
 # ── 第 1 层：规则表（Parlant 式 condition/action + 适用域 + 优先级）──
@@ -343,8 +390,11 @@ def build_messages(text: str, *, has_app: bool, app_summary: str = "") -> list[d
         '  "confidence": 0.0 到 1.0 的小数,\n'
         '  "guidance": "给用户看的引导话术（verdict 不是 real/iteration 时必填，'
         '中文，友好、具体、不说教，直接告诉他可以怎么说）",\n'
-        '  "rewrite": ["改写示例1", "改写示例2"]\n'
+        '  "rewrite": ["改写示例1", "改写示例2"],\n'
+        '  "device": desktop|phone|unspecified,\n'
+        '  "deviceReason": "一句中文，说明按什么姿态判的"\n'
         "}\n\n"
+        f"{_DEVICE_RUBRIC}\n\n"
         "判定纪律：\n"
         "- 拿不准就往宽了判（real/iteration）。误拦一个真需求的代价，远大于"
         "放过一句闲聊。\n"
@@ -368,6 +418,7 @@ def build_messages(text: str, *, has_app: bool, app_summary: str = "") -> list[d
 
 
 _VALID_VERDICTS = {"real", "iteration", "vague", "off_topic", "meta", "out_of_scope"}
+_VALID_DEVICES = {"desktop", "phone", "unspecified"}
 
 
 def _coerce(payload: dict[str, Any], *, has_app: bool) -> Judgement:
@@ -392,6 +443,12 @@ def _coerce(payload: dict[str, Any], *, has_app: bool) -> Judgement:
     confidence = min(1.0, max(0.0, confidence))
     rewrite = payload.get("rewrite")
     rewrite = [str(x)[:80] for x in rewrite][:3] if isinstance(rewrite, list) else []
+    # 设备档：不合法一律落 unspecified，**不猜**。这里最要紧的是别把"模型没
+    # 回这个字段"和"模型判成桌面"混成一件事——前者应该两档都生成，后者才该
+    # 只生成桌面档。所以缺省值是 unspecified 而不是 desktop。
+    device = str(payload.get("device") or "").strip().lower()
+    if device not in _VALID_DEVICES:
+        device = "unspecified"
     return Judgement(
         verdict=verdict,  # type: ignore[arg-type]
         action=_resolve_action(verdict, confidence),  # type: ignore[arg-type]
@@ -400,6 +457,8 @@ def _coerce(payload: dict[str, Any], *, has_app: bool) -> Judgement:
         rewrite=rewrite,
         confidence=confidence,
         source="llm",
+        device=device,  # type: ignore[arg-type]
+        device_reason=str(payload.get("deviceReason") or "")[:200],
     )
 
 

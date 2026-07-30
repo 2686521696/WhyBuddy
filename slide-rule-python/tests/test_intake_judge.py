@@ -11,6 +11,7 @@ scripts/eval_intake_judge.py 对真网关跑 JSONL 用例集来量（当前 35/3
 - 第一版永远不阻断
 """
 
+import collections
 import json
 import re
 import sys
@@ -261,3 +262,90 @@ def test_prompt_does_not_leak_the_cases_it_is_measured_on():
         assert r["text"] not in body, f"{r['id']} 整句出现在 prompt 里"
         for q in quoted:
             assert q not in r["text"], f"{r['id']} 与 prompt 例句「{q}」重合"
+
+
+# ── 设备档：随判定一起出，零额外调用（2026-07-30）──────────────────
+
+def test_device_defaults_to_unspecified_not_desktop():
+    """缺省必须是 unspecified 而不是 desktop。
+
+    这是整件事的支点：「模型没回这个字段」和「模型判成桌面」下游处理完全不同
+    ——前者要两档都生成，后者才只生成桌面档。缺省填 desktop 等于把"判不出来"
+    伪装成"判出来是桌面"，手机档设计会从此再也不生成，而且不报错。
+    """
+    payload = {"verdict": "real", "reason": "r", "confidence": 0.9}
+    j = ij.judge_turn("社区宠物诊所预约系统", has_app=False, llm_json_fn=lambda _m: payload)
+    assert j.device == "unspecified"
+
+
+@pytest.mark.parametrize("raw", ["tablet", "watch", "", None, "DESKTOP ", 123])
+def test_illegal_device_falls_back_to_unspecified(raw):
+    """不合法一律落 unspecified，不猜。tablet 特别要落回——它在
+    preferredDevice 的合法域里，但平板渲染代码已下架（ADR-0001），
+    判出来下游没有对应的设计与外壳。"""
+    payload = {"verdict": "real", "reason": "r", "confidence": 0.9, "device": raw}
+    j = ij.judge_turn("随便一个需求", has_app=False, llm_json_fn=lambda _m: payload)
+    assert j.device in ij._VALID_DEVICES
+    if raw == "DESKTOP ":
+        assert j.device == "desktop", "大小写与空格应被规范化"
+    else:
+        assert j.device == "unspecified"
+
+
+def test_device_rides_the_existing_call_no_extra_roundtrip():
+    """设备档必须搭在**同一次** LLM 调用上。单独判一次是一次完整往返，
+    而入站判定本来每次输入都已经在调了——多抽一个槽位成本是 0。"""
+    calls = []
+
+    def spy(messages):
+        calls.append(messages)
+        return {"verdict": "real", "reason": "r", "confidence": 0.9, "device": "phone"}
+
+    j = ij.judge_turn("给外卖骑手做个接单 App", has_app=False, llm_json_fn=spy)
+    assert len(calls) == 1, f"设备档不该新起调用，实际调了 {len(calls)} 次"
+    assert j.device == "phone"
+
+
+def test_device_rubric_judges_posture_not_keywords():
+    """判据必须是姿态，且两个方向的硬负样本都要在 prompt 正文里。
+
+    只写一个方向不够：只教「骑手→桌面」它会把所有现场词都往桌面推，只教
+    「工单→手机」反过来。两组都在，模型才学到"判的是谁在什么状态下用"。
+    """
+    body = ij.build_messages("随便一句", has_app=False)[0]["content"]
+    assert "姿态" in body
+    assert "骑手" in body and "调度员" in body, "缺「带现场词的后台需求」这一向"
+    assert "巡检" in body and "站着走动" in body, "缺「带后台词的现场需求」这一向"
+    assert "unspecified" in body and "别硬猜" in body
+
+
+def test_device_never_offers_tablet():
+    """判词里不许出现 tablet 选项——判出来也没有对应的设计与外壳，
+    等于让模型判一个系统做不到的东西（跟能力面同一条纪律）。"""
+    body = ij.build_messages("随便一句", has_app=False)[0]["content"]
+    assert '"device": desktop|phone|unspecified' in body
+    assert "tablet" not in ij._VALID_DEVICES
+
+
+def test_device_cases_are_wellformed():
+    path = Path(__file__).parent / "data" / "intake_device_cases.jsonl"
+    rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert len(rows) >= 30
+    ids = [r["id"] for r in rows]
+    assert len(ids) == len(set(ids)), "用例 id 重复"
+    for r in rows:
+        assert r["expect"] in ij._VALID_DEVICES, f"{r['id']} 期望值非法"
+    by = collections.Counter(r["expect"] for r in rows)
+    assert all(by[d] >= 5 for d in ij._VALID_DEVICES), f"某档样本不足: {dict(by)}"
+    # 两个方向的硬负样本都要有——这套判据的考点全在这里
+    assert sum(1 for r in rows if r["id"].startswith("dev_hard_phone")) >= 3
+    assert sum(1 for r in rows if r["id"].startswith("dev_hard_desk")) >= 3
+
+
+def test_device_rubric_examples_not_in_the_graded_cases():
+    """prompt 例句不许跟评测用例重合——拒绝档那轮栽过一次（100%/100% 是背题）。"""
+    body = ij.build_messages("随便一句", has_app=False)[0]["content"]
+    path = Path(__file__).parent / "data" / "intake_device_cases.jsonl"
+    rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    for r in rows:
+        assert r["text"] not in body, f"{r['id']} 整句出现在 prompt 里"

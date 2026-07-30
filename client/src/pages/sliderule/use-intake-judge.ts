@@ -27,6 +27,15 @@ export type IntakeVerdict =
   // 是"这件事做不了，但旁边这件做得了"。
   | "out_of_scope";
 
+/**
+ * 设备档（2026-07-30）。搭在同一次判定调用上，零额外往返。
+ *
+ * `unspecified` 是**一等取值不是 null 的别名**：判不出来跟判出来是桌面，
+ * 下游处理完全不同——前者两档版式都生成，后者只生成桌面档并省掉约 67s。
+ * 所以这里也不允许缺省成 "desktop"。
+ */
+export type IntakeDevice = "desktop" | "phone" | "unspecified";
+
 export interface IntakeJudgement {
   verdict: IntakeVerdict;
   action: "proceed" | "hint";
@@ -36,6 +45,8 @@ export interface IntakeJudgement {
   confidence: number;
   source: string;
   degradedReason: string;
+  device: IntakeDevice;
+  deviceReason: string;
 }
 
 // 这个集合是**闭集**：后端加了判词而这里没加，parseJudgement 会返回 null，
@@ -75,6 +86,11 @@ export function parseJudgement(body: unknown): IntakeJudgement | null {
     confidence: typeof raw.confidence === "number" ? raw.confidence : 1,
     source: String(raw.source ?? ""),
     degradedReason: String(raw.degradedReason ?? ""),
+    // 不认的值一律落 unspecified，**不猜**。后端已经收敛过一遍，这里是第二道
+    // ——前端独立判一次，是因为这个字段将来会被别的调用方消费，不能假定
+    // 只有后端那条路径写它。
+    device: raw.device === "desktop" || raw.device === "phone" ? raw.device : "unspecified",
+    deviceReason: String(raw.deviceReason ?? ""),
   };
 }
 

@@ -1890,7 +1890,26 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
             #
             # 失败不影响主产物：手机那份生不出来就不挂 mobile 键，前端自动
             # 回退到 root（与 RGL 的"往更大的档回退"同一语义）。
-            if device != "phone":
+            # 2026-07-30：手机那份只在**没明说是桌面档**时才生成。
+            #
+            # 此前是无条件生成，理由是"两档都得有设计"。但扫了一遍真实数据：
+            # 9 个应用的 preferredDevice 全是 desktop——不是因为它们真都是桌面
+            # 应用，而是因为生成契约里这个字段**只声明了合法域、没给任何判据**
+            # （见 schema_legal 的 Step 8），模型无从选择就一路倒向 desktop。
+            # 于是"两档都生成"实际是在为一个没人做过的判断买单。
+            #
+            # 现在契约里补了姿态判据（_DEVICE_RUBRIC，与入站判定共用同一份），
+            # 这个字段有意义了，就该用它来省掉这次调用：明说 desktop 就不生成
+            # 手机档（约 67s / 总览页）。unspecified 或没写仍然两档都生成——
+            # **只在明确的时候才砍**，判不出来时宁可多花一分钟，也不要让用户
+            # 切到手机档看见一个被 CSS 掰弯的桌面版式。
+            #
+            # 这也正是 M3 WindowWidthSizeClass.fromWidth(w, density,
+            # supportedSizeClasses) 的语义：布局声明自己有哪几档，解析器在
+            # **现有的**档里挑最合适的，不要求全都存在。少生成一档不是降级，
+            # 是如实声明"这个应用只有这一档"。
+            declared_desktop_only = device == "desktop"
+            if device != "phone" and not declared_desktop_only:
                 try:
                     mobile_content = generate_freeform_block(
                         brief, datamodel, theme_id=theme_id, device="phone",
