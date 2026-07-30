@@ -1,21 +1,20 @@
 """手机档参照图的画布形状（2026-07-30）。
 
-起因：`_DEVICE_IMAGE_SIZE["phone"]` 填的是 "1024x1792"，注释写着"手机该是
-竖屏"——那句是错的，而且错得很安静。活体探针（四个竖版尺寸逐个真发一轮）
-测出这个生图端点**根本不返回竖图**：
+起因：`_DEVICE_IMAGE_SIZE["phone"]` 填 "1024x1792"、注释写着"手机该是竖屏"，
+但真出图从来不是竖的。查下去发现这个端点有个不直觉的行为：
 
-    1024x1792 → 1254x1254    1024x1536 → 1254x1254
-    1536x2048 → 1254x1254    2160x3840 → 1254x1254
+    **尺寸参数只决定像素预算档位，长宽比由提示词内容决定。**
 
-四个不同长宽比、不同像素量的竖版请求收敛到同一张方图，说明服务端按档位重排，
-不是"传什么给什么"。于是过去每次手机档生图：代码以为拿到 9:16 竖图、prompt
-也照着竖屏写（"比例偏竖长"/"整体竖屏比例"），实际拿到的是 1:1 方图，而 prompt
-里还跟着一句"充分利用整个画布/边缘到边缘"——两句合起来把模型引向"把手机界面
-横向摊开填满方画布"，画出来的正是手机上不可能有的比例。参照图形状错了不会报
-错，只会让设计 LLM 静默学到错的比例。
+探针过程本身值得记，因为中间得出过一个错结论：第一轮用一句没有形状线索的
+中性提示词（"纯浅灰背景，正中一个大号数字 1"）测了四个竖版尺寸，全部回落成
+1254x1254 方图，连 skill 包那套 {"image_size":"2K","aspect_ratio":"9:16"}
+也一样（能通，但 aspect_ratio 被忽略）——据此一度判定"这个端点给不了竖图"。
+**那是错的**：换成明说"生成一张手机 App 界面草样、手机竖屏比例"的提示词、
+尺寸照样传 "1024x1024"，出图就是 864x1821 真竖图。错的是探针的提示词，
+不是端点。
 
-这组测试钉住修复后的三件事：请求的尺寸与拿到的形状一致（如实要方图）、手机档
-prompt 不再自称竖屏、以及"铺满画布"那句不对手机档说。
+所以这组测试钉的是**提示词里那句竖屏措辞不能丢**——它是功能性的，不是描述
+性的：删了就变回方图，而且不会报错，只会让设计 LLM 静默学到错的比例。
 """
 
 import sys
@@ -35,55 +34,79 @@ from services.identity_theme_gen import (
 _EMPTY_DATAMODEL: dict = {"entities": []}
 
 
-def test_phone_requests_a_square_canvas_not_a_portrait_one():
-    """如实请求方图。传竖版尺寸也只会收到 1254x1254，那就别传竖版——
-    请求与产出一致，下一个读代码的人才不会再被"手机该是竖屏"骗一次。"""
-    size = _image_size_for_device("phone")
-    w, h = (int(x) for x in size.split("x"))
-    assert w == h, f"手机档应请求方形画布（端点给不了竖图），实际请求 {size}"
-    # 桌面档仍是宽屏——这条修复不该把宽屏档也一起改方了。
-    dw, dh = (int(x) for x in _image_size_for_device("desktop").split("x"))
-    assert dw > dh, "桌面档必须仍是宽屏"
+def test_phone_block_prompt_explicitly_asks_for_a_portrait_canvas():
+    """手机档提示词必须**明说**竖屏——这是拿到竖图的唯一开关。
 
-
-def test_phone_canvas_matches_the_desktop_pixel_tier():
-    """两档参照图清晰度要同一水平，否则一档字清楚一档字糊。
-
-    1792x1024 实收 1672x941 ≈ 1.57MP；1024x1024 实收 1254x1254 ≈ 1.57MP。
-    （"2048x2048" 会跳到 4.2MP 的更贵档位，没必要。）
+    此前只写"比例偏竖长"这种含糊说法，配上"充分利用整个画布"，模型就把内容
+    横着摊开画成方图。要点名 9:16。
     """
-    assert _DEVICE_IMAGE_SIZE["phone"] == "1024x1024"
-
-
-def test_phone_block_prompt_does_not_claim_portrait_and_does_not_say_fill_the_canvas():
-    """手机档 prompt 不能再自称竖屏，也不能说"边缘到边缘铺满画布"。"""
     prompt = _build_reference_image_prompt(
         "测试区块", _EMPTY_DATAMODEL, theme_id="tangerine", device="phone"
     )
-    assert "比例偏竖长" not in prompt, "画布是方的，不能再说内容比例偏竖长"
-    assert "边缘到边缘" not in prompt, "方画布上说铺满会把手机内容横向摊开"
-    assert "正方形" in prompt, "该明说画布是方的，模型才知道要留左右背景"
-    assert "居中的竖向窄栏" in prompt, "手机内容区是窄的，要画成居中窄栏"
+    assert "9:16" in prompt, "手机档必须点名 9:16，含糊说法拿不到竖图"
+    assert "竖屏" in prompt
+    assert "单列纵向" in prompt
 
 
-def test_desktop_block_prompt_still_fills_the_canvas():
-    """宽幅档不受影响——这条修复只针对手机档那个形状错配。"""
-    prompt = _build_reference_image_prompt(
+def test_identity_phone_prompt_also_asks_for_a_portrait_canvas():
+    """身份主题参照图走同一个端点、同一条规律，同一个开关不能漏。"""
+    prompt = _build_identity_reference_image_prompt("测试应用", "产品目标", "数据领域", "phone")
+    assert "9:16" in prompt
+    assert "竖屏" in prompt
+
+
+def test_desktop_prompts_do_not_ask_for_portrait():
+    """宽幅档不能被带偏成竖图。"""
+    block = _build_reference_image_prompt(
         "测试区块", _EMPTY_DATAMODEL, theme_id="tangerine", device="desktop"
     )
-    assert "边缘到边缘" in prompt
-    assert "居中的竖向窄栏" not in prompt
+    identity = _build_identity_reference_image_prompt("测试应用", "产品目标", "数据领域", "desktop")
+    for prompt in (block, identity):
+        assert "9:16" not in prompt
+        assert "竖屏" not in prompt
+    assert "宽屏比例" in identity
 
 
-def test_identity_phone_prompt_does_not_claim_portrait_either():
-    """身份主题参照图走的是同一个 _image_size_for_device，同一个坑要一起堵。"""
-    prompt = _build_identity_reference_image_prompt("测试应用", "产品目标", "数据领域", "phone")
-    assert "整体竖屏比例" not in prompt, "画布是方的，不能再说整体竖屏比例"
-    assert "边缘到边缘" not in prompt
-    assert "居中的一条竖栏" in prompt
+def test_phone_size_param_is_the_pixel_tier_not_the_shape():
+    """尺寸参数在这个端点上只定像素档位，不定形状——别再指望改它能拿到竖图。
+
+    1792x1024 → 1672x941 ≈ 1.57MP（桌面）
+    1024x1024 → 864x1821 ≈ 1.57MP（手机，竖，形状来自 prompt）
+    两档像素预算对齐，参照图清晰度同一水平。
+    """
+    assert _DEVICE_IMAGE_SIZE["phone"] == "1024x1024"
+    assert _image_size_for_device("phone") == "1024x1024"
+    # 桌面档仍是宽屏尺寸，这条修复不该动它。
+    dw, dh = (int(x) for x in _image_size_for_device("desktop").split("x"))
+    assert dw > dh
 
 
-def test_identity_desktop_prompt_still_fills_the_canvas():
-    prompt = _build_identity_reference_image_prompt("测试应用", "产品目标", "数据领域", "desktop")
-    assert "边缘到边缘" in prompt
-    assert "居中的一条竖栏" not in prompt
+def test_phone_only_overview_sheet_also_asks_for_one_portrait_screen():
+    """手机专属档的总览参照板同样直接要一整屏竖版。
+
+    此前这一档是"横版画布上并排画两屏手机"——那是基于"端点给不了竖图"这个
+    后来被推翻的结论做的将就办法。形状既然由提示词决定，就该直接要竖屏。
+    """
+    from services.freeform_block import _build_overview_sheet_prompt
+
+    phone_sheet = _build_overview_sheet_prompt(
+        "测试", _EMPTY_DATAMODEL, theme_id="tangerine", device="phone"
+    )
+    assert "9:16" in phone_sheet
+    assert "并排画两块" not in phone_sheet, "不该再退回并排两屏手机的将就办法"
+
+    # 桌面档与两档并排档都不能被带成竖图。
+    for device in ("desktop", ""):
+        sheet = _build_overview_sheet_prompt(
+            "测试", _EMPTY_DATAMODEL, theme_id="tangerine", device=device
+        )
+        assert "整张图要画成手机竖屏比例" not in sheet
+
+
+def test_both_devices_still_fill_the_canvas():
+    """"铺满画布"对两档都成立——画布本身会是对的形状，不需要靠留白去凑比例。"""
+    for device in ("phone", "desktop"):
+        prompt = _build_reference_image_prompt(
+            "测试区块", _EMPTY_DATAMODEL, theme_id="tangerine", device=device
+        )
+        assert "边缘到边缘" in prompt, f"{device} 档不该在四周留空白凑比例"
