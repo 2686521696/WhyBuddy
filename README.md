@@ -170,7 +170,7 @@ What makes it different from “an LLM with a long prompt”:
 | **Real tools** | `web.search` and `code.run` (E2B sandbox, fail-closed without a key) via an MCP-style registry |
 | **Blind-judged upgrades** | Engine changes ship with paired blind evals (A/B, position-swapped) — e.g. agentic pick 4:0, evidence pipeline 2:0 |
 
-Deep dives: [V5.3 architecture (Chinese)](<./docs/SlideRule V5.3 架构图.md>) · [five-system generation eval](./docs/five-system-generation-eval.md) · [live-runtime blueprint](./docs/LIVE_SYSTEMS_BLUEPRINT.md)
+Deep dives: [V5.7 architecture (Chinese)](<./docs/SlideRule V5.7 架构图.md>) · [five-system generation eval](./docs/five-system-generation-eval.md) · [live-runtime blueprint](./docs/LIVE_SYSTEMS_BLUEPRINT.md)
 
 ---
 
@@ -300,9 +300,9 @@ Setup and package layout: [`skills/README.md`](./skills/README.md).
 
 ## 🏗️ System Architecture
 
-Current engine (V5.3, per-increment commit provenance): [docs/SlideRule V5.3 架构图.md](<./docs/SlideRule V5.3 架构图.md>)
+Current engine (V5.7, per-increment commit provenance): [docs/SlideRule V5.7 架构图.md](<./docs/SlideRule V5.7 架构图.md>)
 
-Historical: [V5.2](<./docs/SlideRule V5.2 架构图.md>) · [v4 Skill closed-loop diagram](./docs/assets/SlideRuleArc/SlideRuleSkill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE_%E6%94%B9%E8%BF%9B%E7%89%88v4.md) (architecture behind the award-winning Skill package)
+Historical: [V5.6](<./docs/SlideRule V5.6 架构图.md>) · [V5.5](<./docs/SlideRule V5.5 架构图.md>) · [V5.4](<./docs/SlideRule V5.4 架构图.md>) · [V5.3](<./docs/SlideRule V5.3 架构图.md>) · [V5.2](<./docs/SlideRule V5.2 架构图.md>) · [v4 Skill closed-loop diagram](./docs/assets/SlideRuleArc/SlideRuleSkill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE_%E6%94%B9%E8%BF%9B%E7%89%88v4.md) (architecture behind the award-winning Skill package)
 
 ---
 
