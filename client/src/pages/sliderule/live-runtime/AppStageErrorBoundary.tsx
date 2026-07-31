@@ -1,4 +1,5 @@
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { Button, Result } from "antd";
+import { ReloadOutlined } from "@ant-design/icons";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface Props {
@@ -57,27 +58,21 @@ export class AppStageErrorBoundary extends Component<Props, State> {
       this.state.error instanceof Error
         ? this.state.error.message
         : String(this.state.error ?? "未知错误");
+    // 2026-07-28：整块手写（lucide 图标 + tailwind 类 + 自己拼的按钮）换成
+    // antd Result。降级卡也是应用的一部分，颜色/圆角/按钮形态得跟舞台里其余
+    // 组件一致——手写那版的琥珀色和 stone 灰是独立于身份主题的一套。
     return (
-      <div
-        role="alert"
-        data-testid="app-stage-error-fallback"
-        className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 rounded-lg border border-amber-200 bg-amber-50/60 p-6 text-center"
-      >
-        <AlertTriangle className="h-8 w-8 text-amber-500" />
-        <div className="text-sm font-medium text-stone-700">
-          应用舞台渲染失败，已安全降级
-        </div>
-        <div className="max-w-md text-xs text-stone-500">
-          推演与模型数据不受影响；这是渲染层异常：{message.slice(0, 160)}
-        </div>
-        <button
-          type="button"
-          onClick={this.reset}
-          className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-600 hover:bg-stone-50"
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-          重试渲染
-        </button>
+      <div role="alert" data-testid="app-stage-error-fallback">
+        <Result
+          status="warning"
+          title="应用舞台渲染失败，已安全降级"
+          subTitle={`推演与模型数据不受影响；这是渲染层异常：${message.slice(0, 160)}`}
+          extra={
+            <Button icon={<ReloadOutlined />} onClick={this.reset}>
+              重试渲染
+            </Button>
+          }
+        />
       </div>
     );
   }

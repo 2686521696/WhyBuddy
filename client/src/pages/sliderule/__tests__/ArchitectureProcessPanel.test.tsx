@@ -132,8 +132,8 @@ describe("ArchitectureProcessPanel publish closure drilldown", () => {
     expect(html).toContain('data-evidence-key="DM_PAGE:leave_request"');
     expect(html).toContain('data-testid="sliderule-skill-linkage-source"');
     expect(html).toContain('data-testid="sliderule-skill-linkage-target"');
-    expect(html).toContain('aria-label="Select source skill datamodel"');
-    expect(html).toContain('aria-label="Select target skill page"');
+    expect(html).toContain('aria-label="选择来源 Skill datamodel"');
+    expect(html).toContain('aria-label="选择目标 Skill page"');
   });
 
   it("renders stable blocker drilldown targets for closure blockers", () => {
@@ -187,8 +187,8 @@ describe("ArchitectureProcessPanel publish closure drilldown", () => {
     expect(html).toContain('data-path="pageBindings[0].pageRef"');
     expect(html).toContain('data-testid="sliderule-closure-blocker-skill"');
     expect(html).toContain('data-testid="sliderule-closure-blocker-ref"');
-    expect(html).toContain('aria-label="Select affected skill page"');
-    expect(html).toContain('aria-label="Select ref page_purchase_request"');
+    expect(html).toContain('aria-label="选择受影响 Skill page"');
+    expect(html).toContain('aria-label="选择引用 page_purchase_request"');
     expect(html).toContain("APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
     expect(html).not.toContain('data-testid="publish-closure-fail-closed"');
   });
@@ -226,7 +226,7 @@ describe("ArchitectureProcessPanel publish closure drilldown", () => {
       />
     );
 
-    expect(html).toContain('aria-label="Select affected skill unknown"');
+    expect(html).toContain('aria-label="选择受影响 Skill unknown"');
     expect(html).toContain(">unknown</button>");
     expect(html).not.toContain("skill?");
   });

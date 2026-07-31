@@ -708,19 +708,62 @@ _backend_signature: Optional[str] = None
 _failed_db_urls: set[str] = set()
 
 
+def _local_sqlite_backend() -> Optional[AppStoreBackend]:
+    """本地 SQLite 兜底（2026-07-28）。远端不可用时的第二选择，排在 JSON 之前。
+
+    为什么值得单独一级：JSON 兜底是"整个文件读出来改完再写回去"，没有索引、
+    没有事务、并发写只能靠进程内一把锁；SQLite 是真库——同一套 SQLAlchemy
+    模型、同样能查能索引，写入是事务性的，进程崩在半路也不会留下半个文件。
+    远端挂掉那段时间里产生的应用，落在 SQLite 比落在 JSON 更捞得回来。
+
+    ⚠️ 分叉是真实存在的：远端恢复后，这段时间写进本地的记录不会自动回流，
+    两边从此各说各话。这个问题在 JSON 兜底时代就存在，加了 SQLite 只是让
+    兜底更好用、并没有解决它。要解决得有一层同步/对账，那是另一件事。
+    所以下面的日志把"现在写在哪"讲明白，而不是静默降级。
+
+    配置置空 → 返回 None（跳过这一级）。建库失败（只读文件系统等）也返回
+    None，由调用方继续降到 JSON。
+    """
+    url = (getattr(settings, "APP_STORE_LOCAL_SQLITE", "") or "").strip()
+    if not url:
+        return None
+    try:
+        # sqlite:///data/xxx.db → 确保 data/ 存在，否则 SQLAlchemy 直接抛
+        prefix = "sqlite:///"
+        if url.startswith(prefix):
+            Path(url[len(prefix):]).parent.mkdir(parents=True, exist_ok=True)
+        return _sqlalchemy_backend(url)
+    except Exception as exc:  # noqa: BLE001 — 本地库也建不起来就继续降级
+        print(f"[app_store] 本地 SQLite 不可用，继续回退 JSON: {str(exc)[:200]}")
+        return None
+
+
 def _current_signature() -> str:
-    return (settings.APP_STORE_DATABASE_URL or "").strip() or f"jsonfile:{settings.APP_STORE_FILE}"
+    remote = (settings.APP_STORE_DATABASE_URL or "").strip()
+    local = (getattr(settings, "APP_STORE_LOCAL_SQLITE", "") or "").strip()
+    # 本地库配置也进签名：改了它（比如测试里置空）要能触发重建，否则会一直
+    # 拿着上一次的后端单例，改配置像没生效。
+    return f"{remote}|{local}|jsonfile:{settings.APP_STORE_FILE}"
 
 
 def get_backend() -> AppStoreBackend:
-    """按当前配置返回后端单例，三级 fail-open：
+    """按当前配置返回后端单例，四级 fail-open（2026-07-28 起）：
 
-        TCP（SQLAlchemy/psycopg）→ Neon SQL over HTTP → 本地 JSON 文件
+        远端 TCP → 远端 SQL over HTTP → 本地 SQLite → 本地 JSON 文件
+        └────────── 同一个 APP_STORE_DATABASE_URL ─────────┘
 
-    首选 TCP：连接复用、延迟低、事务语义完整。TCP 不通（受限网络只放行 443、
-    无服务器/边缘运行时没有原始 TCP）且连接串指向 Neon 时，自动改走官方
-    SQL-over-HTTP 端点——同一个 APP_STORE_DATABASE_URL，无需改配置：生产环境
-    照旧走 TCP，受限环境自动降级但仍然是真库。两条都不通才回退 JSON 文件。
+    优先级的意思是"数据最好落在哪"：
+    1. 远端库（Neon/自建 PG）走 TCP——连接复用、延迟低、事务语义完整；
+    2. TCP 不通（受限网络只放行 443、无服务器/边缘运行时没有原始 TCP）且连接
+       串指向 Neon 时，改走官方 SQL-over-HTTP 端点。同一个连接串、无需改配置：
+       生产照旧走 TCP，受限环境自动降级但**仍然是同一个远端库**，数据不分叉；
+    3. 远端整个不可用时落本地 SQLite——真库，能查能索引、写入是事务性的，比
+       JSON 那种"整文件读改写"强；
+    4. 本地库也建不起来（只读文件系统等）才回 JSON 文件。
+
+    ⚠️ 第 3 级开始数据就和远端分叉了：远端恢复后本地这段时间的记录不会自动
+    回流。这在只有 JSON 兜底的时代就存在，加 SQLite 只是让兜底更可用，没有
+    解决分叉。所以每次降级都打印"现在写在哪"，不静默。
 
     签名变了（比如测试里改环境）就重建。任何一级失败都不抛给调用方——存储层
     绝不拖垮主链路。"""
@@ -743,18 +786,28 @@ def get_backend() -> AppStoreBackend:
                             f"[app_store] TCP 不可用（{tcp_err}），已改走 Neon SQL over HTTP"
                         )
                     except Exception as http_exc:  # noqa: BLE001
+                        _failed_db_urls.add(db_url)
+                        local = _local_sqlite_backend()
                         print(
-                            f"[app_store] TCP 与 HTTP 均不可用，回退 JSON 文件兜底: "
+                            f"[app_store] 远端两条通道均不可用，改写"
+                            f"{'本地 SQLite' if local else 'JSON 文件'}"
+                            f"（与远端分叉，恢复后不会自动回流）: "
                             f"TCP={tcp_err} / HTTP={str(http_exc)[:200]}"
                         )
-                        _failed_db_urls.add(db_url)
-                        _backend_instance = JsonFileAppStore()
+                        _backend_instance = local or JsonFileAppStore()
                 else:
-                    print(f"[app_store] DB 初始化失败，回退 JSON 文件兜底: {tcp_err}")
                     _failed_db_urls.add(db_url)  # 本进程不再重试这个 URL
-                    _backend_instance = JsonFileAppStore()
+                    local = _local_sqlite_backend()
+                    print(
+                        f"[app_store] 远端 DB 初始化失败，改写"
+                        f"{'本地 SQLite' if local else 'JSON 文件'}"
+                        f"（与远端分叉，恢复后不会自动回流）: {tcp_err}"
+                    )
+                    _backend_instance = local or JsonFileAppStore()
         else:
-            _backend_instance = JsonFileAppStore()
+            # 没配远端连接串（或这个 URL 本进程已经失败过）：本地 SQLite 仍然
+            # 优于 JSON——没有远端不代表就该退到最弱的那一档。
+            _backend_instance = _local_sqlite_backend() or JsonFileAppStore()
         _backend_signature = sig
         return _backend_instance
 

@@ -1,17 +1,17 @@
 /**
- * SkillsLibraryPage — 技能库 marketplace（精选 / 社区 / 已安装 三层）。
+ * SkillsLibraryPage — 技能库（精选 / 已安装 两层）。
  *
- * 布局（用户效果图裁决）：全宽（不设最大宽度，16:9 屏一行三卡）、
- * 精选与社区统一卡片风格（同一 SkillCard 组件，统一好维护）、
- * 顶部统计卡全部真数据、右上「技能提交指南」直链论坛真实指南帖。
+ * 布局：全宽（16:9 屏一行三卡）、统一 SkillCard 风格、统计卡真数据。
  *
- * 三层语义：
- *   - 精选：官方技能市场清单（72 项，语义档案驱动试跑）；
- *   - 社区：SOLO 创作赛索引（889 项；378 仓库带原版 SKILL.md 可装
- *     855 个原版技能，合集可展开单装；无包退语义档案，都没有诚实禁用）；
- *   - 已安装：装完即用（原版 SKILL.md / 语义档案 两档徽标区分）。
- *
- * 合规定位不变：索引 + 回链，技能本体归原作者；安装的是执行档案。
+ * 2026-07-27 下架「社区技能」层，一并移除 889 条论坛索引、855 份完整
+ * SKILL.md 正文、543 份语义档案与三个采集脚本（约 11.7MB）。两个理由：
+ *   1. 协议敞口——正文那批 49% 的原仓库没有 LICENSE 文件（另有 2 条
+ *      GPL-3.0），当初是 owner 兜底收录；本次直接把敞口清零。
+ *   2. 装了会伤产品——社区技能同样走"必须产出一条绑定真实数据模型字段
+ *      的 aigc 能力"硬约束，而小红书卡片/学术论文写作/软著生成这类根本
+ *      绑不上，装了要么闭环被结构门拦，要么模型硬编一个无意义能力卡。
+ * 生成期的软参考通道（v5_skill_reference）保留代码不动——它设计上就是
+ * 语料缺失即返回空、prompt 不加块，行为回到收录之前。
  */
 
 import React from "react";
@@ -20,64 +20,28 @@ import {
   Empty,
   Input,
   message,
-  Pagination,
-  Popover,
-  Select,
   Tag,
   Tooltip,
 } from "antd";
 import {
   BookOutlined,
-  CloudDownloadOutlined,
   DeleteOutlined,
   DownloadOutlined,
-  FileMarkdownOutlined,
-  FileZipOutlined,
-  GithubOutlined,
-  LinkOutlined,
   PlayCircleOutlined,
   SafetyCertificateOutlined,
   StarOutlined,
-  TeamOutlined,
 } from "@ant-design/icons";
-import skillsIndex from "@/data/trae-skills-index.json";
-import skillSemantics from "@/data/skill-semantics.json";
 import featuredSkills from "@/data/featured-skills.json";
 import {
+  channelOf,
   installKeyOf,
   installSkill,
   isInstalled,
   loadInstalledSkills,
   uninstallSkill,
   type InstalledSkill,
+  type SkillChannel,
 } from "./installed-skills";
-
-interface SkillIndexItem {
-  topicId: number;
-  title: string;
-  url: string;
-  author: string;
-  createdAt: string;
-  views: number;
-  likeCount: number;
-  postsCount: number;
-  tags: string[];
-  excerpt: string;
-  sourceKind: "repo" | "pan" | "attachment" | "none" | string;
-  repos: string[];
-  pans: string[];
-  attachments: string[];
-}
-
-interface SkillSemanticsItem {
-  repo: string;
-  url: string;
-  license: string;
-  name: string;
-  description: string;
-  ioHints: string[];
-  topicIds: number[];
-}
 
 interface FeaturedSkill {
   id: string;
@@ -85,59 +49,54 @@ interface FeaturedSkill {
   description: string;
   author: string;
   category: string;
+  /** 消费通道（见 installed-skills.ts）：决定装进推演后走哪条 prompt 路径 */
+  channel?: SkillChannel;
+  /** 绑定形状（仅 aigc 通道）：读写字段的类型，不是字段名 */
+  binding?: { inputTypes: string[]; outputType: string };
 }
 
-/** 服务端原版技能包元数据（GET /skill-packages；Python 不在场时优雅缺席） */
-interface SkillPackageMeta {
-  id: string;
-  repo: string;
-  path: string;
-  sourceUrl: string;
-  license: string;
-  name: string;
-  description: string;
-  truncated: boolean;
-  contentChars: number;
-}
-
-const INDEX = skillsIndex as {
-  source: string;
-  license_note: string;
-  fetchedAt: string;
-  count: number;
-  items: SkillIndexItem[];
-};
-
-const SEMANTICS = (skillSemantics as { items: SkillSemanticsItem[] }).items;
 const FEATURED = (featuredSkills as { items: FeaturedSkill[] }).items;
-const FEATURED_CATEGORIES = ["全部", ...new Set(FEATURED.map(f => f.category))];
 
-// topicId → 语义档案（description 非空才算"可安装定义"）
-const SEMANTICS_BY_TOPIC = new Map<number, SkillSemanticsItem>();
-for (const sem of SEMANTICS) {
-  if (!sem.description) continue;
-  for (const tid of sem.topicIds) {
-    if (!SEMANTICS_BY_TOPIC.has(tid)) SEMANTICS_BY_TOPIC.set(tid, sem);
-  }
-}
-
-const KIND_META: Record<
-  string,
-  { label: string; color: string; icon: React.ReactNode }
+/**
+ * 通道标（2026-07-27）：装之前就说清这条技能装了会发生什么，别让用户装完
+ * 才发现它绑不上任何字段。「精选」那个金标只说明来源，不说明用途，替掉。
+ */
+const CHANNEL_META: Record<
+  SkillChannel,
+  { label: string; color: string; title: string }
 > = {
-  repo: { label: "开源仓库", color: "green", icon: <GithubOutlined /> },
-  pan: { label: "网盘分发", color: "blue", icon: <CloudDownloadOutlined /> },
-  attachment: { label: "论坛附件", color: "purple", icon: <FileZipOutlined /> },
-  none: { label: "图文介绍", color: "default", icon: <LinkOutlined /> },
+  aigc: {
+    label: "可绑字段",
+    color: "green",
+    title: "装进推演后会落成一条 AIGC 能力，读写你这个应用里真实的实体字段",
+  },
+  experience: {
+    label: "设计指导",
+    color: "blue",
+    title: "装进推演后影响生成的视觉与版式（配色/布局），不产出业务能力",
+  },
+  unbound: {
+    label: "仅作参考",
+    color: "default",
+    title: "没验证出它能绑到哪个实体字段，只作为生成时的软参考，不发硬要求",
+  },
 };
 
-const KIND_FILTERS = [
-  { label: "全部", value: "all" },
-  { label: "开源仓库", value: "repo" },
-  { label: "网盘分发", value: "pan" },
-  { label: "论坛附件", value: "attachment" },
-  { label: "图文介绍", value: "none" },
-];
+function ChannelTag({ skill }: { skill: { channel?: SkillChannel } }) {
+  const meta = CHANNEL_META[channelOf(skill)];
+  return (
+    <Tooltip title={meta.title}>
+      <Tag
+        color={meta.color}
+        style={{ fontSize: 10, marginInlineEnd: 0 }}
+        data-testid={`skill-channel-${channelOf(skill)}`}
+      >
+        {meta.label}
+      </Tag>
+    </Tooltip>
+  );
+}
+const FEATURED_CATEGORIES = ["全部", ...new Set(FEATURED.map(f => f.category))];
 
 // 字母头像统一浅冷色（用户反馈：多彩色轮太刺眼，对齐效果图的柔和图标底）
 function avatarToneOf(_name: string): string {
@@ -400,83 +359,18 @@ export function SkillsLibraryPage({
   initialTab = "featured",
 }: {
   /** 初始 tab（测试用；产品默认精选层） */
-  initialTab?: "featured" | "market" | "installed";
+  initialTab?: "featured" | "installed";
 } = {}) {
-  const [tab, setTab] = React.useState<"featured" | "market" | "installed">(
+  const [tab, setTab] = React.useState<"featured" | "installed">(
     initialTab
   );
   const [featuredCat, setFeaturedCat] = React.useState("全部");
   const [query, setQuery] = React.useState("");
-  const [kind, setKind] = React.useState<string>("all");
-  const [sort, setSort] = React.useState<"views" | "likes" | "latest">("views");
-  const [page, setPage] = React.useState(1);
-  const [pageSize, setPageSize] = React.useState(21);
+  // kind/sort/page/pageSize 四个 state 与 /skill-packages 拉取都是社区层的
+  // 筛选、分页与技能包元数据，随该层一并移除。
   const [installed, setInstalled] = React.useState<InstalledSkill[]>(() =>
     loadInstalledSkills()
   );
-  const [packages, setPackages] = React.useState<SkillPackageMeta[]>([]);
-
-  React.useEffect(() => {
-    let alive = true;
-    fetch("/api/sliderule/skill-packages")
-      .then(res => (res.ok ? res.json() : null))
-      .then((body: { items?: SkillPackageMeta[] } | null) => {
-        if (alive && body && Array.isArray(body.items)) setPackages(body.items);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const packagesByRepo = React.useMemo(() => {
-    const map = new Map<string, SkillPackageMeta[]>();
-    for (const p of packages) {
-      const list = map.get(p.repo) ?? [];
-      list.push(p);
-      map.set(p.repo, list);
-    }
-    return map;
-  }, [packages]);
-
-  const packagesOfRow = React.useCallback(
-    (it: SkillIndexItem): SkillPackageMeta[] => {
-      const out: SkillPackageMeta[] = [];
-      for (const link of it.repos) {
-        const m =
-          /https?:\/\/(github\.com|gitee\.com|gitcode\.com)\/([^/\s]+)\/([^/\s#?]+)/.exec(
-            link
-          );
-        if (!m) continue;
-        const key = `${m[1]}/${m[2]}/${m[3].replace(/\.git$/, "")}`;
-        for (const p of packagesByRepo.get(key) ?? []) {
-          if (!out.some(x => x.id === p.id)) out.push(p);
-        }
-      }
-      return out;
-    },
-    [packagesByRepo]
-  );
-
-  const installPackage = (pkg: SkillPackageMeta) => {
-    setInstalled(prev => {
-      const next = installSkill(prev, {
-        repo: pkg.repo,
-        url: pkg.sourceUrl,
-        license: pkg.license,
-        name: pkg.name,
-        description: pkg.description,
-        ioHints: [],
-        kind: "package",
-        packageId: pkg.id,
-      });
-      if (next !== prev)
-        message.success(
-          `已安装「${pkg.name}」（原版 SKILL.md），到「已安装」直接试跑`
-        );
-      return next;
-    });
-  };
 
   const installFeatured = (f: FeaturedSkill) => {
     setInstalled(prev => {
@@ -488,55 +382,14 @@ export function SkillsLibraryPage({
         description: f.description,
         ioHints: [],
         kind: "semantic",
+        channel: channelOf(f),
+        ...(f.binding ? { binding: f.binding } : {}),
       });
       if (next !== prev)
         message.success(`已安装「${f.name}」，到「已安装」里直接试跑`);
       return next;
     });
   };
-
-  const installSemantic = (sem: SkillSemanticsItem) => {
-    setInstalled(prev => {
-      const next = installSkill(prev, {
-        repo: sem.repo,
-        url: sem.url,
-        license: sem.license,
-        name: sem.name,
-        description: sem.description,
-        ioHints: sem.ioHints,
-        kind: "semantic",
-      });
-      if (next !== prev)
-        message.success(`已安装「${sem.name}」，到「已安装」里直接试跑`);
-      return next;
-    });
-  };
-
-  // 社区层：筛选 + 排序 + 分页
-  const communityItems = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const filtered = INDEX.items
-      .filter(it => (kind === "all" ? true : it.sourceKind === kind))
-      .filter(
-        it =>
-          !q ||
-          it.title.toLowerCase().includes(q) ||
-          it.excerpt.toLowerCase().includes(q) ||
-          it.author.toLowerCase().includes(q)
-      );
-    return filtered.sort((a, b) =>
-      sort === "views"
-        ? b.views - a.views
-        : sort === "likes"
-          ? b.likeCount - a.likeCount
-          : b.createdAt.localeCompare(a.createdAt)
-    );
-  }, [query, kind, sort]);
-
-  const pagedCommunity = communityItems.slice(
-    (page - 1) * pageSize,
-    page * pageSize
-  );
 
   const featuredItems = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -551,138 +404,9 @@ export function SkillsLibraryPage({
     );
   }, [featuredCat, query]);
 
-  // 真实的投稿指南帖（索引里就有——右上按钮直链，不造假入口）
-  const guideUrl = React.useMemo(
-    () =>
-      INDEX.items.find(it => it.title.includes("投稿指南"))?.url ??
-      INDEX.source,
-    []
-  );
-
-  /** 社区卡的安装动作：原版包 > 语义档案 > 诚实禁用；合集 Popover 单装 */
-  const communityAction = (it: SkillIndexItem) => {
-    const rowPkgs = packagesOfRow(it);
-    if (rowPkgs.length === 1) {
-      const pkg = rowPkgs[0];
-      return isInstalled(installed, pkg.id) ? (
-        <Tag color="success" style={{ marginInlineEnd: 0 }}>
-          ✓ 已安装
-        </Tag>
-      ) : (
-        <Tooltip title="原版 SKILL.md 指令，装完即用">
-          <Button
-            size="small"
-            type="link"
-            icon={<DownloadOutlined />}
-            onClick={() => installPackage(pkg)}
-            data-testid={`skill-install-${it.topicId}`}
-          >
-            安装
-          </Button>
-        </Tooltip>
-      );
-    }
-    if (rowPkgs.length > 1) {
-      const fresh = rowPkgs.filter(p => !isInstalled(installed, p.id));
-      if (fresh.length === 0) {
-        return (
-          <Tag color="success" style={{ marginInlineEnd: 0 }}>
-            ✓ 已装 {rowPkgs.length}
-          </Tag>
-        );
-      }
-      return (
-        <Popover
-          trigger="click"
-          placement="bottomRight"
-          content={
-            <div
-              style={{ maxHeight: 260, overflow: "auto", width: 320 }}
-              className="space-y-1"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-medium text-stone-500">
-                  合集 · {rowPkgs.length} 个原版技能
-                </span>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={() => fresh.forEach(installPackage)}
-                >
-                  全部安装
-                </Button>
-              </div>
-              {rowPkgs.map(pkg => (
-                <div key={pkg.id} className="flex items-center gap-2 text-xs">
-                  <span className="min-w-0 flex-1 truncate text-stone-700">
-                    {pkg.name}
-                  </span>
-                  {isInstalled(installed, pkg.id) ? (
-                    <Tag
-                      color="success"
-                      style={{ marginInlineEnd: 0, fontSize: 10 }}
-                    >
-                      ✓
-                    </Tag>
-                  ) : (
-                    <Button
-                      size="small"
-                      type="link"
-                      onClick={() => installPackage(pkg)}
-                    >
-                      安装
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          }
-        >
-          <Button
-            size="small"
-            type="link"
-            icon={<DownloadOutlined />}
-            data-testid={`skill-install-${it.topicId}`}
-          >
-            装 {fresh.length} 技能
-          </Button>
-        </Popover>
-      );
-    }
-    const sem = SEMANTICS_BY_TOPIC.get(it.topicId);
-    if (!sem) {
-      return (
-        <Tooltip title="该帖未提供可安装的技能定义（无 SKILL.md 也无语义档案）">
-          <Button
-            size="small"
-            disabled
-            icon={<DownloadOutlined />}
-            data-testid={`skill-install-disabled-${it.topicId}`}
-          >
-            安装
-          </Button>
-        </Tooltip>
-      );
-    }
-    return isInstalled(installed, sem.repo) ? (
-      <Tag color="success" style={{ marginInlineEnd: 0 }}>
-        ✓ 已安装
-      </Tag>
-    ) : (
-      <Tooltip title="未抓到 SKILL.md，按语义档案安装（转述驱动）">
-        <Button
-          size="small"
-          type="link"
-          icon={<DownloadOutlined />}
-          onClick={() => installSemantic(sem)}
-          data-testid={`skill-install-${it.topicId}`}
-        >
-          安装
-        </Button>
-      </Tooltip>
-    );
-  };
-
+  // 「可执行 SKILL.md」统计卡随技能包语料一起下架：语料删干净后它恒为
+  // "—"，副标题却写着"需 Python 服务在线"——服务在线也永远是 0，留着就是
+  // 一句假话。
   const STATS = [
     {
       icon: <StarOutlined />,
@@ -690,20 +414,6 @@ export function SkillsLibraryPage({
       value: FEATURED.length,
       sub: "官方/大厂出品",
       tone: "bg-[#e8eeff] text-[#3b5bdb]",
-    },
-    {
-      icon: <TeamOutlined />,
-      label: "社区技能",
-      value: INDEX.count,
-      sub: "SOLO 创作赛索引",
-      tone: "bg-emerald-50 text-emerald-700",
-    },
-    {
-      icon: <FileMarkdownOutlined />,
-      label: "可执行 SKILL.md",
-      value: packages.length > 0 ? packages.length : "—",
-      sub: packages.length > 0 ? "装完即按原指令执行" : "需 Python 服务在线",
-      tone: "bg-violet-50 text-violet-700",
     },
     {
       icon: <SafetyCertificateOutlined />,
@@ -742,7 +452,7 @@ export function SkillsLibraryPage({
               技能库
             </h1>
             <span className="rounded-md bg-white/70 px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/60">
-              {FEATURED.length + INDEX.count} 项
+              {FEATURED.length} 项
             </span>
           </div>
 
@@ -761,16 +471,6 @@ export function SkillsLibraryPage({
             </div>
           )}
 
-          <div className="flex items-center gap-2 sm:ml-auto">
-            <Button
-              icon={<BookOutlined />}
-              href={guideUrl}
-              target="_blank"
-              className="!rounded-lg !border-slate-200/80 !bg-white/70 !text-slate-600 hover:!border-slate-300 hover:!text-slate-800"
-            >
-              技能提交指南
-            </Button>
-          </div>
         </div>
 
         {/* 统计条：轻量卡，真数据 */}
@@ -793,23 +493,6 @@ export function SkillsLibraryPage({
               <div className="text-[10px] text-slate-400">{s.sub}</div>
             </div>
           ))}
-          <div className="min-w-[220px] flex-[1.3] rounded-lg border border-amber-200/80 bg-amber-50/90 px-3.5 py-2.5">
-            <div className="text-[11px] font-semibold text-amber-800">
-              合规说明
-            </div>
-            <div className="mt-1 text-[10px] leading-4 text-amber-800/85">
-              {INDEX.license_note} 采集于 {INDEX.fetchedAt.slice(0, 10)}，
-              <a
-                href={INDEX.source}
-                target="_blank"
-                rel="noreferrer"
-                className="underline"
-              >
-                来源论坛
-              </a>
-              。
-            </div>
-          </div>
         </div>
 
         {/* Tab + 筛选：固定在壳顶，不参与列表滚动 */}
@@ -821,7 +504,6 @@ export function SkillsLibraryPage({
             {(
               [
                 { key: "featured", label: "精选技能", count: FEATURED.length },
-                { key: "market", label: "社区技能", count: INDEX.count },
                 { key: "installed", label: "已安装", count: installed.length },
               ] as const
             ).map(t => (
@@ -848,7 +530,6 @@ export function SkillsLibraryPage({
 
           {tab !== "installed" && (
             <div className="flex flex-wrap items-center gap-1.5">
-              {tab === "featured" ? (
                 <div
                   className="flex flex-wrap items-center gap-1.5"
                   data-testid="skills-featured-cats"
@@ -879,59 +560,6 @@ export function SkillsLibraryPage({
                     );
                   })}
                 </div>
-              ) : (
-                <>
-                  <div
-                    className="flex flex-wrap items-center gap-1.5"
-                    data-testid="skills-kind-filter"
-                  >
-                    {KIND_FILTERS.map(f => {
-                      const count =
-                        f.value === "all"
-                          ? INDEX.count
-                          : INDEX.items.filter(it => it.sourceKind === f.value)
-                              .length;
-                      return (
-                        <button
-                          key={f.value}
-                          type="button"
-                          onClick={() => {
-                            setKind(f.value);
-                            setPage(1);
-                          }}
-                          className={chipClass(kind === f.value)}
-                        >
-                          {f.label}
-                          <span
-                            className={`tabular-nums text-[11px] ${
-                              kind === f.value
-                                ? "text-[#3b5bdb]/80"
-                                : "text-slate-400"
-                            }`}
-                          >
-                            {count}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <Select
-                    size="small"
-                    value={sort}
-                    style={{ width: 120 }}
-                    className="ml-1"
-                    onChange={v => {
-                      setSort(v);
-                      setPage(1);
-                    }}
-                    options={[
-                      { value: "views", label: "按浏览量" },
-                      { value: "likes", label: "按点赞" },
-                      { value: "latest", label: "按最新发布" },
-                    ]}
-                  />
-                </>
-              )}
             </div>
           )}
         </div>
@@ -957,12 +585,7 @@ export function SkillsLibraryPage({
                     <Tag style={{ fontSize: 10, marginInlineEnd: 0 }}>
                       {f.category}
                     </Tag>
-                    <Tag
-                      color="gold"
-                      style={{ fontSize: 10, marginInlineEnd: 0 }}
-                    >
-                      精选
-                    </Tag>
+                    <ChannelTag skill={f} />
                   </>
                 }
                 description={f.description}
@@ -989,66 +612,9 @@ export function SkillsLibraryPage({
         </div>
       )}
 
-      {/* 社区层：同风格三列卡片 + 分页 */}
-      {tab === "market" && (
-        <>
-          <div
-            className="grid grid-cols-1 gap-2.5 md:grid-cols-2 2xl:grid-cols-3"
-            data-testid="skills-community-grid"
-          >
-            {pagedCommunity.map(it => {
-              const kindMeta = KIND_META[it.sourceKind] ?? KIND_META.none;
-              return (
-                <SkillCard
-                  key={it.topicId}
-                  testid={`community-skill-${it.topicId}`}
-                  name={it.title.replace(/^【[^】]*】\s*/, "")}
-                  titleHref={it.url}
-                  tags={
-                    <Tag
-                      color={kindMeta.color}
-                      icon={kindMeta.icon}
-                      style={{ fontSize: 10, marginInlineEnd: 0 }}
-                    >
-                      {kindMeta.label}
-                    </Tag>
-                  }
-                  description={it.excerpt}
-                  author={it.author}
-                  meta={
-                    <>
-                      <span>浏览 {it.views}</span>
-                      <span>赞 {it.likeCount}</span>
-                      <span>{it.createdAt.slice(0, 10)}</span>
-                    </>
-                  }
-                  action={communityAction(it)}
-                />
-              );
-            })}
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-stone-400">
-              共 {communityItems.length} 项
-            </span>
-            <Pagination
-              current={page}
-              pageSize={pageSize}
-              total={communityItems.length}
-              showSizeChanger
-              pageSizeOptions={[21, 42, 63]}
-              onChange={(p, ps) => {
-                setPage(ps !== pageSize ? 1 : p);
-                setPageSize(ps);
-              }}
-            />
-          </div>
-        </>
-      )}
-
       {/* 已安装层 */}
       {tab === "installed" && (
-        <div className="space-y-2.5" data-testid="skills-installed-list">
+        <div className="space-y-2.5" data-testid="skills-installed">
           {installed.length > 0 && (
             <div className="rounded bg-blue-50 px-2.5 py-1.5 text-[11px] text-blue-700 ring-1 ring-blue-200">
               已安装技能会注入新推演（最多前 6
@@ -1059,17 +625,18 @@ export function SkillsLibraryPage({
           {installed.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="还没安装技能 — 到「精选技能」或「社区技能」装一个，装完立即可试跑"
+              description="还没安装技能 — 到「精选技能」装一个，装完立即可试跑"
             />
           ) : (
-            /* TRAE Work 式来源分组：精选（trae-market/ 前缀）与社区各自 label */
+            /* 来源分组。第二组只可能是社区层下架前装进 localStorage 的存量，
+               不再有新增入口，所以如实标注来源已下架，而不是静默藏起来。 */
             [
               {
                 label: "来自精选技能",
                 list: installed.filter(s => s.repo.startsWith("trae-market/")),
               },
               {
-                label: "来自社区技能",
+                label: "早前安装（来源已下架）",
                 list: installed.filter(s => !s.repo.startsWith("trae-market/")),
               },
             ]

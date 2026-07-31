@@ -49,7 +49,22 @@ export interface ChartGroupedData {
   values: number[];
 }
 
-/** 按维度字段分组求值：count = 每组行数；sum = 每组对指标字段求和。 */
+/**
+ * 按维度字段分组求值：count = 每组行数；sum = 每组对指标字段求和。
+ *
+ * **分组按行里存的原值，出类目时才换成 label**（2026-07-28）。enum 字段的
+ * 行值存的是取值 id（表单 Select 存的就是 id），此前一路原样送进图例，
+ * 环图上写的是 `refunded 2` / `unpaid 3` / `paid 2`——那是模型内部的标识符，
+ * 不是给用户看的词。
+ *
+ * 顺序不能反过来（先换 label 再分组）：两个不同的取值 id 万一配了同一个
+ * label，先换就把两类静默并成一类，数字凭空变大。分组键始终是原值，
+ * label 只影响显示；label 撞车时宁可图例上出现两个同名类目——那是模型
+ * 声明本身的问题，如实显示比合并成一条好。
+ *
+ * 声明里查不到的取值原样显示（与 FieldValue 的约定一致：值不在 options 里
+ * 就当纯文本，不猜不藏）。
+ */
 export function groupRowsForChart(
   spec: AppPageChartSchema,
   rows: RuntimeRow[]
@@ -70,12 +85,20 @@ export function groupRowsForChart(
   }
   const entries = [...byCategory.entries()];
   // line 的维度通常有序（日期/阶段）→ 按维度值排序；bar/pie 按指标降序更可读。
+  // 排序也用原值：enum 的 id 往往自带业务次序（draft/paid/refunded），
+  // 换成 label 之后按中文排会打乱。
   if (spec.type === "line") {
     entries.sort((a, b) => a[0].localeCompare(b[0]));
   } else {
     entries.sort((a, b) => b[1] - a[1]);
   }
-  return { categories: entries.map((e) => e[0]), values: entries.map((e) => e[1]) };
+  const labelOf = new Map(
+    (spec.dimensionOptions ?? []).map((o) => [o.id, o.label || o.id] as const)
+  );
+  return {
+    categories: entries.map((e) => labelOf.get(e[0]) ?? e[0]),
+    values: entries.map((e) => e[1]),
+  };
 }
 
 /** >MAX_PIE_SLICES 类折叠进「其他」（灰色，排最后）——分类色只按固定序取用。 */

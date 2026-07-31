@@ -60,6 +60,17 @@ def test_prompt_block_has_no_copy_instruction() -> None:
         assert block.startswith("Industry reference skills")
 
 
+def test_corpus_absent_degrades_to_empty_not_exception() -> None:
+    """2026-07-27 社区技能层下架后 data/skill_semantics.json 已删，这是
+    现在的常态而非异常路径：检索必须静默返回空、prompt 块返回空串，
+    让生成链路退回原始 prompt，而不是抛异常把整条推演带崩。"""
+    from services import v5_skill_reference as mod
+
+    assert mod._load_items() == []
+    assert pick_reference_skills("给咖啡烘焙工坊做生豆库存与烘焙批次管理", k=4) == []
+    assert reference_prompt_block("给咖啡烘焙工坊做生豆库存与烘焙批次管理") == ""
+
+
 def test_build_user_content_fallback_identical_when_no_hit() -> None:
     goal = "qqxxyyzz zkqjwp vvbnmr"
     content = _build_user_content(goal)
@@ -80,8 +91,13 @@ def test_build_user_content_appends_block_between_intent_and_task() -> None:
 
 
 def test_installed_skills_injection_and_cleanup() -> None:
-    """技能库六期"推演注入"：设置已安装技能 → prompt 出 REQUIRED 块；
-    清空后与历史 prompt 逐字节一致（增强项不留残余）。"""
+    """技能库六期"推演注入"：设置已安装技能 → prompt 出已安装块；
+    清空后与历史 prompt 逐字节一致（增强项不留残余）。
+
+    2026-07-27 通道化后，只有 channel=aigc 才进 REQUIRED 块；这里的用例
+    没标 channel（等同存量安装记录），按 unbound 走软参考块——分流本身由
+    tests/test_skill_channels.py 专门锁，这里只锁清洗与顺序。
+    """
     from services.v5_llm_generate import set_installed_skills
 
     goal = "qqxxyyzz zkqjwp vvbnmr"
@@ -96,7 +112,7 @@ def test_installed_skills_injection_and_cleanup() -> None:
     )
     try:
         content = _build_user_content(goal)
-        assert "User-installed skills (REQUIRED" in content
+        assert "User-installed skills (context only" in content
         assert "网络小说创作技能 — 长篇小说大纲与章节生成" in content
         assert "aigc.capabilities" in content
         # 清洗：无名剔除、超长截断（60/160）

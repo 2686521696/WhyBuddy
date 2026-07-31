@@ -34,3 +34,71 @@
 {"id":"pre_002","text":"在吗","hasApp":false,"expect":"meta","note":"precheck 确定性命中"}
 {"id":"pre_003","text":"？？？","hasApp":false,"expect":"vague","note":"precheck：纯标点"}
 {"id":"pre_004","text":"   ","hasApp":false,"expect":"vague","note":"precheck：空输入"}
+{"id":"cross_001","text":"另外再给我做一套幼儿园的接送打卡和过敏原管理","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real","note":"跨语境：已有应用但提的是完全无关的新领域。2026-07-28 真机复现——hasApp=true 时 real 不在候选判定里，模型只能判成 iteration"}
+{"id":"cross_002","text":"帮我做个农机租赁的调度系统，机主挂单、农户下单、作业验收","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real","note":"跨语境：信息完整的新需求，实测被判 vague 并弹提示条——误拦真需求"}
+{"id":"cross_003","text":"再帮我搭一个殡葬服务的治丧流程管理，家属对接和场地档期","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real"}
+{"id":"cross_004","text":"这个先放着，我想另外做个渔船出海报备和返港销号的系统","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real","note":"显式表示要换一件事做"}
+{"id":"cross_005","text":"想弄个把工地上的材料进场、领用和退料串起来的东西","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real","note":"跨语境 + 无载体名词双重难点"}
+{"id":"cross_006","text":"给牙科诊所做个种植牙病例跟踪，从面诊到复查提醒","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real"}
+{"id":"cross_007","text":"我们做无人机测绘的，想要一个飞手排期加空域申请的平台","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real"}
+{"id":"cross_008","text":"新开个话题：社区食堂订餐，老人预订、营养师配餐、志愿者配送","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real"}
+{"id":"cross_009","text":"废品回收站的过磅、分类计价和结算，能不能也做一套","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"real"}
+{"id":"cross_iter_001","text":"现在这个审批链太长了，能不能金额小于5000的直接免审","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"iteration","note":"对照：加了跨语境规则后，真迭代不能被带偏成 real"}
+{"id":"cross_iter_002","text":"列表页每次都要重新筛一遍，加个保存筛选条件的功能","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"iteration","note":"对照"}
+{"id":"cross_iter_003","text":"现在只能看当月数据，想加个按季度和年度切换","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"iteration","note":"对照"}
+{"id":"cross_iter_004","text":"把导出的表格加上门店维度的小计","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"iteration","note":"对照：短祈使句"}
+{"id":"cross_iter_005","text":"再加一个中药饮片的批号追溯","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"iteration","note":"边界：同领域的新增能力，是迭代不是新应用——跟 cross_001~009 恰好相反"}
+{"id":"cross_meta_001","text":"你们这个引擎一次推演大概要多久","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"meta","note":"对照：已有应用时产品咨询仍要判 meta"}
+{"id":"cross_off_001","text":"顺便问下明天上海下雨吗","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"off_topic","note":"对照"}
+{"id":"cross_vague_001","text":"再搞个别的","hasApp":true,"appSummary":"连锁药店进销存系统（采购入库、门店调拨、效期预警、报损审批）","expect":"vague","note":"对照：确实想做新的，但没说做什么——这才是该判 vague 的"}
+{"id":"cross_sym_001","text":"帮我做个农机租赁的调度系统，机主挂单、农户下单、作业验收","hasApp":false,"expect":"real","note":"对称对照：跟 cross_002 同一句话，空会话下必须判 real（用来隔离「是语境导致的还是句子本身导致的」）"}
+{"id": "oos_game_001", "text": "旷野飙车像素世界，一个 3D 像素动物竞速游戏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；实时渲染循环，五系统表达不了"}
+{"id": "oos_game_002", "text": "做个卡牌冒险游戏，玩家抽卡打怪推进剧情", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_game_003", "text": "DND 战棋肉鸽游戏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_game_004", "text": "AI 狼人杀网页游戏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_game_005", "text": "HTML5 沉浸式古风侦探推理网页游戏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_game_006", "text": "像素风 AI 人生模拟器", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_game_007", "text": "没背单词还想玩三消？做个词块坠落的消除游戏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；披着学习外衣的游戏"}
+{"id": "oos_game_008", "text": "AI 驱动的篮球经理战术模拟游戏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；有球队球员像业务实体，但核心是战术模拟"}
+{"id": "oos_game_009", "text": "动动脖子，一个靠头部动作互动的轻量体感游戏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_game_010", "text": "跨端实时修仙 Survivor 对战游戏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_game_011", "text": "螺钿非遗沉浸式互动叙事游戏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_game_012", "text": "课游工坊，让每个老师都能 5 分钟做出课堂互动游戏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；生成器的产物仍是游戏"}
+{"id": "oos_hw_001", "text": "基于 ESP32-S3 的桌面 AI 伙伴硬件", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；单片机固件"}
+{"id": "oos_hw_002", "text": "用 Arduino 做一个智能电子沙漏", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_hw_003", "text": "PCB 雕刻机加一个硬件 AI IDE", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_hw_004", "text": "做个智能药盒，到点提醒老人吃药，没吃就通知子女", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；业务感很强但核心是硬件"}
+{"id": "oos_hw_005", "text": "AI 拐棍，帮视障人士探路避障", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_hw_006", "text": "面向失语失能患者与照护者沟通的硬件系统", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；带「系统」二字但要做硬件"}
+{"id": "oos_hw_007", "text": "光萝卜，一个手捏就能演奏的创意乐器", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_hw_008", "text": "随身的 AI 离屏物理控制器", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_native_001", "text": "一款把 Android 屏幕共享到 Mac 的原生应用程序", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；端侧原生 + 系统级能力"}
+{"id": "oos_native_002", "text": "给 Mac 创建一个专属的灵动岛", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_native_003", "text": "成片相机，从 AI 写稿到拍完即成片的 iOS App", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；要调摄像头"}
+{"id": "oos_native_004", "text": "得嘞，一个音控手机 app，说句话就能操作手机", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_media_001", "text": "AI 辅助长篇小说创作工作台", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；产品核心是内容生成不是记录流转"}
+{"id": "oos_media_002", "text": "面向 3D 打印的 AI 原生参数化 3D 建模设计工具", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_media_003", "text": "一键生成你的手办形象和 3D 模型", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_media_004", "text": "术术动画，一个 AI 漫剧动画工作台", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_media_005", "text": "亲子涂鸦绘本创作与 3D 漫游世界", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_media_006", "text": "做个字帖生成器", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；短句，但明确是内容生成工具"}
+{"id": "oos_media_007", "text": "掌上地质三维建模系统", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；带「系统」二字的建模工具"}
+{"id": "oos_media_008", "text": "星韵，粒子音乐可视化律动播放器", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_signal_001", "text": "主播的福音，一个实时音频处理工具", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；实时信号处理"}
+{"id": "oos_signal_002", "text": "让普通有线耳机成为助听工具", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_signal_003", "text": "空气指挥家，挥挥手就能实时指挥一段音乐", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_signal_004", "text": "视障人士的实时空间音频找物助手", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_algo_001", "text": "面向 Dota 2 玩家的智能教练，看录像给改进建议", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；核心是模型推断"}
+{"id": "oos_algo_002", "text": "儿童语言发育 AI 监测", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_algo_003", "text": "做一个活着的 AI 防火墙", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组"}
+{"id": "oos_algo_004", "text": "AI 体感姿态匹配互动健身平台", "hasApp": false, "expect": "out_of_scope", "note": "Trae 语料 C 组；带「平台」二字但核心是姿态识别"}
+{"id": "real_hard_001", "text": "设备巡检工单系统，记录每台机器的保养历史和责任人", "hasApp": false, "expect": "real", "note": "硬负样本：带「设备」但本体是台账与工单，不许因为关键词误拒"}
+{"id": "real_hard_002", "text": "电竞俱乐部的选手合同、赛事报名与奖金结算管理", "hasApp": false, "expect": "real", "note": "硬负样本：带「电竞/赛事」但本体是合同与结算"}
+{"id": "real_hard_003", "text": "摄影工作室的拍摄排期、客户选片与交片进度管理", "hasApp": false, "expect": "real", "note": "硬负样本：带「摄影/选片」但本体是排期与进度"}
+{"id": "real_hard_004", "text": "签约作者的选题申报、稿费结算与审校流转", "hasApp": false, "expect": "real", "note": "硬负样本：带「写作」但本体是审批流"}
+{"id": "real_hard_005", "text": "3D 打印工厂的订单排产与耗材库存管理", "hasApp": false, "expect": "real", "note": "硬负样本：带「3D 打印」但本体是排产与库存"}
+{"id": "real_hard_006", "text": "音乐培训机构的排课、考勤与课时消耗统计", "hasApp": false, "expect": "real", "note": "硬负样本：带「音乐」但本体是排课与考勤"}
+{"id": "real_hard_007", "text": "无人机植保作业的派单、飞手调度与作业验收", "hasApp": false, "expect": "real", "note": "硬负样本：带「无人机」但本体是派单与验收"}
+{"id": "real_hard_008", "text": "游戏公司的版号申报材料与送审进度跟踪", "hasApp": false, "expect": "real", "note": "硬负样本：带「游戏」但本体是材料与进度"}
+{"id": "real_hard_009", "text": "智能硬件公司的售后返修登记与备件领用", "hasApp": false, "expect": "real", "note": "硬负样本：带「智能硬件」但本体是返修单与领料"}
+{"id": "real_hard_010", "text": "动画外包公司的镜头分派、返修意见与结算", "hasApp": false, "expect": "real", "note": "硬负样本：带「动画」但本体是分派与结算"}

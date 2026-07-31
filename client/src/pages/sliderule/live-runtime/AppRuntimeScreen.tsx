@@ -35,14 +35,22 @@ import {
   Breadcrumb,
   Avatar,
   Timeline,
+  Collapse,
   Drawer,
   Descriptions,
+  Flex,
   ConfigProvider,
   theme as antdTheme,
   message,
   Popover,
+  Popconfirm,
+  Tooltip,
   Checkbox,
-  Rate,
+  Form,
+  Alert,
+  Skeleton,
+  Empty,
+  Badge,
 } from "antd";
 import {
   DashboardOutlined,
@@ -68,7 +76,11 @@ import {
 } from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 import { resolveEntityRef } from "../system-screens/five-system-model";
-import { resolveIdentityTheme, hexToRgba } from "./identity-themes";
+import {
+  resolveIdentityTheme,
+  hexToRgba,
+  admThemeVars,
+} from "./identity-themes";
 import { autoPlaceGrid } from "./grid-compact";
 import { deriveLayoutTokens } from "./design-tokens";
 import {
@@ -97,6 +109,38 @@ const LazyPhonePageList = React.lazy(
   () => import("./phone-mobile/PhonePageList")
 );
 const LazyPhoneTabBar = React.lazy(() => import("./phone-mobile/PhoneTabBar"));
+const LazyPhoneFormPopup = React.lazy(
+  () => import("./phone-mobile/PhoneFormPopup")
+);
+const LazyPhoneDetailPopup = React.lazy(
+  () => import("./phone-mobile/PhoneDetailPopup")
+);
+const LazyPhoneRolePicker = React.lazy(
+  () => import("./phone-mobile/PhoneRolePicker")
+);
+const LazyPhoneHome = React.lazy(() => import("./phone-mobile/PhoneHome"));
+const LazyPhoneDetailSections = React.lazy(
+  () => import("./phone-mobile/PhoneDetailSections")
+);
+const LazyPhoneDetailFields = React.lazy(
+  () => import("./phone-mobile/PhoneDetailFields")
+);
+const LazyPhoneActionButton = React.lazy(
+  () => import("./phone-mobile/PhoneActionButton")
+);
+const LazyPhonePageSections = React.lazy(
+  () => import("./phone-mobile/PhonePageSections")
+);
+const LazyPhoneKanban = React.lazy(
+  () => import("./phone-mobile/PhoneKanban")
+);
+const LazyPhoneNavBar = React.lazy(() => import("./phone-mobile/PhoneNavBar"));
+const LazyPhoneSeedNotice = React.lazy(
+  () => import("./phone-mobile/PhoneSeedNotice")
+);
+const LazyPhoneCalendar = React.lazy(
+  () => import("./phone-mobile/PhoneCalendar")
+);
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -108,6 +152,13 @@ import {
   startInstance,
   nodeById,
 } from "./live-runtime";
+import {
+  seedRuntimeState,
+  dropSeedRowsFor,
+  entityShowsSeed,
+  seedRowCount,
+} from "./demo-seed";
+import { normalizeFieldOptions } from "./field-display";
 import {
   loadRuntimeState,
   saveRuntimeState,
@@ -130,14 +181,41 @@ import {
   type FilterFieldOption,
   type QuickActionButtonSpec,
 } from "./block-registry";
-import { resolveDesignRecipe, designRecipeAlgorithms, DARK_CANVAS_BG } from "./design-recipes";
+import {
+  resolveDesignRecipe,
+  designRecipeAlgorithms,
+  DARK_CANVAS_BG,
+} from "./design-recipes";
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
+import { FieldEditor } from "./FieldEditor";
+import {
+  collectFreeformBlockRefKeys,
+  dedupeBlocksByPanelKey,
+  dropLegacyPanelsCoveredByBlocks,
+} from "./page-panel-dedupe";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
+// 看板分组是纯函数，桌面与手机共用同一份——两档各分各的会让同一条记录
+// 在两个档位落进不同的列。
+import {
+  groupRowsForKanban,
+  localDateKey,
+  rowsByDateKey,
+  type KanbanColumn,
+} from "./page-views";
 import { AiSuggestionCard } from "./AiSuggestionCard";
 import { CodeProjectionView } from "./CodeProjectionView";
+import zhCN from "antd/locale/zh_CN";
+// dayjs 的 locale 是**独立于 antd 的第二套**：antd 的 locale 管按钮/占位这些
+// 文案，星期几的短名（一二三…）和「周一起周」是 dayjs 给的。只设一边的话
+// 面板会一半中文一半 Su/Mo——两行都得有。
+import dayjs from "dayjs";
+import "dayjs/locale/zh-cn";
+import { confirmDestructive, notify } from "./phone-mobile/phone-feedback";
+
+// 模块级设一次。放在组件里会每次渲染都调，dayjs.locale 是全局副作用。
+dayjs.locale("zh-cn");
 import type { AppPageStatSchema } from "./app-runtime-schema";
-import { generatePreviewSeedRows, computePreviewStat } from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
 // 多端设计分辨率（固定渲染 + 等比缩放）
@@ -148,10 +226,101 @@ const DEVICE_SPECS = {
 } as const;
 type DeviceKey = keyof typeof DEVICE_SPECS;
 
+/**
+ * 这个应用**实际有设计的**档位（2026-07-30）。
+ *
+ * 起因：07-30 起明说 preferredDevice=desktop 的应用不再多花一次调用去设计手机
+ * 版式（省约 67s/总览页）。那样一来切换条上的「手机」就成了一个通往没设计过
+ * 的档位的入口——点进去看到的是桌面版式被 CSS 掰弯的样子。**与其想办法把回退
+ * 做得好看，不如不给这个入口。**
+ *
+ * 形状照 Appsmith 的 LayoutSystemFeatures（`useLayoutSystemFeatures()` 按当前
+ * 布局系统类型回答"这个能力开不开"，其中 ENABLE_CANVAS_LAYOUT_CONTROL 管的
+ * 正是"要不要显示档位控件"）。抄的是**用一处派生回答、各处只管问**这个结构：
+ * 不在每个用到档位的地方各写一遍 `preferredDevice === 'desktop' ? …`，否则
+ * 迟早出现"切换条显示手机档、渲染层却没有手机设计"的错位。
+ *
+ * 判据是**真有没有那份设计**，不只是 preferredDevice 说了什么：
+ *   · 声明 phone → 只有手机档
+ *   · 声明 desktop → 只有桌面档
+ *   · 未声明/tablet（平板已下架 ADR-0001）→ 看总览页有没有挂 mobile 设计；
+ *     挂了就两档都给，没挂就只给桌面档
+ * 最后那条兜的是老数据：07-30 之前生成的应用 preferredDevice 一律 desktop
+ * （那时这个字段没判据、9/9 都是它），但它们**确实有** mobile 设计——按声明
+ * 判会把已有的设计藏起来，按"有没有"判才对。
+ */
+export function availableDeviceTiers(
+  schema: { identity?: { preferredDevice?: string }; pages?: unknown[] } | null | undefined
+): DeviceKey[] {
+  const declared = schema?.identity?.preferredDevice;
+  if (declared === "phone") return ["phone"];
+  const hasMobileDesign = (schema?.pages ?? []).some(
+    p =>
+      !!(p as { freeformOverview?: { mobile?: { root?: unknown } } })?.freeformOverview?.mobile
+        ?.root
+  );
+  if (hasMobileDesign) return ["desktop", "phone"];
+  return ["desktop"];
+}
+
+/**
+ * 弹层在各设备画布里的尺寸。
+ *
+ * antd Modal 是桌面组件：不给 width 默认 520px、垂直偏移 top:100。手机画布
+ * 才 390 宽，520 直接顶穿两边——展会上访客点「新建」就能看见。旁边的详情
+ * Drawer 早就按 isPhone 改成了底部弹起，Modal 这块漏了。
+ *
+ * 手机上按原生表单页的做法处理：左右各留 16 边距、垂直居中、内容超高自己
+ * 滚（画布是固定 390×844 的等比缩放渲染，不是真实视口，所以这里按设计分辨率
+ * 算死值而不是用 vh）。
+ */
+export function deviceModalSizing(device: DeviceKey): {
+  width: number;
+  centered: boolean;
+  bodyMaxHeight: number;
+} {
+  const spec = DEVICE_SPECS[device];
+  if (device === "phone") {
+    return {
+      width: spec.w - 32,
+      centered: true,
+      // 减掉标题栏 + 按钮栏 + 上下留白，剩下的给表单内容
+      bodyMaxHeight: Math.round(spec.h * 0.6),
+    };
+  }
+  return {
+    width: 520,
+    centered: false,
+    bodyMaxHeight: Math.round(spec.h * 0.7),
+  };
+}
+
 /** 容器实测尺寸 → 等比缩放系数（min(宽比, 高比)，letterbox 居中）。 */
+/**
+ * 缩放模式（2026-07-30 补 "width"）。
+ *
+ *   contain — min(w/W, h/H)：保证整个应用可见，代价是宽高比不匹配时留边。
+ *             应用舞台要这个：用户要看全。
+ *   width   — w/W：**只按宽度算，高度由内容推导**。缩略图墙要这个。
+ *
+ * 为什么加这一档：作品墙那版设计里卡片大中小交错、宽高比五花八门，用 contain
+ * 的结果是每张卡两侧一大片灰（实测 778×272 的卡里应用只有 484px 宽，
+ * 383×130 的卡里只有 230px）。
+ *
+ * 做法照 WordPress Gutenberg 的 ScaledBlockPreview
+ * （packages/block-editor/src/components/block-preview/auto.js）：
+ *     const scale = containerWidth / viewportWidth;
+ *     const aspectRatio = containerWidth / (contentHeight * scale);
+ * 它也是缩放真实渲染的组件树（不是 iframe、不是截图），跟这里同一个问题。
+ * 关键在**宽度定缩放、高度跟着内容走**，而不是把内容塞进一个固定尺寸的盒子
+ * ——后者必然要么留边要么裁切。调用方据此把容器高度设成 designH×scale。
+ */
+export type ScaleFitMode = "contain" | "width";
+
 function useScaleToFit(
   designW: number,
-  designH: number
+  designH: number,
+  mode: ScaleFitMode = "contain"
 ): {
   ref: React.RefObject<HTMLDivElement | null>;
   scale: number;
@@ -164,14 +333,19 @@ function useScaleToFit(
     const measure = () => {
       const w = el.clientWidth;
       const h = el.clientHeight;
-      if (w > 0 && h > 0) setScale(Math.min(w / designW, h / designH));
+      if (w <= 0) return;
+      if (mode === "width") {
+        setScale(w / designW);
+        return;
+      }
+      if (h > 0) setScale(Math.min(w / designW, h / designH));
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [designW, designH]);
+  }, [designW, designH, mode]);
   return { ref, scale };
 }
 
@@ -183,7 +357,10 @@ const MENU_ICONS = [
 ];
 
 // E40.2 品牌图标封闭集（id 合法域在 @legal identityIcons；未知 id 回退 boxes）
-const BRAND_ICONS: Record<string, React.ComponentType<{ style?: React.CSSProperties }>> = {
+const BRAND_ICONS: Record<
+  string,
+  React.ComponentType<{ style?: React.CSSProperties }>
+> = {
   boxes: AppstoreOutlined,
   chart: BarChartOutlined,
   shield: SafetyOutlined,
@@ -205,126 +382,6 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
   completed: { color: "#52c41a", label: "已完成" },
   rejected: { color: "#ff4d4f", label: "已驳回" },
 };
-
-function FieldInput({
-  field,
-  value,
-  refRows,
-  enumOptions = [],
-  onChange,
-}: {
-  field: AppFormFieldSchema;
-  value: unknown;
-  refRows: Array<{ id: string; label: string }>;
-  /** enum 字段的既有取值（来自已写入的行，去重）——有历史值时变成真下拉 */
-  enumOptions?: string[];
-  onChange: (v: unknown) => void;
-}) {
-  if (field.type === "number") {
-    // format 富化（加厚 schema 一期）：星级用 Rate；金额/百分比/进度/评分
-    // 给量纲前后缀与合理边界——录入界面直接长出字段语义。
-    if (field.format === "rating") {
-      return (
-        <Rate
-          allowHalf
-          value={Number(value) || 0}
-          onChange={v => onChange(v)}
-        />
-      );
-    }
-    const bounded =
-      field.format === "percent" ||
-      field.format === "progress" ||
-      field.format === "score";
-    return (
-      <InputNumber
-        style={{ width: "100%" }}
-        value={value as number | undefined}
-        onChange={v => onChange(v)}
-        placeholder={field.label}
-        prefix={field.format === "money" ? "¥" : undefined}
-        suffix={
-          field.format === "percent" || field.format === "progress"
-            ? "%"
-            : undefined
-        }
-        min={bounded ? 0 : undefined}
-        max={bounded ? 100 : undefined}
-      />
-    );
-  }
-  if (field.type === "date" || field.type === "datetime") {
-    return (
-      <Input
-        type={field.type === "date" ? "date" : "datetime-local"}
-        value={(value as string) ?? ""}
-        onChange={e => onChange(e.target.value)}
-      />
-    );
-  }
-  if (field.type === "enum") {
-    // 声明取值（加厚 schema 一期）→ 严格下拉（schema 即真相，不再自由输入）
-    if (field.options && field.options.length > 0) {
-      return (
-        <Select
-          style={{ width: "100%" }}
-          value={(value as string) || undefined}
-          onChange={v => onChange(v ?? "")}
-          options={field.options.map(o => ({ value: o.id, label: o.label }))}
-          placeholder={`选择${field.label}`}
-          allowClear
-        />
-      );
-    }
-    // 无声明：已有历史取值 → 真枚举下拉（仍允许输入新值）；无数据时保持自由输入
-    return (
-      <Select
-        style={{ width: "100%" }}
-        mode="tags"
-        maxCount={1}
-        value={value ? [String(value)] : []}
-        onChange={v => onChange(v.at(-1) ?? "")}
-        options={enumOptions.map(o => ({ value: o, label: o }))}
-        placeholder={
-          enumOptions.length > 0
-            ? `选择或输入${field.label}`
-            : `${field.label}（输入后回车）`
-        }
-      />
-    );
-  }
-  if (field.type === "ref" && refRows.length > 0) {
-    return (
-      <Select
-        style={{ width: "100%" }}
-        value={(value as string) || undefined}
-        onChange={v => onChange(v)}
-        options={refRows.map(r => ({ value: r.id, label: r.label }))}
-        placeholder={`选择${field.label}`}
-        showSearch
-        optionFilterProp="label"
-      />
-    );
-  }
-  if (field.type === "text") {
-    // 长文本（描述/备注/正文类）→ 多行输入
-    return (
-      <Input.TextArea
-        value={(value as string) ?? ""}
-        onChange={e => onChange(e.target.value)}
-        placeholder={field.label}
-        autoSize={{ minRows: 2, maxRows: 5 }}
-      />
-    );
-  }
-  return (
-    <Input
-      value={(value as string) ?? ""}
-      onChange={e => onChange(e.target.value)}
-      placeholder={field.label}
-    />
-  );
-}
 
 /**
  * 页面级 KPI 卡取值（加厚 schema 一期）：对着运行时行数据求值声明的
@@ -357,9 +414,9 @@ function applyPageFilter(
 ): RuntimeRow[] {
   if (!filterState) return rows;
   let out = rows;
-  const activeEnumEntries = Object.entries(filterState.enumFilters ?? {}).filter(
-    ([, v]) => Boolean(v)
-  );
+  const activeEnumEntries = Object.entries(
+    filterState.enumFilters ?? {}
+  ).filter(([, v]) => Boolean(v));
   for (const [fieldId, value] of activeEnumEntries) {
     out = out.filter(r => String(r.values[fieldId] ?? "") === value);
   }
@@ -402,6 +459,8 @@ export function AppRuntimeScreen({
   xrayActive = false,
   onXrayTarget,
   controlsContainer,
+  scaleFit = "contain",
+  showScaleBadge = true,
 }: {
   model: FiveSystemModel;
   sessionId: string;
@@ -414,12 +473,27 @@ export function AppRuntimeScreen({
   /** 档位切换条的外部挂载点（studio 顶条「游标」左侧）。传了本 prop 就
    *  不再浮在画布左上角：元素就绪前不渲染切换条（避免闪跳）。 */
   controlsContainer?: HTMLElement | null;
+  /** 画布缩放口径。缩略图墙传 "width"（宽度定缩放、高度跟内容），
+   *  应用舞台用默认 "contain"（要看全）。见 ScaleFitMode 的说明。 */
+  scaleFit?: ScaleFitMode;
+  /**
+   * 右下角那枚「1440×810 · 21%」缩放标识要不要画。
+   *
+   * 它是**可交互运行时**的自述——告诉你当前看到的是固定设计分辨率按容器等比
+   * 缩下来的结果。放进应用中心的缩略图里就变成了噪声：9px 的字再被整体缩到
+   * 21% 根本读不出来，而且卡片信息条 2026-07-31 改成压在画面底部之后，两者
+   * 抢同一个右下角，实测叠成一块糊斑。所以缩略图传 false。
+   */
+  showScaleBadge?: boolean;
 }) {
   // 2026-07-24：间距/圆角/阴影刻度——直接吃 antd 自己的 Design Token（见
   // design-tokens.ts 头部注释），不是另起一套静态数字。卡片族（KPI/图表/
   // 排行/动态）的 padding/margin/gap 统一从这里取，不再各处手写数字。
   const { token: antdToken } = antdTheme.useToken();
-  const layout = React.useMemo(() => deriveLayoutTokens(antdToken), [antdToken]);
+  const layout = React.useMemo(
+    () => deriveLayoutTokens(antdToken),
+    [antdToken]
+  );
 
   // 表格列设置（表格自带能力）：按 pageId 记用户勾选的列；undefined = 默认列
   const [tableColPrefs, setTableColPrefs] = React.useState<
@@ -430,9 +504,14 @@ export function AppRuntimeScreen({
     () => deriveAppRuntimeSchema(model, appTitle || "推演应用"),
     [model, appTitle]
   );
-  const [state, setState] = React.useState<RuntimeState>(() => {
-    return loadRuntimeState(sessionId) ?? initRuntimeState(model);
-  });
+  // hydrate 后统一过一遍 seedRuntimeState：只给"完全为空的实体"铺演示行，
+  // 幂等且不碰已有真实数据（见 demo-seed.ts 的三条边界）。放在 load 之后
+  // 而不是只在 init 里，是因为别的面板可能先存过一份没种子的状态。
+  const hydrate = React.useCallback(
+    () => seedRuntimeState(loadRuntimeState(sessionId) ?? initRuntimeState(model), model),
+    [sessionId, model]
+  );
+  const [state, setState] = React.useState<RuntimeState>(hydrate);
   const [activePageId, setActivePageId] = React.useState<string>(
     () => schema?.landingPageId ?? "home"
   );
@@ -442,6 +521,15 @@ export function AppRuntimeScreen({
   const [device, setDevice] = React.useState<DeviceKey>(() =>
     schema?.identity.preferredDevice === "phone" ? "phone" : "desktop"
   );
+  // 这个应用有设计的档位。切换条、代码视图旁的档位按钮都问它，不各自判
+  // （见 availableDeviceTiers 的说明）。
+  const deviceTiers = React.useMemo(() => availableDeviceTiers(schema), [schema]);
+  // 只有一档时把当前档钉在那一档上：老会话可能把 device 存成了一个现在
+  // 不再提供的档（比如之前切到过手机、这次的应用只有桌面档），不纠回来
+  // 就会渲染一个切换条上选不中的视图。
+  React.useEffect(() => {
+    if (!deviceTiers.includes(device)) setDevice(deviceTiers[0]);
+  }, [deviceTiers, device]);
   // 代码视图档（代码视图一期）：schema 的确定性代码投影——与设备档并列的
   // 观察视角切换，开着时替换缩放画布（代码要整幅面积，不做 16:9 缩放）
   const [codeView, setCodeView] = React.useState(false);
@@ -458,6 +546,10 @@ export function AppRuntimeScreen({
     {}
   );
   const [detailRow, setDetailRow] = React.useState<RuntimeRow | null>(null);
+  // 手机档看板当前选中的状态列（桌面档并排显示所有列，不需要这个 state）
+  const [phoneKanbanKey, setPhoneKanbanKey] = React.useState("");
+  // 手机档日历选中的那一天（null = 不筛，显示全部）
+  const [phoneCalDate, setPhoneCalDate] = React.useState<Date | null>(null);
   // AI 生成：正在跑的能力 id + 最近一次失败诊断（fail-closed，不冒充输出）
   const [aiRunningCapId, setAiRunningCapId] = React.useState<string | null>(
     null
@@ -477,17 +569,15 @@ export function AppRuntimeScreen({
     rationale: string | null;
   } | null>(null);
   const spec = DEVICE_SPECS[device];
-  const { ref: fitRef, scale } = useScaleToFit(spec.w, spec.h);
+  const { ref: fitRef, scale } = useScaleToFit(spec.w, spec.h, scaleFit);
   // 弹层（Modal/Select/Drawer）挂进画布，跟随 transform 缩放
   const [canvasEl, setCanvasEl] = React.useState<HTMLDivElement | null>(null);
 
   // 与工作流试运行面共享一份状态：对方变更时重载
   React.useEffect(
     () =>
-      subscribeRuntimeChanged(sessionId, () =>
-        setState(loadRuntimeState(sessionId) ?? initRuntimeState(model))
-      ),
-    [sessionId, model]
+      subscribeRuntimeChanged(sessionId, () => setState(hydrate())),
+    [sessionId, hydrate]
   );
   React.useEffect(
     () =>
@@ -549,6 +639,7 @@ export function AppRuntimeScreen({
 
   const isPhone = device === "phone";
   const isTablet = device === "tablet";
+  const modalSizing = deviceModalSizing(device);
   const isHome = activePageId === "home";
   const page: AppPageSchema | null = isHome
     ? null
@@ -557,6 +648,14 @@ export function AppRuntimeScreen({
       null);
   const currentTitle = isHome ? schema.home.title : (page?.title ?? "");
   const allRows = page?.entityId ? (state.entities[page.entityId] ?? []) : [];
+  /**
+   * 本页主表里还剩几行演示种子（0 = 展示的全是真实数据）。
+   *
+   * 一页里的表格、图表、KPI、体验区块吃的都是这同一批行，所以标注也只需要
+   * 这一处——不给每个渲染器各挂一个徽标（那样一页能挂出七八个"示例数据"，
+   * 反而没人看）。用户往这张表写第一条真实数据时种子整批清掉，徽标随之消失。
+   */
+  const pageSeedCount = seedRowCount(state, page?.entityId);
 
   // Step 6 FilterBar：本页可筛的枚举字段（有声明选项的 enum 字段）+
   // 可选日期范围字段（主实体第一个 date/datetime 字段）。
@@ -595,7 +694,9 @@ export function AppRuntimeScreen({
         [pageId]: {
           enumFilters: { ...cur.enumFilters, ...(patch.enumFilters ?? {}) },
           dateRange:
-            patch.dateRange !== undefined ? patch.dateRange : (cur.dateRange ?? null),
+            patch.dateRange !== undefined
+              ? patch.dateRange
+              : (cur.dateRange ?? null),
         },
       };
     });
@@ -612,7 +713,8 @@ export function AppRuntimeScreen({
         .map(a => {
           const pa = pageAccess.get(page.id);
           const permitted =
-            !a.permissionRef || (pa?.grantedActions ?? []).includes(a.permissionRef);
+            !a.permissionRef ||
+            (pa?.grantedActions ?? []).includes(a.permissionRef);
           if (a.type === "navigate") {
             const target = schema.pages.find(p => p.id === a.targetPageRef);
             return {
@@ -629,6 +731,50 @@ export function AppRuntimeScreen({
           };
         })
     : [];
+
+  /**
+   * enum 字段取值声明的查询（entityId + fieldId → 归一化 options）。
+   *
+   * 页面图表的 options 在 schema 派生时就带上了，freeform 的 chart 节点是
+   * LLM 现写的 `{entityRef, dimensionFieldId}`，手里没有字段定义——不给它
+   * 这个查询，环图图例就只能写取值 id（`refunded` / `unpaid`）。
+   */
+  const enumOptionsOf = React.useCallback(
+    (entityId: string, fieldId: string) => {
+      const field = model?.datamodel?.entities
+        ?.find(e => e.id === entityId)
+        ?.fields?.find(f => f.id === fieldId);
+      return normalizeFieldOptions(field?.type, field?.options);
+    },
+    [model]
+  );
+
+  /**
+   * 字段显示名查询，给 DataTable 区块的列头用（2026-07-28）。
+   *
+   * 区块渲染器手里只有 binding.entityRef 和运行时行数据，没有字段定义，
+   * 于是列头一直在打印字段 id（`lot_code`），跟同页其它表格的中文列名
+   * 坐在一起格外刺眼。查不到回落 undefined，渲染器自己退回字段 id。
+   */
+  const fieldLabelOf = React.useCallback(
+    (entityId: string, fieldId: string) =>
+      model?.datamodel?.entities
+        ?.find(e => e.id === entityId)
+        ?.fields?.find(f => f.id === fieldId)?.name || undefined,
+    [model]
+  );
+
+  // antd v5 的静态 message.xxx() 拿不到 ConfigProvider 上下文（控制台明写着
+  // 「Static function can not consume context like dynamic theme」）——身份主色、
+  // 深色/紧凑档、圆角配方全都下发不到提示条上。改用 hook 版拿带上下文的实例，
+  // messageHolder 挂在 ConfigProvider 里面（见下方渲染处）。
+  const [messageApi, messageHolder] = message.useMessage();
+  /** 提示的统一出口：设备分流 + 落在画布内 + 带主题上下文，调用点只给档位和文案。 */
+  const toast = React.useCallback(
+    (kind: "success" | "warning" | "info" | "error", content: string) =>
+      notify(isPhone, kind, content, () => canvasEl, messageApi),
+    [isPhone, canvasEl, messageApi]
+  );
 
   const apply = (next: RuntimeState) => {
     setState(next);
@@ -654,15 +800,36 @@ export function AppRuntimeScreen({
     }));
   };
 
+  /** 关详情：未确认的 AI 建议随之丢弃（不悄悄写回）。两个设备档共用。 */
+  const closeDetail = () => {
+    setDetailRow(null);
+    setAiError(null);
+    setAiSuggestion(null);
+  };
+
+  /** enum 字段的历史取值（已写入行里出现过的，去重）——无声明取值时的候选来源。 */
+  const enumOptionsFor = (field: AppFormFieldSchema) => {
+    if (field.type !== "enum" || !page?.entityId) return [];
+    return [
+      ...new Set(
+        (state.entities[page.entityId] ?? [])
+          .map(r => String(r.values[field.id] ?? "").trim())
+          .filter(Boolean)
+      ),
+    ];
+  };
+
   const handleCreate = () => {
     if (!page?.entityId) return;
     const problems = validateRowValues(model, page.entityId, formValues);
     if (problems.length > 0) {
-      message.warning(problems.join("；"));
+      toast("warning", problems.join("；"));
       return;
     }
+    // 第一条真实数据落地前，先把这张表的演示种子整批清掉——种子和真实数据
+    // 不混表，否则用户找不到自己刚写的那条，「示例数据」徽标也不再准确。
     const { state: next } = addRow(
-      state,
+      dropSeedRowsFor(state, page.entityId),
       page.entityId,
       formValues,
       new Date().toISOString()
@@ -670,7 +837,7 @@ export function AppRuntimeScreen({
     apply(next);
     setFormOpen(false);
     setFormValues({});
-    message.success("已保存");
+    toast("success", "已保存");
   };
 
   /**
@@ -741,7 +908,7 @@ export function AppRuntimeScreen({
     const updated = (next.entities[entityId] ?? []).find(r => r.id === rowId);
     if (updated) setDetailRow(updated);
     setAiSuggestion(null);
-    message.success(`已应用 AI 建议 →「${action.outputLabel}」`);
+    toast("success", `已应用 AI 建议 →「${action.outputLabel}」`);
   };
 
   const handleSubmitToWorkflow = (rowId: string, rowLabel: string) => {
@@ -755,46 +922,86 @@ export function AppRuntimeScreen({
     );
     if (instance) {
       apply(next);
-      message.success(
-        `已提交审批：${instance.title}（到 Workflow 试运行里推进）`
-      );
+      toast("success", `已提交审批：${instance.title}（到 Workflow 试运行里推进）`);
     }
   };
 
-  const rowActions = (row: RuntimeRow) => (
-    <Space size="small">
-      {page?.workflowLinked && (
-        <span
-          {...probe({ kind: "workflow", label: "提交审批", pageId: page.id })}
+  // 行操作跨设备共用同一套 onClick，只换按钮壳：手机档 antd-mobile Button
+  // （触摸目标够大、按下有原生反馈），桌面档 antd type="link"。外层容器也分档
+  // ——antd Space 是桌面组件，手机上直接用 flex，少一层 PC DOM。
+  const rowActions = (row: RuntimeRow) => {
+    const submit = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      handleSubmitToWorkflow(
+        row.id,
+        String(Object.values(row.values)[0] ?? row.id)
+      );
+    };
+    const remove = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      apply(deleteRow(state, page!.entityId!, row.id));
+    };
+    if (isPhone) {
+      return (
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {page?.workflowLinked && (
+            <span
+              {...probe({ kind: "workflow", label: "提交审批", pageId: page.id })}
+            >
+              <React.Suspense fallback={null}>
+                <LazyPhoneActionButton color="primary" onClick={submit}>
+                  提交审批
+                </LazyPhoneActionButton>
+              </React.Suspense>
+            </span>
+          )}
+          <React.Suspense fallback={null}>
+            <LazyPhoneActionButton color="danger" onClick={remove}>
+              删除
+            </LazyPhoneActionButton>
+          </React.Suspense>
+        </div>
+      );
+    }
+    return (
+      <Space size="small">
+        {page?.workflowLinked && (
+          <span
+            {...probe({ kind: "workflow", label: "提交审批", pageId: page.id })}
+          >
+            <Button size="small" type="link" onClick={submit}>
+              提交审批
+            </Button>
+          </span>
+        )}
+        {/* 删除是不可逆的，此前一点就没了——展会上访客手一滑就把演示数据
+            删掉，还不知道自己干了什么。antd Popconfirm 是这个场景的标准解，
+            不用自己搭一个确认弹框。手机档不套：那边是左滑出删除键，
+            滑动本身已经是"不会误触"的确认动作。 */}
+        <Popconfirm
+          title="删除这条记录？"
+          description="删掉之后无法恢复。"
+          okText="删除"
+          okButtonProps={{ danger: true }}
+          cancelText="取消"
+          getPopupContainer={() => canvasEl ?? document.body}
+          onConfirm={() => {
+            apply(deleteRow(state, page!.entityId!, row.id));
+            toast("success", "已删除");
+          }}
         >
           <Button
             size="small"
             type="link"
-            onClick={e => {
-              e.stopPropagation();
-              handleSubmitToWorkflow(
-                row.id,
-                String(Object.values(row.values)[0] ?? row.id)
-              );
-            }}
+            danger
+            onClick={e => e.stopPropagation()}
           >
-            提交审批
+            删除
           </Button>
-        </span>
-      )}
-      <Button
-        size="small"
-        type="link"
-        danger
-        onClick={e => {
-          e.stopPropagation();
-          apply(deleteRow(state, page!.entityId!, row.id));
-        }}
-      >
-        删除
-      </Button>
-    </Space>
-  );
+        </Popconfirm>
+      </Space>
+    );
+  };
 
   // 表格列：列设置勾选优先（从实体全字段挑），否则默认列；
   // 每列自带排序（按字段类型）与筛选（enum/低基数真实取值）——表格自带能力，不走设计面板。
@@ -901,10 +1108,11 @@ export function AppRuntimeScreen({
   );
 
   // 工作台内置图：ECharts 基建（与页面级声明图表同一 lazy chunk / 同一套 dataviz 约定）
-  const chartCard = (chart: AppChartSchema) => {
+  /** 图表正文（真图 or 诚实空态）——两个设备档共用，只有外面那层卡片不同。 */
+  const chartBody = (chart: AppChartSchema, height: number) => {
     let option: Record<string, unknown> | null = null;
     let emptyHint = "";
-    let ariaLabel = chart.label;
+    const ariaLabel = chart.label;
     if (chart.source === "entities:rowcount") {
       option = buildEntityRowcountOption(
         (model.datamodel?.entities ?? []).slice(0, 6).map(e => ({
@@ -921,38 +1129,40 @@ export function AppRuntimeScreen({
       option = buildInstanceStatusOption(counts);
       emptyHint = "暂无流程实例 — 到业务页面「提交审批」发起";
     }
+    if (!option)
+      return (
+        <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
+          {emptyHint}
+        </div>
+      );
     return (
-      <Card
-        key={chart.id}
-        title={chart.label}
-        size="small"
-        style={{ flex: 1, minWidth: 0 }}
-        data-testid={`app-runtime-${chart.id}`}
-      >
-        {option ? (
-          <React.Suspense
-            fallback={
-              <div
-                style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}
-              >
-                图表加载中…
-              </div>
-            }
-          >
-            <LazyEchartsChart
-              option={option}
-              height={168}
-              ariaLabel={ariaLabel}
-            />
-          </React.Suspense>
-        ) : (
+      <React.Suspense
+        fallback={
           <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
-            {emptyHint}
+            图表加载中…
           </div>
-        )}
-      </Card>
+        }
+      >
+        <LazyEchartsChart
+          option={option}
+          height={height}
+          ariaLabel={ariaLabel}
+        />
+      </React.Suspense>
     );
   };
+
+  const chartCard = (chart: AppChartSchema) => (
+    <Card
+      key={chart.id}
+      title={chart.label}
+      size="small"
+      style={{ flex: 1, minWidth: 0 }}
+      data-testid={`app-runtime-${chart.id}`}
+    >
+      {chartBody(chart, 168)}
+    </Card>
+  );
 
   const timelineCard = (
     <Card title="审批动态" size="small" style={{ flex: 1.2, minWidth: 0 }}>
@@ -1009,21 +1219,17 @@ export function AppRuntimeScreen({
     </Card>
   );
 
+  // 桌面/平板档首页。手机档走 phoneHomeContent（antd-mobile），所以这里
+  // 不再有 isPhone 分支——留着会让人以为手机还走这条路。
   const homeContent = (
     <>
-      <div
-        style={{
-          display: isPhone ? "grid" : "flex",
-          gridTemplateColumns: "1fr 1fr",
-          gap: isPhone ? 8 : 16,
-        }}
-      >
+      <div style={{ display: "flex", gap: 16 }}>
         {schema.home.stats.map(s => (
           <Card
             key={s.id}
             size="small"
             style={{ flex: 1 }}
-            styles={{ body: { padding: isPhone ? "10px 14px" : "16px 20px" } }}
+            styles={{ body: { padding: "16px 20px" } }}
           >
             <Statistic
               title={s.label}
@@ -1033,79 +1239,652 @@ export function AppRuntimeScreen({
           </Card>
         ))}
       </div>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: isPhone ? "column" : "row",
-          gap: isPhone ? 8 : 16,
-          marginTop: isPhone ? 8 : 16,
-        }}
-      >
+      <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
         {schema.home.charts.map(chartCard)}
       </div>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: isPhone ? "column" : "row",
-          gap: isPhone ? 8 : 16,
-          marginTop: isPhone ? 8 : 16,
-        }}
-      >
-        {!isPhone && (
-          <Card title="快速入口" size="small" style={{ flex: 1 }}>
-            <Space wrap>
-              {schema.pages.map(p => {
-                const locked = pageAccess.get(p.id)?.visible === false;
-                return (
-                  <Button
-                    key={p.id}
-                    icon={locked ? <LockOutlined /> : undefined}
-                    disabled={locked}
-                    title={
-                      locked
-                        ? `当前角色（${role ?? "-"}）无本页权限`
-                        : undefined
-                    }
-                    onClick={() => setActivePageId(p.id)}
-                  >
-                    {p.title}
-                  </Button>
-                );
-              })}
-            </Space>
-            {[...pageAccess.values()].some(a => !a.visible) && (
-              <div style={{ marginTop: 10, fontSize: 12, color: "#999" }}>
-                <LockOutlined /> 当前角色不可见{" "}
-                {[...pageAccess.values()].filter(a => !a.visible).length} 个页面
-                — 右上角切换角色试试（RBAC 权限实时生效）
-              </div>
-            )}
-          </Card>
-        )}
+      <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
+        <Card title="快速入口" size="small" style={{ flex: 1 }}>
+          <Space wrap>
+            {schema.pages.map(p => {
+              const locked = pageAccess.get(p.id)?.visible === false;
+              return (
+                <Button
+                  key={p.id}
+                  icon={locked ? <LockOutlined /> : undefined}
+                  disabled={locked}
+                  title={
+                    locked ? `当前角色（${role ?? "-"}）无本页权限` : undefined
+                  }
+                  onClick={() => setActivePageId(p.id)}
+                >
+                  {p.title}
+                </Button>
+              );
+            })}
+          </Space>
+          {[...pageAccess.values()].some(a => !a.visible) && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "#999" }}>
+              <LockOutlined /> 当前角色不可见{" "}
+              {[...pageAccess.values()].filter(a => !a.visible).length} 个页面 —
+              右上角切换角色试试（RBAC 权限实时生效）
+            </div>
+          )}
+        </Card>
         {timelineCard}
       </div>
     </>
   );
 
-  // 手机端业务页：卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
-  const phonePageContent = page && (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+  // 手机端首页：同一份数据（统计/图表/审批动态）交给 antd-mobile 渲染。
+  // 桌面档那版是 antd 的 Card+Statistic+Timeline —— 之前手机档跟着复用，
+  // 只加了几个 isPhone 三元调间距：间距对了，组件还是 PC 的。
+  const phoneHomeContent = (
+    <React.Suspense
+      fallback={
+        <Skeleton active paragraph={{ rows: 4 }} style={{ padding: "12px 4px" }} />
+      }
+    >
+      <LazyPhoneHome
+        stats={schema.home.stats.map(s => ({
+          id: s.id,
+          label: s.label,
+          value: statValue(state, schema, s.source),
+          suffix: s.suffix,
+        }))}
+        charts={schema.home.charts.map(c => ({
+          id: c.id,
+          label: c.label,
+          node: chartBody(c, 148),
+        }))}
+        timeline={recentInstances.map(inst => ({
+          id: inst.id,
+          title: inst.title,
+          nodeLabel:
+            nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId,
+          statusLabel: (STATUS_META[inst.status] ?? STATUS_META.running).label,
+          status:
+            inst.status === "completed"
+              ? "completed"
+              : inst.status === "rejected"
+                ? "rejected"
+                : "running",
+        }))}
+        timelineEmptyHint="暂无流程实例 — 到业务页面「提交审批」发起"
+      />
+    </React.Suspense>
+  );
+
+  // 方案 C 的两张名单：哪些 kind 属于"总览页"、哪些区块类型属于"KPI/图表类"。
+  // 总览页归 freeformOverview（AI 现场设计，每个应用长得不一样）；
+  // 业务页归积木（模板渲染，整齐可预期）。
+  const OVERVIEW_KINDS = new Set(["monitor", "dashboard"]);
+  const KPI_BLOCK_TYPES = new Set(["MetricGrid", "TrendChart"]);
+
+  // 2026-07-29：设计者可以用 blockRef 把排行榜/动态流直接摆进 freeform 版式里
+  //（见 page-panel-dedupe.ts）。摆进去了，外面的脚手架和固定骨架就都不再画
+  // 同一份——否则又是一份数据两张卡，而且破坏它设计的留白节奏。
+  const freeformPlacedKeys = React.useMemo(
+    () => collectFreeformBlockRefKeys(page?.freeformOverview),
+    [page?.freeformOverview]
+  );
+
+  // 体验区块渲染：桌面壳与手机壳共用同一份摆法逻辑，只有槽位来源分档。
+  // 抽成函数之前它内联在 defaultPageContent 里，于是手机档一个区块都渲染不到。
+  const renderExperienceBlockScaffold = (forPhone: boolean) => {
+    if (!page) return null;
+        // 保守策略：_fromLegacy 区块只是转换占位，渲染仍走旧路径（statsBand 等）。
+        // 真正的新模型 blocks 不带 _fromLegacy，走 ExperienceBlockBoundary。
+        const directBlocks = page.experienceBlocks
+          .filter(
+            b =>
+              !(b as import("./block-registry").ExperienceBlockInstance)
+                ._fromLegacy
+          )
+          // 归属划分（2026-07-28）：KPI/图表在一页里只能由一条路负责。
+          //
+          // 总览页（monitor/dashboard）的 stats/charts 会被 ENRICH 重新设计成
+          // freeformOverview——那是同一份声明的美化版，不是另一份内容。这类页
+          // 上再出 MetricGrid/TrendChart 积木，就会和总览区画出两张说同一件事
+          // 的卡。这里直接把它们摘掉：不指望 LLM 一定守规矩，渲染层兜死。
+          //
+          // 反方向在下面（statsBand/chartsBand 让位给积木）。
+          .filter(b => !(OVERVIEW_KINDS.has(page.view.kind) && KPI_BLOCK_TYPES.has(b.type)))
+          // 同一条"一页一个主人"的规矩，用在表格上（2026-07-28 真跑发现）。
+          //
+          // 每一页本来就会把自己的主实体渲染成一张表——带中文列名、枚举彩色标签、
+          // 排序/筛选/分页/行内操作。DataTable 积木绑同一个实体时画的是**同一批行**，
+          // 却只有裸字段名（lot_code / supplier_id）、没有枚举标签、没有操作，
+          // 于是一页里同样的数据出现两遍，上面那遍还更难看。
+          //
+          // 实测：放开 DataTable 生成后，五个业务页全中——模型不知道"这一页已经
+          // 自带主实体表"，只当页面是张白纸。所以跟 KPI 一样在渲染层兜死。
+          //
+          // 只摘"绑主实体"的那些；绑**别的**实体的 DataTable 是真新增内容
+          //（例如库存页上挂一张供应商表），必须留着。
+          .filter(
+            b =>
+              !(
+                b.type === "DataTable" &&
+                page.entityId &&
+                (b.binding as { entityRef?: string } | undefined)?.entityRef ===
+                  page.entityId
+              )
+          )
+          // 同一条规矩的第三例（2026-07-28）：总览页不要筛选条。
+          //
+          // FilterBar 筛的是"本页主实体行"，可总览页压根不逐行展示数据，
+          // 筛了看不出任何变化；更糟的是它绑单个实体，而总览页的 KPI/图表
+          // 通常跨好几个实体（真跑那次跨了 4 个），筛一个也管不着另外三个。
+          // 也就是说它在这类页面上是**功能性无效**的，不只是难看。
+          .filter(b => !(OVERVIEW_KINDS.has(page.view.kind) && b.type === "FilterBar"));
+        // 积木内部的自我去重：模型偶尔把同一份榜/流声明两次（见
+        // page-panel-dedupe.ts 的内容指纹判定）。
+        const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks, freeformPlacedKeys);
+        if (dedupedBlocks.length === 0) return null;
+
+        // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
+        const handleBlockAction = (
+          actionId: string,
+          eventData?: Record<string, unknown>
+        ) => {
+          const action = page.pageActions.find(a => a.id === actionId);
+          if (!action) return;
+          // 实际权限检查：permissionRef 须在当前角色 grantedActions 里。
+          const pa = pageAccess.get(page.id);
+          const permitted =
+            !action.permissionRef ||
+            (pa?.grantedActions ?? []).includes(action.permissionRef);
+          if (!permitted) return;
+          switch (action.type) {
+            case "navigate":
+              if (action.targetPageRef) setActivePageId(action.targetPageRef);
+              break;
+            case "createRecord":
+              // 复用既有「新建」表单：只支持目标实体=本页主实体的场景（表单
+              // 字段就是照本页主实体拼的）；指向别的实体如实拒绝，不假装能建。
+              if (action.entityRef && action.entityRef === page.entityId) {
+                setFormValues({});
+                setFormOpen(true);
+              } else {
+                toast("info", "该操作指向的实体暂不支持在此页创建");
+              }
+              break;
+            case "changeFilter":
+              console.log("[action:changeFilter]", actionId, eventData);
+              break;
+            default:
+              console.log(`[action:${action.type}]`, actionId, eventData);
+          }
+        };
+
+        const renderBlock = (block: (typeof dedupedBlocks)[number]) => (
+          <ExperienceBlockBoundary
+            key={block.id}
+            block={block}
+            onAction={handleBlockAction}
+            pageActions={quickActionButtons}
+            filterState={activePageFilter}
+            filterFieldOptions={filterableEnumFields}
+            dateRangeField={dateRangeField}
+            onFilterChange={handlePageFilterChange}
+            workflow={model.workflow}
+            entityRows={state.entities}
+            chartPalette={{
+              primary: identityTheme.primary,
+              categorical: identityTheme.charts,
+            }}
+            enumOptionsOf={enumOptionsOf}
+            fieldLabelOf={fieldLabelOf}
+          />
+        );
+
+        // Step 7：未声明 layout（或声明后 5 槽位全空，schema 层已判定并回 null）
+        // 时保留原顺序平铺，视觉零变化。
+        if (!page.layout) {
+          return (
+            <div
+              className="mb-3 grid gap-2"
+              data-testid="app-runtime-experience-block-scaffold"
+            >
+              {dedupedBlocks.map(renderBlock)}
+            </div>
+          );
+        }
+
+        const blockById = new Map(dedupedBlocks.map(b => [b.id, b]));
+        // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
+        // forPhone 由调用方传入——从前这里读的是 isPhone，而这段代码只在桌面
+        // 壳里跑（手机壳走 phonePageContent），isPhone 恒 false，layout.mobile
+        // 是死字段：LLM 在生成它、Gate 在校验它，运行时永远读不到。
+        const slotSource =
+          forPhone && page.layout.mobile
+            ? { ...page.layout, ...page.layout.mobile }
+            : page.layout;
+        const slotBlocks = (ids: string[]) =>
+          ids
+            .map(bid => blockById.get(bid))
+            .filter((b): b is NonNullable<typeof b> => !!b);
+        const summaryBlocks = slotBlocks(slotSource.summary ?? []);
+        const primaryBlocks = slotBlocks(slotSource.primary ?? []);
+        const secondaryBlocks = slotBlocks(slotSource.secondary ?? []);
+        const activityBlocks = slotBlocks(slotSource.activity ?? []);
+        const contentBlocks = slotBlocks(slotSource.content ?? []);
+        const placedIds = new Set(
+          [
+            ...summaryBlocks,
+            ...primaryBlocks,
+            ...secondaryBlocks,
+            ...activityBlocks,
+            ...contentBlocks,
+          ].map(b => b.id)
+        );
+        // 声明了 layout 但没被任何槽位引用到的区块：如实照样渲染，不能因为
+        // 没排进槽位就悄悄丢内容——排在末尾，视觉上标为"未分配槽位"。
+        const orphanBlocks = dedupedBlocks.filter(b => !placedIds.has(b.id));
+
+        return (
+          <div
+            className="mb-3 flex flex-col gap-2"
+            data-testid="app-runtime-experience-block-layout"
+          >
+            {summaryBlocks.length > 0 && (
+              <div
+                className="flex flex-wrap gap-2"
+                data-testid="app-runtime-layout-summary"
+              >
+                {summaryBlocks.map(renderBlock)}
+              </div>
+            )}
+            {(primaryBlocks.length > 0 || secondaryBlocks.length > 0) && (
+              <div className="flex flex-col gap-2 md:flex-row md:items-start">
+                {primaryBlocks.length > 0 && (
+                  <div
+                    className="flex min-w-0 flex-[2] flex-col gap-2"
+                    data-testid="app-runtime-layout-primary"
+                  >
+                    {primaryBlocks.map(renderBlock)}
+                  </div>
+                )}
+                {secondaryBlocks.length > 0 && (
+                  <div
+                    className="flex min-w-0 flex-1 flex-col gap-2"
+                    data-testid="app-runtime-layout-secondary"
+                  >
+                    {secondaryBlocks.map(renderBlock)}
+                  </div>
+                )}
+              </div>
+            )}
+            {activityBlocks.length > 0 && (
+              <div
+                className="flex flex-col gap-2"
+                data-testid="app-runtime-layout-activity"
+              >
+                {activityBlocks.map(renderBlock)}
+              </div>
+            )}
+            {contentBlocks.length > 0 && (
+              <div
+                className="flex flex-col gap-2"
+                data-testid="app-runtime-layout-content"
+              >
+                {contentBlocks.map(renderBlock)}
+              </div>
+            )}
+            {orphanBlocks.length > 0 && (
+              <div
+                className="grid gap-2"
+                data-testid="app-runtime-layout-unassigned"
+              >
+                {orphanBlocks.map(renderBlock)}
+              </div>
+            )}
+          </div>
+        );
+  };
+
+  // 页面级 KPI 的取数抽成一处，桌面 statsBand 与手机档共用——两边各算一遍的
+  // 话，同一个指标在两个档位会出现一个有值、一个是"—"。只有摆法分档，取数不分。
+  //
+  // 2026-07-28：这里原本在"真实值为 0/null 时"临时造一批预览行算个数出来，
+  // 那是只给 KPI 打的补丁——同一页的表格、图表、体验区块照样空着，一页里
+  // 半边有数半边空。现在种子行已经在**运行时状态**这一层铺好了
+  //（demo-seed.ts），所有取数口径共用同一批行，这里只需照常算，
+  // 外加如实标一句"这些行是示例"。
+  const pageStatDisplay = (stat: AppPageStatSchema) => {
+    const rows = state.entities[stat.entityId] ?? [];
+    return {
+      value: pageStatValue(stat, rows),
+      isPreview: entityShowsSeed(state, stat.entityId),
+    };
+  };
+
+  // 页面图表的手机形态：取数与桌面 renderChartCard 完全一致
+  //（同一个 buildEchartsOption + 同一份主题色），只把高度压到 140，
+  // 空态文案也照搬——两个档位不能对同一份数据给出不同说法。
+  const phoneChartNode = (chart: AppPageChartSchema) => {
+    const chartRows = state.entities[chart.entityId] ?? [];
+    if (chartRows.length === 0)
+      return (
+        <div style={{ fontSize: 11, color: INK.faint, padding: "12px 0" }}>
+          暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
+        </div>
+      );
+    const option = buildEchartsOption(chart, chartRows, {
+      primary: identityTheme.primary,
+      categorical: identityTheme.charts,
+    });
+    // 维度取不到值时 buildEchartsOption 返回 null —— 如实给空态，不画空图
+    if (!option)
+      return (
+        <div style={{ fontSize: 11, color: INK.faint, padding: "12px 0" }}>
+          暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
+        </div>
+      );
+    return (
       <React.Suspense
         fallback={
-          <div
-            style={{
-              textAlign: "center",
-              fontSize: 12,
-              color: INK.faint,
-              padding: "24px 0",
-            }}
-          >
-            移动端组件加载中…
+          <div style={{ fontSize: 11, color: INK.faint, padding: "12px 0" }}>
+            图表加载中…
           </div>
         }
       >
+        <LazyEchartsChart
+          option={option}
+          height={140}
+          ariaLabel={`${chart.label}：按${chart.dimensionLabel}统计${chart.metricLabel}`}
+        />
+      </React.Suspense>
+    );
+  };
+
+  // 手机档看板：列分组复用桌面同一个纯函数 groupRowsForKanban——两档如果各分
+  // 各的，同一条记录可能在桌面归 A 列、手机归"未归类"。这里只决定"当前看哪
+  // 一列"，分组本身不重写。
+  const phoneKanban =
+    page && page.view.kind === "kanban" && kanbanStatusField
+      ? groupRowsForKanban(
+          rows,
+          kanbanStatusField.id,
+          kanbanStatusField.options ?? []
+        )
+      : null;
+  // 选中列：默认第一列。列集合变了（换页/状态取值变化）时回到第一列，
+  // 而不是卡在一个已经不存在的 key 上显示空白。
+  const phoneKanbanKeys = (phoneKanban ?? [])
+    .map((c: KanbanColumn) => c.id)
+    .join("|");
+  React.useEffect(() => {
+    setPhoneKanbanKey(phoneKanban?.[0]?.id ?? "");
+  }, [phoneKanbanKeys]);
+  const phoneKanbanRows =
+    phoneKanban?.find((c: KanbanColumn) => c.id === phoneKanbanKey)?.rows ??
+    rows;
+
+  // 手机档按 pageKind 决定出哪几段。取数与桌面共用（pageStatDisplay /
+  // phoneChartNode），只有摆法分档——同一个指标不能在两个档位算出不同的数。
+  // 声明位置：必须在 phoneSectionData / phonePageContent 之前——手机档
+  // 2026-07-29 起也渲染这份设计版式，而且 phoneSectionData 要据它决定
+  // 固定骨架让不让位。原来它挨着桌面的 defaultPageContent 放（2400 行开外），
+  // 手机路径引用会直接 TDZ 报错。
+  //
+  // 2026-07-24：monitor 页面的总览区块——freeformOverview 是 Python
+  // enrich_monitor_page_overviews 按这个页面已声明的 stats/charts 当内容
+  // 清单、交给 FreeformInsight 设计出来的 KPI+图表版式（不再是所有 app
+  // 首页都长一样的固定网格骨架）。数字仍然经 ExperienceBlockBoundary →
+  // renderFreeformNode 的 dataRef 现算校验，不会因为换了渲染路径就失去
+  // "不能编数字"这层保证。未声明（老快照/生成失败）时下面的
+  // monitorCombinedRow 固定骨架原样兜底。
+  //
+  // 故意不包含 rankings/feeds——FreeformInsight 的 dataRef 只能表达聚合值
+  // （count/sum/avg），没有"枚举真实第 N 行记录"的能力（真机测试过：LLM
+  // 收到这个要求后只能画出表头+空表身）。排行榜/动态流这类必须逐行展示
+  // 真实记录的内容，固定走 monitorDynamicLists 下面的动态渲染。
+  /**
+   * 按设备档取设计版式（2026-07-29，方案 B）。
+   *
+   * 回退语义照 react-grid-layout 的 findOrGenerateResponsiveLayout：
+   * **有本档就用本档，没有就往更大的档回退**。这里只有两档，所以手机档
+   * 取不到 mobile 就退回 root（桌面那份）——老快照、以及手机那版生成失败的
+   * 页面都走这条路，配合 .phone-freeform-scope 的收窄仍然读得下来。
+   */
+  const renderFreeformOverview = (forPhone: boolean) => {
+    if (!page?.freeformOverview) return null;
+    const picked =
+      (forPhone && page.freeformOverview.mobile) || page.freeformOverview;
+    return (
+      <div
+        data-testid="app-runtime-monitor-freeform-overview"
+        // 手机上到底用的是哪一档，真机排查时一眼看得出，不用去翻模型
+        data-freeform-variant={
+          forPhone && page.freeformOverview.mobile ? "mobile" : "root"
+        }
+      >
+        <ExperienceBlockBoundary
+          block={{
+            id: `${page.id}:freeform-overview`,
+            type: "FreeformInsight",
+            freeformContent: picked,
+          }}
+          entityRows={state.entities}
+          chartPalette={{
+            primary: identityTheme.primary,
+            categorical: identityTheme.charts,
+          }}
+          enumOptionsOf={enumOptionsOf}
+          fieldLabelOf={fieldLabelOf}
+        />
+      </div>
+    );
+  };
+  const monitorFreeformOverview = renderFreeformOverview(false);
+
+  const phoneSectionData = (() => {
+    if (!page) return null;
+    const kind = page.view.kind;
+    // freeformOverview 就是拿这一页的 stats/charts 重新设计出来的版式——
+    // 同一份声明的美化版，不是另一份内容。它渲染了，固定骨架的 KPI/图表
+    // 就必须让位，否则同样的数字在一屏里出现两遍（桌面档早就是这个规矩，
+    // 见 defaultPageContent 里 monitorFreeformOverview 的分支）。
+    const freeformTookOver =
+      Boolean(page.freeformOverview) &&
+      (kind === "monitor" || kind === "dashboard");
+    const wantsMetrics =
+      !freeformTookOver &&
+      (kind === "dashboard" || kind === "monitor" || kind === "workbench");
+    const wantsSteps = kind === "wizard";
+    const stats =
+      wantsMetrics && page.stats.length > 0
+        ? page.stats.map(stat => {
+            const { value, isPreview } = pageStatDisplay(stat);
+            return {
+              id: stat.id,
+              label: stat.label,
+              value,
+              isPreview,
+              prefix: stat.format === "money" ? "¥" : undefined,
+              suffix: stat.format === "percent" ? "%" : undefined,
+              precision:
+                value !== null && Number.isInteger(value)
+                  ? 0
+                  : stat.format === "money"
+                    ? 2
+                    : 1,
+            };
+          })
+        : [];
+    const charts =
+      wantsMetrics && page.charts.length > 0
+        ? page.charts.map(c => ({
+            id: c.id,
+            label: c.label,
+            node: phoneChartNode(c),
+          }))
+        : [];
+    // wizard：流程节点即步骤条。桌面用横向 Steps，手机竖排更读得下来。
+    const steps =
+      wantsSteps && (model?.workflow?.nodes?.length ?? 0) > 0
+        ? (model?.workflow?.nodes ?? []).slice(0, 8).map(n => ({
+            id: n.id,
+            title: n.name || n.id,
+            description: n.phase,
+          }))
+        : [];
+    if (stats.length === 0 && charts.length === 0 && steps.length === 0)
+      return null;
+    return { stats, charts, steps };
+  })();
+
+  // 手机档日历：只算"哪些天有数据"和"选中那天有哪些行"。归组复用桌面
+  // CalendarBoard 同一个 rowsByDateKey——两档对同一个值算出不同的天，
+  // 会让日历上的圆点和下面的列表自己打架。
+  const phoneCalendar =
+    page && page.view.kind === "calendar" && page.view.dateFieldId
+      ? (() => {
+          const byKey = rowsByDateKey(rows, page.view.dateFieldId);
+          const marked = new Set(byKey.keys());
+          const selKey = phoneCalDate ? localDateKey(phoneCalDate) : null;
+          // 选中日无记录时给空数组（不是回退全量）——用户点了 3 号就该看到
+          // 3 号的情况，"这天没有"本身是答案。
+          const filtered = selKey ? (byKey.get(selKey) ?? []) : rows;
+          return { marked, filtered };
+        })()
+      : null;
+
+  // 日历壳：非日历页直接透传（同 PhoneKanbanShell 的理由）。
+  const PhoneCalendarShell = ({
+    data,
+    children,
+  }: {
+    data: { marked: Set<string>; filtered: unknown[] } | null;
+    children: React.ReactNode;
+  }) => {
+    if (!data) return <>{children}</>;
+    return (
+      <React.Suspense fallback={<>{children}</>}>
+        <LazyPhoneCalendar
+          markedDates={data.marked}
+          value={phoneCalDate}
+          onChange={setPhoneCalDate}
+        >
+          {children}
+        </LazyPhoneCalendar>
+      </React.Suspense>
+    );
+  };
+
+  // 手机档列表最终喂什么行：看板页给选中列、日历页给选中日、其余全量。
+  // 两种范式不会同时出现（view.kind 是单选），所以这里是顺序取第一个命中的。
+  const phoneListRows = phoneKanban
+    ? phoneKanbanRows
+    : (phoneCalendar?.filtered as typeof rows | undefined) ?? rows;
+
+  // 看板壳：非看板页（columns 为 null/空）直接透传 children，省得在 JSX 里
+  // 写"条件包裹"那种两份几乎一样的分支。
+  const PhoneKanbanShell = ({
+    columns,
+    activeKey,
+    onChange,
+    children,
+  }: {
+    columns: KanbanColumn[] | null;
+    activeKey: string;
+    onChange: (k: string) => void;
+    children: React.ReactNode;
+  }) => {
+    if (!columns || columns.length === 0) return <>{children}</>;
+    return (
+      <React.Suspense fallback={<>{children}</>}>
+        <LazyPhoneKanban
+          columns={columns.map(c => ({
+            key: c.id,
+            label: c.label,
+            count: c.rows.length,
+          }))}
+          activeKey={activeKey}
+          onChange={onChange}
+        >
+          {children}
+        </LazyPhoneKanban>
+      </React.Suspense>
+    );
+  };
+
+  // 本页有没有 KPI/图表类积木——决定固定骨架要不要让位（方案 C 反方向）。
+  // 只看非 legacy 的真区块：_fromLegacy 是转换占位，本来就走旧路径渲染。
+  const pageHasKpiBlocks = Boolean(
+    page &&
+      !OVERVIEW_KINDS.has(page.view.kind) &&
+      page.experienceBlocks.some(
+        b =>
+          !(b as import("./block-registry").ExperienceBlockInstance)._fromLegacy &&
+          KPI_BLOCK_TYPES.has(b.type)
+      )
+  );
+
+  // 手机端业务页：体验区块 + 卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
+  const phonePageContent = page && (
+    // data-page-kind：手机档按 pageKind 出不同骨架，把 kind 摆到 DOM 上，
+    // 测试和真机排查都能直接看出"这页该长什么样"，不用去翻模型。
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: 8 }}
+      data-testid="phone-page-content"
+      data-page-kind={page.view.kind}
+    >
+      {/* 演示种子的如实标注，与桌面页卡上那个 Tag 同源（pageShowsSeed），
+          一页只标一处。手机档没有 Card title 的位置，用 antd-mobile 的
+          NoticeBar——此前这里是手搓的一个橙字小方块，跟旁边的移动端组件
+          不是一套观感（见 PhoneSeedNotice 的注释）。 */}
+      {pageSeedCount > 0 && (
+        <React.Suspense fallback={null}>
+          <LazyPhoneSeedNotice count={pageSeedCount} />
+        </React.Suspense>
+      )}
+      {/* 体验区块：与桌面壳同一份摆法逻辑，槽位走 layout.mobile（未声明则退回
+          桌面槽位）。从前手机档只有一个裸列表——桌面有的 KPI/图表/筛选条/流程
+          时间线，手机一个都拿不到。 */}
+      {/* 总览页的 AI 设计版式（2026-07-29）。
+          此前只有桌面壳渲染它，手机档一直只有固定骨架——同一个总览页，
+          换个档位就从"每个应用长得不一样"退回"所有应用长一样"。
+
+          更别扭的是 preferredDevice=phone 的应用：那份 freeform **本来就是
+          照手机单列生成的**（生成侧 _DEVICE_CONTAINER_HINTS 里 phone 档明确
+          要求"内容区窄、必须单列纵向排布、字号图标间距收紧一档"），结果只有
+          桌面壳会渲染它——专为手机做的版式送不到手机上。
+
+          外面套 phone-freeform-scope：设计树是照 preferredDevice 那一档生成的，
+          desktop 档的多列/固定宽度进了 390px 会横向撑爆。强制单列不是跟设计
+          较劲，正是把 phone 档提示词里那条规矩补执行一遍。 */}
+      {page.freeformOverview && (
+        <div className="phone-freeform-scope">
+          {renderFreeformOverview(true)}
+        </div>
+      )}
+      {renderExperienceBlockScaffold(true)}
+      {/* pageKind 骨架：schema 有 6 种，手机档此前一种都没有（无论什么 kind
+          都渲染成同一个裸列表）。dashboard/monitor 出 KPI + 图表，wizard 出
+          流程步骤——形态复用首页那套（Grid 两列 / Steps 竖排）。 */}
+      {phoneSectionData && (
+        <React.Suspense fallback={null}>
+          <LazyPhonePageSections {...phoneSectionData} />
+        </React.Suspense>
+      )}
+      <React.Suspense
+        fallback={
+          <Skeleton active paragraph={{ rows: 4 }} style={{ padding: "12px 4px" }} />
+        }
+      >
+        {/* 看板：桌面并排的状态列在手机上改成按状态分页（CapsuleTabs 横向
+            可滚，状态多时下一个露一角，不用自己拼滚动提示）。非看板页
+            phoneKanban 为 null，PhoneKanban 直接透传 children。 */}
+        <PhoneKanbanShell
+          columns={phoneKanban}
+          activeKey={phoneKanbanKey}
+          onChange={setPhoneKanbanKey}
+        >
+        <PhoneCalendarShell data={phoneCalendar}>
         <LazyPhonePageList
-          rows={rows}
+          rows={phoneListRows}
           descFields={page.detailFields
             .slice(1, 4)
             .map(f => ({ id: f.id, label: f.label }))}
@@ -1132,7 +1911,51 @@ export function AppRuntimeScreen({
           }}
           onOpenRow={row => setDetailRow(row as RuntimeRow)}
           renderRowActions={row => rowActions(row as RuntimeRow)}
+          // 左滑动作：与行内按钮同一套 handler，只换触发方式。给了 swipeActions
+          // 之后 PhonePageList 不再渲染行内按钮，行高省一截。
+          swipeActions={row => {
+            const r = row as RuntimeRow;
+            const acts: Array<{
+              key: string;
+              text: string;
+              color?: "primary" | "warning" | "danger";
+              onClick: () => void;
+            }> = [];
+            if (page.workflowLinked)
+              acts.push({
+                key: "submit",
+                text: "提交审批",
+                color: "primary",
+                onClick: () =>
+                  handleSubmitToWorkflow(
+                    r.id,
+                    String(Object.values(r.values)[0] ?? r.id)
+                  ),
+              });
+            acts.push({
+              key: "delete",
+              text: "删除",
+              color: "danger",
+              // 删除不可逆，桌面档早就套了 Popconfirm；手机档此前是滑开一点
+              // 就没了、连提示都没有。Dialog.confirm 返回 Promise<boolean>，
+              // 确认了才真删，删完给一句 Toast。
+              onClick: () => {
+                void confirmDestructive(
+                  "删除这条记录？",
+                  "删掉之后无法恢复。",
+                  () => canvasEl
+                ).then(ok => {
+                  if (!ok) return;
+                  apply(deleteRow(state, page.entityId!, r.id));
+                  toast("success", "已删除");
+                });
+              },
+            });
+            return acts;
+          }}
         />
+        </PhoneCalendarShell>
+        </PhoneKanbanShell>
       </React.Suspense>
     </div>
   );
@@ -1142,13 +1965,12 @@ export function AppRuntimeScreen({
     : [];
 
   // 详情内容块：桌面/手机走 Drawer，平板走右栏主从面板（同一 JSX 两处挂载）
-  const detailBody = detailRow && page && (
-    <>
-      <Descriptions
-        size="small"
-        column={1}
-        items={page.detailFields.map(f => ({
-          key: f.id,
+  // 字段标签（带 X 光探针）与值的渲染跨设备共用，只有「摆法」分档：
+  // 手机走 antd-mobile List（一行一字段），桌面留 antd Descriptions。
+  const detailFieldNodes =
+    detailRow && page
+      ? page.detailFields.map(f => ({
+          id: f.id,
           label: page.entityId ? (
             <span
               {...probe({
@@ -1163,137 +1985,208 @@ export function AppRuntimeScreen({
           ) : (
             f.label
           ),
-          children: <FieldValue field={f} value={detailRow.values[f.id]} />,
-        }))}
-      />
-      {page.aiActions.length > 0 && (
-        <>
-          <div
-            style={{
-              marginTop: 16,
-              fontSize: 12,
-              fontWeight: 600,
-              color: INK.value,
-            }}
-          >
-            AI 能力 · {page.aiActions.length}
-          </div>
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-            }}
-          >
-            {page.aiActions.map(action => (
-              <div
-                key={action.capId}
-                style={{ display: "flex", alignItems: "center", gap: 8 }}
-              >
-                <span
-                  {...probe({
-                    kind: "ai",
-                    capId: action.capId,
-                    label: action.label,
-                  })}
-                >
-                  <Button
+          value: (
+            <FieldValue
+              field={f}
+              value={detailRow.values[f.id]}
+              phone={isPhone}
+            />
+          ),
+        }))
+      : [];
+
+  // 详情面板的次级分区（AI 能力 / 关联审批）。此前每段都是手搓的
+  // 「marginTop:16 + fontWeight:600 的一行小标题 + 一坨内容」，竖着堆，
+  // 面板一开就要往下滚才看得到审批。官方对 Collapse 的定位正是这件事：
+  // 「对复杂区域进行分组和隐藏，保持页面的整洁」。
+  //
+  // 不用 Tabs：官方说 Tabs 提供的是「**平级**的区域」，而这里字段是主、
+  // AI/审批是次，不是平级；Tabs 还会在切走时把字段藏起来，反而更糟。
+  //
+  // 数据在这里算一次，**壳按设备分档**：桌面 antd Collapse、手机
+  // antd-mobile Collapse。第一版只换了桌面的，结果 antd 的 Collapse 被渲染
+  // 进 antd-mobile 的 Popup 里，成了新的跨库混用——字段部分早就分档了，
+  // 分区的壳没道理不分。
+  const detailSectionItems = detailRow && page
+    ? [
+        ...(page.aiActions.length > 0
+        ? [
+            {
+              key: "ai",
+              label: (
+                <span style={{ fontSize: 12, fontWeight: 600, color: INK.value }}>
+                  AI 能力 · {page.aiActions.length}
+                </span>
+              ),
+              children: (
+                <>
+        <Flex vertical gap={6}>
+        {page.aiActions.map(action => (
+          <Flex key={action.capId} align="center" gap={8}>
+            <span
+              {...probe({
+                kind: "ai",
+                capId: action.capId,
+                label: action.label,
+              })}
+            >
+              {isPhone ? (
+                // 手机档用 antd-mobile Button：触摸目标更大、按下有原生
+                // 反馈；antd 的 size="small" ghost 在指尖下太小太轻。
+                <React.Suspense fallback={null}>
+                  <LazyPhoneActionButton
                     size="small"
-                    type="primary"
-                    ghost
-                    data-testid={`app-ai-action-${action.capId}`}
+                    color="primary"
+                    testId={`app-ai-action-${action.capId}`}
                     loading={aiRunningCapId === action.capId}
                     disabled={
-                      aiRunningCapId !== null && aiRunningCapId !== action.capId
+                      aiRunningCapId !== null &&
+                      aiRunningCapId !== action.capId
                     }
                     onClick={() => runAiAction(action)}
                   >
                     ✨ {action.label}
-                  </Button>
-                </span>
-                <span style={{ fontSize: 11, color: INK.faint }}>
-                  → 写回「{action.outputLabel}」
-                </span>
-              </div>
-            ))}
-          </div>
-          {aiRunningCapId && (
-            <div style={{ marginTop: 8, fontSize: 11, color: INK.faint }}>
-              真 LLM 生成中……（与五系统生成同一通道）
-            </div>
-          )}
-          {aiSuggestion && aiSuggestion.rowId === detailRow.id && (
-            <AiSuggestionCard
-              outputLabel={aiSuggestion.action.outputLabel}
-              output={aiSuggestion.output}
-              confidence={aiSuggestion.confidence}
-              rationale={aiSuggestion.rationale}
-              onApply={applyAiSuggestion}
-              onDismiss={() => setAiSuggestion(null)}
-            />
-          )}
-          {aiError && (
-            <div
-              data-testid="app-ai-error"
-              style={{
-                marginTop: 8,
-                padding: "6px 10px",
-                borderRadius: 8,
-                background: "#fff2f0",
-                border: "1px solid #ffccc7",
-                fontSize: 11,
-                color: "#cf1322",
-              }}
-            >
-              <span style={{ fontFamily: "monospace", fontWeight: 600 }}>
-                {aiError.code}
-              </span>
-              <span style={{ marginLeft: 6 }}>{aiError.detail}</span>
-            </div>
-          )}
-        </>
-      )}
-
-      <div
-        style={{
-          marginTop: 16,
-          fontSize: 12,
-          fontWeight: 600,
-          color: INK.value,
-        }}
-      >
-        关联审批实例 · {detailInstances.length}
-      </div>
-      {detailInstances.length === 0 ? (
-        <div style={{ fontSize: 12, color: INK.faint, marginTop: 6 }}>
-          本行尚未提交审批
+                  </LazyPhoneActionButton>
+                </React.Suspense>
+              ) : (
+                <Button
+                  size="small"
+                  type="primary"
+                  ghost
+                  data-testid={`app-ai-action-${action.capId}`}
+                  loading={aiRunningCapId === action.capId}
+                  disabled={
+                    aiRunningCapId !== null &&
+                    aiRunningCapId !== action.capId
+                  }
+                  onClick={() => runAiAction(action)}
+                >
+                  ✨ {action.label}
+                </Button>
+              )}
+            </span>
+            <span style={{ fontSize: 11, color: INK.faint }}>
+              → 写回「{action.outputLabel}」
+            </span>
+          </Flex>
+        ))}
+        </Flex>
+        {aiRunningCapId && (
+        <div style={{ marginTop: 8, fontSize: 11, color: INK.faint }}>
+          真 LLM 生成中……（与五系统生成同一通道）
         </div>
+        )}
+        {aiSuggestion && aiSuggestion.rowId === detailRow.id && (
+        <AiSuggestionCard
+          outputLabel={aiSuggestion.action.outputLabel}
+          output={aiSuggestion.output}
+          confidence={aiSuggestion.confidence}
+          rationale={aiSuggestion.rationale}
+          onApply={applyAiSuggestion}
+          onDismiss={() => setAiSuggestion(null)}
+        />
+        )}
+        {aiError && (
+        // 此前是手写的红框（#fff2f0/#ffccc7 写死），深色档下红底红字读不出来，
+        // 也不跟主题的 colorError 走。antd Alert 就是干这个的。
+        <Alert
+          data-testid="app-ai-error"
+          type="error"
+          showIcon
+          style={{ marginTop: 8 }}
+          message={
+            <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11 }}>
+              {aiError.code}
+            </span>
+          }
+          description={<span style={{ fontSize: 11 }}>{aiError.detail}</span>}
+        />
+        )}
+                </>
+              ),
+            },
+          ]
+        : []),
+        {
+        key: "workflow",
+        label: (
+          <span style={{ fontSize: 12, fontWeight: 600, color: INK.value }}>
+            关联审批实例 · {detailInstances.length}
+          </span>
+        ),
+        children:
+          detailInstances.length === 0 ? (
+            <span style={{ fontSize: 12, color: INK.faint }}>
+              本行尚未提交审批
+            </span>
+          ) : (
+            detailInstances.map(inst => {
+        const meta = STATUS_META[inst.status] ?? STATUS_META.running;
+        return (
+        <div
+          key={inst.id}
+          style={{ marginTop: 8, fontSize: 12, color: INK.label }}
+        >
+          {inst.title} ·{" "}
+          {nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId}
+          <Tag
+            style={{ marginLeft: 8 }}
+            color={
+              inst.status === "running"
+                ? "processing"
+                : inst.status === "completed"
+                  ? "success"
+                  : "error"
+            }
+          >
+            {meta.label}
+          </Tag>
+        </div>
+        );
+            })
+          ),
+        },
+          ]
+    : [];
+
+  const detailBody = detailRow && page && (
+    <>
+      {isPhone ? (
+        <React.Suspense fallback={null}>
+          <LazyPhoneDetailFields fields={detailFieldNodes} />
+        </React.Suspense>
       ) : (
-        detailInstances.map(inst => {
-          const meta = STATUS_META[inst.status] ?? STATUS_META.running;
-          return (
-            <div
-              key={inst.id}
-              style={{ marginTop: 8, fontSize: 12, color: INK.label }}
-            >
-              {inst.title} ·{" "}
-              {nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId}
-              <Tag
-                style={{ marginLeft: 8 }}
-                color={
-                  inst.status === "running"
-                    ? "processing"
-                    : inst.status === "completed"
-                      ? "success"
-                      : "error"
-                }
-              >
-                {meta.label}
-              </Tag>
-            </div>
-          );
-        })
+        <Descriptions
+          size="small"
+          column={1}
+          items={detailFieldNodes.map(f => ({
+            key: f.id,
+            label: f.label,
+            children: f.value,
+          }))}
+        />
+      )}
+      {/* 壳按设备分档，数据同源（见 detailSectionItems 上的说明）。
+          桌面用 ghost 档（无边框无底色）——抽屉本身已经是一层容器面，
+          再套一层描边就是卡片套卡片。 */}
+      {isPhone ? (
+        <React.Suspense fallback={null}>
+          <LazyPhoneDetailSections
+            sections={detailSectionItems.map(it => ({
+              key: it.key,
+              title: it.label,
+              content: it.children,
+            }))}
+          />
+        </React.Suspense>
+      ) : (
+        <Collapse
+          ghost
+          size="small"
+          defaultActiveKey={["ai", "workflow"]}
+          style={{ marginTop: 8 }}
+          items={detailSectionItems}
+        />
       )}
     </>
   );
@@ -1313,33 +2206,18 @@ export function AppRuntimeScreen({
           data-testid="app-runtime-page-stats"
         >
           {page.stats.map(stat => {
-            const realRows = state.entities[stat.entityId] ?? [];
-            const v = pageStatValue(stat, realRows);
             // Phase B: 真实数据为零时用预览种子数据填充，加"示例"标注
-            const entity = model?.datamodel?.entities?.find(e => e.id === stat.entityId);
-            const seedRows = (v === 0 || v === null) && entity
-              ? generatePreviewSeedRows(
-                  {
-                    id: entity.id,
-                    fields: entity.fields?.map(f => ({
-                      id: f.id,
-                      type: f.type,
-                      options: f.options?.map(o => o.label ?? o.id),
-                    })),
-                  },
-                  6
-                )
-              : null;
-            const displayVal = seedRows
-              ? computePreviewStat(stat.metric, stat.metricFieldId, seedRows)
-              : v;
-            const isPreview = seedRows !== null && displayVal !== null && displayVal > 0;
+            const { value: displayVal, isPreview } = pageStatDisplay(stat);
             return (
               <Card
                 key={stat.id}
                 size="small"
                 style={{ flex: 1, minWidth: 140 }}
-                styles={{ body: { padding: `${layout.space.sm}px ${layout.space.md}px` } }}
+                styles={{
+                  body: {
+                    padding: `${layout.space.sm}px ${layout.space.md}px`,
+                  },
+                }}
                 data-testid={`app-runtime-page-stat-${stat.id}`}
               >
                 {displayVal === null ? (
@@ -1349,12 +2227,25 @@ export function AppRuntimeScreen({
                     <Statistic
                       title={stat.label}
                       value={displayVal}
-                      precision={Number.isInteger(displayVal) ? 0 : stat.format === "money" ? 2 : 1}
+                      precision={
+                        Number.isInteger(displayVal)
+                          ? 0
+                          : stat.format === "money"
+                            ? 2
+                            : 1
+                      }
                       prefix={stat.format === "money" ? "¥" : undefined}
                       suffix={stat.format === "percent" ? "%" : undefined}
                     />
                     {isPreview && (
-                      <span style={{ fontSize: 10, color: "#adb5bd", marginTop: 2, display: "block" }}>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "#adb5bd",
+                          marginTop: 2,
+                          display: "block",
+                        }}
+                      >
                         示例数据
                       </span>
                     )}
@@ -1383,7 +2274,8 @@ export function AppRuntimeScreen({
         .sort((a, b) => b.v - a.v)
         .slice(0, ranking.limit);
       const titleFieldId =
-        page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ?? "id";
+        page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ??
+        "id";
       return (
         <Card
           key={ranking.id}
@@ -1405,7 +2297,8 @@ export function AppRuntimeScreen({
                   alignItems: "center",
                   gap: layout.space.xs,
                   padding: `${layout.space.xxs}px 0`,
-                  borderBottom: i < rankRows.length - 1 ? "1px solid #f5f5f5" : "none",
+                  borderBottom:
+                    i < rankRows.length - 1 ? "1px solid #f5f5f5" : "none",
                 }}
               >
                 <span
@@ -1418,7 +2311,8 @@ export function AppRuntimeScreen({
                     fontSize: 11,
                     fontWeight: 600,
                     flexShrink: 0,
-                    background: i < 3 ? "var(--app-primary,#1677ff)" : "#f0f0f0",
+                    background:
+                      i < 3 ? "var(--app-primary,#1677ff)" : "#f0f0f0",
                     color: i < 3 ? "#fff" : "#8c8c8c",
                   }}
                 >
@@ -1436,7 +2330,9 @@ export function AppRuntimeScreen({
                 >
                   {String(row.values[titleFieldId] ?? "—")}
                 </span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#262626" }}>
+                <span
+                  style={{ fontSize: 13, fontWeight: 600, color: "#262626" }}
+                >
                   {v.toLocaleString("zh-CN")}
                 </span>
               </div>
@@ -1459,7 +2355,8 @@ export function AppRuntimeScreen({
       )
       .slice(0, 6);
     const titleFieldId =
-      page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ?? "id";
+      page.detailFields.find(f => f.type === "string" && f.id !== "id")?.id ??
+      "id";
     return (
       <Card
         key={feed.id}
@@ -1474,7 +2371,9 @@ export function AppRuntimeScreen({
           </div>
         ) : (
           feedRows.map((row, i) => {
-            const levelValue = String(row.values[feed.levelFieldId ?? ""] ?? "");
+            const levelValue = String(
+              row.values[feed.levelFieldId ?? ""] ?? ""
+            );
             const option = levelField?.options?.find(o => o.id === levelValue);
             return (
               <div
@@ -1484,7 +2383,8 @@ export function AppRuntimeScreen({
                   alignItems: "center",
                   gap: layout.space.xs,
                   padding: `${layout.space.xxs}px 0`,
-                  borderBottom: i < feedRows.length - 1 ? "1px solid #f5f5f5" : "none",
+                  borderBottom:
+                    i < feedRows.length - 1 ? "1px solid #f5f5f5" : "none",
                 }}
               >
                 {option && (
@@ -1522,7 +2422,12 @@ export function AppRuntimeScreen({
     <>
       {(page.rankings.length > 0 || page.feeds.length > 0) && (
         <div
-          style={{ display: "flex", gap: layout.space.sm, marginBottom: layout.space.sm, flexWrap: "wrap" }}
+          style={{
+            display: "flex",
+            gap: layout.space.sm,
+            marginBottom: layout.space.sm,
+            flexWrap: "wrap",
+          }}
           data-testid="app-runtime-page-widgets"
         >
           {page.rankings.map(renderRankingCard)}
@@ -1559,15 +2464,19 @@ export function AppRuntimeScreen({
         // （不跟着卡片拉伸），卡片被拉高时用 justifyContent:"center" 把
         // 固定高度的图表在多出来的空间里居中，而不是让图表本身去追一个
         // 还没稳定下来的容器尺寸。
-        styles={{ body: { display: "flex", flexDirection: "column", justifyContent: "center" } }}
+        styles={{
+          body: {
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+          },
+        }}
         data-testid={`app-runtime-page-chart-${chart.id}`}
       >
         {option ? (
           <React.Suspense
             fallback={
-              <div style={{ fontSize: 11, color: INK.faint, padding: `${layout.space.md}px 0` }}>
-                图表加载中…
-              </div>
+              <Skeleton.Node active style={{ width: "100%", height: 200 }} />
             }
           >
             <LazyEchartsChart
@@ -1577,9 +2486,11 @@ export function AppRuntimeScreen({
             />
           </React.Suspense>
         ) : (
-          <div style={{ fontSize: 11, color: INK.faint, padding: `${layout.space.md}px 0` }}>
-            暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
-          </div>
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={`写入「${chart.dimensionLabel}」后自动出图`}
+            style={{ margin: `${layout.space.md}px 0` }}
+          />
         )}
       </Card>
     );
@@ -1613,114 +2524,157 @@ export function AppRuntimeScreen({
   // 摆放 + 竖直压实兜底，卡片按估算高度自动分列、列内紧贴堆叠，不会再
   // 留出空档。高度是估算值（图表固定/排行动态按真实行数算），不追求
   // 像素级精确，只保证不留白。
-  const monitorCombinedRow = page && (() => {
-    const CHART_HEIGHT_ESTIMATE = 230; // 卡片头(40) + echarts 固定 180 + 内边距
-    const ROW_HEIGHT_ESTIMATE = 30; // 排行/动态每行的实测行高（padding 5px*2 + 内容）
-    const LIST_CHROME_ESTIMATE = 56; // 卡片头(40) + 上下内边距
+  const monitorCombinedRow =
+    page &&
+    (() => {
+      const CHART_HEIGHT_ESTIMATE = 230; // 卡片头(40) + echarts 固定 180 + 内边距
+      const ROW_HEIGHT_ESTIMATE = 30; // 排行/动态每行的实测行高（padding 5px*2 + 内容）
+      const LIST_CHROME_ESTIMATE = 56; // 卡片头(40) + 上下内边距
 
-    const cardHeights: Array<{ i: string; h: number }> = [
-      ...page.charts.map(c => ({ i: `chart:${c.id}`, h: CHART_HEIGHT_ESTIMATE })),
-      ...page.rankings.map(r => {
-        const rowCount = Math.min(
-          (state.entities[r.entityId] ?? []).length,
-          r.limit
-        );
-        return { i: `ranking:${r.id}`, h: LIST_CHROME_ESTIMATE + Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE };
-      }),
-      ...page.feeds.map(f => {
-        const rowCount = Math.min((state.entities[f.entityId] ?? []).length, 6);
-        return { i: `feed:${f.id}`, h: LIST_CHROME_ESTIMATE + Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE };
-      }),
-    ];
-    if (cardHeights.length === 0) return null;
+      const cardHeights: Array<{ i: string; h: number }> = [
+        ...page.charts.map(c => ({
+          i: `chart:${c.id}`,
+          h: CHART_HEIGHT_ESTIMATE,
+        })),
+        ...page.rankings.map(r => {
+          const rowCount = Math.min(
+            (state.entities[r.entityId] ?? []).length,
+            r.limit
+          );
+          return {
+            i: `ranking:${r.id}`,
+            h:
+              LIST_CHROME_ESTIMATE +
+              Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE,
+          };
+        }),
+        ...page.feeds.map(f => {
+          const rowCount = Math.min(
+            (state.entities[f.entityId] ?? []).length,
+            6
+          );
+          return {
+            i: `feed:${f.id}`,
+            h:
+              LIST_CHROME_ESTIMATE +
+              Math.max(1, rowCount) * ROW_HEIGHT_ESTIMATE,
+          };
+        }),
+      ];
+      if (cardHeights.length === 0) return null;
 
-    const cols = Math.min(3, cardHeights.length);
-    const placed = autoPlaceGrid(cardHeights, cols);
+      const cols = Math.min(3, cardHeights.length);
+      const placed = autoPlaceGrid(cardHeights, cols);
 
-    const nodeById = new Map<string, React.ReactNode>([
-      ...page.charts.map(c => [`chart:${c.id}`, renderChartCard(c)] as const),
-      ...page.rankings.map(r => [`ranking:${r.id}`, renderRankingCard(r)] as const),
-      ...page.feeds.map(f => [`feed:${f.id}`, renderFeedCard(f)] as const),
-    ]);
+      const nodeById = new Map<string, React.ReactNode>([
+        ...page.charts.map(c => [`chart:${c.id}`, renderChartCard(c)] as const),
+        ...page.rankings.map(
+          r => [`ranking:${r.id}`, renderRankingCard(r)] as const
+        ),
+        ...page.feeds.map(f => [`feed:${f.id}`, renderFeedCard(f)] as const),
+      ]);
 
-    const columns: string[][] = Array.from({ length: cols }, () => []);
-    for (const item of [...placed].sort((a, b) => a.y - b.y)) {
-      columns[item.x]?.push(item.i);
-    }
+      const columns: string[][] = Array.from({ length: cols }, () => []);
+      for (const item of [...placed].sort((a, b) => a.y - b.y)) {
+        columns[item.x]?.push(item.i);
+      }
 
-    return (
-      // alignItems: "stretch"（不是 flex-start）——列与列之间高度天然不同步
-      // （比如这一列就 1 张图表卡，隔壁摞了排行+动态两张），flex-start 会让
-      // 矮的那列在自己内容结束处直接停住，下面空出一块没有任何元素的白底，
-      // 用户截图圈过的就是这个（真去查过 DOM，那块确实不是渲染了个空
-      // Card，就是纯背景）。改 stretch 后每一列都撑到最高列那么高，列内
-      // 卡片本来就带的 flex:1（renderChartCard/renderRankingCard/
-      // renderFeedCard 三处都设了）会把卡片自己的边框/背景撑满这段高度——
-      // 富余空间留在卡片"内部"（看起来是留白排版），不再是卡片外面一块
-      // 没有归属的裸白背景。
-      <div
-        style={{ display: "flex", gap: layout.space.sm, alignItems: "stretch" }}
-        data-testid="app-runtime-monitor-combined"
-      >
-        {columns.map((ids, colIdx) => (
-          <div
-            key={colIdx}
-            style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: layout.space.sm }}
-          >
-            {ids.map(id => (
-              <React.Fragment key={id}>{nodeById.get(id)}</React.Fragment>
-            ))}
-          </div>
-        ))}
-      </div>
-    );
-  })();
+      return (
+        // alignItems: "stretch"（不是 flex-start）——列与列之间高度天然不同步
+        // （比如这一列就 1 张图表卡，隔壁摞了排行+动态两张），flex-start 会让
+        // 矮的那列在自己内容结束处直接停住，下面空出一块没有任何元素的白底，
+        // 用户截图圈过的就是这个（真去查过 DOM，那块确实不是渲染了个空
+        // Card，就是纯背景）。改 stretch 后每一列都撑到最高列那么高，列内
+        // 卡片本来就带的 flex:1（renderChartCard/renderRankingCard/
+        // renderFeedCard 三处都设了）会把卡片自己的边框/背景撑满这段高度——
+        // 富余空间留在卡片"内部"（看起来是留白排版），不再是卡片外面一块
+        // 没有归属的裸白背景。
+        <div
+          style={{
+            display: "flex",
+            gap: layout.space.sm,
+            alignItems: "stretch",
+          }}
+          data-testid="app-runtime-monitor-combined"
+        >
+          {columns.map((ids, colIdx) => (
+            <div
+              key={colIdx}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: layout.space.sm,
+              }}
+            >
+              {ids.map(id => (
+                <React.Fragment key={id}>{nodeById.get(id)}</React.Fragment>
+              ))}
+            </div>
+          ))}
+        </div>
+      );
+    })();
 
-  // 2026-07-24：monitor 页面的总览区块——freeformOverview 是 Python
-  // enrich_monitor_page_overviews 按这个页面已声明的 stats/charts 当内容
-  // 清单、交给 FreeformInsight 设计出来的 KPI+图表版式（不再是所有 app
-  // 首页都长一样的固定网格骨架）。数字仍然经 ExperienceBlockBoundary →
-  // renderFreeformNode 的 dataRef 现算校验，不会因为换了渲染路径就失去
-  // "不能编数字"这层保证。未声明（老快照/生成失败）时下面的
-  // monitorCombinedRow 固定骨架原样兜底。
-  //
-  // 故意不包含 rankings/feeds——FreeformInsight 的 dataRef 只能表达聚合值
-  // （count/sum/avg），没有"枚举真实第 N 行记录"的能力（真机测试过：LLM
-  // 收到这个要求后只能画出表头+空表身）。排行榜/动态流这类必须逐行展示
-  // 真实记录的内容，固定走 monitorDynamicLists 下面的动态渲染。
-  const monitorFreeformOverview = page?.freeformOverview ? (
-    <div data-testid="app-runtime-monitor-freeform-overview">
-      <ExperienceBlockBoundary
-        block={{
-          id: `${page.id}:freeform-overview`,
-          type: "FreeformInsight",
-          freeformContent: page.freeformOverview,
-        }}
-        entityRows={state.entities}
-        chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
-      />
-    </div>
-  ) : null;
 
   // freeformOverview 只负责 KPI+图表；排行榜/动态流这类"必须是真实逐行
   // 记录"的内容永远走这条真实动态渲染路径（renderRankingCard/
   // renderFeedCard 直接读 state.entities 真实行数据），跟 freeformOverview
   // 是否存在无关——两者并列渲染，不是互斥关系。
+  //
+  // 2026-07-28 去重：模型会把同一份动态流在 blocks 和 feeds 两条通道里各
+  // 声明一遍（真跑逮到：绑定逐字段相同、只有 id 和名字不同），于是首页出
+  // 现两张一模一样的卡。撞车时保留积木那份（它带槽位摆放 + 新渲染器），
+  // 这里只渲染没被积木覆盖的。判定见 page-panel-dedupe.ts。
+  const dedupedLists = page
+    ? dropLegacyPanelsCoveredByBlocks(
+        { rankings: page.rankings, feeds: page.feeds },
+        page.experienceBlocks,
+        freeformPlacedKeys
+      )
+    : { rankings: [], feeds: [] };
   const monitorDynamicLists =
-    page && (page.rankings.length > 0 || page.feeds.length > 0) ? (
+    page && (dedupedLists.rankings.length > 0 || dedupedLists.feeds.length > 0) ? (
       <div
-        style={{ display: "flex", gap: layout.space.sm, flexWrap: "wrap", marginTop: layout.space.sm }}
+        style={{
+          display: "flex",
+          gap: layout.space.sm,
+          flexWrap: "wrap",
+          marginTop: layout.space.sm,
+        }}
         data-testid="app-runtime-monitor-dynamic-lists"
       >
-        {page.rankings.map(renderRankingCard)}
-        {page.feeds.map(renderFeedCard)}
+        {dedupedLists.rankings.map(renderRankingCard)}
+        {dedupedLists.feeds.map(renderFeedCard)}
       </div>
     ) : null;
+
+
+  // 一次求值、多处摆位（见下方 D1 注释）
+  const blockScaffold = renderExperienceBlockScaffold(false);
 
   const defaultPageContent = page && (
     <Card
       size="small"
-      title={page.title}
+      title={
+        <Space size={6}>
+          <span>{page.title}</span>
+          {pageSeedCount > 0 && (
+            <Tooltip
+              title={`本页 ${allRows.length} 条记录里有 ${pageSeedCount} 条是自动铺的演示数据；点「新建」写入第一条真实记录后即被整批取代`}
+            >
+              <Tag
+                color="orange"
+                style={{ marginInlineEnd: 0, fontWeight: 400 }}
+                data-testid="app-runtime-seed-tag"
+              >
+                示例数据 {pageSeedCount}
+              </Tag>
+            </Tooltip>
+          )}
+        </Space>
+      }
       extra={
         <Space size="small">
           {page.actions.slice(0, 3).map(a => (
@@ -1768,167 +2722,38 @@ export function AppRuntimeScreen({
         </Space>
       }
     >
-      {(() => {
-        // 保守策略：_fromLegacy 区块只是转换占位，渲染仍走旧路径（statsBand 等）。
-        // 真正的新模型 blocks 不带 _fromLegacy，走 ExperienceBlockBoundary。
-        const directBlocks = page.experienceBlocks.filter(
-          b => !(b as import("./block-registry").ExperienceBlockInstance)._fromLegacy
-        );
-        if (directBlocks.length === 0) return null;
+      {/* D1（2026-07-28）：总览页的积木脚手架挪到设计版式**后面**去渲染。
+          此前它固定排在最前，于是首页第一眼看到的是排行榜/动态流这两张
+          外挂卡，AI 现场设计的总览区反倒被压到下面——顺序把主次颠倒了。
+          非总览页保持原样（那些页的积木本来就是页面主角）。
 
-        // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
-        const handleBlockAction = (
-          actionId: string,
-          eventData?: Record<string, unknown>
-        ) => {
-          const action = page.pageActions.find(a => a.id === actionId);
-          if (!action) return;
-          // 实际权限检查：permissionRef 须在当前角色 grantedActions 里。
-          const pa = pageAccess.get(page.id);
-          const permitted =
-            !action.permissionRef ||
-            (pa?.grantedActions ?? []).includes(action.permissionRef);
-          if (!permitted) return;
-          switch (action.type) {
-            case "navigate":
-              if (action.targetPageRef) setActivePageId(action.targetPageRef);
-              break;
-            case "createRecord":
-              // 复用既有「新建」表单：只支持目标实体=本页主实体的场景（表单
-              // 字段就是照本页主实体拼的）；指向别的实体如实拒绝，不假装能建。
-              if (action.entityRef && action.entityRef === page.entityId) {
-                setFormValues({});
-                setFormOpen(true);
-              } else {
-                message.info("该操作指向的实体暂不支持在此页创建");
-              }
-              break;
-            case "changeFilter":
-              console.log("[action:changeFilter]", actionId, eventData);
-              break;
-            default:
-              console.log(`[action:${action.type}]`, actionId, eventData);
-          }
-        };
-
-        const renderBlock = (block: (typeof directBlocks)[number]) => (
-          <ExperienceBlockBoundary
-            key={block.id}
-            block={block}
-            onAction={handleBlockAction}
-            pageActions={quickActionButtons}
-            filterState={activePageFilter}
-            filterFieldOptions={filterableEnumFields}
-            dateRangeField={dateRangeField}
-            onFilterChange={handlePageFilterChange}
-            workflow={model.workflow}
-            entityRows={state.entities}
-            chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
+          脚手架只求值一次、在下面每个分支里显式摆位——不这么写就得在
+          "总览页"那个条件外面再判一次 kind，dashboard 没有 freeformOverview
+          时会掉进最末的兜底分支、积木一个都渲染不出来（第一版就是这个洞）。 */}
+      {!OVERVIEW_KINDS.has(page.view.kind) && blockScaffold}
+      {page.view.kind === "wizard" &&
+        (model?.workflow?.nodes?.length ?? 0) > 0 && (
+          <Steps
+            size="small"
+            current={0}
+            items={(model?.workflow?.nodes ?? []).slice(0, 8).map(n => ({
+              title: n.name || n.id,
+              description: n.phase,
+            }))}
+            style={{ marginBottom: 14 }}
+            data-testid="app-runtime-wizard-steps"
           />
-        );
-
-        // Step 7：未声明 layout（或声明后 5 槽位全空，schema 层已判定并回 null）
-        // 时保留原顺序平铺，视觉零变化。
-        if (!page.layout) {
-          return (
-            <div
-              className="mb-3 grid gap-2"
-              data-testid="app-runtime-experience-block-scaffold"
-            >
-              {directBlocks.map(renderBlock)}
-            </div>
-          );
-        }
-
-        const blockById = new Map(directBlocks.map(b => [b.id, b]));
-        // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
-        const slotSource = isPhone && page.layout.mobile
-          ? { ...page.layout, ...page.layout.mobile }
-          : page.layout;
-        const slotBlocks = (ids: string[]) =>
-          ids.map(bid => blockById.get(bid)).filter((b): b is NonNullable<typeof b> => !!b);
-        const summaryBlocks = slotBlocks(slotSource.summary ?? []);
-        const primaryBlocks = slotBlocks(slotSource.primary ?? []);
-        const secondaryBlocks = slotBlocks(slotSource.secondary ?? []);
-        const activityBlocks = slotBlocks(slotSource.activity ?? []);
-        const contentBlocks = slotBlocks(slotSource.content ?? []);
-        const placedIds = new Set(
-          [...summaryBlocks, ...primaryBlocks, ...secondaryBlocks, ...activityBlocks, ...contentBlocks].map(
-            b => b.id
-          )
-        );
-        // 声明了 layout 但没被任何槽位引用到的区块：如实照样渲染，不能因为
-        // 没排进槽位就悄悄丢内容——排在末尾，视觉上标为"未分配槽位"。
-        const orphanBlocks = directBlocks.filter(b => !placedIds.has(b.id));
-
-        return (
-          <div
-            className="mb-3 flex flex-col gap-2"
-            data-testid="app-runtime-experience-block-layout"
-          >
-            {summaryBlocks.length > 0 && (
-              <div className="flex flex-wrap gap-2" data-testid="app-runtime-layout-summary">
-                {summaryBlocks.map(renderBlock)}
-              </div>
-            )}
-            {(primaryBlocks.length > 0 || secondaryBlocks.length > 0) && (
-              <div className="flex flex-col gap-2 md:flex-row md:items-start">
-                {primaryBlocks.length > 0 && (
-                  <div
-                    className="flex min-w-0 flex-[2] flex-col gap-2"
-                    data-testid="app-runtime-layout-primary"
-                  >
-                    {primaryBlocks.map(renderBlock)}
-                  </div>
-                )}
-                {secondaryBlocks.length > 0 && (
-                  <div
-                    className="flex min-w-0 flex-1 flex-col gap-2"
-                    data-testid="app-runtime-layout-secondary"
-                  >
-                    {secondaryBlocks.map(renderBlock)}
-                  </div>
-                )}
-              </div>
-            )}
-            {activityBlocks.length > 0 && (
-              <div className="flex flex-col gap-2" data-testid="app-runtime-layout-activity">
-                {activityBlocks.map(renderBlock)}
-              </div>
-            )}
-            {contentBlocks.length > 0 && (
-              <div className="flex flex-col gap-2" data-testid="app-runtime-layout-content">
-                {contentBlocks.map(renderBlock)}
-              </div>
-            )}
-            {orphanBlocks.length > 0 && (
-              <div className="grid gap-2" data-testid="app-runtime-layout-unassigned">
-                {orphanBlocks.map(renderBlock)}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-      {page.view.kind === "wizard" && (model?.workflow?.nodes?.length ?? 0) > 0 && (
-        <Steps
-          size="small"
-          current={0}
-          items={(model?.workflow?.nodes ?? []).slice(0, 8).map(n => ({
-            title: n.name || n.id,
-            description: n.phase,
-          }))}
-          style={{ marginBottom: 14 }}
-          data-testid="app-runtime-wizard-steps"
-        />
-      )}
+        )}
       {page.view.kind === "monitor" ? (
         monitorFreeformOverview ? (
           <>
             {monitorFreeformOverview}
+            {blockScaffold}
             {monitorDynamicLists}
           </>
         ) : (
           <>
+            {blockScaffold}
             {statsBand}
             {monitorCombinedRow}
           </>
@@ -1940,11 +2765,21 @@ export function AppRuntimeScreen({
         // dashboard 特有的 widgetsBand（快速入口等）保留，不被设计版式吞掉。
         <>
           {monitorFreeformOverview}
+          {blockScaffold}
           {widgetsBand}
           {monitorDynamicLists}
         </>
+      ) : pageHasKpiBlocks ? (
+        // 方案 C 反方向：业务页声明了 MetricGrid/TrendChart 积木时，固定骨架的
+        // statsBand/chartsBand 让位——两条路画的是同一份指标，都渲染就是两张
+        // 说同一件事的卡。widgetsBand（快速入口等）不属于 KPI/图表，照常保留。
+        <>{widgetsBand}</>
       ) : (
         <>
+          {/* dashboard 页没有 freeformOverview 时会走到这里（pageHasKpiBlocks
+              要求非总览页，所以 dashboard 永远不满足上一支）。总览页的脚手架
+              在上面被跳过了，得在这里补回来，否则积木整页消失。 */}
+          {OVERVIEW_KINDS.has(page.view.kind) ? blockScaffold : null}
           {statsBand}
           {widgetsBand}
           {chartsBand}
@@ -1989,16 +2824,11 @@ export function AppRuntimeScreen({
             {detailRow ? (
               detailBody
             ) : (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: INK.faint,
-                  padding: "24px 0",
-                  textAlign: "center",
-                }}
-              >
-                点击左侧行查看详情与 AI 能力
-              </div>
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="点击左侧行查看详情与 AI 能力"
+                style={{ padding: "16px 0" }}
+              />
             )}
           </Card>
         </div>
@@ -2065,6 +2895,15 @@ export function AppRuntimeScreen({
               (i - (hasLegacyHomeMenu ? 1 : 0) + MENU_ICONS.length) %
                 MENU_ICONS.length
             ];
+    // 菜单项右侧挂本页主实体的行数（antd Badge）。此前侧栏只有一列文字，
+    // 哪一页有货、哪一页是空的要挨个点进去才知道；有了计数，应用一打开就
+    // 有"这套系统里已经有数据在跑"的实感。锁住的页不显示——那是权限信息，
+    // 不该从计数里泄出去。
+    const rowCount = (() => {
+      if (locked || m.pageId === "home") return 0;
+      const entityId = schema.pages.find(p => p.id === m.pageId)?.entityId;
+      return entityId ? (state.entities[entityId]?.length ?? 0) : 0;
+    })();
     return {
       key: m.pageId,
       icon: <Icon />,
@@ -2072,8 +2911,17 @@ export function AppRuntimeScreen({
         <span
           data-testid={`app-runtime-menu-${m.pageId}`}
           {...probe({ kind: "menu", pageId: m.pageId, label: m.label })}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
         >
           {m.label}
+          {rowCount > 0 && (
+            <Badge
+              count={rowCount}
+              overflowCount={99}
+              color={hexToRgba(identityTheme.primaryFg, 0.22)}
+              style={{ color: identityTheme.sidebarText, fontSize: 10, boxShadow: "none" }}
+            />
+          )}
         </span>
       ),
       disabled: locked,
@@ -2235,7 +3083,13 @@ export function AppRuntimeScreen({
           items={navMenuItems}
           style={{ flex: 1, minWidth: 0, background: "transparent" }}
         />
-        <span style={{ fontSize: 13, color: identityTheme.sidebarText, opacity: 0.65 }}>
+        <span
+          style={{
+            fontSize: 13,
+            color: identityTheme.sidebarText,
+            opacity: 0.65,
+          }}
+        >
           当前角色
         </span>
         <Select
@@ -2268,56 +3122,48 @@ export function AppRuntimeScreen({
         background: "#f0f2f5",
       }}
     >
-      <div
-        style={{
-          height: 48,
-          flexShrink: 0,
-          background: "#fff",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "0 12px",
-          boxShadow: "0 1px 4px rgba(0,21,41,0.08)",
-          zIndex: 1,
-        }}
+      {/* 顶栏走 antd-mobile NavBar（左 品牌 / 中 标题 / 右 角色）。此前是手搓的
+          48px flex div，自己摆 logo、自己 flex:1 顶右、自己加投影——三段布局
+          本来就是 NavBar 的事。fallback 给一条等高空白，避免加载那一拍内容区
+          往上跳。 */}
+      <React.Suspense
+        fallback={
+          <div style={{ height: 48, flexShrink: 0, background: "#fff" }} />
+        }
       >
-        <div
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: 6,
-            background: brandGradient,
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <BrandIcon style={{ color: "#fff", fontSize: 12 }} />
-        </div>
-        <span
-          style={{
-            fontWeight: 600,
-            fontSize: 14,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {currentTitle}
-        </span>
-        <span style={{ flex: 1 }} />
-        <Select
-          size="small"
-          style={{ minWidth: 104 }}
-          value={role}
-          onChange={changeRole}
-          options={schema.roles.map(r => ({ value: r, label: r }))}
-          data-testid="app-runtime-role"
+        <LazyPhoneNavBar
+          title={currentTitle}
+          brand={
+            <span
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 6,
+                background: brandGradient,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <BrandIcon style={{ color: "#fff", fontSize: 12 }} />
+            </span>
+          }
+          right={
+            // 角色切换：手机档用 antd-mobile Picker（整屏滚轮，手指点得准），
+            // 不用 antd Select——它的下拉浮层在缩放过的画布里定位会飘。
+            <React.Suspense fallback={<span style={{ width: 96, height: 24 }} />}>
+              <LazyPhoneRolePicker
+                roles={schema.roles}
+                value={role}
+                onChange={changeRole}
+                getContainer={() => canvasEl ?? document.body}
+              />
+            </React.Suspense>
+          }
         />
-      </div>
+      </React.Suspense>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 10 }}>
-        {isHome ? homeContent : phonePageContent}
+        {isHome ? phoneHomeContent : phonePageContent}
       </div>
       <div style={{ flexShrink: 0 }}>
         <React.Suspense
@@ -2332,15 +3178,37 @@ export function AppRuntimeScreen({
           }
         >
           <LazyPhoneTabBar
-            items={schema.menus.map(m => ({
-              pageId: m.pageId,
-              label: m.label,
-              locked:
+            items={schema.menus.map(m => {
+              const locked =
                 m.pageId !== "home" &&
-                pageAccess.get(m.pageId)?.visible === false,
-            }))}
+                pageAccess.get(m.pageId)?.visible === false;
+              // 行数徽标与桌面侧栏同源同口径（见 menuItems 里那段）：
+              // 锁住的页和首页不计数，锁住的那条是权限信息、不能从计数里泄出去。
+              const entityId =
+                locked || m.pageId === "home"
+                  ? undefined
+                  : schema.pages.find(p => p.id === m.pageId)?.entityId;
+              return {
+                pageId: m.pageId,
+                label: m.label,
+                locked,
+                rowCount: entityId
+                  ? (state.entities[entityId]?.length ?? 0)
+                  : 0,
+              };
+            })}
             activeId={activePageId}
             onChange={setActivePageId}
+            // 锁定 tab 点了要出声：灰图标 + title 在触屏上等于没有提示，
+            // 用户只会以为点不动是应用卡了。走同一个 notify（手机档=Toast）。
+            onLockedTap={item =>
+              notify(
+                true,
+                "warning",
+                `当前角色（${role ?? "-"}）无「${item.label}」权限`,
+                () => canvasEl
+              )
+            }
           />
         </React.Suspense>
       </div>
@@ -2386,15 +3254,26 @@ export function AppRuntimeScreen({
             // E40.2：主题变量下发（非 antd 的裸元素经 var(--app-primary) 吃主题）
             ["--app-primary" as string]: identityTheme.primary,
             ["--app-primary-hover" as string]: identityTheme.primaryHover,
+            // 手机档的 antd-mobile 组件不吃 ConfigProvider 的 token，只认
+            // --adm-* 变量。挂在画布上（而不是 :root），生成主题就只染这个
+            // 应用，不会漏到 SlideRule 自己的界面上。
+            ...admThemeVars(identityTheme),
             // Step 9：深色配方覆盖 canvas 底色（不读 identityTheme.contentBg，
             // 避免深色配方叠浅色主题时底色反而变浅）。
-            background: designRecipe.dark ? DARK_CANVAS_BG : identityTheme.contentBg,
+            background: designRecipe.dark
+              ? DARK_CANVAS_BG
+              : identityTheme.contentBg,
             borderRadius: isPhone ? 12 : 5,
             overflow: "hidden",
             boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
           }}
         >
           <ConfigProvider
+            // 生成的应用通篇中文，日期组件却一直是英文的——实测过：新建表单里
+            // 点开日期字段，星期表头是 "Su Mo Tu We Th Fr Sa"、月份是 "Jul"，
+            // 而且**周日起周**（中文习惯是周一起）。antd 不配 locale 时默认
+            // en_US，这一条漏了就等于每个生成出来的应用都带着一个英文日历。
+            locale={zhCN}
             getPopupContainer={() => canvasEl ?? document.body}
             theme={{
               // E40.2：身份主题的主色一把翻全部 antd 组件（按钮/选中态/链接…）
@@ -2402,10 +3281,24 @@ export function AppRuntimeScreen({
               // 略增字号（无障碍场景，antd token 全局生效，不用逐组件改）。
               token: {
                 colorPrimary: identityTheme.primary,
+                // 「选中项的浅底」交给主题自己声明的 accentBg，不吃 antd 从
+                // colorPrimary 派生的那个。派生值对常规亮色主色没问题，但主色
+                // 一旦是**低饱和深色**（生成主题很容易挑到，比如咖啡那套的
+                // #3F7656），派生出来是中灰绿 rgb(170,181,173)——配上同样深绿的
+                // 文字，实测对比度只有 2.6:1，低于 WCAG AA 的 4.5:1，日历选中格
+                // 的日号几乎看不清。accentBg 本来就是主题为"强调浅底"声明的，
+                // 用它既保证是浅的，又跟侧栏/标签的浅底同源。
+                // 这一个 token 同时管住 Calendar 选中格 / Select 选中项 /
+                // Menu 选中项，不用逐组件打补丁。
+                controlItemBgActive: identityTheme.accentBg,
                 borderRadius: designRecipe.borderRadius,
                 padding: designRecipe.padding,
                 ...(designRecipe.highContrast
-                  ? { colorBorder: "#000000", colorBorderSecondary: "#00000040", fontSize: 15 }
+                  ? {
+                      colorBorder: "#000000",
+                      colorBorderSecondary: "#00000040",
+                      fontSize: 15,
+                    }
                   : {}),
               },
               algorithm: designRecipeAlgorithms(designRecipe, isTablet),
@@ -2436,96 +3329,150 @@ export function AppRuntimeScreen({
                   // 锁的位置只剩一段空白，肉眼看不出还有内容）。改成跟
                   // sidebarText 同色但打透明度，深浅侧边栏都能读出"这项被
                   // 锁住了"而不是凭空消失。
-                  darkItemDisabledColor: hexToRgba(identityTheme.sidebarText, 0.35),
+                  darkItemDisabledColor: hexToRgba(
+                    identityTheme.sidebarText,
+                    0.35
+                  ),
                 },
               },
             }}
           >
+            {/* message 的挂载点必须在 ConfigProvider 里面，提示条才吃得到
+                身份主色/深色档/圆角配方；挂外面等于白用 hook 版。 */}
+            {messageHolder}
             {isPhone
               ? phoneShell
               : schema.identity.nav === "top"
                 ? topShell
                 : desktopShell}
 
-            <Modal
-              title={`新建 · ${page?.title ?? ""}`}
-              open={formOpen}
-              onOk={handleCreate}
-              onCancel={() => setFormOpen(false)}
-              okText="保存"
-              cancelText="取消"
-              destroyOnHidden
-              getContainer={() => canvasEl ?? document.body}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                  paddingTop: 8,
-                }}
-              >
-                {(page?.formFields ?? []).map(f => (
-                  <div
-                    key={f.id}
-                    {...(page?.entityId
+            {/* 新建表单：手机档走 antd-mobile Popup（底部弹起），桌面档留 antd
+                Modal。同一份 formFields / formValues / handleCreate，只换容器
+                和录入控件——PC 弹框塞进 390 画布会顶穿两边，实测过。 */}
+            {isPhone ? (
+              <React.Suspense fallback={null}>
+                <LazyPhoneFormPopup
+                  open={formOpen}
+                  title={`新建 · ${page?.title ?? ""}`}
+                  fields={page?.formFields ?? []}
+                  values={formValues}
+                  onChange={(fieldId, v) =>
+                    setFormValues(prev => ({ ...prev, [fieldId]: v }))
+                  }
+                  onCancel={() => setFormOpen(false)}
+                  onSubmit={handleCreate}
+                  refRowsFor={refRowsFor}
+                  enumOptionsFor={enumOptionsFor}
+                  fieldProbeProps={f =>
+                    page?.entityId
                       ? probe({
                           kind: "field",
                           entityId: page.entityId,
                           fieldId: f.id,
                           label: f.label,
                         })
-                      : {})}
-                  >
-                    <div
-                      style={{ fontSize: 12, color: "#666", marginBottom: 4 }}
+                      : {}
+                  }
+                  getContainer={() => canvasEl ?? document.body}
+                />
+              </React.Suspense>
+            ) : (
+              <Modal
+                title={`新建 · ${page?.title ?? ""}`}
+                open={formOpen}
+                onOk={handleCreate}
+                onCancel={() => setFormOpen(false)}
+                okText="保存"
+                cancelText="取消"
+                destroyOnHidden
+                width={modalSizing.width}
+                centered={modalSizing.centered}
+                styles={{
+                  body: {
+                    maxHeight: modalSizing.bodyMaxHeight,
+                    overflowY: "auto",
+                  },
+                }}
+                getContainer={() => canvasEl ?? document.body}
+              >
+                {/* antd Form：此前是手写 div + 12px 灰字当 label，没有必填
+                    标记、没有错误态、label 也不对齐，右边还挂着 `string`
+                    `number` 这种给开发看的类型名。改用 Form 之后这些是白送的——
+                    手机档早就在用 antd-mobile 的 Form，PC 反倒落在后面。
+                    Form.Item 一律**不给 name**：值仍由 formValues 这个受控
+                    state 持有（handleCreate 照旧读它）。不带 name 的 Form.Item
+                    在 antd 里就是纯布局容器（form-item.js:213 直接走
+                    renderLayout），跟父级受控的值兼容，不会来抢数据。 */}
+                <Form
+                  layout="vertical"
+                  size="small"
+                  requiredMark
+                  style={{ paddingTop: 8 }}
+                >
+                  {(page?.formFields ?? []).map(f => (
+                    <Form.Item
+                      key={f.id}
+                      label={f.label}
+                      style={{ marginBottom: 14 }}
                     >
-                      {f.label}
-                      <span style={{ color: "#bbb", marginLeft: 6 }}>
-                        {f.type}
-                      </span>
-                    </div>
-                    <FieldInput
-                      field={f}
-                      value={formValues[f.id]}
-                      refRows={refRowsFor(f)}
-                      enumOptions={
-                        f.type === "enum" && page?.entityId
-                          ? [
-                              ...new Set(
-                                (state.entities[page.entityId] ?? [])
-                                  .map(r => String(r.values[f.id] ?? "").trim())
-                                  .filter(Boolean)
-                              ),
-                            ]
-                          : []
-                      }
-                      onChange={v =>
-                        setFormValues(prev => ({ ...prev, [f.id]: v }))
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-            </Modal>
+                      {/* 游标探针挂在内层 div，不挂 Form.Item——Form.Item 的
+                          props 是它自己的一套（onReset 等签名跟 DOM 事件不兼容），
+                          它也不会把陌生 prop 透传到 DOM 上。 */}
+                      <div
+                        {...(page?.entityId
+                          ? probe({
+                              kind: "field",
+                              entityId: page.entityId,
+                              fieldId: f.id,
+                              label: f.label,
+                            })
+                          : {})}
+                      >
+                        <FieldEditor
+                          field={f}
+                          value={formValues[f.id]}
+                          refRows={refRowsFor(f)}
+                          enumOptions={enumOptionsFor(f)}
+                          onChange={v =>
+                            setFormValues(prev => ({ ...prev, [f.id]: v }))
+                          }
+                        />
+                      </div>
+                    </Form.Item>
+                  ))}
+                </Form>
+              </Modal>
+            )}
 
-            <Drawer
-              title={`详情 · ${page?.title ?? currentTitle}`}
-              open={detailRow !== null && !isTablet}
-              onClose={() => {
-                setDetailRow(null);
-                setAiError(null);
-                setAiSuggestion(null); // 未确认的建议随抽屉关闭丢弃（不悄悄写回）
-              }}
-              placement={isPhone ? "bottom" : "right"}
-              height={isPhone ? "72%" : undefined}
-              width={isPhone ? undefined : 420}
-              destroyOnHidden
-              getContainer={() => canvasEl ?? document.body}
-              data-testid="app-runtime-detail"
-            >
-              {detailBody}
-            </Drawer>
+            {/* 行详情：手机档走 antd-mobile Popup，桌面档留 antd Drawer。
+                原来是把桌面 Drawer 掰成 placement="bottom" 冒充移动端；
+                Popup 才是移动端原生形态（圆角/拖拽条/遮罩关闭都是默认行为）。
+                正文 detailBody 跨设备共用，这里只换容器。 */}
+            {isPhone ? (
+              <React.Suspense fallback={null}>
+                <LazyPhoneDetailPopup
+                  open={detailRow !== null}
+                  title={`详情 · ${page?.title ?? currentTitle}`}
+                  onClose={closeDetail}
+                  getContainer={() => canvasEl ?? document.body}
+                >
+                  {detailBody}
+                </LazyPhoneDetailPopup>
+              </React.Suspense>
+            ) : (
+              <Drawer
+                title={`详情 · ${page?.title ?? currentTitle}`}
+                open={detailRow !== null && !isTablet}
+                onClose={closeDetail}
+                placement="right"
+                width={420}
+                destroyOnHidden
+                getContainer={() => canvasEl ?? document.body}
+                data-testid="app-runtime-detail"
+              >
+                {detailBody}
+              </Drawer>
+            )}
           </ConfigProvider>
         </div>
       </div>
@@ -2543,7 +3490,11 @@ export function AppRuntimeScreen({
                 : "absolute left-3 top-2 flex items-center gap-0.5 rounded-full bg-black/25 p-0.5"
             }
           >
-            {(["desktop", "phone"] as DeviceKey[]).map(key => (
+            {/* 只列这个应用真有设计的档（见 availableDeviceTiers）。
+                只剩一档时**这一档的按钮仍然要在**：它同时是「从代码视图回到
+                应用视图」的唯一入口（旁边的「代码」按钮只负责进去）。一度想
+                过一档就把整条收起来，那会把人留在代码视图里出不来。 */}
+            {deviceTiers.map(key => (
               <button
                 key={key}
                 type="button"
@@ -2585,7 +3536,7 @@ export function AppRuntimeScreen({
           ? createPortal(gearBar, controlsContainer)
           : null;
       })()}
-      {!codeView && (
+      {!codeView && showScaleBadge && (
         <span
           className="absolute bottom-2 right-3 rounded-full bg-black/30 px-2 py-0.5 font-mono text-[9px] text-white/90"
           title={`固定 ${spec.w}×${spec.h} 设计分辨率，按容器等比缩放显示`}

@@ -19,7 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services import freeform_block, schema_legal
 from services.freeform_block import _theme_palette, is_valid_generated_theme
-from services.identity_theme_gen import IdentityThemeSpec
+from services.identity_palette_hint import FALLBACK_SEED
+from services.identity_theme_gen import IdentityThemeSeedSpec
 from services.v5_model_gate import validate_five_system_model  # noqa: F401 — import 即哨兵
 
 _DATA = Path(__file__).resolve().parent.parent / "services" / "data"
@@ -55,79 +56,48 @@ def test_gate_layout_slots_derived_from_catalog():
     assert "LAYOUT_SLOTS = set(EXPERIENCE_BLOCK_ALLOWED_SLOTS)" in gate_src
 
 
-# ── 主题预设单一真相源 ─────────────────────────────────────
+# ── 生成主题契约：与前端同一判定（2026-07-30 起只有 seed 一个必填字段）──
+#
+# 此前这里还有三条测主题预设的（test_theme_hints_derived_from_presets /
+# test_preset_ids_match_legal_ledger / test_presets_pass_generation_spec）：
+# 那三条锁的是"8 套手挑色板"这个东西本身的一致性，而这次改动的目的正是
+# 删掉那套东西——presets JSON 不再有 themes 键，锁一个已经不存在的结构
+# 没有意义。appIdentity.theme 的 8 个合法 id 仍然在 five_system_legal.json
+# 里、仍然被 gate/repair 校验（v5_model_gate.py/v5_model_repair.py 那两处
+# 没有改），但它们不再对应任何色板，两边不再需要"id 清单一致"这条哨兵。
 
-def test_theme_hints_derived_from_presets():
-    themes = PRESETS["themes"]
-    assert set(freeform_block._THEME_COLOR_HINTS.keys()) == set(themes.keys())
-    for theme_id, hints in freeform_block._THEME_COLOR_HINTS.items():
-        for key, value in hints.items():
-            assert value == themes[theme_id][key], (theme_id, key)
-    assert freeform_block._DEFAULT_THEME_ID == PRESETS["defaultThemeId"]
-
-
-def test_preset_ids_match_legal_ledger():
-    assert sorted(PRESETS["themes"].keys()) == sorted(LEGAL["identityThemes"])
-
-
-def test_presets_pass_generation_spec():
-    """预设本身必须过生成侧同一套校验（hex 格式 + WCAG 对比度）——预设是
-    生成主题的兜底，兜底自己不合格就说不过去。"""
-    for theme_id, theme in PRESETS["themes"].items():
-        payload = {k: v for k, v in theme.items() if k != "id"}
-        IdentityThemeSpec.model_validate(payload)
-
-
-# ── 生成主题契约：与前端同一判定 ───────────────────────────
-
-VALID_THEME = {
-    "primary": "#123456", "primaryHover": "#123456", "gradTo": "#123456",
-    "primaryFg": "#ffffff", "contentBg": "#f0f0f0", "accentBg": "#eeeeee",
-    "accentFg": "#333333", "sidebarText": "#cccccc", "sidebarBg": "#101820",
-    "charts": ["#111111", "#222222", "#333333"],
-}
+VALID_THEME = {"seed": "#123456", "label": "测试主题"}
 
 
 def test_generated_theme_contract_accepts_valid():
     assert is_valid_generated_theme(VALID_THEME)
-    palette = _theme_palette("forest", VALID_THEME)
-    assert palette["primary"] == VALID_THEME["primary"]
-    # label 不在契约必填集里，但 prompt 消费方要读——出口必须兜底，
-    # 缺 label 的合格主题不能把增强层炸成 KeyError（终检实测事故）。
-    assert palette["label"]
+    palette = _theme_palette("azure", VALID_THEME)
+    assert palette["primary"] == VALID_THEME["seed"]
+    assert palette["label"] == VALID_THEME["label"]
 
 
-def test_generated_theme_contract_rejects_partial():
-    """此前的 8 键弱检查会放行缺 sidebarBg/primaryFg 的主题（前端却弃用）——
-    错配窗口下卡片配色与侧栏对不上。现在必须整套拒绝、回落预设。"""
-    missing_sidebar = {k: v for k, v in VALID_THEME.items() if k != "sidebarBg"}
-    assert not is_valid_generated_theme(missing_sidebar)
-    assert _theme_palette("forest", missing_sidebar) == freeform_block._THEME_COLOR_HINTS["forest"]
+def test_generated_theme_contract_rejects_missing_seed():
+    assert not is_valid_generated_theme({"label": "只有标签没有种子色"})
+    # 落回 FALLBACK_SEED 派生的中性色板，不是某个预设 id
+    fallback = _theme_palette("azure", {"label": "只有标签没有种子色"})
+    assert fallback["primary"] == FALLBACK_SEED
 
 
 def test_generated_theme_contract_rejects_trailing_newline():
     """Python 的 $ 豁免尾随换行、JS 不豁免——必须用 fullmatch 堵住这道
     "后端判合格、前端整套弃用"的换行错配窗口。"""
-    sneaky = dict(VALID_THEME, primary="#123456\n")
+    sneaky = dict(VALID_THEME, seed="#123456\n")
     assert not is_valid_generated_theme(sneaky)
 
 
-def test_generated_theme_contract_rejects_bad_shapes():
-    bad_hex = dict(VALID_THEME, primary="red")
-    assert not is_valid_generated_theme(bad_hex)
-    bad_charts = dict(VALID_THEME, charts=["#111111", "#222222"])
-    assert not is_valid_generated_theme(bad_charts)
-    gradient_ok = dict(
-        VALID_THEME, sidebarBg="linear-gradient(180deg, #101820, #203040)"
-    )
-    assert is_valid_generated_theme(gradient_ok)
-    gradient_bad = dict(VALID_THEME, sidebarBg="linear-gradient(red, blue)")
-    assert not is_valid_generated_theme(gradient_bad)
+def test_generated_theme_contract_rejects_bad_hex():
+    assert not is_valid_generated_theme(dict(VALID_THEME, seed="red"))
+    assert not is_valid_generated_theme(dict(VALID_THEME, seed="#12345"))
 
 
 def test_spec_fields_cover_contract():
     contract = PRESETS["generatedThemeContract"]
-    assert set(contract["requiredKeys"]) <= set(IdentityThemeSpec.model_fields.keys())
+    assert set(contract["requiredKeys"]) <= set(IdentityThemeSeedSpec.model_fields.keys())
 
 
 # ── 区块生成放开名单从目录派生（2026-07-27）──────────────────
@@ -147,30 +117,51 @@ def test_generation_enabled_requires_real_renderer():
 
 
 def test_catalog_rejects_enabling_placeholder_block(monkeypatch):
-    """坏组合必须在加载期 fail-fast，不能带病进 prompt。"""
+    """坏组合必须在加载期 fail-fast，不能带病进 prompt。
+
+    2026-07-28：原来这里是"从真实目录里挑一个 placeholder 再打开开关"来造
+    坏数据。五个占位区块补上真渲染器之后目录里一个 placeholder 都没有了，
+    循环挑不到东西、坏组合根本没造出来，测试就变成了永远通过的空壳
+    （DID NOT RAISE 时才暴露）。改成显式合成一条坏区块——不变式的测试不该
+    依赖真实数据里恰好存在一个反例。
+    """
     import copy
 
     import pytest
 
     bad = copy.deepcopy(CATALOG)
-    for block in bad["blocks"]:
-        if block["rendererStatus"] == "placeholder":
-            block["generationEnabled"] = True
-            break
+    bad["blocks"].append(
+        {
+            **copy.deepcopy(bad["blocks"][0]),
+            "type": "__SyntheticPlaceholder__",
+            "rendererKey": "__synthetic-placeholder__",
+            "rendererStatus": "placeholder",
+            "generationEnabled": True,
+        }
+    )
     monkeypatch.setattr(schema_legal, "_BLOCK_CATALOG", bad)
     with pytest.raises(ValueError, match="放开了生成"):
         schema_legal._load_experience_blocks()
 
 
 def test_prompt_allowlist_derived_from_catalog():
-    """prompt 的放开名单逐字来自目录，不是手写的第二份清单。"""
+    """prompt 的放开名单逐字来自目录，不是手写的第二份清单。
+
+    只锁「名单派生自目录」这个契约，不锁包着它的那句话怎么写——2026-07-28
+    把措辞从许可式（You MAY emit…）改成祈使式时，这条曾因为断言里钉死了
+    "ONLY these types are renderable today: " 而误报。措辞是要随实测调的，
+    名单来源才是不能漂的那一头。
+    """
     prompt = schema_legal.experience_block_prompt_block()
     enabled = [b["type"] for b in CATALOG["blocks"] if b.get("generationEnabled")]
+    disabled = [b["type"] for b in CATALOG["blocks"] if not b.get("generationEnabled")]
     assert enabled, "目录里一个可生成区块都没有——放开名单退化了？"
-    assert "ONLY these types are renderable today: " + ", ".join(enabled) in prompt
-    for block in CATALOG["blocks"]:
-        if not block.get("generationEnabled"):
-            assert f"renderable today: {block['type']}" not in prompt
+    # 通电名单必须整串出现（顺序也来自目录，防止有人另手写一份）
+    assert ", ".join(enabled) in prompt
+    # 未通电的必须被点名禁止，且不能混进通电名单那一串里
+    for t in disabled:
+        assert t in prompt, f"{t} 未通电，prompt 必须明确点名禁止它"
+        assert t not in ", ".join(enabled)
 
 
 def test_prompt_no_longer_carries_blanket_ban():

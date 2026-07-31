@@ -170,7 +170,7 @@ flowchart LR
 | **真实工具** | `web.search` 与 `code.run`（E2B 沙盒，无 key 则 fail-closed），经 MCP 式注册表接入 |
 | **盲评签字上线** | 引擎改动配对盲评（A/B · 换位）——如 agentic pick 4:0、证据管道 2:0 |
 
-深入阅读：[V5.3 架构图](<./docs/SlideRule V5.3 架构图.md>) · [五系统生成评测](./docs/five-system-generation-eval.md) · [运行时蓝图](./docs/LIVE_SYSTEMS_BLUEPRINT.md)
+深入阅读：[V5.7 架构图](<./docs/SlideRule V5.7 架构图.md>) · [五系统生成评测](./docs/five-system-generation-eval.md) · [运行时蓝图](./docs/LIVE_SYSTEMS_BLUEPRINT.md)
 
 ---
 
@@ -300,9 +300,9 @@ unzip skills/sliderule.zip
 
 ## 🏗️ 系统架构
 
-当前引擎（V5.3，增量可溯提交）：[docs/SlideRule V5.3 架构图.md](<./docs/SlideRule V5.3 架构图.md>)
+当前引擎（V5.7，增量可溯提交）：[docs/SlideRule V5.7 架构图.md](<./docs/SlideRule V5.7 架构图.md>)
 
-历史版本：[V5.2](<./docs/SlideRule V5.2 架构图.md>) · [v4 Skill 闭环总图](./docs/assets/SlideRuleArc/SlideRuleSkill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE_%E6%94%B9%E8%BF%9B%E7%89%88v4.md)（获奖技能包背后的架构）
+历史版本：[V5.6](<./docs/SlideRule V5.6 架构图.md>) · [V5.5](<./docs/SlideRule V5.5 架构图.md>) · [V5.4](<./docs/SlideRule V5.4 架构图.md>) · [V5.3](<./docs/SlideRule V5.3 架构图.md>) · [V5.2](<./docs/SlideRule V5.2 架构图.md>) · [v4 Skill 闭环总图](./docs/assets/SlideRuleArc/SlideRuleSkill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE_%E6%94%B9%E8%BF%9B%E7%89%88v4.md)（获奖技能包背后的架构）
 
 ---
 

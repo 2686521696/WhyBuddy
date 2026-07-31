@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     # 本地 JSON 文件（APP_STORE_FILE），行为与"没有 DB"时完全一致。跟账号功能
     # 的 MySQL DATABASE_URL（DB_* 那套）是两个独立子系统，互不影响。
     APP_STORE_DATABASE_URL: Optional[str] = None
+    # 本地库兜底（2026-07-28）：远端连不上时先落本地 SQLite，再不行才回 JSON。
+    # SQLite 比 JSON 强在能查询/能索引/写入是事务性的（JSON 是整文件重写）。
+    # 置空字符串则跳过这一级，直接 JSON——受限文件系统/只读容器里用得上。
+    APP_STORE_LOCAL_SQLITE: str = "sqlite:///data/sliderule-apps.db"
     APP_STORE_FILE: str = "data/sliderule-generated-apps.json"
 
     # AgentLoop worker bridge (108): builds commands for existing Node queue runner.

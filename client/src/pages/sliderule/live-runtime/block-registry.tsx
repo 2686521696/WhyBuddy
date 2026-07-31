@@ -14,7 +14,21 @@
  * 两边说法一旦分家，就会重演"放开了却渲染成惰性占位卡"的事故。
  */
 import React from "react";
-import { Button, Select } from "antd";
+import {
+  Button,
+  Card,
+  Empty,
+  List,
+  Progress,
+  Select,
+  Statistic,
+  Table,
+  Tag,
+  theme as antdTheme,
+  Timeline,
+  Typography,
+} from "antd";
+import type { TableColumnsType } from "antd";
 // WorkflowTimeline 自己的节点箭头（组件 UI，用静态 import；freeform 的
 // 动态图标解析走下面的 AntdIcons 命名空间 + 目录别名表，两回事）。
 import { ArrowRightOutlined } from "@ant-design/icons";
@@ -27,7 +41,41 @@ import * as AntdIcons from "@ant-design/icons";
 import catalogJson from "@experience-blocks";
 import type { WorkflowSection } from "../system-screens/five-system-model";
 import type { RuntimeRow } from "./live-runtime";
+import type { NormalizedFieldOption } from "./field-display";
 import { buildEchartsOption } from "./build-echarts-option";
+import {
+  buildSparklineOption,
+  computeDataRefTrend,
+  formatTrendLabel,
+  type DataRefTrend,
+} from "./dataref-trend";
+
+/** enum 字段取值声明的按需查询（entityId + fieldId → 归一化 options）。 */
+export type EnumOptionsLookup = (
+  entityId: string,
+  fieldId: string
+) => NormalizedFieldOption[];
+
+/**
+ * 字段显示名的按需查询（entityId + fieldId → 中文名）。
+ *
+ * DataTable 的列头本来直接打印字段 id（`lot_code` / `supplier_id`），跟同页
+ * 其它表格的中文列名坐在一起格外刺眼。列定义在模型里，区块渲染器手里没有，
+ * 所以跟 enumOptionsOf 一样按需查。查不到回落字段 id（不猜、不留空）。
+ */
+export type FieldLabelLookup = (
+  entityId: string,
+  fieldId: string
+) => string | undefined;
+import {
+  buildFeedRows,
+  buildRankedRows,
+  buildTrendSeries,
+  computeAggregate,
+  parseAggregate,
+  type FeedItem,
+  type TimeGrain,
+} from "./block-data";
 
 // ECharts 基建走独立 chunk（跟 AppRuntimeScreen 里那份同一个组件/同一个
 // import()，Vite 按 module 去重成一个 chunk，不会重复打包）。
@@ -53,6 +101,10 @@ export interface ExperienceBlockCatalogEntry {
 export interface FreeformDataRef {
   entityRef: string;
   aggregate?: string;
+  /** 同实体下的日期字段。给了就在大数字下面出环比 + 迷你走势线（2026-07-29）。 */
+  trendFieldRef?: string;
+  /** 分桶粒度 day|week|month，默认 day。 */
+  trendGrain?: string;
 }
 /** 真图表声明（2026-07-24）——不是 CSS 画的近似形状，是运行时拿真实行
  * 数据现算的 ECharts option，复用 build-echarts-option.ts 那套已经在用
@@ -65,6 +117,20 @@ export interface FreeformChartSpec {
   metricFieldId?: string;
   metricLabel: string;
 }
+/**
+ * 把一个现成积木摆进 freeform 设计树（2026-07-29）。
+ *
+ * freeform 的 dataRef 只能取聚合值，画不了逐行记录（排行榜/动态流）。与其
+ * 让它硬画出一个空表头，不如让它挑一个积木、决定摆在哪占多大，渲染仍走那个
+ * 积木经过测试的真渲染器。Python 侧 Pydantic 已按目录的 bindingSchema 深校验
+ * 过，这里照 chart 的规矩再自查一遍——不单方面信任上游。
+ */
+export interface FreeformBlockRef {
+  type: string;
+  binding?: Record<string, unknown>;
+  props?: Record<string, unknown>;
+}
+
 export interface FreeformNode {
   tag: string;
   style?: Record<string, string>;
@@ -72,6 +138,7 @@ export interface FreeformNode {
   iconRef?: string;
   dataRef?: FreeformDataRef;
   chart?: FreeformChartSpec;
+  blockRef?: FreeformBlockRef;
   children?: FreeformNode[];
 }
 
@@ -140,6 +207,16 @@ export interface ExperienceBlockRendererProps {
    * 用的身份主题完全无关；现在传主题自己的 primary/charts，颜色才能跟壳
    * 统一。不传时 buildEchartsOption 落到它自己的默认值，不会崩。 */
   chartPalette?: { primary: string; categorical: readonly string[] };
+  /**
+   * FreeformInsight chart 节点专用：enum 字段的取值声明查询（2026-07-28）。
+   * 页面图表的 options 在 schema 派生时就带上了，但 freeform 的 chart 节点
+   * 是 LLM 现写的 `{entityRef, dimensionFieldId}`，手里没有字段定义——不给
+   * 这个查询，环图图例就只能写取值 id（`refunded` / `unpaid`）。查不到返回
+   * 空数组，图例回落原值。
+   */
+  enumOptionsOf?: EnumOptionsLookup;
+  /** DataTable 专用：字段 id → 显示名，用于列头（2026-07-28）。 */
+  fieldLabelOf?: FieldLabelLookup;
 }
 
 export type ExperienceBlockRenderer =
@@ -406,6 +483,17 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
  */
 const FREEFORM_DANGEROUS_VALUE_RE = /url\(|javascript:|expression\(|import\b|@import/i;
 
+/** lineHeight 不带单位时是字号的倍数（CSS 规范特例），不是像素值——真机
+ * 逮到过 LLM 把它当像素写（比如给 28px 字号配 lineHeight: 32，本意是"行高
+ * 32px"），结果渲染成 32 倍字号 = 896px 的行高，整行 KPI 卡被撑到 1000+px，
+ * 后面的图表/列表全被挤出可视区域。Python 侧 freeform_block.py 的
+ * check_style 已经在生成时拦这个模式，但持久化的历史产物/快照恢复不走那
+ * 条校验，这里是渲染层的第二道防线：裸数字倍数超过这个阈值直接丢弃该
+ * 属性（回退浏览器默认行高），不静默"纠正"成某个猜测值——安全，但不会
+ * 把版式挤爆。 */
+const LINE_HEIGHT_RATIO_MAX = 4;
+const BARE_NUMBER_RE = /^-?\d+(\.\d+)?$/;
+
 // 老的 kebab 语义名 → Ant Design 组件名（放开图标白名单之前用的 12 个，历史
 // 生成产物里可能还有，保留兼容）。2026-07-26 起映射表不再在 TS 手抄——从
 // 目录 JSON 派生（Python freeform_block.py 用同一份的键集合做校验），改目录
@@ -451,6 +539,9 @@ function sanitizeFreeformStyle(
   for (const [k, v] of Object.entries(style)) {
     if (!allowed.has(k)) continue;
     if (FREEFORM_DANGEROUS_VALUE_RE.test(String(v))) continue;
+    if (k === "lineHeight" && BARE_NUMBER_RE.test(String(v)) && Number(v) > LINE_HEIGHT_RATIO_MAX) {
+      continue; // 裸数字倍数离谱地大——多半是把像素值当倍数写，丢弃回退默认行高
+    }
     out[k] = v;
   }
   return out as React.CSSProperties;
@@ -467,6 +558,7 @@ function renderFreeformChart(
   chart: FreeformChartSpec | undefined,
   entityRows: Record<string, RuntimeRow[]> | undefined,
   chartPalette: { primary: string; categorical: readonly string[] } | undefined,
+  enumOptionsOf: EnumOptionsLookup | undefined,
   key: React.Key
 ): React.ReactNode {
   if (!chart || typeof chart !== "object") return null;
@@ -487,6 +579,8 @@ function renderFreeformChart(
       metric: chart.metric,
       metricFieldId: chart.metricFieldId,
       metricLabel: chart.metricLabel || "",
+      // 维度是 enum 时，图例照声明的 label 显示，不写取值 id
+      dimensionOptions: enumOptionsOf?.(chart.entityRef, chart.dimensionFieldId),
     },
     entityRows[chart.entityRef] ?? [],
     chartPalette
@@ -505,6 +599,50 @@ function renderFreeformChart(
     >
       <LazyEchartsChart option={option} height={200} ariaLabel={chart.metricLabel} />
     </React.Suspense>
+  );
+}
+
+/**
+ * 可嵌积木白名单——从目录的 freeformEmbeddable 派生（Puck DropZone 的 allow
+ * 语义：allow 设了就只放行名单内的，见 packages/core/lib/data/
+ * is-component-allowed.ts）。改目录一处，Python 校验 / prompt / 这里三处同步。
+ */
+const FREEFORM_EMBEDDABLE_BLOCK_TYPES = new Set(
+  EXPERIENCE_BLOCK_CATALOG.blocks
+    .filter(entry => (entry as { freeformEmbeddable?: boolean }).freeformEmbeddable)
+    .map(entry => entry.type)
+);
+
+/**
+ * blockRef 节点 → 真实积木渲染。
+ *
+ * 二次校验跟 renderFreeformChart 同一套纪律（不单方面信任 Python 端已经查过）：
+ * 类型必须在白名单内、必须有登记的渲染器。任一条不满足就不渲染这个节点，
+ * 交回上层显示诚实占位——绝不能因为一个引用坏了让整页设计降级。
+ *
+ * 走的是 ExperienceBlockBoundary，跟 page.blocks 完全同一条渲染路径：同一个
+ * 组件、同一套主题 token、同一份空态文案。这正是这个机制的意义——嵌进来的
+ * 积木不是"另画一个像它的东西"，就是它本身。
+ */
+function renderFreeformBlockRef(
+  ref: FreeformBlockRef | undefined,
+  props: ExperienceBlockRendererProps,
+  key: React.Key
+): React.ReactNode {
+  if (!ref || typeof ref !== "object") return null;
+  const type = String(ref.type ?? "").trim();
+  if (!FREEFORM_EMBEDDABLE_BLOCK_TYPES.has(type)) return null;
+  if (!experienceBlockEntry(type)) return null;
+  const instance: ExperienceBlockInstance = {
+    id: `freeform-block-${key}`,
+    type,
+    binding: (ref.binding ?? {}) as ExperienceBlockInstance["binding"],
+    props: (ref.props ?? {}) as ExperienceBlockInstance["props"],
+  };
+  return (
+    <div key={key} data-testid="freeform-block-ref" data-block-type={type}>
+      <ExperienceBlockBoundary {...props} block={instance} />
+    </div>
   );
 }
 
@@ -547,6 +685,76 @@ function computeDataRefText(
   return avg.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
 }
 
+/** 环比方向 → 颜色。用的是 antd 的状态色，跟 PageViews 的 TONE_COLORS 同一组。
+ *
+ * 按**方向**上色而不是按好坏——"涨了是不是好事"取决于这个指标是营收还是
+ * 退款率，schema 里没有这个信息，我们也不该猜。参考图和 antd Statistic 文档
+ * 都是这个做法（涨绿跌红），这是这类卡片的既定读法，不另发明一套。 */
+const TREND_COLORS: Record<DataRefTrend["direction"], string> = {
+  up: "#52c41a",
+  down: "#ff4d4f",
+  flat: "#8c8c8c",
+};
+const TREND_ARROWS: Record<DataRefTrend["direction"], string> = {
+  up: "↑",
+  down: "↓",
+  flat: "→",
+};
+
+/**
+ * KPI 数字的第二、三层：环比文案 + 迷你走势线（2026-07-29）。
+ *
+ * 形状对标 ant-design/pro-components 的 StatisticCard——Statistic 出
+ * `trend: 'up' | 'down'` + `description`，StatisticCard 出 `chart` 槽位
+ * （`chartPlacement: 'bottom'`）。参考图上每张 KPI 卡都是这三层，我们此前
+ * 只有第一层，schema 也表达不了后两层。
+ *
+ * 字号/字重/行高**显式重置**：挂 dataRef 的那个节点通常自带 `fontSize: 32`
+ * `fontWeight: 700`（它是大数字本体），环比小字若继承下来会变成第二个大数字。
+ * 外层一律用 `display: block` 的 span：dataRef 节点可能是 `<span>`，往里塞
+ * `<div>` 是非法嵌套。
+ */
+function renderDataRefTrend(
+  dataRef: FreeformDataRef | undefined,
+  entityRows: Record<string, RuntimeRow[]> | undefined,
+  chartPalette: { primary: string; categorical: readonly string[] } | undefined
+): React.ReactNode {
+  if (!dataRef?.trendFieldRef) return null;
+  const trend = computeDataRefTrend((entityRows ?? {})[dataRef.entityRef], dataRef);
+  if (!trend) return null;
+  const color = TREND_COLORS[trend.direction];
+  const sparkOption = buildSparklineOption(trend.spark, chartPalette?.primary || "#1677ff");
+  return (
+    <span key="dataref-trend" data-testid="dataref-trend" style={{ display: "block" }}>
+      <span
+        data-testid="dataref-trend-delta"
+        data-direction={trend.direction}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          marginTop: 4,
+          fontSize: 12,
+          fontWeight: 400,
+          lineHeight: 1.4,
+          letterSpacing: 0,
+          color,
+        }}
+      >
+        <span aria-hidden="true">{TREND_ARROWS[trend.direction]}</span>
+        {formatTrendLabel(trend)}
+      </span>
+      {sparkOption ? (
+        <span data-testid="dataref-sparkline" style={{ display: "block", marginTop: 6 }}>
+          <React.Suspense fallback={<span style={{ display: "block", height: 32 }} />}>
+            <LazyEchartsChart option={sparkOption} height={32} ariaLabel="走势" />
+          </React.Suspense>
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 /** 不可信内容树的硬上限（micromark/cmark 同款纪律：解析不可信输入必须带
  * 嵌套/规模上限，超限截断降级，而不是任由深树把递归栈打爆、整个应用舞台
  * 白屏）。Python 生成侧 freeform_block.py 有同值的校验拦在 reask 环里；
@@ -559,16 +767,30 @@ interface FreeformRenderBudget {
   truncated: boolean;
 }
 
+/**
+ * 渲染 freeform 子树需要的全套上下文。
+ *
+ * 2026-07-29 从三个散参（entityRows / chartPalette / enumOptionsOf）改成一个
+ * 对象：blockRef 节点要把**完整的区块渲染 props** 转交给
+ * ExperienceBlockBoundary（onAction / workflow / pageActions 一个都不能少），
+ * 继续加散参会让这个函数的位置参数上到十个，漏传一个又是一次
+ * "类型全绿、真跑没效果"（enumOptionsOf 刚这么栽过）。
+ */
+interface FreeformRenderCtx {
+  /** 转交给嵌入积木的完整 props（block 字段由 blockRef 现场填） */
+  blockProps: ExperienceBlockRendererProps;
+}
+
 function renderFreeformNode(
   node: unknown,
   key: React.Key,
-  entityRows?: Record<string, RuntimeRow[]>,
-  chartPalette?: { primary: string; categorical: readonly string[] },
+  ctx: FreeformRenderCtx,
   // 根节点记 depth=1（与 Python _freeform_tree_bounds 同一计法——两侧
   // 上限必须真同值，root=0 会让前端多放一层）。
   depth = 1,
   budget?: FreeformRenderBudget
 ): React.ReactNode {
+  const { entityRows, chartPalette, enumOptionsOf } = ctx.blockProps;
   if (!node || typeof node !== "object") return null;
   if (!budget) budget = { remaining: FREEFORM_MAX_NODES, truncated: false };
   if (depth > FREEFORM_MAX_DEPTH || budget.remaining <= 0) {
@@ -583,13 +805,20 @@ function renderFreeformNode(
   // 名走别名表）——放开图标集，非法/查不到的名字 resolveFreeformIcon 返回
   // null，渲染成空、优雅降级。
   const icon = resolveFreeformIcon(typeof n.iconRef === "string" ? n.iconRef : undefined);
-  const chartNode = n.chart ? renderFreeformChart(n.chart, entityRows, chartPalette, "chart") : null;
-  // chart 节点接管这块区域的内容，不再渲染 children/text（跟 Python 侧 prompt
-  // 的约定一致：有 chart 字段的节点不该再让模型塞 children 进来画图表本身）。
-  const children = chartNode
+  const chartNode = n.chart
+    ? renderFreeformChart(n.chart, entityRows, chartPalette, enumOptionsOf, "chart")
+    : null;
+  // blockRef 与 chart 同级：都是"这个节点的内容交给别人渲染"。
+  // chart 交给 ECharts，blockRef 交给积木自己的渲染器。
+  const blockRefNode = n.blockRef
+    ? renderFreeformBlockRef(n.blockRef, ctx.blockProps, "blockRef")
+    : null;
+  // chart / blockRef 节点接管这块区域的内容，不再渲染 children/text（跟 Python
+  // 侧 prompt 的约定一致：挂了这两个字段的节点不该再塞 children 进来自己画）。
+  const children = chartNode || blockRefNode
     ? []
     : (Array.isArray(n.children) ? n.children : []).map((child, i) =>
-        renderFreeformNode(child, i, entityRows, chartPalette, depth + 1, budget)
+        renderFreeformNode(child, i, ctx, depth + 1, budget)
       );
   // dataRef 声明了 aggregate 就是"这是个数字承诺"——现算不出来（实体在
   // entityRows 里查不到/avg 没有合法数值行）也不能退回 LLM 写的 text 掩盖
@@ -598,6 +827,12 @@ function renderFreeformNode(
   const dataRefText = hasNumericClaim
     ? (computeDataRefText(n.dataRef, entityRows) ?? "—")
     : null;
+  // 环比/走势线只在数字真算出来时才挂：主数字都是「—」还配一条走势线，
+  // 等于用图形给一个不存在的数字背书。
+  const trendNode =
+    dataRefText && dataRefText !== "—"
+      ? renderDataRefTrend(n.dataRef, entityRows, chartPalette)
+      : null;
   return React.createElement(
     tag,
     { key, style: sanitizeFreeformStyle(n.style) },
@@ -616,12 +851,15 @@ function renderFreeformNode(
       </span>
     ) : null,
     dataRefText ?? (typeof n.text === "string" ? n.text : null),
+    trendNode,
     chartNode,
+    blockRefNode,
     ...children
   );
 }
 
-const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows, chartPalette }) => {
+const FreeformInsightRenderer: ExperienceBlockRenderer = props => {
+  const { block } = props;
   const root = block.freeformContent?.root;
   if (!root) {
     return (
@@ -637,7 +875,9 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows, c
     remaining: FREEFORM_MAX_NODES,
     truncated: false,
   };
-  const rendered = renderFreeformNode(root, "root", entityRows, chartPalette, 1, budget);
+  // 整包透传：嵌进来的积木要拿到跟 page.blocks 一模一样的 props，
+  // 逐个列举等于每加一个 prop 就埋一次漏传（见 ExperienceBlockBoundary 那次）。
+  const rendered = renderFreeformNode(root, "root", { blockProps: props }, 1, budget);
   return (
     <div data-testid="freeform-insight" className="overflow-hidden rounded">
       {rendered}
@@ -653,14 +893,717 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = ({ block, entityRows, c
   );
 };
 
+
+// ── 五个数据区块的真渲染器（2026-07-28）─────────────────────────────
+// 此前它们登记的是 ExistingContentAdapter：页面上画一个灰框写"下一阶段接入"。
+//
+// 共同纪律（三条都来自这套代码库既有的诚实降级传统）：
+// 1. binding 已经过门禁校验，但运行时**再判一次**——门禁看的是模型声明，
+//    这里拿到的是用户真写进去的行，两者可能对不上（迭代改了字段名、
+//    那一列全是空的）。判不了就出诚实空态，不猜也不崩。
+// 2. "没有数据"和"算不出来"要显示成不同的东西，不能都糊成 0 或 —。
+// 3. 数字格式化一律交给 antd Statistic，不自己拼（参考 ProComponents 的
+//    Statistic：它本身就是 antd Statistic 的薄包装，只加 icon/描述/趋势，
+//    格式化从不自己写）。
+
+/**
+ * 区块外壳：统一标题与留白，让区块在槽位里排起来是一套东西。
+ *
+ * 用 antd Card 而不是手写 div（原来是
+ * `rounded border border-stone-200 bg-white px-3 py-2`，本质就是个简陋版
+ * Card）。换过来的实际收益不是"少写几行"，是三件手写版做不到的事：
+ *
+ * 1. **吃主题**。外层 ConfigProvider 把 colorPrimary 设成了这个应用的身份
+ *    主题色，antd 组件自动跟随；手写的 stone-200/白底不认这套，于是琥珀色
+ *    的咖啡应用里混着一堆中性灰卡片。
+ * 2. **吃 algorithm**。深色/紧凑/高对比是通过 antd 的 theme algorithm 全局
+ *    切的，手写色值在深色模式下就是一块白斑。
+ * 3. 头部/描边/圆角/hover 跟页面里其余 antd 组件严丝合缝，不用手动对齐。
+ */
+function BlockShell({
+  title,
+  testid,
+  extra,
+  children,
+}: {
+  title?: string;
+  testid: string;
+  extra?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const hasHeader = Boolean(title || extra);
+  return (
+    <Card
+      data-testid={testid}
+      size="small"
+      title={title ? <span style={{ fontSize: 13 }}>{title}</span> : undefined}
+      extra={extra}
+      // 没标题时去掉 body 的额外内边距，免得纯图表区块上下各空一截
+      styles={{ body: { padding: hasHeader ? 12 : 10 } }}
+      // 2026-07-28：去掉边框。区块永远渲染在页卡（defaultPageContent 的
+      // 那张 Card）里面，两层都画边框就是圆角套圆角——真跑截图上很扎眼。
+      //
+      // 解法照 ant-design/pro-components 的 ProCard `ghost`
+      //（src/card/components/Card/style.ts 的 '&&-ghost'：backgroundColor
+      // transparent / border none / boxShadow none）：**卡片表面由最外层容器
+      // 提供一次，内层只保留结构**。这里比 ghost 保守一档——只去边框，留白底
+      // 和内边距，区块之间仍有分块感，不至于糊成一片。
+      variant="borderless"
+      style={{ height: "100%" }}
+    >
+      {children}
+    </Card>
+  );
+}
+
+/**
+ * 空态：说清楚"为什么没有"，不是一句冷冰冰的暂无数据。
+ *
+ * 用 antd Empty 拿到统一的插画与留白；description 仍然是我们自己写的那句
+ * 具体原因——Empty 默认文案是「暂无数据」，正是这里最不该出现的话。
+ */
+function BlockEmpty({ hint }: { hint: string }) {
+  return (
+    <Empty
+      image={Empty.PRESENTED_IMAGE_SIMPLE}
+      styles={{ image: { height: 40 } }}
+      description={
+        <span style={{ fontSize: 12, color: "var(--sr-text-muted, #8c8c8c)" }}>
+          {hint}
+        </span>
+      }
+    />
+  );
+}
+
+/** binding 里取实体行；实体在运行时不存在（被迭代删掉等）时返回 null 而不是空数组，
+ *  好让渲染器区分"这个实体没了"和"这个实体一条数据都没有"。 */
+function rowsOfBinding(
+  block: ExperienceBlockInstance,
+  entityRows: Record<string, RuntimeRow[]> | undefined
+): { entityRef: string; rows: RuntimeRow[] } | null {
+  const entityRef = String(block.binding?.entityRef ?? "").trim();
+  if (!entityRef || !entityRows || !(entityRef in entityRows)) return null;
+  return { entityRef, rows: entityRows[entityRef] ?? [] };
+}
+
+const MetricGridRenderer: ExperienceBlockRenderer = ({ children, block, entityRows }) => {
+  // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
+  // 现行 renderBlock 不传 children，走下面的 binding 取数。
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell title={title} testid="metric-grid">
+        <BlockEmpty hint="指标未绑定到有效实体" />
+      </BlockShell>
+    );
+  const spec = parseAggregate(block.binding?.aggregate);
+  const value = computeAggregate(bound.rows, spec);
+  const label =
+    spec.kind === "count"
+      ? "记录数"
+      : `${spec.kind === "sum" ? "合计" : "平均"} · ${spec.fieldId}`;
+  return (
+    <BlockShell title={title} testid="metric-grid">
+      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))" }}>
+        <div data-testid="metric-grid-item" className="rounded bg-stone-50 px-3 py-2">
+          {value === null ? (
+            // 算不出来（该字段一行都没有效值）≠ 0，如实说
+            <>
+              <div className="text-[11px] text-stone-400">{label}</div>
+              <div className="text-lg font-semibold text-stone-400">—</div>
+              <div className="text-[10px] text-stone-400">该字段暂无有效数值</div>
+            </>
+          ) : (
+            <Statistic
+              title={<span className="text-[11px] text-stone-400">{label}</span>}
+              value={value}
+              precision={Number.isInteger(value) ? 0 : 1}
+              valueStyle={{ fontSize: 20, fontWeight: 600 }}
+            />
+          )}
+        </div>
+      </div>
+    </BlockShell>
+  );
+};
+
+const TrendChartRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  chartPalette,
+}) => {
+  // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
+  // 现行 renderBlock 不传 children，走下面的 binding 取数。
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const timeField = String(block.binding?.timeDimensionRef ?? "").trim();
+  if (!bound || !timeField)
+    return (
+      <BlockShell title={title} testid="trend-chart">
+        <BlockEmpty hint="趋势未绑定到有效的时间字段" />
+      </BlockShell>
+    );
+  const rawGrain = String(block.binding?.timeGrain ?? "day");
+  const grain: TimeGrain =
+    rawGrain === "week" || rawGrain === "month" ? rawGrain : "day";
+  const series = buildTrendSeries(
+    bound.rows,
+    timeField,
+    grain,
+    parseAggregate(block.binding?.aggregate)
+  );
+  if (!series)
+    return (
+      <BlockShell title={title} testid="trend-chart">
+        <BlockEmpty hint={`暂无数据 — 写入「${timeField}」后自动出图`} />
+      </BlockShell>
+    );
+  const GRAIN_LABEL: Record<TimeGrain, string> = {
+    day: "按天",
+    week: "按周",
+    month: "按月",
+  };
+  const option = {
+    animation: false,
+    tooltip: { confine: true, trigger: "axis" },
+    grid: { left: 8, right: 8, top: 16, bottom: 4, containLabel: true },
+    xAxis: {
+      type: "category",
+      data: series.categories,
+      axisLabel: { fontSize: 10, color: "#8c8c8c" },
+    },
+    yAxis: { type: "value", axisLabel: { fontSize: 10, color: "#8c8c8c" } },
+    series: [
+      {
+        type: "line",
+        smooth: false,
+        showSymbol: series.categories.length <= 20,
+        data: series.values,
+        itemStyle: { color: chartPalette?.primary ?? "#1677ff" },
+        areaStyle: { opacity: 0.08 },
+      },
+    ],
+  };
+  return (
+    <BlockShell
+      title={title}
+      testid="trend-chart"
+      extra={
+        <span className="text-[10px] text-stone-400" data-testid="trend-chart-grain">
+          {GRAIN_LABEL[series.grain]}
+          {/* 粒度是被自动放粗的就说出来，否则用户会以为自己声明的粒度生效了 */}
+          {series.coarsened ? "（区间过长已自动放粗）" : ""}
+        </span>
+      }
+    >
+      <React.Suspense
+        fallback={<div className="px-2 py-6 text-center text-xs text-stone-400">图表加载中…</div>}
+      >
+        <LazyEchartsChart option={option} height={160} ariaLabel={title || "趋势"} />
+      </React.Suspense>
+    </BlockShell>
+  );
+};
+
+const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRows, onAction }) => {
+  // 取当前生效的主题 token：区块要跟应用的身份主题同色，写死色值做不到
+  const { token } = antdTheme.useToken();
+  // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
+  // 现行 renderBlock 不传 children，走下面的 binding 取数。
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const sortField = String(block.binding?.sortByRef ?? "").trim();
+  if (!bound || !sortField)
+    return (
+      <BlockShell title={title} testid="ranked-list">
+        <BlockEmpty hint="排行未绑定到有效的数值字段" />
+      </BlockShell>
+    );
+  const order = block.binding?.sortOrder === "asc" ? "asc" : "desc";
+  const items = buildRankedRows(
+    bound.rows,
+    sortField,
+    undefined,
+    order,
+    Number(block.binding?.limit ?? 5)
+  );
+  if (items.length === 0)
+    return (
+      <BlockShell title={title} testid="ranked-list">
+        <BlockEmpty hint={`暂无数据 — 写入「${sortField}」后自动排名`} />
+      </BlockShell>
+    );
+  const max = Math.max(...items.map(i => Math.abs(i.value)), 1);
+  return (
+    <BlockShell title={title} testid="ranked-list">
+      <List
+        size="small"
+        split={false}
+        dataSource={items}
+        renderItem={(item, i) => (
+          <List.Item
+            data-testid="ranked-list-item"
+            style={{ padding: "4px 0", cursor: onAction ? "pointer" : undefined }}
+            onClick={() => onAction?.("itemSelect", { rowId: item.row.id })}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
+              {/* 前三名用主题色实心徽标，其余中性——名次的强弱靠颜色区分，
+                  但颜色取自 token，不再是写死的靛蓝（那会跟应用主题色打架） */}
+              {/* 前三名用主题色，其余中性。
+                  不能用 color="processing"——那是 antd 的固定语义蓝，不跟
+                  colorPrimary 走；对照台上切成琥珀主题后名次标签仍然是蓝的。 */}
+              <Tag
+                color={i < 3 ? token.colorPrimary : undefined}
+                style={{
+                  marginInlineEnd: 0,
+                  minWidth: 22,
+                  textAlign: "center",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {i + 1}
+              </Tag>
+              <Typography.Text
+                ellipsis={{ tooltip: item.label }}
+                style={{ flex: 1, minWidth: 0, fontSize: 12 }}
+              >
+                {item.label}
+              </Typography.Text>
+              {/* 条形只是相对长度，真值仍然写在右边——只给条不给数看不出量级。
+                  Progress 自带主题色与无障碍语义，比手写的 span 条强。 */}
+              {/* strokeColor 必须显式给：Progress 在 percent>=100 时会自动切成
+                  success 绿，于是排行第一名的条永远是绿的、其余是默认蓝，
+                  跟应用主题色全无关系（对照台上一眼看得出）。 */}
+              <Progress
+                percent={Math.round((Math.abs(item.value) / max) * 100)}
+                showInfo={false}
+                size={["small", 6]}
+                strokeColor={token.colorPrimary}
+                trailColor={token.colorFillSecondary}
+                style={{ width: 72, marginBottom: 0 }}
+              />
+              <Typography.Text
+                type="secondary"
+                style={{
+                  width: 52,
+                  textAlign: "right",
+                  fontSize: 12,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {Number.isInteger(item.value) ? item.value : item.value.toFixed(1)}
+              </Typography.Text>
+            </div>
+          </List.Item>
+        )}
+      />
+    </BlockShell>
+  );
+};
+
+/**
+ * 动态流的宽行档（2026-07-29）。
+ *
+ * 起因是拿参考图跟真实渲染对照：参考图把动态流画成一条满宽的信息行
+ *（状态 | 单号 | 描述 | 关联单据 | 时间），真实渲染是一条窄时间轴，右边三分之二
+ * 全空。宽度不是 bug——积木拿到的就是满宽，是时间轴这个形态本身撑不满。
+ *
+ * 用 **antd Table**，不是 List 里手拼 flex 行。前两版都是 flex（先 List.Item.Meta
+ * 两层、后单行 flex 分栏），真跑截图上露了同一个馅：每行的状态标签宽度不一样
+ *（待审核/烘焙中/已退回），后面几列的起点就**逐行错开**几像素，一眼能看出来歪。
+ * flex 行没有跨行约束，每行各算各的宽度，对齐只能靠内容碰巧一样长。
+ *
+ * Table 靠 `<colgroup>` 从结构上解决：rc-table 的 ColGroup 按列发一个
+ * `<col style={{width}}>`（es/ColGroup.js），所有行共享同一组列宽，对不齐这件事
+ * 在这个方案里不可能发生。而且只要有一列声明 `ellipsis`，rc-table 就把
+ * `tableLayout` 切到 `fixed`（es/Table.js:447-463），没写宽度的列均分剩余空间——
+ * 正好是"明细列铺满整行"要的行为，不用自己算百分比。
+ *
+ * 列构成：状态点 | 单号+标签 | 明细列… | 时间，跟参考图那条 feed 行一一对应。
+ * 中段明细由 binding.detailFieldRefs 声明——只加 variant 不加字段的话，宽行只是
+ * 把同样三条信息摊开，比时间轴更空。
+ */
+function FeedRowList({
+  items,
+  entityRef,
+  detailFields,
+  levelDecl,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+}: {
+  items: FeedItem[];
+  entityRef: string;
+  detailFields: string[];
+  levelDecl: Map<string, NormalizedFieldOption> | null;
+  onAction?: ExperienceBlockRendererProps["onAction"];
+  fieldLabelOf?: FieldLabelLookup;
+  enumOptionsOf?: EnumOptionsLookup;
+}) {
+  const { token } = antdTheme.useToken();
+  // 明细列的枚举取值表一次建好：跟 DataTable 同一条纪律——同一份数据在别处
+  // 显示「已冻结」，这里不能显示 `frozen`。
+  const detailLabelOf = new Map(
+    detailFields.map(f => [
+      f,
+      new Map((enumOptionsOf?.(entityRef, f) ?? []).map(o => [o.id, o.label])),
+    ])
+  );
+
+  const columns: TableColumnsType<FeedItem> = [
+    {
+      key: "__tone",
+      width: 20,
+      render: (_, item) => {
+        const decl = item.level ? levelDecl?.get(item.level) : undefined;
+        // 时间轴的节点色在宽行里退化成一个小圆点：颜色语义（tone）保留，
+        // 但不再画那条竖线——一行一行的表里画竖轴反而干扰阅读。
+        return (
+          <span
+            style={{
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: toneDotColor(decl?.tone, token.colorPrimary),
+            }}
+          />
+        );
+      },
+    },
+    {
+      key: "__title",
+      width: 220,
+      ellipsis: true,
+      render: (_, item) => {
+        const decl = item.level ? levelDecl?.get(item.level) : undefined;
+        return (
+          <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <Typography.Text ellipsis={{ tooltip: item.title }} style={{ fontSize: 12 }}>
+              {item.title}
+            </Typography.Text>
+            {item.level && (
+              // 出声明里的 label（「可用」），不是取值 id（`available`）
+              <Tag style={{ marginInlineEnd: 0, fontSize: 11 }}>{decl?.label ?? item.level}</Tag>
+            )}
+          </span>
+        );
+      },
+    },
+    // 明细列不给 width：table-layout:fixed 下没写宽度的列**均分剩余空间**，
+    // 于是几列自然铺满整行，不用自己算百分比。
+    ...detailFields.map(f => ({
+      key: f,
+      ellipsis: true,
+      render: (_: unknown, item: FeedItem) => {
+        const raw = String(item.row.values?.[f] ?? "").trim();
+        if (!raw) return <Typography.Text type="secondary">—</Typography.Text>;
+        const label = fieldLabelOf?.(entityRef, f) ?? f;
+        const value = detailLabelOf.get(f)?.get(raw) ?? raw;
+        // 值本身已经以字段名开头时不再重复标签——「使用生豆 使用生豆 1」读起来
+        // 像口吃。演示种子数据正是这个形状（string/ref 字段的种子值就是
+        // 「字段名 序号」），真实数据里也有「状态：状态待定」这类。
+        const prefix = value.startsWith(label) ? "" : `${label} `;
+        return (
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            {prefix}
+            <Typography.Text style={{ fontSize: 11 }}>{value}</Typography.Text>
+          </Typography.Text>
+        );
+      },
+    })),
+    {
+      key: "__date",
+      width: 92,
+      align: "right" as const,
+      render: (_: unknown, item: FeedItem) => (
+        <Typography.Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+          {item.dateKey}
+        </Typography.Text>
+      ),
+    },
+  ];
+
+  return (
+    <Table
+      size="small"
+      rowKey={item => item.row.id}
+      // 动态流不是数据表：参考图上这块也没有表头，一行就是一条动态。列头交给
+      // 单元格里那个灰色小标签（「出豆重量 136」），比一整条表头更轻。
+      // showHeader=false 不影响 <colgroup>——rc-table 的 bodyColGroup 是独立
+      // 渲染的（es/Table.js:583），列宽照样逐列对齐。
+      showHeader={false}
+      columns={columns}
+      dataSource={items}
+      pagination={false}
+      onRow={item => ({
+        onClick: () => onAction?.("itemSelect", { rowId: item.row.id }),
+        style: { cursor: onAction ? "pointer" : undefined },
+        // onRow 的返回值原样摊到 <tr> 上（rc-table GetComponentProps），
+        // data-* 一并透传，测试和截图脚本靠它数行数
+        "data-testid": "activity-feed-row",
+      })}
+      // 不给 scroll.x，理由同 DataTable：区块是页面里的一块，横向滚动条藏在
+      // 卡片里没人会去拉。列共享可用宽度 + 省略号（带 tooltip）才对。
+    />
+  );
+}
+
+const ActivityFeedRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+}) => {
+  // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
+  // 现行 renderBlock 不传 children，走下面的 binding 取数。
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const timeField = String(block.binding?.timeFieldRef ?? "").trim();
+  if (!bound || !timeField)
+    return (
+      <BlockShell title={title} testid="activity-feed">
+        <BlockEmpty hint="动态未绑定到有效的时间字段" />
+      </BlockShell>
+    );
+  const levelField = String(block.binding?.levelFieldRef ?? "").trim() || undefined;
+  const items = buildFeedRows(bound.rows, timeField, levelField);
+  // 等级字段的取值声明：拿它把 `available` 显示成「可用」，并用声明里的 tone
+  // 决定节点颜色。查不到就原样显示取值，不猜。
+  const levelDecl = levelField
+    ? new Map(
+        (enumOptionsOf?.(bound.entityRef, levelField) ?? []).map(o => [o.id, o])
+      )
+    : null;
+  if (items.length === 0)
+    return (
+      <BlockShell title={title} testid="activity-feed">
+        <BlockEmpty hint={`暂无动态 — 写入「${timeField}」后按时间倒序展示`} />
+      </BlockShell>
+    );
+  // 表现档位：宽行 vs 时间轴。未声明/写了个不认识的值一律回默认时间轴——
+  // 档位是长相不是数据，认不出来时给个能看的形态，不能白屏。
+  if (String(block.props?.variant ?? "").trim() === "row") {
+    const detailFields = (
+      Array.isArray(block.binding?.detailFieldRefs) ? block.binding.detailFieldRefs : []
+    )
+      .map(f => String(f ?? "").trim())
+      // 运行时再判一次字段是否真的在行里（门禁看的是模型声明，这里拿到的是
+      // 用户真写进去的行）；顺带排掉已经在标题/标签/时间位置露过面的字段，
+      // 同一个值在一行里出现两次比不显示更糟。
+      .filter(f => f && f !== timeField && f !== levelField)
+      .filter(f => items.some(it => String(it.row.values?.[f] ?? "").trim() !== ""))
+      .slice(0, 3);
+    return (
+      <BlockShell title={title} testid="activity-feed">
+        <FeedRowList
+          items={items}
+          entityRef={bound.entityRef}
+          detailFields={detailFields}
+          levelDecl={levelDecl}
+          onAction={onAction}
+          fieldLabelOf={fieldLabelOf}
+          enumOptionsOf={enumOptionsOf}
+        />
+      </BlockShell>
+    );
+  }
+  return (
+    <BlockShell title={title} testid="activity-feed">
+      {/* 动态流就是 Timeline 的原型用法：一条时间轴串起按时间倒序的事件。
+          手写版是"小圆点 + 两行字"，横向 90% 是空白、圆点还写死 #5b6cff，
+          在琥珀色主题的应用里格外扎眼。Timeline 的轴线与节点都吃主题 token。 */}
+      {/* Timeline 默认每项 padding-bottom:20px，8 条动态就有 480px 高，把总览页
+          首屏吃光。收紧到 10px 后既保留时间轴的形态，密度又跟旧版相当。
+
+          用**逐项 inline style**而不是 Tailwind 的 `[&_.ant-timeline-item]:pb-2.5`：
+          试过了，不生效——antd v5 的 CSS-in-JS 在运行时往 head 注样式，
+          跟 Tailwind 工具类同为 (0,2,0) 特异性，注入顺序又在后面，于是赢的
+          是 antd。inline style 直接压过样式表，不用跟特异性较劲。 */}
+      <Timeline
+        style={{ marginTop: 4, marginBottom: 0 }}
+        items={items.map((item, i) => {
+          const decl = item.level ? levelDecl?.get(item.level) : undefined;
+          return {
+          // 最后一项去掉底部 padding，免得卡片底下空一截
+          style: { paddingBottom: i === items.length - 1 ? 0 : 10 },
+          key: item.row.id,
+          // 用声明里的 tone 着色，把"这条是什么性质"直接画在轴上
+          color: toneTimelineColor(decl?.tone),
+          children: (
+            <div
+              data-testid="activity-feed-item"
+              style={{ cursor: onAction ? "pointer" : undefined }}
+              onClick={() => onAction?.("itemSelect", { rowId: item.row.id })}
+            >
+              {/* 标签紧跟在标题后面。第一版给标题加了 flex:1 又限了 maxWidth，
+                  结果标签被推到 520px 那个边界上，孤零零飘在行中间——比原来
+                  贴右边还怪。这里不给 flex，标题按内容宽度收缩（长了才省略），
+                  标签自然紧随其后。 */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Typography.Text
+                  ellipsis={{ tooltip: item.title }}
+                  style={{ maxWidth: 320, fontSize: 12 }}
+                >
+                  {item.title}
+                </Typography.Text>
+                {item.level && (
+                  // 出声明里的 label（「可用」），不是取值 id（`available`）
+                  <Tag style={{ marginInlineEnd: 0, fontSize: 11 }}>
+                    {decl?.label ?? item.level}
+                  </Tag>
+                )}
+              </div>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                {item.dateKey}
+              </Typography.Text>
+            </div>
+          ),
+          };
+        })}
+      />
+    </BlockShell>
+  );
+};
+
+/**
+ * 枚举 tone → Timeline 节点颜色。
+ *
+ * 第一版在这里写了个**关键词猜测器**（匹配「冻结/异常/warn/pending」之类），
+ * 对照台一跑就露馅：枚举取值是 `available` / `frozen` 这种英文 id，中文规则
+ * 一条都没命中，八个节点全是同一个颜色，等于白写。
+ *
+ * 真正的问题是不该猜——模型声明里每个枚举取值本来就带 `tone`
+ *（success/processing/warning/danger/default，见 five_system_legal.json，
+ * 而且门禁校验过）。同一份 tone 已经在驱动表格里的彩色标签，这里直接复用，
+ * 颜色语义天然跟页面其它地方一致。
+ */
+function toneTimelineColor(tone: string | undefined): string {
+  if (tone === "danger") return "red";
+  if (tone === "warning") return "orange";
+  if (tone === "success") return "green";
+  // processing / default / 查不到 → 主题色（antd 的 "blue" 走 colorPrimary）
+  return "blue";
+}
+
+/**
+ * 同样的 tone，宽行档要的是**真 CSS 色值**。
+ *
+ * 不能直接复用 toneTimelineColor：那个返回的是 antd Timeline 的预设名
+ *（"red"/"green"/"blue"），只有 Timeline 认得，塞进 background 是个非法值，
+ * 圆点会渲染成透明。状态三色跟 PageViews 的 TONE_COLORS 同一组。
+ *
+ * processing/default 落到主题色，由调用方从 `theme.useToken()` 传进来——
+ * 第一版写的是 `var(--sr-primary, #1677ff)`，那个变量**整个代码库里没人定义**
+ * （连隔壁的 --sr-text-muted 也一直在吃 fallback），等于把"跟随主题"写成了
+ * 永远的品牌蓝，在这次的墨绿主题里就是一个突兀的蓝点。
+ */
+function toneDotColor(tone: string | undefined, primary: string): string {
+  if (tone === "danger") return "#ff4d4f";
+  if (tone === "warning") return "#faad14";
+  if (tone === "success") return "#52c41a";
+  return primary;
+}
+
+const DataTableRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+}) => {
+  // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
+  // 现行 renderBlock 不传 children，走下面的 binding 取数。
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell title={title} testid="data-table">
+        <BlockEmpty hint="表格未绑定到有效实体" />
+      </BlockShell>
+    );
+  if (bound.rows.length === 0)
+    return (
+      <BlockShell title={title} testid="data-table">
+        <BlockEmpty hint="暂无数据 — 点「新建」写入第一条真实数据" />
+      </BlockShell>
+    );
+  // 列取自真实行的键（binding 只声明 entityRef，其余列由页面派生——
+  // 见 catalog 里 DataTable 的 bindingSchema note）。最多 5 列，够看不挤。
+  const cols = [...new Set(bound.rows.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 5);
+  const columns = cols.map(c => {
+    // 枚举列出标签不出取值 id：同一份数据在页面自带表格里是「已冻结」，
+    // 在区块里却是 `frozen`，坐在一起就露馅了
+    const options = enumOptionsOf?.(bound.entityRef, c) ?? [];
+    const labelOf = new Map(options.map(o => [o.id, o.label]));
+    return {
+      key: c,
+      dataIndex: c,
+      title: fieldLabelOf?.(bound.entityRef, c) ?? c,
+      ellipsis: true,
+      render: (_: unknown, row: RuntimeRow) => {
+        const raw = row.values?.[c];
+        const s = String(raw ?? "").trim();
+        if (!s) return <Typography.Text type="secondary">—</Typography.Text>;
+        return labelOf.get(s) ?? s;
+      },
+    };
+  });
+  return (
+    <BlockShell
+      title={title}
+      testid="data-table"
+      // 截断如实说在标题栏，不再是表格底下一行灰字（那行容易被当成数据）
+      extra={
+        bound.rows.length > 8 ? (
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            共 {bound.rows.length} 条，显示前 8 条
+          </Typography.Text>
+        ) : undefined
+      }
+    >
+      {/* 换 antd Table：拿到省略号 tooltip、粘性表头、紧凑尺寸与主题描边，
+          手写 <table> 这些都得自己补，而且列头字号/颜色跟同页别的表格对不齐 */}
+      <Table
+        size="small"
+        rowKey="id"
+        columns={columns}
+        dataSource={bound.rows.slice(0, 8)}
+        pagination={false}
+        // 不给 scroll.x：区块是页面里的一块，横向滚动条藏在卡片里没人会去拉，
+        // 对照台上表格直接被卡片右边缘切掉、最后一列看不见。列共享可用宽度 +
+        // 省略号（有 tooltip）才是这个尺寸下该有的行为。
+        tableLayout="fixed"
+        onRow={row => ({
+          "data-testid": "data-table-row",
+          onClick: () => onAction?.("rowSelect", { rowId: row.id }),
+          style: { cursor: onAction ? "pointer" : undefined },
+        })}
+      />
+    </BlockShell>
+  );
+};
+
 export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   Record<string, ExperienceBlockRenderer>
 > = Object.freeze({
-  "metric-grid": ExistingContentAdapter,
-  "trend-chart": ExistingContentAdapter,
-  "ranked-list": ExistingContentAdapter,
-  "activity-feed": ExistingContentAdapter,
-  "data-table": ExistingContentAdapter,
+  // 2026-07-28：五个数据区块接真渲染（此前是 ExistingContentAdapter 占位）
+  "metric-grid": MetricGridRenderer,
+  "trend-chart": TrendChartRenderer,
+  "ranked-list": RankedListRenderer,
+  "activity-feed": ActivityFeedRenderer,
+  "data-table": DataTableRenderer,
   // Step 6：QuickActionPanel/FilterBar 真渲染（Phase 1）
   "quick-action-panel": QuickActionPanelRenderer,
   "filter-bar": FilterBarRenderer,
@@ -675,19 +1618,16 @@ export function experienceBlockEntry(
 }
 
 /** 未知 type 或漏登记 renderer 时明确报不支持，不能白屏或假装成功。 */
-export function ExperienceBlockBoundary({
-  block,
-  children,
-  onAction,
-  pageActions,
-  filterState,
-  filterFieldOptions,
-  dateRangeField,
-  onFilterChange,
-  workflow,
-  entityRows,
-  chartPalette,
-}: ExperienceBlockRendererProps) {
+/**
+ * 区块渲染分发口。
+ *
+ * 这里**整包透传 props**，不逐个列举。2026-07-28 之前是把每个 prop 解构出来
+ * 再手写一遍转发，于是新增 enumOptionsOf 时漏了这一处——类型全绿、单测全绿，
+ * 环图图例照样写着取值 id，只有真跑截图才看得出来。逐个列举等于每加一个
+ * prop 就埋一次同样的雷，改成 {...props} 之后这一类漏传不可能再发生。
+ */
+export function ExperienceBlockBoundary(props: ExperienceBlockRendererProps) {
+  const { block } = props;
   const entry = experienceBlockEntry(block.type);
   const Renderer = entry
     ? EXPERIENCE_BLOCK_RENDERERS[entry.rendererKey]
@@ -703,20 +1643,5 @@ export function ExperienceBlockBoundary({
       </div>
     );
   }
-  return (
-    <Renderer
-      block={block}
-      onAction={onAction}
-      pageActions={pageActions}
-      filterState={filterState}
-      filterFieldOptions={filterFieldOptions}
-      dateRangeField={dateRangeField}
-      onFilterChange={onFilterChange}
-      workflow={workflow}
-      entityRows={entityRows}
-      chartPalette={chartPalette}
-    >
-      {children}
-    </Renderer>
-  );
+  return <Renderer {...props} />;
 }

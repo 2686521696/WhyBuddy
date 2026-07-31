@@ -1,15 +1,28 @@
 """
-identity_theme_gen — 身份主题（侧边栏/顶栏/主色）token 生成（2026-07-24）。
+identity_theme_gen — 身份主题种子色生成（2026-07-30 起改为路线丙）。
 
-跟 freeform_block.py 同一套骨架、同一套哲学：不是让 LLM 写 CSS 去改 Ant
-Design 组件（那条路风险高得多——侧边栏/顶栏是全局共享的，改坏一处波及
-全部页面），而是让 LLM 去填 Ant Design 本来就有的、闭合安全的 token 表
-（colorPrimary/侧边栏底色这些命名好的键，跟 AppRuntimeScreen.tsx 的
-ConfigProvider theme.token/theme.components 一一对应）。8 套写死的预设
-主题（identity-themes.ts 的 THEMES）retained 作降级兜底，不再是唯一选项。
+## 从"LLM 直接吐 11 个字段"改成"LLM 只吐 1 个种子色"
+
+此前这里让 LLM 一次性把 primary/primaryHover/gradTo/.../sidebarText 共 11 个
+字段全部配好，本质是让 LLM 做一遍色彩科学（怎么从主色推出协调的悬停态、
+渐变端、强调底、深色侧栏……），配出来的东西全靠它自己判断"协调不协调"，
+质量不稳定，而且这活儿本来就有更可靠的做法：Material Design 3 的
+material-color-utilities（HCT/CAM16 空间）早就把"从一个种子色出发派生整套
+色阶"这件事解决了，我们已经把它 vendor 进 `client/src/lib/mcu/`
+（`client/src/lib/identity-palette.ts` 的 `deriveIdentityPalette`）。
+
+LLM 真正擅长、算法replace不了的只有一件事：**替这个应用选一个合适的品牌
+色**（懂产品调性、行业气质、目标用户）。所以现在只问它要这一件事——
+一个种子色 + 一个气质标签，剩下 10 个字段全部交给前端的 HCT 派生算法算，
+不再靠 LLM 自己配、也不再靠人工写死 8 套预设。
+
+跟 device 判定用的是同一个方法论（这个仓库里已经验证过的模式）：把"选择"
+这件事收窄到 LLM 真正擅长的那一小块判断，把"从判断结果推出一整套结构化
+产物"的部分交给确定性算法。
 
 生成失败/未配置图片能力时静默降级——appbundle.appIdentity.theme 那个
-8 选 1 的字符串字段完全不受影响，前端 resolveIdentityTheme 照旧能用。
+8 选 1 的字符串字段完全不受影响，generatedTheme 缺失时前端落回
+FALLBACK_SEED 派生的中性色板。
 """
 
 from __future__ import annotations
@@ -20,7 +33,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 # 格式正则从 data/identity_theme_presets.json 的 generatedThemeContract 派生
 # ——前端 isValidGeneratedTheme 与 freeform_block.is_valid_generated_theme
@@ -30,197 +43,139 @@ _THEME_CONTRACT: dict = json.loads(_THEME_PRESETS_PATH.read_text(encoding="utf-8
     "generatedThemeContract"
 ) or {}
 _HEX_RE = re.compile(str(_THEME_CONTRACT.get("hexPattern") or r"^#[0-9a-fA-F]{6}$"))
-# sidebarBg 允许两段式线性渐变（比如深藏蓝到品牌蓝），但格式收紧成固定
-# 模式——只能是 "linear-gradient(<角度>deg, #rrggbb, #rrggbb)"，不是放开
-# 随便写 CSS background；两个色标都要过下面同一套十六进制+对比度校验。
-_GRADIENT_RE = re.compile(
-    str(
-        _THEME_CONTRACT.get("sidebarBgGradientPattern")
-        or r"^linear-gradient\(\s*(\d{1,3})deg\s*,\s*(#[0-9a-fA-F]{6})\s*,\s*(#[0-9a-fA-F]{6})\s*\)$"
-    )
-)
 
 
 class IdentityThemeGenerationError(RuntimeError):
-    """身份主题生成/校验失败（调用方应静默降级到 8 预设主题，不能拖垮主链路）。"""
+    """身份主题生成/校验失败（调用方应静默降级到 FALLBACK_SEED 派生的中性色板，不能拖垮主链路）。"""
 
 
-def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
-    h = hex_color.lstrip("#")
-    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+class IdentityThemeSeedSpec(BaseModel):
+    """跟前端 GeneratedIdentityTheme（{label?, seed}）逐字段对应。只校验客观
+    可查的格式（十六进制），配色好不好看完全交给 LLM 判断——机械层不替它
+    做审美决定，只挡格式不对的输出。"""
 
+    label: str = ""
+    seed: str
 
-def _relative_luminance(hex_color: str) -> float:
-    """WCAG 相对亮度公式。"""
-    r, g, b = (c / 255.0 for c in _hex_to_rgb(hex_color))
-
-    def lin(c: float) -> float:
-        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-
-    r, g, b = lin(r), lin(g), lin(b)
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-
-def _contrast_ratio(hex_a: str, hex_b: str) -> float:
-    """WCAG 对比度公式，越大越清楚，>=3 是可读性的最低线。"""
-    la, lb = _relative_luminance(hex_a), _relative_luminance(hex_b)
-    lighter, darker = max(la, lb), min(la, lb)
-    return (lighter + 0.05) / (darker + 0.05)
-
-
-_MIN_CONTRAST = 3.0
-
-
-def _bg_colors_for_contrast(bg: str) -> list[str]:
-    """把 sidebarBg（可能是纯色也可能是渐变）拆成用来做对比度校验的色值
-    列表——渐变取两个色标，文字色要在两端都保持可读，不是只在浅的那端读得清。
-    """
-    m = _GRADIENT_RE.match(bg)
-    if m:
-        return [m.group(2), m.group(3)]
-    return [bg]
-
-
-class IdentityThemeSpec(BaseModel):
-    """跟前端 identity-themes.ts 的 IdentityTheme 接口逐字段对应。字段本身
-    只做客观可查的校验（十六进制格式、可读性对比度），不对"好不好看"这种
-    主观判断做任何限制——配色选择完全交给 LLM。"""
-
-    label: str
-    primary: str
-    primaryHover: str
-    gradTo: str
-    primaryFg: str
-    contentBg: str
-    accentBg: str
-    accentFg: str
-    charts: list[str] = Field(min_length=3, max_length=3)
-    sidebarBg: str
-    sidebarText: str
-
-    @field_validator(
-        "primary", "primaryHover", "gradTo", "primaryFg", "contentBg",
-        "accentBg", "accentFg", "sidebarText",
-    )
+    @field_validator("seed")
     @classmethod
     def check_hex(cls, v: str) -> str:
         if not _HEX_RE.fullmatch(v):
             raise ValueError(f"'{v}' is not a valid 6-digit hex color (e.g. #1677ff)")
         return v
 
-    @field_validator("sidebarBg")
-    @classmethod
-    def check_sidebar_bg(cls, v: str) -> str:
-        if _HEX_RE.fullmatch(v) or _GRADIENT_RE.fullmatch(v):
-            return v
-        raise ValueError(
-            f"'{v}' must be a 6-digit hex color (e.g. #0f2138) or a two-stop "
-            "linear-gradient(<deg>deg, #rrggbb, #rrggbb)"
-        )
-
-    @field_validator("charts")
-    @classmethod
-    def check_chart_hexes(cls, v: list[str]) -> list[str]:
-        for c in v:
-            if not _HEX_RE.fullmatch(c):
-                raise ValueError(f"chart color '{c}' is not a valid 6-digit hex color")
-        return v
-
-    @model_validator(mode="after")
-    def check_contrast(self) -> "IdentityThemeSpec":
-        pairs = [
-            ("primaryFg on primary", self.primaryFg, [self.primary]),
-            ("sidebarText on sidebarBg", self.sidebarText, _bg_colors_for_contrast(self.sidebarBg)),
-            ("accentFg on accentBg", self.accentFg, [self.accentBg]),
-        ]
-        for label, fg, bgs in pairs:
-            for bg in bgs:
-                ratio = _contrast_ratio(fg, bg)
-                if ratio < _MIN_CONTRAST:
-                    raise ValueError(
-                        f"{label} ({bg}) contrast ratio {ratio:.2f} is too low (need >= {_MIN_CONTRAST}); "
-                        "pick a lighter/darker foreground so text stays readable against every color it sits on"
-                    )
-        return self
-
 
 # 启动漂移哨兵（schema_legal 同款纪律）：Spec 的字段必须覆盖契约的
 # requiredKeys——否则生成出来的主题必然被前端 isValidGeneratedTheme 弃用，
 # 与其运行时静默失效，不如 import 期直接炸出来。
-_SPEC_FIELDS = set(IdentityThemeSpec.model_fields.keys())
+_SPEC_FIELDS = set(IdentityThemeSeedSpec.model_fields.keys())
 _MISSING_CONTRACT_KEYS = set(_THEME_CONTRACT.get("requiredKeys") or ()) - _SPEC_FIELDS
 if _MISSING_CONTRACT_KEYS:
     raise RuntimeError(
-        "identity_theme_gen.IdentityThemeSpec 缺契约必填字段（生成的主题会被前端整套弃用）: "
+        "identity_theme_gen.IdentityThemeSeedSpec 缺契约必填字段（生成的主题会被前端整套弃用）: "
         f"{sorted(_MISSING_CONTRACT_KEYS)}"
     )
 
 
+def experience_skill_guidance_block() -> str:
+    """已安装的 experience 通道技能拼成的设计指导块（2026-07-27）。见旧版
+    同名函数的说明；这里逻辑不变，只是现在只影响"选哪个种子色"这一步。"""
+    try:
+        from .v5_llm_generate import installed_skills_for_channel
+
+        skills = installed_skills_for_channel("experience")
+    except Exception:
+        return ""  # 增强项，任何异常都不拦主题生成
+    if not skills:
+        return ""
+    lines = ["", "用户装了这些设计技能，选种子色时把它们的主张纳入考虑（有冲突时以下面的选色指导为准）："]
+    for s in skills:
+        desc = f" — {s['description']}" if s.get("description") else ""
+        lines.append(f"- {s['name']}{desc}")
+    return "\n".join(lines)
+
+
 def build_identity_theme_prompt(app_name: str, goal_text: str, datamodel_summary: str) -> str:
-    return f"""你是一名产品视觉设计师。给这个应用设计一套完整的品牌配色方案：
+    return f"""你是一名产品视觉设计师。给这个应用选一个品牌种子色：
 应用名称：{app_name}
 产品目标：{goal_text}
 这个应用背后的真实数据领域（配色气质可以呼应这个领域的行业调性，比如财务
 审计类偏严谨、创意协作类偏活泼——不是必须，只是可以参考）：
 {datamodel_summary}
 
-配色气质整体偏克制、淡雅——想象每个色相都有一条从近白到全饱和的完整色阶
-（类似 Radix Colors 的 12 阶体系：浅的几档是背景/浅底，中间是描边，最饱和
-的那一档是"重色"）。大面积区域（contentBg、accentBg，以及选浅色 sidebarBg
-时）都从色阶偏淡的一端取值，饱和度收着点，不要用高饱和度色块铺大面积；
-全饱和的"重色"只留给 primary 这种小面积、需要抓眼球的强调色（按钮/选中态/
-品牌重点）。如果 sidebarBg 选深色或渐变，也优先选低饱和度的深色（比如深
-藏青、深灰蓝这类），不要选高饱和度的深色（比如饱和的深紫红）——深不等于艳。
+只需要选**一个种子色**——应用的按钮/选中态/品牌区会用它，其余所有配色
+（悬停态、渐变、内容区底色、强调色、图表色、侧边栏……）都会由算法从这
+一个颜色自动派生，你不用、也不该管那些字段怎么配。
 
-色相本身自由发挥，不受任何预设色板限制，只要整体偏淡雅克制、专业耐看。
+选色的几条实际约束（不遵守会导致派生结果难看，不是审美偏好）：
+- 色相自由发挥，不受任何预设色板限制，只要贴合这个应用的产品调性即可，
+  避免离题的色相组合（比如财务审计类应用突然给一个荧光粉）。
+- 配色气质整体偏**克制、淡雅**，饱和度选中低档，不要选过曝的高饱和荧光色
+  （比如纯 #ff0000/#00ff00 这类）——那类颜色派生出的按钮/强调色会显得
+  刺眼，跟企业应用的专业气质不搭。
+- 但也不要选到几乎无彩色的灰/米白（比如 #f0f0f0 这种）——那不是"克制"，
+  是没有色相可言，派生算法会按这个种子色的色相去配中性色/强调色，种子
+  本身没有色相，整套派生出来的配色会显得"发灰发脏"，缺乏品牌辨识度。
+  中低饱和度不等于无彩度，选一个"看得出是什么颜色，但不刺眼"的量级。
+- 挑一个你在真实产品里会认得出"这是这家应用的颜色"的中低饱和度色相即可，
+  可以直接类比市面上有代表性的产品主色（比如某某银行的深蓝、某某生鲜
+  平台的绿）帮自己校准饱和度量级，但不要照抄，选一个贴合这个具体应用的。
+{experience_skill_guidance_block()}
 
-输出这些字段，全部是标准 6 位十六进制颜色值（如 #1677ff）：
-- label: 给这套配色起一个简短的气质名（如"湛蓝·通用企业"这种格式，4-8字）
-- primary: 主色（按钮/选中态/品牌区用）
-- primaryHover: 主色的悬停加深态
-- gradTo: 主色渐变的浅端
-- primaryFg: 主色上的文字颜色（通常是白或近白，必须跟 primary 对比度足够）
-- contentBg: 页面内容区底色（通常浅色）
-- accentBg: 强调浅底（选中菜单浅底/高亮块）
-- accentFg: accentBg 上的文字颜色（必须跟 accentBg 对比度足够）
-- charts: 3 个颜色组成的数组，用于图表多类别区分，要跟主色协调但彼此能区分开
-- sidebarBg: 侧边栏/顶栏底色，可以是深色也可以是浅色；也可以是两段式渐变，
-  想要更有质感的侧边栏（比如深藏蓝过渡到品牌蓝）就用渐变，格式必须严格是
-  "linear-gradient(<0-360的整数>deg, #rrggbb, #rrggbb)"，比如
-  "linear-gradient(180deg, #0F172A, #1E3A8A)"；纯色就直接写 #rrggbb
-- sidebarText: sidebarBg 上的文字颜色（如果 sidebarBg 是渐变，必须在两个
-  颜色端都保持可读，不能只在浅的那端读得清）
-
-文字类颜色（primaryFg/accentFg/sidebarText）必须选得让文字在对应底色上
-清晰可读，不要为了好看牺牲可读性。
+输出这些字段：
+- label: 给这个种子色起一个简短的气质名（如"湛蓝·通用企业"这种格式，4-8字）
+- seed: 标准 6 位十六进制颜色值（如 #1677ff）
 
 输出严格 JSON，只输出这一个 JSON 对象，不要解释文字，不要 markdown 代码围栏：
-{{"label": "...", "primary": "#......", "primaryHover": "#......", "gradTo": "#......",
-"primaryFg": "#......", "contentBg": "#......", "accentBg": "#......", "accentFg": "#......",
-"charts": ["#......", "#......", "#......"], "sidebarBg": "#......", "sidebarText": "#......"}}"""
+{{"label": "...", "seed": "#......"}}"""
 
 
 _SHELL_SHAPE_NOTE: dict[str, str] = {
-    "phone": "画手机端形态——上方一条窄标题栏、下方一条底部 Tab 导航栏，中间是内容区，整体竖屏比例。",
+    # 手机档必须在**提示词里明说竖屏**：这个生图端点的输出形状由提示词内容
+    # 决定，尺寸参数只定像素预算档位（探针记录见
+    # freeform_block._DEVICE_IMAGE_SIZE 上方）。此前只写"整体竖屏比例"这种
+    # 轻描淡写的说法，配上后面那句"画面本身要撑满整个画布"，模型会把手机界面
+    # 横向拉宽画成方图。现在直接点名 9:16。
+    "phone": (
+        "画手机端形态——上方一条窄标题栏、下方一条底部 Tab 导航栏，中间是内容区。"
+        "**整张图要画成手机竖屏比例（9:16 的竖长画面）**，内容单列纵向排布。"
+    ),
     "desktop": "画桌面端形态——左侧一条侧边栏、上方一条顶部导航条、右侧是内容区，整体宽屏比例。",
     "tablet": "画平板端形态——左侧一条比桌面窄一些的侧边栏、上方顶部导航条、右侧内容区。",
 }
 
 
 def _build_reference_image_prompt(app_name: str, goal_text: str, datamodel_summary: str, device: str) -> str:
+    """2026-07-30 改版：把"一小块内容区示意即可，不用画满"换成"画出真实完整的
+    页面布局"。实测对比过（同一模型、同一份内容清单，只改这一句）：旧措辞会让
+    生图模型画一堆孤立色块，新措辞会让它画出带侧栏/顶栏/真实卡片层级的完整
+    界面，图标徽标、辅助信息这些细节密度也跟着上来了——参照的是一份真实第三方
+    技能包的验证过的提示词写法（"画出真实的页面布局（顶部导航 + 主操作区 +
+    列表/卡片/侧栏等）"），不是凭空猜的。
+    """
     shape_note = _SHELL_SHAPE_NOTE.get(device) or _SHELL_SHAPE_NOTE["desktop"]
+    use_canvas_note = "充分利用整个画布"
+    fill_note = "画面本身要撑满整个画布，边缘到边缘，不要在四周留一圈空白画布底色、"
     return (
         f"为一个企业应用生成一张品牌配色参考图（干净原型图）。应用名称：{app_name}。"
         f"产品目标：{goal_text}。"
         f"背后的真实数据领域：{datamodel_summary}。"
-        f"要求：{shape_note}重点展示整体配色方案（导航区底色、主色、内容区底色"
-        "如何协调），一小块内容区示意即可，不用画满。"
+        f"要求：{shape_note}画出真实完整的页面布局，{use_canvas_note}——不是几块"
+        "孤立的抽象色块，而是有导航/侧栏/内容区这些真实层级结构的一整页界面；"
+        "整体配色方案（导航区底色、主色、内容区底色如何协调）要在这个真实版式里"
+        "清楚体现出来。"
         "配色气质整体偏克制、淡雅——大面积的内容区/导航区底色都用低饱和度的浅色，"
         "全饱和的鲜艳色只留给按钮/选中态这类小面积强调，不要大面积铺高饱和度色块；"
-        "色相本身可以自由发挥、大胆有个性，只要整体协调专业、不刺眼。只示意版式与"
-        "配色，不要写任何具体数字/真实数据，占位文案用"
-        "「示例XX」这类通用字样；不要出现任何多余的装饰性水印或品牌字样；"
-        "画面本身要撑满整个画布，边缘到边缘，不要在四周留一圈空白画布底色、"
+        "色相本身可以自由发挥、大胆有个性，只要整体协调专业、不刺眼。"
+        # 占位文案按字段形状写（与 freeform_block._PLACEHOLDER_STYLE_NOTE 同一
+        # 口径）：统一写「示例XX」会把所有字段类型压成同一个词，出图每格长一样、
+        # 不像真界面。这张图是拿来提配色种子的，界面越像真的，色彩关系越可信。
+        "不要写任何真实数据，但占位文案要**保留字段本来的形状**——日期写 "
+        "20XX-XX-XX、手机号写 138-••••-••••、邮箱写 name@xxxx.com、金额写 "
+        "¥ ××,×××、人名写「张先生」「李女士」这类示例名（按本应用的业务语境选，"
+        "不要带无关的职业称呼）、机构写「示例科技有限公司」，"
+        "不要所有格子都写同一个词；不要出现任何多余的装饰性水印或品牌字样；"
+        f"{fill_note}"
         "不要画装饰性的外框/圆角卡片壳/浏览器窗口 mockup 把整个界面包在里面——"
         "这张图本身就是应用界面，不是「一张图里嵌一张界面截图」的效果。"
     )
@@ -252,16 +207,18 @@ def generate_identity_theme(
     device: str = "",
     max_retries: int = 2,
     temperature: float = 0.9,
-    max_tokens: int = 2000,
+    max_tokens: int = 400,
     use_reference_image: bool = True,
 ) -> dict[str, Any]:
-    """生成 + 校验一套身份主题 token。跟 freeform_block.generate_freeform_block
+    """生成 + 校验一个身份主题种子色。跟 freeform_block.generate_freeform_block
     同一套 reask 语义。重试耗尽抛 IdentityThemeGenerationError，调用方应静默
-    降级到 8 预设主题，不能让这个增强项拖垮主生成路径。
+    降级到 FALLBACK_SEED 派生的中性色板，不能让这个增强项拖垮主生成路径。
 
-    temperature 给到 0.9（比 FreeformInsight 的 0.7 更高）：这是纯配色发挥，
-    没有真实数据/结构约束要守，更高的温度换更大胆多样的配色，不必担心跑偏
-    出编造数据那类真实性问题。
+    temperature 给到 0.9：这是纯选色发挥，没有真实数据/结构约束要守，更高
+    的温度换更大胆多样的选色，不必担心跑偏出编造数据那类真实性问题。
+
+    max_tokens 从 2000 降到 400：旧版要吐 11 个字段的完整 JSON，现在只有
+    label+seed 两个字段，输出短得多，没必要留那么大的余量。
     """
     app_name = (app_name or "").strip() or "未命名应用"
     goal_text = (goal_text or "").strip() or app_name
@@ -282,8 +239,8 @@ def generate_identity_theme(
             {
                 "type": "text",
                 "text": prompt_text
-                + "\n\n下面这张图是一张配色参考图，照着它的配色方案提炼出上面要求的"
-                "各个 token 值（不需要版式跟这张图一模一样，只需要配色协调统一）。",
+                + "\n\n下面这张图是一张配色参考图，从它的主色调里提炼出上面要求的种子色"
+                "（不需要版式跟这张图一模一样，只需要抓住它的主色调）。",
             },
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{reference_image_b64}"}},
         ]
@@ -318,26 +275,24 @@ def generate_identity_theme(
         except (ValueError, json.JSONDecodeError) as exc:
             last_error = f"invalid JSON: {str(exc)[:200]}"
             convo = convo + [
-                {"role": "assistant", "content": raw[:3000]},
+                {"role": "assistant", "content": raw[:1000]},
                 {"role": "user", "content": f"你上次的输出不是合法 JSON：{last_error}。请重新输出，只要一个 JSON 对象。"},
             ]
             continue
 
         try:
-            spec = IdentityThemeSpec.model_validate(payload)
+            spec = IdentityThemeSeedSpec.model_validate(payload)
             return spec.model_dump()
-        except ValidationError as exc:
-            last_error = str(exc)[:1000]
+        except Exception as exc:  # noqa: BLE001 — pydantic ValidationError 及其子类
+            last_error = str(exc)[:500]
             convo = convo + [
-                {"role": "assistant", "content": raw[:3000]},
+                {"role": "assistant", "content": raw[:1000]},
                 {
                     "role": "user",
                     "content": (
                         f"你上次的输出没有通过校验，具体错误：\n{last_error}\n"
-                        "请检查：所有颜色必须是标准 6 位十六进制格式（#rrggbb）；"
-                        "文字色（primaryFg/accentFg/sidebarText）跟对应底色的对比度"
-                        "必须足够高，文字才能看清——如果报了对比度不够，把文字色换成"
-                        "更接近纯白或纯黑的极端值。重新输出完整的 JSON。"
+                        "请检查：seed 必须是标准 6 位十六进制格式（#rrggbb）。"
+                        "重新输出完整的 JSON。"
                     ),
                 },
             ]
@@ -346,10 +301,11 @@ def generate_identity_theme(
 
 
 def enrich_identity_theme(model: dict[str, Any], goal: str = "") -> dict[str, Any]:
-    """主模型过 Gate 之后跑的增强步骤：生成一套身份主题 token，写回
+    """主模型过 Gate 之后跑的增强步骤：生成一个种子色，写回
     appbundle.appIdentity.generatedTheme。生成失败（重试耗尽/生图不可用）
     时原地跳过，不写这个字段——appIdentity.theme 那个 8 选 1 的字符串字段
-    完全不受影响，前端照旧能用预设主题渲染，不会出现"没有主题"的空态。
+    完全不受影响，前端 resolveIdentityTheme 在 generatedTheme 缺失时落回
+    FALLBACK_SEED 派生的中性色板，不会出现"没有主题"的空态。
     原地修改并返回同一个 model，方便调用方链式使用。
 
     goal：调用方（v5_capability_executor）手里本来就有的原始用户目标文本，

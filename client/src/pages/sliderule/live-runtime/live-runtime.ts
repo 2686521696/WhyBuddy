@@ -23,6 +23,11 @@ export type RuntimeRow = {
   id: string;
   values: Record<string, unknown>;
   createdAt: string;
+  /**
+   * 演示种子行标记（见 demo-seed.ts）。真实写入的行永远没有这个字段——
+   * 渲染层据此出「示例数据」徽标，用户写第一条真实数据时按它整批清掉。
+   */
+  seed?: true;
 };
 
 export interface WorkflowInstanceLog {
@@ -50,6 +55,14 @@ export interface RuntimeState {
   instances: WorkflowInstance[];
   /** 单调递增，生成稳定 id 用（避免 Date.now 依赖注入烦恼仍需时间戳时由调用方传入） */
   seq: number;
+  /**
+   * 已经对"要不要铺演示种子"做过决定的实体（见 demo-seed.ts）。
+   *
+   * 存的是**决定过**，不是**铺过**：首次遇见时已有真实数据的实体也记在这里，
+   * 保证每个实体这辈子只判一次。缺了它就只能看"当前行数为 0"，于是用户把表
+   * 删空之后示例数据会自己长回来。老状态没有这个字段，按空处理即可。
+   */
+  seededEntities?: Record<string, true>;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,9 +102,13 @@ export function updateRow(
   rowId: string,
   values: Record<string, unknown>
 ): RuntimeState {
-  const rows = (state.entities[entityId] ?? []).map((r) =>
-    r.id === rowId ? { ...r, values: { ...r.values, ...values } } : r
-  );
+  // 被编辑过的演示种子行不再算种子（seed 标记去掉）——里面已经有用户真写的
+  // 值了，继续挂「示例数据」徽标是在谎报。见 demo-seed.ts。
+  const rows = (state.entities[entityId] ?? []).map((r) => {
+    if (r.id !== rowId) return r;
+    const { seed: _seed, ...rest } = r;
+    return { ...rest, values: { ...r.values, ...values } };
+  });
   return { ...state, entities: { ...state.entities, [entityId]: rows } };
 }
 

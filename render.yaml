@@ -25,13 +25,89 @@ services:
     dockerContext: .
     # 健康检查指向 /health（返回 200）。不能留空/默认——Render 默认会探根路径 /，
     # 而本应用 / 没有路由、返回 404，Render 一看非成功码就判失败超时。
-    # 绑定保持 :: 默认：实测 Render 探针从 ::1(IPv6 本地) 打进来，:: 能收到、能响应。
     healthCheckPath: /health
     envVars:
       - key: SLIDE_RULE_INTERNAL_KEY
         generateValue: true        # 随机生成；Node 那边引用同一个值（内部 API 靠它挡）
+
+      # ── 监听地址：**必须 0.0.0.0，不能用镜像默认的 ::** ─────────────
+      # 2026-07-31 实测踩中，Dockerfile 里其实早写了这条：
+      #   "有些平台（如 Render）私网/健康检查走 IPv4，且容器可能 v6only=1，
+      #    :: 会收不到 IPv4 连接 → 健康检查超时。这类平台把 UVICORN_HOST
+      #    设成 0.0.0.0 即可。"
+      # 这里原本反而写着"绑定保持 :: 默认，实测探针从 ::1 打进来能收到"——
+      # 那条观察本身没错，但看的是**端口探测**（确实来自 IPv6 本地 ::1），
+      # 跟**健康检查**不是一路。dep-d9m1db3tqb8s739tgub0 的日志是铁证：
+      #   03:30:28  Uvicorn running on http://[::]:10000
+      #   03:30:29  ::1:50900 - "HEAD / HTTP/1.1" 404      ← 端口探测，通
+      #   （中间 15 分钟一条请求都没有——/health 从未被打到）
+      #   03:45:19  ==> Timed Out
+      #   03:45:35  ==> Detected service running on port 10000  ← 服务其实好的
+      # 应用完全正常，纯粹是探针到不了。别再把这条注释改回去。
+      - key: UVICORN_HOST
+        value: 0.0.0.0
+
+      # ── LLM 通道 ─────────────────────────────────────────────────
+      # 2026-07-31 补：此前这里只有 LLM_API_KEY 一项，缺的三项**全部静默降级**，
+      # 部上去表现为"服务起得来、页面打得开、就是生成不出东西"，日志里也没有
+      # 明显报错。逐条记下漏配的后果，别再只填一个 key 就以为配好了：
+      #
+      #   LLM_BASE_URL 漏  → base 为空串，请求打不出去
+      #   LLM_MODEL 漏     → 回落到硬编码默认 "gpt-5.5"（见 sliderule_llm/config.py），
+      #                      跟实际在用的模型对不上
+      #   SLIDERULE_LLM_GENERATE_ENABLED 漏
+      #                    → **五系统 LLM 生成整条关闭**（v5_capability_executor
+      #                      判 "1/true/yes/on"，缺省即关），只剩夹具应用
+      #   LLM_SUPPORTS_IMAGE_CONTENT_PARTS 漏
+      #                    → 默认 False，参照图/参照板整条不触发（见
+      #                      freeform_block._supports_image_content_parts）
       - key: LLM_API_KEY
-        sync: false                # Apply 时在面板填（推演必需）
+        sync: false                # Apply 时在面板填
+      - key: LLM_BASE_URL
+        sync: false                # 服务商地址，跟 key 一起在面板填，不进仓库
+      - key: LLM_MODEL
+        value: gpt-5.6-luna
+      - key: LLM_WIRE_API
+        value: chat_completions
+      - key: LLM_STREAM
+        value: "false"             # 当前服务商流式回包解析出来是空内容，走非流式
+      - key: LLM_REASONING_EFFORT
+        value: medium
+      - key: LLM_TIMEOUT_MS
+        value: "600000"            # 推演单轮很长，默认值不够
+      - key: SLIDERULE_LLM_GENERATE_ENABLED
+        value: "1"
+      - key: LLM_SUPPORTS_IMAGE_CONTENT_PARTS
+        value: "1"
+
+      # ── 生图（参照图 / 首页参照板）─────────────────────────────────
+      # 三项必须齐，缺任意一项 image_client 抛 ImageGenError，上游 fail-open
+      # 静默返回 None → 退回纯文字生成。功能少一半但不会报错，所以容易漏。
+      - key: IMAGE_API_URL
+        sync: false
+      - key: IMAGE_API_KEY
+        sync: false
+      - key: IMAGE_MODEL
+        value: gpt-image-2
+
+      # ── 持久化：免费档没有数据盘，这条是**唯一**存得住东西的路 ──────
+      # app_store.py 的降级是 fail-open：不填就回退本地 JSON 文件
+      # (APP_STORE_FILE)。但免费实例闲置 ~15 分钟休眠，唤醒是全新容器、
+      # 文件系统清空 —— 表现为"生成过的应用每隔一会儿就全没了"，而且不报错。
+      # 实测过：接口老老实实回 {"apps":[]} / {"sessions":[]}。
+      # 填任意 SQLAlchemy URL 即可（当前用 Neon Postgres）。
+      - key: APP_STORE_DATABASE_URL
+        sync: false
+
+      # ── E2B 沙盒：截图复核那一环靠它 ────────────────────────────────
+      # app_screenshot.py 在 E2B 里跑 Playwright。为什么不能用本地
+      # Playwright，那个文件开头记着：生产镜像是 node:22-alpine(musl)，
+      # @playwright/test 又只在 devDependencies，本地那条路"在生产环境从未
+      # 真正跑通过"，截图接口恒 503，前端静默退回假占位缩略图。
+      # 不填则 freeform 那条链路的 _render_preview_screenshot_b64 整环关闭。
+      # ⚠️ E2B 按用量计费，线上每次生成都会真跑一次沙盒。
+      - key: E2B_API_KEY
+        sync: false
 
   # ── Node（前端 + API，免费公开 Web 服务）─────────────────────────
   - type: web
@@ -63,3 +139,9 @@ services:
           type: web
           name: whybuddy-python
           envVarKey: SLIDE_RULE_INTERNAL_KEY
+      # Node 侧也读 E2B（server/routes/sliderule.ts）——跟 Python 那份同一把 key
+      - key: E2B_API_KEY
+        sync: false
+      # 会话签名。config.ts 里是 readOptionalString，不填不会崩，但会话不稳
+      - key: SESSION_SECRET
+        sync: false

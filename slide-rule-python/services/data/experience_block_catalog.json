@@ -1,6 +1,6 @@
 {
-  "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；本版只建立目录和渲染边界，不改变旧页面效果。bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。",
-  "version": 3,
+  "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；本版只建立目录和渲染边界，不改变旧页面效果。bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | freeformEmbeddable：这块能不能被 FreeformInsight 的设计树用 blockRef 嵌进去（Puck DropZone 的 allow 语义：只放行名单内的）。逐行记录类给 True——freeform 的 dataRef 只能出聚合值，画不了逐行；跟 freeform 自画内容撞车的、会撑爆版面的、以及自己嵌自己的给 False。",
+  "version": 6,
   "allowedSlots": [
     "summary",
     "primary",
@@ -199,8 +199,8 @@
       "type": "MetricGrid",
       "description": "一组关键指标卡，用于页面摘要区域。",
       "rendererKey": "metric-grid",
-      "rendererStatus": "placeholder",
-      "generationEnabled": false,
+      "rendererStatus": "real",
+      "generationEnabled": true,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -231,14 +231,15 @@
         "aggregateFields": [
           "aggregate"
         ]
-      }
+      },
+      "freeformEmbeddable": false
     },
     {
       "type": "TrendChart",
       "description": "按时间或有序维度展示变化趋势。",
       "rendererKey": "trend-chart",
-      "rendererStatus": "placeholder",
-      "generationEnabled": false,
+      "rendererStatus": "real",
+      "generationEnabled": true,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -278,14 +279,15 @@
           "timeDimensionRef": "date",
           "seriesBy": "enum"
         }
-      }
+      },
+      "freeformEmbeddable": false
     },
     {
       "type": "RankedList",
       "description": "按数值排序的业务排行。",
       "rendererKey": "ranked-list",
-      "rendererStatus": "placeholder",
-      "generationEnabled": false,
+      "rendererStatus": "real",
+      "generationEnabled": true,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -329,20 +331,28 @@
             20
           ]
         }
-      }
+      },
+      "freeformEmbeddable": true
     },
     {
       "type": "ActivityFeed",
       "description": "按时间倒序展示动态、提醒或风险事件。",
       "rendererKey": "activity-feed",
-      "rendererStatus": "placeholder",
-      "generationEnabled": false,
+      "rendererStatus": "real",
+      "generationEnabled": true,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "title": {
             "type": "string"
+          },
+          "variant": {
+            "type": "string",
+            "enum": [
+              "timeline",
+              "row"
+            ]
           }
         }
       },
@@ -362,20 +372,28 @@
           "timeFieldRef"
         ],
         "optional": [
-          "levelFieldRef"
+          "levelFieldRef",
+          "detailFieldRefs"
         ],
         "entityFieldRefs": {
           "timeFieldRef": "date",
           "levelFieldRef": "enum"
+        },
+        "entityFieldRefLists": {
+          "detailFieldRefs": {
+            "maxItems": 3,
+            "note": "宽行档（variant=row）中段展示的明细字段，同实体下任意类型"
+          }
         }
-      }
+      },
+      "freeformEmbeddable": true
     },
     {
       "type": "DataTable",
       "description": "展示实体记录并承接行级业务操作。",
       "rendererKey": "data-table",
-      "rendererStatus": "placeholder",
-      "generationEnabled": false,
+      "rendererStatus": "real",
+      "generationEnabled": true,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -403,14 +421,15 @@
         ],
         "optional": [],
         "note": "其余列由页面 columns 派生；binding 对象整体可省略，省略时不受 required 约束。"
-      }
+      },
+      "freeformEmbeddable": false
     },
     {
       "type": "QuickActionPanel",
       "description": "CRM/任务工作台的快捷业务操作按钮组，适合工作台首页的常用动作入口。",
       "rendererKey": "quick-action-panel",
       "rendererStatus": "real",
-      "generationEnabled": false,
+      "generationEnabled": true,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -437,14 +456,15 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；入口按钮由 actions[] 里的 createRecord/navigate 类型动作声明。"
-      }
+      },
+      "freeformEmbeddable": true
     },
     {
       "type": "FilterBar",
       "description": "时间范围和枚举条件筛选栏，适合经营大盘、舆情监控等需要全局筛选的页面顶部。",
       "rendererKey": "filter-bar",
       "rendererStatus": "real",
-      "generationEnabled": false,
+      "generationEnabled": true,
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -472,7 +492,8 @@
           "entityRef"
         ],
         "note": "可筛选字段在 props.filterFields 里声明（不是 binding）；entityRef 仅在需要按实体过滤时填写。触发 changeFilter 动作刷新同页面其他区块。"
-      }
+      },
+      "freeformEmbeddable": false
     },
     {
       "type": "WorkflowTimeline",
@@ -504,7 +525,8 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；展示哪条流程链路由 props.chainRef 声明（留空=workflow 主链路，填值必须是 workflow.chains[].id 之一）。节点、顺序、条件全部从 workflow 系统机械派生，不接受自由文案。"
-      }
+      },
+      "freeformEmbeddable": true
     },
     {
       "type": "FreeformInsight",
@@ -536,7 +558,8 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；本次调用只需要给 props.designBrief（一句话说清楚这个区块该展示什么，必填，不能空），具体结构/样式/数据绑定由二段生成流程另外产出，不在这次输出里。"
-      }
+      },
+      "freeformEmbeddable": false
     }
   ]
 }

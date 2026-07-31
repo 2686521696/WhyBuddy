@@ -18,6 +18,13 @@
 
 import React from "react";
 import { Pagination } from "antd";
+
+import { useContainerPosition } from "masonic";
+
+import { useScrollerIn } from "./useScrollerIn";
+import { SpanMasonry } from "./SpanMasonry";
+import { computeSpanKeys, spanForColumnCount } from "./app-wall-span";
+import { DEVICE_ASPECT, aspectForDevice } from "@/lib/justified-rows";
 import {
   LayoutGrid,
   FileText,
@@ -41,6 +48,7 @@ import {
   Heart,
   BookOpen,
 } from "lucide-react";
+import { requestMountPermit } from "@/lib/mount-scheduler";
 import { resolveIdentityTheme } from "@/pages/sliderule/live-runtime/identity-themes";
 import {
   mergeFiveSystemModels,
@@ -357,11 +365,19 @@ function themePrimary(themeId: string): string {
   return resolveIdentityTheme(themeId).primary;
 }
 
-// E41：徽标 = 全线统一的门语言（closed 6/6 / blocked / 推演中），
-// 不再另造"运行中/待补充"一套。dot 色在深色浮层上仍可辨。
+// E41：徽标 = 全线统一的门语言，不再另造"运行中/待补充"一套。
+// dot 色在深色浮层上仍可辨。
+//
+// 2026-07-31 汉化（用户要求）：原文是 "closed 6/6" / "blocked"，跟旁边的
+// 「推演中」混着排，一排筛选条两种语言。译法两条：
+//   · 6/6 **保留数字** —— 它不是装饰，是六个 Skill（DataModel / Workflow /
+//     RBAC / Page / AIGC / AppBundle）的证据条数，见 buildDetailFromModel 里
+//     `evidenceCount >= 6` 那个判定。译成"已闭环"丢掉数字就看不出还差几项。
+//   · blocked → 待补充 —— 跟未闭环占位图上那句「待补充信息」同一套说法，
+//     不再一个叫 blocked、一个叫待补充。
 const STATUS_META: Record<AppCardStatus, { label: string; cls: string; dot: string }> = {
-  runnable: { label: "closed 6/6", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-400" },
-  awaiting: { label: "blocked", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-400" },
+  runnable: { label: "已闭环 6/6", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-400" },
+  awaiting: { label: "待补充", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-400" },
   draft: { label: "推演中", cls: "bg-blue-50 text-[#1677ff]", dot: "bg-[#4d9aff]" },
 };
 
@@ -457,6 +473,15 @@ const LazyAppRuntimeScreen = React.lazy(() =>
  * AppRuntimeScreen 自己的 useScaleToFit 会把 1440×810 画布按容器实际尺寸
  * 等比缩小，这里只需要给够 h-full w-full 的容器；设备切换条经 controlsContainer
  * portal 到一个隐藏节点，缩略图里不需要看见它。
+ *
+ * 2026-07-30 追加**分批挂载**（requestMountPermit）。进视口只是拿到"该挂了"，
+ * 真正挂哪一批由全局排队器决定。理由是实测：生产构建下同屏 14 张卡，最长
+ * 单任务 4106ms——主线程连续堵四秒，这四秒里页面点不动滚不动。滚动本身全档
+ * 稳在 60fps、20 张堆内存才 93MB，所以问题只在首屏挂载这一处，分批就能治，
+ * 不需要虚拟化。详见 lib/mount-scheduler.ts 与 scripts/app-wall-perf.mjs。
+ *
+ * 两道闸串联的顺序要对：**先进视口、再排队**。反过来（先排队再看视口）会把
+ * 滚动到很远处的卡也排进队里，白占许可名额。
  */
 function LiveAppThumb({
   sessionId,
@@ -469,18 +494,20 @@ function LiveAppThumb({
 }) {
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const [hiddenControls, setHiddenControls] = React.useState<HTMLDivElement | null>(null);
-  const [visible, setVisible] = React.useState(false);
+  // 闸一：进视口了吗。闸二：排到我了吗。两个都过才挂。
+  const [inView, setInView] = React.useState(false);
+  const [granted, setGranted] = React.useState(false);
 
   React.useEffect(() => {
     const el = wrapRef.current;
     if (!el || typeof IntersectionObserver === "undefined") {
-      setVisible(true);
+      setInView(true);
       return;
     }
     const io = new IntersectionObserver(
       entries => {
         if (entries.some(e => e.isIntersecting)) {
-          setVisible(true);
+          setInView(true);
           io.disconnect();
         }
       },
@@ -489,6 +516,15 @@ function LiveAppThumb({
     io.observe(el);
     return () => io.disconnect();
   }, []);
+
+  // 进了视口才排队（顺序见文件头）。清理函数必须取消排队——卡片在拿到许可前
+  // 被卸载是常态（改搜索、翻页、切库），不取消就会对已卸载组件 setState。
+  React.useEffect(() => {
+    if (!inView) return;
+    return requestMountPermit(() => setGranted(true));
+  }, [inView]);
+
+  const visible = inView && granted;
 
   return (
     <div
@@ -504,6 +540,9 @@ function LiveAppThumb({
             sessionId={sessionId}
             appTitle={goal}
             controlsContainer={hiddenControls}
+            // 缩略图不画缩放标识：9px 的字再缩到 21% 读不出来，而且会跟卡片
+            // 底部那条信息浮层抢同一个右下角，叠成一块糊斑。
+            showScaleBadge={false}
           />
         </React.Suspense>
       )}
@@ -564,6 +603,7 @@ function CenterCard({
   statusLabel,
   onClick,
   topRight,
+  mediaHeight,
 }: {
   testid: string;
   title: string;
@@ -576,17 +616,39 @@ function CenterCard({
   statusLabel: string;
   onClick: () => void;
   topRight?: React.ReactNode;
+  /** 卡片总高（px）。信息条浮在画面上，不再另占高度——见下方那段说明。 */
+  mediaHeight?: number | string;
 }) {
   return (
     <div
       data-testid={testid}
       title={titleAttr}
-      className="group relative aspect-video cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
+      // 2026-07-31：宽高比不再由卡片自己定死 16:9，改由**父容器**给。
+      //
+      // 2026-07-31 之二：信息层压在图上 → 排到图下 → **又改回压在图上**（用户裁决）。
+      // 来回一趟不是反复，两次的约束不一样，记下来免得下次又绕：
+      //
+      //   挪到图下的理由是"压在图上时卡片有文字宽度下限"——手机档在 justified
+      //   排法下只有 122px 宽，那排「页面 5 / 角色 4 / AI 3 / 状态」挤成两行。
+      //   **但 justified 排法已经不在了**：现在是瀑布流，最窄列宽 260px、实测
+      //   落到 308px，跨列卡 632px，122px 那个场景不会再出现，理由随之失效。
+      //
+      //   改回来的收益是实的：信息条不再另占一段高度，同样的卡片高度里画面能
+      //   多显示一截应用——卡片墙的意义就是"一眼看出这个系统长什么样"。
+      //
+      // 压字必须保证在**任意应用截图**上都读得清：生成的应用有浅色仪表盘也有
+      // 深色监控盘，所以用从下往上的黑色渐变（底部 85% 到顶部全透明）而不是
+      // 一整块半透明——整块会在浅色截图上糊掉一条，渐变只压住文字那一带，
+      // 上面的画面照常看得见。再叠一层 backdrop-blur 兜住高频花纹的底。
+      className="group relative h-full w-full cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
+      style={{ height: mediaHeight }}
       onClick={onClick}
     >
-      <div className="absolute inset-0">{media}</div>
-      {/* 底部浮层：字段内容压在画面上（16:9 定稿要求） */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-3.5 pb-2.5 pt-12">
+      {/* 画面区：铺满整张卡 */}
+      <div className="absolute inset-0 overflow-hidden">{media}</div>
+      {topRight}
+      {/* 信息条：浮在画面底部，不占卡片高度 */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/60 to-transparent px-3 pb-2 pt-7 backdrop-blur-[1px]">
         <div className="flex items-center gap-1.5">
           {Icon && (
             <span
@@ -596,19 +658,120 @@ function CenterCard({
               <Icon size={12} />
             </span>
           )}
-          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-white">
+          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-white drop-shadow-sm">
             {title}
           </span>
         </div>
-        <div className="mt-1 flex items-center gap-2.5 text-[11px] text-white/80">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-white/75">
           {metrics}
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium text-white/95">
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium text-white/90">
             <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
             {statusLabel}
           </span>
         </div>
       </div>
-      {topRight}
+    </div>
+  );
+}
+
+/** 卡片墙一格的数据：应用条目 + 已解析的卡面细节（可能还没到）。 */
+interface WallEntry {
+  item: GalleryItem;
+  detail: AppCardDetail | null;
+}
+
+/**
+ * 卡片墙的列宽下限与间距。列数由 masonic 按容器宽度自己算，算完还会把列宽
+ * **撑满**剩余空间（use-positioner.ts: columnWidth = (width - gutter*(n-1)) / n），
+ * 所以这个值是「最窄能到多少」，不是最终列宽。
+ *
+ * 260 是量出来的下限，卡在信息区那排指标的换行点上：1600px 视口下可用宽
+ * ~1300 → 4 列 × 309px，「页面 n · 角色 n · AI n · 时间 · 状态」正好一行。
+ * 试过 240（5 列 × 244px），**每张卡**的状态都被挤到第二行，卡片凭空高一截，
+ * 带 v4 徽标的那张更是折成三行——比 4 列难看。列数不是越多越好，宽度下限由
+ * 信息区内容定。
+ *
+ * 屏幕再宽会自动加列（1920px → 5 列 × 308px），不用改这里。
+ */
+const WALL_COLUMN_WIDTH = 260;
+const WALL_GUTTER = 16;
+
+/**
+ * 「我的应用」瀑布流。
+ *
+ * 滚动源：`<Masonry>` 内部是 `MasonryScroller` → `useScroller()` →
+ * `@react-hook/window-scroll`，**写死 window**，视口高度取 `window.innerHeight`。
+ * 本应用滚的是 `.native-content`，window 一格都不滚，scrollTop 会恒为 0
+ * （详见 useScrollerIn.ts），所以这一层换成本地滚动容器。
+ *
+ * 渲染层：`useMasonry` 也不能用——它把每格宽度写死成全局列宽，跨列卡表达不出来。
+ * 换成 SpanMasonry（自建渲染循环 + 跨列定位器），落位规则照搬 Pinterest gestalt
+ * 的 multiColumnLayout。为什么非要跨列，见 app-wall-span.ts 顶部那段：卡片高度
+ * 由设备宽高比算出，三档里桌面占 89%，不引入跨列的话整面墙的高度是**同一个数**。
+ *
+ * 仍然复用 masonic 的 `useContainerPosition` 与 `createIntervalTree`。
+ *
+ * 单独抽成组件而不是写在 AppsWorkbench 里，是因为这几个都是 hook——卡片墙
+ * 在「空态/搜索无结果/有结果」三岔里只有一岔渲染，写在外层就成了条件调用。
+ */
+function AppWall({
+  items,
+  renderCard,
+  onReachEnd,
+}: {
+  items: WallEntry[];
+  renderCard: (
+    item: GalleryItem,
+    detail: AppCardDetail | null,
+    cellW: number,
+    span: number,
+  ) => React.ReactNode;
+  onReachEnd?: () => void;
+}) {
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
+  // width 要跟着容器走（侧栏收起、窗口缩放都会变），deps 给 height 让它重量。
+  const { offset: _offset, width } = useContainerPosition(containerRef, [height]);
+
+  // 跨列集合按整份列表算一次：只依赖 items，不依赖详情加载，所以详情回来之后
+  // 不会再重排一遍墙。
+  const spanKeys = React.useMemo(
+    () => computeSpanKeys(items.map(e => e.item)),
+    [items],
+  );
+
+  return (
+    <div data-testid="apps-wall" style={{ display: "contents" }}>
+      <SpanMasonry<WallEntry>
+        containerRef={containerRef}
+        items={items}
+        width={width}
+        height={height}
+        scrollTop={scrollTop}
+        isScrolling={isScrolling}
+        minColumnWidth={WALL_COLUMN_WIDTH}
+        gutter={WALL_GUTTER}
+        overscanBy={2}
+        // 首屏还没量到真实高度时用它估行数。桌面卡 260/1.78≈146 + 信息区 ≈52，
+        // 手机卡 260/0.46≈563 + 52；取中间偏桌面一侧，因为桌面档占多数。
+        itemHeightEstimate={240}
+        itemKey={entry => entry.item.key}
+        getSpan={(entry, _i, columnCount) =>
+          spanForColumnCount(spanKeys.has(entry.item.key), columnCount)
+        }
+        className="mt-5"
+        onReachEnd={onReachEnd}
+        render={(entry, _i, cellW, columnCount) => (
+          <>
+            {renderCard(
+              entry.item,
+              entry.detail,
+              cellW,
+              spanForColumnCount(spanKeys.has(entry.item.key), columnCount),
+            )}
+          </>
+        )}
+      />
     </div>
   );
 }
@@ -915,10 +1078,172 @@ export function AppsWorkbench() {
       e.category.toLowerCase().includes(q)
     );
   });
-  // 分页（每页 12 = 4 × 3，用户硬性要求）
-  const totalItems = tab === "mine" ? visible.length : visibleExamples.length;
-  const pagedMine = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // 分页只剩「官方示例」这一个 tab 在用。
+  //
+  // 「我的应用」2026-07-31 起改成无限流（用户裁决）：卡片墙要的是一条连续的墙，
+  // 12 张在 5 列里只有 2.4 行，怎么调都堆不出墙的观感。取消切片之后靠虚拟化
+  // 扛住数量——SpanMasonry 只渲染视口内外两屏的格子，跟一页 12 张时的挂载量
+  // 是同一个数量级。示例库是普通网格、条目固定且少，保持原样。
+  const totalItems = visibleExamples.length;
   const pagedExamples = visibleExamples.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // ── 「我的应用」卡片墙（2026-07-31）──────────────────────────────────
+  //
+  // 走 **masonic**（jaredLunde，1406★）。为什么从 react-photo-album 换过来：
+  //
+  // 卡片改成「画面 + 图下信息区」之后，高度不再只由图片比例决定——信息区多高
+  // 取决于标题会不会换行、几个计数标签。而 react-photo-album 的模型是
+  // `height = columnWidth / ratio`（源码 masonry.ts），**结构上装不下图外文案**，
+  // 只能把文案高度反算进假的宽高比里，脆且难维护。
+  //
+  // masonic 的定位器把高度当**输入**：
+  //     set: (index, height) => { ...找最矮列...; items[index] = { left, top, height } }
+  // 配 useResizeObserver 量真实 DOM 再回填（src/use-positioner.ts / use-resize-observer.ts）。
+  // 图下文案多高都不用预先知道。
+  //
+  // 另外三个顺带的好处：
+  //   · 列宽恒等 —— left = column * (columnWidth + gutter)，不像 photo-album 的
+  //     columns 靠改列宽凑等高（实测三列差 27%，"排前面的看起来更大"是假暗示）
+  //   · 直接渲染任意 React 子节点，不用再合成 src:"" 的假 Photo 绕开 <img>
+  //   · 自带虚拟化（区间树 O(log n) 视口查询），应用数长起来不用重做
+  //
+  // 画面区高度仍按设备宽高比算——那部分是图，比例是真信息；信息区高度交给
+  // 浏览器。两段相加就是卡片总高，masonic 自己量。
+  //
+  // 用低层 hook 拼装而不是开箱的 `<Masonry>`：后者的滚动源写死是 window，
+  // 本应用滚的是 .native-content，详见 useScrollerIn.ts 顶部那段。
+
+  // 卡片渲染抽成函数：定位器的 render 按 index 回调，拿不到 map 的闭包。
+  // 只给 width——高度是**输出**不是输入，量完真实 DOM 再定位。
+  const renderAppCard = (
+    item: GalleryItem,
+    detail: AppCardDetail | null,
+    cellW: number,
+    span = 1,
+  ) => {
+    // 卡片高度 = 本格宽度 / 设备宽高比。cellW 跨列时已经是两列的合并宽度，
+    // 所以这里**不用**为跨列另算——同一个设备比例下，卡宽了画面就等比高，
+    // 应用截图显示得更完整，正是给它两列的意义。
+    //
+    // 信息条改成浮在画面上之后，这个数就是**整张卡的高度**（此前还要再加一段
+    // 信息区高度）。所以同一个宽度下卡片比之前矮一截，画面反而显示得更多。
+    const mediaH = Math.round(cellW / aspectForDevice(item.summary?.device));
+    const meta = detail ? STATUS_META[detail.status] : null;
+    const BrandIcon = detail?.identity
+      ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
+      : undefined;
+    // 活渲染缩略图的稳定 id：会话卡用 sessionId，App Store 卡无会话时用 appId。
+    const thumbId = item.sessionId || item.appId || item.key;
+    const canOpen = Boolean(item.sessionId);
+    const isApp = item.source === "app";
+    const version = item.version ?? 1;
+    const rel = formatRelativeTime(item.lastActive ?? item.createdAt);
+    return (
+      <div
+        data-testid={`app-cell-${item.sessionId || item.appId}`}
+        data-tier={(item.summary?.device || "desktop").trim() || "desktop"}
+        data-span={span}
+        // 不写死高度：masonic 的 ResizeObserver 量的就是这个节点，写死等于
+        // 把「高度由内容决定」这条又退回去了。宽度也不用给——masonic 的定位
+        // 容器已经是 columnWidth，卡片 w-full 铺满即可。
+      >
+      <CenterCard
+        mediaHeight={mediaH}
+        testid={`app-card-${item.sessionId || item.appId}`}
+        title={detail?.identity?.productName || item.goal || "（未命名话题）"}
+        titleAttr={item.goal}
+        Icon={BrandIcon}
+        iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
+        media={
+          detail?.status === "runnable" && detail.model ? (
+            <LiveAppThumb sessionId={thumbId} model={detail.model} goal={item.goal} />
+          ) : (
+            <PendingAppThumb detail={detail} />
+          )
+        }
+        metrics={
+          detail ? (
+            <>
+              <span className="inline-flex items-center gap-1" title="页面数">
+                <FileText size={11} className="opacity-60" />
+                页面 {detail.pages}
+              </span>
+              <span className="inline-flex items-center gap-1" title="角色数">
+                <Users size={11} className="opacity-60" />
+                角色 {detail.roles}
+              </span>
+              <span className="inline-flex items-center gap-1" title="AI 能力数">
+                <GitBranch size={11} className="opacity-60" />
+                AI {detail.aiCaps}
+              </span>
+              {isApp && version > 1 && (
+                <span
+                  // 信息条改成压在深色渐变上之后，浅底深字的徽标在这里反了；
+                  // 改成半透明白底白字，跟旁边那排指标同一套明度关系。
+                  className="inline-flex items-center rounded bg-white/20 px-1.5 text-[10px] font-semibold text-white"
+                  title="改版次数（App Store 血缘）"
+                >
+                  v{version}
+                </span>
+              )}
+              {rel && (
+                <span
+                  className="inline-flex items-center text-white/60"
+                  title={formatUpdatedAt(item.lastActive ?? item.createdAt)}
+                >
+                  {rel}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="opacity-70">加载中…</span>
+          )
+        }
+        statusDot={meta?.dot ?? "bg-stone-300"}
+        statusLabel={meta?.label ?? "…"}
+        onClick={() => (canOpen ? open(item.sessionId!) : undefined)}
+        topRight={
+          <>
+            <button
+              data-testid={`app-menu-${item.sessionId || item.appId}`}
+              className="absolute right-2 top-2 rounded bg-white/85 p-1 text-stone-400 opacity-0 shadow-sm transition hover:text-stone-600 group-hover:opacity-100"
+              onClick={e => {
+                e.stopPropagation();
+                setMenuFor(prev => (prev === item.key ? null : item.key));
+              }}
+            >
+              <MoreHorizontal size={14} />
+            </button>
+            {menuFor === item.key && (
+              <div
+                className="absolute right-2 top-8 z-10 rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
+                onClick={e => e.stopPropagation()}
+              >
+                {isApp && (
+                  <button
+                    data-testid={`app-fork-${item.appId}`}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
+                    onClick={() => openForkModal(item)}
+                  >
+                    <GitBranch size={13} /> 复刻应用
+                  </button>
+                )}
+                <button
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-50"
+                  onClick={() => void removeCard(item)}
+                >
+                  <Trash2 size={13} /> 删除应用
+                </button>
+              </div>
+            )}
+          </>
+        }
+      />
+      </div>
+    );
+  };
+
+
 
   const llmOk = llm === null ? null : llm !== false && llm.keyPresent;
   const overall: boolean | null =
@@ -945,6 +1270,21 @@ export function AppsWorkbench() {
         顶栏：标题 | 搜索 | 健康+创建。
         DOM 顺序与视觉/焦点顺序一致，不用 order-* 重排可聚焦控件。
       */}
+      {/*
+        吸顶（2026-07-31）：标题/搜索/tab/筛选整块钉在滚动容器顶部，只让卡片墙滚。
+        19 个应用往下翻几行，筛选 chip 就滚没了——想换个筛选口径得先滚回顶部。
+
+        实现要点：
+        · 滚动容器是 .native-content（dashboard.css 里 overflow:auto），sticky
+          就是相对它定位，不需要额外包一层。
+        · 负 margin + 同值 padding 把根节点的 px/py 抵掉再补回来，让吸顶块的
+          背景**铺满整宽**；否则卡片会从左右内边距那两条缝里透出来。
+        · 背景必须显式给（跟根节点同一个 shell 变量），sticky 元素默认透明，
+          卡片会直接从字底下穿过去。
+        · z-30 高于卡片菜单(z-10)与健康浮层(z-20)：健康浮层本身在这块里面，
+          跟着一起吸顶，不会被卡片盖住。
+      */}
+      <div className="sticky top-0 z-30 -mx-6 -mt-5 bg-[var(--sr-shell-bg,#eef2f7)] px-6 pt-5 pb-3 md:-mx-8 md:-mt-6 md:px-8 md:pt-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="flex min-w-0 shrink-0 items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[#5b6cff]">
@@ -1088,14 +1428,16 @@ export function AppsWorkbench() {
             />
             <StatChip
               icon={<CircleCheck size={13} className="text-emerald-500" />}
-              label="closed 6/6"
+              label={STATUS_META.runnable.label}
               count={counts.runnable}
               active={filter === "runnable"}
               onClick={() => setFilter("runnable")}
             />
             <StatChip
               icon={<Hourglass size={13} className="text-orange-400" />}
-              label="blocked"
+              // 筛选条与卡片徽标读同一份 STATUS_META：此前两处各写一份字面量，
+              // 改文案漏掉一处就会出现"筛选叫 blocked、卡片叫待补充"。
+              label={STATUS_META.awaiting.label}
               count={counts.blocked}
               active={filter === "blocked"}
               onClick={() => setFilter("blocked")}
@@ -1126,6 +1468,7 @@ export function AppsWorkbench() {
             </button>
           ))
         )}
+      </div>
       </div>
 
       {/* ===== 我的应用 tab ===== */}
@@ -1203,112 +1546,14 @@ export function AppsWorkbench() {
             </div>
           )
         ) : (
-          <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
-            {pagedMine.map(({ item, detail }) => {
-              const meta = detail ? STATUS_META[detail.status] : null;
-              const BrandIcon = detail?.identity
-                ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
-                : undefined;
-              // 活渲染缩略图的稳定 id：会话卡用 sessionId，App Store 卡无会话时用 appId。
-              const thumbId = item.sessionId || item.appId || item.key;
-              const canOpen = Boolean(item.sessionId);
-              const isApp = item.source === "app";
-              const version = item.version ?? 1;
-              const rel = formatRelativeTime(item.lastActive ?? item.createdAt);
-              return (
-                <CenterCard
-                  key={item.key}
-                  testid={`app-card-${item.sessionId || item.appId}`}
-                  title={detail?.identity?.productName || item.goal || "（未命名话题）"}
-                  titleAttr={item.goal}
-                  Icon={BrandIcon}
-                  iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
-                  media={
-                    detail?.status === "runnable" && detail.model ? (
-                      <LiveAppThumb sessionId={thumbId} model={detail.model} goal={item.goal} />
-                    ) : (
-                      <PendingAppThumb detail={detail} />
-                    )
-                  }
-                  metrics={
-                    detail ? (
-                      <>
-                        <span className="inline-flex items-center gap-1" title="页面数">
-                          <FileText size={11} className="opacity-60" />
-                          页面 {detail.pages}
-                        </span>
-                        <span className="inline-flex items-center gap-1" title="角色数">
-                          <Users size={11} className="opacity-60" />
-                          角色 {detail.roles}
-                        </span>
-                        <span className="inline-flex items-center gap-1" title="AI 能力数">
-                          <GitBranch size={11} className="opacity-60" />
-                          AI {detail.aiCaps}
-                        </span>
-                        {isApp && version > 1 && (
-                          <span
-                            className="inline-flex items-center rounded bg-white/20 px-1.5 text-[10px] font-semibold text-white/95"
-                            title="改版次数（App Store 血缘）"
-                          >
-                            v{version}
-                          </span>
-                        )}
-                        {rel && (
-                          <span
-                            className="inline-flex items-center text-white/65"
-                            title={formatUpdatedAt(item.lastActive ?? item.createdAt)}
-                          >
-                            {rel}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="opacity-70">加载中…</span>
-                    )
-                  }
-                  statusDot={meta?.dot ?? "bg-stone-300"}
-                  statusLabel={meta?.label ?? "…"}
-                  onClick={() => (canOpen ? open(item.sessionId!) : undefined)}
-                  topRight={
-                    <>
-                      <button
-                        data-testid={`app-menu-${item.sessionId || item.appId}`}
-                        className="absolute right-2 top-2 rounded bg-white/85 p-1 text-stone-400 opacity-0 shadow-sm transition hover:text-stone-600 group-hover:opacity-100"
-                        onClick={e => {
-                          e.stopPropagation();
-                          setMenuFor(prev => (prev === item.key ? null : item.key));
-                        }}
-                      >
-                        <MoreHorizontal size={14} />
-                      </button>
-                      {menuFor === item.key && (
-                        <div
-                          className="absolute right-2 top-8 z-10 rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          {isApp && (
-                            <button
-                              data-testid={`app-fork-${item.appId}`}
-                              className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
-                              onClick={() => openForkModal(item)}
-                            >
-                              <GitBranch size={13} /> 复刻应用
-                            </button>
-                          )}
-                          <button
-                            className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-50"
-                            onClick={() => void removeCard(item)}
-                          >
-                            <Trash2 size={13} /> 删除应用
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  }
-                />
-              );
-            })}
-          </div>
+          <AppWall
+            // key 跟着筛选走：定位器的高度缓存按 index 存，换了数据集不重建的话
+            // 会拿旧高度去摆新卡片。数量变化不进 key——那是无限流追加的正常情形，
+            // 重建会把已量到的高度全丢掉，追加一批就整墙闪一次。
+            key={`wall-${tab}-${filter}-${query}`}
+            items={visible}
+            renderCard={renderAppCard}
+          />
         ))}
 
       {/* ===== 官方示例库 tab =====
@@ -1329,8 +1574,10 @@ export function AppsWorkbench() {
               const Icon = BRAND_LUCIDE[example.icon] ?? Boxes;
               const shot = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/examples/${example.domain}.png`;
               return (
+                // CenterCard 2026-07-31 起填满父容器（宽高比交给调用方决定）。
+                // 官方示例仍是等尺寸网格，比例由这层 aspect-video 提供。
+                <div key={example.domain} className="aspect-video">
                 <CenterCard
-                  key={example.domain}
                   testid={`example-card-${example.domain}`}
                   title={example.productName}
                   titleAttr={example.intent}
@@ -1368,13 +1615,14 @@ export function AppsWorkbench() {
                   statusLabel="closed 6/6"
                   onClick={() => useTemplate(example)}
                 />
+                </div>
               );
             })}
           </div>
         ))}
 
-      {/* 分页器：一页 12 张（4 × 3），两个 tab 共用（用户定稿） */}
-      {totalItems > PAGE_SIZE && (
+      {/* 分页器：一页 12 张（4 × 3）。只剩示例库在用——「我的应用」改无限流了。 */}
+      {tab === "examples" && totalItems > PAGE_SIZE && (
         <div className="mt-6 flex justify-center" data-testid="apps-pagination">
           <Pagination
             current={page}

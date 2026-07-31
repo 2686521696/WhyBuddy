@@ -19,9 +19,7 @@ import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 import { SkillThumbnailBar } from "./SkillThumbnailBar";
 import { ActiveSystemScreen } from "./system-screens/ActiveSystemScreen";
 import {
-  mergeFiveSystemModels,
-  parseFiveSystemModelFromContents,
-  parseFiveSystemModelFromPerSkillEvidence,
+  deriveSettledFiveSystemModel,
   parsePartialFiveSystemModel,
   type SkillRuntimeGraphLike,
 } from "./system-screens/five-system-model";
@@ -116,11 +114,9 @@ export function SlideRuleStudio({
   // 五系统模型在此解析一次：舞台判定（能否运行应用）+ 抽屉/游标共享
   const settledModel = useMemo(
     () =>
-      mergeFiveSystemModels(
-        parseFiveSystemModelFromContents(skillContents ?? {}),
-        parseFiveSystemModelFromPerSkillEvidence(
-          publishClosure?.perSkillEvidence
-        )
+      deriveSettledFiveSystemModel(
+        skillContents ?? {},
+        publishClosure?.perSkillEvidence
       ),
     [skillContents, publishClosure?.perSkillEvidence]
   );

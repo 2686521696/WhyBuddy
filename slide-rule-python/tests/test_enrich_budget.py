@@ -95,9 +95,15 @@ def test_monitor_overview_budget(monkeypatch):
         },
     }
     enrich_monitor_page_overviews(model)
-    assert [c[0] for c in calls] == [True, False, False]
+    # 2026-07-29（方案 B）：一页设计两版（默认档 + 手机档），**同页两档共用
+    # 同一张三区参照板**——所以第一页的两次调用都带 use_reference_image=True，
+    # 而不是第二次就掉到 False。预算仍然按"页"计，不是按"次调用"计。
+    assert [c[0] for c in calls] == [True, True, False, False, False, False]
+    # 手机那版不再单独截图自检（两档都做等于把总览页生成时间翻倍）
+    assert calls[1][1] is False
     for page in model["page"]["pages"]:
         assert page.get("freeformOverview")  # 超预算仍然生成（纯文字），不丢内容
+        assert page["freeformOverview"].get("mobile")  # 手机档那份也在
 
 
 def test_budget_counts_failed_attempts(monkeypatch):

@@ -7,7 +7,11 @@
  * 非数值挂了数字格式也渲染原文。
  */
 
+import React from "react";
 import { Progress, Rate, Tag } from "antd";
+
+// 懒加载：静态引 antd-mobile 会让 node 环境的测试在收集期炸掉。
+const LazyPhoneProgress = React.lazy(() => import("./phone-mobile/PhoneProgress"));
 import type { AppFormFieldSchema } from "./app-runtime-schema";
 import {
   clampNumber,
@@ -17,13 +21,18 @@ import {
   scoreColor,
   toneToTagColor,
 } from "./field-display";
+import { resolveValueType } from "./field-value-type";
 
 export function FieldValue({
   field,
   value,
+  phone = false,
 }: {
   field: Pick<AppFormFieldSchema, "type" | "options" | "format">;
   value: unknown;
+  /** 手机档：进度条换 antd-mobile ProgressBar（antd Progress 是桌面组件，
+   *  它的 minWidth 90 在窄屏列表里会把整行撑开）。其余类型跨设备一致。 */
+  phone?: boolean;
 }) {
   if (value === undefined || value === null || value === "") {
     return <span style={{ color: "#bbb" }}>—</span>;
@@ -43,7 +52,10 @@ export function FieldValue({
     return <>{text}</>;
   }
 
-  switch (field.format) {
+  // 2026-07-28：分支条件从 field.format 换成共用的档位表（field-value-type.ts）。
+  // 写侧 FieldEditor 读的是同一张表——此前两边各判各的，日期在读侧掉进
+  // default 出纯文本、在写侧用的是原生 input[type=date]，谁都没发现。
+  switch (resolveValueType(field)) {
     case "money": {
       const money = formatMoney(value);
       return money ? (
@@ -62,8 +74,11 @@ export function FieldValue({
     }
     case "progress": {
       const n = clampNumber(value, 0, 100);
-      return n === null ? (
-        <>{text}</>
+      if (n === null) return <>{text}</>;
+      return phone ? (
+        <React.Suspense fallback={<span>{text}</span>}>
+          <LazyPhoneProgress percent={n} />
+        </React.Suspense>
       ) : (
         <Progress
           percent={n}
@@ -88,7 +103,7 @@ export function FieldValue({
         </span>
       );
     }
-    case "rating": {
+    case "rate": {
       const n = clampNumber(value, 0, 5);
       return n === null ? (
         <>{text}</>
@@ -96,11 +111,28 @@ export function FieldValue({
         <Rate disabled allowHalf value={n} style={{ fontSize: 13 }} />
       );
     }
-    case "masked":
+    case "password":
       return (
         <span style={{ fontVariantNumeric: "tabular-nums" }}>
           {maskValue(value)}
         </span>
+      );
+    case "date":
+    case "dateTime": {
+      // 日期此前掉进 default 出原始串。写侧 DatePicker 存的就是
+      // YYYY-MM-DD / YYYY-MM-DD HH:mm，读侧等宽数字对齐即可，不再二次格式化
+      //（模型/导入的脏值原样显示，不猜它是什么格式）。
+      return (
+        <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+          {text}
+        </span>
+      );
+    }
+    case "switch":
+      return (
+        <Tag color={value ? "success" : "default"} style={{ marginInlineEnd: 0 }}>
+          {value ? "是" : "否"}
+        </Tag>
       );
     default:
       return <>{text}</>;

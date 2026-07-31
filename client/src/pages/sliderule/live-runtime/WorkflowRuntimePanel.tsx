@@ -18,6 +18,7 @@ import {
   nodeById,
 } from "./live-runtime";
 import { loadRuntimeState, saveRuntimeState, notifyRuntimeChanged, subscribeRuntimeChanged } from "./runtime-persistence";
+import { seedRuntimeState } from "./demo-seed";
 
 /** 持久化状态若引用了当前模型不存在的节点（换话题遗留），重建。 */
 function compatibleWithModel(state: RuntimeState, model: FiveSystemModel): boolean {
@@ -44,9 +45,14 @@ export function WorkflowRuntimePanel({
 }) {
   const [state, setState] = React.useState<RuntimeState>(() => {
     const persisted = loadRuntimeState(sessionId);
-    return persisted && compatibleWithModel(persisted, model)
-      ? persisted
-      : initRuntimeState(model);
+    // 演示种子同样过一遍（只铺空实体，幂等）——三个面板共享一份状态，
+    // 这里如果存回一份没种子的，运行应用那边就再也铺不上了。
+    return seedRuntimeState(
+      persisted && compatibleWithModel(persisted, model)
+        ? persisted
+        : initRuntimeState(model),
+      model
+    );
   });
   const [branchChoice, setBranchChoice] = React.useState(0);
 

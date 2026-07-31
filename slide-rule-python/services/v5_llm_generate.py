@@ -86,6 +86,11 @@ Required shape (use these exact keys):
                  {"id": "<id>", "name": "<label>", "entity": "<entity_id>",
                   "timeField": "<entity_id>.<date_field_id>",
                   "levelField": "<entity_id>.<enum_field_id> (optional)"}
+               ],
+               "blocks": [
+                 {"id": "<id>", "type": "<experience block type>",
+                  "props": {"title": "<label>"},
+                  "binding": {"entityRef": "<entity_id>"}}
                ]}]
   },
   "aigc": {
@@ -327,8 +332,42 @@ def set_generate_delta_sink(sink: "Optional[Callable[[str], None]]") -> None:
 _installed_skills: List[Dict[str, str]] = []
 
 
+# 消费通道（2026-07-27）。此前所有已安装技能走同一条硬要求："必须落成一条
+# aigc.capabilities，字段绑定到真实实体"。对设计指导类技能这是必然的门禁
+# 失败——它们产出的是"这一页该长什么样"，不是某个实体字段的值。128 条技能
+# 逐条判定的结果见 docs/skills-triage.jsonl。
+_SKILL_CHANNELS = ("aigc", "experience", "unbound")
+_DEFAULT_SKILL_CHANNEL = "unbound"
+
+
+def _clean_binding(raw: Any) -> str:
+    """把技能声明的绑定形状压成一行 prompt 文案，如 "2 number -> enum"。
+
+    技能目录里的条目不知道目标应用有哪些实体，所以它声明的不是具体字段名，
+    而是**形状**：读几个什么类型的字段、写回什么类型的字段。类型取自
+    five_system_legal.json 的 fieldTypes 闭集；出现闭集外的类型就整条作废
+    （返回空串）——宁可不给形状提示，也不把非法类型喂进 prompt 让模型学歪。
+    """
+    if not isinstance(raw, dict):
+        return ""
+    from .schema_legal import FIELD_TYPES
+
+    legal = set(FIELD_TYPES)
+    ins = raw.get("inputTypes")
+    out = str(raw.get("outputType") or "").strip()
+    if not isinstance(ins, list) or not ins or out not in legal:
+        return ""
+    ins = [str(t).strip() for t in ins]
+    if any(t not in legal for t in ins):
+        return ""
+    return f"{' + '.join(ins)} -> {out}"
+
+
 def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:
     """设置本轮推演要注入的已安装技能（清洗：上限 6 条，name/description 截断）。
+
+    channel 决定拼进哪个 prompt 块（见 _build_user_content）。未标注或标注了
+    未知值的一律按 unbound——宁可不提要求，也不发一条注定绑不上的硬要求。
 
     传 None / 空列表即清空——无安装时生成 prompt 与历史逐字节一致。
     """
@@ -340,10 +379,26 @@ def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:
         name = str(raw.get("name") or "").strip()[:60]
         if not name:
             continue
-        cleaned.append({"name": name, "description": str(raw.get("description") or "").strip()[:160]})
+        channel = str(raw.get("channel") or "").strip()
+        if channel not in _SKILL_CHANNELS:
+            channel = _DEFAULT_SKILL_CHANNEL
+        entry = {
+            "name": name,
+            "description": str(raw.get("description") or "").strip()[:160],
+            "channel": channel,
+        }
+        binding = _clean_binding(raw.get("binding"))
+        if binding:
+            entry["binding"] = binding
+        cleaned.append(entry)
         if len(cleaned) >= 6:
             break
     _installed_skills = cleaned
+
+
+def installed_skills_for_channel(channel: str) -> List[Dict[str, str]]:
+    """按通道取本轮已安装技能。体验层（identity_theme_gen）用它取设计指导。"""
+    return [s for s in _installed_skills if s.get("channel") == channel]
 
 
 # E29 增量迭代：精修/回退上下文（与 _installed_skills 同一请求域模式）。
@@ -409,18 +464,39 @@ def _build_user_content(goal: str) -> str:
     语料缺失或与意图无关时不加块，prompt 与从前逐字节一致。
     """
     parts = [f"Business intent:\n{goal}"]
-    # ①已安装技能（硬要求）：每项必须落成一条 aigc.capabilities，字段绑定
-    # 到真实 datamodel 实体字段——门禁仍然硬校验，绑不上会被拦（不豁免）。
-    if _installed_skills:
+    # ①已安装技能（硬要求）：仅 aigc 通道。每项必须落成一条 aigc.capabilities，
+    # 字段绑定到真实 datamodel 实体字段——门禁仍然硬校验，绑不上会被拦（不豁免）。
+    bound = installed_skills_for_channel("aigc")
+    if bound:
         lines = [
             "User-installed skills (REQUIRED: for EACH one below, include a matching "
             "entry in aigc.capabilities with inputFields/outputField bound to real "
             "datamodel entity fields of this app):"
         ]
-        for skill in _installed_skills:
+        for skill in bound:
+            desc = f" — {skill['description']}" if skill["description"] else ""
+            # 形状提示（inputFields/outputField 各该是什么类型的字段）：技能
+            # 目录里声明的是形状不是字段名，模型据此去这个应用的 datamodel
+            # 里挑真实字段，比让它凭描述硬猜准得多。
+            shape = f" [field shape: {skill['binding']}]" if skill.get("binding") else ""
+            lines.append(f"- {skill['name']}{desc}{shape}")
+        parts.append("\n".join(lines))
+    # ①b 未验证绑定的已安装技能（软参考）：明确写"不要为它硬造能力卡"。
+    # 从前它们跟上面混在一条 REQUIRED 里，模型只能二选一——要么编一个绑不上
+    # 的能力被门禁拦，要么硬塞进无关实体。两种都比不提要求更糟。
+    unbound = installed_skills_for_channel("unbound")
+    if unbound:
+        lines = [
+            "User-installed skills (context only — do NOT invent an aigc.capabilities "
+            "entry for these; include one ONLY if it genuinely binds to real entity "
+            "fields of this app):"
+        ]
+        for skill in unbound:
             desc = f" — {skill['description']}" if skill["description"] else ""
             lines.append(f"- {skill['name']}{desc}")
         parts.append("\n".join(lines))
+    # experience 通道不进这条 prompt：它喂的是过门之后的体验层
+    #（identity_theme_gen 读 installed_skills_for_channel("experience")）。
     # ②业界参考技能（软参考）：只借命名与 IO 风格
     try:
         from .v5_skill_reference import reference_prompt_block

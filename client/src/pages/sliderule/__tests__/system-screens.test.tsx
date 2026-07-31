@@ -25,6 +25,7 @@ import { EntityDataPanel } from "../live-runtime/EntityDataPanel";
 import { AigcTryRunPanel } from "../live-runtime/AigcTryRunPanel";
 import {
   parseFiveSystemModel,
+  deriveSettledFiveSystemModel,
   parseFiveSystemModelFromContents,
   parseFiveSystemModelFromPerSkillEvidence,
   mergeFiveSystemModels,
@@ -247,6 +248,30 @@ describe("five-system-model 解析", () => {
     expect(merged?.rbac?.roles).toContain("student"); // fallback 补齐缺段
     expect(mergeFiveSystemModels(null, null)).toBeNull();
     expect(mergeFiveSystemModels({}, undefined)).toBeNull();
+  });
+
+  it("deriveSettledFiveSystemModel：两源合并，都空则 null（=会话里还没有应用）", () => {
+    // 本轮 SSE 原文优先，缺的段由持久化闭环证据补齐
+    const model = deriveSettledFiveSystemModel(
+      { workflow: JSON.stringify({ workflow: MODEL.workflow }) },
+      { rbac: { modelSection: MODEL.rbac } }
+    );
+    expect(model?.workflow?.id).toBe("wf_enroll");
+    expect(model?.rbac?.roles).toContain("student");
+
+    // 刷新后只剩持久化证据：照样判定为"有应用"
+    expect(
+      deriveSettledFiveSystemModel({}, { workflow: { modelSection: MODEL.workflow } })
+    ).not.toBeNull();
+
+    // 关键用例：用户敲了目标、推演还没出模型 —— 此时应用并不存在。
+    // 入站判定的 hasApp 就靠这个跟 Boolean(goal) 区分开。
+    expect(deriveSettledFiveSystemModel({}, undefined)).toBeNull();
+    expect(deriveSettledFiveSystemModel(null, null)).toBeNull();
+    // 非 JSON 的 mermaid 原文不构成模型
+    expect(
+      deriveSettledFiveSystemModel({ workflow: "flowchart LR\n a --> b" }, {})
+    ).toBeNull();
   });
 
   it("workflowModelToMermaid 输出 nodes/transitions/条件/角色", () => {
@@ -1089,13 +1114,24 @@ describe("浏览器运行时（试运行）入口", () => {
     expect(html).toContain("课程"); // resolveFieldRef 解析出实体名
   });
 
-  it("EntityDataPanel 按实体切页并提供「新增一行」（空表如实提示）", () => {
+  it("EntityDataPanel 按实体切页并提供「新增一行」（空表铺演示种子并如实标注）", () => {
     const html = renderToStaticMarkup(<EntityDataPanel model={MODEL} sessionId="t-dm" />);
     expect(html).toContain('data-testid="datamodel-data-panel"');
     expect(html).toContain('data-testid="datamodel-entity-course"');
     expect(html).toContain('data-testid="datamodel-entity-enrollment"');
     expect(html).toContain('data-testid="datamodel-add-row"');
-    expect(html).toContain("暂无数据");
     expect(html).toContain("容量"); // 字段列头来自实体定义
+    // 2026-07-28：零行的实体不再是一句"暂无数据"，而是铺一批演示种子
+    //（demo-seed.ts）。种子必须带标注——没有这条断言，哪天标注被删掉
+    // 就变成不打招呼的假数据了。
+    expect(html).not.toContain("暂无数据");
+    expect(html).toContain('data-testid="datamodel-seed-notice"');
+    expect(html).toContain("示例数据");
+    // 种子值可读且确定性。原来钉的是字面量「课程名 1」，那是按类型出值时代的
+    // 朴素形态；现在「课程名」会先摘掉元词「名」再修饰成「高原课程」这类
+    // 词——钉死字面量等于把"不许变好"也一起钉住了。这里只锁真正要保的两点：
+    // 表里确实铺出了带实体词的可读值，且不是原封不动的字段名加序号。
+    expect(html).toMatch(/value="[^"]*课程"/);
+    expect(html).not.toContain("课程名 1");
   });
 });

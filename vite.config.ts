@@ -225,6 +225,39 @@ export default defineConfig(() => {
     build: {
       outDir: path.resolve(import.meta.dirname, "dist/public"),
       emptyOutDir: true,
+      // 构建入口默认只有 client/index.html（隐式）——三个 dev-only 台子
+      // （block-gallery / wall-fixture / app-wall-perf）都靠这一点不进生产产物。
+      //
+      // SLIDERULE_PERF_HARNESS=1 时额外把作品墙压测台打进来。为什么需要：dev
+      // 模式的数比生产偏慢（不压缩 / 模块逐个请求 / React 开发构建带额外校验），
+      // 拿它去定版式密度会把设计稿冤枉掉；要拿到生产口径的数，压测台必须**也
+      // 走一遍真实构建**。这个开关默认关，`npm run build` 的产物不受影响。
+      ...(process.env.SLIDERULE_PERF_HARNESS === "1"
+        ? {
+            rollupOptions: {
+              input: {
+                index: path.resolve(import.meta.dirname, "client/index.html"),
+                "app-wall-perf": path.resolve(
+                  import.meta.dirname,
+                  "client/app-wall-perf.html"
+                ),
+              },
+            },
+          }
+        : {}),
+    },
+    // vite preview 只是个本地静态服务器（生产走 scripts/start-prod.mjs），
+    // 但它默认**不带 server.proxy**——压测台要 fetch /api/sliderule 拿真实
+    // 模型，不转发就只能看到一个"一个可运行模型都没拿到"的空态。
+    preview: {
+      port: 4173,
+      strictPort: false,
+      proxy: {
+        "/api/sliderule": {
+          target: resolveApiTarget("/api/sliderule"),
+          changeOrigin: true,
+        },
+      },
     },
     server: {
       port: 3000,

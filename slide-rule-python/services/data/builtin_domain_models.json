@@ -1758,20 +1758,7 @@
     "nav": "side",
     "generatedTheme": {
      "label": "湛蓝·采购智序",
-     "primary": "#0969DA",
-     "primaryHover": "#0757B8",
-     "gradTo": "#3B8EF3",
-     "primaryFg": "#FFFFFF",
-     "contentBg": "#F7FAFE",
-     "accentBg": "#EAF3FF",
-     "accentFg": "#124A8A",
-     "charts": [
-      "#0969DA",
-      "#168AAD",
-      "#5B6FD8"
-     ],
-     "sidebarBg": "linear-gradient(135deg, #0B4FC2, #075FD5)",
-     "sidebarText": "#FFFFFF"
+     "seed": "#0969DA"
     }
    }
   }
@@ -3554,20 +3541,7 @@
     "nav": "side",
     "generatedTheme": {
      "label": "松绿·沉静审批",
-     "primary": "#237A5A",
-     "primaryHover": "#196348",
-     "gradTo": "#45A17B",
-     "primaryFg": "#FFFFFF",
-     "contentBg": "#F7FAF8",
-     "accentBg": "#E7F3EC",
-     "accentFg": "#18563F",
-     "charts": [
-      "#237A5A",
-      "#D58A18",
-      "#6678A8"
-     ],
-     "sidebarBg": "#F1F7F4",
-     "sidebarText": "#263C34"
+     "seed": "#237A5A"
     }
    }
   }
@@ -5549,20 +5523,7 @@
     "nav": "top",
     "generatedTheme": {
      "label": "暖橙·敏捷服务",
-     "primary": "#C2410C",
-     "primaryHover": "#9A3412",
-     "gradTo": "#F97316",
-     "primaryFg": "#FFFFFF",
-     "contentBg": "#FFFCF8",
-     "accentBg": "#FFF1E6",
-     "accentFg": "#7C2D12",
-     "charts": [
-      "#C2410C",
-      "#B45309",
-      "#BE3A34"
-     ],
-     "sidebarBg": "#FFF7ED",
-     "sidebarText": "#431407"
+     "seed": "#C2410C"
     }
    }
   }
@@ -7608,20 +7569,7 @@
     "nav": "side",
     "generatedTheme": {
      "label": "紫韵·雅序",
-     "primary": "#6D36D9",
-     "primaryHover": "#5828BC",
-     "gradTo": "#A78BE8",
-     "primaryFg": "#FFFFFF",
-     "contentBg": "#FBFAFD",
-     "accentBg": "#F0EBFA",
-     "accentFg": "#48247F",
-     "charts": [
-      "#7041D7",
-      "#596BC7",
-      "#A4519D"
-     ],
-     "sidebarBg": "#F6F3FC",
-     "sidebarText": "#38324D"
+     "seed": "#6D36D9"
     }
    }
   }

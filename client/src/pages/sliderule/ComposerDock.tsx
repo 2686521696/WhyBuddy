@@ -21,6 +21,8 @@ import {
 import { navigate } from "wouter/use-browser-location";
 import { EXAMPLE_INTENT_TEXTS } from "./example-intents";
 import { shouldSendOnKey } from "./user-prefs";
+import { useIntakeJudge } from "./use-intake-judge";
+import { IntakeHintBar } from "./IntakeHintBar";
 import {
   installKeyOf,
   loadInjectDisabledKeys,
@@ -169,6 +171,8 @@ export function ComposerDock({
   stop,
   placeholder,
   hero = false,
+  hasApp = false,
+  appSummary = "",
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -176,6 +180,14 @@ export function ComposerDock({
   sendMessage: (textOverride?: string) => void;
   isRunning: boolean;
   goal: string;
+
+  /** 会话里是否已经有一个成形的应用（由五系统模型判定，见 SlideRule.tsx）。
+   *  入站判定按这个切规则域：没应用时首轮描述算 real，有应用时算 iteration。 */
+  hasApp?: boolean;
+
+  /** 当前应用摘要，喂给入站判定让引导话术具体到这个应用（缺省则话术泛化，
+   *  不影响判定结果本身）。 */
+  appSummary?: string;
 
   hintChips?: string[];
   stop?: () => void;
@@ -445,10 +457,23 @@ export function ComposerDock({
 
   const placeholderText = placeholder || "畅所欲问";
 
+  // 入站判定：推演中不判（用户这会儿打的字多半是下一轮的草稿，判了也没用）。
+  // 语境用 hasApp（真有成形应用）而不是 Boolean(goal)（只是有目标文案），
+  // 摘要让引导话术具体到这个应用而不是泛泛的"指出当前应用要怎么改"。
+  const judgement = useIntakeJudge(input, hasApp, !isRunning, appSummary);
+
   return (
     <div className={`pointer-events-none flex flex-col items-center gap-2 ${hero ? "w-full" : "w-[min(820px,calc(100vw-32px))]"}`}>
       {/* 「本轮 · ...」浮标已移除：话题在顶栏 STATUS 常驻，这里只是重复噪声
           （用户反馈：分散注意力，且与交付物按钮在完成态重叠）。 */}
+      <IntakeHintBar
+        judgement={judgement}
+        onRewrite={text => {
+          setInput(text);
+          requestAnimationFrame(adjustTextareaHeight);
+          textareaRef.current?.focus();
+        }}
+      />
       {attachmentHint && (
         <div
           className="pointer-events-auto rounded-full border border-[#e5e7eb] bg-white px-3 py-1 text-[11px] text-stone-500 shadow-sm"

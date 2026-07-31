@@ -128,6 +128,20 @@ def _load_experience_blocks() -> tuple:
                 f"experience_block_catalog.json {block_type} 放开了生成但渲染器仍是"
                 f" {renderer_status}——会渲染成惰性占位卡"
             )
+        # freeformEmbeddable = 这块能不能被 FreeformInsight 的设计树用 blockRef
+        # 嵌进去（Puck DropZone 的 allow 语义：只放行名单内的）。
+        freeform_embeddable = raw.get("freeformEmbeddable")
+        if not isinstance(freeform_embeddable, bool):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.freeformEmbeddable 必须是布尔值"
+            )
+        # 同一条不变式的延伸：能被嵌 ⊆ 能被生成。放开嵌入却没放开生成，等于
+        # 从侧门绕过灰度决定，把一个还没准备好的区块塞进用户看得见的首页。
+        if freeform_embeddable and not generation_enabled:
+            raise ValueError(
+                f"experience_block_catalog.json {block_type} 放开了 freeform 嵌入却没放开生成"
+                "——嵌入是生成的一个入口，不能绕过灰度决定"
+            )
         for key, legal in (
             ("dataKinds", legal_data_kinds),
             ("allowedSlots", legal_slots),
@@ -187,6 +201,37 @@ def _validate_binding_schema(
                 f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefs.{field} "
                 f"字段类型 '{field_type}' 不在合法域内"
             )
+    # entityFieldRefLists：值是**字段 id 数组**的绑定键（如 ActivityFeed 宽行档
+    # 的 detailFieldRefs）。跟 entityFieldRefs 的区别只有两条——值是数组、且不限
+    # 定字段类型（明细列展示什么都行，数字/日期/枚举都是合法的一列）。类型收窄
+    # 交给 fieldType 可选键，没写就是"任意类型"。
+    ref_lists = schema.get("entityFieldRefLists", {})
+    if not isinstance(ref_lists, dict):
+        raise ValueError(
+            f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists 必须是对象"
+        )
+    for field, spec in ref_lists.items():
+        if field not in known_fields:
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists "
+                f"引用了未声明字段: {field}"
+            )
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists.{field} 必须是对象"
+            )
+        max_items = spec.get("maxItems")
+        if max_items is not None and (not isinstance(max_items, int) or max_items < 1):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists.{field}"
+                ".maxItems 必须是正整数"
+            )
+        field_type = spec.get("fieldType")
+        if field_type is not None and field_type not in legal_field_types:
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists.{field}"
+                f".fieldType '{field_type}' 不在合法域内"
+            )
     ranges = schema.get("ranges", {})
     if not isinstance(ranges, dict):
         raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.ranges 必须是对象")
@@ -236,6 +281,19 @@ EXPERIENCE_BLOCK_BINDING_SCHEMAS: Dict[str, Dict[str, Any]] = {
 EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE: Dict[str, tuple] = {
     str(block["type"]): tuple(block["allowedSlots"]) for block in EXPERIENCE_BLOCKS
 }
+# FreeformInsight 的设计树能用 blockRef 嵌哪些积木（2026-07-29）。
+#
+# 语义抄 Puck 的 DropZone allow（packages/core/lib/data/is-component-allowed.ts）：
+# **allow 设了就只放行名单内的**，名单外一律拒。这里名单从目录派生，改目录
+# 一处，Pydantic 校验、prompt 文案、前端渲染三处同步。
+#
+# 为什么要这个口子：freeform 的 dataRef 只能表达聚合值（count/sum/avg），
+# 没有"枚举真实第 N 行"的能力——排行榜/动态流这类逐行内容它画不出来，真机
+# 试过一次只能画出表头+空表身。与其让它硬画，不如让它**挑一个现成的积木摆
+# 进自己的版式里**，渲染仍走那个积木经过测试的真渲染器。
+FREEFORM_EMBEDDABLE_BLOCK_TYPES = tuple(
+    str(block["type"]) for block in EXPERIENCE_BLOCKS if block.get("freeformEmbeddable")
+)
 
 
 def enum_str(*keys: str) -> str:
@@ -262,11 +320,17 @@ def _format_binding_schema(schema: Dict[str, Any]) -> str:
     required = list(schema.get("required", []))
     optional = list(schema.get("optional", []))
     if not required and not optional:
+        # 不能写成裸的 "none"。真跑撞过：prompt 里那行长成
+        # `binding=none (不使用 binding；…)`，模型把 "none" 当成**要填的值**，
+        # 产出 `"binding": {"entityRef": "none"}`，四个 QuickActionPanel 全中，
+        # 门禁报 4 条 entityRef 悬挂。哨兵词长得像值就会被当成值——改成祈使句。
         note = schema.get("note")
-        return f"none ({note})" if note else "none"
+        omit = "OMIT — this block takes no binding; do NOT emit a `binding` key at all"
+        return f"{omit}. ({note})" if note else omit
     enums = schema.get("enums", {})
     entity_field_refs = schema.get("entityFieldRefs", {})
     ranges = schema.get("ranges", {})
+    ref_lists = schema.get("entityFieldRefLists", {})
     aggregate_fields = set(schema.get("aggregateFields", []))
 
     def annotate(field: str) -> str:
@@ -276,6 +340,14 @@ def _format_binding_schema(schema: Dict[str, Any]) -> str:
             return f"{field}({'|'.join(enums[field])})"
         if field in entity_field_refs:
             return f"{field}({entity_field_refs[field]} field)"
+        if field in ref_lists:
+            spec = ref_lists[field]
+            want = spec.get("fieldType")
+            cap = spec.get("maxItems")
+            bits = [f"{want} fieldId" if want else "fieldId"]
+            if cap:
+                bits.append(f"max {cap}")
+            return f"{field}([{', '.join(bits)}])"
         if field in ranges:
             lo, hi = ranges[field]
             return f"{field}({lo}-{hi})"
@@ -303,17 +375,64 @@ def experience_block_prompt_block() -> str:
     # 由 generationEnabled 决定，改目录即改 prompt，不会再各说各话。
     enabled = [b for b in EXPERIENCE_BLOCKS if b.get("generationEnabled")]
     if enabled:
+        # 措辞是祈使式，不是许可式（2026-07-28 实测定的）。此前写的是
+        # "You MAY emit page.blocks ... an unnecessary block is worse than none"
+        # 外加一句"Use the existing stats/charts/rankings/feeds fields instead"，
+        # 通电了七个区块，模型仍然一个都不用——同一目标连跑三次，全是 0。
+        # 排除过的其它假设：往 JSON 骨架里补 blocks 键（补了照样 0）、
+        # CHANNEL OWNERSHIP 规则挤掉了积木（拿掉也是 0）。只把这两句换成
+        # 下面的祈使式，其余一字未动，同目标跑两次得到 9 个 / 8 个积木，
+        # 业务页覆盖 3/3、4/4，方案 C 零越界。
+        # 关窍在于说清"不用的代价"：模型默认走它熟悉的 stats/charts 老路，
+        # 除非明确告诉它空着的业务页是残次交付。
         lines.append(
-            "You MAY emit page.blocks, but ONLY these types are renderable today: "
+            "page.blocks is how you compose a page beyond its table. Renderable today: "
             + ", ".join(str(b["type"]) for b in enabled)
-            + ". Emit them only where they genuinely fit the page's job — an unnecessary "
-            "block is worse than none."
+            + ". Compose each page with the blocks it needs. A workbench / kanban / "
+            "calendar / wizard page that ships with NO blocks renders as a bare table — "
+            "that is an incomplete deliverable, not a safe default. Typically 1-3 blocks "
+            "per business page."
         )
-        lines.append(
-            "Every OTHER type in this catalog is schema-only: its renderer is not shipped, so emitting it "
-            "would show real users an inert placeholder. Use the existing stats/charts/rankings/feeds "
-            "fields for those needs instead."
-        )
+        # 2026-07-31：monitor 页此前被这条祈使句**漏在外面**——上一句只点名了
+        # workbench/kanban/calendar/wizard，加上下面 CHANNEL OWNERSHIP 那条
+        # "monitor 页照常声明 stats/charts"，两处合起来读就是"总览页不用积木"。
+        # 实测后果：19 个真实页面里 page.blocks 声明数 **0**，其中 4 个 monitor
+        # 页一个积木都没有，QuickActionPanel / WorkflowTimeline 这两个
+        # generationEnabled=true、rendererStatus=real 的区块从未被生成过。
+        #
+        # 这直接决定了总览页的骨架形状：喂给 freeformOverview 设计环节的内容
+        # 永远是"N 个标量 + M 个分布 + 可选一组逐行记录"这三档，排布几乎被内容
+        # 定死。放开这一处，输入的内容类型才可能变，版式才跟着变。
+        #
+        # 措辞照上一句的教训走**祈使式**：07-28 记过，写成许可式（"You MAY
+        # emit…"）时七个通电区块一个都没被用，同目标连跑三次全是 0；换成祈使
+        # 式并说清"不用的代价"之后才有产出。所以这里也说清代价。
+        monitor_ok = [
+            str(b["type"]) for b in enabled
+            if str(b["type"]) not in ("MetricGrid", "TrendChart", "DataTable")
+        ]
+        if monitor_ok:
+            lines.append(
+                "monitor / dashboard pages are NOT exempt from this. Their stats and "
+                "charts answer 'how are the numbers', but an overview whose ONLY "
+                "content is numbers is a report, not a workbench — the user opens it "
+                "to act. Where this business's overview genuinely leads with something "
+                "beyond numbers, declare it as a block: "
+                + ", ".join(monitor_ok)
+                + ". Pick by what THIS operation actually does first — a panel of the "
+                "actions this role starts the day with, the stage bar of the process "
+                "the business runs on, a live stream of what just happened, a top-N "
+                "that drives a real decision. Declaring none is correct only when the "
+                "overview truly is read-only; declaring one you cannot justify from "
+                "the domain is worse than none."
+            )
+        schema_only = [b for b in EXPERIENCE_BLOCKS if not b.get("generationEnabled")]
+        if schema_only:
+            lines.append(
+                "Only these are schema-only (renderer not shipped) — never emit them: "
+                + ", ".join(str(b["type"]) for b in schema_only)
+                + ". Everything else listed above is live and SHOULD be used where it fits."
+            )
     else:
         lines.append(
             "No block type is renderable yet — DO NOT emit page.blocks for production pages. "
@@ -321,6 +440,31 @@ def experience_block_prompt_block() -> str:
         )
     lines.append(
         "Whenever you do emit page.blocks, every block type MUST be one of the catalog entries below."
+    )
+    # 归属划分（2026-07-28）：KPI/图表在一页里只能由一条路负责，否则同一个指标
+    # 会被画两次。总览页的 stats/charts 会被后续增强步骤重新设计成一块整体版式
+    # （每个应用长得不一样，是展示面的主角）；业务页没有那一步，走积木更整齐
+    # 可预期。渲染层已经硬隔离（写错了也不会画两遍），这里说清楚是为了让模型
+    # 一开始就写对通道，而不是靠下游兜。
+    lines.append(
+        "CHANNEL OWNERSHIP for KPIs and charts — one page, one channel:\n"
+        "  - monitor / dashboard pages: declare page.stats and page.charts as usual. "
+        "Do NOT emit MetricGrid or TrendChart blocks there; they would duplicate the "
+        "same numbers the overview already shows. This ban covers KPI/trend blocks "
+        "ONLY — it is not a ban on page.blocks for overview pages (see above: action "
+        "panels, stage bars, streams and top-N belong there when the domain leads "
+        "with them).\n"
+        "  - all other page kinds (workbench / kanban / calendar / wizard): use "
+        "MetricGrid / TrendChart blocks when the page needs KPIs or trends, and leave "
+        "page.stats / page.charts empty on those pages.\n"
+        "  - RankedList / ActivityFeed are not affected by this split; "
+        "they may be used on any page kind where they fit.\n"
+        "  - DataTable: every page ALREADY renders its own primary entity as a full "
+        "table (localized column headers, enum tags, sorting, filtering, paging, row "
+        "actions). Do NOT emit a DataTable bound to the page's own primary entity — it "
+        "renders the very same rows a second time, and worse. Emit DataTable ONLY for a "
+        "DIFFERENT entity than the page's primary one (e.g. a supplier table on an "
+        "inventory page)."
     )
     for block in EXPERIENCE_BLOCKS:
         lines.append(
@@ -342,8 +486,11 @@ def experience_block_prompt_block() -> str:
         "Blocks MAY include eventBindings mapping event names to action ids defined in the same page."
     )
     lines.append(
-        "Step 7 — Page layout: pages MAY declare a layout object with slots "
-        "summary/primary/secondary/activity/content, each containing an ordered list of block ids. "
+        "Step 7 — Page layout: pages MAY declare a layout object whose OWN KEYS ARE THE SLOT NAMES — "
+        "summary/primary/secondary/activity/content — each mapping to an ordered list of block ids, "
+        'exactly like "layout": {"summary": ["kpi_grid"], "content": ["order_table"]}. '
+        'Do NOT nest them under a wrapper key: "layout": {"slots": {...}} is WRONG and the whole layout '
+        "will be discarded. "
         "Every block id in layout MUST exist in page.blocks, AND each block MUST be placed only in one "
         "of the slots listed for its type above (slots=... in the catalog entry) — e.g. a RankedList "
         "(slots=primary,secondary) placed in the activity slot is a violation, even though the block id "
@@ -357,6 +504,29 @@ def experience_block_prompt_block() -> str:
         "mode MUST be 'navigation' for now — 'focus' (full-screen single-purpose tools like a report "
         "viewer or document editor) is schema-legal but has NO client renderer yet; declaring it renders "
         "as an ordinary navigation shell, not the immersive full-screen layout the name implies."
+    )
+    # 2026-07-30：preferredDevice 此前只声明了合法域、没给任何判据，结果实测
+    # 9 个真实应用 9 个 desktop——这个字段是死的。而下游拿它决定要不要多花
+    # 一次调用去设计手机版式（enrich_monitor_page_overviews），死字段等于每次
+    # 都得两档都生成。补上判据，用的是与入站判定同一套**姿态**口径（不是关键词
+    # ——「骑手运力调度看板」用的人是坐在后台的调度员）。判不出来就别写这个
+    # 字段：缺省会走"两档都生成"，比猜错便宜。
+    lines.append(
+        "Step 8b — How to choose preferredDevice (this field is consumed downstream: declaring "
+        "'desktop' skips generating a separate phone layout, so choose deliberately). Judge by the "
+        "user's POSTURE while operating, not by keywords in the request:\n"
+        "  · 'phone' — standing, walking, one-handed, on-site, reporting in the moment: scanning, "
+        "photographing, clocking in, signing, jotting a quick record; or an individual using it in "
+        "daily life.\n"
+        "  · 'desktop' — seated, long sessions, multi-column comparison, batch operations, approvals "
+        "and configuration: dashboards, back-office, analysis, reconciliation, scheduling, permission "
+        "matrices.\n"
+        "  · OMIT the field entirely when there is no posture signal. Do not guess.\n"
+        "Two traps (both judged by WHO operates it in WHAT state, not by the words present): "
+        "'courier dispatch board' contains 'courier' but the operator is a dispatcher at a desk → "
+        "desktop; 'inspection work order, worker photographs on site and submits' contains 'work order' "
+        "but the operator is walking around → phone. If the request names a device explicitly "
+        "(app / mobile / mini-program / PC / web / 'on the computer'), follow that."
     )
     lines.append(
         f"Step 9 — Design recipe: appbundle.appIdentity MAY include designRecipeRef "

@@ -59,7 +59,7 @@ describe("installed-skills 本地层", () => {
 describe("推演注入载荷（技能库六期）", () => {
   beforeEach(() => memStore.clear());
 
-  it("瘦身为 {name, description}、上限 6 条、超长截断", async () => {
+  it("瘦身为 {name, description, channel}、上限 6 条、超长截断", async () => {
     const { installedSkillsDrivePayload } = await import("../installed-skills");
     expect(installedSkillsDrivePayload()).toEqual([]);
 
@@ -76,7 +76,26 @@ describe("推演注入载荷（技能库六期）", () => {
     expect(payload).toHaveLength(6);
     expect(payload[0].name.length).toBeLessThanOrEqual(60);
     expect(payload[0].description.length).toBe(160);
-    expect(Object.keys(payload[0])).toEqual(["name", "description"]);
+    // channel 决定服务端把它拼进哪个 prompt 块；SKILL 夹具没标 channel，
+    // 按存量安装记录的降级规则走 unbound（不发注定绑不上的硬要求）。
+    expect(Object.keys(payload[0])).toEqual(["name", "description", "channel"]);
+    expect(payload[0].channel).toBe("unbound");
+  });
+
+  it("带 binding 的技能把绑定形状一并带给服务端", async () => {
+    const { installedSkillsDrivePayload } = await import("../installed-skills");
+    const list = installSkill([], {
+      ...SKILL,
+      channel: "aigc",
+      binding: { inputTypes: ["number", "number"], outputType: "enum" },
+    });
+    expect(list).toHaveLength(1);
+    const payload = installedSkillsDrivePayload();
+    expect(payload[0].channel).toBe("aigc");
+    expect(payload[0].binding).toEqual({
+      inputTypes: ["number", "number"],
+      outputType: "enum",
+    });
   });
 });
 

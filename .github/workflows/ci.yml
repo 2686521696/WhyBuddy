@@ -32,6 +32,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
       - run: pnpm exec vitest run client/src --reporter=dot
+      # 启动/停止脚本的测试跑在 node:test 上（不是 vitest），此前既不在
+      # `pnpm run test` 里也不在 CI 里——而 dev:stop 杀不掉进程正是它们
+      # 该拦下的那类回归。
+      - run: pnpm run test:scripts
 
   server-contract:
     name: Server 薄代理契约（发布门 server 段）

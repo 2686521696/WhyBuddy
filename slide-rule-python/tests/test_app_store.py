@@ -32,8 +32,12 @@ def configured_store(request, tmp_path, monkeypatch):
     if request.param == "jsonfile":
         monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", None)
         monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+        # 2026-07-28 起降级链多了一级本地 SQLite（远端 → 本地库 → JSON）。
+        # 要测 JSON 兜底本身，得把中间那级关掉，否则永远走不到最后一档。
+        monkeypatch.setattr(store.settings, "APP_STORE_LOCAL_SQLITE", "")
     else:
         monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", f"sqlite:///{tmp_path / 'apps.db'}")
+        monkeypatch.setattr(store.settings, "APP_STORE_LOCAL_SQLITE", "")
     store.reset_backend_cache()
     yield request.param
     store.reset_backend_cache()
@@ -146,11 +150,45 @@ def test_export_all_returns_full_records(configured_store):
     assert all("model_json" in r for r in dump), "导出是完整记录（可迁移备份）"
 
 
-def test_no_db_url_falls_back_to_jsonfile(tmp_path, monkeypatch):
-    """没配连接串时后端就是 JSON 文件——'有 DB 用 DB、没 DB 兜底'。"""
+def test_no_db_url_falls_back_to_local_sqlite(tmp_path, monkeypatch):
+    """没配远端连接串时落**本地 SQLite**，不是 JSON（2026-07-28 起）。
+
+    优先级是 远端 → 本地库 → JSON。没有远端不代表就该退到最弱的那一档：
+    SQLite 能查能索引、写入是事务性的，JSON 是整文件读改写。"""
     monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", None)
     monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    monkeypatch.setattr(
+        store.settings, "APP_STORE_LOCAL_SQLITE", f"sqlite:///{tmp_path / 'local.db'}"
+    )
     store.reset_backend_cache()
+    assert type(store.get_backend()).__name__ == "SqlAppStore"
+    app_id = store.save_app(_model("咖营通"))
+    assert store.get_app(app_id) is not None
+    assert (tmp_path / "local.db").exists()
+    store.reset_backend_cache()
+
+
+def test_local_sqlite_disabled_falls_back_to_jsonfile(tmp_path, monkeypatch):
+    """本地库置空 = 跳过这一级，直接 JSON。只读文件系统/容器里用得上。"""
+    monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", None)
+    monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    monkeypatch.setattr(store.settings, "APP_STORE_LOCAL_SQLITE", "")
+    store.reset_backend_cache()
+    assert type(store.get_backend()).__name__ == "JsonFileAppStore"
+    store.reset_backend_cache()
+
+
+def test_local_sqlite_config_is_part_of_backend_signature(tmp_path, monkeypatch):
+    """改本地库配置要能触发重建——否则改了配置像没生效（拿的是旧单例）。"""
+    monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", None)
+    monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    monkeypatch.setattr(
+        store.settings, "APP_STORE_LOCAL_SQLITE", f"sqlite:///{tmp_path / 'a.db'}"
+    )
+    store.reset_backend_cache()
+    assert type(store.get_backend()).__name__ == "SqlAppStore"
+    monkeypatch.setattr(store.settings, "APP_STORE_LOCAL_SQLITE", "")
+    # 不调 reset_backend_cache——签名变了就该自己重建
     assert type(store.get_backend()).__name__ == "JsonFileAppStore"
     store.reset_backend_cache()
 
@@ -183,13 +221,27 @@ def test_sqlite_engine_config_no_pgbouncer_tweaks():
     assert engine_kwargs.get("pool_pre_ping") is True
 
 
-def test_bad_db_url_fails_open_to_jsonfile(tmp_path, monkeypatch):
-    """DB 初始化失败（无法解析的连接串）时 fail-open 落回 JSON 文件，不崩。"""
+def test_bad_db_url_fails_open_to_local_sqlite(tmp_path, monkeypatch):
+    """远端初始化失败（无法解析的连接串）时降到本地 SQLite，不崩。"""
     monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", "not-a-valid-url://xxx")
     monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    monkeypatch.setattr(
+        store.settings, "APP_STORE_LOCAL_SQLITE", f"sqlite:///{tmp_path / 'local.db'}"
+    )
+    store.reset_backend_cache()
+    assert type(store.get_backend()).__name__ == "SqlAppStore"
+    app_id = store.save_app(_model("咖营通"))
+    assert store.get_app(app_id) is not None
+    store.reset_backend_cache()
+
+
+def test_bad_db_url_and_no_local_falls_open_to_jsonfile(tmp_path, monkeypatch):
+    """远端挂 + 本地库禁用 → 最后一档 JSON。任何一级失败都不抛给调用方。"""
+    monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", "not-a-valid-url://xxx")
+    monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    monkeypatch.setattr(store.settings, "APP_STORE_LOCAL_SQLITE", "")
     store.reset_backend_cache()
     assert type(store.get_backend()).__name__ == "JsonFileAppStore"
-    # 仍能正常存取（走了兜底）
     app_id = store.save_app(_model("咖营通"))
     assert store.get_app(app_id) is not None
     store.reset_backend_cache()

@@ -65,6 +65,12 @@ export interface AppPageChartSchema {
   metricFieldId?: string;
   /** 指标展示名（count → "数量"；sum → 字段名） */
   metricLabel: string;
+  /**
+   * 维度字段是 enum 时的取值声明（已归一化）。图例/轴类目照这个把存进行里的
+   * 取值 id 换成中文 label——不给的话环图图例直接写 `refunded` `unpaid`，
+   * 那是模型内部的标识符，不是给用户看的词。非 enum 维度不给。
+   */
+  dimensionOptions?: NormalizedFieldOption[];
 }
 
 /**
@@ -217,7 +223,19 @@ export interface AppPageSchema {
    * 有就优先渲染，生成失败/未声明时 AppRuntimeScreen 回退固定的
    * stats/charts/rankings/feeds 骨架，不是互相替代关系。原样透传不做
    * 类型收窄（跟 identity.generatedTheme 同一个"渲染器内部再校验"套路）。 */
-  freeformOverview?: { root: Record<string, unknown> };
+  /**
+   * 总览页的 AI 设计版式。默认那份按 appbundle.preferredDevice 生成
+   * （通常是桌面），`mobile` 是手机档的覆盖（2026-07-29 起 Python 侧会
+   * 多设计一版单列的）。
+   *
+   * 形状照 react-grid-layout 的 `layouts={{lg,md,sm}}`：同一份内容、每档
+   * 一份布局，取用时"有本档用本档、没有就往更大的档回退"。老快照只有 root，
+   * 手机自动回退到它——与 RGL 的回退语义一致。
+   */
+  freeformOverview?: {
+    root: Record<string, unknown>;
+    mobile?: { root: Record<string, unknown> };
+  };
 }
 
 /** Step 7：页面布局 5 槽位——每个槽位是有序区块 id 列表；mobile 为手机端覆盖。 */
@@ -355,6 +373,25 @@ export const LAYOUT_SLOT_KEYS = [
 ] as const;
 type LayoutSlotKey = (typeof LAYOUT_SLOT_KEYS)[number];
 
+/**
+ * 槽位表偶发被模型多包一层 `slots`（`layout: { slots: { summary: [...] } }`）。
+ * 生成侧的 prompt 和 Gate 都已经按"摊平"来管了，但**已经落库的模型改不动**，
+ * 而这层包装漏过来的后果是静默的：5 个槽位一个都读不到 → hasAny=false →
+ * deriveLayout 返回 null → 渲染层判定为"没声明 layout"退回顺序平铺，模型的
+ * 排版意图全丢，页面照常渲染、没有任何报错。
+ *
+ * 解包的判定是确定的，不是猜：`slots` 不在合法槽位名里，而合法槽位的值是
+ * 数组、这里是对象——两条同时成立时不存在别的解释。
+ */
+function unwrapNestedSlots(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const nested = (raw as Record<string, unknown>).slots;
+  if (!nested || typeof nested !== "object" || Array.isArray(nested)) return raw;
+  const hasRealSlot = LAYOUT_SLOT_KEYS.some(k => Array.isArray((raw as Record<string, unknown>)[k]));
+  // 外层已经有真槽位时以外层为准，不拿包装层去覆盖它。
+  return hasRealSlot ? raw : { ...(raw as Record<string, unknown>), ...nested };
+}
+
 function normalizeLayoutSlotMap(
   raw: unknown,
   validBlockIds: Set<string>
@@ -383,10 +420,11 @@ function deriveLayout(
     experienceBlocks.filter(b => !b._fromLegacy).map(b => b.id)
   );
   if (directIds.size === 0) return null;
-  const slots = normalizeLayoutSlotMap(rawLayout, directIds);
-  const mobileRaw = (rawLayout as Record<string, unknown>).mobile;
+  const layout = unwrapNestedSlots(rawLayout);
+  const slots = normalizeLayoutSlotMap(layout, directIds);
+  const mobileRaw = (layout as Record<string, unknown>).mobile;
   const mobile = mobileRaw
-    ? normalizeLayoutSlotMap(mobileRaw, directIds)
+    ? normalizeLayoutSlotMap(unwrapNestedSlots(mobileRaw), directIds)
     : undefined;
   const hasAny = LAYOUT_SLOT_KEYS.some(k => slots[k].length > 0);
   if (!hasAny) return null;
@@ -524,6 +562,7 @@ export function deriveAppRuntimeSchema(
         metricLabel = mField.name || mField.id;
       }
       const rawType = String(chart.type ?? "bar");
+      const dimensionOptions = normalizeFieldOptions(dimField.type, dimField.options);
       charts.push({
         id: chart.id || `chart-${id}-${ci}`,
         label: chart.name || chart.id || `图表 ${ci + 1}`,
@@ -537,6 +576,7 @@ export function deriveAppRuntimeSchema(
         metric,
         metricFieldId,
         metricLabel,
+        ...(dimensionOptions.length > 0 ? { dimensionOptions } : {}),
       });
     }
 
@@ -827,62 +867,4 @@ export function deriveAppRuntimeSchema(
     ],
     pages: pageSchemas,
   };
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Phase B：预览种子数据（确定性、只读、仅供展示，绝不写入正式存储）
-// ─────────────────────────────────────────────────────────────────
-
-export interface PreviewSeedRow {
-  __previewSeed: true;
-  id: string;
-  values: Record<string, unknown>;
-}
-
-/**
- * 根据实体字段类型确定性生成 N 条预览行。
- * 输入相同参数输出完全相同，不依赖随机数。
- */
-export function generatePreviewSeedRows(
-  entity: { id: string; fields?: Array<{ id: string; type?: string; options?: string[] }> },
-  count = 6
-): PreviewSeedRow[] {
-  const fields = entity.fields ?? [];
-  return Array.from({ length: count }, (_, i): PreviewSeedRow => {
-    const values: Record<string, unknown> = {};
-    for (const field of fields) {
-      const type = field.type ?? "text";
-      const seed = (field.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0) + i * 7) % 97;
-      if (type === "number") {
-        values[field.id] = Math.round(seed * 15.3 + 12);
-      } else if (type === "date") {
-        const d = new Date(2026, 3, 1 + (i * 4) % 28);
-        values[field.id] = d.toISOString().slice(0, 10);
-      } else if (type === "enum" && field.options?.length) {
-        values[field.id] = field.options[i % field.options.length];
-      } else if (type === "boolean") {
-        values[field.id] = i % 3 !== 0;
-      } else {
-        values[field.id] = `示例 ${i + 1}`;
-      }
-    }
-    return { __previewSeed: true, id: `preview-${entity.id}-${i + 1}`, values };
-  });
-}
-
-/**
- * 对预览行计算指标值（与 pageStatValue 同逻辑，用于确认非零）。
- */
-export function computePreviewStat(
-  metric: string,
-  metricFieldId: string | null | undefined,
-  rows: PreviewSeedRow[]
-): number {
-  if (metric === "count") return rows.length;
-  const nums = rows
-    .map(r => Number(r.values[metricFieldId ?? ""]))
-    .filter(n => Number.isFinite(n) && n > 0);
-  if (metric === "sum") return nums.reduce((a, b) => a + b, 0) || rows.length * 42;
-  if (nums.length > 0) return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
-  return rows.length * 7;
 }

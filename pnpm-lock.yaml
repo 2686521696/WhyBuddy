@@ -198,6 +198,9 @@ importers:
       dagre:
         specifier: ^0.8.5
         version: 0.8.5
+      dayjs:
+        specifier: 1.11.21
+        version: 1.11.21
       dockerode:
         specifier: ^4.0.12
         version: 4.0.12
@@ -234,6 +237,9 @@ importers:
       mammoth:
         specifier: ^1.12.0
         version: 1.12.0
+      masonic:
+        specifier: ^4.1.0
+        version: 4.1.0(react@19.2.1)
       mermaid:
         specifier: 11.16.0
         version: 11.16.0
@@ -252,6 +258,9 @@ importers:
       pdfjs-dist:
         specifier: ^5.7.284
         version: 5.7.284
+      pure-rand:
+        specifier: ^8.4.2
+        version: 8.4.2
       react:
         specifier: ^19.2.1
         version: 19.2.1
@@ -1092,6 +1101,18 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@essentials/memoize-one@1.1.0':
+    resolution: {integrity: sha512-HMkuIkKNe0EWSUpZhlaq9+5Yp47YhrMhxLMnXTRnEyE5N4xKLspAvMGjUFdi794VnEF1EcOZFS8rdROeujrgag==}
+
+  '@essentials/one-key-map@1.2.0':
+    resolution: {integrity: sha512-C2H7zHVcsoipDv4VKY5uUcv5ilsK+uEgEj+WeOdN5oz/Qj1/OZIzCdle90gDzj0xnGQrmZ9qDujwD7AkBb5k9A==}
+
+  '@essentials/raf@1.2.0':
+    resolution: {integrity: sha512-AWJvpprE2o7ATMb7HBYMVUVmPJBCt2wZp2rY7d+rAcNSMvzLbDepy9KFeqqrPZh+s9aIpbw1LgmuAW7kuRFgrQ==}
+
+  '@essentials/request-timeout@1.3.0':
+    resolution: {integrity: sha512-lKZPhKScNFnR1MBnk4+sxshk46fpvdN+Uh1LlKWFO5g1ocuz4EcknNIL7tm/rsCAs/+xMWiBTwbDUvm+pDNlXw==}
 
   '@floating-ui/core@1.7.3':
     resolution: {integrity: sha512-sGnvb5dmrJaKEZ+LDIpguvdX3bDlEllmv4/ClQ9awcmCZrlx5jQyyMWFM5kBI+EyNOCDDiKk8il0zeuX3Zlg/w==}
@@ -2064,6 +2085,41 @@ packages:
     peerDependencies:
       react: '>=16.9.0'
       react-dom: '>=16.9.0'
+
+  '@react-hook/debounce@3.0.0':
+    resolution: {integrity: sha512-ir/kPrSfAzY12Gre0sOHkZ2rkEmM4fS5M5zFxCi4BnCeXh2nvx9Ujd+U4IGpKCuPA+EQD0pg1eK2NGLvfWejag==}
+    peerDependencies:
+      react: '>=16.8'
+
+  '@react-hook/event@1.2.6':
+    resolution: {integrity: sha512-JUL5IluaOdn5w5Afpe/puPa1rj8X6udMlQ9dt4hvMuKmTrBS1Ya6sb4sVgvfe2eU4yDuOfAhik8xhbcCekbg9Q==}
+    peerDependencies:
+      react: '>=16.8'
+
+  '@react-hook/latest@1.0.3':
+    resolution: {integrity: sha512-dy6duzl+JnAZcDbNTfmaP3xHiKtbXYOaz3G51MGVljh548Y8MWzTr+PHLOfvpypEVW9zwvl+VyKjbWKEVbV1Rg==}
+    peerDependencies:
+      react: '>=16.8'
+
+  '@react-hook/passive-layout-effect@1.2.1':
+    resolution: {integrity: sha512-IwEphTD75liO8g+6taS+4oqz+nnroocNfWVHWz7j+N+ZO2vYrc6PV1q7GQhuahL0IOR7JccFTsFKQ/mb6iZWAg==}
+    peerDependencies:
+      react: '>=16.8'
+
+  '@react-hook/throttle@2.2.0':
+    resolution: {integrity: sha512-LJ5eg+yMV8lXtqK3lR+OtOZ2WH/EfWvuiEEu0M3bhR7dZRfTyEJKxH1oK9uyBxiXPtWXiQggWbZirMCXam51tg==}
+    peerDependencies:
+      react: '>=16.8'
+
+  '@react-hook/window-scroll@1.3.0':
+    resolution: {integrity: sha512-LdYnCL22pFI+LTs85Fi2OQHSKWkzIuHFgv8lA+wwuaPxLOEhWR5bzJ21iygUH9X4meeLVRZKEbfpYi3OWWD4GQ==}
+    peerDependencies:
+      react: '>=16.8'
+
+  '@react-hook/window-size@3.1.1':
+    resolution: {integrity: sha512-yWnVS5LKnOUIrEsI44oz3bIIUYqflamPL27n+k/PC//PsX/YeWBky09oPeAoc9As6jSH16Wgo8plI+ECZaHk3g==}
+    peerDependencies:
+      react: '>=16.8'
 
   '@react-spring/animated@9.6.1':
     resolution: {integrity: sha512-ls/rJBrAqiAYozjLo5EPPLLOb1LM0lNVQcXODTC1SMtS6DbuBCPaKco5svFUQFMP2dso3O+qcC4k9FsKc0KxMQ==}
@@ -3281,9 +3337,6 @@ packages:
   date-fns@4.1.0:
     resolution: {integrity: sha512-Ukq0owbQXxa/U3EGtsdVBkR1w7KOQ5gIBqdH2hkvknzZPYvBxb/aa6E8L7tmjFtkwZBu3UXBbjIgPo/Ez4xaNg==}
 
-  dayjs@1.11.18:
-    resolution: {integrity: sha512-zFBQ7WFRvVRhKcWoUh+ZA1g2HVgUbsZm9sbddh8EC5iv93sui8DVVz1Npvz+r6meo9VKfa8NyLWBsQK1VvIKPA==}
-
   dayjs@1.11.21:
     resolution: {integrity: sha512-98IT+HOahAisibz/yjKbzuOBwYcjJ7BCLPzARyHiyEBmRz4fatF+KPJszEHXsGYjUG234aH/cOjW1wwTbKUZlA==}
 
@@ -4006,6 +4059,11 @@ packages:
     engines: {node: '>= 20'}
     hasBin: true
 
+  masonic@4.1.0:
+    resolution: {integrity: sha512-3RNbAG5qLve7qNtGp1UM/u7vI39jO73ZFHDBAg3xl8AVh7A6Ikx7I7mBeC0NY0h1r1jJn2Wqeol1QMa09MQbyQ==}
+    peerDependencies:
+      react: '>=16.8'
+
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
@@ -4453,8 +4511,8 @@ packages:
   pump@3.0.4:
     resolution: {integrity: sha512-VS7sjc6KR7e1ukRFhQSY5LM2uBWAUPiOPa/A3mkKmiMwSmRFUITt0xuj+/lesgnCv+dPIEYlkzrcyXgquIHMcA==}
 
-  pure-rand@8.4.0:
-    resolution: {integrity: sha512-IoM8YF/jY0hiugFo/wOWqfmarlE6J0wc6fDK1PhftMk7MGhVZl88sZimmqBBFomLOCSmcCCpsfj7wXASCpvK9A==}
+  pure-rand@8.4.2:
+    resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
 
   qs@6.15.3:
     resolution: {integrity: sha512-O9gl3zCl5h5blw1KGUzQKhA5oUXSl8rwUIM5o0S3nCXMliSvy5Dzx7/DJcI+SwgICv+IneSZwhBh1oSyEHA71A==}
@@ -4475,6 +4533,9 @@ packages:
         optional: true
       '@types/react-dom':
         optional: true
+
+  raf-schd@4.0.3:
+    resolution: {integrity: sha512-tQkJl2GRWh83ui2DiPTJz9wEiMN20syf+5oKfB03yYP7ioZcJwsIK8FjrtLwH1m7C7e+Tt2yYBlrOpdT+dyeIQ==}
 
   range-parser@1.2.1:
     resolution: {integrity: sha512-Hrgsx+orqoygnmhFbKaHE6c296J+HTAQXoxEF6gNupROmmGJRoyzfG3ccAveqCBrwr/2yxQ5BVd/GTl5agOwSg==}
@@ -5240,6 +5301,9 @@ packages:
 
   tr46@0.0.3:
     resolution: {integrity: sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==}
+
+  trie-memoize@1.2.0:
+    resolution: {integrity: sha512-hEDLVEP1FCgaRtt0oZDJdz2lK9uK7WlB7ASswt9U9cqruSNueVigtRGxI97hevKlViqhAcRgNgzuY/m8FCCMcg==}
 
   trim-lines@3.0.1:
     resolution: {integrity: sha512-kRj8B+YHZCc9kQYdWfJB2/oUl9rA99qbowYYBtr4ui4mZyAQ2JpvVBd/6U2YloATfqBhBTSMhTpgBHtU0Mf3Rg==}
@@ -6396,6 +6460,16 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
+  '@essentials/memoize-one@1.1.0': {}
+
+  '@essentials/one-key-map@1.2.0': {}
+
+  '@essentials/raf@1.2.0': {}
+
+  '@essentials/request-timeout@1.3.0':
+    dependencies:
+      '@essentials/raf': 1.2.0
+
   '@floating-ui/core@1.7.3':
     dependencies:
       '@floating-ui/utils': 0.2.10
@@ -7429,6 +7503,41 @@ snapshots:
       react: 19.2.1
       react-dom: 19.2.1(react@19.2.1)
 
+  '@react-hook/debounce@3.0.0(react@19.2.1)':
+    dependencies:
+      '@react-hook/latest': 1.0.3(react@19.2.1)
+      react: 19.2.1
+
+  '@react-hook/event@1.2.6(react@19.2.1)':
+    dependencies:
+      react: 19.2.1
+
+  '@react-hook/latest@1.0.3(react@19.2.1)':
+    dependencies:
+      react: 19.2.1
+
+  '@react-hook/passive-layout-effect@1.2.1(react@19.2.1)':
+    dependencies:
+      react: 19.2.1
+
+  '@react-hook/throttle@2.2.0(react@19.2.1)':
+    dependencies:
+      '@react-hook/latest': 1.0.3(react@19.2.1)
+      react: 19.2.1
+
+  '@react-hook/window-scroll@1.3.0(react@19.2.1)':
+    dependencies:
+      '@react-hook/event': 1.2.6(react@19.2.1)
+      '@react-hook/throttle': 2.2.0(react@19.2.1)
+      react: 19.2.1
+
+  '@react-hook/window-size@3.1.1(react@19.2.1)':
+    dependencies:
+      '@react-hook/debounce': 3.0.0(react@19.2.1)
+      '@react-hook/event': 1.2.6(react@19.2.1)
+      '@react-hook/throttle': 2.2.0(react@19.2.1)
+      react: 19.2.1
+
   '@react-spring/animated@9.6.1(react@19.2.1)':
     dependencies:
       '@react-spring/shared': 9.6.1(react@19.2.1)
@@ -8184,7 +8293,7 @@ snapshots:
     dependencies:
       '@babel/runtime': 7.28.4
       '@types/js-cookie': 3.0.6
-      dayjs: 1.11.18
+      dayjs: 1.11.21
       intersection-observer: 0.12.2
       js-cookie: 3.0.8
       lodash: 4.18.1
@@ -8220,7 +8329,7 @@ snapshots:
       antd-mobile-icons: 0.3.0
       antd-mobile-v5-count: 1.0.1
       classnames: 2.5.1
-      dayjs: 1.11.18
+      dayjs: 1.11.21
       deepmerge: 4.3.1
       nano-memoize: 3.0.16
       rc-field-form: 1.44.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -8251,7 +8360,7 @@ snapshots:
       '@rc-component/trigger': 2.3.1(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       classnames: 2.5.1
       copy-to-clipboard: 3.3.3
-      dayjs: 1.11.18
+      dayjs: 1.11.21
       rc-cascader: 3.34.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-checkbox: 3.5.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-collapse: 3.9.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -8267,7 +8376,7 @@ snapshots:
       rc-motion: 2.9.5(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-notification: 5.6.4(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-pagination: 5.1.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
-      rc-picker: 4.11.3(date-fns@4.1.0)(dayjs@1.11.18)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
+      rc-picker: 4.11.3(date-fns@4.1.0)(dayjs@1.11.21)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-progress: 4.0.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-rate: 2.13.1(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       rc-resize-observer: 1.4.3(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -8790,8 +8899,6 @@ snapshots:
 
   date-fns@4.1.0: {}
 
-  dayjs@1.11.18: {}
-
   dayjs@1.11.21: {}
 
   debug@2.6.9:
@@ -9091,7 +9198,7 @@ snapshots:
 
   fast-check@4.9.0:
     dependencies:
-      pure-rand: 8.4.0
+      pure-rand: 8.4.2
 
   fast-deep-equal@3.1.3: {}
 
@@ -9588,6 +9695,21 @@ snapshots:
   markdown-table@3.0.4: {}
 
   marked@16.4.1: {}
+
+  masonic@4.1.0(react@19.2.1):
+    dependencies:
+      '@essentials/memoize-one': 1.1.0
+      '@essentials/one-key-map': 1.2.0
+      '@essentials/request-timeout': 1.3.0
+      '@react-hook/event': 1.2.6(react@19.2.1)
+      '@react-hook/latest': 1.0.3(react@19.2.1)
+      '@react-hook/passive-layout-effect': 1.2.1(react@19.2.1)
+      '@react-hook/throttle': 2.2.0(react@19.2.1)
+      '@react-hook/window-scroll': 1.3.0(react@19.2.1)
+      '@react-hook/window-size': 3.1.1(react@19.2.1)
+      raf-schd: 4.0.3
+      react: 19.2.1
+      trie-memoize: 1.2.0
 
   math-intrinsics@1.1.0: {}
 
@@ -10262,7 +10384,7 @@ snapshots:
       end-of-stream: 1.4.5
       once: 1.4.0
 
-  pure-rand@8.4.0: {}
+  pure-rand@8.4.2: {}
 
   qs@6.15.3:
     dependencies:
@@ -10333,6 +10455,8 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.17
       '@types/react-dom': 19.2.3(@types/react@19.2.17)
+
+  raf-schd@4.0.3: {}
 
   range-parser@1.2.1: {}
 
@@ -10501,7 +10625,7 @@ snapshots:
       react: 19.2.1
       react-dom: 19.2.1(react@19.2.1)
 
-  rc-picker@4.11.3(date-fns@4.1.0)(dayjs@1.11.18)(react-dom@19.2.1(react@19.2.1))(react@19.2.1):
+  rc-picker@4.11.3(date-fns@4.1.0)(dayjs@1.11.21)(react-dom@19.2.1(react@19.2.1))(react@19.2.1):
     dependencies:
       '@babel/runtime': 7.28.4
       '@rc-component/trigger': 2.3.1(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -10513,7 +10637,7 @@ snapshots:
       react-dom: 19.2.1(react@19.2.1)
     optionalDependencies:
       date-fns: 4.1.0
-      dayjs: 1.11.18
+      dayjs: 1.11.21
 
   rc-progress@4.0.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1):
     dependencies:
@@ -11340,6 +11464,8 @@ snapshots:
   totalist@3.0.1: {}
 
   tr46@0.0.3: {}
+
+  trie-memoize@1.2.0: {}
 
   trim-lines@3.0.1: {}
 

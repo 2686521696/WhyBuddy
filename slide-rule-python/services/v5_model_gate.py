@@ -54,6 +54,7 @@ from .schema_legal import (  # noqa: F401 — re-export 即接口
     EXPERIENCE_BLOCK_BINDING_SCHEMAS,
     EXPERIENCE_BLOCK_TYPES,
     FIELD_TONES,
+    FIELD_TYPES,
     NUMBER_FORMATS,
     PAGE_KINDS,
     STAT_FORMATS,
@@ -105,6 +106,19 @@ def _validate_block_binding(
     区块类型不在合法域内时上层已经报过，这里直接跳过不重复报。"""
     schema = EXPERIENCE_BLOCK_BINDING_SCHEMAS.get(btype)
     if schema is None:
+        return
+
+    # 这类积木压根不吃 binding（QuickActionPanel / WorkflowTimeline）。塞了就
+    # 直说"它不该有 binding"，别让它掉到下面按 entityRef 悬挂去报——那条报错
+    # 说的是"实体找不到"，会把人引去查数据模型，而真正该做的是把整个 binding
+    # 删掉。freeform 的 BlockRef 深校验早就有这条规则，page.blocks 这边漏了。
+    if not schema.get("required") and not schema.get("optional") and binding:
+        findings.append(_finding(
+            PUBLISH_INVALID_FIELD, f"{block_path}.binding",
+            f"{btype} takes no binding; remove the binding object "
+            f"(got keys: {sorted(binding)})",
+            ref=btype, skill="page",
+        ))
         return
 
     entity_ref = str(binding.get("entityRef") or "").strip()
@@ -163,6 +177,44 @@ def _validate_block_binding(
                     f"{field} '{value}' must be a {expected_type} field (got '{field_types[qualified]}')",
                     ref=str(value), skill="page",
                 ))
+
+        # 数组型字段引用（ActivityFeed 宽行档的 detailFieldRefs）：逐个落到同
+        # 一实体上。写成非数组、或超出 maxItems 都拦——渲染端只能画声明得清楚
+        # 的列，模糊的声明到了运行时只能猜，猜出来的列是编的。
+        for field, spec in (schema.get("entityFieldRefLists") or {}).items():
+            value = binding.get(field)
+            if value is None:
+                continue
+            if not isinstance(value, list):
+                findings.append(_finding(
+                    PUBLISH_INVALID_FIELD, f"{block_path}.binding.{field}",
+                    f"{field} must be an array of field ids, got '{value}'",
+                    ref=str(value), skill="page",
+                ))
+                continue
+            max_items = spec.get("maxItems")
+            if max_items and len(value) > max_items:
+                findings.append(_finding(
+                    PUBLISH_INVALID_FIELD, f"{block_path}.binding.{field}",
+                    f"{field} accepts at most {max_items} field(s), got {len(value)}",
+                    ref=str(len(value)), skill="page",
+                ))
+            want_type = spec.get("fieldType")
+            for field_ref in value:
+                qualified = f"{entity_ref}.{field_ref}"
+                if qualified not in field_types:
+                    findings.append(_finding(
+                        DANGLING, f"{block_path}.binding.{field}",
+                        f"{field} '{field_ref}' not found in entity '{entity_ref}' fields",
+                        ref=str(field_ref), skill="page",
+                    ))
+                elif want_type and field_types[qualified] != want_type:
+                    findings.append(_finding(
+                        DANGLING, f"{block_path}.binding.{field}",
+                        f"{field} '{field_ref}' must be a {want_type} field "
+                        f"(got '{field_types[qualified]}')",
+                        ref=str(field_ref), skill="page",
+                    ))
 
         for field in schema.get("aggregateFields", []):
             value = binding.get(field)
@@ -371,6 +423,25 @@ def validate_five_system_model(
             fid = fd.get("id") or fd.get("name") or "<unnamed>"
             fpath = f"datamodel.entities[{eid}].fields[{fid}]"
             ftype = str(fd.get("type") or "string").strip().lower()
+            # 字段类型必须落在封闭合法域内。
+            #
+            # 这条以前是漏的：FIELD_TYPES 只在技能 binding 那里用过，实体字段的
+            # type 一路没人查。实测喂 boolean/datetime/file 三个进来，findings
+            # 一条都没有、全放行——所谓"合法域"其实只是 prompt 里的一句约定。
+            #
+            # 漏掉的代价不是"模型写错了没人说"，而是**静默降级**：前端
+            # field-value-type 对认不出的类型一律 `return "text"`，于是一个
+            # `file` 字段会安安静静变成普通文本输入框。用户以为这儿能传附件，
+            # 实际只能打字；不报错、不提示，测试也全绿。
+            #
+            # 缺省不罚（上面 `or "string"`）：老模型不写 type 的照旧当 string，
+            # 与本段"出现即校验、缺省不罚"的口径一致。
+            if fd.get("type") is not None and ftype not in FIELD_TYPES:
+                findings.append(_finding(
+                    PUBLISH_ENUM_VIOLATION, f"{fpath}.type",
+                    f"field type '{ftype}' is not one of {'/'.join(FIELD_TYPES)}",
+                    ref=ftype, skill="datamodel",
+                ))
             if "options" in fd:
                 if ftype != "enum":
                     findings.append(_finding(
@@ -956,6 +1027,20 @@ def validate_five_system_model(
         layout_page = f"page.pages[{pd.get('id') or pi}].layout"
         for slot_key, block_refs in layout.items():
             if slot_key == "mobile":
+                continue
+            # 槽位表被多包了一层 `slots`。真跑撞过一次 6/6 页全中：prompt 里
+            # 那句 "a layout object with slots summary/primary/..." 会被读成
+            # "有个叫 slots 的键"（跟 binding=none 是同一类哨兵词事故）。
+            # 泛化的 "slot 'slots' 不合法" 那条不足以让 reask 知道要怎么改，
+            # 这里直接说"把它摊平"。识别是确定的：slots 不是合法槽位名，且
+            # 合法槽位的值是数组、这里是对象。
+            if slot_key == "slots" and isinstance(block_refs, dict):
+                findings.append(_finding(
+                    DANGLING, f"{layout_page}.slots",
+                    "layout slot map must not be nested under a 'slots' key; hoist its "
+                    'entries onto layout itself (layout: {"summary": [...], "content": [...]})',
+                    ref=slot_key, skill="page",
+                ))
                 continue
             if slot_key not in LAYOUT_SLOTS:
                 findings.append(_finding(

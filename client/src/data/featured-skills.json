@@ -1,902 +1,733 @@
 {
   "source": "TRAE 官方技能市场精选（用户提供清单，2026-07-09）",
-  "note": "官方/大厂出品的开源 Skill，安装后按语义档案（名称+描述）驱动本产品 LLM 通道试跑",
+  "note": "官方/大厂出品的开源 Skill，安装后按语义档案（名称+描述）驱动本产品 LLM 通道试跑 ｜ 2026-07-27：下架 18 条开发者工具类技能（部署/CLI/Git/技术栈规范/MCP 开发），并给每条标注消费通道 channel——aigc=能绑到真实实体字段、experience=生成期设计指导走体验层。依据 docs/skills-triage.jsonl。 另下架 31 条 unbound（开发者/Agent 工具、本地硬件工具、开发流程辅助）：装了不产出任何东西，只在 prompt 里留一句软参考，占着精选位却帮不上用户。",
   "items": [
-    {
-      "id": "alipay-payment-integration",
-      "name": "alipay-payment-integration",
-      "description": "支付宝支付产品接入最佳实践指南，涵盖从线下到线上的全场景支付。",
-      "author": "Alipay",
-      "category": "开发工具"
-    },
-    {
-      "id": "byted-bp-cdn-pagesdeploy",
-      "name": "byted-bp-cdn-pagesdeploy",
-      "description": "一键部署静态网站至 BytePlus Edge Pages 平台。支持项目自动创建、版本更新部署、自定义域名绑定及 CDN 全球加速。同时为暂无 BytePlus 账号的新用户提供完善的引导式上手教程。",
-      "author": "BytePlus CDN Pages",
-      "category": "开发工具"
-    },
-    {
-      "id": "composition-patterns",
-      "name": "composition-patterns",
-      "description": "使用组合模式设计可扩展的 React 组件架构，涵盖复合组件、render props 和 context，包含 React 19 更新。",
-      "author": "Vercel",
-      "category": "开发工具"
-    },
-    {
-      "id": "douyin-interact-creation",
-      "name": "douyin-interact-creation",
-      "description": "辅助创作符合平台标准的互动空间作品，保证产物可顺利上传以及在抖音的运行效果。",
-      "author": "Douyin",
-      "category": "开发工具"
-    },
-    {
-      "id": "douyin-interactive-content-publish",
-      "name": "douyin-interactive-content-publish",
-      "description": "Supports the full publishing workflow of interactive space creations on Douyin, with automatic configuration parsing and completion upon user confirmation for simplified operation.",
-      "author": "Douyin",
-      "category": "开发工具"
-    },
-    {
-      "id": "douyinpay-payment-integration",
-      "name": "douyinpay-payment-integration",
-      "description": "抖音支付接入集成 Skill 是面向商户与开发者的端到端接入助手，支持在 AI IDE / AI Agent 场景下，通过自然语言完成抖音支付的产品选型、接入准备梳理、服务端及客户端 SDK 集成与关键代码生成，并提供签名验签、回调处理、错误码排查与上线前自检等能力。",
-      "author": "Douyin Pay",
-      "category": "开发工具"
-    },
     {
       "id": "frontend-design",
       "name": "frontend-design",
       "description": "构建具有独特风格、生产级质量的前端界面，避免千篇一律的 AI 审美。",
       "author": "Anthropic",
-      "category": "界面设计"
-    },
-    {
-      "id": "gh-cli",
-      "name": "gh-cli",
-      "description": "GitHub CLI（gh）的全面参考指南，涵盖仓库、Issue、Pull Request、Actions、项目、发布等命令行操作。",
-      "author": "Github",
-      "category": "开发工具"
-    },
-    {
-      "id": "git-commit",
-      "name": "git-commit",
-      "description": "执行 Git 提交，支持智能暂存、自动检测规范提交信息生成，以及类型、范围和描述的自定义覆盖。",
-      "author": "Github",
-      "category": "开发工具"
-    },
-    {
-      "id": "iga-pages",
-      "name": "iga-pages",
-      "description": "一键部署前端网页、全栈项目和 AI Agent 应用，支持应用云端发布与可分享的在线预览链接生成。",
-      "author": "火山引擎IGA产品",
-      "category": "开发工具"
-    },
-    {
-      "id": "mcp-builder",
-      "name": "mcp-builder",
-      "description": "构建高质量 MCP 服务器的指南，将 LLM 与外部 API 和服务连接。",
-      "author": "Anthropic",
-      "category": "开发工具"
-    },
-    {
-      "id": "react-best-practices",
-      "name": "react-best-practices",
-      "description": "在编写、审查或重构代码时，应用 Vercel Engineering 的 React 和 Next.js 性能优化规范。",
-      "author": "Vercel",
-      "category": "开发工具"
-    },
-    {
-      "id": "react-native-skills",
-      "name": "react-native-skills",
-      "description": "应用 React Native 和 Expo 最佳实践构建高性能移动应用，涵盖动画、列表优化和原生平台 API。",
-      "author": "Vercel",
-      "category": "开发工具"
-    },
-    {
-      "id": "redis-development",
-      "name": "redis-development",
-      "description": "应用 Redis 最佳实践与性能优化，涵盖数据结构、向量搜索（RedisVL）、语义缓存（LangCache）和 Redis Query Engine。",
-      "author": "Redis",
-      "category": "开发工具"
-    },
-    {
-      "id": "security-best-practices",
-      "name": "security-best-practices",
-      "description": "针对 Python、JavaScript/TypeScript 和 Go 进行安全最佳实践审查并提供改进建议。",
-      "author": "OpenAI",
-      "category": "开发工具"
-    },
-    {
-      "id": "web-artifacts-builder",
-      "name": "web-artifacts-builder",
-      "description": "使用 React、Tailwind CSS 和 shadcn/ui 构建复杂的多组件 HTML，适用于需要状态管理或路由的项目。",
-      "author": "Anthropic",
-      "category": "开发工具"
-    },
-    {
-      "id": "webapp-testing",
-      "name": "webapp-testing",
-      "description": "使用 Playwright 对本地 Web 应用进行测试与调试，支持截图和浏览器日志查看。",
-      "author": "Anthropic",
-      "category": "开发工具"
+      "category": "界面设计",
+      "channel": "experience"
     },
     {
       "id": "chart-visualization",
       "name": "chart-visualization",
       "description": "从 26 种图表类型中智能选择最适合的方案，根据详细规格生成图表图像。",
       "author": "Bytedance",
-      "category": "数据分析"
+      "category": "数据分析",
+      "channel": "experience"
     },
     {
       "id": "consulting-analysis",
       "name": "consulting-analysis",
       "description": "分两阶段生成咨询级研究报告：先输出结构化分析框架，再生成含叙述、图表和战略洞察的完整报告。",
       "author": "Bytedance",
-      "category": "数据分析"
-    },
-    {
-      "id": "data-analysis",
-      "name": "data-analysis",
-      "description": "分析 Excel 和 CSV 文件，支持多工作表、聚合、过滤、关联查询及导出为 CSV/JSON/Markdown。",
-      "author": "Bytedance",
-      "category": "数据分析"
+      "category": "数据分析",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text"
+        ],
+        "outputType": "text"
+      }
     },
     {
       "id": "hook-analyzer-skill",
       "name": "hook-analyzer-skill",
       "description": "从视频分镜拆解结果中提取前三秒数据，为钩子吸引力评估提供结构化分析。",
       "author": "Bytedance",
-      "category": "数据分析"
+      "category": "数据分析",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text"
+        ],
+        "outputType": "text"
+      }
     },
     {
       "id": "report-generator-skill",
       "name": "report-generator-skill",
       "description": "整合分镜拆解数据与钩子分析结果，生成专业的 Markdown 格式视频分析报告。",
       "author": "Bytedance",
-      "category": "数据分析"
+      "category": "数据分析",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text",
+          "text"
+        ],
+        "outputType": "text"
+      }
     },
     {
       "id": "algorithmic-art",
       "name": "algorithmic-art",
       "description": "使用 p5.js 创作原创算法艺术，支持种子随机、交互参数、流场和粒子系统。",
       "author": "Anthropic",
-      "category": "界面设计"
+      "category": "界面设计",
+      "channel": "experience"
     },
     {
       "id": "brand-guidelines",
       "name": "brand-guidelines",
       "description": "将 Anthropic 官方品牌色彩和字体规范应用于任意 Artifact，确保视觉风格一致。",
       "author": "Anthropic",
-      "category": "界面设计"
+      "category": "界面设计",
+      "channel": "experience"
     },
     {
       "id": "figma",
       "name": "figma",
       "description": "通过 MCP 获取 Figma 设计上下文、截图、变量和资源，并将 Figma 节点转译为生产代码。",
       "author": "Figma",
-      "category": "界面设计"
+      "category": "界面设计",
+      "channel": "experience"
     },
     {
       "id": "frontend-skill",
       "name": "frontend-skill",
       "description": "构建视觉冲击力强的落地页、应用、原型和游戏界面，注重克制的排版、图像主导的层级和精致的动效。",
       "author": "OpenAI",
-      "category": "界面设计"
+      "category": "界面设计",
+      "channel": "experience"
     },
     {
       "id": "shadcn",
       "name": "shadcn",
       "description": "管理 shadcn/ui 组件与项目，支持添加、搜索、修复、样式调整和 UI 组合，提供完整组件文档和使用示例。",
       "author": "shadcn",
-      "category": "界面设计"
+      "category": "界面设计",
+      "channel": "experience"
     },
     {
       "id": "theme-factory",
       "name": "theme-factory",
       "description": "为幻灯片、文档、报告和 HTML 落地页应用 10 种预设主题或实时生成自定义主题。",
       "author": "Anthropic",
-      "category": "界面设计"
+      "category": "界面设计",
+      "channel": "experience"
     },
     {
       "id": "web-design-guidelines",
       "name": "web-design-guidelines",
       "description": "审查 UI 代码是否符合 Web 界面规范，涵盖无障碍访问、设计质量和 UX 最佳实践。",
       "author": "Vercel",
-      "category": "界面设计"
+      "category": "界面设计",
+      "channel": "experience"
     },
     {
       "id": "byted-seedance-video-generate",
       "name": "byted-seedance-video-generate",
       "description": "使用 Seedance 模型从文字提示、图像或参考素材生成视频。",
       "author": "Bytedance",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text"
+        ],
+        "outputType": "string"
+      }
     },
     {
       "id": "byted-seedream-image-generate",
       "name": "byted-seedream-image-generate",
       "description": "使用火山引擎 Seedream 模型从文字描述生成高质量图像，支持多种艺术风格和宽高比。",
       "author": "Bytedance",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text"
+        ],
+        "outputType": "string"
+      }
     },
     {
       "id": "canvas-design",
       "name": "canvas-design",
       "description": "运用设计理念创作原创视觉艺术、海报和设计作品，输出为 .png 或 .pdf，不复制任何现有艺术家的作品。",
       "author": "Anthropic",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "experience"
     },
     {
       "id": "dashboard-page",
       "name": "dashboard-page",
       "description": "Build stable local/offline ECharts dashboards with KPI panels, time controls, auditable source modals, freshness indicators, and automation-ready daily snapshots.",
       "author": "TRAE",
-      "category": "内容创作"
-    },
-    {
-      "id": "defuddle",
-      "name": "defuddle",
-      "description": "使用 Defuddle CLI 从网页提取干净的 Markdown 内容，去除冗余元素以节省 Token。",
-      "author": "Obsidian",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "experience"
     },
     {
       "id": "doc-coauthoring",
       "name": "doc-coauthoring",
       "description": "引导用户通过结构化协作流程撰写文档、提案、技术规格和决策文档。",
       "author": "Anthropic",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text"
+        ],
+        "outputType": "text"
+      }
     },
     {
       "id": "doc-page",
       "name": "doc-page",
       "description": "Create polished printable document pages for reports, forms, schedules, resumes, memos, and records, with clean A4 layout and optional PDF or DOCX export when needed.",
       "author": "TRAE",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "experience"
     },
     {
       "id": "gsap",
       "name": "gsap",
       "description": "在 HyperFrames 中编写 GSAP 动画和时间轴，所有动画通过 window.__timelines 注册，由框架统一控制 seek。",
       "author": "Heygen",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "experience"
     },
     {
       "id": "hyperframes",
       "name": "hyperframes",
       "description": "HyperFrames 核心技能，负责编写 HTML 视频 composition，涵盖时间轴、clip 结构、动画、字幕、转场、音频驱动视觉，以及所有渲染适配器（Three.js、Lottie、Anime.js、WebGPU 等）。",
       "author": "Heygen",
-      "category": "内容创作"
-    },
-    {
-      "id": "hyperframes-cli",
-      "name": "hyperframes-cli",
-      "description": "HyperFrames 命令行工具，用于项目初始化、语法校验、预览和最终渲染导出。",
-      "author": "Heygen",
-      "category": "内容创作"
-    },
-    {
-      "id": "hyperframes-media",
-      "name": "hyperframes-media",
-      "description": "视频资产预处理，包括用 Kokoro 生成 TTS 旁白音频、用 Whisper 转录字幕、用 u2net 去除视频或图片背景。",
-      "author": "Heygen",
-      "category": "内容创作"
-    },
-    {
-      "id": "hyperframes-registry",
-      "name": "hyperframes-registry",
-      "description": "通过 hyperframes add 安装并接入官方预制的 block 和 component，快速复用标准化视觉模块。",
-      "author": "Heygen",
-      "category": "内容创作"
-    },
-    {
-      "id": "json-canvas",
-      "name": "json-canvas",
-      "description": "创建和编辑包含节点、边、分组和连接的 JSON Canvas 文件，用于可视化画布和思维导图。",
-      "author": "Obsidian",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "experience"
     },
     {
       "id": "knowledge-capture",
       "name": "knowledge-capture",
       "description": "将对话和讨论转化为结构化的 Notion 文档页面，并有序保存至 Wiki 或数据库，便于检索。",
       "author": "Notion",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text"
+        ],
+        "outputType": "text"
+      }
     },
     {
       "id": "meeting-intelligence",
       "name": "meeting-intelligence",
       "description": "从 Notion 收集背景资料并补充研究内容，生成内部预读文档和外部议程，保存至 Notion。",
       "author": "Notion",
-      "category": "内容创作"
-    },
-    {
-      "id": "notion-cli",
-      "name": "notion-cli",
-      "description": "通过 ntn CLI 调用 Notion API，管理 Worker、上传文件、创建页面和查询数据库。",
-      "author": "Notion",
-      "category": "内容创作"
-    },
-    {
-      "id": "obsidian-bases",
-      "name": "obsidian-bases",
-      "description": "创建和编辑 Obsidian Bases（.base 文件），支持视图、过滤、公式和摘要，实现类数据库的笔记管理。",
-      "author": "Obsidian",
-      "category": "内容创作"
-    },
-    {
-      "id": "obsidian-cli",
-      "name": "obsidian-cli",
-      "description": "通过 CLI 与 Obsidian Vault 交互，支持笔记读写、搜索、任务管理，以及插件和主题的开发调试。",
-      "author": "Obsidian",
-      "category": "内容创作"
-    },
-    {
-      "id": "obsidian-markdown",
-      "name": "obsidian-markdown",
-      "description": "编写和编辑 Obsidian 风格的 Markdown，支持 wikilinks、嵌入、callout、属性等 Obsidian 专有语法。",
-      "author": "Obsidian",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text",
+          "text"
+        ],
+        "outputType": "text"
+      }
     },
     {
       "id": "ppt-page",
       "name": "ppt-page",
       "description": "Create polished scrollable HTML presentation pages from outlines, articles, screenshots, or deck content, with slide cards, captions, fullscreen review, validation, and optional PPTX/PDF export on request.",
       "author": "TRAE",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "experience"
     },
     {
       "id": "report-page",
       "name": "report-page",
       "description": "Create source-backed static HTML reports, memos, research notes, operating updates, and data interpretation pages with readable structure, tables, images, diagrams, and optional ECharts figures.",
       "author": "TRAE",
-      "category": "内容创作"
-    },
-    {
-      "id": "research-documentation",
-      "name": "research-documentation",
-      "description": "搜索整个 Notion 工作区，整合研究结果，并将综合报告保存为新的 Notion 页面。",
-      "author": "Notion",
-      "category": "内容创作"
+      "category": "内容创作",
+      "channel": "experience"
     },
     {
       "id": "slides",
       "name": "slides",
       "description": "使用布局辅助和验证工具构建与编辑 PowerPoint 演示文稿（.pptx），支持图表、视觉元素及布局问题诊断。",
       "author": "OpenAI",
-      "category": "内容创作"
-    },
-    {
-      "id": "spec-to-implementation",
-      "name": "spec-to-implementation",
-      "description": "将产品或技术规格拆解为带验收标准和进度追踪的详细 Notion 实施任务。",
-      "author": "Notion",
-      "category": "内容创作"
-    },
-    {
-      "id": "agent-browser",
-      "name": "agent-browser",
-      "description": "为 AI Agent 提供浏览器自动化 CLI，支持页面导航、表单填写、按钮点击、数据抓取和 Web 应用测试。",
-      "author": "Vercel",
-      "category": "效率提升"
-    },
-    {
-      "id": "brainstorming",
-      "name": "brainstorming",
-      "description": "在任何创作、功能开发或行为修改前，先探索用户意图、需求和设计方向。",
-      "author": "obra",
-      "category": "效率提升"
-    },
-    {
-      "id": "dogfood",
-      "name": "dogfood",
-      "description": "系统化地对 Web 应用进行内部试用和质量测试，输出含截图、复现视频和详细步骤的结构化缺陷报告。",
-      "author": "Vercel",
-      "category": "效率提升"
-    },
-    {
-      "id": "electron",
-      "name": "electron",
-      "description": "通过 Chrome DevTools Protocol 使用 agent-browser 自动化 Electron 桌面应用（VS Code、Slack、Discord、Figma 等）。",
-      "author": "Vercel",
-      "category": "效率提升"
-    },
-    {
-      "id": "executing-plans",
-      "name": "executing-plans",
-      "description": "在独立会话中按书面实施计划执行，并设有结构化的阶段审查节点。",
-      "author": "obra",
-      "category": "效率提升"
+      "category": "内容创作",
+      "channel": "experience"
     },
     {
       "id": "internal-comms",
       "name": "internal-comms",
       "description": "按公司偏好格式撰写内部沟通材料，涵盖状态报告、领导层更新、通讯、事故报告和 FAQ。",
       "author": "Anthropic",
-      "category": "效率提升"
+      "category": "效率提升",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text"
+        ],
+        "outputType": "text"
+      }
     },
     {
       "id": "local-asr",
       "name": "local-asr",
       "description": "Zero-cost voice-to-text translation based on local AI large model (Intel AIPC Platform Only)",
       "author": "GitHub",
-      "category": "效率提升"
-    },
-    {
-      "id": "local-computer-use",
-      "name": "local-computer-use",
-      "description": "Utilize local computing power to control your Windows system (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升"
-    },
-    {
-      "id": "local-img2img",
-      "name": "local-img2img",
-      "description": "Image modification based on local AI large model (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升"
-    },
-    {
-      "id": "local-mineru",
-      "name": "local-mineru",
-      "description": "Document parsing of PDFs and images based on local AI large model (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升"
+      "category": "效率提升",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "string"
+        ],
+        "outputType": "text"
+      }
     },
     {
       "id": "local-ocr-npu",
       "name": "local-ocr-npu",
       "description": "High-speed text extraction from images using local Intel NPU computing power (Support for mixing Chinese and English)",
       "author": "GitHub",
-      "category": "效率提升"
-    },
-    {
-      "id": "local-realtime-translator",
-      "name": "local-realtime-translator",
-      "description": "Real-time translation between Chinese and English based on local AI large model (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升"
-    },
-    {
-      "id": "local-screenshot-qa",
-      "name": "local-screenshot-qa",
-      "description": "Image understanding and answering image-related questions based on local AI large model (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升"
+      "category": "效率提升",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "string"
+        ],
+        "outputType": "text"
+      }
     },
     {
       "id": "local-tts",
       "name": "local-tts",
       "description": "Text-to-speech conversion with cloned accents such as Northeastern and Sichuanese dialects based on local AI large model (Intel AIPC Platform Only)",
       "author": "GitHub",
-      "category": "效率提升"
-    },
-    {
-      "id": "local-txt2img",
-      "name": "local-txt2img",
-      "description": "Text-to-image generation based on local AI large model (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升"
-    },
-    {
-      "id": "local-vram",
-      "name": "local-vram",
-      "description": "Adjust the maximum limit of integrated graphics shared memory (Intel AIPC Platform Only)",
-      "author": "GitHub",
-      "category": "效率提升"
-    },
-    {
-      "id": "screenshot",
-      "name": "screenshot",
-      "description": "在工具级截图不可用时，对全屏、应用窗口或指定区域进行系统级截图。",
-      "author": "OpenAI",
-      "category": "效率提升"
-    },
-    {
-      "id": "test-driven-development",
-      "name": "test-driven-development",
-      "description": "在编写实现代码前，为功能开发或缺陷修复制定清晰的实施方案。",
-      "author": "obra",
-      "category": "效率提升"
-    },
-    {
-      "id": "writing-plans",
-      "name": "writing-plans",
-      "description": "在动手写代码前，将规格和多步骤需求拆解为结构化计划。",
-      "author": "obra",
-      "category": "效率提升"
+      "category": "效率提升",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text"
+        ],
+        "outputType": "string"
+      }
     },
     {
       "id": "color-palette-architect",
       "name": "color-palette-architect",
       "description": "根据业务气质与行业语义生成企业级配色方案:主色/辅助色/语义色/中性阶梯,附 WCAG AA 对比度校验与明暗双主题变量表。",
       "author": "WhyBuddy",
-      "category": "页面设计"
+      "category": "页面设计",
+      "channel": "experience"
     },
     {
       "id": "dashboard-composer",
       "name": "dashboard-composer",
       "description": "把一组 KPI、图表与列表编排成有主次的总览页:确定英雄指标、分组逻辑与视线动线,避免千篇一律的等宽网格。",
       "author": "WhyBuddy",
-      "category": "页面设计"
+      "category": "页面设计",
+      "channel": "experience"
     },
     {
       "id": "empty-state-designer",
       "name": "empty-state-designer",
       "description": "为列表/看板/搜索无结果等空态生成引导文案与下一步动作建议,把死胡同变成入口。",
       "author": "WhyBuddy",
-      "category": "页面设计"
+      "category": "页面设计",
+      "channel": "experience"
     },
     {
       "id": "form-flow-designer",
       "name": "form-flow-designer",
       "description": "把长表单拆成合理的分步/分组结构:字段排序、必填策略、行内校验时机与防丢失草稿建议。",
       "author": "WhyBuddy",
-      "category": "页面设计"
+      "category": "页面设计",
+      "channel": "experience"
     },
     {
       "id": "navigation-architect",
       "name": "navigation-architect",
       "description": "根据页面数量与角色职责推荐导航形态(侧栏/顶栏/分步)与菜单分组层级,给出信息架构树。",
       "author": "WhyBuddy",
-      "category": "页面设计"
+      "category": "页面设计",
+      "channel": "experience"
     },
     {
       "id": "card-hierarchy-designer",
       "name": "card-hierarchy-designer",
       "description": "设计卡片内部的信息层级:标题/核心数值/次要元数据/操作区的字号、字重与间距刻度建议。",
       "author": "WhyBuddy",
-      "category": "页面设计"
+      "category": "页面设计",
+      "channel": "experience"
     },
     {
       "id": "data-table-stylist",
       "name": "data-table-stylist",
       "description": "为数据表推荐列宽策略、对齐规则(文本左对齐/数字右对齐)、状态徽章用色与行密度档位。",
       "author": "WhyBuddy",
-      "category": "页面设计"
+      "category": "页面设计",
+      "channel": "experience"
     },
     {
       "id": "mobile-adaptation-advisor",
       "name": "mobile-adaptation-advisor",
       "description": "把桌面页面翻译成移动端范式:底部导航、单列布局、手势操作与触控目标尺寸检查。",
       "author": "WhyBuddy",
-      "category": "页面设计"
+      "category": "页面设计",
+      "channel": "experience"
     },
     {
       "id": "detail-page-composer",
       "name": "detail-page-composer",
       "description": "设计详情页的信息编排:概要头、关键字段分组、关联记录、操作按钮的主次与危险操作隔离。",
       "author": "WhyBuddy",
-      "category": "页面设计"
+      "category": "页面设计",
+      "channel": "experience"
     },
     {
       "id": "visual-density-tuner",
       "name": "visual-density-tuner",
       "description": "按业务场景调整界面信息密度:运营后台紧凑档/消费端舒展档,给出间距与字号的成套刻度。",
       "author": "WhyBuddy",
-      "category": "页面设计"
+      "category": "页面设计",
+      "channel": "experience"
     },
     {
       "id": "semantic-color-mapper",
       "name": "semantic-color-mapper",
       "description": "把业务状态映射到语义色:成功/进行/警告/危险/中性五档,保证同一状态全应用同色,附色值表。",
       "author": "WhyBuddy",
-      "category": "色彩搭配"
+      "category": "色彩搭配",
+      "channel": "experience"
     },
     {
       "id": "contrast-guardian",
       "name": "contrast-guardian",
       "description": "审查文本与背景的 WCAG 对比度,标出不达标组合并给出最小改动的替换色。",
       "author": "WhyBuddy",
-      "category": "色彩搭配"
+      "category": "色彩搭配",
+      "channel": "experience"
     },
     {
       "id": "dark-mode-palette",
       "name": "dark-mode-palette",
       "description": "从亮色主题推导暗色主题变量表:背景抬升层级、去饱和策略与阴影替代方案。",
       "author": "WhyBuddy",
-      "category": "色彩搭配"
+      "category": "色彩搭配",
+      "channel": "experience"
     },
     {
       "id": "chart-color-harmonizer",
       "name": "chart-color-harmonizer",
       "description": "为多序列图表生成互相区分又与品牌协调的分类色板,含色盲友好校验。",
       "author": "WhyBuddy",
-      "category": "色彩搭配"
+      "category": "色彩搭配",
+      "channel": "experience"
     },
     {
       "id": "brand-hue-extractor",
       "name": "brand-hue-extractor",
       "description": "从品牌关键词或参考图提炼主色相家族,输出从浅到深的完整色阶(参照 Radix 12 阶体系)。",
       "author": "WhyBuddy",
-      "category": "色彩搭配"
+      "category": "色彩搭配",
+      "channel": "experience"
     },
     {
       "id": "status-tone-designer",
       "name": "status-tone-designer",
       "description": "为枚举字段的每个选项配语义色调,让徽章/看板列/筛选器颜色讲同一种语言。",
       "author": "WhyBuddy",
-      "category": "色彩搭配"
+      "category": "色彩搭配",
+      "channel": "experience"
     },
     {
       "id": "accent-restraint-advisor",
       "name": "accent-restraint-advisor",
       "description": "审查页面强调色使用面积,大面积高饱和铺色降档为浅底,把重色留给真正需要抓眼球的按钮。",
       "author": "WhyBuddy",
-      "category": "色彩搭配"
+      "category": "色彩搭配",
+      "channel": "experience"
     },
     {
       "id": "industry-palette-advisor",
       "name": "industry-palette-advisor",
       "description": "按行业惯例推荐配色气质:财务金融偏稳重、医疗偏洁净、创意工具偏活泼,附反例警示。",
       "author": "WhyBuddy",
-      "category": "色彩搭配"
+      "category": "色彩搭配",
+      "channel": "experience"
     },
     {
       "id": "typographic-scale-advisor",
       "name": "typographic-scale-advisor",
       "description": "生成成套字号阶梯(标题/正文/辅助/说明)与行高搭配,中英文混排基线对齐建议。",
       "author": "WhyBuddy",
-      "category": "布局排版"
+      "category": "布局排版",
+      "channel": "experience"
     },
     {
       "id": "whitespace-rhythm",
       "name": "whitespace-rhythm",
       "description": "用 4/8pt 网格统一页面间距节奏:组内紧、组间松,消除随手写死的魔法数字。",
       "author": "WhyBuddy",
-      "category": "布局排版"
+      "category": "布局排版",
+      "channel": "experience"
     },
     {
       "id": "responsive-breakpoint-planner",
       "name": "responsive-breakpoint-planner",
       "description": "规划断点策略:哪些列在窄屏合并、哪些区块降级隐藏、表格如何退化为卡片列表。",
       "author": "WhyBuddy",
-      "category": "布局排版"
+      "category": "布局排版",
+      "channel": "experience"
     },
     {
       "id": "information-grouping",
       "name": "information-grouping",
       "description": "按认知就近原则重新分组页面字段:相关信息聚拢、无关信息分离,输出分组框架。",
       "author": "WhyBuddy",
-      "category": "布局排版"
+      "category": "布局排版",
+      "channel": "experience"
     },
     {
       "id": "content-priority-ranker",
       "name": "content-priority-ranker",
       "description": "给页面元素排优先级:用户第一眼要什么、第二步做什么,据此决定位置、尺寸与折叠。",
       "author": "WhyBuddy",
-      "category": "布局排版"
+      "category": "布局排版",
+      "channel": "experience"
     },
     {
       "id": "alignment-auditor",
       "name": "alignment-auditor",
       "description": "检查页面对齐一致性:左缘对齐线、数字小数点对齐、按钮组基线,列出violations与修法。",
       "author": "WhyBuddy",
-      "category": "布局排版"
+      "category": "布局排版",
+      "channel": "experience"
     },
     {
       "id": "section-divider-strategist",
       "name": "section-divider-strategist",
       "description": "决定分区手段的层级:留白<分隔线<底色<卡片,避免线框套线框的过度分割。",
       "author": "WhyBuddy",
-      "category": "布局排版"
+      "category": "布局排版",
+      "channel": "experience"
     },
     {
       "id": "grid-system-planner",
       "name": "grid-system-planner",
       "description": "为页面选择栅格制度(12/24 列)并给出各区块跨列方案与响应式收缩顺序。",
       "author": "WhyBuddy",
-      "category": "布局排版"
-    },
-    {
-      "id": "requirement-decomposer",
-      "name": "requirement-decomposer",
-      "description": "把一句话需求拆成可交付的功能清单:实体、角色、流程、页面与验收点,标注推断与待确认项。",
-      "author": "WhyBuddy",
-      "category": "需求分析"
-    },
-    {
-      "id": "user-story-writer",
-      "name": "user-story-writer",
-      "description": "按「作为…我想要…以便…」格式产出用户故事,附 INVEST 检查与故事间依赖标注。",
-      "author": "WhyBuddy",
-      "category": "需求分析"
-    },
-    {
-      "id": "acceptance-criteria-generator",
-      "name": "acceptance-criteria-generator",
-      "description": "为功能生成 EARS 格式验收标准:正常流/边界/异常/权限四类场景全覆盖。",
-      "author": "WhyBuddy",
-      "category": "需求分析"
-    },
-    {
-      "id": "edge-case-hunter",
-      "name": "edge-case-hunter",
-      "description": "系统性枚举边界情况:空值/超长/并发/权限越界/网络中断/重复提交,输出测试清单。",
-      "author": "WhyBuddy",
-      "category": "需求分析"
-    },
-    {
-      "id": "scope-guardian",
-      "name": "scope-guardian",
-      "description": "识别需求蔓延:标出哪些是 MVP 必需、哪些可延后、哪些与目标冲突,给出裁剪建议。",
-      "author": "WhyBuddy",
-      "category": "需求分析"
+      "category": "布局排版",
+      "channel": "experience"
     },
     {
       "id": "persona-synthesizer",
       "name": "persona-synthesizer",
       "description": "从业务描述推导关键用户画像:目标、痛点、使用场景与技术水平,驱动角色权限设计。",
       "author": "WhyBuddy",
-      "category": "需求分析"
-    },
-    {
-      "id": "kpi-definer",
-      "name": "kpi-definer",
-      "description": "为业务定义可度量的北极星指标与过程指标,明确统计口径、分母与反作弊注意项。",
-      "author": "WhyBuddy",
-      "category": "需求分析"
+      "category": "需求分析",
+      "channel": "experience"
     },
     {
       "id": "workflow-gap-finder",
       "name": "workflow-gap-finder",
       "description": "审查业务流程完整性:找出缺失的退回路径、超时处理、代理审批与终态不可达问题。",
       "author": "WhyBuddy",
-      "category": "需求分析"
+      "category": "需求分析",
+      "channel": "experience"
     },
     {
       "id": "priority-matrix-builder",
       "name": "priority-matrix-builder",
       "description": "用价值/成本矩阵为需求排序,输出四象限清单与首期建议范围。",
       "author": "WhyBuddy",
-      "category": "需求分析"
+      "category": "需求分析",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "number",
+          "number"
+        ],
+        "outputType": "enum"
+      }
     },
     {
       "id": "risk-register-writer",
       "name": "risk-register-writer",
       "description": "为方案生成风险登记册:技术/合规/运营三类风险,附概率、影响与缓解措施。",
       "author": "WhyBuddy",
-      "category": "需求分析"
+      "category": "需求分析",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "text"
+        ],
+        "outputType": "enum"
+      }
     },
     {
       "id": "chart-type-selector",
       "name": "chart-type-selector",
       "description": "按数据形态选图表类型:分布/趋势/占比/对比各配何种图,拒绝为了好看而误用的图形。",
       "author": "WhyBuddy",
-      "category": "数据可视化"
+      "category": "数据可视化",
+      "channel": "experience"
     },
     {
       "id": "kpi-card-designer",
       "name": "kpi-card-designer",
       "description": "设计 KPI 卡片:主数值、同环比、趋势迷你图的取舍与红涨绿跌语义约定。",
       "author": "WhyBuddy",
-      "category": "数据可视化"
+      "category": "数据可视化",
+      "channel": "experience"
     },
     {
       "id": "trend-annotator",
       "name": "trend-annotator",
       "description": "为趋势图自动标注关键事件点与异常区间,让图表讲出业务故事而不只是画线。",
       "author": "WhyBuddy",
-      "category": "数据可视化"
+      "category": "数据可视化",
+      "channel": "experience"
     },
     {
       "id": "ranking-visualizer",
       "name": "ranking-visualizer",
       "description": "设计排行榜的展示策略:前 N 取值、并列处理、变化箭头与长尾折叠。",
       "author": "WhyBuddy",
-      "category": "数据可视化"
+      "category": "数据可视化",
+      "channel": "experience"
     },
     {
       "id": "distribution-explainer",
       "name": "distribution-explainer",
       "description": "把分布数据翻译成人话结论:集中度、离群点与分组建议,附在图表下方。",
       "author": "WhyBuddy",
-      "category": "数据可视化"
+      "category": "数据可视化",
+      "channel": "experience"
     },
     {
       "id": "anomaly-highlighter",
       "name": "anomaly-highlighter",
       "description": "定义指标的正常区间与告警阈值,超限数据在图表和列表中自动高亮标注。",
       "author": "WhyBuddy",
-      "category": "数据可视化"
+      "category": "数据可视化",
+      "channel": "experience"
     },
     {
       "id": "drilldown-planner",
       "name": "drilldown-planner",
       "description": "规划从总览到明细的下钻路径:每层看什么、点什么、回到哪,避免死胡同报表。",
       "author": "WhyBuddy",
-      "category": "数据可视化"
+      "category": "数据可视化",
+      "channel": "experience"
     },
     {
       "id": "report-summarizer",
       "name": "report-summarizer",
       "description": "把周期数据自动写成三段式摘要:整体结论、显著变化、需要关注的风险点。",
       "author": "WhyBuddy",
-      "category": "数据可视化"
+      "category": "数据可视化",
+      "channel": "aigc",
+      "binding": {
+        "inputTypes": [
+          "number",
+          "number",
+          "date"
+        ],
+        "outputType": "text"
+      }
     },
     {
       "id": "feedback-message-writer",
       "name": "feedback-message-writer",
       "description": "为操作结果写人话反馈:成功说结果、失败说原因和下一步,禁止裸抛错误码。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "error-recovery-advisor",
       "name": "error-recovery-advisor",
       "description": "为每类错误设计恢复路径:可重试/需修改/需联系管理员,给出对应的界面呈现。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "onboarding-flow-designer",
       "name": "onboarding-flow-designer",
       "description": "设计首次使用引导:空态引导、示例数据、关键动作高亮,三步内让用户做成第一件事。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "confirmation-dialog-writer",
       "name": "confirmation-dialog-writer",
       "description": "区分需要确认的危险操作与不该打断的常规操作,危险确认写明后果与不可逆性。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "search-experience-tuner",
       "name": "search-experience-tuner",
       "description": "设计搜索体验:匹配范围说明、空结果建议、历史记录与高亮策略。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "filter-designer",
       "name": "filter-designer",
       "description": "设计筛选器组合:常用条件外置、长尾收进高级筛选、已选条件可见可清除。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "notification-strategist",
       "name": "notification-strategist",
       "description": "规划通知策略:什么事件通知谁、站内/邮件分级、聚合频率与免打扰边界。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "loading-state-designer",
       "name": "loading-state-designer",
       "description": "为不同时长的等待设计反馈:即时操作乐观更新、短等待骨架屏、长任务进度与可离开提示。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "accessibility-auditor",
       "name": "accessibility-auditor",
       "description": "审查可访问性:键盘可达、焦点顺序、替代文本与色彩之外的状态指示。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "microcopy-polisher",
       "name": "microcopy-polisher",
       "description": "打磨界面微文案:按钮动词化、标签名词化、提示口语化,全应用同一术语表。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "undo-strategy-designer",
       "name": "undo-strategy-designer",
       "description": "为破坏性操作设计撤销策略:软删除、回收站、时限撤回,减少确认弹窗依赖。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     },
     {
       "id": "keyboard-flow-planner",
       "name": "keyboard-flow-planner",
       "description": "为高频操作规划键盘动线:Tab 顺序、快捷键表与录入密集页的回车行为。",
       "author": "WhyBuddy",
-      "category": "交互体验"
+      "category": "交互体验",
+      "channel": "experience"
     }
   ]
 }

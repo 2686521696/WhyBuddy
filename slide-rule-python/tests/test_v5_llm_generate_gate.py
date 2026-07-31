@@ -1215,6 +1215,43 @@ def test_layout_block_type_allowed_in_declared_slot_passes():
     assert len(layout_findings) == 0, f"valid slot placement should pass: {layout_findings}"
 
 
+def test_layout_nested_slots_key_reports_actionable_message():
+    """槽位表被多包一层 `slots` 时，finding 必须直说"摊平"，不能只说"槽位名非法"。
+
+    真跑撞过：一轮生成里 6 个页面全写成 `layout: {"slots": {...}}`，起因是
+    prompt 里 "a layout object with slots summary/..." 被读成"有个叫 slots
+    的键"。泛化那条 "slot 'slots' is not in allowed slots" 虽然不假，但
+    reask 拿着它不知道该怎么改——所以这里锁的是**措辞可执行**。
+    """
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "MetricGrid"}]
+        pages[0]["layout"] = {"slots": {"summary": ["b1"]}}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    layout_findings = [f for f in result["findings"] if "layout" in f.get("path", "")]
+    assert len(layout_findings) == 1, f"expected exactly one layout finding: {layout_findings}"
+    msg = layout_findings[0]["message"]
+    assert "must not be nested" in msg and "hoist" in msg, msg
+    # 不能顺带再报一堆"block ref 'summary' 不存在"的噪声
+    assert "not found in page.blocks" not in msg, msg
+
+
+def test_layout_nested_slots_does_not_swallow_other_slot_errors():
+    """包装层之外照常校验：同一个 layout 里的非法槽位名不能被 `slots` 分支吃掉。"""
+    model = _make_model_with_landing()
+    pages = model.get("page", {}).get("pages", [])
+    if pages:
+        pages[0]["blocks"] = [{"id": "b1", "type": "MetricGrid"}]
+        pages[0]["layout"] = {"slots": {"summary": ["b1"]}, "bogus_slot": ["b1"]}
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    msgs = [f["message"] for f in result["findings"] if "layout" in f.get("path", "")]
+    assert any("must not be nested" in m for m in msgs), msgs
+    assert any("bogus_slot" in m for m in msgs), msgs
+
+
 # ---------- WorkflowTimeline（2026-07-23）：props.chainRef 深校验 ----------
 
 

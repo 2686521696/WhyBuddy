@@ -5,6 +5,16 @@
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.9.0
+# 配色合规校验（services/palette_guard.py）：OKLCh 转换与色差。手搓 OKLab
+# 矩阵能省这个依赖，但色彩空间转换是那种"差一点点就全错、还很难发现"的活，
+# 用成熟库更稳。
+coloraide>=4.0
+# FreeformInsight 内容树是深层嵌套 JSON，LLM 一次性整段吐出来偶发数错括号
+# 层数（真机复现过：{}/[] 各差 1、尾巴多一个孤立句号，且不是 token 截断——
+# 那份输出结尾收得完整）。这类"语法错但结构基本对"的输出，成熟的修复库
+# 比重新问一轮 LLM 更快更稳，用它而不是自己写括号计数式的线性修补——
+# 手搓的线性修补容易把内容拼出语法合法但结构错位的树。
+json-repair>=0.61
 pydantic-settings>=2.5.0
 python-dotenv>=1.0.0
 httpx>=0.27.0
