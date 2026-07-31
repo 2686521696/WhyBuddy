@@ -90,6 +90,25 @@ services:
       - key: IMAGE_MODEL
         value: gpt-image-2
 
+      # ── 持久化：免费档没有数据盘，这条是**唯一**存得住东西的路 ──────
+      # app_store.py 的降级是 fail-open：不填就回退本地 JSON 文件
+      # (APP_STORE_FILE)。但免费实例闲置 ~15 分钟休眠，唤醒是全新容器、
+      # 文件系统清空 —— 表现为"生成过的应用每隔一会儿就全没了"，而且不报错。
+      # 实测过：接口老老实实回 {"apps":[]} / {"sessions":[]}。
+      # 填任意 SQLAlchemy URL 即可（当前用 Neon Postgres）。
+      - key: APP_STORE_DATABASE_URL
+        sync: false
+
+      # ── E2B 沙盒：截图复核那一环靠它 ────────────────────────────────
+      # app_screenshot.py 在 E2B 里跑 Playwright。为什么不能用本地
+      # Playwright，那个文件开头记着：生产镜像是 node:22-alpine(musl)，
+      # @playwright/test 又只在 devDependencies，本地那条路"在生产环境从未
+      # 真正跑通过"，截图接口恒 503，前端静默退回假占位缩略图。
+      # 不填则 freeform 那条链路的 _render_preview_screenshot_b64 整环关闭。
+      # ⚠️ E2B 按用量计费，线上每次生成都会真跑一次沙盒。
+      - key: E2B_API_KEY
+        sync: false
+
   # ── Node（前端 + API，免费公开 Web 服务）─────────────────────────
   - type: web
     name: whybuddy
@@ -120,3 +139,9 @@ services:
           type: web
           name: whybuddy-python
           envVarKey: SLIDE_RULE_INTERNAL_KEY
+      # Node 侧也读 E2B（server/routes/sliderule.ts）——跟 Python 那份同一把 key
+      - key: E2B_API_KEY
+        sync: false
+      # 会话签名。config.ts 里是 readOptionalString，不填不会崩，但会话不稳
+      - key: SESSION_SECRET
+        sync: false
