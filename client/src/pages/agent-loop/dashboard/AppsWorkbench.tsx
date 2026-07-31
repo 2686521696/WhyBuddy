@@ -365,11 +365,19 @@ function themePrimary(themeId: string): string {
   return resolveIdentityTheme(themeId).primary;
 }
 
-// E41：徽标 = 全线统一的门语言（closed 6/6 / blocked / 推演中），
-// 不再另造"运行中/待补充"一套。dot 色在深色浮层上仍可辨。
+// E41：徽标 = 全线统一的门语言，不再另造"运行中/待补充"一套。
+// dot 色在深色浮层上仍可辨。
+//
+// 2026-07-31 汉化（用户要求）：原文是 "closed 6/6" / "blocked"，跟旁边的
+// 「推演中」混着排，一排筛选条两种语言。译法两条：
+//   · 6/6 **保留数字** —— 它不是装饰，是六个 Skill（DataModel / Workflow /
+//     RBAC / Page / AIGC / AppBundle）的证据条数，见 buildDetailFromModel 里
+//     `evidenceCount >= 6` 那个判定。译成"已闭环"丢掉数字就看不出还差几项。
+//   · blocked → 待补充 —— 跟未闭环占位图上那句「待补充信息」同一套说法，
+//     不再一个叫 blocked、一个叫待补充。
 const STATUS_META: Record<AppCardStatus, { label: string; cls: string; dot: string }> = {
-  runnable: { label: "closed 6/6", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-400" },
-  awaiting: { label: "blocked", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-400" },
+  runnable: { label: "已闭环 6/6", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-400" },
+  awaiting: { label: "待补充", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-400" },
   draft: { label: "推演中", cls: "bg-blue-50 text-[#1677ff]", dot: "bg-[#4d9aff]" },
 };
 
@@ -1420,14 +1428,16 @@ export function AppsWorkbench() {
             />
             <StatChip
               icon={<CircleCheck size={13} className="text-emerald-500" />}
-              label="closed 6/6"
+              label={STATUS_META.runnable.label}
               count={counts.runnable}
               active={filter === "runnable"}
               onClick={() => setFilter("runnable")}
             />
             <StatChip
               icon={<Hourglass size={13} className="text-orange-400" />}
-              label="blocked"
+              // 筛选条与卡片徽标读同一份 STATUS_META：此前两处各写一份字面量，
+              // 改文案漏掉一处就会出现"筛选叫 blocked、卡片叫待补充"。
+              label={STATUS_META.awaiting.label}
               count={counts.blocked}
               active={filter === "blocked"}
               onClick={() => setFilter("blocked")}

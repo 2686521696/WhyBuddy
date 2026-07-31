@@ -176,7 +176,7 @@ export function ArchitectureProcessPanel({
         <section
           className="mt-3 rounded-sm border border-[#e5e7eb]/80 bg-white/70 px-3 py-2 text-[10px] text-stone-600 shadow-sm"
           data-testid="sliderule-cross-runtime-graph"
-          aria-label="Skill runtime linkage"
+          aria-label="Skill 运行时联动"
         >
           {crossRuntimeGraph && (
             <>
@@ -214,7 +214,7 @@ export function ArchitectureProcessPanel({
                       data-testid="sliderule-skill-linkage-source"
                       data-skill={edge.sourceSkill}
                       className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-stone-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-stone-400"
-                      aria-label={`Select source skill ${edge.sourceSkill}`}
+                      aria-label={`选择来源 Skill ${edge.sourceSkill}`}
                       onClick={() => onSelectSkillLinkage?.(edge)}
                     >
                       {edge.sourceSkill}
@@ -225,7 +225,7 @@ export function ArchitectureProcessPanel({
                       data-testid="sliderule-skill-linkage-target"
                       data-skill={edge.targetSkill}
                       className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-stone-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-stone-400"
-                      aria-label={`Select target skill ${edge.targetSkill}`}
+                      aria-label={`选择目标 Skill ${edge.targetSkill}`}
                       onClick={() => onSelectSkillLinkage?.(edge)}
                     >
                       {edge.targetSkill}
@@ -297,7 +297,7 @@ export function ArchitectureProcessPanel({
                           data-testid="sliderule-closure-blocker-skill"
                           data-skill={affectedSkill}
                           className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-rose-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-stone-400"
-                          aria-label={`Select affected skill ${affectedSkill || "unknown"}`}
+                          aria-label={`选择受影响 Skill ${affectedSkill || "unknown"}`}
                           onClick={() => onSelectClosureBlocker?.(blocker)}
                         >
                           {affectedSkill || "unknown"}
@@ -308,7 +308,7 @@ export function ArchitectureProcessPanel({
                           data-testid="sliderule-closure-blocker-ref"
                           data-ref={blocker.ref ?? ""}
                           className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-rose-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-stone-400"
-                          aria-label={`Select ref ${blockerRef}`}
+                          aria-label={`选择引用 ${blockerRef}`}
                           onClick={() => onSelectClosureBlocker?.(blocker)}
                         >
                           {blockerRef}

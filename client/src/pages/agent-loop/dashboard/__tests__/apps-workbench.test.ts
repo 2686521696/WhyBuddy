@@ -348,6 +348,23 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     expect(src).not.toMatch(/inline-flex items-center text-slate-400"\s*\n\s*title=\{formatUpdatedAt/);
   });
 
+  it("门语言标签是中文，且筛选条与卡片徽标同源", () => {
+    // 2026-07-31 用户要求汉化：原文 "closed 6/6" / "blocked" 跟旁边的「推演中」
+    // 混排，一排筛选条两种语言。
+    expect(src).toContain('label: "已闭环 6/6"');
+    expect(src).toContain('label: "待补充"');
+    expect(src).not.toMatch(/label:\s*"closed 6\/6"/);
+    expect(src).not.toMatch(/label:\s*"blocked"/);
+    // 筛选条不能再各写一份字面量——此前两处分开写，改一处漏一处就会
+    // 出现"筛选叫 blocked、卡片叫待补充"。
+    expect(src).toContain("label={STATUS_META.runnable.label}");
+    expect(src).toContain("label={STATUS_META.awaiting.label}");
+    expect(src).not.toMatch(/label="closed 6\/6"/);
+    expect(src).not.toMatch(/label="blocked"/);
+    // 6/6 的数字不能丢：它是六个 Skill 的证据条数，不是装饰
+    expect(src).toMatch(/已闭环 6\/6/);
+  });
+
   it("aspectForDevice 保持设备事实，不带任何卡片墙的钳制", () => {
     // 它还服务运行时和 dev-harness，那里要的是真实设备比例。
     const lib = readFileSync(new URL("../../../../lib/justified-rows.ts", import.meta.url), "utf8");
