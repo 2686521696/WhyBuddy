@@ -937,16 +937,6 @@ function AppWall({
         getSpan={(entry, _i, columnCount) =>
           spanForColumnCount(spanKeys.has(entry.item.key), columnCount)
         }
-        // 跨列卡落在窗口内最高那列的下沿，矮的那列就留下一段填不上的死区。
-        // 超过 60px 宁可不跨——一格空白比"错落"重要，用户会以为那里少了一张卡。
-        //
-        // 60 不是调出来的：20~150 这一整段在真实数据上结果完全相同（空洞 0、
-        // 墙高 1600、跨列卡 4→2），因为实际死区是 189px，要么整段留着要么整段
-        // 消失，中间没有过渡。取 60 是因为它明显小于最矮的卡（桌面档 173px），
-        // 比这更小的空隙读起来是间距而不是缺口。
-        //
-        // 只在真会留洞时才降级：实测 6 列/7 列一个洞都没有，跨列卡仍是 4 张。
-        maxSpanWhitespace={60}
         className="mt-5"
         onReachEnd={onReachEnd}
         render={(entry, _i, cellW, columnCount) => (

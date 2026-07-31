@@ -69,16 +69,6 @@ export interface SpanPositionerOptions {
    * 窄屏只有 1 列时，「跨 2 列」必须自动退回 1 列，否则整张卡会画到容器外面。
    */
   getSpan: (index: number) => number;
-  /**
-   * 跨列落位允许留下的最大空洞（px）。超过就把这张卡降回单列。
-   *
-   * 跨列卡必须落在窗口内**最高**那列的下沿（落最矮会压住旁边已有的卡），窗口里矮
-   * 的那些列于是各留下一段 `窗口最高 - 自己` 的死区，之后两列一起被抬走，再也填不
-   * 上。1920px / 5 列 / 20 张卡实测留下两个 189px 的洞，占墙面积 4.2%。
-   *
-   * 不设（undefined）= 不降级，保留全部跨列卡，接受空洞。
-   */
-  maxSpanWhitespace?: number;
 }
 
 /**
@@ -168,7 +158,7 @@ export function bestSpanStart(heights: number[], span: number): number {
 }
 
 export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositioner {
-  const { columnCount, columnWidth, columnGutter, rowGutter, getSpan, maxSpanWhitespace } = opts;
+  const { columnCount, columnWidth, columnGutter, rowGutter, getSpan } = opts;
   const columnWidthAndGutter = columnWidth + columnGutter;
 
   let intervalTree = createIntervalTree();
@@ -179,33 +169,14 @@ export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositione
 
   /** 把第 index 个格子按当前列高落位（追加语义，不回溯）。 */
   function place(index: number, height: number) {
-    let span = Math.max(1, Math.min(columnCount, Math.floor(getSpan(index)) || 1));
+    const span = Math.max(1, Math.min(columnCount, Math.floor(getSpan(index)) || 1));
     // 单列走同一条规则——bestSpanStart 在 span=1 时退化成"最矮列"，见其文档。
-    let column = bestSpanStart(columnHeights, span);
+    const column = bestSpanStart(columnHeights, span);
     // top 取窗口内最高的那列：取最矮会压在旁边已有的卡上面。
     let top = columnHeights[column];
     for (let j = column + 1; j < column + span; j++) {
       if (columnHeights[j] > top) top = columnHeights[j];
     }
-
-    // 空洞太大就放弃跨列。窗口里矮的那列会留下 `top - 它自己` 的死区，落位后两列
-    // 一起被抬到 next，那段死区再没人填得上——所以只能在**落位前**决定不跨。
-    //
-    // 判据只看窗口的高低差，跟这张卡自己的高度无关，因此重排时结论稳定：
-    // 降级 → 卡变窄变高 → ResizeObserver 回填 → relayout 时同一个窗口仍然判降级，
-    // 不会来回翻。
-    if (span > 1 && maxSpanWhitespace !== undefined) {
-      let lowest = columnHeights[column];
-      for (let j = column + 1; j < column + span; j++) {
-        if (columnHeights[j] < lowest) lowest = columnHeights[j];
-      }
-      if (top - lowest > maxSpanWhitespace) {
-        span = 1;
-        column = bestSpanStart(columnHeights, 1);
-        top = columnHeights[column];
-      }
-    }
-
     const width = columnWidth * span + columnGutter * (span - 1);
     const next = top + height + rowGutter;
     for (let j = column; j < column + span; j++) columnHeights[j] = next;

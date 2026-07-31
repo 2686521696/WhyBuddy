@@ -13,18 +13,13 @@ import { createSpanPositioner, bestSpanStart } from "../span-positioner";
 const W = 100;
 const G = 10;
 
-function make(
-  columnCount: number,
-  getSpan: (i: number) => number,
-  maxSpanWhitespace?: number
-) {
+function make(columnCount: number, getSpan: (i: number) => number) {
   return createSpanPositioner({
     columnCount,
     columnWidth: W,
     columnGutter: G,
     rowGutter: G,
     getSpan,
-    maxSpanWhitespace,
   });
 }
 
@@ -224,98 +219,5 @@ describe("bestSpanStart", () => {
       for (let j = s; j < s + span; j++) heights[j] = top + 234 + 16;
     }
     expect(new Set(starts).size).toBeGreaterThan(1);
-  });
-});
-
-// ── 空洞上限：超了就不跨（2026-07-31）────────────────────────────────
-describe("maxSpanWhitespace", () => {
-  /** 逐列扫空洞：某列上相邻两格之间超过一个 rowGutter 的空隙就是洞。 */
-  function holes(p: ReturnType<typeof make>, columnCount: number) {
-    const cols: { top: number; height: number }[][] = Array.from(
-      { length: columnCount },
-      () => []
-    );
-    for (const it of p.all()) {
-      if (!it) continue;
-      for (let c = it.column; c < it.column + it.span; c++) cols[c]?.push(it);
-    }
-    let n = 0;
-    for (const list of cols) {
-      list.sort((a, b) => a.top - b.top);
-      let cursor = 0;
-      for (const it of list) {
-        if (it.top - cursor > G) n += 1;
-        cursor = Math.max(cursor, it.top + it.height + G);
-      }
-    }
-    return n;
-  }
-
-  // 两列高度差 200 的局面：0 号卡把第 0 列推到 200，第 1 列还是 0，
-  // 然后 1 号卡想跨 [0,1]。
-  const uneven = (maxWhitespace?: number) => {
-    const p = make(2, i => (i === 1 ? 2 : 1), maxWhitespace);
-    p.set(0, 200 - G); // 第 0 列变成 200
-    p.set(1, 50);
-    return p;
-  };
-
-  it("不设上限 = 保持原行为：跨列成功，矮的那列留下一个洞", () => {
-    const p = uneven(undefined);
-    expect(p.get(1)!.span).toBe(2);
-    // 跨列卡落在最高列下沿 200，第 1 列从 0 到 200 是死区
-    expect(p.get(1)!.top).toBe(200);
-    expect(holes(p, 2)).toBe(1);
-  });
-
-  it("空洞超上限 → 降回单列，洞消失", () => {
-    const p = uneven(60);
-    expect(p.get(1)!.span).toBe(1);
-    // 降级后走"最矮列"，落到还是 0 的第 1 列
-    expect(p.get(1)!.top).toBe(0);
-    expect(p.get(1)!.width).toBe(W);
-    expect(holes(p, 2)).toBe(0);
-  });
-
-  it("空洞在上限内 → 照常跨列，不误伤", () => {
-    // 高度差只有 40，小于上限 60
-    const p = make(2, i => (i === 1 ? 2 : 1), 60);
-    p.set(0, 40 - G);
-    p.set(1, 50);
-    expect(p.get(1)!.span).toBe(2);
-    expect(p.get(1)!.width).toBe(W * 2 + G);
-  });
-
-  it("判据只看列高差、与卡片自身高度无关 —— 所以重排时结论稳定", () => {
-    // 降级会让卡变窄→变高→ResizeObserver 回填→relayout。如果判据掺进了卡片
-    // 自己的高度，这一路会来回翻。用同一个局面喂两个差很多的高度，结论必须一样。
-    for (const h of [50, 500]) {
-      const p = make(2, i => (i === 1 ? 2 : 1), 60);
-      p.set(0, 200 - G);
-      p.set(1, h);
-      expect(p.get(1)!.span).toBe(1);
-    }
-  });
-
-  it("update 重排后降级结论不变（不会跨列/单列来回跳）", () => {
-    const p = uneven(60);
-    expect(p.get(1)!.span).toBe(1);
-    p.update([1, 300]); // 变窄之后量到更高的高度
-    expect(p.get(1)!.span).toBe(1);
-    expect(holes(p, 2)).toBe(0);
-  });
-
-  it("降级不会破坏几何不变式：仍然不重叠、不越界", () => {
-    const CC = 5;
-    const p = make(CC, i => (i % 3 === 0 ? 2 : 1), 60);
-    for (let i = 0; i < 30; i++) p.set(i, 60 + ((i * 37) % 200));
-    const all = p.all().filter(Boolean);
-    for (let i = 0; i < all.length; i++) {
-      expect(all[i].left).toBeGreaterThanOrEqual(0);
-      expect(all[i].left + all[i].width).toBeLessThanOrEqual(CC * W + (CC - 1) * G);
-      for (let j = i + 1; j < all.length; j++) {
-        expect(overlaps(all[i], all[j])).toBe(false);
-      }
-    }
   });
 });
