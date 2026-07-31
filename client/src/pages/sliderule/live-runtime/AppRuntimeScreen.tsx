@@ -460,6 +460,7 @@ export function AppRuntimeScreen({
   onXrayTarget,
   controlsContainer,
   scaleFit = "contain",
+  showScaleBadge = true,
 }: {
   model: FiveSystemModel;
   sessionId: string;
@@ -475,6 +476,15 @@ export function AppRuntimeScreen({
   /** 画布缩放口径。缩略图墙传 "width"（宽度定缩放、高度跟内容），
    *  应用舞台用默认 "contain"（要看全）。见 ScaleFitMode 的说明。 */
   scaleFit?: ScaleFitMode;
+  /**
+   * 右下角那枚「1440×810 · 21%」缩放标识要不要画。
+   *
+   * 它是**可交互运行时**的自述——告诉你当前看到的是固定设计分辨率按容器等比
+   * 缩下来的结果。放进应用中心的缩略图里就变成了噪声：9px 的字再被整体缩到
+   * 21% 根本读不出来，而且卡片信息条 2026-07-31 改成压在画面底部之后，两者
+   * 抢同一个右下角，实测叠成一块糊斑。所以缩略图传 false。
+   */
+  showScaleBadge?: boolean;
 }) {
   // 2026-07-24：间距/圆角/阴影刻度——直接吃 antd 自己的 Design Token（见
   // design-tokens.ts 头部注释），不是另起一套静态数字。卡片族（KPI/图表/
@@ -3526,7 +3536,7 @@ export function AppRuntimeScreen({
           ? createPortal(gearBar, controlsContainer)
           : null;
       })()}
-      {!codeView && (
+      {!codeView && showScaleBadge && (
         <span
           className="absolute bottom-2 right-3 rounded-full bg-black/30 px-2 py-0.5 font-mono text-[9px] text-white/90"
           title={`固定 ${spec.w}×${spec.h} 设计分辨率，按容器等比缩放显示`}

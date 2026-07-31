@@ -532,6 +532,9 @@ function LiveAppThumb({
             sessionId={sessionId}
             appTitle={goal}
             controlsContainer={hiddenControls}
+            // 缩略图不画缩放标识：9px 的字再缩到 21% 读不出来，而且会跟卡片
+            // 底部那条信息浮层抢同一个右下角，叠成一块糊斑。
+            showScaleBadge={false}
           />
         </React.Suspense>
       )}
@@ -605,7 +608,7 @@ function CenterCard({
   statusLabel: string;
   onClick: () => void;
   topRight?: React.ReactNode;
-  /** 画面区高度（px）。信息区高度由内容决定，不在这里算。 */
+  /** 卡片总高（px）。信息条浮在画面上，不再另占高度——见下方那段说明。 */
   mediaHeight?: number | string;
 }) {
   return (
@@ -613,21 +616,31 @@ function CenterCard({
       data-testid={testid}
       title={titleAttr}
       // 2026-07-31：宽高比不再由卡片自己定死 16:9，改由**父容器**给。
-      // 2026-07-31：信息层从**压在图上**改成**排在图下**（对标花瓣/Pinterest 那类
-      // 瀑布流）。这不只是观感——压在图上时卡片有**文字宽度下限**：手机档在
-      // justified 排法下只有 122px 宽，那一排「页面 5 / 角色 4 / AI 3 / 状态」
-      // 直接挤成两行。挪到图外之后这个下限消失，窄卡也能排，布局的选择面才打开。
-      // 顺带解决另一个问题：那层 from-black/80 的渐变本来就盖住了应用截图底部。
-      className="group flex w-full cursor-pointer flex-col overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
+      //
+      // 2026-07-31 之二：信息层压在图上 → 排到图下 → **又改回压在图上**（用户裁决）。
+      // 来回一趟不是反复，两次的约束不一样，记下来免得下次又绕：
+      //
+      //   挪到图下的理由是"压在图上时卡片有文字宽度下限"——手机档在 justified
+      //   排法下只有 122px 宽，那排「页面 5 / 角色 4 / AI 3 / 状态」挤成两行。
+      //   **但 justified 排法已经不在了**：现在是瀑布流，最窄列宽 260px、实测
+      //   落到 308px，跨列卡 632px，122px 那个场景不会再出现，理由随之失效。
+      //
+      //   改回来的收益是实的：信息条不再另占一段高度，同样的卡片高度里画面能
+      //   多显示一截应用——卡片墙的意义就是"一眼看出这个系统长什么样"。
+      //
+      // 压字必须保证在**任意应用截图**上都读得清：生成的应用有浅色仪表盘也有
+      // 深色监控盘，所以用从下往上的黑色渐变（底部 85% 到顶部全透明）而不是
+      // 一整块半透明——整块会在浅色截图上糊掉一条，渐变只压住文字那一带，
+      // 上面的画面照常看得见。再叠一层 backdrop-blur 兜住高频花纹的底。
+      className="group relative h-full w-full cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
+      style={{ height: mediaHeight }}
       onClick={onClick}
     >
-      {/* 画面区：高度由外层给（masonic 按真实 DOM 量），这里只负责裁切 */}
-      <div className="relative w-full overflow-hidden" style={{ height: mediaHeight }}>
-        {media}
-        {topRight}
-      </div>
-      {/* 信息区：跟着内容走，masonic 的 ResizeObserver 会把它算进卡片总高 */}
-      <div className="px-3 pb-2.5 pt-2">
+      {/* 画面区：铺满整张卡 */}
+      <div className="absolute inset-0 overflow-hidden">{media}</div>
+      {topRight}
+      {/* 信息条：浮在画面底部，不占卡片高度 */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/60 to-transparent px-3 pb-2 pt-7 backdrop-blur-[1px]">
         <div className="flex items-center gap-1.5">
           {Icon && (
             <span
@@ -637,13 +650,13 @@ function CenterCard({
               <Icon size={12} />
             </span>
           )}
-          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-slate-800">
+          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-white drop-shadow-sm">
             {title}
           </span>
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-slate-500">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-white/75">
           {metrics}
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium text-slate-600">
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium text-white/90">
             <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
             {statusLabel}
           </span>
@@ -1100,9 +1113,12 @@ export function AppsWorkbench() {
     cellW: number,
     span = 1,
   ) => {
-    // 画面区高度 = 本格宽度 / 设备宽高比。cellW 跨列时已经是两列的合并宽度，
+    // 卡片高度 = 本格宽度 / 设备宽高比。cellW 跨列时已经是两列的合并宽度，
     // 所以这里**不用**为跨列另算——同一个设备比例下，卡宽了画面就等比高，
-    // 应用截图显示得更完整，正是给它两列的意义。信息区高度由内容决定。
+    // 应用截图显示得更完整，正是给它两列的意义。
+    //
+    // 信息条改成浮在画面上之后，这个数就是**整张卡的高度**（此前还要再加一段
+    // 信息区高度）。所以同一个宽度下卡片比之前矮一截，画面反而显示得更多。
     const mediaH = Math.round(cellW / aspectForDevice(item.summary?.device));
     const meta = detail ? STATUS_META[detail.status] : null;
     const BrandIcon = detail?.identity
@@ -1154,7 +1170,9 @@ export function AppsWorkbench() {
               </span>
               {isApp && version > 1 && (
                 <span
-                  className="inline-flex items-center rounded bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-600"
+                  // 信息条改成压在深色渐变上之后，浅底深字的徽标在这里反了；
+                  // 改成半透明白底白字，跟旁边那排指标同一套明度关系。
+                  className="inline-flex items-center rounded bg-white/20 px-1.5 text-[10px] font-semibold text-white"
                   title="改版次数（App Store 血缘）"
                 >
                   v{version}
@@ -1162,7 +1180,7 @@ export function AppsWorkbench() {
               )}
               {rel && (
                 <span
-                  className="inline-flex items-center text-slate-400"
+                  className="inline-flex items-center text-white/60"
                   title={formatUpdatedAt(item.lastActive ?? item.createdAt)}
                 >
                   {rel}

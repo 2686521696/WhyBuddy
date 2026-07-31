@@ -328,14 +328,24 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     expect(src).not.toContain("cellH");
   });
 
-  it("信息区排在图下，不再是压在图上的黑色渐变浮层", () => {
-    // 压在图上时卡片有**文字宽度下限**（手机档 122px 宽时那排指标挤成两行），
-    // 挪到图外之后这个下限消失，窄列也能排，布局的选择面才打开。
-    expect(src).not.toContain("bg-gradient-to-t from-black/80");
-    expect(src).toContain("text-slate-800");
-    // 图下是白底，指标不能再用白字
-    expect(src).not.toContain("text-white/65");
-    expect(src).not.toContain("text-white/95");
+  it("信息条压在画面上，不另占卡片高度（用户裁决，2026-07-31 改回）", () => {
+    // 曾经因为"压在图上有文字宽度下限"（手机档 122px 宽时那排指标挤成两行）
+    // 把信息区挪到了图下。那个下限来自 justified 排法，而 justified 已经换成
+    // 瀑布流：最窄列宽 260、实测 308，跨列 632，122px 的场景不会再出现。
+    // 改回压字之后同样的卡高能多显示一截应用画面。
+    expect(src).toMatch(/absolute inset-x-0 bottom-0 bg-gradient-to-t from-black\//);
+    // 压在深色渐变上就必须是白字
+    expect(src).toMatch(/text-\[13\.5px\] font-semibold text-white/);
+    expect(src).toContain("text-white/75");
+    // 画面要铺满整张卡——信息条是浮层，不能再把画面挤成上半截
+    expect(src).toContain("absolute inset-0 overflow-hidden");
+  });
+
+  it("压在渐变上的元素不能留浅底深字", () => {
+    // 版本徽标原本是 bg-slate-100 + text-slate-600（图下白底时对的），
+    // 挪到黑色渐变上就反了。这条防止以后再往信息条里加浅底元素。
+    expect(src).not.toMatch(/bg-slate-100 px-1\.5 text-\[10px\] font-semibold text-slate-600/);
+    expect(src).not.toMatch(/inline-flex items-center text-slate-400"\s*\n\s*title=\{formatUpdatedAt/);
   });
 
   it("aspectForDevice 保持设备事实，不带任何卡片墙的钳制", () => {
