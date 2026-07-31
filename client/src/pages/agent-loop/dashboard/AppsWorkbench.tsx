@@ -1011,6 +1011,21 @@ export function AppsWorkbench() {
         顶栏：标题 | 搜索 | 健康+创建。
         DOM 顺序与视觉/焦点顺序一致，不用 order-* 重排可聚焦控件。
       */}
+      {/*
+        吸顶（2026-07-31）：标题/搜索/tab/筛选整块钉在滚动容器顶部，只让卡片墙滚。
+        19 个应用往下翻几行，筛选 chip 就滚没了——想换个筛选口径得先滚回顶部。
+
+        实现要点：
+        · 滚动容器是 .native-content（dashboard.css 里 overflow:auto），sticky
+          就是相对它定位，不需要额外包一层。
+        · 负 margin + 同值 padding 把根节点的 px/py 抵掉再补回来，让吸顶块的
+          背景**铺满整宽**；否则卡片会从左右内边距那两条缝里透出来。
+        · 背景必须显式给（跟根节点同一个 shell 变量），sticky 元素默认透明，
+          卡片会直接从字底下穿过去。
+        · z-30 高于卡片菜单(z-10)与健康浮层(z-20)：健康浮层本身在这块里面，
+          跟着一起吸顶，不会被卡片盖住。
+      */}
+      <div className="sticky top-0 z-30 -mx-6 -mt-5 bg-[var(--sr-shell-bg,#eef2f7)] px-6 pt-5 pb-3 md:-mx-8 md:-mt-6 md:px-8 md:pt-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="flex min-w-0 shrink-0 items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[#5b6cff]">
@@ -1192,6 +1207,7 @@ export function AppsWorkbench() {
             </button>
           ))
         )}
+      </div>
       </div>
 
       {/* ===== 我的应用 tab ===== */}

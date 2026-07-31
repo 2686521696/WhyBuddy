@@ -2,6 +2,8 @@
  * E14 我的应用画廊：卡片推导/筛选纯函数。
  * 纪律回归：不发明数据——模型缺失就是 draft，证据数如实。
  */
+import { readFileSync } from "node:fs";
+
 import { describe, it, expect } from "vitest";
 import {
   deriveAppCardDetail,
@@ -218,5 +220,45 @@ describe("formatRelativeTime", () => {
   it("空/坏输入回空串", () => {
     expect(formatRelativeTime(null, now)).toBe("");
     expect(formatRelativeTime("garbage", now)).toBe("");
+  });
+});
+
+// ── 顶栏吸顶 + 卡片墙（2026-07-31）─────────────────────────────────────
+// 纯 className 的改动最容易在后续重构里被无声改掉（不报错、测试也不红，
+// 只是回到"筛选 chip 跟着滚没"）。这里读源码钉住几条必要条件。
+describe("应用中心顶栏吸顶", () => {
+  const src = readFileSync(
+    new URL("../AppsWorkbench.tsx", import.meta.url),
+    "utf8"
+  );
+
+  it("标题/搜索/tab/筛选整块 sticky 在滚动容器顶部", () => {
+    expect(src).toMatch(/className="sticky top-0 z-30 /);
+  });
+
+  it("吸顶块必须自带背景——sticky 元素默认透明，卡片会从字底下穿过去", () => {
+    const m = src.match(/className="sticky top-0 z-30 [^"]*"/);
+    expect(m).not.toBeNull();
+    expect(m![0]).toContain("bg-[var(--sr-shell-bg,#eef2f7)]");
+  });
+
+  it("负 margin + 同值 padding 抵掉根节点内边距，背景铺满整宽", () => {
+    // 不这么做的话卡片会从左右内边距那两条缝里透出来。
+    const m = src.match(/className="sticky top-0 z-30 [^"]*"/)![0];
+    for (const cls of ["-mx-6", "px-6", "-mt-5", "pt-5", "md:-mx-8", "md:px-8"]) {
+      expect(m).toContain(cls);
+    }
+  });
+
+  it("z-30 高于卡片菜单(z-10)与健康浮层(z-20)", () => {
+    // 健康浮层在吸顶块**里面**，跟着一起吸顶；卡片菜单在下面，被盖住是对的。
+    expect(src).toContain("top-11 z-20"); // 健康浮层
+    expect(src).toContain("top-8 z-10"); // 卡片菜单
+  });
+
+  it("卡片墙用绝对定位容器，不再是等尺寸 grid", () => {
+    expect(src).toContain('data-testid="apps-wall"');
+    // 旧写法：grid-cols-2 + 每卡 aspect-video，手机档被硬拉成 16:9
+    expect(src).not.toMatch(/grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">\s*\{pagedMine/);
   });
 });
