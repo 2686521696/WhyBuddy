@@ -264,31 +264,69 @@ describe("应用中心顶栏吸顶", () => {
 });
 
 
-// ── 卡片墙布局与比例下限（2026-07-31）─────────────────────────────────
-describe("卡片墙用 masonry + 宽高比下限", () => {
+// ── 卡片墙：masonic 瀑布流 + 图下信息区（2026-07-31）───────────────────
+describe("卡片墙走 masonic，高度由内容决定", () => {
   const src = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
+  const scroller = readFileSync(new URL("../useScrollerIn.ts", import.meta.url), "utf8");
 
-  it("用 masonry 而不是 columns——列宽必须恒等", () => {
-    // columns 能把底部对齐到 0px，但它是**靠调整列宽**做到的（源码
-    // columns.ts: columnsRatios[i] = 1/Σ(1/ratio)），实测三列 506/452/399，
-    // 差 27%。卡片是同类对象，"排在前面的看起来更大"是假的视觉暗示。
-    expect(src).toContain("MasonryPhotoAlbum");
-    expect(src).toContain("react-photo-album/masonry.css");
+  it("换掉 react-photo-album——它的高度是算出来的，装不下图外文案", () => {
+    // photo-album 的模型是 height = columnWidth / ratio（源码 masonry.ts），
+    // 高度只能由比例反推。卡片改成「画面 + 图下信息区」之后，信息区多高取决于
+    // 标题会不会换行，结构上就不该由比例决定。
+    // 只禁 import——注释里为了说明取舍还会提到这个库名。
+    expect(src).not.toMatch(/from "react-photo-album/);
+    expect(src).not.toMatch(/import "react-photo-album/);
+    expect(src).not.toContain("MasonryPhotoAlbum");
     expect(src).not.toContain("ColumnsPhotoAlbum");
+    // masonic 的定位器把高度当**输入**：set(index, height)，配 ResizeObserver
+    // 量真实 DOM 再回填。
+    expect(src).toMatch(/from "masonic"/);
+    expect(src).toContain("useMasonry");
+    expect(src).toContain("usePositioner");
+    expect(src).toContain("useResizeObserver");
   });
 
-  it("手机档宽高比钳到下限，避免一张卡占掉整列", () => {
-    // 真实比例 0.462 在 453px 列宽下算出 980px，桌面卡才 255px——3.8×。
-    // 卡片高度不该等于重要性。钳到 0.9 后 503px / 2.0×，对齐官方 masonry
-    // demo 的观感（那面墙最高/最矮也约 2×）。库本身不提供任何比例钳制。
-    expect(src).toContain("WALL_MIN_ASPECT = 0.9");
-    expect(src).toMatch(/Math\.max\(\s*aspectForDevice\(item\.summary\?\.device\),\s*WALL_MIN_ASPECT\s*\)/);
+  it("不用开箱的 <Masonry>——它的滚动源写死是 window", () => {
+    // <Masonry> → MasonryScroller → useScroller() → @react-hook/window-scroll。
+    // 本应用滚的是 .native-content，window 一格都不滚 → scrollTop 恒 0 →
+    // 取件窗口锁死在首屏，往下滚只有空白。所以按官方 advanced usage 自己拼。
+    expect(src).not.toMatch(/\bMasonry\b(?!Photo)\s*[,}]/);
+    expect(src).toContain("useScrollerIn");
+    expect(src).toContain("useContainerPosition");
   });
 
-  it("下限只作用于卡片墙，不污染 aspectForDevice 本身", () => {
-    // aspectForDevice 还服务运行时和 dev-harness，那里要的是设备事实。
+  it("滚动源找的是最近可滚动祖先，不是 window", () => {
+    expect(scroller).toContain("findScrollParent");
+    expect(scroller).toMatch(/overflowY === "auto"/);
+    // scrollTop 必须是**相对网格**的（照抄官方 use-scroller.js 最后一行），
+    // 否则网格上方那段顶栏高度会被当成已滚距离。
+    expect(scroller).toMatch(/Math\.max\(0,\s*raw - offset\)/);
+    // 视口高度取滚动容器的 clientHeight，不是 window.innerHeight
+    expect(scroller).toContain("scroller.clientHeight");
+  });
+
+  it("卡片高度不写死：只给画面区高度，信息区交给浏览器量", () => {
+    // 画面区高度 = 列宽 / 设备宽高比（那是图，比例是真信息）。
+    expect(src).toMatch(/const mediaH = Math\.round\(cellW \/ aspectForDevice\(item\.summary\?\.device\)\)/);
+    expect(src).toContain("mediaHeight={mediaH}");
+    // 外框不能带 height——写死等于把「高度由内容决定」退回去了。
+    expect(src).not.toMatch(/style=\{\{ width: cellW, height: cellH \}\}/);
+    expect(src).not.toContain("cellH");
+  });
+
+  it("信息区排在图下，不再是压在图上的黑色渐变浮层", () => {
+    // 压在图上时卡片有**文字宽度下限**（手机档 122px 宽时那排指标挤成两行），
+    // 挪到图外之后这个下限消失，窄列也能排，布局的选择面才打开。
+    expect(src).not.toContain("bg-gradient-to-t from-black/80");
+    expect(src).toContain("text-slate-800");
+    // 图下是白底，指标不能再用白字
+    expect(src).not.toContain("text-white/65");
+    expect(src).not.toContain("text-white/95");
+  });
+
+  it("aspectForDevice 保持设备事实，不带任何卡片墙的钳制", () => {
+    // 它还服务运行时和 dev-harness，那里要的是真实设备比例。
     const lib = readFileSync(new URL("../../../../lib/justified-rows.ts", import.meta.url), "utf8");
     expect(lib).not.toContain("WALL_MIN_ASPECT");
-    expect(lib).not.toContain("0.9");
   });
 });

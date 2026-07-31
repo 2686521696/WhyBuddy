@@ -19,9 +19,14 @@
 import React from "react";
 import { Pagination } from "antd";
 
-import { MasonryPhotoAlbum } from "react-photo-album";
-import "react-photo-album/masonry.css";
+import {
+  useContainerPosition,
+  useMasonry,
+  usePositioner,
+  useResizeObserver,
+} from "masonic";
 
+import { useScrollerIn } from "./useScrollerIn";
 import { DEVICE_ASPECT, aspectForDevice } from "@/lib/justified-rows";
 import {
   LayoutGrid,
@@ -590,6 +595,7 @@ function CenterCard({
   statusLabel,
   onClick,
   topRight,
+  mediaHeight,
 }: {
   testid: string;
   title: string;
@@ -602,23 +608,29 @@ function CenterCard({
   statusLabel: string;
   onClick: () => void;
   topRight?: React.ReactNode;
+  /** 画面区高度（px）。信息区高度由内容决定，不在这里算。 */
+  mediaHeight?: number | string;
 }) {
   return (
     <div
       data-testid={testid}
       title={titleAttr}
       // 2026-07-31：宽高比不再由卡片自己定死 16:9，改由**父容器**给。
-      // 「我的应用」那栏走两端对齐行布局（justifiedRows），每张卡的宽高是算出来
-      // 的绝对值——手机档应用 0.462 自然成窄竖条，正是设计稿那种混排。写死
-      // aspect-video 会把手机档硬拉成 16:9，overflow-hidden 一裁就成了两边大片
-      // 留白的样子（线上 19 个应用里有 2 个手机档，长期都是这个毛病）。
-      // 其余调用方（骨架屏 / 官方示例）仍是等尺寸网格，由它们自己套 aspect-video。
-      className="group relative h-full w-full cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
+      // 2026-07-31：信息层从**压在图上**改成**排在图下**（对标花瓣/Pinterest 那类
+      // 瀑布流）。这不只是观感——压在图上时卡片有**文字宽度下限**：手机档在
+      // justified 排法下只有 122px 宽，那一排「页面 5 / 角色 4 / AI 3 / 状态」
+      // 直接挤成两行。挪到图外之后这个下限消失，窄卡也能排，布局的选择面才打开。
+      // 顺带解决另一个问题：那层 from-black/80 的渐变本来就盖住了应用截图底部。
+      className="group flex w-full cursor-pointer flex-col overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
       onClick={onClick}
     >
-      <div className="absolute inset-0">{media}</div>
-      {/* 底部浮层：字段内容压在画面上（16:9 定稿要求） */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-3.5 pb-2.5 pt-12">
+      {/* 画面区：高度由外层给（masonic 按真实 DOM 量），这里只负责裁切 */}
+      <div className="relative w-full overflow-hidden" style={{ height: mediaHeight }}>
+        {media}
+        {topRight}
+      </div>
+      {/* 信息区：跟着内容走，masonic 的 ResizeObserver 会把它算进卡片总高 */}
+      <div className="px-3 pb-2.5 pt-2">
         <div className="flex items-center gap-1.5">
           {Icon && (
             <span
@@ -628,19 +640,99 @@ function CenterCard({
               <Icon size={12} />
             </span>
           )}
-          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-white">
+          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-slate-800">
             {title}
           </span>
         </div>
-        <div className="mt-1 flex items-center gap-2.5 text-[11px] text-white/80">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-slate-500">
           {metrics}
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium text-white/95">
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium text-slate-600">
             <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
             {statusLabel}
           </span>
         </div>
       </div>
-      {topRight}
+    </div>
+  );
+}
+
+/** 卡片墙一格的数据：应用条目 + 已解析的卡面细节（可能还没到）。 */
+interface WallEntry {
+  item: GalleryItem;
+  detail: AppCardDetail | null;
+}
+
+/**
+ * 卡片墙的列宽下限与间距。列数由 masonic 按容器宽度自己算，算完还会把列宽
+ * **撑满**剩余空间（use-positioner.ts: columnWidth = (width - gutter*(n-1)) / n），
+ * 所以这个值是「最窄能到多少」，不是最终列宽。
+ *
+ * 260 是量出来的下限，卡在信息区那排指标的换行点上：1600px 视口下可用宽
+ * ~1300 → 4 列 × 309px，「页面 n · 角色 n · AI n · 时间 · 状态」正好一行。
+ * 试过 240（5 列 × 244px），**每张卡**的状态都被挤到第二行，卡片凭空高一截，
+ * 带 v4 徽标的那张更是折成三行——比 4 列难看。列数不是越多越好，宽度下限由
+ * 信息区内容定。
+ *
+ * 屏幕再宽会自动加列（1920px → 5 列 × 308px），不用改这里。
+ */
+const WALL_COLUMN_WIDTH = 260;
+const WALL_GUTTER = 16;
+
+/**
+ * 「我的应用」瀑布流（masonic 低层 hook 拼装）。
+ *
+ * 为什么不用开箱的 `<Masonry>`：它内部是 `MasonryScroller` → `useScroller()`
+ * → `@react-hook/window-scroll`，**滚动源写死是 window**，视口高度取
+ * `window.innerHeight`。本应用滚的是 `.native-content`，window 一格都不滚，
+ * scrollTop 会恒为 0（详见 useScrollerIn.ts）。所以这里按官方 README 的
+ * "advanced usage" 路子自己拼：
+ *     usePositioner + useResizeObserver + useContainerPosition + useMasonry
+ * 只把 scrollTop/height 那一层换成本地滚动容器。
+ *
+ * 单独抽成组件而不是写在 AppsWorkbench 里，是因为这几个都是 hook——卡片墙
+ * 在「空态/搜索无结果/有结果」三岔里只有一岔渲染，写在外层就成了条件调用。
+ */
+function AppWall({
+  items,
+  renderCard,
+}: {
+  items: WallEntry[];
+  renderCard: (item: GalleryItem, detail: AppCardDetail | null, cellW: number) => React.ReactNode;
+}) {
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
+  // width 要跟着容器走（侧栏收起、窗口缩放都会变），deps 给 height 让它重量。
+  const { offset: _offset, width } = useContainerPosition(containerRef, [height]);
+  const positioner = usePositioner(
+    { width, columnWidth: WALL_COLUMN_WIDTH, columnGutter: WALL_GUTTER, rowGutter: WALL_GUTTER },
+    [items.length],
+  );
+  const resizeObserver = useResizeObserver(positioner);
+
+  const grid = useMasonry<WallEntry>({
+    positioner,
+    resizeObserver,
+    containerRef,
+    items,
+    height,
+    scrollTop,
+    isScrolling,
+    overscanBy: 2,
+    // 首屏还没量到真实高度时用它估行数。桌面卡 260/1.78≈146 + 信息区 ≈52，
+    // 手机卡 260/0.46≈563 + 52；取中间偏桌面一侧，因为桌面档占多数。
+    itemHeightEstimate: 240,
+    itemKey: (entry: WallEntry) => entry.item.key,
+    className: "mt-5",
+    role: "list",
+    render: ({ data, width: cellW }) => <>{renderCard(data.item, data.detail, cellW)}</>,
+  });
+
+  // data-testid 挂在外层：useMasonry 只认 id/className/style，不透传 data-*。
+  // 外层不能有自己的盒模型影响（display:contents），否则 useContainerPosition
+  // 量的 offsetWidth 就不是网格的实际可用宽度。
+  return (
+    <div data-testid="apps-wall" style={{ display: "contents" }}>
+      {grid}
     </div>
   );
 }
@@ -954,62 +1046,35 @@ export function AppsWorkbench() {
 
   // ── 「我的应用」卡片墙（2026-07-31）──────────────────────────────────
   //
-  // 走 react-photo-album 的 **masonry**：等宽变高，每张塞进当前最矮的那列。
+  // 走 **masonic**（jaredLunde，1406★）。为什么从 react-photo-album 换过来：
   //
-  // 为什么不是同库的 columns：columns 确实能把各列底部对齐到 0px 落差，但它是
-  // **靠调整列宽**做到的（源码 columns.ts：columnsRatios[i] = 1 / Σ(1/ratio)）。
-  // 实测三列宽 506 / 452 / 399，**差 27%**。相册里无所谓，但我们这里意味着
-  // "排在前面的应用看起来更大更重要"——而排序只是最近更新，这个视觉暗示是假的。
-  // 卡片是同类对象，等宽比底部齐重要，所以选 masonry。
+  // 卡片改成「画面 + 图下信息区」之后，高度不再只由图片比例决定——信息区多高
+  // 取决于标题会不会换行、几个计数标签。而 react-photo-album 的模型是
+  // `height = columnWidth / ratio`（源码 masonry.ts），**结构上装不下图外文案**，
+  // 只能把文案高度反算进假的宽高比里，脆且难维护。
   //
-  // 为什么不是自己那套 justifiedRows（等高变宽，flickr 相册那种）：
-  // 那套下手机档卡片只有约 122px 宽（264 × 0.462），而每张卡底部要压图标 +
-  // 标题 + 页面/角色/AI 三个计数 + 状态标签——122px 塞不下，实测已经在换行挤。
-  // 相册里图就是图，窄一条无所谓；我们每张卡都要读标题和状态。
-  // masonry 下所有卡等宽，手机档只是变高（约 3.8× 桌面卡），文字宽度不受影响。
+  // masonic 的定位器把高度当**输入**：
+  //     set: (index, height) => { ...找最矮列...; items[index] = { left, top, height } }
+  // 配 useResizeObserver 量真实 DOM 再回填（src/use-positioner.ts / use-resize-observer.ts）。
+  // 图下文案多高都不用预先知道。
   //
-  // 库的 Photo 契约要 src + 宽高，而我们没有图片：这里**合成**一份 Photo，
-  // 宽高直接填 DEVICE_SPECS 的画布尺寸（比例是唯一被消费的信息），src 给空串，
-  // 再用 render.photo 完全接管渲染——默认的 <img> 分支根本不会走到。
-  // 这是个阻抗失配，但换来的是布局算法、响应式断点、SSR 由库负责。
-  // 卡片墙的宽高比**下限**（不是设备事实，是这面墙的呈现决定，所以放在这里
-  // 而不是 aspectForDevice 里——那个函数还服务运行时和 dev-harness）。
+  // 另外三个顺带的好处：
+  //   · 列宽恒等 —— left = column * (columnWidth + gutter)，不像 photo-album 的
+  //     columns 靠改列宽凑等高（实测三列差 27%，"排前面的看起来更大"是假暗示）
+  //   · 直接渲染任意 React 子节点，不用再合成 src:"" 的假 Photo 绕开 <img>
+  //   · 自带虚拟化（区间树 O(log n) 视口查询），应用数长起来不用重做
   //
-  // 等宽变高的排法下，卡高 = 列宽 / 宽高比。手机档真实比例 0.462 在 444px 列宽
-  // 下算出 961px，而桌面卡只有 250px——**3.8 倍**，一张就占掉整列，视觉上压过
-  // 其他所有应用。但卡片高度不该等于重要性：手机档应用并不比桌面档更重要。
+  // 画面区高度仍按设备宽高比算——那部分是图，比例是真信息；信息区高度交给
+  // 浏览器。两段相加就是卡片总高，masonic 自己量。
   //
-  // 钳到多少是产品决定，**库本身不提供任何比例钳制**（源码确认：rowConstraints
-  // 只管一行放几张，masonry/columns 里一处 clamp 都没有）。标定参照官方 masonry
-  // demo：那面墙里最高/最矮约 2.0×，观感是"错落"而不是"一张怪卡"。
-  //
-  //   下限 0.462（真实）→ 手机卡 980px / 3.8×   一张占掉整列
-  //   下限 0.700        → 647px / 2.5×
-  //   下限 0.900        → 503px / 2.0×          ← 对齐 demo 观感
-  //   下限 1.000        → 453px / 1.8×
-  //
-  // 缩略图本来就不是等比预览（外面还压着一层信息浮层），牺牲一点比例真实性
-  // 换版面均衡划算。仍然一眼看得出"这是竖屏应用"。
-  const WALL_MIN_ASPECT = 0.9;
+  // 用低层 hook 拼装而不是开箱的 `<Masonry>`：后者的滚动源写死是 window，
+  // 本应用滚的是 .native-content，详见 useScrollerIn.ts 顶部那段。
 
-  const wallPhotos = React.useMemo(
-    () =>
-      pagedMine.map(({ item }) => {
-        const ratio = Math.max(aspectForDevice(item.summary?.device), WALL_MIN_ASPECT);
-        const h = 1000;
-        return { key: item.key, src: "", width: Math.round(h * ratio), height: h };
-      }),
-    [pagedMine]
-  );
-
-  // 卡片渲染抽成函数：render.photo 按 index 回调，拿不到 map 的闭包。
-  // cellW/cellH 是库算好的像素尺寸（等宽变高），直接当卡片外框。
-  const renderAppCard = (
-    item: GalleryItem,
-    detail: AppCardDetail | null,
-    cellW: number,
-    cellH: number
-  ) => {
+  // 卡片渲染抽成函数：masonic 的 render 按 index 回调，拿不到 map 的闭包。
+  // 只给 width——高度是**输出**不是输入，masonic 量完真实 DOM 再定位。
+  const renderAppCard = (item: GalleryItem, detail: AppCardDetail | null, cellW: number) => {
+    // 画面区高度 = 列宽 / 设备宽高比。信息区高度由内容决定，masonic 量真实 DOM。
+    const mediaH = Math.round(cellW / aspectForDevice(item.summary?.device));
     const meta = detail ? STATUS_META[detail.status] : null;
     const BrandIcon = detail?.identity
       ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
@@ -1024,9 +1089,12 @@ export function AppsWorkbench() {
       <div
         data-testid={`app-cell-${item.sessionId || item.appId}`}
         data-tier={(item.summary?.device || "desktop").trim() || "desktop"}
-        style={{ width: cellW, height: cellH }}
+        // 不写死高度：masonic 的 ResizeObserver 量的就是这个节点，写死等于
+        // 把「高度由内容决定」这条又退回去了。宽度也不用给——masonic 的定位
+        // 容器已经是 columnWidth，卡片 w-full 铺满即可。
       >
       <CenterCard
+        mediaHeight={mediaH}
         testid={`app-card-${item.sessionId || item.appId}`}
         title={detail?.identity?.productName || item.goal || "（未命名话题）"}
         titleAttr={item.goal}
@@ -1056,7 +1124,7 @@ export function AppsWorkbench() {
               </span>
               {isApp && version > 1 && (
                 <span
-                  className="inline-flex items-center rounded bg-white/20 px-1.5 text-[10px] font-semibold text-white/95"
+                  className="inline-flex items-center rounded bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-600"
                   title="改版次数（App Store 血缘）"
                 >
                   v{version}
@@ -1064,7 +1132,7 @@ export function AppsWorkbench() {
               )}
               {rel && (
                 <span
-                  className="inline-flex items-center text-white/65"
+                  className="inline-flex items-center text-slate-400"
                   title={formatUpdatedAt(item.lastActive ?? item.createdAt)}
                 >
                   {rel}
@@ -1420,25 +1488,13 @@ export function AppsWorkbench() {
             </div>
           )
         ) : (
-          <div className="mt-5" data-testid="apps-wall">
-            <MasonryPhotoAlbum
-              photos={wallPhotos}
-              spacing={16}
-              // 断点交给库。列数别给太多——列宽一小，卡片底部那层文字又会挤
-              // 回去，那正是从等高变宽（justified）换成等宽变高要治的病。
-              columns={w => (w >= 1400 ? 4 : w >= 1000 ? 3 : w >= 640 ? 2 : 1)}
-              render={{
-                // 整张自定义。合成 Photo 的 src 是空串，默认 <img> 分支走不到。
-                // ctx 给的是算好的像素宽高，直接当卡片外框尺寸。
-                photo: (_props, ctx) => {
-                  const entry = pagedMine[ctx.index];
-                  return entry
-                    ? renderAppCard(entry.item, entry.detail, ctx.width, ctx.height)
-                    : null;
-                },
-              }}
-            />
-          </div>
+          <AppWall
+            // key 跟着页码/筛选走：masonic 的定位器缓存按 index 存，换了数据集
+            // 不重建的话会拿旧高度去摆新卡片。
+            key={`wall-${page}-${tab}-${pagedMine.length}`}
+            items={pagedMine}
+            renderCard={renderAppCard}
+          />
         ))}
 
       {/* ===== 官方示例库 tab =====
