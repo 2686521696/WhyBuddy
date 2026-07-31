@@ -556,3 +556,81 @@ def test_generation_contract_teaches_how_to_pick_the_device():
     assert "inspection work order" in body and "walking around" in body, \
         "缺「带后台词的现场需求」这一向"
     assert "OMIT the field" in body, "没告诉模型判不出来就别写——那才是默认两档都生成的入口"
+
+
+# ── monitor 页放开 page.blocks（2026-07-31）─────────────────────────────
+
+
+def _monitor_page_with_blocks():
+    page = _monitor_page()
+    page["blocks"] = [
+        {"id": "qa", "type": "QuickActionPanel", "props": {"title": "常用操作", "columns": 3}},
+        {"id": "wf", "type": "WorkflowTimeline", "props": {"title": "审批流程", "chainRef": "chain_main"}},
+    ]
+    return page
+
+
+def test_brief_lists_binding_free_blocks_without_an_empty_binding():
+    """不吃 binding 的积木不能被拼成 "binding": {}。
+
+    QuickActionPanel 的按钮来自 page.actions、WorkflowTimeline 的节点从 workflow
+    机械派生（见目录里两者的 bindingSchema.note）。给它们摆一个空 binding，等于
+    在提示模型"这里该填点什么"，而它填什么都是错的——下游 blockRef 深校验会以
+    unknown key 拒掉，整块设计白生成一轮。
+    """
+    brief = _monitor_overview_design_brief(_monitor_page_with_blocks(), _datamodel())
+    assert '"type": "QuickActionPanel"' in brief
+    assert '"type": "WorkflowTimeline"' in brief
+    assert '"binding": {}' not in brief
+    # chainRef 是 props 不是 binding，要原样带出去，否则模型只能瞎猜画哪条链路
+    assert '"chainRef": "chain_main"' in brief
+    # 吃 binding 的那一类照旧带 binding
+    assert '"type": "ActivityFeed"' in brief
+    assert '"entityRef": "ticket"' in brief
+
+
+def test_brief_separates_row_content_from_action_and_process_blocks():
+    """两类积木分段写——「逐行内容」这个说法套不到动作面/流程面上。
+
+    合在一段的代价不是措辞难看：设计 LLM 是按"这是什么内容"决定放哪的，
+    把一排操作按钮说成"逐行内容"，它就会照着逐行内容的惯例塞到页面最下面。
+    """
+    brief = _monitor_overview_design_brief(_monitor_page_with_blocks(), _datamodel())
+    assert "非数据面的成品积木" in brief
+    row_section = brief.split("这一页还声明了下面这些**非数据面")[0]
+    assert "QuickActionPanel" not in row_section, "动作面不该混进逐行内容那一段"
+    assert "ActivityFeed" in row_section
+
+
+def test_generation_contract_no_longer_exempts_monitor_pages_from_blocks():
+    """生成契约必须明说 monitor 页也要摆积木。
+
+    此前两处合起来把总览页排除在外——祈使句只点名 workbench/kanban/calendar/
+    wizard，CHANNEL OWNERSHIP 又说"monitor 页照常声明 stats/charts"。实测后果：
+    19 个真实页面里 page.blocks 声明数 0，QuickActionPanel / WorkflowTimeline
+    这两个 generationEnabled=true 的区块从未被生成过。
+    """
+    from services.schema_legal import experience_block_prompt_block
+
+    text = experience_block_prompt_block()
+    assert "monitor / dashboard pages are NOT exempt" in text
+    # KPI/趋势区块的禁令仍在，且明确写清它只管这两类，不是禁掉整个 page.blocks
+    assert "Do NOT emit MetricGrid or TrendChart blocks there" in text
+    assert "not a ban on page.blocks for overview pages" in text
+    # 放行名单从目录派生，且不含被 CHANNEL OWNERSHIP 挡掉的三类
+    for banned in ("MetricGrid", "TrendChart", "DataTable"):
+        seg = text.split("monitor / dashboard pages are NOT exempt")[1].split("\n")[0]
+        assert banned not in seg, f"{banned} 不该出现在总览页的放行名单里"
+
+
+def test_generation_contract_json_skeleton_exposes_blocks():
+    """光在说明里讲不够——JSON 骨架里没有 blocks 键，模型不知道往哪写。
+
+    骨架和说明是两处，历史上分叉过（07-28 那次补了说明没补骨架，仍然 0 产出）。
+    这条把两处钉在一起。
+    """
+    from services.v5_llm_generate import _SCHEMA_INSTRUCTION
+
+    page_section = _SCHEMA_INSTRUCTION.split('"page": {')[1].split('"aigc": {')[0]
+    assert '"blocks": [' in page_section, "page 骨架里必须有 blocks 键"
+    assert '"type": "<experience block type>"' in page_section

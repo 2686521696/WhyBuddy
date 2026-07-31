@@ -393,6 +393,39 @@ def experience_block_prompt_block() -> str:
             "that is an incomplete deliverable, not a safe default. Typically 1-3 blocks "
             "per business page."
         )
+        # 2026-07-31：monitor 页此前被这条祈使句**漏在外面**——上一句只点名了
+        # workbench/kanban/calendar/wizard，加上下面 CHANNEL OWNERSHIP 那条
+        # "monitor 页照常声明 stats/charts"，两处合起来读就是"总览页不用积木"。
+        # 实测后果：19 个真实页面里 page.blocks 声明数 **0**，其中 4 个 monitor
+        # 页一个积木都没有，QuickActionPanel / WorkflowTimeline 这两个
+        # generationEnabled=true、rendererStatus=real 的区块从未被生成过。
+        #
+        # 这直接决定了总览页的骨架形状：喂给 freeformOverview 设计环节的内容
+        # 永远是"N 个标量 + M 个分布 + 可选一组逐行记录"这三档，排布几乎被内容
+        # 定死。放开这一处，输入的内容类型才可能变，版式才跟着变。
+        #
+        # 措辞照上一句的教训走**祈使式**：07-28 记过，写成许可式（"You MAY
+        # emit…"）时七个通电区块一个都没被用，同目标连跑三次全是 0；换成祈使
+        # 式并说清"不用的代价"之后才有产出。所以这里也说清代价。
+        monitor_ok = [
+            str(b["type"]) for b in enabled
+            if str(b["type"]) not in ("MetricGrid", "TrendChart", "DataTable")
+        ]
+        if monitor_ok:
+            lines.append(
+                "monitor / dashboard pages are NOT exempt from this. Their stats and "
+                "charts answer 'how are the numbers', but an overview whose ONLY "
+                "content is numbers is a report, not a workbench — the user opens it "
+                "to act. Where this business's overview genuinely leads with something "
+                "beyond numbers, declare it as a block: "
+                + ", ".join(monitor_ok)
+                + ". Pick by what THIS operation actually does first — a panel of the "
+                "actions this role starts the day with, the stage bar of the process "
+                "the business runs on, a live stream of what just happened, a top-N "
+                "that drives a real decision. Declaring none is correct only when the "
+                "overview truly is read-only; declaring one you cannot justify from "
+                "the domain is worse than none."
+            )
         schema_only = [b for b in EXPERIENCE_BLOCKS if not b.get("generationEnabled")]
         if schema_only:
             lines.append(
@@ -417,7 +450,10 @@ def experience_block_prompt_block() -> str:
         "CHANNEL OWNERSHIP for KPIs and charts — one page, one channel:\n"
         "  - monitor / dashboard pages: declare page.stats and page.charts as usual. "
         "Do NOT emit MetricGrid or TrendChart blocks there; they would duplicate the "
-        "same numbers the overview already shows.\n"
+        "same numbers the overview already shows. This ban covers KPI/trend blocks "
+        "ONLY — it is not a ban on page.blocks for overview pages (see above: action "
+        "panels, stage bars, streams and top-N belong there when the domain leads "
+        "with them).\n"
         "  - all other page kinds (workbench / kanban / calendar / wizard): use "
         "MetricGrid / TrendChart blocks when the page needs KPIs or trends, and leave "
         "page.stats / page.charts empty on those pages.\n"

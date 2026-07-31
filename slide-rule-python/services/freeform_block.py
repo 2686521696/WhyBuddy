@@ -2043,6 +2043,7 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
     # 否则等于让它把同一张卡摆两次。指纹口径与前端 page-panel-dedupe.ts 的
     # blockPanelKey 一致：类型 + 实体 + 关键字段，不含 id / 名字 / 条数。
     row_bits: list[str] = []
+    plain_bits: list[str] = []  # 不吃 binding 的成品积木（动作面／流程面）
     seen_row_keys: set[str] = set()
 
     def _take(key: str) -> bool:
@@ -2094,14 +2095,39 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
             key = f"{block_type}|{b.get('id')}"
         if not _take(key):
             continue
-        row_bits.append(
-            f'{b.get("id")}：{{"type": "{block_type}", "binding": '
-            f"{json.dumps(binding, ensure_ascii=False)}}}"
-        )
+        # 2026-07-31：不是每个可嵌入区块都是"逐行内容"。QuickActionPanel（一组
+        # 快捷动作按钮）和 WorkflowTimeline（流程阶段条）**不吃 binding**——前者
+        # 的按钮来自 page.actions，后者的节点从 workflow 机械派生（见目录里这两条
+        # 的 bindingSchema.note）。给它们拼一个 "binding": {} 是在提示模型"这里
+        # 该填点什么"，而它填什么都是错的。所以按"吃不吃 binding"分开写。
+        if binding:
+            row_bits.append(
+                f'{b.get("id")}：{{"type": "{block_type}", "binding": '
+                f"{json.dumps(binding, ensure_ascii=False)}}}"
+            )
+        else:
+            props = b.get("props") or {}
+            title = str(props.get("title") or b.get("name") or b.get("id") or "")
+            extra = ""
+            if block_type == "WorkflowTimeline" and props.get("chainRef"):
+                extra = f'，"props": {{"chainRef": "{props["chainRef"]}"}}'
+            plain_bits.append(
+                f'{title}：{{"type": "{block_type}"{extra}}}（这个积木不吃 binding，'
+                f"照抄即可)"
+            )
     if row_bits:
         lines.append(
             "这一页还声明了下面这些**逐行内容**，请把它们用 blockRef 摆进你的版式里"
             "（binding 照抄，由你决定各自放哪一格、占多宽）：\n- " + "\n- ".join(row_bits)
+        )
+    if plain_bits:
+        # 这两类是**总览页的动作面/流程面**，不是数据面——它们的存在本身就会
+        # 改变版式重心（一整排操作按钮该在最上面还是靠右？流程条是通栏还是
+        # 塞在一角？），这正是 2026-07-31 放开 monitor 页 page.blocks 想要的效果。
+        lines.append(
+            "这一页还声明了下面这些**非数据面的成品积木**（动作入口／流程阶段），"
+            "同样用 blockRef 摆进版式里，由你决定放哪、占多宽——它们跟一堆数字的"
+            "阅读优先级不一样，别默认往最下面塞：\n- " + "\n- ".join(plain_bits)
         )
 
     # 2026-07-29：这里原来是一句硬禁令——"不要画排行榜/动态流/数据列表"，

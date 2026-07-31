@@ -86,6 +86,11 @@ Required shape (use these exact keys):
                  {"id": "<id>", "name": "<label>", "entity": "<entity_id>",
                   "timeField": "<entity_id>.<date_field_id>",
                   "levelField": "<entity_id>.<enum_field_id> (optional)"}
+               ],
+               "blocks": [
+                 {"id": "<id>", "type": "<experience block type>",
+                  "props": {"title": "<label>"},
+                  "binding": {"entityRef": "<entity_id>"}}
                ]}]
   },
   "aigc": {
