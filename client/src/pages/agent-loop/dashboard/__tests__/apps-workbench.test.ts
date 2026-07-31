@@ -262,3 +262,33 @@ describe("应用中心顶栏吸顶", () => {
     expect(src).not.toMatch(/grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">\s*\{pagedMine/);
   });
 });
+
+
+// ── 卡片墙布局与比例下限（2026-07-31）─────────────────────────────────
+describe("卡片墙用 masonry + 宽高比下限", () => {
+  const src = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
+
+  it("用 masonry 而不是 columns——列宽必须恒等", () => {
+    // columns 能把底部对齐到 0px，但它是**靠调整列宽**做到的（源码
+    // columns.ts: columnsRatios[i] = 1/Σ(1/ratio)），实测三列 506/452/399，
+    // 差 27%。卡片是同类对象，"排在前面的看起来更大"是假的视觉暗示。
+    expect(src).toContain("MasonryPhotoAlbum");
+    expect(src).toContain("react-photo-album/masonry.css");
+    expect(src).not.toContain("ColumnsPhotoAlbum");
+  });
+
+  it("手机档宽高比钳到下限，避免一张卡占掉整列", () => {
+    // 真实比例 0.462 在 453px 列宽下算出 980px，桌面卡才 255px——3.8×。
+    // 卡片高度不该等于重要性。钳到 0.9 后 503px / 2.0×，对齐官方 masonry
+    // demo 的观感（那面墙最高/最矮也约 2×）。库本身不提供任何比例钳制。
+    expect(src).toContain("WALL_MIN_ASPECT = 0.9");
+    expect(src).toMatch(/Math\.max\(\s*aspectForDevice\(item\.summary\?\.device\),\s*WALL_MIN_ASPECT\s*\)/);
+  });
+
+  it("下限只作用于卡片墙，不污染 aspectForDevice 本身", () => {
+    // aspectForDevice 还服务运行时和 dev-harness，那里要的是设备事实。
+    const lib = readFileSync(new URL("../../../../lib/justified-rows.ts", import.meta.url), "utf8");
+    expect(lib).not.toContain("WALL_MIN_ASPECT");
+    expect(lib).not.toContain("0.9");
+  });
+});

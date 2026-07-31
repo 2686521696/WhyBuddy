@@ -952,9 +952,15 @@ export function AppsWorkbench() {
   const pagedMine = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const pagedExamples = visibleExamples.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // ── 「我的应用」瀑布流（2026-07-31）──────────────────────────────────
+  // ── 「我的应用」卡片墙（2026-07-31）──────────────────────────────────
   //
-  // 走 react-photo-album 的 masonry：**等宽变高**，每张塞进当前最矮的那列。
+  // 走 react-photo-album 的 **masonry**：等宽变高，每张塞进当前最矮的那列。
+  //
+  // 为什么不是同库的 columns：columns 确实能把各列底部对齐到 0px 落差，但它是
+  // **靠调整列宽**做到的（源码 columns.ts：columnsRatios[i] = 1 / Σ(1/ratio)）。
+  // 实测三列宽 506 / 452 / 399，**差 27%**。相册里无所谓，但我们这里意味着
+  // "排在前面的应用看起来更大更重要"——而排序只是最近更新，这个视觉暗示是假的。
+  // 卡片是同类对象，等宽比底部齐重要，所以选 masonry。
   //
   // 为什么不是自己那套 justifiedRows（等高变宽，flickr 相册那种）：
   // 那套下手机档卡片只有约 122px 宽（264 × 0.462），而每张卡底部要压图标 +
@@ -966,17 +972,37 @@ export function AppsWorkbench() {
   // 宽高直接填 DEVICE_SPECS 的画布尺寸（比例是唯一被消费的信息），src 给空串，
   // 再用 render.photo 完全接管渲染——默认的 <img> 分支根本不会走到。
   // 这是个阻抗失配，但换来的是布局算法、响应式断点、SSR 由库负责。
+  // 卡片墙的宽高比**下限**（不是设备事实，是这面墙的呈现决定，所以放在这里
+  // 而不是 aspectForDevice 里——那个函数还服务运行时和 dev-harness）。
+  //
+  // 等宽变高的排法下，卡高 = 列宽 / 宽高比。手机档真实比例 0.462 在 444px 列宽
+  // 下算出 961px，而桌面卡只有 250px——**3.8 倍**，一张就占掉整列，视觉上压过
+  // 其他所有应用。但卡片高度不该等于重要性：手机档应用并不比桌面档更重要。
+  //
+  // 钳到多少是产品决定，**库本身不提供任何比例钳制**（源码确认：rowConstraints
+  // 只管一行放几张，masonry/columns 里一处 clamp 都没有）。标定参照官方 masonry
+  // demo：那面墙里最高/最矮约 2.0×，观感是"错落"而不是"一张怪卡"。
+  //
+  //   下限 0.462（真实）→ 手机卡 980px / 3.8×   一张占掉整列
+  //   下限 0.700        → 647px / 2.5×
+  //   下限 0.900        → 503px / 2.0×          ← 对齐 demo 观感
+  //   下限 1.000        → 453px / 1.8×
+  //
+  // 缩略图本来就不是等比预览（外面还压着一层信息浮层），牺牲一点比例真实性
+  // 换版面均衡划算。仍然一眼看得出"这是竖屏应用"。
+  const WALL_MIN_ASPECT = 0.9;
+
   const wallPhotos = React.useMemo(
     () =>
       pagedMine.map(({ item }) => {
-        const ratio = aspectForDevice(item.summary?.device);
+        const ratio = Math.max(aspectForDevice(item.summary?.device), WALL_MIN_ASPECT);
         const h = 1000;
         return { key: item.key, src: "", width: Math.round(h * ratio), height: h };
       }),
     [pagedMine]
   );
 
-  // 卡片渲染抽成函数：masonry 的 render.photo 按 index 回调，拿不到 map 的闭包。
+  // 卡片渲染抽成函数：render.photo 按 index 回调，拿不到 map 的闭包。
   // cellW/cellH 是库算好的像素尺寸（等宽变高），直接当卡片外框。
   const renderAppCard = (
     item: GalleryItem,
