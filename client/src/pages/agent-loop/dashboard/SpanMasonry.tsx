@@ -54,7 +54,7 @@ function useSpanPositioner(
   opts: SpanPositionerOptions,
   deps: React.DependencyList
 ): SpanPositioner {
-  const { columnCount, columnWidth, columnGutter, rowGutter } = opts;
+  const { columnCount, columnWidth, columnGutter, rowGutter, maxSpanWhitespace } = opts;
   // getSpan 每次渲染都是新函数，不能进依赖数组；用 ref 让定位器始终读到最新的。
   const getSpanRef = React.useRef(opts.getSpan);
   getSpanRef.current = opts.getSpan;
@@ -66,9 +66,10 @@ function useSpanPositioner(
         columnWidth,
         columnGutter,
         rowGutter,
+        maxSpanWhitespace,
         getSpan: i => getSpanRef.current(i),
       }),
-    [columnCount, columnWidth, columnGutter, rowGutter]
+    [columnCount, columnWidth, columnGutter, rowGutter, maxSpanWhitespace]
   );
 
   const ref = React.useRef<SpanPositioner | undefined>(undefined);
@@ -149,6 +150,11 @@ export interface SpanMasonryProps<T> {
   maxColumnCount?: number;
   /** 第 index 项占几列。会被钳进 [1, 列数]。 */
   getSpan: (item: T, index: number, columnCount: number) => number;
+  /**
+   * 跨列允许留下的最大空洞（px），超过就把那张卡降回单列。不给 = 不降级。
+   * 详见 span-positioner.ts 的同名选项。
+   */
+  maxSpanWhitespace?: number;
   itemKey: (item: T, index: number) => React.Key;
   /** 渲染一格。width 是**该格**的实际宽度（跨列时更宽）。 */
   render: (item: T, index: number, width: number, columnCount: number) => React.ReactNode;
@@ -173,6 +179,7 @@ export function SpanMasonry<T>({
   gutter,
   maxColumnCount,
   getSpan,
+  maxSpanWhitespace,
   itemKey,
   render,
   itemHeightEstimate = 240,
@@ -197,6 +204,7 @@ export function SpanMasonry<T>({
       columnWidth,
       columnGutter: gutter,
       rowGutter: gutter,
+      maxSpanWhitespace,
       getSpan: index => {
         const item = itemsRef.current[index];
         return item === undefined ? 1 : spanRef.current(item, index, columnCount);
