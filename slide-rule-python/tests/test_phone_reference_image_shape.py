@@ -1,7 +1,13 @@
-"""手机档参照图的画布形状（2026-07-30）。
+"""手机档参照图的画布形状（2026-07-30 起，2026-07-31 换端点后补记）。
+
+⚠️ 先说当前事实：**当前端点（api.xiaoleai.team）逐像素认 size 参数**，手机档
+传 720x1280 就实收 720x1280。下面这段是**上一个端点**的行为记录，留着是因为
+它解释了 prompt 里那些竖屏措辞为什么存在、为什么不能删。
+
+── 上一个端点（hello.vangularcode.asia）────────────────────────────
 
 起因：`_DEVICE_IMAGE_SIZE["phone"]` 填 "1024x1792"、注释写着"手机该是竖屏"，
-但真出图从来不是竖的。查下去发现这个端点有个不直觉的行为：
+但真出图从来不是竖的。查下去发现那个端点有个不直觉的行为：
 
     **尺寸参数只决定像素预算档位，长宽比由提示词内容决定。**
 
@@ -67,18 +73,28 @@ def test_desktop_prompts_do_not_ask_for_portrait():
     assert "宽屏比例" in identity
 
 
-def test_phone_size_param_is_the_pixel_tier_not_the_shape():
-    """尺寸参数在这个端点上只定像素档位，不定形状——别再指望改它能拿到竖图。
+def test_phone_size_param_now_carries_the_shape_too():
+    """尺寸参数**在当前端点上是形状的第一来源**——手机档必须传竖版尺寸。
 
-    1792x1024 → 1672x941 ≈ 1.57MP（桌面）
-    1024x1024 → 864x1821 ≈ 1.57MP（手机，竖，形状来自 prompt）
-    两档像素预算对齐，参照图清晰度同一水平。
+    2026-07-31 换到 api.xiaoleai.team 之后行为翻转了（实测记录见
+    _DEVICE_IMAGE_SIZE 上方）：
+
+      旧端点 hello.vangularcode.asia —— size 完全不起作用，十个尺寸/形态组合
+        全部回 1672x941，形状**只能**靠 prompt 里那句竖屏措辞掰回来
+      当前端点 api.xiaoleai.team —— 逐像素认 size：720x1280 → 实收 720x1280
+
+    所以这条从"别指望改 size"改成了"size 必须是对的形状"。上面那几个钉
+    prompt 措辞的用例**一条都没删**：措辞在这家是冗余的双保险，一旦换回不认
+    size 的端点它又变回唯一开关，两边都不吃亏。
     """
-    assert _DEVICE_IMAGE_SIZE["phone"] == "1024x1024"
-    assert _image_size_for_device("phone") == "1024x1024"
-    # 桌面档仍是宽屏尺寸，这条修复不该动它。
+    pw, ph = (int(x) for x in _image_size_for_device("phone").split("x"))
+    assert pw < ph, "手机档要传竖版尺寸，形状不该再只靠 prompt 措辞"
+    assert _DEVICE_IMAGE_SIZE["phone"] == _image_size_for_device("phone")
+    # 桌面档仍是宽屏尺寸。
     dw, dh = (int(x) for x in _image_size_for_device("desktop").split("x"))
     assert dw > dh
+    # 两档像素预算同一水平，参照图清晰度才不会一档糊一档锐。
+    assert abs(pw * ph - dw * dh) / (dw * dh) < 0.15
 
 
 def test_phone_only_overview_sheet_also_asks_for_one_portrait_screen():

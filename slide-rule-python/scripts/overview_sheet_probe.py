@@ -1,13 +1,17 @@
-"""真发一张三区参照板并落盘 —— 改画布尺寸后唯一能验的方式。
+"""真发参照板并落盘 —— 改画布尺寸后唯一能验的方式。
 
-尺寸这件事必须实测：这个生图端点认的是一份白名单尺寸，而且传进去的尺寸
-**不等于**返回的尺寸（1792x1024 传进去实收 1672x941）。所以改
-_SHEET_IMAGE_SIZE 之后要看两样东西——返回 PNG 的真实宽高，以及画面上的
-中文标签糊不糊。后者只能人眼看，脚本负责把图落到盘上。
+尺寸这件事必须实测，而且**每换一次端点都要重测**：不同服务商对 size 的处理
+可以完全相反。当前端点（api.xiaoleai.team）逐像素认 size，传什么回什么；上一
+家（hello.vangularcode.asia）则无论传什么都回同一个 1672x941。所以改
+_DEVICE_IMAGE_SIZE 或换端点之后要看两样东西——返回 PNG 的真实宽高，以及画面
+上的中文标签糊不糊。后者只能人眼看，脚本负责把图落到盘上。
+
+默认两档都发（桌面 + 手机），因为手机档现在传的是竖版尺寸，只测桌面档发现
+不了竖版那一路的问题。
 
 用法：
     cd slide-rule-python
-    .venv/bin/python scripts/overview_sheet_probe.py <输出目录>
+    .venv/bin/python scripts/overview_sheet_probe.py <输出目录> [desktop|phone|all]
 """
 
 import os
@@ -80,27 +84,45 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     _load_env_file(_ROOT / ".env")
 
-    from services.freeform_block import _SHEET_IMAGE_SIZE, _build_overview_sheet_prompt
+    from services.freeform_block import (
+        _build_overview_sheet_prompt,
+        _sheet_image_size_for_device,
+    )
     from sliderule_llm.image_client import generate_image_png
 
-    print(f"[probe] 请求尺寸 = {_SHEET_IMAGE_SIZE}")
-    prompt = _build_overview_sheet_prompt(BRIEF, DATAMODEL, theme_id="tangerine")
-    print(f"[probe] prompt 长度 = {len(prompt)} 字")
+    which = (sys.argv[2] if len(sys.argv) > 2 else "all").lower()
+    devices = ["desktop", "phone"] if which == "all" else [which]
 
-    t0 = time.time()
-    png = generate_image_png(prompt, size=_SHEET_IMAGE_SIZE)
-    elapsed = time.time() - t0
+    rc = 0
+    for device in devices:
+        requested = _sheet_image_size_for_device(device)
+        prompt = _build_overview_sheet_prompt(
+            BRIEF, DATAMODEL, theme_id="tangerine", device=device
+        )
+        print(f"[probe] {device}: 请求尺寸 = {requested}，prompt {len(prompt)} 字")
 
-    w, h = png_size(png)
-    path = out_dir / f"sheet-{w}x{h}.png"
-    path.write_bytes(png)
-    print(f"[probe] 实收 {w}x{h}  {len(png) / 1024:.0f}KB  {elapsed:.1f}s")
-    print(f"[probe] 落盘 {path}")
-    # 容 ±2px：同一个请求尺寸实测返回过 1672x941 和 1671x941，端点自己有
-    # 一个像素的抖动。卡死等值会天天误报，真正要看的是"有没有换档"。
-    if abs(w - 1672) > 2 or abs(h - 941) > 2:
-        print("[probe] ⚠️ 实收尺寸偏离预期的 1672x941 —— 端点档位可能变了")
-    return 0
+        t0 = time.time()
+        png = generate_image_png(prompt, size=requested)
+        elapsed = time.time() - t0
+
+        w, h = png_size(png)
+        path = out_dir / f"sheet-{device}-{w}x{h}.png"
+        path.write_bytes(png)
+        print(f"[probe] {device}: 实收 {w}x{h}  {len(png) / 1024:.0f}KB  {elapsed:.1f}s")
+        print(f"[probe] {device}: 落盘 {path}")
+
+        # 期望值直接从常量算，不写死字面量——换尺寸时不用回来改这里。
+        # 容 ±2px：端点自己有一两个像素的抖动（旧端点同一请求返回过 1672x941
+        # 和 1671x941），卡死等值会天天误报，真正要看的是"有没有换档"。
+        ew, eh = (int(x) for x in requested.split("x"))
+        if abs(w - ew) > 2 or abs(h - eh) > 2:
+            print(
+                f"[probe] ⚠️ {device}: 实收 {w}x{h} 偏离请求的 {requested}"
+                " —— 这家端点可能不认 size，或者换了档位。**别改常量去迁就它**，"
+                "先照 _DEVICE_IMAGE_SIZE 上方那份记录整份重测。"
+            )
+            rc = 1
+    return rc
 
 
 if __name__ == "__main__":

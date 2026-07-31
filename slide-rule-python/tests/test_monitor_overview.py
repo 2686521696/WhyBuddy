@@ -284,20 +284,35 @@ def test_enrich_covers_dashboard_pages(monkeypatch):
 
 
 def test_sheet_size_matches_prompt_canvas():
-    """请求尺寸与 prompt 里写的画布尺寸必须对得上。
+    """请求尺寸与 prompt 里写的画布尺寸必须对得上，**逐档对**。
 
     这两处分开写在两个地方（常量 + prompt 文案），改一处忘一处的话，模型会
-    按一个尺寸构图、实际画布是另一个尺寸，比例直接歪掉。这里钉住它们同步。
+    按一个尺寸排布、实际画布是另一个尺寸，比例直接歪掉。这里钉住它们同步。
 
-    注意端点会**降档**：传 1792x1024 实收 1672x941（活体探针记录见
-    _SHEET_IMAGE_SIZE 上方）。prompt 里要写的是**实收**尺寸——模型按它构图。
+    2026-07-31 换到 api.xiaoleai.team 之后这条更要紧了：这家**逐像素认 size**
+    （传什么回什么，实测记录见 _DEVICE_IMAGE_SIZE 上方），不像上一家那样无论
+    传什么都降档回同一个横版尺寸。所以 prompt 里报的必须是真正传出去的那个值，
+    而且手机档要跟桌面档报不一样的数——写死一个常量就等于手机档报错尺寸。
     """
-    from services.freeform_block import _SHEET_IMAGE_SIZE, _build_overview_sheet_prompt
+    from services.freeform_block import (
+        _build_overview_sheet_prompt,
+        _sheet_image_size_for_device,
+    )
 
-    assert _SHEET_IMAGE_SIZE == "1792x1024"
-    prompt = _build_overview_sheet_prompt("测试", {"entities": []}, theme_id="tangerine")
-    assert "1672x941" in prompt
-    assert "3840" not in prompt
+    for device in ("desktop", "phone", ""):
+        size = _sheet_image_size_for_device(device)
+        prompt = _build_overview_sheet_prompt(
+            "测试", {"entities": []}, theme_id="tangerine", device=device
+        )
+        assert size in prompt, f"{device!r} 档 prompt 里没报出真实画布 {size}"
+
+    # 手机竖、桌面横：形状由 size 参数保证，不再只靠 prompt 措辞掰。
+    pw, ph = (int(x) for x in _sheet_image_size_for_device("phone").split("x"))
+    dw, dh = (int(x) for x in _sheet_image_size_for_device("desktop").split("x"))
+    assert pw < ph, "手机档必须是竖版画布"
+    assert dw > dh, "桌面档必须是横版画布"
+    # device 没明说时跟桌面档一致——那一支要并排画两块，本身就是横版。
+    assert _sheet_image_size_for_device("") == _sheet_image_size_for_device("desktop")
 
 
 def test_sheet_prompt_keeps_only_what_the_model_cannot_do_itself():

@@ -277,62 +277,68 @@ _CARD_VISUAL_NOTE = (
     "（彩色底配白字，浅底配深字），不要出现看不清的低对比文字。"
 )
 
-# 生图尺寸：**当前这家端点上，尺寸参数完全不起作用**——总像素锁死约
-# 1.57MP，长宽比由提示词内容决定。下面这些字面值只是留着，等哪天换了认尺寸
-# 的服务商能直接用（见 _generate_overview_sheet_b64 的 SHEET_IMAGE_* 口子）。
+# 生图尺寸：**当前这家端点（api.xiaoleai.team）逐像素认 size 参数**——传
+# 什么回什么，不降档、不改比例。所以下面这些值就是真实画布，写 prompt 时可以
+# 直接照着算密度。
 #
-# 全矩阵实测（2026-07-30，同一句带横版线索的提示词，逐个真发一轮）：
-#   size 形态：1024x1024 / 1536x1024 / 1792x1024 / 2048x1152 /
-#              2048x1536 / 2048x2048 / 3840x2160
-#              → 七个值**全部**回 1672x941，耗时 56~62s 平齐
-#   image_size 形态 + aspect_ratio=16:9（技能包那套）：1K / 2K / 4K
-#              → 三个档**全部**回 1672x941，耗时 58~68s
-# 十个组合十个一样的结果，连 4K 也不例外。所以"升档换清晰度"在这家走不通，
-# 想要更高像素只能换服务商。
+# 实测（2026-07-31，探针带形状线索，逐个真发一轮）：
+#   1280x720  → 实收 1280x720  (0.92MP, 16:9)  69s
+#   720x1280  → 实收 720x1280  (0.92MP, 9:16)  48s
+#   1920x1080 → HTTP 400（不在这家的白名单里，秒回）
+# 中文标签在 0.92MP 上依旧锐利，没有糊字——密度预算够用。
 #
-# 长宽比确实归提示词管，三种形状的像素量分毫不差：
-#   横版 UI 线索 → 1672x941  ≈ 1.57MP
-#   中性无线索   → 1254x1254 ≈ 1.57MP
-#   9:16 竖屏线索 → 864x1821 ≈ 1.57MP
-# 这是"固定像素预算 + 长宽比可变"的典型实现。中间踩过一个坑值得记：第一轮
-# 探针用的是没有形状线索的中性提示词（"纯浅灰背景，正中一个大号数字 1"），
-# 拿到一堆方图就误判成"这个端点给不了竖图"——错的是探针，不是端点。
+# ⚠️ **这是端点相关的行为，换端点必须整份重测。** 同一份代码在上一家
+# （hello.vangularcode.asia）上表现完全相反：那家 size 参数**完全不起作用**，
+# 十个尺寸/形态组合（1024x1024 一路到 3840x2160，以及 image_size 1K/2K/4K +
+# aspect_ratio）**全部**回 1672x941，总像素锁死 1.57MP，长宽比只由提示词内容
+# 决定（横版线索→1672x941，中性→1254x1254，9:16 线索→864x1821）。
 #
-# 推论：**prompt 里那些比例措辞是功能性的，删了形状就会跑掉**
+# 被这件事绊过三次，记在这里免得下一个人再踩：
+#   ① 拿上一个端点测出的"可用尺寸白名单"当常量用，换 URL 后整份作废；
+#   ② 拿**没有形状线索**的中性提示词做探针（"纯浅灰背景，正中一个大号数字
+#      1"），拿到一堆方图就误判成"这家给不了竖图"——错的是探针不是端点；
+#   ③ 把 ② 得出的"形状只能靠提示词"当成普适结论，而它只对那一家成立。
+#
+# 提示词里的比例措辞仍然保留、并且**要跟这里的尺寸对齐**：认尺寸的端点上它
+# 是冗余的双保险，不认尺寸的端点上它是唯一的形状来源，两边都不吃亏
 # （见 _build_reference_image_prompt 的 device_note 与
 # identity_theme_gen._SHELL_SHAPE_NOTE）。
 _DEVICE_IMAGE_SIZE: dict[str, str] = {
-    "phone": "1024x1024",
-    "desktop": "1792x1024",
-    "tablet": "1792x1024",
+    "phone": "720x1280",
+    "desktop": "1280x720",
+    "tablet": "1280x720",
 }
 # 手机档参照图的**实际**画布（explicit 好过 implicit：调用方要写 prompt
-# 就得知道真实形状，不能从上面那个字面值猜）。
-_PHONE_IMAGE_ACTUAL_SIZE = "1254x1254"
+# 就得知道真实形状，不能从上面那个字面值猜）。这家端点不降档，所以两者相同；
+# 留着这个名字是因为换回降档端点时它还会重新分叉。
+_PHONE_IMAGE_ACTUAL_SIZE = "720x1280"
 
 
-# 参照板单独一档尺寸。
+# 参照板的尺寸：跟 _DEVICE_IMAGE_SIZE 同一套，按档位取。
 #
-# **在当前端点上这个值不起作用**（全矩阵实测见 _DEVICE_IMAGE_SIZE 上方：
-# 十个尺寸/形态组合全部回 1672x941）。留着它有两个用处：一是换到认尺寸的
-# 服务商时不用重新加参数，二是 SHEET_IMAGE_SIZE 没配时当默认值传下去。
+# 曾经这里是一个跟设备无关的常量（"1792x1024"），因为上一家端点无论传什么都
+# 回同一个横版尺寸，手机档只能靠 prompt 里那句"9:16 竖屏"把形状掰回来。换到
+# 认尺寸的端点之后没有理由再这么绕——手机档直接传 720x1280，形状由参数保证，
+# prompt 里那句竖屏措辞降级成双保险。
 #
-# ⚠️ 历史教训：这里曾经维护过一份带 ✅/❌/503 的"可用尺寸白名单"，那是
-# 2026-07-29 对**上一个**端点测的。本会话换过 IMAGE_API_URL 之后整份作废——
-# 当时标 ❌ HTTP 400 的、标 503 的，现在全都正常返回，只是返回的都一样。
-# 已删掉那份名单，免得下一个人照着它调尺寸白费功夫。**换端点必须整份重测**，
-# 这是今天被同一个坑绊了两次之后的结论（第一次是拿旧结论当常量，第二次是
-# 拿没有形状线索的中性提示词做探针）。
-#
-# 密度预算跟画布尺寸是一组：这张板实收 1672x941，元素个数不同步收敛的话每个
-# 元素分到的像素会少到中文标签糊成一片。所以下面的 prompt 里图表 3→2、动态
-# 列表 5→3 行那些上限不能单独放开——真正让参照失效的不是总像素不够，是每个
-# 元素分到的像素不够。
-_SHEET_IMAGE_SIZE = "1792x1024"
+# 密度预算跟画布尺寸是一组：元素个数不同步收敛的话每个元素分到的像素会少到
+# 中文标签糊成一片。所以下面 prompt 里图表最多 2 张、动态列表最多 5 行那些
+# 上限不能单独放开——真正让参照失效的不是总像素不够，是每个元素分到的像素
+# 不够。0.92MP 这一档实测中文仍然锐利，当前上限有余量。
+_SHEET_IMAGE_SIZE = _DEVICE_IMAGE_SIZE["desktop"]
 
 
 def _image_size_for_device(device: str) -> str:
     return _DEVICE_IMAGE_SIZE.get(device) or _DEVICE_IMAGE_SIZE[_DEFAULT_DEVICE]
+
+
+def _sheet_image_size_for_device(device: str) -> str:
+    """参照板按档位取画布。
+
+    device 没明说时走桌面档——跟 _build_overview_sheet_prompt 的 else 分支
+    一致：那一支要在一张横版画布上并排画桌面和手机两块，本身就是横版。
+    """
+    return _DEVICE_IMAGE_SIZE.get(device) or _SHEET_IMAGE_SIZE
 
 
 def _theme_palette(theme_id: str, generated_theme: Optional[dict[str, Any]] = None) -> dict[str, Any]:
@@ -1333,7 +1339,10 @@ def _build_overview_sheet_prompt(
     return (
         # 措辞不再叫 "design style sheet"——那个词本身就在把模型往色板拼贴上
         # 引（Style Tile 是色板+样例的交付物），而这张图现在只画真实版式。
-        "生成一张 1672x941 的 UI 页面版式参照图，"
+        # 这里报的尺寸必须跟真正传给端点的 size 一致（见
+        # _sheet_image_size_for_device）：当前端点逐像素认 size，两边说的不是
+        # 同一个画布的话，模型按 A 排布、端点按 B 出图，密度和比例都会偏。
+        f"生成一张 {_sheet_image_size_for_device(device)} 的 UI 页面版式参照图，"
         f"{zones_text}"
         # 密度预算是跟着画布尺寸走的（见 _SHEET_IMAGE_SIZE 上方的说明）：这张
         # 板从 4K 降到 1672x941，元素个数不同步收敛的话，每个元素分到的像素会
@@ -1485,7 +1494,7 @@ def _generate_overview_sheet_b64(
         sheet_cfg = get_image_gen_config("SHEET_")
         size = (os.environ.get("SHEET_IMAGE_SIZE") or "").strip() if sheet_cfg else ""
         png_bytes = generate_image_png(
-            prompt, cfg=sheet_cfg, size=size or _SHEET_IMAGE_SIZE
+            prompt, cfg=sheet_cfg, size=size or _sheet_image_size_for_device(device)
         )
     except ImageGenError as exc:
         print(f"[freeform_block] overview sheet skipped: {str(exc)[:160]}")
