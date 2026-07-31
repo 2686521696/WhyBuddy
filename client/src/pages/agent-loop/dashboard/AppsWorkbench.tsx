@@ -19,8 +19,10 @@
 import React from "react";
 import { Pagination } from "antd";
 
-import { useContainerWidth } from "@/hooks/useContainerWidth";
-import { aspectForDevice, justifiedRows } from "@/lib/justified-rows";
+import { MasonryPhotoAlbum } from "react-photo-album";
+import "react-photo-album/masonry.css";
+
+import { DEVICE_ASPECT, aspectForDevice } from "@/lib/justified-rows";
 import {
   LayoutGrid,
   FileText,
@@ -950,41 +952,148 @@ export function AppsWorkbench() {
   const pagedMine = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const pagedExamples = visibleExamples.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // ── 「我的应用」两端对齐行布局（2026-07-31）──────────────────────────
+  // ── 「我的应用」瀑布流（2026-07-31）──────────────────────────────────
   //
-  // 此前这栏是 grid-cols-2/3/4 + 每卡 aspect-video：所有卡片同宽同高、一律
-  // 16:9。手机档应用（线上 19 个里有 2 个）被硬拉成横版，overflow-hidden 一裁
-  // 就是"窄条 UI 居中、两边大片留白"。
+  // 走 react-photo-album 的 masonry：**等宽变高**，每张塞进当前最矮的那列。
   //
-  // 换成 justifiedRows 之后，宽高比由各应用的 device 决定（桌面 1.778 /
-  // 手机 0.462），同一行等高、宽度随比例走，手机档自然成窄竖条——设计稿里
-  // 那种大中小交错不需要"随机"，是宽高比落进等高行的必然结果。
+  // 为什么不是自己那套 justifiedRows（等高变宽，flickr 相册那种）：
+  // 那套下手机档卡片只有约 122px 宽（264 × 0.462），而每张卡底部要压图标 +
+  // 标题 + 页面/角色/AI 三个计数 + 状态标签——122px 塞不下，实测已经在换行挤。
+  // 相册里图就是图，窄一条无所谓；我们每张卡都要读标题和状态。
+  // masonry 下所有卡等宽，手机档只是变高（约 3.8× 桌面卡），文字宽度不受影响。
   //
-  // device 的来源是 App Store 摘要（列表接口顶层就有，不用等 model 加载完），
-  // 所以首屏骨架期就能算出正确版式，不会等详情回来再跳版。
-  // 容器宽度用仓内现成的 useContainerWidth（useSyncExternalStore 实现，
-  // 已处理 ref 未挂载时回退 window.innerWidth 与 SSR 快照）——别再自己写一遍
-  // ResizeObserver。
-  const wallRef = React.useRef<HTMLDivElement | null>(null);
-  const wallWidth = useContainerWidth(wallRef);
-
-  const wallAspects = React.useMemo(
-    () => pagedMine.map(({ item }) => aspectForDevice(item.summary?.device)),
+  // 库的 Photo 契约要 src + 宽高，而我们没有图片：这里**合成**一份 Photo，
+  // 宽高直接填 DEVICE_SPECS 的画布尺寸（比例是唯一被消费的信息），src 给空串，
+  // 再用 render.photo 完全接管渲染——默认的 <img> 分支根本不会走到。
+  // 这是个阻抗失配，但换来的是布局算法、响应式断点、SSR 由库负责。
+  const wallPhotos = React.useMemo(
+    () =>
+      pagedMine.map(({ item }) => {
+        const ratio = aspectForDevice(item.summary?.device);
+        const h = 1000;
+        return { key: item.key, src: "", width: Math.round(h * ratio), height: h };
+      }),
     [pagedMine]
   );
-  // 目标行高按容器宽度收缩：窄屏还用 260 的话一行塞不下两张桌面卡，
-  // 算法会把行高拉到容差上限，卡片变得过高。
-  const wallTargetRowHeight = wallWidth >= 1280 ? 260 : wallWidth >= 900 ? 220 : 180;
-  const wallLayout = React.useMemo(
-    () =>
-      wallWidth > 0
-        ? justifiedRows(
-            wallAspects.map(a => ({ aspectRatio: a })),
-            { containerWidth: wallWidth, targetRowHeight: wallTargetRowHeight, spacing: 16 }
+
+  // 卡片渲染抽成函数：masonry 的 render.photo 按 index 回调，拿不到 map 的闭包。
+  // cellW/cellH 是库算好的像素尺寸（等宽变高），直接当卡片外框。
+  const renderAppCard = (
+    item: GalleryItem,
+    detail: AppCardDetail | null,
+    cellW: number,
+    cellH: number
+  ) => {
+    const meta = detail ? STATUS_META[detail.status] : null;
+    const BrandIcon = detail?.identity
+      ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
+      : undefined;
+    // 活渲染缩略图的稳定 id：会话卡用 sessionId，App Store 卡无会话时用 appId。
+    const thumbId = item.sessionId || item.appId || item.key;
+    const canOpen = Boolean(item.sessionId);
+    const isApp = item.source === "app";
+    const version = item.version ?? 1;
+    const rel = formatRelativeTime(item.lastActive ?? item.createdAt);
+    return (
+      <div
+        data-testid={`app-cell-${item.sessionId || item.appId}`}
+        data-tier={(item.summary?.device || "desktop").trim() || "desktop"}
+        style={{ width: cellW, height: cellH }}
+      >
+      <CenterCard
+        testid={`app-card-${item.sessionId || item.appId}`}
+        title={detail?.identity?.productName || item.goal || "（未命名话题）"}
+        titleAttr={item.goal}
+        Icon={BrandIcon}
+        iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
+        media={
+          detail?.status === "runnable" && detail.model ? (
+            <LiveAppThumb sessionId={thumbId} model={detail.model} goal={item.goal} />
+          ) : (
+            <PendingAppThumb detail={detail} />
           )
-        : null,
-    [wallAspects, wallWidth, wallTargetRowHeight]
-  );
+        }
+        metrics={
+          detail ? (
+            <>
+              <span className="inline-flex items-center gap-1" title="页面数">
+                <FileText size={11} className="opacity-60" />
+                页面 {detail.pages}
+              </span>
+              <span className="inline-flex items-center gap-1" title="角色数">
+                <Users size={11} className="opacity-60" />
+                角色 {detail.roles}
+              </span>
+              <span className="inline-flex items-center gap-1" title="AI 能力数">
+                <GitBranch size={11} className="opacity-60" />
+                AI {detail.aiCaps}
+              </span>
+              {isApp && version > 1 && (
+                <span
+                  className="inline-flex items-center rounded bg-white/20 px-1.5 text-[10px] font-semibold text-white/95"
+                  title="改版次数（App Store 血缘）"
+                >
+                  v{version}
+                </span>
+              )}
+              {rel && (
+                <span
+                  className="inline-flex items-center text-white/65"
+                  title={formatUpdatedAt(item.lastActive ?? item.createdAt)}
+                >
+                  {rel}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="opacity-70">加载中…</span>
+          )
+        }
+        statusDot={meta?.dot ?? "bg-stone-300"}
+        statusLabel={meta?.label ?? "…"}
+        onClick={() => (canOpen ? open(item.sessionId!) : undefined)}
+        topRight={
+          <>
+            <button
+              data-testid={`app-menu-${item.sessionId || item.appId}`}
+              className="absolute right-2 top-2 rounded bg-white/85 p-1 text-stone-400 opacity-0 shadow-sm transition hover:text-stone-600 group-hover:opacity-100"
+              onClick={e => {
+                e.stopPropagation();
+                setMenuFor(prev => (prev === item.key ? null : item.key));
+              }}
+            >
+              <MoreHorizontal size={14} />
+            </button>
+            {menuFor === item.key && (
+              <div
+                className="absolute right-2 top-8 z-10 rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
+                onClick={e => e.stopPropagation()}
+              >
+                {isApp && (
+                  <button
+                    data-testid={`app-fork-${item.appId}`}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
+                    onClick={() => openForkModal(item)}
+                  >
+                    <GitBranch size={13} /> 复刻应用
+                  </button>
+                )}
+                <button
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-50"
+                  onClick={() => void removeCard(item)}
+                >
+                  <Trash2 size={13} /> 删除应用
+                </button>
+              </div>
+            )}
+          </>
+        }
+      />
+      </div>
+    );
+  };
+
+
 
   const llmOk = llm === null ? null : llm !== false && llm.keyPresent;
   const overall: boolean | null =
@@ -1285,129 +1394,24 @@ export function AppsWorkbench() {
             </div>
           )
         ) : (
-          <div
-            ref={wallRef}
-            className="relative mt-5"
-            style={{ height: wallLayout ? wallLayout.containerHeight : undefined }}
-            data-testid="apps-wall"
-          >
-            {pagedMine.map(({ item, detail }, wallIndex) => {
-              // 算法给绝对坐标，这里只负责定位（同 dev-harness 的 justified 档）。
-              // 首帧宽度还没量到时 box 为空，退回静态流式布局占位，不跳版。
-              const box = wallLayout?.boxes[wallIndex];
-              const meta = detail ? STATUS_META[detail.status] : null;
-              const BrandIcon = detail?.identity
-                ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
-                : undefined;
-              // 活渲染缩略图的稳定 id：会话卡用 sessionId，App Store 卡无会话时用 appId。
-              const thumbId = item.sessionId || item.appId || item.key;
-              const canOpen = Boolean(item.sessionId);
-              const isApp = item.source === "app";
-              const version = item.version ?? 1;
-              const rel = formatRelativeTime(item.lastActive ?? item.createdAt);
-              return (
-                <div
-                  key={item.key}
-                  data-testid={`app-cell-${item.sessionId || item.appId}`}
-                  data-tier={(item.summary?.device || "desktop").trim() || "desktop"}
-                  style={
-                    box
-                      ? { position: "absolute", top: box.top, left: box.left, width: box.width, height: box.height }
-                      : { position: "relative", aspectRatio: "16 / 9" }
-                  }
-                >
-                <CenterCard
-                  testid={`app-card-${item.sessionId || item.appId}`}
-                  title={detail?.identity?.productName || item.goal || "（未命名话题）"}
-                  titleAttr={item.goal}
-                  Icon={BrandIcon}
-                  iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
-                  media={
-                    detail?.status === "runnable" && detail.model ? (
-                      <LiveAppThumb sessionId={thumbId} model={detail.model} goal={item.goal} />
-                    ) : (
-                      <PendingAppThumb detail={detail} />
-                    )
-                  }
-                  metrics={
-                    detail ? (
-                      <>
-                        <span className="inline-flex items-center gap-1" title="页面数">
-                          <FileText size={11} className="opacity-60" />
-                          页面 {detail.pages}
-                        </span>
-                        <span className="inline-flex items-center gap-1" title="角色数">
-                          <Users size={11} className="opacity-60" />
-                          角色 {detail.roles}
-                        </span>
-                        <span className="inline-flex items-center gap-1" title="AI 能力数">
-                          <GitBranch size={11} className="opacity-60" />
-                          AI {detail.aiCaps}
-                        </span>
-                        {isApp && version > 1 && (
-                          <span
-                            className="inline-flex items-center rounded bg-white/20 px-1.5 text-[10px] font-semibold text-white/95"
-                            title="改版次数（App Store 血缘）"
-                          >
-                            v{version}
-                          </span>
-                        )}
-                        {rel && (
-                          <span
-                            className="inline-flex items-center text-white/65"
-                            title={formatUpdatedAt(item.lastActive ?? item.createdAt)}
-                          >
-                            {rel}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="opacity-70">加载中…</span>
-                    )
-                  }
-                  statusDot={meta?.dot ?? "bg-stone-300"}
-                  statusLabel={meta?.label ?? "…"}
-                  onClick={() => (canOpen ? open(item.sessionId!) : undefined)}
-                  topRight={
-                    <>
-                      <button
-                        data-testid={`app-menu-${item.sessionId || item.appId}`}
-                        className="absolute right-2 top-2 rounded bg-white/85 p-1 text-stone-400 opacity-0 shadow-sm transition hover:text-stone-600 group-hover:opacity-100"
-                        onClick={e => {
-                          e.stopPropagation();
-                          setMenuFor(prev => (prev === item.key ? null : item.key));
-                        }}
-                      >
-                        <MoreHorizontal size={14} />
-                      </button>
-                      {menuFor === item.key && (
-                        <div
-                          className="absolute right-2 top-8 z-10 rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          {isApp && (
-                            <button
-                              data-testid={`app-fork-${item.appId}`}
-                              className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
-                              onClick={() => openForkModal(item)}
-                            >
-                              <GitBranch size={13} /> 复刻应用
-                            </button>
-                          )}
-                          <button
-                            className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-50"
-                            onClick={() => void removeCard(item)}
-                          >
-                            <Trash2 size={13} /> 删除应用
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  }
-                />
-                </div>
-              );
-            })}
+          <div className="mt-5" data-testid="apps-wall">
+            <MasonryPhotoAlbum
+              photos={wallPhotos}
+              spacing={16}
+              // 断点交给库。列数别给太多——列宽一小，卡片底部那层文字又会挤
+              // 回去，那正是从等高变宽（justified）换成等宽变高要治的病。
+              columns={w => (w >= 1400 ? 4 : w >= 1000 ? 3 : w >= 640 ? 2 : 1)}
+              render={{
+                // 整张自定义。合成 Photo 的 src 是空串，默认 <img> 分支走不到。
+                // ctx 给的是算好的像素宽高，直接当卡片外框尺寸。
+                photo: (_props, ctx) => {
+                  const entry = pagedMine[ctx.index];
+                  return entry
+                    ? renderAppCard(entry.item, entry.detail, ctx.width, ctx.height)
+                    : null;
+                },
+              }}
+            />
           </div>
         ))}
 
