@@ -164,17 +164,30 @@ describe("createSpanPositioner", () => {
 });
 
 describe("bestSpanStart", () => {
-  it("先比落位后的 top（窗口内最大值），不是先比空白", () => {
-    // 窗口 [0,100]→top 100、[100,110]→top 110、[110,20]→top 110
-    // 按空白算会选 index 1（空白 10，最平）；按 top 算选 index 0（落得最高）。
-    // 选 top 是量过的决定，理由见 bestSpanStart 的文档。
-    expect(bestSpanStart([0, 100, 110, 20], 2)).toBe(0);
+  it("先比窗口内总空白，不是先比 top（= gestalt 原版）", () => {
+    // 窗口 [0,100]→空白 100、[100,110]→空白 10、[110,20]→空白 90
+    // 选 index 1：它最平，跨上去只在矮列留 10px；选 index 0 会留 100px 的洞。
+    //
+    // 这条 2026-07-31 反转过一次：上午改成"先比 top"，下午被线上截图推翻
+    // （真实数据上留了两个 189px 的洞，各正好空掉一个卡位）。理由见
+    // bestSpanStart 的文档，别再照"墙底更整齐"把它改回去。
+    expect(bestSpanStart([0, 100, 110, 20], 2)).toBe(1);
   });
 
-  it("top 并列时才用空白破平", () => {
-    // [50,50]→top 50 空白 0；[50,50] 之后 [50,10]→top 50 空白 40
-    // 两个窗口 top 都是 50，取空白小的 index 0
-    expect(bestSpanStart([50, 50, 10], 2)).toBe(0);
+  it("空白并列时才用 top 破平", () => {
+    // [50,50]→空白 0 top 50；[10,10]→空白 0 top 10。两个都平，取落得低的。
+    expect(bestSpanStart([50, 50, 10, 10], 2)).toBe(2);
+  });
+
+  it("跨列不在矮列留下整卡高度的洞（线上截图暴露的那个缺陷）", () => {
+    // 线上复现的形状：某列比邻列矮整整一个卡位(189px)，此时跨列若按 top 择位
+    // 就会把矮的那列从当前高度直接抬到高列，留下 189px 谁也填不进的空白。
+    // 空白优先会绕开这个窗口。
+    const heights = [800, 611, 800, 800, 800]; // 第 1 列矮 189
+    const s = bestSpanStart(heights, 2);
+    const seg = heights.slice(s, s + 2);
+    const hole = Math.max(...seg) - Math.min(...seg);
+    expect(hole).toBeLessThan(189);
   });
 
   it("span=1 时退化成最矮列（与 masonic 原生逐字一致）", () => {

@@ -96,48 +96,61 @@ export interface SpanPositioner {
  * 跨列格子的起始列：在所有长度为 span 的相邻列窗口里，**先**挑落位后 top 最低的
  * （`max(窗口内列高)` 最小），并列时**再**挑窗口内总空白 `Σ(max - h)` 最小的。
  *
- * ## 这里跟 gestalt 不一样，是量过之后**故意**的
+ * ## 跟 gestalt 一致，而且是**撤回过一次偏离之后**才一致的
  *
- * gestalt `getAdjacentColumnHeightDeltas` 只按空白择窗口（不看 top）。照搬过来在
- * 我们的数据上会退化：跨列卡落位后会把跨到的每一列设成**完全相等**，而"最平的
- * 窗口"从此永远是这一对——下一张跨列卡又落回同一处，自我强化。实测 50 格随机
- * 高度下 10 张跨列卡**全部** left=0，堆成最左边一竖条。
+ * 2026-07-31 上午我把这条规则改成了「先比落位后的 top、并列再比空白」，理由是
+ * 照搬空白优先会让跨列卡自我强化地堆在最左边（跨列卡落位后把跨到的每一列设成
+ * 完全相等，"最平的窗口"从此永远是这一对）。当天下午被线上截图推翻，撤回。
  *
- * 两条规则在**我们的真实高度分布**（22 张卡、桌面档 234px 占压倒多数、手机档
- * 728px 两张、5 列）上逐档量过：
+ * ### 我当时错在哪 —— 用合成数据下的结论去覆盖了人家在真实数据上的选择
  *
- *   每 3 张跨 1 张   空白优先 → 起始列 {0:8}        墙高 2494  列底参差 1244
- *                   top 优先  → 起始列 {0:6,2:1,3:1} 墙高 1994  列底参差  494
- *   每 4 张跨 1 张   空白优先 → {0:3,1:3}  墙高 1750  参差 500
- *                   top 优先  → {0:2,1:3,2:1} 墙高 1750  参差 250
- *   每 5 张跨 1 张   两者墙高相同，参差 250 vs 244
+ * 那个「全堆 left=0」是拿**随机高度 100~600px 的合成探针**测出来的。真实数据
+ * 里卡片高度近似恒等（桌面单列 173、跨列 356、手机 667），根本不会形成那种
+ * 自我强化。而我当时选的评价指标是「墙高 + 列底参差」，**没有把「洞」单独量**
+ * ——洞正是空白优先在治的东西，指标里没有它，自然就选错了。
  *
- * top 优先在每一档都不劣，密集档明显更好。反过来在**高度剧烈变化**的数据上
- * （随机 100~600px）空白优先的墙确实更紧（4451 vs 4560）——所以 gestalt 的选择
- * 对他们的图片墙是对的，只是前提跟我们不同：我们的卡片高度近似恒等，这正是
- * 一开始要引入跨列的原因。换了数据形态要重新量，别照抄这里的结论。
+ * ### 线上真实数据的复核（20 个应用的 device/page_count，5 列）
  *
- * 附带的好处：span=1 时"窗口内最大值"就是那一列自己的高度，规则**退化成最矮列**，
- * 跟 masonic/gestalt 的单列行为逐字一致——单列和跨列不再是两套逻辑。
+ *   规模    空白优先 洞数/洞总高      top 优先 洞数/洞总高    参差(ws vs top)
+ *    20        0 / 0                  2 / 378              555 vs 494
+ *    40        1 / 61                 4 / 628              616 vs 500
+ *    60        1 / 61                 5 / 811              781 vs 604
+ *   100        1 / 61                 9 / 1238            1513 vs 512
  *
- * 首行不需要特例：全 0 窗口的 max 是 0，天然就是全局最小，且并列时取最左，
- * 等价于 gestalt 那句 `heights.indexOf(0)`（而且比它更严——它只检查了起点那列）。
+ * top 优先每个规模都多出一个数量级的洞；换来的只是墙**底**参差小一些。
+ * 洞在视野中央、永远不会被填上；参差在最底下，且无限流往下加载会自己补平。
+ * 这笔交易是亏的——20 个应用时那两个 189px 的洞（各正好空掉一个卡位）在
+ * 线上截图里一眼就能看见。
+ *
+ * 教训记在这儿：**拿合成数据推翻成熟开源项目的既有选择之前，先确认自己的
+ * 评价指标覆盖了人家那条规则在治的问题。**
+ *
+ * ### 现在的规则（= gestalt `getAdjacentColumnHeightDeltas` 的 V2 支）
+ *
+ * 在每个长度为 span 的相邻列窗口上算「总空白」`Σ(max - h)`，取最小的那个；
+ * 并列时再比落位后的 top，取低的。
+ *
+ * 附带：span=1 时窗口只有一列，空白恒为 0，于是完全由 top 破平——**退化成
+ * 最矮列**，跟 masonic/gestalt 的单列行为逐字一致，单列跨列不是两套逻辑。
+ *
+ * 首行不需要特例：全 0 窗口空白为 0、top 也为 0，并列取最左，等价于 gestalt
+ * 那句 `heights.indexOf(0)`（且比它更严——它只检查了起点那一列）。
  *
  * 导出是为了单测能直接打这个规则，不用绕整个定位器。
  */
 export function bestSpanStart(heights: number[], span: number): number {
   const last = heights.length - span;
   let bestIndex = 0;
-  let bestTop = Number.POSITIVE_INFINITY;
   let bestWhitespace = Number.POSITIVE_INFINITY;
+  let bestTop = Number.POSITIVE_INFINITY;
   for (let i = 0; i <= last; i++) {
     let max = heights[i];
     for (let j = i + 1; j < i + span; j++) if (heights[j] > max) max = heights[j];
     let whitespace = 0;
     for (let j = i; j < i + span; j++) whitespace += max - heights[j];
-    if (max < bestTop || (max === bestTop && whitespace < bestWhitespace)) {
-      bestTop = max;
+    if (whitespace < bestWhitespace || (whitespace === bestWhitespace && max < bestTop)) {
       bestWhitespace = whitespace;
+      bestTop = max;
       bestIndex = i;
     }
   }
