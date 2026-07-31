@@ -18,6 +18,9 @@
 
 import React from "react";
 import { Pagination } from "antd";
+
+import { useContainerWidth } from "@/hooks/useContainerWidth";
+import { aspectForDevice, justifiedRows } from "@/lib/justified-rows";
 import {
   LayoutGrid,
   FileText,
@@ -602,7 +605,13 @@ function CenterCard({
     <div
       data-testid={testid}
       title={titleAttr}
-      className="group relative aspect-video cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
+      // 2026-07-31：宽高比不再由卡片自己定死 16:9，改由**父容器**给。
+      // 「我的应用」那栏走两端对齐行布局（justifiedRows），每张卡的宽高是算出来
+      // 的绝对值——手机档应用 0.462 自然成窄竖条，正是设计稿那种混排。写死
+      // aspect-video 会把手机档硬拉成 16:9，overflow-hidden 一裁就成了两边大片
+      // 留白的样子（线上 19 个应用里有 2 个手机档，长期都是这个毛病）。
+      // 其余调用方（骨架屏 / 官方示例）仍是等尺寸网格，由它们自己套 aspect-video。
+      className="group relative h-full w-full cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
       onClick={onClick}
     >
       <div className="absolute inset-0">{media}</div>
@@ -941,6 +950,42 @@ export function AppsWorkbench() {
   const pagedMine = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const pagedExamples = visibleExamples.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  // ── 「我的应用」两端对齐行布局（2026-07-31）──────────────────────────
+  //
+  // 此前这栏是 grid-cols-2/3/4 + 每卡 aspect-video：所有卡片同宽同高、一律
+  // 16:9。手机档应用（线上 19 个里有 2 个）被硬拉成横版，overflow-hidden 一裁
+  // 就是"窄条 UI 居中、两边大片留白"。
+  //
+  // 换成 justifiedRows 之后，宽高比由各应用的 device 决定（桌面 1.778 /
+  // 手机 0.462），同一行等高、宽度随比例走，手机档自然成窄竖条——设计稿里
+  // 那种大中小交错不需要"随机"，是宽高比落进等高行的必然结果。
+  //
+  // device 的来源是 App Store 摘要（列表接口顶层就有，不用等 model 加载完），
+  // 所以首屏骨架期就能算出正确版式，不会等详情回来再跳版。
+  // 容器宽度用仓内现成的 useContainerWidth（useSyncExternalStore 实现，
+  // 已处理 ref 未挂载时回退 window.innerWidth 与 SSR 快照）——别再自己写一遍
+  // ResizeObserver。
+  const wallRef = React.useRef<HTMLDivElement | null>(null);
+  const wallWidth = useContainerWidth(wallRef);
+
+  const wallAspects = React.useMemo(
+    () => pagedMine.map(({ item }) => aspectForDevice(item.summary?.device)),
+    [pagedMine]
+  );
+  // 目标行高按容器宽度收缩：窄屏还用 260 的话一行塞不下两张桌面卡，
+  // 算法会把行高拉到容差上限，卡片变得过高。
+  const wallTargetRowHeight = wallWidth >= 1280 ? 260 : wallWidth >= 900 ? 220 : 180;
+  const wallLayout = React.useMemo(
+    () =>
+      wallWidth > 0
+        ? justifiedRows(
+            wallAspects.map(a => ({ aspectRatio: a })),
+            { containerWidth: wallWidth, targetRowHeight: wallTargetRowHeight, spacing: 16 }
+          )
+        : null,
+    [wallAspects, wallWidth, wallTargetRowHeight]
+  );
+
   const llmOk = llm === null ? null : llm !== false && llm.keyPresent;
   const overall: boolean | null =
     nodeOk === null || pyOk === null || llmOk === null
@@ -1224,8 +1269,16 @@ export function AppsWorkbench() {
             </div>
           )
         ) : (
-          <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
-            {pagedMine.map(({ item, detail }) => {
+          <div
+            ref={wallRef}
+            className="relative mt-5"
+            style={{ height: wallLayout ? wallLayout.containerHeight : undefined }}
+            data-testid="apps-wall"
+          >
+            {pagedMine.map(({ item, detail }, wallIndex) => {
+              // 算法给绝对坐标，这里只负责定位（同 dev-harness 的 justified 档）。
+              // 首帧宽度还没量到时 box 为空，退回静态流式布局占位，不跳版。
+              const box = wallLayout?.boxes[wallIndex];
               const meta = detail ? STATUS_META[detail.status] : null;
               const BrandIcon = detail?.identity
                 ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
@@ -1237,8 +1290,17 @@ export function AppsWorkbench() {
               const version = item.version ?? 1;
               const rel = formatRelativeTime(item.lastActive ?? item.createdAt);
               return (
-                <CenterCard
+                <div
                   key={item.key}
+                  data-testid={`app-cell-${item.sessionId || item.appId}`}
+                  data-tier={(item.summary?.device || "desktop").trim() || "desktop"}
+                  style={
+                    box
+                      ? { position: "absolute", top: box.top, left: box.left, width: box.width, height: box.height }
+                      : { position: "relative", aspectRatio: "16 / 9" }
+                  }
+                >
+                <CenterCard
                   testid={`app-card-${item.sessionId || item.appId}`}
                   title={detail?.identity?.productName || item.goal || "（未命名话题）"}
                   titleAttr={item.goal}
@@ -1327,6 +1389,7 @@ export function AppsWorkbench() {
                     </>
                   }
                 />
+                </div>
               );
             })}
           </div>
@@ -1350,8 +1413,10 @@ export function AppsWorkbench() {
               const Icon = BRAND_LUCIDE[example.icon] ?? Boxes;
               const shot = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/examples/${example.domain}.png`;
               return (
+                // CenterCard 2026-07-31 起填满父容器（宽高比交给调用方决定）。
+                // 官方示例仍是等尺寸网格，比例由这层 aspect-video 提供。
+                <div key={example.domain} className="aspect-video">
                 <CenterCard
-                  key={example.domain}
                   testid={`example-card-${example.domain}`}
                   title={example.productName}
                   titleAttr={example.intent}
@@ -1389,6 +1454,7 @@ export function AppsWorkbench() {
                   statusLabel="closed 6/6"
                   onClick={() => useTemplate(example)}
                 />
+                </div>
               );
             })}
           </div>

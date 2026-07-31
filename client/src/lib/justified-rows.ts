@@ -176,3 +176,34 @@ export function justifiedRows(
     rowHeights,
   };
 }
+
+
+/**
+ * 各设备档的画布宽高比 —— justifiedRows 的输入。
+ *
+ * 数值来自 AppRuntimeScreen 的 DEVICE_SPECS（桌面 1440×810、平板 1112×834、
+ * 手机 390×844）。**不从那里 import**：DEVICE_SPECS 定义在 AppRuntimeScreen.tsx
+ * 里，而应用中心是靠 React.lazy 才把整个运行时挡在首屏之外的（见
+ * AppsWorkbench 的 LazyAppRuntimeScreen）；为了几个数字把那个模块拉成同步
+ * 依赖，等于把懒加载白做了。所以这里放一份纯数值副本，两处靠
+ * justified-rows.test.ts 里的一致性用例锁住，改了 DEVICE_SPECS 而没改这里
+ * 会当场红。
+ */
+export const DEVICE_ASPECT: Record<string, number> = {
+  desktop: 1440 / 810,
+  tablet: 1112 / 834,
+  phone: 390 / 844,
+};
+
+/**
+ * 把 App Store 摘要里的 device 字段翻成宽高比。
+ *
+ * 线上实测（19 个应用）：desktop 12、phone 2、**空串 5**。空串来自
+ * preferredDevice 未声明的老记录，按桌面处理——这跟 _DEFAULT_DEVICE 的取向
+ * 一致，也是保守的那一边：错判成桌面只是卡片偏宽，错判成手机会把一个宽版
+ * 应用压进 120px 窄条里，糊得没法看。
+ */
+export function aspectForDevice(device: string | null | undefined): number {
+  const key = (device || "").trim().toLowerCase();
+  return DEVICE_ASPECT[key] ?? DEVICE_ASPECT.desktop;
+}

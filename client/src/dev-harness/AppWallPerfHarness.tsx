@@ -33,7 +33,7 @@
 
 import React from "react";
 
-import { justifiedRows } from "@/lib/justified-rows";
+import { DEVICE_ASPECT, aspectForDevice, justifiedRows } from "@/lib/justified-rows";
 import { requestMountPermit } from "@/lib/mount-scheduler";
 import {
   parseFiveSystemModelFromPerSkillEvidence,
@@ -102,18 +102,13 @@ interface Loaded {
   aspectRatio: number;
 }
 
-/** 与 AppRuntimeScreen 的 DEVICE_SPECS 同源。平板已下架但比例留着。 */
-const DEVICE_ASPECT: Record<string, number> = {
-  desktop: 1440 / 810,
-  tablet: 1112 / 834,
-  phone: 390 / 844,
-};
+// DEVICE_ASPECT 曾在这里单独定义过一份，2026-07-31 抽进 lib/justified-rows
+// ——应用中心接同一套布局时需要同一份数值，两处各留一份迟早分叉。
 
 function aspectOf(model: FiveSystemModel): number {
-  const pref = String(
-    (model as { appbundle?: { preferredDevice?: unknown } }).appbundle?.preferredDevice ?? ""
-  ).trim();
-  return DEVICE_ASPECT[pref] ?? DEVICE_ASPECT.desktop;
+  return aspectForDevice(
+    String((model as { appbundle?: { preferredDevice?: unknown } }).appbundle?.preferredDevice ?? "")
+  );
 }
 
 /** 驱动脚本读的那份数据。挂在 window 上，避免让脚本去猜 DOM。 */

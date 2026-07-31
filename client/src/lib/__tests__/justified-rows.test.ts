@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { justifiedRows } from "../justified-rows";
+import { DEVICE_ASPECT, aspectForDevice, justifiedRows } from "../justified-rows";
 
 /** 真实设备档的宽高比（与 AppRuntimeScreen 的 DEVICE_SPECS 同源） */
 const DESKTOP = 1440 / 810; // 1.778
@@ -120,5 +120,60 @@ describe("justifiedRows", () => {
     }
     const tops = r.rowHeights.map((_, i) => r.boxes.find(b => b.row === i)!.top);
     for (let i = 1; i < tops.length; i++) expect(tops[i]).toBeGreaterThan(tops[i - 1]);
+  });
+});
+
+// ── 设备档宽高比（2026-07-31 从 dev-harness 抽上来，应用中心也用同一份）──
+
+describe("aspectForDevice", () => {
+  it("手机档必须比桌面档窄——这是整个混排的目的", () => {
+    expect(aspectForDevice("phone")).toBeLessThan(1);
+    expect(aspectForDevice("desktop")).toBeGreaterThan(1);
+    expect(aspectForDevice("phone")).toBeLessThan(aspectForDevice("desktop"));
+  });
+
+  it("空串/未知值按桌面处理", () => {
+    // 线上实测 19 个应用里 5 个是空串（preferredDevice 未声明的老记录）。
+    // 保守方向：错判成桌面只是卡片偏宽；错判成手机会把宽版应用压进窄条里。
+    for (const v of ["", "  ", null, undefined, "watch", "DESKTOP"]) {
+      expect(aspectForDevice(v as string)).toBe(DEVICE_ASPECT.desktop);
+    }
+  });
+
+  it("与 AppRuntimeScreen 的 DEVICE_SPECS 数值一致", () => {
+    // 那边是 desktop 1440×810 / tablet 1112×834 / phone 390×844。
+    // 这里放的是纯数值副本（不 import，避免把整个运行时拉成同步依赖，
+    // 见 DEVICE_ASPECT 的说明）。改了一边没改另一边，这条当场红。
+    expect(DEVICE_ASPECT.desktop).toBeCloseTo(1440 / 810, 6);
+    expect(DEVICE_ASPECT.tablet).toBeCloseTo(1112 / 834, 6);
+    expect(DEVICE_ASPECT.phone).toBeCloseTo(390 / 844, 6);
+  });
+});
+
+describe("混排：手机档落进等高行会自动变窄竖条", () => {
+  it("同一行里手机卡明显窄于桌面卡，且两者等高", () => {
+    // 设计稿那种「大中小交错」不是随机摆的，是宽高比落进等高行的必然结果。
+    const items = [
+      { aspectRatio: DEVICE_ASPECT.desktop },
+      { aspectRatio: DEVICE_ASPECT.phone },
+      { aspectRatio: DEVICE_ASPECT.desktop },
+    ];
+    const r = justifiedRows(items, { containerWidth: 1200, targetRowHeight: 260, spacing: 16 });
+    const row0 = r.boxes.filter(b => b.row === 0);
+    expect(row0.length).toBeGreaterThan(1);
+    const heights = new Set(row0.map(b => Math.round(b.height)));
+    expect(heights.size).toBe(1); // 同行等高
+
+    const phone = r.boxes.find(b => b.aspectRatio < 1)!;
+    const desktop = r.boxes.find(b => b.aspectRatio > 1)!;
+    expect(phone.width).toBeLessThan(desktop.width / 2);
+  });
+
+  it("全是桌面档时不会退化成竖条（回归保护）", () => {
+    const r = justifiedRows(
+      Array.from({ length: 6 }, () => ({ aspectRatio: DEVICE_ASPECT.desktop })),
+      { containerWidth: 1200, targetRowHeight: 260, spacing: 16 }
+    );
+    for (const b of r.boxes) expect(b.width).toBeGreaterThan(b.height);
   });
 });
