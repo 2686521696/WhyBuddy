@@ -278,12 +278,26 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     expect(src).not.toMatch(/import "react-photo-album/);
     expect(src).not.toContain("MasonryPhotoAlbum");
     expect(src).not.toContain("ColumnsPhotoAlbum");
-    // masonic 的定位器把高度当**输入**：set(index, height)，配 ResizeObserver
-    // 量真实 DOM 再回填。
+    // 定位器把高度当**输入**：set(index, height)，配 ResizeObserver 量真实 DOM
+    // 再回填。2026-07-31 起这一层是自建的 SpanMasonry（要支持跨列，masonic 的
+    // useMasonry 把每格宽度写死成全局列宽），但"高度是输入"这条契约没变。
     expect(src).toMatch(/from "masonic"/);
-    expect(src).toContain("useMasonry");
-    expect(src).toContain("usePositioner");
-    expect(src).toContain("useResizeObserver");
+    expect(src).toContain("useContainerPosition");
+    expect(src).toContain("SpanMasonry");
+    const positioner = readFileSync(new URL("../span-positioner.ts", import.meta.url), "utf8");
+    expect(positioner).toMatch(/set\(index, height/);
+    const masonry = readFileSync(new URL("../SpanMasonry.tsx", import.meta.url), "utf8");
+    expect(masonry).toContain("ResizeObserver");
+    expect(masonry).toMatch(/positioner\.set\(index, el\.offsetHeight\)/);
+  });
+
+  it("跨列：逐格宽度必须是自己算的，不能退回全局列宽", () => {
+    // masonic use-masonry.js:93 把 style.width 写死成 positioner.columnWidth，
+    // 跨列卡因此只能画一列宽。这里钉住"宽度来自该格自己的落位结果"。
+    const masonry = readFileSync(new URL("../SpanMasonry.tsx", import.meta.url), "utf8");
+    expect(masonry).toMatch(/width: pos\.width/);
+    // 隐藏量高那一批也要用跨列后的宽度，否则量出来的高度是按一列宽换行的，偏高。
+    expect(masonry).toMatch(/const w = columnWidth \* span \+ gutter \* \(span - 1\)/);
   });
 
   it("不用开箱的 <Masonry>——它的滚动源写死是 window", () => {

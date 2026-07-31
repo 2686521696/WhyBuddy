@@ -19,14 +19,11 @@
 import React from "react";
 import { Pagination } from "antd";
 
-import {
-  useContainerPosition,
-  useMasonry,
-  usePositioner,
-  useResizeObserver,
-} from "masonic";
+import { useContainerPosition } from "masonic";
 
 import { useScrollerIn } from "./useScrollerIn";
+import { SpanMasonry } from "./SpanMasonry";
+import { computeSpanKeys, spanForColumnCount } from "./app-wall-span";
 import { DEVICE_ASPECT, aspectForDevice } from "@/lib/justified-rows";
 import {
   LayoutGrid,
@@ -679,15 +676,19 @@ const WALL_COLUMN_WIDTH = 260;
 const WALL_GUTTER = 16;
 
 /**
- * 「我的应用」瀑布流（masonic 低层 hook 拼装）。
+ * 「我的应用」瀑布流。
  *
- * 为什么不用开箱的 `<Masonry>`：它内部是 `MasonryScroller` → `useScroller()`
- * → `@react-hook/window-scroll`，**滚动源写死是 window**，视口高度取
- * `window.innerHeight`。本应用滚的是 `.native-content`，window 一格都不滚，
- * scrollTop 会恒为 0（详见 useScrollerIn.ts）。所以这里按官方 README 的
- * "advanced usage" 路子自己拼：
- *     usePositioner + useResizeObserver + useContainerPosition + useMasonry
- * 只把 scrollTop/height 那一层换成本地滚动容器。
+ * 滚动源：`<Masonry>` 内部是 `MasonryScroller` → `useScroller()` →
+ * `@react-hook/window-scroll`，**写死 window**，视口高度取 `window.innerHeight`。
+ * 本应用滚的是 `.native-content`，window 一格都不滚，scrollTop 会恒为 0
+ * （详见 useScrollerIn.ts），所以这一层换成本地滚动容器。
+ *
+ * 渲染层：`useMasonry` 也不能用——它把每格宽度写死成全局列宽，跨列卡表达不出来。
+ * 换成 SpanMasonry（自建渲染循环 + 跨列定位器），落位规则照搬 Pinterest gestalt
+ * 的 multiColumnLayout。为什么非要跨列，见 app-wall-span.ts 顶部那段：卡片高度
+ * 由设备宽高比算出，三档里桌面占 89%，不引入跨列的话整面墙的高度是**同一个数**。
+ *
+ * 仍然复用 masonic 的 `useContainerPosition` 与 `createIntervalTree`。
  *
  * 单独抽成组件而不是写在 AppsWorkbench 里，是因为这几个都是 hook——卡片墙
  * 在「空态/搜索无结果/有结果」三岔里只有一岔渲染，写在外层就成了条件调用。
@@ -695,44 +696,61 @@ const WALL_GUTTER = 16;
 function AppWall({
   items,
   renderCard,
+  onReachEnd,
 }: {
   items: WallEntry[];
-  renderCard: (item: GalleryItem, detail: AppCardDetail | null, cellW: number) => React.ReactNode;
+  renderCard: (
+    item: GalleryItem,
+    detail: AppCardDetail | null,
+    cellW: number,
+    span: number,
+  ) => React.ReactNode;
+  onReachEnd?: () => void;
 }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
   // width 要跟着容器走（侧栏收起、窗口缩放都会变），deps 给 height 让它重量。
   const { offset: _offset, width } = useContainerPosition(containerRef, [height]);
-  const positioner = usePositioner(
-    { width, columnWidth: WALL_COLUMN_WIDTH, columnGutter: WALL_GUTTER, rowGutter: WALL_GUTTER },
-    [items.length],
+
+  // 跨列集合按整份列表算一次：只依赖 items，不依赖详情加载，所以详情回来之后
+  // 不会再重排一遍墙。
+  const spanKeys = React.useMemo(
+    () => computeSpanKeys(items.map(e => e.item)),
+    [items],
   );
-  const resizeObserver = useResizeObserver(positioner);
 
-  const grid = useMasonry<WallEntry>({
-    positioner,
-    resizeObserver,
-    containerRef,
-    items,
-    height,
-    scrollTop,
-    isScrolling,
-    overscanBy: 2,
-    // 首屏还没量到真实高度时用它估行数。桌面卡 260/1.78≈146 + 信息区 ≈52，
-    // 手机卡 260/0.46≈563 + 52；取中间偏桌面一侧，因为桌面档占多数。
-    itemHeightEstimate: 240,
-    itemKey: (entry: WallEntry) => entry.item.key,
-    className: "mt-5",
-    role: "list",
-    render: ({ data, width: cellW }) => <>{renderCard(data.item, data.detail, cellW)}</>,
-  });
-
-  // data-testid 挂在外层：useMasonry 只认 id/className/style，不透传 data-*。
-  // 外层不能有自己的盒模型影响（display:contents），否则 useContainerPosition
-  // 量的 offsetWidth 就不是网格的实际可用宽度。
   return (
     <div data-testid="apps-wall" style={{ display: "contents" }}>
-      {grid}
+      <SpanMasonry<WallEntry>
+        containerRef={containerRef}
+        items={items}
+        width={width}
+        height={height}
+        scrollTop={scrollTop}
+        isScrolling={isScrolling}
+        minColumnWidth={WALL_COLUMN_WIDTH}
+        gutter={WALL_GUTTER}
+        overscanBy={2}
+        // 首屏还没量到真实高度时用它估行数。桌面卡 260/1.78≈146 + 信息区 ≈52，
+        // 手机卡 260/0.46≈563 + 52；取中间偏桌面一侧，因为桌面档占多数。
+        itemHeightEstimate={240}
+        itemKey={entry => entry.item.key}
+        getSpan={(entry, _i, columnCount) =>
+          spanForColumnCount(spanKeys.has(entry.item.key), columnCount)
+        }
+        className="mt-5"
+        onReachEnd={onReachEnd}
+        render={(entry, _i, cellW, columnCount) => (
+          <>
+            {renderCard(
+              entry.item,
+              entry.detail,
+              cellW,
+              spanForColumnCount(spanKeys.has(entry.item.key), columnCount),
+            )}
+          </>
+        )}
+      />
     </div>
   );
 }
@@ -1039,9 +1057,13 @@ export function AppsWorkbench() {
       e.category.toLowerCase().includes(q)
     );
   });
-  // 分页（每页 12 = 4 × 3，用户硬性要求）
-  const totalItems = tab === "mine" ? visible.length : visibleExamples.length;
-  const pagedMine = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // 分页只剩「官方示例」这一个 tab 在用。
+  //
+  // 「我的应用」2026-07-31 起改成无限流（用户裁决）：卡片墙要的是一条连续的墙，
+  // 12 张在 5 列里只有 2.4 行，怎么调都堆不出墙的观感。取消切片之后靠虚拟化
+  // 扛住数量——SpanMasonry 只渲染视口内外两屏的格子，跟一页 12 张时的挂载量
+  // 是同一个数量级。示例库是普通网格、条目固定且少，保持原样。
+  const totalItems = visibleExamples.length;
   const pagedExamples = visibleExamples.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // ── 「我的应用」卡片墙（2026-07-31）──────────────────────────────────
@@ -1070,10 +1092,17 @@ export function AppsWorkbench() {
   // 用低层 hook 拼装而不是开箱的 `<Masonry>`：后者的滚动源写死是 window，
   // 本应用滚的是 .native-content，详见 useScrollerIn.ts 顶部那段。
 
-  // 卡片渲染抽成函数：masonic 的 render 按 index 回调，拿不到 map 的闭包。
-  // 只给 width——高度是**输出**不是输入，masonic 量完真实 DOM 再定位。
-  const renderAppCard = (item: GalleryItem, detail: AppCardDetail | null, cellW: number) => {
-    // 画面区高度 = 列宽 / 设备宽高比。信息区高度由内容决定，masonic 量真实 DOM。
+  // 卡片渲染抽成函数：定位器的 render 按 index 回调，拿不到 map 的闭包。
+  // 只给 width——高度是**输出**不是输入，量完真实 DOM 再定位。
+  const renderAppCard = (
+    item: GalleryItem,
+    detail: AppCardDetail | null,
+    cellW: number,
+    span = 1,
+  ) => {
+    // 画面区高度 = 本格宽度 / 设备宽高比。cellW 跨列时已经是两列的合并宽度，
+    // 所以这里**不用**为跨列另算——同一个设备比例下，卡宽了画面就等比高，
+    // 应用截图显示得更完整，正是给它两列的意义。信息区高度由内容决定。
     const mediaH = Math.round(cellW / aspectForDevice(item.summary?.device));
     const meta = detail ? STATUS_META[detail.status] : null;
     const BrandIcon = detail?.identity
@@ -1089,6 +1118,7 @@ export function AppsWorkbench() {
       <div
         data-testid={`app-cell-${item.sessionId || item.appId}`}
         data-tier={(item.summary?.device || "desktop").trim() || "desktop"}
+        data-span={span}
         // 不写死高度：masonic 的 ResizeObserver 量的就是这个节点，写死等于
         // 把「高度由内容决定」这条又退回去了。宽度也不用给——masonic 的定位
         // 容器已经是 columnWidth，卡片 w-full 铺满即可。
@@ -1489,10 +1519,11 @@ export function AppsWorkbench() {
           )
         ) : (
           <AppWall
-            // key 跟着页码/筛选走：masonic 的定位器缓存按 index 存，换了数据集
-            // 不重建的话会拿旧高度去摆新卡片。
-            key={`wall-${page}-${tab}-${pagedMine.length}`}
-            items={pagedMine}
+            // key 跟着筛选走：定位器的高度缓存按 index 存，换了数据集不重建的话
+            // 会拿旧高度去摆新卡片。数量变化不进 key——那是无限流追加的正常情形，
+            // 重建会把已量到的高度全丢掉，追加一批就整墙闪一次。
+            key={`wall-${tab}-${filter}-${query}`}
+            items={visible}
             renderCard={renderAppCard}
           />
         ))}
@@ -1562,8 +1593,8 @@ export function AppsWorkbench() {
           </div>
         ))}
 
-      {/* 分页器：一页 12 张（4 × 3），两个 tab 共用（用户定稿） */}
-      {totalItems > PAGE_SIZE && (
+      {/* 分页器：一页 12 张（4 × 3）。只剩示例库在用——「我的应用」改无限流了。 */}
+      {tab === "examples" && totalItems > PAGE_SIZE && (
         <div className="mt-6 flex justify-center" data-testid="apps-pagination">
           <Pagination
             current={page}
