@@ -97,26 +97,39 @@ def test_phone_size_param_now_carries_the_shape_too():
     assert abs(pw * ph - dw * dh) / (dw * dh) < 0.15
 
 
-def test_phone_only_overview_sheet_also_asks_for_one_portrait_screen():
-    """手机专属档的总览参照板同样直接要一整屏竖版。
+def test_phone_only_overview_sheet_carries_the_portrait_canvas_as_fact():
+    """总览参照板的手机档形状 2026-07-31 起由**事实**承载，不再靠措辞。
 
-    此前这一档是"横版画布上并排画两屏手机"——那是基于"端点给不了竖图"这个
-    后来被推翻的结论做的将就办法。形状既然由提示词决定，就该直接要竖屏。
+    此前这一档在 prompt 里明写"9:16 竖屏"，因为上一个端点不认 size、形状只能
+    靠措辞掰。现在两件事都变了：当前端点逐像素认 size（手机档直接传 720x1280），
+    而 prompt 正文改成由 LLM 按业务现写，写死的措辞整体挪走了。所以这里改成钉
+    事实清单——竖版画布 + 窄屏设备档，两样都在，改写 LLM 才不会按宽屏排布。
+
+    注意单区块参照图（_build_reference_image_prompt）**没有**跟着改，它那几条
+    钉措辞的用例仍然有效：那条路还是写死模板。
     """
-    from services.freeform_block import _build_overview_sheet_prompt
+    from services.freeform_block import (
+        _build_overview_sheet_facts,
+        _sheet_image_size_for_device,
+    )
 
-    phone_sheet = _build_overview_sheet_prompt(
+    phone_facts = _build_overview_sheet_facts(
         "测试", _EMPTY_DATAMODEL, theme_id="tangerine", device="phone"
     )
-    assert "9:16" in phone_sheet
-    assert "并排画两块" not in phone_sheet, "不该再退回并排两屏手机的将就办法"
+    assert _sheet_image_size_for_device("phone") in phone_facts
+    assert "竖版画布" in phone_facts
+    assert "窄屏" in phone_facts
+    w, h = (int(x) for x in _sheet_image_size_for_device("phone").split("x"))
+    assert w < h
 
-    # 桌面档与两档并排档都不能被带成竖图。
+    # 桌面档与未指定档都必须是横版，且不能被带成竖屏说法
     for device in ("desktop", ""):
-        sheet = _build_overview_sheet_prompt(
+        facts = _build_overview_sheet_facts(
             "测试", _EMPTY_DATAMODEL, theme_id="tangerine", device=device
         )
-        assert "整张图要画成手机竖屏比例" not in sheet
+        assert "竖版画布" not in facts
+        dw, dh = (int(x) for x in _sheet_image_size_for_device(device).split("x"))
+        assert dw > dh
 
 
 def test_block_reference_prompt_forbids_drawing_technical_identifiers():

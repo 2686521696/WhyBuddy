@@ -20,7 +20,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.freeform_block import (  # noqa: E402
     FreeformGenerationError,
+    _build_overview_sheet_facts,
     _monitor_overview_design_brief,
+    _sheet_image_size_for_device,
     enrich_monitor_page_overviews,
 )
 
@@ -315,163 +317,140 @@ def test_sheet_size_matches_prompt_canvas():
     assert _sheet_image_size_for_device("") == _sheet_image_size_for_device("desktop")
 
 
-def test_sheet_prompt_keeps_only_what_the_model_cannot_do_itself():
-    """2026-07-30 精简后的取舍：砍四类、留四类，这条把边界钉住。
+def test_facts_carry_only_what_the_model_cannot_derive():
+    """事实清单只装四类事实，**一条做法都不许有**。
 
-    做法是减法实验（逐类拿掉、真出图、看哪个 bug 复发），按"这条约束在替模型
-    做什么"分类：
+    2026-07-31 重构：此前这里钉的是"砍四类留四类"那份写死模板的边界。那套
+    模板每一条都有出图证据，问题出在它对每个应用说同一句话——实测两个完全
+    不同业务的出图提示词逐字相同 87%，能变的 13% 全是色值/字段名/内容清单，
+    没有一个字关于"怎么排"。所以做法整体挪给 refine 那一步按业务现写，这里
+    只保留模型自己推不出来的事实。
 
-      砍掉 = 替模型做它已经会做的事
-        密度预算(字高下限) / 控件形态(点名 antd) / 信息层级清单 / 配色使用规则
-      保留 = 模型自己产生不了、或本能会做反的事
-        版式要求 / 技术标识禁令 / 占位写法 / 主题色板(事实)
-
-    验证规模：5 题材 × 5 主题种子，四项检查 20/20 通过。**这个结论依赖当前
-    生图模型的能力**——换模型或换端点后要按 _build_overview_sheet_prompt
-    docstring 里那张表重测，砍掉的四条可能重新变成必需。
-
-    这条测试不是在说"砍了就永远别加回来"，而是让加回来时必须是**显式决定**
-    ——就像 ssot-parity 那条 FreeformInsight 哨兵一样。
+    这条守的是**边界不许回流**：谁要是图省事又把"顶部一行指标卡"塞回事实里，
+    多样性立刻回到写死模板的水平，而且不会有任何报错。
     """
-    from services.freeform_block import _build_overview_sheet_prompt
-
-    prompt = _build_overview_sheet_prompt(
+    facts = _build_overview_sheet_facts(
         "测试", {"entities": []}, theme_id="tangerine", device="desktop"
     )
+    # 四类事实都在
+    assert "画布：" in facts
+    assert "设备档：" in facts
+    assert "这一页要覆盖的内容范围" in facts
+    assert "身份色板" in facts and "主色" in facts
 
-    # 版式要求：画布形状与卡/图排布是我们的产品决定，模型猜不出来
-    assert "最多 2 张图" in prompt
-    assert "一整页桌面端总览界面" in prompt
-    # 主题色板：只给事实。砍掉之后三个不同业务的出图配色会趋同，各应用视觉
-    # 身份消失，而运行时外壳仍按种子渲染 → 内容区跟外壳撞色。
-    assert "配色基调用" in prompt
-
-    # 信息层级清单：砍过又加回来了。砍掉当轮出图的图例/坐标轴/单位都还在，
-    # 看着不需要；但"再砍版式要求"那轮暴露了更隐蔽的失败——**漏内容**（采购
-    # 那张少画一张 KPI 卡、整块 blockRef 表格没了）。这条逐项点名每张卡/每个
-    # 图表要有哪几层，是针对漏内容最直接的正面约束，所以留着。
-    assert "信息层级必须画满" in prompt
-    assert "一项都不许漏" in prompt
-
-    # 砍掉的三类不该再出现——加回来请先读 docstring 里的取舍记录
-    assert "1.5%" not in prompt, "密度预算已砍（砍后字并没有糊）"
-    assert "Ant Design" not in prompt, "控件形态已砍（砍后长相仍是 antd 那套）"
-    assert "KPI 指标卡要有设计感" not in prompt, "配色使用规则已砍（砍后仍跟主题种子走）"
+    # 做法一条都不许有
+    for banned in (
+        "顶部一行", "最多 2 张图", "多列横向排布",     # 版式处方
+        "20XX-XX-XX", "138-", "一个真实数据都不许出现",  # 占位写法
+        "技术标识", "blockRef",                        # 技术标识禁令
+        "水印", "画面撑满画布",                        # 水印/铺满
+        "信息层级必须画满", "一项都不许漏",             # 信息层级清单
+        "字高", "Ant Design",                          # 密度预算 / 控件形态
+    ):
+        assert banned not in facts, f"事实清单里混进了做法：{banned}"
 
 
-def test_sheet_prompt_draws_only_real_layouts_no_style_tile():
-    """参照板不再画「样式风格」区（色板色块/图标样例/字号层级示意）。
-
-    Style Tile（Samantha Warren 2011）那套交付物是给**人**看的——先定调性
-    再谈页面。但这张图的读者是设计 LLM，而调性信息它已经以**文字**形式拿到
-    了（build_freeform_prompt 里 _theme_prompt_fragment 直接把主色/背景/图表
-    色列给它），图上再画一遍色块是重复信息，却实打实吃掉画布面积和密度预算。
-    参照一份已验证过的第三方技能包提示词写法：整张只画一页真实界面，没有任何
-    色板拼贴（同一结论也是 c425911 改单区块参照图的依据）。
-
-    三档都要干净——只要有一档漏了，那一档的画布就又被样例吃回去。
-    """
-    from services.freeform_block import _build_overview_sheet_prompt
-
-    for device in ("desktop", "phone", ""):
-        prompt = _build_overview_sheet_prompt(
+def test_facts_state_the_device_tier_and_canvas_consistently():
+    """设备档与画布必须同时出现且互相自洽——竖版画布配"桌面端"会让改写 LLM
+    按宽屏排布，出图却是竖的。两处分开写就一定会分叉，这里钉住。"""
+    for device, is_portrait in (("desktop", False), ("phone", True), ("", False)):
+        facts = _build_overview_sheet_facts(
             "测试", {"entities": []}, theme_id="tangerine", device=device
         )
-        assert "样式风格" not in prompt, f"{device!r} 档还在画样式风格区"
-        assert "色板色块" not in prompt, f"{device!r} 档还在画色板样例"
-        assert "字号层级" not in prompt, f"{device!r} 档还在画字号层级示意"
-        # "style sheet" 这个词本身就在把模型往色板拼贴上引，一并去掉。
-        assert "style sheet" not in prompt, f"{device!r} 档措辞还在自称 style sheet"
-        assert "不是色板拼贴" in prompt, f"{device!r} 档缺少明令：不要画成色板拼贴"
+        canvas = _sheet_image_size_for_device(device)
+        assert canvas in facts
+        w, h = (int(x) for x in canvas.split("x"))
+        assert (w < h) is is_portrait
+        assert ("竖版画布" in facts) is is_portrait
 
 
-def test_sheet_prompt_drops_the_unused_zone_when_device_is_declared():
-    """07-30 补漏：明说 desktop/phone 时参照板不该再画那个不会用到的档。
+def test_prompt_falls_back_to_facts_when_refine_fails(monkeypatch):
+    """改写失败必须静默退回事实清单——绝不能让"想写得更好"把整条链路弄挂。
 
-    `enrich_monitor_page_overviews` 判定 preferredDevice 明说桌面时，压根
-    不会再跑手机档那次 freeform 设计生成（见上面 test_declared_desktop_
-    skips_the_phone_design），但参照板 prompt 此前没接 device 参数，一直
-    无条件画所有档——等于让生图模型白画一块永远用不到的 mockup，还挤占了
-    真正要用的那档的画布份额。这里钉住：明说哪档就只画哪档。
+    与 _generate_overview_sheet_b64 同一套 fail-open 纪律。测试环境本来就没配
+    LLM，但这里显式打桩，免得哪天有了默认 provider 让这条用例失去意义。
     """
-    from services.freeform_block import _build_overview_sheet_prompt
+    import services.freeform_block as fb
 
-    # 只查"版式区"这个概念本身在不在，不要用「手机」/「桌面」这种裸词做
-    # not-in 断言——占位文案示例里正当地出现过「手机号写成 138-…」，裸词一撞
-    # 就误判（2026-07-30 真踩过一次）。
-    desktop_prompt = _build_overview_sheet_prompt(
+    monkeypatch.setattr(fb, "_refine_sheet_prompt_via_llm", lambda *a, **k: None)
+    facts = fb._build_overview_sheet_facts(
         "测试", {"entities": []}, theme_id="tangerine", device="desktop"
     )
-    for phone_zone_marker in ("手机首页", "手机屏", "手机端总览界面", "手机轮廓"):
-        assert phone_zone_marker not in desktop_prompt, \
-            f"明说桌面档，参照板不该再画手机 mockup（命中「{phone_zone_marker}」）"
-    assert "桌面端总览界面" in desktop_prompt
-
-    phone_prompt = _build_overview_sheet_prompt(
-        "测试", {"entities": []}, theme_id="tangerine", device="phone"
+    prompt = fb._build_overview_sheet_prompt(
+        "测试", {"entities": []}, theme_id="tangerine", device="desktop"
     )
-    for desktop_zone_marker in ("桌面首页", "PC 内容区", "桌面端的总览版式"):
-        assert desktop_zone_marker not in phone_prompt, \
-            f"明说手机档，参照板不该再画桌面 mockup（命中「{desktop_zone_marker}」）"
-    assert "手机端总览界面" in phone_prompt
-
-    unspecified_prompt = _build_overview_sheet_prompt(
-        "测试", {"entities": []}, theme_id="tangerine", device=""
-    )
-    assert "桌面首页" in unspecified_prompt and "手机首页" in unspecified_prompt, \
-        "判不出来时仍要保守地两档都画（同一条只在明确时才砍的纪律）"
+    assert prompt == facts
 
 
-def test_declared_desktop_skips_the_phone_design(monkeypatch):
-    """明说 preferredDevice=desktop 时不再多花一次调用去设计手机版式。
+def test_prompt_uses_the_refined_text_when_refine_succeeds(monkeypatch):
+    """改写成功时，最终提示词就是改写结果本身——不再跟旧模板拼接。
 
-    这是 07-30 的省时点。此前是无条件两档都生成，而扫过真实数据后发现 9 个
-    应用的 preferredDevice **全是 desktop**——不是它们真都是桌面应用，是生成
-    契约里这个字段只声明了合法域、没给判据，模型无从选择。于是那次调用几乎
-    每轮都在为一个没人做过的判断买单（约 67s/总览页）。契约补了姿态判据之后
-    这个字段有意义了，就该用它省掉这次调用。
+    "作为最终内容覆盖"是这次重构的原话：拼接会让写死的做法从后门回来。
     """
-    calls = []
+    import services.freeform_block as fb
 
-    def fake_generate(brief, datamodel, **kwargs):
-        calls.append(kwargs.get("device"))
-        return {"root": {"tag": "div", "style": {}, "children": []}}
-
-    monkeypatch.setattr("services.freeform_block.generate_freeform_block", fake_generate)
-    monkeypatch.setattr("services.freeform_block._generate_overview_sheet_b64", lambda *a, **k: None)
-    model = {
-        "datamodel": _datamodel(),
-        "appbundle": {"appIdentity": {"theme": "forest"}, "preferredDevice": "desktop"},
-        "page": {"pages": [_monitor_page()]},
-    }
-    result = enrich_monitor_page_overviews(model)
-    assert calls == ["desktop"], f"明说桌面档却还生成了别的档: {calls}"
-    assert "mobile" not in result["page"]["pages"][0]["freeformOverview"], \
-        "桌面档不该挂 mobile 键——挂了前端会去渲一个没设计过的档"
+    refined = "改写后的提示词" * 30
+    monkeypatch.setattr(fb, "_refine_sheet_prompt_via_llm", lambda *a, **k: refined)
+    prompt = fb._build_overview_sheet_prompt(
+        "测试", {"entities": []}, theme_id="tangerine", device="desktop"
+    )
+    assert prompt == refined
 
 
-def test_desktop_sheet_does_not_draw_the_app_shell():
-    """参照图**不画外壳**——试过画、又撤回（2026-07-30）。
+def test_refine_meta_prompt_still_guards_the_two_proven_bugs():
+    """做法虽然交给改写 LLM，但两条**有出图证据**的坑必须在元提示词里点名。
 
-    曾照第三方技能包那样把外壳件逐个点名（顶部导航 + 侧栏），出图确实像个
-    "完整产品"、观感更整。但人工核对后决定不要壳：参照图的职责是交代**内容区**
-    该长什么样，外壳由运行时 AppRuntimeScreen 用 antd 固定渲染；画进参照图只会
-    让设计 LLM 有样学样往内容树里塞导航。
+    减法实验里唯二"砍掉就复发"的：
+      · 技术标识 —— 砍后 brief 里的 blockRef JSON 被当代码块画进图
+      · 真实数据 —— 砍后编出一组加起来能对上的自洽假数字，比明显的假数据更危险
 
-    这条钉住撤回后的状态，免得下次看到"有壳观感更好"又顺手加回去——加之前
-    先看这段注释和它的代价。
+    这里不要求元提示词给出逐类字段的形状清单（那正是本次拿掉的），只要求它
+    **点到这两件事**，让改写 LLM 自己写出对应的守卫。
+    """
+    from services.freeform_block import _SHEET_PROMPT_REFINE_SYSTEM as sys_prompt
+
+    assert "技术标识" in sys_prompt and "blockRef" in sys_prompt
+    assert "不能出现任何真实数据" in sys_prompt
+    assert "占位形状" in sys_prompt
+    # 版式要交给业务性质决定，且明确反掉通用后台网格
+    assert "通用后台网格" in sys_prompt
+    # 只出正文，别裹 markdown——裹了会被原样喂给生图模型
+    assert "不要 markdown 代码块" in sys_prompt
+
+
+def test_parallel_refine_preserves_order_and_isolates_failures(monkeypatch):
+    """批量改写并发发出，但**返回顺序必须与入参一致**，单个失败不拖垮整批。
+
+    顺序错位是这类改造最容易出的错，而且不会报错——只会让手机档拿到桌面档的
+    提示词，出图形状全错。
+    """
+    import services.freeform_block as fb
+
+    def fake(facts, *, device=""):
+        if "坏" in facts:
+            raise RuntimeError("boom")
+        return facts + "|refined" + str(len(facts) * 4)
+
+    monkeypatch.setattr(fb, "_refine_sheet_prompt_via_llm", fake)
+    items = [("A", "desktop"), ("坏", "phone"), ("CCC", "desktop")]
+    out = fb.refine_sheet_prompts_parallel(items)
+    assert len(out) == 3
+    assert out[0].startswith("A|refined")
+    assert out[1] is None, "失败位置必须是 None，不能塌缩掉"
+    assert out[2].startswith("CCC|refined")
+
+
+def test_desktop_sheet_no_longer_hardcodes_shell_rules():
+    """参照图不画外壳这条**从提示词挪走了**，但设计侧那半必须留着。
+
+    两处原本成对：参照图里说"不要画侧边栏"，generate_freeform_block 里说
+    "不要在你的内容树里搭这些"。前一半属于"做法"，归改写 LLM 管了；后一半是
+    对设计 LLM 的硬约束，跟参照图画不画壳无关，不能跟着一起消失。
     """
     import inspect
 
-    from services.freeform_block import _build_overview_sheet_prompt, generate_freeform_block
+    from services.freeform_block import generate_freeform_block
 
-    sheet = _build_overview_sheet_prompt(
-        "测试", {"entities": []}, theme_id="tangerine", device="desktop"
-    )
-    assert "不要画左侧侧边栏和顶栏" in sheet, "参照图不该画外壳"
-    assert "左侧一条竖向导航栏" not in sheet
-
-    # 禁令那半保留：它防的是设计 LLM 自作主张加外壳，跟参照图画不画壳无关。
     src = inspect.getsource(generate_freeform_block)
     assert "不要在你的内容树里搭这些" in src, "要明令禁止把外壳搭进内容树"
 
