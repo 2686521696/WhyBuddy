@@ -13,7 +13,7 @@ import os
 import re
 
 from fastapi import APIRouter, HTTPException, Header, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 from typing import Dict, Any, List, Optional
 from models.v5_state import CapabilityRun, V5SessionState
@@ -1449,6 +1449,30 @@ async def get_generated_app(app_id: str, x_internal_key: Optional[str] = Header(
     if record is None:
         raise HTTPException(404, "app not found")
     return record
+
+
+@router.get("/apps/{app_id}/preview")
+async def get_generated_app_preview(app_id: str, x_internal_key: Optional[str] = Header(None)):
+    """应用中心卡片的缩略图 PNG——生成这个应用时画的那张首页参照板。
+
+    没有图就 404（老应用、生图失败、预算撞顶都会走到这里）。前端按 404 回落
+    到活渲染，跟以前的行为一致——这不是错误态，是"这条记录没这份资产"。
+
+    强缓存：一条 generated_app 记录是不可变的（精修产生的是**新** app_id，
+    见 save_version），所以同一个 id 的图永远不会变，可以 immutable 缓存。
+    这正是这次改动的性能收益所在——第二次进应用中心连请求都不发。
+    """
+    _auth(x_internal_key)
+    from services import app_store
+
+    png = app_store.get_app_preview_png(app_id)
+    if not png:
+        raise HTTPException(404, "preview not found")
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.get("/apps/{root_id}/versions")

@@ -18,7 +18,7 @@
  * 输入是**宽高比**，不是尺寸。而我们每个应用的宽高比由设备档决定：
  *     桌面 1440×810 → 1.778     手机 390×844 → 0.462
  * 同一行里高度一致，于是**手机档应用自动变成窄竖条、桌面档变成宽幅卡**——
- * 设计稿里「待办事项」「消息中心」那两根窄列不是手工摆的，是宽高比 0.46 的
+ * 设计稿里「待办事项」「消息中心」那两根窄列不是手工摆的，是宽高比 0.5625 的
  * 卡片落进等高行里的必然结果。大中小交错也是这么来的，不需要"随机"。
  *
  * 配合 AppRuntimeScreen 的 scaleFit="width"（宽度定缩放、高度跟内容），
@@ -26,7 +26,7 @@
  */
 
 export interface JustifiedItem {
-  /** 宽 / 高。桌面 1.778、手机 0.462（见 DEVICE_SPECS） */
+  /** 宽 / 高。桌面 1.778（16:9）、手机 0.5625（9:16），见 DEVICE_ASPECT */
   aspectRatio: number;
 }
 
@@ -179,20 +179,38 @@ export function justifiedRows(
 
 
 /**
- * 各设备档的画布宽高比 —— justifiedRows 的输入。
+ * 各设备档的**卡片**宽高比 —— justifiedRows 的输入。
  *
- * 数值来自 AppRuntimeScreen 的 DEVICE_SPECS（桌面 1440×810、平板 1112×834、
- * 手机 390×844）。**不从那里 import**：DEVICE_SPECS 定义在 AppRuntimeScreen.tsx
+ * ⚠️ 这是卡片画面的比例，不是设备屏幕的比例。两者曾经是同一回事，2026-08-01
+ * 起不是了：
+ *
+ * 原先这里逐字抄 AppRuntimeScreen 的 DEVICE_SPECS（桌面 1440×810、平板
+ * 1112×834、手机 390×844），因为卡片里装的是**活渲染**——卡片就是那块画布
+ * 缩小版，比例当然得跟画布一致。手机那一档因此是 390/844 = 0.462，即 iPhone
+ * 19.5:9 的物理屏比。
+ *
+ * 现在卡片装的是生成时就画好的首页参照板（见 AppsWorkbench 的 SheetThumb），
+ * 那张图的画布由 freeform_block._DEVICE_IMAGE_SIZE 定死：
+ *   desktop / tablet → 1280×720（16:9 = 1.778）
+ *   phone            → 720×1280（9:16 = 0.5625）
+ * 卡片比例必须跟**图**对齐，否则图要么被裁、要么留黑边。桌面档 1440/810 恰好
+ * 等于 16:9，一直是对的；手机档 0.462 比 9:16 窄 22%，正是「移动端看着过长」
+ * 的来源——同样宽度下卡片高出 22%。
+ *
+ * 拉不到参照板的老应用仍然回落到活渲染（AppRuntimeScreen scaleFit="width"，
+ * 宽度定缩放、高度跟内容），比例不匹配时它自己会往下留白而不是裁切，所以这
+ * 一档改成图的比例对回落路径也是安全的。
+ *
+ * **不从 AppRuntimeScreen import**：DEVICE_SPECS 定义在 AppRuntimeScreen.tsx
  * 里，而应用中心是靠 React.lazy 才把整个运行时挡在首屏之外的（见
  * AppsWorkbench 的 LazyAppRuntimeScreen）；为了几个数字把那个模块拉成同步
- * 依赖，等于把懒加载白做了。所以这里放一份纯数值副本，两处靠
- * justified-rows.test.ts 里的一致性用例锁住，改了 DEVICE_SPECS 而没改这里
- * 会当场红。
+ * 依赖，等于把懒加载白做了。所以这里放一份纯数值副本，靠
+ * justified-rows.test.ts 里的一致性用例锁住它跟出图尺寸的对应关系。
  */
 export const DEVICE_ASPECT: Record<string, number> = {
-  desktop: 1440 / 810,
-  tablet: 1112 / 834,
-  phone: 390 / 844,
+  desktop: 1280 / 720,
+  tablet: 1280 / 720,
+  phone: 720 / 1280,
 };
 
 /**

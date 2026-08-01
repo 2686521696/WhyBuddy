@@ -344,6 +344,17 @@ def _try_llm_generate_evidence(
         model = enrich_freeform_blocks(model)
     except Exception as exc:  # noqa: BLE001 — 二段生成是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] freeform block enrichment skipped: {str(exc)[:160]}")
+    # 参照板收集槽：总览页设计会先画一张参照板给设计 LLM 照着排，那张图同时
+    # 也正是应用中心卡片该显示的画面（见 services/app_preview.py）。槽在这里
+    # 创建、下面落库时读——**只有闭环发布这条路径收集**；脚本调用方不传槽就
+    # 什么都不收，产出的 model.json 和仓库里冻结的域夹具不会混进几 MB base64。
+    preview_sink = None
+    try:
+        from .app_preview import OverviewPreviewSink
+
+        preview_sink = OverviewPreviewSink()
+    except Exception as exc:  # noqa: BLE001 — 缩略图是增强项
+        print(f"[v5_capability_executor] preview sink unavailable: {str(exc)[:160]}")
     # 首页/monitor 页面的总览区块也交给 FreeformInsight 设计——同样是增强项，
     # 放在 identity 主题之后（配色要照 generatedTheme 走）；失败/未声明就照旧
     # 落回 AppRuntimeScreen 里固定的 stats/charts/rankings/feeds 骨架，不影响
@@ -351,7 +362,7 @@ def _try_llm_generate_evidence(
     try:
         from .freeform_block import enrich_monitor_page_overviews
 
-        model = enrich_monitor_page_overviews(model)
+        model = enrich_monitor_page_overviews(model, preview_sink=preview_sink)
     except Exception as exc:  # noqa: BLE001 — 首页设计是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] monitor overview enrichment skipped: {str(exc)[:160]}")
     # 过门 + 增强完的完整设计模型持久化进 App Store（组建库地基）。fail-open：
@@ -366,6 +377,9 @@ def _try_llm_generate_evidence(
         # 画廊堆同名重复卡。模型未变仍走 dedup 幂等更新。
         app_store.save_app_or_version(
             model, goal=goal, session_id=session_id, gate_passed=True,
+            # 没收到图（生图失败/预算撞顶/这个应用没有总览页）传 None——落库侧
+            # 按"保留既有那张"处理，不会把已有卡片打回活渲染。
+            preview_png_b64=preview_sink.png_b64 if preview_sink else None,
         )
     except Exception as exc:  # noqa: BLE001 — 存储是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] app store save skipped: {str(exc)[:160]}")

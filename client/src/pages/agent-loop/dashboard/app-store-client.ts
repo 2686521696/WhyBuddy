@@ -32,6 +32,17 @@ export interface AppStoreSummary {
   landing_page_ref: string;
   entity_count: number;
   page_count: number;
+  /**
+   * 这条记录有没有缩略图（生成时画的那张首页参照板，见 Python 侧
+   * services/app_preview.py）。有就贴图，没有就回落活渲染。
+   *
+   * 图本身不在摘要里——一张约 1MB 的 PNG，列 200 个应用光缩略图就是 200MB。
+   * 真正取图走 GET /api/sliderule/apps/{id}/preview（immutable 强缓存）。
+   *
+   * 可选：老的 Python 后端不返回这个字段，缺失按 false 处理 = 活渲染，
+   * 即改动前的行为。
+   */
+  has_preview?: boolean;
 }
 
 /** 完整记录——摘要 + model_json（可直接重开渲染）。 */

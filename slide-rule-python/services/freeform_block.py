@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from pathlib import Path
 
+from .app_preview import OverviewPreviewSink
 from .enrich_timing import stage as _enrich_stage
 from .identity_palette_hint import FALLBACK_SEED, derive_prompt_palette
 from .palette_guard import extract_hex_colors, palette_report, repair_colors
@@ -2350,7 +2351,9 @@ def _prune_unplaced_blocks(page: dict[str, Any], content: Any) -> None:
     )
 
 
-def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
+def enrich_monitor_page_overviews(
+    model: dict[str, Any], *, preview_sink: Optional[OverviewPreviewSink] = None
+) -> dict[str, Any]:
     """首页/monitor 页面的总览区块也交给 FreeformInsight 设计，不再永远
     套同一套固定骨架（KPI 行 + 图表主列 + 排行/动态流侧列）——那套骨架
     此前是唯一选项，所以所有生成出来的应用首页看起来都一个模子，且列
@@ -2362,19 +2365,29 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
     失败）就照旧走固定骨架兜底，两者是"有更好的就用更好的，没有就诚实
     退回骨架"，不是互相替代关系。原地修改并返回同一个 model，方便调用方
     链式使用。
+
+    preview_sink：可选的参照板收集槽（见 app_preview）。传了就把这次画的参照板
+    交进去，供落库时当应用中心的卡片缩略图；**不传就完全不收集**——两个脚本
+    调用方（fresh_topic_shot / enrich_builtin_domain_models）因此不用改，也不会
+    有几 MB 的 base64 混进它们产出的 model.json 和仓库里冻结的域夹具。
     """
     # 墙钟埋点在函数内部（理由见 identity_theme_gen.enrich_identity_theme 同处
     # 注释：这条链路有多个入口，埋在调用点则换一个入口就没数）。
     with _enrich_stage("monitor.total"):
-        return _enrich_monitor_page_overviews_inner(model)
+        return _enrich_monitor_page_overviews_inner(model, preview_sink=preview_sink)
 
 
-def _enrich_monitor_page_overviews_inner(model: dict[str, Any]) -> dict[str, Any]:
+def _enrich_monitor_page_overviews_inner(
+    model: dict[str, Any], *, preview_sink: Optional[OverviewPreviewSink] = None
+) -> dict[str, Any]:
     datamodel = model.get("datamodel") or {}
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
     theme_id = str(identity.get("theme") or "").strip()
     device = str(appbundle.get("preferredDevice") or "").strip()
+    # 哪一页代表这个应用：落地页那张参照板就是用户点开应用第一眼看到的画面，
+    # 也就是卡片该显示的东西（见 OverviewPreviewSink.offer 的取舍规则）。
+    landing_ref = str(appbundle.get("landingPageRef") or "").strip()
     generated_theme_raw = identity.get("generatedTheme")
     generated_theme = generated_theme_raw if isinstance(generated_theme_raw, dict) else None
 
@@ -2437,6 +2450,12 @@ def _enrich_monitor_page_overviews_inner(model: dict[str, Any]) -> dict[str, Any
             # 跳过（预算撞顶/通道不支持图片）和真生了图，耗时天差地别，
             # 光看 ms 会以为"生图很快"，得把这一位记下来才看得懂数据。
             _st["got"] = 1 if sheet_b64 else 0
+        # 这张图排完版式就该丢了——但它同时也正是应用中心那张卡该显示的画面。
+        # 调用方给了收集槽就交一份（见 app_preview：**没给槽就什么都不做**，
+        # 所以两个脚本调用方不用改也不会被污染）。生图失败传 None 无害，
+        # offer 自己会忽略。
+        if preview_sink is not None:
+            preview_sink.offer(page_id, sheet_b64, is_landing=bool(landing_ref and page_id == landing_ref))
         try:
             with _enrich_stage("monitor.design", page=page_id, device=device or "unspecified"):
                 content = generate_freeform_block(

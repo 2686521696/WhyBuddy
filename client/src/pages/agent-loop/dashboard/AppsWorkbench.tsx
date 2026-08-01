@@ -550,6 +550,90 @@ function LiveAppThumb({
   );
 }
 
+/** 缩略图接口地址。app_id 对应的记录不可变（精修产生新 id），可以 immutable 缓存。 */
+export function appPreviewUrl(appId: string): string {
+  return `/api/sliderule/apps/${encodeURIComponent(appId)}/preview`;
+}
+
+/**
+ * 这张卡该贴参照板还是走活渲染。
+ *
+ * 只有两个条件：是 App Store 卡（有 appId 才有图可取），且后端说它有图。
+ * has_preview 缺失（老后端不返回这个字段）按 false 处理 = 活渲染，也就是
+ * 改动前的行为——**新能力缺席时退回旧行为，不是退化成空白**。
+ *
+ * 会话卡（source==="session"）不在此列：它们还没落进 App Store，没有 app_id
+ * 也就没有那张图，只能活渲染。
+ */
+export function shouldUseSheetThumb(item: {
+  appId?: string | null;
+  summary?: { has_preview?: boolean } | null;
+}): boolean {
+  return Boolean(item.appId && item.summary?.has_preview);
+}
+
+/**
+ * 参照板缩略图（2026-08-01，取代绝大多数卡片上的活渲染）。
+ *
+ * 生成这个应用时，为了让设计 LLM 有版式可参照，已经让生图模型画过一张首页
+ * 参照板（Python 侧 freeform_block._generate_overview_sheet_b64）。那张图画的
+ * 就是这个应用首页长什么样——正是卡片该显示的东西，而且钱已经付过了。此前它
+ * 排完版式就被丢掉，现在落进 Neon（services/app_preview.py + app_store 的
+ * generated_app_preview 表）。
+ *
+ * 为什么换掉活渲染：LiveAppThumb 每张卡挂一个真的 AppRuntimeScreen（antd 表格
+ * + echarts 全套）。它自己的注释记着实测——「生产构建下同屏 14 张卡，最长单
+ * 任务 4106ms，主线程连续堵四秒」。分批挂载只是把这四秒摊开，总工作量一点没
+ * 少。一张 <img> 的解码在合成线程，主线程零成本。
+ *
+ * 当初选活渲染的两条理由，这个方案都躲开了：
+ *   「永远最新、零缓存失效」——一条 generated_app 记录本身不可变（精修产生的
+ *     是新 app_id，见 save_version），图跟着记录走，不存在失效；
+ *   「不用额外的存储/沙盒基建」——不新起沙盒也不新截图，用的是生成时已经
+ *     产出的那张图，只多一张表。
+ *
+ * fail-open 两道：摘要没有 has_preview（老记录/老后端）压根不走这条路；走了
+ * 但图拉不到（记录刚被删、网络抖）→ onError 回落 fallback，也就是原来的活
+ * 渲染。**任何情况下都不会出现空白卡**。
+ */
+export function SheetThumb({
+  appId,
+  alt,
+  fallback,
+}: {
+  appId: string;
+  alt: string;
+  /** 图拉不到时回落到这个——传的就是原来那套活渲染/占位卡。 */
+  fallback: React.ReactNode;
+}) {
+  const [failed, setFailed] = React.useState(false);
+  // 换了一张卡（翻页/搜索复用同一个组件实例）要把失败态清掉，否则上一张的
+  // 失败会让新的这张也直接走 fallback。
+  React.useEffect(() => setFailed(false), [appId]);
+  if (failed) return <>{fallback}</>;
+  return (
+    <div
+      className="pointer-events-none h-full w-full overflow-hidden bg-[#f0f2f5]"
+      data-testid="app-thumb-sheet"
+    >
+      <img
+        src={appPreviewUrl(appId)}
+        alt={alt}
+        // 卡片比例跟出图画布是对齐的（见 lib/justified-rows 的 DEVICE_ASPECT），
+        // 所以 cover 不会真的裁掉内容，只是吃掉取整产生的那一两个像素缝。
+        className="h-full w-full object-cover"
+        loading="lazy"
+        decoding="async"
+        // 首屏之外的卡不参与解码排队，跟 loading=lazy 是一组
+        // eslint-disable-next-line react/no-unknown-property
+        fetchPriority="low"
+        onError={() => setFailed(true)}
+        draggable={false}
+      />
+    </div>
+  );
+}
+
 function StatChip({
   icon,
   label,
@@ -1154,13 +1238,24 @@ export function AppsWorkbench() {
         titleAttr={item.goal}
         Icon={BrandIcon}
         iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
-        media={
-          detail?.status === "runnable" && detail.model ? (
-            <LiveAppThumb sessionId={thumbId} model={detail.model} goal={item.goal} />
-          ) : (
-            <PendingAppThumb detail={detail} />
-          )
-        }
+        media={(() => {
+          // 回落链：参照板 → 活渲染 → 占位卡。后两级就是这次改动前的全部逻辑，
+          // 一行没动——参照板只是插在最前面，拿不到就原样落回去。
+          const live =
+            detail?.status === "runnable" && detail.model ? (
+              <LiveAppThumb sessionId={thumbId} model={detail.model} goal={item.goal} />
+            ) : (
+              <PendingAppThumb detail={detail} />
+            );
+          if (!shouldUseSheetThumb(item)) return live;
+          return (
+            <SheetThumb
+              appId={item.appId!}
+              alt={detail?.identity?.productName || item.goal || "应用首页示意"}
+              fallback={live}
+            />
+          );
+        })()}
         metrics={
           detail ? (
             <>

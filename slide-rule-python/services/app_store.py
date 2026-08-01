@@ -26,6 +26,7 @@ FreeformInsight 内容 + 首页设计。这跟"用户在生成出来的 app 里�
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -137,6 +138,30 @@ class AppStoreBackend:
     def export_all(self) -> list[dict[str, Any]]:  # pragma: no cover
         raise NotImplementedError
 
+    # ── 缩略图（首页参照板）─────────────────────────────────
+    #
+    # 为什么单独一张表 / 一份存储，而不是 generated_app 上加一列：
+    #   那张 base64 约 1MB。加成一列的话，现有每一条 `select *`（list、get、
+    #   find_by_dedup_key、find_latest_by_session、versions、export_all）都会
+    #   顺手把它拖出来——应用中心一次列 200 个应用就是 200MB 过网，正好跟这
+    #   件事要解决的问题相反。单独存就不存在"哪天谁加了个查询忘了排除它"。
+    #
+    # 三个方法都是**可选能力**：默认实现是"没有缩略图"，后端不实现也不会崩，
+    # 只是应用中心回落到活渲染（老行为）。
+
+    def save_preview(self, app_id: str, png_b64: str) -> None:  # pragma: no cover
+        return None
+
+    def get_preview(self, app_id: str) -> Optional[str]:  # pragma: no cover
+        return None
+
+    def preview_ids(self) -> set[str]:  # pragma: no cover
+        """有缩略图的 app id 集合——列表接口靠它给每条摘要打 has_preview。
+
+        只取 id 不取图：几千个 36 字符的 id 也就百来 KB，而对应的图是几个 GB。
+        """
+        return set()
+
 
 # ────────────────────────── JSON 文件后端（兜底）──────────────────────────
 
@@ -229,11 +254,49 @@ class JsonFileAppStore(AppStoreBackend):
             if len(remaining) == len(rows):
                 return False
             self._write(remaining)
+            self._preview_path(app_id).unlink(missing_ok=True)
         return True
 
     def export_all(self) -> list[dict[str, Any]]:
         with self._lock:
             return self._read()
+
+    # ── 缩略图：一个应用一个 .png 文件 ─────────────────────
+    #
+    # 不塞进上面那份 JSON：那个文件每次 save 都整份读进来、整份写回去，
+    # 混进几十 MB 的 base64 之后每存一个应用都要重写全部图片。一图一文件的
+    # 写入代价跟应用数量无关。存 PNG 原始字节而不是 base64，省掉 33% 体积，
+    # 顺便还能直接用图片查看器打开排查。
+    def _preview_dir(self) -> Path:
+        return self._path.parent / (self._path.stem + "-previews")
+
+    def _preview_path(self, app_id: str) -> Path:
+        # app id 是 uuid4().hex，不含路径分隔符；仍然过一道白名单，避免将来
+        # 有人换了 id 生成方式就把这里变成路径穿越。
+        safe = "".join(c for c in str(app_id) if c.isalnum() or c in "-_")[:64]
+        return self._preview_dir() / f"{safe or 'unknown'}.png"
+
+    def save_preview(self, app_id: str, png_b64: str) -> None:
+        raw = base64.b64decode(png_b64)
+        with self._lock:
+            path = self._preview_path(app_id)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".png.tmp")
+            tmp.write_bytes(raw)
+            os.replace(tmp, path)
+
+    def get_preview(self, app_id: str) -> Optional[str]:
+        path = self._preview_path(app_id)
+        try:
+            return base64.b64encode(path.read_bytes()).decode("ascii")
+        except OSError:
+            return None
+
+    def preview_ids(self) -> set[str]:
+        try:
+            return {p.stem for p in self._preview_dir().glob("*.png")}
+        except OSError:
+            return set()
 
 
 # ────────────────────────── SQLAlchemy 后端（Postgres / SQLite）──────────────
@@ -318,6 +381,24 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 "created_at": self.created_at.isoformat() if self.created_at else None,
                 "model_json": self.model_json,
             }
+
+    class GeneratedAppPreview(Base):
+        """应用中心的卡片缩略图（生成时那张首页参照板）。
+
+        单独一张表的理由见 AppStoreBackend.save_preview 上方那段：约 1MB 的
+        base64 挂在 generated_app 上，会被现有每一条 `select *` 顺手拖出来。
+        独立表 + 独立查询 = 只有真要图的那一次请求才付这个代价。
+
+        app_id 不设外键：generated_app 是三个后端共建的表（JSON/SQLAlchemy/
+        Neon HTTP 各建各的，都是 IF NOT EXISTS），加外键等于要求建表顺序，
+        而 Neon HTTP 那份不参与 SQLAlchemy 的 metadata。孤儿行由 delete_app
+        显式清理，代价是一张图，不值得为它引入建表顺序依赖。
+        """
+
+        __tablename__ = "generated_app_preview"
+        app_id = Column(String(36), primary_key=True)
+        png_b64 = Column(Text, default="")
+        created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # 连接超时收短 + 先做一次 2s TCP 探针：DB 不可达（网络封端口/连接串错/
     # 服务挂了）时快速失败 → get_backend 捕获后 fail-open 回退 JSON 文件，绝不
@@ -428,12 +509,36 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 if row is None:
                     return False
                 s.delete(row)
+                shot = s.get(GeneratedAppPreview, app_id)
+                if shot is not None:
+                    s.delete(shot)
                 s.commit()
             return True
 
         def export_all(self) -> list[dict[str, Any]]:
             with Session(engine) as s:
                 return [r.to_record() for r in s.scalars(select(GeneratedApp))]
+
+        # ── 缩略图 ───────────────────────────────────────
+        def save_preview(self, app_id: str, png_b64: str) -> None:
+            with Session(engine) as s:
+                existing = s.get(GeneratedAppPreview, app_id)
+                if existing is not None:
+                    s.delete(existing)
+                    s.flush()
+                s.add(GeneratedAppPreview(app_id=app_id, png_b64=png_b64))
+                s.commit()
+
+        def get_preview(self, app_id: str) -> Optional[str]:
+            with Session(engine) as s:
+                row = s.get(GeneratedAppPreview, app_id)
+            return (row.png_b64 or None) if row else None
+
+        def preview_ids(self) -> set[str]:
+            # 只查主键列——`select(GeneratedAppPreview)` 会把每行的 png_b64
+            # 一起拉出来，那正是这张表拆出去要避免的事。
+            with Session(engine) as s:
+                return {r for r in s.scalars(select(GeneratedAppPreview.app_id))}
 
     return SqlAppStore()
 
@@ -615,6 +720,17 @@ class NeonHttpAppStore(AppStoreBackend):
         )
         for col in ("root_id", "product_name", "dedup_key"):
             self._q(f"create index if not exists ix_generated_app_{col} on generated_app ({col})")
+        # 缩略图另起一张表（理由见 AppStoreBackend.save_preview 上方）。列定义
+        # 与 SQLAlchemy 侧的 GeneratedAppPreview 保持一致，两个后端读写同一份。
+        self._q(
+            """
+            create table if not exists generated_app_preview (
+                app_id varchar(36) primary key,
+                png_b64 text,
+                created_at timestamptz
+            )
+            """
+        )
 
     # ── 接口实现 ────────────────────────────────────────────
     def save(self, record: dict[str, Any]) -> str:
@@ -692,10 +808,35 @@ class NeonHttpAppStore(AppStoreBackend):
 
     def delete(self, app_id: str) -> bool:
         rows = self._q("delete from generated_app where id = $1 returning id", [app_id])
+        self._q("delete from generated_app_preview where app_id = $1", [app_id])
         return bool(rows)
 
     def export_all(self) -> list[dict[str, Any]]:
         return [_neon_normalize_row(r) for r in self._q("select * from generated_app")]
+
+    # ── 缩略图 ─────────────────────────────────────────────
+    def save_preview(self, app_id: str, png_b64: str) -> None:
+        self._q(
+            "insert into generated_app_preview (app_id, png_b64, created_at) "
+            "values ($1, $2, $3) on conflict (app_id) do update set "
+            "png_b64 = excluded.png_b64, created_at = excluded.created_at",
+            [app_id, png_b64, _now_iso()],
+        )
+
+    def get_preview(self, app_id: str) -> Optional[str]:
+        rows = self._q(
+            "select png_b64 from generated_app_preview where app_id = $1", [app_id]
+        )
+        if not rows:
+            return None
+        b64 = rows[0].get("png_b64")
+        return b64 if isinstance(b64, str) and b64 else None
+
+    def preview_ids(self) -> set[str]:
+        # 只 select app_id：`select *` 会把每行约 1MB 的 png_b64 一起过网，
+        # 而这里要的只是"哪些应用有图"。
+        rows = self._q("select app_id from generated_app_preview")
+        return {str(r.get("app_id")) for r in rows if r.get("app_id")}
 
 
 # ────────────────────────── 后端单例选择 ──────────────────────────
@@ -830,11 +971,18 @@ def save_app(
     session_id: Optional[str] = None,
     gate_passed: bool = True,
     dedup_key: Optional[str] = None,
+    preview_png_b64: Optional[str] = None,
 ) -> str:
     """存一个新生成的原始应用（root=自己·v1·无 parent）。返回 app id。
 
     传了 dedup_key 且已有同键记录 → 幂等更新那一条（复用它的 id/root/version，
-    刷新 model_json/元数据），不堆重复；用于"同一会话反复落同一个模型"。"""
+    刷新 model_json/元数据），不堆重复；用于"同一会话反复落同一个模型"。
+
+    preview_png_b64 是应用中心的卡片缩略图（生成时那张首页参照板，见
+    app_preview）。**没传就保留既有的那张**，不清空——这一路上大部分调用
+    根本没生成图（重开夹具、纯精修、fork），若按"没传即无图"处理，一次重存
+    就会把卡片打回活渲染。
+    """
     backend = get_backend()
     if dedup_key:
         existing = backend.find_by_dedup_key(dedup_key)
@@ -846,13 +994,45 @@ def save_app(
                 dedup_key=dedup_key,
             )
             record["created_at"] = existing.get("created_at") or record["created_at"]
-            return backend.save(record)
+            app_id = backend.save(record)
+            _attach_preview(backend, app_id, preview_png_b64, inherit_from=None)
+            return app_id
     app_id = _new_id()
     record = _build_record(
         model, goal=goal, session_id=session_id, gate_passed=gate_passed,
         app_id=app_id, root_id=app_id, parent_id=None, version=1, dedup_key=dedup_key,
     )
-    return backend.save(record)
+    saved = backend.save(record)
+    _attach_preview(backend, saved, preview_png_b64, inherit_from=None)
+    return saved
+
+
+def _attach_preview(
+    backend: AppStoreBackend,
+    app_id: str,
+    png_b64: Optional[str],
+    *,
+    inherit_from: Optional[str],
+) -> None:
+    """给刚落库的这一条挂缩略图。fail-open：挂不上只影响卡片长相，不影响落库。
+
+    有新图就用新图；没有新图但指了 inherit_from（上一版 / fork 源）就把那条的
+    图复制过来——新版本是个新 app_id，不复制的话每次精修卡片都会掉回活渲染，
+    而实际上这一版跟上一版长得基本一样，上一版那张图仍然是诚实的示意。
+    """
+    b64 = png_b64
+    if not b64 and inherit_from:
+        try:
+            b64 = backend.get_preview(inherit_from)
+        except Exception as exc:  # noqa: BLE001 — 缩略图是增强项
+            print(f"[app_store] 缩略图继承失败（不影响落库）: {str(exc)[:160]}")
+            return
+    if not b64:
+        return
+    try:
+        backend.save_preview(app_id, b64)
+    except Exception as exc:  # noqa: BLE001 — 同上
+        print(f"[app_store] 缩略图写入失败（不影响落库）: {str(exc)[:160]}")
 
 
 def save_app_or_version(
@@ -861,6 +1041,7 @@ def save_app_or_version(
     goal: str = "",
     session_id: Optional[str] = None,
     gate_passed: bool = True,
+    preview_png_b64: Optional[str] = None,
 ) -> str:
     """闭环落库的正确入口（2026-07-27，审查修复）：
 
@@ -880,6 +1061,7 @@ def save_app_or_version(
         return save_app(
             model, goal=goal, session_id=session_id,
             gate_passed=gate_passed, dedup_key=dedup_key,
+            preview_png_b64=preview_png_b64,
         )
     prior = backend.find_latest_by_session(session_id) if session_id else None
     if prior is not None:
@@ -887,23 +1069,42 @@ def save_app_or_version(
             prior.get("root_id") or prior["id"], prior["id"], model,
             goal=goal or (prior.get("goal") or ""),
             session_id=session_id, gate_passed=gate_passed,
+            preview_png_b64=preview_png_b64,
         )
     return save_app(
         model, goal=goal, session_id=session_id,
         gate_passed=gate_passed, dedup_key=dedup_key,
+        preview_png_b64=preview_png_b64,
     )
 
 
-def save_version(root_id: str, parent_id: str, model: dict[str, Any], *, goal: str = "", session_id: Optional[str] = None, gate_passed: bool = True) -> str:
-    """同一应用的新一版（同 root，version 递增）。用于对已有应用精修/重生成。"""
-    existing = get_backend().versions(root_id)
+def save_version(
+    root_id: str,
+    parent_id: str,
+    model: dict[str, Any],
+    *,
+    goal: str = "",
+    session_id: Optional[str] = None,
+    gate_passed: bool = True,
+    preview_png_b64: Optional[str] = None,
+) -> str:
+    """同一应用的新一版（同 root，version 递增）。用于对已有应用精修/重生成。
+
+    缩略图：这一版自己生了图就用自己的，没生就继承上一版那张（见
+    _attach_preview）——精修通常不重跑生图，不继承的话每精修一次卡片就掉回
+    活渲染一次。
+    """
+    backend = get_backend()
+    existing = backend.versions(root_id)
     next_version = (max((v.get("version") or 0) for v in existing) + 1) if existing else 1
     app_id = _new_id()
     record = _build_record(
         model, goal=goal, session_id=session_id, gate_passed=gate_passed,
         app_id=app_id, root_id=root_id, parent_id=parent_id, version=next_version,
     )
-    return get_backend().save(record)
+    saved = backend.save(record)
+    _attach_preview(backend, saved, preview_png_b64, inherit_from=parent_id)
+    return saved
 
 
 def fork_app(
@@ -938,20 +1139,61 @@ def fork_app(
         gate_passed=bool(source.get("gate_passed")),
         app_id=app_id, root_id=app_id, parent_id=source_id, version=1,
     )
-    return get_backend().save(record)
+    backend = get_backend()
+    saved = backend.save(record)
+    # 副本的设计跟源一模一样（model_json 就是拷贝的），源那张图对副本同样诚实。
+    _attach_preview(backend, saved, None, inherit_from=source_id)
+    return saved
 
 
 def get_app(app_id: str) -> Optional[dict[str, Any]]:
     return get_backend().get(app_id)
 
 
+def get_app_preview_png(app_id: str) -> Optional[bytes]:
+    """应用中心卡片缩略图的 PNG 原始字节；没有就 None（调用方 404，前端回落
+    活渲染）。fail-open：存储层出问题也当成"没有图"，不把一张缩略图变成故障。"""
+    try:
+        b64 = get_backend().get_preview(app_id)
+    except Exception as exc:  # noqa: BLE001 — 缩略图是增强项
+        print(f"[app_store] 缩略图读取失败: {str(exc)[:160]}")
+        return None
+    if not b64:
+        return None
+    try:
+        return base64.b64decode(b64)
+    except (ValueError, TypeError):
+        return None
+
+
+def _mark_previews(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """给一批摘要打上 has_preview——前端据此决定这张卡是贴图还是活渲染。
+
+    图本身不进摘要（一张约 1MB，列 200 个就是 200MB）。这里只多做一次
+    "有图的 id 集合" 查询，跟列表长度无关。fail-open：查不到就当全都没图，
+    前端回落活渲染（老行为），不因为一次查询失败让整个列表 500。
+    """
+    if not rows:
+        return rows
+    try:
+        have = get_backend().preview_ids()
+    except Exception as exc:  # noqa: BLE001 — 缩略图是增强项
+        print(f"[app_store] 缩略图索引读取失败，本次列表按「无图」处理: {str(exc)[:160]}")
+        have = set()
+    for r in rows:
+        r["has_preview"] = str(r.get("id")) in have
+    return rows
+
+
 def list_apps(*, limit: int = 50, offset: int = 0, latest_per_root: bool = True) -> list[dict[str, Any]]:
-    """列表（默认每个应用只出最新版），返回摘要（不含 model_json）。"""
-    return get_backend().list(limit=max(1, min(limit, 200)), offset=max(0, offset), latest_per_root=latest_per_root)
+    """列表（默认每个应用只出最新版），返回摘要（不含 model_json / 缩略图本体）。"""
+    return _mark_previews(get_backend().list(
+        limit=max(1, min(limit, 200)), offset=max(0, offset), latest_per_root=latest_per_root
+    ))
 
 
 def list_versions(root_id: str) -> list[dict[str, Any]]:
-    return get_backend().versions(root_id)
+    return _mark_previews(get_backend().versions(root_id))
 
 
 def delete_app(app_id: str) -> bool:
