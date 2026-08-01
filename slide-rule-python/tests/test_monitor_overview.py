@@ -161,10 +161,28 @@ def test_design_brief_frames_blocks_as_a_real_choice():
     的取舍。②那句"不会消失"必须已撤，它描述的是旧行为。
     """
     brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
-    assert "备选项" in brief
     assert "会被移除" in brief
     assert "不会消失" not in brief
     assert "用不上就完全不用" not in brief
+
+    # ④ 作用域必须咬死在积木上（2026-08-01 真跑修）。上一版写"上面列出的积木
+    # 是备选项……别为了凑齐而硬塞"，而"上面"之上还有"必须包含的 KPI/图表"清单
+    # 与"不能遗漏任何一项"——两句字面冲突，模型把 KPI/图表也当成了可选：一轮
+    # 真跑声明 3 个 KPI + 3 张图表，设计只画出 1 个数字、0 张图表。
+    assert "不在取舍范围内" in brief
+    assert "KPI 与图表照单全画" in brief
+    # 可选项要指名道姓，不能靠"上面列出的"这种相对指代
+    assert "可选的只有这几个积木" in brief
+
+
+def test_choice_scope_never_swallows_the_mandatory_lists():
+    """取舍话术出现时，"必须包含"的措辞必须同时在场且未被削弱。"""
+    brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
+    assert "必须包含的 KPI 统计卡" in brief
+    assert "必须包含的图表" in brief
+    assert "不能遗漏清单里的任何一项" in brief
+    # 旧版那句会把"别凑齐"泛化到所有内容，必须已撤
+    assert "别为了凑齐而硬塞" not in brief
 
 
 def test_design_brief_has_no_placement_demand_without_blocks():
