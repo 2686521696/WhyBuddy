@@ -73,7 +73,12 @@ def test_refresh_extends_active_session_and_preserves_missing_failure_semantics(
         expires_at="2026-08-01T00:00:00.000Z",
         now="2026-06-22T00:05:00.000Z",
     )
-    read = read_auth_session_record("session-runtime-1", store_file=store_file)
+    # now 必须钉住（2026-08-01 修，同 test_auth_session_refresh_logout_runtime）：
+    # 上面把过期时间设成绝对时刻 2026-08-01T00:00:00Z，而 read 不传 now 时
+    # _now() 回落真实墙钟，于是这条断言过了那个时刻就必然红。
+    read = read_auth_session_record(
+        "session-runtime-1", store_file=store_file, now="2026-06-22T00:06:00.000Z"
+    )
     missing = refresh_auth_session_record("missing-session", store_file=store_file)
 
     assert refreshed == {

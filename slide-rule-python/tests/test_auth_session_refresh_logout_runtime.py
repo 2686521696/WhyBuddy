@@ -45,7 +45,15 @@ def test_refresh_success_returns_refreshed_envelope_and_updates_persistence(tmp_
         },
         store_file=store_file,
     )
-    read = read_auth_session_record("session-runtime-1", store_file=store_file)
+    # now 必须钉住（2026-08-01 修）：refresh 把过期时间设成绝对时刻
+    # 2026-08-01T00:00:00Z，而 read 不传 now 时 _now() 回落 datetime.now()
+    # （auth_session_persistence.py:150）。于是这条断言在 2026-08-01T00:00:00Z
+    # 之前一直是绿的、之后必然红——真的在那天凌晨集体翻红。
+    # 用例本意是"刚刷完，会话读回来有效"，那就把读取时点钉在刷新之后一分钟；
+    # 换成相对时间（now+N天）会让"过期判定"这条断言本身失去意义。
+    read = read_auth_session_record(
+        "session-runtime-1", store_file=store_file, now="2026-06-22T00:06:00.000Z"
+    )
     raw_store = dict(json.loads(store_file.read_text(encoding="utf-8")))
 
     assert refreshed == {
