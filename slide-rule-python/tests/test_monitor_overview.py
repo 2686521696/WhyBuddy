@@ -145,35 +145,37 @@ def test_design_brief_points_row_content_at_blockref():
     assert "不要自己用 CSS 去画这类内容" in brief
 
 
-def test_design_brief_demands_placing_every_declared_block():
-    """2026-08-01：安置语义从**许可式**改成**祈使式 + 说清代价**。
+def test_design_brief_frames_blocks_as_a_real_choice():
+    """安置语义在 2026-08-01 反转过两次，这条用例记录最终形态与理由。
 
-    此前那句是"如果这一页还适合……就摆一个……用不上就完全不用，不必凑数"，
-    读起来是道选择题。但列出来的积木并不是备选项——它们是这一页已经声明、
-    一定会被渲染的东西：设计者不安置，它们不会消失，只会掉到设计区外面的固定
-    骨架里，首页又变回"AI 设计区 + 几张外挂卡"。
+    ① 最初是**许可式**："如果这一页还适合……就摆一个……用不上就完全不用"。
+    ② 当天改成**祈使式**："不是备选项，你必须全部安置"。理由是：不安置并不能
+       让积木消失，它只会掉到设计区外面的固定骨架里，主次和留白由不得设计者。
+    ③ 当天再次反转回**备选语义**——②的问题在于，它把一个架构缺陷固化成了对
+       模型的命令。"这一页用不用得上这个积木"本来就该由设计者判断，而它是链路
+       上信息最全的一环（刚把整页版式排完）；声明这些积木的五系统生成反而信息
+       更少。真正该修的是"不摆没有出口"，不是逼它全摆。
 
-    这个改法有本仓库两次先例撑腰（schema_legal 里许可式让七个通电区块一个都
-    没被用、binding 哨兵词 "none" 被当成值），所以这里锁死三件事：说了"必须"、
-    说了"不会消失"的代价、且**不再留"用不上就完全不用"那个逃生口**。
+    所以现在：积木是备选项，**不摆 = 真的移除**（见 _prune_unplaced_blocks）。
+    锁死两件事：说明白是备选、且说明白不摆的真实后果——否则那是一次没有信息
+    的取舍。②那句"不会消失"必须已撤，它描述的是旧行为。
     """
     brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
-    assert "不是备选项" in brief
-    assert "必须" in brief
-    assert "不会消失" in brief
-    # 旧的许可式逃生口必须已经拿掉，否则祈使式会被它当场抵消
+    assert "备选项" in brief
+    assert "会被移除" in brief
+    assert "不会消失" not in brief
     assert "用不上就完全不用" not in brief
 
 
 def test_design_brief_has_no_placement_demand_without_blocks():
-    """没有可安置积木的页面不该出现那段祈使话术（否则是对着空气下命令）。"""
+    """没有可安置积木的页面不该出现那段取舍话术（否则是对着空气下命令）。"""
     page = {
         "id": "home", "name": "首页", "kind": "monitor",
         "stats": [{"id": "s1", "name": "总数", "metric": "count", "entity": "appointment"}],
         "charts": [], "rankings": [], "feeds": [], "blocks": [],
     }
     brief = _monitor_overview_design_brief(page, _datamodel())
-    assert "不是备选项" not in brief
+    assert "备选项" not in brief
 
 
 def test_design_brief_omits_empty_sections():
@@ -686,3 +688,90 @@ def test_design_audience_keeps_blockref_mechanics():
     des = _monitor_overview_design_brief(page, _datamodel())
     assert "blockRef" in des
     assert '{"type"' in des
+
+
+# ── 设计者的否决权（2026-08-01，方案 B）────────────────────────────
+#
+# 语义：设计 LLM 没有摆进版式的可嵌积木 = 它判断这一页用不上 → 真的移除。
+# 此前"不摆"没有出口：积木照样渲染，只是掉到设计外面，比摆了还糟。
+
+
+def _page_with_blocks():
+    page = _monitor_page()
+    page["blocks"] = [
+        {"id": "acts", "type": "QuickActionPanel", "props": {"title": "常用操作"}},
+        {"id": "flow", "type": "WorkflowTimeline", "props": {}},
+    ]
+    page["layout"] = {"summary": ["acts"], "primary": ["flow"]}
+    return page
+
+
+def _design_with(*types):
+    children = [{"tag": "div", "blockRef": {"type": t, "binding": {}, "props": {}}} for t in types]
+    return {"root": {"tag": "div", "style": {}, "children": children}}
+
+
+def _run_enrich(page, design, monkeypatch):
+    monkeypatch.setattr("services.freeform_block.generate_freeform_block", lambda *a, **k: design)
+    monkeypatch.setattr("services.freeform_block._supports_image_content_parts", lambda: False)
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"appIdentity": {"theme": "azure"}, "preferredDevice": "desktop"},
+        "page": {"pages": [page]},
+    }
+    return enrich_monitor_page_overviews(model)["page"]["pages"][0]
+
+
+def test_unplaced_block_is_removed(monkeypatch):
+    """只摆了 QuickActionPanel → WorkflowTimeline 视为不需要，移除。"""
+    page = _run_enrich(_page_with_blocks(), _design_with("QuickActionPanel"), monkeypatch)
+    ids = [b["id"] for b in page["blocks"]]
+    assert ids == ["acts"], ids
+    # layout 里的悬空引用一并清掉，否则渲染层拿着一个不存在的 id
+    assert page["layout"]["primary"] == []
+    assert page["layout"]["summary"] == ["acts"]
+
+
+def test_all_placed_keeps_everything(monkeypatch):
+    page = _run_enrich(
+        _page_with_blocks(), _design_with("QuickActionPanel", "WorkflowTimeline"), monkeypatch
+    )
+    assert [b["id"] for b in page["blocks"]] == ["acts", "flow"]
+
+
+def test_generation_failure_removes_nothing(monkeypatch):
+    """设计生成失败 → 回落固定骨架，此时一个都不能删（否则内容凭空消失）。"""
+
+    def boom(*a, **k):
+        raise FreeformGenerationError("boom")
+
+    monkeypatch.setattr("services.freeform_block.generate_freeform_block", boom)
+    monkeypatch.setattr("services.freeform_block._supports_image_content_parts", lambda: False)
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"appIdentity": {"theme": "azure"}, "preferredDevice": "desktop"},
+        "page": {"pages": [_page_with_blocks()]},
+    }
+    page = enrich_monitor_page_overviews(model)["page"]["pages"][0]
+    assert [b["id"] for b in page["blocks"]] == ["acts", "flow"]
+    assert "freeformOverview" not in page
+
+
+def test_non_embeddable_block_is_never_pruned(monkeypatch):
+    """不可嵌类型压根没有"摆进设计"这个选项，不能按未安置移除。"""
+    page = _page_with_blocks()
+    page["blocks"].append({"id": "tbl", "type": "DataTable", "binding": {"entityRef": "order"}})
+    out = _run_enrich(page, _design_with("QuickActionPanel", "WorkflowTimeline"), monkeypatch)
+    assert "tbl" in [b["id"] for b in out["blocks"]]
+
+
+def test_prune_matches_by_type_not_instance(monkeypatch):
+    """保守偏向保留：设计里出现过该类型就整类保留，宁可多留不误删。"""
+    page = _monitor_page()
+    page["blocks"] = [
+        {"id": "feed_a", "type": "ActivityFeed", "binding": {"entityRef": "ticket", "timeFieldRef": "created_at"}},
+        {"id": "feed_b", "type": "ActivityFeed", "binding": {"entityRef": "order", "timeFieldRef": "created_at"}},
+    ]
+    out = _run_enrich(page, _design_with("ActivityFeed"), monkeypatch)
+    assert [b["id"] for b in out["blocks"]] == ["feed_a", "feed_b"]
+

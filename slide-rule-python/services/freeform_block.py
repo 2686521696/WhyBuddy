@@ -2261,11 +2261,13 @@ def _monitor_overview_design_brief(
     # 并且**把不安置的代价明说出来**。
     if row_bits or plain_bits:
         lines.append(
-            "上面列出的积木**不是备选项**：它们是这一页已经声明、一定会渲染的"
-            "内容。你必须在版式里用 blockRef 逐个安置它们（binding/props 照抄），"
-            "由你决定各自放哪一格、占多宽。**没有被你安置的，不会消失**——它会"
-            "掉到你的设计之外单独渲染，你精心安排的主次和留白就被打断了。"
-            "所以请把它们全部收进版式里，而不是留给外面。"
+            "上面列出的积木是**备选项，由你决定这一页用不用得上**：\n"
+            "· 用得上 → 用 blockRef 摆进版式（binding/props 照抄），放哪一格、"
+            "占多宽由你定；\n"
+            "· 用不上 → **不要摆**。没被你摆进来的会被移除，不会跑到你的设计"
+            "外面另起一张卡。\n"
+            "这是一次真正的取舍：按这一页的实际需要选，别为了凑齐而硬塞——"
+            "硬塞进来的东西会挤掉真正重要内容的位置。"
         )
     lines.append(
         "除了 KPI 统计卡和图表，这一页若还适合展示逐行记录（排行榜、最近动态/"
@@ -2274,6 +2276,65 @@ def _monitor_overview_design_brief(
         "也不要因为画不了就当它不存在。"
     )
     return "\n".join(lines)
+
+
+def _placed_blockref_types(content: Any) -> set[str]:
+    """走一遍设计树，收出被 blockRef 摆进去的积木类型。
+
+    深度上限与渲染侧 collectFreeformBlockRefKeys 同值（8），坏形状一律跳过、
+    不抛——这段跑在 fail-open 的增强链路里。
+    """
+    found: set[str] = set()
+
+    def walk(node: Any, depth: int) -> None:
+        if depth > 8 or not isinstance(node, (dict, list)):
+            return
+        if isinstance(node, list):
+            for item in node:
+                walk(item, depth + 1)
+            return
+        ref = node.get("blockRef")
+        if isinstance(ref, dict) and ref.get("type"):
+            found.add(str(ref["type"]))
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                walk(value, depth + 1)
+
+    walk(content, 0)
+    return found
+
+
+def _prune_unplaced_blocks(page: dict[str, Any], content: Any) -> None:
+    """把设计者没有安置的可嵌积木从 page.blocks / page.layout 里摘掉。
+
+    见调用点注释。这里只做机械移除，判断权在设计 LLM 的产出里。
+    """
+    blocks = page.get("blocks")
+    if not isinstance(blocks, list) or not blocks:
+        return
+    placed = _placed_blockref_types(content)
+    dropped_ids: list[str] = []
+    kept: list[Any] = []
+    for block in blocks:
+        btype = str((block or {}).get("type") or "") if isinstance(block, dict) else ""
+        if btype in FREEFORM_EMBEDDABLE_BLOCK_TYPES and btype not in placed:
+            dropped_ids.append(str(block.get("id") or btype))
+            continue
+        kept.append(block)
+    if not dropped_ids:
+        return
+    page["blocks"] = kept
+    layout = page.get("layout")
+    if isinstance(layout, dict):
+        for slot_key, refs in list(layout.items()):
+            if isinstance(refs, list):
+                layout[slot_key] = [r for r in refs if r not in dropped_ids]
+    # no silent drops：移除的是用户看得见的内容，必须留痕。
+    print(
+        f"[freeform_block] {page.get('id')} 设计者未安置，已移除 "
+        f"{len(dropped_ids)} 个积木: {dropped_ids}"
+        f"（设计里用到的类型: {sorted(placed) or '无'}）"
+    )
 
 
 def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
@@ -2431,6 +2492,25 @@ def _enrich_monitor_page_overviews_inner(model: dict[str, Any]) -> dict[str, Any
                         f"falling back to the desktop design on phone: {str(exc)[:160]}"
                     )
             page["freeformOverview"] = content
+            # 设计者的否决权（2026-08-01）：**没被摆进设计的可嵌积木，就此移除**。
+            #
+            # 此前"不摆"没有任何出口——积木照样渲染，只是掉到设计区外面的固定
+            # 骨架里。于是设计 LLM 判断"这一页用不上它"这件事**根本无法表达**：
+            # 不摆比摆还糟（出现在它控制不到的地方，打断它安排的主次和留白）。
+            # 上面 brief 里那段"用不上就不要摆"因此才成立——现在它是真的。
+            #
+            # 谁来判断：设计 LLM 是链路上信息最全的一环（它刚把整页版式排完），
+            # 而声明这些积木的是更早、信息更少的五系统生成。把取舍交给前者。
+            #
+            # 只动**可嵌类型**：不可嵌的积木压根没有"摆进设计"这个选项，按
+            # 未安置移除等于无条件删掉。总览页上这两个集合当前恰好相等
+            # （monitor_ok == FREEFORM_EMBEDDABLE_BLOCK_TYPES），这里仍按类型
+            # 判断而不是依赖那个巧合。
+            #
+            # 保守偏向保留：按**类型**匹配而非逐实例指纹——设计里出现过该类型
+            # 就整类保留。宁可多留一个（掉骨架，老行为），也不要误删。
+            # 移除必须留痕：静默删掉用户看得见的内容是这个仓库明令避免的。
+            _prune_unplaced_blocks(page, content)
         except FreeformGenerationError as exc:
             print(
                 f"[freeform_block] {page.get('id')} monitor overview generation failed, "
