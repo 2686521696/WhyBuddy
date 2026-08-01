@@ -407,9 +407,20 @@ def experience_block_prompt_block() -> str:
         # 措辞照上一句的教训走**祈使式**：07-28 记过，写成许可式（"You MAY
         # emit…"）时七个通电区块一个都没被用，同目标连跑三次全是 0；换成祈使
         # 式并说清"不用的代价"之后才有产出。所以这里也说清代价。
+        # 2026-08-01 追加排除 FilterBar：它在总览页**驱动不了任何东西**。
+        # 实测链路：filterState 全仓只有 FilterBarRenderer 自己读（用来显示当前
+        # 筛选态），变更经 onFilterChange 进页面级过滤态，只影响页面自有视图
+        # （Table/看板/日历，走筛过的 rows）；而积木与 freeform 设计树拿到的是
+        # entityRows = state.entities，**未筛的全量**。总览页没有 Table/看板/
+        # 日历，于是那条筛选栏按下去什么都不会变。
+        # 这也正是 blockRef 白名单一直不收它的理由（test_freeform_blockref 的
+        # 用例注释原文："FilterBar 在总览页筛不动东西"）——既然嵌不进设计、
+        # 又驱动不了内容，就不该在总览页把它摆出来当选项：模型真的会照单声明
+        # （2026-08-01 基线轮，dashboard 页声明了 analytics_filter），结果是
+        # 一个按不动的控件掉在设计区外面。
         monitor_ok = [
             str(b["type"]) for b in enabled
-            if str(b["type"]) not in ("MetricGrid", "TrendChart", "DataTable")
+            if str(b["type"]) not in ("MetricGrid", "TrendChart", "DataTable", "FilterBar")
         ]
         if monitor_ok:
             lines.append(

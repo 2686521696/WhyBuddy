@@ -143,8 +143,37 @@ def test_design_brief_points_row_content_at_blockref():
     assert "blockRef" in brief
     # 仍然要拦住"自己用 CSS 画"这条歧路
     assert "不要自己用 CSS 去画这类内容" in brief
-    # 可选语义：用不上就别凑数
-    assert "用不上就完全不用" in brief
+
+
+def test_design_brief_demands_placing_every_declared_block():
+    """2026-08-01：安置语义从**许可式**改成**祈使式 + 说清代价**。
+
+    此前那句是"如果这一页还适合……就摆一个……用不上就完全不用，不必凑数"，
+    读起来是道选择题。但列出来的积木并不是备选项——它们是这一页已经声明、
+    一定会被渲染的东西：设计者不安置，它们不会消失，只会掉到设计区外面的固定
+    骨架里，首页又变回"AI 设计区 + 几张外挂卡"。
+
+    这个改法有本仓库两次先例撑腰（schema_legal 里许可式让七个通电区块一个都
+    没被用、binding 哨兵词 "none" 被当成值），所以这里锁死三件事：说了"必须"、
+    说了"不会消失"的代价、且**不再留"用不上就完全不用"那个逃生口**。
+    """
+    brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
+    assert "不是备选项" in brief
+    assert "必须" in brief
+    assert "不会消失" in brief
+    # 旧的许可式逃生口必须已经拿掉，否则祈使式会被它当场抵消
+    assert "用不上就完全不用" not in brief
+
+
+def test_design_brief_has_no_placement_demand_without_blocks():
+    """没有可安置积木的页面不该出现那段祈使话术（否则是对着空气下命令）。"""
+    page = {
+        "id": "home", "name": "首页", "kind": "monitor",
+        "stats": [{"id": "s1", "name": "总数", "metric": "count", "entity": "appointment"}],
+        "charts": [], "rankings": [], "feeds": [], "blocks": [],
+    }
+    brief = _monitor_overview_design_brief(page, _datamodel())
+    assert "不是备选项" not in brief
 
 
 def test_design_brief_omits_empty_sections():
