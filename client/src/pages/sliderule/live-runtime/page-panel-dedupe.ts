@@ -61,10 +61,44 @@ function feedKey(entityId: string, timeFieldId: string, levelFieldId?: string): 
   return `ActivityFeed|${entityId}|${bareField(timeFieldId)}|${bareField(levelFieldId ?? "")}`;
 }
 
-/** 积木实例/blockRef → 指纹（不是排行/动态流类型，或绑定不全的，返回 null）。 */
+/**
+ * 不吃 binding 的两类可嵌积木的指纹（2026-08-01 补）。
+ *
+ * 上面两个指纹都是从 binding 推的，而 blockRef 白名单在 6fe1c13 从 2 种扩到
+ * 4 种时，新增的这两种**按设计就不吃 binding**（目录原文："不使用 binding；
+ * 展示哪条流程链路由 props.chainRef 声明"）——于是 blockPanelKey 对它们
+ * 恒返回 null，去重直接放行，同一个积木在首页设计里嵌一次、下面骨架里再画
+ * 一次。真机复现过：诊所应用 today_overview 页，设计树里嵌了
+ * QuickActionPanel + WorkflowTimeline，两者在骨架里各又出现一次。
+ *
+ * 所以身份不能再从 binding 取，改从各自真正的内容源取：
+ * - QuickActionPanel：内容全部来自 page.actions，一页里没有"第二个不同的
+ *   快捷操作面板"这种东西，按类型单例即可。
+ * - WorkflowTimeline：节点从 workflow 系统按 props.chainRef 解析（留空=主
+ *   链路）。所以 chainRef 就是它的身份——两个指向不同链路的流程条是两个
+ *   不同的东西，不该互相去重。
+ */
+function actionPanelKey(): string {
+  return "QuickActionPanel|__page__";
+}
+
+function workflowTimelineKey(chainRef: unknown): string {
+  const chain = String(chainRef ?? "").trim();
+  return `WorkflowTimeline|${chain || "__main__"}`;
+}
+
+/** 积木实例/blockRef → 指纹（算不出身份的类型返回 null，不参与去重）。 */
 export function blockPanelKey(
-  block: Pick<ExperienceBlockInstance, "type" | "binding">
+  block: Pick<ExperienceBlockInstance, "type" | "binding" | "props">
 ): string | null {
+  // 先处理不吃 binding 的两类——它们没有 entityRef，落到下面的 entity 判空
+  // 就会被当成"绑定不全"直接返回 null（这正是此前漏掉它们的原因）。
+  if (block.type === "QuickActionPanel") return actionPanelKey();
+  if (block.type === "WorkflowTimeline") {
+    return workflowTimelineKey(
+      (block.props as { chainRef?: unknown } | undefined)?.chainRef
+    );
+  }
   const binding = (block.binding ?? {}) as {
     entityRef?: string;
     sortByRef?: string;
@@ -136,13 +170,20 @@ export function collectFreeformBlockRefKeys(
   const walk = (node: unknown, depth: number) => {
     if (depth > 8 || !node || typeof node !== "object") return;
     const n = node as {
-      blockRef?: { type?: string; binding?: Record<string, unknown> };
+      blockRef?: {
+        type?: string;
+        binding?: Record<string, unknown>;
+        props?: Record<string, unknown>;
+      };
       children?: unknown;
     };
     if (n.blockRef?.type) {
       const key = blockPanelKey({
         type: String(n.blockRef.type),
         binding: (n.blockRef.binding ?? {}) as ExperienceBlockInstance["binding"],
+        // props 也要带上：WorkflowTimeline 的身份是 props.chainRef，不带就
+        // 恒等于主链路指纹，指向别的链路的那个会被误去重掉。
+        props: (n.blockRef.props ?? {}) as ExperienceBlockInstance["props"],
       });
       if (key) keys.add(key);
     }
