@@ -116,3 +116,23 @@ def test_gate_still_blocks_off_ledger_values():
     assert "sparkly" in refs      # 非法 tone
     assert "hologram" in refs     # 非法页面范式
     assert "sparkline" in refs    # 非法图表形态
+
+
+def test_monitor_pages_carry_an_explicit_block_prohibition():
+    """2026-08-01：总览页的禁用积木必须是**显式禁令**，不能只是"不在推荐清单里"。
+
+    实测教训：先只把 FilterBar 从 monitor_ok 移除，重跑一轮 dashboard 页照样
+    声明了 analytics_filters——目录里它仍是通电区块，没有任何一句说总览页不许
+    用，模型按语义直觉("总览页该有个筛选条")就补上了。
+
+    所以这里锁三件事：说了 NEVER、四个类型都点名、且给了理由（本仓库反复
+    验证过只丢名单不给理由时模型会照旧按直觉猜）。
+    """
+    from services import schema_legal
+
+    prompt = schema_legal.experience_block_prompt_block()
+    assert "On monitor / dashboard pages, NEVER emit these blocks" in prompt
+    for t in ("MetricGrid", "TrendChart", "DataTable", "FilterBar"):
+        assert t in prompt
+    # 理由必须在场——FilterBar 那条是最容易被当成"随便定的规矩"的
+    assert "cannot filter ANYTHING on an overview" in prompt

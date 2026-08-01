@@ -250,6 +250,18 @@ try {
     else fail(`${type} 全页渲染了 ${total} 次 —— 期望 1 次，去重未生效`);
   }
 
+  // ── 断言 3：全部安置时，设计区外面的固定骨架应当一个都不渲染 ──
+  //
+  // 这决定了「第 3 步：骨架让位」到底还要不要做。骨架的渲染函数开头就有
+  // `if (dedupedBlocks.length === 0) return null`——所有积木都被设计安置掉
+  // 之后它本来就该整段消失。若此处为 0，说明骨架**已经自动让位**，不需要
+  // 再去硬删它；硬删反而更糟：没被安置的积木会直接从界面上消失。
+  const scaffoldNodes = await pg.locator(
+    '[data-testid="app-runtime-experience-block-layout"], [data-testid="app-runtime-experience-block-scaffold"]'
+  ).count();
+  if (scaffoldNodes === 0) log("✓ 固定骨架整段未渲染（全部积木已被设计安置，骨架自动让位）");
+  else log(`· 固定骨架仍渲染了 ${scaffoldNodes} 段 —— 说明还有积木没被设计安置`);
+
   const shot = join(OUT_DIR, "today-overview.png");
   await pg.screenshot({ path: shot, fullPage: true });
   log(`截图: ${shot}`);

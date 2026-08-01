@@ -418,10 +418,35 @@ def experience_block_prompt_block() -> str:
         # 又驱动不了内容，就不该在总览页把它摆出来当选项：模型真的会照单声明
         # （2026-08-01 基线轮，dashboard 页声明了 analytics_filter），结果是
         # 一个按不动的控件掉在设计区外面。
+        # 只从推荐清单里拿掉是**不够的**：2026-08-01 实测，把 FilterBar 从
+        # monitor_ok 移除后重跑，dashboard 页照样声明了 analytics_filters——
+        # 目录里它仍是通电区块，没有任何一句话说总览页不许用。所以下面补一条
+        # 显式禁令。四个一起禁（不只 FilterBar）：另外三个此前同样只是"不推荐"
+        # 而无硬禁，是同一个洞，只是还没撞上。
+        MONITOR_FORBIDDEN = ("MetricGrid", "TrendChart", "DataTable", "FilterBar")
         monitor_ok = [
             str(b["type"]) for b in enabled
-            if str(b["type"]) not in ("MetricGrid", "TrendChart", "DataTable", "FilterBar")
+            if str(b["type"]) not in MONITOR_FORBIDDEN
         ]
+        monitor_forbidden_live = [t for t in MONITOR_FORBIDDEN if t in {str(b["type"]) for b in enabled}]
+        if monitor_forbidden_live:
+            # 逐条给理由而不是只列名单：本仓库反复验证过措辞决定行为（许可式
+            # 让七个通电区块一个都没被用；binding 哨兵词 "none" 被当成值）。
+            # 只丢一张禁用表，模型下次照样按语义直觉去猜"这页是不是该有个筛选条"。
+            lines.append(
+                "On monitor / dashboard pages, NEVER emit these blocks: "
+                + ", ".join(monitor_forbidden_live)
+                + ". Each is inert there, not merely discouraged. MetricGrid and "
+                "TrendChart would render the same numbers a second time — an overview's "
+                "KPIs and charts are already declared as page.stats / page.charts and "
+                "get laid out by the design pass. DataTable needs full width and a "
+                "second entity to be worth anything on an overview. FilterBar cannot "
+                "filter ANYTHING on an overview: its state only reaches this page's own "
+                "table / kanban / calendar views, and an overview has none of them — "
+                "the blocks and the designed layout read the unfiltered rows, so the "
+                "control would sit there doing nothing. Put the filter on the business "
+                "page that actually lists records instead."
+            )
         if monitor_ok:
             lines.append(
                 "monitor / dashboard pages are NOT exempt from this. Their stats and "
