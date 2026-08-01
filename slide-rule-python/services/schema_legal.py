@@ -542,6 +542,24 @@ def experience_block_prompt_block() -> str:
         "Each action MUST have a permissionRef matching an entry in page.actionPermissions. "
         "Blocks MAY include eventBindings mapping event names to action ids defined in the same page."
     )
+    # 槽位的**实际形态**（2026-08-01）。此前提示词从头到尾只给槽位**名字**，
+    # 从没说过它们渲染成什么样——模型不知道 content 在页面最下面、secondary
+    # 只有 1/3 宽，于是只能按名字的字面意思猜（"content 听起来就是放内容的"）。
+    # 那一类违规反复复发、只是换主角：WorkflowTimeline→secondary（5 次）、
+    # FilterBar→content（2 次）、QuickActionPanel→content（3 次）。
+    # 逐块补 slotsRationale 是在治单点，这一句才是治这一类：把判据交给模型，
+    # 它才谈得上自己推。数值取自 AppRuntimeScreen 的实际渲染。
+    lines.append(
+        "What the slots actually look like when rendered (top to bottom): "
+        "summary = a horizontal wrapping row across the very top; "
+        "primary and secondary = two columns side by side under it, primary is "
+        "twice as wide as secondary (2/3 vs 1/3); "
+        "activity then content = full-width rows below those columns. "
+        "So the reading order is summary → primary/secondary → activity → content, "
+        "and secondary is the only narrow slot. Anything the user must see or act on "
+        "BEFORE the page's content belongs in summary, not in activity/content — "
+        "those render after the very things they would act on."
+    )
     lines.append(
         "Step 7 — Page layout: pages MAY declare a layout object whose OWN KEYS ARE THE SLOT NAMES — "
         "summary/primary/secondary/activity/content — each mapping to an ordered list of block ids, "

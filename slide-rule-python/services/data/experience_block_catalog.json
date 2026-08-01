@@ -217,6 +217,7 @@
         "summary",
         "primary"
       ],
+      "slotsRationale": "NOT secondary or activity/content: a KPI row is several stat cards side by side, so the one-third-width column wraps them into an unreadable stack, and KPIs are the first thing the user scans — placing them below the page content defeats that.",
       "events": [
         "metricSelect"
       ],
@@ -256,6 +257,7 @@
         "primary",
         "secondary"
       ],
+      "slotsRationale": "NOT summary or activity/content: a chart needs a solid drawing area, which the top wrapping row cannot give it; and a trend belongs with the overview above the detail rows, not underneath them.",
       "events": [
         "pointSelect"
       ],
@@ -304,6 +306,7 @@
         "primary",
         "secondary"
       ],
+      "slotsRationale": "NOT summary or activity/content: a Top-N is a vertical list and needs column height, which the top wrapping row has none of.",
       "events": [
         "itemSelect"
       ],
@@ -365,6 +368,7 @@
         "primary",
         "content"
       ],
+      "slotsRationale": "NOT summary: a feed is a vertical list of entries; the top row is a horizontal wrapping strip and cannot hold it.",
       "events": [
         "itemSelect"
       ],
@@ -413,6 +417,7 @@
         "content",
         "activity"
       ],
+      "slotsRationale": "NOT summary or secondary: a table needs width for its columns — the one-third column squeezes them together, and the top wrapping row cannot hold a table at all.",
       "events": [
         "rowSelect",
         "createRequest",
@@ -452,6 +457,7 @@
         "summary",
         "primary"
       ],
+      "slotsRationale": "NOT activity/content or secondary: this is the page's entry point for DOING something, and activity/content render BELOW the content it acts on — an action bar placed after the work is an action bar the user finds too late. The one-third column also wraps a row of buttons into several cramped lines.",
       "events": [
         "actionTrigger"
       ],
@@ -486,6 +492,7 @@
       "allowedSlots": [
         "summary"
       ],
+      "slotsRationale": "summary ONLY: a filter must sit BEFORE the rows it filters. Every other slot renders after summary, so putting it anywhere else asks the user to read the content first and filter it afterwards.",
       "events": [
         "filterChange"
       ],
@@ -522,7 +529,7 @@
         "content",
         "activity"
       ],
-      "slotsRationale": "NOT secondary: this bar runs HORIZONTALLY across its stages, and the secondary slot is a one-third-width side column that squeezes it unreadable. It needs the wide main column or a full-width row.",
+      "slotsRationale": "NOT secondary or summary: this bar runs HORIZONTALLY across its stages, so the one-third-width side column squeezes it unreadable, and the top wrapping row is a strip for compact controls, not for a full stage bar. It needs the wide main column or a full-width row.",
       "events": [
         "itemSelect"
       ],
@@ -559,6 +566,7 @@
         "content",
         "activity"
       ],
+      "slotsRationale": "NOT summary: a designed insight card is a block of content, not a compact control that fits the top wrapping strip.",
       "events": [],
       "bindingSchema": {
         "required": [],

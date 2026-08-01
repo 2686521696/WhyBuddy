@@ -172,18 +172,49 @@ def test_activity_and_content_are_opened_together():
         )
 
 
-def test_non_obvious_slot_restriction_ships_its_reason():
-    """限制不显然的类型必须在目录里带 slotsRationale，并渲染进 prompt。
+def test_every_slot_restriction_ships_its_reason():
+    """**凡是限制了槽位的类型，都必须说明为什么**——不是只给犯过错的那个补。
 
-    WorkflowTimeline 禁 secondary 是**有依据**的（横向流程条塞不进 1/3 窄栏），
-    但三轮真跑里模型仍把它摆进 secondary 共 5 次——因为 prompt 只给了一张
-    slots 表、没给理由，模型只能按"流程条是辅助信息"的直觉猜。
+    2026-08-01 的教训：给 WorkflowTimeline 补了理由之后它那类违规归零，但同一
+    个毛病立刻换主角复发——FilterBar→content ×2、QuickActionPanel→content ×3。
+    上一版这条用例只钉了 WorkflowTimeline 一个，所以"补了理由"这件事没有被推广，
+    等于修了症状没修这一类。
+
+    判据：allowedSlots 不是全集 = 存在限制 = 必须有 slotsRationale。模型推不出
+    "为什么不行"时只会按名字的字面意思猜（"content 听起来就是放内容的"）。
     """
     from services import schema_legal
 
-    wft = next(b for b in schema_legal.EXPERIENCE_BLOCKS if b["type"] == "WorkflowTimeline")
-    assert "secondary" not in wft["allowedSlots"]
-    assert str(wft.get("slotsRationale") or "").strip(), "禁 secondary 却没写理由"
+    all_slots = set(schema_legal.EXPERIENCE_BLOCK_ALLOWED_SLOTS)
+    for block in schema_legal.EXPERIENCE_BLOCKS:
+        if set(block["allowedSlots"]) >= all_slots:
+            continue  # 不限制就不用解释
+        assert str(block.get("slotsRationale") or "").strip(), (
+            f"{block['type']} 限制了槽位（只允许 {sorted(block['allowedSlots'])}）"
+            "却没写 slotsRationale——模型无从推断，只会按名字乱猜"
+        )
+
+
+def test_slot_rationales_reach_the_generation_contract():
+    """理由必须真的进生成契约，不能只躺在目录里。"""
+    from services import schema_legal
+
     prompt = schema_legal.experience_block_prompt_block()
-    assert "NOT secondary" in prompt
-    assert "one-third-width" in prompt
+    for block in schema_legal.EXPERIENCE_BLOCKS:
+        rationale = str(block.get("slotsRationale") or "").strip()
+        if rationale:
+            assert rationale in prompt, f"{block['type']} 的槽位理由没进 prompt"
+
+
+def test_contract_explains_what_the_slots_look_like():
+    """槽位的**渲染形态**要交代清楚——这是那一类违规的根因。
+
+    此前提示词只给槽位名字，从没说过 content 渲染在页面最下面、secondary 只有
+    1/3 宽。模型不知道形态就只能按名字猜，逐块补理由是治单点，这一句才治这一类。
+    """
+    from services import schema_legal
+
+    prompt = schema_legal.experience_block_prompt_block()
+    assert "What the slots actually look like" in prompt
+    assert "2/3 vs 1/3" in prompt
+    assert "summary → primary/secondary → activity → content" in prompt
