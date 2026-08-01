@@ -1908,6 +1908,28 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
     page.blocks 和 page.layout 的槽位引用里一并摘掉，如实降级，不让一个
     装饰性区块的生成失败拖垮整个应用发布（fail-closed 的口径延伸到区块
     级）。原地修改并返回同一个 model，方便调用方链式使用。
+
+    ⚠️ **当前灰度下这个函数在生产路径上不处理任何区块**（2026-08-01 实测）。
+
+    它只认 `type == "FreeformInsight"` 的块，而该类型在
+    `experience_block_catalog.json` 里是 `generationEnabled: false`，生成契约
+    还把它列进 schema-only 名单明令 "never emit them"
+    （`schema_legal.py` 的 `schema_only` 那段）。四条独立证据：
+      · 目录里 generationEnabled=false
+      · 生成契约明令不许产出
+      · 演示域冻结夹具 builtin_domain_models.json 里出现 0 次
+      · 离线夹具再生成脚本 enrich_builtin_domain_models.py 压根不调用本函数
+    五轮真跑（诊所×3 / 公园×2）里 `[enrich-timing] stage=freeform.total` 恒为
+    `ms=0`，一次都没触发。
+
+    **但它不是可以删的死代码**：结构门并不拒绝 `FreeformInsight`
+    （`v5_model_gate.py:660-672` 有它的专门校验分支，检查 props.designBrief
+    非空），所以这是"提示词层面的禁止"而非"结构上的不可能"——模型万一漏网
+    吐出一个，门会放行，这段就会真的执行。
+
+    灰度一旦放开（把目录里那个布尔改成 true），这里立刻恢复工作；届时**必须
+    先处理下面那两个预算计数器的并发问题**再谈并行化，见
+    docs/enrich-pipeline-parallelization-audit-2026-07-31.md「四、2」。
     """
     # 墙钟埋点在函数内部（理由见 identity_theme_gen.enrich_identity_theme 同处
     # 注释：这条链路有多个入口，埋在调用点则换一个入口就没数）。

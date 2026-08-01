@@ -170,3 +170,32 @@ def test_prompt_states_the_two_easy_mistakes():
     frag = _blockref_prompt_fragment()
     assert "不要再给这个节点套一层" in frag
     assert "可选" in frag
+
+
+def test_freeform_insight_stays_out_of_generation_until_greylight_flips():
+    """FreeformInsight 关着生成 → enrich_freeform_blocks 在生产路径上空转。
+
+    这条不是重复 test_allowlist_*，它锁的是**另一件事**：那个函数的注释里
+    写着"当前不处理任何区块"，而这个结论依赖三个可独立变动的事实。任何一个
+    变了而注释没跟上，下一个读代码的人就会照着一份不成立的说明去理解系统
+    （2026-08-01 审查里，正是这类"描述与代码不符"造成了最大的误判）。
+
+    所以把三个事实一起钉住；灰度放开时这条会红，提醒同步更新注释，并按
+    docs/enrich-pipeline-parallelization-audit-2026-07-31.md「四、2」先处理
+    预算计数器的并发问题。
+    """
+    import json
+    from pathlib import Path
+
+    from services import schema_legal
+
+    ff = next(b for b in schema_legal.EXPERIENCE_BLOCKS if b["type"] == "FreeformInsight")
+    # ① 目录里关着生成
+    assert ff.get("generationEnabled") is False
+    # ② 生成契约把它列进 schema-only 并明令不许产出
+    prompt = schema_legal.experience_block_prompt_block()
+    assert "never emit them" in prompt
+    assert "FreeformInsight" in prompt.split("never emit them")[1][:200]
+    # ③ 演示域冻结夹具里一个都没有
+    fixtures = Path(schema_legal.__file__).resolve().parent / "data" / "builtin_domain_models.json"
+    assert "FreeformInsight" not in fixtures.read_text(encoding="utf-8")
