@@ -35,6 +35,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from .enrich_timing import stage as _enrich_stage
+
 # 格式正则从 data/identity_theme_presets.json 的 generatedThemeContract 派生
 # ——前端 isValidGeneratedTheme 与 freeform_block.is_valid_generated_theme
 # 同读同一份，格式定义只此一处。
@@ -232,7 +234,12 @@ def generate_identity_theme(
 
     reference_image_b64: Optional[str] = None
     if use_reference_image and get_llm_config().supports_image_content_parts:
-        reference_image_b64 = _generate_reference_image_b64(app_name, goal_text, datamodel_summary, device)
+        # 埋点：主题参照图。这是「满配 9 张 = 主题 1 + 区块 4 + 首页 4」里的
+        # 那 1 张（.env 的成本笼子注释）——单独记一条，才分得清主题段的耗时
+        # 里有多少是生图、多少是取色 LLM。
+        with _enrich_stage("theme.refimage", device=device or "unspecified") as _st:
+            reference_image_b64 = _generate_reference_image_b64(app_name, goal_text, datamodel_summary, device)
+            _st["got"] = 1 if reference_image_b64 else 0
 
     if reference_image_b64:
         first_content: Any = [

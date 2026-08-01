@@ -330,15 +330,19 @@ def _try_llm_generate_evidence(
     # 身份主题要先生成——FreeformInsight 的配色会读 appIdentity.generatedTheme，
     # 顺序反了就只能落回 8 预设，侧边栏和内容卡片颜色对不上。
     try:
+        from .enrich_timing import stage as _enrich_stage
         from .identity_theme_gen import enrich_identity_theme
 
-        model = enrich_identity_theme(model, goal)
+        with _enrich_stage("theme.total"):
+            model = enrich_identity_theme(model, goal)
     except Exception as exc:  # noqa: BLE001 — 主题生成是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] identity theme enrichment skipped: {str(exc)[:160]}")
     try:
+        from .enrich_timing import stage as _enrich_stage
         from .freeform_block import enrich_freeform_blocks
 
-        model = enrich_freeform_blocks(model)
+        with _enrich_stage("freeform.total"):
+            model = enrich_freeform_blocks(model)
     except Exception as exc:  # noqa: BLE001 — 二段生成是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] freeform block enrichment skipped: {str(exc)[:160]}")
     # 首页/monitor 页面的总览区块也交给 FreeformInsight 设计——同样是增强项，
@@ -346,9 +350,11 @@ def _try_llm_generate_evidence(
     # 落回 AppRuntimeScreen 里固定的 stats/charts/rankings/feeds 骨架，不影响
     # 主路径。
     try:
+        from .enrich_timing import stage as _enrich_stage
         from .freeform_block import enrich_monitor_page_overviews
 
-        model = enrich_monitor_page_overviews(model)
+        with _enrich_stage("monitor.total"):
+            model = enrich_monitor_page_overviews(model)
     except Exception as exc:  # noqa: BLE001 — 首页设计是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] monitor overview enrichment skipped: {str(exc)[:160]}")
     # 过门 + 增强完的完整设计模型持久化进 App Store（组建库地基）。fail-open：

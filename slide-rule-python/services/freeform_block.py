@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from pathlib import Path
 
+from .enrich_timing import stage as _enrich_stage
 from .identity_palette_hint import FALLBACK_SEED, derive_prompt_palette
 from .palette_guard import extract_hex_colors, palette_report, repair_colors
 from .schema_legal import (
@@ -1719,9 +1720,11 @@ def generate_freeform_block(
     # 一张三区参照板同时喂给桌面档和手机档两次设计，两档才出自同一套视觉语言，
     # 也省掉一次生图。没传才自己生一张。
     if reference_image_b64 is None and use_reference_image and get_llm_config().supports_image_content_parts:
-        reference_image_b64 = _generate_reference_image_b64(
-            design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
-        )
+        with _enrich_stage("block.refimage", device=device or "unspecified") as _st:
+            reference_image_b64 = _generate_reference_image_b64(
+                design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+            )
+            _st["got"] = 1 if reference_image_b64 else 0
 
     if reference_image_b64:
         first_content: Any = [
@@ -1870,17 +1873,25 @@ def generate_freeform_block(
         # 校验通过的生成结果因为这个增强步骤而报废。
         if reference_image_b64 and allow_screenshot_verify:
             try:
-                preview_b64 = _render_preview_screenshot_b64(
-                    design_dump, theme_id=theme_id, device=device, generated_theme=generated_theme
-                )
-                if preview_b64:
-                    revised_dump = _critique_against_reference(
-                        design_dump,
-                        reference_image_b64=reference_image_b64,
-                        preview_screenshot_b64=preview_b64,
-                        design_brief=design_brief,
-                        FreeformDesign=FreeformDesign,
+                # 埋点：E2B 截图自检。这一段此前**完全测不到**——本地没配
+                # SLIDERULE_PUBLIC_APP_URL 时整段不触发，只能拿"沙盒固定开销
+                # 实测 29.1s + 代码里的超时上限"夹逼出 29~69s 的区间
+                # （审查文档「九、3」）。这条线一上，那个区间就能换成实测值。
+                with _enrich_stage("block.screenshot", device=device or "unspecified") as _st:
+                    preview_b64 = _render_preview_screenshot_b64(
+                        design_dump, theme_id=theme_id, device=device, generated_theme=generated_theme
                     )
+                    _st["got"] = 1 if preview_b64 else 0
+                if preview_b64:
+                    with _enrich_stage("block.critique", device=device or "unspecified") as _st:
+                        revised_dump = _critique_against_reference(
+                            design_dump,
+                            reference_image_b64=reference_image_b64,
+                            preview_screenshot_b64=preview_b64,
+                            design_brief=design_brief,
+                            FreeformDesign=FreeformDesign,
+                        )
+                        _st["revised"] = 1 if revised_dump is not None else 0
                     if revised_dump is not None:
                         design_dump = revised_dump
             except Exception as exc:  # noqa: BLE001 — 增强步骤绝不能拖垮已校验通过的主结果
@@ -1943,12 +1954,17 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
             if allow_shot:
                 shot_used += 1
             try:
-                content = generate_freeform_block(
-                    brief, datamodel, theme_id=theme_id, device=device,
-                    generated_theme=generated_theme,
-                    use_reference_image=use_ref,
-                    allow_screenshot_verify=allow_shot,
-                )
+                # 埋点②：区块级生成。当前灰度下 FreeformInsight 的
+                # generationEnabled=false，主模型不会产出这类区块，这个循环体
+                # 在生产路径上跑不到（审查文档「八、1」）——埋点仍然照放，
+                # 灰度一旦放开就直接有数，不用再回来补一次。
+                with _enrich_stage("freeform.block", page=str(page.get("id") or ""), block=bid):
+                    content = generate_freeform_block(
+                        brief, datamodel, theme_id=theme_id, device=device,
+                        generated_theme=generated_theme,
+                        use_reference_image=use_ref,
+                        allow_screenshot_verify=allow_shot,
+                    )
                 block["freeformContent"] = content
             except FreeformGenerationError as exc:
                 print(f"[freeform_block] {page.get('id')}.{bid} generation failed, dropping block: {str(exc)[:200]}")
@@ -2224,21 +2240,29 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
         # （见 _build_overview_sheet_prompt）——不然会让生图模型白画一块
         # 后面根本不会用来生成设计的版式区，还挤占了真正会用的那档的画布
         # 份额。生图失败返回 None，下面照旧退回纯文字生成。
-        sheet_b64 = (
-            _generate_overview_sheet_b64(
-                brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+        page_id = str(page.get("id") or "")
+        # 埋点①：参照板生图。单张实测 60~85s，是这一段最贵的一步，也是并行化
+        # 收益最大的那一处（见审查文档「八、7」第 2 项）——改造前后就靠这条线对比。
+        with _enrich_stage("monitor.sheet", page=page_id, device=device or "unspecified") as _st:
+            sheet_b64 = (
+                _generate_overview_sheet_b64(
+                    brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+                )
+                if use_ref and _supports_image_content_parts()
+                else None
             )
-            if use_ref and _supports_image_content_parts()
-            else None
-        )
+            # 跳过（预算撞顶/通道不支持图片）和真生了图，耗时天差地别，
+            # 光看 ms 会以为"生图很快"，得把这一位记下来才看得懂数据。
+            _st["got"] = 1 if sheet_b64 else 0
         try:
-            content = generate_freeform_block(
-                brief, datamodel, theme_id=theme_id, device=device,
-                generated_theme=generated_theme,
-                use_reference_image=use_ref,
-                allow_screenshot_verify=allow_shot,
-                reference_image_b64=sheet_b64,
-            )
+            with _enrich_stage("monitor.design", page=page_id, device=device or "unspecified"):
+                content = generate_freeform_block(
+                    brief, datamodel, theme_id=theme_id, device=device,
+                    generated_theme=generated_theme,
+                    use_reference_image=use_ref,
+                    allow_screenshot_verify=allow_shot,
+                    reference_image_b64=sheet_b64,
+                )
             # 手机档再设计一版（方案 B）。
             #
             # 形状照两处成熟先例：react-grid-layout 的 layouts={{lg,md,sm}}
@@ -2275,16 +2299,19 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
             declared_desktop_only = device == "desktop"
             if device != "phone" and not declared_desktop_only:
                 try:
-                    mobile_content = generate_freeform_block(
-                        brief, datamodel, theme_id=theme_id, device="phone",
-                        generated_theme=generated_theme,
-                        use_reference_image=use_ref,
-                        # 手机那份不再单独截图自检：那一步是"渲染出来再让视觉
-                        # 模型跟参照图比一遍"，成本高且收益递减，两档都做等于
-                        # 把总览页的生成时间再翻一倍。
-                        allow_screenshot_verify=False,
-                        reference_image_b64=sheet_b64,
-                    )
+                    # 埋点③：手机档。注释里写的是约 67s/页，这条线用来核实这个
+                    # 数字是否还成立——它同时是"跳过手机档省了多少"的依据。
+                    with _enrich_stage("monitor.design", page=page_id, device="phone"):
+                        mobile_content = generate_freeform_block(
+                            brief, datamodel, theme_id=theme_id, device="phone",
+                            generated_theme=generated_theme,
+                            use_reference_image=use_ref,
+                            # 手机那份不再单独截图自检：那一步是"渲染出来再让视觉
+                            # 模型跟参照图比一遍"，成本高且收益递减，两档都做等于
+                            # 把总览页的生成时间再翻一倍。
+                            allow_screenshot_verify=False,
+                            reference_image_b64=sheet_b64,
+                        )
                     # 复制一份而不是原地改：生成器返回的对象不该被调用方
                     # 就地改写。真被咬过——测试里 fake 两次返回同一个 dict，
                     # `content["mobile"] = mobile_content` 直接造出自引用结构。
