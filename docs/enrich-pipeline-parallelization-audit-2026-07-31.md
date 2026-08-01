@@ -326,9 +326,12 @@ worker，worker 自己不再抢锁）。
 
 ### 7. 修正后的实施顺序（取代「六」）
 
-1. **补两个并发闸**（不是一个）：
+0. **先加阶段耗时埋点**（「十、2」补充）——成功路径当前完全静默，没有埋点
+   就无法验收"并行之后到底快了多少"。
+1. **补三个并发闸**（不是一个）：
    - LLM 侧——消费 `LLM_MAX_CONCURRENT`（「四、1」）
    - 生图侧——并发上限 + 退避加 jitter（「八、2」）
+   - E2B 侧——确认账户并发沙盒配额（「九、4」；「十、1」已证实生产真的在起沙盒）
 2. **① 参照板生图**：唯一确认有实际收益的一项。按「二、2」重构
    `enrich_monitor_page_overviews` 的 for-page 循环（批量 facts →
    `refine_sheet_prompts_parallel` → 生图并行），并行宽度按笼子设为 4。
@@ -427,3 +430,67 @@ worker，worker 自己不再抢锁）。
   的**第三个**需要设闸的地方（「八、2」只列了前两个）。
 - 若要压这段，配 `SLIDERULE_E2B_TEMPLATE` 把 playwright 预烤进模板是纯收益
   （省约 25s/次且不改任何语义），优先级应排在并行化改造之前——它不碰代码。
+
+## 十、生产日志验证（2026-08-01，Render API）
+
+「九」留了一个悬念：生产到底有没有配 `SLIDERULE_PUBLIC_APP_URL`。若没配，则
+「八、3」「九」整套「生产比本地多一段截图开销」的推断都不成立。拉了 Render
+生产日志核实（`whybuddy-python` = `srv-d9ipnq7avr4c73b8sj2g`，窗口
+2026-07-31 15:00~19:17）。
+
+### 1. 结论：生产**开着**截图自检，「八、3」前提成立
+
+日志里出现两条 `GET /api/sliderule/freeform-preview/{pid}`：
+
+```
+17:19:38  POST execute-capability
+17:20:03  [freeform_block] JSON repaired mechanically (json-repair), reask 轮次被省下
+17:20:36  GET  freeform-preview/5f109dbf…      ← 距 execute-capability 57s
+17:22:11  POST drive-full-stream
+17:28:41  POST execute-capability
+17:30:14  GET  freeform-preview/10f6423e…      ← 距 execute-capability 92s
+```
+
+拿不到 user-agent（前端服务 `whybuddy` 不记访问日志），但三条证据闭合：
+
+1. **那个 pid 人类无从获得**——`capture_freeform_preview_screenshot` 在
+   `generate_freeform_block` **生成中途**调用，截的是"还没写入任何 session"
+   的候选内容，应用从不把用户导航到该 URL。
+2. **时点吻合**——两次都落在推演进行中，不是空闲时段。
+3. **次数吻合预算**——`_ENRICH_MAX_SCREENSHOT_VERIFY_DEFAULT = 2`，两轮推演
+   各命中一次。
+
+而 `e2b_screenshot_available()` 要求 E2B key 与公网地址**同时**有值，该请求
+能发生即证明两者在生产均已配置。
+
+**故「九、3」的夹逼估算继续有效**：生产比本地基线多约 60~140s，本地量到的
+244.2s 在生产大致对应 305~385s。
+
+顺带印证：`[freeform_block] JSON repaired mechanically` 说明 V5.7 的 ✧7
+（json-repair 先机械修复再 reask）在生产真实生效。
+
+### 2. ⚠️ 完整基线仍拿不到——应用不打点
+
+1000 行日志里 **902 行是 `GET /health`**，应用侧有效日志只有 4 行（3 条
+startup + 1 条 freeform）。**各阶段耗时一条都没有**：`enrich_identity_theme` /
+`enrich_freeform_blocks` / `enrich_monitor_page_overviews` 只在**失败或撞预算**
+时才 `print`，成功路径完全静默。
+
+这就是为什么耗时只能靠本地手工计时。**要拿生产基线，必须先加埋点**（每段
+记 duration），否则日志里永远只有健康检查。这一条应排在并行化改造之前——
+没有埋点就无法验收"并行之后到底快了多少"。
+
+### 3. 顺带发现：Node 与 Python 两侧 LLM 配置不一致
+
+| 服务 | llmHost | llmModel |
+| --- | --- | --- |
+| `whybuddy`（Node） | `api.openai.com` | `gpt-4o-mini` |
+| `whybuddy-python` | `api.rcouyi.com` | `gpt-5.6-luna` |
+
+Node 侧看起来是**默认值没被覆盖**（render.yaml 的 LLM 那组只下发给了 Python）。
+按 V5.7 架构图 Node 定位是"薄代理到 Python 引擎"，若确实不自己发 LLM 请求则
+无影响；但只要有任何一条 Node 侧自主调用 LLM 的路径，它打的就是
+`api.openai.com` 而非配置的网关，且大概率静默降级。建议确认。
+
+另有 32 行 `PydanticSerializationUnexpectedValue` 警告与 1 条
+`[agentic-pick] loop N attempt N/N 失败`，与本轮结论无关，未展开。
