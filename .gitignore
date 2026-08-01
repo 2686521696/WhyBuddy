@@ -21,6 +21,9 @@ build/
 *.swo
 *~
 
+# Claude Code 个人本地设置（权限规则等，不进仓库——每个人的授权范围不一样）
+.claude/settings.local.json
+
 # OS generated files
 .DS_Store
 .DS_Store?
