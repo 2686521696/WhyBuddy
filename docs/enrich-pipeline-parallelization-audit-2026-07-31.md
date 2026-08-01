@@ -340,3 +340,90 @@ worker，worker 自己不再抢锁）。
 
 验收纪律追加一条：**必须在配了 `SLIDERULE_PUBLIC_APP_URL` 的环境上复测**
 （「八、3」），本地关掉截图自检的耗时画像不足以验收。
+
+## 九、补测截图自检开销（2026-08-01）
+
+目标是照「八、3」把 `SLIDERULE_PUBLIC_APP_URL` 配上重测完整基线。**完整基线
+没跑成**，原因见下；但把缺失的那一段用「实测固定开销 + 代码里的超时上限」
+夹逼出了区间，并**推翻了一条文档里的常量说法**。
+
+### 1. 完整基线在本环境跑不了（隧道方案已证伪）
+
+截图自检要求 E2B 沙盒能回连到**正在跑增强的那个进程**。两处约束叠加：
+
+- `preview_url = f"{base_url}/sliderule/freeform-preview/{preview_id}"`
+  （`app_screenshot.py:148-149`），而 `preview_id` 存在
+  `freeform_preview_store._store` 这个**进程内字典**里（:26）。
+- 该路由由 uvicorn 进程提供（`routes/sliderule_full.py:1411`）。
+
+因此 base_url 必须指向当前实例。两条路都堵死：
+
+| 尝试 | 结果 |
+| --- | --- |
+| 指向生产 `miantuan.ai` | **错**。preview_id 只存在于本进程，生产那边查不到 → 沙盒 `waitForSelector` 超时 → 每次白跑一个沙盒还真计费 |
+| 用 `fresh_topic_shot.py` 跑链路 | **同样错**。脚本是独立进程，`put_preview()` 写进自己的内存，uvicorn 看不见 |
+| cloudflared quick tunnel | **不可行**，见下 |
+
+隧道失败的根因是本容器的出口策略，不是工具选择问题：
+
+- `region1.v2.argotunnel.com:7844`（数据面默认端口，TCP 与 UDP）：不通
+- SSH 隧道（`localhost.run:22` / `serveo.net:22`）：端口不通，且无 ssh 客户端
+- 用隐藏的 `TUNNEL_EDGE` 强制走边缘 443：TCP 连上了，但握手回包是
+  `bogus greeting "HTTP/1.1 400 Bad Request"` —— 连上的是**本环境的出口
+  代理**，它对 443 做 HTTP 语义拦截，隧道协议不是合法 HTTP 于是被回 400。
+
+结论：**该环境的出口代理无法承载任何隧道数据面**，换 ngrok/localtunnel 会
+撞同一堵墙（早先 `tunnel.ngrok.com:443` 的「直连通」是假象——只证明 TCP 能连
+上代理）。完整基线必须在真正有公网入口的部署环境上跑。
+
+### 2. ⚠️ 修正：「每次现装约 2 分钟」实测是 **29.1s**，差约 4 倍
+
+`.env` 对 `SLIDERULE_E2B_TEMPLATE` 的注释写着"不填则每个一次性沙盒现装
+（约 2 分钟/次）"。单独量了这段固定开销（不依赖应用可达性）：
+
+| 步骤 | 实测 |
+| --- | --- |
+| 沙盒冷启动 | 0.2s |
+| 首次代码往返 | 2.2s |
+| playwright 就绪检查（确认**未**预装） | 1.2s |
+| `npm install playwright` | 2.7s |
+| `npx playwright install --with-deps chromium` | 22.7s |
+| **固定开销合计** | **29.1s** |
+
+探针与生产路径逐条同构，因此可比：`_create_sandbox` 走默认模板
+`Sandbox.create(timeout=...)`（`app_screenshot.py:43-49`），`_ensure_playwright`
+执行 `npm install playwright@{_PLAYWRIGHT_VERSION}` → `npx playwright install
+--with-deps chromium`（:57-65），与探针所做完全一致。
+
+**注意**：单次采样，E2B 侧镜像与网络状况会浮动；但 29.1s 与 120s 的差距远超
+采样噪声。配 `SLIDERULE_E2B_TEMPLATE` 的收益因此也没有注释说的那么大
+（省的是约 25s，不是约 2 分钟）。
+
+顺带确认：默认模板里 playwright **确实没有预装**（就绪检查失败），注释这一
+半是对的。
+
+### 3. 生产画像的夹逼估算
+
+单次截图自检 = 固定开销（实测 29.1s）+ 页面加载与截图。后者量不到，但代码里
+有硬上限：`subprocess.run(..., timeout=40)`（`app_screenshot.py:161-165`），
+其内 JS 为 `goto` 25s + `waitForSelector` 15s + 稳定等待 1.5s。故：
+
+- 单次截图自检 ≈ **29s ~ 69s**
+- 每次 enrich 最多 2 次（`_ENRICH_MAX_SCREENSHOT_VERIFY_DEFAULT = 2`）
+- 即生产环境比本地基线**多出约 60s ~ 140s**
+
+把它叠到「一」的实测上：本地量到的 freeform 段 244.2s，在配齐公网地址的生产
+环境上大致对应 **约 305s ~ 385s**。这是估算不是实测，动手前仍需按「八、7」
+在真部署环境复测。
+
+### 4. 对并行化结论的影响
+
+截图自检是**串行链路里第二贵的一段**（仅次于生图），且它跟生图一样是
+"每个任务各自独立、彼此无依赖"。所以：
+
+- ① 的收益在生产环境比本地基线显示的**更大**（本地那段被整个关掉了）。
+- 但并行化会把 N 个一次性沙盒同时拉起来。E2B 按用量计费，且账户级并发上限
+  未知——**并行化前需要确认 E2B 账户的并发沙盒配额**，这是除 LLM、生图之外
+  的**第三个**需要设闸的地方（「八、2」只列了前两个）。
+- 若要压这段，配 `SLIDERULE_E2B_TEMPLATE` 把 playwright 预烤进模板是纯收益
+  （省约 25s/次且不改任何语义），优先级应排在并行化改造之前——它不碰代码。
