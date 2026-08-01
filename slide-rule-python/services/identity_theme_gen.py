@@ -318,6 +318,16 @@ def enrich_identity_theme(model: dict[str, Any], goal: str = "") -> dict[str, An
     goal：调用方（v5_capability_executor）手里本来就有的原始用户目标文本，
     直接传进来——model 字典本身不携带这个字段，不要指望从 model.get 读到。
     """
+    # 墙钟埋点放在**函数内部**而不是调用点：这条链路有多个入口
+    # （v5_capability_executor 的生产路径、scripts/fresh_topic_shot.py 的
+    # 基线采集、scripts/enrich_builtin_domain_models.py 的夹具再生成），
+    # 埋在调用点则换一个入口就没数——第一版就是这么写的，真跑基线时三条
+    # .total 一条都没打出来。埋在函数里，谁调用都有。
+    with _enrich_stage("theme.total"):
+        return _enrich_identity_theme_inner(model, goal)
+
+
+def _enrich_identity_theme_inner(model: dict[str, Any], goal: str = "") -> dict[str, Any]:
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity")
     if not isinstance(identity, dict):

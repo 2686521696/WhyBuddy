@@ -1909,6 +1909,13 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
     装饰性区块的生成失败拖垮整个应用发布（fail-closed 的口径延伸到区块
     级）。原地修改并返回同一个 model，方便调用方链式使用。
     """
+    # 墙钟埋点在函数内部（理由见 identity_theme_gen.enrich_identity_theme 同处
+    # 注释：这条链路有多个入口，埋在调用点则换一个入口就没数）。
+    with _enrich_stage("freeform.total"):
+        return _enrich_freeform_blocks_inner(model)
+
+
+def _enrich_freeform_blocks_inner(model: dict[str, Any]) -> dict[str, Any]:
     datamodel = model.get("datamodel") or {}
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
@@ -2191,6 +2198,13 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
     退回骨架"，不是互相替代关系。原地修改并返回同一个 model，方便调用方
     链式使用。
     """
+    # 墙钟埋点在函数内部（理由见 identity_theme_gen.enrich_identity_theme 同处
+    # 注释：这条链路有多个入口，埋在调用点则换一个入口就没数）。
+    with _enrich_stage("monitor.total"):
+        return _enrich_monitor_page_overviews_inner(model)
+
+
+def _enrich_monitor_page_overviews_inner(model: dict[str, Any]) -> dict[str, Any]:
     datamodel = model.get("datamodel") or {}
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
