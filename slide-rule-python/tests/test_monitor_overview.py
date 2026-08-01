@@ -642,3 +642,47 @@ def test_generation_contract_json_skeleton_exposes_blocks():
     page_section = _SCHEMA_INSTRUCTION.split('"page": {')[1].split('"aigc": {')[0]
     assert '"blocks": [' in page_section, "page 骨架里必须有 blocks 键"
     assert '"type": "<experience block type>"' in page_section
+
+
+def test_image_audience_brief_carries_no_technical_identifiers():
+    """参照板出图的 brief 里不许出现 blockRef/binding/JSON 这类技术标识。
+
+    这份 brief 被 _build_overview_sheet_facts 整段照抄进出图提示词。此前两个
+    受众共用一份（blockRef 的技术形态），后果是生图模型读到
+    {"type": "ActivityFeed", "binding": {...}} 无从知道该画什么——参照板上
+    一直没有这些积木，原因在此，不是它判断"这一页不需要"。架构图那条
+    "画面里不许出现 JSON/字段id/blockRef 等技术标识"针对的也是这里。
+    """
+    page = _monitor_page()
+    page["blocks"] = [
+        {"id": "acts", "type": "QuickActionPanel", "props": {"title": "常用操作"}},
+        {"id": "flow", "type": "WorkflowTimeline", "props": {}},
+    ]
+    img = _monitor_overview_design_brief(page, _datamodel(), audience="image")
+    for forbidden in ("blockRef", "binding", '{"type"', "照抄"):
+        assert forbidden not in img, f"出图 brief 混进了技术标识: {forbidden}"
+
+
+def test_image_audience_brief_describes_blocks_visually():
+    """同一批积木要以**画得出来**的形态告诉生图模型，不能只是删掉技术形态。
+
+    只清理不补描述的话，参照板会缺掉这一页真实存在的内容，设计 LLM 拿到的
+    参照图就与它自己的 brief 对不上。
+    """
+    page = _monitor_page()
+    page["blocks"] = [
+        {"id": "acts", "type": "QuickActionPanel", "props": {"title": "常用操作"}},
+        {"id": "flow", "type": "WorkflowTimeline", "props": {}},
+    ]
+    img = _monitor_overview_design_brief(page, _datamodel(), audience="image")
+    assert "一排常用操作按钮" in img
+    assert "一条横向流程阶段条" in img
+
+
+def test_design_audience_keeps_blockref_mechanics():
+    """设计 LLM 那一份必须保留技术形态——它的产出要能被渲染器认出来。"""
+    page = _monitor_page()
+    page["blocks"] = [{"id": "acts", "type": "QuickActionPanel", "props": {"title": "常用操作"}}]
+    des = _monitor_overview_design_brief(page, _datamodel())
+    assert "blockRef" in des
+    assert '{"type"' in des

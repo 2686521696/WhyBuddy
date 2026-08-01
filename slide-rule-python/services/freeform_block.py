@@ -2016,7 +2016,19 @@ def _enrich_freeform_blocks_inner(model: dict[str, Any]) -> dict[str, Any]:
     return model
 
 
-def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, Any]) -> str:
+def _monitor_overview_design_brief(
+    page: dict[str, Any], datamodel: dict[str, Any], *, audience: str = "design"
+) -> str:
+    # audience（2026-08-01）：这份 brief 有**两个消费方**，需要的说法不一样。
+    #   "design" —— 首页设计 LLM。要 blockRef 的技术形态（type/binding/props
+    #                照抄），因为它的产出要能被渲染器认出来。
+    #   "image"  —— 参照板生图模型。_build_overview_sheet_facts 把 brief 整段
+    #                照抄进出图提示词，而技术形态对它是天书：读到
+    #                {"type": "ActivityFeed", "binding": {...}} 它不知道该画一
+    #                条时间线；架构图那条"画面里不许出现 JSON/字段id/blockRef
+    #                等技术标识"针对的也是这里。给它视觉描述。
+    # 此前两边共用一份（技术形态那份），是参照板上一直没有这些积木的原因——
+    # 不是生图模型判断"这页不需要"，是它没看懂那段 JSON 在说什么。
     """monitor 页面（首页/运营总览）的总览设计需求文案——不是让 LLM 凭空
     发挥内容范围，而是把这个页面自己已经声明、已经过 Gate 校验的
     stats/charts 当成"必须覆盖的内容清单"喂给它，LLM 只负责这批内容的
@@ -2103,6 +2115,29 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
     # blockPanelKey 一致：类型 + 实体 + 关键字段，不含 id / 名字 / 条数。
     row_bits: list[str] = []
     plain_bits: list[str] = []  # 不吃 binding 的成品积木（动作面／流程面）
+    # 同一批积木给**画图模型**看的说法（2026-08-01）。
+    #
+    # 这份 brief 会被 _build_overview_sheet_facts 整段照抄进出图提示词，而上面
+    # 那两份 bits 是给设计 LLM 的：里头是 {"type": "ActivityFeed", "binding":
+    # {...}} 这种 JSON 加一句"照抄即可"。生图模型读到它**无从知道该画一排按钮
+    # 还是一条时间线**——参照板上一直没有这些积木，原因就在这里，不是它判断
+    # "这一页不需要"。架构图那条"画面里不许出现 JSON/字段id/blockRef 等技术
+    # 标识（brief 是照抄进 prompt 的）"说的也是同一件事。
+    #
+    # 所以按受众分两套说法：技术形态留给设计 LLM，画图模型拿视觉描述。
+    visual_bits: list[str] = []
+    _VISUAL_SHAPE = {
+        "RankedList": "一张 Top-N 排行榜（名次 + 名称 + 数值，纵向若干行）",
+        "ActivityFeed": "一列最近动态（按时间倒序的事件条目，每条带时间与状态标记）",
+        "QuickActionPanel": "一排常用操作按钮（横向并列的几个按钮）",
+        "WorkflowTimeline": "一条横向流程阶段条（若干阶段依次相连，当前阶段高亮）",
+    }
+
+    def _visual(block_type: str, title: str = "") -> None:
+        shape = _VISUAL_SHAPE.get(block_type)
+        if not shape:
+            return
+        visual_bits.append(f"{shape}{f'——{title}' if title else ''}")
     seen_row_keys: set[str] = set()
 
     def _take(key: str) -> bool:
@@ -2124,6 +2159,7 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
             f'{r.get("name") or r.get("id")}：{{"type": "RankedList", "binding": '
             f'{{"entityRef": "{entity}", "sortByRef": "{sort_by}"{extra}}}}}'
         )
+        _visual("RankedList", str(r.get("name") or ""))
     for f in page.get("feeds") or []:
         entity = str(f.get("entity") or "").strip()
         time_field = str(f.get("timeField") or "").rpartition(".")[2]
@@ -2137,6 +2173,7 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
             f'{f.get("name") or f.get("id")}：{{"type": "ActivityFeed", "binding": '
             f'{{"entityRef": "{entity}", "timeFieldRef": "{time_field}"{extra}}}}}'
         )
+        _visual("ActivityFeed", str(f.get("name") or ""))
     for b in page.get("blocks") or []:
         block_type = str(b.get("type") or "")
         if block_type not in FREEFORM_EMBEDDABLE_BLOCK_TYPES:
@@ -2164,16 +2201,29 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
                 f'{b.get("id")}：{{"type": "{block_type}", "binding": '
                 f"{json.dumps(binding, ensure_ascii=False)}}}"
             )
+            _visual(block_type, str(b.get("name") or ""))
         else:
             props = b.get("props") or {}
             title = str(props.get("title") or b.get("name") or b.get("id") or "")
             extra = ""
             if block_type == "WorkflowTimeline" and props.get("chainRef"):
                 extra = f'，"props": {{"chainRef": "{props["chainRef"]}"}}'
+            _visual(block_type, title)
             plain_bits.append(
                 f'{title}：{{"type": "{block_type}"{extra}}}（这个积木不吃 binding，'
                 f"照抄即可)"
             )
+    # ── 出图受众：到此为止 ──────────────────────────────────────
+    # 下面全是 blockRef 的技术形态与安置机制，只对设计 LLM 有意义。给生图模型
+    # 的是同一批积木的视觉描述——它才画得出来。
+    if audience == "image":
+        if visual_bits:
+            lines.append(
+                "画面上除了这些数字与图表，还要画出下面这几块内容（它们是这一页"
+                "真实存在的部分，不是装饰）：\n- " + "\n- ".join(visual_bits)
+            )
+        return "\n".join(lines)
+
     if row_bits:
         lines.append(
             "这一页还声明了下面这些**逐行内容**，请把它们用 blockRef 摆进你的版式里"
@@ -2280,6 +2330,9 @@ def _enrich_monitor_page_overviews_inner(model: dict[str, Any]) -> dict[str, Any
         if isinstance(existing_overview, dict) and existing_overview.get("root"):
             continue
         brief = _monitor_overview_design_brief(page, datamodel)
+        # 参照板走**出图受众**那一份：同一批内容，但积木用视觉描述而不是
+        # blockRef 的 JSON 形态（见 _monitor_overview_design_brief 的 audience）。
+        sheet_brief = _monitor_overview_design_brief(page, datamodel, audience="image")
         # 与 enrich_freeform_blocks 同一预算语义：按尝试计费（见彼处注释）。
         use_ref = ref_used < max_ref_images
         allow_shot = use_ref and shot_used < max_screenshot_verify
@@ -2301,7 +2354,8 @@ def _enrich_monitor_page_overviews_inner(model: dict[str, Any]) -> dict[str, Any
         with _enrich_stage("monitor.sheet", page=page_id, device=device or "unspecified") as _st:
             sheet_b64 = (
                 _generate_overview_sheet_b64(
-                    brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+                    sheet_brief, datamodel, theme_id=theme_id, device=device,
+                    generated_theme=generated_theme,
                 )
                 if use_ref and _supports_image_content_parts()
                 else None
