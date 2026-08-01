@@ -344,8 +344,24 @@ def _enrich_identity_theme_inner(model: dict[str, Any], goal: str = "") -> dict[
     goal_text = str(goal or app_name).strip()
     datamodel = model.get("datamodel") or {}
     device = str(appbundle.get("preferredDevice") or "").strip()
+    # 主题参照图也归**同一份成本笼子**管（2026-08-01 修）。
+    #
+    # .env 对 SLIDERULE_ENRICH_MAX_REF_IMAGES 写的是"设 0 全关"，架构图也把这
+    # 张算进"满配 9 张 = 主题 1 + 区块 4 + 首页 4"。但这条路径此前**根本不读
+    # 那个变量**：真机设 0 之后 monitor.sheet 确实跳过了，主题这张照生不误，
+    # 端点挂着又白等了 685s。文档说全关而实际关不干净，比不提供开关更糟。
+    from services.freeform_block import (
+        _ENRICH_MAX_REF_IMAGES_DEFAULT,
+        _ENRICH_MAX_REF_IMAGES_ENV,
+        _env_budget,
+    )
+
+    ref_budget = _env_budget(_ENRICH_MAX_REF_IMAGES_ENV, _ENRICH_MAX_REF_IMAGES_DEFAULT)
     try:
-        theme = generate_identity_theme(app_name, goal_text, datamodel, device=device)
+        theme = generate_identity_theme(
+            app_name, goal_text, datamodel, device=device,
+            use_reference_image=ref_budget > 0,
+        )
         identity["generatedTheme"] = theme
     except IdentityThemeGenerationError as exc:
         print(f"[identity_theme_gen] generation failed, falling back to preset theme: {str(exc)[:200]}")

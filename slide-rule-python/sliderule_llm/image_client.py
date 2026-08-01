@@ -22,6 +22,22 @@ from dataclasses import dataclass
 RETRIES = 3
 BACKOFF = 5  # 秒，退避基数：5, 10, 15
 DEFAULT_TIMEOUT_S = 600
+
+# 一次 generate_image_png 调用（含全部重试与退避）的**总时长上限**。
+#
+# 2026-08-01 真机吃到的教训：端点 503 时，"重试 3 次 × 单次超时 600s + 退避"
+# 没有任何总量约束——实测两轮分别白等 788s / 686s，理论最坏 3×600+15 = 30 分钟
+# 一张；满配 9 张全挂约 4.5 小时。其中一轮直接把整个生成跑挂在 25 分钟超时上，
+# 什么都没产出。
+#
+# fail-open 的语义只保证"不崩"（确实照常降级成纯文字），没人管过"要等多久"。
+# 对用户而言，转圈半小时和失败没有区别，只是更糟——他连失败都看不到。
+#
+# 240s 的取法：实测成功出图 34~107s（最慢那张是参照板），取 >2× 最慢值，
+# 不会切掉正常的慢出图；端点挂掉时最多浪费 4 分钟而不是 30 分钟。
+# 需要更宽可用 IMAGE_TOTAL_BUDGET_S 调；设 0 表示不限（回到老行为）。
+DEFAULT_TOTAL_BUDGET_S = 240
+
 LABEL = "预览·未验证"
 
 
@@ -91,6 +107,17 @@ def _build_body(cfg: ImageGenConfig, prompt: str, size: str) -> dict:
     return body
 
 
+def _total_budget_s() -> float:
+    """整段生图（含重试与退避）的总时长上限，秒。<=0 表示不限。"""
+    raw = (os.environ.get("IMAGE_TOTAL_BUDGET_S") or "").strip()
+    if not raw:
+        return float(DEFAULT_TOTAL_BUDGET_S)
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return float(DEFAULT_TOTAL_BUDGET_S)
+
+
 def _transient(exc: Exception) -> bool:
     return isinstance(exc, urllib.error.HTTPError) and exc.code in (429, 500, 502, 503, 504)
 
@@ -118,8 +145,20 @@ def generate_image_png(
     body = _build_body(resolved, prompt, size)
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {resolved.key}"}
 
+    # 总时长闸（见 DEFAULT_TOTAL_BUDGET_S）：单次超时只约束一次请求，约束不了
+    # "重试 + 退避" 累计花掉多久。这里按整段计时，每次请求的超时再取
+    # min(单次超时, 剩余预算)，退避前也先看还剩不剩得下。
+    budget = _total_budget_s()
+    started = time.monotonic()
+
+    def _remaining() -> float:
+        return float("inf") if budget <= 0 else budget - (time.monotonic() - started)
+
     last_exc: Exception | None = None
     for attempt in range(1, RETRIES + 1):
+        remaining = _remaining()
+        if remaining <= 0:
+            break
         try:
             req = urllib.request.Request(
                 resolved.url,
@@ -127,14 +166,24 @@ def generate_image_png(
                 headers=headers,
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=resolved.timeout) as resp:
+            per_call = resolved.timeout if budget <= 0 else min(resolved.timeout, remaining)
+            with urllib.request.urlopen(req, timeout=per_call) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
             b64 = payload["data"][0]["b64_json"]
             return base64.b64decode(b64)
         except Exception as exc:  # noqa: BLE001 — 统一走下面的重试/包装逻辑
             last_exc = exc
             if attempt < RETRIES and _transient(exc):
-                time.sleep(BACKOFF * attempt)
+                backoff = BACKOFF * attempt
+                # 退避睡完就没预算发下一次请求的话，睡也白睡——直接收工。
+                if _remaining() - backoff <= 0:
+                    break
+                time.sleep(backoff)
                 continue
             break
-    raise ImageGenError(f"生图失败（已重试 {RETRIES} 次）: {last_exc}")
+    spent = time.monotonic() - started
+    if budget > 0 and spent >= budget:
+        raise ImageGenError(
+            f"生图超出总时长预算 {budget}s（实耗 {spent:.0f}s，最后一次错误: {last_exc}）"
+        )
+    raise ImageGenError(f"生图失败（已重试 {RETRIES} 次，耗时 {spent:.0f}s）: {last_exc}")
