@@ -110,6 +110,20 @@ def _load_experience_blocks() -> tuple:
         # ExistingContentAdapter 惰性占位）；generationEnabled = 灰度决定（准不准
         # 让 LLM 往 page.blocks 里写这个类型）。分两个字段是因为它们会各自独立
         # 变化：渲染器先落地、放开是后一步的决定。
+        # slotsRationale（可选，2026-08-01）：只给"限制不显然"的类型写一句
+        # **为什么**。三轮真跑里模型把 WorkflowTimeline 放进 secondary 共 5 次，
+        # 是最稳定的一类结构门失败——它按"流程条是辅助信息"的语义直觉摆，而真实
+        # 依据是宽度（横向流程条塞不进 1/3 窄栏）。只丢一张 slots 表模型无从
+        # 推断，下次照样按直觉猜；本仓库反复验证过措辞/理由决定行为。
+        # 放在这里而不是 prompt 文案里：理由与它约束的 allowedSlots 同处一行，
+        # 谁改约束都会看见。
+        slots_rationale = raw.get("slotsRationale")
+        if slots_rationale is not None and (
+            not isinstance(slots_rationale, str) or not slots_rationale.strip()
+        ):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.slotsRationale 必须是非空字符串（或整个省略）"
+            )
         renderer_status = raw.get("rendererStatus")
         if renderer_status not in ("real", "placeholder"):
             raise ValueError(
@@ -503,9 +517,16 @@ def experience_block_prompt_block() -> str:
         "inventory page)."
     )
     for block in EXPERIENCE_BLOCKS:
+        # slots 后面紧跟这一类的槽位理由（只有限制不显然的类型才有）。
+        # 只给一张 slots 表，模型无从推断"为什么不行"，会按语义直觉去猜——
+        # WorkflowTimeline 被摆进 secondary 在三轮真跑里复发 5 次就是这么来的。
+        rationale = str(block.get("slotsRationale") or "").strip()
+        slots_part = f"slots={','.join(block['allowedSlots'])}"
+        if rationale:
+            slots_part += f" ({rationale})"
         lines.append(
             f"- {block['type']}: {block['description']} "
-            f"data={','.join(block['dataKinds'])}; slots={','.join(block['allowedSlots'])}; "
+            f"data={','.join(block['dataKinds'])}; {slots_part}; "
             f"events={','.join(block['events'])}; "
             f"binding={_format_binding_schema(block['bindingSchema'])}"
         )

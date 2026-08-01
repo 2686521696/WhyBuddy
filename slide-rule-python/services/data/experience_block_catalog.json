@@ -361,7 +361,9 @@
       ],
       "allowedSlots": [
         "activity",
-        "secondary"
+        "secondary",
+        "primary",
+        "content"
       ],
       "events": [
         "itemSelect"
@@ -408,7 +410,8 @@
       ],
       "allowedSlots": [
         "primary",
-        "content"
+        "content",
+        "activity"
       ],
       "events": [
         "rowSelect",
@@ -516,8 +519,10 @@
       "dataKinds": [],
       "allowedSlots": [
         "primary",
-        "content"
+        "content",
+        "activity"
       ],
+      "slotsRationale": "NOT secondary: this bar runs HORIZONTALLY across its stages, and the secondary slot is a one-third-width side column that squeezes it unreadable. It needs the wide main column or a full-width row.",
       "events": [
         "itemSelect"
       ],
@@ -551,7 +556,8 @@
       "allowedSlots": [
         "primary",
         "secondary",
-        "content"
+        "content",
+        "activity"
       ],
       "events": [],
       "bindingSchema": {

@@ -136,3 +136,54 @@ def test_monitor_pages_carry_an_explicit_block_prohibition():
         assert t in prompt
     # 理由必须在场——FilterBar 那条是最容易被当成"随便定的规矩"的
     assert "cannot filter ANYTHING on an overview" in prompt
+
+
+def test_slot_restrictions_have_no_unexplained_width_gaps():
+    """槽位限制的唯一物理依据是宽度——不该出现"窄的能放、宽的能放、中间不能放"。
+
+    渲染实测（AppRuntimeScreen.tsx:1490-1532）：secondary=1/3 窄栏、
+    primary=2/3 主栏、activity/content=全宽且 className 逐字节相同。
+    所以若一个区块同时允许 secondary 和全宽档，中间的 primary 必然也放得下；
+    禁掉它没有物理解释（ActivityFeed 此前正是如此，见
+    docs/layout-slot-constraint-audit-2026-08-01.md）。
+    """
+    from services import schema_legal
+
+    order = {"secondary": 1, "primary": 2, "activity": 3, "content": 3}
+    for block in schema_legal.EXPERIENCE_BLOCKS:
+        slots = set(block["allowedSlots"])
+        ranked = [order[s] for s in slots if s in order]
+        if not ranked:
+            continue
+        lo, hi = min(ranked), max(ranked)
+        gaps = [s for s, o in order.items() if lo < o < hi and s not in slots]
+        assert not gaps, f"{block['type']} 的宽度区间有洞：允许 {sorted(slots)}，却禁了 {gaps}"
+
+
+def test_activity_and_content_are_opened_together():
+    """activity 与 content 渲染完全相同（同一段 className），开一个禁一个是任意限制。"""
+    from services import schema_legal
+
+    for block in schema_legal.EXPERIENCE_BLOCKS:
+        slots = set(block["allowedSlots"])
+        assert ("activity" in slots) == ("content" in slots), (
+            f"{block['type']} 只开了 activity/content 其中一个：{sorted(slots)}"
+            "——两者渲染逐字节相同，这个区分没有效果差异"
+        )
+
+
+def test_non_obvious_slot_restriction_ships_its_reason():
+    """限制不显然的类型必须在目录里带 slotsRationale，并渲染进 prompt。
+
+    WorkflowTimeline 禁 secondary 是**有依据**的（横向流程条塞不进 1/3 窄栏），
+    但三轮真跑里模型仍把它摆进 secondary 共 5 次——因为 prompt 只给了一张
+    slots 表、没给理由，模型只能按"流程条是辅助信息"的直觉猜。
+    """
+    from services import schema_legal
+
+    wft = next(b for b in schema_legal.EXPERIENCE_BLOCKS if b["type"] == "WorkflowTimeline")
+    assert "secondary" not in wft["allowedSlots"]
+    assert str(wft.get("slotsRationale") or "").strip(), "禁 secondary 却没写理由"
+    prompt = schema_legal.experience_block_prompt_block()
+    assert "NOT secondary" in prompt
+    assert "one-third-width" in prompt
