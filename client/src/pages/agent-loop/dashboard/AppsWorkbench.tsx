@@ -540,6 +540,21 @@ function LiveAppThumb({
             sessionId={sessionId}
             appTitle={goal}
             controlsContainer={hiddenControls}
+            // 宽度定缩放（2026-08-01 补）。**此前这里什么都没传，吃的是默认
+            // 的 contain**——min(w/W, h/H)，卡片比例跟画布比例对不上时按更紧
+            // 的那一边缩，另一边留边。
+            //
+            // 一直没暴露是因为两边比例恰好相等：卡片比例本来就是照
+            // DEVICE_SPECS 抄的，contain 的两项算出来一样大，等于白留了个坑。
+            // 卡片比例改成跟出图画布对齐（手机档 0.462 → 0.5625）之后坑就踩响
+            // 了：手机档画布 390×844 装进 9:16 的卡，contain 按高度缩，实测
+            // 宽度只铺到 **81.8%**，两侧各留一条灰边。
+            //
+            // "width" 模式就是为缩略图墙加的（见 ScaleFitMode 的说明与
+            // dev-harness/AppWallPerfHarness——那边一直传着，所以压测台从来
+            // 没复现过这个现象）。宽度铺满、高度按内容溢出后裁掉：缩略图看的
+            // 是"这个应用长什么样"，顶部那一屏就够，留灰边反而更糟。
+            scaleFit="width"
             // 缩略图不画缩放标识：9px 的字再缩到 21% 读不出来，而且会跟卡片
             // 底部那条信息浮层抢同一个右下角，叠成一块糊斑。
             showScaleBadge={false}

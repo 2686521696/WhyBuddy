@@ -197,9 +197,12 @@ export function justifiedRows(
  * 等于 16:9，一直是对的；手机档 0.462 比 9:16 窄 22%，正是「移动端看着过长」
  * 的来源——同样宽度下卡片高出 22%。
  *
- * 拉不到参照板的老应用仍然回落到活渲染（AppRuntimeScreen scaleFit="width"，
- * 宽度定缩放、高度跟内容），比例不匹配时它自己会往下留白而不是裁切，所以这
- * 一档改成图的比例对回落路径也是安全的。
+ * 拉不到参照板的老应用仍然回落到活渲染。**这条回落路径不是自动安全的**：
+ * 活渲染的画布仍是 DEVICE_SPECS（手机 390×844 = 0.462），跟卡片比例不再相等，
+ * 缩放模式必须是 scaleFit="width"（宽度铺满、高度溢出裁掉）才不留边。
+ * LiveAppThumb 此前没传这个参数、吃的是默认的 contain，改完比例后手机档
+ * 实测宽度只铺到 81.8%——两侧各一条灰边。已在 AppsWorkbench 补上，那里有
+ * 完整记录。改这张表时要一并确认活渲染那头的缩放模式。
  *
  * **不从 AppRuntimeScreen import**：DEVICE_SPECS 定义在 AppRuntimeScreen.tsx
  * 里，而应用中心是靠 React.lazy 才把整个运行时挡在首屏之外的（见

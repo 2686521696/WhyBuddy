@@ -14,10 +14,13 @@
  * 触发的回落转换测不了；判据本身抽成了纯函数 shouldUseSheetThumb，转换后要
  * 渲染的东西就是 fallback 那个节点，两头都在下面覆盖到了。
  */
+import { readFileSync } from "node:fs";
+
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
 
+import { DEVICE_ASPECT } from "@/lib/justified-rows";
 import { SheetThumb, appPreviewUrl, shouldUseSheetThumb } from "../AppsWorkbench";
 
 describe("shouldUseSheetThumb", () => {
@@ -49,6 +52,30 @@ describe("appPreviewUrl", () => {
   it("指向取图接口并对 id 转义", () => {
     expect(appPreviewUrl("abc123")).toBe("/api/sliderule/apps/abc123/preview");
     expect(appPreviewUrl("a/b?c")).toBe("/api/sliderule/apps/a%2Fb%3Fc/preview");
+  });
+});
+
+describe("回落的活渲染必须按宽度缩放", () => {
+  const src = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
+
+  it("卡片比例已经跟活渲染画布不一样了——这是下一条断言的前提", () => {
+    // AppRuntimeScreen 的 DEVICE_SPECS：手机 390×844 = 0.462。
+    // 卡片比例现在照出图画布走（9:16 = 0.5625）。两者不再相等，contain 就会
+    // 按更紧的那一边缩、另一边留边。这条先钉住"前提成立"，否则下面那条会
+    // 变成一句无关的字符串匹配。
+    expect(DEVICE_ASPECT.phone).not.toBeCloseTo(390 / 844, 3);
+    // 留边有多宽：画布比 / 卡片比 = 宽度只能铺到这个比例（实测 81.8%）
+    expect(390 / 844 / DEVICE_ASPECT.phone).toBeLessThan(0.85);
+  });
+
+  it("LiveAppThumb 必须传 scaleFit=\"width\"", () => {
+    // 不传吃的是默认 contain。上面那条已经证明两个比例不相等，于是 contain
+    // 会在手机档卡片两侧各留一条灰边（实测宽度只铺 81.8%）。
+    // "width" 模式就是为缩略图墙加的（见 AppRuntimeScreen 的 ScaleFitMode）。
+    const block = src.slice(src.indexOf("function LiveAppThumb"));
+    const mount = block.slice(0, block.indexOf("</React.Suspense>"));
+    expect(mount).toContain("LazyAppRuntimeScreen");
+    expect(mount).toMatch(/scaleFit=["{]?["']?width/);
   });
 });
 
