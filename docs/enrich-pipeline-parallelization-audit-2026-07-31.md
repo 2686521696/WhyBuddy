@@ -5,6 +5,11 @@
 （`ENRICH`，见 `docs/SlideRule V5.7 架构图.md` 子图 10）——五系统模型生成本身
 （单次 LLM 调用）不在本次审查的可并行范围内。
 
+> **第二轮复核（照 V5.7 架构图逐节点核对）修正了本文档的结论。**
+> ② 被证实是生产路径上的死代码，原「收益最大」的排序作废；另发现 5 处遗漏。
+> 全部修正集中在文末「八、第二轮复核」，与之相关的原文已就地标注。
+> **实施顺序以「八」为准，不要照「六」执行。**
+
 ## 结论摘要
 
 一轮真实推演约 7 分钟，其中约 4 分钟（`ENRICH` 段）有并行空间、前 2.5 分钟
@@ -81,6 +86,8 @@ enrich_monitor_page_overviews (freeform_block.py:2165)
 就是 N 倍。调用之间无数据依赖——同一份 `datamodel` 和主题，各生各的。
 
 ### ② `enrich_freeform_blocks` 的页 × 块双重循环
+
+> ⚠️ **第二轮复核推翻：这段在生产路径上不处理任何区块，收益≈0。见「八、1」。**
 
 `freeform_block.py:1893-1971`，`for page → for block(FreeformInsight)` 全串行，
 每个区块一次独立 LLM 调用（可能带参照图+截图自检）。区块间无依赖，唯一共享
@@ -187,7 +194,7 @@ worker，worker 自己不再抢锁）。
   碰到。
 - **`lru_cache` 或其他模块级缓存**：freeform 相关代码路径未发现。
 
-## 六、建议的实施顺序
+## 六、建议的实施顺序（⚠️ 已作废，以「八、7」为准）
 
 1. **先补 `LLM_MAX_CONCURRENT` 的消费**（信号量/连接池上限）——这是并行化的前提，不是可选项。
 2. **①参照板生图**：按「二、2」的更正重构 `enrich_monitor_page_overviews` 的
@@ -214,3 +221,122 @@ worker，worker 自己不再抢锁）。
    `refine_sheet_prompts_parallel` 已经是这么写的（失败位置返回 `None`），
    照抄它的形状即可。
 3. **预算笼子不能失真**：见「四、2」，改成派发前一次性分配。
+
+## 八、第二轮复核（照 V5.7 架构图逐节点核对，2026-07-31 晚）
+
+第一轮只顺着 `enrich_*` 三个函数往下读，没有回到架构图把 `ENRICH` 子图的
+节点逐个对照。补做之后发现 6 处遗漏，其中第 1 条推翻了原优先级排序。
+
+### 1. ⚠️ ② 是生产路径上的死代码——原「收益最大」的判断作废
+
+`enrich_freeform_blocks` 的整个循环体挂在
+`if block.get("type") != "FreeformInsight": continue`（`freeform_block.py:1924`）
+上，而 `FreeformInsight` **不会出现在 `page.blocks` 里**。四条独立证据：
+
+| 证据 | 位置 |
+| --- | --- |
+| `FreeformInsight` 的 `generationEnabled: false` | `services/data/experience_block_catalog.json:536` |
+| 生成契约把它列进 schema-only 名单并明令 "never emit them" | `services/schema_legal.py:429-435` |
+| 演示域冻结夹具里 `FreeformInsight` 出现 **0** 次 | `services/data/builtin_domain_models.json` |
+| 离线夹具再生成脚本只 import/调用 `enrich_monitor_page_overviews` | `scripts/enrich_builtin_domain_models.py:36, 83` |
+
+**一处重要差别**：结构门**并不拒绝** `FreeformInsight`——`v5_model_gate.py:660-672`
+有它的专门校验分支（要求 `props.designBrief` 非空）。所以这是**提示词层面
+的禁止，不是结构上的不可能**：模型万一漏网吐出一个，门会放行，这段代码
+会真的执行。因此它是"实践上的死代码"，删不得，但也不值得为它做并行化。
+
+**连带影响**：
+- ② 的并行收益 ≈ 0，应从优先级列表移到最后或直接不做。
+- ④（两段整段并行）随之失去大半价值——两段里有一段是空转。
+- 实测的 244.2s「freeform 增强」几乎全部是 `enrich_monitor_page_overviews`
+  的耗时，不是 `enrich_freeform_blocks`。原文档把这个数字归给"freeform"
+  容易让人以为 ② 有 244s 可压。
+- 「四、2」预算竞态的**区块级那一处**（`1937-1944`）同样落在死代码里；
+  真正会在生产中触发的只有**页级那一处**（`2213-2220`）。
+
+### 2. 生图客户端才是 ① 真正并行的对象，而它没有任何并发控制
+
+第一轮盯着 `LLM_MAX_CONCURRENT`，却完全没有审查 `sliderule_llm/image_client.py`
+——而 ① 并行的正是这个客户端。
+
+| 事实 | 位置 |
+| --- | --- |
+| `RETRIES = 3`，`BACKOFF = 5`（线性 5/10/15 秒） | `image_client.py:22-23` |
+| `_transient()` 把 **429** 列为可重试 | `image_client.py:95` |
+| 重试用 `time.sleep(BACKOFF * attempt)`，**无 jitter** | `image_client.py:137` |
+| 无任何并发上限、无连接池、无信号量 | 全文件 |
+
+**风险**：并行后 N 个 worker 同时打向生图端点 → 一起收 429 → 各自 sleep
+**完全相同**的时长 → 同一时刻一起醒来重试 → 再撞一次。没有抖动的线性退避
+在并发下会让重试保持锁步，把一次拥塞放大成连环拥塞。
+
+**因此「四、1」的结论要扩展**：并行化前要补的不只是 LLM 侧的并发闸，
+生图侧同样需要（并发上限 + 退避加 jitter）。这两条是不同的端点、不同的
+客户端、不同的配置项，不能只补一处。
+
+### 3. 实测耗时来自一次「截图自检被关掉」的运行
+
+`e2b_screenshot_available()`（`services/app_screenshot.py:99-101`）要求
+**E2B key 与 `SLIDERULE_PUBLIC_APP_URL` 同时有值**。本地 `.env` 里后者是
+注释掉的（注释原文："本地开发保持注释（localhost 沙盒够不到）"）。
+实跑验证：`e2b_screenshot_available()` 返回 `False`。
+
+**后果**：
+- 244.2s 这个数字**不含任何 E2B 截图时间**，`shot_used` 与
+  `allow_screenshot_verify` 在本地全程惰性——「四、2」里截图预算那一半
+  在本地根本不会触发。
+- 生产环境（配了公网地址）会多出一整个成本中心，而并行化会把它变成
+  **N 个并发 E2B 沙盒**。`.env` 对 E2B 的注记是"⚠️ 按用量计费"，且每个
+  一次性沙盒不配 `SLIDERULE_E2B_TEMPLATE` 时要现装 playwright（约 2 分钟）。
+- **本文档的耗时画像不能直接外推到生产**。并行化的验收必须在配了
+  `SLIDERULE_PUBLIC_APP_URL` 的环境上再测一轮。
+
+### 4. 预算笼子就是并行宽度的天花板——收益估算需要下修
+
+`_ENRICH_MAX_REF_IMAGES_DEFAULT = 4`（`freeform_block.py:144`）。即使一个应用
+有 10 个 monitor 页，也只有前 4 页拿得到参照图，其余页 `use_ref=False` 走
+纯文字生成（快得多）。所以：
+
+- ① 的**有效并行宽度上限是 4，不是页数 N**。
+- 原文「以 4 个 monitor 页估，并行度 4 大致能压到 1/3」恰好踩在笼子边界上，
+  页数再多收益也不会线性增长。
+- 顺带核实架构图「满配 9 张 = 主题 1 + 区块 4 + 首页 4」：主题侧确实只生
+  1 张（`identity_theme_gen.py:235` 单次调用，不在循环里），与架构图一致；
+  但"区块 4"那一档因为第 1 条（② 死代码）在当前灰度下实际取不到。
+
+### 5. PALGUARD 节点第一轮完全没覆盖
+
+架构图 `ENRICH` 子图里 `FREEFORM → PALGUARD → FREEFORM` 是一条 reask 环边，
+第一轮审查漏掉了整个节点。补查结论：
+
+- **线程安全，无需改动**：`services/palette_guard.py` 只有模块级不可变常量
+  （`_HEX_RE` 编译正则、`HUE_TOLERANCE=25.0`、`NEUTRAL_CHROMA=0.04`、
+  `_FAMILY_BUCKET=30.0`），无可变全局、无缓存、无锁。
+- **但它让单任务耗时变成可变量**：违规时"带具体偏差重问"，一次 freeform
+  生成的 LLM 往返次数不固定。并行批次的墙钟时间由**最慢那个 worker 的重问
+  次数**决定，不是平均值——收益估算按平均耗时算会偏乐观。
+
+### 6. DOMFIX 旁路：这些并行化对四个演示域零收益
+
+架构图明写演示域意图（采购/请假/工单/入职）走 `DOMFIX` 冻结夹具旁路，
+**运行时跳过 ENRICH 整层**。因此本文档讨论的全部并行化只对**新颖意图**
+生效。夹具的增强是离线脚本 `scripts/enrich_builtin_domain_models.py` 预先
+跑好冻结进 JSON 的——那个脚本本身是可以并行化的（它调用同一个
+`enrich_monitor_page_overviews`），但它不在用户等待的关键路径上，优先级低。
+
+### 7. 修正后的实施顺序（取代「六」）
+
+1. **补两个并发闸**（不是一个）：
+   - LLM 侧——消费 `LLM_MAX_CONCURRENT`（「四、1」）
+   - 生图侧——并发上限 + 退避加 jitter（「八、2」）
+2. **① 参照板生图**：唯一确认有实际收益的一项。按「二、2」重构
+   `enrich_monitor_page_overviews` 的 for-page 循环（批量 facts →
+   `refine_sheet_prompts_parallel` → 生图并行），并行宽度按笼子设为 4。
+3. **③ 同页桌面/手机双档**：约省 67s/页，天然成对，无预算竞态。
+4. ~~② freeform 区块循环~~ —— **不做**。生产路径空转（「八、1」）。
+   若日后 `FreeformInsight` 的 `generationEnabled` 放开灰度，再回到这一条，
+   届时必须先处理区块级预算竞态。
+5. **④ 两段整段并行**：依赖已排除，但因 ② 空转而收益有限，最后考虑。
+
+验收纪律追加一条：**必须在配了 `SLIDERULE_PUBLIC_APP_URL` 的环境上复测**
+（「八、3」），本地关掉截图自检的耗时画像不足以验收。
