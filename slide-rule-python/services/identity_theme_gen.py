@@ -35,6 +35,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from .enrich_timing import stage as _enrich_stage
+
 # 格式正则从 data/identity_theme_presets.json 的 generatedThemeContract 派生
 # ——前端 isValidGeneratedTheme 与 freeform_block.is_valid_generated_theme
 # 同读同一份，格式定义只此一处。
@@ -232,7 +234,12 @@ def generate_identity_theme(
 
     reference_image_b64: Optional[str] = None
     if use_reference_image and get_llm_config().supports_image_content_parts:
-        reference_image_b64 = _generate_reference_image_b64(app_name, goal_text, datamodel_summary, device)
+        # 埋点：主题参照图。这是「满配 9 张 = 主题 1 + 区块 4 + 首页 4」里的
+        # 那 1 张（.env 的成本笼子注释）——单独记一条，才分得清主题段的耗时
+        # 里有多少是生图、多少是取色 LLM。
+        with _enrich_stage("theme.refimage", device=device or "unspecified") as _st:
+            reference_image_b64 = _generate_reference_image_b64(app_name, goal_text, datamodel_summary, device)
+            _st["got"] = 1 if reference_image_b64 else 0
 
     if reference_image_b64:
         first_content: Any = [
@@ -311,6 +318,16 @@ def enrich_identity_theme(model: dict[str, Any], goal: str = "") -> dict[str, An
     goal：调用方（v5_capability_executor）手里本来就有的原始用户目标文本，
     直接传进来——model 字典本身不携带这个字段，不要指望从 model.get 读到。
     """
+    # 墙钟埋点放在**函数内部**而不是调用点：这条链路有多个入口
+    # （v5_capability_executor 的生产路径、scripts/fresh_topic_shot.py 的
+    # 基线采集、scripts/enrich_builtin_domain_models.py 的夹具再生成），
+    # 埋在调用点则换一个入口就没数——第一版就是这么写的，真跑基线时三条
+    # .total 一条都没打出来。埋在函数里，谁调用都有。
+    with _enrich_stage("theme.total"):
+        return _enrich_identity_theme_inner(model, goal)
+
+
+def _enrich_identity_theme_inner(model: dict[str, Any], goal: str = "") -> dict[str, Any]:
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity")
     if not isinstance(identity, dict):
@@ -327,8 +344,24 @@ def enrich_identity_theme(model: dict[str, Any], goal: str = "") -> dict[str, An
     goal_text = str(goal or app_name).strip()
     datamodel = model.get("datamodel") or {}
     device = str(appbundle.get("preferredDevice") or "").strip()
+    # 主题参照图也归**同一份成本笼子**管（2026-08-01 修）。
+    #
+    # .env 对 SLIDERULE_ENRICH_MAX_REF_IMAGES 写的是"设 0 全关"，架构图也把这
+    # 张算进"满配 9 张 = 主题 1 + 区块 4 + 首页 4"。但这条路径此前**根本不读
+    # 那个变量**：真机设 0 之后 monitor.sheet 确实跳过了，主题这张照生不误，
+    # 端点挂着又白等了 685s。文档说全关而实际关不干净，比不提供开关更糟。
+    from services.freeform_block import (
+        _ENRICH_MAX_REF_IMAGES_DEFAULT,
+        _ENRICH_MAX_REF_IMAGES_ENV,
+        _env_budget,
+    )
+
+    ref_budget = _env_budget(_ENRICH_MAX_REF_IMAGES_ENV, _ENRICH_MAX_REF_IMAGES_DEFAULT)
     try:
-        theme = generate_identity_theme(app_name, goal_text, datamodel, device=device)
+        theme = generate_identity_theme(
+            app_name, goal_text, datamodel, device=device,
+            use_reference_image=ref_budget > 0,
+        )
         identity["generatedTheme"] = theme
     except IdentityThemeGenerationError as exc:
         print(f"[identity_theme_gen] generation failed, falling back to preset theme: {str(exc)[:200]}")

@@ -1330,6 +1330,77 @@ export function AppRuntimeScreen({
 
   // 体验区块渲染：桌面壳与手机壳共用同一份摆法逻辑，只有槽位来源分档。
   // 抽成函数之前它内联在 defaultPageContent 里，于是手机档一个区块都渲染不到。
+  // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
+  // 2026-08-01 提到组件层：此前定义在 renderExperienceBlockScaffold 闭包里，
+  // 首页设计路径（renderFreeformOverview）够不到它，是下面那份共享 props
+  // 一直缺 onAction 的直接原因。
+  const handleBlockAction = (
+    actionId: string,
+    eventData?: Record<string, unknown>
+  ) => {
+    if (!page) return;
+    const action = page.pageActions.find(a => a.id === actionId);
+    if (!action) return;
+    // 实际权限检查：permissionRef 须在当前角色 grantedActions 里。
+    const pa = pageAccess.get(page.id);
+    const permitted =
+      !action.permissionRef ||
+      (pa?.grantedActions ?? []).includes(action.permissionRef);
+    if (!permitted) return;
+    switch (action.type) {
+      case "navigate":
+        if (action.targetPageRef) setActivePageId(action.targetPageRef);
+        break;
+      case "createRecord":
+        // 复用既有「新建」表单：只支持目标实体=本页主实体的场景（表单
+        // 字段就是照本页主实体拼的）；指向别的实体如实拒绝，不假装能建。
+        if (action.entityRef && action.entityRef === page.entityId) {
+          setFormValues({});
+          setFormOpen(true);
+        } else {
+          toast("info", "该操作指向的实体暂不支持在此页创建");
+        }
+        break;
+      case "changeFilter":
+        console.log("[action:changeFilter]", actionId, eventData);
+        break;
+      default:
+        console.log(`[action:${action.type}]`, actionId, eventData);
+    }
+  };
+
+  /**
+   * 积木渲染 props 的**唯一真相源**（2026-08-01）。
+   *
+   * 积木有两条渲染入口：page.layout 的 5 槽位骨架，以及首页设计树里用
+   * blockRef 嵌进去的（✱C 桥）。此前两处各自逐个列举 props，结果漂移了：
+   * 骨架路径传 12 个，首页设计路径只传 4 个（漏了 onAction / pageActions /
+   * workflow / filter 那一组）。而 FreeformInsight 渲染器是整包透传的，
+   * 它自己收到什么就转交什么——于是嵌进首页设计的 QuickActionPanel 拿不到
+   * pageActions 渲染成空面板、WorkflowTimeline 拿不到 workflow 走 empty 分支，
+   * 同一个积木在下面骨架里却是好的。表现为"上面空壳、下面能用"。
+   *
+   * 收成一份对象后两条路径同源：以后加 prop 只能同时加给两边，漂移不了。
+   * （block-registry 里那句"逐个列举等于每加一个 prop 就埋一次漏传"说的
+   * 就是这件事，只是当时只在下游做了整包透传，上游两个入口还是各写各的。）
+   */
+  const sharedBlockRendererProps = {
+    onAction: handleBlockAction,
+    pageActions: quickActionButtons,
+    filterState: activePageFilter,
+    filterFieldOptions: filterableEnumFields,
+    dateRangeField,
+    onFilterChange: handlePageFilterChange,
+    workflow: model.workflow,
+    entityRows: state.entities,
+    chartPalette: {
+      primary: identityTheme.primary,
+      categorical: identityTheme.charts,
+    },
+    enumOptionsOf,
+    fieldLabelOf,
+  };
+
   const renderExperienceBlockScaffold = (forPhone: boolean) => {
     if (!page) return null;
         // 保守策略：_fromLegacy 区块只是转换占位，渲染仍走旧路径（statsBand 等）。
@@ -1382,59 +1453,11 @@ export function AppRuntimeScreen({
         const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks, freeformPlacedKeys);
         if (dedupedBlocks.length === 0) return null;
 
-        // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
-        const handleBlockAction = (
-          actionId: string,
-          eventData?: Record<string, unknown>
-        ) => {
-          const action = page.pageActions.find(a => a.id === actionId);
-          if (!action) return;
-          // 实际权限检查：permissionRef 须在当前角色 grantedActions 里。
-          const pa = pageAccess.get(page.id);
-          const permitted =
-            !action.permissionRef ||
-            (pa?.grantedActions ?? []).includes(action.permissionRef);
-          if (!permitted) return;
-          switch (action.type) {
-            case "navigate":
-              if (action.targetPageRef) setActivePageId(action.targetPageRef);
-              break;
-            case "createRecord":
-              // 复用既有「新建」表单：只支持目标实体=本页主实体的场景（表单
-              // 字段就是照本页主实体拼的）；指向别的实体如实拒绝，不假装能建。
-              if (action.entityRef && action.entityRef === page.entityId) {
-                setFormValues({});
-                setFormOpen(true);
-              } else {
-                toast("info", "该操作指向的实体暂不支持在此页创建");
-              }
-              break;
-            case "changeFilter":
-              console.log("[action:changeFilter]", actionId, eventData);
-              break;
-            default:
-              console.log(`[action:${action.type}]`, actionId, eventData);
-          }
-        };
-
         const renderBlock = (block: (typeof dedupedBlocks)[number]) => (
           <ExperienceBlockBoundary
             key={block.id}
+            {...sharedBlockRendererProps}
             block={block}
-            onAction={handleBlockAction}
-            pageActions={quickActionButtons}
-            filterState={activePageFilter}
-            filterFieldOptions={filterableEnumFields}
-            dateRangeField={dateRangeField}
-            onFilterChange={handlePageFilterChange}
-            workflow={model.workflow}
-            entityRows={state.entities}
-            chartPalette={{
-              primary: identityTheme.primary,
-              categorical: identityTheme.charts,
-            }}
-            enumOptionsOf={enumOptionsOf}
-            fieldLabelOf={fieldLabelOf}
           />
         );
 
@@ -1660,19 +1683,17 @@ export function AppRuntimeScreen({
           forPhone && page.freeformOverview.mobile ? "mobile" : "root"
         }
       >
+        {/* 共享同一份 props（见 sharedBlockRendererProps 的说明）：设计树里用
+            blockRef 嵌进来的积木由 FreeformInsight 整包透传拿到它们，跟骨架
+            路径逐字节一致。此前这里只传 4 个，嵌入的 QuickActionPanel /
+            WorkflowTimeline 因此渲染成空壳。 */}
         <ExperienceBlockBoundary
+          {...sharedBlockRendererProps}
           block={{
             id: `${page.id}:freeform-overview`,
             type: "FreeformInsight",
             freeformContent: picked,
           }}
-          entityRows={state.entities}
-          chartPalette={{
-            primary: identityTheme.primary,
-            categorical: identityTheme.charts,
-          }}
-          enumOptionsOf={enumOptionsOf}
-          fieldLabelOf={fieldLabelOf}
         />
       </div>
     );

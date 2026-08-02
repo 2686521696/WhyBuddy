@@ -224,3 +224,73 @@ describe("collectFreeformBlockRefKeys · 嵌了就外面不画", () => {
     expect(collectFreeformBlockRefKeys({ root: deep }).size).toBe(0);
   });
 });
+
+/**
+ * 2026-08-01：不吃 binding 的两类可嵌积木（blockRef 白名单在 6fe1c13 从 2 种
+ * 扩到 4 种时新增的那两个）。它们的指纹此前恒为 null，去重放行，同一个积木
+ * 在首页设计里嵌一次、下面骨架里再画一次。
+ *
+ * 下面用的是真机跑出来的形状（诊所话题 today_overview 页，2026-08-01 基线轮）：
+ * 设计树里的 blockRef 只带 {type, binding:{}, props:{}}，**不带 id**——所以
+ * 任何"按 id 匹配"的方案在这里都对不上，指纹必须从内容源取。
+ */
+describe("不吃 binding 的可嵌积木去重", () => {
+  const embeddedActionPanel = { type: "QuickActionPanel", binding: {}, props: {} };
+  const embeddedTimeline = { type: "WorkflowTimeline", binding: {}, props: {} };
+
+  it("QuickActionPanel：设计里嵌了，骨架里同类就不再画", () => {
+    const keys = collectFreeformBlockRefKeys({
+      root: { tag: "div", children: [{ tag: "div", blockRef: embeddedActionPanel }] },
+    } as never);
+    expect(keys.size).toBe(1);
+    const out = dedupeBlocksByPanelKey(
+      [{ id: "today_actions", type: "QuickActionPanel", binding: {}, props: {} } as never],
+      keys
+    );
+    expect(out).toHaveLength(0);
+  });
+
+  it("WorkflowTimeline：按 props.chainRef 认身份，主链路能对上", () => {
+    const keys = collectFreeformBlockRefKeys({
+      root: { tag: "div", children: [{ tag: "div", blockRef: embeddedTimeline }] },
+    } as never);
+    const out = dedupeBlocksByPanelKey(
+      [{ id: "appointment_stages", type: "WorkflowTimeline", binding: {}, props: {} } as never],
+      keys
+    );
+    expect(out).toHaveLength(0);
+  });
+
+  it("指向不同链路的两个流程条不互相去重（chainRef 就是身份）", () => {
+    const keys = collectFreeformBlockRefKeys({
+      root: {
+        tag: "div",
+        children: [
+          { tag: "div", blockRef: { type: "WorkflowTimeline", props: { chainRef: "chain_a" } } },
+        ],
+      },
+    } as never);
+    // 骨架里那个指向 chain_b，跟设计里嵌的不是同一个东西，必须保留
+    const out = dedupeBlocksByPanelKey(
+      [{ id: "flow_b", type: "WorkflowTimeline", binding: {}, props: { chainRef: "chain_b" } } as never],
+      keys
+    );
+    expect(out).toHaveLength(1);
+  });
+
+  it("回归：ActivityFeed 仍按 binding 取指纹，行为不变", () => {
+    const keys = collectFreeformBlockRefKeys({
+      root: {
+        tag: "div",
+        children: [
+          {
+            tag: "div",
+            blockRef: { type: "ActivityFeed", binding: feedBlock.binding, props: { variant: "row" } },
+          },
+        ],
+      },
+    } as never);
+    const out = dedupeBlocksByPanelKey([feedBlock], keys);
+    expect(out).toHaveLength(0);
+  });
+});

@@ -36,6 +36,8 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from pathlib import Path
 
+from .app_preview import OverviewPreviewSink
+from .enrich_timing import stage as _enrich_stage
 from .identity_palette_hint import FALLBACK_SEED, derive_prompt_palette
 from .palette_guard import extract_hex_colors, palette_report, repair_colors
 from .schema_legal import (
@@ -1719,9 +1721,11 @@ def generate_freeform_block(
     # 一张三区参照板同时喂给桌面档和手机档两次设计，两档才出自同一套视觉语言，
     # 也省掉一次生图。没传才自己生一张。
     if reference_image_b64 is None and use_reference_image and get_llm_config().supports_image_content_parts:
-        reference_image_b64 = _generate_reference_image_b64(
-            design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
-        )
+        with _enrich_stage("block.refimage", device=device or "unspecified") as _st:
+            reference_image_b64 = _generate_reference_image_b64(
+                design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+            )
+            _st["got"] = 1 if reference_image_b64 else 0
 
     if reference_image_b64:
         first_content: Any = [
@@ -1870,17 +1874,25 @@ def generate_freeform_block(
         # 校验通过的生成结果因为这个增强步骤而报废。
         if reference_image_b64 and allow_screenshot_verify:
             try:
-                preview_b64 = _render_preview_screenshot_b64(
-                    design_dump, theme_id=theme_id, device=device, generated_theme=generated_theme
-                )
-                if preview_b64:
-                    revised_dump = _critique_against_reference(
-                        design_dump,
-                        reference_image_b64=reference_image_b64,
-                        preview_screenshot_b64=preview_b64,
-                        design_brief=design_brief,
-                        FreeformDesign=FreeformDesign,
+                # 埋点：E2B 截图自检。这一段此前**完全测不到**——本地没配
+                # SLIDERULE_PUBLIC_APP_URL 时整段不触发，只能拿"沙盒固定开销
+                # 实测 29.1s + 代码里的超时上限"夹逼出 29~69s 的区间
+                # （审查文档「九、3」）。这条线一上，那个区间就能换成实测值。
+                with _enrich_stage("block.screenshot", device=device or "unspecified") as _st:
+                    preview_b64 = _render_preview_screenshot_b64(
+                        design_dump, theme_id=theme_id, device=device, generated_theme=generated_theme
                     )
+                    _st["got"] = 1 if preview_b64 else 0
+                if preview_b64:
+                    with _enrich_stage("block.critique", device=device or "unspecified") as _st:
+                        revised_dump = _critique_against_reference(
+                            design_dump,
+                            reference_image_b64=reference_image_b64,
+                            preview_screenshot_b64=preview_b64,
+                            design_brief=design_brief,
+                            FreeformDesign=FreeformDesign,
+                        )
+                        _st["revised"] = 1 if revised_dump is not None else 0
                     if revised_dump is not None:
                         design_dump = revised_dump
             except Exception as exc:  # noqa: BLE001 — 增强步骤绝不能拖垮已校验通过的主结果
@@ -1897,7 +1909,36 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
     page.blocks 和 page.layout 的槽位引用里一并摘掉，如实降级，不让一个
     装饰性区块的生成失败拖垮整个应用发布（fail-closed 的口径延伸到区块
     级）。原地修改并返回同一个 model，方便调用方链式使用。
+
+    ⚠️ **当前灰度下这个函数在生产路径上不处理任何区块**（2026-08-01 实测）。
+
+    它只认 `type == "FreeformInsight"` 的块，而该类型在
+    `experience_block_catalog.json` 里是 `generationEnabled: false`，生成契约
+    还把它列进 schema-only 名单明令 "never emit them"
+    （`schema_legal.py` 的 `schema_only` 那段）。四条独立证据：
+      · 目录里 generationEnabled=false
+      · 生成契约明令不许产出
+      · 演示域冻结夹具 builtin_domain_models.json 里出现 0 次
+      · 离线夹具再生成脚本 enrich_builtin_domain_models.py 压根不调用本函数
+    五轮真跑（诊所×3 / 公园×2）里 `[enrich-timing] stage=freeform.total` 恒为
+    `ms=0`，一次都没触发。
+
+    **但它不是可以删的死代码**：结构门并不拒绝 `FreeformInsight`
+    （`v5_model_gate.py:660-672` 有它的专门校验分支，检查 props.designBrief
+    非空），所以这是"提示词层面的禁止"而非"结构上的不可能"——模型万一漏网
+    吐出一个，门会放行，这段就会真的执行。
+
+    灰度一旦放开（把目录里那个布尔改成 true），这里立刻恢复工作；届时**必须
+    先处理下面那两个预算计数器的并发问题**再谈并行化，见
+    docs/enrich-pipeline-parallelization-audit-2026-07-31.md「四、2」。
     """
+    # 墙钟埋点在函数内部（理由见 identity_theme_gen.enrich_identity_theme 同处
+    # 注释：这条链路有多个入口，埋在调用点则换一个入口就没数）。
+    with _enrich_stage("freeform.total"):
+        return _enrich_freeform_blocks_inner(model)
+
+
+def _enrich_freeform_blocks_inner(model: dict[str, Any]) -> dict[str, Any]:
     datamodel = model.get("datamodel") or {}
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
@@ -1943,12 +1984,17 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
             if allow_shot:
                 shot_used += 1
             try:
-                content = generate_freeform_block(
-                    brief, datamodel, theme_id=theme_id, device=device,
-                    generated_theme=generated_theme,
-                    use_reference_image=use_ref,
-                    allow_screenshot_verify=allow_shot,
-                )
+                # 埋点②：区块级生成。当前灰度下 FreeformInsight 的
+                # generationEnabled=false，主模型不会产出这类区块，这个循环体
+                # 在生产路径上跑不到（审查文档「八、1」）——埋点仍然照放，
+                # 灰度一旦放开就直接有数，不用再回来补一次。
+                with _enrich_stage("freeform.block", page=str(page.get("id") or ""), block=bid):
+                    content = generate_freeform_block(
+                        brief, datamodel, theme_id=theme_id, device=device,
+                        generated_theme=generated_theme,
+                        use_reference_image=use_ref,
+                        allow_screenshot_verify=allow_shot,
+                    )
                 block["freeformContent"] = content
             except FreeformGenerationError as exc:
                 print(f"[freeform_block] {page.get('id')}.{bid} generation failed, dropping block: {str(exc)[:200]}")
@@ -1971,7 +2017,19 @@ def enrich_freeform_blocks(model: dict[str, Any]) -> dict[str, Any]:
     return model
 
 
-def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, Any]) -> str:
+def _monitor_overview_design_brief(
+    page: dict[str, Any], datamodel: dict[str, Any], *, audience: str = "design"
+) -> str:
+    # audience（2026-08-01）：这份 brief 有**两个消费方**，需要的说法不一样。
+    #   "design" —— 首页设计 LLM。要 blockRef 的技术形态（type/binding/props
+    #                照抄），因为它的产出要能被渲染器认出来。
+    #   "image"  —— 参照板生图模型。_build_overview_sheet_facts 把 brief 整段
+    #                照抄进出图提示词，而技术形态对它是天书：读到
+    #                {"type": "ActivityFeed", "binding": {...}} 它不知道该画一
+    #                条时间线；架构图那条"画面里不许出现 JSON/字段id/blockRef
+    #                等技术标识"针对的也是这里。给它视觉描述。
+    # 此前两边共用一份（技术形态那份），是参照板上一直没有这些积木的原因——
+    # 不是生图模型判断"这页不需要"，是它没看懂那段 JSON 在说什么。
     """monitor 页面（首页/运营总览）的总览设计需求文案——不是让 LLM 凭空
     发挥内容范围，而是把这个页面自己已经声明、已经过 Gate 校验的
     stats/charts 当成"必须覆盖的内容清单"喂给它，LLM 只负责这批内容的
@@ -2058,6 +2116,29 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
     # blockPanelKey 一致：类型 + 实体 + 关键字段，不含 id / 名字 / 条数。
     row_bits: list[str] = []
     plain_bits: list[str] = []  # 不吃 binding 的成品积木（动作面／流程面）
+    # 同一批积木给**画图模型**看的说法（2026-08-01）。
+    #
+    # 这份 brief 会被 _build_overview_sheet_facts 整段照抄进出图提示词，而上面
+    # 那两份 bits 是给设计 LLM 的：里头是 {"type": "ActivityFeed", "binding":
+    # {...}} 这种 JSON 加一句"照抄即可"。生图模型读到它**无从知道该画一排按钮
+    # 还是一条时间线**——参照板上一直没有这些积木，原因就在这里，不是它判断
+    # "这一页不需要"。架构图那条"画面里不许出现 JSON/字段id/blockRef 等技术
+    # 标识（brief 是照抄进 prompt 的）"说的也是同一件事。
+    #
+    # 所以按受众分两套说法：技术形态留给设计 LLM，画图模型拿视觉描述。
+    visual_bits: list[str] = []
+    _VISUAL_SHAPE = {
+        "RankedList": "一张 Top-N 排行榜（名次 + 名称 + 数值，纵向若干行）",
+        "ActivityFeed": "一列最近动态（按时间倒序的事件条目，每条带时间与状态标记）",
+        "QuickActionPanel": "一排常用操作按钮（横向并列的几个按钮）",
+        "WorkflowTimeline": "一条横向流程阶段条（若干阶段依次相连，当前阶段高亮）",
+    }
+
+    def _visual(block_type: str, title: str = "") -> None:
+        shape = _VISUAL_SHAPE.get(block_type)
+        if not shape:
+            return
+        visual_bits.append(f"{shape}{f'——{title}' if title else ''}")
     seen_row_keys: set[str] = set()
 
     def _take(key: str) -> bool:
@@ -2079,6 +2160,7 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
             f'{r.get("name") or r.get("id")}：{{"type": "RankedList", "binding": '
             f'{{"entityRef": "{entity}", "sortByRef": "{sort_by}"{extra}}}}}'
         )
+        _visual("RankedList", str(r.get("name") or ""))
     for f in page.get("feeds") or []:
         entity = str(f.get("entity") or "").strip()
         time_field = str(f.get("timeField") or "").rpartition(".")[2]
@@ -2092,6 +2174,7 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
             f'{f.get("name") or f.get("id")}：{{"type": "ActivityFeed", "binding": '
             f'{{"entityRef": "{entity}", "timeFieldRef": "{time_field}"{extra}}}}}'
         )
+        _visual("ActivityFeed", str(f.get("name") or ""))
     for b in page.get("blocks") or []:
         block_type = str(b.get("type") or "")
         if block_type not in FREEFORM_EMBEDDABLE_BLOCK_TYPES:
@@ -2119,16 +2202,29 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
                 f'{b.get("id")}：{{"type": "{block_type}", "binding": '
                 f"{json.dumps(binding, ensure_ascii=False)}}}"
             )
+            _visual(block_type, str(b.get("name") or ""))
         else:
             props = b.get("props") or {}
             title = str(props.get("title") or b.get("name") or b.get("id") or "")
             extra = ""
             if block_type == "WorkflowTimeline" and props.get("chainRef"):
                 extra = f'，"props": {{"chainRef": "{props["chainRef"]}"}}'
+            _visual(block_type, title)
             plain_bits.append(
                 f'{title}：{{"type": "{block_type}"{extra}}}（这个积木不吃 binding，'
                 f"照抄即可)"
             )
+    # ── 出图受众：到此为止 ──────────────────────────────────────
+    # 下面全是 blockRef 的技术形态与安置机制，只对设计 LLM 有意义。给生图模型
+    # 的是同一批积木的视觉描述——它才画得出来。
+    if audience == "image":
+        if visual_bits:
+            lines.append(
+                "画面上除了这些数字与图表，还要画出下面这几块内容（它们是这一页"
+                "真实存在的部分，不是装饰）：\n- " + "\n- ".join(visual_bits)
+            )
+        return "\n".join(lines)
+
     if row_bits:
         lines.append(
             "这一页还声明了下面这些**逐行内容**，请把它们用 blockRef 摆进你的版式里"
@@ -2152,17 +2248,112 @@ def _monitor_overview_design_brief(page: dict[str, Any], datamodel: dict[str, An
     # 现在有 blockRef 了（见 _blockref_prompt_fragment）：逐行内容仍然不由它
     # 画，但**由它决定摆在哪、占多大**，渲染交给积木自己的真渲染器。所以这里
     # 从"不许"改成"要用就摆一个"。
+    # 2026-08-01：这一句从**许可式**改成**祈使式 + 说清代价**。
+    #
+    # 原文是"如果这一页还适合……就摆一个……用不上就完全不用，不必凑数"。
+    # 它读起来是一道选择题，而上面列出的那些积木**并不是备选项**——它们是这
+    # 一页已经声明、一定会被渲染的东西：设计者不安置，它们不会消失，只会掉到
+    # 设计区外面的固定骨架里，于是首页又变回"AI 设计区 + 几张外挂卡"，主次和
+    # 留白仍旧由不得设计者（这正是 blockRef 桥当初要解决的问题）。
+    #
+    # 仓库里两次教训都指向同一件事——措辞方式决定模型行为：schema_legal 那边
+    # 记着许可式（"You MAY emit…"）让七个通电区块一个都没被用、连跑三次全是 0；
+    # binding 哨兵词写 "none" 时模型把它当成要填的值。所以这里也用祈使式，
+    # 并且**把不安置的代价明说出来**。
+    if row_bits or plain_bits:
+        # 措辞的作用域必须**咬死在积木上**（2026-08-01 修）。
+        #
+        # 上一版写的是"上面列出的积木是备选项……别为了凑齐而硬塞"。但"上面"
+        # 之上还有"必须包含的 KPI 统计卡/ 必须包含的图表"两段清单，紧跟着
+        # "不能遗漏清单里的任何一项"——于是两句话字面冲突："别为了凑齐而硬塞"
+        # 与"不能遗漏任何一项"。模型化解冲突的方式是把 KPI/图表也当成了可选：
+        # 真跑一轮声明 3 个 KPI + 3 张图表，设计只画出 1 个数字、0 张图表。
+        #
+        # 所以这里改成：先重申必含清单不在取舍范围内，再指名道姓地说"只有下面
+        # 这几个积木可选"，并把"别硬塞"的对象也限定到积木。
+        names = [b.split("：", 1)[0] for b in (row_bits + plain_bits)]
+        lines.append(
+            "关于**积木**（也只关于积木）的取舍——上面「必须包含」的 KPI 统计卡"
+            "与图表**不在取舍范围内，一项都不能少**：\n"
+            f"· 可选的只有这几个积木：{'、'.join(names)}\n"
+            "· 用得上 → 用 blockRef 摆进版式（binding/props 照抄），放哪一格、"
+            "占多宽由你定；\n"
+            "· 用不上 → **不要摆**。没被你摆进来的会被移除，不会跑到你的设计"
+            "外面另起一张卡。\n"
+            "按这一页的实际需要选，不必把积木凑齐——但这句话只对积木有效，"
+            "KPI 与图表照单全画。"
+        )
     lines.append(
-        "除了 KPI 统计卡和图表，如果这一页还适合展示逐行记录（比如排行榜、"
-        "最近动态/提醒、流程阶段条、常用操作入口），就在你的版式里用 blockRef "
-        "摆一个现成积木（用法见下方说明），由你决定它放在哪一格、占多宽——"
-        "不要自己用 CSS 去画这类内容（画出来只有表头没有行），也不要因为画不了"
-        "就当它不存在。用不上就完全不用，不必凑数。"
+        "除了 KPI 统计卡和图表，这一页若还适合展示逐行记录（排行榜、最近动态/"
+        "提醒、流程阶段条、常用操作入口），一律用 blockRef 摆现成积木（用法见"
+        "下方说明）——不要自己用 CSS 去画这类内容（画出来只有表头没有行），"
+        "也不要因为画不了就当它不存在。"
     )
     return "\n".join(lines)
 
 
-def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
+def _placed_blockref_types(content: Any) -> set[str]:
+    """走一遍设计树，收出被 blockRef 摆进去的积木类型。
+
+    深度上限与渲染侧 collectFreeformBlockRefKeys 同值（8），坏形状一律跳过、
+    不抛——这段跑在 fail-open 的增强链路里。
+    """
+    found: set[str] = set()
+
+    def walk(node: Any, depth: int) -> None:
+        if depth > 8 or not isinstance(node, (dict, list)):
+            return
+        if isinstance(node, list):
+            for item in node:
+                walk(item, depth + 1)
+            return
+        ref = node.get("blockRef")
+        if isinstance(ref, dict) and ref.get("type"):
+            found.add(str(ref["type"]))
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                walk(value, depth + 1)
+
+    walk(content, 0)
+    return found
+
+
+def _prune_unplaced_blocks(page: dict[str, Any], content: Any) -> None:
+    """把设计者没有安置的可嵌积木从 page.blocks / page.layout 里摘掉。
+
+    见调用点注释。这里只做机械移除，判断权在设计 LLM 的产出里。
+    """
+    blocks = page.get("blocks")
+    if not isinstance(blocks, list) or not blocks:
+        return
+    placed = _placed_blockref_types(content)
+    dropped_ids: list[str] = []
+    kept: list[Any] = []
+    for block in blocks:
+        btype = str((block or {}).get("type") or "") if isinstance(block, dict) else ""
+        if btype in FREEFORM_EMBEDDABLE_BLOCK_TYPES and btype not in placed:
+            dropped_ids.append(str(block.get("id") or btype))
+            continue
+        kept.append(block)
+    if not dropped_ids:
+        return
+    page["blocks"] = kept
+    layout = page.get("layout")
+    if isinstance(layout, dict):
+        for slot_key, refs in list(layout.items()):
+            if isinstance(refs, list):
+                layout[slot_key] = [r for r in refs if r not in dropped_ids]
+    # no silent drops：移除的是用户看得见的内容，必须留痕。
+    print(
+        f"[freeform_block] {page.get('id')} 设计者未安置，已移除 "
+        f"{len(dropped_ids)} 个积木: {dropped_ids}"
+        f"（设计里用到的类型: {sorted(placed) or '无'}）"
+    )
+
+
+def enrich_monitor_page_overviews(
+    model: dict[str, Any], *, preview_sink: Optional[OverviewPreviewSink] = None
+) -> dict[str, Any]:
     """首页/monitor 页面的总览区块也交给 FreeformInsight 设计，不再永远
     套同一套固定骨架（KPI 行 + 图表主列 + 排行/动态流侧列）——那套骨架
     此前是唯一选项，所以所有生成出来的应用首页看起来都一个模子，且列
@@ -2174,12 +2365,29 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
     失败）就照旧走固定骨架兜底，两者是"有更好的就用更好的，没有就诚实
     退回骨架"，不是互相替代关系。原地修改并返回同一个 model，方便调用方
     链式使用。
+
+    preview_sink：可选的参照板收集槽（见 app_preview）。传了就把这次画的参照板
+    交进去，供落库时当应用中心的卡片缩略图；**不传就完全不收集**——两个脚本
+    调用方（fresh_topic_shot / enrich_builtin_domain_models）因此不用改，也不会
+    有几 MB 的 base64 混进它们产出的 model.json 和仓库里冻结的域夹具。
     """
+    # 墙钟埋点在函数内部（理由见 identity_theme_gen.enrich_identity_theme 同处
+    # 注释：这条链路有多个入口，埋在调用点则换一个入口就没数）。
+    with _enrich_stage("monitor.total"):
+        return _enrich_monitor_page_overviews_inner(model, preview_sink=preview_sink)
+
+
+def _enrich_monitor_page_overviews_inner(
+    model: dict[str, Any], *, preview_sink: Optional[OverviewPreviewSink] = None
+) -> dict[str, Any]:
     datamodel = model.get("datamodel") or {}
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
     theme_id = str(identity.get("theme") or "").strip()
     device = str(appbundle.get("preferredDevice") or "").strip()
+    # 哪一页代表这个应用：落地页那张参照板就是用户点开应用第一眼看到的画面，
+    # 也就是卡片该显示的东西（见 OverviewPreviewSink.offer 的取舍规则）。
+    landing_ref = str(appbundle.get("landingPageRef") or "").strip()
     generated_theme_raw = identity.get("generatedTheme")
     generated_theme = generated_theme_raw if isinstance(generated_theme_raw, dict) else None
 
@@ -2209,6 +2417,9 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
         if isinstance(existing_overview, dict) and existing_overview.get("root"):
             continue
         brief = _monitor_overview_design_brief(page, datamodel)
+        # 参照板走**出图受众**那一份：同一批内容，但积木用视觉描述而不是
+        # blockRef 的 JSON 形态（见 _monitor_overview_design_brief 的 audience）。
+        sheet_brief = _monitor_overview_design_brief(page, datamodel, audience="image")
         # 与 enrich_freeform_blocks 同一预算语义：按尝试计费（见彼处注释）。
         use_ref = ref_used < max_ref_images
         allow_shot = use_ref and shot_used < max_screenshot_verify
@@ -2224,21 +2435,36 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
         # （见 _build_overview_sheet_prompt）——不然会让生图模型白画一块
         # 后面根本不会用来生成设计的版式区，还挤占了真正会用的那档的画布
         # 份额。生图失败返回 None，下面照旧退回纯文字生成。
-        sheet_b64 = (
-            _generate_overview_sheet_b64(
-                brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+        page_id = str(page.get("id") or "")
+        # 埋点①：参照板生图。单张实测 60~85s，是这一段最贵的一步，也是并行化
+        # 收益最大的那一处（见审查文档「八、7」第 2 项）——改造前后就靠这条线对比。
+        with _enrich_stage("monitor.sheet", page=page_id, device=device or "unspecified") as _st:
+            sheet_b64 = (
+                _generate_overview_sheet_b64(
+                    sheet_brief, datamodel, theme_id=theme_id, device=device,
+                    generated_theme=generated_theme,
+                )
+                if use_ref and _supports_image_content_parts()
+                else None
             )
-            if use_ref and _supports_image_content_parts()
-            else None
-        )
+            # 跳过（预算撞顶/通道不支持图片）和真生了图，耗时天差地别，
+            # 光看 ms 会以为"生图很快"，得把这一位记下来才看得懂数据。
+            _st["got"] = 1 if sheet_b64 else 0
+        # 这张图排完版式就该丢了——但它同时也正是应用中心那张卡该显示的画面。
+        # 调用方给了收集槽就交一份（见 app_preview：**没给槽就什么都不做**，
+        # 所以两个脚本调用方不用改也不会被污染）。生图失败传 None 无害，
+        # offer 自己会忽略。
+        if preview_sink is not None:
+            preview_sink.offer(page_id, sheet_b64, is_landing=bool(landing_ref and page_id == landing_ref))
         try:
-            content = generate_freeform_block(
-                brief, datamodel, theme_id=theme_id, device=device,
-                generated_theme=generated_theme,
-                use_reference_image=use_ref,
-                allow_screenshot_verify=allow_shot,
-                reference_image_b64=sheet_b64,
-            )
+            with _enrich_stage("monitor.design", page=page_id, device=device or "unspecified"):
+                content = generate_freeform_block(
+                    brief, datamodel, theme_id=theme_id, device=device,
+                    generated_theme=generated_theme,
+                    use_reference_image=use_ref,
+                    allow_screenshot_verify=allow_shot,
+                    reference_image_b64=sheet_b64,
+                )
             # 手机档再设计一版（方案 B）。
             #
             # 形状照两处成熟先例：react-grid-layout 的 layouts={{lg,md,sm}}
@@ -2275,16 +2501,19 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
             declared_desktop_only = device == "desktop"
             if device != "phone" and not declared_desktop_only:
                 try:
-                    mobile_content = generate_freeform_block(
-                        brief, datamodel, theme_id=theme_id, device="phone",
-                        generated_theme=generated_theme,
-                        use_reference_image=use_ref,
-                        # 手机那份不再单独截图自检：那一步是"渲染出来再让视觉
-                        # 模型跟参照图比一遍"，成本高且收益递减，两档都做等于
-                        # 把总览页的生成时间再翻一倍。
-                        allow_screenshot_verify=False,
-                        reference_image_b64=sheet_b64,
-                    )
+                    # 埋点③：手机档。注释里写的是约 67s/页，这条线用来核实这个
+                    # 数字是否还成立——它同时是"跳过手机档省了多少"的依据。
+                    with _enrich_stage("monitor.design", page=page_id, device="phone"):
+                        mobile_content = generate_freeform_block(
+                            brief, datamodel, theme_id=theme_id, device="phone",
+                            generated_theme=generated_theme,
+                            use_reference_image=use_ref,
+                            # 手机那份不再单独截图自检：那一步是"渲染出来再让视觉
+                            # 模型跟参照图比一遍"，成本高且收益递减，两档都做等于
+                            # 把总览页的生成时间再翻一倍。
+                            allow_screenshot_verify=False,
+                            reference_image_b64=sheet_b64,
+                        )
                     # 复制一份而不是原地改：生成器返回的对象不该被调用方
                     # 就地改写。真被咬过——测试里 fake 两次返回同一个 dict，
                     # `content["mobile"] = mobile_content` 直接造出自引用结构。
@@ -2295,6 +2524,25 @@ def enrich_monitor_page_overviews(model: dict[str, Any]) -> dict[str, Any]:
                         f"falling back to the desktop design on phone: {str(exc)[:160]}"
                     )
             page["freeformOverview"] = content
+            # 设计者的否决权（2026-08-01）：**没被摆进设计的可嵌积木，就此移除**。
+            #
+            # 此前"不摆"没有任何出口——积木照样渲染，只是掉到设计区外面的固定
+            # 骨架里。于是设计 LLM 判断"这一页用不上它"这件事**根本无法表达**：
+            # 不摆比摆还糟（出现在它控制不到的地方，打断它安排的主次和留白）。
+            # 上面 brief 里那段"用不上就不要摆"因此才成立——现在它是真的。
+            #
+            # 谁来判断：设计 LLM 是链路上信息最全的一环（它刚把整页版式排完），
+            # 而声明这些积木的是更早、信息更少的五系统生成。把取舍交给前者。
+            #
+            # 只动**可嵌类型**：不可嵌的积木压根没有"摆进设计"这个选项，按
+            # 未安置移除等于无条件删掉。总览页上这两个集合当前恰好相等
+            # （monitor_ok == FREEFORM_EMBEDDABLE_BLOCK_TYPES），这里仍按类型
+            # 判断而不是依赖那个巧合。
+            #
+            # 保守偏向保留：按**类型**匹配而非逐实例指纹——设计里出现过该类型
+            # 就整类保留。宁可多留一个（掉骨架，老行为），也不要误删。
+            # 移除必须留痕：静默删掉用户看得见的内容是这个仓库明令避免的。
+            _prune_unplaced_blocks(page, content)
         except FreeformGenerationError as exc:
             print(
                 f"[freeform_block] {page.get('id')} monitor overview generation failed, "

@@ -140,13 +140,16 @@ describe("aspectForDevice", () => {
     }
   });
 
-  it("与 AppRuntimeScreen 的 DEVICE_SPECS 数值一致", () => {
-    // 那边是 desktop 1440×810 / tablet 1112×834 / phone 390×844。
-    // 这里放的是纯数值副本（不 import，避免把整个运行时拉成同步依赖，
-    // 见 DEVICE_ASPECT 的说明）。改了一边没改另一边，这条当场红。
-    expect(DEVICE_ASPECT.desktop).toBeCloseTo(1440 / 810, 6);
-    expect(DEVICE_ASPECT.tablet).toBeCloseTo(1112 / 834, 6);
-    expect(DEVICE_ASPECT.phone).toBeCloseTo(390 / 844, 6);
+  it("与首页参照板的出图画布一致（卡片装的是那张图）", () => {
+    // 卡片比例的唯一依据是 freeform_block._DEVICE_IMAGE_SIZE：
+    //   desktop / tablet → 1280×720、phone → 720×1280。
+    // 不 import 那边（Python），也不再抄 AppRuntimeScreen 的 DEVICE_SPECS——
+    // 2026-08-01 起卡片装的是参照板而不是活渲染，跟屏幕物理比对齐反而是错的
+    // （手机档 390/844 比 9:16 窄 22%，卡片就高 22%，即用户看到的「过长」）。
+    // 出图画布改了而这里没改 → 卡片开始裁图/留边，这条当场红。
+    expect(DEVICE_ASPECT.desktop).toBeCloseTo(16 / 9, 6);
+    expect(DEVICE_ASPECT.tablet).toBeCloseTo(16 / 9, 6);
+    expect(DEVICE_ASPECT.phone).toBeCloseTo(9 / 16, 6);
   });
 });
 

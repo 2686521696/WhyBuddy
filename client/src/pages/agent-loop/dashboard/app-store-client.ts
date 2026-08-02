@@ -32,6 +32,37 @@ export interface AppStoreSummary {
   landing_page_ref: string;
   entity_count: number;
   page_count: number;
+  /**
+   * 这条记录有没有缩略图。有就贴图，没有就回落活渲染。
+   *
+   * 图有两个可能的来源，**服务端按可信度挑**（见 Python 侧 app_store 的
+   * PREVIEW_SOURCE_PRIORITY）：真实渲染的截图 > 生成时那张首页参照板。
+   * 这个布尔只回答"有没有"，不区分是哪一路——前端也不需要区分，两者画幅一致、
+   * 走同一个接口。
+   *
+   * 图本身不在摘要里——一张约 1MB 的 PNG，列 200 个应用光缩略图就是 200MB。
+   * 真正取图走 GET /api/sliderule/apps/{id}/preview（immutable 强缓存）。
+   *
+   * 可选：老的 Python 后端不返回这个字段，缺失按 false 处理 = 活渲染，
+   * 即改动前的行为。
+   */
+  has_preview?: boolean;
+  /**
+   * 当前用的是哪一路图："shot"（真截图）/ "sheet"（参照板）/ ""（没图）。
+   *
+   * 除了观测（"这张卡到底贴的什么"在列表接口上直接可见），它还有一个实际作用：
+   * 活渲染的卡据此决定要不要就地采一张真截图（见 lib/thumb-capture.ts）——
+   * 已经是 "shot" 的不再采。
+   */
+  preview_source?: string;
+  /**
+   * 缩略图的缓存版本位，拼进 URL 的 `?v=`（见 AppsWorkbench.appPreviewUrl）。
+   *
+   * 形如 `"shot.1754140000123456"`——来源 + 写入时刻。**必须带上**：缩略图响应
+   * 是 immutable 强缓存的，而同一个 app_id 的图会变（真截图是事后采集回传的），
+   * URL 不跟着变，浏览器就永远停在升级前那张。
+   */
+  preview_tag?: string;
 }
 
 /** 完整记录——摘要 + model_json（可直接重开渲染）。 */

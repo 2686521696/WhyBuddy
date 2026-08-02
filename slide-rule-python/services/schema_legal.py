@@ -110,6 +110,20 @@ def _load_experience_blocks() -> tuple:
         # ExistingContentAdapter 惰性占位）；generationEnabled = 灰度决定（准不准
         # 让 LLM 往 page.blocks 里写这个类型）。分两个字段是因为它们会各自独立
         # 变化：渲染器先落地、放开是后一步的决定。
+        # slotsRationale（可选，2026-08-01）：只给"限制不显然"的类型写一句
+        # **为什么**。三轮真跑里模型把 WorkflowTimeline 放进 secondary 共 5 次，
+        # 是最稳定的一类结构门失败——它按"流程条是辅助信息"的语义直觉摆，而真实
+        # 依据是宽度（横向流程条塞不进 1/3 窄栏）。只丢一张 slots 表模型无从
+        # 推断，下次照样按直觉猜；本仓库反复验证过措辞/理由决定行为。
+        # 放在这里而不是 prompt 文案里：理由与它约束的 allowedSlots 同处一行，
+        # 谁改约束都会看见。
+        slots_rationale = raw.get("slotsRationale")
+        if slots_rationale is not None and (
+            not isinstance(slots_rationale, str) or not slots_rationale.strip()
+        ):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.slotsRationale 必须是非空字符串（或整个省略）"
+            )
         renderer_status = raw.get("rendererStatus")
         if renderer_status not in ("real", "placeholder"):
             raise ValueError(
@@ -407,10 +421,46 @@ def experience_block_prompt_block() -> str:
         # 措辞照上一句的教训走**祈使式**：07-28 记过，写成许可式（"You MAY
         # emit…"）时七个通电区块一个都没被用，同目标连跑三次全是 0；换成祈使
         # 式并说清"不用的代价"之后才有产出。所以这里也说清代价。
+        # 2026-08-01 追加排除 FilterBar：它在总览页**驱动不了任何东西**。
+        # 实测链路：filterState 全仓只有 FilterBarRenderer 自己读（用来显示当前
+        # 筛选态），变更经 onFilterChange 进页面级过滤态，只影响页面自有视图
+        # （Table/看板/日历，走筛过的 rows）；而积木与 freeform 设计树拿到的是
+        # entityRows = state.entities，**未筛的全量**。总览页没有 Table/看板/
+        # 日历，于是那条筛选栏按下去什么都不会变。
+        # 这也正是 blockRef 白名单一直不收它的理由（test_freeform_blockref 的
+        # 用例注释原文："FilterBar 在总览页筛不动东西"）——既然嵌不进设计、
+        # 又驱动不了内容，就不该在总览页把它摆出来当选项：模型真的会照单声明
+        # （2026-08-01 基线轮，dashboard 页声明了 analytics_filter），结果是
+        # 一个按不动的控件掉在设计区外面。
+        # 只从推荐清单里拿掉是**不够的**：2026-08-01 实测，把 FilterBar 从
+        # monitor_ok 移除后重跑，dashboard 页照样声明了 analytics_filters——
+        # 目录里它仍是通电区块，没有任何一句话说总览页不许用。所以下面补一条
+        # 显式禁令。四个一起禁（不只 FilterBar）：另外三个此前同样只是"不推荐"
+        # 而无硬禁，是同一个洞，只是还没撞上。
+        MONITOR_FORBIDDEN = ("MetricGrid", "TrendChart", "DataTable", "FilterBar")
         monitor_ok = [
             str(b["type"]) for b in enabled
-            if str(b["type"]) not in ("MetricGrid", "TrendChart", "DataTable")
+            if str(b["type"]) not in MONITOR_FORBIDDEN
         ]
+        monitor_forbidden_live = [t for t in MONITOR_FORBIDDEN if t in {str(b["type"]) for b in enabled}]
+        if monitor_forbidden_live:
+            # 逐条给理由而不是只列名单：本仓库反复验证过措辞决定行为（许可式
+            # 让七个通电区块一个都没被用；binding 哨兵词 "none" 被当成值）。
+            # 只丢一张禁用表，模型下次照样按语义直觉去猜"这页是不是该有个筛选条"。
+            lines.append(
+                "On monitor / dashboard pages, NEVER emit these blocks: "
+                + ", ".join(monitor_forbidden_live)
+                + ". Each is inert there, not merely discouraged. MetricGrid and "
+                "TrendChart would render the same numbers a second time — an overview's "
+                "KPIs and charts are already declared as page.stats / page.charts and "
+                "get laid out by the design pass. DataTable needs full width and a "
+                "second entity to be worth anything on an overview. FilterBar cannot "
+                "filter ANYTHING on an overview: its state only reaches this page's own "
+                "table / kanban / calendar views, and an overview has none of them — "
+                "the blocks and the designed layout read the unfiltered rows, so the "
+                "control would sit there doing nothing. Put the filter on the business "
+                "page that actually lists records instead."
+            )
         if monitor_ok:
             lines.append(
                 "monitor / dashboard pages are NOT exempt from this. Their stats and "
@@ -467,9 +517,16 @@ def experience_block_prompt_block() -> str:
         "inventory page)."
     )
     for block in EXPERIENCE_BLOCKS:
+        # slots 后面紧跟这一类的槽位理由（只有限制不显然的类型才有）。
+        # 只给一张 slots 表，模型无从推断"为什么不行"，会按语义直觉去猜——
+        # WorkflowTimeline 被摆进 secondary 在三轮真跑里复发 5 次就是这么来的。
+        rationale = str(block.get("slotsRationale") or "").strip()
+        slots_part = f"slots={','.join(block['allowedSlots'])}"
+        if rationale:
+            slots_part += f" ({rationale})"
         lines.append(
             f"- {block['type']}: {block['description']} "
-            f"data={','.join(block['dataKinds'])}; slots={','.join(block['allowedSlots'])}; "
+            f"data={','.join(block['dataKinds'])}; {slots_part}; "
             f"events={','.join(block['events'])}; "
             f"binding={_format_binding_schema(block['bindingSchema'])}"
         )
@@ -484,6 +541,24 @@ def experience_block_prompt_block() -> str:
         "updateRecord (entityRef), changeFilter (targetBlockRef), drillDown (targetBlockRef). "
         "Each action MUST have a permissionRef matching an entry in page.actionPermissions. "
         "Blocks MAY include eventBindings mapping event names to action ids defined in the same page."
+    )
+    # 槽位的**实际形态**（2026-08-01）。此前提示词从头到尾只给槽位**名字**，
+    # 从没说过它们渲染成什么样——模型不知道 content 在页面最下面、secondary
+    # 只有 1/3 宽，于是只能按名字的字面意思猜（"content 听起来就是放内容的"）。
+    # 那一类违规反复复发、只是换主角：WorkflowTimeline→secondary（5 次）、
+    # FilterBar→content（2 次）、QuickActionPanel→content（3 次）。
+    # 逐块补 slotsRationale 是在治单点，这一句才是治这一类：把判据交给模型，
+    # 它才谈得上自己推。数值取自 AppRuntimeScreen 的实际渲染。
+    lines.append(
+        "What the slots actually look like when rendered (top to bottom): "
+        "summary = a horizontal wrapping row across the very top; "
+        "primary and secondary = two columns side by side under it, primary is "
+        "twice as wide as secondary (2/3 vs 1/3); "
+        "activity then content = full-width rows below those columns. "
+        "So the reading order is summary → primary/secondary → activity → content, "
+        "and secondary is the only narrow slot. Anything the user must see or act on "
+        "BEFORE the page's content belongs in summary, not in activity/content — "
+        "those render after the very things they would act on."
     )
     lines.append(
         "Step 7 — Page layout: pages MAY declare a layout object whose OWN KEYS ARE THE SLOT NAMES — "

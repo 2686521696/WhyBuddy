@@ -116,3 +116,105 @@ def test_gate_still_blocks_off_ledger_values():
     assert "sparkly" in refs      # 非法 tone
     assert "hologram" in refs     # 非法页面范式
     assert "sparkline" in refs    # 非法图表形态
+
+
+def test_monitor_pages_carry_an_explicit_block_prohibition():
+    """2026-08-01：总览页的禁用积木必须是**显式禁令**，不能只是"不在推荐清单里"。
+
+    实测教训：先只把 FilterBar 从 monitor_ok 移除，重跑一轮 dashboard 页照样
+    声明了 analytics_filters——目录里它仍是通电区块，没有任何一句说总览页不许
+    用，模型按语义直觉("总览页该有个筛选条")就补上了。
+
+    所以这里锁三件事：说了 NEVER、四个类型都点名、且给了理由（本仓库反复
+    验证过只丢名单不给理由时模型会照旧按直觉猜）。
+    """
+    from services import schema_legal
+
+    prompt = schema_legal.experience_block_prompt_block()
+    assert "On monitor / dashboard pages, NEVER emit these blocks" in prompt
+    for t in ("MetricGrid", "TrendChart", "DataTable", "FilterBar"):
+        assert t in prompt
+    # 理由必须在场——FilterBar 那条是最容易被当成"随便定的规矩"的
+    assert "cannot filter ANYTHING on an overview" in prompt
+
+
+def test_slot_restrictions_have_no_unexplained_width_gaps():
+    """槽位限制的唯一物理依据是宽度——不该出现"窄的能放、宽的能放、中间不能放"。
+
+    渲染实测（AppRuntimeScreen.tsx:1490-1532）：secondary=1/3 窄栏、
+    primary=2/3 主栏、activity/content=全宽且 className 逐字节相同。
+    所以若一个区块同时允许 secondary 和全宽档，中间的 primary 必然也放得下；
+    禁掉它没有物理解释（ActivityFeed 此前正是如此，见
+    docs/layout-slot-constraint-audit-2026-08-01.md）。
+    """
+    from services import schema_legal
+
+    order = {"secondary": 1, "primary": 2, "activity": 3, "content": 3}
+    for block in schema_legal.EXPERIENCE_BLOCKS:
+        slots = set(block["allowedSlots"])
+        ranked = [order[s] for s in slots if s in order]
+        if not ranked:
+            continue
+        lo, hi = min(ranked), max(ranked)
+        gaps = [s for s, o in order.items() if lo < o < hi and s not in slots]
+        assert not gaps, f"{block['type']} 的宽度区间有洞：允许 {sorted(slots)}，却禁了 {gaps}"
+
+
+def test_activity_and_content_are_opened_together():
+    """activity 与 content 渲染完全相同（同一段 className），开一个禁一个是任意限制。"""
+    from services import schema_legal
+
+    for block in schema_legal.EXPERIENCE_BLOCKS:
+        slots = set(block["allowedSlots"])
+        assert ("activity" in slots) == ("content" in slots), (
+            f"{block['type']} 只开了 activity/content 其中一个：{sorted(slots)}"
+            "——两者渲染逐字节相同，这个区分没有效果差异"
+        )
+
+
+def test_every_slot_restriction_ships_its_reason():
+    """**凡是限制了槽位的类型，都必须说明为什么**——不是只给犯过错的那个补。
+
+    2026-08-01 的教训：给 WorkflowTimeline 补了理由之后它那类违规归零，但同一
+    个毛病立刻换主角复发——FilterBar→content ×2、QuickActionPanel→content ×3。
+    上一版这条用例只钉了 WorkflowTimeline 一个，所以"补了理由"这件事没有被推广，
+    等于修了症状没修这一类。
+
+    判据：allowedSlots 不是全集 = 存在限制 = 必须有 slotsRationale。模型推不出
+    "为什么不行"时只会按名字的字面意思猜（"content 听起来就是放内容的"）。
+    """
+    from services import schema_legal
+
+    all_slots = set(schema_legal.EXPERIENCE_BLOCK_ALLOWED_SLOTS)
+    for block in schema_legal.EXPERIENCE_BLOCKS:
+        if set(block["allowedSlots"]) >= all_slots:
+            continue  # 不限制就不用解释
+        assert str(block.get("slotsRationale") or "").strip(), (
+            f"{block['type']} 限制了槽位（只允许 {sorted(block['allowedSlots'])}）"
+            "却没写 slotsRationale——模型无从推断，只会按名字乱猜"
+        )
+
+
+def test_slot_rationales_reach_the_generation_contract():
+    """理由必须真的进生成契约，不能只躺在目录里。"""
+    from services import schema_legal
+
+    prompt = schema_legal.experience_block_prompt_block()
+    for block in schema_legal.EXPERIENCE_BLOCKS:
+        rationale = str(block.get("slotsRationale") or "").strip()
+        if rationale:
+            assert rationale in prompt, f"{block['type']} 的槽位理由没进 prompt"
+
+
+def test_contract_explains_what_the_slots_look_like():
+    """槽位的**渲染形态**要交代清楚——这是那一类违规的根因。
+
+    此前提示词只给槽位名字，从没说过 content 渲染在页面最下面、secondary 只有
+    1/3 宽。模型不知道形态就只能按名字猜，逐块补理由是治单点，这一句才治这一类。
+    """
+    from services import schema_legal
+
+    prompt = schema_legal.experience_block_prompt_block()
+    assert "What the slots actually look like" in prompt
+    assert "2/3 vs 1/3" in prompt
+    assert "summary → primary/secondary → activity → content" in prompt

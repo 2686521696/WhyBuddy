@@ -49,6 +49,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { requestMountPermit } from "@/lib/mount-scheduler";
+import { captureAndUpload } from "@/lib/thumb-capture";
 import { resolveIdentityTheme } from "@/pages/sliderule/live-runtime/identity-themes";
 import {
   mergeFiveSystemModels,
@@ -483,14 +484,34 @@ const LazyAppRuntimeScreen = React.lazy(() =>
  * 两道闸串联的顺序要对：**先进视口、再排队**。反过来（先排队再看视口）会把
  * 滚动到很远处的卡也排进队里，白占许可名额。
  */
+/**
+ * 活渲染挂上之后，等多久再采集。
+ *
+ * 挂载完成 ≠ 画面就绪：echarts 要拿到容器尺寸后才画，表格与图标还有懒加载的
+ * chunk。1500ms 是照 freeform 预览截图那条已经在生产验证过的路径取的同一个数
+ * （Python 侧 _FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE 里的 waitForTimeout）。
+ * 采早了拿到的是半渲染的画面，而它会被当成"这个应用长这样"存起来——比没有更糟。
+ */
+const CAPTURE_SETTLE_MS = 1500;
+
 function LiveAppThumb({
   sessionId,
   model,
   goal,
+  captureFor,
+  device,
 }: {
   sessionId: string;
   model: FiveSystemModel;
   goal: string;
+  /**
+   * 采集回传的目标 app_id。传了就表示"这张卡是在活渲染，而这个应用还没有真
+   * 截图"——渲染稳定之后就地采一张存住，于是这次活渲染是最后一次
+   * （见 lib/thumb-capture.ts）。不传（会话卡、已经有图）就只渲染，不采集。
+   */
+  captureFor?: string | null;
+  /** 应用档位，决定采集画幅。 */
+  device?: string | null;
 }) {
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const [hiddenControls, setHiddenControls] = React.useState<HTMLDivElement | null>(null);
@@ -526,6 +547,27 @@ function LiveAppThumb({
 
   const visible = inView && granted;
 
+  // 渲染稳定之后采一张存住（缩略图三级来源的第一级，见 lib/thumb-capture.ts）。
+  //
+  // 时机：挂上之后再等 CAPTURE_SETTLE_MS。挂载完成 ≠ 画面就绪——echarts 要一帧
+  // 去量容器再画，表格还有懒加载的 chunk。采早了会得到一张半渲染的图，而它会被
+  // 当成"这个应用长这样"存起来，比没有更糟。
+  //
+  // 卸载即取消：滚出去、改搜索、翻页都会卸载这张卡，那时候再采就是对着已经拆掉
+  // 的 DOM 采。节流与预算在 thumb-capture 里全局管，这里只管"什么时候可以采"。
+  React.useEffect(() => {
+    if (!visible || !captureFor) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled || !wrapRef.current) return;
+      void captureAndUpload({ appId: captureFor, container: wrapRef.current, device });
+    }, CAPTURE_SETTLE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [visible, captureFor, device]);
+
   return (
     <div
       ref={wrapRef}
@@ -540,12 +582,143 @@ function LiveAppThumb({
             sessionId={sessionId}
             appTitle={goal}
             controlsContainer={hiddenControls}
+            // 宽度定缩放（2026-08-01 补）。**此前这里什么都没传，吃的是默认
+            // 的 contain**——min(w/W, h/H)，卡片比例跟画布比例对不上时按更紧
+            // 的那一边缩，另一边留边。
+            //
+            // 一直没暴露是因为两边比例恰好相等：卡片比例本来就是照
+            // DEVICE_SPECS 抄的，contain 的两项算出来一样大，等于白留了个坑。
+            // 卡片比例改成跟出图画布对齐（手机档 0.462 → 0.5625）之后坑就踩响
+            // 了：手机档画布 390×844 装进 9:16 的卡，contain 按高度缩，实测
+            // 宽度只铺到 **81.8%**，两侧各留一条灰边。
+            //
+            // "width" 模式就是为缩略图墙加的（见 ScaleFitMode 的说明与
+            // dev-harness/AppWallPerfHarness——那边一直传着，所以压测台从来
+            // 没复现过这个现象）。宽度铺满、高度按内容溢出后裁掉：缩略图看的
+            // 是"这个应用长什么样"，顶部那一屏就够，留灰边反而更糟。
+            scaleFit="width"
             // 缩略图不画缩放标识：9px 的字再缩到 21% 读不出来，而且会跟卡片
             // 底部那条信息浮层抢同一个右下角，叠成一块糊斑。
             showScaleBadge={false}
           />
         </React.Suspense>
       )}
+    </div>
+  );
+}
+
+/**
+ * 缩略图接口地址。
+ *
+ * `?v=` 是缓存版本位，值就是摘要里的 preview_tag（后端给的"来源.写入时刻"）。
+ * **不是可选的装饰**：那个响应带 immutable 强缓存，而同一个 app_id 的图是会变
+ * 的——真截图是事后采集回传的（lib/thumb-capture.ts），卡片会从参照板升级成
+ * 真截图。URL 不跟着变，浏览器就永远停在升级前那张。
+ *
+ * 记录本身仍然不可变（精修产生新 app_id），所以 id + tag 这一对确定了字节，
+ * immutable 依然成立。tag 缺失（老后端）就不带——退回"URL 只按 id 变"的老行为，
+ * 强缓存照旧生效，只是拿不到回填后的新图。
+ */
+export function appPreviewUrl(appId: string, tag?: string | null): string {
+  const base = `/api/sliderule/apps/${encodeURIComponent(appId)}/preview`;
+  return tag ? `${base}?v=${encodeURIComponent(tag)}` : base;
+}
+
+/**
+ * 这张卡该贴图还是走活渲染。
+ *
+ * 只有两个条件：是 App Store 卡（有 appId 才有图可取），且后端说它有图。
+ * **不区分是哪一路的图**——真截图和参照板走的是同一个接口、同一套画幅，
+ * 挑哪张是服务端的事（见 app_store 的 PREVIEW_SOURCE_PRIORITY）。前端多一个
+ * 分支只会多一处要跟后端对齐的地方。
+ *
+ * has_preview 缺失（老后端不返回这个字段）按 false 处理 = 活渲染，也就是
+ * 改动前的行为——**新能力缺席时退回旧行为，不是退化成空白**。
+ *
+ * 会话卡（source==="session"）不在此列：它们还没落进 App Store，没有 app_id
+ * 也就没有那张图，只能活渲染。
+ */
+export function shouldUseSheetThumb(item: {
+  appId?: string | null;
+  summary?: { has_preview?: boolean } | null;
+}): boolean {
+  return Boolean(item.appId && item.summary?.has_preview);
+}
+
+/**
+ * 贴图缩略图（2026-08-01 起用，取代绝大多数卡片上的活渲染）。
+ *
+ * ## 三级来源，这是第一、二级
+ *
+ * 服务端按可信度挑图，这个组件只管"有图就贴、拉不到就回落"：
+ *
+ *   ① shot  —— 应用真实渲染出来之后截的图，**就是应用本身**。由前端在活渲染
+ *              那张卡上就地采集后回传（lib/thumb-capture.ts）——那次昂贵的渲染
+ *              本来就要发生，采下来存住，它就成了最后一次。
+ *   ② sheet —— 生成时为了让设计 LLM 有版式可参照，让生图模型画的那张首页
+ *              参照板（freeform_block._generate_overview_sheet_b64）。画的就是
+ *              这个应用首页长什么样，而且钱已经付过了。落库即有。
+ *   ③ 活渲染 —— 两张都没有时的 fallback，也就是这个组件的 fallback 属性。
+ *
+ * ①② 都落在 generated_app_preview 表（一行两列，见 app_store）。两者画幅一致
+ * （PC 1280×720 / 移动 720×1280），所以卡片不用关心贴的是哪一张。
+ *
+ * ## 为什么第三级要往后排
+ *
+ * LiveAppThumb 每张卡挂一个真的 AppRuntimeScreen（antd 表格 + echarts 全套）。
+ * 它自己的注释记着实测——「生产构建下同屏 14 张卡，最长单任务 4106ms，主线程
+ * 连续堵四秒」。分批挂载只是把这四秒摊开，总工作量一点没少。一张 <img> 的解码
+ * 在合成线程，主线程零成本。
+ *
+ * 当初选活渲染的两条理由，贴图方案都躲开了：
+ *   「永远最新、零缓存失效」——一条 generated_app 记录本身不可变（精修产生的
+ *     是新 app_id，见 save_version），图跟着记录走；图本身会被回填换掉，靠
+ *     URL 上的 ?v= 版本位跟上（见 appPreviewUrl）；
+ *   「不用额外的存储/沙盒基建」——②用的是生成时已经产出的那张图，只多一张表；
+ *     ①用的是本来就要跑的那次活渲染，不起沙盒、不加服务，只多一个回传接口。
+ *
+ * fail-open 两道：摘要没有 has_preview（老记录/老后端）压根不走这条路；走了
+ * 但图拉不到（记录刚被删、网络抖）→ onError 回落 fallback，也就是活渲染。
+ * **任何情况下都不会出现空白卡**。
+ */
+export function SheetThumb({
+  appId,
+  alt,
+  fallback,
+  previewTag,
+}: {
+  appId: string;
+  alt: string;
+  /** 图拉不到时回落到这个——传的就是原来那套活渲染/占位卡。 */
+  fallback: React.ReactNode;
+  /** 摘要里的 preview_tag，拼进 URL 当缓存版本位（见 appPreviewUrl）。 */
+  previewTag?: string | null;
+}) {
+  const [failed, setFailed] = React.useState(false);
+  // 换了一张卡（翻页/搜索复用同一个组件实例）要把失败态清掉，否则上一张的
+  // 失败会让新的这张也直接走 fallback。回填让 tag 变了也要重试：上一次的失败
+  // 是针对上一张图的，新图凭什么继承那个结论。
+  React.useEffect(() => setFailed(false), [appId, previewTag]);
+  if (failed) return <>{fallback}</>;
+  return (
+    <div
+      className="pointer-events-none h-full w-full overflow-hidden bg-[#f0f2f5]"
+      data-testid="app-thumb-sheet"
+    >
+      <img
+        src={appPreviewUrl(appId, previewTag)}
+        alt={alt}
+        // 卡片比例跟出图画布是对齐的（见 lib/justified-rows 的 DEVICE_ASPECT），
+        // 所以 cover 不会真的裁掉内容，只是吃掉取整产生的那一两个像素缝。
+        className="h-full w-full object-cover"
+        loading="lazy"
+        decoding="async"
+        // 首屏之外的卡不参与解码排队，跟 loading=lazy 是一组
+        // eslint-disable-next-line react/no-unknown-property
+        fetchPriority="low"
+        onError={() => setFailed(true)}
+        draggable={false}
+      />
     </div>
   );
 }
@@ -1154,13 +1327,41 @@ export function AppsWorkbench() {
         titleAttr={item.goal}
         Icon={BrandIcon}
         iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
-        media={
-          detail?.status === "runnable" && detail.model ? (
-            <LiveAppThumb sessionId={thumbId} model={detail.model} goal={item.goal} />
-          ) : (
-            <PendingAppThumb detail={detail} />
-          )
-        }
+        media={(() => {
+          // 回落链：贴图 → 活渲染 → 占位卡。后两级就是贴图方案落地前的全部
+          // 逻辑，一行没动——贴图只是插在最前面，拿不到就原样落回去。
+          //
+          // 贴图这一级内部还有两路（真截图优先于参照板），但那是服务端的事：
+          // 同一个 URL、同一套画幅，这里看到的只有"有图/没图"。
+          //
+          // 活渲染那一支带上 captureFor：**没有真截图的应用，在这次昂贵的渲染
+          // 上就地采一张存住**，于是这次活渲染是最后一次
+          // （见 lib/thumb-capture.ts）。已经有真截图的（preview_source==="shot"）
+          // 不再采——那正是这套东西要消灭的重复劳动。
+          const needsShot =
+            Boolean(item.appId) && item.summary?.preview_source !== "shot";
+          const live =
+            detail?.status === "runnable" && detail.model ? (
+              <LiveAppThumb
+                sessionId={thumbId}
+                model={detail.model}
+                goal={item.goal}
+                captureFor={needsShot ? item.appId : null}
+                device={item.summary?.device}
+              />
+            ) : (
+              <PendingAppThumb detail={detail} />
+            );
+          if (!shouldUseSheetThumb(item)) return live;
+          return (
+            <SheetThumb
+              appId={item.appId!}
+              alt={detail?.identity?.productName || item.goal || "应用首页示意"}
+              fallback={live}
+              previewTag={item.summary?.preview_tag}
+            />
+          );
+        })()}
         metrics={
           detail ? (
             <>
