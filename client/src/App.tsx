@@ -14,6 +14,7 @@ import {
 } from "@/components/navigation-config";
 import AgentLoopPage, {
   getAgentLoopSliderulePath,
+  getAgentLoopWorkbenchPath,
 } from "@/pages/agent-loop/AgentLoopPage";
 
 import { AppSidebar } from "./components/AppSidebar";
@@ -66,6 +67,9 @@ const AutopilotRoutePage = lazy(
   () => import("./pages/autopilot/AutopilotRoutePage")
 );
 const AuthPage = lazy(() => import("./pages/auth/AuthPage"));
+// 面团的登录页（2026-08-03）：接新的 Neon 身份体系。
+// 与上面那个并存——那个接旧 Node/MySQL 账号体系，/projects 和 /admin 还依赖它。
+const MianTuanAuthPage = lazy(() => import("./pages/auth/MianTuanAuthPage"));
 const SpecCenterPage = lazy(() => import("./pages/specs/SpecCenterPage"));
 const TaskDetailPage = lazy(() =>
   import("./pages/tasks").then(m => ({ default: m.TaskDetailPage }))
@@ -120,6 +124,15 @@ function Router() {
       </Route>
       <Route path={`${PROJECTS_PATH}/:projectId`}>
         {params => <ProjectAutopilotRedirect projectId={params.projectId} />}
+      </Route>
+      <Route path={"/signin"}>
+        {() =>
+          IS_GITHUB_PAGES ? (
+            <RedirectRoute to={getAgentLoopWorkbenchPath()} />
+          ) : (
+            <MianTuanAuthPage />
+          )
+        }
       </Route>
       <Route path={"/login"}>
         {() =>
@@ -375,9 +388,16 @@ function isHomeLocation(location: string) {
   );
 }
 
+/**
+ * 登录类页面：**整屏渲染，不套应用外壳**。
+ *
+ * 套上外壳的话，未登录的人在登录页左边看到的是一整列自己点不动的功能菜单——
+ * 既占地方又误导。/signin 是面团的登录页（2026-08-03 新增），/login 是旧账号
+ * 体系那个，两个都要排除。
+ */
 function isAuthLocation(location: string) {
   const [pathname] = location.trim().split(/[?#]/, 1);
-  return pathname === "/login";
+  return pathname === "/login" || pathname === "/signin";
 }
 
 function isSlideRuleLocation(location: string) {

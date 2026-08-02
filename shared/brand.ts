@@ -30,6 +30,22 @@ export const BRAND_HEADLINE_ZH = `${BRAND_NAME_DISPLAY} · 产品推演引擎`;
 export const BRAND_HEADLINE_EN = `${BRAND_NAME_LATIN} · Product Rehearsal Engine`;
 
 /**
+ * 面团 / miantuan.ai —— 对外产品品牌（2026-08-03）。
+ *
+ * 与上面那组 SlideRule 常量**并存**，不是替换：SlideRule 仍然是引擎和内部
+ * 标识的名字（文件名、事件族、几百个 spec 目录都写着它），一次性全量改名的
+ * 风险远大于收益。这里只给**面向用户的新触点**（登录页、后续的产品外壳）
+ * 用，等真要做全站改名时，把上面那组的值换掉即可，调用点不用动。
+ *
+ * 这正是这个文件开头写的 alias-first 策略。
+ */
+export const PRODUCT_NAME_ZH = "面团";
+export const PRODUCT_NAME_LATIN = "MianTuan";
+export const PRODUCT_DOMAIN = "miantuan.ai";
+export const PRODUCT_TAGLINE_ZH = "把一句模糊想法，推演成能跑起来的完整应用";
+export const PRODUCT_TAGLINE_EN = "Turn a vague idea into a runnable product.";
+
+/**
  * Legacy package name — kept for places that still need to reference the
  * old token while the internal rename is staged.
  */

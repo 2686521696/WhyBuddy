@@ -53,7 +53,16 @@ export function AccountPanel() {
           type="button"
           className="native-agent-user"
           data-testid="account-signin"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            // 跳独立登录页而不是就地弹框（2026-08-03）。
+            // 弹框在侧栏底部那个尺寸里放不下品牌与说明，而登录/注册是新用户
+            // 见到的第一屏——值得一个完整的页面。
+            // 带上 next：登录完回到刚才这一页，不是被扔回首页。
+            const next = encodeURIComponent(
+              window.location.pathname + window.location.search
+            );
+            window.location.href = `/signin?next=${next}`;
+          }}
           title="登录后可以复刻应用、继续推演"
         >
           <span className="native-agent-user-avatar" aria-hidden>
