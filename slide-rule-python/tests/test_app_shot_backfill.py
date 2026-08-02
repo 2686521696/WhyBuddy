@@ -228,3 +228,24 @@ def test_unknown_device_falls_back_to_desktop():
     assert _shot_canvas("") == _SHOT_CANVAS["desktop"]
     assert _shot_canvas("watch") == _SHOT_CANVAS["desktop"]
     assert _shot_canvas("PHONE") == _SHOT_CANVAS["phone"]
+
+
+# ────────────────────── ⑤ 截不到应用就失败，不许退而求其次 ──────────────────────
+
+
+def test_capture_script_fails_closed_when_app_root_is_missing():
+    """**等不到 app-runtime-screen 必须抛，不许回退去截个视口。**
+
+    2026-08-02 实测逼出来的：拿一个在目标环境里不存在的会话跑真截图，旧代码那支
+    "截左上角一块，聊胜于无"的回退如实返回了 SCREENSHOT_OK——截回来的是一张空的
+    产品落地页。在旧用法下（按需接口，截了直接给前端看）那还说得过去；现在这张图
+    会被存进库并排在缩略图优先级**第一位**，等于用一张假图顶掉本来诚实的参照板。
+
+    宁可没有真截图（卡片留在参照板），也不要一张假的。
+    """
+    from services.app_screenshot import _SCREENSHOT_JS_TEMPLATE as js
+
+    assert "app-runtime-screen not found" in js, "缺少 fail-closed 的抛出"
+    # 回退那一支的签名：不带 clip 定位到元素、直接按视口坐标截。它一旦回来，
+    # 上面那条断言仍然会过（抛出语句还在），所以这里单独钉死。
+    assert "clip: { x: 0, y: 0" not in js, "视口回退截图又回来了"

@@ -115,32 +115,30 @@ const { chromium } = require("playwright");
     // 跟 freeform 预览截图同一个数（1500ms），那条路已经在生产验证过。
     await page.waitForTimeout(1500);
     const appEl = await page.$('[data-testid="app-runtime-screen"]');
+    // **等不到应用根元素就失败，不许退而求其次截个视口。**
+    //
+    // 原来这里有一支"截左上角一块，聊胜于无"的回退。在旧用法下（按需截图接口，
+    // 截了就直接回给前端看）那还说得过去；现在这张图会被存进库、并且排在缩略图
+    // 优先级的**第一位**，退而求其次就变成了主动的错误——2026-08-02 实测：会话
+    // 在目标环境不存在时，那一支截回来的是一张空的产品落地页，而它会顶掉本来
+    // 诚实的参照板。宁可没有真截图（卡片留在参照板），也不要一张假的。
+    if (!appEl) throw new Error("app-runtime-screen not found (session not rendered)");
+    // 按目标比例从**左上角**切一块，而不是整个元素照单全收。
+    //
+    // 元素本身的比例是渲染画布定的（桌面 16:9、手机 0.462），跟卡片不一定
+    // 相等。整个截下来交给 cover 去裁，裁掉的是上下**各一半**——手机档会把
+    // 顶部那条应用标题栏切掉。从左上角切则是"留头去尾"，跟活渲染那条路
+    // （scaleFit="width"，宽度铺满、下面溢出裁掉）看到的是同一块画面。
     const targetAspect = %(viewport_w)d / %(viewport_h)d;
-    if (appEl) {
-      // 按目标比例从**左上角**切一块，而不是整个元素照单全收。
-      //
-      // 元素本身的比例是渲染画布定的（桌面 16:9、手机 0.462），跟卡片不一定
-      // 相等。整个截下来交给 cover 去裁，裁掉的是上下**各一半**——手机档会把
-      // 顶部那条应用标题栏切掉。从左上角切则是"留头去尾"，跟活渲染那条路
-      // （scaleFit="width"，宽度铺满、下面溢出裁掉）看到的是同一块画面。
-      const box = await appEl.boundingBox();
-      if (!box || box.width < 8 || box.height < 8) throw new Error("empty app element box");
-      let cw = box.width;
-      let ch = cw / targetAspect;
-      if (ch > box.height) { ch = box.height; cw = ch * targetAspect; }
-      await page.screenshot({
-        path: "/tmp/app-thumb.png",
-        clip: { x: box.x, y: box.y, width: cw, height: ch },
-      });
-    } else {
-      // 等不到应用根元素——截视口左上角同比例的一块，聊胜于无。这一支进不了
-      // 库：调用方按 SCREENSHOT_OK 判成功，而这里仍然会走到 OK。所以宁可
-      // 让它跟着视口比例走，至少画幅是对的。
-      await page.screenshot({
-        path: "/tmp/app-thumb.png",
-        clip: { x: 0, y: 0, width: %(viewport_w)d, height: %(viewport_h)d },
-      });
-    }
+    const box = await appEl.boundingBox();
+    if (!box || box.width < 8 || box.height < 8) throw new Error("empty app element box");
+    let cw = box.width;
+    let ch = cw / targetAspect;
+    if (ch > box.height) { ch = box.height; cw = ch * targetAspect; }
+    await page.screenshot({
+      path: "/tmp/app-thumb.png",
+      clip: { x: box.x, y: box.y, width: cw, height: ch },
+    });
     console.log("SCREENSHOT_OK");
   } finally {
     await browser.close();
