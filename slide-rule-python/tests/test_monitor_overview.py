@@ -546,6 +546,39 @@ def test_declared_phone_designs_only_the_phone_layout(monkeypatch):
     assert calls == ["phone"], f"明说手机档却生成了别的档: {calls}"
 
 
+def test_declared_desktop_skips_the_phone_layout(monkeypatch):
+    """**明说桌面档时不许再生成一版手机版式。**
+
+    这是 preferredDevice 这个字段存在的全部意义——省掉的就是这一次调用
+    （实测约 67s/总览页）。此前这条路径只被间接覆盖：
+    test_sheet_generation_receives_the_declared_device 断言的是"参照板收到了
+    desktop"，而**不是**"手机档那次调用没发生"，两者是两回事。
+
+    守的是 freeform_block 里那个双重否定：
+        if device != "phone" and not declared_desktop_only:
+    这种写法很容易在后续改动里被顺手"化简"成 `if device != "phone"`，而那一改
+    正好把省下来的调用又加回去，且没有任何测试会红。
+    """
+    calls = []
+    monkeypatch.setattr(
+        "services.freeform_block.generate_freeform_block",
+        lambda brief, datamodel, **kw: (calls.append(kw.get("device")),
+                                        {"root": {"tag": "div", "children": []}})[1],
+    )
+    monkeypatch.setattr("services.freeform_block._generate_overview_sheet_b64", lambda *a, **k: None)
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"appIdentity": {"theme": "forest"}, "preferredDevice": "desktop"},
+        "page": {"pages": [_monitor_page()]},
+    }
+    enrich_monitor_page_overviews(model)
+    assert calls == ["desktop"], f"明说桌面档却仍生成了手机版式: {calls}"
+    # 顺带钉住产物形状：没有 mobile 键，前端 availableDeviceTiers 据此只给桌面
+    # 一档入口（不给一个通往"没设计过的档位"的门）。
+    overview = model["page"]["pages"][0].get("freeformOverview") or {}
+    assert "mobile" not in overview, "桌面档不该挂 mobile 设计"
+
+
 def test_unspecified_device_still_designs_both(monkeypatch):
     """判不出来时仍然两档都生成——**只在明确的时候才砍**。
 
