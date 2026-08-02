@@ -238,11 +238,13 @@ docker compose down -v              # stop and wipe data
   docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
   # auto-updates (Watchtower every 5 min):
   docker compose -f docker-compose.prod.yml --profile auto up -d
-  # rollback: pin :latest to a release :<commit-sha> in docker-compose.prod.yml
-  # slow ghcr (e.g. China): SLIDERULE_REGISTRY=ghcr.nju.edu.cn in .env
-  # or Docker Hub dual-push (with secrets configured):
-  #   SLIDERULE_IMAGE_APP=docker.io/<hub-user>/whybuddy-app:latest
-  #   SLIDERULE_IMAGE_PYTHON=docker.io/<hub-user>/whybuddy-python:latest
+  # image address is assembled from four .env vars, each overridable:
+  #   SLIDERULE_REGISTRY=ghcr.io  SLIDERULE_IMAGE_OWNER=xiaojilele-glitch  SLIDERULE_IMAGE_TAG=latest
+  # rollback to a release:      SLIDERULE_IMAGE_TAG=<commit-sha>
+  # your own fork's images:     SLIDERULE_IMAGE_OWNER=<your-github-user-lowercase>
+  # slow ghcr (e.g. China):     SLIDERULE_REGISTRY=ghcr.nju.edu.cn   (owner unchanged — the mirror is transparent)
+  # Docker Hub dual-push:       SLIDERULE_REGISTRY=docker.io + SLIDERULE_IMAGE_OWNER=<hub-user>
+  #   ^ changing the registry alone is not enough: namespaces are per-registry.
   ```
 
 - **Corporate TLS-intercepting proxies**: drop your root CA (`.crt` PEM) into `docker/certs/` before building (see `docker/certs/README.md`). Certificates are gitignored.

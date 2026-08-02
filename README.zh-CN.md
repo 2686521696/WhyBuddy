@@ -238,11 +238,13 @@ docker compose down -v              # 停止并清空数据
   docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
   # 全自动更新（Watchtower 每 5 分钟）：
   docker compose -f docker-compose.prod.yml --profile auto up -d
-  # 回滚：把 :latest 换成某次发版的 :<commit-sha>
-  # 国内拉 ghcr 慢：.env 加 SLIDERULE_REGISTRY=ghcr.nju.edu.cn
-  # 或 Docker Hub 双推（配好 secrets 后）：
-  #   SLIDERULE_IMAGE_APP=docker.io/<Hub用户名>/whybuddy-app:latest
-  #   SLIDERULE_IMAGE_PYTHON=docker.io/<Hub用户名>/whybuddy-python:latest
+  # 镜像地址由 .env 里四个变量拼成，每段都能单独换：
+  #   SLIDERULE_REGISTRY=ghcr.io  SLIDERULE_IMAGE_OWNER=xiaojilele-glitch  SLIDERULE_IMAGE_TAG=latest
+  # 回滚到某次发版：  SLIDERULE_IMAGE_TAG=<commit-sha>
+  # 用自己 fork 的镜像：SLIDERULE_IMAGE_OWNER=<你的GitHub用户名小写>
+  # 国内拉 ghcr 慢：  SLIDERULE_REGISTRY=ghcr.nju.edu.cn（owner 不用动，镜像站透传）
+  # 走 Docker Hub：   SLIDERULE_REGISTRY=docker.io + SLIDERULE_IMAGE_OWNER=<Hub用户名>
+  #   ^ 只换 registry 不够：命名空间是各仓库各自独立的。
   ```
 
 - **企业 TLS 拦截代理**：根证书（PEM `.crt`）放进 `docker/certs/` 再构建（见 `docker/certs/README.md`）。证书已 gitignore。
