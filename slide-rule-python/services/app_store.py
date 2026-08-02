@@ -168,7 +168,11 @@ def _build_record(
     parent_id: Optional[str],
     version: int,
     dedup_key: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    visibility: Optional[str] = None,
 ) -> dict[str, Any]:
+    from .app_access import normalize_visibility
+
     meta = derive_app_metadata(model)
     return {
         "id": app_id,
@@ -180,6 +184,10 @@ def _build_record(
         "gate_passed": bool(gate_passed),
         "dedup_key": (dedup_key or None),
         "created_at": _now_iso(),
+        # 归属与可见性（2026-08-02）。owner_id 为 None = 无主的存量应用，
+        # 语义在 app_access 里定义：可读、不可写（超管除外）。
+        "owner_id": (owner_id or None),
+        "visibility": normalize_visibility(visibility),
         "model_json": model,
         **meta,
     }
@@ -617,6 +625,10 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
         gate_passed = Column(Boolean, default=False)
         dedup_key = Column(String(80), nullable=True, index=True)
         created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+        # 归属与可见性（2026-08-02）。老库靠 _init 里的 add-column 就地补，
+        # create_all 对已存在的表不会加新列。
+        owner_id = Column(String(64), nullable=True, index=True)
+        visibility = Column(String(16), default="public", index=True)
         model_json = Column(json_type)
 
         def to_record(self) -> dict[str, Any]:
@@ -629,6 +641,8 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 "page_count": self.page_count, "gate_passed": self.gate_passed,
                 "dedup_key": self.dedup_key,
                 "created_at": self.created_at.isoformat() if self.created_at else None,
+                "owner_id": self.owner_id,
+                "visibility": self.visibility or "public",
                 "model_json": self.model_json,
             }
 
@@ -724,8 +738,33 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                     _sql_text("alter table generated_app_preview add column shot_png_b64 text")
                 )
                 print("[app_store] generated_app_preview 补上 shot_png_b64 列")
+            # 归属与可见性（2026-08-02）。同理：create_all 对已存在的表不加新列。
+            # 补不上时**整个身份/权限功能不可用**，但不影响现有读写——所以仍然
+            # 只打日志、不抛：存储层不拖垮主链路，权限判定那边把缺列当"无主 + public"。
+            _app_cols = {
+                c["name"] for c in _sql_inspect(_init_conn).get_columns("generated_app")
+            }
+            for _col, _ddl in (
+                ("owner_id", "alter table generated_app add column owner_id varchar(64)"),
+                (
+                    "visibility",
+                    "alter table generated_app add column visibility varchar(16) default 'public'",
+                ),
+            ):
+                if _col not in _app_cols:
+                    _init_conn.execute(_sql_text(_ddl))
+                    print(f"[app_store] generated_app 补上 {_col} 列")
+            # 显式授权表（把某个应用的读/写权限给某个用户）
+            _init_conn.execute(
+                _sql_text(
+                    "create table if not exists generated_app_grant ("
+                    " app_id varchar(36) not null, user_id varchar(64) not null,"
+                    " access integer not null, created_at timestamp,"
+                    " primary key (app_id, user_id))"
+                )
+            )
         except Exception as exc:  # noqa: BLE001 — 补不上就当没有这个来源
-            print(f"[app_store] 截图列补齐失败（回落 sheet 单来源）: {str(exc)[:160]}")
+            print(f"[app_store] 列补齐失败: {str(exc)[:160]}")
 
     class SqlAppStore(AppStoreBackend):
         def _row_from_record(self, record: dict[str, Any]) -> "GeneratedApp":
@@ -740,6 +779,8 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 entity_count=int(record.get("entity_count") or 0), page_count=int(record.get("page_count") or 0),
                 gate_passed=bool(record.get("gate_passed")), created_at=created,
                 dedup_key=record.get("dedup_key"),
+                owner_id=record.get("owner_id"),
+                visibility=record.get("visibility") or "public",
                 model_json=record.get("model_json") or {},
             )
 
@@ -994,7 +1035,9 @@ def _neon_http_error(resp: Any) -> NeonHttpError:
 _NEON_COLUMNS = (
     "id", "root_id", "parent_id", "version", "session_id", "goal",
     "product_name", "theme_id", "theme_label", "device", "landing_page_ref",
-    "entity_count", "page_count", "gate_passed", "dedup_key", "created_at", "model_json",
+    "entity_count", "page_count", "gate_passed", "dedup_key", "created_at",
+    "owner_id", "visibility",
+    "model_json",
 )
 
 
@@ -1069,6 +1112,19 @@ class NeonHttpAppStore(AppStoreBackend):
         # 什么都不做，新列不会自己长出来。补不上就当没有这个来源，读到 NULL
         # 等同"没图"，回落 sheet。
         self._q("alter table generated_app_preview add column if not exists shot_png_b64 text")
+        # 归属与可见性（2026-08-02）：老库靠这两句就地补，上面的
+        # `create table if not exists` 对已存在的表什么都不做。
+        self._q("alter table generated_app add column if not exists owner_id varchar(64)")
+        self._q(
+            "alter table generated_app add column if not exists visibility"
+            " varchar(16) default 'public'"
+        )
+        self._q(
+            "create table if not exists generated_app_grant ("
+            " app_id varchar(36) not null, user_id varchar(64) not null,"
+            " access integer not null, created_at timestamptz,"
+            " primary key (app_id, user_id))"
+        )
 
     # ── 接口实现 ────────────────────────────────────────────
     def save(self, record: dict[str, Any]) -> str:
@@ -1397,8 +1453,13 @@ def save_app(
     gate_passed: bool = True,
     dedup_key: Optional[str] = None,
     preview_png_b64: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    visibility: Optional[str] = None,
 ) -> str:
     """存一个新生成的原始应用（root=自己·v1·无 parent）。返回 app id。
+
+    owner_id 为 None = 无主（匿名推演出来的、或存量数据）。语义在 app_access
+    里定义：可读、不可写（超管除外）。
 
     传了 dedup_key 且已有同键记录 → 幂等更新那一条（复用它的 id/root/version，
     刷新 model_json/元数据），不堆重复；用于"同一会话反复落同一个模型"。
@@ -1417,6 +1478,11 @@ def save_app(
                 app_id=existing["id"], root_id=existing["root_id"],
                 parent_id=existing.get("parent_id"), version=existing.get("version") or 1,
                 dedup_key=dedup_key,
+                # 幂等更新走这条：**归属与可见性沿用已有记录**。同一会话反复落同
+                # 一个模型是常态，若每次都按调用方传的值覆盖，一次匿名重跑就能把
+                # 已有主的应用变成无主、把私有变成公开。
+                owner_id=existing.get("owner_id") or owner_id,
+                visibility=existing.get("visibility") or visibility,
             )
             record["created_at"] = existing.get("created_at") or record["created_at"]
             app_id = backend.save(record)
@@ -1426,6 +1492,7 @@ def save_app(
     record = _build_record(
         model, goal=goal, session_id=session_id, gate_passed=gate_passed,
         app_id=app_id, root_id=app_id, parent_id=None, version=1, dedup_key=dedup_key,
+        owner_id=owner_id, visibility=visibility,
     )
     saved = backend.save(record)
     _attach_preview(backend, saved, preview_png_b64, inherit_from=None)
@@ -1575,9 +1642,18 @@ def save_version(
     existing = backend.versions(root_id)
     next_version = (max((v.get("version") or 0) for v in existing) + 1) if existing else 1
     app_id = _new_id()
+    # 改版是同一条血缘上的新版本：归属与可见性跟着走，不重新协商。
+    # 从上一版取（parent 优先，取不到就用同 root 里 version 最大的那条）——
+    # 漏了这一步的话，每精修一次就产生一条无主+public 的新记录，
+    # 私有应用会在改版时悄悄变公开。
+    base = backend.get(parent_id) or (
+        max(existing, key=lambda v: v.get("version") or 0) if existing else None
+    )
     record = _build_record(
         model, goal=goal, session_id=session_id, gate_passed=gate_passed,
         app_id=app_id, root_id=root_id, parent_id=parent_id, version=next_version,
+        owner_id=(base or {}).get("owner_id"),
+        visibility=(base or {}).get("visibility"),
     )
     saved = backend.save(record)
     _attach_preview(backend, saved, preview_png_b64, inherit_from=parent_id)
@@ -1589,6 +1665,8 @@ def fork_app(
     *,
     session_id: Optional[str] = None,
     new_name: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    visibility: Optional[str] = None,
 ) -> Optional[str]:
     """从现有应用分出一条新血缘：新 root·v1·parent 指向源，model_json 拷贝一份。
     源不存在返回 None。用于"以某个生成应用为起点，改成一个新应用"。
@@ -1615,6 +1693,10 @@ def fork_app(
         session_id=session_id,
         gate_passed=bool(source.get("gate_passed")),
         app_id=app_id, root_id=app_id, parent_id=source_id, version=1,
+        # 副本归 Fork 的人所有；可见性由调用方按 app_access.fork_visibility 算好
+        # 传进来——**不在这里默认 public**，那会让 Fork 成为绕过私有的后门。
+        owner_id=owner_id,
+        visibility=visibility if visibility is not None else source.get("visibility"),
     )
     backend = get_backend()
     saved = backend.save(record)

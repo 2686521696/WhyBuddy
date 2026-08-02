@@ -17,6 +17,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 from typing import Dict, Any, List, Optional
 from models.v5_state import CapabilityRun, V5SessionState
+from middlewares.current_user import CurrentUserOptional
+from services import app_access
 from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn, pick_next_capabilities
 from services.persistence import load_all
 from services.slide_rule_marathon import drive_marathon
@@ -1452,6 +1454,7 @@ def get_freeform_preview(pid: str):
 
 @router.get("/apps")
 async def list_generated_apps(
+    viewer: CurrentUserOptional,
     limit: int = 50,
     offset: int = 0,
     x_internal_key: Optional[str] = Header(None),
@@ -1469,13 +1472,21 @@ async def list_generated_apps(
     """
     _auth(x_internal_key)
     from services import app_store
+    from services.app_access import filter_records
 
     apps = await asyncio.to_thread(app_store.list_apps, limit=limit, offset=offset)
-    return {"apps": apps}
+    # 列表过滤与单条判定共用 app_access 的同一份判定——两套代码漂移是这类系统
+    # 最常见的泄露方式（列表少过滤一个条件，私有应用就出现在广场上，而单条打开
+    # 是好的，所以没人会报 bug）。见 tests/test_app_access.py 那条穷举测试。
+    return {"apps": filter_records(apps, viewer)}
 
 
 @router.get("/apps/{app_id}")
-async def get_generated_app(app_id: str, x_internal_key: Optional[str] = Header(None)):
+async def get_generated_app(
+    app_id: str,
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
     """取一个生成应用的完整记录（含 model_json，可直接重开渲染）。
 
     同步库调用走 to_thread，理由见 list_generated_apps。
@@ -1486,6 +1497,9 @@ async def get_generated_app(app_id: str, x_internal_key: Optional[str] = Header(
     record = await asyncio.to_thread(app_store.get_app, app_id)
     if record is None:
         raise HTTPException(404, "app not found")
+    # 看不见的资源报 404 而不是 403——403 等于确认"这个 id 存在"，
+    # 可以被用来枚举别人的私有应用。require 内部已按此实现。
+    app_access.require("view", record, viewer)
     return record
 
 
@@ -1633,12 +1647,32 @@ async def list_generated_app_versions(root_id: str, x_internal_key: Optional[str
 
 @router.post("/apps/{app_id}/fork")
 async def fork_generated_app(
-    app_id: str, request: Request, x_internal_key: Optional[str] = Header(None)
+    app_id: str,
+    request: Request,
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
 ):
     """以某个生成应用为起点分出一条新血缘（新 root·v1·parent 指向源）。
-    可选 body {name}：给副本改名（避免同名孪生卡，对标 Budibase duplicateApp）。"""
+    可选 body {name}：给副本改名（避免同名孪生卡，对标 Budibase duplicateApp）。
+
+    权限（2026-08-02）：**能看就能 Fork**（Gitea 同款），但必须登录——Fork 产出
+    的是一条归属于你的新记录，匿名没有可绑定的主体。
+
+    ⚠️ 副本的可见性**继承源**，不是默认公开（app_access.fork_visibility）。
+    写成默认公开非常自然，而那样 Fork 就成了绕过私有的后门：被授权能读某个私有
+    应用的人，Fork 一下就把它公开了。
+    """
     _auth(x_internal_key)
     from services import app_store
+
+    source = await asyncio.to_thread(app_store.get_app, app_id)
+    if source is None:
+        raise HTTPException(404, "source app not found")
+    app_access.require("fork", source, viewer)
+    if viewer is None:
+        # require 已经用 401 挡住匿名（fork 需要 READ，但没有主体可绑定），
+        # 这里是防御性的第二道——上面的判定将来若被改动，这条仍然守住。
+        raise HTTPException(401, "请先登录后再复刻")
 
     new_name: Optional[str] = None
     try:
@@ -1657,7 +1691,13 @@ async def fork_generated_app(
     import uuid as _uuid
 
     fork_sid = f"sliderule-fork-{_uuid.uuid4().hex[:10]}"
-    new_id = app_store.fork_app(app_id, new_name=new_name, session_id=fork_sid)
+    new_id = app_store.fork_app(
+        app_id,
+        new_name=new_name,
+        session_id=fork_sid,
+        owner_id=viewer.id,
+        visibility=app_access.fork_visibility(source),
+    )
     if new_id is None:
         raise HTTPException(404, "source app not found")
 
@@ -1699,12 +1739,20 @@ async def fork_generated_app(
 
 
 @router.delete("/apps/{app_id}")
-async def delete_generated_app(app_id: str, x_internal_key: Optional[str] = Header(None)):
+async def delete_generated_app(
+    app_id: str,
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
     """从画廊移除一个生成应用记录（只删记录，不动对应推演会话）。"""
     _auth(x_internal_key)
     from services import app_store
 
-    if not app_store.delete_app(app_id):
+    record = await asyncio.to_thread(app_store.get_app, app_id)
+    if record is None:
+        raise HTTPException(404, "app not found")
+    app_access.require("delete", record, viewer)
+    if not await asyncio.to_thread(app_store.delete_app, app_id):
         raise HTTPException(404, "app not found")
     return {"ok": True}
 
