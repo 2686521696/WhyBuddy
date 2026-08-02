@@ -39,3 +39,12 @@ e2b-code-interpreter>=2.8.0
 # （分辨率不减）。见 services/thumb_image.py。
 # 惰性导入 + fail-open：装不上时整条压缩链路静默失效、原样存 PNG，不影响功能。
 pillow>=10.4
+
+# 身份体系（2026-08-02）：邮箱注册/登录 + 匿名可读/登录可写/超管三档。
+# 密码哈希用 Argon2（内存硬、抗 GPU 爆破），算法选择与写法对齐
+# fastapi/full-stack-fastapi-template 与 fastapi-users——两者 2026 年都已
+# 把默认从 bcrypt 换成 Argon2。
+# ⚠️ 这两条**不 fail-open**：装不上时身份体系整体不可用，而不是降级放行。
+#    密码哈希没有"弱一点也能用"的选项。
+pwdlib[argon2]>=0.2
+pyjwt>=2.8
