@@ -493,3 +493,99 @@ def test_hung_init_thread_never_blocks_process_exit():
         release.set()
         store._sqlalchemy_backend = orig
         store._SQL_INIT_BUDGET_S = orig_budget
+
+
+# ────────────────────── 显式指定 Neon HTTP 通道 ──────────────────────
+#
+# 事故后加的口子：TCP "能连上、只是慢得要死"时，兜底逻辑永远轮不到 HTTP
+# （它只在 TCP 抛异常时才触发）。这一组盯这个开关的边界。
+
+
+def test_http_channel_is_opt_in(monkeypatch):
+    """默认不开——行为必须与加这个开关之前逐字节一致。"""
+    monkeypatch.delenv(store._PREFER_HTTP_ENV, raising=False)
+    assert store.prefer_neon_http() is False
+    for truthy in ("1", "true", "YES", "on"):
+        monkeypatch.setenv(store._PREFER_HTTP_ENV, truthy)
+        assert store.prefer_neon_http() is True, truthy
+    for falsy in ("0", "false", "no", ""):
+        monkeypatch.setenv(store._PREFER_HTTP_ENV, falsy)
+        assert store.prefer_neon_http() is False, falsy
+
+
+def test_http_preference_skips_the_tcp_path_entirely(monkeypatch, tmp_path):
+    """开了就**根本不碰 TCP**。
+
+    这是这个开关存在的全部意义：TCP 那一段（探针 + pooler 多地址逐个试 ×
+    connect_timeout 4s + 建表补列）正是把线上堵死的地方，指定 HTTP 就不该再
+    走进去一步。
+    """
+    tcp_calls = []
+    monkeypatch.setattr(
+        store, "_sqlalchemy_backend",
+        lambda url: tcp_calls.append(url) or (_ for _ in ()).throw(AssertionError("不该走 TCP")),
+    )
+    made = []
+
+    class FakeHttp:
+        def __init__(self, url, endpoint):
+            made.append(endpoint)
+
+    monkeypatch.setattr(store, "NeonHttpAppStore", FakeHttp)
+    monkeypatch.setenv(store._PREFER_HTTP_ENV, "1")
+    monkeypatch.setattr(
+        store.settings, "APP_STORE_DATABASE_URL",
+        "postgresql://u:p@ep-x-pooler.us-east-2.aws.neon.tech/db?sslmode=require",
+    )
+    store.reset_backend_cache()
+    try:
+        backend = store.get_backend()
+        assert isinstance(backend, FakeHttp), type(backend).__name__
+        assert made, "没有真的去建 HTTP 后端，用例空过"
+        assert tcp_calls == [], "开了 HTTP 偏好却仍然走了 TCP"
+    finally:
+        store.reset_backend_cache()
+
+
+def test_http_preference_still_degrades_when_http_is_down(monkeypatch, tmp_path):
+    """指定了 HTTP 也可能连不上——那时候要继续往下降级，不能把人卡在这一级。"""
+    class Broken:
+        def __init__(self, url, endpoint):
+            raise RuntimeError("http down")
+
+    monkeypatch.setattr(store, "NeonHttpAppStore", Broken)
+    monkeypatch.setattr(store, "_sqlalchemy_backend", lambda url: (_ for _ in ()).throw(OSError("tcp down")))
+    monkeypatch.setenv(store._PREFER_HTTP_ENV, "1")
+    monkeypatch.setattr(
+        store.settings, "APP_STORE_DATABASE_URL",
+        "postgresql://u:p@ep-x-pooler.us-east-2.aws.neon.tech/db?sslmode=require",
+    )
+    monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    monkeypatch.setattr(store.settings, "APP_STORE_LOCAL_SQLITE", f"sqlite:///{tmp_path/'l.db'}")
+    store.reset_backend_cache()
+    try:
+        assert type(store.get_backend()).__name__ in ("SqlAppStore", "JsonFileAppStore")
+    finally:
+        store.reset_backend_cache()
+
+
+def test_http_preference_ignored_for_non_neon_hosts(monkeypatch, tmp_path):
+    """自建 PG / RDS 没有这个 HTTP 端点，盲目拼一个只会得到困惑的连接错误。
+    这种情况忽略偏好、照常走 TCP。"""
+    tcp = []
+    monkeypatch.setattr(
+        store, "_sqlalchemy_backend",
+        lambda url: tcp.append(url) or (_ for _ in ()).throw(OSError("tcp down")),
+    )
+    monkeypatch.setenv(store._PREFER_HTTP_ENV, "1")
+    monkeypatch.setattr(
+        store.settings, "APP_STORE_DATABASE_URL", "postgresql://u:p@pg.internal:5432/x"
+    )
+    monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    monkeypatch.setattr(store.settings, "APP_STORE_LOCAL_SQLITE", f"sqlite:///{tmp_path/'l.db'}")
+    store.reset_backend_cache()
+    try:
+        store.get_backend()
+        assert tcp, "非 Neon 主机应当照常走 TCP"
+    finally:
+        store.reset_backend_cache()

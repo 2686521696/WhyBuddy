@@ -1253,12 +1253,42 @@ def _local_sqlite_backend() -> Optional[AppStoreBackend]:
         return None
 
 
+_PREFER_HTTP_ENV = "APP_STORE_NEON_HTTP"
+
+
+def prefer_neon_http() -> bool:
+    """是否**跳过 TCP、直接走 Neon SQL over HTTP**（2026-08-02 事故后加）。
+
+    ## 为什么需要一个显式开关
+
+    HTTP 这条通道本来只是兜底：TCP 初始化抛异常了才轮到它。但线上事故的形状恰恰
+    是 **TCP "能连上、只是慢得要死"**——探针过、连接最终也建得起来，于是永远走不
+    到 HTTP，哪怕在那台机器上 HTTP 明显更稳。
+
+    两条通道实测对比（同一个库、同一份数据）：
+
+      TCP    连接要在 pooler 解析出的 6 个地址里逐个试，每个 connect_timeout=4s，
+             最坏单次连接 24s；语句超时得靠 options 传，而连接串自带 options
+             （Neon 用它做端点路由）时传不进去。
+      HTTP   共享 httpx.Client（keep-alive），**每次查询 15s 硬超时**，
+             不存在"卡住不返回"。实测 p50 77ms（就是网络往返）、并发 8 吞吐
+             31 条/s，功能与 SQLAlchemy 后端逐项对齐（11 个接口方法全部自实现）。
+
+    默认不开，行为与之前逐字节一致。受这个坑的部署把它打开即可，不用改代码。
+    """
+    return (os.getenv(_PREFER_HTTP_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _current_signature() -> str:
     remote = (settings.APP_STORE_DATABASE_URL or "").strip()
     local = (getattr(settings, "APP_STORE_LOCAL_SQLITE", "") or "").strip()
     # 本地库配置也进签名：改了它（比如测试里置空）要能触发重建，否则会一直
     # 拿着上一次的后端单例，改配置像没生效。
-    return f"{remote}|{local}|jsonfile:{settings.APP_STORE_FILE}"
+    # 通道偏好同理——翻了开关要能重建。
+    return (
+        f"{remote}|{local}|jsonfile:{settings.APP_STORE_FILE}"
+        f"|http:{int(prefer_neon_http())}"
+    )
 
 
 def get_backend() -> AppStoreBackend:
@@ -1288,6 +1318,27 @@ def get_backend() -> AppStoreBackend:
         if _backend_instance is not None and _backend_signature == sig:
             return _backend_instance
         db_url = (settings.APP_STORE_DATABASE_URL or "").strip()
+        # 显式指定走 HTTP：跳过 TCP 那一整段（探针 + 多地址逐个试 + 建表补列），
+        # 直接用 SQL over HTTP。理由见 prefer_neon_http。
+        # 它自己失败了照旧往下降级，不会把人卡在这一级。
+        if db_url and db_url not in _failed_db_urls and prefer_neon_http():
+            endpoint = neon_http_endpoint(db_url)
+            if endpoint:
+                try:
+                    _backend_instance = NeonHttpAppStore(db_url, endpoint)
+                    print(f"[app_store] 按 {_PREFER_HTTP_ENV} 指定，直接走 Neon SQL over HTTP")
+                    _backend_signature = sig
+                    return _backend_instance
+                except Exception as exc:  # noqa: BLE001 — 指定了也可能连不上
+                    print(
+                        f"[app_store] 指定的 HTTP 通道不可用，继续按常规顺序降级: "
+                        f"{str(exc)[:200]}"
+                    )
+            else:
+                print(
+                    f"[app_store] 设了 {_PREFER_HTTP_ENV} 但连接串不是 Neon 主机，"
+                    f"忽略这个偏好"
+                )
         if db_url and db_url not in _failed_db_urls:
             try:
                 _backend_instance = _sqlalchemy_backend_within_budget(db_url)
