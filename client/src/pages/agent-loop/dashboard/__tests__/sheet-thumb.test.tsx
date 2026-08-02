@@ -53,6 +53,30 @@ describe("appPreviewUrl", () => {
     expect(appPreviewUrl("abc123")).toBe("/api/sliderule/apps/abc123/preview");
     expect(appPreviewUrl("a/b?c")).toBe("/api/sliderule/apps/a%2Fb%3Fc/preview");
   });
+
+  it("带上 preview_tag 当缓存版本位，并转义", () => {
+    expect(appPreviewUrl("abc123", "e2b.1754140000123456")).toBe(
+      "/api/sliderule/apps/abc123/preview?v=e2b.1754140000123456"
+    );
+    expect(appPreviewUrl("abc", "a b&c")).toBe("/api/sliderule/apps/abc/preview?v=a%20b%26c");
+  });
+
+  it("**图变了 URL 必须跟着变** —— 强缓存的正确性就靠这个", () => {
+    // 取图响应带 immutable、max-age 一年。而同一个 app_id 的图是会变的：真截图
+    // 是落库之后异步回填的（Python 侧 app_shot_backfill），卡片会从参照板升级成
+    // 真截图。URL 不变，浏览器就永远停在回填前那张——**这不是缓存优化问题，
+    // 是用户看到的图是错的**。
+    const before = appPreviewUrl("app-9", "sheet.1754140000000000");
+    const after = appPreviewUrl("app-9", "e2b.1754140060000000");
+    expect(after).not.toBe(before);
+  });
+
+  it("没有 tag（老后端）退回不带查询串的老 URL", () => {
+    // 新能力缺席时退回旧行为：强缓存照旧生效，只是拿不到回填后的新图。
+    expect(appPreviewUrl("abc", undefined)).toBe("/api/sliderule/apps/abc/preview");
+    expect(appPreviewUrl("abc", null)).toBe("/api/sliderule/apps/abc/preview");
+    expect(appPreviewUrl("abc", "")).toBe("/api/sliderule/apps/abc/preview");
+  });
 });
 
 describe("回落的活渲染必须按宽度缩放", () => {
@@ -112,5 +136,26 @@ describe("SheetThumb", () => {
     );
     expect(html).toContain('loading="lazy"');
     expect(html).toContain('decoding="async"');
+  });
+
+  it("previewTag 透传进 img 的 src", () => {
+    // 组件不解释这个值、也不关心图是哪一路的——挑图是服务端的事，这里只负责
+    // 把缓存版本位原样带上。
+    const html = renderToStaticMarkup(
+      <SheetThumb appId="app-77" alt="园务通" fallback={fallback} previewTag="e2b.17541400001" />
+    );
+    expect(html).toContain(`src="${appPreviewUrl("app-77", "e2b.17541400001")}"`);
+  });
+
+  it("**不按来源分支** —— e2b 和参照板走同一条渲染路径", () => {
+    // 两个来源画幅一致、同一个接口，前端多一个分支只会多一处要跟后端对齐的
+    // 地方。除了 src 上的版本位，两者的产出应当逐字节相同。
+    const asSheet = renderToStaticMarkup(
+      <SheetThumb appId="app-77" alt="园务通" fallback={fallback} previewTag="sheet.1" />
+    );
+    const asE2b = renderToStaticMarkup(
+      <SheetThumb appId="app-77" alt="园务通" fallback={fallback} previewTag="e2b.1" />
+    );
+    expect(asE2b.replace("v=e2b.1", "v=sheet.1")).toBe(asSheet);
   });
 });

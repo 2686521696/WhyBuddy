@@ -375,12 +375,28 @@ def _try_llm_generate_evidence(
         # 2026-07-27（审查修复 #3/D10）：同会话模型有变 → 同 root 新版本
         # （血缘/版本链/v2 徽标由此激活），不再每次精修都新建孤儿 root、
         # 画廊堆同名重复卡。模型未变仍走 dedup 幂等更新。
-        app_store.save_app_or_version(
+        saved_app_id = app_store.save_app_or_version(
             model, goal=goal, session_id=session_id, gate_passed=True,
             # 没收到图（生图失败/预算撞顶/这个应用没有总览页）传 None——落库侧
             # 按"保留既有那张"处理，不会把已有卡片打回活渲染。
             preview_png_b64=preview_sink.png_b64 if preview_sink else None,
         )
+        # 落库之后再排一张 E2B 真截图（异步，见 services/app_shot_backfill）。
+        # 卡片来源优先级是 e2b > 参照板 > 活渲染，这一步补的是最前面那一级。
+        #
+        # **放在 try 里、排队即返回**：截一张要 45~60s，等它就是把这段时间加在
+        # 用户等推演结果的路径上。schedule_app_shot 自己不抛，默认还是关的
+        # （SLIDERULE_APP_SHOT_ENABLED），没开就是一次布尔判断的开销。
+        try:
+            from .app_shot_backfill import schedule_app_shot
+
+            schedule_app_shot(
+                saved_app_id, session_id,
+                # 档位决定截图画幅（PC 16:9 / 移动 9:16），跟卡片比例对齐。
+                (model.get("appbundle") or {}).get("preferredDevice"),
+            )
+        except Exception as exc:  # noqa: BLE001 — 缩略图是增强项
+            print(f"[v5_capability_executor] app shot schedule skipped: {str(exc)[:160]}")
     except Exception as exc:  # noqa: BLE001 — 存储是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] app store save skipped: {str(exc)[:160]}")
     artifacts = model_to_linkage_artifacts(model, goal)

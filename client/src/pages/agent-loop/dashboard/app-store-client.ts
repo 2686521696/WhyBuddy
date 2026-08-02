@@ -33,8 +33,12 @@ export interface AppStoreSummary {
   entity_count: number;
   page_count: number;
   /**
-   * 这条记录有没有缩略图（生成时画的那张首页参照板，见 Python 侧
-   * services/app_preview.py）。有就贴图，没有就回落活渲染。
+   * 这条记录有没有缩略图。有就贴图，没有就回落活渲染。
+   *
+   * 图有两个可能的来源，**服务端按可信度挑**（见 Python 侧 app_store 的
+   * PREVIEW_SOURCE_PRIORITY）：E2B 沙盒截的真图 > 生成时那张首页参照板。
+   * 这个布尔只回答"有没有"，不区分是哪一路——前端也不需要区分，两者画幅一致、
+   * 走同一个接口。
    *
    * 图本身不在摘要里——一张约 1MB 的 PNG，列 200 个应用光缩略图就是 200MB。
    * 真正取图走 GET /api/sliderule/apps/{id}/preview（immutable 强缓存）。
@@ -43,6 +47,21 @@ export interface AppStoreSummary {
    * 即改动前的行为。
    */
   has_preview?: boolean;
+  /**
+   * 当前用的是哪一路图："e2b"（真截图）/ "sheet"（参照板）/ ""（没图）。
+   *
+   * 前端不拿它做渲染分支——挑图是服务端的事。它存在是为了让"这张卡到底贴的
+   * 什么"在列表接口上直接可见，排查时不用去翻库。
+   */
+  preview_source?: string;
+  /**
+   * 缩略图的缓存版本位，拼进 URL 的 `?v=`（见 AppsWorkbench.appPreviewUrl）。
+   *
+   * 形如 `"e2b.1754140000"`——来源 + 写入时刻。**必须带上**：缩略图响应是
+   * immutable 强缓存的，而同一个 app_id 的图会变（真截图是落库之后异步回填
+   * 的），URL 不跟着变，浏览器就永远停在回填前那张。
+   */
+  preview_tag?: string;
 }
 
 /** 完整记录——摘要 + model_json（可直接重开渲染）。 */

@@ -1452,20 +1452,37 @@ async def get_generated_app(app_id: str, x_internal_key: Optional[str] = Header(
 
 
 @router.get("/apps/{app_id}/preview")
-async def get_generated_app_preview(app_id: str, x_internal_key: Optional[str] = Header(None)):
-    """应用中心卡片的缩略图 PNG——生成这个应用时画的那张首页参照板。
+async def get_generated_app_preview(
+    app_id: str,
+    source: Optional[str] = None,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """应用中心卡片的缩略图 PNG。
 
-    没有图就 404（老应用、生图失败、预算撞顶都会走到这里）。前端按 404 回落
-    到活渲染，跟以前的行为一致——这不是错误态，是"这条记录没这份资产"。
+    **优先级判定在这一侧**，前端不需要知道有几个来源（完整说明见 app_store 的
+    PREVIEW_SOURCE_PRIORITY）：
 
-    强缓存：一条 generated_app 记录是不可变的（精修产生的是**新** app_id，
-    见 save_version），所以同一个 id 的图永远不会变，可以 immutable 缓存。
-    这正是这次改动的性能收益所在——第二次进应用中心连请求都不发。
+      e2b   —— E2B 沙盒里真浏览器截的图，就是应用本身；异步回填，见
+               services/app_shot_backfill
+      sheet —— 生成时那张首页参照板，是示意图；落库即有
+      都没有 → 404，前端回落活渲染。这不是错误态，是"这条记录没这份资产"。
+
+    source 可选，指名只要某一路（"e2b" / "sheet"）。**只为排查存在**——正常
+    路径不传，让服务端挑。指名了但那一路没有图 → 404，不会偷偷回落到另一路，
+    否则"指名 e2b 拿到 sheet"会让排查得出反向结论。
+
+    强缓存：一条 generated_app 记录不可变（精修产生的是**新** app_id，见
+    save_version），第二次进应用中心连请求都不发。**但图本身是可变的**——异步
+    回填会把 sheet 换成 e2b。所以前端在 URL 上带一个 `?v={preview_tag}`
+    （摘要里给的，来源 + 写入时刻），图一变 URL 就变，immutable 才成立。
+    这里不读 v，它的全部作用就是当缓存键。
     """
     _auth(x_internal_key)
     from services import app_store
 
-    png = app_store.get_app_preview_png(app_id)
+    png = app_store.get_app_preview_png(
+        app_id, source=app_store.normalize_preview_source(source) if source else None
+    )
     if not png:
         raise HTTPException(404, "preview not found")
     return Response(

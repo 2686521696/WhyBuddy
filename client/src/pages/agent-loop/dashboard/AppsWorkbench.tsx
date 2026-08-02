@@ -565,15 +565,31 @@ function LiveAppThumb({
   );
 }
 
-/** 缩略图接口地址。app_id 对应的记录不可变（精修产生新 id），可以 immutable 缓存。 */
-export function appPreviewUrl(appId: string): string {
-  return `/api/sliderule/apps/${encodeURIComponent(appId)}/preview`;
+/**
+ * 缩略图接口地址。
+ *
+ * `?v=` 是缓存版本位，值就是摘要里的 preview_tag（后端给的"来源.写入时刻"）。
+ * **不是可选的装饰**：那个响应带 immutable 强缓存，而同一个 app_id 的图是会变
+ * 的——真截图是落库之后异步回填的（services/app_shot_backfill），卡片会从参照板
+ * 升级成真截图。URL 不跟着变，浏览器就永远停在升级前那张。
+ *
+ * 记录本身仍然不可变（精修产生新 app_id），所以 id + tag 这一对确定了字节，
+ * immutable 依然成立。tag 缺失（老后端）就不带——退回"URL 只按 id 变"的老行为，
+ * 强缓存照旧生效，只是拿不到回填后的新图。
+ */
+export function appPreviewUrl(appId: string, tag?: string | null): string {
+  const base = `/api/sliderule/apps/${encodeURIComponent(appId)}/preview`;
+  return tag ? `${base}?v=${encodeURIComponent(tag)}` : base;
 }
 
 /**
- * 这张卡该贴参照板还是走活渲染。
+ * 这张卡该贴图还是走活渲染。
  *
  * 只有两个条件：是 App Store 卡（有 appId 才有图可取），且后端说它有图。
+ * **不区分是哪一路的图**——e2b 真截图和参照板走的是同一个接口、同一套画幅，
+ * 挑哪张是服务端的事（见 app_store 的 PREVIEW_SOURCE_PRIORITY）。前端多一个
+ * 分支只会多一处要跟后端对齐的地方。
+ *
  * has_preview 缺失（老后端不返回这个字段）按 false 处理 = 活渲染，也就是
  * 改动前的行为——**新能力缺席时退回旧行为，不是退化成空白**。
  *
@@ -588,43 +604,59 @@ export function shouldUseSheetThumb(item: {
 }
 
 /**
- * 参照板缩略图（2026-08-01，取代绝大多数卡片上的活渲染）。
+ * 贴图缩略图（2026-08-01 起用，取代绝大多数卡片上的活渲染）。
  *
- * 生成这个应用时，为了让设计 LLM 有版式可参照，已经让生图模型画过一张首页
- * 参照板（Python 侧 freeform_block._generate_overview_sheet_b64）。那张图画的
- * 就是这个应用首页长什么样——正是卡片该显示的东西，而且钱已经付过了。此前它
- * 排完版式就被丢掉，现在落进 Neon（services/app_preview.py + app_store 的
- * generated_app_preview 表）。
+ * ## 三级来源，这是第一、二级
  *
- * 为什么换掉活渲染：LiveAppThumb 每张卡挂一个真的 AppRuntimeScreen（antd 表格
- * + echarts 全套）。它自己的注释记着实测——「生产构建下同屏 14 张卡，最长单
- * 任务 4106ms，主线程连续堵四秒」。分批挂载只是把这四秒摊开，总工作量一点没
- * 少。一张 <img> 的解码在合成线程，主线程零成本。
+ * 服务端按可信度挑图，这个组件只管"有图就贴、拉不到就回落"：
  *
- * 当初选活渲染的两条理由，这个方案都躲开了：
+ *   ① e2b   —— E2B 沙盒里真浏览器打开这个应用截的图，**就是应用本身**。
+ *              落库之后异步回填（Python 侧 services/app_shot_backfill），
+ *              默认关（SLIDERULE_APP_SHOT_ENABLED），一张约 45~60s。
+ *   ② sheet —— 生成时为了让设计 LLM 有版式可参照，让生图模型画的那张首页
+ *              参照板（freeform_block._generate_overview_sheet_b64）。画的就是
+ *              这个应用首页长什么样，而且钱已经付过了。落库即有。
+ *   ③ 活渲染 —— 两张都没有时的 fallback，也就是这个组件的 fallback 属性。
+ *
+ * ①② 都落在 generated_app_preview 表（一行两列，见 app_store）。两者画幅一致
+ * （PC 1280×720 / 移动 720×1280），所以卡片不用关心贴的是哪一张。
+ *
+ * ## 为什么第三级要往后排
+ *
+ * LiveAppThumb 每张卡挂一个真的 AppRuntimeScreen（antd 表格 + echarts 全套）。
+ * 它自己的注释记着实测——「生产构建下同屏 14 张卡，最长单任务 4106ms，主线程
+ * 连续堵四秒」。分批挂载只是把这四秒摊开，总工作量一点没少。一张 <img> 的解码
+ * 在合成线程，主线程零成本。
+ *
+ * 当初选活渲染的两条理由，贴图方案都躲开了：
  *   「永远最新、零缓存失效」——一条 generated_app 记录本身不可变（精修产生的
- *     是新 app_id，见 save_version），图跟着记录走，不存在失效；
- *   「不用额外的存储/沙盒基建」——不新起沙盒也不新截图，用的是生成时已经
- *     产出的那张图，只多一张表。
+ *     是新 app_id，见 save_version），图跟着记录走；图本身会被回填换掉，靠
+ *     URL 上的 ?v= 版本位跟上（见 appPreviewUrl）；
+ *   「不用额外的存储/沙盒基建」——②这一级不新起沙盒也不新截图，用的是生成时
+ *     已经产出的那张图，只多一张表。①要沙盒，所以它默认关着、且永远有②兜底。
  *
  * fail-open 两道：摘要没有 has_preview（老记录/老后端）压根不走这条路；走了
- * 但图拉不到（记录刚被删、网络抖）→ onError 回落 fallback，也就是原来的活
- * 渲染。**任何情况下都不会出现空白卡**。
+ * 但图拉不到（记录刚被删、网络抖）→ onError 回落 fallback，也就是活渲染。
+ * **任何情况下都不会出现空白卡**。
  */
 export function SheetThumb({
   appId,
   alt,
   fallback,
+  previewTag,
 }: {
   appId: string;
   alt: string;
   /** 图拉不到时回落到这个——传的就是原来那套活渲染/占位卡。 */
   fallback: React.ReactNode;
+  /** 摘要里的 preview_tag，拼进 URL 当缓存版本位（见 appPreviewUrl）。 */
+  previewTag?: string | null;
 }) {
   const [failed, setFailed] = React.useState(false);
   // 换了一张卡（翻页/搜索复用同一个组件实例）要把失败态清掉，否则上一张的
-  // 失败会让新的这张也直接走 fallback。
-  React.useEffect(() => setFailed(false), [appId]);
+  // 失败会让新的这张也直接走 fallback。回填让 tag 变了也要重试：上一次的失败
+  // 是针对上一张图的，新图凭什么继承那个结论。
+  React.useEffect(() => setFailed(false), [appId, previewTag]);
   if (failed) return <>{fallback}</>;
   return (
     <div
@@ -632,7 +664,7 @@ export function SheetThumb({
       data-testid="app-thumb-sheet"
     >
       <img
-        src={appPreviewUrl(appId)}
+        src={appPreviewUrl(appId, previewTag)}
         alt={alt}
         // 卡片比例跟出图画布是对齐的（见 lib/justified-rows 的 DEVICE_ASPECT），
         // 所以 cover 不会真的裁掉内容，只是吃掉取整产生的那一两个像素缝。
@@ -1254,8 +1286,11 @@ export function AppsWorkbench() {
         Icon={BrandIcon}
         iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
         media={(() => {
-          // 回落链：参照板 → 活渲染 → 占位卡。后两级就是这次改动前的全部逻辑，
-          // 一行没动——参照板只是插在最前面，拿不到就原样落回去。
+          // 回落链：贴图 → 活渲染 → 占位卡。后两级就是贴图方案落地前的全部
+          // 逻辑，一行没动——贴图只是插在最前面，拿不到就原样落回去。
+          //
+          // 贴图这一级内部还有两路（e2b 真截图优先于参照板），但那是服务端的
+          // 事：同一个 URL、同一套画幅，这里看到的只有"有图/没图"。
           const live =
             detail?.status === "runnable" && detail.model ? (
               <LiveAppThumb sessionId={thumbId} model={detail.model} goal={item.goal} />
@@ -1268,6 +1303,7 @@ export function AppsWorkbench() {
               appId={item.appId!}
               alt={detail?.identity?.productName || item.goal || "应用首页示意"}
               fallback={live}
+              previewTag={item.summary?.preview_tag}
             />
           );
         })()}
