@@ -585,7 +585,9 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
     return result
 
 @router.post("/drive-turn")
-async def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+# `def` 而不是 `async def`——理由与 /drive-full 那条完全相同（见下面那段长注释）：
+# drive_reasoning_turn 是同步的重活，写在 async 里会占住事件循环。
+def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     """Single turn drive (drive_reasoning_turn). Full multi-loop driver authority exposed via /drive-full."""
     _auth(x_internal_key)
     state = V5SessionState(**payload["state"])
@@ -594,7 +596,29 @@ async def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     return {"state": new_state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_RAG, "backend": PYTHON_BACKEND}
 
 @router.post("/drive-full")
-async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+# ⚠️ 这条路由是 `def` 而不是 `async def`——**故意的，别改回去**（2026-08-02）。
+#
+# 事故形状：只要有人在推演，整个服务就不响应，连 /api/health 都超时。原因是
+# drive_full_v5_session 是**同步**函数（v5_full_driver.py），一趟推演 6~20 分钟
+# （实测本次 5 个话题 374~1190s），此前它被直接写在 `async def` 里，于是整段
+# 跑在事件循环那条线程上——单 worker 下，事件循环被占住 = 全站失联。
+#
+# 修法用的是 FastAPI 官方口径，不是自己发明的：
+#   "When you declare a path operation function with normal `def` instead of
+#    `async def`, it is run in an external threadpool that is then awaited,
+#    instead of being called directly (as it would block the server)."
+#   —— fastapi.tiangolo.com/async/
+# 底层是 Starlette 的 run_in_threadpool → anyio.to_thread.run_sync。
+#
+# 为什么不用 asyncio.to_thread 手动包一层：能达到同样效果，但要在每个调用点
+# 各写一遍、且容易漏（本文件里 LLM/RAG 那几条就是这么写的，而这两条当初正是
+# 漏掉的）。函数签名去掉 async 是**声明式**的，漏不掉。
+#
+# 代价（记下来，别踩）：线程池默认只有 40 个槽（anyio 的
+# current_default_thread_limiter），而每趟推演会占住一个槽十几分钟。同时在跑的
+# 推演超过 40 个就会开始排队——真到那一天，正确的解法是把推演挪进任务队列，
+# 而不是把这个数字调大。
+def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     """Python driver authority for multiple capability loops until stop condition (coverage/empty picks/max_loops).
     Wires drive_full_v5_session as the visible full-path multi-loop API (PYTHON_AUTHORITY).
     Real userText (user instruction) is forwarded so it drives pick/orchestrate/execute/artifacts/GCOV/phase.

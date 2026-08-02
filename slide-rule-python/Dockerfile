@@ -36,4 +36,10 @@ EXPOSE 9700
 # IPv4 连接 → 健康检查超时。这类平台把 UVICORN_HOST 设成 0.0.0.0 即可。
 # 端口听平台注入的 $PORT，没有回落 9700（compose 设了 PORT=9700）。
 # sh -c + exec 保证 uvicorn 是 PID 1、正常收 SIGTERM 优雅退出。
-CMD ["sh", "-c", "exec python -m uvicorn app:app --host ${UVICORN_HOST:-::} --port ${PORT:-9700}"]
+#
+# --timeout-graceful-shutdown：收到 SIGTERM 后最多等在途请求这么久，然后强退
+# （2026-08-02 事故后加）。默认是**无限等**——而一趟推演要 6~20 分钟，于是
+# 容器停不下来：实测本地 dev:stop 停不掉、端口一直被占，只能手动 kill 端口
+# 占用进程。部署时这表现为滚动更新卡住。30s 够让正常请求收尾，又不会被一趟
+# 长推演拖住。
+CMD ["sh", "-c", "exec python -m uvicorn app:app --host ${UVICORN_HOST:-::} --port ${PORT:-9700} --timeout-graceful-shutdown ${UVICORN_GRACEFUL_TIMEOUT:-30}"]
