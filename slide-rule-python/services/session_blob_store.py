@@ -49,6 +49,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import threading
@@ -104,6 +105,18 @@ class SessionBlobStore:
     ) -> bool:
         """写一条。返回 False = 被别人抢先改过（CAS 失败），调用方应重读重算。"""
         raise NotImplementedError
+
+    def content_hash(self, payload: dict[str, Any]) -> str:
+        """内容指纹，用来跳过「跟库里一模一样」的写入。
+
+        对标 django-reversion 的 `ignore_duplicates`（revisions.py:194——新版本
+        与上一版逐字段相同就根本不存）。这里更需要它：一轮推演里 save_session
+        会被调 5~8 次，而守卫判定「这是陈旧快照」时会把 prior 原样写回去——
+        那次写入 100% 是无效的，却照样要驮着 ~300KB 跑一趟网络。
+        """
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()
+        ).hexdigest()
 
     def delete(self, session_id: str) -> bool:
         raise NotImplementedError

@@ -100,7 +100,14 @@ def save_session(state: V5SessionState) -> V5SessionState:
     # This ensures stale/older state passed to service save NEVER stays in the memory authority cache.
     # load_session will see only the guard-protected newer state; fixes review finding 1.
     # Python service save path now respects the persistence guard final result.
-    save_session_record(state)
+    saved = save_session_record(state)
+    # 库后端会把刚写下去的权威状态一并带回来（persistence 里手上就有），
+    # 直接用它对账，省掉一趟全量回读——那趟在 HTTP 通道上要驮 ~300KB。
+    # 文件后端不带这个字段，照旧走下面的 load 对账。
+    authoritative = saved.get("state") if saved.get("ok") else None
+    if authoritative is not None:
+        _sessions[state.sessionId] = authoritative
+        return authoritative
     rec = load_session_record(state.sessionId)
     if rec.get("ok"):
         final = rec["session"]

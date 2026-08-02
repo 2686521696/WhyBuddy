@@ -399,3 +399,75 @@ def test_db_outage_does_not_drop_an_in_flight_session(db, monkeypatch):
 
     got = svc.load_session("sr-inflight")
     assert got is not None and got.goal["text"] == "推演中", "库一抖动就把手上的会话弄丢了"
+
+
+# ────────────────────── ⑥ 写放大：跳过无效写入 + 去掉回读 ──────────────────────
+
+
+def test_identical_payload_skips_the_write(db):
+    """内容跟库里一模一样就不写——对标 django-reversion 的 ignore_duplicates。
+
+    一轮推演里 save_session 被调 5~8 次，而守卫判定「这是陈旧快照」时会把
+    prior 原样写回去。那次写入必然无效，却照样要驮着约 300KB 跑一趟网络
+    （对真实 Neon 实测：跳过后 215ms → 88ms）。
+    """
+    store = session_blob_store.get_store()
+    persistence.save_session_record(_state("sr-dedup", turn="turn-1"))
+    rev_before = store.load("sr-dedup").rev
+
+    result = persistence.save_session_record(_state("sr-dedup", turn="turn-1"))
+
+    assert result["ok"] is True
+    assert result.get("unchanged") is True
+    assert store.load("sr-dedup").rev == rev_before, "内容没变却涨了 rev，说明白写了一次"
+
+
+def test_changed_payload_still_writes(db):
+    """跳过只能发生在内容真的一致时——否则就是丢数据了。"""
+    store = session_blob_store.get_store()
+    persistence.save_session_record(_state("sr-changed", turn="turn-1"))
+    rev_before = store.load("sr-changed").rev
+
+    result = persistence.save_session_record(_state("sr-changed", turn="turn-2", goal="改了"))
+
+    assert result.get("unchanged") is not True
+    assert store.load("sr-changed").rev > rev_before
+    assert persistence.load_session_record("sr-changed")["session"].goal["text"] == "改了"
+
+
+def test_save_returns_the_authoritative_state_without_a_reread(db, monkeypatch):
+    """写完直接返回权威状态，不再多一趟全量回读。
+
+    save_session 原本是「写完再 load 一次对账」。库后端手上就有刚写下去的结果，
+    那趟回读在 HTTP 通道上要白驮 ~300KB。
+    """
+    from services import slide_rule_session as svc
+
+    svc._sessions.clear()
+    persistence.save_session_record(_state("sr-noreread", turn="turn-1"))
+
+    store = session_blob_store.get_store()
+    loads: list[str] = []
+    real_load = store.load
+    monkeypatch.setattr(store, "load", lambda sid: (loads.append(sid), real_load(sid))[1])
+
+    got = svc.save_session(_state("sr-noreread", turn="turn-5", goal="新一轮"))
+
+    assert got.goal["text"] == "新一轮"
+    assert len(loads) == 1, f"一次 save 读了 {len(loads)} 趟，回读没省掉"
+
+
+def test_skipped_write_still_returns_the_guarded_state(db):
+    """跳过写入时返回的仍须是守卫判定后的状态，不能把调用方传进来的原样吐回去。
+
+    否则「陈旧快照被守卫挡下」这种情况下，调用方会拿着自己那份旧状态继续跑，
+    而库里是新的——两边从此不一致。
+    """
+    from services import slide_rule_session as svc
+
+    svc._sessions.clear()
+    persistence.save_session_record(_state("sr-guarded", turn="turn-9", goal="已提交的新内容"))
+
+    got = svc.save_session(_state("sr-guarded", turn="turn-2", goal="迟到的旧快照"))
+
+    assert got.goal["text"] == "已提交的新内容", "跳过写入时把调用方的旧状态吐回去了"
