@@ -32,6 +32,20 @@ def _load_sessions():
     _sessions = load_all()
     return _sessions
 
+
+def _shared_store_active() -> bool:
+    """会话是不是落在跨机器共享的库里。
+
+    决定 load_session 能不能相信进程内缓存：文件存档由本进程独占，缓存是安全的；
+    共享库则不然——另一台机器写完，这里的缓存还是旧的。
+    """
+    try:
+        from . import session_blob_store
+
+        return session_blob_store.get_store() is not None
+    except Exception:  # noqa: BLE001 — 判定不了就按老行为（用缓存）
+        return False
+
 # 注意：这里刻意没有"整体 dump 内存缓存到存档"的函数。历史上 create_session
 # 调 save_all(_sessions) 整体覆写存档文件——当缓存在别的写入者之后变陈旧时，
 # 一次 create 就会把其他会话从磁盘上抹掉（实测踩过：真实话题跨重启失忆的
@@ -54,6 +68,20 @@ def create_session(goal_text: str, session_id: Optional[str] = None) -> V5Sessio
     return state
 
 def load_session(session_id: str) -> Optional[V5SessionState]:
+    # 会话落库之后（2026-08-02）缓存不能再无条件相信：库是**跨机器共享**的，
+    # 本进程的缓存看不见别的机器刚写进去的内容，返回缓存等于返回陈旧数据。
+    # 存档还在本机文件里时不存在这个问题（本进程独占那个文件），所以只在库
+    # 后端下绕开缓存。代价是每次读一趟库（HTTP 通道实测 p50 77ms）。
+    if _shared_store_active():
+        result = load_session_record(session_id)
+        if result.get("ok"):
+            state = result["session"]
+            _sessions[session_id] = state
+            return state
+        # 库读不到：可能是这一条真不存在，也可能是库临时不可用。后者不该让
+        # 正在进行的推演丢掉手上的状态，所以回落到缓存（有就用，没有才 None）。
+        return _sessions.get(session_id)
+
     if not _sessions:
         _load_sessions()
     cached = _sessions.get(session_id)

@@ -1,0 +1,401 @@
+"""会话落库（2026-08-02）。
+
+背景：线上应用中心 23 个应用、点开 18 个是空白页。应用记录跨机器共享（同一个
+Neon 库），会话却每台机器一份文件——在开发机跑出来的应用，换台机器打开时
+`session_id` 指向的会话查不到，前端就地造一个空会话，不报错。
+
+这份测试盯四件事：
+  ① 配了库就走库、没配就走文件，且**显式传 store_file 永远走文件**；
+  ② 守卫语义在库后端上与文件后端**逐条对齐**（陈旧快照不得覆盖、历史只增不减）；
+  ③ 跨进程并发靠行级 CAS 挡住，冲突后重算而不是硬写；
+  ④ 升级不能让本机原有会话消失——首次用库时把文件里的搬进去，且只插不改。
+
+用 SQLite 当库跑：SqlSessionBlobStore 对 SQLite 和 Postgres 走同一条代码路径
+（只有 jsonb 转型和 DDL 有别），CAS 语义完全一致，不需要真连 Neon。
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from models.v5_state import SlideRuleReplayEvent, V5SessionState
+from services import persistence, session_blob_store
+
+
+@pytest.fixture(autouse=True)
+def _clean_state():
+    """每条用例都从干净的后端缓存开始——单例会跨用例串味。"""
+    session_blob_store.reset_cache()
+    session_blob_store.reset_import_flag_for_tests()
+    persistence._reset_import_flag_for_tests()
+    yield
+    session_blob_store.reset_cache()
+    session_blob_store.reset_import_flag_for_tests()
+    persistence._reset_import_flag_for_tests()
+
+
+@pytest.fixture
+def db(tmp_path, monkeypatch):
+    """把会话存档指到一个临时 SQLite 库。
+
+    必须 chdir 到 tmp_path：文件存档路径是**相对 cwd** 的 data/sliderule-sessions.json，
+    不换目录的话首次用库会把开发者本机那份真实存档整个导进测试库，断言就随
+    本机数据变化了（第一次写这份测试时实测踩中：`新增 6 条`）。
+    """
+    from config.settings import settings
+
+    monkeypatch.chdir(tmp_path)
+    url = f"sqlite:///{tmp_path / 'sessions.db'}"
+    monkeypatch.setattr(settings, "APP_STORE_DATABASE_URL", url, raising=False)
+    # 逃生口必须清空，否则会被判成「这台机器就要用文件」
+    monkeypatch.delenv("SLIDERULE_SESSIONS_FILE", raising=False)
+    monkeypatch.delenv("WHYBUDDY_SESSIONS_FILE", raising=False)
+    monkeypatch.delenv("APP_STORE_NEON_HTTP", raising=False)
+    session_blob_store.reset_cache()
+    return url
+
+
+def _state(session_id: str, *, turn: str = "turn-1", goal: str = "目标") -> V5SessionState:
+    return V5SessionState(
+        sessionId=session_id,
+        goal={"text": goal, "status": "needs_refinement"},
+        artifacts=[],
+        capabilityRuns=[],
+        coverageGaps=[],
+        conversation=[],
+        runtimePhase="idle",
+        lastTurnId=turn,
+    )
+
+
+# ────────────────────── ① 后端选择 ──────────────────────
+
+
+def test_no_db_url_keeps_using_the_file(tmp_path, monkeypatch):
+    """没配连接串 → 还是那个 JSON 文件，行为与改动前一致。"""
+    from config.settings import settings
+
+    monkeypatch.setattr(settings, "APP_STORE_DATABASE_URL", "", raising=False)
+    session_blob_store.reset_cache()
+    assert session_blob_store.get_store() is None
+
+    store_file = tmp_path / "s.json"
+    persistence.save_session_record(_state("sr-1"), store_file)
+    assert store_file.exists()
+    assert persistence.load_session_record("sr-1", store_file)["ok"] is True
+
+
+def test_explicit_store_file_always_wins_over_db(db, tmp_path):
+    """显式传 store_file → 一定走文件，哪怕全局配了库。
+
+    测试与「这台机器就要用这个文件」的逃生口都靠这条规则。若被库配置盖过，
+    所有传 store_file 的历史测试都会莫名其妙地读到别处去。
+    """
+    store_file = tmp_path / "explicit.json"
+    persistence.save_session_record(_state("sr-file-only"), store_file)
+
+    assert store_file.exists(), "显式路径没落到文件上"
+    # 库里不该有这条
+    assert session_blob_store.get_store().load("sr-file-only") is None
+
+
+def test_sessions_file_env_opts_out_of_the_db(db, tmp_path, monkeypatch):
+    """设了 SLIDERULE_SESSIONS_FILE 就不进库——这两个环境变量本来就是
+    「会话存档在哪」的意思，沿用它的语义做逃生口。"""
+    monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "escape.json"))
+    session_blob_store.reset_cache()
+    assert session_blob_store.get_store() is None
+
+
+def test_db_roundtrip(db):
+    """配了库 → 存取走库，文件不再产生。"""
+    persistence.save_session_record(_state("sr-db", goal="进库的会话"))
+    got = persistence.load_session_record("sr-db")
+    assert got["ok"] is True
+    assert got["session"].goal["text"] == "进库的会话"
+
+    assert "sr-db" in persistence.load_all()
+    listed = persistence.list_session_records()
+    assert [s["sessionId"] for s in listed["sessions"]] == ["sr-db"]
+
+    persistence.delete_session_record("sr-db")
+    assert persistence.load_session_record("sr-db")["ok"] is False
+
+
+def test_delete_is_idempotent(db):
+    """删不存在的会话算成功（G1 契约），与文件后端一致。"""
+    assert persistence.delete_session_record("sr-never-existed")["ok"] is True
+
+
+def test_meta_comes_from_the_row_not_a_sidecar(db):
+    """落库后侧栏「最近」排序仍要有时间——库里是行上的两列，不是 sidecar 文件。"""
+    persistence.save_session_record(_state("sr-meta"))
+    meta = persistence.read_session_meta()
+    assert meta["sr-meta"]["lastActive"], "lastActive 空了，侧栏排序会全乱"
+    assert meta["sr-meta"]["createdAt"]
+
+
+# ────────────────────── ② 守卫语义与文件后端对齐 ──────────────────────
+
+
+def test_stale_lower_turn_cannot_clobber_core(db):
+    """低轮次的陈旧快照不得覆盖已提交内容——库后端必须与文件后端同样守住。"""
+    persistence.save_session_record(_state("sr-g", turn="turn-5", goal="第五轮的成果"))
+    persistence.save_session_record(_state("sr-g", turn="turn-2", goal="迟到的旧快照"))
+
+    got = persistence.load_session_record("sr-g")["session"]
+    assert got.goal["text"] == "第五轮的成果", "旧快照把新内容冲掉了"
+
+
+def test_same_turn_without_growth_cannot_clobber(db):
+    """同轮次且核心无增长 = 陈旧快照，同样挡住（这条是踩出来的，见 _is_same_turn_progress）。"""
+    persistence.save_session_record(_state("sr-h", turn="turn-3", goal="已提交"))
+    persistence.save_session_record(_state("sr-h", turn="turn-3", goal="同轮覆盖企图"))
+
+    got = persistence.load_session_record("sr-h")["session"]
+    assert got.goal["text"] == "已提交"
+
+
+def test_higher_turn_is_accepted(db):
+    """更高轮次是真进展，应当写进去。"""
+    persistence.save_session_record(_state("sr-i", turn="turn-1", goal="旧"))
+    persistence.save_session_record(_state("sr-i", turn="turn-9", goal="新"))
+    assert persistence.load_session_record("sr-i")["session"].goal["text"] == "新"
+
+
+def test_guard_logic_has_exactly_one_implementation():
+    """守卫判定只能有一份实现——两条存储路径共用 _resolve_write_state。
+
+    这条不是走形式：历史上这段逻辑内联在 save_session_record 里，落库时如果
+    复制一份，两边就会慢慢漂移，而漂移的表现是「某个后端下旧快照能覆盖新数据」
+    这种极难复现的丢数据 bug。
+    """
+    src = Path(persistence.__file__).read_text(encoding="utf-8")
+    assert src.count("_is_same_turn_progress(prior, state)") == 1, (
+        "守卫判定出现了第二份实现，两条存储路径会漂移"
+    )
+    assert "_resolve_write_state" in src
+
+
+def _replay(event_id: str, session_id: str) -> SlideRuleReplayEvent:
+    """造一条**合法**的 replay 事件。
+
+    第一版这里塞的是 {"id": ..., "kind": "x"} 这种手写 dict，缺 sessionId/at
+    且 kind 不在 Literal 里，落库回读时被校验丢掉——测试红了，但红的是夹具
+    不是代码。追加语义必须用真事件来验。
+    """
+    return SlideRuleReplayEvent(
+        id=event_id,
+        sessionId=session_id,
+        at="2026-08-02T00:00:00+00:00",
+        kind="decision",
+    )
+
+
+def test_replay_log_is_append_only_in_db(db):
+    """服务端历史只增不减：后写的快照没带上历史，也不能把库里的抹掉。"""
+    first = _state("sr-j", turn="turn-1")
+    first.sessionReplayLog = [_replay("ev-1", "sr-j")]
+    persistence.save_session_record(first)
+
+    second = _state("sr-j", turn="turn-2")
+    second.sessionReplayLog = [_replay("ev-2", "sr-j")]
+    persistence.save_session_record(second)
+
+    got = persistence.load_session_record("sr-j")["session"]
+    ids = {e.id for e in (got.sessionReplayLog or [])}
+    assert ids == {"ev-1", "ev-2"}, f"replay 不是追加语义: {ids}"
+
+
+# ────────────────────── ③ 跨进程并发：行级 CAS ──────────────────────
+
+
+def test_cas_blocks_a_write_based_on_a_stale_read(db):
+    """拿旧 rev 写不进去——这是跨机器并发的唯一防线（进程锁挡不住另一台机器）。"""
+    store = session_blob_store.get_store()
+    payload = _state("sr-cas").model_dump()
+    assert store.save("sr-cas", payload, expected_rev=None) is True
+
+    row = store.load("sr-cas")
+    assert store.save("sr-cas", payload, expected_rev=row.rev) is True   # 用最新 rev：成功
+    assert store.save("sr-cas", payload, expected_rev=row.rev) is False  # 同一个 rev 再来：拒绝
+
+
+def test_concurrent_insert_of_same_id_does_not_double_write(db):
+    """两边同时插同一个 id：一个成功、一个按 CAS 失败处理，不会写坏。"""
+    store = session_blob_store.get_store()
+    payload = _state("sr-race").model_dump()
+    assert store.save("sr-race", payload, expected_rev=None) is True
+    assert store.save("sr-race", payload, expected_rev=None) is False
+
+
+def test_save_retries_after_a_conflict_instead_of_forcing(db, monkeypatch):
+    """CAS 冲突后必须**重读重算**再写，不能拿算好的结果硬写。
+
+    硬写会把另一方刚提交的内容冲掉——正是守卫要防的那件事，只是换了个入口。
+    """
+    store = session_blob_store.get_store()
+    persistence.save_session_record(_state("sr-retry", turn="turn-1", goal="初始"))
+
+    reads: list[int] = []
+    real_load = store.load
+    real_save = store.save
+    calls = {"n": 0}
+
+    def flaky_save(sid, payload, *, expected_rev):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return False  # 假装被别人抢先写了
+        return real_save(sid, payload, expected_rev=expected_rev)
+
+    def counting_load(sid):
+        row = real_load(sid)
+        reads.append(1)
+        return row
+
+    monkeypatch.setattr(store, "save", flaky_save)
+    monkeypatch.setattr(store, "load", counting_load)
+
+    result = persistence.save_session_record(_state("sr-retry", turn="turn-2", goal="新的"))
+    assert result["ok"] is True
+    assert len(reads) == 2, "冲突后没有重读，说明是拿旧结果硬写的"
+
+
+def test_exhausted_retries_report_failure_not_silent_loss(db, monkeypatch):
+    """重试用尽要如实返回失败——静默丢写入比报错糟得多。"""
+    store = session_blob_store.get_store()
+    monkeypatch.setattr(store, "save", lambda *a, **k: False)
+    result = persistence.save_session_record(_state("sr-doomed"))
+    assert result["ok"] is False
+    assert result["reason"] == "cas_conflict"
+
+
+# ────────────────────── ④ 升级不能让本机会话消失 ──────────────────────
+
+
+def test_existing_file_sessions_are_imported_on_first_db_use(tmp_path, monkeypatch):
+    """升级到落库版之后，这台机器原有的会话必须还在。
+
+    不导入的话它们会**从界面上消失**——数据还在磁盘上，但读取路径已经改成
+    查库了。那比原来的问题更糟：原问题是别处的应用打不开，这个是自己的没了。
+    """
+    from config.settings import settings
+
+    store_file = tmp_path / "data" / "sliderule-sessions.json"
+    store_file.parent.mkdir(parents=True)
+    store_file.write_text(
+        json.dumps([["sr-old-1", _state("sr-old-1", goal="老会话一").model_dump()],
+                    ["sr-old-2", _state("sr-old-2", goal="老会话二").model_dump()]],
+                   ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        settings, "APP_STORE_DATABASE_URL", f"sqlite:///{tmp_path / 'sessions.db'}", raising=False
+    )
+    monkeypatch.delenv("SLIDERULE_SESSIONS_FILE", raising=False)
+    session_blob_store.reset_cache()
+
+    got = persistence.load_all()
+    assert set(got) == {"sr-old-1", "sr-old-2"}, f"本机原有会话丢了: {set(got)}"
+    assert got["sr-old-1"].goal["text"] == "老会话一"
+
+
+def test_import_never_overwrites_what_is_already_in_the_db(db, tmp_path, monkeypatch):
+    """只插不改：库里那条永远更权威，本地文件可能是很旧的副本。"""
+    store = session_blob_store.get_store()
+    store.save("sr-dup", _state("sr-dup", goal="库里的（新）").model_dump(), expected_rev=None)
+
+    local = {"sr-dup": _state("sr-dup", goal="文件里的（旧）").model_dump()}
+    imported, skipped = session_blob_store.import_local_file_once(local)
+
+    assert (imported, skipped) == (0, 1)
+    row = store.load("sr-dup")
+    assert row.payload["goal"]["text"] == "库里的（新）", "导入把库里的新数据覆盖了"
+
+
+def test_import_runs_only_once_per_process(db):
+    """导入是启动动作，不能每次读存档都跑一遍（那是每次都全表扫一次）。"""
+    first = session_blob_store.import_local_file_once({"sr-x": _state("sr-x").model_dump()})
+    second = session_blob_store.import_local_file_once({"sr-y": _state("sr-y").model_dump()})
+    assert first == (1, 0)
+    assert second == (0, 0)
+
+
+def test_db_failure_falls_back_to_file_without_raising(tmp_path, monkeypatch):
+    """库连不上时照旧回落文件，绝不把异常抛给主链路。"""
+    from config.settings import settings
+
+    monkeypatch.setattr(
+        settings, "APP_STORE_DATABASE_URL", "postgresql://u:p@db.invalid.internal:5432/x",
+        raising=False,
+    )
+    monkeypatch.delenv("SLIDERULE_SESSIONS_FILE", raising=False)
+    session_blob_store.reset_cache()
+
+    assert session_blob_store.get_store() is None  # 降级成 None = 走文件
+    store_file = tmp_path / "fallback.json"
+    assert persistence.save_session_record(_state("sr-fb"), store_file)["ok"] is True
+
+
+# ────────────────────── ⑤ 共享库下不能相信进程内缓存 ──────────────────────
+
+
+def test_load_session_bypasses_the_process_cache_when_the_store_is_shared(db):
+    """库共享之后，另一台机器写进去的内容必须读得到。
+
+    `slide_rule_session._sessions` 是进程内缓存。存档在本机文件里时它是安全的
+    （本进程独占那个文件）；换成共享库就不安全了——别的机器写完，这里的缓存
+    还是旧的，无条件返回缓存 = 返回陈旧数据。
+
+    这里用「直接改库、不碰缓存」来模拟另一台机器的写入。
+    """
+    from services import slide_rule_session as svc
+
+    svc._sessions.clear()
+    persistence.save_session_record(_state("sr-shared", turn="turn-1", goal="本机写的"))
+    assert svc.load_session("sr-shared").goal["text"] == "本机写的"  # 进了缓存
+
+    # 另一台机器改了同一条（绕过本进程的一切缓存）
+    store = session_blob_store.get_store()
+    row = store.load("sr-shared")
+    other = _state("sr-shared", turn="turn-2", goal="另一台机器写的").model_dump()
+    assert store.save("sr-shared", other, expected_rev=row.rev) is True
+
+    assert svc.load_session("sr-shared").goal["text"] == "另一台机器写的", (
+        "读到了进程内缓存的陈旧数据——共享库下必须每次回库读"
+    )
+
+
+def test_load_session_still_uses_the_cache_on_the_file_backend(tmp_path, monkeypatch):
+    """文件后端保持原有的缓存优先行为——那条路上缓存是安全的，绕开只会白白变慢。"""
+    from config.settings import settings
+    from services import slide_rule_session as svc
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(settings, "APP_STORE_DATABASE_URL", "", raising=False)
+    session_blob_store.reset_cache()
+
+    svc._sessions.clear()
+    svc._sessions["sr-cached"] = _state("sr-cached", goal="只在缓存里")
+    # 存档里根本没有这条，能读出来就说明走的是缓存
+    assert svc.load_session("sr-cached").goal["text"] == "只在缓存里"
+
+
+def test_db_outage_does_not_drop_an_in_flight_session(db, monkeypatch):
+    """库临时不可用时，正在推演的会话不该凭空消失——回落到缓存。"""
+    from services import slide_rule_session as svc
+
+    svc._sessions.clear()
+    persistence.save_session_record(_state("sr-inflight", goal="推演中"))
+    assert svc.load_session("sr-inflight") is not None
+
+    store = session_blob_store.get_store()
+    monkeypatch.setattr(store, "load", lambda _sid: (_ for _ in ()).throw(RuntimeError("库挂了")))
+
+    got = svc.load_session("sr-inflight")
+    assert got is not None and got.goal["text"] == "推演中", "库一抖动就把手上的会话弄丢了"

@@ -4,6 +4,23 @@ Durable SlideRule V5 session store.
 The on-disk contract intentionally matches the Node durable pilot:
 JSON array entries of ``[sessionId, V5SessionState]``. The reader also accepts
 the older Python mapping shape so existing local dev files can be recovered.
+
+## 2026-08-02：会话可以落库了
+
+配了 ``APP_STORE_DATABASE_URL`` 时，会话与应用记录进同一个库（见
+``services/session_blob_store``）。动机是线上那个「应用中心 23 个应用、点开
+18 个空白页」——应用记录跨机器共享，会话却每台机器一份，指针自然断掉。
+
+**本文件的判定逻辑一行没改**：lastTurnId 单调守卫、replay/reasoning 追加合并、
+读不回的条目原样保留，全部照旧。换掉的只是「从哪读 prior、往哪写一条」。
+
+两处顺带的收益：
+  · 原来每次保存要把整个存档读出来再整个写回去，一轮推演内持久化好几次；
+    现在按条读写。
+  · 显式传 ``store_file`` 的调用（测试、逃生口）永远走文件，不受库配置影响。
+
+并发保护从「一把进程锁」升级成「进程锁 + 行级 CAS」：库是共享的，开发机和
+服务器是两个进程，光靠进程锁挡不住。CAS 失败就重读重算（见 _MAX_CAS_RETRY）。
 """
 
 import json
@@ -129,8 +146,95 @@ def _is_same_turn_progress(prior: V5SessionState, incoming: V5SessionState) -> b
 # guard (lastTurnId as version; lock order for equal-turn) using existing fields (no extra deps, no schema change).
 _save_lock = threading.Lock()
 
+# CAS 冲突重试次数。冲突只在「另一个进程/机器刚好写了同一个会话」时发生，
+# 重试一次基本就过了；给 3 次是留余量。用尽仍冲突就如实返回错误，不静默丢写入。
+_MAX_CAS_RETRY = 3
+
+
+def _blob_store(store_file: Optional[StorePath] = None):
+    """选存储后端。返回 None 表示走文件（本文件下半部分那套实现）。
+
+    显式传了 ``store_file`` 一律走文件：测试和「这台机器就要用这个文件」的
+    逃生口都靠这条规则，绝不能被全局库配置改掉行为。
+    """
+    if store_file is not None:
+        return None
+    from . import session_blob_store
+
+    store = session_blob_store.get_store()
+    if store is not None:
+        _import_local_once(store)
+    return store
+
+
+_import_attempted = False
+
+
+def _import_local_once(store) -> None:
+    """首次用库时，把本机文件里库中还没有的会话搬进去。
+
+    不做这件事的话，升级到这版之后这台机器原有的会话会**从界面上消失**——
+    数据还在磁盘上，但读取路径已经改成查库了。那比原来的问题更糟。
+
+    只插不改：库里已有的那条永远更权威（本地文件可能是很旧的副本）。
+    """
+    global _import_attempted
+    if _import_attempted:
+        return
+    _import_attempted = True
+    try:
+        from . import session_blob_store
+
+        local, error = _read_store_file()
+        if error or not local:
+            return
+        session_blob_store.import_local_file_once(
+            {sid: state.model_dump() for sid, state in local.items()}
+        )
+    except Exception as exc:  # noqa: BLE001 — 导入失败不能拖垮启动
+        print(f"[persistence] 本机会话导入库失败（不影响运行）: {str(exc)[:200]}")
+
+
+def _reset_import_flag_for_tests() -> None:
+    global _import_attempted
+    _import_attempted = False
+
+
+def _coerce_many(payloads: Dict[str, Any]) -> Dict[str, V5SessionState]:
+    """库里读出来的原始 payload → V5SessionState。
+
+    单条读不回就跳过（与文件后端同一条纪律：绝不因一条坏记录毒化整个列表），
+    但**不需要**文件后端那套 `_unreadable_by_path` 暂存——库是按条写的，
+    没被写到的行原样留在库里，本来就不会丢。
+    """
+    out: Dict[str, V5SessionState] = {}
+    bad: list[str] = []
+    for sid, payload in payloads.items():
+        state, error = _coerce_state(sid, payload)
+        if error:
+            bad.append(sid)
+            continue
+        out[sid] = state
+    if bad:
+        print(
+            f"[persistence] WARN: {len(bad)} 条库内会话读不回、已跳过"
+            f"（原样留在库里，未删）: {', '.join(bad[:5])}"
+        )
+    return out
+
 
 def _read_store(store_file: Optional[StorePath] = None) -> Tuple[Dict[str, V5SessionState], Optional[StoreError]]:
+    """读全量。配了库就读库，否则读文件。"""
+    store = _blob_store(store_file)
+    if store is not None:
+        try:
+            return _coerce_many(store.load_all()), None
+        except Exception as exc:  # noqa: BLE001 — 库读失败按存档损坏处理，调用方各自兜底
+            return {}, _store_error("db_read_failed", str(exc)[:200])
+    return _read_store_file(store_file)
+
+
+def _read_store_file(store_file: Optional[StorePath] = None) -> Tuple[Dict[str, V5SessionState], Optional[StoreError]]:
     path = _resolve_store_file(store_file)
     if not path.exists():
         return {}, None
@@ -216,6 +320,18 @@ def _meta_path(store_file: Optional[StorePath] = None) -> Path:
 
 
 def read_session_meta(store_file: Optional[StorePath] = None) -> Dict[str, Dict[str, Any]]:
+    """会话的 createdAt / lastActive。
+
+    库后端不用 sidecar 文件——同一行上就有 created_at / last_active 两列，
+    每次写入顺带盖章（见 session_blob_store 的 save）。sidecar 那套是文件后端
+    的产物：存档条目是 [sessionId, state]，state 模型里没有时间字段。
+    """
+    store = _blob_store(store_file)
+    if store is not None:
+        try:
+            return store.meta()
+        except Exception:  # noqa: BLE001 — 纯观测数据，取不到只影响排序
+            return {}
     try:
         raw = json.loads(_meta_path(store_file).read_text(encoding="utf-8"))
         return raw if isinstance(raw, dict) else {}
@@ -268,18 +384,43 @@ def save_session_record(state: V5SessionState, store_file: Optional[StorePath] =
     # protected by lastTurnId (version) + <= compare: same-turn or lower cannot overwrite.
     # counts of replay etc never allow clobber. Fixes review finding 1 (no equal-turn clobber).
     # Serialized lock provides timestamp-equivalent ordering for same lastTurnId.
+    store = _blob_store(store_file)
+    if store is not None:
+        return _save_session_record_db(store, state)
     with _save_lock:
-        sessions, error = _read_store(store_file)
+        sessions, error = _read_store_file(store_file)
         if error:
             return error
 
+        prior = sessions.get(state.sessionId)
+        write_state = _resolve_write_state(prior, state)
+        sessions[write_state.sessionId] = write_state
+        result = _write_store(sessions, store_file)
+        if not result.get("ok"):
+            return result
+        _stamp_session_meta(write_state.sessionId, store_file)
+        return {"ok": True, "sessionId": write_state.sessionId}
+
+
+def _resolve_write_state(
+    prior: Optional[V5SessionState], state: V5SessionState
+) -> V5SessionState:
+    """决定这次到底该把什么写下去——**判定逻辑的唯一副本**。
+
+    文件后端和库后端都调它。历史上这段是内联在 save_session_record 里的；
+    会话落库时抽出来共用，逻辑逐行照搬，没有任何行为改动。
+
+    两件事：
+      ① replay / reasoning 事件按 id 追加合并（服务端历史只增不减）；
+      ② lastTurnId 单调守卫决定核心字段能不能被覆盖。
+    """
+    if True:
         # Append-only replay log merge on save (sliderule-python-v52-session-replay-append-only-105)
         # Classification: ... -> PYTHON_COMPAT -> PYTHON_AUTHORITY
         # Read existing replay from durable store and merge (preserve prior + additive new by id);
         # prevents partial/stale/empty replay from client or in-mem snapshot from overwriting server-owned replay.
         # Matches V5.2 append-only intent (no clobber on save); reasoningEvents treated same.
         # Python owns this durability/readback slice; no Node fallback.
-        prior = sessions.get(state.sessionId)
         prior_log = list(getattr(prior, "sessionReplayLog", []) or []) if prior else []
         seen = {getattr(e, "id", None) for e in prior_log if getattr(e, "id", None)}
         for ev in (getattr(state, "sessionReplayLog", []) or []):
@@ -352,16 +493,86 @@ def save_session_record(state: V5SessionState, store_file: Optional[StorePath] =
                         )
                     except Exception:
                         write_state = prior
-        sessions[write_state.sessionId] = write_state
-        result = _write_store(sessions, store_file)
-        if not result.get("ok"):
-            return result
-        _stamp_session_meta(write_state.sessionId, store_file)
-        return {"ok": True, "sessionId": write_state.sessionId}
+        return write_state
+
+
+def _save_session_record_db(store, state: V5SessionState) -> StoreError:
+    """库后端的写入：读一条 prior → 同一套守卫 → CAS 写回，冲突就重来。
+
+    与文件后端的区别只有原子性来源：文件靠 `_save_lock`（单进程独占文件），
+    库靠行级 `rev` 比对（库是共享的，进程锁挡不住另一台机器）。
+    判定用的是同一个 `_resolve_write_state`。
+
+    进程锁仍然套在外面——同机多线程冲突在锁里就化解了，不用去库上自旋。
+    """
+    with _save_lock:
+        last_error = "CAS 冲突次数用尽"
+        for _ in range(_MAX_CAS_RETRY):
+            try:
+                row = store.load(state.sessionId)
+            except Exception as exc:  # noqa: BLE001
+                return _store_error("db_read_failed", str(exc)[:200])
+
+            prior: Optional[V5SessionState] = None
+            if row is not None:
+                coerced, error = _coerce_state(state.sessionId, row.payload)
+                if error:
+                    # 库里那条读不回（旧 schema/字段漂移）：当作没有 prior 处理，
+                    # 让这次写入把它顶掉。文件后端会把坏条目原样保留，但那是因为
+                    # 文件是整体重写、不留就等于删；库是按条写的，这里顶掉的只有
+                    # 这一条，而它本来就已经读不出来了。
+                    print(
+                        f"[persistence] WARN: 库内会话 {state.sessionId} 读不回，"
+                        f"本次写入将覆盖它: {error.get('message')}"
+                    )
+                else:
+                    prior = coerced
+
+            write_state = _resolve_write_state(prior, state)
+            try:
+                ok = store.save(
+                    write_state.sessionId,
+                    write_state.model_dump(),
+                    expected_rev=row.rev if row is not None else None,
+                )
+            except Exception as exc:  # noqa: BLE001
+                return {
+                    "ok": False,
+                    "error": "persist_failed",
+                    "reason": "db_write_failed",
+                    "message": str(exc)[:200],
+                }
+            if ok:
+                return {"ok": True, "sessionId": write_state.sessionId}
+            # 写不进去 = 这一瞬间别人改过同一条。重读重算——注意必须重新过一遍
+            # 守卫，不能拿刚才算好的 write_state 硬写，否则就把别人的提交冲掉了。
+        return {
+            "ok": False,
+            "error": "persist_failed",
+            "reason": "cas_conflict",
+            "message": last_error,
+            "sessionId": state.sessionId,
+        }
 
 
 def load_session_record(session_id: str, store_file: Optional[StorePath] = None) -> StoreError:
-    sessions, error = _read_store(store_file)
+    store = _blob_store(store_file)
+    if store is not None:
+        try:
+            row = store.load(session_id)
+        except Exception as exc:  # noqa: BLE001
+            return {**_store_error("db_read_failed", str(exc)[:200]), "sessionId": session_id}
+        if row is None:
+            return {"ok": False, "error": "not_found", "sessionId": session_id}
+        state, error = _coerce_state(session_id, row.payload)
+        if error:
+            return {**error, "sessionId": session_id}
+        return {"ok": True, "sessionId": session_id, "session": state}
+    return _load_session_record_file(session_id, store_file)
+
+
+def _load_session_record_file(session_id: str, store_file: Optional[StorePath] = None) -> StoreError:
+    sessions, error = _read_store_file(store_file)
     if error:
         return {**error, "sessionId": session_id}
     state = sessions.get(session_id)
@@ -392,7 +603,20 @@ def list_session_records(store_file: Optional[StorePath] = None) -> StoreError:
 
 
 def delete_session_record(session_id: str, store_file: Optional[StorePath] = None) -> StoreError:
-    sessions, error = _read_store(store_file)
+    store = _blob_store(store_file)
+    if store is not None:
+        try:
+            store.delete(session_id)  # 幂等：删不存在的也算成功（G1 契约）
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": "persist_failed",
+                "reason": "db_delete_failed",
+                "message": str(exc)[:200],
+                "sessionId": session_id,
+            }
+        return {"ok": True, "sessionId": session_id}
+    sessions, error = _read_store_file(store_file)
     if error:
         return {**error, "sessionId": session_id}
     sessions.pop(session_id, None)
