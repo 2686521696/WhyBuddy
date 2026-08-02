@@ -283,3 +283,48 @@ def test_wrong_password_is_401_with_a_generic_message(env):
                 json={"email": "ghost@example.com", "password": "nope-nope-nope"},
                 headers=_hdr())
     assert r2.json().get("message") == r.json().get("message")
+
+
+def test_anonymous_checks_must_not_reuse_a_logged_in_client(env):
+    """TestClient 会保留 Cookie —— 复用会让"匿名"请求带上之前登录的凭据。
+
+    写端到端验证脚本时踩过：注册那步把登录 Cookie 种进了同一个 client，
+    之后那条"匿名推演应当 401"的检查实际是以登录身份发的，**真的把 LLM 跑起来了**，
+    而我差点据此以为守卫失效。
+
+    这条测试把行为钉住：新开的 client 必须是匿名的。
+    """
+    from fastapi.testclient import TestClient
+
+    from app import app as fastapi_app
+
+    c = env["client"]
+    r = c.post(
+        f"{API}/account/login",
+        json={"email": "alice@example.com", "password": "correct-horse-battery"},
+        headers=_hdr(),
+    )
+    assert r.status_code == 200
+    # 同一个 client 现在带着 Cookie，是登录态
+    assert c.get(f"{API}/account/me", headers=_hdr()).json()["user"] is not None
+    # 新开的必须是匿名
+    fresh = TestClient(fastapi_app)
+    assert fresh.get(f"{API}/account/me", headers=_hdr()).json()["user"] is None
+
+
+def test_cookie_alone_authenticates_without_a_bearer_header(env):
+    """浏览器只有 Cookie、没有 Authorization——这条路必须走得通。
+
+    Node 代理透传 cookie 就是为了它（server/routes/sliderule.ts）。
+    """
+    c = env["client"]
+    c.post(
+        f"{API}/account/login",
+        json={"email": "alice@example.com", "password": "correct-horse-battery"},
+        headers=_hdr(),
+    )
+    # 只带内部 key，不带 Authorization——身份完全靠 Cookie
+    me = c.get(f"{API}/account/me", headers=_hdr()).json()
+    assert me["user"]["email"] == "alice@example.com"
+    caps = c.get(f"{API}/account/capabilities", headers=_hdr()).json()
+    assert caps["can"]["drive"] is True
