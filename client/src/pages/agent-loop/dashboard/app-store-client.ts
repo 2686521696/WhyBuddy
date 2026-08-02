@@ -33,6 +33,17 @@ export interface AppStoreSummary {
   entity_count: number;
   page_count: number;
   /**
+   * 归属与可见性（2026-08-02）。
+   *
+   * owner_id 为 null = 无主的存量应用。语义与后端一致（app_access）：
+   * **可读、不可写**（超管除外）——判成可写等于权限一上线就把历史数据敞开。
+   *
+   * 两者都可选：老后端不返回这两个字段，缺失时按"无主 + public"处理，
+   * 也就是改动前的行为。
+   */
+  owner_id?: string | null;
+  visibility?: "public" | "unlisted" | "private";
+  /**
    * 这条记录有没有缩略图。有就贴图，没有就回落活渲染。
    *
    * 图有两个可能的来源，**服务端按可信度挑**（见 Python 侧 app_store 的

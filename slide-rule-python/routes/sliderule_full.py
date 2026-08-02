@@ -271,6 +271,29 @@ async def list_sess(x_internal_key: Optional[str] = Header(None)):
         })
     return {"sessions": items}
 
+def _require_login_to_drive(viewer) -> None:
+    """推演必须登录（2026-08-02，用户裁决：匿名只能查看）。
+
+    为什么在这里拦而不是只靠前端藏按钮：那套 RBAC 后台的字段权限就是只藏了前端、
+    后端照样返回全部字段。**前端藏起来的按钮不等于后端拦得住。**
+
+    为什么不是按应用归属判：推演的入口是会话，而新会话此刻还没有对应的应用记录
+    （应用是推演到闭环之后才落库的）。所以这一层只管"是不是登录了"，
+    针对具体应用的写权限由 app_access 在落库/改版那一侧把关。
+    """
+    if viewer is None:
+        raise HTTPException(
+            status_code=401,
+            detail="请先登录后再推演",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    # 推演闭环时应用会落库（v5_capability_executor），那里距离这里隔着好几层。
+    # 用 contextvar 把归属带下去，而不是给沿途十几个函数都加一个参数。
+    from services.request_context import set_current_user
+
+    set_current_user(viewer)
+
+
 @router.post("/sessions")
 async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
@@ -589,9 +612,14 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
 @router.post("/drive-turn")
 # `def` 而不是 `async def`——理由与 /drive-full 那条完全相同（见下面那段长注释）：
 # drive_reasoning_turn 是同步的重活，写在 async 里会占住事件循环。
-def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+def drive(
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
     """Single turn drive (drive_reasoning_turn). Full multi-loop driver authority exposed via /drive-full."""
     _auth(x_internal_key)
+    _require_login_to_drive(viewer)
     state = V5SessionState(**payload["state"])
     new_state = drive_reasoning_turn(state, payload["turnId"], payload.get("userText", ""))
     # python provenance for turn/drive (covers turn + downstream evidence/report)
@@ -620,12 +648,17 @@ def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None))
 # current_default_thread_limiter），而每趟推演会占住一个槽十几分钟。同时在跑的
 # 推演超过 40 个就会开始排队——真到那一天，正确的解法是把推演挪进任务队列，
 # 而不是把这个数字调大。
-def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+def drive_full(
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
     """Python driver authority for multiple capability loops until stop condition (coverage/empty picks/max_loops).
     Wires drive_full_v5_session as the visible full-path multi-loop API (PYTHON_AUTHORITY).
     Real userText (user instruction) is forwarded so it drives pick/orchestrate/execute/artifacts/GCOV/phase.
     """
     _auth(x_internal_key)
+    _require_login_to_drive(viewer)
     raw_state, _ = sanitize_session_dict(payload["state"])
     # PYTHON_AUTHORITY: 已持久化的服务端会话是权威起点。客户端 state 经防伪造清洗后
     # 会失去 trustLevel/producedBy/台账（正确的防伪行为），若以它为起点，之前所有
@@ -725,6 +758,7 @@ async def cov(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(No
 @router.post("/drive-full-stream")
 async def drive_full_stream(
     payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
 ):
     """Stream drive-full execution as Server-Sent Events.
@@ -737,6 +771,7 @@ async def drive_full_stream(
         publish_closure — final closure evidence
         complete      — final state; stream ends
     """
+    _require_login_to_drive(viewer)
     import json
 
     _auth(x_internal_key)

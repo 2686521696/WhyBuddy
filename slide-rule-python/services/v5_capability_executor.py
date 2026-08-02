@@ -375,8 +375,14 @@ def _try_llm_generate_evidence(
         # 2026-07-27（审查修复 #3/D10）：同会话模型有变 → 同 root 新版本
         # （血缘/版本链/v2 徽标由此激活），不再每次精修都新建孤儿 root、
         # 画廊堆同名重复卡。模型未变仍走 dedup 幂等更新。
+        from .request_context import current_user_id
+
         app_store.save_app_or_version(
             model, goal=goal, session_id=session_id, gate_passed=True,
+            # 归属：谁推演出来的就归谁（推演路由已把它放进 contextvar）。
+            # 拿不到就落成无主——语义在 app_access 里定义好了（可读、不可写），
+            # 不能为了拿归属而让闭环失败。
+            owner_id=current_user_id(),
             # 没收到图（生图失败/预算撞顶/这个应用没有总览页）传 None——落库侧
             # 按"保留既有那张"处理，不会把已有卡片打回活渲染。
             preview_png_b64=preview_sink.png_b64 if preview_sink else None,

@@ -1586,6 +1586,7 @@ def save_app_or_version(
     session_id: Optional[str] = None,
     gate_passed: bool = True,
     preview_png_b64: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> str:
     """闭环落库的正确入口（2026-07-27，审查修复）：
 
@@ -1605,7 +1606,7 @@ def save_app_or_version(
         return save_app(
             model, goal=goal, session_id=session_id,
             gate_passed=gate_passed, dedup_key=dedup_key,
-            preview_png_b64=preview_png_b64,
+            preview_png_b64=preview_png_b64, owner_id=owner_id,
         )
     prior = backend.find_latest_by_session(session_id) if session_id else None
     if prior is not None:
@@ -1618,7 +1619,7 @@ def save_app_or_version(
     return save_app(
         model, goal=goal, session_id=session_id,
         gate_passed=gate_passed, dedup_key=dedup_key,
-        preview_png_b64=preview_png_b64,
+        preview_png_b64=preview_png_b64, owner_id=owner_id,
     )
 
 

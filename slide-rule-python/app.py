@@ -70,6 +70,7 @@ from routes.executor_events import router as executor_events_router
 from routes.executor_dispatch import router as executor_dispatch_router
 from routes.permissions import router as permissions_router
 from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
+from routes.account import router as account_router
 from routes.sliderule_full import router as sliderule_full_router
 from routes.agent_loop import router as agent_loop_router
 from routes.rag import router as rag_router
@@ -153,6 +154,9 @@ app.add_middleware(
 )
 
 # Full V5 API - this is the takeover
+# 账号接口挂在 sliderule 前缀下：复用已验证的 Node→Python 代理，
+# 且避开 /api/auth（Node 遗留体系 + Python 桥接桩都占着那里）。
+app.include_router(account_router, prefix="/api/sliderule")
 app.include_router(sliderule_full_router, prefix="/api/sliderule")
 app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-documents")
 app.include_router(blueprint_jobs_router, prefix="/api/blueprint/jobs")

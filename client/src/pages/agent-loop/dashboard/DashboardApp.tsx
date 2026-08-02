@@ -19,6 +19,8 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { Graph, type GraphData } from "@antv/g6";
+import { AccountPanel } from "./AccountPanel";
+import { AuthProvider } from "@/lib/use-auth";
 import {
   Alert,
   Breadcrumb,
@@ -1274,19 +1276,9 @@ function AgentLoopSidebar({
         <span>帮助文档</span>
         <RightOutlined />
       </button>
-      <div
-        className="native-agent-user"
-        title="工作区（占位，账号体系接入后可切换）"
-      >
-        <span className="native-agent-user-avatar" aria-hidden>
-          <TeamOutlined />
-        </span>
-        <span className="native-agent-user-meta">
-          <span className="native-agent-user-name">SlideRule 团队</span>
-          <span className="native-agent-user-plan">企业版</span>
-        </span>
-        <DownOutlined className="native-agent-user-caret" />
-      </div>
+      {/* 2026-08-02：账号体系接上了。原来这里是写死的
+          「SlideRule 团队 · 企业版」占位（title 里写着"账号体系接入后可切换"）。*/}
+      <AccountPanel />
     </aside>
   );
 }
@@ -1365,7 +1357,21 @@ function AgentLoopTopbar({
   );
 }
 
-export function DashboardApp({
+/**
+ * 对外的 DashboardApp：套一层 AuthProvider。
+ *
+ * 登录态要全站一份（应用中心一屏几十张卡都要知道"我能不能改这个"），
+ * 所以放在最外层而不是各处自己 fetch。见 lib/use-auth 的说明。
+ */
+export function DashboardApp(props: React.ComponentProps<typeof DashboardAppInner>) {
+  return (
+    <AuthProvider>
+      <DashboardAppInner {...props} />
+    </AuthProvider>
+  );
+}
+
+function DashboardAppInner({
   payload,
   initialView = "workbench" as ViewKey,
   view: controlledView,

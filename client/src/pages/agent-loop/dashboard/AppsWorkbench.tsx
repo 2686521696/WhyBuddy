@@ -17,6 +17,7 @@
  */
 
 import React from "react";
+import { canWriteApp, useAuth } from "@/lib/use-auth";
 import { Pagination } from "antd";
 
 import { useContainerPosition } from "masonic";
@@ -981,6 +982,8 @@ export function AppsWorkbench() {
   const [llm, setLlm] = React.useState<{ provider: string; model: string; keyPresent: boolean } | null | false>(null);
   const [healthOpen, setHealthOpen] = React.useState(false);
   const [tab, setTab] = React.useState<"mine" | "examples">("mine");
+  // 登录态：决定复刻/删除按钮显不显示（真判定在后端）
+  const { user: authUser, capabilities } = useAuth();
   const [filter, setFilter] = React.useState<GalleryFilter>("all");
   const [query, setQuery] = React.useState("");
   const [sortDesc, setSortDesc] = React.useState(true);
@@ -1308,6 +1311,10 @@ export function AppsWorkbench() {
     // 活渲染缩略图的稳定 id：会话卡用 sessionId，App Store 卡无会话时用 appId。
     const thumbId = item.sessionId || item.appId || item.key;
     const canOpen = Boolean(item.sessionId);
+    // 能不能复刻/删除。无主的存量应用除超管外谁都不能删——判成"谁都能删"
+    // 等于权限一上线就把历史数据敞开（与后端 app_access 同一套规则）。
+    const canFork = capabilities.can.fork;
+    const canWrite = canWriteApp(item.summary?.owner_id ?? null, authUser);
     const isApp = item.source === "app";
     const version = item.version ?? 1;
     const rel = formatRelativeTime(item.lastActive ?? item.createdAt);
@@ -1420,21 +1427,29 @@ export function AppsWorkbench() {
                 className="absolute right-2 top-8 z-10 rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
                 onClick={e => e.stopPropagation()}
               >
+                {/* 2026-08-02：按登录态与归属显隐。
+                    ⚠️ 这只是**不显示注定失败的按钮**，不是权限判定——真正的判定
+                    在后端每个写接口里（Python 侧 app_access.require）。审查那套
+                    RBAC 后台时它的字段权限就是只藏了前端、后端照样全返回。*/}
                 {isApp && (
                   <button
                     data-testid={`app-fork-${item.appId}`}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                    disabled={!canFork}
+                    title={canFork ? undefined : "登录后可复刻"}
                     onClick={() => openForkModal(item)}
                   >
                     <GitBranch size={13} /> 复刻应用
                   </button>
                 )}
-                <button
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-50"
-                  onClick={() => void removeCard(item)}
-                >
-                  <Trash2 size={13} /> 删除应用
-                </button>
+                {canWrite && (
+                  <button
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-50"
+                    onClick={() => void removeCard(item)}
+                  >
+                    <Trash2 size={13} /> 删除应用
+                  </button>
+                )}
               </div>
             )}
           </>

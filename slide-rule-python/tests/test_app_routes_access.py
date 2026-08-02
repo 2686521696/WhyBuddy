@@ -17,8 +17,13 @@ pytest.importorskip("jwt", reason="没装 PyJWT 时令牌不可用")
 
 
 @pytest.fixture
-def env(tmp_path, monkeypatch):
-    """一个干净的本地库 + 两个用户（一个超管一个普通）。"""
+def env(tmp_path, monkeypatch, real_auth):
+    """一个干净的本地库 + 三个用户（一个超管两个普通）。
+
+    `real_auth` 必须带上：conftest 给全套件装了"默认已登录"的依赖覆盖
+    （几十条推演管线测试需要它），而这份测试恰恰要验匿名分支——不摘掉的话
+    "匿名看不见私有应用"这类断言会因为访问者其实是登录用户而失去意义。
+    """
     from config.settings import settings
 
     monkeypatch.chdir(tmp_path)
@@ -195,3 +200,86 @@ def test_cannot_fork_what_you_cannot_see(env):
     store, c = env["store"], env["client"]
     aid = _seed(store, owner_id=env["alice"]["user"]["id"], visibility="private")
     assert c.post(f"{API}/apps/{aid}/fork", headers=_hdr(env["bob"])).status_code == 404
+
+
+# ────────────────────── 推演：匿名只能查看 ──────────────────────
+
+
+def test_anonymous_cannot_drive(env):
+    """用户裁决（2026-08-02）：**匿名只能查看**。
+
+    拦在后端而不是只靠前端藏按钮——那套 RBAC 后台的字段权限就是只藏了前端、
+    后端照样返回全部字段。前端藏起来的按钮不等于后端拦得住。
+    """
+    c = env["client"]
+    for path in ("/drive-turn", "/drive-full", "/drive-full-stream"):
+        r = c.post(
+            f"{API}{path}",
+            json={
+                "state": {"sessionId": "s-1", "goal": {"text": "试试", "status": "needs_refinement"}},
+                "userText": "试试",
+                "turnId": "t-1",
+                "max_loops": 1,
+            },
+            headers=_hdr(),
+        )
+        assert r.status_code == 401, f"{path} 放行了匿名推演（{r.status_code}）"
+
+
+def test_logged_in_user_can_reach_the_drive_endpoint(env):
+    """登录之后不该被身份这一关挡住。
+
+    只断言"不是 401"——推演本身要 LLM，这里不跑真链路。
+    """
+    c = env["client"]
+    # 合法的最小 state：缺字段会在身份关卡**之后**触发校验异常，
+    # 那样这条断言就变成了"没被 401 挡住"以外的东西（实测踩过）。
+    state = {"sessionId": "s-2", "goal": {"text": "试试", "status": "needs_refinement"}}
+    r = c.post(f"{API}/drive-full", json={"state": state, "userText": "试试", "max_loops": 1},
+               headers=_hdr(env["alice"]))
+    assert r.status_code != 401, "登录用户被身份关卡挡住了"
+
+
+def test_account_me_reports_anonymous_as_200_not_401(env):
+    """前端启动时用它判断登录态——匿名是正常状态，不是错误。"""
+    c = env["client"]
+    r = c.get(f"{API}/account/me", headers=_hdr())
+    assert r.status_code == 200
+    assert r.json()["user"] is None
+
+    r2 = c.get(f"{API}/account/me", headers=_hdr(env["alice"]))
+    assert r2.json()["user"]["email"] == "alice@example.com"
+
+
+def test_capabilities_reflect_login_state(env):
+    c = env["client"]
+    anon = c.get(f"{API}/account/capabilities", headers=_hdr()).json()
+    assert anon["can"]["browse"] is True and anon["can"]["drive"] is False
+
+    user = c.get(f"{API}/account/capabilities", headers=_hdr(env["alice"])).json()
+    assert user["can"]["drive"] is True and user["can"]["fork"] is True
+
+
+def test_login_via_http_sets_an_httponly_cookie(env):
+    """浏览器靠 httpOnly Cookie 保持登录——localStorage 存 JWT 一次 XSS 就永久盗号。"""
+    c = env["client"]
+    r = c.post(f"{API}/account/login",
+               json={"email": "alice@example.com", "password": "correct-horse-battery"},
+               headers=_hdr())
+    assert r.status_code == 200
+    raw = r.headers.get("set-cookie") or ""
+    assert "sliderule_token=" in raw
+    assert "HttpOnly" in raw, "登录 Cookie 不是 httpOnly"
+
+
+def test_wrong_password_is_401_with_a_generic_message(env):
+    c = env["client"]
+    r = c.post(f"{API}/account/login",
+               json={"email": "alice@example.com", "password": "nope-nope-nope"},
+               headers=_hdr())
+    assert r.status_code == 401
+    # 与"邮箱不存在"同一句话，不泄露账号是否存在
+    r2 = c.post(f"{API}/account/login",
+                json={"email": "ghost@example.com", "password": "nope-nope-nope"},
+                headers=_hdr())
+    assert r2.json().get("message") == r.json().get("message")

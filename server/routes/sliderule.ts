@@ -1190,6 +1190,23 @@ router.use(async (req: Request, res: Response) => {
       "X-Internal-Key": runtime.internalKey,
       accept: String(req.headers["accept"] || "*/*"),
     };
+    // 2026-08-02：把访问者身份透传给 Python。
+    //
+    // 此前这个代理只带 X-Internal-Key —— 那是"Node 有权调 Python"的凭据，
+    // 不是"这个请求是谁发的"。于是 Python 侧的 optional_user 永远拿不到用户，
+    // 应用中心的归属/可见性判定全部退化成匿名：私有应用照样可见、Fork 报 401。
+    // 权限做在 Python（数据在那边）就必须让身份也过得去。
+    //
+    // 只转发这两个头，不整包 forward req.headers —— host/content-length 那些
+    // 由 fetch 自己算，原样带过去会让上游拿到错的长度。
+    const forwardedAuth = req.headers["authorization"];
+    if (typeof forwardedAuth === "string" && forwardedAuth) {
+      headers["authorization"] = forwardedAuth;
+    }
+    const forwardedCookie = req.headers["cookie"];
+    if (typeof forwardedCookie === "string" && forwardedCookie) {
+      headers["cookie"] = forwardedCookie;
+    }
     let body: string | undefined;
     if (method !== "GET" && method !== "HEAD") {
       headers["content-type"] = String(
@@ -1201,6 +1218,14 @@ router.use(async (req: Request, res: Response) => {
     res.status(upstream.status);
     const contentType = upstream.headers.get("content-type");
     if (contentType) res.setHeader("content-type", contentType);
+    // 登录/登出要靠 Set-Cookie 把 httpOnly 凭据种到浏览器上。不回传的话
+    // 登录接口会"成功但没登上"——这类问题很难查，因为响应体是 200。
+    // getSetCookie() 保留多条（Node 18.14+ / undici）；退化时用单值兜底。
+    const setCookies =
+      typeof (upstream.headers as { getSetCookie?: () => string[] }).getSetCookie === "function"
+        ? (upstream.headers as { getSetCookie: () => string[] }).getSetCookie()
+        : ([upstream.headers.get("set-cookie")].filter(Boolean) as string[]);
+    if (setCookies.length > 0) res.setHeader("set-cookie", setCookies);
     if (!upstream.body) {
       res.end();
       return;
