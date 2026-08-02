@@ -585,7 +585,9 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
     return result
 
 @router.post("/drive-turn")
-async def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+# `def` 而不是 `async def`——理由与 /drive-full 那条完全相同（见下面那段长注释）：
+# drive_reasoning_turn 是同步的重活，写在 async 里会占住事件循环。
+def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     """Single turn drive (drive_reasoning_turn). Full multi-loop driver authority exposed via /drive-full."""
     _auth(x_internal_key)
     state = V5SessionState(**payload["state"])
@@ -594,7 +596,29 @@ async def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     return {"state": new_state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_RAG, "backend": PYTHON_BACKEND}
 
 @router.post("/drive-full")
-async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+# ⚠️ 这条路由是 `def` 而不是 `async def`——**故意的，别改回去**（2026-08-02）。
+#
+# 事故形状：只要有人在推演，整个服务就不响应，连 /api/health 都超时。原因是
+# drive_full_v5_session 是**同步**函数（v5_full_driver.py），一趟推演 6~20 分钟
+# （实测本次 5 个话题 374~1190s），此前它被直接写在 `async def` 里，于是整段
+# 跑在事件循环那条线程上——单 worker 下，事件循环被占住 = 全站失联。
+#
+# 修法用的是 FastAPI 官方口径，不是自己发明的：
+#   "When you declare a path operation function with normal `def` instead of
+#    `async def`, it is run in an external threadpool that is then awaited,
+#    instead of being called directly (as it would block the server)."
+#   —— fastapi.tiangolo.com/async/
+# 底层是 Starlette 的 run_in_threadpool → anyio.to_thread.run_sync。
+#
+# 为什么不用 asyncio.to_thread 手动包一层：能达到同样效果，但要在每个调用点
+# 各写一遍、且容易漏（本文件里 LLM/RAG 那几条就是这么写的，而这两条当初正是
+# 漏掉的）。函数签名去掉 async 是**声明式**的，漏不掉。
+#
+# 代价（记下来，别踩）：线程池默认只有 40 个槽（anyio 的
+# current_default_thread_limiter），而每趟推演会占住一个槽十几分钟。同时在跑的
+# 推演超过 40 个就会开始排队——真到那一天，正确的解法是把推演挪进任务队列，
+# 而不是把这个数字调大。
+def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     """Python driver authority for multiple capability loops until stop condition (coverage/empty picks/max_loops).
     Wires drive_full_v5_session as the visible full-path multi-loop API (PYTHON_AUTHORITY).
     Real userText (user instruction) is forwarded so it drives pick/orchestrate/execute/artifacts/GCOV/phase.
@@ -1432,20 +1456,34 @@ async def list_generated_apps(
     offset: int = 0,
     x_internal_key: Optional[str] = Header(None),
 ):
-    """应用画廊列表——默认每个应用只出最新版，摘要不含大模型载荷。"""
+    """应用画廊列表——默认每个应用只出最新版，摘要不含大模型载荷。
+
+    **同步的库调用必须 to_thread**（2026-08-02 线上事故修复）。这几条路由是
+    `async def`，而 uvicorn 只跑一个 worker、一个事件循环；直接在协程里调同步
+    的 SQLAlchemy，一次慢查询就把整个事件循环冻住——`/api/health` 与
+    `/api/agent-loop/health` 跟着一起超时，"存储层拖垮主链路"的承诺当场作废。
+    这正是切回 Neon 后线上观察到的形状。
+
+    本文件里 LLM/RAG/附件解析那几条早就是这么写的（见 asyncio.to_thread 的
+    其它调用点），app store 这几条是漏网的。
+    """
     _auth(x_internal_key)
     from services import app_store
 
-    return {"apps": app_store.list_apps(limit=limit, offset=offset)}
+    apps = await asyncio.to_thread(app_store.list_apps, limit=limit, offset=offset)
+    return {"apps": apps}
 
 
 @router.get("/apps/{app_id}")
 async def get_generated_app(app_id: str, x_internal_key: Optional[str] = Header(None)):
-    """取一个生成应用的完整记录（含 model_json，可直接重开渲染）。"""
+    """取一个生成应用的完整记录（含 model_json，可直接重开渲染）。
+
+    同步库调用走 to_thread，理由见 list_generated_apps。
+    """
     _auth(x_internal_key)
     from services import app_store
 
-    record = app_store.get_app(app_id)
+    record = await asyncio.to_thread(app_store.get_app, app_id)
     if record is None:
         raise HTTPException(404, "app not found")
     return record
@@ -1454,6 +1492,7 @@ async def get_generated_app(app_id: str, x_internal_key: Optional[str] = Header(
 @router.get("/apps/{app_id}/preview")
 async def get_generated_app_preview(
     app_id: str,
+    request: Request,
     source: Optional[str] = None,
     x_internal_key: Optional[str] = Header(None),
 ):
@@ -1480,14 +1519,30 @@ async def get_generated_app_preview(
     _auth(x_internal_key)
     from services import app_store
 
-    png = app_store.get_app_preview_png(
-        app_id, source=app_store.normalize_preview_source(source) if source else None
+    # 同步库调用走 to_thread，理由见 list_generated_apps。
+    data = await asyncio.to_thread(
+        app_store.get_app_preview_png,
+        app_id,
+        source=app_store.normalize_preview_source(source) if source else None,
     )
-    if not png:
+    if not data:
         raise HTTPException(404, "preview not found")
+
+    from services.thumb_image import client_accepts_webp, sniff_media_type, to_png
+
+    # 按内容报 Content-Type，不写死 image/png：库里存量是 PNG、新写入是 WebP，
+    # 报错类型浏览器可能拒绝渲染，CDN 也会缓存错。
+    media = sniff_media_type(data)
+    # Accept 头协商（thumbor / imgproxy / Next.js Image 同款做法）：不认 WebP 的
+    # 客户端现场转回 PNG。WebP 覆盖率 97%+，这条是给极老客户端和抓取工具留的，
+    # 不是主路径。转不动就原样给——宁可让客户端拿到一张它可能不认的图，
+    # 也不要 500。
+    if media == "image/webp" and not client_accepts_webp(request.headers.get("accept")):
+        data = await asyncio.to_thread(to_png, data)
+        media = sniff_media_type(data)
     return Response(
-        content=png,
-        media_type="image/png",
+        content=data,
+        media_type=media,
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
 
@@ -1497,9 +1552,22 @@ async def get_generated_app_preview(
 #: 这是一张缩略图，几 MB 的东西进来只会把列表接口和 Neon 拖慢。
 _MAX_SHOT_BYTES = 3 * 1024 * 1024
 
-#: PNG 的魔数。只认 PNG：取图路由是按 image/png 回的，别的格式进来会让
-#: 浏览器拿到一个声称是 PNG 的 JPEG。
-_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+#: 允许回传的图片格式。采集端出的是 WebP（见 client/src/lib/thumb-capture.ts），
+#: 但 canvas.toBlob 对不认识的 type 会静默回落成 PNG，所以两种都得收。
+#: 仍然只收这两种：取图路由按内容嗅探报 Content-Type，收进来一个声称是图片的
+#: 任意字节流只会让浏览器拿到一张渲染不出来的东西。
+_ALLOWED_SHOT_MAGIC = ("image/png", "image/webp")
+
+
+def _looks_like_image(data: bytes) -> bool:
+    """真的按魔数验一遍。
+
+    sniff_media_type 认不出时会**兜底返回 image/png**（为了让历史存量能正常
+    显示），所以它不能单独用来做入口校验——不然任意字节流都会被判成 PNG 放进来。
+    """
+    return data.startswith(b"\x89PNG\r\n\x1a\n") or (
+        data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    )
 
 
 @router.post("/apps/{app_id}/preview")
@@ -1533,9 +1601,10 @@ async def upload_generated_app_shot(
     _auth(x_internal_key)
     from services import app_store
 
-    if app_store.get_app(app_id) is None:
+    # 同步库调用走 to_thread，理由见 list_generated_apps。
+    if await asyncio.to_thread(app_store.get_app, app_id) is None:
         raise HTTPException(404, "app not found")
-    if app_store.app_has_shot(app_id):
+    if await asyncio.to_thread(app_store.app_has_shot, app_id):
         return {"stored": False, "reason": "already_has_shot"}
 
     body = await request.body()
@@ -1543,10 +1612,12 @@ async def upload_generated_app_shot(
         raise HTTPException(400, "empty body")
     if len(body) > _MAX_SHOT_BYTES:
         raise HTTPException(413, "screenshot too large")
-    if not body.startswith(_PNG_MAGIC):
-        raise HTTPException(415, "expected a PNG")
+    from services.thumb_image import sniff_media_type
 
-    stored = app_store.save_app_shot(app_id, body)
+    if sniff_media_type(body) not in _ALLOWED_SHOT_MAGIC or not _looks_like_image(body):
+        raise HTTPException(415, "expected a PNG or WebP image")
+
+    stored = await asyncio.to_thread(app_store.save_app_shot, app_id, body)
     return {"stored": stored, "bytes": len(body)}
 
 
@@ -1556,7 +1627,8 @@ async def list_generated_app_versions(root_id: str, x_internal_key: Optional[str
     _auth(x_internal_key)
     from services import app_store
 
-    return {"versions": app_store.list_versions(root_id)}
+    versions = await asyncio.to_thread(app_store.list_versions, root_id)
+    return {"versions": versions}
 
 
 @router.post("/apps/{app_id}/fork")

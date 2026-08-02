@@ -99,8 +99,30 @@ function cropToAspect(
   return out;
 }
 
+/**
+ * WebP 编码质量。与服务端 thumb_image.WEBP_QUALITY 保持一致（0~1 vs 0~100）。
+ *
+ * 参照：Next.js Image 默认 75、thumbor 默认 80、imgproxy 默认 80。取 0.82 是
+ * 因为这些是**界面截图**——大片纯色加细字，比照片更吃量化噪声，稍高一档更稳。
+ */
+const WEBP_QUALITY = 0.82;
+
+/**
+ * 采出来的画面编码成 blob。
+ *
+ * **直接出 WebP，不出 PNG**（2026-08-02）。实测同样分辨率下 805KB PNG →
+ * 43KB WebP，小 19 倍，而分辨率一个像素不减。这条省的是两段流量：回传时的
+ * 上行，以及之后每个访客看这张卡的下行（后者才是大头——应用中心一次首屏
+ * 23 张卡，10.7MB → 约 0.9MB）。
+ *
+ * 服务端也会再压一次（thumb_image.to_webp），那是给参照板那一路和历史存量用的；
+ * 已经是 WebP 的它会原样放行，不会重复编码掉画质。
+ *
+ * canvas.toBlob 对不认识的 type 会**静默回落成 PNG**（规范如此），所以这里
+ * 显式检查一次实际拿到的类型——回落了就如实按 PNG 走，不假装省了带宽。
+ */
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
-  return new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+  return new Promise(resolve => canvas.toBlob(resolve, "image/webp", WEBP_QUALITY));
 }
 
 /** 浏览器空闲时再动手——采集是给缩略图用的，永远排在用户交互后面。 */
@@ -164,7 +186,8 @@ export function captureAndUpload(req: CaptureRequest): Promise<boolean> {
 
       const res = await fetch(`/api/sliderule/apps/${encodeURIComponent(appId)}/preview`, {
         method: "POST",
-        headers: { "Content-Type": "image/png" },
+        // 按 blob 实际类型报，不写死——toBlob 不认 webp 时会静默回落成 PNG。
+        headers: { "Content-Type": blob.type || "image/webp" },
         body: blob,
       });
       if (!res.ok) return false;
