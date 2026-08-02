@@ -114,13 +114,23 @@ def start_registration(email: str, password: str) -> dict[str, Any]:
 
     code = ident.new_email_code()
     store.put_code(email, _code_hash(email, code), purpose="register")
-    delivered = _send_code_email(email, code)
+    try:
+        delivered = _send_code_email(email, code)
+    except Exception as exc:  # noqa: BLE001 — 投递失败要如实报，不能吞
+        # 把刚存的码作废：留着的话用户会在"发送失败"之后仍有一个有效码在库里，
+        # 而他并不知道码是多少——只会挡住重发（冷却期）而没有任何好处。
+        store.drop_code(email)
+        return {
+            "ok": False,
+            "error": "mail_failed",
+            "message": f"验证码发送失败：{str(exc)[:160]}",
+        }
     return {
         "ok": True,
         "codeSent": True,
         "message": "验证码已发送，请查收邮件",
         # 没配邮件服务时把码带回来，否则自部署的人第一步就卡死。
-        # 配了就绝不外泄（那等于把验证码这道关直接拆掉）。
+        # **配了就绝不外泄**——那等于把验证码这道关直接拆掉。
         **({"devCode": code} if not delivered else {}),
     }
 
@@ -206,14 +216,19 @@ def login(email: str, password: str) -> dict[str, Any]:
 
 
 def _send_code_email(email: str, code: str) -> bool:
-    """投递验证码。返回是否真的发出去了。
+    """投递验证码。返回**是否真的发出去了**。
 
-    现在只打日志——真实投递要接 SMTP/服务商，那是独立的一件事。**返回 False 时
-    上层会把验证码带回响应**，这样没配邮件服务也能自部署跑通；一旦接了真投递，
-    这里返回 True，验证码就不再出现在响应里。
+    见 services/mailer：console / smtp / resend 三种模式，环境变量与 Node 侧
+    那套（server/auth/email-mailer.ts）同名，部署配一次两边都认。
 
-    这个降级是显式的：宁可让自部署的人看见"码在响应里"，也不要做成
-    "看起来发了、其实没发"。
+    ⚠️ 返回 False（= 没真发）时上层会把验证码带回响应，这是给**没配邮件服务的
+    自部署**用的，否则注册第一步就卡死。所以：**配了服务商却投递失败时必须抛，
+    不能返回 False**——那会把验证码公开，比没配服务商更糟。mailer.send_login_code
+    已经保证了这个契约，这里只负责不把异常吞掉。
     """
-    print(f"[auth] 邮箱验证码（未配置邮件服务，仅打印）: {email} -> {code}")
-    return False
+    from services.mailer import MailerError, send_login_code
+
+    try:
+        return send_login_code(email, code, expires_minutes=ident.EMAIL_CODE_TTL_S // 60)
+    except MailerError:
+        raise
