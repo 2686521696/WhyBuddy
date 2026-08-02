@@ -49,6 +49,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { requestMountPermit } from "@/lib/mount-scheduler";
+import { captureAndUpload } from "@/lib/thumb-capture";
 import { resolveIdentityTheme } from "@/pages/sliderule/live-runtime/identity-themes";
 import {
   mergeFiveSystemModels,
@@ -483,14 +484,34 @@ const LazyAppRuntimeScreen = React.lazy(() =>
  * 两道闸串联的顺序要对：**先进视口、再排队**。反过来（先排队再看视口）会把
  * 滚动到很远处的卡也排进队里，白占许可名额。
  */
+/**
+ * 活渲染挂上之后，等多久再采集。
+ *
+ * 挂载完成 ≠ 画面就绪：echarts 要拿到容器尺寸后才画，表格与图标还有懒加载的
+ * chunk。1500ms 是照 freeform 预览截图那条已经在生产验证过的路径取的同一个数
+ * （Python 侧 _FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE 里的 waitForTimeout）。
+ * 采早了拿到的是半渲染的画面，而它会被当成"这个应用长这样"存起来——比没有更糟。
+ */
+const CAPTURE_SETTLE_MS = 1500;
+
 function LiveAppThumb({
   sessionId,
   model,
   goal,
+  captureFor,
+  device,
 }: {
   sessionId: string;
   model: FiveSystemModel;
   goal: string;
+  /**
+   * 采集回传的目标 app_id。传了就表示"这张卡是在活渲染，而这个应用还没有真
+   * 截图"——渲染稳定之后就地采一张存住，于是这次活渲染是最后一次
+   * （见 lib/thumb-capture.ts）。不传（会话卡、已经有图）就只渲染，不采集。
+   */
+  captureFor?: string | null;
+  /** 应用档位，决定采集画幅。 */
+  device?: string | null;
 }) {
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const [hiddenControls, setHiddenControls] = React.useState<HTMLDivElement | null>(null);
@@ -525,6 +546,27 @@ function LiveAppThumb({
   }, [inView]);
 
   const visible = inView && granted;
+
+  // 渲染稳定之后采一张存住（缩略图三级来源的第一级，见 lib/thumb-capture.ts）。
+  //
+  // 时机：挂上之后再等 CAPTURE_SETTLE_MS。挂载完成 ≠ 画面就绪——echarts 要一帧
+  // 去量容器再画，表格还有懒加载的 chunk。采早了会得到一张半渲染的图，而它会被
+  // 当成"这个应用长这样"存起来，比没有更糟。
+  //
+  // 卸载即取消：滚出去、改搜索、翻页都会卸载这张卡，那时候再采就是对着已经拆掉
+  // 的 DOM 采。节流与预算在 thumb-capture 里全局管，这里只管"什么时候可以采"。
+  React.useEffect(() => {
+    if (!visible || !captureFor) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled || !wrapRef.current) return;
+      void captureAndUpload({ appId: captureFor, container: wrapRef.current, device });
+    }, CAPTURE_SETTLE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [visible, captureFor, device]);
 
   return (
     <div
@@ -570,8 +612,8 @@ function LiveAppThumb({
  *
  * `?v=` 是缓存版本位，值就是摘要里的 preview_tag（后端给的"来源.写入时刻"）。
  * **不是可选的装饰**：那个响应带 immutable 强缓存，而同一个 app_id 的图是会变
- * 的——真截图是落库之后异步回填的（services/app_shot_backfill），卡片会从参照板
- * 升级成真截图。URL 不跟着变，浏览器就永远停在升级前那张。
+ * 的——真截图是事后采集回传的（lib/thumb-capture.ts），卡片会从参照板升级成
+ * 真截图。URL 不跟着变，浏览器就永远停在升级前那张。
  *
  * 记录本身仍然不可变（精修产生新 app_id），所以 id + tag 这一对确定了字节，
  * immutable 依然成立。tag 缺失（老后端）就不带——退回"URL 只按 id 变"的老行为，
@@ -586,7 +628,7 @@ export function appPreviewUrl(appId: string, tag?: string | null): string {
  * 这张卡该贴图还是走活渲染。
  *
  * 只有两个条件：是 App Store 卡（有 appId 才有图可取），且后端说它有图。
- * **不区分是哪一路的图**——e2b 真截图和参照板走的是同一个接口、同一套画幅，
+ * **不区分是哪一路的图**——真截图和参照板走的是同一个接口、同一套画幅，
  * 挑哪张是服务端的事（见 app_store 的 PREVIEW_SOURCE_PRIORITY）。前端多一个
  * 分支只会多一处要跟后端对齐的地方。
  *
@@ -610,9 +652,9 @@ export function shouldUseSheetThumb(item: {
  *
  * 服务端按可信度挑图，这个组件只管"有图就贴、拉不到就回落"：
  *
- *   ① e2b   —— E2B 沙盒里真浏览器打开这个应用截的图，**就是应用本身**。
- *              落库之后异步回填（Python 侧 services/app_shot_backfill），
- *              默认关（SLIDERULE_APP_SHOT_ENABLED），一张约 45~60s。
+ *   ① shot  —— 应用真实渲染出来之后截的图，**就是应用本身**。由前端在活渲染
+ *              那张卡上就地采集后回传（lib/thumb-capture.ts）——那次昂贵的渲染
+ *              本来就要发生，采下来存住，它就成了最后一次。
  *   ② sheet —— 生成时为了让设计 LLM 有版式可参照，让生图模型画的那张首页
  *              参照板（freeform_block._generate_overview_sheet_b64）。画的就是
  *              这个应用首页长什么样，而且钱已经付过了。落库即有。
@@ -632,8 +674,8 @@ export function shouldUseSheetThumb(item: {
  *   「永远最新、零缓存失效」——一条 generated_app 记录本身不可变（精修产生的
  *     是新 app_id，见 save_version），图跟着记录走；图本身会被回填换掉，靠
  *     URL 上的 ?v= 版本位跟上（见 appPreviewUrl）；
- *   「不用额外的存储/沙盒基建」——②这一级不新起沙盒也不新截图，用的是生成时
- *     已经产出的那张图，只多一张表。①要沙盒，所以它默认关着、且永远有②兜底。
+ *   「不用额外的存储/沙盒基建」——②用的是生成时已经产出的那张图，只多一张表；
+ *     ①用的是本来就要跑的那次活渲染，不起沙盒、不加服务，只多一个回传接口。
  *
  * fail-open 两道：摘要没有 has_preview（老记录/老后端）压根不走这条路；走了
  * 但图拉不到（记录刚被删、网络抖）→ onError 回落 fallback，也就是活渲染。
@@ -1289,11 +1331,24 @@ export function AppsWorkbench() {
           // 回落链：贴图 → 活渲染 → 占位卡。后两级就是贴图方案落地前的全部
           // 逻辑，一行没动——贴图只是插在最前面，拿不到就原样落回去。
           //
-          // 贴图这一级内部还有两路（e2b 真截图优先于参照板），但那是服务端的
-          // 事：同一个 URL、同一套画幅，这里看到的只有"有图/没图"。
+          // 贴图这一级内部还有两路（真截图优先于参照板），但那是服务端的事：
+          // 同一个 URL、同一套画幅，这里看到的只有"有图/没图"。
+          //
+          // 活渲染那一支带上 captureFor：**没有真截图的应用，在这次昂贵的渲染
+          // 上就地采一张存住**，于是这次活渲染是最后一次
+          // （见 lib/thumb-capture.ts）。已经有真截图的（preview_source==="shot"）
+          // 不再采——那正是这套东西要消灭的重复劳动。
+          const needsShot =
+            Boolean(item.appId) && item.summary?.preview_source !== "shot";
           const live =
             detail?.status === "runnable" && detail.model ? (
-              <LiveAppThumb sessionId={thumbId} model={detail.model} goal={item.goal} />
+              <LiveAppThumb
+                sessionId={thumbId}
+                model={detail.model}
+                goal={item.goal}
+                captureFor={needsShot ? item.appId : null}
+                device={item.summary?.device}
+              />
             ) : (
               <PendingAppThumb detail={detail} />
             );

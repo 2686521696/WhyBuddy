@@ -1462,18 +1462,18 @@ async def get_generated_app_preview(
     **优先级判定在这一侧**，前端不需要知道有几个来源（完整说明见 app_store 的
     PREVIEW_SOURCE_PRIORITY）：
 
-      e2b   —— E2B 沙盒里真浏览器截的图，就是应用本身；异步回填，见
-               services/app_shot_backfill
+      shot  —— 应用真实渲染出来之后截的图，就是应用本身；由前端采集后回传，
+               见下面的 POST 同名路由
       sheet —— 生成时那张首页参照板，是示意图；落库即有
       都没有 → 404，前端回落活渲染。这不是错误态，是"这条记录没这份资产"。
 
-    source 可选，指名只要某一路（"e2b" / "sheet"）。**只为排查存在**——正常
+    source 可选，指名只要某一路（"shot" / "sheet"）。**只为排查存在**——正常
     路径不传，让服务端挑。指名了但那一路没有图 → 404，不会偷偷回落到另一路，
-    否则"指名 e2b 拿到 sheet"会让排查得出反向结论。
+    否则"指名 shot 拿到 sheet"会让排查得出反向结论。
 
     强缓存：一条 generated_app 记录不可变（精修产生的是**新** app_id，见
-    save_version），第二次进应用中心连请求都不发。**但图本身是可变的**——异步
-    回填会把 sheet 换成 e2b。所以前端在 URL 上带一个 `?v={preview_tag}`
+    save_version），第二次进应用中心连请求都不发。**但图本身是可变的**——采集
+    回传会把 sheet 换成 shot。所以前端在 URL 上带一个 `?v={preview_tag}`
     （摘要里给的，来源 + 写入时刻），图一变 URL 就变，immutable 才成立。
     这里不读 v，它的全部作用就是当缓存键。
     """
@@ -1490,6 +1490,64 @@ async def get_generated_app_preview(
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
+
+
+#: 回传截图的体积上限。实测一张 1440×810、pixelRatio 2 的应用截图约 325KB；
+#: 留到 3MB 是给手机档（720×1280 更高）和复杂页面的余量。超了直接 413——
+#: 这是一张缩略图，几 MB 的东西进来只会把列表接口和 Neon 拖慢。
+_MAX_SHOT_BYTES = 3 * 1024 * 1024
+
+#: PNG 的魔数。只认 PNG：取图路由是按 image/png 回的，别的格式进来会让
+#: 浏览器拿到一个声称是 PNG 的 JPEG。
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+@router.post("/apps/{app_id}/preview")
+async def upload_generated_app_shot(
+    app_id: str,
+    request: Request,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """收前端采集到的应用真实截图（缩略图优先级的第一级）。
+
+    ## 为什么由前端采集，而不是服务端起浏览器
+
+    应用中心里**没有图的卡片本来就在活渲染**——每张卡挂一个真的
+    AppRuntimeScreen。既然那次昂贵的渲染已经发生了，就地把它采下来存住，等于
+    「这次渲染是最后一次」。服务端再起一个浏览器去渲染同一个东西是纯浪费，还要
+    背上沙盒/容器/无头浏览器那一整套运维面。
+
+    副作用是白赚的：**存量应用也会被自动补上**。老应用没有会话可供服务端打开
+    （会话不跨重启存活），但只要有人在应用中心看见过那张卡，它就有图了。
+
+    ## 幂等
+
+    同一张卡可能被多个标签页、或滚动来回时重复采集。已经有截图就直接跳过
+    （返回 stored=false），省掉一次写库和一次强缓存失效。真想换图就先删那一行。
+
+    ## 请求体
+
+    原始 PNG 字节（Content-Type: image/png）。不用 multipart / base64 JSON——
+    一张图一个请求，裸字节最省，也不给解析器留歧义。
+    """
+    _auth(x_internal_key)
+    from services import app_store
+
+    if app_store.get_app(app_id) is None:
+        raise HTTPException(404, "app not found")
+    if app_store.app_has_shot(app_id):
+        return {"stored": False, "reason": "already_has_shot"}
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "empty body")
+    if len(body) > _MAX_SHOT_BYTES:
+        raise HTTPException(413, "screenshot too large")
+    if not body.startswith(_PNG_MAGIC):
+        raise HTTPException(415, "expected a PNG")
+
+    stored = app_store.save_app_shot(app_id, body)
+    return {"stored": stored, "bytes": len(body)}
 
 
 @router.get("/apps/{root_id}/versions")

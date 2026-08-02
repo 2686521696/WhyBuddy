@@ -42,15 +42,15 @@ from config.settings import settings
 # ────────────────────────── 缩略图来源 ──────────────────────────
 #
 # 优先级链，靠前的更可信（完整说明见 AppStoreBackend 的缩略图小节）：
-#   e2b   —— 真浏览器打开这个应用截的图，就是应用本身
+#   shot  —— 真实渲染的截图，就是这个应用本身
 #   sheet —— 生成时那张首页参照板，是"应该长这样"的示意
 # 都没有 → 前端回落活渲染。
-PREVIEW_SOURCE_E2B = "e2b"
+PREVIEW_SOURCE_SHOT = "shot"
 PREVIEW_SOURCE_SHEET = "sheet"
 
 #: 读取顺序。get_preview(source=None) 与 preview_sources() 都按这个序走，
-#: 两处共用同一份定义——分开写就会出现"列表说有 e2b、取图却给了 sheet"。
-PREVIEW_SOURCE_PRIORITY: tuple[str, ...] = (PREVIEW_SOURCE_E2B, PREVIEW_SOURCE_SHEET)
+#: 两处共用同一份定义——分开写就会出现"列表说有 shot、取图却给了 sheet"。
+PREVIEW_SOURCE_PRIORITY: tuple[str, ...] = (PREVIEW_SOURCE_SHOT, PREVIEW_SOURCE_SHEET)
 
 
 def normalize_preview_source(source: Optional[str]) -> str:
@@ -215,16 +215,17 @@ class AppStoreBackend:
     #
     # 一个应用最多挂两张图，按可信度排：
     #
-    #   "e2b"   —— E2B 沙盒里用真浏览器打开这个应用截的图。**这就是应用本身**，
-    #              不是示意；排第一。异步回填（见 app_shot_backfill），落库那一
-    #              刻通常还没有。
+    #   "shot"  —— 应用真实渲染出来之后截的图。**这就是应用本身**，不是示意；
+    #              排第一。由前端在活渲染那张卡上就地采集后回传（见
+    #              client/src/lib/thumb-capture.ts 与 POST /apps/{id}/preview），
+    #              落库那一刻还没有，等到有人第一次看见这张卡才产生。
     #   "sheet" —— 生成时给设计 LLM 排版式用的那张首页参照板。是"应该长这样"
     #              的示意图，跟最终渲染可能有出入；排第二，但落库即有。
     #
     # 两个都没有 → 前端回落活渲染（第三级，见 AppsWorkbench.SheetThumb）。
     #
-    # 两张图**并存**而不是后者覆盖前者：e2b 那条路要 E2B key + 公网地址 + 沙盒
-    # 跑通，任何一环断了都得有东西可退。覆盖式存储在那天就只剩活渲染了。
+    # 两张图**并存**而不是后者覆盖前者：采集那条路要浏览器真把应用渲染出来，
+    # 任何一环断了都得有东西可退。覆盖式存储在那天就只剩活渲染了。
     #
     # 存储形态选的是「一行两列」，不是「(app_id, source) 复合主键两行」：
     # generated_app_preview 在生产 Neon 里已经有数据，改主键要迁移；加一列是
@@ -239,12 +240,12 @@ class AppStoreBackend:
     def get_preview(
         self, app_id: str, *, source: Optional[str] = None
     ) -> Optional[str]:  # pragma: no cover
-        """取图。source=None 表示"按优先级取最好的那张"（e2b 优先）；
+        """取图。source=None 表示"按优先级取最好的那张"（shot 优先）；
         指名 source 时只取那一张，取不到返回 None（继承逻辑要按来源分别复制）。"""
         return None
 
     def preview_sources(self) -> dict[str, str]:  # pragma: no cover
-        """app_id → 缓存标签，形如 `"e2b.1754140000"`（来源 + 写入时刻秒数）。
+        """app_id → 缓存标签，形如 `"shot.1754140000123456"`（来源 + 写入时刻）。
 
         列表接口靠它给每条摘要打 has_preview / preview_source / preview_tag。
         只取 id、来源与时刻，**不取图**：几千个 36 字符的 id 也就百来 KB，
@@ -256,8 +257,8 @@ class AppStoreBackend:
         上一轮改动的性能收益所在）。前端把这个标签拼进 URL 的 `?v=`，图一变
         URL 就变，强缓存才成立。而"图变了"有两种，只认来源会漏掉第二种：
 
-          ① sheet → e2b：异步回填把更可信的那张补上了，来源变了；
-          ② e2b → e2b：新版本先继承了上一版的 e2b 图，随后自己的回填到了。
+          ① sheet → shot：采集把更可信的那张补上了，来源变了；
+          ② shot → shot：新版本先继承了上一版的截图，随后自己的采集到了。
              **来源一个字没变，字节全变了。**
 
         时刻位把 ② 也盖住了：save_preview 每次都刷 created_at。
@@ -356,7 +357,7 @@ class JsonFileAppStore(AppStoreBackend):
             if len(remaining) == len(rows):
                 return False
             self._write(remaining)
-            # 两个来源各是一个文件，都要清——只清 sheet 会留下孤儿 e2b 图，
+            # 两个来源各是一个文件，都要清——只清 sheet 会留下孤儿截图，
             # 而 preview_sources 是按目录 glob 的，那张孤儿图会让已删除的应用
             # 在列表里继续显示 has_preview。
             for src in PREVIEW_SOURCE_PRIORITY:
@@ -380,8 +381,8 @@ class JsonFileAppStore(AppStoreBackend):
         # app id 是 uuid4().hex，不含路径分隔符；仍然过一道白名单，避免将来
         # 有人换了 id 生成方式就把这里变成路径穿越。
         safe = "".join(c for c in str(app_id) if c.isalnum() or c in "-_")[:64]
-        # sheet 保持 `{id}.png` 这个老文件名——已经落盘的图不用搬家；e2b 另起
-        # `{id}.e2b.png`。两者同目录，preview_sources 一次 glob 就能分辨。
+        # sheet 保持 `{id}.png` 这个老文件名——已经落盘的图不用搬家；shot 另起
+        # `{id}.shot.png`。两者同目录，preview_sources 一次 glob 就能分辨。
         suffix = "" if source == PREVIEW_SOURCE_SHEET else f".{source}"
         return self._preview_dir() / f"{safe or 'unknown'}{suffix}.png"
 
@@ -420,7 +421,7 @@ class JsonFileAppStore(AppStoreBackend):
         best: dict[str, tuple[str, float]] = {}
         for path in paths:
             stem = path.name[: -len(".png")]
-            # `{id}.e2b` → e2b；`{id}` → sheet。id 本身不含 "."（白名单只留
+            # `{id}.shot` → shot；`{id}` → sheet。id 本身不含 "."（白名单只留
             # 字母数字与 -_），所以这个切分是无歧义的。
             app_id, _, suffix = stem.partition(".")
             src = normalize_preview_source(suffix) if suffix else PREVIEW_SOURCE_SHEET
@@ -539,9 +540,9 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
         #: sheet 来源（生成时那张首页参照板）。列名保持不变——生产 Neon 里
         #: 已经有数据，改名就是一次数据迁移。
         png_b64 = Column(Text, default="")
-        #: e2b 来源（真浏览器截的图）。新增列，老库靠下面的 _ensure_columns
+        #: shot 来源（真实渲染的截图）。新增列，老库靠下面的就地 ALTER
         #: 就地补上；补不上时读到的就是 None，等同"没有这张图"。
-        e2b_png_b64 = Column(Text, nullable=True)
+        shot_png_b64 = Column(Text, nullable=True)
         created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # 连接超时收短 + 先做一次 2s TCP 探针：DB 不可达（网络封端口/连接串错/
@@ -575,7 +576,7 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
     Base.metadata.create_all(engine)
 
     # create_all **只建不改**：表已经存在时它一列都不会补。generated_app_preview
-    # 在生产 Neon 与本地 SQLite 里都早有数据，e2b_png_b64 这个新列必须自己
+    # 在生产 Neon 与本地 SQLite 里都早有数据，shot_png_b64 这个新列必须自己
     # ALTER 上去，否则所有读写都会撞 UndefinedColumn。
     #
     # 就地补列而不是引 alembic：整个仓库没有迁移框架，为一列引一套版本表 +
@@ -591,14 +592,14 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
         from sqlalchemy import inspect as _sql_inspect, text as _sql_text
 
         _cols = {c["name"] for c in _sql_inspect(engine).get_columns("generated_app_preview")}
-        if "e2b_png_b64" not in _cols:
+        if "shot_png_b64" not in _cols:
             with engine.begin() as _conn:
                 _conn.execute(
-                    _sql_text("alter table generated_app_preview add column e2b_png_b64 text")
+                    _sql_text("alter table generated_app_preview add column shot_png_b64 text")
                 )
-            print("[app_store] generated_app_preview 补上 e2b_png_b64 列")
+            print("[app_store] generated_app_preview 补上 shot_png_b64 列")
     except Exception as exc:  # noqa: BLE001 — 补不上就当没有这个来源
-        print(f"[app_store] e2b 缩略图列补齐失败（回落 sheet 单来源）: {str(exc)[:160]}")
+        print(f"[app_store] 截图列补齐失败（回落 sheet 单来源）: {str(exc)[:160]}")
 
     class SqlAppStore(AppStoreBackend):
         def _row_from_record(self, record: dict[str, Any]) -> "GeneratedApp":
@@ -694,12 +695,12 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
             self, app_id: str, png_b64: str, *, source: str = PREVIEW_SOURCE_SHEET
         ) -> None:
             col = (
-                "e2b_png_b64"
-                if normalize_preview_source(source) == PREVIEW_SOURCE_E2B
+                "shot_png_b64"
+                if normalize_preview_source(source) == PREVIEW_SOURCE_SHOT
                 else "png_b64"
             )
             # 原地更新那一列，不再 delete + add 整行：两个来源共用一行，删行
-            # 会把另一个来源那张图一起抹掉（异步回填 e2b 时正好会撞上）。
+            # 会把另一个来源那张图一起抹掉（回传截图时正好会撞上）。
             with Session(engine) as s:
                 row = s.get(GeneratedAppPreview, app_id)
                 if row is None:
@@ -718,7 +719,7 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 [normalize_preview_source(source)] if source else list(PREVIEW_SOURCE_PRIORITY)
             )
             for src in wanted:
-                val = row.e2b_png_b64 if src == PREVIEW_SOURCE_E2B else row.png_b64
+                val = row.shot_png_b64 if src == PREVIEW_SOURCE_SHOT else row.png_b64
                 if val:
                     return val
             return None
@@ -731,17 +732,17 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 rows = s.execute(
                     select(
                         GeneratedAppPreview.app_id,
-                        GeneratedAppPreview.e2b_png_b64.isnot(None)
-                        & (GeneratedAppPreview.e2b_png_b64 != ""),
+                        GeneratedAppPreview.shot_png_b64.isnot(None)
+                        & (GeneratedAppPreview.shot_png_b64 != ""),
                         GeneratedAppPreview.png_b64.isnot(None)
                         & (GeneratedAppPreview.png_b64 != ""),
                         GeneratedAppPreview.created_at,
                     )
                 ).all()
             best: dict[str, str] = {}
-            for app_id, has_e2b, has_sheet, written in rows:
-                if has_e2b:
-                    best[str(app_id)] = preview_tag(PREVIEW_SOURCE_E2B, written)
+            for app_id, has_shot, has_sheet, written in rows:
+                if has_shot:
+                    best[str(app_id)] = preview_tag(PREVIEW_SOURCE_SHOT, written)
                 elif has_sheet:
                     best[str(app_id)] = preview_tag(PREVIEW_SOURCE_SHEET, written)
             return best
@@ -937,11 +938,11 @@ class NeonHttpAppStore(AppStoreBackend):
             )
             """
         )
-        # 一行两列、e2b 优先（理由见 AppStoreBackend 的缩略图小节）。老库靠
+        # 一行两列、shot 优先（理由见 AppStoreBackend 的缩略图小节）。老库靠
         # 这一句就地补列——上面那句 `create table if not exists` 对已存在的表
         # 什么都不做，新列不会自己长出来。补不上就当没有这个来源，读到 NULL
         # 等同"没图"，回落 sheet。
-        self._q("alter table generated_app_preview add column if not exists e2b_png_b64 text")
+        self._q("alter table generated_app_preview add column if not exists shot_png_b64 text")
 
     # ── 接口实现 ────────────────────────────────────────────
     def save(self, record: dict[str, Any]) -> str:
@@ -1033,12 +1034,12 @@ class NeonHttpAppStore(AppStoreBackend):
         # 只会返回 PREVIEW_SOURCE_PRIORITY 里的值，这里再映射成两个字面量之一，
         # 外部输入到不了 SQL 文本。
         col = (
-            "e2b_png_b64"
-            if normalize_preview_source(source) == PREVIEW_SOURCE_E2B
+            "shot_png_b64"
+            if normalize_preview_source(source) == PREVIEW_SOURCE_SHOT
             else "png_b64"
         )
         # 只更新自己那一列：两个来源共用一行，`do update set` 把两列都写一遍
-        # 会用 NULL 抹掉另一个来源那张图（异步回填 e2b 时必然撞上）。
+        # 会用 NULL 抹掉另一个来源那张图（回传截图时必然撞上）。
         self._q(
             f"insert into generated_app_preview (app_id, {col}, created_at) "
             f"values ($1, $2, $3) on conflict (app_id) do update set "
@@ -1048,7 +1049,7 @@ class NeonHttpAppStore(AppStoreBackend):
 
     def get_preview(self, app_id: str, *, source: Optional[str] = None) -> Optional[str]:
         rows = self._q(
-            "select e2b_png_b64, png_b64 from generated_app_preview where app_id = $1",
+            "select shot_png_b64, png_b64 from generated_app_preview where app_id = $1",
             [app_id],
         )
         if not rows:
@@ -1058,7 +1059,7 @@ class NeonHttpAppStore(AppStoreBackend):
             [normalize_preview_source(source)] if source else list(PREVIEW_SOURCE_PRIORITY)
         )
         for src in wanted:
-            b64 = row.get("e2b_png_b64" if src == PREVIEW_SOURCE_E2B else "png_b64")
+            b64 = row.get("shot_png_b64" if src == PREVIEW_SOURCE_SHOT else "png_b64")
             if isinstance(b64, str) and b64:
                 return b64
         return None
@@ -1069,7 +1070,7 @@ class NeonHttpAppStore(AppStoreBackend):
         # 只有一个 id 加两个布尔。
         rows = self._q(
             "select app_id, created_at, "
-            "(e2b_png_b64 is not null and e2b_png_b64 <> '') as has_e2b, "
+            "(shot_png_b64 is not null and shot_png_b64 <> '') as has_shot, "
             "(png_b64 is not null and png_b64 <> '') as has_sheet "
             "from generated_app_preview"
         )
@@ -1079,8 +1080,8 @@ class NeonHttpAppStore(AppStoreBackend):
             if not app_id:
                 continue
             written = r.get("created_at")
-            if r.get("has_e2b"):
-                best[str(app_id)] = preview_tag(PREVIEW_SOURCE_E2B, written)
+            if r.get("has_shot"):
+                best[str(app_id)] = preview_tag(PREVIEW_SOURCE_SHOT, written)
             elif r.get("has_sheet"):
                 best[str(app_id)] = preview_tag(PREVIEW_SOURCE_SHEET, written)
         return best
@@ -1268,10 +1269,12 @@ def _attach_preview(
     每次精修卡片都会掉回活渲染，而实际上这一版跟上一版长得基本一样，上一版那张
     图仍然是诚实的示意。
 
-    **e2b 那张单独继承**，且没有"这次新拍的"这一说：真截图是落库之后异步回填
-    的（见 app_shot_backfill），走到这里时必然还没有。继承上一版的 e2b 图是为了
-    让新版本在回填到达之前也有真图可用——它比同一条记录的参照板更接近实物，
-    回填一到就被顶掉。回填没开/失败，留着的这张也仍然比参照板可信。
+    **截图（shot）这一路不继承**，只继承参照板。理由是继承会把自己堵死：新版本
+    一旦继承了上一版的截图，"这个应用已经有截图了"就成立，采集端便不会再为它采
+    一张——而这一版跟上一版恰恰是长得不一样的（模型变了才会开新版本）。
+
+    不继承也不会掉回活渲染：参照板继承仍在，卡片始终有图可贴。代价只是新版本在
+    第一次被人看到之前，显示的是示意图而不是实拍——而那本来就是它该有的样子。
     """
     b64 = png_b64
     if not b64 and inherit_from:
@@ -1280,38 +1283,43 @@ def _attach_preview(
         except Exception as exc:  # noqa: BLE001 — 缩略图是增强项
             print(f"[app_store] 缩略图继承失败（不影响落库）: {str(exc)[:160]}")
             b64 = None
-    if b64:
-        try:
-            backend.save_preview(app_id, b64, source=PREVIEW_SOURCE_SHEET)
-        except Exception as exc:  # noqa: BLE001 — 同上
-            print(f"[app_store] 缩略图写入失败（不影响落库）: {str(exc)[:160]}")
-    if not inherit_from:
+    if not b64:
         return
     try:
-        e2b = backend.get_preview(inherit_from, source=PREVIEW_SOURCE_E2B)
-        if e2b:
-            backend.save_preview(app_id, e2b, source=PREVIEW_SOURCE_E2B)
+        backend.save_preview(app_id, b64, source=PREVIEW_SOURCE_SHEET)
     except Exception as exc:  # noqa: BLE001 — 同上
-        print(f"[app_store] e2b 缩略图继承失败（不影响落库）: {str(exc)[:160]}")
+        print(f"[app_store] 缩略图写入失败（不影响落库）: {str(exc)[:160]}")
 
 
 def save_app_shot(app_id: str, png_bytes: bytes) -> bool:
-    """把一张 E2B 真截图挂到已落库的应用上（异步回填的落点）。
+    """把一张真实渲染的截图挂到已落库的应用上（采集回传的落点）。
 
-    独立于 _attach_preview：那条路跑在落库事务旁边、参数是"这次生成产出的
-    参照板"；这条路是几十秒之后从另一个线程回来的，只认 app_id。
+    独立于 _attach_preview：那条路跑在落库事务旁边、参数是"这次生成产出的参照
+    板"；这条路是之后由前端回传的，只认 app_id。
 
-    fail-open 返回 bool 而不是抛：调用方是后台线程，抛出去没人接，而"回填没
-    成功"的正确表现就是卡片继续用参照板。
+    fail-open 返回 bool 而不是抛：截图是增强项，写不进去的正确表现是卡片继续用
+    参照板，而不是让回传接口 500。
     """
     if not png_bytes:
         return False
     try:
         b64 = base64.b64encode(png_bytes).decode("ascii")
-        get_backend().save_preview(app_id, b64, source=PREVIEW_SOURCE_E2B)
+        get_backend().save_preview(app_id, b64, source=PREVIEW_SOURCE_SHOT)
         return True
     except Exception as exc:  # noqa: BLE001 — 缩略图是增强项
-        print(f"[app_store] e2b 缩略图回填失败: {str(exc)[:160]}")
+        print(f"[app_store] 截图写入失败: {str(exc)[:160]}")
+        return False
+
+
+def app_has_shot(app_id: str) -> bool:
+    """这个应用是不是已经有真实截图了。回传接口用它做幂等——同一张卡可能被多个
+    标签页/多次滚动同时采集，重复写只是白费带宽和一次缓存失效。
+
+    fail-open 当成"没有"：查不到就让这次回传照常写，最坏是覆盖一张同样的图。
+    """
+    try:
+        return bool(get_backend().get_preview(app_id, source=PREVIEW_SOURCE_SHOT))
+    except Exception:  # noqa: BLE001 — 缩略图是增强项
         return False
 
 
@@ -1434,7 +1442,7 @@ def get_app_preview_png(app_id: str, *, source: Optional[str] = None) -> Optiona
     """应用中心卡片缩略图的 PNG 原始字节；没有就 None（调用方 404，前端回落
     活渲染）。fail-open：存储层出问题也当成"没有图"，不把一张缩略图变成故障。
 
-    source 不传 = 按优先级取最好的那张（e2b 优先，见 PREVIEW_SOURCE_PRIORITY）。
+    source 不传 = 按优先级取最好的那张（shot 优先，见 PREVIEW_SOURCE_PRIORITY）。
     这就是应用中心走的路径——**优先级判定在服务端**，前端不需要知道有几个来源，
     它只管"有图就贴、404 就回落活渲染"。
     """
@@ -1455,7 +1463,7 @@ def _mark_previews(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """给一批摘要打上缩略图三件套——前端据此决定这张卡贴哪张图、还是活渲染。
 
       has_preview    有没有图。false → 前端回落活渲染（第三级）。
-      preview_source "e2b" / "sheet"，当前用的是哪一路。观测用，也让"这张卡
+      preview_source "shot" / "sheet"，当前用的是哪一路。观测用，也让"这张卡
                      到底贴的什么"在列表接口上直接可见，不用去翻库。
       preview_tag    拼进缩略图 URL `?v=` 的缓存版本位（见 preview_sources）。
 

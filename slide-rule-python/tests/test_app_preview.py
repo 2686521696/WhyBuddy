@@ -231,66 +231,68 @@ def test_delete_takes_the_preview_with_it(configured_store):
 
 # ────────────────────── ④ 两个来源的优先级链 ──────────────────────
 #
-# 卡片来源三级：e2b 真截图 > sheet 参照板 > 活渲染（前端 fallback）。
+# 卡片来源三级：真截图 shot > 参照板 sheet > 活渲染（前端 fallback）。
 # 前两级都落在 generated_app_preview，这一组钉住"谁赢"与"输的那张还在不在"。
 
 
-def test_e2b_shot_outranks_the_sheet(configured_store):
-    """两张都有时取图给 e2b——它是真浏览器截的这个应用，参照板只是示意。"""
+def test_shot_outranks_the_sheet(configured_store):
+    """两张都有时取图给 shot——它是真浏览器截的这个应用，参照板只是示意。"""
     app_id = store.save_app_or_version(_model(), goal="g", session_id="e1", preview_png_b64=PNG_A)
     assert store.save_app_shot(app_id, base64.b64decode(PNG_B)) is True
     assert store.get_app_preview_png(app_id) == base64.b64decode(PNG_B)
 
 
-def test_backfilling_e2b_keeps_the_sheet(configured_store):
-    """回填真截图**不能**抹掉参照板。
+def test_storing_a_shot_keeps_the_sheet(configured_store):
+    """存真截图**不能**抹掉参照板。
 
-    两张并存是这条链的兜底前提：e2b 那路要 E2B key + 公网地址 + 沙盒跑通，
+    两张并存是这条链的兜底前提：截图那路要浏览器真把应用渲染出来并采集成功，
     哪天断了得有东西可退。覆盖式存储在那天就只剩活渲染了。
     """
     app_id = store.save_app_or_version(_model(), goal="g", session_id="e2", preview_png_b64=PNG_A)
     store.save_app_shot(app_id, base64.b64decode(PNG_B))
     assert store.get_app_preview_png(app_id, source="sheet") == base64.b64decode(PNG_A)
-    assert store.get_app_preview_png(app_id, source="e2b") == base64.b64decode(PNG_B)
+    assert store.get_app_preview_png(app_id, source="shot") == base64.b64decode(PNG_B)
 
 
 def test_named_source_does_not_silently_fall_back(configured_store):
-    """指名要 e2b 而这条只有参照板 → None，不能偷偷给另一路那张。
+    """指名要 shot 而这条只有参照板 → None，不能偷偷给另一路那张。
 
-    这个接口只为排查存在，"指名 e2b 拿到 sheet"会让排查得出反向结论。
+    这个接口只为排查存在，"指名 shot 拿到 sheet"会让排查得出反向结论。
     """
     app_id = store.save_app_or_version(_model(), goal="g", session_id="e3", preview_png_b64=PNG_A)
-    assert store.get_app_preview_png(app_id, source="e2b") is None
+    assert store.get_app_preview_png(app_id, source="shot") is None
     assert store.get_app_preview_png(app_id) == base64.b64decode(PNG_A)
 
 
 def test_sheet_only_app_reports_sheet_source(configured_store):
-    """没有真截图时摘要如实报 sheet——回填还没到（或没开）是常态，不是故障。"""
+    """没有真截图时摘要如实报 sheet——还没人看过这张卡是常态，不是故障。
+
+    前端也读这个字段：只有它不等于 "shot" 的卡才会去采集（见 thumb-capture）。"""
     app_id = store.save_app_or_version(_model(), goal="g", session_id="e4", preview_png_b64=PNG_A)
     row = next(r for r in store.list_apps() if r["id"] == app_id)
     assert row["has_preview"] is True
     assert row["preview_source"] == "sheet"
 
 
-def test_preview_tag_changes_when_the_image_is_backfilled(configured_store):
-    """回填后 preview_tag 必须变——它是缩略图 URL 的 `?v=`，而那条响应带
-    immutable 强缓存。标签不变，浏览器就永远停在回填前那张图上。"""
+def test_preview_tag_changes_when_the_shot_arrives(configured_store):
+    """采到真截图之后 preview_tag 必须变——它是缩略图 URL 的 `?v=`，而那条响应
+    带 immutable 强缓存。标签不变，浏览器就永远停在升级前那张图上。"""
     app_id = store.save_app_or_version(_model(), goal="g", session_id="e5", preview_png_b64=PNG_A)
     before = next(r for r in store.list_apps() if r["id"] == app_id)["preview_tag"]
     assert before.startswith("sheet.")
 
     store.save_app_shot(app_id, base64.b64decode(PNG_B))
     after = next(r for r in store.list_apps() if r["id"] == app_id)["preview_tag"]
-    assert after.startswith("e2b.")
+    assert after.startswith("shot.")
     assert after != before
 
 
 def test_preview_tag_changes_when_the_same_source_is_rewritten(configured_store):
     """**同一个来源换了图，标签也必须变。**
 
-    这是标签里带时刻位的唯一理由，只带来源盖不住：新版本先继承上一版的 e2b 图
-    （来源 e2b），随后自己的回填到了（来源还是 e2b）——来源一个字没变，字节全
-    变了。标签不变 = immutable 缓存把浏览器钉死在继承来的那张旧图上。
+    这是标签里带时刻位的唯一理由，只带来源盖不住：同一个应用被重新采集一次
+    （那一行被删掉后重来、或将来放开覆盖），来源还是 shot，**字节却全变了**。
+    标签不变 = immutable 缓存把浏览器钉死在旧图上。
     """
     app_id = store.save_app_or_version(_model(), goal="g", session_id="e8", preview_png_b64=PNG_A)
     store.save_app_shot(app_id, base64.b64decode(PNG_A))
@@ -298,22 +300,27 @@ def test_preview_tag_changes_when_the_same_source_is_rewritten(configured_store)
 
     store.save_app_shot(app_id, base64.b64decode(PNG_B))
     after = next(r for r in store.list_apps() if r["id"] == app_id)["preview_tag"]
-    assert store.preview_source_of(before) == store.preview_source_of(after) == "e2b"
+    assert store.preview_source_of(before) == store.preview_source_of(after) == "shot"
     assert after != before, "同来源换图后标签没变，强缓存会钉死在旧图上"
 
 
-def test_new_version_inherits_both_sources_separately(configured_store):
-    """新版本要把两张图分别继承过去。
+def test_new_version_inherits_the_sheet_but_not_the_shot(configured_store):
+    """新版本继承参照板，**但不继承真截图**。
 
-    只继承"最好的那张"会让新版本丢掉参照板——随后 e2b 那路一旦不可用
-    （key 撤了、图被删），这一版就直接掉到活渲染，而它本该有参照板兜着。
+    继承截图会把自己堵死：一旦继承，"这个应用已经有截图了"就成立，采集端便不会
+    再为它采一张——而新版本恰恰是长得不一样的那个（模型变了才会开新版本），结果
+    是新版永远顶着上一版的实拍图。
+
+    不继承也不会掉回活渲染：参照板继承仍在，卡片始终有图可贴。
     """
     v1 = store.save_app_or_version(_model(), goal="g", session_id="e6", preview_png_b64=PNG_A)
     store.save_app_shot(v1, base64.b64decode(PNG_B))
     v2 = store.save_app_or_version(_model(entities=3), goal="g", session_id="e6")
     assert v2 != v1
     assert store.get_app_preview_png(v2, source="sheet") == base64.b64decode(PNG_A)
-    assert store.get_app_preview_png(v2, source="e2b") == base64.b64decode(PNG_B)
+    assert store.get_app_preview_png(v2, source="shot") is None, "新版本不该继承实拍图"
+    # 卡片仍有图可贴，只是暂时是示意图——采集端会据此为它采一张自己的
+    assert store.get_app_preview_png(v2) == base64.b64decode(PNG_A)
 
 
 def test_delete_takes_both_sources_with_it(configured_store):
@@ -324,21 +331,21 @@ def test_delete_takes_both_sources_with_it(configured_store):
     assert store.delete_app(app_id) is True
     assert store.get_app_preview_png(app_id) is None
     assert store.get_app_preview_png(app_id, source="sheet") is None
-    assert store.get_app_preview_png(app_id, source="e2b") is None
+    assert store.get_app_preview_png(app_id, source="shot") is None
     assert app_id not in store.get_backend().preview_sources()
 
 
 # ────────────────────── ⑤ 老库就地补列 ──────────────────────
 
 
-def test_existing_table_without_e2b_column_gets_migrated(tmp_path, monkeypatch):
+def test_existing_table_without_shot_column_gets_migrated(tmp_path, monkeypatch):
     """**这条是反向验证**：上面所有用例都建的是新库，`create_all` 会照模型直接
-    带上 e2b_png_b64——补列那一支根本没被跑过。
+    带上 shot_png_b64——补列那一支根本没被跑过。
 
     生产（Neon）与本地 SQLite 里 generated_app_preview 都是**已经存在且没有这
-    一列**的。create_all 只建不改，不显式 ALTER 的话所有 e2b 读写都会撞
+    一列**的。create_all 只建不改，不显式 ALTER 的话所有截图读写都会撞
     UndefinedColumn。这里手工造一张老表，再让后端初始化，钉住"列补上了 + 老数
-    据还在 + e2b 能写能读"。
+    据还在 + 截图能写能读"。
 
     顺带钉住写法：`add column if not exists` 只有 Postgres 认，SQLite 直接抛
     syntax error——所以实现走的是先 inspect 再 ALTER。
@@ -374,10 +381,91 @@ def test_existing_table_without_e2b_column_gets_migrated(tmp_path, monkeypatch):
         # 老数据没被动过
         assert backend.get_preview("legacy-app", source="sheet") == "SEVMTE8="
         # 新列真的补上了，能写能读，且没顶掉老图
-        backend.save_preview("legacy-app", PNG_B, source="e2b")
-        assert backend.get_preview("legacy-app", source="e2b") == PNG_B
+        backend.save_preview("legacy-app", PNG_B, source="shot")
+        assert backend.get_preview("legacy-app", source="shot") == PNG_B
         assert backend.get_preview("legacy-app", source="sheet") == "SEVMTE8="
-        assert backend.get_preview("legacy-app") == PNG_B  # 优先级：e2b 赢
-        assert store.preview_source_of(backend.preview_sources()["legacy-app"]) == "e2b"
+        assert backend.get_preview("legacy-app") == PNG_B  # 优先级：shot 赢
+        assert store.preview_source_of(backend.preview_sources()["legacy-app"]) == "shot"
     finally:
         store.reset_backend_cache()
+
+
+# ────────────────────── ⑥ 截图回传接口 ──────────────────────
+#
+# 真截图由前端在活渲染那张卡上就地采集后 POST 回来（见
+# client/src/lib/thumb-capture.ts）。这一组盯的是这个入口的守门。
+
+
+@pytest.fixture
+def api_client(configured_store):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from routes.sliderule_full import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/sliderule")
+    return TestClient(app)
+
+
+_PNG = b"\x89PNG\r\n\x1a\n" + b"X" * 64
+
+
+def test_upload_stores_the_shot_and_it_wins(api_client):
+    """回传的截图存进 shot 槽，并顶掉参照板成为取图默认。"""
+    app_id = store.save_app_or_version(_model(), goal="g", session_id="u1", preview_png_b64=PNG_A)
+    res = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=_PNG,
+                          headers={"content-type": "image/png"})
+    assert res.status_code == 200 and res.json()["stored"] is True
+    assert store.get_app_preview_png(app_id) == _PNG
+    # 参照板还在
+    assert store.get_app_preview_png(app_id, source="sheet") == base64.b64decode(PNG_A)
+
+
+def test_upload_is_idempotent(api_client):
+    """已经有截图就跳过。同一张卡可能被多个标签页/来回滚动重复采集——重复写只是
+    白费带宽，还会平白让 immutable 缓存失效一次。"""
+    app_id = store.save_app_or_version(_model(), goal="g", session_id="u2", preview_png_b64=PNG_A)
+    first = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=_PNG,
+                            headers={"content-type": "image/png"})
+    assert first.json()["stored"] is True
+    second = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=b"\x89PNG\r\n\x1a\nY" * 8,
+                             headers={"content-type": "image/png"})
+    assert second.status_code == 200 and second.json()["stored"] is False
+    assert store.get_app_preview_png(app_id) == _PNG, "第二次不该覆盖"
+
+
+def test_upload_rejects_non_png(api_client):
+    """只认 PNG。取图路由是按 image/png 回的，别的格式进来会让浏览器拿到一个
+    声称是 PNG 的 JPEG。"""
+    app_id = store.save_app_or_version(_model(), goal="g", session_id="u3")
+    res = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=b"\xff\xd8\xff" + b"J" * 64,
+                          headers={"content-type": "image/png"})
+    assert res.status_code == 415
+    assert store.get_app_preview_png(app_id) is None
+
+
+def test_upload_rejects_oversized(api_client):
+    """体积上限：这是一张缩略图，几 MB 的东西进来只会把列表接口和库拖慢。"""
+    from routes import sliderule_full
+
+    app_id = store.save_app_or_version(_model(), goal="g", session_id="u4")
+    big = b"\x89PNG\r\n\x1a\n" + b"X" * (sliderule_full._MAX_SHOT_BYTES + 1)
+    res = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=big,
+                          headers={"content-type": "image/png"})
+    assert res.status_code == 413
+    assert store.get_app_preview_png(app_id) is None
+
+
+def test_upload_rejects_unknown_app(api_client):
+    """认不出的 app_id 直接 404——不然这个接口就成了任人往库里塞图的入口。"""
+    res = api_client.post("/api/sliderule/apps/does-not-exist/preview", content=_PNG,
+                          headers={"content-type": "image/png"})
+    assert res.status_code == 404
+
+
+def test_upload_rejects_empty_body(api_client):
+    app_id = store.save_app_or_version(_model(), goal="g", session_id="u5")
+    res = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=b"",
+                          headers={"content-type": "image/png"})
+    assert res.status_code == 400
