@@ -97,13 +97,13 @@ Enter an idea → **one coffee’s worth of real multi-loop deliberation, every 
 
 ### What it is / is not
 
-| SlideRule **is** | SlideRule **is not** |
-| :--------------- | :------------------- |
-| A **product rehearsal engine** (intent → gated plan → previewable app) | A pure **code agent** (Devin / Cursor-style repo labor) |
-| A **business-structure generator** (data · RBAC · workflow · pages · AIGC) | A **chatbot / workflow builder** alone (Dify / n8n) |
-| A **trust-first** system: gates, evidence, fail-closed tools | An unconstrained “vibe UI” generator with no publish bar |
+| SlideRule **is**                                                           | SlideRule **is not**                                     |
+| :------------------------------------------------------------------------- | :------------------------------------------------------- |
+| A **product rehearsal engine** (intent → gated plan → previewable app)     | A pure **code agent** (Devin / Cursor-style repo labor)  |
+| A **business-structure generator** (data · RBAC · workflow · pages · AIGC) | A **chatbot / workflow builder** alone (Dify / n8n)      |
+| A **trust-first** system: gates, evidence, fail-closed tools               | An unconstrained “vibe UI” generator with no publish bar |
 
-Closest mental models people use: *“v0/Lovable for the generation surface, Power Platform–like business structure, Manus-like long deliberation — ending in a gated app model, not a git repo.”*
+Closest mental models people use: _“v0/Lovable for the generation surface, Power Platform–like business structure, Manus-like long deliberation — ending in a gated app model, not a git repo.”_
 
 ---
 
@@ -162,13 +162,13 @@ flowchart LR
 
 What makes it different from “an LLM with a long prompt”:
 
-| Mechanism | What it does |
-| :-------- | :----------- |
-| **Evidence trust gate** | Every artifact passes structural + grounding gates before it earns `gated_pass`; failures re-ask with validator errors |
-| **Evidence context pipeline** | Downstream reasoning is fed **only gated** upstream artifacts, priority-packed under budget with honest omission notes |
-| **Publish closure** | Ships only when all six skills (dataModel · RBAC · workflow · page · AIGC · appBundle) hold evidence — otherwise parks at AWAIT |
-| **Real tools** | `web.search` and `code.run` (E2B sandbox, fail-closed without a key) via an MCP-style registry |
-| **Blind-judged upgrades** | Engine changes ship with paired blind evals (A/B, position-swapped) — e.g. agentic pick 4:0, evidence pipeline 2:0 |
+| Mechanism                     | What it does                                                                                                                    |
+| :---------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| **Evidence trust gate**       | Every artifact passes structural + grounding gates before it earns `gated_pass`; failures re-ask with validator errors          |
+| **Evidence context pipeline** | Downstream reasoning is fed **only gated** upstream artifacts, priority-packed under budget with honest omission notes          |
+| **Publish closure**           | Ships only when all six skills (dataModel · RBAC · workflow · page · AIGC · appBundle) hold evidence — otherwise parks at AWAIT |
+| **Real tools**                | `web.search` and `code.run` (E2B sandbox, fail-closed without a key) via an MCP-style registry                                  |
+| **Blind-judged upgrades**     | Engine changes ship with paired blind evals (A/B, position-swapped) — e.g. agentic pick 4:0, evidence pipeline 2:0              |
 
 Deep dives: [V5.7 architecture (Chinese)](<./docs/SlideRule V5.7 架构图.md>) · [five-system generation eval](./docs/five-system-generation-eval.md) · [live-runtime blueprint](./docs/LIVE_SYSTEMS_BLUEPRINT.md)
 
@@ -178,10 +178,10 @@ Deep dives: [V5.7 architecture (Chinese)](<./docs/SlideRule V5.7 架构图.md>) 
 
 The rehearsed model is not just diagrams — **the browser renders it into an operable system**. The five-system JSON is the schema: zero backend, zero database for the runtime preview.
 
-| | |
-| --- | --- |
-| <img src="./docs/assets/live-runtime/home.png" alt="Studio home" /> <br/> <sub>Studio home — brand sidebar, session gallery, guided examples</sub> | <img src="./docs/assets/live-runtime/xray.png" alt="X-ray cursor panel" /> <br/> <sub>**X-ray cursor (游标)** — hover any element and read five-system declarations: fields, roles, workflow nodes</sub> |
-| <img src="./docs/assets/live-runtime/workflow-live.png" alt="Live workflow graph" /> <br/> <sub>**Live workflow** — role-colored nodes; running instances light up their current node</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="Runnable app, Pro shell" /> <br/> <sub>**Run the app** — Pro shell from the model: charts, tables, forms, approvals</sub> |
+|                                                                                                                                                                                             |                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <img src="./docs/assets/live-runtime/home.png" alt="Studio home" /> <br/> <sub>Studio home — brand sidebar, session gallery, guided examples</sub>                                          | <img src="./docs/assets/live-runtime/xray.png" alt="X-ray cursor panel" /> <br/> <sub>**X-ray cursor (游标)** — hover any element and read five-system declarations: fields, roles, workflow nodes</sub> |
+| <img src="./docs/assets/live-runtime/workflow-live.png" alt="Live workflow graph" /> <br/> <sub>**Live workflow** — role-colored nodes; running instances light up their current node</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="Runnable app, Pro shell" /> <br/> <sub>**Run the app** — Pro shell from the model: charts, tables, forms, approvals</sub>                         |
 
 After a topic closes (all state in the browser, per-session):
 
@@ -289,11 +289,11 @@ Setup and package layout: [`skills/README.md`](./skills/README.md).
 
 > Every rehearsal is shareable content. The first three are live in the [static demo](https://xiaojilele-glitch.github.io/WhyBuddy/agent-loop/workbench) — captured from real end-to-end engine runs.
 
-| 💬 Input | 📦 Output |
-| :------- | :-------- |
-| "Community pet-clinic booking & triage system" | Six-skill playback · 6/6 publish closure · runnable booking/triage app |
-| "Second-hand instrument consignment & appraisal" | Closed rehearsal · consignment ledger, appraisal workbench, listing calendar, compliance audit |
-| "Script-murder venue scheduling & party matching" | Closed rehearsal · session board, store calendars, sign-up & carpool grouping |
+| 💬 Input                                            | 📦 Output                                                                                      |
+| :-------------------------------------------------- | :--------------------------------------------------------------------------------------------- |
+| "Community pet-clinic booking & triage system"      | Six-skill playback · 6/6 publish closure · runnable booking/triage app                         |
+| "Second-hand instrument consignment & appraisal"    | Closed rehearsal · consignment ledger, appraisal workbench, listing calendar, compliance audit |
+| "Script-murder venue scheduling & party matching"   | Closed rehearsal · session board, store calendars, sign-up & carpool grouping                  |
 | "Procurement approval with field-level permissions" | Five-system model · approval state machine · RBAC field locks · risk & counter-evidence report |
 
 ---
@@ -308,29 +308,29 @@ Historical: [V5.6](<./docs/SlideRule V5.6 架构图.md>) · [V5.5](<./docs/Slide
 
 ## 🛠️ Tech Stack
 
-| Layer | Technology |
-| :---- | :--------- |
+| Layer    | Technology                                                                           |
+| :------- | :----------------------------------------------------------------------------------- |
 | Frontend | React 19 · Vite · TypeScript · Tailwind · streamdown / assistant-ui · Three.js (R3F) |
-| Server | Express · Socket.IO · TypeScript (thin proxy to the Python engine) |
-| Engine | Python 3.11 · FastAPI · deterministic gates + LLM capability pool |
-| AI | OpenAI-compatible APIs (any provider) · BYOK in the browser |
-| Tools | `web.search` · `code.run` (E2B) via MCP-style registry |
-| Testing | Vitest · pytest · Playwright browser smokes · fast-check (PBT) |
-| Storage | JSON session store · MySQL 8 (accounts) · IndexedDB (browser) |
-| Deploy | Docker Compose · GitHub Pages static demo · GitHub Actions gate |
+| Server   | Express · Socket.IO · TypeScript (thin proxy to the Python engine)                   |
+| Engine   | Python 3.11 · FastAPI · deterministic gates + LLM capability pool                    |
+| AI       | OpenAI-compatible APIs (any provider) · BYOK in the browser                          |
+| Tools    | `web.search` · `code.run` (E2B) via MCP-style registry                               |
+| Testing  | Vitest · pytest · Playwright browser smokes · fast-check (PBT)                       |
+| Storage  | JSON session store · MySQL 8 (accounts) · IndexedDB (browser)                        |
+| Deploy   | Docker Compose · GitHub Pages static demo · GitHub Actions gate                      |
 
 ---
 
 ## 📊 Project Scale
 
-| Metric | Count |
-| :----- | ----: |
-| Project files | 8,194 |
-| TypeScript/TSX files | 2,926 |
-| TypeScript lines | 835,305 |
-| Python lines | 92,137 |
-| Test files | 1,322 |
-| Spec directories | 316 |
+| Metric               |   Count |
+| :------------------- | ------: |
+| Project files        |   8,194 |
+| TypeScript/TSX files |   2,926 |
+| TypeScript lines     | 835,305 |
+| Python lines         |  92,137 |
+| Test files           |   1,322 |
+| Spec directories     |     316 |
 
 ---
 
@@ -338,19 +338,19 @@ Historical: [V5.6](<./docs/SlideRule V5.6 架构图.md>) · [V5.5](<./docs/Slide
 
 These tools solve **different jobs**. The table is not “we replace them all” — it shows where the rehearsal main line is unique.
 
-| Capability | Agent frameworks<br/>(CrewAI / LangGraph) | Workflow builders<br/>(Dify / n8n) | **SlideRule** |
-| :--------- | :----------------------------------------: | :--------------------------------: | :-----------: |
-| Open source | ✅ | ✅ | ✅ |
-| Multi-agent / long orchestration | ✅ | ⚠️ | ✅ |
-| One sentence → **product structure** (data · RBAC · flow · pages) | ❌ | ❌ | ✅ |
-| Spec package (requirements · design · tasks · traceability) | ❌ | ❌ | ✅ |
-| **Evidence-gated publish closure** | ❌ | ❌ | ✅ |
-| Rehearsed model **runs as an app** in the browser | ❌ | ❌ | ✅ |
-| Replay, audit, human park / re-enter | ⚠️ | ⚠️ | ✅ |
-| Sandboxed code tools | ⚠️ | ⚠️ | ✅ |
-| Browser-only demo (zero install) | ❌ | ❌ | ✅ |
+| Capability                                                        | Agent frameworks<br/>(CrewAI / LangGraph) | Workflow builders<br/>(Dify / n8n) | **SlideRule** |
+| :---------------------------------------------------------------- | :---------------------------------------: | :--------------------------------: | :-----------: |
+| Open source                                                       |                    ✅                     |                 ✅                 |      ✅       |
+| Multi-agent / long orchestration                                  |                    ✅                     |                 ⚠️                 |      ✅       |
+| One sentence → **product structure** (data · RBAC · flow · pages) |                    ❌                     |                 ❌                 |      ✅       |
+| Spec package (requirements · design · tasks · traceability)       |                    ❌                     |                 ❌                 |      ✅       |
+| **Evidence-gated publish closure**                                |                    ❌                     |                 ❌                 |      ✅       |
+| Rehearsed model **runs as an app** in the browser                 |                    ❌                     |                 ❌                 |      ✅       |
+| Replay, audit, human park / re-enter                              |                    ⚠️                     |                 ⚠️                 |      ✅       |
+| Sandboxed code tools                                              |                    ⚠️                     |                 ⚠️                 |      ✅       |
+| Browser-only demo (zero install)                                  |                    ❌                     |                 ❌                 |      ✅       |
 
-For generation UX people often compare **v0 / Lovable / Bolt**; for long visible deliberation, **Manus-class agents**; for enterprise app structure, **Power Platform / low-code**. SlideRule’s bet is the **intersection**: *rehearse the business system under gates, then run the model — not only emit code or a chat bot.*
+For generation UX people often compare **v0 / Lovable / Bolt**; for long visible deliberation, **Manus-class agents**; for enterprise app structure, **Power Platform / low-code**. SlideRule’s bet is the **intersection**: _rehearse the business system under gates, then run the model — not only emit code or a chat bot._
 
 ---
 
