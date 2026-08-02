@@ -347,3 +347,149 @@ def test_neon_error_fields_cover_official_driver_list():
     }
     assert official <= set(store._NEON_ERROR_FIELDS)
     assert "neon:retryable" in store._NEON_ERROR_FIELDS
+
+
+# ────────────────────── Neon 事故（2026-08-02）的三层守卫 ──────────────────────
+#
+# 事故形状：切回 Neon 后 Python 单 worker 被堵死，/api/health 一起超时。
+# 三个原因叠加，各配一条守卫：
+#   ① fail-open 只兜异常、不兜"卡住"        → 服务端超时 + 墙钟预算
+#   ② 初始化每一步各开一条连接              → 合并成一次握手
+#   ③ async 路由里同步调库，单 worker       → to_thread（在路由那侧断言）
+
+
+def test_postgres_config_sets_server_side_timeouts():
+    """**没有语句级超时 = 那套四级 fail-open 是摆设。**
+
+    降级全靠 except 触发，而一条永远不返回的查询什么都不抛。connect_timeout
+    只管握手，连上之后想跑多久跑多久——线上就是这么被堵死的。
+    """
+    connect_args, _ = store._sql_engine_config(
+        "postgresql+psycopg://u:p@ep-x-pooler.neon.tech/db?sslmode=require", _FakeNullPool
+    )
+    opts = connect_args.get("options") or ""
+    assert f"statement_timeout={store._PG_STATEMENT_TIMEOUT_MS}" in opts
+    # 等锁超时是给 DDL 的：ALTER TABLE 要 ACCESS EXCLUSIVE，撞上任何一个正在读
+    # 这张表的连接就会无限等，那正是把单 worker 堵死的形状。
+    assert f"lock_timeout={store._PG_LOCK_TIMEOUT_MS}" in opts
+    assert f"idle_in_transaction_session_timeout={store._PG_IDLE_TX_TIMEOUT_MS}" in opts
+
+
+def test_connection_string_options_are_never_clobbered():
+    """连接串自带 options 时不许覆盖——Neon 用 `options=endpoint%3D...` 做端点
+    路由，盖掉就连错库了。宁可这一条没有服务端超时（还有墙钟预算兜底），也不能
+    改坏路由。"""
+    connect_args, _ = store._sql_engine_config(
+        "postgresql+psycopg://u:p@ep-x.neon.tech/db?options=endpoint%3Dep-x", _FakeNullPool
+    )
+    assert "options" not in connect_args
+
+
+def test_sqlite_gets_no_postgres_timeouts():
+    """SQLite 不认 postgres 的 options，塞进去会连不上。"""
+    connect_args, _ = store._sql_engine_config("sqlite:///x.db", _FakeNullPool)
+    assert "options" not in connect_args
+
+
+def test_slow_remote_init_degrades_instead_of_hanging(tmp_path, monkeypatch):
+    """**初始化卡住时必须降级，不能吊死。**
+
+    这是事故的核心：存储层承诺"绝不拖垮主链路"，但那个承诺只覆盖了"失败"，
+    没覆盖"不返回"。这条用例模拟一个永远不返回的初始化，断言 get_backend 在
+    预算内放弃并落到本地 SQLite——而不是一直等下去。
+    """
+    started = __import__("threading").Event()
+    real_factory = store._sqlalchemy_backend
+
+    # **只拦远端那一个 URL**：_local_sqlite_backend 走的是同一个工厂函数，
+    # 一刀切地替换会让降级目标也卡住——本地兜底那一步没有预算保护，于是整条
+    # 用例挂死。第一版就是这么写的，被自己挂住了。
+    def blocks_only_the_remote(url):
+        if "invalid.internal" in url:
+            started.set()
+            __import__("threading").Event().wait()  # 永远不返回
+        return real_factory(url)
+
+    monkeypatch.setattr(store, "_sqlalchemy_backend", blocks_only_the_remote)
+    monkeypatch.setattr(store, "_SQL_INIT_BUDGET_S", 0.5)
+    # 刻意用**非 Neon** 主机：*.neon.tech 会让降级链先去试 SQL-over-HTTP，
+    # 那是一次真实网络请求，会把这条用例的耗时变成网络超时而不是预算。
+    monkeypatch.setattr(
+        store.settings, "APP_STORE_DATABASE_URL",
+        "postgresql://u:p@db.invalid.internal:5432/x?sslmode=require",
+    )
+    monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    monkeypatch.setattr(
+        store.settings, "APP_STORE_LOCAL_SQLITE", f"sqlite:///{tmp_path / 'local.db'}"
+    )
+    store.reset_backend_cache()
+
+    import time as _t
+
+    t0 = _t.time()
+    backend = store.get_backend()
+    elapsed = _t.time() - t0
+
+    assert started.is_set(), "初始化根本没被调用，这条用例是空过的"
+    assert elapsed < 5, f"没有在预算内放弃，等了 {elapsed:.1f}s"
+    assert type(backend).__name__ == "SqlAppStore", "应当降级到本地 SQLite"
+    store.reset_backend_cache()
+
+
+def test_remote_init_opens_one_connection_not_three(monkeypatch):
+    """建表 + 查列 + 补列**共用一条连接**。
+
+    NullPool 下每次 engine 级操作都是新建连接。平时无所谓，但线上撞到的正是
+    "每次连接都慢"（Neon pooler 多地址 × connect_timeout=4s），连接次数在这条
+    路径上是直接乘上去的成本。这条按源码钉住，因为真连库测不了。
+    """
+    import inspect as _inspect
+
+    src = _inspect.getsource(store._sqlalchemy_backend)
+    body = src[src.index("engine = create_engine"):src.index("class SqlAppStore")]
+    # 只允许出现一次 engine 级的连接获取
+    assert body.count("engine.begin()") == 1, "初始化里不止一次 engine.begin()"
+    assert "create_all(_init_conn)" in body, "create_all 没有复用那条连接"
+    assert "_sql_inspect(_init_conn)" in body, "查列没有复用那条连接"
+    assert "_sql_inspect(engine)" not in body, "查列又开了一条新连接"
+
+
+def test_hung_init_thread_never_blocks_process_exit():
+    """**卡住的初始化线程必须是 daemon。**
+
+    第一版用 ThreadPoolExecutor + future.result(timeout=…)，被这条抓了：它的
+    工作线程是非守护线程，而 concurrent.futures 注册了 atexit 钩子去 join 它们
+    ——卡住的线程会挡住**进程退出**。那等于把"启动卡死"换成"关停卡死"，容器停
+    不下来，部署时更难受。
+
+    这条不是风格检查：非 daemon 会让整个测试进程在收集完后挂死（实测撞到过）。
+    """
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocks(_url):
+        started.set()
+        release.wait(timeout=30)
+        raise RuntimeError("late")
+
+    orig = store._sqlalchemy_backend
+    orig_budget = store._SQL_INIT_BUDGET_S
+    store._sqlalchemy_backend = blocks
+    store._SQL_INIT_BUDGET_S = 0.3
+    try:
+        try:
+            store._sqlalchemy_backend_within_budget("postgresql://u:p@h/db")
+        except TimeoutError:
+            pass
+        else:
+            raise AssertionError("超预算时应当抛 TimeoutError")
+        assert started.is_set(), "初始化没被调用，用例空过"
+        stuck = [t for t in threading.enumerate() if t.name == "appstore-init"]
+        assert stuck, "没找到那个卡住的线程，用例空过"
+        assert all(t.daemon for t in stuck), "初始化线程不是 daemon，会挡住进程退出"
+    finally:
+        release.set()
+        store._sqlalchemy_backend = orig
+        store._SQL_INIT_BUDGET_S = orig_budget

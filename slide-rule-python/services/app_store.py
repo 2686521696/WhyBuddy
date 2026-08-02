@@ -39,6 +39,33 @@ from typing import Any, Optional
 from config.settings import settings
 
 
+# ── Postgres 服务端超时与初始化预算（2026-08-02 线上事故修复）───────────
+#
+# 事故：切回 Neon 后 Python 单 worker 被堵死，/api/health 一起超时。这一组值
+# 是为了让"卡住"变成"抛异常"——下面那套四级 fail-open 全靠 except 触发，而一条
+# 永远不返回的查询什么都不抛，于是一级都不会降。
+
+#: 单条语句上限。正常查询是百毫秒级（最大的一次是取一张几百 KB 的缩略图），
+#: 8s 只用来兜"不正常"，不会误伤。
+_PG_STATEMENT_TIMEOUT_MS = 8_000
+#: 等锁上限。专门给 DDL——ALTER TABLE 要 ACCESS EXCLUSIVE 锁，撞上任何一个
+#: 正在读这张表的连接就会**无限等**。3s 等不到就放弃，下次启动再补。
+_PG_LOCK_TIMEOUT_MS = 3_000
+#: 事务里发呆多久自己断。防的是"连接攥着锁不放，把别人全堵住"。
+_PG_IDLE_TX_TIMEOUT_MS = 10_000
+
+#: 整个远端后端初始化的墙钟预算，超了就当这一级不可用、降到下一级。
+#:
+#: **这是最后一道防线，也是唯一不依赖库配合的一道**：上面三个超时要连上库、
+#: 且服务端认 options 才生效；连接串自带 options（Neon 用它做端点路由）时它们
+#: 压根不会被设上。而初始化本身可能在任何一步慢下来——多地址逐个重试、pooler
+#: 冷启动、驱动类型初始化。这条是纯墙钟，谁都拦得住。
+#:
+#: 12s 的来历：连接握手上限 4s，初始化里最多两次连接（见 _sqlalchemy_backend
+#: 已经合并成一次），留一倍余量给建表与补列。
+_SQL_INIT_BUDGET_S = 12.0
+
+
 # ────────────────────────── 缩略图来源 ──────────────────────────
 #
 # 优先级链，靠前的更可信（完整说明见 AppStoreBackend 的缩略图小节）：
@@ -453,17 +480,100 @@ def _sql_engine_config(url: str, null_pool: Any) -> tuple[dict[str, Any], dict[s
       连接池（两层打架 + 长连遇 scale-to-zero 挂起变陈旧）。NullPool 每次开新
       连接、用完即还给 PgBouncer，是 SQLAlchemy 官方对"外部池"的推荐。
     - connect_timeout=4：连不上快速失败 → fail-open 回退 JSON。
+    - options 里的三个服务端超时（2026-08-02 事故修复，见下）。
+
+    ## 为什么必须有语句级超时
+
+    线上事故：切回 Neon 后 Python 单 worker 被堵死，`/api/health` 一起超时。
+    根因之一是**这套四级 fail-open 只兜异常、不兜"卡住"**——降级全靠 except
+    触发，而一条永远不返回的查询什么都不抛，于是一级都不会降。
+
+    `connect_timeout` 只管握手那一段；连上之后想跑多久跑多久。三个服务端超时
+    补的正是这一段：
+
+      statement_timeout                     单条语句上限
+      lock_timeout                          等锁上限——DDL（ALTER TABLE 要
+                                            ACCESS EXCLUSIVE）撞上别的连接时
+                                            会无限等，这条是专门给它的
+      idle_in_transaction_session_timeout   事务里发呆的连接自己断，别攥着锁
+
+    值取得比正常查询宽一个数量级（缩略图那张图几百 KB，正常也就百毫秒级），
+    只用来兜"不正常"。超时表现为异常 → 上层照常降级到下一级存储，而不是吊死。
+
+    ⚠️ 连接串自带 options 时**不覆盖**：Neon 用 `options=endpoint%3D...` 做
+    端点路由，盖掉会连错库。这种情况下放弃设超时（宁可没有，也不能改坏路由），
+    由 get_backend 的墙钟预算兜底。
     """
     connect_args: dict[str, Any] = {}
     engine_kwargs: dict[str, Any] = {"future": True}
     if url.startswith("postgresql"):
         connect_args["connect_timeout"] = 4
         connect_args["prepare_threshold"] = None
+        if "options=" not in url:
+            connect_args["options"] = (
+                f"-c statement_timeout={_PG_STATEMENT_TIMEOUT_MS}"
+                f" -c lock_timeout={_PG_LOCK_TIMEOUT_MS}"
+                f" -c idle_in_transaction_session_timeout={_PG_IDLE_TX_TIMEOUT_MS}"
+            )
         engine_kwargs["poolclass"] = null_pool
     else:
         # 本地 SQLite：无外部池，保留 pre_ping（文件库无 scale-to-zero 问题，无害）。
         engine_kwargs["pool_pre_ping"] = True
     return connect_args, engine_kwargs
+
+
+def _sqlalchemy_backend_within_budget(database_url: str) -> AppStoreBackend:
+    """给远端后端的初始化套一个墙钟预算（2026-08-02 线上事故修复）。
+
+    ## 为什么需要它
+
+    事故形状：切回 Neon 后 Python 单 worker 被堵死，`/api/health` 一起超时。
+    `get_backend` 那套四级 fail-open 全靠 `except` 触发，而**卡住不抛异常**，
+    于是一级都不会降——存储层最终还是把主链路吊死了，正是它承诺绝不做的事。
+
+    服务端超时（statement/lock/idle_in_transaction）能兜住大部分，但它们有个
+    前提：得先连上库、且服务端认 options。连接串自带 options 时（Neon 用它做
+    端点路由，不能覆盖）它们压根设不上；初始化也可能慢在连接之前——多地址逐个
+    重试、pooler 冷启动、驱动类型初始化。这条是纯墙钟，不依赖库配合。
+
+    ## 为什么是"丢弃"而不是"杀掉"
+
+    Python 杀不掉一个正在阻塞的线程。所以超预算时不去杀它，而是**放弃等待、
+    把结果丢掉**，主流程照常降级到下一级存储。被丢下的那个线程自己会结束
+    （每次连接握手有 connect_timeout=4 封顶，工作量是有界的），它只是白干一场。
+
+    这样做是安全的，因为 `_sqlalchemy_backend` 是**纯工厂**：只返回值、不写
+    任何模块级状态。晚到的结果没有任何地方可以污染。
+
+    ## 必须是 daemon 线程，不能用 ThreadPoolExecutor
+
+    第一版用的是 ThreadPoolExecutor + future.result(timeout=…)，**写完就被自己
+    的测试抓了**：它的工作线程是非守护线程，而 concurrent.futures 注册了一个
+    atexit 钩子去 join 它们。于是卡住的初始化线程会挡住**进程退出**——等于把
+    "启动卡死"换成了"关停卡死"，部署时更难受（容器停不下来）。
+
+    daemon 线程没有这个问题：解释器退出时直接丢下它，不 join。
+    """
+    import threading as _threading
+
+    box: dict[str, Any] = {}
+
+    def _run() -> None:
+        try:
+            box["value"] = _sqlalchemy_backend(database_url)
+        except BaseException as exc:  # noqa: BLE001 — 原样带回主线程再抛
+            box["error"] = exc
+
+    worker = _threading.Thread(target=_run, name="appstore-init", daemon=True)
+    worker.start()
+    worker.join(_SQL_INIT_BUDGET_S)
+    if worker.is_alive():
+        raise TimeoutError(
+            f"远端后端初始化超过 {_SQL_INIT_BUDGET_S:g}s 预算，按不可用处理"
+        )
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
 
 
 def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
@@ -573,7 +683,16 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
             finally:
                 probe.close()
     engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
-    Base.metadata.create_all(engine)
+    # 建表 + 补列**共用一条连接**（2026-08-02 事故修复）。
+    #
+    # 原来是 create_all(engine) 一条、inspect(engine) 又一条、ALTER 再一条——
+    # NullPool 下每次都是**新建连接**。平时无所谓（几十毫秒），但线上撞到的正是
+    # "每次连接都慢"：Neon pooler 解析出多个地址、psycopg 逐个试、每个
+    # connect_timeout=4s。连接次数在这条路径上是直接乘上去的成本。
+    #
+    # 合并之后整个初始化只握手一次。
+    with engine.begin() as _init_conn:
+        Base.metadata.create_all(_init_conn)
 
     # create_all **只建不改**：表已经存在时它一列都不会补。generated_app_preview
     # 在生产 Neon 与本地 SQLite 里都早有数据，shot_png_b64 这个新列必须自己
@@ -588,18 +707,25 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
     # 带这一列"时那句多余的 ALTER。
     #
     # fail-open：补不上就当没有这个来源——读到 None、等同没图，回落 sheet。
-    try:
-        from sqlalchemy import inspect as _sql_inspect, text as _sql_text
+    #
+    # 跑在上面那条 _init_conn 里，不再另开连接（理由见 create_all 那段）。
+    # 等锁上限由 lock_timeout 兜（见 _PG_LOCK_TIMEOUT_MS）：ALTER 要
+    # ACCESS EXCLUSIVE，撞上任何一个正在读这张表的连接就会无限等——那正是
+    # 把单 worker 堵死的形状。等不到就抛、被这里吞掉，下次启动再补。
+        try:
+            from sqlalchemy import inspect as _sql_inspect, text as _sql_text
 
-        _cols = {c["name"] for c in _sql_inspect(engine).get_columns("generated_app_preview")}
-        if "shot_png_b64" not in _cols:
-            with engine.begin() as _conn:
-                _conn.execute(
+            _cols = {
+                c["name"]
+                for c in _sql_inspect(_init_conn).get_columns("generated_app_preview")
+            }
+            if "shot_png_b64" not in _cols:
+                _init_conn.execute(
                     _sql_text("alter table generated_app_preview add column shot_png_b64 text")
                 )
-            print("[app_store] generated_app_preview 补上 shot_png_b64 列")
-    except Exception as exc:  # noqa: BLE001 — 补不上就当没有这个来源
-        print(f"[app_store] 截图列补齐失败（回落 sheet 单来源）: {str(exc)[:160]}")
+                print("[app_store] generated_app_preview 补上 shot_png_b64 列")
+        except Exception as exc:  # noqa: BLE001 — 补不上就当没有这个来源
+            print(f"[app_store] 截图列补齐失败（回落 sheet 单来源）: {str(exc)[:160]}")
 
     class SqlAppStore(AppStoreBackend):
         def _row_from_record(self, record: dict[str, Any]) -> "GeneratedApp":
@@ -1164,7 +1290,7 @@ def get_backend() -> AppStoreBackend:
         db_url = (settings.APP_STORE_DATABASE_URL or "").strip()
         if db_url and db_url not in _failed_db_urls:
             try:
-                _backend_instance = _sqlalchemy_backend(db_url)
+                _backend_instance = _sqlalchemy_backend_within_budget(db_url)
             except Exception as exc:  # noqa: BLE001 — 连不上/驱动缺失时诚实降级
                 tcp_err = str(exc)[:200]
                 endpoint = neon_http_endpoint(db_url)

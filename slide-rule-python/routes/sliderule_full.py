@@ -1432,20 +1432,34 @@ async def list_generated_apps(
     offset: int = 0,
     x_internal_key: Optional[str] = Header(None),
 ):
-    """应用画廊列表——默认每个应用只出最新版，摘要不含大模型载荷。"""
+    """应用画廊列表——默认每个应用只出最新版，摘要不含大模型载荷。
+
+    **同步的库调用必须 to_thread**（2026-08-02 线上事故修复）。这几条路由是
+    `async def`，而 uvicorn 只跑一个 worker、一个事件循环；直接在协程里调同步
+    的 SQLAlchemy，一次慢查询就把整个事件循环冻住——`/api/health` 与
+    `/api/agent-loop/health` 跟着一起超时，"存储层拖垮主链路"的承诺当场作废。
+    这正是切回 Neon 后线上观察到的形状。
+
+    本文件里 LLM/RAG/附件解析那几条早就是这么写的（见 asyncio.to_thread 的
+    其它调用点），app store 这几条是漏网的。
+    """
     _auth(x_internal_key)
     from services import app_store
 
-    return {"apps": app_store.list_apps(limit=limit, offset=offset)}
+    apps = await asyncio.to_thread(app_store.list_apps, limit=limit, offset=offset)
+    return {"apps": apps}
 
 
 @router.get("/apps/{app_id}")
 async def get_generated_app(app_id: str, x_internal_key: Optional[str] = Header(None)):
-    """取一个生成应用的完整记录（含 model_json，可直接重开渲染）。"""
+    """取一个生成应用的完整记录（含 model_json，可直接重开渲染）。
+
+    同步库调用走 to_thread，理由见 list_generated_apps。
+    """
     _auth(x_internal_key)
     from services import app_store
 
-    record = app_store.get_app(app_id)
+    record = await asyncio.to_thread(app_store.get_app, app_id)
     if record is None:
         raise HTTPException(404, "app not found")
     return record
@@ -1480,8 +1494,11 @@ async def get_generated_app_preview(
     _auth(x_internal_key)
     from services import app_store
 
-    png = app_store.get_app_preview_png(
-        app_id, source=app_store.normalize_preview_source(source) if source else None
+    # 同步库调用走 to_thread，理由见 list_generated_apps。
+    png = await asyncio.to_thread(
+        app_store.get_app_preview_png,
+        app_id,
+        source=app_store.normalize_preview_source(source) if source else None,
     )
     if not png:
         raise HTTPException(404, "preview not found")
@@ -1533,9 +1550,10 @@ async def upload_generated_app_shot(
     _auth(x_internal_key)
     from services import app_store
 
-    if app_store.get_app(app_id) is None:
+    # 同步库调用走 to_thread，理由见 list_generated_apps。
+    if await asyncio.to_thread(app_store.get_app, app_id) is None:
         raise HTTPException(404, "app not found")
-    if app_store.app_has_shot(app_id):
+    if await asyncio.to_thread(app_store.app_has_shot, app_id):
         return {"stored": False, "reason": "already_has_shot"}
 
     body = await request.body()
@@ -1546,7 +1564,7 @@ async def upload_generated_app_shot(
     if not body.startswith(_PNG_MAGIC):
         raise HTTPException(415, "expected a PNG")
 
-    stored = app_store.save_app_shot(app_id, body)
+    stored = await asyncio.to_thread(app_store.save_app_shot, app_id, body)
     return {"stored": stored, "bytes": len(body)}
 
 
@@ -1556,7 +1574,8 @@ async def list_generated_app_versions(root_id: str, x_internal_key: Optional[str
     _auth(x_internal_key)
     from services import app_store
 
-    return {"versions": app_store.list_versions(root_id)}
+    versions = await asyncio.to_thread(app_store.list_versions, root_id)
+    return {"versions": versions}
 
 
 @router.post("/apps/{app_id}/fork")
