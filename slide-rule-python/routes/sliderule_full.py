@@ -1492,6 +1492,7 @@ async def get_generated_app(app_id: str, x_internal_key: Optional[str] = Header(
 @router.get("/apps/{app_id}/preview")
 async def get_generated_app_preview(
     app_id: str,
+    request: Request,
     source: Optional[str] = None,
     x_internal_key: Optional[str] = Header(None),
 ):
@@ -1519,16 +1520,29 @@ async def get_generated_app_preview(
     from services import app_store
 
     # 同步库调用走 to_thread，理由见 list_generated_apps。
-    png = await asyncio.to_thread(
+    data = await asyncio.to_thread(
         app_store.get_app_preview_png,
         app_id,
         source=app_store.normalize_preview_source(source) if source else None,
     )
-    if not png:
+    if not data:
         raise HTTPException(404, "preview not found")
+
+    from services.thumb_image import client_accepts_webp, sniff_media_type, to_png
+
+    # 按内容报 Content-Type，不写死 image/png：库里存量是 PNG、新写入是 WebP，
+    # 报错类型浏览器可能拒绝渲染，CDN 也会缓存错。
+    media = sniff_media_type(data)
+    # Accept 头协商（thumbor / imgproxy / Next.js Image 同款做法）：不认 WebP 的
+    # 客户端现场转回 PNG。WebP 覆盖率 97%+，这条是给极老客户端和抓取工具留的，
+    # 不是主路径。转不动就原样给——宁可让客户端拿到一张它可能不认的图，
+    # 也不要 500。
+    if media == "image/webp" and not client_accepts_webp(request.headers.get("accept")):
+        data = await asyncio.to_thread(to_png, data)
+        media = sniff_media_type(data)
     return Response(
-        content=png,
-        media_type="image/png",
+        content=data,
+        media_type=media,
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
 
@@ -1538,9 +1552,22 @@ async def get_generated_app_preview(
 #: 这是一张缩略图，几 MB 的东西进来只会把列表接口和 Neon 拖慢。
 _MAX_SHOT_BYTES = 3 * 1024 * 1024
 
-#: PNG 的魔数。只认 PNG：取图路由是按 image/png 回的，别的格式进来会让
-#: 浏览器拿到一个声称是 PNG 的 JPEG。
-_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+#: 允许回传的图片格式。采集端出的是 WebP（见 client/src/lib/thumb-capture.ts），
+#: 但 canvas.toBlob 对不认识的 type 会静默回落成 PNG，所以两种都得收。
+#: 仍然只收这两种：取图路由按内容嗅探报 Content-Type，收进来一个声称是图片的
+#: 任意字节流只会让浏览器拿到一张渲染不出来的东西。
+_ALLOWED_SHOT_MAGIC = ("image/png", "image/webp")
+
+
+def _looks_like_image(data: bytes) -> bool:
+    """真的按魔数验一遍。
+
+    sniff_media_type 认不出时会**兜底返回 image/png**（为了让历史存量能正常
+    显示），所以它不能单独用来做入口校验——不然任意字节流都会被判成 PNG 放进来。
+    """
+    return data.startswith(b"\x89PNG\r\n\x1a\n") or (
+        data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    )
 
 
 @router.post("/apps/{app_id}/preview")
@@ -1585,8 +1612,10 @@ async def upload_generated_app_shot(
         raise HTTPException(400, "empty body")
     if len(body) > _MAX_SHOT_BYTES:
         raise HTTPException(413, "screenshot too large")
-    if not body.startswith(_PNG_MAGIC):
-        raise HTTPException(415, "expected a PNG")
+    from services.thumb_image import sniff_media_type
+
+    if sniff_media_type(body) not in _ALLOWED_SHOT_MAGIC or not _looks_like_image(body):
+        raise HTTPException(415, "expected a PNG or WebP image")
 
     stored = await asyncio.to_thread(app_store.save_app_shot, app_id, body)
     return {"stored": stored, "bytes": len(body)}

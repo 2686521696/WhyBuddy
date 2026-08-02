@@ -1463,6 +1463,13 @@ def _attach_preview(
     if not b64:
         return
     try:
+        from .thumb_image import to_webp
+
+        # 参照板来自生图 API，是 PNG base64（实测 805~857KB）。同样只存派生图。
+        # 注意：这里压的**只是留给卡片显示的那一份**——设计 LLM 用的那张参照图
+        # 走的是内存里的原始 base64，不经过这里，画质不受影响。
+        raw = base64.b64decode(b64)
+        b64 = base64.b64encode(to_webp(raw)).decode("ascii")
         backend.save_preview(app_id, b64, source=PREVIEW_SOURCE_SHEET)
     except Exception as exc:  # noqa: BLE001 — 同上
         print(f"[app_store] 缩略图写入失败（不影响落库）: {str(exc)[:160]}")
@@ -1480,7 +1487,12 @@ def save_app_shot(app_id: str, png_bytes: bytes) -> bool:
     if not png_bytes:
         return False
     try:
-        b64 = base64.b64encode(png_bytes).decode("ascii")
+        from .thumb_image import to_webp
+
+        # 存派生图而不是原图（thumbor/imgproxy 的做法，理由见 thumb_image 头注）：
+        # 实测 805KB PNG → 43KB WebP，分辨率一个像素不减。fail-open——转不动就
+        # 原样存，卡片照常显示，只是没省下带宽。
+        b64 = base64.b64encode(to_webp(png_bytes)).decode("ascii")
         get_backend().save_preview(app_id, b64, source=PREVIEW_SOURCE_SHOT)
         return True
     except Exception as exc:  # noqa: BLE001 — 缩略图是增强项

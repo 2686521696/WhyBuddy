@@ -34,3 +34,8 @@ psycopg[binary]>=3.2
 
 # P2b execution tools: code.run runs ONLY inside E2B sandbox (fail-closed without key)
 e2b-code-interpreter>=2.8.0
+
+# 缩略图编码（2026-08-02）：卡片缩略图从 PNG 换 WebP，实测 805KB → 43KB
+# （分辨率不减）。见 services/thumb_image.py。
+# 惰性导入 + fail-open：装不上时整条压缩链路静默失效、原样存 PNG，不影响功能。
+pillow>=10.4
