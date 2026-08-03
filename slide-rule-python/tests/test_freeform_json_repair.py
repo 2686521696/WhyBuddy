@@ -73,19 +73,12 @@ _REAL_CASE_DATAMODEL = {
 }
 
 
-# 这份真实样本是 blockRef 关闭（2026-08-03）之前抓的，树里带一个 ActivityFeed
-# 的 blockRef。这条用例测的是 **JSON 修复**，不是 blockRef 政策——名单空着会让
-# 它挂在校验上，测不到它真正要测的东西。所以把名单临时开回来。
-PREVIOUSLY_EMBEDDABLE = ("RankedList", "ActivityFeed", "QuickActionPanel", "WorkflowTimeline")
-
-
-@pytest.fixture
-def embedding_on(monkeypatch):
-    from services import freeform_block, schema_legal
-
-    monkeypatch.setattr(schema_legal, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
-    monkeypatch.setattr(freeform_block, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
-    return PREVIOUSLY_EMBEDDABLE
+# 样本文件（tests/data/…）是真实抓取的产物，保持原样不动——它的价值就在于
+# "这是模型真的吐出来过的东西"。它抓于 blockRef 通道删除（2026-08-03）之前，
+# 第二行第三块当时是个 ActivityFeed 的 blockRef 节点；blockRef 字段现在已经
+# 不在模型里，Pydantic 默认忽略未知字段，于是它被静默丢弃、那个节点渲染成一个
+# 普通空容器。对这条用例没有影响：它验的是 **JSON 修复**（括号错位/孤立字符
+# 之后结构还在不在），不是 blockRef 政策，所以第三块只断言"容器还在"。
 
 
 def test_synthetic_extra_brace_repaired():
@@ -129,7 +122,7 @@ def test_prune_non_dict_list_items_drops_junk_keeps_dicts():
     }
 
 
-def test_real_captured_failure_repairs_to_valid_schema(embedding_on):
+def test_real_captured_failure_repairs_to_valid_schema():
     """真实复现样本（2026-07-30，健身房会话第 4 次尝试抓到）：修复后必须
     是结构正确、能通过我们严格 Pydantic 校验的内容——不只是"能 json.loads
     了"这么低的标准。"""
@@ -143,7 +136,7 @@ def test_real_captured_failure_repairs_to_valid_schema(embedding_on):
     design = FreeformDesign.model_validate(repaired)  # 校验不过会抛 ValidationError，测试直接失败
 
     # 结构性断言：4 张 KPI 卡 + 一行两个图表卡片（各自套一层 wrapper div）+
-    # 一个 ActivityFeed，这是模型原本想表达的内容（用脚本走树核对过实际结构）。
+    # 一块逐行内容，这是模型原本想表达的内容（用脚本走树核对过实际结构）。
     root = design.root
     kpi_row, chart_row = root.children[0], root.children[1]
     assert len(kpi_row.children) == 4, "四张 KPI 卡不能被修复过程弄丢"
@@ -156,16 +149,11 @@ def test_real_captured_failure_repairs_to_valid_schema(embedding_on):
             found.extend(find_charts(c))
         return found
 
-    def find_block_refs(node):
-        found = []
-        if node.blockRef:
-            found.append(node.blockRef.type)
-        for c in node.children or []:
-            found.extend(find_block_refs(c))
-        return found
-
     assert find_charts(chart_row) == ["line", "donut"], "两个图表的顺序/类型不能因为修复而错位"
-    assert "ActivityFeed" in find_block_refs(chart_row)
+    # 第二行原本是"两个图表 + 一块逐行内容"三块。逐行内容那块当年用的 blockRef
+    # 已随通道删除（见文件头说明），但**容器本身**必须还在——修复过程弄丢一整块
+    # 内容正是这条用例要防的事。
+    assert len(chart_row.children) == 3, "第二行的三块内容不能被修复过程弄丢"
 
 
 def test_garbage_input_returns_none_not_a_guess():

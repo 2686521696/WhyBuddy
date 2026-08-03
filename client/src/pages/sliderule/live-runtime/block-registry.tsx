@@ -118,17 +118,23 @@ export interface FreeformChartSpec {
   metricLabel: string;
 }
 /**
- * 把一个现成积木摆进 freeform 设计树（2026-07-29）。
+ * 逐行真实数据（2026-08-03）——排行榜/动态流/最近记录这类"一行一行"的内容。
  *
- * freeform 的 dataRef 只能取聚合值，画不了逐行记录（排行榜/动态流）。与其
- * 让它硬画出一个空表头，不如让它挑一个积木、决定摆在哪占多大，渲染仍走那个
- * 积木经过测试的真渲染器。Python 侧 Pydantic 已按目录的 bindingSchema 深校验
- * 过，这里照 chart 的规矩再自查一遍——不单方面信任上游。
+ * 取代了此前的 blockRef（从固定积木清单里挑一个摆进来）。blockRef 存在的
+ * 唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容；但固定积木长什么
+ * 样由组件写死，参照图上的版式落不了地。现在把逐行能力直接补给设计模型：
+ * **版式它自由画，数据我们喂真的**，固定积木那条通道整体删除。
+ *
+ * 声明这个字段的节点是列表容器，它的 children 是**一行**的模板，按取到的
+ * 行数重复渲染；模板里带 fieldRef 的节点替换成那一行的真实值。
  */
-export interface FreeformBlockRef {
-  type: string;
-  binding?: Record<string, unknown>;
-  props?: Record<string, unknown>;
+export interface FreeformRowsRef {
+  entityRef: string;
+  /** 模板里允许读取的字段白名单（Python 侧强制非空并逐个校验存在）。 */
+  fieldRefs: string[];
+  sortByRef?: string;
+  order?: "asc" | "desc";
+  limit?: number;
 }
 
 export interface FreeformNode {
@@ -138,7 +144,9 @@ export interface FreeformNode {
   iconRef?: string;
   dataRef?: FreeformDataRef;
   chart?: FreeformChartSpec;
-  blockRef?: FreeformBlockRef;
+  rowsRef?: FreeformRowsRef;
+  /** 取当前行的字段值——只在 rowsRef 子树内有意义。 */
+  fieldRef?: string;
   children?: FreeformNode[];
 }
 
@@ -602,48 +610,64 @@ function renderFreeformChart(
   );
 }
 
-/**
- * 可嵌积木白名单——从目录的 freeformEmbeddable 派生（Puck DropZone 的 allow
- * 语义：allow 设了就只放行名单内的，见 packages/core/lib/data/
- * is-component-allowed.ts）。改目录一处，Python 校验 / prompt / 这里三处同步。
- */
-const FREEFORM_EMBEDDABLE_BLOCK_TYPES = new Set(
-  EXPERIENCE_BLOCK_CATALOG.blocks
-    .filter(entry => (entry as { freeformEmbeddable?: boolean }).freeformEmbeddable)
-    .map(entry => entry.type)
-);
+/** rowsRef 单次取行上限——与 Python 侧 ROWS_REF_MAX_LIMIT 同值。
+ *
+ * Python 那边 Pydantic 已经夹过一次，这里是纵深防御第二道：持久化快照恢复
+ * 走的是渲染这条路，不再过 Pydantic，老快照或手工改过的数据一样能进来。 */
+export const ROWS_REF_MAX_LIMIT = 20;
+export const ROWS_REF_DEFAULT_LIMIT = 5;
 
 /**
- * blockRef 节点 → 真实积木渲染。
+ * rowsRef → 真实行数据（排序 + 截断）。
  *
- * 二次校验跟 renderFreeformChart 同一套纪律（不单方面信任 Python 端已经查过）：
- * 类型必须在白名单内、必须有登记的渲染器。任一条不满足就不渲染这个节点，
- * 交回上层显示诚实占位——绝不能因为一个引用坏了让整页设计降级。
- *
- * 走的是 ExperienceBlockBoundary，跟 page.blocks 完全同一条渲染路径：同一个
- * 组件、同一套主题 token、同一份空态文案。这正是这个机制的意义——嵌进来的
- * 积木不是"另画一个像它的东西"，就是它本身。
+ * 跟 computeDataRefText 同一套诚实原则：查不到实体就返回空数组，让上层如实
+ * 显示空态，绝不编造占位行——"这一行看起来像真的但其实是假的"比空着更糟。
  */
-function renderFreeformBlockRef(
-  ref: FreeformBlockRef | undefined,
-  props: ExperienceBlockRendererProps,
-  key: React.Key
-): React.ReactNode {
-  if (!ref || typeof ref !== "object") return null;
-  const type = String(ref.type ?? "").trim();
-  if (!FREEFORM_EMBEDDABLE_BLOCK_TYPES.has(type)) return null;
-  if (!experienceBlockEntry(type)) return null;
-  const instance: ExperienceBlockInstance = {
-    id: `freeform-block-${key}`,
-    type,
-    binding: (ref.binding ?? {}) as ExperienceBlockInstance["binding"],
-    props: (ref.props ?? {}) as ExperienceBlockInstance["props"],
-  };
-  return (
-    <div key={key} data-testid="freeform-block-ref" data-block-type={type}>
-      <ExperienceBlockBoundary {...props} block={instance} />
-    </div>
+function resolveRowsRef(
+  rowsRef: FreeformRowsRef | undefined,
+  entityRows: Record<string, RuntimeRow[]> | undefined
+): RuntimeRow[] {
+  if (!rowsRef || typeof rowsRef !== "object") return [];
+  const rows = (entityRows ?? {})[rowsRef.entityRef];
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const limit = Math.max(
+    1,
+    Math.min(
+      ROWS_REF_MAX_LIMIT,
+      Number.isFinite(rowsRef.limit) ? Number(rowsRef.limit) : ROWS_REF_DEFAULT_LIMIT
+    )
   );
+  const sortBy = rowsRef.sortByRef;
+  if (!sortBy) return rows.slice(0, limit);
+  // 不给的字段/不可比的值一律沉底，保持排序稳定——排序键缺失时保持原顺序，
+  // 不让"没有这个字段的行"随机跳到榜首。
+  const dir = rowsRef.order === "asc" ? 1 : -1;
+  const keyed = rows.map((row, i) => ({ row, i, v: row.values?.[sortBy] }));
+  keyed.sort((a, b) => {
+    const an = Number(a.v);
+    const bn = Number(b.v);
+    const aNum = Number.isFinite(an);
+    const bNum = Number.isFinite(bn);
+    if (aNum && bNum && an !== bn) return (an - bn) * dir;
+    if (!aNum || !bNum) {
+      const as = a.v == null ? "" : String(a.v);
+      const bs = b.v == null ? "" : String(b.v);
+      if (as !== bs) return as.localeCompare(bs, "zh-CN") * dir;
+    }
+    return a.i - b.i;
+  });
+  return keyed.slice(0, limit).map(k => k.row);
+}
+
+/** 一个单元格的显示值。空/不可读一律显「—」，跟 dataRef 算不出来时同一个记号。 */
+function formatRowCell(value: unknown): string {
+  if (value == null || value === "") return "—";
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toLocaleString("zh-CN") : "—";
+  }
+  if (typeof value === "boolean") return value ? "是" : "否";
+  const s = String(value);
+  return s.trim() === "" ? "—" : s;
 }
 
 /** dataRef 聚合 → 真实数字（2026-07-24 修复真实撞到的坑）：dataRef 之前
@@ -771,14 +795,20 @@ interface FreeformRenderBudget {
  * 渲染 freeform 子树需要的全套上下文。
  *
  * 2026-07-29 从三个散参（entityRows / chartPalette / enumOptionsOf）改成一个
- * 对象：blockRef 节点要把**完整的区块渲染 props** 转交给
- * ExperienceBlockBoundary（onAction / workflow / pageActions 一个都不能少），
- * 继续加散参会让这个函数的位置参数上到十个，漏传一个又是一次
+ * 对象：继续加散参会让这个函数的位置参数上到十个，漏传一个又是一次
  * "类型全绿、真跑没效果"（enumOptionsOf 刚这么栽过）。
  */
 interface FreeformRenderCtx {
-  /** 转交给嵌入积木的完整 props（block 字段由 blockRef 现场填） */
+  /** 区块渲染 props（entityRows / chartPalette / enumOptionsOf 等都在里面） */
   blockProps: ExperienceBlockRendererProps;
+  /**
+   * 当前行——只在 rowsRef 展开出来的那棵子树里有值（2026-08-03）。
+   * fieldRef 节点从这里取值；不在 rowsRef 内时是 undefined，fieldRef 渲染成
+   * 「—」而不是崩掉（Python 侧已经拦过作用域外的 fieldRef，这里是第二道）。
+   */
+  row?: RuntimeRow;
+  /** 当前行允许读取的字段白名单，同上，来自最近一层 rowsRef.fieldRefs。 */
+  rowFields?: ReadonlySet<string>;
 }
 
 function renderFreeformNode(
@@ -808,18 +838,45 @@ function renderFreeformNode(
   const chartNode = n.chart
     ? renderFreeformChart(n.chart, entityRows, chartPalette, enumOptionsOf, "chart")
     : null;
-  // blockRef 与 chart 同级：都是"这个节点的内容交给别人渲染"。
-  // chart 交给 ECharts，blockRef 交给积木自己的渲染器。
-  const blockRefNode = n.blockRef
-    ? renderFreeformBlockRef(n.blockRef, ctx.blockProps, "blockRef")
-    : null;
-  // chart / blockRef 节点接管这块区域的内容，不再渲染 children/text（跟 Python
-  // 侧 prompt 的约定一致：挂了这两个字段的节点不该再塞 children 进来自己画）。
-  const children = chartNode || blockRefNode
+  // rowsRef：这个节点是列表容器，children 是**一行**的模板，按真实行数重复。
+  // 展开发生在这里（渲染期）而不是设计树里——模板只写一次，所以设计树不会
+  // 因为行数多而变大；重复出来的节点照样逐个扣 budget，行数再多也吃不穿预算。
+  const rowsNode = (() => {
+    if (!n.rowsRef) return null;
+    const rows = resolveRowsRef(n.rowsRef, entityRows);
+    // 一行都没有时如实空着，交给设计里自己写的空态文案/上层占位——绝不
+    // 编造占位行冒充真实数据（同 computeDataRefText 的诚实原则）。
+    if (rows.length === 0) return null;
+    const template = Array.isArray(n.children) ? n.children : [];
+    const fields: ReadonlySet<string> = new Set(
+      Array.isArray(n.rowsRef.fieldRefs) ? n.rowsRef.fieldRefs : []
+    );
+    return rows.map((row, ri) =>
+      template.map((child, ci) =>
+        renderFreeformNode(
+          child,
+          `r${ri}-${ci}`,
+          { ...ctx, row, rowFields: fields },
+          depth + 1,
+          budget
+        )
+      )
+    );
+  })();
+  // chart / rowsRef 节点接管这块区域的内容，不再走普通 children 渲染（跟
+  // Python 侧 prompt 的约定一致：挂了这两个字段的节点不自己另画一套）。
+  //
+  // ⚠ rowsRef 判定看的是**字段在不在**，不是 rowsNode 有没有值：一行数据都
+  // 取不到时 rowsNode 是 null，若在这里 fall through 去渲染 children，等于把
+  // "一行的模板"当普通内容画一遍——屏幕上出现一条所有字段都是「—」的行，
+  // 看着像真有这么一条记录。那正是这次要消灭的东西，所以空数据时渲染成空。
+  const children = chartNode
     ? []
-    : (Array.isArray(n.children) ? n.children : []).map((child, i) =>
-        renderFreeformNode(child, i, ctx, depth + 1, budget)
-      );
+    : n.rowsRef
+      ? (rowsNode ?? [])
+      : (Array.isArray(n.children) ? n.children : []).map((child, i) =>
+          renderFreeformNode(child, i, ctx, depth + 1, budget)
+        );
   // dataRef 声明了 aggregate 就是"这是个数字承诺"——现算不出来（实体在
   // entityRows 里查不到/avg 没有合法数值行）也不能退回 LLM 写的 text 掩盖
   // 过去，如实显示「—」，跟别处"暂无数据"占位是同一套诚实原则。
@@ -832,6 +889,17 @@ function renderFreeformNode(
   const trendNode =
     dataRefText && dataRefText !== "—"
       ? renderDataRefTrend(n.dataRef, entityRows, chartPalette)
+      : null;
+  // fieldRef → 当前行的真实字段值。跟 dataRefText 同一个位置、同一套纪律：
+  // 取不到就是「—」，不回落 LLM 写的 text 假装有值。
+  //
+  // 白名单在这里再查一遍（Python 侧 FreeformDesign 已经拦过一次）：快照恢复
+  // 走渲染这条路，不再过 Pydantic，声明外的字段不能因为换了条路就读得到。
+  const fieldRefText =
+    typeof n.fieldRef === "string"
+      ? ctx.row && ctx.rowFields?.has(n.fieldRef)
+        ? formatRowCell(ctx.row.values?.[n.fieldRef])
+        : "—"
       : null;
   return React.createElement(
     tag,
@@ -850,10 +918,9 @@ function renderFreeformNode(
         {icon}
       </span>
     ) : null,
-    dataRefText ?? (typeof n.text === "string" ? n.text : null),
+    fieldRefText ?? dataRefText ?? (typeof n.text === "string" ? n.text : null),
     trendNode,
     chartNode,
-    blockRefNode,
     ...children
   );
 }

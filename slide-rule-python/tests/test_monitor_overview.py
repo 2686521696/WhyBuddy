@@ -29,24 +29,12 @@ from services.freeform_block import (  # noqa: E402
 )
 
 
-# ── blockRef 关闭之后（2026-08-03 用户裁决：首页只 LLM 生成，先不要固定组件）
+# ── 逐行内容：由设计模型自己画（2026-08-03）
 #
-# 目录里 freeformEmbeddable 全部置 False，于是这份 brief 不再列出任何"逐行
-# 内容/成品积木"清单——列了也没用，blockRef 会被 Pydantic 拒收，等于制造必然
-# 失败的 reask。下面凡是断言"清单在"的用例，都得先把名单临时开回来；机制没
-# 删，测试就得继续守着，将来翻回 true 时才有护栏。
-
-PREVIOUSLY_EMBEDDABLE = ("RankedList", "ActivityFeed", "QuickActionPanel", "WorkflowTimeline")
-
-
-@pytest.fixture
-def embedding_on(monkeypatch):
-    """把可嵌名单临时开回关闭前的那四个。两个模块各持一份引用，都要打。"""
-    from services import freeform_block, schema_legal
-
-    monkeypatch.setattr(schema_legal, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
-    monkeypatch.setattr(freeform_block, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
-    return PREVIOUSLY_EMBEDDABLE
+# blockRef（从固定积木清单里挑一个嵌进设计树）整条通道已删除。逐行内容改由
+# 设计模型用 rowsRef 自己画——版式它定，真实行数据由渲染端绑。所以这份 brief
+# 仍然要列出"这一页有哪些逐行内容"，只是措辞从"照抄这段 blockRef JSON"变成
+# 业务语言描述（实体 + 排序字段），具体长什么样交给模型按参照图决定。
 
 
 def _datamodel():
@@ -105,126 +93,24 @@ def test_design_brief_covers_stats_and_charts():
     assert "状态" in brief
 
 
-def test_design_brief_excludes_rankings_and_feeds():
-    """rankings/feeds 不进「必须包含」清单——身份是"可摆的积木"，不是"必须画的内容"。
+def test_design_brief_lists_row_content_outside_the_mandatory_section():
+    """rankings/feeds 不进「必须包含」清单，但要作为**可画的逐行内容**列出来。
 
-    2026-07-29 语义分成了两层，这条断言也跟着分层：
-    - **不在**必须清单里：dataRef 表达不了逐行记录，把它们写成"必须画出来"
-      只会逼模型画空表身（这一条没变，是这个函数原本的用意）；
-    - **在**可选的 blockRef 候选清单里：见下一个用例。
+    两层语义（2026-08-03 起）：
+    - **不在**必须清单里：必须画的只有 KPI 与图表，逐行内容看参照图有没有；
+    - **在**逐行内容清单里：模型得知道这一页有哪些一行一行的东西可画、
+      数据绑哪个实体哪个字段，否则它只能瞎猜或干脆不画。
     """
     brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
-    required_section = brief.split("这一页还声明了下面这些")[0]
+    required_section = brief.split("这一页还有下面这些")[0]
     assert "金额排行" not in required_section
     assert "工单动态" not in required_section
-
-
-def test_design_brief_offers_row_content_as_blockref_candidates(embedding_on):
-    """逐行内容以**现成绑定**的形式给出来，模型照抄就能摆。
-
-    第一版只写了一句泛泛的"适合的话就摆一个"，真跑生成出来 blockRef 一个都
-    没有——模型压根不知道这一页有哪些逐行内容可摆（必须清单里刻意只放了
-    stats/charts）。补上具体清单和现成 binding 之后，同一个模型立刻摆了两个。
-    """
-    brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
-    assert "这一页还声明了下面这些" in brief
-    # 给的是可直接照抄的 blockRef 形状，不是自然语言描述
-    assert '"type": "RankedList"' in brief
-    assert '"type": "ActivityFeed"' in brief
-    assert '"entityRef": "order"' in brief
-    assert '"sortByRef": "amount"' in brief
-
-
-def test_design_brief_dedupes_row_content_candidates(embedding_on):
-    """同一份逐行内容常被 feeds 和 blocks 各声明一遍（真跑逮到过）——
-    喂给模型之前先按内容指纹去重，否则等于让它把同一张卡摆两次。"""
-    page = _monitor_page()
-    page["blocks"] = [
-        {
-            "id": "dup_feed",
-            "type": "ActivityFeed",
-            # 与 feeds[0] 绑定逐字段相同，只有 id/名字不同
-            "binding": {"entityRef": "ticket", "timeFieldRef": "created_at"},
-        }
-    ]
-    brief = _monitor_overview_design_brief(page, _datamodel())
-    candidates = [l for l in brief.split("\n") if l.startswith("- ")]
-    assert sum(1 for l in candidates if "ActivityFeed" in l) == 1, candidates
-
-
-def test_brief_stops_offering_blocks_once_the_allowlist_is_empty():
-    """默认状态（2026-08-03 起）：brief 里一个积木都不提。
-
-    这条钉的是**两个受众一起收口**：
-
-    · 设计 LLM 那份如果还留着"用 blockRef 摆进版式"，模型会照做，然后被
-      Pydantic 拒收、进 reask、三次烧完降级回固定骨架——比不改还差。
-    · 生图那份如果还留着"画一条流程阶段条"，参照板就会承诺真实渲染兑现不了
-      的东西，正好加大"参考图和实际渲染差很远"这个已知落差。
-
-    页面 fixture 本身声明了 rankings/feeds/blocks，所以这条不是空跑：清单
-    有东西可列，是代码选择了不列。
-    """
-    page, dm = _monitor_page(), _datamodel()
-    assert page.get("rankings") or page.get("feeds") or page.get("blocks")
-
-    design = _monitor_overview_design_brief(page, dm)
-    assert "blockRef" not in design
-    assert "逐行内容" not in design
-    assert "成品积木" not in design
-
-    image = _monitor_overview_design_brief(page, dm, audience="image")
-    assert "排行榜" not in image
-    assert "流程阶段条" not in image
-
-    # KPI 与图表这两份"必须包含"清单不受影响——这次关的是积木，不是内容。
-    assert "必须包含的 KPI 统计卡" in design
-    assert "必须包含的图表" in design
-
-
-def test_design_brief_points_row_content_at_blockref(embedding_on):
-    """2026-07-29：这里原来断言的是一句硬禁令「不要画排行榜/动态流」。
-
-    禁令本身没错（模型确实画不了逐行），但代价是那些内容被赶到设计之外
-    单独渲染成外挂卡，首页变成"AI 设计区 + 两张外挂卡"，主次和留白都由不得
-    设计者。有了 blockRef 之后语义改成：逐行内容仍然不由它画，但**由它决定
-    摆在哪、占多大**，渲染交给积木自己的真渲染器。所以断言从"不许"改成
-    "指向 blockRef"。
-    """
-    brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
-    assert "blockRef" in brief
-    # 仍然要拦住"自己用 CSS 画"这条歧路
-    assert "不要自己用 CSS 去画这类内容" in brief
-
-
-def test_design_brief_frames_blocks_as_a_real_choice(embedding_on):
-    """安置语义在 2026-08-01 反转过两次，这条用例记录最终形态与理由。
-
-    ① 最初是**许可式**："如果这一页还适合……就摆一个……用不上就完全不用"。
-    ② 当天改成**祈使式**："不是备选项，你必须全部安置"。理由是：不安置并不能
-       让积木消失，它只会掉到设计区外面的固定骨架里，主次和留白由不得设计者。
-    ③ 当天再次反转回**备选语义**——②的问题在于，它把一个架构缺陷固化成了对
-       模型的命令。"这一页用不用得上这个积木"本来就该由设计者判断，而它是链路
-       上信息最全的一环（刚把整页版式排完）；声明这些积木的五系统生成反而信息
-       更少。真正该修的是"不摆没有出口"，不是逼它全摆。
-
-    所以现在：积木是备选项，**不摆 = 真的移除**（见 _prune_unplaced_blocks）。
-    锁死两件事：说明白是备选、且说明白不摆的真实后果——否则那是一次没有信息
-    的取舍。②那句"不会消失"必须已撤，它描述的是旧行为。
-    """
-    brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
-    assert "会被移除" in brief
-    assert "不会消失" not in brief
-    assert "用不上就完全不用" not in brief
-
-    # ④ 作用域必须咬死在积木上（2026-08-01 真跑修）。上一版写"上面列出的积木
-    # 是备选项……别为了凑齐而硬塞"，而"上面"之上还有"必须包含的 KPI/图表"清单
-    # 与"不能遗漏任何一项"——两句字面冲突，模型把 KPI/图表也当成了可选：一轮
-    # 真跑声明 3 个 KPI + 3 张图表，设计只画出 1 个数字、0 张图表。
-    assert "不在取舍范围内" in brief
-    assert "KPI 与图表照单全画" in brief
-    # 可选项要指名道姓，不能靠"上面列出的"这种相对指代
-    assert "可选的只有这几个积木" in brief
+    # 但在逐行内容那一段里要出现，并且给出数据来源
+    assert "金额排行" in brief and "工单动态" in brief
+    assert "rowsRef" in brief
+    # 用业务语言给数据来源，不再是可照抄的 blockRef JSON
+    assert '"type": "RankedList"' not in brief
+    assert "blockRef" not in brief
 
 
 def test_choice_scope_never_swallows_the_mandatory_lists():
@@ -449,7 +335,7 @@ def test_facts_carry_only_what_the_model_cannot_derive():
     for banned in (
         "顶部一行", "最多 2 张图", "多列横向排布",     # 版式处方
         "20XX-XX-XX", "138-", "一个真实数据都不许出现",  # 占位写法
-        "技术标识", "blockRef",                        # 技术标识禁令
+        "技术标识", "rowsRef",                         # 技术标识禁令
         "水印", "画面撑满画布",                        # 水印/铺满
         "信息层级必须画满", "一项都不许漏",             # 信息层级清单
         "字高", "Ant Design",                          # 密度预算 / 控件形态
@@ -516,7 +402,7 @@ def test_refine_meta_prompt_still_guards_the_two_proven_bugs():
     """
     from services.freeform_block import _SHEET_PROMPT_REFINE_SYSTEM as sys_prompt
 
-    assert "技术标识" in sys_prompt and "blockRef" in sys_prompt
+    assert "技术标识" in sys_prompt and "rowsRef" in sys_prompt
     assert "不能出现任何真实数据" in sys_prompt
     assert "占位形状" in sys_prompt
     # 版式要交给业务性质决定，且明确反掉通用后台网格
@@ -691,38 +577,6 @@ def _monitor_page_with_blocks():
     return page
 
 
-def test_brief_lists_binding_free_blocks_without_an_empty_binding(embedding_on):
-    """不吃 binding 的积木不能被拼成 "binding": {}。
-
-    QuickActionPanel 的按钮来自 page.actions、WorkflowTimeline 的节点从 workflow
-    机械派生（见目录里两者的 bindingSchema.note）。给它们摆一个空 binding，等于
-    在提示模型"这里该填点什么"，而它填什么都是错的——下游 blockRef 深校验会以
-    unknown key 拒掉，整块设计白生成一轮。
-    """
-    brief = _monitor_overview_design_brief(_monitor_page_with_blocks(), _datamodel())
-    assert '"type": "QuickActionPanel"' in brief
-    assert '"type": "WorkflowTimeline"' in brief
-    assert '"binding": {}' not in brief
-    # chainRef 是 props 不是 binding，要原样带出去，否则模型只能瞎猜画哪条链路
-    assert '"chainRef": "chain_main"' in brief
-    # 吃 binding 的那一类照旧带 binding
-    assert '"type": "ActivityFeed"' in brief
-    assert '"entityRef": "ticket"' in brief
-
-
-def test_brief_separates_row_content_from_action_and_process_blocks(embedding_on):
-    """两类积木分段写——「逐行内容」这个说法套不到动作面/流程面上。
-
-    合在一段的代价不是措辞难看：设计 LLM 是按"这是什么内容"决定放哪的，
-    把一排操作按钮说成"逐行内容"，它就会照着逐行内容的惯例塞到页面最下面。
-    """
-    brief = _monitor_overview_design_brief(_monitor_page_with_blocks(), _datamodel())
-    assert "非数据面的成品积木" in brief
-    row_section = brief.split("这一页还声明了下面这些**非数据面")[0]
-    assert "QuickActionPanel" not in row_section, "动作面不该混进逐行内容那一段"
-    assert "ActivityFeed" in row_section
-
-
 def test_generation_contract_no_longer_exempts_monitor_pages_from_blocks():
     """生成契约必须明说 monitor 页也要摆积木。
 
@@ -776,31 +630,6 @@ def test_image_audience_brief_carries_no_technical_identifiers():
         assert forbidden not in img, f"出图 brief 混进了技术标识: {forbidden}"
 
 
-def test_image_audience_brief_describes_blocks_visually(embedding_on):
-    """同一批积木要以**画得出来**的形态告诉生图模型，不能只是删掉技术形态。
-
-    只清理不补描述的话，参照板会缺掉这一页真实存在的内容，设计 LLM 拿到的
-    参照图就与它自己的 brief 对不上。
-    """
-    page = _monitor_page()
-    page["blocks"] = [
-        {"id": "acts", "type": "QuickActionPanel", "props": {"title": "常用操作"}},
-        {"id": "flow", "type": "WorkflowTimeline", "props": {}},
-    ]
-    img = _monitor_overview_design_brief(page, _datamodel(), audience="image")
-    assert "一排常用操作按钮" in img
-    assert "一条横向流程阶段条" in img
-
-
-def test_design_audience_keeps_blockref_mechanics(embedding_on):
-    """设计 LLM 那一份必须保留技术形态——它的产出要能被渲染器认出来。"""
-    page = _monitor_page()
-    page["blocks"] = [{"id": "acts", "type": "QuickActionPanel", "props": {"title": "常用操作"}}]
-    des = _monitor_overview_design_brief(page, _datamodel())
-    assert "blockRef" in des
-    assert '{"type"' in des
-
-
 # ── 设计者的否决权（2026-08-01，方案 B）────────────────────────────
 #
 # 语义：设计 LLM 没有摆进版式的可嵌积木 = 它判断这一页用不上 → 真的移除。
@@ -831,16 +660,6 @@ def _run_enrich(page, design, monkeypatch):
         "page": {"pages": [page]},
     }
     return enrich_monitor_page_overviews(model)["page"]["pages"][0]
-
-
-def test_unplaced_block_is_removed(monkeypatch, embedding_on):
-    """只摆了 QuickActionPanel → WorkflowTimeline 视为不需要，移除。"""
-    page = _run_enrich(_page_with_blocks(), _design_with("QuickActionPanel"), monkeypatch)
-    ids = [b["id"] for b in page["blocks"]]
-    assert ids == ["acts"], ids
-    # layout 里的悬空引用一并清掉，否则渲染层拿着一个不存在的 id
-    assert page["layout"]["primary"] == []
-    assert page["layout"]["summary"] == ["acts"]
 
 
 def test_all_placed_keeps_everything(monkeypatch):

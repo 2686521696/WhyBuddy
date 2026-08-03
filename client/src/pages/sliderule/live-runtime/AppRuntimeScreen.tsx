@@ -190,7 +190,6 @@ import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { FieldEditor } from "./FieldEditor";
 import {
-  collectFreeformBlockRefKeys,
   dedupeBlocksByPanelKey,
   dropLegacyPanelsCoveredByBlocks,
 } from "./page-panel-dedupe";
@@ -1338,28 +1337,21 @@ export function AppRuntimeScreen({
   const OVERVIEW_KINDS = new Set(["monitor", "dashboard"]);
   const KPI_BLOCK_TYPES = new Set(["MetricGrid", "TrendChart"]);
 
-  // 2026-07-29：设计者可以用 blockRef 把排行榜/动态流直接摆进 freeform 版式里
-  //（见 page-panel-dedupe.ts）。摆进去了，外面的脚手架和固定骨架就都不再画
-  // 同一份——否则又是一份数据两张卡，而且破坏它设计的留白节奏。
-  const freeformPlacedKeys = React.useMemo(
-    () => collectFreeformBlockRefKeys(page?.freeformOverview),
-    [page?.freeformOverview]
-  );
-
   /**
-   * 首页由 AI 设计**独占**（2026-08-03 用户裁决：「首页只 LLM 生成，先不要
-   * 固定组件」）。
+   * 总览页由 AI 设计**独占**（2026-08-03 用户裁决：「首页只由 LLM 动态设计，
+   * 参照图上有什么就设计什么，不要固定组件」）。
    *
-   * 光在后端关掉 blockRef 是不够的：那些积木仍然写在 page.blocks 里，摆不进
-   * 设计树就会掉到设计区**外面**的脚手架里照样渲染——用户看到的固定组件一个
-   * 没少，只是位置更差，还把本来就超高的版面再撑长一截（真跑量到的溢出是
-   * 790px，图表整个被裁在画布之外）。所以渲染端这一侧必须同时收口：总览页
-   * 一旦有 freeformOverview，设计树就是这一页的全部内容，脚手架和固定榜/流
-   * 都让位。
+   * 一旦这一页有 freeformOverview，设计树就是这一页的全部内容：脚手架、固定
+   * 榜/流一律让位。逐行内容不再靠固定积木补——设计模型用 rowsRef 自己画，
+   * 真实行数据由渲染端绑进去（见 block-registry.tsx 的 FreeformRowsRef）。
+   *
+   * 为什么渲染端必须也收口、光在生成端收不够：那些积木仍然写在 page.blocks
+   * 里，没被设计安置就会掉到设计区**外面**的脚手架里照样渲染——用户看到的
+   * 固定组件一个没少，只是位置更差，还把本来就超高的版面再撑长一截（真跑
+   * 量到的溢出是 790px，图表整个被裁在画布之外）。
    *
    * fail-open 不变：生成失败 → 没有 freeformOverview → 这个开关自动是 false，
-   * 一切照旧走固定骨架。真正会消失的只有"设计没安置、又确实声明了"的那些，
-   * 那正是这次裁决要去掉的东西。
+   * 一切照旧走固定骨架，页面不会因此变空。
    */
   const freeformOwnsPage =
     Boolean(page?.freeformOverview) && OVERVIEW_KINDS.has(page?.view.kind ?? "");
@@ -1489,7 +1481,7 @@ export function AppRuntimeScreen({
           .filter(b => !(OVERVIEW_KINDS.has(page.view.kind) && b.type === "FilterBar"));
         // 积木内部的自我去重：模型偶尔把同一份榜/流声明两次（见
         // page-panel-dedupe.ts 的内容指纹判定）。
-        const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks, freeformPlacedKeys);
+        const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks);
         if (dedupedBlocks.length === 0) return null;
 
         const renderBlock = (block: (typeof dedupedBlocks)[number]) => (
@@ -2696,8 +2688,7 @@ export function AppRuntimeScreen({
     page && !freeformOwnsPage
       ? dropLegacyPanelsCoveredByBlocks(
           { rankings: page.rankings, feeds: page.feeds },
-          page.experienceBlocks,
-          freeformPlacedKeys
+          page.experienceBlocks
         )
       : { rankings: [], feeds: [] };
   const monitorDynamicLists =
@@ -2828,11 +2819,19 @@ export function AppRuntimeScreen({
         // 2026-07-27：dashboard 页也吃 freeformOverview——此前只有 monitor
         // 一个 kind 走得到设计版式，LLM 把总览页写成 dashboard 时整条
         // "照参考图设计"的产出送不到页面上（首页恒回固定骨架的根因之一）。
-        // dashboard 特有的 widgetsBand（快速入口等）保留，不被设计版式吞掉。
+        //
+        // ⚠ 2026-08-03 补漏：这里原本还渲染 widgetsBand，注释写的是"dashboard
+        // 特有的快速入口保留，不被设计版式吞掉"。但 widgetsBand 渲染的其实就是
+        // page.rankings / page.feeds——跟 monitorDynamicLists 同一批榜/流，只是
+        // 数据源直接读原始字段、绕过了 dedupedLists 那道闸。于是总览页收口只在
+        // monitor 档生效（那条分支里没有 widgetsBand），dashboard 档的排行榜/
+        // 动态流照旧冒出来。真实数据里 13 个 dashboard 页有 11 个带设计版式、
+        // 其中 3 个同时带榜/流，是真会撞上的。
+        // 设计版式独占整页，这里跟着一起让位。
         <>
           {monitorFreeformOverview}
           {blockScaffold}
-          {widgetsBand}
+          {freeformOwnsPage ? null : widgetsBand}
           {monitorDynamicLists}
         </>
       ) : pageHasKpiBlocks ? (

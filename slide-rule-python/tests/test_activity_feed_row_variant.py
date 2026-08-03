@@ -9,10 +9,6 @@
 渲染端画出一列空白，而空白列跟"这条记录这个字段没填"在界面上长得一模一样。
 """
 
-import pytest
-from pydantic import ValidationError
-
-from services.freeform_block import _blockref_prompt_fragment, build_freeform_models
 from services.schema_legal import EXPERIENCE_BLOCK_BINDING_SCHEMAS, EXPERIENCE_BLOCKS
 from services.v5_model_gate import validate_five_system_model
 
@@ -42,37 +38,11 @@ DATAMODEL = {
 }
 
 
-def _validate_ref(block_ref):
-    model = build_freeform_models(DATAMODEL)
-    return model.model_validate(
-        {"root": {"tag": "div", "children": [{"tag": "div", "blockRef": block_ref}]}}
-    )
-
-
-def _feed(**binding):
-    return {
-        "type": "ActivityFeed",
-        "binding": {"entityRef": "batch", "timeFieldRef": "roasted_at", **binding},
-    }
-
-
-# ── 账本本身 ──────────────────────────────────────────────────────────
-
-
-# blockRef 自 2026-08-03 起整体关闭（用户裁决：首页只 LLM 生成，先不要固定
-# 组件），可嵌名单为空。ActivityFeed 的 row 档 / detailFieldRefs 属于 blockRef
-# 机制的一部分，机制没删，测试就继续守着——把名单临时开回来再测。
-PREVIOUSLY_EMBEDDABLE = ("RankedList", "ActivityFeed", "QuickActionPanel", "WorkflowTimeline")
-
-
-@pytest.fixture
-def embedding_on(monkeypatch):
-    """两个模块各持一份名单引用（freeform_block 在 import 时取了值），都要打。"""
-    from services import freeform_block, schema_legal
-
-    monkeypatch.setattr(schema_legal, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
-    monkeypatch.setattr(freeform_block, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
-    return PREVIOUSLY_EMBEDDABLE
+# blockRef（把现成积木嵌进 freeform 设计树）自 2026-08-03 起整体删除——逐行
+# 内容改由设计模型用 rowsRef 自己画，见 freeform_block.RowsRef。原先这里那批
+# "ActivityFeed 的 row 档 / detailFieldRefs 走 freeform 内嵌路径"的深校验用例
+# 随机制一并移除；detailFieldRefs 本身仍然有效（业务页的 page.blocks 还在用），
+# 由下面的 Gate 段守着。
 
 
 def test_catalog_declares_variant_and_detail_refs():
@@ -83,52 +53,6 @@ def test_catalog_declares_variant_and_detail_refs():
     schema = EXPERIENCE_BLOCK_BINDING_SCHEMAS["ActivityFeed"]
     assert "detailFieldRefs" in schema["optional"]
     assert schema["entityFieldRefLists"]["detailFieldRefs"]["maxItems"] == 3
-
-
-# ── blockRef 深校验（freeform 内嵌路径）────────────────────────────────
-
-
-def test_detail_field_refs_accepted(embedding_on):
-    tree = _validate_ref(_feed(detailFieldRefs=["code", "weight"]))
-    assert tree.root.children[0].blockRef.binding["detailFieldRefs"] == ["code", "weight"]
-
-
-def test_omitting_detail_field_refs_still_valid(embedding_on):
-    """窄侧栏里用时间轴档，本来就不需要明细列。"""
-    tree = _validate_ref(_feed())
-    assert "detailFieldRefs" not in tree.root.children[0].blockRef.binding
-
-
-def test_detail_field_must_exist_on_the_entity(embedding_on):
-    with pytest.raises(ValidationError) as e:
-        _validate_ref(_feed(detailFieldRefs=["code", "no_such_field"]))
-    assert "no_such_field" in str(e.value)
-
-
-def test_detail_field_from_another_entity_rejected(embedding_on):
-    """bean.origin 是真字段，但不在 batch 上——取不到这一列的值。"""
-    with pytest.raises(ValidationError) as e:
-        _validate_ref(_feed(detailFieldRefs=["origin"]))
-    assert "does not exist on entity 'batch'" in str(e.value)
-
-
-def test_detail_field_refs_must_be_an_array(embedding_on):
-    with pytest.raises(ValidationError) as e:
-        _validate_ref(_feed(detailFieldRefs="code"))
-    assert "array of field ids" in str(e.value)
-
-
-def test_detail_field_refs_capped_at_three(embedding_on):
-    with pytest.raises(ValidationError) as e:
-        _validate_ref(_feed(detailFieldRefs=["code", "weight", "status", "roasted_at"]))
-    assert "at most 3" in str(e.value)
-
-
-def test_any_field_type_allowed_as_a_detail_column(embedding_on):
-    """明细列不限类型——数字/日期/枚举都是合法的一列。"""
-    tree = _validate_ref(_feed(detailFieldRefs=["weight", "status"]))
-    assert tree.root.children[0].blockRef.binding["detailFieldRefs"] == ["weight", "status"]
-
 
 # ── Gate 校验（page.blocks 路径）───────────────────────────────────────
 
@@ -171,16 +95,3 @@ def test_gate_flags_too_many_detail_refs():
         _lib_binding(detailFieldRefs=["status", "book_id", "id", "due_date"])
     )
     assert findings and "at most 3" in findings[0]["message"]
-
-
-# ── prompt 得说得清 ───────────────────────────────────────────────────
-
-
-def test_prompt_documents_variant_and_detail_refs(embedding_on):
-    frag = _blockref_prompt_fragment()
-    assert "detailFieldRefs" in frag
-    assert "数组" in frag
-    assert "最多 3 个" in frag
-    assert "timeline/row" in frag
-    # 只加档位不加字段的话宽行只是"更空"，这条提醒必须在
-    assert "右边三分之二全是空的" in frag

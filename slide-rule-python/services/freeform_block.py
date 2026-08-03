@@ -46,7 +46,6 @@ from .schema_legal import (
     FREEFORM_ALLOWED_ICON_REFS,
     FREEFORM_ALLOWED_STYLE_PROPS,
     FREEFORM_ALLOWED_TAGS,
-    FREEFORM_EMBEDDABLE_BLOCK_TYPES,
     FREEFORM_ICON_NAME_PATTERN,
     FREEFORM_LEGACY_ICON_ALIASES,
 )
@@ -123,6 +122,14 @@ def _NUMERIC_CLAIM_RES_MATCH(text: str) -> bool:
 # 值做纵深防御第二道（持久化快照恢复也走渲染那条路径）。改值两侧要一起改。
 FREEFORM_MAX_DEPTH = 12
 FREEFORM_MAX_NODES = 300
+
+# rowsRef 单次取行数（2026-08-03）。逐行内容展开发生在渲染期，一个 rowsRef
+# 就能把 limit 份模板子树摆进页面——limit 不设上限的话，一句 "limit": 500 能
+# 直接把渲染预算（FREEFORM_MAX_NODES）吃穿、页面高度也失控。默认值按参照图上
+# 排行榜/动态流的常见长度取（5~8 条），上限给到 20 留余量。
+# 两侧同值：前端 block-registry.tsx 展开时再夹一次（纵深防御，快照恢复也走那条路）。
+ROWS_REF_DEFAULT_LIMIT = 5
+ROWS_REF_MAX_LIMIT = 20
 
 
 def _env_budget(name: str, default: int) -> int:
@@ -509,6 +516,14 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
     """
     entities, field_types = _entity_index(datamodel)
 
+    def _entity_field_ids(entity_id: str) -> list[str]:
+        """某实体的真实字段 id 列表——只用来把校验错误说清楚。
+
+        报错里带上"这个实体到底有哪些字段"，reask 一次就能改对；只说"字段
+        不存在"的话模型只能瞎猜，白烧一轮重试。"""
+        prefix = f"{entity_id}."
+        return [k[len(prefix):] for k in field_types if k.startswith(prefix)]
+
     class DataRef(BaseModel):
         """一个数字的真实来源。
 
@@ -581,6 +596,95 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
                 raise ValueError("dataRef.trendGrain 需要同时给 trendFieldRef")
             return self
 
+    class RowsRef(BaseModel):
+        """逐行真实数据的来源——「取这张表、按某字段排序、前 N 行」。
+
+        为什么要有它（2026-08-03）：dataRef 只能表达聚合值（count/sum/avg），
+        没有"枚举第 N 行"的能力。于是设计模型只要想画排行榜/动态流/最近记录
+        这类**一行一行**的内容，就只能画出表头加一片空白——这正是当初引入
+        blockRef（从固定积木清单里挑一个摆进来）的唯一原因。
+
+        但固定积木是死的：长什么样由组件写死，设计模型改不动，参照图上画的
+        版式落不了地。用户裁决「首页只由 LLM 动态设计，图上有什么就设计什么」
+        之后，正确的解法不是二选一，而是**把逐行能力补给设计模型自己**：
+        版式它自由画，数据我们负责喂真的。补上之后 blockRef 整条通道就没有
+        存在理由了，已一并删除。
+
+        ## 用法：这个节点是列表容器，它的 children 是**一行**的模板
+
+            {"tag": "div", "rowsRef": {...}, "children": [ ...一行的样子... ]}
+
+        渲染端把 children 这棵子树按取到的行数重复渲染，每行把子树里带
+        fieldRef 的节点替换成那一行的真实字段值。模板只写一次，展开发生在
+        渲染期——所以设计树本身不会因为行数多而变大，节点上限不受影响。
+
+        ## 安全边界（逐行数据比聚合数字敏感得多，这里是主要防线）
+
+        · fieldRefs 是**显式白名单**：模板里的 fieldRef 只能取这里声明过的
+          字段。不声明就读不到——避免设计模型顺手把整张表的字段拉出来。
+        · limit 夹在 1..ROWS_REF_MAX_LIMIT 之间，防止一个 rowsRef 把整表拉平
+          撑爆版面（也撑爆渲染预算）。
+        · entityRef / fieldRefs / sortByRef 全部要求在真实数据模型里存在，
+          与 dataRef 同一套判定，不另起一套。
+        """
+
+        entityRef: str
+        #: 模板里允许读取的字段白名单。至少一个，且必须真实存在。
+        fieldRefs: list[str] = Field(default_factory=list)
+        #: 排序字段（可选，不给就按数据源自然顺序）。
+        sortByRef: Optional[str] = None
+        #: asc | desc，默认 desc（榜单/动态流绝大多数是"最大/最新在前"）。
+        order: Optional[str] = None
+        #: 取前几行。
+        limit: int = ROWS_REF_DEFAULT_LIMIT
+
+        @field_validator("entityRef")
+        @classmethod
+        def check_entity(cls, v: str) -> str:
+            if v not in entities:
+                raise ValueError(
+                    f"rowsRef.entityRef '{v}' does not exist. "
+                    f"Real entities are: {list(entities.keys())}"
+                )
+            return v
+
+        @field_validator("limit")
+        @classmethod
+        def check_limit(cls, v: int) -> int:
+            if v < 1 or v > ROWS_REF_MAX_LIMIT:
+                raise ValueError(
+                    f"rowsRef.limit 必须在 1..{ROWS_REF_MAX_LIMIT} 之间（给的是 {v}）"
+                )
+            return v
+
+        @field_validator("order")
+        @classmethod
+        def check_order(cls, v: Optional[str]) -> Optional[str]:
+            if v is not None and v not in ("asc", "desc"):
+                raise ValueError("rowsRef.order must be 'asc' or 'desc'")
+            return v
+
+        @model_validator(mode="after")
+        def check_fields(self) -> "RowsRef":
+            if not self.fieldRefs:
+                raise ValueError(
+                    "rowsRef.fieldRefs 不能为空——必须先声明这一行要显示哪些字段，"
+                    "模板里的 fieldRef 只能取声明过的字段"
+                )
+            for fid in self.fieldRefs:
+                if f"{self.entityRef}.{fid}" not in field_types:
+                    raise ValueError(
+                        f"rowsRef.fieldRefs 里的 '{fid}' 在实体 '{self.entityRef}' 上"
+                        f"不存在。该实体的真实字段：{_entity_field_ids(self.entityRef)}"
+                    )
+            if self.sortByRef and f"{self.entityRef}.{self.sortByRef}" not in field_types:
+                raise ValueError(
+                    f"rowsRef.sortByRef '{self.sortByRef}' 在实体 "
+                    f"'{self.entityRef}' 上不存在。"
+                    f"该实体的真实字段：{_entity_field_ids(self.entityRef)}"
+                )
+            return self
+
     class ChartSpec(BaseModel):
         """真图表声明——不是画出来的近似值，是运行时拿真实行数据现算的
         ECharts option（复用 client 侧 build-echarts-option.ts 那套已经在用
@@ -639,137 +743,6 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
                     )
             return self
 
-    class BlockRef(BaseModel):
-        """把一个**现成的体验积木**摆进设计树里（2026-07-29）。
-
-        动机：freeform 的 dataRef 只能表达聚合值（count/sum/avg），没有"枚举
-        真实第 N 行"的能力——排行榜/动态流这类逐行内容它画不出来，真机试过
-        一次只能画出表头 + 空表身。与其让它硬画，不如让它**挑一个现成积木摆进
-        自己的版式里**，渲染仍走那个积木经过测试的真渲染器（主题联动、诚实
-        空态、真实行数据都是白送的）。
-
-        这是 chart 节点的泛化：那边是"节点上挂 chart，渲染委托给 ECharts"，
-        这边是"节点上挂 blockRef，渲染委托给 ExperienceBlockBoundary"。同一个
-        口子，从只能嵌图表放宽到能嵌名单内的任何积木。
-
-        名单语义抄 Puck 的 DropZone allow（packages/core/lib/data/
-        is-component-allowed.ts）：**allow 设了就只放行名单内的**，名单外一律
-        拒。名单从 experience_block_catalog.json 的 freeformEmbeddable 派生。
-
-        binding 的深校验直接吃目录里那份 bindingSchema——跟 Gate 校验
-        page.blocks 用的是同一本账（EXPERIENCE_BLOCK_BINDING_SCHEMAS），
-        不另写一套判定，免得两处对同一个绑定给出不同结论。
-        """
-
-        type: str
-        binding: dict[str, Any] = Field(default_factory=dict)
-        props: dict[str, Any] = Field(default_factory=dict)
-
-        @field_validator("type")
-        @classmethod
-        def check_type(cls, v: str) -> str:
-            if v not in FREEFORM_EMBEDDABLE_BLOCK_TYPES:
-                raise ValueError(
-                    f"blockRef.type '{v}' can not be embedded in a freeform design. "
-                    f"Embeddable types are: {list(FREEFORM_EMBEDDABLE_BLOCK_TYPES)}"
-                )
-            return v
-
-        @model_validator(mode="after")
-        def check_binding(self) -> "BlockRef":
-            schema = EXPERIENCE_BLOCK_BINDING_SCHEMAS.get(self.type) or {}
-            required = [str(k) for k in (schema.get("required") or [])]
-            optional = [str(k) for k in (schema.get("optional") or [])]
-            if not required and not optional:
-                # 这类积木不吃 binding（QuickActionPanel / WorkflowTimeline）。
-                if self.binding:
-                    raise ValueError(
-                        f"blockRef.type '{self.type}' does not take a binding "
-                        f"(got keys: {sorted(self.binding)})"
-                    )
-                return self
-
-            allowed = set(required) | set(optional)
-            unknown = sorted(set(self.binding) - allowed)
-            if unknown:
-                raise ValueError(
-                    f"blockRef.binding for '{self.type}' has unknown keys {unknown}. "
-                    f"Allowed: {sorted(allowed)}"
-                )
-            missing = [k for k in required if not str(self.binding.get(k) or "").strip()]
-            if missing:
-                raise ValueError(
-                    f"blockRef.binding for '{self.type}' is missing required keys {missing}"
-                )
-
-            entity_ref = str(self.binding.get("entityRef") or "").strip()
-            if entity_ref and entity_ref not in entities:
-                raise ValueError(
-                    f"blockRef.binding.entityRef '{entity_ref}' does not exist. "
-                    f"Real entities are: {list(entities.keys())}"
-                )
-            # 字段引用必须落在同一个实体上、类型对得上（date 的位置不能塞
-            # number）——判定标准与 Gate 的 _validate_block_binding 同源。
-            for ref_key, want_type in (schema.get("entityFieldRefs") or {}).items():
-                field_id = str(self.binding.get(ref_key) or "").strip()
-                if not field_id:
-                    continue
-                qualified = f"{entity_ref}.{field_id}"
-                if qualified not in field_types:
-                    raise ValueError(
-                        f"blockRef.binding.{ref_key} '{field_id}' does not exist on entity "
-                        f"'{entity_ref}'"
-                    )
-                if field_types[qualified] != want_type:
-                    raise ValueError(
-                        f"blockRef.binding.{ref_key} '{field_id}' on '{entity_ref}' is type "
-                        f"'{field_types[qualified]}', {self.type} requires a {want_type} field"
-                    )
-            # 数组型字段引用（ActivityFeed 宽行档的 detailFieldRefs）——校验口径
-            # 与 Gate 的 _validate_block_binding 同源。
-            for key, spec in (schema.get("entityFieldRefLists") or {}).items():
-                val = self.binding.get(key)
-                if val is None:
-                    continue
-                if not isinstance(val, list):
-                    raise ValueError(
-                        f"blockRef.binding.{key} must be an array of field ids, got {val!r}"
-                    )
-                cap = spec.get("maxItems")
-                if cap and len(val) > cap:
-                    raise ValueError(
-                        f"blockRef.binding.{key} accepts at most {cap} field(s), got {len(val)}"
-                    )
-                want = spec.get("fieldType")
-                for field_id in val:
-                    qualified = f"{entity_ref}.{field_id}"
-                    if qualified not in field_types:
-                        raise ValueError(
-                            f"blockRef.binding.{key} '{field_id}' does not exist on entity "
-                            f"'{entity_ref}'"
-                        )
-                    if want and field_types[qualified] != want:
-                        raise ValueError(
-                            f"blockRef.binding.{key} '{field_id}' on '{entity_ref}' is type "
-                            f"'{field_types[qualified]}', {self.type} requires a {want} field"
-                        )
-            for key, choices in (schema.get("enums") or {}).items():
-                val = self.binding.get(key)
-                if val is not None and val not in choices:
-                    raise ValueError(
-                        f"blockRef.binding.{key} '{val}' is not one of {list(choices)}"
-                    )
-            for key, bounds in (schema.get("ranges") or {}).items():
-                val = self.binding.get(key)
-                if val is None:
-                    continue
-                lo, hi = bounds[0], bounds[1]
-                if not isinstance(val, int) or isinstance(val, bool) or not (lo <= val <= hi):
-                    raise ValueError(
-                        f"blockRef.binding.{key} must be an integer in [{lo}, {hi}], got {val!r}"
-                    )
-            return self
-
     class FreeformNode(BaseModel):
         tag: str
         style: dict[str, str] = Field(default_factory=dict)
@@ -777,7 +750,11 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
         iconRef: Optional[str] = None
         dataRef: Optional[DataRef] = None
         chart: Optional[ChartSpec] = None
-        blockRef: Optional[BlockRef] = None
+        #: 逐行列表容器：children 是一行的模板，按取到的行数重复渲染。
+        rowsRef: Optional[RowsRef] = None
+        #: 取当前行的某个字段值（只在 rowsRef 子树内有意义，且必须在该
+        #: rowsRef 的 fieldRefs 白名单里——两条都由 FreeformDesign 树级校验保证）。
+        fieldRef: Optional[str] = None
         children: list["FreeformNode"] = Field(default_factory=list)
 
         @field_validator("tag")
@@ -876,6 +853,42 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
         root: FreeformNode
 
         @model_validator(mode="after")
+        def check_field_refs_scoped(self) -> "FreeformDesign":
+            """fieldRef 必须落在某个 rowsRef 的子树里，且取的字段被那个
+            rowsRef 显式声明过。
+
+            这条只能在树级做——单个节点看不到自己在谁的作用域内。两件事一起
+            管住：
+              · 作用域外的 fieldRef（没有"当前行"可言）→ 渲染期无解，直接拦下
+              · 白名单外的字段 → 逐行数据的主要防线，见 RowsRef 的说明
+            嵌套 rowsRef 时以**最近的**那个为准（同 CSS 作用域直觉），所以递归
+            时把 allowed 换成内层的白名单。
+            """
+
+            def walk(node: "FreeformNode", allowed: Optional[set[str]]) -> None:
+                scope = (
+                    set(node.rowsRef.fieldRefs) if node.rowsRef is not None else allowed
+                )
+                if node.fieldRef is not None:
+                    if scope is None:
+                        raise ValueError(
+                            f"fieldRef '{node.fieldRef}' 不在任何 rowsRef 里——"
+                            "取某一行的字段必须放在声明了 rowsRef 的列表容器内部。"
+                            "如果你要的是总数/求和这类聚合值，用 dataRef。"
+                        )
+                    if node.fieldRef not in scope:
+                        raise ValueError(
+                            f"fieldRef '{node.fieldRef}' 没有在所属 rowsRef 的 "
+                            f"fieldRefs 里声明（已声明的是 {sorted(scope)}）——"
+                            "要显示的字段必须先在 rowsRef.fieldRefs 里列出来。"
+                        )
+                for child in node.children:
+                    walk(child, scope)
+
+            walk(self.root, None)
+            return self
+
+        @model_validator(mode="after")
         def check_tree_bounds(self) -> "FreeformDesign":
             depth, nodes = _freeform_tree_bounds(self.root)
             if depth > FREEFORM_MAX_DEPTH:
@@ -893,128 +906,49 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
     return FreeformDesign
 
 
-def _aggregate_only_prompt_fragment() -> str:
-    """名单空掉时替上的口径：这一页只画聚合，不要硬画逐行记录。
+def _rows_prompt_fragment() -> str:
+    """逐行内容怎么画——rowsRef 的用法（2026-08-03）。
 
-    2026-08-03 用户裁决「首页只 LLM 生成，先不要固定组件」之后，blockRef
-    这条路整体关闭。但**不能只是把那段说明删掉就完事**——那段话原本承担
-    两件事：①给出可嵌积木清单，②告诉模型"逐行记录你画不出来"。删掉第一
-    件，第二件跟着没了，模型只会以为逐行内容可以自己画，于是画出一个表头
-    加一片空白（这正是当初引入 blockRef 的起因，见 schema_legal 里
-    FREEFORM_EMBEDDABLE_BLOCK_TYPES 的注释）。
+    取代了此前的 `_blockref_prompt_fragment`（口径是"你画不出来，从名单里挑
+    个现成积木摆进去"）。用户裁决「首页只由 LLM 动态设计，参照图上有什么就
+    设计什么，不要固定组件」之后，固定积木那条路整体删除，逐行能力直接补给
+    设计模型自己——版式它自由画，真实行数据由 rowsRef 喂进去。
 
-    所以这里把②单独留下来，并且把结论从"摆个积木"改成"换成聚合表达"。
+    这段话必须把三件事说清楚，少一件都会退回老毛病：
+      ① 逐行内容**可以画**（不说的话模型沿用旧直觉，改用聚合数字替代）；
+      ② 模板只写一行（不说的话模型会手写 5 份几乎相同的子树，节点数爆掉）；
+      ③ 要显示的字段必须先在 fieldRefs 里声明（白名单是逐行数据的主要防线，
+         漏声明会被 Pydantic 拒收、白烧一轮 reask）。
     """
     return "\n".join([
         "",
-        "有些内容你**画不出来**：需要逐行列出真实记录的那类（排行榜、动态流、",
-        "流程时间线、逐条待办）。dataRef 只能取聚合值（count/sum/avg），没有",
-        "\"引用第 N 行\"的表达方式——硬画只会得到一个表头加一片空白，比不画更差。",
+        "### 逐行内容（排行榜、最近动态、待办清单、流程记录……）",
         "",
-        "**遇到这种内容，换一种说法，不要硬画**：把「最近 8 条提醒」改成「今日待发",
-        "提醒 N 条」这样的聚合数字，把「逾期书目清单」改成按状态分组的环图。总览页",
-        "本来就是看总量和趋势的地方，逐行明细在各自的业务页上，这一页不承担。",
+        "这类「一行一行列出真实记录」的内容**你可以自己画**，版式完全由你定：",
+        "几列、每列多宽、徽标/进度条怎么摆，跟画别的区域一样自由。",
+        "",
+        "数据这样绑：在**列表容器**节点上写 rowsRef 声明取哪些行，它的 children",
+        "写**一行**的样子（模板），运行时会按取到的真实行数重复渲染这份模板，",
+        "把模板里带 fieldRef 的节点替换成那一行的真实值。",
+        "",
+        '{"tag": "div", "style": {"display": "flex", "flexDirection": "column"},',
+        ' "rowsRef": {',
+        '   "entityRef": "<真实实体 id>",',
+        '   "fieldRefs": ["<这一行要显示的字段 id>", "..."],',
+        '   "sortByRef": "<排序字段 id，可选>", "order": "desc", "limit": 5},',
+        ' "children": [',
+        '   {"tag": "div", "style": {"display": "flex", "gap": "12px"},',
+        '    "children": [{"tag": "span", "fieldRef": "<字段 id>"},',
+        '                 {"tag": "span", "fieldRef": "<字段 id>"}]}]}',
+        "",
+        "三条硬规矩：",
+        "1. **模板只写一份**——不要手写 5 份几乎相同的行，重复由运行时负责。",
+        "2. **fieldRef 只能取 fieldRefs 里声明过的字段**，没声明的读不到（会被拒）。",
+        "3. rowsRef 与 fieldRef 都必须指向数据模型里真实存在的实体/字段，不能编。",
+        "",
+        "limit 建议 5-8 条（上限 20）。这一页用不上逐行内容就完全不用，不要为了",
+        "凑版面硬塞一个跟业务无关的排行榜——参照图上有才画，没有就没有。",
     ])
-
-
-def _blockref_prompt_fragment() -> str:
-    """可嵌积木清单——从目录的 freeformEmbeddable 派生（2026-07-29）。
-
-    名单语义抄 Puck 的 DropZone allow：allow 设了就只放行名单内的。改目录
-    一处，Pydantic 校验/这段 prompt/前端渲染三处同步。绑定字段说明直接吃
-    bindingSchema，与 Gate 校验 page.blocks 同一本账。
-
-    名单空掉（当前状态）时不是"什么都不说"，而是换成
-    `_aggregate_only_prompt_fragment` 的口径——理由见那个函数。
-    """
-    if not FREEFORM_EMBEDDABLE_BLOCK_TYPES:
-        return _aggregate_only_prompt_fragment()
-    by_type = {str(b["type"]): b for b in EXPERIENCE_BLOCKS}
-    lines = [
-        "",
-        "有些内容你**画不出来**：需要逐行列出真实记录的那类（排行榜、动态流、",
-        "流程时间线、入口按钮组）。dataRef 只能取聚合值（count/sum/avg），没有",
-        "\"引用第 N 行\"的表达方式，硬画只会得到一个表头加一片空白。",
-        "",
-        "遇到这种内容，不要硬画，也不要跳过——**在你的版式里摆一个现成积木**：",
-        "节点上加一个 blockRef 字段，运行时会把那个积木真实渲染进这块区域",
-        "（真实行数据、主题配色、空态文案都由积木自己负责，你只决定它摆在哪、",
-        "占多大）。这跟 chart 字段是同一个机制，只是换成了积木。",
-        "",
-        "可以嵌的积木只有这几个，名单之外的一律不接受：",
-    ]
-    for block_type in FREEFORM_EMBEDDABLE_BLOCK_TYPES:
-        block = by_type.get(block_type) or {}
-        schema = block.get("bindingSchema") or {}
-        required = list(schema.get("required") or [])
-        optional = list(schema.get("optional") or [])
-        desc = str(block.get("description") or "").strip()
-        if not required and not optional:
-            bind_desc = "不需要 binding（省略这个字段）"
-        else:
-            parts = []
-            field_refs = schema.get("entityFieldRefs") or {}
-            for key in required:
-                want = field_refs.get(key)
-                parts.append(f"{key}（必填{'，同实体下的 ' + want + ' 字段' if want else ''}）")
-            ref_lists = schema.get("entityFieldRefLists") or {}
-            for key in optional:
-                want = field_refs.get(key)
-                extra = ""
-                if want:
-                    extra = f"，同实体下的 {want} 字段"
-                elif key in ref_lists:
-                    spec = ref_lists[key]
-                    cap = spec.get("maxItems")
-                    want_type = spec.get("fieldType")
-                    extra = "，同实体下的{}字段 id **数组**{}".format(
-                        f" {want_type} " if want_type else "",
-                        f"，最多 {cap} 个" if cap else "",
-                    )
-                elif key in (schema.get("enums") or {}):
-                    extra = "，取值：" + "/".join(map(str, schema["enums"][key]))
-                elif key in (schema.get("ranges") or {}):
-                    lo, hi = schema["ranges"][key]
-                    extra = f"，{lo}-{hi} 的整数"
-                parts.append(f"{key}（可选{extra}）")
-            bind_desc = "binding: " + "、".join(parts)
-        lines.append(f"- {block_type}：{desc[:60]}　{bind_desc}")
-        # 表现档位（props.variant）——同一个积木的两种长相，由设计者按版面挑。
-        # 从 propsSchema 派生而不是在这写死，加档位改目录一处即可。
-        variants = (
-            ((block.get("propsSchema") or {}).get("properties") or {})
-            .get("variant", {})
-            .get("enum")
-        )
-        if variants:
-            lines.append(
-                f"  ↳ 这个积木有 props.variant 可选：{'/'.join(map(str, variants))}"
-                "（不写按第一个算）"
-            )
-    lines += [
-        "",
-        "写法（binding 里的 limit/sortOrder 这类可选项也写在 binding 里，不要写进 props；",
-        "props 只放上面标了 ↳ 的表现档位）：",
-        '{"tag": "div", "style": {"flex": "1"}, "blockRef": {',
-        '  "type": "<上面名单里的一个>",',
-        '  "binding": {"entityRef": "<真实实体 id>", "...": "<按上面说明填>"},',
-        '  "props": {"variant": "<有 ↳ 才写，没有就整个省掉 props>"}',
-        "}}",
-        "",
-        "**积木摆在哪，就挑对应的长相**：占满整行的位置用宽行档（ActivityFeed 的",
-        "variant=row），这时一定要用 detailFieldRefs 补 1-3 个明细字段，否则一整行",
-        "只有标题和日期，右边三分之二全是空的；挤在窄侧栏里才用默认的时间轴档。",
-        "",
-        "跟 chart 一样：有 blockRef 的节点不要再写 children/text（积木会接管这块",
-        "区域的内容），节点自己的 style 仍然控制它在版式里占多大、周围留多少白。",
-        "积木自带卡片外观（标题栏 + 白底 + 内边距），所以**不要再给这个节点套一层",
-        "自己画的卡片**（不要设 backgroundColor / border / boxShadow / padding），",
-        "否则又是卡片套卡片。",
-        "",
-        "这些积木是**可选的**：这一页确实需要展示逐行记录才摆，用不上就完全不用，",
-        "不要为了凑数硬塞一个跟这页业务无关的排行榜。",
-    ]
-    return "\n".join(lines)
 
 
 def build_freeform_prompt(
@@ -1102,7 +1036,7 @@ listStyle）会被直接判失败：{", ".join(FREEFORM_ALLOWED_STYLE_PROPS)}。
 想要图表视觉上更突出，用外层包一层更宽的容器（比如让它独占一整行）或
 调整周围留白，而不是在 chart 节点自己身上加一个不会生效的 height 期望。
 {_chart_candidates_prompt_fragment(datamodel)}
-{_blockref_prompt_fragment()}
+{_rows_prompt_fragment()}
 下面是这个应用真实的数据模型，唯一可以引用的数据来源：
 {json.dumps(datamodel, ensure_ascii=False, indent=2)}
 
@@ -1188,8 +1122,8 @@ def _build_reference_image_prompt(
         # _generate_overview_sheet_b64 任何一步失败都静默返回 None，
         # generate_freeform_block 就会退回来自己生一张，把带 blockRef JSON 的
         # 总览 brief 原样喂到这里。真机复现过两次：画面里直接印出
-        # 「blockRef / ActivityFeed」徽标，严重时整块 JSON 当代码块画进图里。
-        "注意：上面的设计需求里可能夹带 JSON 片段、字段 id、blockRef 之类的"
+        # 「rowsRef / entityRef」这类徽标，严重时整块 JSON 当代码块画进图里。
+        "注意：上面的设计需求里可能夹带 JSON 片段、字段 id、rowsRef 之类的"
         "技术标识，那些只是在告诉你**这一格该放什么内容**，不是要画的文案——"
         "画面里一个技术标识都不许出现，该画成对应的真实界面（比如一行行的动态"
         "列表、带图标和状态标签的条目），标题用人看得懂的中文短语；"
@@ -1297,7 +1231,7 @@ _SHEET_PROMPT_REFINE_SYSTEM = (
     "2. 版式由你按这一页的**业务性质**决定：哪块内容该在最显眼的位置、"
     "分几列、谁跟谁并排、什么该占整行——按这个业务的人打开这一页最先要做什么"
     "来排，不要套「顶部一排指标卡 + 下面两张图 + 底部一张表」那种通用后台网格。\n"
-    "3. 事实清单里可能夹带 JSON 片段、字段 id、blockRef 这类**技术标识**，"
+    "3. 事实清单里可能夹带 JSON 片段、字段 id、rowsRef 这类**技术标识**，"
     "那些只是在说明某一格该放什么内容，不是要画在图上的文案——你写的提示词里"
     "必须把它们翻译成人看得懂的中文界面说法。\n"
     "4. 这张图**不能出现任何真实数据**（它会被误当成真实业务数字）。你要在"
@@ -1890,7 +1824,7 @@ def generate_freeform_block(
                         {
                             "role": "user",
                             "content": report.reask_message(palette_list, primary_color)
-                            + "\n其余内容（版式、节点结构、dataRef、chart、blockRef）保持不变，"
+                            + "\n其余内容（版式、节点结构、dataRef、chart、rowsRef）保持不变，"
                             "重新输出完整的 JSON，只要一个 JSON 对象。",
                         },
                     ]
@@ -2194,25 +2128,17 @@ def _monitor_overview_design_brief(
         seen_row_keys.add(key)
         return True
 
-    # blockRef 整体关闭时（目录里 freeformEmbeddable 全 False，2026-08-03 用户
-    # 裁决「首页只 LLM 生成，先不要固定组件」），下面这三段清单**全部没有消费
-    # 方**，必须一起停掉：
+    # 这一页声明的**逐行内容**（2026-08-03 改）。
     #
-    #   · 给设计 LLM 的 row_bits/plain_bits 说的是"用 blockRef 摆进版式"，而
-    #     blockRef 现在会被 Pydantic 拒收——继续喂等于亲手制造必然失败的 reask，
-    #     三次重试烧完，整页设计降级回固定骨架，比不改还差。
-    #   · 给生图模型的 visual_bits 更要停：参照板画了排行榜/动态流，真实渲染
-    #     却做不出来，那正是"参考图和实际渲染差很远"的一个来源。参照板只该
-    #     承诺渲染端兑现得了的东西。
+    # 以前这里拼的是 blockRef 的 JSON（"照抄这段，把这个积木摆进版式"）。固定
+    # 积木那条通道已整体删除——现在设计模型用 rowsRef 自己画逐行内容，所以这里
+    # 改成用**业务语言**描述"这一页有哪些一行一行的东西、数据从哪来"，具体长
+    # 什么样由模型按参照图决定，我们不再规定形状。
     #
-    # 用空列表替掉数据源而不是在每个循环里加分支：清单为空时下游那几个
-    # `if row_bits:` / `if visual_bits:` 本来就不出这段文案，行为自然收敛。
-    _embeddable_on = bool(FREEFORM_EMBEDDABLE_BLOCK_TYPES)
-    _rankings_src = (page.get("rankings") or []) if _embeddable_on else []
-    _feeds_src = (page.get("feeds") or []) if _embeddable_on else []
-    _blocks_src = (page.get("blocks") or []) if _embeddable_on else []
-
-    for r in _rankings_src:
+    # 两个受众都要说（对比上一版把两边一起停掉的做法）：
+    #   · 设计 LLM 要知道有哪些逐行内容可画、绑哪个实体哪些字段；
+    #   · 生图模型要把它们画进参照板——现在渲染端真做得出来了，参照板承诺得起。
+    for r in page.get("rankings") or []:
         entity = str(r.get("entity") or "").strip()
         sort_by = str(r.get("sortBy") or "").rpartition(".")[2]
         if not entity or not sort_by:
@@ -2220,13 +2146,13 @@ def _monitor_overview_design_brief(
         if not _take(f"RankedList|{entity}|{sort_by}"):
             continue
         limit = r.get("limit")
-        extra = f', "limit": {limit}' if isinstance(limit, int) else ""
+        limit_bit = f"，取前 {limit} 条" if isinstance(limit, int) else ""
         row_bits.append(
-            f'{r.get("name") or r.get("id")}：{{"type": "RankedList", "binding": '
-            f'{{"entityRef": "{entity}", "sortByRef": "{sort_by}"{extra}}}}}'
+            f'{r.get("name") or r.get("id")}（排行榜）：实体 "{entity}"，'
+            f'按字段 "{sort_by}" 从高到低排序{limit_bit}'
         )
         _visual("RankedList", str(r.get("name") or ""))
-    for f in _feeds_src:
+    for f in page.get("feeds") or []:
         entity = str(f.get("entity") or "").strip()
         time_field = str(f.get("timeField") or "").rpartition(".")[2]
         if not entity or not time_field:
@@ -2234,54 +2160,20 @@ def _monitor_overview_design_brief(
         level = str(f.get("levelField") or "").rpartition(".")[2]
         if not _take(f"ActivityFeed|{entity}|{time_field}|{level}"):
             continue
-        extra = f', "levelFieldRef": "{level}"' if level else ""
+        level_bit = f'，另有等级字段 "{level}" 可用来上色/加徽标' if level else ""
         row_bits.append(
-            f'{f.get("name") or f.get("id")}：{{"type": "ActivityFeed", "binding": '
-            f'{{"entityRef": "{entity}", "timeFieldRef": "{time_field}"{extra}}}}}'
+            f'{f.get("name") or f.get("id")}（最近动态）：实体 "{entity}"，'
+            f'按时间字段 "{time_field}" 倒序{level_bit}'
         )
         _visual("ActivityFeed", str(f.get("name") or ""))
-    for b in _blocks_src:
-        block_type = str(b.get("type") or "")
-        if block_type not in FREEFORM_EMBEDDABLE_BLOCK_TYPES:
-            continue
-        binding = b.get("binding") or {}
-        ent = str(binding.get("entityRef") or "")
-        if block_type == "RankedList":
-            key = f"RankedList|{ent}|{binding.get('sortByRef') or ''}"
-        elif block_type == "ActivityFeed":
-            key = (
-                f"ActivityFeed|{ent}|{binding.get('timeFieldRef') or ''}"
-                f"|{binding.get('levelFieldRef') or ''}"
-            )
-        else:
-            key = f"{block_type}|{b.get('id')}"
-        if not _take(key):
-            continue
-        # 2026-07-31：不是每个可嵌入区块都是"逐行内容"。QuickActionPanel（一组
-        # 快捷动作按钮）和 WorkflowTimeline（流程阶段条）**不吃 binding**——前者
-        # 的按钮来自 page.actions，后者的节点从 workflow 机械派生（见目录里这两条
-        # 的 bindingSchema.note）。给它们拼一个 "binding": {} 是在提示模型"这里
-        # 该填点什么"，而它填什么都是错的。所以按"吃不吃 binding"分开写。
-        if binding:
-            row_bits.append(
-                f'{b.get("id")}：{{"type": "{block_type}", "binding": '
-                f"{json.dumps(binding, ensure_ascii=False)}}}"
-            )
-            _visual(block_type, str(b.get("name") or ""))
-        else:
-            props = b.get("props") or {}
-            title = str(props.get("title") or b.get("name") or b.get("id") or "")
-            extra = ""
-            if block_type == "WorkflowTimeline" and props.get("chainRef"):
-                extra = f'，"props": {{"chainRef": "{props["chainRef"]}"}}'
-            _visual(block_type, title)
-            plain_bits.append(
-                f'{title}：{{"type": "{block_type}"{extra}}}（这个积木不吃 binding，'
-                f"照抄即可)"
-            )
+
     # ── 出图受众：到此为止 ──────────────────────────────────────
-    # 下面全是 blockRef 的技术形态与安置机制，只对设计 LLM 有意义。给生图模型
-    # 的是同一批积木的视觉描述——它才画得出来。
+    # 下面是给设计 LLM 的安置指导，只对它有意义。给生图模型的是同一批内容的
+    # 视觉描述——它才画得出来。
+    #
+    # 2026-08-03：这批逐行内容以前渲染端做不出来（dataRef 只有聚合值），所以
+    # 上一版把给生图模型的这段一并停掉了，理由是"参照板不该承诺渲染兑现不了
+    # 的东西"。现在 rowsRef 补上了逐行能力，承诺兑现得了，这段恢复。
     if audience == "image":
         if visual_bits:
             lines.append(
@@ -2292,133 +2184,32 @@ def _monitor_overview_design_brief(
 
     if row_bits:
         lines.append(
-            "这一页还声明了下面这些**逐行内容**，请把它们用 blockRef 摆进你的版式里"
-            "（binding 照抄，由你决定各自放哪一格、占多宽）：\n- " + "\n- ".join(row_bits)
-        )
-    if plain_bits:
-        # 这两类是**总览页的动作面/流程面**，不是数据面——它们的存在本身就会
-        # 改变版式重心（一整排操作按钮该在最上面还是靠右？流程条是通栏还是
-        # 塞在一角？），这正是 2026-07-31 放开 monitor 页 page.blocks 想要的效果。
-        lines.append(
-            "这一页还声明了下面这些**非数据面的成品积木**（动作入口／流程阶段），"
-            "同样用 blockRef 摆进版式里，由你决定放哪、占多宽——它们跟一堆数字的"
-            "阅读优先级不一样，别默认往最下面塞：\n- " + "\n- ".join(plain_bits)
+            "这一页还有下面这些**逐行内容**。版式由你按参照图定（几列、多宽、"
+            "怎么排都由你），数据用 rowsRef 绑（用法见下方说明）：\n- "
+            + "\n- ".join(row_bits)
         )
 
-    # 2026-07-29：这里原来是一句硬禁令——"不要画排行榜/动态流/数据列表"，
-    # 理由是 dataRef 取不到逐行记录、硬画只会出空表头。禁令本身没错，但代价是
-    # 那些内容被赶到设计之外单独渲染成外挂卡，首页变成"AI 设计区 + 两张外挂
-    # 卡"，主次和留白都由不得设计者。
+    # 措辞用祈使式并把代价说明白（2026-08-01 的教训，保留）：仓库里两次栽在
+    # 许可式措辞上——schema_legal 记着 "You MAY emit…" 让七个通电区块一个没被
+    # 用、连跑三次全是 0。所以这里说"要画就这样画"，不说"你可以考虑画"。
     #
-    # 现在有 blockRef 了（见 _blockref_prompt_fragment）：逐行内容仍然不由它
-    # 画，但**由它决定摆在哪、占多大**，渲染交给积木自己的真渲染器。所以这里
-    # 从"不许"改成"要用就摆一个"。
-    # 2026-08-01：这一句从**许可式**改成**祈使式 + 说清代价**。
-    #
-    # 原文是"如果这一页还适合……就摆一个……用不上就完全不用，不必凑数"。
-    # 它读起来是一道选择题，而上面列出的那些积木**并不是备选项**——它们是这
-    # 一页已经声明、一定会被渲染的东西：设计者不安置，它们不会消失，只会掉到
-    # 设计区外面的固定骨架里，于是首页又变回"AI 设计区 + 几张外挂卡"，主次和
-    # 留白仍旧由不得设计者（这正是 blockRef 桥当初要解决的问题）。
-    #
-    # 仓库里两次教训都指向同一件事——措辞方式决定模型行为：schema_legal 那边
-    # 记着许可式（"You MAY emit…"）让七个通电区块一个都没被用、连跑三次全是 0；
-    # binding 哨兵词写 "none" 时模型把它当成要填的值。所以这里也用祈使式，
-    # 并且**把不安置的代价明说出来**。
-    if row_bits or plain_bits:
-        # 措辞的作用域必须**咬死在积木上**（2026-08-01 修）。
-        #
-        # 上一版写的是"上面列出的积木是备选项……别为了凑齐而硬塞"。但"上面"
-        # 之上还有"必须包含的 KPI 统计卡/ 必须包含的图表"两段清单，紧跟着
-        # "不能遗漏清单里的任何一项"——于是两句话字面冲突："别为了凑齐而硬塞"
-        # 与"不能遗漏任何一项"。模型化解冲突的方式是把 KPI/图表也当成了可选：
-        # 真跑一轮声明 3 个 KPI + 3 张图表，设计只画出 1 个数字、0 张图表。
-        #
-        # 所以这里改成：先重申必含清单不在取舍范围内，再指名道姓地说"只有下面
-        # 这几个积木可选"，并把"别硬塞"的对象也限定到积木。
-        names = [b.split("：", 1)[0] for b in (row_bits + plain_bits)]
+    # 2026-08-03 措辞随机制改：以前这些是"已声明、你不安置就会掉到设计区外面
+    # 变成外挂卡"的既成事实，所以要说"不摆的代价"。现在没有外挂卡这条退路了
+    # ——整页就是你的设计，参照图上没有的就是没有。于是取舍标准回到唯一该有
+    # 的那个：**看参照图**。
+    if row_bits:
+        names = [b.split("（", 1)[0] for b in row_bits]
         lines.append(
-            "关于**积木**（也只关于积木）的取舍——上面「必须包含」的 KPI 统计卡"
+            "关于**逐行内容**（也只关于它）的取舍——上面「必须包含」的 KPI 统计卡"
             "与图表**不在取舍范围内，一项都不能少**：\n"
-            f"· 可选的只有这几个积木：{'、'.join(names)}\n"
-            "· 用得上 → 用 blockRef 摆进版式（binding/props 照抄），放哪一格、"
-            "占多宽由你定；\n"
-            "· 用不上 → **不要摆**。没被你摆进来的会被移除，不会跑到你的设计"
-            "外面另起一张卡。\n"
-            "按这一页的实际需要选，不必把积木凑齐——但这句话只对积木有效，"
+            f"· 可选的只有这几块：{'、'.join(names)}\n"
+            "· 参照图上画了 → 用 rowsRef 画出来，放哪一格、占多宽、长什么样由你定；\n"
+            "· 参照图上没有 → **不要画**。不画就是这一页没有这块内容，不会跑到"
+            "你的设计外面另起一张卡。\n"
+            "按这一页的实际需要选，不必凑齐——但这句话只对逐行内容有效，"
             "KPI 与图表照单全画。"
         )
-    # blockRef 关掉之后这句必须跟着走（2026-08-03）：它指的"下方说明"已经被
-    # _aggregate_only_prompt_fragment 换掉，留着就是让模型去用一个会被拒收的
-    # 字段。逐行记录该怎么办由那段新文案负责说（换成聚合表达，不硬画）。
-    if _embeddable_on:
-        lines.append(
-            "除了 KPI 统计卡和图表，这一页若还适合展示逐行记录（排行榜、最近动态/"
-            "提醒、流程阶段条、常用操作入口），一律用 blockRef 摆现成积木（用法见"
-            "下方说明）——不要自己用 CSS 去画这类内容（画出来只有表头没有行），"
-            "也不要因为画不了就当它不存在。"
-        )
     return "\n".join(lines)
-
-
-def _placed_blockref_types(content: Any) -> set[str]:
-    """走一遍设计树，收出被 blockRef 摆进去的积木类型。
-
-    深度上限与渲染侧 collectFreeformBlockRefKeys 同值（8），坏形状一律跳过、
-    不抛——这段跑在 fail-open 的增强链路里。
-    """
-    found: set[str] = set()
-
-    def walk(node: Any, depth: int) -> None:
-        if depth > 8 or not isinstance(node, (dict, list)):
-            return
-        if isinstance(node, list):
-            for item in node:
-                walk(item, depth + 1)
-            return
-        ref = node.get("blockRef")
-        if isinstance(ref, dict) and ref.get("type"):
-            found.add(str(ref["type"]))
-        for value in node.values():
-            if isinstance(value, (dict, list)):
-                walk(value, depth + 1)
-
-    walk(content, 0)
-    return found
-
-
-def _prune_unplaced_blocks(page: dict[str, Any], content: Any) -> None:
-    """把设计者没有安置的可嵌积木从 page.blocks / page.layout 里摘掉。
-
-    见调用点注释。这里只做机械移除，判断权在设计 LLM 的产出里。
-    """
-    blocks = page.get("blocks")
-    if not isinstance(blocks, list) or not blocks:
-        return
-    placed = _placed_blockref_types(content)
-    dropped_ids: list[str] = []
-    kept: list[Any] = []
-    for block in blocks:
-        btype = str((block or {}).get("type") or "") if isinstance(block, dict) else ""
-        if btype in FREEFORM_EMBEDDABLE_BLOCK_TYPES and btype not in placed:
-            dropped_ids.append(str(block.get("id") or btype))
-            continue
-        kept.append(block)
-    if not dropped_ids:
-        return
-    page["blocks"] = kept
-    layout = page.get("layout")
-    if isinstance(layout, dict):
-        for slot_key, refs in list(layout.items()):
-            if isinstance(refs, list):
-                layout[slot_key] = [r for r in refs if r not in dropped_ids]
-    # no silent drops：移除的是用户看得见的内容，必须留痕。
-    print(
-        f"[freeform_block] {page.get('id')} 设计者未安置，已移除 "
-        f"{len(dropped_ids)} 个积木: {dropped_ids}"
-        f"（设计里用到的类型: {sorted(placed) or '无'}）"
-    )
-
 
 def enrich_monitor_page_overviews(
     model: dict[str, Any], *, preview_sink: Optional[OverviewPreviewSink] = None
@@ -2607,25 +2398,6 @@ def _enrich_monitor_page_overviews_inner(
                         f"falling back to the desktop design on phone: {str(exc)[:160]}"
                     )
             page["freeformOverview"] = content
-            # 设计者的否决权（2026-08-01）：**没被摆进设计的可嵌积木，就此移除**。
-            #
-            # 此前"不摆"没有任何出口——积木照样渲染，只是掉到设计区外面的固定
-            # 骨架里。于是设计 LLM 判断"这一页用不上它"这件事**根本无法表达**：
-            # 不摆比摆还糟（出现在它控制不到的地方，打断它安排的主次和留白）。
-            # 上面 brief 里那段"用不上就不要摆"因此才成立——现在它是真的。
-            #
-            # 谁来判断：设计 LLM 是链路上信息最全的一环（它刚把整页版式排完），
-            # 而声明这些积木的是更早、信息更少的五系统生成。把取舍交给前者。
-            #
-            # 只动**可嵌类型**：不可嵌的积木压根没有"摆进设计"这个选项，按
-            # 未安置移除等于无条件删掉。总览页上这两个集合当前恰好相等
-            # （monitor_ok == FREEFORM_EMBEDDABLE_BLOCK_TYPES），这里仍按类型
-            # 判断而不是依赖那个巧合。
-            #
-            # 保守偏向保留：按**类型**匹配而非逐实例指纹——设计里出现过该类型
-            # 就整类保留。宁可多留一个（掉骨架，老行为），也不要误删。
-            # 移除必须留痕：静默删掉用户看得见的内容是这个仓库明令避免的。
-            _prune_unplaced_blocks(page, content)
         except FreeformGenerationError as exc:
             print(
                 f"[freeform_block] {page.get('id')} monitor overview generation failed, "

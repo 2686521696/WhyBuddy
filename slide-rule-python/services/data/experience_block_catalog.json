@@ -1,6 +1,6 @@
 {
-  "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；本版只建立目录和渲染边界，不改变旧页面效果。bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | freeformEmbeddable：这块能不能被 FreeformInsight 的设计树用 blockRef 嵌进去（Puck DropZone 的 allow 语义：只放行名单内的）。2026-08-03 用户裁决「首页只 LLM 生成，先不要固定组件」——全部置 False，名单空了，blockRef 这条路整体关闭（prompt 段自动消失、Pydantic 拒收任何 blockRef，见 freeform_block.py）。要重新放开就是把对应的几条翻回 true，别的地方不用动。",
-  "version": 7,
+  "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
+  "version": 8,
   "allowedSlots": [
     "summary",
     "primary",
@@ -232,8 +232,7 @@
         "aggregateFields": [
           "aggregate"
         ]
-      },
-      "freeformEmbeddable": false
+      }
     },
     {
       "type": "TrendChart",
@@ -281,8 +280,7 @@
           "timeDimensionRef": "date",
           "seriesBy": "enum"
         }
-      },
-      "freeformEmbeddable": false
+      }
     },
     {
       "type": "RankedList",
@@ -334,8 +332,7 @@
             20
           ]
         }
-      },
-      "freeformEmbeddable": false
+      }
     },
     {
       "type": "ActivityFeed",
@@ -391,8 +388,7 @@
             "note": "宽行档（variant=row）中段展示的明细字段，同实体下任意类型"
           }
         }
-      },
-      "freeformEmbeddable": false
+      }
     },
     {
       "type": "DataTable",
@@ -429,8 +425,7 @@
         ],
         "optional": [],
         "note": "其余列由页面 columns 派生；binding 对象整体可省略，省略时不受 required 约束。"
-      },
-      "freeformEmbeddable": false
+      }
     },
     {
       "type": "QuickActionPanel",
@@ -465,8 +460,7 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；入口按钮由 actions[] 里的 createRecord/navigate 类型动作声明。"
-      },
-      "freeformEmbeddable": false
+      }
     },
     {
       "type": "FilterBar",
@@ -502,8 +496,7 @@
           "entityRef"
         ],
         "note": "可筛选字段在 props.filterFields 里声明（不是 binding）；entityRef 仅在需要按实体过滤时填写。触发 changeFilter 动作刷新同页面其他区块。"
-      },
-      "freeformEmbeddable": false
+      }
     },
     {
       "type": "WorkflowTimeline",
@@ -537,8 +530,7 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；展示哪条流程链路由 props.chainRef 声明（留空=workflow 主链路，填值必须是 workflow.chains[].id 之一）。节点、顺序、条件全部从 workflow 系统机械派生，不接受自由文案。"
-      },
-      "freeformEmbeddable": false
+      }
     },
     {
       "type": "FreeformInsight",
@@ -572,8 +564,7 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；本次调用只需要给 props.designBrief（一句话说清楚这个区块该展示什么，必填，不能空），具体结构/样式/数据绑定由二段生成流程另外产出，不在这次输出里。"
-      },
-      "freeformEmbeddable": false
+      }
     }
   ]
 }
