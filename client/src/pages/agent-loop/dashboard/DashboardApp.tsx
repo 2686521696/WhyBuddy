@@ -1181,8 +1181,9 @@ function AgentLoopSidebar({
 
   return (
     <aside className="native-agent-sidebar">
-      {/* 品牌区（可点击 → 推演视图）：官方尺标 svg（左）+ SlideRule.AI 单行字标（右）
-          —— 2026-07-10 用户裁决：图标用上传的 logo svg（已裁透明边距），文字与图标同高 */}
+      {/* 品牌区（可点击 → 推演视图）：面团 AI 横版标识（2026-08-03 用户裁决）。
+          此前是「方标 + SlideRule.AI 单行字标」两件拼的。换成横版之后字标就在
+          图里，不再单独排一行文字——否则「面团 AI」和「SlideRule.AI」会并排出现。 */}
       <a
         className="native-agent-brand"
         data-testid="agent-brand"
@@ -1194,16 +1195,11 @@ function AgentLoopSidebar({
         }}
       >
         <img
-          className="native-agent-brand-icon"
+          className="native-agent-brand-logo"
           // BASE_URL 前缀：GitHub Pages 子路径部署（/<repo>/）下绝对路径会 404
-          src={`${import.meta.env.BASE_URL}brand/miantuan-mark.png`}
+          src={`${import.meta.env.BASE_URL}brand/miantuan-horizontal.png`}
           alt="面团 AI"
         />
-        <span className="native-agent-brand-text">
-          <span className="native-agent-brand-name">
-            SlideRule<span className="native-agent-brand-ai">.AI</span>
-          </span>
-        </span>
       </a>
       <nav className="native-agent-nav" aria-label="SlideRule">
         {navItems.map(item => (

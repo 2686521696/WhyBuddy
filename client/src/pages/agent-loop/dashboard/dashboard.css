@@ -40,7 +40,7 @@
   width: 252px;
 }
 
-/* 品牌区（可点击 → 推演视图）：矢量尺标（左）+ SlideRule.AI 单行字标（右） */
+/* 品牌区（可点击 → 推演视图）：面团 AI 横版标识（2026-08-03） */
 .native-agent-brand {
   align-items: center;
   border-radius: 12px;
@@ -57,36 +57,22 @@
   background: rgba(255, 255, 255, 0.55);
 }
 
-.native-agent-brand-icon {
+/* 横版标识：字标在图里，不再单独排文字。
+ *
+ * 定高不定宽（原图 1132×468，比例 2.42）：宽度跟着高走，换素材时只要比例
+ * 相近就不用改 CSS。56px 是照着原来那行的视觉重量定的——原构图是 34px 的
+ * 方标 + 25px 的字标，横版里「面团」二字约占总高的 40%，56 × 0.4 ≈ 22px，
+ * 跟原来的字标基本齐平。
+ *
+ * max-width 兜底：侧栏 252px 减去左右各 8px 的内边距。素材换成更扁的比例时
+ * 不至于顶出去。 */
+.native-agent-brand-logo {
   display: block;
   flex-shrink: 0;
-  height: 34px;
+  height: 56px;
   width: auto;
-}
-
-.native-agent-brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1;
-  min-width: 0;
-}
-
-/* 文字与图标同高（2026-07-10 用户裁决）：字号随图标撑满品牌行 */
-.native-agent-brand-name {
-  color: #0f172a;
-  font-family: "DM Sans", system-ui, sans-serif;
-  font-size: 25px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  white-space: nowrap;
-}
-
-/* .AI 亮蓝渐变点缀（与图标滑杆同一渐变） */
-.native-agent-brand-ai {
-  background: linear-gradient(90deg, #2563eb, #38bdf8);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .native-agent-nav {
