@@ -1,10 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { SlideRuleTopHud } from "../SlideRuleTopHud";
-
-vi.mock("@/lib/deploy-target", () => ({
-  IS_GITHUB_PAGES: false,
-}));
 
 describe("SlideRuleTopHud", () => {
   it("hides the wordmark when rendered inside AgentLoop", () => {
@@ -13,13 +9,14 @@ describe("SlideRuleTopHud", () => {
     );
 
     expect(html).toContain('data-testid="sliderule-status-bar"');
-    expect(html).not.toContain("sliderule_logo_wordmark_transparent.png");
+    expect(html).not.toContain("面团AI");
   });
 
   it("keeps the wordmark for the standalone immersion surface", () => {
     const html = renderToStaticMarkup(<SlideRuleTopHud isRunning={false} />);
 
-    expect(html).toContain("sliderule_logo_wordmark_transparent.png");
+    expect(html).toContain("面团AI");
+    expect(html).toContain("miantuan.ai");
   });
 
   it("STATUS 状态盒与 Work/Code 胶囊均退役（Work 模式迁私有主仓）", () => {

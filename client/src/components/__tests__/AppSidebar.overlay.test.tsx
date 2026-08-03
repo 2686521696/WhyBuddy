@@ -167,8 +167,9 @@ describe("AppSidebar overlay embedding", () => {
     expect(aside).toContain("background:linear-gradient");
     expect(aside).toContain("rgba(255, 255, 255, 0.98)");
     expect(aside).toContain("rgba(244, 251, 255, 0.94)");
-    expect(markup).toContain('/brand/transLogo.png');
-    expect(markup).toContain("SlideRule");
+    expect(markup).toContain('aria-label="面团"');
+    expect(markup).toContain("面团AI");
+    expect(markup).toContain("miantuan.ai");
     expect(markup).toContain('aria-current="page"');
     expect(markup).toContain('aria-expanded="true"');
   });

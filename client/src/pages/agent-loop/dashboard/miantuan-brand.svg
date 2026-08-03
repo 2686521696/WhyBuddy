@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 170" fill="none">
+  <defs>
+    <linearGradient id="miantuan-wordmark-grad" x1="18" y1="14" x2="145" y2="145" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#19D3C5" />
+      <stop offset="0.55" stop-color="#1492FF" />
+      <stop offset="1" stop-color="#6F3BFF" />
+    </linearGradient>
+    <linearGradient id="miantuan-ai-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#19D3C5" />
+      <stop offset="0.55" stop-color="#1492FF" />
+      <stop offset="1" stop-color="#6F3BFF" />
+    </linearGradient>
+  </defs>
+  <g transform="translate(0 5)">
+    <path
+      d="M80.8 8.2c21.3 0 37.5 3.5 49.4 10.6 13.4 8.1 20.6 20.4 22.1 37 .3 2.6 1.8 5.2 4.1 7.4 4.5 4.2 7 10.5 7 18.8 0 10.7-3.1 19.2-9.2 25.7-4.7 5.2-10.8 8.8-18.1 10.6-2.4.6-4.6 2-6.4 4.3-11.4 14.1-29 21.2-52.5 21.2-17.7 0-32.4-2.9-44.5-8.8C17.6 127.5 10 114.6 10 96.7c0-5.2.9-10.2 2.6-15 .9-3.3.9-6.5.2-9.7C10.8 65.9 9.8 61.1 9.8 56c0-15.4 5.8-27.4 17.1-36.3C39.5 12.1 57.5 8.2 80.8 8.2Z"
+      fill="url(#miantuan-wordmark-grad)"
+    />
+    <path
+      d="M81.3 30.7c17.4 0 30.7 3.6 39.7 10.8 9.7 7.6 14.5 19.5 14.5 35.8 0 12.9-1.2 23.6-3.8 32.2-1.1 3.6-.8 7.1.8 10.5 1.8 3.9 2.7 8 2.7 12.2 0 3.2-1 6.2-3 8.9-2.5 3.5-6.1 5.2-10.6 5.2H41.6c-4.5 0-8.1-1.7-10.7-5.2-1.9-2.4-2.8-5.3-2.8-8.6 0-4.2.9-8.4 2.8-12.3 1.8-3.5 2-7 .9-10.7-2.2-8-3.2-18.8-3.2-32.2 0-16.4 4.8-28.3 14.4-35.8 9.3-7.2 22.4-10.8 39.3-10.8Z"
+      fill="#fff"
+    />
+    <rect x="56.8" y="59" width="12.2" height="23" rx="6.1" fill="#1C78F7" />
+    <rect x="92.4" y="59" width="12.2" height="23" rx="6.1" fill="#1C78F7" />
+    <path
+      d="M62.8 97.5c5.2 5.2 11.2 7.8 18.1 7.8s12.9-2.6 18.1-7.8"
+      stroke="#1C78F7"
+      stroke-linecap="round"
+      stroke-width="7.5"
+    />
+  </g>
+  <g transform="translate(188 34)">
+    <text
+      x="0"
+      y="52"
+      fill="#09142A"
+      font-family="'Noto Sans SC','PingFang SC','Microsoft YaHei',Arial,sans-serif"
+      font-size="62"
+      font-weight="700"
+      letter-spacing="-1.5"
+    >
+      面团
+    </text>
+    <text
+      x="150"
+      y="52"
+      fill="url(#miantuan-ai-grad)"
+      font-family="'Inter','DM Sans',Arial,sans-serif"
+      font-size="62"
+      font-weight="700"
+      letter-spacing="-1.5"
+    >
+      AI
+    </text>
+    <text
+      x="2"
+      y="103"
+      fill="#98A2B3"
+      font-family="'Inter','DM Sans',Arial,sans-serif"
+      font-size="24"
+      font-weight="500"
+      letter-spacing="9"
+    >
+      miantuan.ai
+    </text>
+  </g>
+</svg>

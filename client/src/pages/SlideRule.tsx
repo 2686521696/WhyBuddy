@@ -35,6 +35,7 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
+import { MianTuanMark } from "@/components/brand/MianTuanMark";
 import {
   ChainOfThought,
   ChainOfThoughtHeader,
@@ -459,11 +460,7 @@ function HomeEmptyState({
     >
       <div className="flex flex-col items-center gap-3">
         <div className="flex items-center gap-3.5">
-          <img
-            src={`${import.meta.env.BASE_URL}assets/sliderule-brand-mark.svg`}
-            alt="SlideRule"
-            className="h-10 w-10 shrink-0"
-          />
+          <MianTuanMark size={40} className="shrink-0" />
           <h1 className="font-display text-[clamp(22px,2.4vw,30px)] font-semibold tracking-tight text-[#1f2329]">
             把一句模糊想法，快速推演成可执行的完整应用
           </h1>
@@ -1431,12 +1428,9 @@ function SlideRuleSplitEngineering({
   return (
     <div className={autopilotTheme.page}>
       <header className={autopilotTheme.header}>
-        <img
-          src={`${import.meta.env.BASE_URL}assets/sliderule_icon_flat_transparent.png`}
-          alt="SlideRule"
-          className="mr-2 h-5 w-5 shrink-0 self-center opacity-70"
-          title="SlideRule"
-        />
+        <span className="mr-2 shrink-0 self-center opacity-80" title="面团AI">
+          <MianTuanMark size={20} />
+        </span>
         <div className="min-w-0 flex-1">
           <div className={autopilotTheme.label}>我的想法</div>
           <div

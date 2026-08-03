@@ -17,7 +17,7 @@ import {
 import type { RunEventSubscriptionHandlers } from "./dashboard/agentLoopApi";
 import type { DetailPayload, OverviewPayload } from "./dashboard/dashboardTypes";
 import { normalizeSettingsForUI } from "./dashboard/agentLoopApi";
-import brandLogo from "./dashboard/sliderule-brand.svg";
+import brandLogo from "./dashboard/miantuan-brand.svg";
 import "./dashboard/dashboard.css";
 
 // Expose the brand asset the way the ported DashboardApp expects to read it.

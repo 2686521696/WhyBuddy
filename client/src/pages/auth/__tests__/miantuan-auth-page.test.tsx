@@ -73,7 +73,8 @@ describe("品牌标识", () => {
   it("文字标识带中文名和域名", () => {
     const markup = renderToStaticMarkup(<MianTuanWordmark />);
     expect(markup).toContain("面团");
-    expect(markup).toContain("MIANTUAN.AI");
+    expect(markup).toContain("AI");
+    expect(markup).toContain("miantuan.ai");
   });
 
   it("有无障碍标签", () => {

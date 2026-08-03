@@ -13,6 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { MianTuanMark } from "@/components/brand/MianTuanMark";
 import { useI18n } from "@/i18n";
 import type { AuthUser } from "@/lib/auth-client";
 import { useProjectStore } from "@/lib/project-store";
@@ -51,11 +52,7 @@ function SidebarHeader({
             : "border-sky-100 shadow-[0_14px_34px_rgba(14,165,233,0.14),inset_0_1px_0_rgba(255,255,255,0.96)]"
         )}
       >
-        <img
-          src="/brand/transLogo.png"
-          alt="SlideRule"
-          className="relative size-9 object-contain"
-        />
+        <MianTuanMark size={36} className="relative shrink-0" />
       </span>
       {!collapsed ? (
         <span className="min-w-0">
@@ -65,10 +62,10 @@ function SidebarHeader({
               glass ? "text-slate-700" : "text-slate-800"
             )}
           >
-            SlideRule
+            面团AI
           </span>
           <span className="mt-1.5 block truncate text-[11px] font-semibold leading-none text-slate-500">
-            {subtitle}
+            miantuan.ai · {subtitle}
           </span>
         </span>
       ) : null}

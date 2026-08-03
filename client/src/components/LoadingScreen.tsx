@@ -1,11 +1,11 @@
 import type { CSSProperties } from "react";
 
+import { MianTuanWordmark } from "@/components/brand/MianTuanMark";
 import { useI18n } from "@/i18n";
 import { useAppStore } from "@/lib/store";
 import {
   BRAND_HEADLINE_EN,
   BRAND_HEADLINE_ZH,
-  BRAND_NAME_DISPLAY,
   BRAND_TAGLINE_EN,
   BRAND_TAGLINE_ZH,
 } from "@shared/brand";
@@ -117,15 +117,11 @@ function BrandWordmark({ copy }: { copy: typeof CHINESE_COPY }) {
       className="relative mx-auto flex w-full flex-col items-start gap-3"
       data-testid="loading-brand-wordmark"
     >
-      <img
-        src="/brand/logo.png"
-        alt="SlideRule"
-        className="h-16 w-auto object-contain"
-      />
+      <MianTuanWordmark size={58} />
       <h1
         className="font-display text-[clamp(3.5rem,8vw,5.5rem)] font-medium leading-[0.95] tracking-tight text-black"
       >
-        {BRAND_NAME_DISPLAY}
+        面团AI
       </h1>
       <p className="font-display text-base font-normal leading-7 tracking-normal text-black/60">
         {copy.brandTagline}

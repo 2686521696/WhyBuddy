@@ -40,7 +40,7 @@
   width: 252px;
 }
 
-/* 品牌区（可点击 → 推演视图）：矢量尺标（左）+ SlideRule.AI 单行字标（右） */
+/* 品牌区（可点击 → 推演视图）：面团图标（左）+ 面团AI 字标（右） */
 .native-agent-brand {
   align-items: center;
   border-radius: 12px;
@@ -58,10 +58,11 @@
 }
 
 .native-agent-brand-icon {
-  display: block;
+  align-items: center;
+  display: inline-flex;
   flex-shrink: 0;
-  height: 34px;
-  width: auto;
+  justify-content: center;
+  min-height: 34px;
 }
 
 .native-agent-brand-text {
@@ -71,22 +72,30 @@
   min-width: 0;
 }
 
-/* 文字与图标同高（2026-07-10 用户裁决）：字号随图标撑满品牌行 */
 .native-agent-brand-name {
   color: #0f172a;
   font-family: "DM Sans", system-ui, sans-serif;
-  font-size: 25px;
+  font-size: 23px;
   font-weight: 700;
   letter-spacing: -0.03em;
   white-space: nowrap;
 }
 
-/* .AI 亮蓝渐变点缀（与图标滑杆同一渐变） */
 .native-agent-brand-ai {
-  background: linear-gradient(90deg, #2563eb, #38bdf8);
+  background: linear-gradient(135deg, #19d3c5 0%, #1492ff 52%, #6f3bff 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+.native-agent-brand-domain {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  margin-top: 4px;
+  text-transform: lowercase;
 }
 
 .native-agent-nav {

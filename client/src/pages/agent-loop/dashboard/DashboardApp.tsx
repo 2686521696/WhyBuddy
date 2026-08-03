@@ -20,6 +20,7 @@ import {
 } from "@ant-design/icons";
 import { Graph, type GraphData } from "@antv/g6";
 import { AccountPanel } from "./AccountPanel";
+import { MianTuanMark } from "@/components/brand/MianTuanMark";
 import { AuthProvider } from "@/lib/use-auth";
 import {
   Alert,
@@ -1193,19 +1194,17 @@ function AgentLoopSidebar({
           onViewChange("sliderule");
         }}
       >
-        <img
-          className="native-agent-brand-icon"
-          // BASE_URL 前缀：GitHub Pages 子路径部署（/<repo>/）下绝对路径会 404
-          src={`${import.meta.env.BASE_URL}assets/sliderule-brand-mark.svg`}
-          alt="SlideRule"
-        />
+        <span className="native-agent-brand-icon" aria-hidden="true">
+          <MianTuanMark size={30} />
+        </span>
         <span className="native-agent-brand-text">
           <span className="native-agent-brand-name">
-            SlideRule<span className="native-agent-brand-ai">.AI</span>
+            面团<span className="native-agent-brand-ai">AI</span>
           </span>
+          <span className="native-agent-brand-domain">miantuan.ai</span>
         </span>
       </a>
-      <nav className="native-agent-nav" aria-label="SlideRule">
+      <nav className="native-agent-nav" aria-label="面团AI">
         {navItems.map(item => (
           <a
             href={getViewPath?.(item.key)}

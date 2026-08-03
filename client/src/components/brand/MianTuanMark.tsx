@@ -39,29 +39,29 @@ export function MianTuanMark({
     >
       <defs>
         <linearGradient id={gid} x1="4" y1="8" x2="58" y2="58" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#22D3C5" />
-          <stop offset="0.5" stopColor="#3B82F6" />
-          <stop offset="1" stopColor="#7C3AED" />
+          <stop stopColor="#19D3C5" />
+          <stop offset="0.55" stopColor="#1492FF" />
+          <stop offset="1" stopColor="#6F3BFF" />
         </linearGradient>
       </defs>
       {/* 外层那坨面团：刻意不对称——正圆会显得像通用头像，失去"一坨面"的手感 */}
       <path
-        d="M32 5c9.5 0 15.8 2.6 20.6 7.4C57.4 17.2 60 24 60 32.6c0 9.2-3 15.9-8.2 20.6C46.6 57.9 39.8 60 31.4 60c-8.9 0-15.7-2.4-20.4-7.2C6.3 48 4 41.1 4 32.2c0-8.8 2.5-15.6 7.4-20.3C16.3 7.2 22.9 5 32 5Z"
+        d="M31.6 5.2c8.5 0 15 1.4 19.7 4.2 5.3 3.2 8.2 8.1 8.8 14.8.1 1 .7 2.1 1.6 3 1.8 1.7 2.8 4.2 2.8 7.5 0 4.2-1.2 7.7-3.7 10.4-1.9 2.1-4.3 3.5-7.2 4.2-.9.2-1.8.8-2.5 1.7-4.5 5.7-11.5 8.5-20.9 8.5-7 0-12.9-1.2-17.7-3.5-6.1-3-9.2-8.1-9.2-15.2 0-2.1.3-4.1 1-6 .5-1.3.5-2.6.1-4C3.7 28.8 3.4 26.9 3.4 25c0-6.1 2.3-10.9 6.8-14.4 5-3.6 12.1-5.4 21.4-5.4Z"
         fill={`url(#${gid})`}
       />
       {/* 内层留白，让笑脸浮在面团上 */}
       <path
-        d="M32 13.5c7.1 0 11.8 1.9 15.3 5.4 3.5 3.5 5.4 8.4 5.4 14.6 0 6.7-2.1 11.5-5.9 14.9-3.8 3.4-8.8 5-15 5-6.6 0-11.6-1.7-15.1-5.2-3.5-3.4-5.2-8.4-5.2-14.9 0-6.4 1.8-11.3 5.4-14.8 3.6-3.5 8.3-5 15.1-5Z"
+        d="M31.9 14.3c6.9 0 12.2 1.4 15.8 4.3 3.8 3 5.7 7.8 5.7 14.2 0 5.1-.5 9.4-1.5 12.8-.4 1.4-.3 2.8.3 4.2.7 1.5 1.1 3.2 1.1 4.8 0 1.3-.4 2.5-1.2 3.5-1 1.4-2.4 2.1-4.2 2.1H15.8c-1.8 0-3.2-.7-4.3-2.1-.7-1-1.1-2.1-1.1-3.4 0-1.7.4-3.4 1.1-4.9.7-1.4.8-2.8.4-4.3-.9-3.2-1.3-7.4-1.3-12.8 0-6.5 1.9-11.2 5.7-14.2 3.7-2.9 8.9-4.3 15.6-4.3Z"
         fill="#fff"
       />
       {/* 眼睛：竖着的圆角矩形，比圆点更有"眯眼笑"的味道 */}
-      <rect x="23" y="26" width="4.6" height="9.5" rx="2.3" fill="#2563EB" />
-      <rect x="36.4" y="26" width="4.6" height="9.5" rx="2.3" fill="#2563EB" />
+      <rect x="22.4" y="25.4" width="4.9" height="9.2" rx="2.45" fill="#1C78F7" />
+      <rect x="36.7" y="25.4" width="4.9" height="9.2" rx="2.45" fill="#1C78F7" />
       {/* 嘴 */}
       <path
-        d="M25 41.5c1.9 2.6 4.3 3.9 7 3.9s5.1-1.3 7-3.9"
-        stroke="#2563EB"
-        strokeWidth="3.2"
+        d="M24.8 40.8c2.1 2.1 4.5 3.2 7.2 3.2 2.7 0 5.1-1.1 7.2-3.2"
+        stroke="#1C78F7"
+        strokeWidth="3"
         strokeLinecap="round"
         fill="none"
       />
@@ -77,21 +77,36 @@ export function MianTuanWordmark({
   size?: number;
   className?: string;
 }) {
+  const aiGradient = {
+    backgroundImage: "linear-gradient(135deg,#19D3C5 0%,#1492FF 52%,#6F3BFF 100%)",
+    WebkitBackgroundClip: "text",
+    backgroundClip: "text",
+    color: "transparent",
+  } as const;
+
   return (
-    <span className={`inline-flex items-center gap-2.5 ${className ?? ""}`}>
+    <span className={`inline-flex items-center gap-3 ${className ?? ""}`} aria-label="面团AI">
       <MianTuanMark size={size} />
       <span className="flex flex-col leading-none">
-        <span
-          className="font-semibold tracking-tight text-slate-900"
-          style={{ fontSize: size * 0.62 }}
-        >
-          面团
+        <span className="flex items-end gap-1.5">
+          <span
+            className="font-semibold tracking-tight text-slate-950"
+            style={{ fontSize: size * 0.62 }}
+          >
+            面团
+          </span>
+          <span
+            className="font-semibold leading-none"
+            style={{ ...aiGradient, fontSize: size * 0.62 }}
+          >
+            AI
+          </span>
         </span>
         <span
-          className="mt-1 font-medium tracking-[0.18em] text-slate-400"
+          className="mt-1.5 font-medium lowercase tracking-[0.18em] text-slate-400"
           style={{ fontSize: size * 0.3 }}
         >
-          MIANTUAN.AI
+          miantuan.ai
         </span>
       </span>
     </span>

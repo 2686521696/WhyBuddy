@@ -1,6 +1,6 @@
 import React from "react";
 import { autopilotTheme } from "./autopilot-theme";
-import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
+import { MianTuanWordmark } from "@/components/brand/MianTuanMark";
 import { Layers, RotateCw } from "lucide-react";
 
 export function SlideRuleTopHud({
@@ -22,12 +22,9 @@ export function SlideRuleTopHud({
       <div className="flex w-full items-center justify-between gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {embedded ? null : (
-            <img
-              src={`${import.meta.env.BASE_URL}assets/sliderule_logo_wordmark_transparent.png`}
-              alt="SlideRule"
-              className="h-[42px] w-auto max-w-[156px] shrink-0 object-contain opacity-95 sm:h-[46px]"
-              title="SlideRule"
-            />
+            <span className="shrink-0" title="面团AI">
+              <MianTuanWordmark size={44} />
+            </span>
           )}
           {/* Work 模式已迁至私有主仓 SlideRule（公开仓保留推演主线） */}
         </div>

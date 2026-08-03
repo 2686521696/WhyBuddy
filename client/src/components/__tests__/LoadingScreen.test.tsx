@@ -49,9 +49,9 @@ describe("LoadingScreen — MiroFish skin", () => {
     expect(markup).toContain('data-testid="loading-status-rail"');
     expect(markup).toContain('data-testid="loading-brand-wordmark"');
 
-    // Brand swap: SlideRule replaces previous project names
-    expect(markup).toContain("SlideRule");
-    expect(markup).toContain("/brand/logo.png");
+    // Brand swap: 面团AI replaces the old logo lockup
+    expect(markup).toContain("面团AI");
+    expect(markup).toContain("miantuan.ai");
     expect(markup).not.toContain("Duan" + "yun");
     expect(markup).not.toContain("Cube Pets " + "Office");
 
