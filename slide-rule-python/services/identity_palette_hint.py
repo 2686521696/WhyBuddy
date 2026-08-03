@@ -16,11 +16,18 @@
 换算成 OKLCh lightness（0-1，除以 100），色相旋转量原样照搬（旋转角度跟
 色彩空间无关）。两边测的不是同一把尺，但方向和意图完全对齐。
 
-## seed 缺失时的兜底
+## 种子色从哪来
 
-`FALLBACK_SEED` 必须与前端 identity-palette.ts 的同名常量同一个值——不是
-因为两边必须像素级一致（本来就不要求），而是"没有任何身份色可用"这件事
-两端应该达成同一个判断，而不是各自编一个不同的兜底色。
+2026-08-03 起**全站一个颜色**：所有生成应用共用 `BRAND_SEED`，读自
+`services/data/identity_theme_presets.json` 的 `brandSeed.seed`——前端
+`live-runtime/identity-themes.ts` 读的是同一处。
+
+这一条必须同源：Python 用它拼进生成提示词里那句"运行时的侧边栏/顶栏/按钮
+已经按这套渲染了"，前端用它派生真正渲染的 12 个字段。两边各写一份的话，
+提示词说的颜色和实际渲染的颜色会悄悄分叉，而这种分叉只有肉眼比对才看得出来。
+
+`FALLBACK_SEED` 保留为读取失败时的最后兜底（JSON 缺失/损坏）——那是部署
+事故，不该让整条生成链路跟着炸。
 """
 
 from __future__ import annotations
@@ -30,12 +37,36 @@ from typing import Any
 
 from coloraide import Color
 
-__all__ = ["FALLBACK_SEED", "derive_prompt_palette"]
+__all__ = ["BRAND_SEED", "BRAND_LABEL", "FALLBACK_SEED", "derive_prompt_palette"]
 
-#: 与 client/src/lib/identity-palette.ts 的 FALLBACK_SEED 同一个值。
+#: 读不出账本时的最后兜底（JSON 缺失/损坏，属于部署事故）。
 FALLBACK_SEED = "#5b6b7c"
 
+
+def _read_brand_seed() -> tuple[str, str]:
+    """从与前端同一份账本里读品牌种子色。
+
+    模块导入期读一次：这个值在进程生命周期内不会变，而 prompt 拼接是热路径。
+    读失败不抛——回落 FALLBACK_SEED，让链路继续跑（fail-open 是这条链路的纪律）。
+    """
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent / "data" / "identity_theme_presets.json"
+    try:
+        brand = json.loads(path.read_text(encoding="utf-8")).get("brandSeed") or {}
+        seed = str(brand.get("seed") or "")
+        if _HEX_RE.match(seed):
+            return seed, str(brand.get("label") or "品牌")
+    except Exception as exc:  # noqa: BLE001 — 账本读不出不该拖垮生成
+        print(f"[identity_palette_hint] brandSeed 读取失败，回落兜底色: {str(exc)[:120]}")
+    return FALLBACK_SEED, "中性 · 降级"
+
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+#: 全站唯一的品牌种子色 / 标签。与前端同读一份账本（见模块头说明）。
+#: 赋值放在 _HEX_RE 之后：_read_brand_seed 要用它校验格式。
+BRAND_SEED, BRAND_LABEL = _read_brand_seed()
 
 # HCT tone（0-100）→ OKLCh lightness（0-1）的换算：除以 100。逐项抄自
 # identity-palette.ts 的 TONE 表。

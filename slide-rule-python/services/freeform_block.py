@@ -38,7 +38,7 @@ from pathlib import Path
 
 from .app_preview import OverviewPreviewSink
 from .enrich_timing import stage as _enrich_stage
-from .identity_palette_hint import FALLBACK_SEED, derive_prompt_palette
+from .identity_palette_hint import BRAND_LABEL, BRAND_SEED, derive_prompt_palette
 from .palette_guard import extract_hex_colors, palette_report, repair_colors
 from .schema_legal import (
     EXPERIENCE_BLOCKS,
@@ -344,26 +344,26 @@ def _sheet_image_size_for_device(device: str) -> str:
 
 
 def _theme_palette(theme_id: str, generated_theme: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-    """身份主题现在可能是 identity_theme_gen.py 生成的种子色——优先用这个
-    （同一个 app 的侧边栏/顶栏就是照它来的，颜色要统一），传了但不合契约
-    就落回 FALLBACK_SEED 派生的中性色板，不让一个坏字典拖垮整个生成。
-    判定用 is_valid_generated_theme——与前端同一契约，前端会弃用的主题这里
-    绝不拿来配色（否则卡片一个色系、侧栏另一个色系）。
+    """**全站一个颜色**（2026-08-03，用户裁决）：永远是 BRAND_SEED 派生的色板。
 
-    theme_id（appIdentity.theme 那 8 选 1 的分类字段）2026-07-30 起不再参与
-    颜色决定——它仍然是 gate 校验的合法分类值，但不再对应任何手挑色板；
-    这里保留参数只是为了不动调用方的签名，函数体内不读它。真正的颜色只有
-    两个来源：LLM 选的种子色，或者 FALLBACK_SEED。
+    这个色板只有一个用途：告诉设计 LLM「运行时的侧边栏/顶栏/按钮已经按这套
+    渲染了」，好让它生成的版式配色跟真实外壳对得上。所以它必须与前端实际
+    渲染的那套同源——两者同读 identity_theme_presets.json 的 brandSeed。
+
+    两个参数都不再参与颜色决定，签名保持不变：调用点有十几处，且**存量应用
+    的库里仍然存着 generatedTheme 字段**。保留参数 = 老数据不需要迁移脚本，
+    读进来直接被忽略。
+
+    · theme_id：appIdentity.theme 那 8 选 1 的分类字段，2026-07-30 起就不是
+      颜色来源了（仍然是 gate 校验的合法分类值）。
+    · generated_theme：2026-08-03 起不再生成。为它生的那张参照图从不展示给
+      任何人，用一次生图换一个色值，已整段移除。
 
     derive_prompt_palette 返回的色板是 OKLCh 近似（不是前端渲染用的权威
     HCT 派生），只用于这里的 prompt 拼接和下面 palette_guard 的色相参照——
     见 identity_palette_hint.py 顶部说明，为什么这里不需要跟前端数值一致。"""
-    del theme_id
-    if is_valid_generated_theme(generated_theme):
-        seed = str(generated_theme.get("seed"))  # type: ignore[union-attr]
-        label = str(generated_theme.get("label") or "自定义主题")  # type: ignore[union-attr]
-        return derive_prompt_palette(seed, id_="generated", label=label)
-    return derive_prompt_palette(FALLBACK_SEED, id_="fallback", label="中性 · 降级")
+    del theme_id, generated_theme
+    return derive_prompt_palette(BRAND_SEED, id_="brand", label=BRAND_LABEL)
 
 
 def _theme_prompt_fragment(theme_id: str, generated_theme: Optional[dict[str, Any]] = None) -> str:
@@ -1221,15 +1221,19 @@ def _build_overview_sheet_facts(
 
       · 画布尺寸与设备档 —— 端点逐像素认 size，两边说的必须是同一个画布
       · design_brief    —— 这一页经过门禁的内容范围
-      · 主题色板        —— 运行时外壳已经按种子渲染了，参照图偏色就会撞色
       · datamodel 摘要  —— 真实实体/字段/enum 选项，防止编出对不上的分类数
+
+    ⚠️ **不给色板**（2026-08-03，用户裁决：首页生图自由发挥）。
+    此前这里会附一句"运行时外壳已经按这套渲染了，别偏色"。现在全站外壳是
+    统一的白菜单 + 白 Header + 一个品牌主色，参照图本来就不需要去迁就它——
+    它的职责只剩**版式**。把配色的手铐摘掉，出图的表现力明显更高，而外壳
+    的一致性由前端那套固定色板保证，不依赖这张图画成什么样。
 
     ⚠️ 保留一条底线：**这段文本会被原样塞进 refine 的输入里**，而 brief 里
     夹带 blockRef JSON 是常态。refine 那一步的指令里必须自己处理这件事——
     这里不再重复禁令（那正是本次要拿掉的东西之一）。
     """
-    hint = _theme_palette(theme_id, generated_theme)
-    charts = "、".join(hint["charts"])
+    del theme_id, generated_theme  # 见上：参照图不再受色板约束
     datamodel_summary = _datamodel_summary_lines(datamodel)
     canvas = _sheet_image_size_for_device(device)
     tier = {
@@ -1241,12 +1245,6 @@ def _build_overview_sheet_facts(
         f"画布：{canvas} 像素，出图端点逐像素照此返回。",
         f"设备档：{tier}。",
         f"这一页要覆盖的内容范围：\n{design_brief}",
-        (
-            f"这个应用的身份色板（运行时的侧边栏/顶栏/按钮已经按这套渲染了）："
-            f"主题「{hint['label']}」，主色 {hint['primary']}，"
-            f"内容区底色 {hint['contentBg']}，强调浅底 {hint['accentBg']}，"
-            f"多类别/多序列区分色 {charts}。"
-        ),
     ]
     if datamodel_summary:
         parts.append(

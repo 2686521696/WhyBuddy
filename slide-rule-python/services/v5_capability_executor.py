@@ -327,17 +327,19 @@ def _try_llm_generate_evidence(
         }
         return None
     _llm_generate_diagnostic = {}
-    # 身份主题要先生成——FreeformInsight 的配色会读 appIdentity.generatedTheme，
-    # 顺序反了就只能落回 8 预设，侧边栏和内容卡片颜色对不上。
-    # 注：三段 enrich 的墙钟埋点在各自函数内部（theme.total / freeform.total /
-    # monitor.total），不在这里——这条链路还有 fresh_topic_shot / 夹具再生成
-    # 两个入口，埋在调用点会漏掉它们。
-    try:
-        from .identity_theme_gen import enrich_identity_theme
-
-        model = enrich_identity_theme(model, goal)
-    except Exception as exc:  # noqa: BLE001 — 主题生成是增强项，故障不改变主路径语义
-        print(f"[v5_capability_executor] identity theme enrichment skipped: {str(exc)[:160]}")
+    # 身份主题生成已整段移除（2026-08-03，用户裁决：全站一个颜色）。
+    #
+    # 原来这里会调 enrich_identity_theme：花 ~74s 生一张参照图，喂给视觉 LLM，
+    # 取回一个 {label, seed} 种子色写进 appIdentity.generatedTheme，前端再由它
+    # 派生整套色板。那张图从不展示给任何人——用一次生图换一个色值。
+    #
+    # 现在颜色在前端定死（live-runtime/identity-themes.ts 的 BRAND_SEED），
+    # 后端不再产出任何配色。存量应用库里的 generatedTheme 字段读到即忽略，
+    # 不需要迁移。
+    #
+    # 注：两段 enrich 的墙钟埋点在各自函数内部（freeform.total / monitor.total），
+    # 不在这里——这条链路还有 fresh_topic_shot / 夹具再生成两个入口，
+    # 埋在调用点会漏掉它们。
     try:
         from .freeform_block import enrich_freeform_blocks
 

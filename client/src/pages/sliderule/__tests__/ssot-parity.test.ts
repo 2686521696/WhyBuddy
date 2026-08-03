@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import catalogJson from "@experience-blocks";
 import legalDomains from "@legal";
-import { FALLBACK_SEED } from "@/lib/identity-palette";
+import themePresets from "@identity-themes";
 import {
   EXPERIENCE_BLOCK_CATALOG,
   EXPERIENCE_BLOCK_RENDERERS,
@@ -50,33 +50,41 @@ describe("SSOT parity（手抄清单收编）", () => {
     );
   });
 
-  it("生成主题契约生效：缺 seed 的主题被弃用回落 FALLBACK_SEED（与 Python 同判定）", () => {
-    const invalid: Record<string, unknown> = { label: "只有标签没有种子色" };
-    const resolved = resolveIdentityTheme("azure", invalid);
-    expect(resolved.id).toBe("fallback");
-    expect(resolved.primary).toBe(FALLBACK_SEED);
+  it("全站一个颜色：任何 generatedTheme 都不再影响配色", () => {
+    // 2026-08-03 用户裁决。这条锁的是"不会有半套新半套旧"——库里的存量应用
+    // 各自带着 generatedTheme，如果它们还能影响配色，同一个应用中心里就会
+    // 既有品牌色的新应用、又有五颜六色的老应用，而外壳（白菜单/白 Header）
+    // 是统一的，混在一起比全都不统一更难看。
+    const brand = resolveIdentityTheme();
+    for (const input of [
+      { label: "只有标签没有种子色" },
+      { label: "测试主题", seed: "#123456" },
+      // 2026-07-30 之前的 11 字段旧格式
+      {
+        primary: "#e05d38", primaryHover: "#c2410c", gradTo: "#fdba74",
+        primaryFg: "#ffffff", contentBg: "#f8fafc", accentBg: "#fff0eb",
+        accentFg: "#b23c17", sidebarText: "#e8d9d1", sidebarBg: "#271a15",
+        charts: ["#e05d38", "#f59e0b", "#3b82f6"],
+      },
+      undefined,
+    ]) {
+      expect(resolveIdentityTheme("tangerine", input)).toEqual(brand);
+    }
   });
 
-  it("生成主题契约生效：合法种子色被采用", () => {
-    const valid: Record<string, unknown> = { label: "测试主题", seed: "#123456" };
-    const resolved = resolveIdentityTheme("azure", valid);
-    expect(resolved.id).toBe("generated");
-    expect(resolved.primary).toBe("#123456");
+  it("品牌色来自前后端同读的那份账本，不在前端写死", () => {
+    // 写死的话改一次颜色要记得改两个地方；漏掉一边的症状是"生成提示词里
+    // 说的颜色和实际渲染的颜色不一样"，只有肉眼比对才看得出来。
+    expect(resolveIdentityTheme().primary.toLowerCase()).toBe(
+      (themePresets as { brandSeed: { seed: string } }).brandSeed.seed.toLowerCase()
+    );
   });
 
-  it("旧格式（11 字段）生成主题仍可用：primary 当种子色读", () => {
-    // 2026-07-30 之前生成的存量会话没有 seed 字段，只有 primary——见
-    // identity-themes.ts 的 extractSeed 注释：这不是兼容层，primary 本来
-    // 就是"原样保留的种子色"，拿它当新种子色语义上是同一件事。
-    const legacy: Record<string, unknown> = {
-      primary: "#e05d38", primaryHover: "#c2410c", gradTo: "#fdba74",
-      primaryFg: "#ffffff", contentBg: "#f8fafc", accentBg: "#fff0eb",
-      accentFg: "#b23c17", sidebarText: "#e8d9d1", sidebarBg: "#271a15",
-      charts: ["#e05d38", "#f59e0b", "#3b82f6"],
-    };
-    const resolved = resolveIdentityTheme("tangerine", legacy);
-    expect(resolved.id).toBe("generated");
-    expect(resolved.primary).toBe("#e05d38");
+  it("菜单与 Header 是白的", () => {
+    const t = resolveIdentityTheme();
+    expect(t.sidebarBg.toLowerCase()).toBe("#ffffff");
+    // 白底上必须是深字，否则菜单直接隐形
+    expect(t.sidebarText.toLowerCase()).not.toBe("#ffffff");
   });
 });
 

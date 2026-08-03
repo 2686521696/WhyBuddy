@@ -77,10 +77,24 @@ const TONE = {
   accentFg: 32,
   /** 内容区底色：中性色系接近白 */
   contentBg: 97,
-  /** 深色侧栏 */
-  sidebarBg: 22,
-  /** 侧栏文字 */
-  sidebarText: 92,
+  /**
+   * 侧栏底色：**白**（2026-08-03，用户裁决，参照 Ant Design Pro）。
+   *
+   * 原来是 tone 22 的深色侧栏。改白之后菜单/Header 跟内容区连成一片，
+   * 主色只出现在选中态、按钮、图表这些"该被看见"的地方——这也是
+   * Ant Design Pro / 现代后台的通行做法。
+   *
+   * tone 100 出的是纯 #ffffff（中性色系在 tone 100 与色相无关）。
+   */
+  sidebarBg: 100,
+  /**
+   * 侧栏文字：深色。
+   *
+   * 不能跟着改成"底色的反色"由算法自动决定——`foregroundFor` 只在纯黑纯白
+   * 之间二选一，那样菜单文字会是硬邦邦的 #1f1f1f。tone 30 的中性色带一点
+   * 主色色相，跟 Header/内容区是同一家人。
+   */
+  sidebarText: 30,
 } as const;
 
 /**

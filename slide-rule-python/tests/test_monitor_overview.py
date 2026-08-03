@@ -367,7 +367,7 @@ def test_sheet_size_matches_prompt_canvas():
 
 
 def test_facts_carry_only_what_the_model_cannot_derive():
-    """事实清单只装四类事实，**一条做法都不许有**。
+    """事实清单只装**三类**事实，一条做法都不许有。
 
     2026-07-31 重构：此前这里钉的是"砍四类留四类"那份写死模板的边界。那套
     模板每一条都有出图证据，问题出在它对每个应用说同一句话——实测两个完全
@@ -381,11 +381,17 @@ def test_facts_carry_only_what_the_model_cannot_derive():
     facts = _build_overview_sheet_facts(
         "测试", {"entities": []}, theme_id="tangerine", device="desktop"
     )
-    # 四类事实都在
+    # 三类事实都在
     assert "画布：" in facts
     assert "设备档：" in facts
     assert "这一页要覆盖的内容范围" in facts
-    assert "身份色板" in facts and "主色" in facts
+
+    # 色板已从事实里拿掉（2026-08-03，用户裁决：首页生图自由发挥）。
+    # 此前会附一句"运行时外壳已经按这套渲染了，别偏色"——现在外壳是统一的
+    # 白菜单 + 白 Header + 一个品牌主色，参照图的职责只剩版式，不必迁就配色。
+    # 这条断言的方向是反的（不许回流），因为把手铐加回去不会有任何报错。
+    assert "身份色板" not in facts
+    assert "主色 #" not in facts
 
     # 做法一条都不许有
     for banned in (

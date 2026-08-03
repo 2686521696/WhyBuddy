@@ -78,14 +78,25 @@ describe("deriveIdentityPalette", () => {
     }
   });
 
-  it("侧栏是深的、侧栏文字是浅的，且明度差拉得开", () => {
+  it("侧栏是白的、侧栏文字是深的，且明度差拉得开", () => {
+    // 2026-08-03（用户裁决，参照 Ant Design Pro）：菜单与 Header 改成白底。
+    // 方向反过来了，但**要守的东西没变**——明度差必须够大，否则菜单文字
+    // 在自己的底色上读不出来。深浅只是取向，可读性不是。
     for (const seed of Object.values(OLD_SEEDS)) {
       const p = deriveIdentityPalette(seed);
       const bg = hctOf(p.sidebarBg).tone;
       const fg = hctOf(p.sidebarText).tone;
-      expect(bg).toBeLessThan(40);
-      expect(fg).toBeGreaterThan(80);
-      expect(fg - bg, `${seed} 侧栏明度差只有 ${(fg - bg).toFixed(0)}`).toBeGreaterThan(50);
+      expect(bg).toBeGreaterThan(95);
+      expect(fg).toBeLessThan(45);
+      expect(bg - fg, `${seed} 侧栏明度差只有 ${(bg - fg).toFixed(0)}`).toBeGreaterThan(50);
+    }
+  });
+
+  it("白侧栏是真的白，不带任何色相偏移", () => {
+    // 中性色系在 tone 100 与色相无关，出的必须是纯 #ffffff——参照图那种
+    // 干净的白底菜单，带一点色相就会显脏（尤其跟纯白的内容卡片并排时）。
+    for (const seed of Object.values(OLD_SEEDS)) {
+      expect(deriveIdentityPalette(seed).sidebarBg.toLowerCase()).toBe("#ffffff");
     }
   });
 
