@@ -6,7 +6,7 @@
  * antd（稳定版 5.x）渲染成 Ant Design Pro 风格的后台系统。
  * 零后端、零数据库：状态在 live-runtime 内核 + localStorage。
  *
- * 多端画布：桌面 1440×810（16:9）/ 平板 1112×834 / 手机 390×844，
+ * 多端画布：桌面 1440×810（16:9）/ 平板 1112×834 / 手机 405×720（9:16），
  * 均按固定设计分辨率渲染再 CSS transform 等比缩放（"缩放 iframe"效果）；
  * 手机端换 App 壳（顶栏 + 卡片列表 + 底部标签导航）。弹层经
  * getPopupContainer 挂进画布随缩放（antd 5 trigger 自带 scale 校正）。
@@ -219,10 +219,28 @@ import type { AppPageStatSchema } from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
 // 多端设计分辨率（固定渲染 + 等比缩放）
+//
+// ⚠️ 手机档必须是 **9:16**，与出图画布同比（2026-08-03 修）。
+//
+// 事故形状：手机档此前是 390×844（0.462，iPhone 19.5:9 的物理屏比），而首页
+// 参照板出图是 720×1280（9:16），设计 LLM 是**照着 9:16 那张图排的版式**，
+// 真实渲染却把它铺进一块高出 22% 的画布——版式被拉长，底部多出一截空。
+//
+// 链路上另外三处一直是 9:16，只有这里不是：
+//   · 出图      freeform_block._DEVICE_IMAGE_SIZE.phone = 720x1280
+//   · 卡片画幅  justified-rows.DEVICE_ASPECT.phone      = 720/1280
+//   · 缩略图裁切 thumb-capture.SHOT_CANVAS.phone        = 720x1280
+// 2026-08-01 那次把卡片对齐到出图时，就地记了一笔"手机档 0.462 比 9:16 窄 22%，
+// 正是「移动端看着过长」的来源"——那次只改了卡片，画布留到了现在。
+//
+// 尺寸取 405×720（= 9×45 : 16×45，精确 9:16）。宽度从 390 往**大**挪而不是把
+// 高度压到 693：这块画布的横向一直很紧（antd Modal 默认 520 顶穿两边、
+// PhoneFormPopup 量到右侧溢出 130 设计像素——见那两处注释），往窄了改会把这
+// 类问题全部放大一档，往宽 15px 则只会更宽松。
 const DEVICE_SPECS = {
   desktop: { w: 1440, h: 810, label: "桌面" },
   tablet: { w: 1112, h: 834, label: "平板" },
-  phone: { w: 390, h: 844, label: "手机" },
+  phone: { w: 405, h: 720, label: "手机" },
 } as const;
 type DeviceKey = keyof typeof DEVICE_SPECS;
 
@@ -267,11 +285,11 @@ export function availableDeviceTiers(
  * 弹层在各设备画布里的尺寸。
  *
  * antd Modal 是桌面组件：不给 width 默认 520px、垂直偏移 top:100。手机画布
- * 才 390 宽，520 直接顶穿两边——展会上访客点「新建」就能看见。旁边的详情
+ * 才 405 宽，520 直接顶穿两边——展会上访客点「新建」就能看见。旁边的详情
  * Drawer 早就按 isPhone 改成了底部弹起，Modal 这块漏了。
  *
  * 手机上按原生表单页的做法处理：左右各留 16 边距、垂直居中、内容超高自己
- * 滚（画布是固定 390×844 的等比缩放渲染，不是真实视口，所以这里按设计分辨率
+ * 滚（画布是固定 405×720 的等比缩放渲染，不是真实视口，所以这里按设计分辨率
  * 算死值而不是用 vh）。
  */
 export function deviceModalSizing(device: DeviceKey): {
@@ -1874,7 +1892,7 @@ export function AppRuntimeScreen({
           桌面壳会渲染它——专为手机做的版式送不到手机上。
 
           外面套 phone-freeform-scope：设计树是照 preferredDevice 那一档生成的，
-          desktop 档的多列/固定宽度进了 390px 会横向撑爆。强制单列不是跟设计
+          desktop 档的多列/固定宽度进了 405px 会横向撑爆。强制单列不是跟设计
           较劲，正是把 phone 档提示词里那条规矩补执行一遍。 */}
       {page.freeformOverview && (
         <div className="phone-freeform-scope">
@@ -3369,7 +3387,7 @@ export function AppRuntimeScreen({
 
             {/* 新建表单：手机档走 antd-mobile Popup（底部弹起），桌面档留 antd
                 Modal。同一份 formFields / formValues / handleCreate，只换容器
-                和录入控件——PC 弹框塞进 390 画布会顶穿两边，实测过。 */}
+                和录入控件——PC 弹框塞进 405 画布会顶穿两边，实测过。 */}
             {isPhone ? (
               <React.Suspense fallback={null}>
                 <LazyPhoneFormPopup

@@ -82,14 +82,21 @@ describe("appPreviewUrl", () => {
 describe("回落的活渲染必须按宽度缩放", () => {
   const src = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
 
-  it("卡片比例已经跟活渲染画布不一样了——这是下一条断言的前提", () => {
-    // AppRuntimeScreen 的 DEVICE_SPECS：手机 390×844 = 0.462。
-    // 卡片比例现在照出图画布走（9:16 = 0.5625）。两者不再相等，contain 就会
-    // 按更紧的那一边缩、另一边留边。这条先钉住"前提成立"，否则下面那条会
-    // 变成一句无关的字符串匹配。
-    expect(DEVICE_ASPECT.phone).not.toBeCloseTo(390 / 844, 3);
-    // 留边有多宽：画布比 / 卡片比 = 宽度只能铺到这个比例（实测 81.8%）
-    expect(390 / 844 / DEVICE_ASPECT.phone).toBeLessThan(0.85);
+  it("卡片比例与活渲染画布同比（2026-08-03 起）", () => {
+    // 这条原先断言的是**两者不相等**——08-01 卡片对齐出图、画布留在 0.462
+    // 时的状态。08-03 画布也改成 9:16 之后前提反转了，断言跟着反转。
+    //
+    // 相等之后 contain 与 width 两种缩放算出来一样，下面那条 scaleFit 断言
+    // 就不再是"修补"而是"显式声明"——它仍然必须在，理由见那一条。
+    const canvas = readFileSync(
+      new URL("../../../sliderule/live-runtime/AppRuntimeScreen.tsx", import.meta.url),
+      "utf8"
+    );
+    const m = /phone:\s*\{\s*w:\s*(\d+),\s*h:\s*(\d+)/.exec(canvas);
+    expect(m, "AppRuntimeScreen 的 DEVICE_SPECS.phone 没找到").toBeTruthy();
+    const canvasAspect = Number(m![1]) / Number(m![2]);
+    expect(canvasAspect).toBeCloseTo(DEVICE_ASPECT.phone, 4);
+    expect(canvasAspect).toBeCloseTo(0.5625, 4);
   });
 
   it("LiveAppThumb 必须传 scaleFit=\"width\"", () => {

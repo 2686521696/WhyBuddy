@@ -42,7 +42,7 @@ function sessionItem(key: string): GalleryItem {
 
 describe("computeSpanKeys", () => {
   it("只有桌面档有资格跨列", () => {
-    // 手机档是 390×844 的竖比例，跨两列会算出 1400px 以上的巨条。
+    // 手机档是 405×720（9:16）的竖比例，跨两列会算出 1000px 以上的巨条。
     const items = [
       appItem("phone-1", "phone", 99),
       appItem("phone-2", "phone", 98),
