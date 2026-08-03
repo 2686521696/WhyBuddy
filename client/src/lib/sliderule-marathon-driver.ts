@@ -52,6 +52,47 @@ export type DriveFullStatus =
   | "python_unavailable"
   | "fallback";
 
+/**
+ * 推演需要登录（后端 401）。
+ *
+ * ## 为什么必须是一个**独立的异常**，不能跟其它失败一样 return null
+ *
+ * 这几个驱动函数的约定是"失败返回 null"，调用方拿到 null 就回落本地引擎重跑。
+ * 那个约定对**服务不可用**是对的，对 401 是错的：
+ *
+ *   · 本地重跑绕不过登录——后端每个写接口都会再拦一次；
+ *   · 回落路径会去打 legacy 的 /execute-capability，那条路在
+ *     SLIDERULE_V5_BACKEND=python 下直接 500（thin_proxy_violation）；
+ *   · 用户看到的是转圈转到底 + 一个跟登录毫无关系的 500，而真正的原因
+ *     （"请先登录后再推演"）被吞掉了。
+ *
+ * 线上实测过这个形状：miantuan.ai 上匿名点发送 → drive-full-stream 401 →
+ * 前端当故障降级 → execute-capability 500。**后端守卫是对的，错的是前端
+ * 把"没权限"当成了"服务坏了"。**
+ *
+ * 权限失败不是瞬时故障，不该重试、不该降级——如实抛出，让调用方去引导登录。
+ */
+export class DriveAuthRequiredError extends Error {
+  readonly needsLogin = true;
+  constructor(message: string) {
+    super(message || "请先登录后再推演");
+    this.name = "DriveAuthRequiredError";
+  }
+}
+
+/** 401 → 抛 DriveAuthRequiredError（带上后端那句人话）；其余交给调用方按原约定处理。 */
+async function throwIfAuthRequired(res: Response): Promise<void> {
+  if (res.status !== 401) return;
+  let message = "";
+  try {
+    const body = await res.clone().json();
+    message = String(body?.message || body?.detail || "");
+  } catch {
+    // 非 JSON 响应（网关自己的 401 页面等）——用默认文案
+  }
+  throw new DriveAuthRequiredError(message);
+}
+
 async function driveMarathonViaPython(
   state: V5SessionState,
   seedText: string,
@@ -71,6 +112,7 @@ async function driveMarathonViaPython(
         maxRounds: 8,
       }),
     });
+    await throwIfAuthRequired(res);
     if (!res.ok) return null;
     const body = await res.json();
     if (body?.backend !== "python" || body?.budgetAuthority !== "python" || !body?.state) return null;
@@ -87,7 +129,8 @@ async function driveMarathonViaPython(
       stopReason: (body.stopReason || "await_human") as MarathonStopReason,
       publishClosure: body.publishClosure,
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof DriveAuthRequiredError) throw err;
     return null;
   }
 }
@@ -126,6 +169,7 @@ export async function driveFullViaPython(
         installedSkills: installedSkillsDrivePayload(),
       }),
     });
+    await throwIfAuthRequired(res);
     if (!res.ok) return null;
     const body = await res.json();
     if (body?.backend !== "python" || !body?.state) return null;
@@ -151,7 +195,8 @@ export async function driveFullViaPython(
           ]
         : [],
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof DriveAuthRequiredError) throw err;
     return null;
   }
 }
@@ -223,9 +268,12 @@ export async function driveFullViaPythonStream(
         ...(opts.mode ? { mode: opts.mode } : {}),
       }),
     });
+    await throwIfAuthRequired(res);
     if (!res.ok || !res.body) return null;
     return await consumeDriveStreamResponse(res, opts);
-  } catch {
+  } catch (err) {
+    // 权限失败必须穿透这层 catch——它正是被这个 catch 吞成 null 的
+    if (err instanceof DriveAuthRequiredError) throw err;
     return null;
   }
 }
@@ -245,9 +293,12 @@ export async function resumeDriveFullStream(
       `/api/sliderule/runs/${encodeURIComponent(runId)}/stream?since=0`,
       { signal: opts.stopSignal }
     );
+    await throwIfAuthRequired(res);
     if (!res.ok || !res.body) return null;
     return await consumeDriveStreamResponse(res, opts);
-  } catch {
+  } catch (err) {
+    // 权限失败必须穿透这层 catch——它正是被这个 catch 吞成 null 的
+    if (err instanceof DriveAuthRequiredError) throw err;
     return null;
   }
 }
@@ -352,7 +403,8 @@ async function consumeDriveStreamResponse(
           ]
         : [],
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof DriveAuthRequiredError) throw err;
     return null;
   }
 }

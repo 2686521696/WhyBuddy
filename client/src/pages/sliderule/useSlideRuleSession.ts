@@ -1052,15 +1052,29 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         driveErrored = true;
         // Graceful: don't leave the turn dangling as "streaming" forever.
         const errMsg = driveErr?.message || String(driveErr);
+        // 推演需要登录：**不是故障，不能按"已降级显示"说**（2026-08-03 线上实测修）。
+        //
+        // 现场形状：匿名在 miantuan.ai 点发送 → drive-full-stream 401 → 前端把
+        // 401 当"服务不可用"回落本地引擎 → 那条路去打 legacy 的
+        // /execute-capability → 500 thin_proxy_violation。用户看到的是转圈转到底
+        // 加一个跟登录毫无关系的 500，而后端其实早把话说清楚了（"请先登录后再推演"）。
+        //
+        // 真正的修复在驱动层：401 抛 DriveAuthRequiredError 而不是 return null，
+        // 于是**本地兜底那一步在 try 里就被跳过了**（见 sliderule-marathon-driver）。
+        // 走到这里时兜底已经不会发生，所以这里不需要再 throw——re-throw 只会连
+        // 带跳过下面的半程落盘与收尾。只把话说对就够。
+        const needsLogin = Boolean(driveErr?.needsLogin);
         appendStep({
-          id: `${turnId}-drive-err`,
+          id: `${turnId}-drive-${needsLogin ? "auth" : "err"}`,
           kind: "capability_fail",
           capabilityId: "intent.parse" as any,
           roleId: "system",
           loopTurnId: turnId,
           capabilityRunId: `${turnId}-drive-err`,
           runIndex: 0,
-          message: `驱动执行失败（已降级显示）：${errMsg.slice(0, 140)}`,
+          message: needsLogin
+            ? `${errMsg}——浏览应用中心无需登录，推演和复刻需要账号；左下角「登录 / 注册」可以登录。`
+            : `驱动执行失败（已降级显示）：${errMsg.slice(0, 140)}`,
         });
         // Try to at least persist the intake state so graph has something
         try {
