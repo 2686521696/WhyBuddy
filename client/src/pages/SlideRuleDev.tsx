@@ -562,7 +562,7 @@ export default function SlideRuleDev() {
           <div className="flex-1 overflow-auto p-4 space-y-4 text-sm">
             {chatTurns.length === 0 && (
               <div className="text-center text-zinc-500 mt-10">
-                欢迎来到 SlideRule V5。<br />
+                欢迎来到面团 AI V5。<br />
                 在下方输入你的目标或质疑，系统会从丰富的能力池中动态挑选 (capability × role) 进行推演。<br />
                 没有固定阶段，一切由当前状态和你的输入驱动。
               </div>

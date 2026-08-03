@@ -469,7 +469,7 @@ function HomeEmptyState({
           </h1>
         </div>
         <p className="text-[14px] text-stone-500">
-          SlideRule「产品推演引擎」——一句话把业务意图推演成「能跑起来」的企业应用数字孪生
+          面团 AI「产品推演引擎」——一句话把业务意图推演成「能跑起来」的企业应用数字孪生
         </p>
       </div>
 
@@ -1749,7 +1749,7 @@ function SlideRuleSessionBody({
     // E18：Pages 下 activeSessionId 也可能是画廊示例（pages-demo-*，
     // 会话壳已做过准入回落），不再钉死主演示
     sessionId: activeSessionId,
-    documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : undefined,
+    documentTitle: IS_GITHUB_PAGES ? "面团 AI · 演示" : undefined,
     // 「点发送看回放」的预填只属于主演示空会话；画廊示例自带完整终态
     initialGoal:
       IS_GITHUB_PAGES && activeSessionId === GITHUB_PAGES_DEMO_SESSION_ID
@@ -1762,7 +1762,7 @@ function SlideRuleSessionBody({
     if (IS_GITHUB_PAGES) return;
     document.title = goal
       ? `${goal.slice(0, 24)} · SlideRule`
-      : "新会话 · SlideRule";
+      : "新会话 · 面团 AI";
   }, [goal]);
 
   // E33.5 加载官方组件化（用户裁决：弃自定义骨架屏，用 antd 官方 Spin）：

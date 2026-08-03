@@ -272,7 +272,7 @@ export function ComposerDock({
         // Let the default paste fill the textarea, then surface a hint.
         setTimeout(() => {
           setAttachmentHint(
-            `已检测到 URL — 可直接发送，SlideRule 会尝试抓取摘要`
+            `已检测到 URL — 可直接发送，面团 AI 会尝试抓取摘要`
           );
           setTimeout(() => setAttachmentHint(null), 5000);
         }, 0);

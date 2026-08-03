@@ -55,7 +55,7 @@ describe("AgentLoopPage", () => {
     // is client-only and mounts after hydration, so SSR shows the loading placeholder.
     expect(html).toContain('data-testid="agent-loop-page"');
     expect(html).toContain('data-testid="agent-loop-loading"');
-    expect(html).toContain("SlideRule 控制台加载中");
+    expect(html).toContain("面团 AI 控制台加载中");
   });
   it("maps AgentLoop workbench, settings, and run detail to first-class URL routes", () => {
     expect(getAgentLoopSliderulePath()).toBe("/agent-loop/sliderule");

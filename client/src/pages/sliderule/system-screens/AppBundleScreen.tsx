@@ -505,7 +505,7 @@ export function AppBundleScreen({
 
         {!publishClosure && (
           <div className="mt-6 text-center text-xs text-stone-300">
-            发送应用意图后，SlideRule 将逐系统填充发布证据
+            发送应用意图后，面团 AI 将逐系统填充发布证据
           </div>
         )}
       </div>

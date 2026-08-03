@@ -1190,7 +1190,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             typeof Notification !== "undefined" &&
             Notification.permission === "granted"
           ) {
-            new Notification("SlideRule 持续推演", {
+            new Notification("面团 AI 持续推演", {
               body: "本轮已收敛或需要人工确认。点击后可继续 marathon。",
             });
           } else if (

@@ -1292,18 +1292,18 @@ function AgentLoopTopbar({
   // AgentLoop（内部路由/标识保留，不破链接）
   const title =
     view === "sliderule"
-      ? "SlideRule / 推演"
+      ? "面团 / 推演"
       : view === "settings"
-        ? "SlideRule / 设置"
+        ? "面团 / 设置"
         : view === "settings-legacy"
-          ? "SlideRule / 设置（legacy）"
+          ? "面团 / 设置（legacy）"
           : view === "skills"
-            ? "SlideRule / 技能库"
+            ? "面团 / 技能库"
             : view === "help"
-              ? "SlideRule / 帮助文档"
+              ? "面团 / 帮助文档"
               : view === "workbench-legacy"
-              ? "SlideRule / 任务队列（legacy）"
-              : "SlideRule / 应用中心";
+              ? "面团 / 任务队列（legacy）"
+              : "面团 / 应用中心";
 
   const pythonStatus = pythonHealth?.service?.status || "unknown";
   const pythonTone =
@@ -1716,7 +1716,7 @@ function DashboardAppInner({
 
   const slideruleContent = (
     <div className="native-workbench-shell native-sliderule-workbench">
-      <section className="native-sliderule-shell" aria-label="SlideRule 推演">
+      <section className="native-sliderule-shell" aria-label="面团 推演">
         <SlideRulePage embedded />
       </section>
     </div>

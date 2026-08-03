@@ -512,7 +512,7 @@ function PrivacyFactsSection() {
       <ul className="space-y-1.5 text-[11px] leading-5 text-stone-400">
         <li>
           ·「浏览器直连」里填的 LLM 密钥只存在这台浏览器的本地存储里，
-          不会上传到 SlideRule 服务端；换浏览器或清站点数据后需要重填。
+          不会上传到面团 AI 服务端；换浏览器或清站点数据后需要重填。
         </li>
         <li>
           · 走「推演通道」（服务端）时，密钥配置在服务器环境变量里，

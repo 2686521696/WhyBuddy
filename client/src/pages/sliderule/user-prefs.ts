@@ -101,7 +101,7 @@ export function notifyDriveComplete(topic: string): void {
     if (typeof Notification === "undefined") return;
     if (Notification.permission !== "granted") return;
     if (!document.hidden) return;
-    new Notification("SlideRule 推演完成", {
+    new Notification("面团 AI 推演完成", {
       body: topic
         ? `「${topic.slice(0, 40)}」已闭环，回来看看结果`
         : "本轮推演已完成",
