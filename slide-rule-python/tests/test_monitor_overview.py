@@ -16,6 +16,8 @@
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.freeform_block import (  # noqa: E402
@@ -25,6 +27,26 @@ from services.freeform_block import (  # noqa: E402
     _sheet_image_size_for_device,
     enrich_monitor_page_overviews,
 )
+
+
+# ── blockRef 关闭之后（2026-08-03 用户裁决：首页只 LLM 生成，先不要固定组件）
+#
+# 目录里 freeformEmbeddable 全部置 False，于是这份 brief 不再列出任何"逐行
+# 内容/成品积木"清单——列了也没用，blockRef 会被 Pydantic 拒收，等于制造必然
+# 失败的 reask。下面凡是断言"清单在"的用例，都得先把名单临时开回来；机制没
+# 删，测试就得继续守着，将来翻回 true 时才有护栏。
+
+PREVIOUSLY_EMBEDDABLE = ("RankedList", "ActivityFeed", "QuickActionPanel", "WorkflowTimeline")
+
+
+@pytest.fixture
+def embedding_on(monkeypatch):
+    """把可嵌名单临时开回关闭前的那四个。两个模块各持一份引用，都要打。"""
+    from services import freeform_block, schema_legal
+
+    monkeypatch.setattr(schema_legal, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
+    monkeypatch.setattr(freeform_block, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
+    return PREVIOUSLY_EMBEDDABLE
 
 
 def _datamodel():
@@ -97,7 +119,7 @@ def test_design_brief_excludes_rankings_and_feeds():
     assert "工单动态" not in required_section
 
 
-def test_design_brief_offers_row_content_as_blockref_candidates():
+def test_design_brief_offers_row_content_as_blockref_candidates(embedding_on):
     """逐行内容以**现成绑定**的形式给出来，模型照抄就能摆。
 
     第一版只写了一句泛泛的"适合的话就摆一个"，真跑生成出来 blockRef 一个都
@@ -113,7 +135,7 @@ def test_design_brief_offers_row_content_as_blockref_candidates():
     assert '"sortByRef": "amount"' in brief
 
 
-def test_design_brief_dedupes_row_content_candidates():
+def test_design_brief_dedupes_row_content_candidates(embedding_on):
     """同一份逐行内容常被 feeds 和 blocks 各声明一遍（真跑逮到过）——
     喂给模型之前先按内容指纹去重，否则等于让它把同一张卡摆两次。"""
     page = _monitor_page()
@@ -130,7 +152,37 @@ def test_design_brief_dedupes_row_content_candidates():
     assert sum(1 for l in candidates if "ActivityFeed" in l) == 1, candidates
 
 
-def test_design_brief_points_row_content_at_blockref():
+def test_brief_stops_offering_blocks_once_the_allowlist_is_empty():
+    """默认状态（2026-08-03 起）：brief 里一个积木都不提。
+
+    这条钉的是**两个受众一起收口**：
+
+    · 设计 LLM 那份如果还留着"用 blockRef 摆进版式"，模型会照做，然后被
+      Pydantic 拒收、进 reask、三次烧完降级回固定骨架——比不改还差。
+    · 生图那份如果还留着"画一条流程阶段条"，参照板就会承诺真实渲染兑现不了
+      的东西，正好加大"参考图和实际渲染差很远"这个已知落差。
+
+    页面 fixture 本身声明了 rankings/feeds/blocks，所以这条不是空跑：清单
+    有东西可列，是代码选择了不列。
+    """
+    page, dm = _monitor_page(), _datamodel()
+    assert page.get("rankings") or page.get("feeds") or page.get("blocks")
+
+    design = _monitor_overview_design_brief(page, dm)
+    assert "blockRef" not in design
+    assert "逐行内容" not in design
+    assert "成品积木" not in design
+
+    image = _monitor_overview_design_brief(page, dm, audience="image")
+    assert "排行榜" not in image
+    assert "流程阶段条" not in image
+
+    # KPI 与图表这两份"必须包含"清单不受影响——这次关的是积木，不是内容。
+    assert "必须包含的 KPI 统计卡" in design
+    assert "必须包含的图表" in design
+
+
+def test_design_brief_points_row_content_at_blockref(embedding_on):
     """2026-07-29：这里原来断言的是一句硬禁令「不要画排行榜/动态流」。
 
     禁令本身没错（模型确实画不了逐行），但代价是那些内容被赶到设计之外
@@ -145,7 +197,7 @@ def test_design_brief_points_row_content_at_blockref():
     assert "不要自己用 CSS 去画这类内容" in brief
 
 
-def test_design_brief_frames_blocks_as_a_real_choice():
+def test_design_brief_frames_blocks_as_a_real_choice(embedding_on):
     """安置语义在 2026-08-01 反转过两次，这条用例记录最终形态与理由。
 
     ① 最初是**许可式**："如果这一页还适合……就摆一个……用不上就完全不用"。
@@ -639,7 +691,7 @@ def _monitor_page_with_blocks():
     return page
 
 
-def test_brief_lists_binding_free_blocks_without_an_empty_binding():
+def test_brief_lists_binding_free_blocks_without_an_empty_binding(embedding_on):
     """不吃 binding 的积木不能被拼成 "binding": {}。
 
     QuickActionPanel 的按钮来自 page.actions、WorkflowTimeline 的节点从 workflow
@@ -658,7 +710,7 @@ def test_brief_lists_binding_free_blocks_without_an_empty_binding():
     assert '"entityRef": "ticket"' in brief
 
 
-def test_brief_separates_row_content_from_action_and_process_blocks():
+def test_brief_separates_row_content_from_action_and_process_blocks(embedding_on):
     """两类积木分段写——「逐行内容」这个说法套不到动作面/流程面上。
 
     合在一段的代价不是措辞难看：设计 LLM 是按"这是什么内容"决定放哪的，
@@ -724,7 +776,7 @@ def test_image_audience_brief_carries_no_technical_identifiers():
         assert forbidden not in img, f"出图 brief 混进了技术标识: {forbidden}"
 
 
-def test_image_audience_brief_describes_blocks_visually():
+def test_image_audience_brief_describes_blocks_visually(embedding_on):
     """同一批积木要以**画得出来**的形态告诉生图模型，不能只是删掉技术形态。
 
     只清理不补描述的话，参照板会缺掉这一页真实存在的内容，设计 LLM 拿到的
@@ -740,7 +792,7 @@ def test_image_audience_brief_describes_blocks_visually():
     assert "一条横向流程阶段条" in img
 
 
-def test_design_audience_keeps_blockref_mechanics():
+def test_design_audience_keeps_blockref_mechanics(embedding_on):
     """设计 LLM 那一份必须保留技术形态——它的产出要能被渲染器认出来。"""
     page = _monitor_page()
     page["blocks"] = [{"id": "acts", "type": "QuickActionPanel", "props": {"title": "常用操作"}}]
@@ -781,7 +833,7 @@ def _run_enrich(page, design, monkeypatch):
     return enrich_monitor_page_overviews(model)["page"]["pages"][0]
 
 
-def test_unplaced_block_is_removed(monkeypatch):
+def test_unplaced_block_is_removed(monkeypatch, embedding_on):
     """只摆了 QuickActionPanel → WorkflowTimeline 视为不需要，移除。"""
     page = _run_enrich(_page_with_blocks(), _design_with("QuickActionPanel"), monkeypatch)
     ids = [b["id"] for b in page["blocks"]]

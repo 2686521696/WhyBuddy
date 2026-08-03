@@ -1,6 +1,6 @@
 {
-  "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；本版只建立目录和渲染边界，不改变旧页面效果。bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | freeformEmbeddable：这块能不能被 FreeformInsight 的设计树用 blockRef 嵌进去（Puck DropZone 的 allow 语义：只放行名单内的）。逐行记录类给 True——freeform 的 dataRef 只能出聚合值，画不了逐行；跟 freeform 自画内容撞车的、会撑爆版面的、以及自己嵌自己的给 False。",
-  "version": 6,
+  "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；本版只建立目录和渲染边界，不改变旧页面效果。bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | freeformEmbeddable：这块能不能被 FreeformInsight 的设计树用 blockRef 嵌进去（Puck DropZone 的 allow 语义：只放行名单内的）。2026-08-03 用户裁决「首页只 LLM 生成，先不要固定组件」——全部置 False，名单空了，blockRef 这条路整体关闭（prompt 段自动消失、Pydantic 拒收任何 blockRef，见 freeform_block.py）。要重新放开就是把对应的几条翻回 true，别的地方不用动。",
+  "version": 7,
   "allowedSlots": [
     "summary",
     "primary",
@@ -335,7 +335,7 @@
           ]
         }
       },
-      "freeformEmbeddable": true
+      "freeformEmbeddable": false
     },
     {
       "type": "ActivityFeed",
@@ -392,7 +392,7 @@
           }
         }
       },
-      "freeformEmbeddable": true
+      "freeformEmbeddable": false
     },
     {
       "type": "DataTable",
@@ -466,7 +466,7 @@
         "optional": [],
         "note": "不使用 binding；入口按钮由 actions[] 里的 createRecord/navigate 类型动作声明。"
       },
-      "freeformEmbeddable": true
+      "freeformEmbeddable": false
     },
     {
       "type": "FilterBar",
@@ -538,7 +538,7 @@
         "optional": [],
         "note": "不使用 binding；展示哪条流程链路由 props.chainRef 声明（留空=workflow 主链路，填值必须是 workflow.chains[].id 之一）。节点、顺序、条件全部从 workflow 系统机械派生，不接受自由文案。"
       },
-      "freeformEmbeddable": true
+      "freeformEmbeddable": false
     },
     {
       "type": "FreeformInsight",

@@ -59,6 +59,22 @@ def _feed(**binding):
 # ── 账本本身 ──────────────────────────────────────────────────────────
 
 
+# blockRef 自 2026-08-03 起整体关闭（用户裁决：首页只 LLM 生成，先不要固定
+# 组件），可嵌名单为空。ActivityFeed 的 row 档 / detailFieldRefs 属于 blockRef
+# 机制的一部分，机制没删，测试就继续守着——把名单临时开回来再测。
+PREVIOUSLY_EMBEDDABLE = ("RankedList", "ActivityFeed", "QuickActionPanel", "WorkflowTimeline")
+
+
+@pytest.fixture
+def embedding_on(monkeypatch):
+    """两个模块各持一份名单引用（freeform_block 在 import 时取了值），都要打。"""
+    from services import freeform_block, schema_legal
+
+    monkeypatch.setattr(schema_legal, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
+    monkeypatch.setattr(freeform_block, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
+    return PREVIOUSLY_EMBEDDABLE
+
+
 def test_catalog_declares_variant_and_detail_refs():
     entry = next(b for b in EXPERIENCE_BLOCKS if b["type"] == "ActivityFeed")
     variant = entry["propsSchema"]["properties"]["variant"]
@@ -72,43 +88,43 @@ def test_catalog_declares_variant_and_detail_refs():
 # ── blockRef 深校验（freeform 内嵌路径）────────────────────────────────
 
 
-def test_detail_field_refs_accepted():
+def test_detail_field_refs_accepted(embedding_on):
     tree = _validate_ref(_feed(detailFieldRefs=["code", "weight"]))
     assert tree.root.children[0].blockRef.binding["detailFieldRefs"] == ["code", "weight"]
 
 
-def test_omitting_detail_field_refs_still_valid():
+def test_omitting_detail_field_refs_still_valid(embedding_on):
     """窄侧栏里用时间轴档，本来就不需要明细列。"""
     tree = _validate_ref(_feed())
     assert "detailFieldRefs" not in tree.root.children[0].blockRef.binding
 
 
-def test_detail_field_must_exist_on_the_entity():
+def test_detail_field_must_exist_on_the_entity(embedding_on):
     with pytest.raises(ValidationError) as e:
         _validate_ref(_feed(detailFieldRefs=["code", "no_such_field"]))
     assert "no_such_field" in str(e.value)
 
 
-def test_detail_field_from_another_entity_rejected():
+def test_detail_field_from_another_entity_rejected(embedding_on):
     """bean.origin 是真字段，但不在 batch 上——取不到这一列的值。"""
     with pytest.raises(ValidationError) as e:
         _validate_ref(_feed(detailFieldRefs=["origin"]))
     assert "does not exist on entity 'batch'" in str(e.value)
 
 
-def test_detail_field_refs_must_be_an_array():
+def test_detail_field_refs_must_be_an_array(embedding_on):
     with pytest.raises(ValidationError) as e:
         _validate_ref(_feed(detailFieldRefs="code"))
     assert "array of field ids" in str(e.value)
 
 
-def test_detail_field_refs_capped_at_three():
+def test_detail_field_refs_capped_at_three(embedding_on):
     with pytest.raises(ValidationError) as e:
         _validate_ref(_feed(detailFieldRefs=["code", "weight", "status", "roasted_at"]))
     assert "at most 3" in str(e.value)
 
 
-def test_any_field_type_allowed_as_a_detail_column():
+def test_any_field_type_allowed_as_a_detail_column(embedding_on):
     """明细列不限类型——数字/日期/枚举都是合法的一列。"""
     tree = _validate_ref(_feed(detailFieldRefs=["weight", "status"]))
     assert tree.root.children[0].blockRef.binding["detailFieldRefs"] == ["weight", "status"]
@@ -160,7 +176,7 @@ def test_gate_flags_too_many_detail_refs():
 # ── prompt 得说得清 ───────────────────────────────────────────────────
 
 
-def test_prompt_documents_variant_and_detail_refs():
+def test_prompt_documents_variant_and_detail_refs(embedding_on):
     frag = _blockref_prompt_fragment()
     assert "detailFieldRefs" in frag
     assert "数组" in frag

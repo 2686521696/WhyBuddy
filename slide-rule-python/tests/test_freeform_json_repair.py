@@ -16,6 +16,8 @@ tests/data/freeform_json_repair_case_real.txt）：结尾收得完整（不是�
 
 import json
 import sys
+
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -71,6 +73,21 @@ _REAL_CASE_DATAMODEL = {
 }
 
 
+# 这份真实样本是 blockRef 关闭（2026-08-03）之前抓的，树里带一个 ActivityFeed
+# 的 blockRef。这条用例测的是 **JSON 修复**，不是 blockRef 政策——名单空着会让
+# 它挂在校验上，测不到它真正要测的东西。所以把名单临时开回来。
+PREVIOUSLY_EMBEDDABLE = ("RankedList", "ActivityFeed", "QuickActionPanel", "WorkflowTimeline")
+
+
+@pytest.fixture
+def embedding_on(monkeypatch):
+    from services import freeform_block, schema_legal
+
+    monkeypatch.setattr(schema_legal, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
+    monkeypatch.setattr(freeform_block, "FREEFORM_EMBEDDABLE_BLOCK_TYPES", PREVIOUSLY_EMBEDDABLE)
+    return PREVIOUSLY_EMBEDDABLE
+
+
 def test_synthetic_extra_brace_repaired():
     """最小复现：children 数组里一个节点多了一个收尾 }，后面还接了个坏值。"""
     bad = (
@@ -112,7 +129,7 @@ def test_prune_non_dict_list_items_drops_junk_keeps_dicts():
     }
 
 
-def test_real_captured_failure_repairs_to_valid_schema():
+def test_real_captured_failure_repairs_to_valid_schema(embedding_on):
     """真实复现样本（2026-07-30，健身房会话第 4 次尝试抓到）：修复后必须
     是结构正确、能通过我们严格 Pydantic 校验的内容——不只是"能 json.loads
     了"这么低的标准。"""

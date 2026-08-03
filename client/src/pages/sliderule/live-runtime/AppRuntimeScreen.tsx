@@ -1346,6 +1346,24 @@ export function AppRuntimeScreen({
     [page?.freeformOverview]
   );
 
+  /**
+   * 首页由 AI 设计**独占**（2026-08-03 用户裁决：「首页只 LLM 生成，先不要
+   * 固定组件」）。
+   *
+   * 光在后端关掉 blockRef 是不够的：那些积木仍然写在 page.blocks 里，摆不进
+   * 设计树就会掉到设计区**外面**的脚手架里照样渲染——用户看到的固定组件一个
+   * 没少，只是位置更差，还把本来就超高的版面再撑长一截（真跑量到的溢出是
+   * 790px，图表整个被裁在画布之外）。所以渲染端这一侧必须同时收口：总览页
+   * 一旦有 freeformOverview，设计树就是这一页的全部内容，脚手架和固定榜/流
+   * 都让位。
+   *
+   * fail-open 不变：生成失败 → 没有 freeformOverview → 这个开关自动是 false，
+   * 一切照旧走固定骨架。真正会消失的只有"设计没安置、又确实声明了"的那些，
+   * 那正是这次裁决要去掉的东西。
+   */
+  const freeformOwnsPage =
+    Boolean(page?.freeformOverview) && OVERVIEW_KINDS.has(page?.view.kind ?? "");
+
   // 体验区块渲染：桌面壳与手机壳共用同一份摆法逻辑，只有槽位来源分档。
   // 抽成函数之前它内联在 defaultPageContent 里，于是手机档一个区块都渲染不到。
   // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
@@ -1421,6 +1439,9 @@ export function AppRuntimeScreen({
 
   const renderExperienceBlockScaffold = (forPhone: boolean) => {
     if (!page) return null;
+    // 首页归 AI 设计独占（见 freeformOwnsPage）——设计树没安置的积木不再
+    // 外挂到设计区下面。
+    if (freeformOwnsPage) return null;
         // 保守策略：_fromLegacy 区块只是转换占位，渲染仍走旧路径（statsBand 等）。
         // 真正的新模型 blocks 不带 _fromLegacy，走 ExperienceBlockBoundary。
         const directBlocks = page.experienceBlocks
@@ -2666,13 +2687,19 @@ export function AppRuntimeScreen({
   // 声明一遍（真跑逮到：绑定逐字段相同、只有 id 和名字不同），于是首页出
   // 现两张一模一样的卡。撞车时保留积木那份（它带槽位摆放 + 新渲染器），
   // 这里只渲染没被积木覆盖的。判定见 page-panel-dedupe.ts。
-  const dedupedLists = page
-    ? dropLegacyPanelsCoveredByBlocks(
-        { rankings: page.rankings, feeds: page.feeds },
-        page.experienceBlocks,
-        freeformPlacedKeys
-      )
-    : { rankings: [], feeds: [] };
+  //
+  // 2026-08-03：上面那条"两者并列渲染"的老规矩，在**首页**上被用户裁决推翻了
+  //（「首页只 LLM 生成，先不要固定组件」）。首页有 AI 设计时它独占整页，榜/流
+  // 一并让位——首页因此只剩聚合与图表，逐行明细回到各自的业务页。其余页面
+  // （workbench/kanban/…）没有 freeformOverview，这条老规矩原样保留。
+  const dedupedLists =
+    page && !freeformOwnsPage
+      ? dropLegacyPanelsCoveredByBlocks(
+          { rankings: page.rankings, feeds: page.feeds },
+          page.experienceBlocks,
+          freeformPlacedKeys
+        )
+      : { rankings: [], feeds: [] };
   const monitorDynamicLists =
     page && (dedupedLists.rankings.length > 0 || dedupedLists.feeds.length > 0) ? (
       <div

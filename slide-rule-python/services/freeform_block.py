@@ -893,15 +893,42 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
     return FreeformDesign
 
 
+def _aggregate_only_prompt_fragment() -> str:
+    """名单空掉时替上的口径：这一页只画聚合，不要硬画逐行记录。
+
+    2026-08-03 用户裁决「首页只 LLM 生成，先不要固定组件」之后，blockRef
+    这条路整体关闭。但**不能只是把那段说明删掉就完事**——那段话原本承担
+    两件事：①给出可嵌积木清单，②告诉模型"逐行记录你画不出来"。删掉第一
+    件，第二件跟着没了，模型只会以为逐行内容可以自己画，于是画出一个表头
+    加一片空白（这正是当初引入 blockRef 的起因，见 schema_legal 里
+    FREEFORM_EMBEDDABLE_BLOCK_TYPES 的注释）。
+
+    所以这里把②单独留下来，并且把结论从"摆个积木"改成"换成聚合表达"。
+    """
+    return "\n".join([
+        "",
+        "有些内容你**画不出来**：需要逐行列出真实记录的那类（排行榜、动态流、",
+        "流程时间线、逐条待办）。dataRef 只能取聚合值（count/sum/avg），没有",
+        "\"引用第 N 行\"的表达方式——硬画只会得到一个表头加一片空白，比不画更差。",
+        "",
+        "**遇到这种内容，换一种说法，不要硬画**：把「最近 8 条提醒」改成「今日待发",
+        "提醒 N 条」这样的聚合数字，把「逾期书目清单」改成按状态分组的环图。总览页",
+        "本来就是看总量和趋势的地方，逐行明细在各自的业务页上，这一页不承担。",
+    ])
+
+
 def _blockref_prompt_fragment() -> str:
     """可嵌积木清单——从目录的 freeformEmbeddable 派生（2026-07-29）。
 
     名单语义抄 Puck 的 DropZone allow：allow 设了就只放行名单内的。改目录
     一处，Pydantic 校验/这段 prompt/前端渲染三处同步。绑定字段说明直接吃
     bindingSchema，与 Gate 校验 page.blocks 同一本账。
+
+    名单空掉（当前状态）时不是"什么都不说"，而是换成
+    `_aggregate_only_prompt_fragment` 的口径——理由见那个函数。
     """
     if not FREEFORM_EMBEDDABLE_BLOCK_TYPES:
-        return ""
+        return _aggregate_only_prompt_fragment()
     by_type = {str(b["type"]): b for b in EXPERIENCE_BLOCKS}
     lines = [
         "",
@@ -2167,7 +2194,25 @@ def _monitor_overview_design_brief(
         seen_row_keys.add(key)
         return True
 
-    for r in page.get("rankings") or []:
+    # blockRef 整体关闭时（目录里 freeformEmbeddable 全 False，2026-08-03 用户
+    # 裁决「首页只 LLM 生成，先不要固定组件」），下面这三段清单**全部没有消费
+    # 方**，必须一起停掉：
+    #
+    #   · 给设计 LLM 的 row_bits/plain_bits 说的是"用 blockRef 摆进版式"，而
+    #     blockRef 现在会被 Pydantic 拒收——继续喂等于亲手制造必然失败的 reask，
+    #     三次重试烧完，整页设计降级回固定骨架，比不改还差。
+    #   · 给生图模型的 visual_bits 更要停：参照板画了排行榜/动态流，真实渲染
+    #     却做不出来，那正是"参考图和实际渲染差很远"的一个来源。参照板只该
+    #     承诺渲染端兑现得了的东西。
+    #
+    # 用空列表替掉数据源而不是在每个循环里加分支：清单为空时下游那几个
+    # `if row_bits:` / `if visual_bits:` 本来就不出这段文案，行为自然收敛。
+    _embeddable_on = bool(FREEFORM_EMBEDDABLE_BLOCK_TYPES)
+    _rankings_src = (page.get("rankings") or []) if _embeddable_on else []
+    _feeds_src = (page.get("feeds") or []) if _embeddable_on else []
+    _blocks_src = (page.get("blocks") or []) if _embeddable_on else []
+
+    for r in _rankings_src:
         entity = str(r.get("entity") or "").strip()
         sort_by = str(r.get("sortBy") or "").rpartition(".")[2]
         if not entity or not sort_by:
@@ -2181,7 +2226,7 @@ def _monitor_overview_design_brief(
             f'{{"entityRef": "{entity}", "sortByRef": "{sort_by}"{extra}}}}}'
         )
         _visual("RankedList", str(r.get("name") or ""))
-    for f in page.get("feeds") or []:
+    for f in _feeds_src:
         entity = str(f.get("entity") or "").strip()
         time_field = str(f.get("timeField") or "").rpartition(".")[2]
         if not entity or not time_field:
@@ -2195,7 +2240,7 @@ def _monitor_overview_design_brief(
             f'{{"entityRef": "{entity}", "timeFieldRef": "{time_field}"{extra}}}}}'
         )
         _visual("ActivityFeed", str(f.get("name") or ""))
-    for b in page.get("blocks") or []:
+    for b in _blocks_src:
         block_type = str(b.get("type") or "")
         if block_type not in FREEFORM_EMBEDDABLE_BLOCK_TYPES:
             continue
@@ -2303,12 +2348,16 @@ def _monitor_overview_design_brief(
             "按这一页的实际需要选，不必把积木凑齐——但这句话只对积木有效，"
             "KPI 与图表照单全画。"
         )
-    lines.append(
-        "除了 KPI 统计卡和图表，这一页若还适合展示逐行记录（排行榜、最近动态/"
-        "提醒、流程阶段条、常用操作入口），一律用 blockRef 摆现成积木（用法见"
-        "下方说明）——不要自己用 CSS 去画这类内容（画出来只有表头没有行），"
-        "也不要因为画不了就当它不存在。"
-    )
+    # blockRef 关掉之后这句必须跟着走（2026-08-03）：它指的"下方说明"已经被
+    # _aggregate_only_prompt_fragment 换掉，留着就是让模型去用一个会被拒收的
+    # 字段。逐行记录该怎么办由那段新文案负责说（换成聚合表达，不硬画）。
+    if _embeddable_on:
+        lines.append(
+            "除了 KPI 统计卡和图表，这一页若还适合展示逐行记录（排行榜、最近动态/"
+            "提醒、流程阶段条、常用操作入口），一律用 blockRef 摆现成积木（用法见"
+            "下方说明）——不要自己用 CSS 去画这类内容（画出来只有表头没有行），"
+            "也不要因为画不了就当它不存在。"
+        )
     return "\n".join(lines)
 
 
