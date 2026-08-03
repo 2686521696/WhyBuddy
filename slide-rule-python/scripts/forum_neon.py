@@ -131,17 +131,25 @@ def main() -> None:
     print(f"表就绪，当前 {db.count()} 条")
 
     ok = fail = 0
+    skipped = 0
     for line in src.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        rec = json.loads(line)
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            # 抓取还在往同一个文件追加时，最后一行可能只写了一半。跳过而不是
+            # 崩掉——这个脚本要能对着一个正在增长的 JSONL 跑，随时落库兜底。
+            skipped += 1
+            continue
         try:
             db.upsert(rec)
             ok += 1
         except Exception as exc:  # noqa: BLE001 — 单条失败不中断整批
             fail += 1
             print(f"  ✗ {rec.get('id')}: {exc}", flush=True)
-    print(f"写入完成：成功 {ok}，失败 {fail}；表内共 {db.count()} 条")
+    tail = f"，跳过半行 {skipped}" if skipped else ""
+    print(f"写入完成：成功 {ok}，失败 {fail}{tail}；表内共 {db.count()} 条")
 
 
 if __name__ == "__main__":
