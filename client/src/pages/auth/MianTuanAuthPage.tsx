@@ -48,7 +48,7 @@ import {
 } from "@/lib/auth-client";
 import { useAuth } from "@/lib/use-auth";
 import {
-  PRODUCT_NAME_ZH,
+  PRODUCT_HERO_ZH,
   PRODUCT_TAGLINE_ZH,
 } from "@shared/brand";
 
@@ -56,6 +56,9 @@ type Mode = "login" | "register";
 type Step = "form" | "code";
 
 const DEFAULT_NEXT = "/agent-loop/workbench";
+
+/** 左侧品牌区的团队协作插画（官方素材，透明底 PNG，1536×1024）。 */
+const TEAM_ILLUSTRATION_SRC = "/brand/miantuan-team-illustration.png";
 
 /**
  * 从 URL 取回跳地址。**只认站内相对路径。**
@@ -97,10 +100,13 @@ export default function MianTuanAuthPage() {
           <div className="mb-8 lg:hidden">
             <MianTuanWordmark size={30} />
           </div>
-          <AuthCard onDone={async () => {
-            await refresh();
-            setLocation(next);
-          }} />
+          <AuthCard
+            onDone={async () => {
+              await refresh();
+              setLocation(next);
+            }}
+            onBrowse={() => setLocation(DEFAULT_NEXT)}
+          />
         </div>
       </div>
     </div>
@@ -130,29 +136,26 @@ export function BrandPanel() {
         <MianTuanWordmark size={34} />
       </div>
 
-      <div className="relative max-w-[520px]">
-        <h1 className="text-[42px] font-bold leading-[1.18] tracking-tight text-slate-900">
-          欢迎来到{PRODUCT_NAME_ZH}
+      {/* 插画 + 标语作为一个整体居中（2026-08-03 改版，对齐用户给的设计稿）。
+          此前这一侧只有文字和一串要点，大屏下左半边几乎是空的，跟右侧表单
+          也没有共同的视觉重心——用户反馈"不规整、对不齐"说的就是这里。
+
+          插画用 max-h 而不是固定高度：素材是 1536×1024 的横图，容器高度随
+          视口变，写死高度会在矮屏上把标语挤出可视区。object-contain 保证
+          任何比例下都不裁切、不变形。 */}
+      <div className="relative flex flex-1 flex-col items-center justify-center py-8">
+        <img
+          src={TEAM_ILLUSTRATION_SRC}
+          alt=""
+          aria-hidden
+          className="w-full max-w-[560px] max-h-[46vh] object-contain"
+        />
+        <h1 className="mt-10 text-center text-[38px] font-bold leading-[1.2] tracking-tight text-slate-900">
+          {PRODUCT_HERO_ZH}
         </h1>
-        <p className="mt-4 text-[17px] leading-relaxed text-slate-500">
+        <p className="mt-3 max-w-[440px] text-center text-[16px] leading-relaxed text-slate-500">
           {PRODUCT_TAGLINE_ZH}
         </p>
-
-        <ul className="mt-9 space-y-3.5">
-          {[
-            "浏览应用中心无需登录",
-            "登录后可复刻他人应用、继续推演",
-            "你的应用归你所有，可设为公开或私密",
-          ].map(line => (
-            <li key={line} className="flex items-start gap-3 text-[15px] text-slate-600">
-              <span
-                className="mt-[7px] size-1.5 shrink-0 rounded-full"
-                style={{ background: "linear-gradient(135deg,#22D3C5,#7C3AED)" }}
-              />
-              {line}
-            </li>
-          ))}
-        </ul>
       </div>
 
       <p className="relative text-xs text-slate-400">miantuan.ai</p>
@@ -161,7 +164,14 @@ export function BrandPanel() {
 }
 
 /** 右侧表单卡。同样导出以便单测（它只用 useState，SSR 下能渲染）。 */
-export function AuthCard({ onDone }: { onDone: () => Promise<void> | void }) {
+export function AuthCard({
+  onDone,
+  onBrowse,
+}: {
+  onDone: () => Promise<void> | void;
+  /** 「暂不登录」出口。路由跳转留在父组件，这张卡不依赖 wouter，才好单测。 */
+  onBrowse: () => void;
+}) {
   const [mode, setMode] = useState<Mode>("login");
   const [step, setStep] = useState<Step>("form");
   const [email, setEmail] = useState("");
@@ -203,6 +213,7 @@ export function AuthCard({ onDone }: { onDone: () => Promise<void> | void }) {
   const title = mode === "login" ? "登录" : step === "form" ? "创建账号" : "输入验证码";
   const inputCls =
     "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[15px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400";
+  const labelCls = "block text-[13px] font-medium text-slate-700";
 
   return (
     <div data-testid="miantuan-auth">
@@ -213,40 +224,61 @@ export function AuthCard({ onDone }: { onDone: () => Promise<void> | void }) {
           : "浏览无需登录；复刻和推演需要账号。"}
       </p>
 
-      <div className="mt-7 space-y-3">
+      {/* 字段带独立标签（2026-08-03 改版）。此前只有 placeholder——一开始填就
+          消失，用户填到第三个框回头看不出哪个是哪个；辅助技术也读不到字段名。
+          label + htmlFor 是这条的标准解法，顺带点标签能聚焦对应输入框。 */}
+      <div className="mt-7 space-y-4">
         {step === "form" ? (
           <>
-            <input
-              className={inputCls}
-              type="email"
-              placeholder="邮箱"
-              autoComplete="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              data-testid="auth-email"
-            />
-            <input
-              className={inputCls}
-              type="password"
-              placeholder={mode === "register" ? "密码（至少 8 位）" : "密码"}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && void submit()}
-              data-testid="auth-password"
-            />
+            <div className="space-y-1.5">
+              <label htmlFor="auth-email" className={labelCls}>
+                邮箱
+              </label>
+              <input
+                id="auth-email"
+                className={inputCls}
+                type="email"
+                placeholder="请输入邮箱"
+                autoComplete="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                data-testid="auth-email"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="auth-password" className={labelCls}>
+                密码
+              </label>
+              <input
+                id="auth-password"
+                className={inputCls}
+                type="password"
+                placeholder={mode === "register" ? "请设置密码（至少 8 位）" : "请输入密码"}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && void submit()}
+                data-testid="auth-password"
+              />
+            </div>
           </>
         ) : (
-          <input
-            className={`${inputCls} text-center text-2xl tracking-[0.5em]`}
-            inputMode="numeric"
-            maxLength={6}
-            placeholder="000000"
-            value={code}
-            onChange={e => setCode(e.target.value.replace(/\D/g, ""))}
-            onKeyDown={e => e.key === "Enter" && void submit()}
-            data-testid="auth-code"
-          />
+          <div className="space-y-1.5">
+            <label htmlFor="auth-code" className={labelCls}>
+              邮箱验证码
+            </label>
+            <input
+              id="auth-code"
+              className={`${inputCls} text-center text-2xl tracking-[0.5em]`}
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="000000"
+              value={code}
+              onChange={e => setCode(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={e => e.key === "Enter" && void submit()}
+              data-testid="auth-code"
+            />
+          </div>
         )}
       </div>
 
@@ -300,6 +332,22 @@ export function AuthCard({ onDone }: { onDone: () => Promise<void> | void }) {
           data-testid="auth-switch-mode"
         >
           {mode === "login" ? "还没有账号？创建一个" : "已有账号？去登录"}
+        </button>
+      )}
+
+      {/* 「暂不登录」的出口（2026-08-03 补，设计稿上有）。
+          产品规则本来就是"浏览无需登录，复刻和推演才要账号"（上面副标题就
+          这么写的），但此前这一页没有任何地方能走到应用中心——说了不用登录，
+          却只给了登录一条路。注册流程中途（step=code）不出这个口子，那时候
+          离开等于放弃刚发的验证码。 */}
+      {step === "form" && (
+        <button
+          type="button"
+          className="mt-6 w-full text-[13px] font-medium text-blue-600 transition hover:text-blue-700"
+          onClick={() => onBrowse()}
+          data-testid="auth-browse-without-login"
+        >
+          暂不登录，浏览应用中心
         </button>
       )}
 

@@ -89,19 +89,41 @@ describe("品牌标识", () => {
 });
 
 describe("登录页", () => {
-  it("品牌区讲清楚了主张，以及「浏览无需登录」", () => {
+  it("品牌区有插画、主标语和产品说明", () => {
     // 整页渲染要 wouter 的 window，这里直接测两个展示组件——
     // 它们才是版式与文案的载体，路由不是这份测试的目标。
     const markup = renderToStaticMarkup(<BrandPanel />);
-    expect(markup).toContain("欢迎来到面团");
+    // 2026-08-03 改版：左侧从"一行标题 + 三条要点"换成"插画 + 主标语"，
+    // 对齐用户给的设计稿（此前大屏下左半边几乎是空的）。
+    expect(markup).toContain("miantuan-team-illustration.png");
+    expect(markup).toContain("不止一面，即刻成团");
     expect(markup).toContain("把一句模糊想法");
-    // 这句必须在：新用户不知道匿名能干什么，会以为不登录寸步难行
-    expect(markup).toContain("浏览应用中心无需登录");
     expect(markup).toContain("miantuan.ai");
+    // 插画是装饰性的，必须对读屏软件隐藏，否则念出一串无意义的文件名
+    expect(markup).toContain('aria-hidden');
+  });
+
+  it("「浏览无需登录」这条产品规则有实际出口，不只是一句说明", () => {
+    // 改版前这句话只写在左侧要点里，页面上却没有任何地方能走到应用中心——
+    // 说了不用登录，却只给了登录一条路。现在是一个真按钮。
+    const markup = renderToStaticMarkup(
+      <AuthCard onDone={() => {}} onBrowse={() => {}} />
+    );
+    expect(markup).toContain('data-testid="auth-browse-without-login"');
+    expect(markup).toContain("暂不登录，浏览应用中心");
+  });
+
+  it("字段有独立标签，不只靠 placeholder", () => {
+    // placeholder 一开始填就消失，辅助技术也读不到字段名
+    const markup = renderToStaticMarkup(
+      <AuthCard onDone={() => {}} onBrowse={() => {}} />
+    );
+    expect(markup).toContain('for="auth-email"');
+    expect(markup).toContain('for="auth-password"');
   });
 
   it("表单卡有邮箱、密码和切换注册的入口", () => {
-    const markup = renderToStaticMarkup(<AuthCard onDone={() => {}} />);
+    const markup = renderToStaticMarkup(<AuthCard onDone={() => {}} onBrowse={() => {}} />);
     expect(markup).toContain('data-testid="auth-email"');
     expect(markup).toContain('data-testid="auth-password"');
     expect(markup).toContain('data-testid="auth-switch-mode"');
@@ -110,7 +132,7 @@ describe("登录页", () => {
 
   it("默认是登录模式，不是注册", () => {
     // 回访用户远多于新用户；默认落在注册会让老用户多点一次
-    const markup = renderToStaticMarkup(<AuthCard onDone={() => {}} />);
+    const markup = renderToStaticMarkup(<AuthCard onDone={() => {}} onBrowse={() => {}} />);
     expect(markup).toContain("浏览无需登录；复刻和推演需要账号。");
     expect(markup).not.toContain("至少 8 位");
   });

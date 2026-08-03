@@ -24,6 +24,14 @@ export const PRODUCT_NAME_LATIN = "MianTuan";
 export const PRODUCT_DOMAIN = "miantuan.ai";
 export const PRODUCT_TAGLINE_ZH = "把一句模糊想法，推演成能跑起来的完整应用";
 export const PRODUCT_TAGLINE_EN = "Turn a vague idea into a runnable product.";
+/**
+ * 主标语——比 TAGLINE 更短、更像口号，用在登录页这类有大幅留白的地方
+ * （2026-08-03 随登录页改版加入，取自用户给的设计稿）。
+ *
+ * 跟 TAGLINE 是两个东西，不要互相替代：这句负责"记住这个品牌"，
+ * TAGLINE 负责"说清楚它干什么"，设计稿上两句是上下并置的。
+ */
+export const PRODUCT_HERO_ZH = "不止一面，即刻成团";
 
 export const BRAND_NAME_DISPLAY = PRODUCT_NAME_ZH;
 export const BRAND_NAME_LATIN = PRODUCT_NAME_LATIN;
