@@ -73,20 +73,27 @@ def test_enrich_blocks_budget_env_zero(monkeypatch):
     assert calls == [False, False, False]
 
 
-def test_monitor_overview_budget(monkeypatch):
+def test_monitor_overview_generates_exactly_one_sheet_for_the_landing_page(monkeypatch):
+    """总览页参照板只给**首页**生一张（2026-08-03，用户裁决）。
+
+    之前是"每页各一张、上限 4 张"。实测单张 60~85s 且串行，而真正被用到的
+    只有落地页那张——它同时是应用中心卡片显示的画面。其余页拿到参照板的
+    收益远不抵那一分多钟。
+
+    其余页仍然照常生成设计（纯文字），**不是少生成一页内容**。
+    """
     calls = []
 
     def fake_generate(brief, datamodel, **kwargs):
-        calls.append(
-            (kwargs.get("use_reference_image"), kwargs.get("allow_screenshot_verify"))
-        )
+        calls.append(kwargs.get("use_reference_image"))
         return {"root": {"tag": "div", "text": "ok"}}
 
     monkeypatch.setattr(freeform_block, "generate_freeform_block", fake_generate)
-    monkeypatch.setenv("SLIDERULE_ENRICH_MAX_REF_IMAGES", "1")
+    monkeypatch.setattr(freeform_block, "_image_generation_configured", lambda: True)
+    monkeypatch.setattr(freeform_block, "_supports_image_content_parts", lambda: True)
     model = {
         "datamodel": {"entities": []},
-        "appbundle": {"appIdentity": {"theme": "azure"}},
+        "appbundle": {"appIdentity": {"theme": "azure"}, "landingPageRef": "m1"},
         "page": {
             "pages": [
                 {"id": f"m{i}", "kind": "monitor", "stats": [{"id": "s", "entity": "e"}]}
@@ -95,15 +102,58 @@ def test_monitor_overview_budget(monkeypatch):
         },
     }
     enrich_monitor_page_overviews(model)
-    # 2026-07-29（方案 B）：一页设计两版（默认档 + 手机档），**同页两档共用
-    # 同一张三区参照板**——所以第一页的两次调用都带 use_reference_image=True，
-    # 而不是第二次就掉到 False。预算仍然按"页"计，不是按"次调用"计。
-    assert [c[0] for c in calls] == [True, True, False, False, False, False]
-    # 手机那版不再单独截图自检（两档都做等于把总览页生成时间翻倍）
-    assert calls[1][1] is False
+    # 一页两档（默认档 + 手机档）共用同一张参照板，所以落地页 m1 是 True,True，
+    # 其余页两档都是 False。注意顺序：m0 在前、m1 才是落地页——不能靠"第一页"蒙对。
+    assert [c for c in calls] == [False, False, True, True, False, False]
     for page in model["page"]["pages"]:
-        assert page.get("freeformOverview")  # 超预算仍然生成（纯文字），不丢内容
-        assert page["freeformOverview"].get("mobile")  # 手机档那份也在
+        assert page.get("freeformOverview"), "没参照板的页仍然要出设计，不能丢内容"
+        assert page["freeformOverview"].get("mobile")
+
+
+def test_sheet_falls_back_to_the_first_page_when_landing_is_missing(monkeypatch):
+    """模型漏填 landingPageRef 时退回第一个符合条件的页。
+
+    不能因为一个字段没填就整个应用一张图都没有——卡片会掉回活渲染。
+    """
+    calls = []
+    monkeypatch.setattr(
+        freeform_block, "generate_freeform_block",
+        lambda brief, datamodel, **kw: (calls.append(kw.get("use_reference_image")) or {"root": {"tag": "div"}}),
+    )
+    monkeypatch.setattr(freeform_block, "_image_generation_configured", lambda: True)
+    monkeypatch.setattr(freeform_block, "_supports_image_content_parts", lambda: True)
+    model = {
+        "datamodel": {"entities": []},
+        "appbundle": {"appIdentity": {"theme": "azure"}},  # 没有 landingPageRef
+        "page": {
+            "pages": [
+                {"id": f"m{i}", "kind": "monitor", "stats": [{"id": "s", "entity": "e"}]}
+                for i in range(2)
+            ]
+        },
+    }
+    enrich_monitor_page_overviews(model)
+    assert calls[:2] == [True, True], "漏填落地页时第一页应当拿到参照板"
+    assert calls[2:] == [False, False]
+
+
+def test_no_sheet_at_all_when_image_generation_is_not_configured(monkeypatch):
+    """没配生图 key = 一张都不生。**这就是开关，没有第二个环境变量。**"""
+    calls = []
+    monkeypatch.setattr(
+        freeform_block, "generate_freeform_block",
+        lambda brief, datamodel, **kw: (calls.append(kw.get("use_reference_image")) or {"root": {"tag": "div"}}),
+    )
+    monkeypatch.setattr(freeform_block, "_image_generation_configured", lambda: False)
+    monkeypatch.setattr(freeform_block, "_supports_image_content_parts", lambda: True)
+    model = {
+        "datamodel": {"entities": []},
+        "appbundle": {"appIdentity": {"theme": "azure"}, "landingPageRef": "m0"},
+        "page": {"pages": [{"id": "m0", "kind": "monitor", "stats": [{"id": "s", "entity": "e"}]}]},
+    }
+    enrich_monitor_page_overviews(model)
+    assert all(c is False for c in calls)
+    assert model["page"]["pages"][0].get("freeformOverview"), "没图也要出设计"
 
 
 def test_budget_counts_failed_attempts(monkeypatch):

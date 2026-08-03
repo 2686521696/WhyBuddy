@@ -1463,6 +1463,28 @@ def _supports_image_content_parts() -> bool:
         return False
 
 
+def _image_generation_configured() -> bool:
+    """配没配生图。**这就是首页参照板的开关**——没有单独的环境变量。
+
+    首页参照板可以单独指到另一家服务商（SHEET_ 前缀），缺项时回落到默认那份，
+    所以两份任意一份齐全就算配了；判据与 _generate_overview_sheet_b64 真正
+    取配置的顺序一致，不能只看默认那份（否则只配了 SHEET_ 的部署会被误判成
+    "没配"，一张图都不生，而实际上它是能生的）。
+
+    读不出配置按"没配"处理：宁可退回纯文字设计，也不要在一个注定失败的
+    生图请求上串行地白等一分钟。
+    """
+    try:
+        from sliderule_llm.image_client import get_image_gen_config
+
+        return (
+            get_image_gen_config("SHEET_") is not None
+            or get_image_gen_config() is not None
+        )
+    except Exception:  # noqa: BLE001 — 配置异常不该拖垮主链路
+        return False
+
+
 def _generate_overview_sheet_b64(
     design_brief: str,
     datamodel: dict[str, Any],
@@ -2391,13 +2413,23 @@ def _enrich_monitor_page_overviews_inner(
     generated_theme_raw = identity.get("generatedTheme")
     generated_theme = generated_theme_raw if isinstance(generated_theme_raw, dict) else None
 
-    max_ref_images = _env_budget(_ENRICH_MAX_REF_IMAGES_ENV, _ENRICH_MAX_REF_IMAGES_DEFAULT)
+    # 生图只给**首页**一张（2026-08-03，用户裁决）。
+    #
+    # 之前是"每个 monitor/dashboard 页各一张，上限 4 张"，再加主题那张。实测
+    # 单张 60~85s 且串行，而真正被用到的只有落地页那张——它同时是应用中心
+    # 卡片显示的画面（见 OverviewPreviewSink.offer）。其余页拿到参照板的收益
+    # 远不抵那一分多钟。
+    #
+    # 开关就是**有没有配生图 key**，不再引入新的环境变量：配了就首页这一张，
+    # 没配就一张都不生（整页退回纯文字设计，与从前"未配生图"时逐字节一致）。
+    # 少一个旋钮少一处"文档说关了其实没关干净"的机会——这条链路已经踩过
+    # 一次那个坑（主题图曾经不读成本笼子，设 0 之后照生，白等 685s）。
+    sheet_enabled = _image_generation_configured() and _supports_image_content_parts()
     max_screenshot_verify = _env_budget(
         _ENRICH_MAX_SCREENSHOT_VERIFY_ENV, _ENRICH_MAX_SCREENSHOT_VERIFY_DEFAULT
     )
-    ref_used = 0
     shot_used = 0
-    capped_pages = 0
+    sheet_used = 0
     for page in (model.get("page") or {}).get("pages") or []:
         # 2026-07-27：dashboard 也纳入——此前只认 monitor,LLM 把总览页写成
         # dashboard(prompt 曾反向引导)或夹具用 dashboard 时,设计版式整条
@@ -2420,13 +2452,17 @@ def _enrich_monitor_page_overviews_inner(
         # 参照板走**出图受众**那一份：同一批内容，但积木用视觉描述而不是
         # blockRef 的 JSON 形态（见 _monitor_overview_design_brief 的 audience）。
         sheet_brief = _monitor_overview_design_brief(page, datamodel, audience="image")
-        # 与 enrich_freeform_blocks 同一预算语义：按尝试计费（见彼处注释）。
-        use_ref = ref_used < max_ref_images
+        # 只有首页那一张（见上面的说明）。
+        #
+        # 落地页没声明时退回"第一个符合条件的页"——不能因为模型漏填一个字段
+        # 就整个应用一张图都没有。按尝试计费：生图失败也算用掉了，否则端点
+        # 抖动时这个"一张"会退化成"每页都试一次"。
+        page_id_now = str(page.get("id") or "")
+        is_landing = bool(landing_ref) and page_id_now == landing_ref
+        use_ref = sheet_enabled and sheet_used == 0 and (is_landing or not landing_ref)
         allow_shot = use_ref and shot_used < max_screenshot_verify
         if use_ref:
-            ref_used += 1
-        else:
-            capped_pages += 1
+            sheet_used += 1
         if allow_shot:
             shot_used += 1
         # 参照板（只画会真正生成的那几档真实版式），共用一张。分开生的话
@@ -2444,10 +2480,10 @@ def _enrich_monitor_page_overviews_inner(
                     sheet_brief, datamodel, theme_id=theme_id, device=device,
                     generated_theme=generated_theme,
                 )
-                if use_ref and _supports_image_content_parts()
+                if use_ref
                 else None
             )
-            # 跳过（预算撞顶/通道不支持图片）和真生了图，耗时天差地别，
+            # 跳过（非首页/未配生图/通道不支持图片）和真生了图，耗时天差地别，
             # 光看 ms 会以为"生图很快"，得把这一位记下来才看得懂数据。
             _st["got"] = 1 if sheet_b64 else 0
         # 这张图排完版式就该丢了——但它同时也正是应用中心那张卡该显示的画面。
@@ -2548,9 +2584,13 @@ def _enrich_monitor_page_overviews_inner(
                 f"[freeform_block] {page.get('id')} monitor overview generation failed, "
                 f"keeping fixed skeleton: {str(exc)[:200]}"
             )
-    if capped_pages:
-        print(
-            f"[freeform_block] monitor overview budget hit: {capped_pages} page(s) generated "
-            f"text-only (ref-image cap {max_ref_images}; raise {_ENRICH_MAX_REF_IMAGES_ENV} to widen)"
+    # no silent caps：一张都没生的时候说清楚是"没配 key"还是"通道不吃图"，
+    # 否则现象只是"首页长得比较素"，没人会想到去查配置。
+    if not sheet_enabled:
+        why = (
+            "生图未配置（IMAGE_API_URL / IMAGE_MODEL / IMAGE_API_KEY 需三项齐全）"
+            if not _image_generation_configured()
+            else "LLM 通道不支持图片输入（LLM_SUPPORTS_IMAGE_CONTENT_PARTS=0）"
         )
+        print(f"[freeform_block] 首页参照板已跳过，本次全部走纯文字设计：{why}")
     return model

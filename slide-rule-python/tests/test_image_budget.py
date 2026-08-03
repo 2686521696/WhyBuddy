@@ -55,18 +55,21 @@ def test_default_budget_leaves_room_for_a_slow_success():
     assert ic.DEFAULT_TOTAL_BUDGET_S >= 2 * 107
 
 
-def test_ref_image_budget_zero_also_skips_the_theme_image(monkeypatch):
-    """SLIDERULE_ENRICH_MAX_REF_IMAGES=0 必须把**主题那张**也关掉。
+def test_theme_never_asks_for_a_reference_image(monkeypatch):
+    """主题选色**永远不生参照图**（2026-08-03，用户裁决）。
 
-    .env 写的是"设 0 全关"，但主题路径此前不读这个变量：真机设 0 后
-    monitor.sheet 跳过了、主题照生，端点挂着白等 685s。
+    原来的做法是花 ~74s 生一整张 PNG 喂给视觉 LLM，只为取回 {label, seed}
+    两个字段——那张图从不展示给任何人，是整条链路上性价比最低的一步。
+
+    这条测试锁死"不管环境变量怎么设都不生"：此前它挂在
+    SLIDERULE_ENRICH_MAX_REF_IMAGES 上，于是"全系统只有首页生图"这条约定
+    取决于有没有人记得去设那个变量——约定就不成其为约定了。
     """
     from services import identity_theme_gen as itg
 
-    monkeypatch.setenv("SLIDERULE_ENRICH_MAX_REF_IMAGES", "0")
     seen = {}
 
-    def fake_generate(app_name, goal_text, datamodel, *, device="", use_reference_image=True, **kw):
+    def fake_generate(app_name, goal_text, datamodel, *, device="", use_reference_image=False, **kw):
         seen["use_reference_image"] = use_reference_image
         return {"label": "测试", "seed": "#1677ff"}
 
@@ -75,24 +78,20 @@ def test_ref_image_budget_zero_also_skips_the_theme_image(monkeypatch):
         "appbundle": {"appIdentity": {"productName": "X", "theme": "azure"}},
         "datamodel": {"entities": []},
     }
-    itg.enrich_identity_theme(model, "目标")
-    assert seen["use_reference_image"] is False, "设 0 之后主题参照图仍在生成"
+
+    for budget in ("0", "4", "9"):
+        seen.clear()
+        monkeypatch.setenv("SLIDERULE_ENRICH_MAX_REF_IMAGES", budget)
+        model["appbundle"]["appIdentity"].pop("generatedTheme", None)
+        itg.enrich_identity_theme(model, "目标")
+        assert seen["use_reference_image"] is False, f"预算={budget} 时主题仍在生参照图"
 
 
-def test_ref_image_budget_positive_keeps_the_theme_image(monkeypatch):
-    from services import identity_theme_gen as itg
+def test_theme_generation_defaults_to_no_reference_image():
+    """默认参数本身就得是 False——调用方漏传时不能悄悄退回生图。"""
+    import inspect
 
-    monkeypatch.setenv("SLIDERULE_ENRICH_MAX_REF_IMAGES", "4")
-    seen = {}
+    from services.identity_theme_gen import generate_identity_theme
 
-    def fake_generate(app_name, goal_text, datamodel, *, device="", use_reference_image=True, **kw):
-        seen["use_reference_image"] = use_reference_image
-        return {"label": "测试", "seed": "#1677ff"}
-
-    monkeypatch.setattr(itg, "generate_identity_theme", fake_generate)
-    model = {
-        "appbundle": {"appIdentity": {"productName": "X", "theme": "azure"}},
-        "datamodel": {"entities": []},
-    }
-    itg.enrich_identity_theme(model, "目标")
-    assert seen["use_reference_image"] is True
+    sig = inspect.signature(generate_identity_theme)
+    assert sig.parameters["use_reference_image"].default is False

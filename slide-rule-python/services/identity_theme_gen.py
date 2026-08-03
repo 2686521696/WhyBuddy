@@ -210,7 +210,7 @@ def generate_identity_theme(
     max_retries: int = 2,
     temperature: float = 0.9,
     max_tokens: int = 400,
-    use_reference_image: bool = True,
+    use_reference_image: bool = False,
 ) -> dict[str, Any]:
     """生成 + 校验一个身份主题种子色。跟 freeform_block.generate_freeform_block
     同一套 reask 语义。重试耗尽抛 IdentityThemeGenerationError，调用方应静默
@@ -221,6 +221,11 @@ def generate_identity_theme(
 
     max_tokens 从 2000 降到 400：旧版要吐 11 个字段的完整 JSON，现在只有
     label+seed 两个字段，输出短得多，没必要留那么大的余量。
+
+    `use_reference_image` 默认 **False**（2026-08-03 改）：生产路径不再为
+    选一个色值去生一张 ~74s 的 PNG（见 _enrich_identity_theme_inner 的说明）。
+    参数保留是因为参照图取色的代码路径本身是好的，评测脚本要能单独打开它
+    做 A/B——但默认不能是它，否则"只有首页生图"这条约定就是假的。
     """
     app_name = (app_name or "").strip() or "未命名应用"
     goal_text = (goal_text or "").strip() or app_name
@@ -344,23 +349,19 @@ def _enrich_identity_theme_inner(model: dict[str, Any], goal: str = "") -> dict[
     goal_text = str(goal or app_name).strip()
     datamodel = model.get("datamodel") or {}
     device = str(appbundle.get("preferredDevice") or "").strip()
-    # 主题参照图也归**同一份成本笼子**管（2026-08-01 修）。
+    # 主题**不再生参照图**（2026-08-03，用户裁决：全系统只有首页那一张生图）。
     #
-    # .env 对 SLIDERULE_ENRICH_MAX_REF_IMAGES 写的是"设 0 全关"，架构图也把这
-    # 张算进"满配 9 张 = 主题 1 + 区块 4 + 首页 4"。但这条路径此前**根本不读
-    # 那个变量**：真机设 0 之后 monitor.sheet 确实跳过了，主题这张照生不误，
-    # 端点挂着又白等了 685s。文档说全关而实际关不干净，比不提供开关更糟。
-    from services.freeform_block import (
-        _ENRICH_MAX_REF_IMAGES_DEFAULT,
-        _ENRICH_MAX_REF_IMAGES_ENV,
-        _env_budget,
-    )
-
-    ref_budget = _env_budget(_ENRICH_MAX_REF_IMAGES_ENV, _ENRICH_MAX_REF_IMAGES_DEFAULT)
+    # 原来的做法：花 ~74s 生一整张 PNG，喂给视觉 LLM，附一句"从它的主色调里
+    # 提炼出种子色（不需要版式一样）"，然后只取回 {label, seed} 两个字段。
+    # 那张图从不展示给任何人。**用一次生图换一个色值**，是这条链路上性价比
+    # 最低的一步——实测占单遍 enrich 总耗时的一半。
+    #
+    # 现在走纯文字选色：模型只看应用名 + 目标 + 数据模型摘要。代价是选色会
+    # 更保守一些（少了图像那份"意外的灵感"），换来每遍省 ~74s，且不再依赖
+    # 生图端点的可用性。
     try:
         theme = generate_identity_theme(
             app_name, goal_text, datamodel, device=device,
-            use_reference_image=ref_budget > 0,
         )
         identity["generatedTheme"] = theme
     except IdentityThemeGenerationError as exc:

@@ -114,34 +114,46 @@ def test_enrich_without_sink_leaves_the_model_untouched(monkeypatch):
 
 
 def test_enrich_hands_the_landing_sheet_to_the_sink(monkeypatch):
-    """传了槽就能收到——并且收到的是落地页那一页的。"""
+    """传了槽就能收到——并且收到的是落地页那一页的。
+
+    2026-08-03 起全系统只给**首页**生一张图，所以这里顺带锁死"另一页根本
+    没去生图"：卡片拿到的必须是落地页那张，而不是"碰巧最后一个覆盖上去的"。
+    """
     from services import freeform_block
 
     monkeypatch.setattr(freeform_block, "_supports_image_content_parts", lambda: True)
+    monkeypatch.setattr(freeform_block, "_image_generation_configured", lambda: True)
     monkeypatch.setattr(
         freeform_block, "generate_freeform_block",
         lambda *a, **k: {"root": {"kind": "section", "children": []}},
     )
-    # 两页都是总览页，各出各的图；p0 是落地页
     sheets = {"p_side": PNG_B, "p0": PNG_A}
-    calls = []
+    asked = []
 
     def fake_sheet(design_brief, datamodel, **kwargs):
-        return sheets[calls.pop(0)]
+        # 用页面 id 反查该返回哪张——现在只应该被问一次（落地页那次）
+        return sheets[asked[-1]]
 
     model = _model()
     model["page"]["pages"] = [
         {"id": "p_side", "kind": "monitor", "stats": [{"id": "s", "label": "L", "entityRef": "e0"}]},
         {"id": "p0", "kind": "monitor", "stats": [{"id": "s2", "label": "L2", "entityRef": "e0"}]},
     ]
-    calls[:] = ["p_side", "p0"]
+
+    real_stage = freeform_block._enrich_stage
+
+    def spy_stage(name, **kw):
+        if name == "monitor.sheet" and kw.get("page"):
+            asked.append(kw["page"])
+        return real_stage(name, **kw)
+
+    monkeypatch.setattr(freeform_block, "_enrich_stage", spy_stage)
     monkeypatch.setattr(freeform_block, "_generate_overview_sheet_b64", fake_sheet)
-    # 预算默认可能不够两页，明确放开，让两页都真去"生图"
-    monkeypatch.setenv(freeform_block._ENRICH_MAX_REF_IMAGES_ENV, "5")
 
     sink = OverviewPreviewSink()
     freeform_block.enrich_monitor_page_overviews(model, preview_sink=sink)
     assert sink.page_id == "p0" and sink.png_b64 == PNG_A
+    assert PNG_B != sink.png_b64, "非落地页那张图不该跑到卡片上"
 
 
 # ────────────────────── ② 图不进摘要载荷 ──────────────────────

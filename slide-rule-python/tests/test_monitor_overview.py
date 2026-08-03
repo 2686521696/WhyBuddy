@@ -515,6 +515,8 @@ def test_sheet_generation_receives_the_declared_device(monkeypatch):
 
     monkeypatch.setattr("services.freeform_block._generate_overview_sheet_b64", fake_sheet)
     monkeypatch.setattr("services.freeform_block._supports_image_content_parts", lambda: True)
+    # 2026-08-03：参照板的开关是"配没配生图 key"，测试里显式打开
+    monkeypatch.setattr("services.freeform_block._image_generation_configured", lambda: True)
     monkeypatch.setattr(
         "services.freeform_block.generate_freeform_block",
         lambda brief, datamodel, **kw: {"root": {"tag": "div", "children": []}},
