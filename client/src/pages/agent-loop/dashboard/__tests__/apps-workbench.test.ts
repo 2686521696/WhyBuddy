@@ -239,7 +239,10 @@ describe("应用中心顶栏吸顶", () => {
   it("吸顶块必须自带背景——sticky 元素默认透明，卡片会从字底下穿过去", () => {
     const m = src.match(/className="sticky top-0 z-30 [^"]*"/);
     expect(m).not.toBeNull();
-    expect(m![0]).toContain("bg-[var(--sr-shell-bg,#eef2f7)]");
+    // 钉的是"背景走壳底色这个 token"，不是某个具体色值——底色改过一次
+    // （2026-08-03 冷灰 → 白），把 hex 写进断言的话每次换色都要改测试，
+    // 而真正会出事的是**忘了给背景**（sticky 默认透明，卡片从标题底下穿过去）。
+    expect(m![0]).toMatch(/bg-\[var\(--sr-shell-bg,\s*#[0-9a-fA-F]{3,6}\)\]/);
   });
 
   it("负 margin + 同值 padding 抵掉根节点内边距，背景铺满整宽", () => {

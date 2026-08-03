@@ -434,7 +434,7 @@ export function SkillsLibraryPage({
   return (
     <div
       // 壳：顶栏固定 + 列表单独滚动（彻底告别 sticky/padding 露缝）
-      className="flex h-full flex-col overflow-hidden bg-[#eef2f7]"
+      className="flex h-full flex-col overflow-hidden bg-[var(--sr-shell-bg,#fff)]"
       data-testid="skills-library"
     >
       <div className="shrink-0 space-y-3 px-6 pt-5 md:px-8">

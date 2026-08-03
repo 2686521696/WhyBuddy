@@ -1319,7 +1319,9 @@ function AgentLoopTopbar({
     <Header
       className="native-header native-agent-topbar"
       style={{
-        background: "#eef2f7",
+        // 走同一个壳底色变量，不写死——写死的话顶栏会盖过 CSS 里的 token，
+        // 换底色时只有它一条留在原地（灰顶栏 + 白内容）。
+        background: "var(--sr-shell-bg, #ffffff)",
         borderBottom: "none",
         boxShadow: "none",
       }}

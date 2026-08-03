@@ -5,8 +5,9 @@
 }
 
 .native-dashboard {
-  /* 与应用中心内容区同冷灰，侧栏白浮起分层 */
-  background: #eef2f7;
+  /* 白底（2026-08-03 用户裁决）。此前是冷灰 #eef2f7，靠"侧栏白、内容灰"分层；
+     现在整壳同白，分层交给卡片自己的描边与投影。 */
+  background: var(--sr-shell-bg, #ffffff);
   color: rgba(15, 23, 42, 0.88);
   height: 100%;
   min-height: 100vh;
@@ -18,7 +19,7 @@
 }
 
 .native-agent-shell {
-  background: #eef2f7;
+  background: var(--sr-shell-bg, #ffffff);
   flex-direction: row;
   height: 100%;
   min-height: 0;
@@ -26,8 +27,9 @@
 }
 
 .native-agent-sidebar {
-  /* 与主内容区同色 #eef2f7，去掉白侧栏割裂感；右边线保留极轻分隔 */
-  background: #eef2f7;
+  /* 与主内容区同色（现在都是白），右边线保留极轻分隔——整壳同色之后，
+     这条线是侧栏与内容区之间唯一的边界，不能一起去掉。 */
+  background: var(--sr-shell-bg, #ffffff);
   border-right: 1px solid rgba(15, 23, 42, 0.06);
   box-shadow: none;
   display: flex;
@@ -300,15 +302,18 @@
   overflow: hidden;
 }
 
-/* 页面壳统一底色（顶栏 / 内容 / Layout 必须同 token，否则 antd 默认 #fff 会露馅） */
+/* 页面壳统一底色（顶栏 / 内容 / Layout 必须同 token，否则 antd 默认 #fff 会露馅）。
+ *
+ * 改这一个值 = 整壳换底色：侧栏、顶栏、内容区、antd Layout 六处都读它。
+ * 2026-08-03 由 #eef2f7 改为白（用户裁决）。 */
 .native-agent-shell,
 .native-dashboard {
-  --sr-shell-bg: #eef2f7;
+  --sr-shell-bg: #ffffff;
 }
 
 .native-header {
   align-items: center;
-  background: var(--sr-shell-bg, #eef2f7) !important;
+  background: var(--sr-shell-bg, #ffffff) !important;
   border-bottom: none !important;
   box-shadow: none !important;
   display: flex;
@@ -322,12 +327,12 @@
 .native-main.agent-ant-layout,
 .native-agent-main.agent-ant-layout,
 .native-main.agent-ant-layout .agent-ant-layout {
-  background: var(--sr-shell-bg, #eef2f7) !important;
+  background: var(--sr-shell-bg, #ffffff) !important;
 }
 
 .native-header.agent-ant-layout-header,
 .agent-ant-layout-header.native-header {
-  background: var(--sr-shell-bg, #eef2f7) !important;
+  background: var(--sr-shell-bg, #ffffff) !important;
   border-bottom: none !important;
   box-shadow: none !important;
   line-height: 48px;
@@ -348,19 +353,19 @@
   min-height: 0;
   overflow: auto;
   overflow-x: hidden;
-  background: var(--sr-shell-bg, #eef2f7) !important;
+  background: var(--sr-shell-bg, #ffffff) !important;
   /* padding: 12px; */
 }
 
 .native-content.agent-ant-layout-content,
 .agent-ant-layout-content.native-content {
-  background: var(--sr-shell-bg, #eef2f7) !important;
+  background: var(--sr-shell-bg, #ffffff) !important;
 }
 
 .native-agent-main > .native-settings-content,
 .native-agent-main > .native-workbench-content {
   padding: 0;
-  background: var(--sr-shell-bg, #eef2f7) !important;
+  background: var(--sr-shell-bg, #ffffff) !important;
 }
 
 /* Detail uses same scroll container; must beat shell bg !important above */
