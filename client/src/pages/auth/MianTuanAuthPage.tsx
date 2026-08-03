@@ -98,7 +98,7 @@ export default function MianTuanAuthPage() {
         <div className="mx-auto w-full max-w-[360px]">
           {/* 窄屏时品牌面板隐藏了，这里补一个标识，否则表单孤零零的 */}
           <div className="mb-8 lg:hidden">
-            <MianTuanWordmark size={30} />
+            <MianTuanWordmark size={38} />
           </div>
           <AuthCard
             onDone={async () => {
@@ -133,7 +133,7 @@ export function BrandPanel() {
       />
 
       <div className="relative">
-        <MianTuanWordmark size={34} />
+        <MianTuanWordmark size={44} />
       </div>
 
       {/* 插画 + 标语作为一个整体居中（2026-08-03 改版，对齐用户给的设计稿）。

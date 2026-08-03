@@ -75,10 +75,14 @@ describe("品牌标识", () => {
     expect(markup).toContain('width="20"');
   });
 
-  it("文字标识带中文名和域名", () => {
+  it("横版标识用官方素材，不是手排的文字", () => {
+    // 2026-08-03：此前是「方标 + 手排两行文字」，字体/字重/字间距全是估的，
+    // 跟官方横版摆一起看得出不是同一个东西。现在用官方一体图。
     const markup = renderToStaticMarkup(<MianTuanWordmark />);
-    expect(markup).toContain("面团");
-    expect(markup).toContain("MIANTUAN.AI");
+    expect(markup).toContain("miantuan-horizontal.png");
+    expect(markup).toContain('alt="面团 AI"');
+    // 只定高、宽度按比例：写死宽度会把「面团 AI」压扁
+    expect(markup).toContain("width:auto");
   });
 
   it("有无障碍标签", () => {
@@ -101,7 +105,9 @@ describe("登录页", () => {
     // 2026-08-03 用户反馈"品牌名太多了"：此前左下角一处 miantuan.ai、表单
     // 底下还有一处带图标的，加上左上角标识里的 MIANTUAN.AI 共三遍。现在只
     // 保留标识自带的那一处（大写，是 logo 的一部分），额外的两处小写页脚去掉。
-    expect(markup).toContain("MIANTUAN.AI");
+    // 品牌名现在只由左上角那张官方横版标识承载（图里含 miantuan.ai），
+    // DOM 里不该再有额外的文字页脚——用户反馈"品牌名出现太多次"。
+    expect(markup).toContain("miantuan-horizontal.png");
     expect(markup).not.toContain(">miantuan.ai<");
     // 插画是装饰性的，必须对读屏软件隐藏，否则念出一串无意义的文件名
     expect(markup).toContain('aria-hidden');

@@ -49,31 +49,39 @@ export function MianTuanMark({
   );
 }
 
-/** 标识 + 文字，横向排列。登录页和侧栏共用。 */
+/** 官方横版标识（1141×450，带透明通道）：图标 + 「面团 AI」+ miantuan.ai 一体。 */
+const HORIZONTAL_SRC = "/brand/miantuan-horizontal.png";
+
+/** 横版标识。登录页和侧栏共用。
+ *
+ * 2026-08-03：从「方标 + 手排两行文字」换成官方横版一体图。
+ *
+ * 手排那版是在只有方标素材时的权宜——字体、字重、字间距、两行的相对位置
+ * 全是估的，跟官方横版摆在一起看得出不是同一个东西。这跟上面那段"手绘 SVG
+ * 换成官方 PNG"是同一个道理：一个"很像"的标识比换个字体还伤品牌。
+ *
+ * ⚠️ 调用口径变了：`size` 以前是**方标的边长**，现在是**整条横版的高度**。
+ * 同一个数字下新版会明显更宽——横版含文字，宽高比约 2.5:1。所以调用点的
+ * size 要重新定，不能直接沿用旧值（登录页因此从 34 调到 30 上下）。
+ */
 export function MianTuanWordmark({
   size = 32,
   className,
 }: {
+  /** 整条标识的**高度**（不是方标边长，见上面的告诫）。 */
   size?: number;
   className?: string;
 }) {
   return (
-    <span className={`inline-flex items-center gap-2.5 ${className ?? ""}`}>
-      <MianTuanMark size={size} />
-      <span className="flex flex-col leading-none">
-        <span
-          className="font-semibold tracking-tight text-slate-900"
-          style={{ fontSize: size * 0.62 }}
-        >
-          面团
-        </span>
-        <span
-          className="mt-1 font-medium tracking-[0.18em] text-slate-400"
-          style={{ fontSize: size * 0.3 }}
-        >
-          MIANTUAN.AI
-        </span>
-      </span>
-    </span>
+    <img
+      src={HORIZONTAL_SRC}
+      height={size}
+      className={className}
+      // 只定高、宽度按原图比例走：写死宽度会让「面团 AI」被压扁
+      style={{ height: size, width: "auto", display: "block" }}
+      alt="面团 AI"
+      // 不能 lazy：登录页首屏就要它，懒加载会先空一块再跳出来
+      decoding="async"
+    />
   );
 }
