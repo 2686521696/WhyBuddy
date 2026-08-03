@@ -460,8 +460,8 @@ function HomeEmptyState({
       <div className="flex flex-col items-center gap-3">
         <div className="flex items-center gap-3.5">
           <img
-            src={`${import.meta.env.BASE_URL}assets/sliderule-brand-mark.svg`}
-            alt="SlideRule"
+            src={`${import.meta.env.BASE_URL}brand/miantuan-mark.png`}
+            alt="面团 AI"
             className="h-10 w-10 shrink-0"
           />
           <h1 className="font-display text-[clamp(22px,2.4vw,30px)] font-semibold tracking-tight text-[#1f2329]">

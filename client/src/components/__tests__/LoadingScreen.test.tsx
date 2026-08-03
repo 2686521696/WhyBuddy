@@ -51,7 +51,7 @@ describe("LoadingScreen — MiroFish skin", () => {
 
     // Brand swap: SlideRule replaces previous project names
     expect(markup).toContain("SlideRule");
-    expect(markup).toContain("/brand/logo.png");
+    expect(markup).toContain("/brand/miantuan-mark.png");
     expect(markup).not.toContain("Duan" + "yun");
     expect(markup).not.toContain("Cube Pets " + "Office");
 

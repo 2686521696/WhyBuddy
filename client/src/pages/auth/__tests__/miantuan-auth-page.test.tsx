@@ -56,18 +56,23 @@ describe("回跳地址（开放重定向防护）", () => {
 });
 
 describe("品牌标识", () => {
-  it("能渲染，且同页多实例的渐变 id 不撞车", () => {
-    // 渐变 id 写死的话，第二个实例会引用到第一个的定义——表现是"其中一个变透明"，
-    // 只在特定组合下复现，很难查。所以用 useId 生成。
+  it("用的是官方素材，不是手绘复刻", () => {
+    // 2026-08-03：这里原本测的是"同页多实例的渐变 id 不撞车"——那是手写 SVG
+    // 时代的问题（写死 id 会让第二个实例引用到第一个的定义）。换成官方 PNG
+    // 之后不存在 id，那条测试没有对象了。
+    //
+    // 换成钉住"用的是那份素材"：这个标识同时被 index.html 的 favicon 引用，
+    // 走同一份文件才不会出现"标签页和页面里是两个版本"。
     const markup = renderToStaticMarkup(
       <div>
         <MianTuanMark size={40} />
         <MianTuanMark size={20} />
       </div>
     );
-    const ids = [...markup.matchAll(/id="(mt-grad-[^"]+)"/g)].map(m => m[1]);
-    expect(ids).toHaveLength(2);
-    expect(new Set(ids).size).toBe(2);
+    expect(markup).toContain("/brand/miantuan-mark.png");
+    // 尺寸由 size 一个数控制，两个实例各自生效
+    expect(markup).toContain('width="40"');
+    expect(markup).toContain('width="20"');
   });
 
   it("文字标识带中文名和域名", () => {
@@ -77,7 +82,9 @@ describe("品牌标识", () => {
   });
 
   it("有无障碍标签", () => {
-    expect(renderToStaticMarkup(<MianTuanMark />)).toContain('aria-label="面团"');
+    // 从 svg 的 aria-label 变成 img 的 alt——语义一样：读屏软件要念出"面团"，
+    // 不能是一张没有说明的图。
+    expect(renderToStaticMarkup(<MianTuanMark />)).toContain('alt="面团"');
   });
 });
 

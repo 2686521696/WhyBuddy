@@ -52,8 +52,8 @@ function SidebarHeader({
         )}
       >
         <img
-          src="/brand/transLogo.png"
-          alt="SlideRule"
+          src="/brand/miantuan-mark.png"
+          alt="面团 AI"
           className="relative size-9 object-contain"
         />
       </span>

@@ -1,21 +1,31 @@
 /**
- * 面团标识（2026-08-03）。
+ * 面团标识（2026-08-03 换成官方素材）。
  *
- * 照用户提供的 logo 复刻：一坨圆润的、不完全对称的"面团"形，上面一张笑脸，
- * 描边是青→蓝→紫的渐变。
+ * ## 从手绘 SVG 换成官方 PNG
  *
- * ## 为什么手写 SVG 而不是放图片文件
+ * 这个文件原来是**照着一张截图手写的 SVG 复刻**——那时候还没有官方素材。
+ * 手写的好处是随字号缩放、零请求；坏处是它终究只是"很像"：渐变的走向、
+ * 面团那几个不对称的凸起、笑脸的弧度，全是估的。
  *
- * · **随字号缩放**：登录页要 56px、侧栏要 20px、favicon 要 32px，一份矢量全覆盖，
- *   不用维护三套 PNG
- * · **跟随主题**：`currentColor` 让它在深色底上也能用（虽然默认走渐变）
- * · **零请求**：登录页是首屏，少一个图片请求就少一次白屏机会
+ * 现在有官方素材了（client/public/brand/miantuan-mark.png），就该用真的。
+ * 一个"很像"的标识比换个字体还伤品牌——它会出现在标签页、侧栏、登录页，
+ * 每一处都在告诉人这个产品长什么样。
  *
- * 渐变 id 带随机后缀——同页面出现两个实例时，写死的 id 会让第二个引用到第一个的
- * 定义，表现是"其中一个变透明"，而且只在特定组合下复现，很难查。
+ * ## 为什么不做成 SVG
+ *
+ * 素材给的就是 PNG（462×450，带透明通道）。它在页面上最大只用到 34px，
+ * 而位图有 462px 宽——像素密度 13 倍，任何屏幕上都锐利。要矢量得回去找
+ * 设计源文件，那是另一件事，不该为此把一个"很像"的手绘版留在代码里。
+ *
+ * ## 调用口径没变
+ *
+ * 仍然是 `size` 一个数控制宽高，调用点一行不用改（登录页 34、页脚 14、
+ * 窄屏 30）。原图不是严格正方，靠 object-contain 保证不变形。
  */
 
-import { useId } from "react";
+/** 官方方标。放 public 下而不是 import：它同时被 index.html 的 favicon 引用，
+ *  走同一份文件才不会出现"标签页和页面里是两个版本"。 */
+const MARK_SRC = "/brand/miantuan-mark.png";
 
 export function MianTuanMark({
   size = 40,
@@ -24,48 +34,18 @@ export function MianTuanMark({
   size?: number;
   className?: string;
 }) {
-  // useId 保证同页多实例不撞车（见文件头说明）
-  const gid = `mt-grad-${useId().replace(/:/g, "")}`;
-
   return (
-    <svg
+    <img
+      src={MARK_SRC}
       width={size}
       height={size}
-      viewBox="0 0 64 64"
-      fill="none"
       className={className}
-      role="img"
-      aria-label="面团"
-    >
-      <defs>
-        <linearGradient id={gid} x1="4" y1="8" x2="58" y2="58" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#22D3C5" />
-          <stop offset="0.5" stopColor="#3B82F6" />
-          <stop offset="1" stopColor="#7C3AED" />
-        </linearGradient>
-      </defs>
-      {/* 外层那坨面团：刻意不对称——正圆会显得像通用头像，失去"一坨面"的手感 */}
-      <path
-        d="M32 5c9.5 0 15.8 2.6 20.6 7.4C57.4 17.2 60 24 60 32.6c0 9.2-3 15.9-8.2 20.6C46.6 57.9 39.8 60 31.4 60c-8.9 0-15.7-2.4-20.4-7.2C6.3 48 4 41.1 4 32.2c0-8.8 2.5-15.6 7.4-20.3C16.3 7.2 22.9 5 32 5Z"
-        fill={`url(#${gid})`}
-      />
-      {/* 内层留白，让笑脸浮在面团上 */}
-      <path
-        d="M32 13.5c7.1 0 11.8 1.9 15.3 5.4 3.5 3.5 5.4 8.4 5.4 14.6 0 6.7-2.1 11.5-5.9 14.9-3.8 3.4-8.8 5-15 5-6.6 0-11.6-1.7-15.1-5.2-3.5-3.4-5.2-8.4-5.2-14.9 0-6.4 1.8-11.3 5.4-14.8 3.6-3.5 8.3-5 15.1-5Z"
-        fill="#fff"
-      />
-      {/* 眼睛：竖着的圆角矩形，比圆点更有"眯眼笑"的味道 */}
-      <rect x="23" y="26" width="4.6" height="9.5" rx="2.3" fill="#2563EB" />
-      <rect x="36.4" y="26" width="4.6" height="9.5" rx="2.3" fill="#2563EB" />
-      {/* 嘴 */}
-      <path
-        d="M25 41.5c1.9 2.6 4.3 3.9 7 3.9s5.1-1.3 7-3.9"
-        stroke="#2563EB"
-        strokeWidth="3.2"
-        strokeLinecap="round"
-        fill="none"
-      />
-    </svg>
+      // 原图 462×450 不是严格正方，不加 contain 会被拉扁
+      style={{ objectFit: "contain", display: "block" }}
+      alt="面团"
+      // 不能 lazy：登录页首屏就要它，懒加载会先空一块再跳出来
+      decoding="async"
+    />
   );
 }
 
