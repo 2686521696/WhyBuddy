@@ -15,6 +15,7 @@
  * 参考：@docs/SlideRuleV5闭环总图_完整版_修复闭环.md
  */
 
+import { BRAND_NAME_FULL } from "@shared/brand";
 import React, { useState, useMemo } from "react";
 import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurface";
 import { REASONING_GRAPH_FIXTURE } from "@/dev-harness/reasoning-graph-fixture";
@@ -78,7 +79,7 @@ export default function SlideRuleDev() {
   // V5: ensure clean product identity, no old autopilot title leaking
   React.useEffect(() => {
     const prevTitle = document.title;
-    document.title = "SlideRule Dev · V5 Engineering Cockpit";
+    document.title = `${BRAND_NAME_FULL} Dev · V5 Engineering Cockpit`;
     return () => { document.title = prevTitle; };
   }, []);
   const [goal, setGoal] = useState("做一个权限管理系统（支持 RBAC + 数据范围）");

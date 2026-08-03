@@ -1,3 +1,4 @@
+import { BRAND_NAME_FULL } from "@shared/brand";
 import {
   CheckCircleFilled,
   ClockCircleOutlined,
@@ -1201,7 +1202,7 @@ function AgentLoopSidebar({
           alt="面团 AI"
         />
       </a>
-      <nav className="native-agent-nav" aria-label="SlideRule">
+      <nav className="native-agent-nav" aria-label={BRAND_NAME_FULL}>
         {navItems.map(item => (
           <a
             href={getViewPath?.(item.key)}
@@ -1288,8 +1289,8 @@ function AgentLoopTopbar({
   showActions?: boolean;
   pythonHealth?: PythonHealthViewModel | null;
 }) {
-  // 品牌统一（用户裁决 2026-07-15）：系统对外叫 SlideRule，顶栏不再出现
-  // AgentLoop（内部路由/标识保留，不破链接）
+  // 品牌统一：系统对外叫面团 AI（2026-08-03 换名，此前是 SlideRule），顶栏不再
+  // 出现 AgentLoop（内部路由/标识保留，不破链接）
   const title =
     view === "sliderule"
       ? "面团 / 推演"
@@ -1439,7 +1440,7 @@ function DashboardAppInner({
             : view === "settings-legacy"
               ? "设置（legacy）"
               : "任务队列（legacy）";
-    document.title = `${label} · SlideRule`;
+    document.title = `${label} · ${BRAND_NAME_FULL}`;
   }, [view]);
 
   // Load additional settings-tab data when switching to the legacy settings view
