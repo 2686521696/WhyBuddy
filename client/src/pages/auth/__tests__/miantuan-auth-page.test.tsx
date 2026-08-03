@@ -98,7 +98,11 @@ describe("登录页", () => {
     expect(markup).toContain("miantuan-team-illustration.png");
     expect(markup).toContain("不止一面，即刻成团");
     expect(markup).toContain("把一句模糊想法");
-    expect(markup).toContain("miantuan.ai");
+    // 2026-08-03 用户反馈"品牌名太多了"：此前左下角一处 miantuan.ai、表单
+    // 底下还有一处带图标的，加上左上角标识里的 MIANTUAN.AI 共三遍。现在只
+    // 保留标识自带的那一处（大写，是 logo 的一部分），额外的两处小写页脚去掉。
+    expect(markup).toContain("MIANTUAN.AI");
+    expect(markup).not.toContain(">miantuan.ai<");
     // 插画是装饰性的，必须对读屏软件隐藏，否则念出一串无意义的文件名
     expect(markup).toContain('aria-hidden');
   });

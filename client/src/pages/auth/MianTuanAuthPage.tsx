@@ -40,7 +40,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 
-import { MianTuanMark, MianTuanWordmark } from "@/components/brand/MianTuanMark";
+import { MianTuanWordmark } from "@/components/brand/MianTuanMark";
 import {
   completeRegistration,
   login as apiLogin,
@@ -158,7 +158,6 @@ export function BrandPanel() {
         </p>
       </div>
 
-      <p className="relative text-xs text-slate-400">miantuan.ai</p>
     </div>
   );
 }
@@ -351,10 +350,6 @@ export function AuthCard({
         </button>
       )}
 
-      <div className="mt-10 flex items-center justify-center gap-2 text-[11px] text-slate-300">
-        <MianTuanMark size={14} />
-        miantuan.ai
-      </div>
     </div>
   );
 }
