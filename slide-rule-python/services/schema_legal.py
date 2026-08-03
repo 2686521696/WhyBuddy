@@ -572,7 +572,22 @@ def experience_block_prompt_block() -> str:
         "'courier dispatch board' contains 'courier' but the operator is a dispatcher at a desk → "
         "desktop; 'inspection work order, worker photographs on site and submits' contains 'work order' "
         "but the operator is walking around → phone. If the request names a device explicitly "
-        "(app / mobile / mini-program / PC / web / 'on the computer'), follow that."
+        "(app / mobile / mini-program / PC / web / 'on the computer'), follow that.\n"
+        # 2026-08-03：姿态判据本身没错，但它可能跟**你自己产出的东西**打架。
+        # 真机案例：「鱼眼图像辨别水产新鲜度」——采样确实是站着拍照，姿态判 phone，
+        # 按上面的规则一点没判错；可这个应用真正生成出来的是一整套后台（新鲜度
+        # 评分仪表盘、样品占比环图、各品类平均评分柱状图、批次台账），一个 9:16
+        # 的窄条根本装不下，作品墙上那张卡也因此是竖的、糊的。
+        #
+        # 采集动作往往只是**整套系统里的一个页面**，而首页决定的是整个应用的形态。
+        # 所以补一条压在姿态之上：先看你打算产出什么，再看谁在什么状态下用。
+        "OVERRIDE (this outranks posture): judge by WHAT YOU ARE ABOUT TO BUILD first. "
+        "If this app's landing page is an overview/dashboard — KPI tiles, charts, cross-entity "
+        "aggregates, batch review or reconciliation — choose 'desktop' EVEN IF the request "
+        "describes on-site capture (photographing, scanning, clocking in). Capture is usually one "
+        "page inside the system; the landing page decides the shape of the whole app, and a 9:16 "
+        "column cannot hold a multi-column dashboard. Choose 'phone' only when capture-in-the-moment "
+        "is essentially the WHOLE product and there is no back-office side to it."
     )
     lines.append(
         f"Step 9 — Design recipe: appbundle.appIdentity MAY include designRecipeRef "
