@@ -313,6 +313,17 @@ class IdentityStore:
         rows = self._x.query(f"select * from {TABLE} where id = {self._x.ph(1)}", [user_id])
         return User(rows[0]) if rows else None
 
+    def list_users(self, limit: int = 500) -> list[User]:
+        """全量用户，新的在前。给管理台用。
+
+        limit 直接内联进 SQL 而不走占位符——三种后端对 LIMIT 参数化的支持不一致
+        （Neon HTTP 端点尤其挑），而 `int()` 已经杜绝了注入。
+        """
+        rows = self._x.query(
+            f"select * from {TABLE} order by created_at desc limit {int(limit)}", []
+        )
+        return [User(row) for row in rows]
+
     def count(self) -> int:
         rows = self._x.query(f"select count(*) as n from {TABLE}", [])
         # ⚠️ Neon HTTP 端点对 count(*)（int8）返回的是**字符串**，必须显式转

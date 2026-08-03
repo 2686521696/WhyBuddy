@@ -18,7 +18,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useAuthStore } from "@/lib/auth-store";
+import { useAuth } from "@/lib/use-auth";
 import { cn } from "@/lib/utils";
 
 interface AdminLayoutProps {
@@ -60,25 +60,34 @@ function AdminAccessCard({
 }
 
 export function AdminLayout({ children }: AdminLayoutProps) {
-  const currentUser = useAuthStore(state => state.currentUser);
-  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
-  const isAdmin = useAuthStore(state => state.isAdmin);
+  const { user: currentUser, ready } = useAuth();
 
-  if (!isAuthenticated()) {
+  // 还没问出登录态时不要下结论：直接判"未登录"会让已登录的管理员先看到一屏
+  // "Sign in required"，再闪回控制台。
+  if (!ready) {
+    return (
+      <AdminAccessCard
+        title="Checking session"
+        description="Confirming your account before opening the management console."
+      />
+    );
+  }
+
+  if (!currentUser) {
     return (
       <AdminAccessCard
         title="Sign in required"
         description="Use an authenticated admin session to open the management console."
         action={
           <Button asChild size="sm">
-            <a href="/login">Go to sign in</a>
+            <a href="/signin?next=/admin">Go to sign in</a>
           </Button>
         }
       />
     );
   }
 
-  if (!isAdmin()) {
+  if (!currentUser.isSuperuser) {
     return (
       <AdminAccessCard
         title="Admin access required"

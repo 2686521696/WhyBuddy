@@ -63,7 +63,6 @@ _hydrate_env_files()
 
 from config.settings import settings
 from routes.audit import router as audit_router
-from routes.auth import router as auth_router
 from routes.blueprint_jobs import router as blueprint_jobs_router
 from routes.tasks import router as tasks_router
 from routes.executor_events import router as executor_events_router
@@ -154,17 +153,16 @@ app.add_middleware(
 )
 
 # Full V5 API - this is the takeover
-# 账号接口挂在 sliderule 前缀下：复用已验证的 Node→Python 代理，
-# 且避开 /api/auth（Node 遗留体系 + Python 桥接桩都占着那里）。
+# 账号接口挂在 sliderule 前缀下：复用已验证的 Node→Python 代理。
+# （/api/auth 那套 —— Node 的遗留账号体系和这边的桥接桩 —— 已于 2026-08-03
+# 整体删除，现在全站只有这一套身份。）
 app.include_router(account_router, prefix="/api/sliderule")
 app.include_router(sliderule_full_router, prefix="/api/sliderule")
 app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-documents")
 app.include_router(blueprint_jobs_router, prefix="/api/blueprint/jobs")
 
-# Auth / permissions / audit takeover services now have an HTTP skin (task 55/60:
-# top blocker for Node index.ts retirement). Thin delegation to services/auth_*,
-# permission_*, audit_*; node-retained surfaces stay in server/routes/*.ts.
-app.include_router(auth_router, prefix="/api/auth")
+# Permissions / audit takeover services have an HTTP skin (task 55/60).
+# Thin delegation to services/permission_*, audit_*.
 app.include_router(permissions_router, prefix="/api/permissions")
 app.include_router(audit_router, prefix="/api/audit")
 

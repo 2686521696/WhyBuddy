@@ -1,23 +1,63 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useAuthStore } from "./lib/auth-store";
+const { authState, deployTargetState, locationState, viewportState } =
+  vi.hoisted(() => ({
+    // 身份来自新账号体系（2026-08-03）；旧的 useAuthStore 已随整套删除。
+    authState: {
+      user: null as {
+        id: string;
+        email: string;
+        displayName: string | null;
+        isSuperuser: boolean;
+        isVerified: boolean;
+        createdAt: string;
+      } | null,
+      ready: true,
+    },
+    deployTargetState: {
+      isGitHubPages: false,
+    },
+    locationState: {
+      current: "/tasks",
+      setLocation: vi.fn(),
+    },
+    viewportState: {
+      isMobile: false,
+      isTablet: false,
+    },
+  }));
 
-const { deployTargetState, locationState, viewportState } = vi.hoisted(() => ({
-  deployTargetState: {
-    isGitHubPages: false,
-  },
-  locationState: {
-    current: "/tasks",
-    setLocation: vi.fn(),
-  },
-  viewportState: {
-    isMobile: false,
-    isTablet: false,
-  },
+import {
+  AppShell,
+  isAgentLoopLocation,
+  isProjectWorkspaceLocation,
+} from "./App";
+
+vi.mock("./lib/use-auth", () => ({
+  // Provider 在这份测试里退化成透传：AppShell 只读 useAuth，不需要真去 fetch。
+  AuthProvider: ({ children }: { children?: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  useAuth: () => ({
+    user: authState.user,
+    ready: authState.ready,
+    capabilities: {
+      loggedIn: Boolean(authState.user),
+      isSuperuser: Boolean(authState.user?.isSuperuser),
+      can: {
+        browse: true,
+        viewApp: true,
+        fork: Boolean(authState.user),
+        drive: Boolean(authState.user),
+        manageOwn: Boolean(authState.user),
+      },
+    },
+    refresh: async () => {},
+    signOut: async () => {},
+  }),
+  canWriteApp: () => false,
 }));
-
-import { AppShell, isAgentLoopLocation, isProjectWorkspaceLocation } from "./App";
 
 vi.mock("./lib/deploy-target", () => ({
   CAN_USE_ADVANCED_RUNTIME: true,
@@ -37,8 +77,7 @@ vi.mock("wouter", () => ({
     path,
   }: {
     children?:
-      | React.ReactNode
-      | ((params: Record<string, string>) => React.ReactNode);
+      React.ReactNode | ((params: Record<string, string>) => React.ReactNode);
     component?: React.ComponentType;
     path?: string;
   }) => {
@@ -60,10 +99,13 @@ vi.mock("wouter", () => ({
       (path === "/debug/:section" &&
         current.startsWith("/debug/") &&
         current !== "/debug/autopilot-spec-documents-workbench") ||
-      (path === "/agent-loop/sliderule" && current === "/agent-loop/sliderule") ||
-      (path === "/agent-loop/workbench" && current === "/agent-loop/workbench") ||
+      (path === "/agent-loop/sliderule" &&
+        current === "/agent-loop/sliderule") ||
+      (path === "/agent-loop/workbench" &&
+        current === "/agent-loop/workbench") ||
       (path === "/agent-loop/settings" && current === "/agent-loop/settings") ||
-      (path === "/agent-loop/runs/:runId" && current.startsWith("/agent-loop/runs/")) ||
+      (path === "/agent-loop/runs/:runId" &&
+        current.startsWith("/agent-loop/runs/")) ||
       (path === "/agent-loop" && current === "/agent-loop") ||
       (path === "/sliderule" && current === "/sliderule") ||
       (path === "/AgentLoop" && current === "/AgentLoop") ||
@@ -133,7 +175,7 @@ vi.mock("./pages/Home", () => ({
   default: () => <main data-testid="home-page" />,
 }));
 
-vi.mock("./pages/auth/AuthPage", () => ({
+vi.mock("./pages/auth/MianTuanAuthPage", () => ({
   default: () => <main data-testid="auth-page" />,
 }));
 
@@ -209,23 +251,19 @@ describe("AppShell fixed sidebar layout", () => {
   beforeEach(() => {
     deployTargetState.isGitHubPages = false;
     locationState.setLocation.mockClear();
-    useAuthStore.getState().resetForTest();
+    authState.user = null;
+    authState.ready = true;
   });
 
   function signInForShell() {
-    useAuthStore.setState({
-      sessionChecked: true,
-      currentUser: {
-        id: "user-1",
-        email: "user@example.com",
-        displayName: "User",
-        avatarUrl: null,
-        role: "user",
-        status: "active",
-        emailVerified: true,
-        createdAt: "2026-04-30T00:00:00.000Z",
-      },
-    });
+    authState.user = {
+      id: "user-1",
+      email: "user@example.com",
+      displayName: "User",
+      isSuperuser: false,
+      isVerified: true,
+      createdAt: "2026-04-30T00:00:00.000Z",
+    };
   }
 
   it("offsets non-home desktop content by the fixed sidebar width", async () => {
@@ -289,7 +327,8 @@ describe("AppShell fixed sidebar layout", () => {
   });
 
   it("keeps the login page free of app chrome", async () => {
-    locationState.current = "/login";
+    // 登录页从 /login 搬到了 /signin（旧账号体系整套下掉，2026-08-03）
+    locationState.current = "/signin";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
@@ -304,9 +343,22 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).toContain("padding-left:0");
   });
 
+  it("旧的 /login 只剩重定向，不再渲染任何登录界面", async () => {
+    // 留着这条路径是为了外部链接和书签；它现在只做一次跳转（跳转发生在
+    // useEffect 里，静态渲染下不会执行，所以断言的是"什么都不渲染"）。
+    locationState.current = "/login";
+    viewportState.isMobile = false;
+    viewportState.isTablet = false;
+
+    const markup = await renderShellMarkup();
+
+    expect(markup).not.toContain('data-testid="auth-page"');
+    expect(markup).not.toContain('data-testid="app-sidebar"');
+  });
+
   it("redirects the login page to project space on GitHub Pages", async () => {
     deployTargetState.isGitHubPages = true;
-    locationState.current = "/login";
+    locationState.current = "/signin";
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
@@ -323,6 +375,7 @@ describe("AppShell fixed sidebar layout", () => {
     expect(isProjectWorkspaceLocation("/specs?tab=routes")).toBe(true);
     expect(isProjectWorkspaceLocation("/replay/mission-1#timeline")).toBe(true);
     expect(isProjectWorkspaceLocation("/login")).toBe(false);
+    expect(isProjectWorkspaceLocation("/signin")).toBe(false);
     expect(isProjectWorkspaceLocation("/admin")).toBe(false);
     expect(isProjectWorkspaceLocation("/debug")).toBe(false);
     expect(isProjectWorkspaceLocation("/agent-loop")).toBe(false);
@@ -373,7 +426,9 @@ describe("AppShell fixed sidebar layout", () => {
     expect(isAgentLoopLocation("/agent-loop/sliderule")).toBe(true);
     expect(isAgentLoopLocation("/agent-loop/workbench")).toBe(true);
     expect(isAgentLoopLocation("/agent-loop/settings")).toBe(true);
-    expect(isAgentLoopLocation("/agent-loop/runs/2026-06-27T01-02-03-004Z")).toBe(true);
+    expect(
+      isAgentLoopLocation("/agent-loop/runs/2026-06-27T01-02-03-004Z")
+    ).toBe(true);
     expect(isAgentLoopLocation("/AgentLoop")).toBe(true);
     expect(isAgentLoopLocation("/AGENT-LOOP/")).toBe(true);
     expect(isAgentLoopLocation("/agent-loop?foo=1")).toBe(true);
@@ -400,6 +455,8 @@ describe("AppShell fixed sidebar layout", () => {
 
     await renderShellMarkup();
 
-    expect(locationState.setLocation).not.toHaveBeenCalledWith("/login");
+    expect(locationState.setLocation).not.toHaveBeenCalledWith(
+      expect.stringContaining("/signin")
+    );
   });
 });

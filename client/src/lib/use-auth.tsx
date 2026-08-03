@@ -14,6 +14,13 @@
  * `ready` 为 false 时**当作匿名**渲染，而不是显示骨架屏或假设已登录。
  * 理由：首屏是应用中心，匿名本来就能看——按匿名渲染是正确的最终状态之一，
  * 拿到结果后只需要把按钮点亮。反过来（先假设登录）会闪一下再收回去。
+ *
+ * ## 嵌套是安全的（2026-08-03）
+ *
+ * Provider 提到了 App 根节点（登录页、侧栏、管理台都要用），而 DashboardApp
+ * 自己也套着一层——它要能被单独渲染（测试、独立预览）。外层已经有的时候，
+ * 内层退化成透传：**同一份登录态，不会两个 Provider 各存一份**。
+ * 否则会出现"在应用中心登录了，侧栏还显示未登录"这种只在特定入口复现的怪事。
  */
 
 import React, {
@@ -43,15 +50,30 @@ interface AuthState {
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthState>({
+/** null = 上面没有 Provider。用它区分"还没登录"和"根本没接上"。 */
+const AuthContext = createContext<AuthState | null>(null);
+
+const ANONYMOUS_STATE: AuthState = {
   user: null,
   capabilities: ANONYMOUS_CAPABILITIES,
   ready: false,
   refresh: async () => {},
   signOut: async () => {},
-});
+};
 
+/**
+ * 已经有外层 Provider 时退化成透传（见文件头）。
+ *
+ * `useContext` 无条件调用、再决定渲染哪个分支——不能写成"先 return 再用 hook"，
+ * 那会踩 hooks 顺序。
+ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const outer = useContext(AuthContext);
+  if (outer) return <>{children}</>;
+  return <AuthProviderRoot>{children}</AuthProviderRoot>;
+}
+
+function AuthProviderRoot({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [capabilities, setCapabilities] = useState<Capabilities>(ANONYMOUS_CAPABILITIES);
   const [ready, setReady] = useState(false);
@@ -95,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useAuth(): AuthState {
-  return useContext(AuthContext);
+  return useContext(AuthContext) ?? ANONYMOUS_STATE;
 }
 
 /**

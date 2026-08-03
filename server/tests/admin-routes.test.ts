@@ -27,36 +27,25 @@ const regularUser: CurrentUser = {
   role: "user",
 };
 
+// 用户来自新身份体系（Python 的 `User.public()`）——那一层根本不返回密码哈希，
+// 所以这里的 fixture 也没有可泄漏的字段。下面仍然断言"响应里不出现 passwordHash"，
+// 因为它防的是"以后有人把整行记录透传出去"这类回归，不是防当下这份 fixture。
 const users: UserFixture[] = [
   {
     id: "user-1",
     email: "user@example.com",
-    emailNormalized: "user@example.com",
-    passwordHash: "hash-should-not-leak",
     displayName: "User One",
-    avatarUrl: null,
-    role: "user",
-    status: "active",
-    emailVerifiedAt: now,
-    lastLoginAt: null,
-    lastLoginIp: null,
-    createdAt: now,
-    updatedAt: now,
+    isSuperuser: false,
+    isVerified: true,
+    createdAt: now.toISOString(),
   },
   {
     id: "admin-1",
     email: "admin@example.com",
-    emailNormalized: "admin@example.com",
-    passwordHash: "admin-hash-should-not-leak",
     displayName: "Admin One",
-    avatarUrl: null,
-    role: "admin",
-    status: "active",
-    emailVerifiedAt: now,
-    lastLoginAt: now,
-    lastLoginIp: "127.0.0.1",
-    createdAt: now,
-    updatedAt: now,
+    isSuperuser: true,
+    isVerified: true,
+    createdAt: now.toISOString(),
   },
 ];
 
@@ -106,7 +95,9 @@ function createDeps(currentUser: CurrentUser): AdminRouterDeps {
     requireAdmin,
     users: {
       list: vi.fn(async () => users),
-      findById: vi.fn(async userId => users.find(user => user.id === userId) ?? null),
+      findById: vi.fn(
+        async (userId: string) => users.find(user => user.id === userId) ?? null,
+      ),
     },
     projects: {
       list: vi.fn(async () => projects),
@@ -188,7 +179,7 @@ describe("admin routes", () => {
 
       expect(listResponse.status).toBe(200);
       expect(JSON.stringify(listBody)).not.toContain("passwordHash");
-      expect(JSON.stringify(listBody)).not.toContain("hash-should-not-leak");
+      expect(JSON.stringify(listBody)).not.toContain("password");
       expect(listBody.items).toHaveLength(2);
 
       const detailResponse = await fetch(`${baseUrl}/api/admin/users/user-1`);
@@ -196,7 +187,7 @@ describe("admin routes", () => {
 
       expect(detailResponse.status).toBe(200);
       expect(JSON.stringify(detailBody)).not.toContain("passwordHash");
-      expect(JSON.stringify(detailBody)).not.toContain("hash-should-not-leak");
+      expect(JSON.stringify(detailBody)).not.toContain("password");
       expect(detailBody.user.id).toBe("user-1");
     });
   });

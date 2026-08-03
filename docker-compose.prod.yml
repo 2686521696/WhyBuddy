@@ -3,7 +3,7 @@
 # 前置：main 每次发版由 .github/workflows/deploy-images.yml 自动构建镜像
 # 推到 ghcr.io。服务器上：
 #
-#   cp .env.example .env    # 填 LLM_API_KEY + SESSION_SECRET
+#   cp .env.example .env    # 填 LLM_API_KEY + SLIDERULE_AUTH_SECRET
 #   docker compose -f docker-compose.prod.yml pull
 #   docker compose -f docker-compose.prod.yml up -d
 #   → http://服务器IP:3000/agent-loop/workbench

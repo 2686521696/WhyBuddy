@@ -1,6 +1,6 @@
 # SlideRule — one-command bootstrap
 #
-#   cp .env.example .env   # 填 LLM_API_KEY + SESSION_SECRET
+#   cp .env.example .env   # 填 LLM_API_KEY + SLIDERULE_AUTH_SECRET
 #   docker compose up -d --build
 #   → http://localhost:3000/agent-loop/workbench
 #
@@ -24,7 +24,7 @@
 #   - Feishu integration (mock mode by default)
 #
 # Required env: copy .env.example to .env and fill at least LLM_API_KEY +
-# SESSION_SECRET. Compose passes the host's .env into both app containers.
+# SLIDERULE_AUTH_SECRET. Compose passes the host's .env into both app containers.
 
 services:
   python:

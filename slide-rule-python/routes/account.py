@@ -28,9 +28,10 @@ from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response
 
-from middlewares.current_user import AUTH_COOKIE, CurrentUser, CurrentUserOptional
+from middlewares.current_user import AUTH_COOKIE, CurrentUserOptional, SuperUser
 from services import auth_service
 from services.auth_tokens import DEFAULT_TTL_S
+from services.identity_store import get_identity_store
 
 router = APIRouter(tags=["Account"])
 
@@ -157,3 +158,31 @@ async def capabilities(viewer: CurrentUserOptional):
             "manageOwn": logged_in,
         },
     }
+
+
+# ────────────────────────── 管理台 ──────────────────────────
+#
+# Node 的 /api/admin 原来读的是**遗留 MySQL 用户表**。那套账号体系已经整体下掉
+# （2026-08-03），管理台的数据源随之切到这里——身份只剩一份，不会出现
+# "管理台看到的用户和实际能登录的用户是两拨人"。
+#
+# 守卫是双层的：Node 侧 requireAdmin 先拦一道，这里的 SuperUser 再拦一道。
+# 不省掉任何一层——Node 那层是为了不把请求白白打过来，这层才是真判定。
+
+
+@router.get("/account/admin/users")
+async def admin_list_users(_admin: SuperUser):
+    import asyncio
+
+    users = await asyncio.to_thread(lambda: get_identity_store().list_users())
+    return {"ok": True, "items": [u.public() for u in users]}
+
+
+@router.get("/account/admin/users/{user_id}")
+async def admin_get_user(user_id: str, _admin: SuperUser):
+    import asyncio
+
+    user = await asyncio.to_thread(lambda: get_identity_store().get_by_id(user_id))
+    if user is None:
+        raise HTTPException(404, "用户不存在")
+    return {"ok": True, "user": user.public()}

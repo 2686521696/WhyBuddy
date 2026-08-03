@@ -25,8 +25,8 @@ import { RecoveryDialog } from "./components/RecoveryDialog";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useRecoveryDetection } from "./hooks/useRecoveryDetection";
 import { useViewportTier } from "./hooks/useViewportTier";
-import { useAuthStore } from "./lib/auth-store";
 import { IS_GITHUB_PAGES } from "./lib/deploy-target";
+import { AuthProvider, useAuth } from "./lib/use-auth";
 import { useProjectStore } from "./lib/project-store";
 import { useAppStore } from "./lib/store";
 
@@ -66,9 +66,8 @@ const AdminUsersPage = lazy(() =>
 const AutopilotRoutePage = lazy(
   () => import("./pages/autopilot/AutopilotRoutePage")
 );
-const AuthPage = lazy(() => import("./pages/auth/AuthPage"));
-// 面团的登录页（2026-08-03）：接新的 Neon 身份体系。
-// 与上面那个并存——那个接旧 Node/MySQL 账号体系，/projects 和 /admin 还依赖它。
+// 全站唯一的登录页（2026-08-03）：接 Neon 身份体系。
+// 旧的 `/login` + AuthPage（Node/MySQL 账号体系）已整套删除，只留一条重定向。
 const MianTuanAuthPage = lazy(() => import("./pages/auth/MianTuanAuthPage"));
 const SpecCenterPage = lazy(() => import("./pages/specs/SpecCenterPage"));
 const TaskDetailPage = lazy(() =>
@@ -134,10 +133,12 @@ function Router() {
           )
         }
       </Route>
+      {/* 旧登录页的地址。留着重定向而不是直接 404——外部链接、书签、
+          还有代码里历史遗留的跳转都指着它。 */}
       <Route path={"/login"}>
-        {() =>
-          IS_GITHUB_PAGES ? <RedirectRoute to={PROJECTS_PATH} /> : <AuthPage />
-        }
+        {() => (
+          <RedirectRoute to={IS_GITHUB_PAGES ? PROJECTS_PATH : "/signin"} />
+        )}
       </Route>
       <Route path={"/admin"}>
         {() => (
@@ -347,24 +348,16 @@ function RecoveryGuard() {
   );
 }
 
-function AuthBootstrap() {
-  const fetchMe = useAuthStore(state => state.fetchMe);
-
-  useEffect(() => {
-    if (IS_GITHUB_PAGES) return;
-    // V5 /sliderule is chrome-free and deliberately isolated from auth/project stores.
-    // Skip fetchMe here to eliminate the unconditional 401 console noise on the demo route
-    // (the route already skips RecoveryGuard, AuthRouteGuard, sidebar, etc. via isChromeFree).
-    if (isSlideRuleLocation(typeof window !== 'undefined' ? window.location.pathname : '')) return;
-    if (isAgentLoopLocation(typeof window !== 'undefined' ? window.location.pathname : '')) return;
-    void fetchMe();
-  }, [fetchMe]);
-
-  return null;
-}
-
+/**
+ * 把登录用户接到项目 store 上。
+ *
+ * 旧账号体系下掉后（2026-08-03），身份来自 `AuthProvider`（新的 Neon 体系）。
+ * 原来这里还配着一个 `AuthBootstrap` 负责首屏 fetchMe——现在那件事是
+ * AuthProvider 自己做的，组件删掉了。
+ */
 function AuthProjectOwnerBridge() {
-  const currentUserId = useAuthStore(state => state.currentUser?.id ?? null);
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? null;
   const setActiveOwner = useProjectStore(state => state.setActiveOwner);
 
   useEffect(() => {
@@ -438,21 +431,15 @@ export function isProjectWorkspaceLocation(location: string) {
 
 function AuthRouteGuard() {
   const [location, setLocation] = useLocation();
-  const currentUser = useAuthStore(state => state.currentUser);
-  const loading = useAuthStore(state => state.loading);
-  const sessionChecked = useAuthStore(state => state.sessionChecked);
+  const { user, ready } = useAuth();
 
   useEffect(() => {
     if (IS_GITHUB_PAGES) return;
-    if (
-      sessionChecked &&
-      !loading &&
-      !currentUser &&
-      isProjectWorkspaceLocation(location)
-    ) {
-      setLocation("/login");
+    // 必须等 ready：未就绪时 user 恒为 null，不等就会把已登录的人也踢去登录页。
+    if (ready && !user && isProjectWorkspaceLocation(location)) {
+      setLocation(`/signin?next=${encodeURIComponent(location)}`);
     }
-  }, [currentUser, loading, location, sessionChecked, setLocation]);
+  }, [user, ready, location, setLocation]);
 
   return null;
 }
@@ -516,8 +503,6 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <LocaleSync />
-          <AuthBootstrap />
-          <AuthProjectOwnerBridge />
           <Toaster
             position="top-center"
             toastOptions={{
@@ -531,9 +516,16 @@ function App() {
               },
             }}
           />
-          <WouterRouter base={routerBase}>
-            <AppShell />
-          </WouterRouter>
+          {/* AuthProvider 提到根：登录页、侧栏、管理台、应用中心共用同一份
+              登录态。原来它只包着 DashboardApp，导致 /signin 拿到的是 Context
+              的默认值（user 恒 null、refresh 是空函数），"已登录就别停在登录页"
+              那条逻辑根本不会触发。 */}
+          <AuthProvider>
+            <WouterRouter base={routerBase}>
+              <AuthProjectOwnerBridge />
+              <AppShell />
+            </WouterRouter>
+          </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
