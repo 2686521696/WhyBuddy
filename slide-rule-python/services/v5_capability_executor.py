@@ -367,6 +367,34 @@ def _try_llm_generate_evidence(
         model = enrich_monitor_page_overviews(model, preview_sink=preview_sink)
     except Exception as exc:  # noqa: BLE001 — 首页设计是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] monitor overview enrichment skipped: {str(exc)[:160]}")
+    # 增强后补跑一次门禁（2026-08-04）。
+    #
+    # 上面那道门（gate）在**增强之前**跑。而增强会往模型里写新字段：
+    #   · appIdentity.chartColors  —— 参照图取到的图表色（services/sheet_palette）
+    #   · page.pages[].freeformOverview —— LLM 设计的首页版式
+    # 门跑的时候这两个字段还不存在，所以 v5_model_gate 里针对它们写的校验
+    # **在这条链路上从来没被触发过**——是空转的。
+    #
+    # 补这一跑不是为了拦人：增强产物在写入侧已经各自把过关（sheet_palette 验
+    # 格式/去重/区分度，freeform 走 Pydantic 深校验），渲染侧还会再验一次。
+    # 补它是为了让"门"这一层名副其实——**声称有三层防护，就不能有一层是空的**。
+    #
+    # 判定结果只**留痕不阻断**：增强是 fail-open 的增强项，为了它把一个已经过门
+    # 的模型打回去，等于用增强项的故障去否决主产物。发现问题就打日志，让下一次
+    # 改动有据可查；真要收紧成硬拦，那是另一个决定。
+    try:
+        post_gate = validate_five_system_model(
+            model, require_landing_page_ref=require_landing_page_ref
+        )
+        if not post_gate.get("passed"):
+            findings = post_gate.get("findings") or []
+            codes = [str(f.get("code") or f) for f in findings[:3]]
+            print(
+                "[v5_capability_executor] ⚠ 增强后门禁不通过（只留痕不阻断）："
+                f"{len(findings)} 条，前几条：{codes}"
+            )
+    except Exception as exc:  # noqa: BLE001 — 复检本身故障不能影响主路径
+        print(f"[v5_capability_executor] post-enrich gate skipped: {str(exc)[:160]}")
     # 过门 + 增强完的完整设计模型持久化进 App Store（组建库地基）。fail-open：
     # 存储层任何异常（DB 连不上/建表失败/序列化问题）都不能拖垮闭环发布——
     # 跟上面几段增强一个纪律。dedup_key = 会话+模型内容签名，同会话反复落同一

@@ -79,3 +79,90 @@ def test_the_two_messages_no_longer_contradict_each_other():
         line = _progress_line(loop, 6)
         # 两处都不该出现"先补够证据再收"这类把收口往后推的说法
         assert "收口前先确保" not in desc + line
+
+
+# ── 闭环状态必须回传给模型（2026-08-04）──────────────────────────
+#
+# 真机：模型 **loop-3 选了收口（成功出 v1）、loop-4 又选了一次（出 v2）**。
+# 每选一次是一整套——重新生成五系统模型、生图（实测 100~260s）、取色、设计
+# 首页、落库。两次就是两套，一轮推演时间翻倍（B 组 28.1 分钟 / C 组 27.8 分钟，
+# 而只收一次口的那两轮是 13.6 / 18.2 分钟）。
+#
+# 它不是乱选：`_progress_line` 正在按剩余轮次催它收口，而状态摘要里**没有任何
+# 一处说"你已经收过了、成功了"**——`【已执行能力序列】`只给能力名不带结果。
+# 催促加强了，"已经做完"这个事实没同步过去。这是上面那次措辞改动留下的缺口。
+
+
+def _state(closure):
+    class S:
+        goal = {"text": "做个食堂系统", "status": "clear"}
+        capabilityRuns = []
+        openQuestions = []
+        coverageGaps = []
+        staleArtifactIds = []
+        artifacts = []
+        publishClosure = closure
+
+    return S()
+
+
+def test_digest_says_closure_already_succeeded():
+    """已收口时必须明说"不需要再选一次"——这是防重复构建的唯一信息来源。"""
+    from services.v5_agentic_pick import _state_digest
+
+    digest = _state_digest(
+        _state({"blocked": False, "evidencePresentCount": 6, "skillCount": 6}),
+        "做个食堂系统", 3, 6,
+    )
+    line = [l for l in digest.splitlines() if l.startswith("【闭环状态】")]
+    assert line, "状态摘要里没有闭环状态这一行"
+    assert "已成功收口" in line[0]
+    assert "不需要再选一次" in line[0]
+    assert "6/6" in line[0]
+
+
+def test_closure_line_sits_right_after_the_progress_line():
+    """两句必须挨着。
+
+    隔开了模型容易只看见催促——真机连收两次就是这么来的。
+    """
+    from services.v5_agentic_pick import _state_digest
+
+    lines = _state_digest(
+        _state({"blocked": False, "evidencePresentCount": 6, "skillCount": 6}),
+        "x", 3, 6,
+    ).splitlines()
+    idx_progress = next(i for i, l in enumerate(lines) if l.startswith("【进度】"))
+    assert lines[idx_progress + 1].startswith("【闭环状态】")
+
+
+def test_blocked_closure_keeps_the_door_open():
+    """被拦下的要说清"补齐了可以再来"——不能把 blocked 也说成"别再收了"。
+
+    那会把 fail-closed 变成 fail-forever：证据补齐之后也没人去收口了。
+    """
+    from services.v5_agentic_pick import _closure_line
+
+    line = _closure_line(_state({"blocked": True, "evidencePresentCount": 2, "skillCount": 6}))
+    assert "blocked" in line and "2/6" in line
+    assert "可以再收一次" in line
+    assert "不需要再选一次" not in line
+
+
+def test_no_closure_yet_is_stated_plainly():
+    from services.v5_agentic_pick import _closure_line
+
+    assert "尚未收口" in _closure_line(_state(None))
+    assert "尚未收口" in _closure_line(_state({}))
+
+
+def test_success_wording_leaves_an_exit_for_real_new_requirements():
+    """要挡的是"没有新需求却重复收口"，不是所有的第二次。
+
+    用户带着新要求继续推演时，精修出 v2 是正当的（v5_full_driver 的 refine 分支
+    本来就在）。所以措辞里必须留这个出口，不能写成"禁止再选"。
+    """
+    from services.v5_agentic_pick import _closure_line
+
+    line = _closure_line(_state({"blocked": False, "evidencePresentCount": 6, "skillCount": 6}))
+    assert "除非" in line and "新的补充需求" in line

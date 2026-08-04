@@ -154,6 +154,50 @@ def _progress_line(loop_index: int, max_loops: int) -> str:
     )
 
 
+def _closure_line(state: V5SessionState) -> str:
+    """闭环当前是什么状态（2026-08-04）。
+
+    ## 为什么必须有这一行
+
+    真机：模型在 **loop-3 选了收口（成功，出 v1）、loop-4 又选了一次（出 v2）**。
+    每选一次就是一整套——重新生成五系统模型、生图（实测 100~260s）、取色、
+    设计首页、落库。两次就是两套，一轮推演的时间直接翻倍。
+
+    它不是乱选。从模型的视角这个决定完全理性：`_progress_line` 正在按剩余轮次
+    催它收口，而**状态摘要里没有任何一处告诉它"你已经收过了、成功了"**——
+    `【已执行能力序列】` 只给能力名、不带结果。催促加强了，"已经做完"这个事实
+    却没同步过去。
+
+    这是 2026-08-04 那次措辞改动（鼓励尽早收口）留下的缺口：那次改对了"从不
+    收口"这个真问题，但没把配套的状态回传补上。**两处各自合理，凑一起漏了一个
+    信息。**
+
+    ## 措辞取向
+
+    已收口时明说"不需要再收一次"，但**留一个出口**——"除非有新的补充需求"。
+    不能把话说死成"禁止再选"：用户带着新要求继续推演时，精修出 v2 是正当的
+    （那条路径本来就存在，见 v5_full_driver 的 refine 分支）。要挡的是**没有
+    新需求却重复收口**，不是所有的第二次。
+    """
+    pc = getattr(state, "publishClosure", None)
+    if not isinstance(pc, dict) or not pc:
+        return "【闭环状态】尚未收口——本次推演还没有产出应用。"
+    blocked = bool(pc.get("blocked"))
+    present = pc.get("evidencePresentCount")
+    total = pc.get("skillCount")
+    tally = f"{present}/{total}" if present is not None and total else "—"
+    if blocked:
+        return (
+            f"【闭环状态】收过一次但被拦下（blocked，证据 {tally}）。"
+            "补齐缺的那几项之后可以再收一次。"
+        )
+    return (
+        f"【闭环状态】**已成功收口**（closed，证据 {tally}），应用已经产出。"
+        "除非用户带来新的补充需求，**不需要再选一次收口**——重复收口会把整套"
+        "模型生成、生图与首页设计再跑一遍，而产出跟已有的这版没有实质差别。"
+    )
+
+
 def _state_digest(state: V5SessionState, user_text: str, loop_index: int, max_loops: int = 6) -> str:
     goal = state.goal if isinstance(state.goal, dict) else {}
     kinds = _artifact_kind_counts(state)
@@ -174,6 +218,9 @@ def _state_digest(state: V5SessionState, user_text: str, loop_index: int, max_lo
         f"【本轮用户输入】{(user_text or '').strip()[:300]}",
         f"【目标】{str(goal.get('text') or '')[:200]}（状态 {goal.get('status') or '未定'}）",
         _progress_line(loop_index, max_loops),
+        # 紧跟进度之后：进度那句在催收口，这句说清"收过没有、成没成"。
+        # 两句必须挨着，隔开了模型容易只看见催促（真机就是这么连收两次的）。
+        _closure_line(state),
         f"【已执行能力序列（最近 8 步）】{' → '.join(recent) or '无'}",
         f"【健康产物】{kinds or '无'}；失效产物 {len(getattr(state, 'staleArtifactIds', []) or [])} 件",
         f"【未答问题】{open_qs or '无'}",
