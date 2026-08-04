@@ -1010,10 +1010,16 @@ def _rows_prompt_fragment() -> str:
         '    "children": [{"tag": "span", "fieldRef": "<字段 id>"},',
         '                 {"tag": "span", "fieldRef": "<字段 id>"}]}]}',
         "",
-        "三条硬规矩：",
+        "四条硬规矩：",
         "1. **模板只写一份**——不要手写 5 份几乎相同的行，重复由运行时负责。",
-        "2. **fieldRef 只能取 fieldRefs 里声明过的字段**，没声明的读不到（会被拒）。",
-        "3. rowsRef 与 fieldRef 都必须指向数据模型里真实存在的实体/字段，不能编。",
+        # 2026-08-04：原来这条只说了 fieldRef 与 fieldRefs 的**关系**，没说
+        # fieldRefs 本身必填。真机连挂三轮、烧 192 秒降级，报的都是
+        # "rowsRef.fieldRefs 不能为空"——模型写了 entityRef/limit 就以为齐了。
+        # 关系描述推不出"这个字段不能省"，得直说。
+        "2. **fieldRefs 必填、且不能是空数组**——先在这里列出这一行要显示的字段 id，"
+        "模板里的 fieldRef 才取得到值。只写 entityRef 和 limit 是不够的，会被直接拒收。",
+        "3. **fieldRef 只能取 fieldRefs 里声明过的字段**，没声明的读不到（会被拒）。",
+        "4. rowsRef 与 fieldRef 都必须指向数据模型里真实存在的实体/字段，不能编。",
         "",
         "limit 建议 5-8 条（上限 20）。这一页用不上逐行内容就完全不用，不要为了",
         "凑版面硬塞一个跟业务无关的排行榜——参照图上有才画，没有就没有。",
@@ -1739,6 +1745,70 @@ def _repair_freeform_json_or_none(text: str) -> Optional[dict[str, Any]]:
     return _prune_non_dict_list_items(payload)
 
 
+def _reask_hint(error_text: str) -> str:
+    """按**这次真正报的错**给建议，而不是每次都念一遍全部老经验。
+
+    ## 为什么改成分诊
+
+    2026-08-04 真机：一次首页设计连挂三轮、烧掉 192 秒，最后降级回固定骨架。
+    三轮报的都是同一句——
+
+        root.children.2.children.1.rowsRef
+          Value error, rowsRef.fieldRefs 不能为空
+
+    错误本身回喂得没问题，问题出在紧跟着那段固定的"请仔细检查"：它整段讲的是
+    children 形状、tag/style 白名单、以及 dataRef 的 key 名怎么写，**一个字都
+    没提 rowsRef**。模型拿到一句正确的报错，后面跟着一大段把它往 dataRef 上引
+    的建议——三轮都没改对。
+
+    那段话本身没错，它是 dataRef 时代攒下来的真经验；错在**无差别播放**。
+    提示词里每多一句无关的话，真正相关的那句就被冲淡一分——这跟出图那边
+    "一长串禁令把'画满'那句冲掉"是同一个毛病（见 _build_reference_image_prompt
+    里 2026-07-30 那段注释）。
+
+    ## 分诊口径
+
+    按错误原文里的关键词挑一条建议。认不出来才回落通用清单——**不是每次都发
+    通用清单再附加一条**：那等于没分诊。
+
+    新增一类失败模式时，在这里加一条，而不是往通用清单里再堆一句。
+    """
+    err = error_text or ""
+    if "rowsRef" in err or "fieldRef" in err:
+        return (
+            "这个错跟**逐行内容（rowsRef）**有关，请只检查这几点：\n"
+            "· rowsRef 里 fieldRefs 是**必填且不能为空**——先列出这一行要显示的"
+            "字段 id，模板里的 fieldRef 才取得到值；只写 entityRef/limit 是不够的。\n"
+            "· 模板（rowsRef 节点的 children）里每一个 fieldRef，都必须出现在"
+            "同一个 rowsRef 的 fieldRefs 数组里。\n"
+            "· entityRef 和所有字段 id 必须是数据模型里真实存在的，不能编。\n"
+            "· 这一页如果本来就不需要逐行列表，**直接把这个 rowsRef 节点整个删掉**"
+            "比补一个凑数的字段清单好。\n"
+        )
+    if "dataRef" in err:
+        return (
+            "这个错跟 **dataRef** 有关：它的 key 只有 entityRef / aggregate / "
+            "trendFieldRef / trendGrain 四个，写成 entity / field 之类会被拒；"
+            "引用的实体和字段必须真实存在且类型对得上。\n"
+        )
+    if "chart" in err:
+        return (
+            "这个错跟 **chart 节点**有关：type 只能是 bar/line/pie/donut，"
+            "entityRef / dimensionFieldId 必须真实存在，metric=sum 时必须给 "
+            "metricFieldId。\n"
+        )
+    if "tag" in err or "style" in err or "iconRef" in err:
+        return (
+            "这个错跟**白名单**有关：tag、style 属性名、iconRef 都只能用允许清单"
+            "里的值，清单在上面的说明里，不要用清单外的。\n"
+        )
+    return (
+        "请仔细检查：children 数组每一项必须是完整节点对象（不能是裸字符串）、"
+        "tag/style 属性/iconRef 必须在允许的白名单内、引用的实体和字段必须真实"
+        "存在且类型对得上。\n"
+    )
+
+
 def generate_freeform_block(
     design_brief: str,
     datamodel: dict[str, Any],
@@ -1877,12 +1947,7 @@ def generate_freeform_block(
                     "role": "user",
                     "content": (
                         f"你上次的输出没有通过校验，具体错误：\n{last_error}\n"
-                        "请仔细检查：children 数组每一项必须是完整节点对象（不能是裸字符串）、"
-                        "tag/style 属性/iconRef 必须在允许的白名单内、dataRef 引用的实体和字段"
-                        "必须真实存在且类型对得上。如果报错是 dataRef 相关的 'Field required' 或"
-                        "缺 entityRef，最常见原因是 key 名写错了（比如写成 entity/field），"
-                        "dataRef 的 key 只有 entityRef / aggregate / trendFieldRef / "
-                        "trendGrain 四个，不是别的名字。"
+                        f"{_reask_hint(last_error)}"
                         "重新输出完整的 JSON，只要一个 JSON 对象。"
                     ),
                 },
