@@ -856,6 +856,36 @@ def call_llm_with_retry(
       ③ **对冲副本失败不算数**。副本报错时仍然等原始那份的结果/异常——否则
          "为了更快"反而把一次本来会成功的调用变成失败。
 
+    ## 两条边界（2026-08-04 补，真机 A/B 量出来的）
+
+    上面三条抄全了，但漏了 gRPC 的第四条：**hedgingPolicy 与 retryPolicy 在
+    gRPC 的 method config 里是互斥的**（只能配其一）。漏掉的代价实测如下。
+
+    同一道题跑三轮，只差 `LLM_HEDGE_DELAY_MS`：
+
+        对冲开   流式主路失败 1 次 · 五系统模型流出 —— · 18.2 分钟闭环
+        对冲关   流式主路失败 0 次 · 五系统模型流出  53,172 字 · 28.1 分钟闭环
+        对冲开   流式主路失败 2 次 · 五系统模型流出 316,932 字 · 30.8 分钟**未闭环**
+
+    其余 7 个能力的字数在两组之间是 1.0~1.2 倍（几乎一致），**只有
+    five-system-model 一条炸到 6.0 倍**——排除了"多跑了几轮"这个解释。
+
+    **边界一：`on_delta` 在场时不对冲。**
+    对冲的两份副本会**同时**往同一个 on_delta 里推，UI 上就是两份不同的生成
+    逐块交错。返回值仍然只取一份（是对的），但用户眼前的流式文字是花的。
+    流式的意义就是"边生成边看"，第二份从第一个 token 起就是脏的——除非把副本
+    增量全缓冲起来等胜负揭晓，而那等于放弃流式。所以直接不对冲。
+
+    **边界二：重试的第 2 次起不对冲。**
+    不设这条会**相乘**：`max_attempts` × `max_shape_retries` × 对冲，
+    每次重试都重新对冲一遍。而对冲弄脏流式内容 → 结构校验失败 → 触发重试 →
+    又对冲，自己喂自己。31.7 万字（6 倍）就是这么滚出来的。
+    重试本身已经是对"这次失败了"的响应，给一个已知失败的请求再配一个影子
+    只会放大问题。
+
+    两条边界之后，同一个逻辑调用最多只有 2 个并发生成（对冲的本意），
+    而不是 6~8 个。
+
     ## 为什么不用现成的库
 
     这段逻辑一共几十行，而且要贴着我们自己的 `LlmError.transient` 语义走。
@@ -863,11 +893,14 @@ def call_llm_with_retry(
     读代码的人得先读那个库才能看懂我们的取舍。抄的是 gRPC 的**语义**，
     不是它的实现。
     """
-    delay_ms = _hedge_delay_ms()
+    # 边界一：流式一律不对冲（见上）。判据是**调用方传没传 on_delta**，
+    # 不是"通道支不支持流式"——真正决定会不会双写的是有没有那个回调。
+    delay_ms = 0 if kwargs.get("on_delta") is not None else _hedge_delay_ms()
     last_error: LlmError | None = None
     for attempt in range(1, max_attempts + 1):
         try:
-            return _call_llm_hedged(messages, delay_ms, **kwargs)
+            # 边界二：只有第一次尝试对冲，重试不再对冲（见上，防相乘）
+            return _call_llm_hedged(messages, delay_ms if attempt == 1 else 0, **kwargs)
         except LlmError as error:
             last_error = error
             if not error.transient or attempt >= max_attempts:

@@ -129,3 +129,109 @@ def test_default_threshold_sits_between_the_observed_fast_and_slow_runs():
     """
     monkeypatch_free = C._HEDGE_DELAY_MS_DEFAULT / 1000.0
     assert 22.6 < monkeypatch_free < 69.0
+
+
+# ── 两条边界（2026-08-04 补，真机 A/B 量出来的）────────────────────
+#
+# 上面那几条把 gRPC hedgingPolicy 的语义抄全了，但漏了它的第四条：
+# **hedgingPolicy 与 retryPolicy 在 gRPC 的 method config 里是互斥的**。
+# 漏掉的代价是同一道题跑三轮量出来的：
+#
+#     对冲开   流式主路失败 1 次 · 五系统模型流出 ——        · 18.2 分钟闭环
+#     对冲关   流式主路失败 0 次 · 五系统模型流出  53,172 字 · 28.1 分钟闭环
+#     对冲开   流式主路失败 2 次 · 五系统模型流出 316,932 字 · 30.8 分钟**未闭环**
+#
+# 其余 7 个能力在两组之间是 1.0~1.2 倍（几乎一致），只有 five-system-model
+# 一条炸到 6.0 倍——排除了"多跑了几轮"这个解释。
+
+
+def test_streaming_calls_are_never_hedged():
+    """传了 on_delta 就不对冲——两份副本会同时往同一个回调里推。
+
+    返回值仍然只取一份（那是对的），但**用户眼前的流式文字是两份内容逐块交错**。
+    流式的意义就是"边生成边看"，第二份从第一个 token 起就是脏的。
+    """
+    gen = {"n": 0}
+    seen = []
+
+    def fake(_messages, **kw):
+        gen["n"] += 1
+        which = gen["n"]
+        cb = kw.get("on_delta")
+        for i in range(3):
+            time.sleep(0.06)  # 每次都超过 50ms 阈值
+            if cb:
+                cb(f"[{which}-{i}]")
+        return C.LlmResult(
+            content=f"内容{which}", usage=None, finish_reason="stop", model="m", latency_ms=1
+        )
+
+    orig = C.call_llm
+    try:
+        C.call_llm = fake
+        C.call_llm_with_retry([], on_delta=lambda c: seen.append(c))
+    finally:
+        C.call_llm = orig
+
+    assert gen["n"] == 1, f"流式调用被对冲了，发起了 {gen['n']} 次生成"
+    # 流里只能出现一份内容的编号
+    assert {s.split("-")[0] for s in seen} == {"[1"}, f"流里混了多份内容：{''.join(seen)}"
+
+
+def test_retry_attempts_do_not_hedge_again():
+    """重试的第 2 次起不对冲——不然会**相乘**。
+
+    `max_attempts` × `max_shape_retries` × 对冲，每次重试都重新对冲一遍；
+    而对冲弄脏内容 → 校验失败 → 触发重试 → 又对冲，自己喂自己。31.7 万字
+    （6 倍）就是这么滚出来的。
+
+    重试本身已经是对"这次失败了"的响应，给一个已知失败的请求再配影子只会放大问题。
+    """
+    calls = {"n": 0}
+
+    def fake(_messages, **_kw):
+        calls["n"] += 1
+        if calls["n"] <= 2:      # 前两次都慢+失败，逼出重试
+            time.sleep(0.08)
+            raise C.LlmError("gateway hiccup", transient=True)
+        return C.LlmResult(
+            content="ok", usage=None, finish_reason="stop", model="m", latency_ms=1
+        )
+
+    orig = C.call_llm
+    try:
+        C.call_llm = fake
+        got = C.call_llm_with_retry([], max_attempts=3, backoff_ms=1)
+    finally:
+        C.call_llm = orig
+
+    assert got.content == "ok"
+    # 第 1 次尝试：原始 + 对冲 = 2 次；第 2、3 次尝试各 1 次（不再对冲）
+    # 所以上限是 4。没有这条边界的话会是 2+2+2=6。
+    assert calls["n"] <= 4, f"重试仍在对冲，总共发起了 {calls['n']} 次生成"
+
+
+def test_non_streaming_calls_still_get_hedged():
+    """两条边界都不能把对冲整个废掉——它要治的长尾还在。
+
+    能力执行那些 74.8s/69.0s 的调用**不传 on_delta**，仍然该享受对冲。
+    """
+    gen = {"n": 0}
+
+    def fake(_messages, **_kw):
+        gen["n"] += 1
+        if gen["n"] == 1:
+            time.sleep(0.5)      # 原始那份很慢
+        return C.LlmResult(
+            content=f"内容{gen['n']}", usage=None, finish_reason="stop", model="m", latency_ms=1
+        )
+
+    orig = C.call_llm
+    try:
+        C.call_llm = fake
+        got = C.call_llm_with_retry([])   # 不传 on_delta
+    finally:
+        C.call_llm = orig
+
+    assert gen["n"] == 2, "非流式的慢调用没有被对冲，长尾治不了了"
+    assert got.content == "内容2", "对冲发出去了，但没取先回的那份"
