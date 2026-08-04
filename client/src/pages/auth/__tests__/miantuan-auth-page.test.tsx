@@ -140,6 +140,23 @@ describe("登录页", () => {
     expect(markup).toContain("还没有账号");
   });
 
+  it("主按钮是设计稿上的纯蓝，不是蓝紫渐变", () => {
+    // 2026-08-03：此前是 linear-gradient(135deg,#3B82F6,#7C3AED)，跟设计稿不符，
+    // 也跟这一页其余的蓝色链接不是同一个蓝。钉住这条是因为渐变很容易被"顺手
+    // 加点视觉效果"改回去。
+    const markup = renderToStaticMarkup(<AuthCard onDone={() => {}} onBrowse={() => {}} />);
+    expect(markup).toContain("bg-blue-600");
+    expect(markup).not.toContain("linear-gradient");
+  });
+
+  it("有「忘记密码?」入口，且它真的通向一条流程", () => {
+    // 设计稿上一直画着这个入口，但后端此前**没有找回密码的接口**——链接指向
+    // 空气。这次是连着后端两个接口一起补的。
+    const markup = renderToStaticMarkup(<AuthCard onDone={() => {}} onBrowse={() => {}} />);
+    expect(markup).toContain('data-testid="auth-forgot-password"');
+    expect(markup).toContain("忘记密码?");
+  });
+
   it("默认是登录模式，不是注册", () => {
     // 回访用户远多于新用户；默认落在注册会让老用户多点一次
     const markup = renderToStaticMarkup(<AuthCard onDone={() => {}} onBrowse={() => {}} />);

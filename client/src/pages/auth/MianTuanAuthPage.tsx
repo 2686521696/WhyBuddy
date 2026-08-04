@@ -42,8 +42,10 @@ import { useLocation } from "wouter";
 
 import { MianTuanWordmark } from "@/components/brand/MianTuanMark";
 import {
+  completePasswordReset,
   completeRegistration,
   login as apiLogin,
+  startPasswordReset,
   startRegistration,
 } from "@/lib/auth-client";
 import { useAuth } from "@/lib/use-auth";
@@ -52,10 +54,26 @@ import {
   PRODUCT_TAGLINE_ZH,
 } from "@shared/brand";
 
-type Mode = "login" | "register";
+/**
+ * `reset` 是 2026-08-03 补的第三条流程（设计稿上一直有「忘记密码?」，但后端
+ * 当时没有对应接口，链接就等于一个死胡同——所以是连着后端一起补的）。
+ *
+ * 它跟 `register` 的形状完全一样（填表 → 收码 → 填码），只是最后一步调的是
+ * 改密码而不是建账号。所以复用同一个 `Step`，不另起状态机。
+ */
+type Mode = "login" | "register" | "reset";
 type Step = "form" | "code";
 
 const DEFAULT_NEXT = "/agent-loop/workbench";
+
+/**
+ * 密码长度下限，跟后端 identity_store._MIN_PASSWORD_LEN 对齐。
+ *
+ * 前端这道只是**提前反馈**，真判定在后端（改不了这个数就绕不过去）。
+ * 之所以要有：找回密码的第一步只把邮箱发给后端，新密码要到填完验证码才提交——
+ * 不在这里挡一下的话，用户收完邮件、填完码，才被告知"密码太短"。
+ */
+const MIN_PASSWORD_LEN = 8;
 
 /** 左侧品牌区的团队协作插画（官方素材，透明底 PNG，1536×1024）。 */
 const TEAM_ILLUSTRATION_SRC = "/brand/miantuan-team-illustration.png";
@@ -182,13 +200,22 @@ export function AuthCard({
 
   const submit = async () => {
     if (busy) return;
+    // 找回密码的新密码要到第二步才提交给后端，这里先自己挡一下（见 MIN_PASSWORD_LEN）
+    if (mode === "reset" && step === "form" && password.length < MIN_PASSWORD_LEN) {
+      setError(`密码至少 ${MIN_PASSWORD_LEN} 位`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       if (mode === "login") {
         await apiLogin(email, password);
       } else if (step === "form") {
-        const started = await startRegistration(email, password);
+        // 注册和找回密码的第一步都是"发码"，只是接口不同
+        const started =
+          mode === "register"
+            ? await startRegistration(email, password)
+            : await startPasswordReset(email);
         setStep("code");
         // 没配邮件服务时后端把码带回来（devCode），否则自部署第一步就卡死。
         // 配了真投递就没有这个字段，这行也不会显示。
@@ -198,8 +225,10 @@ export function AuthCard({
             : started.message || "验证码已发送，请查收邮件"
         );
         return;
-      } else {
+      } else if (mode === "register") {
         await completeRegistration(email, password, code);
+      } else {
+        await completePasswordReset(email, code, password);
       }
       await onDone();
     } catch (e) {
@@ -209,7 +238,35 @@ export function AuthCard({
     }
   };
 
-  const title = mode === "login" ? "登录" : step === "form" ? "创建账号" : "输入验证码";
+  const title =
+    mode === "login"
+      ? "登录"
+      : step === "code"
+        ? "输入验证码"
+        : mode === "register"
+          ? "创建账号"
+          : "重置密码";
+  /**
+   * 按钮文案跟标题分开。
+   *
+   * 此前按钮直接复用 `title`，于是验证码那一步是「标题：输入验证码 / 按钮：
+   * 输入验证码」——按钮上写的是**用户要做的事**，不是点下去会发生的事。
+   * 找回密码第一步同理：标题是「重置密码」，但点下去只是发一封信。
+   */
+  const submitLabel =
+    step === "code"
+      ? "确认"
+      : mode === "login"
+        ? "登录"
+        : mode === "register"
+          ? "创建账号"
+          : "发送验证码";
+  const subtitle =
+    step === "code"
+      ? `验证码已发到 ${email}`
+      : mode === "reset"
+        ? "填注册邮箱和新密码，我们发一个验证码确认是你本人。"
+        : "浏览无需登录；复刻和推演需要账号。";
   const inputCls =
     "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[15px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400";
   const labelCls = "block text-[13px] font-medium text-slate-700";
@@ -217,11 +274,7 @@ export function AuthCard({
   return (
     <div data-testid="miantuan-auth">
       <h2 className="text-[26px] font-semibold tracking-tight text-slate-900">{title}</h2>
-      <p className="mt-2 text-sm text-slate-500">
-        {step === "code"
-          ? `验证码已发到 ${email}`
-          : "浏览无需登录；复刻和推演需要账号。"}
-      </p>
+      <p className="mt-2 text-sm text-slate-500">{subtitle}</p>
 
       {/* 字段带独立标签（2026-08-03 改版）。此前只有 placeholder——一开始填就
           消失，用户填到第三个框回头看不出哪个是哪个；辅助技术也读不到字段名。
@@ -246,19 +299,44 @@ export function AuthCard({
             </div>
             <div className="space-y-1.5">
               <label htmlFor="auth-password" className={labelCls}>
-                密码
+                {mode === "reset" ? "新密码" : "密码"}
               </label>
               <input
                 id="auth-password"
                 className={inputCls}
                 type="password"
-                placeholder={mode === "register" ? "请设置密码（至少 8 位）" : "请输入密码"}
+                placeholder={
+                  mode === "login"
+                    ? "请输入密码"
+                    : `请设置密码（至少 ${MIN_PASSWORD_LEN} 位）`
+                }
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && void submit()}
                 data-testid="auth-password"
               />
+              {/* 「忘记密码?」（2026-08-03 补）。设计稿上一直画着这个入口，但后端
+                  当时根本没有找回密码的接口——所以这条是连着后端两个接口一起补的，
+                  不是加个链接了事。位置照设计稿：紧贴密码框右下角。 */}
+              {mode === "login" && (
+                <div className="flex justify-end pt-0.5">
+                  <button
+                    type="button"
+                    className="text-[13px] text-blue-600 transition hover:text-blue-700"
+                    onClick={() => {
+                      setMode("reset");
+                      setStep("form");
+                      setPassword("");
+                      setError(null);
+                      setHint(null);
+                    }}
+                    data-testid="auth-forgot-password"
+                  >
+                    忘记密码?
+                  </button>
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -295,15 +373,18 @@ export function AuthCard({
         </div>
       )}
 
+      {/* 主按钮是**纯蓝**（blue-600 #2563EB），不是渐变。
+          2026-08-03 改回来的：此前用的是蓝紫渐变 linear-gradient(#3B82F6,#7C3AED)，
+          跟设计稿不符，也跟这一页其余的蓝色链接（都是 blue-600）不是同一个蓝。
+          用 class 而不是 style，是因为 inline style 写不了 hover。 */}
       <button
         type="button"
-        className="mt-6 w-full rounded-xl py-3 text-[15px] font-medium text-white transition disabled:opacity-50"
-        style={{ background: "linear-gradient(135deg,#3B82F6,#7C3AED)" }}
+        className="mt-6 w-full rounded-xl bg-blue-600 py-3 text-[15px] font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
         disabled={busy}
         onClick={() => void submit()}
         data-testid="auth-submit"
       >
-        {busy ? "处理中…" : title}
+        {busy ? "处理中…" : submitLabel}
       </button>
 
       {step === "code" ? (
@@ -325,12 +406,19 @@ export function AuthCard({
           onClick={() => {
             setMode(m => (m === "login" ? "register" : "login"));
             setStep("form");
+            // 从找回密码退回登录时把新密码清掉：那一栏填的是**将要设置**的密码，
+            // 留着会被当成"用它登录"，而它还没生效
+            setPassword(p => (mode === "reset" ? "" : p));
             setError(null);
             setHint(null);
           }}
           data-testid="auth-switch-mode"
         >
-          {mode === "login" ? "还没有账号？创建一个" : "已有账号？去登录"}
+          {mode === "login"
+            ? "还没有账号？创建一个"
+            : mode === "reset"
+              ? "← 返回登录"
+              : "已有账号？去登录"}
         </button>
       )}
 

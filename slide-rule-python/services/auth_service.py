@@ -21,6 +21,17 @@
 对齐官方模板 `initial_data.py` 的取向（用 FIRST_SUPERUSER 建首个超管），但改成
 "库里一个用户都没有时自动提升"——自部署场景下不用先配环境变量再启动。
 之后再注册的都是普通用户。
+
+## 验证码按用途隔离（2026-08-03 随找回密码加入）
+
+验证码表 `sliderule_email_code` 的主键是**邮箱**，一个邮箱同一时刻只有一个码，
+`purpose` 列一直存着但此前**没有人校验**。加了找回密码之后这就成了真漏洞：
+
+  攻击者用受害者的邮箱走「注册」→ 后端因为邮箱已存在不发码（防枚举），
+  但换个方向——受害者自己刚为**注册**收到的码，可以被拿去走**改密码**接口。
+
+所以验码统一走 `_consume_code(email, code, purpose=…)`，用途对不上按"码无效"
+处理。两条流程各自的码互不通用。
 """
 
 from __future__ import annotations
@@ -36,6 +47,14 @@ from services.auth_tokens import create_access_token
 
 # 登录失败的统一话术。**不要**按情况细分（见模块说明 ①）。
 LOGIN_FAILED = "邮箱或密码不正确"
+
+# 验码失败的统一话术。过期 / 次数用尽 / 用途不符 / 压根就填错，对外都是这一句：
+# 分开说等于告诉攻击者"这个邮箱有一个正在生效的码"。
+CODE_INVALID = "验证码无效或已过期"
+
+# 验证码用途。存进 sliderule_email_code.purpose，验的时候必须对上（见模块说明）。
+PURPOSE_REGISTER = "register"
+PURPOSE_RESET = "reset"
 
 # 邮箱不存在时用来空跑的假哈希，抹平时序差（见模块说明 ②）。
 # 进程启动时算一次，值本身无意义。
@@ -113,7 +132,7 @@ def start_registration(email: str, password: str) -> dict[str, Any]:
             }
 
     code = ident.new_email_code()
-    store.put_code(email, _code_hash(email, code), purpose="register")
+    store.put_code(email, _code_hash(email, code), purpose=PURPOSE_REGISTER)
     try:
         delivered = _send_code_email(email, code)
     except Exception as exc:  # noqa: BLE001 — 投递失败要如实报，不能吞
@@ -135,28 +154,55 @@ def start_registration(email: str, password: str) -> dict[str, Any]:
     }
 
 
+def _code_invalid() -> dict[str, Any]:
+    return {"ok": False, "error": "code_invalid", "message": CODE_INVALID}
+
+
+def check_code(email: str, code: str, purpose: str) -> Optional[dict[str, Any]]:
+    """验一个邮箱验证码。**通过返回 None**，不通过返回可直接外抛的错误字典。
+
+    ⚠️ 通过时**不删码**。删码要等真正的副作用（建账号 / 改密码）落地之后：
+    中途因为别的原因失败（比如新密码太短），码已经作废的话用户手里那封邮件
+    就白收了，只能从头再走一遍。
+
+    `purpose` 必须对上（见模块说明「验证码按用途隔离」）。用途不符时**不计
+    失败次数**——那不是在猜码，而计数会让"往改密码接口丢一个注册码"成为
+    作废他人验证码的廉价手段。
+    """
+    store = ident.get_identity_store()
+    rec = store.get_code(email)
+    if not rec:
+        return _code_invalid()
+
+    expires = _parse_iso(rec.get("expires_at"))
+    if expires and _now() > expires:
+        store.drop_code(email)
+        return _code_invalid()
+
+    if int(rec.get("attempts") or 0) >= ident.EMAIL_CODE_MAX_ATTEMPTS:
+        store.drop_code(email)
+        return _code_invalid()
+
+    # 用途判定放在比对**之前**：这个码根本不是发给这条流程的，就不该顺带
+    # 泄露"码本身对不对"
+    if str(rec.get("purpose") or "") != purpose:
+        return _code_invalid()
+
+    # 定长比较，避免时序侧信道
+    if not hmac.compare_digest(str(rec.get("code_hash") or ""), _code_hash(email, code or "")):
+        store.bump_code_attempts(email)
+        return _code_invalid()
+    return None
+
+
 def complete_registration(email: str, password: str, code: str) -> dict[str, Any]:
     """第二步：验码 + 建账号 + 直接发令牌（注册完即登录态）。"""
     email = ident.normalize_email(email)
     store = ident.get_identity_store()
 
-    rec = store.get_code(email)
-    if not rec:
-        return {"ok": False, "error": "code_invalid", "message": "验证码无效或已过期"}
-
-    expires = _parse_iso(rec.get("expires_at"))
-    if expires and _now() > expires:
-        store.drop_code(email)
-        return {"ok": False, "error": "code_invalid", "message": "验证码无效或已过期"}
-
-    if int(rec.get("attempts") or 0) >= ident.EMAIL_CODE_MAX_ATTEMPTS:
-        store.drop_code(email)
-        return {"ok": False, "error": "code_invalid", "message": "验证码无效或已过期"}
-
-    # 定长比较，避免时序侧信道
-    if not hmac.compare_digest(str(rec.get("code_hash") or ""), _code_hash(email, code or "")):
-        store.bump_code_attempts(email)
-        return {"ok": False, "error": "code_invalid", "message": "验证码无效或已过期"}
+    bad = check_code(email, code, PURPOSE_REGISTER)
+    if bad:
+        return bad
 
     err = ident.validate_password(password)
     if err:
@@ -208,6 +254,96 @@ def login(email: str, password: str) -> dict[str, Any]:
         # 旧算法的哈希在登录时自动升级到 Argon2，用户无感（对齐官方模板）
         store.set_password_hash(user.id, upgraded)
 
+    store.touch_login(user.id)
+    return {"ok": True, "user": user.public(), "token": create_access_token(user.id)}
+
+
+# ────────────────────────── 找回密码 ──────────────────────────
+#
+# 复用注册那套邮箱验证码（同一张表、同一个投递通道），只是 purpose 换成 reset。
+# 不另起一套「重置令牌 + 带 token 的链接」是因为：那需要一个能承载链接的落地页、
+# 一套独立的令牌生命周期，而验证码这条路已经跑通并且用户刚在注册时用过。
+#
+# ⚠️ **一件必须说清的事：改密码不会踢掉已登录的会话。**
+# 这套认证是纯 JWT，没有服务端撤销（routes/account.py 的 logout 里写了同一件事）。
+# 所以"密码被别人拿到了，赶紧改一下"这个场景，改完之后对方手里那个还没过期的
+# token 依然能用。真要做到"改密码即全端下线"，需要一张撤销表或者在 token 里带
+# 密码版本号——那是一件独立的事，不该在做找回密码时偷偷做半套。
+
+RESET_CODE_SENT = "验证码已发送，请查收邮件"
+
+
+def start_password_reset(email: str) -> dict[str, Any]:
+    """第一步：给这个邮箱发一个 purpose=reset 的验证码。
+
+    ⚠️ 邮箱**没注册**时同样返回成功（不发码）——和 start_registration 那条
+    "已注册也返回成功"是同一个道理的反面：如实回答就是一个用户枚举器。
+
+    冷却期内也走**同一条成功出口**（不发新码、不报 too_frequent）。报错的话，
+    "连点两次得到 too_frequent" 就成了"这个邮箱注册过"的探针——不存在的邮箱
+    永远进不了冷却，因为它压根不会有码。这里的措辞不算撒谎：冷却 60 秒 < 验证码
+    有效期 600 秒，用户收件箱里那个码此刻仍然有效。
+    """
+    email = ident.normalize_email(email)
+    err = ident.validate_email(email)
+    if err:
+        # 这个可以如实报：它只说明输入不是个邮箱，跟"谁注册过"无关
+        return {"ok": False, "error": "invalid_email", "message": err}
+
+    store = ident.get_identity_store()
+    user = store.get_by_email(email)
+    if user is None or not user.is_active:
+        return {"ok": True, "codeSent": False, "message": RESET_CODE_SENT}
+
+    prior = store.get_code(email)
+    if prior:
+        sent = _parse_iso(prior.get("sent_at"))
+        if sent and (_now() - sent).total_seconds() < ident.EMAIL_CODE_COOLDOWN_S:
+            return {"ok": True, "codeSent": False, "message": RESET_CODE_SENT}
+
+    code = ident.new_email_code()
+    store.put_code(email, _code_hash(email, code), purpose=PURPOSE_RESET)
+    try:
+        delivered = _send_code_email(email, code)
+    except Exception as exc:  # noqa: BLE001 — 投递失败要如实报，不能吞
+        # 同 start_registration：作废刚存的码，否则用户手里没有码却被冷却挡住重发
+        store.drop_code(email)
+        return {
+            "ok": False,
+            "error": "mail_failed",
+            "message": f"验证码发送失败：{str(exc)[:160]}",
+        }
+    return {
+        "ok": True,
+        "codeSent": True,
+        "message": RESET_CODE_SENT,
+        # 没配邮件服务时把码带回来（同注册），**配了就绝不外泄**
+        **({"devCode": code} if not delivered else {}),
+    }
+
+
+def complete_password_reset(email: str, code: str, password: str) -> dict[str, Any]:
+    """第二步：验码 + 换密码 + 直接发令牌（改完即登录态，同注册）。"""
+    email = ident.normalize_email(email)
+    store = ident.get_identity_store()
+
+    bad = check_code(email, code, PURPOSE_RESET)
+    if bad:
+        return bad
+
+    err = ident.validate_password(password)
+    if err:
+        # 密码不合格**不删码**（见 check_code 的说明），用户改个密码就能继续
+        return {"ok": False, "error": "weak_password", "message": err}
+
+    user = store.get_by_email(email)
+    if user is None or not user.is_active:
+        # 发码之后账号被删/停用才会走到这——按码无效处理，别把账号状态说出去
+        store.drop_code(email)
+        return _code_invalid()
+
+    store.set_password_hash(user.id, ident.hash_password(password))
+    store.drop_code(email)
     store.touch_login(user.id)
     return {"ok": True, "user": user.public(), "token": create_access_token(user.id)}
 

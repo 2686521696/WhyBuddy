@@ -115,6 +115,47 @@ async def login(response: Response, request: Request, payload: dict[str, Any] = 
     return result
 
 
+@router.post("/account/password/reset/start")
+async def password_reset_start(payload: dict[str, Any] = Body(...)):
+    """找回密码第一步：发验证码。
+
+    ⚠️ 邮箱**没注册**时也返回成功（不发码）——理由同注册那条：如实回答就是
+    一个用户枚举器。冷却期内同样走成功出口，见 auth_service.start_password_reset。
+    """
+    import asyncio
+
+    result = await asyncio.to_thread(
+        auth_service.start_password_reset,
+        str(payload.get("email") or ""),
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("message") or "发送失败")
+    return result
+
+
+@router.post("/account/password/reset")
+async def password_reset_complete(
+    response: Response, request: Request, payload: dict[str, Any] = Body(...)
+):
+    """找回密码第二步：验码 + 换密码，成功即登录态。
+
+    ⚠️ 换密码**不会**让其他设备上已签发的 token 失效（纯 JWT 没有服务端撤销，
+    同 logout 的说明）。见 auth_service 里「找回密码」那段。
+    """
+    import asyncio
+
+    result = await asyncio.to_thread(
+        auth_service.complete_password_reset,
+        str(payload.get("email") or ""),
+        str(payload.get("code") or ""),
+        str(payload.get("password") or ""),
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("message") or "重置失败")
+    _set_auth_cookie(response, result["token"])
+    return result
+
+
 @router.post("/account/logout")
 async def logout(response: Response):
     """清 Cookie。

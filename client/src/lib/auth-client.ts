@@ -125,6 +125,37 @@ export async function completeRegistration(
 }
 
 /**
+ * 找回密码第一步：给邮箱发验证码。
+ *
+ * ⚠️ 邮箱**没注册**时后端同样返回成功（不发码）——防用户枚举。所以前端
+ * 拿到 ok **不能**当成"这个邮箱存在"来提示，照抄 message 就好。
+ */
+export async function startPasswordReset(
+  email: string
+): Promise<{ codeSent: boolean; message: string; devCode?: string }> {
+  return post("/account/password/reset/start", { email });
+}
+
+/**
+ * 找回密码第二步：验码 + 设新密码，成功即登录态。
+ *
+ * ⚠️ 诚实说明：改密码**不会**踢掉其他设备上已签发的 token（纯 JWT 没有服务端
+ * 撤销，同 logout 那条）。别在 UI 上承诺"已在所有设备退出"。
+ */
+export async function completePasswordReset(
+  email: string,
+  code: string,
+  password: string
+): Promise<AuthUser> {
+  const data = await post<{ user: AuthUser }>("/account/password/reset", {
+    email,
+    code,
+    password,
+  });
+  return data.user;
+}
+
+/**
  * 登出：清 Cookie。
  *
  * ⚠️ 诚实说明：这**不会**让已签发的 token 立即失效（纯 JWT 没有服务端撤销）。
