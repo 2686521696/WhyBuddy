@@ -829,6 +829,29 @@ function renderFreeformNode(
   }
   budget.remaining -= 1;
   const n = node as FreeformNode;
+  // blockRef 时代的存量节点：整个不渲染，**连位置也不占**（2026-08-04）。
+  //
+  // blockRef 通道在 rowsRef 上线时整条删掉了（schema + 渲染器），但**库里已经
+  // 存着的模型没人管**——那些节点还在设计树里，带着自己的 style（flex:1 /
+  // width:32%）却没有任何渲染器认领它，于是变成一块**撑着版面的空白**。
+  // 真机长这样：绘本小站首页 KPI 行右边空掉三分之一、图表行右边又空掉一块，
+  // 分别对应存量树里的 QuickActionPanel / WorkflowTimeline / ActivityFeed
+  // 三个 children 为空的 blockRef 节点。
+  //
+  // 为什么在渲染端跳过而不是写迁移脚本改库：这跟 generatedTheme 那个字段是同一
+  // 类问题（存量数据带着一个已经没有消费方的字段），仓库既有的处理方式就是
+  // "读进来直接忽略，不需要迁移" —— 迁移脚本要跑、要回滚、还会在跑完之前留下
+  // 一段新旧混杂的中间态，而这里想要的效果只是"当它不存在"。
+  //
+  // 判定条件带上 children 为空：blockRef 节点按当年的约定本来就不写 children
+  // （积木接管那块区域）。万一有哪个节点既挂 blockRef 又有真实 children，
+  // 那些 children 是真内容，不能跟着一起丢。
+  if (
+    (n as { blockRef?: unknown }).blockRef &&
+    !(Array.isArray(n.children) && n.children.length > 0)
+  ) {
+    return null;
+  }
   const allowedTags = new Set(EXPERIENCE_BLOCK_CATALOG.freeformAllowedTags);
   const tag = typeof n.tag === "string" && allowedTags.has(n.tag) ? n.tag : "div";
   // 图标不再查 catalog 白名单，改成按 Ant Design 组件名动态解析（老 kebab
