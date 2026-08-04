@@ -256,6 +256,38 @@ create table if not exists {_CODE_TABLE} (
 )
 """
 
+# ── 令牌撤销表（2026-08-04）───────────────────────────────────────
+#
+# 抄 fastapi-users `authentication/strategy/db/strategy.py` 的取向：**能撤销的
+# 前提是服务端记账**。但我们不像它那样把整张令牌存下来（那等于换成不透明令牌，
+# 要动每条路由和 Node 那层桥），只记**被撤销的 jti**——黑名单而不是白名单。
+#
+# 代价与收益：
+#   · 白名单（存全部有效令牌）：登出即删行，表大小 = 活跃会话数；但每次签发都要写库。
+#   · 黑名单（只存撤销的）：签发零写库，只有登出才写；表大小 = 未过期的已登出令牌数。
+#
+# 我们选黑名单，因为签发远多于登出。`expires_at` 存的是**原令牌自己的过期时间**：
+# 过了那个点令牌本来就无效了，撤销记录再留着没有意义，可以直接删（见 purge_revoked）。
+_REVOKE_TABLE = "sliderule_revoked_token"
+
+_REVOKE_DDL_PG = f"""
+create table if not exists {_REVOKE_TABLE} (
+    jti varchar(64) primary key,
+    user_id varchar(64),
+    expires_at timestamptz,
+    revoked_at timestamptz
+)
+"""
+
+_REVOKE_DDL_SQLITE = f"""
+create table if not exists {_REVOKE_TABLE} (
+    jti varchar(64) primary key,
+    user_id varchar(64),
+    expires_at text,
+    revoked_at text
+)
+"""
+
 
 class User(dict):
     """用户记录。用 dict 子类而不是 pydantic 模型——这一层要能被三种后端
@@ -301,6 +333,7 @@ class IdentityStore:
         self._is_sqlite = is_sqlite
         self._x.execute(_DDL_SQLITE if is_sqlite else _DDL_PG)
         self._x.execute(_CODE_DDL_SQLITE if is_sqlite else _CODE_DDL_PG)
+        self._x.execute(_REVOKE_DDL_SQLITE if is_sqlite else _REVOKE_DDL_PG)
 
     # ── 用户 ──────────────────────────────────────────
     def get_by_email(self, email: str) -> Optional[User]:
@@ -423,6 +456,71 @@ class IdentityStore:
         self._x.execute(
             f"delete from {_CODE_TABLE} where email = {self._x.ph(1)}", [normalize_email(email)]
         )
+
+    # ── 令牌撤销 ──────────────────────────────────────
+    def revoke_token(self, jti: str, *, user_id: str = "", expires_at: Any = None) -> None:
+        """把一个 jti 记进黑名单（登出）。
+
+        重复登出同一张令牌是正常的（多标签页各点一次），所以**先删后插**而不是
+        直接插——主键冲突会抛，而"已经撤销过了"根本不是错误。
+        """
+        jti = (jti or "").strip()
+        if not jti:
+            return
+        p = self._x.ph
+        exp = expires_at if isinstance(expires_at, str) else (
+            expires_at.isoformat() if isinstance(expires_at, datetime) else None
+        )
+        self._x.execute(f"delete from {_REVOKE_TABLE} where jti = {p(1)}", [jti])
+        self._x.execute(
+            f"insert into {_REVOKE_TABLE} (jti, user_id, expires_at, revoked_at)"
+            f" values ({p(1)},{p(2)},{p(3)},{p(4)})",
+            [jti, user_id or None, exp, _now_iso()],
+        )
+
+    def is_token_revoked(self, jti: str) -> bool:
+        """这张令牌被撤销了吗。
+
+        ⚠️ 这是**每个已登录请求都会走**的一次查询。真成为瓶颈时该加的是缓存
+        （撤销是低频写、判定是高频读，很适合缓存），而不是把这道检查去掉。
+        """
+        jti = (jti or "").strip()
+        if not jti:
+            return False
+        rows = self._x.query(
+            f"select jti from {_REVOKE_TABLE} where jti = {self._x.ph(1)}", [jti]
+        )
+        return bool(rows)
+
+    def purge_revoked(self) -> int:
+        """清掉已经自然过期的撤销记录。
+
+        令牌自己过期之后，它在不在黑名单里都一样无效——记录留着只占地方。
+        `expires_at` 为空的（理论上不该有）一律保留：宁可多留几行，
+        也不要因为一个空值把还该生效的撤销记录删掉。
+        """
+        rows = self._x.query(
+            f"select jti, expires_at from {_REVOKE_TABLE}", []
+        )
+        now = _now()
+        stale = []
+        for r in rows:
+            exp = r.get("expires_at")
+            if not exp:
+                continue
+            try:
+                dt = exp if isinstance(exp, datetime) else datetime.fromisoformat(
+                    str(exp).replace(" ", "T")
+                )
+            except ValueError:
+                continue
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt < now:
+                stale.append(str(r.get("jti")))
+        for jti in stale:
+            self._x.execute(f"delete from {_REVOKE_TABLE} where jti = {self._x.ph(1)}", [jti])
+        return len(stale)
 
 
 # ────────────────────────── 执行器：三种后端 ──────────────────────────

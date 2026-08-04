@@ -144,13 +144,30 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS：**白名单，没配就整个不装**（2026-08-04）。
+#
+# 原来是 allow_origins=["*"] + allow_credentials=True。Starlette 对这个组合的
+# 处理不是"返回 *"，而是**回显请求方的 Origin**（cors.py:167），实测
+# `curl -H "Origin: https://evil.example"` 拿回的就是那个域名 +
+# `access-control-allow-credentials: true`。当时没被打穿，只是因为登录 Cookie
+# 带 samesite=lax、浏览器不会在跨站 fetch 上带它——整条防线押在一个 Cookie
+# 属性上，CORS 这层零防御。
+#
+# 现在按 full-stack-fastapi-template 的做法（main.py:28 `if
+# settings.all_cors_origins:`）：**有白名单才装中间件**。前端与后端同源部署
+# （Node/Vite 代理到这里），所以默认空 = 只允许同源 = 浏览器默认行为，
+# 不需要任何配置。真要跨域时配 BACKEND_CORS_ORIGINS。
+_cors_origins = settings.cors_origins
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    print("[cors] 未配置 BACKEND_CORS_ORIGINS：只允许同源访问（跨站请求会被浏览器拦下）")
 
 # Full V5 API - this is the takeover
 # 账号接口挂在 sliderule 前缀下：复用已验证的 Node→Python 代理。

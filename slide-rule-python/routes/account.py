@@ -26,11 +26,11 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, Body, HTTPException, Request, Response
+from fastapi import APIRouter, Body, Cookie, Header, HTTPException, Request, Response
 
 from middlewares.current_user import AUTH_COOKIE, CurrentUserOptional, SuperUser
 from services import auth_service
-from services.auth_tokens import DEFAULT_TTL_S
+from services.auth_tokens import DEFAULT_TTL_S, decode_access_token
 from services.identity_store import get_identity_store
 
 router = APIRouter(tags=["Account"])
@@ -157,16 +157,59 @@ async def password_reset_complete(
 
 
 @router.post("/account/logout")
-async def logout(response: Response):
-    """清 Cookie。
+async def logout(
+    response: Response,
+    authorization: Optional[str] = Header(None),
+    sliderule_token: Optional[str] = Cookie(None, alias=AUTH_COOKIE),
+):
+    """登出：**撤销这张令牌** + 清 Cookie。
 
-    ⚠️ 诚实说明：**这不会让已签发的 token 失效**。纯 JWT 没有服务端撤销，
-    要做到"登出即失效"需要一张黑名单表（或改用不透明 token + 服务端会话）。
-    现在的语义是"这个浏览器忘掉凭据"，对被盗的 token 无效。
-    真需要强制下线时再加撤销表——那是一件独立的事，不该现在偷偷做半套。
+    2026-08-04 之前这里只清 Cookie，注释里如实写着"这不会让已签发的 token 失效"。
+    现在真的失效了：把令牌的 `jti` 记进撤销表，之后任何人拿着它都进不来
+    （做法与取舍见 services/auth_tokens 模块头 ②，抄的是 fastapi-users 的
+    DatabaseStrategy.destroy_token）。
+
+    ⚠️ 只撤销**这一张**。"把我所有设备都踢下线"是另一个动作——改密码才是
+    （`pv` 密码戳，见模块头 ①）。两者不该混为一谈：在公用电脑上登出，不该
+    连带把自己手机上的会话也断了。
+
+    撤销失败**不影响返回成功**：Cookie 已经清了，本地就是登出状态；为一次
+    写库失败让用户卡在"登不出去"更糟。
     """
+    import asyncio
+
+    token = _extract_bearer(authorization) or (sliderule_token or "").strip()
+    payload = decode_access_token(token) if token else None
+    if payload and payload.get("jti"):
+        try:
+            await asyncio.to_thread(
+                _revoke,
+                str(payload.get("jti") or ""),
+                str(payload.get("sub") or ""),
+                payload.get("exp"),
+            )
+        except Exception as exc:  # noqa: BLE001 — 见 docstring：不让写库失败卡住登出
+            print(f"[account] 登出时撤销令牌失败（Cookie 已清）: {str(exc)[:160]}")
     response.delete_cookie(key=AUTH_COOKIE, path="/")
     return {"ok": True}
+
+
+def _extract_bearer(authorization: Optional[str]) -> str:
+    if not authorization:
+        return ""
+    parts = authorization.split(None, 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return ""
+
+
+def _revoke(jti: str, user_id: str, exp: Any) -> None:
+    from datetime import datetime, timezone
+
+    expires_at = None
+    if isinstance(exp, (int, float)):
+        expires_at = datetime.fromtimestamp(float(exp), tz=timezone.utc).isoformat()
+    get_identity_store().revoke_token(jti, user_id=user_id, expires_at=expires_at)
 
 
 @router.get("/account/me")

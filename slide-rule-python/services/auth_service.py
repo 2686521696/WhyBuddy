@@ -224,7 +224,8 @@ def complete_registration(email: str, password: str, code: str) -> dict[str, Any
     return {
         "ok": True,
         "user": user.public(),
-        "token": create_access_token(user.id),
+        # 带上密码戳（pv）：改密码即全端失效，见 auth_tokens 模块头 ①
+        "token": create_access_token(user.id, password_hash=str(user.get("password_hash") or "")),
         "isFirstSuperuser": first,
     }
 
@@ -255,7 +256,14 @@ def login(email: str, password: str) -> dict[str, Any]:
         store.set_password_hash(user.id, upgraded)
 
     store.touch_login(user.id)
-    return {"ok": True, "user": user.public(), "token": create_access_token(user.id)}
+    # 哈希可能刚被升级过（upgraded），戳要按**当前落库的**那份算，
+    # 否则签出去的令牌下一秒就对不上自己
+    current_hash = upgraded or str(user.get("password_hash") or "")
+    return {
+        "ok": True,
+        "user": user.public(),
+        "token": create_access_token(user.id, password_hash=current_hash),
+    }
 
 
 # ────────────────────────── 找回密码 ──────────────────────────
@@ -264,11 +272,12 @@ def login(email: str, password: str) -> dict[str, Any]:
 # 不另起一套「重置令牌 + 带 token 的链接」是因为：那需要一个能承载链接的落地页、
 # 一套独立的令牌生命周期，而验证码这条路已经跑通并且用户刚在注册时用过。
 #
-# ⚠️ **一件必须说清的事：改密码不会踢掉已登录的会话。**
-# 这套认证是纯 JWT，没有服务端撤销（routes/account.py 的 logout 里写了同一件事）。
-# 所以"密码被别人拿到了，赶紧改一下"这个场景，改完之后对方手里那个还没过期的
-# token 依然能用。真要做到"改密码即全端下线"，需要一张撤销表或者在 token 里带
-# 密码版本号——那是一件独立的事，不该在做找回密码时偷偷做半套。
+# ✅ 2026-08-04：**改密码现在会踢掉全部旧会话。**
+#
+# 这段原本写着"改密码不会踢掉已登录的会话……真要做到需要一张撤销表或者在 token
+# 里带密码版本号"。后一条已经做了：令牌带 `pv` 密码戳（拿密码哈希再 HMAC 一次），
+# 每次请求跟库里当前哈希重算比对，密码一改所有旧戳全部对不上。做法抄自 Django
+# 的 `get_session_auth_hash`，理由与取舍见 services/auth_tokens 的模块头。
 
 RESET_CODE_SENT = "验证码已发送，请查收邮件"
 
@@ -342,10 +351,17 @@ def complete_password_reset(email: str, code: str, password: str) -> dict[str, A
         store.drop_code(email)
         return _code_invalid()
 
-    store.set_password_hash(user.id, ident.hash_password(password))
+    new_hash = ident.hash_password(password)
+    store.set_password_hash(user.id, new_hash)
     store.drop_code(email)
     store.touch_login(user.id)
-    return {"ok": True, "user": user.public(), "token": create_access_token(user.id)}
+    # 新令牌用**新哈希**算戳：旧密码派生的那些戳全部对不上，等于所有旧会话当场作废
+    # ——这正是"密码被别人拿到了赶紧改"这个场景要的效果（见 auth_tokens 模块头 ①）。
+    return {
+        "ok": True,
+        "user": user.public(),
+        "token": create_access_token(user.id, password_hash=new_hash),
+    }
 
 
 # ────────────────────────── 邮件投递 ──────────────────────────
