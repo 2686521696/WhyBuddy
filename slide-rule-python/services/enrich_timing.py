@@ -73,6 +73,37 @@ def _fmt_value(v: Any) -> str:
     return s or "-"
 
 
+#: 可选的**实时**阶段观察者（2026-08-04）。
+#:
+#: 埋点原本只在阶段**结束**时 print 一行——做基线够用，但对着屏幕等的人拿不到
+#: 任何东西。真机量到：体验层那三段（生参照图 104.9s + 读配色 19.1s + 设计版式
+#: 59.5s）在 SSE 上是一个 165.8 秒的洞，比选材那六段加起来还长，而且正好落在
+#: 用户最没耐心的位置——已经等了七八分钟、眼看要出结果了，突然黑三分钟。
+#:
+#: 所以补一条 sink：阶段**开始**时也叫一声，让驱动器能把它转成 SSE。
+#: 注册是模块级单例，跟 capability delta sink 同一套约定（本次流注册、
+#: finally 注销）。
+#:
+#: ⚠ 纪律不变：sink 自身出任何问题都必须静默，绝不能把被测流水线搞崩。
+_stage_sink: Any = None
+
+
+def set_stage_sink(fn: Any) -> None:
+    """注册/注销阶段观察者。fn(phase, name, fields) —— phase 是 "start"/"end"。"""
+    global _stage_sink
+    _stage_sink = fn
+
+
+def _notify(phase: str, name: str, fields: dict[str, Any]) -> None:
+    fn = _stage_sink
+    if fn is None:
+        return
+    try:
+        fn(phase, name, fields)
+    except Exception:  # noqa: BLE001 — 观察者出问题不该影响被观察的链路
+        pass
+
+
 def _emit(stage_name: str, ms: int, ok: bool, fields: dict[str, Any]) -> None:
     """打一行。自身任何异常都吞掉——测量工具不该把被测流水线搞崩。"""
     try:
@@ -105,6 +136,7 @@ def stage(name: str, **fields: Any) -> Iterator[dict[str, Any]]:
     started = time.perf_counter()
     extra: dict[str, Any] = {}
     ok = True
+    _notify("start", name, dict(fields))
     try:
         yield extra
     except BaseException:
@@ -113,4 +145,5 @@ def stage(name: str, **fields: Any) -> Iterator[dict[str, Any]]:
     finally:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         merged = {**fields, **extra}
+        _notify("end", name, {**merged, "ms": elapsed_ms, "ok": ok})
         _emit(name, elapsed_ms, ok, merged)

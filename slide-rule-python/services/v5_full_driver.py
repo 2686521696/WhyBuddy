@@ -942,6 +942,49 @@ _CLOSURE_KEY_TO_SKILL_ID = {
 # SSE streaming driver
 # ---------------------------------------------------------------------------
 
+#: 体验层阶段 → 给人看的说法 + 实测耗时区间（2026-08-04 真机）。
+#:
+#: 带上"大概多久"是这条改动的重点，不是装饰：生参照图那一步在物理上没法流式
+#: （图片一次性返回），屏幕上唯一能给的就是"在做什么 + 正常要多久"。有了这个
+#: 区间，用户能自己判断"还在正常范围"还是"真卡了"；只给一个转圈图标的话，
+#: 等 30 秒和等 3 分钟看起来一模一样。
+#:
+#: 区间取自实测：monitor.sheet 104.9s / monitor.palette 19.1s /
+#: monitor.design 59.5s（同一轮，社区消防巡检）。写成范围而不是точ值——
+#: 不同题目的内容量差得多，给个准数反而会让"稍微超一点"看着像出事。
+#:
+#: 只列**用户该看见的**三段。block.refimage / freeform.total 这些是内部子步骤，
+#: 报出来只会把一条清晰的进度线拆成一堆看不懂的碎片。
+_ENRICH_STAGE_LABELS: Dict[str, tuple] = {
+    "monitor.sheet": ("生成首页参照图", "通常 60~120 秒"),
+    "monitor.palette": ("从参照图读取配色", "通常 15~30 秒"),
+    "monitor.design": ("照着参照图设计页面版式", "通常 40~90 秒"),
+}
+
+
+def _enrich_stage_event(phase: str, name: str, fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """体验层阶段 → SSE 事件；名单外的阶段返回 None（不报内部子步骤）。
+
+    复用 reasoning_step / reasoning_step_result 这对既有事件，而不是新造一种
+    类型：前端已经会把它们渲染成"一条正在进行的步骤"，新类型意味着前端也要跟着
+    改，而这次要解决的问题（黑屏）在后端补齐就够了。
+    """
+    entry = _ENRICH_STAGE_LABELS.get(name)
+    if entry is None:
+        return None
+    label, hint = entry
+    if phase == "start":
+        return {"type": "reasoning_step", "label": label, "hint": hint, "stage": name}
+    return {
+        "type": "reasoning_step_result",
+        "label": label,
+        "stage": name,
+        "ms": fields.get("ms"),
+        # got=0 是"这一步跳过了/没产出"（比如没配生图 key），不是失败——
+        # ok 才是失败标志。两者混同的话，未配置生图的环境会满屏红叉。
+        "error": not fields.get("ok", True),
+    }
+
 async def drive_full_v5_session_stream(
     initial_state: "V5SessionState",
     max_loops: int = 10,
@@ -969,6 +1012,7 @@ async def drive_full_v5_session_stream(
 
     from sliderule_llm import capabilities as _caps
 
+    from . import enrich_timing as _enrich_timing
     from . import v5_llm_generate as _gen
 
     # 全程共享的带标签 LLM 增量队列（label, chunk）：轮内能力（risk.analyze /
@@ -978,6 +1022,20 @@ async def drive_full_v5_session_stream(
     _delta_q: "_queue.Queue[tuple[str, str]]" = _queue.Queue()
     _caps.set_capability_delta_sink(lambda cap_id, chunk: _delta_q.put((cap_id, chunk)))
     _gen.set_generate_delta_sink(lambda chunk: _delta_q.put(("five-system-model", chunk)))
+
+    # 体验层（ENRICH）阶段事件（2026-08-04）。
+    #
+    # 真机量到这三段在 SSE 上是一个 **165.8 秒的洞**——比选材那六段加起来还长，
+    # 而且落在最难受的位置：用户已经等了七八分钟、眼看要出结果，突然黑三分钟。
+    # 后端本来就有 enrich-timing 埋点，数是现成的，只是从来没往前端送。
+    #
+    # ⚠ 其中生参照图那 ~105 秒**在物理上没法流式**——图片没有"逐字"这回事，
+    # 它是画完一次性返回。这类操作能做的只有报告"在做什么 + 大概多久"：
+    # 用户能判断"这是正常的"还是"卡了"，比一个转圈图标强得多。
+    _stage_q: "_queue.Queue[tuple[str, str, dict]]" = _queue.Queue()
+    _enrich_timing.set_stage_sink(
+        lambda phase, name, fields: _stage_q.put((phase, name, dict(fields)))
+    )
 
     async def _pump_llm_deltas(task: "asyncio.Task"):
         """任务运行期间持续排水：把队列里的（标签, 增量）按相邻同标签聚合成
@@ -997,6 +1055,16 @@ async def drive_full_v5_session_stream(
                 pass
             for label, chunks in batches:
                 yield {"type": "llm_delta", "text": "".join(chunks), "label": label}
+            # 体验层阶段事件跟增量走同一个排水循环：它们发生在同一段时间里，
+            # 分开两个泵只会让顺序不可预期。
+            try:
+                while True:
+                    phase, name, fields = _stage_q.get_nowait()
+                    ev = _enrich_stage_event(phase, name, fields)
+                    if ev is not None:
+                        yield ev
+            except _queue.Empty:
+                pass
             if finished:
                 break
             await asyncio.sleep(0.15)
@@ -1034,6 +1102,15 @@ async def drive_full_v5_session_stream(
 
         while loop < max_loops:
             ui = user_instruction or ""
+            # ⚠ 规划信号必须发在**整段规划之前**，不是发在 agentic pick 之前。
+            #
+            # 2026-08-04 第一版发晚了：信号在 agentic pick 前面，可它前面还有
+            # orchestrate_plan 和规则版 pick_next_capabilities。真机量到每轮
+            # 仍有 8~10s 黑屏（六轮合计 57.6s），只是把黑屏从"整段"缩成了"前半段"。
+            # 这也是"光看代码以为修好了、跑一遍才知道只填了一半"的典型——
+            # 所以现在从进入这一轮就报，一直报到真开始干活。
+            yield {"type": "reasoning_step", "label": "planning", "loop": loop}
+            _planning_ok = True
             await asyncio.to_thread(orchestrate_plan, state, f"loop-{loop}", ui)
             picks = await asyncio.to_thread(
                 (lambda st, _ui: pick_repair_capabilities(st)) if repair else pick_next_capabilities,
@@ -1043,30 +1120,11 @@ async def drive_full_v5_session_stream(
             # 规则选材，收敛权归规则，台账 source="llm"，失败回落）。
             # 修复轮不参与——修什么以覆盖门说了算，不给 LLM 扩范围的机会。
             if picks and not repair:
-                # ⚠ 这一步是**整条链路上最长的一段静默**（2026-08-04 实测）。
-                #
-                # 真机日志：一轮的 agentic pick 要 20~26s（第一轮 20.5s，
-                # loop-4→loop-5 那次 26s），六轮加起来 152s，占 6.4 分钟墙钟的
-                # 39%。而 `_emit_batch_capability_starts` 是**选完之后**才发
-                # capability_start 的——所以从上一轮收尾到下一轮第一个事件之间，
-                # 前端一个字都收不到，用户看到的就是"停住了不知道在干啥"。
-                #
-                # 这里先发一个 reasoning_step 占住这段时间。它不改任何执行逻辑，
-                # 纯粹是把一段本来就存在的等待**说出来**——静默的成本不在时长，
-                # 在于用户无法判断是在算还是挂了。
-                yield {"type": "reasoning_step", "label": "planning", "loop": loop}
                 from .v5_agentic_pick import agentic_pick_next_capabilities
                 _proposal = await asyncio.to_thread(
                     agentic_pick_next_capabilities, state, ui, loop_index=loop, max_loops=max_loops
                 )
-                # 收尾也要给：不发 result 的话前端那一条会一直转，直到下一批
-                # capability_start 才被顶掉，看着像"卡在 planning"。
-                yield {
-                    "type": "reasoning_step_result",
-                    "label": "planning",
-                    "loop": loop,
-                    "error": _proposal is None,
-                }
+                _planning_ok = _proposal is not None
                 if _proposal:
                     _now = datetime.now(timezone.utc).isoformat()
                     _dl = getattr(state, "decisionLedger", []) or []
@@ -1084,6 +1142,15 @@ async def drive_full_v5_session_stream(
                     picks = _proposal["picks"]
             state = await asyncio.to_thread(reconcile_coverage, state)
             selected = picks
+            # 规划段收尾。**必须在这里发**，不能等到执行批次里去发——
+            # 下面 max_repeat_guard / no_progress 两条都会 break 出循环，
+            # 那两条路上如果没有 result，前端那条 planning 会一直转到流结束。
+            yield {
+                "type": "reasoning_step_result",
+                "label": "planning",
+                "loop": loop,
+                "error": not _planning_ok,
+            }
 
             # max_repeat_guard
             if picks:
@@ -1342,6 +1409,7 @@ async def drive_full_v5_session_stream(
         # 注销模块级 sink：本次流之后的 LLM 调用不再往（已废弃的）队列里灌。
         _caps.set_capability_delta_sink(None)
         _gen.set_generate_delta_sink(None)
+        _enrich_timing.set_stage_sink(None)
         # E29：精修/直供上下文兜底清理（异常路径防泄漏到下一轮）
         _gen.set_refine_context(None)
         _gen.set_model_override(None)
