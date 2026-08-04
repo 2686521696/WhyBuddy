@@ -56,6 +56,13 @@ class PublishClosureResponse(BaseModel):
     tierCounts: PublishClosureTierCounts
     perSkillEvidence: Dict[str, Any] = Field(default_factory=dict)
     topBlockers: List[PublishClosureTopBlocker] = Field(default_factory=list)
+    # 判定依据。blocked 只是结论，这两块是过程：
+    # goalRelevance 说明「产出对不对得上题」（放行时也留分数，否则通过的那次
+    # 完全无痕，事后无从判断关卡是真在起作用还是形同虚设）；
+    # runConditions 是本轮的降级审计（K8s Condition 形状，见 run_degradation）。
+    goalRelevance: Optional[Dict[str, Any]] = None
+    runConditions: List[Dict[str, Any]] = Field(default_factory=list)
+    degradationSummary: str = ""
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:
@@ -139,6 +146,13 @@ def _to_publish_closure_summary(report: Dict[str, Any]) -> Optional[Dict[str, An
         },
         "perSkillEvidence": per_skill,
         "topBlockers": top_blockers,
+        # 这是白名单投影：不在这里列出的字段一律被丢掉。新增闭环判定信号时
+        # 记得同步加，否则前端只看到结论看不到依据（本次实测就漏过一轮）。
+        "goalRelevance": report.get("goalRelevance") or None,
+        "runConditions": [
+            _as_dict(c) for c in (report.get("runConditions") or [])
+        ],
+        "degradationSummary": str(report.get("degradationSummary") or ""),
     }
     # Enforce typed schema (positive evidence of schema); raises on shape violation.
     PublishClosureResponse.model_validate(summary)

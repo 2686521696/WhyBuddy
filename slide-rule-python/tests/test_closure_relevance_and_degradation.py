@@ -268,6 +268,33 @@ class TestClosureEndToEnd:
         assert "goalRelevance" in r and "runConditions" in r
         assert "app_purchase_approval" not in r["closureId"]
 
+    def test_判定依据要投影到前端契约里(self):
+        """derive 那层是**白名单**投影，不列出的字段一律丢掉。
+
+        实测漏过一轮：闭环产物里明明带了 goalRelevance/runConditions，
+        持久化的 publishClosure 里却是 None——前端只看到结论看不到依据。
+        放行时也必须留分数，否则通过的那次完全无痕，事后无从判断这道关卡
+        是真在起作用还是形同虚设。
+        """
+        from services.v5_publish_closure_response import _to_publish_closure_summary
+
+        real_leave = ("给公司做一套请假审批系统：登记员工和假期余额、提交请假单、"
+                      "主管审批、HR假勤概览、审批记录归档")
+        # 放行的一轮：分数要在
+        s = _to_publish_closure_summary(self._closure(real_leave))
+        assert s["blocked"] is False
+        assert s["goalRelevance"]["passed"] is True
+        assert s["goalRelevance"]["score"] >= COVERAGE_THRESHOLD
+        assert s["runConditions"] == []
+        assert s["degradationSummary"] == ""
+
+        # 降级的一轮：降级条目与摘要要在
+        s2 = _to_publish_closure_summary(self._closure(real_leave, degrade=True))
+        assert s2["blocked"] is True
+        assert len(s2["runConditions"]) == 1
+        assert s2["runConditions"][0]["reason"] == REASON_AGENTIC_PICK_FALLBACK
+        assert "降级" in s2["degradationSummary"]
+
     def test_模型能从逐技能证据拼回来(self):
         """走演示域快路径的真请假题会挂上完整模型段，验证拼装覆盖这条路。"""
         real_leave = ("给公司做一套请假审批系统：登记员工和假期余额、提交请假单、"
