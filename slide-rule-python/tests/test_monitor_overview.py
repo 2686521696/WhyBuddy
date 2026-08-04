@@ -83,6 +83,65 @@ def _monitor_page():
     }
 
 
+def test_sheet_canvas_is_the_2560_tier_and_decoupled_from_block_reference_images():
+    """参照板 2560x1440 档，且**不再跟区块级参照图共用一张尺寸表**（2026-08-03）。
+
+    两件事各自钉住：
+
+    · **16 的倍数**——端点硬校验，两边不整除 16 直接 400（所以拿不到
+      1920x1080：1080÷16=67.5，而 2560x1440 反而合法）。不写成测试的话，
+      下次有人手改成一个"看起来更标准"的尺寸，会在生图那一步才炸，报的还是
+      400 不是超时，很容易被当成鉴权或网络问题去查。
+    · **和区块级参照图分开**——那张图每个区块生一次、且要喂进视觉 LLM 当输入，
+      图越大输入 token 越多越贵；参照板整页只生一次。两者的成本账不一样，
+      合用一张表迟早会为了省其中一个而误伤另一个。
+    """
+    from services.freeform_block import _image_size_for_device, _sheet_image_size_for_device
+
+    for device in ("desktop", "tablet", "phone", ""):
+        w, h = (int(x) for x in _sheet_image_size_for_device(device).split("x"))
+        assert w % 16 == 0 and h % 16 == 0, (device, w, h)
+        assert w * h >= 2560 * 1440, (device, w, h)   # 不许悄悄降回小档
+        # 区块级那张仍然是小档，两者必须是两个数
+        assert _sheet_image_size_for_device(device) != _image_size_for_device(device)
+
+    # 档位形状不能弄反：桌面横版、手机竖版
+    dw, dh = (int(x) for x in _sheet_image_size_for_device("desktop").split("x"))
+    pw, ph = (int(x) for x in _sheet_image_size_for_device("phone").split("x"))
+    assert dw > dh and ph > pw
+
+
+def test_refine_system_prompt_carries_the_placeholder_rules():
+    """占位写法必须写进**改写系统提示词**，不能只留在区块级那份常量里。
+
+    这条防的是一次真实复发（2026-08-03）：07-31 参照板提示词从写死模板改成
+    「LLM 现写」，那五段常量——含占位写法与末尾信息层级清单——一条都没搬过来。
+    出图里数值那一类于是退化成**灰色横条**（KPI 数值、环图中心、坐标轴刻度
+    全是灰条）。
+
+    为什么这不只是"不好看"：参照板的读者是设计模型，它看图学的是「这一格该放
+    什么形状的内容」。一根灰条什么都没说——分不清那格装的是三位数计数、金额
+    还是日期，列宽/对齐/字号全学不到，信息层级也塌了。
+
+    V5.7 架构图当时就写下了这个风险："改写 LLM 漏掉哪一条，那一张图就会复发
+    对应的老 bug。" 所以这里两头都钉：既要有占位形状，也要点名禁掉灰条。
+    """
+    from services.freeform_block import _SHEET_PROMPT_REFINE_SYSTEM as sys_prompt
+
+    # ① 按字段形状占位——各类字段至少给出范例
+    for shape in ("20XX-XX-XX", "¥ ××,×××", "××.×%", "×,×××"):
+        assert shape in sys_prompt, shape
+    # ② 点名禁掉那个具体的退化形态
+    assert "灰色横条" in sys_prompt
+    assert "留空" in sys_prompt
+    # ③ 信息层级要画满——坐标轴刻度这类最容易被省掉的也点名
+    assert "坐标轴刻度" in sys_prompt
+    # ④ 不能因此把「不许出现真实数据」那条挤掉——两条是一组，只留一条就会
+    #    从"画灰条"翻车成"编一套自洽的假数据"（真机撞过：环图各段加起来正好
+    #    等于 KPI 总数）。
+    assert "不能出现任何真实数据" in sys_prompt
+
+
 def test_design_brief_covers_stats_and_charts():
     brief = _monitor_overview_design_brief(_monitor_page(), _datamodel())
     assert "订单总数" in brief
