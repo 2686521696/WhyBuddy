@@ -50,11 +50,22 @@ class TestJsTemplate:
             "require_playwright": require_expr,
             "preview_url_json": json.dumps("http://localhost:3000/x"),
             "shot_path_json": json.dumps("/tmp/a.png"),
+            "axe_path_json": json.dumps("/repo/node_modules/axe-core/axe.min.js"),
+            "axe_out_json": json.dumps("/tmp/axe.json"),
         }
         assert "%(" not in js  # 没有漏填的占位符
         assert require_expr in js
         assert 'data-testid="freeform-preview-root"' in js
         assert "SCREENSHOT_OK" in js
+
+    def test_axe_扫描与截图同一次打开_且扫不动不影响截图(self):
+        """浏览器已经开着、页面已经渲染好，顺手扫一遍几乎零开销
+        （实测 2.7s → 2.8s）。但它是增强项，出错不能连累已经拿到的截图。"""
+        src = sc._FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE
+        assert "axe.run" in src
+        assert "AXE_SKIP" in src  # 扫描异常被单独 catch 掉
+        # 截图先落盘、再扫 axe——顺序保证扫描失败时截图已经在手上了
+        assert src.index("el.screenshot") < src.index("axe.run")
 
     def test_本机路径_require_的是绝对路径(self):
         """CommonJS 的 require 按**脚本所在目录**往上找 node_modules，与 cwd 无关。

@@ -178,6 +178,7 @@
     "@vitest/ui": "^3.2.6",
     "add": "^2.0.6",
     "autoprefixer": "^10.5.2",
+    "axe-core": "^4.10.2",
     "esbuild": "^0.25.12",
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.9.0",

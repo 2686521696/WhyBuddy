@@ -128,6 +128,30 @@ const { chromium } = %(require_playwright)s;
     await page.waitForTimeout(1500);
     const el = await page.$('[data-testid="freeform-preview-root"]');
     await el.screenshot({ path: %(shot_path_json)s });
+    // 浏览器已经打开、页面已经渲染好——顺手跑一遍 axe-core，几乎零额外开销。
+    // 对比度/文字可读性这类**能算准的**别去问 LLM：UICrit（UIST'24）实测
+    // zero-shot 让模型自由评审 UI，只有 13.1%% 的意见有效；axe 这边是
+    // deterministic、官方口径「no false positives」。两者分工，不重叠。
+    const axePath = %(axe_path_json)s;
+    if (axePath) {
+      try {
+        await page.addScriptTag({ path: axePath });
+        const axeResult = await page.evaluate(async () => await window.axe.run(
+          document.querySelector('[data-testid="freeform-preview-root"]'),
+          { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] }, resultTypes: ["violations"] },
+        ));
+        const slim = (axeResult.violations || []).map((v) => ({
+          id: v.id, impact: v.impact, help: v.help,
+          count: (v.nodes || []).length,
+          sample: (v.nodes || []).slice(0, 3).map((n) => (n.failureSummary || "").slice(0, 200)),
+        }));
+        require("fs").writeFileSync(%(axe_out_json)s, JSON.stringify(slim));
+        console.log("AXE_OK:" + slim.length);
+      } catch (e) {
+        // 扫描是增强项，扫不动不能影响已经拿到手的截图
+        console.log("AXE_SKIP:" + (e && e.message ? e.message.slice(0, 120) : "unknown"));
+      }
+    }
     console.log("SCREENSHOT_OK");
   } finally {
     await browser.close();
@@ -141,6 +165,21 @@ const { chromium } = %(require_playwright)s;
 
 _LOCAL_APP_URL_ENV = "SLIDERULE_LOCAL_APP_URL"
 _DEFAULT_LOCAL_APP_URL = "http://localhost:3000"
+
+# 最近一次本机截图时顺带跑出来的 axe-core 违规（供 critique 取用）。
+# 单进程内单次生成串行执行，用模块级变量足够——跟 _llm_generate_diagnostic
+# 同一套做法。E2B 路径不产出这个，取到空列表即可。
+_last_axe_violations: list = []
+
+
+def last_axe_violations() -> list:
+    """最近一次截图扫出来的确定性可访问性违规（对比度/文字可读性等）。
+
+    这些是 axe-core 算出来的**硬事实**（官方口径 no false positives），
+    跟 LLM 的主观判断不是一回事——喂给 critique 时要分开讲清楚，
+    否则模型会把两者混为一谈、拿不准哪些必须改。
+    """
+    return list(_last_axe_violations)
 
 
 def _local_app_base_url() -> str:
@@ -203,12 +242,16 @@ def capture_freeform_preview_screenshot_local(
     # 跟 cwd 无关。脚本写在临时目录里，所以这里给绝对路径——否则永远
     # MODULE_NOT_FOUND（实测踩过）。
     pkg_path = str(_repo_root() / "node_modules" / "@playwright" / "test")
+    axe_path = _repo_root() / "node_modules" / "axe-core" / "axe.min.js"
     with tempfile.TemporaryDirectory() as tmp:
         shot_path = Path(tmp) / "freeform-preview.png"
+        axe_out = Path(tmp) / "axe.json"
         js = _FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE % {
             "require_playwright": f"require({json.dumps(pkg_path)})",
             "preview_url_json": json.dumps(preview_url),
             "shot_path_json": json.dumps(str(shot_path)),
+            "axe_path_json": json.dumps(str(axe_path) if axe_path.is_file() else ""),
+            "axe_out_json": json.dumps(str(axe_out)),
         }
         js_path = Path(tmp) / "shot.js"
         js_path.write_text(js, encoding="utf-8")
@@ -229,6 +272,17 @@ def capture_freeform_preview_screenshot_local(
             print(f"[app_screenshot] 本机截图未成: {detail[:200]}")
         if "SCREENSHOT_OK" not in (res.stdout or "") or not shot_path.exists():
             return None
+        # axe 扫描结果挂到模块级，供 critique 取用。扫不到就是空——它是增强项，
+        # 缺了 critique 照常跑，只是少一份确定性证据打底。
+        global _last_axe_violations
+        _last_axe_violations = []
+        if axe_out.exists():
+            try:
+                loaded = json.loads(axe_out.read_text(encoding="utf-8"))
+                if isinstance(loaded, list):
+                    _last_axe_violations = loaded
+            except (OSError, ValueError):
+                pass
         try:
             return shot_path.read_bytes() or None
         except OSError:

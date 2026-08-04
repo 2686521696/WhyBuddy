@@ -1648,6 +1648,39 @@ def _render_preview_screenshot_b64(
     return base64.b64encode(png_bytes).decode("ascii")
 
 
+def _count_nodes(node: Any) -> int:
+    """内容树节点总数。护栏用：修订不该把东西改没了。"""
+    if not isinstance(node, dict):
+        return 0
+    return 1 + sum(_count_nodes(c) for c in (node.get("children") or []))
+
+
+def _format_axe_evidence(violations: Optional[list]) -> str:
+    """把 axe-core 扫出来的确定性违规拼成证据段。
+
+    为什么要单独一段、而且明说「这些是算出来的硬事实」：UICrit（UIST'24）
+    实测 zero-shot 让模型自由评审 UI，**只有 13.1% 的意见有效**。对比度、
+    alt 文本这类能算准的东西根本不该问模型——axe-core 是 deterministic、
+    官方口径「no false positives」，还能给出确切数值（实测算出对比度
+    1.65、并指明前景色 #c9c9c9）。把硬事实先摆出来，模型才不至于满屏
+    臆测；也让它清楚哪些是必须改、哪些只是它的主观建议。
+    """
+    if not violations:
+        return ""
+    lines = ["【已确诊的硬问题（axe-core 自动检测算出来的，不是主观判断，必须修）】"]
+    for v in violations[:6]:
+        if not isinstance(v, dict):
+            continue
+        lines.append(
+            f"- {v.get('id')}（{v.get('impact') or '未分级'}，{v.get('count') or 0} 处）："
+            f"{(v.get('help') or '')[:80]}"
+        )
+        for s in (v.get("sample") or [])[:1]:
+            lines.append(f"    实测：{str(s)[:160]}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _critique_against_reference(
     design_dump: dict[str, Any],
     *,
@@ -1655,29 +1688,70 @@ def _critique_against_reference(
     preview_screenshot_b64: str,
     design_brief: str,
     FreeformDesign: type[BaseModel],
+    axe_violations: Optional[list] = None,
 ) -> Optional[dict[str, Any]]:
-    """把参考图和真实渲染截图一起喂给 LLM，让它自己判断这版结构是不是明显
-    比参考图单薄/有版式问题；如果是，让它直接产出一版修订过的完整 JSON。
+    """把参考图、真实渲染截图、以及 axe-core 扫出来的确定性违规一起喂给 LLM，
+    让它按真实设计评审的维度找问题，并产出一版修订过的完整 JSON。
 
-    只做一轮，不递归再校验一次修订结果的截图——那样成本会失控。修订结果
-    仍然要过同一套 Pydantic 深校验，校验不过就放弃这轮修订、用原版本，不能
-    因为"想变得更好"反而引入一个没校验过的坏结果。任何失败（LLM 报错/
-    JSON 解析失败/校验不过）都静默回退到原始 design_dump。
+    ## 为什么不是「让它自由发挥」
+
+    UICrit（UIST'24，google-research-datasets/uicrit）拿 3059 条专业设计师
+    批评做过实测：**zero-shot 自由评审只有 13.1% 的意见有效**，失败模式是
+    大量臆测、抓不住重点。而这里的修订是**直接采纳**的——放任自由发挥等于
+    让一个八成说胡话的评审去改用户的页面。
+
+    所以三条约束照该论文的结论来：
+    ① 维度白名单，权重取自那 11328 条批评的实际分布（见 prompt 内注）；
+    ② 强制两段式「standard / observed」——这是真实批评的固定结构，
+       必须先说出依据的标准，就很难凭空编问题；
+    ③ 能算准的（对比度/alt）交给 axe-core，不进模型的主观判断。
+
+    ## 护栏
+
+    只做一轮，不递归再校验修订结果的截图——那样成本会失控。修订结果必须：
+    - 过同一套 Pydantic 深校验（原有）
+    - **节点数不少于原版**（新增）——防止它"精简"掉真实内容。UICrit 那
+      13.1% 的另一面就是它可能自信地删掉不该删的东西。
+
+    任何失败（LLM 报错/JSON 解析失败/校验不过/节点变少）都静默回退到原始
+    design_dump——想变好不能反而变坏。
     """
     from sliderule_llm.client import LlmError, call_llm_with_retry
 
+    axe_block = _format_axe_evidence(axe_violations)
     critique_prompt = (
-        f"设计需求是：{design_brief}\n\n"
-        "第一张图是这个区块的配色/版式参考图（生成用的草稿参照，不是真实数据）。"
-        "第二张图是刚才生成的结构 JSON 真实渲染出来的样子（图表部分因为还没有"
-        "真实数据会显示「暂无数据」占位，这是正常的，不算问题，不用因此改动）。\n\n"
-        "对比这两张图，只看版式密度、留白节奏、图标使用、色彩克制程度这些跟"
-        "具体数据无关的方面：如果第二张明显比第一张单薄（卡片数量少很多/"
-        "大片空白/完全没用图标/结构过于简单），请输出一版修订后的完整 JSON，"
-        "在现有基础上补充更多卡片/分组/图标，让密度更接近参考图，其它规则"
-        "（安全标签白名单、dataRef 必须指向真实字段、chart 字段格式）完全不变。"
-        "如果已经足够接近，不需要改，直接回复严格的 JSON 字符串 \"GOOD\"，"
-        "不要输出别的文字。"
+        f"你是资深产品设计评审。设计需求是：{design_brief}\n\n"
+        "第一张图是配色/版式参考图（草稿参照，不是真实数据）。第二张图是刚才"
+        "生成的结构 JSON 真实渲染出来的样子。\n"
+        "【不算问题、不要因此改动】图表显示「暂无数据」占位（此刻还没有真实行"
+        "数据，是正常的）。\n\n"
+        f"{axe_block}"
+        "请只在下面这些维度上找问题——它们来自 UICrit（UIST'24）对 11328 条"
+        "真实设计师批评的分布统计，括号里是该类问题在真实评审中的占比：\n"
+        "1. 图标与文案是否让人一看就懂（20.6%）：图标含义含糊、标签词不达意\n"
+        "2. 视觉层级与主次（13.6%）：最重要的信息没有被突出，或次要信息喧宾夺主\n"
+        "3. 可点击元素的可用性（13.0%）：按钮/操作项看起来不像能点，或热区过小\n"
+        "4. 一致性（7.5%）：同类元素的字号/圆角/间距/颜色处理不统一\n"
+        "5. 字号与字重层级（5.9%）：标题没有明显大于正文，层级靠不住\n"
+        "6. 对齐与边界（4.9%）：元素越界、错位、参差不齐\n"
+        "7. 留白与密度（3.7%）：过于单薄大片空白，或过于拥挤没有喘息\n\n"
+        "**每条意见必须写成两段式**（这是真实设计师批评的固定结构，"
+        "写不出「标准」的意见一律不要提）：\n"
+        '  standard：这一条依据的设计标准是什么\n'
+        '  observed：当前这一版具体哪里违背了它（要能在第二张图上指出来）\n\n'
+        "纪律：\n"
+        "- 只提你能在第二张图里**看到**的问题，不要臆测看不见的东西\n"
+        "- 没把握的不要提。少而准 >> 多而糊\n"
+        "- 修订只能在现有结构上调整/补充，**不要删掉已有的卡片、分组或数据绑定**\n"
+        "- 其它规则完全不变：安全标签白名单、dataRef 必须指向真实字段、chart 字段格式\n\n"
+        "只输出 JSON，两种形态二选一：\n"
+        '① 有问题：{"findings":[{"dimension":"层级","standard":"…","observed":"…"}],'
+        '"design":{完整修订后的内容树}}\n'
+        '② 已经够好：{"findings":[],"design":null}\n'
+        "**findings 非空就必须同时给出 design**——把你列出的问题在这份内容树里"
+        "实际改掉（调 style 的字号/字重/间距/背景，或补节点），只挑出毛病却不"
+        "给修订等于白说一轮。确实无从下手的那条，就别写进 findings。\n"
+        "design 必须是完整的内容树（跟输入同结构、可直接替换），不是 diff 片段。"
     )
     convo: list[dict[str, Any]] = [
         {
@@ -1698,21 +1772,72 @@ def _critique_against_reference(
             max_tokens=14000,
             on_delta=lambda _chunk: None,
         )
-    except LlmError:
+    except LlmError as exc:
+        # 同上：静默失败会伪装成「评审认为没问题」。实测因此误判过一次
+        # ——LLM 压根没配上，却以为是模型说 OK。
+        print(f"[freeform_block] 评审 LLM 调用失败，本轮跳过：{str(exc)[:160]}")
         return None
 
     raw = (result.content or "").strip()
-    if raw.strip('"').strip() == "GOOD" or not raw:
+    # 解析每一步都留痕。此前失败是静默 return None，日志里只剩 revised=0，
+    # 分不清是「它说没问题」「它说了但输出被截断」还是「解析没认出来」
+    # ——排查时只能靠猜（实测因此误判过一次）。
+    if not raw:
+        print("[freeform_block] 评审无返回（空正文）")
+        return None
+    if raw.strip('"').strip() == "GOOD":  # 上一版口径，模型偶尔还这么答
         return None
     try:
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE)
         if not text.startswith("{"):
+            print(f"[freeform_block] 评审返回不是 JSON：{text[:120]}")
             return None
         payload = json.loads(text)
-        revised = FreeformDesign.model_validate(payload)
-    except (ValueError, json.JSONDecodeError, ValidationError):
+    except (ValueError, json.JSONDecodeError) as exc:
+        # 最常见的是要求「同时给意见和完整树」时输出被 max_tokens 截断
+        print(
+            f"[freeform_block] 评审 JSON 解析失败（{str(exc)[:60]}）；"
+            f"长度 {len(text)}，结尾：…{text[-80:]}"
+        )
         return None
-    return revised.model_dump()
+
+    findings = payload.get("findings") if isinstance(payload, dict) else None
+    if isinstance(findings, list) and findings:
+        # 评审意见留痕。哪怕最后没采纳修订，也要能看到它到底看出了什么——
+        # 否则「revised=0」永远分不清是「确实没问题」还是「它根本没在看」。
+        for f in findings[:5]:
+            if isinstance(f, dict):
+                print(
+                    f"[freeform_block] 评审意见[{f.get('dimension') or '?'}] "
+                    f"标准={str(f.get('standard') or '')[:60]} "
+                    f"实况={str(f.get('observed') or '')[:80]}"
+                )
+
+    # 新契约 {"findings":[...], "design":{...}}；design 为空即「不用改」
+    candidate = payload.get("design") if isinstance(payload, dict) else None
+    if candidate is None and isinstance(payload, dict) and "root" in payload:
+        candidate = payload  # 兼容老口径：整份树直接顶格返回
+    if not isinstance(candidate, dict):
+        if isinstance(findings, list) and findings:
+            # 提了问题却不给修订 = 白说一轮。prompt 里已明令要求两者同出，
+            # 还这样就是模型没照做，留痕出来才知道要不要再拧 prompt。
+            print(f"[freeform_block] 评审提了 {len(findings)} 条意见但没给修订，本轮不改")
+        return None
+
+    try:
+        revised = FreeformDesign.model_validate(candidate)
+    except (ValueError, ValidationError) as exc:
+        print(f"[freeform_block] 修订未过深校验，保留原版：{str(exc)[:140]}")
+        return None
+    revised_dump = revised.model_dump()
+
+    # 护栏：修订不许把内容改少。UICrit 实测的高幻觉率有另一面——模型会
+    # 自信地"精简"掉不该删的东西，而这里的修订是直接采纳的。
+    before, after = _count_nodes(design_dump.get("root")), _count_nodes(revised_dump.get("root"))
+    if after < before:
+        print(f"[freeform_block] 修订被拒：节点 {before} → {after}，改少了，保留原版")
+        return None
+    return revised_dump
 
 
 def _prune_non_dict_list_items(node: Any) -> Any:
@@ -2030,13 +2155,22 @@ def generate_freeform_block(
                     )
                     _st["got"] = 1 if preview_b64 else 0
                 if preview_b64:
+                    # 截图那一趟顺带扫出来的确定性违规（本机路径才有；E2B 返回空）
+                    try:
+                        from services.app_screenshot import last_axe_violations
+
+                        _axe = last_axe_violations()
+                    except Exception:  # noqa: BLE001 — 拿不到证据不该拖垮评审
+                        _axe = []
                     with _enrich_stage("block.critique", device=device or "unspecified") as _st:
+                        _st["axe"] = len(_axe)
                         revised_dump = _critique_against_reference(
                             design_dump,
                             reference_image_b64=reference_image_b64,
                             preview_screenshot_b64=preview_b64,
                             design_brief=design_brief,
                             FreeformDesign=FreeformDesign,
+                            axe_violations=_axe,
                         )
                         _st["revised"] = 1 if revised_dump is not None else 0
                     if revised_dump is not None:
