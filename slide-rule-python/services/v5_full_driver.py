@@ -1043,10 +1043,30 @@ async def drive_full_v5_session_stream(
             # 规则选材，收敛权归规则，台账 source="llm"，失败回落）。
             # 修复轮不参与——修什么以覆盖门说了算，不给 LLM 扩范围的机会。
             if picks and not repair:
+                # ⚠ 这一步是**整条链路上最长的一段静默**（2026-08-04 实测）。
+                #
+                # 真机日志：一轮的 agentic pick 要 20~26s（第一轮 20.5s，
+                # loop-4→loop-5 那次 26s），六轮加起来 152s，占 6.4 分钟墙钟的
+                # 39%。而 `_emit_batch_capability_starts` 是**选完之后**才发
+                # capability_start 的——所以从上一轮收尾到下一轮第一个事件之间，
+                # 前端一个字都收不到，用户看到的就是"停住了不知道在干啥"。
+                #
+                # 这里先发一个 reasoning_step 占住这段时间。它不改任何执行逻辑，
+                # 纯粹是把一段本来就存在的等待**说出来**——静默的成本不在时长，
+                # 在于用户无法判断是在算还是挂了。
+                yield {"type": "reasoning_step", "label": "planning", "loop": loop}
                 from .v5_agentic_pick import agentic_pick_next_capabilities
                 _proposal = await asyncio.to_thread(
                     agentic_pick_next_capabilities, state, ui, loop_index=loop, max_loops=max_loops
                 )
+                # 收尾也要给：不发 result 的话前端那一条会一直转，直到下一批
+                # capability_start 才被顶掉，看着像"卡在 planning"。
+                yield {
+                    "type": "reasoning_step_result",
+                    "label": "planning",
+                    "loop": loop,
+                    "error": _proposal is None,
+                }
                 if _proposal:
                     _now = datetime.now(timezone.utc).isoformat()
                     _dl = getattr(state, "decisionLedger", []) or []

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import os
 import time
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Iterable, Literal
@@ -802,6 +803,26 @@ def classify_llm_failure_kind(error: LlmError) -> str:
     return "unknown"
 
 
+#: 对冲阈值（毫秒）。0 或负数 = 关闭对冲，退回纯重试语义。
+#:
+#: 默认 30s 是从真机日志量出来的：同一个能力自己跟自己差 3~6 倍——
+#: critique.generate 74.8s vs 22.6s、synthesis.merge 69.0s vs 11.3s。
+#: 差这么多不是活变重了，是网关排队抖动。取值要落在"正常请求已经回来了、
+#: 慢请求还在等"这个区间：太小会把每个请求都变成两个（白烧配额），
+#: 太大则等于没开。
+_HEDGE_DELAY_MS_DEFAULT = 30_000
+
+
+def _hedge_delay_ms() -> int:
+    raw = os.getenv("LLM_HEDGE_DELAY_MS")
+    if raw is None or not str(raw).strip():
+        return _HEDGE_DELAY_MS_DEFAULT
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        return _HEDGE_DELAY_MS_DEFAULT
+
+
 def call_llm_with_retry(
     messages: list[Message],
     *,
@@ -809,10 +830,44 @@ def call_llm_with_retry(
     backoff_ms: int = 200,
     **kwargs: Any,
 ) -> LlmResult:
+    """带重试 + **对冲**的调用（对冲于 2026-08-04 加入）。
+
+    ## 重试和对冲是两件事，别混
+
+    · **重试**治的是"失败了"——请求抛错才有第二次，串行。
+    · **对冲**治的是"慢"——请求**没失败也没回来**，超过阈值就并发再发一份，
+      谁先回用谁。原始那份不取消（它可能马上就回），只是不再等它。
+
+    真机数据说明为什么需要后者：同一个能力自己跟自己差 3~6 倍
+    （critique.generate 74.8s vs 22.6s，synthesis.merge 69.0s vs 11.3s）。
+    这类请求**从不报错**，所以重试一次都不会触发；它只是排在网关队列后面。
+    一次 6.4 分钟的执行里，这两条离群值吃掉 143.8s——占全部能力时间的 41%。
+
+    ## 语义照抄 gRPC 的 hedging policy
+
+    gRPC 的 `hedgingPolicy`（hedgingDelay / maxAttempts / 非致命状态码）是这套
+    做法的成熟形态，Envoy 与「The Tail at Scale」讲的是同一件事。三条关键约定
+    这里都保留：
+
+      ① **只对冲一次**（相当于 maxAttempts=2）。不设上限的话，网关一旦整体变慢，
+         每个请求都会裂变成 N 个，把它压得更慢——对冲是治长尾，不是治过载。
+      ② **谁先回用谁，另一份直接丢**。不比较内容、不做仲裁：两份都是合法输出，
+         选先到的那份既最快也最简单。
+      ③ **对冲副本失败不算数**。副本报错时仍然等原始那份的结果/异常——否则
+         "为了更快"反而把一次本来会成功的调用变成失败。
+
+    ## 为什么不用现成的库
+
+    这段逻辑一共几十行，而且要贴着我们自己的 `LlmError.transient` 语义走。
+    引一个通用重试库（tenacity 之类）反而要把这三条约定翻译成它的配置词汇，
+    读代码的人得先读那个库才能看懂我们的取舍。抄的是 gRPC 的**语义**，
+    不是它的实现。
+    """
+    delay_ms = _hedge_delay_ms()
     last_error: LlmError | None = None
     for attempt in range(1, max_attempts + 1):
         try:
-            return call_llm(messages, **kwargs)
+            return _call_llm_hedged(messages, delay_ms, **kwargs)
         except LlmError as error:
             last_error = error
             if not error.transient or attempt >= max_attempts:
@@ -821,6 +876,44 @@ def call_llm_with_retry(
     if last_error is not None:
         raise last_error
     raise LlmError("call_llm_with_retry exhausted without result", transient=False)
+
+
+def _call_llm_hedged(messages: list[Message], delay_ms: int, **kwargs: Any) -> LlmResult:
+    """一次调用；超过 delay_ms 还没回就并发补发一份，取先到的那个。
+
+    delay_ms <= 0 时**完全走老路径**（直接 call_llm，不建线程池）——关掉对冲
+    的环境里不该为一个用不到的功能付出任何额外开销。
+    """
+    if delay_ms <= 0:
+        return call_llm(messages, **kwargs)
+
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
+    # 不用 with：块退出时 ThreadPoolExecutor 会 join 所有线程，那会把"不再等
+    # 慢的那份"这件事整个抵消掉——原始请求还在跑，我们就卡在这里等它。
+    pool = ThreadPoolExecutor(max_workers=2)
+    try:
+        primary = pool.submit(call_llm, messages, **kwargs)
+        done, _ = wait([primary], timeout=delay_ms / 1000.0, return_when=FIRST_COMPLETED)
+        if done:
+            return primary.result()  # 正常路径：没超时，跟以前逐字一样
+
+        hedge = pool.submit(call_llm, messages, **kwargs)
+        pending = {primary, hedge}
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for fut in done:
+                try:
+                    return fut.result()
+                except LlmError:
+                    # 约定③：副本失败不算数，继续等另一份。两份都失败时
+                    # 循环退出，下面按原始那份的异常抛——报错要报真实那次的。
+                    if not pending:
+                        return primary.result()
+        return primary.result()
+    finally:
+        # 不等在跑的线程：慢的那份自己会结束，它的结果没人取，直接丢掉。
+        pool.shutdown(wait=False)
 
 
 def parse_llm_json_shape(

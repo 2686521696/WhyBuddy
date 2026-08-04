@@ -134,7 +134,88 @@ def _state_digest(state: V5SessionState, user_text: str, loop_index: int, max_lo
         f"【未答问题】{open_qs or '无'}",
         f"【覆盖缺口】{gaps or '无'}",
     ]
+    lines.extend(_history_lines(state))
     return "\n".join(lines)
+
+
+def _history_lines(state: V5SessionState) -> list[str]:
+    """把**上几轮自己做过的决定和它的效果**摆到面前（2026-08-04）。
+
+    ## 为什么补这一段
+
+    真机日志（社区消防巡检那次，6 轮 6.4 分钟）：五轮的 rationale 几乎逐字
+    相同——
+
+        loop-1  先补齐消防巡检业务与合规依据，再进行红队质疑…
+        loop-2  当前需求主线已明确但证据覆盖不足，先补齐关键业务与合规依据…
+        loop-3  先补齐消防巡检业务与合规依据，再将需求细化…
+        loop-4  先补齐社区消防巡检业务与合规证据，再针对方案风险…
+        loop-5  先补齐消防巡检业务与合规依据，再整合现有风险…
+
+    对应到执行：evidence.search 被选中 5 次、synthesis.merge 4 次、
+    critique/risk/intent.clarify/structure.decompose 各 2 次。最后是驱动器的
+    max_repeat_guard 强行踩的刹车——不是它自己判断够了。整轮结束
+    publishClosure 仍是 null：**6.4 分钟、16 次能力调用，一个应用都没交付**。
+
+    ## 缺的到底是什么
+
+    不是"没有历史"——digest 里一直有【已执行能力序列】。缺的是**因果**：
+
+      · 它看得到 evidence.search 跑过，看不到自己上一轮**为什么**选它；
+      · 更关键的是看不到那一轮**有没有用**——覆盖缺口是不是少了一个。
+
+    没有这两条，每轮都是从一个长得差不多的状态重新推理一遍，自然得出差不多
+    的结论。所以这里补三样：上轮理由原文、缺口有没有推进、以及一句针对
+    "重复选"的明确要求。
+
+    ## 为什么不直接禁止重复
+
+    重复本身不是错——证据确实可能要分两次补。禁掉会逼它去挑不该挑的能力。
+    这里只要求它**给出新理由**：说不出跟上次的区别，就是在原地转圈。判断留给
+    它，证据摆给它看。
+    """
+    ledger = list(getattr(state, "decisionLedger", []) or [])
+
+    def _get(d, k, default=""):
+        return (d.get(k, default) if isinstance(d, dict) else getattr(d, k, default)) or default
+
+    llm_decisions = [d for d in ledger if _get(d, "source") == "llm"]
+    if not llm_decisions:
+        return []
+
+    out: list[str] = ["【你前几轮的决定（这是你自己说过的话，不是别人的）】"]
+    for d in llm_decisions[-3:]:
+        chose = _get(d, "chose", []) or []
+        why = str(_get(d, "rationale", ""))[:120]
+        out.append(f"· {_get(d, 'turnId')}：选了 {'、'.join(chose) or '（空）'}；理由「{why}」")
+
+    # 缺口有没有被推进——上一轮到底有没有用，只有这一条能说明
+    gaps = getattr(state, "coverageGaps", []) or []
+    resolved = sum(
+        1 for g in gaps
+        if (g.get("status") if isinstance(g, dict) else getattr(g, "status", None)) == "resolved"
+    )
+    out.append(f"【上述决定的效果】覆盖缺口已解决 {resolved}/{len(gaps)} 项")
+
+    # 重复计数：只列真的重复了的。没重复就不出这段——凭空提一句"可以重复"
+    # 反而是在给它出主意。
+    counts: dict[str, int] = {}
+    for r in getattr(state, "capabilityRuns", []) or []:
+        cap = r.get("capabilityId") if isinstance(r, dict) else getattr(r, "capabilityId", "")
+        if cap:
+            counts[cap] = counts.get(cap, 0) + 1
+    repeated = {c: n for c, n in counts.items() if n >= 2}
+    if repeated:
+        out.append(
+            "【已经重复跑过的能力】"
+            + "、".join(f"{c}×{n}" for c, n in sorted(repeated.items(), key=lambda kv: -kv[1]))
+        )
+        out.append(
+            "⚠ 上面这些**再选一次就必须说明这次跟上次做的有什么不同**（补哪一块、"
+            "为什么上次那次不够）。说不出区别就换别的能力，或者直接收口——重复跑"
+            "同一件事既不会让缺口变少，也拖到最后什么都交付不出来。"
+        )
+    return out
 
 
 # ── LLM 提案 + 门验收 ─────────────────────────────────────────────────
