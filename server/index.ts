@@ -3,6 +3,7 @@
  * Express + Socket.IO + REST API + Multi-Agent Orchestration
  */
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { applyInternalKeyAlias } from "./config/internal-key-alias.js";
 import express, { type Request, type Response } from "express";
 import { createServer } from "http";
 import dotenv from "dotenv";
@@ -32,6 +33,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
+// 紧跟在 dotenv 之后、任何读这个变量的模块之前：Node 与 Python 守的是同一把
+// 钥匙却读两个变量名，只配一个会让每次 Node→Python 调用 403（见该模块说明）。
+applyInternalKeyAlias();
 logSlideRuleProxyStartupDiag();
 const STARTUP_TRACE_ENABLED = process.env.STARTUP_TRACE === "1";
 
