@@ -52,9 +52,23 @@ CAPABILITY_VOCAB: dict[str, str] = {
     "outcome.visualize": "可视化成果（图表/结构图）",
     "handoff.package": "打包最终交接物",
     # 收口能力（agentic 独有解锁）：规则版 pick 从不产出它——真实产品里
-    # 装配闭环由前端流程触发；给 LLM 这个选项 = 让它自己判断「证据齐了
-    # 该收口了」。门保持 fail-closed：证据不齐装配照样 blocked，提案无法作弊
-    "appbundle.runtimeclosure": "装配运行时闭环（五系统证据齐备后收口出应用，证据不齐会被门拦下——收口前先确保证据充分）",
+    # 装配闭环由前端流程触发；给 LLM 这个选项 = 让它自己判断「该收口了」。
+    # 门保持 fail-closed：证据不齐装配照样 blocked，提案无法作弊。
+    #
+    # ⚠ 2026-08-04 改写措辞。原文是「…证据不齐会被门拦下——**收口前先确保
+    # 证据充分**」，它跟 _state_digest 里那句「提案收口没有惩罚，拖到轮次
+    # 耗尽才有」**直接打架**，而且打架的这句就挂在能力本身上——模型正是在
+    # 决定要不要选它的时候读到这句。
+    #
+    # 真机后果（同一个题连跑三轮，第三轮）：loop-4/loop-5 连着两轮写
+    # 「当前证据不足，不进入运行时装配」，六轮跑满从没选过收口，最后被
+    # awaitReason=max_loops 强停，evidence 0/6、blocked、一个应用都没落库。
+    # 而前两轮同样的输入是出了应用的——**两成一败**。
+    #
+    # 现在如实说：收口早了顶多是 blocked（用户至少看得到进度和拦下的理由），
+    # 拖到轮次耗尽是同样的 blocked **外加什么都没有**。后者严格更差，所以
+    # 不该让"再补一轮证据"看起来永远是更安全的选择。
+    "appbundle.runtimeclosure": "装配运行时闭环，收口出应用。证据齐则出应用；不齐则如实标 blocked 并说明缺什么——**这也是一种交付**，比拖到轮次耗尽什么都没有好",
 }
 
 ROLE_VOCAB = ("产品", "架构", "工程", "综合")
@@ -108,6 +122,38 @@ def _artifact_kind_counts(state: V5SessionState) -> dict[str, int]:
     return counts
 
 
+def _progress_line(loop_index: int, max_loops: int) -> str:
+    """进度 + **随轮次递进**的收口压力（2026-08-04）。
+
+    原来是一句不变的话（"过半仍未装配闭环应认真考虑收口…"）。问题是它从第 1 轮
+    到第 6 轮说得一模一样——第 6 轮的紧迫程度和第 1 轮显然不是一回事，而模型
+    只看得到同一句提醒。真机第三轮就是这么跑没的：六轮跑满、一次都没选收口、
+    被 max_loops 强停，evidence 0/6，什么都没交付。
+
+    所以按剩余轮次分三档说话。最后一轮说得最重——那时候"再补一轮"这个选项
+    **已经不存在了**，可原来的措辞完全没体现这一点。
+    """
+    remaining = max_loops - loop_index - 1
+    base = f"【进度】第 {loop_index + 1}/{max_loops} 轮"
+    if remaining <= 0:
+        return (
+            base + "（**这是最后一轮**。没有下一轮了：这一轮不提案收口，"
+            "本次推演就会以 max_loops 强停收场——evidence 0/6、blocked、"
+            "用户一个应用都拿不到。证据不齐也要收，门会如实标出缺什么，"
+            "那仍然是有内容的交付。）"
+        )
+    if remaining <= 2:
+        return (
+            base + f"（只剩 {remaining} 轮。到这一步应当**优先考虑收口**而不是"
+            "再补一轮证据：收口早了顶多被门标 blocked 并说明缺什么，拖到轮次"
+            "耗尽是同样的 blocked 外加什么都没有——后者严格更差。）"
+        )
+    return (
+        base + "（收口感知：过半仍未装配闭环应认真考虑收口——证据不齐门会拦下"
+        "并如实标 blocked，提案收口没有惩罚，拖到轮次耗尽才有）"
+    )
+
+
 def _state_digest(state: V5SessionState, user_text: str, loop_index: int, max_loops: int = 6) -> str:
     goal = state.goal if isinstance(state.goal, dict) else {}
     kinds = _artifact_kind_counts(state)
@@ -127,8 +173,7 @@ def _state_digest(state: V5SessionState, user_text: str, loop_index: int, max_lo
     lines = [
         f"【本轮用户输入】{(user_text or '').strip()[:300]}",
         f"【目标】{str(goal.get('text') or '')[:200]}（状态 {goal.get('status') or '未定'}）",
-        f"【进度】第 {loop_index + 1}/{max_loops} 轮（收口感知：过半仍未装配闭环应认真考虑收口——"
-        "证据不齐门会拦下并如实标 blocked，提案收口没有惩罚，拖到轮次耗尽才有）",
+        _progress_line(loop_index, max_loops),
         f"【已执行能力序列（最近 8 步）】{' → '.join(recent) or '无'}",
         f"【健康产物】{kinds or '无'}；失效产物 {len(getattr(state, 'staleArtifactIds', []) or [])} 件",
         f"【未答问题】{open_qs or '无'}",
