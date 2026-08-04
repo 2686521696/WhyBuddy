@@ -245,11 +245,17 @@ def _execute_round_capability(cap: str, state: V5SessionState, role: str, turn_i
         except Exception as exc:  # noqa: BLE001 — LlmError/transport 都回落，一步失败不许沉掉整场推演
             print(f"[v5_full_driver] native LLM cap {cap} failed, fallback to RAG: {str(exc)[:160]}")
             # 回退 RAG 也是降级：能力的原生结果没拿到，产出质量已经打折。
-            from .run_degradation import mark_degraded, REASON_CAPABILITY_LLM_FALLBACK
+            # 影响面看是哪个能力——推演类退兜底只是结论粗糙，收口类才伤成品。
+            from .run_degradation import (
+                REASON_CAPABILITY_LLM_FALLBACK,
+                impact_for_capability,
+                mark_degraded,
+            )
             mark_degraded(
                 state,
                 reason=REASON_CAPABILITY_LLM_FALLBACK,
                 message=f"能力 {cap} 的 LLM 执行失败，回退 RAG：{str(exc)[:120]}",
+                impact=impact_for_capability(cap),
             )
     return execute_v5_capability(cap, state, [], role, turn_id)
 
@@ -684,11 +690,18 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                 else:
                     # 回落规则版 = 本轮降级。记一条 Condition，闭环判定据此
                     # 拒发合格证——此前这里只在 stderr 打一行，闭环完全看不见。
-                    from .run_degradation import mark_degraded, REASON_AGENTIC_PICK_FALLBACK
+                    from .run_degradation import (
+                        IMPACT_REASONING,
+                        REASON_AGENTIC_PICK_FALLBACK,
+                        mark_degraded,
+                    )
                     mark_degraded(
                         state,
                         reason=REASON_AGENTIC_PICK_FALLBACK,
                         message=f"第 {loop} 轮 LLM 选材未成，回落规则版选能力",
+                        # 只决定「这轮挑哪几件活儿干」，挑出来的活儿照样认真执行，
+                        # 做出来的东西不因此变差——显式写出来，不靠默认值猜
+                        impact=IMPACT_REASONING,
                     )
             state = reconcile_coverage(state)
             selected = picks
@@ -1158,11 +1171,18 @@ async def drive_full_v5_session_stream(
                     picks = _proposal["picks"]
                 else:
                     # 同步驱动同款：回落规则版 = 本轮降级，闭环据此拒发合格证。
-                    from .run_degradation import mark_degraded, REASON_AGENTIC_PICK_FALLBACK
+                    from .run_degradation import (
+                        IMPACT_REASONING,
+                        REASON_AGENTIC_PICK_FALLBACK,
+                        mark_degraded,
+                    )
                     mark_degraded(
                         state,
                         reason=REASON_AGENTIC_PICK_FALLBACK,
                         message=f"第 {loop} 轮 LLM 选材未成，回落规则版选能力",
+                        # 只决定「这轮挑哪几件活儿干」，挑出来的活儿照样认真执行，
+                        # 做出来的东西不因此变差——显式写出来，不靠默认值猜
+                        impact=IMPACT_REASONING,
                     )
             state = await asyncio.to_thread(reconcile_coverage, state)
             selected = picks

@@ -22,9 +22,15 @@ from services.closure_relevance import (
     split_goal_phrases,
 )
 from services.run_degradation import (
+    IMPACT_DELIVERABLE,
+    IMPACT_REASONING,
     REASON_AGENTIC_PICK_FALLBACK,
+    REASON_CAPABILITY_LLM_FALLBACK,
+    blocking_degradations,
     collect_degradations,
     degradation_blockers,
+    degradation_summary,
+    impact_for_capability,
     mark_degraded,
 )
 from services.v5_capability_executor import (
@@ -151,12 +157,67 @@ class TestDegradation:
             mark_degraded(st, reason=REASON_AGENTIC_PICK_FALLBACK, message="回落")
         assert len(collect_degradations(st)) == 1
 
-    def test_降级转成_blocker(self):
+    def test_伤到交付物的降级才转成_blocker(self):
         st = V5SessionState(sessionId="s", goal={"text": "x"})
-        mark_degraded(st, reason=REASON_AGENTIC_PICK_FALLBACK, message="回落规则版")
+        mark_degraded(st, reason=REASON_CAPABILITY_LLM_FALLBACK, message="收口退 RAG",
+                      impact=IMPACT_DELIVERABLE)
         blockers = degradation_blockers(collect_degradations(st))
         assert blockers[0]["code"] == "CLOSURE_DEGRADED_RUN"
-        assert REASON_AGENTIC_PICK_FALLBACK in blockers[0]["ref"]
+        assert REASON_CAPABILITY_LLM_FALLBACK in blockers[0]["ref"]
+
+    def test_过程磕碰不转成_blocker(self):
+        """argo#12530 的教训：「能继续跑」跟「算不算数」是两件事。"""
+        st = V5SessionState(sessionId="s", goal={"text": "x"})
+        mark_degraded(st, reason=REASON_AGENTIC_PICK_FALLBACK, message="回落规则版")
+        got = collect_degradations(st)
+        assert len(got) == 1                       # 照样留痕
+        assert blocking_degradations(got) == []    # 但不拦交付
+        assert degradation_blockers(got) == []
+
+
+class TestImpactGrading:
+    """降级分级：只有伤到交付物的才拦。
+
+    2026-08-04 真跑：六项证据齐、相关性 0.857 判定对题、建模生图设计全成，
+    只因推演阶段两处退 RAG 就整轮作废，用户白等 33 分钟。
+    """
+
+    def test_收口能力算交付关键路径(self):
+        assert impact_for_capability("appbundle.runtimeclosure") == IMPACT_DELIVERABLE
+        assert impact_for_capability("AppBundle.RuntimeClosure") == IMPACT_DELIVERABLE  # 大小写无关
+
+    @pytest.mark.parametrize("cap", [
+        "synthesis.merge", "risk.analyze", "evidence.search",
+        "critique.generate", "structure.decompose", "task.write",
+    ])
+    def test_推演类能力只算过程磕碰(self, cap):
+        assert impact_for_capability(cap) == IMPACT_REASONING
+
+    def test_默认取_reasoning_而不是阻断(self):
+        """默认设成阻断会重演「白等半小时」；真正伤交付物的路径可枚举，让它显式声明。"""
+        st = V5SessionState(sessionId="s", goal={"text": "x"})
+        mark_degraded(st, reason="SomeNewReason", message="m")
+        assert collect_degradations(st)[0]["impact"] == IMPACT_REASONING
+
+    def test_同原因再次上报可升级影响面(self):
+        """先在推演里退过一次、后来收口也退了——不能被首次记录盖住。"""
+        st = V5SessionState(sessionId="s", goal={"text": "x"})
+        mark_degraded(st, reason=REASON_CAPABILITY_LLM_FALLBACK, message="synthesis 退 RAG")
+        mark_degraded(st, reason=REASON_CAPABILITY_LLM_FALLBACK, message="收口退 RAG",
+                      impact=IMPACT_DELIVERABLE)
+        got = collect_degradations(st)
+        assert len(got) == 1
+        assert got[0]["impact"] == IMPACT_DELIVERABLE
+        assert len(blocking_degradations(got)) == 1
+
+    def test_摘要措辞要分清拦下了还是放行了(self):
+        """用户看到绿灯时也该知道这轮不是一帆风顺，好自己判断要不要重跑。"""
+        soft = [{"reason": "R", "message": "退了兜底", "impact": IMPACT_REASONING}]
+        hard = [{"reason": "R", "message": "收口退兜底", "impact": IMPACT_DELIVERABLE}]
+        assert "未伤及交付物" in degradation_summary(soft)
+        assert "伤及交付物" in degradation_summary(hard)
+        assert "不足以判定闭环" in degradation_summary(hard)
+        assert degradation_summary([]) == ""
 
 
 class TestClosureIdSlug:
@@ -186,10 +247,11 @@ class TestClosureIdSlug:
 class TestClosureEndToEnd:
     """事故现场的端到端复现——这三条是这次改动真正要守住的东西。"""
 
-    def _closure(self, goal, *, degrade=False):
+    def _closure(self, goal, *, degrade=False, degrade_impact=IMPACT_DELIVERABLE):
         st = V5SessionState(sessionId="t", goal={"text": goal})
         if degrade:
-            mark_degraded(st, reason=REASON_AGENTIC_PICK_FALLBACK, message="第 4 轮回落规则版")
+            mark_degraded(st, reason=REASON_AGENTIC_PICK_FALLBACK,
+                          message="第 4 轮回落规则版", impact=degrade_impact)
         return execute_v5_capability("appbundle.runtimeClosure", st, [], "综合", "turn-1")
 
     def test_课后托管不再被套上请假样板(self):
@@ -251,17 +313,26 @@ class TestClosureEndToEnd:
         assert r["blockers"] == []
         assert r["goalRelevance"]["passed"] is True
 
-    def test_降级轮即便产出对题也不发合格证(self):
-        r = self._closure(
-            "给公司做一套请假审批系统：登记员工和假期余额、提交请假单、"
-            "主管审批、HR假勤概览、审批记录归档",
-            degrade=True,
-        )
+    REAL_LEAVE = ("给公司做一套请假审批系统：登记员工和假期余额、提交请假单、"
+                  "主管审批、HR假勤概览、审批记录归档")
+
+    def test_伤到交付物的降级_产出对题也不发合格证(self):
+        r = self._closure(self.REAL_LEAVE, degrade=True, degrade_impact=IMPACT_DELIVERABLE)
         assert r["blocked"] is True
         assert "CLOSURE_DEGRADED_RUN" in [b["code"] for b in r["blockers"]]
-        # 产出本身是对题的，拦它纯粹因为这轮降级过
+        # 产出本身是对题的，拦它纯粹因为交付链路降级了
         assert r["goalRelevance"]["passed"] is True
-        assert r["degradationSummary"]
+        assert "伤及交付物" in r["degradationSummary"]
+
+    def test_过程磕碰照常放行_但摘要要标出来(self):
+        """2026-08-04 真跑：六项证据齐、判定对题、建模生图设计全成，只因推演
+        阶段两处退 RAG 就整轮作废，用户白等 33 分钟。分级之后这种放行。"""
+        r = self._closure(self.REAL_LEAVE, degrade=True, degrade_impact=IMPACT_REASONING)
+        assert r["blocked"] is False
+        assert r["blockers"] == []
+        # 放行不等于装作没发生：降级照旧留痕、摘要照旧标注
+        assert len(r["runConditions"]) == 1
+        assert "未伤及交付物" in r["degradationSummary"]
 
     def test_闭环产物带上判定依据(self):
         r = self._closure(TUOGUAN_GOAL)
