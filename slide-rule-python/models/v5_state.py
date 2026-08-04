@@ -373,6 +373,10 @@ class V5SessionState(BaseModel):
     # skillRuntimeGraph (cross-skill runtime evidence graph from python /drive-full and /drive-marathon):
     # Kept durable alongside publishClosure so browser reload can replay Skill linkage surfaces.
     skillRuntimeGraph: Optional[Dict[str, Any]] = None
+    # 本轮运行的降级状况（services/run_degradation.py 写、闭环判定读）。
+    # 结构照 Kubernetes metav1.Condition：{type,status,reason,message,lastTransitionTime}。
+    # 存在降级条目时闭环不许判 closed——降级轮的产出不可信，详见该模块头。
+    runConditions: List[Dict[str, Any]] = Field(default_factory=list)
     # ... (add more fields as migrated from TS)
 
     @classmethod

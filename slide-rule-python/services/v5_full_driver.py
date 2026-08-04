@@ -244,6 +244,13 @@ def _execute_round_capability(cap: str, state: V5SessionState, role: str, turn_i
                 return _native_execute(payload)
         except Exception as exc:  # noqa: BLE001 — LlmError/transport 都回落，一步失败不许沉掉整场推演
             print(f"[v5_full_driver] native LLM cap {cap} failed, fallback to RAG: {str(exc)[:160]}")
+            # 回退 RAG 也是降级：能力的原生结果没拿到，产出质量已经打折。
+            from .run_degradation import mark_degraded, REASON_CAPABILITY_LLM_FALLBACK
+            mark_degraded(
+                state,
+                reason=REASON_CAPABILITY_LLM_FALLBACK,
+                message=f"能力 {cap} 的 LLM 执行失败，回退 RAG：{str(exc)[:120]}",
+            )
     return execute_v5_capability(cap, state, [], role, turn_id)
 
 
@@ -674,6 +681,15 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                     ))
                     state.decisionLedger = _dl
                     picks = _proposal["picks"]
+                else:
+                    # 回落规则版 = 本轮降级。记一条 Condition，闭环判定据此
+                    # 拒发合格证——此前这里只在 stderr 打一行，闭环完全看不见。
+                    from .run_degradation import mark_degraded, REASON_AGENTIC_PICK_FALLBACK
+                    mark_degraded(
+                        state,
+                        reason=REASON_AGENTIC_PICK_FALLBACK,
+                        message=f"第 {loop} 轮 LLM 选材未成，回落规则版选能力",
+                    )
             state = reconcile_coverage(state)
             selected = picks
 
@@ -1140,6 +1156,14 @@ async def drive_full_v5_session_stream(
                     ))
                     state.decisionLedger = _dl
                     picks = _proposal["picks"]
+                else:
+                    # 同步驱动同款：回落规则版 = 本轮降级，闭环据此拒发合格证。
+                    from .run_degradation import mark_degraded, REASON_AGENTIC_PICK_FALLBACK
+                    mark_degraded(
+                        state,
+                        reason=REASON_AGENTIC_PICK_FALLBACK,
+                        message=f"第 {loop} 轮 LLM 选材未成，回落规则版选能力",
+                    )
             state = await asyncio.to_thread(reconcile_coverage, state)
             selected = picks
             # 规划段收尾。**必须在这里发**，不能等到执行批次里去发——

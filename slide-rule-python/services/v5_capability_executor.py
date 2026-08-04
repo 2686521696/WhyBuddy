@@ -13,6 +13,11 @@ import os
 import re
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
+from .run_degradation import (
+    collect_degradations,
+    degradation_blockers,
+    degradation_summary,
+)
 
 
 def _llm_generate_enabled() -> bool:
@@ -211,6 +216,28 @@ def _builtin_domain_model_section(domain: str, skill: str) -> "Dict[str, Any] | 
         return None
     section = model.get(skill)
     return section if isinstance(section, dict) else None
+
+
+def _domain_fixture_fits_goal(domain: str, goal: str) -> bool:
+    """识别出来的演示域，它的内置模型跟用户这道题对得上吗？
+
+    强词单个命中即认域（见 DOMAIN_INTENT_MARKERS），碰上「托管系统里有请假
+    功能」这类需求就会整体误判。用同一把相关性尺子（services/closure_relevance）
+    量一下夹具模型：对不上就别用它。
+
+    判不了（目标太短等）时返回 True——保持原有的演示域快路径行为，这道
+    检查只负责否掉**明确不符**的，不负责在信息不足时改变既有行为。
+    """
+    from .closure_relevance import evaluate_model_relevance
+
+    global _BUILTIN_DOMAIN_MODELS
+    if _BUILTIN_DOMAIN_MODELS is None:
+        _builtin_domain_model_section(domain, "datamodel")  # 触发懒加载
+    model = (_BUILTIN_DOMAIN_MODELS or {}).get(domain)
+    if not isinstance(model, dict):
+        return True
+    verdict = evaluate_model_relevance(goal, model)
+    return bool(verdict.get("passed", True))
 
 
 def _runtime_linkage_artifact_for_skill(skill: str, goal: str, domain: str = "purchase_approval") -> Dict[str, Any]:
@@ -454,6 +481,22 @@ def _build_per_skill_evidence(
                 matches[skill] = artifact
 
     recognized_domain = None if _refine_active else _recognize_domain(goal)
+    # 演示域的强词是**单个**命中即认（"请假"、"采购"…）。可业务需求里出现
+    # 一个这样的子功能太常见了：2026-08-04 实测事故里「给中小学课后托管…
+    # 家长请假申请…」就因为「请假」二字被判成 leave_approval，直接套上内置
+    # 「员工请假管理」样板，托管的学生/班次/签到/账单一个没做。
+    #
+    # 这里在**用夹具之前**先问一句：这套夹具模型跟用户的题对得上吗？对不上
+    # 就当没认出来，落到下面的 LLM 生成分支去真做一个——既不交付错的，也
+    # 不因为一次误认就让用户什么都拿不到。真正的采购/请假题相关性会通过，
+    # 演示域快路径不受影响。
+    if recognized_domain is not None and not _domain_fixture_fits_goal(recognized_domain, goal):
+        print(
+            f"[v5_capability_executor] 演示域 {recognized_domain} 与目标不符，"
+            "弃用夹具改走 LLM 生成",
+            file=__import__("sys").stderr, flush=True,
+        )
+        recognized_domain = None
     if _refine_active and not blocked_signal:
         # 精修/回退：走 LLM 生成分支（override 时生成层不调 LLM 直接返回快照）
         # override 路径传 False（历史快照无 landingPageRef 仍可恢复）；
@@ -598,6 +641,89 @@ def _skill_runtime_graph_payload() -> Dict[str, Any]:
     }
 
 
+def _assemble_model_from_per_skill(per_skill: Dict[str, Any]) -> Dict[str, Any]:
+    """把逐技能挂着的 modelSection 拼回一份完整五系统模型。
+
+    三条产模路径（内置夹具 / LLM 生成 / override 直供）都把模型段挂在
+    per_skill[skill]["modelSection"]，所以在这里拼是唯一能覆盖全部路径的
+    位置——相关性校验必须对三条路一视同仁。
+    """
+    model: Dict[str, Any] = {}
+    for skill in REQUIRED_EVIDENCE_KEYS:
+        section = (per_skill.get(skill) or {}).get("modelSection")
+        if isinstance(section, dict):
+            model[skill] = section
+    return model
+
+
+def _closure_app_slug(model: Dict[str, Any], goal: str) -> str:
+    """closureId 里的应用标识。
+
+    历史上这里硬编码成 `app_purchase_approval`（第一个内置演示域的名字），
+    不管实际生成的是什么应用都是这一串——闭环产物无法互相区分，排查时
+    看到的 id 还会把人往采购审批上带。改成按实际应用派生。
+
+    形态照 OCI / in-toto 的 `name@version` 惯例。中文产品名无法直接进 id，
+    取其确定性短 hash；确定性来源保证同一应用每次算出同一个 slug。
+    """
+    identity = ((model.get("appbundle") or {}).get("appIdentity") or {}) if model else {}
+    product = str(identity.get("productName") or "").strip()
+    entity_ids = [
+        str(e.get("id"))
+        for e in (((model.get("datamodel") or {}).get("entities") or []) if model else [])
+        if isinstance(e, dict) and e.get("id")
+    ]
+    # 指纹取「产品名 + 实体清单」：光靠产品名，两个同名但结构不同的应用会撞成
+    # 同一个 closureId。实体清单是应用的骨架，两者合起来足以区分。
+    basis = "|".join([product] + entity_ids) or (goal or "").strip()
+    if not basis:
+        return "app_unnamed"
+    digest = hashlib.sha256(basis.encode("utf-8")).hexdigest()[:8]
+    # 可读前缀：产品名多为中文（"假期无忧"）拿不出 ASCII，退而取首个实体 id
+    # ——那是蛇形英文（leave_request / purchase_order），一眼能认出是什么应用。
+    label = re.sub(r"[^a-z0-9]+", "_", product.lower()).strip("_")
+    if not label and entity_ids:
+        label = re.sub(r"[^a-z0-9]+", "_", entity_ids[0].lower()).strip("_")
+    return f"{label[:24]}_{digest}" if label else f"app_{digest}"
+
+
+def _relevance_findings(
+    goal: str, per_skill: Dict[str, Any]
+) -> "tuple[Dict[str, Any] | None, List[Dict[str, Any]]]":
+    """题目相关性校验：产出的模型是不是**这道题**的产出。
+
+    2026-08-04 实测事故：用户要「中小学课后托管」，目标里「家长请假申请」
+    这一个子功能让 `_recognize_domain` 单强词命中 `leave_approval`，于是走
+    确定性夹具近路，直接注入内置「员工请假管理」样板的 6 项证据。数量齐
+    6/6 → 判 closed → 舞台渲染出一套跟托管毫无关系的请假系统。模型自己在
+    收口总结里写了「尚未证实已实现学生、班次、排班、签到签退和托管账单」，
+    那句话不参与任何判定。
+
+    此前的闭环判定只数证据**个数**。这里补上「证据是不是这道题的」——
+    算法与阈值标定见 services/closure_relevance.py 模块头。
+
+    返回 (校验结果, 追加的 blockers)。样本不足以判定时结果里
+    applicable=False，不产生 blocker（只抓明确不相关，不在信息不足时替
+    别人下结论）。
+    """
+    from .closure_relevance import evaluate_model_relevance
+
+    model = _assemble_model_from_per_skill(per_skill)
+    if not model:
+        return None, []
+    verdict = evaluate_model_relevance(goal, model)
+    if verdict.get("applicable") and not verdict.get("passed"):
+        return verdict, [
+            {
+                "code": "CLOSURE_GOAL_RELEVANCE_FAILED",
+                "path": "runtimeClosure.goalRelevance",
+                "affectedSkill": "",
+                "ref": str(verdict.get("reason") or "")[:200],
+            }
+        ]
+    return verdict, []
+
+
 def build_fallback_blocked_closure(state: V5SessionState, goal: str, error_message: str) -> Dict[str, Any]:
     """E37 fail-closed 兜底：闭环重建能力执行炸掉时的确定性 blocked 闭环。
 
@@ -637,7 +763,10 @@ def build_fallback_blocked_closure(state: V5SessionState, goal: str, error_messa
                 "ref": str(error_message or "")[:200],
             },
         ],
-        "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+        "closureId": (
+            f"appbundle:{_closure_app_slug(_assemble_model_from_per_skill(per_skill), goal)}"
+            f"@1.0.0:runtime-closure"
+        ),
         "closureHash": closure_hash,
         "stableDigest": stable_digest,
         "findingsByTier": {
@@ -686,7 +815,12 @@ def execute_v5_capability(capability_id: str, state: V5SessionState, input_ids: 
     if "appbundle" in capability_id.lower() or "runtimeclosure" in capability_id.lower():
         blocked_signal = "blocked" in capability_id.lower() or "blocked" in goal.lower()
         per_skill = _build_per_skill_evidence(state, blocked_signal, goal)
-        blocked = any(not item.get("evidencePresent") for item in per_skill.values())
+        evidence_blocked = any(not item.get("evidencePresent") for item in per_skill.values())
+        # 证据齐不齐（数量）与证据对不对题（内容）是两道独立的关卡；
+        # 降级轮（LLM 选材回落规则版等）的产出不可信，不许判 closed。
+        relevance, relevance_blockers = _relevance_findings(goal, per_skill)
+        degradations = collect_degradations(state)
+        blocked = bool(evidence_blocked or relevance_blockers or degradations)
         closure_hash, stable_digest = _stable_closure_hash(per_skill, blocked, goal)
         # LLM 生成路径的失败原因随 blocker 透出（诊断留痕，不参与 blocked/hash 判定）。
         llm_diag = dict(_llm_generate_diagnostic) if _llm_generate_diagnostic.get("code") else None
@@ -703,6 +837,11 @@ def execute_v5_capability(capability_id: str, state: V5SessionState, input_ids: 
             else []
         )
         hard_findings = [{"code": "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED"}] if blocked else []
+        # 两道新关卡的 blocker 与证据缺失并列透出：用户要能一眼看出
+        # 「是没做完」还是「做的不是这道题」还是「这轮降级了」。
+        for extra in relevance_blockers + degradation_blockers(degradations):
+            blockers.append(extra)
+            hard_findings.append({"code": extra["code"]})
         if blocked and llm_diag:
             diag_blocker = {
                 "code": llm_diag["code"],
@@ -743,9 +882,16 @@ def execute_v5_capability(capability_id: str, state: V5SessionState, input_ids: 
                 "perSkillEvidence": per_skill,
                 "blocked": blocked,
                 "blockers": blockers,
-                "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+                "closureId": (
+                    f"appbundle:{_closure_app_slug(_assemble_model_from_per_skill(per_skill), goal)}"
+                    f"@1.0.0:runtime-closure"
+                ),
                 "closureHash": closure_hash,
                 "stableDigest": stable_digest,
+                # 判定依据随闭环产物一起交付：blocked 只是结论，这两块是过程。
+                "goalRelevance": relevance,
+                "runConditions": degradations,
+                "degradationSummary": degradation_summary(degradations),
                 "findingsByTier": {
                     "hard_blocker": hard_findings,
                     "warning": [],

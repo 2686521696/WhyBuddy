@@ -1,0 +1,278 @@
+# -*- coding: utf-8 -*-
+"""闭环三道新关卡的回归：题目相关性、降级标记、closureId。
+
+回归锚点是 2026-08-04 那次真实事故：用户要「中小学课后托管」，目标里
+「家长请假申请」这一个子功能让 `_recognize_domain` 单强词命中
+`leave_approval`，走确定性夹具近路注入内置「员工请假管理」样板，6 项证据
+数量齐全 → 判 closed 6/6 → 舞台渲染出一套跟托管毫无关系的请假系统。
+
+正例数据取自 App Store 里真实落库的应用，不是编的——阈值就是拿它们标定
+出来的（见 services/closure_relevance.py 模块头）。
+"""
+
+import pytest
+
+from models.v5_state import V5SessionState
+from services.closure_relevance import (
+    COVERAGE_THRESHOLD,
+    collect_model_terms,
+    containment,
+    evaluate_model_relevance,
+    goal_coverage,
+    split_goal_phrases,
+)
+from services.run_degradation import (
+    REASON_AGENTIC_PICK_FALLBACK,
+    collect_degradations,
+    degradation_blockers,
+    mark_degraded,
+)
+from services.v5_capability_executor import (
+    _assemble_model_from_per_skill,
+    _closure_app_slug,
+    execute_v5_capability,
+)
+
+# ── 事故现场：目标是课后托管，产出是内置请假样板 ──
+TUOGUAN_GOAL = (
+    "给中小学课后托管做一套管理系统：登记学生和托管班次、老师排班考勤、"
+    "每日签到签退、家长请假申请、按月生成托管费账单"
+)
+LEAVE_TERMS = [
+    "员工", "假期余额", "请假单", "审批记录",
+    "我的请假单", "主管审批看板", "团队请假日历", "HR假勤概览",
+]
+
+# ── 正例：App Store 里真实落库的应用（标定集） ──
+REAL_APPS = [
+    (
+        "给社区老年食堂做一套系统：登记就餐老人和补贴资格、排每日菜单、"
+        "刷卡就餐记录、每月补贴结算、家属查看用餐情况",
+        ["就餐老人", "家属", "补贴资格", "每日菜单", "就餐卡", "刷卡就餐记录", "月度补贴结算",
+         "食堂运营总览", "刷卡就餐管理", "每日菜单排期", "补贴资格办理", "家属用餐查询"],
+    ),
+    (
+        "给社区消防安全巡检做一套系统：登记楼栋和消防设施、排巡检班次、"
+        "记录每次巡检结果和隐患等级、隐患整改闭环",
+        ["楼栋", "消防设施", "巡检班次", "消防巡检", "消防隐患", "隐患整改记录",
+         "消防安全总览", "楼栋设施台账", "巡检班次排期", "巡检记录", "隐患整改看板"],
+    ),
+    (
+        "给社区图书馆做一套绘本借阅管理系统，登记绘本、办理借还、逾期提醒、"
+        "按借阅次数排热门榜、看最近借还动态",
+        ["绘本", "读者", "借阅记录", "逾期提醒", "借还动态",
+         "借阅运营总览", "绘本登记与编目", "读者登记", "借还办理", "到期与逾期日历"],
+    ),
+]
+
+
+class TestGoalCoverage:
+    def test_事故现场_课后托管配请假模型_判不通过(self):
+        v = goal_coverage(TUOGUAN_GOAL, LEAVE_TERMS)
+        assert v["applicable"] is True
+        assert v["passed"] is False
+        assert v["score"] < COVERAGE_THRESHOLD
+        # 理由要能自解释：说清漏了哪些业务点，否则用户无从排查
+        assert "托管" in v["reason"]
+        missing = {m["phrase"] for m in v["missing"]}
+        assert "登记学生" in missing
+        assert "每日签到签退" in missing
+
+    def test_家长请假申请会部分命中请假单_但不足以救回覆盖率(self):
+        """负例里恰好有一个业务点能对上，正是「只要有一个匹配就算过」会漏判的地方。"""
+        v = goal_coverage(TUOGUAN_GOAL, LEAVE_TERMS)
+        matched = {m["phrase"] for m in v["matched"]}
+        assert "家长请假申请" in matched
+        assert v["passed"] is False
+
+    @pytest.mark.parametrize("goal,terms", REAL_APPS)
+    def test_真实落库应用不被误杀(self, goal, terms):
+        v = goal_coverage(goal, terms)
+        assert v["passed"] is True, v["reason"]
+        assert v["score"] >= COVERAGE_THRESHOLD
+
+    def test_交叉错配全部判不通过(self):
+        """A 的题配 B 的模型——标定时 24 个错配对全是 0.00。"""
+        for i, (goal, _) in enumerate(REAL_APPS):
+            for j, (_, terms) in enumerate(REAL_APPS):
+                if i == j:
+                    continue
+                v = goal_coverage(goal, terms)
+                assert v["passed"] is False, f"错配 {i}×{j} 竟然放行了：{v['reason']}"
+
+    def test_目标太短时不判定_放行而非误杀(self):
+        v = goal_coverage("做个记账的", ["账目"])
+        assert v["applicable"] is False
+        assert v["passed"] is True
+
+    def test_模型没有可比对名称时不判定(self):
+        v = goal_coverage(TUOGUAN_GOAL, [])
+        assert v["applicable"] is False
+        assert v["passed"] is True
+
+
+class TestPrimitives:
+    def test_短语切分_按标点与并列连词(self):
+        ph = split_goal_phrases(TUOGUAN_GOAL)
+        assert "登记学生" in ph
+        assert "托管班次" in ph  # "和" 拆开的后半段
+        assert "每日签到签退" in ph
+
+    def test_包含度是非对称的_短实体能被长短语覆盖(self):
+        # 实体名比目标短语短，对称的 Dice 会被长度差稀释
+        assert containment("登记就餐老人", "就餐老人") == 1.0
+        assert containment("登记就餐老人", "绘本") == 0.0
+
+    def test_只取_name_不取_id(self):
+        model = {
+            "datamodel": {"entities": [{"id": "leave_request", "name": "请假单"}]},
+            "page": {"pages": [{"id": "my_leave", "name": "我的请假单"}]},
+        }
+        terms = collect_model_terms(model)
+        assert terms == ["请假单", "我的请假单"]
+
+
+class TestDegradation:
+    def test_记录并取出降级条目(self):
+        st = V5SessionState(sessionId="s", goal={"text": "x"})
+        assert collect_degradations(st) == []
+        mark_degraded(st, reason=REASON_AGENTIC_PICK_FALLBACK, message="第 4 轮回落规则版")
+        got = collect_degradations(st)
+        assert len(got) == 1
+        # 照 K8s metav1.Condition 的字段与语义
+        assert got[0]["type"] == "Degraded"
+        assert got[0]["status"] == "True"
+        assert got[0]["reason"] == REASON_AGENTIC_PICK_FALLBACK
+        assert got[0]["lastTransitionTime"]
+
+    def test_同原因重复上报只记一次(self):
+        st = V5SessionState(sessionId="s", goal={"text": "x"})
+        for _ in range(3):
+            mark_degraded(st, reason=REASON_AGENTIC_PICK_FALLBACK, message="回落")
+        assert len(collect_degradations(st)) == 1
+
+    def test_降级转成_blocker(self):
+        st = V5SessionState(sessionId="s", goal={"text": "x"})
+        mark_degraded(st, reason=REASON_AGENTIC_PICK_FALLBACK, message="回落规则版")
+        blockers = degradation_blockers(collect_degradations(st))
+        assert blockers[0]["code"] == "CLOSURE_DEGRADED_RUN"
+        assert REASON_AGENTIC_PICK_FALLBACK in blockers[0]["ref"]
+
+
+class TestClosureIdSlug:
+    def test_不再是硬编码的采购审批(self):
+        model = {
+            "appbundle": {"appIdentity": {"productName": "假期无忧"}},
+            "datamodel": {"entities": [{"id": "leave_request"}]},
+        }
+        slug = _closure_app_slug(model, "随便什么目标")
+        assert "purchase_approval" not in slug
+        # 中文产品名取不出 ASCII，退到实体 id 当可读前缀
+        assert slug.startswith("leave_request_")
+
+    def test_同名但结构不同的应用不撞_id(self):
+        a = {"appbundle": {"appIdentity": {"productName": "工单系统"}},
+             "datamodel": {"entities": [{"id": "ticket"}]}}
+        b = {"appbundle": {"appIdentity": {"productName": "工单系统"}},
+             "datamodel": {"entities": [{"id": "work_order"}, {"id": "customer"}]}}
+        assert _closure_app_slug(a, "g") != _closure_app_slug(b, "g")
+
+    def test_同一应用两次算出同一个_slug(self):
+        model = {"appbundle": {"appIdentity": {"productName": "X"}},
+                 "datamodel": {"entities": [{"id": "a"}]}}
+        assert _closure_app_slug(model, "g") == _closure_app_slug(model, "g")
+
+
+class TestClosureEndToEnd:
+    """事故现场的端到端复现——这三条是这次改动真正要守住的东西。"""
+
+    def _closure(self, goal, *, degrade=False):
+        st = V5SessionState(sessionId="t", goal={"text": goal})
+        if degrade:
+            mark_degraded(st, reason=REASON_AGENTIC_PICK_FALLBACK, message="第 4 轮回落规则版")
+        return execute_v5_capability("appbundle.runtimeClosure", st, [], "综合", "turn-1")
+
+    def test_课后托管不再被套上请假样板(self):
+        """事故的正解：不是「套错了再拦住」，是压根不套。
+
+        「家长请假申请」仍会让 _recognize_domain 认成 leave_approval，但夹具
+        适配检查会否掉它，落到 LLM 生成分支去真做一个托管应用。测试环境没开
+        LLM 生成，于是诚实停在 0/6 + LLM_GENERATE_DISABLED——绝不会再渲染出
+        一套员工请假系统。
+        """
+        r = self._closure(TUOGUAN_GOAL)
+        assert r["blocked"] is True
+        model = _assemble_model_from_per_skill(r["perSkillEvidence"])
+        entity_names = [
+            e.get("name") for e in ((model.get("datamodel") or {}).get("entities") or [])
+        ]
+        assert "请假单" not in entity_names
+        assert "假期余额" not in entity_names
+
+    def test_域误认时夹具被否掉_真域不受影响(self):
+        from services.v5_capability_executor import (
+            _domain_fixture_fits_goal,
+            _recognize_domain,
+        )
+
+        # 托管题里的「请假」子功能仍会命中强词，但夹具对不上题
+        assert _recognize_domain(TUOGUAN_GOAL) == "leave_approval"
+        assert _domain_fixture_fits_goal("leave_approval", TUOGUAN_GOAL) is False
+        # 真请假题 / 真采购题的演示域快路径不受影响
+        real_leave = ("给公司做一套请假审批系统：登记员工和假期余额、提交请假单、"
+                      "主管审批、HR假勤概览、审批记录归档")
+        assert _domain_fixture_fits_goal("leave_approval", real_leave) is True
+
+    def test_错模型若混进证据_相关性关卡仍能拦住(self):
+        """夹具适配是第一道，相关性关卡是第二道——LLM 生成路径跑歪时靠它兜。"""
+        from services.v5_capability_executor import _relevance_findings
+
+        per_skill = {
+            "datamodel": {"modelSection": {"entities": [
+                {"id": "leave_request", "name": "请假单"},
+                {"id": "employee", "name": "员工"},
+            ]}},
+            "page": {"modelSection": {"pages": [
+                {"id": "my_leave", "name": "我的请假单"},
+                {"id": "kanban", "name": "主管审批看板"},
+            ]}},
+        }
+        verdict, blockers = _relevance_findings(TUOGUAN_GOAL, per_skill)
+        assert verdict["passed"] is False
+        assert verdict["score"] < COVERAGE_THRESHOLD
+        assert [b["code"] for b in blockers] == ["CLOSURE_GOAL_RELEVANCE_FAILED"]
+
+    def test_题目与产出相符时照常放行(self):
+        r = self._closure(
+            "给公司做一套请假审批系统：登记员工和假期余额、提交请假单、"
+            "主管审批、HR假勤概览、审批记录归档"
+        )
+        assert r["blocked"] is False
+        assert r["blockers"] == []
+        assert r["goalRelevance"]["passed"] is True
+
+    def test_降级轮即便产出对题也不发合格证(self):
+        r = self._closure(
+            "给公司做一套请假审批系统：登记员工和假期余额、提交请假单、"
+            "主管审批、HR假勤概览、审批记录归档",
+            degrade=True,
+        )
+        assert r["blocked"] is True
+        assert "CLOSURE_DEGRADED_RUN" in [b["code"] for b in r["blockers"]]
+        # 产出本身是对题的，拦它纯粹因为这轮降级过
+        assert r["goalRelevance"]["passed"] is True
+        assert r["degradationSummary"]
+
+    def test_闭环产物带上判定依据(self):
+        r = self._closure(TUOGUAN_GOAL)
+        assert "goalRelevance" in r and "runConditions" in r
+        assert "app_purchase_approval" not in r["closureId"]
+
+    def test_模型能从逐技能证据拼回来(self):
+        """走演示域快路径的真请假题会挂上完整模型段，验证拼装覆盖这条路。"""
+        real_leave = ("给公司做一套请假审批系统：登记员工和假期余额、提交请假单、"
+                      "主管审批、HR假勤概览、审批记录归档")
+        r = self._closure(real_leave)
+        model = _assemble_model_from_per_skill(r["perSkillEvidence"])
+        assert "datamodel" in model and "page" in model
+        assert evaluate_model_relevance(real_leave, model)["passed"] is True
