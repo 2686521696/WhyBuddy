@@ -1622,11 +1622,14 @@ def _render_preview_screenshot_b64(
         from services.app_screenshot import (
             capture_freeform_preview_screenshot,
             e2b_screenshot_available,
+            local_screenshot_available,
         )
         from services.freeform_preview_store import put_preview
     except Exception:
         return None
-    if not e2b_screenshot_available():
+    # 2026-08-04：此前这里只认 E2B，而 E2B 要公网域名——本地开发永远拿不到，
+    # 这个自检闭环从上线起 got=0 一次没跑过。本机 Playwright 可用就够了。
+    if not (local_screenshot_available() or e2b_screenshot_available()):
         return None
     try:
         pid = put_preview(

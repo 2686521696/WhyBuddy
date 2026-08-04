@@ -111,8 +111,12 @@ def _public_app_base_url() -> Optional[str]:
     return url or None
 
 
+# 本机与 E2B 两条路共用这一份，只有 require 的包名和落盘路径不同：
+# 本机用仓库里的 @playwright/test，沙盒里用现装的 playwright。共用是为了保证
+# 两条路截出来的东西一致——否则「本地看着没问题、线上换 E2B 就不一样」这种
+# 差异极难查。
 _FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE = """
-const { chromium } = require("playwright");
+const { chromium } = %(require_playwright)s;
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
   try {
@@ -123,7 +127,7 @@ const { chromium } = require("playwright");
     // 给图表/图标这些懒加载 chunk 一点时间稳定下来，避免截到半渲染的过渡态。
     await page.waitForTimeout(1500);
     const el = await page.$('[data-testid="freeform-preview-root"]');
-    await el.screenshot({ path: "/tmp/freeform-preview.png" });
+    await el.screenshot({ path: %(shot_path_json)s });
     console.log("SCREENSHOT_OK");
   } finally {
     await browser.close();
@@ -135,14 +139,118 @@ const { chromium } = require("playwright");
 """
 
 
-def capture_freeform_preview_screenshot(preview_id: str, timeout_s: int = 90) -> Optional[bytes]:
-    """FreeformInsight 自我校验闭环用：在一次性 E2B 沙盒里截图一份还没写入
-    任何 session 的候选内容（generate_freeform_block 生成中途调用）。
+_LOCAL_APP_URL_ENV = "SLIDERULE_LOCAL_APP_URL"
+_DEFAULT_LOCAL_APP_URL = "http://localhost:3000"
 
-    跟 capture_app_screenshot 同一套 fail-closed 语义、同一个 E2B 沙盒安装
-    步骤，区别只是目标 URL——这里打的是隔离预览页
-    （/sliderule/freeform-preview/:pid），不是某个真实 session 的完整应用。
+
+def _local_app_base_url() -> str:
+    """本机可达的应用地址。跟 E2B 那条路最大的区别就在这——本地浏览器就在
+    同一台机器上，localhost 直接够得着，不需要公网域名。"""
+    return (os.getenv(_LOCAL_APP_URL_ENV) or _DEFAULT_LOCAL_APP_URL).strip().rstrip("/")
+
+
+def _repo_root():
+    from pathlib import Path
+
+    # services/app_screenshot.py → services → slide-rule-python → 仓库根
+    return Path(__file__).resolve().parents[2]
+
+
+def local_screenshot_available() -> bool:
+    """本机能不能直接截图：有 node、有装好的 @playwright/test。
+
+    浏览器二进制本身交给 Playwright 自己找（PLAYWRIGHT_BROWSERS_PATH），
+    这里只判包在不在——判太细反而容易把能跑的环境误判成不能跑。
     """
+    import shutil
+
+    if not shutil.which("node"):
+        return False
+    return (_repo_root() / "node_modules" / "@playwright" / "test").is_dir()
+
+
+def capture_freeform_preview_screenshot_local(
+    preview_id: str, timeout_s: int = 60
+) -> Optional[bytes]:
+    """本机 Playwright 截预览页（2026-08-04）。
+
+    ## 为什么加这条
+
+    E2B 那条路要 ①E2B_API_KEY ②SLIDERULE_PUBLIC_APP_URL 公网域名
+    ③每次现装 playwright+chromium（两个 subprocess，超时上限 90s+150s）。
+    三个条件缺一不可，其中公网域名在本地开发根本没有——实测日志里
+    `block.screenshot got=0`，这个自我校验闭环**从上线起一次都没跑过**。
+
+    本机这条路把三个条件全省了：浏览器就在同一台机器上，localhost 直接够得
+    着。同仓 client/src/lib/thumb-capture.ts 早就写明了这个道理——服务端起
+    无头浏览器"要背上沙盒/容器/浏览器安装那一整套运维面"，能不背就别背。
+
+    截图脚本与 E2B 路径共用同一份模板（唯一差别是 require 的包名：本地是
+    仓库里的 @playwright/test，沙盒里是现装的 playwright），保证两条路截出
+    来的东西一致。
+
+    fail-closed 同 E2B 路径：任何一步不成返回 None，调用方当"这步跳过"。
+    """
+    if not local_screenshot_available():
+        return None
+
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    preview_url = f"{_local_app_base_url()}/sliderule/freeform-preview/{preview_id}"
+    # CommonJS 的 require 是按**脚本自己所在目录**逐级往上找 node_modules 的，
+    # 跟 cwd 无关。脚本写在临时目录里，所以这里给绝对路径——否则永远
+    # MODULE_NOT_FOUND（实测踩过）。
+    pkg_path = str(_repo_root() / "node_modules" / "@playwright" / "test")
+    with tempfile.TemporaryDirectory() as tmp:
+        shot_path = Path(tmp) / "freeform-preview.png"
+        js = _FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE % {
+            "require_playwright": f"require({json.dumps(pkg_path)})",
+            "preview_url_json": json.dumps(preview_url),
+            "shot_path_json": json.dumps(str(shot_path)),
+        }
+        js_path = Path(tmp) / "shot.js"
+        js_path.write_text(js, encoding="utf-8")
+        try:
+            res = subprocess.run(
+                ["node", str(js_path)],
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                cwd=str(_repo_root()),
+            )
+        except Exception:
+            return None
+        if "SCREENSHOT_OK" not in (res.stdout or ""):
+            # 失败原因留痕：此前这一步静默返回 None，日志里只有 got=0，
+            # 排查时完全不知道是没装浏览器、页面没起来还是选择器没匹配上。
+            detail = (res.stderr or res.stdout or "").strip().replace("\n", " ")
+            print(f"[app_screenshot] 本机截图未成: {detail[:200]}")
+        if "SCREENSHOT_OK" not in (res.stdout or "") or not shot_path.exists():
+            return None
+        try:
+            return shot_path.read_bytes() or None
+        except OSError:
+            return None
+
+
+def capture_freeform_preview_screenshot(preview_id: str, timeout_s: int = 90) -> Optional[bytes]:
+    """FreeformInsight 自我校验闭环用：截一份还没写入任何 session 的候选内容
+    （generate_freeform_block 生成中途调用）。
+
+    **先试本机**（不需要公网域名/E2B/现装浏览器，见
+    capture_freeform_preview_screenshot_local），本机不可用再走 E2B 沙盒。
+    顺序不能反：E2B 那条每次要现装 playwright+chromium，本机零安装开销。
+
+    跟 capture_app_screenshot 同一套 fail-closed 语义，区别只是目标 URL
+    ——这里打的是隔离预览页（/sliderule/freeform-preview/:pid），不是某个
+    真实 session 的完整应用。
+    """
+    local = capture_freeform_preview_screenshot_local(preview_id, timeout_s=min(timeout_s, 60))
+    if local:
+        return local
+
     if not e2b_screenshot_available():
         return None
     base_url = _public_app_base_url()
@@ -154,7 +262,9 @@ def capture_freeform_preview_screenshot(preview_id: str, timeout_s: int = 90) ->
             return None
 
         js_code = _FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE % {
+            "require_playwright": 'require("playwright")',  # 沙盒里现装的那个
             "preview_url_json": json.dumps(preview_url),
+            "shot_path_json": json.dumps("/tmp/freeform-preview.png"),
         }
         run = sandbox.run_code(
             "open('/tmp/shot.js', 'w').write(" + repr(js_code) + ")\n"
