@@ -975,6 +975,31 @@ def validate_five_system_model(
                 "identity productName must be a non-empty string when declared",
                 ref="", skill="appbundle",
             ))
+        # 2026-08-04：chartColors（参照图取色的产物，可选）。出现即校验——
+        # 这一段会被前端直接当成图表的分类色画出来，非法值 = 画不出来的假承诺，
+        # 跟上面三个枚举同一条纪律。只查客观可查的（是不是 6 位 hex、够不够几个），
+        # 好不好看/区分度那条在写入侧（sheet_palette）已经把过关，这里不重复。
+        chart_colors = identity.get("chartColors")
+        if chart_colors is not None:
+            import re
+
+            from .sheet_palette import MIN_USABLE_COLORS
+
+            bad = (
+                not isinstance(chart_colors, list)
+                or len(chart_colors) < MIN_USABLE_COLORS
+                or any(
+                    not isinstance(c, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", c)
+                    for c in chart_colors
+                )
+            )
+            if bad:
+                findings.append(_finding(
+                    DANGLING, "appbundle.appIdentity.chartColors",
+                    f"chartColors must be a list of at least {MIN_USABLE_COLORS} 6-digit hex colors",
+                    ref=str(chart_colors)[:80], skill="appbundle",
+                ))
+
         # Step 9: designRecipeRef 合法域
         design_recipe = str(identity.get("designRecipeRef") or "").strip()
         if design_recipe and design_recipe not in DESIGN_RECIPES:

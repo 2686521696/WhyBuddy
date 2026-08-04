@@ -296,6 +296,10 @@ export interface AppRuntimeSchema {
     /** 2026-07-24：生图驱动生成的身份主题 token；未声明/校验不过时降级到
      * themeId 对应的 8 预设之一（resolveIdentityTheme 内部处理）。 */
     generatedTheme?: Record<string, unknown>;
+    /** 2026-08-04：从这个应用的参照图上读出来的图表分类色（sheet_palette 写入）。
+     * 未声明/校验不过时退回账本色序（resolveIdentityTheme 内部处理）。
+     * 原样透传不收窄类型——存量快照没走过这一版门禁，形状在渲染器里再验。 */
+    chartColors?: unknown;
   };
   roles: string[];
   /** 应用首次打开的页面；老模型缺省为 home。 */
@@ -847,6 +851,8 @@ export function deriveAppRuntimeSchema(
     // 原样透传不做类型收窄（跟 freeformContent 同一个"渲染器内部再校验"
     // 的处理方式）。
     generatedTheme: rawIdentity?.generatedTheme as Record<string, unknown> | undefined,
+    // 2026-08-04：参照图取到的图表色，同样原样透传（校验在 identity-palette）。
+    chartColors: rawIdentity?.chartColors,
   };
 
   return {

@@ -39,6 +39,7 @@ from pathlib import Path
 from .app_preview import OverviewPreviewSink
 from .enrich_timing import stage as _enrich_stage
 from .identity_palette_hint import BRAND_LABEL, BRAND_SEED, derive_prompt_palette
+from .sheet_palette import usable_chart_palette
 from .palette_guard import extract_hex_colors, palette_report, repair_colors
 from .schema_legal import (
     EXPERIENCE_BLOCKS,
@@ -382,16 +383,25 @@ def _sheet_image_size_for_device(device: str) -> str:
     return _SHEET_DEVICE_IMAGE_SIZE.get(device) or _SHEET_IMAGE_SIZE
 
 
-def _theme_palette(theme_id: str, generated_theme: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-    """**全站一个颜色**（2026-08-03，用户裁决）：永远是 BRAND_SEED 派生的色板。
+def _theme_palette(
+    theme_id: str,
+    generated_theme: Optional[dict[str, Any]] = None,
+    chart_colors: Optional[list[str]] = None,
+    chart_variant_key: str = "",
+) -> dict[str, Any]:
+    """**外壳一个颜色**（2026-08-03，用户裁决）：永远是 BRAND_SEED 派生的色板。
+
+    ⚠️ 2026-08-04 起**图表色是例外**：那一组改成从这个应用自己的参照图上读
+    （chart_colors，来源见 services/sheet_palette）。外壳统一、图表跟着应用走
+    ——「全站一个颜色」那条裁决管的是外壳。
 
     这个色板只有一个用途：告诉设计 LLM「运行时的侧边栏/顶栏/按钮已经按这套
     渲染了」，好让它生成的版式配色跟真实外壳对得上。所以它必须与前端实际
     渲染的那套同源——两者同读 identity_theme_presets.json 的 brandSeed。
 
-    两个参数都不再参与颜色决定，签名保持不变：调用点有十几处，且**存量应用
-    的库里仍然存着 generatedTheme 字段**。保留参数 = 老数据不需要迁移脚本，
-    读进来直接被忽略。
+    theme_id / generated_theme 都不再参与颜色决定，签名保持不变：调用点有十几处，
+    且**存量应用的库里仍然存着 generatedTheme 字段**。保留参数 = 老数据不需要
+    迁移脚本，读进来直接被忽略。
 
     · theme_id：appIdentity.theme 那 8 选 1 的分类字段，2026-07-30 起就不是
       颜色来源了（仍然是 gate 校验的合法分类值）。
@@ -402,31 +412,36 @@ def _theme_palette(theme_id: str, generated_theme: Optional[dict[str, Any]] = No
     HCT 派生），只用于这里的 prompt 拼接和下面 palette_guard 的色相参照——
     见 identity_palette_hint.py 顶部说明，为什么这里不需要跟前端数值一致。"""
     del theme_id, generated_theme
-    # ⚠ 已知不一致（2026-08-04，图表色改成每个应用一套时留下的）：
+    palette = derive_prompt_palette(BRAND_SEED, id_="brand", label=BRAND_LABEL)
+    # 2026-08-04：图表色改成从这个应用的参照图上读（services/sheet_palette）。
+    # 传进来了就覆盖——**这一步是为了消掉"提示词说的"和"画出来的"分叉**：
+    # 前端真实渲染已经优先用 chartColors 了（identity-palette.chartsFor），
+    # 这里不跟着换的话，设计 LLM 会照着一组不会出现的颜色配色，
+    # palette_guard 的色相参照也对着过时的色相判。
     #
-    # 这里**没有传 chart_variant_key**，所以 hint["charts"] 仍然是旧的色相旋转
-    # 那六个色；而真实渲染的图表色已经改成按应用名从账本里挑一套已验证色序
-    # （见 client/src/lib/identity-palette.ts 的 chartsFor）。也就是说提示词里
-    # 列出的图表色**不是这个应用实际会画出来的那六个**。
+    # 没取到色就退回账本色序，**用跟前端同一个键**（产品名），两边才挑到同一套。
+    # 此前这里够不着应用名，只能用旧的色相旋转算法，于是兜底路径上"提示词说的"
+    # 和"画出来的"也是分叉的——那是 0f9172a 留下的已知不一致，它的注释写着
+    # "修的时候一次穿到底"，就是这里。
     #
-    # 影响范围有限但不是零：
-    #   · 外壳那几个字段（primary / sidebar / accent）没变，仍然准确——提示词里
-    #     "这套色板已经用在真实渲染的外壳上"这句话对的还是对的；
-    #   · 图表色只在两处被消费：拼进提示词当参考、以及 palette_guard 拿它的色相
-    #     当 R1 的参照。前者让设计 LLM 参考了一组不会出现的颜色，后者让色相检查
-    #     对着一组过时的色相判。都不影响正确性闸门，但会让"提示词说的"和"画出来
-    #     的"分叉——而这种分叉只有肉眼比对才看得出来。
-    #
-    # 为什么没顺手修：应用名在这条链路上够不着（_theme_palette 的三个调用点分别
-    # 在 _theme_prompt_fragment / _build_reference_image_prompt /
-    # generate_freeform_block 里，都没有 appbundle 在作用域内），要传得穿过好几层
-    # 签名。半穿的话会出现"一部分提示词用新色、一部分用旧色"的中间态，比现在这个
-    # 一致的旧值更难查。修的时候一次穿到底。
-    return derive_prompt_palette(BRAND_SEED, id_="brand", label=BRAND_LABEL)
+    # 两个都没有时才落回旧算法：那是老调用点的行为，不因这次改动悄悄变色。
+    usable = usable_chart_palette(chart_colors or [])
+    if usable:
+        palette = {**palette, "charts": usable}
+    elif chart_variant_key:
+        palette = derive_prompt_palette(
+            BRAND_SEED, id_="brand", label=BRAND_LABEL, chart_variant_key=chart_variant_key
+        )
+    return palette
 
 
-def _theme_prompt_fragment(theme_id: str, generated_theme: Optional[dict[str, Any]] = None) -> str:
-    hint = _theme_palette(theme_id, generated_theme)
+def _theme_prompt_fragment(
+    theme_id: str,
+    generated_theme: Optional[dict[str, Any]] = None,
+    chart_colors: Optional[list[str]] = None,
+    chart_variant_key: str = "",
+) -> str:
+    hint = _theme_palette(theme_id, generated_theme, chart_colors, chart_variant_key)
     charts = ", ".join(hint["charts"])
     return (
         f"这个应用当前用的身份主题是「{hint['label']}」，下面这套色板已经用在真实"
@@ -435,8 +450,10 @@ def _theme_prompt_fragment(theme_id: str, generated_theme: Optional[dict[str, An
         f"- 主色：{hint['primary']}（悬停态 {hint['primaryHover']}，浅端 {hint['gradTo']}）\n"
         f"- 内容区底色：{hint['contentBg']}\n"
         f"- 强调浅底/强调字：{hint['accentBg']} / {hint['accentFg']}\n"
+        # 「这 N 个」按实际条数写。此前写死"这 3 个"、后面却列了 6 个色
+        # ——参照图取色之后条数还会变（4~6），写死的数字只会更不准。
         f"- 多类别/多序列区分色（画多阶段流程、多类别图例这种需要好几个不同色块"
-        f"时优先从这 3 个里选，而不是自己配一套糖果色）：{charts}\n"
+        f"时优先从这 {len(hint['charts'])} 个里选，而不是自己配一套糖果色）：{charts}\n"
         "同一个组件里如果需要不止一种颜色，从以上色值出发做深浅/透明度调整，"
         "不要引入跟这套色板色相不搭的新颜色（比如主题是暖橙系就不要通篇上蓝紫）。"
     )
@@ -1010,11 +1027,13 @@ def build_freeform_prompt(
     theme_id: str = "",
     device: str = "",
     generated_theme: Optional[dict[str, Any]] = None,
+    chart_colors: Optional[list[str]] = None,
+    chart_variant_key: str = "",
 ) -> str:
     return f"""你是一名前端视觉设计师。设计一个可视化组件：{design_brief}
 要有视觉创意和现代感，大胆用间距、层次、颜色对比、图标去表达内容。
 
-{_theme_prompt_fragment(theme_id, generated_theme)}
+{_theme_prompt_fragment(theme_id, generated_theme, chart_colors, chart_variant_key)}
 {_device_prompt_fragment(device)}
 
 只能用安全原子积木拼：{", ".join(FREEFORM_ALLOWED_TAGS)} 标签。
@@ -1733,6 +1752,8 @@ def generate_freeform_block(
     use_reference_image: bool = True,
     allow_screenshot_verify: bool = True,
     reference_image_b64: Optional[str] = None,
+    chart_colors: Optional[list[str]] = None,
+    chart_variant_key: str = "",
 ) -> dict[str, Any]:
     """生成 + 深校验一个 FreeformInsight 区块的内容树。校验失败时把「上次
     输出 + 具体报错」拼回消息重问（跟 structured_llm_json 同一套 reask 语义，
@@ -1769,7 +1790,9 @@ def generate_freeform_block(
 
     FreeformDesign = build_freeform_models(datamodel)
     prompt_text = build_freeform_prompt(
-        design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+        design_brief, datamodel, theme_id=theme_id, device=device,
+        generated_theme=generated_theme, chart_colors=chart_colors,
+        chart_variant_key=chart_variant_key,
     )
 
     # 调用方可以把现成的参照图传进来（reference_image_b64）——总览页就是这么用的：
@@ -1878,7 +1901,7 @@ def generate_freeform_block(
         # 违规先 reask（跟 Pydantic 校验失败走同一条路，把具体哪几个色、偏了
         # 多少度告诉它）；重试耗尽时**机械纠偏后放行**，绝不因为配色问题抛错
         # ——抛了调用方就回落固定骨架，那正是这一整条链路一直在治的病。
-        palette_hint = _theme_palette(theme_id, generated_theme)
+        palette_hint = _theme_palette(theme_id, generated_theme, chart_colors, chart_variant_key)
         palette_list = [
             c
             for c in [palette_hint.get("primary"), *(palette_hint.get("charts") or [])]
@@ -2285,6 +2308,42 @@ def _monitor_overview_design_brief(
         )
     return "\n".join(lines)
 
+def _existing_chart_colors(model: dict[str, Any]) -> list[str]:
+    """模型里已经有的图表色（幂等用：重跑一遍不该再花一次取色调用）。"""
+    identity = ((model.get("appbundle") or {}).get("appIdentity")) or {}
+    got = identity.get("chartColors")
+    return [c for c in got if isinstance(c, str)] if isinstance(got, list) else []
+
+
+def _chart_variant_key(model: dict[str, Any]) -> str:
+    """账本色序的挑选键——**必须跟前端取的是同一个值**。
+
+    前端用的是 `productName || appName`（app-runtime-schema），所以这里取
+    appIdentity.productName。取不到就返回空串，退回旧算法（老行为）而不是编一个
+    ——编出来的键会让提示词和真实渲染挑到不同的两套色，比"都用旧的"更难查。
+    """
+    identity = ((model.get("appbundle") or {}).get("appIdentity")) or {}
+    return str(identity.get("productName") or "").strip()
+
+
+def _write_chart_colors(model: dict[str, Any], colors: list[str]) -> None:
+    """把取到的图表色写进 appbundle.appIdentity.chartColors。
+
+    挂在 appIdentity 下而不是新开一个顶层字段：这就是"这个应用长什么样"的一部分，
+    跟 theme/icon/nav 同一段；门禁与修复器也已经按段处理这一块（出现即校验、
+    非法值清除留痕）。前端 app-runtime-schema 从同一处透传。
+    """
+    appbundle = model.get("appbundle")
+    if not isinstance(appbundle, dict):
+        appbundle = {}
+        model["appbundle"] = appbundle
+    identity = appbundle.get("appIdentity")
+    if not isinstance(identity, dict):
+        identity = {}
+        appbundle["appIdentity"] = identity
+    identity["chartColors"] = list(colors)
+
+
 def enrich_monitor_page_overviews(
     model: dict[str, Any], *, preview_sink: Optional[OverviewPreviewSink] = None
 ) -> dict[str, Any]:
@@ -2404,6 +2463,29 @@ def _enrich_monitor_page_overviews_inner(
         # offer 自己会忽略。
         if preview_sink is not None:
             preview_sink.offer(page_id, sheet_b64, is_landing=bool(landing_ref and page_id == landing_ref))
+        # 顺手把这张图的**配色**也读回来（2026-08-04）。
+        #
+        # 用户观察："图表的颜色是一样的"。查下来是链路断在这一步：图每个应用
+        # 都真的生成了、也真的喂给了视觉模型，但视觉模型只被问了"这一页该怎么
+        # 排"，从来没人问过"图上是什么颜色"——那份配色画完就丢了，图表色另走
+        # 账本里 8 套预置色序按应用名散列挑一套，而那 8 套是同一条 ramp 的 8 个
+        # 旋转，所以摆在一起仍然是"一个调调"。
+        #
+        # 这里补的就是那一问：图已经在手上，多问一句拿到的是**这个应用自己的**
+        # 颜色。放在这个位置是因为 sheet_b64 只在首页那一张上有值（sheet_used
+        # 那道闸），一个应用只会取一次色。
+        #
+        # 取不到/不合格返回 None，什么都不写——前端读不到 chartColors 就回落
+        # 账本色序，跟这次改动之前的行为一模一样（fail-open）。
+        if sheet_b64 and not _existing_chart_colors(model):
+            with _enrich_stage("monitor.palette", page=page_id) as _pst:
+                from .sheet_palette import extract_chart_palette
+
+                picked = extract_chart_palette(sheet_b64)
+                _pst["got"] = len(picked or ())
+            if picked:
+                _write_chart_colors(model, picked)
+                print(f"[freeform_block] 参照图取色 → 图表色 {picked}")
         try:
             with _enrich_stage("monitor.design", page=page_id, device=device or "unspecified"):
                 content = generate_freeform_block(
@@ -2412,6 +2494,11 @@ def _enrich_monitor_page_overviews_inner(
                     use_reference_image=use_ref,
                     allow_screenshot_verify=allow_shot,
                     reference_image_b64=sheet_b64,
+                    # 设计 LLM 拿到的图表色 = 真实会画出来的那几个（上面刚从
+                    # 参照图读出来的）。不传的话它会照着账本旧色配色，而 ECharts
+                    # 画的是参照图那套——同一页两套颜色。
+                    chart_colors=_existing_chart_colors(model) or None,
+                    chart_variant_key=_chart_variant_key(model),
                 )
             # 手机档再设计一版（方案 B）。
             #
@@ -2455,6 +2542,8 @@ def _enrich_monitor_page_overviews_inner(
                         mobile_content = generate_freeform_block(
                             brief, datamodel, theme_id=theme_id, device="phone",
                             generated_theme=generated_theme,
+                            chart_colors=_existing_chart_colors(model) or None,
+                            chart_variant_key=_chart_variant_key(model),
                             use_reference_image=use_ref,
                             # 手机那份不再单独截图自检：那一步是"渲染出来再让视觉
                             # 模型跟参照图比一遍"，成本高且收益递减，两档都做等于

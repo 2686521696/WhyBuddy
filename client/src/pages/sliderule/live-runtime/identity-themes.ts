@@ -83,12 +83,21 @@ export function resolveIdentityTheme(
    * 只影响 charts 这一个字段——外壳（主色、菜单白、Header 白）仍然全站统一，
    * 那是另一条裁决管的事。不传就退回老行为，十几个调用点一个都不用改。
    */
-  chartVariantKey?: string
+  chartVariantKey?: string,
+  /**
+   * 这个应用参照图上读出来的图表色（2026-08-04，`appIdentity.chartColors`）。
+   *
+   * 验得过就直接用，chartVariantKey 那套账本色序退为兜底——账本那 8 套是同一条
+   * ramp 的 8 个旋转，不同应用摆在一起仍然像同一套色；参照图那份才是**为这个
+   * 应用画的**。校验在 identity-palette 里做（形状不可信，见那边的说明）。
+   */
+  extractedCharts?: unknown
 ): IdentityTheme {
   return deriveIdentityPalette(BRAND_SEED, {
     id: "brand",
     label: BRAND_LABEL,
     chartVariantKey,
+    extractedCharts,
   });
 }
 

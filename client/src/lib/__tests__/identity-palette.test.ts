@@ -139,6 +139,63 @@ describe("deriveIdentityPalette", () => {
     }
   });
 
+  // ── 参照图取到的图表色（2026-08-04）─────────────────────────────
+  //
+  // 每个应用都会生成一张参照图，此前只被用来学版式、配色画完就丢；图表色另走
+  // 账本 8 套预置色序按应用名散列挑一套，而那 8 套是同一条 ramp 的 8 个旋转
+  // ——不同应用摆在一起仍然是同一串珠子从不同位置起数（用户实测三个不同业务
+  // 的应用"图表的颜色是一样的"）。这一组断言钉住那条被接回来的线。
+
+  it("参照图取到的色**原样**用上，不被算法改掉", () => {
+    const fromSheet = ["#c0392b", "#16a085", "#8e44ad", "#f39c12", "#2980b9"];
+    const p = deriveIdentityPalette(OLD_SEEDS.azure, { extractedCharts: fromSheet });
+    expect(p.charts).toEqual(fromSheet);
+  });
+
+  it("优先级高于账本色序——同一个 key 给不给取色结果不一样", () => {
+    const fromSheet = ["#c0392b", "#16a085", "#8e44ad", "#f39c12"];
+    const ledger = deriveIdentityPalette(OLD_SEEDS.azure, { chartVariantKey: "宠护提醒" });
+    const sheet = deriveIdentityPalette(OLD_SEEDS.azure, {
+      chartVariantKey: "宠护提醒",
+      extractedCharts: fromSheet,
+    });
+    expect(sheet.charts).toEqual(fromSheet);
+    expect(sheet.charts).not.toEqual(ledger.charts);
+  });
+
+  it("读者分不开的一套整套不要，回落账本——不勉强留半套", () => {
+    // 生图模型很常见的"高级灰蓝紫"：好看，但相邻两色 ΔE 过不了常人视力底线。
+    // 好看但读不出来的图表比朴素的图表更糟。
+    const prettyButUnreadable = ["#6b7fd7", "#7183d4", "#6f86dd", "#7480d0"];
+    const p = deriveIdentityPalette(OLD_SEEDS.azure, {
+      chartVariantKey: "某应用",
+      extractedCharts: prettyButUnreadable,
+    });
+    expect(p.charts).toEqual(deriveIdentityPalette(OLD_SEEDS.azure, { chartVariantKey: "某应用" }).charts);
+  });
+
+  it("形状不可信的输入一律回落，不抛错", () => {
+    // 这个字段经由**存量快照**和库里的老应用记录到达前端，那些数据没走过
+    // 这一版的门禁——渲染器内部必须自己再验一遍。
+    const base = deriveIdentityPalette(OLD_SEEDS.azure, { chartVariantKey: "k" }).charts;
+    for (const bad of [
+      undefined,
+      null,
+      "#1677ff",
+      [],
+      ["#1677ff", "#52c41a"], // 数量不够
+      ["#1677ff", "#52c41a", "#fa8c16", "红色"], // 混了非 hex
+      ["#1677ff", "#52c41a", "#fa8c16", "#1677ff"], // 有重复
+      [1, 2, 3, 4],
+    ]) {
+      const p = deriveIdentityPalette(OLD_SEEDS.azure, {
+        chartVariantKey: "k",
+        extractedCharts: bad,
+      });
+      expect(p.charts, `脏输入 ${JSON.stringify(bad)} 没有回落`).toEqual(base);
+    }
+  });
+
   it("种子色不合法一律落兜底，不抛错（这条链路是 fail-open）", () => {
     for (const bad of ["", "  ", "#12", "not-a-color", "#gggggg", "#11223344"]) {
       const p = deriveIdentityPalette(bad);

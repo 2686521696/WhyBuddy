@@ -364,6 +364,29 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
         if "productName" in fixed_identity and not str(fixed_identity.get("productName") or "").strip():
             fixed_identity.pop("productName", None)
             notes["clearedIdentity"].append({"key": "productName", "value": ""})
+        # 2026-08-04：chartColors 非法就整段清掉（不是逐个挑好的留下）。
+        # 图表色是**一套**，区分度是按整套的相邻关系验的（见 sheet_palette），
+        # 从一套里捡几个剩下的拼起来，那个"剩下的组合"谁都没验过。清掉即回落
+        # 账本里那 8 套验过的色序，比留半套强。
+        raw_colors = fixed_identity.get("chartColors")
+        if "chartColors" in fixed_identity:
+            import re as _re
+
+            from .sheet_palette import MIN_USABLE_COLORS
+
+            ok = (
+                isinstance(raw_colors, list)
+                and len(raw_colors) >= MIN_USABLE_COLORS
+                and all(
+                    isinstance(c, str) and _re.fullmatch(r"#[0-9a-fA-F]{6}", c)
+                    for c in raw_colors
+                )
+            )
+            if not ok:
+                fixed_identity.pop("chartColors", None)
+                notes["clearedIdentity"].append(
+                    {"key": "chartColors", "value": str(raw_colors)[:80]}
+                )
         if fixed_identity != identity:
             appbundle_i = dict(appbundle_i)
             appbundle_i["appIdentity"] = fixed_identity

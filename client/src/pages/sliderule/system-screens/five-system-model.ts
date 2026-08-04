@@ -363,6 +363,14 @@ export interface AppIdentitySection {
   /** 2026-07-24：生图驱动生成的身份主题 token（Python identity_theme_gen.py
    * 生成后写回），未声明/校验不过时降级到 theme 对应的 8 预设之一。 */
   generatedTheme?: Record<string, unknown>;
+  /** 2026-08-04：从这个应用的参照图上读出来的图表分类色（Python
+   * services/sheet_palette.py 取色后写回）。参照图每个应用都会生成，此前只被
+   * 用来学版式、配色画完就丢；这个字段把那一段接回来，让不同应用的图表色
+   * 真的不一样。未声明/校验不过时退回账本里那 8 套已验证色序。
+   *
+   * 类型是 unknown 而不是 string[]：存量快照没走过这一版门禁，形状不可信，
+   * 校验在渲染侧（lib/identity-palette 的 validExtractedCharts）。 */
+  chartColors?: unknown;
 }
 
 export interface FiveSystemModel {

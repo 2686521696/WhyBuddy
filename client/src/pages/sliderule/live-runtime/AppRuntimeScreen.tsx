@@ -1123,10 +1123,14 @@ export function AppRuntimeScreen({
   // 所以同一个应用每次打开图表颜色一致，不同应用之间换一套。应用名缺失时退回
   // 老行为（全站同一套图表色），不去编一个 key——编出来的键会让同一个应用在
   // 不同渲染路径上拿到不同颜色，比"都一样"更糟。
+  // 第四个参数（2026-08-04）：这个应用参照图上读出来的图表色。验得过就用它，
+  // 第三个参数那套账本色序退为兜底——账本 8 套是同一条 ramp 的 8 个旋转，
+  // 不同应用摆在一起仍然像同一套色，参照图那份才是为这个应用画的。
   const identityTheme = resolveIdentityTheme(
     schema.identity.themeId,
     schema.identity.generatedTheme,
-    schema.appName || undefined
+    schema.appName || undefined,
+    schema.identity.chartColors
   );
 
   // 工作台内置图：ECharts 基建（与页面级声明图表同一 lazy chunk / 同一套 dataviz 约定）
