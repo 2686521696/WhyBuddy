@@ -75,9 +75,21 @@ export type GeneratedIdentityTheme = { label?: unknown; seed?: unknown };
  */
 export function resolveIdentityTheme(
   _themeId?: string,
-  _generatedTheme?: unknown
+  _generatedTheme?: unknown,
+  /**
+   * 图表配色的挑选键（2026-08-04）。传一个**每个应用稳定且互不相同**的值
+   * （产品名 / appId 都行），这个应用就固定拿到账本里 8 套已验证色序中的一套。
+   *
+   * 只影响 charts 这一个字段——外壳（主色、菜单白、Header 白）仍然全站统一，
+   * 那是另一条裁决管的事。不传就退回老行为，十几个调用点一个都不用改。
+   */
+  chartVariantKey?: string
 ): IdentityTheme {
-  return deriveIdentityPalette(BRAND_SEED, { id: "brand", label: BRAND_LABEL });
+  return deriveIdentityPalette(BRAND_SEED, {
+    id: "brand",
+    label: BRAND_LABEL,
+    chartVariantKey,
+  });
 }
 
 /** 6 位十六进制转 rgba() 字符串——菜单 hover 态要跟主色调一层半透明叠色，

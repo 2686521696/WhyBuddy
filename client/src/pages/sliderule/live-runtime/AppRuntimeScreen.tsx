@@ -1119,9 +1119,14 @@ export function AppRuntimeScreen({
   // E40.2 应用身份：主题 token 决定品牌区/主色/内容底色/图表配色；缺省 = azure（老模型渲染与历史一致）。
   // 声明必须在 chartCard 之前——homeContent 是即时求值的 JSX（非函数），
   // 里面 .map(chartCard) 在这一行就会同步执行，晚声明会触发 TDZ 报错。
+  // 第三个参数是**图表配色的挑选键**（2026-08-04）：应用名每个应用不同且稳定，
+  // 所以同一个应用每次打开图表颜色一致，不同应用之间换一套。应用名缺失时退回
+  // 老行为（全站同一套图表色），不去编一个 key——编出来的键会让同一个应用在
+  // 不同渲染路径上拿到不同颜色，比"都一样"更糟。
   const identityTheme = resolveIdentityTheme(
     schema.identity.themeId,
-    schema.identity.generatedTheme
+    schema.identity.generatedTheme,
+    schema.appName || undefined
   );
 
   // 工作台内置图：ECharts 基建（与页面级声明图表同一 lazy chunk / 同一套 dataviz 约定）

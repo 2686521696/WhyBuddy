@@ -34,6 +34,8 @@
  * 角色映射按**我们自己的 12 个字段**在下面做。
  */
 
+import themePresets from "@identity-themes";
+
 import { Hct } from "./mcu/hct/hct";
 import { TonalPalette } from "./mcu/palettes/tonal_palette";
 
@@ -139,6 +141,49 @@ const CHART_TONE = 58;
 const CHART_CHROMA_FLOOR = 22;
 const CHART_CHROMA_CEIL = 48;
 
+/**
+ * 已验证的图表色序（账本 chartThemes.variants，前后端同读一份）。
+ *
+ * 这些不是"配"出来的，是**验**出来的：8 个旋转逐个跑过 dataviz 的
+ * validate_palette.js（白底），0 个 FAIL。顺序本身就是安全机制——相邻对的
+ * 区分度按这个顺序验，重排等于作废。
+ */
+const CHART_VARIANTS: readonly (readonly string[])[] =
+  (themePresets as { chartThemes?: { variants?: string[][] } }).chartThemes?.variants ?? [];
+
+/** 稳定散列（FNV-1a 32 位）：同一个 key 永远落到同一套，刷新不换色。 */
+function variantIndex(key: string, count: number): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i += 1) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h % count;
+}
+
+/**
+ * 这个应用的 6 个图表色。
+ *
+ * 没给 key（或账本里没有色序）时退回**旧的色相旋转**算法——那套区分度不合格，
+ * 但它是老行为，不能因为这次改动让没传 key 的调用点悄悄变色；要换的是那些
+ * 明确传了 key 的地方。
+ */
+function chartsFor(key: string | undefined, argb: number, src: Hct): string[] {
+  if (key && CHART_VARIANTS.length > 0) {
+    return [...CHART_VARIANTS[variantIndex(key, CHART_VARIANTS.length)]];
+  }
+  return CHART_HUE_SHIFTS.map(shift =>
+    shift === 0
+      ? hex(argb) // 第一条必须是主色本身（见 CHART_HUE_SHIFTS 的说明）
+      : hex(
+          TonalPalette.fromHueAndChroma(
+            (src.hue + shift) % 360,
+            Math.min(Math.max(src.chroma, CHART_CHROMA_FLOOR), CHART_CHROMA_CEIL)
+          ).tone(CHART_TONE)
+        )
+  );
+}
+
 const hex = (argb: number): string =>
   `#${(argb & 0x00ffffff).toString(16).padStart(6, "0")}`;
 
@@ -156,6 +201,17 @@ export interface DeriveOptions {
   id?: string;
   /** 人看的标签（透传） */
   label?: string;
+  /**
+   * 图表配色的挑选键（2026-08-04）——**给什么值不重要，稳定就行**。
+   *
+   * 传了就从账本里那 8 套已验证色序中按稳定散列挑一套，同一个应用永远拿到
+   * 同一套；不传就退回第 0 套（老行为，调用点不用改）。
+   *
+   * 选它当"每个应用不一样"的开关而不是重新算色相：色相旋转出来的那套过不了
+   * 区分度校验（见 CHART_HUE_SHIFTS 上方说明），所以变化必须来自**换一套
+   * 验过的**，不能来自"再转一点"。
+   */
+  chartVariantKey?: string;
 }
 
 /**
@@ -197,16 +253,7 @@ export function deriveIdentityPalette(
     contentBg: hex(neutralP.tone(TONE.contentBg)),
     accentBg: hex(accentP.tone(TONE.accentBg)),
     accentFg: hex(accentP.tone(TONE.accentFg)),
-    charts: CHART_HUE_SHIFTS.map(shift =>
-      shift === 0
-        ? hex(argb) // 第一条必须是主色本身（见 CHART_HUE_SHIFTS 的说明）
-        : hex(
-            TonalPalette.fromHueAndChroma(
-              (src.hue + shift) % 360,
-              Math.min(Math.max(src.chroma, CHART_CHROMA_FLOOR), CHART_CHROMA_CEIL)
-            ).tone(CHART_TONE)
-          )
-    ),
+    charts: chartsFor(opts.chartVariantKey, argb, src),
     sidebarBg: hex(neutralP.tone(TONE.sidebarBg)),
     sidebarText: hex(neutralP.tone(TONE.sidebarText)),
   };

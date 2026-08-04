@@ -33,7 +33,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Optional
 
 from coloraide import Color
 
@@ -107,10 +107,70 @@ def _foreground_for(lightness: float) -> str:
     return "#ffffff" if lightness < 0.6 else "#1f1f1f"
 
 
-def derive_prompt_palette(seed_hex: str, *, id_: str = "generated", label: str = "") -> dict[str, Any]:
+def _chart_variants() -> list[list[str]]:
+    """账本里那 8 套已验证图表色序（与前端 identity-palette.ts 同读一份）。
+
+    不是"配"出来的，是**验**出来的：8 个旋转逐个跑过 dataviz 的
+    validate_palette.js（白底），0 个 FAIL。顺序本身就是安全机制——相邻对的
+    区分度按这个顺序验，重排等于作废。
+    """
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent / "data" / "identity_theme_presets.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        variants = ((data.get("chartThemes") or {}).get("variants")) or []
+        return [list(v) for v in variants if isinstance(v, list) and v]
+    except Exception:  # noqa: BLE001 — 读不到就退回旧算法，配色不该拖垮生成
+        return []
+
+
+def _variant_index(key: str, count: int) -> int:
+    """稳定散列（FNV-1a 32 位，与前端同一套）：同一个 key 永远落到同一套。"""
+    h = 0x811C9DC5
+    for ch in key:
+        h ^= ord(ch) & 0xFF
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return h % count
+
+
+def _charts_for(key: Optional[str], seed: str, hue: float, chroma: float) -> list[str]:
+    """这个应用的 6 个图表色。
+
+    给了 key 就从已验证色序里挑一套；没给就退回**旧的色相旋转**算法——那套
+    区分度不合格（相邻 ΔE 常人 9.0 / 色盲 2.4），但它是老行为，不能因为这次
+    改动让没传 key 的调用点悄悄变色。
+    """
+    variants = _chart_variants()
+    if key and variants:
+        return list(variants[_variant_index(key, len(variants))])
+    out: list[str] = []
+    for shift in _CHART_HUE_SHIFTS:
+        if shift == 0.0:
+            out.append(seed)  # 第一条必须是主色本身，理由同前端注释
+        else:
+            chart_chroma = min(max(chroma, _CHART_CHROMA_FLOOR), _CHART_CHROMA_CEIL)
+            out.append(_to_hex(_CHART_LIGHTNESS, chart_chroma, hue + shift))
+    return out
+
+
+def derive_prompt_palette(
+    seed_hex: str,
+    *,
+    id_: str = "generated",
+    label: str = "",
+    chart_variant_key: Optional[str] = None,
+) -> dict[str, Any]:
     """种子色 → 提示色板（跟前端 IdentityPalette 同形状，供 prompt 拼接/
     palette_guard 参照色使用）。非法种子色落回 FALLBACK_SEED，不抛错——
     这条链路跟整个 experience 层一样是 fail-open 的。
+
+    chart_variant_key：图表配色的挑选键（2026-08-04）。传一个每个应用稳定且
+    互不相同的值（应用名即可），这个应用就固定拿到账本里 8 套已验证色序中的
+    一套；不传退回旧的色相旋转算法。**必须跟前端传同一个值**——这份色板是
+    写进生成提示词的"事实"，跟真实渲染分叉的话，提示词说的颜色和画出来的
+    颜色不是一回事，而这种分叉只有肉眼比对才看得出来。
     """
     seed = seed_hex if isinstance(seed_hex, str) and _HEX_RE.match(seed_hex) else FALLBACK_SEED
     seed = seed.lower()
@@ -124,13 +184,7 @@ def derive_prompt_palette(seed_hex: str, *, id_: str = "generated", label: str =
 
     grad_hue = (hue + _GRAD_HUE_SHIFT) % 360.0
 
-    charts = []
-    for shift in _CHART_HUE_SHIFTS:
-        if shift == 0.0:
-            charts.append(seed)  # 第一条必须是主色本身，理由同前端注释
-        else:
-            chart_chroma = min(max(chroma, _CHART_CHROMA_FLOOR), _CHART_CHROMA_CEIL)
-            charts.append(_to_hex(_CHART_LIGHTNESS, chart_chroma, hue + shift))
+    charts = _charts_for(chart_variant_key, seed, hue, chroma)
 
     accent_chroma = chroma * _ACCENT_CHROMA_SCALE
 

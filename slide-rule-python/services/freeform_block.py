@@ -402,6 +402,26 @@ def _theme_palette(theme_id: str, generated_theme: Optional[dict[str, Any]] = No
     HCT 派生），只用于这里的 prompt 拼接和下面 palette_guard 的色相参照——
     见 identity_palette_hint.py 顶部说明，为什么这里不需要跟前端数值一致。"""
     del theme_id, generated_theme
+    # ⚠ 已知不一致（2026-08-04，图表色改成每个应用一套时留下的）：
+    #
+    # 这里**没有传 chart_variant_key**，所以 hint["charts"] 仍然是旧的色相旋转
+    # 那六个色；而真实渲染的图表色已经改成按应用名从账本里挑一套已验证色序
+    # （见 client/src/lib/identity-palette.ts 的 chartsFor）。也就是说提示词里
+    # 列出的图表色**不是这个应用实际会画出来的那六个**。
+    #
+    # 影响范围有限但不是零：
+    #   · 外壳那几个字段（primary / sidebar / accent）没变，仍然准确——提示词里
+    #     "这套色板已经用在真实渲染的外壳上"这句话对的还是对的；
+    #   · 图表色只在两处被消费：拼进提示词当参考、以及 palette_guard 拿它的色相
+    #     当 R1 的参照。前者让设计 LLM 参考了一组不会出现的颜色，后者让色相检查
+    #     对着一组过时的色相判。都不影响正确性闸门，但会让"提示词说的"和"画出来
+    #     的"分叉——而这种分叉只有肉眼比对才看得出来。
+    #
+    # 为什么没顺手修：应用名在这条链路上够不着（_theme_palette 的三个调用点分别
+    # 在 _theme_prompt_fragment / _build_reference_image_prompt /
+    # generate_freeform_block 里，都没有 appbundle 在作用域内），要传得穿过好几层
+    # 签名。半穿的话会出现"一部分提示词用新色、一部分用旧色"的中间态，比现在这个
+    # 一致的旧值更难查。修的时候一次穿到底。
     return derive_prompt_palette(BRAND_SEED, id_="brand", label=BRAND_LABEL)
 
 
