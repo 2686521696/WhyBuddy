@@ -64,19 +64,10 @@ Verified 2026-08-05: with `readonly: true`, an `INSERT` is rejected and the tabl
 is left untouched. The rejection surfaces as a bare `500 Internal Server Error`
 with no detail — see "Known rough edge" below.
 
-## Do NOT point the application at this API
+## Two ways for the application to reach the database
 
-This API exists for operators and for tooling that can only speak HTTPS. **The
-application never connects through it**, for a reason that is easy to miss:
-
-`services/app_store.py` does have a "SQL over HTTP" fallback, but
-`neon_http_endpoint()` hard-codes a `*.neon.tech` host check and returns `None`
-for anything else. This API also speaks its own JSON shape (`{"sql", "params",
-"readonly"}`), not the PostgreSQL wire protocol. No backend in the codebase can
-talk to it.
-
-The application and PostgreSQL share a Docker network, so the app connects over
-plain TCP and never touches Caddy:
+**TCP, when the app can open port 5432.** The application and PostgreSQL share a
+Docker network, so the app connects directly and never touches Caddy:
 
 ```
 APP_STORE_DATABASE_URL=postgresql://db_api_user:<password>@local-postgres:5432/appdb?sslmode=require
@@ -85,21 +76,53 @@ APP_STORE_DATABASE_URL=postgresql://db_api_user:<password>@local-postgres:5432/a
 Use `db_api_user`, not `postgres_admin`: the admin role can create and drop
 databases, which the application never needs.
 
-## One variable drives three stores
+**This API, when it cannot.** Restricted sandboxes, serverless and edge runtimes
+often allow nothing but outbound 443. Since 2026-08-05 the application speaks
+this API's JSON shape directly:
 
-`APP_STORE_DATABASE_URL` is read by **three** stores, not just the app store.
-Grep for the variable name and you will only find the app store; the other two
-reach it through `settings`:
+```
+APP_STORE_HTTP_API_URL=https://miantuan.ai/db-api
+APP_STORE_HTTP_API_KEY=<token>
+```
 
-| Store | Where it reads the URL |
+When set, this takes priority over `APP_STORE_DATABASE_URL` — in an environment
+that reaches the database this way, the TCP probe below it is pure waiting
+(one connect attempt per resolved address, 4s each).
+
+An earlier version of this file said the application could never use this API,
+because `services/app_store.py` only had a Neon-specific `*.neon.tech` HTTP
+fallback. That is no longer true: `HttpSqlGateway` in the same file speaks this
+API's shape, and all three stores go through it.
+
+## One database, three stores
+
+Whichever channel you pick, it carries **three** stores, not just the app store:
+
+| Store | What it holds |
 |---|---|
-| App store | `services/app_store.py` |
-| Identity (users, email codes, revoked tokens) | `services/identity_store.py` → `settings.APP_STORE_DATABASE_URL` |
-| Session blobs | `services/session_blob_store.py` → `settings.APP_STORE_DATABASE_URL` |
+| App store (`services/app_store.py`) | generated apps, previews, grants |
+| Identity (`services/identity_store.py`) | users, email codes, revoked tokens |
+| Session blobs (`services/session_blob_store.py`) | session state |
 
 So switching databases is a one-line change — but it moves user accounts and
 sessions too. There is no separate identity DSN to forget about, and equally no
 way to keep identity on the old host while apps move.
+
+⚠️ Configuring only *part* of a channel is the dangerous state. Before
+2026-08-05 the gateway was wired to the app store alone, so setting
+`APP_STORE_HTTP_API_URL` while leaving `APP_STORE_DATABASE_URL` empty sent apps
+to this API and silently dropped accounts and sessions into a local SQLite file.
+Nothing errored. The symptom was "accounts work, but not from another machine".
+
+## Placeholder dialect
+
+This API runs `cur.execute(sql, params)` through psycopg, which is DB-API
+`format` paramstyle: `%s`, positional, no reuse. The application's SQL is
+written in Postgres numbered style (`$1`, `$2`) because it is shared with the
+Neon HTTP backend. `HttpSqlGateway` converts on the way out — and it rewrites
+the **parameter list** as well as the text, because `$3, $3` (one value used
+twice) has to become two `%s` and two copies of that value. Converting the text
+alone yields "the server expected 4 arguments, 3 were given".
 
 ## Schema
 

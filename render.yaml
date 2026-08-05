@@ -97,7 +97,7 @@ services:
       # 实测过：接口老老实实回 {"apps":[]} / {"sessions":[]}。
       # 填任意 SQLAlchemy URL 即可（当前用自建 PostgreSQL 17）。
       # 只出得去 443 的部署改用 APP_STORE_HTTP_API_URL / _KEY 那条 HTTPS
-      # 网关（见 .env.example），但那条只接应用库、不接身份库和会话档。
+      # 网关（见 .env.example）：三个存储都走它，落同一个远端库。
       - key: APP_STORE_DATABASE_URL
         sync: false
 

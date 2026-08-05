@@ -380,14 +380,46 @@ def file_override() -> Optional[str]:
     return None
 
 
+class HttpApiSessionBlobStore(NeonHttpSessionBlobStore):
+    """自定义 HTTPS SQL 网关后端（本仓库的 /db-api）。
+
+    与上面那个共用**同一份 SQL**——包括 `values ($1, $2::jsonb, 1, $3, $3)`
+    这条：`$3` 引用了两次（created_at 与 last_active 取同一个时刻）。网关那边
+    的 numeric_to_format 会把参数表跟着铺开，所以这里什么都不用改。
+    """
+
+    def __init__(self, api_base_url: str, api_key: str) -> None:
+        from .app_store import HttpSqlGateway
+
+        self._gateway = HttpSqlGateway(api_base_url, api_key, timeout_s=_HTTP_TIMEOUT_S)
+        self._endpoint = self._gateway.endpoint
+        self._q(_DDL_PG)
+
+    def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
+        return self._gateway.query(sql, params)
+
+
 def _db_url() -> str:
     from config.settings import settings
 
     return (getattr(settings, _DB_URL_ATTR, "") or "").strip()
 
 
+def _http_api() -> tuple[str, str]:
+    from .app_store import http_api_credentials
+
+    return http_api_credentials()
+
+
 def _signature_now() -> str:
-    return f"{_db_url()}|file:{file_override() or ''}|http:{int(_prefer_http())}"
+    from .app_store import _http_api_target_key
+
+    url, key = _http_api()
+    return (
+        f"{_db_url()}|file:{file_override() or ''}"
+        f"|httpapi:{_http_api_target_key(url, key)}"
+        f"|http:{int(_prefer_http())}"
+    )
 
 
 def _prefer_http() -> bool:
@@ -417,6 +449,21 @@ def _build() -> Optional[SessionBlobStore]:
     if override:
         # 不打印——这是显式配置的结果，不是降级
         return None
+
+    # 自定义 HTTPS 网关排在最前：配了它就说明这个环境出不去 5432，下面那段
+    # TCP 探测纯属白等。它自己不可用时照旧往下降级，不把人卡在这一级。
+    api_url, api_key = _http_api()
+    if api_url:
+        if not api_key:
+            print("[session_store] 设了 APP_STORE_HTTP_API_URL 但没配密钥，忽略这个通道")
+        else:
+            try:
+                store = HttpApiSessionBlobStore(api_url, api_key)
+                print("[session_store] 会话存档：自定义 HTTPS SQL 网关")
+                return store
+            except Exception as exc:  # noqa: BLE001 — 指定了也可能连不上
+                print(f"[session_store] HTTPS 网关不可用，继续降级: {str(exc)[:200]}")
+
     url = _db_url()
     if not url or url in _failed_urls:
         return None

@@ -1295,7 +1295,7 @@ _DOLLAR_TAG_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 
 
 def _numeric_to_format_params(sql: str) -> str:
-    """把 Postgres 编号占位符 `$1` 换成 DB-API 的 `%s`（2026-08-05）。
+    r"""把 Postgres 编号占位符 `$1` 换成 DB-API 的 `%s`（2026-08-05）。
 
     ## 为什么需要这层转换
 
@@ -1329,7 +1329,16 @@ def _numeric_to_format_params(sql: str) -> str:
     将来加 `like '%foo%'` 这类语句时要注意——这个函数不替你转义，因为它
     分不清 `%` 是你要的字面量还是别的后端的占位符。
     """
+    return _scan_numeric_placeholders(sql)[0]
+
+
+def _scan_numeric_placeholders(sql: str) -> tuple[str, list[int]]:
+    """扫一遍 SQL，返回 (换成 `%s` 的 SQL, 按出现顺序排列的原始序号)。
+
+    序号表是 `numeric_to_format` 重排参数用的——见那边关于 `$3, $3` 的说明。
+    """
     out: list[str] = []
+    order: list[int] = []
     i, n = 0, len(sql)
     while i < n:
         ch = sql[i]
@@ -1359,49 +1368,146 @@ def _numeric_to_format_params(sql: str) -> str:
             m2 = _NUMERIC_PLACEHOLDER_RE.match(sql, i)
             if m2:
                 out.append("%s")
+                order.append(int(m2.group(1)))
                 i = m2.end()
                 continue
         out.append(ch)
         i += 1
-    return "".join(out)
+    return "".join(out), order
+
+
+def numeric_to_format(
+    sql: str, params: Optional[list[Any]] = None
+) -> tuple[str, list[Any]]:
+    """`$n` 语句 + 参数表 → `%s` 语句 + **重排后**的参数表（2026-08-05）。
+
+    ## 光换符号是不够的
+
+    `$n` 是**具名**的：同一个参数可以在语句里引用多次，也可以不按顺序引用。
+    `%s` 是**位置**的：第 k 个 `%s` 吃第 k 个参数，没有复用一说。
+
+    会话存档的 upsert 就正好踩在这上面：
+
+        values ($1, $2::jsonb, 1, $3, $3)   -- created_at 和 last_active 同一个值
+
+    只换符号会得到 4 个 `%s` 配 3 个参数，psycopg 直接报参数不够。所以扫描器
+    额外吐出「每个占位符原本是第几号」，这里照着把参数表铺开：`[a,b,c]` →
+    `[a,b,c,c]`。乱序引用（`$2, $1`）同理会被正确换位。
+
+    序号越界（比如 SQL 里写了 `$4` 但只给了 3 个参数）直接抛，不静默补 None：
+    那种情况下写进库的是一行错数据，比报错难查得多。
+    """
+    out_sql, order = _scan_numeric_placeholders(sql)
+    src = list(params or [])
+    if not order:
+        return out_sql, src
+    remapped: list[Any] = []
+    for idx in order:
+        if idx < 1 or idx > len(src):
+            raise IndexError(
+                f"SQL 引用了 ${idx}，但只传了 {len(src)} 个参数: {out_sql[:120]}"
+            )
+        remapped.append(src[idx - 1])
+    return out_sql, remapped
+
+
+#: 单次查询最多取多少行。服务端 DB_API_MAX_ROWS 默认封顶 5000，要更多就得先
+#: 改服务端；这里对齐它，别请求一个会被静默改小的数。
+_HTTP_API_MAX_ROWS = 5000
+
+
+class HttpSqlGateway:
+    """自定义 HTTPS SQL 网关（本仓库的 deploy/postgres-https-api）的薄客户端。
+
+    ## 为什么单独抽一个类
+
+    三个存储——应用库、身份库、会话档——都要走这条通道，而它们的"后端"长得
+    完全不一样（一个是 AppStoreBackend 子类，一个是执行器协议，一个是
+    SessionBlobStore 子类）。共用的只有"怎么把一条 SQL 送出去"这一件事：
+    鉴权头、占位符方言、超时、行数上限、错误映射。抄三份的话，将来网关加个
+    字段就得记着改三处——本项目已经在 upsert 上吃过这种分叉的亏。
+
+    ## 截断为什么要抛而不是截断
+
+    服务端拿 `max_rows` 封顶并在响应里给 `truncated`。**少几行不报错**是最难
+    查的一类故障：会话列表看着正常，只是"有些会话不见了"。所以这里发现截断
+    就抛——真撞上了要么分页要么调服务端上限，两者都得是人做的决定。
+    """
+
+    def __init__(
+        self,
+        api_base_url: str,
+        api_key: str,
+        *,
+        timeout_s: float = _NEON_HTTP_TIMEOUT_S,
+    ) -> None:
+        import httpx
+
+        endpoint = http_api_query_endpoint(api_base_url)
+        token = (api_key or "").strip()
+        if not endpoint:
+            raise ValueError("HTTPS SQL 网关地址为空（APP_STORE_HTTP_API_URL）")
+        if not token:
+            raise ValueError("HTTPS SQL 网关密钥为空（APP_STORE_HTTP_API_KEY）")
+        self.endpoint = endpoint
+        self._client = httpx.Client(
+            timeout=timeout_s,
+            headers={
+                # 凭据只在头里，不进 URL 也不进日志
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
+
+    def query(
+        self,
+        sql: str,
+        params: Optional[list[Any]] = None,
+        *,
+        max_rows: int = _HTTP_API_MAX_ROWS,
+    ) -> list[dict[str, Any]]:
+        # 占位符方言在这里转，**不改调用方那些 SQL**（2026-08-05）：那些语句是
+        # Neon 后端和本通道共用的一份，改了会让 Neon 那条路挂掉。见 numeric_to_format。
+        out_sql, out_params = numeric_to_format(sql, params)
+        resp = self._client.post(
+            self.endpoint,
+            json={
+                "sql": out_sql,
+                "params": out_params,
+                "timeout_ms": _PG_STATEMENT_TIMEOUT_MS,
+                "max_rows": max_rows,
+            },
+        )
+        if resp.status_code >= 400:
+            raise _neon_http_error(resp)
+        body = resp.json()
+        if body.get("truncated"):
+            raise NeonHttpError(
+                f"HTTPS SQL 网关在 {max_rows} 行处截断了结果，剩下的没取回来: "
+                f"{out_sql[:120]}",
+                resp.status_code,
+            )
+        return body.get("rows") or []
+
+
+def http_api_credentials() -> tuple[str, str]:
+    """三个存储共用的一处读取点：(网关地址, 密钥)，都已 strip。"""
+    return (
+        (getattr(settings, "APP_STORE_HTTP_API_URL", "") or "").strip(),
+        (getattr(settings, "APP_STORE_HTTP_API_KEY", "") or "").strip(),
+    )
 
 
 class HttpApiAppStore(NeonHttpAppStore):
     """自定义 HTTPS SQL API 后端（例如本仓库的 /db-api）。"""
 
     def __init__(self, api_base_url: str, api_key: str) -> None:
-        import httpx
-
-        endpoint = http_api_query_endpoint(api_base_url)
-        token = (api_key or "").strip()
-        if not endpoint:
-            raise ValueError("APP_STORE_HTTP_API_URL is empty")
-        if not token:
-            raise ValueError("APP_STORE_HTTP_API_KEY is empty")
-        self._endpoint = endpoint
-        self._client = httpx.Client(
-            timeout=_NEON_HTTP_TIMEOUT_S,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-        )
+        self._gateway = HttpSqlGateway(api_base_url, api_key)
+        self._endpoint = self._gateway.endpoint
         self._ensure_table()
 
     def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
-        resp = self._client.post(
-            self._endpoint,
-            json={
-                # 占位符方言在这里转，**不改上面那些 SQL**（2026-08-05）。
-                # 理由见 _numeric_to_format_params：那些 SQL 是三个后端共用的。
-                "sql": _numeric_to_format_params(sql),
-                "params": params or [],
-                "timeout_ms": _PG_STATEMENT_TIMEOUT_MS,
-            },
-        )
-        if resp.status_code >= 400:
-            raise _neon_http_error(resp)
-        return resp.json().get("rows") or []
+        return self._gateway.query(sql, params)
 
 
 # ────────────────────────── 后端单例选择 ──────────────────────────

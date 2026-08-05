@@ -587,6 +587,30 @@ class _NeonHttpExecutor:
         self.query(sql, params or [])
 
 
+class _HttpApiExecutor:
+    """自定义 HTTPS SQL 网关执行器（本仓库的 /db-api）。
+
+    `ph` 仍然吐 `$n` 而不是直接吐 `%s`：网关那边会做方言转换，而 `$n` 是**具名**
+    的、`%s` 是位置的——保留 `$n` 才能让重复引用同一个参数继续成立。这一层
+    只负责"送出去"，方言的事交给 HttpSqlGateway 一处管。
+    """
+
+    def __init__(self, api_base_url: str, api_key: str) -> None:
+        from .app_store import HttpSqlGateway
+
+        self.is_sqlite = False
+        self._gateway = HttpSqlGateway(api_base_url, api_key)
+
+    def ph(self, n: int) -> str:
+        return f"${n}"
+
+    def query(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
+        return self._gateway.query(sql, params)
+
+    def execute(self, sql: str, params: Optional[list[Any]] = None) -> None:
+        self._gateway.query(sql, params or [])
+
+
 # ────────────────────────── 单例 ──────────────────────────
 
 _store_lock = threading.Lock()
@@ -600,9 +624,14 @@ _LOCAL_SQLITE = "sqlite:///data/sliderule-identity.db"
 def _signature() -> str:
     from config.settings import settings
 
-    from .app_store import prefer_neon_http
+    from .app_store import _http_api_target_key, http_api_credentials, prefer_neon_http
 
-    return f"{(getattr(settings, 'APP_STORE_DATABASE_URL', '') or '').strip()}|{int(prefer_neon_http())}"
+    url, key = http_api_credentials()
+    return (
+        f"{(getattr(settings, 'APP_STORE_DATABASE_URL', '') or '').strip()}"
+        f"|httpapi:{_http_api_target_key(url, key)}"
+        f"|{int(prefer_neon_http())}"
+    )
 
 
 def get_identity_store() -> IdentityStore:
@@ -627,7 +656,22 @@ def _build_store() -> IdentityStore:
 
     from config.settings import settings
 
-    from .app_store import neon_http_endpoint, prefer_neon_http
+    from .app_store import http_api_credentials, neon_http_endpoint, prefer_neon_http
+
+    # 自定义 HTTPS 网关排在最前：配了它就说明这个环境出不去 5432，下面那段
+    # TCP 探测纯属白等（每个地址 connect_timeout 4s，最坏一次登录卡二十几秒）。
+    api_url, api_key = http_api_credentials()
+    if api_url:
+        if not api_key:
+            print("[identity] 设了 APP_STORE_HTTP_API_URL 但没配密钥，忽略这个通道")
+        else:
+            try:
+                x = _HttpApiExecutor(api_url, api_key)
+                store = IdentityStore(x, is_sqlite=False)
+                print("[identity] 身份存储：自定义 HTTPS SQL 网关")
+                return store
+            except Exception as exc:  # noqa: BLE001 — 指定了也可能连不上
+                print(f"[identity] HTTPS 网关不可用，继续按常规顺序降级: {str(exc)[:200]}")
 
     url = (getattr(settings, "APP_STORE_DATABASE_URL", "") or "").strip()
     if url:

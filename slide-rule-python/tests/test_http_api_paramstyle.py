@@ -76,16 +76,72 @@ def test_the_real_upsert_converts_completely():
     assert out.count("%s") == len(_NEON_COLUMNS)
 
 
-def test_conversion_sits_in_the_backend_not_in_the_shared_sql():
+def test_conversion_sits_in_the_gateway_not_in_the_shared_sql():
     """SQL 本身必须仍然是 `$n` 写法。
 
     那些语句是 NeonHttpAppStore 和 HttpApiAppStore **共用的一份**：改成 `%s`
     会让 Neon 那条路挂掉，各写一份则必然分叉（两份 upsert 迟早只改一份）。
-    所以转换只能待在唯一出口 `_q` 上。
+    所以转换只能待在唯一出口上——2026-08-05 三个存储都接网关之后，那个出口
+    从 `HttpApiAppStore._q` 挪进了 `HttpSqlGateway.query`，仍然只有一处。
     """
     import inspect
 
-    from services.app_store import HttpApiAppStore, NeonHttpAppStore
+    from services.app_store import HttpSqlGateway, NeonHttpAppStore
 
     assert "$1" in inspect.getsource(NeonHttpAppStore.get), "共用 SQL 不该被改成 %s"
-    assert "_numeric_to_format_params" in inspect.getsource(HttpApiAppStore._q)
+    assert "numeric_to_format" in inspect.getsource(HttpSqlGateway.query)
+
+
+# ── 参数重排（2026-08-05）────────────────────────────────────
+#
+# `$n` 是具名的，`%s` 是位置的。只换符号不重排参数，是会真的把数据写错的。
+
+
+def test_reused_placeholder_expands_the_param_list():
+    """会话存档的真实语句：`$3` 引用两次（created_at 与 last_active 同一时刻）。
+
+    只换符号会得到 4 个 `%s` 配 3 个参数，psycopg 直接报参数不够。
+    """
+    from services.app_store import numeric_to_format
+
+    sql, params = numeric_to_format(
+        "insert into t (session_id, payload, rev, created_at, last_active) "
+        "values ($1, $2::jsonb, 1, $3, $3)",
+        ["s-1", "{}", "2026-08-05T00:00:00Z"],
+    )
+    assert sql.count("%s") == 4
+    assert params == ["s-1", "{}", "2026-08-05T00:00:00Z", "2026-08-05T00:00:00Z"]
+
+
+def test_out_of_order_reference_is_swapped_not_just_renamed():
+    from services.app_store import numeric_to_format
+
+    sql, params = numeric_to_format("select $2, $1", ["a", "b"])
+    assert sql == "select %s, %s"
+    assert params == ["b", "a"], "乱序引用必须换位，否则两列的值对调了还不报错"
+
+
+def test_params_inside_quoted_regions_are_not_counted():
+    """跳过的区段里那些 `$1` 不是占位符，不能吃掉一个参数。"""
+    from services.app_store import numeric_to_format
+
+    sql, params = numeric_to_format("select 'a $1 b', $1", ["only"])
+    assert sql == "select 'a $1 b', %s"
+    assert params == ["only"]
+
+
+def test_missing_param_raises_instead_of_silently_padding():
+    """SQL 引用 $4 却只给 3 个参数：补 None 会往库里写一行错数据，必须抛。"""
+    from services.app_store import numeric_to_format
+
+    with pytest.raises(IndexError):
+        numeric_to_format("select $1, $4", ["a", "b", "c"])
+
+
+def test_no_params_path_is_untouched():
+    from services.app_store import numeric_to_format
+
+    assert numeric_to_format("create table if not exists t (a int)") == (
+        "create table if not exists t (a int)",
+        [],
+    )
