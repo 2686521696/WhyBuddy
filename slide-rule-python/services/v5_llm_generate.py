@@ -20,6 +20,8 @@ from __future__ import annotations
 import os
 from typing import Any, Callable, Dict, List, Optional
 
+from .enrich_timing import stage as _enrich_stage
+
 # Sections the model must contain — mirrors v5_model_gate.SKILL_KEYS.
 _REQUIRED_SECTIONS = ("datamodel", "rbac", "workflow", "page", "aigc", "appbundle")
 
@@ -702,26 +704,35 @@ def generate_five_system_model(
     # （fail-closed 语义保留：两次都失败仍返回 None）。注入 fn 的测试不受影响。
     attempts = 2 if llm_json_fn is None else 1
     last_detail = ""
-    for attempt in range(attempts):
-        try:
-            model = fn(goal)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} raised: {str(exc)[:200]}")
-            last_detail = f"{type(exc).__name__}: {str(exc)[:180]}"
-            model = None
-        if isinstance(model, dict) and all(section in model for section in _REQUIRED_SECTIONS):
-            last_generate_diagnostic = {"outcome": "ok"}
-            return model
-        if model is not None:
-            print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} returned incomplete model (missing sections)")
-            last_detail = "LLM 返回的模型缺少必需的五系统段"
-        else:
-            print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} returned no model")
-            last_detail = _last_call_error or last_detail or "LLM 未返回模型"
-        if attempt + 1 < attempts:
-            import time as _time
+    # 埋点范围是**整个重试循环**，不是单次 fn(goal)（2026-08-05）。
+    #
+    # 对着屏幕等的人要知道的是"建模这件事进行到哪了"，不是"这是第几次调用"。
+    # 一次失败重试在 SSE 上应该表现为同一个阶段耗时更长，而不是同一条步骤
+    # 闪两遍——后者看着像出错了。真正的失败次数走 attempts 字段和日志。
+    stage_name = "model.regenerate" if gate_feedback else "model.generate"
+    with _enrich_stage(stage_name, attempts=attempts) as _st:
+        for attempt in range(attempts):
+            try:
+                model = fn(goal)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} raised: {str(exc)[:200]}")
+                last_detail = f"{type(exc).__name__}: {str(exc)[:180]}"
+                model = None
+            if isinstance(model, dict) and all(section in model for section in _REQUIRED_SECTIONS):
+                last_generate_diagnostic = {"outcome": "ok"}
+                _st["used"] = attempt + 1
+                return model
+            if model is not None:
+                print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} returned incomplete model (missing sections)")
+                last_detail = "LLM 返回的模型缺少必需的五系统段"
+            else:
+                print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} returned no model")
+                last_detail = _last_call_error or last_detail or "LLM 未返回模型"
+            if attempt + 1 < attempts:
+                import time as _time
 
-            _time.sleep(2.0)
+                _time.sleep(2.0)
+        _st["used"] = attempts
     last_generate_diagnostic = {"outcome": "failed", "detail": last_detail}
     return None
 

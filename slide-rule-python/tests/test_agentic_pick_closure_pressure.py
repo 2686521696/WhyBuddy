@@ -166,3 +166,68 @@ def test_success_wording_leaves_an_exit_for_real_new_requirements():
 
     line = _closure_line(_state({"blocked": False, "evidencePresentCount": 6, "skillCount": 6}))
     assert "除非" in line and "新的补充需求" in line
+
+
+# ── 那句提示词得**真读得到**闭环状态（2026-08-05）────────────────
+#
+# 上面整组测试都绿，可真机照样连收两次口：09:39 那轮 loop-4 选收口（210.1s
+# 起、682.2s 完），682.9s 又开一轮规划，701.3s **再选一次收口**。
+#
+# 根因不在措辞，在数据来源：`state.publishClosure` 原本只在**循环整个结束
+# 之后**才赋值（v5_full_driver 末尾），循环里 `_closure_line` 永远读到 None，
+# 于是每一轮都报「尚未收口」——包括刚刚收口成功的那一轮。
+#
+# 上面的 `_state()` 是手搓的、字段直接给好，所以它测的是"拿到状态之后怎么
+# 措辞"，测不到"状态压根没人往里写"。这两条补的就是这一半：驱动器必须在
+# 收过口的那一轮把结果写回 state。
+
+
+def _driver_source():
+    import inspect
+
+    from services import v5_full_driver
+
+    return inspect.getsource(v5_full_driver)
+
+
+def test_closure_result_is_written_back_within_the_loop():
+    """收口跑完要当场写回 state，不能等整个循环结束。
+
+    等到最后才写 = 循环里那句防重复收口的提示词永远是空的。一次多余的收口
+    是整套重来（重新建模 + 生参照图 + 取色 + 设计版式 + 落库），真机 472 秒。
+    """
+    src = _driver_source()
+    # 末尾那次赋值不算——它在循环外，正是原来的写法
+    in_loop_writes = src.count("state.publishClosure = _round_closure")
+    assert in_loop_writes == 2, (
+        "流式驱动和同步驱动都要写回；漏一条那条路径上的重复收口就没人挡"
+    )
+
+
+def test_write_back_only_happens_on_rounds_that_actually_closed():
+    """没收口的轮次不许写。
+
+    E37 之后 derive_publish_closure_response **永不返回 None**（拿不到证据
+    会回落成 blocked 闭环）。无条件写回会让还没收过口的轮次报
+    「blocked 0/6，可以再收一次」，把"还没做"说成"做了没成"——模型据此
+    以为自己试过了。
+    """
+    src = _driver_source()
+    assert src.count("_is_closure_cap(p.get(\"capabilityId\", \"\"))") == 2
+
+
+def test_closure_cap_detector_does_not_over_match():
+    """判"这轮收过口没有"只能认收口本身。
+
+    `_is_commit_order_sensitive_cap` 还包含 synthesis / report（它们同样要当
+    屏障），拿它来判会把只跑了综合的轮次也标成已收口。
+    """
+    from services.v5_full_driver import _is_closure_cap, _is_commit_order_sensitive_cap
+
+    assert _is_closure_cap("appbundle.runtimeClosure")
+    assert _is_closure_cap("appbundle.runtimeclosure")
+    assert not _is_closure_cap("synthesis.merge")
+    assert not _is_closure_cap("evidence.search")
+    # 屏障判据认得更宽是对的，两者不能混用
+    assert _is_commit_order_sensitive_cap("synthesis.merge")
+    assert not _is_closure_cap("synthesis.merge")

@@ -145,6 +145,17 @@ def _parallel_caps_enabled() -> bool:
         return True
 
 
+def _is_closure_cap(capability_id: str) -> bool:
+    """这条能力是不是"发布收口"本身。
+
+    跟下面的 `_is_commit_order_sensitive_cap` 分开写：那个还包含 synthesis /
+    report（它们同样要当屏障），而"本轮收过口没有"必须只认收口本身——
+    多认一个就会把没收口的轮次也标成已收口。
+    """
+    cap = (capability_id or "").lower()
+    return "appbundle" in cap or "runtimeclosure" in cap
+
+
 def _is_commit_order_sensitive_cap(capability_id: str) -> bool:
     """Caps whose EXECUTOR reads committed artifacts (not just goal text).
 
@@ -906,6 +917,13 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                     state.awaitDetail = (getattr(state, "awaitDetail", None) or "") + f"; degraded cap {cap}"
                     # continue to next cap or stop decision; error run is auditable record
             executed_loops += 1
+            # 同步驱动同款写回——理由见流式驱动那处的长注释。
+            # 两条路径都得改：这个 bug 在提示词层，跟走哪条驱动无关。
+            if any(_is_closure_cap(p.get("capabilityId", "")) for p in selected):
+                _round_closure = derive_publish_closure_response(state)
+                if _round_closure is not None:
+                    state.publishClosure = _round_closure
+                    persist_state(state)
             # update progress for no_progress detection
             now_art = len(getattr(state, "artifacts", []) or [])
             now_res = _count_resolved(state)
@@ -1047,7 +1065,13 @@ _CLOSURE_KEY_TO_SKILL_ID = {
 #:
 #: 只列**用户该看见的**三段。block.refimage / freeform.total 这些是内部子步骤，
 #: 报出来只会把一条清晰的进度线拆成一堆看不懂的碎片。
+#: model.generate 是 2026-08-05 补的，补的是**这条线上最长的一个洞**：
+#: 真机一轮里 234.6s → 445.6s 之间 211 秒没有任何事件，正好夹在"选中收口"
+#: 和"生成首页参照图"中间。上面三段之所以先被埋，是因为它们在最末尾、最显眼；
+#: 而这一段比它们任何一段都长，只是没人想到去量它。
 _ENRICH_STAGE_LABELS: Dict[str, tuple] = {
+    "model.generate": ("生成五系统模型", "通常 120~220 秒"),
+    "model.regenerate": ("按结构闸的意见重做模型", "通常 120~220 秒"),
     "monitor.sheet": ("生成首页参照图", "通常 60~120 秒"),
     "monitor.palette": ("从参照图读取配色", "通常 15~30 秒"),
     "monitor.design": ("照着参照图设计页面版式", "通常 40~90 秒"),
@@ -1430,6 +1454,28 @@ async def drive_full_v5_session_stream(
                     "error": cap_error,
                     "summary": result_data.get("summary") if not cap_error else None,
                 }
+
+            # 本轮真收过口 → 立刻把闭环结果写回 state（2026-08-05）。
+            #
+            # 不写回的话，下一轮的状态摘要读 state.publishClosure 读到 None，
+            # `_closure_line` 报「尚未收口」——**刚刚成功收完口的那一轮也一样**。
+            # 模型据此再收一次，一次收口是整套重来：重新生成五系统模型、生参照图、
+            # 取色、设计版式、落库。真机实测这一趟 472 秒。
+            #
+            # 之前 state.publishClosure 只在**循环全部结束之后**才赋值（本文件
+            # 末尾），也就是说那条防重复收口的提示词在流式驱动里从来没生效过。
+            # 单元测试是绿的，因为它自己手搓了一个带 publishClosure 的 state
+            # （test_agentic_pick_closure_pressure.py 的 `_state`）——这正是
+            # "测试钉住了措辞、没钉住数据从哪来"的典型缺口。
+            #
+            # 只在收口能力真的跑过的轮次写回。E37 之后 derive_* 永不返回 None
+            # （拿不到证据就回落成 blocked 闭环），无条件赋值会让没收过口的轮次
+            # 也报「blocked 0/6，可以再收一次」，把"还没做"说成"做了没成"。
+            if any(_is_closure_cap(p.get("capabilityId", "")) for p in selected):
+                _round_closure = derive_publish_closure_response(state)
+                if _round_closure is not None:
+                    state.publishClosure = _round_closure
+                    persist_state(state)
 
             # progress tracking
             now_art = len(getattr(state, "artifacts", []) or [])

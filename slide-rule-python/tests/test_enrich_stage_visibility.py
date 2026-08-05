@@ -1,4 +1,4 @@
-"""体验层三段必须在流上可见（2026-08-04）。
+"""慢阶段必须在流上可见（2026-08-04 起，2026-08-05 补建模两段）。
 
 ## 这条防的是一个 165.8 秒的黑屏
 
@@ -28,9 +28,55 @@ from services import enrich_timing  # noqa: E402
 from services.v5_full_driver import _ENRICH_STAGE_LABELS, _enrich_stage_event  # noqa: E402
 
 
-def test_the_three_slow_stages_are_all_covered():
-    """三段一个都不能漏——漏掉哪一段，那一段就还是黑的。"""
-    assert set(_ENRICH_STAGE_LABELS) == {"monitor.sheet", "monitor.palette", "monitor.design"}
+def test_the_slow_stages_are_all_covered():
+    """慢的那几段一个都不能漏——漏掉哪一段，那一段就还是黑的。
+
+    2026-08-05 加了建模两段。原因是这条线上**最长的一个洞根本不在体验层**：
+    真机一轮里 234.6s → 445.6s 之间 211 秒无事件，夹在"选中收口"和"生成
+    首页参照图"中间，比上面三段里任何一段都长。当初先埋体验层，是因为它在
+    最末尾、最显眼，不是因为它最慢。
+
+    写成全等而不是包含：多出来的名字同样要过审。名单外的阶段会被
+    `_enrich_stage_event` 直接丢掉（内部子步骤报出来只会把一条清晰的进度线
+    拆成一堆碎片），所以加进来就意味着"决定让用户看见"。
+    """
+    assert set(_ENRICH_STAGE_LABELS) == {
+        "model.generate",
+        "model.regenerate",
+        "monitor.sheet",
+        "monitor.palette",
+        "monitor.design",
+    }
+
+
+def test_model_generation_stage_is_actually_instrumented():
+    """名单里有名字不等于埋点在。
+
+    `_ENRICH_STAGE_LABELS` 只是"愿意报哪些"，真正发事件的是
+    v5_llm_generate 里那个 with。两边对不上时名单是死的，屏幕照样黑。
+    """
+    import inspect
+
+    from services.v5_llm_generate import generate_five_system_model
+
+    src = inspect.getsource(generate_five_system_model)
+    assert "_enrich_stage(stage_name" in src
+    assert "model.regenerate" in src and "model.generate" in src
+
+
+def test_retry_does_not_split_into_two_visible_steps():
+    """一次失败重试要表现为同一段变慢，不是同一条步骤闪两遍。
+
+    闪两遍在屏幕上像出错了。埋点因此包住整个重试循环，而不是单次调用。
+    """
+    import inspect
+
+    from services.v5_llm_generate import generate_five_system_model
+
+    src = inspect.getsource(generate_five_system_model)
+    stage_at = src.index("_enrich_stage(stage_name")
+    loop_at = src.index("for attempt in range(attempts)")
+    assert stage_at < loop_at, "埋点必须在重试循环外层"
 
 
 def test_every_label_carries_a_duration_hint():
