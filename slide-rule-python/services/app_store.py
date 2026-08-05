@@ -1287,6 +1287,85 @@ class NeonHttpAppStore(AppStoreBackend):
         return best
 
 
+#: 编号占位符 `$1`。只在**扫描器判定为普通 SQL 文本**的区段里才替换。
+_NUMERIC_PLACEHOLDER_RE = re.compile(r"\$(\d+)")
+
+#: 美元引号块的开头：`$$` 或 `$tag$`（tag 是标识符）。
+_DOLLAR_TAG_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+
+
+def _numeric_to_format_params(sql: str) -> str:
+    """把 Postgres 编号占位符 `$1` 换成 DB-API 的 `%s`（2026-08-05）。
+
+    ## 为什么需要这层转换
+
+    这个类继承 NeonHttpAppStore，连 SQL 一起继承——那些 SQL 用的是 `$1`、
+    `$2`（Neon 的 HTTP 接口按 Postgres 原生扩展协议吃这套）。本仓的 /db-api
+    底层是 psycopg，`cur.execute(sql, params)` 走 DB-API 的 `format`
+    paramstyle，只认 `%s`。PEP 249 定义了五种 paramstyle，两边各站一头。
+
+    真机症状有迷惑性：**不带参数的语句全过、带参数的全 500**。后端因此
+    "初始化成功、列表也读得出来"，一存就炸，看着像权限或建表问题。
+
+    ## 为什么在这里转，而不是把上面的 SQL 改成 `%s`
+
+    那些 SQL 是 NeonHttpAppStore 和这个类**共用的一份**。改成 `%s` 会让 Neon
+    那条路挂掉；给每个后端各写一份则必然分叉——两份 upsert 迟早只改一份。
+    转换点收在唯一出口（`_q`）上，共用的部分保持一份。
+
+    ## 为什么是扫描器而不是一条正则
+
+    第一版写的是 `(?<!\$)\$(\d+)`，想用后顾断言避开美元引号块。**它不成立**：
+    `$$hello $1 world$$` 里的 `$1` 前面是空格不是 `$`，照样被替换，把字符串
+    **内容**改掉了——这类"差不多对"是静默数据损坏，比直接报错糟得多。
+
+    所以改成走一遍：`'...'`（含 `''` 转义）和 `$tag$...$tag$` 两种区段整段
+    跳过，只在剩下的普通 SQL 文本里替换。
+
+    ## 一个仍然存在的前提
+
+    转成 format paramstyle 之后，SQL 里的**字面量 `%` 必须写成 `%%`**，否则
+    psycopg 会把它当成占位符的开头。本文件现有 SQL 里没有字面量 `%`（查过），
+    将来加 `like '%foo%'` 这类语句时要注意——这个函数不替你转义，因为它
+    分不清 `%` 是你要的字面量还是别的后端的占位符。
+    """
+    out: list[str] = []
+    i, n = 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            # 单引号字符串：'' 是转义的单引号，不算结束
+            j = i + 1
+            while j < n:
+                if sql[j] == "'":
+                    if j + 1 < n and sql[j + 1] == "'":
+                        j += 2
+                        continue
+                    j += 1
+                    break
+                j += 1
+            out.append(sql[i:j])
+            i = j
+            continue
+        if ch == "$":
+            m = _DOLLAR_TAG_RE.match(sql, i)
+            if m:
+                tag = m.group(0)
+                close = sql.find(tag, m.end())
+                j = n if close < 0 else close + len(tag)
+                out.append(sql[i:j])
+                i = j
+                continue
+            m2 = _NUMERIC_PLACEHOLDER_RE.match(sql, i)
+            if m2:
+                out.append("%s")
+                i = m2.end()
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 class HttpApiAppStore(NeonHttpAppStore):
     """自定义 HTTPS SQL API 后端（例如本仓库的 /db-api）。"""
 
@@ -1313,7 +1392,9 @@ class HttpApiAppStore(NeonHttpAppStore):
         resp = self._client.post(
             self._endpoint,
             json={
-                "sql": sql,
+                # 占位符方言在这里转，**不改上面那些 SQL**（2026-08-05）。
+                # 理由见 _numeric_to_format_params：那些 SQL 是三个后端共用的。
+                "sql": _numeric_to_format_params(sql),
                 "params": params or [],
                 "timeout_ms": _PG_STATEMENT_TIMEOUT_MS,
             },

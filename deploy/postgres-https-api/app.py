@@ -62,6 +62,20 @@ def jsonable(value: Any) -> Any:
     return str(value)
 
 
+def _pg_error_detail(exc: psycopg.Error) -> str:
+    """把 psycopg 异常压成一行可读的诊断。
+
+    带上 SQLSTATE：五位错误码是**机器可判的**，调用方靠它分流（42601 语法错、
+    42501 权限不足、57014 超时、25006 只读事务里写），而消息文本会随 PG 版本
+    和语言环境变。两个都给，各取所需。
+    """
+    diag = getattr(exc, "diag", None)
+    sqlstate = getattr(diag, "sqlstate", None) or getattr(exc, "sqlstate", None) or "unknown"
+    text = str(exc).strip()
+    message = text.splitlines()[0] if text else exc.__class__.__name__
+    return f"{sqlstate}: {message}"[:500]
+
+
 class QueryRequest(BaseModel):
     sql: str = Field(min_length=1, max_length=500_000)
     params: list[Any] | dict[str, Any] | None = None
@@ -160,7 +174,22 @@ def query(body: QueryRequest) -> dict[str, Any]:
                 (f"{timeout_ms}ms",),
             )
 
-            cur.execute(body.sql, body.params)
+            try:
+                cur.execute(body.sql, body.params)
+            except psycopg.Error as exc:
+                # 不带这一层的时候，任何 SQL 失败都只回一句裸的
+                # `500 Internal Server Error`——语法错、参数不匹配、权限不足、
+                # 超时、只读事务违规，客户端看起来一模一样。
+                #
+                # 2026-08-05 真机代价：应用侧新后端沿用了 Neon 的 `$1` 占位符，
+                # 而 psycopg 走 DB-API 的 format paramstyle 只认 `%s`。定位它
+                # 全靠手动二分（先试 $1、再试 %s、再试不带参数），而 Postgres
+                # 本来第一次就会说 "there is no parameter $1"。
+                #
+                # 回传是安全的：PG 的错误消息里是**语句结构**（列名、类型、
+                # 参数序号），不含行数据。真正该保密的是密码和连接串，那些
+                # 不在这里。
+                raise HTTPException(status_code=400, detail=_pg_error_detail(exc)) from exc
 
             columns: list[str] = []
             rows: list[Any] = []
