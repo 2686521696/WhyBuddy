@@ -108,6 +108,19 @@ So switching databases is a one-line change — but it moves user accounts and
 sessions too. There is no separate identity DSN to forget about, and equally no
 way to keep identity on the old host while apps move.
 
+⚠️ **Pointing a dev machine at a shared database uploads that machine's local
+sessions.** `session_blob_store.import_local_file_once` copies every session in
+the local file archive that the database doesn't already have, once per process,
+on startup. It exists for a good reason — without it, upgrading to the
+database-backed store makes existing sessions vanish from the UI while still
+sitting on disk. But the direction is local → shared, and it fires the first
+time a developer sets these variables. Observed 2026-08-05: a dev container's
+first startup against the shared database pushed 18 sessions (~3 MB) in nine
+seconds. It only ever inserts, never overwrites, so nothing shared is damaged —
+but the rows are there and nobody asked for them. Clear `SLIDERULE_SESSIONS_FILE`
+(or point it at a scratch path) before connecting a machine that has an
+accumulated local archive.
+
 ⚠️ Configuring only *part* of a channel is the dangerous state. Before
 2026-08-05 the gateway was wired to the app store alone, so setting
 `APP_STORE_HTTP_API_URL` while leaving `APP_STORE_DATABASE_URL` empty sent apps
