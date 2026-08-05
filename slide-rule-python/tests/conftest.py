@@ -61,6 +61,19 @@ os.environ.setdefault("SLIDERULE_AGENTIC_PICK", "off")
 #   · 关心身份本身的测试（test_auth_identity / test_app_routes_access）用
 #     `real_auth` fixture 把这个覆盖摘掉，走真实令牌解析。
 os.environ.setdefault("SLIDERULE_AUTH_SECRET", "sliderule-test-secret-" + "x" * 24)
+# 内部密钥同理钉死（2026-08-05）。
+#
+# 套件里几十条路由测试**硬编码**发 `x-internal-key: dev-slide-rule-internal`
+# （tests/test_v5_smoke.py:21），而 settings 是从 .env 读的。只要 .env 里配了
+# 真密钥，这些请求就全部 403——实测 146 条红，其中 21 条集中在 test_v5_smoke。
+#
+# 这不是"测试写得不好"，是**隔离漏了一项**：上面会话、应用库、鉴权密钥都按
+# 默认值钉过了，唯独这一个漏网。后果比红一片更糟——它红得很像业务回归
+# （403/断言失败，不是"缺配置"），真的回归混在里面就看不出来了。
+#
+# 钉成出厂默认值即可：它本来就是测试里那一串。生产环境沿用默认值会被
+# _enforce_non_default_secrets 直接拒绝启动，所以这里钉它不会放松线上。
+os.environ.setdefault("SLIDE_RULE_INTERNAL_KEY", "dev-slide-rule-internal")
 
 import pytest  # noqa: E402
 

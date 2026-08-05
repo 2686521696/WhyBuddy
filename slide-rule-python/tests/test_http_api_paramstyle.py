@@ -22,7 +22,17 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.app_store import _numeric_to_format_params as conv  # noqa: E402
+from services.app_store import _scan_numeric_placeholders  # noqa: E402
+
+
+def conv(sql: str) -> str:
+    """只看**文本**怎么转，不带参数。
+
+    参数重排由 `numeric_to_format` 负责，在本文件下半段单独钉。这里盯的是
+    扫描器该跳哪些区段——那是静默数据损坏的那一半，和参数够不够无关。
+    （`numeric_to_format(sql)` 不能拿来做这件事：不给参数它会按越界抛。）
+    """
+    return _scan_numeric_placeholders(sql)[0]
 
 
 @pytest.mark.parametrize(

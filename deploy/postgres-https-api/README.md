@@ -160,12 +160,23 @@ Two things worth carrying forward:
   degrades to local SQLite or JSON when the remote is unreachable, so a dead
   database looks like "the app gallery is empty", not like an error.
 
-## Known rough edge
+## Known rough edge: fixed in code, not yet deployed
 
 `/v1/query` returns a bare `500 Internal Server Error` for any SQL failure —
 syntax error, permission denied, statement timeout, read-only violation all look
 identical from the client side. Nothing leaks, but nothing diagnoses either.
 
-Wrapping the `cur.execute` in `except psycopg.Error` and returning
-`400 {"detail": "<sqlstate>: <message>"}` would fix it. PostgreSQL error
+`app.py` now catches `psycopg.Error` and returns
+`400 {"detail": "<sqlstate>: <message>"}` (`_pg_error_detail`). PostgreSQL error
 messages carry no row data, so returning them is safe.
+
+**The running container predates that change.** Verified 2026-08-05: a query
+against a non-existent table still comes back as a bare `500`. Redeploy to pick
+it up:
+
+```bash
+docker compose up -d --build
+```
+
+Until then, treat any `500` from this API as "some SQL error" and reproduce the
+statement locally to find out which.

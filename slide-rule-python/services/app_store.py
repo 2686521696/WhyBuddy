@@ -1294,24 +1294,10 @@ _NUMERIC_PLACEHOLDER_RE = re.compile(r"\$(\d+)")
 _DOLLAR_TAG_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 
 
-def _numeric_to_format_params(sql: str) -> str:
-    r"""把 Postgres 编号占位符 `$1` 换成 DB-API 的 `%s`（2026-08-05）。
+def _scan_numeric_placeholders(sql: str) -> tuple[str, list[int]]:
+    r"""扫一遍 SQL，返回 (换成 `%s` 的 SQL, 按出现顺序排列的原始序号)。
 
-    ## 为什么需要这层转换
-
-    这个类继承 NeonHttpAppStore，连 SQL 一起继承——那些 SQL 用的是 `$1`、
-    `$2`（Neon 的 HTTP 接口按 Postgres 原生扩展协议吃这套）。本仓的 /db-api
-    底层是 psycopg，`cur.execute(sql, params)` 走 DB-API 的 `format`
-    paramstyle，只认 `%s`。PEP 249 定义了五种 paramstyle，两边各站一头。
-
-    真机症状有迷惑性：**不带参数的语句全过、带参数的全 500**。后端因此
-    "初始化成功、列表也读得出来"，一存就炸，看着像权限或建表问题。
-
-    ## 为什么在这里转，而不是把上面的 SQL 改成 `%s`
-
-    那些 SQL 是 NeonHttpAppStore 和这个类**共用的一份**。改成 `%s` 会让 Neon
-    那条路挂掉；给每个后端各写一份则必然分叉——两份 upsert 迟早只改一份。
-    转换点收在唯一出口（`_q`）上，共用的部分保持一份。
+    序号表是 `numeric_to_format` 重排参数用的——见那边关于 `$3, $3` 的说明。
 
     ## 为什么是扫描器而不是一条正则
 
@@ -1321,21 +1307,6 @@ def _numeric_to_format_params(sql: str) -> str:
 
     所以改成走一遍：`'...'`（含 `''` 转义）和 `$tag$...$tag$` 两种区段整段
     跳过，只在剩下的普通 SQL 文本里替换。
-
-    ## 一个仍然存在的前提
-
-    转成 format paramstyle 之后，SQL 里的**字面量 `%` 必须写成 `%%`**，否则
-    psycopg 会把它当成占位符的开头。本文件现有 SQL 里没有字面量 `%`（查过），
-    将来加 `like '%foo%'` 这类语句时要注意——这个函数不替你转义，因为它
-    分不清 `%` 是你要的字面量还是别的后端的占位符。
-    """
-    return _scan_numeric_placeholders(sql)[0]
-
-
-def _scan_numeric_placeholders(sql: str) -> tuple[str, list[int]]:
-    """扫一遍 SQL，返回 (换成 `%s` 的 SQL, 按出现顺序排列的原始序号)。
-
-    序号表是 `numeric_to_format` 重排参数用的——见那边关于 `$3, $3` 的说明。
     """
     out: list[str] = []
     order: list[int] = []
@@ -1380,6 +1351,29 @@ def numeric_to_format(
     sql: str, params: Optional[list[Any]] = None
 ) -> tuple[str, list[Any]]:
     """`$n` 语句 + 参数表 → `%s` 语句 + **重排后**的参数表（2026-08-05）。
+
+    ## 为什么需要这层转换
+
+    `HttpApiAppStore` 继承 NeonHttpAppStore，连 SQL 一起继承——那些 SQL 用的是
+    `$1`、`$2`（Neon 的 HTTP 接口按 Postgres 原生扩展协议吃这套）。本仓的
+    /db-api 底层是 psycopg，`cur.execute(sql, params)` 走 DB-API 的 `format`
+    paramstyle，只认 `%s`。PEP 249 定义了五种 paramstyle，两边各站一头。
+
+    真机症状有迷惑性：**不带参数的语句全过、带参数的全 500**。后端因此
+    "初始化成功、列表也读得出来"，一存就炸，看着像权限或建表问题。
+
+    ## 为什么在这里转，而不是把上面的 SQL 改成 `%s`
+
+    那些 SQL 是 NeonHttpAppStore 和 HttpApiAppStore **共用的一份**。改成 `%s`
+    会让 Neon 那条路挂掉；给每个后端各写一份则必然分叉——两份 upsert 迟早只改
+    一份。转换点收在唯一出口（`HttpSqlGateway.query`）上，共用的部分保持一份。
+
+    ## 一个仍然存在的前提
+
+    转成 format paramstyle 之后，SQL 里的**字面量 `%` 必须写成 `%%`**，否则
+    psycopg 会把它当成占位符的开头。本文件现有 SQL 里没有字面量 `%`（查过），
+    将来加 `like '%foo%'` 这类语句时要注意——这个函数不替你转义，因为它
+    分不清 `%` 是你要的字面量还是别的后端的占位符。
 
     ## 光换符号是不够的
 
