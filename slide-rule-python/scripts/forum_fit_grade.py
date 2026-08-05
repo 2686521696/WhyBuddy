@@ -65,11 +65,24 @@ B = 半个：有结构化数据和管理界面，但没有多角色流转，主�
 C = 圈外：游戏、3D、硬件固件、音视频处理、图像生成、纯创作工具、模拟器。
     没有"业务实体+角色"这个结构，SlideRule 推演不了。
 
-只输出 JSON：{"items":[{"i":序号,"grade":"A|B|C","why":"12字以内"}]}
-序号必须和输入一一对应，一条都不能少。"""
+只输出 JSON：{"items":[{"i":行号,"grade":"A|B|C","why":"12字以内"}]}
+行号就是每行开头那个数字，从 1 开始，必须和输入一一对应，一条都不能少。"""
 
 
 def classify(titles: list[tuple[int, str]], model: str) -> dict[int, tuple[str, str]]:
+    """返回 {topic_id: (档位, 理由)}。
+
+    ## 给模型看的是 1..N 的行号，不是 topic_id
+
+    2026-08-05 真机代价：第一版把 topic_id 直接当行号发给模型，让它原样抄
+    回来。实测同一批输入跑三次，**有一次它把序号重新编成了 1、2、3…**——
+    那批 25 个 key 全都对不上真实 id，update 一行都匹配不到，还不报错。
+    一轮下来静默丢了 374 条。
+
+    模型"顺手把序号规整一下"是很自然的行为，提示词里那个"序号"更是在邀请
+    它这么做。所以别让它碰 id：发 1..N（它编号也只能编成 1..N，编对编错
+    都一样），本地再映射回 topic_id。这条通道就没有出错的余地了。
+    """
     import httpx
 
     resp = httpx.post(
@@ -80,7 +93,10 @@ def classify(titles: list[tuple[int, str]], model: str) -> dict[int, tuple[str, 
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": RUBRIC},
-                {"role": "user", "content": "\n".join(f"{i}. {t}" for i, t in titles)},
+                {"role": "user", "content": "\n".join(
+                    f"{lineno}. {title}"
+                    for lineno, (_tid, title) in enumerate(titles, 1)
+                )},
             ],
         },
         timeout=300,
@@ -90,33 +106,53 @@ def classify(titles: list[tuple[int, str]], model: str) -> dict[int, tuple[str, 
     out: dict[int, tuple[str, str]] = {}
     for it in items:
         grade = str(it.get("grade") or "").strip().upper()[:1]
-        if grade in FIT_GRADES and grade != "U":
-            out[int(it["i"])] = (grade, str(it.get("why") or "")[:60])
+        if grade not in FIT_GRADES or grade == "U":
+            continue
+        try:
+            lineno = int(it["i"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        # 越界的行号直接丢——宁可这条留空下次重判，也不能张冠李戴把
+        # A 档的理由挂到别人身上
+        if not 1 <= lineno <= len(titles):
+            continue
+        out[titles[lineno - 1][0]] = (grade, str(it.get("why") or "")[:60])
     return out
 
 
-def write_back(db: Store, model: str, graded: dict[int, tuple[str, str]]) -> None:
-    """一条语句更新整批。
+def write_back(db: Store, model: str, graded: dict[int, tuple[str, str]]) -> int:
+    """一条语句更新整批，返回**真正落地的行数**。
 
     逐条 update 的话，2000 条就是 2000 次 HTTPS 往返。用 `from (values ...)`
     连接一次更新完——分档结果都是短字符串，一批 25 条离网关 1MB 的体积上限
     差着好几个量级，不需要像话题正文那样按字节切批。
+
+    ## 为什么必须 `returning` 数一遍
+
+    2026-08-05 真机代价：一轮 1693 条报告"写回 1686 条"，库里实际只多了
+    1312 条——**374 条静默丢失**。update 的 where join 匹配不到行时不报错，
+    只是什么都不做，于是脚本理直气壮地报了个假的成功数。
+
+    这正是本项目反复栽的那一类：少几行不报错，比直接崩掉难查得多。所以这里
+    不信"我发了多少"，只信"库里回了多少"，对不上就让调用方喊出来。
     """
     if not graded:
-        return
+        return 0
     rows, params = [], []
     for topic_id, (grade, why) in graded.items():
         base = len(params)
         rows.append(f"(${base + 1}::int, ${base + 2}, ${base + 3})")
         params.extend([topic_id, grade, why])
     params.append(model)
-    db.q(
+    landed = db.q(
         f"update forum_topic set fit_grade = v.g, fit_reason = v.r, "
         f"fit_model = ${len(params)}, fit_at = now() "
         f"from (values {', '.join(rows)}) as v(tid, g, r) "
-        f"where forum_topic.topic_id = v.tid",
+        f"where forum_topic.topic_id = v.tid "
+        f"returning forum_topic.topic_id",
         params,
     )
+    return len(landed)
 
 
 def report(db: Store) -> None:
@@ -160,7 +196,7 @@ def main() -> None:
     workers = int(_opt(argv, "--workers", DEFAULT_WORKERS))
     print(f"待判 {len(todo)} 条，分 {len(chunks)} 批，并发 {workers}，模型 {model}")
 
-    tally = {"done": 0, "failed": 0, "n": 0}
+    tally = {"done": 0, "failed": 0, "lost": 0, "n": 0}
     lock = threading.Lock()
     started = time.monotonic()
 
@@ -173,13 +209,20 @@ def main() -> None:
                 # 每批立刻落库：中途挂掉重跑能接着上次走，不用从头再来。
                 # Store 内部是一个 httpx.Client，多线程共用是安全的。
                 with lock:
-                    write_back(db, model, graded)
-                    tally["done"] += len(graded)
+                    landed = write_back(db, model, graded)
+                    tally["done"] += landed
+                    tally["lost"] += len(graded) - landed
                     tally["n"] += 1
                     seen = tally["n"]
-                miss = len(chunk) - len(graded)
-                tail = f"，{miss} 条模型没给（留空，下次重跑会再判）" if miss else ""
-                print(f"  [{seen}/{len(chunks)}] 批 {n} {len(graded)} 条 / "
+                notes = []
+                if len(chunk) - len(graded):
+                    notes.append(f"{len(chunk) - len(graded)} 条模型没给")
+                if len(graded) - landed:
+                    # 判出来了却没落进库——多半是模型把 topic_id 抄错了，
+                    # 那个 id 在表里不存在，update 就静默匹配不到任何行
+                    notes.append(f"⚠️ {len(graded) - landed} 条没落库")
+                tail = ("，" + "，".join(notes) + "（留空，下次重跑会再判）") if notes else ""
+                print(f"  [{seen}/{len(chunks)}] 批 {n} 落地 {landed} 条 / "
                       f"{time.perf_counter() - t0:.0f}s{tail}", flush=True)
                 return
             except Exception as exc:  # noqa: BLE001 — 单批失败不拖垮整轮
@@ -199,8 +242,14 @@ def main() -> None:
             list(pool.map(one, indexed))
 
     dur = time.monotonic() - started
-    print(f"\n写回 {tally['done']} 条，用时 {dur:.0f}s"
-          + (f"，{tally['failed']} 条整批失败（重跑会补）" if tally["failed"] else ""))
+    parts = [f"落地 {tally['done']} 条", f"用时 {dur:.0f}s"]
+    if tally["lost"]:
+        parts.append(f"⚠️ {tally['lost']} 条判出来了但没落库")
+    if tally["failed"]:
+        parts.append(f"{tally['failed']} 条整批失败")
+    if tally["lost"] or tally["failed"]:
+        parts.append("重跑本命令会自动补上（只挑 fit_grade 为空的）")
+    print("\n" + "，".join(parts))
     report(db)
 
 
