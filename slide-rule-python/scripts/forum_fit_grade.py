@@ -1,7 +1,8 @@
 """给 forum_topic 的话题打「SlideRule 能不能推演它」的分档，并写回库。
 
     cd slide-rule-python
-    .venv/bin/python scripts/forum_fit_grade.py            # 只判还没判过的
+    .venv/bin/python scripts/forum_fit_grade.py                    # 只判还没判过的
+    .venv/bin/python scripts/forum_fit_grade.py --workers 6        # 并发（默认 6）
     .venv/bin/python scripts/forum_fit_grade.py --all      # 全部重判（换了标准时）
     .venv/bin/python scripts/forum_fit_grade.py --report   # 不调模型，只看现状
 
@@ -32,7 +33,9 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +43,13 @@ from forum_neon import FIT_GRADES, Store
 
 BATCH = 25
 RETRIES = 3
+#: 并发批数。模型侧是别人的网关，别开太猛；实测 6 路已经把 2000 条压进十分钟内。
+DEFAULT_WORKERS = 6
+
+
+def _opt(argv: list[str], name: str, default: int) -> int:
+    """从命令行取 `--name 值`，没给就用默认。"""
+    return int(argv[argv.index(name) + 1]) if name in argv else default
 
 RUBRIC = """你在给一批参赛作品做能力圈归类。
 
@@ -86,12 +96,27 @@ def classify(titles: list[tuple[int, str]], model: str) -> dict[int, tuple[str, 
 
 
 def write_back(db: Store, model: str, graded: dict[int, tuple[str, str]]) -> None:
+    """一条语句更新整批。
+
+    逐条 update 的话，2000 条就是 2000 次 HTTPS 往返。用 `from (values ...)`
+    连接一次更新完——分档结果都是短字符串，一批 25 条离网关 1MB 的体积上限
+    差着好几个量级，不需要像话题正文那样按字节切批。
+    """
+    if not graded:
+        return
+    rows, params = [], []
     for topic_id, (grade, why) in graded.items():
-        db.q(
-            "update forum_topic set fit_grade = $1, fit_reason = $2, "
-            "fit_model = $3, fit_at = now() where topic_id = $4",
-            [grade, why, model, topic_id],
-        )
+        base = len(params)
+        rows.append(f"(${base + 1}::int, ${base + 2}, ${base + 3})")
+        params.extend([topic_id, grade, why])
+    params.append(model)
+    db.q(
+        f"update forum_topic set fit_grade = v.g, fit_reason = v.r, "
+        f"fit_model = ${len(params)}, fit_at = now() "
+        f"from (values {', '.join(rows)}) as v(tid, g, r) "
+        f"where forum_topic.topic_id = v.tid",
+        params,
+    )
 
 
 def report(db: Store) -> None:
@@ -108,7 +133,8 @@ def report(db: Store) -> None:
 
 
 def main() -> None:
-    args = set(sys.argv[1:])
+    argv = sys.argv[1:]
+    args = set(argv)
     db = Store()
     db.ensure_table()
 
@@ -130,32 +156,51 @@ def main() -> None:
         raise SystemExit("缺 LLM_MODEL / LLM_API_KEY")
 
     todo = [(int(r["topic_id"]), str(r["title"])) for r in rows]
-    batches = (len(todo) + BATCH - 1) // BATCH
-    print(f"待判 {len(todo)} 条，分 {batches} 批，模型 {model}")
+    chunks = [todo[i:i + BATCH] for i in range(0, len(todo), BATCH)]
+    workers = int(_opt(argv, "--workers", DEFAULT_WORKERS))
+    print(f"待判 {len(todo)} 条，分 {len(chunks)} 批，并发 {workers}，模型 {model}")
 
-    done = failed = 0
-    for n, start in enumerate(range(0, len(todo), BATCH), 1):
-        chunk = todo[start:start + BATCH]
+    tally = {"done": 0, "failed": 0, "n": 0}
+    lock = threading.Lock()
+    started = time.monotonic()
+
+    def one(indexed: tuple[int, list[tuple[int, str]]]) -> None:
+        n, chunk = indexed
         for attempt in range(RETRIES):
             try:
                 t0 = time.perf_counter()
                 graded = classify(chunk, model)
-                # 每批立刻落库：中途挂掉重跑能接着上次走，不用从头再来
-                write_back(db, model, graded)
-                done += len(graded)
+                # 每批立刻落库：中途挂掉重跑能接着上次走，不用从头再来。
+                # Store 内部是一个 httpx.Client，多线程共用是安全的。
+                with lock:
+                    write_back(db, model, graded)
+                    tally["done"] += len(graded)
+                    tally["n"] += 1
+                    seen = tally["n"]
                 miss = len(chunk) - len(graded)
                 tail = f"，{miss} 条模型没给（留空，下次重跑会再判）" if miss else ""
-                print(f"  批 {n}/{batches}  {len(graded)} 条 / "
+                print(f"  [{seen}/{len(chunks)}] 批 {n} {len(graded)} 条 / "
                       f"{time.perf_counter() - t0:.0f}s{tail}", flush=True)
-                break
+                return
             except Exception as exc:  # noqa: BLE001 — 单批失败不拖垮整轮
-                print(f"  批 {n}/{batches} 第 {attempt + 1} 次失败："
+                print(f"  批 {n} 第 {attempt + 1} 次失败："
                       f"{type(exc).__name__} {str(exc)[:100]}", flush=True)
-                if attempt == RETRIES - 1:
-                    failed += len(chunk)
-                time.sleep(3)
+                time.sleep(3 * (attempt + 1))
+        with lock:
+            tally["failed"] += len(chunk)
+            tally["n"] += 1
 
-    print(f"\n写回 {done} 条" + (f"，{failed} 条整批失败" if failed else ""))
+    indexed = list(enumerate(chunks, 1))
+    if workers <= 1:
+        for item in indexed:
+            one(item)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(one, indexed))
+
+    dur = time.monotonic() - started
+    print(f"\n写回 {tally['done']} 条，用时 {dur:.0f}s"
+          + (f"，{tally['failed']} 条整批失败（重跑会补）" if tally["failed"] else ""))
     report(db)
 
 

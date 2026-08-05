@@ -21,7 +21,9 @@ import html
 import json
 import re
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -226,49 +228,138 @@ def load_category_names(client: httpx.Client) -> dict[int, str]:
     return {c["id"]: c.get("name") or "" for c in cats if c.get("id") is not None}
 
 
-def make_client() -> httpx.Client:
+def make_client(workers: int = 1) -> httpx.Client:
     return httpx.Client(
         timeout=httpx.Timeout(30.0, connect=15.0),
         headers={"User-Agent": UA, "Accept": "application/json"},
         follow_redirects=True,
+        # 连接池得跟着并发开，否则多出来的线程排队等连接，白并发一场
+        limits=httpx.Limits(max_connections=max(workers * 2, 10),
+                            max_keepalive_connections=max(workers, 5)),
     )
 
 
-def run(ids: Iterable[int], out_path: Path, delay: float = 0.7) -> tuple[int, int]:
-    """顺序抓取并逐条写 JSONL，支持断点续跑（已抓过的 id 跳过）。"""
-    done: set[int] = set()
-    if out_path.exists():
-        for line in out_path.read_text(encoding="utf-8").splitlines():
-            try:
-                done.add(int(json.loads(line)["topic_id"]))
-            except Exception:  # noqa: BLE001
-                continue
+class _Pacer:
+    """全局节流闸：不管几个线程，两次请求之间至少隔 `interval` 秒。
 
+    并发抓取最容易做错的地方就是这里——每个 worker 各自 sleep(delay) 的话，
+    实际速率是 workers/delay，5 个线程配 0.7s 就是 7 req/s，论坛的限流器
+    分分钟把你打成 429。真正要控的是**整体速率**，所以闸放在共享锁里。
+    """
+
+    def __init__(self, interval: float) -> None:
+        self._interval = interval
+        self._lock = threading.Lock()
+        self._next = 0.0
+
+    def wait(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            sleep_for = self._next - now
+            self._next = max(now, self._next) + self._interval
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+
+
+#: 从已抓文件里认 topic_id。用正则而不是 json.loads——2000 条约 87MB，
+#: 逐行解析整份 JSON 只为读一个字段，纯属浪费。
+_DONE_ID_RE = re.compile(rb'"topic_id":\s*(\d+)')
+
+
+def already_fetched(out_path: Path) -> set[int]:
+    """已经抓过的 topic_id。断点续跑靠它。"""
+    if not out_path.exists():
+        return set()
+    with out_path.open("rb") as fh:
+        return {int(m.group(1)) for m in _DONE_ID_RE.finditer(fh.read())}
+
+
+def run(
+    ids: Iterable[int],
+    out_path: Path,
+    delay: float = 0.7,
+    workers: int = 1,
+) -> tuple[int, int]:
+    """并发抓取并逐条写 JSONL，支持断点续跑（已抓过的 id 跳过）。
+
+    `workers` 是并发线程数，`delay` 是**全局**最小请求间隔（见 _Pacer）。
+    默认 1 线程 = 与并发之前逐字节一致的行为。
+    """
+    done = already_fetched(out_path)
     ids = [i for i in ids if i not in done]
-    ok = fail = 0
-    with make_client() as client:
+    if done:
+        print(f"已抓过 {len(done)} 条，本轮待抓 {len(ids)} 条")
+    if not ids:
+        return 0, 0
+
+    pacer = _Pacer(delay)
+    write_lock = threading.Lock()
+    counter = {"n": 0, "ok": 0, "fail": 0}
+
+    with make_client(workers) as client:
         cats = load_category_names(client)
         with out_path.open("a", encoding="utf-8") as fh:
-            for n, tid in enumerate(ids, 1):
+
+            def one(tid: int) -> None:
+                pacer.wait()
                 try:
                     rec = to_archive(fetch_topic(client, tid), cats)
-                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                    fh.flush()
-                    ok += 1
+                    line = json.dumps(rec, ensure_ascii=False) + "\n"
+                    # 写文件必须串行：多线程各写各的会把行撕碎，而这个文件
+                    # 正是断点续跑的依据，撕一行就少抓一条且查不出来
+                    with write_lock:
+                        fh.write(line)
+                        fh.flush()
+                        counter["n"] += 1
+                        counter["ok"] += 1
+                        n = counter["n"]
                     print(f"[{n}/{len(ids)}] ✓ {tid} {rec['title'][:40]} "
                           f"({len(rec['body_text'])}字 {rec['views']}阅)", flush=True)
                 except Exception as exc:  # noqa: BLE001 — 单条失败不中断整批
-                    fail += 1
+                    with write_lock:
+                        counter["n"] += 1
+                        counter["fail"] += 1
+                        n = counter["n"]
                     print(f"[{n}/{len(ids)}] ✗ {tid} {exc}", flush=True)
-                time.sleep(delay)
-    return ok, fail
+
+            if workers <= 1:
+                for tid in ids:
+                    one(tid)
+            else:
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    list(pool.map(one, ids))
+
+    return counter["ok"], counter["fail"]
+
+
+def _usage() -> str:
+    return (
+        "用法: forum_fetch.py <链接清单> <输出.jsonl> [--workers N] [--delay S]\n"
+        "  --workers  并发线程数（默认 1）。论坛是别人的服务，别开太猛，4~6 够用。\n"
+        "  --delay    全局最小请求间隔秒（默认 0.7）。这是整体速率，不是每线程。"
+    )
 
 
 if __name__ == "__main__":
-    src = Path(sys.argv[1])
-    dst = Path(sys.argv[2])
-    raw_ids = [parse_topic_id(l) for l in src.read_text(encoding="utf-8").splitlines()]
+    argv = sys.argv[1:]
+    if len(argv) < 2 or argv[0] in ("-h", "--help"):
+        raise SystemExit(_usage())
+
+    def _opt(name: str, default: float) -> float:
+        return float(argv[argv.index(name) + 1]) if name in argv else default
+
+    src, dst = Path(argv[0]), Path(argv[1])
+    n_workers = int(_opt("--workers", 1))
+    req_delay = _opt("--delay", 0.7)
+
+    raw_ids = [parse_topic_id(line) for line in src.read_text(encoding="utf-8").splitlines()]
     todo = [i for i in raw_ids if i]
-    print(f"输入 {len(raw_ids)} 行 → 有效话题 {len(todo)} 个")
-    ok, fail = run(todo, dst)
-    print(f"完成：成功 {ok}，失败 {fail} → {dst}")
+    # 同一个 id 在清单里出现两次不该抓两次；dict.fromkeys 保序去重
+    todo = list(dict.fromkeys(todo))
+    print(f"输入 {len(raw_ids)} 行 → 有效话题 {len(todo)} 个"
+          f"（并发 {n_workers}，全局间隔 {req_delay}s）")
+    started = time.monotonic()
+    ok, fail = run(todo, dst, delay=req_delay, workers=n_workers)
+    dur = time.monotonic() - started
+    rate = f"，{ok / dur:.1f} 条/秒" if dur > 0 and ok else ""
+    print(f"完成：成功 {ok}，失败 {fail}，用时 {dur:.0f}s{rate} → {dst}")

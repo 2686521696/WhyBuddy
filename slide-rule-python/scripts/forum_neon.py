@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -157,7 +158,8 @@ class Store:
             self.q(ddl)
         self.q("create index if not exists ix_forum_topic_fit_grade on forum_topic (fit_grade)")
 
-    def upsert(self, rec: dict[str, Any]) -> None:
+    @staticmethod
+    def _row_params(rec: dict[str, Any]) -> list[Any]:
         params: list[Any] = []
         for col in COLUMNS:
             val = rec.get(col)
@@ -168,13 +170,38 @@ class Store:
             elif col == "has_accepted_answer":
                 val = bool(val)
             params.append(val)
-        placeholders = ", ".join(
-            f"${i + 1}::jsonb" if c in JSONB_COLS else f"${i + 1}"
-            for i, c in enumerate(COLUMNS)
-        )
+        return params
+
+    def upsert(self, rec: dict[str, Any]) -> None:
+        self.upsert_many([rec])
+
+    def upsert_many(self, recs: list[dict[str, Any]]) -> None:
+        """一条语句写多行。
+
+        2000 条逐行插入就是 2000 次 HTTPS 往返；按 40ms 一次算是一分多钟纯等
+        网络。合并成多行 VALUES 之后往返数降一到两个量级。
+
+        ⚠ 批的大小必须**按字节**卡，不能只按条数：话题正文差距极大（实测中位
+        39KB、最大 260KB），而网关的 DB_API_MAX_BODY_BYTES 默认 1MB。按条数
+        分批的话，几条长文凑一起就会撞 413，而且只在长文多的那一批上偶发。
+        """
+        if not recs:
+            return
         updates = ", ".join(f"{c} = excluded.{c}" for c in COLUMNS if c != "id")
+        n_cols = len(COLUMNS)
+        params: list[Any] = []
+        groups: list[str] = []
+        for rec in recs:
+            row = self._row_params(rec)
+            base = len(params)
+            groups.append("(" + ", ".join(
+                f"${base + i + 1}::jsonb" if c in JSONB_COLS else f"${base + i + 1}"
+                for i, c in enumerate(COLUMNS)
+            ) + ")")
+            params.extend(row)
+        assert len(params) == n_cols * len(recs)
         self.q(
-            f"insert into forum_topic ({', '.join(COLUMNS)}) values ({placeholders}) "
+            f"insert into forum_topic ({', '.join(COLUMNS)}) values {', '.join(groups)} "
             f"on conflict (id) do update set {updates}",
             params,
         )
@@ -186,32 +213,74 @@ class Store:
         return int(self.q("select count(*)::int as n from forum_topic")[0]["n"])
 
 
+#: 单批请求体的字节预算。网关默认 DB_API_MAX_BODY_BYTES = 1MB，留三成余量给
+#: SQL 文本本身和 JSON 转义膨胀（中文在 JSON 里会变成 \uXXXX，最坏 6 倍）。
+_BATCH_BYTE_BUDGET = 700_000
+#: 再加一道条数上限。字节没到顶但行数太多时，一条语句的占位符会多到离谱
+#: （24 列 × 200 行 = 4800 个），解析开销反而上来了。
+_BATCH_MAX_ROWS = 100
+
+
+def _batched(recs: list[dict[str, Any]]) -> "list[list[dict[str, Any]]]":
+    """按字节预算 + 条数上限切批。单条自己就超预算时独占一批（总得试一次）。"""
+    out: list[list[dict[str, Any]]] = []
+    cur: list[dict[str, Any]] = []
+    cur_bytes = 0
+    for rec in recs:
+        size = len(json.dumps(rec, ensure_ascii=False).encode("utf-8"))
+        if cur and (cur_bytes + size > _BATCH_BYTE_BUDGET or len(cur) >= _BATCH_MAX_ROWS):
+            out.append(cur)
+            cur, cur_bytes = [], 0
+        cur.append(rec)
+        cur_bytes += size
+    if cur:
+        out.append(cur)
+    return out
+
+
 def main() -> None:
     src = Path(sys.argv[1])
     db = Store()
     db.ensure_table()
-    print(f"表就绪，当前 {db.count()} 条")
+    before = db.count()
+    print(f"表就绪，当前 {before} 条")
 
-    ok = fail = 0
+    recs: list[dict[str, Any]] = []
     skipped = 0
     for line in src.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         try:
-            rec = json.loads(line)
+            recs.append(json.loads(line))
         except json.JSONDecodeError:
             # 抓取还在往同一个文件追加时，最后一行可能只写了一半。跳过而不是
             # 崩掉——这个脚本要能对着一个正在增长的 JSONL 跑，随时落库兜底。
             skipped += 1
-            continue
+
+    batches = _batched(recs)
+    print(f"读到 {len(recs)} 条，切成 {len(batches)} 批")
+    ok = fail = 0
+    started = time.monotonic()
+    for n, batch in enumerate(batches, 1):
         try:
-            db.upsert(rec)
-            ok += 1
-        except Exception as exc:  # noqa: BLE001 — 单条失败不中断整批
-            fail += 1
-            print(f"  ✗ {rec.get('id')}: {exc}", flush=True)
+            db.upsert_many(batch)
+            ok += len(batch)
+        except Exception as exc:  # noqa: BLE001 — 整批失败时逐条重试，别连坐
+            print(f"  批 {n} 整批失败，改逐条重试：{str(exc)[:160]}", flush=True)
+            for rec in batch:
+                try:
+                    db.upsert(rec)
+                    ok += 1
+                except Exception as one_exc:  # noqa: BLE001
+                    fail += 1
+                    print(f"    ✗ {rec.get('id')}: {str(one_exc)[:160]}", flush=True)
+        if n % 5 == 0 or n == len(batches):
+            print(f"  [{n}/{len(batches)}] 已写 {ok} 条", flush=True)
+
+    dur = time.monotonic() - started
     tail = f"，跳过半行 {skipped}" if skipped else ""
-    print(f"写入完成：成功 {ok}，失败 {fail}{tail}；表内共 {db.count()} 条")
+    print(f"写入完成：成功 {ok}，失败 {fail}{tail}；用时 {dur:.0f}s；"
+          f"表内 {before} → {db.count()} 条")
 
 
 if __name__ == "__main__":
