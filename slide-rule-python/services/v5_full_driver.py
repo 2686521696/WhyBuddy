@@ -518,6 +518,64 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
     return state
 
 
+def goal_digest(state: "V5SessionState") -> str:
+    """目标文本的确定性指纹，用作模型复用键的一半。"""
+    import hashlib
+
+    goal = getattr(state, "goal", None) or {}
+    text = goal.get("text", "") if isinstance(goal, dict) else str(goal)
+    return hashlib.sha256(str(text).strip().encode("utf-8")).hexdigest()[:16]
+
+
+def reusable_model_for_turn(state: "V5SessionState") -> "Optional[Dict[str, Any]]":
+    """本轮已经生成过、可以直接复用的五系统模型；没有就 None。
+
+    ## 解决什么
+
+    2026-08-04 真跑：模型自己在多个 loop 里选了收口，`MAX_REPEAT_PER_CAP=2`
+    放行两次。第二次收口时生成入口**没有复用通道**，从头再调一次 LLM 生成
+    （13 万字），拿到一份全新模型。而链路上那三道幂等保护
+    （page.freeformOverview 已存在就跳过、chartColors 已有就不重取、
+    sheet_used 计数）检查的全是「model 内部字段」——新模型上这些都是空，
+    保护形同虚设。于是生图 100s + 取色 12s + 设计 100s 整套重跑一遍，
+    两张不同参照图取出两套不同配色，后写的覆盖先写的，第一遍 233 秒全废。
+
+    **锁挂在门上，但每次来的是一扇新门。** 这里补的就是那把会话级的锁。
+
+    modelVersions 存的是**增强之后**的模型（证据由 model_to_linkage_artifacts
+    从增强后的 model 转出），所以复用它等于连生图/取色/设计一并省掉——那三道
+    既有的幂等保护这次会自然生效，因为终于是同一份 model 了。
+
+    ## 复用键怎么定的
+
+    两个开源方案各贡献一半：
+
+    - vercel/turborepo#4572：缓存最大的坑是**影响输出的输入没进键**，改了
+      东西还吃旧结果。所以 goal 必须进键（goalDigest）。
+    - Stripe 幂等键：同一个键配不同参数必须报错而不是静默返回旧结果。这里
+      对应的就是 goalDigest 对不上时**宁可重算**，绝不返回。
+
+    作用域刻意收窄到**单轮（turnId）**：跨轮复用会让「用户补充需求之后仍然
+    拿到旧模型」，那正是 turborepo 那个坑在我们这儿的形态。一轮 = 一次用户
+    输入到闭环，轮内 goal 不会变，是安全的。
+
+    精修（refine）与版本回退（override）有各自的通道，调用方在走到这里之前
+    就分流了，不会误用本函数。
+    """
+    versions = list(getattr(state, "modelVersions", None) or [])
+    if not versions:
+        return None
+    last = versions[-1]
+    if not isinstance(last, dict) or not isinstance(last.get("model"), dict):
+        return None
+    turn = str(getattr(state, "lastTurnId", "") or "")
+    if not turn or str(last.get("turnId") or "") != turn:
+        return None  # 不是本轮的产物，不复用
+    if str(last.get("goalDigest") or "") != goal_digest(state):
+        return None  # 目标变了（或旧快照没记指纹）——宁可重算
+    return last["model"]
+
+
 def extract_model_from_closure(closure) -> "Optional[Dict[str, Any]]":
     """从闭环 perSkillEvidence 的 modelSection 还原五系统模型（缺任一段返回 None）。"""
     per_skill = (
@@ -563,6 +621,11 @@ def record_model_version(state: "V5SessionState", publish_closure, instruction: 
         "turnId": str(getattr(state, "lastTurnId", "") or ""),
         "instruction": str(instruction or "")[:300],
         "createdAt": datetime.now(timezone.utc).isoformat(),
+        # 复用键的一半（另一半是 turnId）。教训取自 vercel/turborepo#4572
+        # 「cache doesn't invalidate on change in dependent code」——缓存最大
+        # 的坑不是没命中，是**影响输出的输入没进键**，于是改了东西还吃旧结果。
+        # 模型是照着 goal 生成的，goal 就必须进键；对不上宁可重算。
+        "goalDigest": goal_digest(state),
         "model": model,
     })
     state.modelVersions = versions[-20:]  # 上限 20 版，防状态无限膨胀

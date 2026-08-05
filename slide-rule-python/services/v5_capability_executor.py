@@ -451,6 +451,43 @@ def _try_llm_generate_evidence(
     return {a["id"].replace("llm-linkage-", ""): a for a in artifacts}
 
 
+def _reuse_this_turn_model(state: V5SessionState, matches: Dict[str, Any]) -> bool:
+    """本轮已生成过模型 → 直接拿它铺证据，跳过整条重生成。
+
+    命中时省掉的是**一整套**：五系统模型生成（真跑实测 13 万字/数分钟）、
+    生图（~100s）、取色（~12s）、首页设计（~100s）、截图自检（~30s）。
+    因为 modelVersions 存的是增强之后的模型，那些产物本来就在里面。
+
+    复用键与作用域见 v5_full_driver.reusable_model_for_turn 的说明
+    （turborepo#4572 的输入追踪 + Stripe 幂等键的参数校验）。
+
+    返回是否命中。任何异常都当没命中——复用是省时间的优化，它自己出问题
+    绝不能把一次能正常生成的推演带崩。
+    """
+    try:
+        from .v5_full_driver import reusable_model_for_turn
+        from .v5_llm_generate import model_to_linkage_artifacts
+
+        model = reusable_model_for_turn(state)
+        if not model:
+            return False
+        goal = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal)
+        artifacts = model_to_linkage_artifacts(model, goal)
+        reused = {a["id"].replace("llm-linkage-", ""): a for a in artifacts}
+        if not all(skill in reused for skill in REQUIRED_EVIDENCE_KEYS):
+            return False
+        for skill in REQUIRED_EVIDENCE_KEYS:
+            matches[skill] = reused[skill]
+        print(
+            "[v5_capability_executor] 本轮已生成过模型，复用上一版："
+            "跳过重生成/生图/取色/首页设计"
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[v5_capability_executor] 模型复用检查跳过：{str(exc)[:140]}")
+        return False
+
+
 def _build_per_skill_evidence(
     state: V5SessionState,
     blocked_signal: bool,
@@ -533,6 +570,13 @@ def _build_per_skill_evidence(
                     "[v5_capability_executor] refine failed, keeping previous model "
                     f"(本轮修改未生效): {detail}"
                 )
+    elif not blocked_signal and _reuse_this_turn_model(state, matches):
+        # 本轮已生成过模型：证据已由 _reuse_this_turn_model 铺好，整条重生成跳过。
+        #
+        # 排在演示域夹具**之前**：夹具本身不调 LLM 很快，但它同样会往下触发
+        # 整条增强（生图 ~100s / 取色 / 首页设计 ~100s）。第二次收口不管模型
+        # 当初是夹具来的还是 LLM 生成的，都该直接用现成的那一份。
+        pass
     elif not blocked_signal and recognized_domain is not None:
         # Deterministic domain (purchase/leave/ticket/onboarding) — fast fixture path,
         # no LLM call. This is the T1 generality proof.
