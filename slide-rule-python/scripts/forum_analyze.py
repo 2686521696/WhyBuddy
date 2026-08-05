@@ -1,4 +1,4 @@
-"""从 Neon 的 forum_topic 读话题档，出一份分析报告。
+"""从远端库的 forum_topic 读话题档，出一份分析报告。
 
 分析口径都写在下面各函数的注释里——赛道是从标题里认的（论坛没有结构化赛道字段），
 所以有误差，误差来源也一并标出来。
@@ -11,7 +11,7 @@ from collections import Counter
 from statistics import median
 from typing import Any
 
-from forum_neon import Neon
+from forum_neon import Store
 
 # 赛道关键词。选手在标题里写法极不统一（【学习工作赛道】/学习工作 |/〖学习工作赛道〗/
 # [学习工作]/【学子工作】…），所以按关键词认而不是按固定格式解析。
@@ -80,7 +80,7 @@ def pct(n: int, total: int) -> str:
 
 
 def main() -> None:
-    db = Neon()
+    db = Store()
     rows: list[dict[str, Any]] = db.q(
         "select topic_id, url, title, author_username, category_name, tags, "
         "created_at, views, like_count, reply_count, posts_count, participant_count, "

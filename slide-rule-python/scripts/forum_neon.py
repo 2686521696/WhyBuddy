@@ -1,19 +1,27 @@
-"""把话题档写进 Neon（SQL over HTTP），与 app_store 的 NeonHttpAppStore 同款接法。
+"""把话题档写进远端库。
 
-凭据只走 Neon-Connection-String 请求头，不进 URL、不进日志。
+## 2026-08-05：从 Neon 改成走应用自己那条通道
+
+原来这里自己拼 Neon 的 SQL-over-HTTP 端点，`endpoint_for` 还硬卡
+`*.neon.tech`。Neon 因为流量配额打满停用之后，这条链整个断了——表也
+跟着没了。
+
+现在不再自己接线，直接复用 `services.app_store` 里的连接选择：网关
+（APP_STORE_HTTP_API_URL）优先，其次 TCP 连接串。好处不只是少写代码：
+占位符方言转换、鉴权头、行数上限、错误映射都在那一处，网关将来改了
+这个脚本不用跟着改——本项目已经在"同一份 SQL 抄两遍"上吃过亏。
+
+凭据只走请求头，不进 URL、不进日志。
 """
 from __future__ import annotations
 
 import json
-import os
-import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
 
-import httpx
-
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # 列序绑定 INSERT 的占位符序，改字段只改这一处
 COLUMNS = (
@@ -57,39 +65,63 @@ create table if not exists forum_topic (
 """
 
 
-def database_url() -> str:
-    """从环境或 .env 取连接串。"""
-    url = os.environ.get("APP_STORE_DATABASE_URL", "").strip()
-    if url:
-        return url
-    for line in (REPO / ".env").read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("APP_STORE_DATABASE_URL=") and not line.startswith("#"):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
-    raise SystemExit("找不到 APP_STORE_DATABASE_URL")
+def _load_env() -> None:
+    """脚本单独跑时不经过 app 启动，得自己把 .env 读进来。"""
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(REPO / ".env")
+    except ImportError:  # 没装 python-dotenv 就只认真实环境变量
+        pass
 
 
-def endpoint_for(url: str) -> str:
-    host = re.sub(r"^postgresql(\+\w+)?://", "", url).split("@")[-1].split("/")[0].split("?")[0]
-    if not host.lower().endswith(".neon.tech"):
-        raise SystemExit(f"不是 Neon 主机，没有 SQL-over-HTTP 端点：{host}")
-    return f"https://{host}/sql"
+class Store:
+    """话题档的库句柄。通道由 app_store 统一决定，这里不自己判断。"""
 
-
-class Neon:
     def __init__(self) -> None:
-        url = database_url()
-        self._client = httpx.Client(
-            timeout=60.0,
-            headers={"Neon-Connection-String": url, "Content-Type": "application/json"},
-        )
-        self._endpoint = endpoint_for(url)
+        _load_env()
+        from config.settings import settings
+        from services.app_store import HttpSqlGateway, http_api_credentials
+
+        api_url, api_key = http_api_credentials()
+        if api_url and api_key:
+            self._gateway = HttpSqlGateway(api_url, api_key, timeout_s=60.0)
+            self._engine = None
+            print(f"通道：HTTPS SQL 网关 {self._gateway.endpoint}")
+            return
+
+        url = (getattr(settings, "APP_STORE_DATABASE_URL", "") or "").strip()
+        if not url:
+            raise SystemExit(
+                "既没配 APP_STORE_HTTP_API_URL/_KEY，也没配 APP_STORE_DATABASE_URL"
+            )
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import NullPool
+
+        from services.app_store import _sql_engine_config
+
+        connect_args, kwargs = _sql_engine_config(url, NullPool)
+        self._gateway = None
+        self._engine = create_engine(url, connect_args=connect_args, **kwargs)
+        print("通道：TCP 直连")
 
     def q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
-        resp = self._client.post(self._endpoint, json={"query": sql, "params": params or []})
-        if resp.status_code >= 400:
-            raise RuntimeError(f"neon http {resp.status_code}: {resp.text[:400]}")
-        return resp.json().get("rows") or []
+        if self._gateway is not None:
+            # `$n` → `%s` 的方言转换在网关那一层，这里的 SQL 保持 Postgres 写法
+            return self._gateway.query(sql, params)
+        from sqlalchemy import text
+
+        # SQLAlchemy 走具名参数，把 $n 换成 :pn
+        bound = sql
+        for i in range(len(params or []), 0, -1):
+            bound = bound.replace(f"${i}", f":p{i}")
+        binds = {f"p{i + 1}": v for i, v in enumerate(params or [])}
+        with self._engine.begin() as conn:
+            result = conn.execute(text(bound), binds)
+            # DDL / INSERT 没有结果集，取 .mappings() 会抛 ResourceClosedError
+            if not result.returns_rows:
+                return []
+            return [dict(r) for r in result.mappings().all()]
 
     def ensure_table(self) -> None:
         self.q(DDL)
@@ -119,14 +151,15 @@ class Neon:
         )
 
     def count(self) -> int:
-        # ⚠ HTTP 端点对 bigint 返回字符串（见 app_store._neon_normalize_row 的告
-        # 诫），count(*) 必须显式 ::int，否则拿到的是 "23" 而不是 23
+        # ⚠ count(*) 是 int8。Neon 的 HTTP 端点对 bigint 返回**字符串**，新网关
+        # 走 psycopg 返回真 int——两边行为不一样。显式 ::int 之后两边都对，
+        # 外加一层 int() 兜底，不赌任何一边。
         return int(self.q("select count(*)::int as n from forum_topic")[0]["n"])
 
 
 def main() -> None:
     src = Path(sys.argv[1])
-    db = Neon()
+    db = Store()
     db.ensure_table()
     print(f"表就绪，当前 {db.count()} 条")
 
