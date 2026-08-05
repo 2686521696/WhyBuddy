@@ -80,10 +80,16 @@ def test_retry_does_not_split_into_two_visible_steps():
 
 
 def test_every_label_carries_a_duration_hint():
-    """每一段都要带时长提示，理由见文件头（没法流式时它是唯一的判断依据）。"""
+    """每一段都要带时长提示，理由见文件头（没法流式时它是唯一的判断依据）。
+
+    单位收秒或分钟都行——建模那两段中位数三分多钟，写成"通常 200~240 秒"
+    没人愿意在脑子里换算。要的是"看一眼知道还要等多久"。
+    """
     for name, (label, hint) in _ENRICH_STAGE_LABELS.items():
-        assert label and not label.startswith("monitor."), f"{name} 要给人话，不是内部阶段名"
-        assert "秒" in hint, f"{name} 缺时长提示"
+        assert label and not label.split(".")[0] in ("monitor", "model"), (
+            f"{name} 要给人话，不是内部阶段名"
+        )
+        assert "秒" in hint or "分钟" in hint, f"{name} 缺时长提示"
 
 
 def test_start_and_end_are_paired():
