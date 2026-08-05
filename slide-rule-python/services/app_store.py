@@ -12,6 +12,8 @@ FreeformInsight 内容 + 首页设计。这跟"用户在生成出来的 app 里�
 - settings.APP_STORE_DATABASE_URL 填了任意 SQLAlchemy URL（Neon/自建
   Postgres 用 postgresql://…；也接受 sqlite:///data/apps.db 这种本地库）
   → 落库，可查询、可索引、可并发。
+- settings.APP_STORE_HTTP_API_URL + APP_STORE_HTTP_API_KEY 指向自定义 HTTPS
+  SQL API（例如本仓库的 /db-api）时 → 走 HTTPS 代理，不要求原生 Postgres 协议。
 - 不填 → fail-open 回退本地 JSON 文件（APP_STORE_FILE），行为跟"没有 DB"
   时完全一致，不引入新的失败面。
 
@@ -27,6 +29,7 @@ FreeformInsight 内容 + 首页设计。这跟"用户在生成出来的 app 里�
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -948,6 +951,21 @@ def neon_http_endpoint(database_url: str) -> Optional[str]:
     return f"https://{host}/sql"
 
 
+def http_api_query_endpoint(api_base_url: str) -> Optional[str]:
+    """把自定义 HTTPS SQL API 的 base URL 归一成 /v1/query 端点。"""
+    base = (api_base_url or "").strip().rstrip("/")
+    if not base:
+        return None
+    if base.endswith("/v1/query"):
+        return base
+    return f"{base}/v1/query"
+
+
+def _http_api_target_key(api_base_url: str, api_key: str) -> str:
+    digest = hashlib.sha256((api_key or "").encode("utf-8")).hexdigest() if api_key else ""
+    return f"{(api_base_url or '').strip()}|{digest}"
+
+
 def _neon_normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     """把 HTTP 返回的一行归一化成跟另外两个后端完全一致的记录形状。
 
@@ -1022,7 +1040,7 @@ def _neon_http_error(resp: Any) -> NeonHttpError:
     except Exception:  # noqa: BLE001 — 网关 5xx 常返回 HTML，回落文本即可
         return NeonHttpError(f"neon http {resp.status_code}: {resp.text[:200]}", resp.status_code)
     fields = {k: payload[k] for k in _NEON_ERROR_FIELDS if payload.get(k) not in (None, "")}
-    message = str(payload.get("message") or "").strip() or resp.text[:200]
+    message = str(payload.get("message") or payload.get("detail") or "").strip() or resp.text[:200]
     # 摘要里带上最常用来定位的三项，日志一眼能看出是什么错
     summary = ", ".join(
         f"{k}={fields[k]}" for k in ("code", "constraint", "detail") if k in fields
@@ -1269,6 +1287,42 @@ class NeonHttpAppStore(AppStoreBackend):
         return best
 
 
+class HttpApiAppStore(NeonHttpAppStore):
+    """自定义 HTTPS SQL API 后端（例如本仓库的 /db-api）。"""
+
+    def __init__(self, api_base_url: str, api_key: str) -> None:
+        import httpx
+
+        endpoint = http_api_query_endpoint(api_base_url)
+        token = (api_key or "").strip()
+        if not endpoint:
+            raise ValueError("APP_STORE_HTTP_API_URL is empty")
+        if not token:
+            raise ValueError("APP_STORE_HTTP_API_KEY is empty")
+        self._endpoint = endpoint
+        self._client = httpx.Client(
+            timeout=_NEON_HTTP_TIMEOUT_S,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        self._ensure_table()
+
+    def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
+        resp = self._client.post(
+            self._endpoint,
+            json={
+                "sql": sql,
+                "params": params or [],
+                "timeout_ms": _PG_STATEMENT_TIMEOUT_MS,
+            },
+        )
+        if resp.status_code >= 400:
+            raise _neon_http_error(resp)
+        return resp.json().get("rows") or []
+
+
 # ────────────────────────── 后端单例选择 ──────────────────────────
 
 _backend_lock = threading.Lock()
@@ -1277,6 +1331,7 @@ _backend_signature: Optional[str] = None
 # 本进程内已经初始化失败过的 DB URL——不再重试（避免每次 get_backend 都吃一次
 # 连接超时）。直接走 JSON 兜底。reset_backend_cache 会一并清空（测试用）。
 _failed_db_urls: set[str] = set()
+_failed_http_api_targets: set[str] = set()
 
 
 def _local_sqlite_backend() -> Optional[AppStoreBackend]:
@@ -1337,30 +1392,34 @@ def prefer_neon_http() -> bool:
 
 def _current_signature() -> str:
     remote = (settings.APP_STORE_DATABASE_URL or "").strip()
+    http_api_url = (getattr(settings, "APP_STORE_HTTP_API_URL", "") or "").strip()
+    http_api_key = (getattr(settings, "APP_STORE_HTTP_API_KEY", "") or "").strip()
     local = (getattr(settings, "APP_STORE_LOCAL_SQLITE", "") or "").strip()
     # 本地库配置也进签名：改了它（比如测试里置空）要能触发重建，否则会一直
     # 拿着上一次的后端单例，改配置像没生效。
     # 通道偏好同理——翻了开关要能重建。
     return (
         f"{remote}|{local}|jsonfile:{settings.APP_STORE_FILE}"
+        f"|httpapi:{_http_api_target_key(http_api_url, http_api_key)}"
         f"|http:{int(prefer_neon_http())}"
     )
 
 
 def get_backend() -> AppStoreBackend:
-    """按当前配置返回后端单例，四级 fail-open（2026-07-28 起）：
+    """按当前配置返回后端单例，fail-open（2026-07-28 起）：
 
-        远端 TCP → 远端 SQL over HTTP → 本地 SQLite → 本地 JSON 文件
-        └────────── 同一个 APP_STORE_DATABASE_URL ─────────┘
+        自定义 HTTPS SQL API（可选） → 远端 TCP → 远端 SQL over HTTP → 本地 SQLite → 本地 JSON 文件
+        └────────────────────────────── 同一个 APP_STORE_DATABASE_URL ──────────────────────────────┘
 
     优先级的意思是"数据最好落在哪"：
-    1. 远端库（Neon/自建 PG）走 TCP——连接复用、延迟低、事务语义完整；
-    2. TCP 不通（受限网络只放行 443、无服务器/边缘运行时没有原始 TCP）且连接
+    1. 自定义 HTTPS SQL API 适用于只能跑 HTTPS 的受限环境（例如外部沙盒）；
+    2. 远端库（Neon/自建 PG）走 TCP——连接复用、延迟低、事务语义完整；
+    3. TCP 不通（受限网络只放行 443、无服务器/边缘运行时没有原始 TCP）且连接
        串指向 Neon 时，改走官方 SQL-over-HTTP 端点。同一个连接串、无需改配置：
        生产照旧走 TCP，受限环境自动降级但**仍然是同一个远端库**，数据不分叉；
-    3. 远端整个不可用时落本地 SQLite——真库，能查能索引、写入是事务性的，比
+    4. 远端整个不可用时落本地 SQLite——真库，能查能索引、写入是事务性的，比
        JSON 那种"整文件读改写"强；
-    4. 本地库也建不起来（只读文件系统等）才回 JSON 文件。
+    5. 本地库也建不起来（只读文件系统等）才回 JSON 文件。
 
     ⚠️ 第 3 级开始数据就和远端分叉了：远端恢复后本地这段时间的记录不会自动
     回流。这在只有 JSON 兜底的时代就存在，加 SQLite 只是让兜底更可用，没有
@@ -1373,6 +1432,24 @@ def get_backend() -> AppStoreBackend:
         sig = _current_signature()
         if _backend_instance is not None and _backend_signature == sig:
             return _backend_instance
+        http_api_url = (getattr(settings, "APP_STORE_HTTP_API_URL", "") or "").strip()
+        http_api_key = (getattr(settings, "APP_STORE_HTTP_API_KEY", "") or "").strip()
+        if http_api_url:
+            http_api_sig = _http_api_target_key(http_api_url, http_api_key)
+            if not http_api_key:
+                print("[app_store] 设了 APP_STORE_HTTP_API_URL 但没配 APP_STORE_HTTP_API_KEY，忽略这个通道")
+            elif http_api_sig not in _failed_http_api_targets:
+                try:
+                    _backend_instance = HttpApiAppStore(http_api_url, http_api_key)
+                    print("[app_store] 直接走自定义 HTTPS SQL API")
+                    _backend_signature = sig
+                    return _backend_instance
+                except Exception as exc:  # noqa: BLE001 — 指定了也可能连不上
+                    _failed_http_api_targets.add(http_api_sig)
+                    print(
+                        f"[app_store] 自定义 HTTPS API 不可用，继续按常规顺序降级: "
+                        f"{str(exc)[:200]}"
+                    )
         db_url = (settings.APP_STORE_DATABASE_URL or "").strip()
         # 显式指定走 HTTP：跳过 TCP 那一整段（探针 + 多地址逐个试 + 建表补列），
         # 直接用 SQL over HTTP。理由见 prefer_neon_http。
@@ -1441,6 +1518,7 @@ def reset_backend_cache() -> None:
         _backend_instance = None
         _backend_signature = None
         _failed_db_urls.clear()
+        _failed_http_api_targets.clear()
 
 
 # ────────────────────────── 公开 API ──────────────────────────

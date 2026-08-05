@@ -55,6 +55,9 @@ services:
       SLIDE_RULE_INTERNAL_KEY: ${SLIDE_RULE_INTERNAL_KEY:-dev-slide-rule-internal}
     volumes:
       - sliderule-python-data:/app/data
+    networks:
+      - default
+      - postgres-internal
     healthcheck:
       test:
         [
@@ -93,6 +96,9 @@ services:
       AGENT_LOOP_API_TARGET: http://python:9700
     ports:
       - "3000:3001"
+    networks:
+      - default
+      - postgres-internal
     healthcheck:
       test:
         [
@@ -150,3 +156,8 @@ volumes:
     name: sliderule-mysql-data
   sliderule-python-data:
     name: sliderule-python-data
+
+networks:
+  postgres-internal:
+    external: true
+    name: postgres-stack-internal

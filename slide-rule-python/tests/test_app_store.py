@@ -6,6 +6,7 @@ Postgres 路径；再单独测 JSON 文件兜底。两条后端跑同一批断�
 证明"有 DB 用 DB、没 DB 回退文件"两条路行为一致。
 """
 
+import json
 import os
 import tempfile
 
@@ -265,6 +266,83 @@ def test_neon_http_endpoint_derived_only_for_neon_hosts():
     assert store.neon_http_endpoint("postgresql://u:p@my-rds.amazonaws.com/db") is None
     assert store.neon_http_endpoint("sqlite:///data/apps.db") is None
     assert store.neon_http_endpoint("not-a-url") is None
+
+
+def test_http_api_query_endpoint_normalizes_base_urls():
+    assert store.http_api_query_endpoint("https://miantuan.ai/db-api") == (
+        "https://miantuan.ai/db-api/v1/query"
+    )
+    assert store.http_api_query_endpoint("https://miantuan.ai/db-api/") == (
+        "https://miantuan.ai/db-api/v1/query"
+    )
+    assert store.http_api_query_endpoint("https://miantuan.ai/db-api/v1/query") == (
+        "https://miantuan.ai/db-api/v1/query"
+    )
+    assert store.http_api_query_endpoint("") is None
+
+
+class _FakeHttpxResp:
+    def __init__(self, status_code=200, payload=None):
+        self.status_code = status_code
+        self._payload = payload if payload is not None else {"rows": []}
+        self.text = json.dumps(self._payload, ensure_ascii=False)
+
+    def json(self):
+        return self._payload
+
+
+class _FakeHttpxClient:
+    instances = []
+
+    def __init__(self, timeout=None, headers=None):
+        self.timeout = timeout
+        self.headers = headers or {}
+        self.posts = []
+        self.__class__.instances.append(self)
+
+    def post(self, endpoint, json=None):
+        self.posts.append((endpoint, json))
+        return _FakeHttpxResp()
+
+
+def test_http_api_backend_uses_sql_endpoint_and_bearer_token(monkeypatch):
+    import httpx
+
+    _FakeHttpxClient.instances.clear()
+    monkeypatch.setattr(httpx, "Client", _FakeHttpxClient)
+
+    backend = store.HttpApiAppStore("https://miantuan.ai/db-api", "secret-token")
+    client = _FakeHttpxClient.instances[-1]
+    assert client.headers["Authorization"] == "Bearer secret-token"
+    assert client.posts[0][0] == "https://miantuan.ai/db-api/v1/query"
+    assert client.posts[0][1]["sql"].lstrip().startswith("create table if not exists generated_app")
+    assert client.posts[0][1]["timeout_ms"] == store._PG_STATEMENT_TIMEOUT_MS
+
+    backend._q("select 1", [])
+    assert client.posts[-1][1]["sql"] == "select 1"
+    assert client.posts[-1][1]["params"] == []
+    assert client.posts[-1][1]["timeout_ms"] == store._PG_STATEMENT_TIMEOUT_MS
+
+
+def test_http_api_base_url_takes_priority_when_configured(tmp_path, monkeypatch):
+    chosen = []
+
+    class FakeHttpApi:
+        def __init__(self, api_base_url, api_key):
+            chosen.append((api_base_url, api_key))
+
+    monkeypatch.setattr(store, "HttpApiAppStore", FakeHttpApi)
+    monkeypatch.setattr(store.settings, "APP_STORE_HTTP_API_URL", "https://miantuan.ai/db-api")
+    monkeypatch.setattr(store.settings, "APP_STORE_HTTP_API_KEY", "secret-token")
+    monkeypatch.setattr(store.settings, "APP_STORE_DATABASE_URL", None)
+    monkeypatch.setattr(store.settings, "APP_STORE_FILE", str(tmp_path / "apps.json"))
+    monkeypatch.setattr(store.settings, "APP_STORE_LOCAL_SQLITE", "")
+    store.reset_backend_cache()
+
+    backend = store.get_backend()
+    assert type(backend).__name__ == "FakeHttpApi"
+    assert chosen == [("https://miantuan.ai/db-api", "secret-token")]
+    store.reset_backend_cache()
 
 
 def test_neon_row_normalization_matches_other_backends():
