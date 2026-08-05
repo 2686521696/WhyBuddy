@@ -320,11 +320,10 @@ def _validate_proposal(raw: Any, state: V5SessionState) -> list[dict] | None:
     items = raw.get("picks")
     if not isinstance(items, list):
         return None
-    runs = getattr(state, "capabilityRuns", []) or []
-    recent = [
-        (r.get("capabilityId") if isinstance(r, dict) else getattr(r, "capabilityId", ""))
-        for r in runs[-6:]
-    ]
+    import sys as _sys
+
+    from .repeat_policy import is_repeat_exhausted, reason_allows_repeat
+
     picks: list[dict] = []
     seen: set[str] = set()
     for item in items:
@@ -333,15 +332,34 @@ def _validate_proposal(raw: Any, state: V5SessionState) -> list[dict] | None:
         cap = str(item.get("capabilityId") or "").strip()
         if cap not in CAPABILITY_VOCAB or cap in seen:
             continue  # 幻觉能力/重复提案剔除
-        # 重复护栏（与驱动器 max_repeat_guard 同精神）：最近 6 步里已跑过
-        # 两次的能力不许再提——防 LLM 原地打转
-        if recent.count(cap) >= 2:
-            continue
+        # 重复护栏：窗口内跑满次数的不许再提——防 LLM 原地打转。
+        #
+        # 判据搬去 repeat_policy 与驱动器那道门共用（2026-08-05）。此前两边
+        # 各写各的：这里数最近 6 次 run，驱动器数**整个会话**，于是同一个
+        # 能力可能提案门放行、执行门拦下，白跑一次规划。
+        repeat_granted = False
+        if is_repeat_exhausted(state, cap):
+            why = str(item.get("why") or "").strip()
+            # 跑满之后还想要，就得说出这次跟上次有什么不同。提示词一直这么
+            # 要求，`why` 字段也一直在传，只是以前没人读——见 repeat_policy。
+            if not reason_allows_repeat(state, cap, why):
+                continue
+            repeat_granted = True
+            print(
+                f"[agentic-pick] {cap} 已跑满，凭理由放行一次：{why[:80]}",
+                file=_sys.stderr, flush=True,
+            )
         role = str(item.get("roleId") or "").strip()
         if role not in ROLE_VOCAB:
             role = _DEFAULT_ROLE.get(cap, "综合")
         seen.add(cap)
-        picks.append({"capabilityId": cap, "roleId": role})
+        pick = {"capabilityId": cap, "roleId": role}
+        if repeat_granted:
+            # 驱动器那道门排在后面，不带这个标记它会把刚放行的又拦掉——
+            # 那就退回"两道门各判各的"的老毛病了。
+            pick["repeatGranted"] = True
+            pick["why"] = why
+        picks.append(pick)
         if len(picks) >= _MAX_PICKS:
             break
     return picks or None

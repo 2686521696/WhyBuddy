@@ -156,3 +156,45 @@ class TestExecutorReuse:
         )
         st = _state()
         assert ex._reuse_this_turn_model(st, {}) is False
+
+
+# ── 这把锁得真的被合上（2026-08-05）──────────────────────────────
+#
+# 上面整组都绿，可 2026-08-05 真跑里复用**一次都没命中**：第二次收口老老实实
+# 重跑了建模 200s + 生图 113s + 取色 14s + 设计 277s，一共 608 秒，占整轮 45%。
+#
+# 原因不在复用逻辑，在**没人往 modelVersions 里写**：record_model_version
+# 原本只在驱动器循环**结束之后**调一次，循环里那份永远是空的，
+# reusable_model_for_turn 每次都因为「没有历史版本」返回 None。
+#
+# 上面 TestReuseKey 全是手搓 state 喂进去的——测的是"拿到快照之后怎么判"，
+# 测不到"快照压根没人写"。跟同一天查出的 publishClosure 那个 bug 一模一样：
+# 该在循环里更新的状态写在了循环外，单元测试绿着，真机全废。
+
+
+def _driver_source():
+    import inspect
+
+    from services import v5_full_driver
+
+    return inspect.getsource(v5_full_driver)
+
+
+class TestSnapshotIsRecordedInsideTheLoop:
+    def test_收过口的那一轮当场记版本(self):
+        """两条驱动路径都要记——bug 在状态写回的位置，跟走哪条驱动无关。"""
+        src = _driver_source()
+        assert src.count("record_model_version(state, _round_closure, user_instruction)") == 2
+
+    def test_记版本紧跟着写回闭环(self):
+        """两件事必须挨着做，而且同一个条件。
+
+        分开写迟早只改一处——publishClosure 写回是 2026-08-05 补的，
+        record_model_version 当时就漏在了循环外，隔了两行。
+        """
+        src = _driver_source()
+        for block in src.split("state.publishClosure = _round_closure")[1:]:
+            head = block[:600]
+            assert "record_model_version" in head, (
+                "写回闭环之后没有紧跟着记版本——复用锁又会读到空的 modelVersions"
+            )

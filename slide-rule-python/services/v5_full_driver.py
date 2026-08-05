@@ -145,6 +145,23 @@ def _parallel_caps_enabled() -> bool:
         return True
 
 
+def _repeat_allows(state: "V5SessionState", pick: Dict[str, Any]) -> bool:
+    """max_repeat_guard 的单条判据：这个提案还能不能跑。
+
+    两种放行：没跑满，或者提案门读了 `why` 之后凭理由放行过（`repeatGranted`）。
+    后者仍然受硬顶约束——理由再充分也不能无限重复，见 repeat_policy。
+
+    ⚠ 必须认 `repeatGranted`。不认的话，提案门刚凭理由放行的，转头就被这道门
+    拦掉——那正是 2026-08-05 之前"两道门各判各的、算法还不一样"的老毛病。
+    """
+    from .repeat_policy import is_over_ceiling, is_repeat_exhausted
+
+    cap = pick.get("capabilityId", "")
+    if not is_repeat_exhausted(state, cap):
+        return True
+    return bool(pick.get("repeatGranted")) and not is_over_ceiling(state, cap)
+
+
 def _is_closure_cap(capability_id: str) -> bool:
     """这条能力是不是"发布收口"本身。
 
@@ -725,7 +742,9 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
     picks = []
     executed_loops = 0
     no_progress_streak = 0
-    MAX_REPEAT_PER_CAP = 2  # small threshold for guard testability; per V5.2 policy default higher but slice uses 2
+    from .repeat_policy import max_repeat_per_cap
+
+    MAX_REPEAT_PER_CAP = max_repeat_per_cap()  # 阈值与窗口见 services/repeat_policy.py
     try:
         prev_art_count = len(getattr(state, "artifacts", []) or [])
         # simple resolved count from coverageGaps (status resolved)
@@ -782,12 +801,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
 
             # max_repeat_guard: filter candidates by run count; stop if had picks but all filtered
             if picks:
-                filtered = []
-                for p in picks:
-                    cid = p["capabilityId"]
-                    cnt = sum(1 for r in (getattr(state, "capabilityRuns", []) or []) if (r.get("capabilityId") if isinstance(r, dict) else getattr(r, "capabilityId", "")) == cid)
-                    if cnt < MAX_REPEAT_PER_CAP:
-                        filtered.append(p)
+                filtered = [p for p in picks if _repeat_allows(state, p)]
                 if len(picks) > 0 and len(filtered) == 0:
                     # auditable ledger entry for max_repeat_guard
                     now = datetime.now(timezone.utc).isoformat()
@@ -923,6 +937,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                 _round_closure = derive_publish_closure_response(state)
                 if _round_closure is not None:
                     state.publishClosure = _round_closure
+                    record_model_version(state, _round_closure, user_instruction)
                     persist_state(state)
             # update progress for no_progress detection
             now_art = len(getattr(state, "artifacts", []) or [])
@@ -1212,7 +1227,9 @@ async def drive_full_v5_session_stream(
     loop = 0
     picks: list = []
     no_progress_streak = 0
-    MAX_REPEAT_PER_CAP = 2
+    from .repeat_policy import max_repeat_per_cap
+
+    MAX_REPEAT_PER_CAP = max_repeat_per_cap()  # 阈值与窗口见 services/repeat_policy.py
 
     try:
         prev_art_count = len(getattr(state, "artifacts", []) or [])
@@ -1295,13 +1312,7 @@ async def drive_full_v5_session_stream(
 
             # max_repeat_guard
             if picks:
-                filtered = [
-                    p for p in picks
-                    if sum(
-                        1 for r in (getattr(state, "capabilityRuns", []) or [])
-                        if (r.get("capabilityId") if isinstance(r, dict) else getattr(r, "capabilityId", "")) == p["capabilityId"]
-                    ) < MAX_REPEAT_PER_CAP
-                ]
+                filtered = [p for p in picks if _repeat_allows(state, p)]
                 if filtered:
                     selected = filtered
                 else:
@@ -1485,6 +1496,21 @@ async def drive_full_v5_session_stream(
                 _round_closure = derive_publish_closure_response(state)
                 if _round_closure is not None:
                     state.publishClosure = _round_closure
+                    # 版本快照也必须当场记（2026-08-05）。
+                    #
+                    # 它是 `reusable_model_for_turn` 的**唯一数据来源**：那把
+                    # 会话级的锁 2026-08-04 就写好了，专治的正是"同一轮收两次口、
+                    # 第二次从头重生成"。可它读 state.modelVersions，而
+                    # record_model_version 原本只在循环结束后才调一次——循环里
+                    # 那份永远是空的，锁一次都没合上过。
+                    #
+                    # 真机代价：第二次收口全价重跑，建模 200s + 生图 113s +
+                    # 取色 14s + 设计 277s = 608 秒，占整轮 45%。
+                    #
+                    # 跟上面 publishClosure 那条是同一个结构性错误、同一段代码、
+                    # 隔着两行：**该在循环里更新的状态写在了循环外**。防重复的
+                    # 提示词和省时间的复用锁都因此失灵，只剩最粗的计数器兜底。
+                    record_model_version(state, _round_closure, user_instruction)
                     persist_state(state)
 
             # progress tracking
