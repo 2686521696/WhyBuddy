@@ -65,6 +65,32 @@ create table if not exists forum_topic (
 """
 
 
+# ── 能力圈分档（2026-08-05）────────────────────────────────────
+#
+# 这四列跟上面那些**性质不一样**：上面是从论坛抓来的事实，这里是一次判断的
+# 结果——判断会随着判定标准（rubric）和模型换代而变。所以不只存结论，还存
+# 「哪个模型、什么时候判的」，否则过两个月看到一个 A 没人知道该不该信。
+#
+# 刻意不放进 COLUMNS：`upsert` 的 `do update set` 是按 COLUMNS 拼的，分档列
+# 不在里面 → **重抓一遍话题不会把分档冲掉**。抓取和判断本来就该各走各的。
+FIT_COLUMNS_DDL = (
+    "alter table forum_topic add column if not exists fit_grade  varchar(1)",
+    "alter table forum_topic add column if not exists fit_reason varchar(60)",
+    "alter table forum_topic add column if not exists fit_model   varchar(60)",
+    "alter table forum_topic add column if not exists fit_at      timestamptz",
+)
+
+#: 分档含义。判定基准是 SlideRule 的能力圈——它产出五系统模型
+#: （数据实体 / 角色权限 / 工作流 / 页面 / AI 能力），只擅长
+#: 「表单 + 台账 + 角色 + 流转」这一类业务系统。
+FIT_GRADES = {
+    "A": "正中靶心：本质是业务系统，有实体、有角色、有申请/审批/流转",
+    "B": "半个：有结构化数据和管理界面，但没有多角色流转",
+    "C": "圈外：游戏/3D/硬件固件/音视频/图像生成，没有实体+角色这个结构",
+    "U": "未判定",
+}
+
+
 def _load_env() -> None:
     """脚本单独跑时不经过 app 启动，得自己把 .env 读进来。"""
     try:
@@ -127,6 +153,9 @@ class Store:
         self.q(DDL)
         for col in ("topic_id", "category_id", "created_at", "views"):
             self.q(f"create index if not exists ix_forum_topic_{col} on forum_topic ({col})")
+        for ddl in FIT_COLUMNS_DDL:
+            self.q(ddl)
+        self.q("create index if not exists ix_forum_topic_fit_grade on forum_topic (fit_grade)")
 
     def upsert(self, rec: dict[str, Any]) -> None:
         params: list[Any] = []
