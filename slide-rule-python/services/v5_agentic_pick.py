@@ -313,8 +313,16 @@ def _history_lines(state: V5SessionState) -> list[str]:
 # ── LLM 提案 + 门验收 ─────────────────────────────────────────────────
 
 
-def _validate_proposal(raw: Any, state: V5SessionState) -> list[dict] | None:
-    """验收：词表封闭 + 角色纠偏 + 去重 + 重复护栏 + cap<=5。全灭 → None。"""
+def _validate_proposal(
+    raw: Any, state: V5SessionState, dropped: "Optional[list[str]]" = None
+) -> list[dict] | None:
+    """验收：词表封闭 + 角色纠偏 + 去重 + 重复护栏 + cap<=5。全灭 → None。
+
+    `dropped` 传进来的话，每剔掉一条就往里记一句人话（谁、为什么）。
+    2026-08-05 实测：一轮里连着两次「提案全被门剔除」，而日志只有这七个字
+    ——剔的是哪几条、卡在哪道门，事后完全查不出来。而每次剔光都意味着这轮
+    LLM 选材白跑（25~30 秒）且整轮被标降级，是该看得见的事。
+    """
     if not isinstance(raw, dict):
         return None
     items = raw.get("picks")
@@ -322,16 +330,30 @@ def _validate_proposal(raw: Any, state: V5SessionState) -> list[dict] | None:
         return None
     import sys as _sys
 
-    from .repeat_policy import is_repeat_exhausted, reason_allows_repeat
+    from .repeat_policy import (
+        is_repeat_exhausted,
+        reason_allows_repeat,
+        recent_run_count,
+        repeat_ceiling,
+    )
+
+    def _note(text: str) -> None:
+        if dropped is not None:
+            dropped.append(text)
 
     picks: list[dict] = []
     seen: set[str] = set()
     for item in items:
         if not isinstance(item, dict):
+            _note("提案项不是对象")
             continue
         cap = str(item.get("capabilityId") or "").strip()
-        if cap not in CAPABILITY_VOCAB or cap in seen:
-            continue  # 幻觉能力/重复提案剔除
+        if cap not in CAPABILITY_VOCAB:
+            _note(f"{cap or '(空)'}：不在能力清单里（模型编的）")
+            continue
+        if cap in seen:
+            _note(f"{cap}：同一批里重复提了")
+            continue
         # 重复护栏：窗口内跑满次数的不许再提——防 LLM 原地打转。
         #
         # 判据搬去 repeat_policy 与驱动器那道门共用（2026-08-05）。此前两边
@@ -343,6 +365,15 @@ def _validate_proposal(raw: Any, state: V5SessionState) -> list[dict] | None:
             # 跑满之后还想要，就得说出这次跟上次有什么不同。提示词一直这么
             # 要求，`why` 字段也一直在传，只是以前没人读——见 repeat_policy。
             if not reason_allows_repeat(state, cap, why):
+                n = recent_run_count(state, cap)
+                _note(
+                    f"{cap}：窗口内已跑 {n} 次"
+                    + (
+                        f"，到硬顶 {repeat_ceiling()} 了，再充分的理由也不放"
+                        if n >= repeat_ceiling()
+                        else "，且没说清这次跟上次有什么不同（why 太短或为空）"
+                    )
+                )
                 continue
             repeat_granted = True
             print(
@@ -424,9 +455,16 @@ def agentic_pick_next_capabilities(
     if parsed is None:
         print(f"[agentic-pick] loop {loop_index}: 回落规则版", file=_sys.stderr, flush=True)
         return None
-    picks = _validate_proposal(parsed, state)
+    dropped: list[str] = []
+    picks = _validate_proposal(parsed, state, dropped)
     if not picks:
-        print(f"[agentic-pick] loop {loop_index}: 提案全被门剔除，回落规则版", file=_sys.stderr, flush=True)
+        # 剔光 = 这轮 LLM 选材白跑（实测 25~30 秒）+ 整轮被标降级，
+        # 所以必须说清剔的是谁、卡在哪道门。只打七个字查不出任何东西。
+        detail = "；".join(dropped) if dropped else "模型没给出任何提案项"
+        print(
+            f"[agentic-pick] loop {loop_index}: 提案全被门剔除，回落规则版 —— {detail}",
+            file=_sys.stderr, flush=True,
+        )
         return None
     return {
         "picks": picks,

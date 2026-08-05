@@ -203,3 +203,66 @@ def test_validator_still_drops_a_repeat_with_no_reason():
         ]},
         st,
     ) is None
+
+
+# ── 剔光了得说清剔的是谁（2026-08-05）──────────────────────────
+#
+# 实测一轮里连着两次「提案全被门剔除，回落规则版」，日志就这七个字。剔的是
+# 哪几条、卡在哪道门，事后完全查不出来——而每次剔光都意味着这轮 LLM 选材白跑
+# （25~30 秒）且整轮被标降级，是该看得见的事。
+
+
+def test_dropped_items_are_explained_one_by_one():
+    from services.v5_agentic_pick import _validate_proposal
+
+    st = _pickable_state("evidence.search", "evidence.search")
+    dropped: list[str] = []
+    out = _validate_proposal(
+        {
+            "rationale": "再来一轮",
+            "picks": [
+                {"capabilityId": "evidence.search", "roleId": "综合", "why": ""},
+                {"capabilityId": "根本不存在的能力", "roleId": "综合", "why": "x"},
+            ],
+        },
+        st,
+        dropped,
+    )
+    assert out is None
+    assert len(dropped) == 2
+    joined = "；".join(dropped)
+    assert "evidence.search" in joined and "窗口内已跑 2 次" in joined
+    assert "不在能力清单里" in joined
+
+
+def test_ceiling_rejection_says_it_is_the_ceiling():
+    """"没说理由"和"说了也没用（到顶了）"是两种情况，日志得分得开。"""
+    from services.v5_agentic_pick import _validate_proposal
+
+    st = _pickable_state("evidence.search", "evidence.search", "evidence.search")
+    dropped: list[str] = []
+    _validate_proposal(
+        {"picks": [{
+            "capabilityId": "evidence.search", "roleId": "综合",
+            "why": "这次要补的是完全不同的一块，理由非常充分且具体",
+        }]},
+        st,
+        dropped,
+    )
+    assert dropped and "硬顶" in dropped[0]
+
+
+def test_diagnostics_are_optional_and_do_not_change_the_verdict():
+    """不传 dropped 时行为必须跟以前一模一样——诊断不能改判。"""
+    from services.v5_agentic_pick import _validate_proposal
+
+    st = _pickable_state("evidence.search", "evidence.search")
+    proposal = {"picks": [
+        {"capabilityId": "evidence.search", "roleId": "综合", "why": ""},
+        {"capabilityId": "risk.analyze", "roleId": "安全", "why": "看风险"},
+    ]}
+    with_diag: list[str] = []
+    a = _validate_proposal(proposal, st, with_diag)
+    b = _validate_proposal(proposal, st)
+    assert a == b
+    assert with_diag, "传了收集器却什么都没记"
