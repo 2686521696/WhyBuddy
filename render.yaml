@@ -95,7 +95,9 @@ services:
       # (APP_STORE_FILE)。但免费实例闲置 ~15 分钟休眠，唤醒是全新容器、
       # 文件系统清空 —— 表现为"生成过的应用每隔一会儿就全没了"，而且不报错。
       # 实测过：接口老老实实回 {"apps":[]} / {"sessions":[]}。
-      # 填任意 SQLAlchemy URL 即可（当前用 Neon Postgres）。
+      # 填任意 SQLAlchemy URL 即可（当前用自建 PostgreSQL 17）。
+      # 只出得去 443 的部署改用 APP_STORE_HTTP_API_URL / _KEY 那条 HTTPS
+      # 网关（见 .env.example），但那条只接应用库、不接身份库和会话档。
       - key: APP_STORE_DATABASE_URL
         sync: false
 
