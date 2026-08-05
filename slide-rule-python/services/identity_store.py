@@ -536,6 +536,10 @@ class _SqlExecutor:
         from .app_store import _sql_engine_config
 
         self._text = text
+        # 跟 app_store 保持一致：生产配置常写 postgresql://...，但本镜像依赖的是
+        # psycopg v3，不是 psycopg2。SQLAlchemy 裸 postgresql:// 会去找 psycopg2，
+        # 然后身份库悄悄降级到本地 SQLite。
+        url = re.sub(r"^postgresql://", "postgresql+psycopg://", url)
         connect_args, kwargs = _sql_engine_config(url, NullPool)
         self._engine = create_engine(url, connect_args=connect_args, **kwargs)
         self.is_sqlite = url.startswith("sqlite")
