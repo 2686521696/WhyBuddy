@@ -19,6 +19,31 @@ os.environ.setdefault(
     "SLIDERULE_SESSIONS_FILE",
     str(Path(tempfile.mkdtemp(prefix="sliderule-tests-")) / "sessions.json"),
 )
+# 应用库全套件隔离（2026-08-05，为一次真实污染补的）。
+#
+# 上面那条会话隔离的理由，对应用库**一字不差地成立**，而且后果更重：会话
+# 灌的是本机开发库，应用库灌的可能是**共享的远端库**。真实发生过——
+# .env 里配上 APP_STORE_HTTP_API_URL 指向线上 /db-api 之后跑一遍 pytest，
+# 91 行 fixture 应用 + 23 张参照图直接写进了生产库（s1/s2/e6/u4 这些夹具
+# id 一看就是测试的），同时 28 条用例因为读到彼此的残留而红。
+#
+# 那次是"库刚建好还没接应用"，清掉就完事；接上线之后同样一条命令就会往
+# 真实用户数据里掺垃圾，而且分不清哪些该删。
+#
+# 所以三个入口一起按空：HTTP API 两个变量、以及远端 DSN。落到临时 SQLite，
+# 每次 pytest 一个新目录，跑完自然消失。
+#
+# ⚠ 这里只改**默认值**——os.environ 的优先级高于 .env 文件，但显式
+# monkeypatch settings 的测试仍然照自己的来（测 Neon/HTTP 后端本身的用例
+# 就是这么做的），一条都不会被这段挡住。
+_APP_STORE_TEST_DIR = Path(tempfile.mkdtemp(prefix="sliderule-appstore-tests-"))
+os.environ.setdefault("APP_STORE_HTTP_API_URL", "")
+os.environ.setdefault("APP_STORE_HTTP_API_KEY", "")
+os.environ.setdefault(
+    "APP_STORE_DATABASE_URL", f"sqlite:///{_APP_STORE_TEST_DIR / 'apps.db'}"
+)
+os.environ.setdefault("APP_STORE_FILE", str(_APP_STORE_TEST_DIR / "apps.json"))
+
 # P2b 执行类工具同理全局关闭：测试不开真沙盒（活体验证用
 # SLIDERULE_LIVE_SANDBOX_TESTS=1 显式开，见 test_mcp_tools.py）
 os.environ.setdefault("SLIDERULE_CODE_RUN", "off")
