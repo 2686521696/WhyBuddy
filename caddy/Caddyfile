@@ -1,0 +1,33 @@
+{
+	email admin@miantuan.ai
+}
+
+miantuan.ai {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+
+	handle /pgadmin* {
+		reverse_proxy pgadmin:80 {
+			header_up X-Script-Name /pgadmin
+			header_up X-Scheme {scheme}
+		}
+	}
+
+	handle_path /db-api* {
+		reverse_proxy local-db-api:8000
+	}
+
+	handle {
+		reverse_proxy app:3001
+	}
+}
+
+www.miantuan.ai {
+	redir https://miantuan.ai{uri} permanent
+}
+
+whybuddy.156.239.47.108.sslip.io {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy app:3001
+}
