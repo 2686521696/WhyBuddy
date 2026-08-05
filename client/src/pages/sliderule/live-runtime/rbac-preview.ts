@@ -10,7 +10,7 @@
  * 纯函数模块：模型/schema 进、访问判定出，无副作用，便于单测。
  */
 
-import type { FiveSystemModel } from "../system-screens/five-system-model";
+import { normalizeRoles, type FiveSystemModel } from "../system-screens/five-system-model";
 import type { AppPageSchema } from "./app-runtime-schema";
 
 export interface RoleAccess {
@@ -19,15 +19,20 @@ export interface RoleAccess {
   permissions: string[];
   /** 该角色可见的 rbac 菜单标签（证据侧口径，供预览展示） */
   menuLabels: string[];
+  /** 给人看的角色名；补中文名之前生成的应用回落成 role 本身 */
+  label: string;
 }
 
 export function deriveRoleAccess(model: FiveSystemModel | null | undefined): RoleAccess[] {
-  const roles = model?.rbac?.roles ?? [];
+  // 归一后取 **id**：menu.roleRefs 里存的是引用键，拿显示名去 includes
+  // 会全部落空，表现为"每个角色都没有任何权限"。
+  const roles = normalizeRoles(model);
   const menus = model?.rbac?.menus ?? [];
-  return roles.map((role) => {
+  return roles.map(({ id: role, label }) => {
     const roleMenus = menus.filter((m) => (m.roleRefs ?? []).includes(role));
     return {
       role,
+      label,
       permissions: [...new Set(roleMenus.flatMap((m) => m.permissionRefs ?? []))],
       menuLabels: roleMenus.map((m) => m.label || m.id || "").filter(Boolean),
     };

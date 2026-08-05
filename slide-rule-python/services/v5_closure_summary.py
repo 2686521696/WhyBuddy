@@ -71,8 +71,13 @@ def _model_stats_lines(publish_closure: Dict[str, Any]) -> List[str]:
         )
     rb = section("rbac")
     if rb and isinstance(rb.get("roles"), list):
+        # 显示名而不是引用键：这行是给人看的。角色补中文名之后直接 str(r)
+        # 会把整个 dict 打进摘要（"{'id': 'warehouse_keeper', 'name': ...}"）。
+        from .rbac_roles import role_entries
+
+        _names = [r["label"] for r in role_entries(rb)]
         lines.append(
-            f"角色权限：{len(rb['roles'])} 角色（{'、'.join(str(r) for r in rb['roles'][:6])}）· {len(rb.get('permissions') or [])} 权限"
+            f"角色权限：{len(_names)} 角色（{'、'.join(_names[:6])}）· {len(rb.get('permissions') or [])} 权限"
         )
     pg = section("page")
     if pg and isinstance(pg.get("pages"), list):

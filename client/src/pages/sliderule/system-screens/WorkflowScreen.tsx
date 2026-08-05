@@ -23,6 +23,7 @@ import {
   resolveRoleRef,
   edgesForSkill,
   crossSkillEdgesToMermaid,
+  normalizeRoles,
 } from "./five-system-model";
 
 interface WorkflowScreenProps {
@@ -125,7 +126,7 @@ export function WorkflowScreen({
 
   // 图例条数据：按角色聚合（color 与图上节点色条一致）
   const roleLegend = useMemo(() => {
-    const declaredRoles = model?.rbac?.roles ?? [];
+    const declaredRoles = normalizeRoles(model).map(r => r.id);
     const byRole = new Map<string, { role: string; resolved: boolean; count: number; color: string }>();
     for (const { role } of roleResolutions) {
       if (!role.ref) continue;

@@ -13,7 +13,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
 import { EmptyScreenHint } from "./EmptyScreenHint";
-import type { FiveSystemModel } from "./five-system-model";
+import { normalizeRoles, type FiveSystemModel } from "./five-system-model";
 import { deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
 import { deriveRoleAccess, pageAccessForRole } from "../live-runtime/rbac-preview";
 import {
@@ -36,7 +36,10 @@ interface RbacScreenProps {
 }
 
 interface RoleEntry {
+  /** 引用键（menu.roleRefs / assigneeRole 里存的就是它） */
   role: string;
+  /** 给人看的名字；补中文名之前生成的应用与 role 相同 */
+  label?: string;
   permissions: string[];
   menus: string[];
   dataRules?: string;
@@ -73,14 +76,16 @@ function parseRolesFromContent(content: string): RoleEntry[] | null {
 
 /** model.rbac → 角色行：权限/菜单从 menus 的 roleRefs/permissionRefs 反推。 */
 function rolesFromModel(rbac: FiveSystemModel["rbac"] | null | undefined): RoleEntry[] | null {
-  const roleIds = rbac?.roles ?? [];
-  if (roleIds.length === 0) return null;
+  // 归一后取 id：menu.roleRefs 存的是引用键，拿显示名去 includes 会全落空
+  const roleEntries = normalizeRoles({ rbac } as FiveSystemModel);
+  if (roleEntries.length === 0) return null;
   const menus = rbac?.menus ?? [];
-  return roleIds.map((role) => {
+  return roleEntries.map(({ id: role, label }) => {
     const roleMenus = menus.filter((m) => (m.roleRefs ?? []).includes(role));
     const permissions = [...new Set(roleMenus.flatMap((m) => m.permissionRefs ?? []))];
     return {
       role,
+      label,
       permissions,
       menus: roleMenus.map((m) => m.label || m.id || "").filter(Boolean),
     };

@@ -3088,7 +3088,7 @@ export function AppRuntimeScreen({
             style={{ minWidth: 140 }}
             value={role}
             onChange={changeRole}
-            options={schema.roles.map(r => ({ value: r, label: r }))}
+            options={schema.roles.map(r => ({ value: r, label: schema.roleLabels[r] ?? r }))}
             data-testid="app-runtime-role"
           />
           <Avatar
@@ -3171,7 +3171,7 @@ export function AppRuntimeScreen({
           style={{ minWidth: 140 }}
           value={role}
           onChange={changeRole}
-          options={schema.roles.map(r => ({ value: r, label: r }))}
+          options={schema.roles.map(r => ({ value: r, label: schema.roleLabels[r] ?? r }))}
           data-testid="app-runtime-role"
         />
         <Avatar

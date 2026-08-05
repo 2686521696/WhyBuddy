@@ -15,7 +15,7 @@ The model shape this gate expects (also the shape the LLM generator targets):
 
     {
       "datamodel": {"entities": [{"id","name","fields":[{"id","name","type"}]}]},
-      "rbac":      {"roles": ["applicant", ...],
+      "rbac":      {"roles": [{"id":"applicant","name":"申请人"}, ...],
                     "permissions": ["purchase:create", ...],
                     "menus": [{"id","label","roleRefs":["applicant"],"permissionRefs":[...]}]},
       "workflow":  {"nodes": [{"id","name","assigneeRole":"dept_manager"}],
@@ -260,15 +260,10 @@ def _collect_field_types(datamodel: Dict[str, Any]) -> Dict[str, str]:
 
 
 def _collect_role_ids(rbac: Dict[str, Any]) -> set:
-    roles: set = set()
-    for role in _as_list(rbac.get("roles")):
-        if isinstance(role, str):
-            roles.add(role.strip())
-        elif isinstance(role, dict):
-            rid = str(role.get("id") or role.get("name") or "").strip()
-            if rid:
-                roles.add(rid)
-    return roles
+    """角色引用键集合。两种写法都吃——判断收在 services/rbac_roles.py 一处。"""
+    from .rbac_roles import role_ids
+
+    return set(role_ids(rbac))
 
 
 def _collect_permission_ids(rbac: Dict[str, Any]) -> set:

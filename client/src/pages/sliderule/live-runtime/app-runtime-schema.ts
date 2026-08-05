@@ -8,6 +8,7 @@
 
 import {
   guessRefEntityId,
+  normalizeRoles,
   type FiveSystemModel,
   type FiveSystemField,
 } from "../system-screens/five-system-model";
@@ -301,7 +302,15 @@ export interface AppRuntimeSchema {
      * 原样透传不收窄类型——存量快照没走过这一版门禁，形状在渲染器里再验。 */
     chartColors?: unknown;
   };
+  /** 角色**引用键**。所有比较（roleRefs.includes、assigneeRole===）都用它。 */
   roles: string[];
+  /**
+   * 引用键 → 显示名。刻意跟 `roles` 分开放：合成一个对象数组的话，
+   * 各处的 `roles.includes(role)` 会静默变成"永远为 false"，而 TS 在
+   * `string[]` → `{id,label}[]` 这步能报错的地方并不多。分开就不可能拿错。
+   * 补字段之前生成的应用这里是 id→id。
+   */
+  roleLabels: Record<string, string>;
   /** 应用首次打开的页面；老模型缺省为 home。 */
   landingPageId: string;
   home: AppHomeSchema;
@@ -855,10 +864,13 @@ export function deriveAppRuntimeSchema(
     chartColors: rawIdentity?.chartColors,
   };
 
+  const normalizedRoles = normalizeRoles(model);
+
   return {
     appName: productName || appName,
     identity,
-    roles: model?.rbac?.roles ?? [],
+    roles: normalizedRoles.map(r => r.id),
+    roleLabels: Object.fromEntries(normalizedRoles.map(r => [r.id, r.label])),
     landingPageId,
     home,
     menus: [

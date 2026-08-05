@@ -373,9 +373,68 @@ export interface AppIdentitySection {
   chartColors?: unknown;
 }
 
+/**
+ * 角色在模型里的两种写法。
+ *
+ * 新生成的是 `{id, name}`（2026-08-05 起，与实体/字段/菜单一致——在那之前
+ * 角色是模型里**唯一**没有中文名的概念，所以界面上只能显示 warehouse_keeper）。
+ * 内置域夹具和线上库里已有的应用全是字符串，一条都不迁移（它们数据里就没有
+ * 中文名，迁移只能瞎编），所以两种形态永远共存。
+ */
+export type RawRbacRole = string | { id?: string; name?: string; label?: string };
+
+/** 归一之后的角色：`id` 是引用键，`label` 是给人看的。 */
+export interface RbacRole {
+  id: string;
+  label: string;
+}
+
+/**
+ * 两种写法 → `{id, label}[]`。判断只在这里做一次。
+ *
+ * 没有中文名时 label 回落成 id：显示英文总好过显示空白，而且一眼能看出
+ * "这个应用是补字段之前生成的"。
+ */
+export function normalizeRoles(
+  model: FiveSystemModel | null | undefined
+): RbacRole[] {
+  const out: RbacRole[] = [];
+  const seen = new Set<string>();
+  for (const raw of model?.rbac?.roles ?? []) {
+    let id = "";
+    let label = "";
+    if (typeof raw === "string") {
+      id = raw.trim();
+      label = id;
+    } else if (raw && typeof raw === "object") {
+      id = String(raw.id ?? raw.name ?? "").trim();
+      label = String(raw.name ?? raw.label ?? "").trim() || id;
+    }
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, label });
+  }
+  return out;
+}
+
+/** 引用键 → 显示名；认不出来就把引用键原样吐回去。 */
+export function roleLabel(
+  roleId: string | null | undefined,
+  model: FiveSystemModel | null | undefined
+): string {
+  const ref = String(roleId ?? "").trim();
+  if (!ref) return "";
+  return normalizeRoles(model).find(r => r.id === ref)?.label ?? ref;
+}
+
 export interface FiveSystemModel {
   datamodel?: { entities?: FiveSystemEntity[] };
-  rbac?: { roles?: string[]; permissions?: string[]; menus?: RbacMenu[] };
+  rbac?: {
+    /** 两种写法并存，永远。用 `normalizeRoles` 读，别直接当 string[] 使 */
+    roles?: RawRbacRole[];
+    permissions?: string[];
+    menus?: RbacMenu[];
+  };
   workflow?: WorkflowSection;
   page?: { pages?: PageModelDef[] };
   aigc?: { capabilities?: AigcCapability[]; pipelines?: AigcPipeline[] };
@@ -734,11 +793,13 @@ export function resolveRoleRef(
   model: FiveSystemModel | null | undefined
 ): RefResolution {
   const ref = String(role ?? "").trim();
-  const roles = model?.rbac?.roles ?? [];
+  const hit = normalizeRoles(model).find(r => r.id === ref);
   return {
     ref,
-    resolved: ref.length > 0 && roles.includes(ref),
-    label: ref || "—",
+    resolved: ref.length > 0 && hit !== undefined,
+    // 与 resolveEntityRef / resolveFieldRef 同款：显示名优先，回落 id。
+    // 这个 label 位一直留着，只是角色以前没有名字可填。
+    label: hit?.label || ref || "—",
   };
 }
 
@@ -973,7 +1034,7 @@ export function deriveSystemLinkageGraph(
   const entities = model.datamodel?.entities ?? [];
   const pages = model.page?.pages ?? [];
   const wfNodes = model.workflow?.nodes ?? [];
-  const roles = model.rbac?.roles ?? [];
+  const roles = normalizeRoles(model);
   const caps = model.aigc?.capabilities ?? [];
 
   const key = (system: LinkageSystem, id: string) => `${system}:${id}`;
@@ -1014,7 +1075,7 @@ export function deriveSystemLinkageGraph(
     mkGroup(
       "rbac",
       "权限 · RBAC",
-      roles.map(r => ({ id: r, name: r }))
+      roles.map(r => ({ id: r.id, name: r.label }))
     ),
     mkGroup(
       "aigc",
@@ -1070,8 +1131,9 @@ export function deriveSystemLinkageGraph(
       push(key("page", b.pageRef), key("workflow", start.id), "page-workflow");
     }
   }
+  const roleIdSet = new Set(roles.map(r => r.id));
   for (const n of wfNodes) {
-    if (n.assigneeRole && roles.includes(n.assigneeRole)) {
+    if (n.assigneeRole && roleIdSet.has(n.assigneeRole)) {
       push(key("workflow", n.id), key("rbac", n.assigneeRole), "node-role");
     }
   }
@@ -1087,7 +1149,7 @@ export function deriveSystemLinkageGraph(
       );
     }
     for (const r of c.roleRefs ?? []) {
-      if (roles.includes(r))
+      if (roleIdSet.has(r))
         push(key("aigc", cid), key("rbac", r), "aigc-role");
     }
   }
@@ -1379,7 +1441,7 @@ export function summarizeClosureForChat(
   const nodes = model.workflow?.nodes ?? [];
   const transitions = model.workflow?.transitions ?? [];
   const phaseCount = new Set(nodes.map(n => n.phase).filter(Boolean)).size;
-  const roles = model.rbac?.roles ?? [];
+  const roles = normalizeRoles(model);
   const perms = model.rbac?.permissions ?? [];
   const pages = model.page?.pages ?? [];
   const bindingCount = pages.reduce(

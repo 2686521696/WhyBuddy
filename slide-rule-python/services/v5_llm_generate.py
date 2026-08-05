@@ -72,7 +72,7 @@ Required shape (use these exact keys):
     ]
   },
   "rbac": {
-    "roles": ["<role_id>", ...],
+    "roles": [{"id": "<snake_case>", "name": "<label>"}, ...],
     "permissions": ["<resource>:<action>", ...],
     "menus": [{"id": "<id>", "label": "<label>", "roleRefs": ["<role_id>"], "permissionRefs": ["<perm>"]}]
   },
@@ -145,7 +145,11 @@ Required shape (use these exact keys):
 }
 
 Rules:
-- Every workflow node assigneeRole MUST be in rbac.roles.
+- Every workflow node assigneeRole MUST be one of the rbac.roles[].id values.
+- rbac.roles[].id is the reference key: snake_case ASCII, used by assigneeRole,
+  roleRefs and menu roleRefs. rbac.roles[].name is what humans see — write it in
+  the SAME LANGUAGE as the user's intent (e.g. 仓库管理员, not warehouse_keeper).
+  Never put the display name in the id, and never leave name equal to the id.
 - Every page fieldBinding MUST be "<entityId>.<fieldId>" from datamodel.
 - Every page actionPermission MUST be in rbac.permissions.
 - Every aigc input/output field MUST be from datamodel; roleRefs from rbac.roles.
