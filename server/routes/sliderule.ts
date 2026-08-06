@@ -32,6 +32,7 @@ import {
   callPythonSlideRule,
   callPythonSlideRuleGet,
   delegateToPythonSlideRule,
+  viewerHeadersFrom,
   checkPythonSlideRuleHealth,
   resolvePythonSlideRuleRuntimeConfig,
   resolvePythonDriveTimeoutMs,
@@ -190,14 +191,15 @@ router.get("/health", async (_req: Request, res: Response) => {
 });
 
 // GET /api/sliderule/sessions — thin proxy to Python (Node no longer owns list/session state)
-router.get("/sessions", async (_req: Request, res: Response) => {
+router.get("/sessions", async (req: Request, res: Response) => {
   const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
   try {
     const data = await callPythonSlideRuleGet(
       pythonRuntime.baseUrl,
       "/api/sliderule/sessions",
       pythonRuntime.internalKey,
-      { timeoutMs: pythonRuntime.timeoutMs },
+      // 身份必须透传，否则 Python 按匿名过滤 → 登录用户看到的历史永远是空的
+      { timeoutMs: pythonRuntime.timeoutMs, viewer: viewerHeadersFrom(req) },
     );
     return res.json(data);
   } catch (e) {
@@ -215,7 +217,8 @@ router.get("/sessions/:sessionId", async (req: Request, res: Response) => {
       pythonRuntime.baseUrl,
       `/api/sliderule/sessions/${encodeURIComponent(sid)}`,
       pythonRuntime.internalKey,
-      { timeoutMs: pythonRuntime.timeoutMs },
+      // 同上：不带身份 → 有主会话一律 404 → 打开应用是空白页
+      { timeoutMs: pythonRuntime.timeoutMs, viewer: viewerHeadersFrom(req) },
     );
     return res.json(data);
   } catch (e) {
@@ -241,7 +244,7 @@ router.put("/sessions/:sessionId", express.json({ limit: "2mb" }), async (req: R
       "PUT",
       body,
       pythonRuntime.internalKey,
-      { timeoutMs: pythonRuntime.timeoutMs },
+      { timeoutMs: pythonRuntime.timeoutMs, viewer: viewerHeadersFrom(req) },
     );
     return res.status(200).json(data);
   } catch (e) {
@@ -261,7 +264,7 @@ router.delete("/sessions/:sessionId", async (req: Request, res: Response) => {
       "DELETE",
       null,
       pythonRuntime.internalKey,
-      { timeoutMs: pythonRuntime.timeoutMs },
+      { timeoutMs: pythonRuntime.timeoutMs, viewer: viewerHeadersFrom(req) },
     );
     return res.status(204).end();
   } catch (e) {
@@ -1232,23 +1235,12 @@ router.use(async (req: Request, res: Response) => {
       "X-Internal-Key": runtime.internalKey,
       accept: String(req.headers["accept"] || "*/*"),
     };
-    // 2026-08-02：把访问者身份透传给 Python。
+    // 2026-08-02：把访问者身份透传给 Python。判据与理由见 viewerHeadersFrom。
     //
-    // 此前这个代理只带 X-Internal-Key —— 那是"Node 有权调 Python"的凭据，
-    // 不是"这个请求是谁发的"。于是 Python 侧的 optional_user 永远拿不到用户，
-    // 应用中心的归属/可见性判定全部退化成匿名：私有应用照样可见、Fork 报 401。
-    // 权限做在 Python（数据在那边）就必须让身份也过得去。
-    //
-    // 只转发这两个头，不整包 forward req.headers —— host/content-length 那些
-    // 由 fetch 自己算，原样带过去会让上游拿到错的长度。
-    const forwardedAuth = req.headers["authorization"];
-    if (typeof forwardedAuth === "string" && forwardedAuth) {
-      headers["authorization"] = forwardedAuth;
-    }
-    const forwardedCookie = req.headers["cookie"];
-    if (typeof forwardedCookie === "string" && forwardedCookie) {
-      headers["cookie"] = forwardedCookie;
-    }
+    // 2026-08-06：这段原本是就地写的，与 python-delegation 里那几条显式路由
+    // 各写各的——结果显式路由那边一直没带身份，登录用户的会话列表恒为空。
+    // 改成共用同一个函数，杜绝第二次漂移。
+    Object.assign(headers, viewerHeadersFrom(req));
     let body: string | undefined;
     if (method !== "GET" && method !== "HEAD") {
       headers["content-type"] = String(

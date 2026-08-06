@@ -307,6 +307,47 @@ def _require_session(state: Any, action: str, viewer) -> None:
         raise HTTPException(404, "Not found")
 
 
+def adopt_user_goal(state: Any, user_text: str) -> Any:
+    """继承来的话题被本人的第一条指令顶掉。
+
+    ## 这个函数解决的现象
+
+    2026-08-06 用户实测：「我发布的是从文献到引用的话题，回答的是电动车方面
+    的内容，但是生成的应用又却是对的。」
+
+    复现路径是 fork：用户在应用中心复刻了别人的「满电管家」（电动车），落进
+    副本会话，然后在里面提了自己的新话题（学术文献引用）。而副本会话的
+    `goal.text` 是**从源应用继承的电动车话题**，推演时：
+
+      · 各能力（evidence.search / route.generate / synthesis.merge …）拿
+        `state.goal` 当输入 → 左侧推演过程整篇都是电动车；
+      · 五系统生成走的是 refine 通道，吃的是 `user_instruction` → 右侧
+        应用确实变成了学术平台。
+
+    于是"过程"和"结果"讲的是两件事。新建会话里没人发现，是因为那时
+    goal == instruction，两者天然一致；只有继承来的会话才会分叉。
+
+    ## 判据为什么是 inherited 标记而不是"猜话题变没变"
+
+    "这条指令是换话题还是精修"没有可靠判据，猜错的代价是把用户的精修当成
+    换话题、把已有模型整个推翻。所以这里只处理**唯一一种确定的情况**：
+    话题不是用户自己提的（fork 时打的 inherited 标记），而用户刚提了第一条。
+    这种情况下继承来的话题没有任何优先权。
+
+    正常会话、以及副本里的后续精修，都不会走到这一步——标记只在第一次被
+    顶掉时清掉一次。
+    """
+    text = (user_text or "").strip()
+    if not text:
+        return state
+    goal = state.goal if isinstance(getattr(state, "goal", None), dict) else None
+    if not goal or not goal.get("inherited"):
+        return state
+    state.goal = {**goal, "text": text, "status": "clear", "inherited": False}
+    print(f"[sliderule_full] 副本会话改用本人的话题：{text[:60]}")
+    return state
+
+
 def _require_login(viewer) -> None:
     """建会话与推演都必须登录。
 
@@ -792,6 +833,8 @@ def drive_full(
     from services.v5_llm_generate import set_installed_skills
 
     set_installed_skills(payload.get("installedSkills"))
+    # 副本会话继承来的话题让位给本人的第一条指令（见 adopt_user_goal）
+    state = adopt_user_goal(state, user_text)
     try:
         new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
     finally:
@@ -918,6 +961,8 @@ async def drive_full_stream(
     # E26 缺口修复轮：mode="repair" 时只重跑覆盖门标红的能力（选材见
     # pick_repair_capabilities），已 PASS 产物与五系统模型原样复用。
     repair = str(payload.get("mode") or "").strip().lower() == "repair"
+    # 同上：流式推演是主路径，两条都要接，否则只有回退路径修好了
+    state = adopt_user_goal(state, user_text)
 
     # 技能库六期"推演注入"：已安装技能进生成契约（生成器全程生效，结束必清空）
     from services.v5_llm_generate import set_installed_skills
@@ -1936,39 +1981,73 @@ async def fork_generated_app(
     if new_id is None:
         raise HTTPException(404, "source app not found")
 
-    session_error: Optional[str] = None
-    try:
-        record = app_store.get_app(new_id) or {}
-        model = record.get("model_json") or {}
-        goal_text = str(record.get("goal") or new_name or "复刻应用")
-        from models.v5_state import V5SessionState
-        from services.v5_full_driver import (
-            _ensure_runtime_closure_evidence,
-            record_model_version,
-        )
-        from services.v5_llm_generate import set_model_override, set_refine_context
+    def _init_fork_session() -> None:
+        """给副本建绑定会话。**整段跑在线程池里，且不打外网**。
 
-        fork_state = V5SessionState(
-            sessionId=fork_sid,
-            goal={"text": goal_text, "status": "clear"},
-        )
-        fork_state.runtimePhase = "done"
-        set_model_override(model)
-        set_refine_context(model, f"fork 初始化：{new_name or goal_text}")
+        2026-08-06 用户实测"点 fork 等待时间超级长"，剖析结果：
+
+            _ensure_runtime_closure_evidence   11027 ms   占 fork 总耗时 99.3%
+              └ 里面 14 次 Wikipedia 请求        9910 ms
+
+        两处都要治：
+
+        ① `suppress_web_search()` —— 复刻的是一份**已经推演完的模型**，
+           重建闭环证据不需要重新去外网找证据（抓回来的还是「PC」
+           「PCI Express」这种无关词条）。理由写在 mcp_tools 那个上下文
+           管理器里。
+
+        ② `asyncio.to_thread` —— 这原本是直接在 `async def` 路由体里同步跑的，
+           11 秒**全程占着事件循环**。也就是说一个人点 fork，同一时间所有人的
+           请求（包括正在推演的 SSE）都被卡住。这才是"整站都变慢"的来源，
+           比 fork 自己慢更严重。
+
+        ContextVar 在 to_thread 里是**父到子**方向传递的，而这里正是这个方向
+        （父设标记、子读标记），没有"子写父读"的问题。
+        """
+        nonlocal session_error
         try:
-            fork_state = _ensure_runtime_closure_evidence(fork_state, f"fork:{new_id}", 0)
-        finally:
-            set_model_override(None)
-            set_refine_context(None)
-        closure = derive_publish_closure_response(fork_state)
-        if closure is not None:
-            fork_state.publishClosure = closure
-            fork_state.skillRuntimeGraph = derive_skill_runtime_graph_response(fork_state)
-            record_model_version(fork_state, closure, f"复刻自 {app_id}")
-        save_session(fork_state)
-    except Exception as exc:  # noqa: BLE001 — 会话初始化失败不吞掉 fork 本身
-        session_error = str(exc)[:200]
-        print(f"[sliderule_full] fork session init failed: {session_error}")
+            record = app_store.get_app(new_id) or {}
+            model = record.get("model_json") or {}
+            goal_text = str(record.get("goal") or new_name or "复刻应用")
+            from models.v5_state import V5SessionState
+            from services.mcp_tools import suppress_web_search
+            from services.v5_full_driver import (
+                _ensure_runtime_closure_evidence,
+                record_model_version,
+            )
+            from services.v5_llm_generate import set_model_override, set_refine_context
+
+            fork_state = V5SessionState(
+                sessionId=fork_sid,
+                # inherited=True 标记"这个话题是从源应用继承来的，不是本人提的"。
+                # 用户第一次在副本里发自己的指令时会被 adopt_user_goal 顶掉，
+                # 见那个函数里的说明。
+                goal={"text": goal_text, "status": "clear", "inherited": True},
+                ownerId=viewer.id,
+            )
+            fork_state.runtimePhase = "done"
+            set_model_override(model)
+            set_refine_context(model, f"fork 初始化：{new_name or goal_text}")
+            try:
+                with suppress_web_search():
+                    fork_state = _ensure_runtime_closure_evidence(
+                        fork_state, f"fork:{new_id}", 0
+                    )
+            finally:
+                set_model_override(None)
+                set_refine_context(None)
+            closure = derive_publish_closure_response(fork_state)
+            if closure is not None:
+                fork_state.publishClosure = closure
+                fork_state.skillRuntimeGraph = derive_skill_runtime_graph_response(fork_state)
+                record_model_version(fork_state, closure, f"复刻自 {app_id}")
+            save_session(fork_state)
+        except Exception as exc:  # noqa: BLE001 — 会话初始化失败不吞掉 fork 本身
+            session_error = str(exc)[:200]
+            print(f"[sliderule_full] fork session init failed: {session_error}")
+
+    session_error: Optional[str] = None
+    await asyncio.to_thread(_init_fork_session)
 
     return {"id": new_id, "sessionId": fork_sid, "sessionError": session_error}
 

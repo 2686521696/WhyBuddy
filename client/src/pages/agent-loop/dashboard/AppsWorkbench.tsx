@@ -994,6 +994,20 @@ export function AppsWorkbench() {
   const [menuFor, setMenuFor] = React.useState<string | null>(null);
   // 复刻改名弹框（对标 Budibase duplicateApp：预填「源名 副本」让用户改名）
   const [forkModal, setForkModal] = React.useState<{ item: GalleryItem; name: string } | null>(null);
+  /**
+   * 只读预览（2026-08-06）：点开**别人的**应用时用它，而不是往对方的会话里跳。
+   *
+   * 此前卡片点击一律 `open(item.sessionId)`——`canOpen` 只判了"有没有
+   * sessionId"，没判"这条会话是不是你的"。于是点别人的应用会跳进对方的
+   * 会话 URL，而会话按归属隔离（services/app_access.session_access），
+   * GET /sessions/{id} 返回 404 → 页面一片空白，卡在"正在准备工作台"。
+   * 用户实测原话："点击这个应用，跳转过去发现啥也没有空的"。
+   *
+   * 取的是 Gitea / Budibase 同一套动线：**看别人的东西是只读的，要改先
+   * Fork 成自己的**。模型本来就在 details[key].model 里（活渲染缩略图用的
+   * 就是它），所以预览不需要任何新接口，也不碰对方的会话。
+   */
+  const [previewModal, setPreviewModal] = React.useState<GalleryItem | null>(null);
   const [forkBusy, setForkBusy] = React.useState(false);
   const [forkError, setForkError] = React.useState<string | null>(null);
   const [page, setPage] = React.useState(1);
@@ -1335,7 +1349,17 @@ export function AppsWorkbench() {
       : undefined;
     // 活渲染缩略图的稳定 id：会话卡用 sessionId，App Store 卡无会话时用 appId。
     const thumbId = item.sessionId || item.appId || item.key;
-    const canOpen = Boolean(item.sessionId);
+    // 能不能进会话：**有 id 不等于进得去**。会话按归属隔离，别人的会话
+    // GET 回来是 404，跳过去就是白屏。进不去的走只读预览（见 previewModal）。
+    //
+    // 两类卡的判据不一样，别合并：
+    //   session 卡 —— 来自 GET /sessions，服务端**已经按归属过滤过**
+    //                （filter_sessions），列出来的就是你的，直接可进。
+    //   app 卡     —— 来自 GET /apps，公开应用人人可见，绑定的会话却是
+    //                作者的。必须按 owner 判。
+    const canOpen =
+      Boolean(item.sessionId) &&
+      (item.source === "session" || canWriteApp(item.summary?.owner_id ?? null, authUser));
     // 能不能复刻/删除。无主的存量应用除超管外谁都不能删——判成"谁都能删"
     // 等于权限一上线就把历史数据敞开（与后端 app_access 同一套规则）。
     const canFork = capabilities.can.fork;
@@ -1434,7 +1458,11 @@ export function AppsWorkbench() {
         }
         statusDot={meta?.dot ?? "bg-stone-300"}
         statusLabel={meta?.label ?? "…"}
-        onClick={() => (canOpen ? open(item.sessionId!) : undefined)}
+        // 进不去会话不再是"点了没反应"——那和白屏一样让人以为坏了。
+        // 有模型就开只读预览，没有模型（非 runnable）才真的不响应。
+        onClick={() =>
+          canOpen ? open(item.sessionId!) : detail?.model ? setPreviewModal(item) : undefined
+        }
         topRight={
           <>
             <button
@@ -1872,6 +1900,71 @@ export function AppsWorkbench() {
             onChange={p => setPage(p)}
             showSizeChanger={false}
           />
+        </div>
+      )}
+
+      {/* 只读预览：点开别人的应用走这里，不进对方的会话（见 previewModal 的说明）。
+          渲染器就是活渲染缩略图用的那一个，模型也是同一份，只是不再缩到卡片里。 */}
+      {previewModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-8"
+          data-testid="app-preview-modal"
+          onClick={() => setPreviewModal(null)}
+        >
+          <div
+            className="flex h-full w-full max-w-[1500px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-4 py-2.5">
+              <span className="truncate text-[14px] font-semibold text-slate-900">
+                {details[previewModal.key]?.identity?.productName ||
+                  previewModal.summary?.product_name ||
+                  previewModal.goal ||
+                  "应用预览"}
+              </span>
+              <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+                只读预览
+              </span>
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                {/* 想改就 Fork 一份成自己的——这是这条动线的出口，
+                    别让用户在只读页里找不到下一步。 */}
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-40"
+                  disabled={!capabilities.can.fork || previewModal.source !== "app"}
+                  title={capabilities.can.fork ? undefined : "登录后可复刻"}
+                  onClick={() => {
+                    const gi = previewModal;
+                    setPreviewModal(null);
+                    openForkModal(gi);
+                  }}
+                >
+                  <GitBranch size={13} /> 复刻到我的
+                </button>
+                <button
+                  className="rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
+                  onClick={() => setPreviewModal(null)}
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden bg-[#f0f2f5]">
+              <React.Suspense
+                fallback={<div className="p-6 text-[13px] text-slate-400">预览加载中…</div>}
+              >
+                <LazyAppRuntimeScreen
+                  model={details[previewModal.key]!.model!}
+                  // 运行期状态（种子数据的增删改、当前角色）按这个 key 存本地。
+                  // **不能用对方真实的 sessionId**：在预览里点两下"新建"，
+                  // 就会把痕迹写进人家会话的本地状态槽位里。给预览一个独立
+                  // 命名空间，关掉即弃。
+                  sessionId={`preview:${previewModal.appId || previewModal.key}`}
+                  appTitle={previewModal.goal}
+                  scaleFit="width"
+                />
+              </React.Suspense>
+            </div>
+          </div>
         </div>
       )}
 

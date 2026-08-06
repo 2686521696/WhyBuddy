@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Callable, Optional
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Callable, Iterator, Optional
 
 # Wikipedia 机器人政策要求 UA 携带联系方式（缺了直接 403 "respect our
 # robot policy"，实测）——URL + 邮箱齐备
@@ -30,7 +32,55 @@ _TIMEOUT_S = 12.0
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
+#: 本次请求内临时停用外网检索（见 suppress_web_search）。
+#: ContextVar 而不是全局：并发请求各判各的，一个 fork 不能把别人的推演也关掉。
+_web_search_suppressed: ContextVar[bool] = ContextVar(
+    "sliderule_web_search_suppressed", default=False
+)
+
+
+@contextmanager
+def suppress_web_search() -> Iterator[None]:
+    """在这段代码里不打外网检索——**给"重建"用，不给"推演"用**。
+
+    ## 为什么需要它
+
+    2026-08-06 剖析 fork（复刻应用）为什么慢，结果很干脆：
+
+        _ensure_runtime_closure_evidence   11027 ms   ← 占 fork 总耗时 99.3%
+          └ execute_v5_capability
+              └ rag_service.retrieve_evidence
+                  └ mcp_tools.web_search
+                      └ _search_wikipedia → _wiki_api ×14   9910 ms
+
+    一次 fork 打了 **14 次 Wikipedia 请求**，9.9 秒。而 fork 复制的是一份
+    **已经推演完的模型**——它要的只是把闭环证据重新落一遍好让副本能回放，
+    根本不需要重新去外网找证据。更难堪的是那些证据本身没用：实测抓回来的是
+    「PC」「PCI Express」「网页颜色」这类词条。
+
+    路由那条注释写着"零 LLM"——是真的没调 LLM，但没人数过网络请求。
+
+    ## 为什么不是把 SLIDERULE_WEB_SEARCH 关掉
+
+    那是全局开关，关了连正常推演的外部证据也一起没了。这里要的是
+    "**这一次调用**不查外网"，天然是请求域的东西。
+
+    ## 降级是诚实的
+
+    web_search 返回 None 时 retrieve_evidence 回落本地 RAG，并把 retrieval
+    字段如实标成 keyword/vector，不会冒充外部证据。所以这里少的是耗时，
+    不是把假证据填进去。
+    """
+    token = _web_search_suppressed.set(True)
+    try:
+        yield
+    finally:
+        _web_search_suppressed.reset(token)
+
+
 def web_search_enabled() -> bool:
+    if _web_search_suppressed.get():
+        return False
     return str(os.getenv("SLIDERULE_WEB_SEARCH", "on")).strip().lower() not in (
         "off",
         "0",
