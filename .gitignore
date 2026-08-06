@@ -170,6 +170,11 @@ data/agent-loop-settings.json.tmp
 # legacy pre-rename runtime file kept for rollback during the migration window
 data/whybuddy-sessions.json
 data/whybuddy-sessions.json.tmp
+# 每个存档旁边的时间戳边车（persistence.py:319 —— <store>.meta.json，
+# 记 sessionId → lastActive/createdAt）。上面逐个点名了主文件和 .tmp，唯独
+# 漏了这一个，于是本机跑一趟推演就会冒出个未跟踪文件。它是纯运行期状态，
+# 跟 .tmp 同性质，不该进版本库。
+data/*.json.meta.json
 
 # Local debug artifacts
 .manus-logs/
