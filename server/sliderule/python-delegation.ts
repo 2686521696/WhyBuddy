@@ -41,7 +41,36 @@ export interface PythonSlideRuleCallOptions {
 const DEFAULT_BASE_URL = "http://localhost:9700";
 const DEFAULT_INTERNAL_KEY = "dev-slide-rule-internal";
 const DEFAULT_TIMEOUT_MS = 120_000;
+
+/**
+ * 推演（drive-full）专用超时。**不能用上面那个 120s 的通用值。**
+ *
+ * 一趟推演实测 374~1190s（见 routes/sliderule_full.py 里 drive_full 那条注释），
+ * 而通用超时是 2 分钟——非流式那条路一旦被走到，必然在第 2 分钟 AbortController
+ * 掐断、返回 502，而 Python 侧那趟推演**还在跑**（drive_full 是 `def` 路由，
+ * 跑在线程池里，客户端断开不会取消它）。表现是"用户看到失败，但后台照样在烧
+ * LLM 额度，最后还成功落库了"——用户多半会再点一次，于是同一个话题生成两遍。
+ *
+ * 为什么不把 DEFAULT_TIMEOUT_MS 整体调大：那个值同时管着健康检查、llm-channel
+ * 这些秒级调用，调大等于后端真挂了也要吊 20 分钟才报错。慢的是推演这一条，
+ * 就只放宽这一条。
+ *
+ * 40 分钟 = 实测最慢 1190s 的两倍余量（1190s 是 5 并发下量到的；单跑更快，
+ * 但并发正是展会现场的常态）。要调用 PYTHON_SLIDE_RULE_DRIVE_TIMEOUT_MS。
+ *
+ * 连接挂 40 分钟听着久，但两边的代价不对称：挂着只占 Node 一个 socket，
+ * 而掐早了是"整趟白烧 + 用户重试再烧一遍"。宁可挂着。
+ *
+ * ⚠️ 前端正常走的是 SSE（drive-full-stream，兜底代理裸 fetch 不设超时，不受此限），
+ * 这条非流式路是 SSE 失败后的回退。回退路径出问题最难发现——正因为平时不走。
+ */
+const DEFAULT_DRIVE_TIMEOUT_MS = 2_400_000;
 const DEFAULT_HEALTH_PATH = "/health";
+
+/** 推演专用超时，允许用 PYTHON_SLIDE_RULE_DRIVE_TIMEOUT_MS 覆盖。 */
+export function resolvePythonDriveTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  return parsePositiveInt(env.PYTHON_SLIDE_RULE_DRIVE_TIMEOUT_MS, DEFAULT_DRIVE_TIMEOUT_MS);
+}
 
 function trimTrailingSlashes(value: string): string {
   return value.replace(/\/+$/, "");

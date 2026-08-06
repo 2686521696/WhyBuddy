@@ -34,6 +34,7 @@ import {
   delegateToPythonSlideRule,
   checkPythonSlideRuleHealth,
   resolvePythonSlideRuleRuntimeConfig,
+  resolvePythonDriveTimeoutMs,
   PythonSlideRuleHttpError,
 } from "../sliderule/python-delegation.js";
 import * as fs from "fs";
@@ -432,7 +433,10 @@ router.post("/drive-full", express.json({ limit: "2mb" }), async (req: Request, 
           installedSkills: body.installedSkills,
         },
         pythonRuntime.internalKey,
-        { timeoutMs: pythonRuntime.timeoutMs },
+        // 推演专用超时，不能用通用的 120s —— 一趟推演实测 374~1190s，
+        // 用通用值必然在第 2 分钟掐断返回 502，而 Python 侧那趟还在跑。
+        // 理由与取值见 python-delegation.ts 的 DEFAULT_DRIVE_TIMEOUT_MS。
+        { timeoutMs: resolvePythonDriveTimeoutMs() },
       );
       return res.json(normalizeDriveClosureResponse(data as any));
     } catch (e) {
@@ -466,7 +470,10 @@ router.post("/drive-marathon", express.json({ limit: "2mb" }), async (req: Reque
         '/api/sliderule/drive-marathon',
         body,
         pythonRuntime.internalKey,
-        { timeoutMs: pythonRuntime.timeoutMs },
+        // 推演专用超时，不能用通用的 120s —— 一趟推演实测 374~1190s，
+        // 用通用值必然在第 2 分钟掐断返回 502，而 Python 侧那趟还在跑。
+        // 理由与取值见 python-delegation.ts 的 DEFAULT_DRIVE_TIMEOUT_MS。
+        { timeoutMs: resolvePythonDriveTimeoutMs() },
       );
       return res.json(normalizeDriveClosureResponse(data as any));
     } catch (e) {

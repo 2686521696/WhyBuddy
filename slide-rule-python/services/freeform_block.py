@@ -2714,6 +2714,35 @@ def _enrich_monitor_page_overviews_inner(
     )
     sync_page_id = str((sync_page or {}).get("id") or "")
 
+    # 一个够格的页都没有 —— 说清楚，别默不作声（2026-08-06）。
+    #
+    # 实测撞到：一个手机端私教应用，4 个页面全是 calendar/workbench/kanban，
+    # stats 与 charts 全为 0，于是 eligible_pages 是空的，这个函数**一声不吭
+    # 直接返回**。表现是"这个应用就是没有设计"，日志里连一行都没有——比
+    # 生成失败还难查，因为失败至少会留个 failed 状态。
+    #
+    # 为什么不干脆放宽资格：这些页面本来就没有可聚合的内容（stats/charts 全空），
+    # 硬给它设计一版总览等于让模型**发明数据**。这条链路的纪律是不发明——
+    # 所以正确的做法是把"为什么没有"讲出来，而不是硬凑一个出来。
+    #
+    # 只打日志，**不往页面上写状态标记**。
+    #
+    # 本来想顺手标一个 freeformOverviewStatus="not_eligible"，查下来放弃了：
+    # 前端一个地方都没读这个字段（已有的 ready/deferred/failed 同样没人读），
+    # 所以标记带不来任何用户可见的好处；而它会把一个字段写进**已经过门禁的
+    # 模型**里，打破 test_v5_llm_generate_gate 那条"modelSection 等于门禁批准
+    # 的原样产出"的不变量。为一个没人读的字段破坏一条真不变量，不划算。
+    # 哪天前端要显示"这个应用没有可做总览的页"，再连着 UI 一起加。
+    if not eligible_pages:
+        kinds = ",".join(sorted({str(p.get("kind") or "?") for p in pages})) or "(无页面)"
+        print(
+            f"[freeform_block] 没有可做总览的页，本次不生成任何版式设计："
+            f"共 {len(pages)} 页（{kinds}），没有一页带 stats/charts，"
+            f"也没有 presentation=marketing-landing 的页。"
+            f"这不是失败——这个应用确实没有可聚合的内容。"
+        )
+        return model
+
     # 真实长尾里首页参照图、取色、版式合计会占 2~6 分钟。运行预算只约束这些
     # fail-open 视觉增强，不中断已经过结构闸的业务模型、权限和流程。
     remaining = remaining_run_budget_seconds()
