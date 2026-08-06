@@ -103,7 +103,14 @@ def test_monitor_overview_generates_exactly_one_sheet_for_the_landing_page(monke
         },
     }
     enrich_monitor_page_overviews(model)
-    # single-v1：只设计唯一设备档；只有落地页进入生成器。
+    # 只有落地页进入生成器，且**只设计一档**。
+    #
+    # 2026-08-06 更新：此前这里断言 [True, True]（默认档 + 手机档两次调用，
+    # 共用同一张参照板），并要求产物带 .mobile。11c4497「单设备权威」把
+    # preferredDevice 收敛成 desktop/phone 二选一（services/device_policy.py：
+    # 先看目标里有没有明说，再看模型的选择，兜底 desktop），一个应用只有一档，
+    # freeform_block 里 design_total 随之写死成 1、手机档那一支整段删除。
+    # 那次同步更新了 test_monitor_overview.py 等，**漏了这个文件**。
     assert calls == [True]
     assert model["page"]["pages"][1].get("freeformOverview")
     assert "mobile" not in model["page"]["pages"][1]["freeformOverview"]

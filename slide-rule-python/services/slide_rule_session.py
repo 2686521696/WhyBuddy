@@ -4,6 +4,7 @@ Session management for V5, ported from Node's memory/session-store.ts, sliderule
 Provides create, load, save, drive loop using stable Python RAG for evidence instead of Node LLM.
 """
 
+import os
 from typing import Dict, Any, Optional
 from models.v5_state import Artifact, CapabilityRun, ProducedBy, V5SessionState, DependencyEdge, SlideRuleReplayEvent, ReasoningEvent, UserIntervention
 from datetime import datetime, timezone
@@ -51,9 +52,76 @@ def _shared_store_active() -> bool:
 # 一次 create 就会把其他会话从磁盘上抹掉（实测踩过：真实话题跨重启失忆的
 # 元凶之一）。一切落盘必须走 save_session_record 的单条守卫式合并。
 
+# Crockford Base32 —— 去掉了 I / L / O / U。
+#
+# 为什么用它而不是 hex 或普通 base32：这些 id 会被人念出来、抄进工单、在日志里
+# 肉眼比对（这次排查就是这么干的）。I/1、O/0、L/1 混淆是真会发生的事，U 被排除
+# 是为了不拼出脏字。字母表照抄 ULID 规范（github.com/ulid/spec）。
+_ID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+# 后缀字符数。10 个 Crockford 字符 = 50 位熵。
+#
+# 长度上限是 **32**，不是随便定的：server/routes/sliderule-screenshot-device.ts:19,27
+# 拿 `sessionId.slice(0, 32)` 当截图缓存键，超了会被截断、两个会话共用一张截图。
+# 现在是 3("sr-") + 14(时间戳) + 1("-") + 10 = 28，留 4 个字符余量。
+_ID_SUFFIX_LEN = 10
+
+
+def _new_session_id() -> str:
+    """时间戳前缀 + 加密随机后缀。
+
+    ## 修的是什么（2026-08-06 实测）
+
+    原来是 `f"sr-{datetime.now().strftime('%Y%m%d%H%M%S')}"` —— **秒级时间戳，
+    没有随机位，没有碰撞检查**。同一秒内创建的会话拿到完全相同的 id，于是后写的
+    把先写的整个盖掉。
+
+    这不是理论风险。并发跑 5 个话题的实测结果：5 个会话只拿到 3 个 id，
+    「独立书店」和「宠物寄养」两个话题的模型双双被「农机租赁」覆盖，库里连它们
+    的原始目标文本都查不到了。下游那套 lastTurnId 单调守卫拦不住——它防的是
+    同一个会话被陈旧快照覆盖，而在这套设计里 id 就是身份，不同会话共用一个 id
+    时它只会认为"这是同一个会话的新一轮"。
+
+    ## 为什么是这个形状
+
+    结构照 ULID 规范（github.com/ulid/spec）：**时间戳在前保证字典序即时间序，
+    加密随机在后保证唯一**。ULID 用 48 位毫秒 + 80 位随机；这里保留原有的
+    可读时间戳（`sr-20260806140617-A7K2M9PQRS`），因为它会进日志、进工单，
+    换成不透明的 `01K1M…` 反而增加排查成本，而且 ULID 以 '0' 开头会**排在**
+    所有存量 `sr-2026…` id **前面**，跨格式的字典序会悄悄反转。
+
+    随机源用 `os.urandom`（跟 python-ulid 的 default provider 一致，
+    ulid/providers/default.py:36）。`b % 32` 没有取模偏置——256 是 32 的整数倍。
+
+    50 位熵的碰撞概率：同一秒内建 10000 个会话时约 4.4e-8。ULID 不做协调、
+    纯靠熵，这里同理；下面那层存在性检查只是额外的一道保险，不是主要依靠。
+    """
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    suffix = "".join(_ID_ALPHABET[b % 32] for b in os.urandom(_ID_SUFFIX_LEN))
+    return f"sr-{stamp}-{suffix}"
+
+
 def create_session(goal_text: str, session_id: Optional[str] = None) -> V5SessionState:
     if not session_id:
-        session_id = f"sr-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        session_id = _new_session_id()
+        # 第二道保险：真撞上就换一个再来。
+        #
+        # 跨进程时这是 TOCTOU（检查完到写入之间别人可能插进来），挡不住所有情况，
+        # 唯一真正的保证是上面那 50 位熵。但这次踩的坑恰好是**单进程内**并发
+        # （uvicorn 线程池里 5 趟同时跑），这一层能百分之百拦下；而且代价只是
+        # 一次字典查找。留着，别当它是主要防线。
+        #
+        # ⚠️ load_session_record **不返回 None**，查不到时返回
+        # {"ok": False, "error": "not_found"}（persistence.py:581）。写成
+        # `is None` 会恒真判定"撞了"，白跑满重试次数、每次多打几趟库，日志还
+        # 骗人说撞了——第一版就是这么写错的，靠日志里冒出 3 次"id 撞了"才发现
+        # （50 位熵下真碰撞是 4e-8 量级，一出现就该起疑）。
+        for _ in range(5):
+            in_memory = session_id in _sessions
+            on_disk = bool((load_session_record(session_id) or {}).get("ok"))
+            if not in_memory and not on_disk:
+                break
+            print(f"[session] id 撞了（{session_id}），换一个重试")
+            session_id = _new_session_id()
     state = V5SessionState(
         sessionId=session_id,
         goal={"text": goal_text, "status": "needs_refinement"},
