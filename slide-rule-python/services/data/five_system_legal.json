@@ -39,6 +39,17 @@
     "wizard",
     "monitor"
   ],
+  "pageSurfaceTypes": [
+    "table",
+    "editable-table",
+    "split-list",
+    "queue"
+  ],
+  "pageSurfaceDensities": [
+    "compact",
+    "default",
+    "comfortable"
+  ],
   "chartTypes": [
     "bar",
     "line",

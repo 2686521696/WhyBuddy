@@ -1101,6 +1101,33 @@ def test_page_blocks_fail_gate_with_invalid_type():
     assert any("NonExistentBlockType" in f.get("ref", "") for f in result["findings"])
 
 
+def test_page_surface_accepts_ant_design_pro_workbench_contract():
+    model = _make_model_with_landing()
+    model["page"]["pages"][0]["surface"] = {
+        "type": "split-list",
+        "density": "compact",
+    }
+    from services.v5_model_gate import validate_five_system_model
+
+    result = validate_five_system_model(model)
+    findings = [f for f in result["findings"] if ".surface" in f.get("path", "")]
+    assert findings == []
+
+
+def test_page_surface_rejects_unknown_type_and_density():
+    model = _make_model_with_landing()
+    model["page"]["pages"][0]["surface"] = {
+        "type": "magic-canvas",
+        "density": "huge",
+    }
+    from services.v5_model_gate import validate_five_system_model
+
+    result = validate_five_system_model(model)
+    findings = [f for f in result["findings"] if ".surface" in f.get("path", "")]
+    assert len(findings) == 2
+    assert all(f.get("code") == "PUBLISH_ENUM_VIOLATION" for f in findings)
+
+
 def test_quick_action_panel_passes_gate():
     model = _make_model_with_landing()
     pages = model.get("page", {}).get("pages", [])

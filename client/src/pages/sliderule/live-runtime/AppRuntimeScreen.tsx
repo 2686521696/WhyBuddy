@@ -51,6 +51,7 @@ import {
   Skeleton,
   Empty,
   Badge,
+  Segmented,
 } from "antd";
 import {
   DashboardOutlined,
@@ -104,6 +105,9 @@ import {
 // ECharts 基建走独立 chunk（React.lazy）：主 bundle 不背 echarts，
 // 首个带图表声明的页面打开时才加载。
 const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
+const LazyProWorkbenchSurface = React.lazy(
+  () => import("./ProWorkbenchSurface")
+);
 // 手机档 UI 基建（antd-mobile）同样独立 chunk：切到手机设备档才加载。
 const LazyPhonePageList = React.lazy(
   () => import("./phone-mobile/PhonePageList")
@@ -2785,6 +2789,13 @@ export function AppRuntimeScreen({
     ) : null;
 
 
+  const usesProWorkbench = Boolean(
+    page &&
+      !isPhone &&
+      !isTablet &&
+      (page.view.kind === "workbench" || page.view.kind === "wizard")
+  );
+
   const pageDataView = page && (
     isTablet ? (
       <div
@@ -2850,6 +2861,27 @@ export function AppRuntimeScreen({
         }
         onOpenRow={setDetailRow}
       />
+    ) : usesProWorkbench ? (
+      <React.Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}>
+        <LazyProWorkbenchSurface
+          surface={page.surface}
+          title={page.title}
+          fields={page.formFields}
+          rows={rows}
+          canCreate={Boolean(
+            page.entityId && pageAccess.get(page.id)?.canCreate !== false
+          )}
+          onCreate={() => {
+            setFormValues({});
+            setFormOpen(true);
+          }}
+          onOpenRow={setDetailRow}
+          onSaveRow={row => {
+            if (!page.entityId) return;
+            apply(updateRow(state, page.entityId, row.id, row.values));
+          }}
+        />
+      </React.Suspense>
     ) : (
       <Table
         size={page.view.kind === "dashboard" ? "small" : "middle"}
@@ -2872,13 +2904,17 @@ export function AppRuntimeScreen({
 
   // 一次求值、多处摆位（见下方 D1 注释）
   const blockScaffold = renderExperienceBlockScaffold(false);
-  const businessPageGrid = renderExperienceBlockScaffold(false, pageDataView);
+  const businessPageGrid = usesProWorkbench
+    ? pageDataView
+    : renderExperienceBlockScaffold(false, pageDataView);
 
   const defaultPageContent = page && (
     <Card
       size="small"
+      bordered={!usesProWorkbench}
+      styles={usesProWorkbench ? { body: { padding: 0 } } : undefined}
       title={
-        <Space size={6}>
+        usesProWorkbench ? undefined : <Space size={6}>
           <span>{page.title}</span>
           {pageSeedCount > 0 && (
             <Tooltip
@@ -2896,7 +2932,7 @@ export function AppRuntimeScreen({
         </Space>
       }
       extra={
-        <Space size="small">
+        usesProWorkbench ? undefined : <Space size="small">
           {page.actions.slice(0, 3).map(a => (
             <Tag key={a} color="blue" style={{ marginInlineEnd: 0 }}>
               {a}
@@ -3727,41 +3763,25 @@ export function AppRuntimeScreen({
                 只剩一档时**这一档的按钮仍然要在**：它同时是「从代码视图回到
                 应用视图」的唯一入口（旁边的「代码」按钮只负责进去）。一度想
                 过一档就把整条收起来，那会把人留在代码视图里出不来。 */}
-            {deviceTiers.map(key => (
-              <button
-                key={key}
-                type="button"
-                data-testid={`app-device-${key}`}
-                onClick={() => {
+            <Segmented
+              size="small"
+              value={codeView ? "code" : device}
+              options={[
+                ...deviceTiers.map(key => ({
+                  value: key,
+                  label: <span data-testid={`app-device-${key}`}>{DEVICE_SPECS[key].label}</span>,
+                })),
+                { value: "code", label: <span data-testid="app-device-code">代码</span> },
+              ]}
+              onChange={value => {
+                if (value === "code") {
+                  setCodeView(true);
+                } else if (deviceTiers.includes(value as (typeof deviceTiers)[number])) {
                   setCodeView(false);
-                  setDevice(key);
-                }}
-                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                  !codeView && device === key
-                    ? "bg-white text-stone-800 shadow-sm"
-                    : inBar
-                      ? "text-stone-500 hover:text-stone-700"
-                      : "text-white/85 hover:text-white"
-                }`}
-              >
-                {DEVICE_SPECS[key].label}
-              </button>
-            ))}
-            <button
-              type="button"
-              data-testid="app-device-code"
-              onClick={() => setCodeView(true)}
-              title="schema 的确定性代码投影（只读）"
-              className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                codeView
-                  ? "bg-white text-stone-800 shadow-sm"
-                  : inBar
-                    ? "text-stone-500 hover:text-stone-700"
-                    : "text-white/85 hover:text-white"
-              }`}
-            >
-              代码
-            </button>
+                  setDevice(value as (typeof deviceTiers)[number]);
+                }
+              }}
+            />
           </div>
         );
         if (!inBar) return gearBar;

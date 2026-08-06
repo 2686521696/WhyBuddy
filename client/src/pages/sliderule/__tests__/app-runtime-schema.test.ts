@@ -86,6 +86,57 @@ const MODEL: FiveSystemModel = {
 };
 
 describe("deriveAppRuntimeSchema（应用运行 option）", () => {
+  it("preserves a valid Pro workbench surface declaration", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.page!.pages![0].surface = {
+      type: "split-list",
+      density: "compact",
+    };
+
+    const schema = deriveAppRuntimeSchema(model)!;
+
+    expect(schema.pages[0].surface).toEqual({
+      type: "split-list",
+      density: "compact",
+      source: "model",
+    });
+  });
+
+  it("deterministically types legacy business pages without another LLM call", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.page!.pages = [
+      { ...model.page!.pages![0], id: "members", name: "Member Registry" },
+      { ...model.page!.pages![0], id: "coaches", name: "Coach Management" },
+      { ...model.page!.pages![0], id: "checkins", name: "Check-in Console" },
+      { ...model.page!.pages![0], id: "renewals", name: "Renewal Workbench" },
+    ];
+
+    const schema = deriveAppRuntimeSchema(model)!;
+
+    expect(schema.pages.map(page => page.surface.type)).toEqual([
+      "table",
+      "split-list",
+      "editable-table",
+      "queue",
+    ]);
+    expect(schema.pages.every(page => page.surface.source === "inferred")).toBe(true);
+  });
+
+  it("keeps people-management pages split even when they are workflow-linked", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.page!.pages = [
+      { ...model.page!.pages![0], id: "coaches", name: "Coach Management" },
+    ];
+    model.appbundle!.pageBindings = [
+      { pageRef: "coaches", workflowRef: "coach_lifecycle" },
+    ];
+
+    const schema = deriveAppRuntimeSchema(model)!;
+
+    expect(schema.pages[0].workflowLinked).toBe(true);
+    expect(schema.pages[0].surface.type).toBe("split-list");
+  });
+
   it("页面主实体 = fieldBindings 中占多数的实体；表单项 = 绑定字段", () => {
     const schema = deriveAppRuntimeSchema(MODEL, "健身房系统")!;
     expect(schema.appName).toBe("健身房系统");

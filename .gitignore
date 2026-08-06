@@ -184,6 +184,7 @@ client/public/__manus__/version.json
 
 # Local verification artifacts
 tmp-server-*.log
+artifacts/
 
 # Grok local tool config, caches, MCP state and temporary artifacts (tooling only).
 # These are per-workspace session files for the Grok Build TUI/CLI (e.g. .grok/config.toml, caches).

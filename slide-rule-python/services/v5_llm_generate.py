@@ -90,6 +90,7 @@ Required shape (use these exact keys):
   "page": {
     "pages": [{"id": "<id>", "name": "<label>",
                "kind": "__PAGE_KINDS__",
+               "surface": {"type": "__PAGE_SURFACE_TYPES__", "density": "__PAGE_SURFACE_DENSITIES__"},
                "statusField": "<entity_id>.<field_id> (kanban only)",
                "dateField": "<entity_id>.<field_id> (calendar only)",
                "colorBy": "<entity_id>.<field_id> (calendar only, optional)",
@@ -241,6 +242,13 @@ Content-quality rules (checked by a deterministic regression gate):
   step-by-step guided flow (the page MUST be bound to the workflow via
   appbundle.pageBindings workflowRef — its steps ARE the workflow nodes).
   Pick by the page's job, vary across pages — real products mix kinds.
+- WORKBENCH SURFACE (optional, for workbench pages): choose the primary operating
+  structure by the page's actual job. table = searchable read-heavy registry;
+  editable-table = high-frequency inline editing such as attendance or stock;
+  split-list = master list plus persistent detail pane for people/resources;
+  queue = status-segmented processing for payments, approvals, renewals, or
+  exceptions. density is compact/default/comfortable. Do not vary this merely
+  for decoration: pages with different jobs should have different structures.
 - FEEDS (activity/alert stream, optional): overview pages that watch things
   happen (alerts, submissions, escalations) may declare ONE feed: "entity" is
   the row source, "timeField" MUST be a real DATE field (stream orders by it,
@@ -320,6 +328,8 @@ def _render_schema_instruction(template: str) -> str:
         .replace("__FIELD_TONES__", enum_str("fieldTones"))
         .replace("__FIELD_FORMATS__", enum_str("numberFormats", "stringFormats"))
         .replace("__PAGE_KINDS__", enum_str("pageKinds"))
+        .replace("__PAGE_SURFACE_TYPES__", enum_str("pageSurfaceTypes"))
+        .replace("__PAGE_SURFACE_DENSITIES__", enum_str("pageSurfaceDensities"))
         .replace("__STAT_FORMATS__", enum_str("statFormats"))
         .replace("__CHART_TYPES__", enum_str("chartTypes"))
         .replace("__STAT_METRIC_FORMS__", stat_metrics)

@@ -18,6 +18,11 @@ import {
   type FieldFormat,
   type NormalizedFieldOption,
 } from "./field-display";
+import type {
+  PageSurfaceDensity,
+  PageSurfaceSpec,
+  PageSurfaceType,
+} from "../system-screens/five-system-model";
 import { DESIGN_RECIPE_IDS } from "./design-recipes";
 import {
   PAGE_CONTENT_REF,
@@ -182,6 +187,12 @@ export type AppPageKind =
   | "wizard"
   | "monitor";
 
+export interface AppPageSurfaceSchema {
+  type: PageSurfaceType;
+  density: PageSurfaceDensity;
+  source: "model" | "inferred";
+}
+
 export interface AppPageViewSchema {
   kind: AppPageKind;
   /** kanban：看板列字段 id（主实体 enum 字段，列来自其 options） */
@@ -219,6 +230,7 @@ export interface AppPageSchema {
   charts: AppPageChartSchema[];
   /** 页面范式（视图骨架；绑定失效已降级 workbench） */
   view: AppPageViewSchema;
+  surface: AppPageSurfaceSchema;
   /** 体验区块过渡声明；旧页面为空，不参与现有内容渲染。 */
   experienceBlocks: AppExperienceBlockSchema[];
   /** 页面级动作实例（Step 5）；空数组对旧模型兼容 */
@@ -260,6 +272,61 @@ export interface AppPageLayoutSchema {
   };
   /** RGL-compatible responsive placements rendered with native CSS Grid. */
   grid?: BusinessGridLayouts;
+}
+
+const SURFACE_TYPES = new Set<PageSurfaceType>([
+  "table",
+  "editable-table",
+  "split-list",
+  "queue",
+]);
+const SURFACE_DENSITIES = new Set<PageSurfaceDensity>([
+  "compact",
+  "default",
+  "comfortable",
+]);
+
+function surfaceText(page: { id?: string; name?: string }): string {
+  return `${page.id ?? ""} ${page.name ?? ""}`.toLowerCase();
+}
+
+export function inferPageSurface(page: {
+  id?: string;
+  name?: string;
+  kind?: string;
+  surface?: PageSurfaceSpec;
+  workflowLinked?: boolean;
+}): AppPageSurfaceSchema {
+  const declaredType = page.surface?.type;
+  const declaredDensity = page.surface?.density;
+  if (
+    declaredType &&
+    SURFACE_TYPES.has(declaredType) &&
+    (!declaredDensity || SURFACE_DENSITIES.has(declaredDensity))
+  ) {
+    return {
+      type: declaredType,
+      density: declaredDensity ?? "default",
+      source: "model",
+    };
+  }
+
+  const text = surfaceText(page);
+  if (
+    /coach|staff|employee|trainer|\u6559\u7ec3|\u5458\u5de5|\u4eba\u5458/.test(text)
+  ) {
+    return { type: "split-list", density: "default", source: "inferred" };
+  }
+  const inferredType: PageSurfaceType =
+    /check[-_ ]?in|attendance|签到|考勤|inventory|stock|盘点/.test(text)
+      ? "editable-table"
+      : /renewal|payment|reconcile|approval|audit|续费|对账|审核|审批|跟进/.test(text) ||
+          page.workflowLinked === true
+        ? "queue"
+        : /coach|staff|employee|trainer|教练|员工|人员/.test(text)
+          ? "split-list"
+          : "table";
+  return { type: inferredType, density: "default", source: "inferred" };
 }
 
 export interface AppStatCardSchema {
@@ -740,6 +807,9 @@ export function deriveAppRuntimeSchema(
       ];
     })();
 
+    const workflowLinked =
+      workflowLinkedPages.has(id) || workflowLinkedPages.has(page.id ?? "");
+
     return {
       id,
       title: page.name || id,
@@ -748,8 +818,8 @@ export function deriveAppRuntimeSchema(
       detailFields: allFields,
       formFields: boundFields.length > 0 ? boundFields : allFields,
       actions: (page.actionPermissions ?? []).map(String),
-      workflowLinked:
-        workflowLinkedPages.has(id) || workflowLinkedPages.has(page.id ?? ""),
+      workflowLinked,
+      surface: inferPageSurface({ ...page, workflowLinked }),
       aiActions: entityId ? (aiActionsByEntity.get(entityId) ?? []) : [],
       stats,
       rankings,

@@ -56,6 +56,8 @@ from .schema_legal import (  # noqa: F401 — re-export 即接口
     FIELD_TONES,
     FIELD_TYPES,
     NUMBER_FORMATS,
+    PAGE_SURFACE_DENSITIES,
+    PAGE_SURFACE_TYPES,
     PAGE_KINDS,
     STAT_FORMATS,
     STRING_FORMATS,
@@ -514,6 +516,24 @@ def validate_five_system_model(
                 f"page kind '{kind}' is not one of {'/'.join(PAGE_KINDS)}",
                 ref=kind, skill="page",
             ))
+
+        surface_raw = pd.get("surface")
+        if surface_raw is not None:
+            surface = _as_dict(surface_raw)
+            surface_type = str(surface.get("type") or "").strip()
+            density = str(surface.get("density") or "").strip()
+            if surface_type not in PAGE_SURFACE_TYPES:
+                findings.append(_finding(
+                    PUBLISH_ENUM_VIOLATION, f"page.pages[{pid}].surface.type",
+                    f"page surface type '{surface_type}' is not one of {'/'.join(PAGE_SURFACE_TYPES)}",
+                    ref=surface_type, skill="page",
+                ))
+            if density and density not in PAGE_SURFACE_DENSITIES:
+                findings.append(_finding(
+                    PUBLISH_ENUM_VIOLATION, f"page.pages[{pid}].surface.density",
+                    f"page surface density '{density}' is not one of {'/'.join(PAGE_SURFACE_DENSITIES)}",
+                    ref=density, skill="page",
+                ))
 
         def _check_view_binding(key: str, required_type: str, required: bool) -> None:
             ref = str(pd.get(key) or "").strip()

@@ -14,14 +14,15 @@
  * 两边说法一旦分家，就会重演"放开了却渲染成惰性占位卡"的事故。
  */
 import React from "react";
+import dayjs from "dayjs";
 import {
   Button,
   Card,
   Empty,
+  Flex,
   List,
   Progress,
-  Select,
-  Statistic,
+  Steps,
   Table,
   Tag,
   theme as antdTheme,
@@ -29,9 +30,15 @@ import {
   Typography,
 } from "antd";
 import type { TableColumnsType } from "antd";
+import {
+  ProCard,
+  ProFormDateRangePicker,
+  ProFormSelect,
+  QueryFilter,
+  StatisticCard,
+} from "@ant-design/pro-components";
 // WorkflowTimeline 自己的节点箭头（组件 UI，用静态 import；freeform 的
 // 动态图标解析走下面的 AntdIcons 命名空间 + 目录别名表，两回事）。
-import { ArrowRightOutlined } from "@ant-design/icons";
 // 全量图标命名空间——FreeformInsight 的 iconRef 按名字动态解析成任意 Ant
 // Design 图标，不再限定在一个手维护的小集合里（2026-07-24）。legacy kebab
 // 别名也走这条动态解析（映射表在目录 JSON 里，与 Python 侧同源），不再
@@ -76,14 +83,6 @@ import {
   type FeedItem,
   type TimeGrain,
 } from "./block-data";
-import {
-  BUSINESS_MUTED_SURFACE_STYLE,
-  BUSINESS_SECONDARY_TEXT_COLOR,
-  BUSINESS_SURFACE_STYLE,
-  BUSINESS_TERTIARY_TEXT_COLOR,
-  BUSINESS_TEXT_COLOR,
-} from "./business-surface-theme";
-
 // ECharts 基建走独立 chunk（跟 AppRuntimeScreen 里那份同一个组件/同一个
 // import()，Vite 按 module 去重成一个 chunk，不会重复打包）。
 const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
@@ -290,28 +289,16 @@ const QuickActionPanelRenderer: ExperienceBlockRenderer = ({
       : 2;
   const actions = pageActions ?? [];
   return (
-    <div
+    <ProCard
       data-testid="quick-action-panel"
-      className="rounded border px-3 py-2"
-      style={BUSINESS_SURFACE_STYLE}
+      size="small"
+      title={title || undefined}
+      bordered
     >
-      {title && (
-        <div
-          className="mb-2 text-xs font-medium"
-          style={{ color: BUSINESS_SECONDARY_TEXT_COLOR }}
-        >
-          {title}
-        </div>
-      )}
       {actions.length === 0 ? (
-        <div className="text-xs" style={{ color: BUSINESS_TERTIARY_TEXT_COLOR }}>
-          暂无可用操作
-        </div>
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可用操作" />
       ) : (
-        <div
-          className="grid gap-2"
-          style={{ gridTemplateColumns: `repeat(${columns}, minmax(0,1fr))` }}
-        >
+        <Flex wrap gap="small">
           {actions.map(a => (
             <Button
               key={a.id}
@@ -319,13 +306,14 @@ const QuickActionPanelRenderer: ExperienceBlockRenderer = ({
               disabled={!a.permitted}
               title={a.permitted ? undefined : "当前角色无此操作权限"}
               onClick={() => onAction?.(a.id)}
+              style={{ flex: `1 1 calc(${100 / columns}% - 8px)` }}
             >
               {a.label}
             </Button>
           ))}
-        </div>
+        </Flex>
       )}
-    </div>
+    </ProCard>
   );
 };
 
@@ -347,94 +335,90 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
   const fields = filterFieldOptions ?? [];
   if (!showDateRange && fields.length === 0) {
     return (
-      <div
-        data-testid="filter-bar-empty"
-        className="rounded border px-3 py-2 text-xs"
-        style={BUSINESS_MUTED_SURFACE_STYLE}
-      >
-        筛选栏：本页无可筛选字段
-      </div>
+      <ProCard data-testid="filter-bar-empty" size="small" bordered>
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="本页无可筛选字段"
+        />
+      </ProCard>
     );
   }
   const enumFilters = filterState?.enumFilters ?? {};
   const dateRange = filterState?.dateRange ?? null;
-  const hasActive = Object.values(enumFilters).some(Boolean) || !!dateRange;
-  return (
-    <div
+  const initialValues: Record<string, unknown> = { ...enumFilters };
+  if (showDateRange && dateRange) {
+    initialValues.dateRange = dateRange.map(value => dayjs(value));
+  }
+
+  const applyValues = (values: Record<string, unknown>) => {
+    const nextEnumFilters = Object.fromEntries(
+      fields.map(field => [
+        field.id,
+        typeof values[field.id] === "string"
+          ? (values[field.id] as string)
+          : undefined,
+      ])
+    );
+    const rawDateRange = values.dateRange;
+    const nextDateRange =
+      Array.isArray(rawDateRange) && rawDateRange.length === 2
+        ? (rawDateRange.map(value => {
+            if (typeof value === "string") return value.slice(0, 10);
+            if (
+              value &&
+              typeof value === "object" &&
+              "format" in value &&
+              typeof value.format === "function"
+            ) {
+              return value.format("YYYY-MM-DD");
+            }
+            return "";
+          }) as [string, string])
+        : null;
+
+    onFilterChange?.({
+      enumFilters: nextEnumFilters,
+      dateRange:
+        nextDateRange?.[0] && nextDateRange[1] ? nextDateRange : null,
+    });
+  };
+
+  const filterForm = (
+    <QueryFilter
       data-testid="filter-bar"
-      className="flex flex-wrap items-center gap-2 rounded border px-3 py-2"
-      style={BUSINESS_SURFACE_STYLE}
+      defaultCollapsed={false}
+      initialValues={initialValues}
+      onFinish={async values => {
+        applyValues(values);
+        return true;
+      }}
+      onReset={() =>
+        onFilterChange?.({
+          enumFilters: Object.fromEntries(fields.map(field => [field.id, undefined])),
+          dateRange: null,
+        })
+      }
     >
-      {title && (
-        <span
-          className="text-xs font-medium"
-          style={{ color: BUSINESS_SECONDARY_TEXT_COLOR }}
-        >
-          {title}
-        </span>
-      )}
       {showDateRange && dateRangeField && (
-        <span
-          className="flex items-center gap-1 text-xs"
-          style={{ color: BUSINESS_SECONDARY_TEXT_COLOR }}
-        >
-          <input
-            type="date"
-            className="rounded border px-1.5 py-0.5 text-xs"
-            style={{ ...BUSINESS_SURFACE_STYLE, colorScheme: "light dark" }}
-            value={dateRange?.[0]?.slice(0, 10) ?? ""}
-            onChange={e => {
-              const from = e.target.value;
-              const to = dateRange?.[1] ?? e.target.value;
-              onFilterChange?.({
-                dateRange: from ? [from, to] : null,
-              });
-            }}
-          />
-          <span>至</span>
-          <input
-            type="date"
-            className="rounded border px-1.5 py-0.5 text-xs"
-            style={{ ...BUSINESS_SURFACE_STYLE, colorScheme: "light dark" }}
-            value={dateRange?.[1]?.slice(0, 10) ?? ""}
-            onChange={e => {
-              const to = e.target.value;
-              const from = dateRange?.[0] ?? e.target.value;
-              onFilterChange?.({
-                dateRange: to ? [from, to] : null,
-              });
-            }}
-          />
-        </span>
+        <ProFormDateRangePicker name="dateRange" label={dateRangeField.label} />
       )}
       {fields.map(f => (
-        <Select
+        <ProFormSelect
           key={f.id}
-          size="small"
-          allowClear
-          placeholder={f.label}
-          style={{ minWidth: 120 }}
-          value={enumFilters[f.id]}
+          name={f.id}
+          label={f.label}
           options={f.options}
-          onChange={v => onFilterChange?.({ enumFilters: { [f.id]: v } })}
-          onClear={() => onFilterChange?.({ enumFilters: { [f.id]: undefined } })}
+          fieldProps={{ allowClear: true }}
         />
       ))}
-      {hasActive && (
-        <Button
-          size="small"
-          type="link"
-          onClick={() =>
-            onFilterChange?.({
-              enumFilters: Object.fromEntries(fields.map(f => [f.id, undefined])),
-              dateRange: null,
-            })
-          }
-        >
-          重置
-        </Button>
-      )}
-    </div>
+    </QueryFilter>
+  );
+  return title ? (
+    <ProCard size="small" title={title} bordered bodyStyle={{ padding: 0 }}>
+      {filterForm}
+    </ProCard>
+  ) : (
+    filterForm
   );
 };
 
@@ -454,13 +438,12 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
 
   if (!workflow || nodes.length === 0) {
     return (
-      <div
-        data-testid="workflow-timeline-empty"
-        className="rounded border px-3 py-2 text-xs"
-        style={BUSINESS_MUTED_SURFACE_STYLE}
-      >
-        流程步骤条：暂无可展示的流程节点
-      </div>
+      <ProCard data-testid="workflow-timeline-empty" size="small" bordered>
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="暂无可展示的流程节点"
+        />
+      </ProCard>
     );
   }
 
@@ -469,63 +452,40 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
   );
 
   return (
-    <div
+    <ProCard
       data-testid="workflow-timeline"
-      className="rounded border px-3 py-3"
-      style={BUSINESS_SURFACE_STYLE}
+      size="small"
+      title={title || undefined}
+      bordered
     >
-      {title && (
-        <div
-          className="mb-2 text-xs font-medium"
-          style={{ color: BUSINESS_SECONDARY_TEXT_COLOR }}
-        >
-          {title}
-        </div>
-      )}
-      <div className="flex flex-wrap items-stretch gap-1.5">
-        {nodes.map((node, i) => (
-          <React.Fragment key={node.id || i}>
-            <div
-              data-testid="workflow-timeline-node"
-              className="flex min-w-[120px] flex-1 flex-col gap-1 rounded border px-2.5 py-2"
-              style={BUSINESS_MUTED_SURFACE_STYLE}
-            >
-              <span
-                className="text-[10px] font-mono"
-                style={{ color: BUSINESS_TERTIARY_TEXT_COLOR }}
-              >
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <span
-                className="text-xs font-medium"
-                style={{ color: BUSINESS_TEXT_COLOR }}
-              >
-                {node.name || node.id}
-              </span>
+      <Steps
+        size="small"
+        responsive
+        current={-1}
+        items={nodes.map((node, index) => ({
+          key: node.id || String(index),
+          title: (
+            <span data-testid="workflow-timeline-node">
+              {node.name || node.id}
+            </span>
+          ),
+          description: (
+            <Flex vertical gap={2}>
               {node.assigneeRole && (
-                <span
-                  className="text-[10px]"
-                  style={{ color: BUSINESS_TERTIARY_TEXT_COLOR }}
-                >
+                <Typography.Text type="secondary">
                   {node.assigneeRole}
-                </span>
+                </Typography.Text>
               )}
               {conditionByFrom.get(node.id) && (
-                <span className="text-[10px] text-amber-600">
+                <Typography.Text type="warning">
                   {conditionByFrom.get(node.id)}
-                </span>
+                </Typography.Text>
               )}
-            </div>
-            {i < nodes.length - 1 && (
-              <ArrowRightOutlined
-                className="self-center"
-                style={{ color: BUSINESS_TERTIARY_TEXT_COLOR }}
-              />
-            )}
-          </React.Fragment>
-        ))}
-      </div>
-    </div>
+            </Flex>
+          ),
+        }))}
+      />
+    </ProCard>
   );
 };
 
@@ -1132,9 +1092,9 @@ const MetricGridRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
   const bound = rowsOfBinding(block, entityRows);
   if (!bound)
     return (
-      <BlockShell title={title} testid="metric-grid">
+      <StatisticCard title={title || undefined} data-testid="metric-grid">
         <BlockEmpty hint="指标未绑定到有效实体" />
-      </BlockShell>
+      </StatisticCard>
     );
   const spec = parseAggregate(block.binding?.aggregate);
   const value = computeAggregate(bound.rows, spec);
@@ -1143,27 +1103,20 @@ const MetricGridRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
       ? "记录数"
       : `${spec.kind === "sum" ? "合计" : "平均"} · ${spec.fieldId}`;
   return (
-    <BlockShell title={title} testid="metric-grid">
-      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))" }}>
-        <div data-testid="metric-grid-item" className="rounded bg-stone-50 px-3 py-2">
-          {value === null ? (
-            // 算不出来（该字段一行都没有效值）≠ 0，如实说
-            <>
-              <div className="text-[11px] text-stone-400">{label}</div>
-              <div className="text-lg font-semibold text-stone-400">—</div>
-              <div className="text-[10px] text-stone-400">该字段暂无有效数值</div>
-            </>
-          ) : (
-            <Statistic
-              title={<span className="text-[11px] text-stone-400">{label}</span>}
-              value={value}
-              precision={Number.isInteger(value) ? 0 : 1}
-              valueStyle={{ fontSize: 20, fontWeight: 600 }}
-            />
-          )}
-        </div>
-      </div>
-    </BlockShell>
+    <StatisticCard
+      data-testid="metric-grid"
+      title={title || undefined}
+      statistic={{
+        title: <span data-testid="metric-grid-item">{label}</span>,
+        value: value ?? "—",
+        precision: value !== null && Number.isInteger(value) ? 0 : 1,
+        description:
+          value === null ? (
+            <Typography.Text type="secondary">该字段暂无有效数值</Typography.Text>
+          ) : undefined,
+      }}
+      bodyStyle={{ height: "100%" }}
+    />
   );
 };
 

@@ -235,11 +235,25 @@ export interface PageLayoutSpec {
   >;
 }
 
+export type PageSurfaceType =
+  | "table"
+  | "editable-table"
+  | "split-list"
+  | "queue";
+export type PageSurfaceDensity = "compact" | "default" | "comfortable";
+
+export interface PageSurfaceSpec {
+  type: PageSurfaceType;
+  density?: PageSurfaceDensity;
+}
+
 export interface PageModelDef {
   id?: string;
   name?: string;
   /** 页面范式（加厚 schema 二期）：workbench(缺省)|kanban|calendar|dashboard */
   kind?: string;
+  /** Ant Design Pro workbench surface; omitted on old models and inferred locally. */
+  surface?: PageSurfaceSpec;
   /** kanban 的看板列字段（"entity.field"，必须是本页主实体的 enum 字段） */
   statusField?: string;
   /** calendar 的日期字段（"entity.field"，必须是本页主实体的 date 字段） */

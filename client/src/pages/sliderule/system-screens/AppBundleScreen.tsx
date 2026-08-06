@@ -11,6 +11,7 @@
  */
 
 import React, { useMemo, useState } from "react";
+import { Button, Segmented } from "antd";
 import { AppRuntimeScreen } from "../live-runtime/AppRuntimeScreen";
 import { SystemLinkageGraph } from "./SystemLinkageGraph";
 import { GateBlockedPanel } from "./GateBlockedPanel";
@@ -143,30 +144,20 @@ export function AppBundleScreen({
         <span className="text-xs text-stone-400">发布证据看板</span>
         <div className="ml-auto flex items-center gap-2">
           {(canRunApp || canLinkage) && (
-            <div
-              className="flex items-center gap-0.5 rounded-full bg-[#e9edf2] p-0.5 ring-1 ring-[#e5e7eb]/80"
+            <Segmented
+              size="small"
               data-testid="appbundle-mode-toggle"
-            >
-              {([
+              value={screenMode}
+              onChange={value => setScreenMode(value as "board" | "graph" | "app")}
+              options={[
                 { id: "board" as const, label: "证据看板" },
                 ...(canLinkage ? [{ id: "graph" as const, label: "联动图" }] : []),
                 ...(canRunApp ? [{ id: "app" as const, label: "运行应用" }] : []),
-              ]).map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  data-testid={`appbundle-mode-${id}`}
-                  onClick={() => setScreenMode(id)}
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                    screenMode === id
-                      ? "bg-white text-stone-800 shadow-sm"
-                      : "text-stone-500 hover:text-stone-700"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+              ].map(({ id, label }) => ({
+                value: id,
+                label: <span data-testid={`appbundle-mode-${id}`}>{label}</span>,
+              }))}
+            />
           )}
           {boardSource && (
             <span
@@ -215,39 +206,28 @@ export function AppBundleScreen({
         <div className="relative min-h-0 flex-1">
           <div className="absolute right-3 top-2 z-10 flex items-center gap-1.5">
             {graphStyle === "mermaid" && archMermaid && (
-              <button
-                type="button"
+              <Button
+                size="small"
                 data-testid="appbundle-arch-fit"
                 onClick={() => setArchFit((v) => !v)}
-                className="rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-medium text-stone-500 shadow-sm ring-1 ring-[#e5e7eb] transition-colors hover:text-stone-700"
                 title={archFit ? "切到原始尺寸，滚动查看细节" : "缩放到容器宽度，看整体结构"}
               >
                 {archFit ? "原始尺寸" : "适宽全貌"}
-              </button>
+              </Button>
             )}
-            <div
-              className="flex items-center gap-0.5 rounded-full bg-white/95 p-0.5 shadow-sm ring-1 ring-[#e5e7eb]"
+            <Segmented
+              size="small"
               data-testid="appbundle-graph-style"
-            >
-              {([
+              value={graphStyle}
+              onChange={value => setGraphStyle(value as "mermaid" | "flow")}
+              options={[
                 { id: "mermaid" as const, label: "架构图" },
                 { id: "flow" as const, label: "交互图" },
-              ]).map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  data-testid={`appbundle-graph-${id}`}
-                  onClick={() => setGraphStyle(id)}
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                    graphStyle === id
-                      ? "bg-[#e9edf2] text-stone-800"
-                      : "text-stone-500 hover:text-stone-700"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+              ].map(({ id, label }) => ({
+                value: id,
+                label: <span data-testid={`appbundle-graph-${id}`}>{label}</span>,
+              }))}
+            />
           </div>
           {graphStyle === "mermaid" && archMermaid ? (
             <div className="h-full w-full overflow-auto p-4" data-testid="appbundle-arch-mermaid">

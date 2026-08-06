@@ -505,6 +505,9 @@ describe("AigcScreen", () => {
     expect(panel).toContain("由上一步注入");
     expect(panel).toContain('data-testid="aigc-pipeline-run"');
     expect(panel).toContain("试跑整条链（2 步）");
+    expect(panel).toContain("ant-segmented");
+    expect(panel).toContain("ant-card");
+    expect(panel).toContain("ant-btn");
   });
 
   it("rawContent 有跨系统联动图但无结构化清单 → 降级标注", () => {
@@ -1087,6 +1090,8 @@ describe("浏览器运行时（试运行）入口", () => {
     expect(html).toContain('data-testid="workflow-runtime-panel"');
     expect(html).toContain('data-testid="runtime-start"');
     expect(html).toContain("发起实例");
+    expect(html).toContain("ant-card");
+    expect(html).toContain("ant-btn");
   });
 
   it("DataModelScreen 有实体时提供「模型图⟷数据表」切换；无模型不显示", () => {
@@ -1112,6 +1117,9 @@ describe("浏览器运行时（试运行）入口", () => {
     expect(html).toContain('data-testid="aigc-tryrun-run"');
     expect(html).toContain("试跑");
     expect(html).toContain("课程"); // resolveFieldRef 解析出实体名
+    expect(html).toContain("ant-segmented");
+    expect(html).toContain("ant-input");
+    expect(html).toContain("ant-btn");
   });
 
   it("EntityDataPanel 按实体切页并提供「新增一行」（空表铺演示种子并如实标注）", () => {
@@ -1121,6 +1129,10 @@ describe("浏览器运行时（试运行）入口", () => {
     expect(html).toContain('data-testid="datamodel-entity-enrollment"');
     expect(html).toContain('data-testid="datamodel-add-row"');
     expect(html).toContain("容量"); // 字段列头来自实体定义
+    expect(html).toContain("ant-segmented");
+    expect(html).toContain("ant-table");
+    expect(html).toContain("ant-input");
+    expect(html).toContain("ant-btn");
     // 2026-07-28：零行的实体不再是一句"暂无数据"，而是铺一批演示种子
     //（demo-seed.ts）。种子必须带标注——没有这条断言，哪天标注被删掉
     // 就变成不打招呼的假数据了。
