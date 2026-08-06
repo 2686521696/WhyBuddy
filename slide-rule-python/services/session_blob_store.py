@@ -149,6 +149,14 @@ create table if not exists {TABLE} (
 """
 
 
+def _payload_bind_expr(is_sqlite: bool) -> str:
+    """SQLAlchemy text() cannot parse ``:p::jsonb`` as a bound parameter.
+
+    Use SQL-standard cast syntax for Postgres so the bind remains ``:p``.
+    """
+    return ":p" if is_sqlite else "cast(:p as jsonb)"
+
+
 class SqlSessionBlobStore(SessionBlobStore):
     """SQLAlchemy 后端。payload 在 Postgres 上是 jsonb、在 SQLite 上是 text——
     读写两边都归一化成 dict，调用方看不出区别。"""
@@ -214,7 +222,7 @@ class SqlSessionBlobStore(SessionBlobStore):
         self, session_id: str, payload: dict[str, Any], *, expected_rev: Optional[int]
     ) -> bool:
         blob = self._encode(payload)
-        cast = "" if self._is_sqlite else "::jsonb"
+        payload_expr = _payload_bind_expr(self._is_sqlite)
         now = _now_iso()
         with self._engine.begin() as conn:
             if expected_rev is None:
@@ -225,7 +233,7 @@ class SqlSessionBlobStore(SessionBlobStore):
                         self._text(
                             f"insert into {TABLE} "
                             f"(session_id, payload, rev, created_at, last_active) "
-                            f"values (:sid, :p{cast}, 1, :now, :now)"
+                            f"values (:sid, {payload_expr}, 1, :now, :now)"
                         ),
                         {"sid": session_id, "p": blob, "now": now},
                     )
@@ -234,7 +242,7 @@ class SqlSessionBlobStore(SessionBlobStore):
                     return False
             result = conn.execute(
                 self._text(
-                    f"update {TABLE} set payload = :p{cast}, rev = rev + 1, last_active = :now "
+                    f"update {TABLE} set payload = {payload_expr}, rev = rev + 1, last_active = :now "
                     f"where session_id = :sid and rev = :rev"
                 ),
                 {"sid": session_id, "p": blob, "now": now, "rev": expected_rev},

@@ -10,6 +10,7 @@ FROM node:22-alpine AS builder
 COPY docker/certs/ /usr/local/share/ca-certificates/sliderule/
 RUN sh -c 'cat /usr/local/share/ca-certificates/sliderule/*.crt >> /etc/ssl/certs/ca-certificates.crt 2>/dev/null || true'
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+ENV NODE_OPTIONS=--max-old-space-size=4096
 
 # pnpm via corepack (pinned by package.json `packageManager`).
 RUN corepack enable

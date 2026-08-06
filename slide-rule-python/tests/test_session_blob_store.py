@@ -125,6 +125,13 @@ def test_db_roundtrip(db):
     assert persistence.load_session_record("sr-db")["ok"] is False
 
 
+def test_postgres_payload_bind_expr_keeps_named_param_parseable():
+    """Postgres JSONB casts must not use ``:p::jsonb`` with SQLAlchemy text()."""
+    expr = session_blob_store._payload_bind_expr(is_sqlite=False)
+    assert expr == "cast(:p as jsonb)"
+    assert ":p::jsonb" not in expr
+
+
 def test_delete_is_idempotent(db):
     """删不存在的会话算成功（G1 契约），与文件后端一致。"""
     assert persistence.delete_session_record("sr-never-existed")["ok"] is True
