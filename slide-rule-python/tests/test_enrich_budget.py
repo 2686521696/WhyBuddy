@@ -103,10 +103,16 @@ def test_monitor_overview_generates_exactly_one_sheet_for_the_landing_page(monke
         },
     }
     enrich_monitor_page_overviews(model)
-    # 一页两档（默认档 + 手机档）共用同一张参照板；只有落地页进入生成器。
-    assert calls == [True, True]
+    # 只有落地页进入生成器，且**只设计一档**。
+    #
+    # 2026-08-06 更新：此前这里断言 [True, True]（默认档 + 手机档两次调用，
+    # 共用同一张参照板），并要求产物带 .mobile。11c4497「单设备权威」把
+    # preferredDevice 收敛成 desktop/phone 二选一（services/device_policy.py：
+    # 先看目标里有没有明说，再看模型的选择，兜底 desktop），一个应用只有一档，
+    # freeform_block 里 design_total 随之写死成 1、手机档那一支整段删除。
+    # 那次同步更新了 test_monitor_overview.py 等，**漏了这个文件**。
+    assert calls == [True]
     assert model["page"]["pages"][1].get("freeformOverview")
-    assert model["page"]["pages"][1]["freeformOverview"].get("mobile")
     for page in (model["page"]["pages"][0], model["page"]["pages"][2]):
         assert "freeformOverview" not in page
         assert page["freeformOverviewStatus"] == "deferred"
@@ -136,8 +142,9 @@ def test_sheet_falls_back_to_the_first_page_when_landing_is_missing(monkeypatch)
         },
     }
     enrich_monitor_page_overviews(model)
-    assert calls[:2] == [True, True], "漏填落地页时第一页应当拿到参照板"
-    assert calls[2:] == []
+    # 单设备权威（11c4497）之后一个应用只设计一档，所以是一次调用不是两次。
+    assert calls[:1] == [True], "漏填落地页时第一页应当拿到参照板"
+    assert calls[1:] == []
     assert model["page"]["pages"][1]["freeformOverviewStatus"] == "deferred"
 
 
