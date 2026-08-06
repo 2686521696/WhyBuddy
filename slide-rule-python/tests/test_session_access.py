@@ -175,3 +175,47 @@ def test_anonymous_cannot_create_a_session():
 
     src = inspect.getsource(sliderule_full.create_sess)
     assert "_require_login(viewer)" in src, "建会话路由必须要求登录"
+
+
+# ── 会话劫持（2026-08-06，实测出来的）──────────────────────────────────
+def test_create_with_someone_elses_id_is_blocked():
+    """客户端自带 sessionId 时必须先查重，否则整条会话会被劫走。
+
+    实测过的攻击（改之前）：
+
+        受害者建   goal="受害者的机密业务想法"  owner=YkYF…
+        攻击者拿着同一个 id 发一次 POST /sessions  → HTTP 200
+        受害者再读 goal="攻击者覆盖"          owner=jIKM…（攻击者）
+
+    内容被覆盖、归属被改成攻击者的。上一版的归属判定在这条路上完全没生效
+    ——它只判"建的时候是谁"，没判"这个 id 已经是别人的了"。
+
+    为什么不能干脆禁止客户端指定 id：前端是**懒创建**的，newSessionId() 先
+    在本地生成 id 就切过去（SidebarSessions.tsx:32），用户真发第一条消息时
+    才 POST 上来。所以只能查重，不能一律拒绝。
+    """
+    import inspect
+
+    from routes import sliderule_full
+
+    src = inspect.getsource(sliderule_full.create_sess)
+    # id 已存在时必须走"取"而不是"建"，且要过归属判定
+    assert "load_session(requested_id)" in src, "自带 id 时必须先查库"
+    assert '_require_session(existing, "drive", viewer)' in src, "查到了必须判归属"
+
+
+def test_create_is_idempotent_for_the_owner():
+    """本人重发同一个 id 要幂等返回原状态，不能把自己的内容冲掉。
+
+    前端懒创建 + 重试的场景下这条会真的发生：同一个 id 可能被 POST 多次。
+    """
+    import inspect
+
+    from routes import sliderule_full
+
+    src = inspect.getsource(sliderule_full.create_sess)
+    # 判定通过后直接返回既有状态，不走 create_session 覆盖
+    idx_require = src.index('_require_session(existing, "drive", viewer)')
+    idx_create = src.index("state = create_session(")
+    assert idx_require < idx_create, "查重分支必须在 create_session 之前返回"
+    assert "existing.model_dump()" in src, "自己的会话应原样返回，不是重建"

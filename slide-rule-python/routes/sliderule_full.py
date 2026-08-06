@@ -360,9 +360,42 @@ async def create_sess(
     from services.request_context import set_current_user
 
     set_current_user(viewer)
+
+    # ── 客户端自带 sessionId 时必须先查重（2026-08-06，实测出来的劫持漏洞）──
+    #
+    # 前端是**懒创建**的：newSessionId() 先在本地生成一个 id 就切过去
+    # （client/.../SidebarSessions.tsx:32），用户真发第一条消息时才 POST 上来。
+    # 所以这条路由必须接受客户端指定 id，不能一律用服务端生成的。
+    #
+    # 但原来它接受之后**直接覆盖**，实测后果是整条会话被劫走：
+    #
+    #     受害者建   goal="受害者的机密业务想法"  owner=YkYF…
+    #     攻击者拿着同一个 id 发一次 POST      → HTTP 200
+    #     受害者再读 goal="攻击者覆盖"          owner=jIKM…（攻击者）
+    #
+    # 内容被覆盖、归属被改成攻击者的。上一版加的归属判定在这条路上完全没生效
+    # ——它只判"建的时候是谁"，没判"这个 id 已经是别人的了"。
+    #
+    # 修法：id 已存在时不再是"建"，而是"取"。
+    #   · 自己的（或超管）→ 原样返回，幂等；前端重发同一个 id 不会丢东西
+    #   · 别人的         → 404（不是 403：403 等于承认"这个 id 存在"）
+    requested_id = str(payload.get("sessionId") or "").strip()
+    if requested_id:
+        existing = load_session(requested_id) or _sessions.get(requested_id)
+        if existing is not None:
+            _require_session(existing, "drive", viewer)
+            existing, _changed = sanitize_session_state(existing)
+            return {
+                "sessionId": existing.sessionId,
+                "state": existing.model_dump(),
+                "stateAuthority": STATE_AUTHORITY_PYTHON,
+                "provenance": PROVENANCE_PYTHON_FULLPATH,
+                "backend": PYTHON_BACKEND,
+            }
+
     goal_text = payload.get("goal", {}).get("text", "default")
     repaired_payload, _ = sanitize_session_dict({"goal": {"text": goal_text}})
-    state = create_session(repaired_payload.get("goal", {}).get("text", goal_text), payload.get("sessionId"))
+    state = create_session(repaired_payload.get("goal", {}).get("text", goal_text), requested_id or None)
     state, changed = sanitize_session_state(state)
     # If sanitize mutated the state, persist via save_session so the authoritative
     # store is consistent. create_session already persisted (guarded per-record
