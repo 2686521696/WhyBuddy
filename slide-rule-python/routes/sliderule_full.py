@@ -307,45 +307,50 @@ def _require_session(state: Any, action: str, viewer) -> None:
         raise HTTPException(404, "Not found")
 
 
-def adopt_user_goal(state: Any, user_text: str) -> Any:
-    """继承来的话题被本人的第一条指令顶掉。
-
-    ## 这个函数解决的现象
-
-    2026-08-06 用户实测：「我发布的是从文献到引用的话题，回答的是电动车方面
-    的内容，但是生成的应用又却是对的。」
-
-    复现路径是 fork：用户在应用中心复刻了别人的「满电管家」（电动车），落进
-    副本会话，然后在里面提了自己的新话题（学术文献引用）。而副本会话的
-    `goal.text` 是**从源应用继承的电动车话题**，推演时：
-
-      · 各能力（evidence.search / route.generate / synthesis.merge …）拿
-        `state.goal` 当输入 → 左侧推演过程整篇都是电动车；
-      · 五系统生成走的是 refine 通道，吃的是 `user_instruction` → 右侧
-        应用确实变成了学术平台。
-
-    于是"过程"和"结果"讲的是两件事。新建会话里没人发现，是因为那时
-    goal == instruction，两者天然一致；只有继承来的会话才会分叉。
-
-    ## 判据为什么是 inherited 标记而不是"猜话题变没变"
-
-    "这条指令是换话题还是精修"没有可靠判据，猜错的代价是把用户的精修当成
-    换话题、把已有模型整个推翻。所以这里只处理**唯一一种确定的情况**：
-    话题不是用户自己提的（fork 时打的 inherited 标记），而用户刚提了第一条。
-    这种情况下继承来的话题没有任何优先权。
-
-    正常会话、以及副本里的后续精修，都不会走到这一步——标记只在第一次被
-    顶掉时清掉一次。
-    """
-    text = (user_text or "").strip()
-    if not text:
-        return state
-    goal = state.goal if isinstance(getattr(state, "goal", None), dict) else None
-    if not goal or not goal.get("inherited"):
-        return state
-    state.goal = {**goal, "text": text, "status": "clear", "inherited": False}
-    print(f"[sliderule_full] 副本会话改用本人的话题：{text[:60]}")
-    return state
+# ── 副本会话的话题问题：**先别改，这里记着为什么**（2026-08-06）───────────
+#
+# 现象（用户实测）：「我发布的是从文献到引用的话题，回答的是电动车方面的
+# 内容，但是生成的应用又却是对的。」
+#
+# 机制：从应用中心 fork 出来的会话，goal.text 继承自源应用。之后
+#
+#   · 各能力（evidence.search / route.generate / synthesis.merge…）吃
+#     state.goal → 左侧推演过程整篇是源应用的话题；
+#   · 五系统生成走 refine 通道，吃 user_instruction → 右侧应用是对的。
+#
+# 于是"过程"和"结果"讲两件事。新建会话里 goal == instruction，天然一致，
+# 只有继承来的会话才分叉。
+#
+# ## 试过一版，回退了
+#
+# 第一版的修法是"本人第一条指令顶掉继承来的话题"（adopt_user_goal）。
+# 实测跑通了话题接管，但**同时炸掉了生成**：
+#
+#     v5_full_driver._ensure_runtime_closure_evidence:
+#         if instruction and instruction != goal_text and current_model:
+#             …进入 refine，按新指令改模型
+#         else:
+#             return state          ← 什么都不做
+#
+# 话题被顶成和指令一样之后，`instruction != goal_text` 不再成立 → 直接
+# return → 整趟推演 23.7 秒跑完、模型原地不动。实测结果：goal 变成了
+# 「学术文献引用管理平台」，而 modelVersions 里仍然只有那份健身房模型。
+# 也就是说，修好了"过程串话题"，代价是"结果根本不生成"——比原来更糟。
+#
+# ## 为什么不直接"顶掉话题 + 清掉闭环重新生成"
+#
+# 那样等于假定"在副本里发指令 = 我要换个应用"。但 fork 最常见的意图恰恰
+# 相反：复刻一份然后微调。清闭环会把用户刚复刻的东西整个推翻。
+#
+# **"这条指令是换话题还是精修"没有可靠判据**，两个方向猜错的代价都很大，
+# 所以这是个产品判断，不该由实现顺手定。
+#
+# ## 真要修，往哪边看
+#
+# 症状出在"过程"而不是"结果"——各能力用的是 state.goal，而它们本该用
+# 这一轮用户真正说的话。把能力的输入从 state.goal 换成
+# "user_instruction 优先、goal 兜底"，可以在不碰生成通道的前提下让过程
+# 与指令对齐。改动面在 v5_capability_executor 那一侧，需要单独评估。
 
 
 def _require_login(viewer) -> None:
@@ -833,8 +838,6 @@ def drive_full(
     from services.v5_llm_generate import set_installed_skills
 
     set_installed_skills(payload.get("installedSkills"))
-    # 副本会话继承来的话题让位给本人的第一条指令（见 adopt_user_goal）
-    state = adopt_user_goal(state, user_text)
     try:
         new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
     finally:
@@ -961,8 +964,6 @@ async def drive_full_stream(
     # E26 缺口修复轮：mode="repair" 时只重跑覆盖门标红的能力（选材见
     # pick_repair_capabilities），已 PASS 产物与五系统模型原样复用。
     repair = str(payload.get("mode") or "").strip().lower() == "repair"
-    # 同上：流式推演是主路径，两条都要接，否则只有回退路径修好了
-    state = adopt_user_goal(state, user_text)
 
     # 技能库六期"推演注入"：已安装技能进生成契约（生成器全程生效，结束必清空）
     from services.v5_llm_generate import set_installed_skills
@@ -2019,9 +2020,10 @@ async def fork_generated_app(
 
             fork_state = V5SessionState(
                 sessionId=fork_sid,
-                # inherited=True 标记"这个话题是从源应用继承来的，不是本人提的"。
-                # 用户第一次在副本里发自己的指令时会被 adopt_user_goal 顶掉，
-                # 见那个函数里的说明。
+                # inherited=True 只是**如实标注**"这个话题是从源应用继承来的，
+                # 不是本人提的"，不改变任何行为。留着它是因为副本会话"过程串
+                # 话题"的问题还没定方案（见文件上方那段说明），真要修时判据
+                # 就在这个字段上，不用再去猜。
                 goal={"text": goal_text, "status": "clear", "inherited": True},
                 ownerId=viewer.id,
             )

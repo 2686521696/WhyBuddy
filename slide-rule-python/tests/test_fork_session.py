@@ -8,11 +8,14 @@ fork 里建 V5SessionState 时没传 ownerId → 副本会话**无主**。而 20
 的会话隔离把无主会话收紧成"只有超管看得见"，于是复刻完的人自己都打不开
 刚复刻出来的东西。加归属列那次没有回头检查还有谁在建会话。
 
-## ② 副本的话题是源应用的，本人的指令顶不掉它
+## ② 副本的话题是源应用的（**未修，只标注**）
 
 用户原话：「我发布的是从文献到引用的话题，回答的是电动车方面的内容，
 但是生成的应用又却是对的。」——各能力吃 state.goal（继承来的电动车），
 五系统生成吃 user_instruction（本人的新话题），过程和结果讲两件事。
+
+试过"第一条指令顶掉继承来的话题"，实测反而让生成整个不跑了，已回退。
+理由与后续方向见 routes/sliderule_full.py 里那段说明。
 
 ## ③ fork 慢：一次复刻打 14 次 Wikipedia
 
@@ -30,51 +33,37 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-# ── ② 继承来的话题让位 ──────────────────────────────────────────
-class _State:
-    def __init__(self, goal):
-        self.goal = goal
+# ── ② 副本会话"过程串话题"：**这条没修，记着为什么** ──────────────
+def test_fork_marks_goal_as_inherited():
+    """副本的话题如实标注成"继承来的"，但**不改变行为**。
 
+    试过一版"本人第一条指令顶掉继承来的话题"，实测把生成炸了：
+    _ensure_runtime_closure_evidence 里 `instruction != goal_text` 是进入
+    refine 的条件，话题被顶成和指令一样之后走 else 分支直接 return，
+    整趟推演 23.7 秒跑完、模型原地不动（实测 goal 变成了「学术文献引用
+    管理平台」而 modelVersions 里仍然只有那份健身房模型）。
 
-def test_inherited_goal_is_replaced_by_first_user_instruction():
-    from routes.sliderule_full import adopt_user_goal
+    修好了"过程串话题"，代价是"结果根本不生成"——比原来更糟，已回退。
+    完整分析见 routes/sliderule_full.py 里 _require_login 上方那段。
 
-    st = _State({"text": "电动车一站式综合服务", "status": "clear", "inherited": True})
-    adopt_user_goal(st, "做一个学术文献引用管理平台")
-    assert st.goal["text"] == "做一个学术文献引用管理平台"
-    # 标记必须清掉：只顶一次，之后的都是正常精修
-    assert st.goal["inherited"] is False
-
-
-def test_second_instruction_does_not_overwrite_again():
-    """第二条指令是精修，不能再把话题冲掉。
-
-    否则「把提醒改成短信」会变成整个会话的话题，模型下一轮就没了上下文。
+    这个字段留着：真要修时判据就在它上面，不用再猜。
     """
-    from routes.sliderule_full import adopt_user_goal
+    import inspect
 
-    st = _State({"text": "学术文献引用管理平台", "status": "clear", "inherited": False})
-    adopt_user_goal(st, "把提醒改成短信")
-    assert st.goal["text"] == "学术文献引用管理平台"
+    from routes import sliderule_full
 
-
-def test_normal_session_goal_is_never_touched():
-    """自己新建的会话没有 inherited 标记，一个字都不该动。"""
-    from routes.sliderule_full import adopt_user_goal
-
-    st = _State({"text": "我自己提的话题", "status": "clear"})
-    adopt_user_goal(st, "随便一条指令")
-    assert st.goal["text"] == "我自己提的话题"
-
-
-def test_empty_instruction_keeps_inherited_goal():
-    """空指令不能把话题清成空——那会让副本变成一个没有话题的壳。"""
-    from routes.sliderule_full import adopt_user_goal
-
-    st = _State({"text": "电动车一站式综合服务", "status": "clear", "inherited": True})
-    adopt_user_goal(st, "   ")
-    assert st.goal["text"] == "电动车一站式综合服务"
-    assert st.goal["inherited"] is True
+    src = inspect.getsource(sliderule_full.fork_generated_app)
+    assert '"inherited": True' in src, "继承来的话题要如实标注"
+    # 反向断言：不能再有任何地方**真的去改**话题。
+    # 只看定义与调用，不看注释——那段回退说明里必然提到这个名字。
+    full = inspect.getsource(sliderule_full)
+    code = "\n".join(
+        line for line in full.splitlines() if not line.lstrip().startswith("#")
+    )
+    assert "def adopt_user_goal" not in code, "函数已回退，不该再有定义"
+    assert "adopt_user_goal(" not in code, (
+        "要重新引入必须先解决 refine 分支被绕过的问题（见回退说明）"
+    )
 
 
 # ── ① 副本会话必须有主 · ③ 不打外网 ───────────────────────────────
