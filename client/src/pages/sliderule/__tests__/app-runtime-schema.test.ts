@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildAiActionInputs,
   deriveAppRuntimeSchema,
+  type AppPageSchema,
 } from "../live-runtime/app-runtime-schema";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 
@@ -618,5 +619,21 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
       icon: "heart",
       nav: "top",
     });
+  });
+
+  it("preserves page reconstruction evidence on the derived page schema", () => {
+    const model = structuredClone(MODEL);
+    model.page!.pages![0].pageReconstruction = {
+      version: "page-reconstruction-v1",
+      status: "ready",
+      spec: { device: "desktop", regions: [{ id: "hero" }] },
+      prompt: "PAGE RECONSTRUCTION CONTRACT",
+      diagnostic: "",
+    };
+
+    const page: AppPageSchema = deriveAppRuntimeSchema(model)!.pages[0];
+
+    expect(page.pageReconstruction?.status).toBe("ready");
+    expect(page.pageReconstruction?.prompt).toBe("PAGE RECONSTRUCTION CONTRACT");
   });
 });

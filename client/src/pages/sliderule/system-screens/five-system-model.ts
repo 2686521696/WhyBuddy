@@ -247,6 +247,14 @@ export interface PageSurfaceSpec {
   density?: PageSurfaceDensity;
 }
 
+export interface PageReconstructionEvidence {
+  version: "page-reconstruction-v1";
+  status: "ready" | "skipped" | "failed";
+  spec: Record<string, unknown> | null;
+  prompt: string;
+  diagnostic: string;
+}
+
 export interface PageModelDef {
   id?: string;
   name?: string;
@@ -275,6 +283,8 @@ export interface PageModelDef {
    * 用页面已选定的 stats/charts/rankings/feeds 当设计输入生成，跟这些
    * 固定字段并存——后者是生成失败时的诚实兜底，不是被这个字段取代。 */
   freeformOverview?: { root: Record<string, unknown> };
+  /** 首页参考图的独立解析产物；用于审查视觉理解，不参与运行时信任判定。 */
+  pageReconstruction?: PageReconstructionEvidence;
   /** 页面级动作实例（Step 5），与 actionPermissions 的权限字符串独立 */
   actions?: PageActionSpec[];
   /** 区块布局声明（Step 7）；未填时由渲染器按 kind 默认排布 */

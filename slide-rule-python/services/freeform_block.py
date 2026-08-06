@@ -1584,6 +1584,25 @@ def _build_marketing_hero_prompt(design_brief: str, *, device: str = "") -> str:
     )
 
 
+def _build_marketing_page_prompt(design_brief: str, *, device: str = "") -> str:
+    device_label = "手机端" if device == "phone" else "桌面端"
+    composition = (
+        "390x844 左右的单列竖屏页面，触控优先，首屏底部露出下一内容区"
+        if device == "phone"
+        else "1440x900 左右的宽屏页面，首屏内容有明确水平层次，底部露出下一内容区"
+    )
+    return (
+        f"为以下品牌生成一张{device_label}完整首页视觉稿，而不是一张独立 Hero 素材：\n"
+        f"{design_brief}\n\n"
+        f"画布与构图：{composition}。画出真实可运行网页的完整页面组合，包括品牌导航、"
+        "真实摄影主视觉、可读中文文案、清晰的主要行动按钮，以及与业务直接相关的下一内容区开头。"
+        "产品、地点、服务或人物必须清晰可检视，不能只用抽象色块代替。标题、辅助文案、按钮、"
+        "图片和后续内容之间的相对尺寸、位置、留白和对齐必须明确，让另一个模型能够逐区还原。"
+        "不要套通用后台 KPI 卡片网格，不要把标题或主要体验塞进悬浮卡片，不要画浏览器边框、"
+        "设备外壳、水印、设计标注或多个页面拼板。只输出一个设备档的一张完整首页视觉稿。"
+    )
+
+
 def _generate_overview_sheet_b64(
     design_brief: str,
     datamodel: dict[str, Any],
@@ -1592,6 +1611,7 @@ def _generate_overview_sheet_b64(
     device: str = "",
     generated_theme: Optional[dict[str, Any]] = None,
     marketing_hero: bool = False,
+    marketing_page: bool = False,
 ) -> Optional[str]:
     """生成参照板（默认三区，device 明说 desktop/phone 时两区——见
     _build_overview_sheet_prompt）。跟 _generate_reference_image_b64 一样是
@@ -1626,14 +1646,15 @@ def _generate_overview_sheet_b64(
     except Exception:
         return None
     try:
-        prompt = (
-            _build_marketing_hero_prompt(design_brief, device=device)
-            if marketing_hero
-            else _build_overview_sheet_prompt(
+        if marketing_page:
+            prompt = _build_marketing_page_prompt(design_brief, device=device)
+        elif marketing_hero:
+            prompt = _build_marketing_hero_prompt(design_brief, device=device)
+        else:
+            prompt = _build_overview_sheet_prompt(
                 design_brief, datamodel, theme_id=theme_id, device=device,
                 generated_theme=generated_theme,
             )
-        )
         sheet_cfg = get_image_gen_config("SHEET_")
         size = (os.environ.get("SHEET_IMAGE_SIZE") or "").strip() if sheet_cfg else ""
         png_bytes = generate_image_png(
@@ -1655,6 +1676,7 @@ def _render_preview_screenshot_b64(
     device: str,
     generated_theme: Optional[dict[str, Any]],
     reference_image_b64: Optional[str] = None,
+    landing_media_b64: Optional[str] = None,
 ) -> Optional[str]:
     """把校验通过的候选内容真实渲染一次、截图，供下面的自我校验步骤跟参考图
     比对（借鉴 abi/screenshot-to-code 的 screenshot_preview 思路：生成→截图→
@@ -1686,8 +1708,9 @@ def _render_preview_screenshot_b64(
             "generatedTheme": generated_theme,
             "device": device or _DEFAULT_DEVICE,
         }
-        if reference_image_b64:
-            preview_payload["_landingHeroB64"] = reference_image_b64
+        hero_b64 = landing_media_b64 or reference_image_b64
+        if hero_b64:
+            preview_payload["_landingHeroB64"] = hero_b64
         pid = put_preview(preview_payload)
         png_bytes = capture_freeform_preview_screenshot(pid)
     except Exception:
@@ -2005,6 +2028,9 @@ def generate_freeform_block(
     use_reference_image: bool = True,
     allow_screenshot_verify: bool = True,
     reference_image_b64: Optional[str] = None,
+    landing_media_b64: Optional[str] = None,
+    full_page_visual: bool = False,
+    reconstruction_prompt: Optional[str] = None,
     chart_colors: Optional[list[str]] = None,
     chart_variant_key: str = "",
 ) -> dict[str, Any]:
@@ -2047,10 +2073,22 @@ def generate_freeform_block(
         generated_theme=generated_theme, chart_colors=chart_colors,
         chart_variant_key=chart_variant_key,
     )
+    if reconstruction_prompt:
+        prompt_text += (
+            "\n\n下面是从参考图独立解析并通过结构校验的页面还原契约。"
+            "它约束视觉区域、相对几何和组件映射；业务数据仍只允许使用上面的"
+            "DataModel 与合法 dataRef/rowsRef：\n"
+            + reconstruction_prompt
+        )
+    if full_page_visual:
+        prompt_text += (
+            "\n\n这是营销首页的完整页面设计，不是嵌在后台壳里的单张卡片。根节点拥有整张"
+            "营销首页的内容结构；参考图里可见的品牌导航、主视觉、可读文案、主要行动和"
+            "后续内容区都要还原。不要生成浏览器边框或设备外壳。"
+        )
 
     # 调用方可以把现成的参照图传进来（reference_image_b64）——总览页就是这么用的：
-    # 一张三区参照板同时喂给桌面档和手机档两次设计，两档才出自同一套视觉语言，
-    # 也省掉一次生图。没传才自己生一张。
+    # 唯一设备档复用首页参照图；没传时区块生成器才自己补一张。
     if reference_image_b64 is None and use_reference_image and get_llm_config().supports_image_content_parts:
         with _enrich_stage("block.refimage", device=device or "unspecified") as _st:
             reference_image_b64 = _generate_reference_image_b64(
@@ -2059,6 +2097,13 @@ def generate_freeform_block(
             _st["got"] = 1 if reference_image_b64 else 0
 
     if reference_image_b64:
+        shell_note = (
+            "\n注意：这是一张完整营销首页视觉稿。页面内容从品牌导航开始，参考图里"
+            "可见的所有主要区域都归你设计；只排除浏览器边框和设备外壳。"
+            if full_page_visual
+            else "\n注意：侧边栏、顶栏、搜索框、用户头像这些外壳组件由运行时另外"
+            "渲染，不归你设计——不要在你的内容树里搭这些，从内容区第一张卡片开始画。"
+        )
         first_content: Any = [
             {
                 "type": "text",
@@ -2071,9 +2116,7 @@ def generate_freeform_block(
                 # _build_overview_sheet_prompt 那条注释）。所以这里不需要"外壳是
                 # 背景"那句解释；但"别自己搭外壳"这条禁令保留——它防的是设计 LLM
                 # 自作主张在内容区里加一套导航，跟参照图画不画壳无关。
-                + "\n注意：侧边栏、顶栏、搜索框、用户头像这些外壳组件由运行时另外"
-                "渲染，不归你设计——不要在你的内容树里搭这些，从内容区第一张卡片"
-                "开始画。",
+                + shell_note,
             },
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{reference_image_b64}"}},
         ]
@@ -2211,6 +2254,7 @@ def generate_freeform_block(
                         device=device,
                         generated_theme=generated_theme,
                         reference_image_b64=reference_image_b64,
+                        landing_media_b64=landing_media_b64,
                     )
                     _st["got"] = 1 if preview_b64 else 0
                 if preview_b64:
@@ -2373,8 +2417,16 @@ def _marketing_landing_design_brief(
             "主视觉必须使用受控媒体节点 imageRef=landing-hero，并填写准确的 imageAlt；"
             "不要用色块或渐变冒充真实图片。"
         )
+    elif audience == "image":
+        lines.append(
+            "生成一张完整首页视觉稿：必须同时画出真实场景主视觉、可读界面文案、"
+            "主要行动按钮和下一内容区开头，让后续设计模型能够按整页结构还原。"
+        )
     else:
-        lines.append("生成一张可直接作为页面主视觉使用的真实场景图片，不要在图片里绘制网页文字、按钮或浏览器外壳。")
+        lines.append(
+            "只生成首页主视觉使用的真实场景摄影素材，不画网页文字、按钮、导航、"
+            "浏览器或设备外壳；主体完整，并为界面标题保留干净区域。"
+        )
     return "\n".join(lines)
 
 
@@ -2761,6 +2813,11 @@ def _enrich_monitor_page_overviews_inner(
         # 参照板走**出图受众**那一份：同一批内容，但积木用视觉描述而不是
         # blockRef 的 JSON 形态（见 _monitor_overview_design_brief 的 audience）。
         sheet_brief = brief_builder(page, datamodel, audience="image")
+        hero_brief = (
+            brief_builder(page, datamodel, audience="hero")
+            if is_marketing_landing
+            else ""
+        )
         # 只有首页那一张（见上面的说明）。
         #
         # 落地页没声明时退回"第一个符合条件的页"——不能因为模型漏填一个字段
@@ -2785,23 +2842,88 @@ def _enrich_monitor_page_overviews_inner(
         with _enrich_stage(
             "monitor.sheet", page=page_id, device=device or "unspecified", current=1, total=1
         ) as _st:
-            sheet_b64 = (
-                _generate_overview_sheet_b64(
-                    sheet_brief, datamodel, theme_id=theme_id, device=device,
-                    generated_theme=generated_theme, marketing_hero=is_marketing_landing,
+            landing_media_b64 = None
+            if use_ref and is_marketing_landing:
+                # 完整视觉稿负责还原，独立 Hero 负责运行时媒体。两个请求互不依赖，
+                # 并发发出避免把营销首页生图时长直接翻倍。
+                from concurrent.futures import ThreadPoolExecutor
+
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    page_future = pool.submit(
+                        _generate_overview_sheet_b64,
+                        sheet_brief,
+                        datamodel,
+                        theme_id=theme_id,
+                        device=device,
+                        generated_theme=generated_theme,
+                        marketing_page=True,
+                        marketing_hero=False,
+                    )
+                    hero_future = pool.submit(
+                        _generate_overview_sheet_b64,
+                        hero_brief,
+                        datamodel,
+                        theme_id=theme_id,
+                        device=device,
+                        generated_theme=generated_theme,
+                        marketing_page=False,
+                        marketing_hero=True,
+                    )
+                    sheet_b64 = page_future.result()
+                    landing_media_b64 = hero_future.result()
+            elif use_ref:
+                sheet_b64 = _generate_overview_sheet_b64(
+                    sheet_brief,
+                    datamodel,
+                    theme_id=theme_id,
+                    device=device,
+                    generated_theme=generated_theme,
                 )
-                if use_ref
-                else None
-            )
+            else:
+                sheet_b64 = None
             # 跳过（非首页/未配生图/通道不支持图片）和真生了图，耗时天差地别，
             # 光看 ms 会以为"生图很快"，得把这一位记下来才看得懂数据。
             _st["got"] = 1 if sheet_b64 else 0
+            _st["mediaGot"] = 1 if landing_media_b64 else 0
         # 这张图排完版式就该丢了——但它同时也正是应用中心那张卡该显示的画面。
         # 调用方给了收集槽就交一份（见 app_preview：**没给槽就什么都不做**，
         # 所以两个脚本调用方不用改也不会被污染）。生图失败传 None 无害，
         # offer 自己会忽略。
         if preview_sink is not None:
-            preview_sink.offer(page_id, sheet_b64, is_landing=bool(landing_ref and page_id == landing_ref))
+            preview_sink.offer(
+                page_id,
+                landing_media_b64 if is_marketing_landing else sheet_b64,
+                is_landing=bool(landing_ref and page_id == landing_ref),
+            )
+        # 参考图先独立解析成可检查的结构契约，再交给最终页面生成器。此前最终
+        # LLM 同时承担看图、理解布局和写 JSON，失败后无法区分是哪一层出了错。
+        with _enrich_stage(
+            "monitor.reconstruction",
+            page=page_id,
+            device=device or "unspecified",
+            current=1,
+            total=1,
+        ) as _rst:
+            try:
+                from .page_reconstruction import analyze_page_reference
+
+                reconstruction = analyze_page_reference(
+                    sheet_b64,
+                    design_brief=brief,
+                    datamodel=datamodel,
+                    device=device,
+                )
+            except Exception as exc:  # noqa: BLE001 - analysis cannot block a valid model
+                reconstruction = {
+                    "version": "page-reconstruction-v1",
+                    "status": "failed",
+                    "spec": None,
+                    "prompt": "",
+                    "diagnostic": f"reconstruction orchestration failed: {str(exc)[:500]}",
+                }
+            page["pageReconstruction"] = reconstruction
+            _rst["got"] = 1 if reconstruction.get("status") == "ready" else 0
+            _rst["status"] = str(reconstruction.get("status") or "failed")
         # 顺手把这张图的**配色**也读回来（2026-08-04）。
         #
         # 用户观察："图表的颜色是一样的"。查下来是链路断在这一步：图每个应用
@@ -2865,6 +2987,13 @@ def _enrich_monitor_page_overviews_inner(
                     use_reference_image=use_ref,
                     allow_screenshot_verify=allow_shot,
                     reference_image_b64=sheet_b64,
+                    landing_media_b64=landing_media_b64,
+                    full_page_visual=is_marketing_landing,
+                    reconstruction_prompt=(
+                        str(reconstruction.get("prompt") or "")
+                        if reconstruction.get("status") == "ready"
+                        else None
+                    ),
                     # 设计 LLM 拿到的图表色 = 真实会画出来的那几个（上面刚从
                     # 参照图读出来的）。不传的话它会照着账本旧色配色，而 ECharts
                     # 画的是参照图那套——同一页两套颜色。

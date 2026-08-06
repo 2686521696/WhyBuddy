@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.freeform_block import (  # noqa: E402
     FreeformGenerationError,
     _build_overview_sheet_facts,
-    _build_marketing_hero_prompt,
+    _build_marketing_page_prompt,
     _marketing_landing_design_brief,
     _monitor_overview_design_brief,
     _sheet_image_size_for_device,
@@ -48,6 +48,8 @@ def test_marketing_landing_brief_is_not_an_operations_dashboard():
     assert "KPI" not in brief
     assert "图表" not in brief
     assert "运营总览" not in brief
+    assert "完整首页视觉稿" in brief
+    assert "不要在图片里绘制网页文字" not in brief
 
 
 def test_generation_contract_exposes_marketing_landing_presentation():
@@ -58,15 +60,19 @@ def test_generation_contract_exposes_marketing_landing_presentation():
     assert "MUST NOT be coerced into an operations monitor" in _SCHEMA_INSTRUCTION
 
 
-def test_marketing_hero_prompt_requests_a_clean_photographic_asset():
-    prompt = _build_marketing_hero_prompt(
+def test_marketing_page_prompt_requests_a_complete_homepage_visual():
+    prompt = _build_marketing_page_prompt(
         "星野营地提供沙漠观星住宿体验", device="desktop"
     )
 
-    assert "真实摄影" in prompt
-    assert "不要出现任何文字" in prompt
-    assert "网页" not in prompt
-    assert "按钮" not in prompt
+    assert "完整首页视觉稿" in prompt
+    assert "桌面端" in prompt
+    assert "真实摄影主视觉" in prompt
+    assert "可读中文文案" in prompt
+    assert "主要行动按钮" in prompt
+    assert "下一内容区" in prompt
+    assert "只画一张 Hero" not in prompt
+    assert "不要出现任何文字" not in prompt
 
 
 # ── 逐行内容：由设计模型自己画（2026-08-03）
@@ -670,6 +676,134 @@ def test_monitor_progress_reports_one_authoritative_device(monkeypatch):
     assert design_starts == [
         {"page": "home", "device": "phone", "current": 1, "total": 1}
     ]
+
+
+def test_reference_image_is_analyzed_persisted_and_passed_to_page_generation(monkeypatch):
+    from services import freeform_block, page_reconstruction, sheet_palette
+
+    seen = {"analysis": 0, "prompt": None}
+
+    def fake_analysis(image, **kwargs):
+        seen["analysis"] += 1
+        assert image == "sheet-image"
+        assert kwargs["device"] == "desktop"
+        return {
+            "version": "page-reconstruction-v1",
+            "status": "ready",
+            "spec": {"device": "desktop", "regions": [{"id": "hero"}]},
+            "prompt": "RECONSTRUCT hero at x=0.000 width=1.000",
+            "diagnostic": "",
+        }
+
+    def fake_design(brief, datamodel, **kwargs):
+        seen["prompt"] = kwargs.get("reconstruction_prompt")
+        return {"root": {"tag": "div", "children": []}}
+
+    monkeypatch.setattr(freeform_block, "_image_generation_configured", lambda: True)
+    monkeypatch.setattr(freeform_block, "_supports_image_content_parts", lambda: True)
+    monkeypatch.setattr(freeform_block, "_generate_overview_sheet_b64", lambda *a, **k: "sheet-image")
+    monkeypatch.setattr(page_reconstruction, "analyze_page_reference", fake_analysis)
+    monkeypatch.setattr(sheet_palette, "extract_chart_palette", lambda image: [])
+    monkeypatch.setattr(freeform_block, "generate_freeform_block", fake_design)
+
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"landingPageRef": "home", "preferredDevice": "desktop"},
+        "page": {"pages": [_monitor_page()]},
+    }
+    page = enrich_monitor_page_overviews(model)["page"]["pages"][0]
+
+    assert seen == {
+        "analysis": 1,
+        "prompt": "RECONSTRUCT hero at x=0.000 width=1.000",
+    }
+    assert page["pageReconstruction"]["status"] == "ready"
+    assert page["pageReconstruction"]["spec"]["regions"][0]["id"] == "hero"
+
+
+def test_missing_reference_image_persists_skipped_reconstruction(monkeypatch):
+    from services import freeform_block
+
+    seen = []
+    monkeypatch.setattr(freeform_block, "_generate_overview_sheet_b64", lambda *a, **k: None)
+    monkeypatch.setattr(
+        freeform_block,
+        "generate_freeform_block",
+        lambda brief, datamodel, **kwargs: (
+            seen.append(kwargs.get("reconstruction_prompt"))
+            or {"root": {"tag": "div", "children": []}}
+        ),
+    )
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"landingPageRef": "home", "preferredDevice": "phone"},
+        "page": {"pages": [_monitor_page()]},
+    }
+
+    page = enrich_monitor_page_overviews(model)["page"]["pages"][0]
+
+    assert seen == [None]
+    assert page["pageReconstruction"] == {
+        "version": "page-reconstruction-v1",
+        "status": "skipped",
+        "spec": None,
+        "prompt": "",
+        "diagnostic": "reference image unavailable",
+    }
+
+
+def test_marketing_landing_separates_full_page_reference_from_hero_media(monkeypatch):
+    from services import freeform_block, page_reconstruction, sheet_palette
+    from services.app_preview import OverviewPreviewSink
+
+    generated = []
+    design_kwargs = {}
+
+    def fake_image(*args, **kwargs):
+        generated.append((kwargs.get("marketing_page"), kwargs.get("marketing_hero")))
+        return "full-page-reference" if kwargs.get("marketing_page") else "hero-media"
+
+    def fake_analysis(image, **kwargs):
+        assert image == "full-page-reference"
+        return {
+            "version": "page-reconstruction-v1",
+            "status": "ready",
+            "spec": {"device": "desktop", "regions": [{"id": "hero"}]},
+            "prompt": "FULL PAGE CONTRACT",
+            "diagnostic": "",
+        }
+
+    def fake_design(*args, **kwargs):
+        design_kwargs.update(kwargs)
+        return {"root": {"tag": "div", "children": []}}
+
+    monkeypatch.setattr(freeform_block, "_image_generation_configured", lambda: True)
+    monkeypatch.setattr(freeform_block, "_supports_image_content_parts", lambda: True)
+    monkeypatch.setattr(freeform_block, "_generate_overview_sheet_b64", fake_image)
+    monkeypatch.setattr(page_reconstruction, "analyze_page_reference", fake_analysis)
+    monkeypatch.setattr(sheet_palette, "extract_chart_palette", lambda image: [])
+    monkeypatch.setattr(freeform_block, "generate_freeform_block", fake_design)
+    sink = OverviewPreviewSink()
+    page = {
+        "id": "home",
+        "name": "星野营地",
+        "kind": "monitor",
+        "presentation": "marketing-landing",
+    }
+    model = {
+        "datamodel": _datamodel(),
+        "appbundle": {"landingPageRef": "home", "preferredDevice": "desktop"},
+        "page": {"pages": [page]},
+    }
+
+    enrich_monitor_page_overviews(model, preview_sink=sink)
+
+    assert sorted(generated) == [(False, True), (True, False)]
+    assert sink.png_b64 == "hero-media"
+    assert design_kwargs["reference_image_b64"] == "full-page-reference"
+    assert design_kwargs["landing_media_b64"] == "hero-media"
+    assert design_kwargs["full_page_visual"] is True
+    assert design_kwargs["reconstruction_prompt"] == "FULL PAGE CONTRACT"
 
 
 def test_generation_contract_teaches_how_to_pick_the_device():

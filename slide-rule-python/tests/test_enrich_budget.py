@@ -103,10 +103,10 @@ def test_monitor_overview_generates_exactly_one_sheet_for_the_landing_page(monke
         },
     }
     enrich_monitor_page_overviews(model)
-    # 一页两档（默认档 + 手机档）共用同一张参照板；只有落地页进入生成器。
-    assert calls == [True, True]
+    # single-v1：只设计唯一设备档；只有落地页进入生成器。
+    assert calls == [True]
     assert model["page"]["pages"][1].get("freeformOverview")
-    assert model["page"]["pages"][1]["freeformOverview"].get("mobile")
+    assert "mobile" not in model["page"]["pages"][1]["freeformOverview"]
     for page in (model["page"]["pages"][0], model["page"]["pages"][2]):
         assert "freeformOverview" not in page
         assert page["freeformOverviewStatus"] == "deferred"
@@ -136,8 +136,7 @@ def test_sheet_falls_back_to_the_first_page_when_landing_is_missing(monkeypatch)
         },
     }
     enrich_monitor_page_overviews(model)
-    assert calls[:2] == [True, True], "漏填落地页时第一页应当拿到参照板"
-    assert calls[2:] == []
+    assert calls == [True], "漏填落地页时第一页应当拿到唯一设备档的参照板"
     assert model["page"]["pages"][1]["freeformOverviewStatus"] == "deferred"
 
 

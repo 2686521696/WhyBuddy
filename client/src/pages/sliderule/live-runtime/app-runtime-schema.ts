@@ -11,6 +11,7 @@ import {
   normalizeRoles,
   type FiveSystemModel,
   type FiveSystemField,
+  type PageReconstructionEvidence,
 } from "../system-screens/five-system-model";
 import {
   normalizeFieldFormat,
@@ -243,9 +244,8 @@ export interface AppPageSchema {
    * stats/charts/rankings/feeds 骨架，不是互相替代关系。原样透传不做
    * 类型收窄（跟 identity.generatedTheme 同一个"渲染器内部再校验"套路）。 */
   /**
-   * 总览页的 AI 设计版式。默认那份按 appbundle.preferredDevice 生成
-   * （通常是桌面），`mobile` 是手机档的覆盖（2026-07-29 起 Python 侧会
-   * 多设计一版单列的）。
+   * 总览页的 AI 设计版式。当前只按 appbundle.preferredDevice 生成唯一设备档；
+   * `mobile` 仅用于兼容历史双档快照。
    *
    * 形状照 react-grid-layout 的 `layouts={{lg,md,sm}}`：同一份内容、每档
    * 一份布局，取用时"有本档用本档、没有就往更大的档回退"。老快照只有 root，
@@ -255,6 +255,8 @@ export interface AppPageSchema {
     root: Record<string, unknown>;
     mobile?: { root: Record<string, unknown> };
   };
+  /** 从完整首页视觉稿解析出的可审查契约与确定性还原提示词。 */
+  pageReconstruction?: PageReconstructionEvidence;
 }
 
 /** Step 7：页面布局 5 槽位——每个槽位是有序区块 id 列表；mobile 为手机端覆盖。 */
@@ -842,6 +844,7 @@ export function deriveAppRuntimeSchema(
       charts,
       view,
       freeformOverview: page.freeformOverview,
+      pageReconstruction: page.pageReconstruction,
       // 体验区块：优先用模型直接声明的 page.blocks；若无声明，从现有
       // stats/charts/rankings/feeds 自动转换（零视觉变化路径，三阶段接入前
       // AppRuntimeScreen 会过滤掉 _fromLegacy 块，仍走旧渲染路径）。
