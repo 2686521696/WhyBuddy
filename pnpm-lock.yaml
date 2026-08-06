@@ -186,6 +186,9 @@ importers:
       antd-mobile:
         specifier: ^5.42.3
         version: 5.42.3(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
+      antd-mobile-icons:
+        specifier: 0.3.0
+        version: 0.3.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

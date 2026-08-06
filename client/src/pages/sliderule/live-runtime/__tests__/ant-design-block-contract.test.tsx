@@ -1,4 +1,6 @@
 import React from "react";
+import fs from "node:fs";
+import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
@@ -98,5 +100,51 @@ describe("experience blocks use Ant Design primitives", () => {
 
     expect(html).toContain("ant-pro-statistic-card");
     expect(html).not.toContain("bg-stone-50");
+  });
+});
+
+describe("phone experience blocks use Ant Design Mobile", () => {
+  const blockRegistrySource = fs.readFileSync(
+    path.resolve(__dirname, "../block-registry.tsx"),
+    "utf8"
+  );
+  const screenSource = fs.readFileSync(
+    path.resolve(__dirname, "../AppRuntimeScreen.tsx"),
+    "utf8"
+  );
+  const phoneRendererPath = path.resolve(
+    __dirname,
+    "../phone-mobile/PhoneExperienceBlock.tsx"
+  );
+  const phoneSource = fs.existsSync(phoneRendererPath)
+    ? fs.readFileSync(phoneRendererPath, "utf8")
+    : "";
+
+  it("configures QueryFilter itself with responsive desktop column spans", () => {
+    expect(blockRegistrySource).toContain(
+      "span={{ xs: 24, sm: 24, md: 12, lg: 12, xl: 8, xxl: 8 }}"
+    );
+    expect(blockRegistrySource).toContain('style: { width: "100%" }');
+  });
+
+  it("lazy-loads a dedicated phone renderer from the mobile chunk", () => {
+    expect(screenSource).toContain(
+      'import("./phone-mobile/PhoneExperienceBlock")'
+    );
+    expect(screenSource).toContain("<LazyPhoneExperienceBlock");
+  });
+
+  it("implements mobile blocks with antd-mobile and no desktop component imports", () => {
+    expect(phoneSource).toContain('from "antd-mobile"');
+    expect(phoneSource).not.toContain('from "antd"');
+    expect(phoneSource).not.toContain("@ant-design/pro-components");
+    for (const blockType of [
+      "FilterBar",
+      "MetricGrid",
+      "WorkflowTimeline",
+      "QuickActionPanel",
+    ]) {
+      expect(phoneSource).toContain(`case "${blockType}"`);
+    }
   });
 });

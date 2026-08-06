@@ -387,6 +387,7 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
     <QueryFilter
       data-testid="filter-bar"
       defaultCollapsed={false}
+      span={{ xs: 24, sm: 24, md: 12, lg: 12, xl: 8, xxl: 8 }}
       initialValues={initialValues}
       onFinish={async values => {
         applyValues(values);
@@ -400,7 +401,11 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
       }
     >
       {showDateRange && dateRangeField && (
-        <ProFormDateRangePicker name="dateRange" label={dateRangeField.label} />
+        <ProFormDateRangePicker
+          name="dateRange"
+          label={dateRangeField.label}
+          fieldProps={{ style: { width: "100%" } }}
+        />
       )}
       {fields.map(f => (
         <ProFormSelect
@@ -408,7 +413,7 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
           name={f.id}
           label={f.label}
           options={f.options}
-          fieldProps={{ allowClear: true }}
+          fieldProps={{ allowClear: true, style: { width: "100%" } }}
         />
       ))}
     </QueryFilter>

@@ -107,6 +107,7 @@
     "animejs": "^4.5.0",
     "antd": "^5.29.3",
     "antd-mobile": "^5.42.3",
+    "antd-mobile-icons": "0.3.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

@@ -145,6 +145,15 @@ const LazyPhoneSeedNotice = React.lazy(
 const LazyPhoneCalendar = React.lazy(
   () => import("./phone-mobile/PhoneCalendar")
 );
+const LazyPhoneExperienceBlock = React.lazy(
+  () => import("./phone-mobile/PhoneExperienceBlock")
+);
+const PHONE_EXPERIENCE_BLOCK_TYPES = new Set([
+  "FilterBar",
+  "MetricGrid",
+  "WorkflowTimeline",
+  "QuickActionPanel",
+]);
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -1518,13 +1527,21 @@ export function AppRuntimeScreen({
         const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks);
         if (dedupedBlocks.length === 0 && pageContent === undefined) return null;
 
-        const renderBlock = (block: (typeof dedupedBlocks)[number]) => (
-          <ExperienceBlockBoundary
-            key={block.id}
-            {...sharedBlockRendererProps}
-            block={block}
-          />
-        );
+        const renderBlock = (block: (typeof dedupedBlocks)[number]) =>
+          forPhone && PHONE_EXPERIENCE_BLOCK_TYPES.has(block.type) ? (
+            <React.Suspense key={block.id} fallback={<Skeleton active paragraph={{ rows: 2 }} />}>
+              <LazyPhoneExperienceBlock
+                {...sharedBlockRendererProps}
+                block={block}
+              />
+            </React.Suspense>
+          ) : (
+            <ExperienceBlockBoundary
+              key={block.id}
+              {...sharedBlockRendererProps}
+              block={block}
+            />
+          );
 
         const blockById = new Map(dedupedBlocks.map(b => [b.id, b]));
         // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
