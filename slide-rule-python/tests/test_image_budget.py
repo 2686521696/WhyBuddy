@@ -50,9 +50,21 @@ def test_budget_defaults_when_unset_or_garbage(monkeypatch):
     assert ic._total_budget_s() == float(ic.DEFAULT_TOTAL_BUDGET_S)
 
 
-def test_default_budget_leaves_room_for_a_slow_success():
-    """默认预算不能切掉正常的慢出图——实测最慢一张 107s。"""
-    assert ic.DEFAULT_TOTAL_BUDGET_S >= 2 * 107
+def test_default_budget_leaves_room_for_a_retry_after_a_slow_attempt():
+    """默认预算必须装得下「一次慢出图卡死 + 退避 + 再来一次完整的慢出图」。
+
+    2026-08-06 收紧：原来只断言 `>= 2 * 107`，表达的是"不切掉一次慢出图"。
+    那个尺度不够——预算约束的是**重试与退避的总和**，只够跑一次的预算等于
+    把重试机制关掉了：单次超时取 min(600, 剩余预算)，第一次卡住就能把预算
+    耗光，第二次连发都发不出去。
+
+    实测最慢一张是桌面参照板（2560x1440），103.6s；按 110s 留余量算。
+    """
+    slowest = 110
+    need = slowest + ic.BACKOFF + slowest  # 卡死一次 + 退避 + 成功一次
+    assert ic.DEFAULT_TOTAL_BUDGET_S >= need, (
+        f"预算 {ic.DEFAULT_TOTAL_BUDGET_S}s 装不下一次重试（至少要 {need}s）"
+    )
 
 
 def test_theme_never_asks_for_a_reference_image(monkeypatch):
