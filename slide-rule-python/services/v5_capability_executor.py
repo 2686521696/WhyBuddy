@@ -334,13 +334,34 @@ def _try_llm_generate_evidence(
     )
     if not gate.get("passed"):
         # E37 门裁决回喂：确定性修复兜不住的裁决（骨架级悬空引用等），把门的
-        # 具体 findings 喂回 LLM 有界重生成一次——错哪改哪，比盲重试/直接
-        # fail-closed 都对。仍然失败才落 MODEL_GATE_BLOCKED（fail-closed 不变）。
+        # 具体 findings 喂回 LLM 有界修复一次：生产并发路径只重生受影响 section，
+        # appbundle 只做确定性重组；测试注入/关闭并发时保留历史整包回喂语义。
+        # 仍然失败才落 MODEL_GATE_BLOCKED（fail-closed 不变）。
         try:
-            feedback = _format_gate_findings(gate.get("findings") or [])
-            retry_model = generate_five_system_model(
-                goal, llm_json_fn=llm_json_fn, gate_feedback=feedback
-            )
+            findings = gate.get("findings") or []
+            retry_model = None
+            fallback_to_full_retry = llm_json_fn is not None
+            if llm_json_fn is None:
+                from .v5_llm_generate import _parallel_json_call
+                from .v5_parallel_generate import (
+                    parallel_generation_enabled,
+                    regenerate_failed_sections,
+                )
+
+                if parallel_generation_enabled():
+                    retry_model = regenerate_failed_sections(
+                        goal,
+                        model,
+                        findings,
+                        call_json=_parallel_json_call,
+                    )
+                else:
+                    fallback_to_full_retry = True
+            if retry_model is None and fallback_to_full_retry:
+                feedback = _format_gate_findings(findings)
+                retry_model = generate_five_system_model(
+                    goal, llm_json_fn=llm_json_fn, gate_feedback=feedback
+                )
         except Exception as exc:  # noqa: BLE001 — 回喂重试是增强项，失败不改变主路径语义
             print(f"[v5_capability_executor] gate-feedback retry skipped: {str(exc)[:120]}")
             retry_model = None

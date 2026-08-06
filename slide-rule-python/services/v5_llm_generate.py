@@ -508,7 +508,11 @@ def _emit_delta(chunk: str) -> None:
 _last_call_error: str = ""
 
 
-def _build_user_content(goal: str) -> str:
+def _build_user_content(
+    goal: str,
+    *,
+    final_instruction: str = "Produce the five-system JSON now.",
+) -> str:
     """用户消息装配：意图 + （命中时）业界参考技能块。
 
     参考块来自宽松协议开源技能语料（v5_skill_reference，技能库二期）——
@@ -587,7 +591,7 @@ def _build_user_content(goal: str) -> str:
             f"Current model JSON:\n{model_json}\n"
             f"Follow-up instruction:\n{refine_ctx['instruction']}"
         )
-    parts.append("Produce the five-system JSON now.")
+    parts.append(final_instruction)
     return "\n\n".join(parts)
 
 
@@ -617,6 +621,58 @@ def _structured_llm_json_fn(messages: list) -> Optional[Dict[str, Any]]:
     except StructuredLlmError as exc:
         print(f"[v5_llm_generate] structured channel failed: {str(exc)[:200]}")
         _last_call_error = f"structured: {str(exc)[:160]}"
+        return None
+
+
+def _parallel_json_call(
+    messages: list[dict[str, str]],
+    required_keys: tuple[str, ...],
+    max_tokens: int,
+) -> Optional[Dict[str, Any]]:
+    """Structured, non-streaming worker call used by the bounded model DAG.
+
+    Raw token deltas from concurrent JSON workers cannot be interleaved into one
+    valid preview stream. Progress is exposed through the per-node timing/SSE
+    stages instead; the final assembled model still follows the existing stream.
+    """
+    global _last_call_error
+    effective_max_tokens = max(max_tokens, _generate_max_tokens())
+    try:
+        from sliderule_llm.structured import (
+            StructuredLlmError,
+            structured_llm_enabled,
+            structured_llm_json,
+        )
+
+        if structured_llm_enabled():
+            try:
+                return structured_llm_json(
+                    messages,
+                    required_keys=required_keys,
+                    temperature=0.2,
+                    max_tokens=effective_max_tokens,
+                    max_retries=1,
+                )
+            except StructuredLlmError as exc:
+                _last_call_error = f"parallel structured: {str(exc)[:160]}"
+    except Exception:
+        pass
+
+    try:
+        from sliderule_llm.client import call_llm_json_with_shape
+
+        parsed, _result = call_llm_json_with_shape(
+            messages,
+            required_keys=required_keys,
+            max_shape_retries=1,
+            temperature=0.2,
+            max_tokens=effective_max_tokens,
+            backoff_ms=2000,
+            on_delta=None,
+        )
+        return parsed if isinstance(parsed, dict) else None
+    except Exception as exc:  # noqa: BLE001
+        _last_call_error = f"parallel worker: {str(exc)[:160]}"
         return None
 
 
@@ -719,7 +775,26 @@ def generate_five_system_model(
     if model_override is not None:
         last_generate_diagnostic = {"outcome": "ok"}
         return dict(model_override)
-    if llm_json_fn is None and gate_feedback:
+    use_parallel = False
+    if llm_json_fn is None and not gate_feedback and get_refine_context() is None:
+        try:
+            from .v5_parallel_generate import parallel_generation_enabled
+
+            use_parallel = parallel_generation_enabled()
+        except Exception:
+            use_parallel = False
+    if use_parallel:
+        from .v5_parallel_generate import generate_parallel_five_system_model
+
+        fn = lambda g: generate_parallel_five_system_model(
+            g,
+            user_context=_build_user_content(
+                g,
+                final_instruction="Produce the complete SystemContract JSON now.",
+            ),
+            call_json=_parallel_json_call,
+        )
+    elif llm_json_fn is None and gate_feedback:
         fn: Callable[[str], Optional[Dict[str, Any]]] = (
             lambda g: _default_llm_json_fn(g, gate_feedback=gate_feedback)
         )
@@ -727,7 +802,10 @@ def generate_five_system_model(
         fn = llm_json_fn or _default_llm_json_fn
     # 一次有界重试：并发/限流下的瞬时失败不该直接变成永久 publish blocked
     # （fail-closed 语义保留：两次都失败仍返回 None）。注入 fn 的测试不受影响。
-    attempts = 2 if llm_json_fn is None else 1
+    # Each parallel node already has transport/shape retries. Re-running the
+    # complete DAG here would repeat every successful section and defeat the
+    # section-level repair path in the caller.
+    attempts = 1 if use_parallel else (2 if llm_json_fn is None else 1)
     last_detail = ""
     # 埋点范围是**整个重试循环**，不是单次 fn(goal)（2026-08-05）。
     #

@@ -48,6 +48,15 @@ _SIMILARITY_CUTOFF = 0.75
 
 
 def _unique_near_match(ref: str, known: set) -> str | None:
+    # A model may flatten a canonical ``entity.field`` reference to
+    # ``entity_field``. Restore it only when the mapping is unique.
+    flattened = [
+        k for k in known if str(k).replace(".", "_").replace(":", "_") == ref
+    ]
+    if len(flattened) == 1:
+        return flattened[0]
+    if len(flattened) > 1:
+        return None
     """唯一近邻：词干包含（唯一）→ difflib 相似度（唯一且过阈值）→ None。"""
     # 1) 词干包含：ref 是某已知 id 的子串 / 超串（去掉动词前缀这类拼错）
     containment = [k for k in known if (ref in k or k in ref) and k != ref]
@@ -112,12 +121,52 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
     from .v5_model_gate import _collect_field_types
 
     field_types = _collect_field_types(_as_dict(m.get("datamodel")))
+    number_refs = {r for r, t in field_types.items() if t == "number"}
+    date_refs = {r for r, t in field_types.items() if t == "date"}
+    enum_refs = {r for r, t in field_types.items() if t == "enum"}
+    rbac = _as_dict(m.get("rbac"))
+    permission_refs = {
+        str(value).strip() for value in _as_list(rbac.get("permissions")) if str(value).strip()
+    }
+    role_refs = set()
+    for value in _as_list(rbac.get("roles")):
+        role_id = _as_dict(value).get("id") if isinstance(value, dict) else value
+        if str(role_id or "").strip():
+            role_refs.add(str(role_id).strip())
     notes: Dict[str, List[Dict[str, Any]]] = {
         "repaired": [], "droppedCharts": [], "droppedStats": [],
         "droppedRankings": [], "droppedFeeds": [],
+        "droppedPipelines": [],
         "clearedFormats": [], "clearedIdentity": [], "clearedLandingPage": [],
         "droppedBlocks": [],
     }
+
+    # Field format is optional renderer metadata. Clearing an out-of-domain
+    # value is deterministic and preserves the entity/field contract, so it
+    # must not force an expensive datamodel regeneration.
+    from .schema_legal import NUMBER_FORMATS, STRING_FORMATS
+
+    for entity in _as_list(_as_dict(m.get("datamodel")).get("entities")):
+        entity_dict = _as_dict(entity)
+        entity_id = str(entity_dict.get("id") or "").strip()
+        for field in _as_list(entity_dict.get("fields")):
+            field_dict = _as_dict(field)
+            fmt = str(field_dict.get("format") or "").strip()
+            if not fmt:
+                continue
+            field_type = str(field_dict.get("type") or "string").strip()
+            allowed = (
+                NUMBER_FORMATS
+                if field_type == "number"
+                else STRING_FORMATS
+                if field_type in ("string", "text")
+                else ()
+            )
+            if fmt not in allowed:
+                field_dict.pop("format", None)
+                notes["clearedFormats"].append(
+                    {"entityId": entity_id, "fieldId": field_dict.get("id"), "format": fmt}
+                )
 
     def _fix_ref(container: Dict[str, Any], key: str, ref: str, known: set, pid: str) -> bool:
         """近邻修复 container[key]（引用 ref）。修成返回 True 并留痕。"""
@@ -134,6 +183,21 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
         notes["repaired"].append({"pageId": pid, "path": key, "from": ref, "to": fixed})
         return True
 
+    def _fix_ref_list(container: Dict[str, Any], key: str, known: set, owner: str) -> None:
+        values = container.get(key)
+        if not isinstance(values, list):
+            return
+        repaired_values = []
+        for value in values:
+            ref = str(value or "").strip()
+            fixed = ref if ref in known else _unique_near_match(ref, known)
+            repaired_values.append(fixed or value)
+            if fixed and fixed != ref:
+                notes["repaired"].append(
+                    {"pageId": owner, "path": key, "from": ref, "to": fixed}
+                )
+        container[key] = repaired_values
+
     page = _as_dict(m.get("page"))
     pages = _as_list(page.get("pages"))
     new_pages: List[Any] = []
@@ -143,6 +207,22 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
             continue
         pd = dict(p)
         pid = str(pd.get("id") or pd.get("name") or "<unnamed>")
+
+        for key, known_refs in (
+            ("statusField", enum_refs),
+            ("dateField", date_refs),
+            ("colorBy", enum_refs),
+        ):
+            ref = str(pd.get(key) or "").strip()
+            if ref and ref not in known_refs:
+                _fix_ref(pd, key, ref, known_refs, pid)
+        _fix_ref_list(pd, "fieldBindings", dotted_refs, pid)
+        _fix_ref_list(pd, "actionPermissions", permission_refs, pid)
+        for action in _as_list(pd.get("actions")):
+            action_dict = _as_dict(action)
+            permission_ref = str(action_dict.get("permissionRef") or "").strip()
+            if permission_ref and permission_ref not in permission_refs:
+                _fix_ref(action_dict, "permissionRef", permission_ref, permission_refs, pid)
 
         # 二阶段体验区块目录：type 拼写近邻唯一命中才修；无法解析的整块
         # 剔除并留痕。绑定/布局/动作仍属后续步骤，本步只守住选材合法域。
@@ -259,10 +339,6 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
         # E40.4 排行榜/动态流：与图表同款处方——引用近邻修复（唯一命中），
         # 修不好整条剔除留痕。类型不匹配（sortBy 非 number / timeField 非
         # date / levelField 非 enum）由门硬拦，这里只治悬空引用。
-        number_refs = {r for r, t in field_types.items() if t == "number"}
-        date_refs = {r for r, t in field_types.items() if t == "date"}
-        enum_refs = {r for r, t in field_types.items() if t == "enum"}
-
         kept_rankings: List[Any] = []
         for rank in _as_list(pd.get("rankings")):
             rd = dict(_as_dict(rank))
@@ -318,6 +394,62 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
         page = dict(page)
         page["pages"] = new_pages
         m["page"] = page
+
+    aigc = _as_dict(m.get("aigc"))
+    capabilities = _as_list(aigc.get("capabilities"))
+    repaired_capabilities: List[Any] = []
+    for capability in capabilities:
+        if not isinstance(capability, dict):
+            repaired_capabilities.append(capability)
+            continue
+        cap = dict(capability)
+        cap_id = str(cap.get("id") or cap.get("name") or "<unnamed>")
+        _fix_ref_list(cap, "inputFields", dotted_refs, f"aigc:{cap_id}")
+        _fix_ref_list(cap, "roleRefs", role_refs, f"aigc:{cap_id}")
+        output_ref = str(cap.get("outputField") or "").strip()
+        if output_ref and output_ref not in dotted_refs:
+            _fix_ref(cap, "outputField", output_ref, dotted_refs, f"aigc:{cap_id}")
+        repaired_capabilities.append(cap)
+    if capabilities:
+        aigc = dict(aigc)
+        aigc["capabilities"] = repaired_capabilities
+        cap_by_id = {
+            str(cap.get("id") or "").strip(): cap
+            for cap in repaired_capabilities
+            if isinstance(cap, dict) and str(cap.get("id") or "").strip()
+        }
+        kept_pipelines: List[Any] = []
+        for pipeline in _as_list(aigc.get("pipelines")):
+            pipe = _as_dict(pipeline)
+            pipe_id = str(pipe.get("id") or pipe.get("name") or "<unnamed>")
+            steps = [str(step or "").strip() for step in _as_list(pipe.get("steps"))]
+            reason = ""
+            if len(steps) < 2:
+                reason = "pipeline has fewer than two capabilities"
+            elif any(step not in cap_by_id for step in steps):
+                reason = "pipeline references an unknown capability"
+            else:
+                for previous, current in zip(steps, steps[1:]):
+                    output = str(cap_by_id[previous].get("outputField") or "").strip()
+                    inputs = {
+                        str(value or "").strip()
+                        for value in _as_list(cap_by_id[current].get("inputFields"))
+                    }
+                    if not output or output not in inputs:
+                        reason = f"pipeline handoff is not wired between {previous} and {current}"
+                        break
+            if reason:
+                notes["droppedPipelines"].append(
+                    {"pipelineId": pipe_id, "reason": reason}
+                )
+            else:
+                kept_pipelines.append(pipeline)
+        if "pipelines" in aigc:
+            if kept_pipelines:
+                aigc["pipelines"] = kept_pipelines
+            else:
+                aigc.pop("pipelines", None)
+        m["aigc"] = aigc
 
     # 落地页是可选展示增强：拼错时只在 page id 中做唯一近邻修复；无唯一
     # 候选时清除并回退旧工作台，不让一个首页引用株连整个五系统模型。
