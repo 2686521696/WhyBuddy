@@ -116,6 +116,46 @@ class TestGoalCoverage:
         assert v["applicable"] is False
         assert v["passed"] is True
 
+    def test_餐饮巡检最终六系统模型覆盖责任升级看板和权限(self):
+        """2026-08-05 真机回归：不能只看实体名和页面名就误判 3/7。"""
+        goal = (
+            "为连锁餐饮企业设计门店巡检与整改闭环系统，包含问题上报、责任分派、"
+            "超时升级、数据看板和角色权限"
+        )
+        model = {
+            "datamodel": {"entities": [
+                {"id": "inspection_issue", "name": "巡检问题", "fields": [
+                    {"id": "assignee", "name": "整改责任人"},
+                    {"id": "deadline", "name": "整改时限"},
+                ]},
+            ]},
+            "workflow": {"nodes": [
+                {"id": "reported", "name": "问题上报"},
+                {"id": "assigned", "name": "责任分派"},
+                {"id": "escalated", "name": "超时升级"},
+            ]},
+            "rbac": {"roles": [
+                {"id": "store_manager", "name": "门店店长", "permissionRefs": ["issue.assign"]},
+                {"id": "quality_manager", "name": "品控管理员", "permissionRefs": ["dashboard.view"]},
+            ], "permissions": [
+                {"id": "issue.assign", "name": "分派整改责任"},
+                {"id": "dashboard.view", "name": "查看数据看板"},
+            ]},
+            "page": {"pages": [
+                {"id": "report_wizard", "name": "问题上报向导", "kind": "wizard"},
+                {"id": "quality_dashboard", "name": "品控分析看板", "kind": "dashboard",
+                 "stats": [{"id": "overdue", "label": "超时整改"}]},
+                {"id": "escalation_workbench", "name": "升级督办台", "kind": "workbench"},
+            ]},
+            "aigc": {"features": []},
+            "appbundle": {"appIdentity": {"productName": "巡改通"}},
+        }
+
+        verdict = evaluate_model_relevance(goal, model)
+        assert verdict["passed"] is True, verdict["reason"]
+        missing = {item["phrase"] for item in verdict["missing"]}
+        assert not {"责任分派", "超时升级", "数据看板", "角色权限"} & missing
+
 
 class TestPrimitives:
     def test_短语切分_按标点与并列连词(self):

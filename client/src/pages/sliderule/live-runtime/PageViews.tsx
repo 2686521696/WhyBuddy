@@ -21,8 +21,18 @@ import {
   groupRowsForKanban,
   rowsByDateKey,
 } from "./page-views";
+import {
+  BUSINESS_MUTED_SURFACE_STYLE,
+  BUSINESS_SECONDARY_TEXT_COLOR,
+  BUSINESS_TERTIARY_TEXT_COLOR,
+  BUSINESS_TEXT_COLOR,
+} from "./business-surface-theme";
 
-const INK = { label: "#595959", value: "#262626", faint: "#bfbfbf" };
+const INK = {
+  label: BUSINESS_SECONDARY_TEXT_COLOR,
+  value: BUSINESS_TEXT_COLOR,
+  faint: BUSINESS_TERTIARY_TEXT_COLOR,
+};
 
 /** tone → 事件点/列顶条颜色（与 antd 状态色一致）。 */
 const TONE_COLORS: Record<FieldTone, string> = {
@@ -67,7 +77,7 @@ export function KanbanBoard({
           style={{
             flex: "1 0 0",
             minWidth: 170,
-            background: "#fafafa",
+            ...BUSINESS_MUTED_SURFACE_STYLE,
             borderRadius: 8,
             borderTop: `3px solid ${TONE_COLORS[col.tone]}`,
             padding: "8px 8px 10px",

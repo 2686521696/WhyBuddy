@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services import app_screenshot, freeform_block
+from services import enrich_timing
 from services.freeform_block import enrich_freeform_blocks, enrich_monitor_page_overviews
 
 
@@ -74,13 +75,13 @@ def test_enrich_blocks_budget_env_zero(monkeypatch):
 
 
 def test_monitor_overview_generates_exactly_one_sheet_for_the_landing_page(monkeypatch):
-    """总览页参照板只给**首页**生一张（2026-08-03，用户裁决）。
+    """同步体验层只设计首页；非首页保留标准布局并标记延迟增强。
 
     之前是"每页各一张、上限 4 张"。实测单张 60~85s 且串行，而真正被用到的
     只有落地页那张——它同时是应用中心卡片显示的画面。其余页拿到参照板的
     收益远不抵那一分多钟。
 
-    其余页仍然照常生成设计（纯文字），**不是少生成一页内容**。
+    非首页原有 stats/charts/blocks 不删除，所以仍可由标准渲染器立即使用。
     """
     calls = []
 
@@ -102,12 +103,14 @@ def test_monitor_overview_generates_exactly_one_sheet_for_the_landing_page(monke
         },
     }
     enrich_monitor_page_overviews(model)
-    # 一页两档（默认档 + 手机档）共用同一张参照板，所以落地页 m1 是 True,True，
-    # 其余页两档都是 False。注意顺序：m0 在前、m1 才是落地页——不能靠"第一页"蒙对。
-    assert [c for c in calls] == [False, False, True, True, False, False]
-    for page in model["page"]["pages"]:
-        assert page.get("freeformOverview"), "没参照板的页仍然要出设计，不能丢内容"
-        assert page["freeformOverview"].get("mobile")
+    # 一页两档（默认档 + 手机档）共用同一张参照板；只有落地页进入生成器。
+    assert calls == [True, True]
+    assert model["page"]["pages"][1].get("freeformOverview")
+    assert model["page"]["pages"][1]["freeformOverview"].get("mobile")
+    for page in (model["page"]["pages"][0], model["page"]["pages"][2]):
+        assert "freeformOverview" not in page
+        assert page["freeformOverviewStatus"] == "deferred"
+        assert page.get("stats"), "延迟视觉增强不能删除标准渲染所需内容"
 
 
 def test_sheet_falls_back_to_the_first_page_when_landing_is_missing(monkeypatch):
@@ -134,7 +137,8 @@ def test_sheet_falls_back_to_the_first_page_when_landing_is_missing(monkeypatch)
     }
     enrich_monitor_page_overviews(model)
     assert calls[:2] == [True, True], "漏填落地页时第一页应当拿到参照板"
-    assert calls[2:] == [False, False]
+    assert calls[2:] == []
+    assert model["page"]["pages"][1]["freeformOverviewStatus"] == "deferred"
 
 
 def test_no_sheet_at_all_when_image_generation_is_not_configured(monkeypatch):
@@ -179,6 +183,61 @@ def test_budget_env_garbage_falls_back_to_default(monkeypatch):
     assert freeform_block._env_budget("SLIDERULE_ENRICH_MAX_REF_IMAGES", 4) == 4
     monkeypatch.setenv("SLIDERULE_ENRICH_MAX_REF_IMAGES", "-3")
     assert freeform_block._env_budget("SLIDERULE_ENRICH_MAX_REF_IMAGES", 4) == 0
+
+
+def test_monitor_visuals_fail_open_when_run_deadline_is_too_close(monkeypatch):
+    calls = []
+    monkeypatch.setattr(freeform_block, "generate_freeform_block", lambda *_a, **_k: calls.append(1))
+    monkeypatch.setattr(freeform_block, "_image_generation_configured", lambda: True)
+    monkeypatch.setattr(freeform_block, "_supports_image_content_parts", lambda: True)
+    model = {
+        "appbundle": {"landingPageRef": "m1", "preferredDevice": "desktop"},
+        "page": {"pages": [{"id": "m1", "kind": "monitor", "stats": [{"id": "s1"}]}]},
+    }
+    token = enrich_timing.begin_run_budget(seconds=1)
+    try:
+        enrich_monitor_page_overviews(model)
+    finally:
+        enrich_timing.reset_run_budget(token)
+    assert calls == []
+    assert model["page"]["pages"][0]["freeformOverviewStatus"] == "deferred_budget"
+
+
+def test_monitor_keeps_text_only_landing_design_when_only_reference_image_is_over_budget(monkeypatch):
+    calls = []
+
+    def fake_generate(*_args, **kwargs):
+        calls.append(kwargs)
+        return {"root": {"type": "stack", "children": []}}
+
+    monkeypatch.setattr(freeform_block, "generate_freeform_block", fake_generate)
+    monkeypatch.setattr(freeform_block, "_image_generation_configured", lambda: True)
+    monkeypatch.setattr(freeform_block, "_supports_image_content_parts", lambda: True)
+    monkeypatch.setattr(
+        freeform_block,
+        "_generate_overview_sheet_b64",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("reference image must be skipped")),
+    )
+    model = {
+        "appbundle": {"landingPageRef": "m1", "preferredDevice": "desktop"},
+        "page": {"pages": [{"id": "m1", "kind": "monitor", "stats": [{"id": "s1"}]}]},
+    }
+    token = enrich_timing.begin_run_budget(seconds=200)
+    try:
+        enrich_monitor_page_overviews(model)
+    finally:
+        enrich_timing.reset_run_budget(token)
+    assert len(calls) == 1
+    assert calls[0]["use_reference_image"] is False
+    assert calls[0]["reference_image_b64"] is None
+    assert model["page"]["pages"][0]["freeformOverviewStatus"] == "ready"
+
+
+def test_run_budget_defaults_to_nine_minutes_and_can_be_overridden(monkeypatch):
+    monkeypatch.delenv("SLIDERULE_RUN_BUDGET_SECONDS", raising=False)
+    assert enrich_timing.run_budget_seconds() == 540
+    monkeypatch.setenv("SLIDERULE_RUN_BUDGET_SECONDS", "420")
+    assert enrich_timing.run_budget_seconds() == 420
 
 
 class _FakeSandbox:

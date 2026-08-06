@@ -36,6 +36,11 @@ class TestAvailability:
         monkeypatch.setenv(sc._LOCAL_APP_URL_ENV, "http://127.0.0.1:5173/")
         assert sc._local_app_base_url() == "http://127.0.0.1:5173"
 
+    def test_完整应用截图本机或_e2b_任一可用即可(self, monkeypatch):
+        monkeypatch.setattr(sc, "local_screenshot_available", lambda: True)
+        monkeypatch.setattr(sc, "e2b_screenshot_available", lambda: False)
+        assert sc.app_screenshot_available() is True
+
 
 class TestJsTemplate:
     """两条路共用同一份模板——共用是为了「本地看着对、换 E2B 就不一样」这种
@@ -113,6 +118,22 @@ class TestPreferLocal:
         monkeypatch.setattr(sc, "e2b_screenshot_available", lambda: False)
         # E2B 也不可用 → None（fail-closed，不假装成功）
         assert sc.capture_freeform_preview_screenshot("pid") is None
+
+    def test_完整应用截图优先本机_成功后不碰_e2b(self, monkeypatch):
+        called = {"e2b": 0}
+        monkeypatch.setattr(
+            sc,
+            "capture_app_screenshot_local",
+            lambda sid, timeout_s=60: b"LOCAL_PNG",
+        )
+
+        def _e2b_available():
+            called["e2b"] += 1
+            return True
+
+        monkeypatch.setattr(sc, "e2b_screenshot_available", _e2b_available)
+        assert sc.capture_app_screenshot("session-1") == b"LOCAL_PNG"
+        assert called["e2b"] == 0
 
 
 class TestSelfVerifyGate:

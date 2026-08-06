@@ -869,8 +869,9 @@ def _run_sse_response(run, since: int) -> StreamingResponse:
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-store",
             "X-Accel-Buffering": "no",  # disable nginx buffering
+            "Connection": "keep-alive",
         },
     )
 
@@ -1441,15 +1442,15 @@ def eval_baseline(x_internal_key: Optional[str] = Header(None)):
 
 @router.post("/sessions/{sid}/e2b-screenshot")
 def capture_session_screenshot(sid: str, x_internal_key: Optional[str] = Header(None)):
-    """在 E2B 沙盒截图 sid 对应的已闭环应用；不可用/失败 → 404，Node 侧照实转 503。
+    """截图 sid 对应的已闭环应用；不可用/失败 → 404，Node 侧照实转 503。
 
-    fail-closed：E2B_API_KEY 缺失或 SLIDERULE_PUBLIC_APP_URL 未配置时不尝试，
-    不用本地兜底掩盖——这两个条件任一没配，说明这套环境本来就截不了图。
+    开发环境可从本机前端截图，生产环境仍可使用 E2B；两条路径均不可用时
+    fail-closed，不生成占位图冒充真实应用截图。
     """
     _auth(x_internal_key)
-    from services.app_screenshot import capture_app_screenshot, e2b_screenshot_available
+    from services.app_screenshot import app_screenshot_available, capture_app_screenshot
 
-    if not e2b_screenshot_available():
+    if not app_screenshot_available():
         return JSONResponse({"error": "screenshot_unavailable"}, status_code=404)
     png_bytes = capture_app_screenshot(sid)
     if not png_bytes:

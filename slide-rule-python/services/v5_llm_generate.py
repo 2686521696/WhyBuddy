@@ -714,7 +714,7 @@ def generate_five_system_model(
     # 一次失败重试在 SSE 上应该表现为同一个阶段耗时更长，而不是同一条步骤
     # 闪两遍——后者看着像出错了。真正的失败次数走 attempts 字段和日志。
     stage_name = "model.regenerate" if gate_feedback else "model.generate"
-    with _enrich_stage(stage_name, attempts=attempts) as _st:
+    with _enrich_stage(stage_name, attempts=attempts, current=1, total=1) as _st:
         for attempt in range(attempts):
             try:
                 model = fn(goal)

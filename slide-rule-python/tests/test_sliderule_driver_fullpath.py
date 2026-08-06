@@ -711,17 +711,16 @@ def test_drive_full_v5_stops_on_max_loops_with_nonempty_picks():
         if origs["gate"] is not None: drv_mod.evaluate_coverage_gate = origs["gate"]
         if origs["rec"] is not None: drv_mod.reconcile_coverage = origs["rec"]
 
-    # E37：循环恰好 max_loops=2 次 + 循环后必跑的闭环重建 1 次（此前空指令
-    # 静默跳过闭环——正是"回合完成却无闭环"的病灶，现在 goal 在场必收口）
-    assert call_log["exec"] == 3, f"must execute exactly max_loops=2 loop execs + 1 closure rebuild, got {call_log}"
+    # 第二轮已经并入首次闭包，循环结束后的兜底不能再次执行同一闭包能力。
+    assert call_log["exec"] == 3, f"must execute 2 loop picks plus exactly 1 closure attempt, got {call_log}"
     assert out.runtimePhase == "awaiting"
     assert getattr(out, "awaitReason", None) == "max_loops", "max_loops stop must set awaitReason=max_loops to lock budget exit vs semantic converge"
     assert len(out.capabilityRuns) == 3
     assert len(out.artifacts) == 3
 
 
-def test_drive_full_v5_stops_early_on_coverage_pass():
-    """Coverage pass stops loop early (before max), sets done."""
+def test_drive_full_v5_stops_early_on_coverage_pass_but_blocked_closure_cannot_be_done():
+    """Coverage pass stops the loop, but a blocked closure remains awaiting."""
     state = _mk_state("sr-covstop")
     import services.v5_full_driver as drv_mod
     exec_count = {"n": 0}
@@ -766,7 +765,9 @@ def test_drive_full_v5_stops_early_on_coverage_pass():
 
     # E37：覆盖门首轮即过 → 循环 1 次 + 循环后闭环重建 1 次（goal 在场必收口）
     assert exec_count["n"] == 2
-    assert out.runtimePhase == "done"
+    assert out.runtimePhase == "awaiting"
+    assert getattr(out, "awaitReason", None) == "closure_missing"
+    assert getattr(out, "publishClosure", None) is None
     assert (out.goal or {}).get("status") == "clear" or True  # may set on gate
     assert len(out.capabilityRuns) >= 1
 
@@ -964,8 +965,8 @@ def test_drive_full_v5_stops_on_max_repeat_guard_and_records_ledger():
         if origs["rec"] is not None: drv_mod.reconcile_coverage = origs["rec"]
         if origs["commit"] is not None: drv_mod.commit_artifact = origs["commit"]
 
-    # E37：熔断前循环恰好 2 次（MAX_REPEAT=2）+ 循环后闭环重建 1 次
-    assert call_log["exec"] == 3, f"must stop after 2 loop execs (MAX_REPEAT=2) + 1 closure rebuild, got {call_log}"
+    # 两次 risk + 第二轮并入的一次闭环；循环后不能重复执行同一闭环能力。
+    assert call_log["exec"] == 3, f"repeat guard must keep closure single-shot, got {call_log}"
     assert out.runtimePhase == "awaiting"
     assert getattr(out, "awaitReason", None) == "max_repeat_guard", "must set awaitReason=max_repeat_guard"
     assert len(getattr(out, "decisionLedger", [])) >= 1, "must record auditable decisionLedger entry for max_repeat_guard"

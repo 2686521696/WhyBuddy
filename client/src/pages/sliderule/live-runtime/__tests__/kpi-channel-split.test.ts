@@ -71,6 +71,22 @@ describe("渲染层硬隔离", () => {
     // 被一个"其实还是走固定骨架"的占位区块顶掉，页面直接空一块
     expect(screenSrc).toMatch(/pageHasKpiBlocks[\s\S]{0,400}_fromLegacy/);
   });
+
+  it("没有 freeform 设计的 dashboard 由业务网格持有主数据且不重复追加表格", () => {
+    expect(screenSrc).toContain("const dashboardUsesBusinessGrid");
+    expect(screenSrc).toMatch(
+      /\(!OVERVIEW_KINDS\.has\(page\.view\.kind\) \|\| dashboardUsesBusinessGrid\)[\s\S]{0,80}businessPageGrid/
+    );
+    expect(screenSrc).toMatch(
+      /OVERVIEW_KINDS\.has\(page\.view\.kind\) && !dashboardUsesBusinessGrid[\s\S]{0,80}blockScaffold/
+    );
+    expect(screenSrc).toContain(
+      "OVERVIEW_KINDS.has(page.view.kind) && !dashboardUsesBusinessGrid &&"
+    );
+    expect(screenSrc).toMatch(
+      /dashboardUsesBusinessGrid[\s\S]{0,80}renderExperienceBlockScaffold\(true, phonePrimaryDataView\)/
+    );
+  });
 });
 
 describe("目录与方案 C 一致", () => {

@@ -76,6 +76,13 @@ import {
   type FeedItem,
   type TimeGrain,
 } from "./block-data";
+import {
+  BUSINESS_MUTED_SURFACE_STYLE,
+  BUSINESS_SECONDARY_TEXT_COLOR,
+  BUSINESS_SURFACE_STYLE,
+  BUSINESS_TERTIARY_TEXT_COLOR,
+  BUSINESS_TEXT_COLOR,
+} from "./business-surface-theme";
 
 // ECharts 基建走独立 chunk（跟 AppRuntimeScreen 里那份同一个组件/同一个
 // import()，Vite 按 module 去重成一个 chunk，不会重复打包）。
@@ -285,13 +292,21 @@ const QuickActionPanelRenderer: ExperienceBlockRenderer = ({
   return (
     <div
       data-testid="quick-action-panel"
-      className="rounded border border-stone-200 bg-white px-3 py-2"
+      className="rounded border px-3 py-2"
+      style={BUSINESS_SURFACE_STYLE}
     >
       {title && (
-        <div className="mb-2 text-xs font-medium text-stone-500">{title}</div>
+        <div
+          className="mb-2 text-xs font-medium"
+          style={{ color: BUSINESS_SECONDARY_TEXT_COLOR }}
+        >
+          {title}
+        </div>
       )}
       {actions.length === 0 ? (
-        <div className="text-xs text-stone-400">暂无可用操作</div>
+        <div className="text-xs" style={{ color: BUSINESS_TERTIARY_TEXT_COLOR }}>
+          暂无可用操作
+        </div>
       ) : (
         <div
           className="grid gap-2"
@@ -334,7 +349,8 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
     return (
       <div
         data-testid="filter-bar-empty"
-        className="rounded border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-400"
+        className="rounded border px-3 py-2 text-xs"
+        style={BUSINESS_MUTED_SURFACE_STYLE}
       >
         筛选栏：本页无可筛选字段
       </div>
@@ -346,16 +362,26 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
   return (
     <div
       data-testid="filter-bar"
-      className="flex flex-wrap items-center gap-2 rounded border border-stone-200 bg-white px-3 py-2"
+      className="flex flex-wrap items-center gap-2 rounded border px-3 py-2"
+      style={BUSINESS_SURFACE_STYLE}
     >
       {title && (
-        <span className="text-xs font-medium text-stone-500">{title}</span>
+        <span
+          className="text-xs font-medium"
+          style={{ color: BUSINESS_SECONDARY_TEXT_COLOR }}
+        >
+          {title}
+        </span>
       )}
       {showDateRange && dateRangeField && (
-        <span className="flex items-center gap-1 text-xs text-stone-500">
+        <span
+          className="flex items-center gap-1 text-xs"
+          style={{ color: BUSINESS_SECONDARY_TEXT_COLOR }}
+        >
           <input
             type="date"
-            className="rounded border border-stone-200 px-1.5 py-0.5 text-xs"
+            className="rounded border px-1.5 py-0.5 text-xs"
+            style={{ ...BUSINESS_SURFACE_STYLE, colorScheme: "light dark" }}
             value={dateRange?.[0]?.slice(0, 10) ?? ""}
             onChange={e => {
               const from = e.target.value;
@@ -368,7 +394,8 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
           <span>至</span>
           <input
             type="date"
-            className="rounded border border-stone-200 px-1.5 py-0.5 text-xs"
+            className="rounded border px-1.5 py-0.5 text-xs"
+            style={{ ...BUSINESS_SURFACE_STYLE, colorScheme: "light dark" }}
             value={dateRange?.[1]?.slice(0, 10) ?? ""}
             onChange={e => {
               const to = e.target.value;
@@ -429,7 +456,8 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
     return (
       <div
         data-testid="workflow-timeline-empty"
-        className="rounded border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-400"
+        className="rounded border px-3 py-2 text-xs"
+        style={BUSINESS_MUTED_SURFACE_STYLE}
       >
         流程步骤条：暂无可展示的流程节点
       </div>
@@ -443,26 +471,42 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
   return (
     <div
       data-testid="workflow-timeline"
-      className="rounded border border-stone-200 bg-white px-3 py-3"
+      className="rounded border px-3 py-3"
+      style={BUSINESS_SURFACE_STYLE}
     >
       {title && (
-        <div className="mb-2 text-xs font-medium text-stone-500">{title}</div>
+        <div
+          className="mb-2 text-xs font-medium"
+          style={{ color: BUSINESS_SECONDARY_TEXT_COLOR }}
+        >
+          {title}
+        </div>
       )}
       <div className="flex flex-wrap items-stretch gap-1.5">
         {nodes.map((node, i) => (
           <React.Fragment key={node.id || i}>
             <div
               data-testid="workflow-timeline-node"
-              className="flex min-w-[120px] flex-1 flex-col gap-1 rounded border border-stone-200 bg-stone-50 px-2.5 py-2"
+              className="flex min-w-[120px] flex-1 flex-col gap-1 rounded border px-2.5 py-2"
+              style={BUSINESS_MUTED_SURFACE_STYLE}
             >
-              <span className="text-[10px] font-mono text-stone-400">
+              <span
+                className="text-[10px] font-mono"
+                style={{ color: BUSINESS_TERTIARY_TEXT_COLOR }}
+              >
                 {String(i + 1).padStart(2, "0")}
               </span>
-              <span className="text-xs font-medium text-stone-700">
+              <span
+                className="text-xs font-medium"
+                style={{ color: BUSINESS_TEXT_COLOR }}
+              >
                 {node.name || node.id}
               </span>
               {node.assigneeRole && (
-                <span className="text-[10px] text-stone-400">
+                <span
+                  className="text-[10px]"
+                  style={{ color: BUSINESS_TERTIARY_TEXT_COLOR }}
+                >
                   {node.assigneeRole}
                 </span>
               )}
@@ -473,7 +517,10 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
               )}
             </div>
             {i < nodes.length - 1 && (
-              <ArrowRightOutlined className="self-center text-stone-300" />
+              <ArrowRightOutlined
+                className="self-center"
+                style={{ color: BUSINESS_TERTIARY_TEXT_COLOR }}
+              />
             )}
           </React.Fragment>
         ))}

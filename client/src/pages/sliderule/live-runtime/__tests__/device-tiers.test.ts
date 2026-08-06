@@ -65,4 +65,22 @@ describe("availableDeviceTiers", () => {
       availableDeviceTiers({ identity: {}, pages: [page(false), page(true), page(false)] })
     ).toEqual(["desktop", "phone"]);
   });
+
+  it("业务页声明 phone grid 时即使首页只有桌面设计也开放手机档", () => {
+    expect(
+      availableDeviceTiers({
+        identity: { preferredDevice: "desktop" },
+        pages: [
+          {
+            ...page(false),
+            layout: {
+              grid: {
+                phone: [{ blockRef: "page-content", x: 0, y: 0, w: 4, h: 2 }],
+              },
+            },
+          },
+        ],
+      })
+    ).toEqual(["desktop", "phone"]);
+  });
 });

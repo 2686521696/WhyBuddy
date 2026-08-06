@@ -95,4 +95,28 @@ describe("page.layout 嵌套 slots 解包", () => {
     )!.pages[0];
     expect(page.layout!.mobile!.summary).toEqual(["lab_feed"]);
   });
+
+  it("grid-only 布局经过边界归一化后可以独立成立", () => {
+    const page = deriveAppRuntimeSchema(
+      modelWithLayout({
+        grid: {
+          desktop: [
+            { blockRef: "lab_kpi", x: 0, y: 0, w: 4, h: 1 },
+            { blockRef: "lab_feed", x: 4, y: 0, w: 8, h: 2 },
+            { blockRef: "missing", x: 0, y: 2, w: 12, h: 1 },
+          ],
+          phone: [{ blockRef: "lab_feed", x: 0, y: 0, w: 4, h: 2 }],
+        },
+      })
+    )!.pages[0];
+
+    expect(page.layout).not.toBeNull();
+    expect(page.layout!.grid?.desktop).toEqual([
+      { blockRef: "lab_kpi", x: 0, y: 0, w: 4, h: 1 },
+      { blockRef: "lab_feed", x: 4, y: 0, w: 8, h: 2 },
+    ]);
+    expect(page.layout!.grid?.phone).toEqual([
+      { blockRef: "lab_feed", x: 0, y: 0, w: 4, h: 2 },
+    ]);
+  });
 });

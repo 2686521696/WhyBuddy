@@ -66,7 +66,7 @@ def _ensure_playwright(sandbox, timeout_s: int) -> bool:
     return install.error is None
 
 _SCREENSHOT_JS_TEMPLATE = """
-const { chromium } = require("playwright");
+const { chromium } = %(require_playwright)s;
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
   try {
@@ -81,9 +81,9 @@ const { chromium } = require("playwright");
     } catch {}
     const appEl = await page.$('[data-testid="app-runtime-screen"]');
     if (appEl) {
-      await appEl.screenshot({ path: "/tmp/app-thumb.png" });
+      await appEl.screenshot({ path: %(shot_path_json)s });
     } else {
-      await page.screenshot({ path: "/tmp/app-thumb.png", clip: { x: 0, y: 0, width: 900, height: 520 } });
+      await page.screenshot({ path: %(shot_path_json)s, clip: { x: 0, y: 0, width: 900, height: 520 } });
     }
     console.log("SCREENSHOT_OK");
   } finally {
@@ -206,6 +206,54 @@ def local_screenshot_available() -> bool:
     if not shutil.which("node"):
         return False
     return (_repo_root() / "node_modules" / "@playwright" / "test").is_dir()
+
+
+def app_screenshot_available() -> bool:
+    """Return whether a full application screenshot can run locally or in E2B."""
+    return local_screenshot_available() or e2b_screenshot_available()
+
+
+def capture_app_screenshot_local(
+    session_id: str, timeout_s: int = 60
+) -> Optional[bytes]:
+    """Capture the current local frontend so dev screenshots match the checked-out code."""
+    if not local_screenshot_available():
+        return None
+
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    app_url = f"{_local_app_base_url()}/agent-loop/sliderule"
+    pkg_path = str(_repo_root() / "node_modules" / "@playwright" / "test")
+    with tempfile.TemporaryDirectory() as tmp:
+        shot_path = Path(tmp) / "app-thumb.png"
+        js = _SCREENSHOT_JS_TEMPLATE % {
+            "require_playwright": f"require({json.dumps(pkg_path)})",
+            "session_id_json": json.dumps(session_id),
+            "app_url_json": json.dumps(app_url),
+            "shot_path_json": json.dumps(str(shot_path)),
+        }
+        js_path = Path(tmp) / "shot.js"
+        js_path.write_text(js, encoding="utf-8")
+        try:
+            res = subprocess.run(
+                ["node", str(js_path)],
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                cwd=str(_repo_root()),
+            )
+        except Exception:
+            return None
+        if "SCREENSHOT_OK" not in (res.stdout or "") or not shot_path.exists():
+            detail = (res.stderr or res.stdout or "").strip().replace("\n", " ")
+            print(f"[app_screenshot] local app screenshot failed: {detail[:200]}")
+            return None
+        try:
+            return shot_path.read_bytes() or None
+        except OSError:
+            return None
 
 
 def capture_freeform_preview_screenshot_local(
@@ -346,11 +394,15 @@ def capture_freeform_preview_screenshot(preview_id: str, timeout_s: int = 90) ->
 
 
 def capture_app_screenshot(session_id: str, timeout_s: int = 90) -> Optional[bytes]:
-    """在一次性 E2B 沙盒里截图 session_id 对应的已闭环应用主舞台。
+    """截图 session_id 对应的已闭环应用主舞台。
 
-    返回 PNG bytes；不可用/任一步骤失败 → None（fail-closed，不用本地兜底
-    掩盖失败，如实让调用方走 503）。
+    开发环境优先使用本机正在运行的前端，避免旧公网部署生成过期画面；本机
+    不可用或截图失败时回退 E2B。两条路径都失败才返回 None（fail-closed）。
     """
+    local = capture_app_screenshot_local(session_id, timeout_s=min(timeout_s, 60))
+    if local:
+        return local
+
     if not e2b_screenshot_available():
         return None
     base_url = _public_app_base_url()
@@ -362,8 +414,10 @@ def capture_app_screenshot(session_id: str, timeout_s: int = 90) -> Optional[byt
             return None
 
         js_code = _SCREENSHOT_JS_TEMPLATE % {
+            "require_playwright": 'require("playwright")',
             "session_id_json": json.dumps(session_id),
             "app_url_json": json.dumps(app_url),
+            "shot_path_json": json.dumps("/tmp/app-thumb.png"),
         }
         run = sandbox.run_code(
             "open('/tmp/shot.js', 'w').write(" + repr(js_code) + ")\n"

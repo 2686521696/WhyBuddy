@@ -25,7 +25,11 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services import enrich_timing  # noqa: E402
-from services.v5_full_driver import _ENRICH_STAGE_LABELS, _enrich_stage_event  # noqa: E402
+from services.v5_full_driver import (  # noqa: E402
+    _ENRICH_STAGE_LABELS,
+    _enrich_stage_event,
+    _progress_heartbeat_event,
+)
 
 
 def test_the_slow_stages_are_all_covered():
@@ -93,13 +97,20 @@ def test_every_label_carries_a_duration_hint():
 
 
 def test_start_and_end_are_paired():
-    start = _enrich_stage_event("start", "monitor.sheet", {})
-    end = _enrich_stage_event("end", "monitor.sheet", {"ms": 104895, "ok": True})
+    fields = {"page": "quality_dashboard", "device": "desktop", "current": 1, "total": 1}
+    start = _enrich_stage_event("start", "monitor.sheet", fields)
+    end = _enrich_stage_event("end", "monitor.sheet", {**fields, "ms": 104895, "ok": True})
     assert start["type"] == "reasoning_step"
     assert end["type"] == "reasoning_step_result"
     # 成对的关键是 label 一致——前端靠它把这一条收掉，对不上就会一直转
     assert start["label"] == end["label"]
     assert end["ms"] == 104895 and end["error"] is False
+    assert start["pageId"] == end["pageId"] == "quality_dashboard"
+    assert start["device"] == end["device"] == "desktop"
+    assert start["current"] == end["current"] == 1
+    assert start["total"] == end["total"] == 1
+    assert start["elapsedMs"] == 0
+    assert end["elapsedMs"] == 104895
 
 
 def test_skipped_stage_is_not_reported_as_a_failure():
@@ -109,6 +120,35 @@ def test_skipped_stage_is_not_reported_as_a_failure():
     """
     ev = _enrich_stage_event("end", "monitor.sheet", {"ms": 0, "ok": True, "got": 0})
     assert ev["error"] is False
+
+
+def test_deadline_skip_reason_survives_the_sse_projection():
+    ev = _enrich_stage_event(
+        "end",
+        "monitor.design",
+        {"ms": 0, "ok": True, "got": 0, "skippedReason": "deadline", "page": "p1"},
+    )
+    assert ev["skippedReason"] == "deadline"
+    assert ev["pageId"] == "p1"
+
+
+def test_progress_heartbeat_keeps_active_stage_context():
+    active = _enrich_stage_event(
+        "start",
+        "monitor.design",
+        {"page": "quality_dashboard", "device": "phone", "current": 2, "total": 2},
+    )
+    heartbeat = _progress_heartbeat_event(active, elapsed_ms=15001)
+    assert heartbeat == {
+        "type": "progress_heartbeat",
+        "stage": "monitor.design",
+        "label": active["label"],
+        "pageId": "quality_dashboard",
+        "device": "phone",
+        "current": 2,
+        "total": 2,
+        "elapsedMs": 15001,
+    }
 
 
 def test_internal_substeps_stay_off_the_stream():

@@ -1048,6 +1048,64 @@ def validate_five_system_model(
         for slot_key, block_refs in layout.items():
             if slot_key == "mobile":
                 continue
+            if slot_key == "grid":
+                grid = _as_dict(block_refs)
+                if not grid and block_refs:
+                    findings.append(_finding(
+                        DANGLING, f"{layout_page}.grid",
+                        "layout grid must be an object keyed by desktop/tablet/phone",
+                        ref="grid", skill="page",
+                    ))
+                    continue
+                grid_columns = {"desktop": 12, "tablet": 8, "phone": 4}
+                for breakpoint, raw_items in grid.items():
+                    grid_path = f"{layout_page}.grid.{breakpoint}"
+                    if breakpoint not in grid_columns:
+                        findings.append(_finding(
+                            DANGLING, grid_path,
+                            f"layout grid breakpoint '{breakpoint}' must be desktop/tablet/phone",
+                            ref=str(breakpoint), skill="page",
+                        ))
+                        continue
+                    seen_grid_refs = set()
+                    columns = grid_columns[breakpoint]
+                    for item_index, raw_item in enumerate(_as_list(raw_items)):
+                        item = _as_dict(raw_item)
+                        item_path = f"{grid_path}[{item_index}]"
+                        ref_str = str(item.get("blockRef") or "").strip()
+                        if ref_str in seen_grid_refs:
+                            findings.append(_finding(
+                                DANGLING, f"{item_path}.blockRef",
+                                f"duplicate layout grid blockRef '{ref_str}' in breakpoint '{breakpoint}'",
+                                ref=ref_str, skill="page",
+                            ))
+                        elif ref_str:
+                            seen_grid_refs.add(ref_str)
+                        if ref_str != "page-content" and ref_str not in page_block_types:
+                            findings.append(_finding(
+                                DANGLING, f"{item_path}.blockRef",
+                                f"layout grid block ref '{ref_str}' not found in page.blocks",
+                                ref=ref_str, skill="page",
+                            ))
+                        coords = [item.get(key) for key in ("x", "y", "w", "h")]
+                        if any(isinstance(value, bool) or not isinstance(value, int) for value in coords):
+                            findings.append(_finding(
+                                DANGLING, item_path,
+                                "layout grid x/y/w/h must be integers",
+                                ref=ref_str, skill="page",
+                            ))
+                            continue
+                        x, y, width, height = coords
+                        if (
+                            x < 0 or y < 0 or width <= 0 or height <= 0
+                            or x + width > columns
+                        ):
+                            findings.append(_finding(
+                                DANGLING, item_path,
+                                f"layout grid item must fit within {columns} columns with non-negative x/y and positive w/h",
+                                ref=ref_str, skill="page",
+                            ))
+                continue
             # 槽位表被多包了一层 `slots`。真跑撞过一次 6/6 页全中：prompt 里
             # 那句 "a layout object with slots summary/primary/..." 会被读成
             # "有个叫 slots 的键"（跟 binding=none 是同一类哨兵词事故）。

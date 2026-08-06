@@ -37,7 +37,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 from pathlib import Path
 
 from .app_preview import OverviewPreviewSink
-from .enrich_timing import stage as _enrich_stage
+from .enrich_timing import remaining_run_budget_seconds, stage as _enrich_stage
 from .identity_palette_hint import BRAND_LABEL, BRAND_SEED, derive_prompt_palette
 from .sheet_palette import usable_chart_palette
 from .palette_guard import extract_hex_colors, palette_report, repair_colors
@@ -2625,7 +2625,46 @@ def _enrich_monitor_page_overviews_inner(
     )
     shot_used = 0
     sheet_used = 0
-    for page in (model.get("page") or {}).get("pages") or []:
+    pages = (model.get("page") or {}).get("pages") or []
+    eligible_pages = [
+        page
+        for page in pages
+        if str(page.get("kind") or "").strip() in ("monitor", "dashboard")
+        and (bool(page.get("stats")) or bool(page.get("charts")))
+        and not (
+            isinstance(page.get("freeformOverview"), dict)
+            and page["freeformOverview"].get("root")
+        )
+    ]
+    sync_page = next(
+        (page for page in eligible_pages if str(page.get("id") or "") == landing_ref),
+        eligible_pages[0] if eligible_pages else None,
+    )
+    sync_page_id = str((sync_page or {}).get("id") or "")
+
+    # 真实长尾里首页参照图、取色、版式合计会占 2~6 分钟。运行预算只约束这些
+    # fail-open 视觉增强，不中断已经过结构闸的业务模型、权限和流程。
+    remaining = remaining_run_budget_seconds()
+    design_total = 1 if device in ("desktop", "phone") else 2
+    required_visual_seconds = 150 + (130 * design_total)
+    reference_budget_available = remaining is None or remaining >= required_visual_seconds
+    if sync_page is not None and remaining is not None and remaining < 130 * design_total:
+        sync_page["freeformOverviewStatus"] = "deferred_budget"
+        with _enrich_stage(
+            "monitor.design",
+            page=sync_page_id,
+            device=device or "unspecified",
+            current=1,
+            total=design_total,
+        ) as skipped:
+            skipped["got"] = 0
+            skipped["skippedReason"] = "deadline"
+        for page in eligible_pages:
+            if page is not sync_page:
+                page["freeformOverviewStatus"] = "deferred"
+        return model
+
+    for page in pages:
         # 2026-07-27：dashboard 也纳入——此前只认 monitor,LLM 把总览页写成
         # dashboard(prompt 曾反向引导)或夹具用 dashboard 时,设计版式整条
         # 生成不出来,首页恒回固定骨架。渲染端 AppRuntimeScreen 同步放宽。
@@ -2643,6 +2682,11 @@ def _enrich_monitor_page_overviews_inner(
         existing_overview = page.get("freeformOverview")
         if isinstance(existing_overview, dict) and existing_overview.get("root"):
             continue
+        page_id_now = str(page.get("id") or "")
+        if page_id_now != sync_page_id:
+            page["freeformOverviewStatus"] = "deferred"
+            continue
+        page["freeformOverviewStatus"] = "generating"
         brief = _monitor_overview_design_brief(page, datamodel)
         # 参照板走**出图受众**那一份：同一批内容，但积木用视觉描述而不是
         # blockRef 的 JSON 形态（见 _monitor_overview_design_brief 的 audience）。
@@ -2652,9 +2696,8 @@ def _enrich_monitor_page_overviews_inner(
         # 落地页没声明时退回"第一个符合条件的页"——不能因为模型漏填一个字段
         # 就整个应用一张图都没有。按尝试计费：生图失败也算用掉了，否则端点
         # 抖动时这个"一张"会退化成"每页都试一次"。
-        page_id_now = str(page.get("id") or "")
         is_landing = bool(landing_ref) and page_id_now == landing_ref
-        use_ref = sheet_enabled and sheet_used == 0 and (is_landing or not landing_ref)
+        use_ref = sheet_enabled and sheet_used == 0 and reference_budget_available
         allow_shot = use_ref and shot_used < max_screenshot_verify
         if use_ref:
             sheet_used += 1
@@ -2669,7 +2712,9 @@ def _enrich_monitor_page_overviews_inner(
         page_id = str(page.get("id") or "")
         # 埋点①：参照板生图。单张实测 60~85s，是这一段最贵的一步，也是并行化
         # 收益最大的那一处（见审查文档「八、7」第 2 项）——改造前后就靠这条线对比。
-        with _enrich_stage("monitor.sheet", page=page_id, device=device or "unspecified") as _st:
+        with _enrich_stage(
+            "monitor.sheet", page=page_id, device=device or "unspecified", current=1, total=1
+        ) as _st:
             sheet_b64 = (
                 _generate_overview_sheet_b64(
                     sheet_brief, datamodel, theme_id=theme_id, device=device,
@@ -2701,8 +2746,15 @@ def _enrich_monitor_page_overviews_inner(
         #
         # 取不到/不合格返回 None，什么都不写——前端读不到 chartColors 就回落
         # 账本色序，跟这次改动之前的行为一模一样（fail-open）。
-        if sheet_b64 and not _existing_chart_colors(model):
-            with _enrich_stage("monitor.palette", page=page_id) as _pst:
+        palette_remaining = remaining_run_budget_seconds()
+        if (
+            sheet_b64
+            and not _existing_chart_colors(model)
+            and (palette_remaining is None or palette_remaining >= 160)
+        ):
+            with _enrich_stage(
+                "monitor.palette", page=page_id, device=device or "unspecified", current=1, total=1
+            ) as _pst:
                 from .sheet_palette import extract_chart_palette
 
                 picked = extract_chart_palette(sheet_b64)
@@ -2710,8 +2762,33 @@ def _enrich_monitor_page_overviews_inner(
             if picked:
                 _write_chart_colors(model, picked)
                 print(f"[freeform_block] 参照图取色 → 图表色 {picked}")
+        elif sheet_b64 and not _existing_chart_colors(model):
+            with _enrich_stage(
+                "monitor.palette", page=page_id, device=device or "unspecified", current=1, total=1
+            ) as skipped:
+                skipped["got"] = 0
+                skipped["skippedReason"] = "deadline"
+        design_remaining = remaining_run_budget_seconds()
+        if design_remaining is not None and design_remaining < 130 * design_total:
+            page["freeformOverviewStatus"] = "deferred_budget"
+            with _enrich_stage(
+                "monitor.design",
+                page=page_id,
+                device=device or "unspecified",
+                current=1,
+                total=design_total,
+            ) as skipped:
+                skipped["got"] = 0
+                skipped["skippedReason"] = "deadline"
+            continue
         try:
-            with _enrich_stage("monitor.design", page=page_id, device=device or "unspecified"):
+            with _enrich_stage(
+                "monitor.design",
+                page=page_id,
+                device=device or "unspecified",
+                current=1,
+                total=design_total,
+            ):
                 content = generate_freeform_block(
                     brief, datamodel, theme_id=theme_id, device=device,
                     generated_theme=generated_theme,
@@ -2762,7 +2839,9 @@ def _enrich_monitor_page_overviews_inner(
                 try:
                     # 埋点③：手机档。注释里写的是约 67s/页，这条线用来核实这个
                     # 数字是否还成立——它同时是"跳过手机档省了多少"的依据。
-                    with _enrich_stage("monitor.design", page=page_id, device="phone"):
+                    with _enrich_stage(
+                        "monitor.design", page=page_id, device="phone", current=2, total=2
+                    ):
                         mobile_content = generate_freeform_block(
                             brief, datamodel, theme_id=theme_id, device="phone",
                             generated_theme=generated_theme,
@@ -2785,7 +2864,9 @@ def _enrich_monitor_page_overviews_inner(
                         f"falling back to the desktop design on phone: {str(exc)[:160]}"
                     )
             page["freeformOverview"] = content
+            page["freeformOverviewStatus"] = "ready"
         except FreeformGenerationError as exc:
+            page["freeformOverviewStatus"] = "failed"
             print(
                 f"[freeform_block] {page.get('id')} monitor overview generation failed, "
                 f"keeping fixed skeleton: {str(exc)[:200]}"

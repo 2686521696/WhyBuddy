@@ -1252,6 +1252,55 @@ def test_layout_nested_slots_does_not_swallow_other_slot_errors():
     assert any("bogus_slot" in m for m in msgs), msgs
 
 
+def test_layout_grid_valid_refs_and_page_content_pass():
+    model = _make_model_with_landing()
+    page = model["page"]["pages"][0]
+    page["blocks"] = [{"id": "b1", "type": "MetricGrid"}]
+    page["layout"] = {
+        "grid": {
+            "desktop": [
+                {"blockRef": "b1", "x": 0, "y": 0, "w": 4, "h": 1},
+                {"blockRef": "page-content", "x": 4, "y": 0, "w": 8, "h": 3},
+            ],
+            "phone": [
+                {"blockRef": "b1", "x": 0, "y": 0, "w": 4, "h": 1},
+                {"blockRef": "page-content", "x": 0, "y": 1, "w": 4, "h": 2},
+            ],
+        }
+    }
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    findings = [f for f in result["findings"] if ".layout.grid" in f.get("path", "")]
+    assert findings == [], findings
+
+
+def test_layout_grid_rejects_invalid_breakpoint_coordinates_bounds_duplicates_and_refs():
+    model = _make_model_with_landing()
+    page = model["page"]["pages"][0]
+    page["blocks"] = [{"id": "b1", "type": "MetricGrid"}]
+    page["layout"] = {
+        "grid": {
+            "watch": [{"blockRef": "b1", "x": 0, "y": 0, "w": 1, "h": 1}],
+            "desktop": [
+                {"blockRef": "b1", "x": 0.5, "y": 0, "w": 4, "h": 1},
+                {"blockRef": "b1", "x": 0, "y": 1, "w": 4, "h": 1},
+                {"blockRef": "missing", "x": 0, "y": 2, "w": 13, "h": 0},
+            ],
+        }
+    }
+    from services.v5_model_gate import validate_five_system_model
+    result = validate_five_system_model(model, require_landing_page_ref=True)
+    messages = [
+        f["message"] for f in result["findings"]
+        if ".layout.grid" in f.get("path", "")
+    ]
+    assert any("breakpoint" in message for message in messages), messages
+    assert any("integers" in message for message in messages), messages
+    assert any("duplicate" in message for message in messages), messages
+    assert any("not found" in message for message in messages), messages
+    assert any("within 12 columns" in message for message in messages), messages
+
+
 # ---------- WorkflowTimeline（2026-07-23）：props.chainRef 深校验 ----------
 
 

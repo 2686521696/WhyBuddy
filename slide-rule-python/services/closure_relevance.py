@@ -106,26 +106,53 @@ def containment(a: str, b: str) -> float:
     return len(ba & bb) / min(len(ba), len(bb))
 
 
-def collect_model_terms(model: Any) -> List[str]:
-    """从五系统模型里取实体名与页面名——对应 RAGAS 的 retrieved_contexts。
+_MODEL_TERM_KEYS = frozenset({"name", "label", "title", "description"})
 
-    只取 name 不取 id：id 常是拼音/英文短码（`leave_request`），跟中文目标
-    比对没有意义，反而会引入噪声匹配。
+
+def _collect_named_terms(value: Any, terms: List[str]) -> None:
+    """Collect only schema-owned display fields, never arbitrary generated prose."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in _MODEL_TERM_KEYS and isinstance(child, str) and child.strip():
+                terms.append(child.strip())
+            elif isinstance(child, (dict, list)):
+                _collect_named_terms(child, terms)
+    elif isinstance(value, list):
+        for child in value:
+            _collect_named_terms(child, terms)
+
+
+def collect_model_terms(model: Any) -> List[str]:
+    """Extract evidence terms from all final six-system ``modelSection`` values.
+
+    IDs and free-form content remain excluded. In addition to controlled display
+    fields, a few structural capabilities are derived from the schema itself:
+    RBAC proves role/permission support and a dashboard page proves a data board.
     """
-    terms: List[str] = []
     if not isinstance(model, dict):
-        return terms
-    datamodel = model.get("datamodel")
-    if isinstance(datamodel, dict):
-        for entity in datamodel.get("entities") or []:
-            if isinstance(entity, dict) and str(entity.get("name") or "").strip():
-                terms.append(str(entity["name"]).strip())
+        return []
+
+    terms: List[str] = []
+    for section in ("datamodel", "workflow", "rbac", "page", "aigc", "appbundle"):
+        _collect_named_terms(model.get(section), terms)
+
+    rbac = model.get("rbac")
+    if isinstance(rbac, dict) and (rbac.get("roles") or rbac.get("menus") or rbac.get("permissions")):
+        terms.extend(["角色", "权限", "角色权限"])
+
     page = model.get("page")
-    if isinstance(page, dict):
-        for pg in page.get("pages") or []:
-            if isinstance(pg, dict) and str(pg.get("name") or "").strip():
-                terms.append(str(pg["name"]).strip())
-    return terms
+    pages = page.get("pages") if isinstance(page, dict) else None
+    for pg in pages or []:
+        if not isinstance(pg, dict):
+            continue
+        if str(pg.get("kind") or "").strip() in ("dashboard", "monitor"):
+            terms.extend(["数据看板", "运营总览"])
+
+    identity = ((model.get("appbundle") or {}).get("appIdentity") or {})
+    if isinstance(identity, dict) and str(identity.get("productName") or "").strip():
+        terms.append(str(identity["productName"]).strip())
+
+    return list(dict.fromkeys(terms))
 
 
 def goal_coverage(goal: str, terms: Sequence[str]) -> Dict[str, Any]:

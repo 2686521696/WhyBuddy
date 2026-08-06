@@ -49,6 +49,7 @@ from __future__ import annotations
 import os
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from typing import Any, Iterator
 
 _LOG_PREFIX = "[enrich-timing]"
@@ -57,6 +58,34 @@ _LOG_PREFIX = "[enrich-timing]"
 # 没有任何输出；默认关掉等于白写。噪音敏感的场景（比如批量跑夹具再生成）
 # 可以设 0 关掉。
 _ENABLED_ENV = "SLIDERULE_ENRICH_TIMING"
+_RUN_BUDGET_ENV = "SLIDERULE_RUN_BUDGET_SECONDS"
+_DEFAULT_RUN_BUDGET_SECONDS = 540
+_run_deadline: ContextVar[float | None] = ContextVar("sliderule_run_deadline", default=None)
+
+
+def run_budget_seconds() -> int:
+    raw = (os.getenv(_RUN_BUDGET_ENV) or "").strip()
+    try:
+        value = int(raw) if raw else _DEFAULT_RUN_BUDGET_SECONDS
+    except ValueError:
+        value = _DEFAULT_RUN_BUDGET_SECONDS
+    return value if value > 0 else _DEFAULT_RUN_BUDGET_SECONDS
+
+
+def begin_run_budget(*, seconds: float | None = None) -> Token:
+    budget = float(run_budget_seconds() if seconds is None else seconds)
+    return _run_deadline.set(time.perf_counter() + max(0.0, budget))
+
+
+def reset_run_budget(token: Token) -> None:
+    _run_deadline.reset(token)
+
+
+def remaining_run_budget_seconds() -> float | None:
+    deadline = _run_deadline.get()
+    if deadline is None:
+        return None
+    return max(0.0, deadline - time.perf_counter())
 
 
 def timing_enabled() -> bool:

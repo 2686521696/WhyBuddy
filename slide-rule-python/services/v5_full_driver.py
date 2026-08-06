@@ -173,6 +173,10 @@ def _is_closure_cap(capability_id: str) -> bool:
     return "appbundle" in cap or "runtimeclosure" in cap
 
 
+def _contains_closure_pick(picks: list) -> bool:
+    return any(_is_closure_cap(item.get("capabilityId", "")) for item in picks)
+
+
 def _is_commit_order_sensitive_cap(capability_id: str) -> bool:
     """Caps whose EXECUTOR reads committed artifacts (not just goal text).
 
@@ -419,7 +423,13 @@ def _run_selected_batch_parallel(state: V5SessionState, selected: List[Dict[str,
     persist_state(state)
 
 
-def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: str, loop: int) -> V5SessionState:
+def _ensure_runtime_closure_evidence(
+    state: V5SessionState,
+    user_instruction: str,
+    loop: int,
+    repair: bool = False,
+    closure_attempted: bool = False,
+) -> V5SessionState:
     """Append Python-owned AppBundle closure evidence for replay when a real command ran.
 
     The UI can derive preview surfaces, but reload requires persisted Python evidence.
@@ -431,6 +441,8 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
     # 没有，右侧是一块假装无事发生的空看板。空指令回落 goal 原文照常收口。
     instruction = (user_instruction or "").strip() or (goal_text or "").strip()
     if not instruction:
+        return state
+    if closure_attempted and not repair:
         return state
     existing_closure = derive_publish_closure_response(state)
     _refine_set = False
@@ -604,6 +616,74 @@ def reusable_model_for_turn(state: "V5SessionState") -> "Optional[Dict[str, Any]
     return last["model"]
 
 
+def trusted_closure_decision(
+    state: "V5SessionState", user_instruction: str = "", *, repair: bool = False
+) -> str:
+    """Return the deterministic transition after a runtime closure.
+
+    This is the local equivalent of a LangGraph conditional edge to END and
+    Temporal's USE_EXISTING workflow-ID policy: a successful closure for the
+    current turn and goal is terminal. Only an explicit repair or a genuinely
+    new instruction may schedule more work.
+    """
+    if repair:
+        return "repair"
+
+    goal = getattr(state, "goal", None) or {}
+    goal_text = str(goal.get("text") or "").strip() if isinstance(goal, dict) else str(goal).strip()
+    instruction = str(user_instruction or "").strip()
+    if instruction and goal_text and instruction != goal_text:
+        return "continue"
+
+    closure = getattr(state, "publishClosure", None)
+    if not isinstance(closure, dict) or closure.get("blocked") is not False:
+        return "continue"
+    if int(closure.get("evidencePresentCount") or 0) < int(closure.get("skillCount") or 6):
+        return "continue"
+    return "end" if reusable_model_for_turn(state) is not None else "continue"
+
+
+def ensure_closure_pick_by_deadline(
+    state: "V5SessionState",
+    picks: list,
+    *,
+    loop_index: int,
+    repair: bool,
+    closure_attempted: bool = False,
+) -> list:
+    """第二轮仍未首次收口时，把闭环加入当前并行批次。
+
+    第一轮保留给意图、结构、路线和风险等基础能力。第二轮开始，闭环与证据、
+    批判、综合并行；五系统模型由明确目标生成，不需要再等待一整轮重复规划。
+    """
+    if (
+        repair
+        or closure_attempted
+        or loop_index < 1
+        or isinstance(getattr(state, "publishClosure", None), dict)
+    ):
+        return picks
+    if any(_is_closure_cap(str(item.get("capabilityId") or "")) for item in picks):
+        return picks
+    closure_pick = {"capabilityId": "appbundle.runtimeClosure", "roleId": "综合"}
+    return [*picks[:4], closure_pick]
+
+
+def terminal_phase_decision(
+    state: "V5SessionState", gate: Dict[str, Any], publish_closure: Optional[Dict[str, Any]]
+) -> tuple[str, Optional[str]]:
+    """Resolve the final runtime phase from one authoritative closure verdict."""
+    if not isinstance(publish_closure, dict):
+        return "awaiting", "closure_missing"
+    if publish_closure.get("blocked") is True:
+        return "awaiting", "closure_blocked"
+    goal = getattr(state, "goal", None) or {}
+    goal_clear = isinstance(goal, dict) and goal.get("status") == "clear"
+    if bool((gate or {}).get("passed")) or goal_clear:
+        return "done", None
+    return "awaiting", "coverage"
+
+
 def extract_model_from_closure(closure) -> "Optional[Dict[str, Any]]":
     """从闭环 perSkillEvidence 的 modelSection 还原五系统模型（缺任一段返回 None）。"""
     per_skill = (
@@ -729,6 +809,9 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
     All evidence from stable RAG.
     Implements V5.2 phase transitions (idle/orchestrating/awaiting/failed/done) as PYTHON_AUTHORITY.
     """
+    from . import enrich_timing as _enrich_timing
+
+    _budget_token = _enrich_timing.begin_run_budget()
     state = initial_state
     _advance_turn_version(state)
     state.runtimePhase = "orchestrating"
@@ -740,6 +823,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
     loop = 0
     plan = type("P", (), {"selected": []})()  # safe default for phase decision on early error
     picks = []
+    closure_attempted = False
     executed_loops = 0
     no_progress_streak = 0
     from .repeat_policy import max_repeat_per_cap
@@ -754,6 +838,25 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
         prev_resolved = _count_resolved(state)
         while loop < max_loops:
             ui = user_instruction or ""
+            if trusted_closure_decision(state, ui, repair=False) == "end":
+                state = resolve_coverage_gaps_from_state(state)
+                gate = evaluate_coverage_gate(state)
+                if gate.get("passed") and isinstance(state.goal, dict):
+                    state.goal["status"] = "clear"
+                now = datetime.now(timezone.utc).isoformat()
+                dl = getattr(state, "decisionLedger", []) or []
+                dl.append(SchedulingDecision(
+                    id=f"dec-{loop}-trusted-closure-end",
+                    turnId=f"loop-{loop}",
+                    saw=["appbundle.runtimeclosure"],
+                    chose=[],
+                    skipped=[{"capabilityId": "planning", "reason": "trusted_closure_reused"}],
+                    rationale="trusted current-turn closure is terminal; deterministic coverage check only",
+                    createdAt=now,
+                    source="local_heuristic",
+                ))
+                state.decisionLedger = dl
+                break
             plan = orchestrate_plan(state, f"loop-{loop}", ui)
             # PYTHON_AUTHORITY: use explicit pick_next_capabilities for V5.2 selection semantics + fallbacks
             # (pick is sole authority; empty means converge; no fallback to plan.selected)
@@ -796,8 +899,16 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                         # 做出来的东西不因此变差——显式写出来，不靠默认值猜
                         impact=IMPACT_REASONING,
                     )
+            picks = ensure_closure_pick_by_deadline(
+                state,
+                picks,
+                loop_index=loop,
+                repair=False,
+                closure_attempted=closure_attempted,
+            )
             state = reconcile_coverage(state)
             selected = picks
+            closure_attempted = closure_attempted or _contains_closure_pick(selected)
 
             # max_repeat_guard: filter candidates by run count; stop if had picks but all filtered
             if picks:
@@ -980,11 +1091,15 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                 break
             loop += 1
             persist_state(state)
-        state = _ensure_runtime_closure_evidence(state, user_instruction, loop)
+        state = _ensure_runtime_closure_evidence(
+            state, user_instruction, loop, False, closure_attempted
+        )
         # Final phase: done if clear/coverage, else awaiting (converged or budget)
         state = resolve_coverage_gaps_from_state(state)
         gate = evaluate_coverage_gate(state)
-        if gate.get("passed") or (state.goal or {}).get("status") == "clear":
+        final_closure = derive_publish_closure_response(state)
+        final_phase, final_reason = terminal_phase_decision(state, gate, final_closure)
+        if final_phase == "done":
             if gate.get("passed") and isinstance(state.goal, dict):
                 state.goal["status"] = "clear"  # 最终门通过时 phase/status 保持一致
             state.runtimePhase = "done"
@@ -996,9 +1111,12 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                 pass  # already set with ledger
             elif loop >= max_loops:
                 state.awaitReason = "max_loops"
+            elif not picks:
+                state.awaitReason = "convergence"
+            elif final_reason in ("closure_blocked", "closure_missing"):
+                state.awaitReason = final_reason
             else:
-                # use last picks (from pick_next_capabilities) for convergence; empty pick owns converge decision
-                state.awaitReason = "convergence" if not picks else "coverage"
+                state.awaitReason = "coverage"
             append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end", capabilityId="driver", kind="think", text=f"phase_changed: awaiting ({state.awaitReason or 'coverage'})", order=10)
             persist_state(state)
     except Exception as exc:
@@ -1008,6 +1126,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
         append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end", capabilityId="driver", kind="think", text=f"phase_changed: failed", order=10)
         persist_state(state)
     persist_state(state)
+    _enrich_timing.reset_run_budget(_budget_token)
     return state
 
 
@@ -1114,17 +1233,46 @@ def _enrich_stage_event(phase: str, name: str, fields: Dict[str, Any]) -> Option
     if entry is None:
         return None
     label, hint = entry
+    common = {
+        "pageId": fields.get("page"),
+        "device": fields.get("device"),
+        "current": fields.get("current"),
+        "total": fields.get("total"),
+        "elapsedMs": 0 if phase == "start" else fields.get("ms", 0),
+    }
     if phase == "start":
-        return {"type": "reasoning_step", "label": label, "hint": hint, "stage": name}
+        return {
+            "type": "reasoning_step",
+            "label": label,
+            "hint": hint,
+            "stage": name,
+            **common,
+        }
     return {
         "type": "reasoning_step_result",
         "label": label,
         "stage": name,
         "ms": fields.get("ms"),
+        **common,
+        "skippedReason": fields.get("skippedReason"),
         # got=0 是"这一步跳过了/没产出"（比如没配生图 key），不是失败——
         # ok 才是失败标志。两者混同的话，未配置生图的环境会满屏红叉。
         "error": not fields.get("ok", True),
     }
+
+
+def _progress_heartbeat_event(active: Dict[str, Any], *, elapsed_ms: int) -> Dict[str, Any]:
+    return {
+        "type": "progress_heartbeat",
+        "stage": active.get("stage"),
+        "label": active.get("label"),
+        "pageId": active.get("pageId"),
+        "device": active.get("device"),
+        "current": active.get("current"),
+        "total": active.get("total"),
+        "elapsedMs": elapsed_ms,
+    }
+
 
 async def drive_full_v5_session_stream(
     initial_state: "V5SessionState",
@@ -1177,11 +1325,16 @@ async def drive_full_v5_session_stream(
     _enrich_timing.set_stage_sink(
         lambda phase, name, fields: _stage_q.put((phase, name, dict(fields)))
     )
+    _budget_token = _enrich_timing.begin_run_budget()
 
     async def _pump_llm_deltas(task: "asyncio.Task"):
         """任务运行期间持续排水：把队列里的（标签, 增量）按相邻同标签聚合成
         llm_delta 事件（150ms 批量，防逐 token 事件风暴）。先记完成标志再排水，
         保证任务结束瞬间到达的尾部增量也被冲出，不会滞留队列。"""
+        active_stage: Optional[Dict[str, Any]] = None
+        active_started = 0.0
+        last_heartbeat = 0.0
+        heartbeat_seconds = 15.0
         while True:
             finished = task.done()
             batches: List[tuple] = []
@@ -1203,9 +1356,26 @@ async def drive_full_v5_session_stream(
                     phase, name, fields = _stage_q.get_nowait()
                     ev = _enrich_stage_event(phase, name, fields)
                     if ev is not None:
+                        now = _time.perf_counter()
+                        if phase == "start":
+                            active_stage = ev
+                            active_started = now
+                            last_heartbeat = now
                         yield ev
+                        if phase == "end" and active_stage is not None:
+                            active_stage = None
             except _queue.Empty:
                 pass
+            now = _time.perf_counter()
+            if (
+                active_stage is not None
+                and now - last_heartbeat >= heartbeat_seconds
+            ):
+                yield _progress_heartbeat_event(
+                    active_stage,
+                    elapsed_ms=int((now - active_started) * 1000),
+                )
+                last_heartbeat = now
             if finished:
                 break
             await asyncio.sleep(0.15)
@@ -1226,6 +1396,7 @@ async def drive_full_v5_session_stream(
 
     loop = 0
     picks: list = []
+    closure_attempted = False
     no_progress_streak = 0
     from .repeat_policy import max_repeat_per_cap
 
@@ -1245,6 +1416,26 @@ async def drive_full_v5_session_stream(
 
         while loop < max_loops:
             ui = user_instruction or ""
+            if trusted_closure_decision(state, ui, repair=repair) == "end":
+                state = await asyncio.to_thread(resolve_coverage_gaps_from_state, state)
+                gate = await asyncio.to_thread(evaluate_coverage_gate, state)
+                if gate.get("passed") and isinstance(state.goal, dict):
+                    state.goal["status"] = "clear"
+                now = datetime.now(timezone.utc).isoformat()
+                dl = getattr(state, "decisionLedger", []) or []
+                dl.append(SchedulingDecision(
+                    id=f"dec-{loop}-trusted-closure-end",
+                    turnId=f"loop-{loop}",
+                    saw=["appbundle.runtimeclosure"],
+                    chose=[],
+                    skipped=[{"capabilityId": "planning", "reason": "trusted_closure_reused"}],
+                    rationale="trusted current-turn closure is terminal; deterministic coverage check only",
+                    createdAt=now,
+                    source="local_heuristic",
+                ))
+                state.decisionLedger = dl
+                persist_state(state)
+                break
             # ⚠ 规划信号必须发在**整段规划之前**，不是发在 agentic pick 之前。
             #
             # 2026-08-04 第一版发晚了：信号在 agentic pick 前面，可它前面还有
@@ -1298,8 +1489,16 @@ async def drive_full_v5_session_stream(
                         # 做出来的东西不因此变差——显式写出来，不靠默认值猜
                         impact=IMPACT_REASONING,
                     )
+            picks = ensure_closure_pick_by_deadline(
+                state,
+                picks,
+                loop_index=loop,
+                repair=repair,
+                closure_attempted=closure_attempted,
+            )
             state = await asyncio.to_thread(reconcile_coverage, state)
             selected = picks
+            closure_attempted = closure_attempted or _contains_closure_pick(selected)
             # 规划段收尾。**必须在这里发**，不能等到执行批次里去发——
             # 下面 max_repeat_guard / no_progress 两条都会 break 出循环，
             # 那两条路上如果没有 result，前端那条 planning 会一直转到流结束。
@@ -1557,7 +1756,14 @@ async def drive_full_v5_session_stream(
         # 等待线程期间持续排水（共享带标签队列），把 LLM 的实时输出以
         # llm_delta 事件推给前端（Claude 式"看得见的想法"）。
         closure_task = asyncio.ensure_future(
-            asyncio.to_thread(_ensure_runtime_closure_evidence, state, user_instruction, loop)
+            asyncio.to_thread(
+                _ensure_runtime_closure_evidence,
+                state,
+                user_instruction,
+                loop,
+                repair,
+                closure_attempted,
+            )
         )
         async for _delta_event in _pump_llm_deltas(closure_task):
             yield _delta_event
@@ -1565,7 +1771,9 @@ async def drive_full_v5_session_stream(
 
         state = await asyncio.to_thread(resolve_coverage_gaps_from_state, state)
         gate = await asyncio.to_thread(evaluate_coverage_gate, state)
-        if gate.get("passed") or (state.goal or {}).get("status") == "clear":
+        final_closure = derive_publish_closure_response(state)
+        final_phase, final_reason = terminal_phase_decision(state, gate, final_closure)
+        if final_phase == "done":
             if gate.get("passed") and isinstance(state.goal, dict):
                 state.goal["status"] = "clear"  # 最终门通过时 phase/status 保持一致
             state.runtimePhase = "done"
@@ -1579,6 +1787,8 @@ async def drive_full_v5_session_stream(
                     state.awaitReason = "max_loops"
                 elif not picks:
                     state.awaitReason = "convergence"
+                elif final_reason in ("closure_blocked", "closure_missing"):
+                    state.awaitReason = final_reason
                 else:
                     state.awaitReason = "coverage"
             append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end",
@@ -1599,6 +1809,7 @@ async def drive_full_v5_session_stream(
         _caps.set_capability_delta_sink(None)
         _gen.set_generate_delta_sink(None)
         _enrich_timing.set_stage_sink(None)
+        _enrich_timing.reset_run_budget(_budget_token)
         # E29：精修/直供上下文兜底清理（异常路径防泄漏到下一轮）
         _gen.set_refine_context(None)
         _gen.set_model_override(None)

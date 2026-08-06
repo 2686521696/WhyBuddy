@@ -218,3 +218,14 @@ def test_contract_explains_what_the_slots_look_like():
     assert "What the slots actually look like" in prompt
     assert "2/3 vs 1/3" in prompt
     assert "summary → primary/secondary → activity → content" in prompt
+
+
+def test_contract_teaches_responsive_business_page_grid():
+    from services import schema_legal
+
+    prompt = schema_legal.experience_block_prompt_block()
+    assert "layout.grid" in prompt
+    assert "desktop=12, tablet=8, phone=4" in prompt
+    assert "page-content" in prompt
+    assert "blockRef/x/y/w/h" in prompt
+    assert "one placement per blockRef per breakpoint" in prompt

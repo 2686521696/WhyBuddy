@@ -158,6 +158,45 @@ class TestExecutorReuse:
         assert ex._reuse_this_turn_model(st, {}) is False
 
 
+class TestTrustedClosureDecision:
+    def test_同轮同目标的可信闭环直接结束(self):
+        """Temporal USE_EXISTING + LangGraph END：同一输入的成功闭环不再进 planning。"""
+        from services import v5_full_driver as driver
+
+        decide = getattr(driver, "trusted_closure_decision", None)
+        assert callable(decide), "驱动还没有可信闭环的确定性终止边"
+
+        st = _state()
+        st.publishClosure = {
+            "blocked": False,
+            "evidencePresentCount": 6,
+            "skillCount": 6,
+            "perSkillEvidence": {
+                key: {"evidencePresent": True, "modelSection": MODEL[key]}
+                for key in ("datamodel", "workflow", "rbac", "page", "aigc", "appbundle")
+            },
+        }
+
+        assert decide(st, GOAL, repair=False) == "end"
+
+    def test_同步和流式驱动都在_planning_之前检查终止边(self):
+        import inspect
+
+        from services import v5_full_driver as driver
+
+        src = inspect.getsource(driver)
+        checks = src.split("if trusted_closure_decision(state, ui", 2)
+        assert len(checks) == 3, "同步和流式驱动必须各有一条确定性终止边"
+        for body in checks[1:]:
+            planning_at = min(
+                pos for pos in (
+                    body.find("orchestrate_plan"),
+                    body.find('yield {"type": "reasoning_step", "label": "planning"'),
+                ) if pos >= 0
+            )
+            assert body.find('== "end"') < planning_at
+
+
 # ── 这把锁得真的被合上（2026-08-05）──────────────────────────────
 #
 # 上面整组都绿，可 2026-08-05 真跑里复用**一次都没命中**：第二次收口老老实实

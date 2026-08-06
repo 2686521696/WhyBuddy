@@ -19,6 +19,11 @@ import {
   type NormalizedFieldOption,
 } from "./field-display";
 import { DESIGN_RECIPE_IDS } from "./design-recipes";
+import {
+  PAGE_CONTENT_REF,
+  normalizeBusinessGrid,
+  type BusinessGridLayouts,
+} from "./business-page-layout";
 
 export interface AppFormFieldSchema {
   id: string;
@@ -253,6 +258,8 @@ export interface AppPageLayoutSchema {
     activity?: string[];
     content?: string[];
   };
+  /** RGL-compatible responsive placements rendered with native CSS Grid. */
+  grid?: BusinessGridLayouts;
 }
 
 export interface AppStatCardSchema {
@@ -435,13 +442,17 @@ function deriveLayout(
   if (directIds.size === 0) return null;
   const layout = unwrapNestedSlots(rawLayout);
   const slots = normalizeLayoutSlotMap(layout, directIds);
+  const grid = normalizeBusinessGrid(
+    (layout as Record<string, unknown>).grid,
+    new Set([...directIds, PAGE_CONTENT_REF])
+  );
   const mobileRaw = (layout as Record<string, unknown>).mobile;
   const mobile = mobileRaw
     ? normalizeLayoutSlotMap(unwrapNestedSlots(mobileRaw), directIds)
     : undefined;
-  const hasAny = LAYOUT_SLOT_KEYS.some(k => slots[k].length > 0);
+  const hasAny = LAYOUT_SLOT_KEYS.some(k => slots[k].length > 0) || Boolean(grid);
   if (!hasAny) return null;
-  return { ...slots, mobile };
+  return { ...slots, mobile, grid };
 }
 
 export function deriveAppRuntimeSchema(

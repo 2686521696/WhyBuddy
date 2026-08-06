@@ -12,6 +12,7 @@ import { DownOutlined } from "@ant-design/icons";
 
 export interface PhoneRolePickerProps {
   roles: string[];
+  roleLabels: Record<string, string>;
   value: string | undefined;
   onChange: (role: string) => void;
   getContainer?: () => HTMLElement;
@@ -19,12 +20,14 @@ export interface PhoneRolePickerProps {
 
 export default function PhoneRolePicker({
   roles,
+  roleLabels,
   value,
   onChange,
   getContainer,
 }: PhoneRolePickerProps) {
   const [open, setOpen] = React.useState(false);
-  const columns = [roles.map(r => ({ value: r, label: r }))];
+  const columns = [roles.map(r => ({ value: r, label: roleLabels[r] ?? r }))];
+  const selectedLabel = value ? (roleLabels[value] ?? value) : "选择角色";
 
   return (
     <>
@@ -50,7 +53,7 @@ export default function PhoneRolePicker({
             whiteSpace: "nowrap",
           }}
         >
-          {value ?? "选择角色"}
+          {selectedLabel}
         </span>
         <DownOutlined style={{ fontSize: 9, color: "#999", flexShrink: 0 }} />
       </a>

@@ -451,6 +451,8 @@ subgraph CLOSURE["09 五系统闭环装配层 / Five-System Closure（▲ 07-17 
   REASK5["▲ 门裁决回喂 / gate-feedback retry (E37)<br/>findings原文喂回·有界重生成一次<br/>错哪改哪·两版都拦仍fail-closed"]:::fallback
   DOMFIX["▲ 内置演示域夹具 / builtin_domain_models (E35)<br/>采购·请假·工单·入职四域冻结过门模型·运行时零LLM<br/>★07-26:识别改词边界+强弱词分级(泛词单独不认·认不出走LLM生成·ADR-0002)<br/>产物provenance标注builtin-domain·夹具离线预增强生成主题(golden-file再生成)"]:::state
   CLOSEV["▲ 闭环证据 / appbundle.runtimeClosure<br/>六段 perSkillEvidence·closureHash/stableDigest指纹<br/>modelSection纯载荷(不进指纹/信任判定)"]:::ledger
+  GREL{"▲ Goal relevance / closure_relevance<br/>直接检查最终六系统 modelSection 的受控显示字段<br/>RBAC派生角色权限·monitor/dashboard派生数据看板<br/>不再只看实体名/页面名"}:::gate
+  TERMINAL{"▲ 确定性终止边 / trusted_closure_decision<br/>当前turn+goalDigest模型可复用·closure非blocked·证据6/6 → END<br/>输入变化→继续·repair→仅修复<br/>命中后只跑coverage/delivery机械检查·禁止LLM planning/agentic picker"}:::gate
   FAILSAFE["▲ 闭环兜底 / fail-closed failsafe (E37)<br/>重建异常→确定性blocked闭环(CLOSURE_REBUILD_FAILED带因)<br/>空指令回落goal收口·publishClosure永不为null"]:::fallback
   APPSTAGE["▲ app 主舞台 / App Stage<br/>closed 6/6 → 右栏长出可操作应用<br/>切角色·录数据·走流程·桌面/手机/代码三视图"]:::done
 end
@@ -460,6 +462,8 @@ subgraph ENRICH["10 体验层生成 / Experience Enrichment（★ 07-24 新增�
   THEME["✪ 08-03 **本节点已整体移除**（保留在图上是为了让读到 V5.7 的人知道它去哪了）<br/>全站一个颜色(用户裁决)·enrich_identity_theme 整段从 v5_capability_executor 删除<br/>_theme_palette 恒返回 BRAND_SEED·存量库里的 generatedTheme 读到即忽略·不需迁移<br/>⚠ 省掉的不只是一个函数:那一步要**花一次生图(~74s)换一个色值**·而那张图从不展示给任何人<br/>───────── 以下为 V5.7 原文 ─────────<br/>★ 身份主题生成 / enrich_identity_theme<br/>生图参照→视觉LLM取色(条件:生图key+图片parts声明·缺则纯文本取色)<br/>写回 appIdentity.generatedTheme·合格契约两端同源(identity_theme_presets.json)<br/>✧07-31修正:8套预设**不是降级为兜底·是彻底不参与配色**——色板改由种子色<br/>算出来(vendor MCU 的 HCT/TonalPalette)·_theme_palette 函数体第一行 del theme_id<br/>实测:8个合法主题id派生出的主色**只有一个值**(#5b6b7c 即 FALLBACK_SEED)<br/>appIdentity.theme 仍是 Gate 校验的合法分类值·但不再对应任何色板<br/>颜色真正的来源只剩两个:LLM 选的种子色·或 FALLBACK_SEED"]:::cap
   FREEFORM["★ FreeformInsight 内容生成 / enrich_freeform_blocks<br/>Pydantic深校验+reask(07-26:+数字必须挂dataRef·树深度/节点上限)<br/>视觉参照自校验闭环(条件:生图+E2B key+公网地址·缺则纯文字生成)<br/>chart节点→真ECharts·dataRef现算真值(数字不能编·查不到显—)<br/>07-26成本预算:参考图/截图自检每次enrich限额(env可调·超限退纯文字有日志)<br/>✧07-31:JSON 非法时**先机械修复再 reask**(json-repair)——深层嵌套树偶发数错<br/>括号层数(真机复现:{}/[] 各差1·尾巴多个孤立句号·且**不是** token 截断·<br/>那份输出结尾收得完整)·手搓括号计数容易拼出语法合法但结构错位的树<br/>✧07-31:lineHeight 裸数字曾被当倍数解释·撑爆 KPI 卡高度"]:::cap<br/>✪08-03 **rowsRef 取代 blockRef**:逐行能力直接给设计模型——版式它自由画·真实行数据由 rowsRef 绑(entityRef / fieldRefs / limit / order·limit 有上限防止一个 ref 把整表拉平)<br/>展开发生在**渲染期**·不是生成期(生成时树里只有一份"一行长什么样"的模板)<br/>⚠ 与 blockRef 是两个解法不是一个:前者让它**挑现成积木摆进版式**(代价:首页永远有几块不是它设计的·实测出现过禁用态按钮/8 格流程网格/右栏直接甩 seed-lending_record-10 这种种子 id)·后者让它**自己画**
   MONITOROV["★ 首页设计 / enrich_monitor_page_overviews<br/>monitor/首页交给FreeformInsight排版·不再永远固定骨架<br/>内容数量随领域浮动<br/>✱07-30修正:排行/动态流**不再被赶到设计之外当外挂卡**——改由设计者用<br/>blockRef 摆进自己的版式(见✱C桥)·摆哪占多宽它定·渲染仍交积木真渲染器<br/>✱07-30:一页跑参照板→桌面设计→手机设计·每页一张板<br/>✧07-31修正:是**两次或三次**——preferredDevice 明说 desktop 就不再设计手机档<br/>(省约67s/页)·判不出来或 unspecified 仍两档都生成(只在明确的时候才砍)<br/>✧07-31:monitor 页放开 page.blocks·总览不再只有数字<br/>✪08-03**方向反转**:首页由 freeform 设计**独占**——有 freeformOverview 的总览页·<br/>脚手架/固定榜/流全部让位(freeformOwnsPage)·page.blocks 在这类页面不再渲染<br/>⚠ 只在后端关是不够的:摆不进设计树的积木会掉到设计区**外面**照样画·渲染端必须同时收口<br/>✪08-03 生图**全系统只给落地页一张**(开关=有没有配生图 key·不新增环境变量)·<br/>所以这里不再是"一页跑两次或三次"·参照板这一步整个应用只走一次"]:::cap
+  MONITORDEFER["★ 08-05关键路径收口<br/>同步只设计landingPageRef（缺失时首个合格总览页）<br/>其他dashboard保留stats/charts标准骨架并标记deferred<br/>已有freeformOverview幂等复用·按需打开时再增强"]:::cap
+  VISBUDGET{"★ 视觉准入预算 / SLIDERULE_RUN_BUDGET_SECONDS<br/>默认540s·为10分钟目标预留60s落库/闭环缓冲<br/>阶段启动前按长尾保守值检查剩余时间<br/>不足→deferred_budget+skippedReason=deadline<br/>仅视觉fail-open·业务模型/RBAC/workflow不降级"}:::gate
   BLOCKCAT["★ 体验区块目录 / experience_block_catalog<br/>单一真相源(同一JSON跨语言直读):类型·槽位·binding·标签·样式·图标正则/别名<br/>07-26修正:约束链=Gate浅校验(designBrief)+生成时Pydantic深校验+前端再校验<br/>(Gate不看freeform内容树·有意分工见代码注释)"]:::ledger<br/>✪08-03 **freeformEmbeddable 字段整个删除**(catalog v7 → v8)——那是给 blockRef 挑积木用的白名单·rowsRef 上来之后它存在的唯一理由没了<br/>schema_legal 派生常量 / Pydantic 校验 / prompt 文案 / 前端渲染·四处同步消失(改目录一处的老规矩)
   SAFEREND["★ 前端安全渲染器 / block-registry（纵深防御第二道）<br/>只React.createElement·绝不dangerouslySetInnerHTML/eval<br/>图标按名动态解析任意antd(hasOwnProperty挡原型链)·dataRef现算·白名单再校验<br/>07-26:+渲染预算(深度/节点上限截断降级)·AppStageErrorBoundary兜渲染异常<br/>✱07-30:五个占位区块**接真渲染器**并放开生成(MetricGrid/TrendChart/RankedList/<br/>ActivityFeed/DataTable)·全部换 antd 现成组件(Card/Empty/Timeline/List+Progress/<br/>Table)·颜色走**主题token**不再写死十六进制(此前琥珀色应用里动态流圆点是靛蓝)<br/>表头出中文显示名·枚举列出标签(不再是 lot_code / frozen)<br/>ActivityFeed 宽行档 variant=row+detailFieldRefs(列宽靠 colgroup 对齐)"]:::trust<br/>✪08-03 加 rowsRef 展开:渲染期按 entityRef 取真实行·每行套设计模型给的那份模板(仍然只走 createElement 白名单·安全边界一点没放宽)
   OWNER["✱ KPI/图表归属划分（方案 C · 渲染层双向硬隔离）<br/>总览页(monitor/dashboard)走 page.stats/page.charts·由 ENRICH 重新设计版式<br/>业务页走 MetricGrid/TrendChart 积木<br/>同一个指标不会被画两遍·绑页面主实体的 DataTable 区块直接摘掉<br/>(那一页本来就自带一张带中文列名/彩色状态标签/排序筛选/行内操作的表)<br/>✱KPI 卡三层:大数字 + 环比 + 卡底迷你走势线(对标 pro-components StatisticCard)<br/>dataRef 加 trendFieldRef+trendGrain·一个字段驱动两层(本来就靠同一份时间分桶)<br/>不撒谎边界:前期0→「较上期 —」不编+∞ · 单桶不出线 · &lt;0.5%直说持平<br/>· 回传 series.grain 而非入参(桶太多自动变粗后配「较前一日」就是错文案)<br/>· 主数字算不出(显—)时整个不挂(用图形给不存在的数字背书更糟)"]:::cap
@@ -495,7 +499,7 @@ subgraph RUNTIME["06 运行时 / Runtime（P3 红利 · ● 投影层成果）"]
   ROW["节点行 / Node Row"]:::runtime
   REPLAY["回放 / Replay"]:::runtime
   NARR["■ 直播时间线投影 / turnNarrations<br/>轮末随PUT持久化·3轮×300步封顶<br/>展示投影：同轮守卫豁免清单成员"]:::runtime
-  RUNREG["▲ 后台 run 注册表 / run_registry (E25)<br/>推演与连接解耦·无人观看也跑完落库<br/>事件日志按 seq 续播(Last-Event-ID)<br/>同会话活跃 run 附着防重复·孤儿看门狗回收"]:::runtime
+  RUNREG["▲ 后台 run 注册表 / run_registry (E25)<br/>推演与连接解耦·无人观看也跑完落库<br/>事件日志按 seq 续播(Last-Event-ID)<br/>同会话活跃 run 附着防重复·孤儿看门狗回收<br/>慢阶段SSE携带pageId/device/current/total/elapsedMs<br/>活动阶段每15s progress_heartbeat·no-store·禁代理缓冲"]:::runtime
   SEED["✱ 演示种子数据 / demo-seed（闭环产出的应用打开就有内容）<br/>此前每个实体零行·表格图表KPI全线「暂无数据」·空壳<br/>随机源 pure-rand xoroshiro128+ / uniformInt 拒绝采样(避免取模偏置)·FNV-1a<br/>同一个模型每次打开看到的示例完全一致(确定性·不是每次刷新变一批)<br/>取值按**字段语义**走词表:人名/机构/编号/产地各有出法·认不出才退「字段名+序号」<br/>钉最近两天(否则 KPI 环比四成机会全是「—」·走势线也画不出)"]:::runtime
   SEEDB["✱ 种子数据的三条边界（不许跟真实数据混淆）<br/>①每个实体只在**首次遇见**时铺一次(后续删空也不会自己长回来)<br/>②每行都带标记·界面上始终挂「示例数据 N」徽标<br/>③用户写入第一条真实数据时·该表种子**整批清掉**<br/>行数硬夹 0..500(曾因调用方把时间戳当 count 传，Array.from 1.78e12 直接 OOM)"]:::trust
 end
@@ -714,7 +718,7 @@ GCOV -.▲ 标红能力=修复轮选材.-> ORCH
 CHAT -.▲ 上传附件.-> ATTACH
 ATTACH -.▲ PDF走一次性沙盒.-> CODERUN
 ATTACH -.▲ 提取文本注入指令.-> INTAKE
-%% 五系统闭环装配（循环收敛后由驱动器必跑闭环重建）
+%% 五系统闭环装配：首次生成后先走确定性终止边；只有输入变化或 repair 才重入。
 AWAIT -.▲ 循环落定·闭环重建必跑.-> GEN5
 ECTX -.▲ 同一上下文纪律.-> GEN5
 GEN5 --> DREPAIR
@@ -725,7 +729,10 @@ MGATE ==>|▲ 过门| CLOSEV
 DOMFIX -.▲ 确定性域旁路(零LLM).-> CLOSEV
 GEN5 -.▲ 形状层回喂(缺段).-> SREASK
 CLOSEV -.▲ 证据+指纹入账.-> T_LEDGER
-CLOSEV ==>|▲ closed 6/6| APPSTAGE
+CLOSEV --> GREL
+GREL --> TERMINAL
+TERMINAL ==>|▲ 当前模型可复用·非blocked·6/6 → END| APPSTAGE
+TERMINAL -.▲ 输入变化才回规划.-> ORCH
 CLOSEV -.▲ blocked·人话blocker+补齐缺口.-> AWAIT
 FAILSAFE -.▲ 重建异常兜底.-> CLOSEV
 %% 版本史（E29）：模型变化自动存档，回退=直供重闸
@@ -738,6 +745,8 @@ STATE -.▲ ◀▶回退·模型直供.-> GEN5
 MGATE -.★ 过门后·先增强再装配.-> THEME
 THEME ==>|★ 主题先行·区块读generatedTheme| FREEFORM
 FREEFORM ==>|★ 再逐块逐页设计| MONITOROV
+VISBUDGET --> MONITOROV
+MONITOROV --> MONITORDEFER
 MONITOROV -.★ 增强完的模型入闭环装配.-> CLOSEV
 MONITOROV -.★ 07-26补画:过门+增强模型入库(fail-open·存不进不拦发布).-> APPSTORE
 THEME -.★ 任一步失败·静默降级(固定骨架/8预设·不拦闭环)·fail-open保险丝在executor调用方.-> CLOSEV
@@ -875,6 +884,14 @@ end
 %%     rowsRef 上线后需重测。
 %%   · 首页参照板质量下滑（三因，见文件头 ✪ 已知未修）。
 %%   · 线上跑的仍是 08-03 09:35 之前的版本，本轮改动尚未部署。
+%% ▲ 08-05 收敛与性能修正（真实餐饮巡检轮 18m14s 后落地）：
+%%   ① 可信 runtimeClosure 命中当前 turn+goalDigest 后走 TERMINAL 确定性 END；不再让
+%%      planning/agentic picker 决定是否重复同一闭环。输入变化或明确 repair 才重入。
+%%   ② goal relevance 直接读最终六系统 modelSection；runtimePhase=done 的必要条件包含
+%%      publishClosure.blocked=false，blocked 闭环只能 awaiting/repair，两个状态不再打架。
+%%   ③ 同步视觉只做落地页；额外 dashboard 标记 deferred，退出主交付链路。540 秒视觉
+%%      准入预算不足时保留标准骨架并 fail-open，业务模型、RBAC、workflow 不降级。
+%%   ④ SSE 慢阶段带 pageId/device/current/total/elapsedMs，并每 15 秒发活动阶段心跳。
 
 classDef surface fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
 classDef core fill:#e0e7ff,stroke:#6366f1,color:#312e81

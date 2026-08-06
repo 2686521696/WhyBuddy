@@ -194,6 +194,16 @@ import {
   dropLegacyPanelsCoveredByBlocks,
 } from "./page-panel-dedupe";
 import { KanbanBoard, CalendarBoard } from "./PageViews";
+import BusinessPageGrid from "./BusinessPageGrid";
+import {
+  BUSINESS_GRID_COLUMNS,
+  PAGE_CONTENT_REF,
+  ensurePageContentItem,
+  resolveBusinessGrid,
+  upgradeLegacySlotsToGrid,
+  type BusinessGridItem,
+  type BusinessPageBreakpoint,
+} from "./business-page-layout";
 // 看板分组是纯函数，桌面与手机共用同一份——两档各分各的会让同一条记录
 // 在两个档位落进不同的列。
 import {
@@ -276,7 +286,13 @@ export function availableDeviceTiers(
       !!(p as { freeformOverview?: { mobile?: { root?: unknown } } })?.freeformOverview?.mobile
         ?.root
   );
-  if (hasMobileDesign) return ["desktop", "phone"];
+  const hasBusinessPhoneGrid = (schema?.pages ?? []).some(p => {
+    const phone = (
+      p as { layout?: { grid?: { phone?: unknown } } | null }
+    )?.layout?.grid?.phone;
+    return Array.isArray(phone) && phone.length > 0;
+  });
+  if (hasMobileDesign || hasBusinessPhoneGrid) return ["desktop", "phone"];
   return ["desktop"];
 }
 
@@ -1364,6 +1380,8 @@ export function AppRuntimeScreen({
    */
   const freeformOwnsPage =
     Boolean(page?.freeformOverview) && OVERVIEW_KINDS.has(page?.view.kind ?? "");
+  const dashboardUsesBusinessGrid =
+    page?.view.kind === "dashboard" && !freeformOwnsPage;
 
   // 体验区块渲染：桌面壳与手机壳共用同一份摆法逻辑，只有槽位来源分档。
   // 抽成函数之前它内联在 defaultPageContent 里，于是手机档一个区块都渲染不到。
@@ -1438,7 +1456,10 @@ export function AppRuntimeScreen({
     fieldLabelOf,
   };
 
-  const renderExperienceBlockScaffold = (forPhone: boolean) => {
+  const renderExperienceBlockScaffold = (
+    forPhone: boolean,
+    pageContent?: React.ReactNode
+  ) => {
     if (!page) return null;
     // 首页归 AI 设计独占（见 freeformOwnsPage）——设计树没安置的积木不再
     // 外挂到设计区下面。
@@ -1491,7 +1512,7 @@ export function AppRuntimeScreen({
         // 积木内部的自我去重：模型偶尔把同一份榜/流声明两次（见
         // page-panel-dedupe.ts 的内容指纹判定）。
         const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks);
-        if (dedupedBlocks.length === 0) return null;
+        if (dedupedBlocks.length === 0 && pageContent === undefined) return null;
 
         const renderBlock = (block: (typeof dedupedBlocks)[number]) => (
           <ExperienceBlockBoundary
@@ -1501,107 +1522,67 @@ export function AppRuntimeScreen({
           />
         );
 
-        // Step 7：未声明 layout（或声明后 5 槽位全空，schema 层已判定并回 null）
-        // 时保留原顺序平铺，视觉零变化。
-        if (!page.layout) {
-          return (
-            <div
-              className="mb-3 grid gap-2"
-              data-testid="app-runtime-experience-block-scaffold"
-            >
-              {dedupedBlocks.map(renderBlock)}
-            </div>
-          );
-        }
-
         const blockById = new Map(dedupedBlocks.map(b => [b.id, b]));
         // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
         // forPhone 由调用方传入——从前这里读的是 isPhone，而这段代码只在桌面
         // 壳里跑（手机壳走 phonePageContent），isPhone 恒 false，layout.mobile
         // 是死字段：LLM 在生成它、Gate 在校验它，运行时永远读不到。
         const slotSource =
-          forPhone && page.layout.mobile
+          forPhone && page.layout?.mobile
             ? { ...page.layout, ...page.layout.mobile }
             : page.layout;
-        const slotBlocks = (ids: string[]) =>
-          ids
-            .map(bid => blockById.get(bid))
-            .filter((b): b is NonNullable<typeof b> => !!b);
-        const summaryBlocks = slotBlocks(slotSource.summary ?? []);
-        const primaryBlocks = slotBlocks(slotSource.primary ?? []);
-        const secondaryBlocks = slotBlocks(slotSource.secondary ?? []);
-        const activityBlocks = slotBlocks(slotSource.activity ?? []);
-        const contentBlocks = slotBlocks(slotSource.content ?? []);
-        const placedIds = new Set(
-          [
-            ...summaryBlocks,
-            ...primaryBlocks,
-            ...secondaryBlocks,
-            ...activityBlocks,
-            ...contentBlocks,
-          ].map(b => b.id)
-        );
+        const slots = {
+          summary: slotSource?.summary ?? (page.layout ? [] : dedupedBlocks.map(b => b.id)),
+          primary: slotSource?.primary ?? [],
+          secondary: slotSource?.secondary ?? [],
+          activity: slotSource?.activity ?? [],
+          content: slotSource?.content ?? [],
+        };
+        const placedIds = new Set(Object.values(slots).flat());
         // 声明了 layout 但没被任何槽位引用到的区块：如实照样渲染，不能因为
         // 没排进槽位就悄悄丢内容——排在末尾，视觉上标为"未分配槽位"。
         const orphanBlocks = dedupedBlocks.filter(b => !placedIds.has(b.id));
+        const breakpoint: BusinessPageBreakpoint = forPhone
+          ? "phone"
+          : isTablet
+            ? "tablet"
+            : "desktop";
+        const layouts =
+          page.layout?.grid ??
+          upgradeLegacySlotsToGrid(page.view.kind, {
+            ...slots,
+            content: [...slots.content, ...orphanBlocks.map(b => b.id)],
+          });
+        let items = resolveBusinessGrid(layouts, breakpoint);
+        const itemRefs = new Set(items.map(item => item.blockRef));
+        const nextY = items.reduce((max, item) => Math.max(max, item.y + item.h), 0);
+        const missingBlocks: BusinessGridItem[] = dedupedBlocks
+          .filter(block => !itemRefs.has(block.id))
+          .map((block, index) => ({
+            blockRef: block.id,
+            x: 0,
+            y: nextY + index,
+            w: BUSINESS_GRID_COLUMNS[breakpoint],
+            h: 1,
+          }));
+        items = [...items, ...missingBlocks];
+        if (pageContent !== undefined) {
+          items = ensurePageContentItem(items, breakpoint);
+        } else {
+          items = items.filter(item => item.blockRef !== PAGE_CONTENT_REF);
+        }
 
         return (
-          <div
-            className="mb-3 flex flex-col gap-2"
-            data-testid="app-runtime-experience-block-layout"
-          >
-            {summaryBlocks.length > 0 && (
-              <div
-                className="flex flex-wrap gap-2"
-                data-testid="app-runtime-layout-summary"
-              >
-                {summaryBlocks.map(renderBlock)}
-              </div>
-            )}
-            {(primaryBlocks.length > 0 || secondaryBlocks.length > 0) && (
-              <div className="flex flex-col gap-2 md:flex-row md:items-start">
-                {primaryBlocks.length > 0 && (
-                  <div
-                    className="flex min-w-0 flex-[2] flex-col gap-2"
-                    data-testid="app-runtime-layout-primary"
-                  >
-                    {primaryBlocks.map(renderBlock)}
-                  </div>
-                )}
-                {secondaryBlocks.length > 0 && (
-                  <div
-                    className="flex min-w-0 flex-1 flex-col gap-2"
-                    data-testid="app-runtime-layout-secondary"
-                  >
-                    {secondaryBlocks.map(renderBlock)}
-                  </div>
-                )}
-              </div>
-            )}
-            {activityBlocks.length > 0 && (
-              <div
-                className="flex flex-col gap-2"
-                data-testid="app-runtime-layout-activity"
-              >
-                {activityBlocks.map(renderBlock)}
-              </div>
-            )}
-            {contentBlocks.length > 0 && (
-              <div
-                className="flex flex-col gap-2"
-                data-testid="app-runtime-layout-content"
-              >
-                {contentBlocks.map(renderBlock)}
-              </div>
-            )}
-            {orphanBlocks.length > 0 && (
-              <div
-                className="grid gap-2"
-                data-testid="app-runtime-layout-unassigned"
-              >
-                {orphanBlocks.map(renderBlock)}
-              </div>
-            )}
+          <div className="mb-3" data-testid="app-runtime-experience-block-layout">
+            <BusinessPageGrid
+              breakpoint={breakpoint}
+              items={items}
+              renderItem={blockRef => {
+                if (blockRef === PAGE_CONTENT_REF) return pageContent ?? null;
+                const block = blockById.get(blockRef);
+                return block ? renderBlock(block) : null;
+              }}
+            />
           </div>
         );
   };
@@ -1883,6 +1864,89 @@ export function AppRuntimeScreen({
       )
   );
 
+  const phonePrimaryDataView = page && (
+    <React.Suspense
+      fallback={
+        <Skeleton active paragraph={{ rows: 4 }} style={{ padding: "12px 4px" }} />
+      }
+    >
+      <PhoneKanbanShell
+        columns={phoneKanban}
+        activeKey={phoneKanbanKey}
+        onChange={setPhoneKanbanKey}
+      >
+      <PhoneCalendarShell data={phoneCalendar}>
+      <LazyPhonePageList
+        rows={phoneListRows}
+        descFields={page.detailFields
+          .slice(1, 4)
+          .map(f => ({ id: f.id, label: f.label }))}
+        createProbeProps={probe({
+          kind: "action",
+          label: "新建",
+          pageId: page.id,
+          permission: pageAccess.get(page.id)?.createPermission ?? null,
+          granted: pageAccess.get(page.id)?.canCreate !== false,
+          role,
+        })}
+        canCreate={
+          Boolean(page.entityId) &&
+          pageAccess.get(page.id)?.canCreate !== false
+        }
+        createLockedHint={
+          pageAccess.get(page.id)?.canCreate === false
+            ? "当前角色（" + (role ?? "-") + "）无新建权限"
+            : undefined
+        }
+        onCreate={() => {
+          setFormValues({});
+          setFormOpen(true);
+        }}
+        onOpenRow={row => setDetailRow(row as RuntimeRow)}
+        renderRowActions={row => rowActions(row as RuntimeRow)}
+        swipeActions={row => {
+          const r = row as RuntimeRow;
+          const acts: Array<{
+            key: string;
+            text: string;
+            color?: "primary" | "warning" | "danger";
+            onClick: () => void;
+          }> = [];
+          if (page.workflowLinked)
+            acts.push({
+              key: "submit",
+              text: "提交审批",
+              color: "primary",
+              onClick: () =>
+                handleSubmitToWorkflow(
+                  r.id,
+                  String(Object.values(r.values)[0] ?? r.id)
+                ),
+            });
+          acts.push({
+            key: "delete",
+            text: "删除",
+            color: "danger",
+            onClick: () => {
+              void confirmDestructive(
+                "删除这条记录？",
+                "删掉之后无法恢复。",
+                () => canvasEl
+              ).then(ok => {
+                if (!ok) return;
+                apply(deleteRow(state, page.entityId!, r.id));
+                toast("success", "已删除");
+              });
+            },
+          });
+          return acts;
+        }}
+      />
+      </PhoneCalendarShell>
+      </PhoneKanbanShell>
+    </React.Suspense>
+  );
+
   // 手机端业务页：体验区块 + 卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
   const phonePageContent = page && (
     // data-page-kind：手机档按 pageKind 出不同骨架，把 kind 摆到 DOM 上，
@@ -1921,7 +1985,11 @@ export function AppRuntimeScreen({
           {renderFreeformOverview(true)}
         </div>
       )}
-      {renderExperienceBlockScaffold(true)}
+      {OVERVIEW_KINDS.has(page.view.kind)
+        ? dashboardUsesBusinessGrid
+          ? renderExperienceBlockScaffold(true, phonePrimaryDataView)
+          : renderExperienceBlockScaffold(true)
+        : renderExperienceBlockScaffold(true, phonePrimaryDataView)}
       {/* pageKind 骨架：schema 有 6 种，手机档此前一种都没有（无论什么 kind
           都渲染成同一个裸列表）。dashboard/monitor 出 KPI + 图表，wizard 出
           流程步骤——形态复用首页那套（Grid 两列 / Steps 竖排）。 */}
@@ -1930,7 +1998,7 @@ export function AppRuntimeScreen({
           <LazyPhonePageSections {...phoneSectionData} />
         </React.Suspense>
       )}
-      <React.Suspense
+      {OVERVIEW_KINDS.has(page.view.kind) ? <React.Suspense
         fallback={
           <Skeleton active paragraph={{ rows: 4 }} style={{ padding: "12px 4px" }} />
         }
@@ -2017,7 +2085,7 @@ export function AppRuntimeScreen({
         />
         </PhoneCalendarShell>
         </PhoneKanbanShell>
-      </React.Suspense>
+      </React.Suspense> : null}
     </div>
   );
 
@@ -2717,8 +2785,94 @@ export function AppRuntimeScreen({
     ) : null;
 
 
+  const pageDataView = page && (
+    isTablet ? (
+      <div
+        style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+        data-testid="app-runtime-tablet-split"
+      >
+        <div style={{ flex: 3, minWidth: 0 }}>
+          <Table
+            size="small"
+            rowKey="id"
+            columns={
+              columns
+                .slice(0, Math.min(4, columns.length - 1))
+                .concat(columns.slice(-1)) as any
+            }
+            dataSource={rows}
+            onRow={row => ({
+              onClick: () => setDetailRow(row as RuntimeRow),
+              style: { cursor: "pointer" },
+            })}
+            rowClassName={row =>
+              (row as RuntimeRow).id === detailRow?.id
+                ? "ant-table-row-selected"
+                : ""
+            }
+            pagination={rows.length > 10 ? { pageSize: 10 } : false}
+            locale={{ emptyText: "暂无数据 — 点「新建」写入第一条真实数据" }}
+          />
+        </div>
+        <Card
+          size="small"
+          title={detailRow ? "详情" : "详情 · 未选中"}
+          style={{ flex: 2, minWidth: 0 }}
+          data-testid="app-runtime-tablet-detail"
+        >
+          {detailRow ? (
+            detailBody
+          ) : (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="点击左侧行查看详情与 AI 能力"
+              style={{ padding: "16px 0" }}
+            />
+          )}
+        </Card>
+      </div>
+    ) : page.view.kind === "kanban" && kanbanStatusField ? (
+      <KanbanBoard
+        rows={rows}
+        statusField={kanbanStatusField}
+        cardFields={page.columns.filter(f => f.id !== kanbanStatusField.id)}
+        onOpenRow={setDetailRow}
+      />
+    ) : page.view.kind === "calendar" && page.view.dateFieldId ? (
+      <CalendarBoard
+        rows={rows}
+        dateFieldId={page.view.dateFieldId}
+        colorByField={page.detailFields.find(
+          f => f.id === page.view.colorByFieldId
+        )}
+        titleFieldId={
+          page.columns.find(f => f.id !== page.view.dateFieldId)?.id
+        }
+        onOpenRow={setDetailRow}
+      />
+    ) : (
+      <Table
+        size={page.view.kind === "dashboard" ? "small" : "middle"}
+        rowKey="id"
+        columns={columns as any}
+        dataSource={rows}
+        onRow={row => ({
+          onClick: () => setDetailRow(row as RuntimeRow),
+          style: { cursor: "pointer" },
+        })}
+        pagination={
+          page.view.kind === "dashboard"
+            ? rows.length > 5 && { pageSize: 5 }
+            : rows.length > 8 && { pageSize: 8 }
+        }
+        locale={{ emptyText: "暂无数据 — 点「新建」写入第一条真实数据" }}
+      />
+    )
+  );
+
   // 一次求值、多处摆位（见下方 D1 注释）
   const blockScaffold = renderExperienceBlockScaffold(false);
+  const businessPageGrid = renderExperienceBlockScaffold(false, pageDataView);
 
   const defaultPageContent = page && (
     <Card
@@ -2796,7 +2950,8 @@ export function AppRuntimeScreen({
           脚手架只求值一次、在下面每个分支里显式摆位——不这么写就得在
           "总览页"那个条件外面再判一次 kind，dashboard 没有 freeformOverview
           时会掉进最末的兜底分支、积木一个都渲染不出来（第一版就是这个洞）。 */}
-      {!OVERVIEW_KINDS.has(page.view.kind) && blockScaffold}
+      {(!OVERVIEW_KINDS.has(page.view.kind) || dashboardUsesBusinessGrid) &&
+        businessPageGrid}
       {page.view.kind === "wizard" &&
         (model?.workflow?.nodes?.length ?? 0) > 0 && (
           <Steps
@@ -2853,13 +3008,15 @@ export function AppRuntimeScreen({
           {/* dashboard 页没有 freeformOverview 时会走到这里（pageHasKpiBlocks
               要求非总览页，所以 dashboard 永远不满足上一支）。总览页的脚手架
               在上面被跳过了，得在这里补回来，否则积木整页消失。 */}
-          {OVERVIEW_KINDS.has(page.view.kind) ? blockScaffold : null}
+          {OVERVIEW_KINDS.has(page.view.kind) && !dashboardUsesBusinessGrid
+            ? blockScaffold
+            : null}
           {statsBand}
           {widgetsBand}
           {chartsBand}
         </>
       )}
-      {isTablet ? (
+      {OVERVIEW_KINDS.has(page.view.kind) && !dashboardUsesBusinessGrid && (isTablet ? (
         // 平板范式：紧凑双栏（iPad 式主从视图）——左列表右详情，详情不走 Drawer
         <div
           style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
@@ -2945,7 +3102,7 @@ export function AppRuntimeScreen({
           }
           locale={{ emptyText: "暂无数据 — 点「新建」写入第一条真实数据" }}
         />
-      )}
+      ))}
     </Card>
   );
 
@@ -3228,6 +3385,7 @@ export function AppRuntimeScreen({
             <React.Suspense fallback={<span style={{ width: 96, height: 24 }} />}>
               <LazyPhoneRolePicker
                 roles={schema.roles}
+                roleLabels={schema.roleLabels}
                 value={role}
                 onChange={changeRole}
                 getContainer={() => canvasEl ?? document.body}
@@ -3350,6 +3508,7 @@ export function AppRuntimeScreen({
             locale={zhCN}
             getPopupContainer={() => canvasEl ?? document.body}
             theme={{
+              cssVar: true,
               // E40.2：身份主题的主色一把翻全部 antd 组件（按钮/选中态/链接…）
               // Step 9：配方叠加圆角 + 深色/紧凑 algorithm；高对比额外加深边框、
               // 略增字号（无障碍场景，antd token 全局生效，不用逐组件改）。

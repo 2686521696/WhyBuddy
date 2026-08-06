@@ -220,6 +220,19 @@ export interface PageLayoutSpec {
   content?: string[];
   /** 手机端槽位覆盖（可选，不填则与桌面相同）：槽位名 → 区块 id 列表 */
   mobile?: Partial<Omit<PageLayoutSpec, "mobile">>;
+  /** 响应式 12/8/4 列网格；page-content 是本页表格/看板/日历保留节点。 */
+  grid?: Partial<
+    Record<
+      "desktop" | "tablet" | "phone",
+      Array<{
+        blockRef: string;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+      }>
+    >
+  >;
 }
 
 export interface PageModelDef {

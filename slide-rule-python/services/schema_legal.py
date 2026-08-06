@@ -544,6 +544,23 @@ def experience_block_prompt_block() -> str:
         "(summary+content table)."
     )
     lines.append(
+        "Step 7b — Responsive business-page grid (preferred for workbench/kanban/calendar/wizard): "
+        "layout.grid is an object with optional desktop/tablet/phone arrays. Column counts are "
+        "desktop=12, tablet=8, phone=4. Every array item has exactly blockRef/x/y/w/h; all coordinates "
+        "and sizes are integers, x/y are non-negative, w/h are positive, and x+w must fit the breakpoint. "
+        "blockRef is either an id from page.blocks or the reserved value page-content, which means this "
+        "page's real table/kanban/calendar/wizard data surface. Use one placement per blockRef per breakpoint. "
+        "Phone layouts must be a single reading-order column (x=0,w=4). When a smaller breakpoint is omitted, "
+        "runtime falls back to the nearest larger layout. Example: "
+        '"layout":{"grid":{"desktop":[{"blockRef":"filter","x":0,"y":0,"w":12,"h":1},'
+        '{"blockRef":"page-content","x":0,"y":1,"w":9,"h":3},'
+        '{"blockRef":"feed","x":9,"y":1,"w":3,"h":3}],'
+        '"phone":[{"blockRef":"filter","x":0,"y":0,"w":4,"h":1},'
+        '{"blockRef":"page-content","x":0,"y":1,"w":4,"h":2},'
+        '{"blockRef":"feed","x":0,"y":2,"w":4,"h":1}]}}. '
+        "Do not emit both a grid placement and a second copy of the same content through another block."
+    )
+    lines.append(
         "Step 8 — Shell and device: appbundle MAY include experienceShell "
         "{mode: 'navigation'|'focus', navigation: 'side'|'top'} and preferredDevice 'desktop'|'tablet'|'phone'. "
         "Use experienceShell instead of appIdentity.nav for new models. "
