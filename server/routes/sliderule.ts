@@ -1101,10 +1101,15 @@ router.post("/sessions/:sessionId/screenshot", express.json({ limit: "512kb" }),
     modelHash?: string;
     device?: string;
   };
-  const { normalizeScreenshotDevice, screenshotCacheSlug } = await import(
+  const {
+    normalizeScreenshotDevice,
+    resolveScreenshotResponseDevice,
+    screenshotAuthoritySlug,
+    screenshotCacheSlug,
+  } = await import(
     "./sliderule-screenshot-device.js"
   );
-  const device = normalizeScreenshotDevice(requestedDevice);
+  const requested = normalizeScreenshotDevice(requestedDevice);
 
   const fs = await import("node:fs/promises");
   const nodePath = await import("node:path");
@@ -1113,14 +1118,26 @@ router.post("/sessions/:sessionId/screenshot", express.json({ limit: "512kb" }),
   const screenshotDir = nodePath.resolve(__routeDir, "../../tmp/app-thumbnails");
   await fs.mkdir(screenshotDir, { recursive: true });
 
-  const slug = screenshotCacheSlug(sessionId, modelHash, device);
-  const screenshotPath = nodePath.join(screenshotDir, `${slug}.png`);
+  const authorityPath = nodePath.join(
+    screenshotDir,
+    `${screenshotAuthoritySlug(sessionId, modelHash)}.txt`,
+  );
 
-  // 已有缓存直接返回
+  // Cache lookup follows the device previously confirmed by Python, not the request.
   try {
+    const authoritative = resolveScreenshotResponseDevice(
+      requested,
+      (await fs.readFile(authorityPath, "utf8")).trim(),
+    );
+    const slug = screenshotCacheSlug(sessionId, modelHash, authoritative);
+    const screenshotPath = nodePath.join(screenshotDir, `${slug}.png`);
     await fs.access(screenshotPath);
     const buf = await fs.readFile(screenshotPath);
-    res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(buf);
+    res
+      .set("Content-Type", "image/png")
+      .set("X-Sliderule-Device", authoritative)
+      .set("Cache-Control", "public, max-age=86400")
+      .send(buf);
     return;
   } catch {}
 
@@ -1138,7 +1155,7 @@ router.post("/sessions/:sessionId/screenshot", express.json({ limit: "512kb" }),
   const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
   try {
     const upstream = await fetch(
-      `${pythonRuntime.baseUrl}/api/sliderule/sessions/${encodeURIComponent(sessionId)}/e2b-screenshot?device=${device}`,
+      `${pythonRuntime.baseUrl}/api/sliderule/sessions/${encodeURIComponent(sessionId)}/e2b-screenshot?device=${requested}`,
       {
         method: "POST",
         headers: { "X-Internal-Key": pythonRuntime.internalKey },
@@ -1152,8 +1169,19 @@ router.post("/sessions/:sessionId/screenshot", express.json({ limit: "512kb" }),
       return;
     }
     const buf = Buffer.from(await upstream.arrayBuffer());
+    const authoritative = resolveScreenshotResponseDevice(
+      requested,
+      upstream.headers.get("x-sliderule-device"),
+    );
+    const slug = screenshotCacheSlug(sessionId, modelHash, authoritative);
+    const screenshotPath = nodePath.join(screenshotDir, `${slug}.png`);
     await fs.writeFile(screenshotPath, buf);
-    res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(buf);
+    await fs.writeFile(authorityPath, authoritative, "utf8");
+    res
+      .set("Content-Type", "image/png")
+      .set("X-Sliderule-Device", authoritative)
+      .set("Cache-Control", "public, max-age=86400")
+      .send(buf);
   } catch {
     res.status(503).json({ error: "screenshot_unavailable" });
   }

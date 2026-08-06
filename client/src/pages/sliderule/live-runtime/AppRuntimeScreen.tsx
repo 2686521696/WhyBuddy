@@ -281,19 +281,25 @@ type DeviceKey = keyof typeof DEVICE_SPECS;
  * 不在每个用到档位的地方各写一遍 `preferredDevice === 'desktop' ? …`，否则
  * 迟早出现"切换条显示手机档、渲染层却没有手机设计"的错位。
  *
- * 判据是**真有没有那份设计**，不只是 preferredDevice 说了什么：
+ * 新模型由 deviceAuthority + preferredDevice 声明唯一档位；只有没有该标记的历史数据
+ * 才按实际已有设计判断：
  *   · 声明 phone → 只有手机档
- *   · 声明 desktop → 只有桌面档
- *   · 未声明/tablet（平板已下架 ADR-0001）→ 看总览页有没有挂 mobile 设计；
+ *   · 未声明/desktop/tablet（平板已下架 ADR-0001）→ 看总览页有没有挂 mobile 设计；
  *     挂了就两档都给，没挂就只给桌面档
  * 最后那条兜的是老数据：07-30 之前生成的应用 preferredDevice 一律 desktop
  * （那时这个字段没判据、9/9 都是它），但它们**确实有** mobile 设计——按声明
  * 判会把已有的设计藏起来，按"有没有"判才对。
  */
 export function availableDeviceTiers(
-  schema: { identity?: { preferredDevice?: string }; pages?: unknown[] } | null | undefined
+  schema: {
+    identity?: { preferredDevice?: string; deviceAuthority?: string };
+    pages?: unknown[];
+  } | null | undefined
 ): DeviceKey[] {
   const declared = schema?.identity?.preferredDevice;
+  if (schema?.identity?.deviceAuthority === "single-v1") {
+    return declared === "phone" ? ["phone"] : ["desktop"];
+  }
   if (declared === "phone") return ["phone"];
   const hasMobileDesign = (schema?.pages ?? []).some(
     p =>
@@ -562,7 +568,7 @@ export function AppRuntimeScreen({
   const [activePageId, setActivePageId] = React.useState<string>(
     () => schema?.landingPageId ?? "home"
   );
-  // Step 8：preferredDevice 只定默认打开视图，用户仍可手动切换设备档。
+  // Step 8：新模型的 preferredDevice 是唯一运行时档位；历史模型才保留切换兼容。
   // 平板档已从切换条下架（见下方档位切换注释），declared "tablet" 时按
   // 未声明处理，回落 desktop，避免初始态落进一个切换条选不中的档位。
   const [device, setDevice] = React.useState<DeviceKey>(() =>

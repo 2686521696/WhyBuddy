@@ -2282,7 +2282,7 @@ def _enrich_freeform_blocks_inner(model: dict[str, Any]) -> dict[str, Any]:
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
     theme_id = str(identity.get("theme") or "").strip()
-    device = str(appbundle.get("preferredDevice") or "").strip()
+    device = "phone" if appbundle.get("preferredDevice") == "phone" else "desktop"
     # identity_theme_gen.enrich_identity_theme 如果已经跑过（在这之前调用），
     # appIdentity.generatedTheme 会有一份自定义主题——FreeformInsight 的配色
     # 要照它走，不能还停在 8 预设，不然侧边栏和内容卡片颜色对不上。
@@ -2660,7 +2660,7 @@ def _enrich_monitor_page_overviews_inner(
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
     theme_id = str(identity.get("theme") or "").strip()
-    device = str(appbundle.get("preferredDevice") or "").strip()
+    device = "phone" if appbundle.get("preferredDevice") == "phone" else "desktop"
     # 哪一页代表这个应用：落地页那张参照板就是用户点开应用第一眼看到的画面，
     # 也就是卡片该显示的东西（见 OverviewPreviewSink.offer 的取舍规则）。
     landing_ref = str(appbundle.get("landingPageRef") or "").strip()
@@ -2709,7 +2709,7 @@ def _enrich_monitor_page_overviews_inner(
     # 真实长尾里首页参照图、取色、版式合计会占 2~6 分钟。运行预算只约束这些
     # fail-open 视觉增强，不中断已经过结构闸的业务模型、权限和流程。
     remaining = remaining_run_budget_seconds()
-    design_total = 1 if device in ("desktop", "phone") else 2
+    design_total = 1
     required_visual_seconds = 150 + (130 * design_total)
     reference_budget_available = remaining is None or remaining >= required_visual_seconds
     if sync_page is not None and remaining is not None and remaining < 130 * design_total:
@@ -2871,68 +2871,6 @@ def _enrich_monitor_page_overviews_inner(
                     chart_colors=_existing_chart_colors(model) or None,
                     chart_variant_key=_chart_variant_key(model),
                 )
-            # 手机档再设计一版（方案 B）。
-            #
-            # 形状照两处成熟先例：react-grid-layout 的 layouts={{lg,md,sm}}
-            # ——同一份内容、每个断点一份布局，取用时"有本档用本档、没有就往
-            # 更大的档回退"；以及本仓库自己 page.layout + layout.mobile 的
-            # 覆盖约定。这里定为 freeformOverview = {root, mobile:{root}}：
-            # 默认那份是 device 档（通常桌面），mobile 是手机档覆盖。
-            #
-            # 为什么值得多花一次调用：设计是按 device 生成的，phone 档的提示词
-            # 明确要求"内容区窄、必须单列纵向、字号图标间距收紧一档"。此前只
-            # 生一份，手机上看到的是桌面版式被 CSS 掰弯的结果——能读，但不是
-            # 为手机规划的。
-            #
-            # 失败不影响主产物：手机那份生不出来就不挂 mobile 键，前端自动
-            # 回退到 root（与 RGL 的"往更大的档回退"同一语义）。
-            # 2026-07-30：手机那份只在**没明说是桌面档**时才生成。
-            #
-            # 此前是无条件生成，理由是"两档都得有设计"。但扫了一遍真实数据：
-            # 9 个应用的 preferredDevice 全是 desktop——不是因为它们真都是桌面
-            # 应用，而是因为生成契约里这个字段**只声明了合法域、没给任何判据**
-            # （见 schema_legal 的 Step 8），模型无从选择就一路倒向 desktop。
-            # 于是"两档都生成"实际是在为一个没人做过的判断买单。
-            #
-            # 现在契约里补了姿态判据（_DEVICE_RUBRIC，与入站判定共用同一份），
-            # 这个字段有意义了，就该用它来省掉这次调用：明说 desktop 就不生成
-            # 手机档（约 67s / 总览页）。unspecified 或没写仍然两档都生成——
-            # **只在明确的时候才砍**，判不出来时宁可多花一分钟，也不要让用户
-            # 切到手机档看见一个被 CSS 掰弯的桌面版式。
-            #
-            # 这也正是 M3 WindowWidthSizeClass.fromWidth(w, density,
-            # supportedSizeClasses) 的语义：布局声明自己有哪几档，解析器在
-            # **现有的**档里挑最合适的，不要求全都存在。少生成一档不是降级，
-            # 是如实声明"这个应用只有这一档"。
-            declared_desktop_only = device == "desktop"
-            if device != "phone" and not declared_desktop_only:
-                try:
-                    # 埋点③：手机档。注释里写的是约 67s/页，这条线用来核实这个
-                    # 数字是否还成立——它同时是"跳过手机档省了多少"的依据。
-                    with _enrich_stage(
-                        "monitor.design", page=page_id, device="phone", current=2, total=2
-                    ):
-                        mobile_content = generate_freeform_block(
-                            brief, datamodel, theme_id=theme_id, device="phone",
-                            generated_theme=generated_theme,
-                            chart_colors=_existing_chart_colors(model) or None,
-                            chart_variant_key=_chart_variant_key(model),
-                            use_reference_image=use_ref,
-                            # 手机那份不再单独截图自检：那一步是"渲染出来再让视觉
-                            # 模型跟参照图比一遍"，成本高且收益递减，两档都做等于
-                            # 把总览页的生成时间再翻一倍。
-                            allow_screenshot_verify=False,
-                            reference_image_b64=sheet_b64,
-                        )
-                    # 复制一份而不是原地改：生成器返回的对象不该被调用方
-                    # 就地改写。真被咬过——测试里 fake 两次返回同一个 dict，
-                    # `content["mobile"] = mobile_content` 直接造出自引用结构。
-                    content = {**content, "mobile": mobile_content}
-                except FreeformGenerationError as exc:
-                    print(
-                        f"[freeform_block] {page.get('id')} mobile overview generation failed, "
-                        f"falling back to the desktop design on phone: {str(exc)[:160]}"
-                    )
             page["freeformOverview"] = content
             page["freeformOverviewStatus"] = "ready"
         except FreeformGenerationError as exc:

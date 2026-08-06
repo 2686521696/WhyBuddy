@@ -300,32 +300,25 @@ def test_enrich_writes_freeform_overview_on_success(monkeypatch):
     fake_content = {"root": {"tag": "div", "style": {}, "children": []}}
     captured_kwargs = {}
 
-    # 2026-07-29（方案 B）：一个总览页现在设计两版——先按 preferredDevice
-    # 那一档，再补一版 phone。所以这里逐次记录，不能只看最后一次的 kwargs。
     calls = []
 
     def fake_generate(brief, datamodel, **kwargs):
         captured_kwargs.update(kwargs)
         calls.append(kwargs.get("device"))
         assert "订单总数" in brief
-        # 每次返回**新对象**：返回同一个 dict 的话，挂 mobile 时会造出自引用
         return {"root": dict(fake_content["root"])}
 
     monkeypatch.setattr("services.freeform_block.generate_freeform_block", fake_generate)
     model = {
         "datamodel": _datamodel(),
-        # 2026-07-30：这条测的是「两档都设计」，所以**不能**声明 preferredDevice
-        # ——明说 desktop 现在会跳过手机档（那条路径由下面两条新测试覆盖）。
         "appbundle": {"appIdentity": {"theme": "forest"}},
         "page": {"pages": [_monitor_page()]},
     }
     result = enrich_monitor_page_overviews(model)
     overview = result["page"]["pages"][0]["freeformOverview"]
-    # 默认那份仍是 preferredDevice 档的设计
     assert overview["root"] == fake_content["root"]
-    # 手机档另挂一份（形状照 react-grid-layout 的 layouts 键控回退）
-    assert overview["mobile"]["root"] == fake_content["root"]
-    assert calls == ["", "phone"]  # 未声明设备档 → 默认档 + 手机档
+    assert "mobile" not in overview
+    assert calls == ["desktop"]
     assert captured_kwargs["theme_id"] == "forest"
     # 原有固定骨架字段必须原样保留——freeformOverview 是追加，不是替换
     assert result["page"]["pages"][0]["stats"]
@@ -363,8 +356,7 @@ def test_enrich_covers_dashboard_pages(monkeypatch):
         "page": {"pages": [{"id": "d1", "kind": "dashboard", "stats": [{"id": "s"}]}]},
     }
     result = enrich_monitor_page_overviews(model)
-    # 一页两次：默认档（未声明 preferredDevice → 空串）+ 手机档（方案 B）
-    assert called == ["", "phone"]
+    assert called == ["desktop"]
     assert "freeformOverview" in result["page"]["pages"][0]
 
 
@@ -624,12 +616,8 @@ def test_declared_desktop_skips_the_phone_layout(monkeypatch):
     assert "mobile" not in overview, "桌面档不该挂 mobile 设计"
 
 
-def test_unspecified_device_still_designs_both(monkeypatch):
-    """判不出来时仍然两档都生成——**只在明确的时候才砍**。
-
-    宁可多花一分钟，也不要让用户切到手机档看见一个被 CSS 掰弯的桌面版式。
-    这条纪律跟入站判定那侧同源（device 缺省是 unspecified 而不是 desktop）。
-    """
+def test_unspecified_device_deterministically_designs_desktop_only(monkeypatch):
+    """历史/部分模型进入增强时也只能走一个确定性兜底，不得恢复双生成。"""
     calls = []
     monkeypatch.setattr(
         "services.freeform_block.generate_freeform_block",
@@ -642,8 +630,46 @@ def test_unspecified_device_still_designs_both(monkeypatch):
         "appbundle": {"appIdentity": {"theme": "forest"}},
         "page": {"pages": [_monitor_page()]},
     }
-    enrich_monitor_page_overviews(model)
-    assert "phone" in calls, f"未声明设备档时应仍设计手机版式: {calls}"
+    result = enrich_monitor_page_overviews(model)
+    assert calls == ["desktop"]
+    assert "mobile" not in result["page"]["pages"][0]["freeformOverview"]
+
+
+def test_monitor_progress_reports_one_authoritative_device(monkeypatch):
+    from services import enrich_timing
+
+    events = []
+    monkeypatch.setattr(
+        "services.freeform_block.generate_freeform_block",
+        lambda brief, datamodel, **kw: {"root": {"tag": "div", "children": []}},
+    )
+    monkeypatch.setattr("services.freeform_block._generate_overview_sheet_b64", lambda *a, **k: None)
+    enrich_timing.set_stage_sink(
+        lambda phase, name, fields: events.append((phase, name, dict(fields)))
+    )
+    try:
+        enrich_monitor_page_overviews(
+            {
+                "datamodel": _datamodel(),
+                "appbundle": {
+                    "appIdentity": {"theme": "forest"},
+                    "preferredDevice": "phone",
+                    "deviceAuthority": "single-v1",
+                },
+                "page": {"pages": [_monitor_page()]},
+            }
+        )
+    finally:
+        enrich_timing.set_stage_sink(None)
+
+    design_starts = [
+        fields
+        for phase, name, fields in events
+        if phase == "start" and name == "monitor.design"
+    ]
+    assert design_starts == [
+        {"page": "home", "device": "phone", "current": 1, "total": 1}
+    ]
 
 
 def test_generation_contract_teaches_how_to_pick_the_device():
@@ -661,7 +687,10 @@ def test_generation_contract_teaches_how_to_pick_the_device():
     assert "courier" in body and "dispatcher" in body, "缺「带现场词的后台需求」这一向"
     assert "inspection work order" in body and "walking around" in body, \
         "缺「带后台词的现场需求」这一向"
-    assert "OMIT the field" in body, "没告诉模型判不出来就别写——那才是默认两档都生成的入口"
+    assert "MUST choose exactly one" in body
+    assert "NEVER omit" in body
+    assert "'desktop'|'phone'" in body
+    assert "'tablet'" not in body
 
 
 # ── monitor 页放开 page.blocks（2026-07-31）─────────────────────────────

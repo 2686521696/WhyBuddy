@@ -371,8 +371,10 @@ export interface AppBundleSection {
    * 新模型填此字段；老模型由 appIdentity.nav 自动编译，不影响旧快照。
    */
   experienceShell?: ExperienceShellSpec;
-  /** 默认设备视口偏好（Step 8）：desktop | tablet | phone；只控制首次打开默认视图 */
+  /** 设备视口。新模型只生成 desktop | phone；tablet 仅保留历史读取兼容。 */
   preferredDevice?: "desktop" | "tablet" | "phone";
+  /** 新生成模型的单一设备权威标记；历史双布局没有该字段。 */
+  deviceAuthority?: "single-v1";
 }
 
 /** 应用身份段（E40.2）：千人千面的第一层——每个应用自己的"脸"。 */

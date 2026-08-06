@@ -565,7 +565,7 @@ def experience_block_prompt_block() -> str:
     )
     lines.append(
         "Step 8 — Shell and device: appbundle MAY include experienceShell "
-        "{mode: 'navigation'|'focus', navigation: 'side'|'top'} and preferredDevice 'desktop'|'tablet'|'phone'. "
+        "{mode: 'navigation'|'focus', navigation: 'side'|'top'} and MUST include preferredDevice 'desktop'|'phone'. "
         "Use experienceShell instead of appIdentity.nav for new models. "
         "mode MUST be 'navigation' for now — 'focus' (full-screen single-purpose tools like a report "
         "viewer or document editor) is schema-legal but has NO client renderer yet; declaring it renders "
@@ -573,13 +573,11 @@ def experience_block_prompt_block() -> str:
     )
     # 2026-07-30：preferredDevice 此前只声明了合法域、没给任何判据，结果实测
     # 9 个真实应用 9 个 desktop——这个字段是死的。而下游拿它决定要不要多花
-    # 一次调用去设计手机版式（enrich_monitor_page_overviews），死字段等于每次
-    # 都得两档都生成。补上判据，用的是与入站判定同一套**姿态**口径（不是关键词
-    # ——「骑手运力调度看板」用的人是坐在后台的调度员）。判不出来就别写这个
-    # 字段：缺省会走"两档都生成"，比猜错便宜。
+    # 一次调用去设计手机版式（enrich_monitor_page_overviews）。现在它是新生成模型
+    # 的单一权威选择：按完整产品与操作姿态选一档，判不清也走确定性单端兜底。
     lines.append(
-        "Step 8b — How to choose preferredDevice (this field is consumed downstream: declaring "
-        "'desktop' skips generating a separate phone layout, so choose deliberately). Judge by the "
+        "Step 8b — How to choose preferredDevice. You MUST choose exactly one supported device; "
+        "NEVER omit the field, request both devices, or emit tablet. Judge by the "
         "user's POSTURE while operating, not by keywords in the request:\n"
         "  · 'phone' — standing, walking, one-handed, on-site, reporting in the moment: scanning, "
         "photographing, clocking in, signing, jotting a quick record; or an individual using it in "
@@ -587,7 +585,8 @@ def experience_block_prompt_block() -> str:
         "  · 'desktop' — seated, long sessions, multi-column comparison, batch operations, approvals "
         "and configuration: dashboards, back-office, analysis, reconciliation, scheduling, permission "
         "matrices.\n"
-        "  · OMIT the field entirely when there is no posture signal. Do not guess.\n"
+        "  · When posture is ambiguous, inspect the complete five-system model, landing-page shape, "
+        "and primary operation, then still choose exactly one device.\n"
         "Two traps (both judged by WHO operates it in WHAT state, not by the words present): "
         "'courier dispatch board' contains 'courier' but the operator is a dispatcher at a desk → "
         "desktop; 'inspection work order, worker photographs on site and submits' contains 'work order' "

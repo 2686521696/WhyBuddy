@@ -364,6 +364,7 @@ def validate_five_system_model(
     model: Any,
     *,
     require_landing_page_ref: bool = False,
+    require_preferred_device: bool = False,
 ) -> Dict[str, Any]:
     """Structural closure gate. Returns {'passed': bool, 'findings': [...]}.
 
@@ -373,6 +374,9 @@ def validate_five_system_model(
     require_landing_page_ref=True (strict mode): appbundle.landingPageRef must be
     present, non-None, and non-blank. Use for LLM-generated and LLM-refined models.
     Defaults to False for backward-compat (old snapshots without the field still pass).
+
+    require_preferred_device=True: appbundle.preferredDevice must be exactly
+    desktop or phone. The tolerant default still accepts missing/tablet historic data.
     """
     findings: List[Dict[str, Any]] = []
     m = _as_dict(model)
@@ -1065,7 +1069,14 @@ def validate_five_system_model(
 
     # Step 8: preferredDevice 合法域
     pref_device = str(appbundle.get("preferredDevice") or "").strip()
-    if pref_device and pref_device not in ("desktop", "tablet", "phone"):
+    supported_devices = ("desktop", "phone")
+    if require_preferred_device and pref_device not in supported_devices:
+        findings.append(_finding(
+            DANGLING, "appbundle.preferredDevice",
+            f"preferredDevice '{pref_device}' must be exactly desktop or phone",
+            ref=pref_device, skill="appbundle",
+        ))
+    elif pref_device and pref_device not in ("desktop", "tablet", "phone"):
         findings.append(_finding(
             DANGLING, "appbundle.preferredDevice",
             f"preferredDevice '{pref_device}' must be desktop/tablet/phone",

@@ -86,6 +86,17 @@ const MODEL: FiveSystemModel = {
 };
 
 describe("deriveAppRuntimeSchema（应用运行 option）", () => {
+  it("projects the single-device authority marker into runtime identity", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.appbundle!.preferredDevice = "phone";
+    (model.appbundle as Record<string, unknown>).deviceAuthority = "single-v1";
+
+    const schema = deriveAppRuntimeSchema(model)!;
+
+    expect(schema.identity.preferredDevice).toBe("phone");
+    expect(schema.identity.deviceAuthority).toBe("single-v1");
+  });
+
   it("preserves a valid Pro workbench surface declaration", () => {
     const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
     model.page!.pages![0].surface = {

@@ -1458,12 +1458,43 @@ def capture_session_screenshot(
 
     if not app_screenshot_available():
         return JSONResponse({"error": "screenshot_unavailable"}, status_code=404)
-    png_bytes = capture_app_screenshot(sid, device=device)
+    authoritative_device = _session_screenshot_device(load_session(sid), device)
+    png_bytes = capture_app_screenshot(sid, device=authoritative_device)
     if not png_bytes:
         return JSONResponse({"error": "screenshot_failed"}, status_code=404)
     from fastapi import Response
 
-    return Response(content=png_bytes, media_type="image/png")
+    response = Response(content=png_bytes, media_type="image/png")
+    response.headers["X-Sliderule-Device"] = authoritative_device
+    return response
+
+
+def _session_screenshot_device(
+    state: Optional[V5SessionState], requested_device: str = "desktop"
+) -> str:
+    """Prefer the current persisted model tier and never probe a second tier."""
+    model: Optional[Dict[str, Any]] = None
+    if state is not None:
+        versions = list(getattr(state, "modelVersions", None) or [])
+        current_id = str(getattr(state, "currentModelVersionId", "") or "")
+        selected = next(
+            (
+                version
+                for version in versions
+                if isinstance(version, dict) and version.get("id") == current_id
+            ),
+            None,
+        )
+        if selected is None and versions:
+            selected = versions[-1]
+        if isinstance(selected, dict) and isinstance(selected.get("model"), dict):
+            model = selected["model"]
+
+    appbundle = model.get("appbundle") if isinstance(model, dict) else None
+    persisted = appbundle.get("preferredDevice") if isinstance(appbundle, dict) else None
+    if persisted in ("desktop", "phone"):
+        return persisted
+    return "phone" if requested_device == "phone" else "desktop"
 
 
 # ---------------------------------------------------------------------------

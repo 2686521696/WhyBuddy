@@ -297,6 +297,7 @@ def _try_llm_generate_evidence(
     try:
         from .v5_llm_generate import generate_five_system_model, model_to_linkage_artifacts
         from .v5_model_gate import validate_five_system_model
+        from .device_policy import normalize_model_preferred_device
     except Exception as exc:
         _llm_generate_diagnostic = {
             "code": "LLM_GENERATE_FAILED",
@@ -325,7 +326,12 @@ def _try_llm_generate_evidence(
         }
         return None
     model = _repair(model)
-    gate = validate_five_system_model(model, require_landing_page_ref=require_landing_page_ref)
+    model = normalize_model_preferred_device(goal, model)
+    gate = validate_five_system_model(
+        model,
+        require_landing_page_ref=require_landing_page_ref,
+        require_preferred_device=True,
+    )
     if not gate.get("passed"):
         # E37 门裁决回喂：确定性修复兜不住的裁决（骨架级悬空引用等），把门的
         # 具体 findings 喂回 LLM 有界重生成一次——错哪改哪，比盲重试/直接
@@ -340,7 +346,12 @@ def _try_llm_generate_evidence(
             retry_model = None
         if retry_model is not None:
             retry_model = _repair(retry_model)
-            retry_gate = validate_five_system_model(retry_model, require_landing_page_ref=require_landing_page_ref)
+            retry_model = normalize_model_preferred_device(goal, retry_model)
+            retry_gate = validate_five_system_model(
+                retry_model,
+                require_landing_page_ref=require_landing_page_ref,
+                require_preferred_device=True,
+            )
             if retry_gate.get("passed"):
                 model, gate = retry_model, retry_gate
     if not gate.get("passed"):
@@ -412,7 +423,9 @@ def _try_llm_generate_evidence(
     # 改动有据可查；真要收紧成硬拦，那是另一个决定。
     try:
         post_gate = validate_five_system_model(
-            model, require_landing_page_ref=require_landing_page_ref
+            model,
+            require_landing_page_ref=require_landing_page_ref,
+            require_preferred_device=True,
         )
         if not post_gate.get("passed"):
             findings = post_gate.get("findings") or []

@@ -16,6 +16,33 @@ const page = (mobile: boolean) => ({
 });
 
 describe("availableDeviceTiers", () => {
+  it("single-v1 desktop 模型即使残留历史手机布局也只开放桌面档", () => {
+    expect(
+      availableDeviceTiers({
+        identity: { preferredDevice: "desktop", deviceAuthority: "single-v1" },
+        pages: [
+          {
+            ...page(true),
+            layout: {
+              grid: {
+                phone: [{ blockRef: "page-content", x: 0, y: 0, w: 4, h: 2 }],
+              },
+            },
+          },
+        ],
+      })
+    ).toEqual(["desktop"]);
+  });
+
+  it("single-v1 phone 模型只开放手机档", () => {
+    expect(
+      availableDeviceTiers({
+        identity: { preferredDevice: "phone", deviceAuthority: "single-v1" },
+        pages: [page(true)],
+      })
+    ).toEqual(["phone"]);
+  });
+
   it("声明 phone → 只有手机档", () => {
     expect(availableDeviceTiers({ identity: { preferredDevice: "phone" }, pages: [] })).toEqual([
       "phone",

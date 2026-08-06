@@ -234,6 +234,7 @@ def test_screenshot_route_forwards_the_requested_device(monkeypatch):
 
     called = []
     monkeypatch.setattr(sliderule_full, "_auth", lambda key: None)
+    monkeypatch.setattr(sliderule_full, "load_session", lambda sid: None)
     monkeypatch.setattr(sc, "app_screenshot_available", lambda: True)
     monkeypatch.setattr(
         sc,
@@ -246,7 +247,38 @@ def test_screenshot_route_forwards_the_requested_device(monkeypatch):
     )
 
     assert response.media_type == "image/png"
+    assert response.headers["x-sliderule-device"] == "phone"
     assert called == [("session-phone", "phone")]
+
+
+def test_screenshot_route_uses_persisted_model_device_over_conflicting_request(monkeypatch):
+    from types import SimpleNamespace
+    from routes import sliderule_full
+
+    called = []
+    state = SimpleNamespace(
+        currentModelVersionId="mv-phone",
+        modelVersions=[
+            {"id": "mv-desktop", "model": {"appbundle": {"preferredDevice": "desktop"}}},
+            {"id": "mv-phone", "model": {"appbundle": {"preferredDevice": "phone"}}},
+        ],
+    )
+    monkeypatch.setattr(sliderule_full, "_auth", lambda key: None)
+    monkeypatch.setattr(sliderule_full, "load_session", lambda sid: state)
+    monkeypatch.setattr(sc, "app_screenshot_available", lambda: True)
+    monkeypatch.setattr(
+        sc,
+        "capture_app_screenshot",
+        lambda sid, device="desktop": called.append((sid, device)) or b"PNG",
+    )
+
+    response = sliderule_full.capture_session_screenshot(
+        "session-authoritative", device="desktop", x_internal_key="test"
+    )
+
+    assert response.media_type == "image/png"
+    assert response.headers["x-sliderule-device"] == "phone"
+    assert called == [("session-authoritative", "phone")]
 
 
 class TestSelfVerifyGate:

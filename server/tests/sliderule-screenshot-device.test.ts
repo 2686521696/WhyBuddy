@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   normalizeScreenshotDevice,
+  resolveScreenshotResponseDevice,
   screenshotCacheSlug,
 } from "../routes/sliderule-screenshot-device.js";
 
@@ -20,5 +21,12 @@ describe("SlideRule screenshot device contract", () => {
     expect(desktop).not.toBe(phone);
     expect(desktop).toContain("-desktop-");
     expect(phone).toContain("-phone-");
+  });
+
+  it("uses the authoritative response device over a conflicting request", () => {
+    expect(resolveScreenshotResponseDevice("desktop", "phone")).toBe("phone");
+    expect(resolveScreenshotResponseDevice("phone", "desktop")).toBe("desktop");
+    expect(resolveScreenshotResponseDevice("phone", null)).toBe("phone");
+    expect(resolveScreenshotResponseDevice("tablet", "tablet")).toBe("desktop");
   });
 });

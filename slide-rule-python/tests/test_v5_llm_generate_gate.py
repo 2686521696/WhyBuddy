@@ -12,6 +12,7 @@ llm_json_fn drives generation with NO key + NO network.
 
 import os
 import sys
+import copy
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -94,6 +95,39 @@ def test_valid_model_passes_gate():
     assert result["findings"] == []
 
 
+def test_generated_model_gate_requires_one_supported_preferred_device():
+    for device in (None, "", "tablet", "watch"):
+        model = _valid_library_model()
+        if device is not None:
+            model["appbundle"]["preferredDevice"] = device
+
+        result = validate_five_system_model(model, require_preferred_device=True)
+
+        assert result["passed"] is False
+        assert any(
+            finding["path"] == "appbundle.preferredDevice"
+            for finding in result["findings"]
+        )
+
+    for device in ("desktop", "phone"):
+        model = _valid_library_model()
+        model["appbundle"]["preferredDevice"] = device
+
+        result = validate_five_system_model(model, require_preferred_device=True)
+
+        assert result["passed"] is True, result["findings"]
+
+
+def test_historic_model_gate_remains_tolerant_of_missing_or_tablet_device():
+    missing = validate_five_system_model(_valid_library_model())
+    tablet_model = _valid_library_model()
+    tablet_model["appbundle"]["preferredDevice"] = "tablet"
+    tablet = validate_five_system_model(tablet_model)
+
+    assert missing["passed"] is True, missing["findings"]
+    assert tablet["passed"] is True, tablet["findings"]
+
+
 def test_marketing_landing_presentation_rejects_dashboard_content():
     model = _valid_library_model()
     page = model["page"]["pages"][0]
@@ -146,6 +180,80 @@ def test_generation_contract_requires_a_real_landing_page():
 
     assert '"landingPageRef": "<page_id shown first when the app opens>"' in _SCHEMA_INSTRUCTION
     assert "appbundle.landingPageRef is REQUIRED" in _SCHEMA_INSTRUCTION
+
+
+def test_generation_contract_requires_exactly_one_supported_device():
+    from services.v5_llm_generate import _SCHEMA_INSTRUCTION
+
+    assert '"preferredDevice": "desktop|phone"' in _SCHEMA_INSTRUCTION
+    assert "preferredDevice is REQUIRED" in _SCHEMA_INSTRUCTION
+    assert "never omit" in _SCHEMA_INSTRUCTION.lower()
+    assert "desktop|tablet|phone" not in _SCHEMA_INSTRUCTION
+
+
+def test_llm_generation_normalizes_device_before_gate_and_visual_enrichment(monkeypatch):
+    from services import app_store, freeform_block, v5_llm_generate
+    from services.v5_capability_executor import _try_llm_generate_evidence
+
+    generated = _valid_library_model()
+    seen = []
+    monkeypatch.setattr(
+        v5_llm_generate,
+        "generate_five_system_model",
+        lambda *args, **kwargs: copy.deepcopy(generated),
+    )
+    monkeypatch.setattr(
+        freeform_block,
+        "enrich_freeform_blocks",
+        lambda model: seen.append(("blocks", copy.deepcopy(model["appbundle"]))) or model,
+    )
+    monkeypatch.setattr(
+        freeform_block,
+        "enrich_monitor_page_overviews",
+        lambda model, **kwargs: seen.append(("monitor", copy.deepcopy(model["appbundle"]))) or model,
+    )
+    monkeypatch.setattr(app_store, "save_app_or_version", lambda *args, **kwargs: None)
+
+    result = _try_llm_generate_evidence("做一个手机图书借阅 App", lambda prompt: {})
+
+    assert result is not None
+    assert [stage for stage, _ in seen] == ["blocks", "monitor"]
+    assert all(bundle["preferredDevice"] == "phone" for _, bundle in seen)
+    assert all(bundle["deviceAuthority"] == "single-v1" for _, bundle in seen)
+
+
+def test_gate_feedback_retry_is_normalized_before_strict_gate(monkeypatch):
+    from services import app_store, freeform_block, v5_llm_generate
+    from services.v5_capability_executor import _try_llm_generate_evidence
+
+    broken = _valid_library_model()
+    del broken["aigc"]
+    repaired_retry = _valid_library_model()
+    generated = iter((copy.deepcopy(broken), copy.deepcopy(repaired_retry)))
+    seen = []
+    monkeypatch.setattr(
+        v5_llm_generate,
+        "generate_five_system_model",
+        lambda *args, **kwargs: next(generated),
+    )
+    monkeypatch.setattr(freeform_block, "enrich_freeform_blocks", lambda model: model)
+    monkeypatch.setattr(
+        freeform_block,
+        "enrich_monitor_page_overviews",
+        lambda model, **kwargs: seen.append(copy.deepcopy(model["appbundle"])) or model,
+    )
+    monkeypatch.setattr(app_store, "save_app_or_version", lambda *args, **kwargs: None)
+
+    result = _try_llm_generate_evidence("做一个 PC 端图书管理网页", lambda prompt: {})
+
+    assert result is not None
+    assert seen == [
+        {
+            **repaired_retry["appbundle"],
+            "preferredDevice": "desktop",
+            "deviceAuthority": "single-v1",
+        }
+    ]
 
 
 def test_missing_section_blocked():
@@ -497,7 +605,14 @@ def test_llm_path_per_skill_evidence_carries_model_sections():
     )
     for skill in REQUIRED_EVIDENCE_KEYS:
         assert per_skill[skill]["evidencePresent"] is True
-        assert per_skill[skill]["modelSection"] == model[skill], skill
+        if skill == "appbundle":
+            assert per_skill[skill]["modelSection"] == {
+                **model[skill],
+                "preferredDevice": "desktop",
+                "deviceAuthority": "single-v1",
+            }
+        else:
+            assert per_skill[skill]["modelSection"] == model[skill], skill
 
 
 def test_deterministic_domain_carries_builtin_model_section():
@@ -584,7 +699,14 @@ def test_stream_skill_result_emits_model_section_for_llm_path(monkeypatch):
     for skill in REQUIRED_EVIDENCE_KEYS:
         event = by_label[skill]
         assert event["evidencePresent"] is True
-        assert event["modelSection"] == model[skill], skill
+        if skill == "appbundle":
+            assert event["modelSection"] == {
+                **model[skill],
+                "preferredDevice": "desktop",
+                "deviceAuthority": "single-v1",
+            }
+        else:
+            assert event["modelSection"] == model[skill], skill
         assert isinstance(event.get("mermaid"), str)  # edge projection still present
 
 
