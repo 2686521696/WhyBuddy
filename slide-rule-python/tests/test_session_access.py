@@ -79,19 +79,23 @@ def test_superuser_sees_everything():
     assert can_session("delete", THEIRS, ROOT)
 
 
-def test_ownerless_stays_readable():
-    """无主保持可读 —— 与应用侧存量数据同一条规则，是**有意**的取舍。
+def test_ownerless_is_superuser_only():
+    """无主会话只有超管看得到（2026-08-06 方案 B 之后收紧）。
 
-    真正要防的是登录用户之间互看业务内容（上面几条已经保证）。无主的只有
-    两类：字段存在之前的存量数据，和匿名建的。一刀切成不可读会让匿名用户
-    连自己刚建的会话都读不回来。要清零跑 scripts/backfill_session_owner.py。
+    第一版让无主"保持可读"，与应用侧存量数据同规则。用户实测后否掉了：
+    没登录建的会话，登录之后照样出现在列表里。
+
+    方案 B 从源头解决——建会话已经要求登录，正常路径不再产生无主会话。
+    剩下的唯一来源是**本机文件存档自动导入**（启动时把
+    data/sliderule-sessions.json 灌进库，那批天然没有归属），那种更不该
+    人人可见。
     """
     for payload in (LEGACY, ANON_MADE):
-        assert session_access(payload, BOB) == Access.READ
-        assert can_session("view", payload, BOB)
-        # 但仍然不能写、不能删——READ 就是 READ
-        assert not can_session("drive", payload, BOB)
-        assert not can_session("delete", payload, BOB)
+        assert session_access(payload, BOB) == Access.NONE
+        assert session_access(payload, None) == Access.NONE
+        assert not can_session("view", payload, BOB)
+        # 超管仍然看得到——否则导入进来的数据谁也管不了
+        assert session_access(payload, ROOT) == Access.OWNER
 
 
 def test_list_filter_matches_single_decision():
@@ -102,10 +106,10 @@ def test_list_filter_matches_single_decision():
     """
     everything = [MINE, THEIRS, LEGACY]
     for viewer, expected in (
-        (ALICE, {"s-alice", "s-legacy"}),
-        (BOB, {"s-bob", "s-legacy"}),
-        (None, {"s-legacy"}),
-        (ROOT, {"s-alice", "s-bob", "s-legacy"}),
+        (ALICE, {"s-alice"}),
+        (BOB, {"s-bob"}),
+        (None, set()),                                   # 匿名什么都看不到
+        (ROOT, {"s-alice", "s-bob", "s-legacy"}),        # 只有超管看得到无主的
     ):
         got = {p["sessionId"] for p in filter_sessions(everything, viewer)}
         assert got == expected, f"viewer={viewer} 拿到 {got}"
@@ -114,14 +118,17 @@ def test_list_filter_matches_single_decision():
             assert session_access(payload, viewer) >= Access.READ
 
 
-def test_owned_sessions_are_private_not_public():
-    """有主的会话可见性必须是 private —— 不能因为漏设而落进"公开"那一支。"""
+def test_sessions_are_always_private():
+    """会话可见性恒为 private，**无主也一样**。
+
+    没有"公开分享一个会话"这个产品概念（要分享的是应用）。留一个会落进
+    "公开"那一支的取值，就等于给泄漏留了条路。
+    """
     from services.app_access import Visibility
 
     assert session_record(MINE)["visibility"] == Visibility.PRIVATE
     assert session_record(MINE)["owner_id"] == "user-alice"
-    # 无主留空，走 access_for 里"存量数据保持可读"那一支
-    assert session_record(LEGACY)["visibility"] == ""
+    assert session_record(LEGACY)["visibility"] == Visibility.PRIVATE
     assert session_record(LEGACY)["owner_id"] is None
 
 
@@ -155,12 +162,16 @@ def test_new_sessions_carry_the_current_user():
         S._sessions.pop(state.sessionId, None)
 
 
-def test_anonymous_creation_is_allowed_and_ownerless():
-    """匿名建会话是合法状态，不能因为没登录就建不出来。"""
-    from services import slide_rule_session as S
+def test_anonymous_cannot_create_a_session():
+    """方案 B：建会话必须登录，从源头消灭"无主会话"这个状态。
 
-    state = S.create_session("匿名建的")
-    try:
-        assert state.ownerId is None
-    finally:
-        S._sessions.pop(state.sessionId, None)
+    路由层用 _require_login 拦（401）。这里钉的是**动机**：允许匿名建就
+    必然产生无主会话，而"无主该给谁看"没有好答案——给所有人看是泄漏，
+    只给超管看则游客读不回自己刚建的那条。
+    """
+    import inspect
+
+    from routes import sliderule_full
+
+    src = inspect.getsource(sliderule_full.create_sess)
+    assert "_require_login(viewer)" in src, "建会话路由必须要求登录"

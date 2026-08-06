@@ -307,8 +307,12 @@ def _require_session(state: Any, action: str, viewer) -> None:
         raise HTTPException(404, "Not found")
 
 
-def _require_login_to_drive(viewer) -> None:
-    """推演必须登录（2026-08-02，用户裁决：匿名只能查看）。
+def _require_login(viewer) -> None:
+    """建会话与推演都必须登录。
+
+    2026-08-02 用户裁决"匿名只能查看"时只管了推演；2026-08-06 方案 B 之后
+    建会话也走这里——所以名字从 _require_login_to_drive 改成中性的
+    _require_login，免得下一个人以为它只跟推演有关。
 
     为什么在这里拦而不是只靠前端藏按钮：那套 RBAC 后台的字段权限就是只藏了前端、
     后端照样返回全部字段。**前端藏起来的按钮不等于后端拦得住。**
@@ -337,6 +341,16 @@ async def create_sess(
     x_internal_key: Optional[str] = Header(None),
 ):
     _auth(x_internal_key)
+    # 建会话必须登录（2026-08-06，用户裁决"方案 B"）。
+    #
+    # 为什么从源头堵而不是事后定规则：允许匿名建会话就必然产生**无主会话**，
+    # 而"无主该给谁看"没有好答案——给所有人看就是泄漏（实测：没登录建的会话，
+    # 登录后照样出现在列表里）；只给超管看则游客连自己刚建的那条都读不回来。
+    # 不让这个状态存在，比事后给它定规则干净。
+    #
+    # 代价：游客不能试用。可以接受，因为推演本来就已经要求登录
+    # （_require_login_to_drive）——一个建得出来却推不动的会话没有意义。
+    _require_login(viewer)
     # 把访问者放进请求上下文，create_session 深处才取得到 ownerId
     # （contextvars，见 services/request_context.py 顶部）。
     #
@@ -691,7 +705,7 @@ def drive(
 ):
     """Single turn drive (drive_reasoning_turn). Full multi-loop driver authority exposed via /drive-full."""
     _auth(x_internal_key)
-    _require_login_to_drive(viewer)
+    _require_login(viewer)
     state = V5SessionState(**payload["state"])
     new_state = drive_reasoning_turn(state, payload["turnId"], payload.get("userText", ""))
     # python provenance for turn/drive (covers turn + downstream evidence/report)
@@ -730,7 +744,7 @@ def drive_full(
     Real userText (user instruction) is forwarded so it drives pick/orchestrate/execute/artifacts/GCOV/phase.
     """
     _auth(x_internal_key)
-    _require_login_to_drive(viewer)
+    _require_login(viewer)
     raw_state, _ = sanitize_session_dict(payload["state"])
     # PYTHON_AUTHORITY: 已持久化的服务端会话是权威起点。客户端 state 经防伪造清洗后
     # 会失去 trustLevel/producedBy/台账（正确的防伪行为），若以它为起点，之前所有
@@ -843,7 +857,7 @@ async def drive_full_stream(
         publish_closure — final closure evidence
         complete      — final state; stream ends
     """
-    _require_login_to_drive(viewer)
+    _require_login(viewer)
     import json
 
     _auth(x_internal_key)

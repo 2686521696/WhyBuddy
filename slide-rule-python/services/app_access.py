@@ -332,9 +332,16 @@ def session_record(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str((payload or {}).get("sessionId") or ""),
         "owner_id": owner,
-        # 无主时留空 visibility，走 access_for 里"存量数据保持可读"那一支；
-        # 有主时明确 private，只有本人/超管。
-        "visibility": Visibility.PRIVATE if owner else "",
+        # **恒为 private，无主也一样**（2026-08-06 用户裁决"方案 B"之后收紧）。
+        #
+        # 原来无主留空 visibility，走 access_for 里"存量数据保持可读"那一支——
+        # 跟应用侧存量数据同一条规则。方案 B 之后这条规则失去了理由：建会话
+        # 已经要求登录，正常路径上不再产生无主会话。剩下的唯一来源是**本机
+        # 文件存档自动导入**（启动时把 data/sliderule-sessions.json 灌进库，
+        # 那批天然没有归属）——那种更不该人人可见。
+        #
+        # 结果：无主会话只有超管看得到（access_for 第 ④ 步）。
+        "visibility": Visibility.PRIVATE,
     }
 
 
