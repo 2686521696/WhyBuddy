@@ -18,6 +18,7 @@ North-star discipline (先证通用性，再接 LLM；别把两件事耦合):
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional
 
 from .enrich_timing import stage as _enrich_stage
@@ -363,25 +364,121 @@ _SCHEMA_INSTRUCTION = _append_experience_block_catalog(
 )
 
 
+# ── 请求域状态（2026-08-06 从模块级全局改过来）──────────────────────
+#
+# 下面这几项原本是**普通模块级全局**，等于整个进程共用一份。单人本地开发看
+# 不出问题，多租户并发下三条全部实测复现（并发探针，两个请求 + 三个并行 worker）：
+#
+#   _delta_sink            → 用户 A 生成的内容实时出现在用户 B 的页面上，
+#                            A 自己那边一片空白。**跨用户内容泄漏。**
+#   _installed_skills      → A 装的技能没进 A 的生成，B 的技能进去了。
+#   _last_call_error       → 三个并行 worker 互相覆盖，报错张冠李戴
+#                            （datamodel 挂了却报 rbac 挂了）。
+#   last_generate_diagnostic → 同上，跨请求互相覆盖。
+#
+# ## 为什么用 ContextVar，以及为什么其中一个必须存「可变容器」
+#
+# ContextVar 是 PEP 567 给的标准答案，且**与现有并行实现天然配套**：
+# v5_parallel_generate._run_wave 已经用 `copy_context()` + `ctx.run(...)` 把
+# 上下文传进 worker（与 OpenTelemetry 的 `context.get_current()` /
+# `context.attach()` 是同一套语义，见 opentelemetry-instrumentation-threading
+# 的 __wrap_thread_pool_submit）。
+#
+# 但那套复制的是 ContextVar 的**值**——worker 里 `var.set(x)` **不会**回传给
+# 父线程。这对 sink / skills 无所谓（父设、子读），对 _last_call_error 却是
+# 致命的：它恰恰是 worker 写、主线程读，存值会让主线程永远读到空。
+#
+# 解法照抄两个成熟实现共用的那一招：**ContextVar 存的是可变容器的引用，
+# 不是值本身**。父子共享同一个 dict，worker 改 dict 主线程看得见；不同请求
+# 各拿各的 dict，天然隔离。出处：
+#   · OpenTelemetry —— ContextVar 存 Span 引用，子任务改 Span 属性，父任务读得到
+#   · asgiref.local._CVar —— ContextVar 存 _Storage，真正的数据在 _Storage.data
+#     这个可变 dict 里（django/asgiref，asgiref/local.py）
+#
+# 顺带：容器还让「三个 worker 互相覆盖」这件事也解决了——按 section 分键存，
+# 谁的错就是谁的，不用抢同一个格子。
+
 # 最近一次生成的诊断（供 publish closure 的 blocker 面向用户透出失败原因；
 # fail-closed 判定完全不读它——它只是留痕，不参与 trust/gate）。
-last_generate_diagnostic: Dict[str, Any] = {}
+_diagnostic_var: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
+    "sliderule_generate_diagnostic", default=None
+)
 
 # 实时增量回调（推演可观测性）：驱动层注册后，五系统 LLM 生成的内容增量会
 # 逐块推给它（SSE llm_delta → 前端左栏实时草稿）。只是观测钩子——不参与
 # 生成结果、gate、trust 判定；回调异常被吞掉，永不影响调用本身。
-# 注意：模块级单 sink，多会话并发时增量会交织（本地单人 dev 可接受）。
-_delta_sink: Optional[Callable[[str], None]] = None
+_delta_sink_var: ContextVar[Optional[Callable[[str], None]]] = ContextVar(
+    "sliderule_generate_delta_sink", default=None
+)
+
+# 每请求一个的错误簿：worker 线程写、主线程读，所以必须是可变容器（理由见上）。
+# 键是 section 名（并行路径）或 "default"（串行路径）。
+_error_book_var: ContextVar[Optional[Dict[str, str]]] = ContextVar(
+    "sliderule_generate_error_book", default=None
+)
+
+
+def _error_book() -> Dict[str, str]:
+    """拿到本请求的错误簿；没有就建一个并绑上去。
+
+    懒建而不是在请求入口建：这个模块有一堆入口（评测脚本、测试、直接调
+    generate_five_system_model），要求每个入口都记得初始化必然会漏，
+    漏了就退回"读不到任何错误原因"——比串号更难查。
+    """
+    book = _error_book_var.get()
+    if book is None:
+        book = {}
+        _error_book_var.set(book)
+    return book
+
+
+def _section_label(required_keys: "tuple[str, ...]") -> str:
+    """并行 worker 的错误按段归档，别让三个 worker 抢同一个格子。
+
+    并行路径每个 worker 的 required_keys 就是 (section,)，直接拿来当键。
+    """
+    return required_keys[0] if len(required_keys) == 1 else "default"
+
+
+def _record_call_error(detail: str, *, section: str = "default") -> None:
+    _error_book()[section] = detail
+
+
+def _read_call_error() -> str:
+    """汇总本请求记下的错误。并行路径下多个 section 都失败时逐条列出。"""
+    book = _error_book_var.get() or {}
+    if not book:
+        return ""
+    if len(book) == 1:
+        return next(iter(book.values()))
+    return "；".join(f"{sec}: {msg}" for sec, msg in sorted(book.items()))
 
 
 def set_generate_delta_sink(sink: "Optional[Callable[[str], None]]") -> None:
-    global _delta_sink
-    _delta_sink = sink
+    _delta_sink_var.set(sink)
+
+
+def get_generate_diagnostic() -> Dict[str, Any]:
+    """本请求最近一次生成的诊断。
+
+    从模块属性 `last_generate_diagnostic` 换成访问器（2026-08-06）：属性读法
+    在多租户下会读到别的请求的结果。调用方原本写的是
+    `from .v5_llm_generate import last_generate_diagnostic as _diag`——那是
+    函数内 import，每次拿的是当时的模块属性，正好跨请求串。
+    """
+    return _diagnostic_var.get() or {}
+
+
+def set_generate_diagnostic(diag: Optional[Dict[str, Any]]) -> None:
+    """给测试/评测脚本用的显式写入口（生产路径由生成函数自己写）。"""
+    _diagnostic_var.set(diag)
 
 
 # 已安装技能（技能库六期"推演注入"）：/drive-full(-stream) 在请求进入时设置、
-# 结束后清空——与 _delta_sink 同一请求域上下文模式（同样的单进程并发注意事项）。
-_installed_skills: List[Dict[str, str]] = []
+# 结束后清空。请求域隔离，见本段顶部。
+_installed_skills_var: ContextVar[Optional[List[Dict[str, str]]]] = ContextVar(
+    "sliderule_installed_skills", default=None
+)
 
 
 # 消费通道（2026-07-27）。此前所有已安装技能走同一条硬要求："必须落成一条
@@ -423,7 +520,6 @@ def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:
 
     传 None / 空列表即清空——无安装时生成 prompt 与历史逐字节一致。
     """
-    global _installed_skills
     cleaned: List[Dict[str, str]] = []
     for raw in skills or []:
         if not isinstance(raw, dict):
@@ -445,12 +541,12 @@ def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:
         cleaned.append(entry)
         if len(cleaned) >= 6:
             break
-    _installed_skills = cleaned
+    _installed_skills_var.set(cleaned)
 
 
 def installed_skills_for_channel(channel: str) -> List[Dict[str, str]]:
     """按通道取本轮已安装技能。体验层（identity_theme_gen）用它取设计指导。"""
-    return [s for s in _installed_skills if s.get("channel") == channel]
+    return [s for s in (_installed_skills_var.get() or []) if s.get("channel") == channel]
 
 
 # E29 增量迭代：精修/回退上下文（与 _installed_skills 同一请求域模式）。
@@ -496,7 +592,7 @@ def get_model_override() -> "Optional[Dict[str, Any]]":
 
 
 def _emit_delta(chunk: str) -> None:
-    sink = _delta_sink
+    sink = _delta_sink_var.get()
     if sink is None:
         return
     try:
@@ -505,7 +601,6 @@ def _emit_delta(chunk: str) -> None:
         pass
 
 # _default_llm_json_fn 内部最近一次调用失败的原因（LlmError / 异常文本）。
-_last_call_error: str = ""
 
 
 def _build_user_content(
@@ -598,7 +693,6 @@ def _build_user_content(
 def _structured_llm_json_fn(messages: list) -> Optional[Dict[str, Any]]:
     """P3 结构化通道（instructor 错误回喂）：校验失败把「上次输出+具体报错」
     拼回消息让模型自我修正——替代盲重采样。失败返回 None（调用方回落/留痕）。"""
-    global _last_call_error
     try:
         from sliderule_llm.structured import (
             StructuredLlmError,
@@ -620,7 +714,7 @@ def _structured_llm_json_fn(messages: list) -> Optional[Dict[str, Any]]:
         return parsed if isinstance(parsed, dict) else None
     except StructuredLlmError as exc:
         print(f"[v5_llm_generate] structured channel failed: {str(exc)[:200]}")
-        _last_call_error = f"structured: {str(exc)[:160]}"
+        _record_call_error(f"structured: {str(exc)[:160]}")
         return None
 
 
@@ -635,7 +729,6 @@ def _parallel_json_call(
     valid preview stream. Progress is exposed through the per-node timing/SSE
     stages instead; the final assembled model still follows the existing stream.
     """
-    global _last_call_error
     effective_max_tokens = max(max_tokens, _generate_max_tokens())
     try:
         from sliderule_llm.structured import (
@@ -654,7 +747,7 @@ def _parallel_json_call(
                     max_retries=1,
                 )
             except StructuredLlmError as exc:
-                _last_call_error = f"parallel structured: {str(exc)[:160]}"
+                _record_call_error(f"structured: {str(exc)[:160]}", section=_section_label(required_keys))
     except Exception:
         pass
 
@@ -672,7 +765,7 @@ def _parallel_json_call(
         )
         return parsed if isinstance(parsed, dict) else None
     except Exception as exc:  # noqa: BLE001
-        _last_call_error = f"parallel worker: {str(exc)[:160]}"
+        _record_call_error(f"{type(exc).__name__}: {str(exc)[:160]}", section=_section_label(required_keys))
         return None
 
 
@@ -685,12 +778,11 @@ def _default_llm_json_fn(goal: str, gate_feedback: Optional[str] = None) -> Opti
     - 有流式 sink（交互 UI 要 llm_delta 直播）：旧流式通道优先保直播，
       失败用结构化通道救场（少看一段直播，换回一个能用的模型）。
     """
-    global _last_call_error
-    _last_call_error = ""
+    _error_book().clear()
     try:
         from sliderule_llm.client import call_llm_json_with_shape, LlmError
     except Exception as exc:
-        _last_call_error = f"llm client unavailable: {str(exc)[:160]}"
+        _record_call_error(f"llm client unavailable: {str(exc)[:160]}")
         return None
     user_content = _build_user_content(goal)
     if gate_feedback:
@@ -706,7 +798,7 @@ def _default_llm_json_fn(goal: str, gate_feedback: Optional[str] = None) -> Opti
         {"role": "system", "content": _SCHEMA_INSTRUCTION},
         {"role": "user", "content": user_content},
     ]
-    streaming = _delta_sink is not None
+    streaming = _delta_sink_var.get() is not None
     if not streaming:
         parsed = _structured_llm_json_fn(messages)
         if parsed is not None:
@@ -725,7 +817,7 @@ def _default_llm_json_fn(goal: str, gate_feedback: Optional[str] = None) -> Opti
             # 的网关抖动（线上案例：blackaicoding 502 连吃三发）。
             backoff_ms=2000,
             # sink 已注册时走流式：内容增量实时推给 UI（llm_delta）。
-            on_delta=_emit_delta if _delta_sink is not None else None,
+            on_delta=_emit_delta if _delta_sink_var.get() is not None else None,
         )
         return parsed if isinstance(parsed, dict) else None
     except LlmError as exc:
@@ -739,11 +831,11 @@ def _default_llm_json_fn(goal: str, gate_feedback: Optional[str] = None) -> Opti
                 return rescued
         from services.llm_error_text import humanize_llm_error
 
-        _last_call_error = f"LlmError: {humanize_llm_error(str(exc))[:180]}"
+        _record_call_error(f"LlmError: {humanize_llm_error(str(exc))[:180]}")
         print(f"[v5_llm_generate] LlmError: {str(exc)[:200]}")
         return None
     except Exception as exc:  # noqa: BLE001
-        _last_call_error = f"{type(exc).__name__}: {str(exc)[:180]}"
+        _record_call_error(f"{type(exc).__name__}: {str(exc)[:180]}")
         print(f"[v5_llm_generate] unexpected error: {str(exc)[:200]}")
         return None
 
@@ -766,14 +858,13 @@ def generate_five_system_model(
     `gate_feedback`（E37）：上一版模型的结构门裁决文本。只作用于默认 LLM
     通道（注入 fn 的测试路径不受影响）——喂回后 LLM 定向改错重生成。
     """
-    global last_generate_diagnostic
-    last_generate_diagnostic = {}
+    _diagnostic_var.set({})
     if not (goal or "").strip():
         return None
     # E29 版本回退：直供模型即生成结果（结构闸仍由调用方照常执行）
     model_override = get_model_override()
     if model_override is not None:
-        last_generate_diagnostic = {"outcome": "ok"}
+        _diagnostic_var.set({"outcome": "ok"})
         return dict(model_override)
     use_parallel = False
     if llm_json_fn is None and not gate_feedback and get_refine_context() is None:
@@ -822,7 +913,7 @@ def generate_five_system_model(
                 last_detail = f"{type(exc).__name__}: {str(exc)[:180]}"
                 model = None
             if isinstance(model, dict) and all(section in model for section in _REQUIRED_SECTIONS):
-                last_generate_diagnostic = {"outcome": "ok"}
+                _diagnostic_var.set({"outcome": "ok"})
                 _st["used"] = attempt + 1
                 return model
             if model is not None:
@@ -830,13 +921,13 @@ def generate_five_system_model(
                 last_detail = "LLM 返回的模型缺少必需的五系统段"
             else:
                 print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} returned no model")
-                last_detail = _last_call_error or last_detail or "LLM 未返回模型"
+                last_detail = _read_call_error() or last_detail or "LLM 未返回模型"
             if attempt + 1 < attempts:
                 import time as _time
 
                 _time.sleep(2.0)
         _st["used"] = attempts
-    last_generate_diagnostic = {"outcome": "failed", "detail": last_detail}
+    _diagnostic_var.set({"outcome": "failed", "detail": last_detail})
     return None
 
 

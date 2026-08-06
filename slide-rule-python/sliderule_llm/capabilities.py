@@ -16,6 +16,7 @@ call_llm_json_with_shape. Anything else raises UnsupportedCapability so the call
 from __future__ import annotations
 
 import re
+from contextvars import ContextVar
 from typing import Any, Callable
 
 from .client import LlmError, LlmResult, call_llm_json_with_shape, call_llm_with_retry
@@ -29,21 +30,28 @@ class UnsupportedCapability(Exception):
 # 实时增量回调（推演可观测性）：驱动层注册后，每个能力的 LLM 内容增量会带
 # capability 标签逐块推给它（SSE llm_delta → 前端左栏实时输出）。只是观测
 # 钩子——不参与结果/gate/trust；回调异常被吞掉，永不影响调用本身。
-# 注意：模块级单 sink，多会话并发时增量会交织（本地单人 dev 可接受）。
-_delta_sink: Callable[[str, str], None] | None = None
+#
+# 2026-08-06：从模块级全局改成请求域 ContextVar。原来的注释写着"多会话并发时
+# 增量会交织（本地单人 dev 可接受）"——那个前提在有账号的多租户下不成立了。
+# 实测过它的同门兄弟 v5_llm_generate._delta_sink：两个并发流式推演，后到的把
+# 先到的 sink 顶掉，**用户 A 生成的内容实时出现在用户 B 的页面上**，A 自己
+# 那边一片空白。这个 sink 是同一形状同一后果，只是走能力执行那条链路。
+# 详细取舍见 services/v5_llm_generate.py 里那段"请求域状态"说明。
+_delta_sink_var: ContextVar[Callable[[str, str], None] | None] = ContextVar(
+    "sliderule_capability_delta_sink", default=None
+)
 
 
 def set_capability_delta_sink(sink: Callable[[str, str], None] | None) -> None:
-    global _delta_sink
-    _delta_sink = sink
+    _delta_sink_var.set(sink)
 
 
 def _delta_emitter(capability_id: str) -> Callable[[str], None] | None:
-    if _delta_sink is None:
+    if _delta_sink_var.get() is None:
         return None
 
     def _emit(chunk: str, _cap: str = capability_id) -> None:
-        sink = _delta_sink
+        sink = _delta_sink_var.get()
         if sink is None:
             return
         try:

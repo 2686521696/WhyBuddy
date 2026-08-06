@@ -133,4 +133,4 @@ def test_stream_emits_labeled_llm_delta_during_rounds(driver, monkeypatch, paral
     )
     assert first_delta < first_result
     # 流结束后模块级 sink 已注销
-    assert caps._delta_sink is None
+    assert caps._delta_sink_var.get() is None

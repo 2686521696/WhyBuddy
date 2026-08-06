@@ -765,10 +765,11 @@ def test_blocked_closure_carries_llm_failed_diagnostic(monkeypatch):
     import services.v5_llm_generate as v5_llm_generate
 
     def _boom(goal, llm_json_fn=None):
-        v5_llm_generate.last_generate_diagnostic = {
+        # 请求域 ContextVar，不再是模块属性（2026-08-06）
+        v5_llm_generate.set_generate_diagnostic({
             "outcome": "failed",
             "detail": "LlmError: connection refused to llm host",
-        }
+        })
         return None
 
     monkeypatch.setattr(v5_llm_generate, "generate_five_system_model", _boom)
@@ -814,7 +815,7 @@ def test_stream_emits_llm_delta_during_generation(monkeypatch):
     assert len(deltas) >= 1, "generation increments must surface as llm_delta events"
     assert '"datamodel"' in "".join(d["text"] for d in deltas)
     # sink 用完即卸载（不泄漏到后续会话）
-    assert v5_llm_generate._delta_sink is None
+    assert v5_llm_generate._delta_sink_var.get() is None
 
 
 def test_diagnostic_never_affects_closure_hash(monkeypatch):

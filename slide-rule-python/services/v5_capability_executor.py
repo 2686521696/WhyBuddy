@@ -318,8 +318,11 @@ def _try_llm_generate_evidence(
 
     model = generate_five_system_model(goal, llm_json_fn=llm_json_fn)
     if model is None:
-        from .v5_llm_generate import last_generate_diagnostic as _diag
+        # 请求域访问器，不是模块属性——属性读法在多租户下会读到别的请求的诊断
+        # （2026-08-06，见 v5_llm_generate 里那段请求域状态说明）。
+        from .v5_llm_generate import get_generate_diagnostic
 
+        _diag = get_generate_diagnostic()
         _llm_generate_diagnostic = {
             "code": "LLM_GENERATE_FAILED",
             "detail": str((_diag or {}).get("detail") or "LLM 未返回完整五系统模型")[:200],
