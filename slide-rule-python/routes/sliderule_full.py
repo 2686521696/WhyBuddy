@@ -250,15 +250,27 @@ async def _run_orchestrate_plan(payload: Any):
     return dumped
 
 @router.get("/sessions")
-async def list_sess(x_internal_key: Optional[str] = Header(None)):
-    """Thin list for Node thin-proxy compat. Returns slim list shape matching prior Node contract."""
+async def list_sess(
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """Thin list for Node thin-proxy compat. Returns slim list shape matching prior Node contract.
+
+    2026-08-06 补归属过滤。此前这条路由**没有 viewer 参数**，直接 load_all()
+    全量返回——实测匿名请求能列出全站所有人的会话，连业务目标原文都在里面。
+    过滤复用 app_access（会话与应用共用同一套阶梯），不另写条件：列表与单条
+    判定漂移是这类系统最常见的泄漏方式。
+    """
     _auth(x_internal_key)
+    from services.app_access import session_access, Access
     from services.persistence import read_session_meta
 
     states = list((load_all() or {}).values()) or list(_sessions.values())
     meta = read_session_meta()
     items = []
     for s in states:
+        if session_access(_session_payload(s), viewer) < Access.READ:
+            continue
         g = s.goal if isinstance(getattr(s, "goal", None), dict) else {}
         sid = getattr(s, "sessionId", "")
         m = meta.get(sid) if isinstance(meta.get(sid), dict) else {}
@@ -272,6 +284,28 @@ async def list_sess(x_internal_key: Optional[str] = Header(None)):
             "phase": getattr(s, "runtimePhase", None),
         })
     return {"sessions": items}
+
+def _session_payload(state: Any) -> Dict[str, Any]:
+    """把会话状态取成 app_access 认识的 payload（dict 或 pydantic 模型都收）。"""
+    if isinstance(state, dict):
+        return state
+    return {
+        "sessionId": getattr(state, "sessionId", ""),
+        "ownerId": getattr(state, "ownerId", None),
+    }
+
+
+def _require_session(state: Any, action: str, viewer) -> None:
+    """会话动作的统一守卫。
+
+    级别不够抛 404 而不是 403 —— 与 app_access.require 同一取向：403 等于告诉
+    对方"这个 id 存在但你没权限"，把 id 的存在性也泄漏出去了。
+    """
+    from services.app_access import can_session
+
+    if not can_session(action, _session_payload(state), viewer):
+        raise HTTPException(404, "Not found")
+
 
 def _require_login_to_drive(viewer) -> None:
     """推演必须登录（2026-08-02，用户裁决：匿名只能查看）。
@@ -297,8 +331,21 @@ def _require_login_to_drive(viewer) -> None:
 
 
 @router.post("/sessions")
-async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+async def create_sess(
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
     _auth(x_internal_key)
+    # 把访问者放进请求上下文，create_session 深处才取得到 ownerId
+    # （contextvars，见 services/request_context.py 顶部）。
+    #
+    # ⚠️ 漏了这两行的后果**不是报错，是会话建出来永远无主** —— 实测踩过：
+    # 带着有效 token 建的会话，ownerId 仍然是 None，于是匿名照样读得到、
+    # 列得出。归属链路上任何一环断掉都是这个形状：静默地退回"人人可见"。
+    from services.request_context import set_current_user
+
+    set_current_user(viewer)
     goal_text = payload.get("goal", {}).get("text", "default")
     repaired_payload, _ = sanitize_session_dict({"goal": {"text": goal_text}})
     state = create_session(repaired_payload.get("goal", {}).get("text", goal_text), payload.get("sessionId"))
@@ -311,11 +358,16 @@ async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = H
     return {"sessionId": state.sessionId, "state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.get("/sessions/{sid}")
-async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
+async def get_sess(
+    sid: str,
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
     _auth(x_internal_key)
     state = load_session(sid) or _sessions.get(sid)
     if not state:
         raise HTTPException(404, "Not found")
+    _require_session(state, "view", viewer)
     state, changed = sanitize_session_state(state)
     if changed:
         # Best-effort persist of the sanitized state so subsequent GETs and the service layer
@@ -360,8 +412,18 @@ def _cap_turn_narrations(state: V5SessionState) -> None:
 
 
 @router.put("/sessions/{sid}")
-async def save_sess(sid: str, state: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+async def save_sess(
+    sid: str,
+    state: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
     _auth(x_internal_key)
+    # 归属按**库里那条**判，不按客户端传上来的 state 判——否则伪造一个
+    # ownerId 就能改别人的会话。这条已存在时必须够 WRITE 才放行。
+    _existing = load_session(sid) or _sessions.get(sid)
+    if _existing is not None:
+        _require_session(_existing, "drive", viewer)
     # Sanitize client PUT body to prevent forging server-owned fields per V5.2 authority.
     # coverageGate, capabilityRuns, artifacts trust and ledgers + sessionReplayLog/reasoningEvents (server append-only) are server-owned only.
     # Load existing (may be server_trusted via load path) and retain/merge those; client updates only safe fields.
@@ -442,8 +504,16 @@ async def save_sess(sid: str, state: Dict[str, Any], x_internal_key: Optional[st
     return {"ok": True, "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.delete("/sessions/{sid}")
-async def delete_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
+async def delete_sess(
+    sid: str,
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
     _auth(x_internal_key)
+    # 删之前先判——实测过匿名 DELETE 别人的会话返回 200 且真删掉了。
+    _existing = load_session(sid) or _sessions.get(sid)
+    if _existing is not None:
+        _require_session(_existing, "delete", viewer)
     result = delete_session(sid)
     _sessions.pop(sid, None)
     if not result.get("ok"):

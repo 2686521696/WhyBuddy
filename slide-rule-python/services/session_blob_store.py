@@ -73,6 +73,18 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _owner_of(payload: dict[str, Any]) -> Optional[str]:
+    """从 payload 里取归属，写进 owner_id 列。
+
+    payload 是唯一真相（V5SessionState.ownerId），这里只做投影。空串归一成
+    None——SQL 里 `owner_id is null` 与 `owner_id = ''` 是两种情况，让"无主"
+    只有一种表示法。
+    """
+    value = payload.get("ownerId") if isinstance(payload, dict) else None
+    text_value = str(value or "").strip()
+    return text_value or None
+
+
 class BlobRow:
     """一条会话存档：原始 payload + 乐观锁版本号。"""
 
@@ -134,7 +146,8 @@ create table if not exists {TABLE} (
     payload jsonb,
     rev integer not null default 1,
     created_at timestamptz,
-    last_active timestamptz
+    last_active timestamptz,
+    owner_id varchar(64)
 )
 """
 
@@ -144,7 +157,8 @@ create table if not exists {TABLE} (
     payload text,
     rev integer not null default 1,
     created_at text,
-    last_active text
+    last_active text,
+    owner_id varchar(64)
 )
 """
 
@@ -175,6 +189,19 @@ class SqlSessionBlobStore(SessionBlobStore):
         self._is_sqlite = database_url.startswith("sqlite")
         with self._engine.begin() as conn:
             conn.execute(text(_DDL_SQLITE if self._is_sqlite else _DDL_PG))
+            # 老库靠这一句就地补列——上面那句 `create table if not exists` 对
+            # 已存在的表什么都不做，新列不会自己长出来（与 app_store 里
+            # owner_id/visibility 那两句同一个理由）。SQLite 不支持
+            # `if not exists`，重复执行会抛，吞掉即可：抛出来就说明已经有了。
+            try:
+                if self._is_sqlite:
+                    conn.execute(text(f"alter table {TABLE} add column owner_id varchar(64)"))
+                else:
+                    conn.execute(
+                        text(f"alter table {TABLE} add column if not exists owner_id varchar(64)")
+                    )
+            except Exception:  # noqa: BLE001 — 列已存在
+                pass
 
     def _decode(self, raw: Any) -> dict[str, Any]:
         if isinstance(raw, dict):
@@ -224,6 +251,10 @@ class SqlSessionBlobStore(SessionBlobStore):
         blob = self._encode(payload)
         payload_expr = _payload_bind_expr(self._is_sqlite)
         now = _now_iso()
+        # 列是 payload 的**投影**，不是第二份真相：判定一律读 payload.ownerId
+        # （见 app_access.session_record）。写进列只为将来能用 SQL 过滤/建索引，
+        # 跟 generated_app 既存 model_json 又存 goal/product_name 一个路子。
+        owner_id = _owner_of(payload)
         with self._engine.begin() as conn:
             if expected_rev is None:
                 # 这条还不存在（或调用方明说不做 CAS）：插入，撞主键说明别人
@@ -232,20 +263,21 @@ class SqlSessionBlobStore(SessionBlobStore):
                     conn.execute(
                         self._text(
                             f"insert into {TABLE} "
-                            f"(session_id, payload, rev, created_at, last_active) "
-                            f"values (:sid, {payload_expr}, 1, :now, :now)"
+                            f"(session_id, payload, rev, created_at, last_active, owner_id) "
+                            f"values (:sid, {payload_expr}, 1, :now, :now, :owner)"
                         ),
-                        {"sid": session_id, "p": blob, "now": now},
+                        {"sid": session_id, "p": blob, "now": now, "owner": owner_id},
                     )
                     return True
                 except Exception:  # noqa: BLE001 — 唯一键冲突 = 并发插入
                     return False
             result = conn.execute(
                 self._text(
-                    f"update {TABLE} set payload = {payload_expr}, rev = rev + 1, last_active = :now "
+                    f"update {TABLE} set payload = {payload_expr}, rev = rev + 1, "
+                    f"last_active = :now, owner_id = :owner "
                     f"where session_id = :sid and rev = :rev"
                 ),
-                {"sid": session_id, "p": blob, "now": now, "rev": expected_rev},
+                {"sid": session_id, "p": blob, "now": now, "rev": expected_rev, "owner": owner_id},
             )
             return (result.rowcount or 0) > 0
 
@@ -280,6 +312,9 @@ class NeonHttpSessionBlobStore(SessionBlobStore):
             },
         )
         self._q(_DDL_PG)
+        # 老库就地补列，理由同 SqlSessionBlobStore.__init__ 里那句。
+        # 线上走的就是这条 HTTP 分支，漏了它 = 线上永远没有 owner_id 列。
+        self._q(f"alter table {TABLE} add column if not exists owner_id varchar(64)")
 
     def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
         from .app_store import _neon_http_error
@@ -335,19 +370,21 @@ class NeonHttpSessionBlobStore(SessionBlobStore):
     ) -> bool:
         blob = json.dumps(payload, ensure_ascii=False)
         now = _now_iso()
+        owner_id = _owner_of(payload)   # 列是 payload 的投影，见 _owner_of
         if expected_rev is None:
             # on conflict do nothing + returning：撞上了返回 0 行 = CAS 失败
             affected = self._rows_affected(
-                f"insert into {TABLE} (session_id, payload, rev, created_at, last_active) "
-                f"values ($1, $2::jsonb, 1, $3, $3) "
+                f"insert into {TABLE} (session_id, payload, rev, created_at, last_active, owner_id) "
+                f"values ($1, $2::jsonb, 1, $3, $3, $4) "
                 f"on conflict (session_id) do nothing returning session_id",
-                [session_id, blob, now],
+                [session_id, blob, now, owner_id],
             )
             return affected > 0
         affected = self._rows_affected(
-            f"update {TABLE} set payload = $2::jsonb, rev = rev + 1, last_active = $3 "
+            f"update {TABLE} set payload = $2::jsonb, rev = rev + 1, last_active = $3, "
+            f"owner_id = $5 "
             f"where session_id = $1 and rev = $4 returning session_id",
-            [session_id, blob, now, expected_rev],
+            [session_id, blob, now, expected_rev, owner_id],
         )
         return affected > 0
 
@@ -402,6 +439,9 @@ class HttpApiSessionBlobStore(NeonHttpSessionBlobStore):
         self._gateway = HttpSqlGateway(api_base_url, api_key, timeout_s=_HTTP_TIMEOUT_S)
         self._endpoint = self._gateway.endpoint
         self._q(_DDL_PG)
+        # 老库就地补列，理由同 SqlSessionBlobStore.__init__ 里那句。
+        # 线上走的就是这条 HTTP 分支，漏了它 = 线上永远没有 owner_id 列。
+        self._q(f"alter table {TABLE} add column if not exists owner_id varchar(64)")
 
     def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
         return self._gateway.query(sql, params)

@@ -122,8 +122,14 @@ def create_session(goal_text: str, session_id: Optional[str] = None) -> V5Sessio
                 break
             print(f"[session] id 撞了（{session_id}），换一个重试")
             session_id = _new_session_id()
+    # 归属：从请求上下文取当前用户（contextvars，见 services/request_context.py
+    # 顶部那段说明）。拿不到就是 None = 无主——匿名建的会话是合法状态，
+    # 不能因为没登录就建不出来。判定语义在 app_access。
+    from .request_context import current_user_id
+
     state = V5SessionState(
         sessionId=session_id,
+        ownerId=current_user_id(),
         goal={"text": goal_text, "status": "needs_refinement"},
         artifacts=[],
         capabilityRuns=[],

@@ -304,6 +304,15 @@ class V5SessionState(BaseModel):
     """
     sessionId: str
     goal: Dict[str, Any]
+    # 归属（2026-08-06）。None = 无主：匿名建的，或者这个字段存在之前的存量会话。
+    #
+    # 为什么放进 state 而不是只放数据库列：payload 是唯一真相，列是可查询的投影
+    # ——跟 generated_app 一个路子（那张表既有 model_json 也有 goal/product_name
+    # 这些反范式列）。四个存储后端（SQL / NeonHttp / HttpApi / 文件）里只有
+    # 建表和 save 需要知道这个字段，读路径完全不用改；文件后端也天然跟着走。
+    #
+    # 语义与判定在 services/app_access.py，与应用共用同一套阶梯——不新写一套。
+    ownerId: Optional[str] = None
     artifacts: List[Artifact] = []
     capabilityRuns: List[CapabilityRun] = []
     coverageGaps: List[CoverageGap] = []

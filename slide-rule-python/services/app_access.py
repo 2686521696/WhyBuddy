@@ -290,3 +290,71 @@ def filter_records(
                 continue
         out.append(rec)
     return out
+
+
+# ────────────────────────── 会话（2026-08-06）──────────────────────────
+#
+# 会话此前**完全没有隔离**：sliderule_session 表只有 session_id/payload/rev/
+# created_at/last_active，5 条路由（list/create/get/save/delete）没有一条带
+# viewer。实测匿名可以列出全站所有人的会话（连业务目标原文都出来）、可以读
+# 任意 id 的完整状态、可以直接删掉别人的会话。
+#
+# 这里**不新写一套判定**，把会话转成上面 access_for 认识的记录形状即可——
+# 应用侧那套阶梯照抄 Gitea accessLevel（models/perm/access/access.go:36），
+# 已经过一轮实战；再写一份的唯一结果是两边漂移。
+#
+# 两处会话特有的取值：
+#
+# ① 可见性恒为 private。会话是"正在进行的工作台"，没有"公开分享一个会话"这个
+#    产品概念（要分享的是**应用**，那边有完整的 public/unlisted/private）。
+#    写死而不是加字段，是为了不引入一个没人设置、永远是默认值的旋钮。
+#
+# ② 无主（ownerId 为空）保持可读——与应用侧存量数据同一条规则
+#    （access_for 里"存量应用（没有 owner_id、没有 visibility）保持可读"）。
+#    理由与取舍：
+#      · 真正要防的是**登录用户之间**互相看到对方的业务内容，这条已经解决：
+#        登录后建的会话带 ownerId，只有本人和超管能碰。
+#      · 无主的只有两类——这个字段存在之前的存量数据，和匿名建的。前者是
+#        演示/夹具，后者本来就没有"谁的"可言。把它们一刀切成不可读，会让
+#        匿名用户连自己刚建的会话都读不回来。
+#      · 想彻底清零：跑 scripts/backfill_session_owner.py 把能推断的补上，
+#        剩下的直接删。
+
+
+def session_record(payload: dict[str, Any]) -> dict[str, Any]:
+    """把会话 payload 转成 access_for 认识的记录形状。
+
+    payload 是唯一真相（V5SessionState.ownerId）；数据库那个 owner_id 列只是
+    可查询的投影，判定不读它——否则列一旦没补上（老库、文件后端）就会静默
+    变成"人人可读"。
+    """
+    owner = str((payload or {}).get("ownerId") or "").strip() or None
+    return {
+        "id": str((payload or {}).get("sessionId") or ""),
+        "owner_id": owner,
+        # 无主时留空 visibility，走 access_for 里"存量数据保持可读"那一支；
+        # 有主时明确 private，只有本人/超管。
+        "visibility": Visibility.PRIVATE if owner else "",
+    }
+
+
+def session_access(payload: dict[str, Any], viewer: Any = None) -> Access:
+    return access_for(session_record(payload), viewer)
+
+
+def can_session(action: str, payload: dict[str, Any], viewer: Any = None) -> bool:
+    return can(action, session_record(payload), viewer)
+
+
+def require_session(action: str, payload: dict[str, Any], viewer: Any = None) -> None:
+    """不够级别就抛 —— 与应用侧同一个异常形状（404/403 由 require 决定）。"""
+    require(action, session_record(payload), viewer)
+
+
+def filter_sessions(
+    payloads: list[dict[str, Any]], viewer: Any = None
+) -> list[dict[str, Any]]:
+    """列表过滤。与单条判定共用 session_access，不另写条件——列表漏一个条件
+    就是"别人的会话出现在侧栏里"，而单条打开是好的，所以没人会报 bug。
+    """
+    return [p for p in payloads if session_access(p, viewer) >= Access.READ]
