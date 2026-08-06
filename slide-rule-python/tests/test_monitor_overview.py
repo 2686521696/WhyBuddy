@@ -23,10 +23,50 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.freeform_block import (  # noqa: E402
     FreeformGenerationError,
     _build_overview_sheet_facts,
+    _build_marketing_hero_prompt,
+    _marketing_landing_design_brief,
     _monitor_overview_design_brief,
     _sheet_image_size_for_device,
     enrich_monitor_page_overviews,
 )
+
+
+def test_marketing_landing_brief_is_not_an_operations_dashboard():
+    page = {
+        "id": "home",
+        "name": "星野营地",
+        "kind": "monitor",
+        "presentation": "marketing-landing",
+        "stats": [{"id": "bookings", "name": "预订数", "entity": "order", "metric": "count"}],
+        "charts": [{"id": "trend", "name": "趋势", "type": "line", "dimension": "order.created_at", "metric": "count"}],
+    }
+
+    brief = _marketing_landing_design_brief(page, _datamodel(), audience="image")
+
+    assert "沉浸式首屏主视觉" in brief
+    assert "主要行动按钮" in brief
+    assert "KPI" not in brief
+    assert "图表" not in brief
+    assert "运营总览" not in brief
+
+
+def test_generation_contract_exposes_marketing_landing_presentation():
+    from services.v5_llm_generate import _SCHEMA_INSTRUCTION
+
+    assert '"presentation": "marketing-landing|application"' in _SCHEMA_INSTRUCTION
+    assert "consumer-facing or public landing page" in _SCHEMA_INSTRUCTION
+    assert "MUST NOT be coerced into an operations monitor" in _SCHEMA_INSTRUCTION
+
+
+def test_marketing_hero_prompt_requests_a_clean_photographic_asset():
+    prompt = _build_marketing_hero_prompt(
+        "星野营地提供沙漠观星住宿体验", device="desktop"
+    )
+
+    assert "真实摄影" in prompt
+    assert "不要出现任何文字" in prompt
+    assert "网页" not in prompt
+    assert "按钮" not in prompt
 
 
 # ── 逐行内容：由设计模型自己画（2026-08-03）

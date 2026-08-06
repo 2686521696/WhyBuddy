@@ -23,7 +23,12 @@ export type AwaitReason =
   | "coverage"
   | "budget"
   | "convergence"
-  | "user_input";
+  | "user_input"
+  | "max_loops"
+  | "max_repeat_guard"
+  | "no_progress"
+  | "closure_blocked"
+  | "closure_missing";
 
 export interface Artifact {
   id: string;

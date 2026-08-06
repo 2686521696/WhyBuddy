@@ -90,6 +90,7 @@ Required shape (use these exact keys):
   "page": {
     "pages": [{"id": "<id>", "name": "<label>",
                "kind": "__PAGE_KINDS__",
+               "presentation": "marketing-landing|application",
                "surface": {"type": "__PAGE_SURFACE_TYPES__", "density": "__PAGE_SURFACE_DENSITIES__"},
                "statusField": "<entity_id>.<field_id> (kanban only)",
                "dateField": "<entity_id>.<field_id> (calendar only)",
@@ -275,6 +276,10 @@ Content-quality rules (checked by a deterministic regression gate):
   every time (a monitor that always has exactly 4 stats reads as a template,
   not a design). "entity" scopes count; sum/avg must target a number field.
   Same field-existence rules as charts. Pure CRUD pages need none.
+- PAGE PRESENTATION: use "marketing-landing" only for a consumer-facing or public landing page
+  whose first job is to explain an offer, establish a brand, and drive one primary action. Such a
+  page MUST NOT be coerced into an operations monitor and MUST NOT declare stats, charts, rankings,
+  feeds, or a workbench surface. Use "application" for authenticated operational product pages.
 - PAGE KIND (view paradigm): pick each page's "kind" by its job — omit or
   "workbench" (default) for CRUD tables; "kanban" when the core object flows
   through stages (跟进/审批/生产状态) — REQUIRES "statusField" naming an enum
@@ -290,9 +295,10 @@ Content-quality rules (checked by a deterministic regression gate):
   focus rather than a fixed quota.
   Use at most one kanban and one calendar page; never force a paradigm the
   domain doesn't need.
-- LANDING PAGE: appbundle.landingPageRef SHOULD point to the monitor/overview
-  page (打开应用第一眼看到经营全貌) — unless this business genuinely opens on
-  an action page (e.g. a submit-first tool with no meaningful overview).
+- LANDING PAGE: appbundle.landingPageRef points to the page that should truly open first. For a
+  public/consumer offer, this MUST be the marketing-landing page. For an internal operations app,
+  it usually points to the monitor/overview page. Do not invent an operations dashboard merely to
+  satisfy landingPageRef.
 - INVARIANTS: emit 5-8 entries in "appbundle.invariants" — declarative constraints that
   must always hold, the kind an architect writes after a production incident
   (ordering: "charge before calling the upstream provider"; source of truth:

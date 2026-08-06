@@ -94,6 +94,31 @@ def test_valid_model_passes_gate():
     assert result["findings"] == []
 
 
+def test_marketing_landing_presentation_rejects_dashboard_content():
+    model = _valid_library_model()
+    page = model["page"]["pages"][0]
+    page["presentation"] = "marketing-landing"
+    page["stats"] = [{"id": "count", "name": "数量", "entity": "loan", "metric": "count"}]
+
+    result = validate_five_system_model(model)
+
+    assert result["passed"] is False
+    assert any(
+        f.get("path") == "page.pages[p_apply].presentation" and "stats" in f.get("message", "")
+        for f in result["findings"]
+    )
+
+
+def test_unknown_page_presentation_is_rejected():
+    model = _valid_library_model()
+    model["page"]["pages"][0]["presentation"] = "random-template"
+
+    result = validate_five_system_model(model)
+
+    assert result["passed"] is False
+    assert any(f.get("path") == "page.pages[p_apply].presentation" for f in result["findings"])
+
+
 def test_broken_model_blocked_with_precise_findings():
     result = validate_five_system_model(_broken_model())
     assert result["passed"] is False

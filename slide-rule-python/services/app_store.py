@@ -1990,6 +1990,23 @@ def get_app_preview_png(app_id: str, *, source: Optional[str] = None) -> Optiona
         return None
 
 
+def get_session_preview_png(session_id: str, *, source: Optional[str] = None) -> Optional[bytes]:
+    """Resolve a trusted generated asset through its owning session.
+
+    The model stores only the semantic ``landing-hero`` reference. Binary data remains in the
+    preview store, and the latest immutable app version for the session owns the concrete asset.
+    """
+    if not str(session_id or "").strip():
+        return None
+    try:
+        record = get_backend().find_latest_by_session(str(session_id))
+    except Exception as exc:  # noqa: BLE001 — media is a fail-open enhancement
+        print(f"[app_store] 会话主视觉查询失败: {str(exc)[:160]}")
+        return None
+    app_id = str((record or {}).get("id") or "")
+    return get_app_preview_png(app_id, source=source) if app_id else None
+
+
 def _mark_previews(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """给一批摘要打上缩略图三件套——前端据此决定这张卡贴哪张图、还是活渲染。
 

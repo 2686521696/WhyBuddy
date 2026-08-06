@@ -39,6 +39,10 @@
     "wizard",
     "monitor"
   ],
+  "pagePresentations": [
+    "application",
+    "marketing-landing"
+  ],
   "pageSurfaceTypes": [
     "table",
     "editable-table",

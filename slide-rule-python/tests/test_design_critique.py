@@ -130,6 +130,29 @@ class TestGuardrails:
         bad = json.dumps({"findings": [], "design": {"没有root字段": 1}})
         assert _critique(monkeypatch, bad) is None
 
+    def test_深校验失败日志包含具体字段路径与原因(self, monkeypatch, capsys):
+        class _StrictNode(BaseModel):
+            tag: str
+
+        class _StrictDesign(BaseModel):
+            root: _StrictNode
+
+        _fake_llm(
+            monkeypatch,
+            json.dumps({"findings": [], "design": {"root": {"tag": 7}}}),
+        )
+        assert _critique_against_reference(
+            ORIGINAL,
+            reference_image_b64="AA==",
+            preview_screenshot_b64="BB==",
+            design_brief="测试",
+            FreeformDesign=_StrictDesign,
+            axe_violations=[],
+        ) is None
+        out = capsys.readouterr().out
+        assert "root.tag" in out
+        assert "string" in out.lower()
+
     def test_不是_JSON_就丢弃(self, monkeypatch):
         assert _critique(monkeypatch, "这一版挺好的，不用改") is None
 

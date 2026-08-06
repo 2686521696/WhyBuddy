@@ -19,6 +19,8 @@ AwaitReason = Literal[
     "max_loops",
     "max_repeat_guard",
     "no_progress",
+    "closure_blocked",
+    "closure_missing",
 ]
 
 

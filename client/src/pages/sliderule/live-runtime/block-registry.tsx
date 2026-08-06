@@ -148,6 +148,8 @@ export interface FreeformNode {
   style?: Record<string, string>;
   text?: string;
   iconRef?: string;
+  imageRef?: "landing-hero";
+  imageAlt?: string;
   dataRef?: FreeformDataRef;
   chart?: FreeformChartSpec;
   rowsRef?: FreeformRowsRef;
@@ -196,6 +198,10 @@ export interface FilterFieldOption {
 
 export interface ExperienceBlockRendererProps {
   block: ExperienceBlockInstance;
+  /** Resolves trusted generated assets; never accepts a model-provided URL. */
+  sessionId?: string;
+  /** One-time self-review token; resolves only the trusted landing hero endpoint. */
+  previewId?: string;
   children?: React.ReactNode;
   /** Step 5：区块事件触发动作时的回调（actionId, eventData）。 */
   onAction?: (actionId: string, eventData?: Record<string, unknown>) => void;
@@ -936,6 +942,23 @@ function renderFreeformNode(
         ? formatRowCell(ctx.row.values?.[n.fieldRef])
         : "—"
       : null;
+  const landingHeroSrc =
+    n.imageRef === "landing-hero"
+      ? ctx.blockProps.previewId
+        ? `/api/sliderule/freeform-preview/${encodeURIComponent(ctx.blockProps.previewId)}/media/landing-hero`
+        : ctx.blockProps.sessionId
+          ? `/api/sliderule/sessions/${encodeURIComponent(ctx.blockProps.sessionId)}/preview?source=sheet`
+          : null
+      : null;
+  const imageNode =
+    landingHeroSrc ? (
+      <img
+        key="image"
+        src={landingHeroSrc}
+        alt={typeof n.imageAlt === "string" ? n.imageAlt : ""}
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+    ) : null;
   return React.createElement(
     tag,
     { key, style: sanitizeFreeformStyle(n.style) },
@@ -955,6 +978,7 @@ function renderFreeformNode(
     ) : null,
     fieldRefText ?? dataRefText ?? (typeof n.text === "string" ? n.text : null),
     trendNode,
+    imageNode,
     chartNode,
     ...children
   );

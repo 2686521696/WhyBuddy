@@ -78,6 +78,50 @@ class TestJsTemplate:
         assert (sc._repo_root() / "node_modules" / "@playwright" / "test").is_dir()
 
 
+class TestAppScreenshotTemplate:
+    def test_waits_for_the_real_runtime_and_hydration_to_finish(self):
+        src = sc._SCREENSHOT_JS_TEMPLATE
+        assert "waitForSelector(" in src
+        assert '[data-testid="app-runtime-screen"]' in src
+        assert "state: \"hidden\"" in src
+        assert 'data-testid="sliderule-hydration-spin"' in src
+        assert "const appEl = await page.$" not in src
+        assert "if (appEl)" not in src
+
+    @pytest.mark.parametrize(
+        ("device", "viewport", "target"),
+        [
+            (
+                "desktop",
+                (1440, 1000),
+                '[data-testid="app-shell-side"], [data-testid="app-shell-top"]',
+            ),
+            ("phone", (430, 932), '[data-testid="app-shell-phone"]'),
+        ],
+    )
+    def test_device_config_uses_real_runtime_shells(self, device, viewport, target):
+        config = sc._screenshot_device_config(device)
+        assert config["viewport"] == viewport
+        assert config["target"] == target
+
+    def test_unknown_device_falls_back_to_desktop(self):
+        assert sc._screenshot_device_config("tablet") == sc._screenshot_device_config("desktop")
+
+    def test_phone_template_switches_the_runtime_before_capture(self):
+        src = sc._SCREENSHOT_JS_TEMPLATE
+        assert 'data-testid="app-device-phone"' in src
+        assert "%(device_json)s" in src
+        assert "%(target_selector_json)s" in src
+        assert "%(viewport_width)d" in src
+        assert "%(viewport_height)d" in src
+
+    def test_preview_capture_blocks_remote_fonts_that_can_stall_screenshot(self):
+        src = sc._FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE
+        assert "fonts.googleapis.com" in src
+        assert "fonts.gstatic.com" in src
+        assert "route.abort" in src
+
+
 class TestFailClosed:
     def test_本机不可用时返回_None(self, monkeypatch):
         monkeypatch.setattr(sc, "local_screenshot_available", lambda: False)
@@ -124,7 +168,7 @@ class TestPreferLocal:
         monkeypatch.setattr(
             sc,
             "capture_app_screenshot_local",
-            lambda sid, timeout_s=60: b"LOCAL_PNG",
+            lambda sid, timeout_s=60, device="desktop": b"LOCAL_PNG",
         )
 
         def _e2b_available():
@@ -134,6 +178,75 @@ class TestPreferLocal:
         monkeypatch.setattr(sc, "e2b_screenshot_available", _e2b_available)
         assert sc.capture_app_screenshot("session-1") == b"LOCAL_PNG"
         assert called["e2b"] == 0
+
+    def test_local_failure_does_not_hide_current_code_with_a_stale_public_capture(self, monkeypatch):
+        called = {"e2b": 0}
+        monkeypatch.setattr(sc, "local_screenshot_available", lambda: True)
+        monkeypatch.setattr(
+            sc,
+            "capture_app_screenshot_local",
+            lambda sid, timeout_s=60, device="desktop": None,
+        )
+
+        def _e2b_available():
+            called["e2b"] += 1
+            return True
+
+        monkeypatch.setattr(sc, "e2b_screenshot_available", _e2b_available)
+
+        assert sc.capture_app_screenshot("session-1") is None
+        assert called["e2b"] == 0
+
+    def test_preview_e2b_fallback_fills_the_complete_template(self, monkeypatch):
+        class _Files:
+            @staticmethod
+            def read(path, format="bytes"):
+                return b"E2B_PNG"
+
+        class _Run:
+            class _Logs:
+                stdout = ["SCREENSHOT_OK"]
+
+            logs = _Logs()
+
+        class _Sandbox:
+            files = _Files()
+
+            @staticmethod
+            def run_code(*args, **kwargs):
+                return _Run()
+
+            @staticmethod
+            def kill():
+                return None
+
+        monkeypatch.setattr(sc, "capture_freeform_preview_screenshot_local", lambda *a, **k: None)
+        monkeypatch.setattr(sc, "e2b_screenshot_available", lambda: True)
+        monkeypatch.setattr(sc, "_public_app_base_url", lambda: "https://example.test")
+        monkeypatch.setattr(sc, "_create_sandbox", lambda timeout_s: _Sandbox())
+        monkeypatch.setattr(sc, "_ensure_playwright", lambda sandbox, timeout_s: True)
+
+        assert sc.capture_freeform_preview_screenshot("preview-1") == b"E2B_PNG"
+
+
+def test_screenshot_route_forwards_the_requested_device(monkeypatch):
+    from routes import sliderule_full
+
+    called = []
+    monkeypatch.setattr(sliderule_full, "_auth", lambda key: None)
+    monkeypatch.setattr(sc, "app_screenshot_available", lambda: True)
+    monkeypatch.setattr(
+        sc,
+        "capture_app_screenshot",
+        lambda sid, device="desktop": called.append((sid, device)) or b"PNG",
+    )
+
+    response = sliderule_full.capture_session_screenshot(
+        "session-phone", device="phone", x_internal_key="test"
+    )
+
+    assert response.media_type == "image/png"
+    assert called == [("session-phone", "phone")]
 
 
 class TestSelfVerifyGate:

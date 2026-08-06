@@ -1097,7 +1097,14 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
 //   → 删除该 session 全部缓存截图（模型变化时调用）
 router.post("/sessions/:sessionId/screenshot", express.json({ limit: "512kb" }), async (req: Request, res: Response) => {
   const { sessionId } = req.params;
-  const { modelHash } = (req.body ?? {}) as { modelHash?: string };
+  const { modelHash, device: requestedDevice } = (req.body ?? {}) as {
+    modelHash?: string;
+    device?: string;
+  };
+  const { normalizeScreenshotDevice, screenshotCacheSlug } = await import(
+    "./sliderule-screenshot-device.js"
+  );
+  const device = normalizeScreenshotDevice(requestedDevice);
 
   const fs = await import("node:fs/promises");
   const nodePath = await import("node:path");
@@ -1106,7 +1113,7 @@ router.post("/sessions/:sessionId/screenshot", express.json({ limit: "512kb" }),
   const screenshotDir = nodePath.resolve(__routeDir, "../../tmp/app-thumbnails");
   await fs.mkdir(screenshotDir, { recursive: true });
 
-  const slug = `${sessionId.slice(0, 32)}-${(modelHash ?? "nohash").slice(0, 16)}`;
+  const slug = screenshotCacheSlug(sessionId, modelHash, device);
   const screenshotPath = nodePath.join(screenshotDir, `${slug}.png`);
 
   // 已有缓存直接返回
@@ -1131,7 +1138,7 @@ router.post("/sessions/:sessionId/screenshot", express.json({ limit: "512kb" }),
   const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
   try {
     const upstream = await fetch(
-      `${pythonRuntime.baseUrl}/api/sliderule/sessions/${encodeURIComponent(sessionId)}/e2b-screenshot`,
+      `${pythonRuntime.baseUrl}/api/sliderule/sessions/${encodeURIComponent(sessionId)}/e2b-screenshot?device=${device}`,
       {
         method: "POST",
         headers: { "X-Internal-Key": pythonRuntime.internalKey },

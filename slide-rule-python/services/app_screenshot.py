@@ -35,6 +35,20 @@ _PLAYWRIGHT_VERSION = "1.61.1"
 _E2B_TEMPLATE_ENV = "SLIDERULE_E2B_TEMPLATE"
 
 
+def _screenshot_device_config(device: str) -> dict:
+    if device == "phone":
+        return {
+            "device": "phone",
+            "viewport": (430, 932),
+            "target": '[data-testid="app-shell-phone"]',
+        }
+    return {
+        "device": "desktop",
+        "viewport": (1440, 1000),
+        "target": '[data-testid="app-shell-side"], [data-testid="app-shell-top"]',
+    }
+
+
 def _e2b_template() -> Optional[str]:
     tpl = (os.getenv(_E2B_TEMPLATE_ENV) or "").strip()
     return tpl or None
@@ -70,21 +84,44 @@ const { chromium } = %(require_playwright)s;
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
   try {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const ctx = await browser.newContext({
+      viewport: { width: %(viewport_width)d, height: %(viewport_height)d }
+    });
     const page = await ctx.newPage();
+    const device = %(device_json)s;
+    const targetSelector = %(target_selector_json)s;
     await page.addInitScript((sid) => {
       try { localStorage.setItem("sliderule:active-session-id", sid); } catch {}
     }, %(session_id_json)s);
     await page.goto(%(app_url_json)s, { waitUntil: "domcontentloaded", timeout: 25000 });
-    try {
-      await page.waitForSelector('[data-testid="app-runtime-screen"]', { timeout: 12000 });
-    } catch {}
-    const appEl = await page.$('[data-testid="app-runtime-screen"]');
-    if (appEl) {
-      await appEl.screenshot({ path: %(shot_path_json)s });
-    } else {
-      await page.screenshot({ path: %(shot_path_json)s, clip: { x: 0, y: 0, width: 900, height: 520 } });
+    await page.waitForSelector(
+      '[data-testid="app-runtime-screen"]',
+      { timeout: 60000 }
+    );
+    await page.waitForSelector(
+      '[data-testid="sliderule-hydration-spin"]',
+      { state: "hidden", timeout: 60000 }
+    );
+    if (device === "phone") {
+      const phoneButton = page.locator('[data-testid="app-device-phone"]');
+      await phoneButton.waitFor({ state: "visible", timeout: 15000 });
+      await phoneButton.click();
     }
+    const target = page.locator(targetSelector);
+    await target.waitFor({ state: "visible", timeout: 15000 });
+    await target.evaluate(async (root) => {
+      const images = Array.from(root.querySelectorAll("img"));
+      await Promise.all(images.map((img) => {
+        if (img.complete) return Promise.resolve();
+        return new Promise((resolve) => {
+          const done = () => resolve();
+          img.addEventListener("load", done, { once: true });
+          img.addEventListener("error", done, { once: true });
+          setTimeout(done, 15000);
+        });
+      }));
+    });
+    await target.screenshot({ path: %(shot_path_json)s });
     console.log("SCREENSHOT_OK");
   } finally {
     await browser.close();
@@ -122,6 +159,16 @@ const { chromium } = %(require_playwright)s;
   try {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 1400 } });
     const page = await ctx.newPage();
+    await page.route("**/*", (route) => {
+      const url = route.request().url();
+      if (
+        url.startsWith("https://fonts.googleapis.com/") ||
+        url.startsWith("https://fonts.gstatic.com/")
+      ) {
+        return route.abort();
+      }
+      return route.continue();
+    });
     await page.goto(%(preview_url_json)s, { waitUntil: "domcontentloaded", timeout: 25000 });
     await page.waitForSelector('[data-testid="freeform-preview-root"]', { timeout: 15000 });
     // 给图表/图标这些懒加载 chunk 一点时间稳定下来，避免截到半渲染的过渡态。
@@ -214,7 +261,7 @@ def app_screenshot_available() -> bool:
 
 
 def capture_app_screenshot_local(
-    session_id: str, timeout_s: int = 60
+    session_id: str, timeout_s: int = 60, device: str = "desktop"
 ) -> Optional[bytes]:
     """Capture the current local frontend so dev screenshots match the checked-out code."""
     if not local_screenshot_available():
@@ -226,6 +273,8 @@ def capture_app_screenshot_local(
 
     app_url = f"{_local_app_base_url()}/agent-loop/sliderule"
     pkg_path = str(_repo_root() / "node_modules" / "@playwright" / "test")
+    device_config = _screenshot_device_config(device)
+    viewport_width, viewport_height = device_config["viewport"]
     with tempfile.TemporaryDirectory() as tmp:
         shot_path = Path(tmp) / "app-thumb.png"
         js = _SCREENSHOT_JS_TEMPLATE % {
@@ -233,6 +282,10 @@ def capture_app_screenshot_local(
             "session_id_json": json.dumps(session_id),
             "app_url_json": json.dumps(app_url),
             "shot_path_json": json.dumps(str(shot_path)),
+            "device_json": json.dumps(device_config["device"]),
+            "target_selector_json": json.dumps(device_config["target"]),
+            "viewport_width": viewport_width,
+            "viewport_height": viewport_height,
         }
         js_path = Path(tmp) / "shot.js"
         js_path.write_text(js, encoding="utf-8")
@@ -367,6 +420,8 @@ def capture_freeform_preview_screenshot(preview_id: str, timeout_s: int = 90) ->
             "require_playwright": 'require("playwright")',  # 沙盒里现装的那个
             "preview_url_json": json.dumps(preview_url),
             "shot_path_json": json.dumps("/tmp/freeform-preview.png"),
+            "axe_path_json": json.dumps(""),
+            "axe_out_json": json.dumps("/tmp/axe.json"),
         }
         run = sandbox.run_code(
             "open('/tmp/shot.js', 'w').write(" + repr(js_code) + ")\n"
@@ -393,15 +448,21 @@ def capture_freeform_preview_screenshot(preview_id: str, timeout_s: int = 90) ->
             pass
 
 
-def capture_app_screenshot(session_id: str, timeout_s: int = 90) -> Optional[bytes]:
+def capture_app_screenshot(
+    session_id: str, timeout_s: int = 90, device: str = "desktop"
+) -> Optional[bytes]:
     """截图 session_id 对应的已闭环应用主舞台。
 
     开发环境优先使用本机正在运行的前端，避免旧公网部署生成过期画面；本机
     不可用或截图失败时回退 E2B。两条路径都失败才返回 None（fail-closed）。
     """
-    local = capture_app_screenshot_local(session_id, timeout_s=min(timeout_s, 60))
-    if local:
-        return local
+    device_config = _screenshot_device_config(device)
+    if local_screenshot_available():
+        return capture_app_screenshot_local(
+            session_id,
+            timeout_s=min(timeout_s, 90),
+            device=device_config["device"],
+        )
 
     if not e2b_screenshot_available():
         return None
@@ -418,6 +479,10 @@ def capture_app_screenshot(session_id: str, timeout_s: int = 90) -> Optional[byt
             "session_id_json": json.dumps(session_id),
             "app_url_json": json.dumps(app_url),
             "shot_path_json": json.dumps("/tmp/app-thumb.png"),
+            "device_json": json.dumps(device_config["device"]),
+            "target_selector_json": json.dumps(device_config["target"]),
+            "viewport_width": device_config["viewport"][0],
+            "viewport_height": device_config["viewport"][1],
         }
         run = sandbox.run_code(
             "open('/tmp/shot.js', 'w').write(" + repr(js_code) + ")\n"

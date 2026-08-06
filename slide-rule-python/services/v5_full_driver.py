@@ -684,6 +684,16 @@ def terminal_phase_decision(
     return "awaiting", "coverage"
 
 
+def apply_terminal_phase_decision(
+    state: "V5SessionState", gate: Dict[str, Any], publish_closure: Optional[Dict[str, Any]]
+) -> tuple[str, Optional[str]]:
+    """Apply the authoritative terminal verdict without creating an invalid state."""
+    phase, reason = terminal_phase_decision(state, gate, publish_closure)
+    state.runtimePhase = phase
+    state.awaitReason = reason
+    return phase, reason
+
+
 def extract_model_from_closure(closure) -> "Optional[Dict[str, Any]]":
     """从闭环 perSkillEvidence 的 modelSection 还原五系统模型（缺任一段返回 None）。"""
     per_skill = (

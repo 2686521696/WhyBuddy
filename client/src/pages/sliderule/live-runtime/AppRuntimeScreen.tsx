@@ -87,6 +87,7 @@ import { deriveLayoutTokens } from "./design-tokens";
 import {
   buildAiActionInputs,
   deriveAppRuntimeSchema,
+  pageFreeformOwnsContent,
   type AppAiActionSchema,
   type AppChartSchema,
   type AppFormFieldSchema,
@@ -1391,8 +1392,7 @@ export function AppRuntimeScreen({
    * fail-open 不变：生成失败 → 没有 freeformOverview → 这个开关自动是 false，
    * 一切照旧走固定骨架，页面不会因此变空。
    */
-  const freeformOwnsPage =
-    Boolean(page?.freeformOverview) && OVERVIEW_KINDS.has(page?.view.kind ?? "");
+  const freeformOwnsPage = page ? pageFreeformOwnsContent(page) : false;
   const dashboardUsesBusinessGrid =
     page?.view.kind === "dashboard" && !freeformOwnsPage;
 
@@ -1453,6 +1453,7 @@ export function AppRuntimeScreen({
    * 就是这件事，只是当时只在下游做了整包透传，上游两个入口还是各写各的。）
    */
   const sharedBlockRendererProps = {
+    sessionId,
     onAction: handleBlockAction,
     pageActions: quickActionButtons,
     filterState: activePageFilter,
@@ -1749,9 +1750,7 @@ export function AppRuntimeScreen({
     // 同一份声明的美化版，不是另一份内容。它渲染了，固定骨架的 KPI/图表
     // 就必须让位，否则同样的数字在一屏里出现两遍（桌面档早就是这个规矩，
     // 见 defaultPageContent 里 monitorFreeformOverview 的分支）。
-    const freeformTookOver =
-      Boolean(page.freeformOverview) &&
-      (kind === "monitor" || kind === "dashboard");
+    const freeformTookOver = pageFreeformOwnsContent(page);
     const wantsMetrics =
       !freeformTookOver &&
       (kind === "dashboard" || kind === "monitor" || kind === "workbench");
@@ -1981,7 +1980,7 @@ export function AppRuntimeScreen({
           一页只标一处。手机档没有 Card title 的位置，用 antd-mobile 的
           NoticeBar——此前这里是手搓的一个橙字小方块，跟旁边的移动端组件
           不是一套观感（见 PhoneSeedNotice 的注释）。 */}
-      {pageSeedCount > 0 && (
+      {pageSeedCount > 0 && !freeformOwnsPage && (
         <React.Suspense fallback={null}>
           <LazyPhoneSeedNotice count={pageSeedCount} />
         </React.Suspense>
@@ -2001,16 +2000,16 @@ export function AppRuntimeScreen({
           外面套 phone-freeform-scope：设计树是照 preferredDevice 那一档生成的，
           desktop 档的多列/固定宽度进了 405px 会横向撑爆。强制单列不是跟设计
           较劲，正是把 phone 档提示词里那条规矩补执行一遍。 */}
-      {page.freeformOverview && (
+      {freeformOwnsPage && (
         <div className="phone-freeform-scope">
           {renderFreeformOverview(true)}
         </div>
       )}
-      {OVERVIEW_KINDS.has(page.view.kind)
+      {!freeformOwnsPage && (OVERVIEW_KINDS.has(page.view.kind)
         ? dashboardUsesBusinessGrid
           ? renderExperienceBlockScaffold(true, phonePrimaryDataView)
           : renderExperienceBlockScaffold(true)
-        : renderExperienceBlockScaffold(true, phonePrimaryDataView)}
+        : renderExperienceBlockScaffold(true, phonePrimaryDataView))}
       {/* pageKind 骨架：schema 有 6 种，手机档此前一种都没有（无论什么 kind
           都渲染成同一个裸列表）。dashboard/monitor 出 KPI + 图表，wizard 出
           流程步骤——形态复用首页那套（Grid 两列 / Steps 竖排）。 */}
@@ -2019,7 +2018,7 @@ export function AppRuntimeScreen({
           <LazyPhonePageSections {...phoneSectionData} />
         </React.Suspense>
       )}
-      {OVERVIEW_KINDS.has(page.view.kind) ? <React.Suspense
+      {!freeformOwnsPage && OVERVIEW_KINDS.has(page.view.kind) ? <React.Suspense
         fallback={
           <Skeleton active paragraph={{ rows: 4 }} style={{ padding: "12px 4px" }} />
         }
@@ -2928,10 +2927,14 @@ export function AppRuntimeScreen({
   const defaultPageContent = page && (
     <Card
       size="small"
-      bordered={!usesProWorkbench}
-      styles={usesProWorkbench ? { body: { padding: 0 } } : undefined}
+      bordered={page.presentation === "marketing-landing" ? false : !usesProWorkbench}
+      styles={
+        usesProWorkbench || page.presentation === "marketing-landing"
+          ? { body: { padding: 0 } }
+          : undefined
+      }
       title={
-        usesProWorkbench ? undefined : <Space size={6}>
+        usesProWorkbench || page.presentation === "marketing-landing" ? undefined : <Space size={6}>
           <span>{page.title}</span>
           {pageSeedCount > 0 && (
             <Tooltip
@@ -2949,7 +2952,7 @@ export function AppRuntimeScreen({
         </Space>
       }
       extra={
-        usesProWorkbench ? undefined : <Space size="small">
+        usesProWorkbench || page.presentation === "marketing-landing" ? undefined : <Space size="small">
           {page.actions.slice(0, 3).map(a => (
             <Tag key={a} color="blue" style={{ marginInlineEnd: 0 }}>
               {a}
@@ -3003,7 +3006,8 @@ export function AppRuntimeScreen({
           脚手架只求值一次、在下面每个分支里显式摆位——不这么写就得在
           "总览页"那个条件外面再判一次 kind，dashboard 没有 freeformOverview
           时会掉进最末的兜底分支、积木一个都渲染不出来（第一版就是这个洞）。 */}
-      {(!OVERVIEW_KINDS.has(page.view.kind) || dashboardUsesBusinessGrid) &&
+      {!freeformOwnsPage &&
+        (!OVERVIEW_KINDS.has(page.view.kind) || dashboardUsesBusinessGrid) &&
         businessPageGrid}
       {page.view.kind === "wizard" &&
         (model?.workflow?.nodes?.length ?? 0) > 0 && (
@@ -3018,7 +3022,9 @@ export function AppRuntimeScreen({
             data-testid="app-runtime-wizard-steps"
           />
         )}
-      {page.view.kind === "monitor" ? (
+      {freeformOwnsPage ? (
+        <>{monitorFreeformOverview}</>
+      ) : page.view.kind === "monitor" ? (
         monitorFreeformOverview ? (
           <>
             {monitorFreeformOverview}

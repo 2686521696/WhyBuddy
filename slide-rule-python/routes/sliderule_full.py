@@ -9,6 +9,8 @@ See audit / FINAL_MIGRATION_STATUS.md for exact coverage vs. "all historical cap
 """
 
 import asyncio
+import base64
+import binascii
 import os
 import re
 
@@ -1441,7 +1443,11 @@ def eval_baseline(x_internal_key: Optional[str] = Header(None)):
 
 
 @router.post("/sessions/{sid}/e2b-screenshot")
-def capture_session_screenshot(sid: str, x_internal_key: Optional[str] = Header(None)):
+def capture_session_screenshot(
+    sid: str,
+    device: str = "desktop",
+    x_internal_key: Optional[str] = Header(None),
+):
     """截图 sid 对应的已闭环应用；不可用/失败 → 404，Node 侧照实转 503。
 
     开发环境可从本机前端截图，生产环境仍可使用 E2B；两条路径均不可用时
@@ -1452,7 +1458,7 @@ def capture_session_screenshot(sid: str, x_internal_key: Optional[str] = Header(
 
     if not app_screenshot_available():
         return JSONResponse({"error": "screenshot_unavailable"}, status_code=404)
-    png_bytes = capture_app_screenshot(sid)
+    png_bytes = capture_app_screenshot(sid, device=device)
     if not png_bytes:
         return JSONResponse({"error": "screenshot_failed"}, status_code=404)
     from fastapi import Response
@@ -1478,7 +1484,22 @@ def get_freeform_preview(pid: str):
     payload = get_preview(pid)
     if payload is None:
         return JSONResponse({"error": "not_found"}, status_code=404)
-    return JSONResponse(payload)
+    return JSONResponse({k: v for k, v in payload.items() if not k.startswith("_")})
+
+
+@router.get("/freeform-preview/{pid}/media/{asset}")
+def get_freeform_preview_media(pid: str, asset: str):
+    from services.freeform_preview_store import get_preview
+
+    payload = get_preview(pid)
+    encoded = payload.get("_landingHeroB64") if payload and asset == "landing-hero" else None
+    if not isinstance(encoded, str) or not encoded:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    try:
+        png_bytes = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error):
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return Response(content=png_bytes, media_type="image/png")
 
 
 # ---------------------------------------------------------------------------
@@ -1594,6 +1615,36 @@ async def get_generated_app_preview(
         content=data,
         media_type=media,
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+@router.get("/sessions/{session_id}/preview")
+async def get_generated_session_preview(
+    session_id: str,
+    request: Request,
+    source: Optional[str] = None,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """Serve the current session's trusted generated media without exposing a model URL field."""
+    _auth(x_internal_key)
+    from services import app_store
+    from services.thumb_image import client_accepts_webp, sniff_media_type, to_png
+
+    data = await asyncio.to_thread(
+        app_store.get_session_preview_png,
+        session_id,
+        source=app_store.normalize_preview_source(source) if source else None,
+    )
+    if not data:
+        raise HTTPException(404, "preview not found")
+    media = sniff_media_type(data)
+    if media == "image/webp" and not client_accepts_webp(request.headers.get("accept")):
+        data = await asyncio.to_thread(to_png, data)
+        media = sniff_media_type(data)
+    return Response(
+        content=data,
+        media_type=media,
+        headers={"Cache-Control": "private, max-age=300"},
     )
 
 

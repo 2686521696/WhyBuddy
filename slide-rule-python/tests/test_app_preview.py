@@ -194,6 +194,15 @@ def test_preview_roundtrips_as_png_bytes(configured_store):
     assert store.get_app_preview_png(app_id) == base64.b64decode(PNG_A)
 
 
+def test_preview_can_be_resolved_by_session_without_embedding_base64(configured_store):
+    store.save_app_or_version(
+        _model(), goal="g", session_id="hero-session", preview_png_b64=PNG_A
+    )
+
+    assert store.get_session_preview_png("hero-session", source="sheet") == base64.b64decode(PNG_A)
+    assert store.get_session_preview_png("missing-session", source="sheet") is None
+
+
 # ────────────────────── ③ 版本 / fork / 幂等不丢图 ──────────────────────
 
 

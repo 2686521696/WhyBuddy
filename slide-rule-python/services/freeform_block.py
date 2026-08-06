@@ -29,7 +29,7 @@ import base64
 import json
 import os
 import re
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import json_repair
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
@@ -839,6 +839,8 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
         style: dict[str, str] = Field(default_factory=dict)
         text: Optional[str] = None
         iconRef: Optional[str] = None
+        imageRef: Optional[Literal["landing-hero"]] = None
+        imageAlt: Optional[str] = None
         dataRef: Optional[DataRef] = None
         chart: Optional[ChartSpec] = None
         #: 逐行列表容器：children 是一行的模板，按取到的行数重复渲染。
@@ -1065,6 +1067,11 @@ def build_freeform_prompt(
 {_device_prompt_fragment(device)}
 
 只能用安全原子积木拼：{", ".join(FREEFORM_ALLOWED_TAGS)} 标签。
+
+受控图片（imageRef）：只有营销落地页会提供 `landing-hero`。需要主视觉时在一个
+div 节点写 `"imageRef":"landing-hero"` 和准确的 `imageAlt`；运行时只会解析
+这个受控引用，不能填写 URL、data URI 或其它值。图片节点可用 width/height/
+borderRadius/overflow 控制版式，不能用 CSS url(...)。
 
 图标（iconRef）：直接用 Ant Design 图标组件名，PascalCase、以 Outlined 结尾
 （也可以是 Filled/TwoTone），比如 WalletOutlined、ShoppingCartOutlined、
@@ -1565,6 +1572,18 @@ def _image_generation_configured() -> bool:
         return False
 
 
+def _build_marketing_hero_prompt(design_brief: str, *, device: str = "") -> str:
+    orientation = "横向宽画幅" if device != "phone" else "竖向画幅"
+    return (
+        f"为以下品牌首页生成一张{orientation}的沉浸式主视觉真实摄影素材：\n"
+        f"{design_brief}\n\n"
+        "画面要清晰展示真实地点、产品或体验本身，主体完整、光线自然、细节可检视，"
+        "并在构图一侧保留适量干净空间供界面层叠放标题。不要出现任何文字、数字、"
+        "标志、水印、控件、边框、设备外壳或排版稿。不要使用渐变色块、抽象光斑、"
+        "朦胧库存照片质感。输出应当是一张可直接作为全宽首屏背景使用的独立图片。"
+    )
+
+
 def _generate_overview_sheet_b64(
     design_brief: str,
     datamodel: dict[str, Any],
@@ -1572,6 +1591,7 @@ def _generate_overview_sheet_b64(
     theme_id: str = "",
     device: str = "",
     generated_theme: Optional[dict[str, Any]] = None,
+    marketing_hero: bool = False,
 ) -> Optional[str]:
     """生成参照板（默认三区，device 明说 desktop/phone 时两区——见
     _build_overview_sheet_prompt）。跟 _generate_reference_image_b64 一样是
@@ -1606,8 +1626,13 @@ def _generate_overview_sheet_b64(
     except Exception:
         return None
     try:
-        prompt = _build_overview_sheet_prompt(
-            design_brief, datamodel, theme_id=theme_id, device=device, generated_theme=generated_theme
+        prompt = (
+            _build_marketing_hero_prompt(design_brief, device=device)
+            if marketing_hero
+            else _build_overview_sheet_prompt(
+                design_brief, datamodel, theme_id=theme_id, device=device,
+                generated_theme=generated_theme,
+            )
         )
         sheet_cfg = get_image_gen_config("SHEET_")
         size = (os.environ.get("SHEET_IMAGE_SIZE") or "").strip() if sheet_cfg else ""
@@ -1629,6 +1654,7 @@ def _render_preview_screenshot_b64(
     theme_id: str,
     device: str,
     generated_theme: Optional[dict[str, Any]],
+    reference_image_b64: Optional[str] = None,
 ) -> Optional[str]:
     """把校验通过的候选内容真实渲染一次、截图，供下面的自我校验步骤跟参考图
     比对（借鉴 abi/screenshot-to-code 的 screenshot_preview 思路：生成→截图→
@@ -1654,14 +1680,15 @@ def _render_preview_screenshot_b64(
     if not (local_screenshot_available() or e2b_screenshot_available()):
         return None
     try:
-        pid = put_preview(
-            {
-                "freeformContent": design_dump,
-                "themeId": theme_id,
-                "generatedTheme": generated_theme,
-                "device": device or _DEFAULT_DEVICE,
-            }
-        )
+        preview_payload = {
+            "freeformContent": design_dump,
+            "themeId": theme_id,
+            "generatedTheme": generated_theme,
+            "device": device or _DEFAULT_DEVICE,
+        }
+        if reference_image_b64:
+            preview_payload["_landingHeroB64"] = reference_image_b64
+        pid = put_preview(preview_payload)
         png_bytes = capture_freeform_preview_screenshot(pid)
     except Exception:
         return None
@@ -1849,7 +1876,13 @@ def _critique_against_reference(
     try:
         revised = FreeformDesign.model_validate(candidate)
     except (ValueError, ValidationError) as exc:
-        print(f"[freeform_block] 修订未过深校验，保留原版：{str(exc)[:140]}")
+        if isinstance(exc, ValidationError) and exc.errors():
+            first = exc.errors()[0]
+            path = ".".join(str(part) for part in first.get("loc") or ()) or "<root>"
+            detail = str(first.get("msg") or str(exc))
+            print(f"[freeform_block] 修订未过深校验，保留原版：{path}: {detail}")
+        else:
+            print(f"[freeform_block] 修订未过深校验，保留原版：{str(exc)[:240]}")
         return None
     revised_dump = revised.model_dump()
 
@@ -2173,7 +2206,11 @@ def generate_freeform_block(
                 # （审查文档「九、3」）。这条线一上，那个区间就能换成实测值。
                 with _enrich_stage("block.screenshot", device=device or "unspecified") as _st:
                     preview_b64 = _render_preview_screenshot_b64(
-                        design_dump, theme_id=theme_id, device=device, generated_theme=generated_theme
+                        design_dump,
+                        theme_id=theme_id,
+                        device=device,
+                        generated_theme=generated_theme,
+                        reference_image_b64=reference_image_b64,
                     )
                     _st["got"] = 1 if preview_b64 else 0
                 if preview_b64:
@@ -2317,6 +2354,28 @@ def _enrich_freeform_blocks_inner(model: dict[str, Any]) -> dict[str, Any]:
             f"raise {_ENRICH_MAX_REF_IMAGES_ENV} / {_ENRICH_MAX_SCREENSHOT_VERIFY_ENV} to widen)"
         )
     return model
+
+
+def _marketing_landing_design_brief(
+    page: dict[str, Any], datamodel: dict[str, Any], *, audience: str = "design"
+) -> str:
+    """消费型首页的视觉任务，不借用运营总览的内容与容器假设。"""
+    del datamodel
+    name = str(page.get("name") or page.get("id") or "首页")
+    lines = [
+        f"「{name}」是面向访客的品牌与转化首页，不是内部工作台。",
+        "首屏必须采用沉浸式首屏主视觉，品牌或产品名作为最醒目的标题，并提供一个明确的主要行动按钮。",
+        "首屏在常见桌面和手机视口内仍要露出下一段内容的开头；后续内容围绕真实服务、体验或商品展开。",
+        "避免后台卡片阵列、数据分析区、排行榜、活动流水和侧边导航；版式应服务于浏览、理解与转化。",
+    ]
+    if audience == "design":
+        lines.append(
+            "主视觉必须使用受控媒体节点 imageRef=landing-hero，并填写准确的 imageAlt；"
+            "不要用色块或渐变冒充真实图片。"
+        )
+    else:
+        lines.append("生成一张可直接作为页面主视觉使用的真实场景图片，不要在图片里绘制网页文字、按钮或浏览器外壳。")
+    return "\n".join(lines)
 
 
 def _monitor_overview_design_brief(
@@ -2629,8 +2688,13 @@ def _enrich_monitor_page_overviews_inner(
     eligible_pages = [
         page
         for page in pages
-        if str(page.get("kind") or "").strip() in ("monitor", "dashboard")
-        and (bool(page.get("stats")) or bool(page.get("charts")))
+        if (
+            str(page.get("presentation") or "").strip() == "marketing-landing"
+            or (
+                str(page.get("kind") or "").strip() in ("monitor", "dashboard")
+                and (bool(page.get("stats")) or bool(page.get("charts")))
+            )
+        )
         and not (
             isinstance(page.get("freeformOverview"), dict)
             and page["freeformOverview"].get("root")
@@ -2668,14 +2732,17 @@ def _enrich_monitor_page_overviews_inner(
         # 2026-07-27：dashboard 也纳入——此前只认 monitor,LLM 把总览页写成
         # dashboard(prompt 曾反向引导)或夹具用 dashboard 时,设计版式整条
         # 生成不出来,首页恒回固定骨架。渲染端 AppRuntimeScreen 同步放宽。
-        if str(page.get("kind") or "").strip() not in ("monitor", "dashboard"):
+        is_marketing_landing = (
+            str(page.get("presentation") or "").strip() == "marketing-landing"
+        )
+        if not is_marketing_landing and str(page.get("kind") or "").strip() not in ("monitor", "dashboard"):
             continue
         # 只看 stats/charts——rankings/feeds 不进设计文案（见
         # _monitor_overview_design_brief 的说明），一个页面如果只声明了
         # rankings/feeds、没有 stats/charts，freeformOverview 没有东西可画，
         # 生成了也是空区块，不如不生成，直接走原有固定骨架（那套骨架的
         # renderRankingCard/renderFeedCard 本来就能正确渲染这种页面）。
-        has_content = bool(page.get("stats")) or bool(page.get("charts"))
+        has_content = is_marketing_landing or bool(page.get("stats")) or bool(page.get("charts"))
         if not has_content:
             continue
         # 幂等（2026-07-27 D1）：已有总览设计的页不重生成（同上区块级注释）。
@@ -2687,10 +2754,13 @@ def _enrich_monitor_page_overviews_inner(
             page["freeformOverviewStatus"] = "deferred"
             continue
         page["freeformOverviewStatus"] = "generating"
-        brief = _monitor_overview_design_brief(page, datamodel)
+        brief_builder = (
+            _marketing_landing_design_brief if is_marketing_landing else _monitor_overview_design_brief
+        )
+        brief = brief_builder(page, datamodel)
         # 参照板走**出图受众**那一份：同一批内容，但积木用视觉描述而不是
         # blockRef 的 JSON 形态（见 _monitor_overview_design_brief 的 audience）。
-        sheet_brief = _monitor_overview_design_brief(page, datamodel, audience="image")
+        sheet_brief = brief_builder(page, datamodel, audience="image")
         # 只有首页那一张（见上面的说明）。
         #
         # 落地页没声明时退回"第一个符合条件的页"——不能因为模型漏填一个字段
@@ -2718,7 +2788,7 @@ def _enrich_monitor_page_overviews_inner(
             sheet_b64 = (
                 _generate_overview_sheet_b64(
                     sheet_brief, datamodel, theme_id=theme_id, device=device,
-                    generated_theme=generated_theme,
+                    generated_theme=generated_theme, marketing_hero=is_marketing_landing,
                 )
                 if use_ref
                 else None

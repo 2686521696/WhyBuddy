@@ -252,6 +252,8 @@ export interface PageModelDef {
   name?: string;
   /** 页面范式（加厚 schema 二期）：workbench(缺省)|kanban|calendar|dashboard */
   kind?: string;
+  /** 页面呈现目的：营销落地页与登录后的业务应用使用不同的视觉契约。 */
+  presentation?: "application" | "marketing-landing";
   /** Ant Design Pro workbench surface; omitted on old models and inferred locally. */
   surface?: PageSurfaceSpec;
   /** kanban 的看板列字段（"entity.field"，必须是本页主实体的 enum 字段） */

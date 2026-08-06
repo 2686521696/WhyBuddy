@@ -38,3 +38,17 @@ def test_missing_closure_is_fail_closed():
     phase, reason = terminal_phase_decision(_state(), {"passed": True}, None)
     assert phase == "awaiting"
     assert reason == "closure_missing"
+
+
+def test_terminal_closure_reason_can_be_written_to_session_state():
+    from services.v5_full_driver import apply_terminal_phase_decision
+
+    state = _state()
+    apply_terminal_phase_decision(
+        state,
+        {"passed": True},
+        {"blocked": True, "topBlockers": [{"code": "CLOSURE_GOAL_RELEVANCE_FAILED"}]},
+    )
+
+    assert state.runtimePhase == "awaiting"
+    assert state.awaitReason == "closure_blocked"

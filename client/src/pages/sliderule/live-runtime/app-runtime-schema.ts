@@ -206,6 +206,7 @@ export interface AppPageViewSchema {
 export interface AppPageSchema {
   id: string;
   title: string;
+  presentation: "application" | "marketing-landing";
   /** 本页主实体（fieldBindings 中出现最多的实体）；无绑定时 null → 渲染器显示空页 */
   entityId: string | null;
   /** 数据表列（主实体字段） */
@@ -272,6 +273,16 @@ export interface AppPageLayoutSchema {
   };
   /** RGL-compatible responsive placements rendered with native CSS Grid. */
   grid?: BusinessGridLayouts;
+}
+
+export function pageFreeformOwnsContent(
+  page: Pick<AppPageSchema, "presentation" | "view" | "freeformOverview">
+): boolean {
+  return Boolean(page.freeformOverview) && (
+    page.presentation === "marketing-landing" ||
+    page.view.kind === "monitor" ||
+    page.view.kind === "dashboard"
+  );
 }
 
 const SURFACE_TYPES = new Set<PageSurfaceType>([
@@ -813,6 +824,8 @@ export function deriveAppRuntimeSchema(
     return {
       id,
       title: page.name || id,
+      presentation:
+        page.presentation === "marketing-landing" ? "marketing-landing" : "application",
       entityId: entity ? entityId : null,
       columns: allFields.slice(0, 6),
       detailFields: allFields,

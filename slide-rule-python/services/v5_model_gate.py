@@ -59,6 +59,7 @@ from .schema_legal import (  # noqa: F401 — re-export 即接口
     PAGE_SURFACE_DENSITIES,
     PAGE_SURFACE_TYPES,
     PAGE_KINDS,
+    PAGE_PRESENTATIONS,
     STAT_FORMATS,
     STRING_FORMATS,
 )
@@ -516,6 +517,26 @@ def validate_five_system_model(
                 f"page kind '{kind}' is not one of {'/'.join(PAGE_KINDS)}",
                 ref=kind, skill="page",
             ))
+
+        presentation = str(pd.get("presentation") or "").strip()
+        if presentation and presentation not in PAGE_PRESENTATIONS:
+            findings.append(_finding(
+                PUBLISH_ENUM_VIOLATION, f"page.pages[{pid}].presentation",
+                f"page presentation '{presentation}' is not one of {'/'.join(PAGE_PRESENTATIONS)}",
+                ref=presentation, skill="page",
+            ))
+        elif presentation == "marketing-landing":
+            forbidden = [
+                key for key in ("stats", "charts", "rankings", "feeds")
+                if bool(pd.get(key))
+            ]
+            if forbidden:
+                findings.append(_finding(
+                    PUBLISH_ENUM_VIOLATION, f"page.pages[{pid}].presentation",
+                    "marketing-landing must not declare operations dashboard content: "
+                    + ", ".join(forbidden),
+                    ref=presentation, skill="page",
+                ))
 
         surface_raw = pd.get("surface")
         if surface_raw is not None:
