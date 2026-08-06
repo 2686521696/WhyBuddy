@@ -370,7 +370,9 @@ router.post("/orchestrate-plan", express.json({ limit: "2mb" }), async (req: Req
           intervention: body.intervention ?? null,
         },
         pythonRuntime.internalKey,
-        { timeoutMs: pythonRuntime.timeoutMs },
+        // 身份要跟着走：Python 侧推演类路由 _require_login(viewer)，
+        // 不带就是 401（实测踩过）。理由见 viewerHeadersFrom。
+        { timeoutMs: pythonRuntime.timeoutMs, viewer: viewerHeadersFrom(req) },
       );
       return res.json(data);
     } catch (e) {
@@ -439,7 +441,7 @@ router.post("/drive-full", express.json({ limit: "2mb" }), async (req: Request, 
         // 推演专用超时，不能用通用的 120s —— 一趟推演实测 374~1190s，
         // 用通用值必然在第 2 分钟掐断返回 502，而 Python 侧那趟还在跑。
         // 理由与取值见 python-delegation.ts 的 DEFAULT_DRIVE_TIMEOUT_MS。
-        { timeoutMs: resolvePythonDriveTimeoutMs() },
+        { timeoutMs: resolvePythonDriveTimeoutMs(), viewer: viewerHeadersFrom(req) },
       );
       return res.json(normalizeDriveClosureResponse(data as any));
     } catch (e) {
@@ -476,7 +478,7 @@ router.post("/drive-marathon", express.json({ limit: "2mb" }), async (req: Reque
         // 推演专用超时，不能用通用的 120s —— 一趟推演实测 374~1190s，
         // 用通用值必然在第 2 分钟掐断返回 502，而 Python 侧那趟还在跑。
         // 理由与取值见 python-delegation.ts 的 DEFAULT_DRIVE_TIMEOUT_MS。
-        { timeoutMs: resolvePythonDriveTimeoutMs() },
+        { timeoutMs: resolvePythonDriveTimeoutMs(), viewer: viewerHeadersFrom(req) },
       );
       return res.json(normalizeDriveClosureResponse(data as any));
     } catch (e) {
@@ -799,7 +801,7 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
           endpoint,
           payload,
           pythonRuntime.internalKey,
-          { timeoutMs: pythonRuntime.timeoutMs },
+          { timeoutMs: pythonRuntime.timeoutMs, viewer: viewerHeadersFrom(req) },
         );
         return sendJson(data);
       } catch (e) {
