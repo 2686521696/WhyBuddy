@@ -61,7 +61,7 @@ import {
   ACTIVE_SESSION_KEY,
   SESSIONS_UPDATED_EVENT,
   activateSession,
-  newSessionId,
+  createSessionId,
   notifySessionsUpdated,
 } from "./SidebarSessions";
 import {
@@ -1147,13 +1147,32 @@ export function AppsWorkbench() {
     window.location.href = `${base}/agent-loop/sliderule`;
   };
 
+  /**
+   * 开一个新会话：**先向服务端要 id**，拿到再跳（2026-08-06）。
+   *
+   * 以前是本地铸 id 直接跳，服务端只能被动接受客户端说的 id——熵只有 25 位，
+   * 而且实测出过劫持漏洞（拿别人的 id 发一次 POST 就能夺走整条会话）。
+   *
+   * 失败**不静默回落到本地 id**：那等于把刚拆掉的弱路径又留个后门。真实原因
+   * 通常是没登录（建会话已要求登录），如实提示比给个用不了的 id 强。
+   */
+  const openNewSession = () => {
+    void (async () => {
+      try {
+        open(await createSessionId());
+      } catch (e) {
+        setListError(String(e instanceof Error ? e.message : e));
+      }
+    })();
+  };
+
   const useTemplate = (example: BuiltinExample) => {
     try {
       localStorage.setItem(PENDING_TEMPLATE_INTENT_KEY, example.intent);
     } catch {
       /* 隐私模式无存储：仍然打开新会话，用户手动输入 */
     }
-    open(newSessionId());
+    openNewSession();
   };
 
   /** 删卡：App Store 卡删记录（DELETE /apps/{id}，不动会话）；会话草稿卡删会话。 */
@@ -1175,7 +1194,9 @@ export function AppsWorkbench() {
         notifySessionsUpdated();
         try {
           if (localStorage.getItem(ACTIVE_SESSION_KEY) === gi.sessionId) {
-            activateSession(remaining[0]?.sessionId ?? newSessionId());
+            // 还有剩的就切过去；一条不剩才向服务端要新的
+            if (remaining[0]?.sessionId) activateSession(remaining[0].sessionId);
+            else openNewSession();
           }
         } catch {
           /* 隐私模式无存储：跳过活跃会话纠正 */
@@ -1589,7 +1610,7 @@ export function AppsWorkbench() {
             type="button"
             data-testid="apps-create-new"
             className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_14px_rgba(91,108,255,0.28)] transition hover:bg-[#4a5aef] active:scale-[0.98]"
-            onClick={() => open(newSessionId())}
+            onClick={openNewSession}
           >
             <span className="text-[15px] leading-none">+</span>
             创建新应用
@@ -1717,7 +1738,7 @@ export function AppsWorkbench() {
               <button
                 data-testid="apps-empty-create"
                 className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_14px_rgba(91,108,255,0.28)] transition hover:bg-[#4a5aef] active:scale-[0.98]"
-                onClick={() => open(newSessionId())}
+                onClick={openNewSession}
               >
                 <span className="text-[15px] leading-none">+</span> 创建新应用
               </button>
