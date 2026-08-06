@@ -1454,7 +1454,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     resumeAttemptedRef.current = true;
     const sid = sessionState.sessionId || sessionId;
     const record = loadActiveRun(sid);
-    if (!record) return;
     void (async () => {
       try {
         const res = await fetch(
@@ -1463,12 +1462,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         const body = res.ok ? await res.json() : null;
         const active = body?.active;
         if (active && active.status === "running" && active.runId) {
-          await runTurn(record.userText || "（续播上一轮推演）", undefined, {
+          await runTurn(record?.userText || "（续播上一轮推演）", undefined, {
             runId: String(active.runId),
           });
         } else {
           // run 已完结/服务端已无此 run：清书签（终态已由轮边界落库覆盖）
-          clearActiveRun(sid);
+          if (record) clearActiveRun(sid);
         }
       } catch {
         // 后端暂不可达：书签保留，下次进入再试
