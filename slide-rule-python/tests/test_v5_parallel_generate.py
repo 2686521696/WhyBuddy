@@ -478,3 +478,51 @@ def test_deterministic_repair_drops_single_step_aigc_pipeline():
         require_preferred_device=True,
     )
     assert gate["passed"] is True, gate["findings"]
+
+
+# ── 默认开关（2026-08-06）────────────────────────────────────────────
+def test_parallel_generation_is_off_by_default():
+    """并行生成默认必须是**关**的，直到它能稳定出货。
+
+    实测三趟（同话题、同模型 gpt-5.6-luna / api.rcouyi.com）：
+
+        并行 第 1 趟   ❌ 生成失败   569.6s
+        并行 第 2 趟   ❌ 生成失败   738.0s
+        串行           ✅ 成功       236.0s
+
+    两趟失败判词一致（Contract 校验过不去），且 v5_llm_generate 里
+    `attempts = 1 if use_parallel else 2` —— 并行没有串行兜底，Contract 挂了
+    整趟返回 None。默认打开等于把能用的老路径永久遮住。
+
+    要改回 on 之前，先把这两件做完并有实测支撑：
+      ① 并行失败时回落串行
+      ② Contract 瘦身成真正的 ID 骨架（同时放宽 _contract_problems 的字段级校验）
+    """
+    import os
+
+    import services.v5_parallel_generate as P
+
+    saved = os.environ.pop("SLIDERULE_PARALLEL_MODEL_GENERATION", None)
+    try:
+        assert P.parallel_generation_enabled() is False, "并行生成不能默认开启"
+    finally:
+        if saved is not None:
+            os.environ["SLIDERULE_PARALLEL_MODEL_GENERATION"] = saved
+
+
+def test_parallel_generation_can_still_be_turned_on():
+    """开关本身要留着——调试和修好之后都要用它。"""
+    import os
+
+    import services.v5_parallel_generate as P
+
+    saved = os.environ.get("SLIDERULE_PARALLEL_MODEL_GENERATION")
+    try:
+        for on in ("1", "true", "yes", "on"):
+            os.environ["SLIDERULE_PARALLEL_MODEL_GENERATION"] = on
+            assert P.parallel_generation_enabled() is True, f"{on} 应该能打开"
+    finally:
+        if saved is None:
+            os.environ.pop("SLIDERULE_PARALLEL_MODEL_GENERATION", None)
+        else:
+            os.environ["SLIDERULE_PARALLEL_MODEL_GENERATION"] = saved

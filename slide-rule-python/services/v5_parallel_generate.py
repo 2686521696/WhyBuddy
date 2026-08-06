@@ -33,7 +33,50 @@ _ALL_LLM_SECTIONS = _FIRST_WAVE + _SECOND_WAVE
 
 
 def parallel_generation_enabled() -> bool:
-    raw = str(os.getenv("SLIDERULE_PARALLEL_MODEL_GENERATION", "on")).strip().lower()
+    """并行生成的开关。**默认关**（2026-08-06 从 on 改过来）。
+
+    ## 为什么关掉
+
+    实测三趟，同一话题、同一模型（gpt-5.6-luna / api.rcouyi.com）：
+
+        并行 第 1 趟   ❌ 生成失败   569.6s
+        并行 第 2 趟   ❌ 生成失败   738.0s
+        串行           ✅ 成功       236.0s（8 实体 / 5 页 / 5 角色）
+
+    并行不是慢一点，是**跑不出东西**，而且比串行慢 2.4~3.1 倍。两趟失败判词
+    一致，可复现：
+
+        contract page club_overview stat has an unknown metric field
+        contract page club_overview ranking / feed has an unknown binding
+        contract AIGC booking_training_advice has an unknown inputField: student_id
+        contract.menus must grant every declared permission
+
+    根因在 `_contract_problems`：它要求 Contract 里 stats / rankings / feeds /
+    AIGC 输入输出引用的字段**必须已在 Contract 内声明**（field_refs）。这等于
+    逼 Contract 先把实体字段全枚举一遍——Contract 本该是"小型 ID 骨架"，现在
+    接近"先生成半套六系统"，于是它既慢又过不了自己的校验。
+
+    ## 为什么失败一次就整趟报废
+
+    v5_llm_generate 里：`attempts = 1 if use_parallel else (2 if ... else 1)`
+    ——并行只给一次机会，Contract 挂了直接 return None。串行代码就在旁边却
+    走不到。**这是 fail-closed 的最坏形态**：能用的老路径还在，却因为新路径
+    的开关默认打开而永远用不上。
+
+    ## 这是止血，不是结论
+
+    并行的方向没问题（Contract 统一 ID 口径，解决并发时各写各的），
+    `_run_wave` 的 copy_context 也是对的。要修的是两件事，都跟这个开关无关：
+
+      ① 给并行加串行兜底 —— Contract 失败时回落，而不是整趟报废
+      ② Contract 瘦身到真正的 ID 骨架（目标 30~60s）；注意光减提示词不够，
+        `_contract_problems` 那套字段级校验必须同步放宽，否则瘦身后的
+        Contract 反而更过不了自己的校验
+
+    这两件做完、有实测数据支撑之后，把默认改回 on 即可——
+    `SLIDERULE_PARALLEL_MODEL_GENERATION=1` 现在就能单独打开来调试。
+    """
+    raw = str(os.getenv("SLIDERULE_PARALLEL_MODEL_GENERATION", "off")).strip().lower()
     return raw not in {"0", "false", "no", "off"}
 
 
