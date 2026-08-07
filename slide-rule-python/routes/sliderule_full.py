@@ -307,50 +307,44 @@ def _require_session(state: Any, action: str, viewer) -> None:
         raise HTTPException(404, "Not found")
 
 
-# ── 副本会话的话题问题：**先别改，这里记着为什么**（2026-08-06）───────────
+# ── 副本会话的话题问题：**已经修好了，这里只留教训**（2026-08-06→08-07）──
 #
 # 现象（用户实测）：「我发布的是从文献到引用的话题，回答的是电动车方面的
 # 内容，但是生成的应用又却是对的。」
 #
-# 机制：从应用中心 fork 出来的会话，goal.text 继承自源应用。之后
+# 真因不在这个文件里：execute_v5_capability 压根没有 user_instruction 这个
+# 参数，只读 state.goal。从应用中心 fork 出来的副本 goal.text 继承自源应用，
+# 于是各能力按旧话题干活（左侧过程整篇是电动车），而五系统生成走另一条通道
+# 吃 user_instruction（右侧应用是对的）。
 #
-#   · 各能力（evidence.search / route.generate / synthesis.merge…）吃
-#     state.goal → 左侧推演过程整篇是源应用的话题；
-#   · 五系统生成走 refine 通道，吃 user_instruction → 右侧应用是对的。
+# **修法见 services/v5_capability_executor.compose_capability_topic**（aa284b5）：
+# 话题与本轮要求**并存并分别打标签**，不互相顶替——形状照 CrewAI 的
+# role_playing/task 与 LangChain v1 的 system/human 两片式。
 #
-# 于是"过程"和"结果"讲两件事。新建会话里 goal == instruction，天然一致，
-# 只有继承来的会话才分叉。
+# ## 这里为什么还留着这段
 #
-# ## 试过一版，回退了
-#
-# 第一版的修法是"本人第一条指令顶掉继承来的话题"（adopt_user_goal）。
-# 实测跑通了话题接管，但**同时炸掉了生成**：
+# 我在这个文件里试过一版错的修法（adopt_user_goal：本人第一条指令顶掉继承来
+# 的话题），实测把生成整个跑没了：
 #
 #     v5_full_driver._ensure_runtime_closure_evidence:
 #         if instruction and instruction != goal_text and current_model:
-#             …进入 refine，按新指令改模型
+#             …进入 refine
 #         else:
 #             return state          ← 什么都不做
 #
-# 话题被顶成和指令一样之后，`instruction != goal_text` 不再成立 → 直接
-# return → 整趟推演 23.7 秒跑完、模型原地不动。实测结果：goal 变成了
-# 「学术文献引用管理平台」，而 modelVersions 里仍然只有那份健身房模型。
-# 也就是说，修好了"过程串话题"，代价是"结果根本不生成"——比原来更糟。
+# `instruction != goal_text` 正是进入 refine 的条件，把话题顶平等于让它永远
+# 不成立。实测：推演 23.7 秒返回，goal 变成了新话题而 modelVersions 里仍然
+# 只有那份健身房模型。修好了"过程串话题"，代价是"结果根本不生成"。已回退
+# （0e0d04a）。
 #
-# ## 为什么不直接"顶掉话题 + 清掉闭环重新生成"
+# 教训有两条，都不只针对这一处：
+#   ① 改判据之前先查**谁在读这个判据**——goal 与 instruction 的"不相等"
+#      本身就是一个开关。
+#   ② 端到端跑一趟再报"修好了"。这个回归单测抓不到（话题接管确实生效），
+#      只有真跑完看 modelVersions 才露馅。
 #
-# 那样等于假定"在副本里发指令 = 我要换个应用"。但 fork 最常见的意图恰恰
-# 相反：复刻一份然后微调。清闭环会把用户刚复刻的东西整个推翻。
-#
-# **"这条指令是换话题还是精修"没有可靠判据**，两个方向猜错的代价都很大，
-# 所以这是个产品判断，不该由实现顺手定。
-#
-# ## 真要修，往哪边看
-#
-# 症状出在"过程"而不是"结果"——各能力用的是 state.goal，而它们本该用
-# 这一轮用户真正说的话。把能力的输入从 state.goal 换成
-# "user_instruction 优先、goal 兜底"，可以在不碰生成通道的前提下让过程
-# 与指令对齐。改动面在 v5_capability_executor 那一侧，需要单独评估。
+# fork 会话的 goal 仍然带 inherited 标记，如实标注"这话题是继承来的"，
+# 不改变任何行为。
 
 
 def _require_login(viewer) -> None:

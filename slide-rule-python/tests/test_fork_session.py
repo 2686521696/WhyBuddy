@@ -8,14 +8,17 @@ fork 里建 V5SessionState 时没传 ownerId → 副本会话**无主**。而 20
 的会话隔离把无主会话收紧成"只有超管看得见"，于是复刻完的人自己都打不开
 刚复刻出来的东西。加归属列那次没有回头检查还有谁在建会话。
 
-## ② 副本的话题是源应用的（**未修，只标注**）
+## ② 副本的话题是源应用的（**已在能力侧修好**，这里只留回退教训）
 
 用户原话：「我发布的是从文献到引用的话题，回答的是电动车方面的内容，
 但是生成的应用又却是对的。」——各能力吃 state.goal（继承来的电动车），
 五系统生成吃 user_instruction（本人的新话题），过程和结果讲两件事。
 
-试过"第一条指令顶掉继承来的话题"，实测反而让生成整个不跑了，已回退。
-理由与后续方向见 routes/sliderule_full.py 里那段说明。
+真因在 execute_v5_capability 没有 user_instruction 参数，修法是
+compose_capability_topic（话题与本轮要求并存、分别打标签，aa284b5）。
+
+这个文件里试过的那版（第一条指令顶掉继承来的话题）是错的，实测让生成整个
+不跑了，已回退——理由见 routes/sliderule_full.py 里那段说明。
 
 ## ③ fork 慢：一次复刻打 14 次 Wikipedia
 
@@ -33,9 +36,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-# ── ② 副本会话"过程串话题"：**这条没修，记着为什么** ──────────────
+# ── ② 副本会话"过程串话题"：真因已在能力侧修好，这里钉回退后的形状 ──
 def test_fork_marks_goal_as_inherited():
     """副本的话题如实标注成"继承来的"，但**不改变行为**。
+
+    真因不在这个文件：execute_v5_capability 没有 user_instruction 参数。
+    修法是 compose_capability_topic（话题与本轮要求并存、分别打标签，
+    aa284b5），这里只负责钉住"别再用顶替的办法解决它"。
 
     试过一版"本人第一条指令顶掉继承来的话题"，实测把生成炸了：
     _ensure_runtime_closure_evidence 里 `instruction != goal_text` 是进入
@@ -46,7 +53,7 @@ def test_fork_marks_goal_as_inherited():
     修好了"过程串话题"，代价是"结果根本不生成"——比原来更糟，已回退。
     完整分析见 routes/sliderule_full.py 里 _require_login 上方那段。
 
-    这个字段留着：真要修时判据就在它上面，不用再猜。
+    这个字段留着：它如实标注了会话话题的来历，本身是有用的信息。
     """
     import inspect
 
