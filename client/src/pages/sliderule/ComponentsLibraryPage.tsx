@@ -39,7 +39,7 @@
 
 import React from "react";
 import { Empty } from "antd";
-import { LayoutGrid, Search, Blocks, LayoutTemplate, Monitor, Smartphone } from "lucide-react";
+import { LayoutGrid, Search, Rows3, Monitor, Smartphone } from "lucide-react";
 import { useContainerPosition } from "masonic";
 import catalogJson from "@experience-blocks";
 import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
@@ -394,11 +394,15 @@ function interleaveWide(blocks: CatalogBlock[]): CatalogBlock[] {
   return out;
 }
 
-/** 筛选 chip——与 AppsWorkbench 的 TabButton 同一套类名（含右侧计数）。 */
+/** 筛选 chip——与 AppsWorkbench 的 TabButton / StatChip 同一套类名（含右侧计数）。
+ *
+ * icon 可选是照那边的分工来的：库切换那两个（我的应用 / 官方示例）没有图标，
+ * 只有状态筛选那排（全部 / 推演中 / 已闭环 / 待补充）才带。混着用会让"这是切库"
+ * 和"这是筛条件"两件事在视觉上分不开。 */
 function FilterChip({
   icon, label, count, active, onClick,
 }: {
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   label: string;
   count: number;
   active: boolean;
@@ -415,7 +419,7 @@ function FilterChip({
       }`}
       onClick={onClick}
     >
-      <span className={active ? "opacity-100" : "opacity-70"}>{icon}</span>
+      {icon && <span className={active ? "opacity-100" : "opacity-70"}>{icon}</span>}
       <span>{label}</span>
       <span className={`tabular-nums text-[11px] ${active ? "text-[#3b5bdb]/80" : "text-slate-400"}`}>
         {count}
@@ -655,78 +659,84 @@ export default function ComponentsLibraryPage() {
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
-            <FilterChip
-              icon={<Blocks size={14} />}
-              label="体验区块"
-              count={blocks.length}
-              active={tab === "blocks"}
-              onClick={() => setTab("blocks")}
-            />
-            <FilterChip
-              icon={<LayoutTemplate size={14} />}
-              label="页面形态"
-              count={PAGE_KINDS.length}
-              active={tab === "kinds"}
-              onClick={() => setTab("kinds")}
-            />
-          </div>
         </div>
 
-        {tab === "blocks" && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-            <FilterChip
-              icon={<span className="text-[13px]">◇</span>}
-              label="全部槽位"
-              count={blocks.length}
-              active={slot === "all"}
-              onClick={() => setSlot("all")}
-            />
-            {(CATALOG.allowedSlots ?? []).map(s => (
+        {/* 第二行：库切换 + 筛选 + 档位 —— 结构照 AppsWorkbench「第二行：库切换 +
+            门语言筛选 / 分类」那一段：同一个 mt-4 / gap-1.5，库切换打头且不带图标，
+            与后面的条件筛选之间用竖线分开，右端 ml-auto 放次级控件。
+            原来这里是"tab 在第一行右侧 + 筛选另起一行 mt-2.5"，两行两套节奏。 */}
+        <div className="mt-4 flex flex-wrap items-center gap-1.5">
+          <FilterChip
+            label="体验区块"
+            count={blocks.length}
+            active={tab === "blocks"}
+            onClick={() => setTab("blocks")}
+          />
+          <FilterChip
+            label="页面形态"
+            count={PAGE_KINDS.length}
+            active={tab === "kinds"}
+            onClick={() => setTab("kinds")}
+          />
+
+          {tab === "blocks" && (
+            <>
+              <span className="mx-1 hidden h-4 w-px bg-slate-200 sm:inline-block" />
               <FilterChip
-                key={s}
-                icon={<span className="text-[13px]">◇</span>}
-                label={SLOT_LABEL[s] ?? s}
-                count={blocks.filter(b => (b.allowedSlots ?? []).includes(s)).length}
-                active={slot === s}
-                onClick={() => setSlot(s)}
-              />
-            ))}
-            <span className="ml-auto flex items-center gap-1.5">
-              <FilterChip
-                icon={<Monitor size={14} />}
-                label="桌面档"
+                icon={<LayoutGrid size={13} />}
+                label="全部槽位"
                 count={blocks.length}
-                active={device === "desktop"}
-                onClick={() => setDevice("desktop")}
+                active={slot === "all"}
+                onClick={() => setSlot("all")}
               />
-              {/* 计数写 blocks.length 而不是 phoneReady：这个数字在 chip 上读作
-                  "这一档有几张卡"，而手机档确实是 9 张全在（4 张专属渲染器 +
-                  5 张桌面档降级）。写 4 会让人以为另外 5 个看不到。
-                  真正的 4/9 由下面那行说明和每张卡上的「桌面档降级」角标交代。 */}
-              <FilterChip
-                icon={<Smartphone size={14} />}
-                label="手机档"
-                count={blocks.length}
-                active={device === "phone"}
-                onClick={() => setDevice("phone")}
-              />
-            </span>
-          </div>
-        )}
+              {(CATALOG.allowedSlots ?? []).map(sl => (
+                <FilterChip
+                  key={sl}
+                  icon={<Rows3 size={13} className="text-slate-400" />}
+                  label={SLOT_LABEL[sl] ?? sl}
+                  count={blocks.filter(b => (b.allowedSlots ?? []).includes(sl)).length}
+                  active={slot === sl}
+                  onClick={() => setSlot(sl)}
+                />
+              ))}
+              <div className="ml-auto flex items-center gap-1.5">
+                <FilterChip
+                  icon={<Monitor size={13} className="text-slate-400" />}
+                  label="桌面档"
+                  count={blocks.length}
+                  active={device === "desktop"}
+                  onClick={() => setDevice("desktop")}
+                />
+                {/* 计数写 blocks.length 而不是 phoneReady：这个数字在 chip 上读作
+                    "这一档有几张卡"，而手机档确实是 9 张全在（4 张专属渲染器 +
+                    5 张桌面档降级）。写 4 会让人以为另外 5 个看不到。
+                    真正的 4/9 由下面那行说明和每张卡上的「桌面档降级」角标交代。 */}
+                <FilterChip
+                  icon={<Smartphone size={13} className="text-slate-400" />}
+                  label="手机档"
+                  count={blocks.length}
+                  active={device === "phone"}
+                  onClick={() => setDevice("phone")}
+                />
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      <p className="mt-3 text-[12.5px] leading-relaxed text-slate-500">
-        系统生成应用时可用的全部组件。每一格都是<strong className="text-slate-700">真实渲染器</strong>
-        按夹具数据现渲的，跟线上应用同一套代码；清单读自 <code>experience_block_catalog.json</code>
-        ——它同时也是 AI 生成时对着的契约，所以这一页不会跟实际能力脱节。
+      {/* 说明行：应用中心那一页没有这一段，所以它是这一页额外的高度。
+          压到 12px / slate-400 一行，读作图注而不是正文段落，尽量不破坏
+          「吸顶头 → 内容」的节奏。手机档那句是有承载的（解释降级不是"不显示"），
+          只在手机档出现。 */}
+      <p className="mt-3 text-[12px] leading-relaxed text-slate-400">
+        每一格都是<span className="text-slate-600">真实渲染器</span>按夹具数据现渲的，与线上应用同一套代码；
+        清单读自 <code>experience_block_catalog.json</code>——AI 生成时对着的同一份契约。
         {tab === "blocks" && device === "phone" && (
           <>
-            {" "}当前是手机档：<strong className="text-slate-700">{phoneReady}</strong> 个有专属渲染器，
-            另 <strong className="text-amber-600">{blocks.length - phoneReady}</strong> 个走
-            <strong className="text-amber-600">桌面档降级</strong>
-            ——降级不是「不显示」，是真实应用里就拿桌面渲染器塞进 380px 窄壳
-            （AppRuntimeScreen 的 forPhone 分支），所以卡里看到的挤压就是用户会看到的。
+            {" "}手机档 <span className="text-slate-600">{phoneReady}</span> 个有专属渲染器，
+            另 <span className="text-amber-600">{blocks.length - phoneReady}</span> 个走
+            <span className="text-amber-600">桌面档降级</span>——不是"不显示"，是真实应用里
+            就拿桌面渲染器塞进 380px 窄壳（AppRuntimeScreen 的 forPhone 分支），卡里的挤压就是用户会看到的。
           </>
         )}
       </p>
