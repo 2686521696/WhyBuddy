@@ -55,6 +55,10 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "client/public/miantuan-mark-512.png"
+#: 32px 的**手工版**（2026-08-07 用户提供 miantuan-favicon-32.ico，已转存为 PNG）。
+#: 存在就直接当 32 帧用，并且 16 帧也从它推——它的外轮廓比从 512 缩下来的干净
+#: 得多（边缘 AA 少、blob 形状更实）。不存在则整体回落到从 512 缩。
+SRC_32 = ROOT / "client/public/miantuan-mark-32.png"
 OUT = ROOT / "client/public/favicon.ico"
 
 #: 五官颜色：原图眼睛中心采到的品牌蓝（左 #0189f1 / 右 #006bfb，取中）
@@ -115,8 +119,19 @@ def draw_frame(img: Image.Image, size: int) -> Image.Image:
     return out
 
 
-def frame_at(base: Image.Image, size: int) -> Image.Image:
-    return draw_frame(base.resize((size, size), Image.LANCZOS), size)
+def frame_at(base: Image.Image, size: int, hand32: Image.Image | None = None) -> Image.Image:
+    """出一帧。
+
+    32 —— 有手工版就**原样用**，不做任何加工：那是设计给过的成品，我们再
+          去"修"眼睛高度或把点状的嘴连成弧，等于替设计做决定。
+    16 —— 手工版在的话从它缩（轮廓更干净），再照常盖硬边眼睛；
+          手工版不在就退回从 512 缩。
+    其余 —— 一律从 512 缩，那些尺寸原图本来就清楚。
+    """
+    if size == 32 and hand32 is not None:
+        return hand32.copy()
+    source = hand32 if (size == 16 and hand32 is not None) else base
+    return draw_frame(source.resize((size, size), Image.LANCZOS), size)
 
 
 def pack_ico(frames: list[Image.Image]) -> bytes:
@@ -165,14 +180,17 @@ def main() -> int:
         print(f"源图不存在：{SRC}")
         return 1
     base = Image.open(SRC).convert("RGBA")
-    frames = [frame_at(base, s) for s in SIZES]
+    hand32 = Image.open(SRC_32).convert("RGBA") if SRC_32.exists() else None
+    if hand32 is not None:
+        print(f"32px 用手工版：{SRC_32.name}（16px 也从它推）")
+    frames = [frame_at(base, s, hand32) for s in SIZES]
 
     if "--preview" in sys.argv:
         scale = 12
         tiles = []
         for size in (16, 32):
             plain = base.resize((size, size), Image.LANCZOS)
-            drawn = frame_at(base, size)
+            drawn = frame_at(base, size, hand32)
             for tag, im in (("缩放", plain), ("专画", drawn)):
                 tiles.append((f"{size}-{tag}", im.resize((size * scale, size * scale), Image.NEAREST)))
         h = 32 * scale + 32
