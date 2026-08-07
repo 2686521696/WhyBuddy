@@ -38,12 +38,9 @@
  */
 
 import React from "react";
-import { Card, Empty, Flex, Input, Tag, Tooltip } from "antd";
-import {
-  AppstoreOutlined,
-  DesktopOutlined,
-  MobileOutlined,
-} from "@ant-design/icons";
+import { Card, Empty, Tooltip } from "antd";
+// 顶部一律用 lucide，与 AppsWorkbench 同源；antd 图标只留给卡片内部。
+import { LayoutGrid, Monitor, Rows3, Search, Smartphone } from "lucide-react";
 import { useContainerPosition } from "masonic";
 import catalogJson from "@experience-blocks";
 import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
@@ -57,14 +54,58 @@ import type { RuntimeRow } from "./live-runtime/live-runtime";
 
 const PRIMARY = "#1677ff";
 const CHARTS = ["#1677ff", "#52c41a", "#faad14", "#722ed1", "#13c2c2"];
-const FILTER_TAG_CLASS =
-  "!m-0 inline-flex items-center gap-1.5 rounded-lg !border-0 !px-3 !py-1.5 !text-[12.5px] !font-medium !leading-5 transition";
-const FILTER_TAG_STYLE: React.CSSProperties = { marginInlineEnd: 0 };
-const filterTagClass = (checked: boolean) =>
-  `${FILTER_TAG_CLASS} ${checked
-    ? "!bg-[#e8eeff] !text-[#3b5bdb]"
-    : "!bg-transparent !text-slate-500 hover:!bg-white/60 hover:!text-slate-700"}`;
-
+/**
+ * 顶部筛选 chip —— 与 AppsWorkbench 的 TabButton / StatChip 逐字同款。
+ *
+ * 原来用的是 antd `Tag.CheckableTag`，配色虽然对上了，但得靠一串 `!important`
+ * 去压 antd 自带的 margin/border/padding；`!m-0`、`!border-0`、`!px-3` 这些一旦
+ * 有一条被 antd 版本改动顶掉，样式就会悄悄偏一点。应用中心那边本来就是普通
+ * button，直接用同一个，`!important` 一个都不需要。
+ *
+ * icon 可选，是照那边的分工：库切换那排（我的应用 / 官方示例）不带图标，
+ * 只有条件筛选那排才带——混着用会让"切内容"和"筛条件"在视觉上分不开。
+ */
+function FilterChip({
+  icon,
+  label,
+  count,
+  active,
+  onClick,
+  testid,
+}: {
+  icon?: React.ReactNode;
+  label: string;
+  count?: number;
+  active: boolean;
+  onClick: () => void;
+  testid?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      data-testid={testid}
+      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
+        active
+          ? "bg-[#e8eeff] text-[#3b5bdb]"
+          : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
+      }`}
+      onClick={onClick}
+    >
+      {icon && <span className={active ? "opacity-100" : "opacity-70"}>{icon}</span>}
+      <span>{label}</span>
+      {count !== undefined && (
+        <span
+          className={`tabular-nums text-[11px] ${
+            active ? "text-[#3b5bdb]/80" : "text-slate-400"
+          }`}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
 interface CatalogBlock {
   type: string;
   description?: string;
@@ -446,7 +487,9 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
     : device === "phone"
       ? "手机档"
       : "桌面档";
-  const DeviceIcon = device === "phone" ? MobileOutlined : DesktopOutlined;
+  // 卡片角标跟顶部档位 chip 用同一套 lucide 图标——原来这里是 antd 的
+  // Mobile/DesktopOutlined，跟顶部两个图标线宽和字重都对不上。
+  const DeviceIcon = device === "phone" ? Smartphone : Monitor;
 
   return (
     <Card
@@ -456,7 +499,16 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
       styles={{ body: { padding: 0, overflow: "hidden", position: "relative" } }}
       className="w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
     >
-      {rendered}
+      {/* 底部那条浮层是 absolute 的，不占高度——渲染区必须自己让出 64px，
+          否则它会**压住组件最下面一带**。真机看到的：MetricGrid 的数字、
+          RankedList 的第 4/5 名、QuickActionPanel 的按钮、DataTable 的末行
+          全被盖掉。这一段本文件的 docstring 写着"元信息不会覆盖可交互内容"，
+          留白就是兑现那句话的东西。
+          （应用中心那边不需要，因为它盖的是应用截图，糊掉一点无所谓；
+          这里盖的是活组件，盖掉就等于这一页在错误地展示这个组件。） */}
+      <div className="px-4 pt-4" style={{ paddingBottom: 64 }}>
+        {rendered}
+      </div>
       <Tooltip title={phoneFallback ? "该区块暂无手机专属实现，当前展示桌面渲染器" : undefined}>
         <span
           className={`absolute right-2.5 top-2.5 z-10 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium shadow-sm backdrop-blur-sm ${
@@ -465,7 +517,7 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
               : "bg-white/90 text-slate-700 ring-1 ring-slate-200"
           }`}
         >
-          <DeviceIcon />
+          <DeviceIcon size={12} />
           {statusLabel}
         </span>
       </Tooltip>
@@ -572,83 +624,98 @@ export default function ComponentsLibraryPage() {
       {/* 吸顶头：与应用中心同一套（-mx/-mt 抵消外层内边距，保证背景铺满） */}
       <div className="sticky top-0 z-30 -mx-6 -mt-5 bg-[var(--sr-shell-bg,#fff)] px-6 pt-5 pb-3 md:-mx-8 md:-mt-6 md:px-8 md:pt-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          {/* 标题块：8×8 圆角底座 + lucide LayoutGrid + #5b6cff，与 AppsWorkbench
+              一模一样。原来是裸的 AppstoreOutlined，既没有底座、色号也是 #1677ff。 */}
           <div className="flex min-w-0 shrink-0 items-center gap-2">
-            <AppstoreOutlined className="text-lg text-[#1677ff]" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[#5b6cff]">
+              <LayoutGrid size={18} strokeWidth={2.2} />
+            </span>
             <h1 className="text-[18px] font-bold tracking-tight text-slate-900 md:text-[20px]">
               体验区块库
             </h1>
           </div>
 
-          <div className="w-full min-w-[200px] flex-1 sm:mx-4 sm:max-w-xl md:max-w-2xl">
-            <Input.Search
+          {/* 搜索框：应用中心那个自绘的（无边框 + 半透明底 + ring），不是
+              antd Input.Search——后者自带搜索按钮和另一套高度/边框，摆在一起
+              一眼就看得出是两个东西。 */}
+          <div className="relative w-full min-w-[200px] flex-1 sm:mx-4 sm:max-w-xl md:max-w-2xl">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
               data-testid="components-search"
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="搜区块名、说明或实现…"
-              allowClear
+              className="w-full rounded-lg border-0 bg-white/70 py-2.5 pl-10 pr-4 text-[13px] text-slate-800 outline-none ring-1 ring-slate-200/60 placeholder:text-slate-400 transition focus:bg-white focus:ring-2 focus:ring-[#5b6cff]/25"
             />
           </div>
-
         </div>
 
-        <div className="mt-4 flex flex-col gap-1.5" data-testid="components-filters">
-          <Flex wrap gap={6} align="center" data-testid="components-page-kind-switch">
-            {PAGE_KINDS.map(kind => {
-              const count = blocks.filter(block => (block.pageKinds ?? []).includes(kind.key)).length;
-              const checked = pageKind === kind.key;
-              return (
-                <Tag.CheckableTag
-                  style={FILTER_TAG_STYLE}
-                  className={filterTagClass(checked)}
-                  key={kind.key}
-                  data-testid={`components-page-kind-${kind.key}`}
-                  checked={checked}
-                  onChange={() => setPageKind(kind.key)}
-                >
-                  <span>{kind.label}</span>
-                  <span className={`tabular-nums text-[11px] ${checked ? "text-[#3b5bdb]/80" : "text-slate-400"}`}>
-                    {count}
-                  </span>
-                </Tag.CheckableTag>
-              );
-            })}
-          </Flex>
+        {/* 第二行：内容切换 + 条件筛选 + 档位 —— 结构照 AppsWorkbench
+            「第二行：库切换 + 门语言筛选 / 分类」那一段：**一个** flex-wrap 容器、
+            同一个 mt-4 / gap-1.5，切内容的打头且不带图标，与条件筛选之间用竖线
+            分开，次级控件 ml-auto 靠右。
 
-          <div className="flex flex-col gap-1.5">
-            <Flex wrap gap={6} align="center" aria-label="按页面槽位筛选">
-              <Tag.CheckableTag
-                style={FILTER_TAG_STYLE}
-                className={filterTagClass(slot === "all")}
-                data-testid="components-slot-all"
-                checked={slot === "all"}
-                onChange={() => setSlot("all")}
-              >
-                全部槽位 {pageKindBlocks.length}
-              </Tag.CheckableTag>
-            {(CATALOG.allowedSlots ?? []).map(s => (
-              <Tag.CheckableTag
-                style={FILTER_TAG_STYLE}
-                className={filterTagClass(slot === s)}
-                key={s}
-                data-testid={`components-slot-${s}`}
-                checked={slot === s}
-                onChange={() => setSlot(s)}
-              >
-                {SLOT_LABEL[s] ?? s} {pageKindBlocks.filter(b => (b.allowedSlots ?? []).includes(s)).length}
-              </Tag.CheckableTag>
+            原来是 `flex flex-col gap-1.5` 里套三个 <Flex>，等于把一行拆成三行、
+            三套节奏；应用中心从来只有一行（窄屏靠 flex-wrap 自己折）。 */}
+        <div
+          className="mt-4 flex flex-wrap items-center gap-1.5"
+          data-testid="components-filters"
+        >
+          <span className="contents" data-testid="components-page-kind-switch">
+            {PAGE_KINDS.map(kind => (
+              <FilterChip
+                key={kind.key}
+                testid={`components-page-kind-${kind.key}`}
+                label={kind.label}
+                count={blocks.filter(b => (b.pageKinds ?? []).includes(kind.key)).length}
+                active={pageKind === kind.key}
+                onClick={() => setPageKind(kind.key)}
+              />
             ))}
-            </Flex>
-            <Flex wrap gap={6} align="center" data-testid="components-device-switch">
-              <Tag.CheckableTag style={FILTER_TAG_STYLE} className={filterTagClass(device === "all")} checked={device === "all"} onChange={() => setDevice("all")}>
-                全部
-              </Tag.CheckableTag>
-              <Tag.CheckableTag style={FILTER_TAG_STYLE} className={filterTagClass(device === "desktop")} checked={device === "desktop"} onChange={() => setDevice("desktop")}>
-                <DesktopOutlined /> 桌面档
-              </Tag.CheckableTag>
-              <Tag.CheckableTag style={FILTER_TAG_STYLE} className={filterTagClass(device === "phone")} checked={device === "phone"} onChange={() => setDevice("phone")}>
-                <MobileOutlined /> 手机档
-              </Tag.CheckableTag>
-            </Flex>
+          </span>
+
+          <span className="mx-1 hidden h-4 w-px bg-slate-200 sm:inline-block" />
+
+          <FilterChip
+            testid="components-slot-all"
+            icon={<LayoutGrid size={13} />}
+            label="全部槽位"
+            count={pageKindBlocks.length}
+            active={slot === "all"}
+            onClick={() => setSlot("all")}
+          />
+          {(CATALOG.allowedSlots ?? []).map(sl => (
+            <FilterChip
+              key={sl}
+              testid={`components-slot-${sl}`}
+              icon={<Rows3 size={13} className="text-slate-400" />}
+              label={SLOT_LABEL[sl] ?? sl}
+              count={pageKindBlocks.filter(b => (b.allowedSlots ?? []).includes(sl)).length}
+              active={slot === sl}
+              onClick={() => setSlot(sl)}
+            />
+          ))}
+
+          <div
+            className="ml-auto flex items-center gap-1.5"
+            data-testid="components-device-switch"
+          >
+            <FilterChip label="全部" active={device === "all"} onClick={() => setDevice("all")} />
+            <FilterChip
+              icon={<Monitor size={13} className="text-slate-400" />}
+              label="桌面档"
+              active={device === "desktop"}
+              onClick={() => setDevice("desktop")}
+            />
+            <FilterChip
+              icon={<Smartphone size={13} className="text-slate-400" />}
+              label="手机档"
+              active={device === "phone"}
+              onClick={() => setDevice("phone")}
+            />
           </div>
         </div>
       </div>
