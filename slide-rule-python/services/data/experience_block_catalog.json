@@ -949,7 +949,7 @@
           },
           {
             "type": "RecordForm",
-            "slot": "content"
+            "slot": "primary"
           }
         ]
       }

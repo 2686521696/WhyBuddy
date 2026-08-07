@@ -47,6 +47,11 @@ import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
 import { useScrollerIn } from "@/pages/agent-loop/dashboard/useScrollerIn";
 import { spanForColumnCount } from "@/pages/agent-loop/dashboard/app-wall-span";
 import { ExperienceBlockBoundary } from "./live-runtime/block-registry";
+import BusinessPageGrid from "./live-runtime/BusinessPageGrid";
+import {
+  resolveBusinessGrid,
+  upgradeLegacySlotsToGrid,
+} from "./live-runtime/business-page-layout";
 import type { ExperienceBlockInstance } from "./live-runtime/block-registry";
 import { isPhoneExperienceBlock } from "./live-runtime/phone-mobile/PhoneExperienceBlock";
 import type { RuntimeRow } from "./live-runtime/live-runtime";
@@ -119,10 +124,19 @@ interface CatalogBlock {
   freeformGenerated?: boolean;
 }
 
+/** 页面形态预设：一套"已经排好的积木组合"。与 Python 侧同源同一份 JSON。 */
+interface PagePreset {
+  id: string;
+  name: string;
+  when: string;
+  blocks: { type: string; slot: string }[];
+}
+
 const CATALOG = catalogJson as unknown as {
   blocks: CatalogBlock[];
   allowedSlots: string[];
   dataKinds: string[];
+  pageKindPresets?: Record<string, PagePreset[]>;
 };
 
 /**
@@ -678,6 +692,100 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
   );
 }
 
+/**
+ * 预设卡：把一套"排好的组合"按**真实页面的摆法**摆出来。
+ *
+ * ## 为什么不自己近似一套栅格
+ *
+ * 槽位到网格的映射是有真实实现的（business-page-layout.upgradeLegacySlotsToGrid
+ * → resolveBusinessGrid → BusinessPageGrid），而且每种 pageKind 的映射还不一样
+ * （dashboard 的 summary 是整行、workbench 的 primary 占 2/3…）。这里照抄一份
+ * 近似的，就等于让这一页展示的排布**跟真实应用不是同一件事**——而这一页存在
+ * 的全部意义就是"看见真实的样子"。所以直接复用那条管线。
+ *
+ * 与区块卡同一条纪律：渲染器是真的，数据是同一份夹具，摆法也是真的。
+ */
+function PresetCard({ kind, preset }: { kind: string; preset: PagePreset }) {
+  // 预设只声明 (type, slot)，这里补上实例 id —— 网格是按 blockRef 索引的。
+  const instances = preset.blocks.map((b, i) => ({
+    ...b,
+    id: `${preset.id}-${i}-${b.type}`,
+  }));
+  const slots = {
+    summary: instances.filter(b => b.slot === "summary").map(b => b.id),
+    primary: instances.filter(b => b.slot === "primary").map(b => b.id),
+    secondary: instances.filter(b => b.slot === "secondary").map(b => b.id),
+    activity: instances.filter(b => b.slot === "activity").map(b => b.id),
+    content: instances.filter(b => b.slot === "content").map(b => b.id),
+  };
+  const layouts = upgradeLegacySlotsToGrid(kind, slots);
+  const items = resolveBusinessGrid(layouts, "desktop");
+  const byId = new Map(instances.map(b => [b.id, b]));
+  return (
+    <Card
+      data-testid={`preset-card-${kind}-${preset.id}`}
+      size="small"
+      variant="borderless"
+      styles={{ body: { padding: 0, overflow: "hidden", position: "relative" } }}
+      className="w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
+    >
+      <div className="border-b border-slate-100 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[13.5px] font-semibold text-slate-900">{preset.name}</span>
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
+            {PAGE_KINDS.find(k => k.key === kind)?.label ?? kind}
+          </span>
+        </div>
+        {/* "什么时候用"必须摆出来——它是模型挑预设的唯一依据，
+            看不见它就没法判断这套预设写得对不对。 */}
+        <div className="mt-1 text-[11.5px] leading-relaxed text-slate-500">{preset.when}</div>
+      </div>
+      <div className="bg-[#f0f2f5] p-3">
+        <BusinessPageGrid
+          breakpoint="desktop"
+          items={items}
+          renderItem={ref => {
+            const b = byId.get(ref);
+            if (!b) return null;
+            const { block, extra } = demoFor(b.type);
+            if (!HAS_DEMO.has(b.type)) {
+              return (
+                <Card size="small" variant="borderless">
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={`${b.type} 还没有示例数据`}
+                  />
+                </Card>
+              );
+            }
+            return (
+              <Card
+                size="small"
+                variant="borderless"
+                styles={{ body: { padding: 0, overflow: "hidden" } }}
+                className="shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
+              >
+                <ExperienceBlockBoundary
+                  block={{ ...block, id: b.id }}
+                  entityRows={ENTITY_ROWS}
+                  chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
+                  fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
+                  fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+                  enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
+                  {...extra}
+                />
+                <div className="border-t border-slate-100 px-2 py-1 text-[10.5px] text-slate-400">
+                  {b.type} · {SLOT_LABEL[b.slot] ?? b.slot}
+                </div>
+              </Card>
+            );
+          }}
+        />
+      </div>
+    </Card>
+  );
+}
+
 /** 区块墙。抽成组件的理由同 AppsWorkbench 的 AppWall：里面全是 hook，
  * 而墙在「有结果 / 搜索无结果」两岔里只有一岔渲染，写在外层就成了条件调用。 */
 function BlockWall({ blocks, device }: { blocks: CatalogBlock[]; device: DeviceTier }) {
@@ -735,12 +843,20 @@ function BlockWall({ blocks, device }: { blocks: CatalogBlock[]; device: DeviceT
 }
 
 export default function ComponentsLibraryPage() {
+  // 区块 = 一个个积木；预设 = 已经排好的组合（2026-08-07）。
+  // 预设是模型真正的起点，看不见它就没法判断生成质量的上限在哪，
+  // 所以给它一个与"区块"并列的入口，而不是塞在某个角落。
+  const [mode, setMode] = React.useState<"blocks" | "presets">("blocks");
   const [device, setDevice] = React.useState<DeviceTier>("all");
   const [query, setQuery] = React.useState("");
   const [slot, setSlot] = React.useState<string>("all");
   const [pageKind, setPageKind] = React.useState("workbench");
 
   const blocks = CATALOG.blocks ?? [];
+  const allPresets = CATALOG.pageKindPresets ?? {};
+  const presetCount = Object.values(allPresets).reduce((n, ps) => n + ps.length, 0);
+  // 预设按**页面形态**过滤，跟第一行那排 chip 走同一个选择——不另开一套筛选。
+  const kindPresets = allPresets[pageKind] ?? [];
   const pageKindBlocks = React.useMemo(
     () => blocks.filter(block => (block.pageKinds ?? []).includes(pageKind)),
     [blocks, pageKind]
@@ -827,6 +943,26 @@ export default function ComponentsLibraryPage() {
 
           <div
             className="ml-auto flex items-center gap-1.5"
+            data-testid="components-mode-switch"
+          >
+            <FilterChip
+              testid="components-mode-blocks"
+              label="区块"
+              count={blocks.length}
+              active={mode === "blocks"}
+              onClick={() => setMode("blocks")}
+            />
+            <FilterChip
+              testid="components-mode-presets"
+              label="预设"
+              count={presetCount}
+              active={mode === "presets"}
+              onClick={() => setMode("presets")}
+            />
+          </div>
+
+          <div
+            className="ml-3 flex items-center gap-1.5"
             data-testid="components-device-switch"
           >
             <FilterChip label="全部" active={device === "all"} onClick={() => setDevice("all")} />
@@ -873,7 +1009,19 @@ export default function ComponentsLibraryPage() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {mode === "presets" ? (
+        kindPresets.length === 0 ? (
+          <Empty description="这种页面形态还没有预设" className="py-16" />
+        ) : (
+          // 预设走单列：一套预设本身就是一整页的排布，塞进瀑布流的窄列
+          // 会把"2/3 主区 + 1/3 副区"压成两条竖条，那正好把要看的东西看没了。
+          <div className="mt-5 flex flex-col gap-4">
+            {kindPresets.map(ps => (
+              <PresetCard key={ps.id} kind={pageKind} preset={ps} />
+            ))}
+          </div>
+        )
+      ) : filtered.length === 0 ? (
         <Empty description="没有匹配的区块" className="py-16" />
       ) : (
         <BlockWall blocks={ordered} device={device} />

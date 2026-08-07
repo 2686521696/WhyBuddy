@@ -133,3 +133,42 @@ def test_every_live_page_kind_has_at_least_one_preset():
     """
     for kind in L.PAGE_KINDS:
         assert L.PAGE_KIND_PRESETS.get(kind), f"页面形态 {kind} 没有任何预设"
+
+
+def test_width_hungry_blocks_never_land_in_the_narrow_support_column():
+    """需要完整宽度的积木不能被预设摆进右侧窄列。
+
+    ## 这条是预设视图当场抓出来的
+
+    2026-08-07：预设刚接进组件库页就看见「流程条 + 单页表单」里的 RecordForm
+    被压成了右侧窄条——而它自己的 slotsRationale 明写着"a form needs full
+    label+control width"。**契约没被违反**（content 确实在 RecordForm 的
+    allowedSlots 里），违反的是我对渲染结果的预期。
+
+    机制在 business-page-layout.upgradeLegacySlotsToGrid：非 dashboard 形态下
+
+        leading = summary + primary          → 整行宽
+        support = secondary + activity + content → 右侧 4/12（看板/日历是 3/12）
+
+    也就是说 **content 不是全宽**。这一点跟仓库里另一处注释（"activity/content
+    =全宽且 className 逐字节相同"）对不上——那句描述的是**升级到网格之前**的
+    老槽位渲染，网格化之后 content 就并进窄列了。旧注释没跟着改。
+
+    ## 为什么钉在预设这一层而不是收窄 allowedSlots
+
+    RecordForm 放进 content 本身不是非法的：一个窄的表单也能用，只是不好用。
+    真正不能接受的是**我们推荐的示范**把它摆在那里——模型会照抄，用户看到的
+    就是一排挤成一条的输入框。契约管"合不合法"，预设管"好不好"，两层各管各的。
+    """
+    NARROW = {"secondary", "activity", "content"}
+    WIDTH_HUNGRY = {"RecordForm", "StepsForm", "DataTable", "WorkflowTimeline"}
+    for kind, presets in L.PAGE_KIND_PRESETS.items():
+        if kind == "dashboard":
+            continue  # dashboard 的映射不同：primary/content 都在底部整行
+        for ps in presets:
+            for it in ps["blocks"]:
+                if it["type"] in WIDTH_HUNGRY:
+                    assert it["slot"] not in NARROW, (
+                        f"{kind}/{ps['id']}: {it['type']} 摆在 {it['slot']}，"
+                        f"网格会把它压进 4/12 窄列——这个积木要整行宽"
+                    )
