@@ -31,11 +31,20 @@ import {
 } from "antd";
 import type { TableColumnsType } from "antd";
 import {
+  DrawerForm,
+  ModalForm,
   ProCard,
+  ProDescriptions,
+  ProForm,
   ProFormDateRangePicker,
+  ProFormDatePicker,
+  ProFormDigit,
   ProFormSelect,
+  ProFormText,
+  ProFormTextArea,
   QueryFilter,
   StatisticCard,
+  StepsForm,
 } from "@ant-design/pro-components";
 // WorkflowTimeline 自己的节点箭头（组件 UI，用静态 import；freeform 的
 // 动态图标解析走下面的 AntdIcons 命名空间 + 目录别名表，两回事）。
@@ -71,6 +80,18 @@ export type EnumOptionsLookup = (
  * 所以跟 enumOptionsOf 一样按需查。查不到回落字段 id（不猜、不留空）。
  */
 export type FieldLabelLookup = (
+  entityId: string,
+  fieldId: string
+) => string | undefined;
+
+/**
+ * 字段类型的按需查询（entityId + fieldId → 数据模型里声明的类型）。
+ *
+ * 表单族积木（RecordForm / RecordFormDialog / StepsForm）靠它决定每个字段
+ * 出哪种控件：enum→下拉、number→数字、date→日期、text→多行。**查不到就按
+ * string 处理，不猜**——跟 fieldLabelOf 查不到回落字段 id 是同一条纪律。
+ */
+export type FieldTypeLookup = (
   entityId: string,
   fieldId: string
 ) => string | undefined;
@@ -237,6 +258,8 @@ export interface ExperienceBlockRendererProps {
   enumOptionsOf?: EnumOptionsLookup;
   /** DataTable 专用：字段 id → 显示名，用于列头（2026-07-28）。 */
   fieldLabelOf?: FieldLabelLookup;
+  /** 表单族专用：字段 id → 类型，决定出哪种控件（2026-08-07）。 */
+  fieldTypeOf?: FieldTypeLookup;
 }
 
 export type ExperienceBlockRenderer =
@@ -1729,6 +1752,271 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
   );
 };
 
+/**
+ * ── 表单/详情族（2026-08-07）─────────────────────────────────────────────
+ *
+ * 用户裁决的方向："先补积木，门槛只收 Ant Design 官方能力"。表单、抽屉、
+ * 弹窗、分步表单、详情这几样是业务系统里最费工的部分，而 ProComponents
+ * 早就把它们做完了——**已经装在依赖里**（@ant-design/pro-components 2.8），
+ * 此前一个都没包成积木。这一批不引入任何新依赖。
+ *
+ * 字段从哪来：binding.fieldRefs 声明要哪几个字段（entityFieldRefLists，
+ * 门禁会校验字段真的属于那个实体）；没声明就从真实行数据的键里推前 6 个。
+ * **不猜字段类型**——类型从 fieldTypeOf 查，查不到按 string 处理，
+ * 与其它区块"查不到就回落、不编"的纪律一致。
+ */
+
+/** 字段 id → 该出哪种 ProForm 控件。类型来自数据模型，不猜。 */
+function formItemFor(
+  entityRef: string,
+  fieldId: string,
+  fieldLabelOf: FieldLabelLookup | undefined,
+  enumOptionsOf: EnumOptionsLookup | undefined,
+  fieldTypeOf: FieldTypeLookup | undefined
+): React.ReactNode {
+  const label = fieldLabelOf?.(entityRef, fieldId) ?? fieldId;
+  const type = fieldTypeOf?.(entityRef, fieldId) ?? "string";
+  const common = { key: fieldId, name: fieldId, label };
+  if (type === "enum") {
+    const options = (enumOptionsOf?.(entityRef, fieldId) ?? []).map(o => ({
+      label: o.label,
+      value: o.id,
+    }));
+    // 枚举没有取值时不出一个空下拉——那是个点开什么都没有的坑，
+    // 退回文本框至少还能填。
+    if (options.length > 0) return <ProFormSelect {...common} options={options} />;
+    return <ProFormText {...common} />;
+  }
+  if (type === "number") return <ProFormDigit {...common} />;
+  if (type === "date") return <ProFormDatePicker {...common} />;
+  if (type === "text") return <ProFormTextArea {...common} />;
+  return <ProFormText {...common} />;
+}
+
+/** binding.fieldRefs 优先；没声明就从真实行的键里取前 6 个（不编字段）。 */
+function formFieldIds(
+  block: ExperienceBlockInstance,
+  rows: RuntimeRow[]
+): string[] {
+  const declared = block.binding?.fieldRefs;
+  if (Array.isArray(declared) && declared.length > 0) {
+    return declared.map(f => String(f)).filter(Boolean);
+  }
+  return [...new Set(rows.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 6);
+}
+
+const RecordFormRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+  fieldTypeOf,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell title={title} testid="record-form">
+        <BlockEmpty hint="表单未绑定到有效实体" />
+      </BlockShell>
+    );
+  const fields = formFieldIds(block, bound.rows);
+  if (fields.length === 0)
+    return (
+      <BlockShell title={title} testid="record-form">
+        <BlockEmpty hint="这个实体还没有可填写的字段" />
+      </BlockShell>
+    );
+  const layout = block.props?.layout === "horizontal" ? "horizontal" : "vertical";
+  return (
+    <BlockShell title={title} testid="record-form">
+      <ProForm
+        layout={layout}
+        submitter={{
+          searchConfig: { submitText: String(block.props?.submitText ?? "提交") },
+          resetButtonProps: false,
+        }}
+        onFinish={async values => {
+          onAction?.("submitRequest", { entityRef: bound.entityRef, values });
+          return true;
+        }}
+      >
+        {fields.map(f =>
+          formItemFor(bound.entityRef, f, fieldLabelOf, enumOptionsOf, fieldTypeOf)
+        )}
+      </ProForm>
+    </BlockShell>
+  );
+};
+
+const RecordFormDialogRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+  fieldTypeOf,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell title={title} testid="record-form-dialog">
+        <BlockEmpty hint="表单未绑定到有效实体" />
+      </BlockShell>
+    );
+  const fields = formFieldIds(block, bound.rows);
+  const triggerText = String(block.props?.triggerText ?? "").trim() || title || "新建";
+  // 抽屉与弹窗只差呈现方式，共用同一份字段与提交回调。做成两个积木会让
+  // 目录里出现一对只差一个词的孪生条目，AI 选型时也多一次无意义的分叉。
+  const Dialog = block.props?.mode === "modal" ? ModalForm : DrawerForm;
+  const trigger = <Button type="primary">{triggerText}</Button>;
+  return (
+    <div data-testid="record-form-dialog">
+      <Dialog
+        title={title || triggerText}
+        trigger={trigger}
+        onFinish={async values => {
+          onAction?.("submitRequest", { entityRef: bound.entityRef, values });
+          return true;
+        }}
+      >
+        {fields.map(f =>
+          formItemFor(bound.entityRef, f, fieldLabelOf, enumOptionsOf, fieldTypeOf)
+        )}
+      </Dialog>
+    </div>
+  );
+};
+
+const RecordDetailRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell title={title} testid="record-detail">
+        <BlockEmpty hint="详情未绑定到有效实体" />
+      </BlockShell>
+    );
+  if (bound.rows.length === 0)
+    return (
+      <BlockShell title={title} testid="record-detail">
+        <BlockEmpty hint="暂无数据 — 先写入第一条真实数据" />
+      </BlockShell>
+    );
+  // 详情展示的是"当前选中那条"。运行时还没有选中态时用第一条——**不是随机
+  // 一条**，顺序稳定，截图/回归才可比。
+  const row = bound.rows[0];
+  const fields = formFieldIds(block, bound.rows);
+  const columns = Math.max(1, Math.min(3, Number(block.props?.columns ?? 2) || 2));
+  return (
+    <BlockShell
+      title={title}
+      testid="record-detail"
+      extra={
+        <Button size="small" onClick={() => onAction?.("editRequest", { rowId: row.id })}>
+          编辑
+        </Button>
+      }
+    >
+      <ProDescriptions
+        column={columns}
+        size="small"
+        dataSource={row.values ?? {}}
+        columns={fields.map(f => {
+          const options = enumOptionsOf?.(bound.entityRef, f) ?? [];
+          const labelOf = new Map(options.map(o => [o.id, o.label]));
+          return {
+            key: f,
+            dataIndex: f,
+            title: fieldLabelOf?.(bound.entityRef, f) ?? f,
+            // 枚举出标签不出取值 id——与 DataTable 同一条纪律，
+            // 同一份数据在两个区块里必须读起来一样。
+            render: (_: unknown, record: Record<string, unknown>) => {
+              const s = String(record?.[f] ?? "").trim();
+              if (!s) return <Typography.Text type="secondary">—</Typography.Text>;
+              return labelOf.get(s) ?? s;
+            },
+          };
+        })}
+      />
+    </BlockShell>
+  );
+};
+
+const StepsFormRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+  fieldTypeOf,
+  workflow,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell title={title} testid="steps-form">
+        <BlockEmpty hint="分步表单未绑定到有效实体" />
+      </BlockShell>
+    );
+  const fields = formFieldIds(block, bound.rows);
+  if (fields.length === 0)
+    return (
+      <BlockShell title={title} testid="steps-form">
+        <BlockEmpty hint="这个实体还没有可填写的字段" />
+      </BlockShell>
+    );
+  // 分几步、每步叫什么：**优先跟着工作流的链路节点走**，而不是把字段机械
+  // 均分。这一页的意义是"五系统关联"——步骤名来自 workflow 才叫关联上了，
+  // 按字段数切段只是把一个长表单折起来。链路取不到时才回落到均分两步。
+  const chainRef = String(block.props?.chainRef ?? "").trim();
+  const chains = workflow?.chains ?? [];
+  const chain = chainRef ? chains.find(c => c.id === chainRef) : chains[0];
+  const nodeNames = (chain?.nodes ?? [])
+    .map(n => String(n?.name ?? n?.id ?? "").trim())
+    .filter(Boolean);
+  const stepNames = nodeNames.length >= 2 ? nodeNames.slice(0, 4) : ["填写信息", "确认提交"];
+  const per = Math.max(1, Math.ceil(fields.length / stepNames.length));
+  return (
+    <BlockShell title={title} testid="steps-form">
+      <StepsForm
+        onFinish={async values => {
+          onAction?.("submitRequest", { entityRef: bound.entityRef, values });
+          return true;
+        }}
+        onCurrentChange={current => onAction?.("stepChange", { step: current })}
+      >
+        {stepNames.map((name, i) => (
+          <StepsForm.StepForm key={name} name={`step-${i}`} title={name}>
+            {fields
+              .slice(i * per, (i + 1) * per)
+              .map(f =>
+                formItemFor(bound.entityRef, f, fieldLabelOf, enumOptionsOf, fieldTypeOf)
+              )}
+          </StepsForm.StepForm>
+        ))}
+      </StepsForm>
+    </BlockShell>
+  );
+};
+
 export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   Record<string, ExperienceBlockRenderer>
 > = Object.freeze({
@@ -1743,6 +2031,11 @@ export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   "filter-bar": FilterBarRenderer,
   "workflow-timeline": WorkflowTimelineRenderer,
   "freeform-insight": FreeformInsightRenderer,
+  // 2026-08-07 表单/详情族：全部来自已装的 pro-components，零新依赖
+  "record-form": RecordFormRenderer,
+  "record-form-dialog": RecordFormDialogRenderer,
+  "record-detail": RecordDetailRenderer,
+  "steps-form": StepsFormRenderer,
 });
 
 export function experienceBlockEntry(

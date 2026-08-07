@@ -23,7 +23,9 @@
     "createRequest",
     "editRequest",
     "actionTrigger",
-    "filterChange"
+    "filterChange",
+    "submitRequest",
+    "stepChange"
   ],
   "freeformAllowedTags": [
     "div",
@@ -609,6 +611,213 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；本次调用只需要给 props.designBrief（一句话说清楚这个区块该展示什么，必填，不能空），具体结构/样式/数据绑定由二段生成流程另外产出，不在这次输出里。"
+      }
+    },
+    {
+      "type": "RecordForm",
+      "description": "一条记录的新建/编辑表单，字段按数据模型生成。用于工作台右侧或向导页的填写区。",
+      "rendererKey": "record-form",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "submitText": {
+            "type": "string"
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "vertical",
+              "horizontal"
+            ]
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "wizard"
+      ],
+      "allowedSlots": [
+        "primary",
+        "activity",
+        "content"
+      ],
+      "slotsRationale": "NOT summary or secondary: a form needs full label+control width; the one-third column wraps every control onto its own line and the summary strip is a scan area, not a place to type. activity and content are opened together because they render identically — banning one on intent alone would be a restriction with no effect.",
+      "events": [
+        "submitRequest",
+        "editRequest"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef"
+        ],
+        "optional": [
+          "fieldRefs"
+        ],
+        "entityFieldRefLists": {
+          "fieldRefs": {}
+        }
+      }
+    },
+    {
+      "type": "RecordFormDialog",
+      "description": "一个按钮，点开抽屉或弹窗里的记录表单。抽屉与弹窗只差呈现方式，由 mode 决定。",
+      "rendererKey": "record-form-dialog",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "drawer",
+              "modal"
+            ]
+          },
+          "triggerText": {
+            "type": "string"
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "calendar",
+        "dashboard"
+      ],
+      "allowedSlots": [
+        "summary",
+        "primary",
+        "secondary",
+        "activity",
+        "content"
+      ],
+      "slotsRationale": "Allowed everywhere because the block itself is only a button — the form lives in an overlay and costs no page space, so no width argument can exclude any slot.",
+      "events": [
+        "submitRequest",
+        "actionTrigger"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef"
+        ],
+        "optional": [
+          "fieldRefs"
+        ],
+        "entityFieldRefLists": {
+          "fieldRefs": {}
+        }
+      }
+    },
+    {
+      "type": "RecordDetail",
+      "description": "一条记录的字段明细，只读。用于工作台的右侧详情或内容区。",
+      "rendererKey": "record-detail",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "number"
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "calendar",
+        "monitor"
+      ],
+      "allowedSlots": [
+        "secondary",
+        "primary",
+        "activity",
+        "content"
+      ],
+      "slotsRationale": "NOT summary: a read-only field list is what you look at after picking a row, and the summary strip is a scan area sized for numbers, not for a field table. Every width from the one-third column upward is allowed — a field list that fits in a third fits wider too.",
+      "events": [
+        "editRequest"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef"
+        ],
+        "optional": [
+          "fieldRefs"
+        ],
+        "entityFieldRefLists": {
+          "fieldRefs": {}
+        }
+      }
+    },
+    {
+      "type": "StepsForm",
+      "description": "分步填写的表单，每一步一组字段。用于向导页的主流程。",
+      "rendererKey": "steps-form",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "chainRef": {
+            "type": "string"
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "wizard"
+      ],
+      "allowedSlots": [
+        "primary",
+        "activity",
+        "content"
+      ],
+      "slotsRationale": "NOT summary or secondary: a multi-step form IS the page — a narrow or summary slot leaves no room for the step bar plus the fields of the current step.",
+      "events": [
+        "submitRequest",
+        "stepChange"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef"
+        ],
+        "optional": [
+          "fieldRefs"
+        ],
+        "entityFieldRefLists": {
+          "fieldRefs": {}
+        }
       }
     }
   ]

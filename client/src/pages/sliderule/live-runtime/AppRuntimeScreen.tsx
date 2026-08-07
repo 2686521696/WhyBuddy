@@ -817,6 +817,22 @@ export function AppRuntimeScreen({
     [model]
   );
 
+  /**
+   * 字段类型的按需查询（2026-08-07，表单族积木用）。
+   *
+   * RecordForm / RecordFormDialog / StepsForm 要按字段类型决定出哪种控件。
+   * 跟 fieldLabelOf 同一条路子：渲染器手里只有 binding 和运行时行数据，
+   * 没有字段定义，所以从模型按需查；**查不到回落 undefined**，渲染器自己
+   * 按 string 处理，不在这里替它猜。
+   */
+  const fieldTypeOf = React.useCallback(
+    (entityId: string, fieldId: string) =>
+      model?.datamodel?.entities
+        ?.find(e => e.id === entityId)
+        ?.fields?.find(f => f.id === fieldId)?.type || undefined,
+    [model]
+  );
+
   // antd v5 的静态 message.xxx() 拿不到 ConfigProvider 上下文（控制台明写着
   // 「Static function can not consume context like dynamic theme」）——身份主色、
   // 深色/紧凑档、圆角配方全都下发不到提示条上。改用 hook 版拿带上下文的实例，
@@ -1474,6 +1490,7 @@ export function AppRuntimeScreen({
     },
     enumOptionsOf,
     fieldLabelOf,
+    fieldTypeOf,
   };
 
   const renderExperienceBlockScaffold = (

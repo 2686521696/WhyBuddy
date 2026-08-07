@@ -50,6 +50,7 @@ import { ExperienceBlockBoundary } from "./live-runtime/block-registry";
 import type { ExperienceBlockInstance } from "./live-runtime/block-registry";
 import { isPhoneExperienceBlock } from "./live-runtime/phone-mobile/PhoneExperienceBlock";
 import type { RuntimeRow } from "./live-runtime/live-runtime";
+import type { NormalizedFieldOption } from "./live-runtime/field-display";
 
 
 const PRIMARY = "#1677ff";
@@ -140,6 +141,11 @@ const IMPL_BY_TYPE: Record<string, string> = {
   FilterBar: "ProComponents QueryFilter",
   WorkflowTimeline: "ProCard + antd Steps",
   FreeformInsight: "受限 JSON 树（非固定组件）",
+  // 2026-08-07 表单/详情族：全部来自已装的 @ant-design/pro-components 2.8
+  RecordForm: "ProComponents ProForm",
+  RecordFormDialog: "ProComponents DrawerForm / ModalForm",
+  RecordDetail: "ProComponents ProDescriptions",
+  StepsForm: "ProComponents StepsForm",
 };
 
 const SLOT_LABEL: Record<string, string> = {
@@ -166,6 +172,35 @@ const FIELD_LABEL: Record<string, string> = {
   status: "状态",
   channel: "渠道",
   at: "日期",
+};
+
+/** 字段类型：表单族按它决定出哪种控件（enum→下拉、number→数字、date→日期）。
+ *  与 FIELD_LABEL 同源同形——这一页是对照台，两张表都得跟真实数据模型对得上。 */
+const FIELD_TYPE: Record<string, string> = {
+  name: "string",
+  amount: "number",
+  status: "enum",
+  channel: "enum",
+  at: "date",
+};
+
+/**
+ * 枚举取值：表单族的 enum 字段靠它出下拉，表格/详情靠它把取值 id 翻成标签。
+ *
+ * **必须与 ENTITY_ROWS 里真实出现的取值对上**——对不上的话下拉里选不到行数据
+ * 里已有的值，而这一页恰恰是用来看"契约真的接上了没有"的。
+ */
+const ENUM_OPTIONS: Record<string, NormalizedFieldOption[]> = {
+  status: [
+    { id: "todo", label: "待办", tone: "default" },
+    { id: "doing", label: "进行中", tone: "processing" },
+    { id: "done", label: "已完成", tone: "success" },
+  ],
+  channel: [
+    { id: "线上", label: "线上", tone: "default" },
+    { id: "门店", label: "门店", tone: "default" },
+    { id: "电话", label: "电话", tone: "default" },
+  ],
 };
 
 const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
@@ -264,6 +299,61 @@ function demoFor(type: string): {
 } {
   const base = { id: `demo-${type}`, type };
   switch (type) {
+    // ── 表单/详情族（2026-08-07）：全部来自已装的 pro-components ──────────
+    // fieldRefs 显式声明要哪几个字段——**不写就走"从行数据推前 6 个"那条
+    // 兜底路径**，那条路径在真实应用里是有的，但对照台要看的是"声明了会
+    // 怎样"，两种都留在这里反而看不出契约在起作用。
+    case "RecordForm":
+      return {
+        block: {
+          ...base,
+          props: { title: "新建订单", submitText: "创建", layout: "vertical" },
+          binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "channel", "at"] },
+        },
+        extra: {},
+      };
+    case "RecordFormDialog":
+      return {
+        block: {
+          ...base,
+          props: { title: "新建订单", mode: "drawer", triggerText: "新建订单" },
+          binding: { entityRef: "order", fieldRefs: ["name", "amount", "status"] },
+        },
+        extra: {},
+      };
+    case "RecordDetail":
+      return {
+        block: {
+          ...base,
+          props: { title: "订单详情", columns: 2 },
+          binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "channel", "at"] },
+        },
+        extra: {},
+      };
+    case "StepsForm":
+      return {
+        block: {
+          ...base,
+          props: { title: "订单录入" },
+          binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "channel"] },
+        },
+        // 步骤名跟着工作流链路走（见 StepsFormRenderer 里的说明），
+        // 这里给一条真链路，才看得出"五系统关联"不是一句口号。
+        extra: {
+          workflow: {
+            chains: [
+              {
+                id: "order-main",
+                nodes: [
+                  { id: "n1", name: "填写订单" },
+                  { id: "n2", name: "确认金额" },
+                  { id: "n3", name: "提交审核" },
+                ],
+              },
+            ],
+          },
+        },
+      };
     case "MetricGrid":
       return {
         block: { ...base, props: { title: "今日经营指标" }, binding: { entityRef: "order", aggregate: "sum:amount" } },
@@ -360,6 +450,8 @@ function demoFor(type: string): {
 const HAS_DEMO = new Set([
   "MetricGrid", "TrendChart", "RankedList", "ActivityFeed", "DataTable",
   "QuickActionPanel", "FilterBar", "WorkflowTimeline", "FreeformInsight",
+  // 2026-08-07 表单/详情族
+  "RecordForm", "RecordFormDialog", "RecordDetail", "StepsForm",
 ]);
 
 /** 页面形态（pageKind）——与 Python 侧 schema_legal.PAGE_KINDS 同源，此处是说明文案。 */
@@ -489,6 +581,8 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
           entityRows={ENTITY_ROWS}
           chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
           fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
+          fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+          enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
           {...extra}
         />
       </React.Suspense>
@@ -498,6 +592,8 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
         entityRows={ENTITY_ROWS}
         chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
         fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
+        fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+        enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
         {...extra}
       />
     )

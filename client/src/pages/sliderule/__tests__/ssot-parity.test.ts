@@ -121,6 +121,19 @@ describe("体验区块渲染器状态 SSOT", () => {
     // 2026-07-28 扩量：五个数据区块补上真渲染器后，连同两个早就就绪的辅助
     // 区块一起放开。这条哨兵的价值就是逼这次改动变成一次显式决定——改目录
     // 时它会红，必须回来把新名字写进这里，不会有人"顺手"多开一个。
+    //
+    // 2026-08-07 再扩量：表单/详情族四个。用户裁决"先补积木，门槛只收
+    // Ant Design 官方能力"——这四个的渲染器全部来自已装的
+    // @ant-design/pro-components 2.8，零新依赖：
+    //
+    //   RecordForm        ProForm                  内联表单
+    //   RecordFormDialog  DrawerForm / ModalForm   按钮开抽屉或弹窗（mode 决定）
+    //   RecordDetail      ProDescriptions          只读字段明细
+    //   StepsForm         StepsForm                分步表单，步骤名跟工作流链路走
+    //
+    // 抽屉与弹窗做成一个积木而不是两个：它们只差呈现方式，共用同一份字段与
+    // 提交回调；拆成两条会让目录里出现一对只差一个词的孪生项，AI 选型时多
+    // 一次没有意义的分叉。
     const enabled = EXPERIENCE_BLOCK_CATALOG.blocks
       .filter(b => b.generationEnabled)
       .map(b => b.type);
@@ -133,6 +146,10 @@ describe("体验区块渲染器状态 SSOT", () => {
       "QuickActionPanel",
       "FilterBar",
       "WorkflowTimeline",
+      "RecordForm",
+      "RecordFormDialog",
+      "RecordDetail",
+      "StepsForm",
     ]);
   });
 
