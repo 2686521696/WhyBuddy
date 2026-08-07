@@ -68,12 +68,19 @@ describe("components library UI contract", () => {
     expect(code).not.toContain("Input.Search");
     expect(code).not.toContain("Tag.CheckableTag");
 
-    // 三个筛选轴的挂载点
-    expect(code).toContain("components-page-kind-switch");
+    // 筛选条的挂载点。2026-08-08 从"三行常驻 chip"改成 Polaris 的 Filters
+    // 模型（每个维度一个下拉 + 已选的才以 pill 占位），所以钉的东西也换了：
+    // 原来钉三个轴各自的 testid，现在钉那一条筛选条 + pill 机制。
+    expect(code).toContain("components-filters");
+    expect(code).toContain("filter-clear-all");
+    expect(code).toContain("filter-pill-");
+    // 档位切换仍在（它只在区块档出现，是 extra 槽里的东西）
     expect(code).toContain("components-device-switch");
-    expect(code).toContain("components-slot-filters");
     // 早先那版按"区块分区"筛的开关已经删掉，别再回来
     expect(code).not.toContain("components-section-switch");
+    // 三行常驻 chip 不许回来——那正是"承载不住"的病根
+    expect(code).not.toContain("components-slot-filters");
+    expect(code).not.toContain("components-page-kind-switch");
   });
 
   it("filters blocks directly by the six page kinds from the shared catalog", () => {

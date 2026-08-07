@@ -38,9 +38,9 @@
  */
 
 import React from "react";
-import { Card, Empty, Tooltip } from "antd";
+import { Card, Dropdown, Empty, Tooltip } from "antd";
 // 顶部一律用 lucide，与 AppsWorkbench 同源；antd 图标只留给卡片内部。
-import { LayoutGrid, Monitor, Rows3, Search, Smartphone, Sparkles } from "lucide-react";
+import { ChevronDown, LayoutGrid, Monitor, Rows3, Search, Smartphone, Sparkles, X } from "lucide-react";
 import { useContainerPosition } from "masonic";
 import catalogJson from "@experience-blocks";
 import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
@@ -117,6 +117,137 @@ function FilterChip({
     </button>
   );
 }
+/**
+ * ── 筛选条 —— 照 Shopify Polaris 的 Filters 模型重做（2026-08-08）─────────
+ *
+ * ## 为什么重做
+ *
+ * 用户："目前顶部的筛选区域已经承载不了我们目前的页面，包括筛选的级联关系，
+ * 包括现在的排列方式，已经承载不住了。"
+ *
+ * 症结有两条，第二条更要命：
+ *
+ *   ① **占地方**：三行 chip 常驻（范式 7 + 区域 6 + 能力 7 = 20 个），
+ *      内容还没开始就吃掉三行高度。组件从 14 长到 137，只会更糟。
+ *   ② **层次混了**：范式/区域是"区块"那一层的维度（页面形态、槽位），
+ *      能力是"基础组件"那一层的（官方分组），行业是"模板"那一层的。
+ *      现在不管在哪个档都全摆着——在基础组件档下摆着区块的槽位筛选，
+ *      点了什么也不会发生。这就是用户说的"级联关系承载不住"。
+ *
+ * ## 抄的什么
+ *
+ * Shopify/polaris 的 Filters（polaris-react/src/components/Filters）：
+ *
+ *     filters: FilterInterface[]       每个维度一条：key + label + 控件
+ *                                      pinned 才常驻，其余收进「+ 添加筛选」
+ *     appliedFilters: AppliedFilter[]  **只有已选中的**才以 pill 形式占位，
+ *                                      可单独 × 掉
+ *     onClearAll                       一键清空
+ *
+ * 关窍是那句 "Applied filters which are rendered as filter pills"——
+ * **筛选项平时不占地方，占地方的只有你已经选了的**。20 个 chip 于是塌成
+ * 几个下拉按钮 + 零到三个 pill。
+ *
+ * 层次问题则靠"每个模式带自己那套维度"解决（对应 Polaris 的 tabs + 每个 tab
+ * 自己的 filters 数组）：基础组件档只有能力和端，区块档才有范式和区域。
+ * 不适用的维度**根本不出现**，而不是出现了点不动。
+ */
+interface FilterDim {
+  key: string;
+  label: string;
+  value: string;
+  options: { value: string; label: string; count?: number }[];
+  onChange: (v: string) => void;
+}
+
+function FilterBarRow({
+  dims,
+  extra,
+}: {
+  dims: FilterDim[];
+  extra?: React.ReactNode;
+}) {
+  const applied = dims.filter(d => d.value !== "all");
+  const labelOf = (d: FilterDim) =>
+    d.options.find(o => o.value === d.value)?.label ?? d.value;
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5" data-testid="components-filters">
+      {dims.map(d => (
+        <Dropdown
+          key={d.key}
+          trigger={["click"]}
+          menu={{
+            selectable: true,
+            selectedKeys: [d.value],
+            items: d.options.map(o => ({
+              key: o.value,
+              label: (
+                <span className="inline-flex min-w-[120px] items-center gap-3">
+                  <span>{o.label}</span>
+                  {o.count !== undefined && (
+                    <span className="ml-auto tabular-nums text-[11px] text-slate-400">
+                      {o.count}
+                    </span>
+                  )}
+                </span>
+              ),
+            })),
+            onClick: ({ key }) => d.onChange(key),
+          }}
+        >
+          <button
+            type="button"
+            data-testid={`filter-dim-${d.key}`}
+            className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
+              d.value !== "all"
+                ? "bg-[#e8eeff] text-[#3b5bdb]"
+                : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
+            }`}
+          >
+            {d.label}
+            <ChevronDown size={13} className="opacity-60" />
+          </button>
+        </Dropdown>
+      ))}
+
+      {/* 已选中的才占位。这是整个改动的关窍——平时这一段是空的。 */}
+      {applied.length > 0 && (
+        <>
+          <span className="mx-1 h-4 w-px bg-slate-200" />
+          {applied.map(d => (
+            <span
+              key={d.key}
+              data-testid={`filter-pill-${d.key}`}
+              className="inline-flex items-center gap-1 rounded-lg bg-[#5b6cff] px-2.5 py-1.5 text-[12px] font-medium text-white"
+            >
+              {d.label}：{labelOf(d)}
+              <button
+                type="button"
+                aria-label={`清除${d.label}筛选`}
+                className="ml-0.5 opacity-70 transition hover:opacity-100"
+                onClick={() => d.onChange("all")}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            data-testid="filter-clear-all"
+            className="rounded-lg px-2.5 py-1.5 text-[12px] text-slate-500 transition hover:bg-slate-100"
+            onClick={() => applied.forEach(d => d.onChange("all"))}
+          >
+            清空
+          </button>
+        </>
+      )}
+
+      {extra && <span className="ml-auto flex items-center gap-1.5">{extra}</span>}
+    </div>
+  );
+}
+
 interface CatalogBlock {
   type: string;
   description?: string;
@@ -1140,48 +1271,23 @@ function BaseScreenModal({ screen, onClose }: { screen: BaseScreen; onClose: () 
  * 高度差得很多（一个 Divider 三十几像素，一个 Calendar 两百多），瀑布流正好
  * 吃这个，而跨列在这里没有意义——没有哪个基础组件"需要整行宽才说得清"。
  */
-function BaseComponentWall({
-  group,
-  onGroup,
-}: {
-  group: string;
-  onGroup: (g: string) => void;
-}) {
+function BaseComponentWall({ group, platform }: { group: string; platform: string }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
   const { width } = useContainerPosition(containerRef, [height]);
+  // 两个维度都从统一筛选条来（见 filterDims）——墙自己不再另摆一排 chip。
   const shown = React.useMemo(
-    () => (group === "all" ? BASE_COMPONENTS : BASE_COMPONENTS.filter(c => c.group === group)),
-    [group]
+    () =>
+      BASE_COMPONENTS.filter(
+        c =>
+          (group === "all" || c.group === group) &&
+          (platform === "all" || c.platform === platform)
+      ),
+    [group, platform]
   );
-  const counts = React.useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const c of BASE_COMPONENTS) m[c.group] = (m[c.group] ?? 0) + 1;
-    return m;
-  }, []);
 
   return (
     <>
-      <div className="mt-4 flex flex-wrap items-center gap-1.5">
-        <FilterChip
-          testid="base-group-all"
-          icon={<LayoutGrid size={13} />}
-          label="全部"
-          count={BASE_COMPONENTS.length}
-          active={group === "all"}
-          onClick={() => onGroup("all")}
-        />
-        {BASE_GROUPS.filter(g => counts[g]).map(g => (
-          <FilterChip
-            key={g}
-            testid={`base-group-${g}`}
-            label={g}
-            count={counts[g]}
-            active={group === g}
-            onClick={() => onGroup(g)}
-          />
-        ))}
-      </div>
       <div data-testid="base-wall" style={{ display: "contents" }}>
         <SpanMasonry
           containerRef={containerRef}
@@ -1294,6 +1400,7 @@ export default function ComponentsLibraryPage() {
   //   presets 模板     —— AI 组装攒出来的，分行业
   const [mode, setMode] = React.useState<"base" | "blocks" | "presets">("base");
   const [baseGroup, setBaseGroup] = React.useState<string>("all");
+  const [basePlatform, setBasePlatform] = React.useState<string>("all");
   const [baseScreen, setBaseScreen] = React.useState<BaseScreen | null>(null);
   const [baseBusy, setBaseBusy] = React.useState(false);
 
@@ -1455,6 +1562,106 @@ export default function ComponentsLibraryPage() {
     () => blocks.filter(block => (block.pageKinds ?? []).includes(pageKind)),
     [blocks, pageKind]
   );
+
+  /**
+   * 当前模式下**适用**的筛选维度。
+   *
+   * 这就是"级联关系"的正解：不适用的维度根本不构造出来，于是它在界面上
+   * 不存在——而不是存在但点不动。此前三行 chip 常驻，在基础组件档下摆着
+   * 区块的槽位筛选，点了什么也不会发生。
+   */
+  const filterDims = React.useMemo<FilterDim[]>(() => {
+    if (mode === "base") {
+      const byGroup: Record<string, number> = {};
+      const byPlatform: Record<string, number> = {};
+      for (const c of BASE_COMPONENTS) {
+        byGroup[c.group] = (byGroup[c.group] ?? 0) + 1;
+        byPlatform[c.platform] = (byPlatform[c.platform] ?? 0) + 1;
+      }
+      return [
+        {
+          key: "capability",
+          label: "能力",
+          value: baseGroup,
+          onChange: setBaseGroup,
+          options: [
+            { value: "all", label: "全部", count: BASE_COMPONENTS.length },
+            ...BASE_GROUPS.filter(g => byGroup[g]).map(g => ({
+              value: g,
+              label: g,
+              count: byGroup[g],
+            })),
+          ],
+        },
+        {
+          key: "platform",
+          label: "端",
+          value: basePlatform,
+          onChange: setBasePlatform,
+          options: [
+            { value: "all", label: "全部", count: BASE_COMPONENTS.length },
+            { value: "pc", label: "桌面端", count: byPlatform.pc ?? 0 },
+            { value: "mobile", label: "手机端", count: byPlatform.mobile ?? 0 },
+          ],
+        },
+      ];
+    }
+    if (mode === "presets") {
+      return [
+        {
+          key: "industry",
+          label: "行业",
+          value: industry,
+          onChange: setIndustry,
+          options: [
+            { value: "all", label: "全部", count: presetCount },
+            ...industries.map(x => ({ value: x.industry, label: x.industry, count: x.count })),
+          ],
+        },
+      ];
+    }
+    // 区块档：范式（页面形态）+ 区域（槽位）。计数跟着上一级走——
+    // 槽位数说的是"在当前这类页面里这个槽位有几个区块可用"。
+    return [
+      {
+        key: "pageKind",
+        label: "范式",
+        value: pageKind,
+        onChange: setPageKind,
+        options: PAGE_KINDS.map(k => ({
+          value: k.key,
+          label: k.label,
+          count: blocks.filter(b => (b.pageKinds ?? []).includes(k.key)).length,
+        })),
+      },
+      {
+        key: "slot",
+        label: "区域",
+        value: slot,
+        onChange: setSlot,
+        options: [
+          { value: "all", label: "全部", count: pageKindBlocks.length },
+          ...(CATALOG.allowedSlots ?? []).map(sl => ({
+            value: sl,
+            label: SLOT_LABEL[sl] ?? sl,
+            count: pageKindBlocks.filter(b => (b.allowedSlots ?? []).includes(sl)).length,
+          })),
+        ],
+      },
+    ];
+  }, [
+    mode,
+    baseGroup,
+    basePlatform,
+    industry,
+    industries,
+    presetCount,
+    pageKind,
+    slot,
+    blocks,
+    pageKindBlocks,
+  ]);
+
   const filtered = React.useMemo(() => {
     const kw = query.trim().toLowerCase();
     return pageKindBlocks.filter(b => {
@@ -1508,119 +1715,71 @@ export default function ComponentsLibraryPage() {
           </div>
         </div>
 
-        {/* 筛选区：chip 样式与间距照 AppsWorkbench，但**分两行**。
-            
-            那边一行装得下是因为它只有 6 个 chip（2 个库切换 + 4 个状态）；
-            这里有 15 个（6 页面形态 + 7 槽位 + 3 档位），挤一行密度差一大截，
-            窄屏 flex-wrap 还会从某个组的中间折断，看着像折错了而不是排版。
-            
-            所以按**层级**拆，不是按数量拆：
-              第一行 = 看哪一类页面 · 看哪个档位   —— 两个"我在看什么"的维度
-              第二行 = 在这批里再按槽位收窄       —— "再筛一下"
-            档位放第一行右端（ml-auto），位置对应应用中心那行右端的排序控件。 */}
+        {/* 模式切换 = Polaris 的 tabs：**先选看哪一层**，再谈筛什么。
+            三层的维度互不相干（基础组件看能力/端、区块看范式/区域、模板看行业），
+            所以层必须在筛选之上——放在同一行会让人以为它们是并列的筛选项。 */}
         <div
-          className="mt-4 flex flex-wrap items-center gap-1.5"
-          data-testid="components-filters"
-        >
-          <span className="contents" data-testid="components-page-kind-switch">
-            {PAGE_KINDS.map(kind => (
-              <FilterChip
-                key={kind.key}
-                testid={`components-page-kind-${kind.key}`}
-                label={kind.label}
-                count={blocks.filter(b => (b.pageKinds ?? []).includes(kind.key)).length}
-                active={pageKind === kind.key}
-                onClick={() => setPageKind(kind.key)}
-              />
-            ))}
-          </span>
-
-          <div
-            className="ml-auto flex items-center gap-1.5"
-            data-testid="components-mode-switch"
-          >
-            <FilterChip
-              testid="components-mode-base"
-              label="基础组件"
-              count={BASE_COMPONENTS.length}
-              active={mode === "base"}
-              onClick={() => setMode("base")}
-            />
-            <FilterChip
-              testid="components-mode-blocks"
-              label="区块"
-              count={blocks.length}
-              active={mode === "blocks"}
-              onClick={() => setMode("blocks")}
-            />
-            <FilterChip
-              testid="components-mode-presets"
-              label="预设"
-              count={presetCount}
-              active={mode === "presets"}
-              onClick={() => setMode("presets")}
-            />
-            {/* AI 组装：现场从当前显示的积木里拼一页出来，能真录数据。
-                与「预设」的区别是死活——预设是手写死的固定组合，这个是每点
-                一次现拼一次。 */}
-            <button
-              type="button"
-              data-testid="components-assemble"
-              disabled={mode === "base" ? baseBusy : assembling || filtered.length === 0}
-              onClick={() => void (mode === "base" ? runBaseAssemble() : runAssemble())}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-50"
-            >
-              <Sparkles size={13} />
-              {(mode === "base" ? baseBusy : assembling) ? "组装中…" : "AI 组装"}
-            </button>
-          </div>
-
-          <div
-            className="ml-3 flex items-center gap-1.5"
-            data-testid="components-device-switch"
-          >
-            <FilterChip label="全部" active={device === "all"} onClick={() => setDevice("all")} />
-            <FilterChip
-              icon={<Monitor size={13} className="text-slate-400" />}
-              label="桌面档"
-              active={device === "desktop"}
-              onClick={() => setDevice("desktop")}
-            />
-            <FilterChip
-              icon={<Smartphone size={13} className="text-slate-400" />}
-              label="手机档"
-              active={device === "phone"}
-              onClick={() => setDevice("phone")}
-            />
-          </div>
-        </div>
-
-        {/* 第二行：槽位收窄。计数走 pageKindBlocks 而不是 blocks——它显示的是
-            "在当前这类页面里，这个槽位有几个区块可用"，跟着上一行的选择走。 */}
-        <div
-          className="mt-4 flex flex-wrap items-center gap-1.5"
-          data-testid="components-slot-filters"
+          className="mt-3 flex flex-wrap items-center gap-1.5"
+          data-testid="components-mode-switch"
         >
           <FilterChip
-            testid="components-slot-all"
-            icon={<LayoutGrid size={13} />}
-            label="全部槽位"
-            count={pageKindBlocks.length}
-            active={slot === "all"}
-            onClick={() => setSlot("all")}
+            testid="components-mode-base"
+            label="基础组件"
+            count={BASE_COMPONENTS.length}
+            active={mode === "base"}
+            onClick={() => setMode("base")}
           />
-          {(CATALOG.allowedSlots ?? []).map(sl => (
-            <FilterChip
-              key={sl}
-              testid={`components-slot-${sl}`}
-              icon={<Rows3 size={13} className="text-slate-400" />}
-              label={SLOT_LABEL[sl] ?? sl}
-              count={pageKindBlocks.filter(b => (b.allowedSlots ?? []).includes(sl)).length}
-              active={slot === sl}
-              onClick={() => setSlot(sl)}
-            />
-          ))}
+          <FilterChip
+            testid="components-mode-blocks"
+            label="区块"
+            count={blocks.length}
+            active={mode === "blocks"}
+            onClick={() => setMode("blocks")}
+          />
+          <FilterChip
+            testid="components-mode-presets"
+            label="模板"
+            count={presetCount}
+            active={mode === "presets"}
+            onClick={() => setMode("presets")}
+          />
+          <button
+            type="button"
+            data-testid="components-assemble"
+            disabled={mode === "base" ? baseBusy : assembling || filtered.length === 0}
+            onClick={() => void (mode === "base" ? runBaseAssemble() : runAssemble())}
+            className="ml-2 inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-50"
+          >
+            <Sparkles size={13} />
+            {(mode === "base" ? baseBusy : assembling) ? "组装中…" : "AI 组装"}
+          </button>
         </div>
+
+        {/* 筛选维度**按模式给**——不适用的根本不出现，而不是出现了点不动。
+            这是用户说的"级联关系承载不住"的正解：基础组件档只有能力和端，
+            区块档才有范式和区域，模板档只有行业。 */}
+        <FilterBarRow
+          dims={filterDims}
+          extra={
+            mode === "blocks" ? (
+              <span className="contents" data-testid="components-device-switch">
+                <FilterChip label="全部" active={device === "all"} onClick={() => setDevice("all")} />
+                <FilterChip
+                  icon={<Monitor size={13} className="text-slate-400" />}
+                  label="桌面档"
+                  active={device === "desktop"}
+                  onClick={() => setDevice("desktop")}
+                />
+                <FilterChip
+                  icon={<Smartphone size={13} className="text-slate-400" />}
+                  label="手机档"
+                  active={device === "phone"}
+                  onClick={() => setDevice("phone")}
+                />
+              </span>
+            ) : undefined
+          }
+        />
       </div>
 
       {assembleError && (
@@ -1644,7 +1803,7 @@ export default function ComponentsLibraryPage() {
       )}
 
       {mode === "base" ? (
-        <BaseComponentWall group={baseGroup} onGroup={setBaseGroup} />
+        <BaseComponentWall group={baseGroup} platform={basePlatform} />
       ) : mode === "presets" ? (
         <>
           {/* 行业筛选：取值来自库里真实存在的行业，不是我们预先定死的一张表。
