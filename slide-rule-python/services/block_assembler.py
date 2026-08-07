@@ -279,3 +279,121 @@ def assemble_page(
         "blocks": kept[:MAX_BLOCKS],
         "dropped": dropped,
     }
+
+
+# ── 基础组件的组装（2026-08-08）──────────────────────────────────────
+#
+# 与上面那条路径的**根本区别**：业务积木有 bindingSchema，能绑到实体和字段，
+# 所以组装出来的页面是真能录数据的；基础组件没有——它们是 antd / antd-mobile
+# 的官方通用示例，render 是一段写死的 demo，不接受外部数据。
+#
+# 所以这条路径抽出来的是**结构**：哪些组件、按什么顺序、分几栏。内容仍是各
+# 组件自带的示例内容。这一点必须对调用方说清楚，不能让人以为抽出来就是一个
+# 能用的页面。
+#
+# 用户要的"配上模拟的行业数据"要再往前一步：得先让基础组件的 render 接受
+# props。那是另一件事，见本函数末尾的说明。
+
+BASE_MAX = 6
+
+
+def _base_prompt(
+    industry_hint: str, components: List[Dict[str, Any]]
+) -> List[Dict[str, str]]:
+    lines = [
+        f"- {c.get('name')} ({c.get('label')}, {c.get('group')}): {c.get('description')}"
+        for c in components
+    ]
+    system = (
+        "You lay out ONE screen by picking from a closed set of UI components. "
+        "Every component already exists and renders — you are choosing which ones this "
+        "screen needs and in what order, not designing new ones."
+    )
+    user = (
+        "AVAILABLE COMPONENTS:\n"
+        + "\n".join(lines)
+        + "\n\nRULES\n"
+        f"1. Pick between 3 and {BASE_MAX} components that together form a screen a real "
+        "user could work in — typically: a way to navigate or filter, the main content, "
+        "and a way to act.\n"
+        "2. Do NOT mix platforms. Components whose name starts with 'M.' are mobile; "
+        "the rest are desktop. Pick one platform and stay in it — a desktop Table next to "
+        "a mobile TabBar is not a screen, it is a pile.\n"
+        "3. Order matters: list them top to bottom as they should appear.\n"
+        "4. width: \"full\" for the main content and anything wide (tables, forms, "
+        "navigation bars); \"half\" for things that read fine at half width.\n"
+        "5. Say which industry this screen suits (\"industry\"), Chinese, 2-6 characters. "
+        "Judge it from the combination you picked, not from the component names."
+        + (f" A hint from the caller: {industry_hint}." if industry_hint else "")
+        + "\n\nReturn JSON only:\n"
+        '{"name":"<页面中文名>","industry":"<行业>","platform":"pc|mobile",'
+        '"components":[{"name":"...","width":"full|half"}]}'
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def assemble_base_screen(
+    components: List[Dict[str, Any]], industry_hint: str = ""
+) -> Dict[str, Any]:
+    """从基础组件里抽一屏。
+
+    校验跟业务积木那条一样是**逐个剔除、如实上报**：模型会挑出目录里没有的
+    名字（幻觉），也会把 PC 和移动端混着挑（提示里明确禁了，仍然会犯）。
+    混平台尤其要拦——一个桌面 Table 挨着一个手机 TabBar 不是一屏，是一堆。
+    """
+    from sliderule_llm.client import LlmError, call_llm_json_with_shape
+
+    if not components:
+        return {"ok": False, "error": "没有可用的基础组件"}
+
+    try:
+        parsed, _ = call_llm_json_with_shape(
+            _base_prompt(industry_hint, components),
+            required_keys=("components",),
+            max_shape_retries=1,
+        )
+    except LlmError as exc:
+        return {"ok": False, "error": f"模型没能给出可用的组装：{str(exc)[:160]}"}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"组装失败：{str(exc)[:160]}"}
+
+    by_name = {str(c.get("name")): c for c in components}
+    platform = str(parsed.get("platform") or "").strip()
+    kept: List[Dict[str, Any]] = []
+    dropped: List[Dict[str, str]] = []
+
+    for i, raw in enumerate(parsed.get("components") or []):
+        if not isinstance(raw, dict):
+            dropped.append({"block": f"#{i}", "why": "不是对象"})
+            continue
+        name = str(raw.get("name") or "").strip()
+        entry = by_name.get(name)
+        if entry is None:
+            dropped.append({"block": name or f"#{i}", "why": "不在组件库里（模型编的）"})
+            continue
+        # 平台一致性：以第一个留下来的为准，后面不一致的剔掉。**不按模型自己
+        # 报的 platform 判**——它报的和它挑的常常对不上，挑出来的才是事实。
+        p = "mobile" if name.startswith("M.") else "pc"
+        if not kept:
+            platform = p
+        elif p != platform:
+            dropped.append({"block": name, "why": f"跟这一屏的平台（{platform}）不一致"})
+            continue
+        width = "half" if str(raw.get("width") or "").strip() == "half" else "full"
+        kept.append({"name": name, "width": width, "group": entry.get("group")})
+
+    if not kept:
+        return {"ok": False, "error": "模型挑的组件一个都没通过校验", "dropped": dropped}
+
+    return {
+        "ok": True,
+        "name": str(parsed.get("name") or "").strip() or "组装页面",
+        "industry": str(parsed.get("industry") or "").strip()[:12] or "通用",
+        "platform": platform or "pc",
+        "components": kept[:BASE_MAX],
+        "dropped": dropped,
+        # 如实标注这条路径的边界：抽出来的是**结构**，内容仍是各组件自带的
+        # 示例内容。基础组件的 render 不接受外部数据（它就是官方 demo），
+        # 要"配上模拟的行业数据"得先让 render 接受 props，那是下一步。
+        "contentIsDemo": True,
+    }

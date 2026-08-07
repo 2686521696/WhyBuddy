@@ -1035,6 +1035,100 @@ function AssembledPageModal({
   );
 }
 
+/** 从基础组件抽出来的一屏。 */
+interface BaseScreen {
+  name: string;
+  industry: string;
+  platform: string;
+  components: { name: string; width: string; group?: string }[];
+  dropped?: { block: string; why: string }[];
+  contentIsDemo?: boolean;
+}
+
+/**
+ * 基础组件抽出来的那一屏。
+ *
+ * 与 AssembledPageModal（业务积木那条）的**根本区别，必须在界面上说清楚**：
+ * 业务积木有 bindingSchema，绑到实体和字段，组装出来真能录数据；基础组件
+ * 没有数据契约，render 就是一段官方 demo。所以这里抽出来的是**结构**——
+ * 哪些组件、什么顺序、分几栏，内容仍是各组件自带的示例内容。
+ *
+ * 头部那句"抽的是结构"就是为这个立的：不写，用户会以为抽出来的就是一个能
+ * 用的页面，然后发现数据全是"选项一/甲/乙"，那时怪的是产品。
+ */
+function BaseScreenModal({ screen, onClose }: { screen: BaseScreen; onClose: () => void }) {
+  const byName = React.useMemo(() => {
+    const m = new Map<string, (typeof BASE_COMPONENTS)[number]>();
+    for (const c of BASE_COMPONENTS) m.set(c.name, c);
+    return m;
+  }, []);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-8"
+      data-testid="base-screen-modal"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-full w-full max-w-[1200px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2.5">
+          <span className="text-[14px] font-semibold text-slate-900">{screen.name}</span>
+          <span className="rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+            {screen.industry}
+          </span>
+          <span className="rounded bg-[#e8eeff] px-2 py-0.5 text-[11px] text-[#3b5bdb]">
+            {screen.platform === "mobile" ? "手机档" : "桌面档"} · {screen.components.length} 个组件
+          </span>
+          {screen.contentIsDemo && (
+            <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+              抽的是结构 · 内容是各组件自带的示例
+            </span>
+          )}
+          {screen.dropped && screen.dropped.length > 0 && (
+            <Tooltip title={screen.dropped.map(d => `${d.block}：${d.why}`).join("；")}>
+              <span className="cursor-help rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+                剔除 {screen.dropped.length} 个
+              </span>
+            </Tooltip>
+          )}
+          <button
+            className="ml-auto rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
+            onClick={onClose}
+          >
+            关闭
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto bg-[#f0f2f5] p-4">
+          <div className="mx-auto flex max-w-[1000px] flex-wrap gap-3">
+            {screen.components.map((c, i) => {
+              const def = byName.get(c.name);
+              if (!def) return null;
+              return (
+                <div
+                  key={`${c.name}-${i}`}
+                  style={{ width: c.width === "half" ? "calc(50% - 6px)" : "100%" }}
+                >
+                  <Card
+                    size="small"
+                    variant="borderless"
+                    styles={{ body: { padding: 12 } }}
+                    className="h-full shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
+                  >
+                    <div className="mb-2 text-[11px] text-slate-400">{c.name}</div>
+                    {def.render()}
+                  </Card>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 /**
  * 基础组件墙 —— 官方组件的通用示例。
  *
@@ -1200,6 +1294,48 @@ export default function ComponentsLibraryPage() {
   //   presets 模板     —— AI 组装攒出来的，分行业
   const [mode, setMode] = React.useState<"base" | "blocks" | "presets">("base");
   const [baseGroup, setBaseGroup] = React.useState<string>("all");
+  const [baseScreen, setBaseScreen] = React.useState<BaseScreen | null>(null);
+  const [baseBusy, setBaseBusy] = React.useState(false);
+
+  /**
+   * 从基础组件抽一屏 —— 传的是**当前筛选之后还在墙上的那些**，跟业务积木
+   * 那条传 allowedTypes 同一条规矩：从看得见的里面抽。切到「数据录入」再点，
+   * 抽出来的就是一屏全是录入件的东西，这是有意义的行为而不是 bug。
+   */
+  const runBaseAssemble = async () => {
+    if (baseBusy) return;
+    setBaseBusy(true);
+    setAssembleError(null);
+    try {
+      const pool =
+        baseGroup === "all"
+          ? BASE_COMPONENTS
+          : BASE_COMPONENTS.filter(c => c.group === baseGroup);
+      const res = await fetch("/api/sliderule/components/assemble-base", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          components: pool.map(c => ({
+            name: c.name,
+            label: c.label,
+            description: c.description,
+            group: c.group,
+            platform: c.platform,
+          })),
+        }),
+      });
+      const body = (await res.json()) as BaseScreen & { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok || !body.components?.length) {
+        setAssembleError(body.error || `组装失败（HTTP ${res.status}）`);
+        return;
+      }
+      setBaseScreen(body);
+    } catch (e) {
+      setAssembleError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBaseBusy(false);
+    }
+  };
   const [assembling, setAssembling] = React.useState(false);
   const [assembled, setAssembled] = React.useState<{
     name: string;
@@ -1430,12 +1566,12 @@ export default function ComponentsLibraryPage() {
             <button
               type="button"
               data-testid="components-assemble"
-              disabled={assembling || filtered.length === 0}
-              onClick={() => void runAssemble()}
+              disabled={mode === "base" ? baseBusy : assembling || filtered.length === 0}
+              onClick={() => void (mode === "base" ? runBaseAssemble() : runAssemble())}
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-50"
             >
               <Sparkles size={13} />
-              {assembling ? "组装中…" : "AI 组装"}
+              {(mode === "base" ? baseBusy : assembling) ? "组装中…" : "AI 组装"}
             </button>
           </div>
 
@@ -1494,6 +1630,9 @@ export default function ComponentsLibraryPage() {
         >
           {assembleError}
         </div>
+      )}
+      {baseScreen && (
+        <BaseScreenModal screen={baseScreen} onClose={() => setBaseScreen(null)} />
       )}
       {assembled && (
         <AssembledPageModal

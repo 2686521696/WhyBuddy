@@ -1957,6 +1957,34 @@ async def assemble_component_page(
     return await asyncio.to_thread(assemble_page, page_kind, allowed_types, datamodel)
 
 
+@router.post("/components/assemble-base")
+async def assemble_base_screen_route(
+    payload: Dict[str, Any],
+    x_internal_key: Optional[str] = Header(None),
+):
+    """从**基础组件**里抽一屏（2026-08-08）。
+
+    与 /components/assemble 的区别，说清楚免得两条路被当成一回事：
+
+      assemble       从业务积木抽。它们有 bindingSchema，能绑实体和字段，
+                     组装出来的页面**真能录数据**。
+      assemble-base  从 antd / antd-mobile 官方组件抽。它们没有数据契约，
+                     render 就是一段官方 demo，所以抽出来的是**结构**
+                     ——哪些组件、什么顺序、分几栏；内容仍是示例内容。
+
+    组件清单由前端传（跟 assemble 传 allowedTypes 同一条规矩：从当前显示的
+    里面抽），服务端只认清单里的名字。
+    """
+    _auth(x_internal_key)
+    from services.block_assembler import assemble_base_screen
+
+    comps = payload.get("components")
+    if not isinstance(comps, list) or not comps:
+        raise HTTPException(400, "components 不能为空")
+    hint = str(payload.get("industryHint") or "").strip()
+    return await asyncio.to_thread(assemble_base_screen, comps, hint)
+
+
 @router.get("/components/presets")
 async def list_component_presets(
     industry: Optional[str] = None,
