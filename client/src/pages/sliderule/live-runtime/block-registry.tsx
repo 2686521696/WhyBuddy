@@ -280,13 +280,27 @@ export const ExistingContentAdapter: ExperienceBlockRenderer = ({
 /**
  * Step 6：快捷操作面板——按钮来源是本页 pageActions 里 type 为
  * navigate/createRecord 的项（AppRuntimeScreen 已按当前角色算好 permitted）。
- * 无候选动作时如实显示"暂无可用操作"，不假装有按钮。
+ *
+ * 2026-08-07：**一个候选动作都没有时整块不渲染**（原来是画一张卡 + 一个
+ * "暂无可用操作"的空态）。
+ *
+ * 原注释的理由是"如实显示，不假装有按钮"——返回 null 同样没有假装任何东西，
+ * 而那张空卡是有代价的：实测首页上它占 115px，而它上面/下面还排着别的积木，
+ * 一起把 KPI 挤出首屏。产品在别处已经表过同一个态：喂给设计 LLM 的 brief 里
+ * 明说过逐行内容"只能画出表头+空表身，比留白还难看"，所以刻意不让 LLM 画
+ * （freeform_block._monitor_overview_design_brief）。渲染端理应同一条纪律。
+ *
+ * ⚠️ 这不是把信息藏起来：区块的声明仍然在模型里、门禁照常能标它，
+ * "这一页没有可用动作"这件事本身由"没有按钮"表达得很清楚，不需要再用
+ * 一张卡去说一遍。真正需要解释"为什么没有"的场景（比如权限不足），走的是
+ * 按钮 disabled + title 提示那条路，不是这里。
  */
 const QuickActionPanelRenderer: ExperienceBlockRenderer = ({
   block,
   pageActions,
   onAction,
 }) => {
+  if ((pageActions ?? []).length === 0) return null;
   const title = String(block.props?.title ?? "").trim();
   const columnsRaw = Number(block.props?.columns);
   const columns =

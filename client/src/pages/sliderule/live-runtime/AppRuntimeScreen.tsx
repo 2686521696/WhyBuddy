@@ -3038,10 +3038,37 @@ export function AppRuntimeScreen({
             {monitorDynamicLists}
           </>
         ) : (
+          // 没有设计版式时的兜底。**顺序必须跟上面那一支一致**：聚合在前，
+          // 积木垫后（2026-08-07 修）。
+          //
+          // 此前这里是 blockScaffold → statsBand → monitorCombinedRow，
+          // 跟产品自己定的首页信息架构正好相反。那套架构写在喂给设计 LLM 的
+          // brief 里（freeform_block._monitor_overview_design_brief）：
+          //
+          //     必须包含的 KPI 统计卡：…
+          //     必须包含的图表：…
+          //     这一页还声明了这些逐行内容（blockRef）：…
+          //
+          // 即「先给聚合结论 → 再给分布 → 最后才是明细」。上面那一支
+          // （monitorFreeformOverview → blockScaffold → monitorDynamicLists）
+          // 是照这个顺序来的，2026-07-28 的 D1 就是为此把脚手架挪到设计版式
+          // 后面的；但**当时只改了有设计版式的那一支**，兜底支原样留着。
+          //
+          // 平时 LLM 都能画出设计版式，所以没人踩到；关掉生图、或者预算不够
+          // （freeformOverviewStatus=deferred_budget）才掉进兜底支，老毛病
+          // 才露出来。实测（药联协同，1920 宽）：
+          //
+          //     快捷操作卡   392→507   115px
+          //     处方处理流程 515→601    86px
+          //     预警动态     610→921   311px   ← 512px 积木压在上面
+          //     KPI 行       929        71px   ← 总览页最该先看的，掉出首屏
+          //     图表        1036       …
+          //
+          // 一个总览页，最该看的数字全在屏幕外。
           <>
-            {blockScaffold}
             {statsBand}
             {monitorCombinedRow}
+            {blockScaffold}
           </>
         )
       ) : page.view.kind === "dashboard" && monitorFreeformOverview ? (

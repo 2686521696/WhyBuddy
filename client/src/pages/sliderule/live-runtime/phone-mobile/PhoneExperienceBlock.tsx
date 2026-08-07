@@ -283,6 +283,13 @@ function PhoneWorkflowTimeline(props: ExperienceBlockRendererProps) {
 
 function PhoneQuickActionPanel(props: ExperienceBlockRendererProps) {
   const actions = props.pageActions ?? [];
+  // 与桌面档同一条纪律（2026-08-07）：一个候选动作都没有时整块不渲染。
+  // 手机档屏幕更窄，一张只写着"暂无可用操作"的卡代价比桌面还大。
+  // 理由与边界见 block-registry.tsx 的 QuickActionPanelRenderer。
+  //
+  // 两档要一起改：只改桌面会造成"同一个应用，手机上多出一张空卡"这种
+  // 档位不对称——这类不对称在这个项目里踩过（见任务 17 那轮）。
+  if (actions.length === 0) return null;
   return (
     <Card title={titleOf(props) || undefined} data-testid="phone-quick-action-panel">
       {actions.length > 0 ? (
