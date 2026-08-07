@@ -261,10 +261,24 @@ def _execute_round_capability(cap: str, state: V5SessionState, role: str, turn_i
                         )
                 except Exception as ctx_exc:  # noqa: BLE001 — 注入失败不挡推演
                     print(f"[v5_full_driver] evidence context skipped: {str(ctx_exc)[:120]}")
+                # USER_MESSAGE 槽位本来就在（capabilities.py:259 的 prompt
+                # 模板是 "GOAL: …\nUSER_MESSAGE: …" 两槽结构，与 CrewAI 的
+                # role_playing/task 同形），此前却被写死成 goal —— 于是"用户
+                # 这一轮说了什么"这一格里装的永远是会话话题。
+                #
+                # 新建会话里两者相同，看不出来；**fork 出来的副本里 goal 是
+                # 源应用的旧话题**，用户提了新要求也进不来，推演过程整篇答非
+                # 所问（2026-08-06 用户实测「我发布的是从文献到引用的话题，
+                # 回答的是电动车方面的内容」）。
+                #
+                # `or goal` 兜底：引擎自推的轮次没有用户输入，保持旧行为
+                # 逐字节不变。
+                from .v5_capability_executor import current_turn_instruction
+
                 payload = {
                     "capabilityId": cap,
                     "state": {"goal": {"text": goal}},
-                    "userText": goal,
+                    "userText": current_turn_instruction() or goal,
                     "roleId": role,
                     "turnId": turn_id,
                     "upstreamEvidence": upstream,

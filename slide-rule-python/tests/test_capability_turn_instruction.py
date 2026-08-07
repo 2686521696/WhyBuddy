@@ -148,6 +148,37 @@ def test_both_drive_entries_set_the_context():
     assert "_turn_token.__exit__(None, None, None)" in stream_src
 
 
+def test_llm_native_path_passes_the_real_user_message():
+    """**主路径**：LLM 原生能力的 payload 里 USER_MESSAGE 要装用户真说的话。
+
+    这条差点漏掉。第一版只改了 execute_v5_capability，而那是**回退路径**
+    ——LLM 通道可用时（生产默认）走的是 _execute_round_capability →
+    sliderule_llm.capabilities.execute_capability，payload 里
+    `"userText": goal` 是写死的。
+
+    实测证据：改完第一版之后跑真推演，7 个产物（Intent clarification /
+    Structured critique / Risk analysis…）**全都还是旧话题**，因为它们
+    根本没走我改的那条路。
+
+    提示模板本身早就是对的（capabilities.py:259）：
+
+        GOAL: {goal}
+        USER_MESSAGE: {user_text}
+
+    两槽结构与 CrewAI 的 role_playing/task 同形。槽位一直在，是调用方
+    没往里装东西。
+    """
+    import inspect
+
+    from services import v5_full_driver
+
+    src = inspect.getsource(v5_full_driver._execute_round_capability)
+    assert '"userText": current_turn_instruction() or goal' in src, (
+        "USER_MESSAGE 必须装本轮用户的话；`or goal` 是无输入时的兜底"
+    )
+    assert '"userText": goal,' not in src, "不能再写死成 goal"
+
+
 def test_executor_reads_the_context():
     """能力执行真的用了拼装结果，而不是又退回只读 goal。"""
     import inspect
