@@ -216,6 +216,7 @@ function Router() {
       <Route path={`${AGENT_LOOP_PATH}/workbench`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/workbench/legacy`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/skills`} component={AgentLoopPage} />
+      <Route path={`${AGENT_LOOP_PATH}/components`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/help`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings/legacy`} component={AgentLoopPage} />

@@ -8,6 +8,7 @@ import {
   LeftOutlined,
   PlayCircleFilled,
   QuestionCircleOutlined,
+  BlockOutlined,
   ReadOutlined,
   ReloadOutlined,
   RightOutlined,
@@ -64,6 +65,7 @@ export type ViewKey =
   | "workbench"
   | "workbench-legacy"
   | "skills"
+  | "components"
   | "help"
   | "settings"
   | "settings-legacy";
@@ -71,6 +73,12 @@ export type ViewKey =
 // 技能库（索引 JSON 打在页面 chunk 里）：点开才加载，不占主包
 const LazySkillsLibraryPage = React.lazy(
   () => import("@/pages/sliderule/SkillsLibraryPage")
+);
+
+// 组件库：清单读自 experience_block_catalog.json，每个区块用真实渲染器现渲，
+// 所以这份 chunk 会拖上 ECharts/ProComponents——必须懒加载，不能压进主包。
+const LazyComponentsLibraryPage = React.lazy(
+  () => import("@/pages/sliderule/ComponentsLibraryPage")
 );
 
 // 帮助中心（E15，markdown 文档打在独立 chunk）：点开才加载
@@ -1177,6 +1185,7 @@ function AgentLoopSidebar({
   }> = [
     { key: "workbench", label: "应用中心", icon: <AppstoreOutlined /> },
     { key: "skills", label: "技能库", icon: <ReadOutlined /> },
+    { key: "components", label: "组件库", icon: <BlockOutlined /> },
     { key: "settings", label: "设置", icon: <SettingOutlined /> },
   ];
 
@@ -1300,6 +1309,8 @@ function AgentLoopTopbar({
           ? "面团 / 设置（legacy）"
           : view === "skills"
             ? "面团 / 技能库"
+            : view === "components"
+              ? "面团 / 组件库"
             : view === "help"
               ? "面团 / 帮助文档"
               : view === "workbench-legacy"
@@ -1437,6 +1448,8 @@ function DashboardAppInner({
         ? "应用中心"
         : view === "skills"
           ? "技能库"
+          : view === "components"
+            ? "组件库"
           : view === "settings"
             ? "设置"
             : view === "settings-legacy"
@@ -1814,6 +1827,16 @@ function DashboardAppInner({
                 }
               >
                 <LazySkillsLibraryPage />
+              </React.Suspense>
+            ) : view === "components" ? (
+              <React.Suspense
+                fallback={
+                  <div style={{ padding: 24, fontSize: 12, color: "#999" }}>
+                    组件库加载中…
+                  </div>
+                }
+              >
+                <LazyComponentsLibraryPage />
               </React.Suspense>
             ) : view === "settings" ? (
               <SettingsPage />

@@ -26,13 +26,14 @@ if (typeof window !== "undefined") {
 }
 
 type View = "overview" | "detail";
-type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "skills" | "help" | "settings" | "settings-legacy";
+type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "skills" | "components" | "help" | "settings" | "settings-legacy";
 
 export type AgentLoopRouteState =
   | { kind: "sliderule" }
   | { kind: "workbench" }
   | { kind: "workbench-legacy" }
   | { kind: "skills" }
+  | { kind: "components" }
   | { kind: "help" }
   | { kind: "settings" }
   | { kind: "settings-legacy" }
@@ -52,6 +53,10 @@ export function getAgentLoopWorkbenchLegacyPath(): string {
 }
 
 /** 技能库（TRAE 论坛技能索引，回链原帖） */
+export function getAgentLoopComponentsPath(): string {
+  return "/agent-loop/components";
+}
+
 export function getAgentLoopSkillsPath(): string {
   return "/agent-loop/skills";
 }
@@ -88,6 +93,9 @@ export function parseAgentLoopLocation(location: string): AgentLoopRouteState {
   if (normalized === "/agent-loop/workbench/legacy") {
     return { kind: "workbench-legacy" };
   }
+  if (normalized === "/agent-loop/components") {
+    return { kind: "components" };
+  }
   if (normalized === "/agent-loop/skills") {
     return { kind: "skills" };
   }
@@ -122,6 +130,7 @@ export function resolveAgentLoopLiveEventRunId(
     route.kind === "settings" ||
     route.kind === "settings-legacy" ||
     route.kind === "skills" ||
+    route.kind === "components" ||
     route.kind === "help" ||
     route.kind === "workbench"
   ) {
@@ -240,6 +249,8 @@ export default function AgentLoopPage() {
             ? getAgentLoopSettingsLegacyPath()
             : next === "skills"
               ? getAgentLoopSkillsPath()
+              : next === "components"
+                ? getAgentLoopComponentsPath()
               : next === "help"
                 ? getAgentLoopHelpPath()
                 : next === "workbench-legacy"
@@ -581,6 +592,8 @@ export default function AgentLoopPage() {
           ? "sliderule"
           : route.kind === "skills"
             ? "skills"
+            : route.kind === "components"
+              ? "components"
             : route.kind === "help"
               ? "help"
               : route.kind === "workbench-legacy"
@@ -614,6 +627,8 @@ export default function AgentLoopPage() {
                   ? getAgentLoopSettingsLegacyPath()
                   : next === "skills"
                     ? getAgentLoopSkillsPath()
+                    : next === "components"
+                      ? getAgentLoopComponentsPath()
                     : next === "help"
                       ? getAgentLoopHelpPath()
                       : next === "workbench-legacy"
