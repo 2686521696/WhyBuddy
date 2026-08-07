@@ -40,7 +40,7 @@
 import React from "react";
 import { Card, Empty, Tooltip } from "antd";
 // 顶部一律用 lucide，与 AppsWorkbench 同源；antd 图标只留给卡片内部。
-import { LayoutGrid, Monitor, Rows3, Search, Smartphone } from "lucide-react";
+import { LayoutGrid, Monitor, Rows3, Search, Smartphone, Sparkles } from "lucide-react";
 import { useContainerPosition } from "masonic";
 import catalogJson from "@experience-blocks";
 import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
@@ -52,7 +52,11 @@ import {
   resolveBusinessGrid,
   upgradeLegacySlotsToGrid,
 } from "./live-runtime/business-page-layout";
-import type { ExperienceBlockInstance } from "./live-runtime/block-registry";
+import type {
+  ExperienceBlockInstance,
+  FilterFieldOption,
+  PageFilterState,
+} from "./live-runtime/block-registry";
 import { isPhoneExperienceBlock } from "./live-runtime/phone-mobile/PhoneExperienceBlock";
 import type { RuntimeRow } from "./live-runtime/live-runtime";
 import type { NormalizedFieldOption } from "./live-runtime/field-display";
@@ -786,6 +790,196 @@ function PresetCard({ kind, preset }: { kind: string; preset: PagePreset }) {
   );
 }
 
+/** 组装结果里的一个积木——服务端已经逐个校验过槽位与绑定。 */
+interface AssembledBlock {
+  id: string;
+  type: string;
+  slot: string;
+  props?: Record<string, unknown>;
+  binding?: Record<string, unknown>;
+}
+
+/**
+ * AI 组装出来的那一页 —— **真的能录数据**。
+ *
+ * 用户要的（2026-08-07 原话）：「点了那个按钮之后，它就真的可以进行录入数据了，
+ * 就往你的页面录入数据了，就已经给你装配好了。」
+ *
+ * 所以这里持有一份自己的 RuntimeState（live-runtime 那套纯函数），表单提交走
+ * addRow 真写进去，下面的表格/详情立刻多一行。不是截图，不是示意。
+ *
+ * ## 为什么它是个副本
+ *
+ * 用户还要求：「相当于这个还是一个副本，你把原组件删掉，也丝毫不会影响到
+ * 这个组件」。做法是**开局就把行数据整份深拷贝一份进自己的状态**，之后
+ * 它跟 ENTITY_ROWS（组件库那份共用夹具）再无关系：在这一页里录 10 条、删
+ * 5 条，切回区块视图那些卡片一行都不变。
+ *
+ * 摆法仍然复用真实的槽位→网格管线，理由同 PresetCard。
+ */
+function AssembledPageModal({
+  page,
+  pageKind,
+  onClose,
+}: {
+  page: { name: string; blocks: AssembledBlock[]; dropped?: { block: string; why: string }[] };
+  pageKind: string;
+  onClose: () => void;
+}) {
+  // 深拷贝一份属于这一页的行数据——副本语义就落在这一行上。
+  const [rows, setRows] = React.useState<Record<string, RuntimeRow[]>>(() =>
+    JSON.parse(JSON.stringify(ENTITY_ROWS))
+  );
+  const [seq, setSeq] = React.useState(0);
+  const [toast, setToast] = React.useState<string | null>(null);
+  // 筛选态：不接它 FilterBar 会直接渲染成"本页无可筛选字段"——一个按不动的
+  // 控件掉在页面上，正是这一页最不该出现的东西（仓库里为此还专门在 prompt
+  // 里禁过总览页用 FilterBar）。接上之后它筛的是**这一页自己的副本数据**。
+  const [filterState, setFilterState] = React.useState<PageFilterState>({
+    enumFilters: {},
+    dateRange: null,
+  });
+  const filterFieldOptions: FilterFieldOption[] = React.useMemo(
+    () =>
+      Object.entries(ENUM_OPTIONS).map(([id, opts]) => ({
+        id,
+        label: FIELD_LABEL[id] ?? id,
+        options: opts.map(o => ({ value: o.id, label: o.label })),
+      })),
+    []
+  );
+  const dateRangeField = React.useMemo(() => {
+    const id = Object.keys(FIELD_TYPE).find(f => FIELD_TYPE[f] === "date");
+    return id ? { id, label: FIELD_LABEL[id] ?? id } : null;
+  }, []);
+
+  /** 筛过的行——展示类积木吃这一份，所以"筛"是真的会变的。 */
+  const visibleRows = React.useMemo(() => {
+    const out: Record<string, RuntimeRow[]> = {};
+    for (const [entityId, list] of Object.entries(rows)) {
+      out[entityId] = list.filter(r => {
+        for (const [field, want] of Object.entries(filterState.enumFilters)) {
+          if (!want) continue;
+          if (String(r.values?.[field] ?? "") !== want) return false;
+        }
+        const range = filterState.dateRange;
+        if (range && dateRangeField) {
+          const v = String(r.values?.[dateRangeField.id] ?? "");
+          if (v && (v < range[0] || v > range[1])) return false;
+        }
+        return true;
+      });
+    }
+    return out;
+  }, [rows, filterState, dateRangeField]);
+
+  const slots = {
+    summary: page.blocks.filter(b => b.slot === "summary").map(b => b.id),
+    primary: page.blocks.filter(b => b.slot === "primary").map(b => b.id),
+    secondary: page.blocks.filter(b => b.slot === "secondary").map(b => b.id),
+    activity: page.blocks.filter(b => b.slot === "activity").map(b => b.id),
+    content: page.blocks.filter(b => b.slot === "content").map(b => b.id),
+  };
+  const items = resolveBusinessGrid(upgradeLegacySlotsToGrid(pageKind, slots), "desktop");
+  const byId = new Map(page.blocks.map(b => [b.id, b]));
+
+  /** 表单提交 → 真写一行。写完让 toast 说清楚写进了哪个实体、现在几条。 */
+  const handleAction = (actionId: string, data?: Record<string, unknown>) => {
+    if (actionId !== "submitRequest") return;
+    const entityRef = String(data?.entityRef ?? "");
+    const values = (data?.values ?? {}) as Record<string, unknown>;
+    if (!entityRef || !rows[entityRef]) return;
+    const next = seq + 1;
+    setSeq(next);
+    setRows(prev => ({
+      ...prev,
+      [entityRef]: [
+        ...(prev[entityRef] ?? []),
+        { id: `asm-row-${next}`, values, createdAt: new Date().toISOString() },
+      ],
+    }));
+    setToast(`已写入 ${entityRef}，现在共 ${(rows[entityRef]?.length ?? 0) + 1} 条`);
+    window.setTimeout(() => setToast(null), 2600);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-8"
+      data-testid="assembled-page-modal"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-full w-full max-w-[1500px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-4 py-2.5">
+          <span className="truncate text-[14px] font-semibold text-slate-900">{page.name}</span>
+          <span className="shrink-0 rounded bg-[#e8eeff] px-2 py-0.5 text-[11px] text-[#3b5bdb]">
+            AI 现场组装 · {page.blocks.length} 个积木
+          </span>
+          {/* 被剔除的必须说出来，不能静默吃掉——否则用户以为模型只拼了这么多 */}
+          {page.dropped && page.dropped.length > 0 && (
+            <Tooltip
+              title={page.dropped.map(d => `${d.block}：${d.why}`).join("；")}
+            >
+              <span className="shrink-0 cursor-help rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+                剔除 {page.dropped.length} 个
+              </span>
+            </Tooltip>
+          )}
+          {toast && (
+            <span
+              data-testid="assembled-toast"
+              className="shrink-0 rounded bg-green-50 px-2 py-0.5 text-[11px] text-green-700"
+            >
+              {toast}
+            </span>
+          )}
+          <button
+            className="ml-auto shrink-0 rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
+            onClick={onClose}
+          >
+            关闭
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto bg-[#f0f2f5] p-4">
+          <BusinessPageGrid
+            breakpoint="desktop"
+            items={items}
+            renderItem={ref => {
+              const b = byId.get(ref);
+              if (!b) return null;
+              return (
+                <Card
+                  size="small"
+                  variant="borderless"
+                  styles={{ body: { padding: 0, overflow: "hidden" } }}
+                  className="shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
+                >
+                  <ExperienceBlockBoundary
+                    block={{ id: b.id, type: b.type, props: b.props, binding: b.binding } as ExperienceBlockInstance}
+                    entityRows={visibleRows}
+                    chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
+                    filterState={filterState}
+                    filterFieldOptions={filterFieldOptions}
+                    dateRangeField={dateRangeField}
+                    onFilterChange={patch => setFilterState(prev => ({ ...prev, ...patch }))}
+                    fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
+                    fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+                    enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
+                    onAction={handleAction}
+                    workflow={WORKFLOW}
+                  />
+                </Card>
+              );
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 区块墙。抽成组件的理由同 AppsWorkbench 的 AppWall：里面全是 hook，
  * 而墙在「有结果 / 搜索无结果」两岔里只有一岔渲染，写在外层就成了条件调用。 */
 function BlockWall({ blocks, device }: { blocks: CatalogBlock[]; device: DeviceTier }) {
@@ -847,6 +1041,13 @@ export default function ComponentsLibraryPage() {
   // 预设是模型真正的起点，看不见它就没法判断生成质量的上限在哪，
   // 所以给它一个与"区块"并列的入口，而不是塞在某个角落。
   const [mode, setMode] = React.useState<"blocks" | "presets">("blocks");
+  const [assembling, setAssembling] = React.useState(false);
+  const [assembled, setAssembled] = React.useState<{
+    name: string;
+    blocks: AssembledBlock[];
+    dropped?: { block: string; why: string }[];
+  } | null>(null);
+  const [assembleError, setAssembleError] = React.useState<string | null>(null);
   const [device, setDevice] = React.useState<DeviceTier>("all");
   const [query, setQuery] = React.useState("");
   const [slot, setSlot] = React.useState<string>("all");
@@ -857,6 +1058,62 @@ export default function ComponentsLibraryPage() {
   const presetCount = Object.values(allPresets).reduce((n, ps) => n + ps.length, 0);
   // 预设按**页面形态**过滤，跟第一行那排 chip 走同一个选择——不另开一套筛选。
   const kindPresets = allPresets[pageKind] ?? [];
+
+  /**
+   * AI 组装：把**当前这一页真正显示着的**积木类型交给模型，让它现场拼一页。
+   *
+   * 传 allowedTypes 而不是让服务端自己算，是因为用户说的是"从当前显示的
+   * 各个组件"里拼——页面形态、槽位、搜索这些筛选此刻筛出什么，就从什么
+   * 里面挑。服务端再按目录复验一遍（模型仍可能挑目录外的）。
+   *
+   * 数据模型用组件库自己那份订单夹具：这一页存在的意义是看积木怎么拼，
+   * 不是再造一遍推演。字段类型/枚举取值都跟卡片里那份逐字节相同，所以
+   * 组装出来的表单跟你在卡片上看到的是同一个东西。
+   */
+  const runAssemble = async () => {
+    if (assembling) return;
+    setAssembling(true);
+    setAssembleError(null);
+    try {
+      const res = await fetch("/api/sliderule/components/assemble", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pageKind,
+          allowedTypes: filtered.map(b => b.type),
+          datamodel: {
+            entities: [
+              {
+                id: "order",
+                name: "订单",
+                fields: Object.keys(FIELD_TYPE).map(id => ({
+                  id,
+                  name: FIELD_LABEL[id] ?? id,
+                  type: FIELD_TYPE[id],
+                })),
+              },
+            ],
+          },
+        }),
+      });
+      const body = (await res.json()) as {
+        ok?: boolean;
+        name?: string;
+        blocks?: AssembledBlock[];
+        dropped?: { block: string; why: string }[];
+        error?: string;
+      };
+      if (!res.ok || !body.ok || !body.blocks?.length) {
+        setAssembleError(body.error || `组装失败（HTTP ${res.status}）`);
+        return;
+      }
+      setAssembled({ name: body.name || "组装页面", blocks: body.blocks, dropped: body.dropped });
+    } catch (e) {
+      setAssembleError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setAssembling(false);
+    }
+  };
   const pageKindBlocks = React.useMemo(
     () => blocks.filter(block => (block.pageKinds ?? []).includes(pageKind)),
     [blocks, pageKind]
@@ -959,6 +1216,19 @@ export default function ComponentsLibraryPage() {
               active={mode === "presets"}
               onClick={() => setMode("presets")}
             />
+            {/* AI 组装：现场从当前显示的积木里拼一页出来，能真录数据。
+                与「预设」的区别是死活——预设是手写死的固定组合，这个是每点
+                一次现拼一次。 */}
+            <button
+              type="button"
+              data-testid="components-assemble"
+              disabled={assembling || filtered.length === 0}
+              onClick={() => void runAssemble()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-50"
+            >
+              <Sparkles size={13} />
+              {assembling ? "组装中…" : "AI 组装"}
+            </button>
           </div>
 
           <div
@@ -1008,6 +1278,22 @@ export default function ComponentsLibraryPage() {
           ))}
         </div>
       </div>
+
+      {assembleError && (
+        <div
+          data-testid="assemble-error"
+          className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] text-red-600"
+        >
+          {assembleError}
+        </div>
+      )}
+      {assembled && (
+        <AssembledPageModal
+          page={assembled}
+          pageKind={pageKind}
+          onClose={() => setAssembled(null)}
+        />
+      )}
 
       {mode === "presets" ? (
         kindPresets.length === 0 ? (

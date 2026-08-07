@@ -1920,6 +1920,43 @@ async def list_generated_app_versions(root_id: str, x_internal_key: Optional[str
     return {"versions": versions}
 
 
+@router.post("/components/assemble")
+async def assemble_component_page(
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """组件库的「AI 组装」：现场从区块目录拼一页出来。
+
+    用户要的形状（2026-08-07）：组件库顶部一个按钮，点了之后大模型从**当前
+    显示的这些真实组件**里挑、排、绑，出来一个能真录数据的完整页面。
+
+    与推演的区别，两条都重要：
+
+      · 它不建会话、不落库、不进应用中心——组装结果只活在弹层里，关了就没。
+        所以这里**不要求登录**：看一眼积木能怎么拼，和"生成一个归你的应用"
+        不是一回事。
+      · 它不跑五系统，只做"选材 + 排位 + 绑定"这一层。数据模型由调用方给
+        （组件库用它自己那份订单夹具），模型不发明实体。
+
+    校验在 services/block_assembler：模型挑错类型/放错槽位/绑不存在的字段
+    都会被逐个剔除，剔除原因如实回给前端，不静默吃掉。
+    """
+    _auth(x_internal_key)
+    from services.block_assembler import assemble_page
+
+    page_kind = str(payload.get("pageKind") or "workbench").strip()
+    allowed = payload.get("allowedTypes")
+    allowed_types = [str(t) for t in allowed] if isinstance(allowed, list) else []
+    datamodel = payload.get("datamodel")
+    if not isinstance(datamodel, dict) or not datamodel.get("entities"):
+        raise HTTPException(400, "datamodel.entities 不能为空——组装需要知道有哪些字段可绑")
+
+    # 组装是一次 LLM 调用，几十秒起步；跑在线程池里，别占着事件循环
+    # （fork 那次就是同步跑 11 秒把所有并发请求一起卡住的）。
+    return await asyncio.to_thread(assemble_page, page_kind, allowed_types, datamodel)
+
+
 @router.post("/apps/{app_id}/fork")
 async def fork_generated_app(
     app_id: str,
