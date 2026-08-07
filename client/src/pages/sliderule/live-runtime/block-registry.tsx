@@ -1314,6 +1314,7 @@ const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
                   success 绿，于是排行第一名的条永远是绿的、其余是默认蓝，
                   跟应用主题色全无关系（对照台上一眼看得出）。 */}
               <Progress
+                aria-label={`${item.label}相对排名进度`}
                 percent={Math.round((Math.abs(item.value) / max) * 100)}
                 showInfo={false}
                 size={["small", 6]}

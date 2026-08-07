@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 8,
+  "version": 9,
   "allowedSlots": [
     "summary",
     "primary",
@@ -213,6 +213,11 @@
       "dataKinds": [
         "aggregate"
       ],
+      "pageKinds": [
+        "workbench",
+        "dashboard",
+        "monitor"
+      ],
       "allowedSlots": [
         "summary",
         "primary"
@@ -251,6 +256,10 @@
       },
       "dataKinds": [
         "series"
+      ],
+      "pageKinds": [
+        "dashboard",
+        "monitor"
       ],
       "allowedSlots": [
         "primary",
@@ -299,6 +308,11 @@
       },
       "dataKinds": [
         "rankedRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "dashboard",
+        "monitor"
       ],
       "allowedSlots": [
         "primary",
@@ -359,6 +373,12 @@
       "dataKinds": [
         "timelineRows"
       ],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "calendar",
+        "monitor"
+      ],
       "allowedSlots": [
         "activity",
         "secondary",
@@ -408,6 +428,11 @@
       "dataKinds": [
         "entityRows"
       ],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "calendar"
+      ],
       "allowedSlots": [
         "primary",
         "content",
@@ -448,6 +473,10 @@
         }
       },
       "dataKinds": [],
+      "pageKinds": [
+        "workbench",
+        "wizard"
+      ],
       "allowedSlots": [
         "summary",
         "primary"
@@ -483,6 +512,13 @@
       "dataKinds": [
         "aggregate"
       ],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "calendar",
+        "dashboard",
+        "monitor"
+      ],
       "allowedSlots": [
         "summary"
       ],
@@ -517,6 +553,11 @@
         }
       },
       "dataKinds": [],
+      "pageKinds": [
+        "workbench",
+        "wizard",
+        "monitor"
+      ],
       "allowedSlots": [
         "primary",
         "content",
@@ -552,6 +593,10 @@
         }
       },
       "dataKinds": [],
+      "pageKinds": [
+        "dashboard",
+        "monitor"
+      ],
       "allowedSlots": [
         "primary",
         "secondary",

@@ -38,8 +38,12 @@
  */
 
 import React from "react";
-import { Empty } from "antd";
-import { LayoutGrid, Search, Blocks, LayoutTemplate, Monitor, Smartphone } from "lucide-react";
+import { Card, Empty, Flex, Input, Tag, Tooltip } from "antd";
+import {
+  AppstoreOutlined,
+  DesktopOutlined,
+  MobileOutlined,
+} from "@ant-design/icons";
 import { useContainerPosition } from "masonic";
 import catalogJson from "@experience-blocks";
 import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
@@ -53,6 +57,13 @@ import type { RuntimeRow } from "./live-runtime/live-runtime";
 
 const PRIMARY = "#1677ff";
 const CHARTS = ["#1677ff", "#52c41a", "#faad14", "#722ed1", "#13c2c2"];
+const FILTER_TAG_CLASS =
+  "!m-0 inline-flex items-center gap-1.5 rounded-lg !border-0 !px-3 !py-1.5 !text-[12.5px] !font-medium !leading-5 transition";
+const FILTER_TAG_STYLE: React.CSSProperties = { marginInlineEnd: 0 };
+const filterTagClass = (checked: boolean) =>
+  `${FILTER_TAG_CLASS} ${checked
+    ? "!bg-[#e8eeff] !text-[#3b5bdb]"
+    : "!bg-transparent !text-slate-500 hover:!bg-white/60 hover:!text-slate-700"}`;
 
 interface CatalogBlock {
   type: string;
@@ -62,6 +73,7 @@ interface CatalogBlock {
   generationEnabled?: boolean;
   dataKinds?: string[];
   allowedSlots?: string[];
+  pageKinds?: string[];
   freeformGenerated?: boolean;
 }
 
@@ -322,26 +334,20 @@ const PAGE_KINDS = [
 
 /** 列宽下限与间距——照应用中心那面墙的写法，但值不同。
  *
- * 应用中心是 260：那面墙放的是应用截图，260 卡在信息条那排指标的换行点上。
- * 这里放的是**真组件**，宽度不够看到的就不是它真正的样子。
- *
- * 300 是试出来的，定的是**列数**不是单卡观感：1600px 视口下可用宽 ~1300，
- * 300 给 4 列 × 316px，340 只给 3 列。列数在这里比列宽要紧——9 个区块里有 4 个
- * 跨两列（见 isWideBlock），3 列时跨列卡占掉 2/3，剩下那一列很快见底，实测左列
- * 在第 5 张之后就空出一大段；4 列时跨列卡只占一半，短卡能继续往空位里填。
- *
- * 单卡这一头 316px 够用：需要横向空间的那几个（DataTable 摆列、
- * WorkflowTimeline 展开阶段）本来就是跨列卡，实得 648px。
+ * 与应用中心保持 260：它决定的是列数下限，真实列宽仍由 SpanMasonry 把剩余空间
+ * 均分。PC 与手机预览必须分别作为独立 item，ResizeObserver 才能按各自真实高度
+ * 排列；把两档包进同一个 item 会让整组高度参与定位，墙面无法填补空列。
  */
-const WALL_COLUMN_WIDTH = 300;
+const WALL_COLUMN_WIDTH = 260;
 const WALL_GUTTER = 16;
 
-/** 手机档一列的宽度。真实手机壳内容区是 380px（见 FreeformPreviewScreen 的
- * DEVICE_CONTENT_WIDTH），加卡片左右内边距与手机边框的余量。 */
-const PHONE_FRAME_WIDTH = 380;
-const PHONE_COLUMN_WIDTH = PHONE_FRAME_WIDTH + 56;
+type DeviceTier = "all" | "desktop" | "phone";
+type PreviewDevice = Exclude<DeviceTier, "all">;
 
-type DeviceTier = "desktop" | "phone";
+interface BlockPreviewEntry {
+  block: CatalogBlock;
+  device: PreviewDevice;
+}
 
 /**
  * 手机档渲染器。**懒加载**：它拉的是整个 antd-mobile，桌面档一个字节都用不上，
@@ -394,45 +400,8 @@ function interleaveWide(blocks: CatalogBlock[]): CatalogBlock[] {
   return out;
 }
 
-/** 筛选 chip——与 AppsWorkbench 的 TabButton 同一套类名（含右侧计数）。 */
-function FilterChip({
-  icon, label, count, active, onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      data-testid={`components-chip-${label}`}
-      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
-        active
-          ? "bg-[#e8eeff] text-[#3b5bdb]"
-          : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
-      }`}
-      onClick={onClick}
-    >
-      <span className={active ? "opacity-100" : "opacity-70"}>{icon}</span>
-      <span>{label}</span>
-      <span className={`tabular-nums text-[11px] ${active ? "text-[#3b5bdb]/80" : "text-slate-400"}`}>
-        {count}
-      </span>
-    </button>
-  );
-}
-
-/**
- * 区块卡——照应用中心的 CenterCard：画面铺满整卡，信息条以底部黑色渐变浮层
- * 压在画面上，不另占高度。
- *
- * 与那边唯一的实质差别：这里的"画面"是**活的组件**而不是一张截图，所以渲染区
- * 必须给底部留出 64px 内边距——渐变浮层会盖住最下面一带，不留就会把组件的最后
- * 一行内容压掉。截图不在乎盖住一点，活组件在乎。
- */
-function BlockCard({ block, device }: { block: CatalogBlock; device: DeviceTier }) {
+/** 真实渲染器预览；外壳使用 Ant Design Card，元信息不会覆盖可交互内容。 */
+function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevice }) {
   const { block: instance, extra } = demoFor(block.type);
   const impl = IMPL_BY_TYPE[block.type];
   const phone = isPhoneExperienceBlock(block.type);
@@ -472,70 +441,54 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: DeviceTier 
     />
   );
 
+  const statusLabel = phoneFallback
+    ? "手机档 · 桌面降级"
+    : device === "phone"
+      ? "手机档"
+      : "桌面档";
+  const DeviceIcon = device === "phone" ? MobileOutlined : DesktopOutlined;
+
   return (
-    <div
+    <Card
       data-testid={`component-card-${block.type}`}
-      title={block.description}
-      className="group relative w-full overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
+      size="small"
+      variant="borderless"
+      styles={{ body: { padding: 0, overflow: "hidden", position: "relative" } }}
+      className="w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
     >
-      {/* 画面区：桌面档直接铺满；手机档套进一个 380px 的机身框里，
-          宽度必须是真的——不套框只把卡变窄，看到的仍是桌面布局在窄容器里的样子，
-          跟真机不是一回事。 */}
-      {device === "phone" ? (
-        <div className="flex justify-center px-4 pt-4" style={{ paddingBottom: 64 }}>
-          <div
-            className="overflow-hidden rounded-[22px] border-[6px] border-slate-800 bg-[#f5f5f5] shadow-inner"
-            style={{ width: PHONE_FRAME_WIDTH }}
-          >
-            <div className="px-2.5 py-3">{rendered}</div>
-          </div>
-        </div>
-      ) : (
-        <div className="px-4 pt-4" style={{ paddingBottom: 64 }}>
-          {rendered}
-        </div>
-      )}
-
-      {/* 右上角：档位指示。手机档下如果是降级来的，直接写出来——一个灰图标
-          说不清"它现在显示的东西其实是桌面渲染器"这件事。 */}
-      <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5 rounded-lg bg-white/85 px-2 py-1 ring-1 ring-slate-200/70 backdrop-blur-[2px]">
-        {phoneFallback ? (
-          <span className="text-[11px] font-medium text-amber-600">桌面档降级</span>
-        ) : (
-          <>
-            <Monitor size={13} className="text-emerald-500" />
-            <Smartphone size={13} className={phone ? "text-emerald-500" : "text-slate-300"} />
-          </>
-        )}
-      </div>
-
-      {/* 信息条：浮在画面底部，不占卡片高度（同 CenterCard 的黑色渐变 + backdrop-blur） */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/60 to-transparent px-3 pb-2 pt-7 backdrop-blur-[1px]">
-        <div className="flex items-baseline gap-2">
-          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-white drop-shadow-sm">
-            {block.type}
-          </span>
-          <span className="shrink-0 text-[11px] text-white/70">
-            {impl ?? "实现未登记"}
-          </span>
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-white/75">
-          {(block.allowedSlots ?? []).map(s => (
-            <span key={s} className="rounded bg-white/15 px-1.5 py-px">
-              {SLOT_LABEL[s] ?? s}
+      {rendered}
+      <Tooltip title={phoneFallback ? "该区块暂无手机专属实现，当前展示桌面渲染器" : undefined}>
+        <span
+          className={`absolute right-2.5 top-2.5 z-10 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium shadow-sm backdrop-blur-sm ${
+            phoneFallback
+              ? "bg-amber-50/95 text-amber-700 ring-1 ring-amber-200"
+              : "bg-white/90 text-slate-700 ring-1 ring-slate-200"
+          }`}
+        >
+          <DeviceIcon />
+          {statusLabel}
+        </span>
+      </Tooltip>
+      <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 via-black/35 to-transparent px-3 pb-2 pt-4 backdrop-blur-[1px]">
+        <div className="flex items-center">
+          <Tooltip title={block.description}>
+            <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-white drop-shadow-sm">
+              {block.type}
             </span>
+          </Tooltip>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-white/75">
+          <span>{impl ?? "实现未登记"}</span>
+          {(block.allowedSlots ?? []).map(s => (
+            <span key={s}>{SLOT_LABEL[s] ?? s}</span>
           ))}
           {(block.dataKinds ?? []).map(k => (
-            <span key={k} className="rounded bg-sky-400/25 px-1.5 py-px text-sky-100">
-              {DATAKIND_LABEL[k] ?? k}
-            </span>
+            <span key={k}>{DATAKIND_LABEL[k] ?? k}</span>
           ))}
-          {block.freeformGenerated && (
-            <span className="rounded bg-purple-400/25 px-1.5 py-px text-purple-100">AI 现场设计</span>
-          )}
+          {block.freeformGenerated && <span>AI 现场设计</span>}
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -545,69 +498,59 @@ function BlockWall({ blocks, device }: { blocks: CatalogBlock[]; device: DeviceT
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
   const { width } = useContainerPosition(containerRef, [height]);
+  const entries = React.useMemo<BlockPreviewEntry[]>(
+    () => device === "all"
+      ? blocks.flatMap(block => [
+          { block, device: "desktop" },
+          { block, device: "phone" },
+        ] satisfies BlockPreviewEntry[])
+      : blocks.map(block => ({ block, device })),
+    [blocks, device]
+  );
 
   return (
     <div data-testid="components-wall" style={{ display: "contents" }}>
-      <SpanMasonry<CatalogBlock>
+      <SpanMasonry<BlockPreviewEntry>
         containerRef={containerRef}
-        items={blocks}
+        items={entries}
         width={width}
         height={height}
         scrollTop={scrollTop}
         isScrolling={isScrolling}
-        minColumnWidth={device === "phone" ? PHONE_COLUMN_WIDTH : WALL_COLUMN_WIDTH}
+        minColumnWidth={WALL_COLUMN_WIDTH}
         gutter={WALL_GUTTER}
         overscanBy={2}
         // 实测各区块渲染高度 148~451px，取中位偏上；真实高度由 ResizeObserver 量，
         // 这个值只影响首屏还没量到时的总高估算。
-        itemHeightEstimate={device === "phone" ? 420 : 330}
-        itemKey={b => `${device}-${b.type}`}
+        itemHeightEstimate={280}
+        itemKey={entry => `${entry.device}-${entry.block.type}`}
         // 手机档不跨列：机身宽度是固定的 380px，跨两列只会让机身两侧多出空白，
         // 不会让内容变宽——跨列的前提是"内容能用上多出来的宽度"，这里用不上。
-        getSpan={(b, _i, columnCount) =>
-          device === "phone" ? 1 : spanForColumnCount(isWideBlock(b), columnCount)}
+        getSpan={(entry, _i, columnCount) =>
+          entry.device === "phone"
+            ? 1
+            : spanForColumnCount(isWideBlock(entry.block), columnCount)}
         className="mt-5"
-        render={b => <BlockCard block={b} device={device} />}
+        render={entry => <BlockCard block={entry.block} device={entry.device} />}
       />
     </div>
   );
 }
 
-/** 页面形态：等尺寸网格（照应用中心「官方示例」那一栏的做法，不进瀑布流）。 */
-function PageKindGrid() {
-  return (
-    <div
-      data-testid="page-kinds"
-      className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-    >
-      {PAGE_KINDS.map(k => (
-        <div
-          key={k.key}
-          data-testid={`page-kind-${k.key}`}
-          className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
-        >
-          <div className="flex items-baseline gap-2">
-            <span className="text-[14.5px] font-semibold text-slate-900">{k.label}</span>
-            <code className="text-[11.5px] text-slate-400">{k.key}</code>
-          </div>
-          <div className="mt-1.5 text-[12.5px] leading-relaxed text-slate-600">{k.desc}</div>
-          <div className="mt-2 text-[11.5px] text-slate-400">成立条件：{k.need}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function ComponentsLibraryPage() {
-  const [tab, setTab] = React.useState<"blocks" | "kinds">("blocks");
-  const [device, setDevice] = React.useState<DeviceTier>("desktop");
+  const [device, setDevice] = React.useState<DeviceTier>("all");
   const [query, setQuery] = React.useState("");
   const [slot, setSlot] = React.useState<string>("all");
+  const [pageKind, setPageKind] = React.useState("workbench");
 
   const blocks = CATALOG.blocks ?? [];
+  const pageKindBlocks = React.useMemo(
+    () => blocks.filter(block => (block.pageKinds ?? []).includes(pageKind)),
+    [blocks, pageKind]
+  );
   const filtered = React.useMemo(() => {
     const kw = query.trim().toLowerCase();
-    return blocks.filter(b => {
+    return pageKindBlocks.filter(b => {
       const hitKw =
         !kw ||
         b.type.toLowerCase().includes(kw) ||
@@ -616,7 +559,7 @@ export default function ComponentsLibraryPage() {
       const hitSlot = slot === "all" || (b.allowedSlots ?? []).includes(slot);
       return hitKw && hitSlot;
     });
-  }, [blocks, query, slot]);
+  }, [pageKindBlocks, query, slot]);
 
   // 先筛后铺：铺开只影响展示次序，不影响筛出来的集合。
   // 手机档不跨列，也就没有"宽卡挤成一坨"的问题，保持目录原序更好读。
@@ -624,116 +567,93 @@ export default function ComponentsLibraryPage() {
     () => (device === "phone" ? filtered : interleaveWide(filtered)),
     [filtered, device]
   );
-  const phoneReady = blocks.filter(b => isPhoneExperienceBlock(b.type)).length;
-
   return (
     <div data-testid="components-library" className="px-6 pb-10 pt-5 md:px-8 md:pt-6">
       {/* 吸顶头：与应用中心同一套（-mx/-mt 抵消外层内边距，保证背景铺满） */}
       <div className="sticky top-0 z-30 -mx-6 -mt-5 bg-[var(--sr-shell-bg,#fff)] px-6 pt-5 pb-3 md:-mx-8 md:-mt-6 md:px-8 md:pt-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="flex min-w-0 shrink-0 items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[#5b6cff]">
-              <LayoutGrid size={18} strokeWidth={2.2} />
-            </span>
+            <AppstoreOutlined className="text-lg text-[#1677ff]" />
             <h1 className="text-[18px] font-bold tracking-tight text-slate-900 md:text-[20px]">
-              组件库
+              体验区块库
             </h1>
           </div>
 
-          <div className="relative w-full min-w-[200px] flex-1 sm:mx-4 sm:max-w-xl md:max-w-2xl">
-            <Search
-              size={15}
-              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <input
+          <div className="w-full min-w-[200px] flex-1 sm:mx-4 sm:max-w-xl md:max-w-2xl">
+            <Input.Search
               data-testid="components-search"
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="搜区块名、说明或实现…"
-              disabled={tab !== "blocks"}
-              className="w-full rounded-lg border-0 bg-white/70 py-2.5 pl-10 pr-4 text-[13px] text-slate-800 outline-none ring-1 ring-slate-200/60 placeholder:text-slate-400 transition focus:bg-white focus:ring-2 focus:ring-[#5b6cff]/25 disabled:opacity-50"
+              allowClear
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
-            <FilterChip
-              icon={<Blocks size={14} />}
-              label="体验区块"
-              count={blocks.length}
-              active={tab === "blocks"}
-              onClick={() => setTab("blocks")}
-            />
-            <FilterChip
-              icon={<LayoutTemplate size={14} />}
-              label="页面形态"
-              count={PAGE_KINDS.length}
-              active={tab === "kinds"}
-              onClick={() => setTab("kinds")}
-            />
-          </div>
         </div>
 
-        {tab === "blocks" && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-            <FilterChip
-              icon={<span className="text-[13px]">◇</span>}
-              label="全部槽位"
-              count={blocks.length}
-              active={slot === "all"}
-              onClick={() => setSlot("all")}
-            />
+        <div className="mt-4 flex flex-col gap-1.5" data-testid="components-filters">
+          <Flex wrap gap={6} align="center" data-testid="components-page-kind-switch">
+            {PAGE_KINDS.map(kind => {
+              const count = blocks.filter(block => (block.pageKinds ?? []).includes(kind.key)).length;
+              const checked = pageKind === kind.key;
+              return (
+                <Tag.CheckableTag
+                  style={FILTER_TAG_STYLE}
+                  className={filterTagClass(checked)}
+                  key={kind.key}
+                  data-testid={`components-page-kind-${kind.key}`}
+                  checked={checked}
+                  onChange={() => setPageKind(kind.key)}
+                >
+                  <span>{kind.label}</span>
+                  <span className={`tabular-nums text-[11px] ${checked ? "text-[#3b5bdb]/80" : "text-slate-400"}`}>
+                    {count}
+                  </span>
+                </Tag.CheckableTag>
+              );
+            })}
+          </Flex>
+
+          <div className="flex flex-col gap-1.5">
+            <Flex wrap gap={6} align="center" aria-label="按页面槽位筛选">
+              <Tag.CheckableTag
+                style={FILTER_TAG_STYLE}
+                className={filterTagClass(slot === "all")}
+                data-testid="components-slot-all"
+                checked={slot === "all"}
+                onChange={() => setSlot("all")}
+              >
+                全部槽位 {pageKindBlocks.length}
+              </Tag.CheckableTag>
             {(CATALOG.allowedSlots ?? []).map(s => (
-              <FilterChip
+              <Tag.CheckableTag
+                style={FILTER_TAG_STYLE}
+                className={filterTagClass(slot === s)}
                 key={s}
-                icon={<span className="text-[13px]">◇</span>}
-                label={SLOT_LABEL[s] ?? s}
-                count={blocks.filter(b => (b.allowedSlots ?? []).includes(s)).length}
-                active={slot === s}
-                onClick={() => setSlot(s)}
-              />
+                data-testid={`components-slot-${s}`}
+                checked={slot === s}
+                onChange={() => setSlot(s)}
+              >
+                {SLOT_LABEL[s] ?? s} {pageKindBlocks.filter(b => (b.allowedSlots ?? []).includes(s)).length}
+              </Tag.CheckableTag>
             ))}
-            <span className="ml-auto flex items-center gap-1.5">
-              <FilterChip
-                icon={<Monitor size={14} />}
-                label="桌面档"
-                count={blocks.length}
-                active={device === "desktop"}
-                onClick={() => setDevice("desktop")}
-              />
-              {/* 计数写 blocks.length 而不是 phoneReady：这个数字在 chip 上读作
-                  "这一档有几张卡"，而手机档确实是 9 张全在（4 张专属渲染器 +
-                  5 张桌面档降级）。写 4 会让人以为另外 5 个看不到。
-                  真正的 4/9 由下面那行说明和每张卡上的「桌面档降级」角标交代。 */}
-              <FilterChip
-                icon={<Smartphone size={14} />}
-                label="手机档"
-                count={blocks.length}
-                active={device === "phone"}
-                onClick={() => setDevice("phone")}
-              />
-            </span>
+            </Flex>
+            <Flex wrap gap={6} align="center" data-testid="components-device-switch">
+              <Tag.CheckableTag style={FILTER_TAG_STYLE} className={filterTagClass(device === "all")} checked={device === "all"} onChange={() => setDevice("all")}>
+                全部
+              </Tag.CheckableTag>
+              <Tag.CheckableTag style={FILTER_TAG_STYLE} className={filterTagClass(device === "desktop")} checked={device === "desktop"} onChange={() => setDevice("desktop")}>
+                <DesktopOutlined /> 桌面档
+              </Tag.CheckableTag>
+              <Tag.CheckableTag style={FILTER_TAG_STYLE} className={filterTagClass(device === "phone")} checked={device === "phone"} onChange={() => setDevice("phone")}>
+                <MobileOutlined /> 手机档
+              </Tag.CheckableTag>
+            </Flex>
           </div>
-        )}
+        </div>
       </div>
 
-      <p className="mt-3 text-[12.5px] leading-relaxed text-slate-500">
-        系统生成应用时可用的全部组件。每一格都是<strong className="text-slate-700">真实渲染器</strong>
-        按夹具数据现渲的，跟线上应用同一套代码；清单读自 <code>experience_block_catalog.json</code>
-        ——它同时也是 AI 生成时对着的契约，所以这一页不会跟实际能力脱节。
-        {tab === "blocks" && device === "phone" && (
-          <>
-            {" "}当前是手机档：<strong className="text-slate-700">{phoneReady}</strong> 个有专属渲染器，
-            另 <strong className="text-amber-600">{blocks.length - phoneReady}</strong> 个走
-            <strong className="text-amber-600">桌面档降级</strong>
-            ——降级不是「不显示」，是真实应用里就拿桌面渲染器塞进 380px 窄壳
-            （AppRuntimeScreen 的 forPhone 分支），所以卡里看到的挤压就是用户会看到的。
-          </>
-        )}
-      </p>
-
-      {tab === "kinds" ? (
-        <PageKindGrid />
-      ) : filtered.length === 0 ? (
+      {filtered.length === 0 ? (
         <Empty description="没有匹配的区块" className="py-16" />
       ) : (
         <BlockWall blocks={ordered} device={device} />
