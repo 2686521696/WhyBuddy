@@ -47,6 +47,7 @@ import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
 import { useScrollerIn } from "@/pages/agent-loop/dashboard/useScrollerIn";
 import { spanForColumnCount } from "@/pages/agent-loop/dashboard/app-wall-span";
 import { BLOCK_DEFINITIONS, ExperienceBlockBoundary } from "./live-runtime/block-registry";
+import { BASE_COMPONENTS, BASE_GROUPS } from "./base-components/base-catalog";
 import BusinessPageGrid from "./live-runtime/BusinessPageGrid";
 import {
   resolveBusinessGrid,
@@ -1034,6 +1035,105 @@ function AssembledPageModal({
   );
 }
 
+/**
+ * 基础组件墙 —— 官方组件的通用示例。
+ *
+ * 与区块墙的区别在**这一层没有槽位、没有绑定、没有设备档**：一个 Input 就是
+ * 一个 Input，不存在"它该放在主区还是副区"。所以这里的筛选只有一个维度：
+ * 官方分组（通用/布局/导航/数据录入/数据展示/反馈）。
+ *
+ * 排布仍用 SpanMasonry（跟另外两面墙同一个组件），但一律单列宽：官方示例
+ * 高度差得很多（一个 Divider 三十几像素，一个 Calendar 两百多），瀑布流正好
+ * 吃这个，而跨列在这里没有意义——没有哪个基础组件"需要整行宽才说得清"。
+ */
+function BaseComponentWall({
+  group,
+  onGroup,
+}: {
+  group: string;
+  onGroup: (g: string) => void;
+}) {
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
+  const { width } = useContainerPosition(containerRef, [height]);
+  const shown = React.useMemo(
+    () => (group === "all" ? BASE_COMPONENTS : BASE_COMPONENTS.filter(c => c.group === group)),
+    [group]
+  );
+  const counts = React.useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const c of BASE_COMPONENTS) m[c.group] = (m[c.group] ?? 0) + 1;
+    return m;
+  }, []);
+
+  return (
+    <>
+      <div className="mt-4 flex flex-wrap items-center gap-1.5">
+        <FilterChip
+          testid="base-group-all"
+          icon={<LayoutGrid size={13} />}
+          label="全部"
+          count={BASE_COMPONENTS.length}
+          active={group === "all"}
+          onClick={() => onGroup("all")}
+        />
+        {BASE_GROUPS.filter(g => counts[g]).map(g => (
+          <FilterChip
+            key={g}
+            testid={`base-group-${g}`}
+            label={g}
+            count={counts[g]}
+            active={group === g}
+            onClick={() => onGroup(g)}
+          />
+        ))}
+      </div>
+      <div data-testid="base-wall" style={{ display: "contents" }}>
+        <SpanMasonry
+          containerRef={containerRef}
+          items={shown}
+          width={width}
+          height={height}
+          scrollTop={scrollTop}
+          isScrolling={isScrolling}
+          minColumnWidth={WALL_COLUMN_WIDTH}
+          gutter={WALL_GUTTER}
+          overscanBy={2}
+          itemHeightEstimate={180}
+          itemKey={c => c.name}
+          getSpan={() => 1}
+          className="mt-5"
+          render={c => (
+            <Card
+              data-testid={`base-card-${c.name}`}
+              size="small"
+              variant="borderless"
+              styles={{ body: { padding: 0, overflow: "hidden" } }}
+              className="w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
+            >
+              <div className="border-b border-slate-100 px-3 py-2">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[13.5px] font-semibold text-slate-900">{c.name}</span>
+                  <span className="text-[12px] text-slate-500">{c.label}</span>
+                  <span className="ml-auto rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] text-slate-500">
+                    {c.group}
+                  </span>
+                </div>
+                <div className="mt-1 text-[11.5px] leading-relaxed text-slate-500">
+                  {c.description}
+                </div>
+              </div>
+              {/* 示例本体。给一点内边距——这一层不像业务积木那样要铺满，
+                  官方文档里每个 demo 也都是有留白的。 */}
+              <div className="px-3 py-3">{c.render()}</div>
+            </Card>
+          )}
+        />
+      </div>
+    </>
+  );
+}
+
 /** 区块墙。抽成组件的理由同 AppsWorkbench 的 AppWall：里面全是 hook，
  * 而墙在「有结果 / 搜索无结果」两岔里只有一岔渲染，写在外层就成了条件调用。 */
 function BlockWall({ blocks, device }: { blocks: CatalogBlock[]; device: DeviceTier }) {
@@ -1094,7 +1194,12 @@ export default function ComponentsLibraryPage() {
   // 区块 = 一个个积木；预设 = 已经排好的组合（2026-08-07）。
   // 预设是模型真正的起点，看不见它就没法判断生成质量的上限在哪，
   // 所以给它一个与"区块"并列的入口，而不是塞在某个角落。
-  const [mode, setMode] = React.useState<"blocks" | "presets">("blocks");
+  // 三档，对应三个层次（2026-08-08 用户澄清的分层）：
+  //   base    基础组件 —— Ant Design 官方组件的通用示例，无业务数据
+  //   blocks  体验区块 —— 绑数据模型的业务积木，有 binding/槽位/门禁
+  //   presets 模板     —— AI 组装攒出来的，分行业
+  const [mode, setMode] = React.useState<"base" | "blocks" | "presets">("base");
+  const [baseGroup, setBaseGroup] = React.useState<string>("all");
   const [assembling, setAssembling] = React.useState(false);
   const [assembled, setAssembled] = React.useState<{
     name: string;
@@ -1299,6 +1404,13 @@ export default function ComponentsLibraryPage() {
             data-testid="components-mode-switch"
           >
             <FilterChip
+              testid="components-mode-base"
+              label="基础组件"
+              count={BASE_COMPONENTS.length}
+              active={mode === "base"}
+              onClick={() => setMode("base")}
+            />
+            <FilterChip
               testid="components-mode-blocks"
               label="区块"
               count={blocks.length}
@@ -1392,7 +1504,9 @@ export default function ComponentsLibraryPage() {
         />
       )}
 
-      {mode === "presets" ? (
+      {mode === "base" ? (
+        <BaseComponentWall group={baseGroup} onGroup={setBaseGroup} />
+      ) : mode === "presets" ? (
         <>
           {/* 行业筛选：取值来自库里真实存在的行业，不是我们预先定死的一张表。
               AI 判出什么行业，这里就有什么——库长什么样，筛选就长什么样。 */}
