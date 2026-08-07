@@ -120,26 +120,28 @@ describe("components library UI contract", () => {
     expect(pageSource).toContain("hasPhoneImplementation(block)");
   });
 
-  it("底部元信息浮在内容上，靠文字阴影而不是渐变遮罩", () => {
-    // 2026-08-07 用户裁决：「底部的阴影背景我觉得可以去掉，文字加灰色阴影的
-    // 方式也会很清晰」。原来是照搬应用中心的深色渐变遮罩
-    // （bg-gradient-to-t from-black/70…），那套是给应用截图设计的；这一页
-    // 盖的是活组件，遮罩本身就是要挡掉的东西。
+  it("底部元信息不铺整条遮罩，每条自带底衬保证可读", () => {
+    // 这条钉的是**结果**（内容不被遮住、元信息读得清），不是某一版实现。
     //
-    // 遮罩撤掉之后**白字必须跟着改成深字**——白字的可读性完全来自那层深色
-    // 渐变，只撤遮罩不改颜色等于让元信息隐形。这条断言把两件事绑在一起，
-    // 防止下次只改一半。
+    // 演进：
+    //   ① 原来是照搬应用中心的整条深色渐变（bg-gradient-to-t from-black/70），
+    //      那套是给应用截图设计的；这一页盖的是活组件，遮罩本身就是要挡掉的。
+    //   ② 用户要求去掉遮罩后，我按字面做了一版"纯文字阴影 + 浮层"，实测不能用
+    //      ——MetricGrid 盖住「1,648」、RankedList 盖住第 4/5 名、DataTable 盖住
+    //      末行。糊住它的不是背景色，是另一层字。
+    //   ③ 我改成把元信息推进正常流（不再浮），可读了但卡片高出一截。
+    //   ④ 用户最终版（b6fb19f）比前两个都好：**元信息仍是浮层，但每条各自带一个
+    //      bg-black/30 小药丸 + 白字**。内容照样铺满，元信息压在任何底色上都读
+    //      得清，又不需要整条遮罩。档位角标也并进了这一行。
+    //
+    // 所以这里只禁"整条遮罩"，并要求"每条自带底衬"，不再规定浮不浮。
     const code = stripComments(pageSource);
     expect(code).not.toContain("bg-gradient-to-t");
-    expect(code).toContain("META_TEXT_SHADOW");
-    expect(code).not.toMatch(/text-white\/\d+/);
+    // 白字必须有底衬托着——只有白字没底衬，压在浅色组件上等于隐形
+    expect(code).toMatch(/bg-black\/\d+/);
+    expect(code).toMatch(/text-white/);
+    expect(code).toContain("textShadow");
     expect(code).toContain('position: "relative"');
-
-    // 元信息**不能是浮层**。按字面"去掉留白 + 去掉遮罩"做过一版，实测元信息
-    // 直接压在内容上：MetricGrid 盖住 1,648、RankedList 盖住第 4/5 名、
-    // DataTable 盖住末行。糊住它的不是背景色是另一层字，文字阴影救不回来。
-    // 所以元信息回到正常流；这条断言防止它被改回 absolute。
-    expect(code).not.toMatch(/absolute inset-x-0 bottom-0/);
   });
 
   it("渲染区四边不留白——组件铺满整张卡", () => {
