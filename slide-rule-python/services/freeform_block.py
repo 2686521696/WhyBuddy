@@ -1050,54 +1050,29 @@ def _rows_prompt_fragment() -> str:
     ])
 
 
-def build_freeform_prompt(
-    design_brief: str,
-    datamodel: dict[str, Any],
-    *,
-    theme_id: str = "",
-    device: str = "",
-    generated_theme: Optional[dict[str, Any]] = None,
-    chart_colors: Optional[list[str]] = None,
-    chart_variant_key: str = "",
-) -> str:
-    return f"""你是一名前端视觉设计师。设计一个可视化组件：{design_brief}
-要有视觉创意和现代感，大胆用间距、层次、颜色对比、图标去表达内容。
-
-{_theme_prompt_fragment(theme_id, generated_theme, chart_colors, chart_variant_key)}
-{_device_prompt_fragment(device)}
-
-只能用安全原子积木拼：{", ".join(FREEFORM_ALLOWED_TAGS)} 标签。
-
-受控图片（imageRef）：只有营销落地页会提供 `landing-hero`。需要主视觉时在一个
-div 节点写 `"imageRef":"landing-hero"` 和准确的 `imageAlt`；运行时只会解析
-这个受控引用，不能填写 URL、data URI 或其它值。图片节点可用 width/height/
-borderRadius/overflow 控制版式，不能用 CSS url(...)。
-
-图标（iconRef）：直接用 Ant Design 图标组件名，PascalCase、以 Outlined 结尾
-（也可以是 Filled/TwoTone），比如 WalletOutlined、ShoppingCartOutlined、
-PieChartOutlined。Ant Design 有上百个图标，**按语义挑最贴切的那个**，不要
-将就：金额/营收用 DollarOutlined/WalletOutlined/AccountBookOutlined，订单/
-购物用 ShoppingCartOutlined/ShoppingOutlined，库存/补货用 InboxOutlined/
-DropboxOutlined/ContainerOutlined，任务/清单用 ProfileOutlined/
-CarryOutOutlined，图表/分析用 PieChartOutlined/BarChartOutlined/
-LineChartOutlined，用户/会员用 UserOutlined/TeamOutlined/CrownOutlined，
-时间/排期用 ClockCircleOutlined/CalendarOutlined，告警/风险用
-WarningOutlined/AlertOutlined/FireOutlined。下面是一批常用示例，但不限于
-这些，任何合法的 Ant Design 图标名都可以用：
-{json.dumps(list(FREEFORM_ALLOWED_ICON_REFS), ensure_ascii=False)}
-每张统计卡/列表项/小节标题旁边，尽量都配一个贴切的 iconRef，图标是这类信息
-卡片天然该有的视觉锚点，不要整份设计一个图标都不用。
-图标要做得醒目、有存在感：统计卡（KPI 卡）的图标别做成一个跟正文一样大的
+#: 「怎么画」的**兜底**处方（2026-08-07 拆出来）。
+#:
+#: 这两段（图标用法 1037 字 + 间距/圆角/阴影刻度 581 字）原本写死在
+#: build_freeform_prompt 正文里，是首页同质化的最大来源：实测两个完全不同
+#: 业务（连锁药房 / 农业大棚）的首页设计提示词**逐字相同 98.6%**——8512 字
+#: 里只有 123 字随业务变化，而那 123 字全是 enum 选项名和内容清单，
+#: 没有一个字关于"怎么排"。
+#:
+#: 于是每张 KPI 卡都被钉成"左上角一个 40~48px 圆角色块图标底座"，间距只准
+#: 取 4/8/12/16/24/32，阴影只准用那两串固定值。药房和大棚拿到同一份处方，
+#: 画出来自然是同一张脸。
+#:
+#: 现在它退居**兜底**：正常路径由 _refine_craft_via_llm 按业务现写
+#: （见那个函数），改写失败才回落到这里。回落是静默的、逐字节等于旧行为。
+#:
+#: ⚠️ 这是模板不是成品：`{icon_list}` 那个占位符要由 _craft_fallback() 填。
+#: 原文在 build_freeform_prompt 的 f-string 里，图标清单是就地插值的；搬成
+#: 模块常量之后 f-string 没了，直接用会把 `{json.dumps(...)}` 原样发给模型。
+_FREEFORM_CRAFT_FALLBACK_TEMPLATE = """图标要做得醒目、有存在感：统计卡（KPI 卡）的图标别做成一个跟正文一样大的
 小字符，做成一个 40~48px 的圆角色块当图标底座（给这个图标节点设
 backgroundColor 一块主题色/浅色底 + borderRadius + 居中），图标本身用
-fontSize 22~28px（图标大小 = 所在节点的 fontSize，想让图标大就把这个节点的
-fontSize 调大，不是设 width/height），色块配色跟这张卡的主色系呼应——参考
-现代仪表盘里"每张 KPI 卡左上角一个醒目图标方块"的做法，不要缩成一个灰扑扑
-的小图标。
-
-style 对象的 key 只能用这些 CSS 属性名，写了列表之外的属性（比如 fontFamily、
-listStyle）会被直接判失败：{", ".join(FREEFORM_ALLOWED_STYLE_PROPS)}。
-颜色用具体十六进制值，背景可用 linear-gradient(...)，不能出现 url(...)。
+fontSize 22~28px，色块配色跟这张卡的主色系呼应——参考现代仪表盘里
+"每张 KPI 卡左上角一个醒目图标方块"的做法，不要缩成一个灰扑扑的小图标。
 
 间距（padding/margin/gap）、圆角（borderRadius）只能从这套固定刻度里取值，
 不要自己另外发明数字——这套刻度是应用真实壳体（侧边栏/顶栏/卡片）本身在用
@@ -1111,7 +1086,213 @@ listStyle）会被直接判失败：{", ".join(FREEFORM_ALLOWED_STYLE_PROPS)}。
 - 阴影：浅色卡片用 "0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px 0 rgba(0,0,0,0.02)"
   这类很轻的多层阴影（近似取代边框、不抢视觉），需要更明显层次时用
   "0 6px 16px 0 rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12), 0 9px 28px 8px rgba(0,0,0,0.05)"，
-  不要自己调一个更重/更黑的阴影。
+  不要自己调一个更重/更黑的阴影。"""
+
+
+def _craft_fallback() -> str:
+    """「怎么画」的兜底处方。图标**契约**不在这里（见 _icon_contract）。"""
+    return _FREEFORM_CRAFT_FALLBACK_TEMPLATE
+
+
+#: 图标的**契约**：怎么把一个图标挂上去。永远在提示词里，跟改写没关系。
+#:
+#: 2026-08-07 拆分后第一次真机产出就踩了这个坑：药房和大棚两页
+#: **一个 iconRef 都没有**，模型把 "FileSearchOutlined"、"AlertOutlined"
+#: 这些名字当**正文**写进了 text 字段，页面上渲染出一排蓝色的英文单词。
+#:
+#: 原因很直接：改写系统提示里写着"不要写任何关于 JSON 结构、标签名、字段名
+#: 的内容"，改写 LLM 老老实实照办，写出来的是"图标使用 MedicineBoxOutlined
+#: 表示药房业务、图标统一 16px"——**只说了用哪个图标，没说图标挂在哪**。
+#: 而这句"挂在节点的 iconRef 字段上"原本就藏在被我搬走的那段处方里。
+#:
+#: 所以边界在这儿：
+#:   · **契约**（字段名 iconRef、名字形状、大小由 fontSize 决定、可选清单）
+#:     → 系统给，固定不变，改写碰不到；
+#:   · **处方**（配哪个语义的图标、多大、要不要底座色块、什么形状）
+#:     → 改写按业务自己定。
+#: 这跟 style 白名单 / chart 字段名留在外面是同一条线——凡是"写错就判失败或
+#: 渲染不出来"的，都不进改写的输入。
+_FREEFORM_ICON_CONTRACT_TEMPLATE = """图标怎么挂：在**需要图标的那个节点**上写 `"iconRef": "<Ant Design 图标组件名>"`。
+图标名不是正文——**绝不要把图标名写进 text 字段**，那样页面上会直接显示出
+"FileSearchOutlined" 这么一串英文单词。一个节点写了 iconRef 就渲染成图标本身。
+名字用 PascalCase、以 Outlined 结尾（Filled/TwoTone 也可以），比如
+WalletOutlined、ShoppingCartOutlined、PieChartOutlined。Ant Design 有上百个
+图标，**按语义挑最贴切的那个**，不要将就：金额/营收用 DollarOutlined/
+WalletOutlined/AccountBookOutlined，订单/购物用 ShoppingCartOutlined/
+ShoppingOutlined，库存/补货用 InboxOutlined/DropboxOutlined/ContainerOutlined，
+任务/清单用 ProfileOutlined/CarryOutOutlined，图表/分析用 PieChartOutlined/
+BarChartOutlined/LineChartOutlined，用户/会员用 UserOutlined/TeamOutlined/
+CrownOutlined，时间/排期用 ClockCircleOutlined/CalendarOutlined，告警/风险用
+WarningOutlined/AlertOutlined/FireOutlined。下面是一批常用示例，但不限于这些，
+任何合法的 Ant Design 图标名都可以用：
+{icon_list}
+图标大小 = 这个节点的 fontSize，想让图标大就把这个节点的 fontSize 调大，
+**不是**设 width/height。
+每张统计卡/列表项/小节标题旁边，尽量都配一个贴切的 iconRef——图标是这类信息
+卡片天然该有的视觉锚点，不要整份设计一个图标都不用。"""
+
+
+def _icon_contract() -> str:
+    """把图标契约里的可选清单填上。
+
+    用 replace 而不是 str.format：这段文本里有 `"iconRef": "<...>"` 这样的
+    JSON 片段，将来再加一段带花括号的例子，format 会当场炸，replace 不会。
+    """
+    return _FREEFORM_ICON_CONTRACT_TEMPLATE.replace(
+        "{icon_list}", json.dumps(list(FREEFORM_ALLOWED_ICON_REFS), ensure_ascii=False)
+    )
+
+
+#: 让 LLM 按业务现写「怎么画」那一段的系统提示（2026-08-07）。
+#:
+#: 形制照抄 _SHEET_PROMPT_REFINE_SYSTEM（参照板出图提示词那条已经这么干了，
+#: 见 _build_overview_sheet_facts 的说明）。但**边界不同，这条差别是要命的**：
+#:
+#:   出图那条的产物是一张**图片**，没有校验。改写 LLM 漏一条，图丑一点而已。
+#:   这条的产物是一棵**必须过校验的 JSON 树**（标签白名单 / style 属性白名单 /
+#:   dataRef 与 chart 的 key 名与取值域）。漏掉契约条款 → 设计判失败 →
+#:   首页退回固定骨架，正是用户抱怨的那个样子。
+#:
+#: 所以**契约段不进这个改写的输入，也不许它输出契约**：它只负责"气质与排布"，
+#: 白名单和 schema 由 build_freeform_prompt 自己拼在外面，改写 LLM 碰不到。
+#:
+#: ⚠️ 第 3 条被真机打过脸一次，值得单独说。原文只写"图标用 Ant Design 组件名、
+#: 按语义挑"，改写 LLM 照办，产出"图标使用 MedicineBoxOutlined 表示药房业务、
+#: 统一 16px"——**说了用哪个，没说挂在哪**。下游设计模型于是把图标名当正文
+#: 写进 text，两页一个 iconRef 都没有，页面上排出一串蓝色英文单词。
+#: 现在"挂在 iconRef 字段上"由 _icon_contract() 固定给出，这里补一句让改写
+#: 知道机制已由系统交代、它只管设计判断，免得它以为自己得负责说清怎么挂。
+_FREEFORM_CRAFT_REFINE_SYSTEM = (
+    "你是给「界面设计模型」写作画要求的人。下面会给你一个企业应用某一页的"
+    "**事实**：这一页要覆盖的内容范围、真实数据字段、设备档。\n\n"
+    "请据此写出一段**中文作画要求**，交给另一个模型去产出这一页的版式。\n\n"
+    "要求：\n"
+    "1. 只输出要求正文，不要解释、不要标题、不要 markdown 代码块。\n"
+    "2. **按这个业务的性质决定视觉气质与排布**：哪块内容该最显眼、分几列、"
+    "谁跟谁并排、什么该占整行、卡片之间的大小对比、图标该用什么语义的、"
+    "间距该紧凑还是疏朗、圆角该硬朗还是柔和、阴影该轻还是重。"
+    "按这个业务的人打开这一页最先要做什么来排——**不要套「顶部一排等宽指标卡 + "
+    "下面两张图 + 底部一张表」那种通用后台网格**，那是这次要摆脱的东西。\n"
+    "3. 图标：**怎么挂图标（写在哪个字段上）系统已经另外交代过了，你不用管**，"
+    "你只决定设计层面的事——这一页哪些地方该配图标、配什么语义的图标"
+    "（用 Ant Design 图标组件名，如 WarningOutlined）、多大、要不要底座色块、"
+    "什么形状，也可以判断这一页压根不用底座。\n"
+    "4. 间距、圆角、阴影**给出具体数值**，让下游有确定的依据；但数值由你按这一页"
+    "的气质定，不必迁就任何通用刻度。\n"
+    "5. **不要**写任何关于 JSON 结构、标签名、允许的 CSS 属性名、dataRef/chart "
+    "字段名的内容——那些由系统另行给出，你写了会互相打架。\n"
+    "6. 不要编造数据模型里没有的字段或指标。\n"
+    "7. 长度 300-600 字，写成连贯的中文段落。"
+)
+
+
+def _refine_craft_via_llm(
+    design_brief: str, datamodel: dict[str, Any], *, device: str = ""
+) -> Optional[str]:
+    """让 LLM 按这一页的业务现写「怎么画」。**加分项，失败静默回退。**
+
+    与 _refine_sheet_prompt_via_llm 同一套 fail-open 纪律：任何失败（LLM 报错 /
+    空回复 / 短得不像要求）都返回 None，调用方回落 _FREEFORM_CRAFT_FALLBACK
+    ——那份常量逐字节等于改造前的行为，所以最坏情况是"跟以前一样"，不是更差。
+
+    为什么值得多花一轮 LLM：写死处方下两个完全不同业务的首页设计提示词逐字
+    相同 98.6%，版式必然雷同。
+
+    ⚠️ 这是**拿确定性换多样性**。那两段常量原本在替模型兜住已知的坑（图标退化成
+    小字符、间距各写各的），现在每次让改写 LLM 重新想一遍，它漏掉哪一条，那一页
+    就可能复发对应的老毛病。判断划不划算只能看产出——别拿"以前修过"当作现在也
+    不会复发的理由。这句话是从 _build_overview_sheet_facts 那次同类改造里抄来的，
+    因为那次的教训后来真的复发过一回（灰条占位）。
+    """
+    # 连 import 都放进 try：这一整段是加分项，导入失败（模块缺失、循环导入）
+    # 也必须表现成"这一步跳过"，而不是把 build_freeform_prompt 整个炸掉——
+    # 那会让首页退回固定骨架，比拿兜底处方画一张同质化的页糟得多。
+    try:
+        from sliderule_llm.client import LlmError, call_llm_with_retry
+    except Exception as exc:  # noqa: BLE001
+        print(f"[freeform_block] craft refine skipped (import): {str(exc)[:160]}")
+        return None
+
+    # 预算不够就别抢：这一步是**嵌在 monitor.design 里面**跑的，而 design 自己
+    # 的准入线只有 `130 * design_total` 秒。实测这次改写单次 ~40s，如果卡着
+    # 130 秒进来再花 40，留给真正出版式的只剩 90——那不是"版式朴素一点"，是
+    # 版式**整段生成失败**、首页退回固定骨架，比拿兜底处方画一张同质化的页
+    # 糟得多。所以门槛设在 design 准入线之上留足余量。
+    #
+    # 220 = 40（改写实测）+ 130（design 准入线）+ 50（改写偶尔重试一轮的余量）。
+    # 拿不到预算上下文（remaining is None，比如单测/离线调用）时照常跑——
+    # 这跟这个文件里另外两处预算判断（palette / design）的写法一致。
+    remaining = remaining_run_budget_seconds()
+    if remaining is not None and remaining < 220:
+        print(f"[freeform_block] craft refine skipped: 预算只剩 {remaining:.0f}s")
+        return None
+
+    facts = "\n".join(
+        [
+            f"设备档：{device or 'desktop'}。",
+            f"这一页要覆盖的内容范围：\n{design_brief}",
+            f"真实数据字段：\n{_datamodel_summary_lines(datamodel)}",
+        ]
+    )
+    try:
+        result = call_llm_with_retry(
+            [
+                {"role": "system", "content": _FREEFORM_CRAFT_REFINE_SYSTEM},
+                {"role": "user", "content": facts},
+            ],
+            max_attempts=2,
+            backoff_ms=1500,
+            temperature=0.9,  # 比出图改写更高：这一步要的就是发散
+            max_tokens=1200,
+        )
+    except LlmError as exc:
+        print(f"[freeform_block] craft refine skipped: {str(exc)[:160]}")
+        return None
+    except Exception as exc:  # noqa: BLE001 — 改写失败绝不能拖垮主链路
+        print(f"[freeform_block] craft refine skipped (unexpected): {str(exc)[:160]}")
+        return None
+    text = (result.content or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    if len(text) < 120:
+        print(f"[freeform_block] craft refine skipped: 回复太短（{len(text)} 字）")
+        return None
+    return text
+
+
+def build_freeform_prompt(
+    design_brief: str,
+    datamodel: dict[str, Any],
+    *,
+    theme_id: str = "",
+    device: str = "",
+    generated_theme: Optional[dict[str, Any]] = None,
+    chart_colors: Optional[list[str]] = None,
+    chart_variant_key: str = "",
+) -> str:
+    # 「怎么画」这一段每页现写一次（拿确定性换多样性，理由见 _refine_craft_via_llm）。
+    # 失败静默回落到兜底常量，逐字节等于改造前的行为。
+    craft = _refine_craft_via_llm(design_brief, datamodel, device=device) or _craft_fallback()
+    return f"""你是一名前端视觉设计师。设计一个可视化组件：{design_brief}
+要有视觉创意和现代感，大胆用间距、层次、颜色对比、图标去表达内容。
+
+{_theme_prompt_fragment(theme_id, generated_theme, chart_colors, chart_variant_key)}
+{_device_prompt_fragment(device)}
+
+只能用安全原子积木拼：{", ".join(FREEFORM_ALLOWED_TAGS)} 标签。
+
+受控图片（imageRef）：只有营销落地页会提供 `landing-hero`。需要主视觉时在一个
+div 节点写 `"imageRef":"landing-hero"` 和准确的 `imageAlt`；运行时只会解析
+这个受控引用，不能填写 URL、data URI 或其它值。图片节点可用 width/height/
+borderRadius/overflow 控制版式，不能用 CSS url(...)。
+
+{_icon_contract()}
+
+{craft}
+
+style 对象的 key 只能用这些 CSS 属性名，写了列表之外的属性（比如 fontFamily、
+listStyle）会被直接判失败：{", ".join(FREEFORM_ALLOWED_STYLE_PROPS)}。
+颜色用具体十六进制值，背景可用 linear-gradient(...)，不能出现 url(...)。
 
 根节点（也就是最外层那个 "root"）会被直接放进页面已有的内容区容器里，那层
 容器本身已经带了背景色和内边距——根节点的 style 不要再设置 backgroundColor
@@ -1959,6 +2140,65 @@ def _repair_freeform_json_or_none(text: str) -> Optional[dict[str, Any]]:
     return _prune_non_dict_list_items(payload)
 
 
+def _repair_missing_field_refs(node: Any) -> int:
+    """给写了 rowsRef 但漏了 fieldRefs 的列表容器，按模板里实际用到的 fieldRef
+    把这份声明补上。返回补了几处。
+
+    ## 为什么值得机械补，而不是继续重问
+
+    `rowsRef.fieldRefs 不能为空` 是这条链路上最顽固的一个失败——2026-08-04
+    真机连挂三轮、烧掉 192 秒，三轮报的都是同一句（见 _reask_hint 的说明）；
+    2026-08-07 又复现一次，三轮全挂在同一句，整页降级回固定骨架。分诊式
+    reask 提示已经加过了，还是挡不住：模型写了 entityRef/sortByRef/limit，
+    模板里 fieldRef 一个不少，就是不肯把这份字段清单再抄一遍到 fieldRefs 里。
+
+    但正因为"模板里 fieldRef 一个不少"，**模型的意图是完全明确的**：这一行
+    要显示的字段就是模板里用到的那些。这不是猜，是把它已经写出来的信息换个
+    地方誊一遍——跟 json-repair 补括号是同一类修复（语法/形式错，语义没歧义），
+    所以放在同一个位置、按同一条纪律做：能省一轮重问才生效，修不了就原样
+    交给校验器照旧报错、照旧 reask，不改变任何失败路径的行为。
+
+    只补**空缺**：已经写了非空 fieldRefs 的一律不碰——那是模型的显式选择
+    （比如它想显示的字段比模板里出现的多，留着给 sortByRef 用）。
+    """
+    fixed = 0
+    if isinstance(node, list):
+        return sum(_repair_missing_field_refs(item) for item in node)
+    if not isinstance(node, dict):
+        return 0
+
+    rows_ref = node.get("rowsRef")
+    if isinstance(rows_ref, dict) and not rows_ref.get("fieldRefs"):
+        used: list[str] = []
+
+        def _collect(n: Any) -> None:
+            # 只走这个列表容器自己的模板子树。嵌套的 rowsRef 有自己的字段域，
+            # 把它的 fieldRef 收上来会串味（拿 B 实体的字段去声明 A 实体的行）。
+            if isinstance(n, list):
+                for item in n:
+                    _collect(item)
+                return
+            if not isinstance(n, dict):
+                return
+            ref = n.get("fieldRef")
+            if isinstance(ref, str) and ref and ref not in used:
+                used.append(ref)
+            for child in n.get("children") or []:
+                if isinstance(child, dict) and isinstance(child.get("rowsRef"), dict):
+                    continue
+                _collect(child)
+
+        for child in node.get("children") or []:
+            _collect(child)
+        if used:
+            rows_ref["fieldRefs"] = used
+            fixed += 1
+
+    for child in node.get("children") or []:
+        fixed += _repair_missing_field_refs(child)
+    return fixed
+
+
 def _reask_hint(error_text: str) -> str:
     """按**这次真正报的错**给建议，而不是每次都念一遍全部老经验。
 
@@ -2170,6 +2410,18 @@ def generate_freeform_block(
                 continue
             print("[freeform_block] JSON repaired mechanically (json-repair), reask 轮次被省下")
             payload = repaired_payload
+
+        # 校验前先把"漏抄 fieldRefs"这一类补上——模型已经在模板里写清了要显示
+        # 哪些字段，只是没誊到声明里。理由见 _repair_missing_field_refs。
+        try:
+            refs_fixed = _repair_missing_field_refs(payload.get("root"))
+        except Exception:  # noqa: BLE001 — 修复自身出问题不该顶掉已有的 reask 兜底
+            refs_fixed = 0
+        if refs_fixed:
+            print(
+                f"[freeform_block] rowsRef.fieldRefs repaired mechanically: {refs_fixed} 处，"
+                "reask 轮次被省下"
+            )
 
         try:
             design = FreeformDesign.model_validate(payload)
