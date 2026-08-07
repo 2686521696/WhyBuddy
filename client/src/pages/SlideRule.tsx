@@ -840,7 +840,7 @@ export function ClaudeChatSurface({
   );
 
   return (
-    <div className="relative z-0 flex h-full flex-col overflow-hidden bg-[#f7f8fa] text-[#1f2329]">
+    <div className="relative z-0 flex h-full flex-col overflow-hidden bg-[var(--sr-shell-bg,#ffffff)] text-[#1f2329]">
       {/* Chat area — Viewport 自带贴底跟随（增量到达自动滚底、回翻停住） */}
       <AssistantRuntimeProvider runtime={runtime}>
         <ImSurfaceContext.Provider value={ctxValue}>
@@ -1150,7 +1150,7 @@ function SlideRuleUnified({
   return (
     <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
       {/* ONE header row — brand + Work/Code 模式切换 + actions */}
-      <div className="relative z-20 shrink-0 border-b border-[#e5e7eb]/70 bg-[#f7f8fa]/90 px-3 backdrop-blur sm:px-4">
+      <div className="relative z-20 shrink-0 border-b border-[#e5e7eb]/70 bg-white/90 px-3 backdrop-blur sm:px-4">
         <SlideRuleTopHud
           isRunning={isRunning}
           onResetSession={resetSession}

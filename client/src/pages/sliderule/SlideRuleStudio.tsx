@@ -230,7 +230,7 @@ export function SlideRuleStudio({
   if (!stageVisible) {
     return (
       <div className={`flex h-full w-full overflow-hidden ${className}`}>
-        <div className="flex h-full w-full flex-col bg-[#f7f8fa]">
+        <div className="flex h-full w-full flex-col bg-[var(--sr-shell-bg,#ffffff)]">
           {chatSlot}
         </div>
       </div>
@@ -241,15 +241,21 @@ export function SlideRuleStudio({
     <div className={`flex h-full w-full overflow-hidden ${className}`}>
       {/* Left panel — 38% — Chat（对话 + 实时推演过程） */}
       <div
-        className="flex h-full shrink-0 flex-col border-r border-[#e5e7eb] bg-[#f7f8fa]"
+        className="flex h-full shrink-0 flex-col border-r border-[#e5e7eb] bg-[var(--sr-shell-bg,#ffffff)]"
         style={{ width: "38%" }}
       >
         {chatSlot}
       </div>
 
       {/* Right panel — 62% — 主舞台 */}
-      {/* 与左侧 IM 同一底色（用户反馈：右侧多种颜色不统一） */}
-      <div className="relative flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#f7f8fa] p-4">
+      {/* 与左侧 IM 同一底色（用户反馈：右侧多种颜色不统一）。
+          2026-08-07 再统一一层：底色不再写死 #f7f8fa，改读外壳的
+          --sr-shell-bg（定义在 dashboard.css 的 .native-agent-shell /
+          .native-dashboard 上，会话页就渲染在它里面）。
+          此前会话页是 #f7f8fa、应用中心是 #ffffff，两页切换看得出色差
+          ——用户反馈"背景颜色不一致，会话页面背景不是白色的"。
+          现在两边共用一个 token，"改这一个值 = 整壳换底色"这条重新成立。 */}
+      <div className="relative flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[var(--sr-shell-bg,#ffffff)] p-4">
         {stage === "app" && fiveSystemModel ? (
           <>
             {/* 应用主舞台：细头条（话题 + 游标开关），其下应用整高铺满 */}
@@ -403,7 +409,7 @@ export function SlideRuleStudio({
         {/* 系统屏抽屉：单类别全幅呈现——点哪类看哪类（用户反馈：去六系统切换条、去白卡嵌套、占满区域） */}
         {drawerSkill && (
           <div
-            className="absolute inset-0 z-40 flex flex-col bg-[#f7f8fa]"
+            className="absolute inset-0 z-40 flex flex-col bg-[var(--sr-shell-bg,#ffffff)]"
             data-testid="sliderule-system-drawer"
           >
             <div className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-3">

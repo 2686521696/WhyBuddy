@@ -372,13 +372,17 @@ function themePrimary(themeId: string): string {
 //
 // 2026-07-31 汉化（用户要求）：原文是 "closed 6/6" / "blocked"，跟旁边的
 // 「推演中」混着排，一排筛选条两种语言。译法两条：
-//   · 6/6 **保留数字** —— 它不是装饰，是六个 Skill（DataModel / Workflow /
-//     RBAC / Page / AIGC / AppBundle）的证据条数，见 buildDetailFromModel 里
-//     `evidenceCount >= 6` 那个判定。译成"已闭环"丢掉数字就看不出还差几项。
+//   · blocked → 待补充 —— 见下。
+//
+// 2026-08-07 去掉 "6/6"（用户裁决："用户根本不关注这些，只会增加用户负担"）。
+// 那个数字是六个 Skill（DataModel / Workflow / RBAC / Page / AIGC /
+// AppBundle）的证据条数（判定见 buildDetailFromModel 里 `evidenceCount >= 6`）。
+// 取舍讲清楚：**它只在"已闭环"这一支出现，而这一支恒等于 6/6** —— 所以它
+// 从来没有承担过"还差几项"的信息量，那是「待补充」那一支的事。去掉不丢信息。
 //   · blocked → 待补充 —— 跟未闭环占位图上那句「待补充信息」同一套说法，
 //     不再一个叫 blocked、一个叫待补充。
 const STATUS_META: Record<AppCardStatus, { label: string; cls: string; dot: string }> = {
-  runnable: { label: "已闭环 6/6", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-400" },
+  runnable: { label: "已闭环", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-400" },
   awaiting: { label: "待补充", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-400" },
   draft: { label: "推演中", cls: "bg-blue-50 text-[#1677ff]", dot: "bg-[#4d9aff]" },
 };
@@ -1581,6 +1585,12 @@ export function AppsWorkbench() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          {/* 服务状态：**正常时不显示**（2026-08-07，用户裁决"用户根本不关注
+              这些，只会增加用户负担"）。
+              没有整条删掉，是因为"负担"这个理由只成立于正常态——后端真挂了
+              的时候，这一格是用户唯一能看到的解释，否则只能看到一连串莫名其妙
+              的失败。所以：健康 → 隐藏，异常/检查中/静态演示 → 照常出现。 */}
+          {(IS_GITHUB_PAGES || overall !== true) && (
           <span className="relative">
             <button
               type="button"
@@ -1634,6 +1644,7 @@ export function AppsWorkbench() {
               </div>
             )}
           </span>
+          )}
           <button
             type="button"
             data-testid="apps-create-new"

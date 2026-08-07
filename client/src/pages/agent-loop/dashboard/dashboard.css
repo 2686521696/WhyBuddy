@@ -1124,8 +1124,14 @@
   padding: 0;
 }
 
+/* 会话页外层容器。2026-08-07 由写死的 #f7f8fa 改成读外壳 token
+ * ——此前会话页 #f7f8fa、应用中心 #ffffff，两页切换看得出色差
+ * （用户反馈："背景颜色不一致，会话页面背景不是白色的"）。
+ *
+ * ⚠️ 这一条是**最外层**，压在 SlideRuleStudio 自己那几处底色上面。
+ * 只改组件里的 class 而漏了这里，页面看着一点没变——踩过一次。 */
 .native-sliderule-content {
-  background: #f7f8fa;
+  background: var(--sr-shell-bg, #ffffff);
 }
 
 .native-sliderule-workbench {
