@@ -34,6 +34,7 @@
 
 import React from "react";
 import {
+  Affix,
   Alert,
   Anchor,
   AutoComplete,
@@ -57,12 +58,16 @@ import {
   Flex,
   FloatButton,
   Form,
+  Image,
   Input,
   InputNumber,
+  Layout,
   List,
   Mentions,
+  message,
   Menu,
   Modal,
+  notification,
   Pagination,
   Popconfirm,
   Popover,
@@ -77,6 +82,7 @@ import {
   Slider,
   Space,
   Spin,
+  Splitter,
   Statistic,
   Steps,
   Switch,
@@ -86,6 +92,7 @@ import {
   TimePicker,
   Timeline,
   Tooltip,
+  Tour,
   Transfer,
   Tree,
   TreeSelect,
@@ -94,6 +101,7 @@ import {
   Watermark,
 } from "antd";
 import { InboxOutlined, UploadOutlined } from "@ant-design/icons";
+import { MOBILE_BASE_COMPONENTS } from "./base-catalog-mobile";
 
 /** 官方分组（antd 的 index.zh-CN.md 里那个 group 字段） */
 export type BaseGroup = "通用" | "布局" | "导航" | "数据录入" | "数据展示" | "反馈" | "其他";
@@ -1027,10 +1035,181 @@ export const PC_BASE_COMPONENTS: BaseComponentDef[] = [
       </div>
     ),
   },
+  // ── 补齐 PC 端剩下的 7 个（2026-08-08 第二批）─────────────────────
+  {
+    name: "Affix",
+    label: "固钉",
+    description: "滚动时把元素钉在可视区里。",
+    group: "导航",
+    platform: "pc",
+    render: () => (
+      <div style={{ height: 90, overflow: "auto" }} id="affix-demo">
+        <Affix offsetTop={0} target={() => document.getElementById("affix-demo")}>
+          <Button size="small">滚动时我不动</Button>
+        </Affix>
+        <div style={{ height: 200, paddingTop: 8, fontSize: 12, color: "#8c8c8c" }}>
+          往下滚一滚
+        </div>
+      </div>
+    ),
+  },
+  {
+    name: "Layout",
+    label: "布局",
+    description: "页面的整体骨架：头、侧、内容、脚。",
+    group: "布局",
+    platform: "pc",
+    render: () => (
+      <Layout style={{ borderRadius: 6, overflow: "hidden", fontSize: 12 }}>
+        <Layout.Header style={{ height: 32, lineHeight: "32px", padding: "0 12px", color: "#fff" }}>
+          页头
+        </Layout.Header>
+        <Layout>
+          <Layout.Sider width={70} style={{ background: "#f0f2f5", padding: 8 }}>
+            侧栏
+          </Layout.Sider>
+          <Layout.Content style={{ padding: 8, background: "#fff" }}>内容区</Layout.Content>
+        </Layout>
+        <Layout.Footer style={{ padding: 8, textAlign: "center", background: "#f0f2f5" }}>
+          页脚
+        </Layout.Footer>
+      </Layout>
+    ),
+  },
+  {
+    name: "Splitter",
+    label: "分隔面板",
+    description: "可拖动改变两侧宽度的分栏。",
+    group: "布局",
+    platform: "pc",
+    render: () => (
+      <Splitter style={{ height: 90, borderRadius: 6, border: "1px solid #f0f0f0" }}>
+        <Splitter.Panel defaultSize="40%">
+          <div style={{ padding: 8, fontSize: 12 }}>左侧，拖中间那条线</div>
+        </Splitter.Panel>
+        <Splitter.Panel>
+          <div style={{ padding: 8, fontSize: 12 }}>右侧</div>
+        </Splitter.Panel>
+      </Splitter>
+    ),
+  },
+  {
+    name: "Image",
+    label: "图片",
+    description: "带预览、加载占位与失败兜底的图片。",
+    group: "数据展示",
+    platform: "pc",
+    render: () => (
+      <Space>
+        {/* 用内联 SVG 占位而不是外链图：这一页要在没有外网的环境里也长一样，
+            外链图挂了就变成一片"加载失败"，那不是这个组件真实的样子。 */}
+        <Image
+          width={80}
+          src={
+            "data:image/svg+xml;utf8," +
+            encodeURIComponent(
+              '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120">' +
+                '<rect width="160" height="120" fill="#e8eeff"/>' +
+                '<text x="80" y="66" font-size="16" fill="#3b5bdb" text-anchor="middle">图片</text>' +
+                "</svg>"
+            )
+          }
+        />
+        <Image width={80} src="broken" fallback="" />
+      </Space>
+    ),
+  },
+  {
+    name: "Message",
+    label: "全局提示",
+    description: "顶部飘一条轻提示，不打断操作。",
+    group: "反馈",
+    platform: "pc",
+    render: () => {
+      const Demo = () => {
+        const [api, holder] = message.useMessage();
+        return (
+          <>
+            {holder}
+            <Space wrap>
+              <Button size="small" onClick={() => api.info("一条提示")}>
+                普通
+              </Button>
+              <Button size="small" onClick={() => api.success("成功了")}>
+                成功
+              </Button>
+              <Button size="small" onClick={() => api.error("出错了")}>
+                失败
+              </Button>
+            </Space>
+          </>
+        );
+      };
+      return <Demo />;
+    },
+  },
+  {
+    name: "Notification",
+    label: "通知提醒框",
+    description: "角落弹出的通知，能放标题加正文。",
+    group: "反馈",
+    platform: "pc",
+    render: () => {
+      const Demo = () => {
+        const [api, holder] = notification.useNotification();
+        return (
+          <>
+            {holder}
+            <Button
+              size="small"
+              onClick={() => api.info({ message: "通知标题", description: "一段说明文字。" })}
+            >
+              弹一条通知
+            </Button>
+          </>
+        );
+      };
+      return <Demo />;
+    },
+  },
+  {
+    name: "Tour",
+    label: "漫游式引导",
+    description: "分步指着界面讲一遍怎么用。",
+    group: "反馈",
+    platform: "pc",
+    render: () => {
+      const Demo = () => {
+        const ref = React.useRef<HTMLButtonElement>(null);
+        const [open, setOpen] = React.useState(false);
+        return (
+          <>
+            <Button size="small" ref={ref} onClick={() => setOpen(true)}>
+              开始引导
+            </Button>
+            <Tour
+              open={open}
+              onClose={() => setOpen(false)}
+              steps={[
+                { title: "第一步", description: "先看这里。", target: () => ref.current! },
+              ]}
+            />
+          </>
+        );
+      };
+      return <Demo />;
+    },
+  },
 ];
 
-/** 目前只接了 PC 档；移动端（antd-mobile ~75 个）按同一形状续。 */
-export const BASE_COMPONENTS: BaseComponentDef[] = [...PC_BASE_COMPONENTS];
+/**
+ * 全量 = PC + 移动。移动端在 base-catalog-mobile.tsx，分文件是因为两边加起来
+ * 一百多条，单文件读不动；契约（BaseComponentDef）是同一个。
+ */
+export const BASE_COMPONENTS: BaseComponentDef[] = [
+  ...PC_BASE_COMPONENTS,
+  ...MOBILE_BASE_COMPONENTS,
+];
 
 export const BASE_GROUPS: BaseGroup[] = [
   "通用",
