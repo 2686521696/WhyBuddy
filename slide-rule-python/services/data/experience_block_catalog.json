@@ -819,6 +819,51 @@
           "fieldRefs": {}
         }
       }
+    },
+    {
+      "type": "ContentCard",
+      "description": "一张带标题的卡片，本身不展示数据——它是个容器，用来把若干个积木收进同一张卡里。只在这些积木确实属于同一件事、需要被视觉上圈在一起时才用；不需要时别用，每个积木本来就能独立摆放。",
+      "rendererKey": "content-card",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "bordered": {
+            "type": "boolean"
+          }
+        }
+      },
+      "dataKinds": [],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "calendar",
+        "wizard",
+        "dashboard",
+        "monitor"
+      ],
+      "allowedSlots": [
+        "summary",
+        "primary",
+        "secondary",
+        "activity",
+        "content"
+      ],
+      "slotsRationale": "A container has no width requirement of its own — it inherits whatever its slot gives it, and the blocks inside adapt. What it must NOT do is wrap something that does not fit the slot; that constraint belongs to the child, not to the card.",
+      "events": [],
+      "bindingSchema": {
+        "required": [],
+        "optional": []
+      },
+      "container": true
     }
   ],
   "pageKindPresets": {

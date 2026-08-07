@@ -106,10 +106,18 @@ def _prompt(page_kind: str, catalog: List[Dict[str, Any]], datamodel: Dict[str, 
         "4. Give each block a Chinese props.title that says what it is FOR in this "
         "business — not the block's type name.\n"
         "5. Compose something a real user could work in: usually a way to narrow down, "
-        "a way to see the records, and a way to add one.\n\n"
-        "Return JSON only:\n"
-        '{"name":"<页面中文名>","blocks":[{"type":"...","slot":"...",'
-        '"props":{"title":"..."},"binding":{"entityRef":"...","fieldRefs":["..."]}}]}'
+        "a way to see the records, and a way to add one.\n"
+        "6. Blocks are NOT wrapped in a card for you. Each one renders as exactly what it "
+        "is. If — and only if — two or three blocks belong to the same thing and should "
+        "read as one panel, add a ContentCard and list their ids in its \"children\". "
+        "Wrapping everything in cards is worse than wrapping nothing: it buries the page "
+        "in boxes. Most pages need no ContentCard at all.\n\n"
+        "Return JSON only. Give every block an \"id\" so a container can refer to it:\n"
+        '{"name":"<页面中文名>","blocks":['
+        '{"id":"b1","type":"...","slot":"...","props":{"title":"..."},'
+        '"binding":{"entityRef":"...","fieldRefs":["..."]}},'
+        '{"id":"b2","type":"ContentCard","slot":"secondary",'
+        '"props":{"title":"..."},"children":["b3"]}]}'
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
@@ -168,13 +176,47 @@ def _validate(
         allowed_props = set((entry.get("propsSchema") or {}).get("properties", {}))
         props = {k: v for k, v in props.items() if k in allowed_props}
 
+        # children **只有容器能有**。这不是洁癖：渲染侧多数积木把 children
+        # 当成"遗留适配内容"直接原样返回（block-registry 里每个渲染器开头那句
+        # `if (children != null) return <>{children}</>`），所以给 DataTable
+        # 塞 children 会让它变成一个只显示别人、自己什么都不画的空壳——
+        # 页面上看着像那个表格坏了。模型确实会这么写，所以在这里剥掉。
+        raw_children = [str(c) for c in (raw.get("children") or []) if isinstance(c, str)]
+        if raw_children and not entry.get("container"):
+            dropped.append({
+                "block": t,
+                "why": "只有容器类积木能装 children，已剥掉",
+            })
+            raw_children = []
+
         kept.append({
-            "id": f"asm-{len(kept) + 1}-{t}",
+            "id": str(raw.get("id") or f"b{i + 1}"),
             "type": t,
             "slot": slot,
             "props": props,
             "binding": binding,
+            "children": raw_children,
         })
+
+    # children 只能指向**同一批里真实留下来的** id：模型可能引用一个被剔除的
+    # 积木，或者干脆编一个 id。悬空引用留着会让容器渲染成空卡片，而空卡片
+    # 看起来像"这里本来该有东西但坏了"——比不放这个容器更糟。
+    kept_ids = {b["id"] for b in kept}
+    for b in kept:
+        bad = [c for c in b["children"] if c not in kept_ids or c == b["id"]]
+        if bad:
+            dropped.append({
+                "block": b["type"],
+                "why": f"容器引用了不存在的积木 {bad}，已断开",
+            })
+            b["children"] = [c for c in b["children"] if c in kept_ids and c != b["id"]]
+
+    # 被装进容器的积木不再单独占槽位——否则同一个积木会出现两次（一次在
+    # 容器里，一次在网格上）。
+    nested = {c for b in kept for c in b["children"]}
+    for b in kept:
+        if b["id"] in nested:
+            b["nested"] = True
     return kept, dropped
 
 

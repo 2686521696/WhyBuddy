@@ -134,6 +134,12 @@ describe("体验区块渲染器状态 SSOT", () => {
     // 抽屉与弹窗做成一个积木而不是两个：它们只差呈现方式，共用同一份字段与
     // 提交回调；拆成两条会让目录里出现一对只差一个词的孪生项，AI 选型时多
     // 一次没有意义的分叉。
+    //
+    // 2026-08-08 再加一个 ContentCard —— 它跟其余全部不同：**不取数、不发
+    // 事件，只装别的积木**。加它是因为用户裁决了"组装的时候要纯粹，该是啥
+    // 组件就是啥组件"：此前组装页给每个积木一律套一层 antd Card，等于替模型
+    // 决定"所有东西都装进卡片"。现在默认什么都不套，需要把几个积木圈在一起
+    // 时模型自己放一个 ContentCard，把它们写进 children。
     const enabled = EXPERIENCE_BLOCK_CATALOG.blocks
       .filter(b => b.generationEnabled)
       .map(b => b.type);
@@ -150,6 +156,7 @@ describe("体验区块渲染器状态 SSOT", () => {
       "RecordFormDialog",
       "RecordDetail",
       "StepsForm",
+      "ContentCard",
     ]);
   });
 

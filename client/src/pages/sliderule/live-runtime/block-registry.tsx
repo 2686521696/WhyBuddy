@@ -2017,6 +2017,47 @@ const StepsFormRenderer: ExperienceBlockRenderer = ({
   );
 };
 
+/**
+ * ContentCard —— **唯一一个"卡片"是显式选来的**积木（2026-08-08）。
+ *
+ * 用户裁决：「不要这个 card 的卡片包裹，组装的时候就要纯粹一点，该是啥就是
+ * 啥，该是啥组件就是啥组件。当然了这个 card 它可以只是一个单独的组件，就是
+ * 在真正需要包的时候，然后要让 AI 自己组装。」
+ *
+ * 在这之前，组装页和预设页给**每一个**积木都套了一层 Card。那是替模型做了
+ * 决定：所有东西一律装进卡片。现在反过来——默认什么都不套，需要把几个积木
+ * 圈在一起时，模型自己往组装结果里放一个 ContentCard，把它们写进 children。
+ *
+ * 它自己不取数、不发事件，binding 是空的：装什么由 children 决定，里面的
+ * 积木各绑各的。
+ */
+const ContentCardRenderer: ExperienceBlockRenderer = ({ block, children }) => {
+  const title = String(block.props?.title ?? "").trim();
+  const subtitle = String(block.props?.subtitle ?? "").trim();
+  return (
+    <Card
+      data-testid="content-card"
+      size="small"
+      variant={block.props?.bordered === true ? "outlined" : "borderless"}
+      title={
+        title ? (
+          <div style={{ paddingTop: 2, paddingBottom: 2 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
+            {subtitle && (
+              <div style={{ fontSize: 11, fontWeight: 400, color: "#8c8c8c" }}>{subtitle}</div>
+            )}
+          </div>
+        ) : undefined
+      }
+      styles={{ body: { padding: 12, display: "flex", flexDirection: "column", gap: 12 } }}
+    >
+      {/* children 由渲染宿主按 block.children 里的 id 解析后传进来。
+          容器空着时如实说空——不画一个假的占位内容充数。 */}
+      {children ?? <BlockEmpty hint="这张卡片还没有装任何区块" />}
+    </Card>
+  );
+};
+
 export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   Record<string, ExperienceBlockRenderer>
 > = Object.freeze({
@@ -2036,6 +2077,8 @@ export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   "record-form-dialog": RecordFormDialogRenderer,
   "record-detail": RecordDetailRenderer,
   "steps-form": StepsFormRenderer,
+  // 2026-08-08：唯一一个"卡片"由模型显式选来的积木
+  "content-card": ContentCardRenderer,
 });
 
 export function experienceBlockEntry(

@@ -164,6 +164,7 @@ const IMPL_BY_TYPE: Record<string, string> = {
   RecordFormDialog: "ProComponents DrawerForm / ModalForm",
   RecordDetail: "ProComponents ProDescriptions",
   StepsForm: "ProComponents StepsForm",
+  ContentCard: "antd Card（容器，由 AI 显式选用）",
 };
 
 const SLOT_LABEL: Record<string, string> = {
@@ -372,6 +373,21 @@ function demoFor(type: string): {
           },
         },
       };
+    // 容器：对照台里给它塞一段说明文字当内容——它自己不取数，
+    // 真实组装时装的是别的积木（children）。
+    case "ContentCard":
+      return {
+        block: { ...base, props: { title: "订单概览", subtitle: "容器 · 装什么由组装决定" } },
+        extra: {
+          children: (
+            <div className="text-[12px] leading-relaxed text-slate-500">
+              这是个容器，本身不展示数据。
+              <br />
+              组装时把几个积木的 id 写进它的 children，它们就被收进同一张卡里。
+            </div>
+          ),
+        },
+      };
     case "MetricGrid":
       return {
         block: { ...base, props: { title: "今日经营指标" }, binding: { entityRef: "order", aggregate: "sum:amount" } },
@@ -470,6 +486,7 @@ const HAS_DEMO = new Set([
   "QuickActionPanel", "FilterBar", "WorkflowTimeline", "FreeformInsight",
   // 2026-08-07 表单/详情族
   "RecordForm", "RecordFormDialog", "RecordDetail", "StepsForm",
+  "ContentCard",
 ]);
 
 /** 页面形态（pageKind）——与 Python 侧 schema_legal.PAGE_KINDS 同源，此处是说明文案。 */
@@ -622,14 +639,20 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
       size="small"
       variant="borderless"
       styles={{ body: { padding: 0, overflow: "hidden", position: "relative" } }}
-      className="w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
+      className="group w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
     >
       {/* 渲染区四边不留白，组件铺满整张卡；元信息浮层直接压在画面底部。 */}
       <div className="w-full">{rendered}</div>
-      {/* 元信息作为底部浮层直接压在卡片画面上。 */}
-      <div
-        className="absolute inset-x-0 bottom-0 z-10 px-3 pb-2 pt-2"
-      >
+      {/* 元信息作为底部浮层直接压在卡片画面上。
+          
+          2026-08-08：药丸本身的做法（每条自带底衬）是对的——压在任何底色上
+          都读得清。问题在**视觉权重**：一眼扫过去，一片浅色组件里挂着十几个
+          深色药丸，最抢眼的成了标签而不是组件本身，而这一页是用来看组件的。
+          
+          改成跟着鼠标走：默认 35% 不透明度（认得出有东西、不夺目），指针
+          落到这张卡上才 100%。画廊类界面的通行做法——信息一个不少，只是
+          不在你没问的时候喊。 */}
+      <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-2 pt-2 opacity-35 transition-opacity duration-200 group-hover:opacity-100">
         <div className="flex items-center">
           <Tooltip title={block.description}>
             <span
@@ -717,21 +740,17 @@ function PresetCard({ kind, preset }: { kind: string; preset: PagePreset }) {
             const { block, extra } = demoFor(b.type);
             if (!HAS_DEMO.has(b.type)) {
               return (
-                <Card size="small" variant="borderless">
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description={`${b.type} 还没有示例数据`}
-                  />
-                </Card>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={`${b.type} 还没有示例数据`}
+                />
               );
             }
+            // **不套 Card**（2026-08-08 用户裁决）：该是啥组件就渲染成啥组件。
+            // 要卡片外观时由 AI 显式选 ContentCard 这个积木去包，而不是这里
+            // 替所有积木一律套一层。
             return (
-              <Card
-                size="small"
-                variant="borderless"
-                styles={{ body: { padding: 0, overflow: "hidden" } }}
-                className="shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
-              >
+              <>
                 <ExperienceBlockBoundary
                   block={{ ...block, id: b.id }}
                   entityRows={ENTITY_ROWS}
@@ -741,10 +760,10 @@ function PresetCard({ kind, preset }: { kind: string; preset: PagePreset }) {
                   enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
                   {...extra}
                 />
-                <div className="border-t border-slate-100 px-2 py-1 text-[10.5px] text-slate-400">
+                <div className="px-2 py-1 text-[10.5px] text-slate-400">
                   {b.type} · {SLOT_LABEL[b.slot] ?? b.slot}
                 </div>
-              </Card>
+              </>
             );
           }}
         />
@@ -760,6 +779,10 @@ interface AssembledBlock {
   slot: string;
   props?: Record<string, unknown>;
   binding?: Record<string, unknown>;
+  /** ContentCard 这类容器装的积木 id（服务端已校验都指向真实存在的积木）。 */
+  children?: string[];
+  /** 已经被某个容器装走 —— 不再单独占槽位，否则同一个积木会出现两次。 */
+  nested?: boolean;
 }
 
 /**
@@ -836,15 +859,52 @@ function AssembledPageModal({
     return out;
   }, [rows, filterState, dateRangeField]);
 
+  // 被容器装走的不进网格 —— 它们由容器负责渲染。
+  const topLevel = page.blocks.filter(b => !b.nested);
   const slots = {
-    summary: page.blocks.filter(b => b.slot === "summary").map(b => b.id),
-    primary: page.blocks.filter(b => b.slot === "primary").map(b => b.id),
-    secondary: page.blocks.filter(b => b.slot === "secondary").map(b => b.id),
-    activity: page.blocks.filter(b => b.slot === "activity").map(b => b.id),
-    content: page.blocks.filter(b => b.slot === "content").map(b => b.id),
+    summary: topLevel.filter(b => b.slot === "summary").map(b => b.id),
+    primary: topLevel.filter(b => b.slot === "primary").map(b => b.id),
+    secondary: topLevel.filter(b => b.slot === "secondary").map(b => b.id),
+    activity: topLevel.filter(b => b.slot === "activity").map(b => b.id),
+    content: topLevel.filter(b => b.slot === "content").map(b => b.id),
   };
   const items = resolveBusinessGrid(upgradeLegacySlotsToGrid(pageKind, slots), "desktop");
   const byId = new Map(page.blocks.map(b => [b.id, b]));
+
+  /**
+   * 渲染一个积木 —— **不替它套任何外壳**（2026-08-08 用户裁决）。
+   *
+   * 「组装的时候就要纯粹一点，该是啥就是啥，该是啥组件就是啥组件。」
+   * 要卡片外观时由模型自己选 ContentCard 去包，包不包是组装结果的一部分，
+   * 不是渲染宿主替它决定的。
+   *
+   * 容器（ContentCard）把 children 递归渲进去。深度天然有限：服务端只允许
+   * children 指向同一批里真实存在的积木，且不能指向自己，环也就无从形成。
+   */
+  const renderOne = (b: AssembledBlock): React.ReactNode => (
+    <ExperienceBlockBoundary
+      key={b.id}
+      block={{ id: b.id, type: b.type, props: b.props, binding: b.binding } as ExperienceBlockInstance}
+      entityRows={visibleRows}
+      chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
+      filterState={filterState}
+      filterFieldOptions={filterFieldOptions}
+      dateRangeField={dateRangeField}
+      onFilterChange={patch => setFilterState(prev => ({ ...prev, ...patch }))}
+      fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
+      fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+      enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
+      onAction={handleAction}
+      workflow={WORKFLOW}
+    >
+      {b.children && b.children.length > 0
+        ? b.children.map(id => {
+            const child = byId.get(id);
+            return child ? renderOne(child) : null;
+          })
+        : undefined}
+    </ExperienceBlockBoundary>
+  );
 
   /** 表单提交 → 真写一行。写完让 toast 说清楚写进了哪个实体、现在几条。 */
   const handleAction = (actionId: string, data?: Record<string, unknown>) => {
@@ -912,29 +972,7 @@ function AssembledPageModal({
             renderItem={ref => {
               const b = byId.get(ref);
               if (!b) return null;
-              return (
-                <Card
-                  size="small"
-                  variant="borderless"
-                  styles={{ body: { padding: 0, overflow: "hidden" } }}
-                  className="shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
-                >
-                  <ExperienceBlockBoundary
-                    block={{ id: b.id, type: b.type, props: b.props, binding: b.binding } as ExperienceBlockInstance}
-                    entityRows={visibleRows}
-                    chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
-                    filterState={filterState}
-                    filterFieldOptions={filterFieldOptions}
-                    dateRangeField={dateRangeField}
-                    onFilterChange={patch => setFilterState(prev => ({ ...prev, ...patch }))}
-                    fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
-                    fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
-                    enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
-                    onAction={handleAction}
-                    workflow={WORKFLOW}
-                  />
-                </Card>
-              );
+              return renderOne(b);
             }}
           />
         </div>

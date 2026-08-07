@@ -172,3 +172,58 @@ def test_width_hungry_blocks_never_land_in_the_narrow_support_column():
                         f"{kind}/{ps['id']}: {it['type']} 摆在 {it['slot']}，"
                         f"网格会把它压进 4/12 窄列——这个积木要整行宽"
                     )
+
+
+def test_only_containers_may_carry_children():
+    """children **只有容器类积木能有**。
+
+    这不是洁癖。渲染侧多数积木把 children 当成"遗留适配内容"直接原样返回
+    （block-registry 每个渲染器开头那句 `if (children != null) return
+    <>{children}</>`），所以给 DataTable 塞 children 会让它变成一个只显示
+    别人、自己什么都不画的空壳——页面上看着像那个表格坏了。
+
+    模型确实会这么写（它没理由知道这条实现细节），所以组装侧剥掉并如实上报。
+    """
+    from services.block_assembler import _validate
+
+    dm = {"entities": [{"id": "order", "fields": [{"id": "name"}]}]}
+    kept, dropped = _validate(
+        "workbench",
+        [
+            {"id": "b1", "type": "DataTable", "slot": "primary",
+             "binding": {"entityRef": "order"}, "children": ["b2"]},
+            {"id": "b2", "type": "RecordDetail", "slot": "secondary",
+             "binding": {"entityRef": "order"}},
+        ],
+        dm,
+    )
+    assert kept[0]["children"] == [], "非容器的 children 必须被剥掉"
+    assert not kept[1].get("nested"), "被非法引用的积木仍应独立占槽位"
+    assert any("只有容器" in d["why"] for d in dropped), "剥掉了就要说出来"
+
+
+def test_container_children_must_point_at_surviving_blocks():
+    """容器只能装**同一批里真的留下来的**积木。
+
+    模型可能引用一个被剔除的积木，或者干脆编一个 id。悬空引用留着会让容器
+    渲染成空卡片，而空卡片看起来像"这里本来该有东西但坏了"——比不放这个
+    容器更糟。
+    """
+    from services.block_assembler import _validate
+
+    dm = {"entities": [{"id": "order", "fields": [{"id": "name"}]}]}
+    kept, dropped = _validate(
+        "workbench",
+        [
+            {"id": "c1", "type": "ContentCard", "slot": "secondary",
+             "props": {"title": "详情"}, "children": ["real", "编的"]},
+            {"id": "real", "type": "RecordDetail", "slot": "secondary",
+             "binding": {"entityRef": "order"}},
+        ],
+        dm,
+    )
+    card = next(b for b in kept if b["type"] == "ContentCard")
+    assert card["children"] == ["real"], "悬空引用必须断开"
+    assert any("不存在" in d["why"] for d in dropped), "断开了就要说出来"
+    nested = next(b for b in kept if b["id"] == "real")
+    assert nested.get("nested"), "被装进容器的积木不该再单独占槽位"
