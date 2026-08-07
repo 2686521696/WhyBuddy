@@ -2523,6 +2523,111 @@
 .native-agent-user-caret {
   color: #94a3b8;
   font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+/* ── 账号弹出菜单（2026-08-07，形制参照 claude.ai 的账号菜单）──────────
+   触发行原来只是一个静态 div 加一个裸的登出图标：既没有可发现性，又离
+   "点错就掉线"只有一次误触。改成 触发行 + 上弹菜单，危险项单独分组。 */
+.native-agent-account {
+  position: relative;
+}
+
+/* 触发行沿用 .native-agent-user 的外观，只补按钮该有的那几条 */
+.native-agent-user.is-trigger {
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+}
+
+.native-agent-user-caret.is-open {
+  transform: rotate(180deg);
+}
+
+/* 向上弹：这一行钉在侧栏最底，向下会掉出视口 */
+.native-agent-account-menu {
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  bottom: calc(100% + 8px);
+  /* 两层阴影：近处一层收边、远处一层给浮起感——单层要么发灰要么发硬 */
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 32px rgba(15, 23, 42, 0.12);
+  left: 0;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  z-index: 40;
+  animation: native-agent-account-in 0.12s ease-out;
+}
+
+@keyframes native-agent-account-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* 邮箱做菜单头：不可点，靠字号和颜色退到背景里 */
+.native-agent-account-head {
+  color: #94a3b8;
+  font-size: 11.5px;
+  overflow: hidden;
+  padding: 6px 10px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 分组之间一条发丝线。第一组上面不画——那儿是邮箱头 */
+.native-agent-account-group + .native-agent-account-group {
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.native-agent-account-item {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  color: #334155;
+  cursor: pointer;
+  display: flex;
+  font-size: 12.5px;
+  gap: 9px;
+  padding: 7px 10px;
+  text-align: left;
+  transition: background 0.1s ease;
+  width: 100%;
+}
+
+.native-agent-account-item .anticon {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.native-agent-account-item:hover {
+  background: rgba(15, 23, 42, 0.045);
+}
+
+.native-agent-account-item:focus-visible {
+  background: rgba(15, 23, 42, 0.045);
+  outline: 2px solid rgba(91, 108, 255, 0.4);
+  outline-offset: -2px;
+}
+
+/* 危险项：静止时不喊，悬停才转红——常驻红色会让整个菜单显得在报警 */
+.native-agent-account-item.is-danger:hover,
+.native-agent-account-item.is-danger:hover .anticon {
+  background: rgba(220, 38, 38, 0.07);
+  color: #dc2626;
+}
+
+.native-agent-account-item:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 /* 帮助文档行：底部分隔后独立圆角行（勿再写 display:flex，否则会压过 ≤900px 的 display:none） */
