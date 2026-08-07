@@ -820,7 +820,16 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
     Implements V5.2 phase transitions (idle/orchestrating/awaiting/failed/done) as PYTHON_AUTHORITY.
     """
     from . import enrich_timing as _enrich_timing
+    from .v5_capability_executor import turn_instruction as _turn_instruction
 
+    # 本轮用户说的话对整趟推演可见 —— 能力执行会把它和会话话题**并排**
+    # 送进 prompt（compose_capability_topic，照 CrewAI / LangChain 的形状）。
+    # 此前能力只看 state.goal，fork 出来的副本里那是源应用的旧话题，于是
+    # 推演过程整篇答非所问。ExitStack 是为了在函数任何一条返回路径上都复位。
+    from contextlib import ExitStack as _ExitStack
+
+    _turn_ctx = _ExitStack()
+    _turn_ctx.enter_context(_turn_instruction(user_instruction))
     _budget_token = _enrich_timing.begin_run_budget()
     state = initial_state
     _advance_turn_version(state)
@@ -1137,6 +1146,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
         persist_state(state)
     persist_state(state)
     _enrich_timing.reset_run_budget(_budget_token)
+    _turn_ctx.close()
     return state
 
 
@@ -1336,6 +1346,13 @@ async def drive_full_v5_session_stream(
         lambda phase, name, fields: _stage_q.put((phase, name, dict(fields)))
     )
     _budget_token = _enrich_timing.begin_run_budget()
+    # 与同步入口同一件事：让能力执行看得见本轮用户说了什么。
+    # 流式是主路径（前端走 SSE），两条都要接，否则只有回退路径改好了——
+    # 这个坑刚在身份透传上踩过一次。
+    from .v5_capability_executor import turn_instruction as _turn_instruction
+
+    _turn_token = _turn_instruction(user_instruction)
+    _turn_token.__enter__()
 
     async def _pump_llm_deltas(task: "asyncio.Task"):
         """任务运行期间持续排水：把队列里的（标签, 增量）按相邻同标签聚合成
@@ -1820,6 +1837,7 @@ async def drive_full_v5_session_stream(
         _gen.set_generate_delta_sink(None)
         _enrich_timing.set_stage_sink(None)
         _enrich_timing.reset_run_budget(_budget_token)
+        _turn_token.__exit__(None, None, None)
         # E29：精修/直供上下文兜底清理（异常路径防泄漏到下一轮）
         _gen.set_refine_context(None)
         _gen.set_model_override(None)

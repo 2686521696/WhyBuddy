@@ -7,10 +7,12 @@ Uses RAG for external evidence and stable Python-side execution.
 No Node LLM, no pool, no su8, no proxy issues, no template/degraded.
 """
 
-from typing import Dict, Any, List, Callable, Optional
+from typing import Dict, Any, Iterator, List, Callable, Optional
 import hashlib
 import os
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
 from .run_degradation import (
@@ -862,10 +864,100 @@ def build_fallback_blocked_closure(state: V5SessionState, goal: str, error_messa
     }
 
 
-def execute_v5_capability(capability_id: str, state: V5SessionState, input_ids: List[str], role_id: str, turn_id: str) -> Any:
+#: 本轮用户真正说的那句话。能力执行读它，跟会话话题**并存**（见
+#: compose_capability_topic）。ContextVar 而不是参数：调用链有五层
+#: （drive → _run_selected_batch → _execute_group_parallel → _timed_execute →
+#: _execute_round_capability），且并行分支用 copy_context 把上下文带进 worker，
+#: 方向正好是"父设子读"，天然成立。
+_turn_instruction_var: ContextVar[str] = ContextVar("sliderule_turn_instruction", default="")
+
+
+@contextmanager
+def turn_instruction(text: str) -> Iterator[None]:
+    """圈定"这一轮用户说了什么"。由驱动器在每趟推演外面套一层。"""
+    token = _turn_instruction_var.set(str(text or "").strip())
+    try:
+        yield
+    finally:
+        _turn_instruction_var.reset(token)
+
+
+def current_turn_instruction() -> str:
+    return _turn_instruction_var.get()
+
+
+def compose_capability_topic(goal: str, instruction: str) -> str:
+    """把"会话话题"和"本轮要求"拼成能力执行的输入 —— **两个都给，不互相顶替**。
+
+    ## 这个函数解决的现象
+
+    2026-08-06 用户实测：「我发布的是从文献到引用的话题，回答的是电动车方面
+    的内容，但是生成的应用又却是对的。」
+
+    从应用中心 fork 出来的副本，goal.text 继承自源应用。而此前
+    execute_v5_capability **压根没有 user_instruction 这个参数**，只读
+    state.goal —— 于是各能力（evidence.search / route.generate /
+    synthesis.merge…）全部按继承来的旧话题干活，左侧推演过程整篇是电动车；
+    五系统生成走的是另一条通道，吃 user_instruction，所以右侧应用是对的。
+    过程和结果讲两件事。
+
+    新建会话里 goal == instruction，拿哪个都一样，所以这个洞一直没人踩到。
+
+    ## 为什么是"拼一起"而不是"当前轮优先"
+
+    先试过"本人第一条指令顶掉话题"，实测把生成整个跑没了（refine 的进入
+    条件正是 instruction != goal_text，顶平之后条件永不成立，推演 23.7 秒
+    空跑、模型原地不动）。已回退。
+
+    退一步看，"顶替"这个形状本身就不对：用户说「把到期提醒改成短信」时，
+    只拿这句话去检索和生成，模型根本不知道这是个健身房系统——领域上下文
+    全丢了。
+
+    ## 照着成熟项目的做法
+
+    两个都保留、各自打标签，是 agent 框架的通行解法，不是我们自创的：
+
+      · CrewAI（lib/crewai/src/crewai/translations/en.json +
+        utilities/prompts.py:190-212）把提示拆成两片拼接：
+            role_playing: "Your personal goal is: {goal}"   ← 长期目标
+            task:         "Current Task: {input}"           ← 这一轮
+      · LangChain v1（libs/langchain_v1/langchain/agents/factory.py:974）
+        同一结构：system_prompt 变成独立 SystemMessage 前置，用户这一轮的
+        话仍是单独的 HumanMessage。
+
+    两家都没有用"当前轮"去覆盖"长期目标"。本函数照抄这个形状。
+
+    ## 边界
+
+      · instruction 为空（多轮循环里引擎自推的那些轮次）→ 只有话题，
+        与从前逐字节一致。
+      · instruction 与话题相同（新建会话的第一轮）→ 不重复拼，
+        同样与从前逐字节一致。**这保证了绝大多数现有路径零变化。**
+    """
+    topic = (goal or "").strip()
+    ask = (instruction or "").strip()
+    if not ask or ask == topic:
+        return topic
+    if not topic:
+        return ask
+    return f"{topic}\n本轮用户要求：{ask}"
+
+
+def execute_v5_capability(
+    capability_id: str,
+    state: V5SessionState,
+    input_ids: List[str],
+    role_id: str,
+    turn_id: str,
+    *,
+    user_instruction: Optional[str] = None,
+) -> Any:
     goal = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal)
-    evidence = retrieve_evidence(goal + " for " + capability_id, top_k=10)
-    content = generate_with_rag(f"Full V5 execution for {capability_id} on {goal}. Must include external evidence from RAG.", evidence)
+    # 显式入参优先（测试直接传），否则取本轮上下文。
+    ask = current_turn_instruction() if user_instruction is None else user_instruction
+    topic = compose_capability_topic(goal, ask)
+    evidence = retrieve_evidence(topic + " for " + capability_id, top_k=10)
+    content = generate_with_rag(f"Full V5 execution for {capability_id} on {topic}. Must include external evidence from RAG.", evidence)
 
     provenance = "python-rag"
     if "mcp" in capability_id or "skill" in capability_id:
