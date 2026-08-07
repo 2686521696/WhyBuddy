@@ -820,5 +820,173 @@
         }
       }
     }
-  ]
+  ],
+  "pageKindPresets": {
+    "workbench": [
+      {
+        "id": "list-detail",
+        "name": "列表 + 详情",
+        "when": "用户先在列表里挑一条，再看它的字段明细——最通用的一档。",
+        "blocks": [
+          {
+            "type": "DataTable",
+            "slot": "primary"
+          },
+          {
+            "type": "RecordDetail",
+            "slot": "secondary"
+          }
+        ]
+      },
+      {
+        "id": "filter-list-create",
+        "name": "筛选 + 列表 + 新建",
+        "when": "记录多到要先筛一遍，且用户会在这一页直接录入新记录。",
+        "blocks": [
+          {
+            "type": "FilterBar",
+            "slot": "summary"
+          },
+          {
+            "type": "RecordFormDialog",
+            "slot": "summary"
+          },
+          {
+            "type": "DataTable",
+            "slot": "primary"
+          }
+        ]
+      },
+      {
+        "id": "kpi-list-feed",
+        "name": "指标 + 列表 + 动态",
+        "when": "这一页既要看当下几个数，又要看刚发生了什么。",
+        "blocks": [
+          {
+            "type": "MetricGrid",
+            "slot": "summary"
+          },
+          {
+            "type": "DataTable",
+            "slot": "primary"
+          },
+          {
+            "type": "ActivityFeed",
+            "slot": "secondary"
+          }
+        ]
+      }
+    ],
+    "kanban": [
+      {
+        "id": "board-create",
+        "name": "新建 + 详情",
+        "when": "看板本身是主视图，积木负责补上「新建一张卡」和「看选中那张卡的明细」。",
+        "blocks": [
+          {
+            "type": "RecordFormDialog",
+            "slot": "summary"
+          },
+          {
+            "type": "RecordDetail",
+            "slot": "secondary"
+          }
+        ]
+      },
+      {
+        "id": "board-filter-feed",
+        "name": "筛选 + 动态",
+        "when": "卡片多到要按条件收窄，并且流转过程值得单列一条时间流。",
+        "blocks": [
+          {
+            "type": "FilterBar",
+            "slot": "summary"
+          },
+          {
+            "type": "ActivityFeed",
+            "slot": "secondary"
+          }
+        ]
+      }
+    ],
+    "calendar": [
+      {
+        "id": "calendar-create-detail",
+        "name": "新建 + 详情",
+        "when": "日历是主视图，积木补上「排一件新的」和「看选中那件的明细」。",
+        "blocks": [
+          {
+            "type": "RecordFormDialog",
+            "slot": "summary"
+          },
+          {
+            "type": "RecordDetail",
+            "slot": "secondary"
+          }
+        ]
+      }
+    ],
+    "wizard": [
+      {
+        "id": "steps",
+        "name": "分步录入",
+        "when": "录入本身有先后顺序，且顺序来自业务流程而不是字段多少。",
+        "blocks": [
+          {
+            "type": "StepsForm",
+            "slot": "primary"
+          }
+        ]
+      },
+      {
+        "id": "flow-form",
+        "name": "流程条 + 单页表单",
+        "when": "流程要让用户看见全貌，但填写本身一屏装得下，不必拆步。",
+        "blocks": [
+          {
+            "type": "WorkflowTimeline",
+            "slot": "primary"
+          },
+          {
+            "type": "RecordForm",
+            "slot": "content"
+          }
+        ]
+      }
+    ],
+    "monitor": [
+      {
+        "id": "act-flow-feed",
+        "name": "流程 + 动态",
+        "when": "总览要能让人动手，而不只是看数——数已经由 stats/charts 那条路负责。",
+        "blocks": [
+          {
+            "type": "WorkflowTimeline",
+            "slot": "primary"
+          },
+          {
+            "type": "ActivityFeed",
+            "slot": "secondary"
+          }
+        ]
+      }
+    ],
+    "dashboard": [
+      {
+        "id": "rank-create",
+        "name": "排行 + 新建",
+        "when": "仪表盘的数由 stats/charts 出，积木负责「谁排在前面」和「就地录一条」。",
+        "blocks": [
+          {
+            "type": "RankedList",
+            "slot": "primary"
+          },
+          {
+            "type": "RecordFormDialog",
+            "slot": "summary"
+          }
+        ]
+      }
+    ]
+  }
 }

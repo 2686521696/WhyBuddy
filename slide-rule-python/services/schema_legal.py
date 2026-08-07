@@ -268,6 +268,85 @@ FREEFORM_ICON_NAME_PATTERN: str = str(_BLOCK_CATALOG.get("freeformIconNamePatter
 FREEFORM_LEGACY_ICON_ALIASES: Dict[str, str] = dict(
     _BLOCK_CATALOG.get("freeformLegacyIconAliases") or {}
 )
+def _load_page_kind_presets(blocks: tuple) -> Dict[str, tuple]:
+    """页面形态预设：**每种页面的 2~3 套"已经排好的积木组合"**。
+
+    ## 为什么要有它
+
+    此前给模型的是"13 个积木 + 一句自己组织"。用户的判断（2026-08-07）：
+    「首先让 AI 去设计，感觉有点不现实，因为他也搞不出来很好的组件」——
+    症结不在积木不够，在于**从零编排**这件事对模型太难，而且每次结果都不一样。
+
+    对照阿里 lowcode-engine 的物料协议，它比我们多的正是这一样：`snippets`
+    ——"用户从组件面板拖入组件时会向页面 schema 中插入 snippets 中定义的
+    低代码 schema"。也就是**拖进来的不是一个裸组件，是一段排好的片段**。
+
+    这里照这个思路做成页面级的：模型先挑一套预设，再把每个积木绑到真实
+    实体/字段上。选型这一步从"发明"降级成"挑选"，而绑定那一步本来就有
+    bindingSchema 与门禁把关。
+
+    ## 为什么在启动时自检
+
+    预设是**手写**的，而它引用的每个 (type, slot) 都必须同时满足三件事：
+    区块放开了生成、这种页面允许它、这个槽位允许它。手写的东西会漂——
+    今天改了某个区块的 allowedSlots，明天预设就在推荐一个门禁必拦的组合，
+    而模型会照着抄。那种失败很难查：模型"照做了"，却每次都被门禁打回。
+
+    所以坏预设**在服务启动时直接失败**，跟 bindingSchema 自检同一条纪律：
+    不带病进入 Prompt。
+    """
+    raw = _BLOCK_CATALOG.get("pageKindPresets")
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("experience_block_catalog.json pageKindPresets 必须是对象")
+    by_type = {str(b["type"]): b for b in blocks}
+    legal_kinds = set(PAGE_KINDS)
+    out: Dict[str, tuple] = {}
+    for kind, presets in raw.items():
+        if kind not in legal_kinds:
+            raise ValueError(f"pageKindPresets 含目录外页面形态: {kind}")
+        if not isinstance(presets, list) or not presets:
+            raise ValueError(f"pageKindPresets.{kind} 必须是非空数组")
+        seen_ids: set = set()
+        for ps in presets:
+            pid = str((ps or {}).get("id") or "").strip()
+            if not pid:
+                raise ValueError(f"pageKindPresets.{kind} 有预设缺 id")
+            if pid in seen_ids:
+                raise ValueError(f"pageKindPresets.{kind} 重复预设 id: {pid}")
+            seen_ids.add(pid)
+            for key in ("name", "when"):
+                if not str(ps.get(key) or "").strip():
+                    raise ValueError(f"pageKindPresets.{kind}.{pid} 缺 {key}")
+            items = ps.get("blocks")
+            if not isinstance(items, list) or not items:
+                raise ValueError(f"pageKindPresets.{kind}.{pid}.blocks 必须是非空数组")
+            for it in items:
+                btype = str((it or {}).get("type") or "").strip()
+                slot = str((it or {}).get("slot") or "").strip()
+                entry = by_type.get(btype)
+                if entry is None:
+                    raise ValueError(f"pageKindPresets.{kind}.{pid} 引用了未知区块 {btype}")
+                if not entry.get("generationEnabled"):
+                    raise ValueError(
+                        f"pageKindPresets.{kind}.{pid} 推荐了未放开生成的区块 {btype}"
+                        "——模型照做会被门禁拦下"
+                    )
+                if kind not in entry.get("pageKinds", []):
+                    raise ValueError(
+                        f"pageKindPresets.{kind}.{pid}: {btype} 不允许出现在 {kind} 页"
+                        f"（允许 {entry.get('pageKinds')}）"
+                    )
+                if slot not in entry.get("allowedSlots", []):
+                    raise ValueError(
+                        f"pageKindPresets.{kind}.{pid}: {btype} 不允许放在 {slot}"
+                        f"（允许 {entry.get('allowedSlots')}）"
+                    )
+        out[kind] = tuple(presets)
+    return out
+
+
 EXPERIENCE_BLOCKS = _load_experience_blocks()
 EXPERIENCE_BLOCK_TYPES = tuple(str(block["type"]) for block in EXPERIENCE_BLOCKS)
 EXPERIENCE_BLOCK_RENDERER_KEYS = tuple(
@@ -281,6 +360,8 @@ EXPERIENCE_BLOCK_BINDING_SCHEMAS: Dict[str, Dict[str, Any]] = {
 # 目录里给它开放的槽位，而不只是"槽位名合法 + 区块 id 存在"（此前 layout 深
 # 校验只查这两条，槽位与区块类型的搭配完全没人管，见 Puck DropZone 的
 # allow/disallow 思路——目录数据其实早就够用，只是没人拿它去查 layout）。
+PAGE_KIND_PRESETS: Dict[str, tuple] = _load_page_kind_presets(EXPERIENCE_BLOCKS)
+
 EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE: Dict[str, tuple] = {
     str(block["type"]): tuple(block["allowedSlots"]) for block in EXPERIENCE_BLOCKS
 }
@@ -462,6 +543,39 @@ def experience_block_prompt_block() -> str:
             "No block type is renderable yet — DO NOT emit page.blocks for production pages. "
             "ALWAYS use the existing stats/charts/rankings/feeds fields instead."
         )
+    # ── 页面形态预设（2026-08-07）────────────────────────────────────────
+    # 用户的判断："首先让 AI 去设计，感觉有点不现实"。此前给的是一堆散积木
+    # 加一句"自己组织"，模型每次都得从零发明一遍排布。这里给出**已经排好的
+    # 组合**，选型从"发明"降级成"挑选"。做法照 lowcode-engine 的 snippets
+    # （拖进来的不是裸组件，是一段排好的片段），只是做在页面这一层。
+    #
+    # 措辞仍走本文件反复验证过的那条：**祈使 + 说清不照做的代价**。写成
+    # "here are some examples you may consider" 这类许可式，按 07-28 的实测
+    # 记录，模型会当没看见。
+    #
+    # 同时明说"预设是起点不是枷锁"——业务真需要别的组合时照常自己排，
+    # 否则会把模型逼进只会抄预设的另一个极端。
+    if PAGE_KIND_PRESETS:
+        lines.append(
+            "PROVEN LAYOUTS — start from one of these instead of composing from scratch. "
+            "Each has already been checked against the catalog: every block is live, "
+            "allowed on that page kind, and allowed in that slot. Pick the one whose "
+            "'use when' matches THIS page's job, then bind each block to real entities "
+            "and fields. Composing your own set is allowed and expected when the "
+            "business genuinely needs something else — but an invented layout that "
+            "merely re-derives one of these wastes a turn and usually lands in a slot "
+            "the gate rejects."
+        )
+        for kind in PAGE_KINDS:
+            presets = PAGE_KIND_PRESETS.get(kind)
+            if not presets:
+                continue
+            for ps in presets:
+                combo = " + ".join(
+                    f"{it['type']}@{it['slot']}" for it in ps["blocks"]
+                )
+                lines.append(f"  {kind} · {ps['name']}: {combo} — use when {ps['when']}")
+
     lines.append(
         "Whenever you do emit page.blocks, every block type MUST be one of the catalog entries below."
     )
