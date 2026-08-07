@@ -442,6 +442,18 @@ function interleaveWide(blocks: CatalogBlock[]): CatalogBlock[] {
 }
 
 /**
+ * 底部元信息的文字阴影：四向 1px 浅色描边 + 一层柔和灰投影。
+ *
+ * 去掉深色渐变遮罩之后，这行字直接压在组件上，而组件的底色是不确定的
+ * （多数是白/浅灰，也可能压到蓝色进度条、深色按钮上）。单一方向的
+ * drop-shadow 只在一种底上有效，四向描边才是两种底都能读。
+ */
+const META_TEXT_SHADOW =
+  "0 1px 0 rgba(255,255,255,0.9), 0 -1px 0 rgba(255,255,255,0.9), " +
+  "1px 0 0 rgba(255,255,255,0.9), -1px 0 0 rgba(255,255,255,0.9), " +
+  "0 2px 6px rgba(15,23,42,0.28)";
+
+/**
  * 这个区块在手机档有没有**自己的**渲染器。
  *
  * 两个条件都要满足：手机渲染器认得它（PhoneExperienceBlock 的类型表），
@@ -511,29 +523,51 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
       styles={{ body: { padding: 0, overflow: "hidden", position: "relative" } }}
       className="w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
     >
-      {/* 底部那条浮层是 absolute 的，不占高度——渲染区必须自己让出 64px，
-          否则它会**压住组件最下面一带**。真机看到的：MetricGrid 的数字、
-          RankedList 的第 4/5 名、QuickActionPanel 的按钮、DataTable 的末行
-          全被盖掉。这一段本文件的 docstring 写着"元信息不会覆盖可交互内容"，
-          留白就是兑现那句话的东西。
-          （应用中心那边不需要，因为它盖的是应用截图，糊掉一点无所谓；
-          这里盖的是活组件，盖掉就等于这一页在错误地展示这个组件。） */}
-      <div className="w-full pt-4" style={{ paddingBottom: 64 }}>
-        {rendered}
-      </div>
-      <span className="absolute right-2.5 top-2.5 z-10 inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 backdrop-blur-sm">
+      {/* 渲染区四边不留白，组件铺满整张卡（2026-08-07 用户裁决）。 */}
+      <div className="w-full">{rendered}</div>
+      {/* 档位角标：无边框，半透明底 + 外阴影撑起层次（2026-08-07 用户裁决）。
+          ring-1 那圈灰边去掉之后，与内容的分离全靠 shadow + backdrop-blur——
+          阴影比原来的 shadow-sm 重一档，否则贴在浅色内容上会糊成一片。 */}
+      <span className="absolute right-2.5 top-2.5 z-10 inline-flex items-center gap-1 rounded-md bg-white/75 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-[0_2px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm">
         <DeviceIcon size={12} />
         {statusLabel}
       </span>
-      <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 via-black/35 to-transparent px-3 pb-2 pt-4 backdrop-blur-[1px]">
+      {/* 底部元信息条：**不铺任何背景**，且**不再浮在内容上**。
+
+          2026-08-07 用户裁决三条：去掉上下 padding、角标去边框、"底部的阴影
+          背景可以去掉，文字加灰色阴影的方式也会很清晰"。
+
+          前两条直接照做。第三条**先按字面做了一版，实测不能用**：把 64px 留白
+          和深色渐变一起撤掉之后，元信息真的压在内容上——MetricGrid 盖住
+          「1,648」、QuickActionPanel 盖住三个按钮、RankedList 盖住第 4/5 名、
+          DataTable 盖住末行、FilterBar 盖住「重置/查询」。文字阴影救不回来，
+          因为糊住它的不是背景色，是**另一层字**。
+
+          所以这里取的是能同时满足三条诉求的形状：**元信息回到正常流**，排在
+          渲染区下面而不是压在上面。于是
+            · 没有任何背景遮罩 ✅（第三条的诉求）
+            · 渲染区四边零留白 ✅（第一条的诉求，padding 是 0，不是 64）
+            · 元信息一个像素都不挡内容 ✅（这一页存在的意义）
+          代价是卡片比"纯浮层"高出一行元信息的量。
+
+          文字随之从白色改成深色——白字的可读性完全来自那层深色渐变，遮罩撤了
+          白字就隐形。仍然保留 textShadow：卡片底色虽是白的，但组件自己可能把
+          背景铺到底（FilterBar 的按钮条），描边让两种底都读得清。 */}
+      <div className="relative z-10 px-3 pb-2 pt-2">
         <div className="flex items-center">
           <Tooltip title={block.description}>
-            <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-white drop-shadow-sm">
+            <span
+              className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-slate-900"
+              style={{ textShadow: META_TEXT_SHADOW }}
+            >
               {block.type}
             </span>
           </Tooltip>
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-white/75">
+        <div
+          className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-slate-600"
+          style={{ textShadow: META_TEXT_SHADOW }}
+        >
           <span>{impl ?? "实现未登记"}</span>
           {(block.allowedSlots ?? []).map(s => (
             <span key={s}>{SLOT_LABEL[s] ?? s}</span>

@@ -120,9 +120,34 @@ describe("components library UI contract", () => {
     expect(pageSource).toContain("hasPhoneImplementation(block)");
   });
 
-  it("uses the application-center gradient metadata overlay", () => {
-    expect(pageSource).toContain("bg-gradient-to-t from-black/70 via-black/35 to-transparent");
-    expect(pageSource).toContain('position: "relative"');
+  it("底部元信息浮在内容上，靠文字阴影而不是渐变遮罩", () => {
+    // 2026-08-07 用户裁决：「底部的阴影背景我觉得可以去掉，文字加灰色阴影的
+    // 方式也会很清晰」。原来是照搬应用中心的深色渐变遮罩
+    // （bg-gradient-to-t from-black/70…），那套是给应用截图设计的；这一页
+    // 盖的是活组件，遮罩本身就是要挡掉的东西。
+    //
+    // 遮罩撤掉之后**白字必须跟着改成深字**——白字的可读性完全来自那层深色
+    // 渐变，只撤遮罩不改颜色等于让元信息隐形。这条断言把两件事绑在一起，
+    // 防止下次只改一半。
+    const code = stripComments(pageSource);
+    expect(code).not.toContain("bg-gradient-to-t");
+    expect(code).toContain("META_TEXT_SHADOW");
+    expect(code).not.toMatch(/text-white\/\d+/);
+    expect(code).toContain('position: "relative"');
+
+    // 元信息**不能是浮层**。按字面"去掉留白 + 去掉遮罩"做过一版，实测元信息
+    // 直接压在内容上：MetricGrid 盖住 1,648、RankedList 盖住第 4/5 名、
+    // DataTable 盖住末行。糊住它的不是背景色是另一层字，文字阴影救不回来。
+    // 所以元信息回到正常流；这条断言防止它被改回 absolute。
+    expect(code).not.toMatch(/absolute inset-x-0 bottom-0/);
+  });
+
+  it("渲染区四边不留白——组件铺满整张卡", () => {
+    // 上下 padding 一并去掉（2026-08-07）。原来 paddingBottom: 64 是给渐变
+    // 遮罩让位的，遮罩没了这个留白也就没有理由了。
+    const code = stripComments(pageSource);
+    expect(code).not.toContain("paddingBottom: 64");
+    expect(code).toContain('<div className="w-full">{rendered}</div>');
   });
 
   it("keeps progress indicators named and allows browser zoom", () => {
