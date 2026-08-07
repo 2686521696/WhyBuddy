@@ -506,7 +506,7 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
           留白就是兑现那句话的东西。
           （应用中心那边不需要，因为它盖的是应用截图，糊掉一点无所谓；
           这里盖的是活组件，盖掉就等于这一页在错误地展示这个组件。） */}
-      <div className="px-4 pt-4" style={{ paddingBottom: 64 }}>
+      <div className="w-full pt-4" style={{ paddingBottom: 64 }}>
         {rendered}
       </div>
       <Tooltip title={phoneFallback ? "该区块暂无手机专属实现，当前展示桌面渲染器" : undefined}>
@@ -703,7 +703,7 @@ export default function ComponentsLibraryPage() {
         {/* 第二行：槽位收窄。计数走 pageKindBlocks 而不是 blocks——它显示的是
             "在当前这类页面里，这个槽位有几个区块可用"，跟着上一行的选择走。 */}
         <div
-          className="mt-1.5 flex flex-wrap items-center gap-1.5"
+          className="mt-4 flex flex-wrap items-center gap-1.5"
           data-testid="components-slot-filters"
         >
           <FilterChip
