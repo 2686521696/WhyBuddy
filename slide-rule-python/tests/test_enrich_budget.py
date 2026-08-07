@@ -239,11 +239,41 @@ def test_monitor_keeps_text_only_landing_design_when_only_reference_image_is_ove
     assert model["page"]["pages"][0]["freeformOverviewStatus"] == "ready"
 
 
-def test_run_budget_defaults_to_nine_minutes_and_can_be_overridden(monkeypatch):
+def test_run_budget_defaults_to_eighteen_minutes_and_can_be_overridden(monkeypatch):
+    """默认 1080s（2026-08-07 由 540 上调，用户裁决 ×2）。
+
+    上调的实测依据：一趟真实推演（连锁药房处方与库存协同）里
+    `stage=model.generate ms=532765` 一项就吃掉 540 的 99%，
+    `stage=monitor.design got=0 skippedReason=deadline` —— 首页版式整段被
+    掐掉，退回固定骨架。理由与"为什么不是 Contract 的问题"记在
+    enrich_timing._DEFAULT_RUN_BUDGET_SECONDS 上方。
+
+    这条断言钉的是**默认值**：预算是 fail-open 视觉增强的唯一闸门，
+    悄悄被改小的表现是"某些话题的首页突然没有版式了"，不会报错。
+    """
     monkeypatch.delenv("SLIDERULE_RUN_BUDGET_SECONDS", raising=False)
-    assert enrich_timing.run_budget_seconds() == 540
+    assert enrich_timing.run_budget_seconds() == 1080
     monkeypatch.setenv("SLIDERULE_RUN_BUDGET_SECONDS", "420")
     assert enrich_timing.run_budget_seconds() == 420
+
+
+def test_run_budget_leaves_room_for_design_after_a_heavy_generation():
+    """重话题也要走得完版式那一段——这是这次上调的**目的**，单独钉住。
+
+    版式的进入门槛是 `required_visual_seconds = 150 + 130 * design_total`
+    （freeform_block:2802），单页即 280s。实测最慢的一次模型生成 533s：
+
+        540  − 533 = 7s    < 280  → 跳过（改之前，用户实测到的现象）
+        1080 − 533 = 547s  > 280  → 走得完
+
+    哪天有人把默认值调回去（或调到 813 以下），这条会先响。
+    """
+    HEAVIEST_GENERATION_SECONDS = 533  # 2026-08-07 连锁药房那一轮实测
+    DESIGN_THRESHOLD_SECONDS = 150 + 130 * 1
+    assert (
+        enrich_timing._DEFAULT_RUN_BUDGET_SECONDS - HEAVIEST_GENERATION_SECONDS
+        >= DESIGN_THRESHOLD_SECONDS
+    ), "预算不足以在最慢的一次生成之后还做得完版式设计"
 
 
 class _FakeSandbox:

@@ -59,7 +59,35 @@ _LOG_PREFIX = "[enrich-timing]"
 # 可以设 0 关掉。
 _ENABLED_ENV = "SLIDERULE_ENRICH_TIMING"
 _RUN_BUDGET_ENV = "SLIDERULE_RUN_BUDGET_SECONDS"
-_DEFAULT_RUN_BUDGET_SECONDS = 540
+
+#: 一趟推演的总时长预算。**只约束 fail-open 的视觉增强**（首页版式、取色、
+#: 参照图），不会中断已经过结构闸的业务模型、权限和流程——预算耗尽的表现是
+#: "没有版式设计"，不是"推演失败"。
+#:
+#: 2026-08-07 由 540 上调到 1080（用户裁决 "×2"）。
+#:
+#: 起因是一趟真实推演（连锁药房处方与库存协同，用户账号实跑）：
+#:
+#:     stage=model.generate  ms=532765   ← 8.9 分钟，一项吃掉 540 的 99%
+#:     stage=monitor.design  ms=0  got=0  skippedReason=deadline
+#:
+#: 剩给视觉增强 7 秒，版式设计整段跳过，首页退回固定骨架。
+#:
+#: 要紧的是这个关系是**反向**的：话题越复杂 → 模型生成越久 → 越没预算做版式
+#: → 首页反而越简陋。对照另一次实测（社区健身房）模型生成 145s，剩 190s；
+#: 药房这种重话题 533s，剩 7s。越值得好好呈现的应用，呈现得越差。
+#:
+#: ⚠️ 这里**不是** Contract 的问题。Contract 只存在于并行生成那条路
+#: （v5_parallel_generate），而并行默认是关的（SLIDERULE_PARALLEL_MODEL_GENERATION
+#: 缺省 "off"，见那个文件里记录的实测：并行 569.6s/738.0s 全失败 vs 串行
+#: 236.0s 成功）。本轮日志 `attempts=2` 即证明走的是串行分支
+#: （`attempts = 1 if use_parallel else 2`）。533 秒就是"一次性生成完整五系统
+#: 模型"本身的耗时。
+#:
+#: 调大预算是对症的止血，不是根治：真正的治法是把生成本身变快（分段流式落地、
+#: 或让视觉增强脱离这条同步预算异步补）。在那之前，1080 让重话题也能走完版式
+#: 那一段——按上面两次实测，533 + 280（版式门槛）= 813 < 1080，留了余量。
+_DEFAULT_RUN_BUDGET_SECONDS = 1080
 _run_deadline: ContextVar[float | None] = ContextVar("sliderule_run_deadline", default=None)
 
 
