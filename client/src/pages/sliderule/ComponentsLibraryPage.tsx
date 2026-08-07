@@ -441,20 +441,36 @@ function interleaveWide(blocks: CatalogBlock[]): CatalogBlock[] {
   return out;
 }
 
+/**
+ * 这个区块在手机档有没有**自己的**渲染器。
+ *
+ * 两个条件都要满足：手机渲染器认得它（PhoneExperienceBlock 的类型表），
+ * 并且这一页给它备了示例数据（HAS_DEMO）。缺后者会画出一张空卡，
+ * 那跟"降级"一样是没意义的中间态。
+ *
+ * 2026-08-07 用户裁决：手机端就是手机端，桌面端就是桌面端，不要"手机档但其实
+ * 是桌面渲染器"这种东西。所以这个判据现在决定的是**这张卡出不出现在手机档**，
+ * 而不再是"出现、但挂个降级角标"。
+ *
+ * ⚠️ 这只改了这一页的陈列方式。真实应用里的降级仍然存在
+ * （AppRuntimeScreen.tsx:1538：手机档遇到没有手机实现的区块，照样拿桌面渲染器
+ * 塞进窄壳）。要让线上也"手机端就是手机端"，得单独决定那种情况给用户看什么
+ * ——直接不显示会让手机用户少掉整块内容，比挤一点更糟。
+ */
+function hasPhoneImplementation(block: CatalogBlock): boolean {
+  return isPhoneExperienceBlock(block.type) && HAS_DEMO.has(block.type);
+}
+
 /** 真实渲染器预览；外壳使用 Ant Design Card，元信息不会覆盖可交互内容。 */
 function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevice }) {
   const { block: instance, extra } = demoFor(block.type);
   const impl = IMPL_BY_TYPE[block.type];
-  const phone = isPhoneExperienceBlock(block.type);
   const demoable = HAS_DEMO.has(block.type);
-  // 手机档没有专属渲染器的，真实应用里是**拿桌面渲染器塞进窄壳**
-  // （AppRuntimeScreen.tsx:1538 `forPhone && PHONE_EXPERIENCE_BLOCK_TYPES.has(...)`）。
-  // 这里照做——只有照做，"未适配"的真实代价才看得见；换成一句"暂不支持"就把
-  // 问题藏起来了，而这一页存在的意义正是把它露出来。
-  const phoneFallback = device === "phone" && !phone;
 
+  // 手机档只渲染**真有手机实现**的区块（见 hasPhoneImplementation 与那里的说明）。
+  // 没有实现的不会走到这里——它们压根不进手机档的列表。
   const rendered = demoable ? (
-    device === "phone" && phone ? (
+    device === "phone" ? (
       <React.Suspense fallback={<div style={{ height: 120 }} />}>
         <LazyPhoneExperienceBlock
           block={instance}
@@ -482,11 +498,7 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
     />
   );
 
-  const statusLabel = phoneFallback
-    ? "手机档 · 桌面降级"
-    : device === "phone"
-      ? "手机档"
-      : "桌面档";
+  const statusLabel = device === "phone" ? "手机档" : "桌面档";
   // 卡片角标跟顶部档位 chip 用同一套 lucide 图标——原来这里是 antd 的
   // Mobile/DesktopOutlined，跟顶部两个图标线宽和字重都对不上。
   const DeviceIcon = device === "phone" ? Smartphone : Monitor;
@@ -509,18 +521,10 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
       <div className="w-full pt-4" style={{ paddingBottom: 64 }}>
         {rendered}
       </div>
-      <Tooltip title={phoneFallback ? "该区块暂无手机专属实现，当前展示桌面渲染器" : undefined}>
-        <span
-          className={`absolute right-2.5 top-2.5 z-10 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium shadow-sm backdrop-blur-sm ${
-            phoneFallback
-              ? "bg-amber-50/95 text-amber-700 ring-1 ring-amber-200"
-              : "bg-white/90 text-slate-700 ring-1 ring-slate-200"
-          }`}
-        >
-          <DeviceIcon size={12} />
-          {statusLabel}
-        </span>
-      </Tooltip>
+      <span className="absolute right-2.5 top-2.5 z-10 inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 backdrop-blur-sm">
+        <DeviceIcon size={12} />
+        {statusLabel}
+      </span>
       <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 via-black/35 to-transparent px-3 pb-2 pt-4 backdrop-blur-[1px]">
         <div className="flex items-center">
           <Tooltip title={block.description}>
@@ -550,13 +554,24 @@ function BlockWall({ blocks, device }: { blocks: CatalogBlock[]; device: DeviceT
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
   const { width } = useContainerPosition(containerRef, [height]);
+  // 手机档只列**真有手机实现**的区块。
+  //
+  // 2026-08-07 用户裁决：「手机端就是手机端，桌面端就是桌面端。弄一个手机端
+  // 桌面降级，这没意思的。」——此前没有手机实现的区块也会出现在手机档里，
+  // 拿桌面渲染器塞进 380px 机身、挂一个橙色「桌面降级」角标。那个中间态被
+  // 整个删掉：现在手机档列出来的每一张都是真手机渲染器。
+  //
+  // 「全部」档同理，一个区块出现一次还是两次，取决于它有没有手机实现。
   const entries = React.useMemo<BlockPreviewEntry[]>(
     () => device === "all"
-      ? blocks.flatMap(block => [
-          { block, device: "desktop" },
-          { block, device: "phone" },
-        ] satisfies BlockPreviewEntry[])
-      : blocks.map(block => ({ block, device })),
+      ? blocks.flatMap(block =>
+          hasPhoneImplementation(block)
+            ? ([{ block, device: "desktop" }, { block, device: "phone" }] satisfies BlockPreviewEntry[])
+            : ([{ block, device: "desktop" }] satisfies BlockPreviewEntry[])
+        )
+      : device === "phone"
+        ? blocks.filter(hasPhoneImplementation).map(block => ({ block, device }))
+        : blocks.map(block => ({ block, device })),
     [blocks, device]
   );
 
