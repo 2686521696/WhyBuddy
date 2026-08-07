@@ -336,6 +336,21 @@ const PAGE_KINDS = [
 const WALL_COLUMN_WIDTH = 300;
 const WALL_GUTTER = 16;
 
+/** 手机档一列的宽度。真实手机壳内容区是 380px（见 FreeformPreviewScreen 的
+ * DEVICE_CONTENT_WIDTH），加卡片左右内边距与手机边框的余量。 */
+const PHONE_FRAME_WIDTH = 380;
+const PHONE_COLUMN_WIDTH = PHONE_FRAME_WIDTH + 56;
+
+type DeviceTier = "desktop" | "phone";
+
+/**
+ * 手机档渲染器。**懒加载**：它拉的是整个 antd-mobile，桌面档一个字节都用不上，
+ * 静态引会把 antd-mobile 压进这一页的首包。挂法与 AppRuntimeScreen 一致。
+ */
+const LazyPhoneExperienceBlock = React.lazy(
+  () => import("./live-runtime/phone-mobile/PhoneExperienceBlock")
+);
+
 /** 跨两列的判据：allowedSlots 含 content。
  *
  * 纪律照 app-wall-span.ts 顶部那段——**必须是真实信息，不能是随机也不能凭好看**。
@@ -417,11 +432,45 @@ function FilterChip({
  * 必须给底部留出 64px 内边距——渐变浮层会盖住最下面一带，不留就会把组件的最后
  * 一行内容压掉。截图不在乎盖住一点，活组件在乎。
  */
-function BlockCard({ block }: { block: CatalogBlock }) {
+function BlockCard({ block, device }: { block: CatalogBlock; device: DeviceTier }) {
   const { block: instance, extra } = demoFor(block.type);
   const impl = IMPL_BY_TYPE[block.type];
   const phone = isPhoneExperienceBlock(block.type);
   const demoable = HAS_DEMO.has(block.type);
+  // 手机档没有专属渲染器的，真实应用里是**拿桌面渲染器塞进窄壳**
+  // （AppRuntimeScreen.tsx:1538 `forPhone && PHONE_EXPERIENCE_BLOCK_TYPES.has(...)`）。
+  // 这里照做——只有照做，"未适配"的真实代价才看得见；换成一句"暂不支持"就把
+  // 问题藏起来了，而这一页存在的意义正是把它露出来。
+  const phoneFallback = device === "phone" && !phone;
+
+  const rendered = demoable ? (
+    device === "phone" && phone ? (
+      <React.Suspense fallback={<div style={{ height: 120 }} />}>
+        <LazyPhoneExperienceBlock
+          block={instance}
+          entityRows={ENTITY_ROWS}
+          chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
+          fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
+          {...extra}
+        />
+      </React.Suspense>
+    ) : (
+      <ExperienceBlockBoundary
+        block={instance}
+        entityRows={ENTITY_ROWS}
+        chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
+        fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
+        {...extra}
+      />
+    )
+  ) : (
+    // 目录里有、这一页还没配夹具：如实说"没有示例"，不画一个假的充数。
+    <Empty
+      image={Empty.PRESENTED_IMAGE_SIMPLE}
+      description="这一页还没为它准备示例数据"
+      style={{ margin: "16px 0" }}
+    />
+  );
 
   return (
     <div
@@ -429,30 +478,35 @@ function BlockCard({ block }: { block: CatalogBlock }) {
       title={block.description}
       className="group relative w-full overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
     >
-      {/* 画面区：真组件铺满 */}
-      <div className="px-4 pt-4" style={{ paddingBottom: 64 }}>
-        {demoable ? (
-          <ExperienceBlockBoundary
-            block={instance}
-            entityRows={ENTITY_ROWS}
-            chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
-            fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
-            {...extra}
-          />
-        ) : (
-          // 目录里有、这一页还没配夹具：如实说"没有示例"，不画一个假的充数。
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="这一页还没为它准备示例数据"
-            style={{ margin: "16px 0" }}
-          />
-        )}
-      </div>
+      {/* 画面区：桌面档直接铺满；手机档套进一个 380px 的机身框里，
+          宽度必须是真的——不套框只把卡变窄，看到的仍是桌面布局在窄容器里的样子，
+          跟真机不是一回事。 */}
+      {device === "phone" ? (
+        <div className="flex justify-center px-4 pt-4" style={{ paddingBottom: 64 }}>
+          <div
+            className="overflow-hidden rounded-[22px] border-[6px] border-slate-800 bg-[#f5f5f5] shadow-inner"
+            style={{ width: PHONE_FRAME_WIDTH }}
+          >
+            <div className="px-2.5 py-3">{rendered}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="px-4 pt-4" style={{ paddingBottom: 64 }}>
+          {rendered}
+        </div>
+      )}
 
-      {/* 右上角：档位指示（桌面恒有；手机灰=未适配） */}
-      <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5 rounded-lg bg-white/80 px-2 py-1 ring-1 ring-slate-200/70 backdrop-blur-[2px]">
-        <Monitor size={13} className="text-emerald-500" />
-        <Smartphone size={13} className={phone ? "text-emerald-500" : "text-slate-300"} />
+      {/* 右上角：档位指示。手机档下如果是降级来的，直接写出来——一个灰图标
+          说不清"它现在显示的东西其实是桌面渲染器"这件事。 */}
+      <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5 rounded-lg bg-white/85 px-2 py-1 ring-1 ring-slate-200/70 backdrop-blur-[2px]">
+        {phoneFallback ? (
+          <span className="text-[11px] font-medium text-amber-600">桌面档降级</span>
+        ) : (
+          <>
+            <Monitor size={13} className="text-emerald-500" />
+            <Smartphone size={13} className={phone ? "text-emerald-500" : "text-slate-300"} />
+          </>
+        )}
       </div>
 
       {/* 信息条：浮在画面底部，不占卡片高度（同 CenterCard 的黑色渐变 + backdrop-blur） */}
@@ -487,7 +541,7 @@ function BlockCard({ block }: { block: CatalogBlock }) {
 
 /** 区块墙。抽成组件的理由同 AppsWorkbench 的 AppWall：里面全是 hook，
  * 而墙在「有结果 / 搜索无结果」两岔里只有一岔渲染，写在外层就成了条件调用。 */
-function BlockWall({ blocks }: { blocks: CatalogBlock[] }) {
+function BlockWall({ blocks, device }: { blocks: CatalogBlock[]; device: DeviceTier }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
   const { width } = useContainerPosition(containerRef, [height]);
@@ -501,16 +555,19 @@ function BlockWall({ blocks }: { blocks: CatalogBlock[] }) {
         height={height}
         scrollTop={scrollTop}
         isScrolling={isScrolling}
-        minColumnWidth={WALL_COLUMN_WIDTH}
+        minColumnWidth={device === "phone" ? PHONE_COLUMN_WIDTH : WALL_COLUMN_WIDTH}
         gutter={WALL_GUTTER}
         overscanBy={2}
         // 实测各区块渲染高度 148~451px，取中位偏上；真实高度由 ResizeObserver 量，
         // 这个值只影响首屏还没量到时的总高估算。
-        itemHeightEstimate={330}
-        itemKey={b => b.type}
-        getSpan={(b, _i, columnCount) => spanForColumnCount(isWideBlock(b), columnCount)}
+        itemHeightEstimate={device === "phone" ? 420 : 330}
+        itemKey={b => `${device}-${b.type}`}
+        // 手机档不跨列：机身宽度是固定的 380px，跨两列只会让机身两侧多出空白，
+        // 不会让内容变宽——跨列的前提是"内容能用上多出来的宽度"，这里用不上。
+        getSpan={(b, _i, columnCount) =>
+          device === "phone" ? 1 : spanForColumnCount(isWideBlock(b), columnCount)}
         className="mt-5"
-        render={b => <BlockCard block={b} />}
+        render={b => <BlockCard block={b} device={device} />}
       />
     </div>
   );
@@ -543,6 +600,7 @@ function PageKindGrid() {
 
 export default function ComponentsLibraryPage() {
   const [tab, setTab] = React.useState<"blocks" | "kinds">("blocks");
+  const [device, setDevice] = React.useState<DeviceTier>("desktop");
   const [query, setQuery] = React.useState("");
   const [slot, setSlot] = React.useState<string>("all");
 
@@ -560,8 +618,12 @@ export default function ComponentsLibraryPage() {
     });
   }, [blocks, query, slot]);
 
-  // 先筛后铺：铺开只影响展示次序，不影响筛出来的集合
-  const ordered = React.useMemo(() => interleaveWide(filtered), [filtered]);
+  // 先筛后铺：铺开只影响展示次序，不影响筛出来的集合。
+  // 手机档不跨列，也就没有"宽卡挤成一坨"的问题，保持目录原序更好读。
+  const ordered = React.useMemo(
+    () => (device === "phone" ? filtered : interleaveWide(filtered)),
+    [filtered, device]
+  );
   const phoneReady = blocks.filter(b => isPhoneExperienceBlock(b.type)).length;
 
   return (
@@ -630,8 +692,25 @@ export default function ComponentsLibraryPage() {
                 onClick={() => setSlot(s)}
               />
             ))}
-            <span className="ml-2 text-[11.5px] text-slate-400">
-              手机档已适配 {phoneReady} / {blocks.length}
+            <span className="ml-auto flex items-center gap-1.5">
+              <FilterChip
+                icon={<Monitor size={14} />}
+                label="桌面档"
+                count={blocks.length}
+                active={device === "desktop"}
+                onClick={() => setDevice("desktop")}
+              />
+              {/* 计数写 blocks.length 而不是 phoneReady：这个数字在 chip 上读作
+                  "这一档有几张卡"，而手机档确实是 9 张全在（4 张专属渲染器 +
+                  5 张桌面档降级）。写 4 会让人以为另外 5 个看不到。
+                  真正的 4/9 由下面那行说明和每张卡上的「桌面档降级」角标交代。 */}
+              <FilterChip
+                icon={<Smartphone size={14} />}
+                label="手机档"
+                count={blocks.length}
+                active={device === "phone"}
+                onClick={() => setDevice("phone")}
+              />
             </span>
           </div>
         )}
@@ -641,6 +720,15 @@ export default function ComponentsLibraryPage() {
         系统生成应用时可用的全部组件。每一格都是<strong className="text-slate-700">真实渲染器</strong>
         按夹具数据现渲的，跟线上应用同一套代码；清单读自 <code>experience_block_catalog.json</code>
         ——它同时也是 AI 生成时对着的契约，所以这一页不会跟实际能力脱节。
+        {tab === "blocks" && device === "phone" && (
+          <>
+            {" "}当前是手机档：<strong className="text-slate-700">{phoneReady}</strong> 个有专属渲染器，
+            另 <strong className="text-amber-600">{blocks.length - phoneReady}</strong> 个走
+            <strong className="text-amber-600">桌面档降级</strong>
+            ——降级不是「不显示」，是真实应用里就拿桌面渲染器塞进 380px 窄壳
+            （AppRuntimeScreen 的 forPhone 分支），所以卡里看到的挤压就是用户会看到的。
+          </>
+        )}
       </p>
 
       {tab === "kinds" ? (
@@ -648,7 +736,7 @@ export default function ComponentsLibraryPage() {
       ) : filtered.length === 0 ? (
         <Empty description="没有匹配的区块" className="py-16" />
       ) : (
-        <BlockWall blocks={ordered} />
+        <BlockWall blocks={ordered} device={device} />
       )}
     </div>
   );
