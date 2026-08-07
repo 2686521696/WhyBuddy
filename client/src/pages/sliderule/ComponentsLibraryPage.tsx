@@ -46,7 +46,7 @@ import catalogJson from "@experience-blocks";
 import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
 import { useScrollerIn } from "@/pages/agent-loop/dashboard/useScrollerIn";
 import { spanForColumnCount } from "@/pages/agent-loop/dashboard/app-wall-span";
-import { ExperienceBlockBoundary } from "./live-runtime/block-registry";
+import { BLOCK_DEFINITIONS, ExperienceBlockBoundary } from "./live-runtime/block-registry";
 import BusinessPageGrid from "./live-runtime/BusinessPageGrid";
 import {
   resolveBusinessGrid,
@@ -149,23 +149,20 @@ const CATALOG = catalogJson as unknown as {
  * 手维护的东西会烂，所以下面有一道自检：目录里有、这张表里没有的类型会显示成
  * 「未登记」，而不是静静地空着。看见「未登记」就是在提醒来补一行。
  */
-const IMPL_BY_TYPE: Record<string, string> = {
-  MetricGrid: "ProComponents StatisticCard",
-  TrendChart: "ECharts",
-  RankedList: "antd List + Progress + Tag",
-  ActivityFeed: "antd Timeline",
-  DataTable: "antd Table",
-  QuickActionPanel: "ProCard + antd Button",
-  FilterBar: "ProComponents QueryFilter",
-  WorkflowTimeline: "ProCard + antd Steps",
-  FreeformInsight: "受限 JSON 树（非固定组件）",
-  // 2026-08-07 表单/详情族：全部来自已装的 @ant-design/pro-components 2.8
-  RecordForm: "ProComponents ProForm",
-  RecordFormDialog: "ProComponents DrawerForm / ModalForm",
-  RecordDetail: "ProComponents ProDescriptions",
-  StepsForm: "ProComponents StepsForm",
-  ContentCard: "antd Card（容器，由 AI 显式选用）",
-};
+/**
+ * 「背后是哪个真组件」与中文名 —— **从区块定义表派生**（2026-08-08）。
+ *
+ * 此前这里是一张手维护的表，加组件忘了补就显示「实现未登记」。现在唯一
+ * 真相是 block-registry 的 BLOCK_DEFINITIONS：那条记录里已经带着 impl 和
+ * label，这里只是读出来。加组件不再需要来改这一处。
+ */
+const IMPL_BY_TYPE: Record<string, string> = Object.fromEntries(
+  Object.entries(BLOCK_DEFINITIONS).map(([type, d]) => [type, d.impl])
+);
+const LABEL_BY_TYPE: Record<string, string> = Object.fromEntries(
+  Object.entries(BLOCK_DEFINITIONS).map(([type, d]) => [type, d.label])
+);
+
 
 const SLOT_LABEL: Record<string, string> = {
   summary: "摘要区",
@@ -312,47 +309,47 @@ const FREEFORM_DEMO = {
 };
 
 /** 每个区块要挂起来需要的 block 实例 + 额外 props。 */
-function demoFor(type: string): {
-  block: ExperienceBlockInstance;
-  extra: Record<string, unknown>;
-} {
-  const base = { id: `demo-${type}`, type };
-  switch (type) {
-    // ── 表单/详情族（2026-08-07）：全部来自已装的 pro-components ──────────
-    // fieldRefs 显式声明要哪几个字段——**不写就走"从行数据推前 6 个"那条
-    // 兜底路径**，那条路径在真实应用里是有的，但对照台要看的是"声明了会
-    // 怎样"，两种都留在这里反而看不出契约在起作用。
-    case "RecordForm":
-      return {
+/**
+ * 组件库的示例数据 —— **一个类型一条记录**（2026-08-08 由 14 分支的 switch 改成）。
+ *
+ * 形状照 measuredco/puck 的 ComponentConfig.defaultProps：示例数据是组件的
+ * 一项属性，跟渲染器住在一起，不是散落在调用方的一个 switch 里。
+ *
+ * 此前 switch 与 HAS_DEMO 那张手写名单是两处：名单里有、switch 里没有就渲染
+ * 出一张空卡；反过来示例数据永远用不到。加组件要同时记得改两处，漏改不报错。
+ * 现在 HAS_DEMO 直接由这张表的键派生，两处对不上这件事从结构上消失。
+ *
+ * 到三五百个组件时这张表会挪进目录记录本身（lowcode-engine 的 snippets：
+ * 一个渲染器带多个带标题和截图的行业变体），形状不用变。
+ */
+const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<string, unknown> }> = {
+  RecordForm: {
         block: {
-          ...base,
+          id: "demo-RecordForm", type: "RecordForm",
           props: { title: "新建订单", submitText: "创建", layout: "vertical" },
           binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "channel", "at"] },
         },
         extra: {},
-      };
-    case "RecordFormDialog":
-      return {
+      },
+  RecordFormDialog: {
         block: {
-          ...base,
+          id: "demo-RecordFormDialog", type: "RecordFormDialog",
           props: { title: "新建订单", mode: "drawer", triggerText: "新建订单" },
           binding: { entityRef: "order", fieldRefs: ["name", "amount", "status"] },
         },
         extra: {},
-      };
-    case "RecordDetail":
-      return {
+      },
+  RecordDetail: {
         block: {
-          ...base,
+          id: "demo-RecordDetail", type: "RecordDetail",
           props: { title: "订单详情", columns: 2 },
           binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "channel", "at"] },
         },
         extra: {},
-      };
-    case "StepsForm":
-      return {
+      },
+  StepsForm: {
         block: {
-          ...base,
+          id: "demo-StepsForm", type: "StepsForm",
           props: { title: "订单录入" },
           binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "channel"] },
         },
@@ -372,12 +369,9 @@ function demoFor(type: string): {
             ],
           },
         },
-      };
-    // 容器：对照台里给它塞一段说明文字当内容——它自己不取数，
-    // 真实组装时装的是别的积木（children）。
-    case "ContentCard":
-      return {
-        block: { ...base, props: { title: "订单概览", subtitle: "容器 · 装什么由组装决定" } },
+      },
+  ContentCard: {
+        block: { id: "demo-ContentCard", type: "ContentCard", props: { title: "订单概览", subtitle: "容器 · 装什么由组装决定" } },
         extra: {
           children: (
             <div className="text-[12px] leading-relaxed text-slate-500">
@@ -387,47 +381,41 @@ function demoFor(type: string): {
             </div>
           ),
         },
-      };
-    case "MetricGrid":
-      return {
-        block: { ...base, props: { title: "今日经营指标" }, binding: { entityRef: "order", aggregate: "sum:amount" } },
+      },
+  MetricGrid: {
+        block: { id: "demo-MetricGrid", type: "MetricGrid", props: { title: "今日经营指标" }, binding: { entityRef: "order", aggregate: "sum:amount" } },
         extra: {},
-      };
-    case "TrendChart":
-      return {
+      },
+  TrendChart: {
         block: {
-          ...base, props: { title: "金额走势" },
+          id: "demo-TrendChart", type: "TrendChart", props: { title: "金额走势" },
           binding: { entityRef: "order", aggregate: "sum:amount", timeDimensionRef: "at", timeGrain: "day" },
         },
         extra: {},
-      };
-    case "RankedList":
-      return {
+      },
+  RankedList: {
         block: {
-          ...base, props: { title: "门店销售 Top 5" },
+          id: "demo-RankedList", type: "RankedList", props: { title: "门店销售 Top 5" },
           binding: { entityRef: "order", sortByRef: "amount", sortOrder: "desc", limit: 5 },
         },
         extra: {},
-      };
-    case "ActivityFeed":
-      return {
+      },
+  ActivityFeed: {
         block: {
-          ...base, props: { title: "最近动态", variant: "timeline" },
+          id: "demo-ActivityFeed", type: "ActivityFeed", props: { title: "最近动态", variant: "timeline" },
           binding: {
             entityRef: "order", timeFieldRef: "at",
             levelFieldRef: "status", detailFieldRefs: ["name", "amount"],
           },
         },
         extra: {},
-      };
-    case "DataTable":
-      return {
-        block: { ...base, props: { title: "订单明细" }, binding: { entityRef: "order" } },
+      },
+  DataTable: {
+        block: { id: "demo-DataTable", type: "DataTable", props: { title: "订单明细" }, binding: { entityRef: "order" } },
         extra: {},
-      };
-    case "QuickActionPanel":
-      return {
-        block: { ...base, props: { title: "常用操作", columns: 3 } },
+      },
+  QuickActionPanel: {
+        block: { id: "demo-QuickActionPanel", type: "QuickActionPanel", props: { title: "常用操作", columns: 3 } },
         extra: {
           pageActions: [
             { id: "a1", label: "新建订单", permitted: true },
@@ -435,10 +423,9 @@ function demoFor(type: string): {
             { id: "a3", label: "导出报表", permitted: false },
           ],
         },
-      };
-    case "FilterBar":
-      return {
-        block: { ...base, props: { title: "筛选条件", showDateRange: true } },
+      },
+  FilterBar: {
+        block: { id: "demo-FilterBar", type: "FilterBar", props: { title: "筛选条件", showDateRange: true } },
         extra: {
           filterFieldOptions: [
             {
@@ -461,33 +448,25 @@ function demoFor(type: string): {
           dateRangeField: { id: "at", label: "下单日期" },
           filterState: { enumFilters: {}, dateRange: null },
         },
-      };
-    case "WorkflowTimeline":
-      return {
-        block: { ...base, props: { title: "订单流转" } },
+      },
+  WorkflowTimeline: {
+        block: { id: "demo-WorkflowTimeline", type: "WorkflowTimeline", props: { title: "订单流转" } },
         extra: { workflow: WORKFLOW },
-      };
-    case "FreeformInsight":
-      return {
+      },
+  FreeformInsight: {
         block: {
-          ...base, props: { title: "自由洞察" },
+          id: "demo-FreeformInsight", type: "FreeformInsight", props: { title: "自由洞察" },
           freeformContent: FREEFORM_DEMO as unknown as { root: Record<string, unknown> },
         },
         extra: {},
-      };
-    default:
-      // 目录里新加了区块但这里没补夹具：不假装能演示，如实说。
-      return { block: base, extra: {} };
-  }
-}
+      },
+};
 
-const HAS_DEMO = new Set([
-  "MetricGrid", "TrendChart", "RankedList", "ActivityFeed", "DataTable",
-  "QuickActionPanel", "FilterBar", "WorkflowTimeline", "FreeformInsight",
-  // 2026-08-07 表单/详情族
-  "RecordForm", "RecordFormDialog", "RecordDetail", "StepsForm",
-  "ContentCard",
-]);
+/** 取示例数据；没有就如实返回 null，由调用方决定怎么说"这一页还没准备示例"。 */
+function demoFor(type: string): { block: ExperienceBlockInstance; extra: Record<string, unknown> } {
+  return DEMOS[type] ?? { block: { id: `demo-${type}`, type }, extra: {} };
+}
+const HAS_DEMO = new Set(Object.keys(DEMOS));
 
 /** 页面形态（pageKind）——与 Python 侧 schema_legal.PAGE_KINDS 同源，此处是说明文案。 */
 const PAGE_KINDS = [

@@ -3,10 +3,12 @@ import catalogJson from "@experience-blocks";
 import legalDomains from "@legal";
 import themePresets from "@identity-themes";
 import {
+  BLOCK_DEFINITIONS,
   EXPERIENCE_BLOCK_CATALOG,
   EXPERIENCE_BLOCK_RENDERERS,
   ExistingContentAdapter,
   FREEFORM_ICON_NAME_RE,
+  PHONE_BLOCK_TYPES,
 } from "../live-runtime/block-registry";
 import { LAYOUT_SLOT_KEYS } from "../live-runtime/app-runtime-schema";
 import { LEGAL_THEME_IDS, resolveIdentityTheme } from "../live-runtime/identity-themes";
@@ -117,47 +119,60 @@ describe("体验区块渲染器状态 SSOT", () => {
     }
   });
 
-  it("放开名单是显式的（灰度哨兵，扩量时同步改这里）", () => {
-    // 2026-07-28 扩量：五个数据区块补上真渲染器后，连同两个早就就绪的辅助
-    // 区块一起放开。这条哨兵的价值就是逼这次改动变成一次显式决定——改目录
-    // 时它会红，必须回来把新名字写进这里，不会有人"顺手"多开一个。
+  it("不放开的名单是显式的（灰度哨兵）", () => {
+    // 2026-07-28 建这条哨兵时列的是**放开**的那一批，逼每次扩量变成显式决定。
+    // 它真拦下过三次（表单族四个、ContentCard、页面形态预设）。
     //
-    // 2026-08-07 再扩量：表单/详情族四个。用户裁决"先补积木，门槛只收
-    // Ant Design 官方能力"——这四个的渲染器全部来自已装的
-    // @ant-design/pro-components 2.8，零新依赖：
+    // 2026-08-08 反过来列：用户要把组件扩到三五百个，列 500 个放开的名字既
+    // 写不完也没人读得下去，那时哨兵只会被当成噪音一路加名字——反而失去
+    // 意义。而**不放开**的始终是少数、且每一个都该说得出理由，列它才有信息量。
     //
-    //   RecordForm        ProForm                  内联表单
-    //   RecordFormDialog  DrawerForm / ModalForm   按钮开抽屉或弹窗（mode 决定）
-    //   RecordDetail      ProDescriptions          只读字段明细
-    //   StepsForm         StepsForm                分步表单，步骤名跟工作流链路走
+    // 安全性不靠这条：上面那条"放开生成的区块必须有真渲染器"才是兜底，
+    // 它对 500 个和对 14 个一样有效。
+    const schemaOnly = EXPERIENCE_BLOCK_CATALOG.blocks
+      .filter(b => !b.generationEnabled)
+      .map(b => b.type)
+      .sort();
+    expect(schemaOnly).toEqual(["FreeformInsight"]);
+  });
+
+  it("契约（JSON）与渲染定义（TS）逐条对账 —— 只剩这两处，不许再长第三处", () => {
+    // 2026-08-08：加一个组件此前要手写 8 处（目录 / 渲染器 / 注册表 / 示例
+    // 数据 / HAS_DEMO / IMPL_BY_TYPE / 本文件的放开哨兵 / 手机档名单）。
+    // 14 个时这套很好，用户要扩到三五百个，500×8 就成了路障。
     //
-    // 抽屉与弹窗做成一个积木而不是两个：它们只差呈现方式，共用同一份字段与
-    // 提交回调；拆成两条会让目录里出现一对只差一个词的孪生项，AI 选型时多
-    // 一次没有意义的分叉。
+    // 照 measuredco/puck 的 ComponentConfig 收敛成一条 TS 记录
+    // （render + impl + label + phone 装在一起）。但 Puck 只有 TS 一边，
+    // 我们的契约要跨语言——Python 拿 propsSchema/bindingSchema 拼 prompt、
+    // 跑门禁，所以契约留在共享 JSON 里。
     //
-    // 2026-08-08 再加一个 ContentCard —— 它跟其余全部不同：**不取数、不发
-    // 事件，只装别的积木**。加它是因为用户裁决了"组装的时候要纯粹，该是啥
-    // 组件就是啥组件"：此前组装页给每个积木一律套一层 antd Card，等于替模型
-    // 决定"所有东西都装进卡片"。现在默认什么都不套，需要把几个积木圈在一起
-    // 时模型自己放一个 ContentCard，把它们写进 children。
-    const enabled = EXPERIENCE_BLOCK_CATALOG.blocks
-      .filter(b => b.generationEnabled)
-      .map(b => b.type);
-    expect(enabled).toEqual([
-      "MetricGrid",
-      "TrendChart",
-      "RankedList",
-      "ActivityFeed",
-      "DataTable",
-      "QuickActionPanel",
-      "FilterBar",
-      "WorkflowTimeline",
-      "RecordForm",
-      "RecordFormDialog",
-      "RecordDetail",
-      "StepsForm",
-      "ContentCard",
-    ]);
+    // 于是稳态是**两处**：JSON 一条（契约）+ TS 一条（渲染）。这条用例就是
+    // 钉住"只有两处、且两处一一对应"，任何一边多了少了都当场红。
+    const catalogTypes = EXPERIENCE_BLOCK_CATALOG.blocks.map(b => b.type).sort();
+    const definedTypes = Object.keys(BLOCK_DEFINITIONS).sort();
+    expect(definedTypes, "目录里有、渲染定义里没有 → 界面会显示「暂不支持此区块」").toEqual(
+      catalogTypes
+    );
+
+    for (const [type, def] of Object.entries(BLOCK_DEFINITIONS)) {
+      expect(def.impl, `${type} 缺 impl（组件库要显示背后是哪个真组件）`).toBeTruthy();
+      expect(def.label, `${type} 缺 label（中文名）`).toBeTruthy();
+      expect(typeof def.render, `${type} 的 render 必须是组件`).toBe("function");
+    }
+  });
+
+  it("手机档名单从定义表派生 —— 不许再有第二张手写名单", () => {
+    // 此前 PhoneExperienceBlock 里另有一张 PHONE_BLOCK_TYPES 手写名单，
+    // 与渲染侧各写各的。两处对不上时**没有任何东西会报错**：手机档会静静地
+    // 拿桌面渲染器顶上，而"顶上了"和"本来就该这样"在界面上长得一模一样。
+    const fromDefs = Object.entries(BLOCK_DEFINITIONS)
+      .filter(([, d]) => d.phone)
+      .map(([t]) => t)
+      .sort();
+    expect([...PHONE_BLOCK_TYPES].sort()).toEqual(fromDefs);
+    // 手机档的每一个都必须真的在目录里，否则名单指向一个不存在的区块
+    const catalogTypes = new Set(EXPERIENCE_BLOCK_CATALOG.blocks.map(b => b.type));
+    for (const t of fromDefs) expect(catalogTypes.has(t), `${t} 不在目录里`).toBe(true);
   });
 
   it("FreeformInsight 仍不放开 —— 它不是 LLM 往 page.blocks 里写的东西", () => {

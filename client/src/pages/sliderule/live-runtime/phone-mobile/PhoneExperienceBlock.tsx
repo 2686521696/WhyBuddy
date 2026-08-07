@@ -1,4 +1,5 @@
 import React from "react";
+import { PHONE_BLOCK_TYPES } from "../block-registry";
 import {
   Button,
   Card,
@@ -19,13 +20,15 @@ import type {
   PageFilterState,
 } from "../block-registry";
 
-const PHONE_BLOCK_TYPES = new Set([
-  "FilterBar",
-  "MetricGrid",
-  "WorkflowTimeline",
-  "QuickActionPanel",
-]);
-
+/**
+ * 手机档有没有专属渲染器 —— **从区块定义表派生**（2026-08-08）。
+ *
+ * 此前这里是一张手写名单，与 block-registry 那边各写各的。两处对不上时
+ * 没有任何东西会报错：手机档会静静地拿桌面渲染器顶上，而"顶上了"和"本来
+ * 就该这样"在界面上长得一模一样。500 个组件时这种沉默漂移必然发生。
+ *
+ * 现在唯一真相是 BLOCK_DEFINITIONS 里那条记录的 `phone` 字段。
+ */
 export function isPhoneExperienceBlock(type: string): boolean {
   return PHONE_BLOCK_TYPES.has(type);
 }

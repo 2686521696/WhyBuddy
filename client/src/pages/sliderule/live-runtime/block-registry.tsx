@@ -2119,28 +2119,94 @@ const ContentCardRenderer: ExperienceBlockRenderer = ({ block, children }) => {
   );
 };
 
+/**
+ * ── 区块定义表：**一条记录 = 一个组件**（2026-08-08 重做）───────────────
+ *
+ * ## 为什么重做
+ *
+ * 用户要把组件从十几个扩到三五百个。而在此之前，**每加一个组件要手写 8 处**：
+ * 目录 JSON、渲染器、注册表、组件库示例数据、HAS_DEMO、IMPL_BY_TYPE、
+ * ssot 放开哨兵、手机档名单。14 个时这套很好（每一处都在防漂移，真拦下过
+ * 三次）；500 × 8 = 4000 处，它就从护栏变路障了。
+ *
+ * ## 照着谁改的
+ *
+ * measuredco/puck 的 ComponentConfig（packages/core/types/Config.tsx）：
+ *
+ *     components: { [name]: { render, label, fields, defaultProps,
+ *                             metadata, permissions, resolveFields, … } }
+ *
+ * 渲染器与它的全部元信息装在同一个对象里，加组件就是加一条，**没有第二处
+ * 名单要同步**。这里照抄这个形状。
+ *
+ * ## 与 Puck 的一处必要偏离
+ *
+ * Puck 能把契约也塞进这个对象，因为它只有 TS 一边。我们的契约要跨语言——
+ * Python 侧拿 propsSchema/bindingSchema 拼 prompt、跑门禁，
+ * experience_block_catalog.json 是两边的共同真相源，挪不进 TS。
+ *
+ * 所以这里只收**渲染这一侧**的东西（render / phone / demo / impl / label），
+ * 契约仍在那份 JSON 里。8 处于是收敛成 2 处，并由
+ * ssot-parity 的对账用例钉住两边不许漂。
+ *
+ * 将来目录从数据库生成时，这个形状不用变。
+ */
+export interface BlockDefinition {
+  /** 桌面渲染器 */
+  render: ExperienceBlockRenderer;
+  /** 背后是哪个真组件——组件库要显示，此前是 IMPL_BY_TYPE 那张手维护的表 */
+  impl: string;
+  /** 中文名。目录 JSON 只有 description，缺一个短标题（lowcode-engine 的 title） */
+  label: string;
+  /**
+   * 手机档有没有自己的渲染器。此前是 PhoneExperienceBlock 里另一张手写名单，
+   * 与这里对不上时没有任何东西会报错——手机档会静静地拿桌面渲染器顶上。
+   */
+  phone?: boolean;
+}
+
+/** 目录里有、但渲染侧还没登记的类型会被 ssot 对账当场抓出来。 */
+export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
+  Object.freeze({
+    MetricGrid: { render: MetricGridRenderer, impl: "ProComponents StatisticCard", label: "指标卡组", phone: true },
+    TrendChart: { render: TrendChartRenderer, impl: "ECharts", label: "趋势图" },
+    RankedList: { render: RankedListRenderer, impl: "antd List + Progress + Tag", label: "排行榜" },
+    ActivityFeed: { render: ActivityFeedRenderer, impl: "antd Timeline", label: "动态流" },
+    DataTable: { render: DataTableRenderer, impl: "antd Table", label: "数据表格" },
+    QuickActionPanel: { render: QuickActionPanelRenderer, impl: "ProCard + antd Button", label: "快捷操作", phone: true },
+    FilterBar: { render: FilterBarRenderer, impl: "ProComponents QueryFilter", label: "筛选条", phone: true },
+    WorkflowTimeline: { render: WorkflowTimelineRenderer, impl: "ProCard + antd Steps", label: "流程条", phone: true },
+    FreeformInsight: { render: FreeformInsightRenderer, impl: "受限 JSON 树（非固定组件）", label: "自由版式" },
+    RecordForm: { render: RecordFormRenderer, impl: "ProComponents ProForm", label: "记录表单" },
+    RecordFormDialog: { render: RecordFormDialogRenderer, impl: "ProComponents DrawerForm / ModalForm", label: "弹层表单" },
+    RecordDetail: { render: RecordDetailRenderer, impl: "ProComponents ProDescriptions", label: "记录详情" },
+    StepsForm: { render: StepsFormRenderer, impl: "ProComponents StepsForm", label: "分步表单" },
+    ContentCard: { render: ContentCardRenderer, impl: "antd Card（容器，由 AI 显式选用）", label: "内容卡片" },
+  });
+
+/** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */
+export const PHONE_BLOCK_TYPES: ReadonlySet<string> = new Set(
+  Object.entries(BLOCK_DEFINITIONS)
+    .filter(([, d]) => d.phone)
+    .map(([type]) => type)
+);
+
+/**
+ * rendererKey → 渲染器。**从定义表派生**，不再手写第二份。
+ *
+ * 保留这张表是因为目录 JSON 用 rendererKey 索引（区块 type 与渲染器实现是
+ * 多对一的，将来一个渲染器要带多个行业变体时更是如此——见 lowcode-engine
+ * 的 snippets）。这里只是把 type→render 换算成 rendererKey→render。
+ */
 export const EXPERIENCE_BLOCK_RENDERERS: Readonly<
   Record<string, ExperienceBlockRenderer>
-> = Object.freeze({
-  // 2026-07-28：五个数据区块接真渲染（此前是 ExistingContentAdapter 占位）
-  "metric-grid": MetricGridRenderer,
-  "trend-chart": TrendChartRenderer,
-  "ranked-list": RankedListRenderer,
-  "activity-feed": ActivityFeedRenderer,
-  "data-table": DataTableRenderer,
-  // Step 6：QuickActionPanel/FilterBar 真渲染（Phase 1）
-  "quick-action-panel": QuickActionPanelRenderer,
-  "filter-bar": FilterBarRenderer,
-  "workflow-timeline": WorkflowTimelineRenderer,
-  "freeform-insight": FreeformInsightRenderer,
-  // 2026-08-07 表单/详情族：全部来自已装的 pro-components，零新依赖
-  "record-form": RecordFormRenderer,
-  "record-form-dialog": RecordFormDialogRenderer,
-  "record-detail": RecordDetailRenderer,
-  "steps-form": StepsFormRenderer,
-  // 2026-08-08：唯一一个"卡片"由模型显式选来的积木
-  "content-card": ContentCardRenderer,
-});
+> = Object.freeze(
+  Object.fromEntries(
+    EXPERIENCE_BLOCK_CATALOG.blocks
+      .map(entry => [entry.rendererKey, BLOCK_DEFINITIONS[entry.type]?.render])
+      .filter(([, render]) => Boolean(render))
+  ) as Record<string, ExperienceBlockRenderer>
+);
 
 export function experienceBlockEntry(
   type: string
