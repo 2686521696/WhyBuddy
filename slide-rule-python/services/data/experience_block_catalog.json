@@ -253,6 +253,13 @@
         "properties": {
           "title": {
             "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
           }
         }
       },
@@ -305,6 +312,13 @@
         "properties": {
           "title": {
             "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
           }
         }
       },
@@ -369,6 +383,13 @@
               "timeline",
               "row"
             ]
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
           }
         }
       },
@@ -424,6 +445,13 @@
         "properties": {
           "title": {
             "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
           }
         }
       },
@@ -635,6 +663,13 @@
               "vertical",
               "horizontal"
             ]
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
           }
         }
       },
@@ -689,6 +724,13 @@
           },
           "triggerText": {
             "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
           }
         }
       },
@@ -740,6 +782,13 @@
           },
           "columns": {
             "type": "number"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
           }
         }
       },
@@ -789,6 +838,13 @@
           },
           "chainRef": {
             "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
           }
         }
       },

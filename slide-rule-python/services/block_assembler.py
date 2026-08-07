@@ -108,10 +108,15 @@ def _prompt(page_kind: str, catalog: List[Dict[str, Any]], datamodel: Dict[str, 
         "5. Compose something a real user could work in: usually a way to narrow down, "
         "a way to see the records, and a way to add one.\n"
         "6. Blocks are NOT wrapped in a card for you. Each one renders as exactly what it "
-        "is. If — and only if — two or three blocks belong to the same thing and should "
-        "read as one panel, add a ContentCard and list their ids in its \"children\". "
+        "is — its own title and actions come with the block, not with a frame around it. "
+        "If — and only if — two or three blocks belong to the same thing and should read "
+        "as one panel, add a ContentCard and list their ids in its \"children\". "
         "Wrapping everything in cards is worse than wrapping nothing: it buries the page "
-        "in boxes. Most pages need no ContentCard at all.\n\n"
+        "in boxes. Most pages need no ContentCard at all.\n"
+        "7. props.surface controls whether a block paints its own white panel. Leave it "
+        "out (default \"card\") for a block standing on its own. Set \"plain\" for a "
+        "block you put INSIDE a ContentCard — the card already provides the surface, and "
+        "a panel inside a panel reads as a mistake.\n\n"
         "Return JSON only. Give every block an \"id\" so a container can refer to it:\n"
         '{"name":"<页面中文名>","blocks":['
         '{"id":"b1","type":"...","slot":"...","props":{"title":"..."},'
@@ -217,6 +222,11 @@ def _validate(
     for b in kept:
         if b["id"] in nested:
             b["nested"] = True
+            # 装进容器的积木一律 plain：容器已经提供了表面，里面再来一层白底
+            # 就是卡里套卡。模型经常忘了写，这里直接兜住——**不是覆盖它的选择**，
+            # 而是这个位置根本没有第二种合理选择。
+            if b["props"].get("surface") != "plain":
+                b["props"]["surface"] = "plain"
     return kept, dropped
 
 

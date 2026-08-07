@@ -1083,38 +1083,99 @@ const FreeformInsightRenderer: ExperienceBlockRenderer = props => {
  *    切的，手写色值在深色模式下就是一块白斑。
  * 3. 头部/描边/圆角/hover 跟页面里其余 antd 组件严丝合缝，不用手动对齐。
  */
+/**
+ * 区块外壳 —— **标题与操作区是这个区块自己的，卡片只是可选的表面**。
+ *
+ * ## 2026-08-08 为什么重做
+ *
+ * 用户的判断（原话）：「你把信息全绑在 card 上面了，这是不对的……你实际要把
+ * 这些信息绑在组件上……你不可能每个外面都套一个 card。」
+ *
+ * 之前这个函数是一个 antd Card，标题走 Card 的 `title` 属性、右上角操作走
+ * `extra`。后果是**信息由壳提供**：想去掉卡片，标题和「编辑」「共 N 条」
+ * 这些就跟着一起没了。我上一轮的说法（"拆了就变成没标题的裸组件"）正是
+ * 这个错误结构逼出来的。
+ *
+ * 现在拆成两件独立的事：
+ *
+ *   · 头部（标题 + 操作区）**由区块自己画**，是它 DOM 的一部分，
+ *     跟外面有没有卡片无关
+ *   · 表面（白底 + 内边距那层卡片）由 `props.surface` 决定，
+ *     缺省 "card" —— 已生成的应用一个都不会变样
+ *
+ * ## 为什么留 surface 这个开关而不是直接删掉卡片
+ *
+ * 区块渲染在页卡里面时，白底叠白底确实多余；但它也会被摆在灰底网格上
+ * （组装页、总览页），那时候没有白底就糊成一片。**这是排布决定的，不是
+ * 区块决定的**，所以做成可切换，由组装方按位置选，默认保持今天的样子。
+ *
+ * 到三五百个组件之后这条更重要：卡片是 100 多种布局里的一种选择，
+ * 不能是每个组件出厂就焊死的。
+ */
 function BlockShell({
   title,
   testid,
   extra,
+  block,
   children,
 }: {
   title?: string;
   testid: string;
   extra?: React.ReactNode;
+  /** 传了就读 props.surface；不传等同于 "card"（老调用点无需改） */
+  block?: ExperienceBlockInstance;
   children: React.ReactNode;
 }) {
   const hasHeader = Boolean(title || extra);
+  const plain = block?.props?.surface === "plain";
+
+  // 头部：区块自己的 DOM。字号/间距照抄原先 Card title 的观感，
+  // 这样默认档位下改完前后逐像素一致。
+  const header = hasHeader ? (
+    <div
+      data-testid={`${testid}-header`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        minHeight: 38,
+        padding: plain ? "0 0 8px" : "0 12px",
+        borderBottom: plain ? "none" : "1px solid rgba(5,5,5,0.06)",
+      }}
+    >
+      <span style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0 }}>{title}</span>
+      {extra}
+    </div>
+  ) : null;
+
+  const body = (
+    <div style={{ padding: plain ? 0 : hasHeader ? 12 : 10 }}>{children}</div>
+  );
+
+  if (plain) {
+    return (
+      <div data-testid={testid} style={{ height: "100%" }}>
+        {header}
+        {body}
+      </div>
+    );
+  }
+
   return (
     <Card
       data-testid={testid}
       size="small"
-      title={title ? <span style={{ fontSize: 13 }}>{title}</span> : undefined}
-      extra={extra}
-      // 没标题时去掉 body 的额外内边距，免得纯图表区块上下各空一截
-      styles={{ body: { padding: hasHeader ? 12 : 10 } }}
-      // 2026-07-28：去掉边框。区块永远渲染在页卡（defaultPageContent 的
-      // 那张 Card）里面，两层都画边框就是圆角套圆角——真跑截图上很扎眼。
-      //
-      // 解法照 ant-design/pro-components 的 ProCard `ghost`
-      //（src/card/components/Card/style.ts 的 '&&-ghost'：backgroundColor
-      // transparent / border none / boxShadow none）：**卡片表面由最外层容器
-      // 提供一次，内层只保留结构**。这里比 ghost 保守一档——只去边框，留白底
-      // 和内边距，区块之间仍有分块感，不至于糊成一片。
+      // 注意：**不再走 Card 的 title/extra**。头部是上面那个 div，属于区块。
+      styles={{ body: { padding: 0 } }}
+      // 2026-07-28：去掉边框。区块常渲染在页卡里面，两层都画边框就是圆角套
+      // 圆角——真跑截图上很扎眼。解法照 pro-components 的 ProCard `ghost`：
+      // 卡片表面由最外层容器提供一次，内层只保留结构。这里比 ghost 保守一档
+      // ——只去边框，留白底和内边距，区块之间仍有分块感。
       variant="borderless"
       style={{ height: "100%" }}
     >
-      {children}
+      {header}
+      {body}
     </Card>
   );
 }
