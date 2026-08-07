@@ -676,52 +676,65 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
 }
 
 /**
- * 预设卡：把一套"排好的组合"按**真实页面的摆法**摆出来。
+ * 一套存下来的模板 —— 用真渲染器 + 真实的槽位→网格管线摆出来。
  *
- * ## 为什么不自己近似一套栅格
- *
- * 槽位到网格的映射是有真实实现的（business-page-layout.upgradeLegacySlotsToGrid
- * → resolveBusinessGrid → BusinessPageGrid），而且每种 pageKind 的映射还不一样
- * （dashboard 的 summary 是整行、workbench 的 primary 占 2/3…）。这里照抄一份
- * 近似的，就等于让这一页展示的排布**跟真实应用不是同一件事**——而这一页存在
- * 的全部意义就是"看见真实的样子"。所以直接复用那条管线。
- *
- * 与区块卡同一条纪律：渲染器是真的，数据是同一份夹具，摆法也是真的。
+ * 与此前那个 PresetCard 的区别不在长相，在**来源**：那个读的是我手写在目录
+ * JSON 里的十套（死的、每次一样，其中三套推荐的积木在真实应用里会被渲染层
+ * 直接丢掉）；这个读的是 AI 组装攒进库里的。所以这里的积木已经带着 binding
+ * ——绑到哪个实体、哪几个字段都是组装时定好的，不需要再 demoFor 一次。
  */
-function PresetCard({ kind, preset }: { kind: string; preset: PagePreset }) {
-  // 预设只声明 (type, slot)，这里补上实例 id —— 网格是按 blockRef 索引的。
-  const instances = preset.blocks.map((b, i) => ({
-    ...b,
-    id: `${preset.id}-${i}-${b.type}`,
-  }));
+function SavedPresetCard({ preset }: { preset: SavedPreset }) {
+  const topLevel = preset.blocks.filter(b => !b.nested);
   const slots = {
-    summary: instances.filter(b => b.slot === "summary").map(b => b.id),
-    primary: instances.filter(b => b.slot === "primary").map(b => b.id),
-    secondary: instances.filter(b => b.slot === "secondary").map(b => b.id),
-    activity: instances.filter(b => b.slot === "activity").map(b => b.id),
-    content: instances.filter(b => b.slot === "content").map(b => b.id),
+    summary: topLevel.filter(b => b.slot === "summary").map(b => b.id),
+    primary: topLevel.filter(b => b.slot === "primary").map(b => b.id),
+    secondary: topLevel.filter(b => b.slot === "secondary").map(b => b.id),
+    activity: topLevel.filter(b => b.slot === "activity").map(b => b.id),
+    content: topLevel.filter(b => b.slot === "content").map(b => b.id),
   };
-  const layouts = upgradeLegacySlotsToGrid(kind, slots);
-  const items = resolveBusinessGrid(layouts, "desktop");
-  const byId = new Map(instances.map(b => [b.id, b]));
+  const items = resolveBusinessGrid(
+    upgradeLegacySlotsToGrid(preset.pageKind, slots),
+    "desktop"
+  );
+  const byId = new Map(preset.blocks.map(b => [b.id, b]));
+
+  const renderOne = (b: AssembledBlock): React.ReactNode => (
+    <ExperienceBlockBoundary
+      key={b.id}
+      block={{ id: b.id, type: b.type, props: b.props, binding: b.binding } as ExperienceBlockInstance}
+      entityRows={ENTITY_ROWS}
+      chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
+      fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
+      fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+      enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
+      workflow={WORKFLOW}
+    >
+      {b.children && b.children.length > 0
+        ? b.children.map(id => {
+            const child = byId.get(id);
+            return child ? renderOne(child) : null;
+          })
+        : undefined}
+    </ExperienceBlockBoundary>
+  );
+
   return (
     <Card
-      data-testid={`preset-card-${kind}-${preset.id}`}
+      data-testid={`saved-preset-${preset.id}`}
       size="small"
       variant="borderless"
-      styles={{ body: { padding: 0, overflow: "hidden", position: "relative" } }}
+      styles={{ body: { padding: 0, overflow: "hidden" } }}
       className="w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
     >
-      <div className="border-b border-slate-100 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[13.5px] font-semibold text-slate-900">{preset.name}</span>
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
-            {PAGE_KINDS.find(k => k.key === kind)?.label ?? kind}
-          </span>
-        </div>
-        {/* "什么时候用"必须摆出来——它是模型挑预设的唯一依据，
-            看不见它就没法判断这套预设写得对不对。 */}
-        <div className="mt-1 text-[11.5px] leading-relaxed text-slate-500">{preset.when}</div>
+      <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
+        <span className="text-[13.5px] font-semibold text-slate-900">{preset.name}</span>
+        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">
+          {preset.industry}
+        </span>
+        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
+          {PAGE_KINDS.find(k => k.key === preset.pageKind)?.label ?? preset.pageKind}
+        </span>
+        <span className="ml-auto text-[11px] text-slate-400">{preset.blockCount} 个积木</span>
       </div>
       <div className="bg-[#f0f2f5] p-3">
         <BusinessPageGrid
@@ -729,35 +742,7 @@ function PresetCard({ kind, preset }: { kind: string; preset: PagePreset }) {
           items={items}
           renderItem={ref => {
             const b = byId.get(ref);
-            if (!b) return null;
-            const { block, extra } = demoFor(b.type);
-            if (!HAS_DEMO.has(b.type)) {
-              return (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={`${b.type} 还没有示例数据`}
-                />
-              );
-            }
-            // **不套 Card**（2026-08-08 用户裁决）：该是啥组件就渲染成啥组件。
-            // 要卡片外观时由 AI 显式选 ContentCard 这个积木去包，而不是这里
-            // 替所有积木一律套一层。
-            return (
-              <>
-                <ExperienceBlockBoundary
-                  block={{ ...block, id: b.id }}
-                  entityRows={ENTITY_ROWS}
-                  chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
-                  fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
-                  fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
-                  enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
-                  {...extra}
-                />
-                <div className="px-2 py-1 text-[10.5px] text-slate-400">
-                  {b.type} · {SLOT_LABEL[b.slot] ?? b.slot}
-                </div>
-              </>
-            );
+            return b ? renderOne(b) : null;
           }}
         />
       </div>
@@ -766,6 +751,16 @@ function PresetCard({ kind, preset }: { kind: string; preset: PagePreset }) {
 }
 
 /** 组装结果里的一个积木——服务端已经逐个校验过槽位与绑定。 */
+/** 存进库里的一套模板 —— AI 组装的产物 + 它判的行业。 */
+interface SavedPreset {
+  id: string;
+  name: string;
+  industry: string;
+  pageKind: string;
+  blockCount: number;
+  blocks: AssembledBlock[];
+}
+
 interface AssembledBlock {
   id: string;
   type: string;
@@ -794,17 +789,58 @@ interface AssembledBlock {
  * 它跟 ENTITY_ROWS（组件库那份共用夹具）再无关系：在这一页里录 10 条、删
  * 5 条，切回区块视图那些卡片一行都不变。
  *
- * 摆法仍然复用真实的槽位→网格管线，理由同 PresetCard。
+ * 摆法仍然复用真实的槽位→网格管线，理由同 SavedPresetCard。
  */
 function AssembledPageModal({
   page,
   pageKind,
   onClose,
+  onSaved,
 }: {
-  page: { name: string; blocks: AssembledBlock[]; dropped?: { block: string; why: string }[] };
+  page: {
+    name: string;
+    industry?: string;
+    blocks: AssembledBlock[];
+    dropped?: { block: string; why: string }[];
+  };
   pageKind: string;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
+  const [saving, setSaving] = React.useState(false);
+  const [savedAs, setSavedAs] = React.useState<string | null>(null);
+
+  /**
+   * 存成模板 —— 这是"拆盲盒"闭环的最后一步（2026-08-08 用户描述）：
+   * 「AI 组装出来的预设，现在就是一个模板了。」
+   *
+   * 组件从十几个长到三五百个的过程中，同一个按钮抽出来的东西会越来越丰富，
+   * 模板库跟着长。所以模板不该手写——我此前手写的十套，其中三套推荐的积木
+   * 在真实应用里会被渲染层直接丢掉，手写的东西没法验证也不会自己变多。
+   */
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/sliderule/components/presets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: page.name,
+          industry: page.industry,
+          pageKind,
+          blocks: page.blocks,
+        }),
+      });
+      const body = (await res.json()) as { ok?: boolean; preset?: { industry: string } };
+      if (res.ok && body.ok) {
+        setSavedAs(body.preset?.industry ?? page.industry ?? "通用");
+        onSaved?.();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
   // 深拷贝一份属于这一页的行数据——副本语义就落在这一行上。
   const [rows, setRows] = React.useState<Record<string, RuntimeRow[]>>(() =>
     JSON.parse(JSON.stringify(ENTITY_ROWS))
@@ -933,6 +969,11 @@ function AssembledPageModal({
           <span className="shrink-0 rounded bg-[#e8eeff] px-2 py-0.5 text-[11px] text-[#3b5bdb]">
             AI 现场组装 · {page.blocks.length} 个积木
           </span>
+          {page.industry && (
+            <span className="shrink-0 rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+              {page.industry}
+            </span>
+          )}
           {/* 被剔除的必须说出来，不能静默吃掉——否则用户以为模型只拼了这么多 */}
           {page.dropped && page.dropped.length > 0 && (
             <Tooltip
@@ -951,12 +992,31 @@ function AssembledPageModal({
               {toast}
             </span>
           )}
-          <button
-            className="ml-auto shrink-0 rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
-            onClick={onClose}
-          >
-            关闭
-          </button>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {savedAs ? (
+              <span
+                data-testid="preset-saved"
+                className="rounded bg-green-50 px-2 py-1 text-[11.5px] text-green-700"
+              >
+                已存入「{savedAs}」模板库
+              </span>
+            ) : (
+              <button
+                data-testid="assembled-save"
+                disabled={saving}
+                onClick={() => void save()}
+                className="rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-50"
+              >
+                {saving ? "存入中…" : "存成模板"}
+              </button>
+            )}
+            <button
+              className="rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
+              onClick={onClose}
+            >
+              关闭
+            </button>
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto bg-[#f0f2f5] p-4">
           <BusinessPageGrid
@@ -1038,6 +1098,7 @@ export default function ComponentsLibraryPage() {
   const [assembling, setAssembling] = React.useState(false);
   const [assembled, setAssembled] = React.useState<{
     name: string;
+    industry?: string;
     blocks: AssembledBlock[];
     dropped?: { block: string; why: string }[];
   } | null>(null);
@@ -1048,10 +1109,45 @@ export default function ComponentsLibraryPage() {
   const [pageKind, setPageKind] = React.useState("workbench");
 
   const blocks = CATALOG.blocks ?? [];
-  const allPresets = CATALOG.pageKindPresets ?? {};
-  const presetCount = Object.values(allPresets).reduce((n, ps) => n + ps.length, 0);
-  // 预设按**页面形态**过滤，跟第一行那排 chip 走同一个选择——不另开一套筛选。
-  const kindPresets = allPresets[pageKind] ?? [];
+  /**
+   * 模板库 —— **攒出来的，不是手写的**（2026-08-08 改）。
+   *
+   * 此前这里读的是目录 JSON 里我手写的十套 pageKindPresets。那批是死的、
+   * 每次一样，而且其中三套推荐的 DataTable 在真实应用里会被渲染层直接丢掉
+   * ——手写的东西没法验证，也不会自己变多。
+   *
+   * 现在读的是 AI 组装攒进库里的：点一次「AI 组装」抽一次盲盒，觉得好就
+   * 「存成模板」，AI 判的行业跟着一起存。组件从十几个长到三五百个的过程中，
+   * 抽出来的东西越来越丰富，这个库跟着长。
+   *
+   * 筛选维度也随之从"页面形态"换成**行业**——页面形态是我们内部的结构分类，
+   * 行业才是用户找模板时真正会用的那个词。
+   */
+  const [presets, setPresets] = React.useState<SavedPreset[]>([]);
+  const [industries, setIndustries] = React.useState<{ industry: string; count: number }[]>([]);
+  const [industry, setIndustry] = React.useState<string>("all");
+  const presetCount = industries.reduce((n, x) => n + x.count, 0);
+
+  const loadPresets = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/sliderule/components/presets");
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        presets?: SavedPreset[];
+        industries?: { industry: string; count: number }[];
+      };
+      setPresets(body.presets ?? []);
+      setIndustries(body.industries ?? []);
+    } catch {
+      // 模板库拉不到不该让整页挂掉——区块视图本来就不依赖它
+    }
+  }, []);
+  React.useEffect(() => {
+    void loadPresets();
+  }, [loadPresets]);
+
+  const shownPresets =
+    industry === "all" ? presets : presets.filter(p => p.industry === industry);
 
   /**
    * AI 组装：把**当前这一页真正显示着的**积木类型交给模型，让它现场拼一页。
@@ -1093,6 +1189,7 @@ export default function ComponentsLibraryPage() {
       const body = (await res.json()) as {
         ok?: boolean;
         name?: string;
+        industry?: string;
         blocks?: AssembledBlock[];
         dropped?: { block: string; why: string }[];
         error?: string;
@@ -1101,7 +1198,12 @@ export default function ComponentsLibraryPage() {
         setAssembleError(body.error || `组装失败（HTTP ${res.status}）`);
         return;
       }
-      setAssembled({ name: body.name || "组装页面", blocks: body.blocks, dropped: body.dropped });
+      setAssembled({
+        name: body.name || "组装页面",
+        industry: body.industry,
+        blocks: body.blocks,
+        dropped: body.dropped,
+      });
     } catch (e) {
       setAssembleError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -1286,21 +1388,48 @@ export default function ComponentsLibraryPage() {
           page={assembled}
           pageKind={pageKind}
           onClose={() => setAssembled(null)}
+          onSaved={() => void loadPresets()}
         />
       )}
 
       {mode === "presets" ? (
-        kindPresets.length === 0 ? (
-          <Empty description="这种页面形态还没有预设" className="py-16" />
-        ) : (
-          // 预设走单列：一套预设本身就是一整页的排布，塞进瀑布流的窄列
-          // 会把"2/3 主区 + 1/3 副区"压成两条竖条，那正好把要看的东西看没了。
-          <div className="mt-5 flex flex-col gap-4">
-            {kindPresets.map(ps => (
-              <PresetCard key={ps.id} kind={pageKind} preset={ps} />
-            ))}
-          </div>
-        )
+        <>
+          {/* 行业筛选：取值来自库里真实存在的行业，不是我们预先定死的一张表。
+              AI 判出什么行业，这里就有什么——库长什么样，筛选就长什么样。 */}
+          {industries.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center gap-1.5">
+              <FilterChip
+                label="全部行业"
+                count={presetCount}
+                active={industry === "all"}
+                onClick={() => setIndustry("all")}
+              />
+              {industries.map(x => (
+                <FilterChip
+                  key={x.industry}
+                  label={x.industry}
+                  count={x.count}
+                  active={industry === x.industry}
+                  onClick={() => setIndustry(x.industry)}
+                />
+              ))}
+            </div>
+          )}
+          {shownPresets.length === 0 ? (
+            <Empty
+              description="模板库还是空的 —— 点右上角「AI 组装」抽一套，觉得好就存下来"
+              className="py-16"
+            />
+          ) : (
+            // 单列：一套模板本身就是一整页的排布，塞进瀑布流的窄列会把
+            // "2/3 主区 + 1/3 副区"压成两条竖条，那正好把要看的东西看没了。
+            <div className="mt-5 flex flex-col gap-4">
+              {shownPresets.map(ps => (
+                <SavedPresetCard key={ps.id} preset={ps} />
+              ))}
+            </div>
+          )}
+        </>
       ) : filtered.length === 0 ? (
         <Empty description="没有匹配的区块" className="py-16" />
       ) : (

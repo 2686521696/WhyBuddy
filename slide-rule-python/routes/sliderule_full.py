@@ -1957,6 +1957,76 @@ async def assemble_component_page(
     return await asyncio.to_thread(assemble_page, page_kind, allowed_types, datamodel)
 
 
+@router.get("/components/presets")
+async def list_component_presets(
+    industry: Optional[str] = None,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """模板库：AI 组装攒出来的页面，按行业分。
+
+    不要求登录——这是素材库，不是谁的应用。归属只在 generated_app 那边有意义。
+    """
+    _auth(x_internal_key)
+    from services.component_preset_store import get_preset_store
+
+    store = await asyncio.to_thread(get_preset_store)
+    presets = await asyncio.to_thread(store.list, industry=industry)
+    industries = await asyncio.to_thread(store.industries)
+    return {"presets": presets, "industries": industries}
+
+
+@router.post("/components/presets")
+async def save_component_preset(
+    payload: Dict[str, Any],
+    x_internal_key: Optional[str] = Header(None),
+):
+    """把一次 AI 组装的结果存成模板。
+
+    用户描述的闭环（2026-08-08）：「AI 组装出来的预设，现在就是一个模板了。」
+    所以模板是**攒出来的**，不是手写的——组件从十几个长到三五百个的过程中，
+    同一个按钮抽出来的东西越来越丰富，模板库跟着长。
+
+    这里**不重新校验积木**：payload 里的 blocks 就是 assemble 刚吐出来、已经
+    逐条过完契约的那一份。再验一遍不是更安全，是给了调用方一个"绕过组装直接
+    塞任意 blocks"的入口——真要那样，验的也该是同一个 _validate，而不是另写
+    一套判据。所以这里只做形状检查，内容信任来源。
+    """
+    _auth(x_internal_key)
+    from services.component_preset_store import get_preset_store
+
+    blocks = payload.get("blocks")
+    if not isinstance(blocks, list) or not blocks:
+        raise HTTPException(400, "blocks 不能为空")
+    name = str(payload.get("name") or "").strip() or "组装模板"
+    industry = str(payload.get("industry") or "").strip() or "通用"
+    page_kind = str(payload.get("pageKind") or "workbench").strip()
+
+    store = await asyncio.to_thread(get_preset_store)
+    saved = await asyncio.to_thread(
+        store.save, name=name, industry=industry, page_kind=page_kind, blocks=blocks
+    )
+    return {"ok": True, "preset": saved}
+
+
+@router.delete("/components/presets/{preset_id}")
+async def delete_component_preset(
+    preset_id: str,
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """删模板。攒出来的东西必然有不好的，得能清掉，否则库会越攒越脏。
+
+    要登录：读是公开的（素材给所有人看），写和删不是。
+    """
+    _auth(x_internal_key)
+    _require_login(viewer)
+    from services.component_preset_store import get_preset_store
+
+    store = await asyncio.to_thread(get_preset_store)
+    await asyncio.to_thread(store.delete, preset_id)
+    return {"ok": True}
+
+
 @router.post("/apps/{app_id}/fork")
 async def fork_generated_app(
     app_id: str,

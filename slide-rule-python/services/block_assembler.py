@@ -117,8 +117,13 @@ def _prompt(page_kind: str, catalog: List[Dict[str, Any]], datamodel: Dict[str, 
         "out (default \"card\") for a block standing on its own. Set \"plain\" for a "
         "block you put INSIDE a ContentCard — the card already provides the surface, and "
         "a panel inside a panel reads as a mistake.\n\n"
+        "Also say which industry this page belongs to (\"industry\"), in Chinese, "
+        "2-6 characters — 餐饮 / 医疗 / 物流 / 零售 / 教育 / 制造 / 政务 / 金融 / "
+        "人力 / 通用 and the like. Judge it from what the page actually does, not from "
+        "the entity names alone. Use 通用 only when it genuinely fits every industry; "
+        "an over-used 通用 makes the whole library unbrowsable.\n\n"
         "Return JSON only. Give every block an \"id\" so a container can refer to it:\n"
-        '{"name":"<页面中文名>","blocks":['
+        '{"name":"<页面中文名>","industry":"<行业>","blocks":['
         '{"id":"b1","type":"...","slot":"...","props":{"title":"..."},'
         '"binding":{"entityRef":"...","fieldRefs":["..."]}},'
         '{"id":"b2","type":"ContentCard","slot":"secondary",'
@@ -264,9 +269,13 @@ def assemble_page(
             "error": "模型给出的积木一个都没通过校验",
             "dropped": dropped,
         }
+    # 行业收窄到一小串：模型偶尔会写成一整句话（"适用于餐饮连锁门店管理"），
+    # 那样每次都是一个新"行业"，筛选就废了。截断 + 兜底成"通用"。
+    industry = str(parsed.get("industry") or "").strip()[:12] or "通用"
     return {
         "ok": True,
         "name": str(parsed.get("name") or "").strip() or "组装页面",
+        "industry": industry,
         "blocks": kept[:MAX_BLOCKS],
         "dropped": dropped,
     }
