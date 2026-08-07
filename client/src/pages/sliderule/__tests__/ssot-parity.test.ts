@@ -6,6 +6,10 @@ const blockRegistrySource = readFileSync(
   new URL("../live-runtime/block-registry.tsx", import.meta.url),
   "utf8"
 );
+const phoneBlockSource = readFileSync(
+  new URL("../live-runtime/phone-mobile/PhoneExperienceBlock.tsx", import.meta.url),
+  "utf8"
+);
 import legalDomains from "@legal";
 import themePresets from "@identity-themes";
 import {
@@ -183,6 +187,25 @@ describe("体验区块渲染器状态 SSOT", () => {
     expect(withBlock, `${calls - withBlock} 个 BlockShell 没传 block，surface 对它们是死的`).toBe(
       calls
     );
+  });
+
+  it("手机档也走 surface —— 两个档位不许在这件事上分叉", () => {
+    // 2026-08-08 连着踩两次的同一个坑：桌面那边把 surface 接好之后，
+    // **手机档完全没被碰到**——它走的是 PhoneExperienceBlock 这套独立代码，
+    // 四个渲染器各自直接套 antd-mobile 的 <Card title=…>，标题又一次由壳提供。
+    //
+    // 分叉了在界面上看不出来：多一层白底和本来就该有一层长得一样，得逐个
+    // 数 DOM 才知道。所以用源码断言钉死——手机档不许再出现裸 <Card，
+    // 一律走 PhoneShell（它和桌面 BlockShell 读的是同一个判据）。
+    const code = phoneBlockSource
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter(l => !l.trim().startsWith("//"))
+      .join("\n");
+    // PhoneShell 自己内部那一处是唯一允许的 <Card
+    const cardOpens = (code.match(/<Card(?=[\s>])/g) ?? []).length;
+    expect(cardOpens, "手机档渲染器不该再直接套 Card，走 PhoneShell").toBe(1);
+    expect(code).toContain('block?.props?.surface === "plain"');
   });
 
   it("手机档名单从定义表派生 —— 不许再有第二张手写名单", () => {

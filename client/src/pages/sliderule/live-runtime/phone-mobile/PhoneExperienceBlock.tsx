@@ -37,6 +37,53 @@ function titleOf(props: ExperienceBlockRendererProps) {
   return String(props.block.props?.title ?? "").trim();
 }
 
+/**
+ * 手机档外壳 —— 与桌面 BlockShell 同一条规矩（2026-08-08）：
+ * **标题是这个区块自己的，卡片只是可选的表面**。
+ *
+ * 此前这四个手机渲染器各自直接套 antd-mobile 的 `<Card title=…>`，于是
+ * 标题又一次由壳提供。桌面那边刚改完，手机这条路径**完全没被碰到**——
+ * 我当时以为改的是"渲染器"，实际只改了走 BlockShell 的那八个，手机档
+ * 走的是另一套代码。用户一眼看出来卡片还在。
+ *
+ * surface 的判据与桌面逐字一致（props.surface === "plain"），这样同一个
+ * 区块在两个档位下的行为不会分叉——分叉了也没人看得出来，因为多一层白底
+ * 和本来就该有一层长得一样。
+ */
+function PhoneShell({
+  block,
+  title,
+  testid,
+  children,
+}: {
+  block: ExperienceBlockRendererProps["block"];
+  title?: string;
+  testid: string;
+  children: React.ReactNode;
+}) {
+  const plain = block?.props?.surface === "plain";
+  if (plain) {
+    return (
+      <div data-testid={testid}>
+        {title && (
+          <div
+            data-testid={`${testid}-header`}
+            style={{ fontSize: 15, fontWeight: 600, padding: "0 0 8px" }}
+          >
+            {title}
+          </div>
+        )}
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Card title={title || undefined} data-testid={testid}>
+      {children}
+    </Card>
+  );
+}
+
 function MobileEmpty({ description }: { description: string }) {
   return (
     <ErrorBlock
@@ -169,9 +216,9 @@ function PhoneFilterBar(props: ExperienceBlockRendererProps) {
 
   if (!showDateRange && fields.length === 0) {
     return (
-      <Card data-testid="phone-filter-bar-empty">
+      <PhoneShell block={props.block} testid="phone-filter-bar-empty">
         <MobileEmpty description="本页无可筛选字段" />
-      </Card>
+      </PhoneShell>
     );
   }
 
@@ -185,7 +232,7 @@ function PhoneFilterBar(props: ExperienceBlockRendererProps) {
   };
 
   return (
-    <Card title={titleOf(props) || undefined} data-testid="phone-filter-bar">
+    <PhoneShell block={props.block} title={titleOf(props)} testid="phone-filter-bar">
       <Form layout="vertical" mode="card" style={{ margin: 0 }}>
         {showDateRange && props.dateRangeField && (
           <DateRangeField
@@ -220,7 +267,7 @@ function PhoneFilterBar(props: ExperienceBlockRendererProps) {
           </Button>
         </Grid.Item>
       </Grid>
-    </Card>
+    </PhoneShell>
   );
 }
 
@@ -237,7 +284,7 @@ function PhoneMetricGrid(props: ExperienceBlockRendererProps) {
     value === null ? "-" : Number.isInteger(value) ? String(value) : value.toFixed(1);
 
   return (
-    <Card title={titleOf(props) || undefined} data-testid="phone-metric-grid">
+    <PhoneShell block={props.block} title={titleOf(props)} testid="phone-metric-grid">
       {rows ? (
         <List mode="card" style={{ margin: 0 }}>
           <List.Item title={label} extra={displayValue} />
@@ -245,7 +292,7 @@ function PhoneMetricGrid(props: ExperienceBlockRendererProps) {
       ) : (
         <MobileEmpty description="指标未绑定到有效实体" />
       )}
-    </Card>
+    </PhoneShell>
   );
 }
 
@@ -261,7 +308,7 @@ function PhoneWorkflowTimeline(props: ExperienceBlockRendererProps) {
   );
 
   return (
-    <Card title={titleOf(props) || undefined} data-testid="phone-workflow-timeline">
+    <PhoneShell block={props.block} title={titleOf(props)} testid="phone-workflow-timeline">
       {nodes.length > 0 ? (
         <Steps
           direction="vertical"
@@ -280,7 +327,7 @@ function PhoneWorkflowTimeline(props: ExperienceBlockRendererProps) {
       ) : (
         <MobileEmpty description="暂无可展示的流程节点" />
       )}
-    </Card>
+    </PhoneShell>
   );
 }
 
@@ -294,7 +341,7 @@ function PhoneQuickActionPanel(props: ExperienceBlockRendererProps) {
   // 档位不对称——这类不对称在这个项目里踩过（见任务 17 那轮）。
   if (actions.length === 0) return null;
   return (
-    <Card title={titleOf(props) || undefined} data-testid="phone-quick-action-panel">
+    <PhoneShell block={props.block} title={titleOf(props)} testid="phone-quick-action-panel">
       {actions.length > 0 ? (
         <Space direction="vertical" block style={{ "--gap": "8px" } as React.CSSProperties}>
           {actions.map(action => (
@@ -312,7 +359,7 @@ function PhoneQuickActionPanel(props: ExperienceBlockRendererProps) {
       ) : (
         <MobileEmpty description="暂无可用操作" />
       )}
-    </Card>
+    </PhoneShell>
   );
 }
 
