@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import catalogJson from "@experience-blocks";
+
+const blockRegistrySource = readFileSync(
+  new URL("../live-runtime/block-registry.tsx", import.meta.url),
+  "utf8"
+);
 import legalDomains from "@legal";
 import themePresets from "@identity-themes";
 import {
@@ -159,6 +165,24 @@ describe("体验区块渲染器状态 SSOT", () => {
       expect(def.label, `${type} 缺 label（中文名）`).toBeTruthy();
       expect(typeof def.render, `${type} 的 render 必须是组件`).toBe("function");
     }
+  });
+
+  it("surface 开关必须真的接上 —— 每个 BlockShell 调用点都要把 block 传进去", () => {
+    // 2026-08-08 踩到的坑：给 BlockShell 加了 `block` 参数用来读
+    // props.surface，**却没有更新那 23 个调用点**。于是 surface 从头到尾
+    // 没生效过，而我当时"验证"的是"默认观感不变"——参数根本没被读的时候，
+    // 那当然不变。用户一眼看出组件库里还是卡里套卡。
+    //
+    // 这条用源码断言钉住：BlockShell 的调用点数量必须与传了 block 的数量
+    // 相等。少一个就是那一个区块的 surface 是死的，而界面上看不出来
+    // （多一层白底和本来就该有一层，长得一样）。
+    const src = blockRegistrySource;
+    const calls = (src.match(/<BlockShell(?=[\s>])/g) ?? []).length;
+    const withBlock = (src.match(/<BlockShell block=\{block\}/g) ?? []).length;
+    expect(calls, "BlockShell 调用点数量").toBeGreaterThan(0);
+    expect(withBlock, `${calls - withBlock} 个 BlockShell 没传 block，surface 对它们是死的`).toBe(
+      calls
+    );
   });
 
   it("手机档名单从定义表派生 —— 不许再有第二张手写名单", () => {

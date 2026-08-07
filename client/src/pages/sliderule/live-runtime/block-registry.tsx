@@ -1261,7 +1261,7 @@ const TrendChartRenderer: ExperienceBlockRenderer = ({
   const timeField = String(block.binding?.timeDimensionRef ?? "").trim();
   if (!bound || !timeField)
     return (
-      <BlockShell title={title} testid="trend-chart">
+      <BlockShell block={block} title={title} testid="trend-chart">
         <BlockEmpty hint="趋势未绑定到有效的时间字段" />
       </BlockShell>
     );
@@ -1276,7 +1276,7 @@ const TrendChartRenderer: ExperienceBlockRenderer = ({
   );
   if (!series)
     return (
-      <BlockShell title={title} testid="trend-chart">
+      <BlockShell block={block} title={title} testid="trend-chart">
         <BlockEmpty hint={`暂无数据 — 写入「${timeField}」后自动出图`} />
       </BlockShell>
     );
@@ -1307,7 +1307,7 @@ const TrendChartRenderer: ExperienceBlockRenderer = ({
     ],
   };
   return (
-    <BlockShell
+    <BlockShell block={block}
       title={title}
       testid="trend-chart"
       extra={
@@ -1338,7 +1338,7 @@ const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
   const sortField = String(block.binding?.sortByRef ?? "").trim();
   if (!bound || !sortField)
     return (
-      <BlockShell title={title} testid="ranked-list">
+      <BlockShell block={block} title={title} testid="ranked-list">
         <BlockEmpty hint="排行未绑定到有效的数值字段" />
       </BlockShell>
     );
@@ -1352,13 +1352,13 @@ const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
   );
   if (items.length === 0)
     return (
-      <BlockShell title={title} testid="ranked-list">
+      <BlockShell block={block} title={title} testid="ranked-list">
         <BlockEmpty hint={`暂无数据 — 写入「${sortField}」后自动排名`} />
       </BlockShell>
     );
   const max = Math.max(...items.map(i => Math.abs(i.value)), 1);
   return (
-    <BlockShell title={title} testid="ranked-list">
+    <BlockShell block={block} title={title} testid="ranked-list">
       <List
         size="small"
         split={false}
@@ -1589,7 +1589,7 @@ const ActivityFeedRenderer: ExperienceBlockRenderer = ({
   const timeField = String(block.binding?.timeFieldRef ?? "").trim();
   if (!bound || !timeField)
     return (
-      <BlockShell title={title} testid="activity-feed">
+      <BlockShell block={block} title={title} testid="activity-feed">
         <BlockEmpty hint="动态未绑定到有效的时间字段" />
       </BlockShell>
     );
@@ -1604,7 +1604,7 @@ const ActivityFeedRenderer: ExperienceBlockRenderer = ({
     : null;
   if (items.length === 0)
     return (
-      <BlockShell title={title} testid="activity-feed">
+      <BlockShell block={block} title={title} testid="activity-feed">
         <BlockEmpty hint={`暂无动态 — 写入「${timeField}」后按时间倒序展示`} />
       </BlockShell>
     );
@@ -1622,7 +1622,7 @@ const ActivityFeedRenderer: ExperienceBlockRenderer = ({
       .filter(f => items.some(it => String(it.row.values?.[f] ?? "").trim() !== ""))
       .slice(0, 3);
     return (
-      <BlockShell title={title} testid="activity-feed">
+      <BlockShell block={block} title={title} testid="activity-feed">
         <FeedRowList
           items={items}
           entityRef={bound.entityRef}
@@ -1636,7 +1636,7 @@ const ActivityFeedRenderer: ExperienceBlockRenderer = ({
     );
   }
   return (
-    <BlockShell title={title} testid="activity-feed">
+    <BlockShell block={block} title={title} testid="activity-feed">
       {/* 动态流就是 Timeline 的原型用法：一条时间轴串起按时间倒序的事件。
           手写版是"小圆点 + 两行字"，横向 90% 是空白、圆点还写死 #5b6cff，
           在琥珀色主题的应用里格外扎眼。Timeline 的轴线与节点都吃主题 token。 */}
@@ -1747,13 +1747,13 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
   const bound = rowsOfBinding(block, entityRows);
   if (!bound)
     return (
-      <BlockShell title={title} testid="data-table">
+      <BlockShell block={block} title={title} testid="data-table">
         <BlockEmpty hint="表格未绑定到有效实体" />
       </BlockShell>
     );
   if (bound.rows.length === 0)
     return (
-      <BlockShell title={title} testid="data-table">
+      <BlockShell block={block} title={title} testid="data-table">
         <BlockEmpty hint="暂无数据 — 点「新建」写入第一条真实数据" />
       </BlockShell>
     );
@@ -1779,7 +1779,7 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
     };
   });
   return (
-    <BlockShell
+    <BlockShell block={block}
       title={title}
       testid="data-table"
       // 截断如实说在标题栏，不再是表格底下一行灰字（那行容易被当成数据）
@@ -1880,20 +1880,20 @@ const RecordFormRenderer: ExperienceBlockRenderer = ({
   const bound = rowsOfBinding(block, entityRows);
   if (!bound)
     return (
-      <BlockShell title={title} testid="record-form">
+      <BlockShell block={block} title={title} testid="record-form">
         <BlockEmpty hint="表单未绑定到有效实体" />
       </BlockShell>
     );
   const fields = formFieldIds(block, bound.rows);
   if (fields.length === 0)
     return (
-      <BlockShell title={title} testid="record-form">
+      <BlockShell block={block} title={title} testid="record-form">
         <BlockEmpty hint="这个实体还没有可填写的字段" />
       </BlockShell>
     );
   const layout = block.props?.layout === "horizontal" ? "horizontal" : "vertical";
   return (
-    <BlockShell title={title} testid="record-form">
+    <BlockShell block={block} title={title} testid="record-form">
       <ProForm
         layout={layout}
         submitter={{
@@ -1927,7 +1927,7 @@ const RecordFormDialogRenderer: ExperienceBlockRenderer = ({
   const bound = rowsOfBinding(block, entityRows);
   if (!bound)
     return (
-      <BlockShell title={title} testid="record-form-dialog">
+      <BlockShell block={block} title={title} testid="record-form-dialog">
         <BlockEmpty hint="表单未绑定到有效实体" />
       </BlockShell>
     );
@@ -1968,13 +1968,13 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
   const bound = rowsOfBinding(block, entityRows);
   if (!bound)
     return (
-      <BlockShell title={title} testid="record-detail">
+      <BlockShell block={block} title={title} testid="record-detail">
         <BlockEmpty hint="详情未绑定到有效实体" />
       </BlockShell>
     );
   if (bound.rows.length === 0)
     return (
-      <BlockShell title={title} testid="record-detail">
+      <BlockShell block={block} title={title} testid="record-detail">
         <BlockEmpty hint="暂无数据 — 先写入第一条真实数据" />
       </BlockShell>
     );
@@ -1984,7 +1984,7 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
   const fields = formFieldIds(block, bound.rows);
   const columns = Math.max(1, Math.min(3, Number(block.props?.columns ?? 2) || 2));
   return (
-    <BlockShell
+    <BlockShell block={block}
       title={title}
       testid="record-detail"
       extra={
@@ -2033,14 +2033,14 @@ const StepsFormRenderer: ExperienceBlockRenderer = ({
   const bound = rowsOfBinding(block, entityRows);
   if (!bound)
     return (
-      <BlockShell title={title} testid="steps-form">
+      <BlockShell block={block} title={title} testid="steps-form">
         <BlockEmpty hint="分步表单未绑定到有效实体" />
       </BlockShell>
     );
   const fields = formFieldIds(block, bound.rows);
   if (fields.length === 0)
     return (
-      <BlockShell title={title} testid="steps-form">
+      <BlockShell block={block} title={title} testid="steps-form">
         <BlockEmpty hint="这个实体还没有可填写的字段" />
       </BlockShell>
     );
@@ -2056,7 +2056,7 @@ const StepsFormRenderer: ExperienceBlockRenderer = ({
   const stepNames = nodeNames.length >= 2 ? nodeNames.slice(0, 4) : ["填写信息", "确认提交"];
   const per = Math.max(1, Math.ceil(fields.length / stepNames.length));
   return (
-    <BlockShell title={title} testid="steps-form">
+    <BlockShell block={block} title={title} testid="steps-form">
       <StepsForm
         onFinish={async values => {
           onAction?.("submitRequest", { entityRef: bound.entityRef, values });

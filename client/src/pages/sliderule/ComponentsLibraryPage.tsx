@@ -462,9 +462,23 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
       },
 };
 
-/** 取示例数据；没有就如实返回 null，由调用方决定怎么说"这一页还没准备示例"。 */
+/**
+ * 取示例数据。
+ *
+ * `surface` 一律置 plain（2026-08-08）：**陈列卡本身就是那张卡**，组件在它
+ * 里面再画一层白底就是卡里套卡。实测这么套着的有 8 个（DataTable /
+ * RecordForm / RecordDetail / TrendChart / RankedList / ActivityFeed /
+ * RecordFormDialog / StepsForm），外面一圈阴影、里面又一圈圆角。
+ *
+ * 跟"装进 ContentCard 的积木自动 plain"是同一条规矩，只是这里的容器是陈列
+ * 相框而不是 ContentCard：**谁提供表面，谁负责，一层就够**。
+ */
 function demoFor(type: string): { block: ExperienceBlockInstance; extra: Record<string, unknown> } {
-  return DEMOS[type] ?? { block: { id: `demo-${type}`, type }, extra: {} };
+  const d = DEMOS[type] ?? { block: { id: `demo-${type}`, type }, extra: {} };
+  return {
+    ...d,
+    block: { ...d.block, props: { ...(d.block.props ?? {}), surface: "plain" } },
+  };
 }
 const HAS_DEMO = new Set(Object.keys(DEMOS));
 
