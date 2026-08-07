@@ -653,13 +653,16 @@ export default function ComponentsLibraryPage() {
           </div>
         </div>
 
-        {/* 第二行：内容切换 + 条件筛选 + 档位 —— 结构照 AppsWorkbench
-            「第二行：库切换 + 门语言筛选 / 分类」那一段：**一个** flex-wrap 容器、
-            同一个 mt-4 / gap-1.5，切内容的打头且不带图标，与条件筛选之间用竖线
-            分开，次级控件 ml-auto 靠右。
-
-            原来是 `flex flex-col gap-1.5` 里套三个 <Flex>，等于把一行拆成三行、
-            三套节奏；应用中心从来只有一行（窄屏靠 flex-wrap 自己折）。 */}
+        {/* 筛选区：chip 样式与间距照 AppsWorkbench，但**分两行**。
+            
+            那边一行装得下是因为它只有 6 个 chip（2 个库切换 + 4 个状态）；
+            这里有 15 个（6 页面形态 + 7 槽位 + 3 档位），挤一行密度差一大截，
+            窄屏 flex-wrap 还会从某个组的中间折断，看着像折错了而不是排版。
+            
+            所以按**层级**拆，不是按数量拆：
+              第一行 = 看哪一类页面 · 看哪个档位   —— 两个"我在看什么"的维度
+              第二行 = 在这批里再按槽位收窄       —— "再筛一下"
+            档位放第一行右端（ml-auto），位置对应应用中心那行右端的排序控件。 */}
         <div
           className="mt-4 flex flex-wrap items-center gap-1.5"
           data-testid="components-filters"
@@ -676,28 +679,6 @@ export default function ComponentsLibraryPage() {
               />
             ))}
           </span>
-
-          <span className="mx-1 hidden h-4 w-px bg-slate-200 sm:inline-block" />
-
-          <FilterChip
-            testid="components-slot-all"
-            icon={<LayoutGrid size={13} />}
-            label="全部槽位"
-            count={pageKindBlocks.length}
-            active={slot === "all"}
-            onClick={() => setSlot("all")}
-          />
-          {(CATALOG.allowedSlots ?? []).map(sl => (
-            <FilterChip
-              key={sl}
-              testid={`components-slot-${sl}`}
-              icon={<Rows3 size={13} className="text-slate-400" />}
-              label={SLOT_LABEL[sl] ?? sl}
-              count={pageKindBlocks.filter(b => (b.allowedSlots ?? []).includes(sl)).length}
-              active={slot === sl}
-              onClick={() => setSlot(sl)}
-            />
-          ))}
 
           <div
             className="ml-auto flex items-center gap-1.5"
@@ -717,6 +698,33 @@ export default function ComponentsLibraryPage() {
               onClick={() => setDevice("phone")}
             />
           </div>
+        </div>
+
+        {/* 第二行：槽位收窄。计数走 pageKindBlocks 而不是 blocks——它显示的是
+            "在当前这类页面里，这个槽位有几个区块可用"，跟着上一行的选择走。 */}
+        <div
+          className="mt-1.5 flex flex-wrap items-center gap-1.5"
+          data-testid="components-slot-filters"
+        >
+          <FilterChip
+            testid="components-slot-all"
+            icon={<LayoutGrid size={13} />}
+            label="全部槽位"
+            count={pageKindBlocks.length}
+            active={slot === "all"}
+            onClick={() => setSlot("all")}
+          />
+          {(CATALOG.allowedSlots ?? []).map(sl => (
+            <FilterChip
+              key={sl}
+              testid={`components-slot-${sl}`}
+              icon={<Rows3 size={13} className="text-slate-400" />}
+              label={SLOT_LABEL[sl] ?? sl}
+              count={pageKindBlocks.filter(b => (b.allowedSlots ?? []).includes(sl)).length}
+              active={slot === sl}
+              onClick={() => setSlot(sl)}
+            />
+          ))}
         </div>
       </div>
 
