@@ -191,10 +191,47 @@ IMAGE_API_URL / IMAGE_MODEL / IMAGE_API_KEY
    商业产品里不合适；唯一可用的一张是 rawpixel 的 CC0。真做要选 Unsplash / Pexels
    这类授权干净、corpus 大的源。
 
-另有一条待验：生产服务器在国内（`docker-compose.prod.yml` 自己写着「国内服务器
-拉 ghcr 慢/超时」），图库 CDN 可达性必须在那台机器上实测，
-探针见 `scripts/stock-probe.sh`。**维基的 upload.wikimedia.org 在国内基本不可用，
-所以 Openverse 这条路在生产环境上大概率直接判死。**
+### 网络可达性：已在生产服务器上实测，不是阻塞项
+
+我原本预判「生产服务器在国内（`docker-compose.prod.yml` 自己写着「国内服务器拉
+ghcr 慢/超时」），维基的 upload.wikimedia.org 基本不可用，Openverse 这条路大概率
+判死」。**这个预判被实测推翻了**，留在这里当记录：别拿"服务器在国内"这个标签去
+推断具体域名的可达性，各家的边缘节点分布差别很大。
+
+2026-08-07 在生产服务器跑 `scripts/stock-probe.sh` 的实测：
+
+| | HTTP | 首字节 |
+|---|---|---|
+| api.unsplash.com | 301 | 0.28s |
+| api.pexels.com | 302 | 0.16s |
+| pixabay.com/api | 400 | 0.17s |
+| api.openverse.org | **200** | 0.10s |
+| images.unsplash.com | **200** | 0.18s |
+| images.pexels.com | 404 | 0.20s |
+| cdn.pixabay.com | 403 | 0.09s |
+| images.rawpixel.com | 403 | 0.09s |
+| upload.wikimedia.org | 301 | **0.10s** |
+
+真下一张 525KB 大图：**HTTP 200，1.61s，334 KB/s**。
+
+三点读法：
+
+1. **全部可达，而且快。** 首字节 0.09~0.28s，比开发容器（走代理，0.19~0.27s）
+   还略好。下载 1.61s 相对于 ② 生一张图的 60~85s 是零头。
+2. **403 / 404 不是不可达**，是 CDN 拒绝对裸根路径的请求。真正有意义的是最后那次
+   带完整路径的下载：rawpixel CDN 根路径 403，但真图 200。
+3. **API 端点没带 key 验过**。301/302 只证明 DNS + TLS + HTTP 通，不证明 API 本身
+   可用。接入前仍需拿真 key 打一次。
+
+顺带一个推论（未验证）：wikimedia 0.10s 这个数不像从中国大陆出去的（跨太平洋
+仅 RTT 就 150ms+，TLS 还要 2~3 个来回）。那台机器多半在香港/新加坡一带，或者
+配了代理。这跟 compose 注释里「国内服务器拉 ghcr 慢」的假设不一致，**其它依赖
+"服务器在国内"的判断也该重新核一遍**。
+
+### 所以真正的阻塞项只剩两个
+
+网络划掉之后，剩下的是上面 1、3 两条——**语义歧义**和**授权**。两条都跟选哪家
+图库无关，得在方案层面解决，不是换个源就能绕过去的。
 
 ## 相关文件
 
