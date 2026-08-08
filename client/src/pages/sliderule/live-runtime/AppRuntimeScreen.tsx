@@ -191,7 +191,11 @@ import {
 } from "./rbac-preview";
 import {
   ExperienceBlockBoundary,
+  type BlockColumnState,
+  type PageColumnState,
   type PageFilterState,
+  type PageFocusState,
+  type PageSelectionState,
   type FilterFieldOption,
   type QuickActionButtonSpec,
 } from "./block-registry";
@@ -474,6 +478,21 @@ function applyPageFilter(
   for (const [fieldId, value] of activeEnumEntries) {
     out = out.filter(r => String(r.values[fieldId] ?? "") === value);
   }
+  // 多选标签行（TagFilterRow，2026-08-08）。**空数组 = 不筛这个维度**——
+  // 「全部」取消勾选之后是空数组，那时候该看到全部而不是一条都没有。
+  for (const [fieldId, picked] of Object.entries(filterState.enumMulti ?? {})) {
+    if (!picked || picked.length === 0) continue;
+    out = out.filter(r => picked.includes(String(r.values[fieldId] ?? "")));
+  }
+  // 关键词（SearchBox，2026-08-08）。跨这一行的所有值做子串匹配。
+  const kw = (filterState.keyword ?? "").trim().toLowerCase();
+  if (kw) {
+    out = out.filter(r =>
+      Object.values(r.values ?? {}).some(v =>
+        String(v ?? "").toLowerCase().includes(kw)
+      )
+    );
+  }
   if (filterState.dateRange && dateFieldId) {
     const [from, to] = filterState.dateRange;
     const fromMs = new Date(from).getTime();
@@ -595,6 +614,21 @@ export function AppRuntimeScreen({
   const [pageFilters, setPageFilters] = React.useState<
     Record<string, PageFilterState>
   >({});
+  /**
+   * 2026-08-08 复盘补的三份页面态。
+   *
+   * 批次 1-4 建的区块里有六个靠它们活着，而这条路径（**真实运行时**）一份
+   * 都没接——装配预览接了，所以一直看着是好的。表现全是"渲染正常但点不动"：
+   * BatchActionBar 永远显示「勾选左侧的行」、表格没有勾选列、列设置说「没有
+   * 连到任何表格」、关联单据表说「先选中一条主记录」。
+   *
+   * 这跟 QuickActionPanel 当初渲染成空气是同一个故事，只是换了四个 prop。
+   */
+  const [selection, setSelection] = React.useState<PageSelectionState>({
+    rowIds: {},
+  });
+  const [columnState, setColumnState] = React.useState<PageColumnState>({});
+  const [focus, setFocus] = React.useState<PageFocusState>({});
   const [formOpen, setFormOpen] = React.useState(false);
   const [formValues, setFormValues] = React.useState<Record<string, unknown>>(
     {}
@@ -751,6 +785,15 @@ export function AppRuntimeScreen({
             patch.dateRange !== undefined
               ? patch.dateRange
               : (cur.dateRange ?? null),
+          // 2026-08-08：这里原来只重建 enumFilters 和 dateRange，于是
+          // TagFilterRow 和 SearchBox 发过来的补丁被**默默丢掉**——区块本身
+          // 渲染得完全正常，点了就是没反应。逐字段重建的写法每加一条通道
+          // 就要回来补一次，漏了不报错，这正是下面那条护栏要挡的事。
+          enumMulti:
+            patch.enumMulti !== undefined
+              ? { ...cur.enumMulti, ...patch.enumMulti }
+              : cur.enumMulti,
+          keyword: patch.keyword !== undefined ? patch.keyword : cur.keyword,
         },
       };
     });
@@ -1430,6 +1473,18 @@ export function AppRuntimeScreen({
     eventData?: Record<string, unknown>
   ) => {
     if (!page) return;
+    // rowSelect 是**区块事件**，不是页面动作。下面那句
+    // `page.pageActions.find(...)` 查不到就 return，所以在这之前处理——
+    // 否则点一行永远什么都不发生（详情和关联单据表就都认不出"这是哪一条"）。
+    if (actionId === "rowSelect") {
+      const rowId = String(eventData?.rowId ?? "");
+      if (!rowId) return;
+      const owner = Object.entries(state.entities).find(([, list]) =>
+        (list ?? []).some(r => r.id === rowId)
+      );
+      if (owner) setFocus(prev => ({ ...prev, [owner[0]]: rowId }));
+      return;
+    }
     const action = page.pageActions.find(a => a.id === actionId);
     if (!action) return;
     // 实际权限检查：permissionRef 须在当前角色 grantedActions 里。
@@ -1483,6 +1538,13 @@ export function AppRuntimeScreen({
     filterFieldOptions: filterableEnumFields,
     dateRangeField,
     onFilterChange: handlePageFilterChange,
+    selection,
+    onSelectionChange: (entityRef: string, rowIds: string[]) =>
+      setSelection(prev => ({ rowIds: { ...prev.rowIds, [entityRef]: rowIds } })),
+    columnState,
+    onColumnStateChange: (blockId: string, next: BlockColumnState) =>
+      setColumnState(prev => ({ ...prev, [blockId]: next })),
+    focus,
     workflow: model.workflow,
     entityRows: state.entities,
     chartPalette: {
@@ -1552,6 +1614,24 @@ export function AppRuntimeScreen({
         const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks);
         if (dedupedBlocks.length === 0 && pageContent === undefined) return null;
 
+        /**
+         * 列设置面板要列出的字段 —— 从它 targets 指向的那张表来。
+         *
+         * **这一条不能进 sharedBlockRendererProps**：那份是整页共享的一份，
+         * 而这个值是按区块算的。共享 props 那个模式挡的是"漏传"，挡不住
+         * "本来就该按区块算"的东西。
+         */
+        const targetColumnsOf = (b: (typeof dedupedBlocks)[number]) => {
+          const targets = (b.binding?.targets as string[] | undefined) ?? [];
+          if (targets.length === 0) return undefined;
+          const target = dedupedBlocks.find(x => x.id === targets[0]);
+          if (!target) return undefined;
+          const declared = target.binding?.fieldRefs as string[] | undefined;
+          if (Array.isArray(declared) && declared.length > 0) return declared.map(String);
+          const list = state.entities[String(target.binding?.entityRef ?? "")] ?? [];
+          return [...new Set(list.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 8);
+        };
+
         const renderBlock = (block: (typeof dedupedBlocks)[number]) =>
           forPhone && PHONE_EXPERIENCE_BLOCK_TYPES.has(block.type) ? (
             <React.Suspense key={block.id} fallback={<Skeleton active paragraph={{ rows: 2 }} />}>
@@ -1564,6 +1644,7 @@ export function AppRuntimeScreen({
             <ExperienceBlockBoundary
               key={block.id}
               {...sharedBlockRendererProps}
+              targetColumns={targetColumnsOf(block)}
               block={block}
             />
           );
