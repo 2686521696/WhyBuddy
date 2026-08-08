@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 13,
+  "version": 14,
   "blockFamilies": [
     "data",
     "filter",
@@ -951,8 +951,13 @@
         "required": [
           "entityRef"
         ],
-        "optional": [],
-        "note": "其余列由页面 columns 派生；binding 对象整体可省略，省略时不受 required 约束。"
+        "optional": [
+          "fieldRefs"
+        ],
+        "note": "fieldRefs 声明这张表显示哪几列、按什么顺序；不写就由页面从真实行的键里派生前 8 个。字段一多，派生的取舍规则是键的顺序，模型控制不了，所以要显示特定几列就必须写出来。binding 对象整体可省略，省略时不受 required 约束。",
+        "entityFieldRefLists": {
+          "fieldRefs": {}
+        }
       },
       "capability": "entityRows",
       "family": "data"

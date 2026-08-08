@@ -2082,20 +2082,81 @@ const BatchActionBarRenderer: ExperienceBlockRenderer = ({
  * 组件库对照台和遗留数据都可能没有字段声明。
  */
 
-/** 字段的展示语义。比数据类型更细：number 还要分金额与普通数字。 */
-type FieldSemantic = "money" | "number" | "date" | "datetime" | "enum" | "text" | "id";
+/**
+ * 字段的展示语义。比数据类型更细：number 还要分金额与普通数字。
+ *
+ * 2026-08-08 从 7 种补到 13 种。补的六种（email / url / image / richtext /
+ * boolean / relation）全部来自 refine 的 field-inferencers——不是想出来的，
+ * 是照着它 13 个推断器逐个对的账。缺它们的后果很具体：邮箱不出 mailto、
+ * 链接不可点、图片列印一串 URL、长文本把行高撑开。
+ */
+type FieldSemantic =
+  | "money" | "number" | "boolean"
+  | "date" | "datetime"
+  | "email" | "url" | "image" | "richtext"
+  | "enum" | "relation"
+  | "text" | "id";
 
 /** 名字里带这些词的数值列按金额显示。中英都收——生成的字段名两种都有。 */
 const MONEY_HINT = /(amount|price|total|fee|cost|revenue|金额|价格|费用|总额)/i;
 /** 名字里带这些词的字符串列按单号显示（等宽、不换行）。 */
 const ID_HINT = /(^id$|_id$|code$|sku|no$|number$|单号|编号)/i;
 
+// ── 值判据 —— 逐条抄自 refine 的 field-inferencers ────────────────────
+// （/home/user/oss-blocks/refine/packages/inferencer/src/field-inferencers/）
+//
+// 抄正则而不是自己写，是因为这些边界情况人想不全：email 那条要处理引号包裹的
+// local part 和 IP 字面量域名；url 那条要排掉 `a.-b` 这种；date 那条**三个条件
+// 缺一不可**（见下）。
+const EMAIL_RE =
+  /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+const URL_RE = /^(https?|ftp):\/\/(-\.)?([^\s/?\.#-]+\.?)+(\/[^\s]*)?$/i;
+const IMAGE_RE = /\.(gif|jpe?g|tiff?|png|webp|bmp|svg)$/i;
+const RELATION_RE = /(-id|-ids|_id|_ids|Id|Ids|ID|IDs)(\[\])?$/;
+const DATE_SUFFIX_RE = /(_at|_on|At|On|AT|ON)(\[\])?$/;
+/**
+ * 日期形状 —— **这一条我们比 refine 严，因为它那条有洞**。
+ *
+ * refine 的 dateInfer 展开之后是「有分隔符 且 dayjs 能解析」。实测
+ * （node -e 跑 dayjs）：
+ *
+ *     dayjs("u-1").isValid()          → true，解析成 2001-01-01
+ *     dayjs("SO-2026-001").isValid()  → true，解析成 2026-01-01
+ *     dayjs("2").isValid()            → true，解析成 2001-02-01
+ *
+ * 也就是说在 refine 里，`owner_id: "u-1"` 和 `order_no: "SO-2026-001"` 都会被
+ * 判成日期——而 date 的 priority(1) 还高于 relation(0)，它赢定了。这不是我们
+ * 抄错，是它这条本身的缺口。
+ *
+ * 所以加一道形状闸：必须**以四位年份开头**，后面接分隔符和月日。真实业务里
+ * 的日期长这样（我们的种子数据、用户给的参考图都是 `2026-08-06`），而单号、
+ * 外键 id 不会。
+ */
+const DATE_SHAPE_RE = /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}([T ]\d{1,2}:\d{2}(:\d{2})?)?/;
+const DATE_SEPARATORS = ["/", ":", "-", "."];
+/** 超过这个长度按富文本处理（refine 的阈值）。 */
+const RICHTEXT_MIN = 100;
+
 /**
  * 定字段语义 —— **声明优先，值兜底**。
  *
- * 兜底那一半照 refine 的 dateInfer：key 后缀 + 值能解析 + 含分隔符，
- * 三条都满足才认成日期。少一条都不认——只看 key 后缀会把 `create_at_count`
- * 这种也认成日期，只看值能解析会把 "2" 认成日期（dayjs 真的解析得通）。
+ * ## 我们比 refine 占一个便宜
+ *
+ * refine 只能从**值**去猜（所以才要那套正则和 dayjs 试解析）；我们的字段类型
+ * 是数据模型里**声明**好的，fieldTypeOf 直接查得到。所以推断链在这里退化成
+ * "声明了就用声明的"，只有没声明时才走值判据——那条兜底不能省，组件库对照台
+ * 和遗留数据都可能没有字段声明。
+ *
+ * ## 值兜底那一半用 refine 的**优先级**模型，不是先到先得
+ *
+ * 这是这次照着抄来的关键一条（`utilities/pick-inferred-field/`）：refine 让
+ * **所有**推断器都跑，然后取 priority 最高的那个，而不是第一个命中的。
+ *
+ *     image    2   ← `avatar.png` 同时也是 url、也是 text
+ *     email / url / date / richtext   1
+ *     其余（number / boolean / relation / text）   0
+ *
+ * 先到先得会出错：`https://a.com/x.png` 按链序先撞上 url，就再也轮不到 image。
  */
 function fieldSemantic(
   entityRef: string,
@@ -2111,8 +2172,11 @@ function fieldSemantic(
   // 调用方（对照台、老页面）枚举列会打印取值 id（`frozen` 而不是「已冻结」）
   // ——同一份数据在页面自带表格里是中文、在区块里是英文 id，坐在一起就露馅。
   if (options && options.length > 0) return "enum";
+
   const declared = fieldTypeOf?.(entityRef, fieldId);
   if (declared === "enum") return "enum";
+  if (declared === "boolean") return "boolean";
+  if (declared === "ref") return "relation";
   if (declared === "date") {
     // 值里带时刻就按时刻显示 —— 用户示范里「2025-08-06 14:28:32」这种
     const s = String(sample ?? "");
@@ -2120,19 +2184,72 @@ function fieldSemantic(
   }
   if (declared === "number") return MONEY_HINT.test(fieldId) ? "money" : "number";
   if (declared === "string" || declared === "text") {
+    // 声明成字符串**不代表没有更细的语义**：声明只说了"这是个字符串"，
+    // 是不是邮箱/链接/图片得看值。所以这里不直接返回，落到下面的值判据。
+    const byValue = inferByValue(fieldId, sample);
+    if (byValue) return byValue;
     return ID_HINT.test(fieldId) ? "id" : "text";
   }
 
-  // 没有声明：按 refine 那套从值猜
+  // 完全没有声明：全靠值
+  const byValue = inferByValue(fieldId, sample);
+  if (byValue) return byValue;
   if (typeof sample === "number") return MONEY_HINT.test(fieldId) ? "money" : "number";
-  const str = String(sample ?? "");
-  const looksDate =
-    /(_at|_on|At|On)$/.test(fieldId) &&
-    ["/", ":", "-", "."].some(sep => str.includes(sep)) &&
-    dayjs(str).isValid();
-  if (looksDate) return str.includes(":") ? "datetime" : "date";
+  if (typeof sample === "boolean") return "boolean";
   if (ID_HINT.test(fieldId)) return "id";
   return "text";
+}
+
+/**
+ * 从值推语义 —— 照 refine 的优先级模型：**全跑一遍，取最高分**。
+ *
+ * 返回 null 表示"值里看不出更细的语义"，交回调用方按声明/名字兜底。
+ */
+function inferByValue(fieldId: string, sample: unknown): FieldSemantic | null {
+  const hits: Array<{ semantic: FieldSemantic; priority: number }> = [];
+  const str = typeof sample === "string" ? sample : "";
+
+  if (str && IMAGE_RE.test(str)) hits.push({ semantic: "image", priority: 2 });
+  if (str && EMAIL_RE.test(str)) hits.push({ semantic: "email", priority: 1 });
+  if (str && URL_RE.test(str)) hits.push({ semantic: "url", priority: 1 });
+  if (str.length > RICHTEXT_MIN) hits.push({ semantic: "richtext", priority: 1 });
+
+  // 日期：refine 的两条（有分隔符 + dayjs 能解析）**再加一道形状闸**。
+  //
+  //   只看 key 后缀   → `create_at_count` 这种也被认成日期
+  //   只看值能解析     → dayjs("2") 解析得通，"2" 就成了日期
+  //   只看分隔符       → "a-b" 也有分隔符
+  //   前三条都满足还不够 → "SO-2026-001" 全中，仍然不是日期（见 DATE_SHAPE_RE）
+  const parseable = str !== "" && dayjs(str).isValid();
+  const hasSeparator = DATE_SEPARATORS.some(sep => str.includes(sep));
+  const looksLikeDate = DATE_SHAPE_RE.test(str);
+  if (looksLikeDate && hasSeparator && parseable) {
+    hits.push({ semantic: str.includes(":") ? "datetime" : "date", priority: 1 });
+  }
+
+  // 关联字段按**名字**判（refine 的 relationInfer 也是），值只要是标量或标量数组
+  const scalar = typeof sample === "string" || typeof sample === "number";
+  const scalarArray =
+    Array.isArray(sample) && sample.every(v => typeof v === "string" || typeof v === "number");
+  if (RELATION_RE.test(fieldId) && (scalar || scalarArray)) {
+    hits.push({ semantic: "relation", priority: 0 });
+  }
+
+  if (hits.length === 0) return null;
+  hits.sort((a, b) => b.priority - a.priority);
+  return hits[0].semantic;
+}
+
+/**
+ * 只给用例用的薄封装 —— fieldSemantic 的入参里有 entityRef 和 options 两个
+ * 在语义判定里不参与的东西，用例每次都传 null 会把判据淹掉。
+ */
+export function fieldSemanticForTest(
+  fieldId: string,
+  sample: unknown,
+  declared?: string
+): string {
+  return fieldSemantic("e", fieldId, sample, declared ? () => declared : undefined);
 }
 
 /** 枚举取值的色调 → antd Tag 的 color。空/未知一律不上色，不瞎猜。 */
@@ -2143,6 +2260,9 @@ const TONE_COLOR: Record<string, string | undefined> = {
   danger: "error",
   default: undefined,
 };
+
+/** 长度不可控的单行语义 —— 表格列上要单行截断，不然会竖着折成一座塔。 */
+const ELLIPSIS_SEMANTICS = new Set<FieldSemantic>(["text", "email", "url", "relation", "id"]);
 
 /** 一个单元格怎么画 —— 每种语义一个渲染器（refine 的 ②）。 */
 function renderCell(
@@ -2190,6 +2310,57 @@ function renderCell(
       return (
         <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{str}</span>
       );
+    // ── 2026-08-08 补的六种。缺它们的后果都很具体：邮箱不能点、链接是死的、
+    //    图片列印一串 URL、长文本把行高撑开、布尔列显示 "true"。
+    case "boolean": {
+      const yes = raw === true || str === "true" || str === "1" || str === "是";
+      return <Tag color={yes ? "success" : undefined}>{yes ? "是" : "否"}</Tag>;
+    }
+    case "email":
+      // 邮箱要能一键写信 —— 这是它区别于普通文本的**全部意义**
+      return (
+        <Typography.Link href={`mailto:${str}`} onClick={e => e.stopPropagation()}>
+          {str}
+        </Typography.Link>
+      );
+    case "url":
+      // 新窗口打开：表格行本身多半是可点的（选中/查看），链接抢走点击会让
+      // 用户以为自己点错了
+      return (
+        <Typography.Link
+          href={str}
+          target="_blank"
+          rel="noreferrer"
+          onClick={e => e.stopPropagation()}
+        >
+          {str}
+        </Typography.Link>
+      );
+    case "image":
+      // 缩略图固定高度 —— 图片尺寸参差不齐时不给固定高度，一行高一行矮
+      return (
+        <img
+          src={str}
+          alt=""
+          loading="lazy"
+          style={{ height: 28, width: "auto", maxWidth: 64, objectFit: "cover", borderRadius: 4 }}
+        />
+      );
+    case "richtext":
+      // 长文本**不能整段铺进单元格**——一条 500 字的备注会把整行撑到半屏。
+      // 截断 + tooltip 看全文，这是 x-render 的 tooltip widget 那条做法。
+      return (
+        <Typography.Text ellipsis={{ tooltip: str }} style={{ maxWidth: 240 }}>
+          {str}
+        </Typography.Text>
+      );
+    case "relation":
+      // 关联字段展示的是被指向那条记录的标识，等宽不换行（同 id）
+      return (
+        <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+          {Array.isArray(raw) ? raw.join("、") : str}
+        </span>
+      );
     default:
       return str;
   }
@@ -2223,10 +2394,17 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
         <BlockEmpty hint="暂无数据 — 点「新建」写入第一条真实数据" />
       </BlockShell>
     );
-  // 列取自真实行的键（binding 只声明 entityRef，其余列由页面派生）。
-  // 上限从 5 提到 8：用户示范的订单页有 9 列，5 列砍掉的正是"支付状态""操作"
-  // 这种一眼要看的东西——列少不等于清爽，等于信息不全。
-  const cols = [...new Set(bound.rows.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 8);
+  // 列优先取 binding.fieldRefs；没声明才从真实行的键里派生。
+  //
+  // fieldRefs 是 2026-08-08 开给表格的（此前只有表单/详情族能声明）。表格是
+  // 唯一"会显示字段却不能声明显示哪几个"的区块，这个例外没有道理：字段一多，
+  // 派生 + 截断决定谁上榜的规则是键的顺序，模型和使用者都控制不了。对照台上
+  // 就撞上了——十一个字段，截断正好切在第八个，布尔、关联、长文本三种语义
+  // 全部看不见。
+  //
+  // 兜底上限从 5 提到 8：用户示范的订单页有 9 列，5 列砍掉的正是"支付状态"
+  // "操作"这种一眼要看的东西——列少不等于清爽，等于信息不全。
+  const cols = boundFieldIds(block, bound.rows, 8);
   const columns: TableColumnsType<RuntimeRow> = cols.map(c => {
     const options = enumOptionsOf?.(bound.entityRef, c) ?? [];
     // 取第一个非空值当样本定语义——照 refine 的 inferencer，它也是看值。
@@ -2236,7 +2414,11 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
       key: c,
       dataIndex: c,
       title: fieldLabelOf?.(bound.entityRef, c) ?? c,
-      ellipsis: semantic === "text",
+      // 会长的语义一律单行截断（2026-08-08 从只管 text 扩到五种）。邮箱、外链、
+      // 关联 id 都是长度不可控的单行串，不截断的话 tableLayout="fixed" 会把它们
+      // 竖着折成一座塔——列一多整张表就成了参差不齐的一片。richtext 不在这里，
+      // 它在 renderCell 里自带截断 + tooltip。
+      ellipsis: ELLIPSIS_SEMANTICS.has(semantic),
       // 数值右对齐是表格的基本功——左对齐的金额列没法竖着比大小
       align: semantic === "money" || semantic === "number" ? ("right" as const) : undefined,
       render: (_: unknown, row: RuntimeRow) => renderCell(semantic, row.values?.[c], options),
@@ -2371,16 +2553,23 @@ function formItemFor(
   return <ProFormText {...common} />;
 }
 
-/** binding.fieldRefs 优先；没声明就从真实行的键里取前 6 个（不编字段）。 */
-function formFieldIds(
+/**
+ * binding.fieldRefs 优先；没声明就从真实行的键里取前 `fallbackCap` 个（不编字段）。
+ *
+ * **声明了就全用，不再截断**——截断是给"没人说要哪几个"准备的兜底，模型明确
+ * 写出来的列表再砍一刀等于把它的声明当建议。表单族兜底 6 个，表格族 8 个
+ * （2026-08-08 表格从 5 提到 8 的那次判断，见 DataTableRenderer 的说明）。
+ */
+function boundFieldIds(
   block: ExperienceBlockInstance,
-  rows: RuntimeRow[]
+  rows: RuntimeRow[],
+  fallbackCap = 6
 ): string[] {
   const declared = block.binding?.fieldRefs;
   if (Array.isArray(declared) && declared.length > 0) {
     return declared.map(f => String(f)).filter(Boolean);
   }
-  return [...new Set(rows.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 6);
+  return [...new Set(rows.flatMap(r => Object.keys(r.values ?? {})))].slice(0, fallbackCap);
 }
 
 const RecordFormRenderer: ExperienceBlockRenderer = ({
@@ -2401,7 +2590,7 @@ const RecordFormRenderer: ExperienceBlockRenderer = ({
         <BlockEmpty hint="表单未绑定到有效实体" />
       </BlockShell>
     );
-  const fields = formFieldIds(block, bound.rows);
+  const fields = boundFieldIds(block, bound.rows);
   if (fields.length === 0)
     return (
       <BlockShell block={block} title={title} testid="record-form">
@@ -2448,7 +2637,7 @@ const RecordFormDialogRenderer: ExperienceBlockRenderer = ({
         <BlockEmpty hint="表单未绑定到有效实体" />
       </BlockShell>
     );
-  const fields = formFieldIds(block, bound.rows);
+  const fields = boundFieldIds(block, bound.rows);
   const triggerText = String(block.props?.triggerText ?? "").trim() || title || "新建";
   // 抽屉与弹窗只差呈现方式，共用同一份字段与提交回调。做成两个积木会让
   // 目录里出现一对只差一个词的孪生条目，AI 选型时也多一次无意义的分叉。
@@ -2479,6 +2668,7 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
   onAction,
   fieldLabelOf,
   enumOptionsOf,
+  fieldTypeOf,
 }) => {
   if (children !== undefined && children !== null) return <>{children}</>;
   const title = String(block.props?.title ?? "").trim();
@@ -2498,7 +2688,7 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
   // 详情展示的是"当前选中那条"。运行时还没有选中态时用第一条——**不是随机
   // 一条**，顺序稳定，截图/回归才可比。
   const row = bound.rows[0];
-  const fields = formFieldIds(block, bound.rows);
+  const fields = boundFieldIds(block, bound.rows);
   const columns = Math.max(1, Math.min(3, Number(block.props?.columns ?? 2) || 2));
   return (
     <BlockShell block={block}
@@ -2516,18 +2706,19 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
         dataSource={row.values ?? {}}
         columns={fields.map(f => {
           const options = enumOptionsOf?.(bound.entityRef, f) ?? [];
-          const labelOf = new Map(options.map(o => [o.id, o.label]));
+          // 走 DataTable 同一个 renderCell（2026-08-08）。此前这里只把枚举翻成
+          // 标签，别的一律 String() 原样打印——同一条订单在表格里金额是
+          // ¥428.00、邮箱能点，进了详情就变成 428 和一段死文本。"同一份数据在
+          // 两个区块里必须读起来一样"这句纪律本来就写在这，只是当初只兑现了
+          // 枚举那一条。
+          const sample = row.values?.[f];
+          const semantic = fieldSemantic(bound.entityRef, f, sample, fieldTypeOf, options);
           return {
             key: f,
             dataIndex: f,
             title: fieldLabelOf?.(bound.entityRef, f) ?? f,
-            // 枚举出标签不出取值 id——与 DataTable 同一条纪律，
-            // 同一份数据在两个区块里必须读起来一样。
-            render: (_: unknown, record: Record<string, unknown>) => {
-              const s = String(record?.[f] ?? "").trim();
-              if (!s) return <Typography.Text type="secondary">—</Typography.Text>;
-              return labelOf.get(s) ?? s;
-            },
+            render: (_: unknown, record: Record<string, unknown>) =>
+              renderCell(semantic, record?.[f], options),
           };
         })}
       />
@@ -2554,7 +2745,7 @@ const StepsFormRenderer: ExperienceBlockRenderer = ({
         <BlockEmpty hint="分步表单未绑定到有效实体" />
       </BlockShell>
     );
-  const fields = formFieldIds(block, bound.rows);
+  const fields = boundFieldIds(block, bound.rows);
   if (fields.length === 0)
     return (
       <BlockShell block={block} title={title} testid="steps-form">

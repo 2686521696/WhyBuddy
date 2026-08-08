@@ -12,9 +12,10 @@ import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { EXPERIENCE_BLOCK_RENDERERS, ExperienceBlockBoundary } from "../block-registry";
+import { EXPERIENCE_BLOCK_RENDERERS, ExperienceBlockBoundary, fieldSemanticForTest } from "../block-registry";
 import type { ExperienceBlockInstance } from "../block-registry";
 import type { RuntimeRow } from "../live-runtime";
+import CATALOG from "@experience-blocks";
 
 const row = (id: string, values: Record<string, unknown>): RuntimeRow =>
   ({ id, values }) as RuntimeRow;
@@ -475,5 +476,231 @@ describe("DataTable 的勾选列", () => {
       onSelectionChange: () => {},
     });
     expect(html).toContain("selection-col");
+  });
+});
+
+/**
+ * 2026-08-08 ①c：字段语义从 7 种补到 13 种。
+ *
+ * 六种新的（email / url / image / richtext / boolean / relation）全部来自
+ * refine 的 field-inferencers，判据是逐条对着抄的，不是自己想的。
+ *
+ * 最要紧的一条是**优先级模型**：refine 让所有推断器都跑再取最高分
+ * （utilities/pick-inferred-field/），不是先到先得。先到先得会出错——
+ * `https://a.com/x.png` 按链序先撞上 url，就再也轮不到 image。
+ */
+describe("字段语义 13 种", () => {
+  const sem = (fieldId: string, sample: unknown, declared?: string) =>
+    fieldSemanticForTest(fieldId, sample, declared);
+
+  it("图片赢过链接 —— 优先级模型，不是先到先得", () => {
+    // 这一条就是"全跑取最高分"的判据。image 2 > url 1。
+    expect(sem("avatar", "https://cdn.example.com/a/b.png")).toBe("image");
+    expect(sem("avatar", "https://cdn.example.com/a/b.PNG")).toBe("image");
+    // 不是图片后缀就还是链接
+    expect(sem("homepage", "https://example.com/a/b")).toBe("url");
+  });
+
+  it("邮箱、链接、长文本、布尔各自认出来", () => {
+    expect(sem("contact", "a.b-c@example.com")).toBe("email");
+    expect(sem("site", "https://example.com")).toBe("url");
+    expect(sem("remark", "很".repeat(120))).toBe("richtext");
+    expect(sem("enabled", true)).toBe("boolean");
+  });
+
+  it("关联字段按名字判 —— 值只要是标量或标量数组", () => {
+    expect(sem("owner_id", "u-1")).toBe("relation");
+    expect(sem("tagIds", ["t1", "t2"])).toBe("relation");
+    // 名字不像关联就不是
+    expect(sem("title", "u-1")).toBe("text");
+  });
+
+  it("日期那三个条件缺一不可 —— 这是 refine 的 dateInfer", () => {
+    // 三条齐：认
+    expect(sem("created_at", "2026-08-08")).toBe("date");
+    expect(sem("created_at", "2026-08-08 10:30:00")).toBe("datetime");
+    // 只有 key 后缀、值没分隔符：不认（`create_at_count` 那类）
+    expect(sem("created_at", "12")).not.toBe("date");
+    // 只有分隔符、不是日期：不认
+    expect(sem("ratio", "a-b")).not.toBe("date");
+  });
+
+  it("声明成字符串**不代表**没有更细的语义", () => {
+    // 声明只说了"这是个字符串"，是不是邮箱得看值。上一版在 declared==="string"
+    // 时直接返回 text/id，六种新语义对声明过的字段全部失效——那等于白补。
+    expect(sem("contact", "a@example.com", "string")).toBe("email");
+    expect(sem("cover", "https://x.com/a.png", "string")).toBe("image");
+    // 值里看不出更细语义时才回落
+    expect(sem("name", "张三", "string")).toBe("text");
+    expect(sem("order_no", "SO-2026-001", "string")).toBe("id");
+  });
+
+  it("声明优先于值 —— 声明了枚举就按枚举，不去猜", () => {
+    expect(sem("status", "https://x.com", "enum")).toBe("enum");
+  });
+
+  it("**我们的日期判据比 refine 严** —— 它那条有洞，实测过", () => {
+    // refine 的 dateInfer 展开是「有分隔符 且 dayjs 能解析」。实测跑 dayjs：
+    //
+    //   dayjs("u-1")          → valid，2001-01-01
+    //   dayjs("SO-2026-001")  → valid，2026-01-01
+    //   dayjs("2")            → valid，2001-02-01
+    //
+    // 所以在 refine 里外键和单号都会被判成日期，而 date 的 priority(1) 还高于
+    // relation(0)，它赢定了。我们加了一道形状闸：必须以四位年份开头。
+    //
+    // 这条用例存在的意义是：谁要是哪天"照 refine 对齐"把闸门去掉，它当场红。
+    expect(sem("owner_id", "u-1")).not.toBe("date");
+    expect(sem("order_no", "SO-2026-001", "string")).not.toBe("date");
+    expect(sem("qty", "2")).not.toBe("date");
+    // 真日期照样认
+    expect(sem("created_at", "2026-08-08")).toBe("date");
+    expect(sem("paid_at", "2026/08/08 10:30")).toBe("datetime");
+  });
+});
+
+/**
+ * 2026-08-08：表格终于也能声明"显示哪几列"。
+ *
+ * 此前 DataTable 是唯一"会显示字段却不能声明显示哪几个"的区块——列全靠从行
+ * 数据的键里派生再截断到 8。字段一多，谁上榜取决于键的顺序，模型和使用者都
+ * 说了不算。对照台上就撞上了：十一个字段，截断正好切在第八个，布尔、关联、
+ * 长文本三种语义一个都看不见。
+ */
+describe("DataTable 的列由 binding.fieldRefs 说了算", () => {
+  const values: Record<string, unknown> = {
+    a: "1", b: "2", c: "3", d: "4", e: "5",
+    f: "6", g: "7", h: "8", i: "9", j: "10",
+  };
+  const rows = [{ id: "r1", values, createdAt: "2026-08-08T00:00:00.000Z" }];
+  const render = (binding: Record<string, unknown>) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "t", type: "DataTable", binding }}
+        entityRows={{ order: rows }}
+        fieldLabelOf={(_e, f) => `列${f.toUpperCase()}`}
+      />
+    );
+
+  it("没声明时才派生，且仍然截断到 8 —— 兜底行为没变", () => {
+    const html = render({ entityRef: "order" });
+    expect(html).toContain("列H");
+    expect(html).not.toContain("列I");
+    expect(html).not.toContain("列J");
+  });
+
+  it("声明了就**全用**，不再截断 —— 明写十列就出十列", () => {
+    const html = render({ entityRef: "order", fieldRefs: Object.keys(values) });
+    expect(html).toContain("列I");
+    expect(html).toContain("列J");
+  });
+
+  it("声明的顺序就是列的顺序，不按键的顺序重排", () => {
+    const html = render({ entityRef: "order", fieldRefs: ["j", "a"] });
+    expect(html.indexOf("列J")).toBeLessThan(html.indexOf("列A"));
+    expect(html).not.toContain("列B");
+  });
+
+  it("目录里也开了口子，不然门禁会把模型写的 fieldRefs 判非法", () => {
+    const table = (CATALOG.blocks as Array<{
+      type: string;
+      bindingSchema: Record<string, unknown>;
+    }>).find(b => b.type === "DataTable")!;
+    expect(table.bindingSchema.optional).toContain("fieldRefs");
+    // entityFieldRefLists 是"值是字段 id 数组"的那一类，门禁靠它校验字段真的
+    // 属于这个实体。只写进 optional 而不登记，等于开了口子却不查。
+    expect(table.bindingSchema.entityFieldRefLists).toHaveProperty("fieldRefs");
+  });
+});
+
+/**
+ * 2026-08-08：详情与表格共用 renderCell。
+ *
+ * "同一份数据在两个区块里必须读起来一样"这句纪律本来就写在 RecordDetail 的
+ * 注释里，但当初只兑现了枚举那一条——别的字段一律 String() 原样打印。于是
+ * 同一条订单，金额在表格里是 ¥428.00、进了详情变成 428；邮箱在表格里能点、
+ * 在详情里是一段死文本。
+ */
+describe("RecordDetail 与 DataTable 读起来一样", () => {
+  const rows = [
+    {
+      id: "r1",
+      values: {
+        amount: 428,
+        status: "done",
+        contact: "a@example.com",
+        site: "https://example.com/x",
+      },
+      createdAt: "2026-08-08T00:00:00.000Z",
+    },
+  ];
+  const common = {
+    entityRows: { order: rows },
+    fieldTypeOf: (_e: string, f: string) =>
+      ({ amount: "number", status: "enum", contact: "string", site: "string" })[f],
+    enumOptionsOf: (_e: string, f: string) =>
+      f === "status" ? [{ id: "done", label: "已完成", tone: "success" as const }] : [],
+  };
+  const binding = {
+    entityRef: "order",
+    fieldRefs: ["amount", "status", "contact", "site"],
+  };
+
+  it("金额、枚举、邮箱、外链在详情里的画法与表格一致", () => {
+    const detail = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "d", type: "RecordDetail", binding }}
+        {...common}
+      />
+    );
+    expect(detail).toContain("¥428.00");
+    expect(detail).toContain("已完成");
+    expect(detail).toContain("ant-tag-success");
+    expect(detail).toContain('href="mailto:a@example.com"');
+    expect(detail).toContain('target="_blank"');
+    // 取值 id 不该露出来——这条是原来就有的纪律，别在扩展时丢掉
+    expect(detail).not.toMatch(/>done</);
+  });
+});
+
+/**
+ * 2026-08-08：会长的语义单行截断。
+ *
+ * tableLayout="fixed" 下，邮箱和外链这种长度不可控的单行串会被竖着折成一座塔。
+ * 对照台上十列的那张表，行高被撑到 130px+，整张表参差不齐。
+ */
+describe("长字段单行截断", () => {
+  const rows = [
+    {
+      id: "r1",
+      values: {
+        contact: "somebody.with.a.long.name@a-very-long-domain.example.com",
+        site: "https://example.com/a/very/long/path/that/keeps/going",
+        amount: 428,
+      },
+      createdAt: "2026-08-08T00:00:00.000Z",
+    },
+  ];
+  const html = renderToStaticMarkup(
+    <ExperienceBlockBoundary
+      block={{
+        id: "t", type: "DataTable",
+        binding: { entityRef: "order", fieldRefs: ["contact", "site", "amount"] },
+      }}
+      entityRows={{ order: rows }}
+    />
+  );
+
+  it("邮箱与外链列带截断类名", () => {
+    // antd 的 ellipsis 落成 ant-table-cell-ellipsis
+    const hits = html.match(/ant-table-cell-ellipsis/g) ?? [];
+    // 两列 × （表头 + 一行）
+    expect(hits.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("数字列不截断 —— 它长度可控，截了反而看不全金额", () => {
+    expect(html).toContain("¥428.00");
+    // 金额单元格自己不该带截断类
+    expect(html).not.toMatch(/ant-table-cell-ellipsis[^>]*>[^<]*¥428/);
   });
 });

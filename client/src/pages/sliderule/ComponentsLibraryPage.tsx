@@ -346,6 +346,15 @@ const FIELD_LABEL: Record<string, string> = {
   status: "状态",
   channel: "渠道",
   at: "日期",
+  // 2026-08-08 补的六种字段语义要在对照台上**看得见**才叫接上了。
+  // 只有类型定义没有真实数据的话，邮箱有没有出 mailto、图片有没有出缩略图，
+  // 谁都不知道。
+  contact: "联系邮箱",
+  detailUrl: "详情链接",
+  cover: "门店照片",
+  remark: "备注",
+  urgent: "加急",
+  owner_id: "负责人",
 };
 
 /** 字段类型：表单族按它决定出哪种控件（enum→下拉、number→数字、date→日期）。
@@ -356,6 +365,19 @@ const FIELD_TYPE: Record<string, string> = {
   status: "enum",
   channel: "enum",
   at: "date",
+  // cover 用的是**站内静态资源路径**，不是 picsum 这类外链图床。对照台要在
+  // 离线/内网里也能看出"图片语义出的是缩略图"——外链一挡就是六个碎图标，
+  // 那时候分不清是语义没接上还是网没通。
+  //
+  // 这几个**故意声明成 string**：真实数据模型里邮箱、链接、图片地址都是字符串，
+  // 更细的语义得从值看出来。这正好压住"声明成字符串就不再往下看"那个坑
+  // （上一版就是那样，六种新语义对声明过的字段全部失效）。
+  contact: "string",
+  detailUrl: "string",
+  cover: "string",
+  remark: "text",
+  urgent: "boolean",
+  owner_id: "ref",
 };
 
 /**
@@ -379,12 +401,25 @@ const ENUM_OPTIONS: Record<string, NormalizedFieldOption[]> = {
 
 const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
   order: [
-    { name: "人民路店", amount: 428, status: "done", channel: "线上", at: "2026-08-06" },
-    { name: "高新店", amount: 366, status: "doing", channel: "门店", at: "2026-08-05" },
-    { name: "南湖店", amount: 291, status: "done", channel: "线上", at: "2026-08-05" },
-    { name: "城东店", amount: 244, status: "todo", channel: "电话", at: "2026-08-04" },
-    { name: "西溪店", amount: 187, status: "doing", channel: "门店", at: "2026-08-03" },
-    { name: "湖畔店", amount: 132, status: "done", channel: "线上", at: "2026-08-02" },
+    { name: "人民路店", amount: 428, status: "done", channel: "线上", at: "2026-08-06",
+      contact: "renmin@example.com", detailUrl: "https://example.com/store/1",
+      cover: "/brand/miantuan-mark.png", urgent: true, owner_id: "u-1",
+      remark: "客户要求当日达，已与配送确认时间窗；如遇雨天顺延至次日上午，需提前电话告知。" },
+    { name: "高新店", amount: 366, status: "doing", channel: "门店", at: "2026-08-05",
+      contact: "gaoxin@example.com", detailUrl: "https://example.com/store/2",
+      cover: "/assets/sliderule-mark.svg", urgent: false, owner_id: "u-2", remark: "常规" },
+    { name: "南湖店", amount: 291, status: "done", channel: "线上", at: "2026-08-05",
+      contact: "nanhu@example.com", detailUrl: "https://example.com/store/3",
+      cover: "/brand/logo.png", urgent: false, owner_id: "u-1", remark: "常规" },
+    { name: "城东店", amount: 244, status: "todo", channel: "电话", at: "2026-08-04",
+      contact: "chengdong@example.com", detailUrl: "https://example.com/store/4",
+      cover: "/assets/sliderule_icon_flat_transparent.png", urgent: true, owner_id: "u-3", remark: "待确认收货地址" },
+    { name: "西溪店", amount: 187, status: "doing", channel: "门店", at: "2026-08-03",
+      contact: "xixi@example.com", detailUrl: "https://example.com/store/5",
+      cover: "/brand/transLogo.png", urgent: false, owner_id: "u-2", remark: "常规" },
+    { name: "湖畔店", amount: 132, status: "done", channel: "线上", at: "2026-08-02",
+      contact: "hupan@example.com", detailUrl: "https://example.com/store/6",
+      cover: "/assets/sliderule_icon_card_transparent.png", urgent: false, owner_id: "u-3", remark: "常规" },
   ].map((values, i) => ({
     id: `order-${i + 1}`,
     values,
@@ -501,7 +536,12 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
         block: {
           id: "demo-RecordDetail", type: "RecordDetail",
           props: { title: "订单详情", columns: 2 },
-          binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "channel", "at"] },
+          // 详情是宽字段的去处：长文本备注、缩略图、外链在两列描述里比在表格
+          // 单元格里更接近真实用法。
+          binding: {
+            entityRef: "order",
+            fieldRefs: ["name", "amount", "status", "at", "cover", "contact", "detailUrl", "remark"],
+          },
         },
         extra: {},
       },
@@ -569,7 +609,19 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
         extra: {},
       },
   DataTable: {
-        block: { id: "demo-DataTable", type: "DataTable", props: { title: "订单明细" }, binding: { entityRef: "order" } },
+        // fieldRefs 是**显式写死**的，不能省。不写的话渲染器按行数据的键派生前
+        // 八个，正好切在 cover 之后——布尔、关联、长文本三种语义在对照台上一个
+        // 都看不见。看不见就等于没接上。
+        block: {
+          id: "demo-DataTable", type: "DataTable", props: { title: "订单明细" },
+          binding: {
+            entityRef: "order",
+            fieldRefs: [
+              "name", "cover", "amount", "status", "urgent",
+              "owner_id", "contact", "detailUrl", "remark", "at",
+            ],
+          },
+        },
         extra: {},
       },
   QuickActionPanel: {
