@@ -92,8 +92,21 @@ describe("components library UI contract", () => {
       "dashboard",
       "monitor",
     ]);
-    expect(pageSource).toContain('React.useState("workbench")');
+    // 默认**不筛**（2026-08-08 改）。
+    //
+    // 原来这里钉的是 `React.useState("workbench")`。那个默认值配上"范式那栏
+    // 没有『全部』选项"，造出两个真 bug：
+    //   ① 点「清空」把每个维度都置成 "all"，而没有区块的 pageKinds 含 "all"
+    //      → 页面变成「没有匹配的区块」，16 个一个都不剩；
+    //   ② 这一档永远在筛，档位标着 16、进去最多只看得见 13，没有任何一个
+    //      状态能看到全部。
+    // device / slot 本来就都默认 "all"，此前只有这一维是例外。
+    expect(pageSource).toContain('React.useState("all")');
     expect(pageSource).toContain("block.pageKinds");
+    // 「全部」这一项必须在场，而且 pageKindBlocks 必须认它。少任何一半，
+    // 「清空」就又会把用户清进一个选不回来的空集。
+    expect(pageSource).toContain('{ value: "all", label: "全部", count: blocks.length }');
+    expect(pageSource).toContain('pageKind === "all"');
     for (const block of catalog.blocks) {
       expect(block.pageKinds?.length, block.type).toBeGreaterThan(0);
       expect(block.pageKinds?.every(kind => legalKinds.has(kind)), block.type).toBe(true);

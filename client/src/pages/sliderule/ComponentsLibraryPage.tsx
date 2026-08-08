@@ -47,6 +47,7 @@ import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
 import { useScrollerIn } from "@/pages/agent-loop/dashboard/useScrollerIn";
 import { spanForColumnCount } from "@/pages/agent-loop/dashboard/app-wall-span";
 import { BLOCK_DEFINITIONS, ExperienceBlockBoundary } from "./live-runtime/block-registry";
+import { interleaveWide, isWideBlock } from "./block-wall-order";
 import { BASE_COMPONENTS, BASE_GROUPS } from "./base-components/base-catalog";
 import BusinessPageGrid from "./live-runtime/BusinessPageGrid";
 import {
@@ -672,48 +673,6 @@ const LazyPhoneExperienceBlock = React.lazy(
   () => import("./live-runtime/phone-mobile/PhoneExperienceBlock")
 );
 
-/** 跨两列的判据：allowedSlots 含 content。
- *
- * 纪律照 app-wall-span.ts 顶部那段——**必须是真实信息，不能是随机也不能凭好看**。
- * 内容区在真实页面里就是整行宽的，能放进内容区的区块天然需要横向空间
- * （DataTable 要摆列、WorkflowTimeline 要横向展开阶段、ActivityFeed 行要放得下
- * 多个字段）。9 个里有 4 个符合，正好是"够错落又不散"的密度。
- */
-function isWideBlock(b: CatalogBlock): boolean {
-  return (b.allowedSlots ?? []).includes("content");
-}
-
-/**
- * 把宽卡按展示序均匀铺开。
- *
- * 这是 app-wall-span.ts「原因 A」记过的同一个坑，原文是"宽卡全部落在墙的头部……
- * 往下滚几行之后一张宽卡都没有"。这里的表现是反过来的同一件事：目录 JSON 里
- * DataTable / ActivityFeed / WorkflowTimeline / FreeformInsight 正好排在后半段，
- * 四张宽卡**连着来**，于是 4 列布局里它们全挤进中间那两列，第 1 列和第 4 列从第二
- * 行起就空到底——实测左右各空一大片。
- *
- * 那边的修法是把规则拆成两步：**谁有资格**由真实信息定，**在哪儿放**按展示序铺开。
- * 这里照搬：资格仍然只由 allowedSlots 含 content 决定（一个都没多、没少），
- * 只是把它们插在窄卡之间，每两张窄卡后面跟一张宽卡。
- *
- * 为什么可以动顺序：目录里的数组次序本来就没有语义（不是按重要性也不是按字母），
- * 组件库也没有"必须按这个顺序读"的要求。真有排序诉求的是筛选和搜索，那两条没动。
- */
-function interleaveWide(blocks: CatalogBlock[]): CatalogBlock[] {
-  const wide = blocks.filter(isWideBlock);
-  const narrow = blocks.filter(b => !isWideBlock(b));
-  if (wide.length === 0 || narrow.length === 0) return blocks;
-  // 每放 stride 张窄卡插一张宽卡；stride 由两边数量算，保证宽卡摊到整列表上
-  const stride = Math.max(1, Math.round(narrow.length / wide.length));
-  const out: CatalogBlock[] = [];
-  let wi = 0;
-  narrow.forEach((b, i) => {
-    out.push(b);
-    if ((i + 1) % stride === 0 && wi < wide.length) out.push(wide[wi++]);
-  });
-  while (wi < wide.length) out.push(wide[wi++]);
-  return out;
-}
 
 /**
  * 这个区块在手机档有没有**自己的**渲染器。
@@ -1760,7 +1719,9 @@ export default function ComponentsLibraryPage() {
   const [device, setDevice] = React.useState<DeviceTier>("all");
   const [query, setQuery] = React.useState("");
   const [slot, setSlot] = React.useState<string>("all");
-  const [pageKind, setPageKind] = React.useState("workbench");
+  // 默认不筛：档位上标着几个区块，点进来就该看得见几个。device / slot 本来
+  // 就都是 "all"，此前只有这一维写死了具体范式，是这一排里唯一的例外。
+  const [pageKind, setPageKind] = React.useState("all");
 
   const blocks = CATALOG.blocks ?? [];
   /**
@@ -1803,8 +1764,23 @@ export default function ComponentsLibraryPage() {
   const shownPresets =
     industry === "all" ? presets : presets.filter(p => p.industry === industry);
 
+  /**
+   * 当前范式下的区块。`"all"` 是**不筛**，不是"某个叫 all 的范式"。
+   *
+   * 2026-08-08 修：原来这里只有精确匹配，而范式那栏的选项里没有「全部」，
+   * 于是「清空」（把每个维度都置成 `"all"`）之后去找 `pageKinds` 含 `"all"`
+   * 的区块——目录里一个都没有（取值只有 workbench/dashboard/monitor/kanban/
+   * calendar/wizard），页面直接变成「没有匹配的区块」。
+   *
+   * 同一个根还引出第二个症状：初值写死 `"workbench"` 且没有「全部」可选，
+   * 所以这一档**永远在筛**，档位上标着 16 个区块，进去最多只看得见 13 个，
+   * 没有任何一个状态能看到全部。
+   */
   const pageKindBlocks = React.useMemo(
-    () => blocks.filter(block => (block.pageKinds ?? []).includes(pageKind)),
+    () =>
+      pageKind === "all"
+        ? blocks
+        : blocks.filter(block => (block.pageKinds ?? []).includes(pageKind)),
     [blocks, pageKind]
   );
 
@@ -1892,11 +1868,16 @@ export default function ComponentsLibraryPage() {
         label: "范式",
         value: pageKind,
         onChange: setPageKind,
-        options: PAGE_KINDS.map(k => ({
-          value: k.key,
-          label: k.label,
-          count: blocks.filter(b => (b.pageKinds ?? []).includes(k.key)).length,
-        })),
+        options: [
+          // 「全部」必须在场：下面的「清空」会把每个维度都置成 "all"，选项里
+          // 没有它就等于把用户清进一个选不回来的空集（见 pageKindBlocks 注释）。
+          { value: "all", label: "全部", count: blocks.length },
+          ...PAGE_KINDS.map(k => ({
+            value: k.key,
+            label: k.label,
+            count: blocks.filter(b => (b.pageKinds ?? []).includes(k.key)).length,
+          })),
+        ],
       },
       {
         key: "slot",
