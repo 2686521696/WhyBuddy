@@ -239,7 +239,8 @@
         "aggregateFields": [
           "aggregate"
         ]
-      }
+      },
+      "capability": "aggregate"
     },
     {
       "type": "TrendChart",
@@ -298,7 +299,8 @@
           "timeDimensionRef": "date",
           "seriesBy": "enum"
         }
-      }
+      },
+      "capability": "series"
     },
     {
       "type": "RankedList",
@@ -362,7 +364,8 @@
             20
           ]
         }
-      }
+      },
+      "capability": "rankedRows"
     },
     {
       "type": "ActivityFeed",
@@ -431,7 +434,8 @@
             "note": "宽行档（variant=row）中段展示的明细字段，同实体下任意类型"
           }
         }
-      }
+      },
+      "capability": "timelineRows"
     },
     {
       "type": "DataTable",
@@ -480,7 +484,8 @@
         ],
         "optional": [],
         "note": "其余列由页面 columns 派生；binding 对象整体可省略，省略时不受 required 约束。"
-      }
+      },
+      "capability": "entityRows"
     },
     {
       "type": "QuickActionPanel",
@@ -519,7 +524,8 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；入口按钮由 actions[] 里的 createRecord/navigate 类型动作声明。"
-      }
+      },
+      "capability": "action"
     },
     {
       "type": "FilterBar",
@@ -562,7 +568,8 @@
           "entityRef"
         ],
         "note": "可筛选字段在 props.filterFields 里声明（不是 binding）；entityRef 仅在需要按实体过滤时填写。触发 changeFilter 动作刷新同页面其他区块。"
-      }
+      },
+      "capability": "filter"
     },
     {
       "type": "WorkflowTimeline",
@@ -601,7 +608,8 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；展示哪条流程链路由 props.chainRef 声明（留空=workflow 主链路，填值必须是 workflow.chains[].id 之一）。节点、顺序、条件全部从 workflow 系统机械派生，不接受自由文案。"
-      }
+      },
+      "capability": "chain"
     },
     {
       "type": "FreeformInsight",
@@ -639,7 +647,8 @@
         "required": [],
         "optional": [],
         "note": "不使用 binding；本次调用只需要给 props.designBrief（一句话说清楚这个区块该展示什么，必填，不能空），具体结构/样式/数据绑定由二段生成流程另外产出，不在这次输出里。"
-      }
+      },
+      "capability": "freeform"
     },
     {
       "type": "RecordForm",
@@ -700,7 +709,8 @@
         "entityFieldRefLists": {
           "fieldRefs": {}
         }
-      }
+      },
+      "capability": "form"
     },
     {
       "type": "RecordFormDialog",
@@ -765,7 +775,8 @@
         "entityFieldRefLists": {
           "fieldRefs": {}
         }
-      }
+      },
+      "capability": "form"
     },
     {
       "type": "RecordDetail",
@@ -821,7 +832,8 @@
         "entityFieldRefLists": {
           "fieldRefs": {}
         }
-      }
+      },
+      "capability": "entityRows"
     },
     {
       "type": "StepsForm",
@@ -874,7 +886,8 @@
         "entityFieldRefLists": {
           "fieldRefs": {}
         }
-      }
+      },
+      "capability": "form"
     },
     {
       "type": "ContentCard",
@@ -919,7 +932,8 @@
         "required": [],
         "optional": []
       },
-      "container": true
+      "container": true,
+      "capability": "container"
     }
   ],
   "pageKindPresets": {

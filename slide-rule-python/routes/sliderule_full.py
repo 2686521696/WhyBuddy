@@ -1985,6 +1985,38 @@ async def assemble_base_screen_route(
     return await asyncio.to_thread(assemble_base_screen, comps, hint)
 
 
+@router.post("/components/assemble-page")
+async def assemble_page_route(
+    payload: Dict[str, Any],
+    x_internal_key: Optional[str] = Header(None),
+):
+    """五阶段页面装配：意图 → 范式 → 区块 → 实例 → Gate（2026-08-08）。
+
+    替换掉 assemble-base 那条。区别不是提示词调优，是**装配目标**：
+
+      assemble-base  给模型 137 个基础组件的清单，让它选几个排出来。
+                     实测产物是"组件示例合集换了个标题"——Menu / Input /
+                     Button / Table / Pagination 各占一张等大的卡，
+                     内容还是「甲 乙 12 34」。
+      assemble-page  模型先说清用户在这一页要干什么，再挑范式，再往范式的
+                     区域里填**业务区块**。基础组件一个都不出现——它们由
+                     区块自己解析。产出过 Gate 才返回。
+
+    Gate 不过会带着 findings 回喂重来一次；仍不过就如实返回失败与原因，
+    **不降级展示一个坏页面**——用户看到坏页面时怪的是产品。
+    """
+    _auth(x_internal_key)
+    from services.page_assembler import assemble_page
+
+    intent = str(payload.get("intent") or "").strip()
+    if not intent:
+        raise HTTPException(400, "intent 不能为空——说不出这一页是干什么的，装配无从谈起")
+    datamodel = payload.get("datamodel")
+    if not isinstance(datamodel, dict) or not datamodel.get("entities"):
+        raise HTTPException(400, "datamodel.entities 不能为空")
+    return await asyncio.to_thread(assemble_page, intent, datamodel)
+
+
 @router.get("/components/presets")
 async def list_component_presets(
     industry: Optional[str] = None,
