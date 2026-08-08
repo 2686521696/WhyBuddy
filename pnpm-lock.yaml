@@ -252,6 +252,9 @@ importers:
       mermaid:
         specifier: 11.16.0
         version: 11.16.0
+      minisearch:
+        specifier: ^7.2.0
+        version: 7.2.0
       mysql2:
         specifier: ^3.22.6
         version: 3.22.6(@types/node@24.13.3)
@@ -4409,6 +4412,9 @@ packages:
     resolution: {integrity: sha512-x0Vn8spI+wuJ1O6S7gnbaQg8Pxh4NNHb7KSINmEWKiPE4RKOplvijn+NkmYmmRgP68mc70j2EbeTFRsrswaQeg==}
     engines: {node: '>=4'}
     hasBin: true
+
+  minisearch@7.2.0:
+    resolution: {integrity: sha512-dqT2XBYUOZOiC5t2HRnwADjhNS2cecp9u+TJRiJ1Qp/f5qjkeT5APcGPjHw+bz89Ms8Jp+cG4AlE+QZ/QnDglg==}
 
   mitt@3.0.1:
     resolution: {integrity: sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw==}
@@ -10580,6 +10586,8 @@ snapshots:
       mime-db: 1.52.0
 
   mime@1.6.0: {}
+
+  minisearch@7.2.0: {}
 
   mitt@3.0.1: {}
 

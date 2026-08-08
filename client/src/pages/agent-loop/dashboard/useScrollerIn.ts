@@ -112,7 +112,11 @@ export function useScrollerIn(
 }
 
 /** 往上找第一个真正会滚的祖先；找不到返回 null（表示文档在滚）。 */
-function findScrollParent(el: HTMLElement): HTMLElement | null {
+/**
+ * 最近的可滚动祖先。导出是给「换了筛选条件要回到顶部」用的（2026-08-08）：
+ * 谁在滚，就得让谁回顶，而这个判断只有这里有。
+ */
+export function findScrollParent(el: HTMLElement): HTMLElement | null {
   let node: HTMLElement | null = el.parentElement;
   while (node && node !== document.body && node !== document.documentElement) {
     const { overflowY } = getComputedStyle(node);

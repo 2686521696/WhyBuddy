@@ -172,7 +172,17 @@ describe("components library UI contract", () => {
     // 遮罩让位的，遮罩没了这个留白也就没有理由了。
     const code = stripComments(pageSource);
     expect(code).not.toContain("paddingBottom: 64");
-    expect(code).toContain('<div className="w-full">{rendered}</div>');
+    // 2026-08-08 放宽了写法、没放宽约束：原来钉的是一整行字面量
+    // `<div className="w-full">{rendered}</div>`，加收藏功能时这个容器多了
+    // 一个 onClick（点卡片记「最近使用」）就换了行，用例当场红——**而留白
+    // 这件事一点没变**。钉的是"渲染容器只有 w-full、不带内边距"，不是
+    // 它写在几行里。
+    expect(code, "渲染容器不见了？").toMatch(/className="w-full"[\s\S]{0,160}\{rendered\}/);
+    const wrap = code.slice(
+      code.indexOf('className="w-full"'),
+      code.indexOf("{rendered}", code.indexOf('className="w-full"'))
+    );
+    expect(wrap, "渲染容器上又加内边距了").not.toMatch(/p[xytblr]?-\d|padding/);
   });
 
   it("「AI 组装」的标签和动作必须一起跟着档位走 —— 只改标签就是骗人", () => {
@@ -468,5 +478,69 @@ describe("基础组件墙的筛选维度不许漏依赖", () => {
     expect(src, "墙没按 source 筛").toContain(
       'if (source !== "all" && c.source !== source) return false;'
     );
+  });
+});
+
+/**
+ * 用户提的三样（2026-08-08）：默认进区块 / 意图搜索 / 收藏与最近使用。
+ *
+ * 搜索**质量**在 component-search.test.ts 里钉（那边是真语料真排序）；
+ * 这里钉的是"接上了没有"——三样都有过"看着有、其实没接"的先例。
+ */
+describe("组件库的三样新东西", () => {
+  const src = read("../ComponentsLibraryPage.tsx");
+
+  it("默认档是区块，且区块 chip 排第一个", () => {
+    expect(src, "默认档不是区块了").toContain(
+      'React.useState<"base" | "blocks" | "presets">("blocks")'
+    );
+    // 次序也得跟着——档位条从左到右读，第一个就是"该看哪个"的视觉声明
+    expect(src.indexOf('testid="components-mode-blocks"')).toBeLessThan(
+      src.indexOf('testid="components-mode-base"')
+    );
+  });
+
+  it("搜索**两面墙都接**了 —— 基础组件档原来敲什么都没反应", () => {
+    // 老实现是一行 description.includes(kw)，只作用于区块那一档。搜索框却
+    // 一直挂在页面顶上，等于挂了个哑巴。
+    expect(src, "还在用老的 includes 搜法").not.toContain(
+      "(b.description ?? \"\").toLowerCase().includes(kw)"
+    );
+    expect(src).toContain("const searchHits");
+    expect(src, "区块墙没接搜索").toContain('d.kind === "block"');
+    expect(src, "基础组件墙没接搜索").toContain("searchOrder");
+  });
+
+  it("搜的时候不重排 —— interleaveWide 会把相关度顺序打乱", () => {
+    const i = src.indexOf("const ordered = React.useMemo");
+    const body = src.slice(i, src.indexOf("\n  );", i));
+    expect(body, "搜索结果又被铺开重排了 —— 第一名会被挪走").toContain("searchHits");
+  });
+
+  it("收藏/最近的读写口是**一个对象**，四处共用", () => {
+    // 这一页已经在"加一样东西要改几处"上栽过两次（漏传 prop、漏 useMemo
+    // 依赖），两次表现都是界面正常、点了没反应。
+    expect(src).toContain("export interface MarkApi");
+    expect(src).toContain("const markApi = React.useMemo");
+    for (const site of ["marks={markApi}", "marks.isFav(", "marks.onUse("]) {
+      expect(src, `${site} 不见了`).toContain(site);
+    }
+  });
+
+  it("markApi 的依赖齐全 —— 少一个就是「收藏了但列表不动」", () => {
+    const i = src.indexOf("const markApi = React.useMemo");
+    const block = src.slice(i, src.indexOf("\n  );", i));
+    const deps = block.slice(block.lastIndexOf("["), block.lastIndexOf("]") + 1);
+    for (const d of ["favorites", "recent", "marks"]) {
+      expect(deps, `markApi 漏了依赖 ${d}`).toContain(d);
+    }
+  });
+
+  it("换了搜索词/档位要回到顶部", () => {
+    expect(src).toContain("const backToTop");
+    const i = src.indexOf("backToTop();");
+    const deps = src.slice(i, src.indexOf("\n  }, [", i) + 200);
+    expect(deps).toContain("query");
+    expect(deps).toContain("mode");
   });
 });

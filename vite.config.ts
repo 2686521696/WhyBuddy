@@ -205,6 +205,21 @@ export default defineConfig(() => {
     // 跨文件全局态污染（fetch/localStorage 模块级 stub），省的时间不值风险。
     test: {
       pool: "vmThreads",
+      // antd-mobile 的 `cjs/global/index.js` 是未转译的 TS 语法，node 直接
+      // require 会在第 3 行崩「Unexpected token ':'」。任何**导入完整基础组件
+      // 目录**的用例都会踩到（目录 = 桌面 + 手机两档）。inline 让 vite 先转译
+      // 它再交给测试，跟浏览器里走的是同一条路。
+      //
+      // 只列这一个包，不开 `inline: true` 全量 —— 全量会把 antd 这类大依赖
+      // 也拖进转译，collect 阶段本来就是大头（见上）。
+      // 走它的 ESM 产物：node 的 require 条件会挑到 `cjs/`，那份没转译干净。
+      // 浏览器里 vite 本来就走 es/，这里只是让测试跟浏览器同路。
+      alias: {
+        "antd-mobile": path.resolve(
+          import.meta.dirname,
+          "node_modules/antd-mobile/es/index.js"
+        ),
+      },
     },
     plugins,
     resolve: {

@@ -17,7 +17,15 @@ import ComponentsLibraryPage from "@/pages/sliderule/ComponentsLibraryPage";
 
 export function ComponentsLibraryHarness() {
   return (
-    <div style={{ height: "100vh", overflow: "hidden" }}>
+    // **必须是 overflow:auto**，不能是 hidden。
+    //
+    // 墙是虚拟滚动的，滚动源由 useScrollerIn 找「最近的可滚动祖先」定
+    // （真实应用里是 dashboard 的 .native-content，overflow:auto）。台子上写成
+    // hidden 的话找不到可滚祖先、退回 window，而 window 又因为 100vh 根本不滚
+    // ——量出来的 scrollTop 跟真实应用对不上，台子会给出假结论。
+    //
+    // 第一版就是 hidden，害我把「搜索结果一张卡都不渲染」当成产品 bug 追了半天。
+    <div style={{ height: "100vh", overflow: "auto" }}>
       <ComponentsLibraryPage />
     </div>
   );

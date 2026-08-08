@@ -40,7 +40,7 @@
 import React from "react";
 import { Card, Dropdown, Empty, Tooltip } from "antd";
 // 顶部一律用 lucide，与 AppsWorkbench 同源；antd 图标只留给卡片内部。
-import { ChevronDown, LayoutGrid, Monitor, Rows3, Search, Smartphone, Sparkles, X } from "lucide-react";
+import { ChevronDown, LayoutGrid, Monitor, Rows3, Search, Smartphone, Sparkles, Star, X } from "lucide-react";
 import { useContainerPosition } from "masonic";
 import catalogJson from "@experience-blocks";
 import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
@@ -53,6 +53,15 @@ import {
   BASE_GROUPS,
   BASE_SOURCES,
 } from "./base-components/base-catalog";
+import { findScrollParent } from "../agent-loop/dashboard/useScrollerIn";
+import { buildIndex } from "./component-search";
+import {
+  clearRecent,
+  markRecent,
+  readFavorites,
+  readRecent,
+  toggleFavorite,
+} from "./component-marks";
 import BusinessPageGrid from "./live-runtime/BusinessPageGrid";
 import {
   resolveBusinessGrid,
@@ -332,6 +341,18 @@ const LABEL_BY_TYPE: Record<string, string> = Object.fromEntries(
   Object.entries(BLOCK_DEFINITIONS).map(([type, d]) => [type, d.label])
 );
 
+
+/**
+ * 检索索引**建一次**。
+ *
+ * 语料是两份静态目录（区块 23 + 基础组件 217），运行期不会变，所以在模块级
+ * 建好。放进组件里用 useMemo 也行，但那样每个挂载点各建一份——这一页在预览
+ * 和真实壳里可能同时存在。
+ */
+const SEARCH = buildIndex(
+  type => LABEL_BY_TYPE[type],
+  name => BLOCKS_USING[name] ?? []
+);
 
 const SLOT_LABEL: Record<string, string> = {
   summary: "摘要区",
@@ -962,7 +983,15 @@ function hasPhoneImplementation(block: CatalogBlock): boolean {
 }
 
 /** 真实渲染器预览；外壳使用 Ant Design Card，元信息不会覆盖可交互内容。 */
-function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevice }) {
+function BlockCard({
+  block,
+  device,
+  marks,
+}: {
+  block: CatalogBlock;
+  device: PreviewDevice;
+  marks: MarkApi;
+}) {
   const { block: instance, extra } = demoFor(block.type);
   const impl = IMPL_BY_TYPE[block.type];
   const demoable = HAS_DEMO.has(block.type);
@@ -1034,8 +1063,21 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
       styles={{ body: { padding: 0, overflow: "hidden", position: "relative" } }}
       className="group w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
     >
+      {/* 收藏星单独放右上角，不进底部那层 hover 浮层——浮层默认 35%
+          不透明度，星星藏在里面既看不清也不好点。 */}
+      <div className="absolute right-1.5 top-1.5 z-20 rounded bg-white/70 backdrop-blur-sm">
+        <FavStar
+          on={marks.isFav(`block:${block.type}`)}
+          onToggle={() => marks.onToggleFav(`block:${block.type}`)}
+        />
+      </div>
       {/* 渲染区四边不留白，组件铺满整张卡；元信息浮层直接压在画面底部。 */}
-      <div className="w-full">{rendered}</div>
+      <div
+        className="w-full"
+        onClick={() => marks.onUse(`block:${block.type}`)}
+      >
+        {rendered}
+      </div>
       {/* 元信息作为底部浮层直接压在卡片画面上。
           
           2026-08-08：药丸本身的做法（每条自带底衬）是对的——压在任何底色上
@@ -1842,6 +1884,56 @@ function AssembledPageModal({
 }
 
 /**
+ * 收藏/最近的读写口。**一个类型，四处共用**（两面墙 + 两种卡片）。
+ *
+ * 收成一个对象而不是四个 prop 各传一遍：这一页已经在"加一样东西要改几处"
+ * 上栽过两次（漏传 prop、漏 useMemo 依赖），两次的表现都是界面看着正常、
+ * 点了没反应。
+ */
+export interface MarkApi {
+  isFav: (id: string) => boolean;
+  onToggleFav: (id: string) => void;
+  onUse: (id: string) => void;
+  pass: (id: string) => boolean;
+}
+
+/**
+ * 收藏星。两面墙共用一个。
+ *
+ * `stopPropagation` 是必需的：卡片本身点一下算"用过一次"（记进最近使用），
+ * 而点星星是收藏，不该同时把它记成用过——用户只是在整理，不是在挑。
+ */
+function FavStar({
+  on,
+  onToggle,
+}: {
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid="fav-star"
+      data-on={on ? "1" : "0"}
+      aria-label={on ? "取消收藏" : "收藏"}
+      onClick={e => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      className="rounded p-0.5 text-slate-300 transition hover:text-amber-400"
+    >
+      <Star
+        className="h-3.5 w-3.5"
+        strokeWidth={2}
+        // 收藏了就填实。只靠颜色区分的话，色觉障碍用户看不出收没收藏。
+        fill={on ? "currentColor" : "none"}
+        color={on ? "#f59e0b" : undefined}
+      />
+    </button>
+  );
+}
+
+/**
  * 基础组件墙 —— 官方组件的通用示例。
  *
  * 与区块墙的区别在**这一层没有槽位、没有绑定、没有设备档**：一个 Input 就是
@@ -1857,11 +1949,16 @@ function BaseComponentWall({
   platform,
   linked,
   source,
+  /** 有查询词时只画命中的这些名字，且按这个次序（null = 没在搜） */
+  searchOrder,
+  marks,
 }: {
   group: string;
   platform: string;
   linked: string;
   source: string;
+  searchOrder: Map<string, number> | null;
+  marks: MarkApi;
 }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
@@ -1870,6 +1967,9 @@ function BaseComponentWall({
   const shown = React.useMemo(
     () =>
       BASE_COMPONENTS.filter(c => {
+        // 搜索优先：在搜的时候，分类维度让位于相关度（跟区块墙同一条规矩）
+        if (searchOrder && !searchOrder.has(c.name)) return false;
+        if (!marks.pass(`base:${c.name}`)) return false;
         if (group !== "all" && c.group !== group) return false;
         if (platform !== "all" && c.platform !== platform) return false;
         if (source !== "all" && c.source !== source) return false;
@@ -1877,7 +1977,11 @@ function BaseComponentWall({
         if (linked === "linked" && !used) return false;
         if (linked === "unlinked" && used) return false;
         return true;
-      }),
+      }).sort((a, b) =>
+        searchOrder
+          ? (searchOrder.get(a.name) ?? 0) - (searchOrder.get(b.name) ?? 0)
+          : 0
+      ),
     // **四个维度都得在这里**。2026-08-08 加「来源」时只加了上面那行 filter、
     // 忘了这个依赖数组，结果是：pill 显示「来源: Ant Design」，列表纹丝不动
     // ——memo 命中旧结果，筛选看着像没接上。
@@ -1885,7 +1989,7 @@ function BaseComponentWall({
     // 这个形状这个项目已经遇到第三次了（漏传 prop / 漏读通道 / 漏依赖），
     // 共同点都是"加一样东西要改两处，漏了不报错"。所以下面那条用例是从
     // filter 体里**把用到的变量抠出来**跟依赖数组对，而不是钉死这四个名字。
-    [group, platform, linked, source]
+    [group, platform, linked, source, searchOrder, marks]
   );
 
   return (
@@ -1912,6 +2016,9 @@ function BaseComponentWall({
               variant="borderless"
               styles={{ body: { padding: 0, overflow: "hidden" } }}
               className="w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
+              // 点一下算"用过一次"。这是「最近使用」的唯一来源——组件库是拿来
+              // 挑东西的，挑的动作就是看，没有别的更强的信号。
+              onClick={() => marks.onUse(`base:${c.name}`)}
             >
               <div className="border-b border-slate-100 px-3 py-2">
                 <div className="flex items-baseline gap-2">
@@ -1920,6 +2027,10 @@ function BaseComponentWall({
                   <span className="ml-auto rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] text-slate-500">
                     {c.group}
                   </span>
+                  <FavStar
+                    on={marks.isFav(`base:${c.name}`)}
+                    onToggle={() => marks.onToggleFav(`base:${c.name}`)}
+                  />
                 </div>
                 <div className="mt-1 text-[11.5px] leading-relaxed text-slate-500">
                   {c.description}
@@ -1966,7 +2077,15 @@ function BaseComponentWall({
 
 /** 区块墙。抽成组件的理由同 AppsWorkbench 的 AppWall：里面全是 hook，
  * 而墙在「有结果 / 搜索无结果」两岔里只有一岔渲染，写在外层就成了条件调用。 */
-function BlockWall({ blocks, device }: { blocks: CatalogBlock[]; device: DeviceTier }) {
+function BlockWall({
+  blocks,
+  device,
+  marks,
+}: {
+  blocks: CatalogBlock[];
+  device: DeviceTier;
+  marks: MarkApi;
+}) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
   const { width } = useContainerPosition(containerRef, [height]);
@@ -2014,7 +2133,9 @@ function BlockWall({ blocks, device }: { blocks: CatalogBlock[]; device: DeviceT
             ? 1
             : spanForColumnCount(isWideBlock(entry.block), columnCount)}
         className="mt-5"
-        render={entry => <BlockCard block={entry.block} device={entry.device} />}
+        render={entry => (
+          <BlockCard block={entry.block} device={entry.device} marks={marks} />
+        )}
       />
     </div>
   );
@@ -2028,12 +2149,44 @@ export default function ComponentsLibraryPage() {
   //   base    基础组件 —— Ant Design 官方组件的通用示例，无业务数据
   //   blocks  体验区块 —— 绑数据模型的业务积木，有 binding/槽位/门禁
   //   presets 模板     —— AI 组装攒出来的，分行业
-  const [mode, setMode] = React.useState<"base" | "blocks" | "presets">("base");
+  //
+  // **默认进「区块」**（2026-08-08 用户定的，原话）：「基础组件 /
+  // ProComponents 更多作为底层能力」「用户首先看到：筛选栏、数据列表、编辑
+  // 表单、统计概览、审批记录、附件区等真正能直接装进应用的东西」。
+  //
+  // 原来默认进基础组件那一档，是这一页刚建时只有那一档的历史遗留。目录长到
+  // 217 条之后，一进来就是两百多个 Input/Button，反而把真正能用的东西埋了。
+  const [mode, setMode] = React.useState<"base" | "blocks" | "presets">("blocks");
   const [baseGroup, setBaseGroup] = React.useState<string>("all");
   const [basePlatform, setBasePlatform] = React.useState<string>("all");
   const [baseLinked, setBaseLinked] = React.useState<string>("all");
   const [baseSource, setBaseSource] = React.useState<string>("all");
+  // 收藏 / 最近使用（2026-08-08）。存 localStorage —— 这是个人的取用习惯，
+  // 不是应用数据，见 component-marks.ts 的说明。
+  const [favorites, setFavorites] = React.useState<string[]>(() => readFavorites());
+  const [recent, setRecent] = React.useState<string[]>(() => readRecent());
+  /** 全部 / 最近使用 / 收藏。三档共用，切档不重置——找东西时来回切很常见。 */
+  const [marks, setMarks] = React.useState<"all" | "recent" | "fav">("all");
   const [assembled, setAssembled] = React.useState<AssembledPage | null>(null);
+
+  /**
+   * 收藏/最近的读写口。收成一个对象往下传，而不是四个 prop 各传一遍——
+   * 这一页已经在"加一样东西要改几处"上栽过两次（漏传 prop、漏依赖）。
+   */
+  const markApi = React.useMemo(
+    () => ({
+      favorites,
+      recent,
+      isFav: (id: string) => favorites.includes(id),
+      onToggleFav: (id: string) => setFavorites(toggleFavorite(id)),
+      onUse: (id: string) => setRecent(markRecent(id)),
+      /** 当前这一档要不要按标记筛，以及怎么筛。 */
+      pass: (id: string) =>
+        marks === "all" ||
+        (marks === "fav" ? favorites.includes(id) : recent.includes(id)),
+    }),
+    [favorites, recent, marks]
+  );
   // 意图 —— 五阶段的第一阶段。说不出"这一页是给谁用的、要干什么"，后面
   // 全是猜的，所以它是必填而不是可选的高级选项。
   const [intent, setIntent] = React.useState("");
@@ -2238,6 +2391,35 @@ export default function ComponentsLibraryPage() {
    * 区块的槽位筛选，点了什么也不会发生。
    */
   const filterDims = React.useMemo<FilterDim[]>(() => {
+    /**
+     * 「标记」维度三档共用（2026-08-08）。
+     *
+     * 用户原话：「全部 / 最近使用 / 收藏」「对几百个组件以后非常有必要」。
+     * 放在最前面：目录 217 条的时候，"我上次用的那个叫啥来着"比任何一个
+     * 分类维度都更常问。
+     *
+     * 计数是**当前档位下**的数，不是全局数——在区块档看到「收藏 3」，指的
+     * 就是这一档里收藏了 3 个，点进去正好 3 个。全局数会对不上，那比没有
+     * 计数更糟。
+     */
+    const idsHere =
+      mode === "base"
+        ? BASE_COMPONENTS.map(c => `base:${c.name}`)
+        : mode === "blocks"
+          ? blocks.map(b => `block:${b.type}`)
+          : [];
+    const markDim: FilterDim = {
+      key: "marks",
+      label: "标记",
+      value: marks,
+      onChange: v => setMarks(v as "all" | "recent" | "fav"),
+      options: [
+        { value: "all", label: "全部", count: idsHere.length },
+        { value: "recent", label: "最近使用", count: idsHere.filter(id => recent.includes(id)).length },
+        { value: "fav", label: "收藏", count: idsHere.filter(id => favorites.includes(id)).length },
+      ],
+    };
+
     if (mode === "base") {
       const byGroup: Record<string, number> = {};
       const byPlatform: Record<string, number> = {};
@@ -2248,6 +2430,7 @@ export default function ComponentsLibraryPage() {
         if (c.source) bySource[c.source] = (bySource[c.source] ?? 0) + 1;
       }
       return [
+        markDim,
         {
           key: "capability",
           label: "能力",
@@ -2328,6 +2511,7 @@ export default function ComponentsLibraryPage() {
     // 区块档：范式（页面形态）+ 区域（槽位）。计数跟着上一级走——
     // 槽位数说的是"在当前这类页面里这个槽位有几个区块可用"。
     return [
+      markDim,
       {
         key: "pageKind",
         label: "范式",
@@ -2365,6 +2549,9 @@ export default function ComponentsLibraryPage() {
     basePlatform,
     baseLinked,
     baseSource,
+    marks,
+    favorites,
+    recent,
     industry,
     industries,
     presetCount,
@@ -2374,27 +2561,79 @@ export default function ComponentsLibraryPage() {
     pageKindBlocks,
   ]);
 
+  /**
+   * 搜索结果**跨档**（2026-08-08）。
+   *
+   * 用户原话：搜「我要选择客户」这种话，「最终匹配到区块 + 能力组件 +
+   * 基础组件」。所以一旦有查询词，就不再按当前档位分开看——三层一起排。
+   *
+   * 顺带修掉一个既有的哑巴：原来这一行 `includes(kw)` 只作用于区块那一档，
+   * **基础组件档下敲什么都没反应**（实测）。搜索框却一直挂在页面顶上。
+   */
+  /**
+   * 换了搜索词/档位/标记就**滚回顶部**（2026-08-08）。
+   *
+   * 理由很朴素：结果按相关度排，第一名在最上面，而人可能停在第三屏。不回顶
+   * 的话，搜完看到的是一段跟查询词无关的中部内容。
+   *
+   * **不是**为了绕开渲染问题。调这段时台子上出现过"搜完一张卡都不渲染"，
+   * 一度以为是虚拟滚动窗口跑到内容之外——查下来是台子自己的错：外层写了
+   * `overflow: hidden`，useScrollerIn 找不到可滚祖先退回 window，量出来的
+   * scrollTop 跟真实应用（滚 .native-content）对不上。台子改成 auto 之后
+   * 渲染一直是对的。记在这里免得以后有人照着那个错误结论去改渲染。
+   */
+  const scrollAnchorRef = React.useRef<HTMLDivElement | null>(null);
+  const backToTop = React.useCallback(() => {
+    const el = scrollAnchorRef.current;
+    if (!el) return;
+    const scroller = findScrollParent(el);
+    if (scroller) scroller.scrollTo({ top: 0 });
+    else window.scrollTo({ top: 0 });
+  }, []);
+
+  const searchHits = React.useMemo(
+    () => (query.trim() ? SEARCH.search(query) : null),
+    [query]
+  );
+
+  React.useEffect(() => {
+    backToTop();
+    // 这四样一变，"当前看到的那一段"就跟新结果对不上了 —— 搜索词、档位、
+    // 标记、来源。分类维度（能力/端/槽位）不列：那几个通常只是把长列表再收
+    // 窄一点，人还在原来那一段附近，硬拽回顶反而烦。
+  }, [query, mode, marks, baseSource, backToTop]);
+
   const filtered = React.useMemo(() => {
-    const kw = query.trim().toLowerCase();
-    return pageKindBlocks.filter(b => {
-      const hitKw =
-        !kw ||
-        b.type.toLowerCase().includes(kw) ||
-        (b.description ?? "").toLowerCase().includes(kw) ||
-        (IMPL_BY_TYPE[b.type] ?? "").toLowerCase().includes(kw);
-      const hitSlot = slot === "all" || (b.allowedRegions ?? []).includes(slot);
-      return hitKw && hitSlot;
-    });
-  }, [pageKindBlocks, query, slot]);
+    // 有查询词时，区块墙只画搜索命中的那些，次序也按相关度来
+    if (searchHits) {
+      const rank = new Map(searchHits.filter(d => d.kind === "block").map((d, i) => [d.name, i]));
+      return pageKindBlocks
+        .filter(b => rank.has(b.type) && markApi.pass(`block:${b.type}`))
+        .sort((a, b) => (rank.get(a.type) ?? 0) - (rank.get(b.type) ?? 0));
+    }
+    return pageKindBlocks.filter(
+      b =>
+        (slot === "all" || (b.allowedRegions ?? []).includes(slot)) &&
+        markApi.pass(`block:${b.type}`)
+    );
+  }, [pageKindBlocks, searchHits, slot, markApi]);
 
   // 先筛后铺：铺开只影响展示次序，不影响筛出来的集合。
   // 手机档不跨列，也就没有"宽卡挤成一坨"的问题，保持目录原序更好读。
   const ordered = React.useMemo(
-    () => (device === "phone" ? filtered : interleaveWide(filtered)),
-    [filtered, device]
+    () =>
+      // 搜的时候**不铺**：interleaveWide 是为了让宽卡不挤在一起而重排次序，
+      // 那在浏览时是好事，在搜索结果里是把相关度顺序打乱——用户按相关度
+      // 从上往下看，第一名被挪到第五个就没意义了。
+      searchHits || device === "phone" ? filtered : interleaveWide(filtered),
+    [filtered, device, searchHits]
   );
   return (
-    <div data-testid="components-library" className="px-6 pb-10 pt-5 md:px-8 md:pt-6">
+    <div
+      ref={scrollAnchorRef}
+      data-testid="components-library"
+      className="px-6 pb-10 pt-5 md:px-8 md:pt-6"
+    >
       {/* 吸顶头：与应用中心同一套（-mx/-mt 抵消外层内边距，保证背景铺满） */}
       <div className="sticky top-0 z-30 -mx-6 -mt-5 bg-[var(--sr-shell-bg,#fff)] px-6 pt-5 pb-3 md:-mx-8 md:-mt-6 md:px-8 md:pt-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -2421,7 +2660,7 @@ export default function ComponentsLibraryPage() {
               data-testid="components-search"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="搜区块名、说明或实现…"
+              placeholder="说人话也行：我要选择客户 / 做一个订单筛选 / 显示销售趋势…"
               className="w-full rounded-lg border-0 bg-white/70 py-2.5 pl-10 pr-4 text-[13px] text-slate-800 outline-none ring-1 ring-slate-200/60 placeholder:text-slate-400 transition focus:bg-white focus:ring-2 focus:ring-[#5b6cff]/25"
             />
           </div>
@@ -2434,19 +2673,21 @@ export default function ComponentsLibraryPage() {
           className="mt-3 flex flex-wrap items-center gap-1.5"
           data-testid="components-mode-switch"
         >
-          <FilterChip
-            testid="components-mode-base"
-            label="基础组件"
-            count={BASE_COMPONENTS.length}
-            active={mode === "base"}
-            onClick={() => setMode("base")}
-          />
+          {/* 次序也跟着换：区块在最前。档位条从左到右读，第一个就是"默认
+              该看哪个"的视觉声明——默认改了而次序没改，等于自己打自己。 */}
           <FilterChip
             testid="components-mode-blocks"
             label="区块"
             count={blocks.length}
             active={mode === "blocks"}
             onClick={() => setMode("blocks")}
+          />
+          <FilterChip
+            testid="components-mode-base"
+            label="基础组件"
+            count={BASE_COMPONENTS.length}
+            active={mode === "base"}
+            onClick={() => setMode("base")}
           />
           <FilterChip
             testid="components-mode-presets"
@@ -2576,6 +2817,14 @@ export default function ComponentsLibraryPage() {
           platform={basePlatform}
           linked={baseLinked}
           source={baseSource}
+          searchOrder={
+            searchHits
+              ? new Map(
+                  searchHits.filter(d => d.kind === "base").map((d, i) => [d.name, i])
+                )
+              : null
+          }
+          marks={markApi}
         />
       ) : mode === "presets" ? (
         <>
@@ -2618,7 +2867,7 @@ export default function ComponentsLibraryPage() {
       ) : filtered.length === 0 ? (
         <Empty description="没有匹配的区块" className="py-16" />
       ) : (
-        <BlockWall blocks={ordered} device={device} />
+        <BlockWall blocks={ordered} device={device} marks={markApi} />
       )}
     </div>
   );
