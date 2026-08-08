@@ -416,3 +416,57 @@ describe("基础组件目录 · 四个来源", () => {
     expect(unexpected, `自定义档引了新依赖：${unexpected.join(", ")}`).toEqual([]);
   });
 });
+
+/**
+ * 基础组件墙的筛选：**用到的维度必须都在依赖数组里**（2026-08-08）。
+ *
+ * 用户截图报「筛选无效」：pill 上明明写着「来源: Ant Design」，列表纹丝不动。
+ * 原因是加「来源」那一栏时只加了 filter 体里的一行判断，**忘了 useMemo 的
+ * 依赖数组**——memo 一直命中旧结果，筛选看着像没接上。
+ *
+ * 这个形状这个项目已经是第三次了：
+ *
+ *     漏传 prop     六个区块在真实运行时是死壳（②阶段复盘）
+ *     漏读通道      TagFilterRow / SearchBox 的补丁被 reducer 吞掉
+ *     漏依赖        就是这次
+ *
+ * 共同点都是「加一样东西要改两处，漏了不报错」。所以这条**不钉那四个名字**
+ * ——钉死名字的话，将来加第五个维度照样漏，用例照样绿。它从 filter 体里把
+ * 用到的变量抠出来，跟依赖数组现算现比。
+ */
+describe("基础组件墙的筛选维度不许漏依赖", () => {
+  const src = read("../ComponentsLibraryPage.tsx");
+
+  it("filter 体里用到的每个维度，依赖数组里都得有", () => {
+    const start = src.indexOf("  const shown = React.useMemo(");
+    expect(start, "基础组件墙的 shown memo 不见了？").toBeGreaterThan(-1);
+    const block = src.slice(start, src.indexOf("\n  );", start));
+
+    // 墙自己的筛选 prop（从函数签名读，不手抄）
+    const sigStart = src.indexOf("function BaseComponentWall({");
+    const sig = src.slice(sigStart, src.indexOf("}) {", sigStart));
+    const dims = [...sig.matchAll(/^ {2}(\w+),$/gm)].map(m => m[1]);
+    expect(dims.length, "墙的筛选维度没读出来").toBeGreaterThan(2);
+
+    // 依赖数组 = memo 的最后一行 [...]
+    const deps = block.slice(block.lastIndexOf("["), block.lastIndexOf("]") + 1);
+    // filter 体 = 依赖数组之前的部分
+    const body = block.slice(0, block.lastIndexOf("["));
+
+    const used = dims.filter(d => new RegExp(`\\b${d}\\b`).test(body));
+    const missing = used.filter(d => !new RegExp(`\\b${d}\\b`).test(deps));
+    expect(
+      missing,
+      `筛选用到了 ${missing.join(", ")} 但依赖数组里没有 —— ` +
+        "表现是那一栏点了列表纹丝不动（memo 命中旧结果），不报错。"
+    ).toEqual([]);
+  });
+
+  it("「来源」这一维真的接到了墙上 —— 只加筛选条不接墙等于装饰", () => {
+    expect(src, "筛选条上没有来源这一维").toContain('key: "source"');
+    expect(src, "墙没收到 source").toContain("source={baseSource}");
+    expect(src, "墙没按 source 筛").toContain(
+      'if (source !== "all" && c.source !== source) return false;'
+    );
+  });
+});

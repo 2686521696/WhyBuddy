@@ -1878,7 +1878,14 @@ function BaseComponentWall({
         if (linked === "unlinked" && used) return false;
         return true;
       }),
-    [group, platform, linked]
+    // **四个维度都得在这里**。2026-08-08 加「来源」时只加了上面那行 filter、
+    // 忘了这个依赖数组，结果是：pill 显示「来源: Ant Design」，列表纹丝不动
+    // ——memo 命中旧结果，筛选看着像没接上。
+    //
+    // 这个形状这个项目已经遇到第三次了（漏传 prop / 漏读通道 / 漏依赖），
+    // 共同点都是"加一样东西要改两处，漏了不报错"。所以下面那条用例是从
+    // filter 体里**把用到的变量抠出来**跟依赖数组对，而不是钉死这四个名字。
+    [group, platform, linked, source]
   );
 
   return (
