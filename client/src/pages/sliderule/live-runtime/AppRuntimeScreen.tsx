@@ -746,6 +746,44 @@ export function AppRuntimeScreen({
    */
   const pageSeedCount = seedRowCount(state, page?.entityId);
 
+  const freeformOwnsPage = page ? pageFreeformOwnsContent(page) : false;
+  const dashboardUsesBusinessGrid =
+    page?.view.kind === "dashboard" && !freeformOwnsPage;
+
+  /**
+   * ── 这一页由积木画，还是由固定骨架画（2026-08-08，三步走的第②步）──
+   *
+   * **翻转默认**：声明了 blocks 就用积木，没声明才回落骨架。骨架从"拥有者"
+   * 变回"兜底"——它本来就该是这个角色。
+   *
+   * 翻之前是反的：桌面档的 workbench/wizard 页一律交给内置 ProTable 骨架，
+   * `blockScaffold` 只在 monitor/dashboard 上摆出来。后果是**列表页上的积木
+   * 一个都不上屏**——而列表页是最常见的页面类型。更难受的是，给模型的
+   * prompt 里那十套「参考排布」有三套推荐 `DataTable` 放 main，模型照做了、
+   * 门禁放行了，运行时又给扔了：我们在教模型生成一个必定被丢掉的东西。
+   *
+   * 判据是"**声明了没有**"，不是"页面形态是什么"。形态决定的是骨架长什么样，
+   * 决定不了这一页该由谁画——那是模型的声明说了算。
+   */
+  const declaredBlocks = (page?.experienceBlocks ?? []).filter(b => !b._fromLegacy);
+  const blocksOwnPage = !freeformOwnsPage && declaredBlocks.length > 0;
+  /**
+   * 积木里有没有真的在"展示这一页的记录"的。
+   *
+   * 没有的话**仍然把内置表格补进版面**：模型只声明了一个 MetricGrid 就把整页
+   * 的表格弄没了，那是"翻转默认"最容易造成的伤害——用户看到的是一张少了东西
+   * 的页面，而不是一个更灵活的页面。兜底比纯粹更重要。
+   *
+   * 判据用 **capability === "entityRows"**，不是 family === "data"。第一版写的
+   * 是后者，台子上当场露馅：MetricGrid 的 family 就是 data（它自己取数、能独立
+   * 存在），于是"只声明了一个指标卡"的页面被判成"记录已经有人展示了"，表格没
+   * 补回来，整页只剩一张卡。**family 回答的是"能不能独立存在"，capability 才
+   * 回答"展示的是什么"** —— 这里要问的是后者。
+   */
+  const blocksCoverData = declaredBlocks.some(
+    b => EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "entityRows"
+  );
+
   // Step 6 FilterBar：本页可筛的枚举字段（有声明选项的 enum 字段）+
   // 可选日期范围字段（主实体第一个 date/datetime 字段）。
   const filterableEnumFields: FilterFieldOption[] = page
@@ -1159,8 +1197,32 @@ export function AppRuntimeScreen({
     },
   ];
 
-  // 列设置（ProTable 式齿轮）：从实体全字段勾选表格列
-  const columnSettings = page && page.detailFields.length > 0 && (
+  /**
+   * 列设置（ProTable 式齿轮）：从实体全字段勾选表格列。
+   *
+   * ── 三步走的第③步：收掉重复的那一个（2026-08-08）────────────────────
+   *
+   * 这个齿轮改的是 `tableColPrefs` → `page.columns` → **内置表格**的列。
+   * 第②步翻转默认之后，声明了积木且积木里有表格的页面**根本不渲染内置表格**
+   * ——那时候这个齿轮不只是跟 ColumnSettingPanel 重复，它是**完全失效的**：
+   * 点开、勾掉一列，屏幕上什么都不会变。
+   *
+   * 接线台实测（三页并排）：
+   *   积木档   齿轮 1 个 + ColumnSettingPanel 1 个   ← 重复，且齿轮无效
+   *   兜底档   齿轮 1 个（内置表格在，它是唯一的那个）
+   *   骨架档   ProTable 自带的那个（options.setting）
+   *
+   * 所以判据不是"有没有 ColumnSettingPanel"，是"**内置表格在不在屏幕上**"
+   * ——它governs 谁，就跟着谁出现。这跟 pro-components 的分法一致：
+   * 那边 ColumnSetting 是 ProTable `columnsState` 的一个视图，表不在、
+   * 设置面板也就无从谈起。
+   *
+   * 两份列状态**故意不合并**：`tableColPrefs` 按页面 id 存（内置表格没有区块
+   * id），`columnState` 按目标区块 id 存。合并要先给内置表格编一个假 id，
+   * 那是为了对称而对称。等内置表格哪天真的退成一个区块，再合。
+   */
+  const builtInTableOnScreen = !(blocksOwnPage && blocksCoverData);
+  const columnSettings = page && builtInTableOnScreen && page.detailFields.length > 0 && (
     <Popover
       trigger="click"
       placement="bottomRight"
@@ -1459,43 +1521,6 @@ export function AppRuntimeScreen({
    * fail-open 不变：生成失败 → 没有 freeformOverview → 这个开关自动是 false，
    * 一切照旧走固定骨架，页面不会因此变空。
    */
-  const freeformOwnsPage = page ? pageFreeformOwnsContent(page) : false;
-  const dashboardUsesBusinessGrid =
-    page?.view.kind === "dashboard" && !freeformOwnsPage;
-
-  /**
-   * ── 这一页由积木画，还是由固定骨架画（2026-08-08，三步走的第②步）──
-   *
-   * **翻转默认**：声明了 blocks 就用积木，没声明才回落骨架。骨架从"拥有者"
-   * 变回"兜底"——它本来就该是这个角色。
-   *
-   * 翻之前是反的：桌面档的 workbench/wizard 页一律交给内置 ProTable 骨架，
-   * `blockScaffold` 只在 monitor/dashboard 上摆出来。后果是**列表页上的积木
-   * 一个都不上屏**——而列表页是最常见的页面类型。更难受的是，给模型的
-   * prompt 里那十套「参考排布」有三套推荐 `DataTable` 放 main，模型照做了、
-   * 门禁放行了，运行时又给扔了：我们在教模型生成一个必定被丢掉的东西。
-   *
-   * 判据是"**声明了没有**"，不是"页面形态是什么"。形态决定的是骨架长什么样，
-   * 决定不了这一页该由谁画——那是模型的声明说了算。
-   */
-  const declaredBlocks = (page?.experienceBlocks ?? []).filter(b => !b._fromLegacy);
-  const blocksOwnPage = !freeformOwnsPage && declaredBlocks.length > 0;
-  /**
-   * 积木里有没有真的在"展示这一页的记录"的。
-   *
-   * 没有的话**仍然把内置表格补进版面**：模型只声明了一个 MetricGrid 就把整页
-   * 的表格弄没了，那是"翻转默认"最容易造成的伤害——用户看到的是一张少了东西
-   * 的页面，而不是一个更灵活的页面。兜底比纯粹更重要。
-   *
-   * 判据用 **capability === "entityRows"**，不是 family === "data"。第一版写的
-   * 是后者，台子上当场露馅：MetricGrid 的 family 就是 data（它自己取数、能独立
-   * 存在），于是"只声明了一个指标卡"的页面被判成"记录已经有人展示了"，表格没
-   * 补回来，整页只剩一张卡。**family 回答的是"能不能独立存在"，capability 才
-   * 回答"展示的是什么"** —— 这里要问的是后者。
-   */
-  const blocksCoverData = declaredBlocks.some(
-    b => EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "entityRows"
-  );
 
   // 体验区块渲染：桌面壳与手机壳共用同一份摆法逻辑，只有槽位来源分档。
   // 抽成函数之前它内联在 defaultPageContent 里，于是手机档一个区块都渲染不到。

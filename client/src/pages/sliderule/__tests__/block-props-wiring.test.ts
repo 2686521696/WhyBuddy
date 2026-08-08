@@ -317,3 +317,48 @@ describe("列表页归属：声明了积木就归积木", () => {
     }
   });
 });
+
+/**
+ * 收掉重复的列设置（2026-08-08，三步走的第③步）。
+ *
+ * 第②步翻转默认之后，声明了积木的页面**根本不渲染内置表格**。而那个齿轮改的
+ * 是 tableColPrefs → page.columns → 内置表格的列——于是它不只是跟
+ * ColumnSettingPanel 重复，它是**完全失效的**：点开、勾掉一列，屏幕上什么都
+ * 不会变。这是第②步顺手造出来的，不是历史遗留。
+ *
+ * 接线台实测（三页并排，收之前）：
+ *   积木档  齿轮 1 + ColumnSettingPanel 1   ← 重复，且齿轮无效
+ *   兜底档  齿轮 1（内置表格在，它是唯一的）
+ *   骨架档  ProTable 自带的 options.setting
+ * 收之后积木档齿轮变 0，另外两档不动。
+ */
+describe("列设置只留一个", () => {
+  it("判据是「内置表格在不在屏幕上」，不是「有没有 ColumnSettingPanel」", () => {
+    // 它 governs 谁，就跟着谁出现。有 ColumnSettingPanel 但内置表格也在的页面
+    // （两张表各归各的）不该被误伤。
+    expect(runtime).toContain("const builtInTableOnScreen");
+    const start = runtime.indexOf("const builtInTableOnScreen");
+    expect(runtime.slice(start, start + 120)).toContain(
+      "!(blocksOwnPage && blocksCoverData)"
+    );
+  });
+
+  it("齿轮跟着内置表格走", () => {
+    const start = runtime.indexOf("const columnSettings");
+    const body = runtime.slice(start, start + 160);
+    expect(body, "齿轮没接上那个判据 —— 积木页会留一个点了没反应的齿轮")
+      .toContain("builtInTableOnScreen");
+  });
+
+  it("**两份列状态故意不合并** —— 记在这里免得以后有人为了对称去合", () => {
+    // tableColPrefs 按页面 id 存（内置表格没有区块 id），columnState 按目标
+    // 区块 id 存。合并要先给内置表格编一个假 id，那是为对称而对称。
+    expect(runtime).toContain("tableColPrefs");
+    expect(runtime).toContain("columnState");
+    const note = runtime.slice(
+      runtime.indexOf("两份列状态"),
+      runtime.indexOf("两份列状态") + 160
+    );
+    expect(note, "那条「不合并」的理由被删了").toContain("不合并");
+  });
+});
