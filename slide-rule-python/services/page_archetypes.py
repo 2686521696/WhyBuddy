@@ -32,6 +32,42 @@ Table 一张卡、Pagination 又单独一张卡，表格内容还是「甲/乙/1
 primary / secondary / supporting / overlay 直接决定布局引擎分多少空间。
 没有它，模型会继续生成"五个组件 = 五个差不多大的卡片"——那张库存管理页
 就是这么来的。
+
+## 区域名的来历（2026-08-08 第二轮，重要）
+
+**第一版这七个区域是我编的。** 我从常见后台页面倒推，写了 header / metrics /
+filters / charts / main / aside / overlay，没有依据——404 页该有哪些区、结果页
+该有哪些区、详情页的关键数字该摆哪儿，我当时并不知道。
+
+用户指出去看 `ant-design/pro-blocks`：29 个真实页面，被无数项目抄过。扒完
+之后，页面骨架的**官方答案**是 `PageContainer` 的槽（`pro-components/src/
+layout/components/PageContainer`），29 页的使用统计如下：
+
+    PageContainer / GridContent   全部 29 页
+    extra          页头右上角操作     9 页
+    content        页头下的描述块     6 页  ← 我们没有
+    extraContent   页头右侧关键指标   4 页  ← 我们没有
+    tabList        页面级页签         3 页  ← 我们没有
+    FooterToolbar  底部固定操作条     2 页  ← 我们没有
+    <Result>       结果/异常主体      7 页  ← 我们连范式都没有
+
+**最要紧的一条修正**：我原来假设"关键数字 = 全宽一条指标带"（metrics 区）。
+证据不支持。只有仪表盘类才用全宽带（DashboardAnalysis 的 IntroduceRow）；
+列表页和详情页把那两三个最重要的数**放在页头右侧**（ProfileAdvanced 是
+「状态：待审批」「订单金额：¥568.08」，DashboardWorkplace 是「项目数 56 /
+团队内排名 8 / 项目访问 2223」）。这不是审美差异——页头里的数不占正文空间，
+主区还是完整的一张表；做成全宽带就把主体挤下去一屏。
+
+于是新增四个区域，每个都在下面标了它的出处。加不加一个区域，从此有依据可查。
+
+## 还缺的：result 范式
+
+29 页里有 7 页的主体是 `<Result>`（403 / 404 / 500 / 提交成功 / 提交失败 /
+注册结果 / 分步表单的最后一步），是这个库里**最常见的一种页面形状**，我们一个
+都没有。但它得先有区块才能建范式——按用户定的链路，先有基础组件（Result 已在
+库里），再组装成区块（ResultPanel，尚缺），再进范式。所以这一轮先不加空范式：
+`test_required_regions_are_reachable_with_the_blocks_we_actually_have` 会红，
+而那条红得对——它挡的正是"语法里写着、却没有任何区块填得了"。
 """
 
 from __future__ import annotations
@@ -48,6 +84,9 @@ WEIGHTS = ("primary", "secondary", "supporting", "overlay")
 #:
 #: accepts 是这个区域收哪类区块（按 dataKinds / 能力，不是按具体类型名）——
 #: 写死类型名会让每加一个区块都要回来改这张表。
+#:
+#: 每个区域后面的「出处」是它在 ant-design/pro-blocks 里的依据。没有出处的
+#: 区域就是我编的，加区域之前先去那 29 页里找一个真实用例。
 PAGE_ARCHETYPES: Dict[str, Dict[str, Any]] = {
     "list": {
         "label": "列表管理页",
@@ -61,6 +100,44 @@ PAGE_ARCHETYPES: Dict[str, Dict[str, Any]] = {
                 "required": True,
                 "accepts": ["action", "aggregate"],
                 "maxBlocks": 2,
+            },
+            {
+                # 出处：ListBasicList / ListCardList / ProfileAdvanced /
+                # DashboardWorkplace 的 PageContainer extraContent。
+                # 这是对"关键数字 = 全宽指标带"那个错误假设的修正：列表页把
+                # 那两三个最重要的数放在**页头右侧**，不占正文空间，主区还是
+                # 完整一张表。ListBasicList 放的是「我的待办 8个任务 / 本周
+                # 任务平均处理时间 32分钟 / 本周完成任务数 24个任务」。
+                "key": "headerExtra",
+                "label": "页头指标",
+                "why": "两三个最要紧的数，放在标题右边，不挤占正文",
+                "weight": "supporting",
+                "required": False,
+                "accepts": ["aggregate"],
+                "maxBlocks": 1,
+            },
+            {
+                # 出处：ListSearch / ListCardList 的 PageContainer content。
+                # 页头下面那段说明这一页是什么、怎么用的文字块。
+                "key": "headerContent",
+                "label": "页头说明",
+                "why": "这一页是什么、该怎么用——写在标题下面",
+                "weight": "supporting",
+                "required": False,
+                "accepts": ["entityRows"],
+                "maxBlocks": 1,
+            },
+            {
+                # 出处：ListSearch / AccountCenter / ProfileAdvanced 的 tabList。
+                # 注意这**不是**表格里的状态筛选页签，是页面级的：切的是整块
+                # 主体内容（文章/项目/应用）。
+                "key": "tabs",
+                "label": "页面页签",
+                "why": "同一页要装几组不同的东西时，用页签切整块主体",
+                "weight": "secondary",
+                "required": False,
+                "accepts": ["filter"],
+                "maxBlocks": 1,
             },
             {
                 "key": "filters",
@@ -78,6 +155,18 @@ PAGE_ARCHETYPES: Dict[str, Dict[str, Any]] = {
                 "weight": "primary",
                 "required": True,
                 "accepts": ["entityRows", "rankedRows"],
+                "maxBlocks": 1,
+            },
+            {
+                # 出处：ListTableList 的 FooterToolbar —— 选中若干行之后，
+                # 「已选择 N 项 / 批量删除 / 批量审批」固定在视口底部，
+                # 不随表格滚走。列表长的时候这是唯一能用的位置。
+                "key": "footerBar",
+                "label": "底部操作条",
+                "why": "选中多行后的批量操作，固定在视口底部不随内容滚走",
+                "weight": "overlay",
+                "required": False,
+                "accepts": ["action"],
                 "maxBlocks": 1,
             },
             {
@@ -105,13 +194,28 @@ PAGE_ARCHETYPES: Dict[str, Dict[str, Any]] = {
         "when": "用户要一眼看清当下的数，然后决定做什么。",
         "regions": [
             {
+                # 出处：DashboardAnalysis 的 IntroduceRow —— 四张 ChartCard
+                # 撑满整行（总销售额/访问量/支付笔数/运营活动效果），每张带
+                # 迷你图和环比。**只有仪表盘类才用全宽指标带**：它就是这一页
+                # 的主角。列表页和详情页要的是 headerExtra，不是这个。
                 "key": "metrics",
                 "label": "指标区",
-                "why": "几个关键数字，进来第一眼看的",
+                "why": "几个关键数字撑满整行——仪表盘的主角就是这些数",
                 "weight": "primary",
                 "required": True,
                 "accepts": ["aggregate"],
                 "maxBlocks": 2,
+            },
+            {
+                # 出处：DashboardWorkplace 的 content —— 头像 + 「早安，
+                # 曲丽丽，祝你开心每一天」+ 职位。工作台是有"人"的页面。
+                "key": "headerContent",
+                "label": "页头说明",
+                "why": "这是谁的工作台、他今天该关心什么",
+                "weight": "supporting",
+                "required": False,
+                "accepts": ["entityRows"],
+                "maxBlocks": 1,
             },
             {
                 "key": "charts",
@@ -144,6 +248,40 @@ PAGE_ARCHETYPES: Dict[str, Dict[str, Any]] = {
                 "weight": "supporting",
                 "required": True,
                 "accepts": ["action"],
+                "maxBlocks": 1,
+            },
+            {
+                # 出处：ProfileAdvanced 的 extraContent —— 「状态：待审批」
+                # 「订单金额：¥568.08」两个 Statistic 摆在标题右边。详情页
+                # 最要紧的那两个数就该在这儿，而不是另起一条指标带。
+                "key": "headerExtra",
+                "label": "页头指标",
+                "why": "这条记录最要紧的那一两个数（状态、金额），摆在标题右边",
+                "weight": "supporting",
+                "required": False,
+                "accepts": ["aggregate"],
+                "maxBlocks": 1,
+            },
+            {
+                # 出处：ProfileAdvanced 的 content —— 一组 Descriptions
+                # （创建人/订购产品/创建时间/关联单据/生效日期/备注）直接
+                # 摆在页头里，不用等用户往下滚。
+                "key": "headerContent",
+                "label": "页头字段",
+                "why": "几个一进来就要看的字段，摆在标题下面，不用往下滚",
+                "weight": "supporting",
+                "required": False,
+                "accepts": ["entityRows"],
+                "maxBlocks": 1,
+            },
+            {
+                # 出处：ProfileAdvanced 的 tabList —— 详情 / 规则 / 日志。
+                "key": "tabs",
+                "label": "页面页签",
+                "why": "同一条记录的几个面（详情/规则/日志）用页签切",
+                "weight": "secondary",
+                "required": False,
+                "accepts": ["filter"],
                 "maxBlocks": 1,
             },
             {
@@ -180,6 +318,18 @@ PAGE_ARCHETYPES: Dict[str, Dict[str, Any]] = {
         "when": "用户来这里就是为了填一份东西。",
         "regions": [
             {
+                # 出处：FormAdvancedForm / UserRegister 的 content ——
+                # 「高级表单常见于一次性输入和提交大批量数据的场景。」
+                # 长表单尤其需要这句：不说清楚，用户不知道自己要花多久。
+                "key": "headerContent",
+                "label": "页头说明",
+                "why": "这份表单是干什么的、要填多少——写在标题下面",
+                "weight": "supporting",
+                "required": False,
+                "accepts": ["entityRows"],
+                "maxBlocks": 1,
+            },
+            {
                 "key": "main",
                 "label": "表单主体区",
                 "why": "要填的字段",
@@ -195,6 +345,19 @@ PAGE_ARCHETYPES: Dict[str, Dict[str, Any]] = {
                 "weight": "supporting",
                 "required": False,
                 "accepts": ["chain"],
+                "maxBlocks": 1,
+            },
+            {
+                # 出处：FormAdvancedForm 的 FooterToolbar —— 提交按钮和
+                # 校验错误汇总固定在视口底部。长表单里这是**唯一**合理的
+                # 位置：把提交按钮放在表单末尾，用户得滚到底才看得见它，
+                # 也看不见自己错在哪。
+                "key": "footerBar",
+                "label": "底部操作条",
+                "why": "提交按钮与校验错误固定在视口底部——长表单滚到底才见提交是灾难",
+                "weight": "overlay",
+                "required": False,
+                "accepts": ["action"],
                 "maxBlocks": 1,
             },
         ],
@@ -328,5 +491,32 @@ def archetype_prompt_block() -> str:
         "column; overlay costs no page space at all because it only appears on click. "
         "Give every page exactly one clear primary — a page where everything is the same "
         "size is a pile of cards, not a page."
+    )
+    # 下面这三条是从 ant-design/pro-blocks 那 29 个真实页面里读出来的习惯，
+    # 不写进提示词的话模型不会主动用新区域——它们都是 optional，而 optional
+    # 在模型眼里约等于"可以不管"。第一次实测正是这样：detail 页只用了
+    # header/main/aside，把「状态」「金额」这类数丢在了主区里。
+    lines.append("")
+    lines.append(
+        "WHERE THE KEY NUMBERS GO — this is the rule people get wrong most often:\n"
+        "  On a dashboard, the key numbers ARE the page: use the full-width metrics "
+        "region.\n"
+        "  On a list or detail page they are NOT the page — the list or the record is. "
+        "Put the two or three most important numbers in headerExtra, beside the title, "
+        "where they cost no vertical space. A detail page of an order shows 状态 and "
+        "订单金额 up there; a task list shows 我的待办 / 平均处理时间 / 本周完成. "
+        "Never open a list or detail page with a full-width band of metric cards — it "
+        "pushes the thing the user actually came for below the fold."
+    )
+    lines.append(
+        "headerContent holds the few fields that must be visible on arrival (who created "
+        "it, when, related documents) or one sentence saying what this page is for. Use "
+        "it on detail pages and on long forms — not on every page."
+    )
+    lines.append(
+        "footerBar pins actions to the bottom of the viewport. Use it when the action "
+        "belongs to something the user scrolls through: submitting a long form, or acting "
+        "on rows selected in a long table. Putting a submit button at the end of a long "
+        "form means the user must scroll to the bottom to find it."
     )
     return "\n".join(lines)

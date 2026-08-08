@@ -124,6 +124,69 @@ type ChartCardProps = {
 2. 区块粒度有了参照系：**区域大小**，带自己的绑定和逻辑。不是组件，也不是整页。
 3. 上面那张缺口表就是接下来补区块的清单。
 
+---
+
+## 五、第二轮：区域名也得照它改
+
+用户看完上面之后指出更根本的一条：**我们那五个/七个区域名是我编的**。
+「你当时其实也不知道它是分什么区的……比如 404 页面该显示成什么样。」
+
+对。于是把 29 页的页面骨架也扒了一遍。官方答案是 `PageContainer` 的槽
+（`pro-components/src/layout/components/PageContainer`），使用统计：
+
+| 槽 | 用了几页 | 我们有吗 |
+|---|---|---|
+| `PageContainer` / `GridContent` | 29 | 有（隐含） |
+| `extra`（页头右上角操作） | 9 | 混在 header 里 |
+| `content`（页头下的描述块） | 6 | **没有** |
+| `extraContent`（页头右侧关键指标） | 4 | **没有** |
+| `tabList`（页面级页签） | 3 | **没有** |
+| `FooterToolbar`（底部固定操作条） | 2 | **没有** |
+| `<Result>`（结果/异常主体） | 7 | **连范式都没有** |
+
+### 最要紧的一条修正：关键数字该放哪儿
+
+我原来假设「关键数字 = 全宽一条指标带」（`metrics` 区）。证据不支持：
+
+- **只有仪表盘类**用全宽带 —— DashboardAnalysis 的 `IntroduceRow`，四张
+  ChartCard 撑满整行。那一排就是这一页的主角。
+- **列表页和详情页把最重要的两三个数放在页头右侧**（`extraContent`）：
+  - ProfileAdvanced：「状态：待审批」「订单金额：¥568.08」
+  - ListBasicList：「我的待办 8个任务 / 平均处理时间 32分钟 / 本周完成 24个任务」
+  - DashboardWorkplace：「项目数 56 / 团队内排名 8 / 项目访问 2223」
+
+这不是审美差异。页头里的数**不占垂直空间**，主区还是完整一张表；做成全宽带
+就把用户真正来看的东西挤下去一屏。
+
+### 落地
+
+新增四个区域，每个在 `page_archetypes.py` 里都标了出处：
+
+    headerExtra    页头右侧关键指标   ← extraContent
+    headerContent  页头下的说明/字段  ← content
+    tabs           页面级页签         ← tabList
+    footerBar      底部固定操作条     ← FooterToolbar
+
+并把「关键数字放哪儿」写成提示词里的显式规则 —— 不写的话模型不会用新区域，
+optional 在模型眼里约等于"可以不管"（第一次实测正是如此：detail 页只用了
+header/main/aside，把「状态」「金额」丢在主区里）。写完再测，headerExtra 用上了。
+
+### 顺带抓到一个隐形 bug
+
+`footerBar` 把 `QuickActionPanel` 单独放进底部那条带之后，整条带是空的。查下去：
+`QuickActionPanelRenderer` 第一行就是 `if ((pageActions ?? []).length === 0)
+return null`，而装配预览**从来没传过 pageActions**。也就是说此前任何被装进页面的
+QuickActionPanel 都渲染成空气——不报错、不占位。一直没发现是因为它总跟别的区块
+挤在同一个区里，看不出少了谁。
+
+### 还欠着：result 范式
+
+29 页里 7 页的主体是 `<Result>`（403/404/500、提交成功/失败、注册结果、分步表单
+末步），是这个库里最常见的页面形状，我们一个都没有。但按链路得先有区块：Result
+基础组件已在库里 → 缺 `ResultPanel` 区块 → 才能加 `result` 范式。这一轮没加空范式，
+因为 `test_required_regions_are_reachable_with_the_blocks_we_actually_have` 会红，
+而它红得对。
+
 ## 附：仓库
 
 - `ant-design/pro-blocks` — 官方 29 个页面级区块，`umi-block.json` 是清单

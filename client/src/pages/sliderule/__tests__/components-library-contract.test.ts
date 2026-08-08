@@ -183,6 +183,104 @@ describe("components library UI contract", () => {
     expect(code).toContain("契约草案 · 渲染器仍需实现");
   });
 
+  it("区域清单不许两边分叉 —— Python 语法里有的，这边必须摆得出来", () => {
+    // 2026-08-08 第二轮。用户指出我们那套区域名是我编的，让我照
+    // ant-design/pro-blocks 的 29 个真实页面改。改完新增了 headerExtra /
+    // headerContent / tabs / footerBar 四个区域。
+    //
+    // 危险就在这里：区域语法在 Python（模型照它产出），排版表在 TS。语法里
+    // 新增一个、排版表忘了加，表现是**模型规规矩矩填了这个区域，页面上却
+    // 什么都不显示**——不报错、不警告，就是没了。这种 bug 只能靠肉眼比对
+    // 两个文件发现。
+    //
+    // 所以直接读 Python 源码对账。
+    const archetypeSource = readFileSync(
+      new URL(
+        "../../../../../slide-rule-python/services/page_archetypes.py",
+        import.meta.url
+      ),
+      "utf8"
+    );
+    // 只取区域定义里的 key（`"key": "main",`），不要 propsSchema 之类的噪音
+    const pyRegions = new Set(
+      [...archetypeSource.matchAll(/^\s+"key":\s*"(\w+)",$/gm)].map(m => m[1])
+    );
+    expect(pyRegions.size, "没从 page_archetypes.py 里读出区域").toBeGreaterThan(5);
+
+    const code = stripComments(pageSource);
+    const tsRegions = new Set(
+      [...code.matchAll(/\{ key: "(\w+)", label: "[^"]+", weight:/g)].map(m => m[1])
+    );
+    const missing = [...pyRegions].filter(k => !tsRegions.has(k));
+    expect(
+      missing,
+      `Python 语法里有这些区域、REGION_LAYOUT 里没有 —— 模型填了会静静地丢掉：${missing.join(
+        "、"
+      )}`
+    ).toEqual([]);
+
+    // 反向：排版表里多出来的区域是死代码，模型永远不会产出它
+    const extra = [...tsRegions].filter(k => !pyRegions.has(k));
+    expect(extra, `REGION_LAYOUT 里这些区域在 Python 语法里不存在：${extra.join("、")}`).toEqual(
+      []
+    );
+
+    // band 是这一侧的排版决定，但每个区域都必须有一个 —— 漏了 band 的区域
+    // 会从所有分带里掉出去，同样是静静消失。
+    const withBand = (code.match(/\{ key: "\w+", label: "[^"]+", weight: "\w+", band: "\w+" \}/g) ?? [])
+      .length;
+    expect(withBand, "每个 REGION_LAYOUT 条目都要有 band").toBe(tsRegions.size);
+  });
+
+  it("底部操作条必须在滚动区外面 —— 不然它就只是页尾的一行按钮", () => {
+    // 出处是 pro-blocks 的 FooterToolbar（FormAdvancedForm / ListTableList）。
+    // 它的全部价值在于**不随内容滚**：长表单把提交按钮放在表单末尾，用户得
+    // 滚到底才看得见它，也看不见自己错在哪。放进滚动容器里就等于没做。
+    const code = stripComments(pageSource);
+    // 这一页有两个滚动容器（提案面板一个、装配页一个），要的是 footer 之前
+    // 最近的那一个。
+    const footerGuard = code.indexOf("{footerRegions.length > 0 && (");
+    const scrollArea = code.lastIndexOf(
+      'className="min-h-0 flex-1 overflow-auto',
+      footerGuard
+    );
+    expect(footerGuard, "没找到底部操作条").toBeGreaterThan(0);
+    expect(scrollArea, "没找到滚动区").toBeGreaterThan(0);
+
+    // 判据是**同级**：两者都是那个 flex-col 容器的直接子节点。footer 要是被
+    // 塞进滚动容器里，它的缩进会更深。
+    const lines = code.split("\n");
+    const lineOf = (i: number) => code.slice(0, i).split("\n").length - 1;
+    const indent = (n: number) => lines[n].length - lines[n].trimStart().length;
+    expect(
+      indent(lineOf(footerGuard)),
+      "底部操作条与滚动区不同级 —— 缩进更深就是被塞进滚动容器里了，那它就只是页尾的一行按钮"
+    ).toBe(indent(lineOf(scrollArea)));
+    // 而且它得声明自己不参与伸缩，否则内容一多就被挤没
+    expect(code).toContain('className="shrink-0 border-t border-slate-200 bg-white px-4 py-2"');
+  });
+
+  it("装配预览必须喂 pageActions —— 不喂，QuickActionPanel 直接渲染成空气", () => {
+    // 2026-08-08 实测抓到的：QuickActionPanelRenderer 第一行就是
+    //   if ((pageActions ?? []).length === 0) return null;
+    // 按钮来源是宿主给的 pageActions，而装配预览从来没传过。于是任何被装进
+    // 页面的 QuickActionPanel 都是空气——不报错、不占位、什么都没有。
+    //
+    // 一直没被发现，是因为它总跟别的区块挤在同一个区里，看不出少了谁。这次
+    // footerBar 把它单独放进底部那条带，整条带是空的，才露馅。
+    //
+    // 这条同时钉两端：渲染器那个 return null 的判断还在（它对真实应用是对的），
+    // 且预览确实把 pageActions 传了下去。
+    expect(
+      stripComments(registrySource),
+      "QuickActionPanel 不再靠 pageActions 取按钮了？这条断言要跟着改"
+    ).toContain("if ((pageActions ?? []).length === 0) return null;");
+    expect(
+      stripComments(pageSource),
+      "装配预览没给 pageActions —— QuickActionPanel 会渲染成空气"
+    ).toContain("pageActions={previewActions}");
+  });
+
   it("keeps progress indicators named and allows browser zoom", () => {
     expect(registrySource).toContain(
       "aria-label={`${item.label}相对排名进度`}"

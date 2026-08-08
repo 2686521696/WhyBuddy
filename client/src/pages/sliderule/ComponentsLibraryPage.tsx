@@ -1107,14 +1107,31 @@ const REGION_LAYOUT: {
   key: string;
   label: string;
   weight: "primary" | "secondary" | "supporting" | "overlay";
+  /**
+   * 摆在页面的哪一条带上。
+   *
+   * 与 weight 是两件事：weight 说"多重要"（Python 侧定的，Gate 也按它查主次），
+   * band 说"摆哪儿"（这一侧的排版决定）。原来没有 band，靠 `key === "header"`
+   * 这种判断硬凑，于是新加的 headerExtra / headerContent 会被当成普通
+   * supporting 扔进右边窄栏——**而它们的全部意义就是待在页头里**。
+   */
+  band: "top" | "main" | "aside" | "footer" | "overlay";
 }[] = [
-  { key: "header", label: "标题操作区", weight: "supporting" },
-  { key: "metrics", label: "指标区", weight: "primary" },
-  { key: "filters", label: "筛选区", weight: "secondary" },
-  { key: "charts", label: "图表区", weight: "secondary" },
-  { key: "main", label: "主体区", weight: "primary" },
-  { key: "aside", label: "辅助区", weight: "supporting" },
-  { key: "overlay", label: "浮层区", weight: "overlay" },
+  // 页头带：标题、右侧关键指标、下方说明、页签。四样都属于"正文开始之前"。
+  { key: "header", label: "标题操作区", weight: "supporting", band: "top" },
+  { key: "headerExtra", label: "页头指标", weight: "supporting", band: "top" },
+  { key: "headerContent", label: "页头说明", weight: "supporting", band: "top" },
+  { key: "tabs", label: "页面页签", weight: "secondary", band: "top" },
+  { key: "filters", label: "筛选区", weight: "secondary", band: "top" },
+  // 正文
+  { key: "metrics", label: "指标区", weight: "primary", band: "main" },
+  { key: "charts", label: "图表区", weight: "secondary", band: "main" },
+  { key: "main", label: "主体区", weight: "primary", band: "main" },
+  { key: "aside", label: "辅助区", weight: "supporting", band: "aside" },
+  // 固定在底部的操作条 —— 不占正文流，但一直看得见（区别于 overlay：
+  // overlay 是点了才出来）。出处是 pro-blocks 的 FooterToolbar。
+  { key: "footerBar", label: "底部操作条", weight: "overlay", band: "footer" },
+  { key: "overlay", label: "浮层区", weight: "overlay", band: "overlay" },
 ];
 
 /**
@@ -1197,6 +1214,31 @@ function AssembledPageModal({
     window.setTimeout(() => setToast(null), 2600);
   };
 
+  /**
+   * 预览用的页面操作 —— 拿这一页自己的 tasks 当按钮。
+   *
+   * 2026-08-08 实测抓到的坑：`QuickActionPanelRenderer` 第一行就是
+   * `if ((pageActions ?? []).length === 0) return null`——按钮来源是宿主给的
+   * pageActions，而这个预览**从来没传过**。于是任何被装进页面的
+   * QuickActionPanel 都渲染成空气：不报错、不占位、什么都没有。
+   *
+   * 以前看不出来，是因为它总跟别的区块挤在同一个区里；这次 footerBar 把它
+   * 单独放进底部那条带，一眼就露馅了（整条带是空的）。
+   *
+   * 预览里没有真实应用的操作清单，但这一页的 tasks 正是模型写下的"用户在这
+   * 一页要干的事"（提交入库单 / 新增商品 / 补货），拿它当按钮既有内容又诚实
+   * ——按钮文案和这一页的意图是同一份东西。
+   */
+  const previewActions = React.useMemo(
+    () =>
+      (page.tasks ?? []).slice(0, 6).map((t, i) => ({
+        id: `preview-task-${i}`,
+        label: t,
+        permitted: true,
+      })),
+    [page.tasks]
+  );
+
   const renderBlock = (b: AssembledBlock, i: number) => (
     <ExperienceBlockBoundary
       key={`${b.type}-${i}`}
@@ -1219,17 +1261,22 @@ function AssembledPageModal({
       fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
       fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
       enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
+      pageActions={previewActions}
       onAction={handleAction}
       workflow={WORKFLOW}
     />
   );
 
   const region = (key: string) => page.regions?.[key] ?? [];
+  // 按 band 分带 —— 不再靠 `key === "header"` 猜。原来那种写法每加一个区域
+  // 都得回来补一条特判，而漏了特判的表现是"区域静静地跑到了错误的位置"，
+  // 界面上看不出是 bug。
   const shown = REGION_LAYOUT.filter(r => region(r.key).length > 0);
-  const mainRegions = shown.filter(r => r.weight === "primary");
-  const asideRegions = shown.filter(r => r.weight === "supporting" && r.key !== "header");
-  const topRegions = shown.filter(r => r.key === "header" || r.weight === "secondary");
-  const overlayRegions = shown.filter(r => r.weight === "overlay");
+  const topRegions = shown.filter(r => r.band === "top");
+  const mainRegions = shown.filter(r => r.band === "main");
+  const asideRegions = shown.filter(r => r.band === "aside");
+  const footerRegions = shown.filter(r => r.band === "footer");
+  const overlayRegions = shown.filter(r => r.band === "overlay");
 
   const Panel = ({ r }: { r: (typeof REGION_LAYOUT)[number] }) => (
     <Card
@@ -1377,6 +1424,21 @@ function AssembledPageModal({
             )}
           </div>
         </div>
+
+        {/* 底部操作条 —— 照 pro-blocks 的 FooterToolbar：**贴在容器底部，
+            不随内容滚**。这跟 overlay 不是一回事（overlay 点了才出来），
+            也不能塞进正文流里：长表单把提交按钮放在表单末尾，用户得滚到底
+            才看得见它，也看不见自己错在哪。所以它在滚动区外面。 */}
+        {footerRegions.length > 0 && (
+          <div
+            data-testid="region-band-footer"
+            className="shrink-0 border-t border-slate-200 bg-white px-4 py-2"
+          >
+            <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-2">
+              {footerRegions.flatMap(r => region(r.key).map(renderBlock))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
