@@ -905,87 +905,80 @@ interface AssembledBlock {
   nested?: boolean;
 }
 
+
+
+/** 五阶段装配的产物：范式 + 区域 + 每个区域里的区块实例。 */
+interface AssembledPage {
+  name: string;
+  industry: string;
+  archetype: string;
+  tasks: string[];
+  regions: Record<string, AssembledBlock[]>;
+  gatePassed?: boolean;
+  attempts?: number;
+}
+
 /**
- * AI 组装出来的那一页 —— **真的能录数据**。
+ * 区域在页面上占多少空间 —— **权重决定的，不是区块决定的**。
  *
- * 用户要的（2026-08-07 原话）：「点了那个按钮之后，它就真的可以进行录入数据了，
- * 就往你的页面录入数据了，就已经给你装配好了。」
+ * 这是"五个组件 = 五张等大卡片"的解药（2026-08-08 用户指出的第 5 条）。
+ * 区域声明自己的权重，布局按它分空间：
  *
- * 所以这里持有一份自己的 RuntimeState（live-runtime 那套纯函数），表单提交走
- * addRow 真写进去，下面的表格/详情立刻多一行。不是截图，不是示意。
+ *   primary     主角，占主区（2/3 宽）
+ *   secondary   为主角服务的（筛选条），整行但矮
+ *   supporting  辅助信息，右侧窄栏（1/3）
+ *   overlay     **一点页面空间都不占** —— 渲染出来就是个按钮，点了才有东西
  *
- * ## 为什么它是个副本
+ * 区域顺序也在这里定死。不定死的话，模型返回的对象键序会直接变成页面顺序，
+ * 那是随机的——同一份装配换个键序就成了另一张页面。
+ */
+const REGION_LAYOUT: {
+  key: string;
+  label: string;
+  weight: "primary" | "secondary" | "supporting" | "overlay";
+}[] = [
+  { key: "header", label: "标题操作区", weight: "supporting" },
+  { key: "metrics", label: "指标区", weight: "primary" },
+  { key: "filters", label: "筛选区", weight: "secondary" },
+  { key: "charts", label: "图表区", weight: "secondary" },
+  { key: "main", label: "主体区", weight: "primary" },
+  { key: "aside", label: "辅助区", weight: "supporting" },
+  { key: "overlay", label: "浮层区", weight: "overlay" },
+];
+
+/**
+ * 装配出来的那一页。
  *
- * 用户还要求：「相当于这个还是一个副本，你把原组件删掉，也丝毫不会影响到
- * 这个组件」。做法是**开局就把行数据整份深拷贝一份进自己的状态**，之后
- * 它跟 ENTITY_ROWS（组件库那份共用夹具）再无关系：在这一页里录 10 条、删
- * 5 条，切回区块视图那些卡片一行都不变。
+ * 与上一版（从 137 个基础组件抽的那个）的区别不是长相，是**里面装的是什么**：
+ * 那版装的是组件示例（Button 的「主按钮/次按钮/虚线」原样搬进来），这版装的
+ * 是绑到真实实体和字段上的业务区块实例。所以这版能真录数据，那版只能看。
  *
- * 摆法仍然复用真实的槽位→网格管线，理由同 SavedPresetCard。
+ * 头部把 tasks 摆出来——那是"用户在这一页要干什么"的答案，也是整条链路的
+ * 第一步。摆出来才看得出模型到底理解了没有；理解错了，下面排布再整齐也是错的。
  */
 function AssembledPageModal({
   page,
-  pageKind,
   onClose,
   onSaved,
 }: {
-  page: {
-    name: string;
-    industry?: string;
-    blocks: AssembledBlock[];
-    dropped?: { block: string; why: string }[];
-  };
-  pageKind: string;
+  page: AssembledPage;
   onClose: () => void;
   onSaved?: () => void;
 }) {
-  const [saving, setSaving] = React.useState(false);
-  const [savedAs, setSavedAs] = React.useState<string | null>(null);
-
-  /**
-   * 存成模板 —— 这是"拆盲盒"闭环的最后一步（2026-08-08 用户描述）：
-   * 「AI 组装出来的预设，现在就是一个模板了。」
-   *
-   * 组件从十几个长到三五百个的过程中，同一个按钮抽出来的东西会越来越丰富，
-   * 模板库跟着长。所以模板不该手写——我此前手写的十套，其中三套推荐的积木
-   * 在真实应用里会被渲染层直接丢掉，手写的东西没法验证也不会自己变多。
-   */
-  const save = async () => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const res = await fetch("/api/sliderule/components/presets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: page.name,
-          industry: page.industry,
-          pageKind,
-          blocks: page.blocks,
-        }),
-      });
-      const body = (await res.json()) as { ok?: boolean; preset?: { industry: string } };
-      if (res.ok && body.ok) {
-        setSavedAs(body.preset?.industry ?? page.industry ?? "通用");
-        onSaved?.();
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-  // 深拷贝一份属于这一页的行数据——副本语义就落在这一行上。
+  // 深拷贝一份属于这一页的行数据 —— 副本语义就落在这一行上：在这里录十条
+  // 删五条，切回组件库那些卡片一行都不变。
   const [rows, setRows] = React.useState<Record<string, RuntimeRow[]>>(() =>
     JSON.parse(JSON.stringify(ENTITY_ROWS))
   );
   const [seq, setSeq] = React.useState(0);
   const [toast, setToast] = React.useState<string | null>(null);
-  // 筛选态：不接它 FilterBar 会直接渲染成"本页无可筛选字段"——一个按不动的
-  // 控件掉在页面上，正是这一页最不该出现的东西（仓库里为此还专门在 prompt
-  // 里禁过总览页用 FilterBar）。接上之后它筛的是**这一页自己的副本数据**。
+  const [saving, setSaving] = React.useState(false);
+  const [savedAs, setSavedAs] = React.useState<string | null>(null);
   const [filterState, setFilterState] = React.useState<PageFilterState>({
     enumFilters: {},
     dateRange: null,
   });
+
   const filterFieldOptions: FilterFieldOption[] = React.useMemo(
     () =>
       Object.entries(ENUM_OPTIONS).map(([id, opts]) => ({
@@ -1000,7 +993,7 @@ function AssembledPageModal({
     return id ? { id, label: FIELD_LABEL[id] ?? id } : null;
   }, []);
 
-  /** 筛过的行——展示类积木吃这一份，所以"筛"是真的会变的。 */
+  /** 筛过的行 —— 展示类区块吃这一份，所以"筛"是真会变的。 */
   const visibleRows = React.useMemo(() => {
     const out: Record<string, RuntimeRow[]> = {};
     for (const [entityId, list] of Object.entries(rows)) {
@@ -1009,65 +1002,12 @@ function AssembledPageModal({
           if (!want) continue;
           if (String(r.values?.[field] ?? "") !== want) return false;
         }
-        const range = filterState.dateRange;
-        if (range && dateRangeField) {
-          const v = String(r.values?.[dateRangeField.id] ?? "");
-          if (v && (v < range[0] || v > range[1])) return false;
-        }
         return true;
       });
     }
     return out;
-  }, [rows, filterState, dateRangeField]);
+  }, [rows, filterState]);
 
-  // 被容器装走的不进网格 —— 它们由容器负责渲染。
-  const topLevel = page.blocks.filter(b => !b.nested);
-  const slots = {
-    summary: topLevel.filter(b => b.slot === "summary").map(b => b.id),
-    primary: topLevel.filter(b => b.slot === "primary").map(b => b.id),
-    secondary: topLevel.filter(b => b.slot === "secondary").map(b => b.id),
-    activity: topLevel.filter(b => b.slot === "activity").map(b => b.id),
-    content: topLevel.filter(b => b.slot === "content").map(b => b.id),
-  };
-  const items = resolveBusinessGrid(upgradeLegacySlotsToGrid(pageKind, slots), "desktop");
-  const byId = new Map(page.blocks.map(b => [b.id, b]));
-
-  /**
-   * 渲染一个积木 —— **不替它套任何外壳**（2026-08-08 用户裁决）。
-   *
-   * 「组装的时候就要纯粹一点，该是啥就是啥，该是啥组件就是啥组件。」
-   * 要卡片外观时由模型自己选 ContentCard 去包，包不包是组装结果的一部分，
-   * 不是渲染宿主替它决定的。
-   *
-   * 容器（ContentCard）把 children 递归渲进去。深度天然有限：服务端只允许
-   * children 指向同一批里真实存在的积木，且不能指向自己，环也就无从形成。
-   */
-  const renderOne = (b: AssembledBlock): React.ReactNode => (
-    <ExperienceBlockBoundary
-      key={b.id}
-      block={{ id: b.id, type: b.type, props: b.props, binding: b.binding } as ExperienceBlockInstance}
-      entityRows={visibleRows}
-      chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
-      filterState={filterState}
-      filterFieldOptions={filterFieldOptions}
-      dateRangeField={dateRangeField}
-      onFilterChange={patch => setFilterState(prev => ({ ...prev, ...patch }))}
-      fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
-      fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
-      enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
-      onAction={handleAction}
-      workflow={WORKFLOW}
-    >
-      {b.children && b.children.length > 0
-        ? b.children.map(id => {
-            const child = byId.get(id);
-            return child ? renderOne(child) : null;
-          })
-        : undefined}
-    </ExperienceBlockBoundary>
-  );
-
-  /** 表单提交 → 真写一行。写完让 toast 说清楚写进了哪个实体、现在几条。 */
   const handleAction = (actionId: string, data?: Record<string, unknown>) => {
     if (actionId !== "submitRequest") return;
     const entityRef = String(data?.entityRef ?? "");
@@ -1086,6 +1026,82 @@ function AssembledPageModal({
     window.setTimeout(() => setToast(null), 2600);
   };
 
+  const renderBlock = (b: AssembledBlock, i: number) => (
+    <ExperienceBlockBoundary
+      key={`${b.type}-${i}`}
+      block={
+        {
+          id: `${b.type}-${i}`,
+          type: b.type,
+          // surface 一律 plain：区域面板已经提供了那张卡，区块再画一层白底
+          // 就是卡里套卡（同"装进 ContentCard 的自动 plain"那条规矩）。
+          props: { ...(b.props ?? {}), surface: "plain" },
+          binding: b.binding,
+        } as ExperienceBlockInstance
+      }
+      entityRows={visibleRows}
+      chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
+      filterState={filterState}
+      filterFieldOptions={filterFieldOptions}
+      dateRangeField={dateRangeField}
+      onFilterChange={patch => setFilterState(prev => ({ ...prev, ...patch }))}
+      fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
+      fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+      enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
+      onAction={handleAction}
+      workflow={WORKFLOW}
+    />
+  );
+
+  const region = (key: string) => page.regions?.[key] ?? [];
+  const shown = REGION_LAYOUT.filter(r => region(r.key).length > 0);
+  const mainRegions = shown.filter(r => r.weight === "primary");
+  const asideRegions = shown.filter(r => r.weight === "supporting" && r.key !== "header");
+  const topRegions = shown.filter(r => r.key === "header" || r.weight === "secondary");
+  const overlayRegions = shown.filter(r => r.weight === "overlay");
+
+  const Panel = ({ r }: { r: (typeof REGION_LAYOUT)[number] }) => (
+    <Card
+      size="small"
+      variant="borderless"
+      styles={{ body: { padding: 0, overflow: "hidden" } }}
+      className="mb-3 shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
+      data-testid={`region-${r.key}`}
+    >
+      <div className="border-b border-slate-100 px-3 py-1.5 text-[11px] text-slate-400">
+        {r.label} · {r.weight}
+      </div>
+      <div className="p-3">{region(r.key).map(renderBlock)}</div>
+    </Card>
+  );
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const flat = Object.entries(page.regions ?? {}).flatMap(([rk, items]) =>
+        (items ?? []).map((b, i) => ({ ...b, id: `${rk}-${i}`, slot: rk, children: [] }))
+      );
+      const res = await fetch("/api/sliderule/components/presets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: page.name,
+          industry: page.industry,
+          pageKind: page.archetype,
+          blocks: flat,
+        }),
+      });
+      const body = (await res.json()) as { ok?: boolean; preset?: { industry: string } };
+      if (res.ok && body.ok) {
+        setSavedAs(body.preset?.industry ?? page.industry);
+        onSaved?.();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-8"
@@ -1093,172 +1109,107 @@ function AssembledPageModal({
       onClick={onClose}
     >
       <div
-        className="flex h-full w-full max-w-[1500px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        className="flex h-full w-full max-w-[1400px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-4 py-2.5">
-          <span className="truncate text-[14px] font-semibold text-slate-900">{page.name}</span>
-          <span className="shrink-0 rounded bg-[#e8eeff] px-2 py-0.5 text-[11px] text-[#3b5bdb]">
-            AI 现场组装 · {page.blocks.length} 个积木
-          </span>
-          {page.industry && (
-            <span className="shrink-0 rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+        <div className="shrink-0 border-b border-slate-200 px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[14px] font-semibold text-slate-900">{page.name}</span>
+            <span className="rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
               {page.industry}
             </span>
-          )}
-          {/* 被剔除的必须说出来，不能静默吃掉——否则用户以为模型只拼了这么多 */}
-          {page.dropped && page.dropped.length > 0 && (
-            <Tooltip
-              title={page.dropped.map(d => `${d.block}：${d.why}`).join("；")}
-            >
-              <span className="shrink-0 cursor-help rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-                剔除 {page.dropped.length} 个
-              </span>
-            </Tooltip>
-          )}
-          {toast && (
-            <span
-              data-testid="assembled-toast"
-              className="shrink-0 rounded bg-green-50 px-2 py-0.5 text-[11px] text-green-700"
-            >
-              {toast}
+            <span className="rounded bg-[#e8eeff] px-2 py-0.5 text-[11px] text-[#3b5bdb]">
+              {page.archetype}
             </span>
-          )}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {savedAs ? (
+            {page.gatePassed && (
               <span
-                data-testid="preset-saved"
-                className="rounded bg-green-50 px-2 py-1 text-[11.5px] text-green-700"
+                data-testid="gate-passed"
+                className="rounded bg-green-50 px-2 py-0.5 text-[11px] text-green-700"
               >
-                已存入「{savedAs}」模板库
+                过检查{page.attempts && page.attempts > 1 ? `（第 ${page.attempts} 版）` : ""}
               </span>
-            ) : (
-              <button
-                data-testid="assembled-save"
-                disabled={saving}
-                onClick={() => void save()}
-                className="rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-50"
-              >
-                {saving ? "存入中…" : "存成模板"}
-              </button>
             )}
-            <button
-              className="rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
-              onClick={onClose}
-            >
-              关闭
-            </button>
-          </div>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto bg-[#f0f2f5] p-4">
-          <BusinessPageGrid
-            breakpoint="desktop"
-            items={items}
-            renderItem={ref => {
-              const b = byId.get(ref);
-              if (!b) return null;
-              return renderOne(b);
-            }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** 从基础组件抽出来的一屏。 */
-interface BaseScreen {
-  name: string;
-  industry: string;
-  platform: string;
-  components: { name: string; width: string; group?: string }[];
-  dropped?: { block: string; why: string }[];
-  contentIsDemo?: boolean;
-}
-
-/**
- * 基础组件抽出来的那一屏。
- *
- * 与 AssembledPageModal（业务积木那条）的**根本区别，必须在界面上说清楚**：
- * 业务积木有 bindingSchema，绑到实体和字段，组装出来真能录数据；基础组件
- * 没有数据契约，render 就是一段官方 demo。所以这里抽出来的是**结构**——
- * 哪些组件、什么顺序、分几栏，内容仍是各组件自带的示例内容。
- *
- * 头部那句"抽的是结构"就是为这个立的：不写，用户会以为抽出来的就是一个能
- * 用的页面，然后发现数据全是"选项一/甲/乙"，那时怪的是产品。
- */
-function BaseScreenModal({ screen, onClose }: { screen: BaseScreen; onClose: () => void }) {
-  const byName = React.useMemo(() => {
-    const m = new Map<string, (typeof BASE_COMPONENTS)[number]>();
-    for (const c of BASE_COMPONENTS) m.set(c.name, c);
-    return m;
-  }, []);
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-8"
-      data-testid="base-screen-modal"
-      onClick={onClose}
-    >
-      <div
-        className="flex h-full w-full max-w-[1200px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2.5">
-          <span className="text-[14px] font-semibold text-slate-900">{screen.name}</span>
-          <span className="rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-            {screen.industry}
-          </span>
-          <span className="rounded bg-[#e8eeff] px-2 py-0.5 text-[11px] text-[#3b5bdb]">
-            {screen.platform === "mobile" ? "手机档" : "桌面档"} · {screen.components.length} 个组件
-          </span>
-          {screen.contentIsDemo && (
-            <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
-              抽的是结构 · 内容是各组件自带的示例
-            </span>
-          )}
-          {screen.dropped && screen.dropped.length > 0 && (
-            <Tooltip title={screen.dropped.map(d => `${d.block}：${d.why}`).join("；")}>
-              <span className="cursor-help rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-                剔除 {screen.dropped.length} 个
+            {toast && (
+              <span
+                data-testid="assembled-toast"
+                className="rounded bg-green-50 px-2 py-0.5 text-[11px] text-green-700"
+              >
+                {toast}
               </span>
-            </Tooltip>
-          )}
-          <button
-            className="ml-auto rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
-            onClick={onClose}
-          >
-            关闭
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto bg-[#f0f2f5] p-4">
-          <div className="mx-auto flex max-w-[1000px] flex-wrap gap-3">
-            {screen.components.map((c, i) => {
-              const def = byName.get(c.name);
-              if (!def) return null;
-              return (
-                <div
-                  key={`${c.name}-${i}`}
-                  style={{ width: c.width === "half" ? "calc(50% - 6px)" : "100%" }}
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              {savedAs ? (
+                <span
+                  data-testid="preset-saved"
+                  className="rounded bg-green-50 px-2 py-1 text-[11.5px] text-green-700"
                 >
-                  <Card
-                    size="small"
-                    variant="borderless"
-                    styles={{ body: { padding: 12 } }}
-                    className="h-full shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
-                  >
-                    <div className="mb-2 text-[11px] text-slate-400">{c.name}</div>
-                    {def.render()}
-                  </Card>
+                  已存入「{savedAs}」模板库
+                </span>
+              ) : (
+                <button
+                  data-testid="assembled-save"
+                  disabled={saving}
+                  onClick={() => void save()}
+                  className="rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-50"
+                >
+                  {saving ? "存入中…" : "存成模板"}
+                </button>
+              )}
+              <button
+                className="rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
+                onClick={onClose}
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+          {page.tasks?.length > 0 && (
+            <div
+              data-testid="page-tasks"
+              className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-slate-500"
+            >
+              <span className="text-slate-400">用户在这一页要：</span>
+              {page.tasks.map(t => (
+                <span key={t} className="rounded bg-slate-100 px-1.5 py-0.5">
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto bg-[#f0f2f5] p-4">
+          <div className="mx-auto max-w-[1200px]">
+            {topRegions.map(r => (
+              <Panel key={r.key} r={r} />
+            ))}
+            <div className="flex flex-wrap gap-3">
+              <div className="min-w-[320px] flex-[2]">
+                {mainRegions.map(r => (
+                  <Panel key={r.key} r={r} />
+                ))}
+              </div>
+              {asideRegions.length > 0 && (
+                <div className="min-w-[240px] flex-1">
+                  {asideRegions.map(r => (
+                    <Panel key={r.key} r={r} />
+                  ))}
                 </div>
-              );
-            })}
+              )}
+            </div>
+            {/* 浮层区：渲染出来就是几个按钮，点了才有东西 —— 它一点页面空间
+                都不占，这正是 overlay 这个权重的意思。 */}
+            {overlayRegions.length > 0 && (
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {overlayRegions.flatMap(r => region(r.key).map(renderBlock))}
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
-
 
 /**
  * 基础组件墙 —— 官方组件的通用示例。
@@ -1401,7 +1352,11 @@ export default function ComponentsLibraryPage() {
   const [mode, setMode] = React.useState<"base" | "blocks" | "presets">("base");
   const [baseGroup, setBaseGroup] = React.useState<string>("all");
   const [basePlatform, setBasePlatform] = React.useState<string>("all");
-  const [baseScreen, setBaseScreen] = React.useState<BaseScreen | null>(null);
+  const [assembled, setAssembled] = React.useState<AssembledPage | null>(null);
+  // 意图 —— 五阶段的第一阶段。说不出"这一页是给谁用的、要干什么"，后面
+  // 全是猜的，所以它是必填而不是可选的高级选项。
+  const [intent, setIntent] = React.useState("");
+  const [askIntent, setAskIntent] = React.useState(false);
   const [baseBusy, setBaseBusy] = React.useState(false);
 
   /**
@@ -1409,47 +1364,66 @@ export default function ComponentsLibraryPage() {
    * 那条传 allowedTypes 同一条规矩：从看得见的里面抽。切到「数据录入」再点，
    * 抽出来的就是一屏全是录入件的东西，这是有意义的行为而不是 bug。
    */
-  const runBaseAssemble = async () => {
-    if (baseBusy) return;
-    setBaseBusy(true);
+  /**
+   * 五阶段装配：意图 → 范式 → 区块 → 实例 → Gate。
+   *
+   * 换掉了此前那条"给模型 137 个基础组件的清单让它选几个排出来"——那条
+   * 抽出来的是组件示例合集（Menu/Input/Button/Table/Pagination 各一张等大
+   * 的卡，内容还是「甲 乙 12 34」）。区别不在提示词，在装配目标。
+   *
+   * 这里**不传组件清单**：候选集是服务端的业务区块，基础组件由区块自己解析，
+   * 模型从头到尾不会命名一个组件。
+   */
+  const runAssemble = async () => {
+    if (assembling) return;
+    const text = intent.trim();
+    if (!text) {
+      setAskIntent(true);
+      return;
+    }
+    setAssembling(true);
     setAssembleError(null);
     try {
-      const pool =
-        baseGroup === "all"
-          ? BASE_COMPONENTS
-          : BASE_COMPONENTS.filter(c => c.group === baseGroup);
-      const res = await fetch("/api/sliderule/components/assemble-base", {
+      const res = await fetch("/api/sliderule/components/assemble-page", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          components: pool.map(c => ({
-            name: c.name,
-            label: c.label,
-            description: c.description,
-            group: c.group,
-            platform: c.platform,
-          })),
+          intent: text,
+          datamodel: {
+            entities: [
+              {
+                id: "order",
+                name: "订单",
+                fields: Object.keys(FIELD_TYPE).map(id => ({
+                  id,
+                  name: FIELD_LABEL[id] ?? id,
+                  type: FIELD_TYPE[id],
+                })),
+              },
+            ],
+          },
         }),
       });
-      const body = (await res.json()) as BaseScreen & { ok?: boolean; error?: string };
-      if (!res.ok || !body.ok || !body.components?.length) {
-        setAssembleError(body.error || `组装失败（HTTP ${res.status}）`);
+      const body = (await res.json()) as AssembledPage & {
+        ok?: boolean;
+        error?: string;
+        findings?: { code: string; why: string }[];
+      };
+      if (!res.ok || !body.ok) {
+        // Gate 没过就如实说哪条没过——不降级展示一个坏页面。
+        const why = (body.findings ?? []).map(f => f.why).join("；");
+        setAssembleError(why ? `${body.error}：${why}` : body.error || `装配失败（HTTP ${res.status}）`);
         return;
       }
-      setBaseScreen(body);
+      setAssembled(body);
+      setAskIntent(false);
     } catch (e) {
       setAssembleError(String(e instanceof Error ? e.message : e));
     } finally {
-      setBaseBusy(false);
+      setAssembling(false);
     }
   };
   const [assembling, setAssembling] = React.useState(false);
-  const [assembled, setAssembled] = React.useState<{
-    name: string;
-    industry?: string;
-    blocks: AssembledBlock[];
-    dropped?: { block: string; why: string }[];
-  } | null>(null);
   const [assembleError, setAssembleError] = React.useState<string | null>(null);
   const [device, setDevice] = React.useState<DeviceTier>("all");
   const [query, setQuery] = React.useState("");
@@ -1497,67 +1471,6 @@ export default function ComponentsLibraryPage() {
   const shownPresets =
     industry === "all" ? presets : presets.filter(p => p.industry === industry);
 
-  /**
-   * AI 组装：把**当前这一页真正显示着的**积木类型交给模型，让它现场拼一页。
-   *
-   * 传 allowedTypes 而不是让服务端自己算，是因为用户说的是"从当前显示的
-   * 各个组件"里拼——页面形态、槽位、搜索这些筛选此刻筛出什么，就从什么
-   * 里面挑。服务端再按目录复验一遍（模型仍可能挑目录外的）。
-   *
-   * 数据模型用组件库自己那份订单夹具：这一页存在的意义是看积木怎么拼，
-   * 不是再造一遍推演。字段类型/枚举取值都跟卡片里那份逐字节相同，所以
-   * 组装出来的表单跟你在卡片上看到的是同一个东西。
-   */
-  const runAssemble = async () => {
-    if (assembling) return;
-    setAssembling(true);
-    setAssembleError(null);
-    try {
-      const res = await fetch("/api/sliderule/components/assemble", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pageKind,
-          allowedTypes: filtered.map(b => b.type),
-          datamodel: {
-            entities: [
-              {
-                id: "order",
-                name: "订单",
-                fields: Object.keys(FIELD_TYPE).map(id => ({
-                  id,
-                  name: FIELD_LABEL[id] ?? id,
-                  type: FIELD_TYPE[id],
-                })),
-              },
-            ],
-          },
-        }),
-      });
-      const body = (await res.json()) as {
-        ok?: boolean;
-        name?: string;
-        industry?: string;
-        blocks?: AssembledBlock[];
-        dropped?: { block: string; why: string }[];
-        error?: string;
-      };
-      if (!res.ok || !body.ok || !body.blocks?.length) {
-        setAssembleError(body.error || `组装失败（HTTP ${res.status}）`);
-        return;
-      }
-      setAssembled({
-        name: body.name || "组装页面",
-        industry: body.industry,
-        blocks: body.blocks,
-        dropped: body.dropped,
-      });
-    } catch (e) {
-      setAssembleError(String(e instanceof Error ? e.message : e));
-    } finally {
-      setAssembling(false);
-    }
-  };
   const pageKindBlocks = React.useMemo(
     () => blocks.filter(block => (block.pageKinds ?? []).includes(pageKind)),
     [blocks, pageKind]
@@ -1746,12 +1659,12 @@ export default function ComponentsLibraryPage() {
           <button
             type="button"
             data-testid="components-assemble"
-            disabled={mode === "base" ? baseBusy : assembling || filtered.length === 0}
-            onClick={() => void (mode === "base" ? runBaseAssemble() : runAssemble())}
+            disabled={assembling}
+            onClick={() => void runAssemble()}
             className="ml-2 inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-50"
           >
             <Sparkles size={13} />
-            {(mode === "base" ? baseBusy : assembling) ? "组装中…" : "AI 组装"}
+            {assembling ? "组装中…" : "AI 组装"}
           </button>
         </div>
 
@@ -1782,6 +1695,46 @@ export default function ComponentsLibraryPage() {
         />
       </div>
 
+      {/* 意图输入 —— 五阶段的第一阶段，摆在明面上。
+          
+          此前那条链路根本没有这一步：模型直接从组件清单开始挑，所以它永远
+          不知道"用户在这一页要干什么"，出来的当然是组件合集。说不出意图就
+          装配不了，这不是苛刻，是那一步本来就绕不过去。 */}
+      {askIntent && (
+        <div
+          data-testid="intent-prompt"
+          className="mt-4 rounded-lg bg-white p-3 shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
+        >
+          <div className="text-[12.5px] font-medium text-slate-700">
+            这一页是给谁用的、他要在这儿完成什么？
+          </div>
+          <div className="mt-1 text-[11.5px] text-slate-400">
+            说清楚任务，装配才有依据。例如：仓管每天查看商品库存、筛出缺货的、新增商品、补货
+          </div>
+          <div className="mt-2 flex gap-2">
+            <input
+              data-testid="intent-input"
+              autoFocus
+              value={intent}
+              onChange={e => setIntent(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") void runAssemble();
+              }}
+              placeholder="例如：门店店长每天查看订单、按状态筛选、新建订单"
+              className="flex-1 rounded-lg border-0 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 outline-none ring-1 ring-slate-200 focus:bg-white focus:ring-2 focus:ring-[#5b6cff]/25"
+            />
+            <button
+              data-testid="intent-go"
+              disabled={assembling || !intent.trim()}
+              onClick={() => void runAssemble()}
+              className="rounded-lg bg-[#5b6cff] px-4 py-2 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-50"
+            >
+              {assembling ? "装配中…" : "开始装配"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {assembleError && (
         <div
           data-testid="assemble-error"
@@ -1790,13 +1743,9 @@ export default function ComponentsLibraryPage() {
           {assembleError}
         </div>
       )}
-      {baseScreen && (
-        <BaseScreenModal screen={baseScreen} onClose={() => setBaseScreen(null)} />
-      )}
       {assembled && (
         <AssembledPageModal
           page={assembled}
-          pageKind={pageKind}
           onClose={() => setAssembled(null)}
           onSaved={() => void loadPresets()}
         />
