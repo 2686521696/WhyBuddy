@@ -113,12 +113,14 @@ def _prompt(
         "(in Chinese, one sentence). 'because it would be nice' is not a reason.\n"
         "6. Names in Chinese for 'label', PascalCase English for 'type'.\n\n"
         "Return JSON only:\n"
-        '{"proposals":[{"type":"BatchActionBar","label":"批量操作栏",'
-        '"capability":"action","does":"选中若干行后出现，显示已选数量并提供批量操作",'
-        '"uses":["Alert","Checkbox","Button","Space"],"regions":["main","header"],'
+        # 例子里的区块名必须是**还不存在**的：拿现有区块当样例，模型会照抄，
+        # 然后被 duplicate-block 判死，白烧一轮。
+        '{"proposals":[{"type":"ColumnSettingPanel","label":"列设置面板",'
+        '"capability":"action","does":"让用户挑表格显示哪些列、调整列顺序",'
+        '"uses":["Checkbox","Button","Space"],"regions":["main","header"],'
         '"props":["title","actions"],"binding":{"required":["entityRef"],'
         '"optional":["fieldRefs"]},'
-        '"why":"现在表格选中多行之后没有任何出口，只能一行行点操作列"}]}'
+        '"why":"字段多的表格一屏放不下，用户没法只留自己关心的列"}]}'
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 

@@ -36,18 +36,21 @@ from services.block_proposer import (
 BASE = {"Alert", "Checkbox", "Button", "Space", "Table", "Tag", "Segmented", "Badge"}
 UNLINKED = {"Alert", "Checkbox", "Segmented", "Badge"}
 
+# 例子刻意用一个**还不存在**的区块名。2026-08-08 这里踩过一次：原来的例子叫
+# BatchActionBar，等它真的建出来之后这条用例当场红——red 得对，duplicate-block
+# 正是该判的，但拿现有区块当"合格样例"本身就是错的。
 GOOD = {
     "proposals": [
         {
-            "type": "BatchActionBar",
-            "label": "批量操作栏",
+            "type": "ColumnSettingPanel",
+            "label": "列设置面板",
             "capability": "action",
-            "does": "选中若干行后出现，显示已选数量并提供批量操作",
+            "does": "让用户挑表格显示哪些列、调整列顺序，选择记在本地",
             "uses": ["Alert", "Checkbox", "Button", "Space"],
             "regions": ["main", "header"],
             "props": ["title", "actions"],
             "binding": {"required": ["entityRef"], "optional": ["fieldRefs"]},
-            "why": "现在表格选中多行之后没有任何出口，只能一行行点操作列",
+            "why": "字段多的表格一屏放不下，现在只能靠横向滚动，用户没法只留自己关心的列",
         }
     ]
 }

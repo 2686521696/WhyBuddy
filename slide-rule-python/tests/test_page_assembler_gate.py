@@ -329,6 +329,50 @@ def test_a_result_screen_must_say_whether_it_worked_and_where_to_go_next():
     assert "result-no-exit" not in codes(made_up)
 
 
+def test_a_batch_bar_with_no_actions_is_rejected():
+    """勾完几行之后一件事都做不了，那不是批量操作栏，是个空壳。
+
+    2026-08-08 实测真模型给的就是这个：BatchActionBar 只填了 title
+    「批量审批与导出」，props.actions 空着。渲染出来是「已选择 2 项 · 清空」，
+    右边什么都没有。标题里写着"批量审批与导出"让它更糟——承诺了两个操作，
+    一个都不存在。
+
+    跟 result-no-exit 是同一类：这类区块的定义本身就包含"出口"。
+    """
+    page = {
+        "archetype": "list",
+        "name": "订单管理",
+        "tasks": ["查看订单", "按状态筛选", "批量审批"],
+        "regions": {
+            "main": [{"type": "DataTable", "props": {"title": "订单列表"},
+                      "binding": {"entityRef": "product"}}],
+            "footerBar": [{"type": "BatchActionBar",
+                           "props": {"title": "批量审批与导出"},
+                           "binding": {"entityRef": "product"}}],
+        },
+    }
+    assert "batch-no-actions" in codes(page)
+
+    # 给了操作就该过
+    page["regions"]["footerBar"][0]["props"]["actions"] = ["批量审批", "批量导出"]
+    assert "batch-no-actions" not in codes(page)
+
+
+def test_status_tabs_can_fill_the_tabs_region():
+    """tabs 区域上一轮因为没有区块能填而从范式里摘掉，这轮该回来了。
+
+    纪律是「先有区块再开范式」（result 范式等过一轮，tabs 也等过一轮）。
+    这条钉住它真的接回去了，而不是我只建了区块忘了开范式。
+    """
+    arch = PAGE_ARCHETYPES["list"]
+    tabs = [r for r in arch["regions"] if r["key"] == "tabs"]
+    assert tabs, "list 范式里没有 tabs 区域——建了 StatusTabs 却没开范式"
+    caps = {b["capability"] for b in _block_menu()}
+    assert set(tabs[0]["accepts"]) & caps, "tabs 收的能力没有任何区块提供"
+    types = {b["type"] for b in _block_menu()}
+    assert "StatusTabs" in types and "BatchActionBar" in types
+
+
 def test_required_regions_are_reachable_with_the_blocks_we_actually_have():
     """每个必填区域都必须**真的有区块能填**。
 

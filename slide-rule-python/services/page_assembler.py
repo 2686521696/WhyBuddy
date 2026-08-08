@@ -121,7 +121,10 @@ def _prompt(
         "page with a neutral icon looks like a warning. Always give at least one action "
         "(primaryAction, optionally secondaryAction: 返回列表 / 查看单据 / 返回修改) — "
         "there is no content after a result screen, so with no button the user is "
-        "stranded.\n\n"
+        "stranded.\n"
+        "8. A batch action bar must carry the actions themselves in props.actions "
+        "(批量审批 / 批量导出 / 批量删除). Naming them only in the title is worse than "
+        "leaving it out — the user selects rows and then has nothing to click.\n\n"
         "Return JSON only:\n"
         '{"name":"<页面中文名>","industry":"<行业,2-6字>","archetype":"list",'
         '"tasks":["查库存","新增商品"],'
@@ -301,7 +304,30 @@ def gate(page: Dict[str, Any], datamodel: Dict[str, Any]) -> List[Dict[str, str]
                            "不给「接下来去哪」用户只能按浏览器返回",
                 })
 
-    # ⑦ 得说得出用户在这一页干什么
+    # ⑦ 批量操作栏必须真的给得出批量操作
+    #
+    # 2026-08-08 实测：模型给 BatchActionBar 只填了 title「批量审批与导出」，
+    # props.actions 空着。渲染出来就是「已选择 2 项 · 清空」，右边什么都没有
+    # ——用户勾了几行，然后没有任何事可做。标题里写着"批量审批与导出"更糟：
+    # 它承诺了两个操作，一个都不存在。
+    #
+    # 跟上面 result-no-exit 是同一类：**这类区块的定义就包含"出口"**，没有出口
+    # 就不是这个区块，是个空壳。规则一查一个准，不用再让模型凭感觉判。
+    for rkey, items in regions.items():
+        for it in items or []:
+            if str((it or {}).get("type") or "") != "BatchActionBar":
+                continue
+            actions = ((it or {}).get("props") or {}).get("actions")
+            named = [str(a).strip() for a in actions] if isinstance(actions, list) else []
+            if not any(named):
+                findings.append({
+                    "code": "batch-no-actions",
+                    "why": "BatchActionBar 的 props.actions 空着——用户勾完几行之后"
+                           "一件事都做不了。写上真实操作（批量审批 / 批量导出 / "
+                           "批量删除），不要只写在标题里",
+                })
+
+    # ⑧ 得说得出用户在这一页干什么
     tasks = [str(t).strip() for t in (page.get("tasks") or []) if str(t).strip()]
     if len(tasks) < 2:
         findings.append({

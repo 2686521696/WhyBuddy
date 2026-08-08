@@ -359,3 +359,121 @@ describe("字段语义渲染", () => {
     expect(html).toContain("ant-pagination");
   });
 });
+
+/**
+ * 2026-08-08：照 pro-components 补的两个区块。
+ *
+ * 它们共用一个风险：**依赖宿主态，宿主不给就渲染成空气**。这个项目当天刚踩过
+ * 一次——QuickActionPanel 第一行是「没有 pageActions 就返回 null」，而装配预览
+ * 从来没传过，于是它一直是空气、没人发现（它总跟别的区块挤在一个区里，看不出
+ * 少了谁）。所以这两个的用例先钉「宿主没接时说人话，不是消失」。
+ */
+describe("StatusTabs（状态切换栏）", () => {
+  const ENUMS = {
+    status: [
+      { id: "todo", label: "待办" },
+      { id: "doing", label: "进行中" },
+      { id: "done", label: "已完成" },
+    ],
+  };
+  const TASKS = {
+    task: [
+      row("t1", { name: "甲", status: "todo" }),
+      row("t2", { name: "乙", status: "done" }),
+      row("t3", { name: "丙", status: "done" }),
+    ],
+  };
+  const block = {
+    id: "st",
+    type: "StatusTabs",
+    props: {},
+    binding: { entityRef: "task", statusField: "status" },
+  } as unknown as ExperienceBlockInstance;
+
+  it("条数是真数出来的，不是 props 里写死的", () => {
+    // 写死的话，用户删掉一条记录、页签还写着原来的数——那种不一致比不显示
+    // 条数更糟，因为它看起来是对的。
+    const html = render("status-tabs", block, TASKS, undefined, {
+      enumOptionsOf: (_e: string, f: string) => (ENUMS as never)[f] ?? [],
+      filterState: { enumFilters: {} },
+    });
+    expect(html).toContain("全部 3");
+    expect(html).toContain("已完成 2");
+    expect(html).toContain("待办 1");
+    expect(html).toContain("进行中 0");
+  });
+
+  it("绑的字段不是枚举时说清楚，而不是渲染一个空的页签条", () => {
+    const html = render(
+      "status-tabs",
+      {
+        ...block,
+        binding: { entityRef: "task", statusField: "name" },
+      } as unknown as ExperienceBlockInstance,
+      TASKS,
+      undefined,
+      { enumOptionsOf: () => [], fieldLabelOf: () => "名称" }
+    );
+    expect(html).toContain("不是枚举字段");
+  });
+});
+
+describe("BatchActionBar（批量操作栏）", () => {
+  const block = {
+    id: "bar",
+    type: "BatchActionBar",
+    props: { actions: ["批量审批", "批量导出"] },
+    binding: { entityRef: "order" },
+  } as unknown as ExperienceBlockInstance;
+
+  it("没选中时给一句引导，不是整条消失", () => {
+    // 官方 Alert 的做法是整条消失（selectedRowKeys 为空就 return null）。
+    // 我们在组件库和装配预览里不能那样——**会消失的区块没法审阅**，而且
+    // "消失"和"坏了"长得一模一样。
+    const html = render("batch-action-bar", block, ROWS, undefined, {
+      selection: { rowIds: {} },
+    });
+    expect(html).toContain("勾选左侧的行");
+    expect(html).not.toContain("已选择");
+  });
+
+  it("选中之后显示条数与批量操作按钮", () => {
+    const html = render("batch-action-bar", block, ROWS, undefined, {
+      selection: { rowIds: { order: ["o1", "o3"] } },
+    });
+    expect(html).toContain("已选择");
+    expect(html).toContain(">2<");
+    expect(html).toContain("批量审批");
+    expect(html).toContain("批量导出");
+    expect(html).toContain("清空");
+  });
+
+  it("只认自己绑的那个实体的勾选 —— 一页可能有不止一张表", () => {
+    const html = render("batch-action-bar", block, ROWS, undefined, {
+      selection: { rowIds: { customer: ["c1", "c2", "c3"] } },
+    });
+    expect(html).toContain("勾选左侧的行");
+  });
+});
+
+describe("DataTable 的勾选列", () => {
+  const block = {
+    id: "dt",
+    type: "DataTable",
+    props: {},
+    binding: { entityRef: "order" },
+  } as unknown as ExperienceBlockInstance;
+
+  it("宿主没接选择态时不长出勾选列 —— 勾了也没地方用，纯噪音", () => {
+    const html = render("data-table", block, ROWS);
+    expect(html).not.toContain("selection-col");
+  });
+
+  it("宿主接了才出现勾选列", () => {
+    const html = render("data-table", block, ROWS, undefined, {
+      selection: { rowIds: { order: [] } },
+      onSelectionChange: () => {},
+    });
+    expect(html).toContain("selection-col");
+  });
+});

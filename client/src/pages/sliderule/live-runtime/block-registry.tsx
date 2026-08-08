@@ -26,6 +26,7 @@ import {
   Space,
   Steps,
   Table,
+  Tabs,
   Tag,
   theme as antdTheme,
   Timeline,
@@ -213,6 +214,22 @@ export interface PageFilterState {
   dateRange?: [string, string] | null;
 }
 
+/**
+ * 本页的行选择态 —— DataTable 勾选，BatchActionBar 读。
+ *
+ * 2026-08-08：跟 PageFilterState 同一套路（本地视图态，不进 STATE/RBAC/门禁）。
+ * 单独拎出来是因为**批量操作栏没有选择态就是个空壳**——照 pro-components 的
+ * `table/components/Alert`，它只在 selectedRowKeys 非空时才渲染。
+ *
+ * 这个项目刚踩过一次同类的坑：QuickActionPanel 第一行就是"没有 pageActions
+ * 就返回 null"，而装配预览从来没传过，于是它一直渲染成空气、没人发现。所以
+ * 这次先把数据通路接上，再建区块。
+ */
+export interface PageSelectionState {
+  /** 被勾选的行 id。按实体分组——一页可能有不止一张表。 */
+  rowIds: Record<string, string[]>;
+}
+
 /** Step 6 FilterBar：可筛选的枚举字段及其取值选项（来自本页主实体）。 */
 export interface FilterFieldOption {
   id: string;
@@ -239,6 +256,10 @@ export interface ExperienceBlockRendererProps {
   dateRangeField?: { id: string; label: string } | null;
   /** Step 6 FilterBar 专用：过滤态变更回调（局部合并）。 */
   onFilterChange?: (patch: Partial<PageFilterState>) => void;
+  /** DataTable 勾选 / BatchActionBar 读：本页的行选择态。 */
+  selection?: PageSelectionState;
+  /** 行选择变更回调（DataTable 勾选、BatchActionBar 清空都走它）。 */
+  onSelectionChange?: (entityRef: string, rowIds: string[]) => void;
   /** WorkflowTimeline 专用：整份 workflow 系统数据，chainRef 从这里解析节点/连线，
    * 不接受自由文案——Gate 已校验 chainRef 能在这里面查到（留空=主链路）。 */
   workflow?: WorkflowSection | null;
@@ -1865,6 +1886,172 @@ const ResultPanelRenderer: ExperienceBlockRenderer = ({ block, onAction }) => {
 };
 
 /**
+ * 状态切换栏 —— 列表页顶上那排「全部 / 待办 / 进行中 / 已完成」。
+ *
+ * ## 出处
+ *
+ * `@ant-design/pro-components` 的 `ListToolBar.tabs`（契约是
+ * `{activeKey, onChange, items:[{key, tab}]}`），配合 ProTable 时几乎是标配。
+ * 用户给的那张门店订单参考图顶上就是这一排。
+ *
+ * ## 为什么它不是 FilterBar 的一部分
+ *
+ * 两者都在收窄同一批行，但**代价不同**：下拉筛选要点开、选、再点查询，是
+ * 「我知道自己要找什么」时用的；状态页签一眼看得见全部选项和各自条数，是
+ * 「让我先看看待办有几条」时用的。列表页里后者的使用频次高一个量级，所以它
+ * 值得占页面顶上一整行，而不是折进筛选条里。
+ *
+ * ## 条数是真数出来的
+ *
+ * 每个页签后面的数字来自当前行数据，不是 props 里写死的。写死的话，用户删掉
+ * 一条记录、页签还写着原来的数——那种不一致比不显示条数更糟。
+ */
+const StatusTabsRenderer: ExperienceBlockRenderer = ({
+  block,
+  entityRows,
+  filterState,
+  onFilterChange,
+  fieldLabelOf,
+  enumOptionsOf,
+}) => {
+  const bound = rowsOfBinding(block, entityRows);
+  const field = String(block.binding?.statusField ?? "").trim();
+  if (!bound || !field)
+    return (
+      <BlockShell block={block} title="" testid="status-tabs">
+        <BlockEmpty hint="状态栏未绑定到实体的状态字段" />
+      </BlockShell>
+    );
+
+  const options = enumOptionsOf?.(bound.entityRef, field) ?? [];
+  if (options.length === 0)
+    return (
+      <BlockShell block={block} title="" testid="status-tabs">
+        <BlockEmpty hint={`「${fieldLabelOf?.(bound.entityRef, field) ?? field}」不是枚举字段，没有状态可分`} />
+      </BlockShell>
+    );
+
+  const countOf = (value?: string) =>
+    value === undefined
+      ? bound.rows.length
+      : bound.rows.filter(r => String(r.values?.[field] ?? "") === value).length;
+
+  const active = filterState?.enumFilters?.[field] ?? "";
+  const items = [
+    { key: "", label: `全部 ${countOf()}` },
+    ...options.map(o => ({
+      key: String(o.id),
+      label: `${o.label} ${countOf(String(o.id))}`,
+    })),
+  ];
+
+  return (
+    <BlockShell block={block} title="" testid="status-tabs">
+      <Tabs
+        size="small"
+        activeKey={active}
+        items={items.map(i => ({ key: i.key, label: i.label }))}
+        onChange={key =>
+          onFilterChange?.({
+            enumFilters: {
+              ...(filterState?.enumFilters ?? {}),
+              [field]: key || undefined,
+            },
+          })
+        }
+        // 只当导航用，不装内容 —— 内容是主体区那张表的事。
+        tabBarStyle={{ marginBottom: 0 }}
+      />
+    </BlockShell>
+  );
+};
+
+/**
+ * 批量操作栏 —— 「已选择 N 项 · 清空 · 批量操作」。
+ *
+ * ## 出处
+ *
+ * `@ant-design/pro-components` 的 `table/components/Alert`。它的关键行为是
+ * **选中为空时整条不渲染**（`selectedRowKeys.length < 1 && !alwaysShowAlert`
+ * 直接 return null），只在真的选了东西之后才占位。
+ *
+ * ## 为什么先接数据通路再建这个区块
+ *
+ * 它依赖「选中了哪些行」。这个项目 2026-08-08 刚踩过同类的坑：
+ * QuickActionPanel 第一行就是"没有 pageActions 就返回 null"，而装配预览从来
+ * 没传过，于是它一直渲染成空气、没人发现——因为它总跟别的区块挤在一个区里，
+ * 看不出少了谁。所以这次是先给 DataTable 接上 rowSelection、把选择态串通，
+ * 再建这个区块。
+ *
+ * ## 未选中时显示什么
+ *
+ * 官方是整条消失。我们这里显示一句"勾选左侧的行以批量处理"——因为在装配
+ * 预览和组件库里，一个会凭空消失的区块没法审阅，而"消失"和"坏了"长得一样。
+ */
+const BatchActionBarRenderer: ExperienceBlockRenderer = ({
+  block,
+  entityRows,
+  selection,
+  onSelectionChange,
+  onAction,
+}) => {
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell block={block} title="" testid="batch-action-bar">
+        <BlockEmpty hint="批量操作栏未绑定到有效实体" />
+      </BlockShell>
+    );
+
+  const selected = selection?.rowIds?.[bound.entityRef] ?? [];
+  const actions = Array.isArray(block.props?.actions)
+    ? (block.props.actions as unknown[]).map(a => String(a)).filter(Boolean)
+    : [];
+
+  return (
+    <BlockShell block={block} title="" testid="batch-action-bar">
+      {selected.length === 0 ? (
+        <div
+          data-testid="batch-action-bar-idle"
+          style={{ fontSize: 12.5, color: "#94a3b8", padding: "6px 4px" }}
+        >
+          勾选左侧的行以批量处理
+        </div>
+      ) : (
+        <Flex align="center" gap="small" wrap style={{ padding: "4px 0" }}>
+          <span style={{ fontSize: 13, color: "#0f172a" }}>
+            已选择 <b data-testid="batch-selected-count">{selected.length}</b> 项
+          </span>
+          <Button
+            size="small"
+            type="link"
+            onClick={() => onSelectionChange?.(bound.entityRef, [])}
+          >
+            清空
+          </Button>
+          <span style={{ flex: 1 }} />
+          {actions.map(label => (
+            <Button
+              key={label}
+              size="small"
+              onClick={() =>
+                onAction?.("actionTrigger", {
+                  action: label,
+                  entityRef: bound.entityRef,
+                  rowIds: selected,
+                })
+              }
+            >
+              {label}
+            </Button>
+          ))}
+        </Flex>
+      )}
+    </BlockShell>
+  );
+};
+
+/**
  * ── 字段渲染 —— 照 refinedev/refine 的 Inferencer 三层模型（2026-08-08）──
  *
  * ## 为什么重做
@@ -2016,6 +2203,8 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
   fieldLabelOf,
   enumOptionsOf,
   fieldTypeOf,
+  selection,
+  onSelectionChange,
 }) => {
   // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
   // 现行 renderBlock 不传 children，走下面的 binding 取数。
@@ -2120,6 +2309,17 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
         // 对照台上表格直接被卡片右边缘切掉、最后一列看不见。列共享可用宽度 +
         // 省略号（有 tooltip）才是这个尺寸下该有的行为。
         tableLayout="fixed"
+        // 勾选只在宿主真的接了选择态时才出现（2026-08-08）。没有 BatchActionBar
+        // 的页面凭空多一列复选框是纯噪音——勾了也没地方用。
+        rowSelection={
+          onSelectionChange
+            ? {
+                selectedRowKeys: selection?.rowIds?.[bound.entityRef] ?? [],
+                onChange: keys =>
+                  onSelectionChange(bound.entityRef, keys.map(k => String(k))),
+              }
+            : undefined
+        }
         onRow={row => ({
           "data-testid": "data-table-row",
           onClick: () => onAction?.("rowSelect", { rowId: row.id }),
@@ -2516,6 +2716,8 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     ContentCard: { render: ContentCardRenderer, uses: ["Card"], label: "内容卡片" },
     PageHeader: { render: PageHeaderRenderer, uses: ["Button", "Space", "Typography"], label: "页面头" },
     ResultPanel: { render: ResultPanelRenderer, uses: ["Result", "Button", "Space"], label: "结果屏" },
+    StatusTabs: { render: StatusTabsRenderer, uses: ["Tabs", "Badge"], label: "状态切换栏" },
+    BatchActionBar: { render: BatchActionBarRenderer, uses: ["Alert", "Button", "Flex", "Checkbox"], label: "批量操作栏" },
   });
 
 /** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */

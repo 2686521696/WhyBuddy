@@ -59,6 +59,7 @@ import type {
   ExperienceBlockInstance,
   FilterFieldOption,
   PageFilterState,
+  PageSelectionState,
 } from "./live-runtime/block-registry";
 import { isPhoneExperienceBlock } from "./live-runtime/phone-mobile/PhoneExperienceBlock";
 import type { RuntimeRow } from "./live-runtime/live-runtime";
@@ -1140,6 +1141,13 @@ function AssembledPageModal({
     enumFilters: {},
     dateRange: null,
   });
+  // 行选择态 —— DataTable 勾选、BatchActionBar 读。
+  //
+  // 2026-08-08 的教训直接写在这里：QuickActionPanel 的渲染器第一行是"没有
+  // pageActions 就返回 null"，而这个预览从来没传过，于是它一直渲染成空气。
+  // BatchActionBar 依赖同一类宿主态，所以**先把通路接上再建区块**——不接的话
+  // 它在预览里永远显示"勾选左侧的行"，看着像做完了，其实是死的。
+  const [selection, setSelection] = React.useState<PageSelectionState>({ rowIds: {} });
 
   const filterFieldOptions: FilterFieldOption[] = React.useMemo(
     () =>
@@ -1232,6 +1240,10 @@ function AssembledPageModal({
       filterFieldOptions={filterFieldOptions}
       dateRangeField={dateRangeField}
       onFilterChange={patch => setFilterState(prev => ({ ...prev, ...patch }))}
+      selection={selection}
+      onSelectionChange={(entityRef, rowIds) =>
+        setSelection(prev => ({ rowIds: { ...prev.rowIds, [entityRef]: rowIds } }))
+      }
       fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
       fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
       enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}

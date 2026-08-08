@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 10,
+  "version": 11,
   "pageRegionBands": [
     "top",
     "main",
@@ -27,7 +27,7 @@
     "tabs": {
       "label": "页面页签",
       "band": "top",
-      "evidence": "PageContainer 的 tabList——AccountCenter、ListSearch（文章/项目/应用）、ProfileAdvanced（详情/规则/日志），共 3 页。【暂未接入任何范式】没有区块能填它——需要一个 StatusTabs 区块（照 pro-components 的 ListToolBar tabs）。照「先有区块再开范式」的纪律（result 范式上一轮就是这么等的），区块建好之前不放进范式，免得留下模型永远填不上的语法。"
+      "evidence": "PageContainer 的 tabList——AccountCenter、ListSearch（文章/项目/应用）、ProfileAdvanced（详情/规则/日志），共 3 页。2026-08-08 建了 StatusTabs 之后接进 list 范式（此前因为没有区块能填它而暂时摘掉）。"
     },
     "filters": {
       "label": "筛选区",
@@ -103,6 +103,16 @@
           "required": false,
           "accepts": [
             "entityRows"
+          ],
+          "maxBlocks": 1
+        },
+        {
+          "key": "tabs",
+          "why": "先按状态把列表切成几摞（全部/待办/进行中/已完成），比下拉筛选一眼就能看见有几条",
+          "weight": "secondary",
+          "required": false,
+          "accepts": [
+            "filter"
           ],
           "maxBlocks": 1
         },
@@ -1483,6 +1493,109 @@
           "entityRef"
         ],
         "note": "entityRef 只用来说清「是哪一单成功了」（入库单 #IN-2043 已提交）。单据明细与流程进度不在这里画——那是 RecordDetail 和 WorkflowTimeline 的活，摆在 supplement 区。"
+      }
+    },
+    {
+      "type": "StatusTabs",
+      "description": "列表页顶上那排状态页签（全部 / 待办 / 进行中 / 已完成），每个后面带条数。点一下就把下面的列表收窄到那个状态。",
+      "rendererKey": "status-tabs",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "filter",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "monitor"
+      ],
+      "allowedRegions": [
+        "tabs",
+        "filters"
+      ],
+      "regionsRationale": "tabs is where it belongs - it is page-level navigation over the same rows, not a form control. filters is allowed because on a page with no other filtering it can stand in for the filter row. Nowhere else: a status switcher below the list it switches asks the user to read the rows first and narrow them afterwards.",
+      "events": [
+        "filterChange"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef",
+          "statusField"
+        ],
+        "optional": [],
+        "entityFieldRefs": {
+          "statusField": "enum"
+        },
+        "note": "statusField 必须是枚举字段——页签就是它的取值。条数由运行时真数当前行，不从 props 读；写死的数会在用户删掉一条之后立刻变成假的。"
+      }
+    },
+    {
+      "type": "BatchActionBar",
+      "description": "在表格里勾选若干行之后出现的那一条：已选择 N 项、清空、以及批量操作按钮（批量审批 / 批量导出 / 批量删除）。",
+      "rendererKey": "batch-action-bar",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "action",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "kanban"
+      ],
+      "allowedRegions": [
+        "footerBar",
+        "main"
+      ],
+      "regionsRationale": "footerBar is the real home - the selection lives in a long table, so the bar must stay pinned while the user scrolls (this is exactly what pro-blocks uses FooterToolbar for in ListTableList). main is allowed for short tables where pinning is overkill. Never in the header band or aside: it is meaningless until rows are selected, and it must sit next to the rows it acts on.",
+      "events": [
+        "actionTrigger"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef"
+        ],
+        "optional": [],
+        "note": "entityRef 要跟同页那张表绑同一个实体——它读的就是那张表的勾选结果。操作名写在 props.actions 里（批量审批 / 批量导出 / 批量删除）。"
       }
     }
   ],
