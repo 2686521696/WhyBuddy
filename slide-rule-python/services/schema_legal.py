@@ -253,6 +253,22 @@ def _validate_binding_schema(
 
 EXPERIENCE_BLOCK_CATALOG_VERSION: int = int(_BLOCK_CATALOG.get("version", 0))
 EXPERIENCE_BLOCK_ALLOWED_SLOTS = _catalog_tuple("allowedSlots")
+# 页面区域词汇（2026-08-08 第三轮收编）。
+#
+# 此前区域语法只有 page_archetypes.py 有，前端 REGION_LAYOUT 是手抄的第二份。
+# 收进目录之后两边同读一份：Python 从这里，前端从 vite 的 @experience-blocks。
+#
+#   PAGE_REGIONS        区域目录：叫什么、摆哪条带、在 pro-blocks 里的出处
+#   PAGE_ARCHETYPES_RAW 范式语法：哪个范式有哪些区域、多重、必不必填、收什么
+#   PAGE_REGION_BANDS   带的取值域
+#
+# 拆两张表是因为前者是全局事实（main 永远在正文带），后者按范式各有一套
+# （列表页的 main 收 entityRows，结果页的 main 收 outcome）。
+PAGE_REGIONS: Dict[str, Dict[str, Any]] = dict(_BLOCK_CATALOG.get("pageRegions") or {})
+PAGE_ARCHETYPES_RAW: Dict[str, Dict[str, Any]] = dict(
+    _BLOCK_CATALOG.get("pageArchetypes") or {}
+)
+PAGE_REGION_BANDS = _catalog_tuple("pageRegionBands")
 EXPERIENCE_BLOCK_DATA_KINDS = _catalog_tuple("dataKinds")
 EXPERIENCE_BLOCK_EVENT_TYPES = _catalog_tuple("eventTypes")
 # FreeformInsight（2026-07-23）的安全原子积木白名单——Python 深校验、Prompt、

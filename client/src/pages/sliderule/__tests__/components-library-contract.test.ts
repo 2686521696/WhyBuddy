@@ -196,53 +196,58 @@ describe("components library UI contract", () => {
     expect(code).toContain("契约草案 · 渲染器仍需实现");
   });
 
-  it("区域清单不许两边分叉 —— Python 语法里有的，这边必须摆得出来", () => {
-    // 2026-08-08 第二轮。用户指出我们那套区域名是我编的，让我照
-    // ant-design/pro-blocks 的 29 个真实页面改。改完新增了 headerExtra /
-    // headerContent / tabs / footerBar 四个区域。
+  it("区域词汇只有一份 —— 排版表必须从共享目录派生，不许再手抄", () => {
+    // 2026-08-08 第三轮。上一轮这里是一条**对账**用例：Python 一份区域语法、
+    // TS 手抄一份，用例负责在漏抄时报错。那是创可贴——两份还是两份。
     //
-    // 危险就在这里：区域语法在 Python（模型照它产出），排版表在 TS。语法里
-    // 新增一个、排版表忘了加，表现是**模型规规矩矩填了这个区域，页面上却
-    // 什么都不显示**——不报错、不警告，就是没了。这种 bug 只能靠肉眼比对
-    // 两个文件发现。
+    // 同一天真机爆的那个 bug（进「区块」档点「清空」，16 个区块一个都不剩）
+    // 根子是同一类：范式那栏的选项由 PAGE_KINDS 直接铺出、没有「全部」，而
+    // 「清空」把每维置成 "all"。同一个概念在两处各写一份，取值迟早对不上，
+    // 用例只能事后抓，抓不住的那次就是线上 bug。
     //
-    // 所以直接读 Python 源码对账。
-    const archetypeSource = readFileSync(
-      new URL(
-        "../../../../../slide-rule-python/services/page_archetypes.py",
-        import.meta.url
-      ),
-      "utf8"
-    );
-    // 只取区域定义里的 key（`"key": "main",`），不要 propsSchema 之类的噪音
-    const pyRegions = new Set(
-      [...archetypeSource.matchAll(/^\s+"key":\s*"(\w+)",$/gm)].map(m => m[1])
-    );
-    expect(pyRegions.size, "没从 page_archetypes.py 里读出区域").toBeGreaterThan(5);
-
+    // 所以这轮把区域收进共享目录（Python 走 schema_legal，这边走 vite 的
+    // @experience-blocks），TS 侧改成派生。这条用例随之从"对账"变成"钉住
+    // 派生这件事本身"——只要还有人把它改回字面量数组，这条就红。
     const code = stripComments(pageSource);
-    const tsRegions = new Set(
-      [...code.matchAll(/\{ key: "(\w+)", label: "[^"]+", weight:/g)].map(m => m[1])
-    );
-    const missing = [...pyRegions].filter(k => !tsRegions.has(k));
     expect(
-      missing,
-      `Python 语法里有这些区域、REGION_LAYOUT 里没有 —— 模型填了会静静地丢掉：${missing.join(
-        "、"
-      )}`
-    ).toEqual([]);
+      code,
+      "REGION_LAYOUT 不再从目录派生了？那就又有第二份了"
+    ).toContain("pageRegions");
+    expect(code).toContain("REGION_LAYOUT: { key: string; label: string; band: RegionBand }[] =");
+    // 不许出现手写的区域字面量（旧形状：{ key: "main", label: "主体区", ... }）
+    const literals = code.match(/\{ key: "\w+", label: "[^"]+", (weight|band):/g) ?? [];
+    expect(literals, `又出现了手写的区域条目：${literals.join(" ")}`).toEqual([]);
 
-    // 反向：排版表里多出来的区域是死代码，模型永远不会产出它
-    const extra = [...tsRegions].filter(k => !pyRegions.has(k));
-    expect(extra, `REGION_LAYOUT 里这些区域在 Python 语法里不存在：${extra.join("、")}`).toEqual(
-      []
-    );
-
-    // band 是这一侧的排版决定，但每个区域都必须有一个 —— 漏了 band 的区域
-    // 会从所有分带里掉出去，同样是静静消失。
-    const withBand = (code.match(/\{ key: "\w+", label: "[^"]+", weight: "\w+", band: "\w+" \}/g) ?? [])
-      .length;
-    expect(withBand, "每个 REGION_LAYOUT 条目都要有 band").toBe(tsRegions.size);
+    // 目录里确实有这两张表，且区域都带 band —— 派生的源头得是全的
+    const catalogRaw = JSON.parse(
+      readFileSync(
+        new URL(
+          "../../../../../slide-rule-python/services/data/experience_block_catalog.json",
+          import.meta.url
+        ),
+        "utf8"
+      )
+    ) as {
+      pageRegions: Record<string, { label: string; band: string; evidence: string }>;
+      pageArchetypes: Record<string, { regions: { key: string; weight: string }[] }>;
+      pageRegionBands: string[];
+    };
+    const bands = new Set(catalogRaw.pageRegionBands);
+    for (const [key, meta] of Object.entries(catalogRaw.pageRegions)) {
+      expect(meta.label, `${key} 缺 label`).toBeTruthy();
+      expect(bands.has(meta.band), `${key} 的 band「${meta.band}」不在取值域里`).toBe(true);
+      // 出处是这轮定下的纪律：加区域之前先去 pro-blocks 那 29 页里找真实用例
+      expect(meta.evidence, `${key} 没写出处 —— 没有出处的区域就是拍脑袋定的`).toBeTruthy();
+    }
+    // 范式引用的区域必须都在目录里
+    for (const [ak, arch] of Object.entries(catalogRaw.pageArchetypes)) {
+      for (const r of arch.regions) {
+        expect(
+          Object.hasOwn(catalogRaw.pageRegions, r.key),
+          `范式 ${ak} 用了目录里没有的区域「${r.key}」`
+        ).toBe(true);
+      }
+    }
   });
 
   it("底部操作条必须在滚动区外面 —— 不然它就只是页尾的一行按钮", () => {

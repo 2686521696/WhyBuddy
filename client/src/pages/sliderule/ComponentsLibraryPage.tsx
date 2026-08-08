@@ -1062,39 +1062,56 @@ interface AssembledPage {
  * 区域顺序也在这里定死。不定死的话，模型返回的对象键序会直接变成页面顺序，
  * 那是随机的——同一份装配换个键序就成了另一张页面。
  */
-const REGION_LAYOUT: {
-  key: string;
-  label: string;
-  weight: "primary" | "secondary" | "supporting" | "overlay";
-  /**
-   * 摆在页面的哪一条带上。
-   *
-   * 与 weight 是两件事：weight 说"多重要"（Python 侧定的，Gate 也按它查主次），
-   * band 说"摆哪儿"（这一侧的排版决定）。原来没有 band，靠 `key === "header"`
-   * 这种判断硬凑，于是新加的 headerExtra / headerContent 会被当成普通
-   * supporting 扔进右边窄栏——**而它们的全部意义就是待在页头里**。
-   */
-  band: "top" | "main" | "aside" | "footer" | "overlay";
-}[] = [
-  // 页头带：标题、右侧关键指标、下方说明、页签。四样都属于"正文开始之前"。
-  { key: "header", label: "标题操作区", weight: "supporting", band: "top" },
-  { key: "headerExtra", label: "页头指标", weight: "supporting", band: "top" },
-  { key: "headerContent", label: "页头说明", weight: "supporting", band: "top" },
-  { key: "tabs", label: "页面页签", weight: "secondary", band: "top" },
-  { key: "filters", label: "筛选区", weight: "secondary", band: "top" },
-  // 正文
-  { key: "metrics", label: "指标区", weight: "primary", band: "main" },
-  { key: "charts", label: "图表区", weight: "secondary", band: "main" },
-  { key: "main", label: "主体区", weight: "primary", band: "main" },
-  // 结果页的补充说明（刚提交的那张单子 + 审批走到哪）。band 是 main 而不是
-  // aside，因为三列的 Descriptions 和横向的 Steps 在 1/3 宽里会挤成一团。
-  { key: "supplement", label: "补充说明", weight: "secondary", band: "main" },
-  { key: "aside", label: "辅助区", weight: "supporting", band: "aside" },
-  // 固定在底部的操作条 —— 不占正文流，但一直看得见（区别于 overlay：
-  // overlay 是点了才出来）。出处是 pro-blocks 的 FooterToolbar。
-  { key: "footerBar", label: "底部操作条", weight: "overlay", band: "footer" },
-  { key: "overlay", label: "浮层区", weight: "overlay", band: "overlay" },
-];
+/**
+ * 页面区域的排版表 —— **从共享目录派生，不再手抄**。
+ *
+ * 2026-08-08 第三轮改的就是这里。上一轮这张表是我照着 Python 的
+ * page_archetypes.py 手打的第二份，然后加了条对账用例让"一边改了另一边没改"
+ * 报错。那是创可贴：两份还是两份，只是漏抄时会被抓。
+ *
+ * 同一天真机爆的那个 bug（进「区块」档点「清空」，16 个区块一个都不剩）根子
+ * 是同一类——范式那栏的选项由 PAGE_KINDS 直接铺出、没有「全部」，而「清空」
+ * 把每维置成 "all"，两处对同一个概念的取值集合不一致。**同一个概念写两份，
+ * 迟早对不上**，靠用例只能事后抓。
+ *
+ * 现在两边同读 experience_block_catalog.json：Python 走 schema_legal，这边走
+ * vite 的 @experience-blocks 别名。
+ *
+ * key 的顺序就是区域在页面上从上到下的顺序，由目录里 pageRegions 的键序决定
+ * ——不定死的话，模型返回的对象键序会直接变成页面顺序，那是随机的。
+ */
+type RegionBand = "top" | "main" | "aside" | "footer" | "overlay";
+type RegionWeight = "primary" | "secondary" | "supporting" | "overlay";
+
+const REGION_LAYOUT: { key: string; label: string; band: RegionBand }[] =
+  Object.entries(
+    (CATALOG as unknown as {
+      pageRegions: Record<string, { label: string; band: RegionBand }>;
+    }).pageRegions
+  ).map(([key, meta]) => ({ key, label: meta.label, band: meta.band }));
+
+/**
+ * 区域在**某个范式下**的权重。
+ *
+ * 权重是按范式来的，不是全局的：`main` 在列表页是主角（primary），在结果页
+ * 也是主角，但 `metrics` 只有仪表盘才是 primary，列表页压根没有这个区域。
+ * 手抄那版把 weight 拍成了全局一份，是错的——只是它当时只用来显示一行灰字，
+ * 错了看不出来。
+ */
+const REGION_WEIGHTS: Record<string, Record<string, RegionWeight>> =
+  Object.fromEntries(
+    Object.entries(
+      (CATALOG as unknown as {
+        pageArchetypes: Record<
+          string,
+          { regions: { key: string; weight: RegionWeight }[] }
+        >;
+      }).pageArchetypes
+    ).map(([archetype, arch]) => [
+      archetype,
+      Object.fromEntries(arch.regions.map(r => [r.key, r.weight])),
+    ])
+  );
 
 /**
  * 装配出来的那一页。
@@ -1240,6 +1257,10 @@ function AssembledPageModal({
   const footerRegions = shown.filter(r => r.band === "footer");
   const overlayRegions = shown.filter(r => r.band === "overlay");
 
+  // 权重按**这一页的范式**查 —— 同一个区域在不同范式下轻重不同（metrics 只有
+  // 仪表盘才是主角）。手抄那版把它拍成全局一份，是错的。
+  const weightOf = (key: string) => REGION_WEIGHTS[page.archetype]?.[key] ?? "supporting";
+
   const Panel = ({ r }: { r: (typeof REGION_LAYOUT)[number] }) => (
     <Card
       size="small"
@@ -1249,7 +1270,7 @@ function AssembledPageModal({
       data-testid={`region-${r.key}`}
     >
       <div className="border-b border-slate-100 px-3 py-1.5 text-[11px] text-slate-400">
-        {r.label} · {r.weight}
+        {r.label} · {weightOf(r.key)}
       </div>
       <div className="p-3">{region(r.key).map(renderBlock)}</div>
     </Card>
