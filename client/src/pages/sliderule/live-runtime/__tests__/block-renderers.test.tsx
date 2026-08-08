@@ -12,7 +12,12 @@ import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { EXPERIENCE_BLOCK_RENDERERS, ExperienceBlockBoundary, fieldSemanticForTest } from "../block-registry";
+import {
+  applyColumnState,
+  EXPERIENCE_BLOCK_RENDERERS,
+  ExperienceBlockBoundary,
+  fieldSemanticForTest,
+} from "../block-registry";
 import type { ExperienceBlockInstance } from "../block-registry";
 import type { RuntimeRow } from "../live-runtime";
 import CATALOG from "@experience-blocks";
@@ -702,5 +707,187 @@ describe("长字段单行截断", () => {
     expect(html).toContain("¥428.00");
     // 金额单元格自己不该带截断类
     expect(html).not.toMatch(/ant-table-cell-ellipsis[^>]*>[^<]*¥428/);
+  });
+});
+
+/**
+ * 2026-08-08 ②批次 1：ColumnSettingPanel，照 pro-components 的 ColumnSetting。
+ *
+ * **这一组用例才是搬运的产出。** 那 605 行 JSX 我们一行没用（没有 TableContext、
+ * 没有 Tree、状态形状也不同），真正拿到的是它替我们踩过的四条边界——每一条我们
+ * 自己写都会漏，而且漏了之后界面看起来是「好的」，只是行为不对。
+ */
+describe("列设置：applyColumnState 的三步顺序", () => {
+  const fields = ["a", "b", "c", "d"];
+
+  it("不传状态就原样返回 —— 没装面板的表格不该受任何影响", () => {
+    expect(applyColumnState(fields, undefined)).toEqual(fields);
+  });
+
+  it("隐藏的列不出现", () => {
+    expect(applyColumnState(fields, { hidden: ["b"], order: [], fixed: {} })).toEqual([
+      "a", "c", "d",
+    ]);
+  });
+
+  it("没排过序的列排在排过序的后面，且组内保持原顺序", () => {
+    expect(applyColumnState(fields, { hidden: [], order: ["d"], fixed: {} })).toEqual([
+      "d", "a", "b", "c",
+    ]);
+  });
+
+  it("**固定分组盖过顺序号** —— pro-components 的 issue #9556 就是这条没做对", () => {
+    // c 被显式排到最前，但它固定在右侧；固定分组必须赢，否则「固定在右」的列
+    // 画在最左边，分组和顺序自相矛盾。
+    const out = applyColumnState(fields, {
+      hidden: [],
+      order: ["c", "a", "b", "d"],
+      fixed: { c: "right", d: "left" },
+    });
+    expect(out).toEqual(["d", "a", "b", "c"]);
+  });
+
+  it("状态里躺着已经不存在的字段名时不会凭空造出列", () => {
+    // 数据模型删过字段，hidden/order/fixed 里都可能留着过期 id
+    const out = applyColumnState(["a", "b"], {
+      hidden: ["gone"],
+      order: ["gone", "b", "a"],
+      fixed: { alsoGone: "left" },
+    });
+    expect(out).toEqual(["b", "a"]);
+  });
+});
+
+describe("列设置面板", () => {
+  const cols = ["name", "amount", "status", "at"];
+  const render = (extra: Record<string, unknown> = {}, binding: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "panel", type: "ColumnSettingPanel",
+          binding: { entityRef: "order", targets: ["tbl"], ...binding },
+        }}
+        targetColumns={cols}
+        fieldLabelOf={(_e, f) => ({ name: "门店", amount: "金额", status: "状态", at: "日期" })[f]}
+        {...extra}
+      />
+    );
+
+  it("没连到表格时说清楚，而不是渲染一排管不着任何东西的复选框", () => {
+    const html = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "panel", type: "ColumnSettingPanel", binding: { entityRef: "order" } }}
+      />
+    );
+    expect(html).toContain("没有连到任何表格");
+  });
+
+  it("列出目标表格的列，出中文标签不出字段 id", () => {
+    const html = render();
+    expect(html).toContain("门店");
+    expect(html).toContain("金额");
+    expect(html).not.toMatch(/>amount</);
+  });
+
+  it("**半选的分母只数面板里真的列出来的列** —— 状态里的过期 id 不算", () => {
+    // 这是 pro-components 那条注释的判据：columnsMap 里可能有已经不存在的 key，
+    // 算进分母，全选框会永远停在半选（分子分母对不齐）。
+    const html = render({
+      columnState: { tbl: { hidden: ["ghost1", "ghost2"], order: [], fixed: {} } },
+    });
+    // 四列一个没藏，全选框该是「全选」，不是半选
+    expect(html).toContain("列展示（4/4）");
+    expect(html).not.toContain("ant-checkbox-indeterminate");
+  });
+
+  it("真藏了一列才是半选", () => {
+    const html = render({ columnState: { tbl: { hidden: ["amount"], order: [], fixed: {} } } });
+    expect(html).toContain("列展示（3/4）");
+    expect(html).toContain("ant-checkbox-indeterminate");
+  });
+
+  it("被藏起来的列**仍然列在面板里** —— 否则没有地方能把它勾回来", () => {
+    const html = render({ columnState: { tbl: { hidden: ["amount"], order: [], fixed: {} } } });
+    expect(html).toContain("金额");
+  });
+
+  it("被藏起来的列留在**原来的位置**，不是被甩到末尾", () => {
+    // 自己踩过的：顺序一度按"可见的那些"算，于是藏掉一列、再勾回来，它会因为
+    // 丢了名次跳到最后。隐藏是"这次不看"，不该顺手改掉它的位置。
+    // 列序 name/amount/status/at，藏掉 amount：面板里它仍该排在 name 之后。
+    const html = render({ columnState: { tbl: { hidden: ["amount"], order: [], fixed: {} } } });
+    const at = (label: string) => html.indexOf(label);
+    expect(at("门店")).toBeLessThan(at("金额"));
+    expect(at("金额")).toBeLessThan(at("状态"));
+  });
+
+  it("没有任何固定列时不出分组标题 —— 一个孤零零的「不固定」会让人以为还有别的组", () => {
+    expect(render()).not.toContain("不固定");
+    const pinned = render({ columnState: { tbl: { hidden: [], order: [], fixed: { name: "left" } } } });
+    expect(pinned).toContain("固定在左侧");
+    expect(pinned).toContain("不固定");
+  });
+
+  // 「重置」按钮在静态标记里长这样：
+  //   <button data-testid="column-setting-reset" ... disabled=""><span>重置</span></button>
+  const resetDisabled = (html: string) =>
+    /<button data-testid="column-setting-reset"[^>]*\sdisabled=""/.test(html);
+
+  it("没改过任何东西时「重置」是禁用的 —— 点一下什么都不会变的按钮是骗人的", () => {
+    expect(resetDisabled(render())).toBe(true);
+  });
+
+  it("改过之后「重置」可点", () => {
+    const byHide = render({ columnState: { tbl: { hidden: ["amount"], order: [], fixed: {} } } });
+    expect(resetDisabled(byHide)).toBe(false);
+    // 只改了固定、一列没藏，也算改过
+    const byPin = render({ columnState: { tbl: { hidden: [], order: [], fixed: { name: "left" } } } });
+    expect(resetDisabled(byPin)).toBe(false);
+    // 只改了顺序也算 —— pro-components 的 issue #9558 就是"重置没管顺序"
+    const byOrder = render({ columnState: { tbl: { hidden: [], order: ["at", "name"], fixed: {} } } });
+    expect(resetDisabled(byOrder)).toBe(false);
+  });
+
+  it("**面板自己不声明默认列** —— 那是表格说了算，一件事不能有两个出处", () => {
+    // 2026-08-08 当天改掉的：一开始给了面板一份 fieldRefs，浏览器里当场露馅——
+    // 面板说默认 4 列、表格自己声明 10 列，什么都没动过「重置」却是可点的。
+    // 现在面板收到 fieldRefs 也一律忽略，原始态就是原始态。
+    const withStrayFieldRefs = render({}, { fieldRefs: ["name"] });
+    expect(resetDisabled(withStrayFieldRefs)).toBe(true);
+    expect(withStrayFieldRefs).toContain("列展示（4/4）");
+  });
+});
+
+/**
+ * 全部列都被藏起来是真会发生的（把「列展示」的全选框取消掉就是）。
+ * pro-components 到这一步会把一张没有列的表交给 antd Table，渲染出一片空白
+ * 表头——看起来像坏了。这条钉住我们说人话。
+ */
+describe("表格：所有列都被隐藏时", () => {
+  const rows = [{ id: "r1", values: { a: "1", b: "2" }, createdAt: "2026-08-08T00:00:00.000Z" }];
+
+  it("给一句能照着做的空态，不是一张没有列的空壳表", () => {
+    const html = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "tbl", type: "DataTable", binding: { entityRef: "order" } }}
+        entityRows={{ order: rows }}
+        columnState={{ tbl: { hidden: ["a", "b"], order: [], fixed: {} } }}
+      />
+    );
+    expect(html).toContain("所有列都被隐藏了");
+  });
+
+  it("列视图态按**区块 id** 认领 —— 一页两张表各改各的", () => {
+    // 状态写在 other 名下，这张表叫 tbl，不该受影响
+    const html = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "tbl", type: "DataTable", binding: { entityRef: "order" } }}
+        entityRows={{ order: rows }}
+        fieldLabelOf={(_e, f) => `列${f.toUpperCase()}`}
+        columnState={{ other: { hidden: ["a", "b"], order: [], fixed: {} } }}
+      />
+    );
+    expect(html).toContain("列A");
+    expect(html).toContain("列B");
   });
 });

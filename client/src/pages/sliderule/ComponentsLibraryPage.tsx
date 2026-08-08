@@ -58,6 +58,8 @@ import {
 import type {
   ExperienceBlockInstance,
   FilterFieldOption,
+  BlockColumnState,
+  PageColumnState,
   PageFilterState,
   PageSelectionState,
 } from "./live-runtime/block-registry";
@@ -624,6 +626,18 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
         },
         extra: {},
       },
+  ColumnSettingPanel: {
+        block: {
+          id: "demo-ColumnSettingPanel", type: "ColumnSettingPanel",
+          props: { title: "列设置" },
+          // targets 指向墙上那张 DataTable 的 id。这一格是**单块预览**，那张表
+          // 不在同一棵树上，所以看不到联动——但连线本身是真的：装进同一页时
+          // （对照台下半截的装配预览）勾掉一列，表上那列就消失。
+          binding: { entityRef: "order", targets: ["demo-DataTable"] },
+        },
+        // 面板自己不绑行数据，列清单由宿主给（见渲染器里 targetColumns 的说明）
+        extra: { targetColumns: ["name", "cover", "amount", "status", "urgent", "owner_id", "at"] },
+      },
   QuickActionPanel: {
         block: { id: "demo-QuickActionPanel", type: "QuickActionPanel", props: { title: "常用操作", columns: 3 } },
         extra: {
@@ -754,6 +768,15 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
   const { block: instance, extra } = demoFor(block.type);
   const impl = IMPL_BY_TYPE[block.type];
   const demoable = HAS_DEMO.has(block.type);
+  // 墙上的示例也得是**能动的**。ColumnSettingPanel 全靠改宿主态活着，宿主不
+  // 给回调它就是一排点不动的复选框——这一页刚因为同一个原因让 QuickActionPanel
+  // 渲染成空气过（见 previewActions 那段）。这份局部态只服务这张卡。
+  const [demoColumnState, setDemoColumnState] = React.useState<PageColumnState>({});
+  const demoStateProps = {
+    columnState: demoColumnState,
+    onColumnStateChange: (targetId: string, next: BlockColumnState) =>
+      setDemoColumnState(prev => ({ ...prev, [targetId]: next })),
+  };
 
   // 手机档只渲染**真有手机实现**的区块（见 hasPhoneImplementation 与那里的说明）。
   // 没有实现的不会走到这里——它们压根不进手机档的列表。
@@ -778,6 +801,7 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
         fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
         fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
         enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
+        {...demoStateProps}
         {...extra}
       />
     )
@@ -1210,6 +1234,9 @@ function AssembledPageModal({
   // BatchActionBar 依赖同一类宿主态，所以**先把通路接上再建区块**——不接的话
   // 它在预览里永远显示"勾选左侧的行"，看着像做完了，其实是死的。
   const [selection, setSelection] = React.useState<PageSelectionState>({ rowIds: {} });
+  // 列视图态 —— ColumnSettingPanel 改、DataTable 读。跟 filterState 同一套路：
+  // **按目标区块 id 存**，一页两张表各改各的。
+  const [columnState, setColumnState] = React.useState<PageColumnState>({});
 
   const filterFieldOptions: FilterFieldOption[] = React.useMemo(
     () =>
@@ -1261,6 +1288,29 @@ function AssembledPageModal({
       return out;
     },
     [rows, filterState, allBlocks]
+  );
+
+  /**
+   * 列设置面板要列出的字段 —— 从它 targets 指向的那张表**当前的列**来。
+   *
+   * 面板自己不绑行数据（它的 dataKinds 是空的），所以这份清单必须由宿主给。
+   * 顺序也从目标表格来：目标声明了 fieldRefs 就用它，没声明就是行数据的键。
+   * 这跟 DataTable 自己那套派生规则得是同一份，否则面板上列出来的和表上画
+   * 出来的对不上——用户勾掉一个，表上没反应。
+   */
+  const targetColumnsOf = React.useCallback(
+    (b: AssembledBlock): string[] | undefined => {
+      const targets = (b.binding?.targets as string[] | undefined) ?? [];
+      if (targets.length === 0) return undefined;
+      const target = allBlocks.find(x => x.id === targets[0]);
+      if (!target) return undefined;
+      const declared = target.binding?.fieldRefs as string[] | undefined;
+      if (Array.isArray(declared) && declared.length > 0) return declared.map(String);
+      const entityRef = String(target.binding?.entityRef ?? "");
+      const list = rows[entityRef] ?? [];
+      return [...new Set(list.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 8);
+    },
+    [allBlocks, rows]
   );
 
   const handleAction = (actionId: string, data?: Record<string, unknown>) => {
@@ -1341,6 +1391,12 @@ function AssembledPageModal({
       onSelectionChange={(entityRef, rowIds) =>
         setSelection(prev => ({ rowIds: { ...prev.rowIds, [entityRef]: rowIds } }))
       }
+      columnState={columnState}
+      onColumnStateChange={(targetId, next) =>
+        setColumnState(prev => ({ ...prev, [targetId]: next }))
+      }
+      // 列设置自己不绑行数据——它要列什么，得问它管的那张表当前有哪几列。
+      targetColumns={targetColumnsOf(b)}
       fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
       fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
       enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}

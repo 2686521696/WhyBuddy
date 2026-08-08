@@ -56,6 +56,36 @@ REGION_KEYS = {
 MIN_PROPOSALS = 1
 MAX_PROPOSALS = 3
 
+# ── prompt 里那个"合格样例"的名字 ────────────────────────────────────────
+#
+# 样例必须是**还不存在**的区块：拿现有区块当样例，模型会照抄，然后被
+# duplicate-block 判死，白烧一轮。
+#
+# 这里踩过两次同一个坑，坑法一模一样——先挑一个"看起来还不存在"的名字写死，
+# 过些天那个区块真建出来了，用例当场红：
+#
+#   2026-08-08  BatchActionBar        建成真区块
+#   2026-08-08  ColumnSettingPanel    建成真区块（②批次 1 第一个）
+#
+# 所以不再写死。候选按顺序取第一个**目录里没有**的，路线图上排得越靠后越
+# 安全。全被建完了也不会崩：回落到一个明确的占位名。
+_EXAMPLE_CANDIDATES = (
+    "ColumnSettingPanel",
+    "DragSortHandleBar",
+    "PivotSummaryRow",
+    "CrossSheetFieldPanel",
+)
+_EXAMPLE_FALLBACK = "SomeBlockYouInvent"
+
+
+def example_block_type() -> str:
+    """prompt 样例用的区块名 —— 保证不与目录里已有的区块重名。"""
+    taken = {str(b["type"]) for b in L.EXPERIENCE_BLOCKS}
+    for name in _EXAMPLE_CANDIDATES:
+        if name not in taken:
+            return name
+    return _EXAMPLE_FALLBACK
+
 
 def existing_blocks() -> List[Dict[str, Any]]:
     """现有区块的契约摘要 —— 给模型看"已经有什么"，免得提重复的。"""
@@ -113,14 +143,24 @@ def _prompt(
         "(in Chinese, one sentence). 'because it would be nice' is not a reason.\n"
         "6. Names in Chinese for 'label', PascalCase English for 'type'.\n\n"
         "Return JSON only:\n"
-        # 例子里的区块名必须是**还不存在**的：拿现有区块当样例，模型会照抄，
-        # 然后被 duplicate-block 判死，白烧一轮。
-        '{"proposals":[{"type":"ColumnSettingPanel","label":"列设置面板",'
-        '"capability":"action","does":"让用户挑表格显示哪些列、调整列顺序",'
-        '"uses":["Checkbox","Button","Space"],"regions":["main","header"],'
-        '"props":["title","actions"],"binding":{"required":["entityRef"],'
-        '"optional":["fieldRefs"]},'
-        '"why":"字段多的表格一屏放不下，用户没法只留自己关心的列"}]}'
+        # 名字从 example_block_type() 来，保证跟目录里的区块不重名（见那里的说明）
+        + json.dumps(
+            {
+                "proposals": [{
+                    "type": example_block_type(),
+                    "label": "示例区块",
+                    "capability": "action",
+                    "does": "一句话说清它替用户做成了什么",
+                    "uses": ["Checkbox", "Button", "Space"],
+                    "regions": ["main", "header"],
+                    "props": ["title", "actions"],
+                    "binding": {"required": ["entityRef"], "optional": ["fieldRefs"]},
+                    "why": "这里写那个今天被服务得很差的具体页面处境",
+                }]
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 

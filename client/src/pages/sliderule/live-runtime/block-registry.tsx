@@ -18,6 +18,7 @@ import dayjs from "dayjs";
 import {
   Button,
   Card,
+  Checkbox,
   Empty,
   Flex,
   List,
@@ -30,6 +31,7 @@ import {
   Tag,
   theme as antdTheme,
   Timeline,
+  Tooltip,
   Typography,
 } from "antd";
 import type { TableColumnsType } from "antd";
@@ -230,6 +232,32 @@ export interface PageSelectionState {
   rowIds: Record<string, string[]>;
 }
 
+/**
+ * 一张表的列视图态 —— ColumnSettingPanel 改，DataTable 读。
+ *
+ * 2026-08-08 照 pro-components 的 ColumnSetting 建的（②批次 1）。它那边这些
+ * 状态住在 TableContext 的 `columnsMap: Record<key, {show, fixed, order}>` 里；
+ * 我们**按区块 id 存**，跟 ①b 的 targets 同一套路——一页可能有两张表，状态混
+ * 在一起就是当初 filterState 串台的同一个 bug。
+ *
+ * 三样各存各的，而不是塞进一个 `Record<field, {...}>`：
+ * 判断"这列被隐藏了吗"要遍历整表，而 `hidden.includes(f)` 一眼就懂。
+ */
+export interface BlockColumnState {
+  /** 被取消勾选的字段 id。**存隐藏而不是存显示**——数据模型加字段时，
+   *  新字段默认可见才是对的；存显示的话新字段会莫名其妙不出现。 */
+  hidden: string[];
+  /** 显式排过序的字段 id。只含被挪动过的，其余按原顺序补在后面。 */
+  order: string[];
+  /** 固定在左/右的列。不在表里就是不固定。 */
+  fixed: Record<string, "left" | "right">;
+}
+
+/** 按区块 id 存的列视图态。key 是**目标表格区块的 id**，不是实体名。 */
+export type PageColumnState = Record<string, BlockColumnState>;
+
+export const EMPTY_COLUMN_STATE: BlockColumnState = { hidden: [], order: [], fixed: {} };
+
 /** Step 6 FilterBar：可筛选的枚举字段及其取值选项（来自本页主实体）。 */
 export interface FilterFieldOption {
   id: string;
@@ -260,6 +288,13 @@ export interface ExperienceBlockRendererProps {
   selection?: PageSelectionState;
   /** 行选择变更回调（DataTable 勾选、BatchActionBar 清空都走它）。 */
   onSelectionChange?: (entityRef: string, rowIds: string[]) => void;
+  /** ColumnSettingPanel 改 / DataTable 读：按区块 id 存的列视图态。 */
+  columnState?: PageColumnState;
+  /** 列视图态变更回调。blockId 是**目标表格的 id**，不是面板自己的 id。 */
+  onColumnStateChange?: (blockId: string, next: BlockColumnState) => void;
+  /** ColumnSettingPanel 专用：目标表格当前的列（字段 id，按当前顺序）。
+   *  不传的话面板不知道该列出什么——它自己不绑行数据。 */
+  targetColumns?: string[];
   /** WorkflowTimeline 专用：整份 workflow 系统数据，chainRef 从这里解析节点/连线，
    * 不接受自由文案——Gate 已校验 chainRef 能在这里面查到（留空=主链路）。 */
   workflow?: WorkflowSection | null;
@@ -2052,6 +2087,267 @@ const BatchActionBarRenderer: ExperienceBlockRenderer = ({
 };
 
 /**
+ * ── 列设置 —— 照 ant-design/pro-components 的 ColumnSetting（2026-08-08，②批次 1）──
+ *
+ * 源：`src/table/components/ColumnSetting/index.tsx`（605 行）。
+ *
+ * 搬的**不是**它那几行 JSX——我们没有 TableContext、没有 Tree、状态形状也不同。
+ * 搬的是它替我们踩过的四条边界，每一条我们自己写都会漏：
+ *
+ * 1. **半选的分母是"面板里真的列出来的列"，不是状态表全量。** 它的注释原文：
+ *    "columnsMap 可能含有 hideInSetting 列或运行时被删掉的过期 key，导致分子与
+ *    分母不对齐，indeterminate 计算出现偏差"。我们同样会有过期 id——数据模型
+ *    改过字段之后，hidden 里躺着的名字已经不存在了。
+ *
+ * 2. **改了固定之后必须重排顺序。**（它的 issue #9556）固定分左/不固定/右三段，
+ *    顺序号却是全局的；只改固定不重排，一个「固定在左」的列可以排在中间那段
+ *    的后面，分组和顺序自相矛盾。
+ *
+ * 3. **重置要连顺序一起重置。**（它的 issue #9558）只把显示状态复位、留着旧的
+ *    排序数组，下一次挪动仍然基于旧顺序算，用户看到的是"重置了个寂寞"。
+ *
+ * 4. **没有任何固定列时不显示分组标题。**（`showTitle={showLeft || showRight}`）
+ *    否则一个孤零零的「不固定」标题挂在那，用户以为还有别的组没展开。
+ *
+ * 一条我们做得比它多的：**全部取消勾选**时它照样把一张没有列的表交给 antd
+ * Table（渲染出一片空白表头）。我们在 DataTable 里给了空态和一句话，见那边。
+ */
+
+/** 固定分组的顺序 —— 左、不固定、右。这个顺序就是列在表上的先后。 */
+const FIXED_GROUPS: Array<{ key: "left" | "none" | "right"; title: string }> = [
+  { key: "left", title: "固定在左侧" },
+  { key: "none", title: "不固定" },
+  { key: "right", title: "固定在右侧" },
+];
+
+function groupOf(field: string, state: BlockColumnState): "left" | "none" | "right" {
+  return state.fixed[field] ?? "none";
+}
+
+/**
+ * 把列视图态套到字段列表上 —— DataTable 和 ColumnSettingPanel 共用这一份。
+ *
+ * 三步的**先后不能换**（这是上面第 2 条的落点）：
+ *   ① 去掉隐藏的  ② 按显式顺序排  ③ 按固定分组归拢
+ * 分组必须在排序之后、并且盖过排序，否则「固定在左」的列会排在中间那段后面。
+ */
+export function applyColumnState(fields: string[], state?: BlockColumnState): string[] {
+  if (!state) return fields;
+  const hidden = new Set(state.hidden);
+  const visible = fields.filter(f => !hidden.has(f));
+  const rank = new Map(state.order.map((f, i) => [f, i]));
+  // 没排过序的排在后面，组内保持原有相对顺序（稳定排序）
+  const ordered = visible
+    .map((f, i) => ({ f, i, r: rank.has(f) ? rank.get(f)! : Number.MAX_SAFE_INTEGER }))
+    .sort((a, b) => (a.r === b.r ? a.i - b.i : a.r - b.r))
+    .map(x => x.f);
+  return [
+    ...ordered.filter(f => state.fixed[f] === "left"),
+    ...ordered.filter(f => !state.fixed[f]),
+    ...ordered.filter(f => state.fixed[f] === "right"),
+  ];
+}
+
+const ColumnSettingPanelRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  columnState,
+  onColumnStateChange,
+  targetColumns,
+  fieldLabelOf,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim() || "列设置";
+  const entityRef = String(block.binding?.entityRef ?? "").trim();
+  const targets = (block.binding?.targets as string[] | undefined) ?? [];
+  const targetId = targets[0];
+
+  if (!targetId || !targetColumns || targetColumns.length === 0) {
+    return (
+      <BlockShell block={block} title={title} testid="column-setting-panel">
+        <BlockEmpty hint="没有连到任何表格 —— 列设置要先在 binding.targets 里说清楚它管哪一张" />
+      </BlockShell>
+    );
+  }
+
+  const state = columnState?.[targetId] ?? EMPTY_COLUMN_STATE;
+  const push = (next: BlockColumnState) => onColumnStateChange?.(targetId, next);
+
+  // **分母只数面板里真的列出来的列**（pro-components 的那条注释）。state.hidden
+  // 里可能躺着数据模型改过之后已经不存在的字段名，把它们算进去，全选框会永远
+  // 停在半选。
+  const hiddenHere = targetColumns.filter(f => state.hidden.includes(f));
+  const allChecked = hiddenHere.length === 0;
+  const indeterminate = hiddenHere.length > 0 && hiddenHere.length < targetColumns.length;
+
+  // 重置 = 回到**表格自己声明的那一份**（targetColumns 就是它，宿主按表格的
+  // fieldRefs 算好传进来的），并且**顺序和固定一起清掉**——只复位显示状态是
+  // pro-components 的 issue #9558。
+  //
+  // 面板自己不再声明 fieldRefs（2026-08-08 当天改掉的）。一开始给了它一份，
+  // 浏览器里当场露馅：面板说默认 4 列、表格自己声明 10 列，两份默认互相矛盾，
+  // 结果是什么都没动过、「重置」却是可点的。同一件事不能有两个出处——列由表格
+  // 声明，面板只负责在运行时改它。pro-components 也是这么分的：它的重置读的是
+  // 表格的 `columnsState.defaultValue`，不是设置面板另存一份。
+  const resetTo: BlockColumnState = { hidden: [], order: [], fixed: {} };
+  const isPristine =
+    state.hidden.length === 0 &&
+    state.order.length === 0 &&
+    Object.keys(state.fixed).length === 0;
+
+  /**
+   * 顺序永远按**全部列**算，不受当前隐藏影响。
+   *
+   * 写这个块的时候自己踩的：一开始直接把 applyColumnState 的结果存进 order，
+   * 而它返回的是"可见的那些"——于是藏掉一列、挪一下别的、再把它勾回来，那一
+   * 列因为丢了名次会跳到最末尾。隐藏是"这次不看"，不该顺手改掉它的位置。
+   */
+  const orderedAll = (s: BlockColumnState) =>
+    applyColumnState(targetColumns, { ...s, hidden: [] });
+
+  const toggle = (field: string, checked: boolean) =>
+    push({
+      ...state,
+      hidden: checked ? state.hidden.filter(f => f !== field) : [...state.hidden, field],
+    });
+
+  const setFixed = (field: string, fixed: "left" | "right" | undefined) => {
+    if ((state.fixed[field] ?? undefined) === fixed) return; // 跟当前一致就别产生一次无意义更新
+    const nextFixed = { ...state.fixed };
+    if (fixed) nextFixed[field] = fixed;
+    else delete nextFixed[field];
+    // 改完固定重排一次顺序 —— pro-components 的 issue #9556。不重排的话，
+    // 分组把这一列拎到最左边，它的顺序号却还留在中段，下一次挪动就乱套。
+    const next = { ...state, fixed: nextFixed };
+    push({ ...next, order: orderedAll(next) });
+  };
+
+  /** 组内上移/下移。跨组挪没有意义——先后由固定分组决定，不由顺序号决定。 */
+  const move = (field: string, delta: -1 | 1) => {
+    const current = orderedAll(state);
+    const group = groupOf(field, state);
+    const peers = current.filter(f => groupOf(f, state) === group);
+    const at = peers.indexOf(field);
+    const to = at + delta;
+    if (at < 0 || to < 0 || to >= peers.length) return;
+    const reordered = [...peers];
+    reordered.splice(at, 1);
+    reordered.splice(to, 0, field);
+    // 只重写这一组的位置，别的组原样留在自己的位置上
+    let cursor = 0;
+    const merged = current.map(f => (groupOf(f, state) === group ? reordered[cursor++] : f));
+    push({ ...state, order: merged });
+  };
+
+  // 面板里**连隐藏的列一起列出来**（唯一能把它们勾回来的地方），而且按它们
+  // 真实的位置排——不是把隐藏的一律甩到末尾。上移/下移算的也是这一份，
+  // 两处不一致的话按钮会挪走另一列。
+  const rendered = orderedAll(state);
+  const labelOf = (f: string) => fieldLabelOf?.(entityRef, f) ?? f;
+  // 没有任何固定列时不出分组标题 —— 一个孤零零的「不固定」标题会让人以为
+  // 还有别的组没展开（pro-components 的 showTitle={showLeft || showRight}）
+  const anyFixed = targetColumns.some(f => state.fixed[f]);
+
+  return (
+    <BlockShell block={block}
+      title={title}
+      testid="column-setting-panel"
+      extra={
+        <Button
+          size="small"
+          type="link"
+          disabled={isPristine}
+          data-testid="column-setting-reset"
+          onClick={() => push(resetTo)}
+        >
+          重置
+        </Button>
+      }
+    >
+      <Checkbox
+        indeterminate={indeterminate}
+        checked={allChecked}
+        data-testid="column-setting-all"
+        onChange={e =>
+          push({ ...state, hidden: e.target.checked ? [] : [...targetColumns] })
+        }
+      >
+        <span style={{ fontSize: 12 }}>
+          列展示（{targetColumns.length - hiddenHere.length}/{targetColumns.length}）
+        </span>
+      </Checkbox>
+      {FIXED_GROUPS.map(group => {
+        const members = rendered.filter(f => groupOf(f, state) === group.key);
+        if (members.length === 0) return null;
+        return (
+          <div key={group.key} style={{ marginTop: 8 }}>
+            {anyFixed && (
+              <div
+                data-testid="column-setting-group-title"
+                style={{ fontSize: 11, color: "#94a3b8", marginBottom: 2 }}
+              >
+                {group.title}
+              </div>
+            )}
+            {members.map((f, i) => (
+              <Flex key={f} align="center" gap={4} data-testid="column-setting-item">
+                <Checkbox
+                  checked={!state.hidden.includes(f)}
+                  onChange={e => toggle(f, e.target.checked)}
+                >
+                  <span style={{ fontSize: 12 }}>{labelOf(f)}</span>
+                </Checkbox>
+                <span style={{ flex: 1 }} />
+                <Tooltip title="上移">
+                  <Button
+                    size="small"
+                    type="text"
+                    disabled={i === 0}
+                    data-testid="column-setting-up"
+                    onClick={() => move(f, -1)}
+                    icon={<AntdIcons.ArrowUpOutlined />}
+                  />
+                </Tooltip>
+                <Tooltip title="下移">
+                  <Button
+                    size="small"
+                    type="text"
+                    disabled={i === members.length - 1}
+                    data-testid="column-setting-down"
+                    onClick={() => move(f, 1)}
+                    icon={<AntdIcons.ArrowDownOutlined />}
+                  />
+                </Tooltip>
+                <Tooltip title={group.key === "left" ? "取消固定" : "固定在左侧"}>
+                  <Button
+                    size="small"
+                    type="text"
+                    data-testid="column-setting-pin-left"
+                    onClick={() => setFixed(f, group.key === "left" ? undefined : "left")}
+                    // 左右固定用 PicLeft/PicRight（"内容靠左/靠右"），不用箭头——
+                    // 同一行里再放两个箭头，跟上移下移分不开
+                    icon={<AntdIcons.PicLeftOutlined />}
+                  />
+                </Tooltip>
+                <Tooltip title={group.key === "right" ? "取消固定" : "固定在右侧"}>
+                  <Button
+                    size="small"
+                    type="text"
+                    data-testid="column-setting-pin-right"
+                    onClick={() => setFixed(f, group.key === "right" ? undefined : "right")}
+                    icon={<AntdIcons.PicRightOutlined />}
+                  />
+                </Tooltip>
+              </Flex>
+            ))}
+          </div>
+        );
+      })}
+    </BlockShell>
+  );
+};
+
+/**
  * ── 字段渲染 —— 照 refinedev/refine 的 Inferencer 三层模型（2026-08-08）──
  *
  * ## 为什么重做
@@ -2376,6 +2672,7 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
   fieldTypeOf,
   selection,
   onSelectionChange,
+  columnState,
 }) => {
   // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
   // 现行 renderBlock 不传 children，走下面的 binding 取数。
@@ -2404,7 +2701,20 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
   //
   // 兜底上限从 5 提到 8：用户示范的订单页有 9 列，5 列砍掉的正是"支付状态"
   // "操作"这种一眼要看的东西——列少不等于清爽，等于信息不全。
-  const cols = boundFieldIds(block, bound.rows, 8);
+  const declaredCols = boundFieldIds(block, bound.rows, 8);
+  // 用户在 ColumnSettingPanel 里改过的隐藏/顺序/固定，最后套在这里。
+  // 没有那个面板时 columnState 为空，applyColumnState 原样返回。
+  const viewState = block.id ? columnState?.[block.id] : undefined;
+  const cols = applyColumnState(declaredCols, viewState);
+  // **全部列都被藏起来**是真会发生的：面板上把「列展示」的全选框取消掉就是。
+  // pro-components 到这一步会把一张没有列的表交给 antd Table，渲染出一片
+  // 空白表头——看起来像坏了。说清楚发生了什么，比默默画个空壳强。
+  if (cols.length === 0)
+    return (
+      <BlockShell block={block} title={title} testid="data-table">
+        <BlockEmpty hint="所有列都被隐藏了 — 在「列设置」里勾回来" />
+      </BlockShell>
+    );
   const columns: TableColumnsType<RuntimeRow> = cols.map(c => {
     const options = enumOptionsOf?.(bound.entityRef, c) ?? [];
     // 取第一个非空值当样本定语义——照 refine 的 inferencer，它也是看值。
@@ -2421,6 +2731,8 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
       ellipsis: ELLIPSIS_SEMANTICS.has(semantic),
       // 数值右对齐是表格的基本功——左对齐的金额列没法竖着比大小
       align: semantic === "money" || semantic === "number" ? ("right" as const) : undefined,
+      // 固定列。分组顺序 applyColumnState 已经排好了，这里只负责让 antd 真的粘住
+      fixed: viewState?.fixed[c],
       render: (_: unknown, row: RuntimeRow) => renderCell(semantic, row.values?.[c], options),
     };
   });
@@ -2487,10 +2799,21 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
           showQuickJumper: bound.rows.length > 40,
           showTotal: total => `共 ${total.toLocaleString("zh-CN")} 条`,
         }}
-        // 不给 scroll.x：区块是页面里的一块，横向滚动条藏在卡片里没人会去拉，
+        // 默认不给 scroll.x：区块是页面里的一块，横向滚动条藏在卡片里没人会去拉，
         // 对照台上表格直接被卡片右边缘切掉、最后一列看不见。列共享可用宽度 +
         // 省略号（有 tooltip）才是这个尺寸下该有的行为。
-        tableLayout="fixed"
+        //
+        // **有固定列时例外**：固定的意义就是"横向滚的时候这列别走"，不给
+        // scroll.x 的话 antd 的 fixed 无事发生（还会告警）。用户在列设置里
+        // 主动固定了某一列，就是明确表示他要横着看。
+        scroll={
+          viewState && Object.keys(viewState.fixed).length > 0
+            ? { x: "max-content" }
+            : undefined
+        }
+        tableLayout={
+          viewState && Object.keys(viewState.fixed).length > 0 ? undefined : "fixed"
+        }
         // 勾选只在宿主真的接了选择态时才出现（2026-08-08）。没有 BatchActionBar
         // 的页面凭空多一列复选框是纯噪音——勾了也没地方用。
         rowSelection={
@@ -2909,6 +3232,7 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     ResultPanel: { render: ResultPanelRenderer, uses: ["Result", "Button", "Space"], label: "结果屏" },
     StatusTabs: { render: StatusTabsRenderer, uses: ["Tabs", "Badge"], label: "状态切换栏" },
     BatchActionBar: { render: BatchActionBarRenderer, uses: ["Alert", "Button", "Flex", "Checkbox"], label: "批量操作栏" },
+    ColumnSettingPanel: { render: ColumnSettingPanelRenderer, uses: ["Checkbox", "Button", "Tooltip", "Flex"], label: "列设置" },
   });
 
 /** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */

@@ -184,6 +184,27 @@ def _load_experience_blocks() -> tuple:
                 f"{sorted(legal_families)} 之一，现在是 {family!r}"
             )
 
+        # source（可选，2026-08-08 起）：这个区块是照哪个开源项目的哪个文件建的。
+        #
+        # 用户拍板参照不设限之后，记来源的理由从"合规"换成了**可追溯**：以后
+        # 看到某条奇怪的边界处理，能查到它是从哪学来的、当初为什么那么写。
+        # `took` 那一栏写的是"学到的是什么"——搬运的真正产出是边界情况，不是
+        # 那几行 JSX，所以它是三个字段里最值钱的一个。
+        #
+        # 校验它，是因为不校验的自由文本三个月后就会退化成一句"参考了 antd"。
+        source = raw.get("source")
+        if source is not None:
+            if not isinstance(source, dict):
+                raise ValueError(
+                    f"experience_block_catalog.json {block_type}.source 必须是对象（或整个省略）"
+                )
+            for field in ("repo", "path", "took"):
+                value = source.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(
+                        f"experience_block_catalog.json {block_type}.source.{field} 必须是非空字符串"
+                    )
+
         binding_schema = raw.get("bindingSchema")
         if not isinstance(binding_schema, dict):
             raise ValueError(f"experience_block_catalog.json {block_type} 缺 bindingSchema")

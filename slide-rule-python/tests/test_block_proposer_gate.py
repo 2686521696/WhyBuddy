@@ -29,6 +29,7 @@ from services.block_proposer import (
     MAX_PROPOSALS,
     REGION_CAPABILITIES,
     REGION_KEYS,
+    example_block_type,
     existing_blocks,
     gate,
 )
@@ -36,13 +37,16 @@ from services.block_proposer import (
 BASE = {"Alert", "Checkbox", "Button", "Space", "Table", "Tag", "Segmented", "Badge"}
 UNLINKED = {"Alert", "Checkbox", "Segmented", "Badge"}
 
-# 例子刻意用一个**还不存在**的区块名。2026-08-08 这里踩过一次：原来的例子叫
-# BatchActionBar，等它真的建出来之后这条用例当场红——red 得对，duplicate-block
-# 正是该判的，但拿现有区块当"合格样例"本身就是错的。
+# 名字从 example_block_type() 取，跟 prompt 里那个样例是同一个来源。
+#
+# 这里踩过**两次**同一个坑：先写死 BatchActionBar，它建成真区块之后用例当场红；
+# 换成 ColumnSettingPanel，它也建成了真区块。red 得对——duplicate-block 正是该
+# 判的——但拿现有区块当"合格样例"本身就是错的，而"再挑一个看起来还不存在的名字
+# 写死"只是把同一个坑往后推几天。改成从函数取，结构上不会再重名。
 GOOD = {
     "proposals": [
         {
-            "type": "ColumnSettingPanel",
+            "type": example_block_type(),
             "label": "列设置面板",
             "capability": "action",
             "does": "让用户挑表格显示哪些列、调整列顺序，选择记在本地",
@@ -63,6 +67,24 @@ def codes(payload, base=BASE, unlinked=UNLINKED):
 def test_a_well_formed_proposal_passes():
     """先钉住"对的能过"——只会说不的 Gate 等于把功能关掉。"""
     assert gate(GOOD, BASE, UNLINKED) == []
+
+
+def test_the_example_name_is_never_a_real_block():
+    """**这条是替上面那个夹具站岗的。**
+
+    prompt 里的合格样例和用例夹具共用一个名字。它一旦跟真实区块撞名，模型会
+    照抄样例、然后被 duplicate-block 判死——白烧一轮，而且报出来的错跟真正的
+    原因（样例写错了）差着十万八千里。
+
+    直接钉住这个性质本身，而不是钉某个具体名字：候选全被建成真区块的那天，
+    这条会红，提示去 _EXAMPLE_CANDIDATES 里再加一个。
+    """
+    taken = {b["type"] for b in existing_blocks()}
+    name = example_block_type()
+    assert name not in taken, (
+        f"prompt 样例名 {name} 已经是真区块了。去 block_proposer.py 的 "
+        "_EXAMPLE_CANDIDATES 末尾加一个还不存在的名字——不要改这条用例。"
+    )
 
 
 def test_a_proposal_that_releases_nothing_is_rejected():

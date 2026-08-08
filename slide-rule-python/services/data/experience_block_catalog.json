@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 14,
+  "version": 16,
   "blockFamilies": [
     "data",
     "filter",
@@ -1630,6 +1630,55 @@
         ],
         "optional": [],
         "note": "entityRef 要跟同页那张表绑同一个实体——它读的就是那张表的勾选结果。操作名写在 props.actions 里（批量审批 / 批量导出 / 批量删除）。 targets 是这些操作**作用于哪些区块**的 id（同页的 data 族区块）。批量操作要知道自己操作的是哪张表的选中行；页头操作要知道自己新建的是哪个实体的记录。目标必须与本区块绑同一个实体。"
+      }
+    },
+    {
+      "type": "ColumnSettingPanel",
+      "description": "表格上方那个「列设置」——勾哪几列显示、把关键列固定在左右两侧、调整先后顺序，还能一键重置回默认。字段一多的表格没有它就只能横向滚动。",
+      "rendererKey": "column-setting-panel",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "action",
+      "family": "action",
+      "source": {
+        "repo": "ant-design/pro-components",
+        "path": "src/table/components/ColumnSetting/index.tsx",
+        "took": "三段固定分组、全选的半选分母、重置要连顺序一起重置、改固定后 order 需重排；以及它的重置基准是表格自己的 columnsState.defaultValue，不是面板另存一份"
+      },
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          }
+        }
+      },
+      "dataKinds": [],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "monitor"
+      ],
+      "allowedRegions": [
+        "header"
+      ],
+      "regionsRationale": "header only. It is a toolbar control for one table: pro-components puts ColumnSetting inside the table's ToolBar, directly above the rows it governs. Anywhere below the table asks the user to read the columns first and choose them afterwards; anywhere in aside detaches it from the table it controls.",
+      "events": [],
+      "bindingSchema": {
+        "required": [
+          "entityRef",
+          "targets"
+        ],
+        "optional": [],
+        "note": "这个区块**不声明显示哪几列**——那是表格自己的 fieldRefs 说了算，一个页面上同一件事不能有两个出处。它只负责在运行时改（藏/固定/换顺序），「重置」就是回到表格声明的那一份。entityRef 必须与 targets 指向的表格是同一个实体——它列出来的就是那张表的字段。 targets 是这些操作**作用于哪些区块**的 id（同页的 data 族区块）。批量操作要知道自己操作的是哪张表的选中行；页头操作要知道自己新建的是哪个实体的记录。目标必须与本区块绑同一个实体。"
       }
     }
   ],
