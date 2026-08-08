@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 22,
+  "version": 23,
   "blockFamilies": [
     "data",
     "filter",
@@ -260,13 +260,14 @@
         },
         {
           "key": "main",
-          "why": "这条记录的全部字段",
+          "why": "这条记录的全部字段，以及挂在它下面的东西。2026-08-08 从只准放 1 个提到 3 个、并接受 chain：pro-blocks 的 ProfileAdvanced 在 PageContainer 的 children 里摆了四张卡——流程进度（Steps）、用户信息（Descriptions）、来电记录、退货详情（三张关联表）。只准放一个的话，「关联单据」和「流程进度」在详情页上无处可去。",
           "weight": "primary",
           "required": true,
           "accepts": [
-            "entityRows"
+            "entityRows",
+            "chain"
           ],
-          "maxBlocks": 1
+          "maxBlocks": 3
         },
         {
           "key": "aside",
@@ -1048,19 +1049,24 @@
           "entityRef"
         ],
         "optional": [
-          "fieldRefs"
+          "fieldRefs",
+          "parentRef",
+          "viaFieldRef"
         ],
-        "note": "fieldRefs 声明这张表显示哪几列、按什么顺序；不写就由页面从真实行的键里派生前 8 个。字段一多，派生的取舍规则是键的顺序，模型控制不了，所以要显示特定几列就必须写出来。binding 对象整体可省略，省略时不受 required 约束。",
+        "note": "fieldRefs 声明这张表显示哪几列、按什么顺序；不写就由页面从真实行的键里派生前 8 个。字段一多，派生的取舍规则是键的顺序，模型控制不了，所以要显示特定几列就必须写出来。 parentRef + viaFieldRef 一起用，把这张表变成**关联单据表**：只显示 viaFieldRef 指向当前聚焦的那条 parentRef 记录的行（详情页下面那几张「关联单据」就是这个）。两个要么都写要么都不写——只写一个是没说完的话。binding 对象整体可省略，省略时不受 required 约束。",
         "entityFieldRefLists": {
           "fieldRefs": {}
+        },
+        "entityFieldRefs": {
+          "viaFieldRef": "ref"
         }
       },
       "capability": "entityRows",
       "family": "data",
       "source": {
         "repo": "ant-design/pro-components",
-        "path": "src/table/components/DragSortTable/index.tsx + src/table/utils/useDragSort.tsx",
-        "took": "拖拽排序是表格的一个能力，不是另一张表——它那边 DragSortTable 只是为了包住 ProTable 内部才独立成组件；拖完先本地生效再回调（onDragSortEnd 拿到的是已经排好的新数组，持久化归调用方）；限制纵向轴，否则能横着乱拖；拖回原位不触发"
+        "path": "src/table/components/DragSortTable/index.tsx + src/table/utils/useDragSort.tsx；关联单据表照 pro-blocks/ProfileAdvanced/src/index.tsx",
+        "took": "拖拽排序是表格的一个能力，不是另一张表——它那边 DragSortTable 只是为了包住 ProTable 内部才独立成组件；拖完先本地生效再回调（onDragSortEnd 拿到的是已经排好的新数组，持久化归调用方）；限制纵向轴，否则能横着乱拖；拖回原位不触发；关联单据表挂在**当前记录**下面，不是把整张表搬过来——ProfileAdvanced 那三张 Table 各是一份属于这一单的操作日志，不是全库的日志"
       }
     },
     {
@@ -1498,7 +1504,13 @@
             "type": "string"
           },
           "columns": {
-            "type": "number"
+            "type": "string",
+            "enum": [
+              "responsive",
+              "1",
+              "2",
+              "3"
+            ]
           },
           "surface": {
             "type": "string",
@@ -1540,7 +1552,12 @@
         }
       },
       "capability": "entityRows",
-      "family": "data"
+      "family": "data",
+      "source": {
+        "repo": "ant-design/pro-blocks",
+        "path": "ProfileAdvanced/src/index.tsx + ProfileBasic/src/index.tsx",
+        "took": "列数跟屏宽走（它写的是 column={isMobile ? 1 : 2}）——写死列数的详情在窄屏上标签和值会挤成一坨；页头那份 Descriptions 是 size=small + 2 列，正文那份是 3 列，同一个组件在两个位置该是两种密度"
+      }
     },
     {
       "type": "StepsForm",

@@ -9,6 +9,7 @@
  *   3. 遗留的 children 透传没被这次改动弄丢。
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -1368,5 +1369,138 @@ describe("标签筛选行", () => {
 
   it("fieldRefs 指向没有取值声明的字段时说清楚，不画一排空行", () => {
     expect(render({}, ["没有取值的字段"])).toContain("没有可摊成标签行的枚举字段");
+  });
+});
+
+/**
+ * 2026-08-08 ②批次 4：详情页。照 pro-blocks 的 ProfileAdvanced / ProfileBasic。
+ *
+ * 这一批最要紧的不是新控件，是补上一个**一直缺着的概念**：当前聚焦的是哪一条。
+ * RecordDetail 的注释从建成那天就写着「运行时还没有选中态时用第一条」，而"还没有"
+ * 一直是"没有"。关联单据表没有它就只能把整张表搬过来——ProfileAdvanced 那三张
+ * Table 各是**属于这一单**的操作日志，不是全库的日志。
+ */
+describe("关联单据表", () => {
+  const logs = [
+    { id: "l1", values: { orderId: "o1", action: "创建" }, createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "l2", values: { orderId: "o1", action: "复核" }, createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "l3", values: { orderId: "o2", action: "创建" }, createdAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  const render = (binding: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "rel", type: "DataTable", props: { title: "关联单据" }, binding }}
+        entityRows={{ orderLog: logs }}
+        fieldLabelOf={(_e, f) => ({ action: "操作", orderId: "所属订单" })[f]}
+        {...extra}
+      />
+    );
+
+  it("**只显示挂在聚焦记录下面的行** —— 这就是它跟普通表格的全部区别", () => {
+    const html = render(
+      { entityRef: "orderLog", parentRef: "order", viaFieldRef: "orderId", fieldRefs: ["action"] },
+      { focus: { order: "o1" } }
+    );
+    expect((html.match(/data-testid="data-table-row"/g) ?? []).length).toBe(2);
+    expect(html).toContain("复核");
+  });
+
+  it("换一条主记录就换一批行", () => {
+    const html = render(
+      { entityRef: "orderLog", parentRef: "order", viaFieldRef: "orderId", fieldRefs: ["action"] },
+      { focus: { order: "o2" } }
+    );
+    expect((html.match(/data-testid="data-table-row"/g) ?? []).length).toBe(1);
+  });
+
+  it("还没有聚焦记录时说清楚，**不是把整张表摊出来**", () => {
+    // 这条是判据本身：没有主记录却照样显示全部，是最容易犯又最难发现的错——
+    // 界面看起来完全正常，只是给用户看了不属于这条记录的数据。
+    const html = render({
+      entityRef: "orderLog", parentRef: "order", viaFieldRef: "orderId", fieldRefs: ["action"],
+    });
+    expect(html).toContain("先选中一条主记录");
+    expect(html).not.toContain('data-testid="data-table-row"');
+  });
+
+  it("聚焦的记录名下一条都没有时，说的是「没有关联单据」而不是「点新建」", () => {
+    const html = render(
+      { entityRef: "orderLog", parentRef: "order", viaFieldRef: "orderId", fieldRefs: ["action"] },
+      { focus: { order: "查无此单" } }
+    );
+    expect(html).toContain("这条记录名下还没有关联单据");
+  });
+
+  it("**两个键要么都写要么都不写** —— 只写一个当作没声明，不猜", () => {
+    // 猜错的后果是悄悄给用户看了不属于这条记录的数据，那比不生效严重得多。
+    const onlyParent = render(
+      { entityRef: "orderLog", parentRef: "order", fieldRefs: ["action"] },
+      { focus: { order: "o1" } }
+    );
+    expect((onlyParent.match(/data-testid="data-table-row"/g) ?? []).length).toBe(3);
+    const onlyVia = render(
+      { entityRef: "orderLog", viaFieldRef: "orderId", fieldRefs: ["action"] },
+      { focus: { order: "o1" } }
+    );
+    expect((onlyVia.match(/data-testid="data-table-row"/g) ?? []).length).toBe(3);
+  });
+});
+
+describe("详情区块认聚焦的那一条", () => {
+  const rows = [
+    { id: "r1", values: { name: "甲单" }, createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "r2", values: { name: "乙单" }, createdAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  const render = (extra: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "d", type: "RecordDetail", props: { title: "订单详情" },
+          binding: { entityRef: "order", fieldRefs: ["name"] },
+        }}
+        entityRows={{ order: rows }}
+        fieldLabelOf={(_e, f) => ({ name: "单号" })[f]}
+        {...extra}
+      />
+    );
+
+  it("聚焦哪条就显示哪条", () => {
+    expect(render({ focus: { order: "r2" } })).toContain("乙单");
+  });
+
+  it("没有聚焦态时回落第一条 —— 稳定，不是随机", () => {
+    expect(render()).toContain("甲单");
+    expect(render()).not.toContain("乙单");
+  });
+
+  it("聚焦的 id 查不到时也回落第一条，不渲染空详情", () => {
+    const html = render({ focus: { order: "已经被删掉的行" } });
+    expect(html).toContain("甲单");
+  });
+});
+
+describe("详情的列数默认跟屏宽走", () => {
+  it("不声明 columns 时用响应式档位，不是写死的 2 列", () => {
+    // ProfileAdvanced 写的是 column={isMobile ? 1 : 2}——写死列数的详情在窄屏上
+    // 标签和值会挤成一坨。
+    const src = readFileSync(
+      new URL("../block-registry.tsx", import.meta.url),
+      "utf8"
+    );
+    expect(src).toContain('String(block.props?.columns ?? "responsive")');
+    expect(src).toContain("{ xs: 1, sm: 1, md: 2, lg: 3, xl: 3, xxl: 3 }");
+  });
+
+  it("显式声明的档位仍然生效 —— 页头那份该是 2 列，正文那份是 3 列", () => {
+    const html = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "d", type: "RecordDetail", props: { columns: "2" },
+          binding: { entityRef: "order", fieldRefs: ["name"] },
+        }}
+        entityRows={{ order: [{ id: "r1", values: { name: "甲" }, createdAt: "2026-08-01T00:00:00.000Z" }] }}
+      />
+    );
+    expect(html).toContain("甲");
   });
 });

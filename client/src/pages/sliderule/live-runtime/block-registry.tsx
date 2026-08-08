@@ -276,6 +276,18 @@ export interface BlockColumnState {
 /** 按区块 id 存的列视图态。key 是**目标表格区块的 id**，不是实体名。 */
 export type PageColumnState = Record<string, BlockColumnState>;
 
+/**
+ * 当前聚焦的那条记录（2026-08-08，②批次 4）。key 是实体名，值是行 id。
+ *
+ * 详情页要回答的第一个问题是"这是哪一条"，而我们此前**根本没有这个概念**：
+ * RecordDetail 的注释写着「运行时还没有选中态时用第一条」，一直用的就是第一条。
+ * 关联单据表（照 pro-blocks 的 ProfileAdvanced）必须知道主记录是谁，否则它只能
+ * 把整张表搬过来——那三张 Table 各是**属于这一单**的操作日志，不是全库的日志。
+ *
+ * 按实体分组，跟 selection.rowIds 同一套路：一页可能同时聚焦订单和客户各一条。
+ */
+export type PageFocusState = Record<string, string>;
+
 export const EMPTY_COLUMN_STATE: BlockColumnState = { hidden: [], order: [], fixed: {} };
 
 /** Step 6 FilterBar：可筛选的枚举字段及其取值选项（来自本页主实体）。 */
@@ -315,6 +327,8 @@ export interface ExperienceBlockRendererProps {
   /** ColumnSettingPanel 专用：目标表格当前的列（字段 id，按当前顺序）。
    *  不传的话面板不知道该列出什么——它自己不绑行数据。 */
   targetColumns?: string[];
+  /** 当前聚焦的记录（实体名 → 行 id）。关联单据表靠它知道主记录是谁。 */
+  focus?: PageFocusState;
   /** WorkflowTimeline 专用：整份 workflow 系统数据，chainRef 从这里解析节点/连线，
    * 不接受自由文案——Gate 已校验 chainRef 能在这里面查到（留空=主链路）。 */
   workflow?: WorkflowSection | null;
@@ -3123,22 +3137,56 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
   selection,
   onSelectionChange,
   columnState,
+  focus,
 }) => {
   // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
   // 现行 renderBlock 不传 children，走下面的 binding 取数。
   if (children !== undefined && children !== null) return <>{children}</>;
   const title = String(block.props?.title ?? "").trim();
-  const bound = rowsOfBinding(block, entityRows);
+  let bound = rowsOfBinding(block, entityRows);
   if (!bound)
     return (
       <BlockShell block={block} title={title} testid="data-table">
         <BlockEmpty hint="表格未绑定到有效实体" />
       </BlockShell>
     );
+  /**
+   * 关联单据表（2026-08-08，②批次 4，照 pro-blocks 的 ProfileAdvanced）。
+   *
+   * 声明了 parentRef + viaFieldRef，这张表就只显示**属于当前那条主记录**的行。
+   * ProfileAdvanced 详情页下面那三张 Table 各是属于这一单的操作日志，不是全库
+   * 的日志——把整张表原样搬到详情页上是最容易犯的那个错，它长得很像"做完了"。
+   *
+   * 两个键要么都写要么都不写。只写一个是没说完的话，与其猜一个默认值，
+   * 不如当作没声明——猜错的后果是悄悄给用户看了不属于这条记录的数据。
+   */
+  const parentRef = String(block.binding?.parentRef ?? "").trim();
+  const viaFieldRef = String(block.binding?.viaFieldRef ?? "").trim();
+  const isRelated = !!parentRef && !!viaFieldRef;
+  const parentRowId = isRelated ? focus?.[parentRef] : undefined;
+  if (isRelated && !parentRowId)
+    return (
+      <BlockShell block={block} title={title} testid="data-table">
+        <BlockEmpty hint="先选中一条主记录 — 这张表只显示挂在它下面的单据" />
+      </BlockShell>
+    );
+  if (isRelated) {
+    bound = {
+      ...bound,
+      rows: bound.rows.filter(r => String(r.values?.[viaFieldRef] ?? "") === parentRowId),
+    };
+  }
+
   if (bound.rows.length === 0)
     return (
       <BlockShell block={block} title={title} testid="data-table">
-        <BlockEmpty hint="暂无数据 — 点「新建」写入第一条真实数据" />
+        <BlockEmpty
+          hint={
+            isRelated
+              ? "这条记录名下还没有关联单据"
+              : "暂无数据 — 点「新建」写入第一条真实数据"
+          }
+        />
       </BlockShell>
     );
   // 列优先取 binding.fieldRefs；没声明才从真实行的键里派生。
@@ -3485,6 +3533,7 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
   fieldLabelOf,
   enumOptionsOf,
   fieldTypeOf,
+  focus,
 }) => {
   if (children !== undefined && children !== null) return <>{children}</>;
   const title = String(block.props?.title ?? "").trim();
@@ -3501,11 +3550,24 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
         <BlockEmpty hint="暂无数据 — 先写入第一条真实数据" />
       </BlockShell>
     );
-  // 详情展示的是"当前选中那条"。运行时还没有选中态时用第一条——**不是随机
-  // 一条**，顺序稳定，截图/回归才可比。
-  const row = bound.rows[0];
+  // 详情展示的是"当前选中那条"。2026-08-08 之前这里只有一句注释和 rows[0]——
+  // 聚焦态压根不存在。现在真有了（PageFocusState），查不到才回落第一条：
+  // **不是随机一条**，顺序稳定，截图/回归才可比。
+  const focusedId = focus?.[bound.entityRef];
+  const row = (focusedId && bound.rows.find(r => r.id === focusedId)) || bound.rows[0];
   const fields = boundFieldIds(block, bound.rows);
-  const columns = Math.max(1, Math.min(3, Number(block.props?.columns ?? 2) || 2));
+  /**
+   * 列数跟屏宽走（照 ProfileAdvanced 的 `column={isMobile ? 1 : 2}`）。
+   *
+   * 写死列数的详情在窄屏上标签和值会挤成一坨。而且同一个组件在两个位置该是两种
+   * 密度——它页头那份是 size=small + 2 列，正文那份是 3 列。所以 columns 保留
+   * 显式档位，只把**默认值**换成响应式，不再是写死的 2。
+   */
+  const declaredColumns = String(block.props?.columns ?? "responsive");
+  const columns: number | Record<string, number> =
+    declaredColumns === "1" || declaredColumns === "2" || declaredColumns === "3"
+      ? Number(declaredColumns)
+      : { xs: 1, sm: 1, md: 2, lg: 3, xl: 3, xxl: 3 };
   return (
     <BlockShell block={block}
       title={title}

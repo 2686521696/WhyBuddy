@@ -61,6 +61,7 @@ import type {
   BlockColumnState,
   PageColumnState,
   PageFilterState,
+  PageFocusState,
   PageSelectionState,
 } from "./live-runtime/block-registry";
 import { isPhoneExperienceBlock } from "./live-runtime/phone-mobile/PhoneExperienceBlock";
@@ -358,6 +359,9 @@ const FIELD_LABEL: Record<string, string> = {
   urgent: "加急",
   owner_id: "负责人",
   weekDelta: "周涨幅",
+  orderId: "所属订单",
+  action: "操作",
+  operator: "操作人",
 };
 
 /** 字段类型：表单族按它决定出哪种控件（enum→下拉、number→数字、date→日期）。
@@ -382,6 +386,9 @@ const FIELD_TYPE: Record<string, string> = {
   urgent: "boolean",
   owner_id: "ref",
   weekDelta: "number",
+  orderId: "ref",
+  action: "string",
+  operator: "string",
 };
 
 /**
@@ -403,7 +410,29 @@ const ENUM_OPTIONS: Record<string, NormalizedFieldOption[]> = {
   ],
 };
 
+/**
+ * 关联单据的示例数据（2026-08-08，②批次 4）。
+ *
+ * 关联单据表要证明的正是"**只显示挂在这一条下面的**"，所以必须有一个子实体、
+ * 而且它的行要分属不同的主记录——全挂在同一条下面的话，筛没筛都一样，看不出
+ * 对错。这里六条日志分给三张订单。
+ */
+const ORDER_LOGS: RuntimeRow[] = [
+  ["order-1", "创建订单", "曲丽丽", "2026-08-06"],
+  ["order-1", "财务复核", "付小小", "2026-08-06"],
+  ["order-1", "已发货", "周毛毛", "2026-08-07"],
+  ["order-2", "创建订单", "林东东", "2026-08-05"],
+  ["order-2", "部门初审", "陈帅帅", "2026-08-05"],
+  ["order-4", "创建订单", "曲丽丽", "2026-08-04"],
+].map(([orderId, action, operator, at], i) => ({
+  id: `log-${i + 1}`,
+  values: { orderId, action, operator, at },
+  createdAt: `2026-08-0${(i % 7) + 1}T09:00:00.000Z`,
+}));
+
+
 const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
+  orderLog: ORDER_LOGS,
   order: [
     { name: "人民路店", amount: 428, status: "done", channel: "线上", at: "2026-08-06",
       contact: "renmin@example.com", detailUrl: "https://example.com/store/1",
@@ -1422,7 +1451,27 @@ function AssembledPageModal({
     [allBlocks, rows]
   );
 
+  /**
+   * 当前聚焦的记录（2026-08-08，②批次 4）。点表格一行就换一条。
+   *
+   * 关联单据表和详情区块都靠它知道"这是哪一条"。此前根本没有这个概念——
+   * RecordDetail 的注释写着「运行时还没有选中态时用第一条」，一直用的就是
+   * 第一条；关联单据表没有它就只能把整张表搬过来。
+   */
+  const [focus, setFocus] = React.useState<PageFocusState>({});
+
   const handleAction = (actionId: string, data?: Record<string, unknown>) => {
+    // 点一行 = 聚焦这一条。rowSelect 本来就是"选中了某一行"的意思，
+    // 只是此前没人接，点了什么都不发生。
+    if (actionId === "rowSelect") {
+      const rowId = String(data?.rowId ?? "");
+      if (!rowId) return;
+      const owner = Object.entries(rows).find(([, list]) =>
+        list.some(r => r.id === rowId)
+      );
+      if (owner) setFocus(prev => ({ ...prev, [owner[0]]: rowId }));
+      return;
+    }
     if (actionId !== "submitRequest") return;
     const entityRef = String(data?.entityRef ?? "");
     const values = (data?.values ?? {}) as Record<string, unknown>;
@@ -1500,6 +1549,7 @@ function AssembledPageModal({
       onSelectionChange={(entityRef, rowIds) =>
         setSelection(prev => ({ rowIds: { ...prev.rowIds, [entityRef]: rowIds } }))
       }
+      focus={focus}
       columnState={columnState}
       onColumnStateChange={(targetId, next) =>
         setColumnState(prev => ({ ...prev, [targetId]: next }))
