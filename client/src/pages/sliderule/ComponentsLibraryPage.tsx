@@ -289,8 +289,30 @@ const CATALOG = catalogJson as unknown as {
  * label，这里只是读出来。加组件不再需要来改这一处。
  */
 const IMPL_BY_TYPE: Record<string, string> = Object.fromEntries(
-  Object.entries(BLOCK_DEFINITIONS).map(([type, d]) => [type, d.impl])
+  Object.entries(BLOCK_DEFINITIONS).map(([type, d]) => [
+    type,
+    d.uses.length > 0 ? d.uses.join(" + ") : "非组件实现",
+  ])
 );
+
+/**
+ * 反查：这个基础组件被哪些区块用到了。
+ *
+ * 2026-08-08 用户问了一句要害的话：「AI 组装它是真的从这 130 多个组件里面
+ * 组装的吗」。答案是不是——装配器看得见的是 13 个区块，基础组件由区块内部
+ * 调用。所以真正该回答的是"137 个里有多少真的被区块用上了"，而这个数字
+ * 此前**说不出来**，因为那层关系只存在一个手写字符串里。
+ *
+ * 现在能算了，而且组件库直接把它标出来：没有任何区块用到的组件，如实显示
+ * 「还没接进区块」。那是覆盖缺口，不是 bug——但看不见它就没法有意识地补。
+ */
+const BLOCKS_USING = (() => {
+  const m: Record<string, string[]> = {};
+  for (const [type, d] of Object.entries(BLOCK_DEFINITIONS)) {
+    for (const u of d.uses) (m[u] ??= []).push(type);
+  }
+  return m;
+})();
 const LABEL_BY_TYPE: Record<string, string> = Object.fromEntries(
   Object.entries(BLOCK_DEFINITIONS).map(([type, d]) => [type, d.label])
 );
@@ -1222,19 +1244,30 @@ function AssembledPageModal({
  * 高度差得很多（一个 Divider 三十几像素，一个 Calendar 两百多），瀑布流正好
  * 吃这个，而跨列在这里没有意义——没有哪个基础组件"需要整行宽才说得清"。
  */
-function BaseComponentWall({ group, platform }: { group: string; platform: string }) {
+function BaseComponentWall({
+  group,
+  platform,
+  linked,
+}: {
+  group: string;
+  platform: string;
+  linked: string;
+}) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
   const { width } = useContainerPosition(containerRef, [height]);
   // 两个维度都从统一筛选条来（见 filterDims）——墙自己不再另摆一排 chip。
   const shown = React.useMemo(
     () =>
-      BASE_COMPONENTS.filter(
-        c =>
-          (group === "all" || c.group === group) &&
-          (platform === "all" || c.platform === platform)
-      ),
-    [group, platform]
+      BASE_COMPONENTS.filter(c => {
+        if (group !== "all" && c.group !== group) return false;
+        if (platform !== "all" && c.platform !== platform) return false;
+        const used = (BLOCKS_USING[c.name] ?? []).length > 0;
+        if (linked === "linked" && !used) return false;
+        if (linked === "unlinked" && used) return false;
+        return true;
+      }),
+    [group, platform, linked]
   );
 
   return (
@@ -1272,6 +1305,34 @@ function BaseComponentWall({ group, platform }: { group: string; platform: strin
                 </div>
                 <div className="mt-1 text-[11.5px] leading-relaxed text-slate-500">
                   {c.description}
+                </div>
+                {/* 这个素材被哪些区块用了 —— 三层链路（基础组件 → 区块 → 模板）
+                    的第一环，正着反着都得看得见。
+                    
+                    一个区块都没用到的，如实标「还没接进区块」：那意味着它目前
+                    **不可能出现在任何生成的应用里**。这是覆盖缺口，不是 bug，
+                    但看不见它就没法有意识地补。 */}
+                <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                  {(BLOCKS_USING[c.name] ?? []).length > 0 ? (
+                    <>
+                      <span className="text-[10.5px] text-slate-400">用于区块</span>
+                      {(BLOCKS_USING[c.name] ?? []).map(b => (
+                        <span
+                          key={b}
+                          className="rounded bg-[#e8eeff] px-1.5 py-0.5 text-[10.5px] text-[#3b5bdb]"
+                        >
+                          {b}
+                        </span>
+                      ))}
+                    </>
+                  ) : (
+                    <span
+                      data-testid="base-unused"
+                      className="rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] text-slate-400"
+                    >
+                      还没接进区块
+                    </span>
+                  )}
                 </div>
               </div>
               {/* 示例本体。给一点内边距——这一层不像业务积木那样要铺满，
@@ -1352,6 +1413,7 @@ export default function ComponentsLibraryPage() {
   const [mode, setMode] = React.useState<"base" | "blocks" | "presets">("base");
   const [baseGroup, setBaseGroup] = React.useState<string>("all");
   const [basePlatform, setBasePlatform] = React.useState<string>("all");
+  const [baseLinked, setBaseLinked] = React.useState<string>("all");
   const [assembled, setAssembled] = React.useState<AssembledPage | null>(null);
   // 意图 —— 五阶段的第一阶段。说不出"这一页是给谁用的、要干什么"，后面
   // 全是猜的，所以它是必填而不是可选的高级选项。
@@ -1507,6 +1569,25 @@ export default function ComponentsLibraryPage() {
           ],
         },
         {
+          key: "linked",
+          label: "接入",
+          value: baseLinked,
+          onChange: setBaseLinked,
+          options: [
+            { value: "all", label: "全部", count: BASE_COMPONENTS.length },
+            {
+              value: "linked",
+              label: "已接进区块",
+              count: BASE_COMPONENTS.filter(c => (BLOCKS_USING[c.name] ?? []).length > 0).length,
+            },
+            {
+              value: "unlinked",
+              label: "还没接进区块",
+              count: BASE_COMPONENTS.filter(c => (BLOCKS_USING[c.name] ?? []).length === 0).length,
+            },
+          ],
+        },
+        {
           key: "platform",
           label: "端",
           value: basePlatform,
@@ -1566,6 +1647,7 @@ export default function ComponentsLibraryPage() {
     mode,
     baseGroup,
     basePlatform,
+    baseLinked,
     industry,
     industries,
     presetCount,
@@ -1752,7 +1834,7 @@ export default function ComponentsLibraryPage() {
       )}
 
       {mode === "base" ? (
-        <BaseComponentWall group={baseGroup} platform={basePlatform} />
+        <BaseComponentWall group={baseGroup} platform={basePlatform} linked={baseLinked} />
       ) : mode === "presets" ? (
         <>
           {/* 行业筛选：取值来自库里真实存在的行业，不是我们预先定死的一张表。

@@ -100,6 +100,7 @@ import {
   Upload,
   Watermark,
 } from "antd";
+import { StatisticCard } from "@ant-design/pro-components";
 import { InboxOutlined, UploadOutlined } from "@ant-design/icons";
 import { MOBILE_BASE_COMPONENTS } from "./base-catalog-mobile";
 
@@ -1032,6 +1033,61 @@ export const PC_BASE_COMPONENTS: BaseComponentDef[] = [
           <FloatButton />
           <FloatButton.BackTop visibilityHeight={0} />
         </FloatButton.Group>
+      </div>
+    ),
+  },
+  // ── 区块真正在用、而目录里漏了的两样（2026-08-08 第三批）──────────
+  //
+  // 建立"区块 uses 基础组件"这层关系时对账发现的：MetricGrid 用
+  // ProComponents 的 StatisticCard、TrendChart 用 ECharts，而目录里都没有。
+  // 不是可加可不加——**区块真的在用它们**，目录缺了就等于这本账对不上，
+  // 而对账用例正是靠名字存不存在来判对错的。
+  {
+    name: "StatisticCard",
+    label: "统计卡片",
+    description:
+      "ProComponents 的统计卡：数值 + 说明 + 趋势，比裸 Statistic 多一层卡片与分组能力。",
+    group: "数据展示",
+    platform: "pc",
+    render: () => (
+      <StatisticCard.Group>
+        <StatisticCard statistic={{ title: "数值一", value: 1128 }} />
+        <StatisticCard statistic={{ title: "数值二", value: 93, suffix: "%" }} />
+      </StatisticCard.Group>
+    ),
+  },
+  {
+    name: "ECharts",
+    label: "图表",
+    description:
+      "ECharts 图表容器。折线/柱状/饼图等由配置决定；它不是 Ant Design 组件，但已装在依赖里，是图表这项能力的唯一来源。",
+    group: "数据展示",
+    platform: "pc",
+    render: () => (
+      <div
+        style={{
+          height: 120,
+          borderRadius: 6,
+          background:
+            "linear-gradient(180deg,rgba(22,119,255,0.10),rgba(22,119,255,0.01))",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        {/* 画一条静态折线示意。这一页是组件总览，起一个真 ECharts 实例只为
+            画个示例，代价（canvas + resize 监听 × 每张卡）不值当。 */}
+        <svg viewBox="0 0 200 60" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
+          <polyline
+            points="0,45 30,32 60,38 90,18 120,26 150,10 180,20 200,14"
+            fill="none"
+            stroke="#1677ff"
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+        <div style={{ position: "absolute", left: 8, top: 6, fontSize: 11, color: "#8c8c8c" }}>
+          折线示意
+        </div>
       </div>
     ),
   },

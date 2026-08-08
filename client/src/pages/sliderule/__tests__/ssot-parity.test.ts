@@ -6,6 +6,21 @@ const blockRegistrySource = readFileSync(
   new URL("../live-runtime/block-registry.tsx", import.meta.url),
   "utf8"
 );
+/** 基础组件名 —— 从两份目录的源码里取。
+ *
+ *  不 import 那两个模块，是因为本文件是 .ts（不带 JSX），而目录里全是 JSX，
+ *  拉进来会在解析阶段就炸（实测 SyntaxError: Unexpected token ':'）。
+ *  这个文件本来就有按源码文本断言的先例，跟着来即可。 */
+const BASE_COMPONENT_NAMES = new Set(
+  [
+    readFileSync(new URL("../base-components/base-catalog.tsx", import.meta.url), "utf8"),
+    readFileSync(new URL("../base-components/base-catalog-mobile.tsx", import.meta.url), "utf8"),
+  ]
+    .join("\n")
+    .match(/name: "[\w.]+"/g)
+    ?.map(m => m.slice(7, -1)) ?? []
+);
+
 const phoneBlockSource = readFileSync(
   new URL("../live-runtime/phone-mobile/PhoneExperienceBlock.tsx", import.meta.url),
   "utf8"
@@ -164,8 +179,24 @@ describe("体验区块渲染器状态 SSOT", () => {
       catalogTypes
     );
 
+    // uses 就是原来那个 impl。散文（"antd Table"）换成了真名字数组，于是
+    // "这个区块背后是哪些基础组件"从给人看的注释变成了可校验的数据——下一条
+    // 用例正是拿它去比对基础组件库的。
+    //
+    // 唯一允许 uses 为空的是**不放开生成**的那个：FreeformInsight 直接把
+    // freeformContent 那棵树渲染成 DOM，不是拿基础组件搭的，所以它没有第一
+    // 层。判据用的是 generationEnabled 而不是写死名字——真放开它生成的那天，
+    // 这条会立刻要求它说清自己用了什么。
+    const rawDom = new Set(
+      EXPERIENCE_BLOCK_CATALOG.blocks.filter(b => !b.generationEnabled).map(b => b.type)
+    );
     for (const [type, def] of Object.entries(BLOCK_DEFINITIONS)) {
-      expect(def.impl, `${type} 缺 impl（组件库要显示背后是哪个真组件）`).toBeTruthy();
+      if (!rawDom.has(type)) {
+        expect(
+          def.uses?.length,
+          `${type} 缺 uses（说不出它是用哪些基础组件搭的）`
+        ).toBeGreaterThan(0);
+      }
       expect(def.label, `${type} 缺 label（中文名）`).toBeTruthy();
       expect(typeof def.render, `${type} 的 render 必须是组件`).toBe("function");
     }
@@ -187,6 +218,37 @@ describe("体验区块渲染器状态 SSOT", () => {
     expect(withBlock, `${calls - withBlock} 个 BlockShell 没传 block，surface 对它们是死的`).toBe(
       calls
     );
+  });
+
+  it("区块声称用到的基础组件必须真实存在 —— 三层链路的第一环不许断", () => {
+    // 2026-08-08 用户把三层说清楚了：「基础组件相当于底层能力，就是素材；
+    // 区块就是区域……区块它也是基础组件组装的。流程就是先有基础组件，再组装
+    // 成区块，再组装成模板。」
+    //
+    // 此前这层关系是一个手写字符串（impl: "antd Table"），是给人看的散文。
+    // 后果很实在：用户问「AI 组装真的是从这 130 多个组件里组装的吗」，
+    // **答不上来**——只能去翻每个渲染器的 import。
+    //
+    // 换成真名字数组之后这条用例才有意义：写错一个名字当场红。建这层关系时
+    // 就靠它抓出两个漏的（StatisticCard 与 ECharts：区块真在用，基础组件库
+    // 里却没有），账当时是对不上的。
+    const baseNames = BASE_COMPONENT_NAMES;
+    for (const [type, def] of Object.entries(BLOCK_DEFINITIONS)) {
+      for (const u of def.uses) {
+        expect(baseNames.has(u), `${type} 声称用到「${u}」，但基础组件库里没有这个`).toBe(
+          true
+        );
+      }
+    }
+  });
+
+  it("能算出「多少基础组件还没接进区块」—— 这是覆盖缺口，得看得见", () => {
+    // 这个数字本身不该被钉死（补区块就会变），但**算得出来**这件事要钉住：
+    // 算不出来，覆盖缺口就是隐形的，只能靠人翻代码猜。
+    const used = new Set(Object.values(BLOCK_DEFINITIONS).flatMap(d => d.uses));
+    const unlinked = [...BASE_COMPONENT_NAMES].filter(n => !used.has(n));
+    expect(used.size).toBeGreaterThan(0);
+    expect(unlinked.length + used.size).toBe(BASE_COMPONENT_NAMES.size);
   });
 
   it("手机档也走 surface —— 两个档位不许在这件事上分叉", () => {

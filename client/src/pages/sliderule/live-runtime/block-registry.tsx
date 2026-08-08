@@ -2384,8 +2384,23 @@ const ContentCardRenderer: ExperienceBlockRenderer = ({ block, children }) => {
 export interface BlockDefinition {
   /** 桌面渲染器 */
   render: ExperienceBlockRenderer;
-  /** 背后是哪个真组件——组件库要显示，此前是 IMPL_BY_TYPE 那张手维护的表 */
-  impl: string;
+  /**
+   * 这个区块由哪些**基础组件**组装而成 —— 名字必须是 base-catalog 里真实存在的。
+   *
+   * 2026-08-08 用户把三层关系说清楚了：「基础组件相当于底层能力，就是素材；
+   * 区块就是区域……区块它也是基础组件组装的。我们的流程就是先有基础组件，
+   * 再组装成区块，再组装成模板。」
+   *
+   * 此前这里是一个手写的字符串（impl: "antd Table"），是给人看的散文，
+   * 机器读不了。后果是**说不出 137 个基础组件里有多少真被用上了**——
+   * 用户问"AI 组装真的是从 130 多个组件里组装的吗"，我只能靠翻 import 回答。
+   *
+   * 换成真名字数组之后：
+   *   · 正着看  这个区块用了哪几个素材
+   *   · 反着看  这个基础组件被哪些区块用到了；一个都没有就是**还没接上**
+   *   · 对账    ssot 用例校验每个名字都真实存在，写错当场红
+   */
+  uses: string[];
   /** 中文名。目录 JSON 只有 description，缺一个短标题（lowcode-engine 的 title） */
   label: string;
   /**
@@ -2398,21 +2413,21 @@ export interface BlockDefinition {
 /** 目录里有、但渲染侧还没登记的类型会被 ssot 对账当场抓出来。 */
 export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
   Object.freeze({
-    MetricGrid: { render: MetricGridRenderer, impl: "ProComponents StatisticCard", label: "指标卡组", phone: true },
-    TrendChart: { render: TrendChartRenderer, impl: "ECharts", label: "趋势图" },
-    RankedList: { render: RankedListRenderer, impl: "antd List + Progress + Tag", label: "排行榜" },
-    ActivityFeed: { render: ActivityFeedRenderer, impl: "antd Timeline", label: "动态流" },
-    DataTable: { render: DataTableRenderer, impl: "antd Table", label: "数据表格" },
-    QuickActionPanel: { render: QuickActionPanelRenderer, impl: "ProCard + antd Button", label: "快捷操作", phone: true },
-    FilterBar: { render: FilterBarRenderer, impl: "ProComponents QueryFilter", label: "筛选条", phone: true },
-    WorkflowTimeline: { render: WorkflowTimelineRenderer, impl: "ProCard + antd Steps", label: "流程条", phone: true },
-    FreeformInsight: { render: FreeformInsightRenderer, impl: "受限 JSON 树（非固定组件）", label: "自由版式" },
-    RecordForm: { render: RecordFormRenderer, impl: "ProComponents ProForm", label: "记录表单" },
-    RecordFormDialog: { render: RecordFormDialogRenderer, impl: "ProComponents DrawerForm / ModalForm", label: "弹层表单" },
-    RecordDetail: { render: RecordDetailRenderer, impl: "ProComponents ProDescriptions", label: "记录详情" },
-    StepsForm: { render: StepsFormRenderer, impl: "ProComponents StepsForm", label: "分步表单" },
-    ContentCard: { render: ContentCardRenderer, impl: "antd Card（容器，由 AI 显式选用）", label: "内容卡片" },
-    PageHeader: { render: PageHeaderRenderer, impl: "标题 + 说明 + 主次动作", label: "页面头" },
+    MetricGrid: { render: MetricGridRenderer, uses: ["StatisticCard"], label: "指标卡组", phone: true },
+    TrendChart: { render: TrendChartRenderer, uses: ["ECharts"], label: "趋势图" },
+    RankedList: { render: RankedListRenderer, uses: ["List", "Progress", "Tag"], label: "排行榜" },
+    ActivityFeed: { render: ActivityFeedRenderer, uses: ["Timeline", "Tag"], label: "动态流" },
+    DataTable: { render: DataTableRenderer, uses: ["Table", "Tag", "Typography", "Space", "Pagination"], label: "数据表格" },
+    QuickActionPanel: { render: QuickActionPanelRenderer, uses: ["Card", "Button", "Space"], label: "快捷操作", phone: true },
+    FilterBar: { render: FilterBarRenderer, uses: ["Select", "DatePicker", "Button"], label: "筛选条", phone: true },
+    WorkflowTimeline: { render: WorkflowTimelineRenderer, uses: ["Card", "Steps"], label: "流程条", phone: true },
+    FreeformInsight: { render: FreeformInsightRenderer, uses: [], label: "自由版式" },
+    RecordForm: { render: RecordFormRenderer, uses: ["Form", "Input", "InputNumber", "Select", "DatePicker"], label: "记录表单" },
+    RecordFormDialog: { render: RecordFormDialogRenderer, uses: ["Drawer", "Modal", "Form", "Input", "Select", "Button"], label: "弹层表单" },
+    RecordDetail: { render: RecordDetailRenderer, uses: ["Descriptions", "Tag", "Button"], label: "记录详情" },
+    StepsForm: { render: StepsFormRenderer, uses: ["Steps", "Form", "Input", "Select", "DatePicker"], label: "分步表单" },
+    ContentCard: { render: ContentCardRenderer, uses: ["Card"], label: "内容卡片" },
+    PageHeader: { render: PageHeaderRenderer, uses: ["Button", "Space", "Typography"], label: "页面头" },
   });
 
 /** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */
