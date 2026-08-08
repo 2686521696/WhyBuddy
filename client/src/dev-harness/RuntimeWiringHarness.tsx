@@ -192,7 +192,16 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
             // 翻转之后内置表格本来就不渲染了，这张就是这一页唯一的表。
             binding: {
               entityRef: "order",
-              fieldRefs: ["name", "amount", "status", "channel", "at"],
+              fieldRefs: ["name", "amount", "weekDelta", "status", "channel", "at"],
+              // ── 批次 7（2026-08-09）：中式报表的两样 ──────────────────
+              // 合计行：底部固定一行，只对声明的数值列求和。**不是往数据里
+              // 塞一条假行**——jeecgboot 那边就是 push 进 dataSource，于是得把
+              // pageSize 减一，那条假行还能被排序被勾选。antd 的 summary 在
+              // tbody 之外，同一个需求的正确位置。
+              summaryFieldRefs: ["amount", "weekDelta"],
+              // 二级表头：金额和周涨幅归到「经营数据」下面。只重组已经在
+              // fieldRefs 里的列，没被认领的留在原位。
+              columnGroups: [{ title: "经营数据", fieldRefs: ["amount", "weekDelta"] }],
             },
           },
           {

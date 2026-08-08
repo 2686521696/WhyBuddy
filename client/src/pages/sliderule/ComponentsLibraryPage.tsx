@@ -712,6 +712,51 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
         },
         extra: {},
       },
+  SectionedForm: {
+        block: {
+          id: "demo-SectionedForm", type: "SectionedForm",
+          props: { title: "新建订单（分段）", submitText: "提交" },
+          // 分段是它的全部意义，所以夹具必须真的分段——一段的话画出来跟
+          // RecordForm 一模一样，看不出这个区块存在的理由。
+          binding: {
+            entityRef: "order",
+            sections: [
+              { title: "基本信息", fieldRefs: ["name", "channel", "at"] },
+              { title: "金额与考核", fieldRefs: ["amount", "healthScore", "starLevel"] },
+              { title: "联系方式", fieldRefs: ["contact", "owner_id"] },
+            ],
+          },
+        },
+        extra: {},
+      },
+  CardGridList: {
+        block: {
+          id: "demo-CardGridList", type: "CardGridList",
+          props: { title: "门店卡片" },
+          binding: {
+            entityRef: "order",
+            titleFieldRef: "name",
+            descFieldRef: "remark",
+            imageFieldRef: "cover",
+            metaFieldRefs: ["amount", "status"],
+          },
+        },
+        extra: {},
+      },
+  StandardListRows: {
+        block: {
+          id: "demo-StandardListRows", type: "StandardListRows",
+          props: { title: "门店列表", actions: ["编辑", "更多"] },
+          binding: {
+            entityRef: "order",
+            titleFieldRef: "name",
+            descFieldRef: "remark",
+            avatarFieldRef: "cover",
+            statFieldRefs: ["amount", "weekDelta"],
+          },
+        },
+        extra: {},
+      },
   StepsForm: {
         block: {
           id: "demo-StepsForm", type: "StepsForm",

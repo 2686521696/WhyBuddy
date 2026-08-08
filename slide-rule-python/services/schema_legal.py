@@ -307,6 +307,40 @@ def _validate_binding_schema(
                 f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldRefLists.{field}"
                 f".fieldType '{field_type}' 不在合法域内"
             )
+    # entityFieldGroups：值是**带标题的字段分组数组**的绑定键。
+    #
+    #     [{ "title": "仓库管理", "fieldRefs": ["name", "url", "owner"] }, ...]
+    #
+    # 2026-08-09 批次 5/7 一起要的新形状。此前只有"一串字段"（entityFieldRefLists），
+    # 表达不了「这几个字段属于同一段，这一段叫什么」——而分段表单和多级表头**要的
+    # 恰恰是那个标题**。拿两个平行数组（titles[] + 每段几个字段）拼是能拼出来，
+    # 但那种声明一旦长度对不上就静默错位，模型也更容易写错。
+    #
+    # 一个形状服务两处：SectionedForm.sections（表单分段）与 DataTable.columnGroups
+    # （多级表头）。只加一次校验，两边共用。
+    field_groups = schema.get("entityFieldGroups", {})
+    if not isinstance(field_groups, dict):
+        raise ValueError(
+            f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldGroups 必须是对象"
+        )
+    for field, spec in field_groups.items():
+        if field not in known_fields:
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldGroups "
+                f"引用了未声明字段: {field}"
+            )
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldGroups.{field} 必须是对象"
+            )
+        for key in ("maxGroups", "maxFieldsPerGroup"):
+            bound = spec.get(key)
+            if bound is not None and (not isinstance(bound, int) or bound < 1):
+                raise ValueError(
+                    f"experience_block_catalog.json {block_type}.bindingSchema.entityFieldGroups.{field}"
+                    f".{key} 必须是正整数"
+                )
+
     ranges = schema.get("ranges", {})
     if not isinstance(ranges, dict):
         raise ValueError(f"experience_block_catalog.json {block_type}.bindingSchema.ranges 必须是对象")
@@ -498,6 +532,7 @@ def _format_binding_schema(schema: Dict[str, Any]) -> str:
     entity_field_refs = schema.get("entityFieldRefs", {})
     ranges = schema.get("ranges", {})
     ref_lists = schema.get("entityFieldRefLists", {})
+    field_groups = schema.get("entityFieldGroups", {})
     aggregate_fields = set(schema.get("aggregateFields", []))
 
     def annotate(field: str) -> str:
@@ -515,6 +550,14 @@ def _format_binding_schema(schema: Dict[str, Any]) -> str:
             if cap:
                 bits.append(f"max {cap}")
             return f"{field}([{', '.join(bits)}])"
+        if field in field_groups:
+            spec = field_groups[field]
+            bits = ['[{title, fieldRefs:[fieldId]}]']
+            if spec.get("maxGroups"):
+                bits.append(f"max {spec['maxGroups']} groups")
+            if spec.get("maxFieldsPerGroup"):
+                bits.append(f"max {spec['maxFieldsPerGroup']} fields each")
+            return f"{field}({', '.join(bits)})"
         if field in ranges:
             lo, hi = ranges[field]
             return f"{field}({lo}-{hi})"

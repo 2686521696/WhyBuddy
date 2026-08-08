@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 23,
+  "version": 26,
   "blockFamilies": [
     "data",
     "filter",
@@ -1051,14 +1051,26 @@
         "optional": [
           "fieldRefs",
           "parentRef",
-          "viaFieldRef"
+          "viaFieldRef",
+          "summaryFieldRefs",
+          "columnGroups"
         ],
-        "note": "fieldRefs 声明这张表显示哪几列、按什么顺序；不写就由页面从真实行的键里派生前 8 个。字段一多，派生的取舍规则是键的顺序，模型控制不了，所以要显示特定几列就必须写出来。 parentRef + viaFieldRef 一起用，把这张表变成**关联单据表**：只显示 viaFieldRef 指向当前聚焦的那条 parentRef 记录的行（详情页下面那几张「关联单据」就是这个）。两个要么都写要么都不写——只写一个是没说完的话。binding 对象整体可省略，省略时不受 required 约束。",
+        "note": "fieldRefs 声明这张表显示哪几列、按什么顺序；不写就由页面从真实行的键里派生前 8 个。字段一多，派生的取舍规则是键的顺序，模型控制不了，所以要显示特定几列就必须写出来。 parentRef + viaFieldRef 一起用，把这张表变成**关联单据表**：只显示 viaFieldRef 指向当前聚焦的那条 parentRef 记录的行（详情页下面那几张「关联单据」就是这个）。两个要么都写要么都不写——只写一个是没说完的话。binding 对象整体可省略，省略时不受 required 约束。 summaryFieldRefs adds a fixed 合计 row at the bottom for those numeric columns. columnGroups adds a grouped header (二级表头) — only for columns already in fieldRefs.",
         "entityFieldRefLists": {
-          "fieldRefs": {}
+          "fieldRefs": {},
+          "summaryFieldRefs": {
+            "maxItems": 6,
+            "fieldType": "number"
+          }
         },
         "entityFieldRefs": {
           "viaFieldRef": "ref"
+        },
+        "entityFieldGroups": {
+          "columnGroups": {
+            "maxGroups": 4,
+            "maxFieldsPerGroup": 8
+          }
         }
       },
       "capability": "entityRows",
@@ -1067,6 +1079,140 @@
         "repo": "ant-design/pro-components",
         "path": "src/table/components/DragSortTable/index.tsx + src/table/utils/useDragSort.tsx；关联单据表照 pro-blocks/ProfileAdvanced/src/index.tsx",
         "took": "拖拽排序是表格的一个能力，不是另一张表——它那边 DragSortTable 只是为了包住 ProTable 内部才独立成组件；拖完先本地生效再回调（onDragSortEnd 拿到的是已经排好的新数组，持久化归调用方）；限制纵向轴，否则能横着乱拖；拖回原位不触发；关联单据表挂在**当前记录**下面，不是把整张表搬过来——ProfileAdvanced 那三张 Table 各是一份属于这一单的操作日志，不是全库的日志"
+      }
+    },
+    {
+      "type": "CardGridList",
+      "description": "卡片网格：一条记录一张卡，按屏宽自动排 1~4 列。字段少、每条要摆图或大标题时比表格好读；字段一多就该用表格。",
+      "rendererKey": "card-grid-list",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "density": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "default"
+            ]
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "dashboard"
+      ],
+      "allowedRegions": [
+        "main"
+      ],
+      "regionsRationale": "网格要横向排 3~4 列才叫网格。进 aside（三分之一宽）只能排一列，那就是把卡片竖着摞起来，不如直接用列表。",
+      "events": [
+        "itemSelect"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef",
+          "titleFieldRef"
+        ],
+        "optional": [
+          "descFieldRef",
+          "imageFieldRef",
+          "metaFieldRefs"
+        ],
+        "entityFieldRefs": {
+          "titleFieldRef": "string",
+          "descFieldRef": "text",
+          "imageFieldRef": "string"
+        },
+        "entityFieldRefLists": {
+          "metaFieldRefs": {
+            "maxItems": 3
+          }
+        },
+        "note": "titleFieldRef is what the user reads first. metaFieldRefs are the small facts under it (max 3) — a card with ten fields is a table pretending to be a card."
+      },
+      "capability": "entityRows",
+      "family": "data",
+      "source": {
+        "repo": "ant-design/pro-blocks",
+        "path": "ListCardList/src/index.tsx",
+        "took": "List grid 的响应式列数（xs1/sm2/md3/xl4）+ Card.Meta 的头像/标题/描述三段 + 描述固定 3 行省略"
+      }
+    },
+    {
+      "type": "StandardListRows",
+      "description": "标准列表行：左边头像、中间标题与副标题、右边若干组数值，行尾挂操作。比表格松，比卡片紧；每条要说清「谁、什么、几个数」时用它。",
+      "rendererKey": "standard-list-rows",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "dashboard",
+        "monitor"
+      ],
+      "allowedRegions": [
+        "main",
+        "aside"
+      ],
+      "regionsRationale": "三段布局在主区最舒服，但窄到 aside 也还能读——右侧数值组会换到标题下面，不像表格那样列挤成一坨。所以它是唯一同时进主区和副区的行式列表。",
+      "events": [
+        "itemSelect"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef",
+          "titleFieldRef"
+        ],
+        "optional": [
+          "descFieldRef",
+          "avatarFieldRef",
+          "statFieldRefs"
+        ],
+        "entityFieldRefs": {
+          "titleFieldRef": "string",
+          "descFieldRef": "text",
+          "avatarFieldRef": "string"
+        },
+        "entityFieldRefLists": {
+          "statFieldRefs": {
+            "maxItems": 2
+          }
+        },
+        "note": "statFieldRefs are the right-hand numbers (max 2). Put the identity in titleFieldRef, not in the stats."
+      },
+      "capability": "entityRows",
+      "family": "data",
+      "source": {
+        "repo": "ant-design/pro-blocks",
+        "path": "ListBasicList/src/index.tsx",
+        "took": "List.Item 的 avatar/title/description 三段 + 右侧 ListContent 数值组 + 行尾 actions"
       }
     },
     {
@@ -1611,6 +1757,66 @@
       },
       "capability": "form",
       "family": "data"
+    },
+    {
+      "type": "SectionedForm",
+      "description": "分段填写的长表单：字段按业务含义分成几段，每段一个小标题；底部一条吸底工具条摆提交，并汇总没填对的字段。一次性录入大批量数据用它，比一长溜字段好找。",
+      "rendererKey": "sectioned-form",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "submitText": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "wizard"
+      ],
+      "allowedRegions": [
+        "main"
+      ],
+      "regionsRationale": "长表单只能占主区。不进 supplement——分段的意义是一段一段看过去，塞进副区每段都只剩一列，分段反而更难读。",
+      "events": [
+        "submitRequest"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef",
+          "sections"
+        ],
+        "entityFieldGroups": {
+          "sections": {
+            "maxGroups": 6,
+            "maxFieldsPerGroup": 12
+          }
+        },
+        "note": "sections is the whole point: each group needs a business title (仓库管理 / 任务管理 / 成员管理) and the fields that belong to it. A single unnamed group is just RecordForm — use that instead."
+      },
+      "capability": "form",
+      "family": "data",
+      "source": {
+        "repo": "ant-design/pro-blocks",
+        "path": "FormAdvancedForm/src/index.tsx",
+        "took": "三段 Card 分组 + FooterToolbar 吸底提交 + 校验失败时的错误汇总（点一条跳到那个字段）"
+      }
     },
     {
       "type": "EditableSubTable",

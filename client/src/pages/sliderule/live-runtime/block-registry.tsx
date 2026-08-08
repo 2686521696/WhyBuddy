@@ -16,6 +16,7 @@
 import React from "react";
 import dayjs from "dayjs";
 import {
+  Avatar,
   Button,
   Card,
   Checkbox,
@@ -40,6 +41,7 @@ import {
   CellEditorTable,
   DragSortTable,
   DrawerForm,
+  FooterToolbar,
   ModalForm,
   ProCard,
   ProDescriptions,
@@ -486,6 +488,267 @@ export const ExistingContentAdapter: ExperienceBlockRenderer = ({
  * 一张卡去说一遍。真正需要解释"为什么没有"的场景（比如权限不足），走的是
  * 按钮 disabled + title 提示那条路，不是这里。
  */
+/**
+ * 列表变体两兄弟（2026-08-09，批次 6）。
+ *
+ * 搬的是 `ant-design/pro-blocks` 的 ListCardList 与 ListBasicList。
+ *
+ * ## 为什么表格之外还要两种
+ *
+ * 目录里此前只有 DataTable 一种"列出多条记录"的方式。表格的长处是**字段多、
+ * 要对比**；但业务系统里另有两类列表，用表格画就很难看：
+ *
+ *     字段少、每条有图或大标题   → 卡片网格（商品、模板、应用）
+ *     每条要说清「谁、什么、几个数」 → 标准列表行（项目、任务、成员）
+ *
+ * 这两个不是"表格的皮肤"，绑定形状就不一样：表格绑一串平等的列，这两个绑的是
+ * **有主次的几个位置**（标题 / 描述 / 图 / 几个小数）。所以是两个区块，不是
+ * DataTable 的两个 props。
+ *
+ * ## 共用的取值口
+ *
+ * 两个都要"按字段语义把一个值画出来"，跟表格单元格是同一件事，所以共用
+ * `fieldSemantic` + `renderCell`——语义判定只有一处，表格里金额是 ¥ 千分位，
+ * 卡片里也得是。
+ */
+
+/** 从一条行数据里按 fieldRef 取值并按语义画出来（与表格单元格同源）。 */
+function cellOf(
+  entityRef: string,
+  fieldRef: string | undefined,
+  row: RuntimeRow,
+  rows: RuntimeRow[],
+  fieldTypeOf: FieldTypeLookup | undefined,
+  enumOptionsOf: EnumOptionsLookup | undefined
+): React.ReactNode {
+  if (!fieldRef) return null;
+  const options = enumOptionsOf?.(entityRef, fieldRef) ?? [];
+  const sample = rows.find(r => r.values?.[fieldRef] != null)?.values?.[fieldRef];
+  const semantic = fieldSemantic(entityRef, fieldRef, sample, fieldTypeOf, options);
+  return renderCell(semantic, row.values?.[fieldRef], options);
+}
+
+/** binding 上的单个字段引用（不存在就 undefined，不编）。 */
+const fieldRefOf = (block: ExperienceBlockInstance, key: string): string | undefined => {
+  const v = (block.binding as Record<string, unknown> | undefined)?.[key];
+  const s = String(v ?? "").trim();
+  return s || undefined;
+};
+
+/** binding 上的字段引用数组。 */
+const fieldRefListOf = (block: ExperienceBlockInstance, key: string): string[] => {
+  const v = (block.binding as Record<string, unknown> | undefined)?.[key];
+  return Array.isArray(v) ? v.map(String).filter(Boolean) : [];
+};
+
+const CardGridListRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  fieldTypeOf,
+  enumOptionsOf,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell block={block} title={title} testid="card-grid-list">
+        <BlockEmpty hint="卡片网格未绑定到有效实体" />
+      </BlockShell>
+    );
+  const titleRef = fieldRefOf(block, "titleFieldRef");
+  if (!titleRef)
+    return (
+      <BlockShell block={block} title={title} testid="card-grid-list">
+        {/* 没有标题字段就没有"一眼看到的那一行"。不拿第一个字段顶上——
+            顶上去看着像做完了，实际上卡片主标题成了随机字段。 */}
+        <BlockEmpty hint="还没声明卡片主标题字段（titleFieldRef）" />
+      </BlockShell>
+    );
+  if (bound.rows.length === 0)
+    return (
+      <BlockShell block={block} title={title} testid="card-grid-list">
+        <BlockEmpty hint="还没有记录" />
+      </BlockShell>
+    );
+
+  const descRef = fieldRefOf(block, "descFieldRef");
+  const imageRef = fieldRefOf(block, "imageFieldRef");
+  const metaRefs = fieldRefListOf(block, "metaFieldRefs").slice(0, 3);
+  const compact = block.props?.density === "compact";
+
+  return (
+    <BlockShell block={block} title={title} testid="card-grid-list">
+      <List
+        rowKey="id"
+        dataSource={bound.rows}
+        // 响应式列数照搬原版（xs1/sm2/md3/xl4）。这不是随便定的：卡片宽度低于
+        // 220px 时标题就开始换行，那正是这几档断点在避免的。
+        grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: compact ? 4 : 3, xxl: 4 }}
+        renderItem={row => (
+          <List.Item>
+            <Card
+              hoverable
+              size="small"
+              data-testid="card-grid-item"
+              onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}
+              cover={
+                imageRef && String(row.values?.[imageRef] ?? "").trim() ? (
+                  <img
+                    alt=""
+                    src={String(row.values[imageRef])}
+                    style={{ height: 96, objectFit: "cover" }}
+                  />
+                ) : undefined
+              }
+            >
+              <Card.Meta
+                title={cellOf(bound.entityRef, titleRef, row, bound.rows, fieldTypeOf, enumOptionsOf)}
+                description={
+                  descRef ? (
+                    // 描述固定 3 行省略 —— 原版就是这么定的。不定行数的话
+                    // 一条长备注会把它那张卡撑到别人的两倍高，整片网格参差不齐。
+                    <Typography.Paragraph
+                      ellipsis={{ rows: 3 }}
+                      type="secondary"
+                      style={{ marginBottom: 0, fontSize: 12 }}
+                    >
+                      {String(row.values?.[descRef] ?? "")}
+                    </Typography.Paragraph>
+                  ) : undefined
+                }
+              />
+              {metaRefs.length > 0 && (
+                <Flex gap={12} wrap style={{ marginTop: 8 }}>
+                  {metaRefs.map(f => (
+                    <span key={f} style={{ fontSize: 11 }}>
+                      <Typography.Text type="secondary">
+                        {fieldLabelOf?.(bound.entityRef, f) ?? f}{" "}
+                      </Typography.Text>
+                      {cellOf(bound.entityRef, f, row, bound.rows, fieldTypeOf, enumOptionsOf)}
+                    </span>
+                  ))}
+                </Flex>
+              )}
+            </Card>
+          </List.Item>
+        )}
+      />
+    </BlockShell>
+  );
+};
+
+const StandardListRowsRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  fieldTypeOf,
+  enumOptionsOf,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell block={block} title={title} testid="standard-list-rows">
+        <BlockEmpty hint="列表未绑定到有效实体" />
+      </BlockShell>
+    );
+  const titleRef = fieldRefOf(block, "titleFieldRef");
+  if (!titleRef)
+    return (
+      <BlockShell block={block} title={title} testid="standard-list-rows">
+        <BlockEmpty hint="还没声明列表项的标题字段（titleFieldRef）" />
+      </BlockShell>
+    );
+  if (bound.rows.length === 0)
+    return (
+      <BlockShell block={block} title={title} testid="standard-list-rows">
+        <BlockEmpty hint="还没有记录" />
+      </BlockShell>
+    );
+
+  const descRef = fieldRefOf(block, "descFieldRef");
+  const avatarRef = fieldRefOf(block, "avatarFieldRef");
+  const statRefs = fieldRefListOf(block, "statFieldRefs").slice(0, 2);
+  const actions = (block.props?.actions ?? []) as string[];
+
+  return (
+    <BlockShell block={block} title={title} testid="standard-list-rows">
+      <List
+        rowKey="id"
+        size="large"
+        dataSource={bound.rows}
+        renderItem={row => (
+          <List.Item
+            data-testid="standard-list-item"
+            actions={actions.slice(0, 2).map(a => (
+              <a
+                key={a}
+                onClick={e => {
+                  e.stopPropagation();
+                  onAction?.("itemSelect", {
+                    entityRef: bound.entityRef,
+                    rowId: row.id,
+                    action: a,
+                  });
+                }}
+              >
+                {a}
+              </a>
+            ))}
+            onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}
+            style={{ cursor: "pointer" }}
+          >
+            <List.Item.Meta
+              avatar={
+                avatarRef ? (
+                  <Avatar
+                    shape="square"
+                    size="large"
+                    src={String(row.values?.[avatarRef] ?? "") || undefined}
+                  >
+                    {/* 没图就用标题首字兜底 —— 空头像框比没有头像更难看 */}
+                    {String(row.values?.[titleRef] ?? "?").slice(0, 1)}
+                  </Avatar>
+                ) : undefined
+              }
+              title={cellOf(bound.entityRef, titleRef, row, bound.rows, fieldTypeOf, enumOptionsOf)}
+              description={
+                descRef ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {String(row.values?.[descRef] ?? "")}
+                  </Typography.Text>
+                ) : undefined
+              }
+            />
+            {/* 右侧数值组：原版的 ListContent。标签在上、值在下，两组并排。 */}
+            {statRefs.length > 0 && (
+              <Flex gap={28} style={{ marginRight: 24 }}>
+                {statRefs.map(f => (
+                  <div key={f} style={{ minWidth: 72 }}>
+                    <div style={{ fontSize: 11, color: "#8c8c8c" }}>
+                      {fieldLabelOf?.(bound.entityRef, f) ?? f}
+                    </div>
+                    <div style={{ fontSize: 13 }}>
+                      {cellOf(bound.entityRef, f, row, bound.rows, fieldTypeOf, enumOptionsOf)}
+                    </div>
+                  </div>
+                ))}
+              </Flex>
+            )}
+          </List.Item>
+        )}
+      />
+    </BlockShell>
+  );
+};
+
 const QuickActionPanelRenderer: ExperienceBlockRenderer = ({
   block,
   pageActions,
@@ -3348,6 +3611,90 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
    *   分页 —— 跨页拖没有意义，第 9 条拖到第 1 页要先翻页，中途松手就散了
    *   勾选 —— 复选框和拖拽把手抢同一次按下；要批量操作就别开拖拽排序
    */
+  /**
+   * 二级表头（2026-08-09，批次 7）。
+   *
+   * 中式报表里最常见的一件事：「上半年 / 下半年」各管三列，「计划 / 实际」
+   * 各管两列。参照 jeecgboot 的 online 报表配置（`groupTitle` + `children`）。
+   *
+   * 只重组**已经在 columns 里的列**，不新增也不丢：没被任何分组认领的列留在
+   * 原位（原顺序），被认领的按分组聚在一起。这条很重要——分组声明写漏一列时，
+   * 那一列该照常显示，而不是从表上消失。
+   */
+  const groups = fieldGroupsOf(block, "columnGroups");
+  const grouped = (() => {
+    if (groups.length === 0) return columns;
+    const claimed = new Set(groups.flatMap(g => g.fieldRefs));
+    const byKey = new Map(columns.map(c => [String(c.key), c]));
+    const out: typeof columns = [];
+    let placed = false;
+    for (const col of columns) {
+      const key = String(col.key);
+      if (!claimed.has(key)) {
+        out.push(col);
+        continue;
+      }
+      // 所有分组整体插在**第一个被认领的列**的位置上，保持相对次序不乱跳
+      if (placed) continue;
+      placed = true;
+      for (const g of groups) {
+        const kids = g.fieldRefs.map(f => byKey.get(f)).filter(Boolean) as typeof columns;
+        if (kids.length > 0) {
+          out.push({ key: `group-${g.title}`, title: g.title, children: kids } as never);
+        }
+      }
+    }
+    return out;
+  })();
+
+  /**
+   * 合计行（2026-08-09，批次 7）。
+   *
+   * **参照 jeecgboot 提的问题，不参照它的做法。**它是把一条合计对象 push 进
+   * dataSource（`usePopBiz.ts` 的 handleSumColumn），于是要把 pageSize 减一、
+   * 第一次加载还得把最后一条弹掉，而且那条假行能被排序、能被勾选、能被点开。
+   *
+   * antd Table 自带 `summary`：合计行在 tbody 之外、固定在底部、不参与排序与
+   * 选择。同一个需求，正确的位置。
+   *
+   * 只对 number 字段求和（门禁那条 fieldType: number 已经拦住了别的类型），
+   * 空值跳过。合计的是**当前数据源全部行**，不是当前页——用户要的是"这批
+   * 数据一共多少"，翻页翻到哪儿不该改变合计。
+   */
+  const summaryRefs = fieldRefListOf(block, "summaryFieldRefs").filter(f => cols.includes(f));
+  const summaryRow =
+    summaryRefs.length === 0
+      ? undefined
+      : () => (
+          <Table.Summary fixed>
+            <Table.Summary.Row data-testid="data-table-summary">
+              {onSelectionChange ? <Table.Summary.Cell index={-1} /> : null}
+              {cols.map((c, i) => {
+                if (!summaryRefs.includes(c))
+                  return (
+                    <Table.Summary.Cell key={c} index={i}>
+                      {i === 0 ? <strong>合计</strong> : null}
+                    </Table.Summary.Cell>
+                  );
+                const sum = bound.rows.reduce((acc, r) => {
+                  const n = Number(r.values?.[c]);
+                  return Number.isFinite(n) ? acc + n : acc;
+                }, 0);
+                // 合计走**这一列自己的语义**，不另画一套。金额列上面每格都是
+                // ¥ 千分位，底下合计写成裸数字，读起来像另一个东西——而它恰恰
+                // 是那一列的和。语义判定跟单元格同源（renderCell）。
+                return (
+                  <Table.Summary.Cell key={c} index={i} align="right">
+                    <strong>
+                      {cellOf(bound.entityRef, c, { id: "__sum__", values: { [c]: sum } } as RuntimeRow, bound.rows, fieldTypeOf, enumOptionsOf)}
+                    </strong>
+                  </Table.Summary.Cell>
+                );
+              })}
+            </Table.Summary.Row>
+          </Table.Summary>
+        );
+
   const sortable = block.props?.sortable === true;
   if (sortable) {
     return (
@@ -3384,8 +3731,9 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
       <Table
         size="small"
         rowKey="id"
-        columns={columns}
+        columns={grouped}
         dataSource={bound.rows}
+        summary={summaryRow}
         // 分页交给 Table 自己管（2026-08-08）。此前是 slice(0, 8) + 标题栏
         // 一行"共 N 条，显示前 8 条"——那不是分页，是截断，用户根本翻不到
         // 第 9 条。用户的示范图里那一行是「共 1,268 条 ‹ 1 2 3 … › 10/页
@@ -3659,6 +4007,164 @@ const RecordFormRenderer: ExperienceBlockRenderer = ({
             f
           )
         )}
+      </ProForm>
+    </BlockShell>
+  );
+};
+
+/**
+ * 一段字段分组：`{ title, fieldRefs }`。门禁保证了标题非空、字段属于这个实体。
+ */
+interface FieldGroup {
+  title: string;
+  fieldRefs: string[];
+}
+
+/** 从 binding 里取分组，顺手把非法形状挡在渲染之外（生成侧已有门禁，这里防手写夹具）。 */
+function fieldGroupsOf(block: ExperienceBlockInstance, key = "sections"): FieldGroup[] {
+  const raw = (block.binding as Record<string, unknown> | undefined)?.[key];
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(g => {
+      const o = g as { title?: unknown; fieldRefs?: unknown };
+      const title = String(o?.title ?? "").trim();
+      const refs = Array.isArray(o?.fieldRefs)
+        ? o.fieldRefs.map(String).filter(Boolean)
+        : [];
+      return { title, fieldRefs: refs };
+    })
+    .filter(g => g.title && g.fieldRefs.length > 0);
+}
+
+/**
+ * SectionedForm — 分段长表单（2026-08-09，批次 5）。
+ *
+ * 搬的是 `ant-design/pro-blocks` 的 FormAdvancedForm。那一页三样东西值得搬：
+ *
+ *   ① **分段**：字段按业务含义切成「仓库管理 / 任务管理 / 成员管理」三张卡，
+ *      不是按数量机械均分——这跟 StepsForm 里那条注释是同一条纪律。
+ *   ② **吸底工具条**：长表单滚到哪儿提交按钮都在（FooterToolbar）。
+ *   ③ **校验汇总**：提交失败时，底部显示「N 项没填对」，点开是清单，
+ *      点一条**跳到那个字段**。
+ *
+ * ③ 是这一批真正的东西。长表单校验失败时最难受的是"红字在屏幕外某处"——
+ * 原版用 `document.querySelector('label[for=…]').scrollIntoView()` 定位，
+ * 这里照它的路子做，只是换成 ProForm 的 `onFinishFailed` 拿字段名。
+ *
+ * 与 RecordForm 的分工：只有一段、且那一段没名字，就是 RecordForm，别用这个。
+ * 门禁那条 note 也是这么写的。
+ */
+const SectionedFormRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+  fieldTypeOf,
+  fieldSchemaOf,
+}) => {
+  const [badFields, setBadFields] = React.useState<string[]>([]);
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell block={block} title={title} testid="sectioned-form">
+        <BlockEmpty hint="分段表单未绑定到有效实体" />
+      </BlockShell>
+    );
+  const sections = fieldGroupsOf(block);
+  if (sections.length === 0)
+    return (
+      <BlockShell block={block} title={title} testid="sectioned-form">
+        {/* 不回落成"把所有字段摊平画一个大表单"——那样看着像做完了，实际上
+            分段这件事悄悄没了。分段是它存在的理由，没有分段就该说没有。 */}
+        <BlockEmpty hint="还没有声明分段（sections）——分段表单要说清每段叫什么、放哪几个字段" />
+      </BlockShell>
+    );
+
+  const labelOf = (f: string) => fieldLabelOf?.(bound.entityRef, f) ?? f;
+
+  return (
+    <BlockShell block={block} title={title} testid="sectioned-form">
+      <ProForm
+        layout="vertical"
+        submitter={{
+          searchConfig: { submitText: String(block.props?.submitText ?? "提交") },
+          resetButtonProps: false,
+          // 提交区搬进吸底工具条。`portalDom={false}` 让它停在这张卡里而不是
+          // 整页视口底部——区块是页面的一块，不该独占整页的底边。
+          render: (_p, dom) => (
+            <FooterToolbar portalDom={false} extra={
+              badFields.length > 0 ? (
+                <Tooltip
+                  title={
+                    <div data-testid="sectioned-form-errors">
+                      {badFields.map(f => (
+                        <div
+                          key={f}
+                          style={{ cursor: "pointer", padding: "2px 0" }}
+                          onClick={() => {
+                            // 照原版：按 label[for] 找到那个字段滚过去。
+                            document
+                              .querySelector(`label[for="${f}"]`)
+                              ?.scrollIntoView({ block: "center" });
+                          }}
+                        >
+                          {labelOf(f)}
+                        </div>
+                      ))}
+                    </div>
+                  }
+                >
+                  <span data-testid="sectioned-form-error-count" style={{ color: "#ff4d4f" }}>
+                    {badFields.length} 项没填对
+                  </span>
+                </Tooltip>
+              ) : undefined
+            }>
+              {dom}
+            </FooterToolbar>
+          ),
+        }}
+        onFinish={async values => {
+          setBadFields([]);
+          onAction?.("submitRequest", { entityRef: bound.entityRef, values });
+          return true;
+        }}
+        onFinishFailed={info => {
+          setBadFields(
+            (info?.errorFields ?? [])
+              .map(e => String((e.name ?? [])[0] ?? ""))
+              .filter(Boolean)
+          );
+        }}
+      >
+        {sections.map(sec => (
+          <ProCard
+            key={sec.title}
+            title={sec.title}
+            headerBordered
+            bordered
+            style={{ marginBottom: 12 }}
+            data-testid="sectioned-form-section"
+          >
+            {sec.fieldRefs.map(f =>
+              formItemFor(
+                {
+                  entityRef: bound.entityRef,
+                  fieldLabelOf,
+                  fieldTypeOf,
+                  enumOptionsOf,
+                  fieldSchemaOf,
+                  entityRows,
+                },
+                f
+              )
+            )}
+          </ProCard>
+        ))}
       </ProForm>
     </BlockShell>
   );
@@ -4099,6 +4605,8 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     RankedList: { render: RankedListRenderer, uses: ["List", "Progress", "Tag"], label: "排行榜" },
     ActivityFeed: { render: ActivityFeedRenderer, uses: ["Timeline", "Tag"], label: "动态流" },
     DataTable: { render: DataTableRenderer, uses: ["Table", "Tag", "Typography", "Space", "Pagination"], label: "数据表格" },
+    CardGridList: { render: CardGridListRenderer, uses: ["List", "Card", "Image", "Typography", "Flex", "Tag"], label: "卡片网格" },
+    StandardListRows: { render: StandardListRowsRenderer, uses: ["List", "Avatar", "Typography", "Flex", "Tag"], label: "标准列表行" },
     QuickActionPanel: { render: QuickActionPanelRenderer, uses: ["Card", "Button", "Space"], label: "快捷操作", phone: true },
     FilterBar: { render: FilterBarRenderer, uses: ["Select", "DatePicker", "Button"], label: "筛选条", phone: true },
     TagFilterRow: { render: TagFilterRowRenderer, uses: ["Tag", "Flex", "Button"], label: "标签筛选行" },
@@ -4108,6 +4616,7 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     RecordForm: { render: RecordFormRenderer, uses: ["Form", "Input", "InputNumber", "Select", "DatePicker"], label: "记录表单" },
     RecordFormDialog: { render: RecordFormDialogRenderer, uses: ["Drawer", "Modal", "Form", "Input", "Select", "Button"], label: "弹层表单" },
     RecordDetail: { render: RecordDetailRenderer, uses: ["Descriptions", "Tag", "Button"], label: "记录详情" },
+    SectionedForm: { render: SectionedFormRenderer, uses: ["Form", "Card", "Input", "Select", "DatePicker", "Button", "Tooltip"], label: "分段表单" },
     StepsForm: { render: StepsFormRenderer, uses: ["Steps", "Form", "Input", "Select", "DatePicker"], label: "分步表单" },
     EditableSubTable: { render: EditableSubTableRenderer, uses: ["Table", "Form", "Input", "Select", "DatePicker", "InputNumber", "Button"], label: "可编辑子表" },
     ContentCard: { render: ContentCardRenderer, uses: ["Card"], label: "内容卡片" },

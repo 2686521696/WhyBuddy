@@ -181,6 +181,70 @@ def _validate_block_binding(
                     ref=str(value), skill="page",
                 ))
 
+        # 带标题的字段分组（SectionedForm.sections / DataTable.columnGroups）。
+        #
+        # 2026-08-09 批次 5/7 加的形状：`[{title, fieldRefs:[...]}]`。校验三件事
+        # ——分组本身是对象、标题非空、里面每个字段都真的属于这个实体。
+        #
+        # **标题必须非空**，这条比看着重要：分段表单和多级表头的全部意义就是那个
+        # 标题；标题空了，界面上就是几组没名字的字段挤在一起，比不分组更糟。
+        for field, spec in (schema.get("entityFieldGroups") or {}).items():
+            value = binding.get(field)
+            if value is None:
+                continue
+            if not isinstance(value, list):
+                findings.append(_finding(
+                    PUBLISH_INVALID_FIELD, f"{block_path}.binding.{field}",
+                    f"{field} must be an array of {{title, fieldRefs}} groups, got '{value}'",
+                    ref=str(value), skill="page",
+                ))
+                continue
+            max_groups = spec.get("maxGroups")
+            if max_groups and len(value) > max_groups:
+                findings.append(_finding(
+                    PUBLISH_INVALID_FIELD, f"{block_path}.binding.{field}",
+                    f"{field} accepts at most {max_groups} group(s), got {len(value)}",
+                    ref=str(len(value)), skill="page",
+                ))
+            max_each = spec.get("maxFieldsPerGroup")
+            for gi, group in enumerate(value):
+                where = f"{block_path}.binding.{field}[{gi}]"
+                if not isinstance(group, dict):
+                    findings.append(_finding(
+                        PUBLISH_INVALID_FIELD, where,
+                        f"group must be an object with title and fieldRefs, got '{group}'",
+                        ref=str(group), skill="page",
+                    ))
+                    continue
+                if not str(group.get("title") or "").strip():
+                    findings.append(_finding(
+                        PUBLISH_INVALID_FIELD, f"{where}.title",
+                        "group title must not be empty — the title is the whole point of grouping",
+                        ref="", skill="page",
+                    ))
+                refs = group.get("fieldRefs")
+                if not isinstance(refs, list) or not refs:
+                    findings.append(_finding(
+                        PUBLISH_INVALID_FIELD, f"{where}.fieldRefs",
+                        f"fieldRefs must be a non-empty array of field ids, got '{refs}'",
+                        ref=str(refs), skill="page",
+                    ))
+                    continue
+                if max_each and len(refs) > max_each:
+                    findings.append(_finding(
+                        PUBLISH_INVALID_FIELD, f"{where}.fieldRefs",
+                        f"a group accepts at most {max_each} field(s), got {len(refs)}",
+                        ref=str(len(refs)), skill="page",
+                    ))
+                for field_ref in refs:
+                    qualified = f"{entity_ref}.{field_ref}"
+                    if qualified not in field_types:
+                        findings.append(_finding(
+                            DANGLING, f"{where}.fieldRefs",
+                            f"'{field_ref}' not found in entity '{entity_ref}' fields",
+                            ref=str(field_ref), skill="page",
+                        ))
+
         # 数组型字段引用（ActivityFeed 宽行档的 detailFieldRefs）：逐个落到同
         # 一实体上。写成非数组、或超出 maxItems 都拦——渲染端只能画声明得清楚
         # 的列，模糊的声明到了运行时只能猜，猜出来的列是编的。
