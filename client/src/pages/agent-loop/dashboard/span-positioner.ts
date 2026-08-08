@@ -125,32 +125,60 @@ export interface SpanPositioner {
  * 教训记在这儿：**拿合成数据推翻成熟开源项目的既有选择之前，先确认自己的
  * 评价指标覆盖了人家那条规则在治的问题。**
  *
- * ### 现在的规则（= gestalt `getAdjacentColumnHeightDeltas` 的 V2 支）
+ * ### 现在的规则：**落位高度 + 制造的空白**，两者相加取最小
  *
- * 在每个长度为 span 的相邻列窗口上算「总空白」`Σ(max - h)`，取最小的那个；
- * 并列时再比落位后的 top，取低的。
+ * 在每个长度为 span 的相邻列窗口上算两样东西：
  *
- * 附带：span=1 时窗口只有一列，空白恒为 0，于是完全由 top 破平——**退化成
- * 最矮列**，跟 masonic/gestalt 的单列行为逐字一致，单列跨列不是两套逻辑。
+ *     max        = 落位后这张卡的 top（窗口里最高的那列）
+ *     whitespace = Σ(max - h)，跨上去在矮列留下的死空间
  *
- * 首行不需要特例：全 0 窗口空白为 0、top 也为 0，并列取最左，等价于 gestalt
- * 那句 `heights.indexOf(0)`（且比它更严——它只检查了起点那一列）。
+ * 取 `max + whitespace` 最小的窗口。两项都是 px，直接相加即可比较——一句话
+ * 说就是「既别落太低，也别留太多洞」。
+ *
+ * span=1 时窗口只有一列，whitespace 恒为 0，代价退化成 `max`，也就是**最矮列**
+ * ——跟 masonic/gestalt 的单列行为逐字一致，单列跨列不是两套逻辑。
+ *
+ * 首行不需要特例：全 0 窗口代价为 0，并列取最左。
+ *
+ * ### 这条规则翻过两次，两次都是被实测推翻的，别再翻回去
+ *
+ * **第一次（2026-07-31）**：原本"先比 top"，被线上截图推翻——跨列卡按 top 择位
+ * 会在矮列留下整整一个卡位（189px）的洞。于是改成"先比空白"。
+ *
+ * **第二次（2026-08-08）**：纯空白优先在组件库区块墙上翻车，而且是**必然翻车**
+ * ——它完全不看绝对高度：
+ *
+ *     一张跨列卡落下去，会把它盖住的两列设成**完全相等**
+ *       → 那一对窗口的空白恒为 0
+ *       → 下一张跨列卡还挑它（0 比任何正数都小）
+ *       → 又设成相等 …… 正反馈
+ *
+ * 实测：5 列布局，10 张跨列卡**全部** left=0，第 0/1 列摞到 4153px，
+ * 第 2/3/4 列停在 500px 就再没东西了。用户截图报的「卡片展示算法是不是有
+ * 问题」就是这个。
+ *
+ * 相加之后两次的教训都保住：`[0,100,110,20]` 仍然选 index 1（不留 100px 的洞），
+ * `[4000,4000,500,400,300]` 会选 index 3（不再往最高的那对上摞）。
+ *
+ * 当时那条回归用例（「跨列卡不会全部堆在最左边」）是**假绿**的：它模拟的每张
+ * 卡高度都一样，各列自然就散开了。真实高度从 102 到 846，正反馈才咬合。
+ * 用例已改成用实测高度。
  *
  * 导出是为了单测能直接打这个规则，不用绕整个定位器。
  */
 export function bestSpanStart(heights: number[], span: number): number {
   const last = heights.length - span;
   let bestIndex = 0;
-  let bestWhitespace = Number.POSITIVE_INFINITY;
-  let bestTop = Number.POSITIVE_INFINITY;
+  let bestCost = Number.POSITIVE_INFINITY;
   for (let i = 0; i <= last; i++) {
     let max = heights[i];
     for (let j = i + 1; j < i + span; j++) if (heights[j] > max) max = heights[j];
     let whitespace = 0;
     for (let j = i; j < i + span; j++) whitespace += max - heights[j];
-    if (whitespace < bestWhitespace || (whitespace === bestWhitespace && max < bestTop)) {
-      bestWhitespace = whitespace;
-      bestTop = max;
+    // 代价 = 落位高度 + 制造的空白（同一单位，都是 px）
+    const cost = max + whitespace;
+    if (cost < bestCost) {
+      bestCost = cost;
       bestIndex = i;
     }
   }

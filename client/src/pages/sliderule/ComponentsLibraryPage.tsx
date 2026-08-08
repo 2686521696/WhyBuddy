@@ -1920,7 +1920,10 @@ function FavStar({
         e.stopPropagation();
         onToggle();
       }}
-      className="rounded p-0.5 text-slate-300 transition hover:text-amber-400"
+      // `self-center`：基础组件卡的标题行是 `items-baseline`（组件名和中文名
+      // 按基线对齐，那是对的）。图标按钮没有文字基线，跟着基线走会**偏上
+      // 3.3px**（实测）。这一个跟着行中线走，其余不动。
+      className="shrink-0 self-center rounded p-0.5 text-slate-300 transition hover:text-amber-400"
     >
       <Star
         className="h-3.5 w-3.5"

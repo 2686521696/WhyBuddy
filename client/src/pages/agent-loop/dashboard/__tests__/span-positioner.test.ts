@@ -204,20 +204,45 @@ describe("bestSpanStart", () => {
     expect(bestSpanStart([50, 0, 0, 80], 2)).toBe(1);
   });
 
-  it("跨列卡不会全部堆在最左边（反馈环回归）", () => {
-    // 纯空白规则下，跨列卡把两列设成完全相等 → "最平窗口"永远是这一对 →
-    // 后续每张跨列卡都落回 left=0。实测 10 张全在第 0 列。这里钉住不再复发。
+  it("跨列卡不会全部堆在最左边（用实测高度，不是等高模拟）", () => {
+    // **这条用例 2026-08-08 改过——原来是假绿的。**
+    //
+    // 原版模拟每张卡都是 234px。等高时各列自然就散开了，所以它一直是绿的，
+    // 而线上真实高度从 102 到 846，正反馈才咬合：一张跨列卡把两列设成完全
+    // 相等 → 那对窗口空白恒为 0 → 下一张还挑它 → 又设成相等。
+    //
+    // 下面的高度是从组件库区块墙上量下来的原样（5 列、宽卡 span=2）。
+    // 修之前跑这段：10 张宽卡全部 start=0，第 0/1 列摞到 4153px。
     const CC = 5;
+    const wide = [242, 102, 102, 188, 360, 521, 126, 263, 846, 200, 306, 105];
+    const narrow = [120, 80, 120, 170, 280, 120, 236, 32, 102, 70, 102, 120];
     const heights = new Array(CC).fill(0);
     const starts: number[] = [];
-    for (let i = 0; i < 24; i++) {
-      const span = i % 3 === 0 ? 2 : 1;
+    // 宽窄交错，跟 interleaveWide 铺出来的次序一致
+    for (let i = 0; i < wide.length + narrow.length; i++) {
+      const isWide = i % 2 === 0;
+      const span = isWide ? 2 : 1;
+      const h = isWide ? wide[i >> 1] : narrow[i >> 1];
       const s = bestSpanStart(heights, span);
-      if (span === 2) starts.push(s);
+      if (isWide) starts.push(s);
       let top = heights[s];
       for (let j = s + 1; j < s + span; j++) if (heights[j] > top) top = heights[j];
-      for (let j = s; j < s + span; j++) heights[j] = top + 234 + 16;
+      for (let j = s; j < s + span; j++) heights[j] = top + h + 16;
     }
-    expect(new Set(starts).size).toBeGreaterThan(1);
+    // ① 跨列卡得真的分散：5 列里 span=2 有 4 个可能的起点，至少用上 3 个
+    expect(
+      new Set(starts).size,
+      `跨列卡的起始列：${starts.join(", ")}`
+    ).toBeGreaterThanOrEqual(3);
+    // ② 最终各列高度不能悬殊。修之前是 4153 : 500 ≈ 8.3 倍
+    const mx = Math.max(...heights);
+    const mn = Math.min(...heights);
+    expect(mx / mn, `各列高度：${heights.join(", ")}`).toBeLessThan(1.6);
+  });
+
+  it("等高的两列不再永远赢过更矮但不齐的两列", () => {
+    // 这就是正反馈的那一步，单独钉住：
+    // [4000,4000] 空白 0，[400,300] 空白 100 —— 纯空白规则会选前者。
+    expect(bestSpanStart([4000, 4000, 500, 400, 300], 2)).toBe(3);
   });
 });
