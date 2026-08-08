@@ -256,3 +256,64 @@ describe("页面级管道：骨架和积木走同一条", () => {
     ).toBe(1);
   });
 });
+
+/**
+ * 翻转默认（2026-08-08，三步走的第②步）。
+ *
+ * **声明了 blocks 就用积木，没声明才回落骨架。** 骨架从"拥有者"变回"兜底"。
+ *
+ * 翻之前是反的：桌面档的 workbench/wizard 页一律交给内置 ProTable 骨架，积木
+ * 只在 monitor/dashboard 上摆出来——列表页上的积木一个都不上屏。而给模型的
+ * prompt 里那十套「参考排布」有三套推荐 DataTable 放 main，模型照做、门禁放行、
+ * 运行时又扔掉：我们在教模型生成一个必定被丢掉的东西。
+ */
+describe("列表页归属：声明了积木就归积木", () => {
+  it("判据是「声明了没有」，不是「页面形态是什么」", () => {
+    expect(runtime).toContain("const blocksOwnPage");
+    const start = runtime.indexOf("const blocksOwnPage");
+    const body = runtime.slice(start, start + 200);
+    expect(body).toContain("declaredBlocks.length > 0");
+  });
+
+  it("声明了积木就不再走 ProTable 骨架", () => {
+    const start = runtime.indexOf("const usesProWorkbench");
+    const body = runtime.slice(start, runtime.indexOf(");", start));
+    expect(body, "翻转没落到 usesProWorkbench 上").toContain("!blocksOwnPage");
+  });
+
+  it("**没有展示记录的积木时，内置表格补回来** —— 兜底比纯粹重要", () => {
+    expect(runtime).toContain("blocksOwnPage && blocksCoverData ? undefined : pageDataView");
+  });
+
+  it("兜底判据用 capability 不用 family —— 这条踩过", () => {
+    // 第一版写的是 family === "data"，台子上当场露馅：MetricGrid 的 family
+    // 就是 data（它自己取数、能独立存在），于是"只声明了一个指标卡"的页面被
+    // 判成"记录已经有人展示了"，表格没补回来，整页只剩一张卡。
+    // family 回答"能不能独立存在"，capability 才回答"展示的是什么"。
+    const start = runtime.indexOf("const blocksCoverData");
+    const body = runtime.slice(start, start + 220);
+    expect(body).toContain('EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "entityRows"');
+    expect(body, "又用回 family 了").not.toContain("FAMILY_BY_TYPE");
+  });
+
+  it("「绑主实体的 DataTable 一律摘掉」那条规矩只在骨架还在时生效", () => {
+    // 翻转之后内置表格根本不渲染，那时候这个 DataTable 就是这一页唯一的表，
+    // 再摘掉页面直接空了。
+    const i = runtime.indexOf('b.type === "DataTable" &&\n                page.entityId');
+    expect(i, "找不到那条摘除规则").toBeGreaterThan(-1);
+    expect(runtime.slice(i - 120, i)).toContain("!blocksOwnPage");
+  });
+
+  it("目录派生的两张表都在，且没有手抄", () => {
+    expect(registry).toContain("EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE");
+    expect(registry).toContain("EXPERIENCE_BLOCK_FAMILY_BY_TYPE");
+    // 两张表都必须从目录 map 出来，不许写死字面量
+    for (const name of ["CAPABILITY", "FAMILY"]) {
+      const start = registry.indexOf(`EXPERIENCE_BLOCK_${name}_BY_TYPE: Readonly`);
+      const body = registry.slice(start, start + 400);
+      expect(body, `${name} 表不是从目录派生的`).toContain(
+        "EXPERIENCE_BLOCK_CATALOG.blocks.map"
+      );
+    }
+  });
+});

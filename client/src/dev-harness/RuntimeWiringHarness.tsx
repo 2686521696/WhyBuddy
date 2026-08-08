@@ -38,8 +38,27 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
         fields: [
           { id: "name", name: "门店", type: "string" },
           { id: "amount", name: "金额", type: "number" },
-          { id: "status", name: "状态", type: "enum" },
-          { id: "channel", name: "渠道", type: "enum" },
+          // 枚举字段**必须带 options**，否则标签筛选行摊不出标签、表格也只画
+          // 一个「-」。第一版漏了，台子上那一行是空的。
+          {
+            id: "status",
+            name: "状态",
+            type: "enum",
+            options: [
+              { id: "todo", label: "待办", tone: "default" },
+              { id: "doing", label: "进行中", tone: "processing" },
+              { id: "done", label: "已完成", tone: "success" },
+            ],
+          },
+          {
+            id: "channel",
+            name: "渠道",
+            type: "enum",
+            options: [
+              { id: "online", label: "线上", tone: "default" },
+              { id: "store", label: "门店", tone: "default" },
+            ],
+          },
           { id: "at", name: "下单日期", type: "date" },
         ],
       },
@@ -86,17 +105,12 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
       {
         id: "order_list",
         name: "订单管理",
-        // **kind 必须是 monitor/dashboard，体验区块才会上屏。**
+        // **就是 workbench** —— 最常见的列表页形态。
         //
-        // 这是 2026-08-08 用这个台子逮到的第二件事：桌面档的 workbench/wizard 页
-        // 走 `usesProWorkbench` 那条分支，整页交给内置的 ProTable 骨架，
-        // `blockScaffold` 一个都不渲染（见 AppRuntimeScreen 里 businessPageGrid 与
-        // 末尾那个 `OVERVIEW_KINDS.has(...) ? blockScaffold : null`）。
-        //
-        // 也就是说：**列表页上的体验区块在真实运行时是看不见的**。这是个产品级
-        // 决定（固定骨架 vs 积木谁拥有业务页），不在这个台子的职责里改。台子先
-        // 在区块真的会渲染的那一档上，把接线验通。
-        kind: "monitor",
+        // 2026-08-08 第②步之前这里必须写 monitor：桌面档的 workbench 页整页交给
+        // 内置 ProTable 骨架，积木一个都不渲染。翻转默认之后，声明了 blocks 的
+        // 页面由积木画，这一档才是该验的那一档。
+        kind: "workbench",
         fieldBindings: [
           "order.name",
           "order.amount",
@@ -111,15 +125,15 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
             id: "b-search",
             type: "SearchBox",
             props: { title: "搜索", placeholder: "搜门店名" },
-            binding: { entityRef: "orderLog", targets: ["b-table"] },
+            binding: { entityRef: "order", targets: ["b-table"] },
           },
           {
             id: "b-tags",
             type: "TagFilterRow",
             props: { title: "按标签筛选" },
             binding: {
-              entityRef: "orderLog",
-              fieldRefs: ["action"],
+              entityRef: "order",
+              fieldRefs: ["status", "channel"],
               targets: ["b-table"],
             },
           },
@@ -127,25 +141,24 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
             id: "b-colset",
             type: "ColumnSettingPanel",
             props: { title: "列设置" },
-            binding: { entityRef: "orderLog", targets: ["b-table"] },
+            binding: { entityRef: "order", targets: ["b-table"] },
           },
           {
             id: "b-table",
             type: "DataTable",
-            props: { title: "订单日志" },
-            // **故意绑副实体**：运行时有一条"一页一个主人"的规矩，会把绑主实体
-            // 的 DataTable 整个摘掉（页面本来就自带一张主实体表）。台子要验的是
-            // 接线，不是那条规矩，所以让它绑 orderLog——那种表运行时会留着。
+            props: { title: "订单明细" },
+            // 绑**主实体**。第②步之前这么写会被"一页一个主人"那条规矩整个摘掉；
+            // 翻转之后内置表格本来就不渲染了，这张就是这一页唯一的表。
             binding: {
-              entityRef: "orderLog",
-              fieldRefs: ["orderId", "action", "operator"],
+              entityRef: "order",
+              fieldRefs: ["name", "amount", "status", "channel", "at"],
             },
           },
           {
             id: "b-batch",
             type: "BatchActionBar",
             props: { actions: ["批量导出", "批量关闭"] },
-            binding: { entityRef: "orderLog", targets: ["b-table"] },
+            binding: { entityRef: "order", targets: ["b-table"] },
           },
         ],
         layout: {
@@ -154,6 +167,25 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
           main: ["b-table"],
           footerBar: ["b-batch"],
         },
+      },
+      // 第三页：**声明了积木、但一个 data 族都没有**。翻转默认最容易造成的
+      // 伤害就在这里——模型只写了一个 MetricGrid，整页的表格就没了。兜底应该
+      // 把内置表格补回版面。台子上留这一页，就是为了每次都能看见它有没有补。
+      {
+        id: "order_nodata",
+        name: "订单管理（只声明了指标卡）",
+        kind: "workbench",
+        fieldBindings: ["order.name", "order.amount", "order.status"],
+        actionPermissions: ["order:create", "order:read"],
+        blocks: [
+          {
+            id: "n-metric",
+            type: "MetricGrid",
+            props: { title: "订单总额" },
+            binding: { entityRef: "order", aggregate: "sum:amount" },
+          },
+        ],
+        layout: { metrics: ["n-metric"] },
       },
       // 第二页故意是 workbench —— 那一档由**固定骨架**画（积木不上屏）。
       // 台子上两页并排，才验得出"翻转默认"前后各是什么样、骨架有没有被改坏。

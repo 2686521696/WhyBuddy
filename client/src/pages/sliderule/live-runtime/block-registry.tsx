@@ -391,6 +391,36 @@ interface ExperienceBlockCatalogFile {
 export const EXPERIENCE_BLOCK_CATALOG =
   catalogJson as unknown as ExperienceBlockCatalogFile;
 
+/**
+ * 区块 type → family（data / filter / action / content），从目录派生。
+ *
+ * 跟 Python 侧的 `EXPERIENCE_BLOCK_FAMILY_BY_TYPE` 同源同名——两边读的是同一份
+ * 目录 JSON，不许任何一边手抄一张表。
+ *
+ * 运行时靠它回答一个具体问题：**这一页的积木里有没有真的能展示行数据的**。
+ * 没有的话（比如模型只声明了一个 MetricGrid），内置表格仍要补进版面，
+ * 否则翻转默认之后整页就没东西看了。
+ */
+export const EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE: Readonly<Record<string, string>> =
+  Object.freeze(
+    Object.fromEntries(
+      EXPERIENCE_BLOCK_CATALOG.blocks.map(b => [
+        b.type,
+        (b as unknown as { capability?: string }).capability ?? "",
+      ])
+    )
+  );
+
+export const EXPERIENCE_BLOCK_FAMILY_BY_TYPE: Readonly<Record<string, string>> =
+  Object.freeze(
+    Object.fromEntries(
+      EXPERIENCE_BLOCK_CATALOG.blocks.map(b => [
+        b.type,
+        (b as unknown as { family?: string }).family ?? "",
+      ])
+    )
+  );
+
 // 本阶段先把现有页面内容包进可信边界；真实区块内容在第三阶段接入。
 // 导出仅为 SSOT 对账：测试据此判定某个 rendererKey 登记的是真渲染器还是占位。
 export const ExistingContentAdapter: ExperienceBlockRenderer = ({

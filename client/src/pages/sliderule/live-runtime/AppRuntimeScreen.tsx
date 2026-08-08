@@ -191,6 +191,7 @@ import {
 } from "./rbac-preview";
 import {
   ExperienceBlockBoundary,
+  EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE,
   type BlockColumnState,
   type PageColumnState,
   type PageFilterState,
@@ -1462,6 +1463,40 @@ export function AppRuntimeScreen({
   const dashboardUsesBusinessGrid =
     page?.view.kind === "dashboard" && !freeformOwnsPage;
 
+  /**
+   * ── 这一页由积木画，还是由固定骨架画（2026-08-08，三步走的第②步）──
+   *
+   * **翻转默认**：声明了 blocks 就用积木，没声明才回落骨架。骨架从"拥有者"
+   * 变回"兜底"——它本来就该是这个角色。
+   *
+   * 翻之前是反的：桌面档的 workbench/wizard 页一律交给内置 ProTable 骨架，
+   * `blockScaffold` 只在 monitor/dashboard 上摆出来。后果是**列表页上的积木
+   * 一个都不上屏**——而列表页是最常见的页面类型。更难受的是，给模型的
+   * prompt 里那十套「参考排布」有三套推荐 `DataTable` 放 main，模型照做了、
+   * 门禁放行了，运行时又给扔了：我们在教模型生成一个必定被丢掉的东西。
+   *
+   * 判据是"**声明了没有**"，不是"页面形态是什么"。形态决定的是骨架长什么样，
+   * 决定不了这一页该由谁画——那是模型的声明说了算。
+   */
+  const declaredBlocks = (page?.experienceBlocks ?? []).filter(b => !b._fromLegacy);
+  const blocksOwnPage = !freeformOwnsPage && declaredBlocks.length > 0;
+  /**
+   * 积木里有没有真的在"展示这一页的记录"的。
+   *
+   * 没有的话**仍然把内置表格补进版面**：模型只声明了一个 MetricGrid 就把整页
+   * 的表格弄没了，那是"翻转默认"最容易造成的伤害——用户看到的是一张少了东西
+   * 的页面，而不是一个更灵活的页面。兜底比纯粹更重要。
+   *
+   * 判据用 **capability === "entityRows"**，不是 family === "data"。第一版写的
+   * 是后者，台子上当场露馅：MetricGrid 的 family 就是 data（它自己取数、能独立
+   * 存在），于是"只声明了一个指标卡"的页面被判成"记录已经有人展示了"，表格没
+   * 补回来，整页只剩一张卡。**family 回答的是"能不能独立存在"，capability 才
+   * 回答"展示的是什么"** —— 这里要问的是后者。
+   */
+  const blocksCoverData = declaredBlocks.some(
+    b => EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "entityRows"
+  );
+
   // 体验区块渲染：桌面壳与手机壳共用同一份摆法逻辑，只有槽位来源分档。
   // 抽成函数之前它内联在 defaultPageContent 里，于是手机档一个区块都渲染不到。
   // Step 5：区块事件 → 页面动作调度（零破坏，不影响 aiActions 路径）。
@@ -1649,9 +1684,15 @@ export function AppRuntimeScreen({
           //
           // 只摘"绑主实体"的那些；绑**别的**实体的 DataTable 是真新增内容
           //（例如库存页上挂一张供应商表），必须留着。
+          //
+          // **2026-08-08 第②步之后这条规矩只在骨架还在的时候生效。** 翻转默认
+          // 以后，声明了积木的页面根本不渲染内置表格，那时候这个 DataTable 就是
+          // 这一页唯一的表——再摘掉的话页面直接空了。当初这条是为了挡"一页两张
+          // 表"，现在"要不要内置表"由 businessPageGrid 那边决定，这里不该再摘。
           .filter(
             b =>
               !(
+                !blocksOwnPage &&
                 b.type === "DataTable" &&
                 page.entityId &&
                 (b.binding as { entityRef?: string } | undefined)?.entityRef ===
@@ -3005,10 +3046,12 @@ export function AppRuntimeScreen({
     ) : null;
 
 
+  // 声明了积木的页面不再走 ProTable 骨架（第②步的翻转就落在这一行）
   const usesProWorkbench = Boolean(
     page &&
       !isPhone &&
       !isTablet &&
+      !blocksOwnPage &&
       (page.view.kind === "workbench" || page.view.kind === "wizard")
   );
 
@@ -3120,7 +3163,13 @@ export function AppRuntimeScreen({
   const blockScaffold = renderExperienceBlockScaffold(false);
   const businessPageGrid = usesProWorkbench
     ? pageDataView
-    : renderExperienceBlockScaffold(false, pageDataView);
+    : renderExperienceBlockScaffold(
+        false,
+        // 积木拥有这一页、且它们里面确实有展示行数据的 → 不再塞内置表格，
+        // 否则一页两张表（这也正是"绑主实体的 DataTable 会被摘掉"那条规矩
+        // 当初要挡的事——翻转之后由这里决定，不再靠摘积木）。
+        blocksOwnPage && blocksCoverData ? undefined : pageDataView
+      );
 
   /**
    * 演示数据徽标 —— 第三样从骨架身上摘下来的（2026-08-08，第①步）。
