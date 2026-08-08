@@ -171,3 +171,27 @@ def test_the_capability_and_region_vocabularies_come_from_the_archetypes():
     keys = {r["key"] for a in PAGE_ARCHETYPES.values() for r in a["regions"]}
     assert REGION_CAPABILITIES == caps
     assert REGION_KEYS == keys
+
+
+def test_datatable_instruction_matches_who_owns_the_page():
+    """**这条措辞翻过一次，钉住它别翻回去。**
+
+    原文是「每一页都已经自带一张主实体表，不要再发 DataTable」。那时候是真的：
+    桌面档的 workbench/wizard 页整页交给内置 ProTable 骨架。
+
+    2026-08-08 三步走的第②步把默认翻了——声明了 blocks 的页面由积木画，内置
+    表格不再渲染。旧措辞于是变成一条**有害指令**：它教模型别发表格，而现在不发
+    就真的没有表格了。
+
+    证据不是推测：12 个真实生成的应用、60 个页面，**每一页都声明了 blocks，
+    而 DataTable 出现 0 次**——模型完全照着这句话做了。
+    """
+    from services.schema_legal import experience_block_prompt_block
+
+    text = experience_block_prompt_block()
+    assert "DataTable" in text
+    # 翻转之后：列表页**必须**发一张，而不是不许发
+    assert "MUST emit one" in text, "DataTable 那条又变回禁令了？"
+    assert "Do NOT emit a DataTable bound to the page's own primary entity" not in text, (
+        "旧禁令回来了 —— 现在页面不再自带表格，这条会让列表页变成空页"
+    )

@@ -695,11 +695,24 @@ def experience_block_prompt_block() -> str:
         "page.stats / page.charts empty on those pages.\n"
         "  - RankedList / ActivityFeed are not affected by this split; "
         "they may be used on any page kind where they fit.\n"
-        "  - DataTable: every page ALREADY renders its own primary entity as a full "
-        "table (localized column headers, enum tags, sorting, filtering, paging, row "
-        "actions). Do NOT emit a DataTable bound to the page's own primary entity — it "
-        "renders the very same rows a second time, and worse. Emit DataTable ONLY for a "
-        "DIFFERENT entity than the page's primary one (e.g. a supplier table on an "
+        # 2026-08-08 这一条整个反过来了。
+        #
+        # 原文是"每一页都已经自带一张主实体表，**不要**再发 DataTable"。那时候
+        # 是真的：桌面档的 workbench/wizard 页整页交给内置 ProTable 骨架。
+        #
+        # 三步走的第②步把默认翻了：**声明了 blocks 的页面由积木画，内置表格不再
+        # 渲染**。旧措辞于是变成了一条有害指令——它教模型别发表格，而现在不发就
+        # 真的没有表格了。12 个真实生成的应用、60 个页面，DataTable 出现 0 次，
+        # 就是这条措辞的直接后果。
+        #
+        # 措辞仍走本文件反复验证过的那条：祈使 + 说清不照做的代价。
+        "  - DataTable: a page that lists records MUST emit one, bound to the page's "
+        "own primary entity. The page no longer renders a table of its own — blocks "
+        "own the page now, so a list page without a DataTable is a list page with "
+        "nothing to read. (A fallback table is injected when no block shows records, "
+        "but it is a safety net, not the design: it cannot be filtered, sorted or "
+        "batch-selected by the blocks you placed around it.) Emitting one for a "
+        "DIFFERENT entity is also fine and useful (e.g. a supplier table on an "
         "inventory page)."
     )
     for block in EXPERIENCE_BLOCKS:
