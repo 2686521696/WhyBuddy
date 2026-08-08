@@ -11,7 +11,7 @@
  *
  * ## 谁算宽卡
  *
- * `allowedSlots` 含 `content`。内容区在真实页面里就是整行宽的，能放进去的区块
+ * `allowedRegions` 含一个**整行宽的区域**。整行区域在真实页面里就是通栏的，能放进去的区块
  * 天然需要横向空间（DataTable 要摆列、WorkflowTimeline 要横向展开阶段）。
  * 判据必须是真实信息，不是随机也不是"按好看程度挑"——纪律见 app-wall-span.ts。
  *
@@ -35,9 +35,19 @@
  * 谁落后先放谁。它对"多数在哪一边"是对称的，宽 8/窄 5 与宽 4/窄 12 都能摊匀。
  */
 
-/** 只要能进内容区，就按宽卡对待。 */
-export function isWideBlock(block: { allowedSlots?: string[] }): boolean {
-  return (block.allowedSlots ?? []).includes("content");
+/**
+ * 整行宽的区域 —— 判据来自实测，不是按名字猜。
+ *
+ * 2026-08-08 跑 upgradeLegacySlotsToGrid 量过（12 栅格）：窄的只有右侧那一列
+ * （aside，4/12；看板日历 3/12），正文侧的 main / metrics / charts / supplement
+ * 都是整行。旧判据写的是「allowedSlots 含 content」——而 content 恰好是实测
+ * 里**随页型变宽**的那一个（仪表盘 12、其它 4），拿它当"宽"的标志本身就不稳。
+ */
+const WIDE_REGIONS = new Set(["main", "metrics", "charts", "supplement"]);
+
+/** 只要能进任一整行区域，就按宽卡对待。 */
+export function isWideBlock(block: { allowedRegions?: string[] }): boolean {
+  return (block.allowedRegions ?? []).some(r => WIDE_REGIONS.has(r));
 }
 
 /**
@@ -49,7 +59,7 @@ export function isWideBlock(block: { allowedSlots?: string[] }): boolean {
  *
  * 只有一边为空时原样返回——没有"交错"可言，重排只会平白打乱目录次序。
  */
-export function interleaveWide<T extends { allowedSlots?: string[] }>(
+export function interleaveWide<T extends { allowedRegions?: string[] }>(
   blocks: T[]
 ): T[] {
   const wide = blocks.filter(isWideBlock);

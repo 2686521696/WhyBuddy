@@ -35,7 +35,7 @@ import {
   FREEFORM_ICON_NAME_RE,
   PHONE_BLOCK_TYPES,
 } from "../live-runtime/block-registry";
-import { LAYOUT_SLOT_KEYS } from "../live-runtime/app-runtime-schema";
+import { LAYOUT_REGION_KEYS } from "../live-runtime/app-runtime-schema";
 import { LEGAL_THEME_IDS, resolveIdentityTheme } from "../live-runtime/identity-themes";
 
 /** 2026-07-26 手抄清单收编哨兵。
@@ -43,7 +43,7 @@ import { LEGAL_THEME_IDS, resolveIdentityTheme } from "../live-runtime/identity-
  * 此前四处"两边各一份、靠人肉记得同步"的平行拷贝：图标形状正则、legacy
  * 图标别名表、布局槽位键、8 套主题色板 + 生成主题合格标准。现在真相源收进
  * 共享 JSON（vite alias 跨语言直读），这里锁住"派生没有被人重新硬编码"，
- * 以及唯一一处因类型系统保留的字面量（LAYOUT_SLOT_KEYS）与目录一致。 */
+ * 以及唯一一处因类型系统保留的字面量（LAYOUT_REGION_KEYS）与目录一致。 */
 describe("SSOT parity（手抄清单收编）", () => {
   it("图标形状正则从目录派生", () => {
     expect(FREEFORM_ICON_NAME_RE.source).toBe(
@@ -60,9 +60,9 @@ describe("SSOT parity（手抄清单收编）", () => {
     }
   });
 
-  it("LAYOUT_SLOT_KEYS 与目录 allowedSlots 一致（唯一保留的字面量拷贝）", () => {
-    expect([...LAYOUT_SLOT_KEYS]).toEqual(
-      (catalogJson as { allowedSlots: string[] }).allowedSlots
+  it("LAYOUT_REGION_KEYS 与目录 pageRegions 一致（唯一保留的字面量拷贝）", () => {
+    expect([...LAYOUT_REGION_KEYS]).toEqual(
+      Object.keys((catalogJson as { pageRegions: Record<string, unknown> }).pageRegions)
     );
   });
 

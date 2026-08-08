@@ -1341,7 +1341,7 @@ def test_layout_valid_block_ref_passes():
     pages = model.get("page", {}).get("pages", [])
     if pages:
         pages[0]["blocks"] = [{"id": "b1", "type": "MetricGrid"}]
-        pages[0]["layout"] = {"summary": ["b1"]}
+        pages[0]["layout"] = {"metrics": ["b1"]}
     from services.v5_model_gate import validate_five_system_model
     result = validate_five_system_model(model, require_landing_page_ref=True)
     layout_findings = [f for f in result["findings"] if "layout" in f.get("path", "")]
@@ -1378,16 +1378,16 @@ def test_layout_block_type_not_allowed_in_slot_fails():
 
 
 def test_layout_block_type_allowed_in_declared_slot_passes():
-    """同一个 RankedList 放进目录允许的 secondary 槽应该干净通过——防止新校验误报。"""
+    """同一个 RankedList 放进目录允许的 aside 区域应该干净通过——防止新校验误报。"""
     model = _make_model_with_landing()
     pages = model.get("page", {}).get("pages", [])
     if pages:
         pages[0]["blocks"] = [{"id": "b1", "type": "RankedList"}]
-        pages[0]["layout"] = {"secondary": ["b1"]}
+        pages[0]["layout"] = {"aside": ["b1"]}
     from services.v5_model_gate import validate_five_system_model
     result = validate_five_system_model(model, require_landing_page_ref=True)
     layout_findings = [f for f in result["findings"] if "layout" in f.get("path", "")]
-    assert len(layout_findings) == 0, f"valid slot placement should pass: {layout_findings}"
+    assert len(layout_findings) == 0, f"valid region placement should pass: {layout_findings}"
 
 
 def test_layout_nested_slots_key_reports_actionable_message():

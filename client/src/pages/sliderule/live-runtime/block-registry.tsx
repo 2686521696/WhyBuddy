@@ -120,7 +120,8 @@ export interface ExperienceBlockCatalogEntry {
   generationEnabled: boolean;
   propsSchema: Record<string, unknown>;
   dataKinds: string[];
-  allowedSlots: string[];
+  /** 这个区块能落在哪些页面区域（2026-08-08 从 allowedSlots 换过来）。 */
+  allowedRegions: string[];
   events: string[];
 }
 
@@ -269,7 +270,22 @@ export type ExperienceBlockRenderer =
 
 interface ExperienceBlockCatalogFile {
   version: number;
-  allowedSlots: string[];
+  /**
+   * 页面区域目录 —— 键是区域名，值带中文名、摆在哪条带、以及它在
+   * ant-design/pro-blocks 那 29 个真实页面里的出处。
+   *
+   * 2026-08-08 收编：此前区域语法只有 Python 有、前端手抄一份；现在两边同读
+   * 这个文件。同时它取代了旧的 allowedSlots（五个名字实测只有两种行为）。
+   */
+  pageRegions: Record<string, { label: string; band: string; evidence: string }>;
+  /** 范式语法：哪个范式有哪些区域、多重、必不必填、收哪类区块。 */
+  pageArchetypes: Record<
+    string,
+    { label: string; when: string; pageOwnsMain?: boolean;
+      regions: { key: string; why: string; weight: string; required: boolean;
+                 accepts: string[]; maxBlocks: number }[] }
+  >;
+  pageRegionBands: string[];
   dataKinds: string[];
   eventTypes: string[];
   freeformAllowedTags: string[];

@@ -1,13 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 9,
-  "allowedSlots": [
-    "summary",
-    "primary",
-    "secondary",
-    "activity",
-    "content"
-  ],
+  "version": 10,
   "pageRegionBands": [
     "top",
     "main",
@@ -34,7 +27,7 @@
     "tabs": {
       "label": "页面页签",
       "band": "top",
-      "evidence": "PageContainer 的 tabList——AccountCenter、ListSearch（文章/项目/应用）、ProfileAdvanced（详情/规则/日志），共 3 页"
+      "evidence": "PageContainer 的 tabList——AccountCenter、ListSearch（文章/项目/应用）、ProfileAdvanced（详情/规则/日志），共 3 页。【暂未接入任何范式】没有区块能填它——需要一个 StatusTabs 区块（照 pro-components 的 ListToolBar tabs）。照「先有区块再开范式」的纪律（result 范式上一轮就是这么等的），区块建好之前不放进范式，免得留下模型永远填不上的语法。"
     },
     "filters": {
       "label": "筛选区",
@@ -110,16 +103,6 @@
           "required": false,
           "accepts": [
             "entityRows"
-          ],
-          "maxBlocks": 1
-        },
-        {
-          "key": "tabs",
-          "why": "同一页要装几组不同的东西时，用页签切整块主体",
-          "weight": "secondary",
-          "required": false,
-          "accepts": [
-            "filter"
           ],
           "maxBlocks": 1
         },
@@ -256,16 +239,6 @@
           "required": false,
           "accepts": [
             "entityRows"
-          ],
-          "maxBlocks": 1
-        },
-        {
-          "key": "tabs",
-          "why": "同一条记录的几个面（详情/规则/日志）用页签切",
-          "weight": "secondary",
-          "required": false,
-          "accepts": [
-            "filter"
           ],
           "maxBlocks": 1
         },
@@ -694,11 +667,12 @@
         "dashboard",
         "monitor"
       ],
-      "allowedSlots": [
-        "summary",
-        "primary"
+      "allowedRegions": [
+        "metrics",
+        "headerExtra",
+        "aside"
       ],
-      "slotsRationale": "NOT secondary or activity/content: a KPI row is several stat cards side by side, so the one-third-width column wraps them into an unreadable stack, and KPIs are the first thing the user scans — placing them below the page content defeats that.",
+      "regionsRationale": "仪表盘用全宽的 metrics（IntroduceRow 那一排）；列表/详情页用 headerExtra（页头右侧两三个数，不占正文）。不进 main——指标一旦占了主区，用户真正来看的那张表就被挤下去一屏。",
       "events": [
         "metricSelect"
       ],
@@ -745,11 +719,12 @@
         "dashboard",
         "monitor"
       ],
-      "allowedSlots": [
-        "primary",
-        "secondary"
+      "allowedRegions": [
+        "charts",
+        "main",
+        "aside"
       ],
-      "slotsRationale": "NOT summary or activity/content: a chart needs a solid drawing area, which the top wrapping row cannot give it; and a trend belongs with the overview above the detail rows, not underneath them.",
+      "regionsRationale": "趋势图要横向空间才看得出走势，charts 与 main 都够；aside 放迷你趋势也成立（DashboardWorkplace 的 Radar 就在右栏）。不进页头带——页头是给数字和操作的，塞张图会把标题挤成两行。",
       "events": [
         "pointSelect"
       ],
@@ -806,11 +781,13 @@
         "dashboard",
         "monitor"
       ],
-      "allowedSlots": [
-        "primary",
-        "secondary"
+      "allowedRegions": [
+        "charts",
+        "main",
+        "aside",
+        "supplement"
       ],
-      "slotsRationale": "NOT summary or activity/content: a Top-N is a vertical list and needs column height, which the top wrapping row has none of.",
+      "regionsRationale": "排行榜（TopSearch）在分析页与主区都出现过；窄栏也放得下，因为它是纵向的行。",
       "events": [
         "itemSelect"
       ],
@@ -879,13 +856,12 @@
         "calendar",
         "monitor"
       ],
-      "allowedSlots": [
-        "activity",
-        "secondary",
-        "primary",
-        "content"
+      "allowedRegions": [
+        "aside",
+        "main",
+        "supplement"
       ],
-      "slotsRationale": "NOT summary: a feed is a vertical list of entries; the top row is a horizontal wrapping strip and cannot hold it.",
+      "regionsRationale": "动态流是纵向条目，窄栏最合适（工作台右栏的典型内容）；主区与补充区也放得下。",
       "events": [
         "itemSelect"
       ],
@@ -941,12 +917,11 @@
         "kanban",
         "calendar"
       ],
-      "allowedSlots": [
-        "primary",
-        "content",
-        "activity"
+      "allowedRegions": [
+        "main",
+        "supplement"
       ],
-      "slotsRationale": "NOT summary or secondary: a table needs width for its columns — the one-third column squeezes them together, and the top wrapping row cannot hold a table at all.",
+      "regionsRationale": "表格要摆列，必须宽。不进 aside——三分之一宽的表格列会挤成一团，正是要避免的那种页面。",
       "events": [
         "rowSelect",
         "createRequest",
@@ -986,11 +961,12 @@
         "workbench",
         "wizard"
       ],
-      "allowedSlots": [
-        "summary",
-        "primary"
+      "allowedRegions": [
+        "header",
+        "aside",
+        "footerBar"
       ],
-      "slotsRationale": "NOT activity/content or secondary: this is the page's entry point for DOING something, and activity/content render BELOW the content it acts on — an action bar placed after the work is an action bar the user finds too late. The one-third column also wraps a row of buttons into several cramped lines.",
+      "regionsRationale": "快捷操作在页头（这一页能干什么）、右栏（这个角色常做的事）、或底部条（选中多行后的批量操作，出处是 ListTableList 的 FooterToolbar）。不进 main——一排按钮当不了一页的主角。",
       "events": [
         "actionTrigger"
       ],
@@ -1029,10 +1005,10 @@
         "dashboard",
         "monitor"
       ],
-      "allowedSlots": [
-        "summary"
+      "allowedRegions": [
+        "filters"
       ],
-      "slotsRationale": "summary ONLY: a filter must sit BEFORE the rows it filters. Every other slot renders after summary, so putting it anywhere else asks the user to read the content first and filter it afterwards.",
+      "regionsRationale": "筛选必须在它筛的内容**之前**。只给 filters 一个区域——其它任何位置都会变成先读内容再筛选。",
       "events": [
         "filterChange"
       ],
@@ -1069,12 +1045,12 @@
         "wizard",
         "monitor"
       ],
-      "allowedSlots": [
-        "primary",
-        "content",
-        "activity"
+      "allowedRegions": [
+        "main",
+        "aside",
+        "supplement"
       ],
-      "slotsRationale": "NOT secondary or summary: this bar runs HORIZONTALLY across its stages, so the one-third-width side column squeezes it unreadable, and the top wrapping row is a strip for compact controls, not for a full stage bar. It needs the wide main column or a full-width row.",
+      "regionsRationale": "流程条横着展开阶段，主区最舒服；窄栏可竖排；结果页的补充区正是它的典型位置（ResultSuccess 里那条创建项目→部门初审→财务复核→完成）。",
       "events": [
         "itemSelect"
       ],
@@ -1109,13 +1085,11 @@
         "dashboard",
         "monitor"
       ],
-      "allowedSlots": [
-        "primary",
-        "secondary",
-        "content",
-        "activity"
+      "allowedRegions": [
+        "main",
+        "aside"
       ],
-      "slotsRationale": "NOT summary: a designed insight card is a block of content, not a compact control that fits the top wrapping strip.",
+      "regionsRationale": "自由版式由 AI 现场设计，给它正文的两个位置即可；它不参与生成选型（generationEnabled=false）。",
       "events": [],
       "bindingSchema": {
         "required": [],
@@ -1163,12 +1137,11 @@
         "workbench",
         "wizard"
       ],
-      "allowedSlots": [
-        "primary",
-        "activity",
-        "content"
+      "allowedRegions": [
+        "main",
+        "supplement"
       ],
-      "slotsRationale": "NOT summary or secondary: a form needs full label+control width; the one-third column wraps every control onto its own line and the summary strip is a scan area, not a place to type. activity and content are opened together because they render identically — banning one on intent alone would be a restriction with no effect.",
+      "regionsRationale": "表单是来填的，得占主区。不进 aside——三分之一宽的表单每个字段都要换行。",
       "events": [
         "submitRequest",
         "editRequest"
@@ -1227,14 +1200,10 @@
         "calendar",
         "dashboard"
       ],
-      "allowedSlots": [
-        "summary",
-        "primary",
-        "secondary",
-        "activity",
-        "content"
+      "allowedRegions": [
+        "overlay"
       ],
-      "slotsRationale": "Allowed everywhere because the block itself is only a button — the form lives in an overlay and costs no page space, so no width argument can exclude any slot.",
+      "regionsRationale": "弹层表单的定义就是不占页面空间、点了才出来。放进任何实体区域都等于把它变成了内嵌表单。",
       "events": [
         "submitRequest",
         "actionTrigger"
@@ -1286,13 +1255,13 @@
         "calendar",
         "monitor"
       ],
-      "allowedSlots": [
-        "secondary",
-        "primary",
-        "activity",
-        "content"
+      "allowedRegions": [
+        "main",
+        "aside",
+        "headerContent",
+        "supplement"
       ],
-      "slotsRationale": "NOT summary: a read-only field list is what you look at after picking a row, and the summary strip is a scan area sized for numbers, not for a field table. Every width from the one-third column upward is allowed — a field list that fits in a third fits wider too.",
+      "regionsRationale": "字段明细宽窄都成立：主区是完整详情，窄栏是选中行的明细，headerContent 是 ProfileAdvanced 那种摆在页头里的关键字段，supplement 是结果页里刚提交的那张单。",
       "events": [
         "editRequest"
       ],
@@ -1340,12 +1309,10 @@
       "pageKinds": [
         "wizard"
       ],
-      "allowedSlots": [
-        "primary",
-        "activity",
-        "content"
+      "allowedRegions": [
+        "main"
       ],
-      "slotsRationale": "NOT summary or secondary: a multi-step form IS the page — a narrow or summary slot leaves no room for the step bar plus the fields of the current step.",
+      "regionsRationale": "分步表单要横向摆步骤条、纵向摆当前步的字段，只有主区够。",
       "events": [
         "submitRequest",
         "stepChange"
@@ -1393,14 +1360,12 @@
         "dashboard",
         "monitor"
       ],
-      "allowedSlots": [
-        "summary",
-        "primary",
-        "secondary",
-        "activity",
-        "content"
+      "allowedRegions": [
+        "main",
+        "aside",
+        "supplement"
       ],
-      "slotsRationale": "A container has no width requirement of its own — it inherits whatever its slot gives it, and the blocks inside adapt. What it must NOT do is wrap something that does not fit the slot; that constraint belongs to the child, not to the card.",
+      "regionsRationale": "容器跟着它装的东西走，正文侧三个区域都开。不进页头带与浮层——容器套在页头里没有意义。",
       "events": [],
       "bindingSchema": {
         "required": [],
@@ -1443,10 +1408,10 @@
         "dashboard",
         "monitor"
       ],
-      "allowedSlots": [
-        "summary"
+      "allowedRegions": [
+        "header"
       ],
-      "slotsRationale": "summary only: a page header is by definition the strip above everything else. Anywhere lower and it stops being a header — it becomes a stray title in the middle of the page.",
+      "regionsRationale": "页头按定义就是最上面那一条。**这条有实测教训**：此前区块侧的限制没进门禁，真跑时 PageHeader 被放进了 footerBar——两者能力都是 action，容器侧的 accepts 放行了，于是页面标题被钉在了底部操作条上。",
       "events": [
         "actionTrigger"
       ],
@@ -1505,12 +1470,10 @@
         "wizard",
         "monitor"
       ],
-      "allowedSlots": [
-        "primary",
-        "activity",
-        "content"
+      "allowedRegions": [
+        "main"
       ],
-      "slotsRationale": "NOT summary and NOT secondary. summary is the strip above the page content - a result screen is not a header for something else, it IS the page. secondary is the one-third column, and a status icon with a title and two buttons squeezed into a third of the width reads as a stray alert, not as the answer to 'did it work'. primary/activity/content are all wide enough (activity and content render byte-identically at full width), so all three are open.",
+      "regionsRationale": "结果屏就是这一页本身，只能占主区。不进 aside——图标加标题加两个按钮挤进三分之一宽，读起来像散落的告警；不进页头带——它不是别的内容的抬头。",
       "events": [
         "actionTrigger"
       ],
@@ -1532,11 +1495,11 @@
         "blocks": [
           {
             "type": "DataTable",
-            "slot": "primary"
+            "region": "main"
           },
           {
             "type": "RecordDetail",
-            "slot": "secondary"
+            "region": "aside"
           }
         ]
       },
@@ -1547,15 +1510,15 @@
         "blocks": [
           {
             "type": "FilterBar",
-            "slot": "summary"
+            "region": "filters"
           },
           {
             "type": "RecordFormDialog",
-            "slot": "summary"
+            "region": "overlay"
           },
           {
             "type": "DataTable",
-            "slot": "primary"
+            "region": "main"
           }
         ]
       },
@@ -1566,15 +1529,15 @@
         "blocks": [
           {
             "type": "MetricGrid",
-            "slot": "summary"
+            "region": "headerExtra"
           },
           {
             "type": "DataTable",
-            "slot": "primary"
+            "region": "main"
           },
           {
             "type": "ActivityFeed",
-            "slot": "secondary"
+            "region": "aside"
           }
         ]
       }
@@ -1587,11 +1550,11 @@
         "blocks": [
           {
             "type": "RecordFormDialog",
-            "slot": "summary"
+            "region": "overlay"
           },
           {
             "type": "RecordDetail",
-            "slot": "secondary"
+            "region": "aside"
           }
         ]
       },
@@ -1602,11 +1565,11 @@
         "blocks": [
           {
             "type": "FilterBar",
-            "slot": "summary"
+            "region": "filters"
           },
           {
             "type": "ActivityFeed",
-            "slot": "secondary"
+            "region": "aside"
           }
         ]
       }
@@ -1619,11 +1582,11 @@
         "blocks": [
           {
             "type": "RecordFormDialog",
-            "slot": "summary"
+            "region": "overlay"
           },
           {
             "type": "RecordDetail",
-            "slot": "secondary"
+            "region": "aside"
           }
         ]
       }
@@ -1636,7 +1599,7 @@
         "blocks": [
           {
             "type": "StepsForm",
-            "slot": "primary"
+            "region": "main"
           }
         ]
       },
@@ -1647,11 +1610,11 @@
         "blocks": [
           {
             "type": "WorkflowTimeline",
-            "slot": "primary"
+            "region": "main"
           },
           {
             "type": "RecordForm",
-            "slot": "primary"
+            "region": "main"
           }
         ]
       }
@@ -1664,11 +1627,11 @@
         "blocks": [
           {
             "type": "WorkflowTimeline",
-            "slot": "primary"
+            "region": "main"
           },
           {
             "type": "ActivityFeed",
-            "slot": "secondary"
+            "region": "aside"
           }
         ]
       }
@@ -1681,11 +1644,11 @@
         "blocks": [
           {
             "type": "RankedList",
-            "slot": "primary"
+            "region": "main"
           },
           {
             "type": "RecordFormDialog",
-            "slot": "summary"
+            "region": "overlay"
           }
         ]
       }

@@ -65,6 +65,11 @@ def _block_menu() -> List[Dict[str, Any]]:
             "type": str(b["type"]),
             "capability": cap,
             "does": b.get("description", ""),
+            # 能落哪些区域 —— 必须进清单，否则模型只能靠能力猜位置，而能力
+            # 说的是"我干什么"不是"我该待在哪"（PageHeader 和 QuickActionPanel
+            # 能力都是 action，但一个只能在页头、一个可以进底部操作条）。
+            # 不给它就是让它猜，猜错再被 Gate 打回，白烧一轮。
+            "goesIn": list(b.get("allowedRegions") or []),
             "needs": list(bs.get("required", [])),
             "optional": list(bs.get("optional", [])),
         })
@@ -183,6 +188,23 @@ def gate(page: Dict[str, Any], datamodel: Dict[str, Any]) -> List[Dict[str, str]
                 findings.append({
                     "code": "capability-mismatch",
                     "why": f"「{r['label']}」收 {r['accepts']}，{t} 是 {cap}",
+                })
+            # 区块侧的限制 —— **双向约束的另一半**（2026-08-08 补）。
+            #
+            # 上面那条是容器侧：区域按能力收。照 alibaba/lowcode-engine 的
+            # nestingRule，约束本来就该是双向的（父级 childWhitelist + 子级
+            # parentWhitelist），measuredco/puck 的 SlotField 也有 allow。
+            # 我们此前只有容器侧那一半，于是能力对上就放行。
+            #
+            # 实测代价：真跑装配时 PageHeader 落进了 footerBar——两者能力都是
+            # action，容器侧放行，结果页面标题被钉在底部操作条上。能力说的是
+            # "我是干什么的"，位置说的是"我该待在哪"，两件事。
+            allowed = entry.get("allowedRegions") or []
+            if allowed and r["key"] not in allowed:
+                findings.append({
+                    "code": "region-not-allowed",
+                    "why": f"{t} 不能放在「{r['label']}」（只能落 {allowed}）"
+                           f"——{entry.get('regionsRationale') or ''}"[:200],
                 })
 
     # ③ 必须有 primary 区域被填上 —— 没有主次就是一排等大卡片。

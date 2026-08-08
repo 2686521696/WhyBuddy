@@ -22,7 +22,7 @@
   ③ 绑了数据模型里不存在的实体或字段
 
 这三类在真实推演里由 v5_model_gate 拦。这条路径不走完整推演，所以在这里
-按同一份账本（schema_legal 的 allowedSlots / bindingSchema）复验一遍——
+按同一份账本（schema_legal 的 allowedRegions / bindingSchema）复验一遍——
 **不合格的积木直接剔除，而不是整页失败**：拼出 3 个积木里有 1 个不合格时，
 把那 1 个丢掉仍然是一个能用的页面，整页报错则什么都没有。
 
@@ -61,7 +61,7 @@ def _catalog_for_prompt(page_kind: str, allowed_types: List[str]) -> List[Dict[s
         out.append({
             "type": t,
             "does": b.get("description", ""),
-            "slots": list(b.get("allowedSlots", [])),
+            "regions": list(b.get("allowedRegions", [])),
             "bindingRequired": list(bs.get("required", [])),
             "bindingOptional": list(bs.get("optional", [])),
             "props": sorted((b.get("propsSchema") or {}).get("properties", {})),
@@ -99,7 +99,7 @@ def _prompt(page_kind: str, catalog: List[Dict[str, Any]], datamodel: Dict[str, 
         "RULES\n"
         f"1. Between 2 and {MAX_BLOCKS} blocks. A page with one block is not a page; "
         "more than that and they start squeezing each other.\n"
-        "2. Every block type MUST come from AVAILABLE BLOCKS, every slot from that "
+        "2. Every block type MUST come from AVAILABLE BLOCKS, every region from that "
         "block's own 'slots' list.\n"
         "3. Every entityRef MUST be an entity id above; every field ref MUST be a field "
         "of THAT entity. Never invent one.\n"
@@ -124,9 +124,9 @@ def _prompt(page_kind: str, catalog: List[Dict[str, Any]], datamodel: Dict[str, 
         "an over-used 通用 makes the whole library unbrowsable.\n\n"
         "Return JSON only. Give every block an \"id\" so a container can refer to it:\n"
         '{"name":"<页面中文名>","industry":"<行业>","blocks":['
-        '{"id":"b1","type":"...","slot":"...","props":{"title":"..."},'
+        '{"id":"b1","type":"...","region":"...","props":{"title":"..."},'
         '"binding":{"entityRef":"...","fieldRefs":["..."]}},'
-        '{"id":"b2","type":"ContentCard","slot":"secondary",'
+        '{"id":"b2","type":"ContentCard","region":"aside",'
         '"props":{"title":"..."},"children":["b3"]}]}'
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -149,7 +149,7 @@ def _validate(
             dropped.append({"block": f"#{i}", "why": "不是对象"})
             continue
         t = str(raw.get("type") or "").strip()
-        slot = str(raw.get("slot") or "").strip()
+        region = str(raw.get("region") or "").strip()
         entry = by_type.get(t)
         if entry is None or not entry.get("generationEnabled"):
             dropped.append({"block": t or f"#{i}", "why": "不在目录里（模型编的）"})
@@ -157,8 +157,8 @@ def _validate(
         if page_kind not in entry.get("pageKinds", []):
             dropped.append({"block": t, "why": f"这种积木不能放在 {page_kind} 页"})
             continue
-        if slot not in entry.get("allowedSlots", []):
-            dropped.append({"block": t, "why": f"槽位 {slot or '(空)'} 不在它的允许列表里"})
+        if region not in entry.get("allowedRegions", []):
+            dropped.append({"block": t, "why": f"区域 {region or '(空)'} 不在它的允许列表里"})
             continue
 
         binding = raw.get("binding") if isinstance(raw.get("binding"), dict) else {}
@@ -202,7 +202,7 @@ def _validate(
         kept.append({
             "id": str(raw.get("id") or f"b{i + 1}"),
             "type": t,
-            "slot": slot,
+            "region": region,
             "props": props,
             "binding": binding,
             "children": raw_children,

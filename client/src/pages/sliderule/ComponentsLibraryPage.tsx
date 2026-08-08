@@ -32,7 +32,7 @@
  * 本来就差很多**（实测 148~451px），错落是真的，不需要造。
  *
  * 跨列的判据同样必须是真实信息（纪律见 app-wall-span.ts 顶部）：这里用
- * **allowedSlots 含 content** —— 内容区在真实页面里就是整行宽的，能放进去的区块
+ * **allowedRegions 含整行区域** —— 整行区域在真实页面里就是通栏的，能放进去的区块
  * 天然需要横向空间（DataTable 要摆列、WorkflowTimeline 要横向展开阶段）。
  * 不是随机、也不是按好看程度挑。
  */
@@ -52,7 +52,8 @@ import { BASE_COMPONENTS, BASE_GROUPS } from "./base-components/base-catalog";
 import BusinessPageGrid from "./live-runtime/BusinessPageGrid";
 import {
   resolveBusinessGrid,
-  upgradeLegacySlotsToGrid,
+  regionsToGrid,
+  type BusinessRegions,
 } from "./live-runtime/business-page-layout";
 import type {
   ExperienceBlockInstance,
@@ -256,7 +257,7 @@ interface CatalogBlock {
   rendererStatus?: string;
   generationEnabled?: boolean;
   dataKinds?: string[];
-  allowedSlots?: string[];
+  allowedRegions?: string[];
   pageKinds?: string[];
   freeformGenerated?: boolean;
 }
@@ -271,7 +272,8 @@ interface PagePreset {
 
 const CATALOG = catalogJson as unknown as {
   blocks: CatalogBlock[];
-  allowedSlots: string[];
+  /** 区域目录 —— 键就是区域名，值带 label / band / 出处（见 pageRegions 的注释）。 */
+  pageRegions: Record<string, { label: string; band: string; evidence: string }>;
   dataKinds: string[];
   pageKindPresets?: Record<string, PagePreset[]>;
 };
@@ -775,7 +777,7 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
           style={{ textShadow: "0 0.5px 1px rgba(0,0,0,0.28)" }}
         >
           <span className="rounded-sm bg-black/30 px-1">{impl ?? "实现未登记"}</span>
-          {(block.allowedSlots ?? []).map(s => (
+          {(block.allowedRegions ?? []).map(s => (
             <span className="rounded-sm bg-black/30 px-1" key={s}>{SLOT_LABEL[s] ?? s}</span>
           ))}
           {(block.dataKinds ?? []).map(k => (
@@ -798,17 +800,10 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
  */
 function SavedPresetCard({ preset }: { preset: SavedPreset }) {
   const topLevel = preset.blocks.filter(b => !b.nested);
-  const slots = {
-    summary: topLevel.filter(b => b.slot === "summary").map(b => b.id),
-    primary: topLevel.filter(b => b.slot === "primary").map(b => b.id),
-    secondary: topLevel.filter(b => b.slot === "secondary").map(b => b.id),
-    activity: topLevel.filter(b => b.slot === "activity").map(b => b.id),
-    content: topLevel.filter(b => b.slot === "content").map(b => b.id),
-  };
-  const items = resolveBusinessGrid(
-    upgradeLegacySlotsToGrid(preset.pageKind, slots),
-    "desktop"
-  );
+  const regions = Object.fromEntries(
+    REGION_LAYOUT.map(r => [r.key, topLevel.filter(b => b.slot === r.key).map(b => b.id)])
+  ) as unknown as BusinessRegions;
+  const items = resolveBusinessGrid(regionsToGrid(preset.pageKind, regions), "desktop");
   const byId = new Map(preset.blocks.map(b => [b.id, b]));
 
   const renderOne = (b: AssembledBlock): React.ReactNode => (
@@ -1907,10 +1902,10 @@ export default function ComponentsLibraryPage() {
         onChange: setSlot,
         options: [
           { value: "all", label: "全部", count: pageKindBlocks.length },
-          ...(CATALOG.allowedSlots ?? []).map(sl => ({
+          ...Object.keys(CATALOG.pageRegions ?? {}).map(sl => ({
             value: sl,
             label: SLOT_LABEL[sl] ?? sl,
-            count: pageKindBlocks.filter(b => (b.allowedSlots ?? []).includes(sl)).length,
+            count: pageKindBlocks.filter(b => (b.allowedRegions ?? []).includes(sl)).length,
           })),
         ],
       },
@@ -1937,7 +1932,7 @@ export default function ComponentsLibraryPage() {
         b.type.toLowerCase().includes(kw) ||
         (b.description ?? "").toLowerCase().includes(kw) ||
         (IMPL_BY_TYPE[b.type] ?? "").toLowerCase().includes(kw);
-      const hitSlot = slot === "all" || (b.allowedSlots ?? []).includes(slot);
+      const hitSlot = slot === "all" || (b.allowedRegions ?? []).includes(slot);
       return hitKw && hitSlot;
     });
   }, [pageKindBlocks, query, slot]);

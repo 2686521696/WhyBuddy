@@ -43,13 +43,13 @@ def test_every_preset_block_is_legal_where_it_is_placed():
     for kind, presets in L.PAGE_KIND_PRESETS.items():
         for ps in presets:
             for it in ps["blocks"]:
-                t, slot = it["type"], it["slot"]
+                t, slot = it["type"], it["region"]
                 entry = by_type[t]
                 assert entry.get("generationEnabled"), f"{kind}/{ps['id']}: {t} 未放开生成"
                 assert kind in entry["pageKinds"], (
                     f"{kind}/{ps['id']}: {t} 不允许出现在 {kind} 页"
                 )
-                assert slot in entry["allowedSlots"], (
+                assert slot in entry["allowedRegions"], (
                     f"{kind}/{ps['id']}: {t} 不允许放在 {slot}"
                 )
 
@@ -80,11 +80,11 @@ def test_bad_preset_fails_at_startup_not_at_runtime():
     blocks = L.EXPERIENCE_BLOCKS
     cases = {
         "槽位不合法": {"workbench": [{"id": "x", "name": "n", "when": "w",
-                                   "blocks": [{"type": "DataTable", "slot": "summary"}]}]},
+                                   "blocks": [{"type": "DataTable", "region": "filters"}]}]},
         "页面形态不合法": {"wizard": [{"id": "x", "name": "n", "when": "w",
-                                   "blocks": [{"type": "DataTable", "slot": "primary"}]}]},
+                                   "blocks": [{"type": "DataTable", "region": "main"}]}]},
         "未放开生成": {"monitor": [{"id": "x", "name": "n", "when": "w",
-                                 "blocks": [{"type": "FreeformInsight", "slot": "primary"}]}]},
+                                 "blocks": [{"type": "FreeformInsight", "region": "main"}]}]},
     }
     for label, bad in cases.items():
         original = L._BLOCK_CATALOG.get("pageKindPresets")
@@ -113,7 +113,7 @@ def test_presets_reach_the_prompt_with_the_reason_attached():
             assert ps["name"] in prompt, f"{kind}/{ps['id']} 没进 prompt"
             assert ps["when"] in prompt, f"{kind}/{ps['id']} 进了 prompt 但没带理由"
             for it in ps["blocks"]:
-                assert f"{it['type']}@{it['slot']}" in prompt
+                assert f"{it['type']}@{it['region']}" in prompt
 
 
 def test_prompt_says_presets_are_a_starting_point_not_a_cage():
@@ -147,30 +147,32 @@ def test_width_hungry_blocks_never_land_in_the_narrow_support_column():
 
     机制在 business-page-layout.upgradeLegacySlotsToGrid：非 dashboard 形态下
 
-        leading = summary + primary          → 整行宽
-        support = secondary + activity + content → 右侧 4/12（看板/日历是 3/12）
+    2026-08-08 第三轮：旧五槽整套退休了，这条跟着换到区域词汇。
 
-    也就是说 **content 不是全宽**。这一点跟仓库里另一处注释（"activity/content
-    =全宽且 className 逐字节相同"）对不上——那句描述的是**升级到网格之前**的
-    老槽位渲染，网格化之后 content 就并进窄列了。旧注释没跟着改。
+    实测过的宽度（跑 upgradeLegacySlotsToGrid 量出来的，12 栅格）：
 
-    ## 为什么钉在预设这一层而不是收窄 allowedSlots
+        summary / primary                → 12  全宽
+        secondary / activity             → 4   窄列（看板日历 3）
+        content                          → 仪表盘 12、其它页型 4
 
-    RecordForm 放进 content 本身不是非法的：一个窄的表单也能用，只是不好用。
+    也就是五个名字只有两种行为，content 还随页型变。这正是推翻它们的依据。
+    换到区域之后窄的只剩 aside 一个，判据清楚了。
+
+    ## 为什么钉在预设这一层而不是收窄 allowedRegions
+
+    RecordForm 放进窄列本身不是非法的：一个窄的表单也能用，只是不好用。
     真正不能接受的是**我们推荐的示范**把它摆在那里——模型会照抄，用户看到的
     就是一排挤成一条的输入框。契约管"合不合法"，预设管"好不好"，两层各管各的。
     """
-    NARROW = {"secondary", "activity", "content"}
+    NARROW = {"aside"}
     WIDTH_HUNGRY = {"RecordForm", "StepsForm", "DataTable", "WorkflowTimeline"}
     for kind, presets in L.PAGE_KIND_PRESETS.items():
-        if kind == "dashboard":
-            continue  # dashboard 的映射不同：primary/content 都在底部整行
         for ps in presets:
             for it in ps["blocks"]:
                 if it["type"] in WIDTH_HUNGRY:
-                    assert it["slot"] not in NARROW, (
-                        f"{kind}/{ps['id']}: {it['type']} 摆在 {it['slot']}，"
-                        f"网格会把它压进 4/12 窄列——这个积木要整行宽"
+                    assert it["region"] not in NARROW, (
+                        f"{kind}/{ps['id']}: {it['type']} 摆在 {it['region']}，"
+                        f"aside 是 4/12 的窄列——这个积木要整行宽"
                     )
 
 
@@ -190,9 +192,9 @@ def test_only_containers_may_carry_children():
     kept, dropped = _validate(
         "workbench",
         [
-            {"id": "b1", "type": "DataTable", "slot": "primary",
+            {"id": "b1", "type": "DataTable", "region": "main",
              "binding": {"entityRef": "order"}, "children": ["b2"]},
-            {"id": "b2", "type": "RecordDetail", "slot": "secondary",
+            {"id": "b2", "type": "RecordDetail", "region": "aside",
              "binding": {"entityRef": "order"}},
         ],
         dm,
@@ -215,9 +217,9 @@ def test_container_children_must_point_at_surviving_blocks():
     kept, dropped = _validate(
         "workbench",
         [
-            {"id": "c1", "type": "ContentCard", "slot": "secondary",
+            {"id": "c1", "type": "ContentCard", "region": "aside",
              "props": {"title": "详情"}, "children": ["real", "编的"]},
-            {"id": "real", "type": "RecordDetail", "slot": "secondary",
+            {"id": "real", "type": "RecordDetail", "region": "aside",
              "binding": {"entityRef": "order"}},
         ],
         dm,

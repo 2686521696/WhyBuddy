@@ -46,14 +46,14 @@ def test_legacy_icon_aliases_derived_from_catalog():
 
 # ── 槽位从目录派生（gate 不再手抄）─────────────────────────
 
-def test_gate_layout_slots_derived_from_catalog():
-    assert set(schema_legal.EXPERIENCE_BLOCK_ALLOWED_SLOTS) == set(CATALOG["allowedSlots"])
+def test_gate_layout_regions_derived_from_catalog():
+    assert set(schema_legal.EXPERIENCE_BLOCK_ALLOWED_REGIONS) == set(CATALOG["pageRegions"])
     # gate 源码不允许再出现手抄槽位集合
     gate_src = (Path(__file__).resolve().parent.parent / "services" / "v5_model_gate.py").read_text(
         encoding="utf-8"
     )
     assert 'LAYOUT_SLOTS = {"summary"' not in gate_src
-    assert "LAYOUT_SLOTS = set(EXPERIENCE_BLOCK_ALLOWED_SLOTS)" in gate_src
+    assert "LAYOUT_SLOTS = set(EXPERIENCE_BLOCK_ALLOWED_REGIONS)" in gate_src
 
 
 # ── 生成主题契约：与前端同一判定（2026-07-30 起只有 seed 一个必填字段）──

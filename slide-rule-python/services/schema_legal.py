@@ -87,7 +87,7 @@ def _load_experience_blocks() -> tuple:
     if not isinstance(raw_blocks, list) or not raw_blocks:
         raise ValueError("experience_block_catalog.json 缺失或为空: blocks")
 
-    legal_slots = set(_catalog_tuple("allowedSlots"))
+    legal_regions = set(_BLOCK_CATALOG.get("pageRegions") or {})
     legal_data_kinds = set(_catalog_tuple("dataKinds"))
     legal_events = set(_catalog_tuple("eventTypes"))
     legal_field_types = set(_tuple("fieldTypes"))
@@ -113,19 +113,20 @@ def _load_experience_blocks() -> tuple:
         # ExistingContentAdapter 惰性占位）；generationEnabled = 灰度决定（准不准
         # 让 LLM 往 page.blocks 里写这个类型）。分两个字段是因为它们会各自独立
         # 变化：渲染器先落地、放开是后一步的决定。
-        # slotsRationale（可选，2026-08-01）：只给"限制不显然"的类型写一句
+        # regionsRationale（可选，2026-08-01 起；2026-08-08 从 slotsRationale 改名）：
+        # 只给"限制不显然"的类型写一句
         # **为什么**。三轮真跑里模型把 WorkflowTimeline 放进 secondary 共 5 次，
         # 是最稳定的一类结构门失败——它按"流程条是辅助信息"的语义直觉摆，而真实
         # 依据是宽度（横向流程条塞不进 1/3 窄栏）。只丢一张 slots 表模型无从
         # 推断，下次照样按直觉猜；本仓库反复验证过措辞/理由决定行为。
-        # 放在这里而不是 prompt 文案里：理由与它约束的 allowedSlots 同处一行，
+        # 放在这里而不是 prompt 文案里：理由与它约束的 allowedRegions 同处一行，
         # 谁改约束都会看见。
-        slots_rationale = raw.get("slotsRationale")
-        if slots_rationale is not None and (
-            not isinstance(slots_rationale, str) or not slots_rationale.strip()
+        regions_rationale = raw.get("regionsRationale")
+        if regions_rationale is not None and (
+            not isinstance(regions_rationale, str) or not regions_rationale.strip()
         ):
             raise ValueError(
-                f"experience_block_catalog.json {block_type}.slotsRationale 必须是非空字符串（或整个省略）"
+                f"experience_block_catalog.json {block_type}.regionsRationale 必须是非空字符串（或整个省略）"
             )
         renderer_status = raw.get("rendererStatus")
         if renderer_status not in ("real", "placeholder"):
@@ -147,14 +148,14 @@ def _load_experience_blocks() -> tuple:
             )
         for key, legal in (
             ("dataKinds", legal_data_kinds),
-            ("allowedSlots", legal_slots),
+            ("allowedRegions", legal_regions),
             ("events", legal_events),
         ):
             values = raw.get(key)
             # dataKinds may be empty for action-only blocks (e.g. QuickActionPanel)
             # that require no entity data; events may be empty for blocks with no
             # interactive events yet (e.g. FreeformInsight，静态展示卡)；
-            # allowedSlots must always be non-empty.
+            # allowedRegions must always be non-empty.
             if key in ("dataKinds", "events"):
                 if not isinstance(values, list):
                     raise ValueError(f"experience_block_catalog.json {block_type}.{key} 缺失或为空")
@@ -252,7 +253,7 @@ def _validate_binding_schema(
 
 
 EXPERIENCE_BLOCK_CATALOG_VERSION: int = int(_BLOCK_CATALOG.get("version", 0))
-EXPERIENCE_BLOCK_ALLOWED_SLOTS = _catalog_tuple("allowedSlots")
+EXPERIENCE_BLOCK_ALLOWED_REGIONS = tuple(_BLOCK_CATALOG.get("pageRegions") or {})
 # 页面区域词汇（2026-08-08 第三轮收编）。
 #
 # 此前区域语法只有 page_archetypes.py 有，前端 REGION_LAYOUT 是手抄的第二份。
@@ -265,6 +266,7 @@ EXPERIENCE_BLOCK_ALLOWED_SLOTS = _catalog_tuple("allowedSlots")
 # 拆两张表是因为前者是全局事实（main 永远在正文带），后者按范式各有一套
 # （列表页的 main 收 entityRows，结果页的 main 收 outcome）。
 PAGE_REGIONS: Dict[str, Dict[str, Any]] = dict(_BLOCK_CATALOG.get("pageRegions") or {})
+_REGION_KEYS = tuple(PAGE_REGIONS)
 PAGE_ARCHETYPES_RAW: Dict[str, Dict[str, Any]] = dict(
     _BLOCK_CATALOG.get("pageArchetypes") or {}
 )
@@ -303,9 +305,9 @@ def _load_page_kind_presets(blocks: tuple) -> Dict[str, tuple]:
 
     ## 为什么在启动时自检
 
-    预设是**手写**的，而它引用的每个 (type, slot) 都必须同时满足三件事：
+    预设是**手写**的，而它引用的每个 (type, region) 都必须同时满足三件事：
     区块放开了生成、这种页面允许它、这个槽位允许它。手写的东西会漂——
-    今天改了某个区块的 allowedSlots，明天预设就在推荐一个门禁必拦的组合，
+    今天改了某个区块的 allowedRegions，明天预设就在推荐一个门禁必拦的组合，
     而模型会照着抄。那种失败很难查：模型"照做了"，却每次都被门禁打回。
 
     所以坏预设**在服务启动时直接失败**，跟 bindingSchema 自检同一条纪律：
@@ -340,7 +342,7 @@ def _load_page_kind_presets(blocks: tuple) -> Dict[str, tuple]:
                 raise ValueError(f"pageKindPresets.{kind}.{pid}.blocks 必须是非空数组")
             for it in items:
                 btype = str((it or {}).get("type") or "").strip()
-                slot = str((it or {}).get("slot") or "").strip()
+                region = str((it or {}).get("region") or "").strip()
                 entry = by_type.get(btype)
                 if entry is None:
                     raise ValueError(f"pageKindPresets.{kind}.{pid} 引用了未知区块 {btype}")
@@ -354,10 +356,10 @@ def _load_page_kind_presets(blocks: tuple) -> Dict[str, tuple]:
                         f"pageKindPresets.{kind}.{pid}: {btype} 不允许出现在 {kind} 页"
                         f"（允许 {entry.get('pageKinds')}）"
                     )
-                if slot not in entry.get("allowedSlots", []):
+                if region not in entry.get("allowedRegions", []):
                     raise ValueError(
-                        f"pageKindPresets.{kind}.{pid}: {btype} 不允许放在 {slot}"
-                        f"（允许 {entry.get('allowedSlots')}）"
+                        f"pageKindPresets.{kind}.{pid}: {btype} 不允许放在 {region}"
+                        f"（允许 {entry.get('allowedRegions')}）"
                     )
         out[kind] = tuple(presets)
     return out
@@ -372,14 +374,14 @@ EXPERIENCE_BLOCK_RENDERER_KEYS = tuple(
 EXPERIENCE_BLOCK_BINDING_SCHEMAS: Dict[str, Dict[str, Any]] = {
     str(block["type"]): block["bindingSchema"] for block in EXPERIENCE_BLOCKS
 }
-# type -> allowedSlots；Gate 校验 page.layout 时按类型查表，确认区块放的槽位是
+# type -> allowedRegions；Gate 校验 page.layout 时按类型查表，确认区块落的区域是
 # 目录里给它开放的槽位，而不只是"槽位名合法 + 区块 id 存在"（此前 layout 深
 # 校验只查这两条，槽位与区块类型的搭配完全没人管，见 Puck DropZone 的
 # allow/disallow 思路——目录数据其实早就够用，只是没人拿它去查 layout）。
 PAGE_KIND_PRESETS: Dict[str, tuple] = _load_page_kind_presets(EXPERIENCE_BLOCKS)
 
-EXPERIENCE_BLOCK_ALLOWED_SLOTS_BY_TYPE: Dict[str, tuple] = {
-    str(block["type"]): tuple(block["allowedSlots"]) for block in EXPERIENCE_BLOCKS
+EXPERIENCE_BLOCK_ALLOWED_REGIONS_BY_TYPE: Dict[str, tuple] = {
+    str(block["type"]): tuple(block["allowedRegions"]) for block in EXPERIENCE_BLOCKS
 }
 def enum_str(*keys: str) -> str:
     """把一个或多个枚举键渲染成生成契约用的 "a|b|c" 串（顺序=账本顺序）。"""
@@ -575,11 +577,11 @@ def experience_block_prompt_block() -> str:
         lines.append(
             "PROVEN LAYOUTS — start from one of these instead of composing from scratch. "
             "Each has already been checked against the catalog: every block is live, "
-            "allowed on that page kind, and allowed in that slot. Pick the one whose "
+            "allowed on that page kind, and allowed in that region. Pick the one whose "
             "'use when' matches THIS page's job, then bind each block to real entities "
             "and fields. Composing your own set is allowed and expected when the "
             "business genuinely needs something else — but an invented layout that "
-            "merely re-derives one of these wastes a turn and usually lands in a slot "
+            "merely re-derives one of these wastes a turn and usually lands in a region "
             "the gate rejects."
         )
         for kind in PAGE_KINDS:
@@ -588,7 +590,7 @@ def experience_block_prompt_block() -> str:
                 continue
             for ps in presets:
                 combo = " + ".join(
-                    f"{it['type']}@{it['slot']}" for it in ps["blocks"]
+                    f"{it['type']}@{it['region']}" for it in ps["blocks"]
                 )
                 lines.append(f"  {kind} · {ps['name']}: {combo} — use when {ps['when']}")
 
@@ -624,13 +626,13 @@ def experience_block_prompt_block() -> str:
         # slots 后面紧跟这一类的槽位理由（只有限制不显然的类型才有）。
         # 只给一张 slots 表，模型无从推断"为什么不行"，会按语义直觉去猜——
         # WorkflowTimeline 被摆进 secondary 在三轮真跑里复发 5 次就是这么来的。
-        rationale = str(block.get("slotsRationale") or "").strip()
-        slots_part = f"slots={','.join(block['allowedSlots'])}"
+        rationale = str(block.get("regionsRationale") or "").strip()
+        regions_part = f"regions={','.join(block['allowedRegions'])}"
         if rationale:
-            slots_part += f" ({rationale})"
+            regions_part += f" ({rationale})"
         lines.append(
             f"- {block['type']}: {block['description']} "
-            f"data={','.join(block['dataKinds'])}; {slots_part}; "
+            f"data={','.join(block['dataKinds'])}; {regions_part}; "
             f"events={','.join(block['events'])}; "
             f"binding={_format_binding_schema(block['bindingSchema'])}"
         )
@@ -654,27 +656,32 @@ def experience_block_prompt_block() -> str:
     # 逐块补 slotsRationale 是在治单点，这一句才是治这一类：把判据交给模型，
     # 它才谈得上自己推。数值取自 AppRuntimeScreen 的实际渲染。
     lines.append(
-        "What the slots actually look like when rendered (top to bottom): "
-        "summary = a horizontal wrapping row across the very top; "
-        "primary and secondary = two columns side by side under it, primary is "
-        "twice as wide as secondary (2/3 vs 1/3); "
-        "activity then content = full-width rows below those columns. "
-        "So the reading order is summary → primary/secondary → activity → content, "
-        "and secondary is the only narrow slot. Anything the user must see or act on "
-        "BEFORE the page's content belongs in summary, not in activity/content — "
-        "those render after the very things they would act on."
+        "What the regions actually look like when rendered (top to bottom): "
+        "header / headerExtra / headerContent / filters are full-width rows above "
+        "everything, in that order — this is the page header band; "
+        "then the page's own data surface (the table, board, calendar or wizard) "
+        "takes the main area, giving up the right 1/3 to aside when aside is used; "
+        "then metrics / charts / main / supplement render as full-width rows BELOW "
+        "that surface; footerBar pins to the very bottom; overlay costs no layout "
+        "space at all because it only appears on click. "
+        "aside is the ONLY narrow region. Anything the user must see or act on "
+        "BEFORE the page's content belongs in the header band — everything else "
+        "renders after the very things the user would act on."
     )
     lines.append(
-        "Step 7 — Page layout: pages MAY declare a layout object whose OWN KEYS ARE THE SLOT NAMES — "
-        "summary/primary/secondary/activity/content — each mapping to an ordered list of block ids, "
-        'exactly like "layout": {"summary": ["kpi_grid"], "content": ["order_table"]}. '
+        "Step 7 — Page layout: pages MAY declare a layout object whose OWN KEYS ARE THE REGION NAMES — "
+        + "/".join(_REGION_KEYS)
+        + " — each mapping to an ordered list of block ids, "
+        'exactly like "layout": {"headerExtra": ["kpi_grid"], "main": ["order_table"]}. '
         'Do NOT nest them under a wrapper key: "layout": {"slots": {...}} is WRONG and the whole layout '
         "will be discarded. "
         "Every block id in layout MUST exist in page.blocks, AND each block MUST be placed only in one "
-        "of the slots listed for its type above (slots=... in the catalog entry) — e.g. a RankedList "
-        "(slots=primary,secondary) placed in the activity slot is a violation, even though the block id "
-        "itself exists. Use layout to differentiate dashboards (large primary chart) from workbenches "
-        "(summary+content table)."
+        "of the regions listed for its type above (regions=... in the catalog entry) — e.g. a PageHeader "
+        "(regions=header) placed in footerBar is a violation, even though the block id itself exists. "
+        "Where the key numbers go is the rule people get wrong most often: on a dashboard they ARE the "
+        "page, so use the full-width metrics region; on a list or detail page the list or the record is "
+        "the page, so put two or three numbers in headerExtra beside the title where they cost no "
+        "vertical space — never open such a page with a full-width band of metric cards."
     )
     lines.append(
         "Step 7b — Responsive business-page grid (preferred for workbench/kanban/calendar/wizard): "

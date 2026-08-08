@@ -14,12 +14,25 @@ export type BusinessGridLayouts = Partial<
   Record<BusinessPageBreakpoint, BusinessGridItem[]>
 >;
 
-export interface LegacyBusinessSlots {
-  summary: string[];
-  primary: string[];
-  secondary: string[];
-  activity: string[];
-  content: string[];
+/**
+ * 页面区域 -> 落在里面的区块 id。
+ *
+ * 2026-08-08：旧名 LegacyBusinessSlots，装的是那五个槽。整套换成有出处的区域
+ * 名之后它不再是"legacy"了——它就是模型直接产出的东西。
+ */
+export interface BusinessRegions {
+  header: string[];
+  headerExtra: string[];
+  headerContent: string[];
+  tabs: string[];
+  filters: string[];
+  metrics: string[];
+  charts: string[];
+  main: string[];
+  supplement: string[];
+  aside: string[];
+  footerBar: string[];
+  overlay: string[];
 }
 
 export const BUSINESS_GRID_COLUMNS: Record<BusinessPageBreakpoint, number> = {
@@ -170,25 +183,53 @@ function fullWidthItems(
   }));
 }
 
-function phonePreset(kind: string, slots: LegacyBusinessSlots): BusinessGridItem[] {
+/**
+ * 区域 -> 栅格。
+ *
+ * ## 为什么重写
+ *
+ * 上一版叫 `upgradeLegacySlotsToGrid`，名字里就写着 legacy：它把那五个旧槽
+ * 翻译成栅格。2026-08-08 实测量过它的输出（12 栅格）——
+ *
+ *     summary / primary    → 12
+ *     secondary / activity → 4
+ *     content              → 仪表盘 12、其它页型 4
+ *
+ * 五个名字两种行为，content 还随页型变。而 12 个已存应用里 secondary 和
+ * content 一次都没被用过。所以整套换成照 ant-design/pro-blocks 那 29 个真实
+ * 页面定出来的区域（见目录 pageRegions，每个都带出处）。
+ *
+ * ## 带（band）决定几何，不是每个区域各写一套
+ *
+ * 12 个区域归 5 条带（目录里 pageRegions[].band 说了是哪条）：
+ *
+ *     top      页头带：标题、页头指标、页头说明、页签、筛选 —— 整行、依次堆叠
+ *     main     正文带：指标区、图表区、主体区、补充说明 —— 整行；有 aside 时让出右栏
+ *     aside    右栏：辅助区 —— 4/12（看板日历 3/12，因为它们的主视图更需要宽度）
+ *     footer   底部条：贴在最后，整行
+ *     overlay  浮层：**不进栅格** —— 点了才出来，不占版面
+ *
+ * 这样加一个区域不用回来改几何，只要在目录里给它一条带。
+ */
+const REGIONS_BY_BAND = {
+  top: ["header", "headerExtra", "headerContent", "tabs", "filters"],
+  main: ["metrics", "charts", "main", "supplement"],
+  aside: ["aside"],
+  footer: ["footerBar"],
+} as const;
+
+const pick = (regions: BusinessRegions, band: keyof typeof REGIONS_BY_BAND) =>
+  REGIONS_BY_BAND[band].flatMap(k => regions[k as keyof BusinessRegions] ?? []);
+
+function phonePreset(kind: string, regions: BusinessRegions): BusinessGridItem[] {
+  // 手机只有一列，带的顺序就是从上到下的顺序。仪表盘把辅助内容提到主体
+  // 之前——小屏上「现在怎么样」比「全部明细」先看。
   const ordered =
     kind === "dashboard"
-      ? [
-          ...slots.summary,
-          PAGE_CONTENT_REF,
-          ...slots.secondary,
-          ...slots.activity,
-          ...slots.primary,
-          ...slots.content,
-        ]
-      : [
-          ...slots.summary,
-          ...slots.primary,
-          PAGE_CONTENT_REF,
-          ...slots.secondary,
-          ...slots.activity,
-          ...slots.content,
-        ];
+      ? [...pick(regions, "top"), PAGE_CONTENT_REF, ...pick(regions, "aside"),
+         ...pick(regions, "main"), ...pick(regions, "footer")]
+      : [...pick(regions, "top"), ...pick(regions, "main"), PAGE_CONTENT_REF,
+         ...pick(regions, "aside"), ...pick(regions, "footer")];
   return ordered.map((blockRef, index) => ({
     blockRef,
     x: 0,
@@ -198,92 +239,44 @@ function phonePreset(kind: string, slots: LegacyBusinessSlots): BusinessGridItem
   }));
 }
 
-export function upgradeLegacySlotsToGrid(
+export function regionsToGrid(
   kind: string,
-  slots: LegacyBusinessSlots
+  regions: BusinessRegions
 ): Required<Pick<BusinessGridLayouts, "desktop" | "tablet" | "phone">> {
-  const desktopColumns = BUSINESS_GRID_COLUMNS.desktop;
-  if (kind === "dashboard") {
-    const desktop = fullWidthItems(slots.summary, desktopColumns, 0);
-    const contentY = desktop.length;
-    const support = [...slots.secondary, ...slots.activity];
-    desktop.push({
-      blockRef: PAGE_CONTENT_REF,
-      x: 0,
-      y: contentY,
-      w: support.length > 0 ? 8 : desktopColumns,
-      h: 3,
-    });
-    support.forEach((blockRef, index) => {
-      desktop.push({
-        blockRef,
-        x: 8,
-        y: contentY + index,
-        w: 4,
-        h: support.length === 1 ? 3 : 1,
-      });
-    });
-    fullWidthItems(
-      [...slots.primary, ...slots.content],
-      desktopColumns,
-      contentY + 3
-    ).forEach(item => desktop.push(item));
-    const tablet = desktop.map(item => ({
-      ...item,
-      x: 0,
-      w: BUSINESS_GRID_COLUMNS.tablet,
-    }));
-    return { desktop, tablet, phone: phonePreset(kind, slots) };
-  }
+  const columns = BUSINESS_GRID_COLUMNS.desktop;
+  const top = pick(regions, "top");
+  const mainRegion = pick(regions, "main");
+  const aside = pick(regions, "aside");
+  const footer = pick(regions, "footer");
 
-  const leading = [...slots.summary, ...slots.primary];
-  const desktop = fullWidthItems(leading, desktopColumns, 0);
+  // 看板/日历的主视图是棋盘和月历，比别的页型更吃宽度，右栏收窄一格。
+  const asideWidth = kind === "kanban" || kind === "calendar" ? 3 : 4;
+  const contentWidth = aside.length > 0 ? columns - asideWidth : columns;
+
+  const desktop = fullWidthItems(top, columns, 0);
   const contentY = desktop.length;
-  const support = [...slots.secondary, ...slots.activity, ...slots.content];
 
-  if ((kind === "kanban" || kind === "calendar") && support.length > 0) {
+  desktop.push({
+    blockRef: PAGE_CONTENT_REF,
+    x: 0,
+    y: contentY,
+    w: contentWidth,
+    h: 3,
+  });
+  aside.forEach((blockRef, index) => {
     desktop.push({
-      blockRef: PAGE_CONTENT_REF,
-      x: 0,
-      y: contentY,
-      w: 9,
-      h: 3,
+      blockRef,
+      x: contentWidth,
+      y: contentY + index,
+      w: asideWidth,
+      h: aside.length === 1 ? 3 : 1,
     });
-    support.forEach((blockRef, index) => {
-      desktop.push({
-        blockRef,
-        x: 9,
-        y: contentY + index,
-        w: 3,
-        h: support.length === 1 ? 3 : 1,
-      });
-    });
-  } else if (support.length > 0) {
-    desktop.push({
-      blockRef: PAGE_CONTENT_REF,
-      x: 0,
-      y: contentY,
-      w: 8,
-      h: 3,
-    });
-    support.forEach((blockRef, index) => {
-      desktop.push({
-        blockRef,
-        x: 8,
-        y: contentY + index,
-        w: 4,
-        h: support.length === 1 ? 3 : 1,
-      });
-    });
-  } else {
-    desktop.push({
-      blockRef: PAGE_CONTENT_REF,
-      x: 0,
-      y: contentY,
-      w: desktopColumns,
-      h: 3,
-    });
-  }
+  });
+
+  // 正文带的区块跟在主视图下面，整行 —— 它们是主体的一部分，不是附属。
+  fullWidthItems(mainRegion, columns, contentY + 3).forEach(i => desktop.push(i));
+  const afterMain = contentY + 3 + mainRegion.length;
+  fullWidthItems(footer, columns, afterMain).forEach(i => desktop.push(i));
 
   const tablet = desktop.map(item => ({
     ...item,
@@ -291,5 +284,5 @@ export function upgradeLegacySlotsToGrid(
     w: BUSINESS_GRID_COLUMNS.tablet,
   }));
 
-  return { desktop, tablet, phone: phonePreset(kind, slots) };
+  return { desktop, tablet, phone: phonePreset(kind, regions) };
 }

@@ -20,12 +20,12 @@
 import { describe, expect, it } from "vitest";
 import { interleaveWide, isWideBlock } from "../block-wall-order";
 
-type B = { type: string; allowedSlots?: string[] };
+type B = { type: string; allowedRegions?: string[] };
 
 const wide = (n: number): B[] =>
-  Array.from({ length: n }, (_, i) => ({ type: `w${i}`, allowedSlots: ["content"] }));
+  Array.from({ length: n }, (_, i) => ({ type: `w${i}`, allowedRegions: ["main"] }));
 const narrow = (n: number): B[] =>
-  Array.from({ length: n }, (_, i) => ({ type: `n${i}`, allowedSlots: ["primary"] }));
+  Array.from({ length: n }, (_, i) => ({ type: `n${i}`, allowedRegions: ["aside"] }));
 
 /** 最长连续同类段。 */
 function longestRun(blocks: B[], want: boolean): number {
@@ -40,8 +40,8 @@ function longestRun(blocks: B[], want: boolean): number {
 
 describe("isWideBlock", () => {
   it("能进内容区就是宽卡", () => {
-    expect(isWideBlock({ allowedSlots: ["primary", "content"] })).toBe(true);
-    expect(isWideBlock({ allowedSlots: ["primary", "aside"] })).toBe(false);
+    expect(isWideBlock({ allowedRegions: ["aside", "main"] })).toBe(true);
+    expect(isWideBlock({ allowedRegions: ["aside", "overlay"] })).toBe(false);
     expect(isWideBlock({})).toBe(false);
   });
 });
@@ -93,6 +93,14 @@ describe("interleaveWide", () => {
     const blocks = (catalog.default?.blocks ?? catalog.blocks ?? []) as B[];
     expect(blocks.length).toBeGreaterThan(0);
     const out = interleaveWide(blocks);
-    expect(longestRun(out, true)).toBeLessThanOrEqual(2);
+    // 上限**按当下比例算**，不写死。上一版这里钉的是 `<= 2`，那正是这个文件
+    // 自己的注释警告过的事——「比例会随目录继续变，钉死今天的结果等于把目录
+    // 焊进测试」。2026-08-08 换到区域词汇后比例就从 宽8/窄5 变成了 宽12/窄4，
+    // 这条当场红，而算法没有任何问题。
+    const w = blocks.filter(isWideBlock).length;
+    const n = blocks.length - w;
+    const cap = Math.ceil(Math.max(w, n) / Math.min(w, n)) + 1;
+    expect(longestRun(out, true)).toBeLessThanOrEqual(cap);
+    expect(longestRun(out, false)).toBeLessThanOrEqual(cap);
   });
 });

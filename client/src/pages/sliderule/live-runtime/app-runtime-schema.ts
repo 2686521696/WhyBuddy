@@ -261,17 +261,31 @@ export interface AppPageSchema {
 
 /** Step 7：页面布局 5 槽位——每个槽位是有序区块 id 列表；mobile 为手机端覆盖。 */
 export interface AppPageLayoutSchema {
-  summary: string[];
-  primary: string[];
-  secondary: string[];
-  activity: string[];
-  content: string[];
+  header: string[];
+  headerExtra: string[];
+  headerContent: string[];
+  tabs: string[];
+  filters: string[];
+  metrics: string[];
+  charts: string[];
+  main: string[];
+  supplement: string[];
+  aside: string[];
+  footerBar: string[];
+  overlay: string[];
   mobile?: {
-    summary?: string[];
-    primary?: string[];
-    secondary?: string[];
-    activity?: string[];
-    content?: string[];
+    header?: string[];
+    headerExtra?: string[];
+    headerContent?: string[];
+    tabs?: string[];
+    filters?: string[];
+    metrics?: string[];
+    charts?: string[];
+    main?: string[];
+    supplement?: string[];
+    aside?: string[];
+    footerBar?: string[];
+    overlay?: string[];
   };
   /** RGL-compatible responsive placements rendered with native CSS Grid. */
   grid?: BusinessGridLayouts;
@@ -463,55 +477,73 @@ export function buildAiActionInputs(
   return inputs;
 }
 
-/** 5 槽位键。用字面量元组是为了保住 Record<LayoutSlotKey, …> 的类型推导
- * ——直接从目录 JSON 导入会退化成 string。与目录 allowedSlots 的一致性由
- * __tests__/ssot-parity.test.ts 哨兵锁死（谁改目录不改这里，CI 立刻红）。 */
-export const LAYOUT_SLOT_KEYS = [
-  "summary",
-  "primary",
-  "secondary",
-  "activity",
-  "content",
+/**
+ * 页面区域键。
+ *
+ * 2026-08-08 第三轮：旧的五个槽位（summary/primary/secondary/activity/content）
+ * 整套退休。实测量过它们在 12 栅格里的宽度——summary 与 primary 一样（12）、
+ * secondary 与 activity 一样（4）、content 随页型在 12 和 4 之间变，也就是
+ * **五个名字只有两种行为，还有一个是不定项**；而 12 个已存应用里 secondary 和
+ * content 一次都没被用过。换成照 ant-design/pro-blocks 那 29 个真实页面定出来
+ * 的区域名，每一个都有出处（见目录 pageRegions 的 evidence 字段）。
+ *
+ * 仍用字面量元组是为了保住 Record<LayoutRegionKey, …> 的类型推导——直接从目录
+ * JSON 导入会退化成 string。与目录 pageRegions 的一致性由
+ * __tests__/ssot-parity.test.ts 哨兵锁死（谁改目录不改这里，CI 立刻红）。
+ */
+export const LAYOUT_REGION_KEYS = [
+  "header",
+  "headerExtra",
+  "headerContent",
+  "tabs",
+  "filters",
+  "metrics",
+  "charts",
+  "main",
+  "supplement",
+  "aside",
+  "footerBar",
+  "overlay",
 ] as const;
-type LayoutSlotKey = (typeof LAYOUT_SLOT_KEYS)[number];
+type LayoutRegionKey = (typeof LAYOUT_REGION_KEYS)[number];
 
 /**
- * 槽位表偶发被模型多包一层 `slots`（`layout: { slots: { summary: [...] } }`）。
+ * 区域表偶发被模型多包一层 `slots`（`layout: { slots: { summary: [...] } }`）。
  * 生成侧的 prompt 和 Gate 都已经按"摊平"来管了，但**已经落库的模型改不动**，
- * 而这层包装漏过来的后果是静默的：5 个槽位一个都读不到 → hasAny=false →
+ * 而这层包装漏过来的后果是静默的：区域一个都读不到 → hasAny=false →
  * deriveLayout 返回 null → 渲染层判定为"没声明 layout"退回顺序平铺，模型的
  * 排版意图全丢，页面照常渲染、没有任何报错。
  *
- * 解包的判定是确定的，不是猜：`slots` 不在合法槽位名里，而合法槽位的值是
+ * 解包的判定是确定的，不是猜：`slots` 不在合法区域名里，而合法区域的值是
  * 数组、这里是对象——两条同时成立时不存在别的解释。
  */
 function unwrapNestedSlots(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
   const nested = (raw as Record<string, unknown>).slots;
   if (!nested || typeof nested !== "object" || Array.isArray(nested)) return raw;
-  const hasRealSlot = LAYOUT_SLOT_KEYS.some(k => Array.isArray((raw as Record<string, unknown>)[k]));
-  // 外层已经有真槽位时以外层为准，不拿包装层去覆盖它。
-  return hasRealSlot ? raw : { ...(raw as Record<string, unknown>), ...nested };
+  const hasRealRegion = LAYOUT_REGION_KEYS.some(k => Array.isArray((raw as Record<string, unknown>)[k]));
+  // 外层已经有真区域时以外层为准，不拿包装层去覆盖它。
+  return hasRealRegion ? raw : { ...(raw as Record<string, unknown>), ...nested };
 }
 
 function normalizeLayoutSlotMap(
   raw: unknown,
   validBlockIds: Set<string>
-): Record<LayoutSlotKey, string[]> {
+): Record<LayoutRegionKey, string[]> {
   const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const out = {} as Record<LayoutSlotKey, string[]>;
-  for (const slot of LAYOUT_SLOT_KEYS) {
-    const ids = Array.isArray(obj[slot]) ? (obj[slot] as unknown[]) : [];
-    out[slot] = ids.map(v => String(v)).filter(idStr => validBlockIds.has(idStr));
+  const out = {} as Record<LayoutRegionKey, string[]>;
+  for (const region of LAYOUT_REGION_KEYS) {
+    const ids = Array.isArray(obj[region]) ? (obj[region] as unknown[]) : [];
+    out[region] = ids.map(v => String(v)).filter(idStr => validBlockIds.has(idStr));
   }
   return out;
 }
 
 /**
- * Step 7：页面布局 5 槽位派生。Gate 已校验槽位合法 + 引用不悬空，这里仍做
+ * Step 7：页面布局区域派生。Gate 已校验槽位合法 + 引用不悬空，这里仍做
  * 防御性二次过滤（悬空引用/非法槽位如实丢弃，不炸渲染，只信任模型直接
  * 声明的 page.blocks——legacy 转换来的合成块不参与布局）。未声明 layout
- * 或过滤后 5 槽位全空时返回 null，渲染层回退旧的顺序平铺。
+ * 或过滤后所有区域全空时返回 null，渲染层回退旧的顺序平铺。
  */
 function deriveLayout(
   rawLayout: unknown,
@@ -523,7 +555,7 @@ function deriveLayout(
   );
   if (directIds.size === 0) return null;
   const layout = unwrapNestedSlots(rawLayout);
-  const slots = normalizeLayoutSlotMap(layout, directIds);
+  const regions = normalizeLayoutSlotMap(layout, directIds);
   const grid = normalizeBusinessGrid(
     (layout as Record<string, unknown>).grid,
     new Set([...directIds, PAGE_CONTENT_REF])
@@ -532,9 +564,9 @@ function deriveLayout(
   const mobile = mobileRaw
     ? normalizeLayoutSlotMap(unwrapNestedSlots(mobileRaw), directIds)
     : undefined;
-  const hasAny = LAYOUT_SLOT_KEYS.some(k => slots[k].length > 0) || Boolean(grid);
+  const hasAny = LAYOUT_REGION_KEYS.some(k => regions[k].length > 0) || Boolean(grid);
   if (!hasAny) return null;
-  return { ...slots, mobile, grid };
+  return { ...regions, mobile, grid };
 }
 
 export function deriveAppRuntimeSchema(

@@ -49,7 +49,7 @@ def test_experience_block_catalog_is_structurally_closed():
     assert len(set(schema_legal.EXPERIENCE_BLOCK_RENDERER_KEYS)) == len(blocks)
     for block in blocks:
         assert set(block["dataKinds"]) <= set(catalog["dataKinds"])
-        assert set(block["allowedSlots"]) <= set(catalog["allowedSlots"])
+        assert set(block["allowedRegions"]) <= set(catalog["pageRegions"])
         assert set(block["events"]) <= set(catalog["eventTypes"])
 
 
@@ -138,60 +138,64 @@ def test_monitor_pages_carry_an_explicit_block_prohibition():
     assert "cannot filter ANYTHING on an overview" in prompt
 
 
-def test_slot_restrictions_have_no_unexplained_width_gaps():
-    """槽位限制的唯一物理依据是宽度——不该出现"窄的能放、宽的能放、中间不能放"。
+def test_region_restrictions_have_no_unexplained_width_gaps():
+    """区域限制的物理依据是宽度——不该出现"窄的能放、宽的能放、中间不能放"。
 
-    渲染实测（AppRuntimeScreen.tsx:1490-1532）：secondary=1/3 窄栏、
-    primary=2/3 主栏、activity/content=全宽且 className 逐字节相同。
-    所以若一个区块同时允许 secondary 和全宽档，中间的 primary 必然也放得下；
-    禁掉它没有物理解释（ActivityFeed 此前正是如此，见
-    docs/layout-slot-constraint-audit-2026-08-01.md）。
+    2026-08-08 第三轮：旧五槽整套退休，这条跟着换到区域词汇。**顺带纠正上一版
+    写错的依据**——旧注释说"secondary=1/3、primary=2/3、activity/content=全宽
+    且 className 逐字节相同"，还引了 AppRuntimeScreen.tsx:1490-1532。那句是错的。
+    真跑 upgradeLegacySlotsToGrid 量出来（12 栅格）：
+
+        summary / primary    → 12
+        secondary / activity → 4
+        content              → 仪表盘 12、其它页型 4
+
+    所以 activity 与 content 并不相同，content 还随页型变宽；那个行号如今指向的
+    也是无关代码。旧描述停在网格化之前的渲染器上，一直没跟着改——这正是推翻五槽
+    的依据之一：五个名字只有两种行为，还有一个是不定项。
+
+    换到区域之后宽度是清楚的：aside 是窄列（4/12），正文侧的都是整行。
     """
     from services import schema_legal
 
-    order = {"secondary": 1, "primary": 2, "activity": 3, "content": 3}
+    # 实测宽度档：1=窄列，2=整行
+    width = {"aside": 1, "main": 2, "metrics": 2, "charts": 2, "supplement": 2}
     for block in schema_legal.EXPERIENCE_BLOCKS:
-        slots = set(block["allowedSlots"])
-        ranked = [order[s] for s in slots if s in order]
+        regions = set(block["allowedRegions"])
+        ranked = [width[r] for r in regions if r in width]
         if not ranked:
             continue
         lo, hi = min(ranked), max(ranked)
-        gaps = [s for s, o in order.items() if lo < o < hi and s not in slots]
-        assert not gaps, f"{block['type']} 的宽度区间有洞：允许 {sorted(slots)}，却禁了 {gaps}"
-
-
-def test_activity_and_content_are_opened_together():
-    """activity 与 content 渲染完全相同（同一段 className），开一个禁一个是任意限制。"""
-    from services import schema_legal
-
-    for block in schema_legal.EXPERIENCE_BLOCKS:
-        slots = set(block["allowedSlots"])
-        assert ("activity" in slots) == ("content" in slots), (
-            f"{block['type']} 只开了 activity/content 其中一个：{sorted(slots)}"
-            "——两者渲染逐字节相同，这个区分没有效果差异"
+        gaps = [r for r, o in width.items() if lo < o < hi and r not in regions]
+        assert not gaps, (
+            f"{block['type']} 的宽度区间有洞：允许 {sorted(regions)}，却禁了 {gaps}"
         )
 
 
-def test_every_slot_restriction_ships_its_reason():
-    """**凡是限制了槽位的类型，都必须说明为什么**——不是只给犯过错的那个补。
+def test_every_region_restriction_ships_its_reason():
+    """**凡是限制了区域的类型，都必须说明为什么**——不是只给犯过错的那个补。
 
     2026-08-01 的教训：给 WorkflowTimeline 补了理由之后它那类违规归零，但同一
     个毛病立刻换主角复发——FilterBar→content ×2、QuickActionPanel→content ×3。
     上一版这条用例只钉了 WorkflowTimeline 一个，所以"补了理由"这件事没有被推广，
     等于修了症状没修这一类。
 
-    判据：allowedSlots 不是全集 = 存在限制 = 必须有 slotsRationale。模型推不出
-    "为什么不行"时只会按名字的字面意思猜（"content 听起来就是放内容的"）。
+    2026-08-08 又添一例，说明这条依然在防真事：PageHeader 被装配器放进了
+    footerBar——两者能力都是 action，容器侧的 accepts 放行了。区块侧的限制这轮
+    才进门禁，理由也就必须在场。
+
+    判据：allowedRegions 不是全集 = 存在限制 = 必须有 regionsRationale。模型推
+    不出"为什么不行"时只会按名字的字面意思猜。
     """
     from services import schema_legal
 
-    all_slots = set(schema_legal.EXPERIENCE_BLOCK_ALLOWED_SLOTS)
+    all_regions = set(schema_legal.EXPERIENCE_BLOCK_ALLOWED_REGIONS)
     for block in schema_legal.EXPERIENCE_BLOCKS:
-        if set(block["allowedSlots"]) >= all_slots:
+        if set(block["allowedRegions"]) >= all_regions:
             continue  # 不限制就不用解释
-        assert str(block.get("slotsRationale") or "").strip(), (
-            f"{block['type']} 限制了槽位（只允许 {sorted(block['allowedSlots'])}）"
-            "却没写 slotsRationale——模型无从推断，只会按名字乱猜"
+        assert str(block.get("regionsRationale") or "").strip(), (
+            f"{block['type']} 限制了区域（只允许 {sorted(block['allowedRegions'])}）"
+            "却没写 regionsRationale——模型无从推断，只会按名字乱猜"
         )
 
 
@@ -201,7 +205,7 @@ def test_slot_rationales_reach_the_generation_contract():
 
     prompt = schema_legal.experience_block_prompt_block()
     for block in schema_legal.EXPERIENCE_BLOCKS:
-        rationale = str(block.get("slotsRationale") or "").strip()
+        rationale = str(block.get("regionsRationale") or "").strip()
         if rationale:
             assert rationale in prompt, f"{block['type']} 的槽位理由没进 prompt"
 

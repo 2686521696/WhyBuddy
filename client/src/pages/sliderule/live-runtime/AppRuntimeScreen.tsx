@@ -214,7 +214,8 @@ import {
   PAGE_CONTENT_REF,
   ensurePageContentItem,
   resolveBusinessGrid,
-  upgradeLegacySlotsToGrid,
+  regionsToGrid,
+  type BusinessRegions,
   type BusinessGridItem,
   type BusinessPageBreakpoint,
 } from "./business-page-layout";
@@ -1568,24 +1569,34 @@ export function AppRuntimeScreen({
           );
 
         const blockById = new Map(dedupedBlocks.map(b => [b.id, b]));
-        // 手机档用 layout.mobile 覆盖（未声明则退回桌面槽位，同一套摆法）。
+        // 手机档用 layout.mobile 覆盖（未声明则退回桌面区域，同一套摆法）。
         // forPhone 由调用方传入——从前这里读的是 isPhone，而这段代码只在桌面
         // 壳里跑（手机壳走 phonePageContent），isPhone 恒 false，layout.mobile
         // 是死字段：LLM 在生成它、Gate 在校验它，运行时永远读不到。
-        const slotSource =
+        const regionSource =
           forPhone && page.layout?.mobile
             ? { ...page.layout, ...page.layout.mobile }
             : page.layout;
-        const slots = {
-          summary: slotSource?.summary ?? (page.layout ? [] : dedupedBlocks.map(b => b.id)),
-          primary: slotSource?.primary ?? [],
-          secondary: slotSource?.secondary ?? [],
-          activity: slotSource?.activity ?? [],
-          content: slotSource?.content ?? [],
-        };
-        const placedIds = new Set(Object.values(slots).flat());
-        // 声明了 layout 但没被任何槽位引用到的区块：如实照样渲染，不能因为
-        // 没排进槽位就悄悄丢内容——排在末尾，视觉上标为"未分配槽位"。
+        // 没声明 layout 时把所有区块塞进 main —— 让它们整行依次铺开，跟
+        // 从前塞 summary 的效果一样（两者都是全宽），但语义对了：那是页面
+        // 主体内容，不是"页头摘要"。
+        const regions = {
+          header: regionSource?.header ?? [],
+          headerExtra: regionSource?.headerExtra ?? [],
+          headerContent: regionSource?.headerContent ?? [],
+          tabs: regionSource?.tabs ?? [],
+          filters: regionSource?.filters ?? [],
+          metrics: regionSource?.metrics ?? [],
+          charts: regionSource?.charts ?? [],
+          main: regionSource?.main ?? (page.layout ? [] : dedupedBlocks.map(b => b.id)),
+          supplement: regionSource?.supplement ?? [],
+          aside: regionSource?.aside ?? [],
+          footerBar: regionSource?.footerBar ?? [],
+          overlay: regionSource?.overlay ?? [],
+        } as Record<string, string[]>;
+        const placedIds = new Set(Object.values(regions).flat());
+        // 声明了 layout 但没被任何区域引用到的区块：如实照样渲染，不能因为
+        // 没排进区域就悄悄丢内容——排在末尾，视觉上标为"未分配区域"。
         const orphanBlocks = dedupedBlocks.filter(b => !placedIds.has(b.id));
         const breakpoint: BusinessPageBreakpoint = forPhone
           ? "phone"
@@ -1594,9 +1605,9 @@ export function AppRuntimeScreen({
             : "desktop";
         const layouts =
           page.layout?.grid ??
-          upgradeLegacySlotsToGrid(page.view.kind, {
-            ...slots,
-            content: [...slots.content, ...orphanBlocks.map(b => b.id)],
+          regionsToGrid(page.view.kind, {
+            ...(regions as unknown as BusinessRegions),
+            main: [...regions.main, ...orphanBlocks.map(b => b.id)],
           });
         let items = resolveBusinessGrid(layouts, breakpoint);
         const itemRefs = new Set(items.map(item => item.blockRef));
