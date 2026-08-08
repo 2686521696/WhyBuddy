@@ -891,3 +891,164 @@ describe("表格：所有列都被隐藏时", () => {
     expect(html).toContain("列B");
   });
 });
+
+/**
+ * 2026-08-08 ②批次 1：EditableSubTable，照 pro-components 的 EditableTable。
+ *
+ * 这次搬的是"接进契约"——EditableProTable / RowEditorTable / CellEditorTable
+ * 三个都在我们已装的 pro-components 2.8.10 里导出着，一个新依赖都不用加。
+ * 所以用例钉的是**契约这一侧**：列从哪来、控件类型从哪来、上限到了怎么办。
+ *
+ * 它内部那条最值钱的（失焦延迟 150ms 才退出编辑，否则 Tab 切下一格就误关）
+ * 是组件自己的行为，我们只要不绕过它；钉在这里的是"我们用的就是它"。
+ */
+describe("可编辑子表", () => {
+  const rows = [
+    { id: "r1", values: { name: "螺丝", qty: 12, status: "done" }, createdAt: "2026-08-08T00:00:00.000Z" },
+    { id: "r2", values: { name: "螺母", qty: 30, status: "todo" }, createdAt: "2026-08-08T00:00:00.000Z" },
+  ];
+  const render = (props: Record<string, unknown> = {}, binding: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "sub", type: "EditableSubTable",
+          props: { title: "订单明细", ...props },
+          binding: { entityRef: "order", ...binding },
+        }}
+        entityRows={{ order: rows }}
+        fieldLabelOf={(_e, f) => ({ name: "物料", qty: "数量", status: "状态" })[f]}
+        fieldTypeOf={(_e, f) => ({ name: "string", qty: "number", status: "enum" })[f]}
+        enumOptionsOf={(_e, f) =>
+          f === "status"
+            ? [
+                { id: "todo", label: "待办", tone: "default" as const },
+                { id: "done", label: "已完成", tone: "success" as const },
+              ]
+            : []
+        }
+        {...props.hostProps as Record<string, unknown>}
+      />
+    );
+
+  it("列出中文标签，行数据真的进表", () => {
+    const html = render();
+    expect(html).toContain("物料");
+    expect(html).toContain("数量");
+    expect(html).toContain("螺丝");
+  });
+
+  it("列由 binding.fieldRefs 说了算 —— 与表格族同一条规则", () => {
+    const html = render({}, { fieldRefs: ["name"] });
+    expect(html).toContain("物料");
+    expect(html).not.toContain("数量");
+  });
+
+  it("没绑到实体时说清楚，不渲染一张空表", () => {
+    const html = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "sub", type: "EditableSubTable", binding: { entityRef: "nope" } }}
+        entityRows={{ order: rows }}
+      />
+    );
+    expect(html).toContain("未绑定到有效实体");
+  });
+
+  it("**到了行数上限就把新建按钮藏掉**，不是让用户点了再报错", () => {
+    // 两行数据，上限 5 —— 按钮该在
+    expect(render({ maxRows: 5, addText: "新增一行" })).toContain("新增一行");
+    // 上限 2，已经两行 —— 按钮该消失
+    expect(render({ maxRows: 2, addText: "新增一行" })).not.toContain("新增一行");
+  });
+
+  it("不设上限就一直能加", () => {
+    expect(render({ addText: "新增一行" })).toContain("新增一行");
+  });
+});
+
+/**
+ * 2026-08-08 ②批次 1：BatchActionBar 补 alwaysShowAlert。
+ *
+ * 官方的判据是一行：`selectedRowKeys.length < 1 && !alwaysShowAlert` → null。
+ * 关键不在默认值，而在**它把这件事做成了开关**——我们原来把"永远显示一句
+ * 引导"写死了，等于替使用者做了决定。
+ */
+describe("批量操作栏的 alwaysShow", () => {
+  const rows = [{ id: "r1", values: { a: "1" }, createdAt: "2026-08-08T00:00:00.000Z" }];
+  const render = (props: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "bar", type: "BatchActionBar", props, binding: { entityRef: "order" } }}
+        entityRows={{ order: rows }}
+      />
+    );
+
+  it("默认永远显示 —— 会凭空消失的区块在装配预览里没法审阅", () => {
+    expect(render()).toContain("勾选左侧的行");
+  });
+
+  it("alwaysShow=false 时没选中就整条不渲染 —— 这是官方的默认行为", () => {
+    expect(render({ alwaysShow: false })).toBe("");
+  });
+
+  it("选中了就照样出来，跟 alwaysShow 无关", () => {
+    const html = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "bar", type: "BatchActionBar",
+          props: { alwaysShow: false, actions: ["批量导出"] },
+          binding: { entityRef: "order" },
+        }}
+        entityRows={{ order: rows }}
+        selection={{ rowIds: { order: ["r1"] } }}
+      />
+    );
+    expect(html).toContain("已选择");
+    expect(html).toContain("批量导出");
+  });
+});
+
+/**
+ * 2026-08-08 ②批次 1：拖拽排序做成 DataTable 的 prop，不是第四张表。
+ *
+ * pro-components 那边 DragSortTable 独立成组件，是因为它得包住 ProTable 的
+ * components/tableViewRender 才能塞进 dnd 上下文——实现约束，不是概念区分。
+ */
+describe("表格的拖拽排序", () => {
+  const rows = [
+    { id: "r1", values: { name: "甲" }, createdAt: "2026-08-08T00:00:00.000Z" },
+    { id: "r2", values: { name: "乙" }, createdAt: "2026-08-08T00:00:00.000Z" },
+  ];
+  const render = (props: Record<string, unknown>) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "t", type: "DataTable", props, binding: { entityRef: "order" } }}
+        entityRows={{ order: rows }}
+        fieldLabelOf={(_e, f) => ({ name: "名称" })[f]}
+      />
+    );
+
+  it("没开的时候还是原来那张表", () => {
+    const html = render({});
+    expect(html).toContain("名称");
+    expect(html).toContain("ant-pagination");
+  });
+
+  it("开了之后行还在、列还在 —— 换的是同一张表的能力，不是换一个区块", () => {
+    const html = render({ sortable: true });
+    expect(html).toContain("名称");
+    expect(html).toContain("甲");
+    expect(html).toContain("乙");
+  });
+
+  it("两种形态用的是**同一个区块 type** —— 不许分裂成两个", () => {
+    // 这条是判据本身：目录里不该出现 DragSortTable 这种"能拖的 DataTable"
+    const types = (CATALOG.blocks as Array<{ type: string }>).map(b => b.type);
+    expect(types).toContain("DataTable");
+    expect(types).not.toContain("DragSortTable");
+    const table = (CATALOG.blocks as Array<{
+      type: string;
+      propsSchema: { properties: Record<string, unknown> };
+    }>).find(b => b.type === "DataTable")!;
+    expect(table.propsSchema.properties).toHaveProperty("sortable");
+  });
+});

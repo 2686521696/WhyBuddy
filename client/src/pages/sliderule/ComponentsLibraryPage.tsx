@@ -626,6 +626,14 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
         },
         extra: {},
       },
+  EditableSubTable: {
+        block: {
+          id: "demo-EditableSubTable", type: "EditableSubTable",
+          props: { title: "订单明细", editMode: "row", maxRows: 8, addText: "新增一行" },
+          binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "at"] },
+        },
+        extra: {},
+      },
   ColumnSettingPanel: {
         block: {
           id: "demo-ColumnSettingPanel", type: "ColumnSettingPanel",

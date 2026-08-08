@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 16,
+  "version": 19,
   "blockFamilies": [
     "data",
     "filter",
@@ -307,13 +307,13 @@
         },
         {
           "key": "main",
-          "why": "要填的字段",
+          "why": "要填的字段。2026-08-08 从 1 提到 2：pro-blocks 的 FormAdvancedForm 就是主表单 + 明细子表（EditableProTable）同处一页，「订单头 + 订单行」是业务表单页最常见的形状，只准放一个的话明细子表无处可去。",
           "weight": "primary",
           "required": true,
           "accepts": [
             "form"
           ],
-          "maxBlocks": 1
+          "maxBlocks": 2
         },
         {
           "key": "aside",
@@ -926,6 +926,9 @@
               "card",
               "plain"
             ]
+          },
+          "sortable": {
+            "type": "boolean"
           }
         }
       },
@@ -960,7 +963,12 @@
         }
       },
       "capability": "entityRows",
-      "family": "data"
+      "family": "data",
+      "source": {
+        "repo": "ant-design/pro-components",
+        "path": "src/table/components/DragSortTable/index.tsx + src/table/utils/useDragSort.tsx",
+        "took": "拖拽排序是表格的一个能力，不是另一张表——它那边 DragSortTable 只是为了包住 ProTable 内部才独立成组件；拖完先本地生效再回调（onDragSortEnd 拿到的是已经排好的新数组，持久化归调用方）；限制纵向轴，否则能横着乱拖；拖回原位不触发"
+      }
     },
     {
       "type": "QuickActionPanel",
@@ -1367,6 +1375,90 @@
       "family": "data"
     },
     {
+      "type": "EditableSubTable",
+      "description": "表单页里的明细子表：订单头下面的订单行、报销单下面的费用明细。行可以直接在表上改，能加行能删行，不用一行开一个弹窗。",
+      "rendererKey": "editable-sub-table",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "form",
+      "family": "data",
+      "source": {
+        "repo": "ant-design/pro-components",
+        "path": "src/table/components/EditableTable/{index,RowEditorTable,CellEditorTable}.tsx",
+        "took": "失焦延迟 150ms 退出编辑（否则 Tab 切下一格就误关）；整行编辑与单元格编辑是两套；新行分 dataSource/cache 两种（后者取消即消失）；到 maxLength 是**藏掉**新建按钮而不是点了报错"
+      },
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          },
+          "editMode": {
+            "type": "string",
+            "enum": [
+              "row",
+              "cell"
+            ]
+          },
+          "newRecordType": {
+            "type": "string",
+            "enum": [
+              "dataSource",
+              "cache"
+            ]
+          },
+          "addPosition": {
+            "type": "string",
+            "enum": [
+              "top",
+              "bottom"
+            ]
+          },
+          "maxRows": {
+            "type": "integer"
+          },
+          "addText": {
+            "type": "string"
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "wizard",
+        "workbench"
+      ],
+      "allowedRegions": [
+        "main"
+      ],
+      "regionsRationale": "main only, and in practice that means a form page's main. pro-blocks' FormAdvancedForm is the exact shape: PageContainer children = 仓库管理 card + 任务管理 card + 成员管理 card holding an EditableProTable. A read-only 明细 on a detail page is DataTable's job — this block exists because the rows are being *entered*, so it belongs where the entering happens.",
+      "events": [
+        "submitRequest",
+        "editRequest"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef"
+        ],
+        "optional": [
+          "fieldRefs"
+        ],
+        "entityFieldRefLists": {
+          "fieldRefs": {}
+        },
+        "note": "fieldRefs 声明这张明细表有哪几列可填；不写就从真实行的键里取前 6 个。控件类型从数据模型的字段类型来，不猜。"
+      }
+    },
+    {
       "type": "ContentCard",
       "description": "一张带标题的卡片，本身不展示数据——它是个容器，用来把若干个积木收进同一张卡里。只在这些积木确实属于同一件事、需要被视觉上圈在一起时才用；不需要时别用，每个积木本来就能独立摆放。",
       "rendererKey": "content-card",
@@ -1605,6 +1697,9 @@
               "card",
               "plain"
             ]
+          },
+          "alwaysShow": {
+            "type": "boolean"
           }
         }
       },
@@ -1630,6 +1725,11 @@
         ],
         "optional": [],
         "note": "entityRef 要跟同页那张表绑同一个实体——它读的就是那张表的勾选结果。操作名写在 props.actions 里（批量审批 / 批量导出 / 批量删除）。 targets 是这些操作**作用于哪些区块**的 id（同页的 data 族区块）。批量操作要知道自己操作的是哪张表的选中行；页头操作要知道自己新建的是哪个实体的记录。目标必须与本区块绑同一个实体。"
+      },
+      "source": {
+        "repo": "ant-design/pro-components",
+        "path": "src/table/components/Alert/index.tsx",
+        "took": "「没选中时显不显示」是个开关（alwaysShowAlert）而不是写死；清空选中是与批量操作并列的一等动作，不是某个按钮的副作用"
       }
     },
     {

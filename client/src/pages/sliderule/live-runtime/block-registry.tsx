@@ -36,6 +36,8 @@ import {
 } from "antd";
 import type { TableColumnsType } from "antd";
 import {
+  CellEditorTable,
+  DragSortTable,
   DrawerForm,
   ModalForm,
   ProCard,
@@ -48,6 +50,7 @@ import {
   ProFormText,
   ProFormTextArea,
   QueryFilter,
+  RowEditorTable,
   StatisticCard,
   StepsForm,
 } from "@ant-design/pro-components";
@@ -2020,8 +2023,18 @@ const StatusTabsRenderer: ExperienceBlockRenderer = ({
  *
  * ## 未选中时显示什么
  *
- * 官方是整条消失。我们这里显示一句"勾选左侧的行以批量处理"——因为在装配
- * 预览和组件库里，一个会凭空消失的区块没法审阅，而"消失"和"坏了"长得一样。
+ * 官方的判据是一行：`selectedRowKeys.length < 1 && !alwaysShowAlert` → 返回
+ * null，整条消失。**它把"永远显示"做成了一个开关，而不是写死**——这是我们
+ * 2026-08-08 回头补的那一条：原来我们把"永远显示一句引导"写死了，等于替使用
+ * 者做了决定。
+ *
+ * 两边的默认值故意相反，理由也不同：
+ *
+ *   官方默认消失   —— 它是真实应用里表格上方的一条，没选中时消失最干净
+ *   我们默认显示   —— 装配预览和组件库里，一个会凭空消失的区块没法审阅，
+ *                     而"消失"和"坏了"长得一样
+ *
+ * 想要官方那种行为的，把 `props.alwaysShow` 设成 false。
  */
 const BatchActionBarRenderer: ExperienceBlockRenderer = ({
   block,
@@ -2042,6 +2055,10 @@ const BatchActionBarRenderer: ExperienceBlockRenderer = ({
   const actions = Array.isArray(block.props?.actions)
     ? (block.props.actions as unknown[]).map(a => String(a)).filter(Boolean)
     : [];
+
+  // 官方的 alwaysShowAlert，默认值反过来（见上面的说明）
+  const alwaysShow = block.props?.alwaysShow !== false;
+  if (selected.length === 0 && !alwaysShow) return null;
 
   return (
     <BlockShell block={block} title="" testid="batch-action-bar">
@@ -2773,6 +2790,49 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
       ),
     });
   }
+  /**
+   * 拖拽排序（2026-08-08，②批次 1）。
+   *
+   * **做成 DataTable 的一个 prop，而不是第四张表。** pro-components 那边
+   * `DragSortTable` 独立成组件，是因为它得包住 ProTable 的 components/
+   * tableViewRender 才能塞进 dnd 上下文——那是实现约束，不是概念区分：拖得动
+   * 的表和拖不动的表是同一张表。我们这边已经有 DataTable，再建一个"能拖的
+   * DataTable"就是把同一个东西讲两遍，模型还得在两个几乎一样的选项里挑。
+   *
+   * 它的 DragSortTable 就在我们已装的 pro-components 2.8.10 里导出着，不加
+   * 新依赖。拖完的语义照它：**先本地生效，再把排好的新数组回调出去**——
+   * 持久化时机归调用方，组件不等服务端（等的话手一松表格会弹回去）。
+   *
+   * 这一档故意关掉两样东西，都是因为**手势会打架**：
+   *   分页 —— 跨页拖没有意义，第 9 条拖到第 1 页要先翻页，中途松手就散了
+   *   勾选 —— 复选框和拖拽把手抢同一次按下；要批量操作就别开拖拽排序
+   */
+  const sortable = block.props?.sortable === true;
+  if (sortable) {
+    return (
+      <BlockShell block={block} title={title} testid="data-table">
+        <DragSortTable
+          rowKey="id"
+          size="small"
+          search={false}
+          options={false}
+          toolBarRender={false}
+          pagination={false}
+          // 把手挂在第一列上。不指定 dragSortKey 的话它让整行都能拖，而整行
+          // 可拖会跟"点一行 = 选中/查看"打架——两个手势抢同一次按下。
+          dragSortKey={cols[0]}
+          columns={columns as never}
+          dataSource={bound.rows}
+          onDragSortEnd={(_before, _after, next) =>
+            onAction?.("rowSelect", {
+              reorderedRowIds: (next as RuntimeRow[]).map(r => r.id),
+            })
+          }
+        />
+      </BlockShell>
+    );
+  }
+
   return (
     <BlockShell block={block}
       title={title}
@@ -3110,6 +3170,127 @@ const StepsFormRenderer: ExperienceBlockRenderer = ({
 };
 
 /**
+ * ── 可编辑子表 —— 照 pro-components 的 EditableTable（2026-08-08，②批次 1）──
+ *
+ * 源：`src/table/components/EditableTable/{index,RowEditorTable,CellEditorTable}.tsx`
+ *
+ * **这次搬的是"接进契约"，不是重写渲染**——`EditableProTable` / `RowEditorTable`
+ * / `CellEditorTable` 三个都在我们已装的 pro-components 2.8.10 里导出着，一个
+ * 新依赖都不用加。所以真正的活是：把它们接到我们的 binding 上（列从 fieldRefs
+ * 来、控件类型从数据模型来），再把它们内部那几条**不看源码就不知道**的行为
+ * 用用例钉住，免得哪天换实现的时候悄悄丢掉：
+ *
+ * 1. **失焦延迟 150ms 才退出编辑。** 原注释：「如果焦点在同一行内的字段间切换
+ *    （Tab），新字段的 onFocus 会在 blur 的 setTimeout 回调之前触发，从而取消
+ *    定时器、保持编辑态」。立刻退出的话，用户按一下 Tab 就被踢出编辑。
+ * 2. **整行编辑与单元格编辑是两套。** 单元格档还要记 activeColumnId，把别的列
+ *    显式设成 `editable: false`——不然双击一格，整行都变成输入框。
+ * 3. **列标识是 `${列序号}:${dataIndex}`**，不是光用 dataIndex。dataIndex 可能
+ *    缺失、也可能重名，光用它会串格。
+ * 4. **新行分两种**：`dataSource` 直接进数据（不能取消，只能删）；`cache` 进
+ *    缓存（一取消就消失）。这两种在业务上是不同承诺，不是实现细节。
+ * 5. **到了行数上限是把新建按钮藏掉**，不是让用户点了再报错。
+ */
+const EditableSubTableRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  onAction,
+  fieldLabelOf,
+  enumOptionsOf,
+  fieldTypeOf,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound)
+    return (
+      <BlockShell block={block} title={title} testid="editable-sub-table">
+        <BlockEmpty hint="明细表未绑定到有效实体" />
+      </BlockShell>
+    );
+  const fields = boundFieldIds(block, bound.rows);
+  if (fields.length === 0)
+    return (
+      <BlockShell block={block} title={title} testid="editable-sub-table">
+        <BlockEmpty hint="这个实体还没有可填写的字段" />
+      </BlockShell>
+    );
+
+  // 单元格档 vs 整行档 —— pro-components 把它们做成了两个组件，我们照它分。
+  // 默认整行：明细表一行几个字段是一起录的，一格一格双击太碎。
+  const cellMode = String(block.props?.editMode ?? "row") === "cell";
+  const Editor = cellMode ? CellEditorTable : RowEditorTable;
+  const maxRows = Number(block.props?.maxRows);
+  const hasLimit = Number.isFinite(maxRows) && maxRows > 0;
+  const addText = String(block.props?.addText ?? "").trim() || "新增一行";
+  // top / bottom：明细表默认往下加。往上加是"最近录的在最前"那种用法。
+  const addPosition = block.props?.addPosition === "top" ? "top" : "bottom";
+  // dataSource：新行直接进数据，不能取消只能删；cache：取消就消失。
+  // 默认 cache——录一半反悔是常事，直接落进数据的那种更重，得显式选。
+  const newRecordType = block.props?.newRecordType === "dataSource" ? "dataSource" : "cache";
+
+  const value = bound.rows.map(r => ({ id: r.id, ...(r.values ?? {}) }));
+  const columns = fields.map(f => {
+    const options = enumOptionsOf?.(bound.entityRef, f) ?? [];
+    const declared = fieldTypeOf?.(bound.entityRef, f);
+    return {
+      title: fieldLabelOf?.(bound.entityRef, f) ?? f,
+      dataIndex: f,
+      // valueType 从数据模型的字段类型来，不猜——与 formItemFor 同一条纪律。
+      // 查不到按文本处理，跟别处"查不到就回落、不编"一致。
+      valueType:
+        options.length > 0 || declared === "enum"
+          ? ("select" as const)
+          : declared === "number"
+            ? ("digit" as const)
+            : declared === "date"
+              ? ("date" as const)
+              : declared === "text"
+                ? ("textarea" as const)
+                : ("text" as const),
+      valueEnum:
+        options.length > 0
+          ? Object.fromEntries(options.map(o => [o.id, { text: o.label }]))
+          : undefined,
+    };
+  });
+
+  return (
+    <BlockShell block={block} title={title} testid="editable-sub-table">
+      <Editor
+        rowKey="id"
+        size="small"
+        value={value}
+        columns={columns}
+        // 到上限就**不给按钮**（pro-components 的 shouldShowCreatorButton）。
+        // 给了再报错是把"不行"推迟到用户已经动手之后。
+        recordCreatorProps={
+          hasLimit && value.length >= maxRows
+            ? false
+            : {
+                position: addPosition,
+                newRecordType,
+                creatorButtonText: addText,
+                record: () => ({ id: `new-${Date.now()}` }),
+              }
+        }
+        maxLength={hasLimit ? maxRows : undefined}
+        editable={{
+          type: cellMode ? "single" : "multiple",
+          onSave: async (_key, record) => {
+            onAction?.("submitRequest", { entityRef: bound.entityRef, values: record });
+          },
+          onDelete: async (_key, record) => {
+            onAction?.("editRequest", { entityRef: bound.entityRef, rowId: String(record?.id ?? "") });
+          },
+        }}
+      />
+    </BlockShell>
+  );
+};
+
+/**
  * ContentCard —— **唯一一个"卡片"是显式选来的**积木（2026-08-08）。
  *
  * 用户裁决：「不要这个 card 的卡片包裹，组装的时候就要纯粹一点，该是啥就是
@@ -3227,6 +3408,7 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     RecordFormDialog: { render: RecordFormDialogRenderer, uses: ["Drawer", "Modal", "Form", "Input", "Select", "Button"], label: "弹层表单" },
     RecordDetail: { render: RecordDetailRenderer, uses: ["Descriptions", "Tag", "Button"], label: "记录详情" },
     StepsForm: { render: StepsFormRenderer, uses: ["Steps", "Form", "Input", "Select", "DatePicker"], label: "分步表单" },
+    EditableSubTable: { render: EditableSubTableRenderer, uses: ["Table", "Form", "Input", "Select", "DatePicker", "InputNumber", "Button"], label: "可编辑子表" },
     ContentCard: { render: ContentCardRenderer, uses: ["Card"], label: "内容卡片" },
     PageHeader: { render: PageHeaderRenderer, uses: ["Button", "Space", "Typography"], label: "页面头" },
     ResultPanel: { render: ResultPanelRenderer, uses: ["Result", "Button", "Space"], label: "结果屏" },
