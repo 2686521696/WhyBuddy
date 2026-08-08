@@ -155,6 +155,20 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
           footerBar: ["b-batch"],
         },
       },
+      // 第二页故意是 workbench —— 那一档由**固定骨架**画（积木不上屏）。
+      // 台子上两页并排，才验得出"翻转默认"前后各是什么样、骨架有没有被改坏。
+      {
+        id: "order_skeleton",
+        name: "订单管理（骨架档）",
+        fieldBindings: [
+          "order.name",
+          "order.amount",
+          "order.status",
+          "order.channel",
+          "order.at",
+        ],
+        actionPermissions: ["order:create", "order:read"],
+      },
     ],
   },
   aigc: { capabilities: [] },

@@ -1468,6 +1468,47 @@ export function AppRuntimeScreen({
   // 2026-08-01 提到组件层：此前定义在 renderExperienceBlockScaffold 闭包里，
   // 首页设计路径（renderFreeformOverview）够不到它，是下面那份共享 props
   // 一直缺 onAction 的直接原因。
+  /**
+   * ── 页面级管道（2026-08-08，列表页归属三步走的第①步）────────────────
+   *
+   * 三样东西一直**长在固定骨架身上**：新建表单、行详情抽屉、演示数据徽标。
+   * 骨架自己调 setFormOpen / setDetailRow，积木那条路想干同一件事没有入口
+   * ——于是积木永远只能"显示"，不能"打开点什么"。
+   *
+   * 这一步只做一件事：**把这三样从骨架身上摘下来，变成整页共用的服务**。
+   * 骨架照旧调它们（行为一模一样，视觉零变化），积木从今天起也能调。
+   *
+   * 命名和分层照 nocobase 的 ActionContext / ActionContainer
+   *（`schema-component/antd/action/`）：那边的关键一条是
+   * **openMode 决定容器（drawer / modal / page），而不是触发它的那个组件决定**。
+   * 我们这边同理——积木只说"打开这条记录"，落在抽屉还是平板右栏、还是手机
+   * 底部弹层，由页面自己按设备决定，积木不需要知道。
+   */
+  const pagePipes = React.useMemo(
+    () => ({
+      /** 打开「新建」表单（骨架的新建按钮、积木的 createRequest 都走这条）。 */
+      openCreate: () => {
+        setFormValues({});
+        setFormOpen(true);
+      },
+      /** 打开某一行的详情（骨架的行点击、积木的 editRequest 都走这条）。 */
+      openRecord: (row: RuntimeRow | null | undefined) => {
+        if (row) setDetailRow(row);
+      },
+      /** 按 id 找行再打开 —— 积木事件里带的是 rowId，不是整行。 */
+      openRecordById: (rowId: string) => {
+        for (const list of Object.values(state.entities)) {
+          const hit = (list ?? []).find(r => r.id === rowId);
+          if (hit) {
+            setDetailRow(hit);
+            return;
+          }
+        }
+      },
+    }),
+    [state.entities]
+  );
+
   const handleBlockAction = (
     actionId: string,
     eventData?: Record<string, unknown>
@@ -1483,6 +1524,20 @@ export function AppRuntimeScreen({
         (list ?? []).some(r => r.id === rowId)
       );
       if (owner) setFocus(prev => ({ ...prev, [owner[0]]: rowId }));
+      return;
+    }
+    // 积木要打开的那两样，跟骨架走同一条管道（见 pagePipes 的说明）。
+    //
+    // rowSelect 故意**不**弹抽屉：这一页可能已经摆了 RecordDetail 积木，
+    // 点一行的本意是"换一条看"，再弹一个抽屉是同一件事做两遍。要看抽屉
+    // 走 editRequest（表格行内那个「编辑」），跟骨架的行为对齐。
+    if (actionId === "editRequest") {
+      const rowId = String(eventData?.rowId ?? "");
+      if (rowId) pagePipes.openRecordById(rowId);
+      return;
+    }
+    if (actionId === "createRequest") {
+      pagePipes.openCreate();
       return;
     }
     const action = page.pageActions.find(a => a.id === actionId);
@@ -1501,8 +1556,7 @@ export function AppRuntimeScreen({
         // 复用既有「新建」表单：只支持目标实体=本页主实体的场景（表单
         // 字段就是照本页主实体拼的）；指向别的实体如实拒绝，不假装能建。
         if (action.entityRef && action.entityRef === page.entityId) {
-          setFormValues({});
-          setFormOpen(true);
+          pagePipes.openCreate();
         } else {
           toast("info", "该操作指向的实体暂不支持在此页创建");
         }
@@ -3033,11 +3087,9 @@ export function AppRuntimeScreen({
           canCreate={Boolean(
             page.entityId && pageAccess.get(page.id)?.canCreate !== false
           )}
-          onCreate={() => {
-            setFormValues({});
-            setFormOpen(true);
-          }}
-          onOpenRow={setDetailRow}
+          // 走页面级管道，不再自己 setState —— 跟积木那条路同源
+          onCreate={pagePipes.openCreate}
+          onOpenRow={pagePipes.openRecord}
           onSaveRow={row => {
             if (!page.entityId) return;
             apply(updateRow(state, page.entityId, row.id, row.values));
@@ -3070,6 +3122,30 @@ export function AppRuntimeScreen({
     ? pageDataView
     : renderExperienceBlockScaffold(false, pageDataView);
 
+  /**
+   * 演示数据徽标 —— 第三样从骨架身上摘下来的（2026-08-08，第①步）。
+   *
+   * 它此前只写在 `defaultPageContent` 的 Card 标题里，而那个标题在
+   * `usesProWorkbench` 为真时是 `undefined`——也就是说**桌面档的列表页
+   * 今天根本看不到这个徽标**，而列表页恰恰是用户最会看到演示行的地方。
+   *
+   * 这一步只把它抽成一个可复用的节点、挂载点原样不动（承诺了这一步不改
+   * 视觉）。要不要在列表页也挂上，是第②步翻转默认时一并决定的事。
+   */
+  const seedNotice = pageSeedCount > 0 && (
+    <Tooltip
+      title={`本页 ${allRows.length} 条记录里有 ${pageSeedCount} 条是自动铺的演示数据；点「新建」写入第一条真实记录后即被整批取代`}
+    >
+      <Tag
+        color="orange"
+        style={{ marginInlineEnd: 0, fontWeight: 400 }}
+        data-testid="app-runtime-seed-tag"
+      >
+        示例数据 {pageSeedCount}
+      </Tag>
+    </Tooltip>
+  );
+
   const defaultPageContent = page && (
     <Card
       size="small"
@@ -3082,19 +3158,7 @@ export function AppRuntimeScreen({
       title={
         usesProWorkbench || page.presentation === "marketing-landing" ? undefined : <Space size={6}>
           <span>{page.title}</span>
-          {pageSeedCount > 0 && (
-            <Tooltip
-              title={`本页 ${allRows.length} 条记录里有 ${pageSeedCount} 条是自动铺的演示数据；点「新建」写入第一条真实记录后即被整批取代`}
-            >
-              <Tag
-                color="orange"
-                style={{ marginInlineEnd: 0, fontWeight: 400 }}
-                data-testid="app-runtime-seed-tag"
-              >
-                示例数据 {pageSeedCount}
-              </Tag>
-            </Tooltip>
-          )}
+          {seedNotice}
         </Space>
       }
       extra={

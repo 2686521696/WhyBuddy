@@ -203,3 +203,56 @@ describe("筛选真的收窄了区块看到的行", () => {
     expect(body).toContain("if (!applies) return state.entities;");
   });
 });
+
+/**
+ * 页面级管道（2026-08-08，列表页归属三步走的第①步）。
+ *
+ * 新建表单 / 行详情 / 演示数据徽标这三样，此前**长在固定骨架身上**：骨架自己
+ * 调 setFormOpen / setDetailRow，积木那条路想干同一件事没有入口——于是积木
+ * 永远只能"显示"，不能"打开点什么"。
+ *
+ * 这一步把它们摘成整页共用的服务。分层照 nocobase 的 ActionContext /
+ * ActionContainer：**容器（drawer/modal/page）由页面按设备决定，不由触发它的
+ * 那个组件决定**；积木只说"打开这条记录"。
+ */
+describe("页面级管道：骨架和积木走同一条", () => {
+  it("三条管道都收在一处，不再散在各调用点", () => {
+    expect(runtime).toContain("const pagePipes");
+    for (const pipe of ["openCreate", "openRecord", "openRecordById"]) {
+      expect(runtime, `管道 ${pipe} 不见了`).toContain(pipe);
+    }
+  });
+
+  it("**骨架不再自己 setState** —— 它跟积木用的是同一条", () => {
+    const start = runtime.indexOf("<LazyProWorkbenchSurface");
+    const body = runtime.slice(start, runtime.indexOf("/>", start));
+    expect(body, "骨架的新建没走管道").toContain("onCreate={pagePipes.openCreate}");
+    expect(body, "骨架的行点击没走管道").toContain("onOpenRow={pagePipes.openRecord}");
+  });
+
+  it("积木的 createRequest / editRequest 接进了管道", () => {
+    const start = runtime.indexOf("const handleBlockAction");
+    const body = runtime.slice(start, start + 2200);
+    expect(body).toContain('actionId === "createRequest"');
+    expect(body).toContain("pagePipes.openCreate()");
+    expect(body).toContain('actionId === "editRequest"');
+    expect(body).toContain("pagePipes.openRecordById(rowId)");
+  });
+
+  it("**rowSelect 只聚焦，不弹抽屉** —— 页面上可能已经摆了详情区块", () => {
+    const start = runtime.indexOf('if (actionId === "rowSelect")');
+    const body = runtime.slice(start, start + 420);
+    expect(body).toContain("setFocus");
+    expect(body, "rowSelect 弹了抽屉 —— 那就跟同页的 RecordDetail 做了两遍同一件事")
+      .not.toContain("openRecord");
+  });
+
+  it("演示数据徽标抽成了独立节点", () => {
+    expect(runtime).toContain("const seedNotice");
+    // 抽出来之后不该还有第二份内联的
+    expect(
+      (runtime.match(/data-testid="app-runtime-seed-tag"/g) ?? []).length,
+      "徽标出现了不止一处 —— 抽出来的意义就是只剩一份"
+    ).toBe(1);
+  });
+});
