@@ -46,8 +46,15 @@ import {
   ProForm,
   ProFormDateRangePicker,
   ProFormDatePicker,
+  ProFormDateTimePicker,
   ProFormDigit,
+  ProFormMoney,
+  ProFormRadio,
+  ProFormRate,
+  ProFormSegmented,
+  ProFormSlider,
   ProFormSelect,
+  ProFormSwitch,
   ProFormText,
   ProFormTextArea,
   QueryFilter,
@@ -66,7 +73,9 @@ import * as AntdIcons from "@ant-design/icons";
 import catalogJson from "@experience-blocks";
 import type { WorkflowSection } from "../system-screens/five-system-model";
 import type { RuntimeRow } from "./live-runtime";
+import type { AppFormFieldSchema } from "./app-runtime-schema";
 import type { NormalizedFieldOption } from "./field-display";
+import { resolveValueType } from "./field-value-type";
 import { buildEchartsOption } from "./build-echarts-option";
 import {
   buildSparklineOption,
@@ -329,6 +338,27 @@ export interface ExperienceBlockRendererProps {
   targetColumns?: string[];
   /** 当前聚焦的记录（实体名 → 行 id）。关联单据表靠它知道主记录是谁。 */
   focus?: PageFocusState;
+  /**
+   * 字段的**完整声明**（2026-08-08，阶段④）——表单族专用的那一道门。
+   *
+   * ## 为什么是"一个 prop"而不是再加一个 fieldFormatOf
+   *
+   * 上面已经有 fieldLabelOf / fieldTypeOf / enumOptionsOf 三个查询，全都从
+   * **同一个字段对象**上摘一样东西下来。阶段④本来要加第四个（fieldFormatOf），
+   * 加完立刻发现第五个也躲不掉：ref 字段要做下拉，得知道它指向哪张表
+   * （`refEntityId`）。
+   *
+   * 这正是②阶段复盘钉下来的那个形状——**要找的不是重复代码，是"加一样东西
+   * 得改几处"**。每加一个字段属性就加一个 prop、改两个宿主、补一条护栏，而
+   * 漏了不报错。所以这里开一扇门：字段声明整个传进来，以后加属性零改动。
+   *
+   * 老的三个查询留着不动：表格/详情/图表那些渲染器只要标签或类型，没必要为
+   * 了对称去动它们。**表单族走这扇门**，其余照旧。
+   */
+  fieldSchemaOf?: (
+    entityRef: string,
+    fieldId: string
+  ) => AppFormFieldSchema | undefined;
   /** WorkflowTimeline 专用：整份 workflow 系统数据，chainRef 从这里解析节点/连线，
    * 不接受自由文案——Gate 已校验 chainRef 能在这里面查到（留空=主链路）。 */
   workflow?: WorkflowSection | null;
@@ -3420,31 +3450,141 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
  * 与其它区块"查不到就回落、不编"的纪律一致。
  */
 
-/** 字段 id → 该出哪种 ProForm 控件。类型来自数据模型，不猜。 */
-function formItemFor(
-  entityRef: string,
-  fieldId: string,
-  fieldLabelOf: FieldLabelLookup | undefined,
-  enumOptionsOf: EnumOptionsLookup | undefined,
-  fieldTypeOf: FieldTypeLookup | undefined
-): React.ReactNode {
-  const label = fieldLabelOf?.(entityRef, fieldId) ?? fieldId;
-  const type = fieldTypeOf?.(entityRef, fieldId) ?? "string";
+/**
+ * 表单族渲染一个字段时手里有什么。
+ *
+ * 收成一个对象而不是继续排位置参数：原来已经是 6 个位置参数，阶段④要再加
+ * 两个（字段声明、ref 候选行），第 8 个位置参数没人读得懂，而且加一个就要
+ * 回来改三个调用点。
+ */
+interface FormItemCtx {
+  entityRef: string;
+  fieldLabelOf?: FieldLabelLookup;
+  fieldTypeOf?: FieldTypeLookup;
+  enumOptionsOf?: EnumOptionsLookup;
+  fieldSchemaOf?: (
+    entityRef: string,
+    fieldId: string
+  ) => AppFormFieldSchema | undefined;
+  /** ref 字段的候选行从这里取（entityRows[refEntityId]）。 */
+  entityRows?: Record<string, RuntimeRow[]>;
+}
+
+/**
+ * 字段 id → 该出哪种 ProForm 控件。
+ *
+ * ## 这里**不再自己判断**（2026-08-08，阶段④）
+ *
+ * 判定走 `field-value-type.ts` 的 `resolveValueType`——那张表已经是全站的
+ * 单一判定源，读侧（FieldValue）、内置表单（FieldEditor）、手机档
+ * （PhoneFormField）三处早就共读它。**只有这里是第四处，还自己写了一套**，
+ * 而且是更差的一套：
+ *
+ *     枚举     一律 Select（2 个取值也要点开才知道有什么）
+ *     boolean  掉进兜底 → 文本框（要用户手打 true/false）
+ *     ref      掉进兜底 → 文本框（要用户手打一个行 id）
+ *     datetime 掉进兜底 → 文本框
+ *     format   压根不读 → 金额/评分/进度全是裸数字框
+ *
+ * 那张表的文件头写着它存在的理由："不会出现读的时候是进度条、写的时候是裸
+ * 数字框"。这个文件此前恰好就是那个漂移点。接上之后，控件档位从 5 种变成
+ * 17 种，而这里一行判断逻辑都没有——只剩"这一档用哪个 ProForm 组件"。
+ *
+ * ## 与 FieldEditor 的一处有意分歧
+ *
+ * percent / progress / score 在 FieldEditor 那边是"滑杆 + 数字框"并排，
+ * ProForm 没有这个合体控件。这里按各档的主要用法分：进度天然是拖出来的
+ * （Slider），百分比和分数常要精确值（Digit + 后缀）。档位判定仍是同一处，
+ * 分歧只在这一档用哪个零件——这正是那张表允许的（它判"档"，不判"零件"）。
+ */
+function formItemFor(ctx: FormItemCtx, fieldId: string): React.ReactNode {
+  const { entityRef } = ctx;
+  const schema = ctx.fieldSchemaOf?.(entityRef, fieldId);
+  const label =
+    schema?.label ?? ctx.fieldLabelOf?.(entityRef, fieldId) ?? fieldId;
+  const type = schema?.type ?? ctx.fieldTypeOf?.(entityRef, fieldId) ?? "string";
+  // 取值声明：字段 schema 优先（已归一化），退到老的 enumOptionsOf。
+  const options: NormalizedFieldOption[] =
+    schema?.options ?? ctx.enumOptionsOf?.(entityRef, fieldId) ?? [];
   const common = { key: fieldId, name: fieldId, label };
-  if (type === "enum") {
-    const options = (enumOptionsOf?.(entityRef, fieldId) ?? []).map(o => ({
-      label: o.label,
-      value: o.id,
-    }));
-    // 枚举没有取值时不出一个空下拉——那是个点开什么都没有的坑，
-    // 退回文本框至少还能填。
-    if (options.length > 0) return <ProFormSelect {...common} options={options} />;
-    return <ProFormText {...common} />;
+  const opts = options.map(o => ({ label: o.label, value: o.id }));
+
+  switch (resolveValueType({ type, format: schema?.format, options })) {
+    // ── 数值：全靠 format 分档 ────────────────────────────────────────
+    case "money":
+      return <ProFormMoney {...common} />;
+    case "rate":
+      return <ProFormRate {...common} />;
+    case "progress":
+      return <ProFormSlider {...common} min={0} max={100} />;
+    case "percent":
+      return (
+        <ProFormDigit {...common} min={0} max={100} fieldProps={{ addonAfter: "%" }} />
+      );
+    case "score":
+      return (
+        <ProFormDigit {...common} min={0} max={100} fieldProps={{ addonAfter: "分" }} />
+      );
+    case "digit":
+      return <ProFormDigit {...common} />;
+
+    // ── 文本 ────────────────────────────────────────────────────────
+    case "password":
+      // masked（脱敏）：录入时按密码处理——手机号/证件号这类，摊在屏幕上给
+      // 旁边的人看见就是泄露。amis 那边是独立的 input-password。
+      return <ProFormText.Password {...common} />;
+    case "textarea":
+      return <ProFormTextArea {...common} />;
+
+    // ── 时间 ────────────────────────────────────────────────────────
+    case "date":
+      return <ProFormDatePicker {...common} />;
+    case "dateTime":
+      return <ProFormDateTimePicker {...common} />;
+
+    // ── 布尔 ────────────────────────────────────────────────────────
+    case "switch":
+      return <ProFormSwitch {...common} />;
+
+    // ── 枚举三档（按取值个数，阈值在 field-value-type.ts）────────────
+    case "segmented":
+      return <ProFormSegmented {...common} request={async () => opts} />;
+    case "radio":
+      return <ProFormRadio.Group {...common} options={opts} radioType="button" />;
+    case "select":
+      return <ProFormSelect {...common} options={opts} showSearch />;
+    case "tags":
+      // 枚举但没有取值声明：可选可输。不出一个空下拉——那是个点开什么都
+      // 没有的坑。
+      return <ProFormSelect {...common} mode="tags" fieldProps={{ maxCount: 1 }} />;
+
+    // ── 关联 ────────────────────────────────────────────────────────
+    case "ref": {
+      // 候选是**另一张表的行**。显示名用该行的第一个字段值（跟内置表单的
+      // refRowsFor 同一条约定），查不到指向就退回文本框——不编一个假下拉。
+      const rows = schema?.refEntityId
+        ? (ctx.entityRows?.[schema.refEntityId] ?? [])
+        : [];
+      if (rows.length === 0) return <ProFormText {...common} />;
+      return (
+        <ProFormSelect
+          {...common}
+          showSearch
+          options={rows.map(r => ({
+            value: r.id,
+            label: String(Object.values(r.values)[0] ?? r.id),
+          }))}
+        />
+      );
+    }
+
+    // 单行文本，也是判定表兜底给的那一档。**显式写出来**而不是靠 default：
+    // 判定表以后加一档时，护栏会因为"少了一个 case"变红；全靠 default 兜的话
+    // 新档位会静静地掉进文本框，屏幕上看不出来。
+    case "text":
+    default:
+      return <ProFormText {...common} />;
   }
-  if (type === "number") return <ProFormDigit {...common} />;
-  if (type === "date") return <ProFormDatePicker {...common} />;
-  if (type === "text") return <ProFormTextArea {...common} />;
-  return <ProFormText {...common} />;
 }
 
 /**
@@ -3474,6 +3614,7 @@ const RecordFormRenderer: ExperienceBlockRenderer = ({
   fieldLabelOf,
   enumOptionsOf,
   fieldTypeOf,
+  fieldSchemaOf,
 }) => {
   if (children !== undefined && children !== null) return <>{children}</>;
   const title = String(block.props?.title ?? "").trim();
@@ -3506,7 +3647,17 @@ const RecordFormRenderer: ExperienceBlockRenderer = ({
         }}
       >
         {fields.map(f =>
-          formItemFor(bound.entityRef, f, fieldLabelOf, enumOptionsOf, fieldTypeOf)
+          formItemFor(
+            {
+              entityRef: bound.entityRef,
+              fieldLabelOf,
+              fieldTypeOf,
+              enumOptionsOf,
+              fieldSchemaOf,
+              entityRows,
+            },
+            f
+          )
         )}
       </ProForm>
     </BlockShell>
@@ -3521,6 +3672,7 @@ const RecordFormDialogRenderer: ExperienceBlockRenderer = ({
   fieldLabelOf,
   enumOptionsOf,
   fieldTypeOf,
+  fieldSchemaOf,
 }) => {
   if (children !== undefined && children !== null) return <>{children}</>;
   const title = String(block.props?.title ?? "").trim();
@@ -3548,7 +3700,17 @@ const RecordFormDialogRenderer: ExperienceBlockRenderer = ({
         }}
       >
         {fields.map(f =>
-          formItemFor(bound.entityRef, f, fieldLabelOf, enumOptionsOf, fieldTypeOf)
+          formItemFor(
+            {
+              entityRef: bound.entityRef,
+              fieldLabelOf,
+              fieldTypeOf,
+              enumOptionsOf,
+              fieldSchemaOf,
+              entityRows,
+            },
+            f
+          )
         )}
       </Dialog>
     </div>
@@ -3643,6 +3805,7 @@ const StepsFormRenderer: ExperienceBlockRenderer = ({
   enumOptionsOf,
   fieldTypeOf,
   workflow,
+  fieldSchemaOf,
 }) => {
   if (children !== undefined && children !== null) return <>{children}</>;
   const title = String(block.props?.title ?? "").trim();
@@ -3685,7 +3848,17 @@ const StepsFormRenderer: ExperienceBlockRenderer = ({
             {fields
               .slice(i * per, (i + 1) * per)
               .map(f =>
-                formItemFor(bound.entityRef, f, fieldLabelOf, enumOptionsOf, fieldTypeOf)
+                formItemFor(
+            {
+              entityRef: bound.entityRef,
+              fieldLabelOf,
+              fieldTypeOf,
+              enumOptionsOf,
+              fieldSchemaOf,
+              entityRows,
+            },
+            f
+          )
               )}
           </StepsForm.StepForm>
         ))}

@@ -362,3 +362,73 @@ describe("列设置只留一个", () => {
     expect(note, "那条「不合并」的理由被删了").toContain("不合并");
   });
 });
+
+/**
+ * 字段声明那条线（2026-08-08，阶段④）。
+ *
+ * 阶段④本来是"批量灌 amis"。量完供给发现那条路兑现不了区块（见
+ * docs/区块建设-amis对照.md），但它照出了一件立刻能兑现的事：amis 把
+ * input-rating / input-range / input-password / switch 各做成独立控件，
+ * 一个字段该用哪个控件是**声明出来的**；我们这边声明早就有了
+ * （type + format + options + refEntityId），零件也早就装着
+ * （ProFormRate / ProFormSlider / ProFormSwitch / ProFormSegmented…全在
+ * @ant-design/pro-components 里），**中间那根线没接**。
+ *
+ * 更要命的是判定：`field-value-type.ts` 已经是全站的单一判定表，读侧
+ * （FieldValue）、内置表单（FieldEditor）、手机档（PhoneFormField）三处共读。
+ * 区块的表单族是**第四处，还自己写了一套更差的**——枚举一律 Select、
+ * boolean/ref/datetime 全掉进文本框兜底。这一组用例钉的就是"第四套没有回来"。
+ */
+describe("字段声明要真的走到表单控件", () => {
+  it("判定走那张共用表，这里不许自己写 if", () => {
+    // 这条是整组的要害。自己判 = 又一次漂移，而漂移的表现是"读的时候是进度
+    // 条、写的时候是裸数字框"，界面上两处分开看都正常。
+    const start = registry.indexOf("function formItemFor(");
+    const body = registry.slice(start, registry.indexOf("\n}\n", start));
+    expect(body, "表单族不读那张判定表了").toContain("resolveValueType(");
+    expect(body, "又开始自己按 format 判了").not.toMatch(/format === "/);
+    expect(body, "又开始自己按 type 判了").not.toMatch(/type === "/);
+  });
+
+  it("判定表给得出的每一档都得有零件接着 —— 少一档就掉进文本框", () => {
+    const start = registry.indexOf("function formItemFor(");
+    const body = registry.slice(start, registry.indexOf("\n}\n", start));
+    // 档位清单从判定表的类型定义里读，不在这里手抄：那边加一档，这里自动要求。
+    const vt = read("../live-runtime/field-value-type.ts");
+    const decl = vt.slice(
+      vt.indexOf("export type RuntimeValueType ="),
+      vt.indexOf(";", vt.indexOf("export type RuntimeValueType ="))
+    );
+    const cases = [...decl.matchAll(/\|\s*"(\w+)"/g)].map(m => m[1]);
+    expect(cases.length, "档位清单没读出来").toBeGreaterThan(10);
+    for (const c of cases)
+      expect(body, `档位 ${c} 没有对应控件，会掉进兜底文本框`).toContain(`case "${c}":`);
+  });
+
+  it("两个宿主都得开那扇门 —— 只开一个就是「预览好使、真应用不好使」", () => {
+    // 这正是②阶段复盘抓到的形状：装配预览接齐了，真实运行时一个都没接，
+    // 六个区块在真应用里全是死壳而渲染得完全正常。
+    expect(runtime, "真实运行时没接字段声明").toContain("fieldSchemaOf,");
+    expect(library, "装配预览没接字段声明").toContain("fieldSchemaOf={fieldSchemaOf}");
+  });
+
+  it("运行时那扇门要归一化，不许把原始声明直接扔进渲染器", () => {
+    // 格式与类型不匹配的声明要丢掉（number 声明 masked、string 声明 money
+    // 都是非法的）。不归一化的话，一个坏声明就能把手机号字段画成金额框。
+    const start = runtime.indexOf("const fieldSchemaOf");
+    expect(start, "运行时不查字段声明了？").toBeGreaterThan(-1);
+    const body = runtime.slice(start, start + 900);
+    expect(body, "format 没过归一化").toContain("normalizeFieldFormat");
+    expect(body, "options 没过归一化").toContain("normalizeFieldOptions");
+  });
+
+  it("对照台六种格式都得有承载字段 —— 看不见就等于没接上", () => {
+    // ①c 上吃过一次亏：六种字段语义写完了，但没有一个字段用得上，
+    // 全是死代码而屏幕上看不出来。
+    const start = library.indexOf("const FIELD_FORMAT");
+    expect(start, "对照台没有格式夹具了？").toBeGreaterThan(-1);
+    const body = library.slice(start, library.indexOf("};", start));
+    for (const fmt of ["money", "percent", "progress", "score", "rating", "masked"])
+      expect(body, `对照台上没有任何字段声明成 ${fmt}`).toContain(`"${fmt}"`);
+  });
+});

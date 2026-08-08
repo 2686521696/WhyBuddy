@@ -172,7 +172,7 @@ import {
   entityShowsSeed,
   seedRowCount,
 } from "./demo-seed";
-import { normalizeFieldOptions } from "./field-display";
+import { normalizeFieldFormat, normalizeFieldOptions } from "./field-display";
 import {
   loadRuntimeState,
   saveRuntimeState,
@@ -913,6 +913,41 @@ export function AppRuntimeScreen({
       model?.datamodel?.entities
         ?.find(e => e.id === entityId)
         ?.fields?.find(f => f.id === fieldId)?.type || undefined,
+    [model]
+  );
+  /**
+   * 字段的**完整声明**，表单族积木专用（2026-08-08，阶段④）。
+   *
+   * 上面 fieldLabelOf / fieldTypeOf 都是从同一个字段对象上摘一样东西下来。
+   * 阶段④要接 `format`（金额/评分/进度…）本来会加第三个，接着 ref 下拉又要
+   * 第四个（`refEntityId`）——每加一样就多一根线、两个宿主各改一处、护栏补
+   * 一条，**漏了不报错**。所以这里改成把字段声明整个传下去。
+   *
+   * 归一化在这里做，不推给渲染器：格式与类型不匹配的声明要丢掉（number 字段
+   * 声明 masked、string 字段声明 money 都是非法的），非法 tone 降级 default。
+   * 这一层的四个读侧消费者无一例外都归一化过，表单侧不该是那个例外——一个坏
+   * 声明就能把手机号字段画成金额框。
+   */
+  const fieldSchemaOf = React.useCallback(
+    (entityId: string, fieldId: string): AppFormFieldSchema | undefined => {
+      const field = model?.datamodel?.entities
+        ?.find(e => e.id === entityId)
+        ?.fields?.find(f => f.id === fieldId);
+      if (!field) return undefined;
+      const type = String(field.type || "string").toLowerCase();
+      const schema: AppFormFieldSchema = {
+        id: field.id,
+        label: field.name || field.id,
+        type,
+      };
+      const options = normalizeFieldOptions(type, field.options);
+      if (options.length > 0) schema.options = options;
+      const format = normalizeFieldFormat(type, (field as { format?: string }).format);
+      if (format) schema.format = format;
+      const refEntityId = (field as { refEntityId?: string }).refEntityId;
+      if (refEntityId) schema.refEntityId = refEntityId;
+      return schema;
+    },
     [model]
   );
 
@@ -1670,6 +1705,7 @@ export function AppRuntimeScreen({
     enumOptionsOf,
     fieldLabelOf,
     fieldTypeOf,
+    fieldSchemaOf,
   };
 
   const renderExperienceBlockScaffold = (

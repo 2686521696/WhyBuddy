@@ -37,7 +37,25 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
         name: "订单",
         fields: [
           { id: "name", name: "门店", type: "string" },
-          { id: "amount", name: "金额", type: "number" },
+          // ── 格式（2026-08-08，阶段④）────────────────────────────────
+          // 下面五个字段类型全是 number 或 string，控件却各不相同——差别只
+          // 来自 `format`。这条线此前**只有读侧接着**：表格/详情会把金额画成
+          // ¥ 千分位，而同一个字段进了表单还是个裸数字框。台子上摆一页表单，
+          // 就是为了让"表单也读格式了"这件事点得开、看得见。
+          { id: "amount", name: "金额", type: "number", format: "money" },
+          { id: "weekDelta", name: "周涨幅", type: "number", format: "percent" },
+          { id: "fulfillRate", name: "履约完成度", type: "number", format: "progress" },
+          { id: "healthScore", name: "健康分", type: "number", format: "score" },
+          { id: "starLevel", name: "服务星级", type: "number", format: "rating" },
+          { id: "contact", name: "联系电话", type: "string", format: "masked" },
+          // ref：候选是**另一张表的行**，不是枚举取值。此前掉进兜底分支变成
+          // 文本框——要用户手打一个行 id，等于没做。
+          {
+            id: "parentOrderId",
+            name: "关联母单",
+            type: "ref",
+            refEntityId: "order",
+          },
           // 枚举字段**必须带 options**，否则标签筛选行摊不出标签、表格也只画
           // 一个「-」。第一版漏了，台子上那一行是空的。
           {
@@ -50,6 +68,11 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
               { id: "done", label: "已完成", tone: "success" },
             ],
           },
+          // 枚举**按取值个数分三档**（阈值在 field-value-type.ts）。台子上三档
+          // 各摆一个，才看得出"2 个取值也逼人点开下拉"这件事真的改掉了：
+          //   status  3 个 → Segmented（≤3）
+          //   channel 5 个 → Radio.Group（≤6）
+          //   region  8 个 → Select（更多）
           {
             id: "channel",
             name: "渠道",
@@ -57,6 +80,24 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
             options: [
               { id: "online", label: "线上", tone: "default" },
               { id: "store", label: "门店", tone: "default" },
+              { id: "phone", label: "电话", tone: "default" },
+              { id: "agent", label: "代理", tone: "default" },
+              { id: "wholesale", label: "批发", tone: "default" },
+            ],
+          },
+          {
+            id: "region",
+            name: "大区",
+            type: "enum",
+            options: [
+              { id: "hd", label: "华东", tone: "default" },
+              { id: "hb", label: "华北", tone: "default" },
+              { id: "hn", label: "华南", tone: "default" },
+              { id: "hz", label: "华中", tone: "default" },
+              { id: "xn", label: "西南", tone: "default" },
+              { id: "xb", label: "西北", tone: "default" },
+              { id: "db", label: "东北", tone: "default" },
+              { id: "other", label: "其他", tone: "default" },
             ],
           },
           { id: "at", name: "下单日期", type: "date" },
@@ -186,6 +227,36 @@ export const RUNTIME_WIRING_MODEL: FiveSystemModel = {
           },
         ],
         layout: { metrics: ["n-metric"] },
+      },
+      // 第四页：**表单页**，验的是格式那条线（阶段④）。
+      //
+      // 一页之内两条路并排：中间六个字段靠 format 决定控件，末尾 status/at
+      // 没有 format，按类型回落成下拉/日期。都对了才叫"格式优先、类型兜底"。
+      //
+      // 走真实运行时而不是对照台：对照台自己造 FIELD_FORMAT 表，证明不了
+      // AppRuntimeScreen 真的从数据模型里读到了 format——那正是此前断掉的一环。
+      {
+        id: "order_form",
+        name: "新建订单（格式）",
+        kind: "form",
+        fieldBindings: ["order.name", "order.amount", "order.status"],
+        actionPermissions: ["order:create", "order:read"],
+        blocks: [
+          {
+            id: "f-form",
+            type: "RecordForm",
+            props: { title: "新建订单", submitText: "创建", layout: "vertical" },
+            binding: {
+              entityRef: "order",
+              fieldRefs: [
+                "name", "amount", "weekDelta", "fulfillRate",
+                "healthScore", "starLevel", "contact",
+                "status", "channel", "region", "parentOrderId", "at",
+              ],
+            },
+          },
+        ],
+        layout: { main: ["f-form"] },
       },
       // 第二页故意是 workbench —— 那一档由**固定骨架**画（积木不上屏）。
       // 台子上两页并排，才验得出"翻转默认"前后各是什么样、骨架有没有被改坏。

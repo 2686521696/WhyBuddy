@@ -66,7 +66,11 @@ import type {
 } from "./live-runtime/block-registry";
 import { isPhoneExperienceBlock } from "./live-runtime/phone-mobile/PhoneExperienceBlock";
 import type { RuntimeRow } from "./live-runtime/live-runtime";
-import type { NormalizedFieldOption } from "./live-runtime/field-display";
+import type {
+  FieldFormat,
+  NormalizedFieldOption,
+} from "./live-runtime/field-display";
+import type { AppFormFieldSchema } from "./live-runtime/app-runtime-schema";
 
 
 const PRIMARY = "#1677ff";
@@ -359,6 +363,11 @@ const FIELD_LABEL: Record<string, string> = {
   urgent: "加急",
   owner_id: "负责人",
   weekDelta: "周涨幅",
+  // 三个数值字段专为**格式**而设（阶段④）：类型都是 number，长相三样都不同，
+  // 靠的正是 format。少了它们，六种格式里有三种在对照台上根本没有承载体。
+  fulfillRate: "履约完成度",
+  healthScore: "健康分",
+  starLevel: "服务星级",
   orderId: "所属订单",
   action: "操作",
   operator: "操作人",
@@ -386,9 +395,32 @@ const FIELD_TYPE: Record<string, string> = {
   urgent: "boolean",
   owner_id: "ref",
   weekDelta: "number",
+  fulfillRate: "number",
+  healthScore: "number",
+  starLevel: "number",
   orderId: "ref",
   action: "string",
   operator: "string",
+};
+
+/**
+ * 字段的展示格式（2026-08-08，阶段④）。
+ *
+ * 类型决定用哪个控件**族**，格式决定这一族里的**哪一个**：三个字段同为
+ * number，money 出金额框、percent 出带 % 的数字框、progress 出滑杆、
+ * rating 出星星、score 出无上限数字框——差别全在格式上。
+ *
+ * 合法域见 five_system_legal.json 的 numberFormats / stringFormats，六种在这里
+ * **一次全露**：对照台上看不见就等于没接上——这条在 ①c 上已经吃过一次亏
+ * （六种字段语义写完了，但没有一个字段用得上，全是死代码而看不出来）。
+ */
+const FIELD_FORMAT: Record<string, FieldFormat> = {
+  amount: "money",
+  weekDelta: "percent",
+  fulfillRate: "progress",
+  healthScore: "score",
+  starLevel: "rating",
+  contact: "masked",
 };
 
 /**
@@ -431,28 +463,61 @@ const ORDER_LOGS: RuntimeRow[] = [
 }));
 
 
+/**
+ * 字段声明的**单一出口**（2026-08-08，阶段④）。
+ *
+ * 表单族原来要四个查询各问一次（标签/类型/取值/格式），加一样属性就要多接一
+ * 根线、两个宿主各改一处、护栏补一条。这里把上面四张夹具表拼成渲染器认识的
+ * 字段声明，以后加属性只改这一个函数。
+ *
+ * 真实运行时那边同名的 fieldSchemaOf 是从数据模型现查的——两边形状必须一样，
+ * 否则对照台上好使、真应用里不好使，而这一页存在的意义正是把这种差别照出来。
+ */
+function fieldSchemaOf(_entityRef: string, fieldId: string): AppFormFieldSchema {
+  const schema: AppFormFieldSchema = {
+    id: fieldId,
+    label: FIELD_LABEL[fieldId] ?? fieldId,
+    type: FIELD_TYPE[fieldId] ?? "string",
+  };
+  const options = ENUM_OPTIONS[fieldId];
+  if (options?.length) schema.options = options;
+  const format = FIELD_FORMAT[fieldId];
+  if (format) schema.format = format;
+  // ref 字段指向哪张表。夹具里 orderLog.orderId 指向订单；owner_id 没有对应
+  // 实体，**故意留空**——渲染器该退回文本框而不是编一个假下拉，这一档也得
+  // 在对照台上看得见。
+  if (fieldId === "orderId") schema.refEntityId = "order";
+  return schema;
+}
+
 const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
   orderLog: ORDER_LOGS,
   order: [
     { name: "人民路店", amount: 428, status: "done", channel: "线上", at: "2026-08-06",
       contact: "renmin@example.com", detailUrl: "https://example.com/store/1",
       cover: "/brand/miantuan-mark.png", weekDelta: 12.4, urgent: true, owner_id: "u-1",
+      fulfillRate: 92, healthScore: 88, starLevel: 5,
       remark: "客户要求当日达，已与配送确认时间窗；如遇雨天顺延至次日上午，需提前电话告知。" },
     { name: "高新店", amount: 366, status: "doing", channel: "门店", at: "2026-08-05",
       contact: "gaoxin@example.com", detailUrl: "https://example.com/store/2",
-      cover: "/assets/sliderule-mark.svg", weekDelta: -3.1, urgent: false, owner_id: "u-2", remark: "常规" },
+      cover: "/assets/sliderule-mark.svg", weekDelta: -3.1, urgent: false, owner_id: "u-2",
+      fulfillRate: 74, healthScore: 63, starLevel: 4, remark: "常规" },
     { name: "南湖店", amount: 291, status: "done", channel: "线上", at: "2026-08-05",
       contact: "nanhu@example.com", detailUrl: "https://example.com/store/3",
-      cover: "/brand/logo.png", weekDelta: 8.7, urgent: false, owner_id: "u-1", remark: "常规" },
+      cover: "/brand/logo.png", weekDelta: 8.7, urgent: false, owner_id: "u-1",
+      fulfillRate: 88, healthScore: 81, starLevel: 4, remark: "常规" },
     { name: "城东店", amount: 244, status: "todo", channel: "电话", at: "2026-08-04",
       contact: "chengdong@example.com", detailUrl: "https://example.com/store/4",
-      cover: "/assets/sliderule_icon_flat_transparent.png", weekDelta: 0, urgent: true, owner_id: "u-3", remark: "待确认收货地址" },
+      cover: "/assets/sliderule_icon_flat_transparent.png", weekDelta: 0, urgent: true, owner_id: "u-3",
+      fulfillRate: 31, healthScore: 42, starLevel: 2, remark: "待确认收货地址" },
     { name: "西溪店", amount: 187, status: "doing", channel: "门店", at: "2026-08-03",
       contact: "xixi@example.com", detailUrl: "https://example.com/store/5",
-      cover: "/brand/transLogo.png", weekDelta: -15.2, urgent: false, owner_id: "u-2", remark: "常规" },
+      cover: "/brand/transLogo.png", weekDelta: -15.2, urgent: false, owner_id: "u-2",
+      fulfillRate: 56, healthScore: 55, starLevel: 3, remark: "常规" },
     { name: "湖畔店", amount: 132, status: "done", channel: "线上", at: "2026-08-02",
       contact: "hupan@example.com", detailUrl: "https://example.com/store/6",
-      cover: "/assets/sliderule_icon_card_transparent.png", weekDelta: 5.5, urgent: false, owner_id: "u-3", remark: "常规" },
+      cover: "/assets/sliderule_icon_card_transparent.png", weekDelta: 5.5, urgent: false, owner_id: "u-3",
+      fulfillRate: 100, healthScore: 95, starLevel: 5, remark: "常规" },
   ].map((values, i) => ({
     id: `order-${i + 1}`,
     values,
@@ -553,7 +618,24 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
         block: {
           id: "demo-RecordForm", type: "RecordForm",
           props: { title: "新建订单", submitText: "创建", layout: "vertical" },
-          binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "channel", "at"] },
+          // 这份字段表是**格式与类型的对照实验**（阶段④）：中间五个全是 number
+          // 或 string，长相却各不相同，差别只来自 format；两头的 status/at 没有
+          // format，走类型回落。一屏之内两条路都能看见，接没接上一眼就知道。
+          //
+          //   amount      number + money    → 金额框（¥ 千分位）
+          //   weekDelta   number + percent  → 数字框带 % 后缀
+          //   fulfillRate number + progress → 滑杆
+          //   healthScore number + score    → 无上限数字框
+          //   starLevel   number + rating   → 星星
+          //   contact     string + masked   → 密码框（不摊在屏幕上）
+          //   status/at   无 format          → 下拉 / 日期（按类型）
+          binding: {
+            entityRef: "order",
+            fieldRefs: [
+              "name", "amount", "weekDelta", "fulfillRate",
+              "healthScore", "starLevel", "contact", "status", "at",
+            ],
+          },
         },
         extra: {},
       },
@@ -909,6 +991,7 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
           chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
           fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
           fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+          fieldSchemaOf={fieldSchemaOf}
           enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
           {...extra}
         />
@@ -920,6 +1003,7 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
         chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
         fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
         fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+        fieldSchemaOf={fieldSchemaOf}
         enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
         {...demoStateProps}
         {...extra}
@@ -1011,6 +1095,7 @@ function SavedPresetCard({ preset }: { preset: SavedPreset }) {
       chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
       fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
       fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+      fieldSchemaOf={fieldSchemaOf}
       enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
       workflow={WORKFLOW}
     >
@@ -1558,6 +1643,11 @@ function AssembledPageModal({
       targetColumns={targetColumnsOf(b)}
       fieldLabelOf={(_e: string, f: string) => FIELD_LABEL[f] ?? f}
       fieldTypeOf={(_e: string, f: string) => FIELD_TYPE[f]}
+      // 字段的**呈现格式**（money/percent/masked…）跟类型是两回事：类型决定
+      // 用哪个控件族，格式决定这一族里的哪一个。五系统合法值那边早就声明了
+      // numberFormats/stringFormats，运行时 schema 也一直带着 format，只是此前
+      // 没有任何一处读它——表单里一律画成裸数字框。
+      fieldSchemaOf={fieldSchemaOf}
       enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
       pageActions={previewActions}
       onAction={handleAction}
