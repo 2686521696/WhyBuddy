@@ -210,18 +210,29 @@ def test_slot_rationales_reach_the_generation_contract():
             assert rationale in prompt, f"{block['type']} 的槽位理由没进 prompt"
 
 
-def test_contract_explains_what_the_slots_look_like():
-    """槽位的**渲染形态**要交代清楚——这是那一类违规的根因。
+def test_contract_explains_what_the_regions_look_like():
+    """区域的**渲染形态**要交代清楚——这是那一类违规的根因。
 
-    此前提示词只给槽位名字，从没说过 content 渲染在页面最下面、secondary 只有
-    1/3 宽。模型不知道形态就只能按名字猜，逐块补理由是治单点，这一句才治这一类。
+    此前提示词只给名字，从没说过它们渲染成什么样。模型不知道形态就只能按名字
+    猜，逐块补理由是治单点，这一句才治这一类。
+
+    2026-08-08 第三轮换到区域词汇，同时补上这轮实测出来的那条最容易错的规则：
+    **关键数字放哪儿**——仪表盘用全宽 metrics（IntroduceRow 那一排），列表/详情
+    页放 headerExtra（页头右侧，不占正文）。写死一句是因为新区域都是 optional，
+    而 optional 在模型眼里约等于"可以不管"（实测：不写这句，detail 页只用
+    header/main/aside，把状态和金额丢在主区里；写了之后 headerExtra 就用上了）。
     """
     from services import schema_legal
 
     prompt = schema_legal.experience_block_prompt_block()
-    assert "What the slots actually look like" in prompt
-    assert "2/3 vs 1/3" in prompt
-    assert "summary → primary/secondary → activity → content" in prompt
+    assert "What the regions actually look like" in prompt
+    # 唯一的窄区域必须点名——这是"别把宽的东西塞进去"的判据
+    assert "aside is the ONLY narrow region" in prompt
+    # 页头带的阅读顺序
+    assert "header / headerExtra / headerContent / filters" in prompt
+    # 关键数字的去处
+    assert "headerExtra" in prompt
+    assert "never open such a page with a full-width band of metric cards" in prompt
 
 
 def test_contract_teaches_responsive_business_page_grid():
