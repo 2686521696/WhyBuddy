@@ -181,7 +181,79 @@ format    压根不读 → 金额/评分/进度全是裸数字框
 
 ---
 
-## 四、阶段④剩下的、和不做的
+## 四、后续：基础组件从 139 → 217（2026-08-08 同日）
+
+上面的结论指出「amis 的供给在基础组件那一层」。用户接着问了一句：
+「基础组件是不是可以增加一项『自定义组件』」。**该加，而且供给不是 amis。**
+
+### 先把四个库都数了
+
+| 库 | 库里有 | 目录原先收了 | 现在 |
+|---|---:|---:|---:|
+| antd（桌面） | 78 | 67 | 65 |
+| antd-mobile（手机） | 83 | 72 | 78 |
+| **ProComponents** | **118** | **1** | **66** |
+| 自定义（非组件库） | — | 1（ECharts，混在 antd 档里） | 8 |
+| **合计** | | **139** | **217** |
+
+> antd 桌面从 67 变 65 不是删了两条：`ECharts` 归了自定义档、`StatisticCard`
+> 归了 ProComponents 档——它们本来就不是 antd 组件，只是此前没有一栏能说。
+
+**最扎眼的是 ProComponents 那一行。**这批组件区块渲染器天天在用
+（`block-registry.tsx` 里 ProTable、35 个 ProForm*、ProCard、ProDescriptions、
+DrawerForm、ModalForm、StepsForm 全在跑），但目录里只登记了一个。目录是 AI
+组装区块时看得见的那份清单（`propose_blocks` 的 `base_components` 就是从这里
+传过去的）——**没登记就等于对组装器不存在**。
+
+这跟「139 个基础组件里 118 个没被区块用上」是同一个病的反面：那边是登记了
+没人用，这边是用着却没登记。两边都只有一个后果——覆盖缺口看不见。
+
+### 「自定义组件」这一档：把 amis 当地图，不当零件
+
+amis-ui 那 120 个组件逐个跟 antd 对了一遍，**真正 antd 没有的只有 26 个**，
+而那 26 个本身也是别人库的封装（CodeMirror、Tinymce、百度/高德地图、
+react-pdf、signature）。
+
+**不抄它的封装，照它的清单直接接原始库。**理由不是许可证（Apache-2.0，用户
+明确说过不用管），是主题：amis-ui 每个组件都被 `themeable()` 包着，样式走它
+自己的 SCSS 变量体系（`packages/amis-ui/scss/themes/` 下 cxd / antd / ang /
+dark 四套）。拿一个组件就得拖 `amis-core` 加它整套 SCSS 构建，跟我们的
+ConfigProvider 是两套东西——**视觉会分裂成两套**。
+
+这一批 7 条，**零新依赖**（全用已经装着的库）：
+
+| 组件 | 用的什么 | 对应 amis |
+|---|---|---|
+| CodeEditor / JsonEditor / SqlEditor / MarkdownEditor | `@uiw/react-codemirror` + 四个 lang 包 | `editor` / `json-editor` |
+| MarkdownView | `react-markdown` + `remark-gfm` | `markdown` |
+| SignaturePad | 无依赖，canvas + Pointer Events 五十行 | `input-signature` |
+| ExcelExportButton | `xlsx`（附件解析一直在用） | — |
+
+CodeMirror 走 `React.lazy`：一页要渲染两百多个示例，静态引进来等于每次打开
+这一页都先下载一个编辑器（同仓库 `CodeMirrorPanel` 早就定了这条规矩）。
+
+### 还差的四样，以及为什么还没做
+
+| 能力 | 卡在哪 |
+|---|---|
+| PDF 查看器 | `pdfjs-dist` 已装（附件抽文本在用），但**渲染**要一份示例 PDF 资源，中文字体嵌入是另一摊事 |
+| 富文本编辑 | 没有已装的库。拿 contentEditable 自己造质量没保证——该走「引一个成熟库」的决策，不该在补目录时顺手发明 |
+| 地图选点 | 百度/高德都要 API key，是产品决策不是接线 |
+| 条形码 | 没有已装的库（二维码 antd 自带 QRCode） |
+
+### 验收
+
+`/base-catalog.html`（dev-only 逐条渲染台）：**217 条，渲染失败 0**。
+
+台子逮到一个只有量了才看得见的问题：`ProLayout` 内部大量 `position: fixed`，
+而 fixed 相对视口定位，父级 `overflow: hidden` 关不住——第一版它的侧边栏
+**铺满了整个目录页**，另外 216 条全被压在下面，而错误边界全绿（布局逃逸不是
+异常）。加 `transform: translateZ(0)` 让那个格子成为 fixed 后代的包含块才关住。
+`FooterToolbar` 同病同治。这条已钉进用例。
+
+---
+
+## 五、阶段④剩下的、和不做的
 
 **剩下的**（都在表单控件层，不在区块层）：
 

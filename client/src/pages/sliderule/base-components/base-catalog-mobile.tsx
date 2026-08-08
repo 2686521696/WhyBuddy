@@ -23,6 +23,12 @@
 
 import React from "react";
 import {
+  CalendarPickerView,
+  CascadePickerView,
+  CascaderView,
+  DatePickerView,
+  Ellipsis,
+  PickerView,
   ActionSheet,
   Avatar,
   Badge,
@@ -1104,6 +1110,99 @@ export const MOBILE_BASE_COMPONENTS: BaseComponentDef[] = [
     render: () => (
       <PhoneFrame>
         <div style={{ padding: 14 }}>加载中 <DotLoading /></div>
+      </PhoneFrame>
+    ),
+  },
+
+  // ── 内联版选择器（2026-08-08 补齐）───────────────────────────────────
+  //
+  // antd-mobile 里每个弹层选择器都配一个 `*View`：同样的选择逻辑，**不弹层，
+  // 直接嵌在页面里**。此前一个都没收，于是"内联选择"这项能力在目录里等于
+  // 不存在——而它恰恰是移动端筛选面板、分步表单里最常见的形态（弹层套弹层
+  // 在手机上是很糟的体验）。
+  {
+    name: "M.PickerView", label: "内联选择器", description: "滚轮选择器的内嵌版，不弹层，直接占一块版面。",
+    group: "数据录入", platform: "mobile",
+    render: () => (
+      <PhoneFrame>
+        <PickerView
+          columns={[[
+            { label: "选项一", value: "a" },
+            { label: "选项二", value: "b" },
+            { label: "选项三", value: "c" },
+          ]]}
+          defaultValue={["a"]}
+        />
+      </PhoneFrame>
+    ),
+  },
+  {
+    name: "M.DatePickerView", label: "内联日期选择", description: "日期滚轮的内嵌版。筛选面板里比弹层顺手。",
+    group: "数据录入", platform: "mobile",
+    render: () => (
+      <PhoneFrame>
+        <DatePickerView defaultValue={new Date("2026-08-08")} />
+      </PhoneFrame>
+    ),
+  },
+  {
+    name: "M.CascaderView", label: "内联级联选择", description: "多级联动的内嵌版，逐级收窄。",
+    group: "数据录入", platform: "mobile",
+    render: () => (
+      <PhoneFrame>
+        <CascaderView
+          options={[
+            { label: "一级甲", value: "a", children: [{ label: "二级甲", value: "a1" }] },
+            { label: "一级乙", value: "b", children: [{ label: "二级乙", value: "b1" }] },
+          ]}
+          defaultValue={["a", "a1"]}
+        />
+      </PhoneFrame>
+    ),
+  },
+  {
+    name: "M.CascadePickerView", label: "内联级联滚轮", description: "级联 + 滚轮的内嵌版，省地方；省市区这类固定层级用它。",
+    group: "数据录入", platform: "mobile",
+    render: () => (
+      <PhoneFrame>
+        <CascadePickerView
+          options={[
+            { label: "一级甲", value: "a", children: [{ label: "二级甲", value: "a1" }] },
+            { label: "一级乙", value: "b", children: [{ label: "二级乙", value: "b1" }] },
+          ]}
+          defaultValue={["a", "a1"]}
+        />
+      </PhoneFrame>
+    ),
+  },
+  {
+    name: "M.CalendarPickerView", label: "内联日历选择", description: "整月日历的内嵌版，可选区间。订房、排班这类要看全月的场景。",
+    group: "数据录入", platform: "mobile",
+    render: () => (
+      // 它**按月无限往下铺**（不是 bug，日历本来就该能一直翻）。不给高度的话
+      // 这一格会长到八百多像素，把整面墙的瀑布流拉变形。给个高度 + 自己滚动，
+      // 跟真实用法（放在一个可滚区域里）也更接近。
+      <PhoneFrame height={280}>
+        <div style={{ height: "100%", overflowY: "auto" }}>
+          <CalendarPickerView selectionMode="range" />
+        </div>
+      </PhoneFrame>
+    ),
+  },
+  {
+    name: "M.Ellipsis", label: "文本省略", description: "长文本按行数截断，可「展开/收起」。手机屏窄，这个几乎每页都要用。",
+    group: "数据展示", platform: "mobile",
+    render: () => (
+      <PhoneFrame>
+        <div style={{ padding: 14, fontSize: 13 }}>
+          <Ellipsis
+            direction="end"
+            rows={2}
+            expandText="展开"
+            collapseText="收起"
+            content={"这是一段很长的说明文字，用来演示按行数截断之后如何展开与收起。".repeat(3)}
+          />
+        </div>
       </PhoneFrame>
     ),
   },

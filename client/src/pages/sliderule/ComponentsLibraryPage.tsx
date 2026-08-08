@@ -48,7 +48,11 @@ import { useScrollerIn } from "@/pages/agent-loop/dashboard/useScrollerIn";
 import { spanForColumnCount } from "@/pages/agent-loop/dashboard/app-wall-span";
 import { BLOCK_DEFINITIONS, ExperienceBlockBoundary } from "./live-runtime/block-registry";
 import { interleaveWide, isWideBlock } from "./block-wall-order";
-import { BASE_COMPONENTS, BASE_GROUPS } from "./base-components/base-catalog";
+import {
+  BASE_COMPONENTS,
+  BASE_GROUPS,
+  BASE_SOURCES,
+} from "./base-components/base-catalog";
 import BusinessPageGrid from "./live-runtime/BusinessPageGrid";
 import {
   resolveBusinessGrid,
@@ -1852,10 +1856,12 @@ function BaseComponentWall({
   group,
   platform,
   linked,
+  source,
 }: {
   group: string;
   platform: string;
   linked: string;
+  source: string;
 }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
@@ -1866,6 +1872,7 @@ function BaseComponentWall({
       BASE_COMPONENTS.filter(c => {
         if (group !== "all" && c.group !== group) return false;
         if (platform !== "all" && c.platform !== platform) return false;
+        if (source !== "all" && c.source !== source) return false;
         const used = (BLOCKS_USING[c.name] ?? []).length > 0;
         if (linked === "linked" && !used) return false;
         if (linked === "unlinked" && used) return false;
@@ -2018,6 +2025,7 @@ export default function ComponentsLibraryPage() {
   const [baseGroup, setBaseGroup] = React.useState<string>("all");
   const [basePlatform, setBasePlatform] = React.useState<string>("all");
   const [baseLinked, setBaseLinked] = React.useState<string>("all");
+  const [baseSource, setBaseSource] = React.useState<string>("all");
   const [assembled, setAssembled] = React.useState<AssembledPage | null>(null);
   // 意图 —— 五阶段的第一阶段。说不出"这一页是给谁用的、要干什么"，后面
   // 全是猜的，所以它是必填而不是可选的高级选项。
@@ -2226,9 +2234,11 @@ export default function ComponentsLibraryPage() {
     if (mode === "base") {
       const byGroup: Record<string, number> = {};
       const byPlatform: Record<string, number> = {};
+      const bySource: Record<string, number> = {};
       for (const c of BASE_COMPONENTS) {
         byGroup[c.group] = (byGroup[c.group] ?? 0) + 1;
         byPlatform[c.platform] = (byPlatform[c.platform] ?? 0) + 1;
+        if (c.source) bySource[c.source] = (bySource[c.source] ?? 0) + 1;
       }
       return [
         {
@@ -2273,6 +2283,23 @@ export default function ComponentsLibraryPage() {
             { value: "all", label: "全部", count: BASE_COMPONENTS.length },
             { value: "pc", label: "桌面端", count: byPlatform.pc ?? 0 },
             { value: "mobile", label: "手机端", count: byPlatform.mobile ?? 0 },
+          ],
+        },
+        // 来源（2026-08-08）。这一栏不只是筛选，它把"下一个量级从哪来"直接
+        // 摆在界面上：antd 两档基本到顶（78 收 67 / 83 收 78），能长的是
+        // ProComponents 和自定义那两档。
+        {
+          key: "source",
+          label: "来源",
+          value: baseSource,
+          onChange: setBaseSource,
+          options: [
+            { value: "all", label: "全部", count: BASE_COMPONENTS.length },
+            ...BASE_SOURCES.filter(x => bySource[x.value]).map(x => ({
+              value: x.value,
+              label: x.label,
+              count: bySource[x.value],
+            })),
           ],
         },
       ];
@@ -2330,6 +2357,7 @@ export default function ComponentsLibraryPage() {
     baseGroup,
     basePlatform,
     baseLinked,
+    baseSource,
     industry,
     industries,
     presetCount,
@@ -2536,7 +2564,12 @@ export default function ComponentsLibraryPage() {
       )}
 
       {mode === "base" ? (
-        <BaseComponentWall group={baseGroup} platform={basePlatform} linked={baseLinked} />
+        <BaseComponentWall
+          group={baseGroup}
+          platform={basePlatform}
+          linked={baseLinked}
+          source={baseSource}
+        />
       ) : mode === "presets" ? (
         <>
           {/* 行业筛选：取值来自库里真实存在的行业，不是我们预先定死的一张表。

@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+const read = (rel: string) =>
+  readFileSync(new URL(rel, import.meta.url), "utf8");
+
 const pageSource = readFileSync(
   new URL("../ComponentsLibraryPage.tsx", import.meta.url),
   "utf8"
@@ -304,5 +307,112 @@ describe("components library UI contract", () => {
       "aria-label={`${item.label}相对排名进度`}"
     );
     expect(htmlSource).not.toContain("maximum-scale");
+  });
+});
+
+/**
+ * 基础组件目录的四个来源（2026-08-08）。
+ *
+ * ## 这一批是怎么来的
+ *
+ * 用户问「基础组件能不能再上一个量级」。数完四个库：
+ *
+ *     antd（桌面）        库里 78，目录收了 67  ← 基本到顶
+ *     antd-mobile（手机）  库里 83，目录收了 72  ← 也基本到顶
+ *     pro-components      库里 118，目录收了 1   ← **下一个量级在这**
+ *     amis-ui             库里 120，与 antd 重的 88，真新的只有 26
+ *
+ * 139 → 217。补的是 ProComponents 65 条、自定义 7 条、antd-mobile 内联选择器
+ * 6 条。同时把 `source` 这一栏加进契约——ECharts 一直不是 antd 组件，此前
+ * 没有任何一栏能把这件事说出来。
+ *
+ * 逐条能不能渲染由 dev 台子看（/base-catalog.html，217 条 0 失败）；
+ * 这里钉的是**结构上不会悄悄退化**的那几条。
+ */
+describe("基础组件目录 · 四个来源", () => {
+  const catalogSrc = read("../base-components/base-catalog.tsx");
+  const proSrc = read("../base-components/base-catalog-pro.tsx");
+  const customSrc = read("../base-components/base-catalog-custom.tsx");
+
+  it("四个来源的条目都汇进了总表 —— 建了文件没接进去等于白建", () => {
+    const assembled = catalogSrc.slice(
+      catalogSrc.indexOf("export const BASE_COMPONENTS"),
+      catalogSrc.indexOf("];", catalogSrc.indexOf("export const BASE_COMPONENTS"))
+    );
+    for (const part of [
+      "PC_BASE_COMPONENTS",
+      "MOBILE_BASE_COMPONENTS",
+      "PRO_BASE_COMPONENTS",
+      "CUSTOM_BASE_COMPONENTS",
+    ]) {
+      expect(assembled, `${part} 没汇进总表`).toContain(part);
+    }
+  });
+
+  it("前两档的 source 由所在文件补默认值，且**条目自己写的优先**", () => {
+    // 这条顺序很要害：`{ source: "antd", ...c }` 才是"默认值"，
+    // `{ ...c, source: "antd" }` 是"强制覆盖"——后者会把 ECharts 和
+    // StatisticCard 重新盖回 antd，而它们本来就不是。
+    expect(catalogSrc).toContain('...PC_BASE_COMPONENTS.map(c => ({ source: "antd" as const, ...c }))');
+    expect(catalogSrc).toContain(
+      '...MOBILE_BASE_COMPONENTS.map(c => ({ source: "antd-mobile" as const, ...c }))'
+    );
+  });
+
+  it("ECharts 归自定义档 —— 它一直不是 antd 组件，只是以前没地方说", () => {
+    const i = catalogSrc.indexOf('name: "ECharts"');
+    expect(i).toBeGreaterThan(-1);
+    expect(catalogSrc.slice(i, i + 260)).toContain('source: "custom"');
+  });
+
+  it("ProComponents 那一档每条都标了来源 —— 漏一条它就被当成 antd", () => {
+    const entries = (proSrc.match(/^ {4}name: "/gm) ?? []).length;
+    const sourced = (proSrc.match(/source: "pro-components"/g) ?? []).length;
+    // formItem() 与 ProField.* 两个样板各带一处 source，对象字面量条目各带一处
+    expect(sourced, "有对象字面量条目没标 source").toBeGreaterThanOrEqual(entries);
+  });
+
+  it("**ProLayout / FooterToolbar 必须留着 transform** —— 去掉整页会被它们盖住", () => {
+    // 这两个组件内部大量 position:fixed。fixed 相对视口定位，父级
+    // `overflow:hidden` 关不住它——第一版 ProLayout 的侧边栏铺满了整个目录页，
+    // 另外 216 条全被压在下面，而错误边界全绿（布局逃逸不是异常）。
+    //
+    // transform 一加，这个元素就成了 fixed 后代的包含块（CSS Transforms
+    // 规范），它们才老实待在格子里。删掉这一行不会报错，只会白屏——所以钉住。
+    for (const name of ["ProLayout", "FooterToolbar"]) {
+      const i = proSrc.indexOf(`name: "${name}"`);
+      expect(i, `${name} 没了？`).toBeGreaterThan(-1);
+      expect(
+        proSrc.slice(i, i + 1400),
+        `${name} 的 transform 包含块没了 —— 它内部的 fixed 会盖住整页`
+      ).toContain("translateZ(0)");
+    }
+  });
+
+  it("自定义档的重库走懒加载 —— 一页两百多个示例，不能开页就下一个编辑器", () => {
+    expect(customSrc, "CodeMirror 变成静态 import 了").not.toMatch(
+      /^import CodeMirror from/m
+    );
+    expect(customSrc).toContain("React.lazy");
+    expect(customSrc).toContain('import("@uiw/react-codemirror")');
+  });
+
+  it("自定义档不引新依赖 —— 这一批的前提就是「把装着没用的挖出来」", () => {
+    // 只允许出现已经在 package.json 里的那几个。新增依赖不是不行，但那是
+    // 一个要单独决策的动作，不该混在"补目录"里悄悄发生。
+    const dyn = [...customSrc.matchAll(/import\("([^"]+)"\)/g)].map(m => m[1]);
+    const allowed = new Set([
+      "@uiw/react-codemirror",
+      "@uiw/codemirror-theme-github",
+      "@codemirror/lang-javascript",
+      "@codemirror/lang-json",
+      "@codemirror/lang-sql",
+      "@codemirror/lang-markdown",
+      "react-markdown",
+      "remark-gfm",
+      "xlsx",
+    ]);
+    const unexpected = dyn.filter(d => !allowed.has(d));
+    expect(unexpected, `自定义档引了新依赖：${unexpected.join(", ")}`).toEqual([]);
   });
 });

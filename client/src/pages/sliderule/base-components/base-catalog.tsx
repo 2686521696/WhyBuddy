@@ -103,11 +103,35 @@ import {
 import { StatisticCard } from "@ant-design/pro-components";
 import { InboxOutlined, UploadOutlined } from "@ant-design/icons";
 import { MOBILE_BASE_COMPONENTS } from "./base-catalog-mobile";
+import { PRO_BASE_COMPONENTS } from "./base-catalog-pro";
+import { CUSTOM_BASE_COMPONENTS } from "./base-catalog-custom";
 
 /** 官方分组（antd 的 index.zh-CN.md 里那个 group 字段） */
 export type BaseGroup = "通用" | "布局" | "导航" | "数据录入" | "数据展示" | "反馈" | "其他";
 
 export type BasePlatform = "pc" | "mobile";
+
+/**
+ * 这个组件是**哪儿来的**（2026-08-08）。
+ *
+ * 此前目录里只有 antd 与 antd-mobile，来源不言自明所以没有这一栏。加它是因为
+ * 用户提了一句要害的话：「基础组件是不是可以增加一项『自定义组件』」。
+ *
+ * 查了一遍供给才发现这一栏早就该有了：
+ *
+ *     antd（桌面）        库里 78 个，目录收了 67 —— **基本到顶**
+ *     antd-mobile（手机）  库里 83 个，目录收了 72 —— 也基本到顶
+ *     pro-components      库里 118 个，目录收了 1  —— **已经装着，几乎没登记**
+ *     自定义（非组件库）    ECharts 一个，一直混在里面没标出来
+ *
+ * pro-components 那 117 个是最扎眼的一条：区块渲染器天天在用（ProTable /
+ * 35 个 ProForm* / ProCard / DrawerForm / StepsForm 全在跑），但目录里没有，
+ * 于是**AI 组装区块时看不见它们**。这跟"139 个里 118 个没被区块用上"是同一个
+ * 病的反面——那边是登记了没人用，这边是用着却没登记。
+ *
+ * 标出来之后，"下一个量级从哪来"这个问题在界面上就能直接看见答案。
+ */
+export type BaseSource = "antd" | "antd-mobile" | "pro-components" | "custom";
 
 export interface BaseComponentDef {
   /** 组件名，与官方一致（Input / DatePicker…） */
@@ -118,6 +142,8 @@ export interface BaseComponentDef {
   description: string;
   group: BaseGroup;
   platform: BasePlatform;
+  /** 出处。不填按 antd / antd-mobile 推（见 BASE_COMPONENTS 的组装处）。 */
+  source?: BaseSource;
   /** 通用示例。**不带业务数据**——出现"订单""门店"就是滑回业务积木那层了 */
   render: () => React.ReactNode;
 }
@@ -1044,6 +1070,7 @@ export const PC_BASE_COMPONENTS: BaseComponentDef[] = [
   // 而对账用例正是靠名字存不存在来判对错的。
   {
     name: "StatisticCard",
+    source: "pro-components",
     label: "统计卡片",
     description:
       "ProComponents 的统计卡：数值 + 说明 + 趋势，比裸 Statistic 多一层卡片与分组能力。",
@@ -1058,6 +1085,9 @@ export const PC_BASE_COMPONENTS: BaseComponentDef[] = [
   },
   {
     name: "ECharts",
+    // 这一条是"自定义组件"这一档**原本就存在的唯一成员**——它的说明一直写着
+    // "它不是 Ant Design 组件"，只是没有一栏能把这件事标出来。
+    source: "custom",
     label: "图表",
     description:
       "ECharts 图表容器。折线/柱状/饼图等由配置决定；它不是 Ant Design 组件，但已装在依赖里，是图表这项能力的唯一来源。",
@@ -1259,12 +1289,32 @@ export const PC_BASE_COMPONENTS: BaseComponentDef[] = [
 ];
 
 /**
- * 全量 = PC + 移动。移动端在 base-catalog-mobile.tsx，分文件是因为两边加起来
- * 一百多条，单文件读不动；契约（BaseComponentDef）是同一个。
+ * 全量 = antd 桌面 + antd-mobile + ProComponents + 自定义。
+ *
+ * 分四个文件是因为加起来两百多条，单文件读不动；契约（BaseComponentDef）
+ * 是同一个。
+ *
+ * **`source` 在这里补默认值**，而不是让每条都写一遍：前两档的来源由它在
+ * 哪个文件里决定，重复写 200 遍只会漏。后两档在各自文件里显式标了。
  */
 export const BASE_COMPONENTS: BaseComponentDef[] = [
-  ...PC_BASE_COMPONENTS,
-  ...MOBILE_BASE_COMPONENTS,
+  ...PC_BASE_COMPONENTS.map(c => ({ source: "antd" as const, ...c })),
+  ...MOBILE_BASE_COMPONENTS.map(c => ({ source: "antd-mobile" as const, ...c })),
+  ...PRO_BASE_COMPONENTS,
+  ...CUSTOM_BASE_COMPONENTS,
+];
+
+/**
+ * 来源分档，与 BaseSource 同序。
+ *
+ * 这一栏在界面上是个筛选维度，也是「下一个量级从哪来」的答案本身：
+ * antd 两档基本到顶，能长的是后两档。
+ */
+export const BASE_SOURCES: Array<{ value: BaseSource; label: string }> = [
+  { value: "antd", label: "Ant Design" },
+  { value: "antd-mobile", label: "Ant Design Mobile" },
+  { value: "pro-components", label: "ProComponents" },
+  { value: "custom", label: "自定义组件" },
 ];
 
 export const BASE_GROUPS: BaseGroup[] = [
