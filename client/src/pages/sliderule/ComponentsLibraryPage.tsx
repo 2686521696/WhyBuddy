@@ -354,6 +354,33 @@ const SEARCH = buildIndex(
   name => BLOCKS_USING[name] ?? []
 );
 
+/**
+ * 卡片阴影。**必须走行内样式，不能用 Tailwind 的 `shadow-[…]` 类**。
+ *
+ * 2026-08-08 用户说"阴影再多一丢丢"，去量才发现：这一页三处卡片上写了半年的
+ * `shadow-[0_3px_14px_rgba(15,23,42,0.10)]` **一次都没生效过**，屏幕上一直是
+ * antd Card 自己那三层默认阴影。
+ *
+ * 原因不是拼错、也不是没被 Tailwind 扫到——那条规则确实生成了，实测就在
+ * CSS 里：
+ *
+ *     Tailwind  @layer utilities { .shadow-\[0_4px_18px…\] { … } }
+ *     antd      （无 layer）      :where(.css-…).ant-card:not(.ant-card-bordered) { … }
+ *
+ * **无 layer 的样式整体压过任何 layer 里的样式**，跟选择器权重无关（antd 那条
+ * 还特意用了 `:where()` 把权重降到 0，照样赢）。所以只要组件是 antd 的，
+ * Tailwind 的工具类就盖不住它自带的那几个属性。
+ *
+ * 行内样式没有这个问题——它在层叠里高于所有规则。
+ *
+ * 想从根上解决得让 antd 也进 layer（StyleProvider 的 `layer` 选项），那是全站
+ * 行为，不该在"把卡片阴影调深一点"这件事里顺手改。
+ */
+const CARD_SHADOW = "0 4px 18px rgba(15, 23, 42, 0.14)";
+
+/** 次级卡（提议卡、区域分组卡）用更轻的一档，同样只能走行内样式。 */
+const CARD_SHADOW_SOFT = "0 1px 6px rgba(15, 23, 42, 0.08)";
+
 const SLOT_LABEL: Record<string, string> = {
   summary: "摘要区",
   primary: "主区",
@@ -1060,8 +1087,17 @@ function BlockCard({
       data-testid={`component-card-${block.type}`}
       size="small"
       variant="borderless"
-      styles={{ body: { padding: 0, overflow: "hidden", position: "relative" } }}
-      className="group w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
+      // 12px 内边距（2026-08-08 用户要的）。**这是把 08-07 那个决定翻过来。**
+      //
+      // 那次去掉留白的理由是"渐变遮罩没了，给遮罩让位的 paddingBottom: 64 也就
+      // 没理由了"——去 64px 的底部留白是对的，但顺手把四边也清成 0，组件就直接
+      // 贴着卡边，看着像被裁掉一截。12px 是让组件"在卡里"而不是"糊在卡上"。
+      //
+      // 底部那层元信息浮层不受影响：绝对定位相对的是 padding box，`inset-x-0
+      // bottom-0` 仍然贴着卡的内边缘，不会跟着缩进去。
+      styles={{ body: { padding: 12, overflow: "hidden", position: "relative" } }}
+      className="group w-full"
+      style={{ boxShadow: CARD_SHADOW }}
     >
       {/* 收藏星单独放右上角，不进底部那层 hover 浮层——浮层默认 35%
           不透明度，星星藏在里面既看不清也不好点。 */}
@@ -1160,7 +1196,8 @@ function SavedPresetCard({ preset }: { preset: SavedPreset }) {
       size="small"
       variant="borderless"
       styles={{ body: { padding: 0, overflow: "hidden" } }}
-      className="w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
+      className="w-full"
+      style={{ boxShadow: CARD_SHADOW }}
     >
       <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
         <span className="text-[13.5px] font-semibold text-slate-900">{preset.name}</span>
@@ -1272,7 +1309,7 @@ function BlockProposalModal({
                 variant="borderless"
                 styles={{ body: { padding: 0, overflow: "hidden" } }}
                 data-testid={`proposal-${p.type}`}
-                className="shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
+                style={{ boxShadow: CARD_SHADOW_SOFT }}
               >
                 <div className="border-b border-slate-100 px-3 py-2">
                   <div className="flex flex-wrap items-baseline gap-2">
@@ -1722,7 +1759,8 @@ function AssembledPageModal({
       size="small"
       variant="borderless"
       styles={{ body: { padding: 0, overflow: "hidden" } }}
-      className="mb-3 shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
+      className="mb-3"
+      style={{ boxShadow: CARD_SHADOW_SOFT }}
       data-testid={`region-${r.key}`}
     >
       <div className="border-b border-slate-100 px-3 py-1.5 text-[11px] text-slate-400">
@@ -2018,7 +2056,8 @@ function BaseComponentWall({
               size="small"
               variant="borderless"
               styles={{ body: { padding: 0, overflow: "hidden" } }}
-              className="w-full shadow-[0_3px_14px_rgba(15,23,42,0.10)]"
+              className="w-full"
+              style={{ boxShadow: CARD_SHADOW }}
               // 点一下算"用过一次"。这是「最近使用」的唯一来源——组件库是拿来
               // 挑东西的，挑的动作就是看，没有别的更强的信号。
               onClick={() => marks.onUse(`base:${c.name}`)}

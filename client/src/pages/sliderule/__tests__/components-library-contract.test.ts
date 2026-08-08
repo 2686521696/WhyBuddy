@@ -167,22 +167,51 @@ describe("components library UI contract", () => {
     expect(code).toContain('position: "relative"');
   });
 
-  it("渲染区四边不留白——组件铺满整张卡", () => {
-    // 上下 padding 一并去掉（2026-08-07）。原来 paddingBottom: 64 是给渐变
-    // 遮罩让位的，遮罩没了这个留白也就没有理由了。
+  it("区块卡有 12px 内边距 —— 组件在卡里，不是糊在卡上", () => {
+    // **2026-08-08 用户把 08-07 那个决定翻过来了，这条用例跟着翻。**
+    //
+    // 08-07 的原话是「渲染区四边不留白——组件铺满整张卡」，理由是渐变遮罩
+    // 没了、给遮罩让位的 paddingBottom: 64 也就没理由了。去掉那 64px 是对的，
+    // 但顺手把四边清成 0，组件就直接贴着卡边，看着像被裁掉一截。
+    //
+    // 保留的那一半约束仍然钉着：**不许回到 64px 的底部留白**（那是给早已
+    // 删掉的遮罩让的位）。
     const code = stripComments(pageSource);
-    expect(code).not.toContain("paddingBottom: 64");
-    // 2026-08-08 放宽了写法、没放宽约束：原来钉的是一整行字面量
-    // `<div className="w-full">{rendered}</div>`，加收藏功能时这个容器多了
-    // 一个 onClick（点卡片记「最近使用」）就换了行，用例当场红——**而留白
-    // 这件事一点没变**。钉的是"渲染容器只有 w-full、不带内边距"，不是
-    // 它写在几行里。
-    expect(code, "渲染容器不见了？").toMatch(/className="w-full"[\s\S]{0,160}\{rendered\}/);
-    const wrap = code.slice(
-      code.indexOf('className="w-full"'),
-      code.indexOf("{rendered}", code.indexOf('className="w-full"'))
-    );
-    expect(wrap, "渲染容器上又加内边距了").not.toMatch(/p[xytblr]?-\d|padding/);
+    expect(code, "又回到给遮罩让位的那个 64px 了").not.toContain("paddingBottom: 64");
+    const i = code.indexOf("data-testid={`component-card-");
+    expect(i, "区块卡不见了？").toBeGreaterThan(-1);
+    expect(
+      code.slice(i, i + 400),
+      "区块卡的 body 内边距被清回 0 了 —— 组件会重新贴死卡边"
+    ).toContain("padding: 12");
+  });
+
+  it("卡片阴影走行内样式 —— Tailwind 的 shadow 类**盖不住 antd**", () => {
+    // 2026-08-08 量出来的：这一页三处卡片上写了半年的
+    // `shadow-[0_3px_14px_rgba(15,23,42,0.10)]` **一次都没生效过**，
+    // 屏幕上一直是 antd Card 自带的三层默认阴影。
+    //
+    // 不是拼错也不是没被扫到，那条规则确实在 CSS 里：
+    //     Tailwind  @layer utilities { .shadow-\[…\] { … } }
+    //     antd      （无 layer）      :where(…).ant-card:not(.ant-card-bordered) { … }
+    // **无 layer 的样式整体压过 layer 里的**，跟选择器权重无关（antd 那条还
+    // 特意用 :where() 把权重降到 0，照样赢）。
+    //
+    // 所以钉两件事：卡片用行内 boxShadow；别再有人把它改回工具类。
+    const code = stripComments(pageSource);
+    expect(code, "阴影常量没了").toContain("const CARD_SHADOW");
+    expect(code, "卡片没用行内阴影").toContain("style={{ boxShadow: CARD_SHADOW }}");
+    // **只查 antd Card 上的**。普通 div 上的 shadow-[…] 是好使的
+    // （没有 antd 规则跟它抢），一刀切会误伤。
+    const onCards = code
+      .split("<Card")
+      .slice(1)
+      .map(chunk => chunk.slice(0, chunk.indexOf(">")))
+      .filter(open => /shadow-\[/.test(open));
+    expect(
+      onCards,
+      "有 Card 又用回 Tailwind 的 shadow-[…] 了 —— 那个类盖不住 antd Card，等于没写"
+    ).toEqual([]);
   });
 
   it("「AI 组装」的标签和动作必须一起跟着档位走 —— 只改标签就是骗人", () => {
