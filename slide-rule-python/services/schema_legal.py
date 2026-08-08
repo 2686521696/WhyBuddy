@@ -88,6 +88,7 @@ def _load_experience_blocks() -> tuple:
         raise ValueError("experience_block_catalog.json 缺失或为空: blocks")
 
     legal_regions = set(_BLOCK_CATALOG.get("pageRegions") or {})
+    legal_families = set(_BLOCK_CATALOG.get("blockFamilies") or ())
     legal_data_kinds = set(_catalog_tuple("dataKinds"))
     legal_events = set(_catalog_tuple("eventTypes"))
     legal_field_types = set(_tuple("fieldTypes"))
@@ -167,10 +168,59 @@ def _load_experience_blocks() -> tuple:
                 raise ValueError(
                     f"experience_block_catalog.json {block_type}.{key} 含目录外值: {sorted(unknown)}"
                 )
+        # family（2026-08-08）：这个区块**能不能单独存在**。
+        #
+        # 与 capability 是一对：capability 说"我干什么"（filter / action /
+        # entityRows…），family 说"我要不要挂在别人身上"。此前只有 capability，
+        # 于是模型知道 FilterBar 是 filter，却不知道它离开表格就没有意义。
+        #
+        # 分法照 nocobase 的 data-blocks / filter-blocks / other-blocks
+        # （packages/core/client/src/modules/blocks/），我们把 other 拆成
+        # action 与 content，因为"对别人做事"和"纯内容"是两回事。
+        family = raw.get("family")
+        if family not in legal_families:
+            raise ValueError(
+                f"experience_block_catalog.json {block_type}.family 必须是 "
+                f"{sorted(legal_families)} 之一，现在是 {family!r}"
+            )
+
         binding_schema = raw.get("bindingSchema")
         if not isinstance(binding_schema, dict):
             raise ValueError(f"experience_block_catalog.json {block_type} 缺 bindingSchema")
         _validate_binding_schema(block_type, binding_schema, legal_field_types)
+
+        # filter / action 族必须能说出自己作用于谁 —— 否则它就是个装饰。
+        #
+        # 照 nocobase 的 x-filter-targets（SchemaSettingsConnectDataBlocks.tsx）：
+        # 筛选区块不是套在数据区块里面，而是作为兄弟节点、用 uid 显式连过去。
+        # 我们此前靠一份页面级的 filterState 隐式连，后果是一页两张表会互相
+        # 干扰——这条约束就是来堵它的。
+        # 谁必须声明 targets —— 这条判据我改过两次，记下来免得再绕（2026-08-08）：
+        #
+        #   第一版「filter/action 族一律必须」：把 PageHeader 和 QuickActionPanel
+        #     也拖下水了。那两个是**完全不绑 binding** 的区块，契约里明写"不使用
+        #     binding"、还有专门的门禁挡"塞了 binding"；加上之后 note 变成自相
+        #     矛盾的"不使用 binding；targets 是…"，两条既有用例当场红。
+        #   第二版「绑了实体的才必须」：又漏了 FilterBar——它的 entityRef 是
+        #     **可选**的（不按实体筛的场景也成立），于是判据放它过去了。而筛选
+        #     恰恰是最需要 targets 的那个。
+        #
+        # 定稿的分法按族分开说，因为两族的语义本来就不同：
+        #   filter —— 一律必须。筛选的定义就是"筛某个东西"，没有目标不成立。
+        #   action —— 绑实体的才必须。批量审批操作某张表的选中行；页头的"新建"
+        #             是页面级动作，不针对任何一张表。
+        declared_required = set(binding_schema.get("required") or [])
+        needs_targets = family == "filter" or (
+            family == "action" and "entityRef" in declared_required
+        )
+        if needs_targets:
+            declared = declared_required | set(binding_schema.get("optional") or [])
+            if "targets" not in declared:
+                raise ValueError(
+                    f"experience_block_catalog.json {block_type} 是 {family} 族"
+                    f"{'（且绑实体）' if family == 'action' else ''}，"
+                    "bindingSchema 必须声明 targets（作用于哪些区块）"
+                )
         seen_types.add(block_type)
         seen_renderers.add(renderer_key)
         blocks.append(json.loads(json.dumps(raw)))
@@ -271,6 +321,10 @@ PAGE_ARCHETYPES_RAW: Dict[str, Dict[str, Any]] = dict(
     _BLOCK_CATALOG.get("pageArchetypes") or {}
 )
 PAGE_REGION_BANDS = _catalog_tuple("pageRegionBands")
+#: 区块分族：data 自己取数展示 / filter 只筛别人 / action 只对别人做事 /
+#: content 纯内容。与 capability 一对——它说"我干什么"，这个说"我能不能
+#: 单独存在"。分法照 nocobase 的 data-blocks / filter-blocks / other-blocks。
+BLOCK_FAMILIES = _catalog_tuple("blockFamilies")
 EXPERIENCE_BLOCK_DATA_KINDS = _catalog_tuple("dataKinds")
 EXPERIENCE_BLOCK_EVENT_TYPES = _catalog_tuple("eventTypes")
 # FreeformInsight（2026-07-23）的安全原子积木白名单——Python 深校验、Prompt、
@@ -382,6 +436,11 @@ PAGE_KIND_PRESETS: Dict[str, tuple] = _load_page_kind_presets(EXPERIENCE_BLOCKS)
 
 EXPERIENCE_BLOCK_ALLOWED_REGIONS_BY_TYPE: Dict[str, tuple] = {
     str(block["type"]): tuple(block["allowedRegions"]) for block in EXPERIENCE_BLOCKS
+}
+
+#: type -> family。装配器按它判"这个区块能不能单独存在"、要不要 targets。
+EXPERIENCE_BLOCK_FAMILY_BY_TYPE = {
+    str(block["type"]): str(block["family"]) for block in EXPERIENCE_BLOCKS
 }
 def enum_str(*keys: str) -> str:
     """把一个或多个枚举键渲染成生成契约用的 "a|b|c" 串（顺序=账本顺序）。"""

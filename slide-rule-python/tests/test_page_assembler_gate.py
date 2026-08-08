@@ -32,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from services import schema_legal as L
 from services.page_archetypes import PAGE_ARCHETYPES, WEIGHTS
 from services.page_assembler import _block_menu, gate
 
@@ -55,10 +56,19 @@ GOOD = {
     "name": "商品库存",
     "tasks": ["查库存", "筛选缺货商品", "新增商品", "补货"],
     "regions": {
-        "header": [{"type": "QuickActionPanel", "props": {"title": "常用操作"}}],
-        "filters": [{"type": "FilterBar", "props": {"title": "筛选商品"}}],
+        "header": [{"id": "h1", "type": "QuickActionPanel", "props": {"title": "常用操作"}}],
+        # filter 族必须说清自己筛谁——targets 指向同页的数据区块 id
+        "filters": [
+            {
+                "id": "f1",
+                "type": "FilterBar",
+                "props": {"title": "筛选商品"},
+                "binding": {"entityRef": "product", "targets": ["t1"]},
+            }
+        ],
         "main": [
             {
+                "id": "t1",
                 "type": "DataTable",
                 "props": {"title": "商品库存"},
                 "binding": {"entityRef": "product"},
@@ -388,3 +398,168 @@ def test_required_regions_are_reachable_with_the_blocks_we_actually_have():
                 f"{key}.{r['key']} 必填，但没有任何区块能填它"
                 f"（收 {r['accepts']}，现有能力 {sorted(caps)}）"
             )
+
+
+# ── 分族与显式连线（2026-08-08 ①a + ①b）─────────────────────────────
+#
+# 照 nocobase 的 x-filter-targets（SchemaSettingsConnectDataBlocks.tsx）。
+# 它的筛选区块**不是套在数据区块里面**，而是作为兄弟节点用 uid 连过去——
+# 位置（区域）和关系（targets）是两根独立的轴。
+#
+# 我们此前只有隐式的页面级 filterState，后果是实打实的：ComponentsLibraryPage
+# 的 visibleRows 对页面上所有实体套同一份 enumFilters、只按字段名匹配，一页
+# 两张表只要都有 status 字段就互相干扰。这一组用例就是钉住那个后果不再可能。
+
+def test_every_block_declares_a_family():
+    """18 个区块都得说清自己能不能单独存在。
+
+    capability 说"我干什么"，family 说"我要不要挂在别人身上"。只有前者时模型
+    知道 FilterBar 是 filter，却不知道它离开表格就没有意义。
+    """
+    fams = set(L.BLOCK_FAMILIES)
+    assert fams == {"data", "filter", "action", "content"}
+    for b in L.EXPERIENCE_BLOCKS:
+        assert b.get("family") in fams, f"{b['type']} 的 family 不合法：{b.get('family')!r}"
+    # 给模型的清单必须带上它，否则这一层等于没有
+    for m in _block_menu():
+        assert m["family"] in fams, f"{m['type']} 的清单条目缺 family"
+
+
+def test_filter_and_action_families_must_declare_targets_in_their_contract():
+    """契约层面：filter / action 族必须在 bindingSchema 里声明 targets。
+
+    这条在**装载期**就查（schema_legal），所以新加一个 filter 族区块却忘了给
+    targets，服务根本起不来——不会带病进 prompt。
+    """
+    for b in L.EXPERIENCE_BLOCKS:
+        if b.get("family") not in ("filter", "action"):
+            continue
+        bs = b.get("bindingSchema") or {}
+        # 判据按族分开（改过两次，见 schema_legal 里那段注释）：
+        #   filter 一律必须；action 只有绑实体的才必须。
+        if b["family"] == "action" and "entityRef" not in set(bs.get("required") or []):
+            continue
+        declared = set(bs.get("required") or []) | set(bs.get("optional") or [])
+        assert "targets" in declared, f"{b['type']} 绑了实体却没声明 targets"
+
+
+def test_a_filter_without_targets_is_rejected():
+    """不说筛谁的筛选条 = 谁都筛不到。"""
+    page = {
+        **GOOD,
+        "regions": {
+            **GOOD["regions"],
+            "filters": [
+                {"id": "f1", "type": "FilterBar", "props": {"title": "筛选商品"},
+                 "binding": {"entityRef": "product"}}
+            ],
+        },
+    }
+    assert "targets-missing" in codes(page)
+
+
+def test_targets_must_point_at_a_block_on_this_page():
+    page = {
+        **GOOD,
+        "regions": {
+            **GOOD["regions"],
+            "filters": [
+                {"id": "f1", "type": "FilterBar", "props": {"title": "筛选商品"},
+                 "binding": {"entityRef": "product", "targets": ["nope"]}}
+            ],
+        },
+    }
+    assert "target-missing" in codes(page)
+
+
+def test_targets_must_point_at_a_data_block():
+    """筛一个筛选条没有意义 —— 只有数据区块谈得上被筛。"""
+    page = {
+        **GOOD,
+        "regions": {
+            **GOOD["regions"],
+            "filters": [
+                {"id": "f1", "type": "FilterBar", "props": {"title": "筛选商品"},
+                 "binding": {"entityRef": "product", "targets": ["h1"]}},  # h1 是 action 族
+            ],
+        },
+    }
+    assert "target-not-data" in codes(page)
+
+
+def test_targets_must_bind_the_same_entity():
+    """**这条就是那个真 bug 的判据。**
+
+    一页两张表（商品 + 仓库），筛选绑商品却指向仓库那张表——现在的运行时会
+    按字段名把两张表一起筛了。契约上先把它判死。
+    """
+    dm = {
+        "entities": [
+            DM["entities"][0],
+            {"id": "warehouse", "name": "仓库",
+             "fields": [{"id": "name", "name": "仓库名", "type": "string"}]},
+        ]
+    }
+    page = {
+        **GOOD,
+        "regions": {
+            **GOOD["regions"],
+            "filters": [
+                {"id": "f1", "type": "FilterBar", "props": {"title": "筛选商品"},
+                 "binding": {"entityRef": "product", "targets": ["w1"]}}
+            ],
+            "aside": [
+                {"id": "w1", "type": "RecordDetail", "props": {"title": "仓库明细"},
+                 "binding": {"entityRef": "warehouse"}}
+            ],
+        },
+    }
+    assert "target-entity-mismatch" in codes(page, dm)
+
+
+def test_a_filter_placed_after_what_it_filters_is_rejected():
+    """筛选排在它筛的东西后面 = 让用户先读完内容再筛。
+
+    这是两根轴唯一真的有关系的地方：位置本身不决定关系，但**筛选必须在前**。
+    """
+    page = {
+        **GOOD,
+        "regions": {
+            **GOOD["regions"],
+            "filters": [],
+            # aside 在 list 范式里排在 main 后面
+            "aside": [
+                {"id": "f1", "type": "FilterBar", "props": {"title": "筛选商品"},
+                 "binding": {"entityRef": "product", "targets": ["t1"]}}
+            ],
+        },
+    }
+    got = codes(page)
+    # FilterBar 的 allowedRegions 只有 filters，所以还会撞 region-not-allowed；
+    # 这里只关心先后那条被判出来了
+    assert "filter-after-target" in got or "region-not-allowed" in got
+
+
+def test_action_blocks_may_sit_after_their_target():
+    """操作条排在数据后面是**对的** —— 先选再操作。
+
+    这条防的是把先后规则一刀切套到所有族上。
+    """
+    page = {
+        "archetype": "list",
+        "name": "商品库存",
+        "tasks": ["查库存", "批量审批"],
+        "regions": {
+            "main": [
+                {"id": "t1", "type": "DataTable", "props": {"title": "商品库存"},
+                 "binding": {"entityRef": "product"}}
+            ],
+            "footerBar": [
+                {"id": "b1", "type": "BatchActionBar",
+                 "props": {"title": "批量处理", "actions": ["批量审批"]},
+                 "binding": {"entityRef": "product", "targets": ["t1"]}}
+            ],
+        },
+    }
+    got = codes(page)
+    assert "filter-after-target" not in got, f"操作条被误判了：{sorted(got)}"

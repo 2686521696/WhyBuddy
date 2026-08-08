@@ -64,6 +64,10 @@ def _block_menu() -> List[Dict[str, Any]]:
         out.append({
             "type": str(b["type"]),
             "capability": cap,
+            # family 说的是**这东西能不能单独存在**——capability 说"我干什么"，
+            # 两者是一对。filter/action 族离开它作用的那个区块就没有意义，所以
+            # 它们必须给 targets。不告诉模型这一层，它只会按名字猜。
+            "family": b.get("family"),
             "does": b.get("description", ""),
             # 能落哪些区域 —— 必须进清单，否则模型只能靠能力猜位置，而能力
             # 说的是"我干什么"不是"我该待在哪"（PageHeader 和 QuickActionPanel
@@ -124,11 +128,19 @@ def _prompt(
         "stranded.\n"
         "8. A batch action bar must carry the actions themselves in props.actions "
         "(批量审批 / 批量导出 / 批量删除). Naming them only in the title is worse than "
-        "leaving it out — the user selects rows and then has nothing to click.\n\n"
+        "leaving it out — the user selects rows and then has nothing to click.\n"
+        "9. Give every block an \"id\". Blocks whose family is filter or action do NOT "
+        "show data of their own — they act on another block, so they must name it: "
+        "\"binding\":{\"targets\":[\"<id of a data block on this page>\"]}. The target "
+        "must be a data-family block bound to the SAME entity. A filter must also come "
+        "BEFORE what it filters — filtering below the table asks the user to read the "
+        "rows first and narrow them afterwards.\n\n"
         "Return JSON only:\n"
         '{"name":"<页面中文名>","industry":"<行业,2-6字>","archetype":"list",'
         '"tasks":["查库存","新增商品"],'
-        '"regions":{"main":[{"type":"DataTable","props":{"title":"商品库存"},'
+        '"regions":{"filters":[{"id":"f1","type":"FilterBar","props":{"title":"筛选商品"},'
+        '"binding":{"entityRef":"product","targets":["t1"]}}],'
+        '"main":[{"id":"t1","type":"DataTable","props":{"title":"商品库存"},'
         '"binding":{"entityRef":"product"}}],"overlay":[...]}}'
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -209,6 +221,81 @@ def gate(page: Dict[str, Any], datamodel: Dict[str, Any]) -> List[Dict[str, str]
                     "why": f"{t} 不能放在「{r['label']}」（只能落 {allowed}）"
                            f"——{entry.get('regionsRationale') or ''}"[:200],
                 })
+
+    # ②b filter / action 族必须说清自己作用于谁（2026-08-08）
+    #
+    # 照 nocobase 的 x-filter-targets（SchemaSettingsConnectDataBlocks.tsx）：
+    # 筛选区块**不是套在数据区块里面**，而是作为兄弟节点、用 id 显式连过去。
+    # 我们此前靠一份页面级的 filterState 隐式连——后果是实打实的：
+    # ComponentsLibraryPage 的 visibleRows 对页面上所有实体套同一份 enumFilters，
+    # 只按字段名匹配，一页两张表只要都有 status 字段就互相干扰。
+    #
+    # 区块自己的位置（区域）和它跟谁有关系（targets）是两根独立的轴。这里查的
+    # 是第二根：连过去的那一头必须真的存在、是数据区块、绑同一个实体，而且
+    # 筛选得排在它筛的东西**前面**（否则是"先读内容再筛选"）。
+    region_order = {r["key"]: i for i, r in enumerate(arch["regions"])}
+    blocks_by_id: Dict[str, Tuple[str, Dict[str, Any]]] = {}
+    for rkey, items in regions.items():
+        for idx, it in enumerate(items or []):
+            bid = str((it or {}).get("id") or f"{rkey}-{idx}")
+            blocks_by_id[bid] = (rkey, it or {})
+
+    for rkey, items in regions.items():
+        for idx, it in enumerate(items or []):
+            t = str((it or {}).get("type") or "")
+            entry = by_type.get(t)
+            if entry is None:
+                continue
+            fam = entry.get("family")
+            if fam not in ("filter", "action"):
+                continue
+            binding = (it or {}).get("binding") or {}
+            required = list(((entry.get("bindingSchema") or {}).get("required")) or [])
+            targets = binding.get("targets")
+            targets = [str(x) for x in targets] if isinstance(targets, list) else []
+            if not targets:
+                if "targets" in required:
+                    findings.append({
+                        "code": "targets-missing",
+                        "why": f"{t} 是 {fam} 族，必须说清它作用于哪个区块"
+                               "（binding.targets 写目标区块的 id）——不写就等于"
+                               "谁都筛不到 / 谁都操作不了",
+                    })
+                continue
+
+            my_entity = str(binding.get("entityRef") or "")
+            for tid in targets:
+                hit = blocks_by_id.get(tid)
+                if hit is None:
+                    findings.append({
+                        "code": "target-missing",
+                        "why": f"{t} 的 targets 指向「{tid}」，这一页没有这个区块",
+                    })
+                    continue
+                t_region, t_block = hit
+                t_entry = by_type.get(str(t_block.get("type") or ""))
+                if t_entry is None:
+                    continue
+                if t_entry.get("family") != "data":
+                    findings.append({
+                        "code": "target-not-data",
+                        "why": f"{t} 指向的「{t_block.get('type')}」是 "
+                               f"{t_entry.get('family')} 族——只有数据区块才谈得上被筛"
+                               "/被操作",
+                    })
+                t_entity = str(((t_block.get("binding") or {}).get("entityRef")) or "")
+                if my_entity and t_entity and my_entity != t_entity:
+                    findings.append({
+                        "code": "target-entity-mismatch",
+                        "why": f"{t} 绑的是「{my_entity}」，目标区块绑的是"
+                               f"「{t_entity}」——筛/操作另一个实体的数据说不通",
+                    })
+                # 只有筛选有先后要求：操作条排在数据后面是对的（选完再操作）
+                if fam == "filter" and region_order.get(rkey, 0) > region_order.get(t_region, 0):
+                    findings.append({
+                        "code": "filter-after-target",
+                        "why": f"{t} 排在它筛的区块后面——那是让用户先读完内容再筛选",
+                    })
 
     # ③ 必须有 primary 区域被填上 —— 没有主次就是一排等大卡片。
     #

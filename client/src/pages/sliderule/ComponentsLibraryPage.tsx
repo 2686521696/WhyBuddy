@@ -1137,10 +1137,20 @@ function AssembledPageModal({
   const [toast, setToast] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [savedAs, setSavedAs] = React.useState<string | null>(null);
-  const [filterState, setFilterState] = React.useState<PageFilterState>({
-    enumFilters: {},
-    dateRange: null,
-  });
+  // 筛选态**按筛选区块的 id 分片**，不再是页面级一坨（见 rowsForBlock 的注释）。
+  const [filterState, setFilterState] = React.useState<Record<string, PageFilterState>>({});
+  const EMPTY_FILTER: PageFilterState = React.useMemo(
+    () => ({ enumFilters: {}, dateRange: null }),
+    []
+  );
+  /** 这一页所有区块的扁平表 —— 查"谁筛我"要用。 */
+  const allBlocks = React.useMemo(
+    () =>
+      Object.values(page.regions ?? {}).flatMap((items, ri) =>
+        (items ?? []).map((b, i) => ({ ...b, id: b.id ?? `r${ri}-${i}` }))
+      ),
+    [page.regions]
+  );
   // 行选择态 —— DataTable 勾选、BatchActionBar 读。
   //
   // 2026-08-08 的教训直接写在这里：QuickActionPanel 的渲染器第一行是"没有
@@ -1163,20 +1173,43 @@ function AssembledPageModal({
     return id ? { id, label: FIELD_LABEL[id] ?? id } : null;
   }, []);
 
-  /** 筛过的行 —— 展示类区块吃这一份，所以"筛"是真会变的。 */
-  const visibleRows = React.useMemo(() => {
-    const out: Record<string, RuntimeRow[]> = {};
-    for (const [entityId, list] of Object.entries(rows)) {
-      out[entityId] = list.filter(r => {
-        for (const [field, want] of Object.entries(filterState.enumFilters)) {
-          if (!want) continue;
-          if (String(r.values?.[field] ?? "") !== want) return false;
-        }
-        return true;
-      });
-    }
-    return out;
-  }, [rows, filterState]);
+  /**
+   * 某个数据区块**自己**看到的行 —— 只被指向它的筛选收窄。
+   *
+   * 2026-08-08 修的真 bug：上一版是页面级一坨，
+   *
+   *     for (const [entityId, list] of Object.entries(rows))   // 所有实体
+   *       ... filterState.enumFilters ...                      // 只按字段名匹配
+   *
+   * 一页放两张表（订单 + 客户），只要都有 status 字段，筛一个就把两个都筛了。
+   * 而 StatusTabs 写 enumFilters[field] 时同样不知道自己该筛哪张表。
+   *
+   * 现在照 nocobase 的 x-filter-targets：筛选区块显式声明自己筛谁
+   * （SchemaSettingsConnectDataBlocks.tsx），数据区块反过来问"谁在筛我"。
+   * 位置（区域）和关系（targets）是两根独立的轴——筛选条在页头、表格在主区，
+   * 但连线是明确的。
+   */
+  const rowsForBlock = React.useCallback(
+    (blockId: string): Record<string, RuntimeRow[]> => {
+      const applied = allBlocks
+        .filter(b => (b.binding?.targets as string[] | undefined)?.includes(blockId))
+        .map(b => filterState[b.id])
+        .filter(Boolean) as PageFilterState[];
+      if (applied.length === 0) return rows;
+      const out: Record<string, RuntimeRow[]> = {};
+      for (const [entityId, list] of Object.entries(rows)) {
+        out[entityId] = list.filter(r =>
+          applied.every(f =>
+            Object.entries(f.enumFilters ?? {}).every(([field, want]) =>
+              !want ? true : String(r.values?.[field] ?? "") === want
+            )
+          )
+        );
+      }
+      return out;
+    },
+    [rows, filterState, allBlocks]
+  );
 
   const handleAction = (actionId: string, data?: Record<string, unknown>) => {
     if (actionId !== "submitRequest") return;
@@ -1221,12 +1254,16 @@ function AssembledPageModal({
     [page.tasks]
   );
 
-  const renderBlock = (b: AssembledBlock, i: number) => (
+  const renderBlock = (b: AssembledBlock, i: number) => {
+    // 区块 id 用装配结果里给的，没给才退回位置生成的 —— targets 连的是这个 id，
+    // 每次渲染都换一个的话连线就断了。
+    const blockId = b.id ?? `${b.type}-${i}`;
+    return (
     <ExperienceBlockBoundary
-      key={`${b.type}-${i}`}
+      key={blockId}
       block={
         {
-          id: `${b.type}-${i}`,
+          id: blockId,
           type: b.type,
           // surface 一律 plain：区域面板已经提供了那张卡，区块再画一层白底
           // 就是卡里套卡（同"装进 ContentCard 的自动 plain"那条规矩）。
@@ -1234,12 +1271,20 @@ function AssembledPageModal({
           binding: b.binding,
         } as ExperienceBlockInstance
       }
-      entityRows={visibleRows}
+      // 数据区块只看到"筛我的那些筛选"作用之后的行；筛选区块自己不展示数据，
+      // 传原始行即可（它要靠全量算每个状态有几条）。
+      entityRows={rowsForBlock(blockId)}
       chartPalette={{ primary: PRIMARY, categorical: CHARTS }}
-      filterState={filterState}
+      // 筛选态是这个筛选区块自己的那一片
+      filterState={filterState[blockId] ?? EMPTY_FILTER}
       filterFieldOptions={filterFieldOptions}
       dateRangeField={dateRangeField}
-      onFilterChange={patch => setFilterState(prev => ({ ...prev, ...patch }))}
+      onFilterChange={patch =>
+        setFilterState(prev => ({
+          ...prev,
+          [blockId]: { ...(prev[blockId] ?? EMPTY_FILTER), ...patch },
+        }))
+      }
       selection={selection}
       onSelectionChange={(entityRef, rowIds) =>
         setSelection(prev => ({ rowIds: { ...prev.rowIds, [entityRef]: rowIds } }))
@@ -1251,7 +1296,8 @@ function AssembledPageModal({
       onAction={handleAction}
       workflow={WORKFLOW}
     />
-  );
+    );
+  };
 
   const region = (key: string) => page.regions?.[key] ?? [];
   // 按 band 分带 —— 不再靠 `key === "header"` 猜。原来那种写法每加一个区域

@@ -1,6 +1,12 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 11,
+  "version": 13,
+  "blockFamilies": [
+    "data",
+    "filter",
+    "action",
+    "content"
+  ],
   "pageRegionBands": [
     "top",
     "main",
@@ -698,7 +704,8 @@
           "aggregate"
         ]
       },
-      "capability": "aggregate"
+      "capability": "aggregate",
+      "family": "data"
     },
     {
       "type": "TrendChart",
@@ -759,7 +766,8 @@
           "seriesBy": "enum"
         }
       },
-      "capability": "series"
+      "capability": "series",
+      "family": "data"
     },
     {
       "type": "RankedList",
@@ -826,7 +834,8 @@
           ]
         }
       },
-      "capability": "rankedRows"
+      "capability": "rankedRows",
+      "family": "data"
     },
     {
       "type": "ActivityFeed",
@@ -895,7 +904,8 @@
           }
         }
       },
-      "capability": "timelineRows"
+      "capability": "timelineRows",
+      "family": "data"
     },
     {
       "type": "DataTable",
@@ -944,7 +954,8 @@
         "optional": [],
         "note": "其余列由页面 columns 派生；binding 对象整体可省略，省略时不受 required 约束。"
       },
-      "capability": "entityRows"
+      "capability": "entityRows",
+      "family": "data"
     },
     {
       "type": "QuickActionPanel",
@@ -985,7 +996,8 @@
         "optional": [],
         "note": "不使用 binding；入口按钮由 actions[] 里的 createRecord/navigate 类型动作声明。"
       },
-      "capability": "action"
+      "capability": "action",
+      "family": "action"
     },
     {
       "type": "FilterBar",
@@ -1023,13 +1035,16 @@
         "filterChange"
       ],
       "bindingSchema": {
-        "required": [],
+        "required": [
+          "targets"
+        ],
         "optional": [
           "entityRef"
         ],
-        "note": "可筛选字段在 props.filterFields 里声明（不是 binding）；entityRef 仅在需要按实体过滤时填写。触发 changeFilter 动作刷新同页面其他区块。"
+        "note": "可筛选字段在 props.filterFields 里声明（不是 binding）；entityRef 仅在需要按实体过滤时填写。触发 changeFilter 动作刷新同页面其他区块。 targets 是这条筛选**作用于哪些区块**的 id（同页的 data 族区块）。不写就是筛不到任何东西——页面上可能不止一张表，没有 targets 就没法知道该收窄哪一张。目标必须与本区块绑同一个实体。"
       },
-      "capability": "filter"
+      "capability": "filter",
+      "family": "filter"
     },
     {
       "type": "WorkflowTimeline",
@@ -1069,7 +1084,8 @@
         "optional": [],
         "note": "不使用 binding；展示哪条流程链路由 props.chainRef 声明（留空=workflow 主链路，填值必须是 workflow.chains[].id 之一）。节点、顺序、条件全部从 workflow 系统机械派生，不接受自由文案。"
       },
-      "capability": "chain"
+      "capability": "chain",
+      "family": "data"
     },
     {
       "type": "FreeformInsight",
@@ -1106,7 +1122,8 @@
         "optional": [],
         "note": "不使用 binding；本次调用只需要给 props.designBrief（一句话说清楚这个区块该展示什么，必填，不能空），具体结构/样式/数据绑定由二段生成流程另外产出，不在这次输出里。"
       },
-      "capability": "freeform"
+      "capability": "freeform",
+      "family": "content"
     },
     {
       "type": "RecordForm",
@@ -1167,7 +1184,8 @@
           "fieldRefs": {}
         }
       },
-      "capability": "form"
+      "capability": "form",
+      "family": "data"
     },
     {
       "type": "RecordFormDialog",
@@ -1229,7 +1247,8 @@
           "fieldRefs": {}
         }
       },
-      "capability": "form"
+      "capability": "form",
+      "family": "data"
     },
     {
       "type": "RecordDetail",
@@ -1286,7 +1305,8 @@
           "fieldRefs": {}
         }
       },
-      "capability": "entityRows"
+      "capability": "entityRows",
+      "family": "data"
     },
     {
       "type": "StepsForm",
@@ -1338,7 +1358,8 @@
           "fieldRefs": {}
         }
       },
-      "capability": "form"
+      "capability": "form",
+      "family": "data"
     },
     {
       "type": "ContentCard",
@@ -1382,7 +1403,8 @@
         "optional": []
       },
       "container": true,
-      "capability": "container"
+      "capability": "container",
+      "family": "content"
     },
     {
       "type": "PageHeader",
@@ -1391,6 +1413,7 @@
       "rendererStatus": "real",
       "generationEnabled": true,
       "capability": "action",
+      "family": "action",
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1427,7 +1450,8 @@
       ],
       "bindingSchema": {
         "required": [],
-        "optional": []
+        "optional": [],
+        "note": ""
       }
     },
     {
@@ -1437,6 +1461,7 @@
       "rendererStatus": "real",
       "generationEnabled": true,
       "capability": "outcome",
+      "family": "data",
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1502,6 +1527,7 @@
       "rendererStatus": "real",
       "generationEnabled": true,
       "capability": "filter",
+      "family": "filter",
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1537,13 +1563,14 @@
       "bindingSchema": {
         "required": [
           "entityRef",
-          "statusField"
+          "statusField",
+          "targets"
         ],
         "optional": [],
         "entityFieldRefs": {
           "statusField": "enum"
         },
-        "note": "statusField 必须是枚举字段——页签就是它的取值。条数由运行时真数当前行，不从 props 读；写死的数会在用户删掉一条之后立刻变成假的。"
+        "note": "statusField 必须是枚举字段——页签就是它的取值。条数由运行时真数当前行，不从 props 读；写死的数会在用户删掉一条之后立刻变成假的。 targets 是这条筛选**作用于哪些区块**的 id（同页的 data 族区块）。不写就是筛不到任何东西——页面上可能不止一张表，没有 targets 就没法知道该收窄哪一张。目标必须与本区块绑同一个实体。"
       }
     },
     {
@@ -1553,6 +1580,7 @@
       "rendererStatus": "real",
       "generationEnabled": true,
       "capability": "action",
+      "family": "action",
       "propsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1592,10 +1620,11 @@
       ],
       "bindingSchema": {
         "required": [
-          "entityRef"
+          "entityRef",
+          "targets"
         ],
         "optional": [],
-        "note": "entityRef 要跟同页那张表绑同一个实体——它读的就是那张表的勾选结果。操作名写在 props.actions 里（批量审批 / 批量导出 / 批量删除）。"
+        "note": "entityRef 要跟同页那张表绑同一个实体——它读的就是那张表的勾选结果。操作名写在 props.actions 里（批量审批 / 批量导出 / 批量删除）。 targets 是这些操作**作用于哪些区块**的 id（同页的 data 族区块）。批量操作要知道自己操作的是哪张表的选中行；页头操作要知道自己新建的是哪个实体的记录。目标必须与本区块绑同一个实体。"
       }
     }
   ],
