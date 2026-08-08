@@ -905,6 +905,155 @@ function SavedPresetCard({ preset }: { preset: SavedPreset }) {
 }
 
 /** 组装结果里的一个积木——服务端已经逐个校验过槽位与绑定。 */
+/**
+ * 一个区块提案 —— 契约，不是代码。
+ *
+ * 这是链路第二层的入口：基础组件（纯 schema）+ 逻辑 + 关联 = 区块。提案把
+ * 「加什么逻辑、关联到什么」说清楚（capability / binding / regions），渲染器
+ * 仍然要人写。Ant Design 官方的 pro-blocks 也是这个分工——29 个区块全是手写
+ * 源码，`umi block add` 拷源码而已。
+ */
+interface BlockProposal {
+  type: string;
+  label: string;
+  capability: string;
+  does: string;
+  uses: string[];
+  regions: string[];
+  props?: string[];
+  binding?: { required?: string[]; optional?: string[] };
+  why: string;
+}
+
+interface BlockProposalResult {
+  proposals: BlockProposal[];
+  /** 这一批全建了能释放哪些"还没接进区块"的素材 —— 提案的价值得能量出来。 */
+  releases: string[];
+  unlinkedBefore: number;
+  gatePassed?: boolean;
+  attempts?: number;
+}
+
+/**
+ * 提案面板。
+ *
+ * 刻意**不长得像一张组装好的页面**：它不是页面，是一份设计稿。所以摆的是
+ * 契约本身——收哪些基础组件、声明什么能力、绑什么、落哪些区域、为什么值得建。
+ * 做成"预览一张漂亮的页面"反而会让人以为点一下就有了。
+ */
+function BlockProposalModal({
+  result,
+  onClose,
+}: {
+  result: BlockProposalResult;
+  onClose: () => void;
+}) {
+  const after = result.unlinkedBefore - result.releases.length;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-8"
+      data-testid="block-proposal-modal"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-full w-full max-w-[1000px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="shrink-0 border-b border-slate-200 px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[14px] font-semibold text-slate-900">AI 提议的区块</span>
+            <span className="rounded bg-[#e8eeff] px-2 py-0.5 text-[11px] text-[#3b5bdb]">
+              契约草案 · 渲染器仍需实现
+            </span>
+            {/* 提案的价值必须是可量的，否则只是一段好听的话。 */}
+            <span
+              data-testid="proposal-coverage"
+              className="rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700"
+            >
+              建完可释放 {result.releases.length} 个素材：还没接进区块的从{" "}
+              {result.unlinkedBefore} 降到 {after}
+            </span>
+            <button
+              className="ml-auto rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
+              onClick={onClose}
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto bg-[#f0f2f5] p-4">
+          <div className="flex flex-col gap-3">
+            {result.proposals.map(p => (
+              <Card
+                key={p.type}
+                size="small"
+                variant="borderless"
+                styles={{ body: { padding: 0, overflow: "hidden" } }}
+                data-testid={`proposal-${p.type}`}
+                className="shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
+              >
+                <div className="border-b border-slate-100 px-3 py-2">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="text-[13.5px] font-semibold text-slate-900">{p.type}</span>
+                    <span className="text-[12px] text-slate-500">{p.label}</span>
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] text-slate-500">
+                      {p.capability}
+                    </span>
+                    <span className="ml-auto text-[11px] text-slate-400">
+                      落在 {p.regions.join(" / ")}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11.5px] leading-relaxed text-slate-500">{p.does}</div>
+                </div>
+                <div className="space-y-2 p-3 text-[11.5px]">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="text-slate-400">用基础组件</span>
+                    {p.uses.map(u => {
+                      const fresh = result.releases.includes(u);
+                      return (
+                        <span
+                          key={u}
+                          title={fresh ? "此前没有任何区块用它" : "已经被别的区块用了"}
+                          className={`rounded px-1.5 py-0.5 ${
+                            fresh
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {u}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  {p.binding?.required && p.binding.required.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="text-slate-400">必绑</span>
+                      {p.binding.required.map(b => (
+                        <span key={b} className="rounded bg-[#e8eeff] px-1.5 py-0.5 text-[#3b5bdb]">
+                          {b}
+                        </span>
+                      ))}
+                      {(p.binding.optional ?? []).map(b => (
+                        <span key={b} className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500">
+                          {b}?
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="rounded bg-slate-50 px-2 py-1.5 leading-relaxed text-slate-600">
+                    <span className="text-slate-400">为什么要建：</span>
+                    {p.why}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 存进库里的一套模板 —— AI 组装的产物 + 它判的行业。 */
 interface SavedPreset {
   id: string;
@@ -1487,6 +1636,62 @@ export default function ComponentsLibraryPage() {
   };
   const [assembling, setAssembling] = React.useState(false);
   const [assembleError, setAssembleError] = React.useState<string | null>(null);
+
+  /**
+   * AI 组装区块 —— 链路上的**另一次**组装（2026-08-08 用户定的分层）。
+   *
+   *   看模板档 → 组装模板：从现有区块里挑，摆进页面区域 → 产物是数据，直接渲染
+   *   看组件档 → 组装区块：从基础组件里挑，定义一个新区块 → 产物是契约，人来实现
+   *
+   * 后者不生成代码，这是查过 GitHub 之后的判断：Ant Design 官方那个仓库就叫
+   * `pro-blocks`，29 个「区块」（分析页/工作台/查询表格/高级详情/分步表单…）
+   * **全是手写 React 源码**，`umi block add` 是把源码拷进项目的脚手架，不是
+   * 运行时拼装。区块 = schema + 逻辑 + 关联，逻辑就是代码。
+   *
+   * 所以这里让模型做的是设计：看着 118 个还没被任何区块用上的素材，说出还缺
+   * 哪个区块、它收什么、绑什么、落哪些区域。基础组件清单从这一侧传过去——
+   * 那份目录是 TSX（每条挂着真实 render），搬不到 Python 侧。
+   */
+  const [proposals, setProposals] = React.useState<BlockProposalResult | null>(null);
+  const runProposeBlocks = async () => {
+    if (assembling) return;
+    setAssembling(true);
+    setAssembleError(null);
+    try {
+      const res = await fetch("/api/sliderule/components/propose-blocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          baseComponents: BASE_COMPONENTS.map(c => ({
+            name: c.name,
+            label: c.label,
+            group: c.group,
+            platform: c.platform,
+            description: c.description,
+            usedBy: BLOCKS_USING[c.name] ?? [],
+          })),
+        }),
+      });
+      const body = (await res.json()) as BlockProposalResult & {
+        ok?: boolean;
+        error?: string;
+        findings?: { code: string; why: string }[];
+      };
+      if (!res.ok || !body.ok) {
+        const why = (body.findings ?? []).map(f => f.why).join("；");
+        setAssembleError(
+          why ? `${body.error}：${why}` : body.error || `提议失败（HTTP ${res.status}）`
+        );
+        return;
+      }
+      setProposals(body);
+    } catch (e) {
+      setAssembleError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setAssembling(false);
+    }
+  };
+
   const [device, setDevice] = React.useState<DeviceTier>("all");
   const [query, setQuery] = React.useState("");
   const [slot, setSlot] = React.useState<string>("all");
@@ -1738,15 +1943,28 @@ export default function ComponentsLibraryPage() {
             active={mode === "presets"}
             onClick={() => setMode("presets")}
           />
+          {/* 按钮跟着档位走 —— 因为**这条链路上有两次组装，方向不同**
+              （2026-08-08 用户定的分层）：
+
+                看基础组件/区块 → 组装区块：从素材里挑，定义一个新区块
+                看模板         → 组装模板：从现有区块里挑，摆进页面区域
+
+              标签跟着档位变，动作也跟着变；只改标签不改动作就是骗人。 */}
           <button
             type="button"
             data-testid="components-assemble"
             disabled={assembling}
-            onClick={() => void runAssemble()}
+            onClick={() => void (mode === "presets" ? runAssemble() : runProposeBlocks())}
             className="ml-2 inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-50"
           >
             <Sparkles size={13} />
-            {assembling ? "组装中…" : "AI 组装"}
+            {assembling
+              ? mode === "presets"
+                ? "组装中…"
+                : "提议中…"
+              : mode === "presets"
+                ? "AI 组装模板"
+                : "AI 组装区块"}
           </button>
         </div>
 
@@ -1782,7 +2000,10 @@ export default function ComponentsLibraryPage() {
           此前那条链路根本没有这一步：模型直接从组件清单开始挑，所以它永远
           不知道"用户在这一页要干什么"，出来的当然是组件合集。说不出意图就
           装配不了，这不是苛刻，是那一步本来就绕不过去。 */}
-      {askIntent && (
+      {/* 只在模板档问意图 —— 组装区块问的不是"这一页干什么"，是"还缺哪个
+          区块"，它看的是覆盖缺口，不需要意图。留着会变成切档之后一个点了
+          没反应的输入框。 */}
+      {mode === "presets" && askIntent && (
         <div
           data-testid="intent-prompt"
           className="mt-4 rounded-lg bg-white p-3 shadow-[0_1px_6px_rgba(15,23,42,0.08)]"
@@ -1831,6 +2052,10 @@ export default function ComponentsLibraryPage() {
           onClose={() => setAssembled(null)}
           onSaved={() => void loadPresets()}
         />
+      )}
+
+      {proposals && (
+        <BlockProposalModal result={proposals} onClose={() => setProposals(null)} />
       )}
 
       {mode === "base" ? (

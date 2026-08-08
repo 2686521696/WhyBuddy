@@ -159,6 +159,30 @@ describe("components library UI contract", () => {
     expect(code).toContain('<div className="w-full">{rendered}</div>');
   });
 
+  it("「AI 组装」的标签和动作必须一起跟着档位走 —— 只改标签就是骗人", () => {
+    // 2026-08-08 用户点出这条链路上有**两次组装，方向不同**：
+    //
+    //   看基础组件/区块 → 组装区块：从素材里挑，定义一个新区块（产物是契约）
+    //   看模板         → 组装模板：从现有区块里挑，摆进页面（产物是数据）
+    //
+    // 这条钉的是两者绑死：标签写着「组装区块」、点下去却跑五阶段页面装配，
+    // 那是界面在撒谎，而且**看不出来**——两条路都会弹出一个像模像样的浮层。
+    //
+    // 这个坑这个项目踩过一次（surface 参数加了、23 个调用点一个没改，界面上
+    // 完全看不出），所以这次两端都断言。
+    const code = stripComments(pageSource);
+    expect(code).toContain('"AI 组装模板"');
+    expect(code).toContain('"AI 组装区块"');
+    // 动作分叉必须与标签分叉用同一个判据
+    expect(code).toContain(
+      'onClick={() => void (mode === "presets" ? runAssemble() : runProposeBlocks())}'
+    );
+    // 组装区块走的是提议接口，不是页面装配接口
+    expect(code).toContain("/api/sliderule/components/propose-blocks");
+    // 提案面板要如实说它是契约草案，不能让人以为点一下区块就有了
+    expect(code).toContain("契约草案 · 渲染器仍需实现");
+  });
+
   it("keeps progress indicators named and allows browser zoom", () => {
     expect(registrySource).toContain(
       "aria-label={`${item.label}相对排名进度`}"

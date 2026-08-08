@@ -2017,6 +2017,35 @@ async def assemble_page_route(
     return await asyncio.to_thread(assemble_page, intent, datamodel)
 
 
+@router.post("/components/propose-blocks")
+async def propose_blocks_route(
+    payload: Dict[str, Any],
+    x_internal_key: Optional[str] = Header(None),
+):
+    """AI 组装区块：从「还没接进区块」的基础组件里提议下一个该建的区块。
+
+    与 assemble-page 是**两次不同方向的组装**（用户 2026-08-08 定的链路）：
+
+      assemble-page    从现有区块里挑，摆进页面区域  → 产物是数据，直接能渲染
+      propose-blocks   从基础组件里挑，定义一个新区块 → 产物是契约，还要人实现
+
+    后者不生成代码，这是查过 GitHub 之后的判断：Ant Design 官方那 29 个
+    「区块」(ant-design/pro-blocks) 全是手写 React 源码，`umi block add` 是把
+    源码拷进项目的脚手架，不是运行时拼装。区块带逻辑，逻辑就是代码。所以这里
+    让模型做的是设计——说出还缺哪个区块、它的契约长什么样。
+
+    基础组件清单由前端传：那份目录是 TSX（每条挂着一个真实 render），搬不到
+    Python 侧，让持有 SSOT 的那一边送过来。
+    """
+    _auth(x_internal_key)
+    from services.block_proposer import propose_blocks
+
+    comps = payload.get("baseComponents")
+    if not isinstance(comps, list) or not comps:
+        raise HTTPException(400, "baseComponents 不能为空")
+    return await asyncio.to_thread(propose_blocks, comps)
+
+
 @router.get("/components/presets")
 async def list_component_presets(
     industry: Optional[str] = None,
