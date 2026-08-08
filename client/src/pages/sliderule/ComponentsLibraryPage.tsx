@@ -682,6 +682,55 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
           ],
         },
       },
+  TagFilterRow: {
+        block: {
+          id: "demo-TagFilterRow", type: "TagFilterRow",
+          props: { title: "按标签筛选" },
+          binding: {
+            entityRef: "order", fieldRefs: ["status", "channel"],
+            targets: ["demo-DataTable"],
+          },
+        },
+        // 标签行的取值从 filterFieldOptions 来（跟 FilterBar 同一条通道）。
+        // 故意给 status 塞满 11 个取值：**展开按钮只在真的放不下时才该出现**，
+        // 对照台上得能看见这条与源码的分歧（它那边永远显示）。
+        extra: {
+          filterFieldOptions: [
+            {
+              id: "status", label: "状态",
+              options: [
+                { label: "待办", value: "todo" },
+                { label: "进行中", value: "doing" },
+                { label: "已完成", value: "done" },
+                { label: "待审核", value: "s4" },
+                { label: "已驳回", value: "s5" },
+                { label: "待发货", value: "s6" },
+                { label: "已发货", value: "s7" },
+                { label: "配送中", value: "s8" },
+                { label: "已签收", value: "s9" },
+                { label: "已退货", value: "s10" },
+                { label: "已关闭", value: "s11" },
+              ],
+            },
+            {
+              id: "channel", label: "渠道",
+              options: [
+                { label: "线上", value: "线上" },
+                { label: "门店", value: "门店" },
+                { label: "电话", value: "电话" },
+              ],
+            },
+          ],
+        },
+      },
+  SearchBox: {
+        block: {
+          id: "demo-SearchBox", type: "SearchBox",
+          props: { title: "搜索", placeholder: "搜门店名或备注" },
+          binding: { entityRef: "order", targets: ["demo-DataTable"] },
+        },
+        extra: {},
+      },
   FilterBar: {
         block: { id: "demo-FilterBar", type: "FilterBar", props: { title: "筛选条件", showDateRange: true } },
         extra: {
@@ -806,10 +855,18 @@ function BlockCard({ block, device }: { block: CatalogBlock; device: PreviewDevi
   // 给回调它就是一排点不动的复选框——这一页刚因为同一个原因让 QuickActionPanel
   // 渲染成空气过（见 previewActions 那段）。这份局部态只服务这张卡。
   const [demoColumnState, setDemoColumnState] = React.useState<PageColumnState>({});
+  // 筛选态同理：TagFilterRow 勾了标签、SearchBox 敲了词，没有回调就一动不动。
+  const [demoFilter, setDemoFilter] = React.useState<PageFilterState>({
+    enumFilters: {},
+    dateRange: null,
+  });
   const demoStateProps = {
     columnState: demoColumnState,
     onColumnStateChange: (targetId: string, next: BlockColumnState) =>
       setDemoColumnState(prev => ({ ...prev, [targetId]: next })),
+    filterState: demoFilter,
+    onFilterChange: (patch: Partial<PageFilterState>) =>
+      setDemoFilter(prev => ({ ...prev, ...patch })),
   };
 
   // 手机档只渲染**真有手机实现**的区块（见 hasPhoneImplementation 与那里的说明）。
@@ -1312,11 +1369,29 @@ function AssembledPageModal({
       const out: Record<string, RuntimeRow[]> = {};
       for (const [entityId, list] of Object.entries(rows)) {
         out[entityId] = list.filter(r =>
-          applied.every(f =>
-            Object.entries(f.enumFilters ?? {}).every(([field, want]) =>
+          applied.every(f => {
+            // ① 单选下拉（FilterBar）
+            const bySingle = Object.entries(f.enumFilters ?? {}).every(([field, want]) =>
               !want ? true : String(r.values?.[field] ?? "") === want
-            )
-          )
+            );
+            // ② 多选标签行（TagFilterRow）。**空数组 = 不筛这个维度**——
+            // 「全部」取消勾选之后是空数组，那时候该看到全部，不是一条都
+            // 看不到。这条不写清楚很容易写成 includes 直接返回 false。
+            const byMulti = Object.entries(f.enumMulti ?? {}).every(([field, picked]) =>
+              !picked || picked.length === 0
+                ? true
+                : picked.includes(String(r.values?.[field] ?? ""))
+            );
+            // ③ 关键词（SearchBox）。跨所有值做子串匹配——这一页是对照台，
+            // 真实应用该按 fieldRefs 声明的字段搜。
+            const kw = (f.keyword ?? "").trim().toLowerCase();
+            const byKeyword =
+              kw === "" ||
+              Object.values(r.values ?? {}).some(v =>
+                String(v ?? "").toLowerCase().includes(kw)
+              );
+            return bySingle && byMulti && byKeyword;
+          })
         );
       }
       return out;

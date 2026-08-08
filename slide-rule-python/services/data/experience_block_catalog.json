@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 21,
+  "version": 22,
   "blockFamilies": [
     "data",
     "filter",
@@ -1120,6 +1120,9 @@
           },
           "showDateRange": {
             "type": "boolean"
+          },
+          "defaultCollapsed": {
+            "type": "boolean"
           }
         }
       },
@@ -1150,7 +1153,132 @@
         "note": "可筛选字段在 props.filterFields 里声明（不是 binding）；entityRef 仅在需要按实体过滤时填写。触发 changeFilter 动作刷新同页面其他区块。 targets 是这条筛选**作用于哪些区块**的 id（同页的 data 族区块）。不写就是筛不到任何东西——页面上可能不止一张表，没有 targets 就没法知道该收窄哪一张。目标必须与本区块绑同一个实体。"
       },
       "capability": "filter",
-      "family": "filter"
+      "family": "filter",
+      "source": {
+        "repo": "ant-design/pro-components",
+        "path": "src/form/layouts/QueryFilter/index.tsx",
+        "took": "收起按钮的出现条件是算出来的不是拍的：needCollapseRender = 总栅格 >= 24 且控件数 > showLength，而 showLength = max(1, 24/span - 1) —— 减的那个 1 是给「查询/重置」按钮留的位置；一行几个由屏宽断点决定（576/768/992/1200/1600），窄屏还会从 horizontal 切成 vertical 布局；showHiddenNum 把「收起了几个」写在按钮上，否则用户不知道后面还有没有东西"
+      }
+    },
+    {
+      "type": "TagFilterRow",
+      "description": "标签式筛选：一行一个维度，取值摊开成一排可点的标签，能多选。取值多到一行放不下时可以展开。适合「按分类/负责人/状态挑一批」这种要同时选好几个的筛法。",
+      "rendererKey": "tag-filter-row",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "filter",
+      "family": "filter",
+      "source": {
+        "repo": "ant-design/pro-blocks",
+        "path": "ListSearchApplications/src/components/{StandardFormRow,TagSelect}/index.tsx",
+        "took": "一行一个维度、左边一个固定宽度的标题（StandardFormRow）；「全部」本身是一个可勾的标签，勾上=全选、取消=全不选；展开是 CSS max-height 32→200，**它不判断实际有没有溢出**，所以三个标签时也会显示「展开」、点了什么都不变——这条我们没照抄"
+      },
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          },
+          "hideCheckAll": {
+            "type": "boolean"
+          }
+        }
+      },
+      "dataKinds": [],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "monitor"
+      ],
+      "allowedRegions": [
+        "filters"
+      ],
+      "regionsRationale": "filters only. ListSearchApplications stacks these rows directly under the page header as the whole filter band — that is the region. Unlike FilterBar it cannot fold into a header slot: each dimension takes a full row, so it needs the band's width.",
+      "events": [
+        "filterChange"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef",
+          "fieldRefs",
+          "targets"
+        ],
+        "optional": [],
+        "entityFieldRefLists": {
+          "fieldRefs": {
+            "fieldType": "enum"
+          }
+        },
+        "note": "fieldRefs 是要摊开成标签行的枚举字段，一个字段一行。**必须是枚举字段**——标签行的每一颗标签就是它的一个取值，没有取值声明就没东西可摊。 targets 是这条筛选**作用于哪些区块**的 id（同页的 data 族区块）。不写就是筛不到任何东西——页面上可能不止一张表，没有 targets 就没法知道该收窄哪一张。目标必须与本区块绑同一个实体。"
+      }
+    },
+    {
+      "type": "SearchBox",
+      "description": "关键词搜索框。在列表页顶上输入几个字，把下面的列表收窄到匹配的那几条。跟筛选条是两条独立的通道——清空筛选不会清掉搜索词。",
+      "rendererKey": "search-box",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "filter",
+      "family": "filter",
+      "source": {
+        "repo": "ant-design/pro-components",
+        "path": "src/table/components/ListToolBar/index.tsx + ToolBar/index.tsx 的 search 段",
+        "took": "搜索词是**与筛选并列的独立通道**，不混进筛选表单的 values——ToolBar 里它住在 counter.keyWords，重置筛选不碰它；搜索框的位置随有没有标题变（有标题去右边，没标题就占左边标题的位置）；onSearch 返回 false 能拦掉外层的 onSearch"
+      },
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "placeholder": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          }
+        }
+      },
+      "dataKinds": [],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "monitor"
+      ],
+      "allowedRegions": [
+        "header",
+        "filters"
+      ],
+      "regionsRationale": "header is where ListToolBar puts it — search sits on the same bar as the title, above the rows it narrows. filters is allowed when the page already has a filter band and search belongs with it. Never below the target: searching after reading is backwards, and the filter-after-target gate rule enforces exactly that.",
+      "events": [
+        "filterChange"
+      ],
+      "bindingSchema": {
+        "required": [
+          "targets"
+        ],
+        "optional": [
+          "entityRef",
+          "fieldRefs"
+        ],
+        "entityFieldRefLists": {
+          "fieldRefs": {}
+        },
+        "note": "fieldRefs 声明搜哪几个字段；不写就搜目标表格显示的所有文本列。**搜索词与筛选条是两条通道**：清空筛选不清搜索词，反之亦然。 targets 是这条筛选**作用于哪些区块**的 id（同页的 data 族区块）。不写就是筛不到任何东西——页面上可能不止一张表，没有 targets 就没法知道该收窄哪一张。目标必须与本区块绑同一个实体。"
+      }
     },
     {
       "type": "WorkflowTimeline",

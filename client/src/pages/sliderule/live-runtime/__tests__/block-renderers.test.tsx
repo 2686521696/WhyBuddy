@@ -1233,3 +1233,140 @@ describe("排行里的涨跌", () => {
     expect((html.match(/data-testid="ranked-list-item"/g) ?? []).length).toBe(4);
   });
 });
+
+/**
+ * 2026-08-08 ②批次 3：筛选区。
+ *
+ * 两个新区块（SearchBox / TagFilterRow）+ 一条增强（FilterBar 接上收起展开）。
+ * 用例钉的是搬到的那几条判断，不是控件长相。
+ */
+describe("搜索框", () => {
+  const render = (props: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "s", type: "SearchBox", props,
+          binding: { entityRef: "order", targets: ["tbl"] },
+        }}
+        {...extra}
+      />
+    );
+
+  it("出一个搜索框，占位文案可配", () => {
+    const html = render({ placeholder: "搜门店名" });
+    expect(html).toContain('data-testid="search-box-input"');
+    expect(html).toContain("搜门店名");
+  });
+
+  it("不配占位文案时给一句能看懂的默认，不是空白框", () => {
+    expect(render()).toContain("输入关键词搜索");
+  });
+
+  it("已有的搜索词回填进框里 —— 刷新之后不该白敲", () => {
+    const html = render({}, { filterState: { enumFilters: {}, keyword: "人民路" } });
+    expect(html).toContain('value="人民路"');
+  });
+});
+
+describe("标签筛选行", () => {
+  const many = Array.from({ length: 11 }, (_, i) => ({ value: `v${i}`, label: `取值${i}` }));
+  const opts = [
+    { id: "status", label: "状态", options: many },
+    { id: "channel", label: "渠道", options: [
+      { value: "线上", label: "线上" }, { value: "门店", label: "门店" },
+    ] },
+  ];
+  const render = (extra: Record<string, unknown> = {}, fieldRefs = ["status", "channel"]) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "t", type: "TagFilterRow", props: { title: "按标签筛选" },
+          binding: { entityRef: "order", fieldRefs, targets: ["tbl"] },
+        }}
+        filterFieldOptions={opts}
+        {...extra}
+      />
+    );
+
+  it("一个字段一行，左边出维度名", () => {
+    const html = render();
+    expect((html.match(/data-testid="tag-filter-dimension"/g) ?? []).length).toBe(2);
+    expect(html).toContain("状态");
+    expect(html).toContain("渠道");
+  });
+
+  it("「全部」本身是一颗可勾的标签，不是另一个清除按钮", () => {
+    const html = render();
+    expect((html.match(/data-testid="tag-filter-all"/g) ?? []).length).toBe(2);
+    expect(html).toContain("全部");
+  });
+
+  it("hideCheckAll 能关掉「全部」", () => {
+    const html = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "t", type: "TagFilterRow", props: { hideCheckAll: true },
+          binding: { entityRef: "order", fieldRefs: ["channel"], targets: ["tbl"] },
+        }}
+        filterFieldOptions={opts}
+      />
+    );
+    expect(html).not.toContain('data-testid="tag-filter-all"');
+  });
+
+  it("**展开按钮只在真的放不下时才出现** —— 源码那边只要 expandable 就永远显示", () => {
+    const html = render();
+    // status 有 11 个取值（超过 8），channel 只有 2 个
+    expect((html.match(/data-testid="tag-filter-expand"/g) ?? []).length).toBe(1);
+    // 而且说清楚还剩几个，不是光一个「展开」
+    expect(html).toContain("还有 3 个");
+  });
+
+  it("收起时只画前 8 颗，展开才是全部", () => {
+    const html = render();
+    expect(html).toContain("取值7");
+    expect(html).not.toContain("取值8");
+  });
+
+  /** 「全部」那颗标签是不是 checked 态。antd 的 CheckableTag 选中时加
+   *  `ant-tag-checkable-checked`（实测的类名，不是猜的）。 */
+  const allTagChecked = (html: string) => {
+    const m = html.match(/<span data-testid="tag-filter-all" class="([^"]*)"/);
+    return !!m && m[1].includes("ant-tag-checkable-checked");
+  };
+
+  it("真的全选中时「全部」亮起来", () => {
+    const full = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "t", type: "TagFilterRow",
+          binding: { entityRef: "order", fieldRefs: ["channel"], targets: ["tbl"] },
+        }}
+        filterFieldOptions={opts}
+        filterState={{ enumFilters: {}, enumMulti: { channel: ["线上", "门店"] } }}
+      />
+    );
+    expect(allTagChecked(full)).toBe(true);
+  });
+
+  it("**全选的判据是「每个都在」，不是长度相等**", () => {
+    // 源码写的是 `getAllTags().length === value?.length`。筛选态里留着一个
+    // 已经被删掉的取值时，长度照样相等，「全部」就会错误地亮起来——而实际上
+    // 「门店」根本没被选中。同一类坑在 ColumnSettingPanel 的半选分母上踩过。
+    const stale = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "t", type: "TagFilterRow",
+          binding: { entityRef: "order", fieldRefs: ["channel"], targets: ["tbl"] },
+        }}
+        filterFieldOptions={opts}
+        filterState={{ enumFilters: {}, enumMulti: { channel: ["线上", "已经不存在的取值"] } }}
+      />
+    );
+    expect(allTagChecked(stale)).toBe(false);
+  });
+
+  it("fieldRefs 指向没有取值声明的字段时说清楚，不画一排空行", () => {
+    expect(render({}, ["没有取值的字段"])).toContain("没有可摊成标签行的枚举字段");
+  });
+});

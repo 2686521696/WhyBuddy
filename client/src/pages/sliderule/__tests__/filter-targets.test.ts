@@ -121,3 +121,40 @@ describe("区块分族与筛选连线", () => {
     expect(pageSource).toContain("filterState={filterState[blockId] ?? EMPTY_FILTER}");
   });
 });
+
+/**
+ * 2026-08-08 ②批次 3：筛选从一条通道变成三条（下拉单选 / 标签多选 / 关键词）。
+ *
+ * 三条都必须真的作用在行上。区块本身渲染得再对，宿主不接就是一排点不动的
+ * 装饰——这一页刚因为同一个原因让 QuickActionPanel 渲染成空气过。
+ */
+describe("三条筛选通道都真的收窄了行", () => {
+  it("下拉单选、标签多选、关键词，一条都不能少", () => {
+    expect(pageSource, "单选下拉没接").toContain("f.enumFilters ?? {}");
+    expect(pageSource, "标签多选没接").toContain("f.enumMulti ?? {}");
+    expect(pageSource, "关键词没接").toContain("f.keyword ?? \"\"");
+  });
+
+  it("**多选的空数组 = 不筛这个维度**，不是一条都不给看", () => {
+    // 「全部」取消勾选之后是空数组，那时候该看到全部。写成 includes 直接
+    // 返回 false 的话，用户一取消全选就面对一张空表。
+    expect(pageSource).toContain("picked.length === 0");
+  });
+
+  it("关键词与筛选是两条独立通道 —— 契约上就分开存", () => {
+    // 形状即承诺：混成一个字段之后，「重置筛选」必然连搜索词一起清掉。
+    const registrySource = readFileSync(
+      new URL("../live-runtime/block-registry.tsx", import.meta.url),
+      "utf8"
+    );
+    expect(registrySource).toContain("enumMulti?: Record<string, string[]>");
+    expect(registrySource).toContain("keyword?: string");
+    // FilterBar 的重置只清 enumFilters 和 dateRange，不碰 keyword/enumMulti
+    const reset = registrySource.slice(
+      registrySource.indexOf("onReset={() =>"),
+      registrySource.indexOf("onReset={() =>") + 300
+    );
+    expect(reset).not.toContain("keyword");
+    expect(reset).not.toContain("enumMulti");
+  });
+});

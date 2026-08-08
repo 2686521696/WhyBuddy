@@ -21,6 +21,7 @@ import {
   Checkbox,
   Empty,
   Flex,
+  Input,
   List,
   Progress,
   Result,
@@ -217,6 +218,22 @@ export interface QuickActionButtonSpec {
 export interface PageFilterState {
   enumFilters: Record<string, string | undefined>;
   dateRange?: [string, string] | null;
+  /**
+   * 多选筛选（TagFilterRow，2026-08-08）。空数组 = 这个维度不筛（"全部"）。
+   *
+   * 单独一条而不是把 enumFilters 的值改成数组：下拉筛选是**单选**、标签行是
+   * **多选**，两种交互对"没选"的表示都不一样（undefined vs []），混成一个
+   * 字段之后每个读它的地方都要先判类型。
+   */
+  enumMulti?: Record<string, string[]>;
+  /**
+   * 关键词（SearchBox，2026-08-08）。
+   *
+   * **与筛选并列的独立通道**——照 pro-components 的 ToolBar：搜索词住在
+   * `counter.keyWords`，不进筛选表单的 values，所以「重置筛选」不会把用户
+   * 刚敲的搜索词也清掉。这是两件事，用户也是当成两件事在用。
+   */
+  keyword?: string;
 }
 
 /**
@@ -443,6 +460,164 @@ const QuickActionPanelRenderer: ExperienceBlockRenderer = ({
  * 实体确有 date/datetime 字段时渲染。变更经 onFilterChange 合并进页面级
  * 过滤态，同页 Table/看板/日历同步生效（同实体行数据共用一份过滤）。
  */
+/**
+ * ── 关键词搜索 —— 照 pro-components 的 ListToolBar search 段（2026-08-08，②批次 3）──
+ *
+ * 源：`src/table/components/ListToolBar/index.tsx` + `ToolBar/index.tsx`
+ *
+ * 这是批次 1 判定「TableToolbar 不该建成区块」时留下的那个真缺口：ListToolBar
+ * 的四段里，标题/操作是 PageHeader、设置是 ColumnSettingPanel、筛选是
+ * FilterBar，**只有搜索我们一个都没有**。
+ *
+ * 搬到的一条判断，比控件本身值钱：**搜索词是与筛选并列的独立通道。**
+ * ToolBar 里它住在 `counter.keyWords`，不进筛选表单的 values——所以点「重置」
+ * 清筛选的时候，用户刚敲进去的搜索词不会跟着没了。这两件事在用户心里就是
+ * 两件事，混成一个状态之后必然出"我只是想换个筛选，怎么搜索也没了"。
+ */
+const SearchBoxRenderer: ExperienceBlockRenderer = ({
+  block,
+  filterState,
+  onFilterChange,
+}) => {
+  const title = String(block.props?.title ?? "").trim();
+  const placeholder =
+    String(block.props?.placeholder ?? "").trim() || "输入关键词搜索";
+  const keyword = filterState?.keyword ?? "";
+  return (
+    <BlockShell block={block} title={title} testid="search-box">
+      <Input.Search
+        allowClear
+        data-testid="search-box-input"
+        placeholder={placeholder}
+        defaultValue={keyword}
+        style={{ maxWidth: 320 }}
+        // 只在**回车/点搜索**时才收窄，不是每敲一个字就重算一次。
+        // onSearch 在 allowClear 的叉号上也会触发（值为空串），所以"清空"
+        // 走的是同一条路，不用另接 onChange。
+        onSearch={value => onFilterChange?.({ keyword: value.trim() || undefined })}
+      />
+    </BlockShell>
+  );
+};
+
+/**
+ * ── 标签式筛选 —— 照 pro-blocks 的 StandardFormRow + TagSelect（2026-08-08，②批次 3）──
+ *
+ * 源：`ListSearchApplications/src/components/{StandardFormRow,TagSelect}/index.tsx`
+ *
+ * 跟 FilterBar 的区别不是长相，是**多选**。下拉一次只能挑一个值，标签行可以
+ * 「分类挑三个、负责人挑两个」一起筛。所以它不是 FilterBar 的一个 layout
+ * 开关——筛选态的形状都不一样（`string | undefined` vs `string[]`）。
+ *
+ * 三条从它那儿抄的：
+ *
+ * 1. **一行一个维度，左边一个固定宽度的标题**（StandardFormRow 的 label/content
+ *    两栏）。几行标题左对齐，扫一眼就知道有几个维度可筛。
+ * 2. **「全部」本身是一颗可勾的标签**，不是一个额外的清除按钮。勾上=全选、
+ *    取消=全不选，跟别的标签同一种手势。
+ * 3. 取值多到一行放不下时可以展开。
+ *
+ * **第 3 条我们没照抄它的实现**：它的展开是 CSS `max-height: 32px → 200px`，
+ * 而按钮只要 `expandable` 为真就永远显示——不判断实际有没有溢出。于是只有三个
+ * 标签时也挂着一个「展开」，点了什么都不变。我们按标签数判：超过阈值才出按钮。
+ */
+const TAG_ROW_VISIBLE = 8;
+
+const TagFilterRowRenderer: ExperienceBlockRenderer = ({
+  block,
+  filterState,
+  filterFieldOptions,
+  onFilterChange,
+  fieldLabelOf,
+}) => {
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  const title = String(block.props?.title ?? "").trim();
+  const entityRef = String(block.binding?.entityRef ?? "").trim();
+  const declared = (block.binding?.fieldRefs as string[] | undefined)?.map(String) ?? [];
+  const byId = new Map((filterFieldOptions ?? []).map(f => [f.id, f]));
+  const rows = declared.map(id => byId.get(id)).filter(Boolean) as FilterFieldOption[];
+  if (rows.length === 0)
+    return (
+      <BlockShell block={block} title={title} testid="tag-filter-row">
+        <BlockEmpty hint="没有可摊成标签行的枚举字段 —— fieldRefs 要指向有取值声明的枚举字段" />
+      </BlockShell>
+    );
+
+  const multi = filterState?.enumMulti ?? {};
+  const hideCheckAll = block.props?.hideCheckAll === true;
+  const setPicked = (fieldId: string, next: string[]) =>
+    onFilterChange?.({ enumMulti: { ...multi, [fieldId]: next } });
+
+  return (
+    <BlockShell block={block} title={title} testid="tag-filter-row">
+      <Flex vertical gap={6}>
+        {rows.map(row => {
+          const picked = multi[row.id] ?? [];
+          const values = row.options.map(o => o.value);
+          // **全选的判据用"每个都在"，不是长度相等。** 它那边写的是
+          // `getAllTags().length === value?.length`——筛选态里留着一个已经
+          // 被删掉的取值时，长度照样相等，全选框就亮了。同一类坑在
+          // ColumnSettingPanel 的半选分母上也踩过。
+          const allChecked = values.length > 0 && values.every(v => picked.includes(v));
+          const isOpen = expanded[row.id] === true;
+          const overflow = row.options.length > TAG_ROW_VISIBLE;
+          const shown = isOpen ? row.options : row.options.slice(0, TAG_ROW_VISIBLE);
+          return (
+            <Flex key={row.id} align="flex-start" gap={8} data-testid="tag-filter-dimension">
+              {/* 左栏固定宽度：几行标题要左对齐，不然扫不出有几个维度 */}
+              <span
+                style={{ width: 72, flex: "0 0 72px", fontSize: 12, color: "#64748b", lineHeight: "24px" }}
+              >
+                {fieldLabelOf?.(entityRef, row.id) ?? row.label}
+              </span>
+              <Flex wrap gap={4} style={{ flex: 1, minWidth: 0 }}>
+                {!hideCheckAll && (
+                  <Tag.CheckableTag
+                    data-testid="tag-filter-all"
+                    checked={allChecked}
+                    onChange={checked => setPicked(row.id, checked ? values : [])}
+                  >
+                    全部
+                  </Tag.CheckableTag>
+                )}
+                {shown.map(opt => (
+                  <Tag.CheckableTag
+                    key={opt.value}
+                    data-testid="tag-filter-option"
+                    checked={picked.includes(opt.value)}
+                    onChange={checked =>
+                      setPicked(
+                        row.id,
+                        checked
+                          ? [...picked, opt.value]
+                          : picked.filter(v => v !== opt.value)
+                      )
+                    }
+                  >
+                    {opt.label}
+                  </Tag.CheckableTag>
+                ))}
+                {/* 真的放不下才出展开按钮 —— 它那边只要 expandable 就永远显示，
+                    三个标签时也挂着一个点了没反应的「展开」 */}
+                {overflow && (
+                  <Button
+                    size="small"
+                    type="link"
+                    data-testid="tag-filter-expand"
+                    onClick={() => setExpanded(prev => ({ ...prev, [row.id]: !isOpen }))}
+                  >
+                    {isOpen ? "收起" : `展开（还有 ${row.options.length - TAG_ROW_VISIBLE} 个）`}
+                  </Button>
+                )}
+              </Flex>
+            </Flex>
+          );
+        })}
+      </Flex>
+    </BlockShell>
+  );
+};
+
 const FilterBarRenderer: ExperienceBlockRenderer = ({
   block,
   filterState,
@@ -506,7 +681,19 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
   const filterForm = (
     <QueryFilter
       data-testid="filter-bar"
-      defaultCollapsed={false}
+      // 收起/展开（2026-08-08，②批次 3）。此前写死 false —— QueryFilter 的
+      // 收起能力一直在，只是永远不生效。
+      //
+      // 它自己算得出该不该出收起按钮：needCollapseRender = 总栅格 >= 24 且
+      // 控件数 > showLength，showLength = max(1, 24/span - 1)，减掉的那个 1
+      // 是给「查询/重置」留的位置。一行几个由屏宽断点决定（576/768/992/
+      // 1200/1600），窄屏还会从 horizontal 切成 vertical。这些都不用我们算。
+      //
+      // 默认展开：筛选条一般三五个字段，一进页面就收起来等于藏了功能。
+      // 字段多的页面把 defaultCollapsed 打开。
+      defaultCollapsed={block.props?.defaultCollapsed === true}
+      // 收起了几个要写在按钮上，否则用户不知道后面还有没有东西
+      showHiddenNum
       span={{ xs: 24, sm: 24, md: 12, lg: 12, xl: 8, xxl: 8 }}
       initialValues={initialValues}
       onFinish={async values => {
@@ -3649,6 +3836,8 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     DataTable: { render: DataTableRenderer, uses: ["Table", "Tag", "Typography", "Space", "Pagination"], label: "数据表格" },
     QuickActionPanel: { render: QuickActionPanelRenderer, uses: ["Card", "Button", "Space"], label: "快捷操作", phone: true },
     FilterBar: { render: FilterBarRenderer, uses: ["Select", "DatePicker", "Button"], label: "筛选条", phone: true },
+    TagFilterRow: { render: TagFilterRowRenderer, uses: ["Tag", "Flex", "Button"], label: "标签筛选行" },
+    SearchBox: { render: SearchBoxRenderer, uses: ["Input"], label: "搜索框" },
     WorkflowTimeline: { render: WorkflowTimelineRenderer, uses: ["Card", "Steps"], label: "流程条", phone: true },
     FreeformInsight: { render: FreeformInsightRenderer, uses: [], label: "自由版式" },
     RecordForm: { render: RecordFormRenderer, uses: ["Form", "Input", "InputNumber", "Select", "DatePicker"], label: "记录表单" },
