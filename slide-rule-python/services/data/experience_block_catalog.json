@@ -1,6 +1,6 @@
 {
   "$comment": "体验区块目录——页面区块合法域的唯一真相源。Python Gate/Repair/Prompt 与前端 Renderer Registry 共同消费；bindingSchema 是 binding 字段的唯一结构化定义：Prompt 文案和 Gate 校验都从这里派生，不再各写一份。 | 2026-08-03 移除了 freeformEmbeddable：那是给 FreeformInsight 设计树挑固定积木用的白名单，存在的唯一理由是 dataRef 只能取聚合值、设计模型画不了逐行内容。现在 rowsRef 把逐行能力直接给了设计模型（版式它自由画，真实行数据由 rowsRef 绑），固定积木那条通道整体删除，白名单随之取消。",
-  "version": 19,
+  "version": 21,
   "blockFamilies": [
     "data",
     "filter",
@@ -662,7 +662,7 @@
   "blocks": [
     {
       "type": "MetricGrid",
-      "description": "一组关键指标卡，用于页面摘要区域。",
+      "description": "一张关键指标卡：大数字 + 环比涨跌 + 卡底一条迷你走势线 + 一行脚注。仪表盘顶上那排就是它，四张并排各说一个指标。",
       "rendererKey": "metric-grid",
       "rendererStatus": "real",
       "generationEnabled": true,
@@ -671,6 +671,12 @@
         "additionalProperties": false,
         "properties": {
           "title": {
+            "type": "string"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "footnote": {
             "type": "string"
           }
         }
@@ -698,14 +704,32 @@
         ],
         "optional": [
           "aggregate",
-          "filter"
+          "filter",
+          "trendFieldRef",
+          "trendGrain"
         ],
         "aggregateFields": [
           "aggregate"
-        ]
+        ],
+        "entityFieldRefs": {
+          "trendFieldRef": "date"
+        },
+        "enums": {
+          "trendGrain": [
+            "day",
+            "week",
+            "month"
+          ]
+        },
+        "note": "trendFieldRef 给了才出环比和迷你走势线——它是同实体下的日期字段，走势线的聚合方式与主数字同源（主数字看金额总和，走势线就是每期的金额总和）。不给就只出一个大数字，不编趋势。"
       },
       "capability": "aggregate",
-      "family": "data"
+      "family": "data",
+      "source": {
+        "repo": "ant-design/pro-blocks",
+        "path": "DashboardAnalysis/src/components/{IntroduceRow,Trend}.tsx + Charts/ChartCard/index.tsx",
+        "took": "ChartCard 的五槽 title/action/total/children/footer；renderTotal 的判据是 `!total && total !== 0`——**0 是有效值**，写成 !total 会把它判没；contentHeight 固定内容高度，一排卡才等高（有的有迷你图有的没有就会参差）；loading 时 renderContent 直接 return false，交给 Card 自己的骨架，不叠着画"
+      }
     },
     {
       "type": "TrendChart",
@@ -770,6 +794,67 @@
       "family": "data"
     },
     {
+      "type": "ProportionPie",
+      "description": "占比环图：一个维度上各取值各占多少，中间写总计。销售额按渠道、工单按类型这种「构成」问题，用它比条形排行更直观。",
+      "rendererKey": "proportion-pie",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "series",
+      "family": "data",
+      "source": {
+        "repo": "ant-design/pro-blocks",
+        "path": "DashboardAnalysis/src/components/ProportionSales.tsx",
+        "took": "环图不是实心饼（innerRadius 0.64），中间那块空白是用来写总计的；关掉图例改用带引线的标签「名称: 数值」——图例和扇区要靠颜色对应，扇区一多就对不上了；渠道切换是**卡片外面**的筛选，不属于这个图"
+      },
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          },
+          "totalLabel": {
+            "type": "string"
+          }
+        }
+      },
+      "dataKinds": [
+        "series"
+      ],
+      "pageKinds": [
+        "dashboard",
+        "monitor",
+        "workbench"
+      ],
+      "allowedRegions": [
+        "charts",
+        "aside",
+        "main"
+      ],
+      "regionsRationale": "charts is home — DashboardAnalysis puts ProportionSales side by side with the bar chart in the same band. aside works because a donut degrades gracefully into a narrow column (unlike a time axis, it has no long dimension). main only when the composition IS the page's subject.",
+      "events": [],
+      "bindingSchema": {
+        "required": [
+          "entityRef",
+          "dimensionRef"
+        ],
+        "optional": [
+          "aggregate"
+        ],
+        "entityFieldRefs": {
+          "dimensionRef": "enum"
+        },
+        "note": "dimensionRef 是分组维度，必须是枚举字段——占比图的每一瓣对应它的一个取值。aggregate 不写就是数条数（count）。**没有 limit**：瓣数太多时渲染层会自动把长尾折成「其他」，折叠阈值只该有一处。"
+      }
+    },
+    {
       "type": "RankedList",
       "description": "按数值排序的业务排行。",
       "rendererKey": "ranked-list",
@@ -816,7 +901,8 @@
         ],
         "optional": [
           "sortOrder",
-          "limit"
+          "limit",
+          "deltaFieldRef"
         ],
         "enums": {
           "sortOrder": [
@@ -825,17 +911,24 @@
           ]
         },
         "entityFieldRefs": {
-          "sortByRef": "number"
+          "sortByRef": "number",
+          "deltaFieldRef": "number"
         },
         "ranges": {
           "limit": [
             3,
             20
           ]
-        }
+        },
+        "note": "deltaFieldRef 给了才在每行右边出涨跌箭头。它是**数据模型里已有的变化率字段**（周涨幅、环比），不是我们现算的——现算需要每一行各自的时间序列，那是另一件事。正数向上、负数向下，0 不出箭头。"
       },
       "capability": "rankedRows",
-      "family": "data"
+      "family": "data",
+      "source": {
+        "repo": "ant-design/pro-blocks",
+        "path": "DashboardAnalysis/src/components/TopSearch.tsx + Trend/index.tsx",
+        "took": "排行里的「周涨幅」是数据自带的字段，不是图表现算的；涨跌方向和颜色是两件事——Trend 有 colorful 与 reverseColor 两个开关，因为「下降是好事」的指标（退款率、故障数）存在"
+      }
     },
     {
       "type": "ActivityFeed",

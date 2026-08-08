@@ -1052,3 +1052,184 @@ describe("表格的拖拽排序", () => {
     expect(table.propsSchema.properties).toHaveProperty("sortable");
   });
 });
+
+/**
+ * 2026-08-08 ②批次 2：仪表盘。照 pro-blocks 的 DashboardAnalysis。
+ *
+ * ChartCard 把一张指标卡拆成五槽 —— title / action / total / children(迷你图)
+ * / footer。我们此前只有 total 一个槽：一个孤零零的大数字，看不出涨跌、也看
+ * 不出走势。
+ */
+describe("指标卡的五槽", () => {
+  const rows = [
+    { id: "a", values: { amount: 100, at: "2026-08-01" }, createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "b", values: { amount: 200, at: "2026-08-02" }, createdAt: "2026-08-02T00:00:00.000Z" },
+    { id: "c", values: { amount: 400, at: "2026-08-03" }, createdAt: "2026-08-03T00:00:00.000Z" },
+  ];
+  const render = (props: Record<string, unknown> = {}, binding: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "m", type: "MetricGrid",
+          props: { title: "销售额", ...props },
+          binding: { entityRef: "order", aggregate: "sum:amount", ...binding },
+        }}
+        entityRows={{ order: rows }}
+      />
+    );
+
+  it("不给 trendFieldRef 就只出大数字，不编趋势", () => {
+    const html = render();
+    expect(html).toContain("700");
+    expect(html).not.toContain('data-testid="metric-grid-delta"');
+    expect(html).not.toContain('data-testid="metric-grid-spark"');
+  });
+
+  it("给了日期字段才出环比 —— footer 槽", () => {
+    const html = render({}, { trendFieldRef: "at" });
+    expect(html).toContain('data-testid="metric-grid-delta"');
+    // 400 相对 200 是翻倍
+    expect(html).toContain("100%");
+  });
+
+  it("副标题写中文字段名，不是字段 id", () => {
+    // 对照台上逮到的：这张卡写「合计 · amount」，旁边表格的同一列写着「金额」。
+    // 同一份数据在两个区块里必须读起来一样——这条纪律的最后一处漏网。
+    const html = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "m", type: "MetricGrid", props: { title: "销售额" },
+          binding: { entityRef: "order", aggregate: "sum:amount" },
+        }}
+        entityRows={{ order: rows }}
+        fieldLabelOf={(_e, f) => ({ amount: "金额" })[f]}
+      />
+    );
+    expect(html).toContain("合计 · 金额");
+    expect(html).not.toContain("合计 · amount");
+  });
+
+  it("查不到中文名就回落字段 id，不显示 undefined", () => {
+    expect(render()).toContain("合计 · amount");
+  });
+
+  it("action 槽只在写了说明时出现 —— 点开什么都没有的问号比没有更糟", () => {
+    expect(render()).not.toContain('data-testid="metric-grid-hint"');
+    expect(render({ hint: "口径说明" })).toContain('data-testid="metric-grid-hint"');
+  });
+
+  it("footer 槽两样都没有就整条不出，不留一截空白", () => {
+    const html = render();
+    expect(html).not.toContain('data-testid="metric-grid-delta"');
+    expect(html).not.toContain("口径以财务月结为准");
+  });
+
+  it("**`0` 要显示成 0，不是「—」** —— ChartCard 那句 `!total && total !== 0` 防的就是这个", () => {
+    const zero = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "m", type: "MetricGrid", props: { title: "今日新增" },
+          binding: { entityRef: "order", aggregate: "sum:amount" },
+        }}
+        entityRows={{ order: [{ id: "z", values: { amount: 0 }, createdAt: "2026-08-08T00:00:00.000Z" }] }}
+      />
+    );
+    // 有 0 这个数就写 0；写成「—」的话「今日新增 0 单」这张卡看起来像坏了
+    expect(zero).toMatch(/>0</);
+    expect(zero).not.toContain("该字段暂无有效数值");
+  });
+});
+
+describe("占比环图", () => {
+  const rows = [
+    { id: "a", values: { channel: "线上", amount: 100 }, createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "b", values: { channel: "门店", amount: 300 }, createdAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  const render = (binding: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "p", type: "ProportionPie", props: { title: "渠道占比" },
+          binding: { entityRef: "order", dimensionRef: "channel", ...binding },
+        }}
+        entityRows={{ order: rows }}
+      />
+    );
+
+  it("没绑维度就说清楚缺什么", () => {
+    const html = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "p", type: "ProportionPie", binding: { entityRef: "order" } }}
+        entityRows={{ order: rows }}
+      />
+    );
+    expect(html).toContain("未绑定到有效的分组维度");
+  });
+
+  it("有维度就出图（图表本体走懒加载，这里只钉外壳没崩）", () => {
+    expect(render()).toContain("渠道占比");
+    expect(render()).not.toContain("未绑定");
+  });
+
+  it("零行时说的是「写入某字段后自动出图」，不是绑定错误", () => {
+    const html = renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "p", type: "ProportionPie", binding: { entityRef: "order", dimensionRef: "channel" } }}
+        entityRows={{ order: [] }}
+      />
+    );
+    expect(html).toContain("自动出图");
+  });
+
+  it("契约里**没有 limit** —— 长尾折成「其他」这件事只该有一处管", () => {
+    const pie = (CATALOG.blocks as Array<{
+      type: string;
+      bindingSchema: { optional?: string[] };
+    }>).find(b => b.type === "ProportionPie")!;
+    expect(pie.bindingSchema.optional).not.toContain("limit");
+  });
+});
+
+describe("排行里的涨跌", () => {
+  const rows = [
+    { id: "a", values: { name: "甲店", amount: 300, weekDelta: 12.4 }, createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "b", values: { name: "乙店", amount: 200, weekDelta: -3.1 }, createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "c", values: { name: "丙店", amount: 100, weekDelta: 0 }, createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "d", values: { name: "丁店", amount: 50 }, createdAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  const render = (binding: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{
+          id: "r", type: "RankedList", props: { title: "门店排行" },
+          binding: { entityRef: "order", sortByRef: "amount", limit: 5, ...binding },
+        }}
+        entityRows={{ order: rows }}
+      />
+    );
+
+  it("不声明 deltaFieldRef 就一个箭头都不出", () => {
+    expect(render()).not.toContain('data-testid="ranked-list-delta"');
+  });
+
+  it("声明了就每行出涨跌，正数向上负数向下", () => {
+    const html = render({ deltaFieldRef: "weekDelta" });
+    expect(html).toContain("12.4%");
+    expect(html).toContain("3.1%");
+    expect(html).toContain("anticon-caret-up");
+    expect(html).toContain("anticon-caret-down");
+  });
+
+  it("恰好 0 只写数不画箭头 —— 箭头是方向的表示，没方向别画", () => {
+    const html = render({ deltaFieldRef: "weekDelta" });
+    expect(html).toContain("0%");
+    // 三个有值的行里只有两个该有箭头
+    expect((html.match(/anticon-caret-/g) ?? []).length).toBe(2);
+  });
+
+  it("字段没填的那行整块不画 —— 没填和「没有变化」是两回事", () => {
+    const html = render({ deltaFieldRef: "weekDelta" });
+    expect((html.match(/data-testid="ranked-list-delta"/g) ?? []).length).toBe(3);
+    expect((html.match(/data-testid="ranked-list-item"/g) ?? []).length).toBe(4);
+  });
+});

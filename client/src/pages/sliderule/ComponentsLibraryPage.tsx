@@ -357,6 +357,7 @@ const FIELD_LABEL: Record<string, string> = {
   remark: "备注",
   urgent: "加急",
   owner_id: "负责人",
+  weekDelta: "周涨幅",
 };
 
 /** 字段类型：表单族按它决定出哪种控件（enum→下拉、number→数字、date→日期）。
@@ -380,6 +381,7 @@ const FIELD_TYPE: Record<string, string> = {
   remark: "text",
   urgent: "boolean",
   owner_id: "ref",
+  weekDelta: "number",
 };
 
 /**
@@ -405,23 +407,23 @@ const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
   order: [
     { name: "人民路店", amount: 428, status: "done", channel: "线上", at: "2026-08-06",
       contact: "renmin@example.com", detailUrl: "https://example.com/store/1",
-      cover: "/brand/miantuan-mark.png", urgent: true, owner_id: "u-1",
+      cover: "/brand/miantuan-mark.png", weekDelta: 12.4, urgent: true, owner_id: "u-1",
       remark: "客户要求当日达，已与配送确认时间窗；如遇雨天顺延至次日上午，需提前电话告知。" },
     { name: "高新店", amount: 366, status: "doing", channel: "门店", at: "2026-08-05",
       contact: "gaoxin@example.com", detailUrl: "https://example.com/store/2",
-      cover: "/assets/sliderule-mark.svg", urgent: false, owner_id: "u-2", remark: "常规" },
+      cover: "/assets/sliderule-mark.svg", weekDelta: -3.1, urgent: false, owner_id: "u-2", remark: "常规" },
     { name: "南湖店", amount: 291, status: "done", channel: "线上", at: "2026-08-05",
       contact: "nanhu@example.com", detailUrl: "https://example.com/store/3",
-      cover: "/brand/logo.png", urgent: false, owner_id: "u-1", remark: "常规" },
+      cover: "/brand/logo.png", weekDelta: 8.7, urgent: false, owner_id: "u-1", remark: "常规" },
     { name: "城东店", amount: 244, status: "todo", channel: "电话", at: "2026-08-04",
       contact: "chengdong@example.com", detailUrl: "https://example.com/store/4",
-      cover: "/assets/sliderule_icon_flat_transparent.png", urgent: true, owner_id: "u-3", remark: "待确认收货地址" },
+      cover: "/assets/sliderule_icon_flat_transparent.png", weekDelta: 0, urgent: true, owner_id: "u-3", remark: "待确认收货地址" },
     { name: "西溪店", amount: 187, status: "doing", channel: "门店", at: "2026-08-03",
       contact: "xixi@example.com", detailUrl: "https://example.com/store/5",
-      cover: "/brand/transLogo.png", urgent: false, owner_id: "u-2", remark: "常规" },
+      cover: "/brand/transLogo.png", weekDelta: -15.2, urgent: false, owner_id: "u-2", remark: "常规" },
     { name: "湖畔店", amount: 132, status: "done", channel: "线上", at: "2026-08-02",
       contact: "hupan@example.com", detailUrl: "https://example.com/store/6",
-      cover: "/assets/sliderule_icon_card_transparent.png", urgent: false, owner_id: "u-3", remark: "常规" },
+      cover: "/assets/sliderule_icon_card_transparent.png", weekDelta: 5.5, urgent: false, owner_id: "u-3", remark: "常规" },
   ].map((values, i) => ({
     id: `order-${i + 1}`,
     values,
@@ -583,7 +585,28 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
         },
       },
   MetricGrid: {
-        block: { id: "demo-MetricGrid", type: "MetricGrid", props: { title: "今日经营指标" }, binding: { entityRef: "order", aggregate: "sum:amount" } },
+        block: {
+          id: "demo-MetricGrid", type: "MetricGrid",
+          props: {
+            title: "今日经营指标",
+            hint: "统计口径：已完成与进行中的订单金额之和，不含已取消",
+            footnote: "口径以财务月结为准",
+          },
+          // trendFieldRef 给了才有环比和迷你走势线——对照台上要看得见这两层，
+          // 不然「五槽」只兑现了一槽
+          binding: {
+            entityRef: "order", aggregate: "sum:amount",
+            trendFieldRef: "at", trendGrain: "day",
+          },
+        },
+        extra: {},
+      },
+  ProportionPie: {
+        block: {
+          id: "demo-ProportionPie", type: "ProportionPie",
+          props: { title: "渠道占比" },
+          binding: { entityRef: "order", dimensionRef: "channel", aggregate: "sum:amount" },
+        },
         extra: {},
       },
   TrendChart: {
@@ -596,7 +619,10 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   RankedList: {
         block: {
           id: "demo-RankedList", type: "RankedList", props: { title: "门店销售 Top 5" },
-          binding: { entityRef: "order", sortByRef: "amount", sortOrder: "desc", limit: 5 },
+          binding: {
+            entityRef: "order", sortByRef: "amount", sortOrder: "desc", limit: 5,
+            deltaFieldRef: "weekDelta",
+          },
         },
         extra: {},
       },

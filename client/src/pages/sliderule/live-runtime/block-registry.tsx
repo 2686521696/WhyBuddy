@@ -1288,7 +1288,54 @@ function rowsOfBinding(
   return { entityRef, rows: entityRows[entityRef] ?? [] };
 }
 
-const MetricGridRenderer: ExperienceBlockRenderer = ({ children, block, entityRows }) => {
+/**
+ * 涨跌的颜色 —— 照 pro-blocks 的 Trend（`components/Trend/index.less`）。
+ *
+ * 它把「方向」和「颜色」做成两个开关（`colorful` / `reverseColor`），因为
+ * **有些指标下降才是好事**（退款率、故障数、投诉量）。我们这一版先只做默认
+ * 那一档：涨红跌绿，中式财务口径。真遇到反向指标时再开 reverseColor，
+ * 不提前造开关。
+ */
+const TREND_TONE: Record<"up" | "down" | "flat", string | undefined> = {
+  up: "#cf1322",
+  down: "#3f8600",
+  flat: undefined,
+};
+
+/**
+ * ── 指标卡 —— 照 pro-blocks 的 ChartCard 五槽（2026-08-08，②批次 2）──
+ *
+ * 源：`DashboardAnalysis/src/components/Charts/ChartCard/index.tsx`（97 行）
+ *   + `components/IntroduceRow.tsx`（那四张卡的用法）
+ *   + `components/Trend/index.tsx`（涨跌箭头）
+ *
+ * 它把一张指标卡拆成**五个槽**，这个拆法就是搬到的东西：
+ *
+ *     title    这是什么指标
+ *     action   右上角那个「指标说明」的问号
+ *     total    大数字（主角）
+ *     children 卡中间那条迷你图（高度固定 46）
+ *     footer   一行次要信息：环比、或者「日销售额 ￥12,423」
+ *
+ * 我们此前只有 total 一个槽——大数字孤零零一个，用户看不出它是涨是跌、
+ * 也看不出这几天什么走势。环比和走势线的算法早就有了（dataref-trend.ts，
+ * 当初是给 FreeformInsight 的 dataRef 做的），这次是把它接到指标卡上。
+ *
+ * 两条它踩过、我们照抄的坑：
+ *
+ * 1. **`0` 是有效值。** 它的 renderTotal 第一行是 `if (!total && total !== 0)
+ *    return null` —— 那个 `&& total !== 0` 就是为这条加的。写成 `!total` 的话，
+ *    「今日新增 0 单」这张卡会整个空掉，看起来像坏了。
+ * 2. **内容区高度固定**（contentHeight=46）。一排四张卡，有的有迷你图有的
+ *    只有文字，不固定高度就参差不齐——而这排卡是并列比较用的。
+ */
+const MetricGridRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  chartPalette,
+  fieldLabelOf,
+}) => {
   // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
   // 现行 renderBlock 不传 children，走下面的 binding 取数。
   if (children !== undefined && children !== null) return <>{children}</>;
@@ -1302,16 +1349,49 @@ const MetricGridRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
     );
   const spec = parseAggregate(block.binding?.aggregate);
   const value = computeAggregate(bound.rows, spec);
+  // 副标题写**中文字段名**，不是字段 id。同一条纪律在 DataTable 的列头、
+  // ActivityFeed 的等级、RecordDetail 的枚举上都兑现过了，这里是最后一处漏网
+  // ——对照台上一眼看得见：「合计 · amount」，而旁边表格的同一列写着「金额」。
   const label =
     spec.kind === "count"
       ? "记录数"
-      : `${spec.kind === "sum" ? "合计" : "平均"} · ${spec.fieldId}`;
+      : `${spec.kind === "sum" ? "合计" : "平均"} · ${
+          (spec.fieldId && fieldLabelOf?.(bound.entityRef, spec.fieldId)) || spec.fieldId
+        }`;
+
+  // 环比 + 迷你走势线。算法复用 dataref-trend.ts —— 那边已经处理了本地时区、
+  // 周一起周、桶数超限自动变粗、缺失桶补零这些真正容易错的事。
+  const trend = computeDataRefTrend(bound.rows, {
+    aggregate: block.binding?.aggregate as string | undefined,
+    trendFieldRef: block.binding?.trendFieldRef as string | undefined,
+    trendGrain: block.binding?.trendGrain as string | undefined,
+  });
+  const hint = String(block.props?.hint ?? "").trim();
+  const footnote = String(block.props?.footnote ?? "").trim();
+  // 走势线用应用主题色，不写死——同页别的图表都跟着主题走，这一条也得跟上
+  const sparkOption = trend
+    ? buildSparklineOption(trend.spark, chartPalette?.primary ?? "#1677ff")
+    : null;
+
   return (
     <StatisticCard
       data-testid="metric-grid"
       title={title || undefined}
+      // action 槽：右上角那个「指标说明」。没写说明就不出问号——一个点开
+      // 什么都没有的问号比没有更糟。
+      extra={
+        hint ? (
+          <Tooltip title={hint}>
+            <span data-testid="metric-grid-hint" style={{ color: "#94a3b8", fontSize: 12 }}>
+              <AntdIcons.InfoCircleOutlined />
+            </span>
+          </Tooltip>
+        ) : undefined
+      }
       statistic={{
         title: <span data-testid="metric-grid-item">{label}</span>,
+        // **`0` 要显示成 0，不是「—」。** 用 `??` 而不是 `||`：后者会把 0
+        // 一起判掉，这正是 ChartCard 那句 `!total && total !== 0` 防的事。
         value: value ?? "—",
         precision: value !== null && Number.isInteger(value) ? 0 : 1,
         description:
@@ -1319,6 +1399,45 @@ const MetricGridRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
             <Typography.Text type="secondary">该字段暂无有效数值</Typography.Text>
           ) : undefined,
       }}
+      // children 槽：迷你走势线。高度写死 46（照它的 contentHeight），一排卡
+      // 才等高——有的有线有的没有的时候，不固定高度就参差不齐。
+      chart={
+        sparkOption ? (
+          <React.Suspense fallback={<div style={{ height: 46 }} />}>
+            <div data-testid="metric-grid-spark" style={{ height: 46 }}>
+              <LazyEchartsChart
+                option={sparkOption}
+                height={46}
+                ariaLabel={`${title || label}走势`}
+              />
+            </div>
+          </React.Suspense>
+        ) : undefined
+      }
+      chartPlacement="bottom"
+      // footer 槽：环比在前、自定义脚注在后。两个都没有就整条不出——
+      // 空的 footer 会让卡片底部多出一截无意义的留白。
+      footer={
+        trend || footnote ? (
+          <Flex align="center" gap={12} style={{ fontSize: 12 }}>
+            {trend ? (
+              <span data-testid="metric-grid-delta" style={{ color: TREND_TONE[trend.direction] }}>
+                {formatTrendLabel(trend)}
+                {trend.direction === "up" ? (
+                  <AntdIcons.CaretUpOutlined style={{ marginLeft: 2 }} />
+                ) : trend.direction === "down" ? (
+                  <AntdIcons.CaretDownOutlined style={{ marginLeft: 2 }} />
+                ) : null}
+              </span>
+            ) : null}
+            {footnote ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {footnote}
+              </Typography.Text>
+            ) : null}
+          </Flex>
+        ) : undefined
+      }
       bodyStyle={{ height: "100%" }}
     />
   );
@@ -1404,6 +1523,121 @@ const TrendChartRenderer: ExperienceBlockRenderer = ({
   );
 };
 
+/**
+ * ── 占比环图 —— 照 pro-blocks 的 ProportionSales（2026-08-08，②批次 2）──
+ *
+ * 源：`DashboardAnalysis/src/components/ProportionSales.tsx`（78 行）
+ *
+ * 我们此前没有任何"构成"形态的图：TrendChart 是时间轴，RankedList 是条形
+ * 名次。"销售额按渠道各占多少"这类问题，用排行是答不好的——排行回答"谁最多"，
+ * 占比回答"这块饼怎么分"。
+ *
+ * 三条从它那儿抄的判断：
+ *
+ * 1. **环图不是实心饼**（`innerRadius: 0.64`）。中间那块空白不是留白，是用来
+ *    写总计的（它的 `statistic.title.content: '销售额'`）——总量和构成一起看
+ *    才完整，只有构成的话用户还得自己把几瓣加起来。
+ * 2. **关掉图例，改用带引线的标签**（`legend: false` + `label.type: 'spider'`，
+ *    文案是 `名称: 数值`）。图例和扇区要靠颜色对应，扇区一多眼睛就对不上了；
+ *    引线标签把名字直接写在那一瓣旁边。
+ * 3. **渠道切换（全部/线上/门店）是卡片外面的事**，它放在 Card 的 `extra` 里。
+ *    在我们的模型里那是 FilterBar / StatusTabs 的活，通过 targets 连过来，
+ *    不进这个区块的契约。
+ */
+const ProportionPieRenderer: ExperienceBlockRenderer = ({
+  children,
+  block,
+  entityRows,
+  chartPalette,
+  enumOptionsOf,
+  fieldLabelOf,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const dimension = String(block.binding?.dimensionRef ?? "").trim();
+  if (!bound || !dimension)
+    return (
+      <BlockShell block={block} title={title} testid="proportion-pie">
+        <BlockEmpty hint="占比图未绑定到有效的分组维度" />
+      </BlockShell>
+    );
+  // 复用已经在用的 donut option 构造器：它自带确定性配色、中心合计、
+  // 以及**长尾自动折成「其他」**（foldForPie）。再写一份的话两处配色会分家，
+  // 而且折叠阈值也会分成两个数。所以契约里没有 limit —— 那件事已经有人管了。
+  const spec = parseAggregate(block.binding?.aggregate);
+  const sumField = spec.kind === "sum" && spec.fieldId ? spec.fieldId : undefined;
+  const option = buildEchartsOption(
+    {
+      id: block.id ?? "proportion",
+      label: title,
+      type: "donut",
+      entityId: bound.entityRef,
+      dimensionFieldId: dimension,
+      dimensionLabel: fieldLabelOf?.(bound.entityRef, dimension) ?? dimension,
+      // 只有 sum 能落到扇区面积上：avg 在占比图上没有意义（几个平均数加起来
+      // 不等于总体平均），碰到 avg 就退回数条数，而不是画一张读起来像那么回事
+      // 的错图。
+      metric: sumField ? "sum" : "count",
+      metricFieldId: sumField,
+      // 中心那行小字：默认说清楚这堆数是什么，别让用户猜
+      metricLabel:
+        String(block.props?.totalLabel ?? "").trim() ||
+        (sumField ? (fieldLabelOf?.(bound.entityRef, sumField) ?? sumField) : "数量"),
+      dimensionOptions: enumOptionsOf?.(bound.entityRef, dimension) ?? [],
+    },
+    bound.rows,
+    chartPalette
+  );
+  if (!option)
+    return (
+      <BlockShell block={block} title={title} testid="proportion-pie">
+        <BlockEmpty hint={`暂无数据 — 写入「${dimension}」后自动出图`} />
+      </BlockShell>
+    );
+  return (
+    <BlockShell block={block} title={title} testid="proportion-pie">
+      <React.Suspense
+        fallback={<div className="px-2 py-6 text-center text-xs text-stone-400">图表加载中…</div>}
+      >
+        <LazyEchartsChart option={option} height={220} ariaLabel={title || "占比"} />
+      </React.Suspense>
+    </BlockShell>
+  );
+};
+
+/**
+ * 排行里一行的涨跌 —— 照 pro-blocks 的 Trend（文字 + 一个 Caret 箭头 + 颜色）。
+ *
+ * 值取不到数就整块不画，**不画一个 0%**：字段没填和"没有变化"是两回事，
+ * 后者才该显示 0。
+ */
+function renderRankDelta(raw: unknown): React.ReactNode {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  // 恰好 0 就不出箭头（方向不明），只写数——箭头是方向的表示，没方向别画
+  const direction = n > 0 ? "up" : n < 0 ? "down" : "flat";
+  return (
+    <span
+      data-testid="ranked-list-delta"
+      style={{
+        width: 52,
+        textAlign: "right",
+        fontSize: 12,
+        fontVariantNumeric: "tabular-nums",
+        color: TREND_TONE[direction],
+      }}
+    >
+      {Math.abs(n)}%
+      {direction === "up" ? (
+        <AntdIcons.CaretUpOutlined style={{ marginLeft: 2 }} />
+      ) : direction === "down" ? (
+        <AntdIcons.CaretDownOutlined style={{ marginLeft: 2 }} />
+      ) : null}
+    </span>
+  );
+}
+
 const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRows, onAction }) => {
   // 取当前生效的主题 token：区块要跟应用的身份主题同色，写死色值做不到
   const { token } = antdTheme.useToken();
@@ -1434,6 +1668,17 @@ const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
       </BlockShell>
     );
   const max = Math.max(...items.map(i => Math.abs(i.value)), 1);
+  /**
+   * 每行的涨跌（2026-08-08，②批次 2，照 pro-blocks 的 TopSearch）。
+   *
+   * TopSearch 那张「线上热门搜索」表有一列「周涨幅」，带 ↑↓ 箭头。看源码才
+   * 确认的一件事：那个涨幅**是数据自带的字段**（searchData 里的 `range`/
+   * `status`），不是图表现算的。现算需要每一行各自的时间序列——那是另一个
+   * 量级的事，而且业务系统里这类涨幅通常本来就存在库里。
+   *
+   * 所以 deltaFieldRef 指的是数据模型里已有的数值字段，我们只负责画箭头。
+   */
+  const deltaField = String(block.binding?.deltaFieldRef ?? "").trim();
   return (
     <BlockShell block={block} title={title} testid="ranked-list">
       <List
@@ -1494,6 +1739,7 @@ const RankedListRenderer: ExperienceBlockRenderer = ({ children, block, entityRo
               >
                 {Number.isInteger(item.value) ? item.value : item.value.toFixed(1)}
               </Typography.Text>
+              {deltaField ? renderRankDelta(item.row.values?.[deltaField]) : null}
             </div>
           </List.Item>
         )}
@@ -3395,8 +3641,9 @@ export interface BlockDefinition {
 /** 目录里有、但渲染侧还没登记的类型会被 ssot 对账当场抓出来。 */
 export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
   Object.freeze({
-    MetricGrid: { render: MetricGridRenderer, uses: ["StatisticCard"], label: "指标卡组", phone: true },
+    MetricGrid: { render: MetricGridRenderer, uses: ["StatisticCard", "Tooltip", "Flex", "ECharts"], label: "指标卡", phone: true },
     TrendChart: { render: TrendChartRenderer, uses: ["ECharts"], label: "趋势图" },
+    ProportionPie: { render: ProportionPieRenderer, uses: ["ECharts"], label: "占比环图" },
     RankedList: { render: RankedListRenderer, uses: ["List", "Progress", "Tag"], label: "排行榜" },
     ActivityFeed: { render: ActivityFeedRenderer, uses: ["Timeline", "Tag"], label: "动态流" },
     DataTable: { render: DataTableRenderer, uses: ["Table", "Tag", "Typography", "Space", "Pagination"], label: "数据表格" },
