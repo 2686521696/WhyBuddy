@@ -174,3 +174,32 @@ describe("筛选态的每条通道，写的人和读的人对得上", () => {
  * 态时，再回来看。阶段③的触发条件是"真的看到重复"，这里看到的是**四份各不
  * 相同的东西长得有点像**——那不是重复。
  */
+
+/**
+ * 筛选**真的作用到区块上**了吗（2026-08-08，接线台逮到的）。
+ *
+ * 上面那两条钉的是"prop 传了"和"reducer 没吞"。这条钉的是第三种漏法，也是
+ * 藏得最深的一种：prop 传了、reducer 也对，但**区块拿到的是全量行**。
+ *
+ * `applyPageFilter` 算出来的 `rows` 只喂给内置骨架那张表；区块拿的是
+ * `state.entities`。于是 FilterBar / StatusTabs / TagFilterRow / SearchBox
+ * 连着 DataTable 时，勾了、敲了，表一动不动——**从一开始就没接通**，
+ * 不是这次新通道的问题。
+ */
+describe("筛选真的收窄了区块看到的行", () => {
+  it("区块按 targets 拿自己那一份行，不是全量", () => {
+    expect(
+      runtime,
+      "区块还在直接吃 state.entities —— 筛选作用不到它们身上"
+    ).toContain("entityRows={rowsForBlockOf(block.id)}");
+    expect(runtime).toContain("const rowsForBlockOf");
+  });
+
+  it("判据是「谁在筛我」，不是页面上有筛选就一律筛", () => {
+    const start = runtime.indexOf("const rowsForBlockOf");
+    const body = runtime.slice(start, start + 700);
+    expect(body).toContain("targets as string[] | undefined)?.includes(blockId)");
+    // 没人筛它的区块拿全量，不该被别的表的筛选连累
+    expect(body).toContain("if (!applies) return state.entities;");
+  });
+});

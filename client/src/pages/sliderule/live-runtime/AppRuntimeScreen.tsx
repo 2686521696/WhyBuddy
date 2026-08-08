@@ -1546,6 +1546,8 @@ export function AppRuntimeScreen({
       setColumnState(prev => ({ ...prev, [blockId]: next })),
     focus,
     workflow: model.workflow,
+    // 注意：这是**未收窄**的全量行。筛选是按区块算的（谁筛我），
+    // 在下面 renderBlock 里按 targets 逐块套上去——见 rowsForBlockOf。
     entityRows: state.entities,
     chartPalette: {
       primary: identityTheme.primary,
@@ -1632,6 +1634,34 @@ export function AppRuntimeScreen({
           return [...new Set(list.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 8);
         };
 
+        /**
+         * 一个数据区块**自己**看到的行 —— 只被指向它的筛选收窄。
+         *
+         * 2026-08-08 接线台逮到的：此前区块拿到的是 `state.entities` 全量，
+         * 而 `applyPageFilter` 算出来的 `rows` 只喂给内置骨架那张表。也就是说
+         * **筛选从来没有作用到区块上**——FilterBar / StatusTabs / TagFilterRow /
+         * SearchBox 连着 DataTable 时，勾了、敲了，表一动不动。不是新通道没接，
+         * 是这条路上筛选和区块从一开始就没接通。
+         *
+         * 做法照 ComponentsLibraryPage 的 rowsForBlock（那边一直是对的）：
+         * 筛选区块显式声明自己筛谁（targets），数据区块反过来问"谁在筛我"。
+         */
+        const rowsForBlockOf = (blockId: string) => {
+          const applies = dedupedBlocks.some(b =>
+            (b.binding?.targets as string[] | undefined)?.includes(blockId)
+          );
+          if (!applies) return state.entities;
+          const out: Record<string, RuntimeRow[]> = {};
+          for (const [entityId, list] of Object.entries(state.entities)) {
+            out[entityId] = applyPageFilter(
+              list ?? [],
+              activePageFilter,
+              dateRangeField?.id
+            );
+          }
+          return out;
+        };
+
         const renderBlock = (block: (typeof dedupedBlocks)[number]) =>
           forPhone && PHONE_EXPERIENCE_BLOCK_TYPES.has(block.type) ? (
             <React.Suspense key={block.id} fallback={<Skeleton active paragraph={{ rows: 2 }} />}>
@@ -1644,6 +1674,7 @@ export function AppRuntimeScreen({
             <ExperienceBlockBoundary
               key={block.id}
               {...sharedBlockRendererProps}
+              entityRows={rowsForBlockOf(block.id)}
               targetColumns={targetColumnsOf(block)}
               block={block}
             />
