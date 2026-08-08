@@ -179,13 +179,35 @@ return null`，而装配预览**从来没传过 pageActions**。也就是说此�
 QuickActionPanel 都渲染成空气——不报错、不占位。一直没发现是因为它总跟别的区块
 挤在同一个区里，看不出少了谁。
 
-### 还欠着：result 范式
+### result 范式（已补）
 
 29 页里 7 页的主体是 `<Result>`（403/404/500、提交成功/失败、注册结果、分步表单
-末步），是这个库里最常见的页面形状，我们一个都没有。但按链路得先有区块：Result
-基础组件已在库里 → 缺 `ResultPanel` 区块 → 才能加 `result` 范式。这一轮没加空范式，
-因为 `test_required_regions_are_reachable_with_the_blocks_we_actually_have` 会红，
-而它红得对。
+末步），是这个库里最常见的页面形状。按链路倒着建：
+
+    Result 基础组件（已在库）→ ResultPanel 区块（新建）→ result 范式（开出来）
+
+**区块只画外面那层。** 官方 ResultSuccess 是
+
+    <Result status title subTitle extra={几个按钮}>
+      {单据 Descriptions + 流程 Steps}
+    </Result>
+
+里面那两样是 RecordDetail 和 WorkflowTimeline 的活，摆在 `supplement` 区
+（band=main，全宽——三列的 Descriptions 和横向 Steps 在 1/3 宽里会挤成一团）。
+把三样焊死在一个区块里，等于回到"一个区块管一整页"。
+
+#### 实测抓到的两条，已进 Gate
+
+第一次真跑，模型给 ResultPanel **只填了 title**「入库单提交成功」：
+
+- 没 `status` → 渲染器退到 info，一张**成功**的页面顶着蓝色感叹号。图标是用户扫
+  一眼判断成败的东西，中性图标把成功和出错画成一样。
+- 没按钮 → 用户被困住。结果屏本来就是死胡同，后面没有内容了。
+
+pro-blocks 那 7 页无一例外都有 `status` 和 `extra`（返回列表/查看项目/打印、
+返回修改、Back Home）。所以这两条是这类页面的定义，不是苛刻 —— 落成
+`result-no-status` / `result-no-exit` 两条规则，同时把要求写进提示词。补完再测：
+绿勾 + 「返回订单列表」「查看入库单」两个按钮，一次过检查。
 
 ## 附：仓库
 

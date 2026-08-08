@@ -434,6 +434,45 @@ PAGE_ARCHETYPES: Dict[str, Dict[str, Any]] = {
             },
         ],
     },
+    "result": {
+        "label": "结果页",
+        "when": "一件事刚做完（提交成功/失败），或者走不下去了（没权限、找不到、"
+                "出错了）。用户此刻只关心两件事：成了没有、接下来去哪。",
+        # 出处：pro-blocks 里 7 页的主体是 <Result> —— ResultSuccess /
+        # ResultFail / Exception403 / Exception404 / Exception500 /
+        # UserRegisterResult / FormStepForm 的最后一步。是那个库里最常见的
+        # 一种页面形状，而我们此前一个都没有（2026-08-08 补）。
+        "regions": [
+            {
+                "key": "main",
+                "label": "结果主体",
+                "why": "成了没有、为什么、接下来去哪——这一页就是这一件事",
+                "weight": "primary",
+                "required": True,
+                "accepts": ["outcome"],
+                "maxBlocks": 1,
+            },
+            {
+                # 出处：ResultSuccess 的 Result children —— 一组 Descriptions
+                # （项目名称/项目 ID/负责人/生效时间）加一条 Steps（创建项目→
+                # 部门初审→财务复核→完成）。
+                #
+                # 官方把它们塞在 <Result> 内部；我们拆成独立区域，因为那两样
+                # 分别是 RecordDetail 和 WorkflowTimeline 的活。焊死在一个区块
+                # 里就等于回到"一个区块管一整页"。
+                #
+                # 它必须是全宽的（band=main），不能进右侧窄栏：三列的
+                # Descriptions 和横向的 Steps 在 1/3 宽里会挤成一团。
+                "key": "supplement",
+                "label": "补充说明",
+                "why": "刚提交的那张单子长什么样、审批走到哪一步了",
+                "weight": "secondary",
+                "required": False,
+                "accepts": ["entityRows", "chain"],
+                "maxBlocks": 2,
+            },
+        ],
+    },
     "monitor": {
         "label": "总览页",
         "when": "首页。用户进来要知道「现在怎么样」并能立刻动手。",

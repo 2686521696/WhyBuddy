@@ -1127,6 +1127,9 @@ const REGION_LAYOUT: {
   { key: "metrics", label: "指标区", weight: "primary", band: "main" },
   { key: "charts", label: "图表区", weight: "secondary", band: "main" },
   { key: "main", label: "主体区", weight: "primary", band: "main" },
+  // 结果页的补充说明（刚提交的那张单子 + 审批走到哪）。band 是 main 而不是
+  // aside，因为三列的 Descriptions 和横向的 Steps 在 1/3 宽里会挤成一团。
+  { key: "supplement", label: "补充说明", weight: "secondary", band: "main" },
   { key: "aside", label: "辅助区", weight: "supporting", band: "aside" },
   // 固定在底部的操作条 —— 不占正文流，但一直看得见（区别于 overlay：
   // overlay 是点了才出来）。出处是 pro-blocks 的 FooterToolbar。

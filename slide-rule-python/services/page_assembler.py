@@ -109,7 +109,14 @@ def _prompt(
         "5. Every entityRef must be an entity id above; every field ref a field of THAT "
         "entity. Never invent one.\n"
         "6. Exactly one region carries the page's real work. Do not spread everything "
-        "evenly — that is how a page turns into a row of equal cards.\n\n"
+        "evenly — that is how a page turns into a row of equal cards.\n"
+        "7. A result screen must say whether the thing worked and where to go next. "
+        "Always set props.status (success / error / info / warning / 403 / 404 / 500) — "
+        "the icon is how the user reads success or failure at a glance, and a success "
+        "page with a neutral icon looks like a warning. Always give at least one action "
+        "(primaryAction, optionally secondaryAction: 返回列表 / 查看单据 / 返回修改) — "
+        "there is no content after a result screen, so with no button the user is "
+        "stranded.\n\n"
         "Return JSON only:\n"
         '{"name":"<页面中文名>","industry":"<行业,2-6字>","archetype":"list",'
         '"tasks":["查库存","新增商品"],'
@@ -231,7 +238,48 @@ def gate(page: Dict[str, Any], datamodel: Dict[str, Any]) -> List[Dict[str, str]
                         "why": f"{t} 绑了 {ref} 没有的字段「{f}」",
                     })
 
-    # ⑥ 得说得出用户在这一页干什么
+    # ⑥ 结果屏必须说清"成了没有"和"接下来去哪"
+    #
+    # 2026-08-08 实测：模型给 ResultPanel 只填了 title「入库单提交成功」，
+    # 既没有 status 也没有任何按钮。后果是实打实的：
+    #
+    #   没 status → 渲染器退到 info，一张**成功**的页面顶着蓝色感叹号。
+    #               图标是用户扫一眼判断成败的东西，中性图标等于把成功和
+    #               出错画成一个样。
+    #   没按钮   → 用户被困在这一页。结果屏本来就是死胡同（后面没有内容了），
+    #               不给出口就只能按浏览器返回。
+    #
+    # pro-blocks 那 7 页无一例外都有 status 和 extra（返回列表/查看项目/打印、
+    # 返回修改、Back Home）。所以这两条不是苛刻，是这类页面的定义。
+    for rkey, items in regions.items():
+        for it in items or []:
+            t = str((it or {}).get("type") or "")
+            entry = by_type.get(t)
+            if not entry or entry.get("capability") != "outcome":
+                continue
+            props = (it or {}).get("props") or {}
+            allowed = (
+                ((entry.get("propsSchema") or {}).get("properties") or {})
+                .get("status", {})
+                .get("enum")
+                or []
+            )
+            if str(props.get("status") or "") not in allowed:
+                findings.append({
+                    "code": "result-no-status",
+                    "why": f"{t} 没给 status（可选 {allowed}）——"
+                           "成功页会顶着中性图标，用户看不出成没成",
+                })
+            if not str(props.get("primaryAction") or "").strip() and not str(
+                props.get("secondaryAction") or ""
+            ).strip():
+                findings.append({
+                    "code": "result-no-exit",
+                    "why": f"{t} 一个按钮都没有——结果页是死胡同，"
+                           "不给「接下来去哪」用户只能按浏览器返回",
+                })
+
+    # ⑦ 得说得出用户在这一页干什么
     tasks = [str(t).strip() for t in (page.get("tasks") or []) if str(t).strip()]
     if len(tasks) < 2:
         findings.append({

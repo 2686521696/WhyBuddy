@@ -980,6 +980,73 @@
         "required": [],
         "optional": []
       }
+    },
+    {
+      "type": "ResultPanel",
+      "description": "一次操作结束之后那一屏：成功/失败的图标与标题、一句为什么、以及「接下来去哪」的一两个按钮。也用于 403/404/500 这类走不下去的页面。",
+      "rendererKey": "result-panel",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "outcome",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "error",
+              "info",
+              "warning",
+              "403",
+              "404",
+              "500"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "primaryAction": {
+            "type": "string"
+          },
+          "secondaryAction": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          }
+        }
+      },
+      "dataKinds": [],
+      "pageKinds": [
+        "workbench",
+        "wizard",
+        "monitor"
+      ],
+      "allowedSlots": [
+        "primary",
+        "activity",
+        "content"
+      ],
+      "slotsRationale": "NOT summary and NOT secondary. summary is the strip above the page content - a result screen is not a header for something else, it IS the page. secondary is the one-third column, and a status icon with a title and two buttons squeezed into a third of the width reads as a stray alert, not as the answer to 'did it work'. primary/activity/content are all wide enough (activity and content render byte-identically at full width), so all three are open.",
+      "events": [
+        "actionTrigger"
+      ],
+      "bindingSchema": {
+        "required": [],
+        "optional": [
+          "entityRef"
+        ],
+        "note": "entityRef 只用来说清「是哪一单成功了」（入库单 #IN-2043 已提交）。单据明细与流程进度不在这里画——那是 RecordDetail 和 WorkflowTimeline 的活，摆在 supplement 区。"
+      }
     }
   ],
   "pageKindPresets": {

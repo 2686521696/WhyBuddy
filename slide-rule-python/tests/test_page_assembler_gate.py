@@ -220,6 +220,115 @@ def test_every_archetype_has_exactly_one_primary_region():
             assert r["why"], f"{key}.{r['key']} 没说这个区域是干什么的"
 
 
+def test_the_result_archetype_is_actually_open():
+    """结果页范式必须真的能用 —— 有范式、有区块、有能力对得上。
+
+    2026-08-08 扒 ant-design/pro-blocks 时发现的最大缺口：那 29 页里**7 页的
+    主体是 `<Result>`**（403 / 404 / 500 / 提交成功 / 提交失败 / 注册结果 /
+    分步表单末步），是那个库里最常见的一种页面形状，我们一个都没有。
+
+    上一轮没敢直接加范式，因为按用户定的链路得倒着来：先有基础组件（Result
+    早在库里），再组装成区块（ResultPanel），范式才开得出来。加个空范式会被
+    下面那条 reachable 用例判死——而它判得对。
+
+    这条钉住三样东西同时在位。少任何一样，用户点「AI 组装模板」描述一个
+    「提交成功」的页面时，模型要么选不到范式，要么选了填不进区块。
+    """
+    arch = PAGE_ARCHETYPES.get("result")
+    assert arch, "result 范式没了"
+    main = [r for r in arch["regions"] if r["key"] == "main"][0]
+    assert main["weight"] == "primary" and main["required"]
+    assert main["accepts"] == ["outcome"]
+
+    menu = _block_menu()
+    outcome_blocks = [b["type"] for b in menu if b["capability"] == "outcome"]
+    assert outcome_blocks == ["ResultPanel"], (
+        f"没有能填结果主体的区块（现有 outcome 能力的区块：{outcome_blocks}）"
+    )
+
+    # 补充说明区收的是单据与流程 —— 复用现成区块，不在 ResultPanel 里重画
+    supplement = [r for r in arch["regions"] if r["key"] == "supplement"][0]
+    assert set(supplement["accepts"]) == {"entityRows", "chain"}
+    caps = {b["capability"] for b in menu}
+    assert set(supplement["accepts"]) <= caps
+
+
+def test_a_result_page_passes_the_gate():
+    """一张真实形状的结果页要能过 —— 照 pro-blocks 的 ResultSuccess。"""
+    page = {
+        "archetype": "result",
+        "name": "入库单提交成功",
+        "tasks": ["确认提交结果", "查看刚提交的单据", "跟进审批进度", "返回列表"],
+        "regions": {
+            "main": [
+                {
+                    "type": "ResultPanel",
+                    "props": {
+                        "status": "success",
+                        "title": "入库单已提交",
+                        "subtitle": "审批通过后库存会自动更新",
+                        "primaryAction": "返回列表",
+                        "secondaryAction": "查看单据",
+                    },
+                }
+            ],
+            "supplement": [
+                {
+                    "type": "RecordDetail",
+                    "props": {"title": "本次提交的入库单"},
+                    "binding": {"entityRef": "product", "fieldRefs": ["name", "sku"]},
+                }
+            ],
+        },
+    }
+    assert gate(page, DM) == []
+
+
+def test_a_result_screen_must_say_whether_it_worked_and_where_to_go_next():
+    """结果屏少了 status 或按钮，直接打回。
+
+    2026-08-08 实测真模型给的就是这个：ResultPanel 只填了 title
+    「入库单提交成功」，既没 status 也没按钮。后果是实打实的——
+
+      没 status → 渲染器退到 info，一张**成功**的页面顶着蓝色感叹号。图标
+                  是用户扫一眼判断成败的东西，中性图标把成功和出错画成一样。
+      没按钮   → 用户被困住。结果屏本来就是死胡同，后面没有内容了。
+
+    pro-blocks 那 7 页无一例外都有 status 和 extra（返回列表/查看项目/打印、
+    返回修改、Back Home）。所以这两条是这类页面的定义，不是苛刻。
+    """
+    bare = {
+        "archetype": "result",
+        "name": "入库单提交结果",
+        "tasks": ["确认提交成功", "查看单据", "返回列表"],
+        "regions": {
+            "main": [{"type": "ResultPanel", "props": {"title": "入库单提交成功"}}]
+        },
+    }
+    got = codes(bare)
+    assert "result-no-status" in got, f"没判出缺 status，实际 {sorted(got)}"
+    assert "result-no-exit" in got, f"没判出没有出口，实际 {sorted(got)}"
+
+    # 编一个不在枚举里的 status 也得判死 —— 渲染器会静默退到 info
+    made_up = {
+        **bare,
+        "regions": {
+            "main": [
+                {
+                    "type": "ResultPanel",
+                    "props": {
+                        "title": "入库单提交成功",
+                        "status": "ok",  # 不是合法值
+                        "primaryAction": "返回列表",
+                    },
+                }
+            ]
+        },
+    }
+    assert "result-no-status" in codes(made_up)
+    assert "result-no-exit" not in codes(made_up)
+
+
 def test_required_regions_are_reachable_with_the_blocks_we_actually_have():
     """每个必填区域都必须**真的有区块能填**。
 

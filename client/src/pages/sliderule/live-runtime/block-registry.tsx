@@ -22,6 +22,7 @@ import {
   Flex,
   List,
   Progress,
+  Result,
   Space,
   Steps,
   Table,
@@ -1778,6 +1779,76 @@ const PageHeaderRenderer: ExperienceBlockRenderer = ({ block, onAction }) => {
 };
 
 /**
+ * 结果屏 —— 一次操作结束之后的那一页。
+ *
+ * ## 为什么补这个区块
+ *
+ * 2026-08-08 扒 `ant-design/pro-blocks` 的 29 个页面时发现：**7 页的主体是
+ * `<Result>`**（403 / 404 / 500 / 提交成功 / 提交失败 / 注册结果 / 分步表单
+ * 的最后一步），是那个库里最常见的一种页面形状，而我们一个都没有。
+ *
+ * 官方那两页的写法（ResultSuccess / ResultFail）是：
+ *
+ *     <Result status title subTitle extra={几个按钮}>
+ *       {单据 Descriptions + 流程 Steps}
+ *     </Result>
+ *
+ * 我们只画外面那层。里面那两样是 RecordDetail 和 WorkflowTimeline 的活，
+ * 摆在 supplement 区里——**不在这儿重画一遍**。区块该是区域大小的一块，
+ * 把三样东西焊死在一个区块里，等于回到"一个区块管一整页"。
+ *
+ * ## status 决定图标和颜色，不是装饰
+ *
+ * 成功给绿勾、失败给红叉、404 给插画。用户扫一眼要知道"成了没有"，这件事
+ * 由图标承担；只有文字的话得读完标题才知道。所以 status 是必给的：漏了就
+ * 退到 info（蓝色感叹号），那是"中性通知"，不会把失败伪装成成功。
+ */
+const ResultPanelRenderer: ExperienceBlockRenderer = ({ block, onAction }) => {
+  const raw = String(block.props?.status ?? "").trim();
+  const status = (
+    ["success", "error", "info", "warning", "403", "404", "500"].includes(raw)
+      ? raw
+      : "info"
+  ) as React.ComponentProps<typeof Result>["status"];
+  const title = String(block.props?.title ?? "").trim();
+  const subtitle = String(block.props?.subtitle ?? "").trim();
+  const primary = String(block.props?.primaryAction ?? "").trim();
+  const secondary = String(block.props?.secondaryAction ?? "").trim();
+
+  return (
+    <BlockShell block={block} title="" testid="result-panel">
+      <Result
+        status={status}
+        title={title || "操作已完成"}
+        subTitle={subtitle || undefined}
+        // 结果屏本来就自带大量留白（图标 + 标题 + 副标题），外面那张卡再给
+        // 一层内边距就空得离谱。这里压掉纵向的一半。
+        style={{ padding: "24px 16px" }}
+        extra={
+          primary || secondary ? (
+            <Space>
+              {secondary && (
+                <Button onClick={() => onAction?.("actionTrigger", { action: secondary })}>
+                  {secondary}
+                </Button>
+              )}
+              {primary && (
+                <Button
+                  type="primary"
+                  onClick={() => onAction?.("actionTrigger", { action: primary })}
+                >
+                  {primary}
+                </Button>
+              )}
+            </Space>
+          ) : undefined
+        }
+      />
+    </BlockShell>
+  );
+};
+
+/**
  * ── 字段渲染 —— 照 refinedev/refine 的 Inferencer 三层模型（2026-08-08）──
  *
  * ## 为什么重做
@@ -2428,6 +2499,7 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     StepsForm: { render: StepsFormRenderer, uses: ["Steps", "Form", "Input", "Select", "DatePicker"], label: "分步表单" },
     ContentCard: { render: ContentCardRenderer, uses: ["Card"], label: "内容卡片" },
     PageHeader: { render: PageHeaderRenderer, uses: ["Button", "Space", "Typography"], label: "页面头" },
+    ResultPanel: { render: ResultPanelRenderer, uses: ["Result", "Button", "Space"], label: "结果屏" },
   });
 
 /** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */
