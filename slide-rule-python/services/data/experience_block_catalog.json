@@ -934,6 +934,52 @@
       },
       "container": true,
       "capability": "container"
+    },
+    {
+      "type": "PageHeader",
+      "description": "页面顶部那条：标题、一句话说明、以及这一页最主要的那一两个动作（新建/导出）。它交代「这是什么页、你能干什么」，是用户进来第一眼看的东西。",
+      "rendererKey": "page-header",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "action",
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "primaryAction": {
+            "type": "string"
+          },
+          "secondaryAction": {
+            "type": "string"
+          }
+        }
+      },
+      "dataKinds": [],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "calendar",
+        "wizard",
+        "dashboard",
+        "monitor"
+      ],
+      "allowedSlots": [
+        "summary"
+      ],
+      "slotsRationale": "summary only: a page header is by definition the strip above everything else. Anywhere lower and it stops being a header — it becomes a stray title in the middle of the page.",
+      "events": [
+        "actionTrigger"
+      ],
+      "bindingSchema": {
+        "required": [],
+        "optional": []
+      }
     }
   ],
   "pageKindPresets": {

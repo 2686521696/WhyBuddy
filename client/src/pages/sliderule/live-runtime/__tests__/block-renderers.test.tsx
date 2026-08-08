@@ -12,7 +12,7 @@ import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { EXPERIENCE_BLOCK_RENDERERS } from "../block-registry";
+import { EXPERIENCE_BLOCK_RENDERERS, ExperienceBlockBoundary } from "../block-registry";
 import type { ExperienceBlockInstance } from "../block-registry";
 import type { RuntimeRow } from "../live-runtime";
 
@@ -286,5 +286,76 @@ describe("遗留 children 透传没丢", () => {
       );
       expect(html).toContain("现成内容");
     }
+  });
+});
+
+/**
+ * ── 字段语义渲染（2026-08-08，照 refinedev/refine 的 Inferencer）──────────
+ *
+ * 用户拿一张真实的「门店订单管理」页做示范，指出我们的表格差太远：状态该是
+ * 彩色标签、金额该是 ¥428.00、时间该是完整时刻、末尾该有操作列、分页该带
+ * 总数。此前我们**直接拿行数据的键当列**，没有语义也没有格式化。
+ *
+ * refine 的做法是三层：字段语义推断链 → 每种语义一个字段渲染器 → 自动追加
+ * 操作列。我们比它占一个便宜：字段类型是数据模型里声明好的，不用从值猜。
+ */
+describe("字段语义渲染", () => {
+  const rows = [
+    {
+      id: "r1",
+      values: { code: "OD20250806", amount: 428, status: "done", at: "2025-08-06 14:28:32" },
+      createdAt: "2025-08-06T14:28:32.000Z",
+    },
+  ];
+  const types: Record<string, string> = {
+    code: "string",
+    amount: "number",
+    status: "enum",
+    at: "date",
+  };
+  const render = (extra: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <ExperienceBlockBoundary
+        block={{ id: "t", type: "DataTable", binding: { entityRef: "order" } }}
+        entityRows={{ order: rows }}
+        fieldLabelOf={(_e, f) => ({ code: "订单号", amount: "金额", status: "状态", at: "下单时间" })[f]}
+        fieldTypeOf={(_e, f) => types[f]}
+        enumOptionsOf={(_e, f) =>
+          f === "status" ? [{ id: "done", label: "已完成", tone: "success" }] : []
+        }
+        {...extra}
+      />
+    );
+
+  it("金额列格式化成货币并右对齐 —— 左对齐的金额没法竖着比大小", () => {
+    const html = render();
+    expect(html).toContain("¥428.00");
+    // antd 的 align 落成内联 style，不是类名（实测；写成 ant-table-cell-align-right
+    // 会红，那是别的版本的类名）
+    expect(html).toContain("text-align:right");
+  });
+
+  it("枚举列出彩色标签，颜色来自声明的 tone 而不是猜的", () => {
+    const html = render();
+    expect(html).toContain("已完成");
+    expect(html).toContain("ant-tag-success");
+    // 取值 id 不该露出来
+    expect(html).not.toMatch(/>done</);
+  });
+
+  it("带时刻的日期出完整时刻，不是只有日期", () => {
+    expect(render()).toContain("2025-08-06 14:28:32");
+  });
+
+  it("操作列**只在调用方接了 onAction 时**出现", () => {
+    // 没人接的时候画一排点不动的链接，比不画更糟
+    expect(render()).not.toContain("操作");
+    expect(render({ onAction: () => {} })).toContain("操作");
+  });
+
+  it("分页带总数 —— 此前是 slice(0,8) 加一行「显示前 8 条」，用户翻不到第 9 条", () => {
+    const html = render();
+    expect(html).toContain("共 1 条");
+    expect(html).toContain("ant-pagination");
   });
 });

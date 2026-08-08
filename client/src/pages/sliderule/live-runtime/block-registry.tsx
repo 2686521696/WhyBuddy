@@ -22,6 +22,7 @@ import {
   Flex,
   List,
   Progress,
+  Space,
   Steps,
   Table,
   Tag,
@@ -1732,6 +1733,194 @@ function toneDotColor(tone: string | undefined, primary: string): string {
   return primary;
 }
 
+/**
+ * 页面头 —— 用户示范图顶上那一条（2026-08-08）。
+ *
+ * 「门店订单管理 / 管理门店订单、跟踪状态与处理进度 / 导出 · 新建订单」
+ *
+ * 此前一个都没有，所以生成的页面开头就是筛选条——用户进来看不到"这是什么
+ * 页、我能干什么"。refine 的 Inferencer 里对应的是 <List> 那层壳（它自带
+ * 标题与 CreateButton），@ant-design/pro-layout 里对应 PageContainer。
+ *
+ * 主动作用主按钮、次动作用普通按钮：一页只能有一个最主要的动作，两个都画成
+ * 蓝色就等于没有主次——这跟区域权重是同一条道理，只是落在按钮上。
+ */
+const PageHeaderRenderer: ExperienceBlockRenderer = ({ block, onAction }) => {
+  const title = String(block.props?.title ?? "").trim();
+  const subtitle = String(block.props?.subtitle ?? "").trim();
+  const primary = String(block.props?.primaryAction ?? "").trim();
+  const secondary = String(block.props?.secondaryAction ?? "").trim();
+  return (
+    <div
+      data-testid="page-header"
+      style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}
+    >
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>{title || "未命名页面"}</div>
+        {subtitle && (
+          <div style={{ marginTop: 2, fontSize: 12.5, color: "#64748b" }}>{subtitle}</div>
+        )}
+      </div>
+      <Space>
+        {secondary && (
+          <Button onClick={() => onAction?.("actionTrigger", { action: secondary })}>
+            {secondary}
+          </Button>
+        )}
+        {primary && (
+          <Button type="primary" onClick={() => onAction?.("actionTrigger", { action: primary })}>
+            {primary}
+          </Button>
+        )}
+      </Space>
+    </div>
+  );
+};
+
+/**
+ * ── 字段渲染 —— 照 refinedev/refine 的 Inferencer 三层模型（2026-08-08）──
+ *
+ * ## 为什么重做
+ *
+ * 用户拿一张真实的「门店订单管理」页做示范，指出我们生成的表格差太远：
+ * 状态该是彩色标签、金额该是 ¥428.00、时间该是完整时刻、末尾该有操作列、
+ * 分页该带总数和跳页。而我此前**直接拿行数据的键当列**，没有语义、没有
+ * 格式化、没有操作列——出来就是一张裸表。
+ *
+ * ## 抄的什么（packages/inferencer/src）
+ *
+ *   ① field-inferencers/     一条推断链，看 (key, value) 定字段语义。
+ *                            date.ts 的判据很实在：key 匹配 /(_at|_on|At|On)$/
+ *                            **且** dayjs 解析得通 **且** 含日期分隔符，三条
+ *                            都满足才算 date。每条返回 {key, type, priority}，
+ *                            priority 解冲突。
+ *   ② inferencers/antd/list  每种语义配一个字段渲染器：
+ *                            date→DateField / email→EmailField / url→UrlField /
+ *                            boolean→BooleanField / relation→TagField
+ *   ③ 表格自动追加操作列      EditButton / ShowButton / DeleteButton
+ *
+ * ## 我们比 refine 占一个便宜
+ *
+ * refine 只能从**值**去猜类型（所以才要那套正则和 dayjs 试解析）；我们的
+ * 字段类型是数据模型里**声明**好的（string/number/date/enum/ref/text），
+ * fieldTypeOf 直接查得到。所以推断链在这里退化成"声明优先、值兜底"：
+ * 声明了就用声明的，没声明才按 refine 那套从值猜——那条兜底不能省，
+ * 组件库对照台和遗留数据都可能没有字段声明。
+ */
+
+/** 字段的展示语义。比数据类型更细：number 还要分金额与普通数字。 */
+type FieldSemantic = "money" | "number" | "date" | "datetime" | "enum" | "text" | "id";
+
+/** 名字里带这些词的数值列按金额显示。中英都收——生成的字段名两种都有。 */
+const MONEY_HINT = /(amount|price|total|fee|cost|revenue|金额|价格|费用|总额)/i;
+/** 名字里带这些词的字符串列按单号显示（等宽、不换行）。 */
+const ID_HINT = /(^id$|_id$|code$|sku|no$|number$|单号|编号)/i;
+
+/**
+ * 定字段语义 —— **声明优先，值兜底**。
+ *
+ * 兜底那一半照 refine 的 dateInfer：key 后缀 + 值能解析 + 含分隔符，
+ * 三条都满足才认成日期。少一条都不认——只看 key 后缀会把 `create_at_count`
+ * 这种也认成日期，只看值能解析会把 "2" 认成日期（dayjs 真的解析得通）。
+ */
+function fieldSemantic(
+  entityRef: string,
+  fieldId: string,
+  sample: unknown,
+  fieldTypeOf?: FieldTypeLookup,
+  options?: NormalizedFieldOption[]
+): FieldSemantic {
+  // **有枚举取值本身就是一种声明**，而且比 type 字段更直接：调用方能给出
+  // id→label 的对照，就说明这一列是枚举。
+  //
+  // 2026-08-08 回归实测：只认 fieldTypeOf === "enum" 时，没传 fieldTypeOf 的
+  // 调用方（对照台、老页面）枚举列会打印取值 id（`frozen` 而不是「已冻结」）
+  // ——同一份数据在页面自带表格里是中文、在区块里是英文 id，坐在一起就露馅。
+  if (options && options.length > 0) return "enum";
+  const declared = fieldTypeOf?.(entityRef, fieldId);
+  if (declared === "enum") return "enum";
+  if (declared === "date") {
+    // 值里带时刻就按时刻显示 —— 用户示范里「2025-08-06 14:28:32」这种
+    const s = String(sample ?? "");
+    return s.includes(":") || s.includes("T") ? "datetime" : "date";
+  }
+  if (declared === "number") return MONEY_HINT.test(fieldId) ? "money" : "number";
+  if (declared === "string" || declared === "text") {
+    return ID_HINT.test(fieldId) ? "id" : "text";
+  }
+
+  // 没有声明：按 refine 那套从值猜
+  if (typeof sample === "number") return MONEY_HINT.test(fieldId) ? "money" : "number";
+  const str = String(sample ?? "");
+  const looksDate =
+    /(_at|_on|At|On)$/.test(fieldId) &&
+    ["/", ":", "-", "."].some(sep => str.includes(sep)) &&
+    dayjs(str).isValid();
+  if (looksDate) return str.includes(":") ? "datetime" : "date";
+  if (ID_HINT.test(fieldId)) return "id";
+  return "text";
+}
+
+/** 枚举取值的色调 → antd Tag 的 color。空/未知一律不上色，不瞎猜。 */
+const TONE_COLOR: Record<string, string | undefined> = {
+  success: "success",
+  processing: "processing",
+  warning: "warning",
+  danger: "error",
+  default: undefined,
+};
+
+/** 一个单元格怎么画 —— 每种语义一个渲染器（refine 的 ②）。 */
+function renderCell(
+  semantic: FieldSemantic,
+  raw: unknown,
+  options: NormalizedFieldOption[]
+): React.ReactNode {
+  const str = String(raw ?? "").trim();
+  if (!str) return <Typography.Text type="secondary">—</Typography.Text>;
+
+  switch (semantic) {
+    case "enum": {
+      // 出标签不出取值 id，并按 tone 上色。用户示范里「待处理」是橙的、
+      // 「已完成」是绿的——那个颜色来自数据模型声明的 tone，不是我们编的。
+      const opt = options.find(o => o.id === str);
+      if (!opt) return str;
+      const color = TONE_COLOR[opt.tone];
+      return color ? <Tag color={color}>{opt.label}</Tag> : <Tag>{opt.label}</Tag>;
+    }
+    case "money": {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return str;
+      return (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          ¥{n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      );
+    }
+    case "number": {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return str;
+      return (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>{n.toLocaleString("zh-CN")}</span>
+      );
+    }
+    case "datetime": {
+      const d = dayjs(str);
+      return d.isValid() ? d.format("YYYY-MM-DD HH:mm:ss") : str;
+    }
+    case "date": {
+      const d = dayjs(str);
+      return d.isValid() ? d.format("YYYY-MM-DD") : str;
+    }
+    case "id":
+      return (
+        <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{str}</span>
+      );
+    default:
+      return str;
+  }
+}
+
 const DataTableRenderer: ExperienceBlockRenderer = ({
   children,
   block,
@@ -1739,6 +1928,7 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
   onAction,
   fieldLabelOf,
   enumOptionsOf,
+  fieldTypeOf,
 }) => {
   // 遗留适配兜底：调用方塞了现成内容就照原样渲染（_fromLegacy 转换期的用法）。
   // 现行 renderBlock 不传 children，走下面的 binding 取数。
@@ -1757,39 +1947,66 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
         <BlockEmpty hint="暂无数据 — 点「新建」写入第一条真实数据" />
       </BlockShell>
     );
-  // 列取自真实行的键（binding 只声明 entityRef，其余列由页面派生——
-  // 见 catalog 里 DataTable 的 bindingSchema note）。最多 5 列，够看不挤。
-  const cols = [...new Set(bound.rows.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 5);
-  const columns = cols.map(c => {
-    // 枚举列出标签不出取值 id：同一份数据在页面自带表格里是「已冻结」，
-    // 在区块里却是 `frozen`，坐在一起就露馅了
+  // 列取自真实行的键（binding 只声明 entityRef，其余列由页面派生）。
+  // 上限从 5 提到 8：用户示范的订单页有 9 列，5 列砍掉的正是"支付状态""操作"
+  // 这种一眼要看的东西——列少不等于清爽，等于信息不全。
+  const cols = [...new Set(bound.rows.flatMap(r => Object.keys(r.values ?? {})))].slice(0, 8);
+  const columns: TableColumnsType<RuntimeRow> = cols.map(c => {
     const options = enumOptionsOf?.(bound.entityRef, c) ?? [];
-    const labelOf = new Map(options.map(o => [o.id, o.label]));
+    // 取第一个非空值当样本定语义——照 refine 的 inferencer，它也是看值。
+    const sample = bound.rows.find(r => r.values?.[c] != null)?.values?.[c];
+    const semantic = fieldSemantic(bound.entityRef, c, sample, fieldTypeOf, options);
     return {
       key: c,
       dataIndex: c,
       title: fieldLabelOf?.(bound.entityRef, c) ?? c,
-      ellipsis: true,
-      render: (_: unknown, row: RuntimeRow) => {
-        const raw = row.values?.[c];
-        const s = String(raw ?? "").trim();
-        if (!s) return <Typography.Text type="secondary">—</Typography.Text>;
-        return labelOf.get(s) ?? s;
-      },
+      ellipsis: semantic === "text",
+      // 数值右对齐是表格的基本功——左对齐的金额列没法竖着比大小
+      align: semantic === "money" || semantic === "number" ? ("right" as const) : undefined,
+      render: (_: unknown, row: RuntimeRow) => renderCell(semantic, row.values?.[c], options),
     };
   });
+
+  // 操作列 —— refine 的 ③：Inferencer 生成的每张表都自动追加
+  // EditButton / ShowButton / DeleteButton。用户示范里那列「查看 编辑 取消」
+  // 就是这个。此前我们一列都没有，于是表格看得见摸不着。
+  //
+  // 只在调用方接了 onAction 时出现：没人接的时候画一排点不动的链接，
+  // 比不画更糟。
+  if (onAction) {
+    columns.push({
+      key: "__actions",
+      title: "操作",
+      width: 120,
+      fixed: undefined,
+      render: (_: unknown, row: RuntimeRow) => (
+        <Space size={4}>
+          <Typography.Link
+            style={{ fontSize: 12 }}
+            onClick={e => {
+              e.stopPropagation();
+              onAction("rowSelect", { rowId: row.id });
+            }}
+          >
+            查看
+          </Typography.Link>
+          <Typography.Link
+            style={{ fontSize: 12 }}
+            onClick={e => {
+              e.stopPropagation();
+              onAction("editRequest", { rowId: row.id });
+            }}
+          >
+            编辑
+          </Typography.Link>
+        </Space>
+      ),
+    });
+  }
   return (
     <BlockShell block={block}
       title={title}
       testid="data-table"
-      // 截断如实说在标题栏，不再是表格底下一行灰字（那行容易被当成数据）
-      extra={
-        bound.rows.length > 8 ? (
-          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-            共 {bound.rows.length} 条，显示前 8 条
-          </Typography.Text>
-        ) : undefined
-      }
     >
       {/* 换 antd Table：拿到省略号 tooltip、粘性表头、紧凑尺寸与主题描边，
           手写 <table> 这些都得自己补，而且列头字号/颜色跟同页别的表格对不齐 */}
@@ -1797,8 +2014,21 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
         size="small"
         rowKey="id"
         columns={columns}
-        dataSource={bound.rows.slice(0, 8)}
-        pagination={false}
+        dataSource={bound.rows}
+        // 分页交给 Table 自己管（2026-08-08）。此前是 slice(0, 8) + 标题栏
+        // 一行"共 N 条，显示前 8 条"——那不是分页，是截断，用户根本翻不到
+        // 第 9 条。用户的示范图里那一行是「共 1,268 条 ‹ 1 2 3 … › 10/页
+        // 跳至 __ 页」，都是 antd Table 自带的，只是要打开。
+        //
+        // 分页是表格的一部分，不是一个独立区块——用户指出的"Pagination 居然
+        // 变成独立大卡片"，根子就在把它当成了平级组件。
+        pagination={{
+          size: "small",
+          pageSize: 8,
+          showSizeChanger: bound.rows.length > 8,
+          showQuickJumper: bound.rows.length > 40,
+          showTotal: total => `共 ${total.toLocaleString("zh-CN")} 条`,
+        }}
         // 不给 scroll.x：区块是页面里的一块，横向滚动条藏在卡片里没人会去拉，
         // 对照台上表格直接被卡片右边缘切掉、最后一列看不见。列共享可用宽度 +
         // 省略号（有 tooltip）才是这个尺寸下该有的行为。
@@ -2182,6 +2412,7 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     RecordDetail: { render: RecordDetailRenderer, impl: "ProComponents ProDescriptions", label: "记录详情" },
     StepsForm: { render: StepsFormRenderer, impl: "ProComponents StepsForm", label: "分步表单" },
     ContentCard: { render: ContentCardRenderer, impl: "antd Card（容器，由 AI 显式选用）", label: "内容卡片" },
+    PageHeader: { render: PageHeaderRenderer, impl: "标题 + 说明 + 主次动作", label: "页面头" },
   });
 
 /** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */
