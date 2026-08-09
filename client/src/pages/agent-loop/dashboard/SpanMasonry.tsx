@@ -46,13 +46,24 @@ export function computeColumns(
 }
 
 /**
- * 建/换定位器。换列数或换数据集时重建，并把已量到的高度迁移过去
- * （照 masonic usePositioner 的做法：重建后按旧 index 把 height 重新 set 一遍，
- * 否则换个窗口宽度就要把所有卡重新量一次，首屏会闪）。
+ * 建/换定位器。换列数或换数据集时重建，重建后由 `seed` 把已量到的高度喂回去。
+ *
+ * ## 为什么 seed 交给调用方，而不是照 masonic 那样按 index 拷贝
+ *
+ * masonic 的 `usePositioner` 重建时是 `next.set(i, prev.get(i).height)` —— 按**下标**
+ * 搬。它只在「列宽/列数变了」时这么干，数据集变了(deps 变)时是**整张缓存丢掉重量**。
+ *
+ * 我们原来两种情况都按下标搬，于是筛选一次（数据集换了）就出事：新的第 3 项拿到了
+ * 旧的第 3 项的高度，卡片被塞进一个装不下它的槽位——**外层 div 没有设 height，
+ * 真实内容比槽位高就直接画到下一张上面去**，这就是肉眼看到的重叠。
+ *
+ * 现在按 `itemKey` 缓存高度（gestalt 的 MeasurementStore 就是 `WeakMap<item, height>`，
+ * 同一个思路）：谁的高度归谁，换列宽、换筛选、换排序都不会串。
  */
 function useSpanPositioner(
   opts: SpanPositionerOptions,
-  deps: React.DependencyList
+  deps: React.DependencyList,
+  seed: (p: SpanPositioner) => void
 ): SpanPositioner {
   const { columnCount, columnWidth, columnGutter, rowGutter } = opts;
   // getSpan 每次渲染都是新函数，不能进依赖数组；用 ref 让定位器始终读到最新的。
@@ -72,7 +83,10 @@ function useSpanPositioner(
   );
 
   const ref = React.useRef<SpanPositioner | undefined>(undefined);
-  if (ref.current === undefined) ref.current = init();
+  if (ref.current === undefined) {
+    ref.current = init();
+    seed(ref.current);
+  }
   const prevKey = React.useRef<React.DependencyList>([
     columnCount,
     columnWidth,
@@ -82,55 +96,122 @@ function useSpanPositioner(
   ]);
   const key = [columnCount, columnWidth, columnGutter, rowGutter, ...deps];
   if (key.length !== prevKey.current.length || key.some((v, i) => prevKey.current[i] !== v)) {
-    const prev = ref.current;
     const next = init();
-    const size = prev.size();
-    for (let i = 0; i < size; i++) {
-      const pos = prev.get(i);
-      next.set(i, pos ? pos.height : 0);
-    }
+    seed(next);
     prevKey.current = key;
     ref.current = next;
   }
   return ref.current;
 }
 
-/** 自建的 element→index 映射 + ResizeObserver。理由见文件头。 */
-function useSpanResizeObserver(positioner: SpanPositioner) {
+/**
+ * ResizeObserver 那一层。
+ *
+ * ## 下标写在 DOM 上，不写在 WeakMap 里
+ *
+ * 原来是 `setRef(index)` 返回一个新闭包 + 一张 `WeakMap<Element, index>`。两个毛病：
+ *   ① `setRef(index)` **每次渲染都是新函数**，React 会 `ref(null)` 再 `ref(el)`，
+ *      于是每渲染一轮就重新 observe 一遍所有格子，白白触发一轮首帧回调；
+ *   ② 定位器一换（列数变、筛选变），`setRef` 的依赖变了，全部 ref 重挂，
+ *      每张卡都重新走一次"首次挂载量高"。
+ *
+ * gestalt 的 `ItemResizeObserverWrapper` 把下标直接写成 `data-grid-item-idx` 属性，
+ * RO 回调里 `Number(target.getAttribute(...))` 读回来。照抄这个：ref 回调从此是
+ * **恒等函数**，React 不再反复摘挂；下标由 React 正常更新属性来维持最新。
+ */
+const INDEX_ATTR = "data-span-index";
+const KEY_ATTR = "data-span-key";
+/**
+ * ## 重新挂载会量出不一样的高度 —— 这一层**不负责**治它
+ *
+ * 虚拟化把格子卸载再挂回来时，antd 表单、ECharts 这类内容刚挂上的一两帧还没铺开，
+ * 量到的高度偏小。插桩录到的原样（滚下去再滚回来两轮）：
+ *
+ *     desktop-FilterBar   304->204  204->304  304->204  204->304  304->204
+ *
+ * 每次 `304->204` 触发一次重排，它下面整列跟着跳，回头又跳回去。
+ *
+ * 试过在这儿治：给刚 observe 的元素打个标记，把首次回调丢掉（gestalt 的
+ * MeasurementStore 是"量一次就不再量"，这算是它的细化版）。**不成立**——
+ * 分不清"没铺开的中间态"和"这张卡真的变高了"。实测把图表画完那次真增长也吞了，
+ * 定位器记的高度比实际小 140px，直接压到下一张上面。
+ *
+ * 所以这条从测量层撤掉了，改在**调用方**解决：区块墙那种"每张卡都是活组件"的，
+ * 直接不虚拟化（见 ComponentsLibraryPage 的 overscanBy 注释），不卸载就没有重挂。
+ * 这一层只保留一条纪律：**整像素相同不算变化**（死区，同 gestalt 的 Math.floor）。
+ */
+function useSpanResizeObserver(
+  positionerRef: React.MutableRefObject<SpanPositioner>,
+  knownHeight: (key: string) => number | undefined,
+  onMeasured: (key: string, height: number) => void
+) {
   const [, forceUpdate] = React.useReducer((n: number) => n + 1, 0);
-  const indexOf = React.useRef(new WeakMap<Element, number>()).current;
+  const measure = React.useRef(onMeasured);
+  measure.current = onMeasured;
+  const known = React.useRef(knownHeight);
+  known.current = knownHeight;
+
   const observer = React.useMemo(() => {
     if (typeof ResizeObserver === "undefined") return null;
     return new ResizeObserver(entries => {
+      const positioner = positionerRef.current;
       const updates: number[] = [];
       for (const entry of entries) {
         const el = entry.target as HTMLElement;
-        const index = indexOf.get(el);
-        if (index === undefined) continue;
+        const raw = el.getAttribute(INDEX_ATTR);
+        if (raw === null) continue;
+        const index = Number(raw);
         const height = el.offsetHeight;
         if (height <= 0) continue;
+        const k = el.getAttribute(KEY_ATTR);
+        if (k !== null) measure.current(k, height);
         const pos = positioner.get(index);
-        if (pos !== undefined && height !== pos.height) updates.push(index, height);
+        // 死区同 positioner.update：整像素相同就当没变。
+        if (pos !== undefined && Math.floor(height) !== Math.floor(pos.height)) {
+          updates.push(index, height);
+        }
       }
       if (updates.length > 0) {
         positioner.update(updates);
         forceUpdate();
       }
     });
-    // 定位器换了（列数变了）就得换一个观察器，旧的还盯着已经作废的下标。
-  }, [positioner, indexOf]);
+    // 定位器换了也**不用**换观察器：它每次回调都从 ref 读当前定位器，
+    // 下标又是从 DOM 属性读的，天然跟着 React 的渲染走。
+  }, [positionerRef]);
 
   React.useEffect(() => () => observer?.disconnect(), [observer]);
 
   const setRef = React.useCallback(
-    (index: number) => (el: HTMLElement | null) => {
+    (el: HTMLElement | null) => {
       if (el === null) return;
-      indexOf.set(el, index);
+      const k = el.getAttribute(KEY_ATTR);
+      const index = Number(el.getAttribute(INDEX_ATTR));
+      const cached = k === null ? undefined : known.current(k);
+      // 落位用的高度：老熟人用缓存值，新面孔现量。
+      //
+      // **这里绝不能因为"是老熟人"就跳过 set** —— 定位器可能是新建的（换了列宽
+      // 或换了数据集），里面还没有这一格。不落位的话 `positioner.size()` 就卡住
+      // 不涨，而 SpanMasonry 拿它当"下一个该量的下标"，隐藏批次会一直重渲染
+      // 同一批，同一个 key 出现在两处 —— 实测直接摞出满屏重叠。
+      const h = cached ?? el.offsetHeight;
+      // **落位这一步不能有任何前置条件。** 已落位的下标必须恒等于 [0, size())
+      // 这一段连续前缀 —— SpanMasonry 拿 size() 当"下一个该量的下标"，中间空一个
+      // 就会：第 k 格永远不落位 → size() 停在 k → 隐藏批次一直从 k 重来，
+      // 而 k 之后已落位的格子同时出现在"定位好的"和"隐藏待量的"两处，
+      // 同一个 key 渲染两遍 —— React 留下孤儿节点，屏幕上就是两张卡叠着。
+      //
+      // 这条是 2026-08-09 亲手踩的：当时给它加了个 `if (h > 0)` 的保护，
+      // 想跳过"还没布局好、量出来是 0"的格子。结果 1600 视口下 19 帧全部重叠。
+      // 量到 0 没关系，ResizeObserver 下一帧就会纠正；**跳过落位才是灾难**。
+      if (k !== null && cached === undefined && h > 0) measure.current(k, h);
+      // 首次落位就得有高度——ResizeObserver 的首帧回调赶不上这一轮渲染。
+      if (positionerRef.current.get(index) === undefined) {
+        positionerRef.current.set(index, h);
+      }
       observer?.observe(el);
-      // 首次挂载就量一次——ResizeObserver 的首帧回调赶不上这一轮渲染。
-      if (positioner.get(index) === undefined) positioner.set(index, el.offsetHeight);
     },
-    [observer, positioner, indexOf]
+    [observer, positionerRef]
   );
 
   return { setRef, forceUpdate };
@@ -190,7 +271,71 @@ export function SpanMasonry<T>({
   itemsRef.current = items;
   const spanRef = React.useRef(getSpan);
   spanRef.current = getSpan;
+  const keyRef = React.useRef(itemKey);
+  keyRef.current = itemKey;
 
+  // 量到的高度按 **itemKey** 存，不按下标。理由见 useSpanPositioner 的注释。
+  // 连**当时的列宽**一起存：同一张卡在不同列宽下高度不同，得能分辨"这条是不是
+  // 本次布局量的"。
+  const heights = React.useRef(new Map<string, { h: number; gen: string }>()).current;
+  const cellGeneration = `${columnWidth}x${columnCount}`;
+
+  // 这张缓存**永远不整张清空**。踩过：列宽一变就 clear，结果 seed 一条都喂不出来，
+  // 而已经挂在页面上的格子又不会自己重新落位（ref 是恒等函数，不重挂）——
+  // 定位器里于是只有下标 8..29，0..7 是个洞，`size()` 停在 22，隐藏批次从 22 开始
+  // 重渲染**已经定位好的** 22..29，同一个 key 出现两遍，满屏摞卡。
+  //
+  // 正确的分工是：
+  //   · seed  —— 过期高度照喂。它只负责让落位保持"从 0 开始的连续前缀"，
+  //             位置对不对下一步会纠正；
+  //   · gen   —— 只用来判断"刚挂上来的这次量高要不要采信"。列宽变了就采信新量的。
+  const onMeasured = React.useCallback(
+    (k: string, h: number) => {
+      heights.set(k, { h, gen: cellGeneration });
+    },
+    [heights, cellGeneration]
+  );
+  /** 本次列宽下量过的高度。过期（换过列宽）的不算，好让它重新量一次。 */
+  const knownHeight = React.useCallback(
+    (k: string) => {
+      const rec = heights.get(k);
+      return rec && rec.gen === cellGeneration ? rec.h : undefined;
+    },
+    [heights, cellGeneration]
+  );
+
+  // 数据集指纹：**内容**变了才重建定位器。原来只看 items.length ——
+  // 筛选前后条数碰巧一样时定位器根本不重建，新数据就一直用着旧数据的落位。
+  const signature = React.useMemo(() => {
+    let h = 2166136261;
+    for (let i = 0; i < items.length; i++) {
+      const s = String(keyRef.current(items[i], i));
+      for (let c = 0; c < s.length; c++) {
+        h = Math.imul(h ^ s.charCodeAt(c), 16777619);
+      }
+      h = Math.imul(h ^ 31, 16777619);
+    }
+    return `${items.length}:${(h >>> 0).toString(36)}`;
+    // itemKey 每次渲染都是新函数，进不了依赖数组；数组换了才重算（用 ref 读最新的）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  // 重建后把缓存里的高度喂回去。只喂**从头开始连续命中**的那一段：
+  // SpanMasonry 拿 positioner.size() 当"下一个该量的下标"，中间留洞会漏格子。
+  const seed = React.useCallback(
+    (p: SpanPositioner) => {
+      const list = itemsRef.current;
+      for (let i = 0; i < list.length; i++) {
+        // 过期列宽下量的也照喂 —— 见上面那段"这张缓存永远不整张清空"。
+        const rec = heights.get(String(keyRef.current(list[i], i)));
+        if (rec === undefined) break;
+        p.set(i, rec.h);
+      }
+    },
+    [heights]
+  );
+
+  const positionerRef = React.useRef<SpanPositioner | null>(null);
   const positioner = useSpanPositioner(
     {
       columnCount,
@@ -202,12 +347,21 @@ export function SpanMasonry<T>({
         return item === undefined ? 1 : spanRef.current(item, index, columnCount);
       },
     },
-    [items.length]
+    [signature],
+    seed
   );
-  const { setRef, forceUpdate } = useSpanResizeObserver(positioner);
+  positionerRef.current = positioner;
+  const { setRef, forceUpdate } = useSpanResizeObserver(
+    positionerRef as React.MutableRefObject<SpanPositioner>,
+    knownHeight,
+    onMeasured
+  );
 
   const itemCount = items.length;
-  const measuredCount = positioner.size();
+  // 「下一批从哪儿开始量」问的是**第一个没落位的下标**，不是"落了几格"。
+  // 两者只有在落位恰好是连续前缀时才相等，而那个前提是会被破坏的（见
+  // firstUnplaced 的文档：破坏之后同一个 key 会被画两遍）。
+  const measuredCount = positioner.firstUnplaced();
   const shortestColumnSize = positioner.shortestColumn();
   const overscan = height * overscanBy;
   const rangeEnd = scrollTop + overscan;
@@ -222,8 +376,9 @@ export function SpanMasonry<T>({
     children.push(
       <div
         key={itemKey(item, index)}
-        ref={setRef(index)}
+        ref={setRef}
         role="listitem"
+        {...{ [INDEX_ATTR]: index, [KEY_ATTR]: String(itemKey(item, index)) }}
         style={{
           position: "absolute",
           top: pos.top,
@@ -244,16 +399,23 @@ export function SpanMasonry<T>({
       itemCount - measuredCount,
       Math.ceil(((scrollTop + overscan - shortestColumnSize) / itemHeightEstimate) * columnCount)
     );
-    for (let index = measuredCount; index < measuredCount + batchSize; index++) {
+    let queued = 0;
+    for (let index = measuredCount; index < itemCount && queued < batchSize; index++) {
       const item = items[index];
       if (item === undefined) continue;
+      // **已经定位好的绝不再画一遍。** 一个下标要么在上面那段（定位好的）里，
+      // 要么在这里（隐藏待量），不能两边都有——两边都有就是同一个 key 渲染两次，
+      // React 会留下孤儿节点，屏幕上就是两张卡严丝合缝地摞着。
+      if (positioner.get(index) !== undefined) continue;
+      queued++;
       const span = Math.max(1, Math.min(columnCount, spanRef.current(item, index, columnCount)));
       const w = columnWidth * span + gutter * (span - 1);
       children.push(
         <div
           key={itemKey(item, index)}
-          ref={setRef(index)}
+          ref={setRef}
           role="listitem"
+          {...{ [INDEX_ATTR]: index, [KEY_ATTR]: String(itemKey(item, index)) }}
           style={{
             width: w,
             zIndex: -1000,

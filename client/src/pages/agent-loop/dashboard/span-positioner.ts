@@ -34,16 +34,54 @@
  *     否则第一排就会先在左边留一个洞。这里收紧成「窗口内每列都还是 0」，因为
  *     `indexOf(0)` 只检查了起点那一列。
  *
- * ## 与 masonic 原生实现的一处**故意**不同：update 走全量重排
+ * ## update 只重算几何，**不重新选列**（2026-08-09 改，见下）
  *
- * masonic 的 `update()` 是按列增量重排（二分找到该列第一个受影响的格子，只往下推）。
- * 那个优化的前提是「一格只影响一列」——有了跨列就不成立了：一张跨列卡改高，两列
- * 都要往下推，而这两列各自后面的格子又可能是别的跨列卡，影响会横向扩散。写增量
- * 版要维护一张列间依赖图，容易出「偶发重叠」这种最难查的 bug。
+ * ### 之前是怎么写的，为什么错
  *
- * 所以这里 `update()` 直接按记录下来的高度全量重排一遍。代价是 O(n)，但：量高只对
- * 视口内的格子发生、ResizeObserver 那层已经按 rAF 批处理过、n 是页面上的应用数量级。
- * 拿一个常数倍的开销换「不可能重叠」，这笔划算。
+ * 原来 `update()` 走「全量重排」：把记录的高度从头喂一遍 `place()`，连**选哪一列**
+ * 都重新算。当时的理由写在这儿是「拿一个常数倍开销换不可能重叠」。
+ *
+ * 那个理由只对了一半：重叠确实没了，但**换来了更难受的毛病——整面墙会自己动**。
+ * 任何一张卡改高（图表画完、表格拿到数据、卡片被滚出去又滚回来重新量），
+ * `bestSpanStart` 就在新的列高上重选一遍，于是**所有卡的列都可能重新洗牌**。
+ *
+ * 实测（体验区块墙，Playwright 逐屏滚动、每帧单独判）：
+ *
+ *     视口 2000：13 帧里卡片位移 44 次，最大位移 569px
+ *     视口 1600：19 帧里位移 80 次，最大 501px，2 帧出现真重叠
+ *     视口 1280：23 帧里位移 63 次，最大 202px，1 帧出现真重叠
+ *
+ * 而且是**来回**跳：`WorkflowTimeline 1203→634→1203→634`、`FilterBar 238→207→238`
+ * ——往下滚一屏跳一次，滚回来又跳回去。用户报的「不是很稳定」就是这个。
+ *
+ * ### 开源实现是怎么做的（都拉到本地看过）
+ *
+ *   · **masonic**（`use-positioner.ts` 的 `update`）：一格落进哪一列在 `set` 时就
+ *     定死，记在 `columnItems[column]` 里；`update` 只在**受影响的那几列内部**
+ *     二分找到第一个受影响的格子，往下顺序推 top。列归属**永不改变**。
+ *   · **pinterest/gestalt**（`Masonry/dynamicHeightsUtils.ts` 的 `recalcHeights`）：
+ *     改高的那张卡 top/left/width 原地不动，只把「在它下方 且 横向与受影响区域
+ *     有交叠」的卡整体平移 `heightDelta`；受影响区域随着往下走逐步变宽——这正是
+ *     跨列所需要的横向扩散，人家早就写了。同样**不重选列**。
+ *   · **react-photo-album**（`layouts/masonry/masonry.ts`）：连选最矮列都带 1px 死区，
+ *     注释原话是「两列高度相同时浮点误差会让图片在重渲染之间**在列之间跳来跳去**」。
+ *
+ * 三家的共同点很清楚：**测量结果可以变，落位决策不能变。**
+ *
+ * ### 现在的写法：保序重排（reflow）
+ *
+ * `place()` 只在一个格子**第一次**落位时调用，它决定 `column`/`span` 并记进
+ * `order`。`update()` 改走 `reflow()`：按**当初的落位顺序**、用**当初记下的
+ * column/span**，拿最新高度把 top 重新算一遍。
+ *
+ * 好处是三条一起拿到：
+ *   ① 不重叠 —— 与 `place` 同一个不变式（top 取所占各列的最大列高），可数学判定；
+ *   ② 不横跳 —— 列归属是 `place` 时定死的，update 碰不到；
+ *   ③ 比 gestalt 的增量平移更强 —— 它是「按 delta 平移」，收缩时可能把卡拉到
+ *      旁边列的卡上面；这里是重算，任何高度变化后都仍然满足①。
+ *
+ * 代价还是 O(n·span)，跟原来的全量重排同一个数量级——**这次改动没有变慢，
+ * 只是不再重选列**。
  */
 
 import { createIntervalTree } from "masonic";
@@ -87,6 +125,17 @@ export interface SpanPositioner {
     cb: (index: number, left: number, top: number) => void
   ) => void;
   size: () => number;
+  /**
+   * 第一个**还没落位**的下标。渲染层拿它当「从哪儿开始量下一批」。
+   *
+   * 为什么不用 `size()`：`size()` 是"落了几格"，只有在落位下标恰好是 `[0, size())`
+   * 这段连续前缀时两者才相等。2026-08-09 亲手把这个前提破坏过一次（ref 回调里
+   * 给落位加了个 `h > 0` 的前置条件，量到 0 的那一格被跳过），结果是**同一个 key
+   * 同时出现在"已定位"和"隐藏待量"两处，React 留下孤儿节点，满屏摞卡**。
+   *
+   * 与其在那行上写注释叮嘱"别加条件"，不如让渲染层问一个它真正想知道的问题。
+   */
+  firstUnplaced: () => number;
   estimateHeight: (itemCount: number, defaultItemHeight: number) => number;
   shortestColumn: () => number;
   all: () => SpanPositionerItem[];
@@ -192,40 +241,51 @@ export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositione
   let intervalTree = createIntervalTree();
   let columnHeights: number[] = new Array(columnCount).fill(0);
   const items: SpanPositionerItem[] = [];
-  /** 量到的原始高度，按 index 存。全量重排时的唯一输入。 */
+  /** 量到的原始高度，按 index 存。reflow 的唯一输入。 */
   const measured: number[] = [];
+  /** 落位顺序。reflow 按这个顺序重放，**不重新选列**——理由见文件头。 */
+  const order: number[] = [];
 
-  /** 把第 index 个格子按当前列高落位（追加语义，不回溯）。 */
+  /** 把第 index 个格子按当前列高落位。**只在第一次落位时调用。** */
   function place(index: number, height: number) {
     const span = Math.max(1, Math.min(columnCount, Math.floor(getSpan(index)) || 1));
     // 单列走同一条规则——bestSpanStart 在 span=1 时退化成"最矮列"，见其文档。
     const column = bestSpanStart(columnHeights, span);
-    // top 取窗口内最高的那列：取最矮会压在旁边已有的卡上面。
+    settle(index, height, column, span);
+    order.push(index);
+  }
+
+  /**
+   * 把第 index 个格子按**已定的** column/span 放在当前列高之上。
+   * place 与 reflow 共用同一段几何，这样"不重叠"这条不变式只有一个来源。
+   */
+  function settle(index: number, height: number, column: number, span: number) {
+    // top 取所占各列的最高那列：取最矮会压在旁边已有的卡上面。
     let top = columnHeights[column];
     for (let j = column + 1; j < column + span; j++) {
       if (columnHeights[j] > top) top = columnHeights[j];
     }
-    const width = columnWidth * span + columnGutter * (span - 1);
     const next = top + height + rowGutter;
     for (let j = column; j < column + span; j++) columnHeights[j] = next;
     items[index] = {
       top,
       left: column * columnWidthAndGutter,
       height,
-      width,
+      width: columnWidth * span + columnGutter * (span - 1),
       column,
       span,
     };
     intervalTree.insert(top, top + height, index);
   }
 
-  /** 按记录的高度从头重排。update 走这条，理由见文件头。 */
-  function relayout() {
+  /** 保序重排：列归属沿用当初的，只用最新高度把 top 重算一遍。 */
+  function reflow() {
     intervalTree = createIntervalTree();
     columnHeights = new Array(columnCount).fill(0);
-    for (let index = 0; index < measured.length; index++) {
-      if (measured[index] === undefined) continue;
-      place(index, measured[index]);
+    for (const index of order) {
+      const prev = items[index];
+      if (prev === undefined) continue;
+      settle(index, measured[index] ?? prev.height, prev.column, prev.span);
     }
   }
 
@@ -234,15 +294,30 @@ export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositione
     columnWidth,
     set(index, height = 0) {
       measured[index] = height;
+      // 同一个下标被 set 两次时按改高处理：再 place 一次会往 order 里塞重复项，
+      // reflow 就会把同一张卡放两遍（第二遍落在自己下面）——正是"偶发重叠"。
+      if (items[index] !== undefined) {
+        reflow();
+        return;
+      }
       place(index, height);
     },
     get: index => items[index],
     update(updates) {
       // updates 是 [index, height, index, height, ...] 的扁平数组（masonic 的约定）。
+      let changed = false;
       for (let i = 0; i < updates.length - 1; i += 2) {
-        measured[updates[i]] = updates[i + 1];
+        const index = updates[i];
+        const height = updates[i + 1];
+        const item = items[index];
+        if (item === undefined) continue;
+        // 死区：整像素相同就不动。照 gestalt `recalcHeights` 的 Math.floor 比较——
+        // 亚像素抖动（缩放比、字体回退）不该引发一次全墙重排。
+        if (Math.floor(item.height) === Math.floor(height)) continue;
+        measured[index] = height;
+        changed = true;
       }
-      relayout();
+      if (changed) reflow();
     },
     range(lo, hi, cb) {
       intervalTree.search(lo, hi, (index: number, top: number) => {
@@ -250,13 +325,20 @@ export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositione
         if (item) cb(index, item.left, top);
       });
     },
-    size: () => intervalTree.size,
+    // 已落位的**格子数**，不是区间树里的节点数。调用方（SpanMasonry）拿它当
+    // "下一个该量的下标"，所以它必须恒等于 order.length —— 用区间树的 size 顶替
+    // 就要求"一格恰好一个节点"，而那是实现细节，一改就静默漏格子。
+    size: () => order.length,
+    firstUnplaced() {
+      let i = 0;
+      while (items[i] !== undefined) i++;
+      return i;
+    },
     estimateHeight(itemCount, defaultItemHeight) {
       const tallest = Math.max(0, ...columnHeights);
-      if (itemCount === intervalTree.size) return tallest;
+      if (itemCount === order.length) return tallest;
       return (
-        tallest +
-        Math.ceil((itemCount - intervalTree.size) / columnCount) * defaultItemHeight
+        tallest + Math.ceil((itemCount - order.length) / columnCount) * defaultItemHeight
       );
     },
     shortestColumn: () =>

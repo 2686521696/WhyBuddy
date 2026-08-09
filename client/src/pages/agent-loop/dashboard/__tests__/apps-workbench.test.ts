@@ -291,7 +291,15 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     expect(positioner).toMatch(/set\(index, height/);
     const masonry = readFileSync(new URL("../SpanMasonry.tsx", import.meta.url), "utf8");
     expect(masonry).toContain("ResizeObserver");
-    expect(masonry).toMatch(/positioner\.set\(index, el\.offsetHeight\)/);
+    // 钉的是**性质**不是那一行的写法：喂给定位器的高度必须来自真实 DOM 量高
+    // （offsetHeight），不能是按比例算出来的。
+    //
+    // 2026-08-09 改过一次：原来写死 `positioner.set(index, el.offsetHeight)`，
+    // 定位器改成从 ref 读、下标改成从 DOM 属性读之后这条就红了——而契约根本没变。
+    // 这正是"钉实例不钉性质"的老毛病，改成钉两件事：量的是 offsetHeight、
+    // 量到的值最终进了 positioner.set。
+    expect(masonry).toContain("offsetHeight");
+    expect(masonry).toMatch(/\.set\(index, h\b|\.set\(index, el\.offsetHeight\)/);
   });
 
   it("跨列：逐格宽度必须是自己算的，不能退回全局列宽", () => {
