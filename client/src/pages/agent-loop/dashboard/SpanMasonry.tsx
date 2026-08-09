@@ -122,6 +122,14 @@ function useSpanPositioner(
 const INDEX_ATTR = "data-span-index";
 const KEY_ATTR = "data-span-key";
 /**
+ * 判定"墙不动了"要静多久。
+ *
+ * 下限由 antd 那批两趟渲染的组件定：FilterBar 实测 `204 → 304`，两趟之间隔着
+ * 一次 ResizeObserver 派发（下一个宏任务）。取 250ms 是留足余量又不至于让
+ * 用户看见"停一下再跳"——开场首屏本来就还在陆续量高。
+ */
+const SETTLE_MS = 250;
+/**
  * ## 重新挂载会量出不一样的高度 —— 这一层**不负责**治它
  *
  * 虚拟化把格子卸载再挂回来时，antd 表单、ECharts 这类内容刚挂上的一两帧还没铺开，
@@ -434,6 +442,27 @@ export function SpanMasonry<T>({
   React.useEffect(() => {
     if (needsFreshBatch) forceUpdate();
   }, [needsFreshBatch, positioner, forceUpdate]);
+
+  // 沉降：全部落位、且高度安静下来之后，用真高度重选一次列。**只一次**，
+  // 闸在定位器里（`resettle` 自带 `resettled` 标志），理由见 span-positioner 文件头。
+  //
+  // `revision` 一变这条 effect 就重跑、计时器重新开始数——所以"安静 SETTLE_MS"
+  // 是真的安静，而不是"从第一次落位起数 SETTLE_MS"。
+  //
+  // ⚠ `scrollTop === 0` 这一条不是顺手加的保险，是**虚拟化墙必需的**。
+  // 虚拟化时格子是随着滚动一批批落位的，`measuredCount === itemCount` 要滚到底
+  // 才成立——那时重选列就是在用户眼皮底下把整面墙洗一遍。加上这一条之后：
+  //   · 区块墙（不虚拟化，overscanBy=50）开场就全落位、scrollTop 还是 0 → 沉降；
+  //   · 应用墙（虚拟化）滚到底才全落位，那时 scrollTop 早已非 0 → 不沉降；
+  //     一屏装得下、根本没滚过的小墙则照常沉降，而那正是安全的时候。
+  const revision = positioner.revision();
+  React.useEffect(() => {
+    if (itemCount === 0 || measuredCount < itemCount || scrollTop > 0) return;
+    const timer = window.setTimeout(() => {
+      if (positioner.resettle()) forceUpdate();
+    }, SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [positioner, revision, measuredCount, itemCount, scrollTop, forceUpdate]);
 
   // 无限流：滚到只剩不到一屏就喊一次。用 ref 记住上次喊的项数，避免同一批重复喊。
   const lastAsked = React.useRef(-1);

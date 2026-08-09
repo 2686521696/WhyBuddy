@@ -82,6 +82,41 @@
  *
  * 代价还是 O(n·span)，跟原来的全量重排同一个数量级——**这次改动没有变慢，
  * 只是不再重选列**。
+ *
+ * ## `resettle()`：开场**只**重选一次列（2026-08-09 加）
+ *
+ * ### 症状
+ *
+ * 组件库区块墙 1920 视口下 5 列 30 张卡，实测各列末端
+ * `[4246,4246,3418,3418,1792]`——第 4 列停在 1792，其余摞到 4246，填充率 75.0%。
+ * 起始列分布是 `[7,0,13,1,9]`：**第 1 列和第 3 列几乎从不作为跨列卡的起点**，
+ * 5 列实际退化成 `{0,1} / {2,3} / {4}` 三条轨道，落单的第 4 列只吃得到窄卡。
+ *
+ * ### 原因不是 `bestSpanStart` 选错，是**喂给它的高度是错的**
+ *
+ * 拿实测的 30 组 `(span, 最终高度)` 离线跑同一条规则：墙高 3695、填充 **86.2%**、
+ * 各列 `[3695,3695,2141,3668,3668]`。规则本身没问题，浏览器里差出 551px，
+ * 差在决策时读到的列高不是这一版布局的高度：
+ *
+ *   · `seed()` 在定位器重建时会**照喂过期列宽下量的高度**（那是它有意为之的，
+ *     理由见 SpanMasonry「这张缓存永远不整张清空」——它只负责维持连续前缀）；
+ *   · 页面开场容器宽度会变（侧边栏/滚动条落定），于是重建一次；
+ *   · 重建后 `place()` 用**旧列宽的高度**把列全选定了，`update()` 随后只走
+ *     `reflow()`——按定义**不重选列**，几何被纠正，列的错误却永久留下。
+ *
+ * 同一个成因还让版面**不确定**：三次加载总高 4246 / 4388 / 4388，
+ * `desktop-BatchActionBar` 有时落第 0 列有时落第 2 列——取决于纠正来得比它的
+ * 落位早还是晚。
+ *
+ * ### 为什么是"只一次"
+ *
+ * 文件头那三家开源实现的共识是「测量结果可以变，落位决策不能变」，那条纪律治的是
+ * **交互期**整面墙自己动。开场高度还在收敛的那几百毫秒不属于交互期——那时用户
+ * 还没开始看，而决策一旦冻在错的高度上就再也回不来了。
+ *
+ * 所以 `resettle()` 有一道**一次性闸**（`resettled` 标志，随定位器实例存亡）：
+ * 高度安静下来之后重选一次列，之后永久回到 reflow-only。换列宽/换数据集会重建
+ * 定位器，闸自然重置——那本来就是该重新选列的时刻。
  */
 
 import { createIntervalTree } from "masonic";
@@ -139,6 +174,16 @@ export interface SpanPositioner {
   estimateHeight: (itemCount: number, defaultItemHeight: number) => number;
   shortestColumn: () => number;
   all: () => SpanPositionerItem[];
+  /**
+   * 每次高度**真的变了**就 +1。渲染层拿它当"墙还在动"的信号来给沉降计时续期。
+   * 位置变化不计——`resettle()` 自己不会把它推高，所以不会自激。
+   */
+  revision: () => number;
+  /**
+   * 用当前高度重选一次列。**整个定位器生命周期内只生效一次**（理由见文件头）。
+   * 返回是否真的重排了，false 表示闸已落或没有可重排的格子。
+   */
+  resettle: () => boolean;
 }
 
 /**
@@ -244,7 +289,11 @@ export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositione
   /** 量到的原始高度，按 index 存。reflow 的唯一输入。 */
   const measured: number[] = [];
   /** 落位顺序。reflow 按这个顺序重放，**不重新选列**——理由见文件头。 */
-  const order: number[] = [];
+  let order: number[] = [];
+  /** 高度改动次数。渲染层用它判断"墙还在动没有"。 */
+  let revision = 0;
+  /** 一次性闸：`resettle()` 只准放行一次。 */
+  let resettled = false;
 
   /** 把第 index 个格子按当前列高落位。**只在第一次落位时调用。** */
   function place(index: number, height: number) {
@@ -293,6 +342,7 @@ export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositione
     columnCount,
     columnWidth,
     set(index, height = 0) {
+      if (measured[index] !== height) revision++;
       measured[index] = height;
       // 同一个下标被 set 两次时按改高处理：再 place 一次会往 order 里塞重复项，
       // reflow 就会把同一张卡放两遍（第二遍落在自己下面）——正是"偶发重叠"。
@@ -317,7 +367,10 @@ export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositione
         measured[index] = height;
         changed = true;
       }
-      if (changed) reflow();
+      if (changed) {
+        revision++;
+        reflow();
+      }
     },
     range(lo, hi, cb) {
       intervalTree.search(lo, hi, (index: number, top: number) => {
@@ -344,5 +397,24 @@ export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositione
     shortestColumn: () =>
       columnHeights.length > 1 ? Math.min(...columnHeights) : columnHeights[0] || 0,
     all: () => items,
+    revision: () => revision,
+    resettle() {
+      if (resettled) return false;
+      // 只重排**从 0 开始连续量到**的那一段。`items` 必须恒等于 `[0, size())`
+      // 这个连续前缀（见 firstUnplaced 的文档：破坏它会满屏摞卡），所以碰到
+      // 第一个没量到的下标就停，绝不跳过去接着排。
+      let n = 0;
+      while (n < items.length && items[n] !== undefined && measured[n] !== undefined) n++;
+      if (n === 0) return false;
+      resettled = true;
+
+      intervalTree = createIntervalTree();
+      columnHeights = new Array(columnCount).fill(0);
+      order = [];
+      // 只清掉要重排的那一段：后面本来就没有（连续前缀），length 截断即可。
+      items.length = 0;
+      for (let i = 0; i < n; i++) place(i, measured[i]);
+      return true;
+    },
   };
 }

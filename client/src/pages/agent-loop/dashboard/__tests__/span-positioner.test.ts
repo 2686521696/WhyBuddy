@@ -371,3 +371,91 @@ describe("firstUnplaced", () => {
     expect(p.firstUnplaced()).toBe(1);
   });
 });
+
+/**
+ * 沉降重排 —— 2026-08-09 补，为的是一条实测出来的**永久性**错位。
+ *
+ * 组件库区块墙 1920 视口下 5 列 30 张卡，浏览器实测各列末端
+ * `[4246,4246,3418,3418,1792]`，填充率 75.0%；把同一批 `(span, 最终高度)`
+ * 离线喂给**同一条** `bestSpanStart`，得到 `[3695,3695,2141,3668,3668]`、
+ * 填充率 86.2%。规则没错，错的是决策时读到的高度——`seed()` 会照喂过期列宽下
+ * 量的高度（它有意为之），而 `update()` 只 `reflow()`、按定义不重选列，
+ * 于是开场那一次的错误列**永远留下**。
+ *
+ * 同一成因还让版面不确定：三次加载总高 4246 / 4388 / 4388。
+ */
+describe("resettle", () => {
+  it("用真高度重选列——错高度冻出来的列会被纠正", () => {
+    const p = make(3, i => (i === 0 ? 2 : 1));
+    // 开场：第 0 格（跨 2 列）被量成很矮
+    p.set(0, 10);
+    p.set(1, 100);
+    p.set(2, 100);
+    expect(p.get(1)!.column, "此时第 2 列还空着").toBe(2);
+
+    // 真高度到货：第 0 格其实很高。reflow 只改几何，列不动。
+    p.update([0, 500]);
+    expect(p.get(1)!.column, "reflow 按定义不重选列").toBe(2);
+
+    expect(p.resettle()).toBe(true);
+    // 用真高度重来：第 0 格跨 0/1 列到 510，第 1 格该落到还空着的第 2 列
+    expect(p.get(1)!.column).toBe(2);
+    expect(p.get(2)!.column, "第 3 格不该再摞在 510 上").toBe(2);
+    assertNoOverlap(p.all());
+  });
+
+  it("只放行一次——之后永久回到 reflow-only", () => {
+    const p = make(3, () => 1);
+    [100, 120, 90].forEach((h, i) => p.set(i, h));
+    expect(p.resettle()).toBe(true);
+    expect(p.resettle(), "第二次必须被闸挡下").toBe(false);
+    expect(p.resettle()).toBe(false);
+  });
+
+  it("一格都没落位时不动，也不消耗那一次机会", () => {
+    const p = make(3, () => 1);
+    expect(p.resettle()).toBe(false);
+    p.set(0, 100);
+    expect(p.resettle(), "机会还在").toBe(true);
+  });
+
+  it("重排之后 items 仍是从 0 开始的连续前缀", () => {
+    // 破坏这条不变式的后果是满屏摞卡，见 firstUnplaced 的文档。
+    const p = make(4, i => (i % 3 === 0 ? 2 : 1));
+    [120, 90, 300, 60, 210, 45, 180, 75].forEach((h, i) => p.set(i, h));
+    p.resettle();
+    expect(p.size()).toBe(8);
+    expect(p.firstUnplaced()).toBe(8);
+    expect(p.all().filter(Boolean).length).toBe(8);
+    assertNoOverlap(p.all());
+  });
+
+  it("中间有洞时只排到洞前，不跳过去接着排", () => {
+    const p = make(3, () => 1);
+    p.set(0, 100);
+    p.set(1, 120);
+    p.set(3, 140); // 第 2 格没落位
+    p.resettle();
+    expect(p.firstUnplaced(), "洞的位置不变").toBe(2);
+    expect(p.size(), "只重排了连续前缀那两格").toBe(2);
+  });
+
+  it("revision 只跟高度走，位置变化不算", () => {
+    // 渲染层拿它给沉降计时续期：位置也算的话 resettle 会把自己的计时器续起来。
+    const p = make(3, () => 1);
+    const r0 = p.revision();
+    [100, 120, 90].forEach((h, i) => p.set(i, h));
+    expect(p.revision()).toBeGreaterThan(r0);
+
+    const r1 = p.revision();
+    p.update([0, 100]); // 高度没变 —— 死区拦下
+    expect(p.revision(), "没变的高度不该推高 revision").toBe(r1);
+
+    p.update([0, 400]);
+    expect(p.revision()).toBeGreaterThan(r1);
+
+    const r2 = p.revision();
+    p.resettle();
+    expect(p.revision(), "resettle 自己不能推高 revision，否则会自激").toBe(r2);
+  });
+});
