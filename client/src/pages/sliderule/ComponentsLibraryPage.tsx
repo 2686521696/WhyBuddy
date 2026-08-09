@@ -3680,6 +3680,11 @@ function BlockWall({
         // 全目录不再交给这里：桌面/手机预览展开后先切成每页 20 张，当前页内部
         // 保持挂载，既不重现滚动卸载后的量高跳动，也不会一次启动整份目录。
         overscanBy={50}
+        // 开沉降重排：这面墙 overscanBy=50 等于一次性全渲染、也不接 onReachEnd，
+        // 不存在"随滚动逐批落位"，所以重选一次列不会在用户眼皮底下洗牌。
+        // 不开的代价是列被冻在开场那批过期列宽下量的高度上——实测填充率
+        // 75.0% vs 86.6%，见 SpanMasonry 的 settleLayout 文档。
+        settleLayout
         // 实测各区块渲染高度 148~451px，取中位偏上；真实高度由 ResizeObserver 量，
         // 这个值只影响首屏还没量到时的总高估算。
         itemHeightEstimate={280}

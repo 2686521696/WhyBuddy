@@ -245,6 +245,20 @@ export interface SpanMasonryProps<T> {
   itemHeightEstimate?: number;
   /** 视口外多渲染几屏，默认 2。 */
   overscanBy?: number;
+  /**
+   * 允许「沉降重排」：全部落位且高度安静下来之后，用真高度**重选一次列**。
+   * 默认关。
+   *
+   * 只有**不随滚动逐批落位**的墙才该开——也就是 overscanBy 大到一次性全渲染、
+   * 且不接 onReachEnd 无限流的那种。虚拟化墙开了它，会在用户滚到底的那一刻
+   * 把整面墙洗一遍。
+   *
+   * 为什么值得开：定位器重建时 `seed` 会照喂**过期列宽下量的高度**（那是它有意
+   * 为之，只负责维持连续前缀），而 `update()` 只 reflow、按定义不重选列，
+   * 于是开场那次用错高度选的列会**永久留下**。区块墙实测因此差了 551px
+   * （填充 75.0% → 86.6%），详见 span-positioner 文件头。
+   */
+  settleLayout?: boolean;
   className?: string;
   /** 网格容器的 ref。同一个 ref 也给 useScrollerIn / useContainerPosition 用。 */
   containerRef: React.MutableRefObject<HTMLDivElement | null>;
@@ -266,6 +280,7 @@ export function SpanMasonry<T>({
   render,
   itemHeightEstimate = 240,
   overscanBy = 2,
+  settleLayout = false,
   className,
   containerRef,
   onReachEnd,
@@ -449,20 +464,26 @@ export function SpanMasonry<T>({
   // `revision` 一变这条 effect 就重跑、计时器重新开始数——所以"安静 SETTLE_MS"
   // 是真的安静，而不是"从第一次落位起数 SETTLE_MS"。
   //
-  // ⚠ `scrollTop === 0` 这一条不是顺手加的保险，是**虚拟化墙必需的**。
-  // 虚拟化时格子是随着滚动一批批落位的，`measuredCount === itemCount` 要滚到底
-  // 才成立——那时重选列就是在用户眼皮底下把整面墙洗一遍。加上这一条之后：
-  //   · 区块墙（不虚拟化，overscanBy=50）开场就全落位、scrollTop 还是 0 → 沉降；
-  //   · 应用墙（虚拟化）滚到底才全落位，那时 scrollTop 早已非 0 → 不沉降；
-  //     一屏装得下、根本没滚过的小墙则照常沉降，而那正是安全的时候。
+  // ⚠ 开关由**调用方**给（`settleLayout`），不在这里猜。
+  //
+  // 第一版猜的是 `scrollTop === 0`，理由是"虚拟化墙要滚到底才全部落位，那时
+  // 重选列就是在用户眼皮底下洗牌"。方向对，判据错——它把**分页**一起误伤了：
+  // 区块墙翻页时 `onPageChange` 会调 `backToTop()`，但那个 scrollTo 不生效
+  // （实测翻到第 2 页后墙的滚动父级 `MAIN.agent-ant-layout-content` 仍停在 976），
+  // 于是第 2 页起永远不沉降。插桩录到的原样：第 2 页装了 6 次计时器、
+  // **触发 0 次**，全被 effect 清理掉了；离线拿最终高度重跑同一批卡是 1503，
+  // 浏览器是 1885 —— 382px 白丢。
+  //
+  // "这面墙是不是随滚动逐批落位"是调用方**知道**的事（它自己设的 overscanBy、
+  // 自己接的 onReachEnd），拿滚动位置去反推只会像上面这样被别的原因带偏。
   const revision = positioner.revision();
   React.useEffect(() => {
-    if (itemCount === 0 || measuredCount < itemCount || scrollTop > 0) return;
+    if (!settleLayout || itemCount === 0 || measuredCount < itemCount) return;
     const timer = window.setTimeout(() => {
       if (positioner.resettle()) forceUpdate();
     }, SETTLE_MS);
     return () => window.clearTimeout(timer);
-  }, [positioner, revision, measuredCount, itemCount, scrollTop, forceUpdate]);
+  }, [positioner, revision, measuredCount, itemCount, settleLayout, forceUpdate]);
 
   // 无限流：滚到只剩不到一屏就喊一次。用 ref 记住上次喊的项数，避免同一批重复喊。
   const lastAsked = React.useRef(-1);

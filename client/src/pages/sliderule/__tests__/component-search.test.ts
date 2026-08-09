@@ -16,6 +16,17 @@ import { describe, expect, it } from "vitest";
 
 import { buildIndex, expandIntent, tokenize } from "../component-search";
 
+/**
+ * **不注入 labelOf** —— 中文名现在从目录 JSON 读（scripts/sync_block_labels.py
+ * 同步自渲染器注册表），页面和这里拿到的是同一份。
+ *
+ * 2026-08-09 之前这里是 `() => undefined`，而组件库页面注入了
+ * `LABEL_BY_TYPE`（来自 block-registry 的 111 个中文名）。于是**这份测试
+ * 量的排序和用户看到的排序不是同一个索引**——它一直是绿的，而真实页面上
+ * 「我要选择客户」的第二名是 ReferenceManyManager。
+ *
+ * 下面那条 `测试索引必须和页面索引同源` 就是防它再分叉。
+ */
 const index = buildIndex(
   () => undefined,
   () => []
@@ -66,10 +77,27 @@ describe("用户给的四句验收", () => {
     ).toBe(true);
   });
 
-  it("「做一个订单筛选」→ 四个筛选区块排前四", () => {
-    const got = topNames("做一个订单筛选", 4);
+  it("「做一个订单筛选」→ 通用筛选件排前三", () => {
+    /*
+     * 期望从"四个筛选区块排前四"改成"三个通用筛选件排前三"（2026-08-09）。
+     *
+     * 原期望是 filter 族只有 4 个区块时写的，那时"前四"和"全部"是一回事。
+     * 14820a5 之后 filter 族有 15 个，其中 11 个是从具体产品搬来的特化件
+     * （BookingDirectoryFilter / IssueEventFilter / TimelineFilterBar…）。
+     * 它们在文本上跟通用件完全等价——family 都是 filter、能力标签同一串、
+     * 说明里都在讲筛选，所以按文本分它们靠说明长短随机地互相超车。
+     *
+     * 用户裁决（原话选 A）：相信目录里 `generality` 那份首选名单，让它压过
+     * 文本分。所以这里钉的是**那份名单在前**，而不再是某四个具体的名字：
+     * 以后再加十个特化筛选件，这条仍然成立；哪天把某个特化件提成首选，
+     * 也是改目录而不是改这条断言。
+     *
+     * TagFilterRow 不在期望里：模型没把它选进 filter 族的首选，用户同意
+     * 按模型的判断走。
+     */
+    const got = topNames("做一个订单筛选", 3);
     expect(
-      got.every(n => /StatusTabs|SearchBox|TagFilterRow|FilterBar/.test(n)),
+      got.every(n => /StatusTabs|SearchBox|FilterBar/.test(n)),
       `搜出来的是：${got.join(", ")}`
     ).toBe(true);
   });
@@ -153,5 +181,17 @@ describe("普通搜索没被意图层搞坏", () => {
     expect(kinds.has("block") || kinds.has("base")).toBe(true);
     expect(index.docs.filter(d => d.kind === "block").length).toBeGreaterThan(20);
     expect(index.docs.filter(d => d.kind === "base").length).toBeGreaterThan(200);
+  });
+});
+
+describe("测试索引必须和页面索引同源", () => {
+  it("区块中文名从目录读得到，不靠调用方注入", () => {
+    const docs = index.docs.filter(d => d.kind === "block");
+    const named = docs.filter(d => d.label !== d.name);
+    expect(
+      named.length,
+      `${docs.length} 个区块里只有 ${named.length} 个有中文名——` +
+        "目录落后了，跑 slide-rule-python/scripts/sync_block_labels.py"
+    ).toBeGreaterThanOrEqual(docs.length);
   });
 });
