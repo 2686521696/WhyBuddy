@@ -1432,7 +1432,7 @@ async def drive_full_v5_session_stream(
         capabilityId="driver", kind="think",
         text=f"phase_changed: orchestrating ({'repair drive' if repair else 'full drive'})", order=0,
     )
-    persist_state(state)
+    await asyncio.to_thread(persist_state, state)
     yield {"type": "phase_change", "phase": "orchestrating", "repair": repair}
 
     loop = 0
@@ -1475,7 +1475,7 @@ async def drive_full_v5_session_stream(
                     source="local_heuristic",
                 ))
                 state.decisionLedger = dl
-                persist_state(state)
+                await asyncio.to_thread(persist_state, state)
                 break
             # ⚠ 规划信号必须发在**整段规划之前**，不是发在 agentic pick 之前。
             #
@@ -1630,7 +1630,7 @@ async def drive_full_v5_session_stream(
                             "summary": (outcome["result_data"] or {}).get("summary") if outcome["ok"] else None,
                         }
                 _append_loop_timing_event(state, loop, len(selected), int((_time.time() - t_loop) * 1000))
-                persist_state(state)
+                await asyncio.to_thread(persist_state, state)
             for sel in ([] if batch_parallel else selected):
                 cap = sel["capabilityId"]
                 role = sel.get("roleId", "agent")
@@ -1642,7 +1642,7 @@ async def drive_full_v5_session_stream(
                     kind="capability_start", text=f"capability_started: {cap}", roleId=role, order=1,
                 )
                 append_replay_event(state, kind="capability_run", turnId=turn_id, capabilityId=cap, capabilityRunId=run_id)
-                persist_state(state)
+                await asyncio.to_thread(persist_state, state)
 
                 # These are REASONING-engine capabilities (evidence.search, risk.analyze,
                 # synthesis.merge ...), NOT the 5 skill-system capabilities. Emit them as
@@ -1691,7 +1691,7 @@ async def drive_full_v5_session_stream(
                         state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap,
                         kind="capability_complete", text=f"capability_completed: {cap}", roleId=role, order=2,
                     )
-                    persist_state(state)
+                    await asyncio.to_thread(persist_state, state)
 
                 except Exception as cap_exc:
                     cap_error = True
@@ -1706,7 +1706,7 @@ async def drive_full_v5_session_stream(
                         state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap,
                         kind="capability_complete", text=f"capability_completed: {cap} (error)", roleId=role, order=2,
                     )
-                    persist_state(state)
+                    await asyncio.to_thread(persist_state, state)
                     state.awaitDetail = (getattr(state, "awaitDetail", None) or "") + f"; degraded cap {cap}"
 
                 yield {
@@ -1751,7 +1751,7 @@ async def drive_full_v5_session_stream(
                     # 隔着两行：**该在循环里更新的状态写在了循环外**。防重复的
                     # 提示词和省时间的复用锁都因此失灵，只剩最粗的计数器兜底。
                     record_model_version(state, _round_closure, user_instruction)
-                    persist_state(state)
+                    await asyncio.to_thread(persist_state, state)
 
             # progress tracking
             now_art = len(getattr(state, "artifacts", []) or [])
@@ -1787,11 +1787,11 @@ async def drive_full_v5_session_stream(
                 # 交付意图：门通过但交付清单未出全时继续循环（同步驱动同款逻辑）。
                 if await asyncio.to_thread(_has_pending_delivery_picks, state, user_instruction):
                     loop += 1
-                    persist_state(state)
+                    await asyncio.to_thread(persist_state, state)
                     continue
                 break
             loop += 1
-            persist_state(state)
+            await asyncio.to_thread(persist_state, state)
 
         # 闭环证据重建里藏着最长的一步：新颖意图的五系统 LLM 生成（60~100s）。
         # 等待线程期间持续排水（共享带标签队列），把 LLM 的实时输出以
@@ -1820,7 +1820,7 @@ async def drive_full_v5_session_stream(
             state.runtimePhase = "done"
             append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end",
                 capabilityId="driver", kind="think", text="phase_changed: done", order=10)
-            persist_state(state)
+            await asyncio.to_thread(persist_state, state)
         else:
             state.runtimePhase = "awaiting"
             if getattr(state, "awaitReason", None) not in ("no_progress", "max_repeat_guard"):
@@ -1835,7 +1835,7 @@ async def drive_full_v5_session_stream(
             append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end",
                 capabilityId="driver", kind="think",
                 text=f"phase_changed: awaiting ({state.awaitReason or 'coverage'})", order=10)
-            persist_state(state)
+            await asyncio.to_thread(persist_state, state)
 
     except Exception as exc:
         state.runtimePhase = "failed"
@@ -1843,7 +1843,7 @@ async def drive_full_v5_session_stream(
         state.awaitDetail = f"drive error: {str(exc)[:120]}"
         append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end",
             capabilityId="driver", kind="think", text="phase_changed: failed", order=10)
-        persist_state(state)
+        await asyncio.to_thread(persist_state, state)
         yield {"type": "phase_change", "phase": "failed", "detail": state.awaitDetail}
     finally:
         # 注销模块级 sink：本次流之后的 LLM 调用不再往（已废弃的）队列里灌。
@@ -1856,7 +1856,7 @@ async def drive_full_v5_session_stream(
         _gen.set_refine_context(None)
         _gen.set_model_override(None)
 
-    persist_state(state)
+    await asyncio.to_thread(persist_state, state)
 
     # Compute publish closure + skill graph (the REAL 5-system evidence).
     publish_closure = derive_publish_closure_response(state)
@@ -1923,7 +1923,7 @@ async def drive_full_v5_session_stream(
         state.lastTurnId = f"turn-stream-{loop}-drive-full"
         # E29：模型变化才追加版本快照（前进/回退按钮的数据源）
         record_model_version(state, publish_closure, user_instruction)
-        persist_state(state)
+        await asyncio.to_thread(persist_state, state)
         yield {"type": "publish_closure", "data": publish_closure}
 
     yield {"type": "phase_change", "phase": state.runtimePhase}

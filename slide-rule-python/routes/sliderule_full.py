@@ -249,8 +249,44 @@ async def _run_orchestrate_plan(payload: Any):
     dumped["converged"] = len(picks) == 0
     return dumped
 
+# ── 同步路由为什么写成 `def` 而不是 `async def`（2026-08-10）──────────────
+#
+# 事故：两台电脑同时开着页面，一台发起推演，另一台**一直转圈**。
+#
+# 病根不是 worker 数（Dockerfile 里 uvicorn 确实只有 1 个 worker），是这些
+# 路由标着 `async def` 却在里面做**同步网络 IO**——会话档走 HTTPS 网关
+# （httpx.Client 是阻塞的）。`async def` 的函数体直接跑在事件循环上，一阻塞
+# 就是整个进程停摆，所有别人的请求一起排队。
+#
+# 实测（对着线上库）：
+#     GET /sessions 的 load_all()  →  34 条会话、5.2 MB payload、2278 ms
+# 这 2.3 秒里整个服务什么都干不了。推演途中每次 persist_state 再冻几百毫秒。
+#
+# 框架本来就给了答案。fastapi/routing.py:344 —
+#
+#     if is_coroutine:
+#         return await dependant.call(**values)          # async def：跑在循环上
+#     else:
+#         return await run_in_threadpool(dependant.call, **values)   # def：进线程池
+#
+# 而 starlette 的 `run_in_threadpool` 就是 `anyio.to_thread.run_sync`
+# （默认 40 个令牌，本进程实测）。**所以同步路由写成 `def` 才是对的**，
+# 写成 `async def` 反而是把它钉死在循环上——FastAPI 文档里"拿不准就用 def"
+# 说的正是这件事。
+#
+# 判据：函数体里**一个 await 都没有** → 一律 `def`。有 await 的（exec_cap /
+# drive_full_stream / fork_generated_app）不能改签名，改成在阻塞调用外面套
+# `await asyncio.to_thread(...)`。
+#
+# ⚠ 别顺手加 `--workers`。services/run_registry 模块头明写「单进程内存实现」：
+# 多进程下 POST 发起的 run 与 GET /runs/{id}/stream 续播会落到不同进程，
+# 断线重连找不到 run，"同会话已有活跃 run 就附着"的防重复也会失效。
+# 真要多进程，得先照 vercel/resumable-stream 那套把 run 日志挪到进程外
+# （那个库的 README 第一句就是 "Designed for use in serverless environments
+# without sticky load balancing"，靠的是 Redis pub/sub——我们抄了它的契约，
+# 没抄它的载体）。
 @router.get("/sessions")
-async def list_sess(
+def list_sess(
     viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
 ):
@@ -407,7 +443,7 @@ def _require_login(viewer) -> None:
 
 
 @router.post("/sessions")
-async def create_sess(
+def create_sess(
     payload: Dict[str, Any],
     viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
@@ -477,7 +513,7 @@ async def create_sess(
     return {"sessionId": state.sessionId, "state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.get("/sessions/{sid}")
-async def get_sess(
+def get_sess(
     sid: str,
     viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
@@ -531,7 +567,7 @@ def _cap_turn_narrations(state: V5SessionState) -> None:
 
 
 @router.put("/sessions/{sid}")
-async def save_sess(
+def save_sess(
     sid: str,
     state: Dict[str, Any],
     viewer: CurrentUserOptional,
@@ -654,7 +690,7 @@ async def save_sess(
     return {"ok": True, "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.delete("/sessions/{sid}")
-async def delete_sess(
+def delete_sess(
     sid: str,
     viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
@@ -716,7 +752,7 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
                 error=err,
                 timing={"durationMs": dur},
             )
-            save_session(state)
+            await asyncio.to_thread(save_session, state)
             return {
                 "error": err,
                 "degraded": True,
@@ -736,7 +772,7 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
                 error=err,
                 timing={"durationMs": dur},
             )
-            save_session(state)
+            await asyncio.to_thread(save_session, state)
             raise HTTPException(502, f"python LLM failed for {cap}: {e}")
         dur = int((_time.time() - t0) * 1000)
         run_id = f"run-{payload['turnId']}-{cap}"
@@ -746,7 +782,7 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
         if state.capabilityRuns:
             last = state.capabilityRuns[-1]
             if hasattr(last, "timing"): last.timing = {"durationMs": dur}
-        save_session(state)
+        await asyncio.to_thread(save_session, state)
         result = result if isinstance(result, dict) else dict(result)
         result.setdefault("provenance", PROVENANCE_PYTHON_RAG)
         result["backend"] = PYTHON_BACKEND
@@ -780,7 +816,7 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
             roleId=payload.get("roleId"),
             timing={"durationMs": dur},
         )
-        save_session(state)
+        await asyncio.to_thread(save_session, state)
         return {
             "error": err,
             "degraded": True,
@@ -801,7 +837,7 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
             roleId=payload.get("roleId"),
             timing={"durationMs": dur},
         )
-        save_session(state)
+        await asyncio.to_thread(save_session, state)
         # return degraded envelope so API does not hide; state has the record
         return {
             "error": err,
@@ -828,7 +864,7 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
     if state.capabilityRuns:
         last = state.capabilityRuns[-1]
         if hasattr(last, "timing"): last.timing = {"durationMs": dur}
-    save_session(state)
+    await asyncio.to_thread(save_session, state)
     return result
 
 @router.post("/drive-turn")
@@ -1013,7 +1049,7 @@ async def drive_full_stream(
     # PYTHON_AUTHORITY: 同 /drive-full——已持久化会话为权威起点（防伪造清洗会剥掉
     # 客户端 state 的 trust/producedBy/台账，以其起步会清零全部可信进度）。
     sid = str(raw_state.get("sessionId") or payload.get("sessionId") or "")
-    persisted = load_session(sid) if sid else None
+    persisted = await asyncio.to_thread(load_session, sid) if sid else None
     if persisted is not None:
         state = persisted
     else:
@@ -1071,7 +1107,7 @@ async def drive_full_stream(
         if isinstance(event.get("state"), dict):
             final_state = V5SessionState.server_load(event["state"])
             final_state, _ = sanitize_session_state(final_state)
-            final_state = save_session(final_state)
+            final_state = await asyncio.to_thread(save_session, final_state)
             return {**event, "state": final_state.model_dump()}
         return event
 
@@ -1139,7 +1175,7 @@ async def run_stream(
 
 
 @router.post("/sessions/{sid}/model-versions/{version_id}/restore")
-async def restore_model_version(
+def restore_model_version(
     sid: str,
     version_id: str,
     x_internal_key: Optional[str] = Header(None),
