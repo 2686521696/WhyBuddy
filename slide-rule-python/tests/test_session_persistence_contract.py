@@ -1,6 +1,8 @@
 import json
 import pytest
 
+from conftest import TEST_USER_ID
+
 from models.v5_state import V5SessionState
 from services.persistence import (
     delete_session_record,
@@ -346,6 +348,9 @@ def test_put_sanitize_prevents_client_forging_coverageGate_trustLevel_capability
     server_state = V5SessionState(
         sessionId=sid,
         goal={"text": "sanitize goal", "status": "needs_refinement"},
+        # 归属必须写上：会话恒为 private，无主的只有超管读得到 —— 这几条测的是
+        # PUT 的清洗/防覆盖/并发守卫，不是"匿名能不能读别人的会话"。
+        ownerId=TEST_USER_ID,
         artifacts=[trusted_artifact],
         capabilityRuns=[
             CapabilityRun(id="run-s1", capabilityId="evidence.search", turnId="t-s1", outputs=["art-server-1"], gateResults=[{"gateId": "ground", "status": "passed"}])
@@ -502,6 +507,9 @@ def test_put_does_not_overwrite_server_replay_via_client_body(monkeypatch):
     server_state = V5SessionState(
         sessionId=sid,
         goal={"text": "replay put test", "status": "needs_refinement"},
+        # 归属必须写上：会话恒为 private，无主的只有超管读得到 —— 这几条测的是
+        # PUT 的清洗/防覆盖/并发守卫，不是"匿名能不能读别人的会话"。
+        ownerId=TEST_USER_ID,
         artifacts=[],
         capabilityRuns=[],
         coverageGaps=[],
@@ -649,6 +657,9 @@ def test_persistence_guard_prevents_older_lastturn_from_overwriting_newer_state(
     newer = V5SessionState(
         sessionId=sid,
         goal={"text": "newer authoritative goal", "status": "needs_refinement"},
+        # 归属必须写上：会话恒为 private，无主的只有超管读得到 —— 这几条测的是
+        # PUT 的清洗/防覆盖/并发守卫，不是"匿名能不能读别人的会话"。
+        ownerId=TEST_USER_ID,
         artifacts=[],
         capabilityRuns=[{"id": "r-new", "capabilityId": "x", "turnId": "t10"}],
         coverageGaps=[],
@@ -709,6 +720,9 @@ def test_put_route_returns_409_on_stale_lastturn_and_does_not_overwrite(monkeypa
     # Seed server state at higher turn (via service to have full)
     server_newer = V5SessionState(
         sessionId=sid,
+        # 同上：无主会话谁都读不到，PUT 会先在归属判定上 404，根本走不到
+        # 并发守卫那一步——而这条测的正是并发守卫。
+        ownerId=TEST_USER_ID,
         goal={"text": "server-newer", "status": "needs_refinement"},
         artifacts=[],
         capabilityRuns=[],

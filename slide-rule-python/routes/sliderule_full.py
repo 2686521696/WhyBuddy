@@ -295,6 +295,38 @@ def _session_payload(state: Any) -> Dict[str, Any]:
     }
 
 
+def _adopt_owner(state, viewer):
+    """会话没有归属时，认到当前访问者名下。**每个"从请求体造会话"的地方都要调。**
+
+    ## 为什么要有这么一个函数
+
+    2026-08-06 的方案 B 定了「不让无主会话这个状态存在」，但只堵了
+    `POST /sessions` 一条路。实际上从请求体造会话的地方有**四处**：
+
+        POST /sessions        建会话        ← 只有这条设了归属
+        PUT  /sessions/{sid}  保存（可建）  ← 没设
+        POST /drive-full      推演（可建）  ← 没设
+        POST /drive-full-stream            ← 没设
+
+    后三条建出来的会话是无主的，而无主会话 `session_record` 恒判 private、
+    `access_for` 只给超管 —— 也就是**建出来就没人读得到**。表现极具误导性：
+    请求返回 200，紧接着 GET 同一个 id 返回 404。
+
+    套件里 11 条测试红在这个形状上，红了好几天，因为它看着像鉴权回归。
+
+    ## 为什么不在模型默认值里做
+
+    ownerId 是**请求上下文**的东西，V5SessionState 是纯数据模型，不该去摸
+    contextvars。放在路由层、每个入口显式调一次，看得见也搜得到。
+    """
+    if getattr(state, "ownerId", None):
+        return state
+    owner = str(getattr(viewer, "id", "") or "").strip()
+    if owner:
+        state.ownerId = owner
+    return state
+
+
 def _require_session(state: Any, action: str, viewer) -> None:
     """会话动作的统一守卫。
 
@@ -528,6 +560,18 @@ async def save_sess(
     # Protect server-owned append-only replay from client/stale overwrite (task requirement)
     client_input.pop("sessionReplayLog", None)
     client_input.pop("reasoningEvents", None)
+    # 归属是**服务端的**，客户端 PUT 一律不许带（2026-08-09）。
+    #
+    # 原来它既没被 pop、也不在下面 merge 的 exclude 里，于是两个方向都漏：
+    #
+    #   带了 ownerId → 客户端能改归属（写权限已判过，但归属不该由请求体决定）
+    #   没带 ownerId → **merge 时把服务端那条覆盖成 None，会话静默变无主**
+    #
+    # 第二条才是要命的：前端每次保存状态都 PUT 一次全量 state，而它的
+    # V5SessionState 里 ownerId 默认 None。也就是说**正常使用一次就把归属抹了**，
+    # 之后这条会话谁都读不到（无主 = private = 只有超管可见）。
+    # 实测：POST 建好（owner=u-test-default）→ PUT 一次 → DELETE 返回 404。
+    client_input.pop("ownerId", None)
     # publishClosure is client-side derived evidence projection (from python /drive-full); safe for client contrib roundtrip.
     # Do not pop; allow in V5SessionState parse + updates merge for frontend session store persistence (119).
     # Legacy sessions load with default None (see model).
@@ -567,18 +611,37 @@ async def save_sess(
         if client_contrib:
             # apply client-safe updates, exclude server-owned; never take client's artifacts/runs/gate/ledgers/replay
             # publishClosure intentionally NOT excluded: allows roundtrip persist of publish closure evidence into session state.
-            updates = client_contrib.model_dump(exclude={"sessionId", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId"})
+            # ownerId 在 exclude 里 —— 见上面 pop 那段：不排除的话，一次普通
+            # 保存就会把服务端的归属覆盖成 None。
+            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId"})
             for k, v in updates.items():
                 if hasattr(merged, k):
                     setattr(merged, k, v)
             merged.sessionId = sid
         state = merged
     else:
+        # ── PUT 建新会话：跟 POST 走同一条规矩（2026-08-09）──────────────
+        #
+        # 方案 B（2026-08-06）的原话是「不让无主会话这个状态存在」，但那次只堵
+        # 了 POST。PUT 这条路一直能建出无主会话，而无主会话**建出来就没人读得
+        # 到**——session_record 恒判 private，access_for 里匿名与非所有者都拿
+        # 不到 READ，于是只有超管看得见。
+        #
+        # 表现极其误导：PUT 返回 200 ok，紧接着 GET 同一个 id 返回 404。
+        # 套件里 11 条测试红在这个形状上（turnNarrations 4 / 持久化契约 4 /
+        # v5 冒烟 3），红了好几天没人能一眼说清是谁的问题。
+        #
+        # 两件事一起补齐，缺一个洞就还在：
+        #   ① 要登录 —— 否则匿名照样能建无主会话
+        #   ② 归属写进去 —— 否则登录了建出来的还是无主的（POST 那边踩过同一个
+        #      坑，注释就在上面：「漏了这两行的后果不是报错，是会话建出来永远无主」）
+        _require_login(viewer)
         if client_contrib:
             client_contrib.sessionId = sid
             state = client_contrib
         else:
             state = V5SessionState(sessionId=sid, goal={"text": "", "status": "needs_refinement"})
+        _adopt_owner(state, viewer)
     # Use authoritative result from save_session (which delegates to persistence guard + cache reload)
     # instead of the pre-save input state. Ensures route _sessions reflects service-forced authoritative
     # (consistent with "service forces reload authoritative into cache" and load_session behavior).
@@ -779,7 +842,7 @@ def drive(
     """Single turn drive (drive_reasoning_turn). Full multi-loop driver authority exposed via /drive-full."""
     _auth(x_internal_key)
     _require_login(viewer)
-    state = V5SessionState(**payload["state"])
+    state = _adopt_owner(V5SessionState(**payload["state"]), viewer)
     new_state = drive_reasoning_turn(state, payload["turnId"], payload.get("userText", ""))
     # python provenance for turn/drive (covers turn + downstream evidence/report)
     return {"state": new_state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_RAG, "backend": PYTHON_BACKEND}
@@ -825,7 +888,9 @@ def drive_full(
     # delivery 分支）。仅在无持久化会话（首轮）时才用清洗后的客户端 state 起步。
     sid = str(raw_state.get("sessionId") or payload.get("sessionId") or "")
     persisted = load_session(sid) if sid else None
-    state = persisted if persisted is not None else V5SessionState(**raw_state)
+    state = persisted if persisted is not None else _adopt_owner(
+        V5SessionState(**raw_state), viewer
+    )
     max_loops = int(payload.get("max_loops", 10))
     user_text = sanitize_session_dict({"text": payload.get("userText", "") or payload.get("user_text", "")})[0].get("text", "")
     # 技能库六期"推演注入"：已安装技能进生成契约（setter 内清洗；结束必清空）
@@ -868,14 +933,21 @@ def drive_full(
     }
 
 @router.post("/drive-marathon")
-async def drive_marathon_route(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+async def drive_marathon_route(
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
     """Python-owned marathon/budget route.
 
     This is the production wiring point for BudgetMarathon: frontend/Node callers consume
     the Python decision instead of owning maxTurns/maxRuns/maxRepeat/maxTokens locally.
     """
     _auth(x_internal_key)
-    state = V5SessionState(**payload["state"])
+    # 它把 drive_reasoning_turn 当步进器跑，而那个函数内部会 save_session ——
+    # 也就是**这条路会落库**，所以同样得认归属（2026-08-09）。原来这条路由
+    # 连 viewer 都没取，无从认起。
+    state = _adopt_owner(V5SessionState(**payload["state"]), viewer)
     seed_text = payload.get("seedText") or payload.get("seed_text") or payload.get("userText") or ""
     budget = payload.get("budget") or {}
     policy = payload.get("policy") or None
@@ -907,6 +979,8 @@ async def drive_marathon_route(payload: Dict[str, Any], x_internal_key: Optional
 @router.post("/coverage")
 async def cov(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
+    # 这条**不落库**：算一遍覆盖门就把结果返回，state 只是入参。造不出无主
+    # 会话，所以不用 _adopt_owner（用例里也把它列进豁免并写明这个理由）。
     state = V5SessionState(**payload["state"])
     gate = evaluate_coverage_gate(state)
     return gate
@@ -944,7 +1018,7 @@ async def drive_full_stream(
         state = persisted
     else:
         try:
-            state = V5SessionState(**raw_state)
+            state = _adopt_owner(V5SessionState(**raw_state), viewer)
         except (ValidationError, TypeError, ValueError) as e:
             return JSONResponse(
                 status_code=400,

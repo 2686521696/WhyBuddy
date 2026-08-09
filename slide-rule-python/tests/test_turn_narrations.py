@@ -25,6 +25,16 @@ def _fresh_client(monkeypatch):
     sliderule_full._sessions = {}
     app = FastAPI()
     app.include_router(sliderule_full.router, prefix="/api/sliderule")
+    # 这个 app 是**本地新建的**，conftest 那个 autouse 登录覆盖只装在
+    # `sys.modules["app"].app` 上，装不到这里 —— 于是请求是匿名的，而
+    # PUT 建会话要求登录（方案 B），会稳定 401。
+    #
+    # 覆盖同源：用 conftest 的 _TestUser，免得两处身份对不上（对不上的表现是
+    # "建得成但读不到"，比 401 更难查）。
+    from middlewares.current_user import optional_user
+    from conftest import _TestUser
+
+    app.dependency_overrides[optional_user] = lambda: _TestUser()
     return TestClient(app)
 
 

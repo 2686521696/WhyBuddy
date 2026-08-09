@@ -11,6 +11,8 @@ They use the permission-system goal from the fixtures to exercise RAG evidence p
 from fastapi.testclient import TestClient
 import pytest
 
+from conftest import TEST_USER_ID
+
 try:
     from app import app
 except Exception as e:
@@ -187,6 +189,9 @@ def test_app_drive_full_persists_phase_when_existing_session_has_same_turn(monke
 
     sid = "app-route-drive-full-same-turn-phase"
     prior = V5SessionState(
+        # 归属必须写上：会话恒为 private，无主的只有超管读得到
+        # （见 conftest.TEST_USER_ID 那段说明）
+        ownerId=TEST_USER_ID,
         sessionId=sid,
         goal={"text": "purchase approval", "status": "needs_refinement"},
         artifacts=[],
@@ -272,6 +277,9 @@ def test_session_get_repairs_mojibake_and_projects_purchase_graph():
     chinese = "生成一个采购审批应用，包含采购单、申请人、部门经理、财务、采购执行、审批流、表单页面和风险摘要"
     mojibake = chinese.encode("utf-8").decode("latin1").encode("utf-8").decode("latin1")
     prior = V5SessionState(
+        # 归属必须写上：会话恒为 private，无主的只有超管读得到
+        # （见 conftest.TEST_USER_ID 那段说明）
+        ownerId=TEST_USER_ID,
         sessionId=sid,
         goal={"text": mojibake, "status": "needs_refinement"},
         artifacts=[],

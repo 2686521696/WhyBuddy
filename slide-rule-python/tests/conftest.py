@@ -8,8 +8,26 @@ SLIDERULE_LIVE_WEB_TESTS=1 显式开。
 """
 
 import os
+import sys
 import tempfile
 from pathlib import Path
+
+# ── 让 `from app import app` 在**任何**调用方式下都成立（2026-08-09）─────────
+#
+# 此前没有这一行，而套件里有测试写 `from app import app`（test_v5_smoke.py:15）
+# 并在失败时 `pytest.skip(allow_module_level=True)`。后果不是报错，是**整个文件
+# 静默跳过**：
+#
+#     单独跑 tests/test_v5_smoke.py  → 1 skipped（一条都没跑）
+#     跑全量                          → 它跑了，而且红 3 条
+#
+# 差别来自别的测试文件自己做了 `sys.path.insert(0, parent)`（如
+# test_gate_field_types.py:33）——先跑到那一个，`app` 才变得可导入。也就是说
+# 这个冒烟文件**跑不跑，取决于文件名排序**。
+#
+# 这比红更糟：单跑是绿的（因为压根没跑），全量是红的，看起来像"环境问题"。
+# 路径是全套件的事，就该在 conftest 里定一次。
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("SLIDERULE_WEB_SEARCH", "off")
 # 会话存储全套件隔离（E14 揭出的老毛病）：不少路由/驱动测试不各自
@@ -78,10 +96,19 @@ os.environ.setdefault("SLIDE_RULE_INTERNAL_KEY", "dev-slide-rule-internal")
 import pytest  # noqa: E402
 
 
+#: 默认测试身份的 id。**测试里手工造会话时要把它写进 ownerId**。
+#
+# 2026-08-09 加：会话是私有的（session_record 恒判 private），无主会话只有超管
+# 看得见。所以直接走 service 层 `save_session(V5SessionState(...))` 播种、再用
+# TestClient 去 GET/PUT 的测试，会稳定拿到 404——不是鉴权回归，是那条会话确实
+# 谁都不属于。播种时带上这个 id，测的才是它自己声称在测的东西。
+TEST_USER_ID = "u-test-default"
+
+
 class _TestUser:
     """默认测试身份：普通登录用户（**不是**超管——超管会掩盖权限不足的 bug）。"""
 
-    id = "u-test-default"
+    id = TEST_USER_ID
     email = "test@example.com"
     is_active = True
     is_superuser = False
@@ -101,6 +128,25 @@ def _all_apps() -> list:
     import sys
 
     mod = sys.modules.get("app")
+    # 还没被导入就**主动导一次**（2026-08-09）。
+    #
+    # 原来只看 `sys.modules`，于是覆盖能不能装上取决于**测试在哪一行导入 app**：
+    #
+    #     模块顶层 import（test_v5_smoke.py:15）  → 收集期就在，装得上
+    #     测试函数体内 import（持久化契约那几条） → fixture 跑完才导入，装不上
+    #
+    # 后者的表现是 POST /sessions 返回 401「请先登录后再推演」——看起来像鉴权
+    # 回归，其实只是覆盖晚了一步。套件里 4 条契约测试红在这个形状上。
+    #
+    # 主动导一次就没有先后问题了。上面那些 os.environ 已经在本文件顶部设好，
+    # 导入拿到的是测试基线配置。
+    if mod is None:
+        try:
+            import app as _app_mod  # noqa: F401
+
+            mod = sys.modules.get("app")
+        except Exception:  # noqa: BLE001 — 纯单元测试的环境可能装不全依赖
+            mod = None
     current = getattr(mod, "app", None) if mod else None
     if current is not None and not any(a is current for a in _seen_apps):
         _seen_apps.append(current)

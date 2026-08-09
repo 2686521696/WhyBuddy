@@ -90,19 +90,26 @@ def test_fork_route_sets_owner_and_suppresses_web_search():
 
 
 # ── ③ 的机制本身 ──────────────────────────────────────────────
-def test_suppress_web_search_is_request_scoped():
+def test_suppress_web_search_is_request_scoped(monkeypatch):
     """必须是请求域的，不能是全局开关。
 
     全局关等于把正常推演的外部证据也一起关掉；而并发下一个 fork 不该影响
     别人正在跑的推演。
     """
-    import os
-
     from services.mcp_tools import suppress_web_search, web_search_enabled
 
     # 基线跟着环境走（测试环境可能本来就把 SLIDERULE_WEB_SEARCH 关了），
     # 这里钉的是**这个上下文管理器造成的差值**，不是某个绝对值。
-    os.environ.pop("SLIDERULE_WEB_SEARCH", None)
+    #
+    # ⚠️ 必须走 monkeypatch，不能直接 `os.environ.pop`（2026-08-09 修）。
+    # 原来是裸 pop，**跑完不还原**：conftest 把这个变量钉成 off 是为了让全套件
+    # 绝不外呼，被这里清掉之后，后面所有测试都在"外呼开着"的环境里跑。
+    #
+    # 后果不是这条测试红，是**别的文件红**：
+    #     test_mcp_tools::test_disabled_by_conftest_default   直接断言它是 off
+    #     test_vector_rag 那 4 条                              retrieve_evidence 走了另一条分支
+    # 而这 6 条**单独跑全绿**，只有全量跑才红——最难查的那种。
+    monkeypatch.delenv("SLIDERULE_WEB_SEARCH", raising=False)
     baseline = web_search_enabled()
     assert baseline is True, "清掉环境变量后默认应当是开的"
 
