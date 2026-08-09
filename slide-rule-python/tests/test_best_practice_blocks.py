@@ -223,3 +223,115 @@ def test_second_sparse_region_batch_keeps_exact_region_boundaries():
         assert block["rendererStatus"] == "real"
         assert block["source"]["path"]
         assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
+
+
+def test_third_sparse_region_batch_uses_four_verified_sources_and_exact_regions():
+    expected = {
+        "WorkItemCommandHeader": ("makeplane/plane", {"header"}),
+        "DocumentCommandHeader": ("outline/outline", {"header"}),
+        "EnvironmentStatusStrip": ("backstage/backstage", {"headerExtra"}),
+        "DataFreshnessIndicator": ("metabase/metabase", {"headerExtra"}),
+        "WorkItemContextSummary": ("makeplane/plane", {"headerContent"}),
+        "DocumentContextSummary": ("outline/outline", {"headerContent"}),
+        "WorkItemDetailTabs": ("makeplane/plane", {"tabs"}),
+        "QueryModeTabs": ("metabase/metabase", {"tabs"}),
+        "WorkItemFilterBar": ("makeplane/plane", {"filters"}),
+        "DashboardParameterBar": ("metabase/metabase", {"filters"}),
+        "CycleHealthMetrics": ("makeplane/plane", {"metrics"}),
+        "QueryExecutionMetrics": ("metabase/metabase", {"metrics"}),
+        "BulkSelectionBar": ("outline/outline", {"footerBar"}),
+        "DraftPublishBar": ("outline/outline", {"footerBar"}),
+    }
+    for block_type, (repo, regions) in expected.items():
+        block = _block(block_type)
+        assert block["source"]["repo"] == repo
+        assert block["source"]["path"]
+        assert set(block["allowedRegions"]) == regions
+        assert "main" not in block["allowedRegions"]
+        assert block["rendererStatus"] == "real"
+        assert block["generationEnabled"] is True
+        assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
+
+
+def test_fourth_sparse_region_batch_keeps_seven_exact_regions_and_verified_sources():
+    expected = {
+        "QuestionCommandHeader": ("metabase/metabase", {"header"}),
+        "CatalogEntityCommandHeader": ("backstage/backstage", {"header"}),
+        "CollaboratorPresenceStrip": ("outline/outline", {"headerExtra"}),
+        "QueryRunStatusStrip": ("metabase/metabase", {"headerExtra"}),
+        "EntityOwnershipSummary": ("backstage/backstage", {"headerContent"}),
+        "QueryDataSourceSummary": ("metabase/metabase", {"headerContent"}),
+        "DatasetEditorTabs": ("metabase/metabase", {"tabs"}),
+        "DocumentHistoryTabs": ("outline/outline", {"tabs"}),
+        "CatalogEntityFilterBar": ("backstage/backstage", {"filters"}),
+        "QueryClauseFilterBar": ("metabase/metabase", {"filters"}),
+        "DocumentInsightMetrics": ("outline/outline", {"metrics"}),
+        "MetadataQualityMetrics": ("metabase/metabase", {"metrics"}),
+        "QuestionExecutionBar": ("metabase/metabase", {"footerBar"}),
+        "DocumentShareBar": ("outline/outline", {"footerBar"}),
+    }
+    for block_type, (repo, regions) in expected.items():
+        block = _block(block_type)
+        assert block["source"]["repo"] == repo
+        assert block["source"]["path"]
+        assert set(block["allowedRegions"]) == regions
+        assert "main" not in block["allowedRegions"]
+        assert block["rendererStatus"] == "real"
+        assert block["generationEnabled"] is True
+        assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
+
+
+def test_fifth_sparse_region_batch_balances_five_domains_without_main_blocks():
+    expected = {
+        "CycleCommandHeader": ("makeplane/plane", {"header"}),
+        "AlertGroupCommandHeader": ("grafana/grafana", {"header"}),
+        "IncidentOwnershipStrip": ("getsentry/sentry", {"headerExtra"}),
+        "SyncScheduleStrip": ("airbytehq/airbyte-platform", {"headerExtra"}),
+        "CycleContextSummary": ("makeplane/plane", {"headerContent"}),
+        "AlertGroupContextSummary": ("grafana/grafana", {"headerContent"}),
+        "EventTypeEditorTabs": ("calcom/cal.com", {"tabs"}),
+        "IncidentEvidenceTabs": ("getsentry/sentry", {"tabs"}),
+        "CycleFilterBar": ("makeplane/plane", {"filters"}),
+        "AlertRuleFilterBar": ("grafana/grafana", {"filters"}),
+        "SyncReliabilityMetrics": ("airbytehq/airbyte-platform", {"metrics"}),
+        "RuleEvaluationMetrics": ("grafana/grafana", {"metrics"}),
+        "CycleLifecycleBar": ("makeplane/plane", {"footerBar"}),
+        "EventTypePublishBar": ("calcom/cal.com", {"footerBar"}),
+    }
+    for block_type, (repo, regions) in expected.items():
+        block = _block(block_type)
+        assert block["source"]["repo"] == repo
+        assert block["source"]["path"]
+        assert set(block["allowedRegions"]) == regions
+        assert "main" not in block["allowedRegions"]
+        assert block["rendererStatus"] == "real"
+        assert block["generationEnabled"] is True
+        assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
+
+
+def test_sixth_sparse_region_batch_uses_chatwoot_and_keycloak_exact_regions():
+    expected = {
+        "ConversationCommandHeader": ("chatwoot/chatwoot", {"header"}),
+        "UserCommandHeader": ("keycloak/keycloak", {"header"}),
+        "ConversationAssignmentStrip": ("chatwoot/chatwoot", {"headerExtra"}),
+        "RealmStatusStrip": ("keycloak/keycloak", {"headerExtra"}),
+        "ConversationContextSummary": ("chatwoot/chatwoot", {"headerContent"}),
+        "UserIdentitySummary": ("keycloak/keycloak", {"headerContent"}),
+        "ConversationDetailTabs": ("chatwoot/chatwoot", {"tabs"}),
+        "UserSecurityTabs": ("keycloak/keycloak", {"tabs"}),
+        "ConversationInboxFilter": ("chatwoot/chatwoot", {"filters"}),
+        "UserDirectoryFilter": ("keycloak/keycloak", {"filters"}),
+        "ConversationSlaMetrics": ("chatwoot/chatwoot", {"metrics"}),
+        "UserSessionMetrics": ("keycloak/keycloak", {"metrics"}),
+        "ConversationReplyBar": ("chatwoot/chatwoot", {"footerBar"}),
+        "UserAccessBar": ("keycloak/keycloak", {"footerBar"}),
+    }
+    for block_type, (repo, regions) in expected.items():
+        block = _block(block_type)
+        assert block["source"]["repo"] == repo
+        assert block["source"]["path"]
+        assert set(block["allowedRegions"]) == regions
+        assert "main" not in block["allowedRegions"]
+        assert block["rendererStatus"] == "real"
+        assert block["generationEnabled"] is True
+        assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)

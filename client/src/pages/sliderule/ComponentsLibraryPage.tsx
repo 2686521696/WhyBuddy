@@ -461,6 +461,22 @@ const FIELD_LABEL: Record<string, string> = {
   changedField: "变更字段",
   beforeValue: "变更前",
   afterValue: "变更后",
+  workProject: "所属项目",
+  workCycle: "所属周期",
+  workDue: "截止时间",
+  workLabels: "标签",
+  documentCollection: "所属集合",
+  documentOwner: "所有者",
+  documentVisibility: "可见范围",
+  documentUpdated: "最后更新",
+  catalogOwner: "负责人",
+  catalogLifecycle: "生命周期",
+  catalogSystem: "所属系统",
+  catalogDomain: "所属领域",
+  sourceDatabase: "数据库",
+  sourceSchema: "Schema",
+  sourceName: "数据来源",
+  sourceType: "来源类型",
 };
 
 /** 字段类型：表单族按它决定出哪种控件（enum→下拉、number→数字、date→日期）。
@@ -525,6 +541,14 @@ const FIELD_TYPE: Record<string, string> = {
   changedField: "string",
   beforeValue: "text",
   afterValue: "text",
+  workProject: "string",
+  workCycle: "string",
+  workDue: "date",
+  workLabels: "string",
+  documentCollection: "string",
+  documentOwner: "string",
+  documentVisibility: "enum",
+  documentUpdated: "date",
 };
 
 /**
@@ -883,6 +907,155 @@ const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
   ],
   dashboardSave: [
     { id: "dashboard-save-1", values: { dashboardTitle: "支付服务监控", dashboardDirty: "dirty", dashboardCanSave: "allowed", dashboardManaged: "custom", dashboardTemplate: "template" }, createdAt: "2026-08-09T11:20:00.000Z" },
+  ],
+  workItem: [
+    { id: "work-1", values: { workTitle: "完善门店巡检流程", workStatus: "in_progress", workPriority: "high", workAssignee: "陈晓", workProject: "运营平台", workCycle: "八月迭代", workDue: "2026-08-18", workLabels: "流程,巡检" }, createdAt: "2026-08-09T11:30:00.000Z" },
+  ],
+  document: [
+    { id: "doc-1", values: { documentTitle: "门店巡检操作手册", documentState: "draft", documentPermission: "publish", documentRevision: "", documentCollection: "运营规范", documentOwner: "周宁", documentVisibility: "团队可见", documentUpdated: "2026-08-09 11:25", documentDirty: "dirty", documentLocation: "运营规范 / 门店", documentShareVisibility: "public", documentShareDomain: "docs.example.com", documentSharePermission: "share", documentShareLink: "https://docs.example.com/store-inspection" }, createdAt: "2026-08-09T11:25:00.000Z" },
+  ],
+  environmentStatus: [
+    { id: "env-prod", values: { environmentName: "生产环境", environmentStatus: "healthy" }, createdAt: "2026-08-09T11:25:00.000Z" },
+    { id: "env-stage", values: { environmentName: "预发布", environmentStatus: "warning" }, createdAt: "2026-08-09T11:24:00.000Z" },
+    { id: "env-dev", values: { environmentName: "开发环境", environmentStatus: "healthy" }, createdAt: "2026-08-09T11:23:00.000Z" },
+  ],
+  dataFreshness: [
+    { id: "freshness-1", values: { dataSourceName: "订单数仓", dataUpdatedAt: "2026-08-09 11:28", freshnessStatus: "fresh" }, createdAt: "2026-08-09T11:28:00.000Z" },
+  ],
+  workItemTab: [
+    { id: "work-tab-overview", values: { workTabTitle: "概览", workTabKey: "overview", workTabCount: 0, workTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "work-tab-activity", values: { workTabTitle: "活动", workTabKey: "activity", workTabCount: 18, workTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "work-tab-sub", values: { workTabTitle: "子任务", workTabKey: "subtasks", workTabCount: 4, workTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  queryMode: [
+    { id: "query-mode-viz", values: { queryModeTitle: "可视化", queryModeKey: "visualization", queryModeCount: 0, queryModeEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "query-mode-result", values: { queryModeTitle: "结果", queryModeKey: "results", queryModeCount: 1280, queryModeEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "query-mode-sql", values: { queryModeTitle: "SQL", queryModeKey: "sql", queryModeCount: 0, queryModeEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  workFilterOption: [
+    { id: "wf-state-doing", values: { workFilterType: "状态", workFilterKey: "in_progress", workFilterTitle: "进行中" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "wf-state-done", values: { workFilterType: "状态", workFilterKey: "done", workFilterTitle: "已完成" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "wf-priority-high", values: { workFilterType: "优先级", workFilterKey: "high", workFilterTitle: "高" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "wf-owner-chen", values: { workFilterType: "负责人", workFilterKey: "chen", workFilterTitle: "陈晓" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  dashboardParameter: [
+    { id: "param-region", values: { parameterTitle: "区域", parameterKey: "region", parameterValue: "华东", parameterRequired: "required" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "param-channel", values: { parameterTitle: "渠道", parameterKey: "channel", parameterValue: "全部", parameterRequired: "optional" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  cycleHealth: [
+    { id: "cycle-health-1", values: { cycleCompleted: 34, cycleTotal: 52, cycleOverdue: 5, cycleUnstarted: 8 }, createdAt: "2026-08-09T11:20:00.000Z" },
+  ],
+  queryExecution: [
+    { id: "query-execution-1", values: { queryTimeMs: 842, queryRows: 1280, queryCached: "realtime", queryBytes: 1843200 }, createdAt: "2026-08-09T11:20:00.000Z" },
+  ],
+  questionState: [
+    { id: "question-1", values: { questionTitle: "门店履约趋势", questionSaved: "saved", questionDirty: "dirty", questionBookmarked: "bookmarked", queryStatus: "completed", queryRunnable: "runnable", queryTime: 842, queryCached: "realtime" }, createdAt: "2026-08-09T11:35:00.000Z" },
+  ],
+  catalogEntity: [
+    { id: "catalog-1", values: { catalogTitle: "订单聚合服务", catalogKind: "Component", catalogType: "service", catalogStarred: "starred", catalogOwner: "数据平台组", catalogLifecycle: "production", catalogSystem: "交易平台", catalogDomain: "零售交易" }, createdAt: "2026-08-09T11:30:00.000Z" },
+  ],
+  collaborator: [
+    { id: "collab-1", values: { collaboratorName: "周宁", collaboratorPresent: "present", collaboratorEditing: "editing" }, createdAt: "2026-08-09T11:36:00.000Z" },
+    { id: "collab-2", values: { collaboratorName: "陈晓", collaboratorPresent: "present", collaboratorEditing: "viewing" }, createdAt: "2026-08-09T11:35:00.000Z" },
+    { id: "collab-3", values: { collaboratorName: "林静", collaboratorPresent: "offline", collaboratorEditing: "viewing" }, createdAt: "2026-08-09T10:10:00.000Z" },
+  ],
+  querySource: [
+    { id: "query-source-1", values: { sourceDatabase: "经营数仓", sourceSchema: "commerce", sourceName: "store_fulfillment_daily", sourceType: "模型" }, createdAt: "2026-08-09T11:34:00.000Z" },
+  ],
+  datasetEditorTab: [
+    { id: "dataset-query", values: { datasetTabTitle: "查询", datasetTabKey: "query", datasetTabCount: 0, datasetTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "dataset-columns", values: { datasetTabTitle: "字段", datasetTabKey: "columns", datasetTabCount: 18, datasetTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "dataset-settings", values: { datasetTabTitle: "设置", datasetTabKey: "metadata", datasetTabCount: 0, datasetTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  documentHistoryTab: [
+    { id: "history-revisions", values: { historyTabTitle: "修订", historyTabKey: "revisions", historyTabCount: 12, historyTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "history-events", values: { historyTabTitle: "事件", historyTabKey: "events", historyTabCount: 28, historyTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "history-changes", values: { historyTabTitle: "变更对照", historyTabKey: "changes", historyTabCount: 4, historyTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  catalogFilterOption: [
+    { id: "catalog-kind", values: { catalogFacet: "种类", catalogFilterKey: "component", catalogFilterTitle: "Component" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "catalog-type", values: { catalogFacet: "类型", catalogFilterKey: "service", catalogFilterTitle: "服务" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "catalog-life", values: { catalogFacet: "生命周期", catalogFilterKey: "production", catalogFilterTitle: "生产" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "catalog-owner", values: { catalogFacet: "负责人", catalogFilterKey: "data-platform", catalogFilterTitle: "数据平台组" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  queryClause: [
+    { id: "clause-region", values: { queryField: "区域", queryOperator: "=", queryValue: "华东", queryClauseEnabled: "enabled" }, createdAt: "2026-08-09T11:32:00.000Z" },
+    { id: "clause-date", values: { queryField: "日期", queryOperator: ">=", queryValue: "2026-08-01", queryClauseEnabled: "enabled" }, createdAt: "2026-08-09T11:32:00.000Z" },
+  ],
+  documentInsight: [
+    { id: "document-insight-1", values: { documentViews: 1842, documentContributors: 6, documentCreatedAt: "2026-07-18", documentUpdatedAt: "2026-08-09" }, createdAt: "2026-08-09T11:30:00.000Z" },
+  ],
+  metadataQuality: [
+    { id: "metadata-quality-1", values: { metadataTotal: 24, metadataDocumented: 19, metadataTyped: 21 }, createdAt: "2026-08-09T11:30:00.000Z" },
+  ],
+  cycleManagement: [
+    { id: "cycle-manage-1", values: { cycleTitle: "八月交付周期", cycleStatus: "active", cycleEditable: "editable", cycleOwner: "周宁", cycleMembers: "陈晓、林静", cycleDateRange: "08-01 至 08-18", cycleProgress: "34 / 52 工作项" }, createdAt: "2026-08-09T11:40:00.000Z" },
+  ],
+  alertGroup: [
+    { id: "alert-group-1", values: { alertGroupTitle: "支付服务规则组", alertGroupStatus: "active", alertGroupEditable: "editable", alertGroupInterval: "每 1 分钟", alertGroupNamespace: "production", alertGroupRules: "12 条规则", alertGroupFiring: "3 个触发", alertGroupDatasource: "Prometheus" }, createdAt: "2026-08-09T11:40:00.000Z" },
+  ],
+  incidentOwnership: [
+    { id: "ownership-1", values: { incidentAssignee: "陈晓", assignmentSource: "ownership_rule", suggestedOwner: "支付平台组" }, createdAt: "2026-08-09T11:39:00.000Z" },
+  ],
+  syncSchedule: [
+    { id: "sync-schedule-1", values: { syncFrequency: "30 分钟", syncNextRun: "2026-08-09 12:00", syncTimezone: "Asia/Shanghai", syncScheduleStatus: "active" }, createdAt: "2026-08-09T11:30:00.000Z" },
+  ],
+  eventTypeTab: [
+    { id: "event-tab-setup", values: { eventTabTitle: "设置", eventTabKey: "setup", eventTabCount: 0, eventTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "event-tab-availability", values: { eventTabTitle: "可用时间", eventTabKey: "availability", eventTabCount: 0, eventTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "event-tab-limits", values: { eventTabTitle: "限制", eventTabKey: "limits", eventTabCount: 2, eventTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "event-tab-webhooks", values: { eventTabTitle: "Webhook", eventTabKey: "webhooks", eventTabCount: 1, eventTabEnabled: "disabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  incidentEvidenceTab: [
+    { id: "evidence-events", values: { evidenceTabTitle: "事件", evidenceTabKey: "events", evidenceTabCount: 1842, evidenceTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "evidence-attachments", values: { evidenceTabTitle: "附件", evidenceTabKey: "attachments", evidenceTabCount: 3, evidenceTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "evidence-replays", values: { evidenceTabTitle: "回放", evidenceTabKey: "replays", evidenceTabCount: 0, evidenceTabEnabled: "disabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  cycleFilterOption: [
+    { id: "cycle-status-active", values: { cycleFilterType: "状态", cycleFilterKey: "active", cycleFilterTitle: "进行中" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "cycle-status-completed", values: { cycleFilterType: "状态", cycleFilterKey: "completed", cycleFilterTitle: "已完成" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "cycle-start-aug", values: { cycleFilterType: "开始时间", cycleFilterKey: "august", cycleFilterTitle: "八月" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  syncReliability: [
+    { id: "sync-reliability-1", values: { syncSuccessRuns: 47, syncFailedRuns: 3, syncRecordCount: 18420, syncFreshness: "8 分钟" }, createdAt: "2026-08-09T11:40:00.000Z" },
+  ],
+  ruleEvaluation: [
+    { id: "rule-evaluation-1", values: { evaluationActive: 38, evaluationPaused: 4, evaluationErrors: 2, evaluationDuration: 128 }, createdAt: "2026-08-09T11:40:00.000Z" },
+  ],
+  eventTypeState: [
+    { id: "event-type-1", values: { eventTypeTitle: "专家义诊 30 分钟", eventTypeHidden: "hidden", eventTypeDirty: "dirty", eventTypeValid: "valid" }, createdAt: "2026-08-09T11:40:00.000Z" },
+  ],
+  supportConversation: [
+    { id: "conv-1842", values: { contactName: "张女士", conversationStatus: "open", sessionVerified: "verified", inboxName: "微信客服", assignedAgent: "陈晓", assignedTeam: "售后服务组", conversationPriority: "urgent", conversationChannel: "wechat", contactPhone: "138****6621", conversationSnooze: "未暂停", conversationSla: "剩余 12 分钟" }, createdAt: "2026-08-09T11:48:00.000Z" },
+  ],
+  identityUser: [
+    { id: "user-1", values: { identityUsername: "wang.xiao", identityEnabled: "enabled", impersonateAllowed: "allowed", identityEmail: "wang.xiao@example.com", identityProvider: "corporate-ldap", identityCreated: "2026-06-18", emailVerified: "verified", requiredActions: "更新密码", activeSessions: 3, manageableUser: "allowed" }, createdAt: "2026-08-09T11:45:00.000Z" },
+  ],
+  realmStatus: [
+    { id: "realm-1", values: { realmName: "whybuddy", realmEnabled: "enabled", bruteForceProtection: "enabled", sslRequired: "external" }, createdAt: "2026-08-09T11:45:00.000Z" },
+  ],
+  conversationTab: [
+    { id: "conv-tab-messages", values: { conversationTabTitle: "消息", conversationTabKey: "messages", conversationTabCount: 28, conversationTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "conv-tab-activity", values: { conversationTabTitle: "活动", conversationTabKey: "activity", conversationTabCount: 6, conversationTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "conv-tab-attachments", values: { conversationTabTitle: "附件", conversationTabKey: "attachments", conversationTabCount: 2, conversationTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  userSecurityTab: [
+    { id: "user-tab-details", values: { securityTabTitle: "详情", securityTabKey: "settings", securityTabCount: 0, securityTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "user-tab-credentials", values: { securityTabTitle: "凭据", securityTabKey: "credentials", securityTabCount: 3, securityTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "user-tab-sessions", values: { securityTabTitle: "会话", securityTabKey: "sessions", securityTabCount: 3, securityTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "user-tab-workflows", values: { securityTabTitle: "工作流", securityTabKey: "workflows", securityTabCount: 0, securityTabEnabled: "disabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  conversationFilterOption: [
+    { id: "conv-filter-open", values: { conversationFilterType: "状态", conversationFilterKey: "open", conversationFilterTitle: "待处理" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "conv-filter-snoozed", values: { conversationFilterType: "状态", conversationFilterKey: "snoozed", conversationFilterTitle: "已暂停" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "conv-filter-wechat", values: { conversationFilterType: "收件箱", conversationFilterKey: "wechat", conversationFilterTitle: "微信客服" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "conv-filter-urgent", values: { conversationFilterType: "优先级", conversationFilterKey: "urgent", conversationFilterTitle: "紧急" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  conversationSla: [
+    { id: "sla-1", values: { slaFirstResponse: "4 分 12 秒", slaResolution: "1 小时 18 分", slaBreaches: 7, slaConversationCount: 286 }, createdAt: "2026-08-09T11:45:00.000Z" },
+  ],
+  userSessionMetric: [
+    { id: "session-metric-1", values: { sessionActive: 18, sessionOffline: 4, sessionClients: 6, sessionRisk: 2 }, createdAt: "2026-08-09T11:45:00.000Z" },
   ],
   order: [
     { name: "人民路店", amount: 428, status: "done", channel: "线上", at: "2026-08-06",
@@ -1657,6 +1830,174 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   },
   DashboardSaveBar: {
     block: { id: "demo-DashboardSaveBar", type: "DashboardSaveBar", props: { surface: "plain" }, binding: { entityRef: "dashboardSave", titleFieldRef: "dashboardTitle", dirtyFieldRef: "dashboardDirty", canSaveFieldRef: "dashboardCanSave", managedFieldRef: "dashboardManaged", templateFieldRef: "dashboardTemplate", targets: ["dashboard"] } }, extra: { focus: { dashboardSave: "dashboard-save-1" } },
+  },
+  WorkItemCommandHeader: {
+    block: { id: "demo-WorkItemCommandHeader", type: "WorkItemCommandHeader", props: { surface: "plain" }, binding: { entityRef: "workItem", titleFieldRef: "workTitle", statusFieldRef: "workStatus", priorityFieldRef: "workPriority", assigneeFieldRef: "workAssignee", targets: ["work-item-detail"] } }, extra: { focus: { workItem: "work-1" } },
+  },
+  DocumentCommandHeader: {
+    block: { id: "demo-DocumentCommandHeader", type: "DocumentCommandHeader", props: { surface: "plain" }, binding: { entityRef: "document", titleFieldRef: "documentTitle", stateFieldRef: "documentState", permissionFieldRef: "documentPermission", revisionFieldRef: "documentRevision", targets: ["document-editor"] } }, extra: { focus: { document: "doc-1" } },
+  },
+  EnvironmentStatusStrip: {
+    block: { id: "demo-EnvironmentStatusStrip", type: "EnvironmentStatusStrip", props: { title: "部署环境" }, binding: { entityRef: "environmentStatus", nameFieldRef: "environmentName", statusFieldRef: "environmentStatus" } }, extra: {},
+  },
+  DataFreshnessIndicator: {
+    block: { id: "demo-DataFreshnessIndicator", type: "DataFreshnessIndicator", props: { surface: "plain" }, binding: { entityRef: "dataFreshness", sourceFieldRef: "dataSourceName", updatedAtFieldRef: "dataUpdatedAt", statusFieldRef: "freshnessStatus", targets: ["dashboard"] } }, extra: {},
+  },
+  WorkItemContextSummary: {
+    block: { id: "demo-WorkItemContextSummary", type: "WorkItemContextSummary", props: { surface: "plain" }, binding: { entityRef: "workItem", titleFieldRef: "workTitle", fieldRefs: ["workProject", "workCycle", "workDue", "workLabels"] } }, extra: { focus: { workItem: "work-1" } },
+  },
+  DocumentContextSummary: {
+    block: { id: "demo-DocumentContextSummary", type: "DocumentContextSummary", props: { surface: "plain" }, binding: { entityRef: "document", titleFieldRef: "documentTitle", fieldRefs: ["documentCollection", "documentOwner", "documentVisibility", "documentUpdated"] } }, extra: { focus: { document: "doc-1" } },
+  },
+  WorkItemDetailTabs: {
+    block: { id: "demo-WorkItemDetailTabs", type: "WorkItemDetailTabs", props: { surface: "plain" }, binding: { entityRef: "workItemTab", titleFieldRef: "workTabTitle", keyFieldRef: "workTabKey", countFieldRef: "workTabCount", enabledFieldRef: "workTabEnabled", targets: ["work-item-detail"] } }, extra: {},
+  },
+  QueryModeTabs: {
+    block: { id: "demo-QueryModeTabs", type: "QueryModeTabs", props: { surface: "plain" }, binding: { entityRef: "queryMode", titleFieldRef: "queryModeTitle", keyFieldRef: "queryModeKey", countFieldRef: "queryModeCount", enabledFieldRef: "queryModeEnabled", targets: ["query-content"] } }, extra: {},
+  },
+  WorkItemFilterBar: {
+    block: { id: "demo-WorkItemFilterBar", type: "WorkItemFilterBar", props: { title: "工作项筛选" }, binding: { entityRef: "workFilterOption", typeFieldRef: "workFilterType", keyFieldRef: "workFilterKey", titleFieldRef: "workFilterTitle", targets: ["work-item-list"] } }, extra: {},
+  },
+  DashboardParameterBar: {
+    block: { id: "demo-DashboardParameterBar", type: "DashboardParameterBar", props: { title: "经营看板参数" }, binding: { entityRef: "dashboardParameter", titleFieldRef: "parameterTitle", keyFieldRef: "parameterKey", valueFieldRef: "parameterValue", requiredFieldRef: "parameterRequired", targets: ["dashboard"] } }, extra: {},
+  },
+  CycleHealthMetrics: {
+    block: { id: "demo-CycleHealthMetrics", type: "CycleHealthMetrics", props: { title: "八月迭代健康度" }, binding: { entityRef: "cycleHealth", completedFieldRef: "cycleCompleted", totalFieldRef: "cycleTotal", overdueFieldRef: "cycleOverdue", unstartedFieldRef: "cycleUnstarted" } }, extra: {},
+  },
+  QueryExecutionMetrics: {
+    block: { id: "demo-QueryExecutionMetrics", type: "QueryExecutionMetrics", props: { title: "查询执行" }, binding: { entityRef: "queryExecution", timeFieldRef: "queryTimeMs", rowsFieldRef: "queryRows", cachedFieldRef: "queryCached", bytesFieldRef: "queryBytes" } }, extra: {},
+  },
+  BulkSelectionBar: {
+    block: { id: "demo-BulkSelectionBar", type: "BulkSelectionBar", props: { surface: "plain" }, binding: { entityRef: "workItem", targets: ["work-item-list"] } }, extra: { selection: { rowIds: { workItem: ["work-1"] } } },
+  },
+  DraftPublishBar: {
+    block: { id: "demo-DraftPublishBar", type: "DraftPublishBar", props: { surface: "plain" }, binding: { entityRef: "document", titleFieldRef: "documentTitle", stateFieldRef: "documentState", dirtyFieldRef: "documentDirty", canPublishFieldRef: "documentPermission", locationFieldRef: "documentLocation", targets: ["document-editor"] } }, extra: { focus: { document: "doc-1" } },
+  },
+  QuestionCommandHeader: {
+    block: { id: "demo-QuestionCommandHeader", type: "QuestionCommandHeader", props: { surface: "plain" }, binding: { entityRef: "questionState", titleFieldRef: "questionTitle", savedFieldRef: "questionSaved", dirtyFieldRef: "questionDirty", bookmarkFieldRef: "questionBookmarked", targets: ["query-content"] } }, extra: { focus: { questionState: "question-1" } },
+  },
+  CatalogEntityCommandHeader: {
+    block: { id: "demo-CatalogEntityCommandHeader", type: "CatalogEntityCommandHeader", props: { surface: "plain" }, binding: { entityRef: "catalogEntity", titleFieldRef: "catalogTitle", kindFieldRef: "catalogKind", typeFieldRef: "catalogType", starredFieldRef: "catalogStarred", targets: ["catalog-detail"] } }, extra: { focus: { catalogEntity: "catalog-1" } },
+  },
+  CollaboratorPresenceStrip: {
+    block: { id: "demo-CollaboratorPresenceStrip", type: "CollaboratorPresenceStrip", props: { surface: "plain" }, binding: { entityRef: "collaborator", nameFieldRef: "collaboratorName", presentFieldRef: "collaboratorPresent", editingFieldRef: "collaboratorEditing" } }, extra: {},
+  },
+  QueryRunStatusStrip: {
+    block: { id: "demo-QueryRunStatusStrip", type: "QueryRunStatusStrip", props: { surface: "plain" }, binding: { entityRef: "questionState", statusFieldRef: "queryStatus", timeFieldRef: "queryTime", cachedFieldRef: "queryCached", targets: ["query-content"] } }, extra: {},
+  },
+  EntityOwnershipSummary: {
+    block: { id: "demo-EntityOwnershipSummary", type: "EntityOwnershipSummary", props: { surface: "plain" }, binding: { entityRef: "catalogEntity", titleFieldRef: "catalogTitle", ownerFieldRef: "catalogOwner", lifecycleFieldRef: "catalogLifecycle", systemFieldRef: "catalogSystem", domainFieldRef: "catalogDomain" } }, extra: { focus: { catalogEntity: "catalog-1" } },
+  },
+  QueryDataSourceSummary: {
+    block: { id: "demo-QueryDataSourceSummary", type: "QueryDataSourceSummary", props: { surface: "plain", title: "数据来源" }, binding: { entityRef: "querySource", databaseFieldRef: "sourceDatabase", schemaFieldRef: "sourceSchema", sourceFieldRef: "sourceName", typeFieldRef: "sourceType" } }, extra: {},
+  },
+  DatasetEditorTabs: {
+    block: { id: "demo-DatasetEditorTabs", type: "DatasetEditorTabs", props: { surface: "plain" }, binding: { entityRef: "datasetEditorTab", titleFieldRef: "datasetTabTitle", keyFieldRef: "datasetTabKey", countFieldRef: "datasetTabCount", enabledFieldRef: "datasetTabEnabled", targets: ["dataset-editor"] } }, extra: {},
+  },
+  DocumentHistoryTabs: {
+    block: { id: "demo-DocumentHistoryTabs", type: "DocumentHistoryTabs", props: { surface: "plain" }, binding: { entityRef: "documentHistoryTab", titleFieldRef: "historyTabTitle", keyFieldRef: "historyTabKey", countFieldRef: "historyTabCount", enabledFieldRef: "historyTabEnabled", targets: ["document-history"] } }, extra: {},
+  },
+  CatalogEntityFilterBar: {
+    block: { id: "demo-CatalogEntityFilterBar", type: "CatalogEntityFilterBar", props: { title: "目录筛选" }, binding: { entityRef: "catalogFilterOption", facetFieldRef: "catalogFacet", keyFieldRef: "catalogFilterKey", titleFieldRef: "catalogFilterTitle", targets: ["catalog-list"] } }, extra: {},
+  },
+  QueryClauseFilterBar: {
+    block: { id: "demo-QueryClauseFilterBar", type: "QueryClauseFilterBar", props: { title: "查询条件" }, binding: { entityRef: "queryClause", fieldFieldRef: "queryField", operatorFieldRef: "queryOperator", valueFieldRef: "queryValue", enabledFieldRef: "queryClauseEnabled", targets: ["query-content"] } }, extra: {},
+  },
+  DocumentInsightMetrics: {
+    block: { id: "demo-DocumentInsightMetrics", type: "DocumentInsightMetrics", props: { title: "文档洞察" }, binding: { entityRef: "documentInsight", viewsFieldRef: "documentViews", contributorsFieldRef: "documentContributors", createdAtFieldRef: "documentCreatedAt", updatedAtFieldRef: "documentUpdatedAt" } }, extra: {},
+  },
+  MetadataQualityMetrics: {
+    block: { id: "demo-MetadataQualityMetrics", type: "MetadataQualityMetrics", props: { title: "元数据质量" }, binding: { entityRef: "metadataQuality", totalFieldRef: "metadataTotal", documentedFieldRef: "metadataDocumented", typedFieldRef: "metadataTyped" } }, extra: {},
+  },
+  QuestionExecutionBar: {
+    block: { id: "demo-QuestionExecutionBar", type: "QuestionExecutionBar", props: { surface: "plain" }, binding: { entityRef: "questionState", statusFieldRef: "queryStatus", runnableFieldRef: "queryRunnable", dirtyFieldRef: "questionDirty", targets: ["query-content"] } }, extra: {},
+  },
+  DocumentShareBar: {
+    block: { id: "demo-DocumentShareBar", type: "DocumentShareBar", props: { surface: "plain" }, binding: { entityRef: "document", titleFieldRef: "documentTitle", visibilityFieldRef: "documentShareVisibility", domainFieldRef: "documentShareDomain", permissionFieldRef: "documentSharePermission", linkFieldRef: "documentShareLink", targets: ["document-editor"] } }, extra: { focus: { document: "doc-1" } },
+  },
+  CycleCommandHeader: {
+    block: { id: "demo-CycleCommandHeader", type: "CycleCommandHeader", props: { surface: "plain" }, binding: { entityRef: "cycleManagement", titleFieldRef: "cycleTitle", statusFieldRef: "cycleStatus", editableFieldRef: "cycleEditable", targets: ["cycle-detail"] } }, extra: { focus: { cycleManagement: "cycle-manage-1" } },
+  },
+  AlertGroupCommandHeader: {
+    block: { id: "demo-AlertGroupCommandHeader", type: "AlertGroupCommandHeader", props: { surface: "plain" }, binding: { entityRef: "alertGroup", titleFieldRef: "alertGroupTitle", statusFieldRef: "alertGroupStatus", editableFieldRef: "alertGroupEditable", intervalFieldRef: "alertGroupInterval", targets: ["alert-group"] } }, extra: { focus: { alertGroup: "alert-group-1" } },
+  },
+  IncidentOwnershipStrip: {
+    block: { id: "demo-IncidentOwnershipStrip", type: "IncidentOwnershipStrip", props: { surface: "plain" }, binding: { entityRef: "incidentOwnership", assigneeFieldRef: "incidentAssignee", sourceFieldRef: "assignmentSource", suggestedFieldRef: "suggestedOwner", targets: ["issue-detail"] } }, extra: { focus: { incidentOwnership: "ownership-1" } },
+  },
+  SyncScheduleStrip: {
+    block: { id: "demo-SyncScheduleStrip", type: "SyncScheduleStrip", props: { surface: "plain" }, binding: { entityRef: "syncSchedule", frequencyFieldRef: "syncFrequency", nextRunFieldRef: "syncNextRun", timezoneFieldRef: "syncTimezone", statusFieldRef: "syncScheduleStatus", targets: ["connection-settings"] } }, extra: {},
+  },
+  CycleContextSummary: {
+    block: { id: "demo-CycleContextSummary", type: "CycleContextSummary", props: { surface: "plain" }, binding: { entityRef: "cycleManagement", titleFieldRef: "cycleTitle", fieldRefs: ["cycleOwner", "cycleMembers", "cycleDateRange", "cycleProgress"] } }, extra: { focus: { cycleManagement: "cycle-manage-1" } },
+  },
+  AlertGroupContextSummary: {
+    block: { id: "demo-AlertGroupContextSummary", type: "AlertGroupContextSummary", props: { surface: "plain" }, binding: { entityRef: "alertGroup", titleFieldRef: "alertGroupTitle", fieldRefs: ["alertGroupNamespace", "alertGroupRules", "alertGroupFiring", "alertGroupDatasource"] } }, extra: { focus: { alertGroup: "alert-group-1" } },
+  },
+  EventTypeEditorTabs: {
+    block: { id: "demo-EventTypeEditorTabs", type: "EventTypeEditorTabs", props: { surface: "plain" }, binding: { entityRef: "eventTypeTab", titleFieldRef: "eventTabTitle", keyFieldRef: "eventTabKey", countFieldRef: "eventTabCount", enabledFieldRef: "eventTabEnabled", targets: ["event-type-editor"] } }, extra: {},
+  },
+  IncidentEvidenceTabs: {
+    block: { id: "demo-IncidentEvidenceTabs", type: "IncidentEvidenceTabs", props: { surface: "plain" }, binding: { entityRef: "incidentEvidenceTab", titleFieldRef: "evidenceTabTitle", keyFieldRef: "evidenceTabKey", countFieldRef: "evidenceTabCount", enabledFieldRef: "evidenceTabEnabled", targets: ["issue-evidence"] } }, extra: {},
+  },
+  CycleFilterBar: {
+    block: { id: "demo-CycleFilterBar", type: "CycleFilterBar", props: { title: "周期筛选" }, binding: { entityRef: "cycleFilterOption", typeFieldRef: "cycleFilterType", keyFieldRef: "cycleFilterKey", titleFieldRef: "cycleFilterTitle", targets: ["cycle-list"] } }, extra: {},
+  },
+  AlertRuleFilterBar: {
+    block: { id: "demo-AlertRuleFilterBar", type: "AlertRuleFilterBar", props: { title: "规则筛选", defaultQuery: "state:firing label:team=payment", defaultView: "grouped" }, binding: { targets: ["alert-rule-list"] } }, extra: {},
+  },
+  SyncReliabilityMetrics: {
+    block: { id: "demo-SyncReliabilityMetrics", type: "SyncReliabilityMetrics", props: { title: "同步可靠性" }, binding: { entityRef: "syncReliability", successFieldRef: "syncSuccessRuns", failedFieldRef: "syncFailedRuns", recordsFieldRef: "syncRecordCount", freshnessFieldRef: "syncFreshness" } }, extra: {},
+  },
+  RuleEvaluationMetrics: {
+    block: { id: "demo-RuleEvaluationMetrics", type: "RuleEvaluationMetrics", props: { title: "规则评估" }, binding: { entityRef: "ruleEvaluation", activeFieldRef: "evaluationActive", pausedFieldRef: "evaluationPaused", errorFieldRef: "evaluationErrors", durationFieldRef: "evaluationDuration" } }, extra: {},
+  },
+  CycleLifecycleBar: {
+    block: { id: "demo-CycleLifecycleBar", type: "CycleLifecycleBar", props: { surface: "plain" }, binding: { entityRef: "cycleManagement", titleFieldRef: "cycleTitle", statusFieldRef: "cycleStatus", editableFieldRef: "cycleEditable", targets: ["cycle-detail"] } }, extra: { focus: { cycleManagement: "cycle-manage-1" } },
+  },
+  EventTypePublishBar: {
+    block: { id: "demo-EventTypePublishBar", type: "EventTypePublishBar", props: { surface: "plain" }, binding: { entityRef: "eventTypeState", titleFieldRef: "eventTypeTitle", hiddenFieldRef: "eventTypeHidden", dirtyFieldRef: "eventTypeDirty", validFieldRef: "eventTypeValid", targets: ["event-type-editor"] } }, extra: { focus: { eventTypeState: "event-type-1" } },
+  },
+  ConversationCommandHeader: {
+    block: { id: "demo-ConversationCommandHeader", type: "ConversationCommandHeader", props: { surface: "plain" }, binding: { entityRef: "supportConversation", titleFieldRef: "contactName", statusFieldRef: "conversationStatus", verifiedFieldRef: "sessionVerified", inboxFieldRef: "inboxName", targets: ["conversation"] } }, extra: { focus: { supportConversation: "conv-1842" } },
+  },
+  UserCommandHeader: {
+    block: { id: "demo-UserCommandHeader", type: "UserCommandHeader", props: { surface: "plain" }, binding: { entityRef: "identityUser", usernameFieldRef: "identityUsername", enabledFieldRef: "identityEnabled", impersonateFieldRef: "impersonateAllowed", targets: ["user-detail"] } }, extra: { focus: { identityUser: "user-1" } },
+  },
+  ConversationAssignmentStrip: {
+    block: { id: "demo-ConversationAssignmentStrip", type: "ConversationAssignmentStrip", props: { surface: "plain" }, binding: { entityRef: "supportConversation", assigneeFieldRef: "assignedAgent", teamFieldRef: "assignedTeam", priorityFieldRef: "conversationPriority", targets: ["conversation"] } }, extra: { focus: { supportConversation: "conv-1842" } },
+  },
+  RealmStatusStrip: {
+    block: { id: "demo-RealmStatusStrip", type: "RealmStatusStrip", props: { surface: "plain" }, binding: { entityRef: "realmStatus", nameFieldRef: "realmName", enabledFieldRef: "realmEnabled", bruteForceFieldRef: "bruteForceProtection", sslFieldRef: "sslRequired", targets: ["realm-settings"] } }, extra: {},
+  },
+  ConversationContextSummary: {
+    block: { id: "demo-ConversationContextSummary", type: "ConversationContextSummary", props: { surface: "plain" }, binding: { entityRef: "supportConversation", titleFieldRef: "contactName", fieldRefs: ["inboxName", "conversationChannel", "contactPhone", "conversationSla"] } }, extra: { focus: { supportConversation: "conv-1842" } },
+  },
+  UserIdentitySummary: {
+    block: { id: "demo-UserIdentitySummary", type: "UserIdentitySummary", props: { surface: "plain" }, binding: { entityRef: "identityUser", titleFieldRef: "identityUsername", fieldRefs: ["identityEmail", "identityProvider", "identityCreated", "emailVerified", "requiredActions"] } }, extra: { focus: { identityUser: "user-1" } },
+  },
+  ConversationDetailTabs: {
+    block: { id: "demo-ConversationDetailTabs", type: "ConversationDetailTabs", props: { surface: "plain" }, binding: { entityRef: "conversationTab", titleFieldRef: "conversationTabTitle", keyFieldRef: "conversationTabKey", countFieldRef: "conversationTabCount", enabledFieldRef: "conversationTabEnabled", targets: ["conversation-detail"] } }, extra: {},
+  },
+  UserSecurityTabs: {
+    block: { id: "demo-UserSecurityTabs", type: "UserSecurityTabs", props: { surface: "plain" }, binding: { entityRef: "userSecurityTab", titleFieldRef: "securityTabTitle", keyFieldRef: "securityTabKey", countFieldRef: "securityTabCount", enabledFieldRef: "securityTabEnabled", targets: ["user-detail"] } }, extra: {},
+  },
+  ConversationInboxFilter: {
+    block: { id: "demo-ConversationInboxFilter", type: "ConversationInboxFilter", props: { title: "会话筛选" }, binding: { entityRef: "conversationFilterOption", typeFieldRef: "conversationFilterType", keyFieldRef: "conversationFilterKey", titleFieldRef: "conversationFilterTitle", targets: ["conversation-list"] } }, extra: {},
+  },
+  UserDirectoryFilter: {
+    block: { id: "demo-UserDirectoryFilter", type: "UserDirectoryFilter", props: { title: "用户目录筛选", defaultMode: "default" }, binding: { targets: ["user-list"] } }, extra: {},
+  },
+  ConversationSlaMetrics: {
+    block: { id: "demo-ConversationSlaMetrics", type: "ConversationSlaMetrics", props: { title: "客服 SLA" }, binding: { entityRef: "conversationSla", firstResponseFieldRef: "slaFirstResponse", resolutionFieldRef: "slaResolution", breachFieldRef: "slaBreaches", countFieldRef: "slaConversationCount" } }, extra: {},
+  },
+  UserSessionMetrics: {
+    block: { id: "demo-UserSessionMetrics", type: "UserSessionMetrics", props: { title: "身份会话风险" }, binding: { entityRef: "userSessionMetric", activeFieldRef: "sessionActive", offlineFieldRef: "sessionOffline", clientFieldRef: "sessionClients", riskFieldRef: "sessionRisk" } }, extra: {},
+  },
+  ConversationReplyBar: {
+    block: { id: "demo-ConversationReplyBar", type: "ConversationReplyBar", props: { surface: "plain" }, binding: { entityRef: "supportConversation", statusFieldRef: "conversationStatus", channelFieldRef: "conversationChannel", targets: ["conversation-messages"] } }, extra: { focus: { supportConversation: "conv-1842" } },
+  },
+  UserAccessBar: {
+    block: { id: "demo-UserAccessBar", type: "UserAccessBar", props: { surface: "plain" }, binding: { entityRef: "identityUser", usernameFieldRef: "identityUsername", enabledFieldRef: "identityEnabled", sessionsFieldRef: "activeSessions", manageableFieldRef: "manageableUser", targets: ["user-detail"] } }, extra: { focus: { identityUser: "user-1" } },
   },
   FreeformInsight: {
         block: {

@@ -3873,57 +3873,57 @@ function formItemFor(ctx: FormItemCtx, fieldId: string): React.ReactNode {
   // 取值声明：字段 schema 优先（已归一化），退到老的 enumOptionsOf。
   const options: NormalizedFieldOption[] =
     schema?.options ?? ctx.enumOptionsOf?.(entityRef, fieldId) ?? [];
-  const common = { key: fieldId, name: fieldId, label };
+  const common = { name: fieldId, label };
   const opts = options.map(o => ({ label: o.label, value: o.id }));
 
   switch (resolveValueType({ type, format: schema?.format, options })) {
     // ── 数值：全靠 format 分档 ────────────────────────────────────────
     case "money":
-      return <ProFormMoney {...common} />;
+      return <ProFormMoney key={fieldId} {...common} />;
     case "rate":
-      return <ProFormRate {...common} />;
+      return <ProFormRate key={fieldId} {...common} />;
     case "progress":
-      return <ProFormSlider {...common} min={0} max={100} />;
+      return <ProFormSlider key={fieldId} {...common} min={0} max={100} />;
     case "percent":
       return (
-        <ProFormDigit {...common} min={0} max={100} fieldProps={{ addonAfter: "%" }} />
+        <ProFormDigit key={fieldId} {...common} min={0} max={100} fieldProps={{ addonAfter: "%" }} />
       );
     case "score":
       return (
-        <ProFormDigit {...common} min={0} max={100} fieldProps={{ addonAfter: "分" }} />
+        <ProFormDigit key={fieldId} {...common} min={0} max={100} fieldProps={{ addonAfter: "分" }} />
       );
     case "digit":
-      return <ProFormDigit {...common} />;
+      return <ProFormDigit key={fieldId} {...common} />;
 
     // ── 文本 ────────────────────────────────────────────────────────
     case "password":
       // masked（脱敏）：录入时按密码处理——手机号/证件号这类，摊在屏幕上给
       // 旁边的人看见就是泄露。amis 那边是独立的 input-password。
-      return <ProFormText.Password {...common} />;
+      return <ProFormText.Password key={fieldId} {...common} />;
     case "textarea":
-      return <ProFormTextArea {...common} />;
+      return <ProFormTextArea key={fieldId} {...common} />;
 
     // ── 时间 ────────────────────────────────────────────────────────
     case "date":
-      return <ProFormDatePicker {...common} />;
+      return <ProFormDatePicker key={fieldId} {...common} />;
     case "dateTime":
-      return <ProFormDateTimePicker {...common} />;
+      return <ProFormDateTimePicker key={fieldId} {...common} />;
 
     // ── 布尔 ────────────────────────────────────────────────────────
     case "switch":
-      return <ProFormSwitch {...common} />;
+      return <ProFormSwitch key={fieldId} {...common} />;
 
     // ── 枚举三档（按取值个数，阈值在 field-value-type.ts）────────────
     case "segmented":
-      return <ProFormSegmented {...common} request={async () => opts} />;
+      return <ProFormSegmented key={fieldId} {...common} request={async () => opts} />;
     case "radio":
-      return <ProFormRadio.Group {...common} options={opts} radioType="button" />;
+      return <ProFormRadio.Group key={fieldId} {...common} options={opts} radioType="button" />;
     case "select":
-      return <ProFormSelect {...common} options={opts} showSearch />;
+      return <ProFormSelect key={fieldId} {...common} options={opts} showSearch />;
     case "tags":
       // 枚举但没有取值声明：可选可输。不出一个空下拉——那是个点开什么都
       // 没有的坑。
-      return <ProFormSelect {...common} mode="tags" fieldProps={{ maxCount: 1 }} />;
+      return <ProFormSelect key={fieldId} {...common} mode="tags" fieldProps={{ maxCount: 1 }} />;
 
     // ── 关联 ────────────────────────────────────────────────────────
     case "ref": {
@@ -3932,9 +3932,10 @@ function formItemFor(ctx: FormItemCtx, fieldId: string): React.ReactNode {
       const rows = schema?.refEntityId
         ? (ctx.entityRows?.[schema.refEntityId] ?? [])
         : [];
-      if (rows.length === 0) return <ProFormText {...common} />;
+      if (rows.length === 0) return <ProFormText key={fieldId} {...common} />;
       return (
         <ProFormSelect
+          key={fieldId}
           {...common}
           showSearch
           options={rows.map(r => ({
@@ -3950,7 +3951,7 @@ function formItemFor(ctx: FormItemCtx, fieldId: string): React.ReactNode {
     // 新档位会静静地掉进文本框，屏幕上看不出来。
     case "text":
     default:
-      return <ProFormText {...common} />;
+      return <ProFormText key={fieldId} {...common} />;
   }
 }
 
@@ -5864,6 +5865,366 @@ const RecordLifecycleBarRenderer: ExperienceBlockRenderer = ({ block, children, 
   return <BlockShell block={block} testid="record-lifecycle-bar"><Flex align="center" justify="space-between" gap={12} wrap><Space>{statusRef && row && <Tag>{String(row.values?.[statusRef] ?? "")}</Tag>}<Typography.Text type="secondary">{row ? `当前记录 ${row.id}` : "请先选择一条记录"}</Typography.Text></Space><Space><Button disabled={!row} onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row?.id, operation: "save" })}>保存</Button><Button disabled={!row} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row?.id, operation: "archive" })}>归档</Button><Popconfirm title="删除后无法恢复，确认继续？" onConfirm={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row?.id, operation: "delete" })}><Button danger disabled={!row}>删除</Button></Popconfirm></Space></Flex></BlockShell>;
 };
 
+const enabledValue = (value: unknown, positive = "enabled") =>
+  value === true || [positive, "true", "allowed", "active", "ready", "healthy"].includes(String(value ?? "").toLowerCase());
+
+const WorkItemCommandHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const priorityRef = fieldRefOf(block, "priorityFieldRef"); const assigneeRef = fieldRefOf(block, "assigneeFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !statusRef || !row) return <BlockShell block={block} testid="work-item-command-header"><BlockEmpty hint="工作项页头尚未绑定标题和状态" /></BlockShell>;
+  const status = String(row.values?.[statusRef] ?? "open"); const closed = ["done", "closed", "archived", "completed"].includes(status.toLowerCase()); const act = (operation: string, event = "actionTrigger") => onAction?.(event, { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="work-item-command-header"><Flex align="center" justify="space-between" gap={12} wrap><div><Space><Typography.Title level={5} style={{ margin: 0 }}>{String(row.values?.[titleRef] ?? "未命名工作项")}</Typography.Title><Tag color={closed ? "default" : "processing"}>{status}</Tag>{priorityRef && <Tag>{String(row.values?.[priorityRef] ?? "")}</Tag>}</Space>{assigneeRef && <Typography.Text type="secondary" style={{ display: "block", marginTop: 4 }}>负责人：{String(row.values?.[assigneeRef] ?? "未分配")}</Typography.Text>}</div><Space wrap><Button onClick={() => act("editWorkItem", "editRequest")}>编辑</Button><Button onClick={() => act("duplicateWorkItem")}>复制</Button><Popconfirm title={closed ? "确认重新打开？" : "确认归档当前工作项？"} onConfirm={() => act(closed ? "reopenWorkItem" : "archiveWorkItem", "submitRequest")}><Button danger={!closed}>{closed ? "重新打开" : "归档"}</Button></Popconfirm></Space></Flex></BlockShell>;
+};
+
+const DocumentCommandHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const stateRef = fieldRefOf(block, "stateFieldRef"); const permissionRef = fieldRefOf(block, "permissionFieldRef"); const revisionRef = fieldRefOf(block, "revisionFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !stateRef || !row) return <BlockShell block={block} testid="document-command-header"><BlockEmpty hint="文档页头尚未绑定标题和状态" /></BlockShell>;
+  const state = String(row.values?.[stateRef] ?? "draft"); const canPublish = !permissionRef || enabledValue(row.values?.[permissionRef], "publish"); const revision = Boolean(revisionRef && row.values?.[revisionRef]); const act = (operation: string, event = "actionTrigger") => onAction?.(event, { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="document-command-header"><Flex align="center" justify="space-between" gap={12} wrap><Space><Typography.Title level={5} style={{ margin: 0 }}>{String(row.values?.[titleRef] ?? "未命名文档")}</Typography.Title><Tag color={state === "published" ? "success" : "warning"}>{state === "published" ? "已发布" : "草稿"}</Tag>{revision && <Tag color="blue">历史修订</Tag>}</Space><Space wrap>{revision ? <Button type="primary" disabled={!canPublish} onClick={() => act("restoreRevision", "submitRequest")}>恢复此版本</Button> : <><Button onClick={() => act("saveDraft", "editRequest")}>保存草稿</Button><Button type="primary" disabled={!canPublish} onClick={() => act(state === "published" ? "finishEditing" : "publishDocument", "submitRequest")}>{state === "published" ? "完成编辑" : "发布"}</Button></>}</Space></Flex></BlockShell>;
+};
+
+const EnvironmentStatusStripRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const nameRef = fieldRefOf(block, "nameFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef");
+  if (!bound || !nameRef || !statusRef) return <BlockShell block={block} testid="environment-status-strip"><BlockEmpty hint="环境状态尚未绑定名称和状态" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "环境状态")} testid="environment-status-strip"><Flex gap={8} wrap>{bound.rows.map(row => { const status = String(row.values?.[statusRef] ?? "unknown"); const healthy = enabledValue(status); return <Button key={row.id} size="small" onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}><Badge status={healthy ? "success" : status === "warning" ? "warning" : "error"} text={`${String(row.values?.[nameRef] ?? "环境")} · ${status}`} /></Button>; })}</Flex></BlockShell>;
+};
+
+const DataFreshnessIndicatorRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const sourceRef = fieldRefOf(block, "sourceFieldRef"); const updatedRef = fieldRefOf(block, "updatedAtFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const row = bound?.rows[0];
+  if (!bound || !sourceRef || !updatedRef || !row) return <BlockShell block={block} testid="data-freshness-indicator"><BlockEmpty hint="数据新鲜度尚未绑定来源和更新时间" /></BlockShell>;
+  const status = statusRef ? String(row.values?.[statusRef] ?? "fresh") : "fresh"; const stale = ["stale", "delayed", "error"].includes(status.toLowerCase());
+  return <BlockShell block={block} testid="data-freshness-indicator"><Flex align="center" justify="space-between" gap={10} wrap><Space><Badge status={stale ? "warning" : "success"} /><div><Typography.Text strong>{String(row.values?.[sourceRef] ?? "数据源")}</Typography.Text><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>更新于 {String(row.values?.[updatedRef] ?? "-")} · {stale ? "可能延迟" : "数据新鲜"}</Typography.Text></div></Space><Button size="small" onClick={() => onAction?.("actionTrigger", { operation: "refreshFreshness", targets: targetIdsOf(block) })}>刷新</Button></Flex></BlockShell>;
+};
+
+const compactSummaryRenderer = (testid: string, fallback: string): ExperienceBlockRenderer => ({ block, children, entityRows, focus, fieldLabelOf }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const fields = fieldRefListOf(block, "fieldRefs"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !fields.length || !row) return <BlockShell block={block} testid={testid}><BlockEmpty hint={`${fallback}尚未绑定当前记录和摘要字段`} /></BlockShell>;
+  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? fallback)} testid={testid}><Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} items={fields.slice(0, 6).map(field => ({ key: field, label: fieldLabelOf?.(bound.entityRef, field) ?? field, children: String(row.values?.[field] ?? "-") }))} /></BlockShell>;
+};
+const WorkItemContextSummaryRenderer = compactSummaryRenderer("work-item-context-summary", "工作项摘要");
+const DocumentContextSummaryRenderer = compactSummaryRenderer("document-context-summary", "文档摘要");
+
+const stableTabsRenderer = (testid: string, fallback: string, event: "itemSelect" | "filterChange"): ExperienceBlockRenderer => ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const keyRef = fieldRefOf(block, "keyFieldRef"); const countRef = fieldRefOf(block, "countFieldRef"); const enabledRef = fieldRefOf(block, "enabledFieldRef"); const [active, setActive] = React.useState("");
+  if (!bound || !titleRef || !keyRef) return <BlockShell block={block} testid={testid}><BlockEmpty hint={`${fallback}尚未绑定标题和稳定键`} /></BlockShell>;
+  const rows = bound.rows.filter(row => String(row.values?.[keyRef] ?? "")); const usable = rows.filter(row => !enabledRef || ![false, "false", "disabled"].includes(row.values?.[enabledRef] as never)); const selected = usable.some(row => String(row.values?.[keyRef]) === active) ? active : String(usable[0]?.values?.[keyRef] ?? "");
+  return <BlockShell block={block} testid={testid}><Tabs activeKey={selected} onChange={key => { setActive(key); const row = rows.find(item => String(item.values?.[keyRef]) === key); onAction?.(event, { entityRef: bound.entityRef, rowId: row?.id, tabKey: key, targets: targetIdsOf(block) }); }} items={rows.map(row => ({ key: String(row.values?.[keyRef]), label: <Space size={4}>{String(row.values?.[titleRef] ?? fallback)}{countRef && <Badge count={Number(row.values?.[countRef] ?? 0)} showZero />}</Space>, disabled: Boolean(enabledRef && [false, "false", "disabled"].includes(row.values?.[enabledRef] as never)) }))} /></BlockShell>;
+};
+const WorkItemDetailTabsRenderer = stableTabsRenderer("work-item-detail-tabs", "工作项页签", "itemSelect");
+const QueryModeTabsRenderer = stableTabsRenderer("query-mode-tabs", "查询模式", "itemSelect");
+
+const WorkItemFilterBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const typeRef = fieldRefOf(block, "typeFieldRef"); const keyRef = fieldRefOf(block, "keyFieldRef"); const titleRef = fieldRefOf(block, "titleFieldRef"); const [selected, setSelected] = React.useState<Record<string, string[]>>({});
+  if (!bound || !typeRef || !keyRef || !titleRef) return <BlockShell block={block} testid="work-item-filter-bar"><BlockEmpty hint="工作项筛选尚未绑定类型、键和标题" /></BlockShell>;
+  const types = Array.from(new Set(bound.rows.map(row => String(row.values?.[typeRef] ?? "")).filter(Boolean))); const change = (type: string, values: string[]) => { const next = { ...selected, [type]: values }; setSelected(next); onAction?.("filterChange", { facets: next, targets: targetIdsOf(block) }); };
+  return <BlockShell block={block} title={String(block.props?.title ?? "工作项筛选")} testid="work-item-filter-bar"><Flex gap={8} wrap>{types.map(type => <Select key={type} mode="multiple" allowClear placeholder={type} value={selected[type] ?? []} style={{ minWidth: 150 }} options={bound.rows.filter(row => String(row.values?.[typeRef]) === type).map(row => ({ value: String(row.values?.[keyRef]), label: String(row.values?.[titleRef]) }))} onChange={values => change(type, values.map(String))} />)}<Button disabled={!Object.values(selected).some(values => values.length)} onClick={() => { setSelected({}); onAction?.("filterChange", { facets: {}, targets: targetIdsOf(block) }); }}>清除</Button></Flex></BlockShell>;
+};
+
+const DashboardParameterBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const keyRef = fieldRefOf(block, "keyFieldRef"); const valueRef = fieldRefOf(block, "valueFieldRef"); const requiredRef = fieldRefOf(block, "requiredFieldRef"); const [values, setValues] = React.useState<Record<string, string>>({});
+  if (!bound || !titleRef || !keyRef) return <BlockShell block={block} testid="dashboard-parameter-bar"><BlockEmpty hint="Dashboard 参数尚未绑定标题和参数键" /></BlockShell>;
+  const resolved = Object.fromEntries(bound.rows.map(row => { const key = String(row.values?.[keyRef] ?? row.id); return [key, values[key] ?? String(valueRef ? row.values?.[valueRef] ?? "" : "")]; })); const missing = bound.rows.some(row => requiredRef && enabledValue(row.values?.[requiredRef], "required") && !resolved[String(row.values?.[keyRef] ?? row.id)]?.trim());
+  return <BlockShell block={block} title={String(block.props?.title ?? "Dashboard 参数")} testid="dashboard-parameter-bar"><Flex gap={8} align="end" wrap>{bound.rows.map(row => { const key = String(row.values?.[keyRef] ?? row.id); return <div key={row.id}><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>{String(row.values?.[titleRef] ?? "参数")}</Typography.Text><Input value={resolved[key]} placeholder={requiredRef && enabledValue(row.values?.[requiredRef], "required") ? "必填" : "全部"} onChange={event => setValues(current => ({ ...current, [key]: event.target.value }))} /></div>; })}<Button type="primary" disabled={missing} onClick={() => onAction?.("filterChange", { parameters: resolved, targets: targetIdsOf(block) })}>应用</Button></Flex></BlockShell>;
+};
+
+const CycleHealthMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const completedRef = fieldRefOf(block, "completedFieldRef"); const totalRef = fieldRefOf(block, "totalFieldRef"); const overdueRef = fieldRefOf(block, "overdueFieldRef"); const unstartedRef = fieldRefOf(block, "unstartedFieldRef"); const row = bound?.rows[0];
+  if (!bound || !completedRef || !totalRef || !row) return <BlockShell block={block} testid="cycle-health-metrics"><BlockEmpty hint="周期健康指标尚未绑定完成数和总数" /></BlockShell>;
+  const completed = Number(row.values?.[completedRef] ?? 0); const total = Number(row.values?.[totalRef] ?? 0); return <BlockShell block={block} title={String(block.props?.title ?? "周期健康")} testid="cycle-health-metrics"><Flex gap={22} wrap><Statistic title="已完成" value={completed} suffix={`/ ${total}`} /><Statistic title="完成率" value={total ? Math.round(completed / total * 100) : 0} suffix="%" />{overdueRef && <Statistic title="已逾期" value={Number(row.values?.[overdueRef] ?? 0)} />}{unstartedRef && <Statistic title="未开始" value={Number(row.values?.[unstartedRef] ?? 0)} />}</Flex><Progress percent={total ? Math.min(100, Math.round(completed / total * 100)) : 0} showInfo={false} size="small" /></BlockShell>;
+};
+
+const QueryExecutionMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const timeRef = fieldRefOf(block, "timeFieldRef"); const rowsRef = fieldRefOf(block, "rowsFieldRef"); const cachedRef = fieldRefOf(block, "cachedFieldRef"); const bytesRef = fieldRefOf(block, "bytesFieldRef"); const row = bound?.rows[0];
+  if (!bound || !timeRef || !rowsRef || !row) return <BlockShell block={block} testid="query-execution-metrics"><BlockEmpty hint="查询指标尚未绑定耗时和行数" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "查询执行")} testid="query-execution-metrics"><Flex gap={22} wrap><Statistic title="执行耗时" value={Number(row.values?.[timeRef] ?? 0)} suffix="ms" /><Statistic title="结果行数" value={Number(row.values?.[rowsRef] ?? 0)} />{bytesRef && <Statistic title="扫描字节" value={Number(row.values?.[bytesRef] ?? 0)} />}{cachedRef && <Statistic title="结果来源" value={enabledValue(row.values?.[cachedRef], "cached") ? "缓存" : "实时"} />}</Flex></BlockShell>;
+};
+
+const BulkSelectionBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, selection, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const rowIds = bound ? selection?.rowIds?.[bound.entityRef] ?? [] : [];
+  if (!bound) return <BlockShell block={block} testid="bulk-selection-bar"><BlockEmpty hint="批量选择栏尚未绑定实体" /></BlockShell>;
+  const submit = (operation: string) => onAction?.("submitRequest", { entityRef: bound.entityRef, rowIds, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="bulk-selection-bar"><Flex align="center" justify="space-between" gap={12} wrap><Typography.Text strong>已选择 {rowIds.length} 项</Typography.Text><Space wrap><Button disabled={!rowIds.length} onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowIds, operation: "bulkMove", targets: targetIdsOf(block) })}>移动</Button><Button disabled={!rowIds.length} onClick={() => submit("bulkArchive")}>归档</Button><Popconfirm title={`确认删除所选 ${rowIds.length} 项？`} onConfirm={() => submit("bulkDelete")}><Button danger disabled={!rowIds.length}>删除</Button></Popconfirm></Space></Flex></BlockShell>;
+};
+
+const DraftPublishBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const stateRef = fieldRefOf(block, "stateFieldRef"); const dirtyRef = fieldRefOf(block, "dirtyFieldRef"); const canPublishRef = fieldRefOf(block, "canPublishFieldRef"); const locationRef = fieldRefOf(block, "locationFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !stateRef || !row) return <BlockShell block={block} testid="draft-publish-bar"><BlockEmpty hint="草稿发布栏尚未绑定标题和状态" /></BlockShell>;
+  const dirty = !dirtyRef || enabledValue(row.values?.[dirtyRef], "dirty"); const canPublish = !canPublishRef || enabledValue(row.values?.[canPublishRef], "publish"); const location = locationRef ? String(row.values?.[locationRef] ?? "") : ""; const submit = (operation: string, event = "submitRequest") => onAction?.(event, { entityRef: bound.entityRef, rowId: row.id, operation, location, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="draft-publish-bar"><Flex align="center" justify="space-between" gap={12} wrap><div><Typography.Text strong>{String(row.values?.[titleRef] ?? "未命名草稿")}</Typography.Text><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>{dirty ? "有未保存修改" : "草稿已保存"}{location ? ` · 发布到 ${location}` : ""}</Typography.Text></div><Space><Button disabled={!dirty} onClick={() => submit("saveDraft", "editRequest")}>保存草稿</Button><Button type="primary" disabled={!canPublish || !location} onClick={() => submit("publishDocument")}>发布</Button></Space></Flex></BlockShell>;
+};
+
+const QuestionCommandHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const savedRef = fieldRefOf(block, "savedFieldRef"); const dirtyRef = fieldRefOf(block, "dirtyFieldRef"); const bookmarkRef = fieldRefOf(block, "bookmarkFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !row) return <BlockShell block={block} testid="question-command-header"><BlockEmpty hint="问题页头尚未绑定标题" /></BlockShell>;
+  const saved = savedRef ? enabledValue(row.values?.[savedRef], "saved") : false; const dirty = dirtyRef ? enabledValue(row.values?.[dirtyRef], "dirty") : false; const bookmarked = bookmarkRef ? enabledValue(row.values?.[bookmarkRef], "bookmarked") : false; const act = (operation: string, event = "actionTrigger") => onAction?.(event, { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="question-command-header"><Flex align="center" justify="space-between" gap={12} wrap><Space><Typography.Title level={4} style={{ margin: 0 }}>{String(row.values?.[titleRef] ?? "未命名问题")}</Typography.Title><Tag color={saved ? "green" : "default"}>{saved ? "已保存" : "临时问题"}</Tag>{dirty && <Badge status="warning" text="有修改" />}</Space><Space><Tooltip title={bookmarked ? "取消收藏" : "收藏"}><Button type="text" icon={bookmarked ? <AntdIcons.StarFilled /> : <AntdIcons.StarOutlined />} onClick={() => act(bookmarked ? "removeBookmark" : "addBookmark")} /></Tooltip><Button onClick={() => act("duplicateQuestion")}>复制</Button><Button type="primary" disabled={!dirty} onClick={() => act("saveQuestion", "editRequest")}>保存</Button></Space></Flex></BlockShell>;
+};
+
+const CatalogEntityCommandHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const kindRef = fieldRefOf(block, "kindFieldRef"); const typeRef = fieldRefOf(block, "typeFieldRef"); const starredRef = fieldRefOf(block, "starredFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !kindRef || !row) return <BlockShell block={block} testid="catalog-entity-command-header"><BlockEmpty hint="目录实体页头尚未绑定标题和种类" /></BlockShell>;
+  const starred = Boolean(starredRef && enabledValue(row.values?.[starredRef], "starred")); const act = (operation: string) => onAction?.("actionTrigger", { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="catalog-entity-command-header"><Flex align="center" justify="space-between" gap={12} wrap><Space><Typography.Title level={4} style={{ margin: 0 }}>{String(row.values?.[titleRef] ?? "未命名实体")}</Typography.Title><Tag>{String(row.values?.[kindRef] ?? "Entity")}</Tag>{typeRef && row.values?.[typeRef] != null ? <Tag color="blue">{String(row.values[typeRef])}</Tag> : null}</Space><Space><Tooltip title={starred ? "取消收藏" : "收藏"}><Button icon={starred ? <AntdIcons.StarFilled /> : <AntdIcons.StarOutlined />} onClick={() => act(starred ? "unstarEntity" : "starEntity")} /></Tooltip><Dropdown menu={{ items: [{ key: "inspect", label: "查看元数据" }, { key: "refresh", label: "刷新目录" }], onClick: ({ key }) => act(key) }}><Button icon={<AntdIcons.MoreOutlined />} /></Dropdown></Space></Flex></BlockShell>;
+};
+
+const CollaboratorPresenceStripRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const nameRef = fieldRefOf(block, "nameFieldRef"); const presentRef = fieldRefOf(block, "presentFieldRef"); const editingRef = fieldRefOf(block, "editingFieldRef");
+  if (!bound || !nameRef || !presentRef) return <BlockShell block={block} testid="collaborator-presence-strip"><BlockEmpty hint="协作者状态尚未绑定姓名和在线状态" /></BlockShell>;
+  const active = bound.rows.filter(row => enabledValue(row.values?.[presentRef], "present"));
+  return <BlockShell block={block} testid="collaborator-presence-strip"><Flex align="center" justify="space-between" gap={10} wrap><Space><Avatar.Group max={{ count: 6 }}>{active.slice(0, 6).map(row => <Tooltip key={row.id} title={`${String(row.values?.[nameRef] ?? "协作者")}${editingRef && enabledValue(row.values?.[editingRef], "editing") ? " · 正在编辑" : ""}`}><Badge dot color={editingRef && enabledValue(row.values?.[editingRef], "editing") ? "#1677ff" : "#52c41a"}><Avatar>{String(row.values?.[nameRef] ?? "?").slice(0, 1)}</Avatar></Badge></Tooltip>)}</Avatar.Group><Typography.Text type="secondary">{active.length ? `${active.length} 人在线` : "暂无在线协作者"}</Typography.Text></Space><Button size="small" disabled={!active.length} onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowIds: active.map(row => row.id), operation: "showCollaborators" })}>查看协作者</Button></Flex></BlockShell>;
+};
+
+const QueryRunStatusStripRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const statusRef = fieldRefOf(block, "statusFieldRef"); const timeRef = fieldRefOf(block, "timeFieldRef"); const cachedRef = fieldRefOf(block, "cachedFieldRef"); const row = bound?.rows[0];
+  if (!bound || !statusRef || !row) return <BlockShell block={block} testid="query-run-status-strip"><BlockEmpty hint="查询状态尚未绑定运行状态" /></BlockShell>;
+  const status = String(row.values?.[statusRef] ?? "idle").toLowerCase(); const running = ["running", "loading", "executing"].includes(status); const failed = ["failed", "error"].includes(status);
+  return <BlockShell block={block} testid="query-run-status-strip"><Flex align="center" justify="space-between" gap={10} wrap><Space><Badge status={running ? "processing" : failed ? "error" : "success"} text={running ? "查询运行中" : failed ? "上次查询失败" : "查询已完成"} />{timeRef && <Typography.Text type="secondary">{String(row.values?.[timeRef] ?? "-")} ms</Typography.Text>}{cachedRef && <Tag>{enabledValue(row.values?.[cachedRef], "cached") ? "缓存结果" : "实时结果"}</Tag>}</Space><Button size="small" danger={running} onClick={() => onAction?.("actionTrigger", { operation: running ? "cancelQuery" : "runQuery", targets: targetIdsOf(block) })}>{running ? "取消" : "重新运行"}</Button></Flex></BlockShell>;
+};
+
+const EntityOwnershipSummaryRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const ownerRef = fieldRefOf(block, "ownerFieldRef"); const lifecycleRef = fieldRefOf(block, "lifecycleFieldRef"); const systemRef = fieldRefOf(block, "systemFieldRef"); const domainRef = fieldRefOf(block, "domainFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !ownerRef || !row) return <BlockShell block={block} testid="entity-ownership-summary"><BlockEmpty hint="所有权摘要尚未绑定标题和负责人" /></BlockShell>;
+  const optional = [["生命周期", lifecycleRef], ["系统", systemRef], ["领域", domainRef]] as const;
+  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? "实体归属")} testid="entity-ownership-summary"><Descriptions size="small" column={{ xs: 1, sm: 2, md: 4 }} items={[{ key: "owner", label: "负责人", children: String(row.values?.[ownerRef] ?? "-") }, ...optional.flatMap(([label, ref]) => ref ? [{ key: label, label, children: String(row.values?.[ref] ?? "-") }] : [])]} /></BlockShell>;
+};
+
+const QueryDataSourceSummaryRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const databaseRef = fieldRefOf(block, "databaseFieldRef"); const schemaRef = fieldRefOf(block, "schemaFieldRef"); const sourceRef = fieldRefOf(block, "sourceFieldRef"); const typeRef = fieldRefOf(block, "typeFieldRef"); const row = bound?.rows[0];
+  if (!bound || !databaseRef || !sourceRef || !row) return <BlockShell block={block} testid="query-data-source-summary"><BlockEmpty hint="查询数据源尚未绑定数据库和来源" /></BlockShell>;
+  const fields = [databaseRef, schemaRef, sourceRef].filter((ref): ref is string => Boolean(ref));
+  return <BlockShell block={block} title={String(block.props?.title ?? "数据来源")} testid="query-data-source-summary"><Flex align="center" justify="space-between" gap={10} wrap><Breadcrumb items={fields.map((ref, index) => ({ title: <Typography.Text strong={index === fields.length - 1}>{String(row.values?.[ref] ?? "-")}</Typography.Text> }))} />{typeRef && <Tag color="blue">{String(row.values?.[typeRef] ?? "数据表")}</Tag>}</Flex></BlockShell>;
+};
+
+const DatasetEditorTabsRenderer = stableTabsRenderer("dataset-editor-tabs", "数据集编辑", "itemSelect");
+const DocumentHistoryTabsRenderer = stableTabsRenderer("document-history-tabs", "文档历史", "itemSelect");
+
+const CatalogEntityFilterBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  const [selected, setSelected] = React.useState<Record<string, string[]>>({});
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const facetRef = fieldRefOf(block, "facetFieldRef"); const keyRef = fieldRefOf(block, "keyFieldRef"); const titleRef = fieldRefOf(block, "titleFieldRef");
+  if (!bound || !facetRef || !keyRef || !titleRef) return <BlockShell block={block} testid="catalog-entity-filter-bar"><BlockEmpty hint="目录筛选尚未绑定分面、键和值" /></BlockShell>;
+  const groups = Array.from(new Set(bound.rows.map(row => String(row.values?.[facetRef] ?? "")).filter(Boolean))); const emit = (next: Record<string, string[]>) => onAction?.("filterChange", { facets: next, targets: targetIdsOf(block), page: 1 });
+  return <BlockShell block={block} title={String(block.props?.title ?? "目录筛选")} testid="catalog-entity-filter-bar"><Flex gap={10} wrap>{groups.map(group => <Select key={group} mode="multiple" allowClear placeholder={group} style={{ minWidth: 150 }} value={selected[group] ?? []} options={bound.rows.filter(row => String(row.values?.[facetRef]) === group).map(row => ({ value: String(row.values?.[keyRef]), label: String(row.values?.[titleRef]) }))} onChange={values => { const next = { ...selected, [group]: values }; setSelected(next); emit(next); }} />)}<Button disabled={!Object.values(selected).some(values => values.length)} onClick={() => { setSelected({}); emit({}); }}>清除</Button></Flex></BlockShell>;
+};
+
+const QueryClauseFilterBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const fieldRef = fieldRefOf(block, "fieldFieldRef"); const operatorRef = fieldRefOf(block, "operatorFieldRef"); const valueRef = fieldRefOf(block, "valueFieldRef"); const enabledRef = fieldRefOf(block, "enabledFieldRef");
+  if (!bound || !fieldRef || !operatorRef || !valueRef) return <BlockShell block={block} testid="query-clause-filter-bar"><BlockEmpty hint="查询条件尚未绑定字段、运算符和值" /></BlockShell>;
+  const active = bound.rows.filter(row => !enabledRef || enabledValue(row.values?.[enabledRef], "enabled")); const emit = (operation: string, rowId?: string) => onAction?.("filterChange", { operation, rowId, clauses: active.filter(row => row.id !== rowId).map(row => row.id), targets: targetIdsOf(block), page: 1 });
+  return <BlockShell block={block} title={String(block.props?.title ?? "查询条件")} testid="query-clause-filter-bar"><Flex gap={6} wrap>{active.length ? active.map(row => <Tag key={row.id} closable onClose={event => { event.preventDefault(); emit("removeClause", row.id); }}>{String(row.values?.[fieldRef])} {String(row.values?.[operatorRef])} {String(row.values?.[valueRef])}</Tag>) : <Typography.Text type="secondary">没有已生效条件</Typography.Text>}{active.length > 1 && <Button type="link" size="small" onClick={() => emit("clearClauses")}>全部清除</Button>}</Flex></BlockShell>;
+};
+
+const DocumentInsightMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const viewsRef = fieldRefOf(block, "viewsFieldRef"); const contributorsRef = fieldRefOf(block, "contributorsFieldRef"); const createdRef = fieldRefOf(block, "createdAtFieldRef"); const updatedRef = fieldRefOf(block, "updatedAtFieldRef"); const row = bound?.rows[0];
+  if (!bound || !viewsRef || !contributorsRef || !row) return <BlockShell block={block} testid="document-insight-metrics"><BlockEmpty hint="文档洞察尚未绑定阅读和贡献者数据" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "文档洞察")} testid="document-insight-metrics"><Flex gap={22} wrap><Statistic title="阅读次数" value={Number(row.values?.[viewsRef] ?? 0)} /><Statistic title="贡献者" value={Number(row.values?.[contributorsRef] ?? 0)} />{createdRef && <Statistic title="创建时间" value={String(row.values?.[createdRef] ?? "-")} />}{updatedRef && <Statistic title="最近更新" value={String(row.values?.[updatedRef] ?? "-")} />}</Flex></BlockShell>;
+};
+
+const MetadataQualityMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const totalRef = fieldRefOf(block, "totalFieldRef"); const documentedRef = fieldRefOf(block, "documentedFieldRef"); const typedRef = fieldRefOf(block, "typedFieldRef"); const row = bound?.rows[0];
+  if (!bound || !totalRef || !documentedRef || !row) return <BlockShell block={block} testid="metadata-quality-metrics"><BlockEmpty hint="元数据质量尚未绑定字段总数和已描述数" /></BlockShell>;
+  const total = Number(row.values?.[totalRef] ?? 0); const documented = Number(row.values?.[documentedRef] ?? 0); const typed = typedRef ? Number(row.values?.[typedRef] ?? 0) : 0; const score = total ? Math.round((documented + typed) / (total * (typedRef ? 2 : 1)) * 100) : 0;
+  return <BlockShell block={block} title={String(block.props?.title ?? "元数据质量")} testid="metadata-quality-metrics"><Flex align="center" gap={22} wrap><Progress type="circle" size={72} percent={score} /><Statistic title="已描述字段" value={documented} suffix={`/ ${total}`} />{typedRef && <Statistic title="已设置语义类型" value={typed} suffix={`/ ${total}`} />}</Flex></BlockShell>;
+};
+
+const QuestionExecutionBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const statusRef = fieldRefOf(block, "statusFieldRef"); const runnableRef = fieldRefOf(block, "runnableFieldRef"); const dirtyRef = fieldRefOf(block, "dirtyFieldRef"); const row = bound?.rows[0];
+  if (!bound || !statusRef || !row) return <BlockShell block={block} testid="question-execution-bar"><BlockEmpty hint="查询执行栏尚未绑定运行状态" /></BlockShell>;
+  const status = String(row.values?.[statusRef] ?? "idle").toLowerCase(); const running = ["running", "loading", "executing"].includes(status); const runnable = !runnableRef || enabledValue(row.values?.[runnableRef], "runnable"); const dirty = Boolean(dirtyRef && enabledValue(row.values?.[dirtyRef], "dirty")); const act = (operation: string, event = "actionTrigger") => onAction?.(event, { operation, entityRef: bound.entityRef, rowId: row.id, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="question-execution-bar"><Flex align="center" justify="space-between" gap={12} wrap><Typography.Text type={dirty ? "warning" : "secondary"}>{running ? "正在执行查询" : dirty ? "查询有未保存修改" : "查询已就绪"}</Typography.Text><Space><Button disabled={!dirty} onClick={() => act("saveQuestion", "editRequest")}>保存</Button><Button type="primary" danger={running} disabled={!running && !runnable} onClick={() => act(running ? "cancelQuery" : "runQuery")}>{running ? "取消查询" : "运行查询"}</Button></Space></Flex></BlockShell>;
+};
+
+const DocumentShareBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const visibilityRef = fieldRefOf(block, "visibilityFieldRef"); const domainRef = fieldRefOf(block, "domainFieldRef"); const permissionRef = fieldRefOf(block, "permissionFieldRef"); const linkRef = fieldRefOf(block, "linkFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !visibilityRef || !row) return <BlockShell block={block} testid="document-share-bar"><BlockEmpty hint="文档分享栏尚未绑定标题和可见性" /></BlockShell>;
+  const publicShare = enabledValue(row.values?.[visibilityRef], "public"); const canShare = !permissionRef || enabledValue(row.values?.[permissionRef], "share"); const submit = (operation: string) => onAction?.("submitRequest", { operation, entityRef: bound.entityRef, rowId: row.id, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="document-share-bar"><Flex align="center" justify="space-between" gap={12} wrap><div><Typography.Text strong>{String(row.values?.[titleRef] ?? "文档")}</Typography.Text><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>{publicShare ? `公开分享${domainRef ? ` · ${String(row.values?.[domainRef] ?? "")}` : ""}` : "仅团队成员可见"}</Typography.Text></div><Space><Button disabled={!publicShare || !linkRef} onClick={() => onAction?.("actionTrigger", { operation: "copyShareLink", value: linkRef ? String(row.values?.[linkRef] ?? "") : "" })}>复制链接</Button><Button type="primary" disabled={!canShare} onClick={() => submit(publicShare ? "manageShare" : "enableShare")}>{publicShare ? "管理分享" : "开启分享"}</Button></Space></Flex></BlockShell>;
+};
+
+const CycleCommandHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const editableRef = fieldRefOf(block, "editableFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !statusRef || !row) return <BlockShell block={block} testid="cycle-command-header"><BlockEmpty hint="周期页头尚未绑定标题和状态" /></BlockShell>;
+  const status = String(row.values?.[statusRef] ?? "draft").toLowerCase(); const archived = ["archived", "completed"].includes(status); const editable = !editableRef || enabledValue(row.values?.[editableRef], "editable"); const act = (operation: string, event = "actionTrigger") => onAction?.(event, { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="cycle-command-header"><Flex align="center" justify="space-between" gap={12} wrap><Space><Typography.Title level={4} style={{ margin: 0 }}>{String(row.values?.[titleRef] ?? "未命名周期")}</Typography.Title><Tag color={archived ? "default" : "blue"}>{status}</Tag></Space><Space><Button disabled={!editable || archived} onClick={() => act("editCycle", "editRequest")}>编辑</Button><Button onClick={() => act("copyCycleLink")}>复制链接</Button><Popconfirm title={archived ? "确认恢复这个周期？" : "确认归档这个周期？"} onConfirm={() => act(archived ? "restoreCycle" : "archiveCycle", "submitRequest")}><Button disabled={!editable}>{archived ? "恢复" : "归档"}</Button></Popconfirm></Space></Flex></BlockShell>;
+};
+
+const AlertGroupCommandHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const editableRef = fieldRefOf(block, "editableFieldRef"); const intervalRef = fieldRefOf(block, "intervalFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !statusRef || !row) return <BlockShell block={block} testid="alert-group-command-header"><BlockEmpty hint="规则组页头尚未绑定标题和状态" /></BlockShell>;
+  const editable = !editableRef || enabledValue(row.values?.[editableRef], "editable"); const paused = ["paused", "disabled"].includes(String(row.values?.[statusRef] ?? "active").toLowerCase()); const act = (operation: string, event = "actionTrigger") => onAction?.(event, { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="alert-group-command-header"><Flex align="center" justify="space-between" gap={12} wrap><Space><Typography.Title level={4} style={{ margin: 0 }}>{String(row.values?.[titleRef] ?? "未命名规则组")}</Typography.Title><Badge status={paused ? "default" : "processing"} text={paused ? "已暂停" : "评估中"} />{intervalRef && <Tag>{String(row.values?.[intervalRef] ?? "-")}</Tag>}</Space><Space><Button disabled={!editable} onClick={() => act("editAlertGroup", "editRequest")}>编辑</Button><Button disabled={!editable} onClick={() => act(paused ? "resumeAlertGroup" : "pauseAlertGroup", "submitRequest")}>{paused ? "恢复评估" : "暂停评估"}</Button></Space></Flex></BlockShell>;
+};
+
+const IncidentOwnershipStripRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const assigneeRef = fieldRefOf(block, "assigneeFieldRef"); const sourceRef = fieldRefOf(block, "sourceFieldRef"); const suggestedRef = fieldRefOf(block, "suggestedFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !assigneeRef || !row) return <BlockShell block={block} testid="incident-ownership-strip"><BlockEmpty hint="事故归属尚未绑定负责人" /></BlockShell>;
+  const assignee = String(row.values?.[assigneeRef] ?? "").trim(); const suggested = suggestedRef ? String(row.values?.[suggestedRef] ?? "").trim() : "";
+  return <BlockShell block={block} testid="incident-ownership-strip"><Flex align="center" justify="space-between" gap={10} wrap><Space><Avatar>{(assignee || "?").slice(0, 1)}</Avatar><div><Typography.Text strong>{assignee || "未分配"}</Typography.Text><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>{sourceRef ? `来源：${String(row.values?.[sourceRef] ?? "手动")}` : "手动分配"}{suggested ? ` · 建议 ${suggested}` : ""}</Typography.Text></div></Space><Space><Button size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "changeAssignee", targets: targetIdsOf(block) })}>更换负责人</Button>{!assignee && suggested && <Button size="small" type="primary" onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "acceptSuggestedOwner", value: suggested })}>采用建议</Button>}</Space></Flex></BlockShell>;
+};
+
+const SyncScheduleStripRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const frequencyRef = fieldRefOf(block, "frequencyFieldRef"); const nextRef = fieldRefOf(block, "nextRunFieldRef"); const timezoneRef = fieldRefOf(block, "timezoneFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const row = bound?.rows[0];
+  if (!bound || !frequencyRef || !nextRef || !row) return <BlockShell block={block} testid="sync-schedule-strip"><BlockEmpty hint="同步计划尚未绑定频率和下次运行时间" /></BlockShell>;
+  const paused = statusRef && ["paused", "disabled"].includes(String(row.values?.[statusRef] ?? "").toLowerCase());
+  return <BlockShell block={block} testid="sync-schedule-strip"><Flex align="center" justify="space-between" gap={10} wrap><Space><Badge status={paused ? "default" : "processing"} /><div><Typography.Text strong>{paused ? "同步计划已暂停" : `每 ${String(row.values?.[frequencyRef] ?? "-")}`}</Typography.Text><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>下次运行 {String(row.values?.[nextRef] ?? "-")}{timezoneRef ? ` · ${String(row.values?.[timezoneRef] ?? "")}` : ""}</Typography.Text></div></Space><Button size="small" onClick={() => onAction?.("editRequest", { operation: "editSyncSchedule", entityRef: bound.entityRef, rowId: row.id, targets: targetIdsOf(block) })}>调整计划</Button></Flex></BlockShell>;
+};
+
+const CycleContextSummaryRenderer = compactSummaryRenderer("cycle-context-summary", "周期上下文");
+const AlertGroupContextSummaryRenderer = compactSummaryRenderer("alert-group-context-summary", "规则组上下文");
+const EventTypeEditorTabsRenderer = stableTabsRenderer("event-type-editor-tabs", "事件类型编辑", "itemSelect");
+const IncidentEvidenceTabsRenderer = stableTabsRenderer("incident-evidence-tabs", "事故证据", "itemSelect");
+
+const CycleFilterBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  const [selected, setSelected] = React.useState<Record<string, string[]>>({}); if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const typeRef = fieldRefOf(block, "typeFieldRef"); const keyRef = fieldRefOf(block, "keyFieldRef"); const titleRef = fieldRefOf(block, "titleFieldRef");
+  if (!bound || !typeRef || !keyRef || !titleRef) return <BlockShell block={block} testid="cycle-filter-bar"><BlockEmpty hint="周期筛选尚未绑定类型、键和值" /></BlockShell>;
+  const groups = Array.from(new Set(bound.rows.map(row => String(row.values?.[typeRef] ?? "")).filter(Boolean))); const emit = (next: Record<string, string[]>) => onAction?.("filterChange", { facets: next, targets: targetIdsOf(block), page: 1 });
+  return <BlockShell block={block} title={String(block.props?.title ?? "周期筛选")} testid="cycle-filter-bar"><Flex gap={10} wrap>{groups.map(group => <Select key={group} mode="multiple" allowClear placeholder={group} style={{ minWidth: 150 }} value={selected[group] ?? []} options={bound.rows.filter(row => String(row.values?.[typeRef]) === group).map(row => ({ value: String(row.values?.[keyRef]), label: String(row.values?.[titleRef]) }))} onChange={values => { const next = { ...selected, [group]: values }; setSelected(next); emit(next); }} />)}<Button disabled={!Object.values(selected).some(values => values.length)} onClick={() => { setSelected({}); emit({}); }}>清除</Button></Flex></BlockShell>;
+};
+
+const AlertRuleFilterBarRenderer: ExperienceBlockRenderer = ({ block, children, onAction }) => {
+  const [query, setQuery] = React.useState(String(block.props?.defaultQuery ?? "")); const [view, setView] = React.useState<string | number>(String(block.props?.defaultView ?? "grouped")); if (children != null) return <>{children}</>;
+  const submit = (value: string) => onAction?.("filterChange", { query: value.trim(), view, targets: targetIdsOf(block), page: 1 });
+  return <BlockShell block={block} title={String(block.props?.title ?? "规则筛选")} testid="alert-rule-filter-bar"><Flex gap={10} wrap><Input.Search value={query} onChange={event => setQuery(event.target.value)} onSearch={submit} onBlur={() => submit(query)} placeholder='例如 state:firing label:team=payment' style={{ minWidth: 260, flex: 1 }} /><Segmented value={view} options={[{ label: "分组", value: "grouped" }, { label: "列表", value: "list" }]} onChange={value => { setView(value); onAction?.("filterChange", { query: query.trim(), view: value, targets: targetIdsOf(block), page: 1 }); }} /></Flex></BlockShell>;
+};
+
+const SyncReliabilityMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const successRef = fieldRefOf(block, "successFieldRef"); const failedRef = fieldRefOf(block, "failedFieldRef"); const recordsRef = fieldRefOf(block, "recordsFieldRef"); const freshnessRef = fieldRefOf(block, "freshnessFieldRef"); const row = bound?.rows[0];
+  if (!bound || !successRef || !failedRef || !row) return <BlockShell block={block} testid="sync-reliability-metrics"><BlockEmpty hint="同步可靠性尚未绑定成功和失败次数" /></BlockShell>;
+  const success = Number(row.values?.[successRef] ?? 0); const failed = Number(row.values?.[failedRef] ?? 0); const rate = success + failed ? Math.round(success / (success + failed) * 100) : 0;
+  return <BlockShell block={block} title={String(block.props?.title ?? "同步可靠性")} testid="sync-reliability-metrics"><Flex gap={22} wrap><Statistic title="成功率" value={rate} suffix="%" /><Statistic title="成功运行" value={success} /><Statistic title="失败运行" value={failed} />{recordsRef && <Statistic title="同步记录" value={Number(row.values?.[recordsRef] ?? 0)} />}{freshnessRef && <Statistic title="数据新鲜度" value={String(row.values?.[freshnessRef] ?? "-")} />}</Flex></BlockShell>;
+};
+
+const RuleEvaluationMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const activeRef = fieldRefOf(block, "activeFieldRef"); const pausedRef = fieldRefOf(block, "pausedFieldRef"); const errorRef = fieldRefOf(block, "errorFieldRef"); const durationRef = fieldRefOf(block, "durationFieldRef"); const row = bound?.rows[0];
+  if (!bound || !activeRef || !pausedRef || !row) return <BlockShell block={block} testid="rule-evaluation-metrics"><BlockEmpty hint="规则评估尚未绑定活跃和暂停数量" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "规则评估")} testid="rule-evaluation-metrics"><Flex gap={22} wrap><Statistic title="活跃规则" value={Number(row.values?.[activeRef] ?? 0)} /><Statistic title="暂停规则" value={Number(row.values?.[pausedRef] ?? 0)} />{errorRef && <Statistic title="评估错误" value={Number(row.values?.[errorRef] ?? 0)} />}{durationRef && <Statistic title="平均评估耗时" value={Number(row.values?.[durationRef] ?? 0)} suffix="ms" />}</Flex></BlockShell>;
+};
+
+const CycleLifecycleBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const editableRef = fieldRefOf(block, "editableFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !statusRef || !row) return <BlockShell block={block} testid="cycle-lifecycle-bar"><BlockEmpty hint="周期生命周期栏尚未绑定标题和状态" /></BlockShell>;
+  const status = String(row.values?.[statusRef] ?? "draft").toLowerCase(); const archived = status === "archived"; const completed = status === "completed"; const editable = !editableRef || enabledValue(row.values?.[editableRef], "editable"); const submit = (operation: string) => onAction?.("submitRequest", { operation, entityRef: bound.entityRef, rowId: row.id, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="cycle-lifecycle-bar"><Flex align="center" justify="space-between" gap={12} wrap><Typography.Text strong>{String(row.values?.[titleRef] ?? "周期")} · {status}</Typography.Text><Space><Button disabled={!editable || completed || archived} onClick={() => submit("completeCycle")}>完成周期</Button><Button disabled={!editable} onClick={() => submit(archived ? "restoreCycle" : "archiveCycle")}>{archived ? "恢复" : "归档"}</Button><Popconfirm title="删除后不可恢复，确认删除？" onConfirm={() => submit("deleteCycle")}><Button danger disabled={!editable || !archived}>删除</Button></Popconfirm></Space></Flex></BlockShell>;
+};
+
+const EventTypePublishBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const hiddenRef = fieldRefOf(block, "hiddenFieldRef"); const dirtyRef = fieldRefOf(block, "dirtyFieldRef"); const validRef = fieldRefOf(block, "validFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !hiddenRef || !row) return <BlockShell block={block} testid="event-type-publish-bar"><BlockEmpty hint="事件类型发布栏尚未绑定标题和可见状态" /></BlockShell>;
+  const hidden = enabledValue(row.values?.[hiddenRef], "hidden"); const dirty = !dirtyRef || enabledValue(row.values?.[dirtyRef], "dirty"); const valid = !validRef || enabledValue(row.values?.[validRef], "valid"); const act = (operation: string, event = "submitRequest") => onAction?.(event, { operation, entityRef: bound.entityRef, rowId: row.id, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="event-type-publish-bar"><Flex align="center" justify="space-between" gap={12} wrap><div><Typography.Text strong>{String(row.values?.[titleRef] ?? "事件类型")}</Typography.Text><Typography.Text type={valid ? "secondary" : "danger"} style={{ display: "block", fontSize: 12 }}>{hidden ? "未在公开资料中显示" : "公开可预约"}{valid ? "" : " · 配置未通过校验"}</Typography.Text></div><Space><Button disabled={!dirty || !valid} onClick={() => act("saveEventType", "editRequest")}>保存</Button><Button type="primary" disabled={!valid} onClick={() => act(hidden ? "publishEventType" : "hideEventType")}>{hidden ? "发布" : "隐藏"}</Button></Space></Flex></BlockShell>;
+};
+
+const ConversationCommandHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const verifiedRef = fieldRefOf(block, "verifiedFieldRef"); const inboxRef = fieldRefOf(block, "inboxFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !statusRef || !row) return <BlockShell block={block} testid="conversation-command-header"><BlockEmpty hint="会话页头尚未绑定联系人和状态" /></BlockShell>;
+  const status = String(row.values?.[statusRef] ?? "open").toLowerCase(); const snoozed = status === "snoozed"; const resolved = ["resolved", "closed"].includes(status); const verified = !verifiedRef || enabledValue(row.values?.[verifiedRef], "verified"); const act = (operation: string, event = "actionTrigger") => onAction?.(event, { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="conversation-command-header"><Flex align="center" justify="space-between" gap={12} wrap><Space><Avatar>{String(row.values?.[titleRef] ?? "?").slice(0, 1)}</Avatar><div><Typography.Title level={4} style={{ margin: 0 }}>{String(row.values?.[titleRef] ?? "未知联系人")}</Typography.Title><Typography.Text type="secondary" style={{ fontSize: 12 }}>{inboxRef ? `${String(row.values?.[inboxRef] ?? "收件箱")} · ` : ""}#{row.id}</Typography.Text></div>{!verified && <Tag color="warning">未验证</Tag>}<Tag color={resolved ? "default" : snoozed ? "orange" : "blue"}>{status}</Tag></Space><Space><Button onClick={() => act("copyConversationId")}>复制编号</Button><Button type="primary" onClick={() => act(resolved ? "reopenConversation" : "resolveConversation", "submitRequest")}>{resolved ? "重新打开" : "解决"}</Button></Space></Flex></BlockShell>;
+};
+
+const UserCommandHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const usernameRef = fieldRefOf(block, "usernameFieldRef"); const enabledRef = fieldRefOf(block, "enabledFieldRef"); const impersonateRef = fieldRefOf(block, "impersonateFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !usernameRef || !enabledRef || !row) return <BlockShell block={block} testid="user-command-header"><BlockEmpty hint="用户页头尚未绑定用户名和启用状态" /></BlockShell>;
+  const enabled = enabledValue(row.values?.[enabledRef], "enabled"); const canImpersonate = Boolean(impersonateRef && enabledValue(row.values?.[impersonateRef], "allowed")); const submit = (operation: string) => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="user-command-header"><Flex align="center" justify="space-between" gap={12} wrap><Space><Typography.Title level={4} style={{ margin: 0 }}>{String(row.values?.[usernameRef] ?? "未命名用户")}</Typography.Title><Badge status={enabled ? "success" : "default"} text={enabled ? "已启用" : "已禁用"} /></Space><Space><Button disabled={!canImpersonate} onClick={() => onAction?.("actionTrigger", { entityRef: bound.entityRef, rowId: row.id, operation: "impersonateUser" })}>模拟登录</Button><Popconfirm title={`确认${enabled ? "禁用" : "启用"}这个用户？`} onConfirm={() => submit(enabled ? "disableUser" : "enableUser")}><Button>{enabled ? "禁用" : "启用"}</Button></Popconfirm></Space></Flex></BlockShell>;
+};
+
+const ConversationAssignmentStripRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const assigneeRef = fieldRefOf(block, "assigneeFieldRef"); const teamRef = fieldRefOf(block, "teamFieldRef"); const priorityRef = fieldRefOf(block, "priorityFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !assigneeRef || !row) return <BlockShell block={block} testid="conversation-assignment-strip"><BlockEmpty hint="会话分配尚未绑定处理人" /></BlockShell>;
+  return <BlockShell block={block} testid="conversation-assignment-strip"><Flex align="center" justify="space-between" gap={10} wrap><Space><Avatar>{String(row.values?.[assigneeRef] ?? "?").slice(0, 1)}</Avatar><div><Typography.Text strong>{String(row.values?.[assigneeRef] ?? "未分配")}</Typography.Text><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>{teamRef ? String(row.values?.[teamRef] ?? "未分组") : ""}{priorityRef ? ` · ${String(row.values?.[priorityRef] ?? "普通")}` : ""}</Typography.Text></div></Space><Space><Button size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "assignConversation", targets: targetIdsOf(block) })}>更换处理人</Button><Button size="small" onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "assignToMe" })}>分配给我</Button></Space></Flex></BlockShell>;
+};
+
+const RealmStatusStripRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const nameRef = fieldRefOf(block, "nameFieldRef"); const enabledRef = fieldRefOf(block, "enabledFieldRef"); const bruteRef = fieldRefOf(block, "bruteForceFieldRef"); const sslRef = fieldRefOf(block, "sslFieldRef"); const row = bound?.rows[0];
+  if (!bound || !nameRef || !enabledRef || !row) return <BlockShell block={block} testid="realm-status-strip"><BlockEmpty hint="Realm 状态尚未绑定名称和启用状态" /></BlockShell>;
+  const enabled = enabledValue(row.values?.[enabledRef], "enabled");
+  return <BlockShell block={block} testid="realm-status-strip"><Flex align="center" justify="space-between" gap={10} wrap><Space><Badge status={enabled ? "success" : "default"} /><div><Typography.Text strong>{String(row.values?.[nameRef] ?? "Realm")}</Typography.Text><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>{bruteRef ? `暴力破解防护 ${enabledValue(row.values?.[bruteRef], "enabled") ? "开启" : "关闭"}` : ""}{sslRef ? ` · SSL ${String(row.values?.[sslRef] ?? "-")}` : ""}</Typography.Text></div></Space><Button size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "editRealmSettings", targets: targetIdsOf(block) })}>Realm 设置</Button></Flex></BlockShell>;
+};
+
+const ConversationContextSummaryRenderer = compactSummaryRenderer("conversation-context-summary", "会话上下文");
+const UserIdentitySummaryRenderer = compactSummaryRenderer("user-identity-summary", "用户身份");
+const ConversationDetailTabsRenderer = stableTabsRenderer("conversation-detail-tabs", "会话详情", "itemSelect");
+const UserSecurityTabsRenderer = stableTabsRenderer("user-security-tabs", "用户安全", "itemSelect");
+
+const ConversationInboxFilterRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  const [selected, setSelected] = React.useState<Record<string, string[]>>({}); if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const typeRef = fieldRefOf(block, "typeFieldRef"); const keyRef = fieldRefOf(block, "keyFieldRef"); const titleRef = fieldRefOf(block, "titleFieldRef");
+  if (!bound || !typeRef || !keyRef || !titleRef) return <BlockShell block={block} testid="conversation-inbox-filter"><BlockEmpty hint="会话筛选尚未绑定类型、键和值" /></BlockShell>;
+  const groups = Array.from(new Set(bound.rows.map(row => String(row.values?.[typeRef] ?? "")).filter(Boolean))); const emit = (next: Record<string, string[]>) => onAction?.("filterChange", { facets: next, targets: targetIdsOf(block), page: 1 });
+  return <BlockShell block={block} title={String(block.props?.title ?? "会话筛选")} testid="conversation-inbox-filter"><Flex gap={10} wrap>{groups.map(group => <Select key={group} mode="multiple" allowClear placeholder={group} style={{ minWidth: 150 }} value={selected[group] ?? []} options={bound.rows.filter(row => String(row.values?.[typeRef]) === group).map(row => ({ value: String(row.values?.[keyRef]), label: String(row.values?.[titleRef]) }))} onChange={values => { const next = { ...selected, [group]: values }; setSelected(next); emit(next); }} />)}<Button disabled={!Object.values(selected).some(values => values.length)} onClick={() => { setSelected({}); emit({}); }}>清除</Button></Flex></BlockShell>;
+};
+
+const UserDirectoryFilterRenderer: ExperienceBlockRenderer = ({ block, children, onAction }) => {
+  const [query, setQuery] = React.useState(String(block.props?.defaultQuery ?? "")); const [mode, setMode] = React.useState<string | number>(String(block.props?.defaultMode ?? "default")); if (children != null) return <>{children}</>;
+  const submit = (value: string, nextMode = mode) => onAction?.("filterChange", { query: value.trim(), mode: nextMode, exact: Boolean(block.props?.exact), targets: targetIdsOf(block), page: 1 });
+  return <BlockShell block={block} title={String(block.props?.title ?? "用户目录筛选")} testid="user-directory-filter"><Flex gap={10} wrap><Segmented value={mode} options={[{ label: "用户名", value: "default" }, { label: "属性", value: "attribute" }]} onChange={value => { setMode(value); setQuery(""); submit("", value); }} /><Input.Search value={query} onChange={event => setQuery(event.target.value)} onSearch={value => submit(value)} placeholder={mode === "attribute" ? "例如 department:finance" : "用户名或邮箱"} style={{ minWidth: 240, flex: 1 }} /><Button onClick={() => { setQuery(""); submit(""); }}>清除</Button></Flex></BlockShell>;
+};
+
+const ConversationSlaMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const firstRef = fieldRefOf(block, "firstResponseFieldRef"); const resolutionRef = fieldRefOf(block, "resolutionFieldRef"); const breachRef = fieldRefOf(block, "breachFieldRef"); const countRef = fieldRefOf(block, "countFieldRef"); const row = bound?.rows[0];
+  if (!bound || !firstRef || !resolutionRef || !row) return <BlockShell block={block} testid="conversation-sla-metrics"><BlockEmpty hint="SLA 指标尚未绑定首次响应和解决时间" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "会话 SLA")} testid="conversation-sla-metrics"><Flex gap={22} wrap><Statistic title="首次响应" value={String(row.values?.[firstRef] ?? "-")} /><Statistic title="解决时间" value={String(row.values?.[resolutionRef] ?? "-")} />{breachRef && <Statistic title="SLA 违约" value={Number(row.values?.[breachRef] ?? 0)} />}{countRef && <Statistic title="会话总数" value={Number(row.values?.[countRef] ?? 0)} />}</Flex></BlockShell>;
+};
+
+const UserSessionMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const activeRef = fieldRefOf(block, "activeFieldRef"); const offlineRef = fieldRefOf(block, "offlineFieldRef"); const clientRef = fieldRefOf(block, "clientFieldRef"); const riskRef = fieldRefOf(block, "riskFieldRef"); const row = bound?.rows[0];
+  if (!bound || !activeRef || !offlineRef || !row) return <BlockShell block={block} testid="user-session-metrics"><BlockEmpty hint="用户会话指标尚未绑定在线和离线会话" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "用户会话")} testid="user-session-metrics"><Flex gap={22} wrap><Statistic title="在线会话" value={Number(row.values?.[activeRef] ?? 0)} /><Statistic title="离线会话" value={Number(row.values?.[offlineRef] ?? 0)} />{clientRef && <Statistic title="登录客户端" value={Number(row.values?.[clientRef] ?? 0)} />}{riskRef && <Statistic title="风险会话" value={Number(row.values?.[riskRef] ?? 0)} />}</Flex></BlockShell>;
+};
+
+const ConversationReplyBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  const [message, setMessage] = React.useState(""); const [mode, setMode] = React.useState<string | number>("reply"); if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const statusRef = fieldRefOf(block, "statusFieldRef"); const channelRef = fieldRefOf(block, "channelFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !statusRef || !row) return <BlockShell block={block} testid="conversation-reply-bar"><BlockEmpty hint="回复栏尚未绑定会话状态" /></BlockShell>;
+  const closed = ["resolved", "closed"].includes(String(row.values?.[statusRef] ?? "open").toLowerCase()); const submit = () => { const text = message.trim(); if (!text || closed) return; onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: mode === "note" ? "addPrivateNote" : "sendReply", message: text, channel: channelRef ? row.values?.[channelRef] : undefined, targets: targetIdsOf(block) }); setMessage(""); };
+  return <BlockShell block={block} testid="conversation-reply-bar"><Flex gap={8} vertical><Flex gap={8} wrap><Segmented value={mode} options={[{ label: "回复", value: "reply" }, { label: "内部备注", value: "note" }]} onChange={setMode} /><Typography.Text type="secondary">{channelRef ? String(row.values?.[channelRef] ?? "") : ""}{closed ? " · 会话已关闭" : ""}</Typography.Text></Flex><Input.TextArea value={message} onChange={event => setMessage(event.target.value)} disabled={closed} autoSize={{ minRows: 2, maxRows: 4 }} placeholder={mode === "note" ? "仅团队成员可见" : "输入回复内容"} maxLength={5000} showCount /><Flex justify="flex-end"><Button type="primary" disabled={closed || !message.trim()} onClick={submit}>{mode === "note" ? "添加备注" : "发送回复"}</Button></Flex></Flex></BlockShell>;
+};
+
+const UserAccessBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const usernameRef = fieldRefOf(block, "usernameFieldRef"); const enabledRef = fieldRefOf(block, "enabledFieldRef"); const sessionsRef = fieldRefOf(block, "sessionsFieldRef"); const manageableRef = fieldRefOf(block, "manageableFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !usernameRef || !enabledRef || !row) return <BlockShell block={block} testid="user-access-bar"><BlockEmpty hint="用户访问栏尚未绑定用户名和启用状态" /></BlockShell>;
+  const enabled = enabledValue(row.values?.[enabledRef], "enabled"); const sessions = sessionsRef ? Number(row.values?.[sessionsRef] ?? 0) : 0; const manageable = !manageableRef || enabledValue(row.values?.[manageableRef], "allowed"); const submit = (operation: string) => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="user-access-bar"><Flex align="center" justify="space-between" gap={12} wrap><Typography.Text strong>{String(row.values?.[usernameRef] ?? "用户")} · {sessions} 个会话</Typography.Text><Space><Button disabled={!manageable} onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "resetCredentials", targets: targetIdsOf(block) })}>重置凭据</Button><Popconfirm title="确认注销该用户的全部会话？" onConfirm={() => submit("logoutAllSessions")}><Button disabled={!manageable || !sessions}>注销全部会话</Button></Popconfirm><Button danger={enabled} disabled={!manageable} onClick={() => submit(enabled ? "disableUser" : "enableUser")}>{enabled ? "禁用用户" : "启用用户"}</Button></Space></Flex></BlockShell>;
+};
+
 /**
  * ── 区块定义表：**一条记录 = 一个组件**（2026-08-08 重做）───────────────
  *
@@ -6039,6 +6400,62 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     BookingDirectoryFilter: { render: BookingDirectoryFilterRenderer, uses: ["Select", "DatePicker", "Input", "Flex"], label: "预约目录筛选", phone: true },
     BookingDecisionBar: { render: BookingDecisionBarRenderer, uses: ["Typography", "Tag", "Button", "Modal", "Input", "Flex"], label: "预约确认决策栏", phone: true },
     DashboardSaveBar: { render: DashboardSaveBarRenderer, uses: ["Typography", "Button", "Dropdown", "Flex"], label: "Dashboard 保存栏", phone: true },
+    WorkItemCommandHeader: { render: WorkItemCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Popconfirm", "Flex"], label: "工作项操作页头", phone: true },
+    DocumentCommandHeader: { render: DocumentCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Flex"], label: "文档操作页头", phone: true },
+    EnvironmentStatusStrip: { render: EnvironmentStatusStripRenderer, uses: ["Badge", "Button", "Flex"], label: "环境状态条", phone: true },
+    DataFreshnessIndicator: { render: DataFreshnessIndicatorRenderer, uses: ["Badge", "Button", "Typography", "Flex"], label: "数据新鲜度", phone: true },
+    WorkItemContextSummary: { render: WorkItemContextSummaryRenderer, uses: ["Descriptions"], label: "工作项上下文摘要", phone: true },
+    DocumentContextSummary: { render: DocumentContextSummaryRenderer, uses: ["Descriptions"], label: "文档上下文摘要", phone: true },
+    WorkItemDetailTabs: { render: WorkItemDetailTabsRenderer, uses: ["Tabs", "Badge"], label: "工作项详情页签", phone: true },
+    QueryModeTabs: { render: QueryModeTabsRenderer, uses: ["Tabs", "Badge"], label: "查询模式页签", phone: true },
+    WorkItemFilterBar: { render: WorkItemFilterBarRenderer, uses: ["Select", "Button", "Flex"], label: "工作项筛选栏", phone: true },
+    DashboardParameterBar: { render: DashboardParameterBarRenderer, uses: ["Input", "Button", "Typography", "Flex"], label: "Dashboard 参数栏", phone: true },
+    CycleHealthMetrics: { render: CycleHealthMetricsRenderer, uses: ["Statistic", "Progress", "Flex"], label: "周期健康指标", phone: true },
+    QueryExecutionMetrics: { render: QueryExecutionMetricsRenderer, uses: ["Statistic", "Flex"], label: "查询执行指标", phone: true },
+    BulkSelectionBar: { render: BulkSelectionBarRenderer, uses: ["Typography", "Button", "Popconfirm", "Flex"], label: "批量选择操作栏", phone: true },
+    DraftPublishBar: { render: DraftPublishBarRenderer, uses: ["Typography", "Button", "Flex"], label: "草稿发布栏", phone: true },
+    QuestionCommandHeader: { render: QuestionCommandHeaderRenderer, uses: ["Typography", "Tag", "Badge", "Button", "Flex"], label: "问题操作页头", phone: true },
+    CatalogEntityCommandHeader: { render: CatalogEntityCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Dropdown", "Flex"], label: "目录实体页头", phone: true },
+    CollaboratorPresenceStrip: { render: CollaboratorPresenceStripRenderer, uses: ["Avatar", "Badge", "Tooltip", "Button", "Flex"], label: "协作者在线状态", phone: true },
+    QueryRunStatusStrip: { render: QueryRunStatusStripRenderer, uses: ["Badge", "Tag", "Button", "Flex"], label: "查询运行状态", phone: true },
+    EntityOwnershipSummary: { render: EntityOwnershipSummaryRenderer, uses: ["Descriptions"], label: "实体所有权摘要", phone: true },
+    QueryDataSourceSummary: { render: QueryDataSourceSummaryRenderer, uses: ["Breadcrumb", "Tag", "Flex"], label: "查询数据源摘要", phone: true },
+    DatasetEditorTabs: { render: DatasetEditorTabsRenderer, uses: ["Tabs", "Badge"], label: "数据集编辑页签", phone: true },
+    DocumentHistoryTabs: { render: DocumentHistoryTabsRenderer, uses: ["Tabs", "Badge"], label: "文档历史页签", phone: true },
+    CatalogEntityFilterBar: { render: CatalogEntityFilterBarRenderer, uses: ["Select", "Button", "Flex"], label: "目录实体筛选", phone: true },
+    QueryClauseFilterBar: { render: QueryClauseFilterBarRenderer, uses: ["Tag", "Button", "Flex"], label: "查询条件栏", phone: true },
+    DocumentInsightMetrics: { render: DocumentInsightMetricsRenderer, uses: ["Statistic", "Flex"], label: "文档洞察指标", phone: true },
+    MetadataQualityMetrics: { render: MetadataQualityMetricsRenderer, uses: ["Progress", "Statistic", "Flex"], label: "元数据质量指标", phone: true },
+    QuestionExecutionBar: { render: QuestionExecutionBarRenderer, uses: ["Typography", "Button", "Flex"], label: "查询执行栏", phone: true },
+    DocumentShareBar: { render: DocumentShareBarRenderer, uses: ["Typography", "Button", "Flex"], label: "文档分享栏", phone: true },
+    CycleCommandHeader: { render: CycleCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Popconfirm", "Flex"], label: "周期操作页头", phone: true },
+    AlertGroupCommandHeader: { render: AlertGroupCommandHeaderRenderer, uses: ["Typography", "Badge", "Tag", "Button", "Flex"], label: "规则组操作页头", phone: true },
+    IncidentOwnershipStrip: { render: IncidentOwnershipStripRenderer, uses: ["Avatar", "Typography", "Button", "Flex"], label: "事故归属状态", phone: true },
+    SyncScheduleStrip: { render: SyncScheduleStripRenderer, uses: ["Badge", "Typography", "Button", "Flex"], label: "同步计划状态", phone: true },
+    CycleContextSummary: { render: CycleContextSummaryRenderer, uses: ["Descriptions"], label: "周期上下文摘要", phone: true },
+    AlertGroupContextSummary: { render: AlertGroupContextSummaryRenderer, uses: ["Descriptions"], label: "规则组上下文摘要", phone: true },
+    EventTypeEditorTabs: { render: EventTypeEditorTabsRenderer, uses: ["Tabs", "Badge"], label: "事件类型编辑页签", phone: true },
+    IncidentEvidenceTabs: { render: IncidentEvidenceTabsRenderer, uses: ["Tabs", "Badge"], label: "事故证据页签", phone: true },
+    CycleFilterBar: { render: CycleFilterBarRenderer, uses: ["Select", "Button", "Flex"], label: "周期筛选栏", phone: true },
+    AlertRuleFilterBar: { render: AlertRuleFilterBarRenderer, uses: ["Input", "Segmented", "Flex"], label: "告警规则筛选", phone: true },
+    SyncReliabilityMetrics: { render: SyncReliabilityMetricsRenderer, uses: ["Statistic", "Flex"], label: "同步可靠性指标", phone: true },
+    RuleEvaluationMetrics: { render: RuleEvaluationMetricsRenderer, uses: ["Statistic", "Flex"], label: "规则评估指标", phone: true },
+    CycleLifecycleBar: { render: CycleLifecycleBarRenderer, uses: ["Typography", "Button", "Popconfirm", "Flex"], label: "周期生命周期栏", phone: true },
+    EventTypePublishBar: { render: EventTypePublishBarRenderer, uses: ["Typography", "Button", "Flex"], label: "事件类型发布栏", phone: true },
+    ConversationCommandHeader: { render: ConversationCommandHeaderRenderer, uses: ["Avatar", "Typography", "Tag", "Button", "Flex"], label: "会话操作页头", phone: true },
+    UserCommandHeader: { render: UserCommandHeaderRenderer, uses: ["Typography", "Badge", "Button", "Popconfirm", "Flex"], label: "用户操作页头", phone: true },
+    ConversationAssignmentStrip: { render: ConversationAssignmentStripRenderer, uses: ["Avatar", "Typography", "Button", "Flex"], label: "会话分配状态", phone: true },
+    RealmStatusStrip: { render: RealmStatusStripRenderer, uses: ["Badge", "Typography", "Button", "Flex"], label: "Realm 状态", phone: true },
+    ConversationContextSummary: { render: ConversationContextSummaryRenderer, uses: ["Descriptions"], label: "会话上下文摘要", phone: true },
+    UserIdentitySummary: { render: UserIdentitySummaryRenderer, uses: ["Descriptions"], label: "用户身份摘要", phone: true },
+    ConversationDetailTabs: { render: ConversationDetailTabsRenderer, uses: ["Tabs", "Badge"], label: "会话详情页签", phone: true },
+    UserSecurityTabs: { render: UserSecurityTabsRenderer, uses: ["Tabs", "Badge"], label: "用户安全页签", phone: true },
+    ConversationInboxFilter: { render: ConversationInboxFilterRenderer, uses: ["Select", "Button", "Flex"], label: "收件箱会话筛选", phone: true },
+    UserDirectoryFilter: { render: UserDirectoryFilterRenderer, uses: ["Input", "Segmented", "Button", "Flex"], label: "用户目录筛选", phone: true },
+    ConversationSlaMetrics: { render: ConversationSlaMetricsRenderer, uses: ["Statistic", "Flex"], label: "会话 SLA 指标", phone: true },
+    UserSessionMetrics: { render: UserSessionMetricsRenderer, uses: ["Statistic", "Flex"], label: "用户会话指标", phone: true },
+    ConversationReplyBar: { render: ConversationReplyBarRenderer, uses: ["Input", "Segmented", "Button", "Flex"], label: "会话回复栏", phone: true },
+    UserAccessBar: { render: UserAccessBarRenderer, uses: ["Typography", "Button", "Popconfirm", "Flex"], label: "用户访问控制栏", phone: true },
   });
 
 /** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */

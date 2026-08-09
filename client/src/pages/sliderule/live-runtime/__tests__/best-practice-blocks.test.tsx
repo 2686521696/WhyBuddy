@@ -485,4 +485,143 @@ describe("开源最佳实践区块", () => {
       expect(renderToStaticMarkup(<PhoneExperienceBlock {...props} />)).toContain(`data-testid="${testCase.phone}"`);
     }
   });
+
+  it("工作项、文档与查询批次的 14 个稀缺区域区块都有独立双端渲染器", () => {
+    const entityRows = {
+      work: [row("w1", { title: "完善巡检流程", status: "in_progress", priority: "high", assignee: "陈晓", project: "运营平台", cycle: "八月", due: "2026-08-18", labels: "流程" })],
+      document: [row("d1", { title: "巡检手册", state: "draft", permission: "publish", revision: "", collection: "运营规范", owner: "周宁", visibility: "团队", updated: "11:25", dirty: "dirty", location: "运营 / 门店" })],
+      environment: [row("e1", { name: "生产", status: "healthy" })],
+      freshness: [row("f1", { source: "订单数仓", updated: "11:28", status: "fresh" })],
+      tab: [row("t1", { title: "概览", key: "overview", count: 0, enabled: "enabled" })],
+      option: [row("o1", { type: "状态", key: "doing", title: "进行中" })],
+      parameter: [row("p1", { title: "区域", key: "region", value: "华东", required: "required" })],
+      cycle: [row("c1", { completed: 34, total: 52, overdue: 5, unstarted: 8 })],
+      query: [row("q1", { time: 842, rows: 1280, cached: "realtime", bytes: 1843200 })],
+    };
+    const cases: Array<{ block: ExperienceBlockInstance; extra?: Record<string, unknown>; desktop: string; phone: string }> = [
+      { block: { id: "h1", type: "WorkItemCommandHeader", props: { surface: "plain" }, binding: { entityRef: "work", titleFieldRef: "title", statusFieldRef: "status", priorityFieldRef: "priority", assigneeFieldRef: "assignee", targets: ["detail"] } }, desktop: "work-item-command-header", phone: "phone-work-item-command-header" },
+      { block: { id: "h2", type: "DocumentCommandHeader", props: { surface: "plain" }, binding: { entityRef: "document", titleFieldRef: "title", stateFieldRef: "state", permissionFieldRef: "permission", revisionFieldRef: "revision", targets: ["editor"] } }, desktop: "document-command-header", phone: "phone-document-command-header" },
+      { block: { id: "h3", type: "EnvironmentStatusStrip", props: { surface: "plain" }, binding: { entityRef: "environment", nameFieldRef: "name", statusFieldRef: "status" } }, desktop: "environment-status-strip", phone: "phone-environment-status-strip" },
+      { block: { id: "h4", type: "DataFreshnessIndicator", props: { surface: "plain" }, binding: { entityRef: "freshness", sourceFieldRef: "source", updatedAtFieldRef: "updated", statusFieldRef: "status", targets: ["dashboard"] } }, desktop: "data-freshness-indicator", phone: "phone-data-freshness-indicator" },
+      { block: { id: "h5", type: "WorkItemContextSummary", props: { surface: "plain" }, binding: { entityRef: "work", titleFieldRef: "title", fieldRefs: ["project", "cycle", "due", "labels"] } }, desktop: "work-item-context-summary", phone: "phone-work-item-context-summary" },
+      { block: { id: "h6", type: "DocumentContextSummary", props: { surface: "plain" }, binding: { entityRef: "document", titleFieldRef: "title", fieldRefs: ["collection", "owner", "visibility", "updated"] } }, desktop: "document-context-summary", phone: "phone-document-context-summary" },
+      { block: { id: "h7", type: "WorkItemDetailTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["detail"] } }, desktop: "work-item-detail-tabs", phone: "phone-work-item-detail-tabs" },
+      { block: { id: "h8", type: "QueryModeTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["query"] } }, desktop: "query-mode-tabs", phone: "phone-query-mode-tabs" },
+      { block: { id: "h9", type: "WorkItemFilterBar", props: { surface: "plain" }, binding: { entityRef: "option", typeFieldRef: "type", keyFieldRef: "key", titleFieldRef: "title", targets: ["list"] } }, desktop: "work-item-filter-bar", phone: "phone-work-item-filter-bar" },
+      { block: { id: "h10", type: "DashboardParameterBar", props: { surface: "plain" }, binding: { entityRef: "parameter", titleFieldRef: "title", keyFieldRef: "key", valueFieldRef: "value", requiredFieldRef: "required", targets: ["dashboard"] } }, desktop: "dashboard-parameter-bar", phone: "phone-dashboard-parameter-bar" },
+      { block: { id: "h11", type: "CycleHealthMetrics", props: { surface: "plain" }, binding: { entityRef: "cycle", completedFieldRef: "completed", totalFieldRef: "total", overdueFieldRef: "overdue", unstartedFieldRef: "unstarted" } }, desktop: "cycle-health-metrics", phone: "phone-cycle-health-metrics" },
+      { block: { id: "h12", type: "QueryExecutionMetrics", props: { surface: "plain" }, binding: { entityRef: "query", timeFieldRef: "time", rowsFieldRef: "rows", cachedFieldRef: "cached", bytesFieldRef: "bytes" } }, desktop: "query-execution-metrics", phone: "phone-query-execution-metrics" },
+      { block: { id: "h13", type: "BulkSelectionBar", props: { surface: "plain" }, binding: { entityRef: "work", targets: ["list"] } }, extra: { selection: { rowIds: { work: ["w1"] } } }, desktop: "bulk-selection-bar", phone: "phone-bulk-selection-bar" },
+      { block: { id: "h14", type: "DraftPublishBar", props: { surface: "plain" }, binding: { entityRef: "document", titleFieldRef: "title", stateFieldRef: "state", dirtyFieldRef: "dirty", canPublishFieldRef: "permission", locationFieldRef: "location", targets: ["editor"] } }, desktop: "draft-publish-bar", phone: "phone-draft-publish-bar" },
+    ];
+    for (const testCase of cases) {
+      const props = { block: testCase.block, entityRows, ...(testCase.extra ?? {}) };
+      expect(renderToStaticMarkup(<ExperienceBlockBoundary {...props} />)).toContain(`data-testid="${testCase.desktop}"`);
+      expect(renderToStaticMarkup(<PhoneExperienceBlock {...props} />)).toContain(`data-testid="${testCase.phone}"`);
+    }
+  });
+
+  it("目录、协作与查询工作区的 14 个新区块都有独立双端渲染器", () => {
+    const entityRows = {
+      question: [row("q1", { title: "履约趋势", saved: "saved", dirty: "dirty", bookmarked: "bookmarked", status: "completed", runnable: "runnable", time: 842, cached: "realtime" })],
+      entity: [row("e1", { title: "订单服务", kind: "Component", type: "service", starred: "starred", owner: "数据平台", lifecycle: "production", system: "交易平台", domain: "零售" })],
+      collaborator: [row("c1", { name: "周宁", present: "present", editing: "editing" }), row("c2", { name: "陈晓", present: "present", editing: "viewing" })],
+      source: [row("s1", { database: "经营数仓", schema: "commerce", source: "store_daily", type: "模型" })],
+      tab: [row("t1", { title: "查询", key: "query", count: 0, enabled: "enabled" }), row("t2", { title: "字段", key: "columns", count: 18, enabled: "enabled" })],
+      option: [row("o1", { facet: "种类", key: "component", title: "Component" }), row("o2", { facet: "生命周期", key: "production", title: "生产" })],
+      clause: [row("f1", { field: "区域", operator: "=", value: "华东", enabled: "enabled" })],
+      insight: [row("i1", { views: 1842, contributors: 6, created: "2026-07-18", updated: "2026-08-09" })],
+      quality: [row("m1", { total: 24, documented: 19, typed: 21 })],
+      document: [row("d1", { title: "巡检手册", visibility: "public", domain: "docs.example.com", permission: "share", link: "https://docs.example.com/inspection" })],
+    };
+    const cases: Array<{ block: ExperienceBlockInstance; desktop: string; phone: string }> = [
+      { block: { id: "i1", type: "QuestionCommandHeader", props: { surface: "plain" }, binding: { entityRef: "question", titleFieldRef: "title", savedFieldRef: "saved", dirtyFieldRef: "dirty", bookmarkFieldRef: "bookmarked", targets: ["query"] } }, desktop: "question-command-header", phone: "phone-question-command-header" },
+      { block: { id: "i2", type: "CatalogEntityCommandHeader", props: { surface: "plain" }, binding: { entityRef: "entity", titleFieldRef: "title", kindFieldRef: "kind", typeFieldRef: "type", starredFieldRef: "starred", targets: ["detail"] } }, desktop: "catalog-entity-command-header", phone: "phone-catalog-entity-command-header" },
+      { block: { id: "i3", type: "CollaboratorPresenceStrip", props: { surface: "plain" }, binding: { entityRef: "collaborator", nameFieldRef: "name", presentFieldRef: "present", editingFieldRef: "editing" } }, desktop: "collaborator-presence-strip", phone: "phone-collaborator-presence-strip" },
+      { block: { id: "i4", type: "QueryRunStatusStrip", props: { surface: "plain" }, binding: { entityRef: "question", statusFieldRef: "status", timeFieldRef: "time", cachedFieldRef: "cached", targets: ["query"] } }, desktop: "query-run-status-strip", phone: "phone-query-run-status-strip" },
+      { block: { id: "i5", type: "EntityOwnershipSummary", props: { surface: "plain" }, binding: { entityRef: "entity", titleFieldRef: "title", ownerFieldRef: "owner", lifecycleFieldRef: "lifecycle", systemFieldRef: "system", domainFieldRef: "domain" } }, desktop: "entity-ownership-summary", phone: "phone-entity-ownership-summary" },
+      { block: { id: "i6", type: "QueryDataSourceSummary", props: { surface: "plain" }, binding: { entityRef: "source", databaseFieldRef: "database", schemaFieldRef: "schema", sourceFieldRef: "source", typeFieldRef: "type" } }, desktop: "query-data-source-summary", phone: "phone-query-data-source-summary" },
+      { block: { id: "i7", type: "DatasetEditorTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["editor"] } }, desktop: "dataset-editor-tabs", phone: "phone-dataset-editor-tabs" },
+      { block: { id: "i8", type: "DocumentHistoryTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["history"] } }, desktop: "document-history-tabs", phone: "phone-document-history-tabs" },
+      { block: { id: "i9", type: "CatalogEntityFilterBar", props: { surface: "plain" }, binding: { entityRef: "option", facetFieldRef: "facet", keyFieldRef: "key", titleFieldRef: "title", targets: ["catalog"] } }, desktop: "catalog-entity-filter-bar", phone: "phone-catalog-entity-filter-bar" },
+      { block: { id: "i10", type: "QueryClauseFilterBar", props: { surface: "plain" }, binding: { entityRef: "clause", fieldFieldRef: "field", operatorFieldRef: "operator", valueFieldRef: "value", enabledFieldRef: "enabled", targets: ["query"] } }, desktop: "query-clause-filter-bar", phone: "phone-query-clause-filter-bar" },
+      { block: { id: "i11", type: "DocumentInsightMetrics", props: { surface: "plain" }, binding: { entityRef: "insight", viewsFieldRef: "views", contributorsFieldRef: "contributors", createdAtFieldRef: "created", updatedAtFieldRef: "updated" } }, desktop: "document-insight-metrics", phone: "phone-document-insight-metrics" },
+      { block: { id: "i12", type: "MetadataQualityMetrics", props: { surface: "plain" }, binding: { entityRef: "quality", totalFieldRef: "total", documentedFieldRef: "documented", typedFieldRef: "typed" } }, desktop: "metadata-quality-metrics", phone: "phone-metadata-quality-metrics" },
+      { block: { id: "i13", type: "QuestionExecutionBar", props: { surface: "plain" }, binding: { entityRef: "question", statusFieldRef: "status", runnableFieldRef: "runnable", dirtyFieldRef: "dirty", targets: ["query"] } }, desktop: "question-execution-bar", phone: "phone-question-execution-bar" },
+      { block: { id: "i14", type: "DocumentShareBar", props: { surface: "plain" }, binding: { entityRef: "document", titleFieldRef: "title", visibilityFieldRef: "visibility", domainFieldRef: "domain", permissionFieldRef: "permission", linkFieldRef: "link", targets: ["document"] } }, desktop: "document-share-bar", phone: "phone-document-share-bar" },
+    ];
+    for (const testCase of cases) {
+      const props = { block: testCase.block, entityRows };
+      expect(renderToStaticMarkup(<ExperienceBlockBoundary {...props} />)).toContain(`data-testid="${testCase.desktop}"`);
+      expect(renderToStaticMarkup(<PhoneExperienceBlock {...props} />)).toContain(`data-testid="${testCase.phone}"`);
+    }
+  });
+
+  it("周期、事故与运行可靠性批次的 14 个区块都有独立双端渲染器", () => {
+    const entityRows = {
+      cycle: [row("c1", { title: "八月周期", status: "active", editable: "editable", owner: "周宁", members: "陈晓、林静", dates: "08-01 至 08-18", progress: "34 / 52" })],
+      group: [row("g1", { title: "支付规则组", status: "active", editable: "editable", interval: "1 分钟", namespace: "production", rules: "12 条", firing: "3 个", datasource: "Prometheus" })],
+      ownership: [row("o1", { assignee: "陈晓", source: "ownership_rule", suggested: "支付组" })],
+      schedule: [row("s1", { frequency: "30 分钟", next: "2026-08-09 12:00", timezone: "Asia/Shanghai", status: "active" })],
+      tab: [row("t1", { title: "设置", key: "setup", count: 0, enabled: "enabled" }), row("t2", { title: "Webhook", key: "webhooks", count: 1, enabled: "disabled" })],
+      option: [row("f1", { type: "状态", key: "active", title: "进行中" }), row("f2", { type: "开始时间", key: "august", title: "八月" })],
+      reliability: [row("r1", { success: 47, failed: 3, records: 18420, freshness: "8 分钟" })],
+      evaluation: [row("e1", { active: 38, paused: 4, errors: 2, duration: 128 })],
+      eventType: [row("v1", { title: "专家义诊", hidden: "hidden", dirty: "dirty", valid: "valid" })],
+    };
+    const cases: Array<{ block: ExperienceBlockInstance; desktop: string; phone: string }> = [
+      { block: { id: "j1", type: "CycleCommandHeader", props: { surface: "plain" }, binding: { entityRef: "cycle", titleFieldRef: "title", statusFieldRef: "status", editableFieldRef: "editable", targets: ["cycle"] } }, desktop: "cycle-command-header", phone: "phone-cycle-command-header" },
+      { block: { id: "j2", type: "AlertGroupCommandHeader", props: { surface: "plain" }, binding: { entityRef: "group", titleFieldRef: "title", statusFieldRef: "status", editableFieldRef: "editable", intervalFieldRef: "interval", targets: ["rules"] } }, desktop: "alert-group-command-header", phone: "phone-alert-group-command-header" },
+      { block: { id: "j3", type: "IncidentOwnershipStrip", props: { surface: "plain" }, binding: { entityRef: "ownership", assigneeFieldRef: "assignee", sourceFieldRef: "source", suggestedFieldRef: "suggested", targets: ["issue"] } }, desktop: "incident-ownership-strip", phone: "phone-incident-ownership-strip" },
+      { block: { id: "j4", type: "SyncScheduleStrip", props: { surface: "plain" }, binding: { entityRef: "schedule", frequencyFieldRef: "frequency", nextRunFieldRef: "next", timezoneFieldRef: "timezone", statusFieldRef: "status", targets: ["connection"] } }, desktop: "sync-schedule-strip", phone: "phone-sync-schedule-strip" },
+      { block: { id: "j5", type: "CycleContextSummary", props: { surface: "plain" }, binding: { entityRef: "cycle", titleFieldRef: "title", fieldRefs: ["owner", "members", "dates", "progress"] } }, desktop: "cycle-context-summary", phone: "phone-cycle-context-summary" },
+      { block: { id: "j6", type: "AlertGroupContextSummary", props: { surface: "plain" }, binding: { entityRef: "group", titleFieldRef: "title", fieldRefs: ["namespace", "rules", "firing", "datasource"] } }, desktop: "alert-group-context-summary", phone: "phone-alert-group-context-summary" },
+      { block: { id: "j7", type: "EventTypeEditorTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["event"] } }, desktop: "event-type-editor-tabs", phone: "phone-event-type-editor-tabs" },
+      { block: { id: "j8", type: "IncidentEvidenceTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["evidence"] } }, desktop: "incident-evidence-tabs", phone: "phone-incident-evidence-tabs" },
+      { block: { id: "j9", type: "CycleFilterBar", props: { surface: "plain" }, binding: { entityRef: "option", typeFieldRef: "type", keyFieldRef: "key", titleFieldRef: "title", targets: ["cycles"] } }, desktop: "cycle-filter-bar", phone: "phone-cycle-filter-bar" },
+      { block: { id: "j10", type: "AlertRuleFilterBar", props: { surface: "plain", defaultQuery: "state:firing" }, binding: { targets: ["rules"] } }, desktop: "alert-rule-filter-bar", phone: "phone-alert-rule-filter-bar" },
+      { block: { id: "j11", type: "SyncReliabilityMetrics", props: { surface: "plain" }, binding: { entityRef: "reliability", successFieldRef: "success", failedFieldRef: "failed", recordsFieldRef: "records", freshnessFieldRef: "freshness" } }, desktop: "sync-reliability-metrics", phone: "phone-sync-reliability-metrics" },
+      { block: { id: "j12", type: "RuleEvaluationMetrics", props: { surface: "plain" }, binding: { entityRef: "evaluation", activeFieldRef: "active", pausedFieldRef: "paused", errorFieldRef: "errors", durationFieldRef: "duration" } }, desktop: "rule-evaluation-metrics", phone: "phone-rule-evaluation-metrics" },
+      { block: { id: "j13", type: "CycleLifecycleBar", props: { surface: "plain" }, binding: { entityRef: "cycle", titleFieldRef: "title", statusFieldRef: "status", editableFieldRef: "editable", targets: ["cycle"] } }, desktop: "cycle-lifecycle-bar", phone: "phone-cycle-lifecycle-bar" },
+      { block: { id: "j14", type: "EventTypePublishBar", props: { surface: "plain" }, binding: { entityRef: "eventType", titleFieldRef: "title", hiddenFieldRef: "hidden", dirtyFieldRef: "dirty", validFieldRef: "valid", targets: ["event"] } }, desktop: "event-type-publish-bar", phone: "phone-event-type-publish-bar" },
+    ];
+    for (const testCase of cases) {
+      const props = { block: testCase.block, entityRows };
+      expect(renderToStaticMarkup(<ExperienceBlockBoundary {...props} />)).toContain(`data-testid="${testCase.desktop}"`);
+      expect(renderToStaticMarkup(<PhoneExperienceBlock {...props} />)).toContain(`data-testid="${testCase.phone}"`);
+    }
+  });
+
+  it("客服会话与身份权限批次的 14 个区块都有独立双端渲染器", () => {
+    const entityRows = {
+      conversation: [row("c1", { name: "张女士", status: "open", verified: "verified", inbox: "微信", assignee: "陈晓", team: "售后组", priority: "urgent", channel: "wechat", phone: "138****", sla: "12 分钟" })],
+      user: [row("u1", { username: "wang.xiao", enabled: "enabled", impersonate: "allowed", email: "x@example.com", provider: "ldap", created: "2026-06-18", verified: "verified", actions: "更新密码", sessions: 3, manageable: "allowed" })],
+      realm: [row("r1", { name: "whybuddy", enabled: "enabled", brute: "enabled", ssl: "external" })],
+      tab: [row("t1", { title: "详情", key: "details", count: 0, enabled: "enabled" }), row("t2", { title: "会话", key: "sessions", count: 3, enabled: "enabled" })],
+      option: [row("o1", { type: "状态", key: "open", title: "待处理" }), row("o2", { type: "优先级", key: "urgent", title: "紧急" })],
+      sla: [row("s1", { first: "4 分钟", resolution: "1 小时", breaches: 7, count: 286 })],
+      sessions: [row("m1", { active: 18, offline: 4, clients: 6, risk: 2 })],
+    };
+    const cases: Array<{ block: ExperienceBlockInstance; desktop: string; phone: string }> = [
+      { block: { id: "k1", type: "ConversationCommandHeader", props: { surface: "plain" }, binding: { entityRef: "conversation", titleFieldRef: "name", statusFieldRef: "status", verifiedFieldRef: "verified", inboxFieldRef: "inbox", targets: ["conversation"] } }, desktop: "conversation-command-header", phone: "phone-conversation-command-header" },
+      { block: { id: "k2", type: "UserCommandHeader", props: { surface: "plain" }, binding: { entityRef: "user", usernameFieldRef: "username", enabledFieldRef: "enabled", impersonateFieldRef: "impersonate", targets: ["user"] } }, desktop: "user-command-header", phone: "phone-user-command-header" },
+      { block: { id: "k3", type: "ConversationAssignmentStrip", props: { surface: "plain" }, binding: { entityRef: "conversation", assigneeFieldRef: "assignee", teamFieldRef: "team", priorityFieldRef: "priority", targets: ["conversation"] } }, desktop: "conversation-assignment-strip", phone: "phone-conversation-assignment-strip" },
+      { block: { id: "k4", type: "RealmStatusStrip", props: { surface: "plain" }, binding: { entityRef: "realm", nameFieldRef: "name", enabledFieldRef: "enabled", bruteForceFieldRef: "brute", sslFieldRef: "ssl", targets: ["realm"] } }, desktop: "realm-status-strip", phone: "phone-realm-status-strip" },
+      { block: { id: "k5", type: "ConversationContextSummary", props: { surface: "plain" }, binding: { entityRef: "conversation", titleFieldRef: "name", fieldRefs: ["inbox", "channel", "phone", "sla"] } }, desktop: "conversation-context-summary", phone: "phone-conversation-context-summary" },
+      { block: { id: "k6", type: "UserIdentitySummary", props: { surface: "plain" }, binding: { entityRef: "user", titleFieldRef: "username", fieldRefs: ["email", "provider", "created", "verified", "actions"] } }, desktop: "user-identity-summary", phone: "phone-user-identity-summary" },
+      { block: { id: "k7", type: "ConversationDetailTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["conversation"] } }, desktop: "conversation-detail-tabs", phone: "phone-conversation-detail-tabs" },
+      { block: { id: "k8", type: "UserSecurityTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["user"] } }, desktop: "user-security-tabs", phone: "phone-user-security-tabs" },
+      { block: { id: "k9", type: "ConversationInboxFilter", props: { surface: "plain" }, binding: { entityRef: "option", typeFieldRef: "type", keyFieldRef: "key", titleFieldRef: "title", targets: ["list"] } }, desktop: "conversation-inbox-filter", phone: "phone-conversation-inbox-filter" },
+      { block: { id: "k10", type: "UserDirectoryFilter", props: { surface: "plain" }, binding: { targets: ["users"] } }, desktop: "user-directory-filter", phone: "phone-user-directory-filter" },
+      { block: { id: "k11", type: "ConversationSlaMetrics", props: { surface: "plain" }, binding: { entityRef: "sla", firstResponseFieldRef: "first", resolutionFieldRef: "resolution", breachFieldRef: "breaches", countFieldRef: "count" } }, desktop: "conversation-sla-metrics", phone: "phone-conversation-sla-metrics" },
+      { block: { id: "k12", type: "UserSessionMetrics", props: { surface: "plain" }, binding: { entityRef: "sessions", activeFieldRef: "active", offlineFieldRef: "offline", clientFieldRef: "clients", riskFieldRef: "risk" } }, desktop: "user-session-metrics", phone: "phone-user-session-metrics" },
+      { block: { id: "k13", type: "ConversationReplyBar", props: { surface: "plain" }, binding: { entityRef: "conversation", statusFieldRef: "status", channelFieldRef: "channel", targets: ["messages"] } }, desktop: "conversation-reply-bar", phone: "phone-conversation-reply-bar" },
+      { block: { id: "k14", type: "UserAccessBar", props: { surface: "plain" }, binding: { entityRef: "user", usernameFieldRef: "username", enabledFieldRef: "enabled", sessionsFieldRef: "sessions", manageableFieldRef: "manageable", targets: ["user"] } }, desktop: "user-access-bar", phone: "phone-user-access-bar" },
+    ];
+    for (const testCase of cases) {
+      const props = { block: testCase.block, entityRows };
+      expect(renderToStaticMarkup(<ExperienceBlockBoundary {...props} />)).toContain(`data-testid="${testCase.desktop}"`);
+      expect(renderToStaticMarkup(<PhoneExperienceBlock {...props} />)).toContain(`data-testid="${testCase.phone}"`);
+    }
+  });
 });
