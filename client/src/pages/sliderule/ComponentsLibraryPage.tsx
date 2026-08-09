@@ -1057,6 +1057,187 @@ const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
   userSessionMetric: [
     { id: "session-metric-1", values: { sessionActive: 18, sessionOffline: 4, sessionClients: 6, sessionRisk: 2 }, createdAt: "2026-08-09T11:45:00.000Z" },
   ],
+  analysisWindow: [
+    { id: "window-1", values: { windowTime: "08-05", observedValue: 86, expectedLow: 74, expectedHigh: 96, anomalyState: "normal", cohortName: "六月", cohortPeriod: "第 1 周", retentionRate: 82, uptimeStatus: "success", latencyP50: 82, latencyP95: 146, latencyP99: 238 }, createdAt: "2026-08-05T09:00:00.000Z" },
+    { id: "window-2", values: { windowTime: "08-06", observedValue: 91, expectedLow: 76, expectedHigh: 98, anomalyState: "normal", cohortName: "六月", cohortPeriod: "第 2 周", retentionRate: 68, uptimeStatus: "success", latencyP50: 88, latencyP95: 154, latencyP99: 246 }, createdAt: "2026-08-06T09:00:00.000Z" },
+    { id: "window-3", values: { windowTime: "08-07", observedValue: 128, expectedLow: 78, expectedHigh: 101, anomalyState: "anomaly", cohortName: "七月", cohortPeriod: "第 1 周", retentionRate: 77, uptimeStatus: "failed", latencyP50: 96, latencyP95: 186, latencyP99: 318 }, createdAt: "2026-08-07T09:00:00.000Z" },
+    { id: "window-4", values: { windowTime: "08-08", observedValue: null, expectedLow: 79, expectedHigh: 103, anomalyState: "normal", cohortName: "七月", cohortPeriod: "第 2 周", retentionRate: 61, uptimeStatus: "unknown", latencyP50: null, latencyP95: null, latencyP99: null }, createdAt: "2026-08-08T09:00:00.000Z" },
+    { id: "window-5", values: { windowTime: "08-09", observedValue: 94, expectedLow: 80, expectedHigh: 104, anomalyState: "normal", cohortName: "八月", cohortPeriod: "第 1 周", retentionRate: 73, uptimeStatus: "running", latencyP50: 90, latencyP95: 162, latencyP99: 255 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  operationsTab: [
+    { id: "ops-overview", values: { operationsTabTitle: "概览", operationsTabKey: "overview", operationsTabCount: 0, operationsTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "ops-streams", values: { operationsTabTitle: "数据流", operationsTabKey: "streams", operationsTabCount: 18, operationsTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "ops-jobs", values: { operationsTabTitle: "作业", operationsTabKey: "jobs", operationsTabCount: 4, operationsTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "ops-replay", values: { operationsTabTitle: "回放", operationsTabKey: "replay", operationsTabCount: 0, operationsTabEnabled: "disabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  connectionFleet: [
+    ...["healthy", "healthy", "healthy", "running", "queued", "failed", "paused", "notSynced"].map((status, index) => ({ id: `fleet-${index}`, values: { fleetStatus: status }, createdAt: "2026-08-09T09:00:00.000Z" })),
+  ],
+  issueImpact: [
+    { id: "impact-1", values: { impactEvents: 1284, impactUsers: 326, impactFirstSeen: "08-01 09:42", impactLastSeen: "刚刚" }, createdAt: "2026-08-09T11:56:00.000Z" },
+  ],
+  serviceContext: [
+    { id: "service-order", values: { serviceTitle: "订单服务", serviceOwner: "交易平台组", serviceSystem: "零售中台", serviceLifecycle: "production", querySource: "经营数据仓", queryFilters: "华东 · 近 30 天", queryCache: "实时" }, createdAt: "2026-08-09T11:45:00.000Z" },
+  ],
+  releaseHealth: [
+    { id: "release-20260810", values: { releaseVersion: "2026.08.10", releaseCrashFree: 99.72, releaseEnvironment: "production", releaseAdoption: 64 }, createdAt: "2026-08-10T00:20:00.000Z" },
+  ],
+  dashboardContext: [
+    { id: "dashboard-sales", values: { dashboardTitle: "经营数据总览", dashboardStarred: "starred", dashboardSubscribed: "subscribed", dashboardEditable: "editable" }, createdAt: "2026-08-10T00:20:00.000Z" },
+  ],
+  deploymentSeries: [
+    { id: "deploy-run-1", values: { deployTime: "08-06", queueSeconds: 8, pullSeconds: 22, startSeconds: 15, readySeconds: 46 }, createdAt: "2026-08-06T10:00:00.000Z" },
+    { id: "deploy-run-2", values: { deployTime: "08-07", queueSeconds: 11, pullSeconds: 28, startSeconds: 17, readySeconds: 52 }, createdAt: "2026-08-07T10:00:00.000Z" },
+    { id: "deploy-run-3", values: { deployTime: "08-08", queueSeconds: 6, pullSeconds: null, startSeconds: null, readySeconds: null }, createdAt: "2026-08-08T10:00:00.000Z" },
+    { id: "deploy-run-4", values: { deployTime: "08-09", queueSeconds: 9, pullSeconds: 19, startSeconds: 13, readySeconds: 41 }, createdAt: "2026-08-09T10:00:00.000Z" },
+  ],
+  releaseSeries: [
+    { id: "release-point-1", values: { releaseTime: "08-06", releaseAdoptionTrend: 18, releaseHealthTrend: 99.8 }, createdAt: "2026-08-06T10:00:00.000Z" },
+    { id: "release-point-2", values: { releaseTime: "08-07", releaseAdoptionTrend: 37, releaseHealthTrend: 99.6 }, createdAt: "2026-08-07T10:00:00.000Z" },
+    { id: "release-point-3", values: { releaseTime: "08-08", releaseAdoptionTrend: 64, releaseHealthTrend: 99.3 }, createdAt: "2026-08-08T10:00:00.000Z" },
+    { id: "release-point-4", values: { releaseTime: "08-09", releaseAdoptionTrend: 86, releaseHealthTrend: 99.5 }, createdAt: "2026-08-09T10:00:00.000Z" },
+  ],
+  deploymentTab: [
+    { id: "deployment-summary", values: { deploymentTabTitle: "摘要", deploymentTabKey: "summary", deploymentTabCount: 0, deploymentTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "deployment-pods", values: { deploymentTabTitle: "Pod", deploymentTabKey: "pods", deploymentTabCount: 6, deploymentTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "deployment-events", values: { deploymentTabTitle: "事件", deploymentTabKey: "events", deploymentTabCount: 3, deploymentTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "deployment-logs", values: { deploymentTabTitle: "日志", deploymentTabKey: "logs", deploymentTabCount: 0, deploymentTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  releaseTab: [
+    { id: "release-overview", values: { releaseTabTitle: "概览", releaseTabKey: "overview", releaseTabCount: 0, releaseTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "release-errors", values: { releaseTabTitle: "错误", releaseTabKey: "errors", releaseTabCount: 14, releaseTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "release-users", values: { releaseTabTitle: "用户", releaseTabKey: "users", releaseTabCount: 326, releaseTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  deploymentWorkload: [
+    { id: "deployment-order-api", values: { workloadTitle: "order-api", workloadStatus: "healthy", workloadEditable: "editable", desiredReplicas: 6, readyReplicas: 5, availableReplicas: 5, unavailableReplicas: 1, workloadNamespace: "commerce", workloadCluster: "prod-cn", workloadImage: "order-api:2026.08.10", workloadStrategy: "RollingUpdate", workloadUpdated: "2 分钟前" }, createdAt: "2026-08-10T00:22:00.000Z" },
+  ],
+  clusterHealth: [
+    { id: "cluster-prod", values: { clusterName: "prod-cn", clusterStatus: "healthy", clusterNodes: 12, clusterVersion: "v1.31" }, createdAt: "2026-08-10T00:22:00.000Z" },
+    { id: "cluster-staging", values: { clusterName: "staging", clusterStatus: "warning", clusterNodes: 4, clusterVersion: "v1.30" }, createdAt: "2026-08-10T00:22:00.000Z" },
+  ],
+  releaseState: [
+    { id: "release-main", values: { releaseTitle: "2026.08.10", releaseProject: "whybuddy-web", releaseEnvironment: "production", releaseCommit: "77f469a", releaseAuthor: "发布机器人", releaseStatus: "active", releaseAdoption: 86, releaseHealth: 99.5, releaseEvents: 1284, releaseUsers: 326 }, createdAt: "2026-08-10T00:22:00.000Z" },
+    { id: "release-staging", values: { releaseTitle: "2026.08.10-rc.2", releaseProject: "whybuddy-web", releaseEnvironment: "staging", releaseCommit: "a42de19", releaseAuthor: "陈晓", releaseStatus: "healthy", releaseAdoption: 100, releaseHealth: 99.9, releaseEvents: 18, releaseUsers: 9 }, createdAt: "2026-08-09T20:22:00.000Z" },
+  ],
+  featureFlag: [
+    { id: "flag-new-checkout", values: { flagTitle: "new-checkout-flow", flagEnabled: "enabled", flagRollout: 25, flagEditable: "editable" }, createdAt: "2026-08-10T00:22:00.000Z" },
+  ],
+  runtimeFilterOption: [
+    { id: "runtime-cluster", values: { runtimeFacet: "集群", runtimeKey: "prod-cn", runtimeTitle: "prod-cn" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "runtime-namespace", values: { runtimeFacet: "命名空间", runtimeKey: "commerce", runtimeTitle: "commerce" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "runtime-kind", values: { runtimeFacet: "资源类型", runtimeKey: "deployment", runtimeTitle: "Deployment" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "release-env-prod", values: { runtimeFacet: "环境", runtimeKey: "production", runtimeTitle: "production" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "release-health-good", values: { runtimeFacet: "健康状态", runtimeKey: "healthy", runtimeTitle: "健康" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  flowSnapshot: [
+    ...[["08-06", "待处理", 18], ["08-06", "进行中", 9], ["08-06", "已完成", 24], ["08-07", "待处理", 16], ["08-07", "进行中", 11], ["08-07", "已完成", 29], ["08-08", "待处理", 14], ["08-08", "进行中", 8], ["08-08", "已完成", 36], ["08-09", "待处理", 12], ["08-09", "进行中", 7], ["08-09", "已完成", 43]].map(([time, state, count], index) => ({ id: `flow-${index}`, values: { flowTime: time, flowState: state, flowCount: count }, createdAt: "2026-08-09T09:00:00.000Z" })),
+  ],
+  bookingDemand: [
+    { id: "demand-1", values: { demandTime: "周一", availableSlots: 42, bookedSlots: 31, canceledSlots: 3 }, createdAt: "2026-08-04T09:00:00.000Z" },
+    { id: "demand-2", values: { demandTime: "周二", availableSlots: 38, bookedSlots: 34, canceledSlots: 2 }, createdAt: "2026-08-05T09:00:00.000Z" },
+    { id: "demand-3", values: { demandTime: "周三", availableSlots: 46, bookedSlots: 37, canceledSlots: 4 }, createdAt: "2026-08-06T09:00:00.000Z" },
+    { id: "demand-4", values: { demandTime: "周四", availableSlots: 40, bookedSlots: 28, canceledSlots: 1 }, createdAt: "2026-08-07T09:00:00.000Z" },
+  ],
+  activityTab: [
+    { id: "activity-detail", values: { activityTabTitle: "详情", activityTabKey: "detail", activityTabCount: 0, activityTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "activity-child", values: { activityTabTitle: "子项", activityTabKey: "children", activityTabCount: 4, activityTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "activity-log", values: { activityTabTitle: "活动", activityTabKey: "activity", activityTabCount: 12, activityTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  bookingAuditTab: [
+    { id: "audit-detail", values: { auditTabTitle: "详情", auditTabKey: "detail", auditTabCount: 0, auditTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "audit-attendee", values: { auditTabTitle: "参与人", auditTabKey: "attendees", auditTabCount: 3, auditTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "audit-payment", values: { auditTabTitle: "付款", auditTabKey: "payment", auditTabCount: 1, auditTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  throughputMetric: [
+    { id: "throughput-1", values: { throughputCompleted: 43, throughputEntered: 51, throughputWip: 7, throughputBlocked: 2 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  utilizationMetric: [
+    { id: "utilization-1", values: { utilizationAvailable: 2400, utilizationBooked: 1870, utilizationCanceled: 14, utilizationNoShow: 6 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  cycleRisk: [
+    { id: "cycle-risk-1", values: { riskTitle: "八月交付周期", riskRemaining: 6, riskBlocked: 2, riskOverdue: 1 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  calendarConnection: [
+    { id: "calendar-google", values: { calendarAccount: "ops@example.com", calendarStatus: "synced", calendarProvider: "Google", calendarSyncedAt: "2 分钟前" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "calendar-outlook", values: { calendarAccount: "sales@example.com", calendarStatus: "failed", calendarProvider: "Outlook", calendarSyncedAt: "1 小时前" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  movableWorkItem: [
+    { id: "move-item-1", values: { moveTitle: "完善结算错误提示", moveGroup: "当前周期" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "move-group-2", values: { moveTitle: "候选", moveGroup: "下个周期" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "move-group-3", values: { moveTitle: "候选", moveGroup: "需求池" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  bookingConflict: [
+    { id: "conflict-1", values: { conflictTitle: "专家门诊", conflictStart: "08-12 10:00", conflictEnd: "08-12 10:30", conflictSeverity: "high" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "conflict-2", values: { conflictTitle: "内部周会", conflictStart: "08-12 10:15", conflictEnd: "08-12 11:00", conflictSeverity: "medium" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  workflowDuration: [
+    { id: "wf-duration-1", values: { workflowTime: "08-06", workflowAverage: 820, workflowP95: 1460, workflowFailedDuration: 2180 }, createdAt: "2026-08-06T09:00:00.000Z" },
+    { id: "wf-duration-2", values: { workflowTime: "08-07", workflowAverage: 760, workflowP95: 1320, workflowFailedDuration: null }, createdAt: "2026-08-07T09:00:00.000Z" },
+    { id: "wf-duration-3", values: { workflowTime: "08-08", workflowAverage: 910, workflowP95: 1710, workflowFailedDuration: 2640 }, createdAt: "2026-08-08T09:00:00.000Z" },
+    { id: "wf-duration-4", values: { workflowTime: "08-09", workflowAverage: 690, workflowP95: 1180, workflowFailedDuration: null }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  workflowTab: [
+    { id: "workflow-summary", values: { workflowTabTitle: "概要", workflowTabKey: "summary", workflowTabCount: 0, workflowTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "workflow-nodes", values: { workflowTabTitle: "节点", workflowTabKey: "nodes", workflowTabCount: 8, workflowTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "workflow-logs", values: { workflowTabTitle: "日志", workflowTabKey: "logs", workflowTabCount: 26, workflowTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  workflowOutcome: [
+    { id: "workflow-outcome-1", values: { outcomeSuccess: 184, outcomeFailed: 7, outcomeRunning: 3, outcomePending: 11 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  workflowDefinition: [
+    { id: "workflow-order", values: { workflowTitle: "订单异常处理", workflowName: "订单异常处理", workflowEnabled: "enabled", workflowVersion: "v12", workflowEditable: "editable", workflowUpdated: "8 分钟前", workflowTrigger: "订单创建", workflowOwner: "交易平台组", workflowMode: "并行", workflowTimeout: "15 分钟" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  workflowFailure: [
+    { id: "execution-failed-1", values: { failureNode: "发送库存通知", failureMessage: "Webhook 返回 502", failureStatus: "failed", failureTime: "08-09 11:42" }, createdAt: "2026-08-09T11:42:00.000Z" },
+    { id: "execution-success-1", values: { failureNode: "写入审计", failureMessage: "完成", failureStatus: "resolved", failureTime: "08-09 11:38" }, createdAt: "2026-08-09T11:38:00.000Z" },
+  ],
+  workflowFilterOption: [
+    { id: "wf-filter-running", values: { workflowFacet: "状态", workflowFilterKey: "started", workflowFilterTitle: "运行中" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "wf-filter-failed", values: { workflowFacet: "状态", workflowFilterKey: "failed", workflowFilterTitle: "失败" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "wf-filter-manual", values: { workflowFacet: "触发器", workflowFilterKey: "manual", workflowFilterTitle: "手动" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  workflowExecution: [
+    { id: "execution-running-1", values: { executionStatus: "started", executionProgress: 62 }, createdAt: "2026-08-09T11:42:00.000Z" },
+  ],
+  realmSecurity: [
+    { id: "realm-security-1", values: { realmSecurityTitle: "whybuddy", realmSecurityName: "whybuddy", realmSecurityEnabled: "enabled", realmManageable: "allowed", realmSsl: "external", realmBruteForce: "enabled", realmSessionTimeout: "30 分钟", realmTokenLifespan: "5 分钟" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  userEventOption: [
+    { id: "event-login", values: { userEventFacet: "事件类型", userEventKey: "LOGIN", userEventTitle: "登录" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "event-client", values: { userEventFacet: "客户端", userEventKey: "whybuddy-web", userEventTitle: "whybuddy-web" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "event-ip", values: { userEventFacet: "IP", userEventKey: "192.168.0.10", userEventTitle: "192.168.0.10" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  credentialState: [
+    { id: "credential-user-1", values: { credentialUsername: "wang.xiao", credentialResettable: "allowed", credentialTemporary: "temporary", credentialUpdated: "2026-08-01" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  observabilityTrend: [
+    { id: "obs-1", values: { obsTime: "08-06", queryAverage: 180, queryP95: 420, queryTimeout: 2, syncRecords: 12400, syncBytes: 840, syncFailed: 18 }, createdAt: "2026-08-06T09:00:00.000Z" },
+    { id: "obs-2", values: { obsTime: "08-07", queryAverage: 165, queryP95: 380, queryTimeout: 1, syncRecords: 14200, syncBytes: 920, syncFailed: 9 }, createdAt: "2026-08-07T09:00:00.000Z" },
+    { id: "obs-3", values: { obsTime: "08-08", queryAverage: 240, queryP95: 610, queryTimeout: 6, syncRecords: 11800, syncBytes: 790, syncFailed: 37 }, createdAt: "2026-08-08T09:00:00.000Z" },
+  ],
+  inspectorTab: [
+    { id: "inspect-data", values: { inspectTitle: "数据", inspectKey: "data", inspectCount: 0, inspectEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "inspect-stats", values: { inspectTitle: "统计", inspectKey: "stats", inspectCount: 8, inspectEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "inspect-error", values: { inspectTitle: "错误", inspectKey: "error", inspectCount: 1, inspectEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  streamTab: [
+    { id: "stream-overview", values: { streamTabTitle: "概览", streamTabKey: "overview", streamTabCount: 0, streamTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "stream-fields", values: { streamTabTitle: "字段", streamTabKey: "fields", streamTabCount: 24, streamTabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  queryMetric: [{ id: "query-metric-1", values: { queryRequests: 1280, queryErrors: 18, queryCacheHits: 842, queryDuration: 186 }, createdAt: "2026-08-09T09:00:00.000Z" }],
+  streamMetric: [{ id: "stream-metric-1", values: { streamLag: 8, streamSyncedAt: "2 分钟前", streamRecords: 18420, streamFailed: 12 }, createdAt: "2026-08-09T09:00:00.000Z" }],
+  datasourceState: [{ id: "datasource-prom", values: { datasourceName: "Prometheus", datasourceStatus: "healthy", datasourceType: "Prometheus", datasourceChecked: "刚刚" }, createdAt: "2026-08-09T09:00:00.000Z" }],
+  connectorState: [{ id: "connector-postgres", values: { connectorName: "Postgres Source", connectorStatus: "upgrading", connectorVersion: "3.2.1", connectorAvailable: "3.3.0" }, createdAt: "2026-08-09T09:00:00.000Z" }],
+  panelState: [{ id: "panel-latency", values: { panelTitle: "接口延迟", panelDatasource: "Mimir", panelEditable: "editable" }, createdAt: "2026-08-09T09:00:00.000Z" }],
+  schemaState: [{ id: "schema-orders", values: { schemaTitle: "订单同步 Schema", schemaStatus: "breaking", schemaRefreshing: "idle", schemaDirty: "dirty", schemaConnection: "Postgres → BigQuery", schemaNamespace: "commerce", schemaSelected: 18, schemaFields: 126, schemaQuery: "select * from orders" }, createdAt: "2026-08-09T09:00:00.000Z" }],
+  exploreState: [{ id: "explore-a", values: { exploreTitle: "订单延迟查询", exploreDatasource: "Mimir", exploreLanguage: "PromQL", exploreRange: "最近 6 小时", exploreStep: "30s", exploreStatus: "idle", exploreQuery: "histogram_quantile(0.95, rate(http_duration_bucket[5m]))" }, createdAt: "2026-08-09T09:00:00.000Z" }],
+  observabilityFilter: [
+    { id: "label-service", values: { obsFacet: "service", obsKey: "checkout", obsTitle: "checkout" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "label-env", values: { obsFacet: "environment", obsKey: "production", obsTitle: "production" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "stream-ns", values: { obsFacet: "命名空间", obsKey: "commerce", obsTitle: "commerce" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  queryError: [{ id: "query-A", values: { queryRef: "A", queryMessage: "context deadline exceeded", queryStatus: "timeout", queryRequest: "POST /api/ds/query" }, createdAt: "2026-08-09T09:00:00.000Z" }],
+  schemaConflict: [{ id: "schema-conflict-1", values: { conflictStream: "orders", conflictField: "customer_id", conflictChange: "breaking", conflictBreaking: "breaking" }, createdAt: "2026-08-09T09:00:00.000Z" }],
   order: [
     { name: "人民路店", amount: 428, status: "done", channel: "线上", at: "2026-08-06",
       contact: "renmin@example.com", detailUrl: "https://example.com/store/1",
@@ -1999,6 +2180,177 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   UserAccessBar: {
     block: { id: "demo-UserAccessBar", type: "UserAccessBar", props: { surface: "plain" }, binding: { entityRef: "identityUser", usernameFieldRef: "identityUsername", enabledFieldRef: "identityEnabled", sessionsFieldRef: "activeSessions", manageableFieldRef: "manageableUser", targets: ["user-detail"] } }, extra: { focus: { identityUser: "user-1" } },
   },
+  TimeSeriesAnomalyChart: {
+    block: { id: "demo-TimeSeriesAnomalyChart", type: "TimeSeriesAnomalyChart", props: { title: "订单量异常" }, binding: { entityRef: "analysisWindow", timeFieldRef: "windowTime", valueFieldRef: "observedValue", lowerFieldRef: "expectedLow", upperFieldRef: "expectedHigh", anomalyFieldRef: "anomalyState" } }, extra: {},
+  },
+  CohortRetentionChart: {
+    block: { id: "demo-CohortRetentionChart", type: "CohortRetentionChart", props: { title: "用户留存队列" }, binding: { entityRef: "analysisWindow", cohortFieldRef: "cohortName", periodFieldRef: "cohortPeriod", rateFieldRef: "retentionRate" } }, extra: {},
+  },
+  UptimeStatusTimeline: {
+    block: { id: "demo-UptimeStatusTimeline", type: "UptimeStatusTimeline", props: { title: "连接可用性" }, binding: { entityRef: "analysisWindow", timeFieldRef: "windowTime", statusFieldRef: "uptimeStatus" } }, extra: {},
+  },
+  PercentileBandChart: {
+    block: { id: "demo-PercentileBandChart", type: "PercentileBandChart", props: { title: "接口延迟分位" }, binding: { entityRef: "analysisWindow", timeFieldRef: "windowTime", p50FieldRef: "latencyP50", p95FieldRef: "latencyP95", p99FieldRef: "latencyP99" } }, extra: {},
+  },
+  ConnectionWorkspaceTabs: {
+    block: { id: "demo-ConnectionWorkspaceTabs", type: "ConnectionWorkspaceTabs", binding: { entityRef: "operationsTab", titleFieldRef: "operationsTabTitle", keyFieldRef: "operationsTabKey", countFieldRef: "operationsTabCount", enabledFieldRef: "operationsTabEnabled", targets: ["connection-detail"] } }, extra: {},
+  },
+  IssueInvestigationTabs: {
+    block: { id: "demo-IssueInvestigationTabs", type: "IssueInvestigationTabs", binding: { entityRef: "operationsTab", titleFieldRef: "operationsTabTitle", keyFieldRef: "operationsTabKey", countFieldRef: "operationsTabCount", enabledFieldRef: "operationsTabEnabled", targets: ["issue-detail"] } }, extra: {},
+  },
+  ConnectionFleetMetrics: {
+    block: { id: "demo-ConnectionFleetMetrics", type: "ConnectionFleetMetrics", props: { title: "连接状态" }, binding: { entityRef: "connectionFleet", statusFieldRef: "fleetStatus", targets: ["connection-list"] } }, extra: {},
+  },
+  IssueImpactMetrics: {
+    block: { id: "demo-IssueImpactMetrics", type: "IssueImpactMetrics", props: { title: "问题影响" }, binding: { entityRef: "issueImpact", eventCountFieldRef: "impactEvents", userCountFieldRef: "impactUsers", firstSeenFieldRef: "impactFirstSeen", lastSeenFieldRef: "impactLastSeen" } }, extra: {},
+  },
+  DashboardQueryContext: {
+    block: { id: "demo-DashboardQueryContext", type: "DashboardQueryContext", binding: { entityRef: "serviceContext", titleFieldRef: "serviceTitle", fieldRefs: ["querySource", "queryFilters", "queryCache"] } }, extra: {},
+  },
+  ServiceOwnershipContext: {
+    block: { id: "demo-ServiceOwnershipContext", type: "ServiceOwnershipContext", binding: { entityRef: "serviceContext", titleFieldRef: "serviceTitle", fieldRefs: ["serviceOwner", "serviceSystem", "serviceLifecycle"] } }, extra: {},
+  },
+  ReleaseHealthStrip: {
+    block: { id: "demo-ReleaseHealthStrip", type: "ReleaseHealthStrip", binding: { entityRef: "releaseHealth", versionFieldRef: "releaseVersion", healthFieldRef: "releaseCrashFree", environmentFieldRef: "releaseEnvironment", adoptionFieldRef: "releaseAdoption" } }, extra: {},
+  },
+  DashboardCommandHeader: {
+    block: { id: "demo-DashboardCommandHeader", type: "DashboardCommandHeader", binding: { entityRef: "dashboardContext", titleFieldRef: "dashboardTitle", starredFieldRef: "dashboardStarred", subscribedFieldRef: "dashboardSubscribed", editableFieldRef: "dashboardEditable", targets: ["dashboard"] } }, extra: { focus: { dashboardContext: "dashboard-sales" } },
+  },
+  DeploymentLatencyChart: {
+    block: { id: "demo-DeploymentLatencyChart", type: "DeploymentLatencyChart", props: { title: "部署阶段耗时" }, binding: { entityRef: "deploymentSeries", timeFieldRef: "deployTime", queueFieldRef: "queueSeconds", pullFieldRef: "pullSeconds", startFieldRef: "startSeconds", readyFieldRef: "readySeconds" } }, extra: {},
+  },
+  ReleaseAdoptionTrendChart: {
+    block: { id: "demo-ReleaseAdoptionTrendChart", type: "ReleaseAdoptionTrendChart", props: { title: "发布采用趋势" }, binding: { entityRef: "releaseSeries", timeFieldRef: "releaseTime", adoptionFieldRef: "releaseAdoptionTrend", healthFieldRef: "releaseHealthTrend" } }, extra: {},
+  },
+  DeploymentDetailTabs: {
+    block: { id: "demo-DeploymentDetailTabs", type: "DeploymentDetailTabs", binding: { entityRef: "deploymentTab", titleFieldRef: "deploymentTabTitle", keyFieldRef: "deploymentTabKey", countFieldRef: "deploymentTabCount", enabledFieldRef: "deploymentTabEnabled", targets: ["deployment-detail"] } }, extra: {},
+  },
+  ReleaseDetailTabs: {
+    block: { id: "demo-ReleaseDetailTabs", type: "ReleaseDetailTabs", binding: { entityRef: "releaseTab", titleFieldRef: "releaseTabTitle", keyFieldRef: "releaseTabKey", countFieldRef: "releaseTabCount", enabledFieldRef: "releaseTabEnabled", targets: ["release-detail"] } }, extra: {},
+  },
+  DeploymentRolloutMetrics: {
+    block: { id: "demo-DeploymentRolloutMetrics", type: "DeploymentRolloutMetrics", props: { title: "部署滚动状态" }, binding: { entityRef: "deploymentWorkload", desiredFieldRef: "desiredReplicas", readyFieldRef: "readyReplicas", availableFieldRef: "availableReplicas", unavailableFieldRef: "unavailableReplicas" } }, extra: {},
+  },
+  ReleaseAdoptionMetrics: {
+    block: { id: "demo-ReleaseAdoptionMetrics", type: "ReleaseAdoptionMetrics", props: { title: "发布采用" }, binding: { entityRef: "releaseState", adoptionFieldRef: "releaseAdoption", healthFieldRef: "releaseHealth", eventCountFieldRef: "releaseEvents", userCountFieldRef: "releaseUsers" } }, extra: {},
+  },
+  ClusterHealthStrip: {
+    block: { id: "demo-ClusterHealthStrip", type: "ClusterHealthStrip", binding: { entityRef: "clusterHealth", nameFieldRef: "clusterName", statusFieldRef: "clusterStatus", nodeCountFieldRef: "clusterNodes", versionFieldRef: "clusterVersion" } }, extra: {},
+  },
+  ReleaseEnvironmentStrip: {
+    block: { id: "demo-ReleaseEnvironmentStrip", type: "ReleaseEnvironmentStrip", binding: { entityRef: "releaseState", versionFieldRef: "releaseTitle", environmentFieldRef: "releaseEnvironment", statusFieldRef: "releaseStatus", targets: ["release-list"] } }, extra: {},
+  },
+  DeploymentContextSummary: {
+    block: { id: "demo-DeploymentContextSummary", type: "DeploymentContextSummary", binding: { entityRef: "deploymentWorkload", titleFieldRef: "workloadTitle", fieldRefs: ["workloadNamespace", "workloadCluster", "workloadImage", "workloadStrategy", "workloadUpdated"] } }, extra: {},
+  },
+  ReleaseContextSummary: {
+    block: { id: "demo-ReleaseContextSummary", type: "ReleaseContextSummary", binding: { entityRef: "releaseState", titleFieldRef: "releaseTitle", fieldRefs: ["releaseProject", "releaseEnvironment", "releaseCommit", "releaseAuthor"] } }, extra: {},
+  },
+  KubernetesResourceFilter: {
+    block: { id: "demo-KubernetesResourceFilter", type: "KubernetesResourceFilter", props: { title: "资源筛选" }, binding: { entityRef: "runtimeFilterOption", facetFieldRef: "runtimeFacet", keyFieldRef: "runtimeKey", titleFieldRef: "runtimeTitle", targets: ["workload-list"] } }, extra: {},
+  },
+  ReleaseEnvironmentFilter: {
+    block: { id: "demo-ReleaseEnvironmentFilter", type: "ReleaseEnvironmentFilter", props: { title: "发布筛选" }, binding: { entityRef: "runtimeFilterOption", facetFieldRef: "runtimeFacet", keyFieldRef: "runtimeKey", titleFieldRef: "runtimeTitle", targets: ["release-list"] } }, extra: {},
+  },
+  DeploymentCommandHeader: {
+    block: { id: "demo-DeploymentCommandHeader", type: "DeploymentCommandHeader", binding: { entityRef: "deploymentWorkload", titleFieldRef: "workloadTitle", statusFieldRef: "workloadStatus", editableFieldRef: "workloadEditable", targets: ["deployment"] } }, extra: { focus: { deploymentWorkload: "deployment-order-api" } },
+  },
+  FeatureFlagCommandHeader: {
+    block: { id: "demo-FeatureFlagCommandHeader", type: "FeatureFlagCommandHeader", binding: { entityRef: "featureFlag", titleFieldRef: "flagTitle", enabledFieldRef: "flagEnabled", rolloutFieldRef: "flagRollout", editableFieldRef: "flagEditable", targets: ["feature-flag"] } }, extra: { focus: { featureFlag: "flag-new-checkout" } },
+  },
+  DeploymentScaleBar: {
+    block: { id: "demo-DeploymentScaleBar", type: "DeploymentScaleBar", binding: { entityRef: "deploymentWorkload", desiredFieldRef: "desiredReplicas", readyFieldRef: "readyReplicas", editableFieldRef: "workloadEditable", targets: ["deployment"] } }, extra: { focus: { deploymentWorkload: "deployment-order-api" } },
+  },
+  ReleaseRolloutBar: {
+    block: { id: "demo-ReleaseRolloutBar", type: "ReleaseRolloutBar", binding: { entityRef: "releaseState", statusFieldRef: "releaseStatus", adoptionFieldRef: "releaseAdoption", healthFieldRef: "releaseHealth", targets: ["release"] } }, extra: { focus: { releaseState: "release-main" } },
+  },
+  CumulativeFlowChart: {
+    block: { id: "demo-CumulativeFlowChart", type: "CumulativeFlowChart", props: { title: "周期累计流" }, binding: { entityRef: "flowSnapshot", timeFieldRef: "flowTime", stateFieldRef: "flowState", valueFieldRef: "flowCount" } }, extra: {},
+  },
+  BookingDemandChart: {
+    block: { id: "demo-BookingDemandChart", type: "BookingDemandChart", props: { title: "本周预约需求" }, binding: { entityRef: "bookingDemand", timeFieldRef: "demandTime", availableFieldRef: "availableSlots", bookedFieldRef: "bookedSlots", canceledFieldRef: "canceledSlots" } }, extra: {},
+  },
+  WorkItemActivityTabs: {
+    block: { id: "demo-WorkItemActivityTabs", type: "WorkItemActivityTabs", binding: { entityRef: "activityTab", titleFieldRef: "activityTabTitle", keyFieldRef: "activityTabKey", countFieldRef: "activityTabCount", enabledFieldRef: "activityTabEnabled", targets: ["work-item-detail"] } }, extra: {},
+  },
+  BookingAuditTabs: {
+    block: { id: "demo-BookingAuditTabs", type: "BookingAuditTabs", binding: { entityRef: "bookingAuditTab", titleFieldRef: "auditTabTitle", keyFieldRef: "auditTabKey", countFieldRef: "auditTabCount", enabledFieldRef: "auditTabEnabled", targets: ["booking-detail"] } }, extra: {},
+  },
+  WorkloadThroughputMetrics: {
+    block: { id: "demo-WorkloadThroughputMetrics", type: "WorkloadThroughputMetrics", props: { title: "周期吞吐" }, binding: { entityRef: "throughputMetric", completedFieldRef: "throughputCompleted", enteredFieldRef: "throughputEntered", wipFieldRef: "throughputWip", blockedFieldRef: "throughputBlocked" } }, extra: {},
+  },
+  CalendarUtilizationMetrics: {
+    block: { id: "demo-CalendarUtilizationMetrics", type: "CalendarUtilizationMetrics", props: { title: "日历利用率" }, binding: { entityRef: "utilizationMetric", availableFieldRef: "utilizationAvailable", bookedFieldRef: "utilizationBooked", canceledFieldRef: "utilizationCanceled", noShowFieldRef: "utilizationNoShow" } }, extra: {},
+  },
+  CycleRiskStrip: {
+    block: { id: "demo-CycleRiskStrip", type: "CycleRiskStrip", binding: { entityRef: "cycleRisk", titleFieldRef: "riskTitle", remainingFieldRef: "riskRemaining", blockedFieldRef: "riskBlocked", overdueFieldRef: "riskOverdue" } }, extra: {},
+  },
+  CalendarConnectionStrip: {
+    block: { id: "demo-CalendarConnectionStrip", type: "CalendarConnectionStrip", binding: { entityRef: "calendarConnection", accountFieldRef: "calendarAccount", statusFieldRef: "calendarStatus", providerFieldRef: "calendarProvider", syncedAtFieldRef: "calendarSyncedAt", targets: ["calendar-settings"] } }, extra: {},
+  },
+  WorkItemMoveDrawer: {
+    block: { id: "demo-WorkItemMoveDrawer", type: "WorkItemMoveDrawer", binding: { entityRef: "movableWorkItem", titleFieldRef: "moveTitle", groupFieldRef: "moveGroup", targets: ["work-item"] } }, extra: { focus: { movableWorkItem: "move-item-1" } },
+  },
+  BookingConflictDrawer: {
+    block: { id: "demo-BookingConflictDrawer", type: "BookingConflictDrawer", binding: { entityRef: "bookingConflict", titleFieldRef: "conflictTitle", startFieldRef: "conflictStart", endFieldRef: "conflictEnd", severityFieldRef: "conflictSeverity", targets: ["booking"] } }, extra: {},
+  },
+  WorkflowDurationChart: {
+    block: { id: "demo-WorkflowDurationChart", type: "WorkflowDurationChart", props: { title: "工作流执行耗时" }, binding: { entityRef: "workflowDuration", timeFieldRef: "workflowTime", averageFieldRef: "workflowAverage", p95FieldRef: "workflowP95", failedFieldRef: "workflowFailedDuration" } }, extra: {},
+  },
+  WorkflowExecutionTabs: {
+    block: { id: "demo-WorkflowExecutionTabs", type: "WorkflowExecutionTabs", binding: { entityRef: "workflowTab", titleFieldRef: "workflowTabTitle", keyFieldRef: "workflowTabKey", countFieldRef: "workflowTabCount", enabledFieldRef: "workflowTabEnabled", targets: ["workflow-execution"] } }, extra: {},
+  },
+  WorkflowOutcomeMetrics: {
+    block: { id: "demo-WorkflowOutcomeMetrics", type: "WorkflowOutcomeMetrics", props: { title: "执行结果" }, binding: { entityRef: "workflowOutcome", successFieldRef: "outcomeSuccess", failedFieldRef: "outcomeFailed", runningFieldRef: "outcomeRunning", pendingFieldRef: "outcomePending" } }, extra: {},
+  },
+  WorkflowVersionStrip: {
+    block: { id: "demo-WorkflowVersionStrip", type: "WorkflowVersionStrip", binding: { entityRef: "workflowDefinition", nameFieldRef: "workflowName", versionFieldRef: "workflowVersion", enabledFieldRef: "workflowEnabled", updatedAtFieldRef: "workflowUpdated" } }, extra: {},
+  },
+  WorkflowFailureDrawer: {
+    block: { id: "demo-WorkflowFailureDrawer", type: "WorkflowFailureDrawer", binding: { entityRef: "workflowFailure", nodeFieldRef: "failureNode", messageFieldRef: "failureMessage", statusFieldRef: "failureStatus", timeFieldRef: "failureTime", targets: ["workflow-execution"] } }, extra: {},
+  },
+  WorkflowCommandHeader: {
+    block: { id: "demo-WorkflowCommandHeader", type: "WorkflowCommandHeader", binding: { entityRef: "workflowDefinition", titleFieldRef: "workflowTitle", enabledFieldRef: "workflowEnabled", versionFieldRef: "workflowVersion", editableFieldRef: "workflowEditable", targets: ["workflow"] } }, extra: { focus: { workflowDefinition: "workflow-order" } },
+  },
+  WorkflowContextSummary: {
+    block: { id: "demo-WorkflowContextSummary", type: "WorkflowContextSummary", binding: { entityRef: "workflowDefinition", titleFieldRef: "workflowTitle", fieldRefs: ["workflowTrigger", "workflowOwner", "workflowMode", "workflowTimeout", "workflowVersion"] } }, extra: {},
+  },
+  WorkflowExecutionFilter: {
+    block: { id: "demo-WorkflowExecutionFilter", type: "WorkflowExecutionFilter", props: { title: "执行筛选" }, binding: { entityRef: "workflowFilterOption", facetFieldRef: "workflowFacet", keyFieldRef: "workflowFilterKey", titleFieldRef: "workflowFilterTitle", targets: ["workflow-execution-list"] } }, extra: {},
+  },
+  WorkflowControlBar: {
+    block: { id: "demo-WorkflowControlBar", type: "WorkflowControlBar", binding: { entityRef: "workflowExecution", statusFieldRef: "executionStatus", progressFieldRef: "executionProgress", targets: ["workflow-execution"] } }, extra: { focus: { workflowExecution: "execution-running-1" } },
+  },
+  RealmCommandHeader: {
+    block: { id: "demo-RealmCommandHeader", type: "RealmCommandHeader", binding: { entityRef: "realmSecurity", nameFieldRef: "realmSecurityName", enabledFieldRef: "realmSecurityEnabled", manageableFieldRef: "realmManageable", targets: ["realm"] } }, extra: { focus: { realmSecurity: "realm-security-1" } },
+  },
+  RealmSecurityContext: {
+    block: { id: "demo-RealmSecurityContext", type: "RealmSecurityContext", binding: { entityRef: "realmSecurity", titleFieldRef: "realmSecurityTitle", fieldRefs: ["realmSsl", "realmBruteForce", "realmSessionTimeout", "realmTokenLifespan"] } }, extra: {},
+  },
+  UserEventFilter: {
+    block: { id: "demo-UserEventFilter", type: "UserEventFilter", props: { title: "用户事件筛选" }, binding: { entityRef: "userEventOption", facetFieldRef: "userEventFacet", keyFieldRef: "userEventKey", titleFieldRef: "userEventTitle", targets: ["user-events"] } }, extra: {},
+  },
+  CredentialLifecycleBar: {
+    block: { id: "demo-CredentialLifecycleBar", type: "CredentialLifecycleBar", binding: { entityRef: "credentialState", usernameFieldRef: "credentialUsername", resettableFieldRef: "credentialResettable", temporaryFieldRef: "credentialTemporary", updatedAtFieldRef: "credentialUpdated", targets: ["user-credentials"] } }, extra: { focus: { credentialState: "credential-user-1" } },
+  },
+  PanelQueryLatencyChart: { block: { id: "demo-PanelQueryLatencyChart", type: "PanelQueryLatencyChart", props: { title: "面板查询延迟" }, binding: { entityRef: "observabilityTrend", timeFieldRef: "obsTime", averageFieldRef: "queryAverage", p95FieldRef: "queryP95", timeoutFieldRef: "queryTimeout" } }, extra: {} },
+  SyncVolumeTrendChart: { block: { id: "demo-SyncVolumeTrendChart", type: "SyncVolumeTrendChart", props: { title: "同步数据量" }, binding: { entityRef: "observabilityTrend", timeFieldRef: "obsTime", recordsFieldRef: "syncRecords", bytesFieldRef: "syncBytes", failedFieldRef: "syncFailed" } }, extra: {} },
+  ExploreInspectorTabs: { block: { id: "demo-ExploreInspectorTabs", type: "ExploreInspectorTabs", binding: { entityRef: "inspectorTab", titleFieldRef: "inspectTitle", keyFieldRef: "inspectKey", countFieldRef: "inspectCount", enabledFieldRef: "inspectEnabled", targets: ["inspector"] } }, extra: {} },
+  StreamDetailTabs: { block: { id: "demo-StreamDetailTabs", type: "StreamDetailTabs", binding: { entityRef: "streamTab", titleFieldRef: "streamTabTitle", keyFieldRef: "streamTabKey", countFieldRef: "streamTabCount", enabledFieldRef: "streamTabEnabled", targets: ["stream"] } }, extra: {} },
+  DatasourceQueryMetrics: { block: { id: "demo-DatasourceQueryMetrics", type: "DatasourceQueryMetrics", props: { title: "数据源查询" }, binding: { entityRef: "queryMetric", requestFieldRef: "queryRequests", errorFieldRef: "queryErrors", cacheHitFieldRef: "queryCacheHits", durationFieldRef: "queryDuration" } }, extra: {} },
+  StreamFreshnessMetrics: { block: { id: "demo-StreamFreshnessMetrics", type: "StreamFreshnessMetrics", props: { title: "数据流新鲜度" }, binding: { entityRef: "streamMetric", lagFieldRef: "streamLag", syncedAtFieldRef: "streamSyncedAt", recordsFieldRef: "streamRecords", failedFieldRef: "streamFailed" } }, extra: {} },
+  DatasourceHealthStrip: { block: { id: "demo-DatasourceHealthStrip", type: "DatasourceHealthStrip", binding: { entityRef: "datasourceState", nameFieldRef: "datasourceName", statusFieldRef: "datasourceStatus", typeFieldRef: "datasourceType", checkedAtFieldRef: "datasourceChecked", targets: ["datasource"] } }, extra: {} },
+  ConnectorVersionStrip: { block: { id: "demo-ConnectorVersionStrip", type: "ConnectorVersionStrip", binding: { entityRef: "connectorState", nameFieldRef: "connectorName", versionFieldRef: "connectorVersion", statusFieldRef: "connectorStatus", availableVersionFieldRef: "connectorAvailable" } }, extra: {} },
+  PanelCommandHeader: { block: { id: "demo-PanelCommandHeader", type: "PanelCommandHeader", binding: { entityRef: "panelState", titleFieldRef: "panelTitle", datasourceFieldRef: "panelDatasource", editableFieldRef: "panelEditable", targets: ["panel"] } }, extra: {} },
+  ConnectionSchemaHeader: { block: { id: "demo-ConnectionSchemaHeader", type: "ConnectionSchemaHeader", binding: { entityRef: "schemaState", titleFieldRef: "schemaTitle", statusFieldRef: "schemaStatus", refreshingFieldRef: "schemaRefreshing", dirtyFieldRef: "schemaDirty", targets: ["schema"] } }, extra: {} },
+  ExploreQueryContext: { block: { id: "demo-ExploreQueryContext", type: "ExploreQueryContext", binding: { entityRef: "exploreState", titleFieldRef: "exploreTitle", fieldRefs: ["exploreDatasource", "exploreLanguage", "exploreRange", "exploreStep"] } }, extra: {} },
+  StreamSelectionSummary: { block: { id: "demo-StreamSelectionSummary", type: "StreamSelectionSummary", binding: { entityRef: "schemaState", titleFieldRef: "schemaConnection", fieldRefs: ["schemaNamespace", "schemaSelected", "schemaFields"] } }, extra: {} },
+  LogLabelFilter: { block: { id: "demo-LogLabelFilter", type: "LogLabelFilter", props: { title: "日志标签" }, binding: { entityRef: "observabilityFilter", facetFieldRef: "obsFacet", keyFieldRef: "obsKey", titleFieldRef: "obsTitle", targets: ["logs"] } }, extra: {} },
+  StreamNamespaceFilter: { block: { id: "demo-StreamNamespaceFilter", type: "StreamNamespaceFilter", props: { title: "数据流筛选" }, binding: { entityRef: "observabilityFilter", facetFieldRef: "obsFacet", keyFieldRef: "obsKey", titleFieldRef: "obsTitle", targets: ["streams"] } }, extra: {} },
+  ExploreQueryControlBar: { block: { id: "demo-ExploreQueryControlBar", type: "ExploreQueryControlBar", binding: { entityRef: "exploreState", statusFieldRef: "exploreStatus", queryFieldRef: "exploreQuery", targets: ["query"] } }, extra: {} },
+  SchemaRefreshBar: { block: { id: "demo-SchemaRefreshBar", type: "SchemaRefreshBar", binding: { entityRef: "schemaState", statusFieldRef: "schemaStatus", refreshingFieldRef: "schemaRefreshing", dirtyFieldRef: "schemaDirty", targets: ["schema"] } }, extra: {} },
+  QueryErrorDrawer: { block: { id: "demo-QueryErrorDrawer", type: "QueryErrorDrawer", binding: { entityRef: "queryError", refFieldRef: "queryRef", messageFieldRef: "queryMessage", statusFieldRef: "queryStatus", requestFieldRef: "queryRequest", targets: ["query"] } }, extra: {} },
+  SchemaConflictDrawer: { block: { id: "demo-SchemaConflictDrawer", type: "SchemaConflictDrawer", binding: { entityRef: "schemaConflict", streamFieldRef: "conflictStream", fieldFieldRef: "conflictField", changeFieldRef: "conflictChange", breakingFieldRef: "conflictBreaking", targets: ["schema"] } }, extra: {} },
   FreeformInsight: {
         block: {
           id: "demo-FreeformInsight", type: "FreeformInsight", props: { title: "自由洞察" },

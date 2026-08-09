@@ -24,7 +24,7 @@ import {
   SankeyChart,
   TreemapChart,
 } from "echarts/charts";
-import { GridComponent, TooltipComponent, DatasetComponent, TitleComponent, VisualMapComponent, RadarComponent } from "echarts/components";
+import { GridComponent, TooltipComponent, DatasetComponent, TitleComponent, VisualMapComponent, RadarComponent, LegendComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 
 echarts.use([
@@ -45,6 +45,7 @@ echarts.use([
   TitleComponent,
   VisualMapComponent,
   RadarComponent,
+  LegendComponent,
   CanvasRenderer,
 ]);
 

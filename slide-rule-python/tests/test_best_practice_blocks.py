@@ -335,3 +335,122 @@ def test_sixth_sparse_region_batch_uses_chatwoot_and_keycloak_exact_regions():
         assert block["rendererStatus"] == "real"
         assert block["generationEnabled"] is True
         assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
+
+
+def test_seventh_sparse_region_batch_prioritizes_the_five_smallest_regions():
+    expected = {
+        "TimeSeriesAnomalyChart": ("grafana/grafana", {"charts"}),
+        "CohortRetentionChart": ("metabase/metabase", {"charts"}),
+        "UptimeStatusTimeline": ("airbytehq/airbyte-platform", {"charts"}),
+        "PercentileBandChart": ("getsentry/sentry", {"charts"}),
+        "ConnectionWorkspaceTabs": ("airbytehq/airbyte-platform", {"tabs"}),
+        "IssueInvestigationTabs": ("getsentry/sentry", {"tabs"}),
+        "ConnectionFleetMetrics": ("airbytehq/airbyte-platform", {"metrics"}),
+        "IssueImpactMetrics": ("getsentry/sentry", {"metrics"}),
+        "DashboardQueryContext": ("metabase/metabase", {"headerContent"}),
+        "ServiceOwnershipContext": ("backstage/backstage", {"headerContent"}),
+        "ReleaseHealthStrip": ("getsentry/sentry", {"headerExtra"}),
+        "DashboardCommandHeader": ("metabase/metabase", {"header"}),
+    }
+    for block_type, (repo, regions) in expected.items():
+        block = _block(block_type)
+        assert block["source"]["repo"] == repo
+        assert block["source"]["path"]
+        assert set(block["allowedRegions"]) == regions
+        assert "main" not in block["allowedRegions"]
+        assert block["rendererStatus"] == "real"
+        assert block["generationEnabled"] is True
+        assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
+
+
+def test_eighth_sparse_region_batch_balances_release_and_deployment_workflows():
+    expected = {
+        "DeploymentLatencyChart": ("backstage/backstage", {"charts"}),
+        "ReleaseAdoptionTrendChart": ("getsentry/sentry", {"charts"}),
+        "DeploymentDetailTabs": ("backstage/backstage", {"tabs"}),
+        "ReleaseDetailTabs": ("getsentry/sentry", {"tabs"}),
+        "DeploymentRolloutMetrics": ("backstage/backstage", {"metrics"}),
+        "ReleaseAdoptionMetrics": ("getsentry/sentry", {"metrics"}),
+        "ClusterHealthStrip": ("backstage/backstage", {"headerExtra"}),
+        "ReleaseEnvironmentStrip": ("getsentry/sentry", {"headerExtra"}),
+        "DeploymentContextSummary": ("backstage/backstage", {"headerContent"}),
+        "ReleaseContextSummary": ("getsentry/sentry", {"headerContent"}),
+        "KubernetesResourceFilter": ("backstage/backstage", {"filters"}),
+        "ReleaseEnvironmentFilter": ("getsentry/sentry", {"filters"}),
+        "DeploymentCommandHeader": ("backstage/backstage", {"header"}),
+        "FeatureFlagCommandHeader": ("getsentry/sentry", {"header"}),
+        "DeploymentScaleBar": ("backstage/backstage", {"footerBar"}),
+        "ReleaseRolloutBar": ("getsentry/sentry", {"footerBar"}),
+    }
+    for block_type, (repo, regions) in expected.items():
+        block = _block(block_type)
+        assert block["source"]["repo"] == repo
+        assert block["source"]["path"]
+        assert set(block["allowedRegions"]) == regions
+        assert block["rendererStatus"] == "real"
+        assert block["generationEnabled"] is True
+        assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
+
+
+def test_ninth_sparse_region_batch_fills_the_five_smallest_regions():
+    expected = {
+        "CumulativeFlowChart": ("makeplane/plane", {"charts"}),
+        "BookingDemandChart": ("calcom/cal.com", {"charts"}),
+        "WorkItemActivityTabs": ("makeplane/plane", {"tabs"}),
+        "BookingAuditTabs": ("calcom/cal.com", {"tabs"}),
+        "WorkloadThroughputMetrics": ("makeplane/plane", {"metrics"}),
+        "CalendarUtilizationMetrics": ("calcom/cal.com", {"metrics"}),
+        "CycleRiskStrip": ("makeplane/plane", {"headerExtra"}),
+        "CalendarConnectionStrip": ("calcom/cal.com", {"headerExtra"}),
+        "WorkItemMoveDrawer": ("makeplane/plane", {"overlay"}),
+        "BookingConflictDrawer": ("calcom/cal.com", {"overlay"}),
+    }
+    for block_type, (repo, regions) in expected.items():
+        block = _block(block_type)
+        assert block["source"]["repo"] == repo
+        assert block["source"]["path"]
+        assert set(block["allowedRegions"]) == regions
+        assert block["rendererStatus"] == "real"
+        assert block["generationEnabled"] is True
+        assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
+
+
+def test_tenth_sparse_region_batch_equalizes_all_non_body_regions():
+    expected = {
+        "WorkflowDurationChart": ("nocobase/nocobase", {"charts"}),
+        "WorkflowExecutionTabs": ("nocobase/nocobase", {"tabs"}),
+        "WorkflowOutcomeMetrics": ("nocobase/nocobase", {"metrics"}),
+        "WorkflowVersionStrip": ("nocobase/nocobase", {"headerExtra"}),
+        "WorkflowFailureDrawer": ("nocobase/nocobase", {"overlay"}),
+        "WorkflowCommandHeader": ("nocobase/nocobase", {"header"}),
+        "WorkflowContextSummary": ("nocobase/nocobase", {"headerContent"}),
+        "WorkflowExecutionFilter": ("nocobase/nocobase", {"filters"}),
+        "WorkflowControlBar": ("nocobase/nocobase", {"footerBar"}),
+        "RealmCommandHeader": ("keycloak/keycloak", {"header"}),
+        "RealmSecurityContext": ("keycloak/keycloak", {"headerContent"}),
+        "UserEventFilter": ("keycloak/keycloak", {"filters"}),
+        "CredentialLifecycleBar": ("keycloak/keycloak", {"footerBar"}),
+    }
+    for block_type, (repo, regions) in expected.items():
+        block = _block(block_type)
+        assert block["source"]["repo"] == repo
+        assert block["source"]["path"]
+        assert set(block["allowedRegions"]) == regions
+        assert block["rendererStatus"] == "real"
+        assert block["generationEnabled"] is True
+        assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
+
+
+def test_eleventh_sparse_region_batch_keeps_nine_regions_balanced():
+    grafana = {"PanelQueryLatencyChart": "charts", "ExploreInspectorTabs": "tabs", "DatasourceQueryMetrics": "metrics", "DatasourceHealthStrip": "headerExtra", "PanelCommandHeader": "header", "ExploreQueryContext": "headerContent", "LogLabelFilter": "filters", "ExploreQueryControlBar": "footerBar", "QueryErrorDrawer": "overlay"}
+    airbyte = {"SyncVolumeTrendChart": "charts", "StreamDetailTabs": "tabs", "StreamFreshnessMetrics": "metrics", "ConnectorVersionStrip": "headerExtra", "ConnectionSchemaHeader": "header", "StreamSelectionSummary": "headerContent", "StreamNamespaceFilter": "filters", "SchemaRefreshBar": "footerBar", "SchemaConflictDrawer": "overlay"}
+    for block_type, region in grafana.items():
+        block = _block(block_type)
+        assert block["source"]["repo"] == "grafana/grafana"
+        assert set(block["allowedRegions"]) == {region}
+        assert block["rendererStatus"] == "real" and block["generationEnabled"] is True
+    for block_type, region in airbyte.items():
+        block = _block(block_type)
+        assert block["source"]["repo"] == "airbytehq/airbyte-platform"
+        assert set(block["allowedRegions"]) == {region}
+        assert block["rendererStatus"] == "real" and block["generationEnabled"] is True

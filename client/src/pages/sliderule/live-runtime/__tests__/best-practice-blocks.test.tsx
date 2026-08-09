@@ -624,4 +624,133 @@ describe("开源最佳实践区块", () => {
       expect(renderToStaticMarkup(<PhoneExperienceBlock {...props} />)).toContain(`data-testid="${testCase.phone}"`);
     }
   });
+
+  it("图表与运行上下文批次的 12 个区块都有独立双端渲染器", () => {
+    const entityRows = {
+      series: [row("s1", { time: "08-01", value: 12, lower: 8, upper: 16, anomaly: "normal", cohort: "七月", period: "第 1 周", rate: 72, status: "success", p50: 80, p95: 140, p99: 220 })],
+      tab: [row("t1", { title: "概览", key: "overview", count: 2, enabled: "enabled" })],
+      connection: [row("c1", { status: "healthy" }), row("c2", { status: "failed" })],
+      issue: [row("i1", { events: 128, users: 34, first: "08-01", last: "08-10" })],
+      context: [row("x1", { title: "订单服务", owner: "交易组", lifecycle: "production", source: "经营仓", filters: 3 })],
+      release: [row("r1", { version: "2026.08.10", health: 99.5, environment: "production", adoption: 62 })],
+      dashboard: [row("d1", { title: "经营总览", starred: "starred", subscribed: "subscribed", editable: "editable" })],
+    };
+    const cases: Array<{ block: ExperienceBlockInstance; desktop: string; phone: string }> = [
+      { block: { id: "l1", type: "TimeSeriesAnomalyChart", props: { surface: "plain" }, binding: { entityRef: "series", timeFieldRef: "time", valueFieldRef: "value", lowerFieldRef: "lower", upperFieldRef: "upper", anomalyFieldRef: "anomaly" } }, desktop: "time-series-anomaly-chart", phone: "phone-time-series-anomaly-chart" },
+      { block: { id: "l2", type: "CohortRetentionChart", props: { surface: "plain" }, binding: { entityRef: "series", cohortFieldRef: "cohort", periodFieldRef: "period", rateFieldRef: "rate" } }, desktop: "cohort-retention-chart", phone: "phone-cohort-retention-chart" },
+      { block: { id: "l3", type: "UptimeStatusTimeline", props: { surface: "plain" }, binding: { entityRef: "series", timeFieldRef: "time", statusFieldRef: "status" } }, desktop: "uptime-status-timeline", phone: "phone-uptime-status-timeline" },
+      { block: { id: "l4", type: "PercentileBandChart", props: { surface: "plain" }, binding: { entityRef: "series", timeFieldRef: "time", p50FieldRef: "p50", p95FieldRef: "p95", p99FieldRef: "p99" } }, desktop: "percentile-band-chart", phone: "phone-percentile-band-chart" },
+      { block: { id: "l5", type: "ConnectionWorkspaceTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["connection"] } }, desktop: "connection-workspace-tabs", phone: "phone-connection-workspace-tabs" },
+      { block: { id: "l6", type: "IssueInvestigationTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["issue"] } }, desktop: "issue-investigation-tabs", phone: "phone-issue-investigation-tabs" },
+      { block: { id: "l7", type: "ConnectionFleetMetrics", props: { surface: "plain" }, binding: { entityRef: "connection", statusFieldRef: "status", targets: ["connections"] } }, desktop: "connection-fleet-metrics", phone: "phone-connection-fleet-metrics" },
+      { block: { id: "l8", type: "IssueImpactMetrics", props: { surface: "plain" }, binding: { entityRef: "issue", eventCountFieldRef: "events", userCountFieldRef: "users", firstSeenFieldRef: "first", lastSeenFieldRef: "last" } }, desktop: "issue-impact-metrics", phone: "phone-issue-impact-metrics" },
+      { block: { id: "l9", type: "DashboardQueryContext", props: { surface: "plain" }, binding: { entityRef: "context", titleFieldRef: "title", fieldRefs: ["source", "filters"] } }, desktop: "dashboard-query-context", phone: "phone-dashboard-query-context" },
+      { block: { id: "l10", type: "ServiceOwnershipContext", props: { surface: "plain" }, binding: { entityRef: "context", titleFieldRef: "title", fieldRefs: ["owner", "lifecycle"] } }, desktop: "service-ownership-context", phone: "phone-service-ownership-context" },
+      { block: { id: "l11", type: "ReleaseHealthStrip", props: { surface: "plain" }, binding: { entityRef: "release", versionFieldRef: "version", healthFieldRef: "health", environmentFieldRef: "environment", adoptionFieldRef: "adoption" } }, desktop: "release-health-strip", phone: "phone-release-health-strip" },
+      { block: { id: "l12", type: "DashboardCommandHeader", props: { surface: "plain" }, binding: { entityRef: "dashboard", titleFieldRef: "title", starredFieldRef: "starred", subscribedFieldRef: "subscribed", editableFieldRef: "editable", targets: ["dashboard"] } }, desktop: "dashboard-command-header", phone: "phone-dashboard-command-header" },
+    ];
+    for (const testCase of cases) {
+      const props = { block: testCase.block, entityRows };
+      expect(renderToStaticMarkup(<ExperienceBlockBoundary {...props} />)).toContain(`data-testid="${testCase.desktop}"`);
+      expect(renderToStaticMarkup(<PhoneExperienceBlock {...props} />)).toContain(`data-testid="${testCase.phone}"`);
+    }
+  });
+
+  it("部署与发布批次的 16 个区块都有独立双端渲染器", () => {
+    const entityRows = {
+      series: [row("s1", { time: "08-09", queue: 8, pull: 20, start: 14, ready: 44, adoption: 86, health: 99.5 })],
+      tab: [row("t1", { title: "概览", key: "overview", count: 2, enabled: "enabled" })],
+      workload: [row("w1", { title: "order-api", status: "healthy", editable: "editable", desired: 6, ready: 5, available: 5, unavailable: 1, namespace: "commerce", cluster: "prod", image: "order:latest" })],
+      release: [row("r1", { title: "2026.08.10", environment: "production", status: "active", adoption: 86, health: 99.5, events: 12, users: 8, project: "whybuddy", commit: "77f469a" })],
+      cluster: [row("c1", { name: "prod-cn", status: "healthy", nodes: 12, version: "v1.31" })],
+      flag: [row("f1", { title: "new-checkout", enabled: "enabled", rollout: 25, editable: "editable" })],
+      option: [row("o1", { facet: "环境", key: "production", title: "production" })],
+    };
+    const cases: Array<{ block: ExperienceBlockInstance; desktop: string; phone: string }> = [
+      { block: { id: "m1", type: "DeploymentLatencyChart", props: { surface: "plain" }, binding: { entityRef: "series", timeFieldRef: "time", queueFieldRef: "queue", pullFieldRef: "pull", startFieldRef: "start", readyFieldRef: "ready" } }, desktop: "deployment-latency-chart", phone: "phone-deployment-latency-chart" },
+      { block: { id: "m2", type: "ReleaseAdoptionTrendChart", props: { surface: "plain" }, binding: { entityRef: "series", timeFieldRef: "time", adoptionFieldRef: "adoption", healthFieldRef: "health" } }, desktop: "release-adoption-trend-chart", phone: "phone-release-adoption-trend-chart" },
+      { block: { id: "m3", type: "DeploymentDetailTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["deployment"] } }, desktop: "deployment-detail-tabs", phone: "phone-deployment-detail-tabs" },
+      { block: { id: "m4", type: "ReleaseDetailTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["release"] } }, desktop: "release-detail-tabs", phone: "phone-release-detail-tabs" },
+      { block: { id: "m5", type: "DeploymentRolloutMetrics", props: { surface: "plain" }, binding: { entityRef: "workload", desiredFieldRef: "desired", readyFieldRef: "ready", availableFieldRef: "available", unavailableFieldRef: "unavailable" } }, desktop: "deployment-rollout-metrics", phone: "phone-deployment-rollout-metrics" },
+      { block: { id: "m6", type: "ReleaseAdoptionMetrics", props: { surface: "plain" }, binding: { entityRef: "release", adoptionFieldRef: "adoption", healthFieldRef: "health", eventCountFieldRef: "events", userCountFieldRef: "users" } }, desktop: "release-adoption-metrics", phone: "phone-release-adoption-metrics" },
+      { block: { id: "m7", type: "ClusterHealthStrip", props: { surface: "plain" }, binding: { entityRef: "cluster", nameFieldRef: "name", statusFieldRef: "status", nodeCountFieldRef: "nodes", versionFieldRef: "version" } }, desktop: "cluster-health-strip", phone: "phone-cluster-health-strip" },
+      { block: { id: "m8", type: "ReleaseEnvironmentStrip", props: { surface: "plain" }, binding: { entityRef: "release", versionFieldRef: "title", environmentFieldRef: "environment", statusFieldRef: "status", targets: ["release"] } }, desktop: "release-environment-strip", phone: "phone-release-environment-strip" },
+      { block: { id: "m9", type: "DeploymentContextSummary", props: { surface: "plain" }, binding: { entityRef: "workload", titleFieldRef: "title", fieldRefs: ["namespace", "cluster", "image"] } }, desktop: "deployment-context-summary", phone: "phone-deployment-context-summary" },
+      { block: { id: "m10", type: "ReleaseContextSummary", props: { surface: "plain" }, binding: { entityRef: "release", titleFieldRef: "title", fieldRefs: ["project", "environment", "commit"] } }, desktop: "release-context-summary", phone: "phone-release-context-summary" },
+      { block: { id: "m11", type: "KubernetesResourceFilter", props: { surface: "plain" }, binding: { entityRef: "option", facetFieldRef: "facet", keyFieldRef: "key", titleFieldRef: "title", targets: ["workload"] } }, desktop: "kubernetes-resource-filter", phone: "phone-kubernetes-resource-filter" },
+      { block: { id: "m12", type: "ReleaseEnvironmentFilter", props: { surface: "plain" }, binding: { entityRef: "option", facetFieldRef: "facet", keyFieldRef: "key", titleFieldRef: "title", targets: ["release"] } }, desktop: "release-environment-filter", phone: "phone-release-environment-filter" },
+      { block: { id: "m13", type: "DeploymentCommandHeader", props: { surface: "plain" }, binding: { entityRef: "workload", titleFieldRef: "title", statusFieldRef: "status", editableFieldRef: "editable", targets: ["deployment"] } }, desktop: "deployment-command-header", phone: "phone-deployment-command-header" },
+      { block: { id: "m14", type: "FeatureFlagCommandHeader", props: { surface: "plain" }, binding: { entityRef: "flag", titleFieldRef: "title", enabledFieldRef: "enabled", rolloutFieldRef: "rollout", editableFieldRef: "editable", targets: ["flag"] } }, desktop: "feature-flag-command-header", phone: "phone-feature-flag-command-header" },
+      { block: { id: "m15", type: "DeploymentScaleBar", props: { surface: "plain" }, binding: { entityRef: "workload", desiredFieldRef: "desired", readyFieldRef: "ready", editableFieldRef: "editable", targets: ["deployment"] } }, desktop: "deployment-scale-bar", phone: "phone-deployment-scale-bar" },
+      { block: { id: "m16", type: "ReleaseRolloutBar", props: { surface: "plain" }, binding: { entityRef: "release", statusFieldRef: "status", adoptionFieldRef: "adoption", healthFieldRef: "health", targets: ["release"] } }, desktop: "release-rollout-bar", phone: "phone-release-rollout-bar" },
+    ];
+    for (const testCase of cases) {
+      const props = { block: testCase.block, entityRows };
+      expect(renderToStaticMarkup(<ExperienceBlockBoundary {...props} />)).toContain(`data-testid="${testCase.desktop}"`);
+      expect(renderToStaticMarkup(<PhoneExperienceBlock {...props} />)).toContain(`data-testid="${testCase.phone}"`);
+    }
+  });
+
+  it("工作流分析与预约冲突批次的 10 个区块都有独立双端渲染器", () => {
+    const entityRows = {
+      flow: [row("f1", { time: "08-09", state: "进行中", count: 7, available: 42, booked: 31, canceled: 3 })],
+      tab: [row("t1", { title: "详情", key: "detail", count: 2, enabled: "enabled" })],
+      metric: [row("m1", { completed: 43, entered: 51, wip: 7, blocked: 2, available: 2400, booked: 1870, canceled: 14, noShow: 6 })],
+      risk: [row("r1", { title: "八月周期", remaining: 6, blocked: 2, overdue: 1 })],
+      calendar: [row("c1", { account: "ops@example.com", status: "failed", provider: "Outlook", synced: "1 小时前" })],
+      work: [row("w1", { title: "完善错误提示", group: "当前周期" }), row("w2", { title: "候选", group: "下个周期" })],
+      conflict: [row("b1", { title: "专家门诊", start: "10:00", end: "10:30", severity: "high" })],
+    };
+    const cases: Array<{ block: ExperienceBlockInstance; desktop: string; phone: string }> = [
+      { block: { id: "n1", type: "CumulativeFlowChart", props: { surface: "plain" }, binding: { entityRef: "flow", timeFieldRef: "time", stateFieldRef: "state", valueFieldRef: "count" } }, desktop: "cumulative-flow-chart", phone: "phone-cumulative-flow-chart" },
+      { block: { id: "n2", type: "BookingDemandChart", props: { surface: "plain" }, binding: { entityRef: "flow", timeFieldRef: "time", availableFieldRef: "available", bookedFieldRef: "booked", canceledFieldRef: "canceled" } }, desktop: "booking-demand-chart", phone: "phone-booking-demand-chart" },
+      { block: { id: "n3", type: "WorkItemActivityTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["work"] } }, desktop: "work-item-activity-tabs", phone: "phone-work-item-activity-tabs" },
+      { block: { id: "n4", type: "BookingAuditTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["booking"] } }, desktop: "booking-audit-tabs", phone: "phone-booking-audit-tabs" },
+      { block: { id: "n5", type: "WorkloadThroughputMetrics", props: { surface: "plain" }, binding: { entityRef: "metric", completedFieldRef: "completed", enteredFieldRef: "entered", wipFieldRef: "wip", blockedFieldRef: "blocked" } }, desktop: "workload-throughput-metrics", phone: "phone-workload-throughput-metrics" },
+      { block: { id: "n6", type: "CalendarUtilizationMetrics", props: { surface: "plain" }, binding: { entityRef: "metric", availableFieldRef: "available", bookedFieldRef: "booked", canceledFieldRef: "canceled", noShowFieldRef: "noShow" } }, desktop: "calendar-utilization-metrics", phone: "phone-calendar-utilization-metrics" },
+      { block: { id: "n7", type: "CycleRiskStrip", props: { surface: "plain" }, binding: { entityRef: "risk", titleFieldRef: "title", remainingFieldRef: "remaining", blockedFieldRef: "blocked", overdueFieldRef: "overdue" } }, desktop: "cycle-risk-strip", phone: "phone-cycle-risk-strip" },
+      { block: { id: "n8", type: "CalendarConnectionStrip", props: { surface: "plain" }, binding: { entityRef: "calendar", accountFieldRef: "account", statusFieldRef: "status", providerFieldRef: "provider", syncedAtFieldRef: "synced", targets: ["calendar"] } }, desktop: "calendar-connection-strip", phone: "phone-calendar-connection-strip" },
+      { block: { id: "n9", type: "WorkItemMoveDrawer", props: { surface: "plain" }, binding: { entityRef: "work", titleFieldRef: "title", groupFieldRef: "group", targets: ["work"] } }, desktop: "work-item-move-drawer", phone: "phone-work-item-move-drawer" },
+      { block: { id: "n10", type: "BookingConflictDrawer", props: { surface: "plain" }, binding: { entityRef: "conflict", titleFieldRef: "title", startFieldRef: "start", endFieldRef: "end", severityFieldRef: "severity", targets: ["booking"] } }, desktop: "booking-conflict-drawer", phone: "phone-booking-conflict-drawer" },
+    ];
+    for (const testCase of cases) {
+      const props = { block: testCase.block, entityRows };
+      expect(renderToStaticMarkup(<ExperienceBlockBoundary {...props} />)).toContain(`data-testid="${testCase.desktop}"`);
+      expect(renderToStaticMarkup(<PhoneExperienceBlock {...props} />)).toContain(`data-testid="${testCase.phone}"`);
+    }
+  });
+
+  it("工作流运行与 Realm 安全批次的 13 个区块都有独立双端渲染器", () => {
+    const entityRows = {
+      duration: [row("d1", { time: "08-09", average: 690, p95: 1180, failed: 2100 })],
+      tab: [row("t1", { title: "概要", key: "summary", count: 2, enabled: "enabled" })],
+      outcome: [row("o1", { success: 184, failed: 7, running: 3, pending: 11 })],
+      workflow: [row("w1", { title: "订单异常处理", name: "订单异常处理", enabled: "enabled", version: "v12", editable: "editable", updated: "8 分钟前", trigger: "订单创建", owner: "交易组" })],
+      failure: [row("f1", { node: "发送通知", message: "Webhook 502", status: "failed", time: "11:42" })],
+      option: [row("p1", { facet: "状态", key: "failed", title: "失败" })],
+      execution: [row("e1", { status: "started", progress: 62 })],
+      realm: [row("r1", { title: "whybuddy", name: "whybuddy", enabled: "enabled", manageable: "allowed", ssl: "external", brute: "enabled" })],
+      credential: [row("c1", { username: "wang.xiao", resettable: "allowed", temporary: "temporary", updated: "08-01" })],
+    };
+    const cases: Array<{ block: ExperienceBlockInstance; desktop: string; phone: string }> = [
+      { block: { id: "p1", type: "WorkflowDurationChart", props: { surface: "plain" }, binding: { entityRef: "duration", timeFieldRef: "time", averageFieldRef: "average", p95FieldRef: "p95", failedFieldRef: "failed" } }, desktop: "workflow-duration-chart", phone: "phone-workflow-duration-chart" },
+      { block: { id: "p2", type: "WorkflowExecutionTabs", props: { surface: "plain" }, binding: { entityRef: "tab", titleFieldRef: "title", keyFieldRef: "key", countFieldRef: "count", enabledFieldRef: "enabled", targets: ["execution"] } }, desktop: "workflow-execution-tabs", phone: "phone-workflow-execution-tabs" },
+      { block: { id: "p3", type: "WorkflowOutcomeMetrics", props: { surface: "plain" }, binding: { entityRef: "outcome", successFieldRef: "success", failedFieldRef: "failed", runningFieldRef: "running", pendingFieldRef: "pending" } }, desktop: "workflow-outcome-metrics", phone: "phone-workflow-outcome-metrics" },
+      { block: { id: "p4", type: "WorkflowVersionStrip", props: { surface: "plain" }, binding: { entityRef: "workflow", nameFieldRef: "name", versionFieldRef: "version", enabledFieldRef: "enabled", updatedAtFieldRef: "updated" } }, desktop: "workflow-version-strip", phone: "phone-workflow-version-strip" },
+      { block: { id: "p5", type: "WorkflowFailureDrawer", props: { surface: "plain" }, binding: { entityRef: "failure", nodeFieldRef: "node", messageFieldRef: "message", statusFieldRef: "status", timeFieldRef: "time", targets: ["execution"] } }, desktop: "workflow-failure-drawer", phone: "phone-workflow-failure-drawer" },
+      { block: { id: "p6", type: "WorkflowCommandHeader", props: { surface: "plain" }, binding: { entityRef: "workflow", titleFieldRef: "title", enabledFieldRef: "enabled", versionFieldRef: "version", editableFieldRef: "editable", targets: ["workflow"] } }, desktop: "workflow-command-header", phone: "phone-workflow-command-header" },
+      { block: { id: "p7", type: "WorkflowContextSummary", props: { surface: "plain" }, binding: { entityRef: "workflow", titleFieldRef: "title", fieldRefs: ["trigger", "owner"] } }, desktop: "workflow-context-summary", phone: "phone-workflow-context-summary" },
+      { block: { id: "p8", type: "WorkflowExecutionFilter", props: { surface: "plain" }, binding: { entityRef: "option", facetFieldRef: "facet", keyFieldRef: "key", titleFieldRef: "title", targets: ["execution"] } }, desktop: "workflow-execution-filter", phone: "phone-workflow-execution-filter" },
+      { block: { id: "p9", type: "WorkflowControlBar", props: { surface: "plain" }, binding: { entityRef: "execution", statusFieldRef: "status", progressFieldRef: "progress", targets: ["execution"] } }, desktop: "workflow-control-bar", phone: "phone-workflow-control-bar" },
+      { block: { id: "p10", type: "RealmCommandHeader", props: { surface: "plain" }, binding: { entityRef: "realm", nameFieldRef: "name", enabledFieldRef: "enabled", manageableFieldRef: "manageable", targets: ["realm"] } }, desktop: "realm-command-header", phone: "phone-realm-command-header" },
+      { block: { id: "p11", type: "RealmSecurityContext", props: { surface: "plain" }, binding: { entityRef: "realm", titleFieldRef: "title", fieldRefs: ["ssl", "brute"] } }, desktop: "realm-security-context", phone: "phone-realm-security-context" },
+      { block: { id: "p12", type: "UserEventFilter", props: { surface: "plain" }, binding: { entityRef: "option", facetFieldRef: "facet", keyFieldRef: "key", titleFieldRef: "title", targets: ["events"] } }, desktop: "user-event-filter", phone: "phone-user-event-filter" },
+      { block: { id: "p13", type: "CredentialLifecycleBar", props: { surface: "plain" }, binding: { entityRef: "credential", usernameFieldRef: "username", resettableFieldRef: "resettable", temporaryFieldRef: "temporary", updatedAtFieldRef: "updated", targets: ["credentials"] } }, desktop: "credential-lifecycle-bar", phone: "phone-credential-lifecycle-bar" },
+    ];
+    for (const testCase of cases) {
+      const props = { block: testCase.block, entityRows };
+      expect(renderToStaticMarkup(<ExperienceBlockBoundary {...props} />)).toContain(`data-testid="${testCase.desktop}"`);
+      expect(renderToStaticMarkup(<PhoneExperienceBlock {...props} />)).toContain(`data-testid="${testCase.phone}"`);
+    }
+  });
 });
