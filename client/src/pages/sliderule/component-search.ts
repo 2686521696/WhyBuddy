@@ -295,6 +295,8 @@ interface CatalogBlock {
   dataKinds?: string[];
   pageKinds?: string[];
   allowedRegions?: string[];
+  /** 中文名。由 scripts/sync_block_labels.py 从渲染器注册表同步过来。 */
+  label?: string;
   /** 通用主力还是特定场景件。缺省 = 未标注，按 1 算（见 GENERALITY_BOOST）。 */
   generality?: "generic" | "specific";
 }
@@ -379,13 +381,25 @@ const CAPABILITY_CN: Record<string, string> = {
   freeform: "自由 设计 洞察",
 };
 
-/** 区块中文名从渲染实现那边的标签表来；查不到就用类型名（不编）。 */
+/**
+ * 中文名**先读目录**，`labelOf` 只作为覆盖。
+ *
+ * 原来只认 `labelOf` 注入。组件库页面注入的是渲染器注册表里的真名字，而
+ * `__tests__/component-search.test.ts` 注入的是 `() => undefined`——于是
+ * **测出来的排序和用户看到的排序不是同一份**。2026-08-09 排查「订单筛选」
+ * 时被这个坑了一次：我据此断定"区块没有中文名"，而 registry 里 111 个一个
+ * 不缺，只是没进真相源。
+ *
+ * 中文名现在同步进目录 JSON（scripts/sync_block_labels.py），两侧读同一份。
+ * `labelOf` 保留是因为 registry 才是渲染时真正显示的那个名字，它变了应当
+ * 立即生效，不必等同步。
+ */
 function blockDocs(labelOf: (type: string) => string | undefined): SearchDoc[] {
   return CATALOG.blocks.map(b => ({
     id: `block:${b.type}`,
     kind: "block" as const,
     name: b.type,
-    label: labelOf(b.type) ?? b.type,
+    label: labelOf(b.type) ?? b.label ?? b.type,
     description: b.description ?? "",
     generic: b.generality === "generic",
     tags: [

@@ -16,6 +16,17 @@ import { describe, expect, it } from "vitest";
 
 import { buildIndex, expandIntent, tokenize } from "../component-search";
 
+/**
+ * **不注入 labelOf** —— 中文名现在从目录 JSON 读（scripts/sync_block_labels.py
+ * 同步自渲染器注册表），页面和这里拿到的是同一份。
+ *
+ * 2026-08-09 之前这里是 `() => undefined`，而组件库页面注入了
+ * `LABEL_BY_TYPE`（来自 block-registry 的 111 个中文名）。于是**这份测试
+ * 量的排序和用户看到的排序不是同一个索引**——它一直是绿的，而真实页面上
+ * 「我要选择客户」的第二名是 ReferenceManyManager。
+ *
+ * 下面那条 `测试索引必须和页面索引同源` 就是防它再分叉。
+ */
 const index = buildIndex(
   () => undefined,
   () => []
@@ -153,5 +164,17 @@ describe("普通搜索没被意图层搞坏", () => {
     expect(kinds.has("block") || kinds.has("base")).toBe(true);
     expect(index.docs.filter(d => d.kind === "block").length).toBeGreaterThan(20);
     expect(index.docs.filter(d => d.kind === "base").length).toBeGreaterThan(200);
+  });
+});
+
+describe("测试索引必须和页面索引同源", () => {
+  it("区块中文名从目录读得到，不靠调用方注入", () => {
+    const docs = index.docs.filter(d => d.kind === "block");
+    const named = docs.filter(d => d.label !== d.name);
+    expect(
+      named.length,
+      `${docs.length} 个区块里只有 ${named.length} 个有中文名——` +
+        "目录落后了，跑 slide-rule-python/scripts/sync_block_labels.py"
+    ).toBeGreaterThanOrEqual(docs.length);
   });
 });
