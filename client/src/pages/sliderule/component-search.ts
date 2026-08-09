@@ -57,8 +57,10 @@ export interface SearchDoc {
   description: string;
   /** 能力词：分组、族、能力面、用到的基础组件、意图词表命中的词 */
   tags: string;
-  /** 这一类能力里的默认首选（见 GENERALITY_TIEBREAK）。基础组件恒为 false。 */
+  /** 这一类能力里的默认首选（见 TIE_BAND / familyOf）。基础组件恒为 false。 */
   generic?: boolean;
+  /** 能力面（filter / entityRows / series…）。基础组件各自成组，互不影响。 */
+  family?: string;
 }
 
 /**
@@ -346,12 +348,37 @@ interface CatalogBlock {
  * 首选排前面，跨档不动。文本明显更相关的永远在前，这条规则只在"文本上分不
  * 出高低"时说话——而「FilterBar vs BookingDirectoryFilter」正是这种情形。
  *
- * `TIE_BAND` = 多接近才算平手，按头名分数的比例算（分母是本次查询的头名，
- * 不是语料）。0.15 是量出来的：筛选那 15 个区块的文本分挤在头名的 85% 以内，
- * 恰好落进同一档，首选因此能排到前面；而「批量导出」这种一枝独秀的查询，
- * 第二名掉出档外，顺序不受影响。
+ * ## 光靠"平手"不够，因为它们根本不平手
+ *
+ * 按头名比例切档试过（TIE_BAND=0.15/0.3/0.5），「做一个订单筛选」前四永远是
+ * 那四个特化筛选件——FilterBar 的文本分实打实地低一截（第 11），把档位放宽到
+ * "差一半也算平手"它仍在第 12。**这几个区块不是分数接近，是分数确实拉开了**，
+ * 而拉开的原因（说明文字长短、pageKinds 多少）跟"哪个更该先给用户"毫无关系。
+ *
+ * 所以按用户 2026-08-09 的裁决（原话选 A：「相信 AI 那份首选名单，让它压过
+ * 文本分」）改成**同一能力面内首选不低于同门**：
+ *
+ *     有效分 = 首选 ? max(自己的分, 本能力面里最高的分) : 自己的分
+ *
+ * 一个 filter 首选因此不会排在任何 filter 特化件后面；而**跨能力面仍然按文本
+ * 分**——`AlertMatcherFilter` 这种特化件不会被同门的高分带上来，`batchActionBar`
+ * 那种一枝独秀的查询顺序也不动。范围严格限定在"同门之间"，不外溢。
+ *
+ * 基础组件各自成组（组名带 id），所以这条规则对它们是空转，那一档的顺序
+ * 完全不变。
+ *
+ * `TIE_BAND` 保留：有效分打平之后（首选之间、或首选与同门最高分之间）仍要
+ * 分先后，档内首选优先、再按自己的分。
  */
 const TIE_BAND = 0.15;
+
+/** 首选要拿到"同门最高分"，自己至少得有同门最高分的这个比例。 */
+const PROMOTE_FLOOR = 0.35;
+
+/** 分组键：区块按能力面归组，基础组件各自成组（这条规则对它们空转）。 */
+function familyOf(d: SearchDoc): string {
+  return d.kind === "block" ? `cap:${d.family || "-"}` : `base:${d.id}`;
+}
 
 const CATALOG = catalogJson as { blocks: CatalogBlock[] };
 
@@ -402,6 +429,7 @@ function blockDocs(labelOf: (type: string) => string | undefined): SearchDoc[] {
     label: labelOf(b.type) ?? b.label ?? b.type,
     description: b.description ?? "",
     generic: b.generality === "generic",
+    family: b.capability || b.family || "",
     tags: [
       b.family,
       b.capability,
@@ -527,13 +555,27 @@ export function buildIndex(
         // 这块补丁没有存在理由了。
         keep.push(...above.slice(0, MAX_HITS));
       }
-      // 排序三级：文本档位 → 档内首选优先 → 档内按分数。
-      // 业务优先级只在**平手时**说话，不去乘分数（见 TIE_BAND 上面那段）。
       const weighted = (e: readonly [SearchDoc, number]) => e[1] * KIND_WEIGHT[e[0].kind];
-      const top = Math.max(...keep.map(weighted), 0);
+      // 同门最高分：首选不低于它（见 familyOf 上面那段的裁决）
+      const familyBest = new Map<string, number>();
+      for (const e of keep) {
+        const k = familyOf(e[0]);
+        familyBest.set(k, Math.max(familyBest.get(k) ?? 0, weighted(e)));
+      }
+      // 提升有门槛：自己得先跟同门最高分在一个数量级上。
+      // 没有这道门槛时，entityRows 那一族（45 个成员、7 个首选）会被任何沾边的
+      // 查询整体抬到榜首——实测「上传并预览合同」前五变成 RecordDetail /
+      // ReferenceManyManager / DataTable…，一个上传控件都没有。
+      const effective = (e: readonly [SearchDoc, number]) => {
+        const own = weighted(e);
+        if (!e[0].generic) return own;
+        const best = familyBest.get(familyOf(e[0])) ?? 0;
+        return own >= best * PROMOTE_FLOOR ? Math.max(own, best) : own;
+      };
+      const top = Math.max(...keep.map(effective), 0);
       const band = top * TIE_BAND;
       const tierOf = (e: readonly [SearchDoc, number]) =>
-        band > 0 ? Math.floor((top - weighted(e)) / band) : 0;
+        band > 0 ? Math.floor((top - effective(e)) / band) : 0;
       return keep
         .sort((a, b) => {
           const dt = tierOf(a) - tierOf(b);
