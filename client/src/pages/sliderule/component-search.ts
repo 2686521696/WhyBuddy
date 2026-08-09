@@ -376,8 +376,14 @@ interface CatalogBlock {
  */
 
 /** 分组键：区块按能力面归组，基础组件各自成组（这条规则对它们空转）。 */
+const CAPABILITY_FAMILY: Record<string, string> = {
+  chart: "series",
+  metric: "aggregate",
+};
+
 function familyOf(d: SearchDoc): string {
-  return d.kind === "block" ? `cap:${d.family || "-"}` : `base:${d.id}`;
+  const family = CAPABILITY_FAMILY[d.family ?? ""] ?? d.family;
+  return d.kind === "block" ? `cap:${family || "-"}` : `base:${d.id}`;
 }
 
 const CATALOG = catalogJson as { blocks: CatalogBlock[] };
@@ -406,6 +412,10 @@ const CAPABILITY_CN: Record<string, string> = {
   container: "容器 卡片 版面",
   outcome: "结果 反馈 结束",
   freeform: "自由 设计 洞察",
+  chart: "趋势 走势 图表 曲线 占比",
+  metric: "指标 统计 汇总 聚合 概览",
+  navigation: "导航 菜单 页签 步骤",
+  status: "状态 进度 健康 反馈",
 };
 
 /**

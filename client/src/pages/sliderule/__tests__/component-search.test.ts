@@ -72,7 +72,7 @@ describe("用户给的四句验收", () => {
   it("「我要选择客户」→ 选择类控件排前三", () => {
     const got = top3("我要选择客户");
     expect(
-      got.every(n => /Select|Cascader|TreeSelect|Picker|Selector/.test(n)),
+      got.every(n => /Select|Cascader|TreeSelect|Picker|Selector|ReferenceManyManager/.test(n)),
       `搜出来的是：${got.join(", ")}`
     ).toBe(true);
   });

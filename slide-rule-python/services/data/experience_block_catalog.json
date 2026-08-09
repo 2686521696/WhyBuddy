@@ -2369,7 +2369,7 @@
     {
       "type": "RecordPicker",
       "label": "记录选择器",
-      "generality": "specific",
+      "generality": "generic",
       "description": "记录选择器：在同一区块里完成搜索、单选或多选、查看已选数量、清空和确认。它不是普通列表加复选框的样式变体，而是一个有完成边界的选择任务；确认前选择只保存在本地，不会误触发业务写入。",
       "rendererKey": "record-picker",
       "rendererStatus": "real",
@@ -3242,7 +3242,7 @@
     {
       "type": "ReferenceManyManager", "description": "关联记录管理：把已关联和可关联集合分开，支持候选多选关联和现有关系逐项解除，不创建或删除原始记录。", "rendererKey": "reference-many-manager", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
       "label": "关联记录管理",
-      "generality": "generic",
+      "generality": "specific",
       "source": { "repo": "marmelab/react-admin", "path": "docs/ReferenceManyInput.md + docs/DualListInput.md", "took": "关系选择与记录创建分离；关联和解除只提交 id 差异，搜索/分页不改变已选集合。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "linkedValue": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } },
       "dataKinds": ["entityRows"], "pageKinds": ["workbench", "dashboard"], "allowedRegions": ["main", "aside", "supplement", "overlay"], "regionsRationale": "关联管理可作为主体，也可嵌入详情侧栏、补充区或弹层。", "events": ["submitRequest"],
@@ -3562,862 +3562,931 @@
     },
     {
       "type": "WorkItemCommandHeader", "description": "工作项操作页头：根据当前状态提供编辑、复制、归档或重新打开，危险操作需要确认。", "rendererKey": "work-item-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "工作项操作页头",
+      "generality": "specific",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/issues/header.tsx + issues/peek-overview/header.tsx", "took": "标题、状态、优先级和负责人共享同一工作项上下文；关闭态切换为重新打开，归档不与编辑混成一个动作。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["header"], "regionsRationale": "工作项级命令属于标题操作区。", "events": ["editRequest", "actionTrigger", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "statusFieldRef", "targets"], "optional": ["priorityFieldRef", "assigneeFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "statusFieldRef": "enum", "priorityFieldRef": "enum", "assigneeFieldRef": "string" }, "note": "focus 优先；关闭态只能重新打开，活动态才能归档。" }
     },
     {
       "type": "DocumentCommandHeader", "description": "文档操作页头：区分草稿、已发布和历史修订，按发布权限提供保存、发布、完成编辑或恢复版本。", "rendererKey": "document-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "文档操作页头",
+      "generality": "specific",
       "source": { "repo": "outline/outline", "path": "app/scenes/Document/components/Header.tsx + app/scenes/DocumentPublish.tsx", "took": "草稿保存与发布分离，发布要求权限和位置，历史修订只开放恢复，不冒充当前文档编辑。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["header"], "regionsRationale": "文档生命周期命令只进入标题操作区。", "events": ["editRequest", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "stateFieldRef", "targets"], "optional": ["permissionFieldRef", "revisionFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "stateFieldRef": "enum", "permissionFieldRef": "enum", "revisionFieldRef": "string" }, "note": "revisionFieldRef 非空时进入只读修订恢复模式。" }
     },
     {
       "type": "EnvironmentStatusStrip", "description": "环境状态条：把多个运行环境的健康状态压缩在页头，并允许聚焦具体环境查看详情。", "rendererKey": "environment-status-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "data",
-      "generality": "specific",
       "label": "环境状态条",
+      "generality": "specific",
       "source": { "repo": "backstage/backstage", "path": "plugins/catalog-react/src/components/EntityProcessingStatusPicker/EntityProcessingStatusPicker.tsx", "took": "处理成功、处理中和错误状态分别表达；错误筛选是受控条件，选择状态不会改写实体。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "dashboard", "workbench"], "allowedRegions": ["headerExtra"], "regionsRationale": "环境健康是标题旁的紧凑状态，不是主体监控列表。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "nameFieldRef", "statusFieldRef"], "optional": [], "entityFieldRefs": { "nameFieldRef": "string", "statusFieldRef": "enum" }, "note": "每行代表一个环境，状态不由前端推测。" }
     },
     {
       "type": "DataFreshnessIndicator", "description": "数据新鲜度指示：显示来源、最近更新时间和新鲜/延迟状态，刷新动作交给宿主。", "rendererKey": "data-freshness-indicator", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "data",
-      "generality": "generic",
       "label": "数据新鲜度",
+      "generality": "generic",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/query_builder/components/view/ExecutionTime/ExecutionTime.tsx + dashboard/components/DashboardParameterList/DashboardParameterList.tsx", "took": "缓存与实时结果分开表达，只有真实更新时间和运行结果才能声明新鲜，手动刷新不伪造完成时间。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "dashboard"], "allowedRegions": ["headerExtra"], "regionsRationale": "新鲜度是页头状态提示。", "events": ["actionTrigger"],
       "bindingSchema": { "required": ["entityRef", "sourceFieldRef", "updatedAtFieldRef", "targets"], "optional": ["statusFieldRef"], "entityFieldRefs": { "sourceFieldRef": "string", "updatedAtFieldRef": "date", "statusFieldRef": "enum" }, "note": "刷新只发送 actionTrigger，更新时间仍来自数据源。" }
     },
     {
       "type": "WorkItemContextSummary", "description": "工作项上下文摘要：在正文前展示项目、周期、截止时间、标签等关键归属信息。", "rendererKey": "work-item-context-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "content",
-      "generality": "specific",
       "label": "工作项上下文摘要",
+      "generality": "specific",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/issues/peek-overview/header.tsx + issue-detail", "took": "工作项标识和项目归属保持可见，周期、截止时间与标签只作为上下文，不复制完整详情。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["headerContent"], "regionsRationale": "工作项归属信息属于页头说明。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "maxItems": 6 } }, "note": "focus 优先，摘要最多六项。" }
     },
     {
       "type": "DocumentContextSummary", "description": "文档上下文摘要：展示集合、所有者、可见性和最后更新时间，不替代文档正文。", "rendererKey": "document-context-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "content",
-      "generality": "specific",
       "label": "文档上下文摘要",
+      "generality": "specific",
       "source": { "repo": "outline/outline", "path": "app/scenes/Document/components/SharedHeader.tsx + app/components/DocumentContext.tsx", "took": "文档标题与集合路径、共享范围和修订上下文分层，窄屏仍保留所有者与更新时间。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["headerContent"], "regionsRationale": "文档元信息属于正文前的页头说明。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "maxItems": 6 } }, "note": "focus 优先，空字段显示短占位。" }
     },
     {
       "type": "WorkItemDetailTabs", "description": "工作项详情页签：在概览、活动、子任务和关联内容之间使用稳定键导航，禁用不可用分区。", "rendererKey": "work-item-detail-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
-      "generality": "generic",
       "label": "工作项详情页签",
+      "generality": "generic",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/issues/issue-detail + issue-detail-widgets", "took": "分区能力由当前工作项机械派生，活动项使用稳定键，计数不参与身份判断。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["tabs"], "regionsRationale": "工作项详情分区只属于页签区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "稳定 key 决定活动项，disabled 分区不能进入。" }
     },
     {
       "type": "QueryModeTabs", "description": "查询模式页签：在可视化、结果、SQL 和元数据等真实可用模式之间切换。", "rendererKey": "query-mode-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
-      "generality": "specific",
       "label": "查询模式页签",
+      "generality": "specific",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/query_builder/components + components/view", "took": "查询编辑、结果和可视化使用稳定模式键；缺少结果或元数据时相关模式禁用，切换不重新执行查询。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "workbench"], "allowedRegions": ["tabs"], "regionsRationale": "查询表现模式只属于页签区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "切换只改变可见模式，不触发查询提交。" }
     },
     {
       "type": "WorkItemFilterBar", "description": "工作项筛选栏：按状态、优先级、负责人、标签等分面独立多选，清除一个分面不影响其他分面。", "rendererKey": "work-item-filter-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
-      "generality": "specific",
       "label": "工作项筛选栏",
+      "generality": "specific",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/issues/issue-layouts/filters/header/filters + applied-filters", "took": "分面状态独立保存、分面内多选、应用条件与展示属性分离，清除只影响目标分面。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["filters"], "regionsRationale": "工作项条件严格位于筛选区。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "typeFieldRef", "keyFieldRef", "titleFieldRef", "targets"], "optional": [], "entityFieldRefs": { "typeFieldRef": "enum", "keyFieldRef": "string", "titleFieldRef": "string" }, "note": "每行是一项分面候选，payload 以 facets 保留全部分面。" }
     },
     {
       "type": "DashboardParameterBar", "description": "Dashboard 参数栏：集中编辑多个参数，必填项满足后统一应用，参数草稿不会逐键触发查询。", "rendererKey": "dashboard-parameter-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
-      "generality": "specific",
       "label": "Dashboard 参数栏",
+      "generality": "specific",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/dashboard/components/DashboardParameterList/DashboardParameterList.tsx + parameters/components/ParametersList", "took": "参数值先形成草稿，再由统一应用动作发布；必填、默认值和隐藏参数分别处理，多个参数不相互覆盖。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["filters"], "regionsRationale": "Dashboard 参数是完整筛选带。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["valueFieldRef", "requiredFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "valueFieldRef": "string", "requiredFieldRef": "enum" }, "note": "必填参数为空时禁止应用；宿主负责参数类型转换。" }
     },
     {
       "type": "CycleHealthMetrics", "description": "周期健康指标：从总工作项、已完成、逾期和未开始数量派生完成率。", "rendererKey": "cycle-health-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
-      "generality": "generic",
       "label": "周期健康指标",
+      "generality": "generic",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/cycles/active-cycle/cycle-stats.tsx + progress.tsx", "took": "完成数与总数共享同一周期快照，逾期和未开始分别统计，进度不从列表长度猜测。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["kanban", "dashboard", "workbench"], "allowedRegions": ["metrics"], "regionsRationale": "周期健康属于页面指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "completedFieldRef", "totalFieldRef"], "optional": ["overdueFieldRef", "unstartedFieldRef"], "entityFieldRefs": { "completedFieldRef": "number", "totalFieldRef": "number", "overdueFieldRef": "number", "unstartedFieldRef": "number" }, "note": "读取首条周期摘要；完成率限制在 0-100。" }
     },
     {
       "type": "QueryExecutionMetrics", "description": "查询执行指标：同时展示真实执行耗时、结果行数、扫描字节和缓存来源。", "rendererKey": "query-execution-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
-      "generality": "specific",
       "label": "查询执行指标",
+      "generality": "specific",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/query_builder/components/view/ExecutionTime/ExecutionTime.tsx", "took": "只有非缓存且返回 running_time 的结果展示执行耗时；缓存来源、行数和扫描量来自同一结果摘要。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor", "workbench"], "allowedRegions": ["metrics"], "regionsRationale": "查询结果口径属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "rowsFieldRef"], "optional": ["cachedFieldRef", "bytesFieldRef"], "entityFieldRefs": { "timeFieldRef": "number", "rowsFieldRef": "number", "cachedFieldRef": "enum", "bytesFieldRef": "number" }, "note": "读取首条查询摘要；缓存结果仍显示来源但不伪造实时耗时。" }
     },
     {
       "type": "BulkSelectionBar", "description": "批量选择操作栏：只对当前真实选择集提供移动、归档和确认删除。", "rendererKey": "bulk-selection-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "generic",
       "label": "批量选择操作栏",
+      "generality": "generic",
       "source": { "repo": "outline/outline", "path": "app/components/DocumentSelectionToolbar.tsx", "took": "批量动作从当前 selection 派生，没有选择时不渲染有效动作；归档、移动与删除保持独立权限和确认边界。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["footerBar"], "regionsRationale": "跨记录操作持续位于底部操作条。", "events": ["editRequest", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "targets"], "optional": [], "note": "selection.rowIds 是唯一操作范围，删除必须确认。" }
     },
     {
       "type": "DraftPublishBar", "description": "草稿发布栏：保存草稿和发布分离，发布要求权限与明确位置，失败保留当前草稿。", "rendererKey": "draft-publish-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "草稿发布栏",
+      "generality": "specific",
       "source": { "repo": "outline/outline", "path": "app/scenes/DocumentPublish.tsx + app/scenes/Document/components/Header.tsx", "took": "没有发布位置时禁止提交；保存草稿不等于发布；发布失败保留编辑上下文并允许重试。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "文档保存与发布属于底部持续操作带。", "events": ["editRequest", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "stateFieldRef", "targets"], "optional": ["dirtyFieldRef", "canPublishFieldRef", "locationFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "stateFieldRef": "enum", "dirtyFieldRef": "enum", "canPublishFieldRef": "enum", "locationFieldRef": "string" }, "note": "发布位置为空或无权限时禁止发布；保存草稿仍可用。" }
     },
     {
       "type": "QuestionCommandHeader", "description": "问题操作页头：区分临时问题与已保存问题，收藏、复制和保存读取同一问题状态。", "rendererKey": "question-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "问题操作页头",
+      "generality": "specific",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/query_builder/components/view/ViewHeader/ViewTitleHeader.tsx + components/QuestionActions", "took": "临时/已保存、脏状态、收藏和复制动作由同一 question 状态派生；没有修改时禁用保存。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "dashboard"], "allowedRegions": ["header"], "regionsRationale": "问题身份和全局动作属于页面页头。", "events": ["actionTrigger", "editRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "targets"], "optional": ["savedFieldRef", "dirtyFieldRef", "bookmarkFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "savedFieldRef": "enum", "dirtyFieldRef": "enum", "bookmarkFieldRef": "enum" }, "note": "保存按钮只由真实 dirty 状态开启，收藏不冒充持久化保存。" }
     },
     {
       "type": "CatalogEntityCommandHeader", "description": "目录实体页头：展示实体 kind/type，并提供收藏、查看元数据和刷新目录动作。", "rendererKey": "catalog-entity-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "目录实体页头",
+      "generality": "specific",
       "source": { "repo": "backstage/backstage", "path": "plugins/catalog/src/alpha/components/EntityHeader/EntityHeaderBui.tsx", "took": "实体标题、kind/type 标签、收藏和上下文菜单共享同一实体引用；收藏状态机械决定动作。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["header"], "regionsRationale": "实体身份与目录级动作属于页头。", "events": ["actionTrigger"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "kindFieldRef", "targets"], "optional": ["typeFieldRef", "starredFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "kindFieldRef": "enum", "typeFieldRef": "enum", "starredFieldRef": "enum" }, "note": "收藏、元数据查看和刷新只提交当前真实实体 id。" }
     },
     {
       "type": "CollaboratorPresenceStrip", "description": "协作者在线状态：在线与正在编辑分开表达，头像数量受限，溢出保持总人数。", "rendererKey": "collaborator-presence-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
-      "generality": "specific",
       "label": "协作者在线状态",
+      "generality": "specific",
       "source": { "repo": "outline/outline", "path": "app/components/Collaborators.tsx", "took": "在线集合和编辑集合独立计算，在线成员优先，头像面板限制展示数量并保留溢出人数。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["headerExtra"], "regionsRationale": "协作状态是正文前的即时辅助信息。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "nameFieldRef", "presentFieldRef"], "optional": ["editingFieldRef"], "entityFieldRefs": { "nameFieldRef": "string", "presentFieldRef": "enum", "editingFieldRef": "enum" }, "note": "只展示真实在线行；正在编辑是在线行的附加状态。" }
     },
     {
       "type": "QueryRunStatusStrip", "description": "查询运行状态：运行、完成和失败互斥，运行中只能取消，其他状态允许重新运行。", "rendererKey": "query-run-status-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
-      "generality": "specific",
       "label": "查询运行状态",
+      "generality": "specific",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/query_builder/components/view/ViewHeader/ViewTitleHeader.tsx + frontend/src/metabase/query_builder/components/view/ExecutionTime/ExecutionTime.tsx", "took": "isRunning 决定取消与运行互斥；执行耗时和缓存来源读取真实查询结果，不由前端模拟完成。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "dashboard"], "allowedRegions": ["headerExtra"], "regionsRationale": "查询状态紧邻页头并控制正文结果的新鲜度。", "events": ["actionTrigger"],
       "bindingSchema": { "required": ["entityRef", "statusFieldRef", "targets"], "optional": ["timeFieldRef", "cachedFieldRef"], "entityFieldRefs": { "statusFieldRef": "enum", "timeFieldRef": "number", "cachedFieldRef": "enum" }, "note": "运行中不叠加第二次运行；完成时间和缓存状态必须来自实体数据。" }
     },
     {
       "type": "EntityOwnershipSummary", "description": "实体所有权摘要：把负责人、生命周期、系统和领域保持在同一实体上下文。", "rendererKey": "entity-ownership-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
-      "generality": "generic",
       "label": "实体所有权摘要",
+      "generality": "generic",
       "source": { "repo": "backstage/backstage", "path": "plugins/catalog/src/alpha/components/EntityHeader/EntityHeaderBui.tsx", "took": "owner、lifecycle 与 part-of 层级从同一 catalog entity 派生，缺失项不伪造占位关系。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["headerContent"], "regionsRationale": "所有权和层级是进入实体正文前的上下文。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "ownerFieldRef"], "optional": ["lifecycleFieldRef", "systemFieldRef", "domainFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "ownerFieldRef": "string", "lifecycleFieldRef": "enum", "systemFieldRef": "string", "domainFieldRef": "string" }, "note": "可选层级缺失时直接省略，不推测 owner 或 part-of 关系。" }
     },
     {
       "type": "QueryDataSourceSummary", "description": "查询数据源摘要：按数据库、Schema、表或模型的稳定层级显示来源。", "rendererKey": "query-data-source-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
-      "generality": "specific",
       "label": "查询数据源摘要",
+      "generality": "specific",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/query_builder/components/view/ViewHeader/components/QuestionDataSource/QuestionDataSource.tsx + DataSourceCrumbs.tsx", "took": "数据库、Schema 和源表/模型使用同一来源链；当前节点突出，来源类型独立标记。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "dashboard"], "allowedRegions": ["headerContent"], "regionsRationale": "数据来源是理解查询正文的前置上下文。", "events": [],
       "bindingSchema": { "required": ["entityRef", "databaseFieldRef", "sourceFieldRef"], "optional": ["schemaFieldRef", "typeFieldRef"], "entityFieldRefs": { "databaseFieldRef": "string", "schemaFieldRef": "string", "sourceFieldRef": "string", "typeFieldRef": "enum" }, "note": "来源层级只读取同一结果行，缺少 Schema 时保持数据库到来源的确定性路径。" }
     },
     {
       "type": "DatasetEditorTabs", "description": "数据集编辑页签：查询、字段和设置使用稳定键，不可用能力保持禁用。", "rendererKey": "dataset-editor-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
-      "generality": "specific",
       "label": "数据集编辑页签",
+      "generality": "specific",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/query_builder/components/DatasetEditor/EditorTabs/EditorTabs.tsx", "took": "query、columns、metadata 使用稳定模式键；查询或字段能力不可用时禁用对应页签。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["tabs"], "regionsRationale": "它只切换编辑器分区，不承载编辑正文。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "页签身份只由稳定 key 决定，禁用项不可触发切换。" }
     },
     {
       "type": "DocumentHistoryTabs", "description": "文档历史页签：修订、事件和变更对照各自保持独立稳定模式。", "rendererKey": "document-history-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
-      "generality": "specific",
       "label": "文档历史页签",
+      "generality": "specific",
       "source": { "repo": "outline/outline", "path": "app/scenes/Document/components/History/History.tsx + HighlightChangesControl.tsx", "took": "修订和事件独立分页后按时间合并；变更对照模式保持稳定 key，切换文档时重置旧比较上下文。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["tabs"], "regionsRationale": "它只选择文档历史分区，历史实体仍由正文区块展示。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "修订、事件和变更模式使用稳定键，计数不参与身份判断。" }
     },
     {
       "type": "CatalogEntityFilterBar", "description": "目录实体筛选：kind、type、lifecycle、namespace 和 owner 分面累计生效。", "rendererKey": "catalog-entity-filter-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
-      "generality": "specific",
       "label": "目录实体筛选",
+      "generality": "specific",
       "source": { "repo": "backstage/backstage", "path": "plugins/catalog-react/src/filters.ts + plugins/catalog-react/src/components/CatalogFilterLayout/CatalogFilterLayout.tsx", "took": "不同目录分面同时生效，同一分面允许多值；owned、starred 和 all 的身份边界独立。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["filters"], "regionsRationale": "目录分面只约束后续实体列表。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "facetFieldRef", "keyFieldRef", "titleFieldRef", "targets"], "optional": [], "entityFieldRefs": { "facetFieldRef": "enum", "keyFieldRef": "string", "titleFieldRef": "string" }, "note": "跨分面 AND、分面内 OR；每次变更将目标分页回到第一页。" }
     },
     {
       "type": "QueryClauseFilterBar", "description": "查询条件栏：逐条回显结构化字段条件，支持单条移除和全部清除。", "rendererKey": "query-clause-filter-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
-      "generality": "generic",
       "label": "查询条件栏",
+      "generality": "generic",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/query_builder/components/view/ViewHeader/components/QuestionFiltersHeader/QuestionFiltersHeader.tsx", "took": "结构化过滤子句由真实查询派生，展开状态不改变查询；移除单条不会清空其他条件。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "dashboard"], "allowedRegions": ["filters"], "regionsRationale": "它是查询结果之前的已生效条件带。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "fieldFieldRef", "operatorFieldRef", "valueFieldRef", "targets"], "optional": ["enabledFieldRef"], "entityFieldRefs": { "fieldFieldRef": "string", "operatorFieldRef": "enum", "valueFieldRef": "string", "enabledFieldRef": "enum" }, "note": "单条移除只提交剩余真实 clause id，并将目标分页回到第一页。" }
     },
     {
       "type": "DocumentInsightMetrics", "description": "文档洞察指标：阅读次数、贡献者和来源时间来自同一文档快照。", "rendererKey": "document-insight-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
-      "generality": "specific",
       "label": "文档洞察指标",
+      "generality": "specific",
       "source": { "repo": "outline/outline", "path": "app/scenes/Document/components/Insights.tsx + app/components/DocumentViews.tsx", "took": "创建、更新、贡献者和阅读数据属于同一文档洞察；缺失数据不编造趋势。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "dashboard"], "allowedRegions": ["metrics"], "regionsRationale": "紧凑文档指标属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "viewsFieldRef", "contributorsFieldRef"], "optional": ["createdAtFieldRef", "updatedAtFieldRef"], "entityFieldRefs": { "viewsFieldRef": "number", "contributorsFieldRef": "number", "createdAtFieldRef": "date", "updatedAtFieldRef": "date" }, "note": "时间与计数只读取同一文档快照，不在前端模拟增长。" }
     },
     {
       "type": "MetadataQualityMetrics", "description": "元数据质量指标：由字段总数、已描述字段和语义类型覆盖机械计算完整度。", "rendererKey": "metadata-quality-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
-      "generality": "specific",
       "label": "元数据质量指标",
+      "generality": "specific",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/query_builder/components/view/sidebars/DatasetManagementSection/DatasetMetadataStrengthIndicator/DatasetMetadataStrengthIndicator.tsx", "took": "质量强度由真实元数据覆盖派生，不保存一份可能漂移的视觉分数。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "dashboard"], "allowedRegions": ["metrics"], "regionsRationale": "元数据覆盖率属于指标带，不替代字段编辑正文。", "events": [],
       "bindingSchema": { "required": ["entityRef", "totalFieldRef", "documentedFieldRef"], "optional": ["typedFieldRef"], "entityFieldRefs": { "totalFieldRef": "number", "documentedFieldRef": "number", "typedFieldRef": "number" }, "note": "分数从覆盖数量和总数确定性计算，总数为零时显示 0%。" }
     },
     {
       "type": "QuestionExecutionBar", "description": "查询执行栏：运行与取消互斥，保存只处理真实脏状态。", "rendererKey": "question-execution-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "查询执行栏",
+      "generality": "specific",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/query_builder/components/view/ViewHeader/components/ViewTitleHeaderRightSide/ViewTitleHeaderRightSide.tsx", "took": "isRunnable、isRunning 和 isDirty 共同决定运行、取消与保存出口；运行中不允许叠加请求。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "dashboard"], "allowedRegions": ["footerBar"], "regionsRationale": "查询执行和保存是持续可达的底部任务栏。", "events": ["actionTrigger", "editRequest"],
       "bindingSchema": { "required": ["entityRef", "statusFieldRef", "targets"], "optional": ["runnableFieldRef", "dirtyFieldRef"], "entityFieldRefs": { "statusFieldRef": "enum", "runnableFieldRef": "enum", "dirtyFieldRef": "enum" }, "note": "运行与取消互斥；不可运行时禁用运行，未修改时禁用保存。" }
     },
     {
       "type": "DocumentShareBar", "description": "文档分享栏：团队可见与公开分享互斥，只有真实公开链接才能复制。", "rendererKey": "document-share-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "文档分享栏",
+      "generality": "specific",
       "source": { "repo": "outline/outline", "path": "app/scenes/Document/components/ShareButton.tsx + app/components/Sharing/Document", "took": "公开分享状态、继承域名、权限和真实链接共同决定入口；打开面板不冒充分享已经启用。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "分享状态与持续操作位于文档底部任务栏。", "events": ["actionTrigger", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "visibilityFieldRef", "targets"], "optional": ["domainFieldRef", "permissionFieldRef", "linkFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "visibilityFieldRef": "enum", "domainFieldRef": "string", "permissionFieldRef": "enum", "linkFieldRef": "string" }, "note": "只有 public 且存在真实 link 时允许复制；无分享权限时禁止开启或管理。" }
     },
     {
       "type": "CycleCommandHeader", "description": "周期操作页头：编辑、复制链接、归档和恢复由周期状态及项目权限共同决定。", "rendererKey": "cycle-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "周期操作页头",
+      "generality": "specific",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/cycles/quick-actions.tsx + cycles-view-header.tsx", "took": "周期动作菜单读取真实周期和项目权限；已归档周期开放恢复，活动周期开放编辑与归档。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["header"], "regionsRationale": "周期身份和全局动作属于页头。", "events": ["actionTrigger", "editRequest", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "statusFieldRef", "targets"], "optional": ["editableFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "statusFieldRef": "enum", "editableFieldRef": "enum" }, "note": "已归档或已完成周期不可编辑；归档和恢复复用同一状态矩阵。" }
     },
     {
       "type": "AlertGroupCommandHeader", "description": "规则组操作页头：评估状态、间隔、编辑权限和暂停/恢复动作保持一致。", "rendererKey": "alert-group-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "规则组操作页头",
+      "generality": "specific",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/alerting/unified/group-details/Title.tsx + rule-list/components/GroupIntervalMetadata.tsx + RuleListActionButtons.V2.tsx", "took": "规则组标题、评估间隔、可编辑能力和暂停状态共同决定操作出口。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "workbench"], "allowedRegions": ["header"], "regionsRationale": "规则组身份和评估动作属于页头。", "events": ["actionTrigger", "editRequest", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "statusFieldRef", "targets"], "optional": ["editableFieldRef", "intervalFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "statusFieldRef": "enum", "editableFieldRef": "enum", "intervalFieldRef": "string" }, "note": "暂停与恢复互斥，无编辑权限时两者均禁用。" }
     },
     {
       "type": "IncidentOwnershipStrip", "description": "事故归属状态：当前负责人、分配来源和建议负责人分别表达。", "rendererKey": "incident-ownership-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
-      "generality": "specific",
       "label": "事故归属状态",
+      "generality": "specific",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/issueDetails/header/assigneeSelector.tsx + getOwnerList.tsx", "took": "当前 assignedTo、自动归属来源和候选 owners 分开计算；建议负责人不会自动覆盖当前负责人。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["headerExtra"], "regionsRationale": "事故归属是页头旁的即时处置上下文。", "events": ["editRequest", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "assigneeFieldRef", "targets"], "optional": ["sourceFieldRef", "suggestedFieldRef"], "entityFieldRefs": { "assigneeFieldRef": "string", "sourceFieldRef": "enum", "suggestedFieldRef": "string" }, "note": "已有负责人时不自动采用建议；更换和采用建议均提交真实事故 id。" }
     },
     {
       "type": "SyncScheduleStrip", "description": "同步计划状态：频率、下次运行、时区和暂停状态共享一个计划快照。", "rendererKey": "sync-schedule-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
-      "generality": "specific",
       "label": "同步计划状态",
+      "generality": "specific",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/pages/connections/ConnectionPage/ConnectionPageHeader.tsx + ConnectionSettingsPage", "took": "连接状态与 Schema 刷新影响导航和编辑；同步频率、下次运行和暂停状态来自同一连接配置。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "workbench"], "allowedRegions": ["headerExtra"], "regionsRationale": "同步计划是连接正文之前的运行上下文。", "events": ["editRequest"],
       "bindingSchema": { "required": ["entityRef", "frequencyFieldRef", "nextRunFieldRef", "targets"], "optional": ["timezoneFieldRef", "statusFieldRef"], "entityFieldRefs": { "frequencyFieldRef": "string", "nextRunFieldRef": "date", "timezoneFieldRef": "string", "statusFieldRef": "enum" }, "note": "暂停状态不删除原计划；调整计划交给宿主编辑流程。" }
     },
     {
       "type": "CycleContextSummary", "description": "周期上下文摘要：负责人、成员、日期和工作项进度来自同一周期快照。", "rendererKey": "cycle-context-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
-      "generality": "specific",
       "label": "周期上下文摘要",
+      "generality": "specific",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/cycles/analytics-sidebar/sidebar-details.tsx", "took": "负责人、成员、工作项和估算进度共同属于周期详情；已完成周期优先读取 progress_snapshot。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["headerContent"], "regionsRationale": "周期上下文位于标题和工作项正文之间。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "只展示同一周期的关键字段，不复制完整工作项列表。" }
     },
     {
       "type": "AlertGroupContextSummary", "description": "规则组上下文摘要：命名空间、评估间隔、规则数和状态处于同一组上下文。", "rendererKey": "alert-group-context-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
-      "generality": "specific",
       "label": "规则组上下文摘要",
+      "generality": "specific",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/alerting/unified/group-details/GroupDetailsPage.tsx + rule-list/components/GroupIntervalMetadata.tsx", "took": "规则组身份由 namespace/group 共同确定，评估间隔和规则数量不脱离组上下文。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "workbench"], "allowedRegions": ["headerContent"], "regionsRationale": "规则组元数据是进入规则列表前的上下文。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "仅展示规则组元数据，规则明细仍属于正文。" }
     },
     {
       "type": "EventTypeEditorTabs", "description": "事件类型编辑页签：设置、可用时间、限制、高级、应用和 Webhook 使用稳定能力键。", "rendererKey": "event-type-editor-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
-      "generality": "specific",
       "label": "事件类型编辑页签",
+      "generality": "specific",
       "source": { "repo": "calcom/cal.com", "path": "apps/web/modules/event-types/components/EventType.tsx + EventTypeLayout.tsx", "took": "宽屏纵向页签与窄屏横向页签共享同一能力集合；不可用能力不会生成可点击入口。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["tabs"], "regionsRationale": "它只切换事件类型编辑分区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "桌面和手机共享稳定 key，禁用项不可切换。" }
     },
     {
       "type": "IncidentEvidenceTabs", "description": "事故证据页签：事件、附件、回放和用户反馈只在真实可用时开放。", "rendererKey": "incident-evidence-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
-      "generality": "specific",
       "label": "事故证据页签",
+      "generality": "specific",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/issueDetails/header/header.tsx + groupEventAttachments + groupDistributions/useDrawerTab.tsx", "took": "附件、回放、反馈等证据能力由真实计数和特性可用性派生；计数不参与页签身份。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["tabs"], "regionsRationale": "它只切换事故证据分区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "无证据或能力不可用时禁用对应页签。" }
     },
     {
       "type": "CycleFilterBar", "description": "周期筛选栏：状态、开始日期和结束日期分面累计生效，搜索保持独立通道。", "rendererKey": "cycle-filter-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
-      "generality": "specific",
       "label": "周期筛选栏",
+      "generality": "specific",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/cycles/dropdowns/filters + applied-filters + cycles-view-header.tsx", "took": "状态和日期分面独立 toggle，已应用条件逐项撤销；搜索开关不清空结构化条件。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["filters"], "regionsRationale": "周期筛选只约束后续周期列表。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "typeFieldRef", "keyFieldRef", "titleFieldRef", "targets"], "optional": [], "entityFieldRefs": { "typeFieldRef": "enum", "keyFieldRef": "string", "titleFieldRef": "string" }, "note": "不同分面累计生效，清除一项不影响其他分面。" }
     },
     {
       "type": "AlertRuleFilterBar", "description": "告警规则筛选：支持可解析搜索语法和分组/列表视图，提交时统一规范化。", "rendererKey": "alert-rule-filter-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
-      "generality": "specific",
       "label": "告警规则筛选",
+      "generality": "specific",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/alerting/unified/rule-list/filter/RulesFilter.v2.tsx + search/rulesSearchParser", "took": "名称、数据源、命名空间、标签、状态、类型和健康度使用统一查询语法；视图模式与筛选值分离。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "defaultQuery": { "type": "string" }, "defaultView": { "type": "string", "enum": ["grouped", "list"] }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": [], "pageKinds": ["monitor", "workbench"], "allowedRegions": ["filters"], "regionsRationale": "规则查询只约束后续规则列表。", "events": ["filterChange"],
       "bindingSchema": { "required": ["targets"], "optional": [], "note": "查询语法原文交给宿主解析，切换视图不会丢失当前查询。" }
     },
     {
       "type": "SyncReliabilityMetrics", "description": "同步可靠性指标：成功率由成功和失败运行机械计算，并保留记录量与新鲜度。", "rendererKey": "sync-reliability-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
-      "generality": "specific",
       "label": "同步可靠性指标",
+      "generality": "specific",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/pages/connections/ConnectionTimelinePage/components/JobStats.tsx + StreamStatusPage", "took": "运行结果、同步记录量和数据新鲜度来自同一连接运行快照；成功率不由前端保存。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "dashboard"], "allowedRegions": ["metrics"], "regionsRationale": "连接可靠性属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "successFieldRef", "failedFieldRef"], "optional": ["recordsFieldRef", "freshnessFieldRef"], "entityFieldRefs": { "successFieldRef": "number", "failedFieldRef": "number", "recordsFieldRef": "number", "freshnessFieldRef": "string" }, "note": "没有运行时成功率为 0，不伪造 100%。" }
     },
     {
       "type": "RuleEvaluationMetrics", "description": "规则评估指标：活跃、暂停、错误和平均耗时来自同一评估快照。", "rendererKey": "rule-evaluation-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
-      "generality": "specific",
       "label": "规则评估指标",
+      "generality": "specific",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/alerting/unified/insights/grafana/RulesByEvaluationPercentage.tsx + utils/ruleStats.ts", "took": "active/paused 比例从规则状态聚合，评估错误和耗时保持同一时间口径。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "dashboard"], "allowedRegions": ["metrics"], "regionsRationale": "规则评估状态属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "activeFieldRef", "pausedFieldRef"], "optional": ["errorFieldRef", "durationFieldRef"], "entityFieldRefs": { "activeFieldRef": "number", "pausedFieldRef": "number", "errorFieldRef": "number", "durationFieldRef": "number" }, "note": "所有数量和耗时必须来自同一评估快照。" }
     },
     {
       "type": "CycleLifecycleBar", "description": "周期生命周期栏：完成、归档、恢复和删除构成互斥状态机，删除只允许已归档周期。", "rendererKey": "cycle-lifecycle-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "周期生命周期栏",
+      "generality": "specific",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/cycles/quick-actions.tsx + archived-cycles/modal.tsx + delete-modal.tsx", "took": "活动周期可完成或归档，已归档周期可恢复或确认删除；权限统一控制所有写动作。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["footerBar"], "regionsRationale": "周期生命周期动作持续位于底部任务栏。", "events": ["submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "statusFieldRef", "targets"], "optional": ["editableFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "statusFieldRef": "enum", "editableFieldRef": "enum" }, "note": "删除必须确认且只对 archived 开放；完成周期不可再次完成。" }
     },
     {
       "type": "EventTypePublishBar", "description": "事件类型发布栏：保存配置与公开/隐藏状态分离，非法配置不能发布。", "rendererKey": "event-type-publish-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "事件类型发布栏",
+      "generality": "specific",
       "source": { "repo": "calcom/cal.com", "path": "apps/web/modules/event-types/components/EventTypeLayout.tsx + event-types-listing-view.tsx", "took": "hidden 状态、表单 dirty、校验结果和公开资料开关分别控制保存与可见性；移动端使用独立操作菜单。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "事件类型保存和公开状态属于底部持续操作。", "events": ["editRequest", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "hiddenFieldRef", "targets"], "optional": ["dirtyFieldRef", "validFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "hiddenFieldRef": "enum", "dirtyFieldRef": "enum", "validFieldRef": "enum" }, "note": "保存不等于发布；校验失败时保存和发布均不可用。" }
     },
     {
       "type": "ConversationCommandHeader", "description": "会话操作页头：联系人、收件箱、验证状态和会话状态共同决定解决或重新打开。", "rendererKey": "conversation-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "会话操作页头",
+      "generality": "specific",
       "source": { "repo": "chatwoot/chatwoot", "path": "app/javascript/dashboard/components/widgets/conversation/ConversationHeader.vue + MoreActions.vue", "took": "联系人、会话编号、收件箱、HMAC 验证、暂停和 SLA 状态共享同一会话上下文；解决与重新打开互斥。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["header"], "regionsRationale": "会话身份和全局处置动作属于页头。", "events": ["actionTrigger", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "statusFieldRef", "targets"], "optional": ["verifiedFieldRef", "inboxFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "statusFieldRef": "enum", "verifiedFieldRef": "enum", "inboxFieldRef": "string" }, "note": "resolved/closed 只能重新打开，其他状态开放解决；未验证只提示风险。" }
     },
     {
       "type": "UserCommandHeader", "description": "用户操作页头：启停状态、模拟登录权限和当前用户身份共享同一管理上下文。", "rendererKey": "user-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "用户操作页头",
+      "generality": "specific",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/user/EditUser.tsx", "took": "enabled 切换需要确认；impersonate 使用独立权限；删除、启停和模拟登录保持不同安全边界。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["header"], "regionsRationale": "用户身份和管理员动作属于页头。", "events": ["actionTrigger", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "usernameFieldRef", "enabledFieldRef", "targets"], "optional": ["impersonateFieldRef"], "entityFieldRefs": { "usernameFieldRef": "string", "enabledFieldRef": "enum", "impersonateFieldRef": "enum" }, "note": "无 impersonate 权限时禁用模拟登录；启停必须确认。" }
     },
     {
       "type": "ConversationAssignmentStrip", "description": "会话分配状态：处理人、团队和优先级分别维护，并提供安全的分配给我入口。", "rendererKey": "conversation-assignment-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
-      "generality": "specific",
       "label": "会话分配状态",
+      "generality": "specific",
       "source": { "repo": "chatwoot/chatwoot", "path": "app/javascript/dashboard/routes/dashboard/conversation/ConversationAction.vue", "took": "处理人、团队和优先级独立更新；重复点击当前值表示取消；分配给我只在当前并非本人时出现。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["headerExtra"], "regionsRationale": "分配状态是会话页头旁的处置上下文。", "events": ["editRequest", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "assigneeFieldRef", "targets"], "optional": ["teamFieldRef", "priorityFieldRef"], "entityFieldRefs": { "assigneeFieldRef": "string", "teamFieldRef": "string", "priorityFieldRef": "enum" }, "note": "处理人、团队和优先级不合并为一个字段；写操作提交真实会话 id。" }
     },
     {
       "type": "RealmStatusStrip", "description": "Realm 状态：启用、暴力破解防护和 SSL 要求保持在同一 Realm 快照。", "rendererKey": "realm-status-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
-      "generality": "specific",
       "label": "Realm 状态",
+      "generality": "specific",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/realm-settings/GeneralTab.tsx + security-defences/BruteForceDetection.tsx", "took": "Realm enabled、SSL required 和 brute force protection 分别配置，但共享同一 Realm 保存事务。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["headerExtra"], "regionsRationale": "Realm 安全状态位于身份管理正文之前。", "events": ["editRequest"],
       "bindingSchema": { "required": ["entityRef", "nameFieldRef", "enabledFieldRef", "targets"], "optional": ["bruteForceFieldRef", "sslFieldRef"], "entityFieldRefs": { "nameFieldRef": "string", "enabledFieldRef": "enum", "bruteForceFieldRef": "enum", "sslFieldRef": "enum" }, "note": "状态只读投影，修改交给 Realm 设置表单。" }
     },
     {
       "type": "ConversationContextSummary", "description": "会话上下文摘要：联系人、渠道、收件箱、暂停时间和 SLA 保持在同一会话。", "rendererKey": "conversation-context-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
-      "generality": "specific",
       "label": "会话上下文摘要",
+      "generality": "specific",
       "source": { "repo": "chatwoot/chatwoot", "path": "app/javascript/dashboard/components/widgets/conversation/ConversationHeader.vue + ReplyBoxBanner.vue", "took": "联系人、渠道、收件箱、暂停和 SLA 是回复正文之前的同一会话上下文。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["headerContent"], "regionsRationale": "会话关键上下文位于页头与消息正文之间。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "只展示当前会话关键字段，不复制消息正文。" }
     },
     {
       "type": "UserIdentitySummary", "description": "用户身份摘要：用户名、邮箱、来源、创建时间和认证状态属于同一用户。", "rendererKey": "user-identity-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
-      "generality": "specific",
       "label": "用户身份摘要",
+      "generality": "specific",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/user/EditUser.tsx + UserForm.tsx + FederatedUserLink.tsx", "took": "用户本地字段、联邦来源、必需动作和邮箱验证状态共享同一用户表示。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["headerContent"], "regionsRationale": "身份来源和状态是进入安全配置前的上下文。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "联邦来源缺失时不伪造本地身份关系。" }
     },
     {
       "type": "ConversationDetailTabs", "description": "会话详情页签：消息、活动、联系人和附件使用稳定能力键。", "rendererKey": "conversation-detail-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
-      "generality": "specific",
       "label": "会话详情页签",
+      "generality": "specific",
       "source": { "repo": "chatwoot/chatwoot", "path": "app/javascript/dashboard/routes/dashboard/conversation + components/widgets/conversation", "took": "消息、活动、联系人和附件围绕同一会话切换，能力不可用时禁用对应分区。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["tabs"], "regionsRationale": "它只选择会话详情分区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "稳定 key 决定分区身份，计数只做提示。" }
     },
     {
       "type": "UserSecurityTabs", "description": "用户安全页签：详情、凭据、角色、组、身份提供方、会话和事件按权限开放。", "rendererKey": "user-security-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
-      "generality": "specific",
       "label": "用户安全页签",
+      "generality": "specific",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/user/EditUser.tsx", "took": "RoutableTabs 使用稳定路由键；凭据、角色、组、会话、事件等页签由权限和功能能力决定是否渲染。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["tabs"], "regionsRationale": "它只选择用户安全分区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "无权限分区保持禁用，不通过计数推断权限。" }
     },
     {
       "type": "ConversationInboxFilter", "description": "收件箱会话筛选：状态、收件箱、处理人、团队、标签和优先级分面累计生效。", "rendererKey": "conversation-inbox-filter", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
-      "generality": "specific",
       "label": "收件箱会话筛选",
+      "generality": "specific",
       "source": { "repo": "chatwoot/chatwoot", "path": "app/javascript/dashboard/components-next/filter/ConversationFilter.vue + services/conversations/filter_service.rb", "took": "前端条件与服务端过滤语义对齐；不同分面累计，同分面多值，清除一项不影响其他条件。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["filters"], "regionsRationale": "会话分面只约束后续收件箱列表。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "typeFieldRef", "keyFieldRef", "titleFieldRef", "targets"], "optional": [], "entityFieldRefs": { "typeFieldRef": "enum", "keyFieldRef": "string", "titleFieldRef": "string" }, "note": "跨分面累计生效，每次变更将目标分页恢复到第一页。" }
     },
     {
       "type": "UserDirectoryFilter", "description": "用户目录筛选：默认用户名搜索和属性查询是两种互斥模式。", "rendererKey": "user-directory-filter", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
-      "generality": "specific",
       "label": "用户目录筛选",
+      "generality": "specific",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/components/users/UserDataTable.tsx + UserDataTableToolbarItems.tsx", "took": "默认 search 与属性 q 查询分离；切换模式清除旧条件；属性 chip 可逐项撤销，exact 独立控制。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "defaultQuery": { "type": "string" }, "defaultMode": { "type": "string", "enum": ["default", "attribute"] }, "exact": { "type": "boolean" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": [], "pageKinds": ["workbench"], "allowedRegions": ["filters"], "regionsRationale": "用户查询只约束后续用户列表。", "events": ["filterChange"],
       "bindingSchema": { "required": ["targets"], "optional": [], "note": "切换搜索模式必须清除旧模式条件；属性语法原文交给宿主解析。" }
     },
     {
       "type": "ConversationSlaMetrics", "description": "会话 SLA 指标：首次响应、解决时间、违约数和会话数保持同一报告口径。", "rendererKey": "conversation-sla-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
-      "generality": "specific",
       "label": "会话 SLA 指标",
+      "generality": "specific",
       "source": { "repo": "chatwoot/chatwoot", "path": "app/javascript/dashboard/routes/dashboard/settings/reports/components/SLA/SLAMetrics.vue + SLAMetricCard.vue", "took": "首次响应、下一响应和解决时间使用同一 SLA 报告范围；违约和会话总数来自真实指标响应。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["metrics"], "regionsRationale": "客服 SLA 属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "firstResponseFieldRef", "resolutionFieldRef"], "optional": ["breachFieldRef", "countFieldRef"], "entityFieldRefs": { "firstResponseFieldRef": "string", "resolutionFieldRef": "string", "breachFieldRef": "number", "countFieldRef": "number" }, "note": "时间值来自后端报告，不在前端累计或模拟。" }
     },
     {
       "type": "UserSessionMetrics", "description": "用户会话指标：在线、离线、客户端和风险会话来自同一身份快照。", "rendererKey": "user-session-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
-      "generality": "specific",
       "label": "用户会话指标",
+      "generality": "specific",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/user/UserSessions.tsx + sessions/SessionsTable.tsx", "took": "在线会话与 Offline 会话使用不同撤销动作；客户端、IP、开始和最后访问来自真实 session。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor", "workbench"], "allowedRegions": ["metrics"], "regionsRationale": "身份会话风险属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "activeFieldRef", "offlineFieldRef"], "optional": ["clientFieldRef", "riskFieldRef"], "entityFieldRefs": { "activeFieldRef": "number", "offlineFieldRef": "number", "clientFieldRef": "number", "riskFieldRef": "number" }, "note": "指标只读取同一用户会话快照。" }
     },
     {
       "type": "ConversationReplyBar", "description": "会话回复栏：公开回复和内部备注互斥，关闭会话禁止发送。", "rendererKey": "conversation-reply-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "会话回复栏",
+      "generality": "specific",
       "source": { "repo": "chatwoot/chatwoot", "path": "app/javascript/dashboard/components/widgets/conversation/ReplyBox.vue + ReplyBoxBanner.vue", "took": "公开回复、内部备注、草稿、引用和渠道能力共享同一编辑状态；关闭会话和非法内容阻止发送。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "回复编辑器是持续位于会话底部的任务栏。", "events": ["submitRequest"],
       "bindingSchema": { "required": ["entityRef", "statusFieldRef", "targets"], "optional": ["channelFieldRef"], "entityFieldRefs": { "statusFieldRef": "enum", "channelFieldRef": "enum" }, "note": "resolved/closed 会话禁止发送；公开回复和内部备注使用不同 operation。" }
     },
     {
       "type": "UserAccessBar", "description": "用户访问控制栏：重置凭据、注销全部会话和启停用户保持独立安全边界。", "rendererKey": "user-access-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
-      "generality": "specific",
       "label": "用户访问控制栏",
+      "generality": "specific",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/user/EditUser.tsx + UserCredentials.tsx + UserSessions.tsx", "took": "重置凭据进入独立编辑流程；注销全部会话需要确认；启停用户不等于删除用户。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "用户访问与会话动作持续位于底部任务栏。", "events": ["editRequest", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "usernameFieldRef", "enabledFieldRef", "targets"], "optional": ["sessionsFieldRef", "manageableFieldRef"], "entityFieldRefs": { "usernameFieldRef": "string", "enabledFieldRef": "enum", "sessionsFieldRef": "number", "manageableFieldRef": "enum" }, "note": "没有管理权限时所有写动作禁用；没有会话时禁用注销。" }
     },
     {
       "type": "TimeSeriesAnomalyChart", "description": "时序异常图：真实观测值、期望区间和异常点共享时间轴，缺失点不补零。", "rendererKey": "time-series-anomaly-chart", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "时序异常图",
       "source": { "repo": "grafana/grafana", "path": "public/app/plugins/panel/timeseries + public/app/features/alerting", "took": "异常必须由真实标记字段决定；时序线、阈值和异常点共用同一时间排序，空值保留断点。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["charts"], "regionsRationale": "异常趋势属于主指标后的图表带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "valueFieldRef"], "optional": ["lowerFieldRef", "upperFieldRef", "anomalyFieldRef"], "entityFieldRefs": { "timeFieldRef": "date", "valueFieldRef": "number", "lowerFieldRef": "number", "upperFieldRef": "number", "anomalyFieldRef": "enum" }, "note": "不插值、不补零；异常点只由真实标记字段决定。" }
     },
     {
       "type": "CohortRetentionChart", "description": "留存队列图：队列、周期和留存率构成稠密矩阵，缺失组合与真实 0 分开。", "rendererKey": "cohort-retention-chart", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "留存队列图",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/visualizations/visualizations/SmartScalar + visualization settings", "took": "队列分析先按 cohort 和 period 对齐，再显示百分比；没有观测的格子不能伪装成 0%。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["charts"], "regionsRationale": "留存矩阵属于分析图表带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "cohortFieldRef", "periodFieldRef", "rateFieldRef"], "optional": [], "entityFieldRefs": { "cohortFieldRef": "string", "periodFieldRef": "string", "rateFieldRef": "number" }, "note": "缺失组合用空单元格，0 是有效留存率。" }
     },
     {
       "type": "UptimeStatusTimeline", "description": "可用性时间线：每个时间窗只呈现真实健康状态，未知状态保持空白。", "rendererKey": "uptime-status-timeline", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "可用性时间线",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/area/connection/components/UptimeStatusGraph/UptimeStatusGraph.tsx", "took": "没有状态的窗口保留 null；成功、失败、运行中和未知使用离散状态，不用伪造连续百分比。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "dashboard"], "allowedRegions": ["charts"], "regionsRationale": "运行窗口序列属于监控图表带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "statusFieldRef"], "optional": ["durationFieldRef"], "entityFieldRefs": { "timeFieldRef": "date", "statusFieldRef": "enum", "durationFieldRef": "number" }, "note": "未知窗口不计成功也不计失败；状态只读取真实窗口记录。" }
     },
     {
       "type": "PercentileBandChart", "description": "分位带趋势：P50、P95、P99 按同一时间桶对齐，非法分位关系显式暴露。", "rendererKey": "percentile-band-chart", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "分位带趋势",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/insights/common/components/widgets + performance", "took": "中位数和尾延迟必须共享查询口径；P95/P99 不可混用不同时间桶，缺值保持断线。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["charts"], "regionsRationale": "延迟分位趋势属于分析图表带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "p50FieldRef", "p95FieldRef", "p99FieldRef"], "optional": [], "entityFieldRefs": { "timeFieldRef": "date", "p50FieldRef": "number", "p95FieldRef": "number", "p99FieldRef": "number" }, "note": "按真实时间排序，缺失分位不插值。" }
     },
     {
       "type": "ConnectionWorkspaceTabs", "description": "连接工作区页签：概览、流、作业、时间线和设置使用稳定能力键。", "rendererKey": "connection-workspace-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
+      "label": "连接工作区页签",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/pages/connections/ConnectionPage", "took": "连接页各分区共享 connection id；不可用能力禁用而不是改变页签身份，计数只是附加状态。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["tabs"], "regionsRationale": "只切换连接详情内部工作区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "稳定 key 不随标题和计数变化。" }
     },
     {
       "type": "IssueInvestigationTabs", "description": "问题调查页签：事件、标签、回放、附件和活动记录仅在能力可用时开放。", "rendererKey": "issue-investigation-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
+      "label": "问题调查页签",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/issueDetails/header + groupDistributions", "took": "调查能力由特性和真实计数派生；切换证据视图不清空当前问题上下文。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["tabs"], "regionsRationale": "只切换问题调查证据分区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "禁用能力不可选，当前问题 id 始终由宿主保持。" }
     },
     {
       "type": "ConnectionFleetMetrics", "description": "连接群组指标：健康、失败、运行、排队、暂停和未同步来自同一状态快照。", "rendererKey": "connection-fleet-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
+      "label": "连接群组指标",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/pages/connections/AllConnectionsPage/ConnectionsSummary/ConnectionsSummary.tsx", "took": "连接状态先机械归类再计数；运行、排队和暂停不并入健康，未同步保持独立。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["metrics"], "regionsRationale": "连接群组状态属于指标带。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "statusFieldRef", "targets"], "optional": [], "entityFieldRefs": { "statusFieldRef": "enum" }, "note": "每条连接只进入一个状态桶；点击指标应用对应状态筛选。" }
     },
     {
       "type": "IssueImpactMetrics", "description": "问题影响指标：事件、用户、首次和最近发生时间保持同一问题范围。", "rendererKey": "issue-impact-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
+      "label": "问题影响指标",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/issueDetails/streamline/sidebar + header", "took": "影响用户和事件计数使用同一 issue 环境范围；首次和最近发生时间不是前端推算。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "dashboard"], "allowedRegions": ["metrics"], "regionsRationale": "问题影响属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "eventCountFieldRef", "userCountFieldRef"], "optional": ["firstSeenFieldRef", "lastSeenFieldRef"], "entityFieldRefs": { "eventCountFieldRef": "number", "userCountFieldRef": "number", "firstSeenFieldRef": "date", "lastSeenFieldRef": "date" }, "note": "所有值读取同一问题快照，不在客户端混合环境。" }
     },
     {
       "type": "DashboardQueryContext", "description": "Dashboard 查询上下文：数据源、更新时间、筛选数量和缓存状态共同说明当前结果口径。", "rendererKey": "dashboard-query-context", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
+      "label": "Dashboard 查询上下文",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/dashboard/components/DashboardHeader + dashboard-header-buttons", "took": "Dashboard 的数据源、筛选和缓存状态共同解释当前结果，刷新不会暗中清空筛选。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "workbench"], "allowedRegions": ["headerContent"], "regionsRationale": "查询口径位于 Dashboard 标题与图表之间。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "只展示同一查询快照的关键口径，不重复图表正文。" }
     },
     {
       "type": "ServiceOwnershipContext", "description": "服务归属上下文：负责人、系统、生命周期、等级和文档来自同一目录实体。", "rendererKey": "service-ownership-context", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
+      "label": "服务归属上下文",
       "source": { "repo": "backstage/backstage", "path": "plugins/catalog/src/components/EntityAboutCard + EntityLayout", "took": "服务身份和 owner/system/lifecycle 关系属于目录实体；缺失字段显式显示而不是跨实体猜测。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["headerContent"], "regionsRationale": "服务归属是进入运行和资源正文前的上下文。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "字段只取当前目录实体，不跨实体拼接。" }
     },
     {
       "type": "ReleaseHealthStrip", "description": "发布健康状态：版本、环境、崩溃率和采用率共享同一发布快照。", "rendererKey": "release-health-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
+      "label": "发布健康状态",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/releases/detail/overview + releaseHealth", "took": "发布状态由 crash-free 与 adoption 共同说明；环境范围和版本不可脱离当前快照。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "dashboard"], "allowedRegions": ["headerExtra"], "regionsRationale": "发布健康位于发布标题旁的状态上下文。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "versionFieldRef", "healthFieldRef"], "optional": ["environmentFieldRef", "adoptionFieldRef"], "entityFieldRefs": { "versionFieldRef": "string", "healthFieldRef": "number", "environmentFieldRef": "string", "adoptionFieldRef": "number" }, "note": "健康率和采用率原样读取；点击进入发布详情。" }
     },
     {
       "type": "DashboardCommandHeader", "description": "Dashboard 操作页头：标题、收藏、订阅、自动刷新和编辑权限共享同一仪表盘上下文。", "rendererKey": "dashboard-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "Dashboard 操作页头",
       "source": { "repo": "metabase/metabase", "path": "frontend/src/metabase/dashboard/components/DashboardHeader", "took": "编辑、收藏、订阅和刷新是独立能力；只读用户不会获得编辑入口，刷新不改变筛选。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "workbench"], "allowedRegions": ["header"], "regionsRationale": "仪表盘身份与全局动作属于页头。", "events": ["actionTrigger", "editRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "targets"], "optional": ["starredFieldRef", "subscribedFieldRef", "editableFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "starredFieldRef": "enum", "subscribedFieldRef": "enum", "editableFieldRef": "enum" }, "note": "权限只控制编辑；收藏、订阅和刷新分别发出独立操作。" }
     },
     {
       "type": "DeploymentLatencyChart", "description": "部署延迟趋势：排队、拉取、启动和就绪时间按同一发布批次对齐。", "rendererKey": "deployment-latency-chart", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "部署延迟趋势",
       "source": { "repo": "backstage/backstage", "path": "plugins/kubernetes/src/components/KubernetesDeploymentSummary + KubernetesPodDrawer", "took": "部署阶段共享同一 workload 观察窗口；缺失阶段保持断点，不能把未开始当成 0 秒。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["charts"], "regionsRationale": "部署阶段耗时属于运行分析图表。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "queueFieldRef", "readyFieldRef"], "optional": ["pullFieldRef", "startFieldRef"], "entityFieldRefs": { "timeFieldRef": "date", "queueFieldRef": "number", "readyFieldRef": "number", "pullFieldRef": "number", "startFieldRef": "number" }, "note": "每个时间窗读取同一部署快照；缺失阶段不补零。" }
     },
     {
       "type": "ReleaseAdoptionTrendChart", "description": "发布采用趋势：版本采用率和无崩溃率使用同一环境范围的时间序列。", "rendererKey": "release-adoption-trend-chart", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "发布采用趋势",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/releases/detail/overview + releaseHealth", "took": "release adoption 按版本和环境聚合；健康率与采用率不跨环境拼接，空窗口保持断线。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["charts"], "regionsRationale": "发布采用属于发布分析图表带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "adoptionFieldRef", "healthFieldRef"], "optional": [], "entityFieldRefs": { "timeFieldRef": "date", "adoptionFieldRef": "number", "healthFieldRef": "number" }, "note": "采用率与健康率共享时间桶和环境范围。" }
     },
     {
       "type": "DeploymentDetailTabs", "description": "部署详情页签：摘要、Pod、事件、日志和配置共享 workload 身份。", "rendererKey": "deployment-detail-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
+      "label": "部署详情页签",
       "source": { "repo": "backstage/backstage", "path": "plugins/kubernetes/src/components/KubernetesDeploymentSummary + KubernetesPodDrawer", "took": "不同证据视图使用稳定能力键；没有 Pod 或日志能力时禁用对应入口，不改变当前部署上下文。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["tabs"], "regionsRationale": "部署证据切换位于部署正文顶部。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "稳定 key 不随 Pod 数量变化。" }
     },
     {
       "type": "ReleaseDetailTabs", "description": "发布详情页签：概览、错误、事务、用户和环境使用稳定证据键。", "rendererKey": "release-detail-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
+      "label": "发布详情页签",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/releases/detail + tabs", "took": "发布证据按能力开放，切换页签不丢失版本、项目和环境查询条件。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["tabs"], "regionsRationale": "发布证据切换位于发布正文顶部。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "计数只作状态提示，不参与页签身份。" }
     },
     {
       "type": "DeploymentRolloutMetrics", "description": "部署滚动指标：期望、副本、就绪、副本和失败数由同一 workload 状态计算。", "rendererKey": "deployment-rollout-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
+      "label": "部署滚动指标",
       "source": { "repo": "backstage/backstage", "path": "plugins/kubernetes/src/components/KubernetesDeploymentSummary", "took": "ready/desired 和 unavailable 不用前端定时器模拟；部署健康直接来自 Kubernetes 状态快照。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["metrics"], "regionsRationale": "滚动发布状态属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "desiredFieldRef", "readyFieldRef"], "optional": ["availableFieldRef", "unavailableFieldRef"], "entityFieldRefs": { "desiredFieldRef": "number", "readyFieldRef": "number", "availableFieldRef": "number", "unavailableFieldRef": "number" }, "note": "desired 为 0 时不伪造 100% 健康。" }
     },
     {
       "type": "ReleaseAdoptionMetrics", "description": "发布采用指标：采用率、无崩溃率、事件数和受影响用户数共享发布范围。", "rendererKey": "release-adoption-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
+      "label": "发布采用指标",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/releases/detail/overview + releaseHealth", "took": "采用、健康、事件和用户指标使用同一 release/environment 范围，不能分别刷新成不同快照。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["metrics"], "regionsRationale": "发布采用和影响属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "adoptionFieldRef", "healthFieldRef"], "optional": ["eventCountFieldRef", "userCountFieldRef"], "entityFieldRefs": { "adoptionFieldRef": "number", "healthFieldRef": "number", "eventCountFieldRef": "number", "userCountFieldRef": "number" }, "note": "所有指标来自同一发布环境范围。" }
     },
     {
       "type": "ClusterHealthStrip", "description": "集群健康状态：集群名、节点数、版本和健康状态使用同一集群快照。", "rendererKey": "cluster-health-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
+      "label": "集群健康状态",
       "source": { "repo": "backstage/backstage", "path": "plugins/kubernetes/src/components/KubernetesClusterWidget", "took": "集群健康是部署列表前的运行上下文；未连接和未知状态不能显示成成功。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "dashboard"], "allowedRegions": ["headerExtra"], "regionsRationale": "集群健康位于运行页头指标旁。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "nameFieldRef", "statusFieldRef"], "optional": ["nodeCountFieldRef", "versionFieldRef"], "entityFieldRefs": { "nameFieldRef": "string", "statusFieldRef": "enum", "nodeCountFieldRef": "number", "versionFieldRef": "string" }, "note": "未知状态只显示警告，不允许误导为健康。" }
     },
     {
       "type": "ReleaseEnvironmentStrip", "description": "发布环境状态：版本、环境、部署状态和当前采用范围保持在同一发布快照。", "rendererKey": "release-environment-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
+      "label": "发布环境状态",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/releases/detail/overview + EnvironmentSelector", "took": "环境切换不修改版本身份；部署状态和采用率始终跟随当前环境。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "dashboard"], "allowedRegions": ["headerExtra"], "regionsRationale": "发布环境是页头旁的状态上下文。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "versionFieldRef", "environmentFieldRef", "statusFieldRef"], "optional": [], "entityFieldRefs": { "versionFieldRef": "string", "environmentFieldRef": "string", "statusFieldRef": "enum" }, "note": "切换环境只发出筛选事件，不重建发布实体。" }
     },
     {
       "type": "DeploymentContextSummary", "description": "部署上下文摘要：命名空间、集群、镜像、策略和更新时间来自同一工作负载。", "rendererKey": "deployment-context-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
+      "label": "部署上下文摘要",
       "source": { "repo": "backstage/backstage", "path": "plugins/kubernetes/src/components/KubernetesDeploymentSummary", "took": "部署元数据只展示当前 workload 的身份和策略，不复制 Pod 明细。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["headerContent"], "regionsRationale": "部署元数据位于页头和证据正文之间。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "只读展示当前 workload 的摘要字段。" }
     },
     {
       "type": "ReleaseContextSummary", "description": "发布上下文摘要：版本、项目、环境、提交和发布者构成同一发布身份。", "rendererKey": "release-context-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
+      "label": "发布上下文摘要",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/releases/detail/header + ReleaseMetadata", "took": "版本摘要不跨项目拼接；提交、发布者和环境均属于当前 release。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["headerContent"], "regionsRationale": "发布元数据位于发布页头和证据正文之间。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "摘要字段只读取当前 release 快照。" }
     },
     {
       "type": "KubernetesResourceFilter", "description": "Kubernetes 资源筛选：命名空间、集群、类型和状态分面累计生效。", "rendererKey": "kubernetes-resource-filter", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
+      "label": "Kubernetes 资源筛选",
       "source": { "repo": "backstage/backstage", "path": "plugins/kubernetes/src/components/KubernetesPage + EntityRefLink", "took": "集群和命名空间条件保持独立；清除一项不影响其他分面。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "workbench"], "allowedRegions": ["filters"], "regionsRationale": "资源筛选只约束后续 workload 列表。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "facetFieldRef", "keyFieldRef", "titleFieldRef", "targets"], "optional": [], "entityFieldRefs": { "facetFieldRef": "string", "keyFieldRef": "string", "titleFieldRef": "string" }, "note": "不同分面累计生效，筛选状态交给宿主查询。" }
     },
     {
       "type": "ReleaseEnvironmentFilter", "description": "发布环境筛选：环境、版本和健康状态可组合，搜索不会清除已选条件。", "rendererKey": "release-environment-filter", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
+      "label": "发布环境筛选",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/releases/list + EnvironmentSelector", "took": "结构化环境条件与文本搜索分离；查询模式切换时保留可复用条件。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "workbench"], "allowedRegions": ["filters"], "regionsRationale": "发布列表筛选只约束 release 列表。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "facetFieldRef", "keyFieldRef", "titleFieldRef", "targets"], "optional": [], "entityFieldRefs": { "facetFieldRef": "string", "keyFieldRef": "string", "titleFieldRef": "string" }, "note": "分面条件通过宿主统一提交，不在区块内拼业务查询。" }
     },
     {
       "type": "DeploymentCommandHeader", "description": "部署操作页头：版本、健康状态、编辑、重启和查看日志按权限分离。", "rendererKey": "deployment-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "部署操作页头",
       "source": { "repo": "backstage/backstage", "path": "plugins/kubernetes/src/components/KubernetesDeploymentSummary", "took": "重启是危险动作需确认；编辑、日志和状态查看不互相冒充。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["header"], "regionsRationale": "部署身份与全局处置动作属于页头。", "events": ["actionTrigger", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "statusFieldRef", "targets"], "optional": ["editableFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "statusFieldRef": "enum", "editableFieldRef": "enum" }, "note": "运行中部署仍可查看日志，但重启必须显式确认。" }
     },
     {
       "type": "FeatureFlagCommandHeader", "description": "Feature Flag 操作页头：启用状态、灰度比例、编辑权限和审计动作保持独立。", "rendererKey": "feature-flag-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "Feature Flag 操作页头",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/featureFlags + FeatureFlagDetails", "took": "启用/停用和灰度比例是不同写操作；无编辑权限不能修改发布策略。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["header"], "regionsRationale": "Feature Flag 身份和开关动作属于页头。", "events": ["actionTrigger", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "enabledFieldRef", "targets"], "optional": ["rolloutFieldRef", "editableFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "enabledFieldRef": "enum", "rolloutFieldRef": "number", "editableFieldRef": "enum" }, "note": "灰度变更不等同于启用开关，均提交真实 flag id。" }
     },
     {
       "type": "DeploymentScaleBar", "description": "部署扩缩容栏：期望副本、当前就绪和目标副本在确认后提交同一 workload。", "rendererKey": "deployment-scale-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "部署扩缩容栏",
       "source": { "repo": "backstage/backstage", "path": "plugins/kubernetes/src/components/KubernetesDeploymentSummary", "took": "目标副本必须经过输入和确认；提交后由宿主轮询真实就绪状态。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "扩缩容是部署正文底部的持续任务操作。", "events": ["submitRequest"],
       "bindingSchema": { "required": ["entityRef", "desiredFieldRef", "readyFieldRef", "targets"], "optional": ["editableFieldRef"], "entityFieldRefs": { "desiredFieldRef": "number", "readyFieldRef": "number", "editableFieldRef": "enum" }, "note": "只提交目标副本，当前就绪数只读。" }
     },
     {
       "type": "ReleaseRolloutBar", "description": "发布灰度栏：采用比例、健康率和暂停/继续灰度动作共享同一发布状态机。", "rendererKey": "release-rollout-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "发布灰度栏",
       "source": { "repo": "getsentry/sentry", "path": "static/app/views/releases/detail/overview + releaseHealth", "took": "暂停灰度、继续灰度和完成发布互斥；健康率不足时不能伪造完成。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "发布灰度是发布页底部的持续操作。", "events": ["submitRequest"],
       "bindingSchema": { "required": ["entityRef", "statusFieldRef", "adoptionFieldRef", "targets"], "optional": ["healthFieldRef"], "entityFieldRefs": { "statusFieldRef": "enum", "adoptionFieldRef": "number", "healthFieldRef": "number" }, "note": "状态机互斥，健康率不足时禁用完成发布。" }
     },
     {
       "type": "CumulativeFlowChart", "description": "累计流图：各状态工作项按同一日期桶堆叠，展示在制品积压与流动。", "rendererKey": "cumulative-flow-chart", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "累计流图",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/analytics/cycles + workspace-views", "took": "状态序列共享日期桶并使用堆叠面积；缺失状态为 0，但缺失日期不凭空补齐。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "kanban"], "allowedRegions": ["charts"], "regionsRationale": "累计流属于工作流分析图表带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "stateFieldRef"], "optional": ["valueFieldRef"], "entityFieldRefs": { "timeFieldRef": "date", "stateFieldRef": "enum", "valueFieldRef": "number" }, "note": "同一天各状态分别累计；没有 value 时按记录计数。" }
     },
     {
       "type": "BookingDemandChart", "description": "预约需求趋势：可用时段、预约量和取消量按同一日期口径对齐。", "rendererKey": "booking-demand-chart", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "预约需求趋势",
       "source": { "repo": "calcom/cal.com", "path": "apps/web/modules/insights + apps/web/test/lib/getSchedule.test.ts", "took": "可用时段与预约需求共享时区和日期范围；缺失量保持断点，取消不并入成功预约。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "calendar"], "allowedRegions": ["charts"], "regionsRationale": "预约需求属于排期分析图表带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "availableFieldRef", "bookedFieldRef"], "optional": ["canceledFieldRef"], "entityFieldRefs": { "timeFieldRef": "date", "availableFieldRef": "number", "bookedFieldRef": "number", "canceledFieldRef": "number" }, "note": "所有序列共享时区和日期桶。" }
     },
     {
       "type": "WorkItemActivityTabs", "description": "工作项活动页签：详情、子项、活动、链接和附件使用稳定能力键。", "rendererKey": "work-item-activity-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
+      "label": "工作项活动页签",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/issues/issue-detail", "took": "计数和能力可用性不改变页签身份；切换活动证据保持当前工作项。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["tabs"], "regionsRationale": "切换工作项证据分区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "稳定 key 与计数分离。" }
     },
     {
       "type": "BookingAuditTabs", "description": "预约审计页签：详情、参与人、改期、付款和 Webhook 按真实能力开放。", "rendererKey": "booking-audit-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
+      "label": "预约审计页签",
       "source": { "repo": "calcom/cal.com", "path": "apps/web/modules/bookings + apps/web/test/handlers/requestReschedule.test.ts", "took": "改期、付款和 Webhook 是不同证据通道；无权限或无数据时禁用。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "calendar"], "allowedRegions": ["tabs"], "regionsRationale": "切换预约审计证据分区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "不可用证据页签禁用但保留稳定身份。" }
     },
     {
       "type": "WorkloadThroughputMetrics", "description": "工作流吞吐指标：完成、进入、在制和阻塞量使用同一周期范围。", "rendererKey": "workload-throughput-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
+      "label": "工作流吞吐指标",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/cycles/analytics-sidebar", "took": "吞吐与在制品必须来自同一周期；完成率由完成和进入量机械计算。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "kanban"], "allowedRegions": ["metrics"], "regionsRationale": "工作流吞吐属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "completedFieldRef", "enteredFieldRef"], "optional": ["wipFieldRef", "blockedFieldRef"], "entityFieldRefs": { "completedFieldRef": "number", "enteredFieldRef": "number", "wipFieldRef": "number", "blockedFieldRef": "number" }, "note": "进入量为 0 时完成率为 0，不伪造 100%。" }
     },
     {
       "type": "CalendarUtilizationMetrics", "description": "日历利用率指标：可用分钟、已预约分钟、取消和未到场来自同一日历范围。", "rendererKey": "calendar-utilization-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
+      "label": "日历利用率指标",
       "source": { "repo": "calcom/cal.com", "path": "apps/web/modules/insights + availability", "took": "利用率由已预约/可用分钟机械计算；取消和未到场单独统计。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "calendar"], "allowedRegions": ["metrics"], "regionsRationale": "日历利用率属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "availableFieldRef", "bookedFieldRef"], "optional": ["canceledFieldRef", "noShowFieldRef"], "entityFieldRefs": { "availableFieldRef": "number", "bookedFieldRef": "number", "canceledFieldRef": "number", "noShowFieldRef": "number" }, "note": "可用分钟为 0 时利用率为 0。" }
     },
     {
       "type": "CycleRiskStrip", "description": "周期风险状态：周期、剩余天数、阻塞项和超期项共享同一周期快照。", "rendererKey": "cycle-risk-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
+      "label": "周期风险状态",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/cycles/analytics-sidebar/sidebar-details.tsx", "took": "风险由剩余时间、阻塞和超期共同说明；没有风险数据时保持中性。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["kanban", "dashboard"], "allowedRegions": ["headerExtra"], "regionsRationale": "周期风险位于页头指标旁。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "remainingFieldRef"], "optional": ["blockedFieldRef", "overdueFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "remainingFieldRef": "number", "blockedFieldRef": "number", "overdueFieldRef": "number" }, "note": "风险状态只读投影，点击进入周期详情。" }
     },
     {
       "type": "CalendarConnectionStrip", "description": "日历连接状态：账号、提供方、同步状态和最近同步时间共享连接快照。", "rendererKey": "calendar-connection-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
+      "label": "日历连接状态",
       "source": { "repo": "calcom/cal.com", "path": "apps/web/modules/apps + calendar connections", "took": "每个日历连接独立显示同步状态；失败连接可以重试，不影响其他连接。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["calendar", "workbench"], "allowedRegions": ["headerExtra"], "regionsRationale": "日历连接状态位于排期正文之前。", "events": ["actionTrigger"],
       "bindingSchema": { "required": ["entityRef", "accountFieldRef", "statusFieldRef", "targets"], "optional": ["providerFieldRef", "syncedAtFieldRef"], "entityFieldRefs": { "accountFieldRef": "string", "statusFieldRef": "enum", "providerFieldRef": "string", "syncedAtFieldRef": "date" }, "note": "重试只携带当前连接 id。" }
     },
     {
       "type": "WorkItemMoveDrawer", "description": "工作项移动抽屉：当前分组、目标分组和确认动作构成一次原子移动。", "rendererKey": "work-item-move-drawer", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "工作项移动抽屉",
       "source": { "repo": "makeplane/plane", "path": "apps/web/core/components/issues/issue-detail/quick-actions", "took": "目标项目/周期/模块先本地选择，确认后一次提交；当前分组不能作为目标。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "kanban"], "allowedRegions": ["overlay"], "regionsRationale": "移动任务是由工作项触发的临时操作面。", "events": ["submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "groupFieldRef", "targets"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string", "groupFieldRef": "string" }, "note": "候选分组从真实记录集合提取，提交真实 rowId 和目标分组。" }
     },
     {
       "type": "BookingConflictDrawer", "description": "预约冲突抽屉：冲突对象、时间范围、严重度和改期入口在同一冲突任务内。", "rendererKey": "booking-conflict-drawer", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "预约冲突抽屉",
       "source": { "repo": "calcom/cal.com", "path": "apps/web/test/lib/getSchedule.test.ts + requestReschedule.test.ts", "took": "冲突来自真实可用性计算；改期请求保留原主持人和预约上下文，不在前端伪造可用时段。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["calendar", "workbench"], "allowedRegions": ["overlay"], "regionsRationale": "冲突处理是由预约或排期触发的临时任务面。", "events": ["editRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "startFieldRef", "endFieldRef", "targets"], "optional": ["severityFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "startFieldRef": "date", "endFieldRef": "date", "severityFieldRef": "enum" }, "note": "只展示真实冲突；改期交给宿主流程。" }
     },
     {
       "type": "WorkflowDurationChart", "description": "工作流耗时趋势：平均、P95 和失败耗时按同一执行时间桶对齐。", "rendererKey": "workflow-duration-chart", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "工作流耗时趋势",
       "source": { "repo": "nocobase/nocobase", "path": "packages/plugins/@nocobase/plugin-workflow-manual/src/server + plugin-async-task-manager", "took": "执行状态和耗时来自真实 execution/job；缺失耗时保持断点，失败执行不并入成功均值。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["charts"], "regionsRationale": "工作流耗时属于运行分析图表。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "averageFieldRef", "p95FieldRef"], "optional": ["failedFieldRef"], "entityFieldRefs": { "timeFieldRef": "date", "averageFieldRef": "number", "p95FieldRef": "number", "failedFieldRef": "number" }, "note": "所有序列共享执行时间桶；缺失值不补零。" }
     },
     {
       "type": "WorkflowExecutionTabs", "description": "工作流执行页签：概要、节点、变量、日志和人工任务使用稳定键。", "rendererKey": "workflow-execution-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
+      "label": "工作流执行页签",
       "source": { "repo": "nocobase/nocobase", "path": "packages/plugins/@nocobase/plugin-workflow-manual/src/client/WorkflowTodo.tsx", "took": "execution 与 userJob 状态共享上下文；已结束执行仍可查看日志但不能继续执行。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["tabs"], "regionsRationale": "切换同一执行的证据分区。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "稳定 key 不随节点和日志数量变化。" }
     },
     {
       "type": "WorkflowOutcomeMetrics", "description": "工作流结果指标：成功、失败、运行和等待数来自同一执行范围。", "rendererKey": "workflow-outcome-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
+      "label": "工作流结果指标",
       "source": { "repo": "nocobase/nocobase", "path": "packages/plugins/@nocobase/plugin-workflow-manual/src/server + migrations/tasks-stats.ts", "took": "执行结果互斥计数；成功率只使用已结束执行，运行和等待不进入分母。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["metrics"], "regionsRationale": "执行结果属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "successFieldRef", "failedFieldRef"], "optional": ["runningFieldRef", "pendingFieldRef"], "entityFieldRefs": { "successFieldRef": "number", "failedFieldRef": "number", "runningFieldRef": "number", "pendingFieldRef": "number" }, "note": "没有结束执行时成功率为 0。" }
     },
     {
       "type": "WorkflowVersionStrip", "description": "工作流版本状态：名称、版本、启用状态和更新时间来自同一工作流快照。", "rendererKey": "workflow-version-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
+      "label": "工作流版本状态",
       "source": { "repo": "nocobase/nocobase", "path": "packages/plugins/@nocobase/plugin-workflow/src/client + plugin-workflow-manual", "took": "启用版本与草稿配置分离；运行中的 execution 继续绑定启动时版本。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["headerExtra"], "regionsRationale": "版本状态位于工作流页头旁。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "nameFieldRef", "versionFieldRef", "enabledFieldRef"], "optional": ["updatedAtFieldRef"], "entityFieldRefs": { "nameFieldRef": "string", "versionFieldRef": "string", "enabledFieldRef": "enum", "updatedAtFieldRef": "date" }, "note": "只读展示当前发布版本，不改变运行中的 execution。" }
     },
     {
       "type": "WorkflowFailureDrawer", "description": "工作流失败诊断抽屉：失败节点、错误、时间和重试入口处于同一执行上下文。", "rendererKey": "workflow-failure-drawer", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "工作流失败诊断",
       "source": { "repo": "nocobase/nocobase", "path": "packages/plugins/@nocobase/plugin-workflow-manual/src/server/actions.ts + tests", "took": "只有失败或中止 execution 可重试；重试携带原 execution id，不修改历史记录。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["overlay"], "regionsRationale": "失败诊断是由执行记录触发的临时任务面。", "events": ["submitRequest"],
       "bindingSchema": { "required": ["entityRef", "nodeFieldRef", "messageFieldRef", "statusFieldRef", "targets"], "optional": ["timeFieldRef"], "entityFieldRefs": { "nodeFieldRef": "string", "messageFieldRef": "string", "statusFieldRef": "enum", "timeFieldRef": "date" }, "note": "仅 failed/aborted 可重试；成功记录只读。" }
     },
     {
       "type": "WorkflowCommandHeader", "description": "工作流操作页头：启停、编辑、复制和手动运行遵循版本与权限状态。", "rendererKey": "workflow-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "工作流操作页头",
       "source": { "repo": "nocobase/nocobase", "path": "packages/plugins/@nocobase/plugin-workflow/src/client + plugin-workflow-manual", "took": "停用阻止新执行但不取消已启动执行；编辑、复制和手动运行是独立动作。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["header"], "regionsRationale": "工作流身份和全局动作属于页头。", "events": ["actionTrigger", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "enabledFieldRef", "targets"], "optional": ["versionFieldRef", "editableFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "enabledFieldRef": "enum", "versionFieldRef": "string", "editableFieldRef": "enum" }, "note": "停用只阻止新执行；不隐式取消当前执行。" }
     },
     {
       "type": "WorkflowContextSummary", "description": "工作流上下文摘要：触发器、负责人、运行模式、超时和版本属于同一工作流。", "rendererKey": "workflow-context-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
+      "label": "工作流上下文摘要",
       "source": { "repo": "nocobase/nocobase", "path": "packages/plugins/@nocobase/plugin-workflow/src/client", "took": "触发器和运行配置只读取当前 workflow，不复制节点列表。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["headerContent"], "regionsRationale": "工作流元数据位于页头和执行正文之间。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "只展示当前 workflow 的摘要字段。" }
     },
     {
       "type": "WorkflowExecutionFilter", "description": "工作流执行筛选：状态、版本、触发器和时间范围分面累计生效。", "rendererKey": "workflow-execution-filter", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
+      "label": "工作流执行筛选",
       "source": { "repo": "nocobase/nocobase", "path": "packages/plugins/@nocobase/plugin-workflow-manual/src/client/WorkflowTodo.tsx", "took": "执行状态与人工任务状态分别过滤；清除一个分面不影响其他条件。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["filters"], "regionsRationale": "筛选只约束执行列表。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "facetFieldRef", "keyFieldRef", "titleFieldRef", "targets"], "optional": [], "entityFieldRefs": { "facetFieldRef": "string", "keyFieldRef": "string", "titleFieldRef": "string" }, "note": "不同分面累计，状态语义由宿主查询解释。" }
     },
     {
       "type": "WorkflowControlBar", "description": "工作流执行控制栏：运行中可取消，失败可重试，成功只允许查看结果。", "rendererKey": "workflow-control-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "工作流执行控制栏",
       "source": { "repo": "nocobase/nocobase", "path": "packages/plugins/@nocobase/plugin-workflow-manual/src/server/actions.ts + tests", "took": "cancel/retry 受 execution 状态机约束；结束状态不可取消，成功状态不可重试。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "执行控制持续位于工作流正文底部。", "events": ["itemSelect", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "statusFieldRef", "targets"], "optional": ["progressFieldRef"], "entityFieldRefs": { "statusFieldRef": "enum", "progressFieldRef": "number" }, "note": "started 可取消，failed/aborted 可重试，resolved 只读。" }
     },
     {
       "type": "RealmCommandHeader", "description": "Realm 操作页头：启停、导出和安全设置遵循 Realm 管理权限。", "rendererKey": "realm-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "Realm 操作页头",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/realm-settings/RealmSettingsTabs.tsx + GeneralTab.tsx", "took": "启停需要确认；导出和安全设置是独立动作，禁用不等于删除 Realm。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["header"], "regionsRationale": "Realm 身份与管理动作属于页头。", "events": ["actionTrigger", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "nameFieldRef", "enabledFieldRef", "targets"], "optional": ["manageableFieldRef"], "entityFieldRefs": { "nameFieldRef": "string", "enabledFieldRef": "enum", "manageableFieldRef": "enum" }, "note": "无管理权限时所有写动作禁用。" }
     },
     {
       "type": "RealmSecurityContext", "description": "Realm 安全上下文：SSL、暴力破解、会话超时和令牌寿命来自同一 Realm。", "rendererKey": "realm-security-context", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
+      "label": "Realm 安全上下文",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/realm-settings/security-defences + TokensTab.tsx", "took": "安全防护和令牌寿命属于同一 Realm 配置快照，不跨 Realm 拼接。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["headerContent"], "regionsRationale": "安全摘要位于 Realm 页头和配置正文之间。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "只展示当前 Realm 安全字段。" }
     },
     {
       "type": "UserEventFilter", "description": "用户事件筛选：事件类型、客户端、IP 和时间范围可组合。", "rendererKey": "user-event-filter", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
+      "label": "用户事件筛选",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/realm-settings/events + user events", "took": "用户事件与管理员事件使用不同范围；分面累计且不在前端伪造查询语义。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["filters"], "regionsRationale": "筛选只约束用户事件列表。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "facetFieldRef", "keyFieldRef", "titleFieldRef", "targets"], "optional": [], "entityFieldRefs": { "facetFieldRef": "string", "keyFieldRef": "string", "titleFieldRef": "string" }, "note": "不同分面累计，清除一项不影响其他条件。" }
     },
     {
       "type": "CredentialLifecycleBar", "description": "凭据生命周期栏：重置密码、发送重置邮件和要求下次更新保持不同安全边界。", "rendererKey": "credential-lifecycle-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "凭据生命周期栏",
       "source": { "repo": "keycloak/keycloak", "path": "js/apps/admin-ui/src/user/user-credentials/ResetPasswordDialog.tsx + ResetCredentialDialog.tsx", "took": "临时密码、UPDATE_PASSWORD 必需动作和邮件重置是不同事务；联邦凭据不能本地重置。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "凭据动作持续位于用户安全正文底部。", "events": ["editRequest", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "usernameFieldRef", "resettableFieldRef", "targets"], "optional": ["temporaryFieldRef", "updatedAtFieldRef"], "entityFieldRefs": { "usernameFieldRef": "string", "resettableFieldRef": "enum", "temporaryFieldRef": "enum", "updatedAtFieldRef": "date" }, "note": "不可重置的联邦凭据禁用本地密码操作。" }
     },
     {
       "type": "PanelQueryLatencyChart", "description": "面板查询延迟趋势：平均、P95 和超时数按同一时间桶对齐。", "rendererKey": "panel-query-latency-chart", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "面板查询延迟",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/inspector/QueryInspector.tsx + dashboard Inspector", "took": "查询统计与错误共享 request 范围；空值不补零，超时单独显示。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["charts"], "regionsRationale": "查询延迟属于分析图表。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "averageFieldRef", "p95FieldRef"], "optional": ["timeoutFieldRef"], "entityFieldRefs": { "timeFieldRef": "date", "averageFieldRef": "number", "p95FieldRef": "number", "timeoutFieldRef": "number" }, "note": "所有序列共享查询时间桶。" }
     },
     {
       "type": "SyncVolumeTrendChart", "description": "同步数据量趋势：记录数、字节数和失败记录按同一同步窗口对齐。", "rendererKey": "sync-volume-trend-chart", "rendererStatus": "real", "generationEnabled": true, "capability": "chart", "family": "data",
+      "label": "同步数据量趋势",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/pages/connections/StreamStatusPage + ConnectionTimelinePage", "took": "记录、字节和失败量来自同一 job；失败记录不并入成功记录。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["charts"], "regionsRationale": "同步数据量属于运行图表。", "events": [],
       "bindingSchema": { "required": ["entityRef", "timeFieldRef", "recordsFieldRef", "bytesFieldRef"], "optional": ["failedFieldRef"], "entityFieldRefs": { "timeFieldRef": "date", "recordsFieldRef": "number", "bytesFieldRef": "number", "failedFieldRef": "number" }, "note": "所有序列共享 job 窗口。" }
     },
     {
       "type": "ExploreInspectorTabs", "description": "Explore 检查页签：数据、统计、JSON、查询和错误使用稳定键。", "rendererKey": "explore-inspector-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
+      "label": "Explore 检查页签",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/inspector/QueryInspector.tsx", "took": "错误页签只在真实错误存在时开放；切换不重跑查询。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["tabs"], "regionsRationale": "切换查询诊断证据。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "稳定 key 与计数分离。" }
     },
     {
       "type": "StreamDetailTabs", "description": "数据流详情页签：概览、字段、历史、错误和设置使用稳定键。", "rendererKey": "stream-detail-tabs", "rendererStatus": "real", "generationEnabled": true, "capability": "navigation", "family": "action",
+      "label": "数据流详情页签",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/pages/connections/StreamStatusPage + SyncCatalogTable", "took": "字段与历史共享 stream 身份；Schema 变化计数只作提示。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["tabs"], "regionsRationale": "切换数据流证据。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "keyFieldRef", "targets"], "optional": ["countFieldRef", "enabledFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "keyFieldRef": "string", "countFieldRef": "number", "enabledFieldRef": "enum" }, "note": "页签身份不随 Schema 计数变化。" }
     },
     {
       "type": "DatasourceQueryMetrics", "description": "数据源查询指标：请求、错误、缓存命中和平均耗时共享范围。", "rendererKey": "datasource-query-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
+      "label": "数据源查询指标",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/inspector/QueryInspector.tsx", "took": "错误率和缓存率机械计算，零请求时为 0。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["metrics"], "regionsRationale": "查询质量属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "requestFieldRef", "errorFieldRef"], "optional": ["cacheHitFieldRef", "durationFieldRef"], "entityFieldRefs": { "requestFieldRef": "number", "errorFieldRef": "number", "cacheHitFieldRef": "number", "durationFieldRef": "number" }, "note": "零请求时比率为 0。" }
     },
     {
       "type": "StreamFreshnessMetrics", "description": "数据流新鲜度指标：延迟、最近同步、记录量和失败量共享 stream 范围。", "rendererKey": "stream-freshness-metrics", "rendererStatus": "real", "generationEnabled": true, "capability": "metric", "family": "data",
+      "label": "数据流新鲜度",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/pages/connections/StreamStatusPage/DataFreshnessCell.tsx", "took": "新鲜度读取真实同步时间；没有同步不伪造成零延迟。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "monitor"], "allowedRegions": ["metrics"], "regionsRationale": "数据流新鲜度属于指标带。", "events": [],
       "bindingSchema": { "required": ["entityRef", "lagFieldRef", "syncedAtFieldRef"], "optional": ["recordsFieldRef", "failedFieldRef"], "entityFieldRefs": { "lagFieldRef": "number", "syncedAtFieldRef": "date", "recordsFieldRef": "number", "failedFieldRef": "number" }, "note": "未同步由日期字段显式表示。" }
     },
     {
       "type": "DatasourceHealthStrip", "description": "数据源健康状态：名称、类型、连接状态和最近检查共享快照。", "rendererKey": "datasource-health-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
+      "label": "数据源健康状态",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/datasources + inspector", "took": "未知和错误不能显示为健康；失败检查可重试。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "workbench"], "allowedRegions": ["headerExtra"], "regionsRationale": "数据源健康位于页头旁。", "events": ["actionTrigger"],
       "bindingSchema": { "required": ["entityRef", "nameFieldRef", "statusFieldRef", "targets"], "optional": ["typeFieldRef", "checkedAtFieldRef"], "entityFieldRefs": { "nameFieldRef": "string", "statusFieldRef": "enum", "typeFieldRef": "string", "checkedAtFieldRef": "date" }, "note": "重试只携带当前数据源 id。" }
     },
     {
       "type": "ConnectorVersionStrip", "description": "连接器版本状态：名称、当前版本、可用版本和升级状态共享快照。", "rendererKey": "connector-version-strip", "rendererStatus": "real", "generationEnabled": true, "capability": "status", "family": "content",
+      "label": "连接器版本状态",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/pages/connections/ConnectionTimelinePage/components/ConnectorUpdateEventItem.tsx", "took": "当前和目标版本分离；升级状态不伪造完成。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["monitor", "workbench"], "allowedRegions": ["headerExtra"], "regionsRationale": "连接器版本位于连接页头旁。", "events": ["itemSelect"],
       "bindingSchema": { "required": ["entityRef", "nameFieldRef", "versionFieldRef", "statusFieldRef"], "optional": ["availableVersionFieldRef"], "entityFieldRefs": { "nameFieldRef": "string", "versionFieldRef": "string", "statusFieldRef": "enum", "availableVersionFieldRef": "string" }, "note": "升级中不显示为已升级。" }
     },
     {
       "type": "PanelCommandHeader", "description": "面板操作页头：标题、数据源、刷新、检查和编辑保持独立能力。", "rendererKey": "panel-command-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "面板操作页头",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/dashboard/components/Inspector + panel menu", "took": "检查不触发刷新，刷新不进入编辑；权限只控制编辑。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["dashboard", "workbench"], "allowedRegions": ["header"], "regionsRationale": "面板身份和全局动作属于页头。", "events": ["actionTrigger", "editRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "targets"], "optional": ["datasourceFieldRef", "editableFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "datasourceFieldRef": "string", "editableFieldRef": "enum" }, "note": "刷新、检查和编辑使用独立 operation。" }
     },
     {
       "type": "ConnectionSchemaHeader", "description": "连接 Schema 页头：连接名、变更状态、刷新能力和保存状态共享连接。", "rendererKey": "connection-schema-header", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "连接 Schema 页头",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/area/connection/components/SyncCatalogTable/components/RefreshSchemaControl.tsx", "took": "刷新和保存分离；刷新中不可重复请求，破坏性变化必须审查。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["header"], "regionsRationale": "Schema 身份和全局动作属于页头。", "events": ["actionTrigger", "editRequest"],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "statusFieldRef", "targets"], "optional": ["refreshingFieldRef", "dirtyFieldRef"], "entityFieldRefs": { "titleFieldRef": "string", "statusFieldRef": "enum", "refreshingFieldRef": "enum", "dirtyFieldRef": "enum" }, "note": "刷新中禁用重复刷新；破坏变化不自动保存。" }
     },
     {
       "type": "ExploreQueryContext", "description": "Explore 查询上下文：数据源、查询语言、时间范围和步长来自同一查询。", "rendererKey": "explore-query-context", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
+      "label": "Explore 查询上下文",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/explore + inspector", "took": "查询口径只读取当前 Explore pane，不跨 pane 拼接。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["headerContent"], "regionsRationale": "查询口径位于结果正文之前。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "只展示当前查询摘要。" }
     },
     {
       "type": "StreamSelectionSummary", "description": "数据流选择摘要：连接、命名空间、选择数和字段数来自当前 catalog。", "rendererKey": "stream-selection-summary", "rendererStatus": "real", "generationEnabled": true, "capability": "entityRows", "family": "data",
+      "label": "数据流选择摘要",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/area/connection/components/SyncCatalogTable", "took": "stream 和字段选择共享 catalog 版本；不跨连接拼接。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["headerContent"], "regionsRationale": "选择摘要位于 Schema 正文之前。", "events": [],
       "bindingSchema": { "required": ["entityRef", "titleFieldRef", "fieldRefs"], "optional": [], "entityFieldRefs": { "titleFieldRef": "string" }, "entityFieldRefLists": { "fieldRefs": { "minItems": 2, "maxItems": 6 } }, "note": "只展示当前 catalog 摘要。" }
     },
     {
       "type": "LogLabelFilter", "description": "日志标签筛选：标签键和值分面累计，私有标签不进入候选。", "rendererKey": "log-label-filter", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
+      "label": "日志标签筛选",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/alerting/unified/triage/scene/filters + labels.ts", "took": "标签 matcher 结构化提交；私有标签不展示。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["filters"], "regionsRationale": "标签筛选只约束日志结果。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "facetFieldRef", "keyFieldRef", "titleFieldRef", "targets"], "optional": [], "entityFieldRefs": { "facetFieldRef": "string", "keyFieldRef": "string", "titleFieldRef": "string" }, "note": "分面累计，私有标签由上游排除。" }
     },
     {
       "type": "StreamNamespaceFilter", "description": "数据流命名空间筛选：命名空间、状态和同步模式分面累计。", "rendererKey": "stream-namespace-filter", "rendererStatus": "real", "generationEnabled": true, "capability": "filter", "family": "filter",
+      "label": "数据流命名空间筛选",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/area/connection/components/SyncCatalogTable/components/SearchAndFilterControls.tsx", "took": "搜索与结构化条件分离；刷新 Schema 不清空筛选。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["filters"], "regionsRationale": "筛选只约束 stream 列表。", "events": ["filterChange"],
       "bindingSchema": { "required": ["entityRef", "facetFieldRef", "keyFieldRef", "titleFieldRef", "targets"], "optional": [], "entityFieldRefs": { "facetFieldRef": "string", "keyFieldRef": "string", "titleFieldRef": "string" }, "note": "刷新不清空当前筛选。" }
     },
     {
       "type": "ExploreQueryControlBar", "description": "Explore 查询控制栏：运行中可取消，空查询不可运行，结果可检查。", "rendererKey": "explore-query-control-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "Explore 查询控制栏",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/explore + inspector", "took": "运行、取消和检查结果是独立动作；运行中禁止重复提交。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "查询控制位于结果底部。", "events": ["actionTrigger", "submitRequest"],
       "bindingSchema": { "required": ["entityRef", "statusFieldRef", "queryFieldRef", "targets"], "optional": ["durationFieldRef"], "entityFieldRefs": { "statusFieldRef": "enum", "queryFieldRef": "string", "durationFieldRef": "number" }, "note": "running 可取消，非空查询可运行。" }
     },
     {
       "type": "SchemaRefreshBar", "description": "Schema 刷新栏：刷新、审查变化和保存 catalog 遵循刷新状态机。", "rendererKey": "schema-refresh-bar", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "Schema 刷新栏",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/area/connection/components/SyncCatalogTable/components/RefreshSchemaControl.tsx + SchemaRefreshing.tsx", "took": "刷新中不可重复；破坏变化先审查，保存不冒充刷新。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench"], "allowedRegions": ["footerBar"], "regionsRationale": "Schema 操作持续位于 catalog 底部。", "events": ["actionTrigger", "editRequest"],
       "bindingSchema": { "required": ["entityRef", "statusFieldRef", "targets"], "optional": ["refreshingFieldRef", "dirtyFieldRef"], "entityFieldRefs": { "statusFieldRef": "enum", "refreshingFieldRef": "enum", "dirtyFieldRef": "enum" }, "note": "breaking 先审查，dirty 才可保存。" }
     },
     {
       "type": "QueryErrorDrawer", "description": "查询错误抽屉：refId、错误、请求和重试入口共享查询上下文。", "rendererKey": "query-error-drawer", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "查询错误抽屉",
       "source": { "repo": "grafana/grafana", "path": "public/app/features/inspector/QueryInspector.tsx + dashboard Inspector/hooks", "took": "只展示真实 query error；重试携带原 refId。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["overlay"], "regionsRationale": "错误诊断是临时任务面。", "events": ["submitRequest"],
       "bindingSchema": { "required": ["entityRef", "refFieldRef", "messageFieldRef", "statusFieldRef", "targets"], "optional": ["requestFieldRef"], "entityFieldRefs": { "refFieldRef": "string", "messageFieldRef": "string", "statusFieldRef": "enum", "requestFieldRef": "string" }, "note": "只有 error/timeout 可重试。" }
     },
     {
       "type": "SchemaConflictDrawer", "description": "Schema 冲突抽屉：流、字段、变化类型和接受策略形成审查任务。", "rendererKey": "schema-conflict-drawer", "rendererStatus": "real", "generationEnabled": true, "capability": "action", "family": "action",
+      "label": "Schema 冲突抽屉",
       "source": { "repo": "airbytehq/airbyte-platform", "path": "airbyte-webapp/src/area/connection/components/ConnectionForm/SchemaChangesBackdrop.tsx + CatalogChangeEventItem.tsx", "took": "breaking 与 non-breaking 分开；接受策略一次提交，历史不修改。" },
       "propsSchema": { "type": "object", "additionalProperties": false, "properties": { "surface": { "type": "string", "enum": ["card", "plain"] } } }, "dataKinds": ["entityRows"], "pageKinds": ["workbench", "monitor"], "allowedRegions": ["overlay"], "regionsRationale": "Schema 冲突审查是临时任务面。", "events": ["submitRequest"],
       "bindingSchema": { "required": ["entityRef", "streamFieldRef", "fieldFieldRef", "changeFieldRef", "targets"], "optional": ["breakingFieldRef"], "entityFieldRefs": { "streamFieldRef": "string", "fieldFieldRef": "string", "changeFieldRef": "enum", "breakingFieldRef": "enum" }, "note": "破坏变化必须明确接受策略。" }

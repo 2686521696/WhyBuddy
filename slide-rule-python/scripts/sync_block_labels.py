@@ -52,10 +52,79 @@ _ENTRY_RE = re.compile(r'^\s{4}(\w+):\s*\{[^\n]*?label:\s*"([^"]+)"', re.MULTILI
 
 #: 块级键的缩进；propsSchema 内部也有 "type"，靠缩进区分。
 _BLOCK_TYPE_LINE = '      "type": "'
+_BLOCK_LABEL_LINE = '      "label": "'
+_BLOCKS_START = '  "blocks": ['
+_BLOCKS_END = "  ],"
 
 
 def labels_from_registry() -> dict[str, str]:
     return {m[1]: m[2] for m in _ENTRY_RE.finditer(REGISTRY.read_text(encoding="utf-8"))}
+
+
+def block_label_counts(text: str) -> dict[str, int]:
+    """Count top-level label keys per catalog block without hiding duplicate JSON keys."""
+    counts: dict[str, int] = {}
+    current: str | None = None
+    in_blocks = False
+    for line in text.split("\n"):
+        if line == _BLOCKS_START:
+            in_blocks = True
+            continue
+        if in_blocks and line == _BLOCKS_END:
+            break
+        if not in_blocks:
+            continue
+        if line.startswith(_BLOCK_TYPE_LINE):
+            current = line[len(_BLOCK_TYPE_LINE) :].split('"', 1)[0]
+            counts[current] = 0
+        elif current and line.startswith(_BLOCK_LABEL_LINE):
+            counts[current] += 1
+    return counts
+
+
+def rewrite_catalog_labels(text: str, labels: dict[str, str]) -> tuple[str, int]:
+    """Replace every block's top-level label while preserving its field order."""
+    lines = text.split("\n")
+    out: list[str] = []
+    wrote = 0
+    in_blocks = False
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if line == _BLOCKS_START:
+            in_blocks = True
+            out.append(line)
+            index += 1
+            continue
+        if in_blocks and line == _BLOCKS_END:
+            in_blocks = False
+            out.append(line)
+            index += 1
+            continue
+        if not (in_blocks and line.startswith(_BLOCK_TYPE_LINE)):
+            out.append(line)
+            index += 1
+            continue
+
+        block_type = line[len(_BLOCK_TYPE_LINE) :].split('"', 1)[0]
+        end = index + 1
+        while end < len(lines) and lines[end] != _BLOCKS_END and not lines[end].startswith(_BLOCK_TYPE_LINE):
+            end += 1
+        chunk = lines[index:end]
+        label = labels.get(block_type)
+        label_indexes = [i for i, chunk_line in enumerate(chunk) if chunk_line.startswith(_BLOCK_LABEL_LINE)]
+        if label is not None:
+            replacement = f'      "label": "{label}",'
+            if label_indexes:
+                chunk[label_indexes[0]] = replacement
+                for duplicate_index in reversed(label_indexes[1:]):
+                    del chunk[duplicate_index]
+            else:
+                chunk.insert(1, replacement)
+            wrote += 1
+        out.extend(chunk)
+        index = end
+    return "\n".join(out), wrote
 
 
 def main() -> int:
@@ -64,7 +133,8 @@ def main() -> int:
     args = ap.parse_args()
 
     labels = labels_from_registry()
-    catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
+    catalog_text = CATALOG.read_text(encoding="utf-8")
+    catalog = json.loads(catalog_text)
     blocks = catalog["blocks"]
     print(f"注册表 {len(labels)} 个中文名，目录 {len(blocks)} 个区块")
 
@@ -75,43 +145,27 @@ def main() -> int:
         if b.get("label") and b["type"] in labels and b["label"] != labels[b["type"]]
     ]
     todo = [b["type"] for b in blocks if b["type"] in labels and b.get("label") != labels[b["type"]]]
+    duplicate_labels = [block_type for block_type, count in block_label_counts(catalog_text).items() if count > 1]
 
     if missing:
         print(f"注册表里没有中文名的 {len(missing)} 个：{', '.join(missing)}")
     if stale:
         print(f"与注册表不一致的 {len(stale)} 个：{', '.join(stale)}")
+    if duplicate_labels:
+        print(f"存在重复 label 键的 {len(duplicate_labels)} 个：{', '.join(duplicate_labels)}")
 
     if args.check:
-        if todo:
-            print(f"\n目录落后 {len(todo)} 个中文名，跑一次本脚本同步", file=sys.stderr)
+        if todo or duplicate_labels:
+            print(
+                f"\n目录需同步：{len(todo)} 个名称差异，{len(duplicate_labels)} 个重复 label",
+                file=sys.stderr,
+            )
             return 1
         print("目录与注册表一致")
         return 0
 
-    lines = CATALOG.read_text(encoding="utf-8").split("\n")
-    out: list[str] = []
-    wrote = 0
-    prev_is_block_type = False
-    for line in lines:
-        # 幂等：只丢**紧跟在块级 type 后面**的那一行 label（正是本脚本写的位置）。
-        #
-        # ⚠ 第一版写的是"凡 6 空格缩进的 label 行一律丢"，一跑就删掉了 20 行
-        # ——`pageRegions` 与 `pageKinds` 两段的中文名（「筛选区」「仪表盘」…）
-        # 缩进完全相同。缩进不足以定位，得靠上一行是谁。
-        if prev_is_block_type and line.startswith('      "label": "'):
-            prev_is_block_type = False
-            continue
-        prev_is_block_type = line.startswith(_BLOCK_TYPE_LINE)
-        out.append(line)
-        if not prev_is_block_type:
-            continue
-        block_type = line[len(_BLOCK_TYPE_LINE) :].split('"', 1)[0]
-        label = labels.get(block_type)
-        if label is None:
-            continue
-        out.append(f'      "label": "{label}",')
-        wrote += 1
-    CATALOG.write_text("\n".join(out), encoding="utf-8")
+    rewritten, wrote = rewrite_catalog_labels(catalog_text, labels)
+    CATALOG.write_text(rewritten, encoding="utf-8")
     print(f"已写回 {wrote} 个中文名")
     return 0
 
