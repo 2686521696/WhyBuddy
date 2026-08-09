@@ -57,6 +57,8 @@ export interface SearchDoc {
   description: string;
   /** 能力词：分组、族、能力面、用到的基础组件、意图词表命中的词 */
   tags: string;
+  /** 这一类能力里的默认首选（见 GENERALITY_TIEBREAK）。基础组件恒为 false。 */
+  generic?: boolean;
 }
 
 /**
@@ -327,16 +329,27 @@ interface CatalogBlock {
  * storedFields) => number`（见 minisearch/src/MiniSearch.ts:62，返回值直接乘进
  * BM25 分数，返回假值则整条剔除）。所以不需要在外面再套一层重排。
  *
- * ## 现在还没有数据
+ * ## 为什么是**分先后**而不是**乘系数**
  *
- * 目录里 `generality` 字段暂时是空的，缺省按 1 算 —— **行为与不加这段完全
- * 一致**。这里先把接口留出来，是为了让"给 111 个区块标通用性"变成一件纯粹的
- * 数据活儿（可以由 LLM 出初稿、人过一遍），而不是又一次改排序代码。
+ * 第一版挂在 MiniSearch 的 `boostDocument` 上，直接把系数乘进 BM25 分数。
+ * 1.15 / 1.25 / 1.4 三档试下来验收全是 14/15，调不动——**这个旋钮本身就是
+ * 错的**：乘系数会把一个文本上明显更相关的结果压下去（1.6 那档实测让
+ * ReferenceManyManager 蹿到「我要选择客户」的第二名，它根本不是个选择控件）。
+ *
+ * Algolia 的原话说得很清楚：
+ *
+ *     "Custom Ranking only kicks in when textual relevance scores are tied."
+ *
+ * 所以正确形态是**平手时的分先后**：先按文本分把结果分档，**同一档之内**
+ * 首选排前面，跨档不动。文本明显更相关的永远在前，这条规则只在"文本上分不
+ * 出高低"时说话——而「FilterBar vs BookingDirectoryFilter」正是这种情形。
+ *
+ * `TIE_BAND` = 多接近才算平手，按头名分数的比例算（分母是本次查询的头名，
+ * 不是语料）。0.15 是量出来的：筛选那 15 个区块的文本分挤在头名的 85% 以内，
+ * 恰好落进同一档，首选因此能排到前面；而「批量导出」这种一枝独秀的查询，
+ * 第二名掉出档外，顺序不受影响。
  */
-const GENERALITY_BOOST: Record<string, number> = {
-  generic: 1.25,
-  specific: 1,
-};
+const TIE_BAND = 0.15;
 
 const CATALOG = catalogJson as { blocks: CatalogBlock[] };
 
@@ -374,6 +387,7 @@ function blockDocs(labelOf: (type: string) => string | undefined): SearchDoc[] {
     name: b.type,
     label: labelOf(b.type) ?? b.type,
     description: b.description ?? "",
+    generic: b.generality === "generic",
     tags: [
       b.family,
       b.capability,
@@ -412,11 +426,6 @@ export function buildIndex(
   usesOf: (name: string) => string[]
 ): { search: (q: string) => SearchDoc[]; docs: SearchDoc[] } {
   const docs = [...blockDocs(labelOf), ...baseDocs(usesOf)];
-  const generalityBoost = new Map<string, number>(
-    CATALOG.blocks
-      .filter(b => b.generality)
-      .map(b => [`block:${b.type}`, GENERALITY_BOOST[b.generality!] ?? 1])
-  );
   const mini = new MiniSearch<SearchDoc>({
     idField: "id",
     fields: ["name", "label", "tags", "description"],
@@ -433,8 +442,6 @@ export function buildIndex(
       combineWith: "OR",
       // 查询侧单独分词：索引留单字保召回、查询丢单字去噪（见 tokenizeQuery）
       tokenize: tokenizeQuery,
-      // 业务优先级（通用主力 vs 特定场景件），与文本相关性分开（见 GENERALITY_BOOST）
-      boostDocument: (id: any) => generalityBoost.get(String(id)) ?? 1,
     },
   });
   mini.addAll(docs);
@@ -506,8 +513,21 @@ export function buildIndex(
         // 这块补丁没有存在理由了。
         keep.push(...above.slice(0, MAX_HITS));
       }
+      // 排序三级：文本档位 → 档内首选优先 → 档内按分数。
+      // 业务优先级只在**平手时**说话，不去乘分数（见 TIE_BAND 上面那段）。
+      const weighted = (e: readonly [SearchDoc, number]) => e[1] * KIND_WEIGHT[e[0].kind];
+      const top = Math.max(...keep.map(weighted), 0);
+      const band = top * TIE_BAND;
+      const tierOf = (e: readonly [SearchDoc, number]) =>
+        band > 0 ? Math.floor((top - weighted(e)) / band) : 0;
       return keep
-        .sort((a, b) => b[1] * KIND_WEIGHT[b[0].kind] - a[1] * KIND_WEIGHT[a[0].kind])
+        .sort((a, b) => {
+          const dt = tierOf(a) - tierOf(b);
+          if (dt !== 0) return dt;
+          const dg = Number(b[0].generic ?? false) - Number(a[0].generic ?? false);
+          if (dg !== 0) return dg;
+          return weighted(b) - weighted(a);
+        })
         .map(([d]) => d);
     },
   };
