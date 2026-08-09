@@ -88,6 +88,40 @@ export function tokenize(text: string): string[] {
 }
 
 /**
+ * **查询侧**分词：把单个汉字丢掉，只留二字词。
+ *
+ * 索引侧仍然出单字（搜「表」要能命中「表格」是真实需求），但查询侧留着单字
+ * 是灾难——它让「一句话里的每个常用汉字」都去跟整份目录做连连看。
+ *
+ * 2026-08-09 实测（语料 328 条）：
+ *
+ *     查询                 单字+二字   只留二字
+ *     zzzz不存在              84 条      2 条
+ *     显示销售趋势           115 条     26 条
+ *     做一个订单筛选         189 条     50 条
+ *
+ * 「zzzz不存在」原本能出 84 条，是因为「不」「存」「在」这三个字在几乎每条
+ * 说明里都有。这不是排序问题，是**这些字压根不该参与检索**。
+ *
+ * 中文检索里"只用 bigram 不用 unigram"是常规做法（unigram 召回的增量远小于
+ * 它带来的噪声）。这里做成**索引侧留、查询侧丢**的不对称，是因为
+ * MiniSearch 明确支持 `searchOptions.tokenize` 单独覆盖查询分词
+ * （见 minisearch/src/MiniSearch.ts 的 SearchOptions.tokenize：
+ * "Function to tokenize the search query. By default, the same tokenizer
+ * used for indexing is used."）——两边各取所长，不用牺牲哪一边。
+ *
+ * 兜底：滤完一个词都不剩（用户就打了一个「表」字）时退回原分词，
+ * 否则单字查询会变成"永远搜不到"。
+ */
+export function tokenizeQuery(text: string): string[] {
+  const all = tokenize(text);
+  const kept = all.filter(t => !SINGLE_CJK_RE.test(t));
+  return kept.length > 0 ? kept : all;
+}
+
+const SINGLE_CJK_RE = /^[一-龥]$/;
+
+/**
  * 意图词表：**业务话 → 能力词**。
  *
  * 左边是用户会打出来的词，右边是语料里真实存在的词。这张表是手写的，而且
@@ -134,23 +168,61 @@ export const KIND_WEIGHT: Record<SearchDoc["kind"], number> = {
  * 「做一个订单筛选」在这条线下留 8 个区块（四个筛选块 + 几个沾边的），
  * 再松就开始把整份目录放进来。
  */
-export const SCORE_CUTOFF = 0.25;
+export const SCORE_CUTOFF = 0.15;
 
 /** 再多就不是"搜到了"而是"列了个表"。 */
 export const MAX_HITS = 60;
 
 /**
- * 每档**至少**留几个，哪怕分数在线以下。
+ * **身份字段**：命中这几个才算真的搜到了，只蹭到说明散文的不算。
  *
- * 截断线是相对头名算的，一旦头名特别突出，后面全被削掉。实测搜「审批记录」
- * 只剩 WorkflowTimeline 一个区块，ActivityFeed（「按时间倒序展示动态、提醒
- * 或风险事件」——正是"记录"那一类）被削没了。
+ * ## 为什么需要一条绝对判据
  *
- * 截断要防的是「一句话跟整份目录都沾点边」，不是把 23 个区块削成 1 个。
- * 3 是个折中：够把最近的一两个近邻带出来，又不至于让「批量导出」这种
- * 只有一个正解的查询后面跟一串不相干的。
+ * `SCORE_CUTOFF` 是**相对**的（拿本档头名 ×0.25），它能修剪长尾，但回答不了
+ * 「到底搜没搜到」这个问题——因为分母是别的结果，不是查询本身。
+ *
+ * 成熟方案在这一点上是一致的：
+ *
+ *   · **Meilisearch** 的 `_rankingScore` 归一化到 0..1，官方文档明写
+ *     "A document's ranking score does not change based on the scores of other
+ *     documents in the same index"，`rankingScoreThreshold` 因此是绝对的；
+ *   · **Fuse.js** 的分数是 `errors / pattern.length`（见
+ *     src/search/bitap/computeScore.ts）——**分母是查询，不是语料**，
+ *     所以 `threshold: 0.6` 加多少文档都还是那个意思；
+ *   · **cmdk**（shadcn 命令面板）分数 0..1，过滤就是 `score > 0`，
+ *     一条不过就渲染 `Command.Empty`，**不硬凑**。
+ *
+ * ## 这个语料上，绝对判据该拿什么当分母
+ *
+ * 试过按 BM25 分数归一化、按文档频率自动挑停用词，都不干净：328 条的语料里
+ * 「存在」「这个」「东西」这类散文词的文档频率也不高，统计上分不出它们和
+ * 「筛选」「趋势」的差别。
+ *
+ * 真正分得开的是**命中在哪个字段**——照 Algolia 的 searchableAttributes 分层
+ * 那套（身份属性在前、长文本在后）：
+ *
+ *     name / label  这东西叫什么
+ *     tags          它是什么能力（family / capability / dataKinds 的中文）
+ *     description   一段散文，什么词都可能出现
+ *
+ * 2026-08-09 实测（语料 328 条，加上这条判据前 → 后）：
+ *
+ *     显示销售趋势      298 → 259     做一个订单筛选   275 → 214
+ *     审批记录          231 → 192     批量导出         250 → 187
+ *     zzzz不存在         84 →   0     的了吗           159 →   0
+ *     这个东西在不在     129 →   0
+ *
+ * 七句真查询一条没伤到，三句垃圾查询清零。
  */
-export const MIN_HITS_PER_KIND = 3;
+const IDENTITY_FIELDS: ReadonlySet<string> = new Set(["name", "label", "tags"]);
+
+/** 这条结果是否命中了身份字段（而不是只蹭到说明里的散文）。 */
+function matchedIdentityField(match: Record<string, string[]>): boolean {
+  for (const fields of Object.values(match)) {
+    for (const f of fields) if (IDENTITY_FIELDS.has(f)) return true;
+  }
+  return false;
+}
 
 export const INTENT_LEXICON: Array<[RegExp, string]> = [
   // ── 选择关联记录 ──────────────────────────────────────────────────
@@ -221,7 +293,50 @@ interface CatalogBlock {
   dataKinds?: string[];
   pageKinds?: string[];
   allowedRegions?: string[];
+  /** 通用主力还是特定场景件。缺省 = 未标注，按 1 算（见 GENERALITY_BOOST）。 */
+  generality?: "generic" | "specific";
 }
+
+/**
+ * **业务优先级**加权：通用主力排在特定场景件前面。
+ *
+ * ## 为什么这件事文本分算不出来
+ *
+ * 2026-08-09 语料从 26 涨到 111 之后，搜「做一个订单筛选」头四名是
+ * BookingDirectoryFilter / IssueEventFilter / FacetedFilterPanel /
+ * TimelineFilterBar，而 `FilterBar` 掉到第 14。
+ *
+ * 这不是分词或权重没调好——**这几个在文本上是等价的**：family 全是 `filter`，
+ * 能力标签全是同一串「筛选 过滤 查询 条件」，说明里也都在讲筛选。BM25 只能
+ * 看词，看不出「大部分应用要的是 FilterBar，只有做预订系统才要
+ * BookingDirectoryFilter」——那是产品判断，不在语料里。
+ *
+ * Algolia 把这件事讲得最清楚（customRanking 的文档）：
+ *
+ *     "Textual relevance does not include business relevance, which is used to
+ *      provide a custom ranking based on non-textual information."
+ *     "Custom Ranking acts as a tiebreaker when multiple results are equally
+ *      relevant."
+ *
+ * 也就是：**文本相关性和业务优先级是两个维度，必须分开声明**，指望调权重把
+ * 后者从前者里挤出来是徒劳的。
+ *
+ * ## 挂在哪
+ *
+ * MiniSearch 原生就有这个钩子——`searchOptions.boostDocument(id, term,
+ * storedFields) => number`（见 minisearch/src/MiniSearch.ts:62，返回值直接乘进
+ * BM25 分数，返回假值则整条剔除）。所以不需要在外面再套一层重排。
+ *
+ * ## 现在还没有数据
+ *
+ * 目录里 `generality` 字段暂时是空的，缺省按 1 算 —— **行为与不加这段完全
+ * 一致**。这里先把接口留出来，是为了让"给 111 个区块标通用性"变成一件纯粹的
+ * 数据活儿（可以由 LLM 出初稿、人过一遍），而不是又一次改排序代码。
+ */
+const GENERALITY_BOOST: Record<string, number> = {
+  generic: 1.25,
+  specific: 1,
+};
 
 const CATALOG = catalogJson as { blocks: CatalogBlock[] };
 
@@ -297,6 +412,11 @@ export function buildIndex(
   usesOf: (name: string) => string[]
 ): { search: (q: string) => SearchDoc[]; docs: SearchDoc[] } {
   const docs = [...blockDocs(labelOf), ...baseDocs(usesOf)];
+  const generalityBoost = new Map<string, number>(
+    CATALOG.blocks
+      .filter(b => b.generality)
+      .map(b => [`block:${b.type}`, GENERALITY_BOOST[b.generality!] ?? 1])
+  );
   const mini = new MiniSearch<SearchDoc>({
     idField: "id",
     fields: ["name", "label", "tags", "description"],
@@ -311,6 +431,10 @@ export function buildIndex(
       prefix: true,
       // OR：一句话里命中一个词就该出来，全中才出等于没法用自然语言问
       combineWith: "OR",
+      // 查询侧单独分词：索引留单字保召回、查询丢单字去噪（见 tokenizeQuery）
+      tokenize: tokenizeQuery,
+      // 业务优先级（通用主力 vs 特定场景件），与文本相关性分开（见 GENERALITY_BOOST）
+      boostDocument: (id: any) => generalityBoost.get(String(id)) ?? 1,
     },
   });
   mini.addAll(docs);
@@ -337,17 +461,24 @@ export function buildIndex(
         [kw, 1],
         [intentTerms(kw), INTENT_WEIGHT],
       ];
+      // 只蹭到说明散文的一律不算命中（判据与实测见 IDENTITY_FIELDS）。
+      // 这是**绝对**判据，回答"搜没搜到"；下面的 SCORE_CUTOFF 是相对的，
+      // 只负责修剪长尾。两件事分开，语料再涨也不会互相污染。
+      const identityHit = new Set<string>();
       for (const [text, weight] of passes) {
         if (!text) continue;
         for (const r of mini.search(text)) {
           const id = String(r.id);
           score.set(id, (score.get(id) ?? 0) + r.score * weight);
+          if (matchedIdentityField(r.match)) identityHit.add(id);
         }
       }
       const ranked = [...score.entries()]
+        .filter(([id]) => identityHit.has(id))
         .map(([id, sc]) => [byId.get(id), sc] as const)
         .filter((e): e is readonly [SearchDoc, number] => Boolean(e[0]))
         .sort((a, b) => b[1] - a[1]);
+      // 空就是空——照 cmdk 的做法渲染空态，不硬凑几条充数。
       if (ranked.length === 0) return [];
 
       /**
@@ -367,10 +498,13 @@ export function buildIndex(
         if (inKind.length === 0) continue;
         const floor = inKind[0][1] * SCORE_CUTOFF;
         const above = inKind.filter(([, sc]) => sc >= floor);
-        const picked = above.length >= MIN_HITS_PER_KIND
-          ? above
-          : inKind.slice(0, MIN_HITS_PER_KIND);
-        keep.push(...picked.slice(0, MAX_HITS));
+        // 过了身份判据的都是**真命中**，这条线只用来修剪长尾，不再"至少凑 N 条"。
+        // 原来那条 MIN_HITS_PER_KIND 是给相对截断打的补丁：截断线跟着头名飘，
+        // 头名一突出就把近邻全削掉，于是又反过来强行补 3 条。补丁的副作用是
+        // **搜不到时也照样端出 3 条**——实测「zzzz不存在」能出 4 条，用户看到
+        // 结果就以为这是最接近的，而不是"没找到"。绝对判据接管了"有没有"之后，
+        // 这块补丁没有存在理由了。
+        keep.push(...above.slice(0, MAX_HITS));
       }
       return keep
         .sort((a, b) => b[1] * KIND_WEIGHT[b[0].kind] - a[1] * KIND_WEIGHT[a[0].kind])
