@@ -38,7 +38,7 @@
  */
 
 import React from "react";
-import { Card, Dropdown, Empty, Tooltip } from "antd";
+import { Card, Dropdown, Empty, Pagination, Skeleton, Tooltip } from "antd";
 // 顶部一律用 lucide，与 AppsWorkbench 同源；antd 图标只留给卡片内部。
 import { ChevronDown, LayoutGrid, Monitor, Rows3, Search, Smartphone, Sparkles, Star, X } from "lucide-react";
 import { useContainerPosition } from "masonic";
@@ -46,8 +46,16 @@ import catalogJson from "@experience-blocks";
 import { SpanMasonry } from "@/pages/agent-loop/dashboard/SpanMasonry";
 import { useScrollerIn } from "@/pages/agent-loop/dashboard/useScrollerIn";
 import { spanForColumnCount } from "@/pages/agent-loop/dashboard/app-wall-span";
+import { requestMountPermit } from "@/lib/mount-scheduler";
 import { BLOCK_DEFINITIONS, ExperienceBlockBoundary } from "./live-runtime/block-registry";
 import { interleaveWide, isWideBlock } from "./block-wall-order";
+import {
+  buildComponentPreviewEntries,
+  COMPONENT_WALL_PAGE_SIZE,
+  paginateComponentPreviews,
+  type ComponentPreviewDevice,
+  type ComponentWallDevice,
+} from "./component-wall-pagination";
 import {
   BASE_COMPONENTS,
   BASE_GROUPS,
@@ -381,13 +389,9 @@ const CARD_SHADOW = "0 4px 18px rgba(15, 23, 42, 0.14)";
 /** 次级卡（提议卡、区域分组卡）用更轻的一档，同样只能走行内样式。 */
 const CARD_SHADOW_SOFT = "0 1px 6px rgba(15, 23, 42, 0.08)";
 
-const SLOT_LABEL: Record<string, string> = {
-  summary: "摘要区",
-  primary: "主区",
-  secondary: "副区",
-  activity: "动态区",
-  content: "内容区",
-};
+const SLOT_LABEL: Record<string, string> = Object.fromEntries(
+  Object.entries(CATALOG.pageRegions ?? {}).map(([key, region]) => [key, region.label])
+);
 
 const DATAKIND_LABEL: Record<string, string> = {
   aggregate: "聚合值",
@@ -423,6 +427,40 @@ const FIELD_LABEL: Record<string, string> = {
   orderId: "所属订单",
   action: "操作",
   operator: "操作人",
+  fileName: "文件名",
+  fileSize: "文件大小",
+  fileStatus: "文件状态",
+  uploadedAt: "上传时间",
+  author: "作者",
+  content: "内容",
+  avatar: "头像",
+  commentStatus: "审核状态",
+  parentId: "父评论",
+  commentedAt: "评论时间",
+  eventTitle: "日程标题",
+  startAt: "开始时间",
+  endAt: "结束时间",
+  eventStatus: "日程状态",
+  noticeTitle: "通知标题",
+  noticeContent: "通知内容",
+  noticeCategory: "通知分类",
+  noticeRead: "是否已读",
+  notifiedAt: "通知时间",
+  nodeLabel: "节点名称",
+  nodeParent: "父节点",
+  nodeDesc: "节点说明",
+  approvalTitle: "审批标题",
+  approvalStatus: "审批状态",
+  applicant: "申请人",
+  submittedAt: "提交时间",
+  approvalSummary: "申请摘要",
+  auditActor: "操作人",
+  auditAction: "操作动作",
+  auditTime: "操作时间",
+  auditResult: "执行结果",
+  changedField: "变更字段",
+  beforeValue: "变更前",
+  afterValue: "变更后",
 };
 
 /** 字段类型：表单族按它决定出哪种控件（enum→下拉、number→数字、date→日期）。
@@ -453,6 +491,40 @@ const FIELD_TYPE: Record<string, string> = {
   orderId: "ref",
   action: "string",
   operator: "string",
+  fileName: "string",
+  fileSize: "number",
+  fileStatus: "enum",
+  uploadedAt: "date",
+  author: "string",
+  content: "text",
+  avatar: "string",
+  commentStatus: "enum",
+  parentId: "ref",
+  commentedAt: "date",
+  eventTitle: "string",
+  startAt: "date",
+  endAt: "date",
+  eventStatus: "enum",
+  noticeTitle: "string",
+  noticeContent: "text",
+  noticeCategory: "enum",
+  noticeRead: "enum",
+  notifiedAt: "date",
+  nodeLabel: "string",
+  nodeParent: "ref",
+  nodeDesc: "text",
+  approvalTitle: "string",
+  approvalStatus: "enum",
+  applicant: "string",
+  submittedAt: "date",
+  approvalSummary: "text",
+  auditActor: "string",
+  auditAction: "string",
+  auditTime: "date",
+  auditResult: "enum",
+  changedField: "string",
+  beforeValue: "text",
+  afterValue: "text",
 };
 
 /**
@@ -491,6 +563,37 @@ const ENUM_OPTIONS: Record<string, NormalizedFieldOption[]> = {
     { id: "线上", label: "线上", tone: "default" },
     { id: "门店", label: "门店", tone: "default" },
     { id: "电话", label: "电话", tone: "default" },
+  ],
+  fileStatus: [
+    { id: "ready", label: "可用", tone: "success" },
+    { id: "uploading", label: "上传中", tone: "processing" },
+    { id: "failed", label: "失败", tone: "danger" },
+  ],
+  commentStatus: [
+    { id: "published", label: "已发布", tone: "success" },
+    { id: "reviewing", label: "审核中", tone: "warning" },
+  ],
+  eventStatus: [
+    { id: "confirmed", label: "已确认", tone: "success" },
+    { id: "pending", label: "待确认", tone: "warning" },
+  ],
+  noticeCategory: [
+    { id: "系统", label: "系统", tone: "processing" },
+    { id: "任务", label: "任务", tone: "warning" },
+    { id: "协作", label: "协作", tone: "default" },
+  ],
+  noticeRead: [
+    { id: "read", label: "已读", tone: "default" },
+    { id: "unread", label: "未读", tone: "processing" },
+  ],
+  approvalStatus: [
+    { id: "pending", label: "待处理", tone: "warning" },
+    { id: "approved", label: "已通过", tone: "success" },
+    { id: "rejected", label: "已驳回", tone: "danger" },
+  ],
+  auditResult: [
+    { id: "success", label: "成功", tone: "success" },
+    { id: "failed", label: "失败", tone: "danger" },
   ],
 };
 
@@ -544,6 +647,243 @@ function fieldSchemaOf(_entityRef: string, fieldId: string): AppFormFieldSchema 
 
 const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
   orderLog: ORDER_LOGS,
+  attachment: [
+    { id: "file-1", values: { fileName: "门店巡检报告.pdf", fileSize: 2488320, fileStatus: "ready", uploadedAt: "2026-08-08" }, createdAt: "2026-08-08T09:00:00.000Z" },
+    { id: "file-2", values: { fileName: "现场照片.zip", fileSize: 7340032, fileStatus: "uploading", uploadedAt: "2026-08-09" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "file-3", values: { fileName: "整改说明.docx", fileSize: 184320, fileStatus: "ready", uploadedAt: "2026-08-09" }, createdAt: "2026-08-09T10:00:00.000Z" },
+  ],
+  comment: [
+    { id: "comment-1", values: { author: "陈晓", content: "高新店的整改材料已经补齐，请复核。", avatar: "/brand/miantuan-mark.png", commentStatus: "published", parentId: "", commentedAt: "2026-08-09" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "comment-2", values: { author: "周宁", content: "收到，消防通道照片还需要补一张近景。", avatar: "/assets/sliderule-mark.svg", commentStatus: "published", parentId: "comment-1", commentedAt: "2026-08-09" }, createdAt: "2026-08-09T09:20:00.000Z" },
+    { id: "comment-3", values: { author: "林雪", content: "人民路店本周的复查时间调整到周五下午。", avatar: "/brand/logo.png", commentStatus: "reviewing", parentId: "", commentedAt: "2026-08-08" }, createdAt: "2026-08-08T15:00:00.000Z" },
+  ],
+  schedule: [
+    { id: "event-1", values: { eventTitle: "高新店复查", startAt: "2026-08-09", endAt: "2026-08-09", eventStatus: "confirmed" }, createdAt: "2026-08-08T09:00:00.000Z" },
+    { id: "event-2", values: { eventTitle: "消防材料评审", startAt: "2026-08-09", endAt: "2026-08-09", eventStatus: "pending" }, createdAt: "2026-08-08T10:00:00.000Z" },
+    { id: "event-3", values: { eventTitle: "人民路店季度盘点", startAt: "2026-08-12", endAt: "2026-08-12", eventStatus: "confirmed" }, createdAt: "2026-08-08T11:00:00.000Z" },
+  ],
+  notification: [
+    { id: "notice-1", values: { noticeTitle: "巡检报告已通过", noticeContent: "人民路店本周巡检报告已经完成复核。", noticeCategory: "系统", noticeRead: "unread", notifiedAt: "2026-08-09 10:30" }, createdAt: "2026-08-09T10:30:00.000Z" },
+    { id: "notice-2", values: { noticeTitle: "待补充现场照片", noticeContent: "高新店消防通道需要补充一张近景照片。", noticeCategory: "任务", noticeRead: "unread", notifiedAt: "2026-08-09 09:20" }, createdAt: "2026-08-09T09:20:00.000Z" },
+    { id: "notice-3", values: { noticeTitle: "复查时间已调整", noticeContent: "林雪将人民路店复查调整到周五下午。", noticeCategory: "协作", noticeRead: "read", notifiedAt: "2026-08-08 16:10" }, createdAt: "2026-08-08T16:10:00.000Z" },
+  ],
+  hierarchy: [
+    { id: "region-east", values: { nodeLabel: "华东区域", nodeParent: "", nodeDesc: "6 家门店" }, createdAt: "2026-08-09T08:00:00.000Z" },
+    { id: "city-hangzhou", values: { nodeLabel: "杭州", nodeParent: "region-east", nodeDesc: "4 家" }, createdAt: "2026-08-09T08:01:00.000Z" },
+    { id: "store-renmin", values: { nodeLabel: "人民路店", nodeParent: "city-hangzhou", nodeDesc: "正常营业" }, createdAt: "2026-08-09T08:02:00.000Z" },
+    { id: "store-gaoxin", values: { nodeLabel: "高新店", nodeParent: "city-hangzhou", nodeDesc: "待复查" }, createdAt: "2026-08-09T08:03:00.000Z" },
+    { id: "city-suzhou", values: { nodeLabel: "苏州", nodeParent: "region-east", nodeDesc: "2 家" }, createdAt: "2026-08-09T08:04:00.000Z" },
+    { id: "region-south", values: { nodeLabel: "华南区域", nodeParent: "", nodeDesc: "3 家门店" }, createdAt: "2026-08-09T08:05:00.000Z" },
+  ],
+  approval: [
+    { id: "approval-1", values: { approvalTitle: "高新店整改延期", approvalStatus: "pending", applicant: "陈晓", submittedAt: "2026-08-09 09:30", approvalSummary: "申请延期至本周五完成消防材料补充" }, createdAt: "2026-08-09T09:30:00.000Z" },
+    { id: "approval-2", values: { approvalTitle: "人民路店临时闭店", approvalStatus: "pending", applicant: "周宁", submittedAt: "2026-08-09 08:50", approvalSummary: "设备检修，申请闭店两小时" }, createdAt: "2026-08-09T08:50:00.000Z" },
+    { id: "approval-3", values: { approvalTitle: "季度盘点人员调整", approvalStatus: "approved", applicant: "林雪", submittedAt: "2026-08-08 16:10", approvalSummary: "增加一名盘点复核人员" }, createdAt: "2026-08-08T16:10:00.000Z" },
+  ],
+  audit: [
+    { id: "audit-1", values: { auditActor: "陈晓", auditAction: "更新门店状态", auditTime: "2026-08-09 10:18", auditResult: "success", changedField: "status", beforeValue: "待复查", afterValue: "已完成" }, createdAt: "2026-08-09T10:18:00.000Z" },
+    { id: "audit-2", values: { auditActor: "周宁", auditAction: "修改复查时间", auditTime: "2026-08-09 09:42", auditResult: "success", changedField: "reviewAt", beforeValue: "2026-08-10 14:00", afterValue: "2026-08-12 15:30" }, createdAt: "2026-08-09T09:42:00.000Z" },
+    { id: "audit-3", values: { auditActor: "系统", auditAction: "同步审批结果", auditTime: "2026-08-08 18:05", auditResult: "failed", changedField: "approvalStatus", beforeValue: "pending", afterValue: "网络超时，未写入" }, createdAt: "2026-08-08T18:05:00.000Z" },
+  ],
+  importMapping: [
+    { id: "map-1", values: { sourceColumn: "门店名称", targetField: "storeName", mappingStatus: "valid", sampleValue: "人民路店", mappingIssue: "" }, createdAt: "2026-08-09T11:00:00.000Z" },
+    { id: "map-2", values: { sourceColumn: "巡检日期", targetField: "inspectedAt", mappingStatus: "valid", sampleValue: "2026-08-09", mappingIssue: "" }, createdAt: "2026-08-09T11:00:00.000Z" },
+    { id: "map-3", values: { sourceColumn: "整改状态", targetField: "status", mappingStatus: "pending", sampleValue: "待复查", mappingIssue: "" }, createdAt: "2026-08-09T11:00:00.000Z" },
+  ],
+  asyncTask: [
+    { id: "task-1", values: { taskTitle: "导入门店巡检数据", taskStatus: "running", progressCurrent: 68, progressTotal: 120, taskError: "", taskResult: "", taskTime: "2026-08-09 11:08" }, createdAt: "2026-08-09T11:08:00.000Z" },
+    { id: "task-2", values: { taskTitle: "生成月度经营报表", taskStatus: "succeeded", progressCurrent: 80, progressTotal: 80, taskError: "", taskResult: "report-2026-08.xlsx", taskTime: "2026-08-09 10:42" }, createdAt: "2026-08-09T10:42:00.000Z" },
+    { id: "task-3", values: { taskTitle: "同步历史审批记录", taskStatus: "failed", progressCurrent: 23, progressTotal: 60, taskError: "上游接口连接超时", taskResult: "", taskTime: "2026-08-09 09:55" }, createdAt: "2026-08-09T09:55:00.000Z" },
+  ],
+  permission: [
+    { id: "perm-1", values: { resourceName: "门店档案", canView: "allow", canCreate: "allow", canEdit: "allow", canDelete: "deny" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "perm-2", values: { resourceName: "巡检任务", canView: "allow", canCreate: "inherit", canEdit: "allow", canDelete: "deny" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "perm-3", values: { resourceName: "审批记录", canView: "allow", canCreate: "deny", canEdit: "inherit", canDelete: "deny" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  member: [
+    { id: "member-1", values: { memberName: "陈晓", memberAccount: "chenxiao@example.com", memberStatus: "active", membership: "member", memberAvatar: "/brand/miantuan-mark.png" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "member-2", values: { memberName: "周宁", memberAccount: "zhouning@example.com", memberStatus: "active", membership: "member", memberAvatar: "/assets/sliderule-mark.svg" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "member-3", values: { memberName: "林雪", memberAccount: "linxue@example.com", memberStatus: "active", membership: "candidate", memberAvatar: "/brand/logo.png" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "member-4", values: { memberName: "王晨", memberAccount: "wangchen@example.com", memberStatus: "invited", membership: "candidate", memberAvatar: "" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  alert: [
+    { id: "alert-1", values: { alertTitle: "支付接口错误率升高", alertState: "firing", alertSeverity: "critical", alertTime: "2026-08-09 11:20", alertLabels: "service=payment, env=prod" }, createdAt: "2026-08-09T11:20:00.000Z" },
+    { id: "alert-2", values: { alertTitle: "订单积压接近阈值", alertState: "pending", alertSeverity: "warning", alertTime: "2026-08-09 11:10", alertLabels: "queue=orders, env=prod" }, createdAt: "2026-08-09T11:10:00.000Z" },
+    { id: "alert-3", values: { alertTitle: "库存同步延迟", alertState: "resolved", alertSeverity: "info", alertTime: "2026-08-09 10:40", alertLabels: "job=inventory" }, createdAt: "2026-08-09T10:40:00.000Z" },
+  ],
+  alertPolicy: [
+    { id: "policy-root", values: { policyName: "默认路由", policyParent: "", policyMatcher: "全部告警", policyReceiver: "运维值班群" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "policy-critical", values: { policyName: "严重告警", policyParent: "policy-root", policyMatcher: "severity=critical", policyReceiver: "电话 + 短信" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "policy-payment", values: { policyName: "支付服务", policyParent: "policy-critical", policyMatcher: "service=payment", policyReceiver: "支付负责人" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  deletedRecord: [
+    { id: "deleted-1", values: { deletedTitle: "湖畔店旧巡检任务", deletedAt: "2026-08-08", deletedBy: "陈晓" }, createdAt: "2026-08-08T09:00:00.000Z" },
+    { id: "deleted-2", values: { deletedTitle: "季度临时报表", deletedAt: "2026-08-07", deletedBy: "周宁" }, createdAt: "2026-08-07T09:00:00.000Z" },
+  ],
+  revision: [
+    { id: "revision-3", values: { revisionVersion: 3, revisionAuthor: "陈晓", revisionTime: "2026-08-09", revisionSummary: "补充消防材料", revisionCurrent: "current" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "revision-2", values: { revisionVersion: 2, revisionAuthor: "周宁", revisionTime: "2026-08-08", revisionSummary: "调整复查日期", revisionCurrent: "history" }, createdAt: "2026-08-08T09:00:00.000Z" },
+    { id: "revision-1", values: { revisionVersion: 1, revisionAuthor: "林雪", revisionTime: "2026-08-07", revisionSummary: "创建记录", revisionCurrent: "history" }, createdAt: "2026-08-07T09:00:00.000Z" },
+  ],
+  funnelStage: [
+    { id: "stage-1", values: { stageName: "访问", stageValue: 1200 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "stage-2", values: { stageName: "咨询", stageValue: 760 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "stage-3", values: { stageName: "下单", stageValue: 420 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "stage-4", values: { stageName: "支付", stageValue: 318 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  businessFlow: [
+    { id: "flow-1", values: { flowSource: "访问", flowTarget: "咨询", flowValue: 760 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "flow-2", values: { flowSource: "咨询", flowTarget: "下单", flowValue: 420 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "flow-3", values: { flowSource: "下单", flowTarget: "支付", flowValue: 318 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "flow-4", values: { flowSource: "咨询", flowTarget: "流失", flowValue: 340 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  projectSchedule: [
+    { id: "plan-1", values: { planTitle: "需求确认", planStart: "2026-08-09", planEnd: "2026-08-11", planGroup: "已完成" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "plan-2", values: { planTitle: "现场巡检", planStart: "2026-08-11", planEnd: "2026-08-15", planGroup: "进行中" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "plan-3", values: { planTitle: "整改复核", planStart: "2026-08-14", planEnd: "2026-08-18", planGroup: "待开始" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  alertRule: [
+    { id: "rule-1", values: { ruleName: "支付错误率", ruleQuery: "rate(payment_errors[5m])", ruleThreshold: 5, ruleSeverity: "critical" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  muteTiming: [
+    { id: "mute-1", values: { muteName: "周末维护", muteWeekdays: "周六、周日", muteStart: "00:00", muteEnd: "06:00", muteTimezone: "Asia/Shanghai" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "mute-2", values: { muteName: "每日备份", muteWeekdays: "每天", muteStart: "02:00", muteEnd: "02:30", muteTimezone: "Asia/Shanghai" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  contactPoint: [
+    { id: "contact-1", values: { contactName: "运维值班群", contactType: "webhook", contactAddress: "https://hooks.example.com/ops", contactStatus: "ready" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "contact-2", values: { contactName: "严重告警短信", contactType: "sms", contactAddress: "值班号码组", contactStatus: "ready" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  liveChange: [
+    { id: "change-1", values: { changeTitle: "人民路店", changeAction: "更新", changeActor: "周宁", changeTime: "2026-08-09 11:26" }, createdAt: "2026-08-09T11:26:00.000Z" },
+    { id: "change-2", values: { changeTitle: "高新店复查", changeAction: "新增", changeActor: "林雪", changeTime: "2026-08-09 11:24" }, createdAt: "2026-08-09T11:24:00.000Z" },
+  ],
+  availability: [
+    { id: "availability-1", values: { weekday: "周一", startTime: "09:00", endTime: "12:00", enabled: "enabled" }, createdAt: "2026-08-09T08:00:00.000Z" },
+    { id: "availability-2", values: { weekday: "周一", startTime: "14:00", endTime: "18:00", enabled: "enabled" }, createdAt: "2026-08-09T08:01:00.000Z" },
+    { id: "availability-3", values: { weekday: "周二", startTime: "10:00", endTime: "16:00", enabled: "disabled" }, createdAt: "2026-08-09T08:02:00.000Z" },
+  ],
+  bookingSlot: [
+    { id: "slot-1", values: { slotStart: "2026-08-11T09:00:00+08:00", slotEnd: "2026-08-11T09:30:00+08:00", availability: "available", capacity: 3 }, createdAt: "2026-08-09T08:00:00.000Z" },
+    { id: "slot-2", values: { slotStart: "2026-08-11T10:00:00+08:00", slotEnd: "2026-08-11T10:30:00+08:00", availability: "full", capacity: 0 }, createdAt: "2026-08-09T08:01:00.000Z" },
+    { id: "slot-3", values: { slotStart: "2026-08-12T14:00:00+08:00", slotEnd: "2026-08-12T14:30:00+08:00", availability: "available", capacity: 2 }, createdAt: "2026-08-09T08:02:00.000Z" },
+  ],
+  scheduleConflict: [
+    { id: "conflict-1", values: { scheduleTitle: "会议室设备检查", scheduleStart: "2026-08-11T09:00:00+08:00", scheduleEnd: "2026-08-11T10:30:00+08:00", resource: "会议室 A" }, createdAt: "2026-08-09T08:00:00.000Z" },
+    { id: "conflict-2", values: { scheduleTitle: "项目复盘", scheduleStart: "2026-08-11T10:00:00+08:00", scheduleEnd: "2026-08-11T11:00:00+08:00", resource: "会议室 A" }, createdAt: "2026-08-09T08:01:00.000Z" },
+    { id: "conflict-3", values: { scheduleTitle: "供应商沟通", scheduleStart: "2026-08-11T10:00:00+08:00", scheduleEnd: "2026-08-11T11:00:00+08:00", resource: "会议室 B" }, createdAt: "2026-08-09T08:02:00.000Z" },
+  ],
+  stackFrame: [
+    { id: "frame-1", values: { functionName: "submitInspection", fileName: "src/features/inspection/submit.ts", lineNumber: 84, codeContext: "82  const payload = buildPayload(form);\n83  const result = await api.submit(payload);\n84  return result.data.id;", inApp: "in_app" }, createdAt: "2026-08-09T11:20:00.000Z" },
+    { id: "frame-2", values: { functionName: "request", fileName: "node_modules/axios/lib/core/Axios.js", lineNumber: 41, codeContext: "return await dispatchRequest(config);", inApp: "dependency" }, createdAt: "2026-08-09T11:20:00.000Z" },
+  ],
+  eventBreadcrumb: [
+    { id: "crumb-1", values: { breadcrumbMessage: "打开巡检详情", breadcrumbCategory: "navigation", breadcrumbLevel: "info", breadcrumbTime: "2026-08-09 11:19:42" }, createdAt: "2026-08-09T11:19:42.000Z" },
+    { id: "crumb-2", values: { breadcrumbMessage: "提交整改表单", breadcrumbCategory: "ui.click", breadcrumbLevel: "info", breadcrumbTime: "2026-08-09 11:20:03" }, createdAt: "2026-08-09T11:20:03.000Z" },
+    { id: "crumb-3", values: { breadcrumbMessage: "POST /inspections 返回 500", breadcrumbCategory: "http", breadcrumbLevel: "error", breadcrumbTime: "2026-08-09 11:20:05" }, createdAt: "2026-08-09T11:20:05.000Z" },
+  ],
+  suspectCommit: [
+    { id: "commit-1", values: { commitHash: "9fe21a0c6b42", commitAuthor: "陈晓", commitMessage: "调整巡检提交数据结构", commitTime: "2026-08-09 10:12", suspectScore: 92 }, createdAt: "2026-08-09T10:12:00.000Z" },
+    { id: "commit-2", values: { commitHash: "72ca8d19e531", commitAuthor: "周宁", commitMessage: "更新错误提示文案", commitTime: "2026-08-09 09:40", suspectScore: 37 }, createdAt: "2026-08-09T09:40:00.000Z" },
+  ],
+  connectionEvent: [
+    { id: "connection-1", values: { connectionType: "sync", connectionStatus: "succeeded", connectionTime: "2026-08-09 11:10", connectionSummary: "增量同步完成", connectionRecords: 18420 }, createdAt: "2026-08-09T11:10:00.000Z" },
+    { id: "connection-2", values: { connectionType: "schema update", connectionStatus: "failed", connectionTime: "2026-08-09 10:32", connectionSummary: "目标字段类型不兼容", connectionRecords: 0 }, createdAt: "2026-08-09T10:32:00.000Z" },
+    { id: "connection-3", values: { connectionType: "refresh", connectionStatus: "running", connectionTime: "2026-08-09 10:18", connectionSummary: "正在刷新历史分区", connectionRecords: 9230 }, createdAt: "2026-08-09T10:18:00.000Z" },
+  ],
+  schemaChange: [
+    { id: "schema-1", values: { streamName: "orders", fieldName: "customer_level", changeType: "added", beforeType: "-", afterType: "string", breaking: "safe" }, createdAt: "2026-08-09T10:30:00.000Z" },
+    { id: "schema-2", values: { streamName: "orders", fieldName: "amount", changeType: "type_changed", beforeType: "number", afterType: "string", breaking: "breaking" }, createdAt: "2026-08-09T10:31:00.000Z" },
+  ],
+  streamStatus: [
+    { id: "stream-1", values: { streamName: "orders", streamStatus: "succeeded", lastSyncAt: "2026-08-09 11:10", freshness: "2 分钟", recordCount: 18420, streamError: "" }, createdAt: "2026-08-09T11:10:00.000Z" },
+    { id: "stream-2", values: { streamName: "customers", streamStatus: "running", lastSyncAt: "2026-08-09 11:04", freshness: "同步中", recordCount: 6230, streamError: "" }, createdAt: "2026-08-09T11:04:00.000Z" },
+    { id: "stream-3", values: { streamName: "payments", streamStatus: "failed", lastSyncAt: "2026-08-09 10:32", freshness: "40 分钟", recordCount: 0, streamError: "目标表无写入权限" }, createdAt: "2026-08-09T10:32:00.000Z" },
+  ],
+  connectionMapping: [
+    { id: "mapping-1", values: { sourceField: "order_id", targetField: "id", transformType: "direct", mappingStatus: "valid" }, createdAt: "2026-08-09T10:20:00.000Z" },
+    { id: "mapping-2", values: { sourceField: "amount_cents", targetField: "amount", transformType: "divide_100", mappingStatus: "valid" }, createdAt: "2026-08-09T10:21:00.000Z" },
+    { id: "mapping-3", values: { sourceField: "legacy_status", targetField: "", transformType: "lookup", mappingStatus: "invalid" }, createdAt: "2026-08-09T10:22:00.000Z" },
+  ],
+  issueCommand: [
+    { id: "issue-1", values: { issueTitle: "支付回调间歇性失败", issueStatus: "unresolved", issuePriority: "high", issueAssignee: "陈晓" }, createdAt: "2026-08-09T11:20:00.000Z" },
+  ],
+  connectionControl: [
+    { id: "control-1", values: { connectionName: "订单库 → 数据仓库", connectionStatus: "active", syncStatus: "running", scheduleLabel: "每 30 分钟", hasBreakingChange: "safe" }, createdAt: "2026-08-09T11:18:00.000Z" },
+  ],
+  issueMetrics: [
+    { id: "impact-1", values: { eventCount: 1842, userCount: 327 }, createdAt: "2026-08-09T11:20:00.000Z" },
+  ],
+  jobMetrics: [
+    { id: "job-metric-1", values: { bytesLoaded: 187695104, recordsLoaded: 18420, recordsRejected: 23, runDuration: "4 分 18 秒", attemptsCount: 2 }, createdAt: "2026-08-09T11:10:00.000Z" },
+  ],
+  occurrenceEvidence: [
+    { id: "evidence-1", values: { environment: "production", httpStatus: "500", failureReason: "目标表无写入权限", lastSuccessfulAt: "2026-08-09 10:32", downtime: "48 分钟" }, createdAt: "2026-08-09T11:20:00.000Z" },
+  ],
+  connectionRoute: [
+    { id: "route-1", values: { sourceConnector: "PostgreSQL", targetConnector: "Snowflake", sourceVersion: "v3.6.1", targetVersion: "v2.9.0", routeStatus: "active" }, createdAt: "2026-08-09T11:00:00.000Z" },
+  ],
+  resourceSection: [
+    { id: "section-status", values: { sectionTitle: "状态", sectionKey: "status", sectionAvailable: "enabled", sectionCount: 0 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "section-timeline", values: { sectionTitle: "时间线", sectionKey: "timeline", sectionAvailable: "enabled", sectionCount: 12 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "section-schema", values: { sectionTitle: "Schema", sectionKey: "schema", sectionAvailable: "disabled", sectionCount: 2 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "section-settings", values: { sectionTitle: "设置", sectionKey: "settings", sectionAvailable: "enabled", sectionCount: 0 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  inspectorMode: [
+    { id: "inspect-data", values: { modeTitle: "数据", modeKey: "data", modeEnabled: "enabled", issueCount: 0 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "inspect-stats", values: { modeTitle: "统计", modeKey: "stats", modeEnabled: "enabled", issueCount: 0 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "inspect-json", values: { modeTitle: "JSON", modeKey: "json", modeEnabled: "enabled", issueCount: 0 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "inspect-error", values: { modeTitle: "错误", modeKey: "error", modeEnabled: "enabled", issueCount: 3 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "inspect-query", values: { modeTitle: "查询", modeKey: "query", modeEnabled: "disabled", issueCount: 0 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  issueEvent: [
+    { id: "issue-event-1", values: { eventEnvironment: "production" }, createdAt: "2026-08-09T11:20:00.000Z" },
+    { id: "issue-event-2", values: { eventEnvironment: "staging" }, createdAt: "2026-08-09T10:42:00.000Z" },
+    { id: "issue-event-3", values: { eventEnvironment: "production" }, createdAt: "2026-08-09T10:18:00.000Z" },
+  ],
+  dirtyField: [
+    { id: "dirty-1", values: { changedField: "连接名称", changeValid: "valid" }, createdAt: "2026-08-09T11:20:00.000Z" },
+    { id: "dirty-2", values: { changedField: "同步频率", changeValid: "valid" }, createdAt: "2026-08-09T11:21:00.000Z" },
+    { id: "dirty-3", values: { changedField: "目标命名空间", changeValid: "invalid" }, createdAt: "2026-08-09T11:22:00.000Z" },
+  ],
+  runningJob: [
+    { id: "running-job-1", values: { jobTitle: "订单增量同步", jobStatus: "running", jobProgress: 68, jobType: "sync" }, createdAt: "2026-08-09T11:18:00.000Z" },
+    { id: "running-job-2", values: { jobTitle: "历史数据刷新", jobStatus: "failed", jobProgress: 42, jobType: "refresh" }, createdAt: "2026-08-09T10:30:00.000Z" },
+  ],
+  bookingCommand: [
+    { id: "booking-command-1", values: { bookingTitle: "专家义诊预约", bookingStatus: "PENDING", bookingStart: "2026-08-12 14:00", bookingEnd: "2026-08-12 14:30", bookingLocation: "线上诊室", bookingRecurring: "single", bookingPaid: "paid", bookingTimezone: "Asia/Shanghai", bookingAttendee: "张女士" }, createdAt: "2026-08-09T11:00:00.000Z" },
+  ],
+  alertRuleCommand: [
+    { id: "alert-rule-command-1", values: { alertRuleTitle: "支付错误率", alertRuleState: "firing", alertRuleEditable: "editable", alertRuleProvisioned: "custom", alertRuleSilenceable: "enabled" }, createdAt: "2026-08-09T11:20:00.000Z" },
+  ],
+  alertInstanceMetric: [
+    { id: "instance-1", values: { instanceName: "payment-api-01", alertState: "firing", ruleUid: "payment-errors", instanceValue: "8.2%", instanceLabels: "service=payment,env=prod", instanceSummary: "5 分钟错误率超过 5%", instanceStarted: "2026-08-09 11:12" }, createdAt: "2026-08-09T11:12:00.000Z" },
+    { id: "instance-2", values: { instanceName: "payment-api-02", alertState: "firing", ruleUid: "payment-errors", instanceValue: "6.7%", instanceLabels: "service=payment,env=prod", instanceSummary: "错误率持续升高", instanceStarted: "2026-08-09 11:15" }, createdAt: "2026-08-09T11:15:00.000Z" },
+    { id: "instance-3", values: { instanceName: "order-queue", alertState: "pending", ruleUid: "queue-depth", instanceValue: "920", instanceLabels: "queue=orders", instanceSummary: "接近积压阈值", instanceStarted: "2026-08-09 11:18" }, createdAt: "2026-08-09T11:18:00.000Z" },
+  ],
+  bookingCapacity: [
+    { id: "capacity-1", values: { totalCapacity: 40, bookedSeats: 31, noShowCount: 2, waitlistCount: 4 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  bookingStatus: [
+    { id: "booking-tab-upcoming", values: { tabTitle: "即将发生", tabKey: "upcoming", tabCount: 12, tabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "booking-tab-unconfirmed", values: { tabTitle: "待确认", tabKey: "unconfirmed", tabCount: 3, tabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "booking-tab-recurring", values: { tabTitle: "重复预约", tabKey: "recurring", tabCount: 2, tabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "booking-tab-past", values: { tabTitle: "过去", tabKey: "past", tabCount: 28, tabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "booking-tab-cancelled", values: { tabTitle: "已取消", tabKey: "cancelled", tabCount: 4, tabEnabled: "enabled" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  validatedFormTab: [
+    { id: "form-tab-basic", values: { formTabTitle: "基础信息", formTabKey: "basic", formTabErrors: 0, formTabDirty: 2 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "form-tab-schedule", values: { formTabTitle: "排期规则", formTabKey: "schedule", formTabErrors: 2, formTabDirty: 1 }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "form-tab-notification", values: { formTabTitle: "通知", formTabKey: "notification", formTabErrors: 0, formTabDirty: 0 }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  bookingFilterOption: [
+    { id: "option-event-consult", values: { optionType: "事件类型", optionKey: "consult", optionTitle: "专家咨询" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "option-event-clinic", values: { optionType: "事件类型", optionKey: "clinic", optionTitle: "线上义诊" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "option-team-medical", values: { optionType: "团队", optionKey: "medical", optionTitle: "医疗服务组" }, createdAt: "2026-08-09T09:00:00.000Z" },
+    { id: "option-user-chen", values: { optionType: "成员", optionKey: "chen", optionTitle: "陈医生" }, createdAt: "2026-08-09T09:00:00.000Z" },
+  ],
+  dashboardSave: [
+    { id: "dashboard-save-1", values: { dashboardTitle: "支付服务监控", dashboardDirty: "dirty", dashboardCanSave: "allowed", dashboardManaged: "custom", dashboardTemplate: "template" }, createdAt: "2026-08-09T11:20:00.000Z" },
+  ],
   order: [
     { name: "人民路店", amount: 428, status: "done", channel: "线上", at: "2026-08-06",
       contact: "renmin@example.com", detailUrl: "https://example.com/store/1",
@@ -968,6 +1308,356 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
         block: { id: "demo-WorkflowTimeline", type: "WorkflowTimeline", props: { title: "订单流转" } },
         extra: { workflow: WORKFLOW },
       },
+  AttachmentPanel: {
+        block: {
+          id: "demo-AttachmentPanel", type: "AttachmentPanel",
+          props: { title: "巡检附件", allowUpload: true, uploadText: "添加材料" },
+          binding: {
+            entityRef: "attachment",
+            fileNameFieldRef: "fileName",
+            fileSizeFieldRef: "fileSize",
+            statusFieldRef: "fileStatus",
+            uploadedAtFieldRef: "uploadedAt",
+          },
+        },
+        extra: {},
+      },
+  CommentThread: {
+        block: {
+          id: "demo-CommentThread", type: "CommentThread",
+          props: { title: "协作讨论", allowReply: true, pageSize: 3, submitText: "发布" },
+          binding: {
+            entityRef: "comment",
+            authorFieldRef: "author",
+            contentFieldRef: "content",
+            timeFieldRef: "commentedAt",
+            avatarFieldRef: "avatar",
+            statusFieldRef: "commentStatus",
+            parentFieldRef: "parentId",
+          },
+        },
+        extra: {},
+      },
+  RecordPicker: {
+        block: {
+          id: "demo-RecordPicker", type: "RecordPicker",
+          props: { title: "选择门店", selectionMode: "multiple", searchable: true, maxSelected: 3 },
+          binding: {
+            entityRef: "order",
+            titleFieldRef: "name",
+            descFieldRef: "remark",
+            statusFieldRef: "status",
+          },
+        },
+        extra: {},
+      },
+  KanbanBoard: {
+        block: {
+          id: "demo-KanbanBoard", type: "KanbanBoard",
+          props: { title: "门店整改看板", movable: true },
+          binding: { entityRef: "order", titleFieldRef: "name", statusFieldRef: "status", descFieldRef: "remark", assigneeFieldRef: "channel" },
+        },
+        extra: {},
+      },
+  ScheduleCalendar: {
+        block: {
+          id: "demo-ScheduleCalendar", type: "ScheduleCalendar",
+          props: { title: "巡检日程", initialDate: "2026-08-09", allowCreate: true },
+          binding: { entityRef: "schedule", titleFieldRef: "eventTitle", startFieldRef: "startAt", endFieldRef: "endAt", statusFieldRef: "eventStatus" },
+        },
+        extra: {},
+      },
+  NotificationInbox: {
+        block: {
+          id: "demo-NotificationInbox", type: "NotificationInbox",
+          props: { title: "消息通知", pageSize: 3 },
+          binding: { entityRef: "notification", titleFieldRef: "noticeTitle", contentFieldRef: "noticeContent", timeFieldRef: "notifiedAt", categoryFieldRef: "noticeCategory", readFieldRef: "noticeRead" },
+        },
+        extra: {},
+      },
+  TreeNavigator: {
+        block: {
+          id: "demo-TreeNavigator", type: "TreeNavigator",
+          props: { title: "门店组织", searchable: true, showLine: true, defaultExpandAll: true },
+          binding: { entityRef: "hierarchy", labelFieldRef: "nodeLabel", parentFieldRef: "nodeParent", descFieldRef: "nodeDesc" },
+        },
+        extra: {},
+      },
+  ApprovalQueue: {
+        block: {
+          id: "demo-ApprovalQueue", type: "ApprovalQueue",
+          props: { title: "我的审批", pendingValue: "pending", approvedValue: "approved", rejectedValue: "rejected" },
+          binding: { entityRef: "approval", titleFieldRef: "approvalTitle", statusFieldRef: "approvalStatus", applicantFieldRef: "applicant", timeFieldRef: "submittedAt", summaryFieldRef: "approvalSummary" },
+        },
+        extra: {},
+      },
+  AuditTrail: {
+        block: {
+          id: "demo-AuditTrail", type: "AuditTrail",
+          props: { title: "操作审计", pageSize: 3 },
+          binding: { entityRef: "audit", actorFieldRef: "auditActor", actionFieldRef: "auditAction", timeFieldRef: "auditTime", resultFieldRef: "auditResult", fieldNameFieldRef: "changedField", beforeFieldRef: "beforeValue", afterFieldRef: "afterValue" },
+        },
+        extra: {},
+      },
+  DataImportWizard: {
+        block: {
+          id: "demo-DataImportWizard", type: "DataImportWizard",
+          props: { title: "导入巡检数据", initialPhase: "mapping", initialFileName: "门店巡检-8月.xlsx" },
+          binding: { entityRef: "importMapping", sourceFieldRef: "sourceColumn", targetFieldRef: "targetField", statusFieldRef: "mappingStatus", sampleFieldRef: "sampleValue", issueFieldRef: "mappingIssue" },
+        },
+        extra: {},
+      },
+  AsyncTaskMonitor: {
+        block: {
+          id: "demo-AsyncTaskMonitor", type: "AsyncTaskMonitor",
+          props: { title: "后台任务", cancelable: true },
+          binding: { entityRef: "asyncTask", titleFieldRef: "taskTitle", statusFieldRef: "taskStatus", progressCurrentFieldRef: "progressCurrent", progressTotalFieldRef: "progressTotal", errorFieldRef: "taskError", resultFieldRef: "taskResult", timeFieldRef: "taskTime" },
+        },
+        extra: {},
+      },
+  PermissionMatrix: {
+        block: {
+          id: "demo-PermissionMatrix", type: "PermissionMatrix",
+          props: { title: "角色权限" },
+          binding: { entityRef: "permission", resourceFieldRef: "resourceName", viewFieldRef: "canView", createFieldRef: "canCreate", editFieldRef: "canEdit", deleteFieldRef: "canDelete" },
+        },
+        extra: {},
+      },
+  DataExportPanel: {
+        block: {
+          id: "demo-DataExportPanel", type: "DataExportPanel",
+          props: { title: "导出门店数据", maxRows: 2000 },
+          binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "channel", "at"] },
+        },
+        extra: { selection: { rowIds: { order: ["order-1", "order-2"] } } },
+      },
+  BulkEditPanel: {
+        block: {
+          id: "demo-BulkEditPanel", type: "BulkEditPanel",
+          props: { title: "批量更新门店" },
+          binding: { entityRef: "order", fieldRefs: ["status", "channel", "at"] },
+        },
+        extra: { selection: { rowIds: { order: ["order-1", "order-2", "order-3"] } } },
+      },
+  MemberAssignment: {
+        block: {
+          id: "demo-MemberAssignment", type: "MemberAssignment",
+          props: { title: "巡检组成员", memberValue: "member" },
+          binding: { entityRef: "member", nameFieldRef: "memberName", accountFieldRef: "memberAccount", avatarFieldRef: "memberAvatar", statusFieldRef: "memberStatus", membershipFieldRef: "membership" },
+        },
+        extra: {},
+      },
+  ContextBreadcrumb: {
+    block: { id: "demo-ContextBreadcrumb", type: "ContextBreadcrumb", props: { items: ["门店运营", "华东区域", "人民路店"] } }, extra: {},
+  },
+  LiveRefreshControl: {
+    block: { id: "demo-LiveRefreshControl", type: "LiveRefreshControl", props: { title: "数据刷新", intervalMs: 30000 }, binding: { targets: ["orders"] } }, extra: {},
+  },
+  ActiveFilterSummary: {
+    block: { id: "demo-ActiveFilterSummary", type: "ActiveFilterSummary", props: { title: "已应用条件" }, binding: { targets: ["orders"] } },
+    extra: { filterState: { enumFilters: { status: "进行中", channel: "门店" }, enumMulti: {}, dateRange: ["2026-08-01", "2026-08-09"] } },
+  },
+  AnalyticsDateScope: {
+    block: { id: "demo-AnalyticsDateScope", type: "AnalyticsDateScope", props: { title: "经营时间口径", defaultPreset: "month" }, binding: { targets: ["metrics", "trend"] } }, extra: {},
+  },
+  HeaderEntitySummary: {
+    block: { id: "demo-HeaderEntitySummary", type: "HeaderEntitySummary", binding: { entityRef: "order", titleFieldRef: "name", fieldRefs: ["status", "channel", "amount"] } }, extra: { focus: { order: "order-1" } },
+  },
+  HeaderProgressSummary: {
+    block: { id: "demo-HeaderProgressSummary", type: "HeaderProgressSummary", binding: { entityRef: "asyncTask", titleFieldRef: "taskTitle", currentFieldRef: "progressCurrent", totalFieldRef: "progressTotal", statusFieldRef: "taskStatus", nextFieldRef: "taskResult" } }, extra: { focus: { asyncTask: "task-1" } },
+  },
+  WorkspaceTabs: {
+    block: { id: "demo-WorkspaceTabs", type: "WorkspaceTabs", binding: { entityRef: "order", titleFieldRef: "name", targets: ["work-content"] } }, extra: {},
+  },
+  SavedViewTabs: {
+    block: { id: "demo-SavedViewTabs", type: "SavedViewTabs", binding: { entityRef: "order", titleFieldRef: "name", presetKeyFieldRef: "status", countFieldRef: "amount", targets: ["orders"] } }, extra: {},
+  },
+  AdvancedFilterBuilder: {
+    block: { id: "demo-AdvancedFilterBuilder", type: "AdvancedFilterBuilder", props: { title: "高级筛选" }, binding: { entityRef: "order", fieldRefs: ["status", "channel", "amount"], targets: ["orders"] } }, extra: {},
+  },
+  FacetedFilterPanel: {
+    block: { id: "demo-FacetedFilterPanel", type: "FacetedFilterPanel", props: { title: "分面筛选" }, binding: { entityRef: "order", fieldRefs: ["status", "channel"], targets: ["orders"] } }, extra: {},
+  },
+  WizardNavigationBar: {
+    block: { id: "demo-WizardNavigationBar", type: "WizardNavigationBar", props: { steps: ["基本信息", "材料确认", "提交审核"], initialStep: 1 }, binding: { targets: ["wizard-form"] } }, extra: {},
+  },
+  ApprovalDecisionBar: {
+    block: { id: "demo-ApprovalDecisionBar", type: "ApprovalDecisionBar", props: { pendingValue: "pending" }, binding: { entityRef: "approval", titleFieldRef: "approvalTitle", statusFieldRef: "approvalStatus", targets: ["approval-detail"] } }, extra: { focus: { approval: "approval-1" } },
+  },
+  CheckoutSummaryBar: {
+    block: { id: "demo-CheckoutSummaryBar", type: "CheckoutSummaryBar", binding: { entityRef: "order", amountFieldRef: "amount", targets: ["order-list"] } }, extra: { selection: { rowIds: { order: ["order-1", "order-2"] } } },
+  },
+  RecordLifecycleBar: {
+    block: { id: "demo-RecordLifecycleBar", type: "RecordLifecycleBar", binding: { entityRef: "order", statusFieldRef: "status", targets: ["record-form"] } }, extra: { focus: { order: "order-1" } },
+  },
+  WaterfallChart: {
+    block: { id: "demo-WaterfallChart", type: "WaterfallChart", props: { title: "渠道周变化" }, binding: { entityRef: "order", categoryFieldRef: "channel", valueFieldRef: "weekDelta" } }, extra: {},
+  },
+  FunnelChart: {
+    block: { id: "demo-FunnelChart", type: "FunnelChart", props: { title: "订单转化", stages: ["访问", "咨询", "下单", "支付"] }, binding: { entityRef: "funnelStage", stageFieldRef: "stageName", valueFieldRef: "stageValue" } }, extra: {},
+  },
+  DistributionHistogram: {
+    block: { id: "demo-DistributionHistogram", type: "DistributionHistogram", props: { title: "订单金额分布", bins: 5 }, binding: { entityRef: "order", valueFieldRef: "amount" } }, extra: {},
+  },
+  HeatmapMatrix: {
+    block: { id: "demo-HeatmapMatrix", type: "HeatmapMatrix", props: { title: "状态 × 渠道" }, binding: { entityRef: "order", xFieldRef: "status", yFieldRef: "channel", valueFieldRef: "amount" } }, extra: {},
+  },
+  TreemapBreakdown: {
+    block: { id: "demo-TreemapBreakdown", type: "TreemapBreakdown", props: { title: "门店金额构成" }, binding: { entityRef: "order", labelFieldRef: "name", valueFieldRef: "amount" } }, extra: {},
+  },
+  GaugeProgress: {
+    block: { id: "demo-GaugeProgress", type: "GaugeProgress", props: { title: "导入任务完成度" }, binding: { entityRef: "asyncTask", currentFieldRef: "progressCurrent", targetFieldRef: "progressTotal" } }, extra: {},
+  },
+  AlertTriagePanel: {
+    block: { id: "demo-AlertTriagePanel", type: "AlertTriagePanel", props: { title: "告警分诊", firingValue: "firing", pendingValue: "pending" }, binding: { entityRef: "alert", titleFieldRef: "alertTitle", stateFieldRef: "alertState", severityFieldRef: "alertSeverity", timeFieldRef: "alertTime", targets: ["alert-silence"] } }, extra: {},
+  },
+  AlertSilenceForm: {
+    block: { id: "demo-AlertSilenceForm", type: "AlertSilenceForm", props: { title: "创建告警静默" }, binding: { entityRef: "alert", titleFieldRef: "alertTitle", labelFieldRef: "alertLabels", targets: ["alert-triage"] } }, extra: { focus: { alert: "alert-1" } },
+  },
+  AlertRoutingPolicy: {
+    block: { id: "demo-AlertRoutingPolicy", type: "AlertRoutingPolicy", props: { title: "告警路由策略" }, binding: { entityRef: "alertPolicy", nameFieldRef: "policyName", parentFieldRef: "policyParent", matcherFieldRef: "policyMatcher", receiverFieldRef: "policyReceiver" } }, extra: {},
+  },
+  DeletedRecordsRecovery: {
+    block: { id: "demo-DeletedRecordsRecovery", type: "DeletedRecordsRecovery", props: { title: "已删除记录" }, binding: { entityRef: "deletedRecord", titleFieldRef: "deletedTitle", deletedAtFieldRef: "deletedAt", deletedByFieldRef: "deletedBy", targets: ["records"] } }, extra: {},
+  },
+  RevisionHistoryPanel: {
+    block: { id: "demo-RevisionHistoryPanel", type: "RevisionHistoryPanel", props: { title: "修订历史" }, binding: { entityRef: "revision", versionFieldRef: "revisionVersion", authorFieldRef: "revisionAuthor", timeFieldRef: "revisionTime", summaryFieldRef: "revisionSummary", currentFieldRef: "revisionCurrent", targets: ["record-detail"] } }, extra: {},
+  },
+  RecordComparePanel: {
+    block: { id: "demo-RecordComparePanel", type: "RecordComparePanel", props: { title: "门店记录对比" }, binding: { entityRef: "order", fieldRefs: ["name", "amount", "status", "channel"], targets: ["orders"] } }, extra: { selection: { rowIds: { order: ["order-1", "order-2"] } } },
+  },
+  GanttSchedule: {
+    block: { id: "demo-GanttSchedule", type: "GanttSchedule", props: { title: "巡检计划排期" }, binding: { entityRef: "projectSchedule", labelFieldRef: "planTitle", startFieldRef: "planStart", endFieldRef: "planEnd", groupFieldRef: "planGroup" } }, extra: {},
+  },
+  SankeyFlow: {
+    block: { id: "demo-SankeyFlow", type: "SankeyFlow", props: { title: "客户转化流向" }, binding: { entityRef: "businessFlow", sourceFieldRef: "flowSource", targetFieldRef: "flowTarget", valueFieldRef: "flowValue" } }, extra: {},
+  },
+  BoxPlotDistribution: {
+    block: { id: "demo-BoxPlotDistribution", type: "BoxPlotDistribution", props: { title: "渠道金额离散度" }, binding: { entityRef: "order", categoryFieldRef: "channel", valueFieldRef: "amount" } }, extra: {},
+  },
+  RadarComparison: {
+    block: { id: "demo-RadarComparison", type: "RadarComparison", props: { title: "门店能力对比" }, binding: { entityRef: "order", nameFieldRef: "name", metricFieldRefs: ["fulfillRate", "healthScore", "starLevel"] } }, extra: {},
+  },
+  AlertRuleEditor: {
+    block: { id: "demo-AlertRuleEditor", type: "AlertRuleEditor", props: { title: "告警规则" }, binding: { entityRef: "alertRule", nameFieldRef: "ruleName", queryFieldRef: "ruleQuery", thresholdFieldRef: "ruleThreshold", severityFieldRef: "ruleSeverity", targets: ["alert-rules"] } }, extra: { focus: { alertRule: "rule-1" } },
+  },
+  MuteTimingSchedule: {
+    block: { id: "demo-MuteTimingSchedule", type: "MuteTimingSchedule", props: { title: "静默时段" }, binding: { entityRef: "muteTiming", nameFieldRef: "muteName", weekdaysFieldRef: "muteWeekdays", startTimeFieldRef: "muteStart", endTimeFieldRef: "muteEnd", timezoneFieldRef: "muteTimezone", targets: ["alert-policies"] } }, extra: {},
+  },
+  ContactPointManager: {
+    block: { id: "demo-ContactPointManager", type: "ContactPointManager", props: { title: "通知联络点" }, binding: { entityRef: "contactPoint", nameFieldRef: "contactName", typeFieldRef: "contactType", addressFieldRef: "contactAddress", statusFieldRef: "contactStatus", targets: ["alert-policies"] } }, extra: {},
+  },
+  ReferenceManyManager: {
+    block: { id: "demo-ReferenceManyManager", type: "ReferenceManyManager", props: { title: "关联巡检成员", linkedValue: "member" }, binding: { entityRef: "member", titleFieldRef: "memberName", relationFieldRef: "membership", targets: ["inspection-detail"] } }, extra: {},
+  },
+  GlobalSearchPalette: {
+    block: { id: "demo-GlobalSearchPalette", type: "GlobalSearchPalette", props: { title: "全局搜索" }, binding: { entityRef: "order", titleFieldRef: "name", categoryFieldRef: "channel", descFieldRef: "remark" } }, extra: {},
+  },
+  LiveChangeReview: {
+    block: { id: "demo-LiveChangeReview", type: "LiveChangeReview", props: { title: "实时变更" }, binding: { entityRef: "liveChange", titleFieldRef: "changeTitle", actionFieldRef: "changeAction", actorFieldRef: "changeActor", timeFieldRef: "changeTime", targets: ["orders"] } }, extra: {},
+  },
+  AvailabilityPlanner: {
+    block: { id: "demo-AvailabilityPlanner", type: "AvailabilityPlanner", props: { title: "接诊可用时间", timezone: "Asia/Shanghai" }, binding: { entityRef: "availability", dayFieldRef: "weekday", startTimeFieldRef: "startTime", endTimeFieldRef: "endTime", enabledFieldRef: "enabled" } }, extra: {},
+  },
+  BookingSlotPicker: {
+    block: { id: "demo-BookingSlotPicker", type: "BookingSlotPicker", props: { title: "选择预约时段" }, binding: { entityRef: "bookingSlot", startFieldRef: "slotStart", endFieldRef: "slotEnd", availableFieldRef: "availability", capacityFieldRef: "capacity", targets: ["booking-form"] } }, extra: {},
+  },
+  ScheduleConflictResolver: {
+    block: { id: "demo-ScheduleConflictResolver", type: "ScheduleConflictResolver", props: { title: "排期冲突" }, binding: { entityRef: "scheduleConflict", titleFieldRef: "scheduleTitle", startFieldRef: "scheduleStart", endFieldRef: "scheduleEnd", resourceFieldRef: "resource", targets: ["schedule-calendar"] } }, extra: {},
+  },
+  StackTracePanel: {
+    block: { id: "demo-StackTracePanel", type: "StackTracePanel", props: { title: "异常堆栈" }, binding: { entityRef: "stackFrame", functionFieldRef: "functionName", fileFieldRef: "fileName", lineFieldRef: "lineNumber", codeFieldRef: "codeContext", inAppFieldRef: "inApp" } }, extra: {},
+  },
+  EventBreadcrumbTimeline: {
+    block: { id: "demo-EventBreadcrumbTimeline", type: "EventBreadcrumbTimeline", props: { title: "错误前事件轨迹" }, binding: { entityRef: "eventBreadcrumb", messageFieldRef: "breadcrumbMessage", categoryFieldRef: "breadcrumbCategory", levelFieldRef: "breadcrumbLevel", timeFieldRef: "breadcrumbTime" } }, extra: {},
+  },
+  SuspectCommitPanel: {
+    block: { id: "demo-SuspectCommitPanel", type: "SuspectCommitPanel", props: { title: "可疑提交" }, binding: { entityRef: "suspectCommit", hashFieldRef: "commitHash", authorFieldRef: "commitAuthor", messageFieldRef: "commitMessage", timeFieldRef: "commitTime", scoreFieldRef: "suspectScore", targets: ["issue-detail"] } }, extra: {},
+  },
+  ConnectionTimeline: {
+    block: { id: "demo-ConnectionTimeline", type: "ConnectionTimeline", props: { title: "连接任务时间线" }, binding: { entityRef: "connectionEvent", typeFieldRef: "connectionType", statusFieldRef: "connectionStatus", timeFieldRef: "connectionTime", summaryFieldRef: "connectionSummary", recordsFieldRef: "connectionRecords", targets: ["connection-jobs"] } }, extra: {},
+  },
+  SchemaChangeReview: {
+    block: { id: "demo-SchemaChangeReview", type: "SchemaChangeReview", props: { title: "Schema 变更审查" }, binding: { entityRef: "schemaChange", streamFieldRef: "streamName", fieldNameFieldRef: "fieldName", changeTypeFieldRef: "changeType", beforeFieldRef: "beforeType", afterFieldRef: "afterType", breakingFieldRef: "breaking", targets: ["connection-schema"] } }, extra: {},
+  },
+  StreamStatusMonitor: {
+    block: { id: "demo-StreamStatusMonitor", type: "StreamStatusMonitor", props: { title: "数据流状态" }, binding: { entityRef: "streamStatus", nameFieldRef: "streamName", statusFieldRef: "streamStatus", lastSyncFieldRef: "lastSyncAt", freshnessFieldRef: "freshness", recordsFieldRef: "recordCount", errorFieldRef: "streamError", targets: ["connection-streams"] } }, extra: {},
+  },
+  ConnectionMappingPanel: {
+    block: { id: "demo-ConnectionMappingPanel", type: "ConnectionMappingPanel", props: { title: "字段映射" }, binding: { entityRef: "connectionMapping", sourceFieldRef: "sourceField", targetFieldRef: "targetField", transformFieldRef: "transformType", statusFieldRef: "mappingStatus", targets: ["connection-mappings"] } }, extra: {},
+  },
+  IssueCommandHeader: {
+    block: { id: "demo-IssueCommandHeader", type: "IssueCommandHeader", props: { surface: "plain" }, binding: { entityRef: "issueCommand", titleFieldRef: "issueTitle", statusFieldRef: "issueStatus", priorityFieldRef: "issuePriority", assigneeFieldRef: "issueAssignee", targets: ["issue-detail"] } }, extra: { focus: { issueCommand: "issue-1" } },
+  },
+  ConnectionControlHeader: {
+    block: { id: "demo-ConnectionControlHeader", type: "ConnectionControlHeader", props: { surface: "plain" }, binding: { entityRef: "connectionControl", titleFieldRef: "connectionName", statusFieldRef: "connectionStatus", syncStatusFieldRef: "syncStatus", scheduleFieldRef: "scheduleLabel", breakingFieldRef: "hasBreakingChange", targets: ["connection-status"] } }, extra: { focus: { connectionControl: "control-1" } },
+  },
+  EventUserCountMetrics: {
+    block: { id: "demo-EventUserCountMetrics", type: "EventUserCountMetrics", props: { title: "问题影响", periodLabel: "30 天" }, binding: { entityRef: "issueMetrics", eventCountFieldRef: "eventCount", userCountFieldRef: "userCount" } }, extra: {},
+  },
+  JobRunMetrics: {
+    block: { id: "demo-JobRunMetrics", type: "JobRunMetrics", props: { title: "最近运行" }, binding: { entityRef: "jobMetrics", bytesFieldRef: "bytesLoaded", recordsFieldRef: "recordsLoaded", rejectedFieldRef: "recordsRejected", durationFieldRef: "runDuration", attemptsFieldRef: "attemptsCount" } }, extra: {},
+  },
+  OccurrenceEvidenceSummary: {
+    block: { id: "demo-OccurrenceEvidenceSummary", type: "OccurrenceEvidenceSummary", props: { title: "发生摘要" }, binding: { entityRef: "occurrenceEvidence", environmentFieldRef: "environment", statusCodeFieldRef: "httpStatus", reasonFieldRef: "failureReason", lastSuccessFieldRef: "lastSuccessfulAt", downtimeFieldRef: "downtime" } }, extra: {},
+  },
+  ConnectionRouteSummary: {
+    block: { id: "demo-ConnectionRouteSummary", type: "ConnectionRouteSummary", props: { title: "连接路径" }, binding: { entityRef: "connectionRoute", sourceFieldRef: "sourceConnector", targetFieldRef: "targetConnector", sourceVersionFieldRef: "sourceVersion", targetVersionFieldRef: "targetVersion", statusFieldRef: "routeStatus" } }, extra: {},
+  },
+  ResourceDetailTabs: {
+    block: { id: "demo-ResourceDetailTabs", type: "ResourceDetailTabs", props: { surface: "plain" }, binding: { entityRef: "resourceSection", titleFieldRef: "sectionTitle", keyFieldRef: "sectionKey", availableFieldRef: "sectionAvailable", countFieldRef: "sectionCount", targets: ["connection-detail"] } }, extra: {},
+  },
+  InspectorModeTabs: {
+    block: { id: "demo-InspectorModeTabs", type: "InspectorModeTabs", props: { surface: "plain" }, binding: { entityRef: "inspectorMode", titleFieldRef: "modeTitle", keyFieldRef: "modeKey", enabledFieldRef: "modeEnabled", issueCountFieldRef: "issueCount", targets: ["inspector-content"] } }, extra: {},
+  },
+  IssueEventFilter: {
+    block: { id: "demo-IssueEventFilter", type: "IssueEventFilter", props: { title: "问题事件筛选" }, binding: { entityRef: "issueEvent", environmentFieldRef: "eventEnvironment", targets: ["issue-events"] } }, extra: {},
+  },
+  TimelineFilterBar: {
+    block: { id: "demo-TimelineFilterBar", type: "TimelineFilterBar", props: { title: "连接时间线筛选" }, binding: { entityRef: "connectionEvent", typeFieldRef: "connectionType", statusFieldRef: "connectionStatus", timeFieldRef: "connectionTime", targets: ["connection-timeline"] } }, extra: {},
+  },
+  UnsavedChangesBar: {
+    block: { id: "demo-UnsavedChangesBar", type: "UnsavedChangesBar", props: { surface: "plain" }, binding: { entityRef: "dirtyField", fieldNameFieldRef: "changedField", validFieldRef: "changeValid", targets: ["connection-form"] } }, extra: {},
+  },
+  RunningJobControlBar: {
+    block: { id: "demo-RunningJobControlBar", type: "RunningJobControlBar", props: { surface: "plain" }, binding: { entityRef: "runningJob", titleFieldRef: "jobTitle", statusFieldRef: "jobStatus", progressFieldRef: "jobProgress", typeFieldRef: "jobType", targets: ["connection-jobs"] } }, extra: { focus: { runningJob: "running-job-1" } },
+  },
+  BookingCommandHeader: {
+    block: { id: "demo-BookingCommandHeader", type: "BookingCommandHeader", props: { surface: "plain" }, binding: { entityRef: "bookingCommand", titleFieldRef: "bookingTitle", statusFieldRef: "bookingStatus", startFieldRef: "bookingStart", endFieldRef: "bookingEnd", locationFieldRef: "bookingLocation", recurringFieldRef: "bookingRecurring", paidFieldRef: "bookingPaid", targets: ["booking-detail"] } }, extra: { focus: { bookingCommand: "booking-command-1" } },
+  },
+  AlertRuleCommandHeader: {
+    block: { id: "demo-AlertRuleCommandHeader", type: "AlertRuleCommandHeader", props: { surface: "plain" }, binding: { entityRef: "alertRuleCommand", titleFieldRef: "alertRuleTitle", stateFieldRef: "alertRuleState", editableFieldRef: "alertRuleEditable", provisionedFieldRef: "alertRuleProvisioned", silenceableFieldRef: "alertRuleSilenceable", targets: ["alert-rules"] } }, extra: { focus: { alertRuleCommand: "alert-rule-command-1" } },
+  },
+  AlertStateMetrics: {
+    block: { id: "demo-AlertStateMetrics", type: "AlertStateMetrics", props: { title: "告警状态" }, binding: { entityRef: "alertInstanceMetric", stateFieldRef: "alertState", ruleIdFieldRef: "ruleUid" } }, extra: {},
+  },
+  BookingCapacityMetrics: {
+    block: { id: "demo-BookingCapacityMetrics", type: "BookingCapacityMetrics", props: { title: "义诊场次容量" }, binding: { entityRef: "bookingCapacity", capacityFieldRef: "totalCapacity", bookedFieldRef: "bookedSeats", noShowFieldRef: "noShowCount", waitlistFieldRef: "waitlistCount" } }, extra: {},
+  },
+  BookingContextSummary: {
+    block: { id: "demo-BookingContextSummary", type: "BookingContextSummary", props: { title: "预约上下文" }, binding: { entityRef: "bookingCommand", titleFieldRef: "bookingTitle", startFieldRef: "bookingStart", endFieldRef: "bookingEnd", timezoneFieldRef: "bookingTimezone", locationFieldRef: "bookingLocation", attendeeFieldRef: "bookingAttendee", recurringFieldRef: "bookingRecurring" } }, extra: {},
+  },
+  AlertInstanceSummary: {
+    block: { id: "demo-AlertInstanceSummary", type: "AlertInstanceSummary", props: { title: "告警实例" }, binding: { entityRef: "alertInstanceMetric", nameFieldRef: "instanceName", valueFieldRef: "instanceValue", labelsFieldRef: "instanceLabels", summaryFieldRef: "instanceSummary", startedFieldRef: "instanceStarted" } }, extra: { focus: { alertInstanceMetric: "instance-1" } },
+  },
+  BookingStatusTabs: {
+    block: { id: "demo-BookingStatusTabs", type: "BookingStatusTabs", props: { surface: "plain", defaultKey: "upcoming" }, binding: { entityRef: "bookingStatus", titleFieldRef: "tabTitle", keyFieldRef: "tabKey", countFieldRef: "tabCount", enabledFieldRef: "tabEnabled", targets: ["booking-list"] } }, extra: {},
+  },
+  ValidatedFormTabs: {
+    block: { id: "demo-ValidatedFormTabs", type: "ValidatedFormTabs", props: { surface: "plain" }, binding: { entityRef: "validatedFormTab", titleFieldRef: "formTabTitle", keyFieldRef: "formTabKey", errorCountFieldRef: "formTabErrors", dirtyCountFieldRef: "formTabDirty", targets: ["booking-form"] } }, extra: {},
+  },
+  AlertMatcherFilter: {
+    block: { id: "demo-AlertMatcherFilter", type: "AlertMatcherFilter", props: { title: "告警标签匹配", defaultQuery: "severity=\"critical\",instance=~\"payment-.+\"" }, binding: { targets: ["alert-list"] } }, extra: {},
+  },
+  BookingDirectoryFilter: {
+    block: { id: "demo-BookingDirectoryFilter", type: "BookingDirectoryFilter", props: { title: "预约目录筛选" }, binding: { entityRef: "bookingFilterOption", typeFieldRef: "optionType", keyFieldRef: "optionKey", titleFieldRef: "optionTitle", targets: ["booking-list"] } }, extra: {},
+  },
+  BookingDecisionBar: {
+    block: { id: "demo-BookingDecisionBar", type: "BookingDecisionBar", props: { surface: "plain" }, binding: { entityRef: "bookingCommand", titleFieldRef: "bookingTitle", statusFieldRef: "bookingStatus", paidFieldRef: "bookingPaid", recurringFieldRef: "bookingRecurring", targets: ["booking-detail"] } }, extra: { focus: { bookingCommand: "booking-command-1" } },
+  },
+  DashboardSaveBar: {
+    block: { id: "demo-DashboardSaveBar", type: "DashboardSaveBar", props: { surface: "plain" }, binding: { entityRef: "dashboardSave", titleFieldRef: "dashboardTitle", dirtyFieldRef: "dashboardDirty", canSaveFieldRef: "dashboardCanSave", managedFieldRef: "dashboardManaged", templateFieldRef: "dashboardTemplate", targets: ["dashboard"] } }, extra: { focus: { dashboardSave: "dashboard-save-1" } },
+  },
   FreeformInsight: {
         block: {
           id: "demo-FreeformInsight", type: "FreeformInsight", props: { title: "自由洞察" },
@@ -1017,8 +1707,8 @@ const PAGE_KINDS = [
 const WALL_COLUMN_WIDTH = 260;
 const WALL_GUTTER = 16;
 
-type DeviceTier = "all" | "desktop" | "phone";
-type PreviewDevice = Exclude<DeviceTier, "all">;
+type DeviceTier = ComponentWallDevice;
+type PreviewDevice = ComponentPreviewDevice;
 
 interface BlockPreviewEntry {
   block: CatalogBlock;
@@ -1067,6 +1757,14 @@ function BlockCard({
   const { block: instance, extra } = demoFor(block.type);
   const impl = IMPL_BY_TYPE[block.type];
   const demoable = HAS_DEMO.has(block.type);
+  // 与应用中心 LiveAppThumb 共用同一个全局排队器。当前页虽然最多只有 12 张，
+  // 但每张仍可能包含 ProTable / ECharts / Form；分成每批 3 张挂载，避免它们在
+  // 同一个 React 提交阶段抢主线程。翻页或改筛选卸载时会自动取消尚未放行的任务。
+  const [mountGranted, setMountGranted] = React.useState(false);
+  React.useEffect(
+    () => requestMountPermit(() => setMountGranted(true)),
+    []
+  );
   // 墙上的示例也得是**能动的**。ColumnSettingPanel 全靠改宿主态活着，宿主不
   // 给回调它就是一排点不动的复选框——这一页刚因为同一个原因让 QuickActionPanel
   // 渲染成空气过（见 previewActions 那段）。这份局部态只服务这张卡。
@@ -1087,7 +1785,11 @@ function BlockCard({
 
   // 手机档只渲染**真有手机实现**的区块（见 hasPhoneImplementation 与那里的说明）。
   // 没有实现的不会走到这里——它们压根不进手机档的列表。
-  const rendered = demoable ? (
+  const rendered = !mountGranted ? (
+    <div data-testid="component-preview-pending" className="px-2 py-4">
+      <Skeleton active title={{ width: "42%" }} paragraph={{ rows: 4 }} />
+    </div>
+  ) : demoable ? (
     device === "phone" ? (
       <React.Suspense fallback={<div style={{ height: 120 }} />}>
         <LazyPhoneExperienceBlock
@@ -1130,6 +1832,7 @@ function BlockCard({
   return (
     <Card
       data-testid={`component-card-${block.type}`}
+      data-preview-key={`${device}-${block.type}`}
       size="small"
       variant="borderless"
       // 12px 内边距（2026-08-08 用户要的）。**这是把 08-07 那个决定翻过来。**
@@ -1211,6 +1914,7 @@ function BlockCard({
         不再按内容撑高，那正好会打断测量。
       */}
       <div
+        data-testid={mountGranted ? "component-preview-runtime" : undefined}
         className="w-full"
         style={{ contain: "layout" }}
         onClick={() => marks.onUse(`block:${block.type}`)}
@@ -1226,7 +1930,7 @@ function BlockCard({
           改成跟着鼠标走：默认 35% 不透明度（认得出有东西、不夺目），指针
           落到这张卡上才 100%。画廊类界面的通行做法——信息一个不少，只是
           不在你没问的时候喊。 */}
-      <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-2 pt-2 opacity-35 transition-opacity duration-200 group-hover:opacity-100">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-2 pt-2 opacity-35 transition-opacity duration-200 group-hover:opacity-100">
         <div className="flex items-center">
           <Tooltip title={block.description}>
             <span
@@ -2226,10 +2930,14 @@ function BlockWall({
   blocks,
   device,
   marks,
+  page,
+  onPageChange,
 }: {
   blocks: CatalogBlock[];
   device: DeviceTier;
   marks: MarkApi;
+  page: number;
+  onPageChange: (page: number) => void;
 }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
@@ -2243,30 +2951,27 @@ function BlockWall({
   //
   // 「全部」档同理，一个区块出现一次还是两次，取决于它有没有手机实现。
   const entries = React.useMemo<BlockPreviewEntry[]>(
-    () => device === "all"
-      ? blocks.flatMap(block =>
-          hasPhoneImplementation(block)
-            ? ([{ block, device: "desktop" }, { block, device: "phone" }] satisfies BlockPreviewEntry[])
-            : ([{ block, device: "desktop" }] satisfies BlockPreviewEntry[])
-        )
-      : device === "phone"
-        ? blocks.filter(hasPhoneImplementation).map(block => ({ block, device }))
-        : blocks.map(block => ({ block, device })),
+    () => buildComponentPreviewEntries(blocks, device, hasPhoneImplementation),
     [blocks, device]
+  );
+  const paged = React.useMemo(
+    () => paginateComponentPreviews(entries, page),
+    [entries, page]
   );
 
   return (
-    <div data-testid="components-wall" style={{ display: "contents" }}>
-      <SpanMasonry<BlockPreviewEntry>
+    <>
+      <div data-testid="components-wall" style={{ display: "contents" }}>
+        <SpanMasonry<BlockPreviewEntry>
         containerRef={containerRef}
-        items={entries}
+        items={paged.items}
         width={width}
         height={height}
         scrollTop={scrollTop}
         isScrolling={isScrolling}
         minColumnWidth={WALL_COLUMN_WIDTH}
         gutter={WALL_GUTTER}
-        // **这面墙不做虚拟化**（2026-08-09）。
+        // 当前页不做虚拟化（2026-08-09）。
         //
         // 50 屏的预渲染量 = 一次全画出来。不是调参，是一个决定：
         //
@@ -2279,9 +2984,8 @@ function BlockWall({
         //
         // 换个角度这也是对的：卸载活组件会丢掉用户在演示里点出来的状态。
         //
-        // 代价是全部区块同时挂载。当前 26 个区块（"全部"档约 40 张卡）毫无压力；
-        // **区块数奔着 200 去的时候要回头看这里**——那时的解法不是把虚拟化开回来
-        // （抖动会一起回来），而是让卡片先出静态骨架、进视野再点亮真渲染。
+        // 全目录不再交给这里：桌面/手机预览展开后先切成每页 20 张，当前页内部
+        // 保持挂载，既不重现滚动卸载后的量高跳动，也不会一次启动整份目录。
         overscanBy={50}
         // 实测各区块渲染高度 148~451px，取中位偏上；真实高度由 ResizeObserver 量，
         // 这个值只影响首屏还没量到时的总高估算。
@@ -2297,8 +3001,20 @@ function BlockWall({
         render={entry => (
           <BlockCard block={entry.block} device={entry.device} marks={marks} />
         )}
-      />
-    </div>
+        />
+      </div>
+      {paged.total > COMPONENT_WALL_PAGE_SIZE && (
+        <div className="mt-6 flex justify-center" data-testid="components-pagination">
+          <Pagination
+            current={paged.page}
+            pageSize={COMPONENT_WALL_PAGE_SIZE}
+            total={paged.total}
+            onChange={onPageChange}
+            showSizeChanger={false}
+          />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -2477,6 +3193,7 @@ export default function ComponentsLibraryPage() {
   };
 
   const [device, setDevice] = React.useState<DeviceTier>("all");
+  const [blockPage, setBlockPage] = React.useState(1);
   const [query, setQuery] = React.useState("");
   const [slot, setSlot] = React.useState<string>("all");
   // 默认不筛：档位上标着几个区块，点进来就该看得见几个。device / slot 本来
@@ -2751,6 +3468,10 @@ export default function ComponentsLibraryPage() {
     if (scroller) scroller.scrollTo({ top: 0 });
     else window.scrollTo({ top: 0 });
   }, []);
+
+  React.useEffect(() => {
+    setBlockPage(1);
+  }, [query, mode, marks, device, pageKind, slot, favorites, recent]);
 
   const searchHits = React.useMemo(
     () => (query.trim() ? SEARCH.search(query) : null),
@@ -3028,7 +3749,16 @@ export default function ComponentsLibraryPage() {
       ) : filtered.length === 0 ? (
         <Empty description="没有匹配的区块" className="py-16" />
       ) : (
-        <BlockWall blocks={ordered} device={device} marks={markApi} />
+        <BlockWall
+          blocks={ordered}
+          device={device}
+          marks={markApi}
+          page={blockPage}
+          onPageChange={nextPage => {
+            setBlockPage(nextPage);
+            backToTop();
+          }}
+        />
       )}
     </div>
   );

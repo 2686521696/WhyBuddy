@@ -48,7 +48,7 @@
 import {
   LoadingOutlined,
   LogoutOutlined,
-  SafetyCertificateOutlined,
+  ReadOutlined,
   SettingOutlined,
   UpOutlined,
   UserOutlined,
@@ -171,20 +171,16 @@ export function AccountPanel() {
                 （.native-agent-help），隔 40px 再重复一遍只是噪音。Claude
                 的菜单里有 Get help，是因为它的侧栏里没有。照搬形制、不照搬
                 条目——菜单该放什么由你自己的导航决定。 */}
-            {/* 管理后台只对超管出现。这是**藏按钮**不是权限判定——真正的判定
-                在后端每个接口里（Python 侧 app_access.require）。 */}
-            {user.isSuperuser && (
-              <button
-                type="button"
-                role="menuitem"
-                className="native-agent-account-item"
-                data-testid="account-admin"
-                onClick={go("/admin")}
-              >
-                <SafetyCertificateOutlined />
-                <span>管理后台</span>
-              </button>
-            )}
+            <button
+              type="button"
+              role="menuitem"
+              className="native-agent-account-item"
+              data-testid="account-skills"
+              onClick={go("/agent-loop/skills")}
+            >
+              <ReadOutlined />
+              <span>技能库</span>
+            </button>
           </div>
 
           {/* 危险项单独一组：隔一条线，离常规项远一点，减少误触。 */}

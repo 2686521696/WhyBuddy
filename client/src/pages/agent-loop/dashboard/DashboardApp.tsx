@@ -9,7 +9,6 @@ import {
   PlayCircleFilled,
   QuestionCircleOutlined,
   BlockOutlined,
-  ReadOutlined,
   ReloadOutlined,
   RightOutlined,
   DownOutlined,
@@ -1184,7 +1183,6 @@ function AgentLoopSidebar({
     icon: React.ReactNode;
   }> = [
     { key: "workbench", label: "应用中心", icon: <AppstoreOutlined /> },
-    { key: "skills", label: "技能库", icon: <ReadOutlined /> },
     { key: "components", label: "组件库", icon: <BlockOutlined /> },
     { key: "settings", label: "设置", icon: <SettingOutlined /> },
   ];

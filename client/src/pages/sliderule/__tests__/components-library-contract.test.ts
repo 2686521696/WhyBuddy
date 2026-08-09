@@ -8,6 +8,10 @@ const pageSource = readFileSync(
   new URL("../ComponentsLibraryPage.tsx", import.meta.url),
   "utf8"
 );
+const paginationSource = readFileSync(
+  new URL("../component-wall-pagination.ts", import.meta.url),
+  "utf8"
+);
 const registrySource = readFileSync(
   new URL("../live-runtime/block-registry.tsx", import.meta.url),
   "utf8"
@@ -123,6 +127,14 @@ describe("components library UI contract", () => {
     expect(pageSource).toContain("<LazyPhoneExperienceBlock");
   });
 
+  it("pages heavy previews at 20 per page and resets after filters change", () => {
+    expect(pageSource).toContain("COMPONENT_WALL_PAGE_SIZE");
+    expect(pageSource).toContain("paginateComponentPreviews(entries, page)");
+    expect(pageSource).toContain('data-testid="components-pagination"');
+    expect(pageSource).toContain("requestMountPermit(() => setMountGranted(true))");
+    expect(pageSource).toContain("setBlockPage(1)");
+  });
+
   it("手机档只列真有手机实现的区块——不留「桌面降级」这个中间态", () => {
     // 2026-08-07 用户裁决：「手机端就是手机端，桌面端就是桌面端。弄一个手机端
     // 桌面降级，这没意思的，把它去掉吧。」
@@ -139,8 +151,9 @@ describe("components library UI contract", () => {
     expect(code).not.toContain("phoneFallback");
     // 判据本身要在：手机档的列表按它过滤，「全部」档也按它决定出一张还是两张
     expect(pageSource).toContain("function hasPhoneImplementation");
-    expect(pageSource).toContain("blocks.filter(hasPhoneImplementation)");
-    expect(pageSource).toContain("hasPhoneImplementation(block)");
+    expect(pageSource).toContain("buildComponentPreviewEntries(blocks, device, hasPhoneImplementation)");
+    expect(paginationSource).toContain(".filter(hasPhoneImplementation)");
+    expect(paginationSource).toContain("hasPhoneImplementation(block)");
   });
 
   it("底部元信息不铺整条遮罩，每条自带底衬保证可读", () => {

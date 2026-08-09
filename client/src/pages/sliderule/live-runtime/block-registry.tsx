@@ -17,16 +17,32 @@ import React from "react";
 import dayjs from "dayjs";
 import {
   Avatar,
+  Alert,
+  Badge,
+  Breadcrumb,
   Button,
+  Calendar,
   Card,
   Checkbox,
+  Collapse,
+  ConfigProvider,
+  DatePicker,
+  Descriptions,
+  Dropdown,
   Empty,
   Flex,
   Input,
   List,
+  Modal,
+  Pagination,
+  Popconfirm,
   Progress,
+  Segmented,
+  Select,
   Result,
   Space,
+  Statistic,
+  Switch,
   Steps,
   Table,
   Tabs,
@@ -34,9 +50,12 @@ import {
   theme as antdTheme,
   Timeline,
   Tooltip,
+  Tree,
   Typography,
+  Upload,
 } from "antd";
 import type { TableColumnsType } from "antd";
+import zhCN from "antd/locale/zh_CN";
 import {
   CellEditorTable,
   DragSortTable,
@@ -4536,6 +4555,1316 @@ const ContentCardRenderer: ExperienceBlockRenderer = ({ block, children }) => {
 };
 
 /**
+ * 附件面板。组合逻辑来自 MeEdu 的真实课程附件流程：附件必须把名称、可用状态
+ * 和动作放在同一行；动作不可用时保留原因，不能只留一个失效链接。桌面端额外
+ * 使用 Upload 管理待上传队列，beforeUpload 阶段先进入本地列表，再把真正写入
+ * 交给宿主动作，避免区块擅自假定后端上传协议。
+ */
+const AttachmentPanelRenderer: ExperienceBlockRenderer = ({
+  block,
+  children,
+  entityRows,
+  onAction,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const nameRef = fieldRefOf(block, "fileNameFieldRef");
+  const sizeRef = fieldRefOf(block, "fileSizeFieldRef");
+  const statusRef = fieldRefOf(block, "statusFieldRef");
+  const timeRef = fieldRefOf(block, "uploadedAtFieldRef");
+  const allowUpload = block.props?.allowUpload === true;
+  const [queued, setQueued] = React.useState<Array<{ id: string; name: string; size: number }>>([]);
+
+  if (!bound || !nameRef) {
+    return (
+      <BlockShell block={block} title={title} testid="attachment-panel">
+        <BlockEmpty hint="附件面板尚未绑定有效实体和文件名字段" />
+      </BlockShell>
+    );
+  }
+
+  const formatSize = (value: unknown) => {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes) || bytes < 0) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  };
+  const items = [
+    ...queued.map(file => ({
+      id: file.id,
+      name: file.name,
+      size: formatSize(file.size),
+      status: "等待上传",
+      time: "",
+      queued: true,
+    })),
+    ...bound.rows.map(row => ({
+      id: row.id,
+      name: String(row.values?.[nameRef] ?? "").trim() || "未命名附件",
+      size: sizeRef ? formatSize(row.values?.[sizeRef]) : "",
+      status: statusRef ? String(row.values?.[statusRef] ?? "").trim() : "",
+      time: timeRef ? String(row.values?.[timeRef] ?? "").trim() : "",
+      queued: false,
+    })),
+  ];
+
+  return (
+    <BlockShell block={block}
+      title={title}
+      testid="attachment-panel"
+      extra={
+        allowUpload ? (
+          <Upload
+            showUploadList={false}
+            multiple
+            beforeUpload={file => {
+              const id = `${file.uid}-${file.name}`;
+              setQueued(current => [...current, { id, name: file.name, size: file.size }]);
+              onAction?.("createRequest", {
+                entityRef: bound.entityRef,
+                file: { id, name: file.name, size: file.size, type: file.type },
+              });
+              return false;
+            }}
+          >
+            <Button size="small">{String(block.props?.uploadText ?? "添加附件")}</Button>
+          </Upload>
+        ) : undefined
+      }
+    >
+      {items.length === 0 ? (
+        <BlockEmpty hint={String(block.props?.emptyText ?? "还没有附件")} />
+      ) : (
+        <List
+          size="small"
+          dataSource={items}
+          renderItem={item => (
+            <List.Item
+              actions={[
+                item.queued ? (
+                  <Button
+                    key="remove"
+                    type="link"
+                    size="small"
+                    onClick={() => setQueued(current => current.filter(file => file.id !== item.id))}
+                  >
+                    移除
+                  </Button>
+                ) : (
+                  <Button
+                    key="open"
+                    type="link"
+                    size="small"
+                    onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: item.id })}
+                  >
+                    打开
+                  </Button>
+                ),
+              ]}
+            >
+              <List.Item.Meta
+                avatar={<AntdIcons.PaperClipOutlined style={{ fontSize: 18, color: "#1677ff" }} />}
+                title={<Typography.Text ellipsis>{item.name}</Typography.Text>}
+                description={
+                  <Space size={6} wrap>
+                    {item.status && <Tag color={item.queued ? "processing" : undefined}>{item.status}</Tag>}
+                    {item.size && <Typography.Text type="secondary">{item.size}</Typography.Text>}
+                    {item.time && <Typography.Text type="secondary">{item.time}</Typography.Text>}
+                  </Space>
+                }
+              />
+              {item.queued && <Progress percent={0} showInfo={false} size="small" style={{ width: 88 }} />}
+            </List.Item>
+          )}
+        />
+      )}
+    </BlockShell>
+  );
+};
+
+/** 带回复关系的讨论流。父子关系、审核态、分页展示和就地回复来自 MeEdu。 */
+const CommentThreadRenderer: ExperienceBlockRenderer = ({
+  block,
+  children,
+  entityRows,
+  onAction,
+}) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const authorRef = fieldRefOf(block, "authorFieldRef");
+  const contentRef = fieldRefOf(block, "contentFieldRef");
+  const timeRef = fieldRefOf(block, "timeFieldRef");
+  const avatarRef = fieldRefOf(block, "avatarFieldRef");
+  const statusRef = fieldRefOf(block, "statusFieldRef");
+  const parentRef = fieldRefOf(block, "parentFieldRef");
+  const [draft, setDraft] = React.useState("");
+  const [replyTo, setReplyTo] = React.useState<string | null>(null);
+  const pageSize = Math.max(1, Number(block.props?.pageSize ?? 5) || 5);
+  const [visible, setVisible] = React.useState(pageSize);
+
+  if (!bound || !authorRef || !contentRef || !timeRef) {
+    return (
+      <BlockShell block={block} title={title} testid="comment-thread">
+        <BlockEmpty hint="讨论区尚未绑定作者、内容和时间字段" />
+      </BlockShell>
+    );
+  }
+  const roots = bound.rows.filter(row => !parentRef || !String(row.values?.[parentRef] ?? "").trim());
+  const replies = (parentId: string) =>
+    parentRef
+      ? bound.rows.filter(row => String(row.values?.[parentRef] ?? "").trim() === parentId)
+      : [];
+  const submit = () => {
+    const content = draft.trim();
+    if (!content) return;
+    onAction?.("submitRequest", {
+      entityRef: bound.entityRef,
+      values: { [contentRef]: content, ...(parentRef && replyTo ? { [parentRef]: replyTo } : {}) },
+    });
+    setDraft("");
+    setReplyTo(null);
+  };
+  const renderComment = (row: RuntimeRow, nested = false) => {
+    const status = statusRef ? String(row.values?.[statusRef] ?? "").trim() : "";
+    return (
+      <List.Item key={row.id} style={nested ? { paddingInlineStart: 44, background: "rgba(5,5,5,0.02)" } : undefined}>
+        <List.Item.Meta
+          avatar={<Avatar src={avatarRef ? String(row.values?.[avatarRef] ?? "") : undefined}>{String(row.values?.[authorRef] ?? "?").slice(0, 1)}</Avatar>}
+          title={
+            <Space size={6} wrap>
+              <Typography.Text strong>{String(row.values?.[authorRef] ?? "未知用户")}</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{String(row.values?.[timeRef] ?? "")}</Typography.Text>
+              {status && <Tag color={status.includes("审核") ? "warning" : undefined}>{status}</Tag>}
+            </Space>
+          }
+          description={
+            <div>
+              <Typography.Paragraph style={{ margin: "4px 0 2px" }}>{String(row.values?.[contentRef] ?? "")}</Typography.Paragraph>
+              {block.props?.allowReply !== false && !nested && (
+                <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => setReplyTo(replyTo === row.id ? null : row.id)}>
+                  {replyTo === row.id ? "取消回复" : "回复"}
+                </Button>
+              )}
+            </div>
+          }
+        />
+      </List.Item>
+    );
+  };
+
+  return (
+    <BlockShell block={block} title={title} testid="comment-thread" extra={<Typography.Text type="secondary">{bound.rows.length} 条</Typography.Text>}>
+      {roots.length === 0 ? (
+        <BlockEmpty hint="还没有讨论内容" />
+      ) : (
+        <List size="small">
+          {roots.slice(0, visible).flatMap(row => [renderComment(row), ...replies(row.id).map(reply => renderComment(reply, true))])}
+        </List>
+      )}
+      {visible < roots.length && (
+        <Button block type="text" onClick={() => setVisible(current => current + pageSize)}>加载更多</Button>
+      )}
+      <Flex gap={8} align="flex-end" style={{ marginTop: 10 }}>
+        <Input.TextArea
+          autoSize={{ minRows: 1, maxRows: 4 }}
+          value={draft}
+          placeholder={replyTo ? "写下回复" : String(block.props?.composerPlaceholder ?? "写下评论")}
+          onChange={event => setDraft(event.target.value)}
+        />
+        <Button type="primary" disabled={!draft.trim()} onClick={submit}>{String(block.props?.submitText ?? "发布")}</Button>
+      </Flex>
+    </BlockShell>
+  );
+};
+
+/**
+ * 记录选择器。借鉴 NocoBase table-selector：搜索、选择态和确认动作属于同一个
+ * 区块，不能让普通表格勾选后依赖页面上另一个遥远按钮完成选择。
+ */
+const RecordPickerRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const titleRef = fieldRefOf(block, "titleFieldRef");
+  const descRef = fieldRefOf(block, "descFieldRef");
+  const statusRef = fieldRefOf(block, "statusFieldRef");
+  const multiple = block.props?.selectionMode !== "single";
+  const limit = Math.max(1, Number(block.props?.maxSelected ?? 100) || 100);
+  const [keyword, setKeyword] = React.useState("");
+  const [selected, setSelected] = React.useState<string[]>([]);
+  if (!bound || !titleRef) {
+    return (
+      <BlockShell block={block} title={title} testid="record-picker">
+        <BlockEmpty hint="记录选择器尚未绑定有效实体和标题字段" />
+      </BlockShell>
+    );
+  }
+  const shown = bound.rows.filter(row =>
+    [row.values?.[titleRef], descRef ? row.values?.[descRef] : ""]
+      .some(value => String(value ?? "").toLowerCase().includes(keyword.trim().toLowerCase()))
+  );
+  const toggle = (id: string, checked: boolean) => {
+    const next = checked
+      ? multiple ? [...selected.filter(value => value !== id), id].slice(-limit) : [id]
+      : selected.filter(value => value !== id);
+    setSelected(next);
+    onAction?.("itemSelect", { entityRef: bound.entityRef, rowIds: next });
+  };
+  return (
+    <BlockShell block={block}
+      title={title}
+      testid="record-picker"
+      extra={<Typography.Text type="secondary">已选 {selected.length}</Typography.Text>}
+    >
+      {block.props?.searchable !== false && (
+        <Input.Search allowClear value={keyword} placeholder="搜索可选记录" onChange={event => setKeyword(event.target.value)} style={{ marginBottom: 8 }} />
+      )}
+      {shown.length === 0 ? <BlockEmpty hint={keyword ? "没有匹配的记录" : "暂无可选记录"} /> : (
+        <List
+          size="small"
+          dataSource={shown}
+          renderItem={row => {
+            const checked = selected.includes(row.id);
+            return (
+              <List.Item onClick={() => toggle(row.id, !checked)} style={{ cursor: "pointer" }}>
+                <Checkbox checked={checked} style={{ marginInlineEnd: 10 }} />
+                <List.Item.Meta
+                  title={String(row.values?.[titleRef] ?? "未命名记录")}
+                  description={descRef ? String(row.values?.[descRef] ?? "") : undefined}
+                />
+                {statusRef && row.values?.[statusRef] != null && <Tag>{String(row.values[statusRef])}</Tag>}
+              </List.Item>
+            );
+          }}
+        />
+      )}
+      <Flex justify="space-between" align="center" style={{ marginTop: 10 }}>
+        <Button type="text" disabled={selected.length === 0} onClick={() => setSelected([])}>清空</Button>
+        <Button type="primary" disabled={selected.length === 0} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowIds: selected })}>
+          {String(block.props?.confirmText ?? "确认选择")}
+        </Button>
+      </Flex>
+    </BlockShell>
+  );
+};
+
+/**
+ * 状态看板。结构取自 slash-admin 的 Kanban：列与记录是两级状态，移动记录时
+ * 同时知道来源列和目标列。WhyBuddy 不在区块里偷改运行时行数据，移动通过
+ * editRequest 交给宿主；桌面用并列列，手机端则改为一次只看一列。
+ */
+const KanbanBoardRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction, enumOptionsOf }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const titleRef = fieldRefOf(block, "titleFieldRef");
+  const statusRef = fieldRefOf(block, "statusFieldRef");
+  const descRef = fieldRefOf(block, "descFieldRef");
+  const assigneeRef = fieldRefOf(block, "assigneeFieldRef");
+  if (!bound || !titleRef || !statusRef) {
+    return <BlockShell block={block} title={title} testid="kanban-board"><BlockEmpty hint="看板尚未绑定标题和状态字段" /></BlockShell>;
+  }
+  const declared = enumOptionsOf?.(bound.entityRef, statusRef) ?? [];
+  const values = Array.from(new Set(bound.rows.map(row => String(row.values?.[statusRef] ?? "").trim()).filter(Boolean)));
+  const columns = declared.length > 0
+    ? declared.map(option => ({ value: option.id, label: option.label }))
+    : values.map(value => ({ value, label: value }));
+  const move = (rowId: string, status: string) => onAction?.("editRequest", {
+    entityRef: bound.entityRef,
+    rowId,
+    values: { [statusRef]: status },
+  });
+  return (
+    <BlockShell block={block} title={title} testid="kanban-board" extra={<Typography.Text type="secondary">{bound.rows.length} 项</Typography.Text>}>
+      {columns.length === 0 ? <BlockEmpty hint="状态字段还没有可用分组" /> : (
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(columns.length, 4)}, minmax(150px, 1fr))`, gap: 12, overflowX: "auto", alignItems: "start" }}>
+          {columns.map(column => {
+            const rows = bound.rows.filter(row => String(row.values?.[statusRef] ?? "").trim() === column.value);
+            return (
+              <Card key={column.value} size="small" variant="borderless" styles={{ body: { padding: 8, background: "#f5f5f5" } }} title={<Space size={6}><span>{column.label}</span><Badge count={rows.length} showZero color="#8c8c8c" /></Space>}>
+                {rows.length === 0 ? <BlockEmpty hint="这一列还没有记录" /> : (
+                  <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                    {rows.map(row => (
+                      <Card key={row.id} size="small" hoverable onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}>
+                        <Flex justify="space-between" gap={8} align="start">
+                          <div style={{ minWidth: 0 }}>
+                            <Typography.Text strong ellipsis>{String(row.values?.[titleRef] ?? "未命名记录")}</Typography.Text>
+                            {descRef && row.values?.[descRef] != null && <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ margin: "4px 0 0", fontSize: 12 }}>{String(row.values[descRef])}</Typography.Paragraph>}
+                            {assigneeRef && row.values?.[assigneeRef] != null && <Tag style={{ marginTop: 6 }}>{String(row.values[assigneeRef])}</Tag>}
+                          </div>
+                          {block.props?.movable !== false && (
+                            <Select size="small" aria-label="移动到状态" value={column.value} style={{ minWidth: 92 }} options={columns} onClick={event => event.stopPropagation()} onChange={value => move(row.id, value)} />
+                          )}
+                        </Flex>
+                      </Card>
+                    ))}
+                  </Space>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </BlockShell>
+  );
+};
+
+/** 月历与当日议程组合。slash-admin 的关键经验是日期导航和事件列表是一份状态。 */
+const ScheduleCalendarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const titleRef = fieldRefOf(block, "titleFieldRef");
+  const startRef = fieldRefOf(block, "startFieldRef");
+  const endRef = fieldRefOf(block, "endFieldRef");
+  const statusRef = fieldRefOf(block, "statusFieldRef");
+  const [selected, setSelected] = React.useState(() => {
+    const initial = dayjs(String(block.props?.initialDate ?? ""));
+    return initial.isValid() ? initial : dayjs();
+  });
+  if (!bound || !titleRef || !startRef) {
+    return <BlockShell block={block} title={title} testid="schedule-calendar"><BlockEmpty hint="日历尚未绑定标题和开始时间字段" /></BlockShell>;
+  }
+  const dateKey = selected.isValid() ? selected.format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD");
+  const events = bound.rows.filter(row => {
+    const start = dayjs(String(row.values?.[startRef] ?? ""));
+    const end = endRef ? dayjs(String(row.values?.[endRef] ?? "")) : start;
+    return start.isValid() && (start.format("YYYY-MM-DD") === dateKey || (end.isValid() && selected.isAfter(start.startOf("day")) && selected.isBefore(end.endOf("day"))));
+  });
+  const countOn = (date: dayjs.Dayjs) => bound.rows.filter(row => dayjs(String(row.values?.[startRef] ?? "")).format("YYYY-MM-DD") === date.format("YYYY-MM-DD")).length;
+  return (
+    <BlockShell block={block} title={title} testid="schedule-calendar" extra={block.props?.allowCreate === true ? <Button size="small" onClick={() => onAction?.("createRequest", { entityRef: bound.entityRef, date: dateKey })}>新建日程</Button> : undefined}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 1.4fr) minmax(220px, 1fr)", gap: 16 }}>
+        <ConfigProvider locale={zhCN}>
+          <Calendar fullscreen={false} value={selected} onSelect={setSelected} cellRender={date => countOn(date) > 0 ? <Badge status="processing" /> : null} />
+        </ConfigProvider>
+        <div>
+          <Typography.Title level={5} style={{ margin: "4px 0 10px" }}>{selected.format("M 月 D 日")}</Typography.Title>
+          {events.length === 0 ? <BlockEmpty hint="这一天还没有日程" /> : (
+            <List size="small" dataSource={events} renderItem={row => (
+              <List.Item onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })} style={{ cursor: "pointer" }}>
+                <List.Item.Meta title={String(row.values?.[titleRef] ?? "未命名日程")} description={(() => { const start = String(row.values?.[startRef] ?? ""); const end = endRef ? String(row.values?.[endRef] ?? "") : ""; return end && end !== start ? `${start} - ${end}` : start; })()} />
+                {statusRef && row.values?.[statusRef] != null && <Tag>{String(row.values[statusRef])}</Tag>}
+              </List.Item>
+            )} />
+          )}
+        </div>
+      </div>
+    </BlockShell>
+  );
+};
+
+/** 分类通知收件箱。沿用 Ant Design Pro NoticeIcon 的分类计数、已读弱化和清空边界。 */
+const NotificationInboxRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const titleRef = fieldRefOf(block, "titleFieldRef");
+  const contentRef = fieldRefOf(block, "contentFieldRef");
+  const timeRef = fieldRefOf(block, "timeFieldRef");
+  const categoryRef = fieldRefOf(block, "categoryFieldRef");
+  const readRef = fieldRefOf(block, "readFieldRef");
+  const [readIds, setReadIds] = React.useState<string[]>([]);
+  const pageSize = Math.max(1, Number(block.props?.pageSize ?? 5) || 5);
+  const [visible, setVisible] = React.useState(pageSize);
+  const [activeGroup, setActiveGroup] = React.useState("全部");
+  if (!bound || !titleRef || !contentRef || !timeRef) {
+    return <BlockShell block={block} title={title} testid="notification-inbox"><BlockEmpty hint="通知中心尚未绑定标题、内容和时间字段" /></BlockShell>;
+  }
+  const isRead = (row: RuntimeRow) => readIds.includes(row.id) || (readRef ? [true, 1, "1", "true", "read", "已读"].includes(row.values?.[readRef] as never) : false);
+  const categories = categoryRef ? Array.from(new Set(bound.rows.map(row => String(row.values?.[categoryRef] ?? "").trim()).filter(Boolean))) : [];
+  const groups = ["全部", ...categories];
+  const mark = (row: RuntimeRow) => {
+    if (!isRead(row)) {
+      setReadIds(current => [...current, row.id]);
+      if (readRef) onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, values: { [readRef]: "read" } });
+    }
+    onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id });
+  };
+  const renderGroup = (group: string) => {
+    const rows = (group === "全部" ? bound.rows : bound.rows.filter(row => String(row.values?.[categoryRef!] ?? "") === group)).slice(0, visible);
+    return rows.length === 0 ? <BlockEmpty hint="这个分类还没有通知" /> : <List size="small" dataSource={rows} renderItem={row => (
+      <List.Item onClick={() => mark(row)} style={{ cursor: "pointer", opacity: isRead(row) ? 0.58 : 1 }} extra={!isRead(row) ? <Badge status="processing" text="未读" /> : undefined}>
+        <List.Item.Meta title={String(row.values?.[titleRef] ?? "未命名通知")} description={<><div>{String(row.values?.[contentRef] ?? "")}</div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{String(row.values?.[timeRef] ?? "")}</Typography.Text></>} />
+      </List.Item>
+    )} />;
+  };
+  const unread = bound.rows.filter(row => !isRead(row)).length;
+  const activeRows = activeGroup === "全部" ? bound.rows : bound.rows.filter(row => String(row.values?.[categoryRef!] ?? "") === activeGroup);
+  return (
+    <BlockShell block={block} title={title} testid="notification-inbox" extra={<Space><Badge count={unread} showZero /><Button size="small" type="text" disabled={unread === 0} onClick={() => { const ids = bound.rows.filter(row => !isRead(row)).map(row => row.id); setReadIds(current => Array.from(new Set([...current, ...ids]))); onAction?.("submitRequest", { entityRef: bound.entityRef, rowIds: ids, operation: "markRead" }); }}>全部已读</Button></Space>}>
+      <Tabs items={groups.map(group => ({ key: group, label: group, children: renderGroup(group) }))} onChange={group => { setActiveGroup(group); setVisible(pageSize); }} />
+      {visible < activeRows.length && <Button block type="text" onClick={() => setVisible(current => current + pageSize)}>查看更多</Button>}
+    </BlockShell>
+  );
+};
+
+type RuntimeTreeNode = {
+  key: string;
+  label: string;
+  title: React.ReactNode;
+  children: RuntimeTreeNode[];
+};
+
+/** 可搜索层级导航。搜索保留命中节点的祖先链，清空后恢复搜索前的展开状态。 */
+const TreeNavigatorRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const labelRef = fieldRefOf(block, "labelFieldRef");
+  const parentRef = fieldRefOf(block, "parentFieldRef");
+  const descRef = fieldRefOf(block, "descFieldRef");
+  const [keyword, setKeyword] = React.useState("");
+  const [expanded, setExpanded] = React.useState<React.Key[]>(() => block.props?.defaultExpandAll === true ? (bound?.rows.map(row => row.id) ?? []) : []);
+  const expandedBeforeSearch = React.useRef<React.Key[] | null>(null);
+  if (!bound || !labelRef || !parentRef) {
+    return <BlockShell block={block} title={title} testid="tree-navigator"><BlockEmpty hint="层级导航尚未绑定名称和父节点字段" /></BlockShell>;
+  }
+  const nodes = new Map<string, RuntimeTreeNode>();
+  for (const row of bound.rows) {
+    const label = String(row.values?.[labelRef] ?? "未命名节点");
+    const desc = descRef ? String(row.values?.[descRef] ?? "").trim() : "";
+    nodes.set(row.id, { key: row.id, label, title: <span>{label}{desc && <Typography.Text type="secondary" style={{ marginInlineStart: 8, fontSize: 12 }}>{desc}</Typography.Text>}</span>, children: [] });
+  }
+  const roots: RuntimeTreeNode[] = [];
+  for (const row of bound.rows) {
+    const node = nodes.get(row.id)!;
+    const parentId = String(row.values?.[parentRef] ?? "").trim();
+    const parent = nodes.get(parentId);
+    if (parent && parentId !== row.id) parent.children.push(node);
+    else roots.push(node);
+  }
+  const normalized = keyword.trim().toLowerCase();
+  const filterTree = (items: RuntimeTreeNode[]): RuntimeTreeNode[] => items.flatMap(node => {
+    const matchedChildren = filterTree(node.children);
+    if (!normalized || node.label.toLowerCase().includes(normalized) || matchedChildren.length > 0) return [{ ...node, children: matchedChildren }];
+    return [];
+  });
+  const shown = filterTree(roots);
+  const allShownKeys = (items: RuntimeTreeNode[]): React.Key[] => items.flatMap(node => [node.key, ...allShownKeys(node.children)]);
+  const visibleExpanded = normalized ? allShownKeys(shown) : expanded;
+  const changeKeyword = (next: string) => {
+    if (next.trim() && !keyword.trim() && !expandedBeforeSearch.current) expandedBeforeSearch.current = expanded;
+    if (!next.trim() && expandedBeforeSearch.current) {
+      setExpanded(expandedBeforeSearch.current);
+      expandedBeforeSearch.current = null;
+    }
+    setKeyword(next);
+  };
+  return (
+    <BlockShell block={block} title={title} testid="tree-navigator" extra={<Typography.Text type="secondary">{bound.rows.length} 个节点</Typography.Text>}>
+      {block.props?.searchable !== false && <Input allowClear value={keyword} placeholder="搜索层级节点" onChange={event => changeKeyword(event.target.value)} style={{ marginBottom: 8 }} />}
+      {shown.length === 0 ? <BlockEmpty hint={normalized ? "没有匹配的层级节点" : "还没有层级数据"} /> : (
+        <Tree
+          showLine={block.props?.showLine !== false}
+          blockNode
+          treeData={shown}
+          expandedKeys={visibleExpanded}
+          onExpand={keys => setExpanded([...keys])}
+          onSelect={keys => keys[0] && onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: String(keys[0]) })}
+        />
+      )}
+    </BlockShell>
+  );
+};
+
+/** 审批队列。待办与已处理是两种任务态；驳回必须先填写原因再提交。 */
+const ApprovalQueueRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const titleRef = fieldRefOf(block, "titleFieldRef");
+  const statusRef = fieldRefOf(block, "statusFieldRef");
+  const applicantRef = fieldRefOf(block, "applicantFieldRef");
+  const timeRef = fieldRefOf(block, "timeFieldRef");
+  const summaryRef = fieldRefOf(block, "summaryFieldRef");
+  const pendingValue = String(block.props?.pendingValue ?? "pending");
+  const approvedValue = String(block.props?.approvedValue ?? "approved");
+  const rejectedValue = String(block.props?.rejectedValue ?? "rejected");
+  const [tab, setTab] = React.useState("pending");
+  const [decisions, setDecisions] = React.useState<Record<string, string>>({});
+  const [rejecting, setRejecting] = React.useState<string | null>(null);
+  const [reason, setReason] = React.useState("");
+  if (!bound || !titleRef || !statusRef) {
+    return <BlockShell block={block} title={title} testid="approval-queue"><BlockEmpty hint="审批队列尚未绑定标题和状态字段" /></BlockShell>;
+  }
+  const statusOf = (row: RuntimeRow) => decisions[row.id] ?? String(row.values?.[statusRef] ?? "");
+  const pending = bound.rows.filter(row => statusOf(row) === pendingValue);
+  const completed = bound.rows.filter(row => statusOf(row) !== pendingValue);
+  const shown = tab === "pending" ? pending : completed;
+  const submit = (rowId: string, outcome: string, comment = "") => {
+    setDecisions(current => ({ ...current, [rowId]: outcome }));
+    onAction?.("submitRequest", { entityRef: bound.entityRef, rowId, outcome, comment, values: { [statusRef]: outcome } });
+  };
+  return (
+    <>
+      <BlockShell block={block} title={title} testid="approval-queue" extra={<Badge count={pending.length} showZero />}>
+        <Segmented block value={tab} options={[{ label: `待处理 ${pending.length}`, value: "pending" }, { label: `已处理 ${completed.length}`, value: "completed" }]} onChange={value => setTab(String(value))} style={{ marginBottom: 8 }} />
+        {shown.length === 0 ? <BlockEmpty hint={tab === "pending" ? "当前没有待审批任务" : "还没有已处理任务"} /> : (
+          <List size="small" dataSource={shown} renderItem={row => {
+            const status = statusOf(row);
+            return (
+              <List.Item
+                onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}
+                style={{ cursor: "pointer" }}
+                actions={status === pendingValue ? [
+                  <Button key="reject" size="small" danger onClick={event => { event.stopPropagation(); setRejecting(row.id); setReason(""); }}>驳回</Button>,
+                  <Button key="approve" size="small" type="primary" onClick={event => { event.stopPropagation(); submit(row.id, approvedValue); }}>通过</Button>,
+                ] : [<Tag key="status" color={status === approvedValue ? "success" : "error"}>{status === approvedValue ? "已通过" : "已驳回"}</Tag>]}
+              >
+                <List.Item.Meta title={String(row.values?.[titleRef] ?? "未命名审批")} description={[applicantRef ? row.values?.[applicantRef] : "", timeRef ? row.values?.[timeRef] : "", summaryRef ? row.values?.[summaryRef] : ""].filter(Boolean).map(String).join(" · ")} />
+              </List.Item>
+            );
+          }} />
+        )}
+      </BlockShell>
+      <Modal title="填写驳回原因" open={Boolean(rejecting)} okText="确认驳回" okButtonProps={{ danger: true, disabled: !reason.trim() }} onCancel={() => setRejecting(null)} onOk={() => { if (rejecting && reason.trim()) submit(rejecting, rejectedValue, reason.trim()); setRejecting(null); }}>
+        <Input.TextArea value={reason} onChange={event => setReason(event.target.value)} placeholder="请输入驳回原因" autoSize={{ minRows: 3, maxRows: 6 }} />
+      </Modal>
+    </>
+  );
+};
+
+/** 审计变更记录。摘要行负责谁在何时做了什么，展开区只读展示旧值与新值。 */
+const AuditTrailRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const actorRef = fieldRefOf(block, "actorFieldRef");
+  const actionRef = fieldRefOf(block, "actionFieldRef");
+  const timeRef = fieldRefOf(block, "timeFieldRef");
+  const resultRef = fieldRefOf(block, "resultFieldRef");
+  const fieldNameRef = fieldRefOf(block, "fieldNameFieldRef");
+  const beforeRef = fieldRefOf(block, "beforeFieldRef");
+  const afterRef = fieldRefOf(block, "afterFieldRef");
+  const pageSize = Math.max(1, Number(block.props?.pageSize ?? 5) || 5);
+  const [page, setPage] = React.useState(1);
+  if (!bound || !actorRef || !actionRef || !timeRef) {
+    return <BlockShell block={block} title={title} testid="audit-trail"><BlockEmpty hint="审计记录尚未绑定操作人、动作和时间字段" /></BlockShell>;
+  }
+  const rows = bound.rows.slice((page - 1) * pageSize, page * pageSize);
+  return (
+    <BlockShell block={block} title={title} testid="audit-trail" extra={<Typography.Text type="secondary">共 {bound.rows.length} 条</Typography.Text>}>
+      {rows.length === 0 ? <BlockEmpty hint="还没有审计记录" /> : (
+        <Collapse
+          size="small"
+          items={rows.map(row => ({
+            key: row.id,
+            forceRender: true,
+            label: <Flex justify="space-between" gap={8} wrap><Space size={6}><Typography.Text strong>{String(row.values?.[actorRef] ?? "未知用户")}</Typography.Text><span>{String(row.values?.[actionRef] ?? "执行操作")}</span>{resultRef && row.values?.[resultRef] != null && <Tag>{String(row.values[resultRef])}</Tag>}</Space><Typography.Text type="secondary">{String(row.values?.[timeRef] ?? "")}</Typography.Text></Flex>,
+            children: <div>{fieldNameRef && row.values?.[fieldNameRef] != null && <Typography.Paragraph style={{ marginBottom: 8 }}>变更字段：<Typography.Text strong>{String(row.values[fieldNameRef])}</Typography.Text></Typography.Paragraph>}<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}><div><Typography.Text type="secondary">变更前</Typography.Text><Typography.Paragraph code style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>{beforeRef ? String(row.values?.[beforeRef] ?? "空") : "未记录"}</Typography.Paragraph></div><div><Typography.Text type="secondary">变更后</Typography.Text><Typography.Paragraph code style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>{afterRef ? String(row.values?.[afterRef] ?? "空") : "未记录"}</Typography.Paragraph></div></div></div>,
+          }))}
+          onChange={keys => { const key = Array.isArray(keys) ? keys[0] : keys; if (key) onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: String(key) }); }}
+        />
+      )}
+      {bound.rows.length > pageSize && <Flex justify="end" style={{ marginTop: 10 }}><Pagination size="small" current={page} pageSize={pageSize} total={bound.rows.length} showSizeChanger={false} onChange={setPage} /></Flex>}
+    </BlockShell>
+  );
+};
+
+type ImportPhase = "select" | "mapping" | "validated" | "submitted";
+
+/** 数据导入向导。文件、映射、校验和提交共享一条明确的状态链。 */
+const DataImportWizardRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const sourceRef = fieldRefOf(block, "sourceFieldRef");
+  const targetRef = fieldRefOf(block, "targetFieldRef");
+  const statusRef = fieldRefOf(block, "statusFieldRef");
+  const sampleRef = fieldRefOf(block, "sampleFieldRef");
+  const issueRef = fieldRefOf(block, "issueFieldRef");
+  const initialPhase = ["mapping", "validated", "submitted"].includes(String(block.props?.initialPhase))
+    ? String(block.props?.initialPhase) as ImportPhase : "select";
+  const [phase, setPhase] = React.useState<ImportPhase>(initialPhase);
+  const [fileName, setFileName] = React.useState(String(block.props?.initialFileName ?? ""));
+  if (!bound || !sourceRef || !targetRef || !statusRef) {
+    return <BlockShell block={block} title={title} testid="data-import-wizard"><BlockEmpty hint="导入向导尚未绑定源字段、目标字段和校验状态" /></BlockShell>;
+  }
+  const invalidRows = bound.rows.filter(row => ["invalid", "error", "失败"].includes(String(row.values?.[statusRef] ?? "").toLowerCase()));
+  const columns: TableColumnsType<RuntimeRow> = [
+    { title: "源字段", key: "source", render: (_, row) => String(row.values?.[sourceRef] ?? "未命名字段") },
+    { title: "目标字段", key: "target", render: (_, row) => String(row.values?.[targetRef] ?? "未映射") },
+    ...(sampleRef ? [{ title: "样例", key: "sample", render: (_: unknown, row: RuntimeRow) => String(row.values?.[sampleRef] ?? "-") }] : []),
+    { title: "校验", key: "status", render: (_, row) => { const value = String(row.values?.[statusRef] ?? "pending"); const failed = ["invalid", "error", "失败"].includes(value.toLowerCase()); return <Space size={4}><Tag color={failed ? "error" : value === "valid" || value === "通过" ? "success" : "default"}>{failed ? "异常" : value === "valid" || value === "通过" ? "通过" : "待校验"}</Tag>{failed && issueRef && <Typography.Text type="danger">{String(row.values?.[issueRef] ?? "")}</Typography.Text>}</Space>; } },
+  ];
+  const step = phase === "select" ? 0 : phase === "mapping" ? 1 : phase === "validated" ? 2 : 3;
+  return (
+    <BlockShell block={block} title={title} testid="data-import-wizard">
+      <Steps size="small" current={step} items={[{ title: "选择文件" }, { title: "字段映射" }, { title: "校验数据" }, { title: "提交结果" }]} style={{ marginBottom: 16 }} />
+      {phase === "select" && <Upload.Dragger accept=".csv,.xls,.xlsx" maxCount={1} beforeUpload={file => { setFileName(file.name); setPhase("mapping"); return false; }}><Typography.Paragraph strong>选择要导入的数据文件</Typography.Paragraph><Typography.Text type="secondary">支持 CSV、XLS 和 XLSX</Typography.Text></Upload.Dragger>}
+      {phase !== "select" && phase !== "submitted" && <><Alert type="info" showIcon message={fileName || "已选择导入文件"} description={`共 ${bound.rows.length} 个字段映射，${invalidRows.length} 个异常`} style={{ marginBottom: 10 }} /><Table size="small" rowKey="id" columns={columns} dataSource={bound.rows} pagination={false} scroll={{ x: "max-content" }} /></>}
+      {phase === "submitted" && <Result status="info" title="导入任务已提交" subTitle="后台处理结果会通过任务状态回传，区块不会伪造成功数量。" />}
+      <Flex justify="end" gap={8} style={{ marginTop: 12 }}>
+        {phase !== "select" && phase !== "submitted" && <Button onClick={() => setPhase(phase === "validated" ? "mapping" : "select")}>上一步</Button>}
+        {phase === "mapping" && <Button type="primary" onClick={() => { onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "validateImport", fileName }); setPhase("validated"); }}>校验数据</Button>}
+        {phase === "validated" && <Button type="primary" disabled={invalidRows.length > 0} onClick={() => { onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "startImport", fileName }); setPhase("submitted"); }}>开始导入</Button>}
+      </Flex>
+    </BlockShell>
+  );
+};
+
+/** 异步任务监控。进度完全来自实体数据，区块只提交取消和重试意图。 */
+const AsyncTaskMonitorRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const titleRef = fieldRefOf(block, "titleFieldRef");
+  const statusRef = fieldRefOf(block, "statusFieldRef");
+  const currentRef = fieldRefOf(block, "progressCurrentFieldRef");
+  const totalRef = fieldRefOf(block, "progressTotalFieldRef");
+  const errorRef = fieldRefOf(block, "errorFieldRef");
+  const resultRef = fieldRefOf(block, "resultFieldRef");
+  const timeRef = fieldRefOf(block, "timeFieldRef");
+  if (!bound || !titleRef || !statusRef) return <BlockShell block={block} title={title} testid="async-task-monitor"><BlockEmpty hint="任务监控尚未绑定标题和状态字段" /></BlockShell>;
+  const pending = String(block.props?.pendingValue ?? "pending");
+  const running = String(block.props?.runningValue ?? "running");
+  const succeeded = String(block.props?.succeededValue ?? "succeeded");
+  const failed = String(block.props?.failedValue ?? "failed");
+  const canceled = String(block.props?.canceledValue ?? "canceled");
+  return <BlockShell block={block} title={title} testid="async-task-monitor" extra={<Typography.Text type="secondary">{bound.rows.length} 个任务</Typography.Text>}>
+    {bound.rows.length === 0 ? <BlockEmpty hint="当前没有后台任务" /> : <List size="small" dataSource={bound.rows} renderItem={row => {
+      const status = String(row.values?.[statusRef] ?? pending);
+      const current = currentRef ? Number(row.values?.[currentRef] ?? 0) : 0;
+      const total = totalRef ? Number(row.values?.[totalRef] ?? 0) : 0;
+      const percent = total > 0 ? Math.min(100, Math.round(current / total * 100)) : 0;
+      const active = status === pending || status === running;
+      const statusLabel = status === succeeded ? "已完成" : status === failed ? "失败" : status === canceled ? "已取消" : status === running ? "执行中" : "等待中";
+      return <List.Item actions={[
+        ...(active && block.props?.cancelable !== false ? [<Button key="cancel" size="small" danger onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "cancelTask" })}>取消</Button>] : []),
+        ...(status === failed ? [<Button key="retry" size="small" onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "retryTask" })}>重试</Button>] : []),
+        ...(status === succeeded && resultRef ? [<Button key="result" size="small" type="link" onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id, result: row.values?.[resultRef] })}>查看结果</Button>] : []),
+      ]}>
+        <List.Item.Meta title={<Space><Typography.Text strong>{String(row.values?.[titleRef] ?? "未命名任务")}</Typography.Text><Tag color={status === succeeded ? "success" : status === failed ? "error" : status === running ? "processing" : "default"}>{statusLabel}</Tag></Space>} description={<div>{timeRef && <Typography.Text type="secondary">{String(row.values?.[timeRef] ?? "")}</Typography.Text>}{active && total > 0 && <Progress percent={percent} size="small" format={() => `${current}/${total}`} />}{status === failed && errorRef && <Alert type="error" showIcon message={String(row.values?.[errorRef] ?? "任务执行失败")} style={{ marginTop: 6 }} />}</div>} />
+      </List.Item>;
+    }} />}
+  </BlockShell>;
+};
+
+const PERMISSION_KEYS = ["viewFieldRef", "createFieldRef", "editFieldRef", "deleteFieldRef"] as const;
+const PERMISSION_LABELS = ["查看", "新建", "编辑", "删除"] as const;
+
+/** 权限矩阵。固定四类动作，保留 inherit/allow/deny 三态并统一提交。 */
+const PermissionMatrixRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const resourceRef = fieldRefOf(block, "resourceFieldRef");
+  const refs = PERMISSION_KEYS.map(key => fieldRefOf(block, key));
+  const [changes, setChanges] = React.useState<Record<string, Record<string, string>>>({});
+  if (!bound || !resourceRef || !refs[0]) return <BlockShell block={block} title={title} testid="permission-matrix"><BlockEmpty hint="权限矩阵尚未绑定资源和查看权限字段" /></BlockShell>;
+  const valueOf = (row: RuntimeRow, ref: string) => changes[row.id]?.[ref] ?? String(row.values?.[ref] ?? "inherit");
+  const setValue = (rowId: string, ref: string, value: string) => setChanges(current => ({ ...current, [rowId]: { ...current[rowId], [ref]: value } }));
+  const columns: TableColumnsType<RuntimeRow> = [{ title: "资源", key: "resource", fixed: "left", render: (_, row) => <Typography.Text strong>{String(row.values?.[resourceRef] ?? "未命名资源")}</Typography.Text> }, ...refs.flatMap((ref, index) => !ref ? [] : [{ title: <Checkbox checked={bound.rows.length > 0 && bound.rows.every(row => valueOf(row, ref) === "allow")} indeterminate={bound.rows.some(row => valueOf(row, ref) === "allow") && !bound.rows.every(row => valueOf(row, ref) === "allow")} onChange={event => bound.rows.forEach(row => setValue(row.id, ref, event.target.checked ? "allow" : "deny"))}>{PERMISSION_LABELS[index]}</Checkbox>, key: ref, align: "center" as const, render: (_: unknown, row: RuntimeRow) => <Segmented size="small" value={valueOf(row, ref)} options={[{ label: "继承", value: "inherit" }, { label: "允许", value: "allow" }, { label: "拒绝", value: "deny" }]} onChange={value => setValue(row.id, ref, String(value))} /> }])];
+  const save = () => onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "savePermissions", changes: bound.rows.map(row => ({ rowId: row.id, permissions: Object.fromEntries(refs.flatMap(ref => ref ? [[ref, valueOf(row, ref)]] : [])) })) });
+  return <BlockShell block={block} title={title} testid="permission-matrix" extra={<Button size="small" type="primary" disabled={Object.keys(changes).length === 0} onClick={save}>保存权限</Button>}>
+    {bound.rows.length === 0 ? <BlockEmpty hint="还没有可配置的资源" /> : <Table size="small" rowKey="id" columns={columns} dataSource={bound.rows} pagination={false} scroll={{ x: "max-content" }} />}
+  </BlockShell>;
+};
+
+/** 数据导出任务。范围、字段、格式和上限在提交前全部显式确认。 */
+const DataExportPanelRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, selection, fieldLabelOf, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound) return <BlockShell block={block} title={title} testid="data-export-panel"><BlockEmpty hint="导出面板尚未绑定有效实体" /></BlockShell>;
+  const fields = fieldRefListOf(block, "fieldRefs").length > 0 ? fieldRefListOf(block, "fieldRefs") : Array.from(new Set(bound.rows.flatMap(row => Object.keys(row.values ?? {})))).slice(0, 8);
+  const selectedRowIds = selection?.rowIds?.[bound.entityRef] ?? [];
+  const [scope, setScope] = React.useState(selectedRowIds.length > 0 ? "selected" : "all");
+  const [selectedFields, setSelectedFields] = React.useState<string[]>(fields);
+  const [format, setFormat] = React.useState("xlsx");
+  const [submitted, setSubmitted] = React.useState(false);
+  const limit = Math.max(1, Number(block.props?.maxRows ?? 2000) || 2000);
+  const exportCount = scope === "selected" ? selectedRowIds.length : Math.min(bound.rows.length, limit);
+  if (fields.length === 0) return <BlockShell block={block} title={title} testid="data-export-panel"><BlockEmpty hint="当前实体没有可导出的字段" /></BlockShell>;
+  const submit = () => {
+    onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "startExport", scope, rowIds: scope === "selected" ? selectedRowIds : undefined, fieldRefs: selectedFields, format, maxRows: limit });
+    setSubmitted(true);
+  };
+  return <BlockShell block={block} title={title} testid="data-export-panel">
+    {submitted ? <Result status="info" title="导出任务已提交" subTitle="文件生成完成后由宿主提供下载结果。" extra={<Button onClick={() => setSubmitted(false)}>继续导出</Button>} /> : <Space direction="vertical" size={12} style={{ width: "100%" }}>
+      <Alert type="warning" showIcon message={`单次最多导出 ${limit} 条`} description={bound.rows.length > limit ? `当前共 ${bound.rows.length} 条，将按上限导出。` : `当前范围预计导出 ${exportCount} 条。`} />
+      <div><Typography.Text strong>导出范围</Typography.Text><Segmented block value={scope} options={[{ label: `全部记录 ${bound.rows.length}`, value: "all" }, { label: `已选记录 ${selectedRowIds.length}`, value: "selected", disabled: selectedRowIds.length === 0 }]} onChange={value => setScope(String(value))} style={{ marginTop: 6 }} /></div>
+      <div><Flex justify="space-between"><Typography.Text strong>导出字段</Typography.Text><Button type="link" size="small" onClick={() => setSelectedFields(selectedFields.length === fields.length ? [] : fields)}>{selectedFields.length === fields.length ? "清空" : "全选"}</Button></Flex><Checkbox.Group value={selectedFields} onChange={values => setSelectedFields(values.map(String))} style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>{fields.map(field => <Checkbox key={field} value={field}>{fieldLabelOf?.(bound.entityRef, field) ?? field}</Checkbox>)}</Checkbox.Group></div>
+      <Flex justify="space-between" align="center"><Segmented value={format} options={[{ label: "Excel", value: "xlsx" }, { label: "CSV", value: "csv" }]} onChange={value => setFormat(String(value))} /><Button type="primary" disabled={selectedFields.length === 0 || exportCount === 0} onClick={submit}>开始导出</Button></Flex>
+    </Space>}
+  </BlockShell>;
+};
+
+type BulkEditMode = "unchanged" | "set" | "clear";
+
+/** 批量编辑。每个字段独立声明保持、改成或清空，只作用于现有选择态。 */
+const BulkEditPanelRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, selection, fieldLabelOf, fieldTypeOf, enumOptionsOf, fieldSchemaOf, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  if (!bound) return <BlockShell block={block} title={title} testid="bulk-edit-panel"><BlockEmpty hint="批量编辑尚未绑定有效实体" /></BlockShell>;
+  const fields = boundFieldIds(block, bound.rows);
+  const rowIds = selection?.rowIds?.[bound.entityRef] ?? [];
+  const [modes, setModes] = React.useState<Record<string, BulkEditMode>>({});
+  const changedFields = fields.filter(field => (modes[field] ?? "unchanged") !== "unchanged");
+  if (fields.length === 0) return <BlockShell block={block} title={title} testid="bulk-edit-panel"><BlockEmpty hint="当前实体没有可批量编辑的字段" /></BlockShell>;
+  return <BlockShell block={block} title={title} testid="bulk-edit-panel" extra={<Badge count={rowIds.length} showZero overflowCount={999} />}>
+    {rowIds.length === 0 ? <Alert type="warning" showIcon message="请先在目标列表选择要编辑的记录" /> : <ProForm submitter={{ searchConfig: { submitText: `更新 ${rowIds.length} 条记录` }, resetButtonProps: false }} onFinish={async values => { const updates = Object.fromEntries(changedFields.map(field => [field, modes[field] === "clear" ? null : values[field]])); onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "bulkEdit", rowIds, values: updates }); return true; }}>
+      <Alert type="info" showIcon message={`将批量处理 ${rowIds.length} 条记录`} description="每个字段可保持不变、改成指定值或清空；保持不变的字段不会进入提交数据。" style={{ marginBottom: 12 }} />
+      {fields.map(field => { const mode = modes[field] ?? "unchanged"; return <div key={field} style={{ display: "grid", gridTemplateColumns: "140px minmax(0, 1fr)", gap: 10, alignItems: "start", marginBottom: 10 }}><Select value={mode} options={[{ label: "保持不变", value: "unchanged" }, { label: "改成", value: "set" }, { label: "清空", value: "clear" }]} onChange={value => setModes(current => ({ ...current, [field]: value }))} />{mode === "set" ? formItemFor({ entityRef: bound.entityRef, fieldLabelOf, fieldTypeOf, enumOptionsOf, fieldSchemaOf, entityRows }, field) : <Typography.Text type="secondary" style={{ paddingTop: 6 }}>{fieldLabelOf?.(bound.entityRef, field) ?? field}{mode === "clear" ? "将被清空" : "保留原值"}</Typography.Text>}</div>; })}
+    </ProForm>}
+  </BlockShell>;
+};
+
+/** 角色/团队成员分配。当前成员与候选成员是两个集合，加入和移除分别提交。 */
+const MemberAssignmentRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "").trim();
+  const bound = rowsOfBinding(block, entityRows);
+  const nameRef = fieldRefOf(block, "nameFieldRef");
+  const membershipRef = fieldRefOf(block, "membershipFieldRef");
+  const accountRef = fieldRefOf(block, "accountFieldRef");
+  const avatarRef = fieldRefOf(block, "avatarFieldRef");
+  const statusRef = fieldRefOf(block, "statusFieldRef");
+  const memberValue = String(block.props?.memberValue ?? "member");
+  const [tab, setTab] = React.useState("members");
+  const [keyword, setKeyword] = React.useState("");
+  const [selected, setSelected] = React.useState<string[]>([]);
+  const [localMembership, setLocalMembership] = React.useState<Record<string, string>>({});
+  if (!bound || !nameRef || !membershipRef) return <BlockShell block={block} title={title} testid="member-assignment"><BlockEmpty hint="成员分配尚未绑定姓名和成员状态字段" /></BlockShell>;
+  const isMember = (row: RuntimeRow) => (localMembership[row.id] ?? String(row.values?.[membershipRef] ?? "")) === memberValue;
+  const members = bound.rows.filter(isMember);
+  const candidates = bound.rows.filter(row => !isMember(row));
+  const source = tab === "members" ? members : candidates;
+  const normalized = keyword.trim().toLowerCase();
+  const shown = source.filter(row => !normalized || [row.values?.[nameRef], accountRef ? row.values?.[accountRef] : ""].some(value => String(value ?? "").toLowerCase().includes(normalized)));
+  const remove = (rowId: string) => { setLocalMembership(current => ({ ...current, [rowId]: "candidate" })); onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "removeMembers", rowIds: [rowId] }); };
+  const add = () => { setLocalMembership(current => ({ ...current, ...Object.fromEntries(selected.map(id => [id, memberValue])) })); onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "addMembers", rowIds: selected }); setSelected([]); setTab("members"); };
+  return <BlockShell block={block} title={title} testid="member-assignment" extra={tab === "candidates" ? <Button size="small" type="primary" disabled={selected.length === 0} onClick={add}>添加所选 {selected.length || ""}</Button> : undefined}>
+    <Segmented block value={tab} options={[{ label: `当前成员 ${members.length}`, value: "members" }, { label: `可添加 ${candidates.length}`, value: "candidates" }]} onChange={value => { setTab(String(value)); setSelected([]); }} style={{ marginBottom: 8 }} />
+    <Input allowClear value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜索姓名或账号" style={{ marginBottom: 8 }} />
+    {shown.length === 0 ? <BlockEmpty hint={normalized ? "没有匹配的成员" : tab === "members" ? "当前还没有成员" : "没有可添加的候选人"} /> : <List size="small" dataSource={shown} renderItem={row => <List.Item actions={tab === "members" ? [<Button key="remove" type="link" danger size="small" onClick={() => remove(row.id)}>移除</Button>] : undefined}>
+      {tab === "candidates" && <Checkbox checked={selected.includes(row.id)} onChange={event => setSelected(current => event.target.checked ? [...current, row.id] : current.filter(id => id !== row.id))} style={{ marginInlineEnd: 10 }} />}
+      <List.Item.Meta avatar={<Avatar src={avatarRef ? String(row.values?.[avatarRef] ?? "") : undefined}>{String(row.values?.[nameRef] ?? "?").slice(0, 1)}</Avatar>} title={<Space>{String(row.values?.[nameRef] ?? "未命名成员")}{statusRef && row.values?.[statusRef] != null && <Tag>{String(row.values[statusRef])}</Tag>}</Space>} description={accountRef ? String(row.values?.[accountRef] ?? "") : undefined} />
+    </List.Item>} />}
+  </BlockShell>;
+};
+
+const chartColors = (palette?: { primary: string; categorical: readonly string[] }) =>
+  palette?.categorical?.length ? [...palette.categorical] : ["#1677ff", "#52c41a", "#faad14", "#722ed1", "#13c2c2", "#eb2f96"];
+
+function AnalysisChart({ block, title, testid, option, hint }: { block: ExperienceBlockInstance; title: string; testid: string; option?: Record<string, unknown>; hint: string }) {
+  return <BlockShell block={block} title={title} testid={testid}>{option ? <React.Suspense fallback={<div style={{ height: 190 }} />}><LazyEchartsChart option={option} height={190} ariaLabel={title || testid} /></React.Suspense> : <BlockEmpty hint={hint} />}</BlockShell>;
+}
+
+function groupedValues(rows: RuntimeRow[], dimension: string, valueRef?: string) {
+  const values = new Map<string, number>();
+  for (const row of rows) { const key = String(row.values?.[dimension] ?? "").trim(); if (!key) continue; values.set(key, (values.get(key) ?? 0) + (valueRef ? Number(row.values?.[valueRef] ?? 0) : 1)); }
+  return [...values.entries()].map(([name, value]) => ({ name, value }));
+}
+
+const WaterfallChartRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, chartPalette }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "增减构成"); const bound = rowsOfBinding(block, entityRows); const categoryRef = fieldRefOf(block, "categoryFieldRef"); const valueRef = fieldRefOf(block, "valueFieldRef");
+  if (!bound || !categoryRef || !valueRef) return <AnalysisChart block={block} title={title} testid="waterfall-chart" hint="瀑布图尚未绑定分类和增减值字段" />;
+  const data = groupedValues(bound.rows, categoryRef, valueRef); let running = 0; const base: number[] = []; const values: number[] = [];
+  for (const item of data) { const next = running + item.value; base.push(Math.min(running, next)); values.push(Math.abs(item.value)); running = next; }
+  const option = data.length ? { animation: false, tooltip: { trigger: "axis", confine: true }, grid: { left: 8, right: 8, top: 16, bottom: 8, containLabel: true }, xAxis: { type: "category", data: data.map(item => item.name), axisLabel: { fontSize: 10 } }, yAxis: { type: "value" }, series: [{ type: "bar", stack: "total", silent: true, itemStyle: { color: "transparent" }, data: base }, { type: "bar", stack: "total", data: values, itemStyle: { color: (params: { dataIndex: number }) => data[params.dataIndex].value >= 0 ? chartColors(chartPalette)[0] : "#cf1322" }, label: { show: true, position: "top", formatter: (params: { dataIndex: number }) => String(data[params.dataIndex].value) } }] } : undefined;
+  return <AnalysisChart block={block} title={title} testid="waterfall-chart" option={option} hint="当前分类没有可计算的增减值" />;
+};
+
+const FunnelChartRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, chartPalette }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "转化漏斗"); const bound = rowsOfBinding(block, entityRows); const stageRef = fieldRefOf(block, "stageFieldRef"); const valueRef = fieldRefOf(block, "valueFieldRef");
+  if (!bound || !stageRef) return <AnalysisChart block={block} title={title} testid="funnel-chart" hint="漏斗图尚未绑定阶段字段" />;
+  const raw = groupedValues(bound.rows, stageRef, valueRef); const declared = Array.isArray(block.props?.stages) ? block.props.stages.map(String) : []; const data = (declared.length ? declared.flatMap(name => { const item = raw.find(row => row.name === name); return item ? [item] : []; }) : raw.sort((a, b) => b.value - a.value)); const first = data[0]?.value || 1;
+  const option = data.length ? { animation: false, color: chartColors(chartPalette), tooltip: { trigger: "item", confine: true, formatter: (params: { name: string; value: number }) => `${params.name}<br/>${params.value} · ${Math.round(params.value / first * 100)}%` }, series: [{ type: "funnel", left: "5%", right: "5%", top: 8, bottom: 8, minSize: "20%", sort: "none", gap: 2, label: { show: true, position: "inside", color: "#fff", formatter: (params: { name: string; value: number }) => `${params.name} ${params.value}` }, data }] } : undefined;
+  return <AnalysisChart block={block} title={title} testid="funnel-chart" option={option} hint="当前没有可用的漏斗阶段" />;
+};
+
+const DistributionHistogramRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, chartPalette }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "数值分布"); const bound = rowsOfBinding(block, entityRows); const valueRef = fieldRefOf(block, "valueFieldRef"); const values = bound && valueRef ? bound.rows.map(row => Number(row.values?.[valueRef])).filter(Number.isFinite) : [];
+  if (!bound || !valueRef) return <AnalysisChart block={block} title={title} testid="distribution-histogram" hint="直方图尚未绑定数值字段" />;
+  const bins = Math.max(3, Math.min(12, Number(block.props?.bins ?? 6))); const min = values.length ? Math.min(...values) : 0; const max = values.length ? Math.max(...values) : 0; const width = max === min ? 1 : (max - min) / bins; const counts = Array.from({ length: bins }, () => 0); values.forEach(value => { counts[Math.min(bins - 1, Math.floor((value - min) / width))] += 1; }); const labels = counts.map((_, index) => `${(min + index * width).toFixed(0)}–${(min + (index + 1) * width).toFixed(0)}`);
+  const option = values.length ? { animation: false, tooltip: { trigger: "axis", confine: true }, grid: { left: 8, right: 8, top: 16, bottom: 8, containLabel: true }, xAxis: { type: "category", data: labels, axisLabel: { fontSize: 9, rotate: 25 } }, yAxis: { type: "value", minInterval: 1 }, series: [{ type: "bar", data: counts, barGap: 0, itemStyle: { color: chartColors(chartPalette)[0] } }] } : undefined;
+  return <AnalysisChart block={block} title={title} testid="distribution-histogram" option={option} hint="当前没有可计算的数值" />;
+};
+
+const HeatmapMatrixRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, chartPalette }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "热力矩阵"); const bound = rowsOfBinding(block, entityRows); const xRef = fieldRefOf(block, "xFieldRef"); const yRef = fieldRefOf(block, "yFieldRef"); const valueRef = fieldRefOf(block, "valueFieldRef");
+  if (!bound || !xRef || !yRef) return <AnalysisChart block={block} title={title} testid="heatmap-matrix" hint="热力矩阵尚未绑定横纵维度" />;
+  const xs = Array.from(new Set(bound.rows.map(row => String(row.values?.[xRef] ?? "")).filter(Boolean))).slice(0, 12); const ys = Array.from(new Set(bound.rows.map(row => String(row.values?.[yRef] ?? "")).filter(Boolean))).slice(0, 10); const map = new Map<string, number>(); bound.rows.forEach(row => { const x = String(row.values?.[xRef] ?? ""); const y = String(row.values?.[yRef] ?? ""); if (x && y) map.set(`${x}\u0000${y}`, (map.get(`${x}\u0000${y}`) ?? 0) + (valueRef ? Number(row.values?.[valueRef] ?? 0) : 1)); }); const data = ys.flatMap((y, yi) => xs.map((x, xi) => [xi, yi, map.get(`${x}\u0000${y}`) ?? 0])); const max = Math.max(1, ...data.map(item => Number(item[2])));
+  const option = xs.length && ys.length ? { animation: false, tooltip: { position: "top", confine: true }, grid: { left: 8, right: 8, top: 8, bottom: 24, containLabel: true }, xAxis: { type: "category", data: xs, splitArea: { show: true }, axisLabel: { fontSize: 9 } }, yAxis: { type: "category", data: ys, splitArea: { show: true }, axisLabel: { fontSize: 9 } }, visualMap: { min: 0, max, show: false, inRange: { color: ["#f0f5ff", chartColors(chartPalette)[0]] } }, series: [{ type: "heatmap", data, label: { show: data.length <= 48 } }] } : undefined;
+  return <AnalysisChart block={block} title={title} testid="heatmap-matrix" option={option} hint="当前没有可组成矩阵的数据" />;
+};
+
+const TreemapBreakdownRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, chartPalette }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "层级构成"); const bound = rowsOfBinding(block, entityRows); const labelRef = fieldRefOf(block, "labelFieldRef"); const valueRef = fieldRefOf(block, "valueFieldRef"); const parentRef = fieldRefOf(block, "parentFieldRef");
+  if (!bound || !labelRef || !valueRef) return <AnalysisChart block={block} title={title} testid="treemap-breakdown" hint="矩形树图尚未绑定名称和数值字段" />;
+  const nodes = new Map(bound.rows.map(row => [row.id, { name: String(row.values?.[labelRef] ?? row.id), value: Number(row.values?.[valueRef] ?? 0), children: [] as Array<Record<string, unknown>> }])); const roots: Array<Record<string, unknown>> = []; bound.rows.forEach(row => { const node = nodes.get(row.id)!; const parent = parentRef ? String(row.values?.[parentRef] ?? "") : ""; const owner = parent ? nodes.get(parent) : undefined; if (owner) owner.children.push(node); else roots.push(node); }); roots.forEach(node => { if (!Array.isArray(node.children) || node.children.length === 0) delete node.children; });
+  const option = roots.length ? { animation: false, color: chartColors(chartPalette), tooltip: { confine: true }, series: [{ type: "treemap", roam: false, nodeClick: false, breadcrumb: { show: false }, label: { show: true, formatter: "{b}\n{c}" }, upperLabel: { show: true, height: 20 }, data: roots }] } : undefined;
+  return <AnalysisChart block={block} title={title} testid="treemap-breakdown" option={option} hint="当前没有可组成层级构成的数据" />;
+};
+
+const GaugeProgressRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, chartPalette }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "目标完成度"); const bound = rowsOfBinding(block, entityRows); const currentRef = fieldRefOf(block, "currentFieldRef"); const targetRef = fieldRefOf(block, "targetFieldRef"); const row = bound?.rows[0];
+  if (!bound || !currentRef || !targetRef || !row) return <AnalysisChart block={block} title={title} testid="gauge-progress" hint="仪表图尚未绑定当前值和目标值" />;
+  const current = Number(row.values?.[currentRef] ?? 0); const target = Number(row.values?.[targetRef] ?? 0); const percent = target > 0 ? Math.max(0, Math.min(100, current / target * 100)) : 0; const option = target > 0 ? { animation: false, series: [{ type: "gauge", startAngle: 210, endAngle: -30, min: 0, max: 100, progress: { show: true, width: 12, itemStyle: { color: chartColors(chartPalette)[0] } }, axisLine: { lineStyle: { width: 12 } }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, pointer: { show: false }, detail: { valueAnimation: false, formatter: `${percent.toFixed(0)}%\n${current} / ${target}`, fontSize: 18, offsetCenter: [0, "12%"] }, data: [{ value: percent }] }] } : undefined;
+  return <AnalysisChart block={block} title={title} testid="gauge-progress" option={option} hint="目标值必须大于零" />;
+};
+
+const GanttScheduleRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, chartPalette }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "计划排期"); const bound = rowsOfBinding(block, entityRows); const labelRef = fieldRefOf(block, "labelFieldRef"); const startRef = fieldRefOf(block, "startFieldRef"); const endRef = fieldRefOf(block, "endFieldRef"); const groupRef = fieldRefOf(block, "groupFieldRef");
+  if (!bound || !labelRef || !startRef || !endRef) return <AnalysisChart block={block} title={title} testid="gantt-schedule" hint="甘特排期尚未绑定名称、开始和结束字段" />;
+  const rows = bound.rows.flatMap((row, index) => { const start = dayjs(String(row.values?.[startRef] ?? "")); const end = dayjs(String(row.values?.[endRef] ?? "")); return start.isValid() && end.isValid() && !end.isBefore(start) ? [{ name: String(row.values?.[labelRef] ?? row.id), group: groupRef ? String(row.values?.[groupRef] ?? "") : "", value: [index, start.valueOf(), end.valueOf()] }] : []; }); const colors = chartColors(chartPalette);
+  const option = rows.length ? { animation: false, tooltip: { confine: true, formatter: (p: { data: { name: string; group: string; value: number[] } }) => `${p.data.name}<br/>${dayjs(p.data.value[1]).format("MM-DD")} 至 ${dayjs(p.data.value[2]).format("MM-DD")}${p.data.group ? `<br/>${p.data.group}` : ""}` }, grid: { left: 80, right: 10, top: 8, bottom: 24 }, xAxis: { type: "time", minInterval: 86400000, axisLabel: { fontSize: 9, formatter: (value: number) => dayjs(value).format("MM-DD") } }, yAxis: { type: "category", data: rows.map(row => row.name), axisLabel: { fontSize: 9, width: 68, overflow: "truncate" } }, series: [{ type: "custom", renderItem: (params: { dataIndex: number; coordSys: { x: number; y: number; width: number; height: number } }, api: { value: (i: number) => number; coord: (v: number[]) => number[]; size: (v: number[]) => number[] }) => { const category = api.value(0); const start = api.coord([api.value(1), category]); const end = api.coord([api.value(2), category]); const height = Math.min(18, api.size([0, 1])[1] * 0.55); return { type: "rect", shape: { x: start[0], y: start[1] - height / 2, width: Math.max(2, end[0] - start[0]), height }, style: { fill: colors[params.dataIndex % colors.length] } }; }, encode: { x: [1, 2], y: 0 }, data: rows }] } : undefined;
+  return <AnalysisChart block={block} title={title} testid="gantt-schedule" option={option} hint="当前没有有效排期记录" />;
+};
+
+const SankeyFlowRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, chartPalette }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "关系流向"); const bound = rowsOfBinding(block, entityRows); const sourceRef = fieldRefOf(block, "sourceFieldRef"); const targetRef = fieldRefOf(block, "targetFieldRef"); const valueRef = fieldRefOf(block, "valueFieldRef");
+  if (!bound || !sourceRef || !targetRef) return <AnalysisChart block={block} title={title} testid="sankey-flow" hint="桑基图尚未绑定来源和目标字段" />;
+  const links = bound.rows.flatMap(row => { const source = String(row.values?.[sourceRef] ?? "").trim(); const target = String(row.values?.[targetRef] ?? "").trim(); return source && target && source !== target ? [{ source, target, value: valueRef ? Number(row.values?.[valueRef] ?? 0) : 1 }] : []; }); const nodes = Array.from(new Set(links.flatMap(link => [link.source, link.target]))).map(name => ({ name }));
+  const option = links.length ? { animation: false, color: chartColors(chartPalette), tooltip: { trigger: "item", confine: true }, series: [{ type: "sankey", left: 8, right: 8, top: 8, bottom: 8, emphasis: { focus: "adjacency" }, nodeAlign: "justify", lineStyle: { color: "gradient", curveness: 0.5 }, label: { fontSize: 10 }, data: nodes, links }] } : undefined;
+  return <AnalysisChart block={block} title={title} testid="sankey-flow" option={option} hint="当前没有有效的来源到目标关系" />;
+};
+
+function quartiles(values: number[]) { const sorted = [...values].sort((a, b) => a - b); const at = (p: number) => { const index = (sorted.length - 1) * p; const low = Math.floor(index); const high = Math.ceil(index); return sorted[low] + (sorted[high] - sorted[low]) * (index - low); }; return sorted.length ? [sorted[0], at(0.25), at(0.5), at(0.75), sorted[sorted.length - 1]] : [0, 0, 0, 0, 0]; }
+
+const BoxPlotDistributionRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, chartPalette }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "箱线分布"); const bound = rowsOfBinding(block, entityRows); const categoryRef = fieldRefOf(block, "categoryFieldRef"); const valueRef = fieldRefOf(block, "valueFieldRef");
+  if (!bound || !categoryRef || !valueRef) return <AnalysisChart block={block} title={title} testid="boxplot-distribution" hint="箱线图尚未绑定分类和数值字段" />;
+  const groups = new Map<string, number[]>(); bound.rows.forEach(row => { const category = String(row.values?.[categoryRef] ?? "").trim(); const value = Number(row.values?.[valueRef]); if (category && Number.isFinite(value)) groups.set(category, [...(groups.get(category) ?? []), value]); }); const entries = [...groups.entries()]; const option = entries.length ? { animation: false, tooltip: { trigger: "item", confine: true }, grid: { left: 8, right: 8, top: 12, bottom: 8, containLabel: true }, xAxis: { type: "category", data: entries.map(([name]) => name), axisLabel: { fontSize: 9 } }, yAxis: { type: "value" }, series: [{ type: "boxplot", data: entries.map(([, values]) => quartiles(values)), itemStyle: { color: chartColors(chartPalette)[0], borderColor: chartColors(chartPalette)[0] } }] } : undefined;
+  return <AnalysisChart block={block} title={title} testid="boxplot-distribution" option={option} hint="当前没有可计算的分类数值" />;
+};
+
+const RadarComparisonRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, chartPalette, fieldLabelOf }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const title = String(block.props?.title ?? "多维对比"); const bound = rowsOfBinding(block, entityRows); const nameRef = fieldRefOf(block, "nameFieldRef"); const fields = fieldRefListOf(block, "metricFieldRefs").slice(0, 8);
+  if (!bound || !nameRef || fields.length < 3) return <AnalysisChart block={block} title={title} testid="radar-comparison" hint="雷达对比至少需要名称和三个数值维度" />;
+  const maxima = fields.map(field => Math.max(1, ...bound.rows.map(row => Number(row.values?.[field] ?? 0)))); const option = bound.rows.length ? { animation: false, color: chartColors(chartPalette), tooltip: { trigger: "item", confine: true }, radar: { radius: "62%", indicator: fields.map((field, index) => ({ name: fieldLabelOf?.(bound.entityRef, field) ?? field, max: maxima[index] * 1.15 })), axisName: { fontSize: 9 } }, series: [{ type: "radar", data: bound.rows.slice(0, 5).map(row => ({ name: String(row.values?.[nameRef] ?? row.id), value: fields.map(field => Number(row.values?.[field] ?? 0)), areaStyle: { opacity: 0.08 } })) }] } : undefined;
+  return <AnalysisChart block={block} title={title} testid="radar-comparison" option={option} hint="当前没有可对比的记录" />;
+};
+
+const AlertRuleEditorRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0]; const nameRef = fieldRefOf(block, "nameFieldRef"); const queryRef = fieldRefOf(block, "queryFieldRef"); const thresholdRef = fieldRefOf(block, "thresholdFieldRef"); const severityRef = fieldRefOf(block, "severityFieldRef"); const [name, setName] = React.useState(row && nameRef ? String(row.values?.[nameRef] ?? "") : ""); const [query, setQuery] = React.useState(row && queryRef ? String(row.values?.[queryRef] ?? "") : ""); const [threshold, setThreshold] = React.useState(row && thresholdRef ? Number(row.values?.[thresholdRef] ?? 0) : 0); const [severity, setSeverity] = React.useState(row && severityRef ? String(row.values?.[severityRef] ?? "warning") : "warning"); const [evaluation, setEvaluation] = React.useState("1m");
+  if (!bound || !nameRef || !queryRef || !thresholdRef) return <BlockShell block={block} title={String(block.props?.title ?? "告警规则")} testid="alert-rule-editor"><BlockEmpty hint="告警规则尚未绑定名称、查询和阈值字段" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "告警规则")} testid="alert-rule-editor"><Space direction="vertical" style={{ width: "100%" }}><Input value={name} onChange={event => setName(event.target.value)} placeholder="规则名称" /><Input.TextArea value={query} onChange={event => setQuery(event.target.value)} rows={3} placeholder="查询表达式" /><Flex gap={8} wrap><Input type="number" value={threshold} onChange={event => setThreshold(Number(event.target.value))} prefix="阈值" style={{ flex: 1, minWidth: 130 }} /><Select value={severity} onChange={setSeverity} options={[{ label: "提示", value: "info" }, { label: "警告", value: "warning" }, { label: "严重", value: "critical" }]} style={{ minWidth: 110 }} /></Flex><Segmented block value={evaluation} options={[{ label: "每 1 分钟", value: "1m" }, { label: "每 5 分钟", value: "5m" }, { label: "每 15 分钟", value: "15m" }]} onChange={value => setEvaluation(String(value))} /><Button type="primary" block disabled={!name.trim() || !query.trim() || !Number.isFinite(threshold)} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row?.id, operation: row ? "updateAlertRule" : "createAlertRule", values: { name, query, threshold, severity, evaluation }, targets: targetIdsOf(block) })}>保存并启用规则</Button></Space></BlockShell>;
+};
+
+const MuteTimingScheduleRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const nameRef = fieldRefOf(block, "nameFieldRef"); const weekdaysRef = fieldRefOf(block, "weekdaysFieldRef"); const startRef = fieldRefOf(block, "startTimeFieldRef"); const endRef = fieldRefOf(block, "endTimeFieldRef"); const timezoneRef = fieldRefOf(block, "timezoneFieldRef");
+  if (!bound || !nameRef || !weekdaysRef || !startRef || !endRef) return <BlockShell block={block} title={String(block.props?.title ?? "静默时段")} testid="mute-timing-schedule"><BlockEmpty hint="静默时段尚未绑定名称、星期和起止时间" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "静默时段")} testid="mute-timing-schedule" extra={<Button size="small" type="primary" onClick={() => onAction?.("createRequest", { entityRef: bound.entityRef, operation: "createMuteTiming" })}>新增时段</Button>}><List size="small" dataSource={bound.rows} locale={{ emptyText: <BlockEmpty hint="当前没有静默时段" /> }} renderItem={row => <List.Item actions={[<Button key="edit" size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "editMuteTiming" })}>编辑</Button>, <Popconfirm key="delete" title="删除这个静默时段？" onConfirm={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "deleteMuteTiming", targets: targetIdsOf(block) })}><Button size="small" danger>删除</Button></Popconfirm>]}><List.Item.Meta title={String(row.values?.[nameRef] ?? "未命名时段")} description={`${String(row.values?.[weekdaysRef] ?? "")} · ${String(row.values?.[startRef] ?? "")}–${String(row.values?.[endRef] ?? "")}${timezoneRef ? ` · ${String(row.values?.[timezoneRef] ?? "")}` : ""}`} /></List.Item>} /></BlockShell>;
+};
+
+const ContactPointManagerRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const nameRef = fieldRefOf(block, "nameFieldRef"); const typeRef = fieldRefOf(block, "typeFieldRef"); const addressRef = fieldRefOf(block, "addressFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const [testing, setTesting] = React.useState("");
+  if (!bound || !nameRef || !typeRef || !addressRef) return <BlockShell block={block} title={String(block.props?.title ?? "通知联络点")} testid="contact-point-manager"><BlockEmpty hint="联络点尚未绑定名称、类型和地址字段" /></BlockShell>;
+  const test = (rowId: string) => { setTesting(rowId); onAction?.("actionTrigger", { entityRef: bound.entityRef, rowId, operation: "testContactPoint", targets: targetIdsOf(block) }); window.setTimeout(() => setTesting(""), 400); };
+  return <BlockShell block={block} title={String(block.props?.title ?? "通知联络点")} testid="contact-point-manager" extra={<Button size="small" type="primary" onClick={() => onAction?.("createRequest", { entityRef: bound.entityRef, operation: "createContactPoint" })}>新增联络点</Button>}><List size="small" dataSource={bound.rows} renderItem={row => <List.Item actions={[<Button key="test" size="small" loading={testing === row.id} onClick={() => test(row.id)}>测试</Button>, <Button key="edit" size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "editContactPoint" })}>编辑</Button>]}><List.Item.Meta title={<Space>{String(row.values?.[nameRef] ?? "未命名联络点")}{statusRef && <Badge status={String(row.values?.[statusRef] ?? "") === "ready" ? "success" : "default"} />}</Space>} description={`${String(row.values?.[typeRef] ?? "")} · ${String(row.values?.[addressRef] ?? "")}`} /></List.Item>} /></BlockShell>;
+};
+
+const ReferenceManyManagerRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const relationRef = fieldRefOf(block, "relationFieldRef"); const linkedValue = String(block.props?.linkedValue ?? "linked"); const [tab, setTab] = React.useState("linked"); const [selected, setSelected] = React.useState<string[]>([]); const [local, setLocal] = React.useState<Record<string, string>>({});
+  if (!bound || !titleRef || !relationRef) return <BlockShell block={block} title={String(block.props?.title ?? "关联记录")} testid="reference-many-manager"><BlockEmpty hint="关联记录管理尚未绑定标题和关系状态字段" /></BlockShell>;
+  const isLinked = (row: RuntimeRow) => (local[row.id] ?? String(row.values?.[relationRef] ?? "")) === linkedValue; const linked = bound.rows.filter(isLinked); const available = bound.rows.filter(row => !isLinked(row)); const shown = tab === "linked" ? linked : available; const add = () => { setLocal(current => ({ ...current, ...Object.fromEntries(selected.map(id => [id, linkedValue])) })); onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "linkRecords", rowIds: selected, targets: targetIdsOf(block) }); setSelected([]); };
+  return <BlockShell block={block} title={String(block.props?.title ?? "关联记录")} testid="reference-many-manager" extra={tab === "available" ? <Button size="small" type="primary" disabled={!selected.length} onClick={add}>关联所选 {selected.length || ""}</Button> : undefined}><Segmented block value={tab} options={[{ label: `已关联 ${linked.length}`, value: "linked" }, { label: `可关联 ${available.length}`, value: "available" }]} onChange={value => { setTab(String(value)); setSelected([]); }} /><List size="small" dataSource={shown} renderItem={row => <List.Item actions={tab === "linked" ? [<Button key="unlink" danger type="link" size="small" onClick={() => { setLocal(current => ({ ...current, [row.id]: "available" })); onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "unlinkRecords", rowIds: [row.id], targets: targetIdsOf(block) }); }}>解除</Button>] : undefined}>{tab === "available" && <Checkbox checked={selected.includes(row.id)} onChange={event => setSelected(current => event.target.checked ? [...current, row.id] : current.filter(id => id !== row.id))} style={{ marginInlineEnd: 8 }} />}{String(row.values?.[titleRef] ?? "未命名记录")}</List.Item>} /></BlockShell>;
+};
+
+const GlobalSearchPaletteRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const categoryRef = fieldRefOf(block, "categoryFieldRef"); const descRef = fieldRefOf(block, "descFieldRef"); const [keyword, setKeyword] = React.useState("");
+  if (!bound || !titleRef) return <BlockShell block={block} title={String(block.props?.title ?? "全局搜索")} testid="global-search-palette"><BlockEmpty hint="全局搜索尚未绑定标题字段" /></BlockShell>;
+  const normalized = keyword.trim().toLowerCase(); const rows = bound.rows.filter(row => normalized && [row.values?.[titleRef], descRef ? row.values?.[descRef] : ""].some(value => String(value ?? "").toLowerCase().includes(normalized))).slice(0, 12);
+  return <BlockShell block={block} title={String(block.props?.title ?? "全局搜索")} testid="global-search-palette"><Input.Search autoFocus allowClear value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜索页面、记录或操作" />{!normalized ? <Typography.Paragraph type="secondary" style={{ margin: "12px 0 0" }}>输入关键词后显示匹配结果</Typography.Paragraph> : <List size="small" dataSource={rows} locale={{ emptyText: <BlockEmpty hint="没有匹配结果" /> }} renderItem={row => <List.Item onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}><List.Item.Meta title={String(row.values?.[titleRef] ?? "未命名结果")} description={[categoryRef ? row.values?.[categoryRef] : "", descRef ? row.values?.[descRef] : ""].filter(Boolean).map(String).join(" · ")} /></List.Item>} />}</BlockShell>;
+};
+
+const LiveChangeReviewRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const actionRef = fieldRefOf(block, "actionFieldRef"); const timeRef = fieldRefOf(block, "timeFieldRef"); const actorRef = fieldRefOf(block, "actorFieldRef"); const [ignored, setIgnored] = React.useState<string[]>([]); const rows = bound?.rows.filter(row => !ignored.includes(row.id)) ?? [];
+  if (!bound || !titleRef || !actionRef) return <BlockShell block={block} title={String(block.props?.title ?? "实时变更")} testid="live-change-review"><BlockEmpty hint="实时变更尚未绑定标题和动作字段" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "实时变更")} testid="live-change-review" extra={<Badge count={rows.length} showZero />}><Alert type="info" showIcon message="检测到其他用户的实时变更" description="变更不会直接覆盖当前视图；确认刷新后由宿主重新读取数据。" style={{ marginBottom: 8 }} />{rows.length ? <List size="small" dataSource={rows} renderItem={row => <List.Item actions={[<Button key="ignore" size="small" onClick={() => setIgnored(current => [...current, row.id])}>忽略</Button>, <Button key="refresh" size="small" type="primary" onClick={() => onAction?.("actionTrigger", { entityRef: bound.entityRef, rowId: row.id, operation: "refreshAfterLiveChange", targets: targetIdsOf(block) })}>刷新查看</Button>]}><List.Item.Meta title={<Space><Tag>{String(row.values?.[actionRef] ?? "更新")}</Tag>{String(row.values?.[titleRef] ?? "未命名记录")}</Space>} description={[actorRef ? row.values?.[actorRef] : "", timeRef ? row.values?.[timeRef] : ""].filter(Boolean).map(String).join(" · ")} /></List.Item>} /> : <BlockEmpty hint="没有待处理的实时变更" />}</BlockShell>;
+};
+
+const AvailabilityPlannerRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const dayRef = fieldRefOf(block, "dayFieldRef"); const startRef = fieldRefOf(block, "startTimeFieldRef"); const endRef = fieldRefOf(block, "endTimeFieldRef"); const enabledRef = fieldRefOf(block, "enabledFieldRef"); const timezone = String(block.props?.timezone ?? "Asia/Shanghai");
+  if (!bound || !dayRef || !startRef || !endRef) return <BlockShell block={block} title={String(block.props?.title ?? "可用时间")} testid="availability-planner"><BlockEmpty hint="可用时间尚未绑定星期和起止时间" /></BlockShell>;
+  const days = Array.from(new Set(bound.rows.map(row => String(row.values?.[dayRef] ?? "")).filter(Boolean)));
+  return <BlockShell block={block} title={String(block.props?.title ?? "可用时间")} testid="availability-planner" extra={<Tag>{timezone}</Tag>}><Collapse size="small" defaultActiveKey={days} items={days.map(day => ({ key: day, label: day, children: <List size="small" dataSource={bound.rows.filter(row => String(row.values?.[dayRef] ?? "") === day)} renderItem={row => { const enabled = !enabledRef || ![false, "false", "disabled"].includes(row.values?.[enabledRef] as never); return <List.Item actions={[<Button key="edit" size="small" disabled={!enabled} onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "editAvailability" })}>编辑</Button>]}><Space><Badge status={enabled ? "success" : "default"} /><Typography.Text delete={!enabled}>{String(row.values?.[startRef] ?? "")}–{String(row.values?.[endRef] ?? "")}</Typography.Text></Space></List.Item>; }} /> }))} /></BlockShell>;
+};
+
+const BookingSlotPickerRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const startRef = fieldRefOf(block, "startFieldRef"); const endRef = fieldRefOf(block, "endFieldRef"); const availableRef = fieldRefOf(block, "availableFieldRef"); const capacityRef = fieldRefOf(block, "capacityFieldRef"); const [selected, setSelected] = React.useState("");
+  if (!bound || !startRef || !endRef) return <BlockShell block={block} title={String(block.props?.title ?? "选择时段")} testid="booking-slot-picker"><BlockEmpty hint="时段选择器尚未绑定开始和结束时间" /></BlockShell>;
+  const dates = Array.from(new Set(bound.rows.map(row => dayjs(String(row.values?.[startRef] ?? "")).format("YYYY-MM-DD")))); const [date, setDate] = React.useState(dates[0] ?? ""); const rows = bound.rows.filter(row => dayjs(String(row.values?.[startRef] ?? "")).format("YYYY-MM-DD") === date);
+  return <BlockShell block={block} title={String(block.props?.title ?? "选择时段")} testid="booking-slot-picker"><Segmented block value={date} options={dates.slice(0, 5).map(value => ({ value, label: dayjs(value).format("MM-DD") }))} onChange={value => { setDate(String(value)); setSelected(""); }} /><Flex gap={8} wrap style={{ marginTop: 10 }}>{rows.map(row => { const available = !availableRef || ![false, "false", "full"].includes(row.values?.[availableRef] as never); return <Button key={row.id} type={selected === row.id ? "primary" : "default"} disabled={!available} onClick={() => setSelected(row.id)}>{dayjs(String(row.values?.[startRef])).format("HH:mm")}–{dayjs(String(row.values?.[endRef])).format("HH:mm")}{capacityRef ? ` · ${String(row.values?.[capacityRef] ?? 0)} 位` : ""}</Button>; })}</Flex><Button block type="primary" disabled={!selected} style={{ marginTop: 12 }} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: selected, operation: "selectBookingSlot", targets: targetIdsOf(block) })}>确认所选时段</Button></BlockShell>;
+};
+
+const ScheduleConflictResolverRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const startRef = fieldRefOf(block, "startFieldRef"); const endRef = fieldRefOf(block, "endFieldRef"); const resourceRef = fieldRefOf(block, "resourceFieldRef");
+  if (!bound || !titleRef || !startRef || !endRef || !resourceRef) return <BlockShell block={block} title={String(block.props?.title ?? "排期冲突")} testid="schedule-conflict-resolver"><BlockEmpty hint="冲突解析尚未绑定标题、资源和起止时间" /></BlockShell>;
+  const conflicts: Array<{ left: RuntimeRow; right: RuntimeRow }> = []; for (let i = 0; i < bound.rows.length; i += 1) for (let j = i + 1; j < bound.rows.length; j += 1) { const left = bound.rows[i]; const right = bound.rows[j]; if (String(left.values?.[resourceRef] ?? "") !== String(right.values?.[resourceRef] ?? "")) continue; const ls = dayjs(String(left.values?.[startRef])); const le = dayjs(String(left.values?.[endRef])); const rs = dayjs(String(right.values?.[startRef])); const re = dayjs(String(right.values?.[endRef])); if (ls.isValid() && le.isValid() && rs.isValid() && re.isValid() && ls.isBefore(re) && rs.isBefore(le)) conflicts.push({ left, right }); }
+  return <BlockShell block={block} title={String(block.props?.title ?? "排期冲突")} testid="schedule-conflict-resolver" extra={<Badge count={conflicts.length} showZero />}>{conflicts.length ? <List size="small" dataSource={conflicts} renderItem={({ left, right }) => <List.Item actions={[<Button key="resolve" type="primary" size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowIds: [left.id, right.id], operation: "resolveScheduleConflict", targets: targetIdsOf(block) })}>调整排期</Button>]}><List.Item.Meta title={`${String(left.values?.[titleRef] ?? left.id)} ↔ ${String(right.values?.[titleRef] ?? right.id)}`} description={`${String(left.values?.[resourceRef] ?? "")} · ${dayjs(String(left.values?.[startRef])).format("MM-DD HH:mm")}–${dayjs(String(left.values?.[endRef])).format("HH:mm")}`} /></List.Item>} /> : <Result status="success" title="当前没有排期冲突" />}</BlockShell>;
+};
+
+const StackTracePanelRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const functionRef = fieldRefOf(block, "functionFieldRef"); const fileRef = fieldRefOf(block, "fileFieldRef"); const lineRef = fieldRefOf(block, "lineFieldRef"); const codeRef = fieldRefOf(block, "codeFieldRef"); const inAppRef = fieldRefOf(block, "inAppFieldRef");
+  if (!bound || !functionRef || !fileRef || !lineRef) return <BlockShell block={block} title={String(block.props?.title ?? "异常堆栈")} testid="stack-trace-panel"><BlockEmpty hint="堆栈尚未绑定函数、文件和行号字段" /></BlockShell>;
+  const rows = [...bound.rows].sort((a, b) => Number(a.values?.[lineRef] ?? 0) - Number(b.values?.[lineRef] ?? 0));
+  return <BlockShell block={block} title={String(block.props?.title ?? "异常堆栈")} testid="stack-trace-panel"><Collapse size="small" defaultActiveKey={rows.find(row => inAppRef && [true, "true", "in_app"].includes(row.values?.[inAppRef] as never))?.id} items={rows.map(row => ({ key: row.id, label: <Space><Tag color={inAppRef && [true, "true", "in_app"].includes(row.values?.[inAppRef] as never) ? "blue" : "default"}>{inAppRef && [true, "true", "in_app"].includes(row.values?.[inAppRef] as never) ? "应用" : "依赖"}</Tag><Typography.Text code>{String(row.values?.[functionRef] ?? "anonymous")}</Typography.Text><Typography.Text type="secondary">{String(row.values?.[fileRef] ?? "")}:{String(row.values?.[lineRef] ?? "")}</Typography.Text></Space>, children: <div><pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>{codeRef ? String(row.values?.[codeRef] ?? "暂无源码上下文") : "暂无源码上下文"}</pre><Button type="link" size="small" onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}>查看帧详情</Button></div> }))} /></BlockShell>;
+};
+
+const EventBreadcrumbTimelineRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const messageRef = fieldRefOf(block, "messageFieldRef"); const categoryRef = fieldRefOf(block, "categoryFieldRef"); const levelRef = fieldRefOf(block, "levelFieldRef"); const timeRef = fieldRefOf(block, "timeFieldRef"); const [scope, setScope] = React.useState("all");
+  if (!bound || !messageRef || !timeRef) return <BlockShell block={block} title={String(block.props?.title ?? "事件轨迹")} testid="event-breadcrumb-timeline"><BlockEmpty hint="事件轨迹尚未绑定消息和时间字段" /></BlockShell>;
+  const rows = [...bound.rows].sort((a, b) => dayjs(String(a.values?.[timeRef])).valueOf() - dayjs(String(b.values?.[timeRef])).valueOf()).filter(row => scope === "all" || String(row.values?.[levelRef ?? ""] ?? "") === "error");
+  return <BlockShell block={block} title={String(block.props?.title ?? "事件轨迹")} testid="event-breadcrumb-timeline" extra={levelRef ? <Segmented size="small" value={scope} options={[{ label: "全部", value: "all" }, { label: "仅错误", value: "error" }]} onChange={value => setScope(String(value))} /> : undefined}><Timeline items={rows.map(row => ({ color: String(row.values?.[levelRef ?? ""] ?? "") === "error" ? "red" : "blue", children: <div><Space><Tag>{categoryRef ? String(row.values?.[categoryRef] ?? "事件") : "事件"}</Tag><Typography.Text>{String(row.values?.[messageRef] ?? "")}</Typography.Text></Space><div><Typography.Text type="secondary">{String(row.values?.[timeRef] ?? "")}</Typography.Text></div></div> }))} /></BlockShell>;
+};
+
+const SuspectCommitPanelRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const hashRef = fieldRefOf(block, "hashFieldRef"); const authorRef = fieldRefOf(block, "authorFieldRef"); const messageRef = fieldRefOf(block, "messageFieldRef"); const timeRef = fieldRefOf(block, "timeFieldRef"); const scoreRef = fieldRefOf(block, "scoreFieldRef");
+  if (!bound || !hashRef || !messageRef) return <BlockShell block={block} title={String(block.props?.title ?? "可疑提交")} testid="suspect-commit-panel"><BlockEmpty hint="可疑提交尚未绑定哈希和说明字段" /></BlockShell>;
+  const rows = [...bound.rows].sort((a, b) => Number(b.values?.[scoreRef ?? ""] ?? 0) - Number(a.values?.[scoreRef ?? ""] ?? 0));
+  return <BlockShell block={block} title={String(block.props?.title ?? "可疑提交")} testid="suspect-commit-panel"><List size="small" dataSource={rows} renderItem={row => <List.Item actions={[<Button key="cause" size="small" onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "markSuspectCommit", targets: targetIdsOf(block) })}>标记根因</Button>]}><List.Item.Meta title={<Space><Typography.Text code>{String(row.values?.[hashRef] ?? "").slice(0, 8)}</Typography.Text><Typography.Text strong>{String(row.values?.[messageRef] ?? "")}</Typography.Text></Space>} description={[authorRef ? row.values?.[authorRef] : "", timeRef ? row.values?.[timeRef] : "", scoreRef ? `相关度 ${String(row.values?.[scoreRef] ?? 0)}%` : ""].filter(Boolean).map(String).join(" · ")} /></List.Item>} /></BlockShell>;
+};
+
+const ConnectionTimelineRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const typeRef = fieldRefOf(block, "typeFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const timeRef = fieldRefOf(block, "timeFieldRef"); const summaryRef = fieldRefOf(block, "summaryFieldRef"); const recordsRef = fieldRefOf(block, "recordsFieldRef"); const [scope, setScope] = React.useState("all");
+  if (!bound || !typeRef || !statusRef || !timeRef) return <BlockShell block={block} title={String(block.props?.title ?? "连接时间线")} testid="connection-timeline"><BlockEmpty hint="连接时间线尚未绑定类型、状态和时间字段" /></BlockShell>;
+  const rows = [...bound.rows].sort((a, b) => dayjs(String(b.values?.[timeRef])).valueOf() - dayjs(String(a.values?.[timeRef])).valueOf()).filter(row => scope === "all" || String(row.values?.[statusRef] ?? "") === scope);
+  return <BlockShell block={block} title={String(block.props?.title ?? "连接时间线")} testid="connection-timeline" extra={<Segmented size="small" value={scope} options={[{ label: "全部", value: "all" }, { label: "失败", value: "failed" }]} onChange={value => setScope(String(value))} />}><Timeline items={rows.map(row => { const status = String(row.values?.[statusRef] ?? ""); return { color: status === "failed" ? "red" : status === "running" ? "blue" : "green", children: <Flex justify="space-between" gap={8}><div><Space><Tag>{String(row.values?.[typeRef] ?? "事件")}</Tag><Typography.Text strong>{status}</Typography.Text></Space><div>{summaryRef ? String(row.values?.[summaryRef] ?? "") : ""}</div><Typography.Text type="secondary">{String(row.values?.[timeRef] ?? "")}{recordsRef ? ` · ${String(row.values?.[recordsRef] ?? 0)} 条` : ""}</Typography.Text></div>{status === "failed" && <Button size="small" onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "retryConnectionJob", targets: targetIdsOf(block) })}>重试</Button>}</Flex> }; })} /></BlockShell>;
+};
+
+const SchemaChangeReviewRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const streamRef = fieldRefOf(block, "streamFieldRef"); const fieldRef = fieldRefOf(block, "fieldNameFieldRef"); const changeRef = fieldRefOf(block, "changeTypeFieldRef"); const beforeRef = fieldRefOf(block, "beforeFieldRef"); const afterRef = fieldRefOf(block, "afterFieldRef"); const breakingRef = fieldRefOf(block, "breakingFieldRef");
+  if (!bound || !streamRef || !fieldRef || !changeRef) return <BlockShell block={block} title={String(block.props?.title ?? "Schema 变更")} testid="schema-change-review"><BlockEmpty hint="Schema 审查尚未绑定数据流、字段和变更类型" /></BlockShell>;
+  const breaking = bound.rows.filter(row => breakingRef && [true, "true", "breaking"].includes(row.values?.[breakingRef] as never));
+  return <BlockShell block={block} title={String(block.props?.title ?? "Schema 变更")} testid="schema-change-review" extra={<Tag color={breaking.length ? "red" : "blue"}>{breaking.length} 项破坏性变更</Tag>}><Table size="small" rowKey="id" pagination={false} dataSource={bound.rows} columns={[{ title: "数据流", render: (_, row) => String(row.values?.[streamRef] ?? "") }, { title: "字段", render: (_, row) => String(row.values?.[fieldRef] ?? "") }, { title: "变更", render: (_, row) => <Tag color={breakingRef && [true, "true", "breaking"].includes(row.values?.[breakingRef] as never) ? "red" : "blue"}>{String(row.values?.[changeRef] ?? "")}</Tag> }, { title: "前 → 后", render: (_, row) => `${beforeRef ? String(row.values?.[beforeRef] ?? "-") : "-"} → ${afterRef ? String(row.values?.[afterRef] ?? "-") : "-"}` }]} /><Flex justify="end" gap={8} style={{ marginTop: 10 }}><Button onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "rejectSchemaChanges", rowIds: bound.rows.map(row => row.id), targets: targetIdsOf(block) })}>暂不应用</Button><Button type="primary" disabled={breaking.length > 0 && block.props?.allowBreaking !== true} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "applySchemaChanges", rowIds: bound.rows.map(row => row.id), targets: targetIdsOf(block) })}>应用安全变更</Button></Flex></BlockShell>;
+};
+
+const StreamStatusMonitorRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const nameRef = fieldRefOf(block, "nameFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const lastSyncRef = fieldRefOf(block, "lastSyncFieldRef"); const freshnessRef = fieldRefOf(block, "freshnessFieldRef"); const recordsRef = fieldRefOf(block, "recordsFieldRef"); const errorRef = fieldRefOf(block, "errorFieldRef");
+  if (!bound || !nameRef || !statusRef) return <BlockShell block={block} title={String(block.props?.title ?? "数据流状态")} testid="stream-status-monitor"><BlockEmpty hint="数据流监控尚未绑定名称和状态字段" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "数据流状态")} testid="stream-status-monitor"><List size="small" dataSource={bound.rows} renderItem={row => { const status = String(row.values?.[statusRef] ?? ""); return <List.Item actions={status === "failed" ? [<Button key="retry" size="small" onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "retryStream", targets: targetIdsOf(block) })}>重试</Button>] : undefined}><List.Item.Meta title={<Space><Badge status={status === "failed" ? "error" : status === "running" ? "processing" : "success"} /><Typography.Text strong>{String(row.values?.[nameRef] ?? "未命名数据流")}</Typography.Text></Space>} description={<div>{[lastSyncRef ? row.values?.[lastSyncRef] : "", freshnessRef ? `新鲜度 ${String(row.values?.[freshnessRef] ?? "-")}` : "", recordsRef ? `${String(row.values?.[recordsRef] ?? 0)} 条` : ""].filter(Boolean).map(String).join(" · ")}{status === "failed" && errorRef && <div style={{ color: "#cf1322" }}>{String(row.values?.[errorRef] ?? "同步失败")}</div>}</div>} /></List.Item>; }} /></BlockShell>;
+};
+
+const ConnectionMappingPanelRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const sourceRef = fieldRefOf(block, "sourceFieldRef"); const targetRef = fieldRefOf(block, "targetFieldRef"); const transformRef = fieldRefOf(block, "transformFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef");
+  if (!bound || !sourceRef || !targetRef) return <BlockShell block={block} title={String(block.props?.title ?? "字段映射")} testid="connection-mapping-panel"><BlockEmpty hint="字段映射尚未绑定来源和目标字段" /></BlockShell>;
+  const invalid = bound.rows.filter(row => statusRef && String(row.values?.[statusRef] ?? "") === "invalid");
+  return <BlockShell block={block} title={String(block.props?.title ?? "字段映射")} testid="connection-mapping-panel" extra={<Tag color={invalid.length ? "red" : "green"}>{invalid.length ? `${invalid.length} 项异常` : "映射有效"}</Tag>}><List size="small" dataSource={bound.rows} renderItem={row => <List.Item actions={[<Button key="edit" size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "editConnectionMapping" })}>编辑</Button>]}><List.Item.Meta title={<Space><Typography.Text code>{String(row.values?.[sourceRef] ?? "")}</Typography.Text><span>→</span><Typography.Text code>{String(row.values?.[targetRef] ?? "未映射")}</Typography.Text></Space>} description={transformRef ? String(row.values?.[transformRef] ?? "直接映射") : "直接映射"} /></List.Item>} /><Button block type="primary" disabled={invalid.length > 0} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "saveConnectionMappings", rowIds: bound.rows.map(row => row.id), targets: targetIdsOf(block) })}>保存映射</Button></BlockShell>;
+};
+
+const IssueCommandHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const priorityRef = fieldRefOf(block, "priorityFieldRef"); const assigneeRef = fieldRefOf(block, "assigneeFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !statusRef || !row) return <BlockShell block={block} testid="issue-command-header"><BlockEmpty hint="问题操作区尚未绑定当前问题、标题和状态" /></BlockShell>;
+  const status = String(row.values?.[statusRef] ?? "unresolved"); const complete = ["resolved", "ignored", "archived"].includes(status); const submit = (operation: string) => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="issue-command-header"><Flex align="center" justify="space-between" gap={12} wrap><div><Space wrap><Typography.Title level={5} style={{ margin: 0 }}>{String(row.values?.[titleRef] ?? "未命名问题")}</Typography.Title><Tag color={complete ? "green" : "red"}>{status}</Tag>{priorityRef && <Tag>{String(row.values?.[priorityRef] ?? "未定优先级")}</Tag>}</Space>{assigneeRef && <Typography.Text type="secondary" style={{ display: "block", marginTop: 4 }}>负责人：{String(row.values?.[assigneeRef] ?? "未分配")}</Typography.Text>}</div><Space>{complete ? <Button type="primary" onClick={() => submit("reopenIssue")}>重新打开</Button> : <><Button type="primary" onClick={() => submit("resolveIssue")}>解决</Button><Popconfirm title="归档后将从活动问题中移除，确认继续？" onConfirm={() => submit("archiveIssue")}><Button>归档</Button></Popconfirm></>}</Space></Flex></BlockShell>;
+};
+
+const ConnectionControlHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const syncRef = fieldRefOf(block, "syncStatusFieldRef"); const scheduleRef = fieldRefOf(block, "scheduleFieldRef"); const breakingRef = fieldRefOf(block, "breakingFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !statusRef || !syncRef || !row) return <BlockShell block={block} testid="connection-control-header"><BlockEmpty hint="连接控制尚未绑定标题、连接状态和同步状态" /></BlockShell>;
+  const status = String(row.values?.[statusRef] ?? "inactive"); const sync = String(row.values?.[syncRef] ?? "idle"); const running = sync === "running"; const locked = status === "locked"; const breaking = Boolean(breakingRef && [true, "true", "breaking"].includes(row.values?.[breakingRef] as never)); const action = (operation: string) => onAction?.("actionTrigger", { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) });
+  return <BlockShell block={block} testid="connection-control-header"><Flex align="center" justify="space-between" gap={12} wrap><div><Space><Badge status={running ? "processing" : status === "active" ? "success" : "default"} /><Typography.Title level={5} style={{ margin: 0 }}>{String(row.values?.[titleRef] ?? "未命名连接")}</Typography.Title>{locked && <Tag>已锁定</Tag>}</Space>{scheduleRef && <Typography.Text type="secondary" style={{ display: "block", marginTop: 4 }}>计划：{String(row.values?.[scheduleRef] ?? "手动")}</Typography.Text>}</div><Space>{running ? <Popconfirm title="确认取消当前运行任务？" onConfirm={() => action("cancelConnectionJob")}><Button danger>取消运行</Button></Popconfirm> : <Button type="primary" disabled={status !== "active" || breaking} onClick={() => action("startConnectionSync")}>立即同步</Button>}<Tooltip title={breaking ? "存在破坏性 Schema 变更，暂不能启用" : locked ? "连接已锁定" : undefined}><span><Switch checked={status === "active"} disabled={locked || breaking || running} onChange={checked => action(checked ? "enableConnection" : "disableConnection")} /></span></Tooltip></Space></Flex>{breaking && <Alert type="warning" showIcon message="存在破坏性 Schema 变更，确认处理前不能启动同步或启用连接" style={{ marginTop: 10 }} />}</BlockShell>;
+};
+
+const EventUserCountMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const eventRef = fieldRefOf(block, "eventCountFieldRef"); const userRef = fieldRefOf(block, "userCountFieldRef"); const row = bound?.rows[0];
+  if (!bound || !eventRef || !userRef || !row) return <BlockShell block={block} title={String(block.props?.title ?? "问题影响")} testid="event-user-count-metrics"><BlockEmpty hint="影响指标尚未绑定事件数和用户数字段" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "问题影响")} testid="event-user-count-metrics"><Flex gap={24} wrap><Statistic title="事件总数" value={Number(row.values?.[eventRef] ?? 0)} /><Statistic title={`受影响用户${block.props?.periodLabel ? `（${String(block.props.periodLabel)}）` : ""}`} value={Number(row.values?.[userRef] ?? 0)} /></Flex></BlockShell>;
+};
+
+const JobRunMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const bytesRef = fieldRefOf(block, "bytesFieldRef"); const recordsRef = fieldRefOf(block, "recordsFieldRef"); const rejectedRef = fieldRefOf(block, "rejectedFieldRef"); const durationRef = fieldRefOf(block, "durationFieldRef"); const attemptsRef = fieldRefOf(block, "attemptsFieldRef"); const row = bound?.rows[0];
+  if (!bound || !recordsRef || !durationRef || !row) return <BlockShell block={block} title={String(block.props?.title ?? "运行指标")} testid="job-run-metrics"><BlockEmpty hint="运行指标尚未绑定记录数和耗时字段" /></BlockShell>;
+  const bytes = bytesRef ? Number(row.values?.[bytesRef] ?? 0) : 0; const byteText = bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`;
+  return <BlockShell block={block} title={String(block.props?.title ?? "运行指标")} testid="job-run-metrics"><Flex gap={20} wrap><Statistic title="已加载记录" value={Number(row.values?.[recordsRef] ?? 0)} />{bytesRef && <Statistic title="数据量" value={byteText} />}{rejectedRef && <Statistic title="拒绝记录" value={Number(row.values?.[rejectedRef] ?? 0)} valueStyle={{ color: Number(row.values?.[rejectedRef] ?? 0) ? "#cf1322" : undefined }} />}<Statistic title="耗时" value={String(row.values?.[durationRef] ?? "-")} />{attemptsRef && <Statistic title="尝试次数" value={Number(row.values?.[attemptsRef] ?? 1)} />}</Flex></BlockShell>;
+};
+
+const OccurrenceEvidenceSummaryRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const envRef = fieldRefOf(block, "environmentFieldRef"); const codeRef = fieldRefOf(block, "statusCodeFieldRef"); const reasonRef = fieldRefOf(block, "reasonFieldRef"); const successRef = fieldRefOf(block, "lastSuccessFieldRef"); const downtimeRef = fieldRefOf(block, "downtimeFieldRef"); const row = bound?.rows[0]; const fields = [["环境", envRef], ["状态码", codeRef], ["失败原因", reasonRef], ["上次成功", successRef], ["中断时长", downtimeRef]] as const;
+  if (!bound || !row || fields.every(([, ref]) => !ref)) return <BlockShell block={block} title={String(block.props?.title ?? "发生摘要")} testid="occurrence-evidence-summary"><BlockEmpty hint="发生摘要尚未绑定证据字段" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "发生摘要")} testid="occurrence-evidence-summary"><Flex gap={28} wrap>{fields.flatMap(([label, ref]) => ref ? [<div key={label}><Typography.Text type="secondary">{label}</Typography.Text><Typography.Title level={5} style={{ margin: "4px 0 0", maxWidth: 300 }}>{String(row.values?.[ref] ?? "-")}</Typography.Title></div>] : [])}</Flex></BlockShell>;
+};
+
+const ConnectionRouteSummaryRenderer: ExperienceBlockRenderer = ({ block, children, entityRows }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const sourceRef = fieldRefOf(block, "sourceFieldRef"); const targetRef = fieldRefOf(block, "targetFieldRef"); const sourceVersionRef = fieldRefOf(block, "sourceVersionFieldRef"); const targetVersionRef = fieldRefOf(block, "targetVersionFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const row = bound?.rows[0];
+  if (!bound || !sourceRef || !targetRef || !row) return <BlockShell block={block} title={String(block.props?.title ?? "连接路径")} testid="connection-route-summary"><BlockEmpty hint="连接路径尚未绑定来源和目标字段" /></BlockShell>;
+  const endpoint = (label: string, ref: string, versionRef?: string) => <div style={{ minWidth: 0 }}><Typography.Text type="secondary">{label}</Typography.Text><Typography.Title level={5} style={{ margin: "4px 0 0", overflowWrap: "anywhere" }}>{String(row.values?.[ref] ?? "-")}</Typography.Title>{versionRef && <Tag style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>{String(row.values?.[versionRef] ?? "未知版本")}</Tag>}</div>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "连接路径")} testid="connection-route-summary" extra={statusRef ? <Badge status={String(row.values?.[statusRef] ?? "") === "active" ? "success" : "default"} text={String(row.values?.[statusRef] ?? "")} /> : undefined}><div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)", alignItems: "center", gap: 8 }}>{endpoint("来源", sourceRef, sourceVersionRef)}<Typography.Text type="secondary" style={{ fontSize: 20 }}>→</Typography.Text>{endpoint("目标", targetRef, targetVersionRef)}</div></BlockShell>;
+};
+
+const ResourceDetailTabsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const keyRef = fieldRefOf(block, "keyFieldRef"); const availableRef = fieldRefOf(block, "availableFieldRef"); const countRef = fieldRefOf(block, "countFieldRef"); const [active, setActive] = React.useState("");
+  if (!bound || !titleRef || !keyRef) return <BlockShell block={block} testid="resource-detail-tabs"><BlockEmpty hint="资源页签尚未绑定标题和稳定键" /></BlockShell>;
+  const rows = bound.rows.filter(row => String(row.values?.[keyRef] ?? "")); const selected = rows.some(row => String(row.values?.[keyRef]) === active) ? active : String(rows.find(row => !availableRef || ![false, "false", "disabled"].includes(row.values?.[availableRef] as never))?.values?.[keyRef] ?? "");
+  return <BlockShell block={block} testid="resource-detail-tabs"><Tabs activeKey={selected} onChange={key => { setActive(key); const row = rows.find(item => String(item.values?.[keyRef]) === key); onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row?.id, sectionKey: key, targets: targetIdsOf(block) }); }} items={rows.map(row => ({ key: String(row.values?.[keyRef]), disabled: Boolean(availableRef && [false, "false", "disabled"].includes(row.values?.[availableRef] as never)), label: <Space size={4}>{String(row.values?.[titleRef] ?? "未命名")}{countRef && <Badge count={Number(row.values?.[countRef] ?? 0)} showZero />}</Space> }))} /></BlockShell>;
+};
+
+const InspectorModeTabsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const keyRef = fieldRefOf(block, "keyFieldRef"); const titleRef = fieldRefOf(block, "titleFieldRef"); const enabledRef = fieldRefOf(block, "enabledFieldRef"); const issueRef = fieldRefOf(block, "issueCountFieldRef"); const [active, setActive] = React.useState("");
+  if (!bound || !keyRef || !titleRef) return <BlockShell block={block} testid="inspector-mode-tabs"><BlockEmpty hint="检查器页签尚未绑定模式键和标题" /></BlockShell>;
+  const rows = bound.rows.filter(row => String(row.values?.[keyRef] ?? "")); const usable = rows.filter(row => !enabledRef || ![false, "false", "disabled"].includes(row.values?.[enabledRef] as never)); const selected = usable.some(row => String(row.values?.[keyRef]) === active) ? active : String(usable[0]?.values?.[keyRef] ?? "");
+  return <BlockShell block={block} testid="inspector-mode-tabs"><Tabs activeKey={selected} onChange={key => { setActive(key); onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: rows.find(row => String(row.values?.[keyRef]) === key)?.id, mode: key }); }} items={rows.map(row => ({ key: String(row.values?.[keyRef]), disabled: Boolean(enabledRef && [false, "false", "disabled"].includes(row.values?.[enabledRef] as never)), label: <Space size={4}>{String(row.values?.[titleRef] ?? "未命名模式")}{issueRef && Number(row.values?.[issueRef] ?? 0) > 0 && <Badge color="red" count={Number(row.values?.[issueRef])} />}</Space> }))} /></BlockShell>;
+};
+
+const IssueEventFilterRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const environmentRef = fieldRefOf(block, "environmentFieldRef"); const [environment, setEnvironment] = React.useState("all"); const [period, setPeriod] = React.useState("24h"); const [query, setQuery] = React.useState("");
+  if (!bound || !environmentRef) return <BlockShell block={block} title={String(block.props?.title ?? "事件筛选")} testid="issue-event-filter"><BlockEmpty hint="事件筛选尚未绑定环境字段" /></BlockShell>;
+  const environments = Array.from(new Set(bound.rows.map(row => String(row.values?.[environmentRef] ?? "")).filter(Boolean))); const emit = (next: Record<string, unknown>) => onAction?.("filterChange", { environment, period, query: query.trim(), ...next, targets: targetIdsOf(block) });
+  return <BlockShell block={block} title={String(block.props?.title ?? "事件筛选")} testid="issue-event-filter"><Flex gap={8} wrap><Select value={environment} style={{ flex: "1 1 130px", minWidth: 0 }} options={[{ label: "全部环境", value: "all" }, ...environments.map(value => ({ label: value, value }))]} onChange={value => { setEnvironment(value); emit({ environment: value }); }} /><Select value={period} style={{ flex: "1 1 130px", minWidth: 0 }} options={[{ label: "最近 1 小时", value: "1h" }, { label: "最近 24 小时", value: "24h" }, { label: "最近 7 天", value: "7d" }, { label: "首次发生以来", value: "sinceFirst" }]} onChange={value => { setPeriod(value); emit({ period: value }); }} /><Input.Search value={query} onChange={event => setQuery(event.target.value)} onSearch={value => emit({ query: value.trim() })} placeholder="输入字段:值查询" style={{ flex: "1 1 190px", minWidth: 0 }} /></Flex></BlockShell>;
+};
+
+const TimelineFilterBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const typeRef = fieldRefOf(block, "typeFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const timeRef = fieldRefOf(block, "timeFieldRef"); const [type, setType] = React.useState("all"); const [status, setStatus] = React.useState("all"); const [range, setRange] = React.useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  if (!bound || !typeRef || !statusRef || !timeRef) return <BlockShell block={block} title={String(block.props?.title ?? "时间线筛选")} testid="timeline-filter-bar"><BlockEmpty hint="时间线筛选尚未绑定类型、状态和时间字段" /></BlockShell>;
+  const types = Array.from(new Set(bound.rows.map(row => String(row.values?.[typeRef] ?? "")).filter(Boolean))); const statuses = Array.from(new Set(bound.rows.map(row => String(row.values?.[statusRef] ?? "")).filter(Boolean))); const supportsStatus = ["all", "sync", "clear", "refresh"].includes(type); const emit = (next: Record<string, unknown>) => onAction?.("filterChange", { eventType: type, status, dateRange: range?.map(value => value.format("YYYY-MM-DD")) ?? null, ...next, targets: targetIdsOf(block) });
+  return <BlockShell block={block} title={String(block.props?.title ?? "时间线筛选")} testid="timeline-filter-bar"><Flex gap={8} wrap><Select value={type} style={{ minWidth: 130 }} options={[{ label: "全部类型", value: "all" }, ...types.map(value => ({ label: value, value }))]} onChange={value => { setType(value); if (!["all", "sync", "clear", "refresh"].includes(value)) setStatus("all"); emit({ eventType: value, status: ["all", "sync", "clear", "refresh"].includes(value) ? status : "all" }); }} /><Select value={supportsStatus ? status : "all"} disabled={!supportsStatus} style={{ minWidth: 120 }} options={[{ label: "全部状态", value: "all" }, ...statuses.map(value => ({ label: value, value }))]} onChange={value => { setStatus(value); emit({ status: value }); }} /><DatePicker.RangePicker value={range} onChange={value => { const next = value?.[0] && value?.[1] ? [value[0], value[1]] as [dayjs.Dayjs, dayjs.Dayjs] : null; setRange(next); emit({ dateRange: next?.map(item => item.format("YYYY-MM-DD")) ?? null }); }} /><Button disabled={type === "all" && status === "all" && !range} onClick={() => { setType("all"); setStatus("all"); setRange(null); emit({ eventType: "all", status: "all", dateRange: null }); }}>清除</Button></Flex></BlockShell>;
+};
+
+const UnsavedChangesBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const fieldRef = fieldRefOf(block, "fieldNameFieldRef"); const validRef = fieldRefOf(block, "validFieldRef"); const dirty = bound?.rows ?? []; const invalid = validRef ? dirty.filter(row => [false, "false", "invalid"].includes(row.values?.[validRef] as never)) : [];
+  if (!bound || !fieldRef) return <BlockShell block={block} testid="unsaved-changes-bar"><BlockEmpty hint="未保存变更栏尚未绑定变更字段" /></BlockShell>;
+  return <BlockShell block={block} testid="unsaved-changes-bar"><Flex align="center" justify="space-between" gap={12} wrap><Space><Badge count={dirty.length} showZero /><div><Typography.Text strong>{dirty.length ? `${dirty.length} 项未保存变更` : "没有未保存变更"}</Typography.Text>{invalid.length > 0 && <Typography.Text type="danger" style={{ display: "block" }}>{invalid.length} 项校验未通过</Typography.Text>}</div></Space><Space><Popconfirm title="放弃后无法恢复这些本地变更，确认继续？" onConfirm={() => onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "discardChanges", rowIds: dirty.map(row => row.id), targets: targetIdsOf(block) })}><Button disabled={!dirty.length}>放弃</Button></Popconfirm><Button type="primary" disabled={!dirty.length || invalid.length > 0} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "saveChanges", rowIds: dirty.map(row => row.id), targets: targetIdsOf(block) })}>保存变更</Button></Space></Flex></BlockShell>;
+};
+
+const RunningJobControlBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const progressRef = fieldRefOf(block, "progressFieldRef"); const typeRef = fieldRefOf(block, "typeFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows.find(item => String(item.values?.[statusRef ?? ""]) === "running") ?? bound?.rows[0];
+  if (!bound || !titleRef || !statusRef || !row) return <BlockShell block={block} testid="running-job-control-bar"><BlockEmpty hint="运行任务栏尚未绑定任务标题和状态" /></BlockShell>;
+  const status = String(row.values?.[statusRef] ?? ""); const running = status === "running"; const failed = ["failed", "incomplete", "cancelled"].includes(status); const operation = running ? "cancelRunningJob" : "retryJob";
+  return <BlockShell block={block} testid="running-job-control-bar"><Flex align="center" justify="space-between" gap={12} wrap><div style={{ flex: 1, minWidth: 180 }}><Space><Badge status={running ? "processing" : failed ? "error" : "success"} /><Typography.Text strong>{String(row.values?.[titleRef] ?? "未命名任务")}</Typography.Text>{typeRef && <Tag>{String(row.values?.[typeRef] ?? "任务")}</Tag>}</Space>{progressRef && <Progress percent={Math.max(0, Math.min(100, Number(row.values?.[progressRef] ?? 0)))} size="small" style={{ marginTop: 6, maxWidth: 320 }} />}</div>{running ? <Popconfirm title="确认取消当前运行任务？已处理的数据不会自动回滚。" onConfirm={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) })}><Button danger>取消任务</Button></Popconfirm> : failed ? <Button type="primary" onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation, targets: targetIdsOf(block) })}>重试任务</Button> : <Tag color="green">任务已完成</Tag>}</Flex></BlockShell>;
+};
+
+const BookingCommandHeaderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => { if (children != null) return <>{children}</>; const bound=rowsOfBinding(block,entityRows), titleRef=fieldRefOf(block,"titleFieldRef"),statusRef=fieldRefOf(block,"statusFieldRef"),startRef=fieldRefOf(block,"startFieldRef"),endRef=fieldRefOf(block,"endFieldRef"),locationRef=fieldRefOf(block,"locationFieldRef"),recurringRef=fieldRefOf(block,"recurringFieldRef"),paidRef=fieldRefOf(block,"paidFieldRef"); const row=bound?.rows.find(x=>x.id===focus?.[bound.entityRef])??bound?.rows[0]; if(!bound||!titleRef||!statusRef||!startRef||!row)return <BlockShell block={block} testid="booking-command-header"><BlockEmpty hint="预约操作页头尚未绑定标题、状态和开始时间"/></BlockShell>; const status=String(row.values?.[statusRef]??"PENDING"),past=dayjs(String(row.values?.[endRef??startRef])).isBefore(dayjs()),recurring=Boolean(recurringRef&&[true,"true","recurring"].includes(row.values?.[recurringRef] as never)),paid=!paidRef||[true,"true","paid"].includes(row.values?.[paidRef] as never); const submit=(operation:string)=>onAction?.("submitRequest",{entityRef:bound.entityRef,rowId:row.id,operation,scope:recurring?"series":"single",targets:targetIdsOf(block)}); let actions:React.ReactNode=status==="PENDING"&&!past?<><Button disabled={!paid} type="primary" onClick={()=>submit("confirmBooking")}>确认预约</Button><Button danger onClick={()=>submit("rejectBooking")}>拒绝</Button></>:status==="ACCEPTED"&&!past?<><Button onClick={()=>onAction?.("editRequest",{entityRef:bound.entityRef,rowId:row.id,operation:"rescheduleBooking"})}>改期</Button><Popconfirm title="确认取消这次预约？" onConfirm={()=>submit("cancelBooking")}><Button danger>取消</Button></Popconfirm></>:status==="ACCEPTED"&&past?<Button onClick={()=>submit("toggleNoShow")}>标记未到场</Button>:<Tag>当前状态无可用操作</Tag>; return <BlockShell block={block} testid="booking-command-header"><Flex justify="space-between" align="center" gap={12} wrap><div><Space wrap><Typography.Title level={5} style={{margin:0}}>{String(row.values?.[titleRef]??"未命名预约")}</Typography.Title><Tag>{status}</Tag>{recurring&&<Tag color="blue">重复预约</Tag>}</Space><Typography.Text type="secondary" style={{display:"block",marginTop:4}}>{String(row.values?.[startRef]??"")}{endRef?` - ${String(row.values?.[endRef]??"")}`:""}{locationRef?` · ${String(row.values?.[locationRef]??"")}`:""}</Typography.Text></div><Space wrap>{actions}</Space></Flex>{status==="PENDING"&&!paid&&<Alert type="warning" showIcon message="付款尚未完成，暂不能确认预约" style={{marginTop:8}}/>}</BlockShell>; };
+
+const AlertRuleCommandHeaderRenderer: ExperienceBlockRenderer = ({block,children,entityRows,focus,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),titleRef=fieldRefOf(block,"titleFieldRef"),stateRef=fieldRefOf(block,"stateFieldRef"),editableRef=fieldRefOf(block,"editableFieldRef"),provisionedRef=fieldRefOf(block,"provisionedFieldRef"),silenceRef=fieldRefOf(block,"silenceableFieldRef");const row=bound?.rows.find(x=>x.id===focus?.[bound.entityRef])??bound?.rows[0];if(!bound||!titleRef||!stateRef||!row)return <BlockShell block={block} testid="alert-rule-command-header"><BlockEmpty hint="告警规则操作尚未绑定标题和状态"/></BlockShell>;const state=String(row.values?.[stateRef]??"active"),editable=!editableRef||![false,"false","readonly"].includes(row.values?.[editableRef] as never),provisioned=Boolean(provisionedRef&&[true,"true","provisioned"].includes(row.values?.[provisionedRef] as never)),silenceable=!silenceRef||![false,"false","disabled"].includes(row.values?.[silenceRef] as never);const act=(operation:string,event="actionTrigger")=>onAction?.(event,{entityRef:bound.entityRef,rowId:row.id,operation,targets:targetIdsOf(block)});return <BlockShell block={block} testid="alert-rule-command-header"><Flex justify="space-between" align="center" gap={12} wrap><Space><Badge status={state==="firing"?"error":state==="pending"?"warning":"success"}/><Typography.Title level={5} style={{margin:0}}>{String(row.values?.[titleRef]??"未命名规则")}</Typography.Title>{provisioned&&<Tag>受管规则</Tag>}</Space><Space wrap><Button disabled={!editable||provisioned} onClick={()=>act("editAlertRule","editRequest")}>编辑</Button><Button onClick={()=>act("duplicateAlertRule")}>复制</Button><Button disabled={!silenceable} onClick={()=>act("silenceAlertRule")}>静默</Button><Button onClick={()=>act(state==="paused"?"resumeAlertRule":"pauseAlertRule")}>{state==="paused"?"恢复":"暂停"}</Button><Popconfirm title="确认删除这条告警规则？" onConfirm={()=>act("deleteAlertRule","submitRequest")}><Button danger disabled={!editable||provisioned}>删除</Button></Popconfirm></Space></Flex></BlockShell>};
+
+const AlertStateMetricsRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),stateRef=fieldRefOf(block,"stateFieldRef"),ruleRef=fieldRefOf(block,"ruleIdFieldRef");if(!bound||!stateRef||!ruleRef)return <BlockShell block={block} title={String(block.props?.title??"告警状态")} testid="alert-state-metrics"><BlockEmpty hint="告警状态指标尚未绑定状态和规则字段"/></BlockShell>;const count=(state:string)=>bound.rows.filter(x=>String(x.values?.[stateRef])===state),rules=(state:string)=>new Set(count(state).map(x=>String(x.values?.[ruleRef]))).size;return <BlockShell block={block} title={String(block.props?.title??"告警状态")} testid="alert-state-metrics"><Flex gap={20} wrap><Statistic title="触发规则" value={rules("firing")} valueStyle={{color:"#cf1322"}}/><Statistic title="触发实例" value={count("firing").length}/><Statistic title="等待规则" value={rules("pending")} valueStyle={{color:"#d48806"}}/><Statistic title="等待实例" value={count("pending").length}/></Flex></BlockShell>};
+
+const BookingCapacityMetricsRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),capacityRef=fieldRefOf(block,"capacityFieldRef"),bookedRef=fieldRefOf(block,"bookedFieldRef"),noShowRef=fieldRefOf(block,"noShowFieldRef"),waitRef=fieldRefOf(block,"waitlistFieldRef"),row=bound?.rows[0];if(!bound||!capacityRef||!bookedRef||!row)return <BlockShell block={block} title={String(block.props?.title??"预约容量")} testid="booking-capacity-metrics"><BlockEmpty hint="预约容量尚未绑定容量和已预约字段"/></BlockShell>;const capacity=Number(row.values?.[capacityRef]??0),booked=Number(row.values?.[bookedRef]??0);return <BlockShell block={block} title={String(block.props?.title??"预约容量")} testid="booking-capacity-metrics"><Flex gap={20} wrap><Statistic title="总席位" value={capacity}/><Statistic title="已预约" value={booked}/><Statistic title="剩余" value={Math.max(0,capacity-booked)}/>{noShowRef&&<Statistic title="未到场" value={Number(row.values?.[noShowRef]??0)}/>} {waitRef&&<Statistic title="候补" value={Number(row.values?.[waitRef]??0)}/>}</Flex><Progress percent={capacity>0?Math.min(100,Math.round(booked/capacity*100)):0} size="small" style={{marginTop:8}}/></BlockShell>};
+
+const BookingContextSummaryRenderer:ExperienceBlockRenderer=({block,children,entityRows,focus})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),titleRef=fieldRefOf(block,"titleFieldRef"),startRef=fieldRefOf(block,"startFieldRef"),endRef=fieldRefOf(block,"endFieldRef"),timezoneRef=fieldRefOf(block,"timezoneFieldRef"),locationRef=fieldRefOf(block,"locationFieldRef"),attendeeRef=fieldRefOf(block,"attendeeFieldRef"),recurringRef=fieldRefOf(block,"recurringFieldRef"),row=bound?.rows.find(x=>x.id===focus?.[bound.entityRef])??bound?.rows[0];if(!bound||!titleRef||!startRef||!row)return <BlockShell block={block} title={String(block.props?.title??"预约上下文")} testid="booking-context-summary"><BlockEmpty hint="预约上下文尚未绑定标题和开始时间"/></BlockShell>;const items=[["主题",titleRef],["开始",startRef],["结束",endRef],["时区",timezoneRef],["地点",locationRef],["参与人",attendeeRef],["重复规则",recurringRef]] as const;return <BlockShell block={block} title={String(block.props?.title??"预约上下文")} testid="booking-context-summary"><Descriptions size="small" column={2} items={items.flatMap(([label,ref])=>ref?[{key:label,label,children:String(row.values?.[ref]??"-")}]:[])}/></BlockShell>};
+
+const AlertInstanceSummaryRenderer:ExperienceBlockRenderer=({block,children,entityRows,focus})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),nameRef=fieldRefOf(block,"nameFieldRef"),valueRef=fieldRefOf(block,"valueFieldRef"),labelsRef=fieldRefOf(block,"labelsFieldRef"),summaryRef=fieldRefOf(block,"summaryFieldRef"),startedRef=fieldRefOf(block,"startedFieldRef"),row=bound?.rows.find(x=>x.id===focus?.[bound.entityRef])??bound?.rows[0];if(!bound||!nameRef||!valueRef||!row)return <BlockShell block={block} title={String(block.props?.title??"告警实例")} testid="alert-instance-summary"><BlockEmpty hint="告警实例摘要尚未绑定名称和当前值"/></BlockShell>;return <BlockShell block={block} title={String(block.props?.title??"告警实例")} testid="alert-instance-summary"><Space direction="vertical" size={6} style={{width:"100%"}}><Flex justify="space-between" gap={8}><Typography.Text strong>{String(row.values?.[nameRef]??"未命名实例")}</Typography.Text><Tag color="red">{String(row.values?.[valueRef]??"-")}</Tag></Flex>{summaryRef&&<Typography.Paragraph style={{margin:0}}>{String(row.values?.[summaryRef]??"")}</Typography.Paragraph>}{labelsRef&&<Flex gap={4} wrap>{String(row.values?.[labelsRef]??"").split(",").filter(Boolean).map(x=><Tag key={x}>{x.trim()}</Tag>)}</Flex>}{startedRef&&<Typography.Text type="secondary">开始于 {String(row.values?.[startedRef]??"")}</Typography.Text>}</Space></BlockShell>};
+
+const BookingStatusTabsRenderer:ExperienceBlockRenderer=({block,children,entityRows,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),titleRef=fieldRefOf(block,"titleFieldRef"),keyRef=fieldRefOf(block,"keyFieldRef"),countRef=fieldRefOf(block,"countFieldRef"),enabledRef=fieldRefOf(block,"enabledFieldRef");const [active,setActive]=React.useState(String(block.props?.defaultKey??"upcoming"));if(!bound||!titleRef||!keyRef)return <BlockShell block={block} testid="booking-status-tabs"><BlockEmpty hint="预约页签尚未绑定标题和状态键"/></BlockShell>;const rows=bound.rows.filter(x=>String(x.values?.[keyRef]??""));const selected=rows.some(x=>String(x.values?.[keyRef])===active)?active:String(rows[0]?.values?.[keyRef]??"");return <BlockShell block={block} testid="booking-status-tabs"><Tabs activeKey={selected} onChange={key=>{setActive(key);const row=rows.find(x=>String(x.values?.[keyRef])===key);onAction?.("filterChange",{entityRef:bound.entityRef,rowId:row?.id,statusKey:key,preserveExistingFilters:true,targets:targetIdsOf(block)})}} items={rows.map(x=>({key:String(x.values?.[keyRef]),disabled:Boolean(enabledRef&&[false,"false","disabled"].includes(x.values?.[enabledRef] as never)),label:<Space size={4}>{String(x.values?.[titleRef]??"")}{countRef&&<Badge count={Number(x.values?.[countRef]??0)} showZero/>}</Space>}))}/></BlockShell>};
+
+const ValidatedFormTabsRenderer:ExperienceBlockRenderer=({block,children,entityRows,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),titleRef=fieldRefOf(block,"titleFieldRef"),keyRef=fieldRefOf(block,"keyFieldRef"),errorRef=fieldRefOf(block,"errorCountFieldRef"),dirtyRef=fieldRefOf(block,"dirtyCountFieldRef");const [active,setActive]=React.useState("");if(!bound||!titleRef||!keyRef||!errorRef)return <BlockShell block={block} testid="validated-form-tabs"><BlockEmpty hint="表单页签尚未绑定标题、键和错误数"/></BlockShell>;const selected=bound.rows.some(x=>String(x.values?.[keyRef])===active)?active:String(bound.rows[0]?.values?.[keyRef]??"");return <BlockShell block={block} testid="validated-form-tabs"><Tabs activeKey={selected} onChange={key=>{setActive(key);const row=bound.rows.find(x=>String(x.values?.[keyRef])===key);onAction?.("itemSelect",{entityRef:bound.entityRef,rowId:row?.id,tabKey:key,targets:targetIdsOf(block)})}} items={bound.rows.map(x=>{const errors=Number(x.values?.[errorRef]??0),dirty=dirtyRef?Number(x.values?.[dirtyRef]??0):0;return{key:String(x.values?.[keyRef]),label:<Space size={4}><span style={{color:errors?"#cf1322":undefined}}>{String(x.values?.[titleRef]??"")}</span>{errors?<Badge count={errors}/>:dirty?<Badge color="blue" count={dirty}/>:null}</Space>}})}/></BlockShell>};
+
+const AlertMatcherFilterRenderer:ExperienceBlockRenderer=({block,children,onAction})=>{if(children!=null)return <>{children}</>;const [query,setQuery]=React.useState(String(block.props?.defaultQuery??""));const trimmed=query.trim().replace(/^\{|\}$/g,"");const parts=trimmed?trimmed.split(",").map(x=>x.trim()):[];const valid=!trimmed||parts.every(x=>/^[A-Za-z_][\w.-]*\s*(=~|!~|!=|=)\s*"[^"]*"$/.test(x)&&!/[=!~]\s+"/.test(x));return <BlockShell block={block} title={String(block.props?.title??"标签匹配")} testid="alert-matcher-filter"><Space direction="vertical" style={{width:"100%"}}><Input value={query} status={valid?undefined:"error"} onChange={e=>setQuery(e.target.value)} placeholder={'severity="critical", instance=~"cluster-.+"'}/>{!valid&&<Alert type="error" showIcon message="匹配表达式无效：操作符两侧不要留空格，值必须使用双引号"/>}<Button type="primary" disabled={!valid} onClick={()=>onAction?.("filterChange",{matcherQuery:trimmed,matchers:parts,targets:targetIdsOf(block)})}>应用标签匹配</Button></Space></BlockShell>};
+
+const BookingDirectoryFilterRenderer:ExperienceBlockRenderer=({block,children,entityRows,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),typeRef=fieldRefOf(block,"typeFieldRef"),keyRef=fieldRefOf(block,"keyFieldRef"),titleRef=fieldRefOf(block,"titleFieldRef");const [selected,setSelected]=React.useState<Record<string,string[]>>({}),[query,setQuery]=React.useState(""),[range,setRange]=React.useState<[dayjs.Dayjs,dayjs.Dayjs]|null>(null);if(!bound||!typeRef||!keyRef||!titleRef)return <BlockShell block={block} title={String(block.props?.title??"预约目录筛选")} testid="booking-directory-filter"><BlockEmpty hint="预约目录筛选尚未绑定类型、键和标题"/></BlockShell>;const types=Array.from(new Set(bound.rows.map(x=>String(x.values?.[typeRef]??"")).filter(Boolean)));const emit=(next:Record<string,unknown>)=>onAction?.("filterChange",{facets:selected,attendeeQuery:query.trim(),dateRange:range?.map(x=>x.format("YYYY-MM-DD"))??null,...next,targets:targetIdsOf(block)});return <BlockShell block={block} title={String(block.props?.title??"预约目录筛选")} testid="booking-directory-filter"><Space direction="vertical" style={{width:"100%"}}>{types.map(type=><Select key={type} mode="multiple" allowClear value={selected[type]??[]} placeholder={`选择${type}`} style={{width:"100%"}} options={bound.rows.filter(x=>String(x.values?.[typeRef])===type).map(x=>({value:String(x.values?.[keyRef]),label:String(x.values?.[titleRef])}))} onChange={values=>{const next={...selected,[type]:values};setSelected(next);emit({facets:next})}}/>)}<Flex gap={8} wrap><DatePicker.RangePicker value={range} onChange={value=>{const next=value?.[0]&&value?.[1]?[value[0],value[1]] as [dayjs.Dayjs,dayjs.Dayjs]:null;setRange(next);emit({dateRange:next?.map(x=>x.format("YYYY-MM-DD"))??null})}} style={{flex:"1 1 190px"}}/><Input.Search value={query} onChange={e=>setQuery(e.target.value)} onSearch={value=>emit({attendeeQuery:value.trim()})} placeholder="参与人姓名、邮箱或预约 UID" style={{flex:"1 1 220px"}}/></Flex></Space></BlockShell>};
+
+const BookingDecisionBarRenderer:ExperienceBlockRenderer=({block,children,entityRows,focus,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),titleRef=fieldRefOf(block,"titleFieldRef"),statusRef=fieldRefOf(block,"statusFieldRef"),paidRef=fieldRefOf(block,"paidFieldRef"),recurringRef=fieldRefOf(block,"recurringFieldRef"),row=bound?.rows.find(x=>x.id===focus?.[bound.entityRef])??bound?.rows[0];const [reason,setReason]=React.useState(""),[open,setOpen]=React.useState(false);if(!bound||!titleRef||!statusRef||!row)return <BlockShell block={block} testid="booking-decision-bar"><BlockEmpty hint="预约决策栏尚未绑定标题和状态"/></BlockShell>;const pending=String(row.values?.[statusRef])==="PENDING",paid=!paidRef||[true,"true","paid"].includes(row.values?.[paidRef] as never),recurring=Boolean(recurringRef&&[true,"true","recurring"].includes(row.values?.[recurringRef] as never)),submit=(decision:string,extra={})=>onAction?.("submitRequest",{entityRef:bound.entityRef,rowId:row.id,decision,scope:recurring?"series":"single",...extra,targets:targetIdsOf(block)});return <BlockShell block={block} testid="booking-decision-bar"><Flex justify="space-between" align="center" gap={12} wrap><Space><Typography.Text strong>{String(row.values?.[titleRef]??"预约")}</Typography.Text><Tag>{pending?"待确认":"已处理"}</Tag>{recurring&&<Tag color="blue">系列预约</Tag>}</Space><Space><Button disabled={!pending} onClick={()=>setOpen(true)}>拒绝</Button><Button type="primary" disabled={!pending||!paid} onClick={()=>submit("confirm")}>确认</Button></Space></Flex>{pending&&!paid&&<Typography.Text type="warning">付款完成后才能确认</Typography.Text>}<Modal open={open} title="填写拒绝原因" onCancel={()=>setOpen(false)} onOk={()=>{if(reason.trim()){submit("reject",{reason:reason.trim()});setOpen(false)}}} okButtonProps={{disabled:!reason.trim()}}><Input.TextArea value={reason} onChange={e=>setReason(e.target.value)} rows={3}/></Modal></BlockShell>};
+
+const DashboardSaveBarRenderer:ExperienceBlockRenderer=({block,children,entityRows,focus,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),titleRef=fieldRefOf(block,"titleFieldRef"),dirtyRef=fieldRefOf(block,"dirtyFieldRef"),canSaveRef=fieldRefOf(block,"canSaveFieldRef"),managedRef=fieldRefOf(block,"managedFieldRef"),templateRef=fieldRefOf(block,"templateFieldRef"),row=bound?.rows.find(x=>x.id===focus?.[bound.entityRef])??bound?.rows[0];if(!bound||!titleRef||!dirtyRef||!row)return <BlockShell block={block} testid="dashboard-save-bar"><BlockEmpty hint="Dashboard 保存栏尚未绑定标题和脏状态"/></BlockShell>;const dirty=[true,"true","dirty"].includes(row.values?.[dirtyRef] as never),canSave=!canSaveRef||![false,"false","denied"].includes(row.values?.[canSaveRef] as never),managed=Boolean(managedRef&&[true,"true","managed"].includes(row.values?.[managedRef] as never)),template=Boolean(templateRef&&[true,"true","template"].includes(row.values?.[templateRef] as never)),act=(operation:string)=>onAction?.("submitRequest",{entityRef:bound.entityRef,rowId:row.id,operation,targets:targetIdsOf(block)});const menu={items:[{key:"copy",label:"另存为副本"},{key:"template",label:"另存为模板",disabled:!template}],onClick:({key}:{key:string})=>act(key==="copy"?"saveDashboardCopy":"saveDashboardTemplate")};return <BlockShell block={block} testid="dashboard-save-bar"><Flex justify="space-between" align="center" gap={12} wrap><div><Typography.Text strong>{String(row.values?.[titleRef]??"未命名 Dashboard")}</Typography.Text><Typography.Text type={dirty?"warning":"secondary"} style={{display:"block"}}>{dirty?"有未保存修改":"所有修改已保存"}{managed?" · 受管 Dashboard":""}</Typography.Text></div><Space.Compact><Button type={dirty?"primary":"default"} disabled={!canSave||managed} onClick={()=>act("saveDashboard")}>保存</Button><Dropdown menu={menu} trigger={["click"]}><Button disabled={managed}>更多</Button></Dropdown></Space.Compact></Flex></BlockShell>};
+
+const AlertTriagePanelRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const stateRef = fieldRefOf(block, "stateFieldRef"); const severityRef = fieldRefOf(block, "severityFieldRef"); const timeRef = fieldRefOf(block, "timeFieldRef"); const [scope, setScope] = React.useState("active");
+  if (!bound || !titleRef || !stateRef) return <BlockShell block={block} title={String(block.props?.title ?? "告警分诊")} testid="alert-triage-panel"><BlockEmpty hint="告警分诊尚未绑定标题和状态字段" /></BlockShell>;
+  const firing = String(block.props?.firingValue ?? "firing"); const pending = String(block.props?.pendingValue ?? "pending"); const shown = bound.rows.filter(row => scope === "all" || [firing, pending].includes(String(row.values?.[stateRef] ?? "")));
+  return <BlockShell block={block} title={String(block.props?.title ?? "告警分诊")} testid="alert-triage-panel" extra={<Segmented size="small" value={scope} options={[{ label: `活动 ${bound.rows.filter(row => [firing, pending].includes(String(row.values?.[stateRef] ?? ""))).length}`, value: "active" }, { label: `全部 ${bound.rows.length}`, value: "all" }]} onChange={value => setScope(String(value))} />}><List size="small" dataSource={shown} locale={{ emptyText: <BlockEmpty hint="当前没有匹配告警" /> }} renderItem={row => <List.Item onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })} actions={[<Button key="silence" size="small" onClick={() => onAction?.("actionTrigger", { operation: "openSilence", rowId: row.id, targets: targetIdsOf(block) })}>静默</Button>]}><List.Item.Meta title={<Space><Badge status={String(row.values?.[stateRef]) === firing ? "error" : "warning"} /><Typography.Text strong>{String(row.values?.[titleRef] ?? "未命名告警")}</Typography.Text>{severityRef && <Tag>{String(row.values?.[severityRef] ?? "")}</Tag>}</Space>} description={timeRef ? String(row.values?.[timeRef] ?? "") : undefined} /></List.Item>} /></BlockShell>;
+};
+
+const AlertSilenceFormRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const labelRef = fieldRefOf(block, "labelFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0]; const [duration, setDuration] = React.useState("2h"); const [comment, setComment] = React.useState("");
+  if (!bound || !row) return <BlockShell block={block} title={String(block.props?.title ?? "创建静默")} testid="alert-silence-form"><BlockEmpty hint="静默表单尚未找到目标告警" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "创建静默")} testid="alert-silence-form"><Space direction="vertical" style={{ width: "100%" }}><Alert type="info" showIcon message={titleRef ? String(row.values?.[titleRef] ?? "当前告警") : "当前告警"} description={labelRef ? `匹配标签：${String(row.values?.[labelRef] ?? "-")}` : undefined} /><Segmented block value={duration} options={[{ label: "30 分钟", value: "30m" }, { label: "2 小时", value: "2h" }, { label: "1 天", value: "1d" }]} onChange={value => setDuration(String(value))} /><Input.TextArea value={comment} onChange={event => setComment(event.target.value)} rows={3} placeholder="填写静默原因" /><Button type="primary" block disabled={!comment.trim()} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "createSilence", duration, comment, targets: targetIdsOf(block) })}>创建静默</Button></Space></BlockShell>;
+};
+
+const AlertRoutingPolicyRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const nameRef = fieldRefOf(block, "nameFieldRef"); const parentRef = fieldRefOf(block, "parentFieldRef"); const matcherRef = fieldRefOf(block, "matcherFieldRef"); const receiverRef = fieldRefOf(block, "receiverFieldRef");
+  if (!bound || !nameRef || !parentRef || !receiverRef) return <BlockShell block={block} title={String(block.props?.title ?? "告警路由策略")} testid="alert-routing-policy"><BlockEmpty hint="路由策略尚未绑定名称、父级和接收方字段" /></BlockShell>;
+  const childrenOf = (parent: string) => bound.rows.filter(row => String(row.values?.[parentRef] ?? "") === parent); const renderNode = (row: RuntimeRow): React.ReactNode => <div key={row.id} style={{ marginBottom: 8 }}><Flex align="center" justify="space-between" gap={8}><div><Typography.Text strong>{String(row.values?.[nameRef] ?? "未命名策略")}</Typography.Text><div><Typography.Text type="secondary">{matcherRef ? String(row.values?.[matcherRef] ?? "全部告警") : "全部告警"} → {String(row.values?.[receiverRef] ?? "未配置接收方")}</Typography.Text></div></div><Button size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "editPolicy" })}>编辑</Button></Flex>{childrenOf(row.id).length > 0 && <div style={{ borderLeft: "2px solid #f0f0f0", marginTop: 8, paddingLeft: 12 }}>{childrenOf(row.id).map(renderNode)}</div>}</div>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "告警路由策略")} testid="alert-routing-policy">{childrenOf("").length ? childrenOf("").map(renderNode) : <BlockEmpty hint="当前没有根路由策略" />}</BlockShell>;
+};
+
+const DeletedRecordsRecoveryRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const deletedAtRef = fieldRefOf(block, "deletedAtFieldRef"); const deletedByRef = fieldRefOf(block, "deletedByFieldRef");
+  if (!bound || !titleRef || !deletedAtRef) return <BlockShell block={block} title={String(block.props?.title ?? "已删除记录")} testid="deleted-records-recovery"><BlockEmpty hint="回收站尚未绑定标题和删除时间字段" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "已删除记录")} testid="deleted-records-recovery" extra={<Badge count={bound.rows.length} showZero />}><List size="small" dataSource={bound.rows} locale={{ emptyText: <BlockEmpty hint="回收站为空" /> }} renderItem={row => <List.Item actions={[<Button key="restore" size="small" onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "restore", targets: targetIdsOf(block) })}>恢复</Button>, <Popconfirm key="delete" title="永久删除后无法恢复，确认继续？" onConfirm={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "hardDelete", targets: targetIdsOf(block) })}><Button danger size="small">永久删除</Button></Popconfirm>]}><List.Item.Meta title={String(row.values?.[titleRef] ?? "未命名记录")} description={`${String(row.values?.[deletedAtRef] ?? "")} ${deletedByRef ? `· ${String(row.values?.[deletedByRef] ?? "")}` : ""}`} /></List.Item>} /></BlockShell>;
+};
+
+const RevisionHistoryPanelRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const versionRef = fieldRefOf(block, "versionFieldRef"); const authorRef = fieldRefOf(block, "authorFieldRef"); const timeRef = fieldRefOf(block, "timeFieldRef"); const summaryRef = fieldRefOf(block, "summaryFieldRef"); const currentRef = fieldRefOf(block, "currentFieldRef");
+  if (!bound || !versionRef || !timeRef) return <BlockShell block={block} title={String(block.props?.title ?? "修订历史")} testid="revision-history-panel"><BlockEmpty hint="修订历史尚未绑定版本和时间字段" /></BlockShell>;
+  const rows = [...bound.rows].sort((a, b) => Number(b.values?.[versionRef] ?? 0) - Number(a.values?.[versionRef] ?? 0));
+  return <BlockShell block={block} title={String(block.props?.title ?? "修订历史")} testid="revision-history-panel"><Timeline items={rows.map(row => { const current = currentRef && [true, "true", "current"].includes(row.values?.[currentRef] as never); return { color: current ? "blue" : "gray", children: <Flex justify="space-between" gap={8}><div><Space><Typography.Text strong>版本 {String(row.values?.[versionRef] ?? "-")}</Typography.Text>{current && <Tag color="blue">当前</Tag>}</Space><div><Typography.Text type="secondary">{authorRef ? `${String(row.values?.[authorRef] ?? "")} · ` : ""}{String(row.values?.[timeRef] ?? "")}</Typography.Text></div>{summaryRef && <div>{String(row.values?.[summaryRef] ?? "")}</div>}</div><Space direction="vertical"><Button size="small" onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id, operation: "compareRevision" })}>对比</Button>{!current && <Button size="small" onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "restoreRevision", targets: targetIdsOf(block) })}>恢复</Button>}</Space></Flex> }; })} /></BlockShell>;
+};
+
+const RecordComparePanelRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, selection, fieldLabelOf, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const fields = fieldRefListOf(block, "fieldRefs"); const ids = bound ? selection?.rowIds?.[bound.entityRef] ?? [] : []; const rows = bound?.rows.filter(row => ids.includes(row.id)).slice(0, 2) ?? [];
+  if (!bound || fields.length === 0) return <BlockShell block={block} title={String(block.props?.title ?? "记录对比")} testid="record-compare-panel"><BlockEmpty hint="记录对比尚未绑定字段" /></BlockShell>;
+  if (rows.length !== 2) return <BlockShell block={block} title={String(block.props?.title ?? "记录对比")} testid="record-compare-panel"><Alert type="warning" showIcon message="请选择恰好两条记录进行对比" /></BlockShell>;
+  const data = fields.map(field => ({ key: field, field, left: rows[0].values?.[field], right: rows[1].values?.[field], changed: String(rows[0].values?.[field] ?? "") !== String(rows[1].values?.[field] ?? "") }));
+  return <BlockShell block={block} title={String(block.props?.title ?? "记录对比")} testid="record-compare-panel" extra={<Tag color="orange">{data.filter(item => item.changed).length} 项差异</Tag>}><Table size="small" rowKey="key" pagination={false} dataSource={data} columns={[{ title: "字段", dataIndex: "field", render: field => fieldLabelOf?.(bound.entityRef, String(field)) ?? String(field) }, { title: rows[0].id, dataIndex: "left", render: value => String(value ?? "-") }, { title: rows[1].id, dataIndex: "right", render: (value, record) => <Typography.Text mark={record.changed}>{String(value ?? "-")}</Typography.Text> }]} /><Flex justify="end" gap={8} style={{ marginTop: 10 }}><Button onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "useAsCanonical", rowId: rows[0].id, comparedRowId: rows[1].id, targets: targetIdsOf(block) })}>采用左侧</Button><Button type="primary" onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "useAsCanonical", rowId: rows[1].id, comparedRowId: rows[0].id, targets: targetIdsOf(block) })}>采用右侧</Button></Flex></BlockShell>;
+};
+
+const targetIdsOf = (block: ExperienceBlockInstance) =>
+  Array.isArray(block.binding?.targets) ? block.binding.targets.map(String).filter(Boolean) : [];
+
+/** 路径只负责定位上下文，末级只读；单级路径不占据页头。 */
+const ContextBreadcrumbRenderer: ExperienceBlockRenderer = ({ block, children, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const items = Array.isArray(block.props?.items) ? block.props.items.map(String).filter(Boolean) : [];
+  if (items.length < 2) return null;
+  return <BlockShell block={block} testid="context-breadcrumb"><Breadcrumb items={items.map((title, index) => ({ title: index === items.length - 1 ? title : <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onAction?.("actionTrigger", { operation: "navigateBreadcrumb", index, title })}>{title}</Button> }))} /></BlockShell>;
+};
+
+/** 手动刷新和安全轮询共享一个控制器，宿主拥有真正的数据请求。 */
+const LiveRefreshControlRenderer: ExperienceBlockRenderer = ({ block, children, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const targets = targetIdsOf(block);
+  const [polling, setPolling] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [lastAt, setLastAt] = React.useState("");
+  const refresh = () => { setRefreshing(true); onAction?.("actionTrigger", { operation: "refresh", targets }); setLastAt(dayjs().format("HH:mm:ss")); setRefreshing(false); };
+  return <BlockShell block={block} title={String(block.props?.title ?? "数据刷新")} testid="live-refresh-control" extra={<Badge status={polling ? "processing" : "default"} text={polling ? "自动刷新中" : "已暂停"} />}><Flex align="center" justify="space-between" gap={12} wrap><Typography.Text type="secondary">{lastAt ? `最近刷新 ${lastAt}` : "尚未刷新"}</Typography.Text><Space><Button loading={refreshing} disabled={targets.length === 0} onClick={refresh}>刷新</Button><Button type={polling ? "default" : "primary"} disabled={targets.length === 0} onClick={() => { const next = !polling; setPolling(next); onAction?.("actionTrigger", { operation: next ? "startPolling" : "stopPolling", intervalMs: Number(block.props?.intervalMs ?? 30000), targets }); }}>{polling ? "暂停轮询" : "开启轮询"}</Button></Space></Flex></BlockShell>;
+};
+
+/** 只回显和撤销已生效条件，不创建新的筛选条件。 */
+const ActiveFilterSummaryRenderer: ExperienceBlockRenderer = ({ block, children, filterState, onFilterChange, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const enumItems = Object.entries(filterState?.enumFilters ?? {}).filter(([, value]) => value);
+  const multiItems = Object.entries(filterState?.enumMulti ?? {}).flatMap(([key, values]) => values.map(value => [`${key}:${value}`, value] as const));
+  const items = [...enumItems.map(([key, value]) => [key, String(value)] as const), ...multiItems];
+  if (items.length === 0 && !filterState?.dateRange) return null;
+  const clearAll = () => { onFilterChange?.({ enumFilters: {}, enumMulti: {}, dateRange: null }); onAction?.("filterChange", { operation: "clearAll", targets: targetIdsOf(block) }); };
+  return <BlockShell block={block} title={String(block.props?.title ?? "已应用条件")} testid="active-filter-summary" extra={<Button type="link" size="small" onClick={clearAll}>全部清除</Button>}><Flex gap={6} wrap>{items.map(([key, value]) => <Tag key={key} closable onClose={() => { const next = { ...(filterState?.enumFilters ?? {}) }; delete next[key]; onFilterChange?.({ enumFilters: next }); onAction?.("filterChange", { operation: "remove", key, targets: targetIdsOf(block) }); }}>{key}：{value}</Tag>)}{filterState?.dateRange && <Tag closable onClose={() => onFilterChange?.({ dateRange: null })}>{filterState.dateRange.join(" 至 ")}</Tag>}</Flex></BlockShell>;
+};
+
+/** 仪表盘多个目标共享一份时间口径，快捷周期与自定义范围共用受控值。 */
+const AnalyticsDateScopeRenderer: ExperienceBlockRenderer = ({ block, children, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const [preset, setPreset] = React.useState(String(block.props?.defaultPreset ?? "month"));
+  const publish = (next: string, range?: [string, string]) => { setPreset(next); onAction?.("filterChange", { operation: "dateScope", preset: next, range, targets: targetIdsOf(block) }); };
+  return <BlockShell block={block} title={String(block.props?.title ?? "时间口径")} testid="analytics-date-scope"><Flex gap={8} wrap align="center"><Segmented value={preset} options={[{ label: "今日", value: "today" }, { label: "本周", value: "week" }, { label: "本月", value: "month" }, { label: "本年", value: "year" }]} onChange={value => publish(String(value))} /><DatePicker.RangePicker onChange={dates => dates?.[0] && dates?.[1] && publish("custom", [dates[0].format("YYYY-MM-DD"), dates[1].format("YYYY-MM-DD")])} /></Flex></BlockShell>;
+};
+
+/** 当前业务对象的少量关键字段摘要；完整详情仍由 main/aside 的 RecordDetail 承担。 */
+const HeaderEntitySummaryRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, fieldLabelOf, fieldTypeOf, enumOptionsOf }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const fields = fieldRefListOf(block, "fieldRefs"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !titleRef || !row || fields.length === 0) return <BlockShell block={block} testid="header-entity-summary"><BlockEmpty hint="页头实体摘要尚未绑定当前记录和关键字段" /></BlockShell>;
+  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? block.props?.title ?? "当前记录")} testid="header-entity-summary"><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options) }; })} /></BlockShell>;
+};
+
+/** 单个当前对象的进度、状态和下一节点摘要，不与多指标 MetricGrid 重复。 */
+const HeaderProgressSummaryRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const currentRef = fieldRefOf(block, "currentFieldRef"); const totalRef = fieldRefOf(block, "totalFieldRef"); const statusRef = fieldRefOf(block, "statusFieldRef"); const nextRef = fieldRefOf(block, "nextFieldRef"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
+  if (!bound || !currentRef || !totalRef || !row) return <BlockShell block={block} testid="header-progress-summary"><BlockEmpty hint="页头进度摘要尚未绑定当前值和总量字段" /></BlockShell>;
+  const current = Number(row.values?.[currentRef] ?? 0); const total = Number(row.values?.[totalRef] ?? 0); const percent = total > 0 ? Math.min(100, Math.max(0, Math.round(current / total * 100))) : 0;
+  return <BlockShell block={block} title={titleRef ? String(row.values?.[titleRef] ?? "当前进度") : String(block.props?.title ?? "当前进度")} testid="header-progress-summary" extra={statusRef ? <Tag color="processing">{String(row.values?.[statusRef] ?? "")}</Tag> : undefined}><Flex gap={16} align="center"><Progress type="circle" size={64} percent={percent} /><div><Typography.Text strong>{current} / {total}</Typography.Text>{nextRef && <div><Typography.Text type="secondary">下一步：{String(row.values?.[nextRef] ?? "待确认")}</Typography.Text></div>}</div></Flex></BlockShell>;
+};
+
+const WorkspaceTabsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef");
+  const [closed, setClosed] = React.useState<string[]>([]); const [active, setActive] = React.useState("");
+  if (!bound || !titleRef) return <BlockShell block={block} testid="workspace-tabs"><BlockEmpty hint="工作页签尚未绑定标题字段" /></BlockShell>;
+  const rows = bound.rows.filter(row => !closed.includes(row.id)); const key = rows.some(row => row.id === active) ? active : rows[0]?.id;
+  if (!key) return null;
+  return <BlockShell block={block} testid="workspace-tabs"><Tabs type="editable-card" hideAdd activeKey={key} items={rows.map(row => ({ key: row.id, label: String(row.values?.[titleRef] ?? "未命名页签") }))} onChange={next => { setActive(next); onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: next }); }} onEdit={(target, action) => { if (action !== "remove" || rows.length <= 1) return; const id = String(target); setClosed(current => [...current, id]); onAction?.("actionTrigger", { operation: "close", rowId: id }); }} /></BlockShell>;
+};
+
+const SavedViewTabsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const presetRef = fieldRefOf(block, "presetKeyFieldRef"); const countRef = fieldRefOf(block, "countFieldRef");
+  const [active, setActive] = React.useState("all");
+  if (!bound || !titleRef || !presetRef) return <BlockShell block={block} testid="saved-view-tabs"><BlockEmpty hint="保存视图尚未绑定名称和预设键" /></BlockShell>;
+  const items = [{ key: "all", label: "全部" }, ...bound.rows.flatMap(row => { const key = String(row.values?.[presetRef] ?? ""); return key ? [{ key, label: <Space size={4}>{String(row.values?.[titleRef] ?? "未命名视图")}{countRef && <Badge count={Number(row.values?.[countRef] ?? 0)} showZero />}</Space> }] : []; })];
+  return <BlockShell block={block} testid="saved-view-tabs" extra={<Button size="small" onClick={() => onAction?.("submitRequest", { operation: "saveView", targets: targetIdsOf(block) })}>保存当前视图</Button>}><Tabs activeKey={active} items={items} onChange={key => { setActive(key); onAction?.("filterChange", { operation: key === "all" ? "clear" : "apply", presetKey: key, targets: targetIdsOf(block) }); }} /></BlockShell>;
+};
+
+const AdvancedFilterBuilderRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, fieldLabelOf, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const fields = fieldRefListOf(block, "fieldRefs");
+  const [logic, setLogic] = React.useState("and"); const [conditions, setConditions] = React.useState<Array<{ field: string; operator: string; value: string }>>([{ field: fields[0] ?? "", operator: "equals", value: "" }]);
+  if (!bound || fields.length === 0) return <BlockShell block={block} title={String(block.props?.title ?? "高级筛选")} testid="advanced-filter-builder"><BlockEmpty hint="高级筛选尚未绑定可筛选字段" /></BlockShell>;
+  const update = (index: number, patch: Partial<(typeof conditions)[number]>) => setConditions(current => current.map((item, i) => i === index ? { ...item, ...patch } : item));
+  return <BlockShell block={block} title={String(block.props?.title ?? "高级筛选")} testid="advanced-filter-builder" extra={<Segmented size="small" value={logic} options={[{ label: "全部满足", value: "and" }, { label: "任一满足", value: "or" }]} onChange={value => setLogic(String(value))} />}><Space direction="vertical" style={{ width: "100%" }}>{conditions.map((condition, index) => <div key={index} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(108px, 1fr))", gap: 8 }}><Select value={condition.field} style={{ width: "100%", minWidth: 0 }} options={fields.map(field => ({ value: field, label: fieldLabelOf?.(bound.entityRef, field) ?? field }))} onChange={field => update(index, { field, value: "" })} /><Select value={condition.operator} style={{ width: "100%", minWidth: 0 }} options={[{ label: "等于", value: "equals" }, { label: "包含", value: "contains" }, { label: "不等于", value: "notEquals" }]} onChange={operator => update(index, { operator })} /><Input value={condition.value} onChange={event => update(index, { value: event.target.value })} style={{ width: "100%", minWidth: 0 }} /><Button danger disabled={conditions.length === 1} onClick={() => setConditions(current => current.filter((_, i) => i !== index))}>删除</Button></div>)}<Flex justify="space-between" gap={8} wrap><Button onClick={() => setConditions(current => [...current, { field: fields[0], operator: "equals", value: "" }])}>添加条件</Button><Space wrap><Button onClick={() => setConditions([{ field: fields[0], operator: "equals", value: "" }])}>重置</Button><Button type="primary" onClick={() => onAction?.("filterChange", { operation: "submit", logic, conditions: conditions.filter(item => item.field && item.value), targets: targetIdsOf(block) })}>应用筛选</Button></Space></Flex></Space></BlockShell>;
+};
+
+const FacetedFilterPanelRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, fieldLabelOf, enumOptionsOf, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const fields = fieldRefListOf(block, "fieldRefs"); const [selected, setSelected] = React.useState<Record<string, string[]>>({});
+  if (!bound || fields.length < 2) return <BlockShell block={block} title={String(block.props?.title ?? "分面筛选")} testid="faceted-filter-panel"><BlockEmpty hint="分面筛选至少需要两个枚举字段" /></BlockShell>;
+  const toggle = (field: string, values: string[]) => { const next = { ...selected, [field]: values }; setSelected(next); onAction?.("filterChange", { operation: "toggleValue", facets: next, targets: targetIdsOf(block) }); };
+  return <BlockShell block={block} title={String(block.props?.title ?? "分面筛选")} testid="faceted-filter-panel" extra={<Button type="link" size="small" onClick={() => { setSelected({}); onAction?.("filterChange", { operation: "clearAll", targets: targetIdsOf(block) }); }}>全部清除</Button>}><Collapse size="small" defaultActiveKey={fields} items={fields.map(field => { const declared = enumOptionsOf?.(bound.entityRef, field) ?? []; const values = declared.length ? declared.map(option => ({ value: option.id, label: option.label })) : Array.from(new Set(bound.rows.map(row => String(row.values?.[field] ?? "")).filter(Boolean))).map(value => ({ value, label: value })); return { key: field, label: fieldLabelOf?.(bound.entityRef, field) ?? field, children: values.length ? <Checkbox.Group value={selected[field] ?? []} onChange={next => toggle(field, next.map(String))}><Flex gap={8} vertical>{values.map(option => <Checkbox key={option.value} value={option.value}>{option.label} <Typography.Text type="secondary">({bound.rows.filter(row => String(row.values?.[field] ?? "") === option.value).length})</Typography.Text></Checkbox>)}</Flex></Checkbox.Group> : <BlockEmpty hint="当前分面没有可选值" /> }; })} /></BlockShell>;
+};
+
+const WizardNavigationBarRenderer: ExperienceBlockRenderer = ({ block, children, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const steps = Array.isArray(block.props?.steps) ? block.props.steps.map(String) : []; const total = Math.max(steps.length, Number(block.props?.total ?? 3)); const [current, setCurrent] = React.useState(Math.min(total - 1, Math.max(0, Number(block.props?.initialStep ?? 0))));
+  const move = (next: number) => { setCurrent(next); onAction?.("stepChange", { current: next, total, direction: next > current ? "next" : "previous", targets: targetIdsOf(block) }); };
+  return <BlockShell block={block} testid="wizard-navigation-bar"><Flex align="center" justify="space-between" gap={10} style={{ flexWrap: "wrap", width: "100%" }}><div style={{ minWidth: 0, flex: "1 1 160px" }}><Typography.Text>第 {current + 1} / {total} 步{steps[current] ? ` · ${steps[current]}` : ""}</Typography.Text><Progress percent={Math.round((current + 1) / total * 100)} showInfo={false} size="small" /></div><Space wrap style={{ marginLeft: "auto", maxWidth: "100%" }}>{current > 0 && <Button onClick={() => move(current - 1)}>上一步</Button>}{current < total - 1 ? <Button type="primary" onClick={() => move(current + 1)}>下一步</Button> : <Button type="primary" onClick={() => onAction?.("submitRequest", { operation: "finishWizard", current, total, targets: targetIdsOf(block) })}>提交</Button>}</Space></Flex></BlockShell>;
+};
+
+const ApprovalDecisionBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const statusRef = fieldRefOf(block, "statusFieldRef"); const titleRef = fieldRefOf(block, "titleFieldRef"); const [rejecting, setRejecting] = React.useState(false); const [reason, setReason] = React.useState("");
+  const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0]; const status = statusRef && row ? String(row.values?.[statusRef] ?? "pending") : ""; const pending = status === String(block.props?.pendingValue ?? "pending");
+  if (!bound || !statusRef) return <BlockShell block={block} testid="approval-decision-bar"><BlockEmpty hint="审批决策栏尚未绑定状态字段" /></BlockShell>;
+  const submit = (decision: string, extra?: Record<string, unknown>) => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row?.id, decision, ...extra });
+  return <BlockShell block={block} testid="approval-decision-bar"><Flex align="center" justify="space-between" gap={12} wrap><Space><Tag color={pending ? "processing" : "default"}>{pending ? "待处理" : status || "无任务"}</Tag><Typography.Text>{row && titleRef ? String(row.values?.[titleRef] ?? "当前审批") : "当前审批"}</Typography.Text></Space><Space><Button disabled={!row || !pending} onClick={() => setRejecting(true)}>驳回</Button><Button type="primary" disabled={!row || !pending} onClick={() => submit("approve")}>通过</Button></Space></Flex><Modal title="填写驳回原因" open={rejecting} okButtonProps={{ disabled: !reason.trim() }} onCancel={() => setRejecting(false)} onOk={() => { submit("reject", { reason }); setRejecting(false); }}><Input.TextArea value={reason} onChange={event => setReason(event.target.value)} rows={4} placeholder="原因不能为空" /></Modal></BlockShell>;
+};
+
+const CheckoutSummaryBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, selection, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const amountRef = fieldRefOf(block, "amountFieldRef"); const discountRef = fieldRefOf(block, "discountFieldRef"); const rowIds = bound ? selection?.rowIds?.[bound.entityRef] ?? [] : []; const rows = bound?.rows.filter(row => rowIds.includes(row.id)) ?? []; const amount = rows.reduce((sum, row) => sum + Number(row.values?.[amountRef ?? ""] ?? 0), 0); const discount = rows.reduce((sum, row) => sum + Number(row.values?.[discountRef ?? ""] ?? 0), 0); const [agreed, setAgreed] = React.useState(false);
+  if (!bound || !amountRef) return <BlockShell block={block} testid="checkout-summary-bar"><BlockEmpty hint="结算栏尚未绑定金额字段" /></BlockShell>;
+  return <BlockShell block={block} testid="checkout-summary-bar"><Flex align="center" justify="space-between" gap={16} wrap><Space size="large"><Typography.Text>已选 {rows.length} 项</Typography.Text><Statistic title="应付" value={Math.max(0, amount - discount)} precision={2} prefix="¥" /></Space><Space><Checkbox checked={agreed} onChange={event => setAgreed(event.target.checked)}>已确认提交协议</Checkbox><Button type="primary" disabled={rows.length === 0 || !agreed} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "checkout", rowIds, amount, discount, total: Math.max(0, amount - discount), agreementAccepted: agreed })}>确认提交</Button></Space></Flex></BlockShell>;
+};
+
+const RecordLifecycleBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, onAction }) => {
+  if (children !== undefined && children !== null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]); const statusRef = fieldRefOf(block, "statusFieldRef");
+  if (!bound) return <BlockShell block={block} testid="record-lifecycle-bar"><BlockEmpty hint="记录操作栏尚未绑定实体" /></BlockShell>;
+  return <BlockShell block={block} testid="record-lifecycle-bar"><Flex align="center" justify="space-between" gap={12} wrap><Space>{statusRef && row && <Tag>{String(row.values?.[statusRef] ?? "")}</Tag>}<Typography.Text type="secondary">{row ? `当前记录 ${row.id}` : "请先选择一条记录"}</Typography.Text></Space><Space><Button disabled={!row} onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row?.id, operation: "save" })}>保存</Button><Button disabled={!row} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row?.id, operation: "archive" })}>归档</Button><Popconfirm title="删除后无法恢复，确认继续？" onConfirm={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row?.id, operation: "delete" })}><Button danger disabled={!row}>删除</Button></Popconfirm></Space></Flex></BlockShell>;
+};
+
+/**
  * ── 区块定义表：**一条记录 = 一个组件**（2026-08-08 重做）───────────────
  *
  * ## 为什么重做
@@ -4625,6 +5954,91 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     StatusTabs: { render: StatusTabsRenderer, uses: ["Tabs", "Badge"], label: "状态切换栏" },
     BatchActionBar: { render: BatchActionBarRenderer, uses: ["Alert", "Button", "Flex", "Checkbox"], label: "批量操作栏" },
     ColumnSettingPanel: { render: ColumnSettingPanelRenderer, uses: ["Checkbox", "Button", "Tooltip", "Flex"], label: "列设置" },
+    AttachmentPanel: { render: AttachmentPanelRenderer, uses: ["Upload", "List", "Progress", "Tag", "Button", "Typography"], label: "附件面板", phone: true },
+    CommentThread: { render: CommentThreadRenderer, uses: ["List", "Avatar", "Input", "Button", "Tag", "Typography"], label: "讨论线程", phone: true },
+    RecordPicker: { render: RecordPickerRenderer, uses: ["Input", "List", "Checkbox", "Tag", "Button", "Flex"], label: "记录选择器", phone: true },
+    KanbanBoard: { render: KanbanBoardRenderer, uses: ["Card", "Badge", "Select", "Tag", "Flex", "Empty"], label: "状态看板", phone: true },
+    ScheduleCalendar: { render: ScheduleCalendarRenderer, uses: ["Calendar", "List", "Badge", "Tag", "Button"], label: "日程日历", phone: true },
+    NotificationInbox: { render: NotificationInboxRenderer, uses: ["Tabs", "List", "Badge", "Button", "Typography"], label: "通知收件箱", phone: true },
+    TreeNavigator: { render: TreeNavigatorRenderer, uses: ["Input", "Tree", "Empty", "Typography"], label: "层级导航", phone: true },
+    ApprovalQueue: { render: ApprovalQueueRenderer, uses: ["Segmented", "List", "Badge", "Button", "Modal", "Input", "Tag"], label: "审批队列", phone: true },
+    AuditTrail: { render: AuditTrailRenderer, uses: ["Collapse", "Pagination", "Tag", "Typography", "Flex"], label: "审计记录", phone: true },
+    DataImportWizard: { render: DataImportWizardRenderer, uses: ["Upload", "Steps", "Alert", "Table", "Tag", "Result", "Button"], label: "数据导入向导", phone: true },
+    AsyncTaskMonitor: { render: AsyncTaskMonitorRenderer, uses: ["List", "Progress", "Alert", "Tag", "Button"], label: "异步任务监控", phone: true },
+    PermissionMatrix: { render: PermissionMatrixRenderer, uses: ["Table", "Checkbox", "Segmented", "Button", "Typography"], label: "权限矩阵", phone: true },
+    DataExportPanel: { render: DataExportPanelRenderer, uses: ["Alert", "Segmented", "Checkbox", "Button", "Result", "Typography"], label: "数据导出面板", phone: true },
+    BulkEditPanel: { render: BulkEditPanelRenderer, uses: ["Form", "Select", "Alert", "Badge", "Button", "Typography"], label: "批量编辑面板", phone: true },
+    MemberAssignment: { render: MemberAssignmentRenderer, uses: ["Segmented", "Input", "List", "Avatar", "Checkbox", "Tag", "Button"], label: "成员分配器", phone: true },
+    ContextBreadcrumb: { render: ContextBreadcrumbRenderer, uses: ["Breadcrumb", "Button"], label: "上下文路径", phone: true },
+    LiveRefreshControl: { render: LiveRefreshControlRenderer, uses: ["Badge", "Button", "Flex", "Typography"], label: "实时刷新控制", phone: true },
+    ActiveFilterSummary: { render: ActiveFilterSummaryRenderer, uses: ["Tag", "Button", "Flex"], label: "已生效条件摘要", phone: true },
+    AnalyticsDateScope: { render: AnalyticsDateScopeRenderer, uses: ["Segmented", "DatePicker", "Flex"], label: "分析时间口径", phone: true },
+    HeaderEntitySummary: { render: HeaderEntitySummaryRenderer, uses: ["Descriptions"], label: "页头实体摘要", phone: true },
+    HeaderProgressSummary: { render: HeaderProgressSummaryRenderer, uses: ["Progress", "Tag", "Flex", "Typography"], label: "页头进度摘要", phone: true },
+    WorkspaceTabs: { render: WorkspaceTabsRenderer, uses: ["Tabs"], label: "工作上下文页签", phone: true },
+    SavedViewTabs: { render: SavedViewTabsRenderer, uses: ["Tabs", "Badge", "Button"], label: "保存视图页签", phone: true },
+    AdvancedFilterBuilder: { render: AdvancedFilterBuilderRenderer, uses: ["Select", "Input", "Segmented", "Button", "Flex"], label: "高级条件构建器", phone: true },
+    FacetedFilterPanel: { render: FacetedFilterPanelRenderer, uses: ["Collapse", "Checkbox", "Button", "Typography"], label: "分面筛选面板", phone: true },
+    WizardNavigationBar: { render: WizardNavigationBarRenderer, uses: ["Progress", "Button", "Flex", "Typography"], label: "向导导航栏", phone: true },
+    ApprovalDecisionBar: { render: ApprovalDecisionBarRenderer, uses: ["Tag", "Button", "Modal", "Input", "Flex"], label: "审批决策栏", phone: true },
+    CheckoutSummaryBar: { render: CheckoutSummaryBarRenderer, uses: ["Statistic", "Checkbox", "Button", "Flex"], label: "结算确认栏", phone: true },
+    RecordLifecycleBar: { render: RecordLifecycleBarRenderer, uses: ["Tag", "Button", "Popconfirm", "Flex"], label: "记录生命周期栏", phone: true },
+    WaterfallChart: { render: WaterfallChartRenderer, uses: ["ECharts"], label: "瀑布分析图", phone: true },
+    FunnelChart: { render: FunnelChartRenderer, uses: ["ECharts"], label: "转化漏斗图", phone: true },
+    DistributionHistogram: { render: DistributionHistogramRenderer, uses: ["ECharts"], label: "分布直方图", phone: true },
+    HeatmapMatrix: { render: HeatmapMatrixRenderer, uses: ["ECharts"], label: "热力矩阵", phone: true },
+    TreemapBreakdown: { render: TreemapBreakdownRenderer, uses: ["ECharts"], label: "层级构成图", phone: true },
+    GaugeProgress: { render: GaugeProgressRenderer, uses: ["ECharts"], label: "目标完成仪表", phone: true },
+    AlertTriagePanel: { render: AlertTriagePanelRenderer, uses: ["Segmented", "List", "Badge", "Tag", "Button"], label: "告警分诊台", phone: true },
+    AlertSilenceForm: { render: AlertSilenceFormRenderer, uses: ["Alert", "Segmented", "Input", "Button"], label: "告警静默表单", phone: true },
+    AlertRoutingPolicy: { render: AlertRoutingPolicyRenderer, uses: ["Flex", "Typography", "Button"], label: "告警路由策略", phone: true },
+    DeletedRecordsRecovery: { render: DeletedRecordsRecoveryRenderer, uses: ["List", "Badge", "Button", "Popconfirm"], label: "已删除记录恢复", phone: true },
+    RevisionHistoryPanel: { render: RevisionHistoryPanelRenderer, uses: ["Timeline", "Tag", "Button", "Flex"], label: "修订历史", phone: true },
+    RecordComparePanel: { render: RecordComparePanelRenderer, uses: ["Table", "Tag", "Button", "Typography"], label: "记录对比", phone: true },
+    GanttSchedule: { render: GanttScheduleRenderer, uses: ["ECharts"], label: "甘特排期", phone: true },
+    SankeyFlow: { render: SankeyFlowRenderer, uses: ["ECharts"], label: "关系流向", phone: true },
+    BoxPlotDistribution: { render: BoxPlotDistributionRenderer, uses: ["ECharts"], label: "箱线分布", phone: true },
+    RadarComparison: { render: RadarComparisonRenderer, uses: ["ECharts"], label: "雷达对比", phone: true },
+    AlertRuleEditor: { render: AlertRuleEditorRenderer, uses: ["Input", "Select", "Segmented", "Button", "Flex"], label: "告警规则编辑器", phone: true },
+    MuteTimingSchedule: { render: MuteTimingScheduleRenderer, uses: ["List", "Button", "Popconfirm"], label: "静默时段计划", phone: true },
+    ContactPointManager: { render: ContactPointManagerRenderer, uses: ["List", "Badge", "Button"], label: "通知联络点", phone: true },
+    ReferenceManyManager: { render: ReferenceManyManagerRenderer, uses: ["Segmented", "List", "Checkbox", "Button"], label: "关联记录管理", phone: true },
+    GlobalSearchPalette: { render: GlobalSearchPaletteRenderer, uses: ["Input", "List", "Typography"], label: "全局搜索面板", phone: true },
+    LiveChangeReview: { render: LiveChangeReviewRenderer, uses: ["Alert", "List", "Badge", "Tag", "Button"], label: "实时变更审查", phone: true },
+    AvailabilityPlanner: { render: AvailabilityPlannerRenderer, uses: ["Collapse", "List", "Badge", "Tag", "Button", "Typography"], label: "可用时间计划", phone: true },
+    BookingSlotPicker: { render: BookingSlotPickerRenderer, uses: ["Segmented", "Button", "Flex"], label: "预约时段选择", phone: true },
+    ScheduleConflictResolver: { render: ScheduleConflictResolverRenderer, uses: ["List", "Badge", "Button", "Result"], label: "排期冲突解析", phone: true },
+    StackTracePanel: { render: StackTracePanelRenderer, uses: ["Collapse", "Tag", "Typography", "Button"], label: "异常堆栈", phone: true },
+    EventBreadcrumbTimeline: { render: EventBreadcrumbTimelineRenderer, uses: ["Timeline", "Segmented", "Tag", "Typography"], label: "事件轨迹", phone: true },
+    SuspectCommitPanel: { render: SuspectCommitPanelRenderer, uses: ["List", "Typography", "Button"], label: "可疑提交", phone: true },
+    ConnectionTimeline: { render: ConnectionTimelineRenderer, uses: ["Timeline", "Segmented", "Tag", "Button", "Flex"], label: "连接时间线", phone: true },
+    SchemaChangeReview: { render: SchemaChangeReviewRenderer, uses: ["Table", "Tag", "Button", "Flex"], label: "Schema 变更审查", phone: true },
+    StreamStatusMonitor: { render: StreamStatusMonitorRenderer, uses: ["List", "Badge", "Button", "Typography"], label: "数据流状态监控", phone: true },
+    ConnectionMappingPanel: { render: ConnectionMappingPanelRenderer, uses: ["List", "Tag", "Button", "Typography"], label: "连接字段映射", phone: true },
+    IssueCommandHeader: { render: IssueCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Popconfirm", "Flex"], label: "问题操作页头", phone: true },
+    ConnectionControlHeader: { render: ConnectionControlHeaderRenderer, uses: ["Badge", "Typography", "Button", "Switch", "Alert", "Flex"], label: "连接控制页头", phone: true },
+    EventUserCountMetrics: { render: EventUserCountMetricsRenderer, uses: ["Statistic", "Flex"], label: "事件用户指标", phone: true },
+    JobRunMetrics: { render: JobRunMetricsRenderer, uses: ["Statistic", "Flex"], label: "任务运行指标", phone: true },
+    OccurrenceEvidenceSummary: { render: OccurrenceEvidenceSummaryRenderer, uses: ["Typography", "Flex"], label: "发生证据摘要", phone: true },
+    ConnectionRouteSummary: { render: ConnectionRouteSummaryRenderer, uses: ["Typography", "Tag", "Badge", "Flex"], label: "连接路径摘要", phone: true },
+    ResourceDetailTabs: { render: ResourceDetailTabsRenderer, uses: ["Tabs", "Badge"], label: "资源详情页签", phone: true },
+    InspectorModeTabs: { render: InspectorModeTabsRenderer, uses: ["Tabs", "Badge"], label: "检查器模式页签", phone: true },
+    IssueEventFilter: { render: IssueEventFilterRenderer, uses: ["Select", "Input", "Flex"], label: "问题事件筛选", phone: true },
+    TimelineFilterBar: { render: TimelineFilterBarRenderer, uses: ["Select", "DatePicker", "Button", "Flex"], label: "时间线筛选栏", phone: true },
+    UnsavedChangesBar: { render: UnsavedChangesBarRenderer, uses: ["Badge", "Typography", "Button", "Popconfirm", "Flex"], label: "未保存变更栏", phone: true },
+    RunningJobControlBar: { render: RunningJobControlBarRenderer, uses: ["Badge", "Tag", "Progress", "Button", "Popconfirm", "Flex"], label: "运行任务控制栏", phone: true },
+    BookingCommandHeader: { render: BookingCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Popconfirm", "Alert", "Flex"], label: "预约操作页头", phone: true },
+    AlertRuleCommandHeader: { render: AlertRuleCommandHeaderRenderer, uses: ["Badge", "Typography", "Tag", "Button", "Popconfirm", "Flex"], label: "告警规则操作页头", phone: true },
+    AlertStateMetrics: { render: AlertStateMetricsRenderer, uses: ["Statistic", "Flex"], label: "告警状态指标", phone: true },
+    BookingCapacityMetrics: { render: BookingCapacityMetricsRenderer, uses: ["Statistic", "Progress", "Flex"], label: "预约容量指标", phone: true },
+    BookingContextSummary: { render: BookingContextSummaryRenderer, uses: ["Descriptions"], label: "预约上下文摘要", phone: true },
+    AlertInstanceSummary: { render: AlertInstanceSummaryRenderer, uses: ["Typography", "Tag", "Flex"], label: "告警实例摘要", phone: true },
+    BookingStatusTabs: { render: BookingStatusTabsRenderer, uses: ["Tabs", "Badge"], label: "预约生命周期页签", phone: true },
+    ValidatedFormTabs: { render: ValidatedFormTabsRenderer, uses: ["Tabs", "Badge"], label: "带校验表单页签", phone: true },
+    AlertMatcherFilter: { render: AlertMatcherFilterRenderer, uses: ["Input", "Alert", "Button"], label: "告警标签匹配", phone: true },
+    BookingDirectoryFilter: { render: BookingDirectoryFilterRenderer, uses: ["Select", "DatePicker", "Input", "Flex"], label: "预约目录筛选", phone: true },
+    BookingDecisionBar: { render: BookingDecisionBarRenderer, uses: ["Typography", "Tag", "Button", "Modal", "Input", "Flex"], label: "预约确认决策栏", phone: true },
+    DashboardSaveBar: { render: DashboardSaveBarRenderer, uses: ["Typography", "Button", "Dropdown", "Flex"], label: "Dashboard 保存栏", phone: true },
   });
 
 /** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */
