@@ -354,7 +354,11 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
   it("门语言标签是中文，且筛选条与卡片徽标同源", () => {
     // 2026-07-31 用户要求汉化：原文 "closed 6/6" / "blocked" 跟旁边的「推演中」
     // 混排，一排筛选条两种语言。
-    expect(src).toContain('label: "已闭环 6/6"');
+    //
+    // 2026-08-07 用户又裁了一刀：**把 "6/6" 去掉**（原话「用户根本不关注这些，
+    // 只会增加用户负担」）。代码当天就改了，这条用例没跟上，于是它红在
+    // main 上好几天——每次跑全量都要重新判一遍"是不是我弄的"。
+    expect(src).toContain('label: "已闭环"');
     expect(src).toContain('label: "待补充"');
     expect(src).not.toMatch(/label:\s*"closed 6\/6"/);
     expect(src).not.toMatch(/label:\s*"blocked"/);
@@ -364,8 +368,13 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     expect(src).toContain("label={STATUS_META.awaiting.label}");
     expect(src).not.toMatch(/label="closed 6\/6"/);
     expect(src).not.toMatch(/label="blocked"/);
-    // 6/6 的数字不能丢：它是六个 Skill 的证据条数，不是装饰
-    expect(src).toMatch(/已闭环 6\/6/);
+    // **反过来钉：6/6 不许回来。**
+    //
+    // 这条原来写的是"6/6 的数字不能丢：它是六个 Skill 的证据条数，不是装饰"
+    // ——那个理由在 08-07 被推翻了，而推翻的论据写在 AppsWorkbench 的注释里：
+    // 那个数字**只在「已闭环」这一支出现，而这一支恒等于 6/6**，所以它从来
+    // 没有承担过"还差几项"的信息量。去掉不丢信息。
+    expect(src).not.toMatch(/已闭环 6\/6/);
   });
 
   it("aspectForDevice 保持设备事实，不带任何卡片墙的钳制", () => {
