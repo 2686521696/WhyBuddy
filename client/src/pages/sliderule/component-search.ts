@@ -348,32 +348,32 @@ interface CatalogBlock {
  * 首选排前面，跨档不动。文本明显更相关的永远在前，这条规则只在"文本上分不
  * 出高低"时说话——而「FilterBar vs BookingDirectoryFilter」正是这种情形。
  *
- * ## 光靠"平手"不够，因为它们根本不平手
+ * ## 做法：**同门之间换位，不改同门占的名次**
  *
- * 按头名比例切档试过（TIE_BAND=0.15/0.3/0.5），「做一个订单筛选」前四永远是
- * 那四个特化筛选件——FilterBar 的文本分实打实地低一截（第 11），把档位放宽到
- * "差一半也算平手"它仍在第 12。**这几个区块不是分数接近，是分数确实拉开了**，
- * 而拉开的原因（说明文字长短、pageKinds 多少）跟"哪个更该先给用户"毫无关系。
+ * 试过两版都不行：
  *
- * 所以按用户 2026-08-09 的裁决（原话选 A：「相信 AI 那份首选名单，让它压过
- * 文本分」）改成**同一能力面内首选不低于同门**：
+ *   · 乘系数（1.15/1.25/1.4）—— 验收纹丝不动，且 1.6 那档把
+ *     ReferenceManyManager 顶到「我要选择客户」第二名；
+ *   · 照 Algolia 做"平手时才分先后"—— 档位从 15% 放到 50% 都没用，
+ *     **它们根本不平手**：FilterBar 的文本分实打实低一截，而低的原因
+ *     （说明长短、pageKinds 条数）跟"谁更该先给用户"毫无关系。
  *
- *     有效分 = 首选 ? max(自己的分, 本能力面里最高的分) : 自己的分
+ * 第三版一度改成"首选继承同门最高分"，加了个 0.35 的门槛防止大族霸榜。
+ * 语料从 111 涨到 167 之后那个门槛就失效了——**又是一个会随语料漂移的
+ * magic number**，正是这次改动开头要根治的毛病。
  *
- * 一个 filter 首选因此不会排在任何 filter 特化件后面；而**跨能力面仍然按文本
- * 分**——`AlertMatcherFilter` 这种特化件不会被同门的高分带上来，`batchActionBar`
- * 那种一枝独秀的查询顺序也不动。范围严格限定在"同门之间"，不外溢。
+ * 现在的做法不含任何阈值：
  *
- * 基础组件各自成组（组名带 id），所以这条规则对它们是空转，那一档的顺序
- * 完全不变。
+ *     先按文本分正常排 → 每个能力面**占住的那几个名次**原地不动
+ *                      → 只在这几个名次内部重排：首选在前，其余按分数
  *
- * `TIE_BAND` 保留：有效分打平之后（首选之间、或首选与同门最高分之间）仍要
- * 分先后，档内首选优先、再按自己的分。
+ * filter 族占了第 1/2/3/8/11… 那就还是这几个位置，只是 FilterBar 从第 11
+ * 换到第 1。**一个族拿不到本来不属于它的名次**，所以大族再大也压不到别人
+ * 头上——「上传并预览合同」里 entityRows 族占几名就是几名，抢不走上传控件
+ * 的位置。
+ *
+ * 基础组件各自成组（组名带 id），一个组一个成员，重排是恒等变换。
  */
-const TIE_BAND = 0.15;
-
-/** 首选要拿到"同门最高分"，自己至少得有同门最高分的这个比例。 */
-const PROMOTE_FLOOR = 0.35;
 
 /** 分组键：区块按能力面归组，基础组件各自成组（这条规则对它们空转）。 */
 function familyOf(d: SearchDoc): string {
@@ -556,35 +556,26 @@ export function buildIndex(
         keep.push(...above.slice(0, MAX_HITS));
       }
       const weighted = (e: readonly [SearchDoc, number]) => e[1] * KIND_WEIGHT[e[0].kind];
-      // 同门最高分：首选不低于它（见 familyOf 上面那段的裁决）
-      const familyBest = new Map<string, number>();
-      for (const e of keep) {
+      const ranked2 = [...keep].sort((a, b) => weighted(b) - weighted(a));
+      // 同门之间换位：每个能力面占住的名次不变，内部首选提前（见上面那段）
+      const slots = new Map<string, number[]>();
+      ranked2.forEach((e, i) => {
         const k = familyOf(e[0]);
-        familyBest.set(k, Math.max(familyBest.get(k) ?? 0, weighted(e)));
-      }
-      // 提升有门槛：自己得先跟同门最高分在一个数量级上。
-      // 没有这道门槛时，entityRows 那一族（45 个成员、7 个首选）会被任何沾边的
-      // 查询整体抬到榜首——实测「上传并预览合同」前五变成 RecordDetail /
-      // ReferenceManyManager / DataTable…，一个上传控件都没有。
-      const effective = (e: readonly [SearchDoc, number]) => {
-        const own = weighted(e);
-        if (!e[0].generic) return own;
-        const best = familyBest.get(familyOf(e[0])) ?? 0;
-        return own >= best * PROMOTE_FLOOR ? Math.max(own, best) : own;
-      };
-      const top = Math.max(...keep.map(effective), 0);
-      const band = top * TIE_BAND;
-      const tierOf = (e: readonly [SearchDoc, number]) =>
-        band > 0 ? Math.floor((top - effective(e)) / band) : 0;
-      return keep
-        .sort((a, b) => {
-          const dt = tierOf(a) - tierOf(b);
-          if (dt !== 0) return dt;
+        const list = slots.get(k);
+        if (list) list.push(i);
+        else slots.set(k, [i]);
+      });
+      for (const [k, idx] of slots) {
+        if (idx.length < 2) continue;
+        const members = idx.map(i => ranked2[i]);
+        members.sort((a, b) => {
           const dg = Number(b[0].generic ?? false) - Number(a[0].generic ?? false);
-          if (dg !== 0) return dg;
-          return weighted(b) - weighted(a);
-        })
-        .map(([d]) => d);
+          return dg !== 0 ? dg : weighted(b) - weighted(a);
+        });
+        idx.forEach((i, n) => (ranked2[i] = members[n]));
+        void k;
+      }
+      return ranked2.map(([d]) => d);
     },
   };
 }
