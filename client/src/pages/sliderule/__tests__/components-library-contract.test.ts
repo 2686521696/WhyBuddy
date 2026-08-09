@@ -428,6 +428,19 @@ describe("基础组件目录 · 四个来源", () => {
     }
   });
 
+  it("**区块卡必须是 fixed 的包含块** —— 否则 FooterToolbar 会钉在整页底部", () => {
+    // 与上面那条 ProLayout/FooterToolbar 的 transform 是**同一道防护的两半**。
+    //
+    // 那条加在基础组件目录的两个条目上；区块走的是另一条渲染路径
+    // （ExperienceBlockBoundary），谁用到 FooterToolbar 就会漏出来——
+    // SectionedForm 的提交区就是（pro-layout 的 FooterToolbar 样式写死
+    // `position: fixed; bottom: 0`，而 `portalDom={false}` 只管不 createPortal，
+    // 不改定位方式）。实测表现是一条蓝色「提交」浮在整站之上、盖住别的卡。
+    //
+    // 删掉这一行不会报错，只会有个按钮浮在全站底部——所以钉住。
+    expect(pageSource, "区块预览容器的 contain 没了").toContain('contain: "layout"');
+  });
+
   it("自定义档的重库走懒加载 —— 一页两百多个示例，不能开页就下一个编辑器", () => {
     expect(customSrc, "CodeMirror 变成静态 import 了").not.toMatch(
       /^import CodeMirror from/m

@@ -1153,8 +1153,66 @@ function BlockCard({
         />
       </div>
       {/* 渲染区四边不留白，组件铺满整张卡；元信息浮层直接压在画面底部。 */}
+      {/*
+        `contain: layout` —— 把 `position: fixed` 关回这张卡里（2026-08-09）。
+
+        ## 症状
+
+        SectionedForm 的提交区用的是 pro-layout 的 `FooterToolbar`（吸底工具条，
+        原样搬自 pro-blocks 的 FormAdvancedForm）。在组件库这面墙上，那条工具条
+        钉在**浏览器视口**底部，一条蓝色「提交」浮在整站之上，还盖住别的卡。
+
+        ## 为什么 `portalDom={false}` 不够
+
+        那边已经传了 `portalDom={false}`，注释写的是"让它停在这张卡里"。但看
+        pro-layout 的实现，这个开关只决定**要不要 createPortal 到 document.body**：
+
+            // FooterToolbar/index.js:91
+            var ssrDom = !isBrowser() || !portalDom || !containerDom
+              ? renderDom : createPortal(renderDom, containerDom, baseClassName);
+
+        而它的样式是写死的：
+
+            // FooterToolbar/style/index.js:6
+            position: 'fixed', insetInlineEnd: 0, bottom: 0, zIndex: 99
+
+        **管住了在哪儿渲染，没管住按什么定位。** 元素留在卡片的 DOM 里，但
+        `position: fixed` 的包含块默认是视口，照样脱离出去。
+
+        ## 这个坑本仓踩过，只是防护没铺到这面墙
+
+        基础组件那一档早就治过同一件事：`base-catalog-pro.tsx` 给 ProLayout /
+        FooterToolbar 两条加了 `transform: translateZ(0)`，测试也钉着
+        （components-library-contract「必须留着 transform」那条），原话是
+        「第一版 ProLayout 的侧边栏铺满了整个目录页，另外 216 条全被压在下面，
+        而错误边界全绿——布局逃逸不是异常」。
+
+        所以判据早就有了，**只是加在了基础组件那面墙的条目上，区块墙这边没有**。
+        区块是另一条渲染路径（ExperienceBlockBoundary），谁用到 FooterToolbar
+        就会漏出来。这里补的是同一道防护的另一半。
+
+        ## 为什么这边用 contain 而不是照抄 translateZ(0)
+
+        两者都能成为 fixed 后代的包含块，效果等价。那边是**逐条**加在两个已知
+        会逃逸的条目上（217 条里的 2 条）；这边要加在**每张卡**上，而
+        `translateZ(0)` 会把每张卡提升成合成层——26 张活区块各占一层不划算。
+        `contain: layout` 拿到同样的包含块，不强制 GPU 提升。
+
+        ## 为什么用 containment 而不是 iframe
+
+        组件目录做预览隔离，业界的标准答案是 iframe——Storybook 每个 story 都跑在
+        自己的 `iframe.html` 里，样式、脚本、定位全隔离。但这面墙的高度是靠
+        ResizeObserver 量出来喂给瀑布流的（那套刚为"量高不稳"修过一轮），
+        26 个 iframe 意味着 26 份高度要跨文档同步回来——把刚稳住的地方重新推倒。
+
+        CSS 规范给了更轻的办法：`contain: layout` 的元素**成为其绝对/固定定位
+        后代的包含块**。于是 fixed 相对这张卡定位，工具条回到卡片底边——正是
+        那条注释本来想要的效果。用 layout 而不是 `contain: size`：size 会让元素
+        不再按内容撑高，那正好会打断测量。
+      */}
       <div
         className="w-full"
+        style={{ contain: "layout" }}
         onClick={() => marks.onUse(`block:${block.type}`)}
       >
         {rendered}
