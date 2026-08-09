@@ -48,7 +48,6 @@ import { useScrollerIn } from "@/pages/agent-loop/dashboard/useScrollerIn";
 import { spanForColumnCount } from "@/pages/agent-loop/dashboard/app-wall-span";
 import { BLOCK_DEFINITIONS, ExperienceBlockBoundary } from "./live-runtime/block-registry";
 import { interleaveWide, isWideBlock } from "./block-wall-order";
-import { JustifiedBlockWall } from "./JustifiedBlockWall";
 import {
   BASE_COMPONENTS,
   BASE_GROUPS,
@@ -1016,12 +1015,6 @@ const PAGE_KINDS = [
  * 排列；把两档包进同一个 item 会让整组高度参与定位，墙面无法填补空列。
  */
 const WALL_COLUMN_WIDTH = 260;
-/** 区块卡渲染与测量时的统一宽度；缩放以它为基准。 */
-const JUSTIFIED_DESIGN_WIDTH = 420;
-const JUSTIFIED_TARGET_ROW_HEIGHT = 340;
-/** 缩放范围。取值理由见 justified-rows.ts 顶部那张实测表——比这更窄就无解。 */
-const JUSTIFIED_MIN_SCALE = 0.15;
-const JUSTIFIED_MAX_SCALE = 2.0;
 const WALL_GUTTER = 16;
 
 type DeviceTier = "all" | "desktop" | "phone";
@@ -2262,20 +2255,9 @@ function BlockWall({
     [blocks, device]
   );
 
-  /**
-   * 等比缩放铺满（2026-08-09，用户裁决）。
-   *
-   * 固定列宽的瀑布流只有 1 列 / 2 列两种宽度，填充率实测 70.8%（1920×1080，
-   * 4 列 30 项），缺的面积几乎全在参差的底部。改成 justified 分行之后每张卡的
-   * 宽度是连续值，一行正好铺满。
-   *
-   * ⚠ 代价很大，别当成纯优化：区块自然高度 56~1062px（相差 18.96 倍），要让
-   * DP 有解，缩放范围必须开到 0.15~2.0——有些卡缩到 15%（12px 正文变 1.8px），
-   * 另一些放大到 2 倍。用户明确裁决"字看不清没关系"，据此启用。
-   * 算不出来（比如窗口太窄）就如实回落到下面那套瀑布流。
-   */
-  const masonry = (
-    <SpanMasonry<BlockPreviewEntry>
+  return (
+    <div data-testid="components-wall" style={{ display: "contents" }}>
+      <SpanMasonry<BlockPreviewEntry>
         containerRef={containerRef}
         items={entries}
         width={width}
@@ -2312,25 +2294,6 @@ function BlockWall({
             ? 1
             : spanForColumnCount(isWideBlock(entry.block), columnCount)}
         className="mt-5"
-      render={entry => (
-        <BlockCard block={entry.block} device={entry.device} marks={marks} />
-      )}
-    />
-  );
-
-  return (
-    <div data-testid="components-wall" style={{ display: "contents" }}>
-      <JustifiedBlockWall<BlockPreviewEntry>
-        items={entries}
-        itemKey={entry => `${entry.device}-${entry.block.type}`}
-        designWidth={JUSTIFIED_DESIGN_WIDTH}
-        spacing={WALL_GUTTER}
-        targetRowHeight={JUSTIFIED_TARGET_ROW_HEIGHT}
-        minScale={JUSTIFIED_MIN_SCALE}
-        maxScale={JUSTIFIED_MAX_SCALE}
-        maxPerRow={6}
-        className="mt-5"
-        fallback={masonry}
         render={entry => (
           <BlockCard block={entry.block} device={entry.device} marks={marks} />
         )}
