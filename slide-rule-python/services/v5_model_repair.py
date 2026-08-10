@@ -764,6 +764,7 @@ def _repair_layout_slot_violations(model: Dict[str, Any]) -> Dict[str, Any]:
 
     legal_slots = set(EXPERIENCE_BLOCK_ALLOWED_REGIONS)
     moved: List[Dict[str, Any]] = []
+    dropped_panels: List[Dict[str, Any]] = []
     new_pages: List[Any] = []
     changed = False
 
@@ -780,6 +781,14 @@ def _repair_layout_slot_violations(model: Dict[str, Any]) -> Dict[str, Any]:
         }
         page_id = str(pd.get("id") or "<unnamed>")
 
+        # 同页的 stats/charts/rankings/feeds 的 id。它们**不是区块**，但槽位名
+        # 恰好叫 metrics / charts，所以模型会往里塞——见下面 _panel_ids 的用法。
+        panel_ids = {
+            str(_as_dict(x).get("id") or "").strip()
+            for key in ("stats", "charts", "rankings", "feeds")
+            for x in _as_list(pd.get(key))
+        } - {""}
+
         # 先算出每个槽位要保留哪些、以及谁要搬到哪去
         keep: Dict[str, List[str]] = {}
         pending: List[tuple] = []  # (target_slot, block_id)
@@ -792,6 +801,26 @@ def _repair_layout_slot_violations(model: Dict[str, Any]) -> Dict[str, Any]:
                 rid = str(ref or "").strip()
                 btype = types_by_id.get(rid)
                 allowed = EXPERIENCE_BLOCK_ALLOWED_REGIONS_BY_TYPE.get(btype or "")
+                if rid and not btype and rid in panel_ids:
+                    # ── 槽位名撞车：metrics/charts 槽 vs page.stats/page.charts ──
+                    #
+                    # 2026-08-10 两趟独立出现、形态一模一样（都是 monitor 页）：
+                    #     slot=metrics ← 三个 page.stats 的 id
+                    #     slot=charts  ← 两个 page.charts 的 id
+                    # 槽位名就叫 metrics/charts，模型的读法**完全合乎字面**，这是
+                    # 命名撞车不是马虎。但门要求 layout 的 ref 只能是 page.blocks 的
+                    # id，于是整份模型被拒、走一轮重生成。
+                    #
+                    # 摘掉是**严格安全**的：总览页的 stats/charts 归 freeformOverview
+                    # 那条通道渲染（AppRuntimeScreen「总览页归 freeformOverview…设计树
+                    # 就是这一页的全部内容」，stats 另有 schema.home.stats 渲染路径），
+                    # layout 槽位压根不参与。也就是说**运行时本来就忽略这些 ref，
+                    # 只有门在硬拦**——摘掉它一点内容都不丢。
+                    #
+                    # 纪律：只摘**已证实是 stats/charts/rankings/feeds 的 id**。纯粹
+                    # 认不出来的 ref（拼错、凭空造）不碰，门有 DANGLING 判据管它。
+                    dropped_panels.append({"pageId": page_id, "slot": str(slot_key), "ref": rid})
+                    continue
                 if not rid or not btype or not allowed:
                     kept.append(ref)  # 悬空 ref / 不认识的类型 → 门去管
                     continue
@@ -815,7 +844,7 @@ def _repair_layout_slot_violations(model: Dict[str, Any]) -> Dict[str, Any]:
                 changed = True
             keep[str(slot_key)] = kept
 
-        if not changed and not pending:
+        if not changed and not pending and not dropped_panels:
             new_pages.append(raw_page)
             continue
 
@@ -831,12 +860,17 @@ def _repair_layout_slot_violations(model: Dict[str, Any]) -> Dict[str, Any]:
         new_page["layout"] = keep
         new_pages.append(new_page)
 
-    if not moved:
+    if not moved and not dropped_panels:
         return {}
     new_page_section = dict(page)
     new_page_section["pages"] = new_pages
     model["page"] = new_page_section
-    return {"moved": moved}
+    out: Dict[str, Any] = {}
+    if moved:
+        out["moved"] = moved
+    if dropped_panels:
+        out["droppedPanelRefs"] = dropped_panels
+    return out
 
 
 def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:

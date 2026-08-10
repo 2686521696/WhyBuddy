@@ -202,3 +202,82 @@ def test_修完之后门不再报槽位违规():
         if "is not allowed in slot" in str(f.get("message") or "")
     ]
     assert after == [], f"修完仍报槽位违规: {after}"
+
+
+# ── 槽位名撞车：metrics/charts 槽 vs page.stats/page.charts ────────────────
+
+
+def _model_with_panels(layout):
+    m = _model(layout, [{"id": "b1", "type": "DataTable"}])
+    pg = m["page"]["pages"][0]
+    pg["kind"] = "monitor"
+    pg["stats"] = [
+        {"id": "firing_alerts", "name": "触发中", "entity": "alert", "metric": "count"},
+        {"id": "pending_alerts", "name": "待确认", "entity": "alert", "metric": "count"},
+    ]
+    pg["charts"] = [
+        {"id": "alert_trend", "name": "趋势", "type": "line",
+         "dimension": "alert.title", "metric": "count"},
+    ]
+    return m
+
+
+def test_塞进槽位的_stat_chart_id_被摘掉():
+    """2026-08-10 两趟独立复现、形态一模一样：slot=metrics 收 stats 的 id、
+    slot=charts 收 charts 的 id。槽位名就叫 metrics/charts，模型的读法合乎字面。
+
+    摘掉是安全的：总览页 stats/charts 归 freeformOverview 那条通道渲染，layout
+    槽位压根不参与——运行时本来就忽略，只有门在硬拦。
+    """
+    m = _model_with_panels({"metrics": ["firing_alerts", "pending_alerts"],
+                            "charts": ["alert_trend"], "main": ["b1"]})
+    r = repair_five_system_model(m)
+    lay = _layout(r)
+    assert lay.get("metrics") == []
+    assert lay.get("charts") == []
+    assert lay.get("main") == ["b1"], "真正的区块 ref 不能被牵连"
+    dropped = (r["layoutSlots"] or {})["droppedPanelRefs"]
+    assert {d["ref"] for d in dropped} == {"firing_alerts", "pending_alerts", "alert_trend"}
+
+
+def test_认不出来的_ref_不摘_留给门():
+    """纪律：只摘**已证实是 stats/charts/rankings/feeds** 的 id。拼错/凭空造的
+    不碰——门有 DANGLING 判据，在这儿猜只会把"引用错了"伪装成"没这回事"。"""
+    m = _model_with_panels({"metrics": ["totally_made_up_id"], "main": ["b1"]})
+    r = repair_five_system_model(m)
+    assert _layout(r)["metrics"] == ["totally_made_up_id"]
+
+
+def test_rankings_与_feeds_的_id_同样处理():
+    """⚠️ 夹具必须让 ranking/feed 本身**合法**（sortBy 指 number、timeField 指
+    date）。第一版拿 alert.title（string）当 sortBy，于是
+    _repair_presentation_layer 在本条修复之前就把这两条整条剔除了——id 随之消失、
+    自然认不出是面板 id，测试红在"没摘掉"上，看着像实现坏了，其实是夹具无效。
+    """
+    m = _model(({"main": ["b1"], "supplement": ["top_rules", "recent_events"]}),
+               [{"id": "b1", "type": "DataTable"}])
+    m["datamodel"]["entities"][0]["fields"] += [
+        {"id": "hits", "name": "次数", "type": "number"},
+        {"id": "at", "name": "时间", "type": "date"},
+    ]
+    pg = m["page"]["pages"][0]
+    pg["rankings"] = [{"id": "top_rules", "name": "排行", "entity": "alert",
+                       "sortBy": "alert.hits", "limit": 5}]
+    pg["feeds"] = [{"id": "recent_events", "name": "动态", "entity": "alert",
+                    "timeField": "alert.at"}]
+    r = repair_five_system_model(m)
+    assert _layout(r)["supplement"] == []
+
+
+def test_摘面板_ref_后门不再报_layout_悬空():
+    from services.v5_model_gate import validate_five_system_model
+
+    m = _model_with_panels({"metrics": ["firing_alerts"], "charts": ["alert_trend"],
+                            "main": ["b1"]})
+    before = [f for f in (validate_five_system_model(m).get("findings") or [])
+              if "layout block ref" in str(f.get("message") or "")]
+    assert before, "夹具本身应当先触发 layout 悬空"
+    fixed = repair_five_system_model(m)["model"]
+    after = [f for f in (validate_five_system_model(fixed).get("findings") or [])
+             if "layout block ref" in str(f.get("message") or "")]
+    assert after == []
