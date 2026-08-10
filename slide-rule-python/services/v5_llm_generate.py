@@ -348,12 +348,17 @@ Content-quality rules (checked by a deterministic regression gate):
 
 #: appbundle.pageBindings[].workflowRef 的合法域说明（2026-08-10 加，治 B 族）。
 #
-# 单独提出来是为了能 A/B：`SLIDERULE_EXP_OMIT_WORKFLOWREF_RULE=1` 时整段不进
-# prompt。起因是加了这条之后，**新出现**了一族 chainRef 裁决——
+# 曾用 SLIDERULE_EXP_OMIT_WORKFLOWREF_RULE 对这一段做过 A/B，判定完成后开关已撤，
+# 结论留在这里。起因是加了这条之后，**新出现**了一族 chainRef 裁决——
 # `chainRef 'alert_lifecycle' not found in workflow.chains`，而 alert_lifecycle
 # 正是主链 id，也正是这条规则新告诉模型"算 workflow id"的那个东西。怀疑模型把
 # 这条外推到了 chainRef 上（chainRef 恰恰**不认**主链，见
-# _collect_workflow_chain_ids）。开关只为把"我引入的"和"本来就有的"分开。
+# _collect_workflow_chain_ids）。
+#
+# A/B 判定（跨 5 个队列共 28 个模型）：非法 chainRef **只出现在**"有本规则、且没有
+# 末尾那句限定域"的那一个队列（2/6 趟），其余 22 个模型零非法，超几何 p≈0.040；
+# 两个非法值都是主链 id `alert_lifecycle`——正是本规则新点名为合法 workflow id 的
+# 那个东西。所以末尾"别外推到 chainRef"那句是**必须留着**的。
 _WORKFLOWREF_RULE = """\
 - appbundle.pageBindings[].workflowRef IS NOT A FREE LABEL and is NOT one per page.
   It MUST be an id you already defined inside "workflow": the top-level workflow.id,
@@ -368,12 +373,6 @@ _WORKFLOWREF_RULE = """\
   This paragraph is about workflowRef ONLY. Do NOT carry it over to a block's
   props.chainRef: chainRef accepts ONLY a workflow.chains[].id — the top-level
   workflow.id and node ids are NOT valid there."""
-
-
-def _omit_workflowref_rule() -> bool:
-    return str(
-        os.getenv("SLIDERULE_EXP_OMIT_WORKFLOWREF_RULE", "")
-    ).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _render_schema_instruction(template: str) -> str:
@@ -395,7 +394,7 @@ def _render_schema_instruction(template: str) -> str:
     stat_metrics = "|".join(list(METRIC_BARE) + [f"{p}{field_ref}" for p in STAT_METRIC_PREFIXES])
     return (
         template
-        .replace("__WORKFLOWREF_RULE__", "" if _omit_workflowref_rule() else _WORKFLOWREF_RULE)
+        .replace("__WORKFLOWREF_RULE__", _WORKFLOWREF_RULE)
         .replace("__FIELD_TONES__", enum_str("fieldTones"))
         .replace("__FIELD_FORMATS__", enum_str("numberFormats", "stringFormats"))
         .replace("__PAGE_KINDS__", enum_str("pageKinds"))

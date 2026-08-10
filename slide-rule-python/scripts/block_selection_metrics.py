@@ -9,8 +9,6 @@
     # 处理臂（窄化）
     .venv/bin/python scripts/block_selection_metrics.py --narrowing on --runs 3
 
-    # 对照臂：把对题区块提到目录最前（验位置效应）
-    .venv/bin/python scripts/block_selection_metrics.py --arm promoted --runs 3
 
     # 不花钱：拿已经存下来的模型重算指标
     .venv/bin/python scripts/block_selection_metrics.py --from-models "/tmp/*_model.json"
@@ -68,8 +66,8 @@ CASES_FILE = _HERE.parent / "data" / "block_selection_cases.json"
 def catalog_view() -> Dict[str, Any]:
     """当前进程看到的目录：原始顺序 + generality。
 
-    ⚠️ 原始顺序必须绕开 promote 开关单独重载一份——否则 promoted 臂里
-    「原名次」会被换序后的名次覆盖，报告就再也看不出"这个件本来在多深"。
+    「原名次」始终按目录原始顺序算——窄化臂里若拿注入后的顺序当原名次，报告就
+    再也看不出"这个件本来在多深"。
     """
     from services import schema_legal as L
 
@@ -86,16 +84,16 @@ def ordering_for_arm(arm: str, case: Dict[str, Any]) -> List[str]:
     复用 schema_legal._promote_blocks_for_experiment 本体（临时设 env 后调用），
     而不是在这里重写一遍换序逻辑——重写必然和生产实现漂移。
 
-    为什么需要它：`--from-models` 一个进程里要同时分析 control 和 promoted 两
-    臂的模型，而"可达区"是按注入顺序算的。第一版只按 --arm 算了一份顺序，
-    于是 promoted 臂的『对题件在可达区内』被拿 control 的顺序去量，报出
-    0/16 —— 而它们明明被提到了 1~16 位。这种错会让整张表看着"实验没效果"。
+    为什么需要它：`--from-models` 一个进程里要同时分析两个臂的模型，而"可达区"
+    是按**注入顺序**算的。第一版只按 --arm 算了一份顺序，于是处理臂的
+    『对题件在可达区内』被拿对照臂的顺序去量，报出 0/16 —— 而它们明明在前 16 位。
+    这种错会让整张表看着"实验没效果"。
     """
     from services import schema_legal as L
 
     if arm == "narrowed":
-        # 窄化臂：注入顺序 = select_blocks 的返回顺序。同样复用生产本体，
-        # 不在这里重算——第一版就是自算顺序导致 promoted 臂覆盖率报成 0/16。
+        # 窄化臂：注入顺序 = select_blocks 的返回顺序。复用生产本体，不在这里重算
+        # ——第一版自算顺序导致覆盖率报成 0/16。
         from services.block_narrowing import (
             narrowing_limit,
             preset_block_names,
@@ -111,19 +109,12 @@ def ordering_for_arm(arm: str, case: Dict[str, Any]) -> List[str]:
         )
         return [str(b["type"]) for b in picked]
 
-    saved = os.environ.get("SLIDERULE_EXP_PROMOTE_BLOCKS")
-    try:
-        if arm == "promoted":
-            os.environ["SLIDERULE_EXP_PROMOTE_BLOCKS"] = ",".join(case["onTopicBlocks"])
-        else:
-            os.environ.pop("SLIDERULE_EXP_PROMOTE_BLOCKS", None)
-        ordered = L._promote_blocks_for_experiment(L._load_experience_blocks())
-    finally:
-        if saved is None:
-            os.environ.pop("SLIDERULE_EXP_PROMOTE_BLOCKS", None)
-        else:
-            os.environ["SLIDERULE_EXP_PROMOTE_BLOCKS"] = saved
-    return [str(b["type"]) for b in ordered if b.get("generationEnabled")]
+    # 其余臂用原始目录顺序。（曾有两个实验臂建在 SLIDERULE_EXP_* 开关上，判定完成
+    # 后开关与臂一并移除；结论见 docs/block-narrowing-eval.md 与 schema_legal.py
+    # 里那两段留档注释。）
+    return [
+        str(b["type"]) for b in L._load_experience_blocks() if b.get("generationEnabled")
+    ]
 
 
 def _pos(seq: List[str], t: str) -> Optional[int]:
@@ -465,9 +456,7 @@ def load_case(case_id: Optional[str]) -> Dict[str, Any]:
 def main() -> int:
     ap = argparse.ArgumentParser(description="区块选材度量台")
     ap.add_argument("--case", default=None, help="用例 id（默认第一个）")
-    ap.add_argument(
-        "--arm", default="control", choices=["control", "promoted", "omit-presets", "narrowed"]
-    )
+    ap.add_argument("--arm", default="control", choices=["control", "narrowed"])
     # ⚠️ 2026-08-11 起窄化**默认开**，所以"不设环境变量"不再等于对照臂。
     #    必须显式声明，否则跑出来的两臂其实是同一个。
     ap.add_argument(
@@ -494,18 +483,6 @@ def main() -> int:
             "1" if args.narrowing == "on" else "0"
         )
 
-    # ⚠️ 换序/摘预设的开关必须在 import services.schema_legal **之前**设好：
-    #    目录顺序与 _SCHEMA_INSTRUCTION 都是模块级、import 那一刻就固化。
-    if args.arm == "promoted":
-        os.environ["SLIDERULE_EXP_PROMOTE_BLOCKS"] = ",".join(case["onTopicBlocks"])
-        os.environ.pop("SLIDERULE_EXP_OMIT_PROVEN_LAYOUTS", None)
-    elif args.arm == "omit-presets":
-        os.environ["SLIDERULE_EXP_OMIT_PROVEN_LAYOUTS"] = "1"
-        os.environ.pop("SLIDERULE_EXP_PROMOTE_BLOCKS", None)
-    else:
-        os.environ.pop("SLIDERULE_EXP_PROMOTE_BLOCKS", None)
-        os.environ.pop("SLIDERULE_EXP_OMIT_PROVEN_LAYOUTS", None)
-
     cat = catalog_view()
     records: List[Dict[str, Any]] = []
 
@@ -516,9 +493,7 @@ def main() -> int:
         for i, p in enumerate(paths, 1):
             model = json.loads(Path(p).read_text(encoding="utf-8"))
             name = Path(p).name
-            if "promoted" in name:
-                arm = "promoted"
-            elif name.startswith("nw_") or "narrow" in name:
+            if name.startswith("nw_") or "narrow" in name:
                 arm = "narrowed"
             else:
                 arm = "control"
