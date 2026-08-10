@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -787,7 +788,51 @@ def experience_block_prompt_block() -> str:
     #
     # 同时明说"预设是起点不是枷锁"——业务真需要别的组合时照常自己排，
     # 否则会把模型逼进只会抄预设的另一个极端。
-    if PAGE_KIND_PRESETS:
+    # ── 实验开关（2026-08-10，SLIDERULE_EXP_OMIT_PROVEN_LAYOUTS=1）────────────
+    #
+    # 上面这段预设点名的 10 个区块**全部落在目录前 17 名**（MetricGrid 1 /
+    # RankedList 4 / ActivityFeed 5 / DataTable 6 / FilterBar 10 /
+    # WorkflowTimeline 13 / RecordForm 14 / RecordFormDialog 15 /
+    # RecordDetail 16 / StepsForm 17）。而线上实测的两趟里，被选中的区块
+    # 无一例外在前 52 名，点名要求过的 AlertSilenceForm(62) /
+    # OnCallScheduleCalendar(279) / EscalationPolicyPanel(328) 一个没用。
+    #
+    # 于是有两个互相竞争的解释：
+    #   (甲) 位置/可达性——358 个名字连成一句，模型只从头部挑；
+    #   (乙) 就是这一段——祈使句叫它"从这 10 套起手"，还附了"自己组会浪费
+    #        一轮、通常会被 gate 拒"的惩罚性措辞，本文件反复验证过措辞能
+    #        单独决定选材行为（07-28：许可式让 7 个通电区块一次都没被用）。
+    #
+    # 这个开关就为把甲乙分开：置 1 则整段不进 prompt，目录**一字不动**。
+    #
+    # ## 判定结果：(乙) 出局，别删这一段
+    #
+    # 08-10 同题（告警值班与静默管理）同模型同时间窗跑两臂，各 n=1：
+    #
+    #                      含预设段     摘掉预设段
+    #     生成耗时          104.9s      422.7s  ← 慢 4 倍
+    #     页面 / 区块       5 / 15      6 / 22
+    #     最远名次          52          61
+    #     点名区块命中      0/5         0/5     ← 关键：没解锁
+    #
+    # 点名要求过的五个（62/63/72/279/328）两臂都是零命中，天花板只从 52
+    # 挪到 61。这一段不是病根。
+    #
+    # 反过来还测出两件事：
+    #   · 摘掉它慢 4 倍，且开始长废件（PageHeader 糊在 6 页里的 5 页、
+    #     一页塞两个 DataTable + 两个 RecordFormDialog）。它把选型从"发明"
+    #     降成"挑选"，省的是真推理时间——**删它是引入回归**。
+    #   · treatment 臂选中了 AlertTriagePanel(61)——一个**告警专用**件，正好
+    #     蹲在旧天花板外面。可达边界往外挪一点，模型立刻就抓了它。所以
+    #     "模型偏爱泛用件、排斥冷门领域件"这个解释同样出局：它不是不想用，
+    #     是够不到 60 名以后。剩下 (甲) 位置/可达性独存。
+    #
+    # 保留这个开关是为了让上面这组数字可复现（改目录呈现方式时要回归对照）。
+    # 目录窄化落地、天花板问题闭掉之后，连开关带这段注释一起删。
+    _omit_presets = str(
+        os.getenv("SLIDERULE_EXP_OMIT_PROVEN_LAYOUTS", "")
+    ).strip().lower() in ("1", "true", "yes", "on")
+    if PAGE_KIND_PRESETS and not _omit_presets:
         lines.append(
             "PROVEN LAYOUTS — start from one of these instead of composing from scratch. "
             "Each has already been checked against the catalog: every block is live, "
