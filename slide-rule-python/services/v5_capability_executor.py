@@ -1094,7 +1094,36 @@ def execute_v5_capability(
     # 显式入参优先（测试直接传），否则取本轮上下文。
     ask = current_turn_instruction() if user_instruction is None else user_instruction
     topic = compose_capability_topic(goal, ask)
-    evidence = retrieve_evidence(topic + " for " + capability_id, top_k=10)
+    # 检索词**只用话题**，不拼能力 id（2026-08-10 修）。
+    #
+    # 原来是 `retrieve_evidence(topic + " for " + capability_id, ...)`。线上实测
+    # （黑灰产情报自动化分析系统）拿回来的"外部证据"是这些：
+    #
+    #     art-0-intent.parse  → Internet / Intel Core i7處理器 / Internet Explorer
+    #                            / Fortran / Formula of Love
+    #     art-1-收口          → AppBlock / Apple晶片 / APPBP1 / Fortran / …
+    #
+    # 成因：查询被蒸馏成递减前缀，能力 id 与那个字面量 " for " 一起进了词表——
+    #
+    #     "黑灰产情报自动化分析系统 for appbundle.runtimeClosure"
+    #       → ['黑灰产情', '黑灰产', 'for', 'appb', 'app']
+    #           'for'  → Fortran、Formula of Love
+    #           'app'  → AppBlock、Apple晶片、APPBP1
+    #           'inte' → Internet、Intel Core i7處理器（intent.parse 那一路）
+    #
+    # 而且 " for " 是模板硬编码的，所以 **Fortran 出现在每一个能力、每一趟推演
+    # 的外部证据里**，与话题无关——这不是黑灰产特有的，是全站长期如此。
+    #
+    # 相关性闸（mcp_tools._title_matches_term）拦不住它：那些条目字面上**真的**
+    # 包含 'for'/'app'。闸没错，是喂给闸的查询本身脏。治查询才是治根。
+    #
+    # 能力 id 对本地检索也没有贡献：基线语料 5 条（services/rag_service.py 的
+    # KNOWLEDGE_BASE），**没有一条提到任何能力 id**，实测命中数 0。所以整段拿掉
+    # 不损失召回，只去噪。
+    #
+    # ⚠️ 下面 generate_with_rag 的**提示词**仍然带 capability_id —— 那是在告诉
+    # 模型"这一步在干什么"，该留；只有拿去检索的那一份不能带。
+    evidence = retrieve_evidence(topic, top_k=10)
     content = generate_with_rag(f"Full V5 execution for {capability_id} on {topic}. Must include external evidence from RAG.", evidence)
 
     provenance = "python-rag"

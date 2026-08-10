@@ -884,11 +884,27 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             | "cancelled"
             | "error"
             | null = null;
+          // 后端 run 到底建起来没有（2026-08-10 加）。
+          //
+          // 它是"流断了之后能不能落本地兜底"的**唯一正确判据**：
+          //   见过 runId  → 后端已经有一个 run 在跑 → 本地再跑一遍就是双开；
+          //   没见过      → 连 run 都没建起来（Python 后端没起/直接 500）→
+          //                 本地兜底是正当降级，那条路必须留着。
+          //
+          // 下面那道守卫原来只写了 `resumeRun &&`，只护住了续播分支。首发流
+          // 中途断线时 resumeRun 是假、runSettledReason 也是 null（服务端好好
+          // 的，压根没宣布终局），两道守卫全跳过，直接落进本地引擎——正是
+          // 那段注释明令禁止的"与后台 run 双开"。
+          //
+          // 实测踩到过：2026-08-10 一趟推演的 POST 流在第 2 分钟被对端 reset，
+          // 而服务端一路跑到 seq 1812 正常收尾。前端在那一刻会把整轮重跑一遍。
+          let sawRunId = false;
           const streamOpts = {
               stopSignal: controller.signal,
               turnId,
               ...(mode === "repair" ? { mode } : {}),
               onRunId: (runId: string) => {
+                sawRunId = true;
                 // 后端 run 书签：刷新/跳页回来据此续播接回
                 saveActiveRun(resolvedSid, {
                   runId,
@@ -997,17 +1013,26 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 await import("@/lib/sliderule-marathon-driver")
               ).resumeDriveFullStream(resumeRun.runId, streamOpts)
             : await driveStream(preparedState, userText.trim(), streamOpts);
-          // 续播流断了但 run 未终局（网络抖动/代理超时，非本地停止）：
+          // 流断了但 run 未终局（网络抖动/代理超时，非本地停止）：
           // 绝不能落进本地引擎兜底——那会把整轮在前端重跑一遍，与后台
           // run 双开。如实报中断，书签还在，刷新可再次自动接回。
-          if (
-            resumeRun &&
-            !pythonDrive &&
-            runSettledReason === null &&
-            !controller.signal.aborted
-          ) {
+          //
+          // 判据抽在 sliderule-marathon-driver.classifyStreamFallback，那里
+          // 有单测（这个回调本身测不动）。要点：**首发流**断线时 resumeRun
+          // 是假，但只要 onRunId 触发过，后端那个 run 就实实在在在跑——
+          // 只护续播分支等于把最常见的那种断线放进了兜底。
+          const streamVerdict = (
+            await import("@/lib/sliderule-marathon-driver")
+          ).classifyStreamFallback({
+            resuming: Boolean(resumeRun),
+            sawRunId,
+            gotResult: Boolean(pythonDrive),
+            settledReason: runSettledReason,
+            locallyAborted: controller.signal.aborted,
+          });
+          if (streamVerdict === "report_interrupted") {
             throw new Error(
-              "续播连接中断，后台推演仍在进行——刷新页面可再次接回"
+              "推演连接中断，后台仍在进行——刷新页面可再次接回"
             );
           }
           // 服务端宣布取消（他处停止/孤儿回收）且非本地主动停止：同样
