@@ -629,6 +629,94 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
     return notes
 
 
+def _repair_page_workflow_refs(model: Dict[str, Any]) -> Dict[str, Any]:
+    """把 appbundle.pageBindings[].workflowRef 修到合法工作流 id 上；修不好就**摘掉**。
+
+    ## 为什么补这一条
+
+    2026-08-10 度量（scripts/block_selection_metrics.py，control 臂 10 趟）：首轮
+    过闸失败里这一族占 4/6 趟、条数最多，是当下最大的阻塞。模型把这个字段当成
+    "这一页属于哪个流程"的自由文本，一页编一个：
+
+        pageRef=oncall_calendar  workflowRef='oncall_shifts'       ← 凭空造的
+        pageRef=silence_windows  workflowRef='silence_windows'     ← 直接抄了 pageRef
+        pageRef=audit_log        workflowRef='audit_page'          ← 凭空造的
+
+    ⚠️ 合法域**必须**取自门禁的 `_collect_workflow_ids`，不能在这儿自己算一份。
+    第一版就是自己算的（只收 workflow.id + chains[].id），结果比门**更严**——门
+    明确也认**节点 id**（那个函数的文档原文："referenced by its top-level id,
+    chain ids, and/or node ids"）。于是修复把门本来放行的引用摘掉了，直接弄红
+    三条既有用例（library 夹具里 workflowRef='review' 是个节点名）。这正是本
+    文件顶部那条纪律要防的事：合法域两边各自维护，必然奇偶不齐。
+
+    ## 为什么可以确定性地摘掉
+
+    `workflowRef` 是**可选**字段（门禁第 6 节只在 `kind=wizard` 时要求必填），
+    而且下游明确处理了缺省：pageSkill.createWorkflowTaskViewAppBundleBindingEvidence
+    里 `bindingAligned = !wfRef || ...`，没有它就是"不声明流程绑定"，不是错误。
+
+    所以摘掉一个**已证伪的可选断言**跟本文件"歧义不猜"的纪律是一致的：我们没有
+    去猜它到底属于哪条流程（那才是编造），只是删掉一句明确写错的话。代价对比很
+    悬殊——留着就是一轮 172~208 秒的 LLM 回喂重生成。
+
+    ## 边界
+
+      · 先试唯一近邻（复用 `_unique_near_match`）：真是拼错就改对，不浪费信息；
+      · `kind=wizard` 的页**不摘**。那里 workflowRef 是必填，摘了会从"引用错了"
+        变成"假向导"——渲染器没有步骤可画。这种必须让门硬拦。
+    """
+    appbundle = _as_dict(model.get("appbundle"))
+    bindings = _as_list(appbundle.get("pageBindings"))
+    if not bindings:
+        return {}
+
+    # 合法域与门禁第 6 节共用同一函数——见上面头注里那条教训
+    from .v5_model_gate import _collect_workflow_ids
+
+    legal = _collect_workflow_ids(_as_dict(model.get("workflow")))
+    if not legal:
+        return {}  # 压根没有工作流可指——交给门，不在这儿造
+
+    wizard_pages = {
+        str(_as_dict(pd).get("id") or "").strip()
+        for pd in _as_list(_as_dict(model.get("page")).get("pages"))
+        if str(_as_dict(pd).get("kind") or "").strip() == "wizard"
+    }
+
+    repaired: List[Dict[str, Any]] = []
+    dropped: List[Dict[str, Any]] = []
+    new_bindings: List[Any] = []
+    for raw in bindings:
+        bd = _as_dict(raw)
+        wref = str(bd.get("workflowRef") or "").strip()
+        if not wref or wref in legal:
+            new_bindings.append(raw)
+            continue
+        page_ref = str(bd.get("pageRef") or "").strip()
+        fixed = _unique_near_match(wref, legal)
+        if fixed is not None:
+            nb = dict(bd)
+            nb["workflowRef"] = fixed
+            new_bindings.append(nb)
+            repaired.append({"pageRef": page_ref, "from": wref, "to": fixed})
+            continue
+        if page_ref in wizard_pages:
+            new_bindings.append(raw)  # 向导页必填，留给门硬拦
+            continue
+        nb = dict(bd)
+        nb.pop("workflowRef", None)
+        new_bindings.append(nb)
+        dropped.append({"pageRef": page_ref, "workflowRef": wref})
+
+    if not repaired and not dropped:
+        return {}
+    ab = dict(appbundle)
+    ab["pageBindings"] = new_bindings
+    ab["pageWorkflowRefNotes"] = {"repaired": repaired, "dropped": dropped}
+    model["appbundle"] = ab
+    return {"repaired": repaired, "dropped": dropped}
+
+
 def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
     """返回 {"model": 修复后的深拷贝, "repaired": [...], "dropped": [...],
     "presentation": {...}}。
@@ -645,10 +733,21 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
         appbundle_p["presentationNotes"] = {k: v for k, v in presentation.items() if v}
         m["appbundle"] = appbundle_p
 
+    # ⚠️ 必须排在下面 invariants 的提前 return **之前**：没有 invariants 的模型
+    #    照样会写错 pageBindings.workflowRef（实测那几趟正是这样），排在后面等于
+    #    这条修复对它们永不生效。
+    page_workflow_notes = _repair_page_workflow_refs(m)
+
     appbundle = _as_dict(m.get("appbundle"))
     invariants = _as_list(appbundle.get("invariants"))
     if not invariants:
-        return {"model": m, "repaired": [], "dropped": [], "presentation": presentation}
+        return {
+            "model": m,
+            "repaired": [],
+            "dropped": [],
+            "presentation": presentation,
+            "pageWorkflowRefs": page_workflow_notes,
+        }
 
     # 合法解析域与门禁第 7 节共享同一函数（曾因两边各自维护导致奇偶不齐：
     # 修复器认 AIGC 能力 id、门禁不认 → 合法不变式被误拦）
@@ -690,4 +789,10 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
     if repaired or dropped:
         appbundle["invariantNotes"] = {"repaired": repaired, "dropped": dropped}
     m["appbundle"] = appbundle
-    return {"model": m, "repaired": repaired, "dropped": dropped, "presentation": presentation}
+    return {
+        "model": m,
+        "repaired": repaired,
+        "dropped": dropped,
+        "presentation": presentation,
+        "pageWorkflowRefs": page_workflow_notes,
+    }

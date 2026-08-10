@@ -170,6 +170,16 @@ Rules:
   is a rejected deliverable, not a cosmetic warning.
 - Every aigc input/output field MUST be from datamodel; roleRefs from rbac.roles.
 - appbundle pageRef∈pages, workflowRef∈workflow, roleRefs∈roles, dataModelRefs∈entities.
+- appbundle.pageBindings[].workflowRef IS NOT A FREE LABEL and is NOT one per page.
+  It MUST be an id you already defined inside "workflow": the top-level workflow.id,
+  one of workflow.chains[].id, or one of the node ids in either. Nothing else is a
+  workflow id. It is OPTIONAL: set it only on a page the user actually drives that
+  workflow from, and OMIT it everywhere else. Never invent a per-page process name
+  and never copy the pageRef into it. Omitting the field is correct and costs
+  nothing; a value that is not one of those ids is a dangling reference that gets the
+  whole model rejected and regenerated. The one exception: a page with kind "wizard"
+  MUST be bound here with a real workflowRef, because the wizard's steps are read
+  from that workflow — a wizard without it cannot render.
 - appbundle.landingPageRef is REQUIRED and MUST equal one page.pages[].id. Pick
   the page that best represents the user's main job when the app opens (for
   example a monitor/dashboard/calendar page), not a generic approval home.
