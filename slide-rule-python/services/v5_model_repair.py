@@ -73,6 +73,105 @@ def _unique_near_match(ref: str, known: set) -> str | None:
 from .v5_model_gate import CHART_TYPES as _CHART_TYPES
 
 
+def _repair_binding_field_types(
+    block: dict, model: dict, notes: dict, page_id: str
+) -> dict:
+    """把 `binding.*FieldRef` 指到**类型对得上**的字段上。
+
+    ## 为什么补这一条：门拦下来的全是它
+
+    2026-08-10 线上一趟推演（黑灰产情报），容器日志里结构闸的 4 条裁决**无一
+    例外**都是这个形状：
+
+        descFieldRef      'analyst_note' must be a text   field (got 'string')
+        actionFieldRef    'action'       must be a string field (got 'enum')
+        descFieldRef      'risk_level'   must be a text   field (got 'enum')
+        applicantFieldRef 'owner_role'   must be a string field (got 'ref')
+        summaryFieldRef   'risk_level'   must be a text   field (got 'enum')
+
+    不是悬空引用、不是结构错——模型挑了个语义上完全合理的字段，只是类型不对。
+
+    而这类**此前没有任何确定性修复**：`_repair_block_binding` 只修 entityRef 的
+    拼写。于是每次都得走一轮 LLM 回喂重生成，**172~208 秒买一个"把 string 改成
+    text"**。那趟里 loop-1 甚至回喂完仍未过（换了个区块报错），收口直接 0/6。
+
+    这类必然反复发生：目录里 entityFieldRefs 一共要求 708 处类型，
+    string 285 / enum 197 / number 155 / date 56 / **text 12** / ref 3。
+    `text` 是 12/708 的少数派，而 `analyst_note` 这种字段人来标也会标 string。
+
+    ## 判据：类型先过滤，再套本文件既有的"歧义不猜"
+
+    候选只在**同实体、类型正好等于 schema 要求**的字段里挑：
+
+      · 0 个   → 不动，留给门硬拦（fail-closed 不变）
+      · 1 个   → 直接改，留痕
+      · 多个   → 交给 `_unique_near_match`（词干包含唯一 → difflib 过阈值唯一），
+                仍然歧义就不动
+
+    最后这一步是刻意复用本文件既有的那把尺，而不是另发明一个打分：
+    AJV 的 `coerceTypes` 用的是同一条哲学——只沿一张**显式枚举**的表转换，
+    表外的一律判失败而不是猜（docs/coercion.md 里 `⇘` 标的就是"不转，直接
+    失败"）。这里的"显式枚举"就是类型相等，"不猜"就是歧义时原样留给门。
+
+    ## 边界
+
+      · 悬空字段（entity 里压根没有）**不碰** —— 门已有 DANGLING 判据，
+        在这儿再猜一次只会把"引用错了"伪装成"引用对了但选得怪"。
+      · 类型账本与门共用 `_collect_field_types`，不另起一份 —— 本文件顶部那条
+        "合法域来自单一真相源"的纪律；两边各自维护过一次，结果是奇偶不齐。
+    """
+    from .v5_model_gate import EXPERIENCE_BLOCK_BINDING_SCHEMAS, _collect_field_types
+
+    schema = EXPERIENCE_BLOCK_BINDING_SCHEMAS.get(str(block.get("type") or "").strip())
+    if not schema:
+        return block
+    wants = schema.get("entityFieldRefs") or {}
+    if not wants:
+        return block
+    binding = block.get("binding")
+    if not isinstance(binding, dict):
+        return block
+    entity_ref = str(binding.get("entityRef") or "").strip()
+    if not entity_ref:
+        return block
+
+    all_types = _collect_field_types(_as_dict(model.get("datamodel")))
+    prefix = f"{entity_ref}."
+    own = {k[len(prefix):]: v for k, v in all_types.items() if k.startswith(prefix)}
+    if not own:
+        return block
+
+    new_binding = None
+    for field, want in wants.items():
+        cur = str(binding.get(field) or "").strip()
+        if not cur:
+            continue
+        got = own.get(cur)
+        if got is None or got == want:
+            continue  # 悬空交给门；类型已经对的不动
+        candidates = [f for f, t in own.items() if t == want]
+        if len(candidates) == 1:
+            fixed = candidates[0]
+        else:
+            fixed = _unique_near_match(cur, set(candidates))
+        if not fixed:
+            continue
+        if new_binding is None:
+            new_binding = dict(binding)
+        new_binding[field] = fixed
+        notes.setdefault("repaired", []).append({
+            "pageId": page_id,
+            "path": f"blocks[{block.get('id') or '<unnamed>'}].binding.{field}",
+            "from": cur,
+            "to": fixed,
+            "reason": f"类型要 {want}，'{cur}' 是 {got}",
+        })
+    if new_binding is not None:
+        block = dict(block)
+        block["binding"] = new_binding
+    return block
+
+
 def _repair_block_binding(block: dict, model: dict) -> dict:
     """修复 block.binding.entityRef 的近邻拼写错误。
 
@@ -242,6 +341,9 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
             block_type = str(bd.get("type") or "").strip()
             if block_type in EXPERIENCE_BLOCK_TYPES:
                 bd = _repair_block_binding(bd, m)
+                # 顺序要紧：字段类型修复要按 entityRef 去查该实体的字段表，
+                # 所以必须排在 entityRef 近邻修复**之后**。
+                bd = _repair_binding_field_types(bd, m, notes, pid)
                 kept_blocks.append(bd)
                 continue
             fixed_type = _unique_near_match(block_type, set(EXPERIENCE_BLOCK_TYPES))
@@ -254,6 +356,7 @@ def _repair_presentation_layer(m: Dict[str, Any]) -> Dict[str, Any]:
                     "to": fixed_type,
                 })
                 bd = _repair_block_binding(bd, m)
+                bd = _repair_binding_field_types(bd, m, notes, pid)
                 kept_blocks.append(bd)
             else:
                 notes["droppedBlocks"].append({
