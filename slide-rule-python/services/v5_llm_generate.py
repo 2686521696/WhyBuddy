@@ -156,6 +156,21 @@ Rules:
   Never put the display name in the id, and never leave name equal to the id.
 - Every page fieldBinding MUST be "<entityId>.<fieldId>" from datamodel.
 - Every page actionPermission MUST be in rbac.permissions.
+- A BLOCK CAN ONLY BIND FIELDS THE ENTITY ACTUALLY HAS, of the exact type the
+  block's binding contract asks for. Before you place a block, make sure the entity
+  you bind it to CARRIES those fields — if it does not, add them to the entity in
+  datamodel. Two cases keep going wrong; both end as a rejected model:
+  · A recurring time-of-day window (a daily/weekly quiet period, business hours,
+    an on-call shift slot) is a "string" field holding "HH:MM" — NOT a "date".
+    "date" pins one absolute moment, which cannot express "every day 09:00-18:00".
+    Blocks asking for startTimeFieldRef / endTimeFieldRef want that "HH:MM" string,
+    so the entity needs string fields for it.
+  · A threshold, score, count or ranking measure is a "number" field. An enum
+    severity is NOT a threshold and a "ref" is never a measure. If a block needs a
+    numeric field (thresholdFieldRef, sortByRef, …) and the entity has no number
+    field at all, that entity is under-modelled — add the real numeric field.
+  Picking the nearest wrong-typed field does not work: the gate rejects the model
+  and the whole thing is regenerated.
 - PEOPLE NEED A NAME FIELD, not only a relation. Whenever an entity carries a
   person / team / owner / assignee / recipient party, give that entity a "string"
   field holding the party's DISPLAY NAME — in addition to any "ref" field you use
