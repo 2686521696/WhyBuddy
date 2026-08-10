@@ -156,6 +156,18 @@ Rules:
   Never put the display name in the id, and never leave name equal to the id.
 - Every page fieldBinding MUST be "<entityId>.<fieldId>" from datamodel.
 - Every page actionPermission MUST be in rbac.permissions.
+- PEOPLE NEED A NAME FIELD, not only a relation. Whenever an entity carries a
+  person / team / owner / assignee / recipient party, give that entity a "string"
+  field holding the party's DISPLAY NAME — in addition to any "ref" field you use
+  for the relation (e.g. BOTH assignee_ref of type "ref" AND assignee_name of type
+  "string"). Experience blocks bind people through assigneeFieldRef,
+  memberFieldRef, ownerFieldRef, receiverFieldRef, actorFieldRef and
+  applicantFieldRef, and EVERY one of those requires a "string" field. A "ref"
+  field can never satisfy them: "ref" declares no target entity anywhere in this
+  schema, so nothing downstream can resolve it into a name to display. If the only
+  person-ish field on the entity is a "ref", the block has nothing correct to bind,
+  the structural gate rejects the page, and the whole model is regenerated — this
+  is a rejected deliverable, not a cosmetic warning.
 - Every aigc input/output field MUST be from datamodel; roleRefs from rbac.roles.
 - appbundle pageRef∈pages, workflowRef∈workflow, roleRefs∈roles, dataModelRefs∈entities.
 - appbundle.landingPageRef is REQUIRED and MUST equal one page.pages[].id. Pick

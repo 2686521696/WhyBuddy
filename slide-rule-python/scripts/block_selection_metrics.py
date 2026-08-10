@@ -45,6 +45,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import statistics
 import sys
 import time
@@ -131,6 +132,30 @@ def page_rows(model: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
+#: 首轮过闸失败按**裁决原文**分族。
+#
+# 为什么不能只按 code 分：A 族（人员字段类型不符）和 B 族（workflowRef 指错
+# 种类的 id）都报 PUBLISH_DANGLING_CROSSREF，同一个 code。2026-08-10 实测 7 趟
+# 全部首轮未过，就是这两族各占一半、且**互不重叠**——只看 code 计数会把两个
+# 完全不同的病混成一个数，改了一个也看不出效果。
+_FINDING_FAMILIES: List[tuple] = [
+    # assigneeFieldRef 'group_ref' must be a string field (got 'ref')
+    ("fieldref_type", re.compile(r"must be a[n]?\s+\w+\s+field\s+\(got", re.I)),
+    ("dangling_workflowref", re.compile(r"workflowRef\s+'[^']+'\s+not found", re.I)),
+    ("dangling_permissionref", re.compile(r"permissionRef\s+'[^']+'\s+not found", re.I)),
+    ("dangling_pageref", re.compile(r"pageRef\s+'[^']+'\s+not found", re.I)),
+    ("takes_no_binding", re.compile(r"takes no binding", re.I)),
+]
+
+
+def classify_finding(f: Dict[str, Any]) -> str:
+    msg = str(f.get("message") or f.get("detail") or "")
+    for name, pat in _FINDING_FAMILIES:
+        if pat.search(msg):
+            return name
+    return f"other:{f.get('code')}"
+
+
 def gate_verdicts(model: Dict[str, Any], goal: str) -> Dict[str, Any]:
     """两档过闸判定。
 
@@ -163,10 +188,17 @@ def gate_verdicts(model: Dict[str, Any], goal: str) -> Dict[str, Any]:
         )
         out["prod_first_pass_passed"] = bool(prod.get("passed"))
         codes: Dict[str, int] = {}
+        fams: Dict[str, int] = {}
+        msgs: List[str] = []
         for f in (prod.get("findings") or [])[:40]:
             if isinstance(f, dict):
                 codes[str(f.get("code"))] = codes.get(str(f.get("code")), 0) + 1
+                fam = classify_finding(f)
+                fams[fam] = fams.get(fam, 0) + 1
+                msgs.append(f"[{fam}] {str(f.get('message') or f.get('detail') or '')[:150]}")
         out["prod_finding_codes"] = codes
+        out["prod_finding_families"] = fams
+        out["prod_finding_messages"] = msgs
     except Exception as exc:  # noqa: BLE001
         out["prod_first_pass_passed"] = None
         out["prod_error"] = str(exc)[:160]
@@ -327,12 +359,20 @@ def report(records: List[Dict[str, Any]], case: Dict[str, Any], window: int) -> 
         else:
             lines.append("  对题件被选频次     : 全部 0")
 
-        codes: Dict[str, int] = {}
+        fam_runs: Dict[str, int] = {}
+        fam_items: Dict[str, int] = {}
         for r in rs:
-            for k, v in (r.get("prod_finding_codes") or {}).items():
-                codes[k] = codes.get(k, 0) + v
-        if codes:
-            lines.append(f"  prod 门裁决码合计  : {codes}")
+            for k, v in (r.get("prod_finding_families") or {}).items():
+                fam_runs[k] = fam_runs.get(k, 0) + 1
+                fam_items[k] = fam_items.get(k, 0) + v
+        if fam_runs:
+            lines.append("  首轮未过的裁决分族（趟数 / 条数）:")
+            for k in sorted(fam_runs, key=lambda x: -fam_runs[x]):
+                lines.append(
+                    f"     {k:<26} {fam_runs[k]}/{len(rs)} 趟   共 {fam_items[k]} 条"
+                )
+        else:
+            lines.append("  首轮未过的裁决分族  : 无（全部通过）")
 
     if len(by_arm) == 2 and "control" in by_arm:
         other = [a for a in by_arm if a != "control"][0]
