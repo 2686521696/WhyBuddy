@@ -24,6 +24,7 @@ import pytest
 from services.app_template import (
     SEED_APP_TEMPLATES,
     all_app_templates,
+    extract_skeleton,
     match_app_template,
     template_terms,
     validate_app_template,
@@ -285,3 +286,142 @@ class Test抽公共判据没抽坏:
 
     def test_页型词汇两边同源(self):
         assert set(p["kind"] for t in SEED_APP_TEMPLATES for p in t["pages"]) <= set(PAGE_KINDS)
+
+
+def _generated_model(**overrides):
+    """一份「像真生成结果」的五系统模型：区块在 blocks[]，位置在 layout 里。
+
+    这个形状是从 v5_model_gate 的校验反推的——生成出来的区块**自己不带区域**，
+    位置记在 page.layout 的「区域 → 区块 id 列表」里。抽骨架必须两边对着看。
+    """
+    model = {
+        "appbundle": {"appIdentity": {"productName": "华东采购协同"}},
+        "datamodel": {"entities": [{"id": "purchase_order", "fields": [{"id": "title", "type": "string"}]}]},
+        "rbac": {"menus": [{"label": "采购申请"}, {"label": "经理审批"}]},
+        "workflow": {
+            "nodes": [
+                {"name": "填写采购单", "phase": "申请"},
+                {"name": "经理审批", "phase": "审批"},
+            ]
+        },
+        "page": {
+            "pages": [
+                {
+                    "id": "po_workbench",
+                    "kind": "workbench",
+                    "name": "采购申请工作台",
+                    "blocks": [
+                        {"id": "b1", "type": "FilterBar", "binding": {"targets": ["b2"]}},
+                        {"id": "b2", "type": "DataTable", "binding": {"entityRef": "purchase_order", "titleFieldRef": "title"}},
+                    ],
+                    "layout": {"filters": ["b1"], "main": ["b2"], "grid": {"desktop": []}},
+                }
+            ]
+        },
+    }
+    model.update(overrides)
+    return model
+
+
+class Test从生成好的应用抽骨架:
+    """链路方向：基础组件 → 区块 → 推演组装 → 应用 → **骨架**。
+
+    骨架是沉淀物不是原料，所以这个函数是唯一能产出真骨架的地方——种子那四条
+    是从演示域抠的，而演示域根本没走过「用区块搭应用」这一步。
+    """
+
+    def test_抽出来的骨架自己能过自检(self):
+        out = extract_skeleton(_generated_model(), template_id="po", industry="采购", when="员工提需求、经理审批")
+        assert out["problems"] == [], out["problems"]
+        assert validate_app_template(out["skeleton"]) == []
+
+    def test_绑定一个都不跟过来(self):
+        """输入模型里满是 entityRef / titleFieldRef / targets，骨架里必须一个不剩。
+
+        不是靠事后清洗——抽的时候压根不读那些字段。这条红了说明有人在抽取里
+        顺手把 binding 带上了，那会让骨架退回旧模板库那个形态。
+        """
+        out = extract_skeleton(_generated_model(), template_id="po")
+        text = json.dumps(out["skeleton"], ensure_ascii=False)
+        for leaked in ("entityRef", "FieldRef", "purchase_order", "targets", "binding"):
+            assert leaked not in text, f"骨架里漏了 {leaked}"
+
+    def test_区域从layout反查(self):
+        out = extract_skeleton(_generated_model(), template_id="po")
+        blocks = out["skeleton"]["pages"][0]["blocks"]
+        assert {"type": "FilterBar", "region": "filters"} in [dict(b) for b in blocks]
+        assert {"type": "DataTable", "region": "main"} in [dict(b) for b in blocks]
+
+    def test_没进layout的区块丢掉并留痕(self):
+        """真实页面上没位置的区块，抽进骨架等于凭空给它安一个——那正是手写预设的错法。"""
+        model = _generated_model()
+        model["page"]["pages"][0]["blocks"].append({"id": "orphan", "type": "DataTable", "binding": {}})
+        out = extract_skeleton(model, template_id="po", industry="采购", when="员工提需求、经理审批")
+        assert any("orphan" in d["what"] or "位置无从得知" in d["why"] for d in out["dropped"])
+        assert out["problems"] == []
+
+    def test_摆错位置的区块丢掉并留痕(self):
+        """目录后来收紧了区域，老应用里那个摆法现在不合法——丢掉，别把坏骨架存进库。"""
+        model = _generated_model()
+        model["page"]["pages"][0]["layout"] = {"footerBar": ["b2"], "filters": ["b1"]}
+        out = extract_skeleton(model, template_id="po", industry="采购", when="员工提需求、经理审批")
+        assert any("footerBar" in d["why"] for d in out["dropped"]), out["dropped"]
+        assert out["problems"] == []
+
+    def test_同页同类型同区域只留一条(self):
+        model = _generated_model()
+        model["page"]["pages"][0]["blocks"].append({"id": "b3", "type": "DataTable", "binding": {}})
+        model["page"]["pages"][0]["layout"]["main"].append("b3")
+        out = extract_skeleton(model, template_id="po")
+        blocks = out["skeleton"]["pages"][0]["blocks"]
+        assert len(blocks) == len({(b["type"], b["region"]) for b in blocks})
+
+    def test_角色与流程形状抽得出来(self):
+        out = extract_skeleton(_generated_model(), template_id="po")
+        assert out["skeleton"]["roleShape"] == ["采购申请", "经理审批"]
+        shape = out["skeleton"]["workflowShape"]
+        assert shape["steps"] == 2 and shape["hasApproval"] is True
+        assert shape["phases"] == ["申请", "审批"]
+
+    def test_行业和一句话抽不出来_由调用方给(self):
+        """模型里没有这两个概念。它们正好就是贡献时要用户过目的字段。"""
+        out = extract_skeleton(_generated_model(), template_id="po")
+        assert out["skeleton"]["industry"] == "" and out["skeleton"]["when"] == ""
+        assert any("缺 industry" in p for p in out["problems"])
+        assert any("缺 when" in p for p in out["problems"])
+
+    def test_老应用没有区块也不炸_只是抽出空骨架(self):
+        """线上存量应用是老区块时代生成的，页面里没有 blocks——这正是要重新
+        生成的原因。抽这种应用不该崩，但也不该假装抽到了东西。"""
+        model = _generated_model()
+        for page in model["page"]["pages"]:
+            page.pop("blocks", None)
+            page.pop("layout", None)
+        out = extract_skeleton(model, template_id="old", industry="采购", when="老应用")
+        assert out["problems"] == []
+        assert "blocks" not in out["skeleton"]["pages"][0], "没有区块就别造一个空数组出来"
+
+    def test_页型不在目录内的页丢掉(self):
+        model = _generated_model()
+        model["page"]["pages"][0]["kind"] = "并不存在的页型"
+        out = extract_skeleton(model, template_id="po", industry="x", when="y")
+        assert any("不在目录内" in d["why"] for d in out["dropped"])
+
+    def test_垃圾输入不炸(self):
+        for bad in (None, "字符串", 42, [], {}):
+            out = extract_skeleton(bad, template_id="x")
+            assert isinstance(out["skeleton"], dict) and isinstance(out["dropped"], list)
+
+    def test_抽出来的骨架能被匹配到(self):
+        """终判：抽 → 存 → 匹配，整条路走通，而不是只验中间那一段。"""
+        out = extract_skeleton(
+            _generated_model(),
+            template_id="po",
+            industry="采购",
+            when="员工提采购需求、经理审批、财务确认付款",
+        )
+        assert out["problems"] == []
+        hit = match_app_template(
+            "采购申请审批，员工提需求，经理审批，财务确认付款，采购申请工作台", [out["skeleton"]]
+        )
+        assert hit is not None and hit["template"]["id"] == "po"

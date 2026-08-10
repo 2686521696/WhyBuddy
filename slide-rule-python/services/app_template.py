@@ -278,6 +278,153 @@ def _load_seed_templates() -> tuple:
 SEED_APP_TEMPLATES: tuple = _load_seed_templates()
 
 
+def _region_of_block(layout: Any, block_id: str) -> str:
+    """这个区块摆在哪个区域 —— 从 `page.layout` 反查。
+
+    生成出来的模型里，区块自己**不带**区域：`page.blocks[]` 只有 id/type/binding，
+    位置在 `page.layout` 里按「区域 → 区块 id 列表」记。所以抽骨架必须两边对着看。
+    `grid` / `mobile` 两个键不是区域（一个是栅格坐标、一个是手机档覆盖），跳过。
+    """
+    if not isinstance(layout, dict):
+        return ""
+    for slot, refs in layout.items():
+        if slot in ("grid", "mobile") or not isinstance(refs, list):
+            continue
+        if any(str(ref).strip() == block_id for ref in refs):
+            return str(slot)
+    return ""
+
+
+def extract_skeleton(
+    model: Any, *, template_id: str, industry: str = "", when: str = ""
+) -> Dict[str, Any]:
+    """从一份**生成好的五系统模型**里抽骨架。
+
+    ## 为什么是这个方向
+
+    用户校正过的链路（原话）：「基础组件是燃料，区块也是技术燃料。在会话推演的
+    时候，先区块，整个应用搞完之后，你才有骨架」——**骨架是沉淀物，不是原料**。
+    所以这个函数是这条链的最后一环，也是唯一能产出真骨架的地方。
+
+    种子里那四条是从演示域抠的，而演示域根本没走过"用区块搭应用"这一步（页面里
+    连 blocks 键都没有），所以它们是假沉淀，区块清单一片空白。
+
+    ## 抽得出来的和抽不出来的
+
+        抽得出来          从哪
+        name              appbundle.appIdentity.productName
+        pages[].id/kind   page.pages[]
+        pages[].purpose   page.pages[].name
+        pages[].blocks    page.blocks[].type + layout 反查区域
+        roleShape         rbac.menus[].label
+        workflowShape     workflow.nodes 的条数 / phase / 有没有审批
+
+        抽不出来          怎么办
+        industry          模型里没有这个概念，调用方给（贡献时用户填）
+        when              同上
+
+    抽不出来的那两样正好就是**要用户过目的字段**，跟"勾选贡献时给他看 5 行字"
+    那个交互天然对齐：能自动抽的自动抽，要人判断的才问人。
+
+    ## 抽不干净的一律丢掉，并留痕
+
+    模型里的区块可能摆在一个目录后来收紧了的区域，或者用了一个后来关掉生成的
+    类型。这种直接丢，丢了记进 `dropped`——照 `block_assembler._validate` 同一
+    条纪律：**剔除原因如实回给调用方，不静默吃掉**。留一个过不了自检的骨架进库，
+    下次服务就起不来。
+    """
+    model = model if isinstance(model, dict) else {}
+    dropped: List[Dict[str, str]] = []
+
+    identity = ((model.get("appbundle") or {}).get("appIdentity") or {})
+    name = str(identity.get("productName") or "").strip() if isinstance(identity, dict) else ""
+
+    pages: List[Dict[str, Any]] = []
+    for raw_page in ((model.get("page") or {}).get("pages") or []):
+        if not isinstance(raw_page, dict):
+            continue
+        page_id = str(raw_page.get("id") or "").strip()
+        kind = str(raw_page.get("kind") or "").strip()
+        if not page_id or kind not in PAGE_KINDS:
+            dropped.append({"what": page_id or "<无 id 的页>", "why": f"页面形态 '{kind}' 不在目录内"})
+            continue
+        layout = raw_page.get("layout")
+        blocks: List[Dict[str, str]] = []
+        for raw_block in raw_page.get("blocks") or []:
+            if not isinstance(raw_block, dict):
+                continue
+            block_id = str(raw_block.get("id") or "").strip()
+            block_type = str(raw_block.get("type") or "").strip()
+            region = _region_of_block(layout, block_id)
+            if not region:
+                # 没进 layout 的区块在真实页面上也没有位置，抽进骨架等于凭空
+                # 给它安一个——那正是"手写预设"的错法。
+                dropped.append({"what": f"{page_id}.{block_type or block_id}", "why": "没有出现在 page.layout 里，位置无从得知"})
+                continue
+            problem = block_placement_problem(block_type, kind, region)
+            if problem:
+                dropped.append({"what": f"{page_id}.{block_type}@{region}", "why": problem})
+                continue
+            blocks.append({"type": block_type, "region": region})
+        page: Dict[str, Any] = {
+            "id": page_id,
+            "kind": kind,
+            "purpose": str(raw_page.get("name") or "").strip(),
+        }
+        if blocks:
+            # 同一页里同 type 同 region 只留一条：骨架说的是"这种页该有什么"，
+            # 不是"这一页摆了几个"。
+            page["blocks"] = [
+                dict(item) for item in dict.fromkeys(tuple(sorted(b.items())) for b in blocks)
+            ]
+        pages.append(page)
+
+    menus = ((model.get("rbac") or {}).get("menus") or [])
+    role_shape = [
+        str(menu.get("label") or "").strip()
+        for menu in menus
+        if isinstance(menu, dict) and str(menu.get("label") or "").strip()
+    ]
+
+    workflow = model.get("workflow") or {}
+    nodes = workflow.get("nodes") if isinstance(workflow, dict) else None
+    nodes = nodes if isinstance(nodes, list) else []
+    phases = [
+        str(node.get("phase") or "").strip()
+        for node in nodes
+        if isinstance(node, dict) and str(node.get("phase") or "").strip()
+    ]
+    workflow_shape: Dict[str, Any] = {}
+    if nodes:
+        workflow_shape["steps"] = len(nodes)
+        workflow_shape["hasApproval"] = any(
+            any(mark in str(node.get("name") or "") for mark in ("审", "批", "核"))
+            for node in nodes
+            if isinstance(node, dict)
+        )
+        if phases:
+            workflow_shape["phases"] = list(dict.fromkeys(phases))
+
+    skeleton: Dict[str, Any] = {
+        "id": template_id,
+        "name": name,
+        "industry": industry,
+        "when": when,
+        "pages": pages,
+        "source": "harvested",
+    }
+    if role_shape:
+        skeleton["roleShape"] = list(dict.fromkeys(role_shape))
+    if workflow_shape:
+        skeleton["workflowShape"] = workflow_shape
+
+    return {
+        "skeleton": skeleton,
+        "dropped": dropped,
+        "problems": validate_app_template(skeleton),
+    }
+
+
 def all_app_templates() -> List[Dict[str, Any]]:
     """当前可用的骨架全集。
 
