@@ -303,3 +303,79 @@ def preset_block_names(page_kind_presets: Dict[str, Any]) -> List[str]:
                 if t and t not in names:
                     names.append(t)
     return names
+
+
+def derive_goal_presets(
+    picked: Sequence[Dict[str, Any]],
+    page_kind_presets: Dict[str, Any],
+    page_kinds: Sequence[str],
+    *,
+    max_blocks: int = 3,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """按题意为每种页面形态派生一套预设（**只加不减**，authored 那 10 档照旧在前）。
+
+    ## 为什么需要它：窄化只解决了第 1 层
+
+    2026-08-10 实测：窄化把对题件送进可达区（0/16 → 14/16），选中数也涨了
+    （0.5 → 4.5），但**仍然只有 4.5/16**。残余的原因是 PROVEN LAYOUTS 那 10 档
+    预设点名的全是通用件，而 prompt 明写"从这些起手"。
+
+    最直接的证据：`AlertSilenceForm` 的 allowedRegions 是 `overlay,supplement`
+    ——它是个弹窗式表单，跟 authored 预设里 workbench 那档的 `RecordFormDialog@overlay`
+    **抢同一个位置**，而预设点名的是后者。于是静默页三趟都用 RecordFormDialog。
+    把对题件也摆成一档预设，才是让它进入"挑选"而不是"自己发明"的唯一办法。
+
+    ## 保住那句"已经预先校验过"
+
+    authored 预设是手写的，启动时按三条硬校验（见 _load_page_kind_presets）：
+    区块通电、`kind ∈ block.pageKinds`、`region ∈ block.allowedRegions`。派生的
+    这批**按构造**满足同样三条——候选只从通电区块里取，页型和区域都从区块自己
+    声明的集合里选。所以 prompt 里那句承诺对新增的几档同样成立。
+
+    不满足的一律不生成（而不是硬报错）：派生是增强项，失败就退回只有 authored
+    那 10 档，绝不能让生成挂掉。
+
+    ## 组法
+
+    候选 = 窄化结果里**去掉保底件**之后的那截（保底件就是 authored 预设点名的
+    那 10 个，再推荐一遍没有意义），顺序即相关性顺序。每种页型取前 ≤3 个，且
+    **各占不同区域**——都塞 main 会挤成一坨，也无法体现"排好的版面"。
+    少于 2 个就不出这一档：单件预设提供的信息不值一行 prompt。
+    """
+    used_names = set(preset_block_names(page_kind_presets))
+    tail = [b for b in picked if str(b.get("type")) not in used_names]
+    out: Dict[str, List[Dict[str, Any]]] = {}
+
+    for kind in page_kinds:
+        items: List[Dict[str, Any]] = []
+        taken_regions: set = set()
+        for b in tail:
+            if len(items) >= max_blocks:
+                break
+            if not b.get("generationEnabled"):
+                continue
+            if kind not in (b.get("pageKinds") or []):
+                continue
+            region = next(
+                (r for r in (b.get("allowedRegions") or []) if r not in taken_regions),
+                None,
+            )
+            if region is None:
+                continue
+            taken_regions.add(region)
+            items.append({"type": str(b["type"]), "region": region, "_label": str(b.get("label") or "")})
+        if len(items) < 2:
+            continue
+        labels = " + ".join(it["_label"] or it["type"] for it in items)
+        out[kind] = [
+            {
+                "id": f"goal_fit_{kind}",
+                "name": f"按题意 · {labels}",
+                "when": (
+                    "这一页的职责正好落在这几个专用件上时——它们是按本次业务目标从目录里"
+                    "检索出来的，比通用表格/表单更贴题；业务确实更需要上面那几档通用组合时照旧用它们。"
+                ),
+                "blocks": [{"type": it["type"], "region": it["region"]} for it in items],
+            }
+        ]
+    return out

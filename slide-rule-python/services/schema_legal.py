@@ -734,7 +734,10 @@ def _format_binding_schema(schema: Dict[str, Any]) -> str:
     return "; ".join(parts)
 
 
-def experience_block_prompt_block(blocks: "List[Dict[str, Any]] | None" = None) -> str:
+def experience_block_prompt_block(
+    blocks: "List[Dict[str, Any]] | None" = None,
+    extra_presets: "Dict[str, Any] | None" = None,
+) -> str:
     """把目录压成给 LLM 的封闭选材说明；不另写第二份区块清单。
 
     `blocks`：要注入的通电区块子集**及其顺序**。缺省 = 全量目录（原行为）。
@@ -921,7 +924,12 @@ def experience_block_prompt_block(blocks: "List[Dict[str, Any]] | None" = None) 
             "the gate rejects."
         )
         for kind in PAGE_KINDS:
-            presets = PAGE_KIND_PRESETS.get(kind)
+            # authored 那几档在前，按题意派生的追加在后（**只加不减**）。
+            # 顺序有意为之：authored 的是人写的、带真实"use when"判断；派生的
+            # 是本次目标检索出来的补充。让人写的先说话，模型仍能看到专用件那档。
+            presets = list(PAGE_KIND_PRESETS.get(kind) or []) + list(
+                (extra_presets or {}).get(kind) or []
+            )
             if not presets:
                 continue
             for ps in presets:

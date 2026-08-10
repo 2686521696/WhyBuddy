@@ -437,6 +437,7 @@ def schema_instruction_for(goal: str) -> str:
     """
     try:
         from .block_narrowing import (
+            derive_goal_presets,
             narrowing_enabled,
             narrowing_limit,
             preset_block_names,
@@ -449,6 +450,7 @@ def schema_instruction_for(goal: str) -> str:
         from .schema_legal import (
             EXPERIENCE_BLOCKS,
             PAGE_KIND_PRESETS,
+            PAGE_KINDS,
             experience_block_prompt_block,
         )
 
@@ -468,8 +470,12 @@ def schema_instruction_for(goal: str) -> str:
         # 禁令上下文。测试 test_零覆盖域的系统指令与全量逐字相同 抓的就是这个。
         if len(picked) == len(enabled):
             return _SCHEMA_INSTRUCTION
+        # 第 2 层：按题意派生几档预设追加到 PROVEN LAYOUTS 后面。窄化只把对题件
+        # 送进可达区（第 1 层），而选材仍被预设形状主导——实测选中数停在 4.5/16。
+        derived = derive_goal_presets(picked, PAGE_KIND_PRESETS, PAGE_KINDS)
         base = _render_schema_instruction(_SCHEMA_INSTRUCTION_TEMPLATE)
-        return f"{base.rstrip()}\n\n{experience_block_prompt_block(picked)}\n"
+        catalog = experience_block_prompt_block(picked, extra_presets=derived)
+        return f"{base.rstrip()}\n\n{catalog}\n"
     except Exception as exc:  # noqa: BLE001 — 窄化失败不得让生成挂掉
         print(f"[v5_llm_generate] catalog narrowing skipped: {str(exc)[:160]}")
         return _SCHEMA_INSTRUCTION

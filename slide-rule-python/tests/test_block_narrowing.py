@@ -256,3 +256,89 @@ def test_置信度对查询长度不敏感():
     long = _confidence_of(GOAL + " 另外需要通知联络点管理、告警规则编辑、按标签匹配的路由策略树。")
     thr = N.narrowing_confidence_threshold()
     assert short > thr and long > thr, f"同一域的长短写法都该过阈值: {short:.3f} / {long:.3f}"
+
+
+# ── 8. 第 2 层：按题意派生预设 ──────────────────────────────────────────────
+
+
+def _derived():
+    picked = N.select_blocks(ENABLED, GOAL, limit=60, mandatory=MANDATORY)
+    return N.derive_goal_presets(picked, L.PAGE_KIND_PRESETS, L.PAGE_KINDS)
+
+
+def test_派生预设满足_authored_预设的同一套硬校验():
+    """authored 预设启动时按三条硬校验：区块通电、kind∈pageKinds、region∈allowedRegions。
+    派生的这批**按构造**满足同样三条——不满足就等于在 prompt 里推荐一个必被门拦的
+    组合，而模型会照着抄。"""
+    by_type = {str(b["type"]): b for b in L.EXPERIENCE_BLOCKS}
+    derived = _derived()
+    assert derived, "覆盖域上应当能派生出预设"
+    for kind, presets in derived.items():
+        assert kind in L.PAGE_KINDS
+        for ps in presets:
+            assert str(ps.get("id") or "").strip()
+            assert str(ps.get("name") or "").strip()
+            assert str(ps.get("when") or "").strip()
+            assert ps["blocks"], "预设不能空"
+            for it in ps["blocks"]:
+                entry = by_type[it["type"]]
+                assert entry.get("generationEnabled"), f"{it['type']} 未通电"
+                assert kind in (entry.get("pageKinds") or []), f"{it['type']} 不允许在 {kind} 页"
+                assert it["region"] in (entry.get("allowedRegions") or []), (
+                    f"{it['type']} 不允许放在 {it['region']}"
+                )
+
+
+def test_派生预设不重复推荐保底件():
+    """保底件就是 authored 预设已经点名的那 10 个，再推一遍没有信息量。"""
+    names = set(MANDATORY)
+    for presets in _derived().values():
+        for ps in presets:
+            for it in ps["blocks"]:
+                assert it["type"] not in names
+
+
+def test_派生预设各件占不同区域():
+    """都塞 main 会挤成一坨，也体现不出"排好的版面"。"""
+    for presets in _derived().values():
+        for ps in presets:
+            regions = [it["region"] for it in ps["blocks"]]
+            assert len(regions) == len(set(regions))
+
+
+def test_派生预设至少两件():
+    for presets in _derived().values():
+        for ps in presets:
+            assert len(ps["blocks"]) >= 2
+
+
+def test_authored_预设仍在且排在派生的前面():
+    """只加不减：人写的那几档带真实判断，应当先说话。"""
+    picked = N.select_blocks(ENABLED, GOAL, limit=60, mandatory=MANDATORY)
+    text = L.experience_block_prompt_block(picked, extra_presets=_derived())
+    for kind, presets in L.PAGE_KIND_PRESETS.items():
+        for ps in presets or []:
+            assert f"{kind} · {ps['name']}" in text, f"authored 预设 {ps['id']} 不见了"
+    # 同一页型内，authored 的行号应当小于派生的
+    lines = text.split("\n")
+    for kind in L.PAGE_KIND_PRESETS:
+        authored = [i for i, ln in enumerate(lines)
+                    if ln.strip().startswith(f"{kind} · ") and "按题意 ·" not in ln]
+        goalfit = [i for i, ln in enumerate(lines)
+                   if ln.strip().startswith(f"{kind} · ") and "按题意 ·" in ln]
+        if authored and goalfit:
+            assert max(authored) < min(goalfit), f"{kind}: 派生档排到了 authored 前面"
+
+
+def test_不传_extra_presets_时输出与从前逐字相同():
+    picked = N.select_blocks(ENABLED, GOAL, limit=60, mandatory=MANDATORY)
+    assert L.experience_block_prompt_block(picked) == L.experience_block_prompt_block(
+        picked, extra_presets=None
+    )
+
+
+def test_零覆盖域派生不出错():
+    """退回全量的域上，派生仍应安全（可能出、可能不出，但不许抛）。"""
+    picked = N.select_blocks(ENABLED, PHARMACY_GOAL, limit=60, mandatory=MANDATORY)
+    d = N.derive_goal_presets(picked, L.PAGE_KIND_PRESETS, L.PAGE_KINDS)
+    assert isinstance(d, dict)
