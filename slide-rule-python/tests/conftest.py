@@ -172,6 +172,24 @@ def _default_logged_in_user():
 
 
 @pytest.fixture
+def demo_fixture_path(monkeypatch):
+    """打开演示域夹具快路径（`SLIDERULE_DEMO_FIXTURE_ENABLED`）。
+
+    这条路 2026-08-10 起在用户路径上**默认关**，理由见
+    services/v5_capability_executor._demo_fixture_enabled 的头注（认对了域也
+    只有一份 2026-07 冻结的残次品可给）。夹具本身没删，演示/回归照旧要测，
+    所以这些用例用这个 fixture 显式把它打开。
+
+    ⚠️ 故意**不做成 autouse、也不写进上面那堆 os.environ.setdefault**：那样
+    等于把开关在全套件恢复成"开"，于是没有任何一条用例跑在产品的真实默认
+    值上——这次要守住的恰恰是"用户路径不再走夹具"。依赖写在用例签名/
+    usefixtures 上，改默认值时红的就是真正依赖它的那几条。
+    """
+    monkeypatch.setenv("SLIDERULE_DEMO_FIXTURE_ENABLED", "1")
+    yield
+
+
+@pytest.fixture
 def real_auth():
     """摘掉默认身份覆盖，走真实的令牌/Cookie 解析。
 

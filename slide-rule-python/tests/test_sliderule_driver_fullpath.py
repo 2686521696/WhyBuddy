@@ -239,6 +239,9 @@ def test_purchase_approval_runtime_closure_uses_linkage_evidence_without_prior_a
     """
     import services.v5_capability_executor as exec_mod
 
+    # 夹具快路径 2026-08-10 起默认关；这条守的就是演示域夹具能 6/6 收口，
+    # 显式开回来。
+    monkeypatch.setenv("SLIDERULE_DEMO_FIXTURE_ENABLED", "1")
     state = _mk_state("sr-purchase-runtime-linkage")
     state.goal["text"] = "生成一个采购审批应用，包含采购单、申请人、部门经理、财务、采购执行、审批流、表单页面和风险摘要"
     monkeypatch.setattr(exec_mod, "retrieve_evidence", lambda *_args, **_kwargs: [{"title": "purchase approval evidence"}])

@@ -284,8 +284,15 @@ class TestClosureIdSlug:
         assert _closure_app_slug(model, "g") == _closure_app_slug(model, "g")
 
 
+@pytest.mark.usefixtures("demo_fixture_path")
 class TestClosureEndToEnd:
-    """事故现场的端到端复现——这三条是这次改动真正要守住的东西。"""
+    """事故现场的端到端复现——这三条是这次改动真正要守住的东西。
+
+    整类显式开夹具快路径（2026-08-10 起默认关）。对这里的用例这不是"为了让
+    它们继续绿"的补丁，而是**测的前提**：这一类问的是"夹具这条路活着的时候，
+    相关性尺子拦不拦得住误认"。开关关掉的话，托管那条会因为压根没夹具可套
+    而平凡通过，哨兵就失效了。
+    """
 
     def _closure(self, goal, *, degrade=False, degrade_impact=IMPACT_DELIVERABLE):
         st = V5SessionState(sessionId="t", goal={"text": goal})

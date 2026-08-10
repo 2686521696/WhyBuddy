@@ -29,6 +29,26 @@ def _llm_generate_enabled() -> bool:
     return str(os.getenv("SLIDERULE_LLM_GENERATE_ENABLED", "")).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _demo_fixture_enabled() -> bool:
+    """演示域夹具快路径的开关。**默认关**，只有显式开启（演示/回归）才走夹具。
+
+    为什么默认关：这条快路径本来是"确定性域的 T1 通用性证明"+ 加速器，但
+    2026-08-10 线上实测发现它在**真实用户路径上发残次品**。现场：一道
+    「客服工单系统」被 _recognize_domain 认成 service_ticket，相关性补丁
+    理直气壮地放行（这道题确实就是工单系统），整趟推演 model.generate
+    **0 次**，直接端出 2026-07 之前冻结的那份样板——5 个页面里连 blocks
+    这个键都不存在，359 个区块一个都没用上。
+
+    注意这跟 08-04 那次误判是**两种病**：那次是"认错了域"（托管请假被认成
+    企业请假），_domain_fixture_fits_goal 补的是那个洞。这次是"认对了域，
+    可夹具本身已经过期"——相关性尺子量不出这个，因为题和夹具确实是同一个
+    域。补丁挡不住，只能把这条路从用户路径上摘掉。
+
+    夹具没删也没坏：演示模式/回归测试把这个开关打开，行为与之前完全一致。
+    """
+    return str(os.getenv("SLIDERULE_DEMO_FIXTURE_ENABLED", "")).strip().lower() in ("1", "true", "yes", "on")
+
+
 # 最近一次五系统 LLM 生成路径的诊断。仅用于 publish closure 的 blocker 面向
 # 用户透出"为什么 0/6"（未开启 / 调用失败 / 结构闸拦截）；fail-closed 判定
 # 与 trust/gate/closure hash 完全不读它。
@@ -694,6 +714,16 @@ def _build_per_skill_evidence(
                 matches[skill] = artifact
 
     recognized_domain = None if _refine_active else _recognize_domain(goal)
+    # 夹具快路径默认关（见 _demo_fixture_enabled 头注）：认出域也不用它，落到
+    # 下面的 LLM 生成分支去真做一个。排在相关性检查**之前**——夹具既然不会
+    # 被用，就没必要再花一次 evaluate_model_relevance 去量它对不对得上。
+    if recognized_domain is not None and not _demo_fixture_enabled():
+        print(
+            f"[v5_capability_executor] 演示域 {recognized_domain} 已识别，但夹具快路径"
+            "未开启（SLIDERULE_DEMO_FIXTURE_ENABLED），改走 LLM 生成",
+            file=__import__("sys").stderr, flush=True,
+        )
+        recognized_domain = None
     # 演示域的强词是**单个**命中即认（"请假"、"采购"…）。可业务需求里出现
     # 一个这样的子功能太常见了：2026-08-04 实测事故里「给中小学课后托管…
     # 家长请假申请…」就因为「请假」二字被判成 leave_approval，直接套上内置

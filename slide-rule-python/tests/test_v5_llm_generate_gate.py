@@ -15,7 +15,16 @@ import sys
 import copy
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+#: 演示域夹具快路径 2026-08-10 起默认关（见 _demo_fixture_enabled 头注）。
+#  这个文件绝大多数用例走的是 LLM 生成路径（新颖意图，_recognize_domain
+#  返回 None，开关与它们无关），只有几条以"确定性域"为题的要显式开回来。
+#  故意逐条标而不是整个文件 pytestmark：这里 LLM 路径才是主角，整个文件
+#  开着会掩盖"用户路径不再走夹具"这件事。
+_deterministic_domain = pytest.mark.usefixtures("demo_fixture_path")
 
 from services.v5_model_gate import validate_five_system_model, DANGLING, MISSING_SECTION
 from services.v5_llm_generate import generate_five_system_model
@@ -575,6 +584,7 @@ def test_wiring_novel_intent_fail_closed_with_broken_fake_llm():
     assert all(not per_skill[k]["evidencePresent"] for k in REQUIRED_EVIDENCE_KEYS), per_skill
 
 
+@_deterministic_domain
 def test_wiring_deterministic_domain_unaffected_by_llm():
     # Purchase still closes via fixture WITHOUT calling the LLM at all.
     state = _empty_state("采购审批平台")
@@ -615,6 +625,7 @@ def test_llm_path_per_skill_evidence_carries_model_sections():
             assert per_skill[skill]["modelSection"] == model[skill], skill
 
 
+@_deterministic_domain
 def test_deterministic_domain_carries_builtin_model_section():
     """E35 反转旧设计：演示域现在带冻结的内置模型段（用户实测：闭环后右侧
     必须能长出应用）。模型是 LLM 一次性生成、过门后冻结的夹具——仍然
@@ -710,6 +721,7 @@ def test_stream_skill_result_emits_model_section_for_llm_path(monkeypatch):
         assert isinstance(event.get("mermaid"), str)  # edge projection still present
 
 
+@_deterministic_domain
 def test_stream_skill_result_model_section_present_for_deterministic_domain():
     """E35：演示域 skill_result 闭 6/6 且 modelSection 为冻结夹具段（dict）。"""
     import asyncio
@@ -779,6 +791,7 @@ def test_blocked_closure_carries_llm_failed_diagnostic(monkeypatch):
     assert "connection refused" in diag["ref"]
 
 
+@_deterministic_domain
 def test_closed_closure_has_no_diagnostic_blocker():
     """确定性域正常闭合 → 无诊断 blocker（诊断只在 blocked 时透出）。"""
     report = _closure_result_for("采购审批平台")
