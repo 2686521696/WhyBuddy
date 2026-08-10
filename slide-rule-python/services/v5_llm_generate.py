@@ -408,6 +408,49 @@ _SCHEMA_INSTRUCTION = _append_experience_block_catalog(
 )
 
 
+def schema_instruction_for(goal: str) -> str:
+    """这一次生成实际用的系统指令。
+
+    窄化关（默认）→ 原样返回模块级那份全量常量，行为与从前逐字相同。
+    窄化开 → 按题意挑一批区块，**每次请求重新组装**目录段。
+
+    为什么不能沿用模块级常量：`_SCHEMA_INSTRUCTION` 是 import 那一刻就固化的，
+    而窄化的结果依赖 goal。所以窄化必须在请求期组装——这也是它唯一的代价
+    （多拼一次字符串，相对 100s+ 的生成可忽略）。
+
+    fail-open：窄化过程里任何异常都退回全量指令。窄化是优化，不该让生成不可用。
+    """
+    try:
+        from .block_narrowing import (
+            narrowing_enabled,
+            narrowing_limit,
+            preset_block_names,
+            select_blocks,
+        )
+
+        if not narrowing_enabled() or not (goal or "").strip():
+            return _SCHEMA_INSTRUCTION
+
+        from .schema_legal import (
+            EXPERIENCE_BLOCKS,
+            PAGE_KIND_PRESETS,
+            experience_block_prompt_block,
+        )
+
+        enabled = [b for b in EXPERIENCE_BLOCKS if b.get("generationEnabled")]
+        picked = select_blocks(
+            enabled,
+            goal,
+            limit=narrowing_limit(),
+            mandatory=preset_block_names(PAGE_KIND_PRESETS),
+        )
+        base = _render_schema_instruction(_SCHEMA_INSTRUCTION_TEMPLATE)
+        return f"{base.rstrip()}\n\n{experience_block_prompt_block(picked)}\n"
+    except Exception as exc:  # noqa: BLE001 — 窄化失败不得让生成挂掉
+        print(f"[v5_llm_generate] catalog narrowing skipped: {str(exc)[:160]}")
+        return _SCHEMA_INSTRUCTION
+
+
 # ── 请求域状态（2026-08-06 从模块级全局改过来）──────────────────────
 #
 # 下面这几项原本是**普通模块级全局**，等于整个进程共用一份。单人本地开发看
@@ -839,7 +882,7 @@ def _default_llm_json_fn(goal: str, gate_feedback: Optional[str] = None) -> Opti
             + gate_feedback
         )
     messages = [
-        {"role": "system", "content": _SCHEMA_INSTRUCTION},
+        {"role": "system", "content": schema_instruction_for(goal)},
         {"role": "user", "content": user_content},
     ]
     streaming = _delta_sink_var.get() is not None

@@ -90,6 +90,24 @@ def ordering_for_arm(arm: str, case: Dict[str, Any]) -> List[str]:
     """
     from services import schema_legal as L
 
+    if arm == "narrowed":
+        # 窄化臂：注入顺序 = select_blocks 的返回顺序。同样复用生产本体，
+        # 不在这里重算——第一版就是自算顺序导致 promoted 臂覆盖率报成 0/16。
+        from services.block_narrowing import (
+            narrowing_limit,
+            preset_block_names,
+            select_blocks,
+        )
+
+        enabled = [b for b in L.EXPERIENCE_BLOCKS if b.get("generationEnabled")]
+        picked = select_blocks(
+            enabled,
+            case["goal"],
+            limit=narrowing_limit(),
+            mandatory=preset_block_names(L.PAGE_KIND_PRESETS),
+        )
+        return [str(b["type"]) for b in picked]
+
     saved = os.environ.get("SLIDERULE_EXP_PROMOTE_BLOCKS")
     try:
         if arm == "promoted":
@@ -417,7 +435,9 @@ def load_case(case_id: Optional[str]) -> Dict[str, Any]:
 def main() -> int:
     ap = argparse.ArgumentParser(description="区块选材度量台")
     ap.add_argument("--case", default=None, help="用例 id（默认第一个）")
-    ap.add_argument("--arm", default="control", choices=["control", "promoted", "omit-presets"])
+    ap.add_argument(
+        "--arm", default="control", choices=["control", "promoted", "omit-presets", "narrowed"]
+    )
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--window", type=int, default=50, help="可达窗口 W，默认前 50 名")
     ap.add_argument("--save-dir", default=None, help="把每趟原始模型存起来")
@@ -452,7 +472,13 @@ def main() -> int:
             raise SystemExit(f"没匹配到模型文件: {args.from_models}")
         for i, p in enumerate(paths, 1):
             model = json.loads(Path(p).read_text(encoding="utf-8"))
-            arm = "promoted" if "promoted" in Path(p).name else "control"
+            name = Path(p).name
+            if "promoted" in name:
+                arm = "promoted"
+            elif name.startswith("nw_") or "narrow" in name:
+                arm = "narrowed"
+            else:
+                arm = "control"
             rec = {"arm": arm, "run": i, "seconds": 0.0, "generated": True, "source": p}
             rec.update(gate_verdicts(model, case["goal"]))
             rec.update(measure(model, case, cat, args.window, now=ordering_for_arm(arm, case)))

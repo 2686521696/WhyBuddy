@@ -734,8 +734,16 @@ def _format_binding_schema(schema: Dict[str, Any]) -> str:
     return "; ".join(parts)
 
 
-def experience_block_prompt_block() -> str:
-    """把目录压成给 LLM 的封闭选材说明；不另写第二份区块清单。"""
+def experience_block_prompt_block(blocks: "List[Dict[str, Any]] | None" = None) -> str:
+    """把目录压成给 LLM 的封闭选材说明；不另写第二份区块清单。
+
+    `blocks`：要注入的通电区块子集**及其顺序**。缺省 = 全量目录（原行为）。
+    传子集就是"目录窄化"——由 services/block_narrowing.select_blocks 按题意挑，
+    顺序即注入顺序（靠前 = 可达性好，见那个模块的头注）。
+
+    ⚠️ 只影响**通电区块**那一档。下面 schema-only（渲染器没上线、永不可emit）
+    那份清单仍取全量：它是一条禁令，漏掉一个就等于默许模型去 emit 它。
+    """
     lines = [
         "EXPERIENCE BLOCK CATALOG (closed set):",
     ]
@@ -743,7 +751,8 @@ def experience_block_prompt_block() -> str:
     # 接上了，prompt 里那句"渲染器还没上线，不要输出 page.blocks"却留在原地，
     # 于是 WorkflowTimeline 这类已经能用的区块一次都没被渲染过。现在这句话
     # 由 generationEnabled 决定，改目录即改 prompt，不会再各说各话。
-    enabled = [b for b in EXPERIENCE_BLOCKS if b.get("generationEnabled")]
+    source = EXPERIENCE_BLOCKS if blocks is None else blocks
+    enabled = [b for b in source if b.get("generationEnabled")]
     if enabled:
         # 措辞是祈使式，不是许可式（2026-07-28 实测定的）。此前写的是
         # "You MAY emit page.blocks ... an unnecessary block is worse than none"
@@ -962,7 +971,12 @@ def experience_block_prompt_block() -> str:
         "DIFFERENT entity is also fine and useful (e.g. a supplier table on an "
         "inventory page)."
     )
-    for block in EXPERIENCE_BLOCKS:
+    # ⚠️ 必须走 `source` 而不是 EXPERIENCE_BLOCKS。第一版漏了这里，后果不是
+    #    "省得少"，而是**窄化压根没生效**：名单句收窄了，可下面每个区块的详情段
+    #    还是全量 358 条，而 prompt 里明写着"every block type MUST be one of the
+    #    catalog entries below"——below 指的就是这些详情段。于是模型照样能挑任何
+    #    一个，窄化只剩个换序效果。当时只省了 8% 字符，正是这个漏的信号。
+    for block in source:
         # slots 后面紧跟这一类的槽位理由（只有限制不显然的类型才有）。
         # 只给一张 slots 表，模型无从推断"为什么不行"，会按语义直觉去猜——
         # WorkflowTimeline 被摆进 secondary 在三轮真跑里复发 5 次就是这么来的。
