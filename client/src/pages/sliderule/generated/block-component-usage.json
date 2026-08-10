@@ -1,0 +1,5532 @@
+{
+  "version": 2,
+  "generatedFrom": [
+    "live-runtime/block-registry.tsx and its local imports",
+    "live-runtime/phone-mobile/PhoneExperienceBlock.tsx and its local imports"
+  ],
+  "audit": {
+    "method": "typescript-symbol-graph",
+    "renderedButNotCataloged": [],
+    "phoneEnabledBlocks": [
+      "ActiveFilterSummary",
+      "ActivityContextDrawer",
+      "AdvancedFilterBuilder",
+      "AlertGroupCommandHeader",
+      "AlertGroupContextSummary",
+      "AlertInstanceSummary",
+      "AlertMatcherFilter",
+      "AlertRoutingPolicy",
+      "AlertRuleCommandHeader",
+      "AlertRuleEditor",
+      "AlertRuleFilterBar",
+      "AlertSilenceForm",
+      "AlertStateMetrics",
+      "AlertTriagePanel",
+      "AnalyticsDateScope",
+      "AppointmentWaitlistPanel",
+      "ApprovalDecisionBar",
+      "ApprovalQueue",
+      "ApprovalStageBoard",
+      "AssetReservationCalendar",
+      "AsyncTaskMonitor",
+      "AttachmentPanel",
+      "AuditDiffDrawer",
+      "AuditTrail",
+      "AvailabilityOverridePanel",
+      "AvailabilityPlanner",
+      "BacklogPrioritizationBoard",
+      "BookingAuditTabs",
+      "BookingCapacityMetrics",
+      "BookingCommandHeader",
+      "BookingConflictDrawer",
+      "BookingConflictPanel",
+      "BookingContextSummary",
+      "BookingDecisionBar",
+      "BookingDemandChart",
+      "BookingDirectoryFilter",
+      "BookingSlotPicker",
+      "BookingStatusTabs",
+      "BoxPlotDistribution",
+      "BoxPlotDistributionChart",
+      "BulkActionTray",
+      "BulkEditPanel",
+      "BulkSelectionBar",
+      "BurndownChart",
+      "BurnupChart",
+      "CalendarConnectionStrip",
+      "CalendarUtilizationMetrics",
+      "CampaignCalendar",
+      "CatalogEntityCommandHeader",
+      "CatalogEntityFilterBar",
+      "ChangeImpactPanel",
+      "CheckoutSummaryBar",
+      "ClusterHealthStrip",
+      "CohortRetentionChart",
+      "CollaboratorPresenceStrip",
+      "ColumnChooserDrawer",
+      "CommentThread",
+      "CompareSelectionTray",
+      "ConnectionControlHeader",
+      "ConnectionFleetMetrics",
+      "ConnectionMappingPanel",
+      "ConnectionRouteSummary",
+      "ConnectionSchemaHeader",
+      "ConnectionTimeline",
+      "ConnectionWorkspaceTabs",
+      "ConnectorVersionStrip",
+      "ContactPointManager",
+      "ContentPipelineBoard",
+      "ContextBreadcrumb",
+      "ContextHelpDrawer",
+      "ConversationAssignmentStrip",
+      "ConversationCommandHeader",
+      "ConversationContextSummary",
+      "ConversationDetailTabs",
+      "ConversationInboxFilter",
+      "ConversationReplyBar",
+      "ConversationSlaMetrics",
+      "CredentialLifecycleBar",
+      "CumulativeFlowChart",
+      "CycleCommandHeader",
+      "CycleContextSummary",
+      "CycleFilterBar",
+      "CycleHealthMetrics",
+      "CycleLifecycleBar",
+      "CycleRiskStrip",
+      "DashboardCommandHeader",
+      "DashboardParameterBar",
+      "DashboardQueryContext",
+      "DashboardSaveBar",
+      "DataExportPanel",
+      "DataFreshnessIndicator",
+      "DataImportWizard",
+      "DatasetEditorTabs",
+      "DatasourceHealthStrip",
+      "DatasourceQueryMetrics",
+      "DeadlineAgenda",
+      "DeletedRecordsRecovery",
+      "DeliverySlotCalendar",
+      "DependencyGraphPanel",
+      "DependencyKanban",
+      "DeploymentCommandHeader",
+      "DeploymentContextSummary",
+      "DeploymentDetailTabs",
+      "DeploymentLatencyChart",
+      "DeploymentRolloutMetrics",
+      "DeploymentScaleBar",
+      "DeploymentWizard",
+      "DetailInspectorDrawer",
+      "DistributionHistogram",
+      "DocumentCommandHeader",
+      "DocumentContextSummary",
+      "DocumentHistoryTabs",
+      "DocumentInsightMetrics",
+      "DocumentShareBar",
+      "DraftPublishBar",
+      "EditorialCalendar",
+      "EntityOwnershipSummary",
+      "EnvironmentStatusStrip",
+      "ErrorBudgetGauge",
+      "EventBreadcrumbTimeline",
+      "EventRsvpPanel",
+      "EventTypeEditorTabs",
+      "EventTypePublishBar",
+      "EventUserCountMetrics",
+      "ExamScheduleCalendar",
+      "ExploreInspectorTabs",
+      "ExploreQueryContext",
+      "ExploreQueryControlBar",
+      "ExportJobDrawer",
+      "FacetedFilterPanel",
+      "FeatureFlagCommandHeader",
+      "FilterBar",
+      "FilterPresetDrawer",
+      "ForecastConfidenceChart",
+      "FunnelChart",
+      "FunnelConversionChart",
+      "GanttSchedule",
+      "GaugeProgress",
+      "GlobalSearchPalette",
+      "HeaderEntitySummary",
+      "HeaderProgressSummary",
+      "HeatmapMatrix",
+      "HelpContextPanel",
+      "HistogramDistributionChart",
+      "ImportMappingWizard",
+      "IncidentEvidenceTabs",
+      "IncidentOwnershipStrip",
+      "IncidentResolutionWizard",
+      "IncidentResponseBoard",
+      "InspectorModeTabs",
+      "IntegrationSetupWizard",
+      "InterviewScheduleCalendar",
+      "IssueCommandHeader",
+      "IssueEventFilter",
+      "IssueImpactMetrics",
+      "IssueInvestigationTabs",
+      "JobRunMetrics",
+      "KanbanBoard",
+      "KeyboardCommandPalette",
+      "KubernetesResourceFilter",
+      "LeaveCalendar",
+      "LiveChangeReview",
+      "LiveRefreshControl",
+      "LogLabelFilter",
+      "MaintenanceWindowCalendar",
+      "MemberAssignment",
+      "MetadataQualityMetrics",
+      "MetricComparisonPanel",
+      "MetricGrid",
+      "MigrationReadinessWizard",
+      "MilestoneTimelineCalendar",
+      "MuteTimingSchedule",
+      "NotificationCenterDrawer",
+      "NotificationInbox",
+      "OccurrenceEvidenceSummary",
+      "OnboardingChecklistWizard",
+      "OnCallScheduleCalendar",
+      "PanelCommandHeader",
+      "PanelQueryLatencyChart",
+      "PercentileBandChart",
+      "PermissionMatrix",
+      "PermissionSummaryPanel",
+      "PolicyConfigurationWizard",
+      "PortfolioKanban",
+      "ProductionScheduleCalendar",
+      "QueryClauseFilterBar",
+      "QueryDataSourceSummary",
+      "QueryErrorDrawer",
+      "QueryExecutionMetrics",
+      "QueryModeTabs",
+      "QueryResultPivot",
+      "QueryRunStatusStrip",
+      "QuestionCommandHeader",
+      "QuestionExecutionBar",
+      "QuickActionPanel",
+      "RadarComparison",
+      "RealmCommandHeader",
+      "RealmSecurityContext",
+      "RealmStatusStrip",
+      "RecentItemsPanel",
+      "RecordComparePanel",
+      "RecordLifecycleBar",
+      "RecordPicker",
+      "RecruitmentPipelineBoard",
+      "RecurrenceEditor",
+      "ReferenceManyManager",
+      "RelatedEntityPanel",
+      "ReleaseAdoptionMetrics",
+      "ReleaseAdoptionTrendChart",
+      "ReleaseCalendar",
+      "ReleaseContextSummary",
+      "ReleaseDetailTabs",
+      "ReleaseEnvironmentFilter",
+      "ReleaseEnvironmentStrip",
+      "ReleaseHealthStrip",
+      "ReleaseRolloutBar",
+      "ReleaseTrainBoard",
+      "RescheduleRequestDrawer",
+      "ResourceBookingCalendar",
+      "ResourceDetailTabs",
+      "RevisionHistoryPanel",
+      "RoomBookingCalendar",
+      "RuleEvaluationMetrics",
+      "RunningJobControlBar",
+      "SankeyFlow",
+      "SavedSearchPanel",
+      "SavedViewManager",
+      "SavedViewTabs",
+      "ScatterCorrelationChart",
+      "ScheduleCalendar",
+      "ScheduleCapacityHeatmap",
+      "ScheduleConflictResolver",
+      "SchedulePublishBar",
+      "SchemaChangeReview",
+      "SchemaConflictDrawer",
+      "SchemaRefreshBar",
+      "SelectionInspector",
+      "ServiceDispatchCalendar",
+      "ServiceMapPanel",
+      "ServiceOwnershipContext",
+      "ShiftRosterCalendar",
+      "SprintPlanningBoard",
+      "StackTracePanel",
+      "StreamDetailTabs",
+      "StreamFreshnessMetrics",
+      "StreamNamespaceFilter",
+      "StreamSelectionSummary",
+      "StreamStatusMonitor",
+      "SuspectCommitPanel",
+      "SwimlaneKanban",
+      "SyncReliabilityMetrics",
+      "SyncScheduleStrip",
+      "SyncVolumeTrendChart",
+      "TeamAvailabilityCalendar",
+      "TimelineFilterBar",
+      "TimeSeriesAnomalyChart",
+      "TimezoneOverlapPanel",
+      "TrainingCalendar",
+      "TreemapBreakdown",
+      "TreeNavigator",
+      "TriageQueueBoard",
+      "UnsavedChangesBar",
+      "UptimeStatusTimeline",
+      "UserAccessBar",
+      "UserCommandHeader",
+      "UserDirectoryFilter",
+      "UserEventFilter",
+      "UserIdentitySummary",
+      "UserSecurityTabs",
+      "UserSessionMetrics",
+      "ValidatedFormTabs",
+      "ValidationIssuePanel",
+      "WaterfallChart",
+      "WaterfallVarianceChart",
+      "WipLimitBoard",
+      "WizardNavigationBar",
+      "WorkflowCommandHeader",
+      "WorkflowContextSummary",
+      "WorkflowControlBar",
+      "WorkflowDurationChart",
+      "WorkflowExecutionFilter",
+      "WorkflowExecutionTabs",
+      "WorkflowFailureDrawer",
+      "WorkflowOutcomeMetrics",
+      "WorkflowTimeline",
+      "WorkflowVersionStrip",
+      "WorkItemActivityTabs",
+      "WorkItemCommandHeader",
+      "WorkItemContextSummary",
+      "WorkItemDetailTabs",
+      "WorkItemFilterBar",
+      "WorkItemMoveDrawer",
+      "WorkloadThroughputMetrics",
+      "WorkspaceTabs"
+    ],
+    "desktopDeclarationMismatches": {}
+  },
+  "blocks": {
+    "ActiveFilterSummary": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Flex",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Space"
+      ]
+    },
+    "ActivityContextDrawer": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Drawer",
+        "Empty",
+        "Timeline",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup"
+      ]
+    },
+    "ActivityFeed": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Table",
+        "Tag",
+        "Timeline",
+        "Typography"
+      ],
+      "phone": []
+    },
+    "AdvancedFilterBuilder": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "Segmented",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Input",
+        "M.Picker",
+        "M.Selector"
+      ]
+    },
+    "AlertGroupCommandHeader": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "AlertGroupContextSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "AlertInstanceSummary": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "AlertMatcherFilter": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Input",
+        "Space"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Input"
+      ]
+    },
+    "AlertRoutingPolicy": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "AlertRuleCommandHeader": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup",
+        "M.Space"
+      ]
+    },
+    "AlertRuleEditor": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "Segmented",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.Selector",
+        "M.Space",
+        "M.TextArea"
+      ]
+    },
+    "AlertRuleFilterBar": {
+      "desktop": [
+        "Card",
+        "Flex",
+        "Input",
+        "Segmented"
+      ],
+      "phone": [
+        "M.Card",
+        "M.SearchBar",
+        "M.Segmented"
+      ]
+    },
+    "AlertSilenceForm": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Input",
+        "Segmented",
+        "Space"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector",
+        "M.TextArea"
+      ]
+    },
+    "AlertStateMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "AlertTriagePanel": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Segmented",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Segmented"
+      ]
+    },
+    "AnalyticsDateScope": {
+      "desktop": [
+        "Card",
+        "DatePicker",
+        "Flex",
+        "Segmented"
+      ],
+      "phone": [
+        "M.Card",
+        "M.Selector"
+      ]
+    },
+    "AppointmentWaitlistPanel": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ApprovalDecisionBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "Modal",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup",
+        "M.TextArea"
+      ]
+    },
+    "ApprovalQueue": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Input",
+        "List",
+        "Modal",
+        "Segmented",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.Segmented",
+        "M.TextArea"
+      ]
+    },
+    "ApprovalStageBoard": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "AssetReservationCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "AsyncTaskMonitor": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Progress",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar",
+        "M.Space"
+      ]
+    },
+    "AttachmentPanel": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Progress",
+        "Space",
+        "Tag",
+        "Typography",
+        "Upload"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar"
+      ]
+    },
+    "AuditDiffDrawer": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "AuditTrail": {
+      "desktop": [
+        "Card",
+        "Collapse",
+        "Empty",
+        "Flex",
+        "Pagination",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock"
+      ]
+    },
+    "AvailabilityOverridePanel": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "AvailabilityPlanner": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Empty",
+        "List",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "BacklogPrioritizationBoard": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "BatchActionBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex"
+      ],
+      "phone": []
+    },
+    "BookingAuditTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "BookingCapacityMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar"
+      ]
+    },
+    "BookingCommandHeader": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup"
+      ]
+    },
+    "BookingConflictDrawer": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Drawer",
+        "Empty",
+        "List",
+        "Space",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup"
+      ]
+    },
+    "BookingConflictPanel": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "BookingContextSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "BookingDecisionBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "Modal",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup",
+        "M.TextArea"
+      ]
+    },
+    "BookingDemandChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "BookingDirectoryFilter": {
+      "desktop": [
+        "Card",
+        "DatePicker",
+        "Empty",
+        "Flex",
+        "Input",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.SearchBar",
+        "M.Selector"
+      ]
+    },
+    "BookingSlotPicker": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Segmented"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Segmented",
+        "M.Selector"
+      ]
+    },
+    "BookingStatusTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "BoxPlotDistribution": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "BoxPlotDistributionChart": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "BulkActionTray": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "BulkEditPanel": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Card",
+        "Empty",
+        "ProForm",
+        "Select",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.List",
+        "M.Selector"
+      ]
+    },
+    "BulkSelectionBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup"
+      ]
+    },
+    "BurndownChart": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "BurnupChart": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "CalendarConnectionStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "CalendarUtilizationMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar"
+      ]
+    },
+    "CampaignCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "CardGridList": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": []
+    },
+    "CatalogEntityCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Dropdown",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Tooltip",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup",
+        "M.Space"
+      ]
+    },
+    "CatalogEntityFilterBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "ChangeImpactPanel": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "CheckoutSummaryBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Space",
+        "Statistic",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock"
+      ]
+    },
+    "ClusterHealthStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "CohortRetentionChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "CollaboratorPresenceStrip": {
+      "desktop": [
+        "Avatar",
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tooltip",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "ColumnChooserDrawer": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Checkbox",
+        "Drawer",
+        "Empty"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Popup",
+        "M.Selector"
+      ]
+    },
+    "ColumnSettingPanel": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Tooltip"
+      ],
+      "phone": []
+    },
+    "CommentThread": {
+      "desktop": [
+        "Avatar",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "List",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Image",
+        "M.List",
+        "M.TextArea"
+      ]
+    },
+    "CompareSelectionTray": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "ConnectionControlHeader": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Switch",
+        "Tag",
+        "Tooltip",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup"
+      ]
+    },
+    "ConnectionFleetMetrics": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "ConnectionMappingPanel": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ConnectionRouteSummary": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "ConnectionSchemaHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "ConnectionTimeline": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Segmented",
+        "Space",
+        "Tag",
+        "Timeline",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Segmented"
+      ]
+    },
+    "ConnectionWorkspaceTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "ConnectorVersionStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ContactPointManager": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Space"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ContentCard": {
+      "desktop": [
+        "Card",
+        "Empty"
+      ],
+      "phone": []
+    },
+    "ContentPipelineBoard": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "ContextBreadcrumb": {
+      "desktop": [
+        "Breadcrumb",
+        "Button",
+        "Card"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card"
+      ]
+    },
+    "ContextHelpDrawer": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "ConversationAssignmentStrip": {
+      "desktop": [
+        "Avatar",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "ConversationCommandHeader": {
+      "desktop": [
+        "Avatar",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "ConversationContextSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ConversationDetailTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "ConversationInboxFilter": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "ConversationReplyBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "Segmented",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Segmented",
+        "M.TextArea"
+      ]
+    },
+    "ConversationSlaMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "CredentialLifecycleBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "CumulativeFlowChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "CycleCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup",
+        "M.Space"
+      ]
+    },
+    "CycleContextSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "CycleFilterBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "CycleHealthMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar"
+      ]
+    },
+    "CycleLifecycleBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup"
+      ]
+    },
+    "CycleRiskStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "DashboardCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tooltip",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "DashboardParameterBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.Space"
+      ]
+    },
+    "DashboardQueryContext": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "DashboardSaveBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Dropdown",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup",
+        "M.Space"
+      ]
+    },
+    "DataExportPanel": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Result",
+        "Segmented",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Segmented",
+        "M.Space"
+      ]
+    },
+    "DataFreshnessIndicator": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "DataImportWizard": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Result",
+        "Space",
+        "Steps",
+        "Table",
+        "Tag",
+        "Typography",
+        "Upload"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Steps"
+      ]
+    },
+    "DatasetEditorTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "DatasourceHealthStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "DatasourceQueryMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "DataTable": {
+      "desktop": [
+        "Card",
+        "DragSortTable",
+        "Empty",
+        "Space",
+        "Table",
+        "Tag",
+        "Typography"
+      ],
+      "phone": []
+    },
+    "DeadlineAgenda": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "DeletedRecordsRecovery": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Popconfirm"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.Space"
+      ]
+    },
+    "DeliverySlotCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "DependencyGraphPanel": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "DependencyKanban": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "DeploymentCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup"
+      ]
+    },
+    "DeploymentContextSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "DeploymentDetailTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "DeploymentLatencyChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "DeploymentRolloutMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar"
+      ]
+    },
+    "DeploymentScaleBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "Popconfirm",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Input"
+      ]
+    },
+    "DeploymentWizard": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Steps",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Steps",
+        "M.Tag"
+      ]
+    },
+    "DetailInspectorDrawer": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "DistributionHistogram": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "DocumentCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "DocumentContextSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "DocumentHistoryTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "DocumentInsightMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "DocumentShareBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "DraftPublishBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "EditableSubTable": {
+      "desktop": [
+        "Card",
+        "EditableProTable",
+        "Empty"
+      ],
+      "phone": []
+    },
+    "EditorialCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "EntityOwnershipSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "EnvironmentStatusStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ErrorBudgetGauge": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "EventBreadcrumbTimeline": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Segmented",
+        "Space",
+        "Tag",
+        "Timeline",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Segmented",
+        "M.Steps"
+      ]
+    },
+    "EventRsvpPanel": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "EventTypeEditorTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "EventTypePublishBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "EventUserCountMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "ExamScheduleCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "ExploreInspectorTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "ExploreQueryContext": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ExploreQueryControlBar": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "ExportJobDrawer": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "FacetedFilterPanel": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Checkbox",
+        "Collapse",
+        "Empty",
+        "Flex",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "FeatureFlagCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "FilterBar": {
+      "desktop": [
+        "Empty",
+        "ProCard",
+        "ProForm",
+        "QueryFilter"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Form",
+        "M.Grid",
+        "M.List",
+        "M.Picker",
+        "M.Selector"
+      ]
+    },
+    "FilterPresetDrawer": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "ForecastConfidenceChart": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "FreeformInsight": {
+      "desktop": [
+        "ECharts"
+      ],
+      "phone": []
+    },
+    "FunnelChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "FunnelConversionChart": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "GanttSchedule": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "GaugeProgress": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "GlobalSearchPalette": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Input",
+        "List",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.SearchBar"
+      ]
+    },
+    "HeaderEntitySummary": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "ProDescriptions",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "HeaderProgressSummary": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.ProgressBar"
+      ]
+    },
+    "HeatmapMatrix": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "HelpContextPanel": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "HistogramDistributionChart": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ImportMappingWizard": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Progress",
+        "Select",
+        "Steps",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Dialog",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Steps",
+        "M.Tag"
+      ]
+    },
+    "IncidentEvidenceTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "IncidentOwnershipStrip": {
+      "desktop": [
+        "Avatar",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "IncidentResolutionWizard": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Steps",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Steps",
+        "M.Tag"
+      ]
+    },
+    "IncidentResponseBoard": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "InspectorModeTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "IntegrationSetupWizard": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Progress",
+        "Select",
+        "Steps",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Dialog",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Steps",
+        "M.Tag"
+      ]
+    },
+    "InterviewScheduleCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "IssueCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup"
+      ]
+    },
+    "IssueEventFilter": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "Select"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.SearchBar",
+        "M.Segmented",
+        "M.Selector"
+      ]
+    },
+    "IssueImpactMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "IssueInvestigationTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "JobRunMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "KanbanBoard": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Picker",
+        "M.Segmented"
+      ]
+    },
+    "KeyboardCommandPalette": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "KubernetesResourceFilter": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "LeaveCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "LiveChangeReview": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Space",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "LiveRefreshControl": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Grid"
+      ]
+    },
+    "LogLabelFilter": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "MaintenanceWindowCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "MemberAssignment": {
+      "desktop": [
+        "Avatar",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Input",
+        "List",
+        "Segmented",
+        "Space",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.SearchBar",
+        "M.Segmented"
+      ]
+    },
+    "MetadataQualityMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar"
+      ]
+    },
+    "MetricComparisonPanel": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "MetricGrid": {
+      "desktop": [
+        "ECharts",
+        "Empty",
+        "Flex",
+        "StatisticCard",
+        "Tooltip",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "MigrationReadinessWizard": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Steps",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Steps",
+        "M.Tag"
+      ]
+    },
+    "MilestoneTimelineCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "MuteTimingSchedule": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Popconfirm"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "NotificationCenterDrawer": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "NotificationInbox": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Space",
+        "Tabs",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Segmented"
+      ]
+    },
+    "OccurrenceEvidenceSummary": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "OnboardingChecklistWizard": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Progress",
+        "Select",
+        "Steps",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Dialog",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Steps",
+        "M.Tag"
+      ]
+    },
+    "OnCallScheduleCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "PageHeader": {
+      "desktop": [
+        "Button",
+        "Space"
+      ],
+      "phone": []
+    },
+    "PanelCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "PanelQueryLatencyChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "PercentileBandChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "PermissionMatrix": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Segmented",
+        "Table",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Selector"
+      ]
+    },
+    "PermissionSummaryPanel": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "PolicyConfigurationWizard": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Progress",
+        "Select",
+        "Steps",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Dialog",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Steps",
+        "M.Tag"
+      ]
+    },
+    "PortfolioKanban": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "ProductionScheduleCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "ProportionPie": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": []
+    },
+    "QueryClauseFilterBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "QueryDataSourceSummary": {
+      "desktop": [
+        "Breadcrumb",
+        "Card",
+        "Empty",
+        "Flex",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "QueryErrorDrawer": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Drawer",
+        "Empty",
+        "List"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup"
+      ]
+    },
+    "QueryExecutionMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "QueryModeTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "QueryResultPivot": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "QueryRunStatusStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "QuestionCommandHeader": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Tooltip",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "QuestionExecutionBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "QuickActionPanel": {
+      "desktop": [
+        "Button",
+        "Empty",
+        "Flex",
+        "ProCard"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Space"
+      ]
+    },
+    "RadarComparison": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "RankedList": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "List",
+        "Progress",
+        "Tag",
+        "Typography"
+      ],
+      "phone": []
+    },
+    "RealmCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "RealmSecurityContext": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "RealmStatusStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "RecentItemsPanel": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "RecordComparePanel": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Table",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List"
+      ]
+    },
+    "RecordDetail": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "ProDescriptions",
+        "Tag",
+        "Typography"
+      ],
+      "phone": []
+    },
+    "RecordForm": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "ProForm"
+      ],
+      "phone": []
+    },
+    "RecordFormDialog": {
+      "desktop": [
+        "Button",
+        "Card",
+        "DrawerForm",
+        "Empty",
+        "ModalForm",
+        "ProForm"
+      ],
+      "phone": []
+    },
+    "RecordLifecycleBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup",
+        "M.Space"
+      ]
+    },
+    "RecordPicker": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Input",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.SearchBar"
+      ]
+    },
+    "RecruitmentPipelineBoard": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "RecurrenceEditor": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "DatePicker",
+        "Empty",
+        "Form",
+        "InputNumber",
+        "Radio",
+        "Select",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Selector"
+      ]
+    },
+    "ReferenceManyManager": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "List",
+        "Segmented"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Segmented"
+      ]
+    },
+    "RelatedEntityPanel": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "ReleaseAdoptionMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "ReleaseAdoptionTrendChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "ReleaseCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "ReleaseContextSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ReleaseDetailTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "ReleaseEnvironmentFilter": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "ReleaseEnvironmentStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "ReleaseHealthStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Statistic",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "ReleaseRolloutBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar"
+      ]
+    },
+    "ReleaseTrainBoard": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "RescheduleRequestDrawer": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Drawer",
+        "Empty",
+        "Flex",
+        "List",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup"
+      ]
+    },
+    "ResourceBookingCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "ResourceDetailTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "ResultPanel": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Result",
+        "Space"
+      ],
+      "phone": []
+    },
+    "RevisionHistoryPanel": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Timeline",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "RoomBookingCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "RuleEvaluationMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "RunningJobControlBar": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Progress",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Popup",
+        "M.ProgressBar"
+      ]
+    },
+    "SankeyFlow": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "SavedSearchPanel": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "SavedViewManager": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Popconfirm",
+        "Space",
+        "Tag"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "SavedViewTabs": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Segmented"
+      ]
+    },
+    "ScatterCorrelationChart": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ScheduleCalendar": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Calendar",
+        "Card",
+        "ConfigProvider",
+        "Empty",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ScheduleCapacityHeatmap": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar"
+      ]
+    },
+    "ScheduleConflictResolver": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Result"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "SchedulePublishBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List"
+      ]
+    },
+    "SchemaChangeReview": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Table",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "SchemaConflictDrawer": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Drawer",
+        "Empty",
+        "List"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup"
+      ]
+    },
+    "SchemaRefreshBar": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "SearchBox": {
+      "desktop": [
+        "Card",
+        "Input"
+      ],
+      "phone": []
+    },
+    "SectionedForm": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "FooterToolbar",
+        "ProCard",
+        "ProForm",
+        "Tooltip"
+      ],
+      "phone": []
+    },
+    "SelectionInspector": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "ServiceDispatchCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "ServiceMapPanel": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ServiceOwnershipContext": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "ShiftRosterCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "SprintPlanningBoard": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "StackTracePanel": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Collapse",
+        "Empty",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock"
+      ]
+    },
+    "StandardListRows": {
+      "desktop": [
+        "Avatar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": []
+    },
+    "StatusTabs": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Tabs"
+      ],
+      "phone": []
+    },
+    "StepsForm": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "ProForm",
+        "StepsForm"
+      ],
+      "phone": []
+    },
+    "StreamDetailTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "StreamFreshnessMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "StreamNamespaceFilter": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "StreamSelectionSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "StreamStatusMonitor": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "SuspectCommitPanel": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "List",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "SwimlaneKanban": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "SyncReliabilityMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "SyncScheduleStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "SyncVolumeTrendChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "TagFilterRow": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Tag"
+      ],
+      "phone": []
+    },
+    "TeamAvailabilityCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "TimelineFilterBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "DatePicker",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Selector"
+      ]
+    },
+    "TimeSeriesAnomalyChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "TimezoneOverlapPanel": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "List",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "TrainingCalendar": {
+      "desktop": [
+        "Button",
+        "Calendar",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.CalendarPicker",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Tag"
+      ]
+    },
+    "TreemapBreakdown": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "TreeNavigator": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Input",
+        "Tree",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.SearchBar"
+      ]
+    },
+    "TrendChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": []
+    },
+    "TriageQueueBoard": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "UnsavedChangesBar": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup"
+      ]
+    },
+    "UptimeStatusTimeline": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "UserAccessBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup"
+      ]
+    },
+    "UserCommandHeader": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup"
+      ]
+    },
+    "UserDirectoryFilter": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Flex",
+        "Input",
+        "Segmented"
+      ],
+      "phone": [
+        "M.Card",
+        "M.SearchBar",
+        "M.Segmented"
+      ]
+    },
+    "UserEventFilter": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "UserIdentitySummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "UserSecurityTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "UserSessionMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "ValidatedFormTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "ValidationIssuePanel": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Drawer",
+        "Empty",
+        "Input",
+        "List",
+        "Select",
+        "Space"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Popup",
+        "M.SearchBar"
+      ]
+    },
+    "WaterfallChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "WaterfallVarianceChart": {
+      "desktop": [],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "WipLimitBoard": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Select",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
+    "WizardNavigationBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Flex",
+        "Progress",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Grid",
+        "M.ProgressBar"
+      ]
+    },
+    "WorkflowCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "WorkflowContextSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "WorkflowControlBar": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Progress",
+        "Space"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar"
+      ]
+    },
+    "WorkflowDurationChart": {
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty"
+      ],
+      "phone": [
+        "ECharts",
+        "M.Card",
+        "M.ErrorBlock"
+      ]
+    },
+    "WorkflowExecutionFilter": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "WorkflowExecutionTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "WorkflowFailureDrawer": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Drawer",
+        "Empty",
+        "List"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Popup"
+      ]
+    },
+    "WorkflowOutcomeMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "WorkflowTimeline": {
+      "desktop": [
+        "Empty",
+        "Flex",
+        "ProCard",
+        "Steps",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Steps"
+      ]
+    },
+    "WorkflowVersionStrip": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "WorkItemActivityTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "WorkItemCommandHeader": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Popconfirm",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Popup",
+        "M.Space"
+      ]
+    },
+    "WorkItemContextSummary": {
+      "desktop": [
+        "Card",
+        "Descriptions",
+        "Empty"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List"
+      ]
+    },
+    "WorkItemDetailTabs": {
+      "desktop": [
+        "Badge",
+        "Card",
+        "Empty",
+        "Space",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Tabs"
+      ]
+    },
+    "WorkItemFilterBar": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Select"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Selector"
+      ]
+    },
+    "WorkItemMoveDrawer": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Drawer",
+        "Empty",
+        "Select",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Popup",
+        "M.Selector"
+      ]
+    },
+    "WorkloadThroughputMetrics": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Statistic"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid"
+      ]
+    },
+    "WorkspaceTabs": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Tabs"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Segmented"
+      ]
+    }
+  }
+}

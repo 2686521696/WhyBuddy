@@ -105,6 +105,12 @@ import {
   formatTrendLabel,
   type DataRefTrend,
 } from "./dataref-trend";
+import {
+  ImportMappingWizardRenderer,
+  IntegrationSetupWizardRenderer,
+  OnboardingChecklistWizardRenderer,
+  PolicyConfigurationWizardRenderer,
+} from "./practice-wizards";
 
 /** enum 字段取值声明的按需查询（entityId + fieldId → 归一化 options）。 */
 export type EnumOptionsLookup = (
@@ -144,6 +150,54 @@ import {
   type FeedItem,
   type TimeGrain,
 } from "./block-data";
+import {
+  BookingConflictPanelRenderer,
+  CampaignCalendarRenderer,
+  DeadlineAgendaRenderer,
+  DeploymentWizardRenderer,
+  EditorialCalendarRenderer,
+  EventRsvpPanelRenderer,
+  IncidentResolutionWizardRenderer,
+  MaintenanceWindowCalendarRenderer,
+  MigrationReadinessWizardRenderer,
+  RecurrenceEditorRenderer,
+  ReleaseCalendarRenderer,
+  ResourceBookingCalendarRenderer,
+  ScheduleCapacityHeatmapRenderer,
+  ShiftRosterCalendarRenderer,
+  TeamAvailabilityCalendarRenderer,
+} from "./calendar-wizard-blocks";
+import {
+  AppointmentWaitlistPanelRenderer,
+  AssetReservationCalendarRenderer,
+  AvailabilityOverridePanelRenderer,
+  DeliverySlotCalendarRenderer,
+  ExamScheduleCalendarRenderer,
+  InterviewScheduleCalendarRenderer,
+  LeaveCalendarRenderer,
+  MilestoneTimelineCalendarRenderer,
+  OnCallScheduleCalendarRenderer,
+  ProductionScheduleCalendarRenderer,
+  RescheduleRequestDrawerRenderer,
+  RoomBookingCalendarRenderer,
+  SchedulePublishBarRenderer,
+  ServiceDispatchCalendarRenderer,
+  TimezoneOverlapPanelRenderer,
+  TrainingCalendarRenderer,
+} from "./schedule-status-blocks";
+import {
+  CONFIGURATION_WIZARD_POLICIES,
+  CONFIGURATION_WIZARD_RENDERERS,
+} from "./configuration-wizard-batch";
+import {
+  COLLABORATION_CONTENT_LABELS,
+  COLLABORATION_CONTENT_RENDERERS,
+} from "./collaboration-content-blocks";
+import {
+  DATA_GOVERNANCE_LABELS,
+  DATA_GOVERNANCE_RENDERERS,
+} from "./data-governance-blocks";
+import { ANALYSIS_DEPENDENCY_RENDERERS } from "./analysis-dependency-blocks";
 // ECharts 基建走独立 chunk（跟 AppRuntimeScreen 里那份同一个组件/同一个
 // import()，Vite 按 module 去重成一个 chunk，不会重复打包）。
 const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
@@ -6350,6 +6404,196 @@ const QueryErrorDrawerRenderer=diagnosticDrawer("query-error-drawer","查询错�
 const SchemaConflictDrawerRenderer=diagnosticDrawer("schema-conflict-drawer","Schema 冲突","streamFieldRef","fieldFieldRef","changeFieldRef");
 
 /**
+ * Plane's kanban keeps group identity separate from issue data and emits an
+ * explicit source/target move. These variants preserve that behavior while
+ * layering domain-specific guards (WIP, dependency, capacity) on the same
+ * existing binding and event contract.
+ */
+type MatureKanbanVariant =
+  | "swimlane" | "wip" | "backlog" | "sprint" | "dependency" | "triage"
+  | "approval" | "content" | "recruitment" | "incident" | "release" | "portfolio";
+
+const KANBAN_TITLES: Record<MatureKanbanVariant, string> = {
+  swimlane: "泳道看板", wip: "WIP 限制看板", backlog: "待办优先级", sprint: "迭代规划",
+  dependency: "依赖看板", triage: "分诊队列", approval: "审批阶段", content: "内容流水线",
+  recruitment: "招聘流水线", incident: "事件响应", release: "发布列车", portfolio: "组合看板",
+};
+
+function MatureKanban({
+  block, children, entityRows, onAction, variant,
+}: ExperienceBlockRendererProps & { variant: MatureKanbanVariant }) {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows);
+  const titleRef = fieldRefOf(block, "titleFieldRef");
+  const statusRef = fieldRefOf(block, "statusFieldRef");
+  const laneRef = fieldRefOf(block, "laneFieldRef");
+  const priorityRef = fieldRefOf(block, "priorityFieldRef");
+  const limitRef = fieldRefOf(block, "limitFieldRef");
+  const blockedRef = fieldRefOf(block, "blockedFieldRef");
+  const progressRef = fieldRefOf(block, "progressFieldRef");
+  const ownerRef = fieldRefOf(block, "ownerFieldRef");
+  const [moves, setMoves] = React.useState<Record<string, string>>({});
+  const [selected, setSelected] = React.useState<string[]>([]);
+  if (!bound || !titleRef || !statusRef) {
+    return <BlockShell block={block} testid={`mature-kanban-${variant}`}><BlockEmpty hint={`${KANBAN_TITLES[variant]}尚未绑定标题和状态字段`} /></BlockShell>;
+  }
+  const statusOf = (row: RuntimeRow) => moves[row.id] ?? String(row.values?.[statusRef] ?? "未分组");
+  const statuses = Array.from(new Set(bound.rows.map(statusOf).filter(Boolean)));
+  const ordered = [...bound.rows].sort((a, b) => {
+    if (variant !== "backlog" && variant !== "triage" && variant !== "incident") return 0;
+    return Number(b.values?.[priorityRef ?? ""] ?? 0) - Number(a.values?.[priorityRef ?? ""] ?? 0);
+  });
+  const lanes = laneRef ? Array.from(new Set(ordered.map(row => String(row.values?.[laneRef] ?? "未分配")))) : ["全部"];
+  const moveGuard = (row: RuntimeRow, target: string): string | undefined => {
+    const source = statusOf(row);
+    const targetCount = ordered.filter(item => statusOf(item) === target).length;
+    const rowLimit = Number(row.values?.[limitRef ?? ""] ?? block.props?.wipLimit ?? 0);
+    const blocked = blockedRef ? enabledValue(row.values?.[blockedRef], "blocked") : false;
+    const progress = Number(row.values?.[progressRef ?? ""] ?? 0);
+    const owner = String(row.values?.[ownerRef ?? ""] ?? "").trim();
+    const sourceIndex = statuses.indexOf(source), targetIndex = statuses.indexOf(target);
+    if (target === source) return;
+    if (variant === "wip" && rowLimit > 0 && targetCount >= rowLimit) return "目标列已达到 WIP 上限";
+    if (variant === "dependency" && blocked) return "依赖解除前不能推进";
+    if (variant === "sprint" && rowLimit > 0 && targetCount >= rowLimit) return "迭代容量已满";
+    if (variant === "approval" && targetIndex > sourceIndex + 1) return "审批阶段不能跨级推进";
+    if (variant === "content" && /发布|published|done/i.test(target) && progress < 100) return "内容完成度达到 100% 后才能发布";
+    if (variant === "recruitment" && /拒绝|rejected|hired|录用/i.test(source)) return "终态候选人不能直接改阶段";
+    if (variant === "incident" && /解决|resolved|closed/i.test(target) && (blocked || progress < 100)) return "阻塞解除且处置完成后才能关闭事件";
+    if (variant === "release" && targetIndex > sourceIndex + 1) return "发布必须逐环境推进";
+    if (variant === "portfolio" && /完成|done|closed/i.test(target) && progress < 100) return "组合进度完成后才能进入完成阶段";
+    if (variant === "triage" && targetIndex > 0 && !owner) return "分诊后必须先指定负责人";
+    if (variant === "backlog" && targetIndex > 0 && !priorityRef) return "排期待办必须声明优先级";
+    return undefined;
+  };
+  const move = (row: RuntimeRow, target: string) => {
+    const source = statusOf(row);
+    if (moveGuard(row, target)) return;
+    setMoves(current => ({ ...current, [row.id]: target }));
+    onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "moveBoardItem", source, target, targets: targetIdsOf(block) });
+  };
+  return (
+    <BlockShell block={block} title={String(block.props?.title ?? KANBAN_TITLES[variant])} testid={`mature-kanban-${variant}`}
+      extra={<Badge count={bound.rows.length} showZero color="#1677ff" />}>
+      {ordered.length === 0 ? <BlockEmpty hint="当前分组没有工作项" /> : <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        {lanes.map(lane => <div key={lane} data-testid={`kanban-lane-${lane}`}>
+          {laneRef && <Typography.Text strong>{lane}</Typography.Text>}
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, statuses.length)}, minmax(190px, 1fr))`, gap: 10, overflowX: "auto", marginTop: 6 }}>
+            {statuses.map(status => {
+              const rows = ordered.filter(row => statusOf(row) === status && (!laneRef || String(row.values?.[laneRef] ?? "未分配") === lane));
+              const limit = Math.max(0, ...rows.map(row => Number(row.values?.[limitRef ?? ""] ?? 0)), Number(block.props?.wipLimit ?? 0));
+              const full = ["wip", "sprint"].includes(variant) && limit > 0 && rows.length >= limit;
+              return <Card key={status} size="small" title={<Space><span>{status}</span><Badge count={rows.length} showZero /></Space>}
+                extra={limit > 0 ? <Tag color={full ? "error" : "default"}>WIP {rows.length}/{limit}</Tag> : null}
+                styles={{ body: { padding: 8, minHeight: 92 } }}>
+                {rows.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无工作项" /> : rows.map(row => {
+                  const blocked = blockedRef ? enabledValue(row.values?.[blockedRef], "blocked") : false;
+                  const checked = selected.includes(row.id);
+                  return <Card key={row.id} size="small" hoverable style={{ marginBottom: 8, opacity: blocked ? .65 : 1 }}
+                    onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}>
+                    <Flex justify="space-between" gap={8} align="start">
+                      <Checkbox checked={checked} onClick={event => event.stopPropagation()} onChange={event => setSelected(ids => event.target.checked ? [...ids, row.id] : ids.filter(id => id !== row.id))} />
+                      <Typography.Text strong style={{ flex: 1 }}>{String(row.values?.[titleRef] ?? row.id)}</Typography.Text>
+                      {priorityRef && <Tag>{String(row.values?.[priorityRef] ?? "-")}</Tag>}
+                    </Flex>
+                    {ownerRef && <Typography.Text type="secondary">{String(row.values?.[ownerRef] ?? "未分配")}</Typography.Text>}
+                    {progressRef && <Progress size="small" percent={Math.min(100, Number(row.values?.[progressRef] ?? 0))} />}
+                    {blocked && <Alert type="warning" message="存在未完成依赖" showIcon style={{ marginTop: 6 }} />}
+                    <Select size="small" value={statusOf(row)} style={{ width: "100%", marginTop: 8 }}
+                      options={statuses.map(value => ({ value, label: value, disabled: Boolean(moveGuard(row, value)) }))} onClick={event => event.stopPropagation()} onChange={target => move(row, target)} />
+                  </Card>;
+                })}
+              </Card>;
+            })}
+          </div>
+        </div>)}
+        {selected.length > 0 && <Alert type="info" showIcon message={`已选择 ${selected.length} 项`} action={<Button size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowIds: selected, operation: "bulkEditBoardItems" })}>批量处理</Button>} />}
+      </Space>}
+    </BlockShell>
+  );
+}
+
+const matureKanbanRenderer = (variant: MatureKanbanVariant): ExperienceBlockRenderer => props => <MatureKanban {...props} variant={variant} />;
+const SwimlaneKanbanRenderer = matureKanbanRenderer("swimlane");
+const WipLimitBoardRenderer = matureKanbanRenderer("wip");
+const BacklogPrioritizationBoardRenderer = matureKanbanRenderer("backlog");
+const SprintPlanningBoardRenderer = matureKanbanRenderer("sprint");
+const DependencyKanbanRenderer = matureKanbanRenderer("dependency");
+const TriageQueueBoardRenderer = matureKanbanRenderer("triage");
+const ApprovalStageBoardRenderer = matureKanbanRenderer("approval");
+const ContentPipelineBoardRenderer = matureKanbanRenderer("content");
+const RecruitmentPipelineBoardRenderer = matureKanbanRenderer("recruitment");
+const IncidentResponseBoardRenderer = matureKanbanRenderer("incident");
+const ReleaseTrainBoardRenderer = matureKanbanRenderer("release");
+const PortfolioKanbanRenderer = matureKanbanRenderer("portfolio");
+
+const SavedViewManagerRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>; const bound = rowsOfBinding(block, entityRows), name = fieldRefOf(block, "nameFieldRef"), shared = fieldRefOf(block, "sharedFieldRef"), active = fieldRefOf(block, "activeFieldRef");
+  if (!bound || !name) return <BlockShell block={block} testid="saved-view-manager"><BlockEmpty hint="视图管理尚未绑定名称字段" /></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "保存视图")} testid="saved-view-manager"><List dataSource={bound.rows} locale={{ emptyText: "还没有保存视图" }} renderItem={row => <List.Item actions={[<Button key="apply" type="link" onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}>应用</Button>, <Popconfirm key="delete" title="删除这个视图？" onConfirm={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "deleteSavedView", targets: targetIdsOf(block) })}><Button type="link" danger>删除</Button></Popconfirm>]}><List.Item.Meta title={<Space>{String(row.values?.[name])}{active && enabledValue(row.values?.[active], "active") && <Tag color="blue">当前</Tag>}</Space>} description={shared && enabledValue(row.values?.[shared], "shared") ? "团队共享" : "仅自己"} /></List.Item>} /></BlockShell>;
+};
+
+const ColumnChooserDrawerRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>; const bound = rowsOfBinding(block, entityRows), title = fieldRefOf(block, "titleFieldRef"), visible = fieldRefOf(block, "visibleFieldRef"), [open, setOpen] = React.useState(false), [selected, setSelected] = React.useState<string[]>([]);
+  if (!bound || !title) return <BlockShell block={block} testid="column-chooser-drawer"><BlockEmpty hint="列选择器尚未绑定标题字段" /></BlockShell>;
+  const initial = bound.rows.filter(row => !visible || enabledValue(row.values?.[visible], "visible")).map(row => row.id); const values = selected.length ? selected : initial;
+  return <BlockShell block={block} testid="column-chooser-drawer"><Button onClick={() => setOpen(true)}>配置列</Button><Drawer title="配置显示列" open={open} onClose={() => setOpen(false)} extra={<Button type="primary" onClick={() => { onAction?.("submitRequest", { entityRef: bound.entityRef, rowIds: values, operation: "setVisibleColumns", targets: targetIdsOf(block) }); setOpen(false); }}>应用</Button>}><Checkbox.Group value={values} onChange={ids => setSelected(ids.map(String))} style={{ display: "flex", flexDirection: "column", gap: 12 }}>{bound.rows.map(row => <Checkbox key={row.id} value={row.id}>{String(row.values?.[title])}</Checkbox>)}</Checkbox.Group></Drawer></BlockShell>;
+};
+
+const ActivityContextDrawerRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  if (children != null) return <>{children}</>; const bound = rowsOfBinding(block, entityRows), title = fieldRefOf(block, "titleFieldRef"), time = fieldRefOf(block, "timeFieldRef"), actor = fieldRefOf(block, "actorFieldRef"), [open, setOpen] = React.useState(false);
+  if (!bound || !title || !time) return <BlockShell block={block} testid="activity-context-drawer"><BlockEmpty hint="活动抽屉尚未绑定标题和时间字段" /></BlockShell>;
+  return <BlockShell block={block} testid="activity-context-drawer"><Button onClick={() => setOpen(true)}>查看活动 <Badge count={bound.rows.length} /></Button><Drawer title="上下文活动" open={open} onClose={() => setOpen(false)}><Timeline items={[...bound.rows].sort((a,b) => String(b.values?.[time]).localeCompare(String(a.values?.[time]))).map(row => ({ children: <div onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}><Typography.Text strong>{String(row.values?.[title])}</Typography.Text><br/><Typography.Text type="secondary">{actor ? `${String(row.values?.[actor] ?? "系统")} · ` : ""}{String(row.values?.[time])}</Typography.Text></div> }))} /></Drawer></BlockShell>;
+};
+
+const BulkActionTrayRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, selection, onAction }) => {
+  if (children != null) return <>{children}</>; const bound = rowsOfBinding(block, entityRows); if (!bound) return <BlockShell block={block} testid="bulk-action-tray"><BlockEmpty hint="批量操作尚未绑定实体" /></BlockShell>;
+  const ids = selection?.rowIds?.[bound.entityRef] ?? []; const actions = Array.isArray(block.props?.actions) ? block.props.actions.map(String) : ["分配", "移动", "归档"];
+  return <BlockShell block={block} testid="bulk-action-tray"><Flex align="center" gap={8} wrap><Typography.Text strong>已选择 {ids.length} 项</Typography.Text>{actions.map(action => <Button key={action} disabled={!ids.length} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowIds: ids, operation: action, targets: targetIdsOf(block) })}>{action}</Button>)}<Button type="link" disabled={!ids.length} onClick={() => onAction?.("actionTrigger", { entityRef: bound.entityRef, operation: "clearSelection" })}>取消选择</Button></Flex></BlockShell>;
+};
+
+type ContextPanelVariant = "palette"|"notifications"|"filterPreset"|"exportJob"|"compare"|"inspector"|"help"|"audit"|"savedSearch"|"recent"|"related"|"permission"|"selection"|"validation"|"contextHelp"|"impact";
+const CONTEXT_TITLES: Record<ContextPanelVariant,string> = { palette:"命令面板", notifications:"通知中心", filterPreset:"筛选预设", exportJob:"导出任务", compare:"对比选择", inspector:"详情检查器", help:"帮助上下文", audit:"审计差异", savedSearch:"保存搜索", recent:"最近项目", related:"关联实体", permission:"权限摘要", selection:"选择检查器", validation:"校验问题", contextHelp:"上下文帮助", impact:"变更影响" };
+
+const ContextPanelRenderer = (variant: ContextPanelVariant): ExperienceBlockRenderer => ({ block, children, entityRows, selection, onAction }) => {
+  if (children != null) return <>{children}</>;
+  const bound = rowsOfBinding(block, entityRows), titleRef = fieldRefOf(block, "titleFieldRef"), statusRef = fieldRefOf(block, "statusFieldRef"), queryRef = fieldRefOf(block, "queryFieldRef"), timeRef = fieldRefOf(block, "timeFieldRef"), severityRef = fieldRefOf(block, "severityFieldRef"), relationRef = fieldRefOf(block, "relationFieldRef"), allowedRef = fieldRefOf(block, "allowedFieldRef"), messageRef = fieldRefOf(block, "messageFieldRef");
+  const [open, setOpen] = React.useState(false), [query, setQuery] = React.useState(""), [preset, setPreset] = React.useState<string>();
+  const ids = bound ? selection?.rowIds?.[bound.entityRef] ?? [] : [];
+  if (!bound) return <BlockShell block={block} testid={`context-panel-${variant}`}><BlockEmpty hint={`${CONTEXT_TITLES[variant]}尚未绑定实体`} /></BlockShell>;
+  const rows = timeRef ? [...bound.rows].sort((a,b) => String(b.values?.[timeRef]).localeCompare(String(a.values?.[timeRef]))) : bound.rows;
+  const filtered = queryRef ? rows.filter(row => String(row.values?.[queryRef] ?? "").toLowerCase().includes(query.toLowerCase())) : rows;
+  const status = (row: RuntimeRow) => String(row.values?.[statusRef ?? ""] ?? "").toLowerCase();
+  const submit = (operation: string, extra: Record<string, unknown> = {}) => onAction?.("submitRequest", { entityRef: bound.entityRef, operation, targets: targetIdsOf(block), ...extra });
+  let content: React.ReactNode;
+  switch (variant) {
+    case "palette": content = <Space direction="vertical" style={{ width: "100%" }}><Input prefix="⌘" placeholder="搜索命令" value={query} onChange={e=>setQuery(e.target.value)} />{filtered.slice(0,8).map(row=><Button key={row.id} block onClick={()=>onAction?.("actionTrigger",{entityRef:bound.entityRef,rowId:row.id,operation:"runCommand",targets:targetIdsOf(block)})}>{String(row.values?.[titleRef ?? ""] ?? row.id)}</Button>)}</Space>; break;
+    case "notifications": content = <Button onClick={()=>setOpen(true)}>打开通知 <Badge count={bound.rows.filter(row=>status(row)==="unread").length} /></Button>; break;
+    case "filterPreset": content = <Button onClick={()=>setOpen(true)}>管理筛选预设 <Badge count={rows.length} /></Button>; break;
+    case "exportJob": content = <Button onClick={()=>setOpen(true)}>查看导出任务 <Badge count={rows.filter(row=>status(row)==="running").length} /></Button>; break;
+    case "compare": content = <Alert type={ids.length===2?"success":"info"} message={ids.length===2?"已选择两条记录，可以对比":"请选择恰好两条记录"} action={<Button size="small" disabled={ids.length!==2} onClick={()=>onAction?.("itemSelect",{entityRef:bound.entityRef,rowIds:ids,operation:"compareSelection"})}>开始对比</Button>} />; break;
+    case "inspector": content = <Button onClick={()=>setOpen(true)} disabled={!ids.length}>检查已选记录 {ids.length}</Button>; break;
+    case "help": content = <Collapse items={rows.slice(0,6).map(row=>({key:row.id,label:String(row.values?.[titleRef ?? ""] ?? row.id),children:String(row.values?.[messageRef ?? ""] ?? "暂无帮助")}))} />; break;
+    case "audit": content = <Button onClick={()=>setOpen(true)}>查看差异 <Badge count={rows.filter(row=>severityRef&&String(row.values?.[severityRef])).length} /></Button>; break;
+    case "savedSearch": content = <List dataSource={rows} renderItem={row=><List.Item actions={[<Button key="run" type="link" onClick={()=>onAction?.("filterChange",{query:row.values?.[queryRef ?? ""],targets:targetIdsOf(block)})}>运行</Button>,<Button key="delete" type="link" danger onClick={()=>submit("deleteSavedSearch",{rowId:row.id})}>删除</Button>]}>{String(row.values?.[titleRef ?? ""] ?? row.id)}</List.Item>} />; break;
+    case "recent": content = <List dataSource={rows.slice(0,10)} renderItem={row=><List.Item onClick={()=>onAction?.("itemSelect",{entityRef:bound.entityRef,rowId:row.id})}>{String(row.values?.[titleRef ?? ""] ?? row.id)}</List.Item>} />; break;
+    case "related": { const groups = Array.from(new Set(rows.map(row=>String(row.values?.[relationRef ?? ""] ?? "相关")))); content = <Collapse items={groups.map(group=>({key:group,label:group,children:<List dataSource={rows.filter(row=>String(row.values?.[relationRef ?? ""] ?? "相关")===group)} renderItem={row=><List.Item onClick={()=>onAction?.("itemSelect",{entityRef:bound.entityRef,rowId:row.id})}>{String(row.values?.[titleRef ?? ""] ?? row.id)}</List.Item>} />}))} />; break; }
+    case "permission": { const denied = allowedRef ? rows.filter(row=>!enabledValue(row.values?.[allowedRef],"allowed")).length : 0; content = <Alert type={denied?"warning":"success"} message={`${rows.length-denied} 项允许，${denied} 项需要申请`} action={denied?<Button size="small" onClick={()=>submit("requestPermission")}>申请权限</Button>:undefined} />; break; }
+    case "selection": content = <Descriptions size="small" column={1} items={[{key:"selected",label:"已选择",children:ids.length},{key:"available",label:"可检查",children:bound.rows.length}]} />; break;
+    case "validation": { const errors = severityRef ? rows.filter(row=>/error|错误/i.test(String(row.values?.[severityRef]))).length : 0; content = <Alert type={errors?"error":"success"} message={errors?`${errors} 个错误阻止提交`:"校验通过"} action={errors?<Button size="small" onClick={()=>setOpen(true)}>查看问题</Button>:undefined} />; break; }
+    case "contextHelp": content = <Button onClick={()=>setOpen(true)}>打开当前页面帮助</Button>; break;
+    case "impact": { const high = severityRef ? rows.filter(row=>/high|critical|高|严重/i.test(String(row.values?.[severityRef]))).length : 0; content = <Alert type={high?"warning":"info"} message={high?`${high} 项高风险影响需要确认`:`${rows.length} 项受影响`} action={<Button size="small" onClick={()=>submit("confirmChangeImpact")}>确认影响</Button>} />; break; }
+  }
+  let drawerBody: React.ReactNode = <List dataSource={rows} locale={{emptyText:"没有详情"}} renderItem={row=><List.Item><List.Item.Meta title={String(row.values?.[titleRef ?? ""] ?? row.id)} description={String(row.values?.[messageRef ?? statusRef ?? ""] ?? "暂无描述")} /></List.Item>} />;
+  if (variant === "notifications") drawerBody = <List dataSource={rows} renderItem={row=><List.Item actions={[status(row)==="unread"?<Button key="read" type="link" onClick={()=>submit("markNotificationRead",{rowId:row.id})}>标为已读</Button>:null]}><List.Item.Meta title={String(row.values?.[titleRef ?? ""] ?? row.id)} description={String(row.values?.[messageRef ?? ""] ?? status(row))} /></List.Item>} />;
+  if (variant === "filterPreset") drawerBody = <Space direction="vertical" style={{width:"100%"}}><Select value={preset} placeholder="选择预设" options={rows.map(row=>({value:row.id,label:String(row.values?.[titleRef ?? ""] ?? row.id)}))} onChange={setPreset} /><Button type="primary" block disabled={!preset} onClick={()=>{onAction?.("filterChange",{presetId:preset,targets:targetIdsOf(block)});setOpen(false)}}>应用筛选</Button></Space>;
+  if (variant === "exportJob") drawerBody = <List dataSource={rows} renderItem={row=><List.Item actions={[status(row)==="completed"?<Button key="download" type="link" onClick={()=>onAction?.("actionTrigger",{entityRef:bound.entityRef,rowId:row.id,operation:"downloadExport",targets:targetIdsOf(block)})}>下载</Button>:<Button key="cancel" type="link" danger disabled={status(row)!=="running"} onClick={()=>submit("cancelExport",{rowId:row.id})}>取消</Button>]}><List.Item.Meta title={String(row.values?.[titleRef ?? ""] ?? row.id)} description={status(row)||"等待中"} /></List.Item>} />;
+  if (variant === "contextHelp") drawerBody = <Space direction="vertical" style={{width:"100%"}}><Input.Search placeholder="搜索当前页面帮助" value={query} onChange={e=>setQuery(e.target.value)} onSearch={value=>onAction?.("actionTrigger",{entityRef:bound.entityRef,operation:"searchContextHelp",query:value,targets:targetIdsOf(block)})} /><List dataSource={filtered} renderItem={row=><List.Item><List.Item.Meta title={String(row.values?.[titleRef ?? ""] ?? row.id)} description={String(row.values?.[messageRef ?? ""] ?? "")} /></List.Item>} /></Space>;
+  return <BlockShell block={block} title={String(block.props?.title ?? CONTEXT_TITLES[variant])} testid={`context-panel-${variant}`}>{content}<Drawer open={open} onClose={()=>setOpen(false)} title={CONTEXT_TITLES[variant]} width={520}>{drawerBody}</Drawer></BlockShell>;
+};
+const KeyboardCommandPaletteRenderer=ContextPanelRenderer("palette"); const NotificationCenterDrawerRenderer=ContextPanelRenderer("notifications"); const FilterPresetDrawerRenderer=ContextPanelRenderer("filterPreset"); const ExportJobDrawerRenderer=ContextPanelRenderer("exportJob"); const CompareSelectionTrayRenderer=ContextPanelRenderer("compare"); const DetailInspectorDrawerRenderer=ContextPanelRenderer("inspector"); const HelpContextPanelRenderer=ContextPanelRenderer("help"); const AuditDiffDrawerRenderer=ContextPanelRenderer("audit"); const SavedSearchPanelRenderer=ContextPanelRenderer("savedSearch"); const RecentItemsPanelRenderer=ContextPanelRenderer("recent"); const RelatedEntityPanelRenderer=ContextPanelRenderer("related"); const PermissionSummaryPanelRenderer=ContextPanelRenderer("permission"); const SelectionInspectorRenderer=ContextPanelRenderer("selection"); const ValidationIssuePanelRenderer=ContextPanelRenderer("validation"); const ContextHelpDrawerRenderer=ContextPanelRenderer("contextHelp"); const ChangeImpactPanelRenderer=ContextPanelRenderer("impact");
+
+/**
  * ── 区块定义表：**一条记录 = 一个组件**（2026-08-08 重做）───────────────
  *
  * ## 为什么重做
@@ -6400,6 +6644,7 @@ export interface BlockDefinition {
    *   · 反着看  这个基础组件被哪些区块用到了；一个都没有就是**还没接上**
    *   · 对账    ssot 用例校验每个名字都真实存在，写错当场红
    */
+  /** Legacy primary-component hint; full coverage is generated from the renderer symbol graph. */
   uses: string[];
   /** 中文名。目录 JSON 只有 description，缺一个短标题（lowcode-engine 的 title） */
   label: string;
@@ -6649,6 +6894,109 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     SchemaRefreshBar: { render: SchemaRefreshBarRenderer, uses: ["Badge", "Button", "Flex"], label: "Schema 刷新栏", phone: true },
     QueryErrorDrawer: { render: QueryErrorDrawerRenderer, uses: ["Drawer", "List", "Button", "Empty"], label: "查询错误抽屉", phone: true },
     SchemaConflictDrawer: { render: SchemaConflictDrawerRenderer, uses: ["Drawer", "List", "Button", "Empty"], label: "Schema 冲突抽屉", phone: true },
+    SwimlaneKanban: { render: SwimlaneKanbanRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Progress", "Alert", "Empty"], label: "泳道看板", phone: true },
+    WipLimitBoard: { render: WipLimitBoardRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Progress", "Alert", "Empty"], label: "WIP 限制看板", phone: true },
+    BacklogPrioritizationBoard: { render: BacklogPrioritizationBoardRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Tag", "Empty"], label: "待办优先级看板", phone: true },
+    SprintPlanningBoard: { render: SprintPlanningBoardRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Progress", "Empty"], label: "迭代规划看板", phone: true },
+    DependencyKanban: { render: DependencyKanbanRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Alert", "Empty"], label: "依赖看板", phone: true },
+    TriageQueueBoard: { render: TriageQueueBoardRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Tag", "Empty"], label: "分诊队列看板", phone: true },
+    ApprovalStageBoard: { render: ApprovalStageBoardRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Empty"], label: "审批阶段看板", phone: true },
+    ContentPipelineBoard: { render: ContentPipelineBoardRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Progress", "Empty"], label: "内容流水线看板", phone: true },
+    RecruitmentPipelineBoard: { render: RecruitmentPipelineBoardRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Tag", "Empty"], label: "招聘流水线看板", phone: true },
+    IncidentResponseBoard: { render: IncidentResponseBoardRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Alert", "Empty"], label: "事件响应看板", phone: true },
+    ReleaseTrainBoard: { render: ReleaseTrainBoardRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Progress", "Empty"], label: "发布列车看板", phone: true },
+    PortfolioKanban: { render: PortfolioKanbanRenderer, uses: ["Card", "Badge", "Checkbox", "Select", "Progress", "Empty"], label: "项目组合看板", phone: true },
+    SavedViewManager: { render: SavedViewManagerRenderer, uses: ["List", "Tag", "Button", "Popconfirm"], label: "保存视图管理", phone: true },
+    ColumnChooserDrawer: { render: ColumnChooserDrawerRenderer, uses: ["Drawer", "Checkbox", "Button"], label: "列选择抽屉", phone: true },
+    ActivityContextDrawer: { render: ActivityContextDrawerRenderer, uses: ["Drawer", "Timeline", "Badge", "Button"], label: "活动上下文抽屉", phone: true },
+    BulkActionTray: { render: BulkActionTrayRenderer, uses: ["Flex", "Typography", "Button"], label: "批量操作托盘", phone: true },
+    OnboardingChecklistWizard: { render: OnboardingChecklistWizardRenderer, uses: ["Steps", "Card", "Tag", "Progress", "Alert", "Button", "Popconfirm"], label: "入职检查向导", phone: true },
+    ImportMappingWizard: { render: ImportMappingWizardRenderer, uses: ["Steps", "Card", "Tag", "Progress", "Alert", "Select", "Button", "Popconfirm"], label: "导入映射向导", phone: true },
+    IntegrationSetupWizard: { render: IntegrationSetupWizardRenderer, uses: ["Steps", "Card", "Tag", "Progress", "Alert", "Button", "Popconfirm"], label: "集成设置向导", phone: true },
+    PolicyConfigurationWizard: { render: PolicyConfigurationWizardRenderer, uses: ["Steps", "Card", "Tag", "Progress", "Alert", "Button", "Popconfirm"], label: "策略配置向导", phone: true },
+    ResourceBookingCalendar: { render: ResourceBookingCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "资源预约日历", phone: true },
+    TeamAvailabilityCalendar: { render: TeamAvailabilityCalendarRenderer, uses: ["Calendar", "List", "Tag", "Empty", "Flex"], label: "团队可用日历", phone: true },
+    ShiftRosterCalendar: { render: ShiftRosterCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "班次排班日历", phone: true },
+    MaintenanceWindowCalendar: { render: MaintenanceWindowCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "维护窗口日历", phone: true },
+    CampaignCalendar: { render: CampaignCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "活动排期日历", phone: true },
+    EditorialCalendar: { render: EditorialCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "内容编辑日历", phone: true },
+    ReleaseCalendar: { render: ReleaseCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "发布日历", phone: true },
+    DeadlineAgenda: { render: DeadlineAgendaRenderer, uses: ["List", "Tag", "Empty"], label: "截止事项议程", phone: true },
+    BookingConflictPanel: { render: BookingConflictPanelRenderer, uses: ["Alert", "List", "Tag", "Button", "Empty"], label: "预约冲突面板", phone: true },
+    ScheduleCapacityHeatmap: { render: ScheduleCapacityHeatmapRenderer, uses: ["Progress", "Flex", "Empty"], label: "排期容量热力图", phone: true },
+    EventRsvpPanel: { render: EventRsvpPanelRenderer, uses: ["List", "Button", "Empty"], label: "活动 RSVP 面板", phone: true },
+    RecurrenceEditor: { render: RecurrenceEditorRenderer, uses: ["Form", "Select", "InputNumber", "Radio", "DatePicker", "Alert", "Button", "Empty"], label: "重复规则编辑器", phone: true },
+    DeploymentWizard: { render: DeploymentWizardRenderer, uses: ["Steps", "Card", "Alert", "Button", "Flex", "Empty"], label: "部署向导", phone: true },
+    MigrationReadinessWizard: { render: MigrationReadinessWizardRenderer, uses: ["Steps", "Card", "Alert", "Button", "Flex", "Empty"], label: "迁移就绪向导", phone: true },
+    IncidentResolutionWizard: { render: IncidentResolutionWizardRenderer, uses: ["Steps", "Card", "Alert", "Button", "Flex", "Empty"], label: "事件解决向导", phone: true },
+    ServiceDispatchCalendar: { render: ServiceDispatchCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "服务派工日历", phone: true },
+    InterviewScheduleCalendar: { render: InterviewScheduleCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "面试排期日历", phone: true },
+    ExamScheduleCalendar: { render: ExamScheduleCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "考试安排日历", phone: true },
+    TrainingCalendar: { render: TrainingCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "培训日历", phone: true },
+    LeaveCalendar: { render: LeaveCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "请假日历", phone: true },
+    AssetReservationCalendar: { render: AssetReservationCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "资产预约日历", phone: true },
+    RoomBookingCalendar: { render: RoomBookingCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "会议室预约日历", phone: true },
+    DeliverySlotCalendar: { render: DeliverySlotCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "配送时段日历", phone: true },
+    OnCallScheduleCalendar: { render: OnCallScheduleCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "值班日历", phone: true },
+    ProductionScheduleCalendar: { render: ProductionScheduleCalendarRenderer, uses: ["Calendar", "List", "Tag", "Button", "Empty", "Flex"], label: "生产排程日历", phone: true },
+    MilestoneTimelineCalendar: { render: MilestoneTimelineCalendarRenderer, uses: ["Calendar", "List", "Tag", "Empty", "Flex"], label: "里程碑时间线日历", phone: true },
+    AppointmentWaitlistPanel: { render: AppointmentWaitlistPanelRenderer, uses: ["List", "Tag", "Button", "Empty"], label: "预约候补面板", phone: true },
+    AvailabilityOverridePanel: { render: AvailabilityOverridePanelRenderer, uses: ["Alert", "List", "Tag", "Button"], label: "可用时间覆盖面板", phone: true },
+    TimezoneOverlapPanel: { render: TimezoneOverlapPanelRenderer, uses: ["List", "Tag", "Space", "Empty"], label: "时区重叠面板", phone: true },
+    SchedulePublishBar: { render: SchedulePublishBarRenderer, uses: ["Button", "Space", "Flex", "Typography", "Empty"], label: "排期发布栏", phone: true },
+    RescheduleRequestDrawer: { render: RescheduleRequestDrawerRenderer, uses: ["Drawer", "List", "Button", "Flex", "Empty"], label: "改期请求抽屉", phone: true },
+    KeyboardCommandPalette: { render: KeyboardCommandPaletteRenderer, uses: ["Input", "Button", "Space"], label: "键盘命令面板", phone: true },
+    NotificationCenterDrawer: { render: NotificationCenterDrawerRenderer, uses: ["Drawer", "List", "Badge", "Button"], label: "通知中心抽屉", phone: true },
+    FilterPresetDrawer: { render: FilterPresetDrawerRenderer, uses: ["Drawer", "Select", "Button", "Badge"], label: "筛选预设抽屉", phone: true },
+    ExportJobDrawer: { render: ExportJobDrawerRenderer, uses: ["Drawer", "List", "Badge", "Button"], label: "导出任务抽屉", phone: true },
+    CompareSelectionTray: { render: CompareSelectionTrayRenderer, uses: ["Alert", "Button"], label: "对比选择托盘", phone: true },
+    DetailInspectorDrawer: { render: DetailInspectorDrawerRenderer, uses: ["Drawer", "List", "Button"], label: "详情检查抽屉", phone: true },
+    HelpContextPanel: { render: HelpContextPanelRenderer, uses: ["Collapse"], label: "帮助上下文面板", phone: true },
+    AuditDiffDrawer: { render: AuditDiffDrawerRenderer, uses: ["Drawer", "List", "Badge", "Button"], label: "审计差异抽屉", phone: true },
+    SavedSearchPanel: { render: SavedSearchPanelRenderer, uses: ["List", "Button"], label: "保存搜索面板", phone: true },
+    RecentItemsPanel: { render: RecentItemsPanelRenderer, uses: ["List"], label: "最近项目面板", phone: true },
+    RelatedEntityPanel: { render: RelatedEntityPanelRenderer, uses: ["Collapse", "List"], label: "关联实体面板", phone: true },
+    PermissionSummaryPanel: { render: PermissionSummaryPanelRenderer, uses: ["Alert", "Button"], label: "权限摘要面板", phone: true },
+    SelectionInspector: { render: SelectionInspectorRenderer, uses: ["Descriptions"], label: "选择检查器", phone: true },
+    ValidationIssuePanel: { render: ValidationIssuePanelRenderer, uses: ["Alert", "Drawer", "List", "Button"], label: "校验问题面板", phone: true },
+    ContextHelpDrawer: { render: ContextHelpDrawerRenderer, uses: ["Drawer", "Input", "List", "Button"], label: "上下文帮助抽屉", phone: true },
+    ChangeImpactPanel: { render: ChangeImpactPanelRenderer, uses: ["Alert", "Button"], label: "变更影响面板", phone: true },
+    FunnelConversionChart: { render: ANALYSIS_DEPENDENCY_RENDERERS.FunnelConversionChart, uses: ["ECharts", "Card", "Empty"], label: "漏斗转化图", phone: true },
+    HistogramDistributionChart: { render: ANALYSIS_DEPENDENCY_RENDERERS.HistogramDistributionChart, uses: ["ECharts", "Card", "Empty"], label: "分布直方图（增强）", phone: true },
+    ScatterCorrelationChart: { render: ANALYSIS_DEPENDENCY_RENDERERS.ScatterCorrelationChart, uses: ["ECharts", "Card", "Empty"], label: "散点相关图", phone: true },
+    BoxPlotDistributionChart: { render: ANALYSIS_DEPENDENCY_RENDERERS.BoxPlotDistributionChart, uses: ["ECharts", "Card", "Empty"], label: "箱线分布图", phone: true },
+    WaterfallVarianceChart: { render: ANALYSIS_DEPENDENCY_RENDERERS.WaterfallVarianceChart, uses: ["ECharts", "Card", "Empty"], label: "瀑布差异图", phone: true },
+    ForecastConfidenceChart: { render: ANALYSIS_DEPENDENCY_RENDERERS.ForecastConfidenceChart, uses: ["ECharts", "Card", "Empty"], label: "预测置信带", phone: true },
+    BurnupChart: { render: ANALYSIS_DEPENDENCY_RENDERERS.BurnupChart, uses: ["ECharts", "Card", "Empty"], label: "燃尽增长图", phone: true },
+    BurndownChart: { render: ANALYSIS_DEPENDENCY_RENDERERS.BurndownChart, uses: ["ECharts", "Card", "Empty"], label: "燃尽图", phone: true },
+    ErrorBudgetGauge: { render: ANALYSIS_DEPENDENCY_RENDERERS.ErrorBudgetGauge, uses: ["ECharts", "Card", "Empty"], label: "错误预算仪表", phone: true },
+    ServiceMapPanel: { render: ANALYSIS_DEPENDENCY_RENDERERS.ServiceMapPanel, uses: ["ECharts", "Card", "Empty"], label: "服务拓扑面板", phone: true },
+    DependencyGraphPanel: { render: ANALYSIS_DEPENDENCY_RENDERERS.DependencyGraphPanel, uses: ["ECharts", "Card", "Empty"], label: "依赖关系图", phone: true },
+    QueryResultPivot: { render: ANALYSIS_DEPENDENCY_RENDERERS.QueryResultPivot, uses: ["Table", "Card", "Empty"], label: "查询结果透视", phone: true },
+    MetricComparisonPanel: { render: ANALYSIS_DEPENDENCY_RENDERERS.MetricComparisonPanel, uses: ["ECharts", "Card", "Empty"], label: "指标对比面板", phone: true },
+    ...Object.fromEntries(
+      Object.entries(CONFIGURATION_WIZARD_POLICIES).map(([type, policy]) => [
+        type,
+        {
+          render: CONFIGURATION_WIZARD_RENDERERS[type],
+          uses: ["Steps", "Card", "ProForm", "ProFormSelect", "ProFormTextArea", "ProFormCheckbox", "Alert", "Progress", "Button", "Popconfirm"],
+          label: policy.title,
+          phone: true,
+        },
+      ])
+    ),
+    ...Object.fromEntries(
+      Object.entries(COLLABORATION_CONTENT_RENDERERS).map(([type, render]) => [
+        type,
+        { render, uses: ["List", "Button", "Tag", "Typography", "Avatar", "Badge", "Input", "Mentions", "Tree", "Timeline", "Segmented", "Select", "Checkbox", "Popconfirm"], label: COLLABORATION_CONTENT_LABELS[type], phone: true },
+      ])
+    ),
+    ...Object.fromEntries(
+      Object.entries(DATA_GOVERNANCE_RENDERERS).map(([type, render]) => [
+        type,
+        { render, uses: ["Table", "List", "Button", "Alert", "Tag", "Input", "Select", "Checkbox", "Descriptions", "Timeline", "Tree", "Progress", "Popconfirm"], label: DATA_GOVERNANCE_LABELS[type], phone: true },
+      ])
+    ),
   });
 
 /** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */

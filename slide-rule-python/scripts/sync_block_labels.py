@@ -45,10 +45,21 @@ CATALOG = ROOT / "services" / "data" / "experience_block_catalog.json"
 REGISTRY = (
     ROOT.parent / "client" / "src" / "pages" / "sliderule" / "live-runtime" / "block-registry.tsx"
 )
+DYNAMIC_LABEL_SOURCES = [
+    REGISTRY.with_name("configuration-wizard-batch.tsx"),
+    REGISTRY.with_name("collaboration-content-blocks.tsx"),
+    REGISTRY.with_name("data-governance-blocks.tsx"),
+]
 
 #: BLOCK_DEFINITIONS 的条目形如 `    FilterBar: { render: …, label: "筛选条", … },`
 #: 四空格缩进锚定的是注册表那张字面量表，避免匹配到组件内部的 `label:` 选项。
 _ENTRY_RE = re.compile(r'^\s{4}(\w+):\s*\{[^\n]*?label:\s*"([^"]+)"', re.MULTILINE)
+_MULTILINE_CONFIG_RE = re.compile(
+    r'^\s{2}(\w+):\s*\{\r?\n\s{4}title:\s*"([^"]+)"', re.MULTILINE
+)
+_INLINE_CONFIG_RE = re.compile(
+    r'(\w+):\s*\{[^\n{}]*?title:\s*"([^"]+)"[^\n{}]*?\}'
+)
 
 #: 块级键的缩进；propsSchema 内部也有 "type"，靠缩进区分。
 _BLOCK_TYPE_LINE = '      "type": "'
@@ -58,7 +69,12 @@ _BLOCKS_END = "  ],"
 
 
 def labels_from_registry() -> dict[str, str]:
-    return {m[1]: m[2] for m in _ENTRY_RE.finditer(REGISTRY.read_text(encoding="utf-8"))}
+    labels = {m[1]: m[2] for m in _ENTRY_RE.finditer(REGISTRY.read_text(encoding="utf-8"))}
+    for source in DYNAMIC_LABEL_SOURCES:
+        text = source.read_text(encoding="utf-8")
+        labels.update({m[1]: m[2] for m in _MULTILINE_CONFIG_RE.finditer(text)})
+        labels.update({m[1]: m[2] for m in _INLINE_CONFIG_RE.finditer(text)})
+    return labels
 
 
 def block_label_counts(text: str) -> dict[str, int]:

@@ -63,6 +63,7 @@ import {
 } from "./base-components/base-catalog";
 import { findScrollParent } from "../agent-loop/dashboard/useScrollerIn";
 import { buildIndex } from "./component-search";
+import { blocksUsing, usageForBlock, usageMapFor, usageStats } from "./component-usage";
 import {
   clearRecent,
   markRecent,
@@ -321,10 +322,14 @@ const CATALOG = catalogJson as unknown as {
  * label，这里只是读出来。加组件不再需要来改这一处。
  */
 const IMPL_BY_TYPE: Record<string, string> = Object.fromEntries(
-  Object.entries(BLOCK_DEFINITIONS).map(([type, d]) => [
-    type,
-    d.uses.length > 0 ? d.uses.join(" + ") : "非组件实现",
-  ])
+  Object.keys(BLOCK_DEFINITIONS).map(type => {
+    const usage = usageForBlock(type);
+    const parts = [
+      usage.desktop.length > 0 ? `桌面 ${usage.desktop.join(" + ")}` : "",
+      usage.phone.length > 0 ? `手机 ${usage.phone.join(" + ")}` : "",
+    ].filter(Boolean);
+    return [type, parts.length > 0 ? parts.join(" / ") : "非组件实现"];
+  })
 );
 
 /**
@@ -338,13 +343,15 @@ const IMPL_BY_TYPE: Record<string, string> = Object.fromEntries(
  * 现在能算了，而且组件库直接把它标出来：没有任何区块用到的组件，如实显示
  * 「还没接进区块」。那是覆盖缺口，不是 bug——但看不见它就没法有意识地补。
  */
-const BLOCKS_USING = (() => {
-  const m: Record<string, string[]> = {};
-  for (const [type, d] of Object.entries(BLOCK_DEFINITIONS)) {
-    for (const u of d.uses) (m[u] ??= []).push(type);
-  }
-  return m;
-})();
+/**
+ * 组件反查来自真实渲染器依赖图，不再读取仅覆盖部分桌面组件的手写 `uses`。
+ * 依赖图由脚本从桌面/手机渲染器的 JSX 与本地 helper 调用链生成。
+ */
+const COMPONENT_USAGE = usageMapFor(BASE_COMPONENTS);
+const BLOCKS_USING: Record<string, string[]> = Object.fromEntries(
+  BASE_COMPONENTS.map(component => [component.name, blocksUsing(component.name)])
+);
+const COMPONENT_USAGE_STATS = usageStats(BASE_COMPONENTS);
 const LABEL_BY_TYPE: Record<string, string> = Object.fromEntries(
   Object.entries(BLOCK_DEFINITIONS).map(([type, d]) => [type, d.label])
 );
@@ -3514,9 +3521,11 @@ function BaseComponentWall({
         if (group !== "all" && c.group !== group) return false;
         if (platform !== "all" && c.platform !== platform) return false;
         if (source !== "all" && c.source !== source) return false;
-        const used = (BLOCKS_USING[c.name] ?? []).length > 0;
-        if (linked === "linked" && !used) return false;
-        if (linked === "unlinked" && used) return false;
+        const usage = COMPONENT_USAGE.get(c.name);
+        if (linked === "linked" && (usage?.allBlocks.length ?? 0) === 0) return false;
+        if (linked === "desktop" && (usage?.desktopBlocks.length ?? 0) === 0) return false;
+        if (linked === "phone" && (usage?.phoneBlocks.length ?? 0) === 0) return false;
+        if (linked === "unlinked" && (usage?.allBlocks.length ?? 0) > 0) return false;
         return true;
       }).sort((a, b) =>
         searchOrder
@@ -3584,17 +3593,27 @@ function BaseComponentWall({
                     **不可能出现在任何生成的应用里**。这是覆盖缺口，不是 bug，
                     但看不见它就没法有意识地补。 */}
                 <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                  {(BLOCKS_USING[c.name] ?? []).length > 0 ? (
+                  {(COMPONENT_USAGE.get(c.name)?.allBlocks.length ?? 0) > 0 ? (
                     <>
-                      <span className="text-[10.5px] text-slate-400">用于区块</span>
-                      {(BLOCKS_USING[c.name] ?? []).map(b => (
+                      <span className="text-[10.5px] text-slate-400">真实渲染使用</span>
+                      {([
+                        ...(COMPONENT_USAGE.get(c.name)?.desktopBlocks ?? []).map(block => ({ block, device: "桌面" })),
+                        ...(COMPONENT_USAGE.get(c.name)?.phoneBlocks ?? []).map(block => ({ block, device: "手机" })),
+                      ] as Array<{ block: string; device: string }>).slice(0, 8).map(({ block, device }) => (
                         <span
-                          key={b}
+                          key={`${device}-${block}`}
                           className="rounded bg-[#e8eeff] px-1.5 py-0.5 text-[10.5px] text-[#3b5bdb]"
                         >
-                          {b}
+                          {device} · {block}
                         </span>
                       ))}
+                      {(COMPONENT_USAGE.get(c.name)?.desktopBlocks.length ?? 0) +
+                        (COMPONENT_USAGE.get(c.name)?.phoneBlocks.length ?? 0) > 8 && (
+                        <span className="text-[10.5px] text-slate-400">
+                          +{(COMPONENT_USAGE.get(c.name)?.desktopBlocks.length ?? 0) +
+                            (COMPONENT_USAGE.get(c.name)?.phoneBlocks.length ?? 0) - 8}
+                        </span>
+                      )}
                     </>
                   ) : (
                     <span
@@ -4030,13 +4049,23 @@ export default function ComponentsLibraryPage() {
             { value: "all", label: "全部", count: BASE_COMPONENTS.length },
             {
               value: "linked",
-              label: "已接进区块",
-              count: BASE_COMPONENTS.filter(c => (BLOCKS_USING[c.name] ?? []).length > 0).length,
+              label: `已采用组件种类（${COMPONENT_USAGE_STATS.desktopRelations + COMPONENT_USAGE_STATS.phoneRelations} 条关联）`,
+              count: COMPONENT_USAGE_STATS.any,
+            },
+            {
+              value: "desktop",
+              label: `桌面已采用（${COMPONENT_USAGE_STATS.desktopRelations} 条关联）`,
+              count: COMPONENT_USAGE_STATS.desktop,
+            },
+            {
+              value: "phone",
+              label: `手机已采用（${COMPONENT_USAGE_STATS.phoneRelations} 条关联）`,
+              count: COMPONENT_USAGE_STATS.phone,
             },
             {
               value: "unlinked",
-              label: "还没接进区块",
-              count: BASE_COMPONENTS.filter(c => (BLOCKS_USING[c.name] ?? []).length === 0).length,
+              label: "两端都未接入",
+              count: COMPONENT_USAGE_STATS.unlinked,
             },
           ],
         },

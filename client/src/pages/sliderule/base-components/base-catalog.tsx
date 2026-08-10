@@ -49,6 +49,7 @@ import {
   Checkbox,
   Collapse,
   ColorPicker,
+  ConfigProvider,
   DatePicker,
   Descriptions,
   Divider,
@@ -196,6 +197,18 @@ export const PC_BASE_COMPONENTS: BaseComponentDef[] = [
         <Button loading>加载中</Button>
         <Button disabled>禁用</Button>
       </Space>
+    ),
+  },
+  {
+    name: "ConfigProvider",
+    label: "全局化配置",
+    description: "为内部组件统一提供主题、语言和组件级配置。",
+    group: "其他",
+    platform: "pc",
+    render: () => (
+      <ConfigProvider theme={{ token: { colorPrimary: "#1677ff" } }}>
+        <Button type="primary">主题内按钮</Button>
+      </ConfigProvider>
     ),
   },
   {

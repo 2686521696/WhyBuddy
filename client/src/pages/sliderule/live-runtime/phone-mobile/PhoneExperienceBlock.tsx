@@ -30,6 +30,12 @@ import type {
   FilterFieldOption,
   PageFilterState,
 } from "../block-registry";
+import { renderCalendarWizardPhoneBlock } from "./PhoneCalendarWizardBlocks";
+import { renderScheduleStatusPhoneBlock } from "./PhoneScheduleStatusBlocks";
+import { PHONE_PRACTICE_WIZARDS } from "./PhonePracticeWizards";
+import { renderConfigurationWizardPhoneBlock } from "./PhoneConfigurationWizardBatch";
+import { renderCollaborationContentPhoneBlock } from "./PhoneCollaborationContentBlocks";
+import { renderDataGovernancePhoneBlock } from "./PhoneDataGovernanceBlocks";
 
 const PhoneLazyEchartsChart = React.lazy(() => import("../EchartsChart"));
 
@@ -1079,6 +1085,45 @@ function PhoneRadarComparison(props: ExperienceBlockRendererProps) {
   return <PhoneAnalysisChart props={props} testid="phone-radar-comparison" option={option} hint="当前没有可对比记录" />;
 }
 
+function PhoneAnalysisDependencyBlock(props: ExperienceBlockRendererProps) {
+  const type = props.block.type;
+  if (type === "FunnelConversionChart") return <PhoneFunnelChart {...props} />;
+  if (type === "HistogramDistributionChart") return <PhoneDistributionHistogram {...props} />;
+  if (type === "BoxPlotDistributionChart") return <PhoneBoxPlotDistribution {...props} />;
+  if (type === "WaterfallVarianceChart") return <PhoneWaterfallChart {...props} />;
+  if (type === "ServiceMapPanel" || type === "DependencyGraphPanel") return <PhoneSankeyFlow {...props} />;
+  if (type === "ScatterCorrelationChart") {
+    const data = phoneRows(props), x = phoneField(props, "xFieldRef"), y = phoneField(props, "yFieldRef");
+    const points = data && x && y ? data.rows.flatMap(row => { const xv = Number(row.values?.[x]), yv = Number(row.values?.[y]); return Number.isFinite(xv) && Number.isFinite(yv) ? [{ value: [xv, yv] }] : []; }) : [];
+    return <PhoneAnalysisChart props={props} testid="phone-scatter-correlation-chart" option={points.length ? { animation: false, tooltip: { trigger: "item", confine: true }, xAxis: { type: "value" }, yAxis: { type: "value" }, series: [{ type: "scatter", symbolSize: 9, data: points }] } : undefined} hint="尚未绑定成对的数值字段" />;
+  }
+  if (type === "ErrorBudgetGauge") {
+    const data = phoneRows(props), consumed = phoneField(props, "consumedFieldRef"), budget = phoneField(props, "budgetFieldRef"), row = data?.rows[0];
+    const used = row && consumed ? Number(row.values?.[consumed]) : NaN, total = row && budget ? Number(row.values?.[budget]) : NaN;
+    const percent = Number.isFinite(used) && Number.isFinite(total) && total > 0 ? Math.max(0, Math.min(100, used / total * 100)) : null;
+    return <PhoneAnalysisChart props={props} testid="phone-error-budget-gauge" option={percent !== null ? { animation: false, series: [{ type: "gauge", startAngle: 210, endAngle: -30, min: 0, max: 100, progress: { show: true }, detail: { formatter: `${percent.toFixed(1)}%`, fontSize: 18 }, data: [{ value: percent, name: "已消耗" }] }] } : undefined} hint="尚未绑定消耗值与预算值" />;
+  }
+  const data = phoneRows(props), time = phoneField(props, "timeFieldRef");
+  const refs = type === "ForecastConfidenceChart" ? ["actualFieldRef", "forecastFieldRef", "lowerFieldRef", "upperFieldRef"] : type === "BurnupChart" ? ["completedFieldRef", "scopeFieldRef"] : ["remainingFieldRef", "idealFieldRef"];
+  if (type === "ForecastConfidenceChart" || type === "BurnupChart" || type === "BurndownChart") {
+    const timeField = time;
+    const rows = data && timeField ? [...data.rows].sort((a, b) => String(a.values?.[timeField]).localeCompare(String(b.values?.[timeField]))) : [];
+    const series = refs
+      .map(bindingKey => phoneField(props, bindingKey))
+      .filter((fieldRef): fieldRef is string => Boolean(fieldRef))
+      .map(fieldRef => ({ name: fieldRef, type: "line", connectNulls: false, showSymbol: false, data: rows.map(row => Number.isFinite(Number(row.values?.[fieldRef])) ? Number(row.values?.[fieldRef]) : null) }));
+    return <PhoneAnalysisChart props={props} testid={`phone-${type.replace(/[A-Z]/g, m => `-${m.toLowerCase()}`).replace(/^-/, "")}`} option={rows.length && series.length && timeField ? { animation: false, tooltip: { trigger: "axis", confine: true }, xAxis: { type: "category", data: rows.map(row => String(row.values?.[timeField] ?? "")) }, yAxis: { type: "value" }, series } : undefined} hint="尚未绑定完整的时间序列字段" />;
+  }
+  if (type === "QueryResultPivot") {
+    const rowRef = phoneField(props, "rowFieldRef"), columnRef = phoneField(props, "columnFieldRef"), valueRef = phoneField(props, "valueFieldRef");
+    const rows = data && rowRef && columnRef && valueRef ? data.rows.map(row => `${String(row.values?.[rowRef!] ?? "")} · ${String(row.values?.[columnRef!] ?? "")} · ${String(row.values?.[valueRef!] ?? "-")}`) : [];
+    return <PhoneShell block={props.block} title={titleOf(props)} testid="phone-query-result-pivot">{rows.length ? <List mode="card">{rows.map((row, index) => <List.Item key={`${row}-${index}`}>{row}</List.Item>)}</List> : <MobileEmpty description="尚未绑定透视结果字段" />}</PhoneShell>;
+  }
+  const category = phoneField(props, "categoryFieldRef"), metrics = Array.isArray(props.block.binding?.metricFieldRefs) ? (props.block.binding.metricFieldRefs as unknown[]).map(String).filter(Boolean) : [];
+  const labels = data && category ? data.rows.map(row => String(row.values?.[category] ?? "")) : [];
+  return <PhoneAnalysisChart props={props} testid="phone-metric-comparison-panel" option={labels.length && metrics.length ? { animation: false, tooltip: { trigger: "axis", confine: true }, legend: { bottom: 0 }, xAxis: { type: "category", data: labels }, yAxis: { type: "value" }, series: metrics.map(ref => ({ name: ref, type: "bar", data: data!.rows.map(row => Number.isFinite(Number(row.values?.[ref])) ? Number(row.values?.[ref]) : null) })) } : undefined} hint="尚未绑定分类与指标字段" />;
+}
+
 function PhoneAlertRuleEditor(props: ExperienceBlockRendererProps) {
   const bound = phoneRows(props); const row = bound?.rows.find(item => item.id === props.focus?.[bound.entityRef]) ?? bound?.rows[0]; const nameRef = phoneField(props, "nameFieldRef"); const queryRef = phoneField(props, "queryFieldRef"); const thresholdRef = phoneField(props, "thresholdFieldRef"); const [name, setName] = React.useState(row && nameRef ? String(row.values?.[nameRef] ?? "") : ""); const [query, setQuery] = React.useState(row && queryRef ? String(row.values?.[queryRef] ?? "") : ""); const [threshold, setThreshold] = React.useState(row && thresholdRef ? String(row.values?.[thresholdRef] ?? "") : ""); const [evaluation, setEvaluation] = React.useState("1m"); if (!bound || !nameRef || !queryRef || !thresholdRef) return <PhoneShell block={props.block} title={titleOf(props) || "告警规则"} testid="phone-alert-rule-editor"><MobileEmpty description="告警规则尚未绑定必要字段" /></PhoneShell>;
   return <PhoneShell block={props.block} title={titleOf(props) || "告警规则"} testid="phone-alert-rule-editor"><Space direction="vertical" block style={{ "--gap": "8px" }}><Input value={name} onChange={setName} placeholder="规则名称" style={{ padding: 9, background: "#f5f5f5" }} /><TextArea value={query} onChange={setQuery} rows={3} placeholder="查询表达式" style={{ padding: 9, background: "#f5f5f5" }} /><Input value={threshold} onChange={setThreshold} type="number" placeholder="阈值" style={{ padding: 9, background: "#f5f5f5" }} /><Selector columns={3} value={[evaluation]} options={[{ label: "1 分", value: "1m" }, { label: "5 分", value: "5m" }, { label: "15 分", value: "15m" }]} onChange={values => values[0] && setEvaluation(String(values[0]))} /><Button block color="primary" disabled={!name.trim() || !query.trim() || !threshold} onClick={() => props.onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row?.id, operation: row ? "updateAlertRule" : "createAlertRule", values: { name, query, threshold: Number(threshold), evaluation }, targets: phoneTargets(props) })}>保存并启用规则</Button></Space></PhoneShell>;
@@ -1569,8 +1614,72 @@ function PhoneDiagnosticDrawer(props:ExperienceBlockRendererProps,testid:string,
 const PhoneQueryErrorDrawer=(props:ExperienceBlockRendererProps)=>PhoneDiagnosticDrawer(props,"phone-query-error-drawer","查询错误","refFieldRef","messageFieldRef","statusFieldRef");
 const PhoneSchemaConflictDrawer=(props:ExperienceBlockRendererProps)=>PhoneDiagnosticDrawer(props,"phone-schema-conflict-drawer","Schema 冲突","streamFieldRef","fieldFieldRef","changeFieldRef");
 
+type PhoneKanbanVariant = "swimlane"|"wip"|"backlog"|"sprint"|"dependency"|"triage"|"approval"|"content"|"recruitment"|"incident"|"release"|"portfolio";
+const PHONE_KANBAN_TITLES:Record<PhoneKanbanVariant,string>={swimlane:"泳道看板",wip:"WIP 限制看板",backlog:"待办优先级",sprint:"迭代规划",dependency:"依赖看板",triage:"分诊队列",approval:"审批阶段",content:"内容流水线",recruitment:"招聘流水线",incident:"事件响应",release:"发布列车",portfolio:"组合看板"};
+function PhoneMatureKanban(props:ExperienceBlockRendererProps & {variant:PhoneKanbanVariant}){
+  const b=phoneRows(props),title=phoneField(props,"titleFieldRef"),status=phoneField(props,"statusFieldRef"),lane=phoneField(props,"laneFieldRef"),priority=phoneField(props,"priorityFieldRef"),blocked=phoneField(props,"blockedFieldRef"),limit=phoneField(props,"limitFieldRef"),progress=phoneField(props,"progressFieldRef"),owner=phoneField(props,"ownerFieldRef");
+  const [active,setActive]=React.useState(""),[moving,setMoving]=React.useState<string|null>(null),[moves,setMoves]=React.useState<Record<string,string>>({}),[selected,setSelected]=React.useState<string[]>([]);
+  if(!b||!title||!status)return <PhoneShell block={props.block} testid={`phone-mature-kanban-${props.variant}`}><MobileEmpty description={`${PHONE_KANBAN_TITLES[props.variant]}尚未绑定标题和状态字段`}/></PhoneShell>;
+  const statusOf=(r:(typeof b.rows)[number])=>moves[r.id]??String(r.values?.[status]??"未分组"),statuses=Array.from(new Set(b.rows.map(statusOf).filter(Boolean))),current=active&&statuses.includes(active)?active:statuses[0]??"";
+  const sorted=[...b.rows].sort((a,c)=>(["backlog","triage","incident"].includes(props.variant)?Number(c.values?.[priority??""]??0)-Number(a.values?.[priority??""]??0):0)),shown=sorted.filter(r=>statusOf(r)===current),lanes=lane?Array.from(new Set(shown.map(r=>String(r.values?.[lane]??"未分配")))):["全部"];
+  const movingRow=b.rows.find(r=>r.id===moving),moveGuard=(r:(typeof b.rows)[number],target:string)=>{const source=statusOf(r),targetCount=b.rows.filter(x=>statusOf(x)===target).length,rowLimit=Number(r.values?.[limit??""]??props.block.props?.wipLimit??0),isBlocked=Boolean(blocked&&phoneTruthy(r.values?.[blocked],"blocked")),completion=Number(r.values?.[progress??""]??0),assignee=String(r.values?.[owner??""]??"").trim(),sourceIndex=statuses.indexOf(source),targetIndex=statuses.indexOf(target);if(target===source)return "当前阶段";if(props.variant==="wip"&&rowLimit>0&&targetCount>=rowLimit)return "目标列已达到 WIP 上限";if(props.variant==="dependency"&&isBlocked)return "依赖解除前不能推进";if(props.variant==="sprint"&&rowLimit>0&&targetCount>=rowLimit)return "迭代容量已满";if(props.variant==="approval"&&targetIndex>sourceIndex+1)return "审批阶段不能跨级推进";if(props.variant==="content"&&/发布|published|done/i.test(target)&&completion<100)return "完成度达到 100% 后才能发布";if(props.variant==="recruitment"&&/拒绝|rejected|hired|录用/i.test(source))return "终态候选人不能直接改阶段";if(props.variant==="incident"&&/解决|resolved|closed/i.test(target)&&(isBlocked||completion<100))return "处置完成后才能关闭";if(props.variant==="release"&&targetIndex>sourceIndex+1)return "发布必须逐环境推进";if(props.variant==="portfolio"&&/完成|done|closed/i.test(target)&&completion<100)return "组合进度完成后才能关闭";if(props.variant==="triage"&&targetIndex>0&&!assignee)return "分诊后必须指定负责人";if(props.variant==="backlog"&&targetIndex>0&&!priority)return "排期待办必须声明优先级";return undefined},move=(target:string)=>{if(!movingRow||moveGuard(movingRow,target))return;const source=statusOf(movingRow);setMoves(x=>({...x,[movingRow.id]:target}));props.onAction?.("submitRequest",{entityRef:b.entityRef,rowId:movingRow.id,operation:"moveBoardItem",source,target,targets:phoneTargets(props)});setMoving(null);setActive(target)};
+  return <PhoneShell block={props.block} title={titleOf(props)||PHONE_KANBAN_TITLES[props.variant]} testid={`phone-mature-kanban-${props.variant}`}>
+    {statuses.length?<><Tabs activeKey={current} onChange={setActive}>{statuses.map(value=><Tabs.Tab key={value} title={`${value} ${b.rows.filter(r=>statusOf(r)===value).length}`}/>)}</Tabs>{lanes.map(laneName=><div key={laneName}>{lane&&<div style={{fontSize:12,fontWeight:600,margin:"10px 0 6px"}}>{laneName}</div>}<Space direction="vertical" block>{shown.filter(r=>!lane||String(r.values?.[lane]??"未分配")===laneName).map(r=>{const isBlocked=Boolean(blocked&&phoneTruthy(r.values?.[blocked],"blocked"));return <List key={r.id} mode="card" style={{margin:0}}><List.Item onClick={()=>props.onAction?.("itemSelect",{entityRef:b.entityRef,rowId:r.id})}><div style={{width:"100%"}}><div style={{display:"flex",gap:8,alignItems:"start"}}><Checkbox checked={selected.includes(r.id)} onChange={checked=>setSelected(ids=>checked?[...ids,r.id]:ids.filter(id=>id!==r.id))}/><strong style={{flex:1}}>{String(r.values?.[title]??r.id)}</strong>{priority&&<Badge content={String(r.values?.[priority]??"-")}/>}</div>{owner&&<div style={{fontSize:12,color:"#666",marginTop:4}}>{String(r.values?.[owner]??"未分配")}</div>}{progress&&<ProgressBar percent={Math.min(100,Number(r.values?.[progress]??0))} style={{marginTop:8}}/>}{isBlocked&&<div style={{fontSize:12,color:"#ff8f1f",marginTop:6}}>存在未完成依赖</div>}<Button block size="small" disabled={isBlocked} style={{marginTop:8}} onClick={event=>{event.stopPropagation();setMoving(r.id)}}>移动到其他阶段</Button></div></List.Item></List>})}</Space></div>)}{selected.length>0&&<Button block color="primary" style={{marginTop:10}} onClick={()=>props.onAction?.("editRequest",{entityRef:b.entityRef,rowIds:selected,operation:"bulkEditBoardItems"})}>批量处理 {selected.length} 项</Button>}</>:<MobileEmpty description="当前分组没有工作项"/>}
+    <Popup visible={Boolean(moving)} onMaskClick={()=>setMoving(null)} bodyStyle={{padding:12}}><strong>移动工作项</strong><Selector columns={2} value={movingRow?[statusOf(movingRow)]:[]} options={statuses.map(value=>({value,label:value,disabled:Boolean(movingRow&&moveGuard(movingRow,value))}))} onChange={values=>values[0]&&move(String(values[0]))}/><Button block fill="none" onClick={()=>setMoving(null)}>取消</Button></Popup>
+  </PhoneShell>;
+}
+const PhoneSwimlaneKanban=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="swimlane"/>;
+const PhoneWipLimitBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="wip"/>;
+const PhoneBacklogPrioritizationBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="backlog"/>;
+const PhoneSprintPlanningBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="sprint"/>;
+const PhoneDependencyKanban=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="dependency"/>;
+const PhoneTriageQueueBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="triage"/>;
+const PhoneApprovalStageBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="approval"/>;
+const PhoneContentPipelineBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="content"/>;
+const PhoneRecruitmentPipelineBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="recruitment"/>;
+const PhoneIncidentResponseBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="incident"/>;
+const PhoneReleaseTrainBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="release"/>;
+const PhonePortfolioKanban=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="portfolio"/>;
+
+function PhoneSavedViewManager(props:ExperienceBlockRendererProps){const b=phoneRows(props),name=phoneField(props,"nameFieldRef"),shared=phoneField(props,"sharedFieldRef"),active=phoneField(props,"activeFieldRef");if(!b||!name)return <PhoneShell block={props.block} testid="phone-saved-view-manager"><MobileEmpty description="视图管理尚未绑定名称字段"/></PhoneShell>;return <PhoneShell block={props.block} title={titleOf(props)||"保存视图"} testid="phone-saved-view-manager"><List>{b.rows.map(r=><List.Item key={r.id} description={shared&&phoneTruthy(r.values?.[shared],"shared")?"团队共享":"仅自己"} extra={<Button size="mini" color="primary" onClick={()=>props.onAction?.("itemSelect",{entityRef:b.entityRef,rowId:r.id})}>应用</Button>}>{String(r.values?.[name])}{active&&phoneTruthy(r.values?.[active],"active")&&<Badge content="当前"/>}</List.Item>)}</List></PhoneShell>}
+function PhoneColumnChooserDrawer(props:ExperienceBlockRendererProps){const b=phoneRows(props),title=phoneField(props,"titleFieldRef"),visible=phoneField(props,"visibleFieldRef"),[open,setOpen]=React.useState(false),[selected,setSelected]=React.useState<string[]>([]);if(!b||!title)return <PhoneShell block={props.block} testid="phone-column-chooser-drawer"><MobileEmpty description="列选择器尚未绑定标题字段"/></PhoneShell>;const initial=b.rows.filter(r=>!visible||phoneTruthy(r.values?.[visible],"visible")).map(r=>r.id),values=selected.length?selected:initial;return <PhoneShell block={props.block} testid="phone-column-chooser-drawer"><Button block onClick={()=>setOpen(true)}>配置列</Button><Popup visible={open} onMaskClick={()=>setOpen(false)} bodyStyle={{padding:12,maxHeight:"75vh",overflow:"auto"}}><strong>配置显示列</strong><Selector columns={1} multiple value={values} options={b.rows.map(r=>({value:r.id,label:String(r.values?.[title])}))} onChange={ids=>setSelected(ids.map(String))}/><Button block color="primary" onClick={()=>{props.onAction?.("submitRequest",{entityRef:b.entityRef,rowIds:values,operation:"setVisibleColumns",targets:phoneTargets(props)});setOpen(false)}}>应用</Button></Popup></PhoneShell>}
+function PhoneActivityContextDrawer(props:ExperienceBlockRendererProps){const b=phoneRows(props),title=phoneField(props,"titleFieldRef"),time=phoneField(props,"timeFieldRef"),actor=phoneField(props,"actorFieldRef"),[open,setOpen]=React.useState(false);if(!b||!title||!time)return <PhoneShell block={props.block} testid="phone-activity-context-drawer"><MobileEmpty description="活动抽屉尚未绑定标题和时间字段"/></PhoneShell>;return <PhoneShell block={props.block} testid="phone-activity-context-drawer"><Button block onClick={()=>setOpen(true)}>查看活动 {b.rows.length}</Button><Popup visible={open} onMaskClick={()=>setOpen(false)} bodyStyle={{padding:12,maxHeight:"75vh",overflow:"auto"}}><List>{[...b.rows].sort((a,c)=>String(c.values?.[time]).localeCompare(String(a.values?.[time]))).map(r=><List.Item key={r.id} description={`${actor?`${String(r.values?.[actor]??"系统")} · `:""}${String(r.values?.[time])}`} onClick={()=>props.onAction?.("itemSelect",{entityRef:b.entityRef,rowId:r.id})}>{String(r.values?.[title])}</List.Item>)}</List></Popup></PhoneShell>}
+function PhoneBulkActionTray(props:ExperienceBlockRendererProps){const b=phoneRows(props);if(!b)return <PhoneShell block={props.block} testid="phone-bulk-action-tray"><MobileEmpty description="批量操作尚未绑定实体"/></PhoneShell>;const ids=props.selection?.rowIds?.[b.entityRef]??[],actions=Array.isArray(props.block.props?.actions)?props.block.props.actions.map(String):["分配","移动","归档"];return <PhoneShell block={props.block} testid="phone-bulk-action-tray"><div style={{fontWeight:600,marginBottom:8}}>已选择 {ids.length} 项</div><Grid columns={Math.min(3,actions.length)} gap={6}>{actions.map(action=><Grid.Item key={action}><Button block size="small" disabled={!ids.length} onClick={()=>props.onAction?.("submitRequest",{entityRef:b.entityRef,rowIds:ids,operation:action,targets:phoneTargets(props)})}>{action}</Button></Grid.Item>)}</Grid></PhoneShell>}
+
+type PhoneContextVariant="palette"|"notifications"|"filterPreset"|"exportJob"|"compare"|"inspector"|"help"|"audit"|"savedSearch"|"recent"|"related"|"permission"|"selection"|"validation"|"contextHelp"|"impact";
+const PHONE_CONTEXT_TITLES:Record<PhoneContextVariant,string>={palette:"命令面板",notifications:"通知中心",filterPreset:"筛选预设",exportJob:"导出任务",compare:"对比选择",inspector:"详情检查器",help:"帮助上下文",audit:"审计差异",savedSearch:"保存搜索",recent:"最近项目",related:"关联实体",permission:"权限摘要",selection:"选择检查器",validation:"校验问题",contextHelp:"上下文帮助",impact:"变更影响"};
+function PhoneContextPanel(props:ExperienceBlockRendererProps & {variant:PhoneContextVariant}){const b=phoneRows(props),title=phoneField(props,"titleFieldRef"),status=phoneField(props,"statusFieldRef"),queryField=phoneField(props,"queryFieldRef"),time=phoneField(props,"timeFieldRef"),severity=phoneField(props,"severityFieldRef"),relation=phoneField(props,"relationFieldRef"),allowed=phoneField(props,"allowedFieldRef"),message=phoneField(props,"messageFieldRef"),[open,setOpen]=React.useState(false),[query,setQuery]=React.useState(""),ids=b?props.selection?.rowIds?.[b.entityRef]??[]:[];if(!b)return <PhoneShell block={props.block} testid={`phone-context-${props.variant}`}><MobileEmpty description={`${PHONE_CONTEXT_TITLES[props.variant]}尚未绑定实体`}/></PhoneShell>;const rows=time?[...b.rows].sort((a,c)=>String(c.values?.[time]).localeCompare(String(a.values?.[time]))):b.rows,filtered=queryField?rows.filter(r=>String(r.values?.[queryField]??"").toLowerCase().includes(query.toLowerCase())):rows,state=(r:(typeof b.rows)[number])=>String(r.values?.[status??""]??"").toLowerCase(),submit=(operation:string,extra:Record<string,unknown>={})=>props.onAction?.("submitRequest",{entityRef:b.entityRef,operation,targets:phoneTargets(props),...extra});let body:React.ReactNode;
+switch(props.variant){case"palette":body=<><SearchBar value={query} onChange={setQuery} placeholder="搜索命令"/><List>{filtered.slice(0,8).map(r=><List.Item key={r.id} onClick={()=>props.onAction?.("actionTrigger",{entityRef:b.entityRef,rowId:r.id,operation:"runCommand",targets:phoneTargets(props)})}>{String(r.values?.[title??""]??r.id)}</List.Item>)}</List></>;break;case"notifications":body=<Button block onClick={()=>setOpen(true)}>打开通知 <Badge content={rows.filter(r=>state(r)==="unread").length}/></Button>;break;case"filterPreset":body=<Button block onClick={()=>setOpen(true)}>管理筛选预设</Button>;break;case"exportJob":body=<Button block onClick={()=>setOpen(true)}>查看导出任务 <Badge content={rows.filter(r=>state(r)==="running").length}/></Button>;break;case"compare":body=<><div style={{padding:10,background:ids.length===2?"#e7f8f2":"#f5f5f5"}}>{ids.length===2?"已选择两条记录":"请选择恰好两条记录"}</div><Button block color="primary" disabled={ids.length!==2} onClick={()=>props.onAction?.("itemSelect",{entityRef:b.entityRef,rowIds:ids,operation:"compareSelection"})}>开始对比</Button></>;break;case"inspector":body=<Button block disabled={!ids.length} onClick={()=>setOpen(true)}>检查已选记录 {ids.length}</Button>;break;case"help":body=<Collapse>{rows.slice(0,6).map(r=><Collapse.Panel key={r.id} title={String(r.values?.[title??""]??r.id)}>{String(r.values?.[message??""]??"暂无帮助")}</Collapse.Panel>)}</Collapse>;break;case"audit":body=<Button block onClick={()=>setOpen(true)}>查看审计差异</Button>;break;case"savedSearch":body=<List>{rows.map(r=><List.Item key={r.id} extra={<Button size="mini" onClick={()=>props.onAction?.("filterChange",{query:r.values?.[queryField??""],targets:phoneTargets(props)})}>运行</Button>}>{String(r.values?.[title??""]??r.id)}</List.Item>)}</List>;break;case"recent":body=<List>{rows.slice(0,10).map(r=><List.Item key={r.id} onClick={()=>props.onAction?.("itemSelect",{entityRef:b.entityRef,rowId:r.id})}>{String(r.values?.[title??""]??r.id)}</List.Item>)}</List>;break;case"related":{const groups=Array.from(new Set(rows.map(r=>String(r.values?.[relation??""]??"相关"))));body=<Collapse>{groups.map(group=><Collapse.Panel key={group} title={group}><List>{rows.filter(r=>String(r.values?.[relation??""]??"相关")===group).map(r=><List.Item key={r.id} onClick={()=>props.onAction?.("itemSelect",{entityRef:b.entityRef,rowId:r.id})}>{String(r.values?.[title??""]??r.id)}</List.Item>)}</List></Collapse.Panel>)}</Collapse>;break}case"permission":{const denied=allowed?rows.filter(r=>!phoneTruthy(r.values?.[allowed],"allowed")).length:0;body=<><div style={{padding:10,background:denied?"#fff7e6":"#e7f8f2"}}>{rows.length-denied} 项允许，{denied} 项需要申请</div>{denied>0&&<Button block onClick={()=>submit("requestPermission")}>申请权限</Button>}</>;break}case"selection":body=<Grid columns={2} gap={8}><Grid.Item><div style={{padding:10,background:"#f5f5f5"}}>已选择<br/><strong>{ids.length}</strong></div></Grid.Item><Grid.Item><div style={{padding:10,background:"#f5f5f5"}}>可检查<br/><strong>{rows.length}</strong></div></Grid.Item></Grid>;break;case"validation":{const errors=severity?rows.filter(r=>/error|错误/i.test(String(r.values?.[severity]))).length:0;body=<><div style={{padding:10,background:errors?"#fff1f0":"#e7f8f2"}}>{errors?`${errors} 个错误阻止提交`:"校验通过"}</div>{errors>0&&<Button block onClick={()=>setOpen(true)}>查看问题</Button>}</>;break}case"contextHelp":body=<Button block onClick={()=>setOpen(true)}>打开当前页面帮助</Button>;break;case"impact":{const high=severity?rows.filter(r=>/high|critical|高|严重/i.test(String(r.values?.[severity]))).length:0;body=<><div style={{padding:10,background:high?"#fff7e6":"#f5f5f5"}}>{high?`${high} 项高风险影响需要确认`:`${rows.length} 项受影响`}</div><Button block onClick={()=>submit("confirmChangeImpact")}>确认影响</Button></>;break}}
+let popup=<List>{rows.map(r=><List.Item key={r.id} description={String(r.values?.[message??status??""]??"")}>{String(r.values?.[title??""]??r.id)}</List.Item>)}</List>;if(props.variant==="notifications")popup=<List>{rows.map(r=><List.Item key={r.id} extra={state(r)==="unread"?<Button size="mini" onClick={()=>submit("markNotificationRead",{rowId:r.id})}>已读</Button>:null}>{String(r.values?.[title??""]??r.id)}</List.Item>)}</List>;if(props.variant==="filterPreset")popup=<List>{rows.map(r=><List.Item key={r.id} extra={<Button size="mini" color="primary" onClick={()=>{props.onAction?.("filterChange",{presetId:r.id,targets:phoneTargets(props)});setOpen(false)}}>应用</Button>}>{String(r.values?.[title??""]??r.id)}</List.Item>)}</List>;if(props.variant==="exportJob")popup=<List>{rows.map(r=><List.Item key={r.id} description={state(r)||"等待中"} extra={state(r)==="completed"?<Button size="mini" onClick={()=>props.onAction?.("actionTrigger",{entityRef:b.entityRef,rowId:r.id,operation:"downloadExport",targets:phoneTargets(props)})}>下载</Button>:<Button size="mini" disabled={state(r)!=="running"} onClick={()=>submit("cancelExport",{rowId:r.id})}>取消</Button>}>{String(r.values?.[title??""]??r.id)}</List.Item>)}</List>;if(props.variant==="contextHelp")popup=<><SearchBar value={query} onChange={setQuery} onSearch={v=>props.onAction?.("actionTrigger",{entityRef:b.entityRef,operation:"searchContextHelp",query:v,targets:phoneTargets(props)})}/><List>{filtered.map(r=><List.Item key={r.id} description={String(r.values?.[message??""]??"")}>{String(r.values?.[title??""]??r.id)}</List.Item>)}</List></>;
+return <PhoneShell block={props.block} title={titleOf(props)||PHONE_CONTEXT_TITLES[props.variant]} testid={`phone-context-${props.variant}`}>{body}<Popup visible={open} onMaskClick={()=>setOpen(false)} bodyStyle={{padding:12,maxHeight:"78vh",overflow:"auto"}}>{popup}</Popup></PhoneShell>}
+const PhoneKeyboardCommandPalette=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="palette"/>;const PhoneNotificationCenterDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="notifications"/>;const PhoneFilterPresetDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="filterPreset"/>;const PhoneExportJobDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="exportJob"/>;const PhoneCompareSelectionTray=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="compare"/>;const PhoneDetailInspectorDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="inspector"/>;const PhoneHelpContextPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="help"/>;const PhoneAuditDiffDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="audit"/>;const PhoneSavedSearchPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="savedSearch"/>;const PhoneRecentItemsPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="recent"/>;const PhoneRelatedEntityPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="related"/>;const PhonePermissionSummaryPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="permission"/>;const PhoneSelectionInspector=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="selection"/>;const PhoneValidationIssuePanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="validation"/>;const PhoneContextHelpDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="contextHelp"/>;const PhoneChangeImpactPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="impact"/>;
+
 export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps) {
+  const scheduleStatusBlock = renderScheduleStatusPhoneBlock(props);
+  if (scheduleStatusBlock !== undefined) return scheduleStatusBlock;
+  const calendarWizardBlock = renderCalendarWizardPhoneBlock(props);
+  if (calendarWizardBlock !== undefined) return calendarWizardBlock;
+  const configurationWizardBlock = renderConfigurationWizardPhoneBlock(props);
+  if (configurationWizardBlock !== undefined) return configurationWizardBlock;
+  const collaborationContentBlock = renderCollaborationContentPhoneBlock(props);
+  if (collaborationContentBlock !== undefined) return collaborationContentBlock;
+  const dataGovernanceBlock = renderDataGovernancePhoneBlock(props);
+  if (dataGovernanceBlock !== undefined) return dataGovernanceBlock;
   switch (props.block.type) {
+    case "FunnelConversionChart":
+    case "HistogramDistributionChart":
+    case "ScatterCorrelationChart":
+    case "BoxPlotDistributionChart":
+    case "WaterfallVarianceChart":
+    case "ForecastConfidenceChart":
+    case "BurnupChart":
+    case "BurndownChart":
+    case "ErrorBudgetGauge":
+    case "ServiceMapPanel":
+    case "DependencyGraphPanel":
+    case "QueryResultPivot":
+    case "MetricComparisonPanel":
+      return <PhoneAnalysisDependencyBlock {...props} />;
     case "FilterBar":
       return <PhoneFilterBar {...props} />;
     case "MetricGrid":
@@ -1804,6 +1913,42 @@ export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps
     case "SchemaRefreshBar": return <PhoneSchemaRefreshBar {...props} />;
     case "QueryErrorDrawer": return <PhoneQueryErrorDrawer {...props} />;
     case "SchemaConflictDrawer": return <PhoneSchemaConflictDrawer {...props} />;
+    case "SwimlaneKanban": return <PhoneSwimlaneKanban {...props} />;
+    case "WipLimitBoard": return <PhoneWipLimitBoard {...props} />;
+    case "BacklogPrioritizationBoard": return <PhoneBacklogPrioritizationBoard {...props} />;
+    case "SprintPlanningBoard": return <PhoneSprintPlanningBoard {...props} />;
+    case "DependencyKanban": return <PhoneDependencyKanban {...props} />;
+    case "TriageQueueBoard": return <PhoneTriageQueueBoard {...props} />;
+    case "ApprovalStageBoard": return <PhoneApprovalStageBoard {...props} />;
+    case "ContentPipelineBoard": return <PhoneContentPipelineBoard {...props} />;
+    case "RecruitmentPipelineBoard": return <PhoneRecruitmentPipelineBoard {...props} />;
+    case "IncidentResponseBoard": return <PhoneIncidentResponseBoard {...props} />;
+    case "ReleaseTrainBoard": return <PhoneReleaseTrainBoard {...props} />;
+    case "PortfolioKanban": return <PhonePortfolioKanban {...props} />;
+    case "SavedViewManager": return <PhoneSavedViewManager {...props} />;
+    case "ColumnChooserDrawer": return <PhoneColumnChooserDrawer {...props} />;
+    case "ActivityContextDrawer": return <PhoneActivityContextDrawer {...props} />;
+    case "BulkActionTray": return <PhoneBulkActionTray {...props} />;
+    case "OnboardingChecklistWizard": return React.createElement(PHONE_PRACTICE_WIZARDS.OnboardingChecklistWizard, props);
+    case "ImportMappingWizard": return React.createElement(PHONE_PRACTICE_WIZARDS.ImportMappingWizard, props);
+    case "IntegrationSetupWizard": return React.createElement(PHONE_PRACTICE_WIZARDS.IntegrationSetupWizard, props);
+    case "PolicyConfigurationWizard": return React.createElement(PHONE_PRACTICE_WIZARDS.PolicyConfigurationWizard, props);
+    case "KeyboardCommandPalette": return <PhoneKeyboardCommandPalette {...props} />;
+    case "NotificationCenterDrawer": return <PhoneNotificationCenterDrawer {...props} />;
+    case "FilterPresetDrawer": return <PhoneFilterPresetDrawer {...props} />;
+    case "ExportJobDrawer": return <PhoneExportJobDrawer {...props} />;
+    case "CompareSelectionTray": return <PhoneCompareSelectionTray {...props} />;
+    case "DetailInspectorDrawer": return <PhoneDetailInspectorDrawer {...props} />;
+    case "HelpContextPanel": return <PhoneHelpContextPanel {...props} />;
+    case "AuditDiffDrawer": return <PhoneAuditDiffDrawer {...props} />;
+    case "SavedSearchPanel": return <PhoneSavedSearchPanel {...props} />;
+    case "RecentItemsPanel": return <PhoneRecentItemsPanel {...props} />;
+    case "RelatedEntityPanel": return <PhoneRelatedEntityPanel {...props} />;
+    case "PermissionSummaryPanel": return <PhonePermissionSummaryPanel {...props} />;
+    case "SelectionInspector": return <PhoneSelectionInspector {...props} />;
+    case "ValidationIssuePanel": return <PhoneValidationIssuePanel {...props} />;
+    case "ContextHelpDrawer": return <PhoneContextHelpDrawer {...props} />;
+    case "ChangeImpactPanel": return <PhoneChangeImpactPanel {...props} />;
     default:
       return null;
   }

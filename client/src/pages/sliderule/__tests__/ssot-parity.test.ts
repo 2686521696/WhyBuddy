@@ -1,24 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import catalogJson from "@experience-blocks";
+import usageJson from "../generated/block-component-usage.json";
+import { BASE_COMPONENTS } from "../base-components/base-catalog";
 
 const blockRegistrySource = readFileSync(
   new URL("../live-runtime/block-registry.tsx", import.meta.url),
   "utf8"
 );
-/** 基础组件名 —— 从两份目录的源码里取。
- *
- *  不 import 那两个模块，是因为本文件是 .ts（不带 JSX），而目录里全是 JSX，
- *  拉进来会在解析阶段就炸（实测 SyntaxError: Unexpected token ':'）。
- *  这个文件本来就有按源码文本断言的先例，跟着来即可。 */
 const BASE_COMPONENT_NAMES = new Set(
-  [
-    readFileSync(new URL("../base-components/base-catalog.tsx", import.meta.url), "utf8"),
-    readFileSync(new URL("../base-components/base-catalog-mobile.tsx", import.meta.url), "utf8"),
-  ]
-    .join("\n")
-    .match(/name: "[\w.]+"/g)
-    ?.map(m => m.slice(7, -1)) ?? []
+  BASE_COMPONENTS.map(component => component.name)
 );
 
 const phoneBlockSource = readFileSync(
@@ -243,9 +234,14 @@ describe("体验区块渲染器状态 SSOT", () => {
   });
 
   it("能算出「多少基础组件还没接进区块」—— 这是覆盖缺口，得看得见", () => {
-    // 这个数字本身不该被钉死（补区块就会变），但**算得出来**这件事要钉住：
-    // 算不出来，覆盖缺口就是隐形的，只能靠人翻代码猜。
-    const used = new Set(Object.values(BLOCK_DEFINITIONS).flatMap(d => d.uses));
+    // 覆盖统计必须读取真实桌面/手机渲染器生成的依赖图。BLOCK_DEFINITIONS.uses
+    // 只是旧的部分桌面声明，不能再拿它充当组件覆盖率。
+    const used = new Set(
+      Object.values(usageJson.blocks).flatMap(usage => [
+        ...usage.desktop,
+        ...usage.phone,
+      ])
+    );
     const unlinked = [...BASE_COMPONENT_NAMES].filter(n => !used.has(n));
     expect(used.size).toBeGreaterThan(0);
     expect(unlinked.length + used.size).toBe(BASE_COMPONENT_NAMES.size);
