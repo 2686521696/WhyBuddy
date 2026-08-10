@@ -8,11 +8,14 @@
 ```bash
 cd slide-rule-python && set -a && . ../.env && set +a
 # 关（对照臂）
-.venv/bin/python scripts/block_selection_metrics.py --case alert_oncall --runs 6
+.venv/bin/python scripts/block_selection_metrics.py --case alert_oncall --narrowing off --runs 6
 # 开（处理臂）
-SLIDERULE_BLOCK_CATALOG_NARROWING=1 \
-  .venv/bin/python scripts/block_selection_metrics.py --case alert_oncall --runs 6
+.venv/bin/python scripts/block_selection_metrics.py --case alert_oncall --narrowing on  --runs 6
 ```
+
+> ⚠️ 本报告的数据是在窄化**默认关**的时候跑的，用「设/不设 `SLIDERULE_BLOCK_CATALOG_NARROWING`」
+> 区分两臂。2026-08-11 依据本报告把默认翻成了**开**，于是"不设环境变量"不再等于
+> 对照臂——上面的命令已改为用 `--narrowing on|off` 显式声明。复跑请照新命令。
 
 ## 预先登记的口径（看数据之前定的）
 

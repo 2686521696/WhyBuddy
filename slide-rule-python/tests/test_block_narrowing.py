@@ -29,9 +29,24 @@ MANDATORY = N.preset_block_names(L.PAGE_KIND_PRESETS)
 # ── 1. 开关 ────────────────────────────────────────────────────────────────
 
 
-def test_默认关(monkeypatch):
+def test_默认开(monkeypatch):
+    """2026-08-11 翻的默认。依据见 docs/block-narrowing-eval.md
+    （对题件被选中 0.67 → 3.25，Mann-Whitney 单尾精确 p=0.00004）。"""
     monkeypatch.delenv("SLIDERULE_BLOCK_CATALOG_NARROWING", raising=False)
+    assert N.narrowing_enabled() is True
+
+
+@pytest.mark.parametrize("raw", ["0", "false", "no", "off", "OFF"])
+def test_可以显式关掉(monkeypatch, raw):
+    """排查和对照复跑要能一键关。"""
+    monkeypatch.setenv("SLIDERULE_BLOCK_CATALOG_NARROWING", raw)
     assert N.narrowing_enabled() is False
+
+
+@pytest.mark.parametrize("raw", ["", "1", "true", "on", "随便写点什么"])
+def test_非关值一律当开(monkeypatch, raw):
+    monkeypatch.setenv("SLIDERULE_BLOCK_CATALOG_NARROWING", raw)
+    assert N.narrowing_enabled() is True
 
 
 def test_关着时_prompt_与从前逐字相同():
@@ -39,10 +54,11 @@ def test_关着时_prompt_与从前逐字相同():
     assert L.experience_block_prompt_block(None) == L.experience_block_prompt_block()
 
 
-def test_关着时系统指令是同一个对象(monkeypatch):
+def test_显式关掉时系统指令是同一个对象(monkeypatch):
+    """关掉就必须是**逐字**原样——这条是"关得干净"的哨兵。"""
     from services.v5_llm_generate import _SCHEMA_INSTRUCTION, schema_instruction_for
 
-    monkeypatch.delenv("SLIDERULE_BLOCK_CATALOG_NARROWING", raising=False)
+    monkeypatch.setenv("SLIDERULE_BLOCK_CATALOG_NARROWING", "0")
     assert schema_instruction_for(GOAL) is _SCHEMA_INSTRUCTION
 
 

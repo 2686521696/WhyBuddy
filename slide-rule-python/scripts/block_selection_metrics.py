@@ -3,8 +3,11 @@
     cd slide-rule-python
     set -a && . ../.env && set +a
 
-    # 跑基线（原样目录），3 趟
-    .venv/bin/python scripts/block_selection_metrics.py --arm control --runs 3
+    # 对照臂（关掉窄化）——2026-08-11 起窄化默认开，做对照必须显式关
+    .venv/bin/python scripts/block_selection_metrics.py --narrowing off --runs 3
+
+    # 处理臂（窄化）
+    .venv/bin/python scripts/block_selection_metrics.py --narrowing on --runs 3
 
     # 对照臂：把对题区块提到目录最前（验位置效应）
     .venv/bin/python scripts/block_selection_metrics.py --arm promoted --runs 3
@@ -335,9 +338,19 @@ def report(records: List[Dict[str, Any]], case: Dict[str, Any], window: int) -> 
         _q = N.tokenize_query(N.expand_intent(case["goal"]))
         _conf = N.retrieval_confidence(_bm.get_scores(_q), len(_q))
         _thr = N.narrowing_confidence_threshold()
+        # 必须把**开关状态**也打出来。只报置信度判定的话，对照臂（窄化关）也会
+        # 显示"→ 窄化"，读报告的人会以为两臂一样——这类"报告本身骗人"本场已经
+        # 踩过五次，不再多一次。
+        _on = N.narrowing_enabled()
+        if not _on:
+            _verdict = "开关已关，本臂注全量"
+        elif _conf >= _thr:
+            _verdict = "窄化"
+        else:
+            _verdict = "★置信度不足，退回全量"
         lines.append(
-            f"检索置信度      : {_conf:.3f} (阈值 {_thr:.3f} → "
-            f"{'窄化' if _conf >= _thr else '★退回全量'})"
+            f"窄化开关        : {'开' if _on else '关'}\n"
+            f"检索置信度      : {_conf:.3f} (阈值 {_thr:.3f} → {_verdict})"
         )
     except Exception as exc:  # noqa: BLE001 — 报告里的附加信息，算不出不影响主指标
         lines.append(f"检索置信度      : n/a ({str(exc)[:60]})")
@@ -455,6 +468,14 @@ def main() -> int:
     ap.add_argument(
         "--arm", default="control", choices=["control", "promoted", "omit-presets", "narrowed"]
     )
+    # ⚠️ 2026-08-11 起窄化**默认开**，所以"不设环境变量"不再等于对照臂。
+    #    必须显式声明，否则跑出来的两臂其实是同一个。
+    ap.add_argument(
+        "--narrowing",
+        default=None,
+        choices=["on", "off"],
+        help="显式指定窄化开关（默认沿用当前环境/产品默认值）。做对照实验必须显式给。",
+    )
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--window", type=int, default=50, help="可达窗口 W，默认前 50 名")
     ap.add_argument("--save-dir", default=None, help="把每趟原始模型存起来")
@@ -467,6 +488,11 @@ def main() -> int:
     args = ap.parse_args()
 
     case = load_case(args.case)
+
+    if args.narrowing is not None:
+        os.environ["SLIDERULE_BLOCK_CATALOG_NARROWING"] = (
+            "1" if args.narrowing == "on" else "0"
+        )
 
     # ⚠️ 换序/摘预设的开关必须在 import services.schema_legal **之前**设好：
     #    目录顺序与 _SCHEMA_INSTRUCTION 都是模块级、import 那一刻就固化。

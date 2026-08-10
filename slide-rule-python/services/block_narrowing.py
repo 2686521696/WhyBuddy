@@ -147,13 +147,39 @@ def _weighted_tokens(block: Dict[str, Any], weights: Dict[str, int]) -> List[str
 
 
 def narrowing_enabled() -> bool:
-    """目录窄化开关。**默认关**——上线前先用度量台把两层指标量出来。"""
-    return str(os.getenv("SLIDERULE_BLOCK_CATALOG_NARROWING", "")).strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    """目录窄化开关。**默认开**（2026-08-11 翻的），显式置 0/false/no/off 可关。
+
+    ## 翻默认的依据
+
+    docs/block-narrowing-eval.md：两个覆盖域各臂 n=6（共 24 趟）新跑对照——
+
+        对题件被选中(均)   关 0.67 [0,2]  →  开 3.25 [1,7]
+                           Mann-Whitney 单尾精确 p=0.00004
+        首轮过闸           关 10/12 (83%) →  开 12/12 (100%)
+                           Fisher 双尾 p≈0.48 —— **无差异**
+        prompt 字符        160,528        →  53,298（−67%）
+
+    也就是说：**它的价值在选材相关性，不在过闸率**。过闸率的提升来自那几条确定性
+    修复（workflowRef / 区块槽位越界 / layout 面板 ref 撞车），对两臂一视同仁，
+    早期"窄化把过闸抬上去了"那个归因是错的，别再沿用。
+
+    零覆盖域的净负面（B1 阴性对照实测 −58%）由自适应判定兜住——置信度低于阈值
+    就退回全量，系统提示与全量**逐字相同**（见 retrieval_confidence 与
+    test_零覆盖域的系统指令与全量逐字相同）。所以翻默认不会把那笔代价带上线。
+
+    ## 仍然开着的两个口子（翻默认时明确接受的风险）
+
+      · release_deployment 的对照臂当时被上游网关 12/12 拒（HTTP 400），该域只有
+        处理臂数据，缺一组完整对照；
+      · 三个覆盖域都集中在目录建得厚的地方（Alert/Booking/Release），真实用户题目
+        的域分布未知。零覆盖域是靠兜底挡住，不是靠窄化本身变好。
+
+    要临时关掉（排查、或对照复跑）：`SLIDERULE_BLOCK_CATALOG_NARROWING=0`。
+    """
+    raw = str(os.getenv("SLIDERULE_BLOCK_CATALOG_NARROWING", "")).strip().lower()
+    if raw in ("0", "false", "no", "off"):
+        return False
+    return True
 
 
 def narrowing_limit(default: int = 60) -> int:
