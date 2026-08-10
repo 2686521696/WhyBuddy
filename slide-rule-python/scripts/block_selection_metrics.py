@@ -190,11 +190,16 @@ def gate_verdicts(model: Dict[str, Any], goal: str) -> Dict[str, Any]:
         codes: Dict[str, int] = {}
         fams: Dict[str, int] = {}
         msgs: List[str] = []
-        for f in (prod.get("findings") or [])[:40]:
-            if isinstance(f, dict):
-                codes[str(f.get("code"))] = codes.get(str(f.get("code")), 0) + 1
-                fam = classify_finding(f)
-                fams[fam] = fams.get(fam, 0) + 1
+        all_findings = [f for f in (prod.get("findings") or []) if isinstance(f, dict)]
+        # 分族/计数吃**全量**；只有留存的原文样本才截断。
+        # 第一版把 [:40] 加在这个循环上，于是一趟真有 48 条的时候报出来正好是
+        # "40 条"——一个看着像真实计数的整数。差点据此说"40 条级联"。
+        out["prod_finding_total"] = len(all_findings)
+        for f in all_findings:
+            codes[str(f.get("code"))] = codes.get(str(f.get("code")), 0) + 1
+            fam = classify_finding(f)
+            fams[fam] = fams.get(fam, 0) + 1
+            if len(msgs) < 40:  # 只截原文样本，不截计数
                 msgs.append(f"[{fam}] {str(f.get('message') or f.get('detail') or '')[:150]}")
         out["prod_finding_codes"] = codes
         out["prod_finding_families"] = fams
