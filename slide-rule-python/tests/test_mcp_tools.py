@@ -331,3 +331,49 @@ class Test维基相关性闸:
             lambda lang, params: ["剧本杀", ["剧本杀", "剧本", "剧本统筹"], [], []],
         )
         assert m._wiki_titles("zh", "剧本杀", 3) == ["剧本杀", "剧本"]
+
+
+def test_检索词不该把能力id拼进去():
+    """线上实测：查询里带能力 id，蒸馏出的英文碎词把维基整成了噪声源。
+
+        "黑灰产情报自动化分析系统 for appbundle.runtimeClosure"
+          → ['黑灰产情', '黑灰产', 'for', 'appb', 'app']
+              'for'  → Fortran、Formula of Love
+              'app'  → AppBlock、Apple晶片、APPBP1
+              'inte' → Internet、Intel Core i7處理器（intent.parse 那一路）
+
+    而且 " for " 是模板硬编码，所以 Fortran 出现在**每个能力、每趟推演**里。
+
+    相关性闸拦不住——那些条目字面上真的含 'for'/'app'。所以修的是查询本身
+    （v5_capability_executor 里 retrieve_evidence 只传 topic）。这条从两头钉：
+    脏查询确实会蒸馏出英文碎词，干净查询不会。
+    """
+    from services.mcp_tools import _title_matches_term
+
+    dirty = _distill_queries("黑灰产情报自动化分析系统 for appbundle.runtimeClosure")
+    assert "for" in dirty and "app" in dirty, dirty
+    # 闸放行它们是对的 —— 说明问题不在闸，在查询
+    assert _title_matches_term("for", "Fortran")
+    assert _title_matches_term("app", "AppBlock")
+
+    clean = _distill_queries("黑灰产情报自动化分析系统")
+    assert not any(t.isascii() for t in clean), clean
+
+
+def test_能力执行只拿话题去检索(monkeypatch):
+    """接线：execute 不许再把 capability_id 拼进检索词。"""
+    import services.v5_capability_executor as ex
+
+    seen = []
+    monkeypatch.setattr(ex, "retrieve_evidence", lambda q, top_k=6: seen.append(q) or [])
+    monkeypatch.setattr(ex, "generate_with_rag", lambda p, e: "内容")
+    from models.v5_state import V5SessionState
+
+    st = V5SessionState(sessionId="s", goal={"text": "黑灰产情报自动化分析系统", "status": "clear"})
+    try:
+        ex.execute_v5_capability("appbundle.runtimeClosure", st, [], "role-1", "loop-1")
+    except Exception:
+        pass  # 只关心检索词，后续链路炸不炸不影响本判定
+    assert seen, "没调到 retrieve_evidence"
+    assert "appbundle" not in seen[0], f"能力 id 又进检索词了：{seen[0]!r}"
+    assert " for " not in seen[0], f"脚手架词又进检索词了：{seen[0]!r}"

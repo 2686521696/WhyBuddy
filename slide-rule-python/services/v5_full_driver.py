@@ -848,12 +848,42 @@ def _advance_turn_version(state: "V5SessionState") -> None:
     若不推进它，drive 开始时那笔"goal 还没写进"的快照就成了该版本的终点，
     之后所有含 goal/conversation/runtimePhase 的落盘全被静默拒绝——只剩
     append-only 的 artifacts 进盘，重启后会话"失忆"。实测踩过，勿删。
+
+    ## 序号必须**不锚定行尾**地取（2026-08-10 修）
+
+    原来是 `_re.search(r"(\d+)\s*$", raw)` —— 只认结尾的数字。而这条链路上
+    真实流通的 lastTurnId 有好几种形状，其中两种**结尾不是数字**：
+
+        turn-3                      ← 本函数产出，结尾是数字，能读
+        turn-stream-3-drive-full    ← 流式驱动收尾时写的（本文件 1960 行）
+        turn-4-drive-full           ← routes 的 _advance_drive_full_turn_id
+
+    后两种匹配不上，`seq` 落到 1，于是 **每次 drive 开头都把版本重置成
+    `turn-1`**。线上实测（sr-20260810012732）：一趟 drive 跑完 lastTurnId 是
+    `turn-stream-3-drive-full`，下一趟开头又变回 `turn-1`。
+
+    两个后果都不响：
+
+      · **持久化守卫失效** —— 本函数存在的全部理由就是推进这个单调版本
+        （见上文"实测踩过，勿删"）。它卡在 1，含 goal/conversation/runtimePhase
+        的落盘就可能被同版本判定挡下，只剩 append-only 的 artifacts 进盘。
+      · **模型复用的轮次作用域塌掉** —— `reusable_model_for_turn` 拿
+        `modelVersions[-1].turnId == lastTurnId` 当键。两边都恒等于 `turn-1`
+        之后，用户**下一条消息会拿到上一轮的旧模型**，正是那个函数文档里
+        写明要防的事（"跨轮复用会让用户补充需求之后仍然拿到旧模型"）。
+
+    routes 那边的两个读者（`_turn_seq_for_drive_full` / PUT 的 `_turn_seq`）
+    用的都是**不锚定**的 `re.search(r"(\d+)")`，读 `turn-stream-3-drive-full`
+    得 3。也就是说同一个字符串，两个读者理解不一致——统一到不锚定这一侧。
+
+    取**最大**的那个数而不是第一个：形如 `turn-stream-3-drive-full` 只有一个
+    数字，但万一将来出现多段编号，取最大才保证单调。
     """
     import re as _re
 
     raw = str(getattr(state, "lastTurnId", None) or "")
-    m = _re.search(r"(\d+)\s*$", raw)
-    seq = int(m.group(1)) + 1 if m else 1
+    nums = [int(n) for n in _re.findall(r"\d+", raw)]
+    seq = (max(nums) + 1) if nums else 1
     state.lastTurnId = f"turn-{seq}"
 
 
@@ -1957,7 +1987,29 @@ async def drive_full_v5_session_stream(
 
         state.publishClosure = publish_closure
         state.skillRuntimeGraph = skill_graph
-        state.lastTurnId = f"turn-stream-{loop}-drive-full"
+        # 收尾这一笔也必须**单调递增**（2026-08-10 修）。
+        #
+        # 原来写的是 `f"turn-stream-{loop}-drive-full"` —— 用的是**本趟的 loop
+        # 序号**，不是会话级的单调版本。于是每趟 drive 结束都把版本按各自跑了
+        # 几轮盖一遍：跑 3 轮就写 `turn-stream-3-drive-full`，下一趟还跑 3 轮，
+        # 又写同一个值。版本原地踏步，而它正是持久化守卫的依据
+        # （见 _advance_turn_version 的文档："实测踩过，勿删"）。
+        #
+        # 同步那条路（routes 的 _advance_drive_full_turn_id）一直是对的：
+        # `turn-{seq+1}-drive-full` —— 读出当前序号 +1，保留 -drive-full 标记。
+        # 这里照它来，两条路从此同形。
+        #
+        # 配合 `_advance_turn_version` 改成不锚定取数，整条链就单调了：
+        #     drive1 开头 turn-1 → 收尾 turn-2-drive-full
+        #     drive2 开头 turn-3 → 收尾 turn-4-drive-full
+        # 顺带把模型复用的轮次作用域救回来：drive2 里 lastTurnId 是 turn-3，
+        # 而 drive1 存的快照是 turn-1/turn-2-drive-full，对不上 → 不会拿旧模型
+        # 回答用户的新消息（那正是 reusable_model_for_turn 要防的）；
+        # 而 drive2 内部各 loop 之间 lastTurnId 不变 → 轮内复用照常生效。
+        import re as _re_turn
+
+        _prev_seq = [int(_n) for _n in _re_turn.findall(r"\d+", str(state.lastTurnId or ""))]
+        state.lastTurnId = f"turn-{(max(_prev_seq) + 1) if _prev_seq else 1}-drive-full"
         # E29：模型变化才追加版本快照（前进/回退按钮的数据源）
         record_model_version(state, publish_closure, user_instruction)
         await asyncio.to_thread(persist_state, state)
