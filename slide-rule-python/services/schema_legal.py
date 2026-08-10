@@ -474,7 +474,98 @@ def _load_page_kind_presets(blocks: tuple) -> Dict[str, tuple]:
     return out
 
 
+def _assert_field_ref_type_ratchet(blocks: tuple) -> None:
+    """同一个 `*FieldRef` 名字，在不同区块里被要求成不同类型 —— 只准变少。
+
+    ## 这条闸防的是什么
+
+    2026-08-10 审目录时数出来：356 个区块里，**32 个 FieldRef 名字被要求成
+    多种类型**。最刺眼的几条：
+
+        descFieldRef      text  5 / string 21
+        priorityFieldRef  enum  7 / number  5
+        timeFieldRef      date 37 / number  2
+        errorFieldRef     number 2 / text 1 / string 1
+
+    要分清两种成因，它们的处置完全不同：
+
+      · **同义不同型** —— `descFieldRef` 就是"描述"，21 处写 string、5 处写
+        text，纯粹随手。这种该统一。
+      · **同名不同义** —— `errorFieldRef` 在 metrics 里是**错误数**、在 monitor
+        里是**错误信息**；`timeFieldRef` 37 处是时间戳、2 处是**耗时**。这种
+        不该统一类型，该给其中一方改名。
+
+    ## 真正导致过闸失败的不是"冲突"，是"稀有类型"
+
+    先澄清一个我自己一开始想错的点：**同名冲突本身不会让闸判错**——闸是按
+    区块查该区块声明的类型，两个区块各查各的，不会串。生成提示词也是按区块
+    渲染的（`_format_binding_schema` 输出 `descFieldRef(text field)`），
+    模型被如实告知过。
+
+    真正的杀手是**要求了模型几乎不产出的类型**。改之前全目录 1029 处类型要求里
+    `text` 只有 12 处（1.2%）、`ref` 只有 3 处（0.3%）；模型写描述字段的先验
+    压倒性是 `string`，于是每次撞上那 15 个少数派就被拦。线上日志里那条
+    `page.pages[case_kanban]…descFieldRef must be a text field (got 'string')`
+    就是 `KanbanBoard` 声明了 text 造成的。
+
+    所以这一轮做了两件事：
+      ① 那 15 处 `text`/`ref` 全部改成 `string`（运行期同为字符串，渲染器不动），
+         过闸失败的那一类直接消失；顺带 32 个冲突降到 27 个。
+      ② 剩下的 27 个是"同名不同义"，要逐个改名 + 连带改双端渲染器，工作量与
+         风险都不小，且需要逐条判断语义。**不在这一轮做，但必须锁住。**
+
+    ## 为什么是棘轮而不是硬性"一名一型"
+
+    硬性禁止会让 27 个存量当场卡住服务启动；一次性改名又要在没有充分判断的
+    情况下动 27 组语义。取 ESLint `--max-warnings` 基线、以及各类 type-coverage
+    ratchet 的同款做法：**存量记进基线冻结，新增一律拒绝，基线只准变小**。
+
+    于是：
+      · 没在基线里的名字 → 必须单一类型，多一种就启动失败；
+      · 在基线里的名字   → 类型集合必须**恰好等于**基线记录，多出一种也失败；
+      · 冲突消解掉之后   → 基线里那一项必须删掉，否则同样失败（防止基线变成
+        永远不清的垃圾场）。
+    """
+    baseline_raw = _BLOCK_CATALOG.get("fieldRefTypeConflicts") or {}
+    if not isinstance(baseline_raw, dict):
+        raise ValueError("experience_block_catalog.json fieldRefTypeConflicts 必须是对象")
+    baseline = {str(k): set(v) for k, v in baseline_raw.items()}
+
+    seen: Dict[str, set] = {}
+    for block in blocks:
+        for field, ftype in (block["bindingSchema"].get("entityFieldRefs") or {}).items():
+            seen.setdefault(str(field), set()).add(str(ftype))
+
+    problems: List[str] = []
+    for field, types in sorted(seen.items()):
+        allowed = baseline.get(field)
+        if len(types) == 1:
+            if allowed is not None:
+                problems.append(
+                    f"{field} 已经统一成 {sorted(types)[0]} 了，请把它从 "
+                    f"fieldRefTypeConflicts 里删掉（基线只准变小）"
+                )
+            continue
+        if allowed is None:
+            problems.append(
+                f"{field} 被要求成 {sorted(types)} 多种类型。同义就统一，"
+                f"同名不同义就给一方改名——不要往 fieldRefTypeConflicts 里加新条目"
+            )
+        elif types != allowed:
+            problems.append(
+                f"{field} 的类型集合从基线 {sorted(allowed)} 变成了 {sorted(types)}"
+            )
+    for field in sorted(set(baseline) - set(seen)):
+        problems.append(f"fieldRefTypeConflicts 里的 {field} 已经没人用了，请删掉")
+    if problems:
+        raise ValueError(
+            "experience_block_catalog.json FieldRef 类型契约回退：\n  - "
+            + "\n  - ".join(problems)
+        )
+
+
 EXPERIENCE_BLOCKS = _load_experience_blocks()
+_assert_field_ref_type_ratchet(EXPERIENCE_BLOCKS)
 EXPERIENCE_BLOCK_TYPES = tuple(str(block["type"]) for block in EXPERIENCE_BLOCKS)
 EXPERIENCE_BLOCK_RENDERER_KEYS = tuple(
     str(block["rendererKey"]) for block in EXPERIENCE_BLOCKS
