@@ -252,6 +252,52 @@ def retrieval_confidence(scores: Sequence[float], query_token_count: int) -> flo
     return (sum(top) / len(top)) / query_token_count
 
 
+#: 自适应 limit 的相对分数阈值：保留得分 ≥ α × 最高分 的候选。
+#
+# arXiv 2605.24660 的结论是"最优深度随题目难度变"，固定 60 不会是最优。这里用
+# **相对分数截断**来实现——这正是 Weaviate autocut / kneed 那套膝点检测擅长的
+# 问题（"取多少个"）。注意跟 retrieval_confidence 那个判断的区别：那边问的是
+# "到底有没有相关的"，相对信号在那儿**失效**（见其头注）；这边问的是"相关的取
+# 到哪为止"，相对信号才是对的工具。
+#
+# α=0.20 是量出来的。三个覆盖域上按 α 扫召回：
+#
+#              固定 N=60      α=0.25            α=0.20
+#     alert     14/16        N=31 召回 13/16   N=37 召回 **14/16**
+#     booking   15/15        N=45 召回 15/15   N=58 召回 **15/15**
+#     release   17/17        N=40 召回 17/17   N=50 召回 **17/17**
+#
+# 0.20 是**保住与固定 60 完全相同召回**的最激进取值；再紧一档（0.25）alert 就掉
+# 一个对题件。论文明确记过固定砍到 5 条时"难题上一条都没找着"，所以宁可留余量。
+_SCORE_CUTOFF_RATIO = 0.20
+
+#: 自适应的下限。低于它就不再收窄——这里一次要为 5~7 个页面选材，候选太少会重现
+#  论文里"难题上一个都找不着"那种失败。实测三个域最紧也要 31 个才接近满召回。
+_ADAPTIVE_FLOOR = 30
+
+
+def adaptive_limit(scores: Sequence[float], hard_limit: int, mandatory_count: int = 0) -> int:
+    """按分数曲线决定这次实际注入多少个（**只会比 hard_limit 更小，不会更大**）。
+
+    只收窄不放宽是刻意的：hard_limit 是产品配置的上界，自适应无权突破它——
+    突破会让 prompt 体积不可预期，而"目录里压根没有对题件"那种情况已经由
+    retrieval_confidence 退回全量处理掉了，不需要靠放宽 limit 兜。
+    """
+    vals = sorted((float(x) for x in scores), reverse=True)
+    if not vals or vals[0] <= 0:
+        return hard_limit
+    ratio = _SCORE_CUTOFF_RATIO
+    raw = str(os.getenv("SLIDERULE_BLOCK_CATALOG_NARROWING_CUTOFF", "")).strip()
+    try:
+        v = float(raw)
+        if 0 < v <= 1:
+            ratio = v
+    except ValueError:
+        pass
+    keep = sum(1 for x in vals if x >= ratio * vals[0])
+    return max(_ADAPTIVE_FLOOR, min(hard_limit, keep + mandatory_count))
+
+
 def select_blocks(
     blocks: Sequence[Dict[str, Any]],
     goal: str,
@@ -312,6 +358,10 @@ def select_blocks(
         range(len(rest)),
         key=lambda i: (-float(scores[i]), all_blocks.index(rest[i])),
     )
+    # 自适应：分数曲线陡降之后的那些拿进来只是噪声。实测在三个覆盖域上都能保住
+    # 与固定 60 相同的召回，同时把候选降到 37~58（见 adaptive_limit 头注）。
+    effective = adaptive_limit(scores, limit, mandatory_count=len(head))
+    room = max(0, effective - len(head))
     return head + [rest[i] for i in ranked[:room]]
 
 

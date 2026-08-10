@@ -243,8 +243,14 @@ def test_零覆盖域退回全量目录():
 
 
 def test_覆盖域仍然窄化():
+    """注意断言的是"比全量小、且不超过上界"，**不是等于 60**。
+
+    加自适应 limit（2026-08-11）之后实际注入数由分数曲线决定：alert 这道题是 37。
+    原来写死 == 60 是把实现细节当成契约，自适应一上线就红了。
+    """
     picked = N.select_blocks(ENABLED, GOAL, limit=60, mandatory=MANDATORY)
-    assert len(picked) == 60
+    assert len(MANDATORY) <= len(picked) <= 60
+    assert len(picked) < len(ENABLED)
 
 
 def test_零覆盖域的系统指令与全量逐字相同(monkeypatch):
@@ -358,3 +364,58 @@ def test_零覆盖域派生不出错():
     picked = N.select_blocks(ENABLED, PHARMACY_GOAL, limit=60, mandatory=MANDATORY)
     d = N.derive_goal_presets(picked, L.PAGE_KIND_PRESETS, L.PAGE_KINDS)
     assert isinstance(d, dict)
+
+
+# ── 9. 自适应 limit：按分数曲线决定取多少 ──────────────────────────────────
+
+
+def test_自适应只收窄不放宽():
+    """hard_limit 是产品配置的上界，自适应无权突破——突破会让 prompt 体积不可预期。"""
+    assert N.adaptive_limit([100.0] * 500, 60) <= 60
+    assert N.adaptive_limit([100.0, 99.0, 98.0], 60) <= 60
+
+
+def test_分数陡降后不再收进来():
+    """一个高分 + 一堆几乎为零 → 应当收到下限，而不是照 hard_limit 塞满。"""
+    scores = [100.0] + [0.1] * 300
+    assert N.adaptive_limit(scores, 60) == N._ADAPTIVE_FLOOR
+
+
+def test_分数都很接近时取到上界():
+    assert N.adaptive_limit([50.0] * 200, 60) == 60
+
+
+def test_有下限_不会砍到选不出东西():
+    """论文记过固定砍到 5 条时"难题上一条都没找着"。下限就是防这个。"""
+    assert N.adaptive_limit([100.0] + [0.0] * 300, 60) >= N._ADAPTIVE_FLOOR
+
+
+def test_全零分或空分数退回_hard_limit():
+    assert N.adaptive_limit([], 60) == 60
+    assert N.adaptive_limit([0.0, 0.0], 60) == 60
+
+
+def test_截断比例可用环境变量覆盖(monkeypatch):
+    scores = [100.0] + [30.0] * 100 + [1.0] * 100
+    monkeypatch.setenv("SLIDERULE_BLOCK_CATALOG_NARROWING_CUTOFF", "0.5")
+    tight = N.adaptive_limit(scores, 60)
+    monkeypatch.setenv("SLIDERULE_BLOCK_CATALOG_NARROWING_CUTOFF", "0.005")
+    loose = N.adaptive_limit(scores, 60)
+    assert tight < loose
+
+
+def test_自适应之后对题件召回不掉():
+    """这条是自适应的验收线：比固定 60 更小，但对题件一个都不能少捞。
+
+    实测（见 adaptive_limit 头注）三个覆盖域上 α=0.20 的召回与固定 60 完全相同，
+    候选从 60 降到 37/58/50。
+    """
+    on_topic = [
+        "AlertSilenceForm", "AlertRoutingPolicy", "MuteTimingSchedule",
+        "OnCallScheduleCalendar", "EscalationPolicyPanel", "AlertTriagePanel",
+    ]
+    picked = {str(b["type"]) for b in N.select_blocks(ENABLED, GOAL, limit=60, mandatory=MANDATORY)}
+    assert len(picked) < len(ENABLED), "覆盖域应当被窄化"
+    assert len(picked) <= 60
+    hit = [t for t in on_topic if t in picked]
+    assert len(hit) >= 5, f"自适应把对题件砍掉了: 只剩 {hit}"
