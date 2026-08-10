@@ -1,0 +1,45 @@
+{
+  "_note": [
+    "区块选材度量的用例集（scripts/block_selection_metrics.py 读它）。",
+    "",
+    "每个用例给一道题 + 一份『对题区块』人工名单。名单是人工标的，就该当人工",
+    "标的看——它只用来算『对题命中』这一个指标，不参与其它任何判定。加新用例",
+    "时把名单写全（宁多勿少），漏标会让命中率虚低。",
+    "",
+    "另一维『特定场景件命中』不靠这份名单，走目录自带的 generality 字段",
+    "（generic 33 / specific 325，见 scripts/label_block_generality.py），",
+    "跨用例可比，不受人工标注影响。"
+  ],
+  "cases": [
+    {
+      "id": "alert_oncall",
+      "goal": "做一个告警值班与静默管理系统：告警接入后按标签路由到对应的值班组；支持配置静默时段，维护窗口内不打扰；值班表按周排班，可以换班；未确认的告警按升级策略逐级升级通知。",
+      "why": "2026-08-10 位置效应实验用的那道题。_recognize_domain 返回 None（不触发演示域快路径），目录里对应区块齐全但原名次 61~328，全在可达区外。",
+      "onTopicBlocks": [
+        "AlertTriagePanel",
+        "AlertSilenceForm",
+        "AlertRoutingPolicy",
+        "AlertRuleEditor",
+        "MuteTimingSchedule",
+        "ContactPointManager",
+        "AlertRuleCommandHeader",
+        "AlertStateMetrics",
+        "AlertInstanceSummary",
+        "AlertMatcherFilter",
+        "AlertGroupCommandHeader",
+        "AlertGroupContextSummary",
+        "AlertRuleFilterBar",
+        "ShiftRosterCalendar",
+        "OnCallScheduleCalendar",
+        "EscalationPolicyPanel"
+      ],
+      "pointNamed": [
+        "AlertSilenceForm",
+        "AlertRoutingPolicy",
+        "MuteTimingSchedule",
+        "OnCallScheduleCalendar",
+        "EscalationPolicyPanel"
+      ]
+    }
+  ]
+}
