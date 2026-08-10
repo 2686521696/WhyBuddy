@@ -459,6 +459,15 @@ def schema_instruction_for(goal: str) -> str:
             limit=narrowing_limit(),
             mandatory=preset_block_names(PAGE_KIND_PRESETS),
         )
+        # select_blocks 原样退回全量（自适应判定为"目录没覆盖这个域"、goal 空、
+        # 依赖缺失…）时，**返回模块级那份常量本身**，而不是照 enabled 重建一遍。
+        #
+        # 差别是真实的：`enabled` 只含通电区块，而全量那份 prompt 是拿
+        # EXPERIENCE_BLOCKS（含 schema-only 那档）建的。照 enabled 重建会把
+        # schema-only 的详情段丢掉——退回路径本该"什么都没变"，却悄悄少了一段
+        # 禁令上下文。测试 test_零覆盖域的系统指令与全量逐字相同 抓的就是这个。
+        if len(picked) == len(enabled):
+            return _SCHEMA_INSTRUCTION
         base = _render_schema_instruction(_SCHEMA_INSTRUCTION_TEMPLATE)
         return f"{base.rstrip()}\n\n{experience_block_prompt_block(picked)}\n"
     except Exception as exc:  # noqa: BLE001 — 窄化失败不得让生成挂掉

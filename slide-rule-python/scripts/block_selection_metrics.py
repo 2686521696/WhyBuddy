@@ -324,6 +324,23 @@ def report(records: List[Dict[str, Any]], case: Dict[str, Any], window: int) -> 
     lines.append(f"用例            : {case['id']}")
     lines.append(f"题目            : {case['goal'][:60]}…")
     lines.append(f"可达窗口 W      : 前 {window} 名（经验值，非硬边界）")
+    try:
+        from rank_bm25 import BM25Okapi
+
+        from services import block_narrowing as N
+        from services import schema_legal as _L
+
+        _en = [b for b in _L.EXPERIENCE_BLOCKS if b.get("generationEnabled")]
+        _bm = BM25Okapi([N._weighted_tokens(b, N._LEXICON["fieldWeights"]) for b in _en])
+        _q = N.tokenize_query(N.expand_intent(case["goal"]))
+        _conf = N.retrieval_confidence(_bm.get_scores(_q), len(_q))
+        _thr = N.narrowing_confidence_threshold()
+        lines.append(
+            f"检索置信度      : {_conf:.3f} (阈值 {_thr:.3f} → "
+            f"{'窄化' if _conf >= _thr else '★退回全量'})"
+        )
+    except Exception as exc:  # noqa: BLE001 — 报告里的附加信息，算不出不影响主指标
+        lines.append(f"检索置信度      : n/a ({str(exc)[:60]})")
     lines.append(f"趟数            : {len(records)}（成功生成 {len(ok)}）")
     if not ok:
         lines.append("\n全部生成失败，无指标可算。")

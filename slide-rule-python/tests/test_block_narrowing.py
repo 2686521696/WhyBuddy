@@ -187,3 +187,72 @@ def test_额度大于全量时原样返回():
 
 def test_目标为空时原样返回():
     assert N.select_blocks(ENABLED, "", limit=60, mandatory=MANDATORY) == ENABLED
+
+
+# ── 7. 自适应：目录没覆盖这个域时不窄化 ────────────────────────────────────
+
+
+PHARMACY_GOAL = (
+    "开发医院药房库存管理系统，支持药品入库出库、批号效期预警和处方调剂发药，"
+    "药师按处方拣药复核，库管按批号做盘点与补货。"
+)
+
+
+def _confidence_of(goal: str) -> float:
+    from rank_bm25 import BM25Okapi
+
+    w = N._LEXICON["fieldWeights"]
+    bm = BM25Okapi([N._weighted_tokens(b, w) for b in ENABLED])
+    q = N.tokenize_query(N.expand_intent(goal))
+    return N.retrieval_confidence(bm.get_scores(q), len(q))
+
+
+def test_覆盖域的置信度高于阈值():
+    assert _confidence_of(GOAL) > N.narrowing_confidence_threshold()
+
+
+def test_零覆盖域的置信度低于阈值():
+    """药房库存：目录里一个对应件都没有（扫过域词，唯一命中是 DevOps 件误命中）。"""
+    assert _confidence_of(PHARMACY_GOAL) < N.narrowing_confidence_threshold()
+
+
+def test_零覆盖域退回全量目录():
+    """这条是阴性对照那笔代价的回归哨兵。
+
+    实测：零覆盖域上窄化反而更差——特定场景件被选中 6.33 → 2.67（-58%）、
+    去重类型 11 → 8、用到的最远原名次 242 → 23。所以必须退回全量。
+    """
+    picked = N.select_blocks(ENABLED, PHARMACY_GOAL, limit=60, mandatory=MANDATORY)
+    assert picked == ENABLED, "零覆盖域不该被窄化"
+
+
+def test_覆盖域仍然窄化():
+    picked = N.select_blocks(ENABLED, GOAL, limit=60, mandatory=MANDATORY)
+    assert len(picked) == 60
+
+
+def test_零覆盖域的系统指令与全量逐字相同(monkeypatch):
+    """端到端且不花钱：退回全量意味着注进去的 prompt 应当和全量那份一模一样。"""
+    from services.v5_llm_generate import _SCHEMA_INSTRUCTION, schema_instruction_for
+
+    monkeypatch.setenv("SLIDERULE_BLOCK_CATALOG_NARROWING", "1")
+    assert schema_instruction_for(PHARMACY_GOAL) == _SCHEMA_INSTRUCTION
+    # 反面：覆盖域必须真的变短
+    assert len(schema_instruction_for(GOAL)) < len(_SCHEMA_INSTRUCTION)
+
+
+def test_阈值可用环境变量覆盖(monkeypatch):
+    monkeypatch.setenv("SLIDERULE_BLOCK_CATALOG_NARROWING_MIN_CONFIDENCE", "0.0")
+    # 阈值降到 0 之后，连零覆盖域也会被窄化（用来在排查时强制对照）
+    assert N.select_blocks(ENABLED, PHARMACY_GOAL, limit=60, mandatory=MANDATORY) != ENABLED
+
+
+def test_置信度对查询长度不敏感():
+    """BM25 是各查询词得分之和，会随长度线性涨；除以词数就是为了抵掉这个。
+
+    实测短查询是**往上**跑（告警 5 词 → 1.149），所以阈值对短题只会更安全。
+    """
+    short = _confidence_of("告警静默值班")
+    long = _confidence_of(GOAL + " 另外需要通知联络点管理、告警规则编辑、按标签匹配的路由策略树。")
+    thr = N.narrowing_confidence_threshold()
+    assert short > thr and long > thr, f"同一域的长短写法都该过阈值: {short:.3f} / {long:.3f}"

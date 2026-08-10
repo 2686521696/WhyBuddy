@@ -163,6 +163,69 @@ def narrowing_limit(default: int = 60) -> int:
     return default
 
 
+#: 检索置信度阈值：低于它就不窄化，原样注全量目录。
+#
+# 2026-08-10 阴性对照实测出来的必要性：目录**零覆盖**的域（医院药房库存）上，
+# 窄化反而更差——特定场景件被选中从 6.33 掉到 2.67（-58%）、去重类型 11 → 8、
+# 用到的最远原名次 242 → 23。原因是检索捞不到对题件，筛出的 60 个大多是不相关
+# 的浅层通用件；而全量时模型至少有机会自己在深处摸到勉强能用的件。
+#
+# 所以窄化必须**自适应**：先问"目录里到底有没有对题的东西"，没有就别筛。
+_CONFIDENCE_THRESHOLD = 0.20
+
+
+def narrowing_confidence_threshold() -> float:
+    raw = str(os.getenv("SLIDERULE_BLOCK_CATALOG_NARROWING_MIN_CONFIDENCE", "")).strip()
+    try:
+        v = float(raw)
+        return v if v >= 0 else _CONFIDENCE_THRESHOLD
+    except ValueError:
+        return _CONFIDENCE_THRESHOLD
+
+
+#: 算置信度时看多深。固定 20 而不是跟着 limit 变——阈值是在 top-20 上标定的，
+#  跟着 limit 变会让阈值失去意义。
+_CONFIDENCE_DEPTH = 20
+
+
+def retrieval_confidence(scores: Sequence[float], query_token_count: int) -> float:
+    """「目录里到底有没有对题的东西」的一个标量。
+
+    = top-20 平均 BM25 得分 ÷ 查询词数
+
+    ## 为什么是这个式子，而不是业界常用的那些
+
+    实测四个用例（三个目录覆盖的域 + 一个零覆盖域）之后定的：
+
+                          top1    top20均   每词归一
+        release           48.40    30.57     0.437
+        alert             42.24    26.22     0.364
+        booking           34.77    20.39     0.291
+        pharmacy(零覆盖)   9.48     5.26     **0.110**
+
+    · **相对/形状类信号在这里全部失效**。`top1/全体均` 上 pharmacy 是 23.5，
+      **最高**；`top10 占比` 上 pharmacy 是 44.6%，也最高——因为它整体都低，
+      比值反而好看。所以"归一化成相对分再比"这条常规建议在这个问题上是错的。
+    · Weaviate 的 autocut / kneed 那套膝点检测也答不了这个问题：它回答的是
+      "该在第几个截断"，**前提是假定有相关结果**；我们要判的恰恰是"有没有"。
+      pharmacy 的分数曲线同样有膝点。
+    · 能分开的是**绝对分数水平**。这在本场景成立是因为语料固定（358 个区块），
+      所以跨查询的 BM25 绝对值可比。
+    · 再除以查询词数是因为 BM25 是各查询词得分之和，会随题目长度线性涨。实测
+      长度抽查：同一道告警题写成 5 词 → 1.149、103 词 → 0.421（原版 0.364）；
+      药房写成 7 词 → 0.000、83 词 → 0.145。**短查询是往上跑**，所以阈值对
+      短题只会更安全。
+
+    阈值 0.20 取的是 0.291（该窄化里最低）与 0.145（不该窄化里最高）的几何中点。
+    ⚠️ 只在 4 个用例 + 4 条长度抽查上标定过。加新用例时应当重新看这组数
+      （scripts/block_selection_metrics.py 会打印每个用例的置信度）。
+    """
+    if not len(scores) or query_token_count <= 0:
+        return 0.0
+    top = sorted(scores, reverse=True)[:_CONFIDENCE_DEPTH]
+    return (sum(top) / len(top)) / query_token_count
+
+
 def select_blocks(
     blocks: Sequence[Dict[str, Any]],
     goal: str,
@@ -202,7 +265,22 @@ def select_blocks(
     if not any(corpus):
         return all_blocks
     bm25 = BM25Okapi(corpus)
-    scores = bm25.get_scores(tokenize_query(expand_intent(goal)))
+    query = tokenize_query(expand_intent(goal))
+    scores = bm25.get_scores(query)
+
+    # ── 自适应：目录里压根没有对题件时，不窄化 ──────────────────────────────
+    #
+    # 见 retrieval_confidence 头注。零覆盖域上窄化是净负面（实测 -58%），所以
+    # 这里 fail-open 回全量：窄化是优化，不该在它帮不上忙的题目上反而伤人。
+    confidence = retrieval_confidence(scores, len(query))
+    threshold = narrowing_confidence_threshold()
+    if confidence < threshold:
+        print(
+            f"[block_narrowing] 检索置信度 {confidence:.3f} < {threshold:.3f}"
+            f"（目录里没有对题区块）——本次不窄化，注入全量 {len(all_blocks)} 个",
+            flush=True,
+        )
+        return all_blocks
 
     ranked = sorted(
         range(len(rest)),
