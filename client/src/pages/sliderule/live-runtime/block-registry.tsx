@@ -32,6 +32,7 @@ import {
   Drawer,
   Empty,
   Flex,
+  Image,
   Input,
   List,
   Modal,
@@ -605,7 +606,7 @@ function cellOf(
   const options = enumOptionsOf?.(entityRef, fieldRef) ?? [];
   const sample = rows.find(r => r.values?.[fieldRef] != null)?.values?.[fieldRef];
   const semantic = fieldSemantic(entityRef, fieldRef, sample, fieldTypeOf, options);
-  return renderCell(semantic, row.values?.[fieldRef], options);
+  return renderCell(semantic, row.values?.[fieldRef], options, fieldRef);
 }
 
 /** binding 上的单个字段引用（不存在就 undefined，不编）。 */
@@ -675,13 +676,34 @@ const CardGridListRenderer: ExperienceBlockRenderer = ({
               size="small"
               data-testid="card-grid-item"
               onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}
+              /**
+               * 封面走 antd `Image`（2026-08-10 从裸 `<img>` 换过来）。
+               *
+               * 这个区块的定义里一直写着 `uses: [… "Image" …]`，渲染器里却是
+               * 一个裸标签——声明和实现对不上，而且对不上的正好是那三样让
+               * `Image` 成为正确选择的行为：点开看大图、加载占位、加载失败的
+               * 兜底。卡片网格是拿来"看"的版式，封面加载失败时给一个碎图标，
+               * 整片网格就花了。
+               *
+               * `alt` 用卡片主标题，不再是空串——空 alt 的意思是"这张图纯装饰"，
+               * 而这里的图是这张卡片在讲的那件东西。
+               *
+               * 预览的点击要 `stopPropagation`：外层 Card 的 onClick 是"选中这
+               * 条记录"，不拦住的话点图片会既放大又跳走。
+               */
               cover={
                 imageRef && String(row.values?.[imageRef] ?? "").trim() ? (
-                  <img
-                    alt=""
-                    src={String(row.values[imageRef])}
-                    style={{ height: 96, objectFit: "cover" }}
-                  />
+                  <div onClick={e => e.stopPropagation()}>
+                    <Image
+                      alt={String(row.values?.[titleRef] ?? "")}
+                      src={String(row.values[imageRef])}
+                      width="100%"
+                      height={96}
+                      style={{ objectFit: "cover" }}
+                      placeholder
+                      preview={{ mask: "查看大图" }}
+                    />
+                  </div>
                 ) : undefined
               }
             >
@@ -3431,7 +3453,9 @@ const ELLIPSIS_SEMANTICS = new Set<FieldSemantic>(["text", "email", "url", "rela
 function renderCell(
   semantic: FieldSemantic,
   raw: unknown,
-  options: NormalizedFieldOption[]
+  options: NormalizedFieldOption[],
+  /** 列名/字段名。只有 image 档用得上——给图片当替代文本，见那一档的说明。 */
+  alt?: string
 ): React.ReactNode {
   const str = String(raw ?? "").trim();
   if (!str) return <Typography.Text type="secondary">—</Typography.Text>;
@@ -3500,13 +3524,27 @@ function renderCell(
         </Typography.Link>
       );
     case "image":
-      // 缩略图固定高度 —— 图片尺寸参差不齐时不给固定高度，一行高一行矮
+      /**
+       * 缩略图走 antd `Image`（2026-08-10 从裸 `<img>` 换过来）。
+       *
+       * 固定高度那条理由没变——尺寸参差不齐时不给固定高度，一行高一行矮。
+       * 换组件是因为**28 像素的图等于没给**：用户要看清楚只能另开一页。
+       * `Image` 自带点开放大、加载占位、失败兜底，目录里那条的说明就是
+       * 「带预览、加载占位与失败兜底的图片」——这正是这里缺的三样。
+       *
+       * 裸 `<img>` 的第二个代价是 `alt=""`：那是"这张图纯装饰"的意思，而
+       * 表格里的图是内容。这个项目每次截图都跑 axe 扫描，空 alt 的内容图
+       * 恰好是它扫不出来的那一类——它只查 alt 在不在，不查写得对不对。
+       * 所以把列名传进来当 alt（「产品图」），没传才退回空串。
+       */
       return (
-        <img
+        <Image
           src={str}
-          alt=""
-          loading="lazy"
-          style={{ height: 28, width: "auto", maxWidth: 64, objectFit: "cover", borderRadius: 4 }}
+          alt={alt ?? ""}
+          height={28}
+          style={{ maxWidth: 64, objectFit: "cover", borderRadius: 4 }}
+          placeholder
+          preview={{ mask: "查看" }}
         />
       );
     case "richtext":
@@ -3634,7 +3672,8 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
       align: semantic === "money" || semantic === "number" ? ("right" as const) : undefined,
       // 固定列。分组顺序 applyColumnState 已经排好了，这里只负责让 antd 真的粘住
       fixed: viewState?.fixed[c],
-      render: (_: unknown, row: RuntimeRow) => renderCell(semantic, row.values?.[c], options),
+      render: (_: unknown, row: RuntimeRow) =>
+        renderCell(semantic, row.values?.[c], options, fieldLabelOf?.(bound.entityRef, c) ?? c),
     };
   });
 
@@ -4375,7 +4414,7 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
             dataIndex: f,
             title: fieldLabelOf?.(bound.entityRef, f) ?? f,
             render: (_: unknown, record: Record<string, unknown>) =>
-              renderCell(semantic, record?.[f], options),
+              renderCell(semantic, record?.[f], options, fieldLabelOf?.(bound.entityRef, f) ?? f),
           };
         })}
       />
@@ -5894,7 +5933,7 @@ const HeaderEntitySummaryRenderer: ExperienceBlockRenderer = ({ block, children,
   if (children !== undefined && children !== null) return <>{children}</>;
   const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const fields = fieldRefListOf(block, "fieldRefs"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
   if (!bound || !titleRef || !row || fields.length === 0) return <BlockShell block={block} testid="header-entity-summary"><BlockEmpty hint="页头实体摘要尚未绑定当前记录和关键字段" /></BlockShell>;
-  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? block.props?.title ?? "当前记录")} testid="header-entity-summary"><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options) }; })} /></BlockShell>;
+  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? block.props?.title ?? "当前记录")} testid="header-entity-summary"><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options, fieldLabelOf?.(bound.entityRef, field) ?? field) }; })} /></BlockShell>;
 };
 
 /** 单个当前对象的进度、状态和下一节点摘要，不与多指标 MetricGrid 重复。 */
@@ -6029,7 +6068,7 @@ const compactSummaryRenderer = (testid: string, fallback: string): ExperienceBlo
   if (children != null) return <>{children}</>;
   const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const fields = fieldRefListOf(block, "fieldRefs"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
   if (!bound || !titleRef || !fields.length || !row) return <BlockShell block={block} testid={testid}><BlockEmpty hint={`${fallback}尚未绑定当前记录和摘要字段`} /></BlockShell>;
-  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? fallback)} testid={testid}><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options) }; })} /></BlockShell>;
+  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? fallback)} testid={testid}><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options, fieldLabelOf?.(bound.entityRef, field) ?? field) }; })} /></BlockShell>;
 };
 const WorkItemContextSummaryRenderer = compactSummaryRenderer("work-item-context-summary", "工作项摘要");
 const DocumentContextSummaryRenderer = compactSummaryRenderer("document-context-summary", "文档摘要");
@@ -6707,7 +6746,7 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     ProportionPie: { render: ProportionPieRenderer, uses: ["ECharts"], label: "占比环图" },
     RankedList: { render: RankedListRenderer, uses: ["List", "Progress", "Tag"], label: "排行榜" },
     ActivityFeed: { render: ActivityFeedRenderer, uses: ["Timeline", "Tag"], label: "动态流" },
-    DataTable: { render: DataTableRenderer, uses: ["Table", "Tag", "Typography", "Space", "Pagination"], label: "数据表格" },
+    DataTable: { render: DataTableRenderer, uses: ["Table", "DragSortTable", "Tag", "Typography", "Space", "Image"], label: "数据表格" },
     CardGridList: { render: CardGridListRenderer, uses: ["List", "Card", "Image", "Typography", "Flex", "Tag"], label: "卡片网格" },
     StandardListRows: { render: StandardListRowsRenderer, uses: ["List", "Avatar", "Typography", "Flex", "Tag"], label: "标准列表行" },
     QuickActionPanel: { render: QuickActionPanelRenderer, uses: ["Card", "Button", "Space"], label: "快捷操作", phone: true },
@@ -6718,7 +6757,7 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     FreeformInsight: { render: FreeformInsightRenderer, uses: [], label: "自由版式" },
     RecordForm: { render: RecordFormRenderer, uses: ["Form", "Input", "InputNumber", "Select", "DatePicker"], label: "记录表单" },
     RecordFormDialog: { render: RecordFormDialogRenderer, uses: ["Drawer", "Modal", "Form", "Input", "Select", "Button"], label: "弹层表单" },
-    RecordDetail: { render: RecordDetailRenderer, uses: ["Descriptions", "Tag", "Button"], label: "记录详情" },
+    RecordDetail: { render: RecordDetailRenderer, uses: ["ProDescriptions", "Tag", "Button"], label: "记录详情" },
     SectionedForm: { render: SectionedFormRenderer, uses: ["Form", "Card", "Input", "Select", "DatePicker", "Button", "Tooltip"], label: "分段表单" },
     StepsForm: { render: StepsFormRenderer, uses: ["Steps", "Form", "Input", "Select", "DatePicker"], label: "分步表单" },
     EditableSubTable: { render: EditableSubTableRenderer, uses: ["Table", "Form", "Input", "Select", "DatePicker", "InputNumber", "Button"], label: "可编辑子表" },

@@ -608,25 +608,21 @@
       "DataTable": {
         "undeclared": [
           "Card",
-          "DragSortTable",
           "Empty"
         ],
-        "notDetected": [
-          "Pagination"
-        ]
+        "notDetected": []
       },
       "CardGridList": {
         "undeclared": [
           "Empty"
         ],
-        "notDetected": [
-          "Image"
-        ]
+        "notDetected": []
       },
       "StandardListRows": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
@@ -744,12 +740,10 @@
         "undeclared": [
           "Card",
           "Empty",
-          "ProDescriptions",
+          "Image",
           "Typography"
         ],
-        "notDetected": [
-          "Descriptions"
-        ]
+        "notDetected": []
       },
       "SectionedForm": {
         "undeclared": [
@@ -1032,6 +1026,7 @@
         "undeclared": [
           "Card",
           "Empty",
+          "Image",
           "ProDescriptions",
           "Tag",
           "Typography"
@@ -1576,14 +1571,16 @@
       "WorkItemContextSummary": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
       "DocumentContextSummary": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
@@ -1794,14 +1791,16 @@
       "CycleContextSummary": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
       "AlertGroupContextSummary": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
@@ -1899,14 +1898,16 @@
       "ConversationContextSummary": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
       "UserIdentitySummary": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
@@ -2030,14 +2031,16 @@
       "DashboardQueryContext": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
       "ServiceOwnershipContext": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
@@ -2119,14 +2122,16 @@
       "DeploymentContextSummary": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
       "ReleaseContextSummary": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
@@ -2298,7 +2303,8 @@
       "WorkflowContextSummary": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
@@ -2328,7 +2334,8 @@
       "RealmSecurityContext": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
@@ -2424,14 +2431,16 @@
       "ExploreQueryContext": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
       "StreamSelectionSummary": {
         "undeclared": [
           "Card",
-          "Empty"
+          "Empty",
+          "Image"
         ],
         "notDetected": []
       },
@@ -3119,108 +3128,82 @@
         "notDetected": []
       },
       "FunnelConversionChart": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "HistogramDistributionChart": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "ScatterCorrelationChart": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "BoxPlotDistributionChart": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "WaterfallVarianceChart": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "ForecastConfidenceChart": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "BurnupChart": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "BurndownChart": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "ErrorBudgetGauge": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "ServiceMapPanel": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "DependencyGraphPanel": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       },
       "QueryResultPivot": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "Empty",
-          "Table"
-        ]
+        "undeclared": [
+          "ECharts"
+        ],
+        "notDetected": []
       },
       "MetricComparisonPanel": {
-        "undeclared": [],
-        "notDetected": [
-          "Card",
-          "ECharts",
-          "Empty"
-        ]
+        "undeclared": [
+          "Table"
+        ],
+        "notDetected": []
       }
     }
   },
@@ -3341,6 +3324,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -4082,7 +4066,12 @@
       ]
     },
     "BoxPlotDistributionChart": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -4187,7 +4176,12 @@
       ]
     },
     "BurndownChart": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -4196,7 +4190,12 @@
       ]
     },
     "BurnupChart": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -4260,6 +4259,7 @@
         "Card",
         "Empty",
         "Flex",
+        "Image",
         "List",
         "Tag",
         "Typography"
@@ -4826,6 +4826,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -4948,6 +4949,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -5057,6 +5059,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -5268,6 +5271,7 @@
         "Card",
         "DragSortTable",
         "Empty",
+        "Image",
         "Space",
         "Table",
         "Tag",
@@ -5330,7 +5334,12 @@
       ]
     },
     "DependencyGraphPanel": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -5390,6 +5399,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -5539,6 +5549,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -5689,7 +5700,12 @@
       ]
     },
     "ErrorBudgetGauge": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -5823,6 +5839,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -5979,7 +5996,12 @@
       ]
     },
     "ForecastConfidenceChart": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -6006,7 +6028,12 @@
       ]
     },
     "FunnelConversionChart": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -6057,6 +6084,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -6138,7 +6166,12 @@
       ]
     },
     "HistogramDistributionChart": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -6683,7 +6716,12 @@
       ]
     },
     "MetricComparisonPanel": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -7216,7 +7254,12 @@
       ]
     },
     "QueryResultPivot": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -7349,6 +7392,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -7442,6 +7486,7 @@
         "Button",
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -7710,6 +7755,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -8116,7 +8162,12 @@
       ]
     },
     "ScatterCorrelationChart": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -8340,7 +8391,12 @@
       ]
     },
     "ServiceMapPanel": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -8352,6 +8408,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -8435,6 +8492,7 @@
         "Card",
         "Empty",
         "Flex",
+        "Image",
         "List",
         "Tag",
         "Typography"
@@ -8516,6 +8574,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -8950,6 +9009,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -9072,7 +9132,12 @@
       ]
     },
     "WaterfallVarianceChart": {
-      "desktop": [],
+      "desktop": [
+        "Card",
+        "ECharts",
+        "Empty",
+        "Table"
+      ],
       "phone": [
         "ECharts",
         "M.Card",
@@ -9165,6 +9230,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"
@@ -9329,6 +9395,7 @@
       "desktop": [
         "Card",
         "Empty",
+        "Image",
         "ProDescriptions",
         "Tag",
         "Typography"

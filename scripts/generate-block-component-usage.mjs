@@ -338,6 +338,56 @@ function componentIdFromImport(identifier, symbol, device, knownNames) {
   return undefined;
 }
 
+/** 图表宿主模块。三个入口都指向它，见 referencesEchartsHost。 */
+const ECHARTS_HOST_MODULE = "live-runtime/EchartsChart";
+
+/**
+ * 这个标识符是不是**图表宿主**（2026-08-10 从认名字改成认模块）。
+ *
+ * 此前判据是两个写死的名字：`LazyEchartsChart` / `PhoneLazyEchartsChart`。
+ * 于是第三个入口——`analysis-dependency-blocks.tsx` 的
+ * `import EchartsChart from "./EchartsChart"`——认不出来，13 个分析图区块
+ * 一个 ECharts 都没统计到。
+ *
+ * 认名字这件事本身就是个补丁：本文件开头那段注释已经写过"ECharts 是靠一条
+ * 硬编码的标识符特例混进来的，那说明这个盲区早就存在，只是用一条补丁盖住了
+ * 一个"。**盖住了一个，第三个来的时候照样漏。** 所以改成认模块——不管有人
+ * 起什么名字、包不包一层 React.lazy，从 EchartsChart 来的就是图表宿主。
+ */
+function referencesEchartsHost(identifier) {
+  const declaration = identifier.parent;
+  // ① 直接 import：`import EchartsChart from "./EchartsChart"`
+  const importDeclaration = importDeclarationOf(identifier);
+  if (
+    importDeclaration &&
+    ts.isStringLiteral(importDeclaration.moduleSpecifier) &&
+    importDeclaration.moduleSpecifier.text.endsWith("EchartsChart")
+  )
+    return true;
+  // ② React.lazy 包一层：`const LazyEchartsChart = React.lazy(() => import("./EchartsChart"))`
+  let current = declaration;
+  while (current && !ts.isVariableDeclaration(current)) current = current.parent;
+  if (current?.initializer) {
+    let dynamic;
+    const scan = node => {
+      if (dynamic || !node) return;
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        ts.isStringLiteral(node.arguments[0]) &&
+        node.arguments[0].text.endsWith("EchartsChart")
+      ) {
+        dynamic = true;
+        return;
+      }
+      ts.forEachChild(node, scan);
+    };
+    scan(current.initializer);
+    if (dynamic) return true;
+  }
+  return false;
+}
+
 function isRuntimeDeclaration(declaration) {
   const file = path.resolve(declaration.getSourceFile().fileName);
   return file === RUNTIME_DIR || file.startsWith(`${RUNTIME_DIR}${path.sep}`);
@@ -357,6 +407,26 @@ function dependencyReader(program, device, knownNames) {
 
       for (const declaration of symbol.declarations ?? []) {
         if (isRuntimeDeclaration(declaration)) visit(declaration);
+        /**
+         * **简写属性**要再问一次值符号（2026-08-10）。
+         *
+         *     export const ANALYSIS_DEPENDENCY_RENDERERS = {
+         *       FunnelConversionChart, HistogramDistributionChart, …
+         *     };
+         *
+         * `getSymbolAtLocation` 落在简写名字上给的是**属性符号**，它的声明就是
+         * 这条简写本身——顺着它走一圈又回到同一个标识符，到此为止，那个
+         * `const FunnelConversionChart = props => …` 永远走不到。
+         * TS 为这件事专门开了 `getShorthandAssignmentValueSymbol`。
+         *
+         * 后果是这 13 个分析图区块的依赖**全是空的**：它们声明了
+         * `uses: ["ECharts", "Card", "Empty"]`，图里一个都没有。ECharts 在
+         * 统计里显示"被用到"，靠的是别处那条 LazyEchartsChart 标识符特例——
+         * 又一次"补丁盖住了一个，盲区还在"。
+         */
+        if (ts.isShorthandPropertyAssignment(declaration)) {
+          visitSymbol(checker.getShorthandAssignmentValueSymbol(declaration));
+        }
       }
 
       if (symbol.flags & ts.SymbolFlags.Alias) {
@@ -370,11 +440,7 @@ function dependencyReader(program, device, knownNames) {
       visitedNodes.add(node);
 
       if (ts.isIdentifier(node)) {
-        if (
-          node.text === "LazyEchartsChart" ||
-          node.text === "PhoneLazyEchartsChart"
-        )
-          found.add("ECharts");
+        if (referencesEchartsHost(node)) found.add("ECharts");
 
         const symbol = checker.getSymbolAtLocation(node);
         const component = componentIdFromImport(node, symbol, device, knownNames);

@@ -247,6 +247,26 @@ describe("体验区块渲染器状态 SSOT", () => {
     expect(unlinked.length + used.size).toBe(BASE_COMPONENT_NAMES.size);
   });
 
+  it("区块渲染器不许再出现裸 <img —— 图片走 antd Image", () => {
+    // 2026-08-10。此前 CardGridList 的封面和表格里的图片缩略图都是裸 `<img>`，
+    // 而两处的区块定义都写着 `uses: [… "Image" …]`——声明和实现对不上，对不上
+    // 的正好是让 Image 成为正确选择的那三样：点开看大图、加载占位、失败兜底。
+    // 目录里那条的说明就是「带预览、加载占位与失败兜底的图片」。
+    //
+    // 附带的是 `alt=""`：那是"纯装饰"的意思，而卡片封面和表格里的图是内容。
+    // axe 只查 alt 在不在、不查写得对不对，所以这一类它扫不出来。
+    //
+    // 唯一放行的是 FreeformInsight 的落地页大图：那是一整块铺满容器的背景式
+    // 视觉，套一层 Image 的预览遮罩反而不对。
+    const code = blockRegistrySource
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter(line => !line.trim().startsWith("*") && !line.trim().startsWith("//"))
+      .join("\n");
+    const rawImages = (code.match(/<img(?=[\s>/])/g) ?? []).length;
+    expect(rawImages, "新增图片请用 antd Image；确实要裸标签的在这里说明理由").toBe(1);
+  });
+
   it("生成器看到的目录 = 运行时的目录 —— 覆盖率的分母不许各算各的", () => {
     // 2026-08-10。这条是补一个**已经三次给出错误结论**的盲区。
     //
