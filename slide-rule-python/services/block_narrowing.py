@@ -49,6 +49,19 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+#: 已经喊过的告警，喊一次就够——这条路每次生成都会走，不去刷屏。
+_WARNED: set = set()
+
+
+def _warn_once(message: str) -> None:
+    if message in _WARNED:
+        return
+    _WARNED.add(message)
+    import sys
+
+    print(message, file=sys.stderr, flush=True)
+
+
 _LEXICON_FILE = Path(__file__).resolve().parent / "data" / "block_intent_lexicon.json"
 
 #: 单字汉字：查询侧丢掉（见 tokenize_query）
@@ -329,7 +342,20 @@ def select_blocks(
 
     try:
         from rank_bm25 import BM25Okapi
-    except Exception:  # noqa: BLE001 — 依赖缺失不该让生成挂掉
+    except Exception as exc:  # noqa: BLE001 — 依赖缺失不该让生成挂掉
+        # fail-open 是对的（少一个依赖不该让整条生成挂掉），但**静默** fail-open
+        # 不对：这条路上退回全量 = 窄化整个功能没生效，而窄化不是可有可无的增强，
+        # 是那 306 个够不到的区块唯一的出路（对题件被选中 0.67 → 3.25，
+        # p=0.00004）。没有这行日志，线上少装一个包的后果就是"效果没了，
+        # 而且看不出来"。
+        #
+        # 2026-08-11 实测踩到：rank_bm25 当时压根不在 requirements.txt 里，
+        # 而 Dockerfile 只装那一个文件——按当时的状态部署上去，窄化会一声不吭
+        # 地整个关掉。这类"验证手段/降级路径本身骗人"本场已经是第 7 次。
+        _warn_once(
+            f"[block_narrowing] rank_bm25 缺失（{type(exc).__name__}），"
+            "本次注入退回全量目录——窄化未生效。检查 requirements.txt 是否装齐。"
+        )
         return all_blocks
 
     weights = _LEXICON["fieldWeights"]
