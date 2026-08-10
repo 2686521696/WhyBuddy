@@ -717,6 +717,128 @@ def _repair_page_workflow_refs(model: Dict[str, Any]) -> Dict[str, Any]:
     return {"repaired": repaired, "dropped": dropped}
 
 
+def _repair_layout_slot_violations(model: Dict[str, Any]) -> Dict[str, Any]:
+    """把放错槽位的区块**挪到**它自己声明的首选槽位。
+
+    ## 为什么补这一条
+
+    2026-08-10 开了目录窄化之后（services/block_narrowing），对题区块的选中数从
+    0.5 涨到 3.5，但首轮过闸从 2/6 掉到 1/6——残余裁决 4/6 趟都是这个形状：
+
+        block 'silence_form' (type MuteTimingSchedule) is not allowed in slot 'overlay';
+            catalog allows: main/aside/supplement
+        block 'overview_timeline' (type WorkflowTimeline) is not allowed in slot 'metrics'
+        block 'triage_panel' (type AlertTriagePanel) is not allowed in slot 'headerExtra'
+
+    说得通：模型现在真在用大量特定场景件，而这些件的槽位约束比泛用件紧。病从
+    "够不到对的区块"变成了"拿对了区块放错位置"——后者确定性可修。
+
+    ## 为什么是「挪」而不是「摘」
+
+    跟 pageBindings.workflowRef 那次相反。那个字段可选、缺省语义明确，所以摘掉
+    一句写错的话是安全的。这里不行：客户端
+    AppRuntimeScreen.tsx 里 `main: regionSource?.main ?? (page.layout ? [] : …)`
+    ——**声明了 layout 时，没进任何槽位的区块压根不渲染**。摘掉 ref 等于把这个
+    区块从页面上抹掉，而它恰恰是窄化辛苦捞进来的那种对题件。
+
+    ## 挪到哪：用目录自己声明的顺序，不是我猜的
+
+    `allowedRegions` 是**有序**的，而且顺序是authored 的——
+    MuteTimingSchedule 是 (main, aside, supplement)，ActivityFeed 是
+    (aside, main, supplement)。第一个就是这个区块的首选位置。所以取
+    `allowedRegions[0]`（且它必须也在合法槽位表里）。
+
+    这跟本文件既有的处方是同一条哲学（见 _repair_binding_field_types 里引的
+    AJV coerceTypes）：只沿一张**显式枚举**的表转换，表外的不猜。这里那张表就是
+    allowedRegions，"不猜"体现在——类型不认识、或 allowedRegions 为空时原样留给门。
+    """
+    page = _as_dict(model.get("page"))
+    pages = _as_list(page.get("pages"))
+    if not pages:
+        return {}
+
+    from .schema_legal import (
+        EXPERIENCE_BLOCK_ALLOWED_REGIONS,
+        EXPERIENCE_BLOCK_ALLOWED_REGIONS_BY_TYPE,
+    )
+
+    legal_slots = set(EXPERIENCE_BLOCK_ALLOWED_REGIONS)
+    moved: List[Dict[str, Any]] = []
+    new_pages: List[Any] = []
+    changed = False
+
+    for raw_page in pages:
+        pd = _as_dict(raw_page)
+        layout = pd.get("layout")
+        if not isinstance(layout, dict) or not layout:
+            new_pages.append(raw_page)
+            continue
+
+        types_by_id = {
+            str(_as_dict(b).get("id") or "").strip(): str(_as_dict(b).get("type") or "").strip()
+            for b in _as_list(pd.get("blocks"))
+        }
+        page_id = str(pd.get("id") or "<unnamed>")
+
+        # 先算出每个槽位要保留哪些、以及谁要搬到哪去
+        keep: Dict[str, List[str]] = {}
+        pending: List[tuple] = []  # (target_slot, block_id)
+        for slot_key, refs in layout.items():
+            if not isinstance(refs, list):
+                keep[str(slot_key)] = refs  # 形状不对（含 slots 嵌套）交给门
+                continue
+            kept: List[str] = []
+            for ref in refs:
+                rid = str(ref or "").strip()
+                btype = types_by_id.get(rid)
+                allowed = EXPERIENCE_BLOCK_ALLOWED_REGIONS_BY_TYPE.get(btype or "")
+                if not rid or not btype or not allowed:
+                    kept.append(ref)  # 悬空 ref / 不认识的类型 → 门去管
+                    continue
+                if str(slot_key) in allowed:
+                    kept.append(ref)
+                    continue
+                target = next((r for r in allowed if r in legal_slots), None)
+                if target is None:
+                    kept.append(ref)  # 声明的槽位一个都不合法 → 门去管
+                    continue
+                pending.append((target, rid))
+                moved.append(
+                    {
+                        "pageId": page_id,
+                        "blockId": rid,
+                        "type": btype,
+                        "from": str(slot_key),
+                        "to": target,
+                    }
+                )
+                changed = True
+            keep[str(slot_key)] = kept
+
+        if not changed and not pending:
+            new_pages.append(raw_page)
+            continue
+
+        for target, rid in pending:
+            bucket = keep.get(target)
+            if not isinstance(bucket, list):
+                bucket = []
+                keep[target] = bucket
+            if rid not in bucket:
+                bucket.append(rid)
+
+        new_page = dict(pd)
+        new_page["layout"] = keep
+        new_pages.append(new_page)
+
+    if not moved:
+        return {}
+    new_page_section = dict(page)
+    new_page_section["pages"] = new_pages
+    model["page"] = new_page_section
+    return {"moved": moved}
+
+
 def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
     """返回 {"model": 修复后的深拷贝, "repaired": [...], "dropped": [...],
     "presentation": {...}}。
@@ -737,6 +859,7 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
     #    照样会写错 pageBindings.workflowRef（实测那几趟正是这样），排在后面等于
     #    这条修复对它们永不生效。
     page_workflow_notes = _repair_page_workflow_refs(m)
+    layout_slot_notes = _repair_layout_slot_violations(m)
 
     appbundle = _as_dict(m.get("appbundle"))
     invariants = _as_list(appbundle.get("invariants"))
@@ -747,6 +870,7 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
             "dropped": [],
             "presentation": presentation,
             "pageWorkflowRefs": page_workflow_notes,
+            "layoutSlots": layout_slot_notes,
         }
 
     # 合法解析域与门禁第 7 节共享同一函数（曾因两边各自维护导致奇偶不齐：
@@ -795,4 +919,5 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
         "dropped": dropped,
         "presentation": presentation,
         "pageWorkflowRefs": page_workflow_notes,
+        "layoutSlots": layout_slot_notes,
     }
