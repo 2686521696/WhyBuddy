@@ -2397,6 +2397,9 @@
               "card",
               "plain"
             ]
+          },
+          "markdown": {
+            "type": "boolean"
           }
         }
       },
@@ -22629,6 +22632,14 @@
               "card",
               "plain"
             ]
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "javascript",
+              "sql",
+              "json"
+            ]
           }
         }
       },
@@ -23320,6 +23331,221 @@
           "timeFieldRef": "date"
         },
         "note": "重试载荷只包含失败项。"
+      },
+      "generality": "specific"
+    },
+    {
+      "type": "HierarchicalCategoryPicker",
+      "label": "多级分类选择",
+      "description": "多级分类选择：按父子关系把分类展成级联下拉，逐级下钻并允许停在中间层，选中后收窄目标区块。",
+      "rendererKey": "hierarchical-category-picker",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "filter",
+      "family": "filter",
+      "source": {
+        "repo": "ant-design/ant-design",
+        "path": "components/cascader",
+        "took": "Cascader 默认只允许选叶子；分类筛选大多要「整个甲类」，所以默认打开 changeOnSelect，由 props.leafOnly 关掉。"
+      },
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          },
+          "leafOnly": {
+            "type": "boolean"
+          },
+          "placeholder": {
+            "type": "string"
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "kanban",
+        "dashboard",
+        "monitor"
+      ],
+      "allowedRegions": [
+        "filters",
+        "tabs"
+      ],
+      "regionsRationale": "分类下钻是收窄手段，跟其他筛选并排摆在筛选带。",
+      "events": [
+        "filterChange",
+        "itemSelect"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef",
+          "labelFieldRef",
+          "parentFieldRef",
+          "targets"
+        ],
+        "optional": [
+          "descFieldRef"
+        ],
+        "entityFieldRefs": {
+          "labelFieldRef": "string",
+          "parentFieldRef": "string",
+          "descFieldRef": "string"
+        },
+        "note": "parentFieldRef 指向同实体父记录的行 id；空父引用、指向自己、以及成环的记录一律当根节点，避免层级数据一有环整批节点从界面上消失。区块只发筛选事件，不修改层级关系。"
+      },
+      "generality": "specific"
+    },
+    {
+      "type": "OrgTreeSelector",
+      "label": "组织权限树选择",
+      "description": "组织权限树选择：在部门或权限树上勾选一片范围，停用节点不可勾选，提交只发起授权申请。",
+      "rendererKey": "org-tree-selector",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "form",
+      "family": "action",
+      "source": {
+        "repo": "ant-design/ant-design",
+        "path": "components/tree-select",
+        "took": "官方明说树节点 value 重复会出问题，而「运营组」这类部门重名在真实组织里很常见，所以节点 value 一律用行 id 不用标签；勾选口径取 SHOW_PARENT，整枝选中时只提交父节点。"
+      },
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          },
+          "placeholder": {
+            "type": "string"
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "wizard"
+      ],
+      "allowedRegions": [
+        "main",
+        "supplement",
+        "overlay"
+      ],
+      "regionsRationale": "范围勾选是配置主体的一部分，也可作为弹层里的一步。",
+      "events": [
+        "submitRequest"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef",
+          "labelFieldRef",
+          "parentFieldRef",
+          "targets"
+        ],
+        "optional": [
+          "statusFieldRef",
+          "descFieldRef"
+        ],
+        "entityFieldRefs": {
+          "labelFieldRef": "string",
+          "parentFieldRef": "string",
+          "statusFieldRef": "enum",
+          "descFieldRef": "string"
+        },
+        "note": "提交只发起授权申请，不在前端直接改权限。statusFieldRef 标停用的节点禁止勾选。"
+      },
+      "generality": "specific"
+    },
+    {
+      "type": "AssignmentTransfer",
+      "label": "穿梭分配面板",
+      "description": "穿梭分配面板：左右两栏搬运待分配与已分配记录，支持搜索，提交的是相对初始状态的增减差集。",
+      "rendererKey": "assignment-transfer",
+      "rendererStatus": "real",
+      "generationEnabled": true,
+      "capability": "form",
+      "family": "action",
+      "source": {
+        "repo": "ant-design/ant-design",
+        "path": "components/transfer",
+        "took": "Transfer 是纯受控组件（官方原话不支持非受控），targetKeys 必须自己存；每项 key 必须唯一，所以直接用行 id。初始态取自负责人字段非空，之后不再被数据回灌覆盖。"
+      },
+      "propsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "card",
+              "plain"
+            ]
+          },
+          "sourceTitle": {
+            "type": "string"
+          },
+          "targetTitle": {
+            "type": "string"
+          }
+        }
+      },
+      "dataKinds": [
+        "entityRows"
+      ],
+      "pageKinds": [
+        "workbench",
+        "wizard",
+        "kanban"
+      ],
+      "allowedRegions": [
+        "main",
+        "supplement",
+        "overlay"
+      ],
+      "regionsRationale": "穿梭框要两栏宽度，塞不进窄边栏和操作条。",
+      "events": [
+        "submitRequest"
+      ],
+      "bindingSchema": {
+        "required": [
+          "entityRef",
+          "labelFieldRef",
+          "assigneeFieldRef",
+          "targets"
+        ],
+        "optional": [
+          "descFieldRef"
+        ],
+        "entityFieldRefs": {
+          "labelFieldRef": "string",
+          "assigneeFieldRef": "string",
+          "descFieldRef": "string"
+        },
+        "note": "右栏初始成员是负责人字段非空的记录；提交载荷只含本次新增与取消的两组 id，不是全量覆盖。"
       },
       "generality": "specific"
     }

@@ -49,6 +49,7 @@ DYNAMIC_LABEL_SOURCES = [
     REGISTRY.with_name("configuration-wizard-batch.tsx"),
     REGISTRY.with_name("collaboration-content-blocks.tsx"),
     REGISTRY.with_name("data-governance-blocks.tsx"),
+    REGISTRY.with_name("hierarchy-selection-blocks.tsx"),
 ]
 
 #: BLOCK_DEFINITIONS 的条目形如 `    FilterBar: { render: …, label: "筛选条", … },`

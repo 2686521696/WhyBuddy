@@ -36,6 +36,7 @@ import { PHONE_PRACTICE_WIZARDS } from "./PhonePracticeWizards";
 import { renderConfigurationWizardPhoneBlock } from "./PhoneConfigurationWizardBatch";
 import { renderCollaborationContentPhoneBlock } from "./PhoneCollaborationContentBlocks";
 import { renderDataGovernancePhoneBlock } from "./PhoneDataGovernanceBlocks";
+import { renderHierarchySelectionPhoneBlock } from "./PhoneHierarchySelectionBlocks";
 
 const PhoneLazyEchartsChart = React.lazy(() => import("../EchartsChart"));
 
@@ -1665,6 +1666,8 @@ export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps
   if (collaborationContentBlock !== undefined) return collaborationContentBlock;
   const dataGovernanceBlock = renderDataGovernancePhoneBlock(props);
   if (dataGovernanceBlock !== undefined) return dataGovernanceBlock;
+  const hierarchySelectionBlock = renderHierarchySelectionPhoneBlock(props);
+  if (hierarchySelectionBlock !== undefined) return hierarchySelectionBlock;
   switch (props.block.type) {
     case "FunnelConversionChart":
     case "HistogramDistributionChart":

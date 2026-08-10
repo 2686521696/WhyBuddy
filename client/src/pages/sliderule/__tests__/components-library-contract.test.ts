@@ -385,6 +385,11 @@ describe("基础组件目录 · 四个来源", () => {
   const catalogSrc = read("../base-components/base-catalog.tsx");
   const proSrc = read("../base-components/base-catalog-pro.tsx");
   const customSrc = read("../base-components/base-catalog-custom.tsx");
+  /**
+   * 2026-08-10：自研组件的**实现**搬到了 custom-components.tsx（同一份实现
+   * 给组件库示例和运行期区块两个消费方用），下面两条纪律跟着实现走。
+   */
+  const customImplSrc = read("../base-components/custom-components.tsx");
 
   it("四个来源的条目都汇进了总表 —— 建了文件没接进去等于白建", () => {
     const assembled = catalogSrc.slice(
@@ -455,17 +460,22 @@ describe("基础组件目录 · 四个来源", () => {
   });
 
   it("自定义档的重库走懒加载 —— 一页两百多个示例，不能开页就下一个编辑器", () => {
-    expect(customSrc, "CodeMirror 变成静态 import 了").not.toMatch(
-      /^import CodeMirror from/m
-    );
-    expect(customSrc).toContain("React.lazy");
-    expect(customSrc).toContain('import("@uiw/react-codemirror")');
+    for (const src of [customSrc, customImplSrc]) {
+      expect(src, "CodeMirror 变成静态 import 了").not.toMatch(
+        /^import CodeMirror from/m
+      );
+    }
+    expect(customImplSrc).toContain("React.lazy");
+    expect(customImplSrc).toContain('import("@uiw/react-codemirror")');
+    // 运行期区块也在用这份实现了，所以懒加载这条纪律现在护的不只是组件库那一页。
+    expect(customImplSrc).toContain('import("xlsx")');
+    expect(customImplSrc).toContain('import("react-markdown")');
   });
 
   it("自定义档不引新依赖 —— 这一批的前提就是「把装着没用的挖出来」", () => {
     // 只允许出现已经在 package.json 里的那几个。新增依赖不是不行，但那是
     // 一个要单独决策的动作，不该混在"补目录"里悄悄发生。
-    const dyn = [...customSrc.matchAll(/import\("([^"]+)"\)/g)].map(m => m[1]);
+    const dyn = [...`${customSrc}\n${customImplSrc}`.matchAll(/import\("([^"]+)"\)/g)].map(m => m[1]);
     const allowed = new Set([
       "@uiw/react-codemirror",
       "@uiw/codemirror-theme-github",

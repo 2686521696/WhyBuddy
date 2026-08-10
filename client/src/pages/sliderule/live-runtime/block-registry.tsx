@@ -93,6 +93,8 @@ import {
 import * as AntdIcons from "@ant-design/icons";
 
 import catalogJson from "@experience-blocks";
+// 自研基础组件（懒加载重库，不进主包）——见 base-components/custom-components.tsx。
+import { MarkdownEditor, MarkdownView, SqlEditor } from "../base-components/custom-components";
 import type { WorkflowSection } from "../system-screens/five-system-model";
 import type { RuntimeRow } from "./live-runtime";
 import type { AppFormFieldSchema } from "./app-runtime-schema";
@@ -197,6 +199,10 @@ import {
   DATA_GOVERNANCE_LABELS,
   DATA_GOVERNANCE_RENDERERS,
 } from "./data-governance-blocks";
+import {
+  HIERARCHY_SELECTION_LABELS,
+  HIERARCHY_SELECTION_RENDERERS,
+} from "./hierarchy-selection-blocks";
 import { ANALYSIS_DEPENDENCY_RENDERERS } from "./analysis-dependency-blocks";
 // ECharts 基建走独立 chunk（跟 AppRuntimeScreen 里那份同一个组件/同一个
 // import()，Vite 按 module 去重成一个 chunk，不会重复打包）。
@@ -4758,6 +4764,15 @@ const CommentThreadRenderer: ExperienceBlockRenderer = ({
   const parentRef = fieldRefOf(block, "parentFieldRef");
   const [draft, setDraft] = React.useState("");
   const [replyTo, setReplyTo] = React.useState<string | null>(null);
+  /**
+   * 评论正文按 Markdown 渲染（2026-08-10 接入自研档）。
+   *
+   * 默认关：存量讨论区里的正文是纯文本，突然按 Markdown 解析会让形如
+   * `*重点*` 的星号消失、`# 1 号问题` 变成大标题——那是**改了别人已有内容的
+   * 显示**，不该由一次接线顺手决定。开着的时候读写两侧成对：正文走
+   * MarkdownView，输入框走 MarkdownEditor。
+   */
+  const markdown = block.props?.markdown === true;
   const pageSize = Math.max(1, Number(block.props?.pageSize ?? 5) || 5);
   const [visible, setVisible] = React.useState(pageSize);
 
@@ -4798,7 +4813,11 @@ const CommentThreadRenderer: ExperienceBlockRenderer = ({
           }
           description={
             <div>
-              <Typography.Paragraph style={{ margin: "4px 0 2px" }}>{String(row.values?.[contentRef] ?? "")}</Typography.Paragraph>
+              {markdown ? (
+                <MarkdownView text={String(row.values?.[contentRef] ?? "")} style={{ margin: "4px 0 2px" }} />
+              ) : (
+                <Typography.Paragraph style={{ margin: "4px 0 2px" }}>{String(row.values?.[contentRef] ?? "")}</Typography.Paragraph>
+              )}
               {block.props?.allowReply !== false && !nested && (
                 <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => setReplyTo(replyTo === row.id ? null : row.id)}>
                   {replyTo === row.id ? "取消回复" : "回复"}
@@ -4824,12 +4843,18 @@ const CommentThreadRenderer: ExperienceBlockRenderer = ({
         <Button block type="text" onClick={() => setVisible(current => current + pageSize)}>加载更多</Button>
       )}
       <Flex gap={8} align="flex-end" style={{ marginTop: 10 }}>
-        <Input.TextArea
-          autoSize={{ minRows: 1, maxRows: 4 }}
-          value={draft}
-          placeholder={replyTo ? "写下回复" : String(block.props?.composerPlaceholder ?? "写下评论")}
-          onChange={event => setDraft(event.target.value)}
-        />
+        {markdown ? (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <MarkdownEditor value={draft} onChange={setDraft} height="88px" placeholderHeight={88} />
+          </div>
+        ) : (
+          <Input.TextArea
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            value={draft}
+            placeholder={replyTo ? "写下回复" : String(block.props?.composerPlaceholder ?? "写下评论")}
+            onChange={event => setDraft(event.target.value)}
+          />
+        )}
         <Button type="primary" disabled={!draft.trim()} onClick={submit}>{String(block.props?.submitText ?? "发布")}</Button>
       </Flex>
     </BlockShell>
@@ -5539,7 +5564,7 @@ const AlertRuleEditorRenderer: ExperienceBlockRenderer = ({ block, children, ent
   if (children !== undefined && children !== null) return <>{children}</>;
   const bound = rowsOfBinding(block, entityRows); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0]; const nameRef = fieldRefOf(block, "nameFieldRef"); const queryRef = fieldRefOf(block, "queryFieldRef"); const thresholdRef = fieldRefOf(block, "thresholdFieldRef"); const severityRef = fieldRefOf(block, "severityFieldRef"); const [name, setName] = React.useState(row && nameRef ? String(row.values?.[nameRef] ?? "") : ""); const [query, setQuery] = React.useState(row && queryRef ? String(row.values?.[queryRef] ?? "") : ""); const [threshold, setThreshold] = React.useState(row && thresholdRef ? Number(row.values?.[thresholdRef] ?? 0) : 0); const [severity, setSeverity] = React.useState(row && severityRef ? String(row.values?.[severityRef] ?? "warning") : "warning"); const [evaluation, setEvaluation] = React.useState("1m");
   if (!bound || !nameRef || !queryRef || !thresholdRef) return <BlockShell block={block} title={String(block.props?.title ?? "告警规则")} testid="alert-rule-editor"><BlockEmpty hint="告警规则尚未绑定名称、查询和阈值字段" /></BlockShell>;
-  return <BlockShell block={block} title={String(block.props?.title ?? "告警规则")} testid="alert-rule-editor"><Space direction="vertical" style={{ width: "100%" }}><Input value={name} onChange={event => setName(event.target.value)} placeholder="规则名称" /><Input.TextArea value={query} onChange={event => setQuery(event.target.value)} rows={3} placeholder="查询表达式" /><Flex gap={8} wrap><Input type="number" value={threshold} onChange={event => setThreshold(Number(event.target.value))} prefix="阈值" style={{ flex: 1, minWidth: 130 }} /><Select value={severity} onChange={setSeverity} options={[{ label: "提示", value: "info" }, { label: "警告", value: "warning" }, { label: "严重", value: "critical" }]} style={{ minWidth: 110 }} /></Flex><Segmented block value={evaluation} options={[{ label: "每 1 分钟", value: "1m" }, { label: "每 5 分钟", value: "5m" }, { label: "每 15 分钟", value: "15m" }]} onChange={value => setEvaluation(String(value))} /><Button type="primary" block disabled={!name.trim() || !query.trim() || !Number.isFinite(threshold)} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row?.id, operation: row ? "updateAlertRule" : "createAlertRule", values: { name, query, threshold, severity, evaluation }, targets: targetIdsOf(block) })}>保存并启用规则</Button></Space></BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "告警规则")} testid="alert-rule-editor"><Space direction="vertical" style={{ width: "100%" }}><Input value={name} onChange={event => setName(event.target.value)} placeholder="规则名称" /><SqlEditor value={query} onChange={setQuery} height="90px" placeholderHeight={90} /><Flex gap={8} wrap><Input type="number" value={threshold} onChange={event => setThreshold(Number(event.target.value))} prefix="阈值" style={{ flex: 1, minWidth: 130 }} /><Select value={severity} onChange={setSeverity} options={[{ label: "提示", value: "info" }, { label: "警告", value: "warning" }, { label: "严重", value: "critical" }]} style={{ minWidth: 110 }} /></Flex><Segmented block value={evaluation} options={[{ label: "每 1 分钟", value: "1m" }, { label: "每 5 分钟", value: "5m" }, { label: "每 15 分钟", value: "15m" }]} onChange={value => setEvaluation(String(value))} /><Button type="primary" block disabled={!name.trim() || !query.trim() || !Number.isFinite(threshold)} onClick={() => onAction?.("submitRequest", { entityRef: bound.entityRef, rowId: row?.id, operation: row ? "updateAlertRule" : "createAlertRule", values: { name, query, threshold, severity, evaluation }, targets: targetIdsOf(block) })}>保存并启用规则</Button></Space></BlockShell>;
 };
 
 const MuteTimingScheduleRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
@@ -6685,7 +6710,7 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     BatchActionBar: { render: BatchActionBarRenderer, uses: ["Alert", "Button", "Flex", "Checkbox"], label: "批量操作栏" },
     ColumnSettingPanel: { render: ColumnSettingPanelRenderer, uses: ["Checkbox", "Button", "Tooltip", "Flex"], label: "列设置" },
     AttachmentPanel: { render: AttachmentPanelRenderer, uses: ["Upload", "List", "Progress", "Tag", "Button", "Typography"], label: "附件面板", phone: true },
-    CommentThread: { render: CommentThreadRenderer, uses: ["List", "Avatar", "Input", "Button", "Tag", "Typography"], label: "讨论线程", phone: true },
+    CommentThread: { render: CommentThreadRenderer, uses: ["List", "Avatar", "Input", "Button", "Tag", "Typography", "MarkdownEditor", "MarkdownView"], label: "讨论线程", phone: true },
     RecordPicker: { render: RecordPickerRenderer, uses: ["Input", "List", "Checkbox", "Tag", "Button", "Flex"], label: "记录选择器", phone: true },
     KanbanBoard: { render: KanbanBoardRenderer, uses: ["Card", "Badge", "Select", "Tag", "Flex", "Empty"], label: "状态看板", phone: true },
     ScheduleCalendar: { render: ScheduleCalendarRenderer, uses: ["Calendar", "List", "Badge", "Tag", "Button"], label: "日程日历", phone: true },
@@ -6729,7 +6754,7 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     SankeyFlow: { render: SankeyFlowRenderer, uses: ["ECharts"], label: "关系流向", phone: true },
     BoxPlotDistribution: { render: BoxPlotDistributionRenderer, uses: ["ECharts"], label: "箱线分布", phone: true },
     RadarComparison: { render: RadarComparisonRenderer, uses: ["ECharts"], label: "雷达对比", phone: true },
-    AlertRuleEditor: { render: AlertRuleEditorRenderer, uses: ["Input", "Select", "Segmented", "Button", "Flex"], label: "告警规则编辑器", phone: true },
+    AlertRuleEditor: { render: AlertRuleEditorRenderer, uses: ["Input", "Select", "Segmented", "Button", "Flex", "SqlEditor"], label: "告警规则编辑器", phone: true },
     MuteTimingSchedule: { render: MuteTimingScheduleRenderer, uses: ["List", "Button", "Popconfirm"], label: "静默时段计划", phone: true },
     ContactPointManager: { render: ContactPointManagerRenderer, uses: ["List", "Badge", "Button"], label: "通知联络点", phone: true },
     ReferenceManyManager: { render: ReferenceManyManagerRenderer, uses: ["Segmented", "List", "Checkbox", "Button"], label: "关联记录管理", phone: true },
@@ -6995,6 +7020,12 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
       Object.entries(DATA_GOVERNANCE_RENDERERS).map(([type, render]) => [
         type,
         { render, uses: ["Table", "List", "Button", "Alert", "Tag", "Input", "Select", "Checkbox", "Descriptions", "Timeline", "Tree", "Progress", "Popconfirm"], label: DATA_GOVERNANCE_LABELS[type], phone: true },
+      ])
+    ),
+    ...Object.fromEntries(
+      Object.entries(HIERARCHY_SELECTION_RENDERERS).map(([type, render]) => [
+        type,
+        { render, uses: ["Cascader", "TreeSelect", "Transfer", "Card", "Alert", "Button", "Tag", "Empty", "Typography"], label: HIERARCHY_SELECTION_LABELS[type], phone: true },
       ])
     ),
   });

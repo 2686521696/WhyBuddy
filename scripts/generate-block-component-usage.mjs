@@ -25,6 +25,24 @@ const CATALOG_ARRAYS = new Map([
   ["base-catalog-custom.tsx", "CUSTOM_BASE_COMPONENTS"],
 ]);
 
+/**
+ * 自研组件的实现模块（2026-08-10）。
+ *
+ * 此前这份统计只认三个模块的 import——`antd` / `@ant-design/pro-components`
+ * / `antd-mobile`。自定义档那 7 个组件（CodeEditor、SignaturePad…）**结构上
+ * 永远统计不到**：它们不从这三个模块来。ECharts 是靠一条硬编码的标识符特例
+ * （`LazyEchartsChart` → `ECharts`）混进来的，那说明这个盲区早就存在，只是
+ * 用一条补丁盖住了一个。
+ *
+ * 这个盲区不是小数点问题：它让"接线做了没有"这件事在数字上完全看不出来。
+ * 审目录时我据此得出「自定义档零引用」，那个结论当时是对的，但**即使有人接了
+ * 也会得出同样的结论**——这种指标是靠不住的。
+ *
+ * 现在改成认这一个模块：从它导入的名字**就是**目录里的组件名（导出名与
+ * `name` 字段一一对应，见 custom-components.tsx 的文件头）。
+ */
+const CUSTOM_COMPONENT_MODULE = "base-components/custom-components";
+
 function sourceFile(file) {
   return ts.createSourceFile(
     file,
@@ -132,6 +150,10 @@ function componentIdFromImport(identifier, symbol, device) {
     )
       continue;
     const moduleName = importDeclaration.moduleSpecifier.text;
+    // 自研组件是 pc 档（目录里 platform: "pc"），只在桌面侧计数。
+    if (device === "desktop" && moduleName.endsWith(CUSTOM_COMPONENT_MODULE)) {
+      return declaration.propertyName?.text ?? declaration.name.text;
+    }
     const supported =
       device === "desktop"
         ? moduleName === "antd" || moduleName === "@ant-design/pro-components"

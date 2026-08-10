@@ -1,6 +1,24 @@
 import React from "react";
 import { Alert, Button, Card, Checkbox, Descriptions, Empty, Flex, Input, List, Popconfirm, Progress, Select, Space, Table, Tag, Timeline, Tree, Typography } from "antd";
 import type { ExperienceBlockRenderer, ExperienceBlockRendererProps } from "./block-registry";
+import { CodeEditor, JsonEditor, SqlEditor } from "../base-components/custom-components";
+
+/**
+ * 转换表达式用哪一档编辑器（2026-08-10）。
+ *
+ * 此前这里是一个 `Input.TextArea`，placeholder 写着"填写转换表达式"——**这个
+ * 区块的全部意义就是写表达式，却给了一个纯文本框**：没有行号、没有高亮、没有
+ * 括号匹配。自研档里躺着现成的 CodeMirror，一直没人接。
+ *
+ * 语言按 props 选而不是写死 JS：转换表达式在 ToolJet 这类工具里默认是 JS，
+ * 但接数据库的场景写的是 SQL、配映射的场景写的是 JSON。同一个区块三种语言，
+ * 比拆三个区块诚实。
+ */
+const TRANSFORM_EDITORS: Record<string, typeof CodeEditor> = {
+  javascript: CodeEditor,
+  sql: SqlEditor,
+  json: JsonEditor,
+};
 
 type Variant = "schema" | "transform" | "validation" | "duplicate" | "merge" | "checkpoint" | "retry" | "history" | "lineage" | "change" | "permission" | "webhook";
 type Config = { variant: Variant; title: string; testid: string };
@@ -21,7 +39,7 @@ function createDataGovernanceBlock(config: Config): ExperienceBlockRenderer {
     let body: React.ReactNode;
     switch (config.variant) {
       case "schema": { const invalid = rows.filter(row => failed(row.values?.[statusRef])); body = <Flex vertical gap={10}><Table size="small" pagination={false} rowKey="id" dataSource={rows} columns={[{ title: "源字段", render: (_, row) => text(row.values?.[sourceRef], row.id) }, { title: "目标字段", render: (_, row) => <Input value={drafts[row.id] ?? text(row.values?.[targetRef])} onChange={event => setDrafts(previous => ({ ...previous, [row.id]: event.target.value }))} /> }, { title: "状态", render: (_, row) => <Tag color={failed(row.values?.[statusRef]) ? "error" : "success"}>{text(row.values?.[statusRef], "待校验")}</Tag> }]} /><Alert type={invalid.length ? "error" : "info"} message={invalid.length ? `${invalid.length} 个非法映射阻止提交` : "映射草稿尚未写入"} /><Button onClick={() => submit("validateSchemaMapping", { mappings: drafts })}>校验映射</Button><Button type="primary" disabled={invalid.length > 0 || Object.keys(drafts).length === 0} onClick={() => submit("saveSchemaMapping", { mappings: drafts })}>提交映射</Button></Flex>; break; }
-      case "transform": { const row = rows[0]; body = row ? <Flex vertical gap={10}><Input.TextArea value={drafts[row.id] ?? text(row.values?.[messageRef])} onChange={event => setDrafts({ [row.id]: event.target.value })} placeholder="填写转换表达式" /><Descriptions size="small" items={[{ key: "source", label: "输入", children: text(row.values?.[sourceRef], "-") }, { key: "preview", label: "预览", children: text(row.values?.[valueRef], "尚未预览") }]} /><Button onClick={() => submit("previewFieldTransform", { rowId: row.id, expression: drafts[row.id] })}>预览</Button><Button type="primary" disabled={!drafts[row.id]} onClick={() => submit("saveFieldTransform", { rowId: row.id, expression: drafts[row.id] })}>保存转换</Button></Flex> : <Empty description="暂无转换字段" />; break; }
+      case "transform": { const row = rows[0]; const Editor = TRANSFORM_EDITORS[text(props.block.props?.language, "javascript")] ?? CodeEditor; body = row ? <Flex vertical gap={10}><Editor value={drafts[row.id] ?? text(row.values?.[messageRef])} onChange={next => setDrafts({ [row.id]: next })} height="120px" placeholderHeight={120} /><Descriptions size="small" items={[{ key: "source", label: "输入", children: text(row.values?.[sourceRef], "-") }, { key: "preview", label: "预览", children: text(row.values?.[valueRef], "尚未预览") }]} /><Button onClick={() => submit("previewFieldTransform", { rowId: row.id, expression: drafts[row.id] })}>预览</Button><Button type="primary" disabled={!drafts[row.id]} onClick={() => submit("saveFieldTransform", { rowId: row.id, expression: drafts[row.id] })}>保存转换</Button></Flex> : <Empty description="暂无转换字段" />; break; }
       case "validation": { const errors = rows.filter(row => failed(row.values?.[statusRef])), warnings = rows.filter(row => /warning|warn|警告/i.test(text(row.values?.[statusRef]))); body = <Flex vertical gap={10}><Alert type={errors.length ? "error" : warnings.length ? "warning" : "success"} message={`${errors.length} 个错误，${warnings.length} 个警告`} /><List dataSource={rows} renderItem={row => <List.Item><List.Item.Meta title={text(row.values?.[titleRef], row.id)} description={text(row.values?.[messageRef])} /></List.Item>} /><Button type="primary" disabled={errors.length > 0} onClick={() => submit("startValidatedImport", { rowIds: rows.map(row => row.id) })}>开始导入</Button></Flex>; break; }
       case "duplicate": { const groups = [...new Set(rows.map(row => text(row.values?.[parentRef], "default")))]; body = <Flex vertical gap={10}>{groups.map(group => <Select key={group} style={{ width: "100%" }} placeholder={`${group}：选择保留记录`} value={selected[group]} onChange={value => setSelected(previous => ({ ...previous, [group]: value }))} options={rows.filter(row => text(row.values?.[parentRef], "default") === group).map(row => ({ value: row.id, label: text(row.values?.[titleRef], row.id) }))} />)}<Button type="primary" disabled={groups.some(group => !selected[group])} onClick={() => submit("resolveDuplicates", { winners: selected })}>提交去重方案</Button></Flex>; break; }
       case "merge": body = <Flex vertical gap={10}><Descriptions size="small" column={1} items={rows.map(row => ({ key: row.id, label: text(row.values?.[titleRef], row.id), children: text(row.values?.[valueRef], "-") }))} /><Alert type="info" message="当前仅为合并预览，尚未写入目标记录" /><Popconfirm title="确认按当前预览提交合并请求？" onConfirm={() => submit("confirmMerge", { rowIds: rows.map(row => row.id) })}><Button type="primary">确认合并</Button></Popconfirm></Flex>; break;

@@ -471,7 +471,8 @@
         "Input",
         "Segmented",
         "Select",
-        "Space"
+        "Space",
+        "SqlEditor"
       ],
       "phone": [
         "M.Button",
@@ -1322,6 +1323,8 @@
         "Flex",
         "Input",
         "List",
+        "MarkdownEditor",
+        "MarkdownView",
         "Space",
         "Tag",
         "Typography"
