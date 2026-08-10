@@ -353,12 +353,60 @@ class Test从生成好的应用抽骨架:
         assert {"type": "DataTable", "region": "main"} in [dict(b) for b in blocks]
 
     def test_没进layout的区块丢掉并留痕(self):
-        """真实页面上没位置的区块，抽进骨架等于凭空给它安一个——那正是手写预设的错法。"""
+        """真实页面上没位置的区块，抽进骨架等于凭空给它安一个——那正是手写预设的错法。
+
+        断言对着**行为**（丢了几个、留了几个），不对着措辞——上一版钉的是
+        "位置无从得知"那句原话，改一次文案就红，而它护的东西其实没变。
+        """
         model = _generated_model()
-        model["page"]["pages"][0]["blocks"].append({"id": "orphan", "type": "DataTable", "binding": {}})
+        model["page"]["pages"][0]["blocks"].append(
+            {"id": "orphan", "type": "ApprovalQueue", "binding": {}}
+        )
         out = extract_skeleton(model, template_id="po", industry="采购", when="员工提需求、经理审批")
-        assert any("orphan" in d["what"] or "位置无从得知" in d["why"] for d in out["dropped"])
+        kept = [b["type"] for b in out["skeleton"]["pages"][0].get("blocks") or []]
+        assert "ApprovalQueue" not in kept, "没位置的区块被抽进骨架了"
+        assert len(out["dropped"]) == 1, out["dropped"]
         assert out["problems"] == []
+
+    def test_栅格布局的区块要收下_只是没有region(self):
+        """真实模型多数用栅格（x/y/w/h + blockRef），**区域名客观上不存在**。
+
+        2026-08-11 第一份线上收割数据踩到：7 页里 5 页只有栅格，15 个区块被判掉
+        10 个，丢的恰好是那一趟最值钱的专用件。所以栅格里的区块要收，region 留空
+        ——知道该有什么，不假装知道摆哪。
+        """
+        model = _generated_model()
+        page = model["page"]["pages"][0]
+        page["layout"] = {
+            "grid": {
+                "desktop": [
+                    {"blockRef": "b1", "x": 0, "y": 0, "w": 4, "h": 4},
+                    {"blockRef": "b2", "x": 4, "y": 0, "w": 8, "h": 4},
+                ]
+            }
+        }
+        out = extract_skeleton(model, template_id="po", industry="采购", when="员工提需求、经理审批")
+        blocks = out["skeleton"]["pages"][0]["blocks"]
+        assert {b["type"] for b in blocks} == {"FilterBar", "DataTable"}, blocks
+        assert all("region" not in b for b in blocks), f"栅格没有区域名，不该编一个出来：{blocks}"
+        assert out["dropped"] == []
+        assert out["problems"] == [], out["problems"]
+
+    def test_没有region的区块仍然要能摆在这种页上(self):
+        """region 可选不等于判据取消——推荐一个门禁必拦的组合，模型照做还查不出为什么。"""
+        victim = next(
+            (
+                str(b["type"])
+                for b in EXPERIENCE_BLOCKS
+                if b.get("generationEnabled") and "wizard" not in (b.get("pageKinds") or [])
+            ),
+            None,
+        )
+        assert victim
+        skeleton = _skeleton(
+            pages=[{"id": "p1", "kind": "wizard", "purpose": "x", "blocks": [{"type": victim}]}]
+        )
+        assert any("没有任何合法区域" in p for p in validate_app_template(skeleton))
 
     def test_摆错位置的区块丢掉并留痕(self):
         """目录后来收紧了区域，老应用里那个摆法现在不合法——丢掉，别把坏骨架存进库。"""

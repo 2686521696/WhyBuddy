@@ -73,7 +73,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from .closure_relevance import goal_coverage
-from .schema_legal import PAGE_KINDS, block_placement_problem
+from .schema_legal import (
+    EXPERIENCE_BLOCK_BY_TYPE,
+    PAGE_KINDS,
+    block_placement_problem,
+)
 
 #: 骨架里**绝对不能出现**的键。出现就说明有人把成品塞进了骨架。
 #:
@@ -169,11 +173,25 @@ def validate_app_template(raw: Any) -> List[str]:
             if not isinstance(item, dict):
                 problems.append(f"{where}.blocks[{block_index}] 不是对象")
                 continue
-            problem = block_placement_problem(
-                str(item.get("type") or "").strip(),
-                kind,
-                str(item.get("region") or "").strip(),
-            )
+            block_type = str(item.get("type") or "").strip()
+            region = str(item.get("region") or "").strip()
+            if region:
+                problem = block_placement_problem(block_type, kind, region)
+            else:
+                # region 可选（见 `_region_of_block` 头注：栅格布局根本没有区域名）。
+                # 缺 region 时判据降一档但**不取消**：这个区块至少得能摆在这种页的
+                # 某个区域上。否则骨架会推荐一个门禁必拦的组合，而模型照做还查不出
+                # 为什么——`pageKindPresets` 的自检当初就是为这个而设的。
+                entry = EXPERIENCE_BLOCK_BY_TYPE.get(block_type)
+                if entry is None:
+                    problem = f"引用了未知区块 {block_type}"
+                elif not any(
+                    block_placement_problem(block_type, kind, r) is None
+                    for r in entry.get("allowedRegions") or []
+                ):
+                    problem = f"{block_type} 在 {kind} 页上没有任何合法区域"
+                else:
+                    problem = None
             if problem:
                 problems.append(f"{where}.blocks[{block_index}]: {problem}")
 
@@ -279,11 +297,26 @@ SEED_APP_TEMPLATES: tuple = _load_seed_templates()
 
 
 def _region_of_block(layout: Any, block_id: str) -> str:
-    """这个区块摆在哪个区域 —— 从 `page.layout` 反查。
+    """这个区块摆在哪个**命名区域** —— 从 `page.layout` 反查。查不到返回空串。
 
     生成出来的模型里，区块自己**不带**区域：`page.blocks[]` 只有 id/type/binding，
-    位置在 `page.layout` 里按「区域 → 区块 id 列表」记。所以抽骨架必须两边对着看。
-    `grid` / `mobile` 两个键不是区域（一个是栅格坐标、一个是手机档覆盖），跳过。
+    位置在 `page.layout` 里记。所以抽骨架必须两边对着看。
+
+    ## 空串不等于"这个区块没位置"（2026-08-11 用第一份真实收割数据修正）
+
+    `layout` 有两种记法，`grid` 那种**根本没有区域名**：
+
+        命名槽位  {"main": ["overview_workflow"], "aside": ["overview_activity"]}
+        栅格      {"grid": {"desktop": [{"blockRef": "mute_table", "x":0,"y":0,"w":8,"h":5}, …]}}
+
+    第一份从线上真应用收割的骨架里，7 个页面有 5 个只用了栅格——于是 15 个区块
+    被判掉 10 个，**丢掉的恰好是这一趟最值钱的那几个**（AlertTriagePanel、
+    AlertRoutingPolicy、MuteTimingSchedule、OnCallScheduleCalendar、
+    EscalationPolicyPanel，全是窄化之后才第一次进得来的专用件）。
+
+    栅格给的是 x/y/w/h，区域名**客观上不存在**，不是"没记"。所以正确处置不是
+    从坐标猜一个区域（那是发明），而是让骨架的 `region` 变成可选：
+    **知道这一页该有什么，不总是知道摆哪个槽位。**
     """
     if not isinstance(layout, dict):
         return ""
@@ -293,6 +326,29 @@ def _region_of_block(layout: Any, block_id: str) -> str:
         if any(str(ref).strip() == block_id for ref in refs):
             return str(slot)
     return ""
+
+
+def _positioned_block_ids(layout: Any) -> set:
+    """这一页里**确实被摆上去了**的区块 id —— 命名槽位与栅格都算。
+
+    跟 `_region_of_block` 分开是因为两个问题不同：那个问"摆在哪个区域"，
+    这个问"到底摆了没有"。没进任何一种 layout 的区块在真实页面上就是没位置，
+    抽进骨架等于凭空给它安一个——那正是"手写预设"的错法。
+    """
+    ids: set = set()
+    if not isinstance(layout, dict):
+        return ids
+    for slot, refs in layout.items():
+        if slot == "grid":
+            grid = refs if isinstance(refs, dict) else {}
+            for items in grid.values():
+                for item in items if isinstance(items, list) else []:
+                    ref = str((item or {}).get("blockRef") or "").strip()
+                    if ref:
+                        ids.add(ref)
+        elif isinstance(refs, list):
+            ids.update(str(r).strip() for r in refs if str(r).strip())
+    return ids
 
 
 def extract_skeleton(
@@ -349,23 +405,37 @@ def extract_skeleton(
             dropped.append({"what": page_id or "<无 id 的页>", "why": f"页面形态 '{kind}' 不在目录内"})
             continue
         layout = raw_page.get("layout")
+        positioned = _positioned_block_ids(layout)
         blocks: List[Dict[str, str]] = []
         for raw_block in raw_page.get("blocks") or []:
             if not isinstance(raw_block, dict):
                 continue
             block_id = str(raw_block.get("id") or "").strip()
             block_type = str(raw_block.get("type") or "").strip()
+            if block_id not in positioned:
+                # 命名槽位和栅格都没有它 —— 真实页面上就是没位置，抽进骨架等于
+                # 凭空给它安一个，那正是"手写预设"的错法。
+                dropped.append({"what": f"{page_id}.{block_type or block_id}", "why": "命名槽位与栅格里都没有它，页面上没有位置"})
+                continue
             region = _region_of_block(layout, block_id)
-            if not region:
-                # 没进 layout 的区块在真实页面上也没有位置，抽进骨架等于凭空
-                # 给它安一个——那正是"手写预设"的错法。
-                dropped.append({"what": f"{page_id}.{block_type or block_id}", "why": "没有出现在 page.layout 里，位置无从得知"})
-                continue
-            problem = block_placement_problem(block_type, kind, region)
-            if problem:
-                dropped.append({"what": f"{page_id}.{block_type}@{region}", "why": problem})
-                continue
-            blocks.append({"type": block_type, "region": region})
+            if region:
+                problem = block_placement_problem(block_type, kind, region)
+                if problem:
+                    dropped.append({"what": f"{page_id}.{block_type}@{region}", "why": problem})
+                    continue
+                blocks.append({"type": block_type, "region": region})
+            else:
+                # 栅格布局没有区域名（见 _region_of_block 头注）。收下类型、留空
+                # region——知道该有什么，不假装知道摆哪。
+                entry = EXPERIENCE_BLOCK_BY_TYPE.get(block_type)
+                legal = entry and any(
+                    block_placement_problem(block_type, kind, r) is None
+                    for r in entry.get("allowedRegions") or []
+                )
+                if not legal:
+                    dropped.append({"what": f"{page_id}.{block_type}", "why": f"{block_type} 在 {kind} 页上没有任何合法区域"})
+                    continue
+                blocks.append({"type": block_type})
         page: Dict[str, Any] = {
             "id": page_id,
             "kind": kind,
