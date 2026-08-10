@@ -565,7 +565,75 @@ def _assert_field_ref_type_ratchet(blocks: tuple) -> None:
         )
 
 
-EXPERIENCE_BLOCKS = _load_experience_blocks()
+def _promote_blocks_for_experiment(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """实验开关（2026-08-10，SLIDERULE_EXP_PROMOTE_BLOCKS=类型逗号分隔）。
+
+    把点名的区块整体提到目录**最前面**，其余保持原相对顺序。默认空 = 原样，
+    生产不受影响。
+
+    ## 这是在测什么
+
+    08-10 判定：区块选材的天花板不是 PROVEN LAYOUTS 那段祈使句造成的（摘掉
+    它，点名区块仍 0/5，最远名次只从 52 挪到 61），也不是"模型排斥冷门领域
+    件"（摘掉后它立刻选了第 61 名的告警专用件 AlertTriagePanel），也不是
+    描述缺失（深处区块的详情段都在）。剩下的唯一解释是**位置/可达性**。
+
+    这个开关就为钉死它：目录内容、题目、prompt 其余部分全不动，**只**把告警
+    类区块从 61~328 挪到最前。注意顺序一改，名单句和每个区块的详情段**一起**
+    跟着改（两者都从这个列表派生），这正是"把它挪到可达区"该有的样子。
+
+    ## 判定结果：位置效应成立
+
+    08-10 同题（告警值班与静默管理）两臂各 n=3，16 个告警件提到 1~16。
+    **两臂 prompt 字符数完全相同（141,797）**，类型集合、binding 表、
+    PAGE_KIND_PRESETS 全部逐一比对相同——唯一变量就是顺序：
+
+                          原样目录          告警件提到前面
+        告警件命中/趟      0, 0, 0           1, 4, 2
+        原名次最远/趟      33, 52, 34        279, 279, 279
+
+        OnCallScheduleCalendar（原第 279）   0/3  →  **3/3**
+        AlertTriagePanel      （原第 61）    0/3  →  2/3
+        AlertRoutingPolicy    （原第 63）    0/3  →  1/3
+        AlertRuleEditor       （原第 71）    0/3  →  1/3
+
+    原第 279 名的值班日历，原样目录下三趟一次没被选；挪到第 15 位之后
+    **三趟全选**。同样的字数、同样的描述、同样的题——只换了位置。
+
+    ## 但位置是必要条件，不是充分条件（这条别忘）
+
+    16 个提上来的只有 4 个真被用过，另外 12 个照样没人碰，其中包括：
+      · AlertSilenceForm（提到第 2 位）
+      · MuteTimingSchedule（提到第 5 位，名字就叫「静默时段计划」）
+    而题目里逐字点了「静默时段」。静默那一页三趟都还是 DataTable +
+    RecordFormDialog——正是 PROVEN LAYOUTS 里「workbench · 筛选+列表+新建」
+    那一档的原文配方。
+
+    另一头：泛用件被挤到 21~32 位（DataTable 6→22 / RecordFormDialog 15→31 /
+    RecordDetail 16→32）后照样每趟都被选，新第 50 位的 AuditTrail 也被选。
+
+    合起来读：**可达区大约是前 50 个"格子"，与里面装谁无关**。所以
+      1. 位置决定谁**进得了候选**（目录窄化要解决的就是这一层）；
+      2. 进了候选之后，preset 的形状仍然主导 workbench 页选材。
+    窄化能把 306 个死件救进候选，但别指望它自动让最对题的那个胜出——
+    第 2 层要另外处理（预设按题意选，而不是固定那 10 套）。
+    """
+    raw = str(os.getenv("SLIDERULE_EXP_PROMOTE_BLOCKS", "")).strip()
+    if not raw:
+        return blocks
+    wanted = [t.strip() for t in raw.split(",") if t.strip()]
+    by_type = {str(b["type"]): b for b in blocks}
+    missing = [t for t in wanted if t not in by_type]
+    if missing:
+        raise ValueError(
+            f"SLIDERULE_EXP_PROMOTE_BLOCKS 里有目录中不存在的类型: {missing}"
+        )
+    promoted = [by_type[t] for t in wanted]
+    rest = [b for b in blocks if str(b["type"]) not in set(wanted)]
+    return promoted + rest
+
+
+EXPERIENCE_BLOCKS = _promote_blocks_for_experiment(_load_experience_blocks())
 _assert_field_ref_type_ratchet(EXPERIENCE_BLOCKS)
 EXPERIENCE_BLOCK_TYPES = tuple(str(block["type"]) for block in EXPERIENCE_BLOCKS)
 EXPERIENCE_BLOCK_RENDERER_KEYS = tuple(
