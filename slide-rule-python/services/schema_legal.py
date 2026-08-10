@@ -428,7 +428,6 @@ def _load_page_kind_presets(blocks: tuple) -> Dict[str, tuple]:
         return {}
     if not isinstance(raw, dict):
         raise ValueError("experience_block_catalog.json pageKindPresets 必须是对象")
-    by_type = {str(b["type"]): b for b in blocks}
     legal_kinds = set(PAGE_KINDS)
     out: Dict[str, tuple] = {}
     for kind, presets in raw.items():
@@ -451,28 +450,45 @@ def _load_page_kind_presets(blocks: tuple) -> Dict[str, tuple]:
             if not isinstance(items, list) or not items:
                 raise ValueError(f"pageKindPresets.{kind}.{pid}.blocks 必须是非空数组")
             for it in items:
-                btype = str((it or {}).get("type") or "").strip()
-                region = str((it or {}).get("region") or "").strip()
-                entry = by_type.get(btype)
-                if entry is None:
-                    raise ValueError(f"pageKindPresets.{kind}.{pid} 引用了未知区块 {btype}")
-                if not entry.get("generationEnabled"):
-                    raise ValueError(
-                        f"pageKindPresets.{kind}.{pid} 推荐了未放开生成的区块 {btype}"
-                        "——模型照做会被门禁拦下"
-                    )
-                if kind not in entry.get("pageKinds", []):
-                    raise ValueError(
-                        f"pageKindPresets.{kind}.{pid}: {btype} 不允许出现在 {kind} 页"
-                        f"（允许 {entry.get('pageKinds')}）"
-                    )
-                if region not in entry.get("allowedRegions", []):
-                    raise ValueError(
-                        f"pageKindPresets.{kind}.{pid}: {btype} 不允许放在 {region}"
-                        f"（允许 {entry.get('allowedRegions')}）"
-                    )
+                problem = block_placement_problem(
+                    str((it or {}).get("type") or "").strip(),
+                    kind,
+                    str((it or {}).get("region") or "").strip(),
+                )
+                if problem:
+                    raise ValueError(f"pageKindPresets.{kind}.{pid}: {problem}")
         out[kind] = tuple(presets)
     return out
+
+
+def block_placement_problem(
+    block_type: str, page_kind: str, region: str
+) -> "str | None":
+    """「这个区块能不能摆在这种页的这个区域」—— 四条判据，一份实现。
+
+    2026-08-11 从 `_load_page_kind_presets` 里抽出来。抽的理由不是省行数：
+    应用级模板骨架（services/app_template.py）要问的是**同一个问题**，而这四条
+    判据全都是从目录派生的。各写一份的下场这个仓库刚吃过——`BLOCK_DEFINITIONS.uses`
+    就是第二份副本，316 个区块全部与实际不符，最后只能整个删掉。
+
+    返回 None 表示可以摆；返回一句话表示不能，且说清楚为什么。
+    """
+    entry = EXPERIENCE_BLOCK_BY_TYPE.get(block_type)
+    if entry is None:
+        return f"引用了未知区块 {block_type}"
+    if not entry.get("generationEnabled"):
+        return f"推荐了未放开生成的区块 {block_type}——模型照做会被门禁拦下"
+    if page_kind not in entry.get("pageKinds", []):
+        return (
+            f"{block_type} 不允许出现在 {page_kind} 页"
+            f"（允许 {entry.get('pageKinds')}）"
+        )
+    if region not in entry.get("allowedRegions", []):
+        return (
+            f"{block_type} 不允许放在 {region}"
+            f"（允许 {entry.get('allowedRegions')}）"
+        )
+    return None
 
 
 def _assert_field_ref_type_ratchet(blocks: tuple) -> None:
@@ -579,6 +595,10 @@ def _assert_field_ref_type_ratchet(blocks: tuple) -> None:
 #   详见 docs/block-narrowing-eval.md 与 services/block_narrowing.py 头注。
 EXPERIENCE_BLOCKS = _load_experience_blocks()
 _assert_field_ref_type_ratchet(EXPERIENCE_BLOCKS)
+#: type -> 目录条目。`block_placement_problem` 与模板骨架校验共用的索引。
+EXPERIENCE_BLOCK_BY_TYPE: Dict[str, Dict[str, Any]] = {
+    str(block["type"]): block for block in EXPERIENCE_BLOCKS
+}
 EXPERIENCE_BLOCK_TYPES = tuple(str(block["type"]) for block in EXPERIENCE_BLOCKS)
 EXPERIENCE_BLOCK_RENDERER_KEYS = tuple(
     str(block["rendererKey"]) for block in EXPERIENCE_BLOCKS
@@ -686,10 +706,89 @@ def experience_block_prompt_block(
 
     `blocks`：要注入的通电区块子集**及其顺序**。缺省 = 全量目录（原行为）。
     传子集就是"目录窄化"——由 services/block_narrowing.select_blocks 按题意挑，
-    顺序即注入顺序（靠前 = 可达性好，见那个模块的头注）。
+    顺序即注入顺序（靠前 = 可达性好）。
+    `extra_presets`：按题意派生的额外预设，追加在 authored 的 PROVEN LAYOUTS 之后。
 
-    ⚠️ 只影响**通电区块**那一档。下面 schema-only（渲染器没上线、永不可emit）
+    ⚠️ 窄化只影响**通电区块**那一档。下面 schema-only（渲染器没上线、永不可 emit）
     那份清单仍取全量：它是一条禁令，漏掉一个就等于默许模型去 emit 它。
+
+
+    ## ⚠️ 实测：这份目录里只有前 ~50 个区块是**可达**的（2026-08-10）
+
+    改这个函数之前先读这一段。它不是一句提醒，是两趟线上真跑量出来的。
+
+    ### 数据
+
+    把线上应用中心 10 个真实应用的模型全拉下来，统计 `page.blocks[].type`：
+
+        10 个应用，共 127 个区块实例 —— 只用到 **17 种**类型（目录 358 个）
+        这 17 种在本函数输出的名单里排第几：最小 1，最大 **38**，中位 15
+        第 39 名往后的 320 个区块，一次都没出现过
+
+    这有两种解释，当时分不清：(a) 名单太长，模型只读了开头；(b) 前 40 个本来
+    就是通用件，后面 318 个是垂直细分的，家谱应用本来就不该用 AlertRuleEditor。
+
+    ### 分辨这两者的那一趟
+
+    专门发了一道**明确属于某个垂直域**的题（告警值班与静默管理），题面逐字
+    点名了「静默时段」「按标签路由」「值班表按周排」「升级策略」。目录里恰好
+    有名字几乎一模一样的区块：
+
+        第  62 名  AlertSilenceForm        告警静默表单
+        第  63 名  AlertRoutingPolicy      告警路由策略
+        第  72 名  MuteTimingSchedule      静默时段计划
+        第 279 名  OnCallScheduleCalendar  值班日历
+        第 328 名  EscalationPolicyPanel   升级策略面板
+
+    结果：6 页 18 个区块 12 种类型，**上面这些一个都没用**，全换成了
+    DataTable / RecordFormDialog / ScheduleCalendar 这些前 30 名的通用件。
+    用到的 12 种位置是 4~52，最远 **第 52 名**。
+
+    **排除了 (b)**：逐个查过 `block_placement_problem`，这些告警区块在那一趟
+    真实生成的 6 个页面上**全都摆得进去**（AlertSilenceForm 有 4 个合法位置，
+    EscalationPolicyPanel 有 3 个）。不是契约挡的，是没被选中。
+
+    ### 机制
+
+    本函数的输出结构是：先一句 358 个名字连成的长句（1,864 tokens），
+    再是每个区块的详情段落，全长 53,627 tokens。详情段落的位置：
+
+        DataTable               第  5,023 token 处
+        AlertSilenceForm        第 17,184
+        OnCallScheduleCalendar  第 43,959
+        EscalationPolicyPanel   第 48,845
+
+    模型从那句长名单里挑，挑的是它读进去的前几十个。
+
+    ### 结论与后果
+
+    **306 个区块（85%）是死的**：有渲染器、有测试、有契约，每次生成还要花
+    5.3 万 token 描述它们，然后从来不被选中。
+
+    继续往目录里加区块只会让它更糟——名单更长、token 更多、模型照样挑前 50。
+    **新加的区块生下来就是死的。**
+
+    所以「按题意窄化注入」这件事的性质不是省 token（虽然确实能从 5.3 万降到
+    1 万以内），而是**让另外 306 个区块第一次有机会被选中**。省钱是副作用。
+
+    原始数据见 docs/区块可达性-2026-08-10实测.md。
+
+    ## 后续进展：上面这个问题已经在治（2026-08-11）
+
+    上面那段结论「窄化的性质是让另外 306 个区块第一次有机会被选中」已落地为
+    services/block_narrowing.py，并于 2026-08-11 翻为**默认开**。实测（两个覆盖域
+    各臂 n=6）：对题区块被选中数 0.67 → 3.25（Mann-Whitney 单尾精确 p=0.00004），
+    prompt 从 16 万字符降到 5.3 万。原第 328 名的 EscalationPolicyPanel 已能稳定
+    进入交付。完整报告见 docs/block-narrowing-eval.md。
+
+    两处需要跟上面的表述对齐：
+
+      · **"306 个是死的"稍有过头。** 后来把 control 臂 10 趟 136 次选中逐一统计，
+        来自原名次 >52 的有 **2 次（1.5%）**——是概率随名次陡降，不是硬边界。
+        窄化的理由不变（1.5% 对 85% 的错配），但别按"绝对够不到"去设计。
+      · **位置是必要条件不是充分条件。** 把对题件提到最前之后，16 个里仍只有 4 个
+        真被用过——第二层是 PROVEN LAYOUTS 预设的形状在主导，已由 extra_presets
+        这条通道处理（见 block_narrowing.derive_goal_presets）。
     """
     lines = [
         "EXPERIENCE BLOCK CATALOG (closed set):",
