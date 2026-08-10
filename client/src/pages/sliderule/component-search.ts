@@ -44,6 +44,7 @@ import {
   type BaseComponentDef,
 } from "./base-components/base-catalog";
 import catalogJson from "@experience-blocks";
+import { usageForBlock } from "./component-usage";
 
 /** 一条可被搜到的东西：区块或基础组件。 */
 export interface SearchDoc {
@@ -61,6 +62,8 @@ export interface SearchDoc {
   generic?: boolean;
   /** 能力面（filter / entityRows / series…）。基础组件各自成组，互不影响。 */
   family?: string;
+  /** 它是拿哪些零件搭的（基础组件中文名）。见 componentTermsFor。 */
+  parts: string;
 }
 
 /**
@@ -218,7 +221,7 @@ export const MAX_HITS = 60;
  *
  * 七句真查询一条没伤到，三句垃圾查询清零。
  */
-const IDENTITY_FIELDS: ReadonlySet<string> = new Set(["name", "label", "tags"]);
+const IDENTITY_FIELDS: ReadonlySet<string> = new Set(["name", "label", "parts", "tags"]);
 
 /** 这条结果是否命中了身份字段（而不是只蹭到说明里的散文）。 */
 function matchedIdentityField(match: Record<string, string[]>): boolean {
@@ -431,6 +434,86 @@ const CAPABILITY_CN: Record<string, string> = {
  * `labelOf` 保留是因为 registry 才是渲染时真正显示的那个名字，它变了应当
  * 立即生效，不必等同步。
  */
+const BASE_LABEL_BY_NAME = new Map(BASE_COMPONENTS.map(c => [c.name, c.label]));
+
+/**
+ * 区块**用到的基础组件**也进检索词（2026-08-10）。
+ *
+ * ## 为什么补这一层
+ *
+ * 实测「上传并预览合同」前五一个上传件都没有，而 `AttachmentPanel`（附件面板，
+ * 359 个区块里唯一做上传的那个）排第 9。拆开看：
+ *
+ *     「上传」           → AttachmentPanel 第 1
+ *     「附件」           → AttachmentPanel 第 1
+ *     「上传并预览合同」  → 第 9
+ *
+ * 搜索对**核心意图**是准的，是被整句话里的次要词拽偏了：「合同」经意图词表
+ * 展开成「记录 明细 表格 详情 关联」，把 entityRows 那 45 个区块整族拉了进来；
+ * 「预览」在目录涨到 359 之后有了 6 个竞争者（合并预览面板 / 记录变更预览…）。
+ *
+ * 而 `AttachmentPanel` 的中文名是「附件面板」，标签是从 capability / dataKinds
+ * 派生的「表格 列表 记录 明细」——**整条记录里没有"上传"两个字**，尽管它的
+ * 渲染器实打实用了 antd 的 `Upload`。
+ *
+ * ## 数据是现成的，只是没接
+ *
+ * `generated/block-component-usage.json` 由脚本从渲染器 JSX 生成，记着
+ * `AttachmentPanel → [Button, Card, Empty, List, Progress, Space, Tag,
+ * Typography, Upload]`，316 个区块都有。**"这个区块是拿哪些零件搭的"本身就是
+ * 最好的检索词**，而且是派生出来的，不是编的。
+ *
+ * 反方向早就接了：`baseDocs` 的 tags 里有"被哪些区块用了"。区块这一侧一直缺
+ * 这面镜子——搜「批量」能从 BatchActionBar 找到它用的零件，反过来却不行。
+ *
+ * 只取组件的**中文名**（Upload → 上传），不取英文名：英文名已经在 `name` 字段
+ * 里参与匹配，重复进 tags 只会让 `ProForm*` 这种前缀在一堆区块之间互相污染。
+ * 手机档组件（`M.` 前缀）与桌面档同名同译，取并集去重即可。
+ */
+/**
+ * 外壳零件不进检索词：用它的区块超过这个比例，它就不再是"这个区块干什么"的证据。
+ *
+ * 2026-08-10 统计（316 个区块用到 79 个组件）：
+ *
+ *     Card 94%   M.Card 93%   Empty 92%   M.ErrorBlock 90%
+ *     Button 59% M.Button 57% Flex 52%    Typography 44%
+ *     M.List 43% Space 42%    M.Grid 35%  Tag 31%
+ *     ───────────────────────── 断层 ─────────────────────────
+ *     Badge 28%  List 22%     M.Popup 18% Select 16%  …  Upload 1%
+ *
+ * 前 12 个是每张卡都要的骨架（容器、空态、按钮、排版），它们的中文名进了 tags
+ * 等于给**所有**区块都贴上「卡片 按钮 列表 排版」——BM25 的 IDF 会把这些词
+ * 的排序权重压到接近零，但 `IDENTITY_FIELDS` 那道**绝对判据**不看权重：
+ * 一句含「按钮」的查询会因此命中整个目录，把"搜没搜到"这个判断废掉。
+ *
+ * 0.3 落在数据自己的断层上（Tag 31% / Badge 28%），不是拍的。
+ */
+const SHELL_COMPONENT_RATIO = 0.3;
+
+const DISCRIMINATIVE_COMPONENTS: ReadonlySet<string> = (() => {
+  const catalog = catalogJson as { blocks: CatalogBlock[] };
+  const total = catalog.blocks.length || 1;
+  const used = new Map<string, number>();
+  for (const b of catalog.blocks) {
+    for (const name of usageForBlock(b.type).all) {
+      used.set(name, (used.get(name) ?? 0) + 1);
+    }
+  }
+  const keep = new Set<string>();
+  for (const [name, n] of used) if (n / total <= SHELL_COMPONENT_RATIO) keep.add(name);
+  return keep;
+})();
+
+function componentTermsFor(blockType: string): string[] {
+  const seen = new Set<string>();
+  for (const name of usageForBlock(blockType).all) {
+    if (!DISCRIMINATIVE_COMPONENTS.has(name)) continue;
+    const label = BASE_LABEL_BY_NAME.get(name);
+    if (label) seen.add(label);
+  }
+  return [...seen];
+}
+
 function blockDocs(labelOf: (type: string) => string | undefined): SearchDoc[] {
   return CATALOG.blocks.map(b => ({
     id: `block:${b.type}`,
@@ -451,6 +534,8 @@ function blockDocs(labelOf: (type: string) => string | undefined): SearchDoc[] {
     ]
       .filter(Boolean)
       .join(" "),
+    // 零件词单独成字段，权重高于 tags（见 componentTermsFor 上面那段）
+    parts: componentTermsFor(b.type).join(" "),
   }));
 }
 
@@ -464,6 +549,8 @@ function baseDocs(usesOf: (name: string) => string[]): SearchDoc[] {
     // 「被哪些区块用了」也进索引：搜「批量」能顺带找到 BatchActionBar 用到的
     // 那几个基础组件，这正是"区块 + 能力组件 + 基础组件一起给"的意思。
     tags: [c.group, c.source ?? "", c.platform, ...usesOf(c.name)].join(" "),
+    // 基础组件本身就是零件，不再拆
+    parts: "",
   }));
 }
 
@@ -480,14 +567,14 @@ export function buildIndex(
   const docs = [...blockDocs(labelOf), ...baseDocs(usesOf)];
   const mini = new MiniSearch<SearchDoc>({
     idField: "id",
-    fields: ["name", "label", "tags", "description"],
+    fields: ["name", "label", "parts", "tags", "description"],
     storeFields: ["id"],
     tokenize,
     // 查询侧不做额外处理：expandIntent 已经把意图词拼进去了，
     // 再 stem 一次只会把中文切坏。
     processTerm: t => t,
     searchOptions: {
-      boost: { name: 4, label: 4, tags: 2, description: 1 },
+      boost: { name: 4, label: 4, parts: 3, tags: 2, description: 1 },
       // 前缀匹配：打「Pro」要能出 ProForm*；打「筛」要能出「筛选」
       prefix: true,
       // OR：一句话里命中一个词就该出来，全中才出等于没法用自然语言问

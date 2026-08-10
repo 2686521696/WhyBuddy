@@ -854,10 +854,24 @@ def test_generation_contract_no_longer_exempts_monitor_pages_from_blocks():
     # KPI/趋势区块的禁令仍在，且明确写清它只管这两类，不是禁掉整个 page.blocks
     assert "Do NOT emit MetricGrid or TrendChart blocks there" in text
     assert "not a ban on page.blocks for overview pages" in text
-    # 放行名单从目录派生，且不含被 CHANNEL OWNERSHIP 挡掉的三类
+    # 放行名单从目录派生，且不含被 CHANNEL OWNERSHIP 挡掉的三类。
+    #
+    # ⚠ 按**逗号切出来的整名**比，不能用子串（2026-08-10 修）。
+    #
+    # 原来是 `assert banned not in seg`。目录涨到 359 个区块之后名单里出现了
+    # `ReleaseAdoptionTrendChart` —— 它**包含**子串 "TrendChart"，于是这条断言
+    # 判它违规。可它是一个独立区块，跟被禁的 TrendChart 毫无关系。
+    #
+    # 这是本仓记过一次的同一类错误（v5_capability_executor 的域识别注释：裸子串
+    # 让 "sla" 命中 translation / island / slack）。判据该是"名单里有没有这一项"，
+    # 不是"这串字符出现过没有"。
+    seg = text.split("monitor / dashboard pages are NOT exempt")[1].split("\n")[0]
+    allowed = {name.strip() for name in seg.replace(":", ",").split(",")}
     for banned in ("MetricGrid", "TrendChart", "DataTable"):
-        seg = text.split("monitor / dashboard pages are NOT exempt")[1].split("\n")[0]
-        assert banned not in seg, f"{banned} 不该出现在总览页的放行名单里"
+        assert banned not in allowed, (
+            f"{banned} 不该出现在总览页的放行名单里；"
+            f"名单里形近的有：{sorted(n for n in allowed if banned in n)}"
+        )
 
 
 def test_generation_contract_json_skeleton_exposes_blocks():

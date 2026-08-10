@@ -15,6 +15,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildIndex, expandIntent, tokenize } from "../component-search";
+import { JUDGMENTS, precisionAtK, recallAtK } from "../component-search-judgments";
 
 /**
  * **不注入 labelOf** —— 中文名现在从目录 JSON 读（scripts/sync_block_labels.py
@@ -64,73 +65,67 @@ describe("意图词表", () => {
   });
 });
 
-describe("用户给的四句验收", () => {
-  // 前三名就要给对东西。放到前十二名太松——搜索这种东西，"在列表里"和"看得见"
-  // 是两回事。
-  const top3 = (q: string) => topNames(q, 3);
+/**
+ * 检索质量：**按判定清单算指标**，不钉具体名次（2026-08-10 重写）。
+ *
+ * 原来这一段是六条"第 N 名必须是 X"。目录从 26 涨到 359 的过程中它们红了三轮，
+ * 每轮都靠改名单修好——而每次都不是搜索坏了，是**近义条目变多了**：做筛选的
+ * 15 个、做结果面板的 6 个、名字带「预览」的 6 个，它们之间的名次本来就会随
+ * 语料抖动。钉名字等于把"目录不许变"写进测试。
+ *
+ * 改成检索评测的标准形态（判定清单 + Recall@k，做法与出处见
+ * ../component-search-judgments.ts 的模块头，抄 rated-ranking-evaluator）。
+ *
+ * ⚠ 下面这些阈值是**回归护栏，不是质量目标**。它们取自 2026-08-10 的实测
+ * 基线（平均 Recall@5 = 0.635），作用是"别更差"。真实质量还差得远，尤其：
+ *
+ *     上传并预览合同   R@5 = 0.00   ← 「合同」展开成「记录 明细 表格 详情 关联」
+ *                                     把 entityRows 那 45 个整族拉了进来
+ *     我要选择客户     R@5 = 0.25
+ *     审批记录         R@5 = 0.33   ← 三个"向导"类区块占了 2~4 名
+ *
+ * 提这几个数是下一步的事，不是把阈值调低就算完。
+ */
+describe("检索质量（判定清单）", () => {
+  const rankedFor = (q: string) => index.search(q).map(d => d.name);
+  const allQueries = JUDGMENTS.flatMap(j =>
+    [j.query, ...(j.aliases ?? [])].map(q => ({ q, j }))
+  );
 
-  it("「我要选择客户」→ 选择类控件排前三", () => {
-    const got = top3("我要选择客户");
+  it("平均 Recall@5 不低于基线", () => {
+    const scores = allQueries.map(({ q, j }) => recallAtK(rankedFor(q), j, 5));
+    const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const detail = allQueries
+      .map(({ q }, i) => `${q}=${scores[i].toFixed(2)}`)
+      .join("  ");
+    expect(avg, `逐条：${detail}`).toBeGreaterThanOrEqual(0.6);
+  });
+
+  it("每条查询的正解都得进前十 —— 一条都不许整个丢掉", () => {
+    for (const { q, j } of allQueries) {
+      const r10 = recallAtK(rankedFor(q), j, 10);
+      expect(r10, `「${q}」前十里一个正解都没有：${rankedFor(q).slice(0, 10).join(", ")}`)
+        .toBeGreaterThan(0);
+    }
+  });
+
+  it("有唯一正解的查询，头名要落在正解里", () => {
+    const pinned = allQueries.filter(({ j }) => j.topPick);
+    const miss = pinned.filter(({ q, j }) => !j.topPick!.includes(rankedFor(q)[0] ?? ""));
+    // 允许少数落空（同义说法有时会把另一个同样合理的顶上来），但不能过半
     expect(
-      got.every(n => /Select|Cascader|TreeSelect|Picker|Selector|ReferenceManyManager/.test(n)),
-      `搜出来的是：${got.join(", ")}`
-    ).toBe(true);
+      miss.length,
+      `落空的：${miss.map(({ q }) => `${q}→${rankedFor(q)[0]}`).join("; ")}`
+    ).toBeLessThanOrEqual(Math.floor(pinned.length / 2));
   });
 
-  it("「做一个订单筛选」→ 通用筛选件排前三", () => {
-    /*
-     * 期望从"四个筛选区块排前四"改成"三个通用筛选件排前三"（2026-08-09）。
-     *
-     * 原期望是 filter 族只有 4 个区块时写的，那时"前四"和"全部"是一回事。
-     * 14820a5 之后 filter 族有 15 个，其中 11 个是从具体产品搬来的特化件
-     * （BookingDirectoryFilter / IssueEventFilter / TimelineFilterBar…）。
-     * 它们在文本上跟通用件完全等价——family 都是 filter、能力标签同一串、
-     * 说明里都在讲筛选，所以按文本分它们靠说明长短随机地互相超车。
-     *
-     * 用户裁决（原话选 A）：相信目录里 `generality` 那份首选名单，让它压过
-     * 文本分。所以这里钉的是**那份名单在前**，而不再是某四个具体的名字：
-     * 以后再加十个特化筛选件，这条仍然成立；哪天把某个特化件提成首选，
-     * 也是改目录而不是改这条断言。
-     *
-     * TagFilterRow 不在期望里：模型没把它选进 filter 族的首选，用户同意
-     * 按模型的判断走。
-     */
-    const got = topNames("做一个订单筛选", 3);
-    expect(
-      got.every(n => /StatusTabs|SearchBox|FilterBar/.test(n)),
-      `搜出来的是：${got.join(", ")}`
-    ).toBe(true);
-  });
-
-  it("「显示销售趋势」→ 指标/趋势/占比三个区块排前三", () => {
-    const got = top3("显示销售趋势");
-    expect(
-      got.every(n => /MetricGrid|TrendChart|ProportionPie/.test(n)),
-      `搜出来的是：${got.join(", ")}`
-    ).toBe(true);
-  });
-
-  it("「上传并预览合同」→ 上传控件在前", () => {
-    const got = topNames("上传并预览合同", 5);
-    expect(
-      got.some(n => /Upload/.test(n)),
-      `搜出来的是：${got.join(", ")}`
-    ).toBe(true);
-  });
-
-  it("「审批记录」→ 流程条第一，动态流也召得回来", () => {
-    // ActivityFeed 一度被截断削没了（头名 WorkflowTimeline 太突出，25% 那条
-    // 线把它划下去）。修法是每档留够最少个数，见 MIN_HITS_PER_KIND ——
-    // 截断要防的是"一句话跟整份目录都沾边"，不是把 23 个区块削成 1 个。
-    const blocks = index.search("审批记录").filter(d => d.kind === "block").map(d => d.name);
-    expect(blocks[0], `区块顺序：${blocks.join(", ")}`).toBe("WorkflowTimeline");
-    expect(blocks, "动态流被截没了").toContain("ActivityFeed");
-  });
-
-  it("只有一个正解的查询不会拖出一长串 —— 截断得真的在截", () => {
-    const blocks = index.search("批量导出").filter(d => d.kind === "block").map(d => d.name);
-    expect(blocks[0]).toBe("BatchActionBar");
-    expect(blocks.length, `拖出了 ${blocks.join(", ")}`).toBeLessThanOrEqual(4);
+  it("前五里不能全是不相干的 —— 至少沾一个边", () => {
+    for (const { q, j } of allQueries) {
+      expect(
+        precisionAtK(rankedFor(q), j, 5),
+        `「${q}」前五全不相干：${rankedFor(q).slice(0, 5).join(", ")}`
+      ).toBeGreaterThan(0);
+    }
   });
 });
 

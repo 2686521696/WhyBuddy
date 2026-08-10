@@ -252,8 +252,18 @@ def test_the_result_archetype_is_actually_open():
 
     menu = _block_menu()
     outcome_blocks = [b["type"] for b in menu if b["capability"] == "outcome"]
-    assert outcome_blocks == ["ResultPanel"], (
-        f"没有能填结果主体的区块（现有 outcome 能力的区块：{outcome_blocks}）"
+    # 钉的是「这个范式填得满」，不是「outcome 只准有一个区块」（2026-08-10 改）。
+    #
+    # 原来写的是 `== ["ResultPanel"]`。那是 outcome 族只有一个成员时写的，
+    # 于是**每加一个结果类区块这条就红一次**——目录涨到 359 之后它有 6 个成员
+    # （ValidationIssuePanel / ChangeImpactPanel / ImportValidationPanel /
+    # MergePreviewPanel / RecordChangePreview），而这些恰恰是这条用例想要的
+    # 结果：范式更填得满了。
+    #
+    # 精确名单当断言，等于把"目录不许变"写进了测试。改成钉性质：ResultPanel
+    # 这个基准实现必须在，且 outcome 族非空。
+    assert "ResultPanel" in outcome_blocks, (
+        f"没有能填结果主体的基准区块（现有 outcome 能力的区块：{outcome_blocks}）"
     )
 
     # 补充说明区收的是单据与流程 —— 复用现成区块，不在 ResultPanel 里重画
