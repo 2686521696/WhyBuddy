@@ -279,6 +279,62 @@ def _format_gate_findings(findings: List[Dict[str, Any]], limit: int = 10) -> st
     return "\n".join(lines)
 
 
+def _log_gate_findings(phase: str, findings: List[Dict[str, Any]], limit: int = 3) -> None:
+    """把结构闸拦下的东西打进容器日志。
+
+    ## 为什么要有这一条
+
+    2026-08-09 一趟真跑（黑灰产情报，22分52秒）里 `model.generate` 与
+    `model.regenerate` **严格成对出现 3 次**——首轮过闸率 0/3，光重生成就烧掉
+    445 秒（占全程 34%），最后把 1080 秒预算撑爆 228 秒，情报监控页的版式设计
+    直接 `skippedReason=deadline` 没做出来。
+
+    而**闸到底拦了什么，日志里一个字都没有**：`_format_gate_findings` 的结果只
+    喂给了模型，唯一的 print 在回喂本身抛异常那条分支上。于是这趟推演最贵、
+    最该被诊断的那一环，事后完全查不动——只能看出"重生成了"，看不出"为什么"。
+
+    这条日志不改任何行为，只是把已经算好、已经喂给模型的东西**同时说给人听**。
+
+    取前 3 条：真跑里 findings 常是同一类悬挂引用刷屏，前 3 条足够定性；
+    完整那份仍然按 limit=10 回喂给模型（`_format_gate_findings`）。
+    """
+    total = len(findings)
+    head = [
+        f"{(f.get('path') or '?')}: {(f.get('message') or '')}"[:160]
+        for f in findings[:limit]
+        if isinstance(f, dict)
+    ]
+    rest = f"，另有 {total - limit} 项" if total > limit else ""
+    print(f"[v5_capability_executor] 结构闸{phase}（{total} 项{rest}）：" + " | ".join(head))
+
+
+def _findings_all_sectioned(findings: List[Dict[str, Any]]) -> bool:
+    """每一条 finding 都点名了一个能单独重生的 section 吗？
+
+    ## 为什么要这么严
+
+    `regenerate_failed_sections` 只重生 `affectedSkill` 点到的 section，别的原样
+    保留。所以只要有**一条** finding 没点名（`affectedSkill` 为空），它反映的问题
+    在重生后依然存在——闸会再拦一次，白花一次调用。
+
+    实测这不是理论风险：`v5_model_gate` 里 108 处 `_finding(` 只有 63 处显式带
+    `skill=`，其余 45 处默认空串。也就是**四成多的裁决没有归属 section**。
+
+    所以判据是"全部点名"而不是"有点名的就上"：全点名时 section 级修复在信息上
+    与整包回喂等价（喂的 feedback 是同一份），可以放心走便宜的那条；只要有一条
+    没点名，就老老实实走全价。
+    """
+    from .v5_parallel_generate import _ALL_LLM_SECTIONS
+
+    known = set(_ALL_LLM_SECTIONS) | {"appbundle"}
+    if not findings:
+        return False
+    return all(
+        isinstance(f, dict) and str(f.get("affectedSkill") or "").strip() in known
+        for f in findings
+    )
+
+
 def _try_llm_generate_evidence(
     goal: str,
     llm_json_fn: Optional[Callable[[str], Any]],
@@ -344,6 +400,7 @@ def _try_llm_generate_evidence(
         # 仍然失败才落 MODEL_GATE_BLOCKED（fail-closed 不变）。
         try:
             findings = gate.get("findings") or []
+            _log_gate_findings("首轮拦截", findings)
             retry_model = None
             fallback_to_full_retry = llm_json_fn is not None
             if llm_json_fn is None:
@@ -360,7 +417,47 @@ def _try_llm_generate_evidence(
                         findings,
                         call_json=_parallel_json_call,
                     )
+                elif _findings_all_sectioned(findings):
+                    # 串行也走 section 级修复（2026-08-09 加）。
+                    #
+                    # 这条路以前只挂在并行分支下，而并行**默认是关的**
+                    # （SLIDERULE_PARALLEL_MODEL_GENERATION 缺省 "off"），
+                    # 所以线上每次过闸失败都按全价重生整份五系统模型。
+                    #
+                    # 真跑代价（黑灰产情报，2026-08-09）：3 次拦截 → 3 次全量
+                    # 重生成 445 秒，占整轮 34%，把 1080 秒预算撑爆 228 秒，
+                    # 监控页版式 skippedReason=deadline 没做出来。
+                    #
+                    # section 级修复本身**不依赖模型是并行生成的**：它要的只是
+                    # findings 上的 affectedSkill 和一个结构化 JSON 通道，两样
+                    # 串行都有。原来的门是保守，不是技术限制。
+                    #
+                    # 失败仍回落全价重试（下面 fallback_to_full_retry）——所以
+                    # 最坏情况与改前**逐字相同**，最好情况省掉一次整包重生。
+                    # 并行分支不给这个兜底是它自己的选择（重跑整个 DAG 会把已经
+                    # 成功的 section 全部重来），这里不动它。
+                    retry_model = regenerate_failed_sections(
+                        goal,
+                        model,
+                        findings,
+                        call_json=_parallel_json_call,
+                    )
+                    if retry_model is None:
+                        print(
+                            "[v5_capability_executor] section 级修复未产出，回落整包重生成"
+                        )
+                        fallback_to_full_retry = True
                 else:
+                    # 用户要的"至少说清楚为什么走了全价"。
+                    unnamed = sum(
+                        1
+                        for f in findings
+                        if not (isinstance(f, dict) and str(f.get("affectedSkill") or "").strip())
+                    )
+                    print(
+                        f"[v5_capability_executor] 走整包重生成："
+                        f"{len(findings)} 项裁决里有 {unnamed} 项没点名 section"
+                    )
                     fallback_to_full_retry = True
             if retry_model is None and fallback_to_full_retry:
                 feedback = _format_gate_findings(findings)
@@ -380,6 +477,11 @@ def _try_llm_generate_evidence(
             )
             if retry_gate.get("passed"):
                 model, gate = retry_model, retry_gate
+                # 成功也要留一行：只打"首轮拦截"的话，日志上过没过闸看不出来，
+                # 而"拦了但重试过了"和"拦了且重试也没过"的处置完全不同。
+                print("[v5_capability_executor] 结构闸回喂重试后已过闸")
+            else:
+                _log_gate_findings("回喂重试后仍未过", retry_gate.get("findings") or [])
     if not gate.get("passed"):
         # Gate blocked — do NOT inject evidence. Caller stays fail-closed.
         findings = gate.get("findings") or []

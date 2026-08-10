@@ -175,6 +175,25 @@ class CoverageGap(BaseModel):
     requiredCapabilityId: Optional[str] = None
     status: Literal["open", "resolved", "waived"] = "open"
     createdAt: str
+    # 下面两个字段 2026-08-09 补。**代码一直在写它们，模型一直没声明它们。**
+    #
+    # `slide_rule_coverage.reconcile_coverage` 判定缺口被填上时会写
+    # `updatedAt`（何时填上的）和 `resolvedByArtifactId`（被哪个产物填上的），
+    # 见那个文件里 `_set_gap(g, status="resolved", updatedAt=now)` 两处。
+    #
+    # 而 pydantic v2 对未声明字段的 setattr 是直接抛的，实测：
+    #     ValueError: "CoverageGap" object has no field "updatedAt"
+    # 老的 `_set_gap` 又把它 `except Exception: pass` 吞掉——于是**只有当
+    # 状态里装的是裸 dict 时这两个字段才写得进去**。真机日志里那串
+    # `PydanticSerializationUnexpectedValue: Expected 'CoverageGap'` 就是这个：
+    # 代码是靠"状态没被校验"才正常工作的，一旦哪天校验生效，"谁填上的这个缺口"
+    # 会无声无息地丢掉，不报错也不告警。
+    #
+    # 两个字段本来就在 TS 契约里（shared/blueprint/v5-reasoning-state.ts:307/311
+    # 的 `resolvedByArtifactId?` 与 `updatedAt?`）——补的是 Python 侧的漏，
+    # 不是新增契约。
+    resolvedByArtifactId: Optional[str] = None
+    updatedAt: Optional[str] = None
 
 class CoverageContract(BaseModel):
     id: str
