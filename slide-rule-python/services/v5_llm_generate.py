@@ -170,16 +170,7 @@ Rules:
   is a rejected deliverable, not a cosmetic warning.
 - Every aigc input/output field MUST be from datamodel; roleRefs from rbac.roles.
 - appbundle pageRef∈pages, workflowRef∈workflow, roleRefs∈roles, dataModelRefs∈entities.
-- appbundle.pageBindings[].workflowRef IS NOT A FREE LABEL and is NOT one per page.
-  It MUST be an id you already defined inside "workflow": the top-level workflow.id,
-  one of workflow.chains[].id, or one of the node ids in either. Nothing else is a
-  workflow id. It is OPTIONAL: set it only on a page the user actually drives that
-  workflow from, and OMIT it everywhere else. Never invent a per-page process name
-  and never copy the pageRef into it. Omitting the field is correct and costs
-  nothing; a value that is not one of those ids is a dangling reference that gets the
-  whole model rejected and regenerated. The one exception: a page with kind "wizard"
-  MUST be bound here with a real workflowRef, because the wizard's steps are read
-  from that workflow — a wizard without it cannot render.
+__WORKFLOWREF_RULE__
 - appbundle.landingPageRef is REQUIRED and MUST equal one page.pages[].id. Pick
   the page that best represents the user's main job when the app opens (for
   example a monitor/dashboard/calendar page), not a generic approval home.
@@ -340,6 +331,36 @@ Content-quality rules (checked by a deterministic regression gate):
 """
 
 
+#: appbundle.pageBindings[].workflowRef 的合法域说明（2026-08-10 加，治 B 族）。
+#
+# 单独提出来是为了能 A/B：`SLIDERULE_EXP_OMIT_WORKFLOWREF_RULE=1` 时整段不进
+# prompt。起因是加了这条之后，**新出现**了一族 chainRef 裁决——
+# `chainRef 'alert_lifecycle' not found in workflow.chains`，而 alert_lifecycle
+# 正是主链 id，也正是这条规则新告诉模型"算 workflow id"的那个东西。怀疑模型把
+# 这条外推到了 chainRef 上（chainRef 恰恰**不认**主链，见
+# _collect_workflow_chain_ids）。开关只为把"我引入的"和"本来就有的"分开。
+_WORKFLOWREF_RULE = """\
+- appbundle.pageBindings[].workflowRef IS NOT A FREE LABEL and is NOT one per page.
+  It MUST be an id you already defined inside "workflow": the top-level workflow.id,
+  one of workflow.chains[].id, or one of the node ids in either. Nothing else is a
+  workflow id. It is OPTIONAL: set it only on a page the user actually drives that
+  workflow from, and OMIT it everywhere else. Never invent a per-page process name
+  and never copy the pageRef into it. Omitting the field is correct and costs
+  nothing; a value that is not one of those ids is a dangling reference that gets the
+  whole model rejected and regenerated. The one exception: a page with kind "wizard"
+  MUST be bound here with a real workflowRef, because the wizard's steps are read
+  from that workflow — a wizard without it cannot render.
+  This paragraph is about workflowRef ONLY. Do NOT carry it over to a block's
+  props.chainRef: chainRef accepts ONLY a workflow.chains[].id — the top-level
+  workflow.id and node ids are NOT valid there."""
+
+
+def _omit_workflowref_rule() -> bool:
+    return str(
+        os.getenv("SLIDERULE_EXP_OMIT_WORKFLOWREF_RULE", "")
+    ).strip().lower() in ("1", "true", "yes", "on")
+
+
 def _render_schema_instruction(template: str) -> str:
     """E40.1：把契约模板里的 __TOKEN__ 占位换成真相源账本渲染的枚举串。
 
@@ -359,6 +380,7 @@ def _render_schema_instruction(template: str) -> str:
     stat_metrics = "|".join(list(METRIC_BARE) + [f"{p}{field_ref}" for p in STAT_METRIC_PREFIXES])
     return (
         template
+        .replace("__WORKFLOWREF_RULE__", "" if _omit_workflowref_rule() else _WORKFLOWREF_RULE)
         .replace("__FIELD_TONES__", enum_str("fieldTones"))
         .replace("__FIELD_FORMATS__", enum_str("numberFormats", "stringFormats"))
         .replace("__PAGE_KINDS__", enum_str("pageKinds"))
