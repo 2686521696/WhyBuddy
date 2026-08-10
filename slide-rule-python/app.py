@@ -73,6 +73,11 @@ from routes.account import router as account_router
 from routes.sliderule_full import router as sliderule_full_router
 from routes.agent_loop import router as agent_loop_router
 from routes.rag import router as rag_router
+# 只为触发 import 期自检：种子骨架若引用了未放开生成的区块、或把区块摆进不
+# 允许的区域，服务在这里就起不来。跟 schema_legal 里 bindingSchema / 页面预设
+# 的自检同一条纪律——坏账本不带病进 Prompt。本轮还没接进推演（下一轮做），
+# 但自检要从落地第一天就生效，否则"启动即失败"只是一句写在文档里的话。
+from services.app_template import SEED_APP_TEMPLATES as _SEED_APP_TEMPLATES  # noqa: F401
 from services.persistence import load_all
 from services.slide_rule_session import save_session
 from services.v5_full_driver import drive_full_v5_session

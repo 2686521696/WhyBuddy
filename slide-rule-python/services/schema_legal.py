@@ -427,7 +427,6 @@ def _load_page_kind_presets(blocks: tuple) -> Dict[str, tuple]:
         return {}
     if not isinstance(raw, dict):
         raise ValueError("experience_block_catalog.json pageKindPresets 必须是对象")
-    by_type = {str(b["type"]): b for b in blocks}
     legal_kinds = set(PAGE_KINDS)
     out: Dict[str, tuple] = {}
     for kind, presets in raw.items():
@@ -450,28 +449,45 @@ def _load_page_kind_presets(blocks: tuple) -> Dict[str, tuple]:
             if not isinstance(items, list) or not items:
                 raise ValueError(f"pageKindPresets.{kind}.{pid}.blocks 必须是非空数组")
             for it in items:
-                btype = str((it or {}).get("type") or "").strip()
-                region = str((it or {}).get("region") or "").strip()
-                entry = by_type.get(btype)
-                if entry is None:
-                    raise ValueError(f"pageKindPresets.{kind}.{pid} 引用了未知区块 {btype}")
-                if not entry.get("generationEnabled"):
-                    raise ValueError(
-                        f"pageKindPresets.{kind}.{pid} 推荐了未放开生成的区块 {btype}"
-                        "——模型照做会被门禁拦下"
-                    )
-                if kind not in entry.get("pageKinds", []):
-                    raise ValueError(
-                        f"pageKindPresets.{kind}.{pid}: {btype} 不允许出现在 {kind} 页"
-                        f"（允许 {entry.get('pageKinds')}）"
-                    )
-                if region not in entry.get("allowedRegions", []):
-                    raise ValueError(
-                        f"pageKindPresets.{kind}.{pid}: {btype} 不允许放在 {region}"
-                        f"（允许 {entry.get('allowedRegions')}）"
-                    )
+                problem = block_placement_problem(
+                    str((it or {}).get("type") or "").strip(),
+                    kind,
+                    str((it or {}).get("region") or "").strip(),
+                )
+                if problem:
+                    raise ValueError(f"pageKindPresets.{kind}.{pid}: {problem}")
         out[kind] = tuple(presets)
     return out
+
+
+def block_placement_problem(
+    block_type: str, page_kind: str, region: str
+) -> "str | None":
+    """「这个区块能不能摆在这种页的这个区域」—— 四条判据，一份实现。
+
+    2026-08-11 从 `_load_page_kind_presets` 里抽出来。抽的理由不是省行数：
+    应用级模板骨架（services/app_template.py）要问的是**同一个问题**，而这四条
+    判据全都是从目录派生的。各写一份的下场这个仓库刚吃过——`BLOCK_DEFINITIONS.uses`
+    就是第二份副本，316 个区块全部与实际不符，最后只能整个删掉。
+
+    返回 None 表示可以摆；返回一句话表示不能，且说清楚为什么。
+    """
+    entry = EXPERIENCE_BLOCK_BY_TYPE.get(block_type)
+    if entry is None:
+        return f"引用了未知区块 {block_type}"
+    if not entry.get("generationEnabled"):
+        return f"推荐了未放开生成的区块 {block_type}——模型照做会被门禁拦下"
+    if page_kind not in entry.get("pageKinds", []):
+        return (
+            f"{block_type} 不允许出现在 {page_kind} 页"
+            f"（允许 {entry.get('pageKinds')}）"
+        )
+    if region not in entry.get("allowedRegions", []):
+        return (
+            f"{block_type} 不允许放在 {region}"
+            f"（允许 {entry.get('allowedRegions')}）"
+        )
+    return None
 
 
 def _assert_field_ref_type_ratchet(blocks: tuple) -> None:
@@ -566,6 +582,10 @@ def _assert_field_ref_type_ratchet(blocks: tuple) -> None:
 
 EXPERIENCE_BLOCKS = _load_experience_blocks()
 _assert_field_ref_type_ratchet(EXPERIENCE_BLOCKS)
+#: type -> 目录条目。`block_placement_problem` 与模板骨架校验共用的索引。
+EXPERIENCE_BLOCK_BY_TYPE: Dict[str, Dict[str, Any]] = {
+    str(block["type"]): block for block in EXPERIENCE_BLOCKS
+}
 EXPERIENCE_BLOCK_TYPES = tuple(str(block["type"]) for block in EXPERIENCE_BLOCKS)
 EXPERIENCE_BLOCK_RENDERER_KEYS = tuple(
     str(block["rendererKey"]) for block in EXPERIENCE_BLOCKS
