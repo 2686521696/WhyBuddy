@@ -234,7 +234,13 @@ function matchedIdentityField(match: Record<string, string[]>): boolean {
 export const INTENT_LEXICON: Array<[RegExp, string]> = [
   // ── 选择关联记录 ──────────────────────────────────────────────────
   [/客户|供应商|厂商|商户|门店|员工|人员|部门|负责人|经办人/, "关联 选择 下拉 记录 引用"],
-  [/订单|单据|工单|合同|发票|凭证|申请单/, "记录 明细 表格 详情 关联"],
+  // 「合同」2026-08-10 从这条里摘掉。它和 订单/工单/发票 不是一类东西：
+  // 那几个是**一行一行的单据**，合同是**一份要传上来、打开看的文件**。
+  // 把它归到记录族的代价是实打实的——「上传并预览合同」整句话里，「合同」
+  // 二字把 100+ 个 entityRows 区块拉进前排，359 个区块里唯一做附件的
+  // AttachmentPanel 掉到第六；同一件事说成「上传附件」它就是第一名。
+  // 摘掉之后平均 Recall@5 从 0.627 升到 0.651（判定清单 17 条查询实测）。
+  [/订单|单据|工单|发票|凭证|申请单/, "记录 明细 表格 详情 关联"],
   [/选择|选取|挑选|指定|选个|选一个|选中/, "选择 下拉 单选 多选 级联 树"],
   // ── 筛选查询 ─────────────────────────────────────────────────────
   [/筛选|过滤|查询|检索|搜索|找出|按条件/, "筛选 查询 搜索 条件 过滤"],
@@ -523,17 +529,38 @@ function blockDocs(labelOf: (type: string) => string | undefined): SearchDoc[] {
     description: b.description ?? "",
     generic: b.generality === "generic",
     family: b.capability || b.family || "",
+    /**
+     * 标签词**去重**（2026-08-10）。
+     *
+     * 此前这里是直接拼接，而 `capability` 和 `dataKinds` 经常是同一个值
+     * （entityRows 那一族全是），于是同一个词被写进去两遍：
+     *
+     *     DataTable → "data entityRows 表格 列表 记录 明细
+     *                  表格 列表 记录 明细 entityRows workbench …"
+     *
+     * BM25 是按词频算分的，重复一遍就等于这条词的权重翻倍。受益的正好是
+     * 「记录/明细/表格/列表」这一族——359 个区块里最大的一族。后果在
+     * 「上传并预览合同」上看得最清楚：「合同」经意图词表展开成这四个词，
+     * 整族 entityRows 拿着双倍词频把前五占满，唯一做附件的 AttachmentPanel
+     * 掉到第六。同一句话去掉「合同」二字（「上传附件」）它就是第一名。
+     *
+     * 标签是一组名字，不是一份计数。两个字段碰巧取值相同，不构成"更相关"。
+     */
     tags: [
-      b.family,
-      b.capability,
-      CAPABILITY_CN[b.capability ?? ""] ?? "",
-      ...(b.dataKinds ?? []).map(k => CAPABILITY_CN[k] ?? k),
-      ...(b.dataKinds ?? []),
-      ...(b.pageKinds ?? []),
-      ...(b.allowedRegions ?? []),
-    ]
-      .filter(Boolean)
-      .join(" "),
+      ...new Set(
+        [
+          b.family,
+          b.capability,
+          CAPABILITY_CN[b.capability ?? ""] ?? "",
+          ...(b.dataKinds ?? []).map(k => CAPABILITY_CN[k] ?? k),
+          ...(b.dataKinds ?? []),
+          ...(b.pageKinds ?? []),
+          ...(b.allowedRegions ?? []),
+        ]
+          .flatMap(value => (value ?? "").split(/\s+/))
+          .filter(Boolean)
+      ),
+    ].join(" "),
     // 零件词单独成字段，权重高于 tags（见 componentTermsFor 上面那段）
     parts: componentTermsFor(b.type).join(" "),
   }));

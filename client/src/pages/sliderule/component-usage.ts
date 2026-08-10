@@ -13,6 +13,8 @@ type GeneratedUsage = {
   audit: {
     method: string;
     renderedButNotCataloged: string[];
+    /** 生成器读到的目录组件名，由 ssot-parity 对着 BASE_COMPONENTS 对账。 */
+    catalogComponents: string[];
     phoneEnabledBlocks: string[];
     desktopDeclarationMismatches: Record<
       string,

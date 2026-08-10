@@ -6006,11 +6006,30 @@ const DataFreshnessIndicatorRenderer: ExperienceBlockRenderer = ({ block, childr
   return <BlockShell block={block} testid="data-freshness-indicator"><Flex align="center" justify="space-between" gap={10} wrap><Space><Badge status={stale ? "warning" : "success"} /><div><Typography.Text strong>{String(row.values?.[sourceRef] ?? "数据源")}</Typography.Text><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>更新于 {String(row.values?.[updatedRef] ?? "-")} · {stale ? "可能延迟" : "数据新鲜"}</Typography.Text></div></Space><Button size="small" onClick={() => onAction?.("actionTrigger", { operation: "refreshFreshness", targets: targetIdsOf(block) })}>刷新</Button></Flex></BlockShell>;
 };
 
-const compactSummaryRenderer = (testid: string, fallback: string): ExperienceBlockRenderer => ({ block, children, entityRows, focus, fieldLabelOf }) => {
+/**
+ * 上下文摘要的读态（2026-08-10 改）。
+ *
+ * 此前这里是 `String(row.values?.[field] ?? "-")` —— 裸字符串。同一个字段，
+ * 旁边的 DataTable / RecordDetail / HeaderEntitySummary 走的是
+ * `fieldSemantic` + `renderCell`，于是同一份数据在同一个页面上有两副长相：
+ *
+ *     金额 1234567   →  摘要里「1234567」        表格里「¥1,234,567.00」
+ *     状态 pending   →  摘要里「pending」        表格里 一个橙色的「待处理」
+ *     日期 …T09:30Z  →  摘要里 ISO 原文          表格里「2026-08-10」
+ *
+ * 这不是风格差异，是**读态没走数据模型的语义声明**：枚举的 label 和 tone 明明
+ * 在模型里声明了，摘要却把取值 id 摊在用户脸上。14 个区块共用这个工厂，所以
+ * 一处写法差错出现 14 次。
+ *
+ * 改成和 HeaderEntitySummary 同一条路：ProDescriptions + renderCell。读侧和
+ * 写侧（ProFormMoney 那一档）由此共用同一个 valueType 判定，跟 ProComponents
+ * 把 ProField 作为 ProForm 读态的做法是同一条纪律。
+ */
+const compactSummaryRenderer = (testid: string, fallback: string): ExperienceBlockRenderer => ({ block, children, entityRows, focus, fieldLabelOf, fieldTypeOf, enumOptionsOf }) => {
   if (children != null) return <>{children}</>;
   const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const fields = fieldRefListOf(block, "fieldRefs"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
   if (!bound || !titleRef || !fields.length || !row) return <BlockShell block={block} testid={testid}><BlockEmpty hint={`${fallback}尚未绑定当前记录和摘要字段`} /></BlockShell>;
-  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? fallback)} testid={testid}><Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} items={fields.slice(0, 6).map(field => ({ key: field, label: fieldLabelOf?.(bound.entityRef, field) ?? field, children: String(row.values?.[field] ?? "-") }))} /></BlockShell>;
+  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? fallback)} testid={testid}><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options) }; })} /></BlockShell>;
 };
 const WorkItemContextSummaryRenderer = compactSummaryRenderer("work-item-context-summary", "工作项摘要");
 const DocumentContextSummaryRenderer = compactSummaryRenderer("document-context-summary", "文档摘要");
@@ -6798,8 +6817,8 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     DocumentCommandHeader: { render: DocumentCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Flex"], label: "文档操作页头", phone: true },
     EnvironmentStatusStrip: { render: EnvironmentStatusStripRenderer, uses: ["Badge", "Button", "Flex"], label: "环境状态条", phone: true },
     DataFreshnessIndicator: { render: DataFreshnessIndicatorRenderer, uses: ["Badge", "Button", "Typography", "Flex"], label: "数据新鲜度", phone: true },
-    WorkItemContextSummary: { render: WorkItemContextSummaryRenderer, uses: ["Descriptions"], label: "工作项上下文摘要", phone: true },
-    DocumentContextSummary: { render: DocumentContextSummaryRenderer, uses: ["Descriptions"], label: "文档上下文摘要", phone: true },
+    WorkItemContextSummary: { render: WorkItemContextSummaryRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "工作项上下文摘要", phone: true },
+    DocumentContextSummary: { render: DocumentContextSummaryRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "文档上下文摘要", phone: true },
     WorkItemDetailTabs: { render: WorkItemDetailTabsRenderer, uses: ["Tabs", "Badge"], label: "工作项详情页签", phone: true },
     QueryModeTabs: { render: QueryModeTabsRenderer, uses: ["Tabs", "Badge"], label: "查询模式页签", phone: true },
     WorkItemFilterBar: { render: WorkItemFilterBarRenderer, uses: ["Select", "Button", "Flex"], label: "工作项筛选栏", phone: true },
@@ -6826,8 +6845,8 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     AlertGroupCommandHeader: { render: AlertGroupCommandHeaderRenderer, uses: ["Typography", "Badge", "Tag", "Button", "Flex"], label: "规则组操作页头", phone: true },
     IncidentOwnershipStrip: { render: IncidentOwnershipStripRenderer, uses: ["Avatar", "Typography", "Button", "Flex"], label: "事故归属状态", phone: true },
     SyncScheduleStrip: { render: SyncScheduleStripRenderer, uses: ["Badge", "Typography", "Button", "Flex"], label: "同步计划状态", phone: true },
-    CycleContextSummary: { render: CycleContextSummaryRenderer, uses: ["Descriptions"], label: "周期上下文摘要", phone: true },
-    AlertGroupContextSummary: { render: AlertGroupContextSummaryRenderer, uses: ["Descriptions"], label: "规则组上下文摘要", phone: true },
+    CycleContextSummary: { render: CycleContextSummaryRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "周期上下文摘要", phone: true },
+    AlertGroupContextSummary: { render: AlertGroupContextSummaryRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "规则组上下文摘要", phone: true },
     EventTypeEditorTabs: { render: EventTypeEditorTabsRenderer, uses: ["Tabs", "Badge"], label: "事件类型编辑页签", phone: true },
     IncidentEvidenceTabs: { render: IncidentEvidenceTabsRenderer, uses: ["Tabs", "Badge"], label: "事故证据页签", phone: true },
     CycleFilterBar: { render: CycleFilterBarRenderer, uses: ["Select", "Button", "Flex"], label: "周期筛选栏", phone: true },
@@ -6840,8 +6859,8 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     UserCommandHeader: { render: UserCommandHeaderRenderer, uses: ["Typography", "Badge", "Button", "Popconfirm", "Flex"], label: "用户操作页头", phone: true },
     ConversationAssignmentStrip: { render: ConversationAssignmentStripRenderer, uses: ["Avatar", "Typography", "Button", "Flex"], label: "会话分配状态", phone: true },
     RealmStatusStrip: { render: RealmStatusStripRenderer, uses: ["Badge", "Typography", "Button", "Flex"], label: "Realm 状态", phone: true },
-    ConversationContextSummary: { render: ConversationContextSummaryRenderer, uses: ["Descriptions"], label: "会话上下文摘要", phone: true },
-    UserIdentitySummary: { render: UserIdentitySummaryRenderer, uses: ["Descriptions"], label: "用户身份摘要", phone: true },
+    ConversationContextSummary: { render: ConversationContextSummaryRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "会话上下文摘要", phone: true },
+    UserIdentitySummary: { render: UserIdentitySummaryRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "用户身份摘要", phone: true },
     ConversationDetailTabs: { render: ConversationDetailTabsRenderer, uses: ["Tabs", "Badge"], label: "会话详情页签", phone: true },
     UserSecurityTabs: { render: UserSecurityTabsRenderer, uses: ["Tabs", "Badge"], label: "用户安全页签", phone: true },
     ConversationInboxFilter: { render: ConversationInboxFilterRenderer, uses: ["Select", "Button", "Flex"], label: "收件箱会话筛选", phone: true },
@@ -6858,8 +6877,8 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     IssueInvestigationTabs: { render: IssueInvestigationTabsRenderer, uses: ["Tabs", "Badge"], label: "问题调查页签", phone: true },
     ConnectionFleetMetrics: { render: ConnectionFleetMetricsRenderer, uses: ["Statistic", "Button", "Flex"], label: "连接群组指标", phone: true },
     IssueImpactMetrics: { render: IssueImpactMetricsRenderer, uses: ["Statistic", "Flex"], label: "问题影响指标", phone: true },
-    DashboardQueryContext: { render: DashboardQueryContextRenderer, uses: ["Descriptions"], label: "Dashboard 查询上下文", phone: true },
-    ServiceOwnershipContext: { render: ServiceOwnershipContextRenderer, uses: ["Descriptions"], label: "服务归属上下文", phone: true },
+    DashboardQueryContext: { render: DashboardQueryContextRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "Dashboard 查询上下文", phone: true },
+    ServiceOwnershipContext: { render: ServiceOwnershipContextRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "服务归属上下文", phone: true },
     ReleaseHealthStrip: { render: ReleaseHealthStripRenderer, uses: ["Badge", "Statistic", "Button", "Flex"], label: "发布健康状态", phone: true },
     DashboardCommandHeader: { render: DashboardCommandHeaderRenderer, uses: ["Typography", "Button", "Tooltip", "Flex"], label: "Dashboard 操作页头", phone: true },
     DeploymentLatencyChart: { render: DeploymentLatencyChartRenderer, uses: ["ECharts"], label: "部署延迟趋势", phone: true },
@@ -6870,8 +6889,8 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     ReleaseAdoptionMetrics: { render: ReleaseAdoptionMetricsRenderer, uses: ["Statistic", "Flex"], label: "发布采用指标", phone: true },
     ClusterHealthStrip: { render: ClusterHealthStripRenderer, uses: ["Badge", "Button", "Flex"], label: "集群健康状态", phone: true },
     ReleaseEnvironmentStrip: { render: ReleaseEnvironmentStripRenderer, uses: ["Badge", "Button", "Flex"], label: "发布环境状态", phone: true },
-    DeploymentContextSummary: { render: DeploymentContextSummaryRenderer, uses: ["Descriptions"], label: "部署上下文摘要", phone: true },
-    ReleaseContextSummary: { render: ReleaseContextSummaryRenderer, uses: ["Descriptions"], label: "发布上下文摘要", phone: true },
+    DeploymentContextSummary: { render: DeploymentContextSummaryRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "部署上下文摘要", phone: true },
+    ReleaseContextSummary: { render: ReleaseContextSummaryRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "发布上下文摘要", phone: true },
     KubernetesResourceFilter: { render: KubernetesResourceFilterRenderer, uses: ["Select", "Button", "Flex"], label: "Kubernetes 资源筛选", phone: true },
     ReleaseEnvironmentFilter: { render: ReleaseEnvironmentFilterRenderer, uses: ["Select", "Button", "Flex"], label: "发布环境筛选", phone: true },
     DeploymentCommandHeader: { render: DeploymentCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Popconfirm", "Flex"], label: "部署操作页头", phone: true },
@@ -6894,11 +6913,11 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     WorkflowVersionStrip: { render: WorkflowVersionStripRenderer, uses: ["Badge", "Button"], label: "工作流版本状态", phone: true },
     WorkflowFailureDrawer: { render: WorkflowFailureDrawerRenderer, uses: ["Drawer", "List", "Button", "Empty"], label: "工作流失败诊断", phone: true },
     WorkflowCommandHeader: { render: WorkflowCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Popconfirm", "Flex"], label: "工作流操作页头", phone: true },
-    WorkflowContextSummary: { render: WorkflowContextSummaryRenderer, uses: ["Descriptions"], label: "工作流上下文摘要", phone: true },
+    WorkflowContextSummary: { render: WorkflowContextSummaryRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "工作流上下文摘要", phone: true },
     WorkflowExecutionFilter: { render: WorkflowExecutionFilterRenderer, uses: ["Select", "Button", "Flex"], label: "工作流执行筛选", phone: true },
     WorkflowControlBar: { render: WorkflowControlBarRenderer, uses: ["Badge", "Progress", "Button", "Popconfirm", "Flex"], label: "工作流执行控制栏", phone: true },
     RealmCommandHeader: { render: RealmCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Popconfirm", "Flex"], label: "Realm 操作页头", phone: true },
-    RealmSecurityContext: { render: RealmSecurityContextRenderer, uses: ["Descriptions"], label: "Realm 安全上下文", phone: true },
+    RealmSecurityContext: { render: RealmSecurityContextRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "Realm 安全上下文", phone: true },
     UserEventFilter: { render: UserEventFilterRenderer, uses: ["Select", "Button", "Flex"], label: "用户事件筛选", phone: true },
     CredentialLifecycleBar: { render: CredentialLifecycleBarRenderer, uses: ["Typography", "Button", "Flex"], label: "凭据生命周期栏", phone: true },
     PanelQueryLatencyChart: { render: PanelQueryLatencyChartRenderer, uses: ["ECharts"], label: "面板查询延迟", phone: true },
@@ -6911,8 +6930,8 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     ConnectorVersionStrip: { render: ConnectorVersionStripRenderer, uses: ["Badge", "Button", "Flex"], label: "连接器版本状态", phone: true },
     PanelCommandHeader: { render: PanelCommandHeaderRenderer, uses: ["Typography", "Tag", "Button", "Flex"], label: "面板操作页头", phone: true },
     ConnectionSchemaHeader: { render: ConnectionSchemaHeaderRenderer, uses: ["Typography", "Tag", "Button", "Flex"], label: "连接 Schema 页头", phone: true },
-    ExploreQueryContext: { render: ExploreQueryContextRenderer, uses: ["Descriptions"], label: "Explore 查询上下文", phone: true },
-    StreamSelectionSummary: { render: StreamSelectionSummaryRenderer, uses: ["Descriptions"], label: "数据流选择摘要", phone: true },
+    ExploreQueryContext: { render: ExploreQueryContextRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "Explore 查询上下文", phone: true },
+    StreamSelectionSummary: { render: StreamSelectionSummaryRenderer, uses: ["ProDescriptions", "Tag", "Typography"], label: "数据流选择摘要", phone: true },
     LogLabelFilter: { render: LogLabelFilterRenderer, uses: ["Select", "Button", "Flex"], label: "日志标签筛选", phone: true },
     StreamNamespaceFilter: { render: StreamNamespaceFilterRenderer, uses: ["Select", "Button", "Flex"], label: "数据流命名空间筛选", phone: true },
     ExploreQueryControlBar: { render: ExploreQueryControlBarRenderer, uses: ["Badge", "Button", "Flex"], label: "Explore 查询控制栏", phone: true },

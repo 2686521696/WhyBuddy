@@ -247,6 +247,28 @@ describe("体验区块渲染器状态 SSOT", () => {
     expect(unlinked.length + used.size).toBe(BASE_COMPONENT_NAMES.size);
   });
 
+  it("生成器看到的目录 = 运行时的目录 —— 覆盖率的分母不许各算各的", () => {
+    // 2026-08-10。这条是补一个**已经三次给出错误结论**的盲区。
+    //
+    // 覆盖率是「被用到的 / 目录总数」。分子分母都来自 generate-block-component-
+    // usage.mjs 用 AST 读出来的名单，而那份读法一直只认对象字面量：
+    //
+    //   · `formItem("ProFormText", …)` 工厂调用产的 32 条 —— 读不到
+    //   · `...[…].map(…)` 展开产的 10 条 ProField —— 读不到
+    //
+    // 218 条目录只读出 176 条。漏掉的 42 条不是"少统计一点"：`knownNames`
+    // 同时是"渲染了但目录里没有"这条护栏的判据，缺失的名字会让护栏把真实
+    // 存在的条目判成不存在，同时让它们在统计里永远是零引用。我据此报过
+    // 「ProForm 家族 36 个控件零引用」——那是假的，block-registry.tsx 一直
+    // 在渲染 ProFormText / ProFormDigit。
+    //
+    // 所以这里拿运行时真正 import 出来的 BASE_COMPONENTS 跟生成器的名单对账。
+    // 目录以后再多一种写法，红的是这条用例，而不是某个基于它下的结论。
+    expect([...usageJson.audit.catalogComponents].sort()).toEqual(
+      [...BASE_COMPONENT_NAMES].sort()
+    );
+  });
+
   it("手机档也走 surface —— 两个档位不许在这件事上分叉", () => {
     // 2026-08-08 连着踩两次的同一个坑：桌面那边把 surface 接好之后，
     // **手机档完全没被碰到**——它走的是 PhoneExperienceBlock 这套独立代码，

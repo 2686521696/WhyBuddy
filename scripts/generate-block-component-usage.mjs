@@ -78,6 +78,134 @@ function variableInitializer(source, variableName) {
   return undefined;
 }
 
+function objectLiteralName(object) {
+  const nameProperty = object.properties.find(
+    property =>
+      ts.isPropertyAssignment(property) && propertyName(property.name) === "name"
+  );
+  return nameProperty &&
+    ts.isPropertyAssignment(nameProperty) &&
+    ts.isStringLiteral(nameProperty.initializer)
+    ? nameProperty.initializer.text
+    : undefined;
+}
+
+function returnedObjectLiteral(fn) {
+  if (!fn?.body) return undefined;
+  if (ts.isParenthesizedExpression(fn.body) &&
+      ts.isObjectLiteralExpression(fn.body.expression))
+    return fn.body.expression;
+  if (ts.isObjectLiteralExpression(fn.body)) return fn.body;
+  return undefined;
+}
+
+/** `formItem("ProFormText", "文本框", …)` —— 名字是工厂的第几个入参，问工厂本人。 */
+function helperCallName(element, source) {
+  if (!ts.isCallExpression(element) || !ts.isIdentifier(element.expression))
+    return undefined;
+  const helper = variableInitializer(source, element.expression.text);
+  const object = returnedObjectLiteral(helper);
+  if (!object || !ts.isArrowFunction(helper)) return undefined;
+  const nameProperty = object.properties.find(
+    property =>
+      (ts.isPropertyAssignment(property) ||
+        ts.isShorthandPropertyAssignment(property)) &&
+      propertyName(property.name) === "name"
+  );
+  if (!nameProperty) return undefined;
+  const bound = ts.isShorthandPropertyAssignment(nameProperty)
+    ? nameProperty.name.text
+    : ts.isIdentifier(nameProperty.initializer)
+      ? nameProperty.initializer.text
+      : undefined;
+  const index = helper.parameters.findIndex(
+    parameter =>
+      ts.isIdentifier(parameter.name) && parameter.name.text === bound
+  );
+  const argument = index >= 0 ? element.arguments[index] : undefined;
+  return argument && ts.isStringLiteral(argument) ? argument.text : undefined;
+}
+
+function unwrapAs(expression) {
+  let current = expression;
+  while (
+    current &&
+    (ts.isAsExpression(current) || ts.isParenthesizedExpression(current))
+  )
+    current = current.expression;
+  return current;
+}
+
+/** `...([["money", …], …] as …).map(([vt]) => ({ name: `ProField.${vt}` }))` */
+function spreadMappedNames(element) {
+  if (!ts.isSpreadElement(element)) return [];
+  const call = unwrapAs(element.expression);
+  if (
+    !ts.isCallExpression(call) ||
+    !ts.isPropertyAccessExpression(call.expression) ||
+    call.expression.name.text !== "map"
+  )
+    return [];
+  const rows = unwrapAs(call.expression.expression);
+  const callback = call.arguments[0];
+  const object = ts.isArrowFunction(callback)
+    ? returnedObjectLiteral(callback)
+    : undefined;
+  if (!ts.isArrayLiteralExpression(rows) || !object) return [];
+
+  const parameter = callback.parameters[0]?.name;
+  const slots = ts.isArrayBindingPattern(parameter)
+    ? parameter.elements.map(binding =>
+        ts.isBindingElement(binding) && ts.isIdentifier(binding.name)
+          ? binding.name.text
+          : undefined
+      )
+    : [];
+  const nameProperty = object.properties.find(
+    property =>
+      ts.isPropertyAssignment(property) && propertyName(property.name) === "name"
+  );
+  if (!nameProperty || !ts.isPropertyAssignment(nameProperty)) return [];
+  const template = nameProperty.initializer;
+  if (!ts.isTemplateExpression(template)) return [];
+
+  const names = [];
+  for (const row of rows.elements) {
+    if (!ts.isArrayLiteralExpression(row)) continue;
+    let text = template.head.text;
+    let resolved = true;
+    for (const span of template.templateSpans) {
+      const slot = ts.isIdentifier(span.expression)
+        ? slots.indexOf(span.expression.text)
+        : -1;
+      const value = slot >= 0 ? row.elements[slot] : undefined;
+      if (!value || !ts.isStringLiteral(value)) {
+        resolved = false;
+        break;
+      }
+      text += value.text + span.literal.text;
+    }
+    if (resolved) names.push(text);
+  }
+  return names;
+}
+
+/**
+ * 目录里的组件名。
+ *
+ * 三种写法都要认（2026-08-10）：对象字面量、`formItem(…)` 工厂调用、以及
+ * `...[…].map(…)` 批量展开。此前只认第一种，于是 218 条目录只读出 176 条——
+ * 漏掉的 42 条正好是 32 个 ProForm 控件 + 10 个 ProField 只读字段。
+ *
+ * 漏读的后果不是少几行：`knownNames` 同时是「渲染了但目录里没有」这条护栏的
+ * 判据，也是 `memberQualified` 的查表依据。名单缺一块，护栏就会把真实存在的
+ * 条目当成不存在，统计里那些条目则永远是零引用。这已经是同一处度量在同一天
+ * 里第三次因为盲区给出错误结论了（前两次：自定义档、spread 登记的 43 个区块）。
+ *
+ * 所以除了补齐读法，还把读到的名单写进产物的 `audit.catalogComponents`，由
+ * ssot-parity 用运行时真正的 `BASE_COMPONENTS` 对账——下次再漏，红的是测试，
+ * 而不是某个我据此下的结论。
+ */
 function catalogNames() {
   const names = new Set();
   const directory = path.join(
@@ -91,18 +219,23 @@ function catalogNames() {
       throw new Error(`${variableName} array not found in ${file}`);
     }
     for (const element of initializer.elements) {
-      if (!ts.isObjectLiteralExpression(element)) continue;
-      const nameProperty = element.properties.find(
-        property =>
-          ts.isPropertyAssignment(property) &&
-          propertyName(property.name) === "name"
+      const name = ts.isObjectLiteralExpression(element)
+        ? objectLiteralName(element)
+        : helperCallName(element, source);
+      if (name) {
+        names.add(name);
+        continue;
+      }
+      const mapped = spreadMappedNames(element);
+      if (mapped.length > 0) {
+        for (const value of mapped) names.add(value);
+        continue;
+      }
+      throw new Error(
+        `${variableName} 里有一条读不出组件名的条目（${file}:${
+          source.getLineAndCharacterOfPosition(element.getStart()).line + 1
+        }）。目录多了一种写法就要在 catalogNames 里认，否则这条会静默漏掉。`
       );
-      if (
-        nameProperty &&
-        ts.isPropertyAssignment(nameProperty) &&
-        ts.isStringLiteral(nameProperty.initializer)
-      )
-        names.add(nameProperty.initializer.text);
     }
   }
   return names;
@@ -138,7 +271,25 @@ function importDeclarationOf(node) {
   return current && ts.isImportDeclaration(current) ? current : undefined;
 }
 
-function componentIdFromImport(identifier, symbol, device) {
+/**
+ * 成员档条目：目录里叫 `ProFormText.Password` / `ProField.money` /
+ * `StatisticCard.Group`，代码里是 `ProFormText` 这个导入名加一次属性访问。
+ * 只看导入名的话，这类条目**永远统计不到**——和 ProForm 折叠是同一种病。
+ */
+function memberQualified(identifier, base, knownNames) {
+  const parent = identifier.parent;
+  if (
+    parent &&
+    ts.isPropertyAccessExpression(parent) &&
+    parent.expression === identifier
+  ) {
+    const qualified = `${base}.${parent.name.text}`;
+    if (knownNames.has(qualified)) return qualified;
+  }
+  return base;
+}
+
+function componentIdFromImport(identifier, symbol, device, knownNames) {
   for (const declaration of symbol?.declarations ?? []) {
     if (!ts.isImportSpecifier(declaration)) continue;
     const importDeclaration = importDeclarationOf(declaration);
@@ -152,7 +303,8 @@ function componentIdFromImport(identifier, symbol, device) {
     const moduleName = importDeclaration.moduleSpecifier.text;
     // 自研组件是 pc 档（目录里 platform: "pc"），只在桌面侧计数。
     if (device === "desktop" && moduleName.endsWith(CUSTOM_COMPONENT_MODULE)) {
-      return declaration.propertyName?.text ?? declaration.name.text;
+      const custom = declaration.propertyName?.text ?? declaration.name.text;
+      return memberQualified(identifier, custom, knownNames);
     }
     const supported =
       device === "desktop"
@@ -161,21 +313,27 @@ function componentIdFromImport(identifier, symbol, device) {
     if (!supported) continue;
     const imported = declaration.propertyName?.text ?? declaration.name.text;
     if (imported === "theme") return undefined;
-    // ProComponents exposes field-level controls as separate React exports,
-    // while the catalog deliberately models them as one ProForm capability.
-    // The editable row/cell variants are the same catalog capability as the
-    // editable ProTable surface.
+    /**
+     * 此前这里把所有 `ProForm*` 折叠成一个 `ProForm`（2026-08-10 之前）。
+     * 注释里的理由是"目录刻意把它们建模成一个 ProForm 能力"——那个理由**过期
+     * 了**：目录现在逐个列了 `ProFormText`/`ProFormDigit`/… 36 条独立条目。
+     * 折叠的后果是这 36 条**结构上永远统计不到**：`block-registry.tsx` 明明
+     * 导入并渲染了 ProFormText、ProFormDigit，图里记的却是 ProForm，于是它们
+     * 在"零引用"名单里躺着——和自定义档那个盲区一模一样的错。
+     *
+     * 保留的只有 EditableProTable 这一条：CellEditorTable / RowEditorTable 是
+     * 本地包装件，目录里没有它们，指向的确实是同一个可编辑表格能力。
+     */
     const normalized =
-      device === "desktop"
-        ? imported.startsWith("ProForm") ||
-          imported === "CellEditorTable" ||
-          imported === "RowEditorTable"
-          ? imported === "CellEditorTable" || imported === "RowEditorTable"
-            ? "EditableProTable"
-            : "ProForm"
-          : imported
+      device === "desktop" &&
+      (imported === "CellEditorTable" || imported === "RowEditorTable")
+        ? "EditableProTable"
         : imported;
-    return device === "phone" ? `M.${normalized}` : normalized;
+    return memberQualified(
+      identifier,
+      device === "phone" ? `M.${normalized}` : normalized,
+      knownNames
+    );
   }
   return undefined;
 }
@@ -185,10 +343,10 @@ function isRuntimeDeclaration(declaration) {
   return file === RUNTIME_DIR || file.startsWith(`${RUNTIME_DIR}${path.sep}`);
 }
 
-function dependencyReader(program, device) {
+function dependencyReader(program, device, knownNames) {
   const checker = program.getTypeChecker();
 
-  return root => {
+  return (root, skip) => {
     const found = new Set();
     const visitedNodes = new Set();
     const visitedSymbols = new Set();
@@ -208,7 +366,7 @@ function dependencyReader(program, device) {
     };
 
     const visit = node => {
-      if (!node || visitedNodes.has(node)) return;
+      if (!node || visitedNodes.has(node) || skip?.has(node)) return;
       visitedNodes.add(node);
 
       if (ts.isIdentifier(node)) {
@@ -219,7 +377,7 @@ function dependencyReader(program, device) {
           found.add("ECharts");
 
         const symbol = checker.getSymbolAtLocation(node);
-        const component = componentIdFromImport(node, symbol, device);
+        const component = componentIdFromImport(node, symbol, device, knownNames);
         if (component) {
           found.add(component);
           return;
@@ -246,17 +404,233 @@ function unwrapObject(expression) {
   return undefined;
 }
 
-function desktopBlocks(program) {
+/**
+ * 展开 `BLOCK_DEFINITIONS` 里的批量登记（2026-08-10）。
+ *
+ * 359 个区块里有 43 个不是逐条写在定义表里的，而是四条 spread 批量塞进去的：
+ *
+ *     ...Object.fromEntries(Object.entries(DATA_GOVERNANCE_RENDERERS).map(
+ *       ([type, render]) => [type, { render, uses: [...], phone: true }]))
+ *
+ * 此前这份统计只认 `ts.isPropertyAssignment`，这 43 个**整体不在图里**——
+ * 包括上一个提交专门为了消化 Cascader / TreeSelect / Transfer 而加的三个区块。
+ * 于是那三个组件仍然显示成"零引用"，而"基础组件利用率"这个数字本身是低估的。
+ * 用一个漏掉 12% 区块的图去论证"哪些组件没人用"，结论不成立。
+ *
+ * 展开靠的是这四个模块共有的形状：一张 `configs` 字面量（键=区块类型），
+ * 一个工厂函数 `createXxxBlock(config)`，工厂体内 `switch (config.variant)`。
+ * 所以逐块依赖是**能分得开**的，不必给一组区块记同一坨组件：
+ *
+ *   某块的依赖 = 工厂里 switch 之外的公共部分（Card/Empty 这类外壳）
+ *              ∪ 它那个 variant 的 case 分支
+ *
+ * 配置向导那一组没有 variant——一个 policy 驱动的工厂，十几个区块画的确实是
+ * 同一棵树。那种情况退回整份工厂体，因为那就是事实。
+ */
+function objectEntriesArgument(node) {
+  let found;
+  const visit = current => {
+    if (found || !current) return;
+    if (
+      ts.isCallExpression(current) &&
+      ts.isPropertyAccessExpression(current.expression) &&
+      ts.isIdentifier(current.expression.expression) &&
+      current.expression.expression.text === "Object" &&
+      current.expression.name.text === "entries" &&
+      current.arguments.length > 0
+    ) {
+      found = current.arguments[0];
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function declaredValue(checker, expression) {
+  if (!expression || !ts.isIdentifier(expression)) return expression;
+  let symbol = checker.getSymbolAtLocation(expression);
+  if (symbol && symbol.flags & ts.SymbolFlags.Alias) {
+    const target = checker.getAliasedSymbol(symbol);
+    if (target !== symbol) symbol = target;
+  }
+  for (const declaration of symbol?.declarations ?? []) {
+    if (ts.isVariableDeclaration(declaration) && declaration.initializer)
+      return declaration.initializer;
+    if (ts.isFunctionDeclaration(declaration)) return declaration;
+  }
+  return expression;
+}
+
+/** 跟着 `Object.fromEntries(Object.entries(X).map(…))` 一路回溯到源头的对象字面量。 */
+function resolveKeyMap(checker, expression, depth = 0) {
+  if (!expression || depth > 6) return undefined;
+  const value = declaredValue(checker, expression);
+  if (ts.isObjectLiteralExpression(value)) return value;
+  const entries = objectEntriesArgument(value);
+  if (!entries || entries === expression) return undefined;
+  return resolveKeyMap(checker, entries, depth + 1);
+}
+
+/** 在渲染器映射的初始化式里找那个 `createXxx(config)` 工厂调用。 */
+function resolveFactory(checker, expression) {
+  const value = declaredValue(checker, expression);
+  let factory;
+  const visit = node => {
+    if (factory || !node) return;
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      const declaration = declaredValue(checker, node.expression);
+      if (
+        declaration &&
+        declaration !== node.expression &&
+        (ts.isFunctionDeclaration(declaration) ||
+          ts.isArrowFunction(declaration) ||
+          ts.isFunctionExpression(declaration))
+      ) {
+        factory = declaration;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(value);
+  return factory;
+}
+
+/**
+ * 把工厂体拆成「公共外壳」+「每个 variant 的分支」。
+ *
+ * 空 case 体沿用手机侧那条穿透规则：`case "a": case "b": …` 里 a 借 b 的依赖。
+ */
+function factoryDependencies(factory, readDependencies) {
+  const caseBlocks = [];
+  const collect = node => {
+    if (ts.isCaseBlock(node)) caseBlocks.push(node);
+    ts.forEachChild(node, collect);
+  };
+  collect(factory);
+
+  const shell = readDependencies(factory, new Set(caseBlocks));
+  const byVariant = new Map();
+  for (const caseBlock of caseBlocks) {
+    const clauses = caseBlock.clauses;
+    for (let index = 0; index < clauses.length; index += 1) {
+      const clause = clauses[index];
+      if (!ts.isCaseClause(clause) || !ts.isStringLiteral(clause.expression))
+        continue;
+      const group = [clause];
+      let cursor = index;
+      while (group.at(-1)?.statements.length === 0 && cursor + 1 < clauses.length) {
+        cursor += 1;
+        group.push(clauses[cursor]);
+      }
+      const existing = byVariant.get(clause.expression.text) ?? [];
+      byVariant.set(clause.expression.text, [
+        ...new Set([...existing, ...group.flatMap(node => readDependencies(node))]),
+      ]);
+    }
+  }
+  return { shell, byVariant, whole: readDependencies(factory) };
+}
+
+/** 配置条目上的 `variant: "schema"`，工厂靠它分支。没有就是整份工厂一个样。 */
+function variantOf(property) {
+  if (!ts.isObjectLiteralExpression(property.initializer)) return undefined;
+  const variant = property.initializer.properties.find(
+    item => ts.isPropertyAssignment(item) && propertyName(item.name) === "variant"
+  );
+  return variant &&
+    ts.isPropertyAssignment(variant) &&
+    ts.isStringLiteral(variant.initializer)
+    ? variant.initializer.text
+    : undefined;
+}
+
+function spreadBlocks(checker, spread, readDependencies) {
+  const keyMap = resolveKeyMap(checker, objectEntriesArgument(spread.expression));
+  if (!keyMap) return undefined;
+
+  const produced = spread.expression;
+  let renderExpression;
+  const findRender = node => {
+    if (renderExpression || !node) return;
+    if (ts.isPropertyAssignment(node) && propertyName(node.name) === "render")
+      renderExpression = node.initializer;
+    else if (
+      ts.isShorthandPropertyAssignment(node) &&
+      propertyName(node.name) === "render"
+    )
+      renderExpression = node.name;
+    else ts.forEachChild(node, findRender);
+  };
+  findRender(produced);
+  if (!renderExpression) return undefined;
+
+  // `X_RENDERERS[type]` 取下标基；`{ render }` 这种解构则渲染器映射就是被 entries 的那张表。
+  const rendererMap = ts.isElementAccessExpression(renderExpression)
+    ? renderExpression.expression
+    : objectEntriesArgument(produced);
+  const factory = rendererMap && resolveFactory(checker, rendererMap);
+  if (!factory) return undefined;
+
+  const { shell, byVariant, whole } = factoryDependencies(factory, readDependencies);
+  let phone = false;
+  const findPhone = node => {
+    if (phone || !node) return;
+    if (
+      ts.isPropertyAssignment(node) &&
+      propertyName(node.name) === "phone" &&
+      node.initializer.kind === ts.SyntaxKind.TrueKeyword
+    ) {
+      phone = true;
+      return;
+    }
+    ts.forEachChild(node, findPhone);
+  };
+  findPhone(produced);
+
+  const blocks = new Map();
+  for (const property of keyMap.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const blockType = propertyName(property.name);
+    if (!blockType) continue;
+    const variant = variantOf(property);
+    const dependencies =
+      variant && byVariant.has(variant)
+        ? [...new Set([...shell, ...byVariant.get(variant)])]
+        : whole;
+    blocks.set(blockType, [...dependencies].sort((a, b) => a.localeCompare(b)));
+  }
+  return { blocks, phone };
+}
+
+function desktopBlocks(program, knownNames) {
   const source = program.getSourceFile(DESKTOP_FILE);
   if (!source) throw new Error("desktop registry source not found in program");
-  const readDependencies = dependencyReader(program, "desktop");
+  const readDependencies = dependencyReader(program, "desktop", knownNames);
   const definitions = variableInitializer(source, "BLOCK_DEFINITIONS");
   const object = definitions && unwrapObject(definitions);
   if (!object) throw new Error("BLOCK_DEFINITIONS object not found");
 
+  const checker = program.getTypeChecker();
   const blocks = new Map();
+  const declared = new Map();
   const phoneEnabled = new Set();
   for (const property of object.properties) {
+    if (ts.isSpreadAssignment(property)) {
+      const expanded = spreadBlocks(checker, property, readDependencies);
+      if (!expanded) {
+        throw new Error(
+          `BLOCK_DEFINITIONS spread could not be expanded: ${property.getText().slice(0, 120)}`
+        );
+      }
+      for (const [blockType, dependencies] of expanded.blocks) {
+        blocks.set(blockType, dependencies);
+        if (expanded.phone) phoneEnabled.add(blockType);
+      }
+      continue;
+    }
     if (
       !ts.isPropertyAssignment(property) ||
       !ts.isObjectLiteralExpression(property.initializer)
@@ -274,6 +648,21 @@ function desktopBlocks(program) {
     )
       continue;
     blocks.set(blockType, readDependencies(renderProperty.initializer));
+    const usesProperty = property.initializer.properties.find(
+      item => ts.isPropertyAssignment(item) && propertyName(item.name) === "uses"
+    );
+    if (
+      usesProperty &&
+      ts.isPropertyAssignment(usesProperty) &&
+      ts.isArrayLiteralExpression(usesProperty.initializer)
+    ) {
+      declared.set(
+        blockType,
+        usesProperty.initializer.elements
+          .filter(ts.isStringLiteral)
+          .map(element => element.text)
+      );
+    }
     const phoneProperty = property.initializer.properties.find(
       item =>
         ts.isPropertyAssignment(item) && propertyName(item.name) === "phone"
@@ -285,10 +674,10 @@ function desktopBlocks(program) {
     )
       phoneEnabled.add(blockType);
   }
-  return { blocks, phoneEnabled };
+  return { blocks, declared, phoneEnabled };
 }
 
-function phoneBlocks(program, knownBlockTypes) {
+function phoneBlocks(program, knownBlockTypes, knownNames) {
   const phoneDirectory = path.dirname(PHONE_FILE);
   const sources = program.getSourceFiles().filter(source => {
     const file = path.resolve(source.fileName);
@@ -300,8 +689,68 @@ function phoneBlocks(program, knownBlockTypes) {
   });
   if (sources.length === 0)
     throw new Error("phone renderer sources not found in program");
-  const readDependencies = dependencyReader(program, "phone");
+  const readDependencies = dependencyReader(program, "phone", knownNames);
+  const checker = program.getTypeChecker();
   const blocks = new Map();
+
+  const merge = (blockType, dependencies) => {
+    const existing = blocks.get(blockType) ?? [];
+    blocks.set(
+      blockType,
+      [...new Set([...existing, ...dependencies])].sort((a, b) =>
+        a.localeCompare(b)
+      )
+    );
+  };
+
+  /**
+   * 手机档不是只有一个 switch（2026-08-10）。
+   *
+   * `PhoneExperienceBlock` 在进 switch 之前先串了六个「查表派发」：
+   *
+   *     const wizard = renderConfigurationWizardPhoneBlock(props);
+   *     if (wizard !== undefined) return wizard;
+   *
+   * 每个背后是一张 `Object.fromEntries(Object.entries(POLICIES).map(…))`。
+   * 此前这里只认 `case "X":`，于是这类区块的手机依赖**一个都读不到**。
+   *
+   * 六组里有五组恰好在各自的手机文件里也写了 switch，被 case 那条路顺带扫到，
+   * 于是盲区只在配置向导这一组露头——16 个向导查不到手机组件，被
+   * "phone-enabled 却没有手机组件" 那条护栏拦下。我一度据此断定这 16 个
+   * **没有手机渲染器**，还去摘了 `phone: true`。是错的：它们有
+   * PHONE_CONFIGURATION_WIZARD_RENDERERS，只是这份统计看不见。
+   *
+   * 所以按形状认这张表，而不是靠"碰巧还写了 switch"兜底。
+   */
+  const mappedRenderers = source => {
+    for (const statement of source.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        const keyMap = resolveKeyMap(
+          checker,
+          objectEntriesArgument(declaration.initializer)
+        );
+        const factory = resolveFactory(checker, declaration.initializer);
+        if (!keyMap || !factory) continue;
+        const { shell, byVariant, whole } = factoryDependencies(
+          factory,
+          readDependencies
+        );
+        for (const property of keyMap.properties) {
+          if (!ts.isPropertyAssignment(property)) continue;
+          const blockType = propertyName(property.name);
+          if (!blockType || !knownBlockTypes.has(blockType)) continue;
+          const variant = variantOf(property);
+          merge(
+            blockType,
+            variant && byVariant.has(variant)
+              ? [...shell, ...byVariant.get(variant)]
+              : whole
+          );
+        }
+      }
+    }
+  };
 
   const visit = node => {
     if (ts.isCaseBlock(node)) {
@@ -327,26 +776,59 @@ function phoneBlocks(program, knownBlockTypes) {
         const dependencies = new Set(
           nodes.flatMap(candidate => readDependencies(candidate))
         );
-        const existing = blocks.get(clause.expression.text) ?? [];
-        blocks.set(
-          clause.expression.text,
-          [...new Set([...existing, ...dependencies])].sort((a, b) =>
-            a.localeCompare(b)
-          )
-        );
+        merge(clause.expression.text, dependencies);
       }
     }
     ts.forEachChild(node, visit);
   };
-  for (const source of sources) visit(source);
+  for (const source of sources) {
+    mappedRenderers(source);
+    visit(source);
+  }
   return blocks;
+}
+
+/**
+ * `BLOCK_DEFINITIONS[type].uses` 声称用到的 vs 渲染器**真的**用到的。
+ *
+ * 这个字段本来就在产物里，但一直硬编码成 `{}` —— 一个永远为空的差异报告，
+ * 等于没有报告。于是 `uses` 可以随便写：CardGridList 声称 `"Image"`，渲染器
+ * 里一个 Image 都没有；14 个上下文摘要声称 `"Descriptions"`，改成
+ * ProDescriptions 之后声明也不会自己跟上。
+ *
+ * `uses` 不只是文档：组件库页面拿它给区块标"用了哪些技术组件"，提示词也从这
+ * 里取材。声明和实现对不上时，两边都在说假话，而且**没有任何东西会红**。
+ *
+ * 这里只报不拦：先让差异可见，逐个核对过再考虑收紧成门禁。
+ */
+function declarationDrift(actual, declared) {
+  const drift = {};
+  for (const [type, names] of declared) {
+    const rendered = new Set(actual.get(type) ?? []);
+    const claimed = new Set(names);
+    const notDetected = [...claimed].filter(name => !rendered.has(name));
+    const undeclared = [...rendered].filter(name => !claimed.has(name));
+    if (notDetected.length || undeclared.length) {
+      drift[type] = {
+        // 字段名沿用 component-usage.ts 里已有的契约：
+        // undeclared = 渲染了却没声明，notDetected = 声明了却没渲染。
+        undeclared: undeclared.sort((a, b) => a.localeCompare(b)),
+        notDetected: notDetected.sort((a, b) => a.localeCompare(b)),
+      };
+    }
+  }
+  return drift;
 }
 
 function buildUsage() {
   const program = createProject();
-  const { blocks: desktop, phoneEnabled } = desktopBlocks(program);
-  const phone = phoneBlocks(program, new Set(desktop.keys()));
   const knownNames = catalogNames();
+  const {
+    blocks: desktop,
+    declared,
+    phoneEnabled,
+  } = desktopBlocks(program, knownNames);
+  const phone = phoneBlocks(program, new Set(desktop.keys()), knownNames);
   const unknown = new Set();
   for (const values of [...desktop.values(), ...phone.values()]) {
     for (const value of values) if (!knownNames.has(value)) unknown.add(value);
@@ -382,8 +864,10 @@ function buildUsage() {
     audit: {
       method: "typescript-symbol-graph",
       renderedButNotCataloged: [...unknown].sort((a, b) => a.localeCompare(b)),
+      // 由 ssot-parity 对着运行时的 BASE_COMPONENTS 对账，见 catalogNames 的注释。
+      catalogComponents: [...knownNames].sort((a, b) => a.localeCompare(b)),
       phoneEnabledBlocks: [...phoneEnabled].sort((a, b) => a.localeCompare(b)),
-      desktopDeclarationMismatches: {},
+      desktopDeclarationMismatches: declarationDrift(desktop, declared),
     },
     blocks: Object.fromEntries(
       types.map(type => [
