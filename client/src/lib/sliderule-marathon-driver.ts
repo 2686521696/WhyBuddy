@@ -630,3 +630,59 @@ export async function driveMarathon(
 // Mode type re-exported from runtime for consistency
 import type { SlideRuleDriveMode } from "./sliderule-runtime";
 export type { SlideRuleDriveMode };
+
+/** SSE 流没拿回结果时，接下来该走哪条路。 */
+export type StreamFallbackVerdict =
+  /** 后端 run 还在跑：如实报中断，绝不本地重跑（书签还在，刷新可接回）。 */
+  | "report_interrupted"
+  /** 连 run 都没建起来：本地引擎兜底是正当降级。 */
+  | "local_fallback"
+  /** 用户自己停的 / 服务端已宣布终局：按正常收尾走，不算中断。 */
+  | "settled";
+
+/**
+ * 流断了之后该不该落本地引擎兜底。
+ *
+ * ## 为什么单独抽成纯函数
+ *
+ * 这是个**三岔判断**，而它原来长在 useSlideRuleSession 一个几百行的回调里，
+ * 测不动。照 `block-wall-order.ts` 的先例抽出来——判据是纯函数就有单测，
+ * 不必去搭 React hook + 动态 import + fetch 的架子。
+ *
+ * ## 判据：见没见过 runId
+ *
+ * 原来的条件是 `resumeRun && !result && !settled && !aborted`，只护住了
+ * **续播**分支。首发流中途断线时 `resumeRun` 是假、`settledReason` 也是 null
+ * （服务端好好的，压根没宣布终局），两道守卫全跳过，直接落进本地引擎——
+ * 正是那段注释明令禁止的"与后台 run 双开"。
+ *
+ * 实测（2026-08-10）：一趟推演的 POST 流在第 2 分钟被对端 reset
+ * （`curl: (56) Recv failure: Connection reset by peer`），而服务端一路跑到
+ * seq 1812 正常收尾、闭环 6/6。那一刻前端会把整轮在浏览器里重跑一遍，
+ * 与后台那个还活着的 run 各算各的。
+ *
+ * 正确的判据是**后端 run 到底建起来没有**，也就是 `onRunId` 触发过没有：
+ *
+ *   · 见过 runId（或本来就是续播）→ 后端有 run 在跑 → 报中断，别本地重跑；
+ *   · 没见过                      → run 压根没建起来（Python 后端没起 / 直接
+ *                                   500）→ 本地兜底是正当降级，那条路要留着。
+ *
+ * `aborted` 与 `settledReason` 优先于以上两条：用户自己按了停止、或服务端
+ * 已经宣布终局，都不该报"连接中断"。
+ */
+export function classifyStreamFallback(input: {
+  /** 这次走的是续播（GET /runs/{id}/stream）而不是首发 POST。 */
+  resuming: boolean;
+  /** 本次连接期间 onRunId 触发过（后端 run 已存在）。 */
+  sawRunId: boolean;
+  /** 流是否拿回了结果（拿回来就没这个问题）。 */
+  gotResult: boolean;
+  /** 服务端宣布的终局原因；null = 没宣布过。 */
+  settledReason: "complete" | "cancelled" | "error" | null;
+  /** 本地主动中止（用户点了停止）。 */
+  locallyAborted: boolean;
+}): StreamFallbackVerdict {
+  if (input.gotResult) return "settled";
+  if (input.locallyAborted || input.settledReason !== null) return "settled";
+  return input.resuming || input.sawRunId ? "report_interrupted" : "local_fallback";
+}
