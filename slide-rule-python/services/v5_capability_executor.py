@@ -592,6 +592,40 @@ def _try_llm_generate_evidence(
     return {a["id"].replace("llm-linkage-", ""): a for a in artifacts}
 
 
+def _cache_gate_passed_model(
+    state: V5SessionState, llm_result: Dict[str, Dict[str, Any]], instruction: str
+) -> None:
+    """模型一过闸并增强完，**当场**记进 modelVersions，别等它变成完整闭环。
+
+    这是 `_reuse_this_turn_model` 的写入侧——那把锁读的就是 modelVersions。
+    此前唯一的写入口是 `record_model_version`，它从闭环里抽模型，六段缺一就
+    什么都不记。于是"生成成功了、但这一轮没走到完整闭环"的情况下，一份刚花了
+    三分钟生成的模型直接蒸发，下一轮从零重来。
+
+    真机代价（黑灰产情报，2026-08-09）：收口跑三遍 387.7 + 370.3 + 355.0 秒，
+    后两轮产出的产物与第一轮**字节完全相同**，而 modelVersions 只有 1 条、
+    时间戳是最后一刻。725 秒（全程 55%）买了一份已经有的东西。
+
+    `llm_result[skill]["_model_section"]` 就是增强后模型的那一段（由
+    `model_to_linkage_artifacts` 挂上去的），拼回来即是同一份模型。
+
+    任何异常都吞掉：这是省时间的优化，它自己出问题绝不能把一次能正常跑完的
+    推演带崩——与 `_reuse_this_turn_model` 同一条纪律。
+    """
+    try:
+        from .v5_full_driver import record_model_snapshot
+
+        model = {}
+        for skill in REQUIRED_EVIDENCE_KEYS:
+            section = (llm_result.get(skill) or {}).get("_model_section")
+            if section is None:
+                return  # 缺段就不记 —— 半份模型复用出去比不复用更糟
+            model[skill] = section
+        record_model_snapshot(state, model, instruction)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[v5_capability_executor] 模型快照记录跳过：{str(exc)[:140]}")
+
+
 def _reuse_this_turn_model(state: V5SessionState, matches: Dict[str, Any]) -> bool:
     """本轮已生成过模型 → 直接拿它铺证据，跳过整条重生成。
 
@@ -688,6 +722,7 @@ def _build_per_skill_evidence(
         if llm_result is not None:
             for skill in REQUIRED_EVIDENCE_KEYS:
                 matches[skill] = llm_result[skill]
+            _cache_gate_passed_model(state, llm_result, goal)
         else:
             # D2 修复（2026-07-27 迭代体验审查）：精修失败（LLM 网关抖动/
             # 输出截断/过不了闸）不得摧毁已收口的 6/6 闭环——此前六段证据
@@ -745,6 +780,7 @@ def _build_per_skill_evidence(
                 existing = matches.get(skill)
                 if existing is None or "_model_section" not in existing:
                     matches[skill] = llm_result[skill]
+            _cache_gate_passed_model(state, llm_result, goal)
     elif not blocked_signal and recognized_domain is None and (goal or "").strip():
         # 新颖意图但 LLM 生成未开启 → 注定 0/6。把原因留痕给 blocker，
         # 否则用户只看到笼统的 closure blocked，无从排查。

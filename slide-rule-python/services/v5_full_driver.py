@@ -729,6 +729,43 @@ def record_model_version(state: "V5SessionState", publish_closure, instruction: 
     model = extract_model_from_closure(publish_closure)
     if model is None:
         return
+    record_model_snapshot(state, model, instruction)
+
+
+def record_model_snapshot(
+    state: "V5SessionState", model: "Dict[str, Any]", instruction: str
+) -> None:
+    """直接拿一份模型记版本 —— 不要求它先变成一个完整闭环。
+
+    ## 为什么要有这条不经过闭环的入口
+
+    2026-08-09 线上真跑（黑灰产情报，22 分 52 秒）里，收口能力跑了**三遍**：
+
+        loop-1  387.7s   loop-2  370.3s   loop-3  355.0s
+
+    后两轮 725 秒（占全程 55%）产出的收口产物与第一轮**字节完全相同**
+    （各 3089 字节）。而 `modelVersions` 从头到尾只有 1 条，`createdAt` 是
+    18:38:31——最后一轮结束那一刻。也就是说前两轮生成的模型**一份都没留下**，
+    每一轮都从零重新生成（172.6s / 208.7s / 165.8s）。
+
+    成因是缓存点挂错了地方：`record_model_version` 从闭环里抽模型，而
+    `extract_model_from_closure` 要求 perSkillEvidence 六段齐全，缺一段就返回
+    None。轮次没走到完整闭环 → 什么都不记 → 下一轮 `reusable_model_for_turn`
+    读到空 → 全价重来。
+
+    **最贵的产物（模型），只在最便宜的条件（闭环齐全）满足时才进缓存。**
+    那把锁在最需要它的场景里恰好用不上。
+
+    ## 记的必须是"增强之后"的模型
+
+    `_reuse_this_turn_model` 命中时省掉的是一整套：模型生成 + 二段区块生成
+    （freeform.total）+ 首页设计（monitor.total）。能省掉后两样，前提是缓存里
+    那份**已经**含 freeformOverview / chartColors。所以调用点定在
+    `_try_llm_generate_evidence` 增强完、`model_to_linkage_artifacts` 之后，
+    与闭环那条路存进去的是同一份东西。
+    """
+    if not isinstance(model, dict) or not model:
+        return
     versions = list(getattr(state, "modelVersions", None) or [])
     if versions:
         last = versions[-1].get("model") if isinstance(versions[-1], dict) else None
