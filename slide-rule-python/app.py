@@ -100,6 +100,42 @@ def _llm_readiness() -> dict:
     }
 
 
+def _narrowing_readiness() -> dict:
+    """目录窄化的就绪度 —— **它是一个会静默失效的功能，所以必须能远程看出来**。
+
+    2026-08-11 连着踩了两次同一个形状：
+
+      · `rank_bm25` 漏在 requirements.txt 外，而 block_narrowing 对它 fail-open
+        （缺了就退回全量目录）。部署上去窄化整个不生效，而 health、日志、
+        接口返回值**没有任何一处看得出来**。
+      · 修完之后要验证线上到底装没装，发现除了「登服务器敲一行 pip」没有别的
+        办法——一个每次生成都在用的功能，它的开关状态在外面完全不可观测。
+
+    窄化不是可有可无的增强：目录里可达的只有前 ~50 个格子，剩下的靠它才够得着
+    （对题件被选中 0.67 → 3.25，p=0.00004）。这种"没生效也不报错"的功能，
+    健康探针里必须有它的位置——否则每次部署都要靠人记得去查。
+
+    照 `_llm_readiness` 同一个思路：不暴露实现细节，只回答"它现在能不能干活"。
+    """
+    from services.block_narrowing import narrowing_enabled, narrowing_limit
+
+    try:
+        import rank_bm25  # noqa: F401
+
+        scorer = True
+    except Exception:  # noqa: BLE001
+        scorer = False
+    enabled = narrowing_enabled()
+    return {
+        "enabled": enabled,
+        # 依赖装没装。enabled=true + scorerPresent=false = 开关开着但实际退回全量，
+        # 也就是"以为在窄化其实没有"——这一条就是给那个状态用的。
+        "scorerPresent": scorer,
+        "effective": bool(enabled and scorer),
+        "limit": narrowing_limit(),
+    }
+
+
 def _turn_seq_for_drive_full(value) -> int:
     if not value:
         return 0
@@ -251,6 +287,9 @@ async def health():
         # LLM 配置就绪度（无密钥明文）：keyPresent=false + generateEnabled=true
         # 意味着新颖意图必然 blocked 0/6 —— 让 health 一眼可诊断。
         "llm": _llm_readiness(),
+        # 目录窄化就绪度：enabled=true 而 scorerPresent=false 意味着"开关开着但
+        # 实际退回全量目录"——那是个不报错、不留日志的失效态，只能靠这里看出来。
+        "blockNarrowing": _narrowing_readiness(),
         "readiness": "ready",
         "probes": {
             "liveness": "/health",
