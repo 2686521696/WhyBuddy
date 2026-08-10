@@ -170,11 +170,11 @@ describe("体验区块渲染器状态 SSOT", () => {
       catalogTypes
     );
 
-    // uses 就是原来那个 impl。散文（"antd Table"）换成了真名字数组，于是
-    // "这个区块背后是哪些基础组件"从给人看的注释变成了可校验的数据——下一条
-    // 用例正是拿它去比对基础组件库的。
+    // "这个区块背后是哪些基础组件"由 block-component-usage.json 回答——它从
+    // 渲染器 AST 生成，不再是注册表上手写的 uses（那个字段 2026-08-10 删了，
+    // 理由见 BlockDefinition 的注释：316 个区块的声明全部与实际渲染对不上）。
     //
-    // 唯一允许 uses 为空的是**不放开生成**的那个：FreeformInsight 直接把
+    // 唯一允许一个基础组件都追不到的是**不放开生成**的那个：FreeformInsight 直接把
     // freeformContent 那棵树渲染成 DOM，不是拿基础组件搭的，所以它没有第一
     // 层。判据用的是 generationEnabled 而不是写死名字——真放开它生成的那天，
     // 这条会立刻要求它说清自己用了什么。
@@ -183,9 +183,12 @@ describe("体验区块渲染器状态 SSOT", () => {
     );
     for (const [type, def] of Object.entries(BLOCK_DEFINITIONS)) {
       if (!rawDom.has(type)) {
+        // 2026-08-10：判据从"有没有写 uses"改成"依赖图里追到了没有"。
+        // 写了什么只能证明有人打过字；追到了才说明它真是拿基础组件搭的。
+        const traced = usageJson.blocks[type];
         expect(
-          def.uses?.length,
-          `${type} 缺 uses（说不出它是用哪些基础组件搭的）`
+          [...(traced?.desktop ?? []), ...(traced?.phone ?? [])].length,
+          `${type} 在依赖图里一个基础组件都没有（要么真没用，要么生成器没追到）`
         ).toBeGreaterThan(0);
       }
       expect(def.label, `${type} 缺 label（中文名）`).toBeTruthy();
@@ -211,24 +214,26 @@ describe("体验区块渲染器状态 SSOT", () => {
     );
   });
 
-  it("区块声称用到的基础组件必须真实存在 —— 三层链路的第一环不许断", () => {
+  it("区块真正渲染的基础组件必须都在目录里 —— 三层链路的第一环不许断", () => {
     // 2026-08-08 用户把三层说清楚了：「基础组件相当于底层能力，就是素材；
     // 区块就是区域……区块它也是基础组件组装的。流程就是先有基础组件，再组装
     // 成区块，再组装成模板。」
     //
-    // 此前这层关系是一个手写字符串（impl: "antd Table"），是给人看的散文。
-    // 后果很实在：用户问「AI 组装真的是从这 130 多个组件里组装的吗」，
-    // **答不上来**——只能去翻每个渲染器的 import。
+    // 2026-08-10 换判据。此前这条读的是注册表上手写的 `uses` 声明，只能校验
+    // "写下来的名字拼对了没有"。而给 316 个区块逐条对账的结果是：**全部**与
+    // 实际渲染的对不上——84 条声称用了却没渲染，974 条渲染了却没声称。校验
+    // 一份没人读、也没人维护的名单，抓不到任何真实问题。`uses` 已删除。
     //
-    // 换成真名字数组之后这条用例才有意义：写错一个名字当场红。建这层关系时
-    // 就靠它抓出两个漏的（StatisticCard 与 ECharts：区块真在用，基础组件库
-    // 里却没有），账当时是对不上的。
-    const baseNames = BASE_COMPONENT_NAMES;
-    for (const [type, def] of Object.entries(BLOCK_DEFINITIONS)) {
-      for (const u of def.uses) {
-        expect(baseNames.has(u), `${type} 声称用到「${u}」，但基础组件库里没有这个`).toBe(
-          true
-        );
+    // 现在读从渲染器 AST 生成的依赖图，断言的是"真的渲染了这个组件，而它在
+    // 目录里"。生成器本身也会因为 renderedButNotCataloged 非空而直接报错，
+    // 这里是同一件事在测试侧的兜底。
+    expect(usageJson.audit.renderedButNotCataloged).toEqual([]);
+    for (const [type, usage] of Object.entries(usageJson.blocks)) {
+      for (const name of [...usage.desktop, ...usage.phone]) {
+        expect(
+          BASE_COMPONENT_NAMES.has(name),
+          `${type} 渲染了「${name}」，但基础组件库里没有这个`
+        ).toBe(true);
       }
     }
   });

@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import catalogJson from "@experience-blocks";
 import { BLOCK_DEFINITIONS, ExperienceBlockBoundary, type ExperienceBlockInstance } from "../block-registry";
 import { HIERARCHY_SELECTION_LABELS, buildHierarchy } from "../hierarchy-selection-blocks";
+import { usageForBlock } from "../../component-usage";
 import PhoneExperienceBlock from "../phone-mobile/PhoneExperienceBlock";
 
 const row = (id: string, name: string, parent: string, assignee = "", status = "active") => ({
@@ -59,11 +60,19 @@ describe("层级选择区块", () => {
   });
 
   it("这三个正是把 Cascader / TreeSelect / Transfer 用起来的那三个", () => {
-    // 加它们的**理由**就是这个。注册表上的 uses 声明漂了，这条就红。
-    const uses = (type: string) => BLOCK_DEFINITIONS[type]?.uses ?? [];
-    expect(uses("HierarchicalCategoryPicker")).toContain("Cascader");
-    expect(uses("OrgTreeSelector")).toContain("TreeSelect");
-    expect(uses("AssignmentTransfer")).toContain("Transfer");
+    // 加它们的**理由**就是这个。
+    //
+    // 2026-08-10 改判据：此前读的是注册表上手写的 `uses` 声明，注释还写着
+    // "声明漂了这条就红"。**反了**——手写声明恰恰是会说谎的那一头，它红
+    // 只说明有人改了字符串。真出过的事故正是这个方向：这三个区块当时压根
+    // 没进依赖图（批量登记的 spread 读不到），Cascader/TreeSelect/Transfer
+    // 在统计里还是"零引用"，而这条用例一直是绿的。
+    //
+    // 现在读从渲染器 AST 生成的依赖图——断言"真的渲染了"，不是"真的写了"。
+    const used = (type: string) => usageForBlock(type).all;
+    expect(used("HierarchicalCategoryPicker")).toContain("Cascader");
+    expect(used("OrgTreeSelector")).toContain("TreeSelect");
+    expect(used("AssignmentTransfer")).toContain("Transfer");
   });
 
   it("桌面与手机都渲染真实层级数据，不是占位壳", () => {

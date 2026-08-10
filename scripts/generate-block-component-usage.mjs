@@ -681,7 +681,6 @@ function desktopBlocks(program, knownNames) {
 
   const checker = program.getTypeChecker();
   const blocks = new Map();
-  const declared = new Map();
   const phoneEnabled = new Set();
   for (const property of object.properties) {
     if (ts.isSpreadAssignment(property)) {
@@ -714,21 +713,6 @@ function desktopBlocks(program, knownNames) {
     )
       continue;
     blocks.set(blockType, readDependencies(renderProperty.initializer));
-    const usesProperty = property.initializer.properties.find(
-      item => ts.isPropertyAssignment(item) && propertyName(item.name) === "uses"
-    );
-    if (
-      usesProperty &&
-      ts.isPropertyAssignment(usesProperty) &&
-      ts.isArrayLiteralExpression(usesProperty.initializer)
-    ) {
-      declared.set(
-        blockType,
-        usesProperty.initializer.elements
-          .filter(ts.isStringLiteral)
-          .map(element => element.text)
-      );
-    }
     const phoneProperty = property.initializer.properties.find(
       item =>
         ts.isPropertyAssignment(item) && propertyName(item.name) === "phone"
@@ -740,7 +724,7 @@ function desktopBlocks(program, knownNames) {
     )
       phoneEnabled.add(blockType);
   }
-  return { blocks, declared, phoneEnabled };
+  return { blocks, phoneEnabled };
 }
 
 function phoneBlocks(program, knownBlockTypes, knownNames) {
@@ -854,46 +838,10 @@ function phoneBlocks(program, knownBlockTypes, knownNames) {
   return blocks;
 }
 
-/**
- * `BLOCK_DEFINITIONS[type].uses` 声称用到的 vs 渲染器**真的**用到的。
- *
- * 这个字段本来就在产物里，但一直硬编码成 `{}` —— 一个永远为空的差异报告，
- * 等于没有报告。于是 `uses` 可以随便写：CardGridList 声称 `"Image"`，渲染器
- * 里一个 Image 都没有；14 个上下文摘要声称 `"Descriptions"`，改成
- * ProDescriptions 之后声明也不会自己跟上。
- *
- * `uses` 不只是文档：组件库页面拿它给区块标"用了哪些技术组件"，提示词也从这
- * 里取材。声明和实现对不上时，两边都在说假话，而且**没有任何东西会红**。
- *
- * 这里只报不拦：先让差异可见，逐个核对过再考虑收紧成门禁。
- */
-function declarationDrift(actual, declared) {
-  const drift = {};
-  for (const [type, names] of declared) {
-    const rendered = new Set(actual.get(type) ?? []);
-    const claimed = new Set(names);
-    const notDetected = [...claimed].filter(name => !rendered.has(name));
-    const undeclared = [...rendered].filter(name => !claimed.has(name));
-    if (notDetected.length || undeclared.length) {
-      drift[type] = {
-        // 字段名沿用 component-usage.ts 里已有的契约：
-        // undeclared = 渲染了却没声明，notDetected = 声明了却没渲染。
-        undeclared: undeclared.sort((a, b) => a.localeCompare(b)),
-        notDetected: notDetected.sort((a, b) => a.localeCompare(b)),
-      };
-    }
-  }
-  return drift;
-}
-
 function buildUsage() {
   const program = createProject();
   const knownNames = catalogNames();
-  const {
-    blocks: desktop,
-    declared,
-    phoneEnabled,
-  } = desktopBlocks(program, knownNames);
+  const { blocks: desktop, phoneEnabled } = desktopBlocks(program, knownNames);
   const phone = phoneBlocks(program, new Set(desktop.keys()), knownNames);
   const unknown = new Set();
   for (const values of [...desktop.values(), ...phone.values()]) {
@@ -933,7 +881,6 @@ function buildUsage() {
       // 由 ssot-parity 对着运行时的 BASE_COMPONENTS 对账，见 catalogNames 的注释。
       catalogComponents: [...knownNames].sort((a, b) => a.localeCompare(b)),
       phoneEnabledBlocks: [...phoneEnabled].sort((a, b) => a.localeCompare(b)),
-      desktopDeclarationMismatches: declarationDrift(desktop, declared),
     },
     blocks: Object.fromEntries(
       types.map(type => [

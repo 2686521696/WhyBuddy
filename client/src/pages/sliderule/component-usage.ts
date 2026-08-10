@@ -16,10 +16,9 @@ type GeneratedUsage = {
     /** 生成器读到的目录组件名，由 ssot-parity 对着 BASE_COMPONENTS 对账。 */
     catalogComponents: string[];
     phoneEnabledBlocks: string[];
-    desktopDeclarationMismatches: Record<
-      string,
-      { undeclared: string[]; notDetected: string[] }
-    >;
+    // 2026-08-10 去掉 desktopDeclarationMismatches：它比对的是注册表上手写的
+    // `uses` 与实际渲染的差异，而 `uses` 已经删了（见 BlockDefinition 的注释）。
+    // 没有第二份声明，就没有"漂移"这件事——这正是删它的目的。
   };
   blocks: Record<string, GeneratedBlockUsage>;
 };
