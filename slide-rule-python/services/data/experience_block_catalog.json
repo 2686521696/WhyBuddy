@@ -1096,7 +1096,7 @@
     {
       "type": "CardGridList",
       "label": "卡片网格",
-      "generality": "generic",
+      "generality": "specific",
       "description": "卡片网格：一条记录一张卡，按屏宽自动排 1~4 列。字段少、每条要摆图或大标题时比表格好读；字段一多就该用表格。",
       "rendererKey": "card-grid-list",
       "rendererStatus": "real",
@@ -5452,7 +5452,7 @@
       "capability": "entityRows",
       "family": "data",
       "label": "通知联络点",
-      "generality": "generic",
+      "generality": "specific",
       "source": {
         "repo": "grafana/grafana",
         "path": "public/app/features/alerting/unified/components/receivers/form/ReceiverForm.tsx + TestContactPointModal.tsx",
@@ -5587,7 +5587,7 @@
       "capability": "entityRows",
       "family": "data",
       "label": "全局搜索面板",
-      "generality": "generic",
+      "generality": "specific",
       "source": {
         "repo": "marmelab/react-admin",
         "path": "docs/SearchWithResult.md",
@@ -6791,7 +6791,7 @@
       "capability": "entityRows",
       "family": "filter",
       "label": "资源详情页签",
-      "generality": "generic",
+      "generality": "specific",
       "source": {
         "repo": "airbytehq/airbyte-platform",
         "path": "airbyte-webapp/src/pages/connections/ConnectionPage/ConnectionPageHeader.tsx",
@@ -8649,7 +8649,7 @@
       "capability": "action",
       "family": "action",
       "label": "批量选择操作栏",
-      "generality": "generic",
+      "generality": "specific",
       "source": {
         "repo": "outline/outline",
         "path": "app/components/DocumentSelectionToolbar.tsx",
@@ -9007,7 +9007,7 @@
       "capability": "entityRows",
       "family": "data",
       "label": "实体所有权摘要",
-      "generality": "generic",
+      "generality": "specific",
       "source": {
         "repo": "backstage/backstage",
         "path": "plugins/catalog/src/alpha/components/EntityHeader/EntityHeaderBui.tsx",
@@ -18640,7 +18640,7 @@
     {
       "type": "MilestoneTimelineCalendar",
       "label": "里程碑时间线日历",
-      "generality": "generic",
+      "generality": "specific",
       "description": "里程碑、负责人、日期区间和完成状态形成时间线日历。",
       "rendererKey": "milestone-timeline-calendar",
       "rendererStatus": "real",
@@ -18858,7 +18858,7 @@
     {
       "type": "TimezoneOverlapPanel",
       "label": "时区重叠面板",
-      "generality": "generic",
+      "generality": "specific",
       "description": "按成员时区比较工作窗口，突出共同可用区间和无重叠空态。",
       "rendererKey": "timezone-overlap-panel",
       "rendererStatus": "real",
@@ -18930,7 +18930,7 @@
     {
       "type": "SchedulePublishBar",
       "label": "排期发布栏",
-      "generality": "generic",
+      "generality": "specific",
       "description": "草稿状态、未保存变更、最近发布时间和发布动作共享排期上下文。",
       "rendererKey": "schedule-publish-bar",
       "rendererStatus": "real",
@@ -22046,7 +22046,7 @@
     {
       "type": "WaterfallVarianceChart",
       "label": "瀑布差异图",
-      "generality": "generic",
+      "generality": "specific",
       "description": "按分类累积增减，透明基座表达运行总额，负值使用反向颜色。",
       "rendererKey": "waterfall-variance-chart",
       "rendererStatus": "real",
@@ -22155,7 +22155,7 @@
     {
       "type": "BurnupChart",
       "label": "燃尽增长图",
-      "generality": "generic",
+      "generality": "specific",
       "description": "按时间展示已完成量与总范围，范围变化不会被误算成完成量。",
       "rendererKey": "burnup-chart",
       "rendererStatus": "real",
@@ -22208,7 +22208,7 @@
     {
       "type": "BurndownChart",
       "label": "燃尽图",
-      "generality": "generic",
+      "generality": "specific",
       "description": "按时间展示剩余工作和理想线，缺测日期保留空点。",
       "rendererKey": "burndown-chart",
       "rendererStatus": "real",
@@ -22313,7 +22313,7 @@
     {
       "type": "ServiceMapPanel",
       "label": "服务拓扑面板",
-      "generality": "generic",
+      "generality": "specific",
       "description": "以来源、目标和状态构建服务关系图，保留真实节点与边。",
       "rendererKey": "service-map-panel",
       "rendererStatus": "real",
@@ -22370,7 +22370,7 @@
     {
       "type": "DependencyGraphPanel",
       "label": "依赖关系图",
-      "generality": "generic",
+      "generality": "specific",
       "description": "以依赖方向绘制组件或资源关系，禁止把自环当成有效依赖。",
       "rendererKey": "dependency-graph-panel",
       "rendererStatus": "real",
@@ -22427,7 +22427,7 @@
     {
       "type": "QueryResultPivot",
       "label": "查询结果透视",
-      "generality": "generic",
+      "generality": "specific",
       "description": "按行列维度聚合查询结果，缺失交叉单元显示空值而不是零。",
       "rendererKey": "query-result-pivot",
       "rendererStatus": "real",
@@ -22480,7 +22480,7 @@
     {
       "type": "MetricComparisonPanel",
       "label": "指标对比面板",
-      "generality": "generic",
+      "generality": "specific",
       "description": "按分类并列比较多个指标，缺测值断开对应柱条。",
       "rendererKey": "metric-comparison-panel",
       "rendererStatus": "real",
