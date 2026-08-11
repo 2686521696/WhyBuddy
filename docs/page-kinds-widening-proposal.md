@@ -129,7 +129,32 @@ is a report, not a workbench — the user opens it to act*）。
 修法取"机械判据"而不是"让 `monitor_ok` 读 `pageKinds`"：后者会把总览页可选清单从
 355 收到约 171，是真的行为变更，得上度量台跑一轮再定。前者只撤死控件，风险低，
 理由是已实测的机制——`capability == "filter"` 一律禁（原来只禁 `FilterBar` 一个
-名字，而目录里 32 个 filter 区块有 31 个只发 `filterChange`）。
+名字，而目录里 32 个 filter 区块有 **28** 个只发 `filterChange`）。
+
+> **更正与后续（2026-08-11 复核）**
+>
+> ① 上面那个"31 个"是错的，真数是 **28/32**。例外有四个不是一个：
+> `SavedViewTabs`、`SavedSearchPanel`（多发 `submitRequest`）、
+> `HierarchicalCategoryPicker`（多发 `itemSelect`）、`ValidatedFormTabs`
+> （**只**发 `itemSelect`）。数字已由 `tests/test_schema_legal_source.py`
+> 钉住，不要再手写。
+>
+> 更正数字**不改结论**：这 4 个多发的事件同样到不了岸——`eventBindings`
+> （事件名→动作 id）只在 `app-runtime-schema.ts:823` 被解析，全仓库没有第二处
+> 读它；`handleBlockAction`（`AppRuntimeScreen.tsx:1607`）只特判 `rowSelect` /
+> `editRequest` / `createRequest`，其余去 `page.pageActions` 里找 **id 等于事件名**
+> 的动作，而动作 id 是模型生成的。所以判据维持整族，别按"放过这 4 个"去改。
+> 本节对 `SavedSearchPanel` 的判断（"主动词死了"）当时就是对的，这里补上机械依据。
+>
+> ② "让 `monitor_ok` 读 `pageKinds`"这条**已经做了**，因为它不再是可选项：
+> `ffaf964` 把页型限制写成了 prompt 里的 MUST 规则，而 `monitor_ok` 不读
+> `pageKinds`，于是同一份提示词里 **323 个推荐中有 134 个**是被自己的 MUST
+> 规则禁止的（模型连着读到"推荐用它"和"禁止用它"）。在 MUST 规则进来之前这只是
+> 两套判据各说各的、没有可见后果，本文档当时记的"零影响"是对的；MUST 一进来它
+> 就变成了自相矛盾的指令，只能对齐。
+>
+> 实测收窄幅度：推荐清单 **323 → 189**（本文档当初估的是 355 → 171，量级对上）。
+> 这仍然是一次真实的行为变更，**度量台那一轮欠着**——先修矛盾，效果待测。
 禁令的**理由句跟着名单走**：窄化开着时名单常常只剩筛选类，此时不再照抄
 "MetricGrid and TrendChart would…" 去解释一个没出现的名字。
 

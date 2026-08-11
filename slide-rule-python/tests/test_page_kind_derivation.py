@@ -36,7 +36,13 @@
 归 MetricGrid/TrendChart 积木"，而它的 `pageKinds` 只写了总览页——正好是它被硬
 禁的那两种。**等于这个区块哪儿都摆不了**，跟 2026-08-11 早些时候
 `AnalyticsDateScope` / `DashboardParameterBar` 那两个是同一个形状的洞。
-两个都已改成 `workbench`。
+
+当时两个都改成了 `workbench`——**改窄了一档，又造出第二个洞**：方案 C 的分工
+写的是"业务页"，而业务页有四种。kanban / calendar / wizard 于是既拿不到积木
+（`block_assembler` 按 pageKinds 过滤，它们根本不在候选里），又被
+CHANNEL OWNERSHIP 要求"把 page.stats/charts 留空"，一个数字都显示不出来。
+2026-08-11 复核时放开到四种业务页型，并补了
+`test_每种页型都至少有一条能用的KPI通道` 把这个形状钉住。
 """
 
 import subprocess
@@ -52,8 +58,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from label_block_page_kinds import (  # noqa: E402
     OVERVIEW_KINDS,
     PAGE_KIND_FACTS,
+    _resolve_claim,
     audit,
     hard_verdicts,
+    needs_model,
     preset_pairs,
 )
 
@@ -180,3 +188,229 @@ def test_check_模式可以直接当CI闸用():
         f"--check 非零退出：\n{proc.stdout[-2000:]}\n{proc.stderr[-1000:]}"
     )
     assert "硬判据违反 0 处" in proc.stdout, proc.stdout[-2000:]
+
+
+def test_记账位的格子会真的被问到模型():
+    """`require_any_row` 不是"定死"，必须跟着问——否则筛选整族永远推导不出来。
+
+    ## 这条钉的是什么
+
+    硬判据对筛选类的 `workbench` 格给的是 `require_any_row`（"至少得有一种带
+    逐行视图的页，不要求非得是这一格"）。它是**记账位**，本格是 yes 是 no 仍
+    由模型判。但 `ask_list` 当初按"verdict 非 None"排除，把它一并当成定死的
+    剔掉了，而循环里又把预记的那笔 `asked` 给 discard 掉——两处一夹，这一格
+    没有任何地方去问。
+
+    表现是沉默的：区块不会报错，只是 `asked >= set(kinds)` 永远不成立，于是
+    每次都被算进"没问全的 N 个（不下结论，重跑）"，`--write` 一次都不给它们
+    打标。重跑一百遍也一样。这个脚本的存在意义就是让 `pageKinds` 可重算，而
+    筛选整族对它不可达。
+
+    所以这条不测"结果对不对"，测的是**这一格进没进 ask_list**。
+
+    注意别把判据写成"所有筛选区块的 workbench 格都必须被问"——`FilterBar` 那
+    一格上硬③ 的 `require_any_row` 被硬④ 的 `require` **吸收**了（workbench
+    本就是逐行视图页，硬③ 的诉求已被满足，见 `_resolve_claim`），已经定死，
+    不问是对的。真正的不变量只有一条：**凡是 `require_any_row`，就必须问**。
+    """
+    any_row = [
+        (str(b["type"]), kind)
+        for b in EXPERIENCE_BLOCKS
+        if b.get("generationEnabled")
+        for kind, v in hard_verdicts(b).items()
+        if v[0] == "require_any_row"
+    ]
+    assert any_row, "目录里一个 require_any_row 都没有，这条判据失去意义"
+
+    verdicts = {str(b["type"]): hard_verdicts(b) for b in EXPERIENCE_BLOCKS}
+    missed = [(t, k) for t, k in any_row if not needs_model(verdicts[t].get(k))]
+    assert not missed, (
+        f"{len(missed)}/{len(any_row)} 个记账位格子不会被问模型，"
+        f"对应区块永远进不了 complete：{missed[:8]}"
+    )
+
+
+def test_完美模型下每个区块都能推导完整():
+    """端到端复现那个沉默失败：模拟一轮"模型有问必答"，看谁进不了 `complete`。
+
+    上一条钉的是单个格子，这条钉的是**账目闭合**——把 `main()` 里那套
+    "硬判据定死的直接记账 / 其余问模型"的记账逻辑照抄一遍，喂一个百分百
+    答得上的假模型，然后要求 `asked` 覆盖全部页型。
+
+    真实脚本里这一步要调 LLM，所以 CI 跑不到；而 bug 恰恰只在这一步显形
+    （`--check` 只跑硬判据那层，一路绿灯）。这条用假模型把那段账补上。
+    """
+    enabled = [b for b in EXPERIENCE_BLOCKS if b.get("generationEnabled")]
+    kinds = list(PAGE_KIND_FACTS)
+
+    asked: dict[str, set[str]] = {str(b["type"]): set() for b in enabled}
+    for kind in kinds:
+        verdict_of = {str(b["type"]): hard_verdicts(b).get(kind) for b in enabled}
+        ask_list = [b for b in enabled if needs_model(verdict_of[str(b["type"])])]
+        for b in enabled:
+            v = verdict_of[str(b["type"])]
+            if v is None:
+                continue
+            t = str(b["type"])
+            asked[t].add(kind)
+            if v[0] == "require_any_row":
+                asked[t].discard(kind)
+        # 假模型：ask_list 里的每一个都答得上（真模型答不上是另一回事，
+        # 那种情况脚本本来就该报"没问全"）
+        for b in ask_list:
+            asked[str(b["type"])].add(kind)
+
+    incomplete = [str(b["type"]) for b in enabled if asked[str(b["type"])] < set(kinds)]
+    assert not incomplete, (
+        f"完美模型下仍有 {len(incomplete)}/{len(enabled)} 个区块问不全，"
+        f"`--write` 永远不会给它们打标：{incomplete[:8]}"
+    )
+
+
+def test_硬规则打架时不再靠写入顺序拍板():
+    """`forbid` × `require` 必须判成冲突——原来是后写的那条静默赢。
+
+    ## 原来的形状
+
+    四条硬规则依次往同一个 dict 里 `out[kind] = …`。硬④（预设推导出的
+    `require`）排在最后，于是它会盖掉硬①（总览页禁筛选类的 `forbid`）。这两条
+    一个说"必须允许"、一个说"绝对不许"，**不该有赢家**。
+
+    盖掉之后果更糟：`audit()` 会掉头要求把那个页型**加回目录**——而它正是渲染层
+    会当场删掉（AppRuntimeScreen.tsx 的 filter 兜底）、提示词也明令禁止的页型。
+    等于工具在推着人往坑里走，还不说有分歧。
+
+    当时数据里恰好没撞上（唯一的重叠是 FilterBar@workbench，那个是良性的），
+    所以一路绿灯。这条把"没撞上"和"判据能挡住"分开。
+    """
+    # 直接喂主张，不依赖目录里恰好有没有这种数据
+    conflict = _resolve_claim(
+        "monitor",
+        [
+            ("forbid", "总览页没有逐行视图", "硬①"),
+            ("require", "某个预设在 monitor 页上用了它", "硬④"),
+        ],
+    )
+    assert conflict[0] == "conflict", f"forbid × require 没判成冲突：{conflict}"
+    # 理由里两条都要在，不然人拿到冲突也不知道是谁跟谁打
+    assert "硬①" in conflict[1] and "硬④" in conflict[1], conflict[1]
+
+
+def test_require吸收require_any_row_只在逐行视图页成立():
+    """唯一允许的消解，且**要真去查 row_view**，不能因为"听起来更强"就吸收。
+
+    FilterBar@workbench 是现实里唯一一例：硬③ 说"筛选类至少得有一种带逐行视图
+    的页"，硬④ 说"某预设在 workbench 上用了它"。workbench 本来就是逐行视图页，
+    硬③ 的诉求已被满足，不是矛盾。
+
+    但同样一对主张落在**没有**逐行视图的页上，就是真冲突——那说明有预设把筛选类
+    钉在了总览页上，恰恰是最该报的那种。
+    """
+    row = _resolve_claim(
+        "workbench",
+        [("require_any_row", "筛选类要有逐行视图页", "硬③"),
+         ("require", "预设用了它", "硬④")],
+    )
+    assert row[0] == "require", f"逐行视图页上应吸收成 require：{row}"
+
+    overview = _resolve_claim(
+        "monitor",
+        [("require_any_row", "筛选类要有逐行视图页", "硬③"),
+         ("require", "预设用了它", "硬④")],
+    )
+    assert overview[0] == "conflict", (
+        f"非逐行视图页上不该吸收，应报冲突：{overview}"
+    )
+
+
+def test_冲突会被audit报出来并让check非零退出(monkeypatch):
+    """端到端：造一个"预设把筛选区块摆上总览页"的局面，`audit()` 必须报。
+
+    上两条钉消解函数，这条钉**它接进了 CI 那条链路**——`audit()` 认得 conflict、
+    把它算进 problems，`--check` 因此非零退出。
+    """
+    import label_block_page_kinds as lbpk
+
+    planted = {
+        "type": "合成的筛选区块",
+        "capability": "filter",
+        "generationEnabled": True,
+        "pageKinds": ["workbench"],
+        "allowedRegions": ["filters"],
+    }
+    # 让硬④ 认为有个预设在 monitor 页上用了它 —— 与硬① 正面冲突
+    monkeypatch.setattr(lbpk, "preset_pairs", lambda: {"合成的筛选区块": {"monitor"}})
+
+    problems = lbpk.audit([planted])
+    conflicts = [p for p in problems if p[2].startswith("硬判据自相矛盾")]
+    assert conflicts, f"audit 没报冲突，problems={problems}"
+    assert conflicts[0][1] == "monitor", conflicts[0]
+
+
+def test_每种页型都至少有一条能用的KPI通道():
+    """没有哪种页型可以"既不许用积木、又不许自己声明"——那是把它饿死。
+
+    ## 这条补的是什么
+
+    CHANNEL OWNERSHIP（schema_legal.py）把 KPI 通道按页型分了工：
+
+        monitor / dashboard          →  page.stats / page.charts
+        workbench/kanban/calendar/wizard →  MetricGrid / TrendChart 积木，
+                                            且**明确要求** page.stats 留空
+
+    2026-08-11 有一批改动把 MetricGrid 与 TrendChart 的 pageKinds 砍到只剩
+    `workbench`。于是 kanban / calendar / wizard 三种页两条路同时断掉：
+
+      · 积木这条：`block_assembler._catalog_for_prompt` 按 pageKinds 过滤，
+        这两个区块**根本不出现在候选里**；模型硬发也会被 :162 丢掉，
+        记一句"这种积木不能放在 X 页"。
+      · 声明这条：CHANNEL OWNERSHIP 明说这些页要把 page.stats/charts 留空。
+
+    两边都堵死，这三种页一个数字都显示不出来，而且**没有任何测试会红**——
+    目录合法、硬判据 0 违反、提示词也自洽，只有真机上看得出这页少了 KPI。
+
+    所以钉一条跨两侧的：每种页型至少要有一条通道是通的。
+    """
+    kpi_blocks = [
+        b
+        for b in EXPERIENCE_BLOCKS
+        if b.get("generationEnabled") and str(b["type"]) in ("MetricGrid", "TrendChart")
+    ]
+    assert kpi_blocks, "MetricGrid / TrendChart 都不通电了，这条判据要重写"
+
+    starved = []
+    for kind in PAGE_KIND_FACTS:
+        # 通道甲：总览页自己声明 page.stats / page.charts
+        owns_stats_channel = kind in OVERVIEW_KINDS
+        # 通道乙：能摆 KPI 积木
+        has_kpi_block = any(kind in (b.get("pageKinds") or ()) for b in kpi_blocks)
+        if not (owns_stats_channel or has_kpi_block):
+            starved.append(kind)
+
+    assert not starved, (
+        f"这些页型两条 KPI 通道都断了：{starved}。"
+        "要么放开 MetricGrid/TrendChart 的 pageKinds，"
+        "要么改 CHANNEL OWNERSHIP 让它们自己声明 page.stats/charts——"
+        "但不能两边都不给。"
+    )
+
+
+def test_KPI积木与总览页禁令互补而不重叠():
+    """积木能去的页 + 总览页 = 全部页型，且两者不相交。
+
+    上一条保证"没有页型被饿死"，这条保证反方向没有**重叠**——KPI 积木要是溜进
+    了总览页，就跟 page.stats 画的是同一份数字，一屏里出现两遍（硬② 禁的正是
+    这个，渲染层 KPI_BLOCK_TYPES 也兜着）。
+
+    两条一起，把 CHANNEL OWNERSHIP 那句"one page, one channel"钉成机械事实。
+    """
+    for btype in ("MetricGrid", "TrendChart"):
+        entry = next(b for b in EXPERIENCE_BLOCKS if str(b["type"]) == btype)
+        kinds = set(entry.get("pageKinds") or ())
+        assert not (kinds & set(OVERVIEW_KINDS)), (
+            f"{btype} 允许了总览页 {sorted(kinds & set(OVERVIEW_KINDS))}——"
+            "会和 page.stats/charts 画两遍"
+        )
+        assert kinds == set(PAGE_KIND_FACTS) - set(OVERVIEW_KINDS), (
+            f"{btype} 的 pageKinds 应当正好是全部业务页型，现在是 {sorted(kinds)}"
+        )

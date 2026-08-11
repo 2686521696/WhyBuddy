@@ -4,7 +4,11 @@
 358 个通电区块，耗时约 **62 分钟**。
 
 **结论先说：第一层（硬判据）可用并已进 CI；第二层（模型初稿）这一版不可用，
-不落盘。** 下面是原始输出、为什么不可用、以及照此修了脚本哪两处。
+不落盘。** 下面是原始输出、为什么不可用、以及照此修了脚本哪三处。
+
+**另有四条是这一轮我自己引入或写错的，事后被代码审查查出来，记在第六节**
+（其中一条是真回归：把 `MetricGrid`/`TrendChart` 砍到只剩 workbench，让三种页型
+的 KPI 通道两条路一起堵死，且没有任何测试会红）。
 
 ## 一、原始输出
 
@@ -46,7 +50,7 @@ ValidatedFormTabs
 ## 二、跑通了的部分
 
 - **硬判据 0 违反**，与 `--check` 一致（此前它抓到过 4 处，`MetricGrid` /
-  `TrendChart` 那两个已修）。
+  `TrendChart` 那两个已修——**但那次修法本身是错的，见第六节**）。
 - **一条都没丢**：321/321、355/355、354/354、356/356、322/322、322/322。
   「发行号不发区块名」那条纪律有效（`label_block_generality.py` 记着的教训是
   发名字有三分之一批次会被模型"顺手规整"掉 id）。
@@ -132,3 +136,55 @@ ValidatedFormTabs
   workbench / wizard / kanban / calendar 四种页型无差别对待，见
   `tests/test_page_kind_consistency_ratchet.py` 的「上闸还差什么」。
 - 遗留：3.4 那条 `BatchActionBar` / 看板多不多选，待查。
+
+## 六、事后被代码审查推翻/更正的四条（`40f28e2`、`0c83714`、`d07c791`）
+
+这份记录写完之后，另一路对 `7caf7b3..HEAD` 做了代码审查，查出六条，其中四条是
+**我这一轮自己引入或写错的**。据实记在这里，前面几节不回改，以免掩盖过程。
+
+### 6.1 把 `MetricGrid` / `TrendChart` 砍到只剩 workbench，造出了第二个洞
+
+第三节写的"`TrendChart` 只允许总览页 = 哪儿都摆不了"是对的，**但修法砍窄了一档**：
+两个区块都改成只剩 `workbench`，于是 kanban / calendar / wizard 三种页型
+**两条路一起堵死**——积木这条被 `block_assembler._catalog_for_prompt` 按 pageKinds
+过滤掉，自己声明那条又被 CHANNEL OWNERSHIP 明令要求留空。这三种页一个数字都显示
+不出来，而且**没有任何测试会红**：目录合法、硬判据 0 违反、提示词自洽。
+
+已由 `d07c791` 放开到四种业务页型，并补了两条测试（都验过"改回 workbench-only
+会红"）。
+
+### 6.2 我写进 `PAGE_KIND_FACTS` 的一条事实是错的——正是 6.1 的根因
+
+那张表给 wizard / kanban / calendar 的"KPI/图表通道"写的是**「无」**。真实行为
+两个端不一样：桌面 `statsBand` 没有页型闸（只判 `page.stats.length > 0`），照样
+渲染；手机 `wantsMetrics` 只认 dashboard/monitor/workbench，真的没有。
+
+正因为以为"这三种页压根没有 KPI 通道"，才会觉得砍到 workbench 无害。而这张表
+**既是硬判据的依据，又被当前提喂给模型**——我自己在脚本文档里写过"前提假了最难
+查"，这次就栽在这上面。已更正并补上行号出处。
+
+### 6.3 "32 个 filter 区块有 31 个只发 filterChange" 是错的，真数 **28/32**
+
+这个数我在 `schema_legal.py`、`AppRuntimeScreen.tsx`、提案文档三处各抄了一遍，
+三处全错，且错了没有任何东西会红。例外是四个不是一个：`SavedViewTabs` 与
+`SavedSearchPanel` 多发 `submitRequest`，`HierarchicalCategoryPicker` 多发
+`itemSelect`，`ValidatedFormTabs` 只发 `itemSelect`（一个 `filterChange` 都没有）。
+
+判据与结论不变（查过运行时：那 4 个多发的事件同样到不了岸），只更正数字。
+
+⚠️ 注意区分：本文件 3.3 节那个"31"是**另一件事**（31 个筛选区块没被问全），
+那个数是对的。
+
+### 6.4 `hard_verdicts` 四条规则打架时后写的静默赢
+
+四条规则依次往同一个 dict 里 `out[kind] = …`，硬④（预设 `require`）排在最后，
+会盖掉硬①（总览页禁筛选类的 `forbid`）。一个说"必须允许"、一个说"绝对不许"，
+不该有赢家；盖掉之后 `audit()` 反而会要求把那个页型**加回目录**。当时数据里恰好
+没撞上（唯一重叠是 `FilterBar@workbench`，良性），所以一路绿灯。已由 `0c83714`
+改成显式消解。
+
+### 6.5 关于 `monitor_ok` 读不读 `pageKinds`
+
+这条当初评审时选的是"先不动，等度量台"。但 `ffaf964` 把页型限制写成了 prompt 里
+的 MUST 规则之后它不再是可选项——同一份提示词里 323 个推荐里有 134 个与 MUST
+规则直接矛盾。`40f28e2` 先修了矛盾（推荐清单 323 → 189），度量那一轮仍然欠着。

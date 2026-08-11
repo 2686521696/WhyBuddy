@@ -24,11 +24,29 @@
 
     页型         逐行视图   视图形状   KPI/图表通道        区块渲染路径
     workbench    有         表         固定 statsBand      businessPageGrid
-    wizard       有         表+步骤条   无                  businessPageGrid
-    kanban       有         看板       无                  businessPageGrid
-    calendar     有         月历       无                  businessPageGrid
+    wizard       有         表+步骤条    桌面有/手机无        businessPageGrid
+    kanban       有         看板        桌面有/手机无        businessPageGrid
+    calendar     有         月历        桌面有/手机无        businessPageGrid
     monitor      **无**     —          freeformOverview    blockScaffold
     dashboard    **无**     —          同上                blockScaffold / grid
+
+⚠️ 中间那三行原本写的是"无"，**是错的**（2026-08-11 复核）。真实行为两个端不一样：
+
+  · 桌面：`page.stats` / `page.charts` 照样渲染。`statsBand` 自己没有任何页型闸
+    （AppRuntimeScreen.tsx:2674 只判 `page.stats.length > 0`），而这三种页会落进
+    分支链最末那个 else（:3437 起），那里就摆着 statsBand / chartsBand。
+  · 手机：**真的没有**。`wantsMetrics`（:2083）只认 dashboard / monitor /
+    workbench，这三种页一个数字都出不来（wizard 只多一条 Steps）。
+
+这条错误值得记一笔：正因为以为"这三种页压根没有 KPI 通道"，才会觉得把
+MetricGrid/TrendChart 的 pageKinds 砍到只剩 workbench 是无害的——而
+CHANNEL OWNERSHIP 同时要求这三种页"把 page.stats/charts 留空、改用积木"。
+两下一夹，它们就成了**两条路都堵死**：积木不给用，自己声明的又被规矩禁止。
+
+顺带说明为什么修法是"放开积木"而不是"改成让它们用 page.stats"：stats 那条路
+在这三种页上**只有桌面通**，同一个页面换个端就没有数字了；积木两个端都渲染
+（手机档见 :2339 `renderExperienceBlockScaffold(true, phonePrimaryDataView)`）。
+CHANNEL OWNERSHIP 原本的分工是对的，错的是目录被砍窄了。
 
 也就是说 **workbench / wizard / kanban / calendar 四种页型，从"这个区块能不能
 在这儿干活"的角度看是可以互换的**：四者都有逐行视图、都走同一条
@@ -108,21 +126,27 @@ PAGE_KIND_FACTS: dict[str, dict[str, Any]] = {
     },
     "wizard": {
         "provides": "主实体的表 + 一条流程步骤条（来自 workflow.nodes）；"
-                    "主列通常被分步表单占住，附属内容走 aside/supplement/footerBar",
+                    "主列通常被分步表单占住，附属内容走 aside/supplement/footerBar；"
+                    "KPI/趋势走 MetricGrid/TrendChart 积木（page.stats 在这种页上"
+                    "只有桌面渲染、手机不出，所以归积木）",
         "row_view": True,
-        "evidence": 'AppRuntimeScreen.tsx:3347 `page.view.kind === "wizard"` 的 Steps',
+        "evidence": 'AppRuntimeScreen.tsx:3347 `page.view.kind === "wizard"` 的 Steps；'
+                    ":2083 wantsMetrics 不含 wizard",
     },
     "kanban": {
         "provides": "主实体的看板（按 statusFieldId 分列，缺这个字段就回落成表）；"
-                    "右栏比别的页型窄一格（3/12），因为棋盘吃宽度",
+                    "右栏比别的页型窄一格（3/12），因为棋盘吃宽度；"
+                    "KPI/趋势走 MetricGrid/TrendChart 积木（同 wizard）",
         "row_view": True,
-        "evidence": "AppRuntimeScreen.tsx:3180 KanbanBoard；business-page-layout.ts asideWidth",
+        "evidence": "AppRuntimeScreen.tsx:3180 KanbanBoard；business-page-layout.ts asideWidth；"
+                    ":2083 wantsMetrics 不含 kanban",
     },
     "calendar": {
         "provides": "主实体的月历（按 dateFieldId 排，缺这个字段就回落成表）；"
-                    "右栏同样窄一格",
+                    "右栏同样窄一格；"
+                    "KPI/趋势走 MetricGrid/TrendChart 积木（同 wizard）",
         "row_view": True,
-        "evidence": "AppRuntimeScreen.tsx:3187 CalendarBoard",
+        "evidence": "AppRuntimeScreen.tsx:3187 CalendarBoard；:2083 wantsMetrics 不含 calendar",
     },
     "monitor": {
         "provides": "**没有逐行视图**。KPI 与图表走 page.stats / page.charts，"
@@ -167,24 +191,28 @@ def preset_pairs() -> dict[str, set[str]]:
     return out
 
 
-def hard_verdicts(block: dict[str, Any]) -> dict[str, tuple[str, str]]:
-    """硬判据：运行时**真的**会因此丢掉区块或画重复的那几条。
+def _hard_claims(block: dict[str, Any]) -> dict[str, list[tuple[str, str, str]]]:
+    """四条硬规则各自的**主张**，一格可能有多条，这里**不消解**。
 
-    返回 {页型: (verdict, 理由)}：
+    返回 {页型: [(verdict, 理由, 规则号), …]}。
 
-        forbid           这种页上不许有它——运行时会丢掉，或者会画重复
-        require          这种页上必须允许它
-        require_any_row  这一格只是"至少得有一种带逐行视图的页"的记账位，
-                         不要求非得是它（同族别的页型顶上也算达标）
+    拆出这一层是 2026-08-11 复审的结论。原来四条规则依次往同一个 dict 里
+    `out[kind] = …`，于是**后写的赢**：硬④（预设推导出的 require）会静默盖掉
+    硬①（总览页禁筛选类的 forbid），而这两条一个说"必须允许"、一个说"绝对不许"，
+    根本不该有赢家。盖掉之后 `audit()` 会掉头要求把那个页型加回目录——而它正是
+    渲染层会当场删掉、提示词也明令禁止的页型。当时数据里恰好没撞上，
+    所以一路绿灯（唯一的重叠是 FilterBar@workbench，那个是良性的，见 `_resolve_claim`）。
 
-    没进这张表的格子表示"运行时不在乎"，归设计建议那一层。
-
-    条目少得出乎意料，但这正是本脚本查出来的结论——页型对区块准入的技术影响，
-    全部集中在"有没有逐行视图"这一件事上，外加一条来自已自检预设的正面证据。
+    做法照 OPA/Rego 对 complete rule 的处理：多条规则给同一个键算出不同结果时，
+    它不挑一个赢家，直接报 `eval_conflict_error`。冲突是**数据的问题**，
+    应该炸给人看，不该由求值顺序悄悄决定。
     """
-    out: dict[str, tuple[str, str]] = {}
+    out: dict[str, list[tuple[str, str, str]]] = {}
     btype = str(block.get("type") or "")
     cap = str(block.get("capability") or "")
+
+    def claim(kind: str, verdict: str, why: str, rule: str) -> None:
+        out.setdefault(kind, []).append((verdict, why, rule))
 
     # ── 硬① 总览页不放筛选类 ─────────────────────────────────────────
     # filterChange 在总览页够不到任何东西：只有本页的表/看板/日历吃筛过的行
@@ -194,7 +222,8 @@ def hard_verdicts(block: dict[str, Any]) -> dict[str, tuple[str, str]]:
     # 渲染层已按 capability 兜死（:1781），提示词也禁（schema_legal.py）。
     if cap == "filter":
         for k in OVERVIEW_KINDS:
-            out[k] = ("forbid", "总览页没有逐行视图，filterChange 够不到任何东西，是死控件")
+            claim(k, "forbid",
+                  "总览页没有逐行视图，filterChange 够不到任何东西，是死控件", "硬①")
 
     # ── 硬② 总览页不放 KPI 积木 ──────────────────────────────────────
     # 总览页的 KPI/图表已经声明成 page.stats / page.charts 并由设计环节排版，
@@ -202,24 +231,97 @@ def hard_verdicts(block: dict[str, Any]) -> dict[str, tuple[str, str]]:
     # 渲染层兜死见 AppRuntimeScreen.tsx:1735 KPI_BLOCK_TYPES。
     if btype in ("MetricGrid", "TrendChart"):
         for k in OVERVIEW_KINDS:
-            out[k] = ("forbid", "总览页的 KPI/图表归 page.stats/charts，这里会画两遍")
+            claim(k, "forbid",
+                  "总览页的 KPI/图表归 page.stats/charts，这里会画两遍", "硬②")
 
     # ── 硬③ 筛选类至少要有一种带逐行视图的页 ──────────────────────────
     # 否则就是"只允许总览页 + 总览页不许放"，哪儿都摆不了。2026-08-11 真出现过
     # 两个（AnalyticsDateScope / DashboardParameterBar），见
     # tests/test_schema_legal_source.py 的 _OVERVIEW_ONLY_FILTERS_BASELINE。
     if cap == "filter":
-        out["workbench"] = (
-            "require_any_row", "筛选类必须至少有一种带逐行视图的页，否则无处可去"
-        )
+        claim("workbench", "require_any_row",
+              "筛选类必须至少有一种带逐行视图的页，否则无处可去", "硬③")
 
     # ── 硬④ 页型预设用上的组合必须允许 ───────────────────────────────
     # 预设在服务启动时逐条自检过（见 preset_pairs 的说明），是目录里唯一一份
     # 经过校验的正面证据。预设推荐了、而 pageKinds 不允许，服务直接起不来。
     for kind in preset_pairs().get(btype, set()):
-        out[kind] = ("require", f"pageKindPresets 在 {kind} 页上用了它，这条组合已自检通过")
+        claim(kind, "require",
+              f"pageKindPresets 在 {kind} 页上用了它，这条组合已自检通过", "硬④")
 
     return out
+
+
+def _resolve_claim(kind: str, claims: list[tuple[str, str, str]]) -> tuple[str, str]:
+    """把一格上的多条主张消解成一个判据，消解不了就判 `conflict`。
+
+    只认两种可消解的情形，别再往里加"谁优先"的规则——那正是原来那份
+    last-write-wins 的本质，只是写得更显眼一点：
+
+      · **完全一致**：几条规则说的是同一件事（比如两个预设都用了它），合并理由。
+      · **require 吸收 require_any_row**：require_any_row 的诉求是"至少有一种
+        带逐行视图的页"，而 require 钉的这一格如果本来就是逐行视图页
+        （`PAGE_KIND_FACTS[kind]["row_view"]`），那诉求已经被满足，不是矛盾。
+        现实里只有 FilterBar@workbench 这一例。**这里要真去查 row_view**，
+        不能因为"require 听起来更强"就吸收——预设要是把筛选类钉在某个非逐行
+        视图的页上，那恰恰是要报的冲突。
+
+    其余一律 `conflict`。最典型的是 forbid × require：硬①说总览页绝对不许放
+    筛选类，硬④说某个预设在总览页上用了它。这两条不该有赢家——要么预设是错的，
+    要么禁令是错的，得有人去看，不能靠 dict 的写入顺序拍板。
+    """
+    verdicts = {c[0] for c in claims}
+    whys = "；".join(dict.fromkeys(f"{c[2]} {c[1]}" for c in claims))
+
+    if len(verdicts) == 1:
+        return claims[0][0], whys
+
+    if verdicts == {"require", "require_any_row"} and PAGE_KIND_FACTS.get(
+        kind, {}
+    ).get("row_view"):
+        return "require", whys
+
+    return "conflict", f"硬判据自相矛盾（{'/'.join(sorted(verdicts))}）：{whys}"
+
+
+def hard_verdicts(block: dict[str, Any]) -> dict[str, tuple[str, str]]:
+    """硬判据：运行时**真的**会因此丢掉区块或画重复的那几条。
+
+    返回 {页型: (verdict, 理由)}：
+
+        forbid           这种页上不许有它——运行时会丢掉，或者会画重复
+        require          这种页上必须允许它
+        require_any_row  这一格只是"至少得有一种带逐行视图的页"的记账位，
+                         不要求非得是它（同族别的页型顶上也算达标）
+        conflict         几条硬规则在这一格上打架，消解不了——**数据要修**，
+                         由 `audit()` 报出来，`--check` 会因此非零退出
+
+    没进这张表的格子表示"运行时不在乎"，归设计建议那一层。
+
+    条目少得出乎意料，但这正是本脚本查出来的结论——页型对区块准入的技术影响，
+    全部集中在"有没有逐行视图"这一件事上，外加一条来自已自检预设的正面证据。
+    """
+    return {
+        kind: _resolve_claim(kind, claims)
+        for kind, claims in _hard_claims(block).items()
+    }
+
+
+def needs_model(verdict: tuple[str, str] | None) -> bool:
+    """这一格要不要问模型。
+
+    抽成函数是为了能被测试直接调到——它决定"哪些格子会被问"，而问漏了的表现
+    是沉默的（区块永远进不了 `complete`，只会在输出里显示成"没问全，重跑"），
+    靠跑一遍脚本根本看不出来是 bug 还是模型没答上。
+
+        None             硬判据不管这一格 → 问
+        require_any_row  只是记账位，本格是 yes 是 no 仍由模型判 → 问
+        forbid / require 已经定死 → 不问（问了浪费调用，还可能被答反）
+        conflict         规则自己打架 → **不问**。问模型没有意义：要修的是数据，
+                         不是让模型来仲裁两条硬规则谁对。`audit()` 会报出来，
+                         而且 `main()` 在有冲突时直接拒绝跑第二层。
+    """
+    return verdict is None or verdict[0] == "require_any_row"
 
 
 def audit(blocks: list[dict[str, Any]]) -> list[tuple[str, str, str, str]]:
@@ -235,7 +337,11 @@ def audit(blocks: list[dict[str, Any]]) -> list[tuple[str, str, str, str]]:
         declared = set(b.get("pageKinds") or [])
         btype = str(b.get("type") or "")
         for kind, (verdict, why) in hard_verdicts(b).items():
-            if verdict == "forbid":
+            if verdict == "conflict":
+                # 规则之间打架，不是目录违反了规则——但同样得清零，而且更急：
+                # 这一格上任何结论都是不可信的（原来靠写入顺序拍板，谁后写谁赢）
+                problems.append((btype, kind, "硬判据自相矛盾，先修规则或预设", why))
+            elif verdict == "forbid":
                 if kind in declared:
                     problems.append((btype, kind, "目录允许了硬判据禁止的页型", why))
             elif verdict == "require":
@@ -464,6 +570,18 @@ def main() -> int:
         print("\n没指定 --check / --dry-run / --write，只跑了硬判据。")
         return 0
 
+    # 规则自相矛盾时不许往下走。这跟"目录违反了规则"不是一回事：那种情况下
+    # 规则本身还是可信的，推导有意义；而规则打架时，冲突格上的任何结论都建立在
+    # "谁后写谁赢"上，推出来的标签是假的。宁可停在这里让人去看。
+    conflicts = [p for p in problems if p[2].startswith("硬判据自相矛盾")]
+    if conflicts:
+        print(
+            f"\n{len(conflicts)} 处硬判据自相矛盾，拒绝往下推导"
+            "（冲突格上的结论会建立在规则求值顺序上，不可信）。先修规则或预设。",
+            file=sys.stderr,
+        )
+        return 2
+
     # ── 第二层：设计建议（模型初稿）─────────────────────────────────
     if not os.getenv("LLM_API_KEY") or not os.getenv("LLM_BASE_URL"):
         print("缺 LLM_API_KEY / LLM_BASE_URL——第二层要调模型", file=sys.stderr)
@@ -481,19 +599,19 @@ def main() -> int:
     why_of: dict[tuple[str, str], str] = {}
 
     for kind in kinds:
-        # `require_any_row` 不是"这一格定死了"，只是"总得有一种带逐行视图的页"的
-        # 记账位，所以在这里**当没有硬判据处理**——照旧交给模型判。
+        verdict_of = {str(b["type"]): hard_verdicts(b).get(kind) for b in enabled}
+        # 硬判据已经**定死**的格子不问模型——问了也只会浪费一次调用，还可能被它答反。
         #
-        # 2026-08-11 首轮踩过：当时把它算成"有硬判据"，于是筛选类区块的 workbench
-        # 那一格既不问模型、又不记进 asked，导致 32 个筛选类里有 31 个永远凑不满
-        # 6 种页，被差异表整批跳过（`FilterBar` 例外——它有预设 require 顶着）。
-        # 报告里"没问全的 31 个"就是这个洞，全是筛选类不是巧合。
-        verdict_of: dict[str, tuple[str, str] | None] = {}
-        for b in enabled:
-            v = hard_verdicts(b).get(kind)
-            verdict_of[str(b["type"])] = None if (v and v[0] == "require_any_row") else v
-        # 硬判据已经定死的格子不问模型——问了也只会浪费一次调用，还可能被它答反
-        ask_list = [b for b in enabled if verdict_of[str(b["type"])] is None]
+        # ⚠️ require_any_row 不算定死，必须跟着问。它只是一个记账位（"筛选类至少
+        # 得有一种带逐行视图的页"），本格是 yes 还是 no 仍由模型判——下面 :421 的
+        # 注释一直是这么写的，但它被排除在 ask_list 外、答案又在那里被 discard 掉，
+        # 于是没有任何地方真去问。
+        #
+        # 后果实测（完美模型模拟）：32 个筛选区块里 31 个的 workbench 格永远进不了
+        # `asked`，:442 的 `asked >= set(kinds)` 因此永远不成立——它们被算作"没问全"，
+        # `--dry-run` 每次都把它们列进"不下结论，重跑"，`--write` 一次都不会给它们
+        # 打标。这个脚本存在的意义就是让 pageKinds 可重算，而筛选整族对它不可达。
+        ask_list = [b for b in enabled if needs_model(verdict_of[str(b["type"])])]
         for b in enabled:
             v = verdict_of[str(b["type"])]
             if v is None:
@@ -502,6 +620,13 @@ def main() -> int:
             asked[t].add(kind)
             if v[0] == "require":
                 derived[t].add(kind)
+            elif v[0] == "require_any_row":
+                # 这一格不是"必须是它"，只是记账位——照旧交给模型判。
+                # 上面预先 add 的那笔要撤掉：这一格算不算"问过"，取决于模型
+                # 这一轮有没有答上（答上了由下面 :447 补记）。留着会让答不上来的
+                # 也被当成问过，把"没问全"悄悄吞掉。现在它确实在 ask_list 里了。
+                asked[t].discard(kind)
+                continue
             why_of[(t, kind)] = f"硬判据：{v[1]}"
 
         got: dict[str, tuple[bool, str]] = {}
