@@ -23,16 +23,9 @@ import {
 } from "./page-views";
 import {
   BUSINESS_MUTED_SURFACE_STYLE,
-  BUSINESS_SECONDARY_TEXT_COLOR,
-  BUSINESS_TERTIARY_TEXT_COLOR,
   BUSINESS_TEXT_COLOR,
+  INK,
 } from "./business-surface-theme";
-
-const INK = {
-  label: BUSINESS_SECONDARY_TEXT_COLOR,
-  value: BUSINESS_TEXT_COLOR,
-  faint: BUSINESS_TERTIARY_TEXT_COLOR,
-};
 
 /** tone → 事件点/列顶条颜色（与 antd 状态色一致）。 */
 const TONE_COLORS: Record<FieldTone, string> = {

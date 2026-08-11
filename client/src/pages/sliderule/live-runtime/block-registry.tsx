@@ -258,6 +258,13 @@ import {
   ProductVariantMatrixBuilderRenderer,
 } from "./independent-structure-blocks-batch8";
 import { deriveWorkflowMainPath } from "./workflow-main-path";
+import {
+  BLOCK_CHART_AXIS_FONT_SIZE,
+  BUSINESS_FILL_COLOR,
+  BUSINESS_SPLIT_COLOR,
+  INK,
+  INK_HEX,
+} from "./business-surface-theme";
 // ECharts 基建走独立 chunk（跟 AppRuntimeScreen 里那份同一个组件/同一个
 // import()，Vite 按 module 去重成一个 chunk，不会重复打包）。
 const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
@@ -965,7 +972,7 @@ const StandardListRowsRenderer: ExperienceBlockRenderer = ({
               <Flex gap={28} style={{ marginRight: 24 }}>
                 {statRefs.map(f => (
                   <div key={f} style={{ minWidth: 72 }}>
-                    <div style={{ fontSize: 11, color: "#8c8c8c" }}>
+                    <div style={{ fontSize: 11, color: INK.faint }}>
                       {fieldLabelOf?.(bound.entityRef, f) ?? f}
                     </div>
                     <div style={{ fontSize: 13 }}>
@@ -1136,7 +1143,7 @@ const TagFilterRowRenderer: ExperienceBlockRenderer = ({
             <Flex key={row.id} align="flex-start" gap={8} data-testid="tag-filter-dimension">
               {/* 左栏固定宽度：几行标题要左对齐，不然扫不出有几个维度 */}
               <span
-                style={{ width: 72, flex: "0 0 72px", fontSize: 12, color: "#64748b", lineHeight: "24px" }}
+                style={{ width: 72, flex: "0 0 72px", fontSize: 12, color: INK.label, lineHeight: "24px" }}
               >
                 {fieldLabelOf?.(entityRef, row.id) ?? row.label}
               </span>
@@ -2050,7 +2057,7 @@ function BlockEmpty({ hint }: { hint: string }) {
       image={Empty.PRESENTED_IMAGE_SIMPLE}
       styles={{ image: { height: 40 } }}
       description={
-        <span style={{ fontSize: 12, color: "var(--sr-text-muted, #8c8c8c)" }}>
+        <span style={{ fontSize: 12, color: INK.faint }}>
           {hint}
         </span>
       }
@@ -2163,7 +2170,7 @@ const MetricGridRenderer: ExperienceBlockRenderer = ({
       extra={
         hint ? (
           <Tooltip title={hint}>
-            <span data-testid="metric-grid-hint" style={{ color: "#94a3b8", fontSize: 12 }}>
+            <span data-testid="metric-grid-hint" style={{ color: INK.faint, fontSize: 12 }}>
               <AntdIcons.InfoCircleOutlined />
             </span>
           </Tooltip>
@@ -2269,9 +2276,9 @@ const TrendChartRenderer: ExperienceBlockRenderer = ({
     xAxis: {
       type: "category",
       data: series.categories,
-      axisLabel: { fontSize: 10, color: "#8c8c8c" },
+      axisLabel: { fontSize: BLOCK_CHART_AXIS_FONT_SIZE, color: INK_HEX.faint },
     },
-    yAxis: { type: "value", axisLabel: { fontSize: 10, color: "#8c8c8c" } },
+    yAxis: { type: "value", axisLabel: { fontSize: BLOCK_CHART_AXIS_FONT_SIZE, color: INK_HEX.faint } },
     series: [
       {
         type: "line",
@@ -2859,9 +2866,9 @@ const PageHeaderRenderer: ExperienceBlockRenderer = ({ block, onAction }) => {
       style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}
     >
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>{title || "未命名页面"}</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: INK.value }}>{title || "未命名页面"}</div>
         {subtitle && (
-          <div style={{ marginTop: 2, fontSize: 12.5, color: "#64748b" }}>{subtitle}</div>
+          <div style={{ marginTop: 2, fontSize: 12, color: INK.label }}>{subtitle}</div>
         )}
       </div>
       <Space>
@@ -3092,13 +3099,13 @@ const BatchActionBarRenderer: ExperienceBlockRenderer = ({
       {selected.length === 0 ? (
         <div
           data-testid="batch-action-bar-idle"
-          style={{ fontSize: 12.5, color: "#94a3b8", padding: "6px 4px" }}
+          style={{ fontSize: 12, color: INK.faint, padding: "6px 4px" }}
         >
           勾选左侧的行以批量处理
         </div>
       ) : (
         <Flex align="center" gap="small" wrap style={{ padding: "4px 0" }}>
-          <span style={{ fontSize: 13, color: "#0f172a" }}>
+          <span style={{ fontSize: 13, color: INK.value }}>
             已选择 <b data-testid="batch-selected-count">{selected.length}</b> 项
           </span>
           <Button
@@ -3328,7 +3335,7 @@ const ColumnSettingPanelRenderer: ExperienceBlockRenderer = ({
             {anyFixed && (
               <div
                 data-testid="column-setting-group-title"
-                style={{ fontSize: 11, color: "#94a3b8", marginBottom: 2 }}
+                style={{ fontSize: 11, color: INK.faint, marginBottom: 2 }}
               >
                 {group.title}
               </div>
@@ -4803,7 +4810,7 @@ const ContentCardRenderer: ExperienceBlockRenderer = ({ block, children }) => {
           <div style={{ paddingTop: 2, paddingBottom: 2 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
             {subtitle && (
-              <div style={{ fontSize: 11, fontWeight: 400, color: "#8c8c8c" }}>{subtitle}</div>
+              <div style={{ fontSize: 11, fontWeight: 400, color: INK.faint }}>{subtitle}</div>
             )}
           </div>
         ) : undefined
@@ -5167,7 +5174,7 @@ const KanbanBoardRenderer: ExperienceBlockRenderer = ({ block, children, entityR
           {columns.map(column => {
             const rows = bound.rows.filter(row => String(row.values?.[statusRef] ?? "").trim() === column.value);
             return (
-              <Card key={column.value} size="small" variant="borderless" styles={{ body: { padding: 8, background: "#f5f5f5" } }} title={<Space size={6}><span>{column.label}</span><Badge count={rows.length} showZero color="#8c8c8c" /></Space>}>
+              <Card key={column.value} size="small" variant="borderless" styles={{ body: { padding: 8, background: BUSINESS_FILL_COLOR } }} title={<Space size={6}><span>{column.label}</span><Badge count={rows.length} showZero color={INK.faint} /></Space>}>
                 {rows.length === 0 ? <BlockEmpty hint="这一列还没有记录" /> : (
                   <Space direction="vertical" size={8} style={{ width: "100%" }}>
                     {rows.map(row => (
@@ -5697,7 +5704,7 @@ const DistributionHistogramRenderer: ExperienceBlockRenderer = ({ block, childre
   const title = String(block.props?.title ?? "数值分布"); const bound = rowsOfBinding(block, entityRows); const valueRef = fieldRefOf(block, "valueFieldRef"); const values = bound && valueRef ? bound.rows.map(row => Number(row.values?.[valueRef])).filter(Number.isFinite) : [];
   if (!bound || !valueRef) return <AnalysisChart block={block} title={title} testid="distribution-histogram" hint="直方图尚未绑定数值字段" />;
   const bins = Math.max(3, Math.min(12, Number(block.props?.bins ?? 6))); const min = values.length ? Math.min(...values) : 0; const max = values.length ? Math.max(...values) : 0; const width = max === min ? 1 : (max - min) / bins; const counts = Array.from({ length: bins }, () => 0); values.forEach(value => { counts[Math.min(bins - 1, Math.floor((value - min) / width))] += 1; }); const labels = counts.map((_, index) => `${(min + index * width).toFixed(0)}–${(min + (index + 1) * width).toFixed(0)}`);
-  const option = values.length ? { animation: false, tooltip: { trigger: "axis", confine: true }, grid: { left: 8, right: 8, top: 16, bottom: 8, containLabel: true }, xAxis: { type: "category", data: labels, axisLabel: { fontSize: 9, rotate: 25 } }, yAxis: { type: "value", minInterval: 1 }, series: [{ type: "bar", data: counts, barGap: 0, itemStyle: { color: chartColors(chartPalette)[0] } }] } : undefined;
+  const option = values.length ? { animation: false, tooltip: { trigger: "axis", confine: true }, grid: { left: 8, right: 8, top: 16, bottom: 8, containLabel: true }, xAxis: { type: "category", data: labels, axisLabel: { fontSize: BLOCK_CHART_AXIS_FONT_SIZE, rotate: 25 } }, yAxis: { type: "value", minInterval: 1 }, series: [{ type: "bar", data: counts, barGap: 0, itemStyle: { color: chartColors(chartPalette)[0] } }] } : undefined;
   return <AnalysisChart block={block} title={title} testid="distribution-histogram" option={option} hint="当前没有可计算的数值" />;
 };
 
@@ -5706,7 +5713,7 @@ const HeatmapMatrixRenderer: ExperienceBlockRenderer = ({ block, children, entit
   const title = String(block.props?.title ?? "热力矩阵"); const bound = rowsOfBinding(block, entityRows); const xRef = fieldRefOf(block, "xFieldRef"); const yRef = fieldRefOf(block, "yFieldRef"); const valueRef = fieldRefOf(block, "valueFieldRef");
   if (!bound || !xRef || !yRef) return <AnalysisChart block={block} title={title} testid="heatmap-matrix" hint="热力矩阵尚未绑定横纵维度" />;
   const xs = Array.from(new Set(bound.rows.map(row => String(row.values?.[xRef] ?? "")).filter(Boolean))).slice(0, 12); const ys = Array.from(new Set(bound.rows.map(row => String(row.values?.[yRef] ?? "")).filter(Boolean))).slice(0, 10); const map = new Map<string, number>(); bound.rows.forEach(row => { const x = String(row.values?.[xRef] ?? ""); const y = String(row.values?.[yRef] ?? ""); if (x && y) map.set(`${x}\u0000${y}`, (map.get(`${x}\u0000${y}`) ?? 0) + (valueRef ? Number(row.values?.[valueRef] ?? 0) : 1)); }); const data = ys.flatMap((y, yi) => xs.map((x, xi) => [xi, yi, map.get(`${x}\u0000${y}`) ?? 0])); const max = Math.max(1, ...data.map(item => Number(item[2])));
-  const option = xs.length && ys.length ? { animation: false, tooltip: { position: "top", confine: true }, grid: { left: 8, right: 8, top: 8, bottom: 24, containLabel: true }, xAxis: { type: "category", data: xs, splitArea: { show: true }, axisLabel: { fontSize: 9 } }, yAxis: { type: "category", data: ys, splitArea: { show: true }, axisLabel: { fontSize: 9 } }, visualMap: { min: 0, max, show: false, inRange: { color: ["#f0f5ff", chartColors(chartPalette)[0]] } }, series: [{ type: "heatmap", data, label: { show: data.length <= 48 } }] } : undefined;
+  const option = xs.length && ys.length ? { animation: false, tooltip: { position: "top", confine: true }, grid: { left: 8, right: 8, top: 8, bottom: 24, containLabel: true }, xAxis: { type: "category", data: xs, splitArea: { show: true }, axisLabel: { fontSize: BLOCK_CHART_AXIS_FONT_SIZE } }, yAxis: { type: "category", data: ys, splitArea: { show: true }, axisLabel: { fontSize: BLOCK_CHART_AXIS_FONT_SIZE } }, visualMap: { min: 0, max, show: false, inRange: { color: ["#f0f5ff", chartColors(chartPalette)[0]] } }, series: [{ type: "heatmap", data, label: { show: data.length <= 48 } }] } : undefined;
   return <AnalysisChart block={block} title={title} testid="heatmap-matrix" option={option} hint="当前没有可组成矩阵的数据" />;
 };
 
@@ -5732,7 +5739,7 @@ const GanttScheduleRenderer: ExperienceBlockRenderer = ({ block, children, entit
   const title = String(block.props?.title ?? "计划排期"); const bound = rowsOfBinding(block, entityRows); const labelRef = fieldRefOf(block, "labelFieldRef"); const startRef = fieldRefOf(block, "startFieldRef"); const endRef = fieldRefOf(block, "endFieldRef"); const groupRef = fieldRefOf(block, "groupFieldRef");
   if (!bound || !labelRef || !startRef || !endRef) return <AnalysisChart block={block} title={title} testid="gantt-schedule" hint="甘特排期尚未绑定名称、开始和结束字段" />;
   const rows = bound.rows.flatMap((row, index) => { const start = dayjs(String(row.values?.[startRef] ?? "")); const end = dayjs(String(row.values?.[endRef] ?? "")); return start.isValid() && end.isValid() && !end.isBefore(start) ? [{ name: String(row.values?.[labelRef] ?? row.id), group: groupRef ? String(row.values?.[groupRef] ?? "") : "", value: [index, start.valueOf(), end.valueOf()] }] : []; }); const colors = chartColors(chartPalette);
-  const option = rows.length ? { animation: false, tooltip: { confine: true, formatter: (p: { data: { name: string; group: string; value: number[] } }) => `${p.data.name}<br/>${dayjs(p.data.value[1]).format("MM-DD")} 至 ${dayjs(p.data.value[2]).format("MM-DD")}${p.data.group ? `<br/>${p.data.group}` : ""}` }, grid: { left: 80, right: 10, top: 8, bottom: 24 }, xAxis: { type: "time", minInterval: 86400000, axisLabel: { fontSize: 9, formatter: (value: number) => dayjs(value).format("MM-DD") } }, yAxis: { type: "category", data: rows.map(row => row.name), axisLabel: { fontSize: 9, width: 68, overflow: "truncate" } }, series: [{ type: "custom", renderItem: (params: { dataIndex: number; coordSys: { x: number; y: number; width: number; height: number } }, api: { value: (i: number) => number; coord: (v: number[]) => number[]; size: (v: number[]) => number[] }) => { const category = api.value(0); const start = api.coord([api.value(1), category]); const end = api.coord([api.value(2), category]); const height = Math.min(18, api.size([0, 1])[1] * 0.55); return { type: "rect", shape: { x: start[0], y: start[1] - height / 2, width: Math.max(2, end[0] - start[0]), height }, style: { fill: colors[params.dataIndex % colors.length] } }; }, encode: { x: [1, 2], y: 0 }, data: rows }] } : undefined;
+  const option = rows.length ? { animation: false, tooltip: { confine: true, formatter: (p: { data: { name: string; group: string; value: number[] } }) => `${p.data.name}<br/>${dayjs(p.data.value[1]).format("MM-DD")} 至 ${dayjs(p.data.value[2]).format("MM-DD")}${p.data.group ? `<br/>${p.data.group}` : ""}` }, grid: { left: 80, right: 10, top: 8, bottom: 24 }, xAxis: { type: "time", minInterval: 86400000, axisLabel: { fontSize: BLOCK_CHART_AXIS_FONT_SIZE, formatter: (value: number) => dayjs(value).format("MM-DD") } }, yAxis: { type: "category", data: rows.map(row => row.name), axisLabel: { fontSize: BLOCK_CHART_AXIS_FONT_SIZE, width: 68, overflow: "truncate" } }, series: [{ type: "custom", renderItem: (params: { dataIndex: number; coordSys: { x: number; y: number; width: number; height: number } }, api: { value: (i: number) => number; coord: (v: number[]) => number[]; size: (v: number[]) => number[] }) => { const category = api.value(0); const start = api.coord([api.value(1), category]); const end = api.coord([api.value(2), category]); const height = Math.min(18, api.size([0, 1])[1] * 0.55); return { type: "rect", shape: { x: start[0], y: start[1] - height / 2, width: Math.max(2, end[0] - start[0]), height }, style: { fill: colors[params.dataIndex % colors.length] } }; }, encode: { x: [1, 2], y: 0 }, data: rows }] } : undefined;
   return <AnalysisChart block={block} title={title} testid="gantt-schedule" option={option} hint="当前没有有效排期记录" />;
 };
 
@@ -5751,7 +5758,7 @@ const BoxPlotDistributionRenderer: ExperienceBlockRenderer = ({ block, children,
   if (children !== undefined && children !== null) return <>{children}</>;
   const title = String(block.props?.title ?? "箱线分布"); const bound = rowsOfBinding(block, entityRows); const categoryRef = fieldRefOf(block, "categoryFieldRef"); const valueRef = fieldRefOf(block, "valueFieldRef");
   if (!bound || !categoryRef || !valueRef) return <AnalysisChart block={block} title={title} testid="boxplot-distribution" hint="箱线图尚未绑定分类和数值字段" />;
-  const groups = new Map<string, number[]>(); bound.rows.forEach(row => { const category = String(row.values?.[categoryRef] ?? "").trim(); const value = Number(row.values?.[valueRef]); if (category && Number.isFinite(value)) groups.set(category, [...(groups.get(category) ?? []), value]); }); const entries = [...groups.entries()]; const option = entries.length ? { animation: false, tooltip: { trigger: "item", confine: true }, grid: { left: 8, right: 8, top: 12, bottom: 8, containLabel: true }, xAxis: { type: "category", data: entries.map(([name]) => name), axisLabel: { fontSize: 9 } }, yAxis: { type: "value" }, series: [{ type: "boxplot", data: entries.map(([, values]) => quartiles(values)), itemStyle: { color: chartColors(chartPalette)[0], borderColor: chartColors(chartPalette)[0] } }] } : undefined;
+  const groups = new Map<string, number[]>(); bound.rows.forEach(row => { const category = String(row.values?.[categoryRef] ?? "").trim(); const value = Number(row.values?.[valueRef]); if (category && Number.isFinite(value)) groups.set(category, [...(groups.get(category) ?? []), value]); }); const entries = [...groups.entries()]; const option = entries.length ? { animation: false, tooltip: { trigger: "item", confine: true }, grid: { left: 8, right: 8, top: 12, bottom: 8, containLabel: true }, xAxis: { type: "category", data: entries.map(([name]) => name), axisLabel: { fontSize: BLOCK_CHART_AXIS_FONT_SIZE } }, yAxis: { type: "value" }, series: [{ type: "boxplot", data: entries.map(([, values]) => quartiles(values)), itemStyle: { color: chartColors(chartPalette)[0], borderColor: chartColors(chartPalette)[0] } }] } : undefined;
   return <AnalysisChart block={block} title={title} testid="boxplot-distribution" option={option} hint="当前没有可计算的分类数值" />;
 };
 
@@ -5759,7 +5766,7 @@ const RadarComparisonRenderer: ExperienceBlockRenderer = ({ block, children, ent
   if (children !== undefined && children !== null) return <>{children}</>;
   const title = String(block.props?.title ?? "多维对比"); const bound = rowsOfBinding(block, entityRows); const nameRef = fieldRefOf(block, "nameFieldRef"); const fields = fieldRefListOf(block, "metricFieldRefs").slice(0, 8);
   if (!bound || !nameRef || fields.length < 3) return <AnalysisChart block={block} title={title} testid="radar-comparison" hint="雷达对比至少需要名称和三个数值维度" />;
-  const maxima = fields.map(field => Math.max(1, ...bound.rows.map(row => Number(row.values?.[field] ?? 0)))); const option = bound.rows.length ? { animation: false, color: chartColors(chartPalette), tooltip: { trigger: "item", confine: true }, radar: { radius: "62%", indicator: fields.map((field, index) => ({ name: fieldLabelOf?.(bound.entityRef, field) ?? field, max: maxima[index] * 1.15 })), axisName: { fontSize: 9 } }, series: [{ type: "radar", data: bound.rows.slice(0, 5).map(row => ({ name: String(row.values?.[nameRef] ?? row.id), value: fields.map(field => Number(row.values?.[field] ?? 0)), areaStyle: { opacity: 0.08 } })) }] } : undefined;
+  const maxima = fields.map(field => Math.max(1, ...bound.rows.map(row => Number(row.values?.[field] ?? 0)))); const option = bound.rows.length ? { animation: false, color: chartColors(chartPalette), tooltip: { trigger: "item", confine: true }, radar: { radius: "62%", indicator: fields.map((field, index) => ({ name: fieldLabelOf?.(bound.entityRef, field) ?? field, max: maxima[index] * 1.15 })), axisName: { fontSize: BLOCK_CHART_AXIS_FONT_SIZE } }, series: [{ type: "radar", data: bound.rows.slice(0, 5).map(row => ({ name: String(row.values?.[nameRef] ?? row.id), value: fields.map(field => Number(row.values?.[field] ?? 0)), areaStyle: { opacity: 0.08 } })) }] } : undefined;
   return <AnalysisChart block={block} title={title} testid="radar-comparison" option={option} hint="当前没有可对比的记录" />;
 };
 
@@ -6016,7 +6023,7 @@ const AlertRoutingPolicyRenderer: ExperienceBlockRenderer = ({ block, children, 
   if (children !== undefined && children !== null) return <>{children}</>;
   const bound = rowsOfBinding(block, entityRows); const nameRef = fieldRefOf(block, "nameFieldRef"); const parentRef = fieldRefOf(block, "parentFieldRef"); const matcherRef = fieldRefOf(block, "matcherFieldRef"); const receiverRef = fieldRefOf(block, "receiverFieldRef");
   if (!bound || !nameRef || !parentRef || !receiverRef) return <BlockShell block={block} title={String(block.props?.title ?? "告警路由策略")} testid="alert-routing-policy"><BlockEmpty hint="路由策略尚未绑定名称、父级和接收方字段" /></BlockShell>;
-  const childrenOf = (parent: string) => bound.rows.filter(row => String(row.values?.[parentRef] ?? "") === parent); const renderNode = (row: RuntimeRow): React.ReactNode => <div key={row.id} style={{ marginBottom: 8 }}><Flex align="center" justify="space-between" gap={8}><div><Typography.Text strong>{String(row.values?.[nameRef] ?? "未命名策略")}</Typography.Text><div><Typography.Text type="secondary">{matcherRef ? String(row.values?.[matcherRef] ?? "全部告警") : "全部告警"} → {String(row.values?.[receiverRef] ?? "未配置接收方")}</Typography.Text></div></div><Button size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "editPolicy" })}>编辑</Button></Flex>{childrenOf(row.id).length > 0 && <div style={{ borderLeft: "2px solid #f0f0f0", marginTop: 8, paddingLeft: 12 }}>{childrenOf(row.id).map(renderNode)}</div>}</div>;
+  const childrenOf = (parent: string) => bound.rows.filter(row => String(row.values?.[parentRef] ?? "") === parent); const renderNode = (row: RuntimeRow): React.ReactNode => <div key={row.id} style={{ marginBottom: 8 }}><Flex align="center" justify="space-between" gap={8}><div><Typography.Text strong>{String(row.values?.[nameRef] ?? "未命名策略")}</Typography.Text><div><Typography.Text type="secondary">{matcherRef ? String(row.values?.[matcherRef] ?? "全部告警") : "全部告警"} → {String(row.values?.[receiverRef] ?? "未配置接收方")}</Typography.Text></div></div><Button size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "editPolicy" })}>编辑</Button></Flex>{childrenOf(row.id).length > 0 && <div style={{ borderLeft: `2px solid ${BUSINESS_SPLIT_COLOR}`, marginTop: 8, paddingLeft: 12 }}>{childrenOf(row.id).map(renderNode)}</div>}</div>;
   return <BlockShell block={block} title={String(block.props?.title ?? "告警路由策略")} testid="alert-routing-policy">{childrenOf("").length ? childrenOf("").map(renderNode) : <BlockEmpty hint="当前没有根路由策略" />}</BlockShell>;
 };
 
