@@ -15,6 +15,7 @@ call_llm_json_with_shape. Anything else raises UnsupportedCapability so the call
 """
 from __future__ import annotations
 
+import os
 import re
 from contextvars import ContextVar
 from typing import Any, Callable
@@ -211,6 +212,44 @@ STRUCTURED_JSON_CAPABILITIES: frozenset[str] = frozenset({"report.write"})
 
 REPORT_WRITE_REQUIRED_KEYS = ("title", "summary", "content")
 REPORT_WRITE_MAX_TOKENS = 4000
+
+#: 轮内能力的输出上限。**2000 → 8000（2026-08-11 线上实测之后）。**
+#:
+#: ## 为什么翻上来
+#:
+#: 推理模型的**思考 token 和正文共用同一个 max_tokens**。线上跑一道真题时
+#: `intent.clarify` 占着连接算了 115.5 秒，正文一个字都没吐，抛
+#: `empty content from LLM (stream)`，整轮被它一个人从 22 秒拖到 116 秒
+#: （并行批的耗时等于最慢那个），最后还得回退 RAG——**产出也打了折**。
+#:
+#: 这个坑仓库**已经踩过一次并写下来了**，就在 v5_llm_generate.py 的
+#: `_DEFAULT_GENERATE_MAX_TOKENS` 头上：「推理模型必须调大…8000 全被思考吃掉，
+#: 正文一个字都没有，finish_reason=length…表现像"服务商坏了"，其实是预算不够」。
+#: 但那次只补在了**生成**那条路上，轮内能力这条路还写死在函数默认值 2000。
+#:
+#: ## 纪律
+#:
+#: **走 LLM 的路径，token 预算不许写死在函数默认值里。** 写在那儿的东西
+#: 没有名字、搜不到、也没人会想起来它跟模型换代有关系——今天这是第二次栽。
+#: 预算一律做成"有名字的常量 + 环境变量可覆盖"，换模型时有地方可查。
+#: 判据见 tests/test_llm_token_budget.py。
+_DEFAULT_ROUND_CAP_MAX_TOKENS = 8000
+
+
+def round_cap_max_tokens() -> int:
+    """轮内能力的输出上限。`LLM_ROUND_CAP_MAX_TOKENS` 可覆盖。
+
+    每次读而不是模块级常量——跟 `_generate_max_tokens()` 同一条理由：
+    测试与评测脚本要能改完环境变量立刻生效。
+    """
+    raw = (os.getenv("LLM_ROUND_CAP_MAX_TOKENS") or "").strip()
+    if not raw:
+        return _DEFAULT_ROUND_CAP_MAX_TOKENS
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_ROUND_CAP_MAX_TOKENS
+    return value if value > 0 else _DEFAULT_ROUND_CAP_MAX_TOKENS
 REPORT_WRITE_SECTION_MARKERS = (
     "结论",
     "支撑证据",
@@ -366,10 +405,15 @@ def execute_capability(
     caller: Callable[..., LlmResult] | None = None,
     json_caller: Callable[..., tuple[dict[str, Any], LlmResult]] | None = None,
     evidence_retriever: Callable[[str], EvidenceRetrievalResult] | None = None,
-    max_tokens: int = 2000,
+    max_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Run one capability via a REAL LLM call. Raises UnsupportedCapability / LlmError on failure
-    (caller decides fallback). `caller` / `json_caller` are injectable for deterministic unit tests."""
+    (caller decides fallback). `caller` / `json_caller` are injectable for deterministic unit tests.
+
+    `max_tokens=None`（缺省）走 `round_cap_max_tokens()`——**不再写死在签名里**，
+    理由见那个常量头上的长注释。显式传值仍然优先（测试与评测靠它）。
+    """
+    max_tokens = max_tokens or round_cap_max_tokens()
     capability_id = body.get("capabilityId")
     if not is_python_native_capability(capability_id):
         raise UnsupportedCapability(str(capability_id))

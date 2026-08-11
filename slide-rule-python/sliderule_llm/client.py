@@ -274,6 +274,34 @@ def _responses_payload(messages, model, temperature, max_tokens, reasoning, stre
 
 # ── response extraction (chat + responses shapes) ─────────────────────────────
 
+def _empty_content_hint(finish: str | None, max_tokens: int, usage: dict | None) -> str:
+    """空内容报错时，把**为什么空**一起说出来（2026-08-11）。
+
+    ## 差这一个词，两个完全不同的故障长得一模一样
+
+    线上实测：`intent.clarify` 占着连接算了 115.5 秒、正文零字节，报的是
+    `empty content from LLM (stream)`。读到这句话的人第一反应是"服务商坏了"，
+    于是去查上游、查网络——**而真因是 max_tokens 不够**：推理模型的思考 token
+    和正文共用同一个预算，思考把它吃光，`finish_reason=length`，正文自然是空的。
+
+    仓库里那条 `_DEFAULT_GENERATE_MAX_TOKENS` 的注释原话就是「表现像"服务商坏了"，
+    其实是预算不够」——**它预言了这次误诊，而报错消息里偏偏没带这个词。**
+    信息一直在手上（`finish` 就在同一个函数里，成功路径还会塞进返回值），
+    只是没写进错误。
+
+    所以这里只做一件事：把 finish_reason 和当时的预算写进消息。
+    """
+    bits = [f"finish_reason={finish or 'unknown'}", f"max_tokens={max_tokens}"]
+    if isinstance(usage, dict):
+        for key in ("completion_tokens", "reasoning_tokens", "total_tokens"):
+            if usage.get(key) is not None:
+                bits.append(f"{key}={usage[key]}")
+    tail = ""
+    if str(finish or "").lower() == "length":
+        tail = "（预算被吃光，不是服务商故障：推理模型的思考 token 与正文共用 max_tokens，调大 LLM_ROUND_CAP_MAX_TOKENS / LLM_GENERATE_MAX_TOKENS）"
+    return f"[{' '.join(bits)}]{tail}"
+
+
 def _extract(data: dict[str, Any], wire: str) -> tuple[str, dict | None, str | None]:
     if wire == "responses":
         text = data.get("output_text")
@@ -605,7 +633,11 @@ def _call_llm_once(
 
     content, usage, finish = _extract(data, cfg.wire_api)
     if not content.strip():
-        raise LlmError("empty content from LLM", status=r.status_code, transient=False)
+        raise LlmError(
+            f"empty content from LLM {_empty_content_hint(finish, max_tokens, usage)}",
+            status=r.status_code,
+            transient=False,
+        )
     return LlmResult(
         content=content,
         usage=usage,
@@ -706,7 +738,10 @@ def _call_llm_once_streaming(
     latency = int((time.time() - started) * 1000)
     content = "".join(content_parts)
     if not content.strip():
-        raise LlmError("empty content from LLM (stream)", transient=False)
+        raise LlmError(
+            f"empty content from LLM (stream) {_empty_content_hint(finish, max_tokens, usage)}",
+            transient=False,
+        )
     return LlmResult(
         content=content,
         usage=usage,
