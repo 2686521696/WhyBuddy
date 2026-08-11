@@ -431,4 +431,65 @@ describe("字段声明要真的走到表单控件", () => {
     for (const fmt of ["money", "percent", "progress", "score", "rating", "masked"])
       expect(body, `对照台上没有任何字段声明成 ${fmt}`).toContain(`"${fmt}"`);
   });
+
+  /**
+   * 选择态**只有 DataTable 一个供给方** —— 别把它拆了。
+   *
+   * ## 这条是怎么来的（2026-08-11）
+   *
+   * `pageKinds` 推导脚本第二层跑出来的一条建议是「BatchActionBar 不该上看板页，
+   * 因为看板没有多行勾选」。查下来那个**观察是对的，结论是错的**：
+   *
+   *   · `KanbanBoard`（PageViews.tsx:46）只收 rows/statusField/cardFields/onOpenRow，
+   *     确实没有勾选；
+   *   · 但 `DataTable` 允许上看板页，而它**就是**选择态的供给方；
+   *   · 而且内置表格（AppRuntimeScreen 里那几处 Table）一个都没有 rowSelection
+   *     —— 所以 workbench 页同样只在"页面另外声明了 DataTable"时才有勾选。
+   *
+   * 也就是说这是**区块与区块之间的依赖**，不是区块与页型之间的。narrowing
+   * `pageKinds` 治不了它，只会把问题挪个地方。`BatchActionBar` 的出处注释
+   * 早写明了这层依赖（"先给 DataTable 接上 rowSelection…再建这个区块"），
+   * 但目录里没有任何字段能表达"我需要一个提供选择态的同伴"。
+   *
+   * 所以这里先钉住那条**唯一的供给链**：DataTable 的 rowSelection 一旦被摘掉，
+   * BatchActionBar 就会退化成一句永远的「勾选左侧的行」——那正是②阶段复盘
+   * 抓到的形状（渲染得完全正常，只是点不动）。
+   */
+  it("选择态只有 DataTable 供给，摘了它 BatchActionBar 就静默变死壳", () => {
+    // ① DataTable 必须真的把选中键回传给宿主
+    const dt = registry.indexOf("const DataTableRenderer");
+    expect(dt, "DataTableRenderer 改名了？").toBeGreaterThan(-1);
+    const dtBody = registry.slice(dt, registry.indexOf("\n};", dt));
+    expect(dtBody, "DataTable 不再提供勾选列了 —— BatchActionBar 会变死壳").toContain(
+      "rowSelection"
+    );
+    expect(dtBody, "DataTable 勾了不回传，选择态到不了别的区块").toContain(
+      "onSelectionChange("
+    );
+
+    // ② 而且它是**唯一**的供给方。多出第二个供给方本身是好事，
+    //    但这条断言会红，提醒回来把上面那段说明改掉。
+    //
+    // 只数**调用点**（`onSelectionChange(` / `onSelectionChange?.(`），不数类型
+    // 声明里的 `onSelectionChange?: (`。当前恰好两处：DataTable 里写入选中键，
+    // BatchActionBar 里的「清空」把它清成空数组（那是消费方在复位，不是供给方）。
+    const callSites = [
+      ...registry.matchAll(/onSelectionChange(\?\.)?\(/g),
+    ].map(m => m.index ?? 0);
+    expect(
+      callSites.length,
+      "onSelectionChange 的调用点数变了 —— 确认是不是多了供给方，并更新本用例说明"
+    ).toBe(2);
+    // 其中"真正写入非空选中键"的那一处必须在 DataTable 里
+    expect(
+      callSites.some(i => i > dt && i < registry.indexOf("\n};", dt)),
+      "写入选中键的调用点不在 DataTableRenderer 里了"
+    ).toBe(true);
+
+    // ③ 内置表格没有勾选 —— 这正是"必须有 DataTable 同伴"的原因
+    expect(
+      runtime.includes("rowSelection"),
+      "内置表格接上勾选了？那 BatchActionBar 就不再依赖 DataTable 同伴，请更新说明"
+    ).toBe(false);
+  });
 });

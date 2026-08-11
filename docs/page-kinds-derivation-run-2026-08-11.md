@@ -187,4 +187,71 @@ ValidatedFormTabs
 
 这条当初评审时选的是"先不动，等度量台"。但 `ffaf964` 把页型限制写成了 prompt 里
 的 MUST 规则之后它不再是可选项——同一份提示词里 323 个推荐里有 134 个与 MUST
-规则直接矛盾。`40f28e2` 先修了矛盾（推荐清单 323 → 189），度量那一轮仍然欠着。
+规则直接矛盾。`40f28e2` 先修了矛盾（推荐清单 323 → 189）。
+
+**那次欠着的度量已经补上了，见第七节——查出一处真回归。**
+
+## 七、补做欠着的度量：推荐清单收窄踢掉了一个真在用的区块
+
+`40f28e2` 把推荐清单从 323 收到 189，是生成路径上的真行为变更，而当初定的
+"得上度量台跑一轮再定"一直欠着。这次用**零 LLM 成本**的办法补上了。
+
+### 办法：拿真实生成结果当真相源，不重新跑生成
+
+度量台早先存过 **177 份真实生成模型**（`--save-dir` 的产物）。从里面抽出
+**总览页上真的被摆出来过的区块**，再跟收窄后的推荐清单比——曾经被用过、现在不
+推荐了的，就是这次收窄的实际代价。
+
+    扫了 177 份真实生成模型，其中总览页 199 个
+    总览页上真的被摆出来的区块：13 种，共 466 次
+
+### 结果：2 种被踢掉，其中 1 种是真回归
+
+| 区块 | 总览页用过 | 现在的 pageKinds | 判断 |
+|---|---|---|---|
+| `QuickActionPanel` | **43 次**（第 3 多） | workbench,wizard | **真回归，已修** |
+| `DataTable` | 4 次 | workbench,kanban,calendar | 本来就该禁（禁令里点名了） |
+
+前两名 `ActivityFeed`（180 次）、`WorkflowTimeline`（157 次）都还在清单里，
+所以收窄整体是安全的——**只漏了 `QuickActionPanel` 这一个**。
+
+### 为什么判定它是"目录标错"而不是"推荐错了"
+
+`40f28e2` 的默认假设是"目录是对的、推荐是错的"，它的注释还正好拿
+`QuickActionPanel` 当矛盾的例子。四条证据指向反面：
+
+1. **177 份真实模型里在总览页用过 43 次**，是第三多的；
+2. **`freeform_block._VISUAL_SHAPE` 只有 4 个形状是总览页设计环节画得出来的**
+   （RankedList / ActivityFeed / QuickActionPanel / WorkflowTimeline），
+   另外三个都允许 monitor，只有它不允许——渲染端支持，声明没跟上；
+3. **`monitor_ok` 那句话本身就在描述它**：*a panel of the actions this role
+   starts the day with*；
+4. **2026-07-31 补那句祈使语的起因**原文记的正是「QuickActionPanel /
+   WorkflowTimeline 这两个通电且真渲染的区块从未被生成过」——推荐清单一收窄，
+   那次修的洞就被重新打开了一半。
+
+修法：`QuickActionPanel` 的 `pageKinds` 加 `monitor`（只加 monitor，因为实测
+43 次全部发生在 monitor 页，dashboard 页 0 次）。推荐清单 189 → 196。
+
+新增 `test_总览页设计环节画得出的形状都得允许总览页`：把 `_VISUAL_SHAPE`
+当成独立于 `pageKinds` 的正面证据源钉住。它比"同族兄弟允许"硬一档——那是类比，
+这是渲染端的能力声明。
+
+### 顺带结清 3.4 那条待查
+
+模型说「`BatchActionBar` 不该上看板页，因为看板没有多行勾选」。**观察对，结论错**：
+
+- `KanbanBoard`（`PageViews.tsx:46`）只收 rows/statusField/cardFields/onOpenRow，
+  确实没有勾选；
+- 但 `DataTable` 允许上看板页，而它**就是**选择态的唯一供给方；
+- 而且内置表格（`AppRuntimeScreen` 里那几处 `Table`）**一个都没有 `rowSelection`**
+  ——所以 workbench 页同样只在"页面另外声明了 DataTable"时才有勾选。
+
+也就是说这是**区块与区块之间的依赖**，不是区块与页型之间的。收窄 `pageKinds`
+治不了它，只会把问题挪个地方。`BatchActionBar` 的出处注释早写明了这层依赖
+（"先给 DataTable 接上 rowSelection…再建这个区块"），但目录里没有任何字段能表达
+"我需要一个提供选择态的同伴"。
+
+已在 `block-props-wiring.test.ts` 钉住那条唯一的供给链：DataTable 的
+`rowSelection` 一旦被摘掉，`BatchActionBar` 就退化成一句永远的「勾选左侧的行」。
+`pageKinds` 不动。

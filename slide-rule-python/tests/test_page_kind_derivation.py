@@ -168,6 +168,45 @@ def test_硬判据不是空判据():
     assert any("|" in k for k in kinds_hit), f"没抓到「缺了带逐行视图的页」：{problems}"
 
 
+def test_总览页设计环节画得出的形状都得允许总览页():
+    """`freeform_block._VISUAL_SHAPE` 是一份**独立于 pageKinds 的正面证据**。
+
+    ## 这条是怎么来的（2026-08-11）
+
+    `40f28e2` 让推荐清单先过 `pageKinds` 这一关（323 → 189），修的是提示词自相
+    矛盾，方向对。但它默认"目录是对的、推荐是错的"，而其中有一个反过来了：
+
+        QuickActionPanel  pageKinds=workbench,wizard  ← 不含总览页，于是被踢出推荐
+
+    拿 177 份真实生成模型（早先度量台存档）数了一遍：**它在总览页上被真的摆出来
+    过 43 次**，是总览页第三多的区块（前两名 ActivityFeed 180 次、WorkflowTimeline
+    157 次）。而且 `_VISUAL_SHAPE` 里只有四个形状是总览页设计环节**画得出来**的，
+    另外三个都允许 monitor，只有它不允许——这是标注漂移，不是它真的不该在那儿。
+
+    再往前一层：2026-07-31 补 monitor 那句祈使语的起因，原文记的正是
+    「QuickActionPanel / WorkflowTimeline 这两个通电且真渲染的区块从未被生成过」。
+    推荐清单一收窄，那次修的洞就被重新打开了一半。
+
+    所以这条钉住：**设计环节画得出的形状，必须允许总览页**。它比"同族兄弟允许"
+    硬一档——那是类比，这是渲染端的能力声明。
+    """
+    import re
+
+    src = (ROOT / "services" / "freeform_block.py").read_text(encoding="utf-8")
+    start = src.index("_VISUAL_SHAPE = {")
+    shapes = re.findall(r'"(\w+)":', src[start : src.index("}", start)])
+    assert len(shapes) >= 4, f"_VISUAL_SHAPE 只解析出 {shapes}——是不是改名了？"
+
+    declared = {str(b["type"]): set(b.get("pageKinds") or []) for b in EXPERIENCE_BLOCKS}
+    overview = set(OVERVIEW_KINDS)
+    missing = [t for t in shapes if t in declared and not (declared[t] & overview)]
+    assert not missing, (
+        f"这些区块总览页设计环节画得出来，但 pageKinds 不允许总览页：{missing}。"
+        "后果是它们被推荐清单踢掉，模型不会再在总览页声明它们——"
+        "而渲染端明明支持。要么给它们加上 monitor，要么从 _VISUAL_SHAPE 里删掉。"
+    )
+
+
 def test_check_模式可以直接当CI闸用():
     """脚本 `--check` 不调模型、以退出码表态。这条保证它一直是这个契约。
 
