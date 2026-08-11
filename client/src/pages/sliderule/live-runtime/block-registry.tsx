@@ -1296,9 +1296,99 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow, ro
     );
   }
 
-  const conditionByFrom = new Map(
-    transitions.filter(t => t.condition).map(t => [t.from, t.condition])
-  );
+  /**
+   * ── 主链路与分支出口分开（2026-08-11）─────────────────────────────────
+   *
+   * 线上截图里「拒绝兑换」是第 4 步、「退回调整」「退回重做」是第 5 步——**驳回
+   * 被铺成了正向流程的下一步**，等于告诉用户"走完确认发放就该去拒绝兑换"。
+   *
+   * 根因：原来直接 `nodes.map(...)` 按**声明数组顺序**铺 Steps，完全没读
+   * transitions 的图结构。真实模型的图是有分支和回环的，比如告警值班那趟：
+   *
+   *     alert_routed       → alert_notified   「存在匹配的生效路由策略」
+   *     alert_routed       → alert_rejected   「没有匹配的路由策略」   ← 分支
+   *     alert_notified     → alert_routed     「超过升级时限，重新路由」← 回环
+   *     alert_acknowledged → alert_rejected   「确认后判定为误报」     ← 分支
+   *     alert_rejected     → alert_routed     「误报判定被撤回」       ← 回环
+   *
+   * antd 的 Steps 表达的是**线性进度**，图里的分支塞不进去。成熟做法也是分开：
+   * NocoBase 的审批节点把驳回做成**分支**（"可以配置为执行驳回分支后结束流程"），
+   * Camunda 用网关——都没有"驳回是第 N+1 步"这种表达。
+   *
+   * 所以这里派生主链路：从入口（没有入边的节点）出发，每步只走**向前**的边
+   * （目标在声明序里更靠后、且没走过），优先无条件边，其余按目标声明序取最近的
+   * 那个。走不动就停。剩下的节点是分支出口，单独一行渲染，不进 Steps。
+   *
+   * 判据用"声明序"是有依据的：模型是按流程顺序声明节点的（Gate 侧也按这个读），
+   * 所以"更靠后"约等于"更往后走"。选最近的那个而不是第一条声明的边，是因为
+   * 驳回边有时声明在前面（`routed → rejected` 完全可能写在 `routed → notified`
+   * 之前），按目标序取近的更稳。
+   */
+  const orderOf = new Map(nodes.map((n, i) => [String(n.id), i]));
+  const outgoing = new Map<string, Array<{ to: string; condition?: string }>>();
+  const incomingCount = new Map<string, number>();
+  transitions.forEach(t => {
+    const from = String(t.from ?? "");
+    const to = String(t.to ?? "");
+    if (!from || !to) return;
+    (outgoing.get(from) ?? outgoing.set(from, []).get(from)!).push({
+      to,
+      condition: t.condition ? String(t.condition) : undefined,
+    });
+    incomingCount.set(to, (incomingCount.get(to) ?? 0) + 1);
+  });
+
+  const entry = nodes.find(n => !incomingCount.get(String(n.id))) ?? nodes[0];
+  /** 每一步**继续主链路**那条边的条件（不是驳回边的条件，见下面 bug 二）。 */
+  const advanceCondition = new Map<string, string>();
+  const walked = new Set<string>();
+  /**
+   * 只用 id 走图（不是拿节点对象当游标）。写成 `let cursor: (typeof nodes)[number]`
+   * 会让 TS 推断成环——循环体里的 id/forward/next 都依赖 cursor 的类型，而 cursor
+   * 的类型又要靠循环体推出来，报 TS7022。走 id 就没有这个纠缠。
+   */
+  const mainPathIds: string[] = [];
+  let cursorId: string | undefined = entry ? String(entry.id) : undefined;
+  while (cursorId && !walked.has(cursorId)) {
+    walked.add(cursorId);
+    mainPathIds.push(cursorId);
+    const here = orderOf.get(cursorId) ?? -1;
+    const forward = (outgoing.get(cursorId) ?? []).filter(
+      e => !walked.has(e.to) && (orderOf.get(e.to) ?? -1) > here
+    );
+    const next: { to: string; condition?: string } | undefined =
+      forward.find(e => !e.condition) ??
+      [...forward].sort(
+        (a, b) => (orderOf.get(a.to) ?? 0) - (orderOf.get(b.to) ?? 0)
+      )[0];
+    if (next?.condition) advanceCondition.set(cursorId, next.condition);
+    cursorId = next?.to;
+  }
+  const mainPath = mainPathIds.flatMap(id => {
+    const hit = nodes.find(n => String(n.id) === id);
+    return hit ? [hit] : [];
+  });
+
+  /**
+   * 分支出口：没走进主链路的节点。附上"从哪儿、因为什么"进来的——一个驳回节点
+   * 常有多个来源（上例 alert_rejected 有两条入边），只显示节点名说明不了什么。
+   *
+   * ## bug 二：原来的 conditionByFrom 会丢条件
+   *
+   * 它是 `new Map(transitions.filter(有条件).map(t => [t.from, t.condition]))`
+   * ——按 **from** 建键，于是一个节点有多条出边时**只留下最后一条**。
+   * `alert_routed` 两条出边里活下来的是「没有匹配的路由策略」，也就是说
+   * **正常路径的步骤上显示的是驳回分支的条件**。图 4 那行橙字正是这么来的。
+   * 现在改成按"继续主链路那条边"取，驳回条件挪到分支出口里显示。
+   */
+  const branchExits = nodes
+    .filter(n => !walked.has(String(n.id)))
+    .map(n => ({
+      node: n,
+      reasons: transitions
+        .filter(t => String(t.to ?? "") === String(n.id) && t.condition)
+        .map(t => String(t.condition)),
+    }));
 
   return (
     <ProCard
@@ -1311,7 +1401,7 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow, ro
         size="small"
         responsive
         current={-1}
-        items={nodes.map((node, index) => ({
+        items={mainPath.map((node, index) => ({
           key: node.id || String(index),
           title: (
             <span data-testid="workflow-timeline-node">
@@ -1325,15 +1415,33 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow, ro
                   {roleLabelOf?.(node.assigneeRole) || node.assigneeRole}
                 </Typography.Text>
               )}
-              {conditionByFrom.get(node.id) && (
-                <Typography.Text type="warning">
-                  {conditionByFrom.get(node.id)}
+              {advanceCondition.get(String(node.id)) && (
+                <Typography.Text type="secondary">
+                  {advanceCondition.get(String(node.id))}
                 </Typography.Text>
               )}
             </Flex>
           ),
         }))}
       />
+      {branchExits.length > 0 && (
+        <Flex
+          vertical
+          gap={2}
+          style={{ marginTop: 10 }}
+          data-testid="workflow-timeline-branches"
+        >
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            分支出口（不在主流程顺序上）
+          </Typography.Text>
+          {branchExits.map(({ node, reasons }) => (
+            <Typography.Text key={String(node.id)} type="warning" style={{ fontSize: 12 }}>
+              {node.name || node.id}
+              {reasons.length > 0 && `：${reasons.join(" / ")}`}
+            </Typography.Text>
+          ))}
+        </Flex>
+      )}
     </ProCard>
   );
 };
