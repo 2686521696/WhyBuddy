@@ -333,6 +333,43 @@ export interface FreeformNode {
   children?: FreeformNode[];
 }
 
+/**
+ * 按**容器实际宽度**挑详情列数（2026-08-11）。
+ *
+ * ## 线上照出来的问题
+ *
+ * 详情面板里标签和值**直接叠在一起**——"所属班级"压住"特级班级"、"定制宠物"
+ * 压住"称"。根因不是样式写错了，是判据用错了维度：
+ *
+ *     antd 的 `column={{ xs:1, sm:2, md:3, lg:3 }}` 看的是**视口**宽度
+ *     而详情面板常待在右侧窄栏（aside 占 4/12，桌面下约 340px）
+ *     视口是 lg/xl → 选 3 列 → 三对「标签+值」挤进 340px → 叠字
+ *
+ * 原注释写的是"写死列数在窄屏上标签和值会挤成一坨"，方向对，但换成视口断点只
+ * 解决了"整个窗口窄"，没解决"容器窄而窗口宽"——而后者才是详情面板的常态。
+ *
+ * 区块拿不到自己在哪个区域（`ExperienceBlockInstance` 没有 region 字段），
+ * 所以只能量容器本身。
+ *
+ * 阈值按"一对标签+值至少要 ~190px 才不换行"取：<380 一列、<640 两列，再宽才给
+ * 到上限。ResizeObserver 缺席时（SSR / 老环境）回落一列——宁可稀疏，不要叠字。
+ */
+function useContainerColumns(max = 3): [React.RefObject<HTMLDivElement | null>, number] {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [cols, setCols] = React.useState(1);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      setCols(w < 380 ? 1 : w < 640 ? Math.min(2, max) : max);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [max]);
+  return [ref, cols];
+}
+
 export interface ExperienceBlockInstance {
   id: string;
   type: string;
@@ -4405,6 +4442,9 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
   fieldTypeOf,
   focus,
 }) => {
+  // 钩子必须在任何提前 return 之前——否则 children 非空那次会少调一个 hook，
+  // React 会报 "Rendered fewer hooks than expected"。
+  const [widthRef, measuredColumns] = useContainerColumns(3);
   if (children !== undefined && children !== null) return <>{children}</>;
   const title = String(block.props?.title ?? "").trim();
   const bound = rowsOfBinding(block, entityRows);
@@ -4434,10 +4474,12 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
    * 显式档位，只把**默认值**换成响应式，不再是写死的 2。
    */
   const declaredColumns = String(block.props?.columns ?? "responsive");
-  const columns: number | Record<string, number> =
+  // 显式档位照旧生效；默认档改成**量容器**（见 useContainerColumns 的说明——
+  // 视口断点治不了"窗口宽但这一栏窄"，线上就是这么叠字的）。
+  const columns: number =
     declaredColumns === "1" || declaredColumns === "2" || declaredColumns === "3"
       ? Number(declaredColumns)
-      : { xs: 1, sm: 1, md: 2, lg: 3, xl: 3, xxl: 3 };
+      : measuredColumns;
   return (
     <BlockShell block={block}
       title={title}
@@ -4448,9 +4490,10 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
         </Button>
       }
     >
-      <ProDescriptions
-        column={columns}
-        size="small"
+      <div ref={widthRef}>
+        <ProDescriptions
+          column={columns}
+          size="small"
         dataSource={row.values ?? {}}
         columns={fields.map(f => {
           const options = enumOptionsOf?.(bound.entityRef, f) ?? [];
@@ -4469,7 +4512,8 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
               renderCell(semantic, record?.[f], options, fieldLabelOf?.(bound.entityRef, f) ?? f),
           };
         })}
-      />
+        />
+      </div>
     </BlockShell>
   );
 };

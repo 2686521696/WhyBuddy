@@ -1479,16 +1479,31 @@ describe("详情区块认聚焦的那一条", () => {
   });
 });
 
-describe("详情的列数默认跟屏宽走", () => {
-  it("不声明 columns 时用响应式档位，不是写死的 2 列", () => {
-    // ProfileAdvanced 写的是 column={isMobile ? 1 : 2}——写死列数的详情在窄屏上
-    // 标签和值会挤成一坨。
+describe("详情的列数默认跟容器宽度走", () => {
+  it("默认档量的是**容器**，不是视口 —— 视口断点治不了「窗口宽但这一栏窄」", () => {
+    /**
+     * 这条 2026-08-11 换过判据。原来钉的是视口断点那串字面量
+     * `{ xs: 1, sm: 1, md: 2, lg: 3, … }`，而线上截图里详情面板的标签和值**直接
+     * 叠在一起**（"所属班级"压住"特级班级"）——因为 antd 的响应式 column 看的是
+     * 视口宽度，而详情面板待在右侧窄栏（aside 占 4/12，桌面下约 340px）：
+     * 视口是 lg → 选 3 列 → 三对「标签+值」挤进 340px。
+     *
+     * 也就是说旧断言把一个**看着合理但治不了这个场景**的实现钉住了。所以判据
+     * 换成"默认档必须来自容器测量"。
+     */
     const src = readFileSync(
       new URL("../block-registry.tsx", import.meta.url),
       "utf8"
-    );
+    ).replace(/\r\n?/g, "\n");
     expect(src).toContain('String(block.props?.columns ?? "responsive")');
-    expect(src).toContain("{ xs: 1, sm: 1, md: 2, lg: 3, xl: 3, xxl: 3 }");
+    // 默认档接的是容器测量值
+    expect(src).toContain("useContainerColumns(3)");
+    expect(src).toMatch(/:\s*measuredColumns;/);
+    // 而且不许退回视口断点——那是这次要修掉的东西
+    expect(src).not.toContain("{ xs: 1, sm: 1, md: 2, lg: 3, xl: 3, xxl: 3 }");
+    // 容器测量必须真的用 ResizeObserver，且窄容器落到 1 列（宁可稀疏不要叠字）
+    expect(src).toContain("new ResizeObserver");
+    expect(src).toMatch(/w < 380 \? 1/);
   });
 
   it("显式声明的档位仍然生效 —— 页头那份该是 2 列，正文那份是 3 列", () => {
