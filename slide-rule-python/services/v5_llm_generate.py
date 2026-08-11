@@ -67,6 +67,7 @@ Required shape (use these exact keys):
     "entities": [
       {"id": "<snake_case>", "name": "<label>", "fields": [
         {"id": "<snake_case>", "name": "<label>", "type": "string|number|date|ref|enum",
+         "refEntity": "<entity_id>",
          "options": [{"id": "<value>", "label": "<label>", "tone": "__FIELD_TONES__"}],
          "format": "__FIELD_FORMATS__"}
       ]}
@@ -183,6 +184,16 @@ Rules:
   person-ish field on the entity is a "ref", the block has nothing correct to bind,
   the structural gate rejects the page, and the whole model is regenerated — this
   is a rejected deliverable, not a cosmetic warning.
+- A "ref" FIELD MUST DECLARE ITS TARGET: `"refEntity": "<entity_id>"` naming the
+  entity it points at (that entity must exist in this same datamodel). Without it
+  the relation degrades into a plain text box and the user has to TYPE a row id by
+  hand — the runtime can only render a picker when it knows which rows to offer.
+  Measured on 181 real generated models: 1689 "ref" fields, and the id-name
+  heuristic could only resolve 41% of them; the other 998 rendered as free text.
+  Naming alone does not carry it — `assigned_team` pointing at `oncall_teams`,
+  `route_group_id` pointing at `on_call_group`, or `alert_ref` where BOTH
+  `alert_event` and `alert_route_rule` exist are all unresolvable without the
+  declaration. Put "refEntity" on every "ref" field and on no other field.
 - HIERARCHY IS A STRING ID, not a "ref". When an entity forms a tree (parent
   policy, sub-item, parent node, caller/callee), give it a "string" field holding
   the PARENT ROW'S id — e.g. parent_policy_id of type "string". Blocks bind

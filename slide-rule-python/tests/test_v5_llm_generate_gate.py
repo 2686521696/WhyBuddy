@@ -200,6 +200,20 @@ def test_generation_contract_requires_exactly_one_supported_device():
     assert "desktop|tablet|phone" not in _SCHEMA_INSTRUCTION
 
 
+def test_generation_contract_requires_ref_fields_to_name_their_target():
+    """ref 字段必须自带目标实体（2026-08-11）。
+
+    没有这条规则时，前端只能按字段名猜目标（`guessRefEntityId`）。181 份真实
+    模型里 1689 个 ref 字段只猜得出 41%，其余 998 个**退化成让用户手打行 id 的
+    纯文本框**。契约里给了这个键，门禁才有东西可校验
+    （test_v5_field_semantics_gate 里那四条），运行时才有东西可优先采用。
+    """
+    from services.v5_llm_generate import _SCHEMA_INSTRUCTION
+
+    assert '"refEntity"' in _SCHEMA_INSTRUCTION
+    assert "MUST DECLARE ITS TARGET" in _SCHEMA_INSTRUCTION
+
+
 def test_llm_generation_normalizes_device_before_gate_and_visual_enrichment(monkeypatch):
     from services import app_store, freeform_block, v5_llm_generate
     from services.v5_capability_executor import _try_llm_generate_evidence

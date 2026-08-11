@@ -508,6 +508,44 @@ def validate_five_system_model(
                     f"field type '{ftype}' is not one of {'/'.join(FIELD_TYPES)}",
                     ref=ftype, skill="datamodel",
                 ))
+            # refEntity：关系字段的目标声明（2026-08-11）。
+            #
+            # ## 为什么必须由模型声明，而不是运行时猜
+            #
+            # 契约原来没有这个键，前端只能**按字段名猜**目标实体
+            # （`guessRefEntityId`：剥掉 _ref/_id 后缀再跟实体 id 匹配，歧义就
+            # 放弃）。拿 181 份真实生成模型量过：1689 个 ref 字段里只有 691 个
+            # （41%）猜得出来，另外 998 个**退化成纯文本输入框**——用户得手打一个
+            # 行 id。猜不出的都是名字对不上的正常命名：`assigned_team` 指向
+            # `oncall_teams`、`route_group_id` 指向 `on_call_group`，或者
+            # `alert_ref` 而实体里同时有 `alert_event` 和 `alert_route_rule`
+            # （两个都以 alert_ 开头 → 歧义不猜）。
+            #
+            # 这也是 Directus（`related_collection`）/ Strapi（`target`）/
+            # nocobase（关联字段的 `target`）的一致做法：**关系字段自带目标**，
+            # 没有哪个成熟方案靠名字反推。
+            #
+            # 口径与本段其余条目一致：**出现即校验、缺省不罚**（老模型零破坏，
+            # 运行时那条猜测保留当兜底）。
+            if "refEntity" in fd:
+                target = str(fd.get("refEntity") or "").strip()
+                if ftype != "ref":
+                    findings.append(_finding(
+                        DANGLING, f"{fpath}.refEntity",
+                        f"refEntity declared on non-ref field (type '{ftype}')",
+                        ref=ftype, skill="datamodel",
+                    ))
+                elif not target:
+                    findings.append(_finding(
+                        EMPTY_SECTION, f"{fpath}.refEntity",
+                        "refEntity declared but empty", skill="datamodel",
+                    ))
+                elif target not in entity_ids:
+                    findings.append(_finding(
+                        DANGLING, f"{fpath}.refEntity",
+                        f"refEntity '{target}' is not an entity in this datamodel",
+                        ref=target, skill="datamodel",
+                    ))
             if "options" in fd:
                 if ftype != "enum":
                     findings.append(_finding(

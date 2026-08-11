@@ -39,6 +39,12 @@ export interface FiveSystemField {
   options?: FieldOption[];
   /** 展示格式：number → money|percent|progress|score|rating；string → masked */
   format?: string;
+  /**
+   * ref 字段指向的实体 id（2026-08-11 加进契约）。**只有 `type:"ref"` 该带它**，
+   * 悬空/越位由门禁标红（v5_model_gate.py）。缺席时运行时回落到
+   * `guessRefEntityId` 的命名猜测——存量模型全都没有这个字段。
+   */
+  refEntity?: string;
 }
 
 export interface FiveSystemEntity {
@@ -972,6 +978,51 @@ export function guessRefEntityId(
   return contains.length === 1 ? contains[0] : null;
 }
 
+/**
+ * ref 字段 → 目标实体：**声明优先，猜测兜底**（2026-08-11）。
+ *
+ * ## 为什么不能只靠上面那个猜测
+ *
+ * 猜测是从字段名反推的，而字段名跟实体名对不上是常态。拿 181 个真实存过的模型
+ * 量了一遍：1689 个 `type:"ref"` 字段，`guessRefEntityId` 只认出 691 个（41%），
+ * 剩下 998 个（59%）返回 null。典型认不出来的三种：
+ *
+ *   assigned_team   → 目标实体叫 oncall_teams   （词干根本不同）
+ *   route_group_id  → 目标实体叫 on_call_group  （词干是目标的子串之一，但不唯一）
+ *   alert_ref       → alert_event / alert_route_rule 两个都沾（歧义，按"宁可不画"返回 null）
+ *
+ * 认不出来的代价不是少画一根线，而是**关系字段退化成纯文本框**：渲染器靠
+ * `refEntityId` 去取候选行（block-registry 的 `entityRows[schema.refEntityId]`），
+ * 拿不到就只剩一个 Input，用户得手打一个行 id 进去。
+ *
+ * 所以现在让模型自己声明 `refEntity`，猜测降级为存量模型的兜底——**不删猜测**，
+ * 补字段之前生成的那些应用还得能跑。
+ *
+ * ## 返回值里为什么要带 `declared`
+ *
+ * 声明和猜测在"自引用"上待遇不同。**猜**到自己身上多半是命名巧合（字段
+ * `order_ref` 长在实体 `order` 上），历史上一直丢弃；而**声明**是模型的明确
+ * 表态（`merged_into` 指回同一张工单表这种是真的），运行时偷偷改掉它，只会让
+ * 门禁的绿灯跟界面上的现象对不上——该管的是门禁，不是这里。
+ *
+ * 调用方拿 `declared` 自己决定：表单下拉认自引用（同表选行完全能用），
+ * ER 图/mermaid 一律不认（那两条路画不了自环边，跟改动前保持一致）。
+ *
+ * 声明悬空（指向的实体不在这个 datamodel 里）时返回 null 而**不**回落去猜——
+ * 模型已经明确说了指向谁，猜一个别的只会盖掉它的错，让门禁的标红对不上现象。
+ */
+export function resolveRefEntityId(
+  field: FiveSystemField,
+  entityIds: Iterable<string>
+): { target: string | null; declared: boolean } {
+  const ids = [...entityIds];
+  const declared = String(field.refEntity ?? "").trim();
+  if (declared) {
+    return { target: ids.includes(declared) ? declared : null, declared: true };
+  }
+  return { target: guessRefEntityId(field.id, ids), declared: false };
+}
+
 // --- ER 图数据（G6 渲染路径；与 datamodelToMermaid 同一套关联推断） --------
 
 export interface ErGraphField {
@@ -1012,7 +1063,9 @@ export function deriveErGraphData(
       const isRef =
         String(field.type || "").toLowerCase() === "ref" ||
         /_ref$/.test(field.id);
-      const target = isRef ? guessRefEntityId(field.id, entityIds) : null;
+      // 声明优先，猜测兜底（见 resolveRefEntityId）。自引用这条路画不出自环边，
+      // 声明的也一样丢弃——跟加 refEntity 之前的行为保持一致。
+      const target = isRef ? resolveRefEntityId(field, entityIds).target : null;
       const refTarget = target && target !== entity.id ? target : null;
       fields.push({
         id: field.id,
@@ -1378,7 +1431,8 @@ export function datamodelToMermaid(
         String(field.type || "").toLowerCase() === "ref" ||
         /_ref$/.test(field.id);
       if (!isRef) continue;
-      const target = guessRefEntityId(field.id, entityIds);
+      // 声明优先，猜测兜底；自引用同上不画。
+      const target = resolveRefEntityId(field, entityIds).target;
       if (!target || target === entity.id) continue;
       const key = `${entity.id}->${target}:${field.id}`;
       if (seen.has(key)) continue;

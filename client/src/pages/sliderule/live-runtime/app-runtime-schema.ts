@@ -7,8 +7,8 @@
  */
 
 import {
-  guessRefEntityId,
   normalizeRoles,
+  resolveRefEntityId,
   type FiveSystemModel,
   type FiveSystemField,
   type PageReconstructionEvidence,
@@ -610,13 +610,17 @@ export function deriveAppRuntimeSchema(
     const id = page.id || `page-${index + 1}`;
     const entityId = dominantEntityId(page.fieldBindings);
     const entity = entityId ? entityById.get(entityId) : undefined;
-    const allFields = (entity?.fields ?? []).map(toFieldSchema);
+    // 索引对齐由 `.map` 保证：allFields[i] 就是 rawFields[i] 投影出来的那个。
+    const rawFields = entity?.fields ?? [];
+    const allFields = rawFields.map(toFieldSchema);
 
-    // ref 字段解析目标实体（"xxx_ref"/type ref → 词干唯一匹配），供下拉渲染。
-    for (const f of allFields) {
+    // ref 字段解析目标实体，供下拉渲染。**模型声明的 refEntity 优先**，没声明
+    // 才回落到词干猜测（存量模型全靠它）——见 resolveRefEntityId 里的度量。
+    // 自引用只认声明的那种（猜到自己身上多半是命名巧合）。
+    for (const [fi, f] of allFields.entries()) {
       if (f.type === "ref" || /_ref$/.test(f.id)) {
-        const guess = guessRefEntityId(f.id, entityById.keys());
-        if (guess && guess !== entityId) f.refEntityId = guess;
+        const { target, declared } = resolveRefEntityId(rawFields[fi], entityById.keys());
+        if (target && (declared || target !== entityId)) f.refEntityId = target;
       }
     }
 

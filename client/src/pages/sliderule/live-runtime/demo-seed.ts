@@ -33,7 +33,7 @@
  */
 
 import type { FiveSystemEntity, FiveSystemModel } from "../system-screens/five-system-model";
-import { guessRefEntityId } from "../system-screens/five-system-model";
+import { resolveRefEntityId } from "../system-screens/five-system-model";
 import {
   CITIES,
   CODE_LETTERS,
@@ -323,7 +323,8 @@ function resolveSeedRefs(
 
     for (const field of refFields) {
       const fieldId = String(field.id);
-      const targetId = guessRefEntityId(fieldId, allIds);
+      // 声明优先，猜测兜底。这里自引用也认——同表挑一行的显示名照样是合法种子。
+      const targetId = resolveRefEntityId(field, allIds).target;
       const targetDef = targetId ? byId.get(targetId) : undefined;
       const targetRows = targetId ? entities[targetId] : undefined;
       const r = fieldRandom(def.id, `${fieldId}#ref`);

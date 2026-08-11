@@ -902,6 +902,41 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(deriveErGraphData({ entities: [] })).toBeNull();
   });
 
+  it("ER 图两条路都吃 refEntity 声明 —— 名字对不上的关系以前根本画不出来", () => {
+    // assigned_team → oncall_teams：词干完全不同，猜测无解。这是真实样本里
+    // 最常见的失败形态（181 份模型 1689 个 ref 字段，猜得出的只有 41%）。
+    const entities = [
+      { id: "oncall_teams", name: "值班组", fields: [{ id: "name", type: "string" }] },
+      {
+        id: "alert_event",
+        name: "告警",
+        fields: [{ id: "assigned_team", name: "值班组", type: "ref", refEntity: "oncall_teams" }],
+      },
+    ];
+    const data = deriveErGraphData({ entities })!;
+    expect(data.edges).toEqual([
+      { source: "alert_event", target: "oncall_teams", label: "assigned_team" },
+    ]);
+    expect(datamodelToMermaid({ entities })).toContain(
+      'oncall_teams ||--o{ alert_event : "assigned_team"'
+    );
+
+    // 反向：摘掉声明就画不出这条边——证明上面测的是声明在起作用，
+    // 不是"这个名字本来就猜得对"
+    const undeclared = [
+      entities[0],
+      { ...entities[1], fields: [{ id: "assigned_team", name: "值班组", type: "ref" }] },
+    ];
+    expect(deriveErGraphData({ entities: undeclared })!.edges).toEqual([]);
+
+    // 悬空声明不回落去猜：模型说错了就不画，别拿猜出来的目标盖掉
+    const dangling = [
+      { id: "oncall_teams", fields: [] },
+      { id: "team", fields: [{ id: "oncall_teams_ref", type: "ref", refEntity: "ghost" }] },
+    ];
+    expect(deriveErGraphData({ entities: dangling })!.edges).toEqual([]);
+  });
+
   it("deriveWorkflowGraphData：始/终判定、角色解析、条件边（G6 活图路径）", () => {
     const data = deriveWorkflowGraphData(MODEL)!;
     const byId = Object.fromEntries(data.nodes.map((n) => [n.id, n]));
