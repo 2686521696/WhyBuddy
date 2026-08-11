@@ -192,6 +192,7 @@ import {
 import {
   ExperienceBlockBoundary,
   EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE,
+  EXPERIENCE_BLOCK_TYPES_DRAWING_WORKFLOW,
   type BlockColumnState,
   type PageColumnState,
   type PageFilterState,
@@ -205,6 +206,7 @@ import {
   designRecipeAlgorithms,
   DARK_CANVAS_BG,
 } from "./design-recipes";
+import { deriveWorkflowMainPath } from "./workflow-main-path";
 import { buildColumnFeatures } from "./table-features";
 import { FieldValue } from "./FieldValue";
 import { FieldEditor } from "./FieldEditor";
@@ -814,6 +816,34 @@ export function AppRuntimeScreen({
       EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "entityRows" &&
       (coveringBlockIds === null || coveringBlockIds.has(b.id))
   );
+
+  /**
+   * 这一页的积木里有没有已经把 workflow 画出来的（2026-08-11）。
+   *
+   * 向导页顶部有一条内置步骤条（下面 `page.view.kind === "wizard"` 那段），画的
+   * 就是 `model.workflow.nodes`。而 `WorkflowTimeline` 区块画的是同一份数据——
+   * 线上截图里同一页于是叠了**两条流程步骤条**，还各说一套（内置那条按声明序铺，
+   * 把「拒绝兑换」画成正向第 4 步）。有区块画了就让区块画，宿主不再补。
+   *
+   * **不看区域**（跟 blocksCoverData 那条不同）：那条问的是"主区的行列表有没有
+   * 人替代"，所以要求落在正文带；这条问的是"同一个东西是不是画了两遍"，在窄栏
+   * 画一遍也是画了。WorkflowTimeline 的 allowedRegions 是 main/aside/supplement，
+   * 没有 overlay 那种点了才出来的，所以声明了就一定看得见。
+   */
+  const blocksDrawWorkflow = declaredBlocks.some(b =>
+    EXPERIENCE_BLOCK_TYPES_DRAWING_WORKFLOW.has(b.type)
+  );
+
+  /**
+   * 内置步骤条要画的节点：**主链路**，不是 `workflow.nodes` 的声明顺序。
+   *
+   * 跟 WorkflowTimeline 共用 deriveWorkflowMainPath（那里写了为什么按声明序铺
+   * Steps 会把驳回画成正向的下一步）。桌面档和手机档两处内置步骤条都读这一份。
+   */
+  const wizardMainPath = deriveWorkflowMainPath(
+    model?.workflow?.nodes ?? [],
+    model?.workflow?.transitions ?? []
+  ).mainPath;
 
   // Step 6 FilterBar：本页可筛的枚举字段（有声明选项的 enum 字段）+
   // 可选日期范围字段（主实体第一个 date/datetime 字段）。
@@ -2147,9 +2177,12 @@ export function AppRuntimeScreen({
           }))
         : [];
     // wizard：流程节点即步骤条。桌面用横向 Steps，手机竖排更读得下来。
+    // 顺序走主链路、积木画了就让位——跟桌面档同一套判据（见 blocksDrawWorkflow
+    // 和 wizardMainPath 那两段注释）。手机档也渲染声明的积木（下面
+    // renderExperienceBlockScaffold(true)），所以叠两条的问题在这一档一样成立。
     const steps =
-      wantsSteps && (model?.workflow?.nodes?.length ?? 0) > 0
-        ? (model?.workflow?.nodes ?? []).slice(0, 8).map(n => ({
+      wantsSteps && !blocksDrawWorkflow && wizardMainPath.length > 0
+        ? wizardMainPath.slice(0, 8).map(n => ({
             id: n.id,
             title: n.name || n.id,
             description: n.phase,
@@ -3414,12 +3447,22 @@ export function AppRuntimeScreen({
       {!freeformOwnsPage &&
         (!OVERVIEW_KINDS.has(page.view.kind) || dashboardUsesBusinessGrid) &&
         businessPageGrid}
+      {/* 向导页顶部的内置步骤条。
+          两处修正（2026-08-11，线上截图 #8）：
+
+          ① **积木已经画了流程就不画**（blocksDrawWorkflow）。原来无条件画，
+             于是声明了 WorkflowTimeline 的向导页上叠着两条步骤条。
+          ② **顺序按图走，不按声明数组走**。原来是 `nodes.slice(0, 8).map(...)`，
+             把驳回节点铺成正向的下一步——跟 WorkflowTimeline 修过的是同一个 bug，
+             只是这一份漏掉了。现在两处共用 deriveWorkflowMainPath，分支出口不
+             进步骤条（这里只画主链路，分支明细留给 WorkflowTimeline 区块）。 */}
       {page.view.kind === "wizard" &&
-        (model?.workflow?.nodes?.length ?? 0) > 0 && (
+        !blocksDrawWorkflow &&
+        wizardMainPath.length > 0 && (
           <Steps
             size="small"
             current={0}
-            items={(model?.workflow?.nodes ?? []).slice(0, 8).map(n => ({
+            items={wizardMainPath.slice(0, 8).map(n => ({
               title: n.name || n.id,
               description: n.phase,
             }))}
