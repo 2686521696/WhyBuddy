@@ -52,7 +52,29 @@ def _demo_fixture_enabled() -> bool:
 # 最近一次五系统 LLM 生成路径的诊断。仅用于 publish closure 的 blocker 面向
 # 用户透出"为什么 0/6"（未开启 / 调用失败 / 结构闸拦截）；fail-closed 判定
 # 与 trust/gate/closure hash 完全不读它。
-_llm_generate_diagnostic: Dict[str, str] = {}
+#
+# 2026-08-11 从模块级 dict 改成请求域 ContextVar。**不是实测出来的，是顺着
+# `_stage_sink` 那个串流 bug 扫出来的同形状**：它是"最近一次"这种**每请求**
+# 状态，却存在进程级全局里——并发时 A 的失败原因会写进 B 的 blocker，
+# 用户看到的"为什么 0/6"指向别人的故障。
+#
+# ⚠ 存的是**可变 dict 的引用**，不是值。理由与 ea169243e 里 `_last_call_error`
+# 那条完全一样：`copy_context()` 复制的是 ContextVar 的值，worker 里 `var.set()`
+# 不会回传父线程；而这个格子恰恰是深处写、收口处读。存引用则父子共享同一个
+# dict，改得动也看得见，不同请求各拿各的。（出处：OpenTelemetry 的 Span、
+# asgiref.local._CVar 都是这一招。）
+_llm_generate_diagnostic_var: "ContextVar[Dict[str, str]]" = ContextVar(
+    "sliderule_llm_generate_diagnostic", default=None
+)
+
+
+def _diagnostic() -> Dict[str, str]:
+    """本请求的诊断格子。缺省时懒建一个，保证父子共享同一个引用。"""
+    d = _llm_generate_diagnostic_var.get()
+    if d is None:
+        d = {}
+        _llm_generate_diagnostic_var.set(d)
+    return d
 
 REQUIRED_EVIDENCE_KEYS = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
 
@@ -371,16 +393,17 @@ def _try_llm_generate_evidence(
     models — landingPageRef must be present. Set to False for historic override
     (old snapshots without the field must still restore).
     """
-    global _llm_generate_diagnostic
     try:
         from .v5_llm_generate import generate_five_system_model, model_to_linkage_artifacts
         from .v5_model_gate import validate_five_system_model
         from .device_policy import normalize_model_preferred_device
     except Exception as exc:
-        _llm_generate_diagnostic = {
+        _diagnostic().clear()
+
+        _diagnostic().update({
             "code": "LLM_GENERATE_FAILED",
             "detail": f"generate module unavailable: {str(exc)[:160]}",
-        }
+        })
         return None
 
     def _repair(candidate: Dict[str, Any]) -> Dict[str, Any]:
@@ -401,10 +424,12 @@ def _try_llm_generate_evidence(
         from .v5_llm_generate import get_generate_diagnostic
 
         _diag = get_generate_diagnostic()
-        _llm_generate_diagnostic = {
+        _diagnostic().clear()
+
+        _diagnostic().update({
             "code": "LLM_GENERATE_FAILED",
             "detail": str((_diag or {}).get("detail") or "LLM 未返回完整五系统模型")[:200],
-        }
+        })
         return None
     model = _repair(model)
     model = normalize_model_preferred_device(goal, model)
@@ -508,12 +533,14 @@ def _try_llm_generate_evidence(
         first = findings[0] if findings else {}
         # 人话化首条 finding（此前直接打 dict repr，UI 上是一屏工程术语）
         first_text = f"{first.get('path', '')}：{first.get('message', '')}".strip("：")
-        _llm_generate_diagnostic = {
+        _diagnostic().clear()
+
+        _diagnostic().update({
             "code": "MODEL_GATE_BLOCKED",
             "detail": f"结构闸拦截（{len(findings)} 项，已回喂裁决重试仍未过门）：{first_text[:160]}",
-        }
+        })
         return None
-    _llm_generate_diagnostic = {}
+    _diagnostic().clear()
     # 身份主题生成已整段移除（2026-08-03，用户裁决：全站一个颜色）。
     #
     # 原来这里会调 enrich_identity_theme：花 ~74s 生一张参照图，喂给视觉 LLM，
@@ -691,8 +718,7 @@ def _build_per_skill_evidence(
     llm_json_fn: Optional[Callable[[str], Any]] = None,
     force_llm: bool = False,
 ) -> Dict[str, Any]:
-    global _llm_generate_diagnostic
-    _llm_generate_diagnostic = {}
+    _diagnostic().clear()
     # E29 精修/回退：上下文在场时模型权威 = 生成层结果（精修版或直供版），
     # 跳过旧产物 haystack 匹配——否则旧 linkage 产物会把新模型顶掉。
     from . import v5_llm_generate as _gen_mod
@@ -771,7 +797,7 @@ def _build_per_skill_evidence(
                 for skill in REQUIRED_EVIDENCE_KEYS:
                     if skill in keep_by_skill:
                         matches[skill] = keep_by_skill[skill]
-                detail = str((_llm_generate_diagnostic or {}).get("detail") or "")[:160]
+                detail = str(_diagnostic().get("detail") or "")[:160]
                 print(
                     "[v5_capability_executor] refine failed, keeping previous model "
                     f"(本轮修改未生效): {detail}"
@@ -814,10 +840,12 @@ def _build_per_skill_evidence(
     elif not blocked_signal and recognized_domain is None and (goal or "").strip():
         # 新颖意图但 LLM 生成未开启 → 注定 0/6。把原因留痕给 blocker，
         # 否则用户只看到笼统的 closure blocked，无从排查。
-        _llm_generate_diagnostic = {
+        _diagnostic().clear()
+
+        _diagnostic().update({
             "code": "LLM_GENERATE_DISABLED",
             "detail": "SLIDERULE_LLM_GENERATE_ENABLED 未开启：新颖意图不会调用 LLM 生成五系统模型",
-        }
+        })
 
     per_skill: Dict[str, Any] = {}
     for skill in REQUIRED_EVIDENCE_KEYS:
@@ -1200,7 +1228,7 @@ def execute_v5_capability(
         )
         closure_hash, stable_digest = _stable_closure_hash(per_skill, blocked, goal)
         # LLM 生成路径的失败原因随 blocker 透出（诊断留痕，不参与 blocked/hash 判定）。
-        llm_diag = dict(_llm_generate_diagnostic) if _llm_generate_diagnostic.get("code") else None
+        llm_diag = dict(_diagnostic()) if _diagnostic().get("code") else None
         blockers = (
             [
                 {

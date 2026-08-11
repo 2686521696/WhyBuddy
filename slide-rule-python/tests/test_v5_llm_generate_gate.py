@@ -1001,7 +1001,10 @@ def test_gate_feedback_retry_still_fail_closed_when_both_blocked():
 
     artifacts = _try_llm_generate_evidence("宠物美容预约平台", lambda g: _broken_model())
     assert artifacts is None
-    assert executor._llm_generate_diagnostic["code"] == "MODEL_GATE_BLOCKED"
+    # 2026-08-11：诊断从模块级 dict 改成请求域 ContextVar（并发下 A 的失败原因
+    # 会写进 B 的 blocker）。读法跟着改成访问器——**断言的东西没变**，仍然是
+    # "两版都被门拦下时要留下 MODEL_GATE_BLOCKED 这个原因"。
+    assert executor._diagnostic()["code"] == "MODEL_GATE_BLOCKED"
 
 
 def test_default_llm_fn_appends_gate_feedback_to_prompt(monkeypatch):

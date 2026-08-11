@@ -37,6 +37,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from services import enrich_timing as ET
+from services import v5_capability_executor as EXEC
 from services import v5_llm_generate as G
 from sliderule_llm import capabilities as CAPS
 
@@ -175,11 +177,91 @@ def test_diagnostic_does_not_leak_across_requests():
     assert out["B"] == "B 的失败原因"
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# 2026-08-11 补：同一个病漏掉的两处
+#
+# 08-06 那轮修了 v5_llm_generate 与 capabilities 两个模块，**漏了
+# enrich_timing._stage_sink**。而它的注释里正好写着「跟 capability delta sink
+# 同一套约定」——那个约定两天后就被判定为并发 bug 改掉了，这一处没跟上，
+# 于是同一个病又活了五天，直到线上 5 趟并发实测把它照出来：
+#
+#     第 4 趟的 SSE 流里收到 4 个不同会话的 pageId，以及 5 趟各自的
+#     model.generate 耗时；第 1、2、3、5 趟的流里 stage 事件与心跳一条都没有。
+#     用户侧的表现：5 个人同时用，4 个人的进度条完全不动。
+#
+# 教训跟今天其它几处一样：**修复只去了记得住的地方，没去这个模式住着的所有地方。**
+# 所以下面那条"不许再有模块级全局"的名单这次连同一起扩了。
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_stage_sink_does_not_leak_across_requests():
+    """线上实测到的那条：A 的阶段事件不能出现在 B 的流里。
+
+    这是本组里**唯一一条有线上现场佐证**的——其余几条是当时用探针造出来的。
+    """
+    received = {"A": [], "B": []}
+
+    def body(name, barrier, _out):
+        ET.set_stage_sink(lambda phase, stage, fields, n=name: received[n].append((phase, stage)))
+        barrier.wait()
+        time.sleep(0.02)
+        ET._notify("start", f"{name}-stage", {})
+
+    _run_two_requests(body)
+    assert received["A"] == [("start", "A-stage")], f"A 的流拿到 {received['A']}"
+    assert received["B"] == [("start", "B-stage")], f"B 的流拿到 {received['B']}"
+
+
+def test_stage_sink_注销不许殃及别的请求():
+    """驱动器在 finally 里 set_stage_sink(None)。模块级全局时代，**先跑完的那个
+    请求会把还在跑的那个的 sink 一起清掉**——比"串号"更隐蔽，因为它表现为
+    "跑到一半进度就没了"。"""
+    got = []
+
+    def body(name, barrier, _out):
+        if name == "A":
+            ET.set_stage_sink(lambda phase, stage, fields: got.append(stage))
+            barrier.wait()
+            time.sleep(0.05)          # A 还在跑
+            ET._notify("start", "A-still-running", {})
+        else:
+            ET.set_stage_sink(lambda phase, stage, fields: None)
+            barrier.wait()
+            ET.set_stage_sink(None)   # B 先收工，注销自己的
+    _run_two_requests(body)
+    assert got == ["A-still-running"], f"A 的 sink 被 B 的注销殃及了：{got}"
+
+
+def test_生成诊断不许串到别的请求():
+    """顺着 _stage_sink 扫出来的同形状（v5_capability_executor）。
+
+    它是"最近一次生成为什么失败"，只用于给用户解释"为什么 0/6"。串了的后果是
+    **用户看到的失败原因指向别人的故障** —— 不影响 fail-closed 判定，但会把
+    人的排查方向带偏，跟今天那个 finish_reason 缺席的坑是同一类伤害。
+    """
+    def body(name, barrier, out):
+        EXEC._diagnostic().clear()
+        EXEC._diagnostic().update({"code": "X", "detail": f"{name} 的失败原因"})
+        barrier.wait()
+        time.sleep(0.02)
+        out[name] = EXEC._diagnostic().get("detail")
+
+    out = _run_two_requests(body)
+    assert out["A"] == "A 的失败原因"
+    assert out["B"] == "B 的失败原因"
+
+
 def test_no_module_level_mutable_globals_left():
     """守住这次的成果：这几个名字不能再作为模块属性存在。
 
     照着旧写法加回一个全局，串号就会静悄悄地复发——这条让它变成红灯。
+    2026-08-11：名单扩到 enrich_timing 与 v5_capability_executor
+    （漏掉这两处，正是上一轮"只修记得住的地方"的代价）。
     """
     for name in ("_delta_sink", "_installed_skills", "_last_call_error", "last_generate_diagnostic"):
         assert not hasattr(G, name), f"v5_llm_generate.{name} 又变回模块级全局了"
     assert not hasattr(CAPS, "_delta_sink"), "capabilities._delta_sink 又变回模块级全局了"
+    assert not hasattr(ET, "_stage_sink"), "enrich_timing._stage_sink 又变回模块级全局了"
+    assert not hasattr(EXEC, "_llm_generate_diagnostic"), (
+        "v5_capability_executor._llm_generate_diagnostic 又变回模块级全局了"
+    )

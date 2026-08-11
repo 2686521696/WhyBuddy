@@ -159,21 +159,46 @@ def _fmt_value(v: Any) -> str:
 #: 用户最没耐心的位置——已经等了七八分钟、眼看要出结果了，突然黑三分钟。
 #:
 #: 所以补一条 sink：阶段**开始**时也叫一声，让驱动器能把它转成 SSE。
-#: 注册是模块级单例，跟 capability delta sink 同一套约定（本次流注册、
-#: finally 注销）。
+#:
+#: ## 2026-08-11：从模块级全局改成 ContextVar —— 这是个实测到的串流 bug
+#:
+#: 原注释写的是「注册是模块级单例，跟 capability delta sink 同一套约定」。
+#: **那个约定在两天后（08-06，ea169243e）就被判定为并发 bug 改掉了，这一处没跟上。**
+#: 于是同一个病在这儿又活了五天。
+#:
+#: 线上 5 趟并发实测（同一道题）照出来的形状：
+#:
+#:     第 4 趟的 SSE 流里收到 4 个不同会话的 pageId
+#:       community_overview(第4趟自己) / operations_monitor(第1趟)
+#:       / operations_overview(第2、3趟) / home_monitor(第5趟)
+#:     以及 5 个 model.generate 完成事件（109.6/137.3/173.6/160.6/191.1 秒）
+#:       —— 一趟推演只生成一次模型，那是五趟各自的耗时全挤进了一条流
+#:     对称地：第 1、2、3、5 趟的流里 stage 事件与心跳**一条都没有**
+#:
+#: 三层后果，按严重程度：
+#:   ① 5 个人同时用，**4 个人的进度条完全不动**（心跳正是防"以为断线"的机制）
+#:   ② 泄漏事件带的是**接收方的 runId**，按 runId 归因的分析在并发下全错
+#:      —— 排查这个 bug 时我自己先被骗了一次，差点报出"第4趟重生成了5次"
+#:   ③ pageId 是别人会话生成的页面名，多租户下是**跨用户信息泄漏**
+#:
+#: 改法与 ea169243e 完全一致：请求域 ContextVar。`copy_context()` 会把它带进
+#: `asyncio.to_thread` 的 worker（与 OpenTelemetry 的 context.attach() 同一套语义），
+#: 而普通模块级全局是 copy_context 救不了的——那正是上次的原话。
 #:
 #: ⚠ 纪律不变：sink 自身出任何问题都必须静默，绝不能把被测流水线搞崩。
-_stage_sink: Any = None
+_stage_sink_var: ContextVar[Any] = ContextVar("sliderule_stage_sink", default=None)
 
 
 def set_stage_sink(fn: Any) -> None:
-    """注册/注销阶段观察者。fn(phase, name, fields) —— phase 是 "start"/"end"。"""
-    global _stage_sink
-    _stage_sink = fn
+    """注册/注销阶段观察者。fn(phase, name, fields) —— phase 是 "start"/"end"。
+
+    请求域：本次流设的 sink 只有本次流看得见，并发的别的流互不影响。
+    """
+    _stage_sink_var.set(fn)
 
 
 def _notify(phase: str, name: str, fields: dict[str, Any]) -> None:
-    fn = _stage_sink
+    fn = _stage_sink_var.get()
     if fn is None:
         return
     try:
