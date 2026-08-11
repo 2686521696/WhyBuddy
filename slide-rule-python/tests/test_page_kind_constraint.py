@@ -33,6 +33,25 @@ Column 只能在 Table 下」）。区域那一半这个仓库 2026-08-08 已经
 所以这批用例守的是**这个阶段性状态本身**：提示词必须说，修复器必须记，
 而模型**必须不被改动**。等攒够真实数据再决定是收紧模型还是放宽目录——
 那一步会把这里的 `不改模型` 断言换掉，换的时候得有人回来读这段。
+
+## 后续（2026-08-11 当天）：上面那个怀疑被核实了，并且已经放宽了一批
+
+`test_page_kind_consistency_ratchet.py` 把"这条约束经不起推敲"做成了量化判据：
+控制住领域族之后有 **25 对**同域同能力的严格子集矛盾，且 `pageKinds` 从来没有
+集中评审（随每个区块被添加时手写）。随后按
+`docs/page-kinds-widening-proposal.md` 的 A 档放宽了 8 个区块（只沿 workbench /
+dashboard 这两个通用工作面），矛盾降到 **15 对**，允许 workbench 的从 304 →
+**309 / 359**。
+
+对本文件的直接影响：**上面举的反例已经不成立了**——`AlertRuleEditor` 和
+`AlertRoutingPolicy` 现在都允许 workbench。留着那段文字是因为它记录的是当时的
+判断依据；要看现在还剩哪 15 对，读棘轮那个文件。
+
+更要紧的是：那一趟实测的两处越界里，**`AlertRoutingPolicy` 那处已经不算越界了**
+——结论正是"不是模型摆错，是目录把路由策略管理页这种天然工作台排除在外"。
+所以下面 `test_钉住那趟实测的两处越界` 改成了钉住"一处仍越界 + 一处已放宽"。
+
+而"只告知不上闸"这个阶段性状态**没变**：还剩 15 对矛盾，清零之前不上闸。
 """
 
 import json
@@ -157,9 +176,19 @@ class Test修复器只观测不改:
 
 
 class Test真实数据:
+    #: 那一趟实测的两处越界。A 档放宽后 `AlertRoutingPolicy` 已合法，只剩一处。
+    #: 判据不写死"哪个还越界"——从目录现查，这样目录再动时这条会跟着变，
+    #: 而不是悄悄变成空断言。
+    _实测越界的两个区块 = ("AlertRoutingPolicy", "MuteTimingSchedule")
+
     def test_钉住那趟实测的两处越界(self):
-        """判据取自真相源：凡是只允许 monitor/dashboard 的区块，摆进 workbench
-        就该被记一笔。用合成模型复现那一趟的形状，不依赖线上数据文件。"""
+        """判据取自真相源：凡是不允许 workbench 的区块，摆进 workbench 就该被记
+        一笔。用合成模型复现那一趟的形状，不依赖线上数据文件。
+
+        A 档放宽（见文件头"后续"）之后，这两个里 `AlertRoutingPolicy` 已经允许
+        workbench——那正是放宽想要的结果，所以它**不该**再被记一笔；
+        `MuteTimingSchedule` 属于 monitor 那批待议的，仍然越界，仍然要被记。
+        """
         model = {
             "page": {
                 "pages": [
@@ -172,6 +201,23 @@ class Test真实数据:
                 ]
             }
         }
+        仍越界 = {
+            t for t in self._实测越界的两个区块
+            if "workbench" not in EXPERIENCE_BLOCK_PAGE_KINDS_BY_TYPE[t]
+        }
+        # 先证明这份样例里确实还有越界的，否则下面就成了空断言
+        assert 仍越界, (
+            "那两个区块现在都允许 workbench 了，这条用例不再能观测到任何越界。"
+            "请换成目录里其它仍然不允许 workbench 的区块。"
+        )
+        assert 仍越界 == {"MuteTimingSchedule"}, (
+            f"实测那两处的越界状态变了（现在仍越界：{sorted(仍越界)}）。"
+            "如果是有意放宽/收紧，请连同文件头的『后续』一起更新。"
+        )
+
         notes = repair_five_system_model(model)["pageKindViolations"]
-        assert {n["blockType"] for n in notes} == {"AlertRoutingPolicy", "MuteTimingSchedule"}, notes
-        assert all(n["allowed"] == "monitor,dashboard" for n in notes)
+        assert {n["blockType"] for n in notes} == 仍越界, notes
+        assert all(
+            n["allowed"] == ",".join(EXPERIENCE_BLOCK_PAGE_KINDS_BY_TYPE[n["blockType"]])
+            for n in notes
+        ), notes

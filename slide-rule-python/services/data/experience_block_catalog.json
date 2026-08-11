@@ -4823,7 +4823,8 @@
       ],
       "pageKinds": [
         "monitor",
-        "dashboard"
+        "dashboard",
+        "workbench"
       ],
       "allowedRegions": [
         "aside",
@@ -5344,7 +5345,8 @@
       ],
       "pageKinds": [
         "monitor",
-        "dashboard"
+        "dashboard",
+        "workbench"
       ],
       "allowedRegions": [
         "main",
@@ -7251,7 +7253,8 @@
         "entityRows"
       ],
       "pageKinds": [
-        "monitor"
+        "monitor",
+        "workbench"
       ],
       "allowedRegions": [
         "header"
@@ -7509,7 +7512,9 @@
         "entityRows"
       ],
       "pageKinds": [
-        "monitor"
+        "monitor",
+        "dashboard",
+        "workbench"
       ],
       "allowedRegions": [
         "headerContent"
@@ -7700,7 +7705,8 @@
       },
       "dataKinds": [],
       "pageKinds": [
-        "monitor"
+        "monitor",
+        "workbench"
       ],
       "allowedRegions": [
         "filters"
@@ -9959,7 +9965,8 @@
       ],
       "pageKinds": [
         "monitor",
-        "workbench"
+        "workbench",
+        "dashboard"
       ],
       "allowedRegions": [
         "headerContent"
@@ -15143,7 +15150,8 @@
       ],
       "pageKinds": [
         "workbench",
-        "monitor"
+        "monitor",
+        "dashboard"
       ],
       "allowedRegions": [
         "headerContent"
@@ -19767,7 +19775,8 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench"
+        "workbench",
+        "dashboard"
       ],
       "allowedRegions": [
         "aside",

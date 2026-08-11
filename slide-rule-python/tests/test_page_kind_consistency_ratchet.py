@@ -12,7 +12,7 @@ ffaf964 把页型限制告诉了模型但**故意不上门禁**，理由是"这�
 追 git 历史，它是**随每个区块被添加时手写的**（da0be83、9389227 这类"补 XX 区块"
 的提交各写各的）。没有中心化审校，也没有一致性检查——正是漂移的温床。
 
-### 二、控制住领域之后，矛盾依然存在（25 对）
+### 二、控制住领域之后，矛盾依然存在（核实时 25 对，A 档执行后 15 对）
 
 只按 family+capability 分组会得出 67% 不一致，但那个数**不能当证据**：
 `AlertRuleCommandHeader(monitor)` 与 `DocumentCommandHeader(workbench)` 页型不同是
@@ -20,7 +20,7 @@ ffaf964 把页型限制告诉了模型但**故意不上门禁**，理由是"这�
 
 所以判据要**控制住领域**：按「名字首词（领域族）+ capability」分组，只数
 **严格子集**关系——同域、同能力，一个明确比另一个少允许若干页型。这种情况没有
-可辩护的理由。当前 25 对，最刺眼的几对基本是近亲：
+可辩护的理由。核实时 25 对，最刺眼的几对基本是近亲：
 
     Alert  form    AlertRuleEditor          dashboard,monitor
                    AlertSilenceForm         dashboard,monitor,workbench
@@ -29,7 +29,18 @@ ffaf964 把页型限制告诉了模型但**故意不上门禁**，理由是"这�
     Alert  action  AlertRuleCommandHeader   monitor
                    AlertGroupCommandHeader   monitor,workbench
 
-而全目录 304/358（85%）都允许 workbench。少数被卡住的更像随手标窄。
+而全目录 304/359 都允许 workbench。少数被卡住的更像随手标窄。
+
+**这三对已经在 A 档里放宽掉了**（见下面的"后续"），留在基线里的 15 对都涉及
+calendar / kanban / wizard / monitor 这些形状专属或有独立通道纪律的页型。
+
+### 后续：A 档已执行（25 → 15）
+
+docs/page-kinds-widening-proposal.md 里 A 档的 8 个区块已经改了 `pageKinds`，
+只沿 workbench / dashboard 两个通用工作面放宽，没伸进 calendar/kanban/wizard。
+提案里第 9 条（`HeaderEntitySummary` +dashboard）评审时被否掉——顺带发现它对矛盾
+对数**本来就没影响**：加了 dashboard 之后它仍然是 `HeaderProgressSummary` 的严格
+子集（缺 monitor），所以否与不否都是 15 对。
 
 ### 三、门禁的 `_finding` 没有分级
 
@@ -60,7 +71,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from services.schema_legal import EXPERIENCE_BLOCKS, PAGE_KINDS
 
 #: 当前基线。**只准变小。** 降到 0 之后才可以考虑让结构闸硬拒页型越界。
-_CONTRADICTION_BASELINE = 25
+#:
+#: 25 → 15：docs/page-kinds-widening-proposal.md 的 A 档已执行（8 个区块只加
+#: workbench / dashboard 这两个通用工作面）。剩下的 15 对全部涉及
+#: calendar / kanban / wizard / monitor，即 B 档，需要单独定调后才动。
+_CONTRADICTION_BASELINE = 15
 
 
 def _domain_of(block_type: str) -> str:
@@ -132,7 +147,20 @@ def test_门禁仍然不拦页型越界():
     """
     from services.v5_model_gate import validate_five_system_model
 
-    # AlertRoutingPolicy 只允许 dashboard/monitor，这里故意摆进 workbench 页
+    # 前置断言：先证明这份样例真的越界。放宽 pageKinds 时很容易让它变成合法摆放，
+    # 那样下面那条断言就永远成立，路标静默失效。
+    declared = {
+        str(b["type"]): list(b.get("pageKinds") or []) for b in EXPERIENCE_BLOCKS
+    }
+    assert "workbench" not in declared["MuteTimingSchedule"], (
+        "MuteTimingSchedule 现在允许 workbench 了，这份样例不再越界。"
+        "请换一个仍然不允许 workbench 的区块，否则这条路标就是空断言。"
+    )
+
+    # MuteTimingSchedule 只允许 monitor/dashboard，这里故意摆进 workbench 页。
+    # （原先用的是 AlertRoutingPolicy，A 档放宽后它已经允许 workbench，这条路标会
+    #  变成永远为真的空断言，所以换成同族同能力、仍然不允许 workbench 的那个。
+    #  下面 _仍然越界 的前置断言就是防止将来再出现这种静默失效。）
     model = {
         "datamodel": {"entities": [{"id": "alert", "name": "告警", "fields": [
             {"id": "title", "name": "标题", "type": "string"},
@@ -141,7 +169,7 @@ def test_门禁仍然不拦页型越界():
         "workflow": {"id": "wf", "name": "流程", "nodes": [], "transitions": [], "chains": []},
         "page": {"pages": [{
             "id": "p1", "name": "路由策略管理", "kind": "workbench",
-            "blocks": [{"id": "b1", "type": "AlertRoutingPolicy",
+            "blocks": [{"id": "b1", "type": "MuteTimingSchedule",
                         "binding": {"entityRef": "alert"}}],
         }]},
         "aigc": {"capabilities": [{"id": "cap", "name": "摘要",
