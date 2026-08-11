@@ -3267,6 +3267,21 @@ export function AppRuntimeScreen({
         rowKey="id"
         columns={columns as any}
         dataSource={rows}
+        /**
+         * 列多了让表格**横向滚动**，而不是把每列挤成省略号（2026-08-11）。
+         *
+         * 线上截图里 9 列挤在约 740px 的卡里，每列剩 ~80px，于是「加分事项」
+         * 显示成"加分事..."、「行为说明」成"行为说..."、「AI行为分析」成
+         * "AI行为..."——几乎每一列都截断到读不出内容，表头「AI建议积分」还折成
+         * 两行。列上开着 `ellipsis: true` 但没有任何宽度提示，antd 默认把容器
+         * 宽度均分，列数一多必然如此。
+         *
+         * `x: "max-content"` 让每列按内容取自然宽度、整表横向滚动——这是 antd
+         * 对多列表格的标准做法，而且这个仓库**早就在用**（EntityDataPanel.tsx
+         * 那张表、DataImportWizard / 资源配置那两个区块都是这么写的），只有
+         * 页面内置表格一直漏着。
+         */
+        scroll={{ x: "max-content" }}
         onRow={row => ({
           onClick: () => setDetailRow(row as RuntimeRow),
           style: { cursor: "pointer" },
@@ -3567,6 +3582,7 @@ export function AppRuntimeScreen({
           rowKey="id"
           columns={columns as any}
           dataSource={rows}
+          scroll={{ x: "max-content" }}
           onRow={row => ({
             onClick: () => setDetailRow(row as RuntimeRow),
             style: { cursor: "pointer" },

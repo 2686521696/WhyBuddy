@@ -138,6 +138,18 @@ function TableSurface(props: ProWorkbenchSurfaceProps) {
       ]}
       pagination={{ pageSize: props.surface.density === "compact" ? 10 : 8 }}
       cardBordered={false}
+      /**
+       * 列多了横向滚动，不要把每列挤成省略号（2026-08-11）。
+       *
+       * buildColumns 给每列都开了 `ellipsis: true` 但没有宽度提示，antd 默认均分
+       * 容器宽度：线上截图里 9 列挤在约 740px 的卡里，每列剩 ~80px，「加分事项」
+       * 显示成"加分事..."、「AI行为分析」成"AI行为..."，表头「AI建议积分」还折成
+       * 两行——几乎每一列都截断到读不出内容。
+       *
+       * 这是 antd 对多列表格的标准做法，而且本仓库早就在用（EntityDataPanel、
+       * DataImportWizard 那两张表），只有页面表格一直漏着。
+       */
+      scroll={{ x: "max-content" }}
       onRow={row => ({ onDoubleClick: () => props.onOpenRow(row) })}
     />
   );
