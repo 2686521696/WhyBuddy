@@ -676,7 +676,7 @@ function fieldSchemaOf(_entityRef: string, fieldId: string): AppFormFieldSchema 
   return schema;
 }
 
-const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
+export const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
   orderLog: ORDER_LOGS,
   attachment: [
     { id: "file-1", values: { fileName: "门店巡检报告.pdf", fileSize: 2488320, fileStatus: "ready", uploadedAt: "2026-08-08" }, createdAt: "2026-08-08T09:00:00.000Z" },
@@ -2282,9 +2282,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   ConnectionRouteSummary: {
     block: { id: "demo-ConnectionRouteSummary", type: "ConnectionRouteSummary", props: { title: "连接路径" }, binding: { entityRef: "connectionRoute", sourceFieldRef: "sourceConnector", targetFieldRef: "targetConnector", sourceVersionFieldRef: "sourceVersion", targetVersionFieldRef: "targetVersion", statusFieldRef: "routeStatus" } }, extra: {},
   },
-  ResourceDetailTabs: {
-    block: { id: "demo-ResourceDetailTabs", type: "ResourceDetailTabs", props: { surface: "plain" }, binding: { entityRef: "resourceSection", titleFieldRef: "sectionTitle", keyFieldRef: "sectionKey", availableFieldRef: "sectionAvailable", countFieldRef: "sectionCount", targets: ["connection-detail"] } }, extra: {},
-  },
   InspectorModeTabs: {
     block: { id: "demo-InspectorModeTabs", type: "InspectorModeTabs", props: { surface: "plain" }, binding: { entityRef: "inspectorMode", titleFieldRef: "modeTitle", keyFieldRef: "modeKey", enabledFieldRef: "modeEnabled", issueCountFieldRef: "issueCount", targets: ["inspector-content"] } }, extra: {},
   },
@@ -2351,12 +2348,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   WorkItemContextSummary: {
     block: { id: "demo-WorkItemContextSummary", type: "WorkItemContextSummary", props: { surface: "plain" }, binding: { entityRef: "workItem", titleFieldRef: "workTitle", fieldRefs: ["workProject", "workCycle", "workDue", "workLabels"] } }, extra: { focus: { workItem: "work-1" } },
   },
-  WorkItemDetailTabs: {
-    block: { id: "demo-WorkItemDetailTabs", type: "WorkItemDetailTabs", props: { surface: "plain" }, binding: { entityRef: "workItemTab", titleFieldRef: "workTabTitle", keyFieldRef: "workTabKey", countFieldRef: "workTabCount", enabledFieldRef: "workTabEnabled", targets: ["work-item-detail"] } }, extra: {},
-  },
-  WorkItemFilterBar: {
-    block: { id: "demo-WorkItemFilterBar", type: "WorkItemFilterBar", props: { title: "工作项筛选" }, binding: { entityRef: "workFilterOption", typeFieldRef: "workFilterType", keyFieldRef: "workFilterKey", titleFieldRef: "workFilterTitle", targets: ["work-item-list"] } }, extra: {},
-  },
   DashboardParameterBar: {
     block: { id: "demo-DashboardParameterBar", type: "DashboardParameterBar", props: { title: "经营看板参数" }, binding: { entityRef: "dashboardParameter", titleFieldRef: "parameterTitle", keyFieldRef: "parameterKey", valueFieldRef: "parameterValue", requiredFieldRef: "parameterRequired", targets: ["dashboard"] } }, extra: {},
   },
@@ -2390,23 +2381,14 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   QueryDataSourceSummary: {
     block: { id: "demo-QueryDataSourceSummary", type: "QueryDataSourceSummary", props: { surface: "plain", title: "数据来源" }, binding: { entityRef: "querySource", databaseFieldRef: "sourceDatabase", schemaFieldRef: "sourceSchema", sourceFieldRef: "sourceName", typeFieldRef: "sourceType" } }, extra: {},
   },
-  CatalogEntityFilterBar: {
-    block: { id: "demo-CatalogEntityFilterBar", type: "CatalogEntityFilterBar", props: { title: "目录筛选" }, binding: { entityRef: "catalogFilterOption", facetFieldRef: "catalogFacet", keyFieldRef: "catalogFilterKey", titleFieldRef: "catalogFilterTitle", targets: ["catalog-list"] } }, extra: {},
-  },
   QueryClauseFilterBar: {
     block: { id: "demo-QueryClauseFilterBar", type: "QueryClauseFilterBar", props: { title: "查询条件" }, binding: { entityRef: "queryClause", fieldFieldRef: "queryField", operatorFieldRef: "queryOperator", valueFieldRef: "queryValue", enabledFieldRef: "queryClauseEnabled", targets: ["query-content"] } }, extra: {},
-  },
-  DocumentInsightMetrics: {
-    block: { id: "demo-DocumentInsightMetrics", type: "DocumentInsightMetrics", props: { title: "文档洞察" }, binding: { entityRef: "documentInsight", viewsFieldRef: "documentViews", contributorsFieldRef: "documentContributors", createdAtFieldRef: "documentCreatedAt", updatedAtFieldRef: "documentUpdatedAt" } }, extra: {},
   },
   MetadataQualityMetrics: {
     block: { id: "demo-MetadataQualityMetrics", type: "MetadataQualityMetrics", props: { title: "元数据质量" }, binding: { entityRef: "metadataQuality", totalFieldRef: "metadataTotal", documentedFieldRef: "metadataDocumented", typedFieldRef: "metadataTyped" } }, extra: {},
   },
   QuestionExecutionBar: {
     block: { id: "demo-QuestionExecutionBar", type: "QuestionExecutionBar", props: { surface: "plain" }, binding: { entityRef: "questionState", statusFieldRef: "queryStatus", runnableFieldRef: "queryRunnable", dirtyFieldRef: "questionDirty", targets: ["query-content"] } }, extra: {},
-  },
-  DocumentShareBar: {
-    block: { id: "demo-DocumentShareBar", type: "DocumentShareBar", props: { surface: "plain" }, binding: { entityRef: "document", titleFieldRef: "documentTitle", visibilityFieldRef: "documentShareVisibility", domainFieldRef: "documentShareDomain", permissionFieldRef: "documentSharePermission", linkFieldRef: "documentShareLink", targets: ["document-editor"] } }, extra: { focus: { document: "doc-1" } },
   },
   CycleCommandHeader: {
     block: { id: "demo-CycleCommandHeader", type: "CycleCommandHeader", props: { surface: "plain" }, binding: { entityRef: "cycleManagement", titleFieldRef: "cycleTitle", statusFieldRef: "cycleStatus", editableFieldRef: "cycleEditable", targets: ["cycle-detail"] } }, extra: { focus: { cycleManagement: "cycle-manage-1" } },
@@ -2432,9 +2414,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   RuleEvaluationMetrics: {
     block: { id: "demo-RuleEvaluationMetrics", type: "RuleEvaluationMetrics", props: { title: "规则评估" }, binding: { entityRef: "ruleEvaluation", activeFieldRef: "evaluationActive", pausedFieldRef: "evaluationPaused", errorFieldRef: "evaluationErrors", durationFieldRef: "evaluationDuration" } }, extra: {},
   },
-  CycleLifecycleBar: {
-    block: { id: "demo-CycleLifecycleBar", type: "CycleLifecycleBar", props: { surface: "plain" }, binding: { entityRef: "cycleManagement", titleFieldRef: "cycleTitle", statusFieldRef: "cycleStatus", editableFieldRef: "cycleEditable", targets: ["cycle-detail"] } }, extra: { focus: { cycleManagement: "cycle-manage-1" } },
-  },
   EventTypePublishBar: {
     block: { id: "demo-EventTypePublishBar", type: "EventTypePublishBar", props: { surface: "plain" }, binding: { entityRef: "eventTypeState", titleFieldRef: "eventTypeTitle", hiddenFieldRef: "eventTypeHidden", dirtyFieldRef: "eventTypeDirty", validFieldRef: "eventTypeValid", targets: ["event-type-editor"] } }, extra: { focus: { eventTypeState: "event-type-1" } },
   },
@@ -2450,17 +2429,11 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   RealmStatusStrip: {
     block: { id: "demo-RealmStatusStrip", type: "RealmStatusStrip", props: { surface: "plain" }, binding: { entityRef: "realmStatus", nameFieldRef: "realmName", enabledFieldRef: "realmEnabled", bruteForceFieldRef: "bruteForceProtection", sslFieldRef: "sslRequired", targets: ["realm-settings"] } }, extra: {},
   },
-  ConversationInboxFilter: {
-    block: { id: "demo-ConversationInboxFilter", type: "ConversationInboxFilter", props: { title: "会话筛选" }, binding: { entityRef: "conversationFilterOption", typeFieldRef: "conversationFilterType", keyFieldRef: "conversationFilterKey", titleFieldRef: "conversationFilterTitle", targets: ["conversation-list"] } }, extra: {},
-  },
   UserDirectoryFilter: {
     block: { id: "demo-UserDirectoryFilter", type: "UserDirectoryFilter", props: { title: "用户目录筛选", defaultMode: "default" }, binding: { targets: ["user-list"] } }, extra: {},
   },
   ConversationSlaMetrics: {
     block: { id: "demo-ConversationSlaMetrics", type: "ConversationSlaMetrics", props: { title: "客服 SLA" }, binding: { entityRef: "conversationSla", firstResponseFieldRef: "slaFirstResponse", resolutionFieldRef: "slaResolution", breachFieldRef: "slaBreaches", countFieldRef: "slaConversationCount" } }, extra: {},
-  },
-  UserSessionMetrics: {
-    block: { id: "demo-UserSessionMetrics", type: "UserSessionMetrics", props: { title: "身份会话风险" }, binding: { entityRef: "userSessionMetric", activeFieldRef: "sessionActive", offlineFieldRef: "sessionOffline", clientFieldRef: "sessionClients", riskFieldRef: "sessionRisk" } }, extra: {},
   },
   ConversationReplyBar: {
     block: { id: "demo-ConversationReplyBar", type: "ConversationReplyBar", props: { surface: "plain" }, binding: { entityRef: "supportConversation", statusFieldRef: "conversationStatus", channelFieldRef: "conversationChannel", targets: ["conversation-messages"] } }, extra: { focus: { supportConversation: "conv-1842" } },
@@ -2510,9 +2483,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   ReleaseEnvironmentStrip: {
     block: { id: "demo-ReleaseEnvironmentStrip", type: "ReleaseEnvironmentStrip", binding: { entityRef: "releaseState", versionFieldRef: "releaseTitle", environmentFieldRef: "releaseEnvironment", statusFieldRef: "releaseStatus", targets: ["release-list"] } }, extra: {},
   },
-  KubernetesResourceFilter: {
-    block: { id: "demo-KubernetesResourceFilter", type: "KubernetesResourceFilter", props: { title: "资源筛选" }, binding: { entityRef: "runtimeFilterOption", facetFieldRef: "runtimeFacet", keyFieldRef: "runtimeKey", titleFieldRef: "runtimeTitle", targets: ["workload-list"] } }, extra: {},
-  },
   DeploymentCommandHeader: {
     block: { id: "demo-DeploymentCommandHeader", type: "DeploymentCommandHeader", binding: { entityRef: "deploymentWorkload", titleFieldRef: "workloadTitle", statusFieldRef: "workloadStatus", editableFieldRef: "workloadEditable", targets: ["deployment"] } }, extra: { focus: { deploymentWorkload: "deployment-order-api" } },
   },
@@ -2531,17 +2501,8 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   BookingDemandChart: {
     block: { id: "demo-BookingDemandChart", type: "BookingDemandChart", props: { title: "本周预约需求" }, binding: { entityRef: "bookingDemand", timeFieldRef: "demandTime", availableFieldRef: "availableSlots", bookedFieldRef: "bookedSlots", canceledFieldRef: "canceledSlots" } }, extra: {},
   },
-  WorkloadThroughputMetrics: {
-    block: { id: "demo-WorkloadThroughputMetrics", type: "WorkloadThroughputMetrics", props: { title: "周期吞吐" }, binding: { entityRef: "throughputMetric", completedFieldRef: "throughputCompleted", enteredFieldRef: "throughputEntered", wipFieldRef: "throughputWip", blockedFieldRef: "throughputBlocked" } }, extra: {},
-  },
-  CalendarUtilizationMetrics: {
-    block: { id: "demo-CalendarUtilizationMetrics", type: "CalendarUtilizationMetrics", props: { title: "日历利用率" }, binding: { entityRef: "utilizationMetric", availableFieldRef: "utilizationAvailable", bookedFieldRef: "utilizationBooked", canceledFieldRef: "utilizationCanceled", noShowFieldRef: "utilizationNoShow" } }, extra: {},
-  },
   CycleRiskStrip: {
     block: { id: "demo-CycleRiskStrip", type: "CycleRiskStrip", binding: { entityRef: "cycleRisk", titleFieldRef: "riskTitle", remainingFieldRef: "riskRemaining", blockedFieldRef: "riskBlocked", overdueFieldRef: "riskOverdue" } }, extra: {},
-  },
-  CalendarConnectionStrip: {
-    block: { id: "demo-CalendarConnectionStrip", type: "CalendarConnectionStrip", binding: { entityRef: "calendarConnection", accountFieldRef: "calendarAccount", statusFieldRef: "calendarStatus", providerFieldRef: "calendarProvider", syncedAtFieldRef: "calendarSyncedAt", targets: ["calendar-settings"] } }, extra: {},
   },
   WorkItemMoveDrawer: {
     block: { id: "demo-WorkItemMoveDrawer", type: "WorkItemMoveDrawer", binding: { entityRef: "movableWorkItem", titleFieldRef: "moveTitle", groupFieldRef: "moveGroup", targets: ["work-item"] } }, extra: { focus: { movableWorkItem: "move-item-1" } },
@@ -2577,7 +2538,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   SyncVolumeTrendChart: { block: { id: "demo-SyncVolumeTrendChart", type: "SyncVolumeTrendChart", props: { title: "同步数据量" }, binding: { entityRef: "observabilityTrend", timeFieldRef: "obsTime", recordsFieldRef: "syncRecords", bytesFieldRef: "syncBytes", failedFieldRef: "syncFailed" } }, extra: {} },
   DatasourceQueryMetrics: { block: { id: "demo-DatasourceQueryMetrics", type: "DatasourceQueryMetrics", props: { title: "数据源查询" }, binding: { entityRef: "queryMetric", requestFieldRef: "queryRequests", errorFieldRef: "queryErrors", cacheHitFieldRef: "queryCacheHits", durationFieldRef: "queryDuration" } }, extra: {} },
   StreamFreshnessMetrics: { block: { id: "demo-StreamFreshnessMetrics", type: "StreamFreshnessMetrics", props: { title: "数据流新鲜度" }, binding: { entityRef: "streamMetric", lagFieldRef: "streamLag", syncedAtFieldRef: "streamSyncedAt", recordsFieldRef: "streamRecords", failedFieldRef: "streamFailed" } }, extra: {} },
-  DatasourceHealthStrip: { block: { id: "demo-DatasourceHealthStrip", type: "DatasourceHealthStrip", binding: { entityRef: "datasourceState", nameFieldRef: "datasourceName", statusFieldRef: "datasourceStatus", typeFieldRef: "datasourceType", checkedAtFieldRef: "datasourceChecked", targets: ["datasource"] } }, extra: {} },
   PanelCommandHeader: { block: { id: "demo-PanelCommandHeader", type: "PanelCommandHeader", binding: { entityRef: "panelState", titleFieldRef: "panelTitle", datasourceFieldRef: "panelDatasource", editableFieldRef: "panelEditable", targets: ["panel"] } }, extra: {} },
   ExploreQueryControlBar: { block: { id: "demo-ExploreQueryControlBar", type: "ExploreQueryControlBar", binding: { entityRef: "exploreState", statusFieldRef: "exploreStatus", queryFieldRef: "exploreQuery", targets: ["query"] } }, extra: {} },
   QueryErrorDrawer: { block: { id: "demo-QueryErrorDrawer", type: "QueryErrorDrawer", binding: { entityRef: "queryError", refFieldRef: "queryRef", messageFieldRef: "queryMessage", statusFieldRef: "queryStatus", requestFieldRef: "queryRequest", targets: ["query"] } }, extra: {} },
@@ -2602,14 +2562,77 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
  * 跟"装进 ContentCard 的积木自动 plain"是同一条规矩，只是这里的容器是陈列
  * 相框而不是 ContentCard：**谁提供表面，谁负责，一层就够**。
  */
-function demoFor(type: string): { block: ExperienceBlockInstance; extra: Record<string, unknown> } {
-  const d = DEMOS[type] ?? { block: { id: `demo-${type}`, type }, extra: {} };
+
+/**
+ * 没有手写夹具时，按区块自己的 `bindingSchema` **现合成**一份（2026-08-11）。
+ *
+ * ## 为什么加
+ *
+ * 用户看着「主体区」「补充说明」两个筛选说「怎么还全是表格」。去重砍掉 91 个
+ * 之后再看那两屏，剩下的卡片仍然一片一样——但那**不是重复**，是每张卡都在说
+ * 「这一页还没为它准备示例数据」。手写夹具只覆盖到 2/3，剩下的 100 来个区块
+ * 在墙上就是一张空卡加一行灰色组件清单，**看上去当然全一样**。
+ *
+ * 手写 100 份夹具不划算，而且会一直欠着。目录里本来就有每个区块的
+ * `bindingSchema`（required/optional + entityFieldRefs 的类型），照着它挑字段
+ * 就能喂饱绝大多数区块——去重那道闸（no-duplicate-blocks.test.tsx）正是靠同一
+ * 套合成逻辑把 273/350 渲染出了真内容，这条路是验证过的。
+ *
+ * ## 用真数据，不造假数据
+ *
+ * 合成的只是**绑定关系**，值仍然来自这一页原有的 ENTITY_ROWS（门店巡检那套
+ * 中文示例）。按 FIELD_TYPE 给每个 `xxxFieldRef` 挑一个类型对得上的真实字段，
+ * 挑不到才退到同实体的任意字段。所以卡上出现的是"高新店/整改说明.docx"这类
+ * 看得懂的东西，不是 "示例文本 1 / 示例文本 2"。
+ *
+ * ⚠ 合成夹具**不等于手写夹具**：手写的那份能挑最贴题的实体和字段组合，
+ * 合成的只保证"喂得饱、看得见形态"。所以优先级是手写 > 合成，
+ * 且卡上照旧标出来（`data-demo-source`），别让人误以为这是精心配的例子。
+ */
+const SYNTH_ENTITY = "orderLog";
+
+/** 按 type 建索引 —— HAS_SYNTH 要对整册各查一次，用 find 就是 316×316 次线性扫。 */
+const CATALOG_BY_TYPE = new Map(CATALOG.blocks.map(b => [String(b.type), b]));
+
+export function synthesizedDemo(type: string): { block: ExperienceBlockInstance; extra: Record<string, unknown> } | undefined {
+  const entry = CATALOG_BY_TYPE.get(type) as
+    | { bindingSchema?: { required?: string[]; optional?: string[]; entityFieldRefs?: Record<string, string> } }
+    | undefined;
+  const schema = entry?.bindingSchema;
+  if (!schema) return undefined;
+  const rows = ENTITY_ROWS[SYNTH_ENTITY];
+  if (!rows?.length) return undefined;
+  const fields = Object.keys(rows[0].values ?? {});
+  if (!fields.length) return undefined;
+  const pick = (want?: string) =>
+    fields.find(f => FIELD_TYPE[f] === want) ?? fields.find(f => FIELD_TYPE[f] === "string") ?? fields[0];
+
+  const binding: Record<string, unknown> = { entityRef: SYNTH_ENTITY, targets: [SYNTH_ENTITY] };
+  for (const ref of [...(schema.required ?? []), ...(schema.optional ?? [])]) {
+    if (ref === "entityRef" || ref === "targets") continue;
+    if (ref.endsWith("FieldRefs")) { binding[ref] = fields.slice(0, 3); continue; }
+    if (ref.endsWith("FieldRef")) { binding[ref] = pick(schema.entityFieldRefs?.[ref]); continue; }
+    binding[ref] = ref === "limit" ? 5 : undefined;
+    if (binding[ref] === undefined) delete binding[ref];
+  }
+  return { block: { id: `synth-${type}`, type, binding } as ExperienceBlockInstance, extra: {} };
+}
+
+export function demoFor(type: string): { block: ExperienceBlockInstance; extra: Record<string, unknown> } {
+  const d = DEMOS[type] ?? synthesizedDemo(type) ?? { block: { id: `demo-${type}`, type }, extra: {} };
   return {
     ...d,
     block: { ...d.block, props: { ...(d.block.props ?? {}), surface: "plain" } },
   };
 }
 const HAS_DEMO = new Set(Object.keys(DEMOS));
+/** 手写夹具没覆盖、但能按 bindingSchema 合成出来的。合成失败的仍然如实说没有示例。 */
+const HAS_SYNTH = new Set(
+  CATALOG.blocks
+    .map(b => String(b.type))
+    .filter(t => !HAS_DEMO.has(t) && synthesizedDemo(t) !== undefined)
+);
+export const HAS_ANY_DEMO = (type: string) => HAS_DEMO.has(type) || HAS_SYNTH.has(type);
 
 /** 页面形态（pageKind）——与 Python 侧 schema_legal.PAGE_KINDS 同源，此处是说明文案。 */
 const PAGE_KINDS = [
@@ -2665,7 +2688,7 @@ const LazyPhoneExperienceBlock = React.lazy(
  * ——直接不显示会让手机用户少掉整块内容，比挤一点更糟。
  */
 function hasPhoneImplementation(block: CatalogBlock): boolean {
-  return isPhoneExperienceBlock(block.type) && HAS_DEMO.has(block.type);
+  return isPhoneExperienceBlock(block.type) && HAS_ANY_DEMO(block.type);
 }
 
 /** 真实渲染器预览；外壳使用 Ant Design Card，元信息不会覆盖可交互内容。 */
@@ -2680,7 +2703,7 @@ function BlockCard({
 }) {
   const { block: instance, extra } = demoFor(block.type);
   const impl = IMPL_BY_TYPE[block.type];
-  const demoable = HAS_DEMO.has(block.type);
+  const demoable = HAS_ANY_DEMO(block.type);
   // 与应用中心 LiveAppThumb 共用同一个全局排队器。当前页虽然最多只有 12 张，
   // 但每张仍可能包含 ProTable / ECharts / Form；分成每批 3 张挂载，避免它们在
   // 同一个 React 提交阶段抢主线程。翻页或改筛选卸载时会自动取消尚未放行的任务。

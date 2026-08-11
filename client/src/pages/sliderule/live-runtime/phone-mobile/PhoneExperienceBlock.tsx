@@ -1448,7 +1448,6 @@ function PhoneCompactSummary(props:ExperienceBlockRendererProps,testid:string,fa
 const PhoneWorkItemContextSummary=(props:ExperienceBlockRendererProps)=>PhoneCompactSummary(props,"phone-work-item-context-summary","工作项摘要");
 
 function PhoneStableTabs(props:ExperienceBlockRendererProps,testid:string,fallback:string){const b=phoneRows(props),t=phoneField(props,"titleFieldRef"),key=phoneField(props,"keyFieldRef"),count=phoneField(props,"countFieldRef"),enabled=phoneField(props,"enabledFieldRef"),[active,setActive]=React.useState("");if(!b||!t||!key)return <PhoneShell block={props.block} testid={testid}><MobileEmpty description={`${fallback}尚未绑定标题和稳定键`}/></PhoneShell>;const usable=b.rows.filter(r=>!enabled||![false,"false","disabled"].includes(r.values?.[enabled] as never)),selected=usable.some(r=>String(r.values?.[key])===active)?active:String(usable[0]?.values?.[key]??"");return <PhoneShell block={props.block} testid={testid}><Tabs activeKey={selected} onChange={v=>{setActive(v);const r=b.rows.find(x=>String(x.values?.[key])===v);props.onAction?.("itemSelect",{entityRef:b.entityRef,rowId:r?.id,tabKey:v,targets:phoneTargets(props)})}}>{b.rows.map(r=><Tabs.Tab key={String(r.values?.[key])} title={`${String(r.values?.[t]??fallback)}${count?` ${String(r.values?.[count]??0)}`:""}`} disabled={Boolean(enabled&&[false,"false","disabled"].includes(r.values?.[enabled] as never))}/>)}</Tabs></PhoneShell>}
-const PhoneWorkItemDetailTabs=(props:ExperienceBlockRendererProps)=>PhoneStableTabs(props,"phone-work-item-detail-tabs","工作项页签");
 
 function PhoneWorkItemFilterBar(props:ExperienceBlockRendererProps){const b=phoneRows(props),type=phoneField(props,"typeFieldRef"),key=phoneField(props,"keyFieldRef"),title=phoneField(props,"titleFieldRef"),[selected,setSelected]=React.useState<Record<string,string[]>>({});if(!b||!type||!key||!title)return <PhoneShell block={props.block} title={titleOf(props)||"工作项筛选"} testid="phone-work-item-filter-bar"><MobileEmpty description="工作项筛选尚未绑定类型、键和标题"/></PhoneShell>;const types=Array.from(new Set(b.rows.map(r=>String(r.values?.[type]??"")).filter(Boolean))),emit=(next:Record<string,string[]>)=>props.onAction?.("filterChange",{facets:next,targets:phoneTargets(props)});return <PhoneShell block={props.block} title={titleOf(props)||"工作项筛选"} testid="phone-work-item-filter-bar">{types.map(v=><div key={v} style={{marginBottom:8}}><small>{v}</small><Selector columns={2} multiple value={selected[v]??[]} options={b.rows.filter(r=>String(r.values?.[type])===v).map(r=>({value:String(r.values?.[key]),label:String(r.values?.[title])}))} onChange={vals=>{const next={...selected,[v]:vals.map(String)};setSelected(next);emit(next)}}/></div>)}<Button block fill="none" disabled={!Object.values(selected).some(v=>v.length)} onClick={()=>{setSelected({});emit({})}}>清除筛选</Button></PhoneShell>}
 
@@ -1543,7 +1542,6 @@ const phoneNullableNumber=(input:unknown)=>input==null||input===""||!Number.isFi
 function PhoneDeploymentLatencyChart(props:ExperienceBlockRendererProps){const b=phoneRows(props),time=phoneField(props,"timeFieldRef"),queue=phoneField(props,"queueFieldRef"),pull=phoneField(props,"pullFieldRef"),start=phoneField(props,"startFieldRef"),ready=phoneField(props,"readyFieldRef");if(!b||!time||!queue||!ready)return <PhoneAnalysisChart props={props} testid="phone-deployment-latency-chart" hint="部署耗时尚未绑定时间、排队和就绪字段"/>;const rows=[...b.rows].sort((a,c)=>String(a.values?.[time]).localeCompare(String(c.values?.[time]))),defs:Array<[string,string|undefined]>=[["排队",queue],["拉取",pull],["启动",start],["就绪",ready]],series=defs.flatMap(([name,ref])=>ref?[{name,type:"line",connectNulls:false,data:rows.map(r=>phoneNullableNumber(r.values?.[ref]))}]:[]),option=rows.length?{animation:false,tooltip:{trigger:"axis",confine:true},grid:{left:4,right:4,top:8,bottom:8,containLabel:true},xAxis:{type:"category",data:rows.map(r=>String(r.values?.[time])),axisLabel:{fontSize:8}},yAxis:{type:"value"},series}:undefined;return <PhoneAnalysisChart props={props} testid="phone-deployment-latency-chart" option={option} hint="当前没有部署阶段数据"/>}
 function PhoneReleaseAdoptionTrendChart(props:ExperienceBlockRendererProps){const b=phoneRows(props),time=phoneField(props,"timeFieldRef"),adoption=phoneField(props,"adoptionFieldRef"),health=phoneField(props,"healthFieldRef");if(!b||!time||!adoption||!health)return <PhoneAnalysisChart props={props} testid="phone-release-adoption-trend-chart" hint="发布趋势尚未绑定时间、采用率和健康率"/>;const rows=[...b.rows].sort((a,c)=>String(a.values?.[time]).localeCompare(String(c.values?.[time]))),option=rows.length?{animation:false,tooltip:{trigger:"axis",confine:true},grid:{left:4,right:4,top:8,bottom:8,containLabel:true},xAxis:{type:"category",data:rows.map(r=>String(r.values?.[time])),axisLabel:{fontSize:8}},yAxis:{type:"value",min:0,max:100},series:[{name:"采用率",type:"line",areaStyle:{opacity:.08},connectNulls:false,data:rows.map(r=>phoneNullableNumber(r.values?.[adoption]))},{name:"健康率",type:"line",connectNulls:false,data:rows.map(r=>phoneNullableNumber(r.values?.[health]))}]}:undefined;return <PhoneAnalysisChart props={props} testid="phone-release-adoption-trend-chart" option={option} hint="当前没有发布趋势"/>}
 function PhoneFacetFilter(props:ExperienceBlockRendererProps,testid:string,fallback:string){const b=phoneRows(props),facet=phoneField(props,"facetFieldRef"),key=phoneField(props,"keyFieldRef"),title=phoneField(props,"titleFieldRef"),[selected,setSelected]=React.useState<Record<string,string[]>>({});if(!b||!facet||!key||!title)return <PhoneShell block={props.block} testid={testid}><MobileEmpty description={`${fallback}尚未绑定分面、键和标题`}/></PhoneShell>;const groups=Array.from(new Set(b.rows.map(r=>String(r.values?.[facet]??"")).filter(Boolean))),emit=(next:Record<string,string[]>)=>props.onAction?.("filterChange",{facets:next,targets:phoneTargets(props),page:1});return <PhoneShell block={props.block} title={titleOf(props)||fallback} testid={testid}>{groups.map(group=><div key={group} style={{marginBottom:10}}><small>{group}</small><Selector columns={2} multiple value={selected[group]??[]} options={b.rows.filter(r=>String(r.values?.[facet])===group).map(r=>({value:String(r.values?.[key]),label:String(r.values?.[title])}))} onChange={values=>{const next={...selected,[group]:values.map(String)};setSelected(next);emit(next)}}/></div>)}<Button block fill="none" disabled={!Object.values(selected).some(v=>v.length)} onClick={()=>{setSelected({});emit({})}}>清除</Button></PhoneShell>}
-const PhoneKubernetesResourceFilter=(props:ExperienceBlockRendererProps)=>PhoneFacetFilter(props,"phone-kubernetes-resource-filter","资源筛选");
 function PhoneDeploymentRolloutMetrics(props:ExperienceBlockRendererProps){const b=phoneRows(props),desired=phoneField(props,"desiredFieldRef"),ready=phoneField(props,"readyFieldRef"),available=phoneField(props,"availableFieldRef"),unavailable=phoneField(props,"unavailableFieldRef"),r=b?.rows[0];if(!b||!desired||!ready||!r)return <PhoneShell block={props.block} testid="phone-deployment-rollout-metrics"><MobileEmpty description="部署指标尚未绑定期望和就绪副本"/></PhoneShell>;const d=Number(r.values?.[desired]??0),rd=Number(r.values?.[ready]??0),items=[["期望",d],["就绪",rd],...(available?[["可用",r.values?.[available]??0]]:[]),...(unavailable?[["不可用",r.values?.[unavailable]??0]]:[])];return <PhoneShell block={props.block} title={titleOf(props)||"部署滚动状态"} testid="phone-deployment-rollout-metrics"><Grid columns={2} gap={8}>{items.map(([label,value])=><Grid.Item key={String(label)}><div style={{padding:9,background:"#f5f5f5",borderRadius:6}}><small>{String(label)}</small><div style={{fontWeight:600}}>{String(value)}</div></div></Grid.Item>)}</Grid><ProgressBar percent={d>0?Math.min(100,rd/d*100):0} style={{marginTop:8}}/></PhoneShell>}
 function PhoneReleaseAdoptionMetrics(props:ExperienceBlockRendererProps){const b=phoneRows(props),adoption=phoneField(props,"adoptionFieldRef"),health=phoneField(props,"healthFieldRef"),events=phoneField(props,"eventCountFieldRef"),users=phoneField(props,"userCountFieldRef"),r=b?.rows[0];if(!b||!adoption||!health||!r)return <PhoneShell block={props.block} testid="phone-release-adoption-metrics"><MobileEmpty description="发布指标尚未绑定采用率和健康率"/></PhoneShell>;const items=[["采用率",`${r.values?.[adoption]??0}%`],["无崩溃率",`${r.values?.[health]??0}%`],...(events?[["事件",r.values?.[events]??0]]:[]),...(users?[["用户",r.values?.[users]??0]]:[])];return <PhoneShell block={props.block} title={titleOf(props)||"发布采用"} testid="phone-release-adoption-metrics"><Grid columns={2} gap={8}>{items.map(([label,value])=><Grid.Item key={String(label)}><div style={{padding:9,background:"#f5f5f5",borderRadius:6}}><small>{String(label)}</small><div style={{fontWeight:600}}>{String(value)}</div></div></Grid.Item>)}</Grid></PhoneShell>}
 function PhoneClusterHealthStrip(props:ExperienceBlockRendererProps){const b=phoneRows(props),name=phoneField(props,"nameFieldRef"),status=phoneField(props,"statusFieldRef"),nodes=phoneField(props,"nodeCountFieldRef"),version=phoneField(props,"versionFieldRef");if(!b||!name||!status)return <PhoneShell block={props.block} testid="phone-cluster-health-strip"><MobileEmpty description="集群状态尚未绑定名称和状态"/></PhoneShell>;return <PhoneShell block={props.block} testid="phone-cluster-health-strip"><List>{b.rows.map(r=><List.Item key={r.id} description={`${String(r.values?.[status]??"unknown")}${nodes?` · ${r.values?.[nodes]??0} 节点`:""}${version?` · ${r.values?.[version]??""}`:""}`} onClick={()=>props.onAction?.("itemSelect",{entityRef:b.entityRef,rowId:r.id})}>{String(r.values?.[name]??"集群")}</List.Item>)}</List></PhoneShell>}
@@ -1577,7 +1575,6 @@ const PhoneSyncVolumeTrendChart=(props:ExperienceBlockRendererProps)=>PhoneMulti
 function PhoneDatasourceQueryMetrics(props:ExperienceBlockRendererProps){const b=phoneRows(props),req=phoneField(props,"requestFieldRef"),err=phoneField(props,"errorFieldRef"),cache=phoneField(props,"cacheHitFieldRef"),duration=phoneField(props,"durationFieldRef"),r=b?.rows[0];if(!b||!req||!err||!r)return <PhoneShell block={props.block} testid="phone-datasource-query-metrics"><MobileEmpty description="查询指标尚未绑定请求和错误数"/></PhoneShell>;const total=Number(r.values?.[req]??0),items=[["请求",total],["错误率",`${total?Math.round(Number(r.values?.[err]??0)/total*100):0}%`],...(cache?[["缓存命中",`${total?Math.round(Number(r.values?.[cache]??0)/total*100):0}%`]]:[]),...(duration?[["平均耗时",`${r.values?.[duration]??0} ms`]]:[])];return <PhoneShell block={props.block} title={titleOf(props)||"数据源查询"} testid="phone-datasource-query-metrics"><Grid columns={2} gap={8}>{items.map(([l,v])=><Grid.Item key={String(l)}><div style={{padding:9,background:"#f5f5f5",borderRadius:6}}><small>{String(l)}</small><div style={{fontWeight:600}}>{String(v)}</div></div></Grid.Item>)}</Grid></PhoneShell>}
 function PhoneStreamFreshnessMetrics(props:ExperienceBlockRendererProps){const b=phoneRows(props),lag=phoneField(props,"lagFieldRef"),synced=phoneField(props,"syncedAtFieldRef"),records=phoneField(props,"recordsFieldRef"),failed=phoneField(props,"failedFieldRef"),r=b?.rows[0];if(!b||!lag||!synced||!r)return <PhoneShell block={props.block} testid="phone-stream-freshness-metrics"><MobileEmpty description="新鲜度尚未绑定延迟和同步时间"/></PhoneShell>;const items=[["延迟",`${r.values?.[lag]??0} 分钟`],["最近同步",r.values?.[synced]??"未同步"],...(records?[["记录",r.values?.[records]??0]]:[]),...(failed?[["失败",r.values?.[failed]??0]]:[])];return <PhoneShell block={props.block} title={titleOf(props)||"数据流新鲜度"} testid="phone-stream-freshness-metrics"><Grid columns={2} gap={8}>{items.map(([l,v])=><Grid.Item key={String(l)}><div style={{padding:9,background:"#f5f5f5",borderRadius:6}}><small>{String(l)}</small><div style={{fontWeight:600}}>{String(v)}</div></div></Grid.Item>)}</Grid></PhoneShell>}
 function PhoneStatusStrip(props:ExperienceBlockRendererProps,testid:string,fallback:string){const b=phoneRows(props),name=phoneField(props,"nameFieldRef"),status=phoneField(props,"statusFieldRef"),type=phoneField(props,"typeFieldRef"),version=phoneField(props,"versionFieldRef"),extra=phoneField(props,"checkedAtFieldRef")??phoneField(props,"availableVersionFieldRef");if(!b||!name||!status)return <PhoneShell block={props.block} testid={testid}><MobileEmpty description={`${fallback}尚未绑定名称和状态`}/></PhoneShell>;return <PhoneShell block={props.block} testid={testid}><List>{b.rows.map(r=><List.Item key={r.id} description={`${String(r.values?.[status])}${type?` · ${String(r.values?.[type]??"")}`:""}${version?` · ${String(r.values?.[version]??"")}`:""}${extra?` · ${String(r.values?.[extra]??"")}`:""}`} extra={<Button size="mini" onClick={()=>props.onAction?.("actionTrigger",{entityRef:b.entityRef,rowId:r.id,operation:"retryStatusCheck",targets:phoneTargets(props)})}>检查</Button>}>{String(r.values?.[name])}</List.Item>)}</List></PhoneShell>}
-const PhoneDatasourceHealthStrip=(props:ExperienceBlockRendererProps)=>PhoneStatusStrip(props,"phone-datasource-health-strip","数据源健康");
 function PhoneCommandHeader(props:ExperienceBlockRendererProps,testid:string,fallback:string){const b=phoneRows(props),title=phoneField(props,"titleFieldRef"),status=phoneField(props,"statusFieldRef"),editable=phoneField(props,"editableFieldRef"),dirty=phoneField(props,"dirtyFieldRef"),refreshing=phoneField(props,"refreshingFieldRef"),source=phoneField(props,"datasourceFieldRef"),r=b?.rows.find(x=>x.id===props.focus?.[b.entityRef])??b?.rows[0];if(!b||!title||!r)return <PhoneShell block={props.block} testid={testid}><MobileEmpty description={`${fallback}尚未绑定标题`}/></PhoneShell>;const can=!editable||phoneTruthy(r.values?.[editable],"editable"),busy=Boolean(refreshing&&phoneTruthy(r.values?.[refreshing],"refreshing")),changed=Boolean(dirty&&phoneTruthy(r.values?.[dirty],"dirty")),act=(op:string,event="actionTrigger")=>props.onAction?.(event,{entityRef:b.entityRef,rowId:r.id,operation:op,targets:phoneTargets(props)});return <PhoneShell block={props.block} testid={testid}><strong>{String(r.values?.[title])}</strong><div style={{fontSize:12,color:"#666",margin:"4px 0 8px"}}>{status?String(r.values?.[status]??""):""}{source?` · ${String(r.values?.[source]??"")}`:""}</div><Grid columns={3} gap={6}><Grid.Item><Button block size="small" disabled={busy} onClick={()=>act("refresh")}>刷新</Button></Grid.Item><Grid.Item><Button block size="small" onClick={()=>act("inspect")}>检查</Button></Grid.Item><Grid.Item><Button block size="small" color="primary" disabled={!can||busy} onClick={()=>act(changed?"save":"edit","editRequest")}>{changed?"保存":"编辑"}</Button></Grid.Item></Grid></PhoneShell>}
 const PhonePanelCommandHeader=(props:ExperienceBlockRendererProps)=>PhoneCommandHeader(props,"phone-panel-command-header","面板页头");
 function PhoneRuntimeControl(props:ExperienceBlockRendererProps,testid:string,fallback:string){const b=phoneRows(props),status=phoneField(props,"statusFieldRef"),query=phoneField(props,"queryFieldRef"),refreshing=phoneField(props,"refreshingFieldRef"),dirty=phoneField(props,"dirtyFieldRef"),r=b?.rows.find(x=>x.id===props.focus?.[b.entityRef])??b?.rows[0];if(!b||!status||!r)return <PhoneShell block={props.block} testid={testid}><MobileEmpty description={`${fallback}尚未绑定状态`}/></PhoneShell>;const state=String(r.values?.[status]??"idle").toLowerCase(),busy=["running","refreshing"].includes(state)||Boolean(refreshing&&phoneTruthy(r.values?.[refreshing],"refreshing")),changed=Boolean(dirty&&phoneTruthy(r.values?.[dirty],"dirty")),canRun=!query||Boolean(String(r.values?.[query]??"").trim()),act=(op:string,event="actionTrigger")=>props.onAction?.(event,{entityRef:b.entityRef,rowId:r.id,operation:op,targets:phoneTargets(props)});return <PhoneShell block={props.block} testid={testid}><strong>{state}</strong><Grid columns={3} gap={6} style={{marginTop:8}}><Grid.Item><Button block size="small" onClick={()=>act("inspect")}>检查</Button></Grid.Item><Grid.Item><Button block size="small" color="danger" disabled={!busy} onClick={()=>act("cancel","submitRequest")}>取消</Button></Grid.Item><Grid.Item><Button block size="small" color="primary" disabled={busy||(!canRun&&!changed)} onClick={()=>act(changed?"save":"run",changed?"editRequest":"submitRequest")}>{changed?"保存":"运行"}</Button></Grid.Item></Grid></PhoneShell>}
@@ -1602,15 +1599,9 @@ function PhoneMatureKanban(props:ExperienceBlockRendererProps & {variant:PhoneKa
 }
 const PhoneSwimlaneKanban=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="swimlane"/>;
 const PhoneWipLimitBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="wip"/>;
-const PhoneBacklogPrioritizationBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="backlog"/>;
-const PhoneSprintPlanningBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="sprint"/>;
 const PhoneDependencyKanban=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="dependency"/>;
-const PhoneTriageQueueBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="triage"/>;
-const PhoneApprovalStageBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="approval"/>;
 const PhoneContentPipelineBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="content"/>;
-const PhoneRecruitmentPipelineBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="recruitment"/>;
 const PhoneIncidentResponseBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="incident"/>;
-const PhoneReleaseTrainBoard=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="release"/>;
 const PhonePortfolioKanban=(p:ExperienceBlockRendererProps)=><PhoneMatureKanban {...p} variant="portfolio"/>;
 
 function PhoneSavedViewManager(props:ExperienceBlockRendererProps){const b=phoneRows(props),name=phoneField(props,"nameFieldRef"),shared=phoneField(props,"sharedFieldRef"),active=phoneField(props,"activeFieldRef");if(!b||!name)return <PhoneShell block={props.block} testid="phone-saved-view-manager"><MobileEmpty description="视图管理尚未绑定名称字段"/></PhoneShell>;return <PhoneShell block={props.block} title={titleOf(props)||"保存视图"} testid="phone-saved-view-manager"><List>{b.rows.map(r=><List.Item key={r.id} description={shared&&phoneTruthy(r.values?.[shared],"shared")?"团队共享":"仅自己"} extra={<Button size="mini" color="primary" onClick={()=>props.onAction?.("itemSelect",{entityRef:b.entityRef,rowId:r.id})}>应用</Button>}>{String(r.values?.[name])}{active&&phoneTruthy(r.values?.[active],"active")&&<Badge content="当前"/>}</List.Item>)}</List></PhoneShell>}
@@ -1760,7 +1751,6 @@ export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps
     case "JobRunMetrics": return <PhoneJobRunMetrics {...props} />;
     case "OccurrenceEvidenceSummary": return <PhoneOccurrenceEvidenceSummary {...props} />;
     case "ConnectionRouteSummary": return <PhoneConnectionRouteSummary {...props} />;
-    case "ResourceDetailTabs": return <PhoneResourceDetailTabs {...props} />;
     case "InspectorModeTabs": return <PhoneInspectorModeTabs {...props} />;
     case "IssueEventFilter": return <PhoneIssueEventFilter {...props} />;
     case "TimelineFilterBar": return <PhoneTimelineFilterBar {...props} />;
@@ -1783,8 +1773,6 @@ export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps
     case "EnvironmentStatusStrip": return <PhoneEnvironmentStatusStrip {...props} />;
     case "DataFreshnessIndicator": return <PhoneDataFreshnessIndicator {...props} />;
     case "WorkItemContextSummary": return <PhoneWorkItemContextSummary {...props} />;
-    case "WorkItemDetailTabs": return <PhoneWorkItemDetailTabs {...props} />;
-    case "WorkItemFilterBar": return <PhoneWorkItemFilterBar {...props} />;
     case "DashboardParameterBar": return <PhoneDashboardParameterBar {...props} />;
     case "CycleHealthMetrics": return <PhoneCycleHealthMetrics {...props} />;
     case "QueryExecutionMetrics": return <PhoneQueryExecutionMetrics {...props} />;
@@ -1796,12 +1784,9 @@ export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps
     case "QueryRunStatusStrip": return <PhoneQueryRunStatusStrip {...props} />;
     case "EntityOwnershipSummary": return <PhoneEntityOwnershipSummary {...props} />;
     case "QueryDataSourceSummary": return <PhoneQueryDataSourceSummary {...props} />;
-    case "CatalogEntityFilterBar": return <PhoneCatalogEntityFilterBar {...props} />;
     case "QueryClauseFilterBar": return <PhoneQueryClauseFilterBar {...props} />;
-    case "DocumentInsightMetrics": return <PhoneDocumentInsightMetrics {...props} />;
     case "MetadataQualityMetrics": return <PhoneMetadataQualityMetrics {...props} />;
     case "QuestionExecutionBar": return <PhoneQuestionExecutionBar {...props} />;
-    case "DocumentShareBar": return <PhoneDocumentShareBar {...props} />;
     case "CycleCommandHeader": return <PhoneCycleCommandHeader {...props} />;
     case "AlertGroupCommandHeader": return <PhoneAlertGroupCommandHeader {...props} />;
     case "IncidentOwnershipStrip": return <PhoneIncidentOwnershipStrip {...props} />;
@@ -1810,16 +1795,13 @@ export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps
     case "AlertRuleFilterBar": return <PhoneAlertRuleFilterBar {...props} />;
     case "SyncReliabilityMetrics": return <PhoneSyncReliabilityMetrics {...props} />;
     case "RuleEvaluationMetrics": return <PhoneRuleEvaluationMetrics {...props} />;
-    case "CycleLifecycleBar": return <PhoneCycleLifecycleBar {...props} />;
     case "EventTypePublishBar": return <PhoneEventTypePublishBar {...props} />;
     case "ConversationCommandHeader": return <PhoneConversationCommandHeader {...props} />;
     case "UserCommandHeader": return <PhoneUserCommandHeader {...props} />;
     case "ConversationAssignmentStrip": return <PhoneConversationAssignmentStrip {...props} />;
     case "RealmStatusStrip": return <PhoneRealmStatusStrip {...props} />;
-    case "ConversationInboxFilter": return <PhoneConversationInboxFilter {...props} />;
     case "UserDirectoryFilter": return <PhoneUserDirectoryFilter {...props} />;
     case "ConversationSlaMetrics": return <PhoneConversationSlaMetrics {...props} />;
-    case "UserSessionMetrics": return <PhoneUserSessionMetrics {...props} />;
     case "ConversationReplyBar": return <PhoneConversationReplyBar {...props} />;
     case "UserAccessBar": return <PhoneUserAccessBar {...props} />;
     case "TimeSeriesAnomalyChart": return <PhoneTimeSeriesAnomalyChart {...props} />;
@@ -1836,17 +1818,13 @@ export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps
     case "ReleaseAdoptionMetrics": return <PhoneReleaseAdoptionMetrics {...props} />;
     case "ClusterHealthStrip": return <PhoneClusterHealthStrip {...props} />;
     case "ReleaseEnvironmentStrip": return <PhoneReleaseEnvironmentStrip {...props} />;
-    case "KubernetesResourceFilter": return <PhoneKubernetesResourceFilter {...props} />;
     case "DeploymentCommandHeader": return <PhoneDeploymentCommandHeader {...props} />;
     case "FeatureFlagCommandHeader": return <PhoneFeatureFlagCommandHeader {...props} />;
     case "DeploymentScaleBar": return <PhoneDeploymentScaleBar {...props} />;
     case "ReleaseRolloutBar": return <PhoneReleaseRolloutBar {...props} />;
     case "CumulativeFlowChart": return <PhoneCumulativeFlowChart {...props} />;
     case "BookingDemandChart": return <PhoneBookingDemandChart {...props} />;
-    case "WorkloadThroughputMetrics": return <PhoneWorkloadThroughputMetrics {...props} />;
-    case "CalendarUtilizationMetrics": return <PhoneCalendarUtilizationMetrics {...props} />;
     case "CycleRiskStrip": return <PhoneCycleRiskStrip {...props} />;
-    case "CalendarConnectionStrip": return <PhoneCalendarConnectionStrip {...props} />;
     case "WorkItemMoveDrawer": return <PhoneWorkItemMoveDrawer {...props} />;
     case "BookingConflictDrawer": return <PhoneBookingConflictDrawer {...props} />;
     case "WorkflowDurationChart": return <PhoneWorkflowDurationChart {...props} />;
@@ -1861,22 +1839,15 @@ export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps
     case "SyncVolumeTrendChart": return <PhoneSyncVolumeTrendChart {...props} />;
     case "DatasourceQueryMetrics": return <PhoneDatasourceQueryMetrics {...props} />;
     case "StreamFreshnessMetrics": return <PhoneStreamFreshnessMetrics {...props} />;
-    case "DatasourceHealthStrip": return <PhoneDatasourceHealthStrip {...props} />;
     case "PanelCommandHeader": return <PhonePanelCommandHeader {...props} />;
     case "ExploreQueryControlBar": return <PhoneExploreQueryControlBar {...props} />;
     case "QueryErrorDrawer": return <PhoneQueryErrorDrawer {...props} />;
     case "SchemaConflictDrawer": return <PhoneSchemaConflictDrawer {...props} />;
     case "SwimlaneKanban": return <PhoneSwimlaneKanban {...props} />;
     case "WipLimitBoard": return <PhoneWipLimitBoard {...props} />;
-    case "BacklogPrioritizationBoard": return <PhoneBacklogPrioritizationBoard {...props} />;
-    case "SprintPlanningBoard": return <PhoneSprintPlanningBoard {...props} />;
     case "DependencyKanban": return <PhoneDependencyKanban {...props} />;
-    case "TriageQueueBoard": return <PhoneTriageQueueBoard {...props} />;
-    case "ApprovalStageBoard": return <PhoneApprovalStageBoard {...props} />;
     case "ContentPipelineBoard": return <PhoneContentPipelineBoard {...props} />;
-    case "RecruitmentPipelineBoard": return <PhoneRecruitmentPipelineBoard {...props} />;
     case "IncidentResponseBoard": return <PhoneIncidentResponseBoard {...props} />;
-    case "ReleaseTrainBoard": return <PhoneReleaseTrainBoard {...props} />;
     case "PortfolioKanban": return <PhonePortfolioKanban {...props} />;
     case "SavedViewManager": return <PhoneSavedViewManager {...props} />;
     case "ColumnChooserDrawer": return <PhoneColumnChooserDrawer {...props} />;
@@ -1885,8 +1856,6 @@ export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps
     case "OnboardingChecklistWizard": return React.createElement(PHONE_PRACTICE_WIZARDS.OnboardingChecklistWizard, props);
     case "ImportMappingWizard": return React.createElement(PHONE_PRACTICE_WIZARDS.ImportMappingWizard, props);
     case "KeyboardCommandPalette": return <PhoneKeyboardCommandPalette {...props} />;
-    case "NotificationCenterDrawer": return <PhoneNotificationCenterDrawer {...props} />;
-    case "FilterPresetDrawer": return <PhoneFilterPresetDrawer {...props} />;
     case "ExportJobDrawer": return <PhoneExportJobDrawer {...props} />;
     case "CompareSelectionTray": return <PhoneCompareSelectionTray {...props} />;
     case "DetailInspectorDrawer": return <PhoneDetailInspectorDrawer {...props} />;

@@ -122,7 +122,8 @@ from services.schema_legal import EXPERIENCE_BLOCKS, PAGE_KINDS
 #: 「同工厂、参数只有 testid + 中文标题」的凑数类型时顺带掉的：矛盾对里有一对
 #: 本来就是同一份实现挂着两个名字，一个允许 workbench 一个不允许。
 #: 也就是说这批矛盾里至少有一部分根子不在「页型标错」，而在「这个类型压根不该存在」。
-_CONTRADICTION_BASELINE = 8
+#: 2026-08-11 第二刀：8 → 7。同一个理由——又一对矛盾的两边本来就是同一份实现。
+_CONTRADICTION_BASELINE = 7
 
 #: 精判据（区域相交才算可比）下**没有写明理由**的矛盾对数。目标是 0，已经是 0。
 #:

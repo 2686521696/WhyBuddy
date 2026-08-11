@@ -17,21 +17,9 @@ import { PHONE_CONFIGURATION_WIZARD_RENDERERS } from "../phone-mobile/PhoneConfi
 
 const TYPES = [
   "BulkOperationWizard",
-  "DataQualityRepairWizard",
-  "AccessRequestWizard",
-  "SurveyBuilderWizard",
-  "CheckoutReviewWizard",
-  "WorkspaceCreationWizard",
-  "ConnectorMigrationWizard",
-  "ApiCredentialWizard",
-  "RoleAssignmentWizard",
   "ApprovalRoutingWizard",
   "DataRetentionWizard",
-  "NotificationRuleWizard",
-  "ReportScheduleWizard",
-  "LocalizationSetupWizard",
   "RecoveryPlanWizard",
-  "ComplianceAttestationWizard",
 ] as const;
 
 const row = (id: string, values: Record<string, unknown>): RuntimeRow => ({
@@ -99,7 +87,7 @@ describe("advanced configuration wizard batch", () => {
 
   it("renders independent desktop ProForm and mobile Steps controls", () => {
     const props = {
-      block: block("ConnectorMigrationWizard"),
+      block: block("DataRetentionWizard"),
       entityRows: {
         step: [
           row("version", {
@@ -149,7 +137,7 @@ describe("advanced configuration wizard batch", () => {
 
   it("keeps blocked data-repair steps in place", () => {
     const props = {
-      block: block("DataQualityRepairWizard"),
+      block: block("ApprovalRoutingWizard"),
       entityRows: {
         step: [
           row("validate", { title: "规则校验", status: "blocked" }),

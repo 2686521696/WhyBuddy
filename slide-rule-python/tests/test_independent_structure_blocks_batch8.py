@@ -47,7 +47,18 @@ def test_batch8_sources_and_contracts_are_verified():
 # ResourceBookingCalendar 正因为线上在用才被选为幸存者）。
 #
 # 数字本身不是判据，判据是下面 test_没有工厂只换文案的凑数类型 那条。
-def test_batch8_catalog_holds_350_after_dedup():
-    assert legal.EXPERIENCE_BLOCK_CATALOG_VERSION == 350
-    assert len(legal.EXPERIENCE_BLOCKS) == 350
-    assert len({block["type"] for block in legal.EXPERIENCE_BLOCKS}) == 350
+# 第二刀（同一天）：350 → 316。
+#
+# 第一刀按**源码形状**判（同工厂、参数只有 testid/文案），漏了两大类：
+#   · ContextPanelRenderer 那 16 个挤在**同一行源码**里，行锚定的正则只匹到第一个；
+#   · 16 个向导是**策略表条目**（CONFIGURATION_WIZARD_POLICIES），根本不是调用点。
+# 用户第二次指出来（"我看着主体区、补充说明，怎么还全是表格"）之后换了判据：
+# **把每个区块用按它自己 bindingSchema 合成的夹具真渲染一遍，比归一化后的 DOM**。
+# 那是地基真相，跟源码怎么写无关。量出 18 组 52 个结构全等，删 34。
+#
+# ⚠ 度量本身也差点出错：头一版把 19 个图表判成同款（ECharts 在 SSR 下只吐空容器）、
+# 把一批未绑定的判成同款（都渲染 antd Empty）。排掉这两类假重复之后才是这 34 个。
+def test_batch8_catalog_holds_316_after_dedup():
+    assert legal.EXPERIENCE_BLOCK_CATALOG_VERSION == 316
+    assert len(legal.EXPERIENCE_BLOCKS) == 316
+    assert len({block["type"] for block in legal.EXPERIENCE_BLOCKS}) == 316

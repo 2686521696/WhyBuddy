@@ -445,10 +445,11 @@ def test_筛选族的事件分布_钉住注释里那几个数():
 
     # 2026-08-11 去重：32 → 27（facetFilterRenderer 一族 6 个只留 1 个）。
     # 例外那四个一个没变——删掉的全是"只发 filterChange"那一档，整族判据不受影响。
-    assert len(filters) == 27, f"filter 区块数变了（{len(filters)}），三处注释要跟着改"
-    assert len(only_filter_change) == 23, (
+    # 第二刀：27 → 22（5 个筛选条结构全等，只留 1 个）
+    assert len(filters) == 22, f"filter 区块数变了（{len(filters)}），三处注释要跟着改"
+    assert len(only_filter_change) == 18, (
         f"只发 filterChange 的是 {len(only_filter_change)}/{len(filters)}，"
-        f"不是注释里写的 23——schema_legal.py、AppRuntimeScreen.tsx、"
+        f"不是注释里写的 18——schema_legal.py、AppRuntimeScreen.tsx、"
         f"docs/page-kinds-widening-proposal.md 三处要一起改"
     )
     assert exceptions == {

@@ -98,7 +98,6 @@
         "DeploymentCommandHeader",
         "DeploymentScaleBar",
         "ReleaseRolloutBar",
-        "ReleaseTrainBoard",
         "DeploymentWizard"
       ],
       "pointNamed": [

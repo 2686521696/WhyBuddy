@@ -7,9 +7,8 @@ import PhoneExperienceBlock from "../phone-mobile/PhoneExperienceBlock";
 import type { RuntimeRow } from "../live-runtime";
 
 const BOARD_TYPES = [
-  "SwimlaneKanban", "WipLimitBoard", "BacklogPrioritizationBoard", "SprintPlanningBoard",
-  "DependencyKanban", "TriageQueueBoard", "ApprovalStageBoard", "ContentPipelineBoard",
-  "RecruitmentPipelineBoard", "IncidentResponseBoard", "ReleaseTrainBoard", "PortfolioKanban",
+  "SwimlaneKanban", "WipLimitBoard", "DependencyKanban", "ContentPipelineBoard",
+  "IncidentResponseBoard", "PortfolioKanban"
 ] as const;
 const WIZARD_TYPES = ["OnboardingChecklistWizard", "ImportMappingWizard"] as const;
 const row = (id: string, values: Record<string, unknown>): RuntimeRow => ({ id, values, createdAt: "2026-08-10T09:00:00.000Z" });

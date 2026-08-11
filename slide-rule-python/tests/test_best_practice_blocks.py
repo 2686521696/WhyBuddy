@@ -193,7 +193,6 @@ def test_sparse_region_batch_only_expands_the_seven_target_regions():
         "JobRunMetrics": {"headerExtra", "metrics"},
         "OccurrenceEvidenceSummary": {"headerContent"},
         "ConnectionRouteSummary": {"headerContent"},
-        "ResourceDetailTabs": {"tabs"},
         "InspectorModeTabs": {"tabs"},
         "IssueEventFilter": {"filters"},
         "TimelineFilterBar": {"filters"},
@@ -232,8 +231,6 @@ def test_third_sparse_region_batch_uses_four_verified_sources_and_exact_regions(
         "EnvironmentStatusStrip": ("backstage/backstage", {"headerExtra"}),
         "DataFreshnessIndicator": ("metabase/metabase", {"headerExtra"}),
         "WorkItemContextSummary": ("makeplane/plane", {"headerContent"}),
-        "WorkItemDetailTabs": ("makeplane/plane", {"tabs"}),
-        "WorkItemFilterBar": ("makeplane/plane", {"filters"}),
         "DashboardParameterBar": ("metabase/metabase", {"filters"}),
         "CycleHealthMetrics": ("makeplane/plane", {"metrics"}),
         "QueryExecutionMetrics": ("metabase/metabase", {"metrics"}),
@@ -259,12 +256,9 @@ def test_fourth_sparse_region_batch_keeps_seven_exact_regions_and_verified_sourc
         "QueryRunStatusStrip": ("metabase/metabase", {"headerExtra"}),
         "EntityOwnershipSummary": ("backstage/backstage", {"headerContent"}),
         "QueryDataSourceSummary": ("metabase/metabase", {"headerContent"}),
-        "CatalogEntityFilterBar": ("backstage/backstage", {"filters"}),
         "QueryClauseFilterBar": ("metabase/metabase", {"filters"}),
-        "DocumentInsightMetrics": ("outline/outline", {"metrics"}),
         "MetadataQualityMetrics": ("metabase/metabase", {"metrics"}),
         "QuestionExecutionBar": ("metabase/metabase", {"footerBar"}),
-        "DocumentShareBar": ("outline/outline", {"footerBar"}),
     }
     for block_type, (repo, regions) in expected.items():
         block = _block(block_type)
@@ -287,7 +281,6 @@ def test_fifth_sparse_region_batch_balances_five_domains_without_main_blocks():
         "AlertRuleFilterBar": ("grafana/grafana", {"filters"}),
         "SyncReliabilityMetrics": ("airbytehq/airbyte-platform", {"metrics"}),
         "RuleEvaluationMetrics": ("grafana/grafana", {"metrics"}),
-        "CycleLifecycleBar": ("makeplane/plane", {"footerBar"}),
         "EventTypePublishBar": ("calcom/cal.com", {"footerBar"}),
     }
     for block_type, (repo, regions) in expected.items():
@@ -307,10 +300,8 @@ def test_sixth_sparse_region_batch_uses_chatwoot_and_keycloak_exact_regions():
         "UserCommandHeader": ("keycloak/keycloak", {"header"}),
         "ConversationAssignmentStrip": ("chatwoot/chatwoot", {"headerExtra"}),
         "RealmStatusStrip": ("keycloak/keycloak", {"headerExtra"}),
-        "ConversationInboxFilter": ("chatwoot/chatwoot", {"filters"}),
         "UserDirectoryFilter": ("keycloak/keycloak", {"filters"}),
         "ConversationSlaMetrics": ("chatwoot/chatwoot", {"metrics"}),
-        "UserSessionMetrics": ("keycloak/keycloak", {"metrics"}),
         "ConversationReplyBar": ("chatwoot/chatwoot", {"footerBar"}),
         "UserAccessBar": ("keycloak/keycloak", {"footerBar"}),
     }
@@ -355,7 +346,6 @@ def test_eighth_sparse_region_batch_balances_release_and_deployment_workflows():
         "ReleaseAdoptionMetrics": ("getsentry/sentry", {"metrics"}),
         "ClusterHealthStrip": ("backstage/backstage", {"headerExtra"}),
         "ReleaseEnvironmentStrip": ("getsentry/sentry", {"headerExtra"}),
-        "KubernetesResourceFilter": ("backstage/backstage", {"filters"}),
         "DeploymentCommandHeader": ("backstage/backstage", {"header"}),
         "FeatureFlagCommandHeader": ("getsentry/sentry", {"header"}),
         "DeploymentScaleBar": ("backstage/backstage", {"footerBar"}),
@@ -375,10 +365,7 @@ def test_ninth_sparse_region_batch_fills_the_five_smallest_regions():
     expected = {
         "CumulativeFlowChart": ("makeplane/plane", {"charts"}),
         "BookingDemandChart": ("calcom/cal.com", {"charts"}),
-        "WorkloadThroughputMetrics": ("makeplane/plane", {"metrics"}),
-        "CalendarUtilizationMetrics": ("calcom/cal.com", {"metrics"}),
         "CycleRiskStrip": ("makeplane/plane", {"headerExtra"}),
-        "CalendarConnectionStrip": ("calcom/cal.com", {"headerExtra"}),
         "WorkItemMoveDrawer": ("makeplane/plane", {"overlay"}),
         "BookingConflictDrawer": ("calcom/cal.com", {"overlay"}),
     }
@@ -419,7 +406,7 @@ def test_tenth_sparse_region_batch_equalizes_all_non_body_regions():
 # 所以判据从「九区各有一块」退到「剩下的这几块仍然来源真实、区域精确」——
 # **对称性本来就是靠凑数撑出来的，撑它的东西没了，判据就该跟着改，而不是把凑数留着。**
 def test_eleventh_sparse_region_batch_keeps_remaining_regions_exact():
-    grafana = {"PanelQueryLatencyChart": "charts", "DatasourceQueryMetrics": "metrics", "DatasourceHealthStrip": "headerExtra", "PanelCommandHeader": "header", "ExploreQueryControlBar": "footerBar", "QueryErrorDrawer": "overlay"}
+    grafana = {"PanelQueryLatencyChart": "charts", "DatasourceQueryMetrics": "metrics", "PanelCommandHeader": "header", "ExploreQueryControlBar": "footerBar", "QueryErrorDrawer": "overlay"}
     airbyte = {"SyncVolumeTrendChart": "charts", "StreamFreshnessMetrics": "metrics", "SchemaConflictDrawer": "overlay"}
     for block_type, region in grafana.items():
         block = _block(block_type)

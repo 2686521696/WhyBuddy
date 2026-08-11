@@ -8,9 +8,8 @@ import type { ExperienceBlockInstance } from "../block-registry";
 import type { RuntimeRow } from "../live-runtime";
 
 const BOARD_TYPES = [
-  "SwimlaneKanban", "WipLimitBoard", "BacklogPrioritizationBoard", "SprintPlanningBoard",
-  "DependencyKanban", "TriageQueueBoard", "ApprovalStageBoard", "ContentPipelineBoard",
-  "RecruitmentPipelineBoard", "IncidentResponseBoard", "ReleaseTrainBoard", "PortfolioKanban",
+  "SwimlaneKanban", "WipLimitBoard", "DependencyKanban", "ContentPipelineBoard",
+  "IncidentResponseBoard", "PortfolioKanban"
 ] as const;
 
 const row = (id: string, values: Record<string, unknown>): RuntimeRow => ({
@@ -34,7 +33,7 @@ function board(type: string): ExperienceBlockInstance {
 const rows = {
   work: [
     row("a", { title: "核对范围", status: "待处理", lane: "平台", priority: 3, blocked: false, limit: 2, progress: 40, owner: "陈晓" }),
-    row("b", { title: "发布检查", status: "进行中", lane: "平台", priority: 2, blocked: true, limit: 2, progress: 80, owner: "周宁" }),
+    row("b", { title: "发布检查", status: "进行中", lane: "平台", priority: 2, blocked: true, limit: 2, progress: 80, owner: "周宁" })
   ],
 };
 
@@ -61,10 +60,12 @@ describe("稀缺看板第一批", () => {
     expect(dependency).toContain("存在未完成依赖");
   });
 
-  it("目录为 16 个类型提供完整合法域并记录成熟来源", () => {
+  it("目录为每个类型提供完整合法域并记录成熟来源", () => {
     const types = new Set([...BOARD_TYPES, "SavedViewManager", "ColumnChooserDrawer", "ActivityContextDrawer", "BulkActionTray"]);
     const entries = (catalogJson as { blocks: Array<Record<string, unknown>> }).blocks.filter(entry => types.has(String(entry.type) as never));
-    expect(entries).toHaveLength(16);
+    // 数量由上面那份 types 集合派生，不写死 —— 2026-08-11 去重砍掉一批看板之后
+    // 写死的 16 立刻过期，而这条判据要守的是"清单里每个都在目录里、且合法域齐全"。
+    expect(entries).toHaveLength(types.size);
     for (const entry of entries) {
       expect(entry.rendererStatus).toBe("real");
       expect(entry.generationEnabled).toBe(true);
