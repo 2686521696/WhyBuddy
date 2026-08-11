@@ -617,6 +617,17 @@ EXPERIENCE_BLOCK_ALLOWED_REGIONS_BY_TYPE: Dict[str, tuple] = {
     str(block["type"]): tuple(block["allowedRegions"]) for block in EXPERIENCE_BLOCKS
 }
 
+#: type -> pageKinds。「这种区块适合放在哪几种页上」，是 lowcode-engine
+#: `nestingRule.parentWhitelist` 那一半，只是父级是"页"不是"容器"。
+#:
+#: 2026-08-11 之前这份声明**只被选材侧读**（block_assembler 挑候选、
+#: block_narrowing 派生预设、pageKindPresets 自检），生成路径上没有任何一处查它
+#: ——提示词不说、结构闸不查。于是模型把 MuteTimingSchedule（只允许
+#: monitor/dashboard）摆进 workbench 页，没有任何依据知道这不对。
+EXPERIENCE_BLOCK_PAGE_KINDS_BY_TYPE: Dict[str, tuple] = {
+    str(block["type"]): tuple(block["pageKinds"]) for block in EXPERIENCE_BLOCKS
+}
+
 #: type -> family。装配器按它判"这个区块能不能单独存在"、要不要 targets。
 EXPERIENCE_BLOCK_FAMILY_BY_TYPE = {
     str(block["type"]): str(block["family"]) for block in EXPERIENCE_BLOCKS
@@ -1000,12 +1011,47 @@ def experience_block_prompt_block(
         regions_part = f"regions={','.join(block['allowedRegions'])}"
         if rationale:
             regions_part += f" ({rationale})"
+        # `pages=` 是 2026-08-11 补的。目录里每个区块都声明了 pageKinds（这种区块
+        # 适合放在哪几种页上），而在这之前**这条从没进过 prompt**：模型只被告知
+        # 区域限制，页型限制一个字没提。
+        #
+        # 实测后果（第一份线上真骨架收割时照出来的）：告警值班那趟里
+        # AlertRoutingPolicy 与 MuteTimingSchedule 都声明 pages=monitor,dashboard，
+        # 模型把它们摆进了 workbench 页。模型没有任何依据知道这么摆不对——
+        # **不是模型马虎，是我们没说。**
+        #
+        # 这是 lowcode-engine `nestingRule` 里 parentWhitelist 那一半，只是层级更高
+        # （父级是"页"而不是"容器"）。它的文件注释举的例子正是这个形状：
+        # 「FormField 只能在 Form 容器下，Column 只能在 Table 下」。区域那一半
+        # 这个仓库 2026-08-08 已经补过（见 page_assembler「双向约束的另一半」），
+        # 页型这一半漏到了现在。
+        #
+        # ⚠️ 只进 prompt，**没有进结构闸**。因为目录里这份声明本身经不起推敲：
+        # 同为 capability=form 的 AlertSilenceForm 允许 workbench、AlertRuleEditor
+        # 不允许；而「路由策略管理页」天然就是工作台。全目录 304/358 都允许
+        # workbench，这几个被卡住更像随手标窄。拿一条可能标错的规则去硬拒模型，
+        # 是把"违规发出去"换成"合规的也发不出去"。先告知、观测，攒够证据再决定
+        # 是收紧模型还是放宽目录。
         lines.append(
             f"- {block['type']}: {block['description']} "
-            f"data={','.join(block['dataKinds'])}; {regions_part}; "
+            f"data={','.join(block['dataKinds'])}; pages={','.join(block['pageKinds'])}; {regions_part}; "
             f"events={','.join(block['events'])}; "
             f"binding={_format_binding_schema(block['bindingSchema'])}"
         )
+    # 页型限制的**规则句**（2026-08-11）。
+    #
+    # 光在条目里多印一个 `pages=` 字段是不够的——区域限制当初也有条目字段，
+    # 照样反复被违反，直到 Step 7 里补上那句点名 PageHeader 的规则句才收住。
+    # 措辞照那句的形状：给判据 + 举一个具体的反例，不写"请注意"这类软话。
+    lines.append(
+        "Each block also declares which PAGE KINDS it belongs on (pages=... in its catalog entry). "
+        "A block MUST only appear in page.blocks of a page whose kind is in that list — e.g. "
+        "MuteTimingSchedule (pages=monitor,dashboard) on a workbench page is a violation, even though "
+        "the block renders. When a page's job genuinely needs a block whose pages= excludes that kind, "
+        "change the PAGE's kind to one the block allows rather than forcing the block onto the wrong "
+        "kind — a page dedicated to managing one config object is usually a workbench, but a page whose "
+        "job is watching live state is a monitor."
+    )
     lines.append(
         "binding.entityRef (when required or provided) MUST match a datamodel entity id exactly; "
         "every other *Ref field in binding is a bare field id scoped to that same entity "

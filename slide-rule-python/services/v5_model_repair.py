@@ -873,6 +873,66 @@ def _repair_layout_slot_violations(model: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _observe_page_kind_violations(model: Dict[str, Any]) -> List[Dict[str, str]]:
+    """**只观测，不改模型**：区块被摆在了目录不允许的页型上。
+
+    ## 为什么先观测
+
+    目录里每个区块都声明了 `pageKinds`（这种区块适合放在哪几种页上），而生成
+    路径上从来没人查过它——提示词不说（2026-08-11 才补上 `pages=`）、结构闸不查。
+    第一份线上真骨架收割时照出来：告警值班那趟 15 个区块里有 2 个越界。
+
+    但**这条约束本身经不起推敲**，所以这一轮不上闸只留痕：
+
+        AlertSilenceForm    capability=form        pages=monitor,dashboard,workbench
+        AlertRuleEditor     capability=form        pages=monitor,dashboard      ← 同族同能力，规则相反
+        AlertRoutingPolicy  capability=entityRows  pages=monitor,dashboard
+
+    而「路由策略管理页」天然就是个工作台。全目录 304/358 都允许 workbench，
+    这几个被卡住更像是随手标窄，不像有依据。拿一条可能标错的规则去硬拒模型，
+    是把"违规发出去"换成"合规的也发不出去"。
+
+    先把提示词补上（模型此前根本不知道有这条），再攒几趟真实数据，然后才谈
+    是收紧模型还是放宽目录。这条留痕就是攒证据的地方。
+
+    与 `_repair_layout_slot_violations` 的区别：那条改模型（把区块挪回合法槽位），
+    因为槽位摆错会真的把页面搞坏（PageHeader 钉在底部操作条上是实测过的）；
+    页型摆错**不影响渲染**，所以不该由修复器擅自动手。
+    """
+    from .schema_legal import EXPERIENCE_BLOCK_PAGE_KINDS_BY_TYPE
+
+    notes: List[Dict[str, str]] = []
+    for page in _as_list(_as_dict(model.get("page")).get("pages")):
+        pd = _as_dict(page)
+        kind = str(pd.get("kind") or "").strip()
+        page_id = str(pd.get("id") or "").strip() or "<unnamed>"
+        for block in _as_list(pd.get("blocks")):
+            bd = _as_dict(block)
+            btype = str(bd.get("type") or "").strip()
+            allowed = EXPERIENCE_BLOCK_PAGE_KINDS_BY_TYPE.get(btype)
+            if not btype or not kind or not allowed or kind in allowed:
+                continue
+            notes.append({
+                "pageId": page_id,
+                "pageKind": kind,
+                "blockId": str(bd.get("id") or "").strip(),
+                "blockType": btype,
+                "allowed": ",".join(allowed),
+            })
+    if notes:
+        # no silent observation：留痕不打印等于没留——这条链路上没人会去翻
+        # repair 的返回值。同 freeform 的 "enrich budget hit" 那条纪律。
+        print(
+            f"[v5_model_repair] 页型越界 {len(notes)} 处（只记不改，见 pageKinds 声明）："
+            + "；".join(
+                f"{n['pageId']}({n['pageKind']}) ← {n['blockType']}[只允许 {n['allowed']}]"
+                for n in notes[:3]
+            ),
+            flush=True,
+        )
+    return notes
+
+
 def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
     """返回 {"model": 修复后的深拷贝, "repaired": [...], "dropped": [...],
     "presentation": {...}}。
@@ -894,6 +954,8 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
     #    这条修复对它们永不生效。
     page_workflow_notes = _repair_page_workflow_refs(m)
     layout_slot_notes = _repair_layout_slot_violations(m)
+    # 只观测不改（见函数头注：这条约束本身还没核实，先攒证据）。
+    page_kind_notes = _observe_page_kind_violations(m)
 
     appbundle = _as_dict(m.get("appbundle"))
     invariants = _as_list(appbundle.get("invariants"))
@@ -905,6 +967,7 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
             "presentation": presentation,
             "pageWorkflowRefs": page_workflow_notes,
             "layoutSlots": layout_slot_notes,
+            "pageKindViolations": page_kind_notes,
         }
 
     # 合法解析域与门禁第 7 节共享同一函数（曾因两边各自维护导致奇偶不齐：
@@ -954,4 +1017,5 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
         "presentation": presentation,
         "pageWorkflowRefs": page_workflow_notes,
         "layoutSlots": layout_slot_notes,
+        "pageKindViolations": page_kind_notes,
     }
