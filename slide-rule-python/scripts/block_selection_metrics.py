@@ -91,7 +91,22 @@ def ordering_for_arm(arm: str, case: Dict[str, Any]) -> List[str]:
     """
     from services import schema_legal as L
 
-    if arm == "narrowed":
+    # ── 2026-08-11：注入顺序跟着**真实开关**走，不跟 `--arm` 这个标签走 ──────
+    #
+    # 上面那段头注记的是"第一版自算顺序 → 报成 0/16"。今天又踩了一次，换了个入口：
+    # `--arm control --narrowing on`。提示词是窄化过的（30 个），可达区却拿全量
+    # 目录的前 50 名去量，于是 16 个对题件一个都不在窗口里——报出 0/16，而窄化
+    # 其实把 14/16 都挑进来了。
+    #
+    # 根因是**两个轴被当成一个**：`--arm` 是实验臂标签，`--narrowing` 是生产开关，
+    # 两者可以不一致；而窄化已经是生产默认开，所以**缺省调用（arm=control）永远
+    # 会误报第 1 层**。
+    #
+    # 所以判据改成问生产本体"你现在到底窄化了没有"，标签只用来分组/命名。
+    # 这跟头注那条纪律是同一条：可达区必须按**实际注入**的顺序算。
+    from services.block_narrowing import narrowing_enabled
+
+    if arm == "narrowed" or narrowing_enabled():
         # 窄化臂：注入顺序 = select_blocks 的返回顺序。复用生产本体，不在这里重算
         # ——第一版自算顺序导致覆盖率报成 0/16。
         from services.block_narrowing import (
@@ -506,6 +521,17 @@ def main() -> int:
         os.environ.setdefault("SLIDERULE_LLM_GENERATE_ENABLED", "1")
         save_dir = Path(args.save_dir) if args.save_dir else None
         live_now = ordering_for_arm(args.arm, case)
+        # 报告里说清这一趟的可达区是按哪份顺序算的。不打这一行，`--arm control
+        # --narrowing on` 这种组合就会静默按窄化顺序量，而表头写着 CONTROL——
+        # 读表的人无从分辨（今天先踩了反向那次：按标签量，报出 0/16）。
+        from services.block_narrowing import narrowing_enabled as _nw
+
+        print(
+            f"[顺序] 可达区按 {'窄化后' if (args.arm == 'narrowed' or _nw()) else '全量目录'}"
+            f"顺序算（{len(live_now)} 个），臂标签={args.arm}、窄化开关="
+            f"{'开' if _nw() else '关'}",
+            flush=True,
+        )
         for i in range(1, args.runs + 1):
             print(f"[run {i}/{args.runs}] arm={args.arm} …", flush=True)
             records.append(
