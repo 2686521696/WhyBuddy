@@ -31,8 +31,9 @@ def test_batch7_sources_and_contracts_are_verified():
         assert block["rendererKey"] not in {"data-table", "pro-table", "entity-table"}
 
 
-def test_batch7_catalog_keeps_its_401_baseline_without_alias_counting():
-    assert legal.EXPERIENCE_BLOCK_CATALOG_VERSION >= 401
-    assert len(legal.EXPERIENCE_BLOCKS) >= 401
+# 2026-08-11 去重后基线从 401 降到 350，理由见 batch8 那个文件里的长注释。
+def test_batch7_catalog_keeps_its_baseline_without_alias_counting():
+    assert legal.EXPERIENCE_BLOCK_CATALOG_VERSION >= 350
+    assert len(legal.EXPERIENCE_BLOCKS) >= 350
     assert len({block["type"] for block in legal.EXPERIENCE_BLOCKS}) == len(legal.EXPERIENCE_BLOCKS)
     assert set(TYPES) <= {block["type"] for block in legal.EXPERIENCE_BLOCKS}

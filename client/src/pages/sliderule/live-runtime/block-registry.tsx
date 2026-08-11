@@ -110,9 +110,7 @@ import {
 } from "./dataref-trend";
 import {
   ImportMappingWizardRenderer,
-  IntegrationSetupWizardRenderer,
   OnboardingChecklistWizardRenderer,
-  PolicyConfigurationWizardRenderer,
 } from "./practice-wizards";
 
 /** enum 字段取值声明的按需查询（entityId + fieldId → 归一化 options）。 */
@@ -155,38 +153,20 @@ import {
 } from "./block-data";
 import {
   BookingConflictPanelRenderer,
-  CampaignCalendarRenderer,
   DeadlineAgendaRenderer,
   DeploymentWizardRenderer,
-  EditorialCalendarRenderer,
   EventRsvpPanelRenderer,
-  IncidentResolutionWizardRenderer,
-  MaintenanceWindowCalendarRenderer,
-  MigrationReadinessWizardRenderer,
   RecurrenceEditorRenderer,
-  ReleaseCalendarRenderer,
   ResourceBookingCalendarRenderer,
   ScheduleCapacityHeatmapRenderer,
-  ShiftRosterCalendarRenderer,
-  TeamAvailabilityCalendarRenderer,
 } from "./calendar-wizard-blocks";
 import {
   AppointmentWaitlistPanelRenderer,
-  AssetReservationCalendarRenderer,
   AvailabilityOverridePanelRenderer,
-  DeliverySlotCalendarRenderer,
-  ExamScheduleCalendarRenderer,
-  InterviewScheduleCalendarRenderer,
-  LeaveCalendarRenderer,
-  MilestoneTimelineCalendarRenderer,
   OnCallScheduleCalendarRenderer,
-  ProductionScheduleCalendarRenderer,
   RescheduleRequestDrawerRenderer,
-  RoomBookingCalendarRenderer,
   SchedulePublishBarRenderer,
-  ServiceDispatchCalendarRenderer,
   TimezoneOverlapPanelRenderer,
-  TrainingCalendarRenderer,
 } from "./schedule-status-blocks";
 import {
   CONFIGURATION_WIZARD_POLICIES,
@@ -6143,7 +6123,6 @@ const compactSummaryRenderer = (testid: string, fallback: string): ExperienceBlo
   return <BlockShell block={block} title={String(row.values?.[titleRef] ?? fallback)} testid={testid}><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options, fieldLabelOf?.(bound.entityRef, field) ?? field) }; })} /></BlockShell>;
 };
 const WorkItemContextSummaryRenderer = compactSummaryRenderer("work-item-context-summary", "工作项摘要");
-const DocumentContextSummaryRenderer = compactSummaryRenderer("document-context-summary", "文档摘要");
 
 const stableTabsRenderer = (testid: string, fallback: string, event: "itemSelect" | "filterChange"): ExperienceBlockRenderer => ({ block, children, entityRows, onAction }) => {
   if (children != null) return <>{children}</>;
@@ -6153,7 +6132,6 @@ const stableTabsRenderer = (testid: string, fallback: string, event: "itemSelect
   return <BlockShell block={block} testid={testid}><Tabs activeKey={selected} onChange={key => { setActive(key); const row = rows.find(item => String(item.values?.[keyRef]) === key); onAction?.(event, { entityRef: bound.entityRef, rowId: row?.id, tabKey: key, targets: targetIdsOf(block) }); }} items={rows.map(row => ({ key: String(row.values?.[keyRef]), label: <Space size={4}>{String(row.values?.[titleRef] ?? fallback)}{countRef && <Badge count={Number(row.values?.[countRef] ?? 0)} showZero />}</Space>, disabled: Boolean(enabledRef && [false, "false", "disabled"].includes(row.values?.[enabledRef] as never)) }))} /></BlockShell>;
 };
 const WorkItemDetailTabsRenderer = stableTabsRenderer("work-item-detail-tabs", "工作项页签", "itemSelect");
-const QueryModeTabsRenderer = stableTabsRenderer("query-mode-tabs", "查询模式", "itemSelect");
 
 const WorkItemFilterBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
   if (children != null) return <>{children}</>;
@@ -6249,8 +6227,6 @@ const QueryDataSourceSummaryRenderer: ExperienceBlockRenderer = ({ block, childr
   return <BlockShell block={block} title={String(block.props?.title ?? "数据来源")} testid="query-data-source-summary"><Flex align="center" justify="space-between" gap={10} wrap><Breadcrumb items={fields.map((ref, index) => ({ title: <Typography.Text strong={index === fields.length - 1}>{String(row.values?.[ref] ?? "-")}</Typography.Text> }))} />{typeRef && <Tag color="blue">{String(row.values?.[typeRef] ?? "数据表")}</Tag>}</Flex></BlockShell>;
 };
 
-const DatasetEditorTabsRenderer = stableTabsRenderer("dataset-editor-tabs", "数据集编辑", "itemSelect");
-const DocumentHistoryTabsRenderer = stableTabsRenderer("document-history-tabs", "文档历史", "itemSelect");
 
 const CatalogEntityFilterBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
   const [selected, setSelected] = React.useState<Record<string, string[]>>({});
@@ -6332,10 +6308,6 @@ const SyncScheduleStripRenderer: ExperienceBlockRenderer = ({ block, children, e
   return <BlockShell block={block} testid="sync-schedule-strip"><Flex align="center" justify="space-between" gap={10} wrap><Space><Badge status={paused ? "default" : "processing"} /><div><Typography.Text strong>{paused ? "同步计划已暂停" : `每 ${String(row.values?.[frequencyRef] ?? "-")}`}</Typography.Text><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>下次运行 {String(row.values?.[nextRef] ?? "-")}{timezoneRef ? ` · ${String(row.values?.[timezoneRef] ?? "")}` : ""}</Typography.Text></div></Space><Button size="small" onClick={() => onAction?.("editRequest", { operation: "editSyncSchedule", entityRef: bound.entityRef, rowId: row.id, targets: targetIdsOf(block) })}>调整计划</Button></Flex></BlockShell>;
 };
 
-const CycleContextSummaryRenderer = compactSummaryRenderer("cycle-context-summary", "周期上下文");
-const AlertGroupContextSummaryRenderer = compactSummaryRenderer("alert-group-context-summary", "规则组上下文");
-const EventTypeEditorTabsRenderer = stableTabsRenderer("event-type-editor-tabs", "事件类型编辑", "itemSelect");
-const IncidentEvidenceTabsRenderer = stableTabsRenderer("incident-evidence-tabs", "事故证据", "itemSelect");
 
 const CycleFilterBarRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
   const [selected, setSelected] = React.useState<Record<string, string[]>>({}); if (children != null) return <>{children}</>;
@@ -6413,10 +6385,6 @@ const RealmStatusStripRenderer: ExperienceBlockRenderer = ({ block, children, en
   return <BlockShell block={block} testid="realm-status-strip"><Flex align="center" justify="space-between" gap={10} wrap><Space><Badge status={enabled ? "success" : "default"} /><div><Typography.Text strong>{String(row.values?.[nameRef] ?? "Realm")}</Typography.Text><Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>{bruteRef ? `暴力破解防护 ${enabledValue(row.values?.[bruteRef], "enabled") ? "开启" : "关闭"}` : ""}{sslRef ? ` · SSL ${String(row.values?.[sslRef] ?? "-")}` : ""}</Typography.Text></div></Space><Button size="small" onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "editRealmSettings", targets: targetIdsOf(block) })}>Realm 设置</Button></Flex></BlockShell>;
 };
 
-const ConversationContextSummaryRenderer = compactSummaryRenderer("conversation-context-summary", "会话上下文");
-const UserIdentitySummaryRenderer = compactSummaryRenderer("user-identity-summary", "用户身份");
-const ConversationDetailTabsRenderer = stableTabsRenderer("conversation-detail-tabs", "会话详情", "itemSelect");
-const UserSecurityTabsRenderer = stableTabsRenderer("user-security-tabs", "用户安全", "itemSelect");
 
 const ConversationInboxFilterRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
   const [selected, setSelected] = React.useState<Record<string, string[]>>({}); if (children != null) return <>{children}</>;
@@ -6462,10 +6430,6 @@ const UserAccessBarRenderer: ExperienceBlockRenderer = ({ block, children, entit
   return <BlockShell block={block} testid="user-access-bar"><Flex align="center" justify="space-between" gap={12} wrap><Typography.Text strong>{String(row.values?.[usernameRef] ?? "用户")} · {sessions} 个会话</Typography.Text><Space><Button disabled={!manageable} onClick={() => onAction?.("editRequest", { entityRef: bound.entityRef, rowId: row.id, operation: "resetCredentials", targets: targetIdsOf(block) })}>重置凭据</Button><Popconfirm title="确认注销该用户的全部会话？" onConfirm={() => submit("logoutAllSessions")}><Button disabled={!manageable || !sessions}>注销全部会话</Button></Popconfirm><Button danger={enabled} disabled={!manageable} onClick={() => submit(enabled ? "disableUser" : "enableUser")}>{enabled ? "禁用用户" : "启用用户"}</Button></Space></Flex></BlockShell>;
 };
 
-const ConnectionWorkspaceTabsRenderer = stableTabsRenderer("connection-workspace-tabs", "连接工作区", "itemSelect");
-const IssueInvestigationTabsRenderer = stableTabsRenderer("issue-investigation-tabs", "问题调查", "itemSelect");
-const DashboardQueryContextRenderer = compactSummaryRenderer("dashboard-query-context", "查询上下文");
-const ServiceOwnershipContextRenderer = compactSummaryRenderer("service-ownership-context", "服务归属");
 
 const ConnectionFleetMetricsRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
   if (children != null) return <>{children}</>;
@@ -6489,13 +6453,8 @@ const nullableNumber=(input:unknown)=>input==null||input===""||!Number.isFinite(
 const DeploymentLatencyChartRenderer: ExperienceBlockRenderer = ({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),time=fieldRefOf(block,"timeFieldRef"),queue=fieldRefOf(block,"queueFieldRef"),pull=fieldRefOf(block,"pullFieldRef"),start=fieldRefOf(block,"startFieldRef"),ready=fieldRefOf(block,"readyFieldRef");if(!bound||!time||!queue||!ready)return <AnalysisChart block={block} title={String(block.props?.title??"部署阶段耗时")} testid="deployment-latency-chart" hint="部署耗时尚未绑定时间、排队和就绪字段"/>;const rows=[...bound.rows].sort((a,b)=>String(a.values?.[time]).localeCompare(String(b.values?.[time]))),defs:Array<[string,string|undefined,string]>=[["排队",queue,"#8c8c8c"],["拉取镜像",pull,"#1677ff"],["启动",start,"#722ed1"],["就绪",ready,"#52c41a"]],series=defs.flatMap(([name,ref,color])=>ref?[{name,type:"line",connectNulls:false,data:rows.map(r=>nullableNumber(r.values?.[ref])),itemStyle:{color}}]:[]);return <AnalysisChart block={block} title={String(block.props?.title??"部署阶段耗时")} testid="deployment-latency-chart" option={rows.length?{animation:false,tooltip:{trigger:"axis",confine:true},legend:{bottom:0},xAxis:{type:"category",data:rows.map(r=>String(r.values?.[time]))},yAxis:{type:"value",name:"秒"},series}:undefined} hint="当前没有部署阶段数据"/>};
 const ReleaseAdoptionTrendChartRenderer: ExperienceBlockRenderer = ({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),time=fieldRefOf(block,"timeFieldRef"),adoption=fieldRefOf(block,"adoptionFieldRef"),health=fieldRefOf(block,"healthFieldRef");if(!bound||!time||!adoption||!health)return <AnalysisChart block={block} title={String(block.props?.title??"发布采用趋势")} testid="release-adoption-trend-chart" hint="发布趋势尚未绑定时间、采用率和健康率"/>;const rows=[...bound.rows].sort((a,b)=>String(a.values?.[time]).localeCompare(String(b.values?.[time])));return <AnalysisChart block={block} title={String(block.props?.title??"发布采用趋势")} testid="release-adoption-trend-chart" option={rows.length?{animation:false,tooltip:{trigger:"axis",confine:true},legend:{bottom:0},xAxis:{type:"category",data:rows.map(r=>String(r.values?.[time]))},yAxis:{type:"value",min:0,max:100,axisLabel:{formatter:"{value}%"}},series:[{name:"采用率",type:"line",areaStyle:{opacity:.08},connectNulls:false,data:rows.map(r=>nullableNumber(r.values?.[adoption]))},{name:"无崩溃率",type:"line",connectNulls:false,data:rows.map(r=>nullableNumber(r.values?.[health]))}]}:undefined} hint="当前没有发布趋势"/>};
 
-const DeploymentDetailTabsRenderer=stableTabsRenderer("deployment-detail-tabs","部署详情","itemSelect");
-const ReleaseDetailTabsRenderer=stableTabsRenderer("release-detail-tabs","发布详情","itemSelect");
-const DeploymentContextSummaryRenderer=compactSummaryRenderer("deployment-context-summary","部署上下文");
-const ReleaseContextSummaryRenderer=compactSummaryRenderer("release-context-summary","发布上下文");
 const facetFilterRenderer=(testid:string,fallback:string):ExperienceBlockRenderer=>({block,children,entityRows,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),facet=fieldRefOf(block,"facetFieldRef"),key=fieldRefOf(block,"keyFieldRef"),title=fieldRefOf(block,"titleFieldRef"),[selected,setSelected]=React.useState<Record<string,string[]>>({});if(!bound||!facet||!key||!title)return <BlockShell block={block} title={fallback} testid={testid}><BlockEmpty hint={`${fallback}尚未绑定分面、键和标题`}/></BlockShell>;const groups=Array.from(new Set(bound.rows.map(r=>String(r.values?.[facet]??"")).filter(Boolean))),change=(group:string,values:string[])=>{const next={...selected,[group]:values};setSelected(next);onAction?.("filterChange",{facets:next,targets:targetIdsOf(block),page:1})};return <BlockShell block={block} title={String(block.props?.title??fallback)} testid={testid}><Flex gap={8} wrap>{groups.map(group=><Select key={group} mode="multiple" allowClear placeholder={group} style={{minWidth:150}} value={selected[group]??[]} options={bound.rows.filter(r=>String(r.values?.[facet])===group).map(r=>({value:String(r.values?.[key]),label:String(r.values?.[title])}))} onChange={values=>change(group,values.map(String))}/>) }<Button disabled={!Object.values(selected).some(v=>v.length)} onClick={()=>{setSelected({});onAction?.("filterChange",{facets:{},targets:targetIdsOf(block),page:1})}}>清除</Button></Flex></BlockShell>};
 const KubernetesResourceFilterRenderer=facetFilterRenderer("kubernetes-resource-filter","资源筛选");
-const ReleaseEnvironmentFilterRenderer=facetFilterRenderer("release-environment-filter","发布筛选");
 
 const DeploymentRolloutMetricsRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),desired=fieldRefOf(block,"desiredFieldRef"),ready=fieldRefOf(block,"readyFieldRef"),available=fieldRefOf(block,"availableFieldRef"),unavailable=fieldRefOf(block,"unavailableFieldRef"),row=bound?.rows[0];if(!bound||!desired||!ready||!row)return <BlockShell block={block} title={String(block.props?.title??"部署滚动状态")} testid="deployment-rollout-metrics"><BlockEmpty hint="部署指标尚未绑定期望和就绪副本"/></BlockShell>;const d=Number(row.values?.[desired]??0),r=Number(row.values?.[ready]??0);return <BlockShell block={block} title={String(block.props?.title??"部署滚动状态")} testid="deployment-rollout-metrics"><Flex gap={22} wrap><Statistic title="期望副本" value={d}/><Statistic title="就绪副本" value={r}/>{available&&<Statistic title="可用副本" value={Number(row.values?.[available]??0)}/>} {unavailable&&<Statistic title="不可用" value={Number(row.values?.[unavailable]??0)} valueStyle={{color:Number(row.values?.[unavailable]??0)>0?"#cf1322":undefined}}/>}</Flex><Progress percent={d>0?Math.min(100,Math.round(r/d*100)):0} showInfo={false} size="small"/></BlockShell>};
 const ReleaseAdoptionMetricsRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),adoption=fieldRefOf(block,"adoptionFieldRef"),health=fieldRefOf(block,"healthFieldRef"),events=fieldRefOf(block,"eventCountFieldRef"),users=fieldRefOf(block,"userCountFieldRef"),row=bound?.rows[0];if(!bound||!adoption||!health||!row)return <BlockShell block={block} title={String(block.props?.title??"发布采用")} testid="release-adoption-metrics"><BlockEmpty hint="发布指标尚未绑定采用率和健康率"/></BlockShell>;return <BlockShell block={block} title={String(block.props?.title??"发布采用")} testid="release-adoption-metrics"><Flex gap={22} wrap><Statistic title="采用率" value={Number(row.values?.[adoption]??0)} suffix="%"/><Statistic title="无崩溃率" value={Number(row.values?.[health]??0)} suffix="%"/>{events&&<Statistic title="事件" value={Number(row.values?.[events]??0)}/>} {users&&<Statistic title="用户" value={Number(row.values?.[users]??0)}/>}</Flex></BlockShell>};
@@ -6511,8 +6470,6 @@ const ReleaseRolloutBarRenderer:ExperienceBlockRenderer=({block,children,entityR
 
 const CumulativeFlowChartRenderer:ExperienceBlockRenderer=({block,children,entityRows,chartPalette})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),time=fieldRefOf(block,"timeFieldRef"),state=fieldRefOf(block,"stateFieldRef"),value=fieldRefOf(block,"valueFieldRef");if(!bound||!time||!state)return <AnalysisChart block={block} title={String(block.props?.title??"累计流")} testid="cumulative-flow-chart" hint="累计流尚未绑定时间和状态"/>;const dates=Array.from(new Set(bound.rows.map(r=>String(r.values?.[time]??"")).filter(Boolean))).sort(),states=Array.from(new Set(bound.rows.map(r=>String(r.values?.[state]??"")).filter(Boolean))),map=new Map<string,number>();bound.rows.forEach(r=>{const k=`${r.values?.[time]}\u0000${r.values?.[state]}`;map.set(k,(map.get(k)??0)+(value?Number(r.values?.[value]??0):1))});const colors=chartColors(chartPalette),series=states.map((s,index)=>({name:s,type:"line",stack:"flow",areaStyle:{opacity:.35},symbol:"none",data:dates.map(d=>map.get(`${d}\u0000${s}`)??0),itemStyle:{color:colors[index%colors.length]}}));return <AnalysisChart block={block} title={String(block.props?.title??"累计流")} testid="cumulative-flow-chart" option={dates.length?{animation:false,tooltip:{trigger:"axis",confine:true},legend:{bottom:0},xAxis:{type:"category",data:dates},yAxis:{type:"value",minInterval:1},series}:undefined} hint="当前没有累计流数据"/>};
 const BookingDemandChartRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),time=fieldRefOf(block,"timeFieldRef"),available=fieldRefOf(block,"availableFieldRef"),booked=fieldRefOf(block,"bookedFieldRef"),canceled=fieldRefOf(block,"canceledFieldRef");if(!bound||!time||!available||!booked)return <AnalysisChart block={block} title={String(block.props?.title??"预约需求")} testid="booking-demand-chart" hint="预约需求尚未绑定时间、可用和已预约字段"/>;const rows=[...bound.rows].sort((a,b)=>String(a.values?.[time]).localeCompare(String(b.values?.[time]))),defs:Array<[string,string,string]>=[["可用",available,"#1677ff"],["已预约",booked,"#52c41a"],...(canceled?[["已取消",canceled,"#ff4d4f"] as [string,string,string]]:[])],series=defs.map(([name,ref,color])=>({name,type:"line",connectNulls:false,data:rows.map(r=>nullableNumber(r.values?.[ref])),itemStyle:{color}}));return <AnalysisChart block={block} title={String(block.props?.title??"预约需求")} testid="booking-demand-chart" option={rows.length?{animation:false,tooltip:{trigger:"axis",confine:true},legend:{bottom:0},xAxis:{type:"category",data:rows.map(r=>String(r.values?.[time]))},yAxis:{type:"value",minInterval:1},series}:undefined} hint="当前没有预约需求数据"/>};
-const WorkItemActivityTabsRenderer=stableTabsRenderer("work-item-activity-tabs","工作项活动","itemSelect");
-const BookingAuditTabsRenderer=stableTabsRenderer("booking-audit-tabs","预约审计","itemSelect");
 const WorkloadThroughputMetricsRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),completed=fieldRefOf(block,"completedFieldRef"),entered=fieldRefOf(block,"enteredFieldRef"),wip=fieldRefOf(block,"wipFieldRef"),blocked=fieldRefOf(block,"blockedFieldRef"),row=bound?.rows[0];if(!bound||!completed||!entered||!row)return <BlockShell block={block} title={String(block.props?.title??"工作流吞吐")} testid="workload-throughput-metrics"><BlockEmpty hint="吞吐指标尚未绑定完成和进入量"/></BlockShell>;const done=Number(row.values?.[completed]??0),input=Number(row.values?.[entered]??0);return <BlockShell block={block} title={String(block.props?.title??"工作流吞吐")} testid="workload-throughput-metrics"><Flex gap={22} wrap><Statistic title="已完成" value={done}/><Statistic title="进入量" value={input}/><Statistic title="完成率" value={input>0?Math.round(done/input*100):0} suffix="%"/>{wip&&<Statistic title="在制" value={Number(row.values?.[wip]??0)}/>} {blocked&&<Statistic title="阻塞" value={Number(row.values?.[blocked]??0)} valueStyle={{color:Number(row.values?.[blocked]??0)>0?"#cf1322":undefined}}/>}</Flex></BlockShell>};
 const CalendarUtilizationMetricsRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),available=fieldRefOf(block,"availableFieldRef"),booked=fieldRefOf(block,"bookedFieldRef"),canceled=fieldRefOf(block,"canceledFieldRef"),noShow=fieldRefOf(block,"noShowFieldRef"),row=bound?.rows[0];if(!bound||!available||!booked||!row)return <BlockShell block={block} title={String(block.props?.title??"日历利用率")} testid="calendar-utilization-metrics"><BlockEmpty hint="利用率尚未绑定可用和已预约分钟"/></BlockShell>;const total=Number(row.values?.[available]??0),used=Number(row.values?.[booked]??0);return <BlockShell block={block} title={String(block.props?.title??"日历利用率")} testid="calendar-utilization-metrics"><Flex gap={22} wrap><Statistic title="利用率" value={total>0?Math.round(used/total*100):0} suffix="%"/><Statistic title="已预约" value={used} suffix="分钟"/>{canceled&&<Statistic title="取消" value={Number(row.values?.[canceled]??0)}/>} {noShow&&<Statistic title="未到场" value={Number(row.values?.[noShow]??0)}/>}</Flex><Progress percent={total>0?Math.min(100,Math.round(used/total*100)):0} showInfo={false} size="small"/></BlockShell>};
 const CycleRiskStripRenderer:ExperienceBlockRenderer=({block,children,entityRows,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),title=fieldRefOf(block,"titleFieldRef"),remaining=fieldRefOf(block,"remainingFieldRef"),blocked=fieldRefOf(block,"blockedFieldRef"),overdue=fieldRefOf(block,"overdueFieldRef"),row=bound?.rows[0];if(!bound||!title||!remaining||!row)return <BlockShell block={block} testid="cycle-risk-strip"><BlockEmpty hint="周期风险尚未绑定标题和剩余天数"/></BlockShell>;const risk=Number(blocked?row.values?.[blocked]??0:0)+Number(overdue?row.values?.[overdue]??0:0)>0;return <BlockShell block={block} testid="cycle-risk-strip"><Button type="text" onClick={()=>onAction?.("itemSelect",{entityRef:bound.entityRef,rowId:row.id})}><Badge status={risk?"warning":"success"} text={`${String(row.values?.[title])} · 剩余 ${Number(row.values?.[remaining]??0)} 天${blocked?` · 阻塞 ${Number(row.values?.[blocked]??0)}`:""}${overdue?` · 超期 ${Number(row.values?.[overdue]??0)}`:""}`}/></Button></BlockShell>};
@@ -6521,39 +6478,25 @@ const WorkItemMoveDrawerRenderer:ExperienceBlockRenderer=({block,children,entity
 const BookingConflictDrawerRenderer:ExperienceBlockRenderer=({block,children,entityRows,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),title=fieldRefOf(block,"titleFieldRef"),start=fieldRefOf(block,"startFieldRef"),end=fieldRefOf(block,"endFieldRef"),severity=fieldRefOf(block,"severityFieldRef"),[open,setOpen]=React.useState(false);if(!bound||!title||!start||!end)return <BlockShell block={block} testid="booking-conflict-drawer"><BlockEmpty hint="冲突处理尚未绑定标题和时间范围"/></BlockShell>;return <BlockShell block={block} testid="booking-conflict-drawer"><Button danger={bound.rows.length>0} onClick={()=>setOpen(true)}>查看冲突 {bound.rows.length}</Button><Drawer open={open} onClose={()=>setOpen(false)} title="预约冲突" width={480}>{bound.rows.length===0?<Empty description="当前没有冲突"/>:<List dataSource={bound.rows} renderItem={r=><List.Item actions={[<Button key="reschedule" type="link" onClick={()=>onAction?.("editRequest",{entityRef:bound.entityRef,rowId:r.id,operation:"rescheduleBooking",targets:targetIdsOf(block)})}>改期</Button>]}><List.Item.Meta title={<Space>{String(r.values?.[title])}{severity&&<Tag color={String(r.values?.[severity]).toLowerCase()==="high"?"red":"orange"}>{String(r.values?.[severity])}</Tag>}</Space>} description={`${String(r.values?.[start])} - ${String(r.values?.[end])}`}/></List.Item>}/>}</Drawer></BlockShell>};
 
 const WorkflowDurationChartRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),time=fieldRefOf(block,"timeFieldRef"),average=fieldRefOf(block,"averageFieldRef"),p95=fieldRefOf(block,"p95FieldRef"),failed=fieldRefOf(block,"failedFieldRef");if(!bound||!time||!average||!p95)return <AnalysisChart block={block} title={String(block.props?.title??"工作流耗时")} testid="workflow-duration-chart" hint="耗时趋势尚未绑定时间、平均和 P95"/>;const rows=[...bound.rows].sort((a,b)=>String(a.values?.[time]).localeCompare(String(b.values?.[time]))),defs:Array<[string,string,string]>=[["平均",average,"#1677ff"],["P95",p95,"#722ed1"],...(failed?[["失败耗时",failed,"#ff4d4f"] as [string,string,string]]:[])];return <AnalysisChart block={block} title={String(block.props?.title??"工作流耗时")} testid="workflow-duration-chart" option={rows.length?{animation:false,tooltip:{trigger:"axis",confine:true},legend:{bottom:0},xAxis:{type:"category",data:rows.map(r=>String(r.values?.[time]))},yAxis:{type:"value",name:"ms"},series:defs.map(([name,ref,color])=>({name,type:"line",connectNulls:false,data:rows.map(r=>nullableNumber(r.values?.[ref])),itemStyle:{color}}))}:undefined} hint="当前没有工作流耗时数据"/>};
-const WorkflowExecutionTabsRenderer=stableTabsRenderer("workflow-execution-tabs","工作流执行","itemSelect");
 const WorkflowOutcomeMetricsRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),success=fieldRefOf(block,"successFieldRef"),failed=fieldRefOf(block,"failedFieldRef"),running=fieldRefOf(block,"runningFieldRef"),pending=fieldRefOf(block,"pendingFieldRef"),row=bound?.rows[0];if(!bound||!success||!failed||!row)return <BlockShell block={block} title={String(block.props?.title??"执行结果")} testid="workflow-outcome-metrics"><BlockEmpty hint="结果指标尚未绑定成功和失败数"/></BlockShell>;const ok=Number(row.values?.[success]??0),bad=Number(row.values?.[failed]??0),ended=ok+bad;return <BlockShell block={block} title={String(block.props?.title??"执行结果")} testid="workflow-outcome-metrics"><Flex gap={22} wrap><Statistic title="成功" value={ok}/><Statistic title="失败" value={bad} valueStyle={{color:bad?"#cf1322":undefined}}/><Statistic title="成功率" value={ended?Math.round(ok/ended*100):0} suffix="%"/>{running&&<Statistic title="运行中" value={Number(row.values?.[running]??0)}/>} {pending&&<Statistic title="等待" value={Number(row.values?.[pending]??0)}/>}</Flex></BlockShell>};
 const WorkflowVersionStripRenderer:ExperienceBlockRenderer=({block,children,entityRows,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),name=fieldRefOf(block,"nameFieldRef"),version=fieldRefOf(block,"versionFieldRef"),enabled=fieldRefOf(block,"enabledFieldRef"),updated=fieldRefOf(block,"updatedAtFieldRef"),row=bound?.rows[0];if(!bound||!name||!version||!enabled||!row)return <BlockShell block={block} testid="workflow-version-strip"><BlockEmpty hint="工作流版本尚未绑定名称、版本和状态"/></BlockShell>;const active=enabledValue(row.values?.[enabled],"enabled");return <BlockShell block={block} testid="workflow-version-strip"><Button type="text" onClick={()=>onAction?.("itemSelect",{entityRef:bound.entityRef,rowId:row.id})}><Badge status={active?"success":"default"} text={`${String(row.values?.[name])} · ${String(row.values?.[version])}${updated?` · ${String(row.values?.[updated]??"")}`:""}`}/></Button></BlockShell>};
 const WorkflowFailureDrawerRenderer:ExperienceBlockRenderer=({block,children,entityRows,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),node=fieldRefOf(block,"nodeFieldRef"),message=fieldRefOf(block,"messageFieldRef"),status=fieldRefOf(block,"statusFieldRef"),time=fieldRefOf(block,"timeFieldRef"),[open,setOpen]=React.useState(false);if(!bound||!node||!message||!status)return <BlockShell block={block} testid="workflow-failure-drawer"><BlockEmpty hint="失败诊断尚未绑定节点、错误和状态"/></BlockShell>;const failedRows=bound.rows.filter(r=>["failed","aborted","rejected"].includes(String(r.values?.[status]).toLowerCase()));return <BlockShell block={block} testid="workflow-failure-drawer"><Button danger={failedRows.length>0} onClick={()=>setOpen(true)}>失败诊断 {failedRows.length}</Button><Drawer open={open} onClose={()=>setOpen(false)} title="工作流失败诊断" width={520}>{failedRows.length===0?<Empty description="没有失败执行"/>:<List dataSource={failedRows} renderItem={r=><List.Item actions={[<Button key="retry" type="link" onClick={()=>onAction?.("submitRequest",{entityRef:bound.entityRef,rowId:r.id,operation:"retryWorkflowExecution",targets:targetIdsOf(block)})}>重试</Button>]}><List.Item.Meta title={String(r.values?.[node])} description={`${String(r.values?.[message])}${time?` · ${String(r.values?.[time]??"")}`:""}`}/></List.Item>}/>}</Drawer></BlockShell>};
 const WorkflowCommandHeaderRenderer:ExperienceBlockRenderer=({block,children,entityRows,focus,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),title=fieldRefOf(block,"titleFieldRef"),enabled=fieldRefOf(block,"enabledFieldRef"),version=fieldRefOf(block,"versionFieldRef"),editable=fieldRefOf(block,"editableFieldRef"),row=bound?.rows.find(r=>r.id===focus?.[bound.entityRef])??bound?.rows[0];if(!bound||!title||!enabled||!row)return <BlockShell block={block} testid="workflow-command-header"><BlockEmpty hint="工作流页头尚未绑定标题和状态"/></BlockShell>;const active=enabledValue(row.values?.[enabled],"enabled"),can=!editable||enabledValue(row.values?.[editable],"editable"),act=(operation:string,event="actionTrigger")=>onAction?.(event,{entityRef:bound.entityRef,rowId:row.id,operation,targets:targetIdsOf(block)});return <BlockShell block={block} testid="workflow-command-header"><Flex justify="space-between" align="center" gap={12} wrap><Space><Typography.Title level={4} style={{margin:0}}>{String(row.values?.[title])}</Typography.Title><Tag color={active?"green":"default"}>{active?"已启用":"已停用"}</Tag>{version&&<Tag>{String(row.values?.[version]??"")}</Tag>}</Space><Space><Button disabled={!active} onClick={()=>act("runWorkflow")}>运行</Button><Button disabled={!can} onClick={()=>act("editWorkflow","editRequest")}>编辑</Button><Button onClick={()=>act("duplicateWorkflow")}>复制</Button><Popconfirm title={`确认${active?"停用":"启用"}工作流？`} onConfirm={()=>act(active?"disableWorkflow":"enableWorkflow","submitRequest")}><Button disabled={!can}>{active?"停用":"启用"}</Button></Popconfirm></Space></Flex></BlockShell>};
-const WorkflowContextSummaryRenderer=compactSummaryRenderer("workflow-context-summary","工作流上下文");
-const WorkflowExecutionFilterRenderer=facetFilterRenderer("workflow-execution-filter","执行筛选");
 const WorkflowControlBarRenderer:ExperienceBlockRenderer=({block,children,entityRows,focus,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),status=fieldRefOf(block,"statusFieldRef"),progress=fieldRefOf(block,"progressFieldRef"),row=bound?.rows.find(r=>r.id===focus?.[bound.entityRef])??bound?.rows[0];if(!bound||!status||!row)return <BlockShell block={block} testid="workflow-control-bar"><BlockEmpty hint="执行控制尚未绑定状态"/></BlockShell>;const state=String(row.values?.[status]??"pending").toLowerCase(),started=["started","running"].includes(state),retryable=["failed","aborted","rejected"].includes(state),resolved=["resolved","succeeded","success"].includes(state),submit=(operation:string)=>onAction?.("submitRequest",{entityRef:bound.entityRef,rowId:row.id,operation,targets:targetIdsOf(block)});return <BlockShell block={block} testid="workflow-control-bar"><Flex justify="space-between" align="center" gap={12} wrap><Space><Badge status={started?"processing":retryable?"error":resolved?"success":"default"} text={state}/>{progress&&started&&<Progress percent={Math.min(100,Number(row.values?.[progress]??0))} size="small" style={{width:160}}/>}</Space><Space><Button onClick={()=>onAction?.("itemSelect",{entityRef:bound.entityRef,rowId:row.id})}>查看结果</Button><Popconfirm title="确认取消当前执行？" onConfirm={()=>submit("cancelWorkflowExecution")}><Button danger disabled={!started}>取消</Button></Popconfirm><Button type="primary" disabled={!retryable} onClick={()=>submit("retryWorkflowExecution")}>重试</Button></Space></Flex></BlockShell>};
 const RealmCommandHeaderRenderer:ExperienceBlockRenderer=({block,children,entityRows,focus,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),name=fieldRefOf(block,"nameFieldRef"),enabled=fieldRefOf(block,"enabledFieldRef"),manageable=fieldRefOf(block,"manageableFieldRef"),row=bound?.rows.find(r=>r.id===focus?.[bound.entityRef])??bound?.rows[0];if(!bound||!name||!enabled||!row)return <BlockShell block={block} testid="realm-command-header"><BlockEmpty hint="Realm 页头尚未绑定名称和状态"/></BlockShell>;const active=enabledValue(row.values?.[enabled],"enabled"),can=!manageable||enabledValue(row.values?.[manageable],"allowed"),act=(operation:string,event="actionTrigger")=>onAction?.(event,{entityRef:bound.entityRef,rowId:row.id,operation,targets:targetIdsOf(block)});return <BlockShell block={block} testid="realm-command-header"><Flex justify="space-between" align="center" gap={12} wrap><Space><Typography.Title level={4} style={{margin:0}}>{String(row.values?.[name])}</Typography.Title><Tag color={active?"green":"default"}>{active?"已启用":"已禁用"}</Tag></Space><Space><Button onClick={()=>act("exportRealm")}>导出</Button><Button disabled={!can} onClick={()=>act("openRealmSecurity")}>安全设置</Button><Popconfirm title={`确认${active?"禁用":"启用"} Realm？`} onConfirm={()=>act(active?"disableRealm":"enableRealm","submitRequest")}><Button disabled={!can}>{active?"禁用":"启用"}</Button></Popconfirm></Space></Flex></BlockShell>};
-const RealmSecurityContextRenderer=compactSummaryRenderer("realm-security-context","Realm 安全上下文");
-const UserEventFilterRenderer=facetFilterRenderer("user-event-filter","用户事件筛选");
 const CredentialLifecycleBarRenderer:ExperienceBlockRenderer=({block,children,entityRows,focus,onAction})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),username=fieldRefOf(block,"usernameFieldRef"),resettable=fieldRefOf(block,"resettableFieldRef"),temporary=fieldRefOf(block,"temporaryFieldRef"),updated=fieldRefOf(block,"updatedAtFieldRef"),row=bound?.rows.find(r=>r.id===focus?.[bound.entityRef])??bound?.rows[0];if(!bound||!username||!resettable||!row)return <BlockShell block={block} testid="credential-lifecycle-bar"><BlockEmpty hint="凭据生命周期尚未绑定用户和可重置状态"/></BlockShell>;const can=enabledValue(row.values?.[resettable],"allowed"),temp=Boolean(temporary&&enabledValue(row.values?.[temporary],"temporary")),submit=(operation:string,event="submitRequest")=>onAction?.(event,{entityRef:bound.entityRef,rowId:row.id,operation,targets:targetIdsOf(block)});return <BlockShell block={block} testid="credential-lifecycle-bar"><Flex justify="space-between" align="center" gap={12} wrap><div><Typography.Text strong>{String(row.values?.[username])}</Typography.Text><Typography.Text type="secondary" style={{display:"block",fontSize:12}}>{temp?"当前为临时密码":"当前为持久密码"}{updated?` · 更新于 ${String(row.values?.[updated]??"")}`:""}</Typography.Text></div><Space><Button disabled={!can} onClick={()=>submit("resetPassword","editRequest")}>重置密码</Button><Button disabled={!can} onClick={()=>submit("sendResetCredentialEmail")}>发送重置邮件</Button><Button disabled={!can} onClick={()=>submit("requirePasswordUpdate")}>要求下次更新</Button></Space></Flex></BlockShell>};
 
 const multiSeriesChart=(testid:string,fallback:string,defs:Array<[string,string,string]>,unit=""):ExperienceBlockRenderer=>({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const bound=rowsOfBinding(block,entityRows),time=fieldRefOf(block,"timeFieldRef"),resolved=defs.map(([label,key,color])=>[label,fieldRefOf(block,key),color] as const);if(!bound||!time||resolved.slice(0,2).some(([,ref])=>!ref))return <AnalysisChart block={block} title={String(block.props?.title??fallback)} testid={testid} hint={`${fallback}尚未绑定必要字段`}/>;const rows=[...bound.rows].sort((a,b)=>String(a.values?.[time]).localeCompare(String(b.values?.[time]))),series=resolved.flatMap(([name,ref,color])=>ref?[{name,type:"line",connectNulls:false,data:rows.map(r=>nullableNumber(r.values?.[ref])),itemStyle:{color}}]:[]);return <AnalysisChart block={block} title={String(block.props?.title??fallback)} testid={testid} option={rows.length?{animation:false,tooltip:{trigger:"axis",confine:true},legend:{bottom:0},xAxis:{type:"category",data:rows.map(r=>String(r.values?.[time]))},yAxis:{type:"value",name:unit},series}:undefined} hint="当前没有趋势数据"/>};
 const PanelQueryLatencyChartRenderer=multiSeriesChart("panel-query-latency-chart","面板查询延迟",[["平均","averageFieldRef","#1677ff"],["P95","p95FieldRef","#722ed1"],["超时","timeoutFieldRef","#ff4d4f"]],"ms");
 const SyncVolumeTrendChartRenderer=multiSeriesChart("sync-volume-trend-chart","同步数据量",[["记录","recordsFieldRef","#1677ff"],["字节","bytesFieldRef","#52c41a"],["失败","failedFieldRef","#ff4d4f"]]);
-const ExploreInspectorTabsRenderer=stableTabsRenderer("explore-inspector-tabs","Explore 检查","itemSelect");
-const StreamDetailTabsRenderer=stableTabsRenderer("stream-detail-tabs","数据流详情","itemSelect");
 const DatasourceQueryMetricsRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const b=rowsOfBinding(block,entityRows),req=fieldRefOf(block,"requestFieldRef"),err=fieldRefOf(block,"errorFieldRef"),cache=fieldRefOf(block,"cacheHitFieldRef"),duration=fieldRefOf(block,"durationFieldRef"),r=b?.rows[0];if(!b||!req||!err||!r)return <BlockShell block={block} testid="datasource-query-metrics"><BlockEmpty hint="查询指标尚未绑定请求和错误数"/></BlockShell>;const total=Number(r.values?.[req]??0),errors=Number(r.values?.[err]??0);return <BlockShell block={block} title={String(block.props?.title??"数据源查询")} testid="datasource-query-metrics"><Flex gap={20} wrap><Statistic title="请求" value={total}/><Statistic title="错误率" value={total?Math.round(errors/total*100):0} suffix="%"/>{cache&&<Statistic title="缓存命中" value={total?Math.round(Number(r.values?.[cache]??0)/total*100):0} suffix="%"/>}{duration&&<Statistic title="平均耗时" value={Number(r.values?.[duration]??0)} suffix="ms"/>}</Flex></BlockShell>};
 const StreamFreshnessMetricsRenderer:ExperienceBlockRenderer=({block,children,entityRows})=>{if(children!=null)return <>{children}</>;const b=rowsOfBinding(block,entityRows),lag=fieldRefOf(block,"lagFieldRef"),synced=fieldRefOf(block,"syncedAtFieldRef"),records=fieldRefOf(block,"recordsFieldRef"),failed=fieldRefOf(block,"failedFieldRef"),r=b?.rows[0];if(!b||!lag||!synced||!r)return <BlockShell block={block} testid="stream-freshness-metrics"><BlockEmpty hint="新鲜度尚未绑定延迟和同步时间"/></BlockShell>;return <BlockShell block={block} title={String(block.props?.title??"数据流新鲜度")} testid="stream-freshness-metrics"><Flex gap={20} wrap><Statistic title="延迟" value={Number(r.values?.[lag]??0)} suffix="分钟"/><Statistic title="最近同步" value={String(r.values?.[synced]??"未同步")}/>{records&&<Statistic title="记录" value={Number(r.values?.[records]??0)}/>} {failed&&<Statistic title="失败" value={Number(r.values?.[failed]??0)}/>}</Flex></BlockShell>};
 const statusStrip=(testid:string,fallback:string):ExperienceBlockRenderer=>({block,children,entityRows,onAction})=>{if(children!=null)return <>{children}</>;const b=rowsOfBinding(block,entityRows),name=fieldRefOf(block,"nameFieldRef"),status=fieldRefOf(block,"statusFieldRef"),type=fieldRefOf(block,"typeFieldRef"),version=fieldRefOf(block,"versionFieldRef"),extra=fieldRefOf(block,"checkedAtFieldRef")??fieldRefOf(block,"availableVersionFieldRef");if(!b||!name||!status)return <BlockShell block={block} testid={testid}><BlockEmpty hint={`${fallback}尚未绑定名称和状态`}/></BlockShell>;return <BlockShell block={block} testid={testid}><Flex gap={8} wrap>{b.rows.map(r=>{const state=String(r.values?.[status]??"unknown").toLowerCase(),ok=["healthy","connected","ready","current"].includes(state);return <Button key={r.id} size="small" onClick={()=>ok?onAction?.("itemSelect",{entityRef:b.entityRef,rowId:r.id}):onAction?.("actionTrigger",{entityRef:b.entityRef,rowId:r.id,operation:"retryStatusCheck",targets:targetIdsOf(block)})}><Badge status={ok?"success":state==="upgrading"?"processing":"error"} text={`${String(r.values?.[name])}${type?` · ${String(r.values?.[type]??"")}`:""}${version?` · ${String(r.values?.[version]??"")}`:""}${extra?` · ${String(r.values?.[extra]??"")}`:""}`}/></Button>})}</Flex></BlockShell>};
 const DatasourceHealthStripRenderer=statusStrip("datasource-health-strip","数据源健康");
-const ConnectorVersionStripRenderer=statusStrip("connector-version-strip","连接器版本");
 const commandHeader=(testid:string,fallback:string):ExperienceBlockRenderer=>({block,children,entityRows,focus,onAction})=>{if(children!=null)return <>{children}</>;const b=rowsOfBinding(block,entityRows),title=fieldRefOf(block,"titleFieldRef"),status=fieldRefOf(block,"statusFieldRef"),editable=fieldRefOf(block,"editableFieldRef"),dirty=fieldRefOf(block,"dirtyFieldRef"),refreshing=fieldRefOf(block,"refreshingFieldRef"),source=fieldRefOf(block,"datasourceFieldRef"),r=b?.rows.find(x=>x.id===focus?.[b.entityRef])??b?.rows[0];if(!b||!title||!r)return <BlockShell block={block} testid={testid}><BlockEmpty hint={`${fallback}尚未绑定标题`}/></BlockShell>;const can=!editable||enabledValue(r.values?.[editable],"editable"),busy=Boolean(refreshing&&enabledValue(r.values?.[refreshing],"refreshing")),act=(operation:string,event="actionTrigger")=>onAction?.(event,{entityRef:b.entityRef,rowId:r.id,operation,targets:targetIdsOf(block)});return <BlockShell block={block} testid={testid}><Flex justify="space-between" align="center" gap={12} wrap><Space><Typography.Title level={4} style={{margin:0}}>{String(r.values?.[title])}</Typography.Title>{status&&<Tag>{String(r.values?.[status]??"")}</Tag>}{source&&<Tag color="blue">{String(r.values?.[source]??"")}</Tag>}</Space><Space><Button disabled={busy} onClick={()=>act("refresh")}>刷新</Button><Button onClick={()=>act("inspect")}>检查</Button><Button type="primary" disabled={!can||busy} onClick={()=>act(dirty&&enabledValue(r.values?.[dirty],"dirty")?"save":"edit","editRequest")}>{dirty&&enabledValue(r.values?.[dirty],"dirty")?"保存":"编辑"}</Button></Space></Flex></BlockShell>};
 const PanelCommandHeaderRenderer=commandHeader("panel-command-header","面板页头");
-const ConnectionSchemaHeaderRenderer=commandHeader("connection-schema-header","Schema 页头");
-const ExploreQueryContextRenderer=compactSummaryRenderer("explore-query-context","Explore 查询上下文");
-const StreamSelectionSummaryRenderer=compactSummaryRenderer("stream-selection-summary","数据流选择摘要");
-const LogLabelFilterRenderer=facetFilterRenderer("log-label-filter","日志标签筛选");
-const StreamNamespaceFilterRenderer=facetFilterRenderer("stream-namespace-filter","数据流筛选");
 const runtimeControl=(testid:string,fallback:string):ExperienceBlockRenderer=>({block,children,entityRows,focus,onAction})=>{if(children!=null)return <>{children}</>;const b=rowsOfBinding(block,entityRows),status=fieldRefOf(block,"statusFieldRef"),query=fieldRefOf(block,"queryFieldRef"),refreshing=fieldRefOf(block,"refreshingFieldRef"),dirty=fieldRefOf(block,"dirtyFieldRef"),r=b?.rows.find(x=>x.id===focus?.[b.entityRef])??b?.rows[0];if(!b||!status||!r)return <BlockShell block={block} testid={testid}><BlockEmpty hint={`${fallback}尚未绑定状态`}/></BlockShell>;const state=String(r.values?.[status]??"idle").toLowerCase(),busy=["running","refreshing"].includes(state)||Boolean(refreshing&&enabledValue(r.values?.[refreshing],"refreshing")),canRun=!query||Boolean(String(r.values?.[query]??"").trim()),changed=Boolean(dirty&&enabledValue(r.values?.[dirty],"dirty")),act=(op:string,event="actionTrigger")=>onAction?.(event,{entityRef:b.entityRef,rowId:r.id,operation:op,targets:targetIdsOf(block)});return <BlockShell block={block} testid={testid}><Flex justify="space-between" align="center" gap={12} wrap><Badge status={busy?"processing":state.includes("error")||state.includes("breaking")?"error":"success"} text={state}/><Space><Button onClick={()=>act("inspect")}>检查</Button><Button danger disabled={!busy} onClick={()=>act("cancel","submitRequest")}>取消</Button><Button type="primary" disabled={busy||(!canRun&&!changed)} onClick={()=>act(changed?"save":"run",changed?"editRequest":"submitRequest")}>{changed?"保存":"运行"}</Button></Space></Flex></BlockShell>};
 const ExploreQueryControlBarRenderer=runtimeControl("explore-query-control-bar","查询控制");
-const SchemaRefreshBarRenderer=runtimeControl("schema-refresh-bar","Schema 刷新");
 const diagnosticDrawer=(testid:string,fallback:string,refKey:string,messageKey:string,statusKey:string):ExperienceBlockRenderer=>({block,children,entityRows,onAction})=>{if(children!=null)return <>{children}</>;const b=rowsOfBinding(block,entityRows),ref=fieldRefOf(block,refKey),message=fieldRefOf(block,messageKey),status=fieldRefOf(block,statusKey),[open,setOpen]=React.useState(false);if(!b||!ref||!message||!status)return <BlockShell block={block} testid={testid}><BlockEmpty hint={`${fallback}尚未绑定诊断字段`}/></BlockShell>;const rows=b.rows.filter(r=>!["ok","healthy","resolved","no_change"].includes(String(r.values?.[status]).toLowerCase()));return <BlockShell block={block} testid={testid}><Button danger={rows.length>0} onClick={()=>setOpen(true)}>{fallback} {rows.length}</Button><Drawer open={open} onClose={()=>setOpen(false)} title={fallback} width={520}>{rows.length===0?<Empty description="当前没有异常"/>:<List dataSource={rows} renderItem={r=><List.Item actions={[<Button key="retry" type="link" onClick={()=>onAction?.("submitRequest",{entityRef:b.entityRef,rowId:r.id,operation:"resolveDiagnostic",targets:targetIdsOf(block)})}>处理</Button>]}><List.Item.Meta title={String(r.values?.[ref])} description={String(r.values?.[message])}/></List.Item>}/>}</Drawer></BlockShell>};
 const QueryErrorDrawerRenderer=diagnosticDrawer("query-error-drawer","查询错误","refFieldRef","messageFieldRef","statusFieldRef");
 const SchemaConflictDrawerRenderer=diagnosticDrawer("schema-conflict-drawer","Schema 冲突","streamFieldRef","fieldFieldRef","changeFieldRef");
@@ -6943,9 +6886,7 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     EnvironmentStatusStrip: { render: EnvironmentStatusStripRenderer, label: "环境状态条", phone: true },
     DataFreshnessIndicator: { render: DataFreshnessIndicatorRenderer, label: "数据新鲜度", phone: true },
     WorkItemContextSummary: { render: WorkItemContextSummaryRenderer, label: "工作项上下文摘要", phone: true },
-    DocumentContextSummary: { render: DocumentContextSummaryRenderer, label: "文档上下文摘要", phone: true },
     WorkItemDetailTabs: { render: WorkItemDetailTabsRenderer, label: "工作项详情页签", phone: true },
-    QueryModeTabs: { render: QueryModeTabsRenderer, label: "查询模式页签", phone: true },
     WorkItemFilterBar: { render: WorkItemFilterBarRenderer, label: "工作项筛选栏", phone: true },
     DashboardParameterBar: { render: DashboardParameterBarRenderer, label: "Dashboard 参数栏", phone: true },
     CycleHealthMetrics: { render: CycleHealthMetricsRenderer, label: "周期健康指标", phone: true },
@@ -6958,8 +6899,6 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     QueryRunStatusStrip: { render: QueryRunStatusStripRenderer, label: "查询运行状态", phone: true },
     EntityOwnershipSummary: { render: EntityOwnershipSummaryRenderer, label: "实体所有权摘要", phone: true },
     QueryDataSourceSummary: { render: QueryDataSourceSummaryRenderer, label: "查询数据源摘要", phone: true },
-    DatasetEditorTabs: { render: DatasetEditorTabsRenderer, label: "数据集编辑页签", phone: true },
-    DocumentHistoryTabs: { render: DocumentHistoryTabsRenderer, label: "文档历史页签", phone: true },
     CatalogEntityFilterBar: { render: CatalogEntityFilterBarRenderer, label: "目录实体筛选", phone: true },
     QueryClauseFilterBar: { render: QueryClauseFilterBarRenderer, label: "查询条件栏", phone: true },
     DocumentInsightMetrics: { render: DocumentInsightMetricsRenderer, label: "文档洞察指标", phone: true },
@@ -6970,10 +6909,6 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     AlertGroupCommandHeader: { render: AlertGroupCommandHeaderRenderer, label: "规则组操作页头", phone: true },
     IncidentOwnershipStrip: { render: IncidentOwnershipStripRenderer, label: "事故归属状态", phone: true },
     SyncScheduleStrip: { render: SyncScheduleStripRenderer, label: "同步计划状态", phone: true },
-    CycleContextSummary: { render: CycleContextSummaryRenderer, label: "周期上下文摘要", phone: true },
-    AlertGroupContextSummary: { render: AlertGroupContextSummaryRenderer, label: "规则组上下文摘要", phone: true },
-    EventTypeEditorTabs: { render: EventTypeEditorTabsRenderer, label: "事件类型编辑页签", phone: true },
-    IncidentEvidenceTabs: { render: IncidentEvidenceTabsRenderer, label: "事故证据页签", phone: true },
     CycleFilterBar: { render: CycleFilterBarRenderer, label: "周期筛选栏", phone: true },
     AlertRuleFilterBar: { render: AlertRuleFilterBarRenderer, label: "告警规则筛选", phone: true },
     SyncReliabilityMetrics: { render: SyncReliabilityMetricsRenderer, label: "同步可靠性指标", phone: true },
@@ -6984,10 +6919,6 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     UserCommandHeader: { render: UserCommandHeaderRenderer, label: "用户操作页头", phone: true },
     ConversationAssignmentStrip: { render: ConversationAssignmentStripRenderer, label: "会话分配状态", phone: true },
     RealmStatusStrip: { render: RealmStatusStripRenderer, label: "Realm 状态", phone: true },
-    ConversationContextSummary: { render: ConversationContextSummaryRenderer, label: "会话上下文摘要", phone: true },
-    UserIdentitySummary: { render: UserIdentitySummaryRenderer, label: "用户身份摘要", phone: true },
-    ConversationDetailTabs: { render: ConversationDetailTabsRenderer, label: "会话详情页签", phone: true },
-    UserSecurityTabs: { render: UserSecurityTabsRenderer, label: "用户安全页签", phone: true },
     ConversationInboxFilter: { render: ConversationInboxFilterRenderer, label: "收件箱会话筛选", phone: true },
     UserDirectoryFilter: { render: UserDirectoryFilterRenderer, label: "用户目录筛选", phone: true },
     ConversationSlaMetrics: { render: ConversationSlaMetricsRenderer, label: "会话 SLA 指标", phone: true },
@@ -6998,34 +6929,23 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     CohortRetentionChart: { render: CohortRetentionChartRenderer, label: "留存队列图", phone: true },
     UptimeStatusTimeline: { render: UptimeStatusTimelineRenderer, label: "可用性时间线", phone: true },
     PercentileBandChart: { render: PercentileBandChartRenderer, label: "分位带趋势", phone: true },
-    ConnectionWorkspaceTabs: { render: ConnectionWorkspaceTabsRenderer, label: "连接工作区页签", phone: true },
-    IssueInvestigationTabs: { render: IssueInvestigationTabsRenderer, label: "问题调查页签", phone: true },
     ConnectionFleetMetrics: { render: ConnectionFleetMetricsRenderer, label: "连接群组指标", phone: true },
     IssueImpactMetrics: { render: IssueImpactMetricsRenderer, label: "问题影响指标", phone: true },
-    DashboardQueryContext: { render: DashboardQueryContextRenderer, label: "Dashboard 查询上下文", phone: true },
-    ServiceOwnershipContext: { render: ServiceOwnershipContextRenderer, label: "服务归属上下文", phone: true },
     ReleaseHealthStrip: { render: ReleaseHealthStripRenderer, label: "发布健康状态", phone: true },
     DashboardCommandHeader: { render: DashboardCommandHeaderRenderer, label: "Dashboard 操作页头", phone: true },
     DeploymentLatencyChart: { render: DeploymentLatencyChartRenderer, label: "部署延迟趋势", phone: true },
     ReleaseAdoptionTrendChart: { render: ReleaseAdoptionTrendChartRenderer, label: "发布采用趋势", phone: true },
-    DeploymentDetailTabs: { render: DeploymentDetailTabsRenderer, label: "部署详情页签", phone: true },
-    ReleaseDetailTabs: { render: ReleaseDetailTabsRenderer, label: "发布详情页签", phone: true },
     DeploymentRolloutMetrics: { render: DeploymentRolloutMetricsRenderer, label: "部署滚动指标", phone: true },
     ReleaseAdoptionMetrics: { render: ReleaseAdoptionMetricsRenderer, label: "发布采用指标", phone: true },
     ClusterHealthStrip: { render: ClusterHealthStripRenderer, label: "集群健康状态", phone: true },
     ReleaseEnvironmentStrip: { render: ReleaseEnvironmentStripRenderer, label: "发布环境状态", phone: true },
-    DeploymentContextSummary: { render: DeploymentContextSummaryRenderer, label: "部署上下文摘要", phone: true },
-    ReleaseContextSummary: { render: ReleaseContextSummaryRenderer, label: "发布上下文摘要", phone: true },
     KubernetesResourceFilter: { render: KubernetesResourceFilterRenderer, label: "Kubernetes 资源筛选", phone: true },
-    ReleaseEnvironmentFilter: { render: ReleaseEnvironmentFilterRenderer, label: "发布环境筛选", phone: true },
     DeploymentCommandHeader: { render: DeploymentCommandHeaderRenderer, label: "部署操作页头", phone: true },
     FeatureFlagCommandHeader: { render: FeatureFlagCommandHeaderRenderer, label: "Feature Flag 操作页头", phone: true },
     DeploymentScaleBar: { render: DeploymentScaleBarRenderer, label: "部署扩缩容栏", phone: true },
     ReleaseRolloutBar: { render: ReleaseRolloutBarRenderer, label: "发布灰度栏", phone: true },
     CumulativeFlowChart: { render: CumulativeFlowChartRenderer, label: "累计流图", phone: true },
     BookingDemandChart: { render: BookingDemandChartRenderer, label: "预约需求趋势", phone: true },
-    WorkItemActivityTabs: { render: WorkItemActivityTabsRenderer, label: "工作项活动页签", phone: true },
-    BookingAuditTabs: { render: BookingAuditTabsRenderer, label: "预约审计页签", phone: true },
     WorkloadThroughputMetrics: { render: WorkloadThroughputMetricsRenderer, label: "工作流吞吐指标", phone: true },
     CalendarUtilizationMetrics: { render: CalendarUtilizationMetricsRenderer, label: "日历利用率指标", phone: true },
     CycleRiskStrip: { render: CycleRiskStripRenderer, label: "周期风险状态", phone: true },
@@ -7033,34 +6953,20 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     WorkItemMoveDrawer: { render: WorkItemMoveDrawerRenderer, label: "工作项移动抽屉", phone: true },
     BookingConflictDrawer: { render: BookingConflictDrawerRenderer, label: "预约冲突抽屉", phone: true },
     WorkflowDurationChart: { render: WorkflowDurationChartRenderer, label: "工作流耗时趋势", phone: true },
-    WorkflowExecutionTabs: { render: WorkflowExecutionTabsRenderer, label: "工作流执行页签", phone: true },
     WorkflowOutcomeMetrics: { render: WorkflowOutcomeMetricsRenderer, label: "工作流结果指标", phone: true },
     WorkflowVersionStrip: { render: WorkflowVersionStripRenderer, label: "工作流版本状态", phone: true },
     WorkflowFailureDrawer: { render: WorkflowFailureDrawerRenderer, label: "工作流失败诊断", phone: true },
     WorkflowCommandHeader: { render: WorkflowCommandHeaderRenderer, label: "工作流操作页头", phone: true },
-    WorkflowContextSummary: { render: WorkflowContextSummaryRenderer, label: "工作流上下文摘要", phone: true },
-    WorkflowExecutionFilter: { render: WorkflowExecutionFilterRenderer, label: "工作流执行筛选", phone: true },
     WorkflowControlBar: { render: WorkflowControlBarRenderer, label: "工作流执行控制栏", phone: true },
     RealmCommandHeader: { render: RealmCommandHeaderRenderer, label: "Realm 操作页头", phone: true },
-    RealmSecurityContext: { render: RealmSecurityContextRenderer, label: "Realm 安全上下文", phone: true },
-    UserEventFilter: { render: UserEventFilterRenderer, label: "用户事件筛选", phone: true },
     CredentialLifecycleBar: { render: CredentialLifecycleBarRenderer, label: "凭据生命周期栏", phone: true },
     PanelQueryLatencyChart: { render: PanelQueryLatencyChartRenderer, label: "面板查询延迟", phone: true },
     SyncVolumeTrendChart: { render: SyncVolumeTrendChartRenderer, label: "同步数据量趋势", phone: true },
-    ExploreInspectorTabs: { render: ExploreInspectorTabsRenderer, label: "Explore 检查页签", phone: true },
-    StreamDetailTabs: { render: StreamDetailTabsRenderer, label: "数据流详情页签", phone: true },
     DatasourceQueryMetrics: { render: DatasourceQueryMetricsRenderer, label: "数据源查询指标", phone: true },
     StreamFreshnessMetrics: { render: StreamFreshnessMetricsRenderer, label: "数据流新鲜度", phone: true },
     DatasourceHealthStrip: { render: DatasourceHealthStripRenderer, label: "数据源健康状态", phone: true },
-    ConnectorVersionStrip: { render: ConnectorVersionStripRenderer, label: "连接器版本状态", phone: true },
     PanelCommandHeader: { render: PanelCommandHeaderRenderer, label: "面板操作页头", phone: true },
-    ConnectionSchemaHeader: { render: ConnectionSchemaHeaderRenderer, label: "连接 Schema 页头", phone: true },
-    ExploreQueryContext: { render: ExploreQueryContextRenderer, label: "Explore 查询上下文", phone: true },
-    StreamSelectionSummary: { render: StreamSelectionSummaryRenderer, label: "数据流选择摘要", phone: true },
-    LogLabelFilter: { render: LogLabelFilterRenderer, label: "日志标签筛选", phone: true },
-    StreamNamespaceFilter: { render: StreamNamespaceFilterRenderer, label: "数据流命名空间筛选", phone: true },
     ExploreQueryControlBar: { render: ExploreQueryControlBarRenderer, label: "Explore 查询控制栏", phone: true },
-    SchemaRefreshBar: { render: SchemaRefreshBarRenderer, label: "Schema 刷新栏", phone: true },
     QueryErrorDrawer: { render: QueryErrorDrawerRenderer, label: "查询错误抽屉", phone: true },
     SchemaConflictDrawer: { render: SchemaConflictDrawerRenderer, label: "Schema 冲突抽屉", phone: true },
     SwimlaneKanban: { render: SwimlaneKanbanRenderer, label: "泳道看板", phone: true },
@@ -7081,34 +6987,14 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     BulkActionTray: { render: BulkActionTrayRenderer, label: "批量操作托盘", phone: true },
     OnboardingChecklistWizard: { render: OnboardingChecklistWizardRenderer, label: "入职检查向导", phone: true },
     ImportMappingWizard: { render: ImportMappingWizardRenderer, label: "导入映射向导", phone: true },
-    IntegrationSetupWizard: { render: IntegrationSetupWizardRenderer, label: "集成设置向导", phone: true },
-    PolicyConfigurationWizard: { render: PolicyConfigurationWizardRenderer, label: "策略配置向导", phone: true },
     ResourceBookingCalendar: { render: ResourceBookingCalendarRenderer, label: "资源预约日历", phone: true },
-    TeamAvailabilityCalendar: { render: TeamAvailabilityCalendarRenderer, label: "团队可用日历", phone: true },
-    ShiftRosterCalendar: { render: ShiftRosterCalendarRenderer, label: "班次排班日历", phone: true },
-    MaintenanceWindowCalendar: { render: MaintenanceWindowCalendarRenderer, label: "维护窗口日历", phone: true },
-    CampaignCalendar: { render: CampaignCalendarRenderer, label: "活动排期日历", phone: true },
-    EditorialCalendar: { render: EditorialCalendarRenderer, label: "内容编辑日历", phone: true },
-    ReleaseCalendar: { render: ReleaseCalendarRenderer, label: "发布日历", phone: true },
     DeadlineAgenda: { render: DeadlineAgendaRenderer, label: "截止事项议程", phone: true },
     BookingConflictPanel: { render: BookingConflictPanelRenderer, label: "预约冲突面板", phone: true },
     ScheduleCapacityHeatmap: { render: ScheduleCapacityHeatmapRenderer, label: "排期容量热力图", phone: true },
     EventRsvpPanel: { render: EventRsvpPanelRenderer, label: "活动 RSVP 面板", phone: true },
     RecurrenceEditor: { render: RecurrenceEditorRenderer, label: "重复规则编辑器", phone: true },
     DeploymentWizard: { render: DeploymentWizardRenderer, label: "部署向导", phone: true },
-    MigrationReadinessWizard: { render: MigrationReadinessWizardRenderer, label: "迁移就绪向导", phone: true },
-    IncidentResolutionWizard: { render: IncidentResolutionWizardRenderer, label: "事件解决向导", phone: true },
-    ServiceDispatchCalendar: { render: ServiceDispatchCalendarRenderer, label: "服务派工日历", phone: true },
-    InterviewScheduleCalendar: { render: InterviewScheduleCalendarRenderer, label: "面试排期日历", phone: true },
-    ExamScheduleCalendar: { render: ExamScheduleCalendarRenderer, label: "考试安排日历", phone: true },
-    TrainingCalendar: { render: TrainingCalendarRenderer, label: "培训日历", phone: true },
-    LeaveCalendar: { render: LeaveCalendarRenderer, label: "请假日历", phone: true },
-    AssetReservationCalendar: { render: AssetReservationCalendarRenderer, label: "资产预约日历", phone: true },
-    RoomBookingCalendar: { render: RoomBookingCalendarRenderer, label: "会议室预约日历", phone: true },
-    DeliverySlotCalendar: { render: DeliverySlotCalendarRenderer, label: "配送时段日历", phone: true },
     OnCallScheduleCalendar: { render: OnCallScheduleCalendarRenderer, label: "值班日历", phone: true },
-    ProductionScheduleCalendar: { render: ProductionScheduleCalendarRenderer, label: "生产排程日历", phone: true },
-    MilestoneTimelineCalendar: { render: MilestoneTimelineCalendarRenderer, label: "里程碑时间线日历", phone: true },
     AppointmentWaitlistPanel: { render: AppointmentWaitlistPanelRenderer, label: "预约候补面板", phone: true },
     AvailabilityOverridePanel: { render: AvailabilityOverridePanelRenderer, label: "可用时间覆盖面板", phone: true },
     TimezoneOverlapPanel: { render: TimezoneOverlapPanelRenderer, label: "时区重叠面板", phone: true },

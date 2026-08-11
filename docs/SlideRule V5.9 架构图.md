@@ -11,7 +11,7 @@
 %%     2398ba17 → 386324931 → 02fb8d946 基础组件 0 → 58 → 137 → 217，四档：
 %%              antd / antd-mobile / ProComponents / **自研**（CodeMirror·react-markdown·
 %%              xlsx·canvas 签名板，零新依赖——都是"把装着没用的挖出来"）
-%%     87d901ba + 7dd9e00b + 77f469a7 区块 26 → 359 → **407**
+%%     87d901ba + 7dd9e00b + 77f469a7 区块 26 → 359 → 407 → **350**（末一步是当天去重，见 ❖10）
 %%     300cc1c34 区块声明它用哪些基础组件搭 —— impl 从散文换成真名字
 %%     3cbf7c11f ⚠ **但那份手写声明整个删掉了**：316 个区块全部与实际渲染不符
 %%              （84 条声称了没渲染 · 974 条渲染了没声称）。改成从**渲染器 AST 生成**
@@ -65,8 +65,9 @@
 %%   【描述已与代码不符，按现实修正】
 %%     ❖1 GEN5 的 prompt **不再是全量目录** — 注入的是窄化后的 ~60 条（约 7.4K token），
 %%          全量 5.6 万 token 那条路只在自适应退回时走。V5.8 图上"schema契约+…"
-%%          那句话没错，但读的人会以为模型看得见全部 407 个区块——**看不见**。
-%%     ❖2 BLOCKCAT 的 catalog 版本 v8 → **v407**（版本号跟区块数走），
+%%          那句话没错，但读的人会以为模型看得见全部 350 个区块——**看不见**。
+%%     ❖2 BLOCKCAT 的 catalog 版本 v8 → **v407 → v350**（版本号跟区块数走；
+%%          08-11 当天去重砍掉 57 个「同工厂只换文案」的凑数类型，见 ❖10），
 %%          并新增两个字段：`generality`（同能力面内的默认首选，配额 max(1,min(4,n/4))）
 %%          与 `fieldRefTypeConflicts`（同名 FieldRef 类型冲突的冻结基线，只准变小）。
 %%     ❖3 prompt 里每个区块条目补了 `pages=`（页型限制）— ffaf964f。此前只有
@@ -86,11 +87,30 @@
 %%     ❖8 区域词汇整套换代 — 旧五槽退休，12 区域照 pro-blocks 的 29 个真实页面定，
 %%          前端手抄那份删掉，两侧同读目录。
 %%     ❖9 列表页归属翻转（三步走）— 声明了积木就归积木，骨架让位。
+%%     ❖10 **区块去重 407 → 350**（docs/区块去重审查-2026-08-11.md）
+%%          用户在组件库墙上一眼看出来的：「很多是糊弄出来的，是表格」。
+%%          量下来根子不是"渲染了表格"（全目录只有 22 个渲染 Table），是这个形状：
+%%              const QueryModeTabsRenderer = stableTabsRenderer("query-mode-tabs","查询模式","itemSelect")
+%%          17 个 Tabs 的第三参**全同**，差异只剩 testid 和一句中文标题；
+%%          14 个 compactSummary 渲染出的是同一张 ProDescriptions 键值**表**——
+%%          用户说的"表格"就是这一族。共 57 个，每族留 1，线上 5 个应用一个都没用到。
+%%          ⚠ 老防线为什么没拦住：batch8 那条棘轮叫 `..._without_alias_counting`，
+%%            判据却是 **rendererKey 唯一**——而这批凑数每个都有自己的 rendererKey。
+%%            **判据钉在标识上，问题出在内容上**（本仓第三次踩这个：手写 uses 声明、
+%%            pageKinds 从没集中评审，都是同一类）。
+%%          新闸 no-filler-blocks.test.ts 改成看**工厂签名的形参名**：同工厂多区块，
+%%          参数必须有除 testid/文案之外的差异。第一版按"是不是裸字符串"剥，
+%%          把 matureKanban(variant) / diagnosticDrawer(refKey) / multiSeriesChart(defs)
+%%          三族真有差异的误判成了凑数——它们的差异恰好都长成字符串。
+%%          纪律：**签名读不到就一律保留，宁可漏判不可误判**（误判会逼人删掉真有用的）。
 %% ·
 %%   【❖ 08-11 已知缺口（写在图上，免得当成没人看见）】
 %%     · **模板骨架尚未接进推演**：app_template.py 已落地、种子 4 条已自检，但 match/inject
 %%       两端都没接线，也没有存骨架的表。app.py 里那行 import 只为触发启动自检。
-%%     · **pageKinds 还剩 15 对矛盾**（同域同能力却规则相反），清零之前不上闸。
+%%     · **pageKinds 还剩 8 对矛盾**（同域同能力却规则相反），清零之前不上闸。
+%%       ❖ 08-11 去重时白掉一格（9 → 8），**不是靠改 pageKinds 改出来的**：
+%%       那一对本来就是同一份实现挂两个名字，一个允许 workbench 一个不允许。
+%%       所以剩下 8 对值得按"是不是这个类型压根不该存在"再看一遍。
 %%     · **第二层选材没收干净**：位置是必要条件不是充分条件——提到最前的 16 个里
 %%       仍只有 4 个真被用过，PROVEN LAYOUTS 的老配方仍在抢 workbench 页的位。
 %%     · **自研组件 7 个里 2 个仍无归宿**（SignaturePad / ExcelExportButton）。
@@ -583,7 +603,7 @@ subgraph ENRICH["10 体验层生成 / Experience Enrichment（★ 07-24 新增�
   MONITOROV["★ 首页设计 / enrich_monitor_page_overviews<br/>monitor/首页交给FreeformInsight排版·不再永远固定骨架<br/>内容数量随领域浮动<br/>✱07-30修正:排行/动态流**不再被赶到设计之外当外挂卡**——改由设计者用<br/>blockRef 摆进自己的版式(见✱C桥)·摆哪占多宽它定·渲染仍交积木真渲染器<br/>✱07-30:一页跑参照板→桌面设计→手机设计·每页一张板<br/>✧07-31修正:是**两次或三次**——preferredDevice 明说 desktop 就不再设计手机档<br/>(省约67s/页)·判不出来或 unspecified 仍两档都生成(只在明确的时候才砍)<br/>✧07-31:monitor 页放开 page.blocks·总览不再只有数字<br/>✪08-03**方向反转**:首页由 freeform 设计**独占**——有 freeformOverview 的总览页·<br/>脚手架/固定榜/流全部让位(freeformOwnsPage)·page.blocks 在这类页面不再渲染<br/>⚠ 只在后端关是不够的:摆不进设计树的积木会掉到设计区**外面**照样画·渲染端必须同时收口<br/>✪08-03 生图**全系统只给落地页一张**(开关=有没有配生图 key·不新增环境变量)·<br/>所以这里不再是「一页跑两次或三次」·参照板这一步整个应用只走一次"]:::cap
   MONITORDEFER["★ 08-05关键路径收口<br/>同步只设计landingPageRef（缺失时首个合格总览页）<br/>其他dashboard保留stats/charts标准骨架并标记deferred<br/>已有freeformOverview幂等复用·按需打开时再增强"]:::cap
   VISBUDGET{"★ 视觉准入预算 / SLIDERULE_RUN_BUDGET_SECONDS<br/>默认540s·为10分钟目标预留60s落库/闭环缓冲<br/>阶段启动前按长尾保守值检查剩余时间<br/>不足→deferred_budget+skippedReason=deadline<br/>仅视觉fail-open·业务模型/RBAC/workflow不降级"}:::gate
-  BLOCKCAT["★ 体验区块目录 / experience_block_catalog<br/>单一真相源(同一JSON跨语言直读):类型·槽位·binding·标签·样式·图标正则/别名<br/>07-26修正:约束链=Gate浅校验(designBrief)+生成时Pydantic深校验+前端再校验<br/>(Gate不看freeform内容树·有意分工见代码注释)<br/>❖08-11 **v8 → v407**(版本号跟区块数走)·条目新增:generality(通用度·窄化加成用)·<br/>label(中文名进真相源·此前只活在 block-registry.tsx·Python 侧读不到)·<br/>rendererKey/rendererStatus·regionsRationale<br/>❖ 同名 FieldRef 的类型契约统一(fieldRefTypeConflicts 自检)<br/>❖ pageKinds 现在**三方消费**:选材(block_assembler/预设派生) · 提示词条目 pages= ·<br/>修复器观测。⚠ **仍无门禁**——见 MGATE 与文末缺口<br/>✪08-03 **freeformEmbeddable 字段整个删除**(catalog v7 → v8)——那是给 blockRef 挑积木用的白名单·rowsRef 上来之后它存在的唯一理由没了<br/>schema_legal 派生常量 / Pydantic 校验 / prompt 文案 / 前端渲染·四处同步消失(改目录一处的老规矩)"]:::ledger
+  BLOCKCAT["★ 体验区块目录 / experience_block_catalog<br/>单一真相源(同一JSON跨语言直读):类型·槽位·binding·标签·样式·图标正则/别名<br/>07-26修正:约束链=Gate浅校验(designBrief)+生成时Pydantic深校验+前端再校验<br/>(Gate不看freeform内容树·有意分工见代码注释)<br/>❖08-11 **v8 → v407 → v350**(版本号跟区块数走·末一步是去重)·条目新增:generality(通用度·窄化加成用)·<br/>label(中文名进真相源·此前只活在 block-registry.tsx·Python 侧读不到)·<br/>rendererKey/rendererStatus·regionsRationale<br/>❖ 同名 FieldRef 的类型契约统一(fieldRefTypeConflicts 自检)<br/>❖ pageKinds 现在**三方消费**:选材(block_assembler/预设派生) · 提示词条目 pages= ·<br/>修复器观测。⚠ **仍无门禁**——见 MGATE 与文末缺口<br/>✪08-03 **freeformEmbeddable 字段整个删除**(catalog v7 → v8)——那是给 blockRef 挑积木用的白名单·rowsRef 上来之后它存在的唯一理由没了<br/>schema_legal 派生常量 / Pydantic 校验 / prompt 文案 / 前端渲染·四处同步消失(改目录一处的老规矩)"]:::ledger
   SAFEREND["★ 前端安全渲染器 / block-registry（纵深防御第二道）<br/>只React.createElement·绝不dangerouslySetInnerHTML/eval<br/>图标按名动态解析任意antd(hasOwnProperty挡原型链)·dataRef现算·白名单再校验<br/>07-26:+渲染预算(深度/节点上限截断降级)·AppStageErrorBoundary兜渲染异常<br/>✱07-30:五个占位区块**接真渲染器**并放开生成(MetricGrid/TrendChart/RankedList/<br/>ActivityFeed/DataTable)·全部换 antd 现成组件(Card/Empty/Timeline/List+Progress/<br/>Table)·颜色走**主题token**不再写死十六进制(此前琥珀色应用里动态流圆点是靛蓝)<br/>表头出中文显示名·枚举列出标签(不再是 lot_code / frozen)<br/>ActivityFeed 宽行档 variant=row+detailFieldRefs(列宽靠 colgroup 对齐)<br/>✪08-03 加 rowsRef 展开:渲染期按 entityRef 取真实行·每行套设计模型给的那份模板(仍然只走 createElement 白名单·安全边界一点没放宽)"]:::trust
   OWNER["✱ KPI/图表归属划分（方案 C · 渲染层双向硬隔离）<br/>总览页(monitor/dashboard)走 page.stats/page.charts·由 ENRICH 重新设计版式<br/>业务页走 MetricGrid/TrendChart 积木<br/>同一个指标不会被画两遍·绑页面主实体的 DataTable 区块直接摘掉<br/>(那一页本来就自带一张带中文列名/彩色状态标签/排序筛选/行内操作的表)<br/>✱KPI 卡三层:大数字 + 环比 + 卡底迷你走势线(对标 pro-components StatisticCard)<br/>dataRef 加 trendFieldRef+trendGrain·一个字段驱动两层(本来就靠同一份时间分桶)<br/>不撒谎边界:前期0→「较上期 —」不编+∞ · 单桶不出线 · &lt;0.5%直说持平<br/>· 回传 series.grain 而非入参(桶太多自动变粗后配「较前一日」就是错文案)<br/>· 主数字算不出(显—)时整个不挂(用图形给不存在的数字背书更糟)"]:::cap
   APPSTORE["★ App Store 入库 / app_store.save_app（07-26补画·此前图上缺失）<br/>过门+增强完的设计模型持久化·fail-open·dedup_key去重·组建库地基<br/>✱07-30修正:降级从三级改**四级**——远端TCP → 远端SQL over HTTP →<br/>**本地SQLite** → 本地JSON。前两级是同一个远端库的两条通道(受限网络只放行<br/>443 时自动改走HTTP·数据不分叉)·第三级才是本地库<br/>此前远端一挂直接掉到最弱的JSON(整文件读写·无索引无事务·崩在写一半留半个文件)<br/>没配远端连接串时也走SQLite——没有远端不代表就该退到最弱那档<br/>✪08-03 入库时**带上归属**:owner_id 来自推演路由塞进 contextvar 的当前用户·拿不到就落无主(语义见 ✪A OWNERSHIP)·**不能为了拿归属而让闭环失败**"]:::ledger
@@ -596,7 +616,7 @@ end
 subgraph BLOCKSUP["10.1 区块供给侧 / Block Supply（❖ 08-11 新增子图 · 此前图上只有 BLOCKCAT 一个孤点）"]
   direction TB
   BASECOMP["❖ 基础组件库 / base-components（**218 个** · 四档）<br/>V5.8 时代这一层在图上**根本不存在**——区块的 impl 是一句散文<br/>antd(通用) / antd-mobile(手机档) / ProComponents(117 个·装着一直没用) /<br/>**自研**(CodeMirror·react-markdown·xlsx·canvas 签名板)<br/>⚠ 自研这一档**零新依赖**:先把装着没用的挖干净·是这个项目吃到过三次红利的路子<br/>查 amis-ui 那 120 个组件时逐个跟 antd 对过:88 个是重的·真缺的只有 26 个·<br/>而那 26 个本身也是别人库的封装——**照着那份清单直接接原始库·不抄它的封装**<br/>(理由不是许可证·是主题:amis 每个组件被 themeable() 包着走自己 SCSS 变量体系·<br/>拿一个就得拖 amis-core 整套构建·视觉会分裂成两套)"]:::cap
-  BLOCKGROW["❖ 区块扩容 / 26 → 359 → **407**（generationEnabled 406）<br/>V5.8 时代 23 个·问题是「没得选」;五天后 407 个·问题变成**「选不到」**<br/>手机档 385 个可渲染(PhoneExperienceBlock)<br/>❖ 补的是**交互形态的缺位**不是数量:Cascader/TreeSelect/Transfer 三类<br/>层级选择此前整个没有(一个 buildHierarchy 工厂·带成环检测·环上节点降级为根)"]:::cap
+  BLOCKGROW["❖ 区块扩容 / 26 → 359 → 407 → **350**（末一步是去重·见 ❖10）<br/>V5.8 时代 23 个·问题是「没得选」;五天后 407 个·问题变成**「选不到」**<br/>手机档 385 个可渲染(PhoneExperienceBlock)<br/>❖ 补的是**交互形态的缺位**不是数量:Cascader/TreeSelect/Transfer 三类<br/>层级选择此前整个没有(一个 buildHierarchy 工厂·带成环检测·环上节点降级为根)"]:::cap
   BLOCKDEP["❖ 区块↔基础组件依赖图 / block-component-usage.json（**从 AST 生成·不写手**）<br/>⚠ 曾经是手写声明 `uses:[...]`·**整个删掉了**——316 个区块与实际渲染不符<br/>(84 条声称了没渲染 · 974 条渲染了没声称)。手写声明的问题不是「写错了」·<br/>是**没有任何一处会发现它写错**<br/>现在:scripts/generate-block-component-usage.mjs 走 typescript-symbol-graph·<br/>从 block-registry.tsx 与 PhoneExperienceBlock.tsx 的真实 import 链推<br/>纪律:**要查「这个区块用了什么」·问依赖图·不问声明**"]:::ledger
 end
 
@@ -974,14 +994,14 @@ OWNERSHIP ==> APPWALL
 %% ❖A 供给侧三层：基础组件（燃料）→ 区块（技术燃料）→ 目录（真相源）。
 %%    这条链此前图上只画了 BLOCKCAT 一个点，等于说不清「区块是拿什么搭的」。
 BASECOMP ==>|❖ 218 个基础组件搭出区块| BLOCKGROW
-BLOCKGROW ==>|❖ 407 条进真相源| BLOCKCAT
+BLOCKGROW ==>|❖ 350 条进真相源| BLOCKCAT
 BLOCKGROW -.❖ 真实 import 链走 AST 反推.-> BLOCKDEP
 BLOCKDEP -.❖ 要查「区块用了什么」问这里·不问声明.-> BLOCKCAT
 BASECOMP -.❖ 渲染器实际渲染的就是这些组件.-> SAFEREND
 %% ❖B 窄化夹在目录与起草之间：这是本轮唯一改了主轴形状的结构。
 %%    ⚠ 读图要点：REACH 是**病灶**不是模块——它是一次测量，画上来是因为
 %%    「为什么要窄化」比「窄化怎么实现」更容易被后人改丢。
-BLOCKCAT ==>|❖ 全量 407| NARROWSEL
+BLOCKCAT ==>|❖ 全量 350| NARROWSEL
 REACH -.❖ 病灶:只用到 17/358·无一来自 52 名之后.-> NARROWSEL
 NARROWSEL ==>|"❖ 按题意挑 ~60 条注入(≈7.4K token)"| GEN5
 NARROWSEL -.❖ 置信度低于阈值→退回全量(零覆盖域上窄化是净负面).-> BLOCKCAT

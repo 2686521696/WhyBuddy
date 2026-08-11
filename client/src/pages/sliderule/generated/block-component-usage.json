@@ -234,7 +234,6 @@
       "AdvancedFilterBuilder",
       "AlertGroupAccordion",
       "AlertGroupCommandHeader",
-      "AlertGroupContextSummary",
       "AlertInstanceSummary",
       "AlertMatcherFilter",
       "AlertRoutingPolicy",
@@ -254,7 +253,6 @@
       "ApprovalRoutingWizard",
       "ApprovalStageBoard",
       "ArtifactProvenanceVerifier",
-      "AssetReservationCalendar",
       "AssetReviewLightbox",
       "AssignmentQueuePanel",
       "AssignmentTransfer",
@@ -267,7 +265,6 @@
       "BacklogPrioritizationBoard",
       "BankTransactionReconciliationMatcher",
       "BomAssemblyTreeEditor",
-      "BookingAuditTabs",
       "BookingCapacityMetrics",
       "BookingCommandHeader",
       "BookingConflictDrawer",
@@ -289,7 +286,6 @@
       "BurnupChart",
       "CalendarConnectionStrip",
       "CalendarUtilizationMetrics",
-      "CampaignCalendar",
       "CatalogEntityCommandHeader",
       "CatalogEntityFilterBar",
       "CertificateRotationPlanner",
@@ -309,19 +305,14 @@
       "ConnectionFleetMetrics",
       "ConnectionMappingPanel",
       "ConnectionRouteSummary",
-      "ConnectionSchemaHeader",
       "ConnectionTimeline",
-      "ConnectionWorkspaceTabs",
       "ConnectorMigrationWizard",
-      "ConnectorVersionStrip",
       "ContactPointManager",
       "ContentPipelineBoard",
       "ContextBreadcrumb",
       "ContextHelpDrawer",
       "ConversationAssignmentStrip",
       "ConversationCommandHeader",
-      "ConversationContextSummary",
-      "ConversationDetailTabs",
       "ConversationInboxFilter",
       "ConversationReplyBar",
       "ConversationSlaMetrics",
@@ -330,7 +321,6 @@
       "CumulativeFlowChart",
       "CvssVectorCalculator",
       "CycleCommandHeader",
-      "CycleContextSummary",
       "CycleFilterBar",
       "CycleHealthMetrics",
       "CycleLifecycleBar",
@@ -338,7 +328,6 @@
       "DashboardCommandHeader",
       "DashboardGridComposer",
       "DashboardParameterBar",
-      "DashboardQueryContext",
       "DashboardSaveBar",
       "DataExportPanel",
       "DataFreshnessIndicator",
@@ -346,18 +335,14 @@
       "DataLineagePanel",
       "DataQualityRepairWizard",
       "DataRetentionWizard",
-      "DatasetEditorTabs",
       "DatasetJoinBuilder",
       "DatasourceHealthStrip",
       "DatasourceQueryMetrics",
       "DeadlineAgenda",
       "DeletedRecordsRecovery",
-      "DeliverySlotCalendar",
       "DependencyGraphPanel",
       "DependencyKanban",
       "DeploymentCommandHeader",
-      "DeploymentContextSummary",
-      "DeploymentDetailTabs",
       "DeploymentLatencyChart",
       "DeploymentRolloutMetrics",
       "DeploymentRolloutTrack",
@@ -367,28 +352,21 @@
       "DistributedTraceWaterfall",
       "DistributionHistogram",
       "DocumentCommandHeader",
-      "DocumentContextSummary",
-      "DocumentHistoryTabs",
       "DocumentInsightMetrics",
       "DocumentOutlinePanel",
       "DocumentShareBar",
       "DraftPublishBar",
       "DuplicateResolutionPanel",
-      "EditorialCalendar",
       "EntityOwnershipSummary",
       "EnvironmentStatusStrip",
       "ErrorBudgetGauge",
       "EscalationPolicyPanel",
       "EventBreadcrumbTimeline",
       "EventRsvpPanel",
-      "EventTypeEditorTabs",
       "EventTypePublishBar",
       "EventUserCountMetrics",
       "EvidenceCollectionWorkspace",
-      "ExamScheduleCalendar",
       "ExperimentTrafficAllocator",
-      "ExploreInspectorTabs",
-      "ExploreQueryContext",
       "ExploreQueryControlBar",
       "ExportJobDrawer",
       "ExpressionDataMapper",
@@ -417,32 +395,24 @@
       "ImageCropTransformStudio",
       "ImportMappingWizard",
       "ImportValidationPanel",
-      "IncidentEvidenceTabs",
       "IncidentOwnershipStrip",
-      "IncidentResolutionWizard",
       "IncidentResponseBoard",
       "InspectorModeTabs",
-      "IntegrationSetupWizard",
-      "InterviewScheduleCalendar",
       "InventoryLocationLevelTuner",
       "IssueCommandHeader",
       "IssueEventFilter",
       "IssueImpactMetrics",
-      "IssueInvestigationTabs",
       "JobRunHistoryPanel",
       "JobRunMetrics",
       "KanbanBoard",
       "KeyboardCommandPalette",
       "KnowledgeBacklinkPanel",
       "KubernetesResourceFilter",
-      "LeaveCalendar",
       "LiveChangeReview",
       "LiveLogTailer",
       "LiveRefreshControl",
       "LocalizationSetupWizard",
-      "LogLabelFilter",
       "LogPatternClusterExplorer",
-      "MaintenanceWindowCalendar",
       "MediaTrimTimeline",
       "MemberAssignment",
       "MentionComposer",
@@ -450,8 +420,6 @@
       "MetadataQualityMetrics",
       "MetricComparisonPanel",
       "MetricGrid",
-      "MigrationReadinessWizard",
-      "MilestoneTimelineCalendar",
       "MuteTimingSchedule",
       "NotificationCenterDrawer",
       "NotificationInbox",
@@ -471,18 +439,15 @@
       "PermissionMatrixPanel",
       "PermissionSummaryPanel",
       "PivotShelfComposer",
-      "PolicyConfigurationWizard",
       "PolicyDecisionSimulator",
       "PortfolioKanban",
       "PresenceRosterPanel",
-      "ProductionScheduleCalendar",
       "ProductVariantMatrixBuilder",
       "QueryClauseFilterBar",
       "QueryDataSourceSummary",
       "QueryErrorDrawer",
       "QueryExecutionMetrics",
       "QueryExecutionPlanInspector",
-      "QueryModeTabs",
       "QueryNotebookComposer",
       "QueryResultPivot",
       "QueryRunStatusStrip",
@@ -492,7 +457,6 @@
       "RadarComparison",
       "ReactionSummary",
       "RealmCommandHeader",
-      "RealmSecurityContext",
       "RealmStatusStrip",
       "RecentItemsPanel",
       "RecordChangePreview",
@@ -506,10 +470,6 @@
       "RelatedEntityPanel",
       "ReleaseAdoptionMetrics",
       "ReleaseAdoptionTrendChart",
-      "ReleaseCalendar",
-      "ReleaseContextSummary",
-      "ReleaseDetailTabs",
-      "ReleaseEnvironmentFilter",
       "ReleaseEnvironmentStrip",
       "ReleaseHealthStrip",
       "ReleaseRolloutBar",
@@ -522,7 +482,6 @@
       "RetryQueuePanel",
       "RevisionHistoryPanel",
       "RoleAssignmentWizard",
-      "RoomBookingCalendar",
       "RouteStopSequencer",
       "RuleEvaluationMetrics",
       "RunningJobControlBar",
@@ -538,22 +497,15 @@
       "SchemaChangeReview",
       "SchemaConflictDrawer",
       "SchemaMappingPanel",
-      "SchemaRefreshBar",
       "SelectionInspector",
-      "ServiceDispatchCalendar",
       "ServiceMapPanel",
-      "ServiceOwnershipContext",
       "SessionReplayScrubber",
-      "ShiftRosterCalendar",
       "SignatureFieldCanvas",
       "SlaBreachClock",
       "SprintPlanningBoard",
       "StackTracePanel",
-      "StreamDetailTabs",
       "StreamFreshnessMetrics",
-      "StreamNamespaceFilter",
       "StreamReplicationConfigurator",
-      "StreamSelectionSummary",
       "StreamStatusMonitor",
       "SurveyBuilderWizard",
       "SuspectCommitPanel",
@@ -562,13 +514,11 @@
       "SyncReliabilityMetrics",
       "SyncScheduleStrip",
       "SyncVolumeTrendChart",
-      "TeamAvailabilityCalendar",
       "ThreadResolutionBar",
       "ThreeWayMergeResolver",
       "TimelineFilterBar",
       "TimeSeriesAnomalyChart",
       "TimezoneOverlapPanel",
-      "TrainingCalendar",
       "TreemapBreakdown",
       "TreeNavigator",
       "TriageQueueBoard",
@@ -577,9 +527,6 @@
       "UserAccessBar",
       "UserCommandHeader",
       "UserDirectoryFilter",
-      "UserEventFilter",
-      "UserIdentitySummary",
-      "UserSecurityTabs",
       "UserSessionMetrics",
       "ValidatedFormTabs",
       "ValidationIssuePanel",
@@ -594,17 +541,13 @@
       "WipLimitBoard",
       "WizardNavigationBar",
       "WorkflowCommandHeader",
-      "WorkflowContextSummary",
       "WorkflowControlBar",
       "WorkflowDurationChart",
-      "WorkflowExecutionFilter",
-      "WorkflowExecutionTabs",
       "WorkflowFailureDrawer",
       "WorkflowNodeDebugger",
       "WorkflowOutcomeMetrics",
       "WorkflowTimeline",
       "WorkflowVersionStrip",
-      "WorkItemActivityTabs",
       "WorkItemCommandHeader",
       "WorkItemContextSummary",
       "WorkItemDetailTabs",
@@ -747,21 +690,6 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Grid"
-      ]
-    },
-    "AlertGroupContextSummary": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
       ]
     },
     "AlertInstanceSummary": {
@@ -1140,27 +1068,6 @@
         "M.Space"
       ]
     },
-    "AssetReservationCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
-      ]
-    },
     "AssetReviewLightbox": {
       "desktop": [
         "Button",
@@ -1421,20 +1328,6 @@
         "M.List",
         "M.Space",
         "M.Stepper"
-      ]
-    },
-    "BookingAuditTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
       ]
     },
     "BookingCapacityMetrics": {
@@ -1803,27 +1696,6 @@
         "M.ErrorBlock",
         "M.Grid",
         "M.ProgressBar"
-      ]
-    },
-    "CampaignCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
       ]
     },
     "CardGridList": {
@@ -2233,23 +2105,6 @@
         "M.Grid"
       ]
     },
-    "ConnectionSchemaHeader": {
-      "desktop": [
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Space",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid"
-      ]
-    },
     "ConnectionTimeline": {
       "desktop": [
         "Button",
@@ -2268,20 +2123,6 @@
         "M.ErrorBlock",
         "M.List",
         "M.Segmented"
-      ]
-    },
-    "ConnectionWorkspaceTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
       ]
     },
     "ConnectorMigrationWizard": {
@@ -2313,21 +2154,6 @@
         "M.Steps",
         "M.Tag",
         "M.TextArea"
-      ]
-    },
-    "ConnectorVersionStrip": {
-      "desktop": [
-        "Badge",
-        "Button",
-        "Card",
-        "Empty",
-        "Flex"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
       ]
     },
     "ContactPointManager": {
@@ -2453,35 +2279,6 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Grid"
-      ]
-    },
-    "ConversationContextSummary": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
-      ]
-    },
-    "ConversationDetailTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
       ]
     },
     "ConversationInboxFilter": {
@@ -2632,21 +2429,6 @@
         "M.Space"
       ]
     },
-    "CycleContextSummary": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
-      ]
-    },
     "CycleFilterBar": {
       "desktop": [
         "Button",
@@ -2757,21 +2539,6 @@
         "M.ErrorBlock",
         "M.Input",
         "M.Space"
-      ]
-    },
-    "DashboardQueryContext": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
       ]
     },
     "DashboardSaveBar": {
@@ -2928,20 +2695,6 @@
         "M.TextArea"
       ]
     },
-    "DatasetEditorTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
-      ]
-    },
     "DatasetJoinBuilder": {
       "desktop": [
         "Alert",
@@ -3040,27 +2793,6 @@
         "M.Space"
       ]
     },
-    "DeliverySlotCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
-      ]
-    },
     "DependencyGraphPanel": {
       "desktop": [
         "Card",
@@ -3121,35 +2853,6 @@
         "M.ErrorBlock",
         "M.Grid",
         "M.Popup"
-      ]
-    },
-    "DeploymentContextSummary": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
-      ]
-    },
-    "DeploymentDetailTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
       ]
     },
     "DeploymentLatencyChart": {
@@ -3313,35 +3016,6 @@
         "M.Grid"
       ]
     },
-    "DocumentContextSummary": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
-      ]
-    },
-    "DocumentHistoryTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
-      ]
-    },
     "DocumentInsightMetrics": {
       "desktop": [
         "Card",
@@ -3418,27 +3092,6 @@
         "Empty"
       ],
       "phone": []
-    },
-    "EditorialCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
-      ]
     },
     "EntityOwnershipSummary": {
       "desktop": [
@@ -3525,20 +3178,6 @@
         "M.List"
       ]
     },
-    "EventTypeEditorTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
-      ]
-    },
     "EventTypePublishBar": {
       "desktop": [
         "Button",
@@ -3592,27 +3231,6 @@
         "M.Tag"
       ]
     },
-    "ExamScheduleCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
-      ]
-    },
     "ExperimentTrafficAllocator": {
       "desktop": [
         "Button",
@@ -3633,35 +3251,6 @@
         "M.Slider",
         "M.Space",
         "M.Tag"
-      ]
-    },
-    "ExploreInspectorTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
-      ]
-    },
-    "ExploreQueryContext": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
       ]
     },
     "ExploreQueryControlBar": {
@@ -4199,20 +3788,6 @@
         "M.Space"
       ]
     },
-    "IncidentEvidenceTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
-      ]
-    },
     "IncidentOwnershipStrip": {
       "desktop": [
         "Avatar",
@@ -4228,25 +3803,6 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Grid"
-      ]
-    },
-    "IncidentResolutionWizard": {
-      "desktop": [
-        "Alert",
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Steps",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List",
-        "M.Steps",
-        "M.Tag"
       ]
     },
     "IncidentResponseBoard": {
@@ -4290,54 +3846,6 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Tabs"
-      ]
-    },
-    "IntegrationSetupWizard": {
-      "desktop": [
-        "Alert",
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Popconfirm",
-        "Progress",
-        "Select",
-        "Steps",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.Dialog",
-        "M.ErrorBlock",
-        "M.List",
-        "M.ProgressBar",
-        "M.Selector",
-        "M.Space",
-        "M.Steps",
-        "M.Tag"
-      ]
-    },
-    "InterviewScheduleCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
       ]
     },
     "InventoryLocationLevelTuner": {
@@ -4412,20 +3920,6 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Grid"
-      ]
-    },
-    "IssueInvestigationTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
       ]
     },
     "JobRunHistoryPanel": {
@@ -4526,27 +4020,6 @@
         "M.Selector"
       ]
     },
-    "LeaveCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
-      ]
-    },
     "LiveChangeReview": {
       "desktop": [
         "Alert",
@@ -4633,21 +4106,6 @@
         "M.TextArea"
       ]
     },
-    "LogLabelFilter": {
-      "desktop": [
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Select"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Selector"
-      ]
-    },
     "LogPatternClusterExplorer": {
       "desktop": [
         "Alert",
@@ -4668,27 +4126,6 @@
         "M.List",
         "M.Space",
         "M.Tabs",
-        "M.Tag"
-      ]
-    },
-    "MaintenanceWindowCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
         "M.Tag"
       ]
     },
@@ -4811,46 +4248,6 @@
         "M.Card",
         "M.ErrorBlock",
         "M.List"
-      ]
-    },
-    "MigrationReadinessWizard": {
-      "desktop": [
-        "Alert",
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Steps",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List",
-        "M.Steps",
-        "M.Tag"
-      ]
-    },
-    "MilestoneTimelineCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
       ]
     },
     "MuteTimingSchedule": {
@@ -5239,33 +4636,6 @@
         "M.Tag"
       ]
     },
-    "PolicyConfigurationWizard": {
-      "desktop": [
-        "Alert",
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Popconfirm",
-        "Progress",
-        "Select",
-        "Steps",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.Dialog",
-        "M.ErrorBlock",
-        "M.List",
-        "M.ProgressBar",
-        "M.Selector",
-        "M.Space",
-        "M.Steps",
-        "M.Tag"
-      ]
-    },
     "PolicyDecisionSimulator": {
       "desktop": [
         "Button",
@@ -5329,27 +4699,6 @@
         "M.Avatar",
         "M.Badge",
         "M.Space"
-      ]
-    },
-    "ProductionScheduleCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
       ]
     },
     "ProductVariantMatrixBuilder": {
@@ -5470,20 +4819,6 @@
         "M.Space",
         "M.Tabs",
         "M.Tag"
-      ]
-    },
-    "QueryModeTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
       ]
     },
     "QueryNotebookComposer": {
@@ -5641,21 +4976,6 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Grid"
-      ]
-    },
-    "RealmSecurityContext": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
       ]
     },
     "RealmStatusStrip": {
@@ -5985,71 +5305,6 @@
         "M.ErrorBlock"
       ]
     },
-    "ReleaseCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
-      ]
-    },
-    "ReleaseContextSummary": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
-      ]
-    },
-    "ReleaseDetailTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
-      ]
-    },
-    "ReleaseEnvironmentFilter": {
-      "desktop": [
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Select"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Selector"
-      ]
-    },
     "ReleaseEnvironmentStrip": {
       "desktop": [
         "Badge",
@@ -6308,27 +5563,6 @@
         "M.Steps",
         "M.Tag",
         "M.TextArea"
-      ]
-    },
-    "RoomBookingCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
       ]
     },
     "RouteStopSequencer": {
@@ -6593,22 +5827,6 @@
         "M.Tag"
       ]
     },
-    "SchemaRefreshBar": {
-      "desktop": [
-        "Badge",
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Space"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid"
-      ]
-    },
     "SearchBox": {
       "desktop": [
         "Card",
@@ -6667,27 +5885,6 @@
         "M.SearchBar"
       ]
     },
-    "ServiceDispatchCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
-      ]
-    },
     "ServiceMapPanel": {
       "desktop": [
         "Card",
@@ -6697,21 +5894,6 @@
       ],
       "phone": [
         "ECharts",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
-      ]
-    },
-    "ServiceOwnershipContext": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
         "M.Card",
         "M.ErrorBlock",
         "M.List"
@@ -6737,27 +5919,6 @@
         "M.Selector",
         "M.Slider",
         "M.Space",
-        "M.Tag"
-      ]
-    },
-    "ShiftRosterCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
         "M.Tag"
       ]
     },
@@ -6888,20 +6049,6 @@
       ],
       "phone": []
     },
-    "StreamDetailTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
-      ]
-    },
     "StreamFreshnessMetrics": {
       "desktop": [
         "Card",
@@ -6913,21 +6060,6 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Grid"
-      ]
-    },
-    "StreamNamespaceFilter": {
-      "desktop": [
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Select"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Selector"
       ]
     },
     "StreamReplicationConfigurator": {
@@ -6954,21 +6086,6 @@
         "M.Space",
         "M.Switch",
         "M.Tag"
-      ]
-    },
-    "StreamSelectionSummary": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
       ]
     },
     "StreamStatusMonitor": {
@@ -7127,27 +6244,6 @@
       ],
       "phone": []
     },
-    "TeamAvailabilityCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
-        "M.List",
-        "M.Tag"
-      ]
-    },
     "ThreadResolutionBar": {
       "desktop": [
         "Alert",
@@ -7228,27 +6324,6 @@
       "phone": [
         "M.Card",
         "M.ErrorBlock",
-        "M.List",
-        "M.Tag"
-      ]
-    },
-    "TrainingCalendar": {
-      "desktop": [
-        "Button",
-        "Calendar",
-        "Card",
-        "Empty",
-        "Flex",
-        "List",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Button",
-        "M.CalendarPicker",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Grid",
         "M.List",
         "M.Tag"
       ]
@@ -7398,50 +6473,6 @@
         "M.Card",
         "M.SearchBar",
         "M.Segmented"
-      ]
-    },
-    "UserEventFilter": {
-      "desktop": [
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Select"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Selector"
-      ]
-    },
-    "UserIdentitySummary": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
-      ]
-    },
-    "UserSecurityTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
       ]
     },
     "UserSessionMetrics": {
@@ -7697,21 +6728,6 @@
         "M.Grid"
       ]
     },
-    "WorkflowContextSummary": {
-      "desktop": [
-        "Card",
-        "Empty",
-        "Image",
-        "ProDescriptions",
-        "Tag",
-        "Typography"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.List"
-      ]
-    },
     "WorkflowControlBar": {
       "desktop": [
         "Badge",
@@ -7741,35 +6757,6 @@
         "ECharts",
         "M.Card",
         "M.ErrorBlock"
-      ]
-    },
-    "WorkflowExecutionFilter": {
-      "desktop": [
-        "Button",
-        "Card",
-        "Empty",
-        "Flex",
-        "Select"
-      ],
-      "phone": [
-        "M.Button",
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Selector"
-      ]
-    },
-    "WorkflowExecutionTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
       ]
     },
     "WorkflowFailureDrawer": {
@@ -7843,20 +6830,6 @@
         "M.Card",
         "M.ErrorBlock",
         "M.List"
-      ]
-    },
-    "WorkItemActivityTabs": {
-      "desktop": [
-        "Badge",
-        "Card",
-        "Empty",
-        "Space",
-        "Tabs"
-      ],
-      "phone": [
-        "M.Card",
-        "M.ErrorBlock",
-        "M.Tabs"
       ]
     },
     "WorkItemCommandHeader": {

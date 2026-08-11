@@ -886,6 +886,13 @@ def experience_block_prompt_block(
         # 原文写"32 个 filter 区块有 31 个只发 filterChange（HierarchicalCategoryPicker
         # 多发一个 itemSelect）"。真数是 **28/32**，例外有四个不是一个：
         #
+        # ── 2026-08-11 再更新：去重之后是 **23/27** ──
+        # facetFilterRenderer 那一族 6 个（KubernetesResourceFilter / LogLabelFilter /
+        # ReleaseEnvironmentFilter / UserEventFilter / StreamNamespaceFilter /
+        # WorkflowExecutionFilter）是同一个工厂、参数只有 testid 和一句中文标题，
+        # 已删到只剩 1 个。**例外那四个一个没变**——被删的全是"只发 filterChange"
+        # 那一档，所以整族判据不受影响。
+        #
         #     SavedViewTabs               filterChange + submitRequest
         #     SavedSearchPanel            filterChange + submitRequest
         #     HierarchicalCategoryPicker  filterChange + itemSelect
@@ -956,7 +963,7 @@ def experience_block_prompt_block(
             # 只丢一张禁用表，模型下次照样按语义直觉去猜"这页是不是该有个筛选条"。
             #
             # 筛选那批现在是整族，逐个给理由会把这段撑爆（窄化开着时是几个、
-            # 关着时是 32 个）。所以措辞改成"三个点名 + 筛选整族一句"，
+            # 关着时是 27 个；2026-08-11 去重前是 32 个）。所以措辞改成"三个点名 + 筛选整族一句"，
             # **理由一句都不省**——省掉理由这件事本仓库已经付过学费。
             #
             # 理由句必须**跟着名单走**：目录窄化开着时这一批常常只剩筛选类

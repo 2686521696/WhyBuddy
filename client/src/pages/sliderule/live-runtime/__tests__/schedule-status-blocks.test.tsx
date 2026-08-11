@@ -2,11 +2,12 @@ import React from "react";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  AppointmentWaitlistPanelRenderer, AssetReservationCalendarRenderer, AvailabilityOverridePanelRenderer,
-  DeliverySlotCalendarRenderer, ExamScheduleCalendarRenderer, InterviewScheduleCalendarRenderer,
-  LeaveCalendarRenderer, MilestoneTimelineCalendarRenderer, OnCallScheduleCalendarRenderer,
-  ProductionScheduleCalendarRenderer, RescheduleRequestDrawerRenderer, RoomBookingCalendarRenderer,
-  SchedulePublishBarRenderer, ServiceDispatchCalendarRenderer, TimezoneOverlapPanelRenderer, TrainingCalendarRenderer,
+  AppointmentWaitlistPanelRenderer,
+  AvailabilityOverridePanelRenderer,
+  OnCallScheduleCalendarRenderer,
+  RescheduleRequestDrawerRenderer,
+  SchedulePublishBarRenderer,
+  TimezoneOverlapPanelRenderer,
 } from "../schedule-status-blocks";
 import { renderScheduleStatusPhoneBlock } from "../phone-mobile/PhoneScheduleStatusBlocks";
 
@@ -18,17 +19,7 @@ function PhoneProbe({value}:{value:any}) { return <>{renderScheduleStatusPhoneBl
 
 describe("schedule status best-practice blocks",()=>{
   const cases:Array<[string,React.ComponentType<any>,Record<string,unknown>,string]> = [
-    ["ServiceDispatchCalendar",ServiceDispatchCalendarRenderer,calendar("memberFieldRef","locationFieldRef"),"service-dispatch-calendar"],
-    ["InterviewScheduleCalendar",InterviewScheduleCalendarRenderer,calendar("memberFieldRef","participantFieldRef"),"interview-schedule-calendar"],
-    ["ExamScheduleCalendar",ExamScheduleCalendarRenderer,calendar("resourceFieldRef"),"exam-schedule-calendar"],
-    ["TrainingCalendar",TrainingCalendarRenderer,calendar("memberFieldRef"),"training-calendar"],
-    ["LeaveCalendar",LeaveCalendarRenderer,calendar("memberFieldRef","typeFieldRef"),"leave-calendar"],
-    ["AssetReservationCalendar",AssetReservationCalendarRenderer,calendar("resourceFieldRef"),"asset-reservation-calendar"],
-    ["RoomBookingCalendar",RoomBookingCalendarRenderer,calendar("resourceFieldRef"),"room-booking-calendar"],
-    ["DeliverySlotCalendar",DeliverySlotCalendarRenderer,calendar("resourceFieldRef"),"delivery-slot-calendar"],
     ["OnCallScheduleCalendar",OnCallScheduleCalendarRenderer,calendar("memberFieldRef","typeFieldRef"),"on-call-schedule-calendar"],
-    ["ProductionScheduleCalendar",ProductionScheduleCalendarRenderer,calendar("resourceFieldRef"),"production-schedule-calendar"],
-    ["MilestoneTimelineCalendar",MilestoneTimelineCalendarRenderer,calendar("memberFieldRef"),"milestone-timeline-calendar"],
     ["AppointmentWaitlistPanel",AppointmentWaitlistPanelRenderer,{entityRef:"jobs",titleFieldRef:"title",memberFieldRef:"member",positionFieldRef:"position",statusFieldRef:"status",targets:["booking"]},"appointment-waitlist-panel"],
     ["AvailabilityOverridePanel",AvailabilityOverridePanelRenderer,{entityRef:"jobs",dateFieldRef:"date",startTimeFieldRef:"startTime",endTimeFieldRef:"endTime",enabledFieldRef:"enabled",timezoneFieldRef:"timezone",targets:["schedule"]},"availability-override-panel"],
     ["TimezoneOverlapPanel",TimezoneOverlapPanelRenderer,{entityRef:"jobs",memberFieldRef:"member",timezoneFieldRef:"timezone",startTimeFieldRef:"startTime",endTimeFieldRef:"endTime"},"timezone-overlap-panel"],

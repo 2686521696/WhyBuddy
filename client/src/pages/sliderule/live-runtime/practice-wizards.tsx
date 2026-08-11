@@ -65,5 +65,3 @@ function createWizard(policy: WizardPolicy): ExperienceBlockRenderer {
 
 export const OnboardingChecklistWizardRenderer = createWizard({ title: "入职检查向导", testid: "onboarding-checklist-wizard", confirm: "确认所有入职准备均已核对？" });
 export const ImportMappingWizardRenderer = createWizard({ title: "导入映射向导", testid: "import-mapping-wizard", confirm: "确认字段映射并开始导入？", mapping: true });
-export const IntegrationSetupWizardRenderer = createWizard({ title: "集成设置向导", testid: "integration-setup-wizard", confirm: "确认连接配置并开始验证？" });
-export const PolicyConfigurationWizardRenderer = createWizard({ title: "策略配置向导", testid: "policy-configuration-wizard", confirm: "确认策略配置并提交生效？" });

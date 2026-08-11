@@ -79,12 +79,6 @@ function CalendarBlock(props: ExperienceBlockRendererProps, config: CalendarConf
 }
 
 export const ResourceBookingCalendarRenderer: ExperienceBlockRenderer = props => CalendarBlock(props, { testid: "resource-booking-calendar", fallback: "资源预约日历", secondary: "resourceFieldRef", creatable: true });
-export const TeamAvailabilityCalendarRenderer: ExperienceBlockRenderer = props => CalendarBlock(props, { testid: "team-availability-calendar", fallback: "团队可用日历", secondary: "memberFieldRef" });
-export const ShiftRosterCalendarRenderer: ExperienceBlockRenderer = props => CalendarBlock(props, { testid: "shift-roster-calendar", fallback: "班次排班日历", secondary: "memberFieldRef", editable: true });
-export const MaintenanceWindowCalendarRenderer: ExperienceBlockRenderer = props => CalendarBlock(props, { testid: "maintenance-window-calendar", fallback: "维护窗口日历", secondary: "resourceFieldRef", editable: true });
-export const CampaignCalendarRenderer: ExperienceBlockRenderer = props => CalendarBlock(props, { testid: "campaign-calendar", fallback: "活动排期日历", secondary: "resourceFieldRef", creatable: true });
-export const EditorialCalendarRenderer: ExperienceBlockRenderer = props => CalendarBlock(props, { testid: "editorial-calendar", fallback: "内容编辑日历", secondary: "memberFieldRef", editable: true });
-export const ReleaseCalendarRenderer: ExperienceBlockRenderer = props => CalendarBlock(props, { testid: "release-calendar", fallback: "发布日历", secondary: "resourceFieldRef", editable: true });
 
 export const DeadlineAgendaRenderer: ExperienceBlockRenderer = props => {
   const data = bound(props), titleRef = field(props, "titleFieldRef"), dueRef = field(props, "dueFieldRef"), statusRef = field(props, "statusFieldRef"), memberRef = field(props, "memberFieldRef");
@@ -130,5 +124,3 @@ function WizardBlock(props: ExperienceBlockRendererProps, testid: string, fallba
 }
 
 export const DeploymentWizardRenderer: ExperienceBlockRenderer = props => WizardBlock(props, "deployment-wizard", "部署向导", "startDeployment");
-export const MigrationReadinessWizardRenderer: ExperienceBlockRenderer = props => WizardBlock(props, "migration-readiness-wizard", "迁移就绪向导", "confirmMigrationReadiness");
-export const IncidentResolutionWizardRenderer: ExperienceBlockRenderer = props => WizardBlock(props, "incident-resolution-wizard", "事件解决向导", "resolveIncident");

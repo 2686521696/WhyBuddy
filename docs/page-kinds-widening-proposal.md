@@ -129,7 +129,8 @@ is a report, not a workbench — the user opens it to act*）。
 修法取"机械判据"而不是"让 `monitor_ok` 读 `pageKinds`"：后者会把总览页可选清单从
 355 收到约 171，是真的行为变更，得上度量台跑一轮再定。前者只撤死控件，风险低，
 理由是已实测的机制——`capability == "filter"` 一律禁（原来只禁 `FilterBar` 一个
-名字，而目录里 32 个 filter 区块有 **28** 个只发 `filterChange`）。
+名字，而目录里 32 个 filter 区块有 **28** 个只发 `filterChange`；2026-08-11 去重后是 **23/27**，
+删掉的全是「同工厂只换文案」的那一档，例外那四个一个没变）。
 
 > **更正与后续（2026-08-11 复核）**
 >

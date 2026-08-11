@@ -2351,14 +2351,8 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   WorkItemContextSummary: {
     block: { id: "demo-WorkItemContextSummary", type: "WorkItemContextSummary", props: { surface: "plain" }, binding: { entityRef: "workItem", titleFieldRef: "workTitle", fieldRefs: ["workProject", "workCycle", "workDue", "workLabels"] } }, extra: { focus: { workItem: "work-1" } },
   },
-  DocumentContextSummary: {
-    block: { id: "demo-DocumentContextSummary", type: "DocumentContextSummary", props: { surface: "plain" }, binding: { entityRef: "document", titleFieldRef: "documentTitle", fieldRefs: ["documentCollection", "documentOwner", "documentVisibility", "documentUpdated"] } }, extra: { focus: { document: "doc-1" } },
-  },
   WorkItemDetailTabs: {
     block: { id: "demo-WorkItemDetailTabs", type: "WorkItemDetailTabs", props: { surface: "plain" }, binding: { entityRef: "workItemTab", titleFieldRef: "workTabTitle", keyFieldRef: "workTabKey", countFieldRef: "workTabCount", enabledFieldRef: "workTabEnabled", targets: ["work-item-detail"] } }, extra: {},
-  },
-  QueryModeTabs: {
-    block: { id: "demo-QueryModeTabs", type: "QueryModeTabs", props: { surface: "plain" }, binding: { entityRef: "queryMode", titleFieldRef: "queryModeTitle", keyFieldRef: "queryModeKey", countFieldRef: "queryModeCount", enabledFieldRef: "queryModeEnabled", targets: ["query-content"] } }, extra: {},
   },
   WorkItemFilterBar: {
     block: { id: "demo-WorkItemFilterBar", type: "WorkItemFilterBar", props: { title: "工作项筛选" }, binding: { entityRef: "workFilterOption", typeFieldRef: "workFilterType", keyFieldRef: "workFilterKey", titleFieldRef: "workFilterTitle", targets: ["work-item-list"] } }, extra: {},
@@ -2396,12 +2390,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   QueryDataSourceSummary: {
     block: { id: "demo-QueryDataSourceSummary", type: "QueryDataSourceSummary", props: { surface: "plain", title: "数据来源" }, binding: { entityRef: "querySource", databaseFieldRef: "sourceDatabase", schemaFieldRef: "sourceSchema", sourceFieldRef: "sourceName", typeFieldRef: "sourceType" } }, extra: {},
   },
-  DatasetEditorTabs: {
-    block: { id: "demo-DatasetEditorTabs", type: "DatasetEditorTabs", props: { surface: "plain" }, binding: { entityRef: "datasetEditorTab", titleFieldRef: "datasetTabTitle", keyFieldRef: "datasetTabKey", countFieldRef: "datasetTabCount", enabledFieldRef: "datasetTabEnabled", targets: ["dataset-editor"] } }, extra: {},
-  },
-  DocumentHistoryTabs: {
-    block: { id: "demo-DocumentHistoryTabs", type: "DocumentHistoryTabs", props: { surface: "plain" }, binding: { entityRef: "documentHistoryTab", titleFieldRef: "historyTabTitle", keyFieldRef: "historyTabKey", countFieldRef: "historyTabCount", enabledFieldRef: "historyTabEnabled", targets: ["document-history"] } }, extra: {},
-  },
   CatalogEntityFilterBar: {
     block: { id: "demo-CatalogEntityFilterBar", type: "CatalogEntityFilterBar", props: { title: "目录筛选" }, binding: { entityRef: "catalogFilterOption", facetFieldRef: "catalogFacet", keyFieldRef: "catalogFilterKey", titleFieldRef: "catalogFilterTitle", targets: ["catalog-list"] } }, extra: {},
   },
@@ -2431,18 +2419,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   },
   SyncScheduleStrip: {
     block: { id: "demo-SyncScheduleStrip", type: "SyncScheduleStrip", props: { surface: "plain" }, binding: { entityRef: "syncSchedule", frequencyFieldRef: "syncFrequency", nextRunFieldRef: "syncNextRun", timezoneFieldRef: "syncTimezone", statusFieldRef: "syncScheduleStatus", targets: ["connection-settings"] } }, extra: {},
-  },
-  CycleContextSummary: {
-    block: { id: "demo-CycleContextSummary", type: "CycleContextSummary", props: { surface: "plain" }, binding: { entityRef: "cycleManagement", titleFieldRef: "cycleTitle", fieldRefs: ["cycleOwner", "cycleMembers", "cycleDateRange", "cycleProgress"] } }, extra: { focus: { cycleManagement: "cycle-manage-1" } },
-  },
-  AlertGroupContextSummary: {
-    block: { id: "demo-AlertGroupContextSummary", type: "AlertGroupContextSummary", props: { surface: "plain" }, binding: { entityRef: "alertGroup", titleFieldRef: "alertGroupTitle", fieldRefs: ["alertGroupNamespace", "alertGroupRules", "alertGroupFiring", "alertGroupDatasource"] } }, extra: { focus: { alertGroup: "alert-group-1" } },
-  },
-  EventTypeEditorTabs: {
-    block: { id: "demo-EventTypeEditorTabs", type: "EventTypeEditorTabs", props: { surface: "plain" }, binding: { entityRef: "eventTypeTab", titleFieldRef: "eventTabTitle", keyFieldRef: "eventTabKey", countFieldRef: "eventTabCount", enabledFieldRef: "eventTabEnabled", targets: ["event-type-editor"] } }, extra: {},
-  },
-  IncidentEvidenceTabs: {
-    block: { id: "demo-IncidentEvidenceTabs", type: "IncidentEvidenceTabs", props: { surface: "plain" }, binding: { entityRef: "incidentEvidenceTab", titleFieldRef: "evidenceTabTitle", keyFieldRef: "evidenceTabKey", countFieldRef: "evidenceTabCount", enabledFieldRef: "evidenceTabEnabled", targets: ["issue-evidence"] } }, extra: {},
   },
   CycleFilterBar: {
     block: { id: "demo-CycleFilterBar", type: "CycleFilterBar", props: { title: "周期筛选" }, binding: { entityRef: "cycleFilterOption", typeFieldRef: "cycleFilterType", keyFieldRef: "cycleFilterKey", titleFieldRef: "cycleFilterTitle", targets: ["cycle-list"] } }, extra: {},
@@ -2474,18 +2450,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   RealmStatusStrip: {
     block: { id: "demo-RealmStatusStrip", type: "RealmStatusStrip", props: { surface: "plain" }, binding: { entityRef: "realmStatus", nameFieldRef: "realmName", enabledFieldRef: "realmEnabled", bruteForceFieldRef: "bruteForceProtection", sslFieldRef: "sslRequired", targets: ["realm-settings"] } }, extra: {},
   },
-  ConversationContextSummary: {
-    block: { id: "demo-ConversationContextSummary", type: "ConversationContextSummary", props: { surface: "plain" }, binding: { entityRef: "supportConversation", titleFieldRef: "contactName", fieldRefs: ["inboxName", "conversationChannel", "contactPhone", "conversationSla"] } }, extra: { focus: { supportConversation: "conv-1842" } },
-  },
-  UserIdentitySummary: {
-    block: { id: "demo-UserIdentitySummary", type: "UserIdentitySummary", props: { surface: "plain" }, binding: { entityRef: "identityUser", titleFieldRef: "identityUsername", fieldRefs: ["identityEmail", "identityProvider", "identityCreated", "emailVerified", "requiredActions"] } }, extra: { focus: { identityUser: "user-1" } },
-  },
-  ConversationDetailTabs: {
-    block: { id: "demo-ConversationDetailTabs", type: "ConversationDetailTabs", props: { surface: "plain" }, binding: { entityRef: "conversationTab", titleFieldRef: "conversationTabTitle", keyFieldRef: "conversationTabKey", countFieldRef: "conversationTabCount", enabledFieldRef: "conversationTabEnabled", targets: ["conversation-detail"] } }, extra: {},
-  },
-  UserSecurityTabs: {
-    block: { id: "demo-UserSecurityTabs", type: "UserSecurityTabs", props: { surface: "plain" }, binding: { entityRef: "userSecurityTab", titleFieldRef: "securityTabTitle", keyFieldRef: "securityTabKey", countFieldRef: "securityTabCount", enabledFieldRef: "securityTabEnabled", targets: ["user-detail"] } }, extra: {},
-  },
   ConversationInboxFilter: {
     block: { id: "demo-ConversationInboxFilter", type: "ConversationInboxFilter", props: { title: "会话筛选" }, binding: { entityRef: "conversationFilterOption", typeFieldRef: "conversationFilterType", keyFieldRef: "conversationFilterKey", titleFieldRef: "conversationFilterTitle", targets: ["conversation-list"] } }, extra: {},
   },
@@ -2516,23 +2480,11 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   PercentileBandChart: {
     block: { id: "demo-PercentileBandChart", type: "PercentileBandChart", props: { title: "接口延迟分位" }, binding: { entityRef: "analysisWindow", timeFieldRef: "windowTime", p50FieldRef: "latencyP50", p95FieldRef: "latencyP95", p99FieldRef: "latencyP99" } }, extra: {},
   },
-  ConnectionWorkspaceTabs: {
-    block: { id: "demo-ConnectionWorkspaceTabs", type: "ConnectionWorkspaceTabs", binding: { entityRef: "operationsTab", titleFieldRef: "operationsTabTitle", keyFieldRef: "operationsTabKey", countFieldRef: "operationsTabCount", enabledFieldRef: "operationsTabEnabled", targets: ["connection-detail"] } }, extra: {},
-  },
-  IssueInvestigationTabs: {
-    block: { id: "demo-IssueInvestigationTabs", type: "IssueInvestigationTabs", binding: { entityRef: "operationsTab", titleFieldRef: "operationsTabTitle", keyFieldRef: "operationsTabKey", countFieldRef: "operationsTabCount", enabledFieldRef: "operationsTabEnabled", targets: ["issue-detail"] } }, extra: {},
-  },
   ConnectionFleetMetrics: {
     block: { id: "demo-ConnectionFleetMetrics", type: "ConnectionFleetMetrics", props: { title: "连接状态" }, binding: { entityRef: "connectionFleet", statusFieldRef: "fleetStatus", targets: ["connection-list"] } }, extra: {},
   },
   IssueImpactMetrics: {
     block: { id: "demo-IssueImpactMetrics", type: "IssueImpactMetrics", props: { title: "问题影响" }, binding: { entityRef: "issueImpact", eventCountFieldRef: "impactEvents", userCountFieldRef: "impactUsers", firstSeenFieldRef: "impactFirstSeen", lastSeenFieldRef: "impactLastSeen" } }, extra: {},
-  },
-  DashboardQueryContext: {
-    block: { id: "demo-DashboardQueryContext", type: "DashboardQueryContext", binding: { entityRef: "serviceContext", titleFieldRef: "serviceTitle", fieldRefs: ["querySource", "queryFilters", "queryCache"] } }, extra: {},
-  },
-  ServiceOwnershipContext: {
-    block: { id: "demo-ServiceOwnershipContext", type: "ServiceOwnershipContext", binding: { entityRef: "serviceContext", titleFieldRef: "serviceTitle", fieldRefs: ["serviceOwner", "serviceSystem", "serviceLifecycle"] } }, extra: {},
   },
   ReleaseHealthStrip: {
     block: { id: "demo-ReleaseHealthStrip", type: "ReleaseHealthStrip", binding: { entityRef: "releaseHealth", versionFieldRef: "releaseVersion", healthFieldRef: "releaseCrashFree", environmentFieldRef: "releaseEnvironment", adoptionFieldRef: "releaseAdoption" } }, extra: {},
@@ -2546,12 +2498,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   ReleaseAdoptionTrendChart: {
     block: { id: "demo-ReleaseAdoptionTrendChart", type: "ReleaseAdoptionTrendChart", props: { title: "发布采用趋势" }, binding: { entityRef: "releaseSeries", timeFieldRef: "releaseTime", adoptionFieldRef: "releaseAdoptionTrend", healthFieldRef: "releaseHealthTrend" } }, extra: {},
   },
-  DeploymentDetailTabs: {
-    block: { id: "demo-DeploymentDetailTabs", type: "DeploymentDetailTabs", binding: { entityRef: "deploymentTab", titleFieldRef: "deploymentTabTitle", keyFieldRef: "deploymentTabKey", countFieldRef: "deploymentTabCount", enabledFieldRef: "deploymentTabEnabled", targets: ["deployment-detail"] } }, extra: {},
-  },
-  ReleaseDetailTabs: {
-    block: { id: "demo-ReleaseDetailTabs", type: "ReleaseDetailTabs", binding: { entityRef: "releaseTab", titleFieldRef: "releaseTabTitle", keyFieldRef: "releaseTabKey", countFieldRef: "releaseTabCount", enabledFieldRef: "releaseTabEnabled", targets: ["release-detail"] } }, extra: {},
-  },
   DeploymentRolloutMetrics: {
     block: { id: "demo-DeploymentRolloutMetrics", type: "DeploymentRolloutMetrics", props: { title: "部署滚动状态" }, binding: { entityRef: "deploymentWorkload", desiredFieldRef: "desiredReplicas", readyFieldRef: "readyReplicas", availableFieldRef: "availableReplicas", unavailableFieldRef: "unavailableReplicas" } }, extra: {},
   },
@@ -2564,17 +2510,8 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   ReleaseEnvironmentStrip: {
     block: { id: "demo-ReleaseEnvironmentStrip", type: "ReleaseEnvironmentStrip", binding: { entityRef: "releaseState", versionFieldRef: "releaseTitle", environmentFieldRef: "releaseEnvironment", statusFieldRef: "releaseStatus", targets: ["release-list"] } }, extra: {},
   },
-  DeploymentContextSummary: {
-    block: { id: "demo-DeploymentContextSummary", type: "DeploymentContextSummary", binding: { entityRef: "deploymentWorkload", titleFieldRef: "workloadTitle", fieldRefs: ["workloadNamespace", "workloadCluster", "workloadImage", "workloadStrategy", "workloadUpdated"] } }, extra: {},
-  },
-  ReleaseContextSummary: {
-    block: { id: "demo-ReleaseContextSummary", type: "ReleaseContextSummary", binding: { entityRef: "releaseState", titleFieldRef: "releaseTitle", fieldRefs: ["releaseProject", "releaseEnvironment", "releaseCommit", "releaseAuthor"] } }, extra: {},
-  },
   KubernetesResourceFilter: {
     block: { id: "demo-KubernetesResourceFilter", type: "KubernetesResourceFilter", props: { title: "资源筛选" }, binding: { entityRef: "runtimeFilterOption", facetFieldRef: "runtimeFacet", keyFieldRef: "runtimeKey", titleFieldRef: "runtimeTitle", targets: ["workload-list"] } }, extra: {},
-  },
-  ReleaseEnvironmentFilter: {
-    block: { id: "demo-ReleaseEnvironmentFilter", type: "ReleaseEnvironmentFilter", props: { title: "发布筛选" }, binding: { entityRef: "runtimeFilterOption", facetFieldRef: "runtimeFacet", keyFieldRef: "runtimeKey", titleFieldRef: "runtimeTitle", targets: ["release-list"] } }, extra: {},
   },
   DeploymentCommandHeader: {
     block: { id: "demo-DeploymentCommandHeader", type: "DeploymentCommandHeader", binding: { entityRef: "deploymentWorkload", titleFieldRef: "workloadTitle", statusFieldRef: "workloadStatus", editableFieldRef: "workloadEditable", targets: ["deployment"] } }, extra: { focus: { deploymentWorkload: "deployment-order-api" } },
@@ -2593,12 +2530,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   },
   BookingDemandChart: {
     block: { id: "demo-BookingDemandChart", type: "BookingDemandChart", props: { title: "本周预约需求" }, binding: { entityRef: "bookingDemand", timeFieldRef: "demandTime", availableFieldRef: "availableSlots", bookedFieldRef: "bookedSlots", canceledFieldRef: "canceledSlots" } }, extra: {},
-  },
-  WorkItemActivityTabs: {
-    block: { id: "demo-WorkItemActivityTabs", type: "WorkItemActivityTabs", binding: { entityRef: "activityTab", titleFieldRef: "activityTabTitle", keyFieldRef: "activityTabKey", countFieldRef: "activityTabCount", enabledFieldRef: "activityTabEnabled", targets: ["work-item-detail"] } }, extra: {},
-  },
-  BookingAuditTabs: {
-    block: { id: "demo-BookingAuditTabs", type: "BookingAuditTabs", binding: { entityRef: "bookingAuditTab", titleFieldRef: "auditTabTitle", keyFieldRef: "auditTabKey", countFieldRef: "auditTabCount", enabledFieldRef: "auditTabEnabled", targets: ["booking-detail"] } }, extra: {},
   },
   WorkloadThroughputMetrics: {
     block: { id: "demo-WorkloadThroughputMetrics", type: "WorkloadThroughputMetrics", props: { title: "周期吞吐" }, binding: { entityRef: "throughputMetric", completedFieldRef: "throughputCompleted", enteredFieldRef: "throughputEntered", wipFieldRef: "throughputWip", blockedFieldRef: "throughputBlocked" } }, extra: {},
@@ -2621,9 +2552,6 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   WorkflowDurationChart: {
     block: { id: "demo-WorkflowDurationChart", type: "WorkflowDurationChart", props: { title: "工作流执行耗时" }, binding: { entityRef: "workflowDuration", timeFieldRef: "workflowTime", averageFieldRef: "workflowAverage", p95FieldRef: "workflowP95", failedFieldRef: "workflowFailedDuration" } }, extra: {},
   },
-  WorkflowExecutionTabs: {
-    block: { id: "demo-WorkflowExecutionTabs", type: "WorkflowExecutionTabs", binding: { entityRef: "workflowTab", titleFieldRef: "workflowTabTitle", keyFieldRef: "workflowTabKey", countFieldRef: "workflowTabCount", enabledFieldRef: "workflowTabEnabled", targets: ["workflow-execution"] } }, extra: {},
-  },
   WorkflowOutcomeMetrics: {
     block: { id: "demo-WorkflowOutcomeMetrics", type: "WorkflowOutcomeMetrics", props: { title: "执行结果" }, binding: { entityRef: "workflowOutcome", successFieldRef: "outcomeSuccess", failedFieldRef: "outcomeFailed", runningFieldRef: "outcomeRunning", pendingFieldRef: "outcomePending" } }, extra: {},
   },
@@ -2636,43 +2564,22 @@ const DEMOS: Record<string, { block: ExperienceBlockInstance; extra: Record<stri
   WorkflowCommandHeader: {
     block: { id: "demo-WorkflowCommandHeader", type: "WorkflowCommandHeader", binding: { entityRef: "workflowDefinition", titleFieldRef: "workflowTitle", enabledFieldRef: "workflowEnabled", versionFieldRef: "workflowVersion", editableFieldRef: "workflowEditable", targets: ["workflow"] } }, extra: { focus: { workflowDefinition: "workflow-order" } },
   },
-  WorkflowContextSummary: {
-    block: { id: "demo-WorkflowContextSummary", type: "WorkflowContextSummary", binding: { entityRef: "workflowDefinition", titleFieldRef: "workflowTitle", fieldRefs: ["workflowTrigger", "workflowOwner", "workflowMode", "workflowTimeout", "workflowVersion"] } }, extra: {},
-  },
-  WorkflowExecutionFilter: {
-    block: { id: "demo-WorkflowExecutionFilter", type: "WorkflowExecutionFilter", props: { title: "执行筛选" }, binding: { entityRef: "workflowFilterOption", facetFieldRef: "workflowFacet", keyFieldRef: "workflowFilterKey", titleFieldRef: "workflowFilterTitle", targets: ["workflow-execution-list"] } }, extra: {},
-  },
   WorkflowControlBar: {
     block: { id: "demo-WorkflowControlBar", type: "WorkflowControlBar", binding: { entityRef: "workflowExecution", statusFieldRef: "executionStatus", progressFieldRef: "executionProgress", targets: ["workflow-execution"] } }, extra: { focus: { workflowExecution: "execution-running-1" } },
   },
   RealmCommandHeader: {
     block: { id: "demo-RealmCommandHeader", type: "RealmCommandHeader", binding: { entityRef: "realmSecurity", nameFieldRef: "realmSecurityName", enabledFieldRef: "realmSecurityEnabled", manageableFieldRef: "realmManageable", targets: ["realm"] } }, extra: { focus: { realmSecurity: "realm-security-1" } },
   },
-  RealmSecurityContext: {
-    block: { id: "demo-RealmSecurityContext", type: "RealmSecurityContext", binding: { entityRef: "realmSecurity", titleFieldRef: "realmSecurityTitle", fieldRefs: ["realmSsl", "realmBruteForce", "realmSessionTimeout", "realmTokenLifespan"] } }, extra: {},
-  },
-  UserEventFilter: {
-    block: { id: "demo-UserEventFilter", type: "UserEventFilter", props: { title: "用户事件筛选" }, binding: { entityRef: "userEventOption", facetFieldRef: "userEventFacet", keyFieldRef: "userEventKey", titleFieldRef: "userEventTitle", targets: ["user-events"] } }, extra: {},
-  },
   CredentialLifecycleBar: {
     block: { id: "demo-CredentialLifecycleBar", type: "CredentialLifecycleBar", binding: { entityRef: "credentialState", usernameFieldRef: "credentialUsername", resettableFieldRef: "credentialResettable", temporaryFieldRef: "credentialTemporary", updatedAtFieldRef: "credentialUpdated", targets: ["user-credentials"] } }, extra: { focus: { credentialState: "credential-user-1" } },
   },
   PanelQueryLatencyChart: { block: { id: "demo-PanelQueryLatencyChart", type: "PanelQueryLatencyChart", props: { title: "面板查询延迟" }, binding: { entityRef: "observabilityTrend", timeFieldRef: "obsTime", averageFieldRef: "queryAverage", p95FieldRef: "queryP95", timeoutFieldRef: "queryTimeout" } }, extra: {} },
   SyncVolumeTrendChart: { block: { id: "demo-SyncVolumeTrendChart", type: "SyncVolumeTrendChart", props: { title: "同步数据量" }, binding: { entityRef: "observabilityTrend", timeFieldRef: "obsTime", recordsFieldRef: "syncRecords", bytesFieldRef: "syncBytes", failedFieldRef: "syncFailed" } }, extra: {} },
-  ExploreInspectorTabs: { block: { id: "demo-ExploreInspectorTabs", type: "ExploreInspectorTabs", binding: { entityRef: "inspectorTab", titleFieldRef: "inspectTitle", keyFieldRef: "inspectKey", countFieldRef: "inspectCount", enabledFieldRef: "inspectEnabled", targets: ["inspector"] } }, extra: {} },
-  StreamDetailTabs: { block: { id: "demo-StreamDetailTabs", type: "StreamDetailTabs", binding: { entityRef: "streamTab", titleFieldRef: "streamTabTitle", keyFieldRef: "streamTabKey", countFieldRef: "streamTabCount", enabledFieldRef: "streamTabEnabled", targets: ["stream"] } }, extra: {} },
   DatasourceQueryMetrics: { block: { id: "demo-DatasourceQueryMetrics", type: "DatasourceQueryMetrics", props: { title: "数据源查询" }, binding: { entityRef: "queryMetric", requestFieldRef: "queryRequests", errorFieldRef: "queryErrors", cacheHitFieldRef: "queryCacheHits", durationFieldRef: "queryDuration" } }, extra: {} },
   StreamFreshnessMetrics: { block: { id: "demo-StreamFreshnessMetrics", type: "StreamFreshnessMetrics", props: { title: "数据流新鲜度" }, binding: { entityRef: "streamMetric", lagFieldRef: "streamLag", syncedAtFieldRef: "streamSyncedAt", recordsFieldRef: "streamRecords", failedFieldRef: "streamFailed" } }, extra: {} },
   DatasourceHealthStrip: { block: { id: "demo-DatasourceHealthStrip", type: "DatasourceHealthStrip", binding: { entityRef: "datasourceState", nameFieldRef: "datasourceName", statusFieldRef: "datasourceStatus", typeFieldRef: "datasourceType", checkedAtFieldRef: "datasourceChecked", targets: ["datasource"] } }, extra: {} },
-  ConnectorVersionStrip: { block: { id: "demo-ConnectorVersionStrip", type: "ConnectorVersionStrip", binding: { entityRef: "connectorState", nameFieldRef: "connectorName", versionFieldRef: "connectorVersion", statusFieldRef: "connectorStatus", availableVersionFieldRef: "connectorAvailable" } }, extra: {} },
   PanelCommandHeader: { block: { id: "demo-PanelCommandHeader", type: "PanelCommandHeader", binding: { entityRef: "panelState", titleFieldRef: "panelTitle", datasourceFieldRef: "panelDatasource", editableFieldRef: "panelEditable", targets: ["panel"] } }, extra: {} },
-  ConnectionSchemaHeader: { block: { id: "demo-ConnectionSchemaHeader", type: "ConnectionSchemaHeader", binding: { entityRef: "schemaState", titleFieldRef: "schemaTitle", statusFieldRef: "schemaStatus", refreshingFieldRef: "schemaRefreshing", dirtyFieldRef: "schemaDirty", targets: ["schema"] } }, extra: {} },
-  ExploreQueryContext: { block: { id: "demo-ExploreQueryContext", type: "ExploreQueryContext", binding: { entityRef: "exploreState", titleFieldRef: "exploreTitle", fieldRefs: ["exploreDatasource", "exploreLanguage", "exploreRange", "exploreStep"] } }, extra: {} },
-  StreamSelectionSummary: { block: { id: "demo-StreamSelectionSummary", type: "StreamSelectionSummary", binding: { entityRef: "schemaState", titleFieldRef: "schemaConnection", fieldRefs: ["schemaNamespace", "schemaSelected", "schemaFields"] } }, extra: {} },
-  LogLabelFilter: { block: { id: "demo-LogLabelFilter", type: "LogLabelFilter", props: { title: "日志标签" }, binding: { entityRef: "observabilityFilter", facetFieldRef: "obsFacet", keyFieldRef: "obsKey", titleFieldRef: "obsTitle", targets: ["logs"] } }, extra: {} },
-  StreamNamespaceFilter: { block: { id: "demo-StreamNamespaceFilter", type: "StreamNamespaceFilter", props: { title: "数据流筛选" }, binding: { entityRef: "observabilityFilter", facetFieldRef: "obsFacet", keyFieldRef: "obsKey", titleFieldRef: "obsTitle", targets: ["streams"] } }, extra: {} },
   ExploreQueryControlBar: { block: { id: "demo-ExploreQueryControlBar", type: "ExploreQueryControlBar", binding: { entityRef: "exploreState", statusFieldRef: "exploreStatus", queryFieldRef: "exploreQuery", targets: ["query"] } }, extra: {} },
-  SchemaRefreshBar: { block: { id: "demo-SchemaRefreshBar", type: "SchemaRefreshBar", binding: { entityRef: "schemaState", statusFieldRef: "schemaStatus", refreshingFieldRef: "schemaRefreshing", dirtyFieldRef: "schemaDirty", targets: ["schema"] } }, extra: {} },
   QueryErrorDrawer: { block: { id: "demo-QueryErrorDrawer", type: "QueryErrorDrawer", binding: { entityRef: "queryError", refFieldRef: "queryRef", messageFieldRef: "queryMessage", statusFieldRef: "queryStatus", requestFieldRef: "queryRequest", targets: ["query"] } }, extra: {} },
   SchemaConflictDrawer: { block: { id: "demo-SchemaConflictDrawer", type: "SchemaConflictDrawer", binding: { entityRef: "schemaConflict", streamFieldRef: "conflictStream", fieldFieldRef: "conflictField", changeFieldRef: "conflictChange", breakingFieldRef: "conflictBreaking", targets: ["schema"] } }, extra: {} },
   FreeformInsight: {

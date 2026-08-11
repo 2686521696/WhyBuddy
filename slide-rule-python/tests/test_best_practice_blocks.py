@@ -232,9 +232,7 @@ def test_third_sparse_region_batch_uses_four_verified_sources_and_exact_regions(
         "EnvironmentStatusStrip": ("backstage/backstage", {"headerExtra"}),
         "DataFreshnessIndicator": ("metabase/metabase", {"headerExtra"}),
         "WorkItemContextSummary": ("makeplane/plane", {"headerContent"}),
-        "DocumentContextSummary": ("outline/outline", {"headerContent"}),
         "WorkItemDetailTabs": ("makeplane/plane", {"tabs"}),
-        "QueryModeTabs": ("metabase/metabase", {"tabs"}),
         "WorkItemFilterBar": ("makeplane/plane", {"filters"}),
         "DashboardParameterBar": ("metabase/metabase", {"filters"}),
         "CycleHealthMetrics": ("makeplane/plane", {"metrics"}),
@@ -261,8 +259,6 @@ def test_fourth_sparse_region_batch_keeps_seven_exact_regions_and_verified_sourc
         "QueryRunStatusStrip": ("metabase/metabase", {"headerExtra"}),
         "EntityOwnershipSummary": ("backstage/backstage", {"headerContent"}),
         "QueryDataSourceSummary": ("metabase/metabase", {"headerContent"}),
-        "DatasetEditorTabs": ("metabase/metabase", {"tabs"}),
-        "DocumentHistoryTabs": ("outline/outline", {"tabs"}),
         "CatalogEntityFilterBar": ("backstage/backstage", {"filters"}),
         "QueryClauseFilterBar": ("metabase/metabase", {"filters"}),
         "DocumentInsightMetrics": ("outline/outline", {"metrics"}),
@@ -287,10 +283,6 @@ def test_fifth_sparse_region_batch_balances_five_domains_without_main_blocks():
         "AlertGroupCommandHeader": ("grafana/grafana", {"header"}),
         "IncidentOwnershipStrip": ("getsentry/sentry", {"headerExtra"}),
         "SyncScheduleStrip": ("airbytehq/airbyte-platform", {"headerExtra"}),
-        "CycleContextSummary": ("makeplane/plane", {"headerContent"}),
-        "AlertGroupContextSummary": ("grafana/grafana", {"headerContent"}),
-        "EventTypeEditorTabs": ("calcom/cal.com", {"tabs"}),
-        "IncidentEvidenceTabs": ("getsentry/sentry", {"tabs"}),
         "CycleFilterBar": ("makeplane/plane", {"filters"}),
         "AlertRuleFilterBar": ("grafana/grafana", {"filters"}),
         "SyncReliabilityMetrics": ("airbytehq/airbyte-platform", {"metrics"}),
@@ -315,10 +307,6 @@ def test_sixth_sparse_region_batch_uses_chatwoot_and_keycloak_exact_regions():
         "UserCommandHeader": ("keycloak/keycloak", {"header"}),
         "ConversationAssignmentStrip": ("chatwoot/chatwoot", {"headerExtra"}),
         "RealmStatusStrip": ("keycloak/keycloak", {"headerExtra"}),
-        "ConversationContextSummary": ("chatwoot/chatwoot", {"headerContent"}),
-        "UserIdentitySummary": ("keycloak/keycloak", {"headerContent"}),
-        "ConversationDetailTabs": ("chatwoot/chatwoot", {"tabs"}),
-        "UserSecurityTabs": ("keycloak/keycloak", {"tabs"}),
         "ConversationInboxFilter": ("chatwoot/chatwoot", {"filters"}),
         "UserDirectoryFilter": ("keycloak/keycloak", {"filters"}),
         "ConversationSlaMetrics": ("chatwoot/chatwoot", {"metrics"}),
@@ -343,12 +331,8 @@ def test_seventh_sparse_region_batch_prioritizes_the_five_smallest_regions():
         "CohortRetentionChart": ("metabase/metabase", {"charts"}),
         "UptimeStatusTimeline": ("airbytehq/airbyte-platform", {"charts"}),
         "PercentileBandChart": ("getsentry/sentry", {"charts"}),
-        "ConnectionWorkspaceTabs": ("airbytehq/airbyte-platform", {"tabs"}),
-        "IssueInvestigationTabs": ("getsentry/sentry", {"tabs"}),
         "ConnectionFleetMetrics": ("airbytehq/airbyte-platform", {"metrics"}),
         "IssueImpactMetrics": ("getsentry/sentry", {"metrics"}),
-        "DashboardQueryContext": ("metabase/metabase", {"headerContent"}),
-        "ServiceOwnershipContext": ("backstage/backstage", {"headerContent"}),
         "ReleaseHealthStrip": ("getsentry/sentry", {"headerExtra"}),
         "DashboardCommandHeader": ("metabase/metabase", {"header"}),
     }
@@ -367,16 +351,11 @@ def test_eighth_sparse_region_batch_balances_release_and_deployment_workflows():
     expected = {
         "DeploymentLatencyChart": ("backstage/backstage", {"charts"}),
         "ReleaseAdoptionTrendChart": ("getsentry/sentry", {"charts"}),
-        "DeploymentDetailTabs": ("backstage/backstage", {"tabs"}),
-        "ReleaseDetailTabs": ("getsentry/sentry", {"tabs"}),
         "DeploymentRolloutMetrics": ("backstage/backstage", {"metrics"}),
         "ReleaseAdoptionMetrics": ("getsentry/sentry", {"metrics"}),
         "ClusterHealthStrip": ("backstage/backstage", {"headerExtra"}),
         "ReleaseEnvironmentStrip": ("getsentry/sentry", {"headerExtra"}),
-        "DeploymentContextSummary": ("backstage/backstage", {"headerContent"}),
-        "ReleaseContextSummary": ("getsentry/sentry", {"headerContent"}),
         "KubernetesResourceFilter": ("backstage/backstage", {"filters"}),
-        "ReleaseEnvironmentFilter": ("getsentry/sentry", {"filters"}),
         "DeploymentCommandHeader": ("backstage/backstage", {"header"}),
         "FeatureFlagCommandHeader": ("getsentry/sentry", {"header"}),
         "DeploymentScaleBar": ("backstage/backstage", {"footerBar"}),
@@ -396,8 +375,6 @@ def test_ninth_sparse_region_batch_fills_the_five_smallest_regions():
     expected = {
         "CumulativeFlowChart": ("makeplane/plane", {"charts"}),
         "BookingDemandChart": ("calcom/cal.com", {"charts"}),
-        "WorkItemActivityTabs": ("makeplane/plane", {"tabs"}),
-        "BookingAuditTabs": ("calcom/cal.com", {"tabs"}),
         "WorkloadThroughputMetrics": ("makeplane/plane", {"metrics"}),
         "CalendarUtilizationMetrics": ("calcom/cal.com", {"metrics"}),
         "CycleRiskStrip": ("makeplane/plane", {"headerExtra"}),
@@ -418,17 +395,12 @@ def test_ninth_sparse_region_batch_fills_the_five_smallest_regions():
 def test_tenth_sparse_region_batch_equalizes_all_non_body_regions():
     expected = {
         "WorkflowDurationChart": ("nocobase/nocobase", {"charts"}),
-        "WorkflowExecutionTabs": ("nocobase/nocobase", {"tabs"}),
         "WorkflowOutcomeMetrics": ("nocobase/nocobase", {"metrics"}),
         "WorkflowVersionStrip": ("nocobase/nocobase", {"headerExtra"}),
         "WorkflowFailureDrawer": ("nocobase/nocobase", {"overlay"}),
         "WorkflowCommandHeader": ("nocobase/nocobase", {"header"}),
-        "WorkflowContextSummary": ("nocobase/nocobase", {"headerContent"}),
-        "WorkflowExecutionFilter": ("nocobase/nocobase", {"filters"}),
         "WorkflowControlBar": ("nocobase/nocobase", {"footerBar"}),
         "RealmCommandHeader": ("keycloak/keycloak", {"header"}),
-        "RealmSecurityContext": ("keycloak/keycloak", {"headerContent"}),
-        "UserEventFilter": ("keycloak/keycloak", {"filters"}),
         "CredentialLifecycleBar": ("keycloak/keycloak", {"footerBar"}),
     }
     for block_type, (repo, regions) in expected.items():
@@ -441,9 +413,14 @@ def test_tenth_sparse_region_batch_equalizes_all_non_body_regions():
         assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
 
 
-def test_eleventh_sparse_region_batch_keeps_nine_regions_balanced():
-    grafana = {"PanelQueryLatencyChart": "charts", "ExploreInspectorTabs": "tabs", "DatasourceQueryMetrics": "metrics", "DatasourceHealthStrip": "headerExtra", "PanelCommandHeader": "header", "ExploreQueryContext": "headerContent", "LogLabelFilter": "filters", "ExploreQueryControlBar": "footerBar", "QueryErrorDrawer": "overlay"}
-    airbyte = {"SyncVolumeTrendChart": "charts", "StreamDetailTabs": "tabs", "StreamFreshnessMetrics": "metrics", "ConnectorVersionStrip": "headerExtra", "ConnectionSchemaHeader": "header", "StreamSelectionSummary": "headerContent", "StreamNamespaceFilter": "filters", "SchemaRefreshBar": "footerBar", "SchemaConflictDrawer": "overlay"}
+# 2026-08-11 去重：这一批原本是「grafana / airbyte 各覆盖 9 个区域」的对称批次，
+# 但两边各有 5 个是同工厂只换文案的凑数类型（tabs/headerContent/filters/headerExtra/
+# footerBar 五档），已随 57 个一起删掉，只保留了每族的幸存者。
+# 所以判据从「九区各有一块」退到「剩下的这几块仍然来源真实、区域精确」——
+# **对称性本来就是靠凑数撑出来的，撑它的东西没了，判据就该跟着改，而不是把凑数留着。**
+def test_eleventh_sparse_region_batch_keeps_remaining_regions_exact():
+    grafana = {"PanelQueryLatencyChart": "charts", "DatasourceQueryMetrics": "metrics", "DatasourceHealthStrip": "headerExtra", "PanelCommandHeader": "header", "ExploreQueryControlBar": "footerBar", "QueryErrorDrawer": "overlay"}
+    airbyte = {"SyncVolumeTrendChart": "charts", "StreamFreshnessMetrics": "metrics", "SchemaConflictDrawer": "overlay"}
     for block_type, region in grafana.items():
         block = _block(block_type)
         assert block["source"]["repo"] == "grafana/grafana"

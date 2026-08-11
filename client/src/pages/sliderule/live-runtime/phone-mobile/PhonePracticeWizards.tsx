@@ -47,6 +47,4 @@ function createPhoneWizard(policy: Policy): ExperienceBlockRenderer {
 export const PHONE_PRACTICE_WIZARDS: Readonly<Record<string, ExperienceBlockRenderer>> = {
   OnboardingChecklistWizard: createPhoneWizard({ title: "入职检查向导", testid: "onboarding-checklist-wizard", confirm: "确认所有入职准备均已核对？" }),
   ImportMappingWizard: createPhoneWizard({ title: "导入映射向导", testid: "import-mapping-wizard", confirm: "确认字段映射并开始导入？", mapping: true }),
-  IntegrationSetupWizard: createPhoneWizard({ title: "集成设置向导", testid: "integration-setup-wizard", confirm: "确认连接配置并开始验证？" }),
-  PolicyConfigurationWizard: createPhoneWizard({ title: "策略配置向导", testid: "policy-configuration-wizard", confirm: "确认策略配置并提交生效？" }),
 };

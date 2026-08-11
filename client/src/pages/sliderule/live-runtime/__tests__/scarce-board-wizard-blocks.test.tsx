@@ -11,7 +11,7 @@ const BOARD_TYPES = [
   "DependencyKanban", "TriageQueueBoard", "ApprovalStageBoard", "ContentPipelineBoard",
   "RecruitmentPipelineBoard", "IncidentResponseBoard", "ReleaseTrainBoard", "PortfolioKanban",
 ] as const;
-const WIZARD_TYPES = ["OnboardingChecklistWizard", "ImportMappingWizard", "IntegrationSetupWizard", "PolicyConfigurationWizard"] as const;
+const WIZARD_TYPES = ["OnboardingChecklistWizard", "ImportMappingWizard"] as const;
 const row = (id: string, values: Record<string, unknown>): RuntimeRow => ({ id, values, createdAt: "2026-08-10T09:00:00.000Z" });
 
 describe("稀缺看板与配置向导", () => {
@@ -58,7 +58,9 @@ describe("稀缺看板与配置向导", () => {
 
   it("向导遇到阻塞状态时禁用下一步并显示校验错误", () => {
     const markup = renderToStaticMarkup(<ExperienceBlockBoundary
-      block={{ id: "policy", type: "PolicyConfigurationWizard", props: { surface: "plain" }, binding: { entityRef: "step", titleFieldRef: "title", statusFieldRef: "status", targets: ["policy"] } }}
+      // 2026-08-11 去重后 PolicyConfigurationWizard 已删（跟这条同工厂、参数只差文案），
+      // 换成幸存的那个。守的是行为不是类型名：阻塞态要禁用下一步。
+      block={{ id: "policy", type: "OnboardingChecklistWizard", props: { surface: "plain" }, binding: { entityRef: "step", titleFieldRef: "title", statusFieldRef: "status", targets: ["policy"] } }}
       entityRows={{ step: [row("scope", { title: "适用范围", status: "blocked" }), row("publish", { title: "发布确认", status: "pending" })] }}
     />);
     expect(markup).toContain("当前步骤存在校验错误");

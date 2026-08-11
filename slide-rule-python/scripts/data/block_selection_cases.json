@@ -45,9 +45,7 @@
         "AlertInstanceSummary",
         "AlertMatcherFilter",
         "AlertGroupCommandHeader",
-        "AlertGroupContextSummary",
         "AlertRuleFilterBar",
-        "ShiftRosterCalendar",
         "OnCallScheduleCalendar",
         "EscalationPolicyPanel"
       ],
@@ -75,7 +73,6 @@
         "BookingDirectoryFilter",
         "BookingDecisionBar",
         "BookingDemandChart",
-        "BookingAuditTabs",
         "BookingConflictDrawer",
         "BookingConflictPanel",
         "AvailabilityOverridePanel"
@@ -95,26 +92,19 @@
         "ReleaseHealthStrip",
         "DeploymentLatencyChart",
         "ReleaseAdoptionTrendChart",
-        "DeploymentDetailTabs",
-        "ReleaseDetailTabs",
         "DeploymentRolloutMetrics",
         "ReleaseAdoptionMetrics",
         "ReleaseEnvironmentStrip",
-        "DeploymentContextSummary",
-        "ReleaseContextSummary",
-        "ReleaseEnvironmentFilter",
         "DeploymentCommandHeader",
         "DeploymentScaleBar",
         "ReleaseRolloutBar",
         "ReleaseTrainBoard",
-        "ReleaseCalendar",
         "DeploymentWizard"
       ],
       "pointNamed": [
         "ReleaseHealthStrip",
         "ReleaseRolloutBar",
-        "DeploymentRolloutMetrics",
-        "ReleaseCalendar"
+        "DeploymentRolloutMetrics"
       ]
     },
     {

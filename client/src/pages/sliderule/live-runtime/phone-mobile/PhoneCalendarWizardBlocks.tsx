@@ -19,20 +19,12 @@ function wizard(p: ExperienceBlockRendererProps, testid: string, label: string, 
 export function renderCalendarWizardPhoneBlock(p: ExperienceBlockRendererProps): React.ReactNode | undefined {
   switch (p.block.type) {
     case "ResourceBookingCalendar": return calendar(p, { testid: "phone-resource-booking-calendar", secondary: "resourceFieldRef", create: true });
-    case "TeamAvailabilityCalendar": return calendar(p, { testid: "phone-team-availability-calendar", secondary: "memberFieldRef" });
-    case "ShiftRosterCalendar": return calendar(p, { testid: "phone-shift-roster-calendar", secondary: "memberFieldRef", edit: true });
-    case "MaintenanceWindowCalendar": return calendar(p, { testid: "phone-maintenance-window-calendar", secondary: "resourceFieldRef", edit: true });
-    case "CampaignCalendar": return calendar(p, { testid: "phone-campaign-calendar", secondary: "resourceFieldRef", create: true });
-    case "EditorialCalendar": return calendar(p, { testid: "phone-editorial-calendar", secondary: "memberFieldRef", edit: true });
-    case "ReleaseCalendar": return calendar(p, { testid: "phone-release-calendar", secondary: "resourceFieldRef", edit: true });
     case "DeadlineAgenda": return agenda(p);
     case "BookingConflictPanel": return conflict(p);
     case "ScheduleCapacityHeatmap": return heatmap(p);
     case "EventRsvpPanel": return rsvp(p);
     case "RecurrenceEditor": return recurrence(p);
     case "DeploymentWizard": return wizard(p, "phone-deployment-wizard", "部署向导", "startDeployment");
-    case "MigrationReadinessWizard": return wizard(p, "phone-migration-readiness-wizard", "迁移就绪向导", "confirmMigrationReadiness");
-    case "IncidentResolutionWizard": return wizard(p, "phone-incident-resolution-wizard", "事件解决向导", "resolveIncident");
     default: return undefined;
   }
 }
