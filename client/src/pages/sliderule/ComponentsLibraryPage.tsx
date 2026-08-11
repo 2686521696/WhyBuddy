@@ -2864,9 +2864,29 @@ function BlockCard({
       className="group w-full"
       style={{ boxShadow: CARD_SHADOW }}
     >
-      {/* 收藏星单独放右上角，不进底部那层 hover 浮层——浮层默认 35%
-          不透明度，星星藏在里面既看不清也不好点。 */}
-      <div className="absolute right-1.5 top-1.5 z-20 rounded bg-white/70 backdrop-blur-sm">
+      {/* 收藏星单独放右上角，不进底部那层浮层——浮层是 pointer-events-none 的
+          纯展示层，星星要能点。
+
+          2026-08-11 跟着上面那次一起收：**没收藏的星默认也不显示**，悬停才出来；
+          **已收藏的一直显示**。
+
+          这条不是照抄参照站（那面墙上收藏图标也只在悬停时出现），是因为两者
+          性质不同：
+            · 没收藏的星是**入口**——用不着的时候摆在那儿，就是每张卡右上角
+              一个白色小方块，卡片一空下来它反而成了整面墙最显眼的东西。
+            · 已收藏的星是**状态**——藏起来的话，「哪些是我收藏的」在墙上就
+              看不出来了，而收藏本身是这一页的一个筛选维度（顶部有「收藏」档）。
+          隐藏入口可以，隐藏状态不行。
+
+          同样只在有指针的设备上藏（理由见下面那段浮层注释的 ②）。 */}
+      <div
+        className={
+          "absolute right-1.5 top-1.5 z-20 rounded bg-white/70 backdrop-blur-sm transition-opacity duration-200" +
+          (marks.isFav(`block:${block.type}`)
+            ? ""
+            : " opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100")
+        }
+      >
         <FavStar
           on={marks.isFav(`block:${block.type}`)}
           onToggle={() => marks.onToggleFav(`block:${block.type}`)}
@@ -2939,15 +2959,35 @@ function BlockCard({
         {rendered}
       </div>
       {/* 元信息作为底部浮层直接压在卡片画面上。
-          
+
           2026-08-08：药丸本身的做法（每条自带底衬）是对的——压在任何底色上
           都读得清。问题在**视觉权重**：一眼扫过去，一片浅色组件里挂着十几个
           深色药丸，最抢眼的成了标签而不是组件本身，而这一页是用来看组件的。
-          
+
           改成跟着鼠标走：默认 35% 不透明度（认得出有东西、不夺目），指针
           落到这张卡上才 100%。画廊类界面的通行做法——信息一个不少，只是
-          不在你没问的时候喊。 */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-2 pt-2 opacity-35 transition-opacity duration-200 group-hover:opacity-100">
+          不在你没问的时候喊。
+
+          2026-08-11：**35% 再降到 0**。用户拿 isqqw.com（ECharts 示例集，
+          24843 张图的墙）作参照，那面墙上不悬停就是干干净净的图，悬停才浮出
+          标题/浏览量/日期/版本一整块。原话：「默认不显示，鼠标放到卡片上才显示」。
+
+          08-08 那次留 35% 的理由是"认得出有东西"。但真按图墙的用法想一遍，
+          这个理由站不住：**在扫的阶段，"有东西"这个信息本身没用**——每张卡都
+          有，等于没有区分度，却给每张卡都加了一层灰噪点。要看的时候鼠标自然
+          就过去了。
+
+          ⚠ 两处不能跟着照抄 isqqw：
+
+          ① **不加整片压暗的遮罩。** 那面墙的卡是静态缩略图，悬停时盖一层黑
+             无所谓；这面墙的卡是**活组件**，悬停正是要看它的时候，盖上去等于
+             把人要看的东西挡了。（这跟本文件历史上删掉 bg-gradient-to-t 是
+             同一条理由，contract 测试还钉着。）
+          ② **触屏上不能藏。** Tailwind v4 起 hover 变体自带 `@media (hover:hover)`，
+             group-hover 也跟着走——手机上悬停永远不发生，写成 opacity-0 就是
+             **永久隐身**。所以基线是 100%，只在真有指针的设备上才降到 0。
+             键盘同理：group-focus-within 让 Tab 进这张卡也能浮出来。 */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-2 pt-2 opacity-100 transition-opacity duration-200 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
         <div className="flex items-center">
           <Tooltip title={block.description}>
             <span

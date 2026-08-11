@@ -180,6 +180,74 @@ describe("components library UI contract", () => {
     expect(code).toContain('position: "relative"');
   });
 
+  it("元信息浮层默认不显示，悬停才显示（2026-08-11 用户拿 isqqw 图墙作参照）", () => {
+    // 演进的下一节：
+    //   ⑤ 08-08 把药丸从常显改成"默认 35% + 悬停 100%"，理由是"认得出有东西"。
+    //   ⑥ 08-11 用户拿 isqqw.com 的图墙作参照——那面墙不悬停就是干净的图，
+    //      原话「默认不显示，鼠标放到卡片上才显示」。35% 那个理由也确实站不住：
+    //      **每张卡都"有东西"，这个信息本身没有区分度**，代价却是每张卡都糊了
+    //      一层灰噪点。
+    //
+    // 这条钉的是结果：**扫的时候干净，问的时候齐全**。
+    const code = stripComments(pageSource);
+    const i = code.indexOf("absolute inset-x-0 bottom-0");
+    expect(i, "底部元信息浮层不见了").toBeGreaterThan(-1);
+    const overlay = code.slice(i, code.indexOf(">", i));
+
+    expect(overlay, "悬停必须能把它唤出来").toContain("group-hover:opacity-100");
+    // 有指针的设备上，静默态必须是**全透明**。这里只认 0，不认 35——
+    // 35 正是被这次推翻的那一版（下一条用例管"不能是裸 opacity-0"）。
+    expect(
+      overlay,
+      "又回到半透明常显了——扫墙时最抢眼的会变成标签而不是组件"
+    ).not.toContain("opacity-35");
+    expect(overlay, "静默态没有降到全透明").toContain(":opacity-0");
+  });
+
+  it("触屏上不许把元信息藏没了 —— hover 变体在 v4 自带 @media (hover:hover)", () => {
+    // **这条是上面那条的安全绳，也是整段最容易被改坏的地方。**
+    //
+    // Tailwind v4 起 `hover:` 只在 `@media (hover: hover)` 下生效，`group-hover:`
+    // 跟着走。所以基线要是写成 `opacity-0`，手机/平板上悬停永远不发生，
+    // 元信息就是**永久隐身**——而且在开发机上一点都看不出来。
+    //
+    // 正确形状：基线 100%，只在真有指针的设备上降到 0。
+    const code = stripComments(pageSource);
+    const i = code.indexOf("absolute inset-x-0 bottom-0");
+    const overlay = code.slice(i, code.indexOf(">", i));
+
+    expect(overlay, "基线必须是可见的（触屏没有悬停这回事）").toContain("opacity-100");
+    expect(
+      overlay,
+      "隐藏必须挂在 @media(hover:hover) 下面，否则触屏上元信息永久隐身"
+    ).toContain("[@media(hover:hover)]:opacity-0");
+    expect(
+      overlay,
+      "裸 opacity-0 会让触屏永久隐身"
+    ).not.toMatch(/(?:^|\s)opacity-0(?:\s|$)/);
+    // 键盘走到这张卡上也要浮出来，否则只有鼠标用户读得到元信息
+    expect(overlay).toContain("group-focus-within:opacity-100");
+  });
+
+  it("已收藏的星一直显示，没收藏的才藏 —— 隐藏入口可以，隐藏状态不行", () => {
+    // 星跟着浮层一起收（08-11），但两种星不是一回事：
+    //   · 没收藏的星是**入口**，用不着时就是每张卡右上角一个白色小方块；
+    //   · 已收藏的星是**状态**，藏了「哪些是我收藏的」在墙上就看不出来，
+    //     而收藏是这一页的一个筛选维度（顶部有「收藏」档）。
+    const code = stripComments(pageSource);
+    const i = code.indexOf("absolute right-1.5 top-1.5");
+    expect(i, "右上角收藏星不见了").toBeGreaterThan(-1);
+    const star = code.slice(i, code.indexOf("<FavStar", i));
+
+    expect(star, "藏与不藏必须由 isFav 分叉，不能一刀切").toContain("marks.isFav(");
+    expect(star, "没收藏的那支要能被悬停唤出来").toContain("group-hover:opacity-100");
+    expect(star, "触屏同理：基线可见，只在有指针的设备上藏").toContain(
+      "[@media(hover:hover)]:opacity-0"
+    );
+    // 星是可点的控件，藏起来之后键盘 Tab 到它必须现形，否则就是个隐形按钮
+    expect(star, "隐形的可聚焦按钮 —— Tab 到它却看不见").toContain("focus-within:opacity-100");
+  });
+
   it("区块卡有 12px 内边距 —— 组件在卡里，不是糊在卡上", () => {
     // **2026-08-08 用户把 08-07 那个决定翻过来了，这条用例跟着翻。**
     //
