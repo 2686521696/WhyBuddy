@@ -617,6 +617,22 @@ EXPERIENCE_BLOCK_ALLOWED_REGIONS_BY_TYPE: Dict[str, tuple] = {
     str(block["type"]): tuple(block["allowedRegions"]) for block in EXPERIENCE_BLOCKS
 }
 
+#: type -> pageKinds。「这种区块适合放在哪几种页上」，是 lowcode-engine
+#: `nestingRule.parentWhitelist` 那一半，只是父级是"页"不是"容器"。
+#:
+#: 2026-08-11 之前这份声明**只被选材侧读**（block_assembler 挑候选、
+#: block_narrowing 派生预设、pageKindPresets 自检），生成路径上没有任何一处查它
+#: ——提示词不说、结构闸不查。于是模型把 MuteTimingSchedule（只允许
+#: monitor/dashboard）摆进 workbench 页，没有任何依据知道这不对。
+EXPERIENCE_BLOCK_PAGE_KINDS_BY_TYPE: Dict[str, tuple] = {
+    str(block["type"]): tuple(block["pageKinds"]) for block in EXPERIENCE_BLOCKS
+}
+
+#: 总览页——这两种没有逐行视图。"筛选类在这儿是死控件"等一系列判据都从这条
+#: 事实派生。与 scripts/label_block_page_kinds.py 的 OVERVIEW_KINDS、
+#: AppRuntimeScreen.tsx 的 OVERVIEW_KINDS 是同一份定义，别各写各的。
+_OVERVIEW_PAGE_KINDS: tuple = ("monitor", "dashboard")
+
 #: type -> family。装配器按它判"这个区块能不能单独存在"、要不要 targets。
 EXPERIENCE_BLOCK_FAMILY_BY_TYPE = {
     str(block["type"]): str(block["family"]) for block in EXPERIENCE_BLOCKS
@@ -848,29 +864,136 @@ def experience_block_prompt_block(
         # 目录里它仍是通电区块，没有任何一句话说总览页不许用。所以下面补一条
         # 显式禁令。四个一起禁（不只 FilterBar）：另外三个此前同样只是"不推荐"
         # 而无硬禁，是同一个洞，只是还没撞上。
-        MONITOR_FORBIDDEN = ("MetricGrid", "TrendChart", "DataTable", "FilterBar")
+        #
+        # ── 2026-08-11：把 FilterBar 那条从"一个名字"改成"一条机械判据" ──
+        #
+        # 上面那句"是同一个洞，只是还没撞上"写对了，只是禁的方式没跟上：按名字
+        # 硬编码四个，而 FilterBar 那条的**理由是机械的**——`filterChange` 事件
+        # 在总览页够不到任何东西。重新核实了一遍这条链路，比原注释写的还彻底：
+        #
+        #     AppRuntimeScreen.tsx:812   rows = applyPageFilter(allRows, activePageFilter, …)
+        #                                ↑ 只有这一份行被筛过，喂给本页的表/看板/日历
+        #     :1922 pageStatDisplay      state.entities[stat.entityId]      ← 未筛
+        #     :2913 phoneChartNode       state.entities[chart.entityId]     ← 未筛
+        #     :1691 sharedBlockRendererProps.entityRows = state.entities    ← 未筛（注释自己写着"未收窄"）
+        #
+        # 总览页没有表/看板/日历，KPI、图表、积木、设计树全读未筛全量，所以
+        # **任何**发 filterChange 的区块在总览页都是死控件，不只 FilterBar。
+        # 所以判据取 **capability == "filter"**，不再点名字。
+        #
+        # ── 2026-08-11 复核：原注释这里的数字是错的，连带把理由讲窄了 ──
+        #
+        # 原文写"32 个 filter 区块有 31 个只发 filterChange（HierarchicalCategoryPicker
+        # 多发一个 itemSelect）"。真数是 **28/32**，例外有四个不是一个：
+        #
+        #     SavedViewTabs               filterChange + submitRequest
+        #     SavedSearchPanel            filterChange + submitRequest
+        #     HierarchicalCategoryPicker  filterChange + itemSelect
+        #     ValidatedFormTabs           itemSelect（**一个 filterChange 都不发**）
+        #
+        # 数字错了会引出错的补救——第一次复核就据此提过"把判据放宽成
+        # events⊆{filterChange}，让这 4 个在总览页活下来"。**那是反的**：它们多发的
+        # 那两个事件在任何页面上都到不了岸——
+        #
+        #     · `eventBindings`（事件名→动作 id 的映射）只在
+        #       app-runtime-schema.ts:823 被解析，全仓库**没有第二处读它**；
+        #     · handleBlockAction（AppRuntimeScreen.tsx:1607）只特判 rowSelect /
+        #       editRequest / createRequest，其余一律去 `page.pageActions` 里找
+        #       **id 等于事件名**的动作，而动作 id 是模型生成的，不会恰好叫
+        #       "submitRequest"。
+        #
+        # 所以放宽只会把"照样按不动的控件"放回总览页。docs/page-kinds-widening-
+        # proposal.md 当初对 SavedSearchPanel 的判断（"删除发 submitRequest，
+        # **主动词死了**"）是对的，这里补上机械依据。判据维持整族不变。
+        # 这个数由 tests/test_schema_legal_source.py 钉住，别再手写。
+        #
+        # 另外三个（MetricGrid / TrendChart / DataTable）理由各不相同（重复渲染、
+        # 宽度），不是一条机械判据能覆盖的，继续按名字禁。
+        _MONITOR_FORBIDDEN_BY_NAME = ("MetricGrid", "TrendChart", "DataTable")
+
+        def _inert_on_overview(b: dict[str, Any]) -> bool:
+            """它在总览页上是不是**死控件**（运行时摆上去也不干活）。
+
+            注意这只回答"能不能干活"，不回答"目录允不允许"——后者看 pageKinds，
+            是另一条判据，见下面 `_allowed_on_overview`。两者都过了才该推荐。
+            """
+            return (
+                str(b["type"]) in _MONITOR_FORBIDDEN_BY_NAME
+                or str(b.get("capability") or "") == "filter"
+            )
+
+        # ── 2026-08-11：推荐名单必须先过 pageKinds 这一关 ──────────────────
+        #
+        # `_inert_on_overview` 只回答"它在总览页上是不是死的"，**不看目录里
+        # 那份 pageKinds 声明**。而同一份提示词下面（见「页型限制的规则句」）
+        # 刚立了一条 MUST：区块只能出现在 pages= 列出的页型里。两处一夹，
+        # 模型会在同一份 prompt 里连着读到三句互斥的话：
+        #
+        #     - QuickActionPanel: … pages=workbench,wizard        ← 条目自己写着不含总览页
+        #     … declare it as a block: QuickActionPanel, …        ← 这里在推荐它上总览页
+        #     A block MUST only appear … whose kind is in that list  ← 又禁止这么做
+        #
+        # 实测规模：323 个推荐里 **134 个**的 pageKinds 不含 monitor/dashboard，
+        # 不是零星几个。在这条 MUST 进 prompt 之前这只是"两套判据各说各的"、
+        # 没有可见后果（docs/page-kinds-widening-proposal.md 当时记的"零影响"
+        # 是对的）；MUST 一进来，它就变成了自相矛盾的指令。
+        #
+        # 所以推荐名单在这里跟规则句对齐：**只推荐 pageKinds 真的允许总览页的**。
+        # 反过来收紧禁令名单是不行的——禁令说的是"运行时死控件"，跟目录声明
+        # 是两件事，一个区块可以既没被目录允许、又不是死控件。
+        def _allowed_on_overview(b: dict[str, Any]) -> bool:
+            return bool(set(b.get("pageKinds") or ()) & set(_OVERVIEW_PAGE_KINDS))
+
         monitor_ok = [
-            str(b["type"]) for b in enabled
-            if str(b["type"]) not in MONITOR_FORBIDDEN
+            str(b["type"])
+            for b in enabled
+            if not _inert_on_overview(b) and _allowed_on_overview(b)
         ]
-        monitor_forbidden_live = [t for t in MONITOR_FORBIDDEN if t in {str(b["type"]) for b in enabled}]
+        monitor_forbidden_live = [str(b["type"]) for b in enabled if _inert_on_overview(b)]
         if monitor_forbidden_live:
             # 逐条给理由而不是只列名单：本仓库反复验证过措辞决定行为（许可式
             # 让七个通电区块一个都没被用；binding 哨兵词 "none" 被当成值）。
             # 只丢一张禁用表，模型下次照样按语义直觉去猜"这页是不是该有个筛选条"。
+            #
+            # 筛选那批现在是整族，逐个给理由会把这段撑爆（窄化开着时是几个、
+            # 关着时是 32 个）。所以措辞改成"三个点名 + 筛选整族一句"，
+            # **理由一句都不省**——省掉理由这件事本仓库已经付过学费。
+            #
+            # 理由句必须**跟着名单走**：目录窄化开着时这一批常常只剩筛选类
+            # （实测告警值班题：名单里 4 个全是 filter），此时还照抄
+            # "MetricGrid and TrendChart would…" 就是在解释一个没出现的名字，
+            # 模型读到的是一段对不上号的说明。所以逐段按在场情况拼。
+            live = set(monitor_forbidden_live)
+            why: list[str] = []
+            if {"MetricGrid", "TrendChart"} & live:
+                why.append(
+                    ("MetricGrid and TrendChart" if {"MetricGrid", "TrendChart"} <= live
+                     else ("MetricGrid" if "MetricGrid" in live else "TrendChart"))
+                    + " would render the same numbers a second time — an overview's KPIs "
+                    "and charts are already declared as page.stats / page.charts and get "
+                    "laid out by the design pass."
+                )
+            if "DataTable" in live:
+                why.append(
+                    "DataTable needs full width and a second entity to be worth "
+                    "anything on an overview."
+                )
+            if any(str(b.get("capability") or "") == "filter" for b in enabled
+                   if str(b["type"]) in live):
+                why.append(
+                    "EVERY filter block cannot filter ANYTHING on an overview: filter "
+                    "state only reaches this page's own table / kanban / calendar views, "
+                    "and an overview has none of them — its KPIs, its charts, its blocks "
+                    "and its designed layout all read the unfiltered rows, so the control "
+                    "would sit there doing nothing. That holds for a saved-view switcher "
+                    "and a date-range picker just as much as for a filter bar. Put the "
+                    "filter on the business page that actually lists records instead."
+                )
             lines.append(
                 "On monitor / dashboard pages, NEVER emit these blocks: "
                 + ", ".join(monitor_forbidden_live)
-                + ". Each is inert there, not merely discouraged. MetricGrid and "
-                "TrendChart would render the same numbers a second time — an overview's "
-                "KPIs and charts are already declared as page.stats / page.charts and "
-                "get laid out by the design pass. DataTable needs full width and a "
-                "second entity to be worth anything on an overview. FilterBar cannot "
-                "filter ANYTHING on an overview: its state only reaches this page's own "
-                "table / kanban / calendar views, and an overview has none of them — "
-                "the blocks and the designed layout read the unfiltered rows, so the "
-                "control would sit there doing nothing. Put the filter on the business "
-                "page that actually lists records instead."
+                + ". Each is inert there, not merely discouraged. "
+                + " ".join(why)
             )
         if monitor_ok:
             lines.append(
@@ -1000,12 +1123,61 @@ def experience_block_prompt_block(
         regions_part = f"regions={','.join(block['allowedRegions'])}"
         if rationale:
             regions_part += f" ({rationale})"
+        # `pages=` 是 2026-08-11 补的。目录里每个区块都声明了 pageKinds（这种区块
+        # 适合放在哪几种页上），而在这之前**这条从没进过 prompt**：模型只被告知
+        # 区域限制，页型限制一个字没提。
+        #
+        # 实测后果（第一份线上真骨架收割时照出来的）：告警值班那趟里
+        # AlertRoutingPolicy 与 MuteTimingSchedule 都声明 pages=monitor,dashboard，
+        # 模型把它们摆进了 workbench 页。模型没有任何依据知道这么摆不对——
+        # **不是模型马虎，是我们没说。**
+        #
+        # 这是 lowcode-engine `nestingRule` 里 parentWhitelist 那一半，只是层级更高
+        # （父级是"页"而不是"容器"）。它的文件注释举的例子正是这个形状：
+        # 「FormField 只能在 Form 容器下，Column 只能在 Table 下」。区域那一半
+        # 这个仓库 2026-08-08 已经补过（见 page_assembler「双向约束的另一半」），
+        # 页型这一半漏到了现在。
+        #
+        # ⚠️ 只进 prompt，**没有进结构闸**。因为目录里这份声明本身经不起推敲：
+        # 同为 capability=form 的 AlertSilenceForm 允许 workbench、AlertRuleEditor
+        # 不允许；而「路由策略管理页」天然就是工作台。全目录 304/358 都允许
+        # workbench，这几个被卡住更像随手标窄。拿一条可能标错的规则去硬拒模型，
+        # 是把"违规发出去"换成"合规的也发不出去"。先告知、观测，攒够证据再决定
+        # 是收紧模型还是放宽目录。
         lines.append(
             f"- {block['type']}: {block['description']} "
-            f"data={','.join(block['dataKinds'])}; {regions_part}; "
+            f"data={','.join(block['dataKinds'])}; pages={','.join(block['pageKinds'])}; {regions_part}; "
             f"events={','.join(block['events'])}; "
             f"binding={_format_binding_schema(block['bindingSchema'])}"
         )
+    # 页型限制的**规则句**（2026-08-11）。
+    #
+    # 光在条目里多印一个 `pages=` 字段是不够的——区域限制当初也有条目字段，
+    # 照样反复被违反，直到 Step 7 里补上那句点名 PageHeader 的规则句才收住。
+    # 措辞照那句的形状：给判据 + 举一个具体的反例，不写"请注意"这类软话。
+    #
+    # ⚠️ 逃生口（2026-08-11 收窄）：原话是无条件的"改页型去迁就区块"，方向反了
+    # 一半。总览页那两种（monitor/dashboard）**不能**用这个逃生口——
+    #   · 上面那批禁令说的就是"筛选/KPI 积木在总览页是死控件"，把页改成
+    #     workbench 只是把死控件搬到了它能动的页上，但这一页的**职责**没变；
+    #   · CHANNEL OWNERSHIP 那段（见下）把 KPI 通道按页型分了工：总览页归
+    #     page.stats/charts、业务页归 MetricGrid/TrendChart。为了塞一个区块
+    #     把 overview 改判成 workbench，等于顺手把这一页的 KPI 通道也换了，
+    #     而模型不会意识到这个连带后果。
+    # 所以逃生口限定在"业务页之间互换"，总览页明确要求换区块而不是换页型。
+    lines.append(
+        "Each block also declares which PAGE KINDS it belongs on (pages=... in its catalog entry). "
+        "A block MUST only appear in page.blocks of a page whose kind is in that list — e.g. "
+        "MuteTimingSchedule (pages=monitor,dashboard) on a workbench page is a violation, even though "
+        "the block renders. When a page's job genuinely needs a block whose pages= excludes that kind, "
+        "change the PAGE's kind to one the block allows rather than forcing the block onto the wrong "
+        "kind — a page dedicated to managing one config object is usually a workbench, but a page whose "
+        "job is watching live state is a monitor. This swap is only ever between the row-view kinds "
+        "(workbench / wizard / kanban / calendar). NEVER retype a monitor or dashboard page to fit a "
+        "block in: an overview owns its numbers through page.stats and page.charts, and retyping it "
+        "silently moves that page onto the other KPI channel. On an overview, pick a block whose "
+        "pages= already lists monitor or dashboard instead."
+    )
     lines.append(
         "binding.entityRef (when required or provided) MUST match a datamodel entity id exactly; "
         "every other *Ref field in binding is a bare field id scoped to that same entity "
