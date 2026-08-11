@@ -24018,7 +24018,7 @@
     {
       "type":"AlertThresholdBandEditor","label":"告警阈值带编辑器","description":"在正常、警告和严重颜色带上联动当前值、双阈值和状态预览。","rendererKey":"alert-threshold-band-editor","rendererStatus":"real","generationEnabled":true,"capability":"form","family":"content",
       "structureFamily":"threshold-band-state-preview","structureDelta":"新增连续状态颜色带、双阈值游标、当前序列落点和即时状态映射，不是普通 Slider 或静态指标图。","source":{"repo":"grafana/grafana","path":"public/app/features/dimensions/editors/ThresholdsEditor/ThresholdsEditor.tsx","took":"Grafana ThresholdsEditor 联动 threshold steps、颜色、模式和数值顺序；WhyBuddy 使用警告小于严重的确定性 Gate。"},
-      "propsSchema":{"type":"object","additionalProperties":false,"properties":{"title":{"type":"string"},"surface":{"type":"string","enum":["card","plain"]},"warning":{"type":"number"},"critical":{"type":"number"}}},"dataKinds":["entityRows"],"pageKinds":["monitor","workbench"],"allowedRegions":["main"],"regionsRationale":"阈值带、序列落点和控制器需要主区域。","events":["submitRequest"],
+      "propsSchema":{"type":"object","additionalProperties":false,"properties":{"title":{"type":"string"},"surface":{"type":"string","enum":["card","plain"]},"warning":{"type":"number"},"critical":{"type":"number"}}},"dataKinds":["entityRows"],"pageKinds":["dashboard","monitor","workbench"],"allowedRegions":["main"],"regionsRationale":"阈值带、序列落点和控制器需要主区域。","events":["submitRequest"],
       "bindingSchema":{"required":["entityRef","seriesLabelFieldRef","currentValueFieldRef","targets"],"optional":[],"entityFieldRefs":{"seriesLabelFieldRef":"string","currentValueFieldRef":"number"},"note":"警告阈值必须小于严重阈值；保存不改写当前观测值。"},"generality":"generic"
     },
     {

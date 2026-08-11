@@ -179,9 +179,14 @@ def test_check_模式可以直接当CI闸用():
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         # 故意抹掉 LLM 凭据：--check 一旦偷偷调了模型，CI 就会变成一条要联网、
         # 要花钱、还会因为网关抖动而随机红的闸
-        env={"PATH": "/usr/bin:/bin", "HOME": "/tmp"},
+        env={
+            "PATH": "/usr/bin:/bin",
+            "HOME": "/tmp",
+            "PYTHONIOENCODING": "utf-8",
+        },
         timeout=120,
     )
     assert proc.returncode == 0, (
