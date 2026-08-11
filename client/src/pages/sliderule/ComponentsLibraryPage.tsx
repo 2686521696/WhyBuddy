@@ -1547,9 +1547,19 @@ export const ENTITY_ROWS: Record<string, RuntimeRow[]> = {
   ],
 };
 
+/**
+ * 角色 id → 显示名（2026-08-11）。
+ *
+ * 线上截图里流程步骤条底下直接写着 `music_member` 这类内部标识符。夹具里第一个
+ * 节点故意用 snake_case id、其余保留中文，这样对照台上**两条路都看得见**：
+ * `front_desk` 会显示成「前台」，查不到的（主管/仓管/配送）回落原值。
+ * 只演示一条路的夹具审不出这个特性通没通。
+ */
+const ROLE_LABELS: Record<string, string> = { front_desk: "前台" };
+
 const WORKFLOW = {
   nodes: [
-    { id: "n1", name: "受理", assigneeRole: "前台" },
+    { id: "n1", name: "受理", assigneeRole: "front_desk" },
     { id: "n2", name: "审核", assigneeRole: "主管" },
     { id: "n3", name: "配货", assigneeRole: "仓管" },
     { id: "n4", name: "交付", assigneeRole: "配送" },
@@ -2974,6 +2984,7 @@ function SavedPresetCard({ preset }: { preset: SavedPreset }) {
       fieldSchemaOf={fieldSchemaOf}
       enumOptionsOf={(_e: string, f: string) => ENUM_OPTIONS[f] ?? []}
       workflow={WORKFLOW}
+      roleLabelOf={(id: string) => ROLE_LABELS[id]}
     >
       {b.children && b.children.length > 0
         ? b.children.map(id => {
@@ -3529,6 +3540,7 @@ function AssembledPageModal({
       pageActions={previewActions}
       onAction={handleAction}
       workflow={WORKFLOW}
+      roleLabelOf={(id: string) => ROLE_LABELS[id]}
     />
     );
   };

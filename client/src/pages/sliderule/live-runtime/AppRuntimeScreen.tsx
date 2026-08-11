@@ -1695,6 +1695,9 @@ export function AppRuntimeScreen({
       setColumnState(prev => ({ ...prev, [blockId]: next })),
     focus,
     workflow: model.workflow,
+    // 角色 id → 中文名。不传的后果是流程步骤条底下直接显示 `music_member`
+    // 这类内部标识符（线上截图逮到过）。
+    roleLabelOf: (roleId: string) => schema.roleLabels[roleId],
     // 注意：这是**未收窄**的全量行。筛选是按区块算的（谁筛我），
     // 在下面 renderBlock 里按 targets 逐块套上去——见 rowsForBlockOf。
     entityRows: state.entities,
@@ -3300,11 +3303,20 @@ export function AppRuntimeScreen({
       }
       extra={
         usesProWorkbench || page.presentation === "marketing-landing" ? undefined : <Space size="small">
-          {page.actions.slice(0, 3).map(a => (
-            <Tag key={a} color="blue" style={{ marginInlineEnd: 0 }}>
-              {a}
-            </Tag>
-          ))}
+          {/* 权限标识符只在 X 光（检查模式）下露出（2026-08-11）。
+              线上截图里业务页头挂着 `student:read` `pet:read` `redemption:create`
+              这类蓝标签——那是**内部标识符**，交付给终端用户的应用里没人看得懂，
+              而且泄漏了权限命名。它本来是开发期的自查affordance，可这个仓库早就
+              有正经通道了：X 光模式的 probe() 悬停上报（含 permission/granted），
+              信息更全还不占版面。所以不是删掉，是收进 X 光里。
+              顺带说一句 `.slice(0, 3)`：页面有 5 条权限时它只显示前 3 条，
+              既不完整也不说明被截断了——这种"看着像全量其实是抽样"的展示比不展示更糟。 */}
+          {xrayActive &&
+            page.actions.map(a => (
+              <Tag key={a} color="blue" style={{ marginInlineEnd: 0 }}>
+                {a}
+              </Tag>
+            ))}
           {columnSettings}
           <span
             {...probe({

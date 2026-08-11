@@ -555,6 +555,15 @@ export interface ExperienceBlockRendererProps {
   fieldLabelOf?: FieldLabelLookup;
   /** 表单族专用：字段 id → 类型，决定出哪种控件（2026-08-07）。 */
   fieldTypeOf?: FieldTypeLookup;
+  /**
+   * 角色 id → 显示名（2026-08-11）。
+   *
+   * 线上截图里流程步骤条底下直接写着 `music_member` / `collection_curator`
+   * ——**内部标识符漏到了终端用户界面上**。而 `roleLabels`（id → 中文名）
+   * 早就存在（app-runtime-schema 就在建它，角色下拉框一直在用），只是从来
+   * 没送到区块这一层。查不到就回落原值：宁可显示 id，也不显示空白。
+   */
+  roleLabelOf?: (roleId: string) => string | undefined;
 }
 
 export type ExperienceBlockRenderer =
@@ -1267,7 +1276,7 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
  * 不接受自由文案。props.chainRef 留空指主链路（workflow.nodes/transitions），
  * 填值时必须能在 workflow.chains 里查到（Gate 已校验，这里直接信）。
  */
-const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) => {
+const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow, roleLabelOf }) => {
   const title = String(block.props?.title ?? "").trim();
   const chainRef = String(block.props?.chainRef ?? "").trim();
   const chain = chainRef
@@ -1313,7 +1322,7 @@ const WorkflowTimelineRenderer: ExperienceBlockRenderer = ({ block, workflow }) 
             <Flex vertical gap={2}>
               {node.assigneeRole && (
                 <Typography.Text type="secondary">
-                  {node.assigneeRole}
+                  {roleLabelOf?.(node.assigneeRole) || node.assigneeRole}
                 </Typography.Text>
               )}
               {conditionByFrom.get(node.id) && (
