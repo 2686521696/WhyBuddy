@@ -99,10 +99,12 @@ TS 侧（组件库筛选与计数，ComponentsLibraryPage.tsx 3977/4132）读，
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -167,6 +169,27 @@ def _catalog() -> dict[str, Any]:
     return json.loads(CATALOG.read_text(encoding="utf-8"))
 
 
+@functools.lru_cache(maxsize=1)
+def _preset_pairs_cached() -> tuple[tuple[str, frozenset[str]], ...]:
+    """`preset_pairs()` 的缓存层。**别去掉。**
+
+    `hard_verdicts()` 每次都要问一遍预设，而它会被调用 `区块数 × 页型数` 次
+    （358 × 6 = 2148）。没有缓存时每次都重读并解析这份 ~1MB 的目录 JSON——
+    实测 `--check` 因此要跑 17 秒，接进 CI 的一条纯本地检查慢成这样是没道理的。
+
+    返回不可变结构（tuple + frozenset）：`lru_cache` 交出去的是同一个对象，
+    返回可变的 dict/set 会让任何一处调用方的就地修改污染所有后续调用。
+    """
+    out: dict[str, set[str]] = {}
+    for kind, presets in (_catalog().get("pageKindPresets") or {}).items():
+        for ps in presets or []:
+            for it in ps.get("blocks") or ps.get("items") or []:
+                t = str(it.get("type") or "")
+                if t:
+                    out.setdefault(t, set()).add(str(kind))
+    return tuple((t, frozenset(ks)) for t, ks in sorted(out.items()))
+
+
 def preset_pairs() -> dict[str, set[str]]:
     """`pageKindPresets` 里已经用上的 (区块 → 页型) 组合。
 
@@ -180,15 +203,11 @@ def preset_pairs() -> dict[str, set[str]]:
     WorkflowTimeline + RecordForm 摆在 wizard 页上。模型说得有道理，只是事实不对
     ——它不知道这个组合已经被审过了。所以两处都补：硬判据把它钉成 require，
     提示词把预设当"已审核通过的正面例子"发给模型。
+
+    每次返回一份新的可变副本——缓存层交出的是不可变结构（见
+    `_preset_pairs_cached`），调用方就地改也污染不到别人。
     """
-    out: dict[str, set[str]] = {}
-    for kind, presets in (_catalog().get("pageKindPresets") or {}).items():
-        for ps in presets or []:
-            for it in ps.get("blocks") or ps.get("items") or []:
-                t = str(it.get("type") or "")
-                if t:
-                    out.setdefault(t, set()).add(str(kind))
-    return out
+    return {t: set(ks) for t, ks in _preset_pairs_cached()}
 
 
 def _hard_claims(block: dict[str, Any]) -> dict[str, list[tuple[str, str, str]]]:
@@ -538,6 +557,51 @@ def row_of(b: dict[str, Any]) -> tuple[str, str]:
     )
 
 
+#: 默认并发。72 次调用串行跑实测 62 分钟，8 并发压到 10 分钟以内。
+#:
+#: 为什么不开更大：这个网关今天抖过好几次（首轮就撞上一次
+#: `Connection reset by peer`，早先另一条链路还连着吃过 400）。并发越高，
+#: 单位时间内的重试也越密，容易把"偶发抖动"变成"整轮被限流"。8 够用就停在 8。
+_CONCURRENCY = 8
+
+
+def run_batches(
+    tasks: list[tuple[Any, list[tuple[str, str]]]],
+    fn: Any,
+    workers: int,
+    label: str,
+) -> tuple[dict[Any, list[dict[str, Any]]], list[tuple[Any, str]]]:
+    """并发跑一批 (key, rows) 任务，返回 {key: [每批结果…]} 和失败清单。
+
+    ## 为什么每批单独兜异常
+
+    串行版一旦某批重试耗尽就整轮抛出——跑到第 50 分钟才挂，前面的都白花。
+    并发之后这个代价更高（同时在飞的都废了），所以改成**单批失败只丢那一批**：
+    那批区块落进"没问全"，照旧被差异表排除、被下一轮重跑捡起来。
+    宁可少一批数据，不要一轮 62 分钟的产出。
+
+    失败会打出来也会记进返回值——静默丢批比挂掉更坏。
+    """
+    results: dict[Any, list[dict[str, Any]]] = {}
+    failures: list[tuple[Any, str]] = []
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(fn, key, rows): (key, len(rows))
+                   for key, rows in tasks}
+        for fut in as_completed(futures):
+            key, n = futures[fut]
+            done += 1
+            try:
+                results.setdefault(key, []).append(fut.result())
+            except Exception as exc:  # noqa: BLE001 —— 单批失败不该带走整轮
+                failures.append((key, f"{type(exc).__name__}: {str(exc)[:120]}"))
+                print(f"  [{done}/{len(tasks)}] ✗ {label} {key} 这批 {n} 个失败："
+                      f"{type(exc).__name__}: {str(exc)[:80]}")
+                continue
+            print(f"  [{done}/{len(tasks)}] {label} {key} +{n}")
+    return results, failures
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true",
@@ -548,6 +612,8 @@ def main() -> int:
                     help="只跑指定页型（可重复），默认全部 6 种")
     ap.add_argument("--draft-out", default="data/page_kinds_draft.json",
                     help="原始初稿落盘路径（相对 scripts/）。一小时的产出不能只留在终端")
+    ap.add_argument("--concurrency", type=int, default=_CONCURRENCY,
+                    help=f"并发调用数（默认 {_CONCURRENCY}）。1 = 串行")
     args = ap.parse_args()
     draft_path = (Path(__file__).resolve().parent / args.draft_out).resolve()
 
@@ -598,6 +664,11 @@ def main() -> int:
     asked: dict[str, set[str]] = {str(b["type"]): set() for b in enabled}
     why_of: dict[tuple[str, str], str] = {}
 
+    # 六种页型的 72 次调用彼此独立，摊平成一张任务表并发跑（串行 62 分钟 → 8 并发
+    # 10 分钟内）。硬判据那部分是纯本地计算，照旧串行，先算完再决定要问哪些。
+    tasks: list[tuple[str, list[tuple[str, str]]]] = []
+    rows_of_kind: dict[str, int] = {}
+
     for kind in kinds:
         verdict_of = {str(b["type"]): hard_verdicts(b).get(kind) for b in enabled}
         # 硬判据已经**定死**的格子不问模型——问了也只会浪费一次调用，还可能被它答反。
@@ -629,18 +700,35 @@ def main() -> int:
                 continue
             why_of[(t, kind)] = f"硬判据：{v[1]}"
 
-        got: dict[str, tuple[bool, str]] = {}
         rows = [row_of(b) for b in ask_list]
+        rows_of_kind[kind] = len(rows)
         for start in range(0, len(rows), BATCH):
-            got.update(ask(kind, rows[start : start + BATCH], model))
+            tasks.append((kind, rows[start : start + BATCH]))
+
+    print(f"  {len(tasks)} 批待问，并发 {args.concurrency}")
+    batched, failures = run_batches(
+        tasks, lambda k, r: ask(k, r, model), args.concurrency, "页型"
+    )
+
+    for kind in kinds:
+        got: dict[str, tuple[bool, str]] = {}
+        for part in batched.get(kind, []):
+            got.update(part)
         for t, (ok, why) in got.items():
             asked[t].add(kind)
             if ok:
                 derived[t].add(kind)
             why_of[(t, kind)] = why
         n_yes = sum(1 for _t, (ok, _w) in got.items() if ok)
-        print(f"  {kind:<10} 问了 {len(rows):>3} 个（硬判据定死 {len(enabled) - len(rows)} 个），"
-              f"模型答 yes {n_yes}，答上 {len(got)}/{len(rows)}")
+        n_rows = rows_of_kind[kind]
+        print(f"  {kind:<10} 问了 {n_rows:>3} 个（硬判据定死 {len(enabled) - n_rows} 个），"
+              f"模型答 yes {n_yes}，答上 {len(got)}/{n_rows}")
+    if failures:
+        # 失败批的区块会落进"没问全"，被差异表排除。说清楚，不让它看起来像
+        # "模型判它不该有页型"。
+        print(f"\n⚠ {len(failures)} 批调用失败（那批区块算作没问全，重跑捡回来）：")
+        for key, msg in failures[:8]:
+            print(f"    {key}: {msg}")
 
     # ── 兜底：被判成"哪种页都不该放"的区块，回头强制选一次 ──────────────
     #
@@ -659,12 +747,21 @@ def main() -> int:
         if emptied:
             print(f"\n兜底：{len(emptied)} 个区块被判成哪种页都不放，强制重选一次")
             rows = [row_of(b) for b in emptied]
-            for start in range(0, len(rows), BATCH):
-                got2 = force_pick(rows[start : start + BATCH], model)
-                for t, (ks, why) in got2.items():
-                    derived[t] |= ks
-                    for k in ks:
-                        why_of[(t, k)] = f"兜底强制选：{why}"
+            back_tasks = [
+                (start // BATCH, rows[start : start + BATCH])
+                for start in range(0, len(rows), BATCH)
+            ]
+            back, back_fail = run_batches(
+                back_tasks, lambda _k, r: force_pick(r, model), args.concurrency, "兜底"
+            )
+            for parts in back.values():
+                for got2 in parts:
+                    for t, (ks, why) in got2.items():
+                        derived[t] |= ks
+                        for k in ks:
+                            why_of[(t, k)] = f"兜底强制选：{why}"
+            if back_fail:
+                print(f"  ⚠ 兜底有 {len(back_fail)} 批失败，这些区块仍会是空的")
             still = [str(b["type"]) for b in emptied if not derived[str(b["type"])]]
             print(f"  强制重选后仍为空 {len(still)} 个"
                   + (f"：{', '.join(still[:10])}" if still else "（全部有归宿了）"))
