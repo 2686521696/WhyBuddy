@@ -54,6 +54,7 @@ from label_block_page_kinds import (  # noqa: E402
     PAGE_KIND_FACTS,
     audit,
     hard_verdicts,
+    needs_model,
     preset_pairs,
 )
 
@@ -180,3 +181,79 @@ def test_check_模式可以直接当CI闸用():
         f"--check 非零退出：\n{proc.stdout[-2000:]}\n{proc.stderr[-1000:]}"
     )
     assert "硬判据违反 0 处" in proc.stdout, proc.stdout[-2000:]
+
+
+def test_记账位的格子会真的被问到模型():
+    """`require_any_row` 不是"定死"，必须跟着问——否则筛选整族永远推导不出来。
+
+    ## 这条钉的是什么
+
+    硬判据对筛选类的 `workbench` 格给的是 `require_any_row`（"至少得有一种带
+    逐行视图的页，不要求非得是这一格"）。它是**记账位**，本格是 yes 是 no 仍
+    由模型判。但 `ask_list` 当初按"verdict 非 None"排除，把它一并当成定死的
+    剔掉了，而循环里又把预记的那笔 `asked` 给 discard 掉——两处一夹，这一格
+    没有任何地方去问。
+
+    表现是沉默的：区块不会报错，只是 `asked >= set(kinds)` 永远不成立，于是
+    每次都被算进"没问全的 N 个（不下结论，重跑）"，`--write` 一次都不给它们
+    打标。重跑一百遍也一样。这个脚本的存在意义就是让 `pageKinds` 可重算，而
+    筛选整族对它不可达。
+
+    所以这条不测"结果对不对"，测的是**这一格进没进 ask_list**。
+
+    注意别把判据写成"所有筛选区块的 workbench 格都必须被问"——`FilterBar` 那
+    一格被硬④（预设正面证据）覆写成了 `require`，已经定死，不问是对的。真正
+    的不变量只有一条：**凡是 `require_any_row`，就必须问**。
+    """
+    any_row = [
+        (str(b["type"]), kind)
+        for b in EXPERIENCE_BLOCKS
+        if b.get("generationEnabled")
+        for kind, v in hard_verdicts(b).items()
+        if v[0] == "require_any_row"
+    ]
+    assert any_row, "目录里一个 require_any_row 都没有，这条判据失去意义"
+
+    verdicts = {str(b["type"]): hard_verdicts(b) for b in EXPERIENCE_BLOCKS}
+    missed = [(t, k) for t, k in any_row if not needs_model(verdicts[t].get(k))]
+    assert not missed, (
+        f"{len(missed)}/{len(any_row)} 个记账位格子不会被问模型，"
+        f"对应区块永远进不了 complete：{missed[:8]}"
+    )
+
+
+def test_完美模型下每个区块都能推导完整():
+    """端到端复现那个沉默失败：模拟一轮"模型有问必答"，看谁进不了 `complete`。
+
+    上一条钉的是单个格子，这条钉的是**账目闭合**——把 `main()` 里那套
+    "硬判据定死的直接记账 / 其余问模型"的记账逻辑照抄一遍，喂一个百分百
+    答得上的假模型，然后要求 `asked` 覆盖全部页型。
+
+    真实脚本里这一步要调 LLM，所以 CI 跑不到；而 bug 恰恰只在这一步显形
+    （`--check` 只跑硬判据那层，一路绿灯）。这条用假模型把那段账补上。
+    """
+    enabled = [b for b in EXPERIENCE_BLOCKS if b.get("generationEnabled")]
+    kinds = list(PAGE_KIND_FACTS)
+
+    asked: dict[str, set[str]] = {str(b["type"]): set() for b in enabled}
+    for kind in kinds:
+        verdict_of = {str(b["type"]): hard_verdicts(b).get(kind) for b in enabled}
+        ask_list = [b for b in enabled if needs_model(verdict_of[str(b["type"])])]
+        for b in enabled:
+            v = verdict_of[str(b["type"])]
+            if v is None:
+                continue
+            t = str(b["type"])
+            asked[t].add(kind)
+            if v[0] == "require_any_row":
+                asked[t].discard(kind)
+        # 假模型：ask_list 里的每一个都答得上（真模型答不上是另一回事，
+        # 那种情况脚本本来就该报"没问全"）
+        for b in ask_list:
+            asked[str(b["type"])].add(kind)
+
+    incomplete = [str(b["type"]) for b in enabled if asked[str(b["type"])] < set(kinds)]
+    assert not incomplete, (
+        f"完美模型下仍有 {len(incomplete)}/{len(enabled)} 个区块问不全，"
+        f"`--write` 永远不会给它们打标：{incomplete[:8]}"
+    )

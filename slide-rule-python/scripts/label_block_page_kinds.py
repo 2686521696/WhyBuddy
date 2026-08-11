@@ -222,6 +222,20 @@ def hard_verdicts(block: dict[str, Any]) -> dict[str, tuple[str, str]]:
     return out
 
 
+def needs_model(verdict: tuple[str, str] | None) -> bool:
+    """这一格要不要问模型。
+
+    抽成函数是为了能被测试直接调到——它决定"哪些格子会被问"，而问漏了的表现
+    是沉默的（区块永远进不了 `complete`，只会在输出里显示成"没问全，重跑"），
+    靠跑一遍脚本根本看不出来是 bug 还是模型没答上。
+
+        None             硬判据不管这一格 → 问
+        require_any_row  只是记账位，本格是 yes 是 no 仍由模型判 → 问
+        forbid / require 已经定死 → 不问（问了浪费调用，还可能被答反）
+    """
+    return verdict is None or verdict[0] == "require_any_row"
+
+
 def audit(blocks: list[dict[str, Any]]) -> list[tuple[str, str, str, str]]:
     """拿硬判据核对目录现状，返回 [(区块, 页型, 问题, 理由)]。
 
@@ -408,8 +422,18 @@ def main() -> int:
 
     for kind in kinds:
         verdict_of = {str(b["type"]): hard_verdicts(b).get(kind) for b in enabled}
-        # 硬判据已经定死的格子不问模型——问了也只会浪费一次调用，还可能被它答反
-        ask_list = [b for b in enabled if verdict_of[str(b["type"])] is None]
+        # 硬判据已经**定死**的格子不问模型——问了也只会浪费一次调用，还可能被它答反。
+        #
+        # ⚠️ require_any_row 不算定死，必须跟着问。它只是一个记账位（"筛选类至少
+        # 得有一种带逐行视图的页"），本格是 yes 还是 no 仍由模型判——下面 :421 的
+        # 注释一直是这么写的，但它被排除在 ask_list 外、答案又在那里被 discard 掉，
+        # 于是没有任何地方真去问。
+        #
+        # 后果实测（完美模型模拟）：32 个筛选区块里 31 个的 workbench 格永远进不了
+        # `asked`，:442 的 `asked >= set(kinds)` 因此永远不成立——它们被算作"没问全"，
+        # `--dry-run` 每次都把它们列进"不下结论，重跑"，`--write` 一次都不会给它们
+        # 打标。这个脚本存在的意义就是让 pageKinds 可重算，而筛选整族对它不可达。
+        ask_list = [b for b in enabled if needs_model(verdict_of[str(b["type"])])]
         for b in enabled:
             v = verdict_of[str(b["type"])]
             if v is None:
@@ -419,7 +443,10 @@ def main() -> int:
             if v[0] == "require":
                 derived[t].add(kind)
             elif v[0] == "require_any_row":
-                # 这一格不是"必须是它"，只是记账位——照旧交给模型判
+                # 这一格不是"必须是它"，只是记账位——照旧交给模型判。
+                # 上面预先 add 的那笔要撤掉：这一格算不算"问过"，取决于模型
+                # 这一轮有没有答上（答上了由下面 :447 补记）。留着会让答不上来的
+                # 也被当成问过，把"没问全"悄悄吞掉。现在它确实在 ask_list 里了。
                 asked[t].discard(kind)
                 continue
             why_of[(t, kind)] = f"硬判据：{v[1]}"

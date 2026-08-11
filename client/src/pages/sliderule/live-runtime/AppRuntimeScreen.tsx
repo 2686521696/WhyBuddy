@@ -1768,10 +1768,22 @@ export function AppRuntimeScreen({
           // 也就是说它在这类页面上是**功能性无效**的，不只是难看。
           //
           // 2026-08-11：判据从"名字叫 FilterBar"换成 **capability === "filter"**。
-          // 上面那段理由一个字都不用改，但它对**所有**筛选类区块都成立——目录里
-          // 32 个 filter 区块有 31 个只发 filterChange，跟 FilterBar 一模一样。
+          // 上面那段理由一个字都不用改，但它对**所有**筛选类区块都成立。
           // 按名字挡等于只挡了这一族里最出名的那个：SavedViewTabs / TagFilterRow /
           // SearchBox 摆到总览页照样上屏、照样按不动。
+          //
+          // ⚠️ 数字更正（2026-08-11 复核）：原注释写"32 个里 31 个只发
+          // filterChange"，真数是 **28/32**。例外是四个——SavedViewTabs 与
+          // SavedSearchPanel 多发 submitRequest，HierarchicalCategoryPicker 多发
+          // itemSelect，ValidatedFormTabs 只发 itemSelect（一个 filterChange 都没有）。
+          //
+          // 那能不能因此放过这 4 个？**不能**，别再往这个方向改：它们多发的事件
+          // 同样到不了岸。`eventBindings`（事件名→动作 id）只在
+          // app-runtime-schema.ts:823 被解析，全仓库没有第二处读它；而
+          // handleBlockAction（:1607）只特判 rowSelect / editRequest /
+          // createRequest，其余一律去 page.pageActions 里找 **id 等于事件名**的
+          // 动作——动作 id 是模型生成的，不会恰好叫 "submitRequest"。放宽只是把
+          // 按不动的控件放回总览页。真要救它们，先把 eventBindings 接上。
           // 同一条判据现在有三处：目录 pageKinds（filter 区块已剥掉 monitor/
           // dashboard）、提示词禁令（schema_legal 的 monitor_forbidden_live）、
           // 这里的渲染层兜底。三处同源同判据，别再各写各的。

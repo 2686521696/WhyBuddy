@@ -6,7 +6,11 @@ legal-domains-parity.test.ts 锁（同读同一份 JSON）。任何一方私自�
 或改了账本但没跟上派生，这里当场红——E37 式漏账的机械防线。
 """
 
+import re
+from pathlib import Path
+
 from services import schema_legal
+from services.schema_legal import experience_block_prompt_block
 from services.v5_model_gate import (
     CHART_TYPES,
     EXPERIENCE_BLOCK_TYPES,
@@ -319,3 +323,134 @@ def test_contract_teaches_responsive_business_page_grid():
     assert "page-content" in prompt
     assert "blockRef/x/y/w/h" in prompt
     assert "one placement per blockRef per breakpoint" in prompt
+
+
+def test_推荐上总览页的区块_没有一个被页型MUST规则禁止():
+    """同一份 prompt 不能既推荐一个区块上总览页、又立规矩禁止它上总览页。
+
+    ## 这条钉的是什么
+
+    `monitor_ok`（"Where this business's overview genuinely leads with something
+    beyond numbers, declare it as a block: …"）当初只过了一道判据——
+    `_inert_on_overview`，也就是"它在总览页上是不是死控件"。它**不看** pageKinds。
+
+    而 2026-08-11 同一份 prompt 里新立了一条 MUST：区块只能出现在 `pages=` 列出
+    的页型里。两处一夹，模型在同一份提示词里会连着读到三句互斥的话：
+
+        - QuickActionPanel: … pages=workbench,wizard          ← 条目自己写着不含总览页
+        … declare it as a block: QuickActionPanel, …          ← 这里推荐它上总览页
+        A block MUST only appear … whose kind is in that list ← 又禁止这么做
+
+    当时的规模是 323 个推荐里 134 个这样，不是零星几个。
+
+    ## 为什么从 prompt 正文里解析，而不是断言源码
+
+    本文件里已经有过教训：用"源码里出现过某个名字"当判据，`FilterBar` 是另外
+    六个类型名的子串，守卫会被子串喂饱而漏掉真实回归。所以这条**把真实拼出来的
+    prompt 正文切出来解析**——推荐名单来自正文那一句，pages= 来自正文的条目行。
+    两边都是模型真正会读到的字节，中间不经过任何我们自己的判据函数。
+    """
+    text = experience_block_prompt_block()
+
+    # 1) 从条目行里取每个区块的 pages=（模型读到的那一份，不是目录对象）
+    declared: dict[str, set[str]] = {}
+    for line in text.splitlines():
+        m = re.match(r"^- (\w+): .*?; pages=([\w,]+);", line)
+        if m:
+            declared[m.group(1)] = set(m.group(2).split(","))
+    assert declared, "prompt 正文里一条 `- 类型: … pages=…` 都没解析到，判据失效"
+
+    # 2) 从推荐句里取名单
+    marker = "declare it as a block: "
+    recommending = [ln for ln in text.splitlines() if marker in ln]
+    assert len(recommending) == 1, f"推荐句不是恰好一条：{len(recommending)}"
+    tail = recommending[0].split(marker, 1)[1]
+    recommended = [
+        t for t in re.findall(r"\b[A-Z]\w+\b", tail.split(". Pick by what")[0])
+    ]
+    assert recommended, "推荐句里没解析到任何区块名"
+
+    # 3) 交叉核对：被推荐上总览页的，pages= 必须真的含 monitor 或 dashboard
+    contradicted = [
+        t
+        for t in recommended
+        if t in declared and not (declared[t] & {"monitor", "dashboard"})
+    ]
+    assert not contradicted, (
+        f"{len(contradicted)}/{len(recommended)} 个区块被推荐上总览页，"
+        f"但它们自己的 pages= 不含 monitor/dashboard，"
+        f"同一份 prompt 里的 MUST 规则禁止这么做：{contradicted[:8]}"
+    )
+
+
+def test_筛选族的事件分布_钉住注释里那几个数():
+    """`28/32 只发 filterChange` 这个数必须由目录算出来，不许再手写。
+
+    ## 为什么值得单独钉一条
+
+    这个数原本写成 31/32，在 `schema_legal.py`、`AppRuntimeScreen.tsx` 和
+    `docs/page-kinds-widening-proposal.md` 三处各抄了一遍，**三处全错**，而且
+    错了没有任何东西会红——它只是注释。
+
+    代价不是"注释不好看"：判据（整族 filter 一律禁总览页）的正当性就建立在这个
+    数上。数错了，复核的人据此提出的补救方向也是错的（"放宽成 events⊆{filterChange}
+    让那几个活下来"）——而那 4 个多发的事件同样到不了岸，放宽只会把按不动的控件
+    放回总览页。
+
+    所以这条不钉"判据对不对"，钉的是**判据赖以成立的那组事实**。
+    """
+    filters = [
+        b
+        for b in schema_legal.EXPERIENCE_BLOCKS
+        if str(b.get("capability") or "") == "filter"
+    ]
+    only_filter_change = [
+        b for b in filters if set(b.get("events") or ()) == {"filterChange"}
+    ]
+    exceptions = {
+        str(b["type"]): sorted(b.get("events") or ())
+        for b in filters
+        if set(b.get("events") or ()) != {"filterChange"}
+    }
+
+    assert len(filters) == 32, f"filter 区块数变了（{len(filters)}），三处注释要跟着改"
+    assert len(only_filter_change) == 28, (
+        f"只发 filterChange 的是 {len(only_filter_change)}/{len(filters)}，"
+        f"不是注释里写的 28——schema_legal.py、AppRuntimeScreen.tsx、"
+        f"docs/page-kinds-widening-proposal.md 三处要一起改"
+    )
+    assert exceptions == {
+        "HierarchicalCategoryPicker": ["filterChange", "itemSelect"],
+        "SavedSearchPanel": ["filterChange", "submitRequest"],
+        "SavedViewTabs": ["filterChange", "submitRequest"],
+        # 注意：它一个 filterChange 都不发，却被标成 capability=filter
+        "ValidatedFormTabs": ["itemSelect"],
+    }, f"筛选族的事件例外变了：{exceptions}"
+
+
+def test_额外事件到不了岸_所以整族禁令仍然成立():
+    """禁令覆盖那 4 个例外的依据：`eventBindings` 全仓库没有第二处读它。
+
+    这是上一条的另一半。上一条钉事实（谁发了什么事件），这条钉**为什么发了别的
+    事件也照禁**——因为事件名→动作 id 的映射根本没接上，多发的事件在任何页面上
+    都是空转。哪天有人把 `eventBindings` 接上了，这条会红，那时才该回头重议判据。
+    """
+    root = Path(schema_legal.__file__).resolve().parent.parent.parent / "client" / "src"
+    hits: list[str] = []
+    for path in root.rglob("*.ts*"):
+        if "__tests__" in path.parts:
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            # 只数**代码行**：注释里提到它不算接线（这一条本身的说明就提了两次，
+            # 连注释一起数会把判据变成"谁都不许谈论它"）
+            if line.lstrip().startswith(("//", "*", "/*")):
+                continue
+            if "eventBindings" in line:
+                hits.append(f"{path.relative_to(root)}:{i}")
+
+    # 只允许三处：两处类型声明 + 一处解析赋值。多出来的说明有人开始真读它了。
+    assert len(hits) == 3, (
+        "client 侧 eventBindings 的代码引用处变了。若已把事件名→动作 id 接进渲染层，"
+        "那么筛选族禁令对 SavedViewTabs / SavedSearchPanel / "
+        f"HierarchicalCategoryPicker 这几个就要重议：{hits}"
+    )
