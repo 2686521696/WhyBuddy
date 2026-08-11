@@ -688,9 +688,7 @@
         "aggregate"
       ],
       "pageKinds": [
-        "workbench",
-        "dashboard",
-        "monitor"
+        "workbench"
       ],
       "allowedRegions": [
         "metrics",
@@ -762,8 +760,7 @@
         "series"
       ],
       "pageKinds": [
-        "dashboard",
-        "monitor"
+        "workbench"
       ],
       "allowedRegions": [
         "charts",

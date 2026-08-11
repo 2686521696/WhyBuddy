@@ -77,6 +77,24 @@ docs/page-kinds-widening-proposal.md 里 A 档的 8 个区块已经改了 `pageK
 仓库里已有先例——`generality` 有 `scripts/label_block_generality.py`，
 `pageKinds` 从来没有（这正是本文件开头那段"随每个区块被添加时手写"说的事）。
 在那之前，这里守两个数：生判据的总数只准变少，精判据里**没写理由**的必须是 0。
+
+## 那份推导依据已经补上了，而它给出的答案是「不该上闸」
+
+`scripts/label_block_page_kinds.py` + `tests/test_page_kind_derivation.py`
+（2026-08-11）。写那个脚本时把运行时逐处 `page.view.kind` 分支查了一遍，结论：
+
+    workbench / wizard / kanban / calendar 四种页型，从"区块能不能在这儿干活"
+    的角度看是**可以互换的**——四者都有逐行视图、都走同一条 businessPageGrid、
+    吃同一张区域表（regionsToGrid 的几何按 band 走，跟页型无关，只有
+    kanban/calendar 把右栏从 4/12 收到 3/12）。
+
+页型对区块准入的技术影响全部集中在"有没有逐行视图"这一件事上，也就是那 4 条
+硬判据；而它们运行时早就兜死了。**门禁硬拒的前提是"违反了就一定错"，这个字段
+四分之三的格子达不到这个标准**，所以下面那条路标是长期有效的，不是临时状态。
+
+余下的判断（"这一页该不该推荐这个区块"）影响的是选材侧：提示词给模型的清单、
+组件库的页型筛选。标错了页面不会坏，只是推荐得不好——那一层由脚本出初稿、
+人过一遍（`--dry-run`），不进 CI。
 """
 
 import collections

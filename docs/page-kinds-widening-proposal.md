@@ -19,6 +19,10 @@
 > 把这 11% 清成 0，对剩下 317 个手写声明对不对一个字都没说。解锁条件已换成
 > **"pageKinds 得有一份能重算的推导依据"**——仓库里 `generality` 有
 > `scripts/label_block_generality.py`，`pageKinds` 从来没有。
+>
+> **那份依据已经补上了**（`scripts/label_block_page_kinds.py` +
+> `tests/test_page_kind_derivation.py`），而它给出的答案是**不该上闸**——
+> 见下面「推导脚本」一节。
 
 ## 判据：只沿「通用工作面」放宽，不伸进形状专属页型
 
@@ -234,6 +238,75 @@ KPI/图表通常跨好几个实体（真跑那次跨了 4 个），筛一个也�
    `pageKinds` 一份**能重算的推导依据**（照 `scripts/label_block_generality.py`
    给 `generality` 做的那样）。届时要改的仍是 `test_门禁仍然不拦页型越界`
    那条路标，而不是悄悄让修复器开始删区块。
+
+## 推导脚本（**已执行**）：`scripts/label_block_page_kinds.py`
+
+前面三批都是人工判断，判据只覆盖 41/358。这个脚本补的是"能重算的依据"，照
+`label_block_generality.py` 给 `generality` 做的那样。
+
+### 最重要的一条结论：这个字段四分之三不是技术约束
+
+写脚本时把运行时逐处 `page.view.kind` 分支查了一遍：
+
+| 页型 | 逐行视图 | 视图形状 | KPI/图表通道 | 区块渲染路径 |
+|---|---|---|---|---|
+| workbench | 有 | 表 | 固定 statsBand | businessPageGrid |
+| wizard | 有 | 表 + 步骤条 | 无 | businessPageGrid |
+| kanban | 有 | 看板（缺 statusFieldId 回落成表） | 无 | businessPageGrid |
+| calendar | 有 | 月历（缺 dateFieldId 回落成表） | 无 | businessPageGrid |
+| monitor | **无** | — | freeformOverview | blockScaffold |
+| dashboard | **无** | — | 同上 | blockScaffold / grid |
+
+**workbench / wizard / kanban / calendar 四种页型，从"区块能不能在这儿干活"的角度
+看是可以互换的**——四者都有逐行视图、都走同一条 `businessPageGrid`、吃同一张
+区域表（`regionsToGrid` 的几何按 band 走，跟页型无关，只有 kanban/calendar 把右栏
+从 4/12 收到 3/12）。
+
+**所以这个字段不该上结构闸。** 门禁硬拒的前提是"违反了就一定错"，而这个字段
+四分之三的格子达不到这个标准。这条已经写回棘轮那个文件——上闸那条路标从"临时
+状态"改成了"长期有效的结论"。
+
+### 分两层，不混在一起
+
+- **硬判据（4 条）**：运行时真的会丢区块或画重复的，加一条来自已自检预设的正面
+  证据。每条指到具体行号。`--check` 不调模型、以退出码表态，`test_page_kind_derivation.py`
+  把它接进了 CI。
+  1. 总览页不放 `capability == "filter"`（`filterChange` 够不到东西）
+  2. 总览页不放 `MetricGrid` / `TrendChart`（同一份数字画两遍）
+  3. 筛选类至少要有一种带逐行视图的页（否则无处可去）
+  4. `pageKindPresets` 用过的 (区块, 页型) 必须允许（预设启动时逐条自检过）
+- **设计建议（其余全部）**：模型按页型分组出初稿，`--dry-run` 打差异表给人过。
+  标错了页面不会坏，只是推荐得不好，所以**不进 CI、默认不落盘**。
+
+### 第一次 `--check` 就抓到 4 处，其中一处是真事故
+
+    MetricGrid  monitor/dashboard  目录允许了运行时会丢掉的页型
+    TrendChart  monitor/dashboard  同上——而且 TrendChart **只**允许这两种页
+
+`TrendChart` 那条：方案 C 的分工是"总览页归 `page.stats`/`charts`，业务页归
+`MetricGrid`/`TrendChart` 积木"，而它的 `pageKinds` 只写了总览页——正好是它被硬禁
+的那两种。**等于这个区块哪儿都摆不了。** 跟当天早些时候
+`AnalyticsDateScope` / `DashboardParameterBar` 是同一个形状的洞。两个都已改成
+`workbench`。
+
+### 第二层第一次跑就示范了"为什么必须人过"
+
+模型把 `RecordForm` 在 wizard 页判成"否"，理由"单体表单不能替代分步流程"——听着
+有道理，但目录里 `flow-form` 预设正是 `WorkflowTimeline` + `RecordForm` 摆在
+wizard 页上，那个组合服务启动时逐条自检过。它不知道这件事。
+
+所以补了两处：硬判据④把预设用过的组合钉成 `require`；提示词把该页型的预设当
+"已审核通过的正面例子"发给模型。这类错就不会再犯。
+
+### 参考过的成熟方案
+
+- **alibaba/lowcode-engine**（`nestingRule.parentWhitelist` / `childWhitelist`）：
+  **手写白名单**，引擎只校验不推导。这正是我们现在这份数据的形态，也正是它漂掉
+  的原因。
+- **nocobase**（`SchemaInitializer` / `DataBlockInitializer`）：能往一个容器里加
+  什么，由**容器提供什么数据上下文**决定，不是每个区块自己声明一张页面清单。
+  本脚本照这个方向做——先写清"每种页提供什么"（`PAGE_KIND_FACTS`，每条带出处），
+  再问"这个区块需要什么"，两边对上才算能放。
 
 ## 一条没解决的
 
