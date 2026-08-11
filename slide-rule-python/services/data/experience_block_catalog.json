@@ -688,7 +688,10 @@
         "aggregate"
       ],
       "pageKinds": [
-        "workbench"
+        "workbench",
+        "wizard",
+        "kanban",
+        "calendar"
       ],
       "allowedRegions": [
         "metrics",
@@ -760,7 +763,10 @@
         "series"
       ],
       "pageKinds": [
-        "workbench"
+        "workbench",
+        "wizard",
+        "kanban",
+        "calendar"
       ],
       "allowedRegions": [
         "charts",

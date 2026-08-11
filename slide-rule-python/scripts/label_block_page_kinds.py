@@ -24,11 +24,29 @@
 
     页型         逐行视图   视图形状   KPI/图表通道        区块渲染路径
     workbench    有         表         固定 statsBand      businessPageGrid
-    wizard       有         表+步骤条   无                  businessPageGrid
-    kanban       有         看板       无                  businessPageGrid
-    calendar     有         月历       无                  businessPageGrid
+    wizard       有         表+步骤条    桌面有/手机无        businessPageGrid
+    kanban       有         看板        桌面有/手机无        businessPageGrid
+    calendar     有         月历        桌面有/手机无        businessPageGrid
     monitor      **无**     —          freeformOverview    blockScaffold
     dashboard    **无**     —          同上                blockScaffold / grid
+
+⚠️ 中间那三行原本写的是"无"，**是错的**（2026-08-11 复核）。真实行为两个端不一样：
+
+  · 桌面：`page.stats` / `page.charts` 照样渲染。`statsBand` 自己没有任何页型闸
+    （AppRuntimeScreen.tsx:2674 只判 `page.stats.length > 0`），而这三种页会落进
+    分支链最末那个 else（:3437 起），那里就摆着 statsBand / chartsBand。
+  · 手机：**真的没有**。`wantsMetrics`（:2083）只认 dashboard / monitor /
+    workbench，这三种页一个数字都出不来（wizard 只多一条 Steps）。
+
+这条错误值得记一笔：正因为以为"这三种页压根没有 KPI 通道"，才会觉得把
+MetricGrid/TrendChart 的 pageKinds 砍到只剩 workbench 是无害的——而
+CHANNEL OWNERSHIP 同时要求这三种页"把 page.stats/charts 留空、改用积木"。
+两下一夹，它们就成了**两条路都堵死**：积木不给用，自己声明的又被规矩禁止。
+
+顺带说明为什么修法是"放开积木"而不是"改成让它们用 page.stats"：stats 那条路
+在这三种页上**只有桌面通**，同一个页面换个端就没有数字了；积木两个端都渲染
+（手机档见 :2339 `renderExperienceBlockScaffold(true, phonePrimaryDataView)`）。
+CHANNEL OWNERSHIP 原本的分工是对的，错的是目录被砍窄了。
 
 也就是说 **workbench / wizard / kanban / calendar 四种页型，从"这个区块能不能
 在这儿干活"的角度看是可以互换的**：四者都有逐行视图、都走同一条
@@ -108,21 +126,27 @@ PAGE_KIND_FACTS: dict[str, dict[str, Any]] = {
     },
     "wizard": {
         "provides": "主实体的表 + 一条流程步骤条（来自 workflow.nodes）；"
-                    "主列通常被分步表单占住，附属内容走 aside/supplement/footerBar",
+                    "主列通常被分步表单占住，附属内容走 aside/supplement/footerBar；"
+                    "KPI/趋势走 MetricGrid/TrendChart 积木（page.stats 在这种页上"
+                    "只有桌面渲染、手机不出，所以归积木）",
         "row_view": True,
-        "evidence": 'AppRuntimeScreen.tsx:3347 `page.view.kind === "wizard"` 的 Steps',
+        "evidence": 'AppRuntimeScreen.tsx:3347 `page.view.kind === "wizard"` 的 Steps；'
+                    ":2083 wantsMetrics 不含 wizard",
     },
     "kanban": {
         "provides": "主实体的看板（按 statusFieldId 分列，缺这个字段就回落成表）；"
-                    "右栏比别的页型窄一格（3/12），因为棋盘吃宽度",
+                    "右栏比别的页型窄一格（3/12），因为棋盘吃宽度；"
+                    "KPI/趋势走 MetricGrid/TrendChart 积木（同 wizard）",
         "row_view": True,
-        "evidence": "AppRuntimeScreen.tsx:3180 KanbanBoard；business-page-layout.ts asideWidth",
+        "evidence": "AppRuntimeScreen.tsx:3180 KanbanBoard；business-page-layout.ts asideWidth；"
+                    ":2083 wantsMetrics 不含 kanban",
     },
     "calendar": {
         "provides": "主实体的月历（按 dateFieldId 排，缺这个字段就回落成表）；"
-                    "右栏同样窄一格",
+                    "右栏同样窄一格；"
+                    "KPI/趋势走 MetricGrid/TrendChart 积木（同 wizard）",
         "row_view": True,
-        "evidence": "AppRuntimeScreen.tsx:3187 CalendarBoard",
+        "evidence": "AppRuntimeScreen.tsx:3187 CalendarBoard；:2083 wantsMetrics 不含 calendar",
     },
     "monitor": {
         "provides": "**没有逐行视图**。KPI 与图表走 page.stats / page.charts，"

@@ -36,7 +36,13 @@
 归 MetricGrid/TrendChart 积木"，而它的 `pageKinds` 只写了总览页——正好是它被硬
 禁的那两种。**等于这个区块哪儿都摆不了**，跟 2026-08-11 早些时候
 `AnalyticsDateScope` / `DashboardParameterBar` 那两个是同一个形状的洞。
-两个都已改成 `workbench`。
+
+当时两个都改成了 `workbench`——**改窄了一档，又造出第二个洞**：方案 C 的分工
+写的是"业务页"，而业务页有四种。kanban / calendar / wizard 于是既拿不到积木
+（`block_assembler` 按 pageKinds 过滤，它们根本不在候选里），又被
+CHANNEL OWNERSHIP 要求"把 page.stats/charts 留空"，一个数字都显示不出来。
+2026-08-11 复核时放开到四种业务页型，并补了
+`test_每种页型都至少有一条能用的KPI通道` 把这个形状钉住。
 """
 
 import subprocess
@@ -339,3 +345,72 @@ def test_冲突会被audit报出来并让check非零退出(monkeypatch):
     conflicts = [p for p in problems if p[2].startswith("硬判据自相矛盾")]
     assert conflicts, f"audit 没报冲突，problems={problems}"
     assert conflicts[0][1] == "monitor", conflicts[0]
+
+
+def test_每种页型都至少有一条能用的KPI通道():
+    """没有哪种页型可以"既不许用积木、又不许自己声明"——那是把它饿死。
+
+    ## 这条补的是什么
+
+    CHANNEL OWNERSHIP（schema_legal.py）把 KPI 通道按页型分了工：
+
+        monitor / dashboard          →  page.stats / page.charts
+        workbench/kanban/calendar/wizard →  MetricGrid / TrendChart 积木，
+                                            且**明确要求** page.stats 留空
+
+    2026-08-11 有一批改动把 MetricGrid 与 TrendChart 的 pageKinds 砍到只剩
+    `workbench`。于是 kanban / calendar / wizard 三种页两条路同时断掉：
+
+      · 积木这条：`block_assembler._catalog_for_prompt` 按 pageKinds 过滤，
+        这两个区块**根本不出现在候选里**；模型硬发也会被 :162 丢掉，
+        记一句"这种积木不能放在 X 页"。
+      · 声明这条：CHANNEL OWNERSHIP 明说这些页要把 page.stats/charts 留空。
+
+    两边都堵死，这三种页一个数字都显示不出来，而且**没有任何测试会红**——
+    目录合法、硬判据 0 违反、提示词也自洽，只有真机上看得出这页少了 KPI。
+
+    所以钉一条跨两侧的：每种页型至少要有一条通道是通的。
+    """
+    kpi_blocks = [
+        b
+        for b in EXPERIENCE_BLOCKS
+        if b.get("generationEnabled") and str(b["type"]) in ("MetricGrid", "TrendChart")
+    ]
+    assert kpi_blocks, "MetricGrid / TrendChart 都不通电了，这条判据要重写"
+
+    starved = []
+    for kind in PAGE_KIND_FACTS:
+        # 通道甲：总览页自己声明 page.stats / page.charts
+        owns_stats_channel = kind in OVERVIEW_KINDS
+        # 通道乙：能摆 KPI 积木
+        has_kpi_block = any(kind in (b.get("pageKinds") or ()) for b in kpi_blocks)
+        if not (owns_stats_channel or has_kpi_block):
+            starved.append(kind)
+
+    assert not starved, (
+        f"这些页型两条 KPI 通道都断了：{starved}。"
+        "要么放开 MetricGrid/TrendChart 的 pageKinds，"
+        "要么改 CHANNEL OWNERSHIP 让它们自己声明 page.stats/charts——"
+        "但不能两边都不给。"
+    )
+
+
+def test_KPI积木与总览页禁令互补而不重叠():
+    """积木能去的页 + 总览页 = 全部页型，且两者不相交。
+
+    上一条保证"没有页型被饿死"，这条保证反方向没有**重叠**——KPI 积木要是溜进
+    了总览页，就跟 page.stats 画的是同一份数字，一屏里出现两遍（硬② 禁的正是
+    这个，渲染层 KPI_BLOCK_TYPES 也兜着）。
+
+    两条一起，把 CHANNEL OWNERSHIP 那句"one page, one channel"钉成机械事实。
+    """
+    for btype in ("MetricGrid", "TrendChart"):
+        entry = next(b for b in EXPERIENCE_BLOCKS if str(b["type"]) == btype)
+        kinds = set(entry.get("pageKinds") or ())
+        assert not (kinds & set(OVERVIEW_KINDS)), (
+            f"{btype} 允许了总览页 {sorted(kinds & set(OVERVIEW_KINDS))}——"
+            "会和 page.stats/charts 画两遍"
+        )
+        assert kinds == set(PAGE_KIND_FACTS) - set(OVERVIEW_KINDS), (
+            f"{btype} 的 pageKinds 应当正好是全部业务页型，现在是 {sorted(kinds)}"
+        )
