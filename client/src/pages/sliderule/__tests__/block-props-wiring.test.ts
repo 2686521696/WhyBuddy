@@ -38,7 +38,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 const read = (rel: string) =>
-  readFileSync(new URL(rel, import.meta.url), "utf8");
+  readFileSync(new URL(rel, import.meta.url), "utf8").replace(/\r\n?/g, "\n");
 
 const registry = read("../live-runtime/block-registry.tsx");
 const runtime = read("../live-runtime/AppRuntimeScreen.tsx");
