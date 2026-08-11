@@ -2570,7 +2570,8 @@
       "pageKinds": [
         "workbench",
         "dashboard",
-        "monitor"
+        "monitor",
+        "kanban"
       ],
       "allowedRegions": [
         "main",
@@ -2642,8 +2643,8 @@
       ],
       "pageKinds": [
         "workbench",
-        "dashboard",
-        "monitor"
+        "monitor",
+        "calendar"
       ],
       "allowedRegions": [
         "main",

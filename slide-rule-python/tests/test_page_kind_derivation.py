@@ -207,6 +207,50 @@ def test_总览页设计环节画得出的形状都得允许总览页():
     )
 
 
+def test_形状与页型同名的区块必须允许那种页():
+    """`KanbanBoard` 得能上看板页，`ScheduleCalendar` 得能上日历页。
+
+    ## 这条是怎么来的（2026-08-11）
+
+    第二层并发跑完之后，拿 177 份真实生成模型对着差异表查，照出两条**铁的**目录
+    错误——不是"标得不够宽"，是自相矛盾：
+
+        KanbanBoard       pageKinds=workbench,dashboard,monitor   真实在看板页用过 35 次
+        ScheduleCalendar  pageKinds=workbench,dashboard,monitor   真实在日历页用过 77 次
+
+    一个看板形状的区块不允许上看板页、一个日历形状的区块不允许上日历页。因为
+    `pageKinds` 从来没上门禁，模型照样往那儿摆、也照样渲染得出来，所以这两条错了
+    很久都没人发现——**声明和现实各过各的**。两个都已补上。
+
+    判据是名字里的形状词。这是个**启发式**，不是铁律（`MaintenanceWindowCalendar`
+    带 Calendar 但它允许 calendar，不在此列），所以只用来防"形状自相矛盾"这一类，
+    并且把当前成员数钉住：新增区块撞上这条时会红，逼人回来看一眼。
+    """
+    shape_words = {"calendar": ("Calendar", "Agenda"), "kanban": ("Kanban", "Board")}
+    bad = []
+    checked = 0
+    for b in EXPERIENCE_BLOCKS:
+        if not b.get("generationEnabled"):
+            continue
+        t = str(b["type"])
+        declared = set(b.get("pageKinds") or [])
+        for kind, words in shape_words.items():
+            if not any(w in t for w in words):
+                continue
+            checked += 1
+            if kind not in declared:
+                bad.append(f"{t}（{','.join(sorted(declared))}）不允许 {kind}")
+    assert checked >= 8, (
+        f"只匹配到 {checked} 个带形状词的区块——判据的词表是不是过时了？"
+    )
+    assert not bad, (
+        "这些区块的名字就是某种页型的形状，却不允许那种页型：\n    "
+        + "\n    ".join(bad)
+        + "\n形状自相矛盾比'标窄了'严重：模型照样会往那儿摆、也渲染得出来，"
+        "于是声明和现实各过各的。"
+    )
+
+
 def test_check_模式可以直接当CI闸用():
     """脚本 `--check` 不调模型、以退出码表态。这条保证它一直是这个契约。
 
