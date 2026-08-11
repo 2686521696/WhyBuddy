@@ -183,6 +183,17 @@ Rules:
   person-ish field on the entity is a "ref", the block has nothing correct to bind,
   the structural gate rejects the page, and the whole model is regenerated — this
   is a rejected deliverable, not a cosmetic warning.
+- HIERARCHY IS A STRING ID, not a "ref". When an entity forms a tree (parent
+  policy, sub-item, parent node, caller/callee), give it a "string" field holding
+  the PARENT ROW'S id — e.g. parent_policy_id of type "string". Blocks bind
+  hierarchy through parentFieldRef, parentPartFieldRef, spanParentFieldRef,
+  nodeParentFieldRef, operatorParentFieldRef and profileParentFieldRef, and EVERY
+  one of them requires a "string" field. Typing that column "ref" reads as the
+  natural choice and is exactly what gets the model rejected: NO entityFieldRef in
+  the whole catalog accepts "ref" — of 1009 required field types, 447 want string,
+  273 enum, 205 number, 84 date and ZERO want ref — because "ref" declares no
+  target entity anywhere in this schema. Root rows carry an empty parent id; never
+  invent a parent to fill it.
 - Every aigc input/output field MUST be from datamodel; roleRefs from rbac.roles.
 - appbundle pageRef∈pages, workflowRef∈workflow, roleRefs∈roles, dataModelRefs∈entities.
 __WORKFLOWREF_RULE__

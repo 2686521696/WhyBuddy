@@ -531,3 +531,83 @@ def test_名单解析是精确匹配_不会被兄弟名字喂饱():
     assert {"FilterBar", "StatusTabs", "TrendChart"} <= shadowed, (
         f"这些名字不再被别的类型名掩护了，判据可以放宽——先确认：{sorted(shadowed)[:10]}"
     )
+
+
+def test_层级指针的规则_数字必须跟目录对得上():
+    """`ref` 那条规则里的数字是**从目录数出来的**，不许手写漂着。
+
+    ## 这条规则是怎么来的（2026-08-11）
+
+    跑真实话题三趟，有一趟首轮没过闸，唯一那条裁决是：
+
+        [fieldref_type] parentFieldRef 'parent_policy_id' must be a string field (got 'ref')
+
+    模型把"父级策略"标成了 `ref`——**语义上完全正确**，而且确定性修复器也救不
+    回来：`_repair_binding_field_types` 只在同实体、类型正好相等的字段里挑，
+    那个实体的 string 字段是 name / receiver_name / matcher，没有唯一近邻，
+    按"歧义不猜"原样留给门。修复器是对的，缺的是**没人告诉过模型**。
+
+    ## 为什么判定"契约对、提示词缺"，而不是改契约
+
+    同一天在这类事上已经错判过两次（`sortByRef` 要 number、`startTimeFieldRef`
+    要 string，两次都是契约对）。所以这次先数：
+
+        entityFieldRefs 全目录 1009 处，string 447 / enum 273 / number 205 /
+        date 84 / **ref 0**
+
+    **没有任何一处绑定接受 `ref`。** 也就是说模型只要把某个字段标成 `ref` 并让
+    区块去绑它，就必然被拒——这不是某个区块契约窄，是 `ref` 在这套 schema 里
+    压根没有目标声明、下游解析不出来（"PEOPLE NEED A NAME FIELD" 那条早就写了
+    同一个机制，只是它只覆盖了人物类的六个 FieldRef，漏了自引用的层级指针）。
+
+    ## 这条测试守什么
+
+    规则句里写死了几个数（1009 / 447 / 273 / 205 / 84 / 0）和六个 FieldRef 名字。
+    数据一变它们就成了假话，而**假前提是最难查的一类错**——模型会照着一个不存在
+    的事实推理。所以这里逐个跟目录核对。
+    """
+    from services.v5_llm_generate import _SCHEMA_INSTRUCTION as S
+
+    head = "HIERARCHY IS A STRING ID"
+    assert head in S, "层级指针那条规则不见了"
+
+    counts: dict[str, int] = {}
+    parents: set[str] = set()
+    for b in schema_legal.EXPERIENCE_BLOCKS:
+        if not b.get("generationEnabled"):
+            continue
+        wants = (b.get("bindingSchema") or {}).get("entityFieldRefs") or {}
+        for key, typ in wants.items():
+            counts[str(typ)] = counts.get(str(typ), 0) + 1
+            if "parent" in key.lower():
+                parents.add(key)
+
+    # ① 没有任何绑定接受 ref —— 整条规则的地基
+    assert counts.get("ref", 0) == 0, (
+        f"现在有 {counts['ref']} 处绑定要求 ref 了，规则句里那句 "
+        "'ZERO want ref' 变成了假话，请一起改"
+    )
+
+    # ② 规则句里报的每个数，就是从目录数出来的那个数
+    total = sum(counts.values())
+    expected = [
+        (f"of {total} required field types", "绑定总数"),
+        (f"{counts.get('string', 0)} want string", "string"),
+        (f"{counts.get('enum', 0)} enum", "enum"),
+        (f"{counts.get('number', 0)} number", "number"),
+        (f"{counts.get('date', 0)} date", "date"),
+    ]
+    wrong = [(frag, what) for frag, what in expected if frag not in S]
+    assert not wrong, (
+        "规则句里的数字与目录对不上（目录现在是 "
+        f"总数 {total} / string {counts.get('string', 0)} / enum {counts.get('enum', 0)}"
+        f" / number {counts.get('number', 0)} / date {counts.get('date', 0)}）："
+        + "；".join(f"{what} 那处应为 “{frag}”" for frag, what in wrong)
+    )
+
+    # ③ 点名的 FieldRef 必须都还在目录里（名字改了就得跟着改）
+    named = {k for k in parents if k in S}
+    assert named == parents, (
+        f"这些父指针 FieldRef 没被规则句点名：{sorted(parents - named)}。"
+        "漏掉一个，模型在那个区块上就照旧会标 ref。"
+    )
