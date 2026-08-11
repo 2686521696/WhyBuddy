@@ -205,6 +205,78 @@ import {
   HIERARCHY_SELECTION_RENDERERS,
 } from "./hierarchy-selection-blocks";
 import { ANALYSIS_DEPENDENCY_RENDERERS } from "./analysis-dependency-blocks";
+import {
+  AlertGroupAccordionRenderer,
+  AssetReviewLightboxRenderer,
+  DeploymentRolloutTrackRenderer,
+  EvidenceCollectionWorkspaceRenderer,
+  INDEPENDENT_STRUCTURE_LABELS,
+  PaymentAllocationWorkbenchRenderer,
+  SignatureFieldCanvasRenderer,
+} from "./independent-structure-blocks";
+import {
+  ExperimentTrafficAllocatorRenderer,
+  INDEPENDENT_STRUCTURE_BATCH2_LABELS,
+  QueryNotebookComposerRenderer,
+  SlaBreachClockRenderer,
+  WarehouseBinHeatmapRenderer,
+  WarehousePickRouteScannerRenderer,
+  WorkflowNodeDebuggerRenderer,
+} from "./independent-structure-blocks-batch2";
+import {
+  DashboardGridComposerRenderer,
+  DistributedTraceWaterfallRenderer,
+  ExpressionDataMapperRenderer,
+  INDEPENDENT_STRUCTURE_BATCH3_LABELS,
+  LiveLogTailerRenderer,
+  ResumableUploadQueueRenderer,
+  SessionReplayScrubberRenderer,
+} from "./independent-structure-blocks-batch3";
+import {
+  FlameGraphProfilerRenderer,
+  FormCanvasBuilderRenderer,
+  INDEPENDENT_STRUCTURE_BATCH4_LABELS,
+  PdfPageOrganizerRenderer,
+  PolicyDecisionSimulatorRenderer,
+  StreamReplicationConfiguratorRenderer,
+  ThreeWayMergeResolverRenderer,
+} from "./independent-structure-blocks-batch4";
+import {
+  BooleanRuleTreeBuilderRenderer,
+  DatasetJoinBuilderRenderer,
+  GeofenceVertexEditorRenderer,
+  ImageCropTransformStudioRenderer,
+  INDEPENDENT_STRUCTURE_BATCH5_LABELS,
+  PivotShelfComposerRenderer,
+  RouteStopSequencerRenderer,
+} from "./independent-structure-blocks-batch5";
+import {
+  AlertThresholdBandEditorRenderer,
+  BomAssemblyTreeEditorRenderer,
+  CompositeRoleBuilderRenderer,
+  CronOccurrenceBuilderRenderer,
+  HttpRequestWorkbenchRenderer,
+  INDEPENDENT_STRUCTURE_BATCH6_LABELS,
+  MediaTrimTimelineRenderer,
+} from "./independent-structure-blocks-batch6";
+import {
+  ArtifactProvenanceVerifierRenderer,
+  CertificateRotationPlannerRenderer,
+  ColumnProfileWorkbenchRenderer,
+  INDEPENDENT_STRUCTURE_BATCH7_LABELS,
+  OcrRegionCorrectionCanvasRenderer,
+  QueryExecutionPlanInspectorRenderer,
+  WebhookPayloadSchemaExplorerRenderer,
+} from "./independent-structure-blocks-batch7";
+import {
+  BankTransactionReconciliationMatcherRenderer,
+  CvssVectorCalculatorRenderer,
+  FaceIdentityAssignmentPanelRenderer,
+  INDEPENDENT_STRUCTURE_BATCH8_LABELS,
+  InventoryLocationLevelTunerRenderer,
+  LogPatternClusterExplorerRenderer,
+  ProductVariantMatrixBuilderRenderer,
+} from "./independent-structure-blocks-batch8";
 // ECharts 基建走独立 chunk（跟 AppRuntimeScreen 里那份同一个组件/同一个
 // import()，Vite 按 module 去重成一个 chunk，不会重复打包）。
 const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
@@ -7099,6 +7171,54 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
         { render, label: HIERARCHY_SELECTION_LABELS[type], phone: true },
       ])
     ),
+    SignatureFieldCanvas: { render: SignatureFieldCanvasRenderer, label: INDEPENDENT_STRUCTURE_LABELS.SignatureFieldCanvas, phone: true },
+    AlertGroupAccordion: { render: AlertGroupAccordionRenderer, label: INDEPENDENT_STRUCTURE_LABELS.AlertGroupAccordion, phone: true },
+    EvidenceCollectionWorkspace: { render: EvidenceCollectionWorkspaceRenderer, label: INDEPENDENT_STRUCTURE_LABELS.EvidenceCollectionWorkspace, phone: true },
+    AssetReviewLightbox: { render: AssetReviewLightboxRenderer, label: INDEPENDENT_STRUCTURE_LABELS.AssetReviewLightbox, phone: true },
+    PaymentAllocationWorkbench: { render: PaymentAllocationWorkbenchRenderer, label: INDEPENDENT_STRUCTURE_LABELS.PaymentAllocationWorkbench, phone: true },
+    DeploymentRolloutTrack: { render: DeploymentRolloutTrackRenderer, label: INDEPENDENT_STRUCTURE_LABELS.DeploymentRolloutTrack, phone: true },
+    WorkflowNodeDebugger: { render: WorkflowNodeDebuggerRenderer, label: INDEPENDENT_STRUCTURE_BATCH2_LABELS.WorkflowNodeDebugger, phone: true },
+    QueryNotebookComposer: { render: QueryNotebookComposerRenderer, label: INDEPENDENT_STRUCTURE_BATCH2_LABELS.QueryNotebookComposer, phone: true },
+    WarehouseBinHeatmap: { render: WarehouseBinHeatmapRenderer, label: INDEPENDENT_STRUCTURE_BATCH2_LABELS.WarehouseBinHeatmap, phone: true },
+    ExperimentTrafficAllocator: { render: ExperimentTrafficAllocatorRenderer, label: INDEPENDENT_STRUCTURE_BATCH2_LABELS.ExperimentTrafficAllocator, phone: true },
+    SlaBreachClock: { render: SlaBreachClockRenderer, label: INDEPENDENT_STRUCTURE_BATCH2_LABELS.SlaBreachClock, phone: true },
+    WarehousePickRouteScanner: { render: WarehousePickRouteScannerRenderer, label: INDEPENDENT_STRUCTURE_BATCH2_LABELS.WarehousePickRouteScanner, phone: true },
+    ResumableUploadQueue: { render: ResumableUploadQueueRenderer, label: INDEPENDENT_STRUCTURE_BATCH3_LABELS.ResumableUploadQueue, phone: true },
+    DistributedTraceWaterfall: { render: DistributedTraceWaterfallRenderer, label: INDEPENDENT_STRUCTURE_BATCH3_LABELS.DistributedTraceWaterfall, phone: true },
+    ExpressionDataMapper: { render: ExpressionDataMapperRenderer, label: INDEPENDENT_STRUCTURE_BATCH3_LABELS.ExpressionDataMapper, phone: true },
+    SessionReplayScrubber: { render: SessionReplayScrubberRenderer, label: INDEPENDENT_STRUCTURE_BATCH3_LABELS.SessionReplayScrubber, phone: true },
+    DashboardGridComposer: { render: DashboardGridComposerRenderer, label: INDEPENDENT_STRUCTURE_BATCH3_LABELS.DashboardGridComposer, phone: true },
+    LiveLogTailer: { render: LiveLogTailerRenderer, label: INDEPENDENT_STRUCTURE_BATCH3_LABELS.LiveLogTailer, phone: true },
+    FlameGraphProfiler: { render: FlameGraphProfilerRenderer, label: INDEPENDENT_STRUCTURE_BATCH4_LABELS.FlameGraphProfiler, phone: true },
+    ThreeWayMergeResolver: { render: ThreeWayMergeResolverRenderer, label: INDEPENDENT_STRUCTURE_BATCH4_LABELS.ThreeWayMergeResolver, phone: true },
+    PolicyDecisionSimulator: { render: PolicyDecisionSimulatorRenderer, label: INDEPENDENT_STRUCTURE_BATCH4_LABELS.PolicyDecisionSimulator, phone: true },
+    FormCanvasBuilder: { render: FormCanvasBuilderRenderer, label: INDEPENDENT_STRUCTURE_BATCH4_LABELS.FormCanvasBuilder, phone: true },
+    PdfPageOrganizer: { render: PdfPageOrganizerRenderer, label: INDEPENDENT_STRUCTURE_BATCH4_LABELS.PdfPageOrganizer, phone: true },
+    StreamReplicationConfigurator: { render: StreamReplicationConfiguratorRenderer, label: INDEPENDENT_STRUCTURE_BATCH4_LABELS.StreamReplicationConfigurator, phone: true },
+    GeofenceVertexEditor: { render: GeofenceVertexEditorRenderer, label: INDEPENDENT_STRUCTURE_BATCH5_LABELS.GeofenceVertexEditor, phone: true },
+    RouteStopSequencer: { render: RouteStopSequencerRenderer, label: INDEPENDENT_STRUCTURE_BATCH5_LABELS.RouteStopSequencer, phone: true },
+    PivotShelfComposer: { render: PivotShelfComposerRenderer, label: INDEPENDENT_STRUCTURE_BATCH5_LABELS.PivotShelfComposer, phone: true },
+    BooleanRuleTreeBuilder: { render: BooleanRuleTreeBuilderRenderer, label: INDEPENDENT_STRUCTURE_BATCH5_LABELS.BooleanRuleTreeBuilder, phone: true },
+    ImageCropTransformStudio: { render: ImageCropTransformStudioRenderer, label: INDEPENDENT_STRUCTURE_BATCH5_LABELS.ImageCropTransformStudio, phone: true },
+    DatasetJoinBuilder: { render: DatasetJoinBuilderRenderer, label: INDEPENDENT_STRUCTURE_BATCH5_LABELS.DatasetJoinBuilder, phone: true },
+    CompositeRoleBuilder: { render: CompositeRoleBuilderRenderer, label: INDEPENDENT_STRUCTURE_BATCH6_LABELS.CompositeRoleBuilder, phone: true },
+    HttpRequestWorkbench: { render: HttpRequestWorkbenchRenderer, label: INDEPENDENT_STRUCTURE_BATCH6_LABELS.HttpRequestWorkbench, phone: true },
+    BomAssemblyTreeEditor: { render: BomAssemblyTreeEditorRenderer, label: INDEPENDENT_STRUCTURE_BATCH6_LABELS.BomAssemblyTreeEditor, phone: true },
+    AlertThresholdBandEditor: { render: AlertThresholdBandEditorRenderer, label: INDEPENDENT_STRUCTURE_BATCH6_LABELS.AlertThresholdBandEditor, phone: true },
+    MediaTrimTimeline: { render: MediaTrimTimelineRenderer, label: INDEPENDENT_STRUCTURE_BATCH6_LABELS.MediaTrimTimeline, phone: true },
+    CronOccurrenceBuilder: { render: CronOccurrenceBuilderRenderer, label: INDEPENDENT_STRUCTURE_BATCH6_LABELS.CronOccurrenceBuilder, phone: true },
+    OcrRegionCorrectionCanvas: { render: OcrRegionCorrectionCanvasRenderer, label: INDEPENDENT_STRUCTURE_BATCH7_LABELS.OcrRegionCorrectionCanvas, phone: true },
+    QueryExecutionPlanInspector: { render: QueryExecutionPlanInspectorRenderer, label: INDEPENDENT_STRUCTURE_BATCH7_LABELS.QueryExecutionPlanInspector, phone: true },
+    ColumnProfileWorkbench: { render: ColumnProfileWorkbenchRenderer, label: INDEPENDENT_STRUCTURE_BATCH7_LABELS.ColumnProfileWorkbench, phone: true },
+    CertificateRotationPlanner: { render: CertificateRotationPlannerRenderer, label: INDEPENDENT_STRUCTURE_BATCH7_LABELS.CertificateRotationPlanner, phone: true },
+    WebhookPayloadSchemaExplorer: { render: WebhookPayloadSchemaExplorerRenderer, label: INDEPENDENT_STRUCTURE_BATCH7_LABELS.WebhookPayloadSchemaExplorer, phone: true },
+    ArtifactProvenanceVerifier: { render: ArtifactProvenanceVerifierRenderer, label: INDEPENDENT_STRUCTURE_BATCH7_LABELS.ArtifactProvenanceVerifier, phone: true },
+    BankTransactionReconciliationMatcher: { render: BankTransactionReconciliationMatcherRenderer, label: INDEPENDENT_STRUCTURE_BATCH8_LABELS.BankTransactionReconciliationMatcher, phone: true },
+    CvssVectorCalculator: { render: CvssVectorCalculatorRenderer, label: INDEPENDENT_STRUCTURE_BATCH8_LABELS.CvssVectorCalculator, phone: true },
+    LogPatternClusterExplorer: { render: LogPatternClusterExplorerRenderer, label: INDEPENDENT_STRUCTURE_BATCH8_LABELS.LogPatternClusterExplorer, phone: true },
+    ProductVariantMatrixBuilder: { render: ProductVariantMatrixBuilderRenderer, label: INDEPENDENT_STRUCTURE_BATCH8_LABELS.ProductVariantMatrixBuilder, phone: true },
+    InventoryLocationLevelTuner: { render: InventoryLocationLevelTunerRenderer, label: INDEPENDENT_STRUCTURE_BATCH8_LABELS.InventoryLocationLevelTuner, phone: true },
+    FaceIdentityAssignmentPanel: { render: FaceIdentityAssignmentPanelRenderer, label: INDEPENDENT_STRUCTURE_BATCH8_LABELS.FaceIdentityAssignmentPanel, phone: true },
   });
 
 /** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */

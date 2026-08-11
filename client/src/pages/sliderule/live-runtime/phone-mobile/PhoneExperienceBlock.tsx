@@ -37,6 +37,14 @@ import { renderConfigurationWizardPhoneBlock } from "./PhoneConfigurationWizardB
 import { renderCollaborationContentPhoneBlock } from "./PhoneCollaborationContentBlocks";
 import { renderDataGovernancePhoneBlock } from "./PhoneDataGovernanceBlocks";
 import { renderHierarchySelectionPhoneBlock } from "./PhoneHierarchySelectionBlocks";
+import { renderIndependentStructurePhoneBlock } from "./PhoneIndependentStructureBlocks";
+import { renderIndependentStructureBatch2PhoneBlock } from "./PhoneIndependentStructureBlocksBatch2";
+import { renderIndependentStructureBatch3PhoneBlock } from "./PhoneIndependentStructureBlocksBatch3";
+import { renderIndependentStructureBatch4PhoneBlock } from "./PhoneIndependentStructureBlocksBatch4";
+import { renderIndependentStructureBatch5PhoneBlock } from "./PhoneIndependentStructureBlocksBatch5";
+import { renderIndependentStructureBatch6PhoneBlock } from "./PhoneIndependentStructureBlocksBatch6";
+import { renderIndependentStructureBatch7PhoneBlock } from "./PhoneIndependentStructureBlocksBatch7";
+import { renderIndependentStructureBatch8PhoneBlock } from "./PhoneIndependentStructureBlocksBatch8";
 
 const PhoneLazyEchartsChart = React.lazy(() => import("../EchartsChart"));
 
@@ -1656,6 +1664,22 @@ return <PhoneShell block={props.block} title={titleOf(props)||PHONE_CONTEXT_TITL
 const PhoneKeyboardCommandPalette=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="palette"/>;const PhoneNotificationCenterDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="notifications"/>;const PhoneFilterPresetDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="filterPreset"/>;const PhoneExportJobDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="exportJob"/>;const PhoneCompareSelectionTray=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="compare"/>;const PhoneDetailInspectorDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="inspector"/>;const PhoneHelpContextPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="help"/>;const PhoneAuditDiffDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="audit"/>;const PhoneSavedSearchPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="savedSearch"/>;const PhoneRecentItemsPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="recent"/>;const PhoneRelatedEntityPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="related"/>;const PhonePermissionSummaryPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="permission"/>;const PhoneSelectionInspector=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="selection"/>;const PhoneValidationIssuePanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="validation"/>;const PhoneContextHelpDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="contextHelp"/>;const PhoneChangeImpactPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="impact"/>;
 
 export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps) {
+  const independentStructureBatch7Block = renderIndependentStructureBatch7PhoneBlock(props);
+  if (independentStructureBatch7Block !== undefined) return independentStructureBatch7Block;
+  const independentStructureBatch8Block = renderIndependentStructureBatch8PhoneBlock(props);
+  if (independentStructureBatch8Block !== undefined) return independentStructureBatch8Block;
+  const independentStructureBatch6Block = renderIndependentStructureBatch6PhoneBlock(props);
+  if (independentStructureBatch6Block !== undefined) return independentStructureBatch6Block;
+  const independentStructureBatch5Block = renderIndependentStructureBatch5PhoneBlock(props);
+  if (independentStructureBatch5Block !== undefined) return independentStructureBatch5Block;
+  const independentStructureBatch4Block = renderIndependentStructureBatch4PhoneBlock(props);
+  if (independentStructureBatch4Block !== undefined) return independentStructureBatch4Block;
+  const independentStructureBatch3Block = renderIndependentStructureBatch3PhoneBlock(props);
+  if (independentStructureBatch3Block !== undefined) return independentStructureBatch3Block;
+  const independentStructureBatch2Block = renderIndependentStructureBatch2PhoneBlock(props);
+  if (independentStructureBatch2Block !== undefined) return independentStructureBatch2Block;
+  const independentStructureBlock = renderIndependentStructurePhoneBlock(props);
+  if (independentStructureBlock !== undefined) return independentStructureBlock;
   const scheduleStatusBlock = renderScheduleStatusPhoneBlock(props);
   if (scheduleStatusBlock !== undefined) return scheduleStatusBlock;
   const calendarWizardBlock = renderCalendarWizardPhoneBlock(props);

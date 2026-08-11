@@ -1,0 +1,37 @@
+from services import schema_legal as legal
+
+
+TYPES = {
+    "BankTransactionReconciliationMatcher": ("frappe/erpnext", "bank-statement-voucher-amount-matcher"),
+    "CvssVectorCalculator": ("DefectDojo/django-DefectDojo", "cvss-metric-vector-score-builder"),
+    "LogPatternClusterExplorer": ("openobserve/openobserve", "log-template-cluster-sample-inspector"),
+    "ProductVariantMatrixBuilder": ("shopware/shopware", "product-attribute-cartesian-variant-matrix"),
+    "InventoryLocationLevelTuner": ("medusajs/medusa", "inventory-location-stock-reservation-envelope"),
+    "FaceIdentityAssignmentPanel": ("immich-app/immich", "face-crop-person-candidate-assignment"),
+}
+
+
+def test_batch8_families_are_globally_unique_and_real():
+    structured = [block for block in legal.EXPERIENCE_BLOCKS if block.get("structureFamily")]
+    assert len({block["structureFamily"] for block in structured}) == len(structured)
+    blocks = {block["type"]: block for block in legal.EXPERIENCE_BLOCKS}
+    selected = [blocks[block_type] for block_type in TYPES]
+    assert len({block["rendererKey"] for block in selected}) == 6
+    assert all(block["rendererStatus"] == "real" and block["generationEnabled"] and block["structureDelta"] for block in selected)
+
+
+def test_batch8_sources_and_contracts_are_verified():
+    blocks = {block["type"]: block for block in legal.EXPERIENCE_BLOCKS}
+    for block_type, (repo, family) in TYPES.items():
+        block = blocks[block_type]
+        assert block["source"]["repo"] == repo and block["source"]["path"]
+        assert block["structureFamily"] == family
+        assert set(block["events"]) <= set(legal.EXPERIENCE_BLOCK_EVENT_TYPES)
+        assert set(block["allowedRegions"]) <= set(legal.EXPERIENCE_BLOCK_ALLOWED_REGIONS)
+        assert block["rendererKey"] not in {"data-table", "pro-table", "entity-table"}
+
+
+def test_batch8_catalog_reaches_407_without_alias_counting():
+    assert legal.EXPERIENCE_BLOCK_CATALOG_VERSION == 407
+    assert len(legal.EXPERIENCE_BLOCKS) == 407
+    assert len({block["type"] for block in legal.EXPERIENCE_BLOCKS}) == 407

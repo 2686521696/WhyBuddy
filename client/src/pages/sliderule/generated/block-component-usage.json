@@ -232,6 +232,7 @@
       "ActiveFilterSummary",
       "ActivityContextDrawer",
       "AdvancedFilterBuilder",
+      "AlertGroupAccordion",
       "AlertGroupCommandHeader",
       "AlertGroupContextSummary",
       "AlertInstanceSummary",
@@ -242,6 +243,7 @@
       "AlertRuleFilterBar",
       "AlertSilenceForm",
       "AlertStateMetrics",
+      "AlertThresholdBandEditor",
       "AlertTriagePanel",
       "AnalyticsDateScope",
       "ApiCredentialWizard",
@@ -251,7 +253,9 @@
       "ApprovalQueue",
       "ApprovalRoutingWizard",
       "ApprovalStageBoard",
+      "ArtifactProvenanceVerifier",
       "AssetReservationCalendar",
+      "AssetReviewLightbox",
       "AssignmentQueuePanel",
       "AssignmentTransfer",
       "AsyncTaskMonitor",
@@ -261,6 +265,8 @@
       "AvailabilityOverridePanel",
       "AvailabilityPlanner",
       "BacklogPrioritizationBoard",
+      "BankTransactionReconciliationMatcher",
+      "BomAssemblyTreeEditor",
       "BookingAuditTabs",
       "BookingCapacityMetrics",
       "BookingCommandHeader",
@@ -272,6 +278,7 @@
       "BookingDirectoryFilter",
       "BookingSlotPicker",
       "BookingStatusTabs",
+      "BooleanRuleTreeBuilder",
       "BoxPlotDistribution",
       "BoxPlotDistributionChart",
       "BulkActionTray",
@@ -285,6 +292,7 @@
       "CampaignCalendar",
       "CatalogEntityCommandHeader",
       "CatalogEntityFilterBar",
+      "CertificateRotationPlanner",
       "ChangeImpactPanel",
       "CheckoutReviewWizard",
       "CheckoutSummaryBar",
@@ -292,9 +300,11 @@
       "CohortRetentionChart",
       "CollaboratorPresenceStrip",
       "ColumnChooserDrawer",
+      "ColumnProfileWorkbench",
       "CommentThread",
       "CompareSelectionTray",
       "ComplianceAttestationWizard",
+      "CompositeRoleBuilder",
       "ConnectionControlHeader",
       "ConnectionFleetMetrics",
       "ConnectionMappingPanel",
@@ -316,7 +326,9 @@
       "ConversationReplyBar",
       "ConversationSlaMetrics",
       "CredentialLifecycleBar",
+      "CronOccurrenceBuilder",
       "CumulativeFlowChart",
+      "CvssVectorCalculator",
       "CycleCommandHeader",
       "CycleContextSummary",
       "CycleFilterBar",
@@ -324,6 +336,7 @@
       "CycleLifecycleBar",
       "CycleRiskStrip",
       "DashboardCommandHeader",
+      "DashboardGridComposer",
       "DashboardParameterBar",
       "DashboardQueryContext",
       "DashboardSaveBar",
@@ -334,6 +347,7 @@
       "DataQualityRepairWizard",
       "DataRetentionWizard",
       "DatasetEditorTabs",
+      "DatasetJoinBuilder",
       "DatasourceHealthStrip",
       "DatasourceQueryMetrics",
       "DeadlineAgenda",
@@ -346,9 +360,11 @@
       "DeploymentDetailTabs",
       "DeploymentLatencyChart",
       "DeploymentRolloutMetrics",
+      "DeploymentRolloutTrack",
       "DeploymentScaleBar",
       "DeploymentWizard",
       "DetailInspectorDrawer",
+      "DistributedTraceWaterfall",
       "DistributionHistogram",
       "DocumentCommandHeader",
       "DocumentContextSummary",
@@ -368,21 +384,28 @@
       "EventTypeEditorTabs",
       "EventTypePublishBar",
       "EventUserCountMetrics",
+      "EvidenceCollectionWorkspace",
       "ExamScheduleCalendar",
+      "ExperimentTrafficAllocator",
       "ExploreInspectorTabs",
       "ExploreQueryContext",
       "ExploreQueryControlBar",
       "ExportJobDrawer",
+      "ExpressionDataMapper",
+      "FaceIdentityAssignmentPanel",
       "FacetedFilterPanel",
       "FeatureFlagCommandHeader",
       "FieldTransformPanel",
       "FilterBar",
       "FilterPresetDrawer",
+      "FlameGraphProfiler",
       "ForecastConfidenceChart",
+      "FormCanvasBuilder",
       "FunnelChart",
       "FunnelConversionChart",
       "GanttSchedule",
       "GaugeProgress",
+      "GeofenceVertexEditor",
       "GlobalSearchPalette",
       "HeaderEntitySummary",
       "HeaderProgressSummary",
@@ -390,6 +413,8 @@
       "HelpContextPanel",
       "HierarchicalCategoryPicker",
       "HistogramDistributionChart",
+      "HttpRequestWorkbench",
+      "ImageCropTransformStudio",
       "ImportMappingWizard",
       "ImportValidationPanel",
       "IncidentEvidenceTabs",
@@ -399,6 +424,7 @@
       "InspectorModeTabs",
       "IntegrationSetupWizard",
       "InterviewScheduleCalendar",
+      "InventoryLocationLevelTuner",
       "IssueCommandHeader",
       "IssueEventFilter",
       "IssueImpactMetrics",
@@ -411,10 +437,13 @@
       "KubernetesResourceFilter",
       "LeaveCalendar",
       "LiveChangeReview",
+      "LiveLogTailer",
       "LiveRefreshControl",
       "LocalizationSetupWizard",
       "LogLabelFilter",
+      "LogPatternClusterExplorer",
       "MaintenanceWindowCalendar",
+      "MediaTrimTimeline",
       "MemberAssignment",
       "MentionComposer",
       "MergePreviewPanel",
@@ -428,25 +457,33 @@
       "NotificationInbox",
       "NotificationRuleWizard",
       "OccurrenceEvidenceSummary",
+      "OcrRegionCorrectionCanvas",
       "OnboardingChecklistWizard",
       "OnCallScheduleCalendar",
       "OrgTreeSelector",
       "OwnershipTransferPanel",
       "PanelCommandHeader",
       "PanelQueryLatencyChart",
+      "PaymentAllocationWorkbench",
+      "PdfPageOrganizer",
       "PercentileBandChart",
       "PermissionMatrix",
       "PermissionMatrixPanel",
       "PermissionSummaryPanel",
+      "PivotShelfComposer",
       "PolicyConfigurationWizard",
+      "PolicyDecisionSimulator",
       "PortfolioKanban",
       "PresenceRosterPanel",
       "ProductionScheduleCalendar",
+      "ProductVariantMatrixBuilder",
       "QueryClauseFilterBar",
       "QueryDataSourceSummary",
       "QueryErrorDrawer",
       "QueryExecutionMetrics",
+      "QueryExecutionPlanInspector",
       "QueryModeTabs",
+      "QueryNotebookComposer",
       "QueryResultPivot",
       "QueryRunStatusStrip",
       "QuestionCommandHeader",
@@ -481,10 +518,12 @@
       "RescheduleRequestDrawer",
       "ResourceBookingCalendar",
       "ResourceDetailTabs",
+      "ResumableUploadQueue",
       "RetryQueuePanel",
       "RevisionHistoryPanel",
       "RoleAssignmentWizard",
       "RoomBookingCalendar",
+      "RouteStopSequencer",
       "RuleEvaluationMetrics",
       "RunningJobControlBar",
       "SankeyFlow",
@@ -504,12 +543,16 @@
       "ServiceDispatchCalendar",
       "ServiceMapPanel",
       "ServiceOwnershipContext",
+      "SessionReplayScrubber",
       "ShiftRosterCalendar",
+      "SignatureFieldCanvas",
+      "SlaBreachClock",
       "SprintPlanningBoard",
       "StackTracePanel",
       "StreamDetailTabs",
       "StreamFreshnessMetrics",
       "StreamNamespaceFilter",
+      "StreamReplicationConfigurator",
       "StreamSelectionSummary",
       "StreamStatusMonitor",
       "SurveyBuilderWizard",
@@ -521,6 +564,7 @@
       "SyncVolumeTrendChart",
       "TeamAvailabilityCalendar",
       "ThreadResolutionBar",
+      "ThreeWayMergeResolver",
       "TimelineFilterBar",
       "TimeSeriesAnomalyChart",
       "TimezoneOverlapPanel",
@@ -540,10 +584,13 @@
       "ValidatedFormTabs",
       "ValidationIssuePanel",
       "VersionComparePanel",
+      "WarehouseBinHeatmap",
+      "WarehousePickRouteScanner",
       "WatcherManagerPanel",
       "WaterfallChart",
       "WaterfallVarianceChart",
       "WebhookDeliveryPanel",
+      "WebhookPayloadSchemaExplorer",
       "WipLimitBoard",
       "WizardNavigationBar",
       "WorkflowCommandHeader",
@@ -553,6 +600,7 @@
       "WorkflowExecutionFilter",
       "WorkflowExecutionTabs",
       "WorkflowFailureDrawer",
+      "WorkflowNodeDebugger",
       "WorkflowOutcomeMetrics",
       "WorkflowTimeline",
       "WorkflowVersionStrip",
@@ -660,6 +708,27 @@
         "M.Input",
         "M.Picker",
         "M.Selector"
+      ]
+    },
+    "AlertGroupAccordion": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Tag"
       ]
     },
     "AlertGroupCommandHeader": {
@@ -822,6 +891,30 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Grid"
+      ]
+    },
+    "AlertThresholdBandEditor": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "InputNumber",
+        "Slider",
+        "Space",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Slider",
+        "M.Space",
+        "M.Tag"
       ]
     },
     "AlertTriagePanel": {
@@ -1023,6 +1116,30 @@
         "M.Tabs"
       ]
     },
+    "ArtifactProvenanceVerifier": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Collapse",
+        "Descriptions",
+        "Flex",
+        "Space",
+        "Statistic",
+        "Steps",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar",
+        "M.Space"
+      ]
+    },
     "AssetReservationCalendar": {
       "desktop": [
         "Button",
@@ -1042,6 +1159,25 @@
         "M.Grid",
         "M.List",
         "M.Tag"
+      ]
+    },
+    "AssetReviewLightbox": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Descriptions",
+        "Empty",
+        "Flex",
+        "Image"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Image",
+        "M.List",
+        "M.Popup"
       ]
     },
     "AssignmentQueuePanel": {
@@ -1226,6 +1362,34 @@
         "M.Tabs"
       ]
     },
+    "BankTransactionReconciliationMatcher": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Input",
+        "List",
+        "Segmented",
+        "Space",
+        "Statistic",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.SearchBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
     "BatchActionBar": {
       "desktop": [
         "Button",
@@ -1234,6 +1398,30 @@
         "Flex"
       ],
       "phone": []
+    },
+    "BomAssemblyTreeEditor": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "InputNumber",
+        "Progress",
+        "Space",
+        "Statistic",
+        "Tag",
+        "Tree",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Space",
+        "M.Stepper"
+      ]
     },
     "BookingAuditTabs": {
       "desktop": [
@@ -1411,6 +1599,30 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Tabs"
+      ]
+    },
+    "BooleanRuleTreeBuilder": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Collapse",
+        "Empty",
+        "Flex",
+        "Input",
+        "Segmented",
+        "Select",
+        "Space",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.Selector",
+        "M.Space"
       ]
     },
     "BoxPlotDistribution": {
@@ -1662,6 +1874,27 @@
         "M.Selector"
       ]
     },
+    "CertificateRotationPlanner": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Flex",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Space",
+        "M.Steps"
+      ]
+    },
     "ChangeImpactPanel": {
       "desktop": [
         "Alert",
@@ -1798,6 +2031,25 @@
         "M.Selector"
       ]
     },
+    "ColumnProfileWorkbench": {
+      "desktop": [
+        "Alert",
+        "Card",
+        "Flex",
+        "List",
+        "Statistic",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space"
+      ]
+    },
     "ColumnSettingPanel": {
       "desktop": [
         "Button",
@@ -1889,6 +2141,27 @@
         "M.Steps",
         "M.Tag",
         "M.TextArea"
+      ]
+    },
+    "CompositeRoleBuilder": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Tag",
+        "Transfer"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Tabs",
+        "M.Tag"
       ]
     },
     "ConnectionControlHeader": {
@@ -2273,6 +2546,37 @@
         "M.Grid"
       ]
     },
+    "CronOccurrenceBuilder": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Collapse",
+        "Empty",
+        "Flex",
+        "Input",
+        "Segmented",
+        "Switch",
+        "Tag",
+        "Timeline",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Input",
+        "M.List",
+        "M.Selector",
+        "M.Space",
+        "M.Steps",
+        "M.Switch",
+        "M.Tabs",
+        "M.Tag"
+      ]
+    },
     "CumulativeFlowChart": {
       "desktop": [
         "Card",
@@ -2283,6 +2587,29 @@
         "ECharts",
         "M.Card",
         "M.ErrorBlock"
+      ]
+    },
+    "CvssVectorCalculator": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Radio",
+        "Segmented",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs"
       ]
     },
     "CycleCommandHeader": {
@@ -2396,6 +2723,23 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Grid"
+      ]
+    },
+    "DashboardGridComposer": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Space"
       ]
     },
     "DashboardParameterBar": {
@@ -2596,6 +2940,30 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Tabs"
+      ]
+    },
+    "DatasetJoinBuilder": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "List",
+        "Segmented",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Selector",
+        "M.Space",
+        "M.Tag"
       ]
     },
     "DatasourceHealthStrip": {
@@ -2811,6 +3179,27 @@
         "M.ProgressBar"
       ]
     },
+    "DeploymentRolloutTrack": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Steps",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Space",
+        "M.Steps"
+      ]
+    },
     "DeploymentScaleBar": {
       "desktop": [
         "Button",
@@ -2874,6 +3263,25 @@
         "M.List",
         "M.Popup",
         "M.SearchBar"
+      ]
+    },
+    "DistributedTraceWaterfall": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Descriptions",
+        "Empty",
+        "Flex",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.ProgressBar",
+        "M.Space",
+        "M.Steps"
       ]
     },
     "DistributionHistogram": {
@@ -3160,6 +3568,30 @@
         "M.Grid"
       ]
     },
+    "EvidenceCollectionWorkspace": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Space",
+        "Tag",
+        "Typography",
+        "Upload"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.ProgressBar",
+        "M.Space",
+        "M.Tag"
+      ]
+    },
     "ExamScheduleCalendar": {
       "desktop": [
         "Button",
@@ -3178,6 +3610,28 @@
         "M.ErrorBlock",
         "M.Grid",
         "M.List",
+        "M.Tag"
+      ]
+    },
+    "ExperimentTrafficAllocator": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Slider",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar",
+        "M.Slider",
+        "M.Space",
         "M.Tag"
       ]
     },
@@ -3251,6 +3705,49 @@
         "M.List",
         "M.Popup",
         "M.SearchBar"
+      ]
+    },
+    "ExpressionDataMapper": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "CodeEditor",
+        "Descriptions",
+        "Empty",
+        "Tree"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Space",
+        "M.Tabs",
+        "M.Tag",
+        "M.TextArea"
+      ]
+    },
+    "FaceIdentityAssignmentPanel": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Descriptions",
+        "Empty",
+        "Flex",
+        "Input",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.SearchBar",
+        "M.Space",
+        "M.Tag"
       ]
     },
     "FacetedFilterPanel": {
@@ -3355,6 +3852,26 @@
         "M.SearchBar"
       ]
     },
+    "FlameGraphProfiler": {
+      "desktop": [
+        "Breadcrumb",
+        "Button",
+        "Card",
+        "Descriptions",
+        "Empty",
+        "Flex",
+        "Tooltip"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar",
+        "M.Space",
+        "M.Tabs"
+      ]
+    },
     "ForecastConfidenceChart": {
       "desktop": [
         "Card",
@@ -3367,6 +3884,31 @@
         "M.Card",
         "M.ErrorBlock",
         "M.List"
+      ]
+    },
+    "FormCanvasBuilder": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "List",
+        "Space",
+        "Switch",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Checkbox",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.List",
+        "M.Space",
+        "M.Tabs",
+        "M.Tag"
       ]
     },
     "FreeformInsight": {
@@ -3423,6 +3965,26 @@
         "ECharts",
         "M.Card",
         "M.ErrorBlock"
+      ]
+    },
+    "GeofenceVertexEditor": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "InputNumber",
+        "List",
+        "Space",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Space"
       ]
     },
     "GlobalSearchPalette": {
@@ -3537,6 +4099,61 @@
         "M.Card",
         "M.ErrorBlock",
         "M.List"
+      ]
+    },
+    "HttpRequestWorkbench": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Descriptions",
+        "Empty",
+        "Flex",
+        "Input",
+        "List",
+        "Select",
+        "Space",
+        "Tabs",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.List",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs",
+        "M.Tag"
+      ]
+    },
+    "ImageCropTransformStudio": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Image",
+        "InputNumber",
+        "Progress",
+        "Segmented",
+        "Space",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Image",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Slider",
+        "M.Space"
       ]
     },
     "ImportMappingWizard": {
@@ -3720,6 +4337,32 @@
         "M.ErrorBlock",
         "M.Grid",
         "M.List",
+        "M.Tag"
+      ]
+    },
+    "InventoryLocationLevelTuner": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "InputNumber",
+        "List",
+        "Progress",
+        "Switch",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar",
+        "M.Space",
+        "M.Stepper",
         "M.Tag"
       ]
     },
@@ -3922,6 +4565,28 @@
         "M.List"
       ]
     },
+    "LiveLogTailer": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Segmented",
+        "Space",
+        "Switch"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Selector",
+        "M.Space",
+        "M.Switch",
+        "M.Tag"
+      ]
+    },
     "LiveRefreshControl": {
       "desktop": [
         "Badge",
@@ -3983,6 +4648,29 @@
         "M.Selector"
       ]
     },
+    "LogPatternClusterExplorer": {
+      "desktop": [
+        "Alert",
+        "Badge",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Progress",
+        "Statistic",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Space",
+        "M.Tabs",
+        "M.Tag"
+      ]
+    },
     "MaintenanceWindowCalendar": {
       "desktop": [
         "Button",
@@ -4002,6 +4690,27 @@
         "M.Grid",
         "M.List",
         "M.Tag"
+      ]
+    },
+    "MediaTrimTimeline": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Slider",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar",
+        "M.Slider",
+        "M.Space"
       ]
     },
     "MemberAssignment": {
@@ -4250,6 +4959,30 @@
         "M.List"
       ]
     },
+    "OcrRegionCorrectionCanvas": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Flex",
+        "Input",
+        "Progress",
+        "Splitter",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar",
+        "M.Space",
+        "M.Tabs",
+        "M.Tag",
+        "M.TextArea"
+      ]
+    },
     "OnboardingChecklistWizard": {
       "desktop": [
         "Alert",
@@ -4367,6 +5100,46 @@
         "M.ErrorBlock"
       ]
     },
+    "PaymentAllocationWorkbench": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "InputNumber",
+        "Statistic",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.List",
+        "M.ProgressBar",
+        "M.Space"
+      ]
+    },
+    "PdfPageOrganizer": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Image",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Image",
+        "M.Space"
+      ]
+    },
     "PercentileBandChart": {
       "desktop": [
         "Card",
@@ -4442,6 +5215,30 @@
         "M.SearchBar"
       ]
     },
+    "PivotShelfComposer": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Segmented",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs",
+        "M.Tag"
+      ]
+    },
     "PolicyConfigurationWizard": {
       "desktop": [
         "Alert",
@@ -4467,6 +5264,29 @@
         "M.Space",
         "M.Steps",
         "M.Tag"
+      ]
+    },
+    "PolicyDecisionSimulator": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "Result",
+        "Select",
+        "Space",
+        "Steps",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.Selector",
+        "M.Space",
+        "M.Steps"
       ]
     },
     "PortfolioKanban": {
@@ -4530,6 +5350,32 @@
         "M.Grid",
         "M.List",
         "M.Tag"
+      ]
+    },
+    "ProductVariantMatrixBuilder": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "InputNumber",
+        "Space",
+        "Switch",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.Selector",
+        "M.Space",
+        "M.Stepper",
+        "M.Switch"
       ]
     },
     "ProportionPie": {
@@ -4599,6 +5445,33 @@
         "M.Grid"
       ]
     },
+    "QueryExecutionPlanInspector": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Descriptions",
+        "Flex",
+        "Progress",
+        "Segmented",
+        "Space",
+        "Statistic",
+        "Tag",
+        "Tree"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.List",
+        "M.ProgressBar",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs",
+        "M.Tag"
+      ]
+    },
     "QueryModeTabs": {
       "desktop": [
         "Badge",
@@ -4611,6 +5484,28 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Tabs"
+      ]
+    },
+    "QueryNotebookComposer": {
+      "desktop": [
+        "Badge",
+        "Button",
+        "Card",
+        "Collapse",
+        "Empty",
+        "Flex",
+        "Space",
+        "SqlEditor",
+        "Statistic",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.List",
+        "M.TextArea"
       ]
     },
     "QueryResultPivot": {
@@ -5326,6 +6221,28 @@
       ],
       "phone": []
     },
+    "ResumableUploadQueue": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "List",
+        "Progress",
+        "Space",
+        "Tag",
+        "Typography",
+        "Upload"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.ProgressBar",
+        "M.Space"
+      ]
+    },
     "RetryQueuePanel": {
       "desktop": [
         "Alert",
@@ -5411,6 +6328,27 @@
         "M.ErrorBlock",
         "M.Grid",
         "M.List",
+        "M.Tag"
+      ]
+    },
+    "RouteStopSequencer": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Space",
+        "Steps",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Space",
+        "M.Steps",
+        "M.Tabs",
         "M.Tag"
       ]
     },
@@ -5779,6 +6717,29 @@
         "M.List"
       ]
     },
+    "SessionReplayScrubber": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Segmented",
+        "Slider",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.Selector",
+        "M.Slider",
+        "M.Space",
+        "M.Tag"
+      ]
+    },
     "ShiftRosterCalendar": {
       "desktop": [
         "Button",
@@ -5798,6 +6759,45 @@
         "M.Grid",
         "M.List",
         "M.Tag"
+      ]
+    },
+    "SignatureFieldCanvas": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Segmented",
+        "Splitter",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Badge",
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.List",
+        "M.Space",
+        "M.Tabs",
+        "M.Tag"
+      ]
+    },
+    "SlaBreachClock": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Timeline",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Space"
       ]
     },
     "SprintPlanningBoard": {
@@ -5928,6 +6928,32 @@
         "M.Card",
         "M.ErrorBlock",
         "M.Selector"
+      ]
+    },
+    "StreamReplicationConfigurator": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Checkbox",
+        "Collapse",
+        "Empty",
+        "Flex",
+        "Input",
+        "Segmented",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.List",
+        "M.Selector",
+        "M.Space",
+        "M.Switch",
+        "M.Tag"
       ]
     },
     "StreamSelectionSummary": {
@@ -6134,6 +7160,30 @@
         "M.Button",
         "M.Dialog",
         "M.ErrorBlock"
+      ]
+    },
+    "ThreeWayMergeResolver": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Collapse",
+        "Empty",
+        "Flex",
+        "Radio",
+        "Space",
+        "Tag",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.Collapse",
+        "M.ErrorBlock",
+        "M.Selector",
+        "M.Space",
+        "M.Tabs",
+        "M.Tag"
       ]
     },
     "TimelineFilterBar": {
@@ -6465,6 +7515,42 @@
         "M.Space"
       ]
     },
+    "WarehouseBinHeatmap": {
+      "desktop": [
+        "Card",
+        "Empty",
+        "Flex",
+        "Progress",
+        "Segmented",
+        "Typography"
+      ],
+      "phone": [
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Grid",
+        "M.ProgressBar"
+      ]
+    },
+    "WarehousePickRouteScanner": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Empty",
+        "Flex",
+        "Input",
+        "Space",
+        "Steps"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.Space",
+        "M.Steps"
+      ]
+    },
     "WatcherManagerPanel": {
       "desktop": [
         "Avatar",
@@ -6521,6 +7607,31 @@
         "M.ProgressBar",
         "M.Space",
         "M.Tag"
+      ]
+    },
+    "WebhookPayloadSchemaExplorer": {
+      "desktop": [
+        "Alert",
+        "Button",
+        "Card",
+        "Descriptions",
+        "Flex",
+        "Input",
+        "Space",
+        "Tag",
+        "Tree",
+        "Typography"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Input",
+        "M.List",
+        "M.Space",
+        "M.Tabs",
+        "M.Tag",
+        "M.TextArea"
       ]
     },
     "WipLimitBoard": {
@@ -6675,6 +7786,23 @@
         "M.ErrorBlock",
         "M.List",
         "M.Popup"
+      ]
+    },
+    "WorkflowNodeDebugger": {
+      "desktop": [
+        "Button",
+        "Card",
+        "Descriptions",
+        "Empty",
+        "Flex",
+        "Tag"
+      ],
+      "phone": [
+        "M.Button",
+        "M.Card",
+        "M.ErrorBlock",
+        "M.Space",
+        "M.Steps"
       ]
     },
     "WorkflowOutcomeMetrics": {
