@@ -58,7 +58,25 @@ docs/page-kinds-widening-proposal.md 里 A 档的 8 个区块已经改了 `pageK
 ## 这个文件守什么
 
 不擅自改目录数据（那 25 对该放宽还是该收紧是产品判断），只上一道**棘轮**：
-矛盾对数**只准变少**。要上门禁，先把这个数降到 0，那时这条约束才配得上硬拒。
+矛盾对数**只准变少**。
+
+## 上闸还差什么（2026-08-11 修正：原来那条解锁条件不成立）
+
+这个文件原先写的是"矛盾降到 0 就可以上门禁"。**那个条件是不充分的**，量出来
+之后才看清：
+
+    加了区域维度之后，全目录 358 个通电区块里，有至少一个"可比对象"
+    （同域 + 同能力 + 区域相交）的只有 41 个。另外 317 个压根没有对照。
+
+也就是说这条判据只覆盖 **11%** 的目录。把这 11% 里的矛盾清成 0，对剩下 89%
+的声明对不对**一个字都没说**——那些区块只有一份手写的 pageKinds，没有任何
+第二来源可以对照。拿这样一份声明去硬拒模型，仍然是把"违规发出去"换成
+"合规的也发不出去"。
+
+所以解锁条件换成：**pageKinds 得有一份能重算的推导依据**，而不是逐个手写。
+仓库里已有先例——`generality` 有 `scripts/label_block_generality.py`，
+`pageKinds` 从来没有（这正是本文件开头那段"随每个区块被添加时手写"说的事）。
+在那之前，这里守两个数：生判据的总数只准变少，精判据里**没写理由**的必须是 0。
 """
 
 import collections
@@ -70,7 +88,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services.schema_legal import EXPERIENCE_BLOCKS, PAGE_KINDS
 
-#: 当前基线。**只准变小。** 降到 0 之后才可以考虑让结构闸硬拒页型越界。
+#: 生判据（不看区域）的基线。**只准变小。**
 #:
 #: 25 → 15：docs/page-kinds-widening-proposal.md 的 A 档已执行（8 个区块只加
 #: workbench / dashboard 这两个通用工作面）。
@@ -78,8 +96,50 @@ from services.schema_legal import EXPERIENCE_BLOCKS, PAGE_KINDS
 #: monitor（同域近亲已允许、运行时真渲染），2 个 filter 反而收窄了它们更宽的
 #: 兄弟（SavedViewTabs / UserEventFilter 撤掉 monitor），因为 filterChange 在
 #: 总览页够不到任何东西。详见 docs/page-kinds-widening-proposal.md「B 档 monitor
-#: 那 6 个的定调」。剩下的 9 对全部涉及 calendar / kanban / wizard。
+#: 那 6 个的定调」。
+#:
+#: 这个数**留着不动**，作用是防止判据加了新维度之后悄悄失去约束力：下面那条
+#: 更精确的判据是它的子集，两个数一起看才知道是真变好了还是判据变松了。
 _CONTRADICTION_BASELINE = 9
+
+#: 精判据（区域相交才算可比）下**没有写明理由**的矛盾对数。目标是 0，已经是 0。
+#:
+#: 生判据的 9 对里有 6 对是**假阳性**：窄的那个是页头说明（headerContent）、
+#: 浮层抽屉（overlay）或底部操作条（footerBar），宽的那个是主列面板
+#: （main/aside/supplement）——两者永远不会占同一个槽位，只是碰巧 capability
+#: 相同。这种"窄"有可辩护的理由：宽的那个之所以宽，往往正因为它能当某种页型的
+#: **主视图内容**（BookingSlotPicker 是预约向导那一步的主体、ConnectionMappingPanel
+#: 是 Airbyte 连接设置向导里的映射步骤），而页头说明当不了主视图。
+#:
+#: 剩下 3 对区域真相交，逐对写了理由记在 _JUSTIFIED_PAIRS 里。要上门禁先让这个
+#: 数是 0 —— 但**这不是充分条件**，见文件头「上闸还差什么」。
+_UNJUSTIFIED_BASELINE = 0
+
+#: 区域真相交、但"窄"有可辩护理由的对。**每条都必须写清理由**，不许只填名字。
+#:
+#: 这是把"基线数字"换成"逐条理由"：数字降到 0 只说明没有新漂移冒出来，而每一条
+#: 例外为什么成立，得有人能读到。新增一条就是一次评审。
+_JUSTIFIED_PAIRS: dict[tuple[str, str], str] = {
+    ("ConnectionTimeline", "ConnectionMappingPanel"): (
+        "MappingPanel 宽在 wizard，因为它能当**连接设置向导那一步的主体内容**"
+        "（Airbyte 的 SyncCatalogTable 就是设置流程里的一步）；ConnectionTimeline "
+        "是历史事件流，不是设置步骤。宽的那个宽得有理由，不是窄的那个标错了。"
+    ),
+    ("HeaderEntitySummary", "HeaderProgressSummary"): (
+        "两者同区域（headerContent）、同能力，是真同形的一对，但 ProgressSummary "
+        "宽在 dashboard/monitor 是**聚合语义**——总览页说“整体进度到哪了”成立；"
+        "EntitySummary 说的是某一条记录的关键字段，而总览页不围绕单条记录，"
+        "摆上去只能显示“第一行”的字段，是任意的。2026-08-11 评审已单独否掉给它"
+        "加 dashboard 的提议。"
+    ),
+    ("RecordComparePanel", "RecordPicker"): (
+        "只在 supplement 一个槽位相交。RecordPicker 宽在 wizard/monitor 是因为"
+        "“挑一条记录”是向导里的标准一步、也是总览页跳转的常见入口；对比面板是"
+        "复核工具，不是流程步骤。若产品要放宽，wizard 那一半有先例"
+        "（MergePreviewPanel / RecordChangePreview 同是对比形状且允许 wizard），"
+        "monitor 那一半没有。"
+    ),
+}
 
 
 def _domain_of(block_type: str) -> str:
@@ -87,25 +147,37 @@ def _domain_of(block_type: str) -> str:
     return m.group(1) if m else "?"
 
 
-def _strict_subset_pairs():
+def _strict_subset_pairs(*, region_aware: bool = False, blocks=None):
     """同【领域族 + capability】内，页型声明成严格子集关系的对。
 
-    严格子集 = 同域、同能力，一个明确比另一个少允许若干页型。这种情况找不到
-    可辩护的理由，所以当作"标注不自洽"计数。
+    严格子集 = 同域、同能力，一个明确比另一个少允许若干页型。
+
+    region_aware=True 时**再加一维**：两个区块的 allowedRegions 必须相交才算
+    可比。理由见 _UNJUSTIFIED_BASELINE 的说明——不相交意味着它们永远不会占
+    同一个槽位，是不同家具，只是碰巧 capability 相同。
+
+    加这一维是**收紧精度、放宽计数**，所以两个数都留着：生判据那个数防止这条
+    精判据把真漂移一起放过去。
     """
     groups = collections.defaultdict(list)
-    for b in EXPERIENCE_BLOCKS:
+    for b in EXPERIENCE_BLOCKS if blocks is None else blocks:
         if not b.get("generationEnabled"):
             continue
         t = str(b["type"])
         key = (_domain_of(t), str(b.get("capability") or b.get("group")))
-        groups[key].append((t, frozenset(b.get("pageKinds") or [])))
+        groups[key].append((
+            t,
+            frozenset(b.get("pageKinds") or []),
+            frozenset(b.get("allowedRegions") or []),
+        ))
 
     out = []
     for (dom, cap), members in groups.items():
         for i in range(len(members)):
             for j in range(i + 1, len(members)):
                 a, b2 = members[i], members[j]
+                if region_aware and not (a[2] & b2[2]):
+                    continue
                 if a[1] < b2[1] or b2[1] < a[1]:
                     lo, hi = (a, b2) if a[1] < b2[1] else (b2, a)
                     out.append((dom, cap, lo[0], sorted(lo[1]), hi[0], sorted(hi[1])))
@@ -127,8 +199,68 @@ def test_页型声明的自洽性只准变好():
         raise AssertionError(
             f"矛盾对数已降到 {len(pairs)}（基线 {_CONTRADICTION_BASELINE}）。"
             f"请把 _CONTRADICTION_BASELINE 改成 {len(pairs)} 锁住这次改善。"
-            f"降到 0 之后，页型越界才可以考虑让结构闸硬拒。"
         )
+
+
+def test_区域相交的矛盾必须逐条写明理由():
+    """精判据：只数**会占同一个槽位**的对，剩下的每一条都得有写下来的理由。
+
+    这条替代了原来那句"降到 0 才上闸"。数字降到 0 只说明没有新漂移，而"为什么
+    这一条例外成立"必须能被读到——所以例外记在 _JUSTIFIED_PAIRS 里，附理由。
+    """
+    pairs = _strict_subset_pairs(region_aware=True)
+    unjustified = [
+        (d, c, lo, lok, hi, hik)
+        for d, c, lo, lok, hi, hik in pairs
+        if (lo, hi) not in _JUSTIFIED_PAIRS
+    ]
+    detail = "\n".join(
+        f"    {d} · {c}: {lo}({','.join(lok)})  ⊂  {hi}({','.join(hik)})"
+        for d, c, lo, lok, hi, hik in unjustified[:12]
+    )
+    assert len(unjustified) <= _UNJUSTIFIED_BASELINE, (
+        f"出现了 {len(unjustified)} 对**区域相交、又没写理由**的页型矛盾：\n{detail}\n"
+        "两条路：放宽窄的那个（同域同能力同槽位，找不出理由就是标错了），"
+        "或者把理由写进 _JUSTIFIED_PAIRS。不许只改数字。"
+    )
+
+    # 反向：例外表不许留着已经不成立的条目，否则它会慢慢变成一张免死名单
+    live = {(lo, hi) for _, _, lo, _, hi, _ in pairs}
+    stale = sorted(k for k in _JUSTIFIED_PAIRS if k not in live)
+    assert not stale, (
+        f"_JUSTIFIED_PAIRS 里这些对已经不矛盾了，请删掉条目：{stale}"
+    )
+
+    # 每条理由都得真的是理由，不许填占位
+    for key, why in _JUSTIFIED_PAIRS.items():
+        assert len(why.strip()) >= 40, f"{key} 的理由太短，写清为什么宽的那个宽得有理"
+
+
+def test_精判据没有把真漂移一起放过去():
+    """加区域维度是**放宽计数**，所以要证明它没把检测能力一起放掉。
+
+    做法：合成一个必然是漂移的区块（同域、同能力、**同区域**，页型少一个），
+    精判据必须照样抓到它。
+    """
+    victim = next(
+        b for b in EXPERIENCE_BLOCKS
+        if b.get("generationEnabled") and len(b.get("pageKinds") or []) >= 2
+    )
+    planted = dict(victim)
+    planted["type"] = str(victim["type"]) + "Drifted"
+    planted["pageKinds"] = list(victim["pageKinds"])[:1]
+
+    caught = [
+        (lo, hi)
+        for _, _, lo, _, hi, _ in _strict_subset_pairs(
+            region_aware=True, blocks=[*EXPERIENCE_BLOCKS, planted]
+        )
+        if planted["type"] in (lo, hi)
+    ]
+    assert caught, (
+        f"埋进去的漂移区块 {planted['type']}（同域同能力同区域、页型更窄）"
+        "没被精判据抓到——判据已经失效了"
+    )
 
 
 def test_每个通电区块都声明了页型且都合法():
@@ -144,10 +276,14 @@ def test_每个通电区块都声明了页型且都合法():
 
 
 def test_门禁仍然不拦页型越界():
-    """路标：只要上面的矛盾还没清零，结构闸就不该硬拒页型越界。
+    """路标：这份声明还不配硬拒，所以结构闸不该拦页型越界。
 
-    ffaf964 已经有一条同向的测试；这里再钉一次，并写清解锁条件——将来要上闸，
-    先让 test_页型声明的自洽性只准变好 里的基线降到 0，再改这条。
+    ffaf964 已经有一条同向的测试；这里再钉一次，并写清解锁条件。
+
+    **解锁条件已在 2026-08-11 修正**（原来写的是"基线降到 0"，那不充分）：
+    要上闸，先给 pageKinds 一份能重算的推导依据——判据现在只覆盖 41/358 个
+    区块，剩下 317 个的声明没有任何第二来源可以对照。详见文件头
+    「上闸还差什么」。
     """
     from services.v5_model_gate import validate_five_system_model
 
@@ -189,5 +325,6 @@ def test_门禁仍然不拦页型越界():
     ]
     assert page_kind_findings == [], (
         "结构闸开始拦页型越界了，但那份声明还有 "
-        f"{len(_strict_subset_pairs())} 对自相矛盾——先把它清零"
+        f"{len(_strict_subset_pairs())} 对自相矛盾，而且判据只够得着 41/358 个"
+        "区块——先给 pageKinds 一份能重算的推导依据，见文件头「上闸还差什么」"
     )

@@ -1766,7 +1766,22 @@ export function AppRuntimeScreen({
           // 筛了看不出任何变化；更糟的是它绑单个实体，而总览页的 KPI/图表
           // 通常跨好几个实体（真跑那次跨了 4 个），筛一个也管不着另外三个。
           // 也就是说它在这类页面上是**功能性无效**的，不只是难看。
-          .filter(b => !(OVERVIEW_KINDS.has(page.view.kind) && b.type === "FilterBar"));
+          //
+          // 2026-08-11：判据从"名字叫 FilterBar"换成 **capability === "filter"**。
+          // 上面那段理由一个字都不用改，但它对**所有**筛选类区块都成立——目录里
+          // 32 个 filter 区块有 31 个只发 filterChange，跟 FilterBar 一模一样。
+          // 按名字挡等于只挡了这一族里最出名的那个：SavedViewTabs / TagFilterRow /
+          // SearchBox 摆到总览页照样上屏、照样按不动。
+          // 同一条判据现在有三处：目录 pageKinds（filter 区块已剥掉 monitor/
+          // dashboard）、提示词禁令（schema_legal 的 monitor_forbidden_live）、
+          // 这里的渲染层兜底。三处同源同判据，别再各写各的。
+          .filter(
+            b =>
+              !(
+                OVERVIEW_KINDS.has(page.view.kind) &&
+                EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "filter"
+              )
+          );
         // 积木内部的自我去重：模型偶尔把同一份榜/流声明两次（见
         // page-panel-dedupe.ts 的内容指纹判定）。
         const dedupedBlocks = dedupeBlocksByPanelKey(directBlocks);

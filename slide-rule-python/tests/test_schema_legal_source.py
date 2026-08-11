@@ -167,20 +167,21 @@ def test_monitor_pages_carry_an_explicit_block_prohibition():
     assert "cannot filter ANYTHING on an overview" in prompt
 
 
-#: 总览页禁令与 pageKinds 打架、因而**无处可去**的区块。只准变少。
+#: 总览页禁令与 pageKinds 打架、因而**无处可去**的区块。只准变少，现在是 0。
 #:
-#: 2026-08-11 把总览页禁令改成机械判据（capability==filter 一律禁）之后照出来的
-#: 副作用：有两个 filter 区块的 pageKinds **只**写了 dashboard/monitor，禁令一上
-#: 它们就"只允许总览页 + 总览页不许用" —— 哪儿都摆不了。
+#: 2026-08-11 把总览页禁令改成机械判据（capability==filter 一律禁）时照出两个：
+#: `AnalyticsDateScope` 和 `DashboardParameterBar` 的 pageKinds **只**写了
+#: dashboard/monitor，禁令一上就成了"只允许总览页 + 总览页不许用"。
 #:
-#:     AnalyticsDateScope    dashboard,monitor  headerExtra,metrics  仪表盘时间范围
-#:     DashboardParameterBar dashboard,monitor  filters              Grafana 模板变量
+#: 当天收口时按同一条判据修掉了：筛选类区块的归宿是**逐行展示记录的页面**，
+#: 所以这两个的 pageKinds 改成 `workbench`——那里 `applyPageFilter` 真的会
+#: 收窄表格的行（含 dateRangeField 那条日期范围），控件是活的。
 #:
-#: 这不是判据错了：查过链路，这两个照样筛不动东西（pageStatDisplay 与
-#: phoneChartNode 都直读 state.entities，不吃 activePageFilter）。真正的修法是
-#: **让总览页的 KPI/图表吃 filterState**，那是个功能，不是改一行数据；在那之前
-#: 如实记着这两个是废的，不假装它们能用。
-_OVERVIEW_ONLY_FILTERS_BASELINE = 2
+#: 剩下的一句仍然成立：总览页的 KPI/图表照旧不吃 filterState
+#: （pageStatDisplay 与 phoneChartNode 都直读 state.entities）。将来若要让
+#: 仪表盘像 Grafana 那样"时间范围/模板变量管全页"，那是个功能，届时这条禁令
+#: 本身要重新议，不是把这两个区块搬回去。
+_OVERVIEW_ONLY_FILTERS_BASELINE = 0
 
 
 def test_没有更多区块被总览页禁令堵死():

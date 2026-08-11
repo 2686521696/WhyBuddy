@@ -9,10 +9,16 @@
 |---|---|---|
 | A 档（通用工作面） | 执行 8 个（`HeaderEntitySummary` 那条被否掉） | 25 → **15** |
 | B 档 · monitor 那 6 个 | **4 放宽 + 2 收窄兄弟**，并把总览页禁令改成机械判据 | 15 → **9** |
-| B 档 · 其余 8 个（calendar/kanban/wizard） | 待议 | — |
+| filter 区块收口 | 23 个 filter 区块剥掉 `monitor`/`dashboard`，三处判据同源 | 9（判据外） |
+| B 档 · 其余 9 对 | **一个都没放宽**：6 对是判据的假阳性，3 对写明理由 | 9 → 精判据 **3**，其中未写理由 **0** |
 
-棘轮基线（`test_page_kind_consistency_ratchet.py`）已跟着锁到 9。改这份数据会影响
-组件库的页型筛选与计数（`ComponentsLibraryPage.tsx` 3977 / 4132 行）。
+改这份数据会影响组件库的页型筛选与计数（`ComponentsLibraryPage.tsx` 3977 / 4132 行）。
+
+> **原来那条解锁条件（"矛盾降到 0 就可以上门禁"）不成立。** 量出来才看清：加了
+> 区域维度之后，358 个通电区块里有"可比对象"的只有 **41 个**，判据只覆盖 11%。
+> 把这 11% 清成 0，对剩下 317 个手写声明对不对一个字都没说。解锁条件已换成
+> **"pageKinds 得有一份能重算的推导依据"**——仓库里 `generality` 有
+> `scripts/label_block_generality.py`，`pageKinds` 从来没有。
 
 ## 判据：只沿「通用工作面」放宽，不伸进形状专属页型
 
@@ -56,8 +62,11 @@
 清单直接对准了那次事故的成因：不是模型摆错，是目录把「路由策略管理页」这种天然的
 工作台排除在外了。
 
-对组件库筛选的影响（执行后实测）：允许 workbench 的 304 → **309**，允许 dashboard 的
-133 → **137**。（提案初稿把 dashboard 的基数写成 132，实际是 133。）
+对组件库筛选的影响（A 档执行后实测）：允许 workbench 的 304 → **309**，允许
+dashboard 的 133 → **137**。（提案初稿把 dashboard 的基数写成 132，实际是 133。）
+
+三批全做完之后的最终计数：workbench **311**、monitor **154**、dashboard **126**、
+wizard 68、kanban 55、calendar 55（dashboard/monitor 掉下来是 filter 收口剥掉的）。
 
 ## B 档 monitor 那 6 个的定调（**已执行**，矛盾 15 → 9）
 
@@ -128,29 +137,82 @@ is a report, not a workbench — the user opens it to act*）。
 `filterState`**，那是个功能不是改一行数据。在那之前由
 `test_没有更多区块被总览页禁令堵死` 守着这个数只准变少。
 
-顺带留一条不一致：`FilterBar` 等 20 个 filter 区块的 `pageKinds` 仍写着允许
-monitor，而提示词已经硬禁。干净的收口是把 filter 区块的 `pageKinds` 里的
-`monitor`/`dashboard` 一并剥掉，但那会把上面那两个彻底剥空，所以留到"KPI/图表吃
-筛选"那件事定了之后一起做。
+## filter 区块收口（**已执行**）：三处判据同源
 
-## B 档剩下的（8 个区块，涉及 calendar / kanban / wizard）
+上一节留了一条不一致：filter 区块的 `pageKinds` 仍写着允许 monitor，而提示词已经
+硬禁。同一条规矩当时散在**三个地方**，判据各不相同：
 
-这些的"兄弟"往往**不是真近亲**，或者要跨进形状专属页型，机械放宽有风险：
-
-| 区块 | 机械对齐会加 | 为什么先别加 |
+| 位置 | 原判据 | 现判据 |
 |---|---|---|
-| `ActivityContextDrawer` | +calendar,monitor | 它是 `overlay` 抽屉，兄弟 `ActivityFeed` 是动态流——同 capability 但形状不同 |
-| `FilterPresetDrawer` | +calendar,monitor | 同上：抽屉 vs `FilterBar` |
-| `BookingContextSummary` | +wizard | 摘要进向导页是更大的语义跳跃 |
-| `ConnectionRouteSummary` | +wizard | 同上 |
-| `ConnectionTimeline` | +wizard | 同上 |
-| `DocumentContextSummary` | +wizard | 同上 |
-| `RecordComparePanel` | +monitor,wizard | 对比面板进向导页，兄弟 `RecordPicker` 不是真近亲 |
-| `EventTypePublishBar` | +calendar | 兄弟 `EventRsvpPanel` 天然是日历件（RSVP 基于事件），发布栏不是 |
+| 目录 `pageKinds` | 23 个 filter 区块写着允许 monitor / dashboard | 已剥掉 |
+| 提示词禁令（`schema_legal.py`） | 4 个硬编码名字 | `capability == "filter"` |
+| 渲染层兜底（`AppRuntimeScreen.tsx:1769`） | `b.type === "FilterBar"` | `EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "filter"` |
 
-（原表里 monitor 那 6 个已挪到上一节，`SavedSearchPanel` / `UserDirectoryFilter`
-两条的结论是**不放宽**，`ActivityContextDrawer` / `FilterPresetDrawer` /
-`RecordComparePanel` 里的 `+monitor` 那半也随之作废——同一条判据。）
+第三处是这次才发现的：渲染层原来也按名字挡，等于只挡了这一族里最出名的那个
+——`SavedViewTabs` / `TagFilterRow` / `SearchBox` 摆上总览页照样上屏、照样按不动。
+渲染层那段注释给的理由比提示词更强一层：筛选条**绑单个实体**，而总览页的
+KPI/图表通常跨好几个实体（真跑那次跨了 4 个），筛一个也管不着另外三个。
+
+顺带说清为什么**没有**走"让总览页的 KPI/图表吃 `filterState`"那条路：`activePageFilter`
+的 `enumFilters` 键是**本页主实体**的字段 id，而 `page.stats[].entityId` /
+`page.charts[].entityId` 各指各的实体。直接把它套上去，只有主实体那几个卡会响应、
+其余静默不动——比现在的"整个控件不动"更糟。要做成 Grafana 那种"时间范围/模板变量
+管全页"，需要的是一个**总览页级别的筛选构件**（按每个面板自己的实体去匹配），
+那是功能，不是改一行数据。
+
+### 那两个被堵死的区块也一起修了
+
+`AnalyticsDateScope` 和 `DashboardParameterBar` 原来只允许 dashboard/monitor，
+禁令一上就无处可去。按同一条判据修：筛选类区块的归宿是**逐行展示记录的页面**，
+所以这两个的 `pageKinds` 改成 `workbench`——那里 `applyPageFilter` 真的会收窄
+表格的行（含 `dateRangeField` 那条日期范围），控件是活的。
+`test_没有更多区块被总览页禁令堵死` 的基线从 2 锁到 **0**。
+
+## B 档剩下的 9 对（**已定调：一个都不放宽**）
+
+原来的判断是"这些的兄弟往往不是真近亲"。查完之后这句话可以量化了，而且比原来
+说得更硬：**判据本身缺了一维——它不看区块摆在哪个槽位。**
+
+把 `allowedRegions` 加进去看，9 对里有 **6 对区域完全不相交**：
+
+| 窄的 | 它的槽位 | 宽的 | 宽的槽位 |
+|---|---|---|---|
+| `ActivityContextDrawer` | overlay | `ActivityFeed` | aside,main,supplement |
+| `BookingContextSummary` | headerContent | `BookingSlotPicker` | main,supplement,overlay |
+| `ConnectionRouteSummary` | headerContent | `ConnectionMappingPanel` | main,supplement,overlay |
+| `DocumentContextSummary` | headerContent | `DocumentOutlinePanel` | aside,supplement |
+| `EventTypePublishBar` | footerBar | `EventRsvpPanel` | aside,main,supplement |
+| `FilterPresetDrawer` | overlay | `FilterBar` | filters |
+
+**页头说明 / 浮层抽屉 / 底部操作条**去跟**主列面板**比页型，比的不是同一样家具，
+只是碰巧 `capability` 相同。而且这种"窄"有可辩护的理由：宽的那个之所以宽，往往
+正因为它能当某种页型的**主视图内容**——`BookingSlotPicker` 是预约向导那一步的
+主体，`ConnectionMappingPanel` 是 Airbyte 连接设置向导里的映射步骤——而页头说明
+当不了主视图。
+
+所以判据加一维：**区域相交才算可比**。9 对 → **3 对**。
+
+### 剩下 3 对：逐条写理由，不再靠一个基线数字
+
+这 3 对区域真相交，是真同形的比较。它们记在
+`test_page_kind_consistency_ratchet.py` 的 `_JUSTIFIED_PAIRS` 里，**每条附理由**，
+未写理由的对数必须是 0：
+
+| 对 | 为什么宽的那个宽得有理 |
+|---|---|
+| `ConnectionTimeline` ⊂ `ConnectionMappingPanel` | MappingPanel 宽在 wizard 是因为它能当连接设置向导那一步的主体；Timeline 是历史事件流，不是设置步骤 |
+| `HeaderEntitySummary` ⊂ `HeaderProgressSummary` | 同区域同能力的真同形对，但 Progress 宽在 dashboard/monitor 是**聚合语义**（"整体进度到哪了"）；EntitySummary 说的是单条记录的字段，总览页不围绕单条记录，摆上去只能显示"第一行" |
+| `RecordComparePanel` ⊂ `RecordPicker` | 只在 supplement 一个槽位相交。Picker 宽在 wizard/monitor 是因为"挑一条记录"是向导标准一步；对比面板是复核工具。若要放宽，wizard 那半有先例（`MergePreviewPanel` / `RecordChangePreview` 同是对比形状且允许 wizard），monitor 那半没有 |
+
+把数字换成理由的用意：数字降到 0 只说明没有新漂移冒出来，而"这一条例外为什么
+成立"得有人能读到；新增一条就是一次评审。
+
+### 判据放宽了，所以加了一条反向证明
+
+加区域维度是**放宽计数**，容易顺手把检测能力一起放掉。所以
+`test_精判据没有把真漂移一起放过去` 现场合成一个必然是漂移的区块（同域、同能力、
+**同区域**、页型少一个），断言精判据照样抓得到。生判据那个总数（9）也留着不动，
+两个数一起看才知道是真变好了还是判据变松了。
 
 ## 执行方式
 
@@ -164,10 +226,14 @@ monitor，而提示词已经硬禁。干净的收口是把 filter 区块的 `pag
 2. ~~B 档里的 monitor 那 6 个作为第二批一起议~~ **已完成**，见上面「B 档 monitor
    那 6 个的定调」：4 放宽 + 2 收窄兄弟，基线 15 → 9；并把总览页禁令从"4 个硬编码
    名字"改成机械判据（`capability == "filter"` 一律禁）。
-3. **矛盾降到 0 之后**才谈让结构闸硬拒页型越界。届时要改的是
-   `test_门禁仍然不拦页型越界` 那条路标，而不是悄悄让修复器开始删区块。
-4. 剩下的 9 对全在 calendar / kanban / wizard 这三种形状专属页型上——那是第三批，
-   要回答的是"摘要/抽屉/对比面板能不能进有主视图的页"，跟前两批不是同一个问题。
+3. ~~剩下的 9 对是第三批~~ **已完成**，见「B 档剩下的 9 对」：判据加区域维度，
+   6 对是假阳性，3 对写明理由，一个都没放宽。
+4. ~~矛盾降到 0 之后才谈让结构闸硬拒页型越界~~ **这条解锁条件已作废**，
+   见文首那段引文与 `test_page_kind_consistency_ratchet.py` 的「上闸还差什么」：
+   判据只覆盖 41/358 个区块，清零说明不了另外 317 个。新的解锁条件是给
+   `pageKinds` 一份**能重算的推导依据**（照 `scripts/label_block_generality.py`
+   给 `generality` 做的那样）。届时要改的仍是 `test_门禁仍然不拦页型越界`
+   那条路标，而不是悄悄让修复器开始删区块。
 
 ## 一条没解决的
 

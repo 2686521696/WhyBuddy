@@ -1304,9 +1304,7 @@
       "pageKinds": [
         "workbench",
         "kanban",
-        "calendar",
-        "dashboard",
-        "monitor"
+        "calendar"
       ],
       "allowedRegions": [
         "filters"
@@ -1369,8 +1367,7 @@
       "dataKinds": [],
       "pageKinds": [
         "workbench",
-        "kanban",
-        "monitor"
+        "kanban"
       ],
       "allowedRegions": [
         "filters"
@@ -1431,8 +1428,7 @@
       "dataKinds": [],
       "pageKinds": [
         "workbench",
-        "kanban",
-        "monitor"
+        "kanban"
       ],
       "allowedRegions": [
         "header",
@@ -2138,8 +2134,7 @@
       ],
       "pageKinds": [
         "workbench",
-        "kanban",
-        "monitor"
+        "kanban"
       ],
       "allowedRegions": [
         "tabs",
@@ -3571,9 +3566,7 @@
       "pageKinds": [
         "workbench",
         "kanban",
-        "calendar",
-        "dashboard",
-        "monitor"
+        "calendar"
       ],
       "allowedRegions": [
         "headerExtra"
@@ -3632,8 +3625,7 @@
       },
       "dataKinds": [],
       "pageKinds": [
-        "dashboard",
-        "monitor"
+        "workbench"
       ],
       "allowedRegions": [
         "headerExtra",
@@ -3869,8 +3861,7 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench",
-        "dashboard"
+        "workbench"
       ],
       "allowedRegions": [
         "tabs"
@@ -3935,9 +3926,7 @@
       "pageKinds": [
         "workbench",
         "kanban",
-        "calendar",
-        "dashboard",
-        "monitor"
+        "calendar"
       ],
       "allowedRegions": [
         "filters"
@@ -3997,9 +3986,7 @@
       ],
       "pageKinds": [
         "workbench",
-        "kanban",
-        "dashboard",
-        "monitor"
+        "kanban"
       ],
       "allowedRegions": [
         "filters"
@@ -6946,7 +6933,6 @@
         "entityRows"
       ],
       "pageKinds": [
-        "monitor",
         "workbench"
       ],
       "allowedRegions": [
@@ -7004,7 +6990,6 @@
         "entityRows"
       ],
       "pageKinds": [
-        "monitor",
         "workbench"
       ],
       "allowedRegions": [
@@ -7704,7 +7689,6 @@
       },
       "dataKinds": [],
       "pageKinds": [
-        "monitor",
         "workbench"
       ],
       "allowedRegions": [
@@ -8492,8 +8476,7 @@
         "entityRows"
       ],
       "pageKinds": [
-        "dashboard",
-        "monitor"
+        "workbench"
       ],
       "allowedRegions": [
         "filters"
@@ -9346,8 +9329,7 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench",
-        "dashboard"
+        "workbench"
       ],
       "allowedRegions": [
         "filters"
@@ -10219,7 +10201,6 @@
       },
       "dataKinds": [],
       "pageKinds": [
-        "monitor",
         "workbench"
       ],
       "allowedRegions": [
@@ -12705,7 +12686,6 @@
         "entityRows"
       ],
       "pageKinds": [
-        "monitor",
         "workbench"
       ],
       "allowedRegions": [
@@ -12767,7 +12747,6 @@
         "entityRows"
       ],
       "pageKinds": [
-        "monitor",
         "workbench"
       ],
       "allowedRegions": [
@@ -14112,8 +14091,7 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench",
-        "monitor"
+        "workbench"
       ],
       "allowedRegions": [
         "filters"
@@ -15213,8 +15191,7 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench",
-        "monitor"
+        "workbench"
       ],
       "allowedRegions": [
         "filters"
@@ -15275,8 +15252,7 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench",
-        "monitor"
+        "workbench"
       ],
       "allowedRegions": [
         "filters"
@@ -19238,7 +19214,6 @@
       ],
       "pageKinds": [
         "workbench",
-        "dashboard",
         "kanban"
       ],
       "allowedRegions": [
@@ -19596,8 +19571,7 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench",
-        "dashboard"
+        "workbench"
       ],
       "allowedRegions": [
         "aside",
@@ -23386,9 +23360,7 @@
       ],
       "pageKinds": [
         "workbench",
-        "kanban",
-        "dashboard",
-        "monitor"
+        "kanban"
       ],
       "allowedRegions": [
         "filters",
