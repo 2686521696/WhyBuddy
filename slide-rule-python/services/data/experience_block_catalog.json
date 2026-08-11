@@ -3870,8 +3870,7 @@
       ],
       "pageKinds": [
         "workbench",
-        "dashboard",
-        "monitor"
+        "dashboard"
       ],
       "allowedRegions": [
         "tabs"
@@ -13988,7 +13987,8 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench"
+        "workbench",
+        "monitor"
       ],
       "allowedRegions": [
         "header"
@@ -14171,7 +14171,8 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench"
+        "workbench",
+        "monitor"
       ],
       "allowedRegions": [
         "footerBar"
@@ -14351,8 +14352,7 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench",
-        "monitor"
+        "workbench"
       ],
       "allowedRegions": [
         "filters"
@@ -15028,7 +15028,8 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench"
+        "workbench",
+        "monitor"
       ],
       "allowedRegions": [
         "header"
@@ -15393,7 +15394,8 @@
         "entityRows"
       ],
       "pageKinds": [
-        "workbench"
+        "workbench",
+        "monitor"
       ],
       "allowedRegions": [
         "footerBar"

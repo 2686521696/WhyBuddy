@@ -73,9 +73,13 @@ from services.schema_legal import EXPERIENCE_BLOCKS, PAGE_KINDS
 #: 当前基线。**只准变小。** 降到 0 之后才可以考虑让结构闸硬拒页型越界。
 #:
 #: 25 → 15：docs/page-kinds-widening-proposal.md 的 A 档已执行（8 个区块只加
-#: workbench / dashboard 这两个通用工作面）。剩下的 15 对全部涉及
-#: calendar / kanban / wizard / monitor，即 B 档，需要单独定调后才动。
-_CONTRADICTION_BASELINE = 15
+#: workbench / dashboard 这两个通用工作面）。
+#: 15 → 9：B 档里 monitor 那 6 个已定调，但**不是一起放宽**——4 个 action 加
+#: monitor（同域近亲已允许、运行时真渲染），2 个 filter 反而收窄了它们更宽的
+#: 兄弟（SavedViewTabs / UserEventFilter 撤掉 monitor），因为 filterChange 在
+#: 总览页够不到任何东西。详见 docs/page-kinds-widening-proposal.md「B 档 monitor
+#: 那 6 个的定调」。剩下的 9 对全部涉及 calendar / kanban / wizard。
+_CONTRADICTION_BASELINE = 9
 
 
 def _domain_of(block_type: str) -> str:

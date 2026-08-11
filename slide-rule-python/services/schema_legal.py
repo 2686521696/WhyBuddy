@@ -859,29 +859,81 @@ def experience_block_prompt_block(
         # 目录里它仍是通电区块，没有任何一句话说总览页不许用。所以下面补一条
         # 显式禁令。四个一起禁（不只 FilterBar）：另外三个此前同样只是"不推荐"
         # 而无硬禁，是同一个洞，只是还没撞上。
-        MONITOR_FORBIDDEN = ("MetricGrid", "TrendChart", "DataTable", "FilterBar")
-        monitor_ok = [
-            str(b["type"]) for b in enabled
-            if str(b["type"]) not in MONITOR_FORBIDDEN
-        ]
-        monitor_forbidden_live = [t for t in MONITOR_FORBIDDEN if t in {str(b["type"]) for b in enabled}]
+        #
+        # ── 2026-08-11：把 FilterBar 那条从"一个名字"改成"一条机械判据" ──
+        #
+        # 上面那句"是同一个洞，只是还没撞上"写对了，只是禁的方式没跟上：按名字
+        # 硬编码四个，而 FilterBar 那条的**理由是机械的**——`filterChange` 事件
+        # 在总览页够不到任何东西。重新核实了一遍这条链路，比原注释写的还彻底：
+        #
+        #     AppRuntimeScreen.tsx:812   rows = applyPageFilter(allRows, activePageFilter, …)
+        #                                ↑ 只有这一份行被筛过，喂给本页的表/看板/日历
+        #     :1922 pageStatDisplay      state.entities[stat.entityId]      ← 未筛
+        #     :2913 phoneChartNode       state.entities[chart.entityId]     ← 未筛
+        #     :1691 sharedBlockRendererProps.entityRows = state.entities    ← 未筛（注释自己写着"未收窄"）
+        #
+        # 总览页没有表/看板/日历，KPI、图表、积木、设计树全读未筛全量，所以
+        # **任何**发 filterChange 的区块在总览页都是死控件，不只 FilterBar。
+        # 目录里 32 个 filter 区块有 31 个只发 filterChange（HierarchicalCategoryPicker
+        # 多发一个 itemSelect），其中 21 个的 pageKinds 还写着允许 monitor。
+        # 所以判据取 **capability == "filter"**，不再点名字。
+        #
+        # 另外三个（MetricGrid / TrendChart / DataTable）理由各不相同（重复渲染、
+        # 宽度），不是一条机械判据能覆盖的，继续按名字禁。
+        _MONITOR_FORBIDDEN_BY_NAME = ("MetricGrid", "TrendChart", "DataTable")
+
+        def _inert_on_overview(b: dict[str, Any]) -> bool:
+            return (
+                str(b["type"]) in _MONITOR_FORBIDDEN_BY_NAME
+                or str(b.get("capability") or "") == "filter"
+            )
+
+        monitor_ok = [str(b["type"]) for b in enabled if not _inert_on_overview(b)]
+        monitor_forbidden_live = [str(b["type"]) for b in enabled if _inert_on_overview(b)]
         if monitor_forbidden_live:
             # 逐条给理由而不是只列名单：本仓库反复验证过措辞决定行为（许可式
             # 让七个通电区块一个都没被用；binding 哨兵词 "none" 被当成值）。
             # 只丢一张禁用表，模型下次照样按语义直觉去猜"这页是不是该有个筛选条"。
+            #
+            # 筛选那批现在是整族，逐个给理由会把这段撑爆（窄化开着时是几个、
+            # 关着时是 32 个）。所以措辞改成"三个点名 + 筛选整族一句"，
+            # **理由一句都不省**——省掉理由这件事本仓库已经付过学费。
+            #
+            # 理由句必须**跟着名单走**：目录窄化开着时这一批常常只剩筛选类
+            # （实测告警值班题：名单里 4 个全是 filter），此时还照抄
+            # "MetricGrid and TrendChart would…" 就是在解释一个没出现的名字，
+            # 模型读到的是一段对不上号的说明。所以逐段按在场情况拼。
+            live = set(monitor_forbidden_live)
+            why: list[str] = []
+            if {"MetricGrid", "TrendChart"} & live:
+                why.append(
+                    ("MetricGrid and TrendChart" if {"MetricGrid", "TrendChart"} <= live
+                     else ("MetricGrid" if "MetricGrid" in live else "TrendChart"))
+                    + " would render the same numbers a second time — an overview's KPIs "
+                    "and charts are already declared as page.stats / page.charts and get "
+                    "laid out by the design pass."
+                )
+            if "DataTable" in live:
+                why.append(
+                    "DataTable needs full width and a second entity to be worth "
+                    "anything on an overview."
+                )
+            if any(str(b.get("capability") or "") == "filter" for b in enabled
+                   if str(b["type"]) in live):
+                why.append(
+                    "EVERY filter block cannot filter ANYTHING on an overview: filter "
+                    "state only reaches this page's own table / kanban / calendar views, "
+                    "and an overview has none of them — its KPIs, its charts, its blocks "
+                    "and its designed layout all read the unfiltered rows, so the control "
+                    "would sit there doing nothing. That holds for a saved-view switcher "
+                    "and a date-range picker just as much as for a filter bar. Put the "
+                    "filter on the business page that actually lists records instead."
+                )
             lines.append(
                 "On monitor / dashboard pages, NEVER emit these blocks: "
                 + ", ".join(monitor_forbidden_live)
-                + ". Each is inert there, not merely discouraged. MetricGrid and "
-                "TrendChart would render the same numbers a second time — an overview's "
-                "KPIs and charts are already declared as page.stats / page.charts and "
-                "get laid out by the design pass. DataTable needs full width and a "
-                "second entity to be worth anything on an overview. FilterBar cannot "
-                "filter ANYTHING on an overview: its state only reaches this page's own "
-                "table / kanban / calendar views, and an overview has none of them — "
-                "the blocks and the designed layout read the unfiltered rows, so the "
-                "control would sit there doing nothing. Put the filter on the business "
-                "page that actually lists records instead."
+                + ". Each is inert there, not merely discouraged. "
+                + " ".join(why)
             )
         if monitor_ok:
             lines.append(

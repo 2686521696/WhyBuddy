@@ -125,17 +125,91 @@ def test_monitor_pages_carry_an_explicit_block_prohibition():
     声明了 analytics_filters——目录里它仍是通电区块，没有任何一句说总览页不许
     用，模型按语义直觉("总览页该有个筛选条")就补上了。
 
-    所以这里锁三件事：说了 NEVER、四个类型都点名、且给了理由（本仓库反复
-    验证过只丢名单不给理由时模型会照旧按直觉猜）。
+    所以这里锁三件事：说了 NEVER、该点名的都在**禁令那一句里**、且给了理由
+    （本仓库反复验证过只丢名单不给理由时模型会照旧按直觉猜）。
+
+    2026-08-11：判据从"四个名字"换成"三个名字 + capability==filter 整族"。
+    原注释自己写过"是同一个洞，只是还没撞上"——撞上了：`filterChange` 在总览页
+    够不到任何东西这条理由是**机械的**（KPI/图表/积木/设计树全读未筛全量，只有
+    本页的表/看板/日历吃筛过的行），所以 32 个 filter 区块一个不少都得禁，不只
+    FilterBar。断言也跟着从"名字在提示词里"改成"名字在禁令句里"——前者太弱，
+    这些名字在下面的全目录清单里本来就会出现，禁令句删掉了照样通过。
     """
     from services import schema_legal
 
     prompt = schema_legal.experience_block_prompt_block()
-    assert "On monitor / dashboard pages, NEVER emit these blocks" in prompt
-    for t in ("MetricGrid", "TrendChart", "DataTable", "FilterBar"):
-        assert t in prompt
-    # 理由必须在场——FilterBar 那条是最容易被当成"随便定的规矩"的
+    head = "On monitor / dashboard pages, NEVER emit these blocks"
+    assert head in prompt
+    # 只看禁令那一句，不看整份提示词（区块清单里什么名字都有）
+    sentence = prompt[prompt.index(head) : prompt.index(head) + 4000]
+    sentence = sentence[: sentence.index("\n")] if "\n" in sentence else sentence
+
+    for t in ("MetricGrid", "TrendChart", "DataTable"):
+        assert t in sentence, f"{t} 不在禁令句里"
+
+    # 机械判据：所有 filter 能力的通电区块都必须在禁令句里点名
+    filters = [
+        str(b["type"])
+        for b in schema_legal.EXPERIENCE_BLOCKS
+        if b.get("generationEnabled") and str(b.get("capability") or "") == "filter"
+    ]
+    assert filters, "目录里没有 filter 区块了，这条判据失去意义"
+    missing = [t for t in filters if t not in sentence]
+    assert not missing, f"这些 filter 区块没被总览页禁令点名：{missing[:8]}"
+
+    # 反面：被禁的不能同时出现在"总览页可以用这些"那句里
+    ok_head = "monitor / dashboard pages are NOT exempt"
+    ok_sentence = prompt[prompt.index(ok_head) :].split("\n", 1)[0]
+    both = [t for t in filters + ["MetricGrid", "DataTable"] if t in ok_sentence]
+    assert not both, f"同一份提示词里既禁止又推荐：{both[:8]}"
+
+    # 理由必须在场——筛选那条是最容易被当成"随便定的规矩"的
     assert "cannot filter ANYTHING on an overview" in prompt
+
+
+#: 总览页禁令与 pageKinds 打架、因而**无处可去**的区块。只准变少。
+#:
+#: 2026-08-11 把总览页禁令改成机械判据（capability==filter 一律禁）之后照出来的
+#: 副作用：有两个 filter 区块的 pageKinds **只**写了 dashboard/monitor，禁令一上
+#: 它们就"只允许总览页 + 总览页不许用" —— 哪儿都摆不了。
+#:
+#:     AnalyticsDateScope    dashboard,monitor  headerExtra,metrics  仪表盘时间范围
+#:     DashboardParameterBar dashboard,monitor  filters              Grafana 模板变量
+#:
+#: 这不是判据错了：查过链路，这两个照样筛不动东西（pageStatDisplay 与
+#: phoneChartNode 都直读 state.entities，不吃 activePageFilter）。真正的修法是
+#: **让总览页的 KPI/图表吃 filterState**，那是个功能，不是改一行数据；在那之前
+#: 如实记着这两个是废的，不假装它们能用。
+_OVERVIEW_ONLY_FILTERS_BASELINE = 2
+
+
+def test_没有更多区块被总览页禁令堵死():
+    """禁令是机械判据，可能把"只允许总览页"的区块堵死。这条守住那个数只准变少。
+
+    要让某个 filter 区块重新可用，两条路：给它加一个非总览页型（说明它在
+    业务页上确实有用），或者把总览页的 KPI/图表接上 filterState（那时这条
+    禁令本身就该重新议）。
+    """
+    from services import schema_legal
+
+    overview = {"monitor", "dashboard"}
+    stranded = sorted(
+        str(b["type"])
+        for b in schema_legal.EXPERIENCE_BLOCKS
+        if b.get("generationEnabled")
+        and str(b.get("capability") or "") == "filter"
+        and set(b.get("pageKinds") or []) <= overview
+    )
+    assert len(stranded) <= _OVERVIEW_ONLY_FILTERS_BASELINE, (
+        f"又多了被堵死的区块（只允许总览页，而总览页禁止筛选类）：{stranded}。"
+        "给它一个非总览页型，或者别把它标成 filter。"
+    )
+    if len(stranded) < _OVERVIEW_ONLY_FILTERS_BASELINE:
+        raise AssertionError(
+            f"被堵死的区块降到 {len(stranded)} 个（基线 "
+            f"{_OVERVIEW_ONLY_FILTERS_BASELINE}）：{stranded}。"
+            "请把 _OVERVIEW_ONLY_FILTERS_BASELINE 改成这个数锁住改善。"
+        )
 
 
 def test_region_restrictions_have_no_unexplained_width_gaps():
