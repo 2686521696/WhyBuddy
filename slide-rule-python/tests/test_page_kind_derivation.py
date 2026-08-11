@@ -52,6 +52,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from label_block_page_kinds import (  # noqa: E402
     OVERVIEW_KINDS,
     PAGE_KIND_FACTS,
+    _resolve_claim,
     audit,
     hard_verdicts,
     needs_model,
@@ -202,8 +203,9 @@ def test_记账位的格子会真的被问到模型():
     所以这条不测"结果对不对"，测的是**这一格进没进 ask_list**。
 
     注意别把判据写成"所有筛选区块的 workbench 格都必须被问"——`FilterBar` 那
-    一格被硬④（预设正面证据）覆写成了 `require`，已经定死，不问是对的。真正
-    的不变量只有一条：**凡是 `require_any_row`，就必须问**。
+    一格上硬③ 的 `require_any_row` 被硬④ 的 `require` **吸收**了（workbench
+    本就是逐行视图页，硬③ 的诉求已被满足，见 `_resolve_claim`），已经定死，
+    不问是对的。真正的不变量只有一条：**凡是 `require_any_row`，就必须问**。
     """
     any_row = [
         (str(b["type"]), kind)
@@ -257,3 +259,83 @@ def test_完美模型下每个区块都能推导完整():
         f"完美模型下仍有 {len(incomplete)}/{len(enabled)} 个区块问不全，"
         f"`--write` 永远不会给它们打标：{incomplete[:8]}"
     )
+
+
+def test_硬规则打架时不再靠写入顺序拍板():
+    """`forbid` × `require` 必须判成冲突——原来是后写的那条静默赢。
+
+    ## 原来的形状
+
+    四条硬规则依次往同一个 dict 里 `out[kind] = …`。硬④（预设推导出的
+    `require`）排在最后，于是它会盖掉硬①（总览页禁筛选类的 `forbid`）。这两条
+    一个说"必须允许"、一个说"绝对不许"，**不该有赢家**。
+
+    盖掉之后果更糟：`audit()` 会掉头要求把那个页型**加回目录**——而它正是渲染层
+    会当场删掉（AppRuntimeScreen.tsx 的 filter 兜底）、提示词也明令禁止的页型。
+    等于工具在推着人往坑里走，还不说有分歧。
+
+    当时数据里恰好没撞上（唯一的重叠是 FilterBar@workbench，那个是良性的），
+    所以一路绿灯。这条把"没撞上"和"判据能挡住"分开。
+    """
+    # 直接喂主张，不依赖目录里恰好有没有这种数据
+    conflict = _resolve_claim(
+        "monitor",
+        [
+            ("forbid", "总览页没有逐行视图", "硬①"),
+            ("require", "某个预设在 monitor 页上用了它", "硬④"),
+        ],
+    )
+    assert conflict[0] == "conflict", f"forbid × require 没判成冲突：{conflict}"
+    # 理由里两条都要在，不然人拿到冲突也不知道是谁跟谁打
+    assert "硬①" in conflict[1] and "硬④" in conflict[1], conflict[1]
+
+
+def test_require吸收require_any_row_只在逐行视图页成立():
+    """唯一允许的消解，且**要真去查 row_view**，不能因为"听起来更强"就吸收。
+
+    FilterBar@workbench 是现实里唯一一例：硬③ 说"筛选类至少得有一种带逐行视图
+    的页"，硬④ 说"某预设在 workbench 上用了它"。workbench 本来就是逐行视图页，
+    硬③ 的诉求已被满足，不是矛盾。
+
+    但同样一对主张落在**没有**逐行视图的页上，就是真冲突——那说明有预设把筛选类
+    钉在了总览页上，恰恰是最该报的那种。
+    """
+    row = _resolve_claim(
+        "workbench",
+        [("require_any_row", "筛选类要有逐行视图页", "硬③"),
+         ("require", "预设用了它", "硬④")],
+    )
+    assert row[0] == "require", f"逐行视图页上应吸收成 require：{row}"
+
+    overview = _resolve_claim(
+        "monitor",
+        [("require_any_row", "筛选类要有逐行视图页", "硬③"),
+         ("require", "预设用了它", "硬④")],
+    )
+    assert overview[0] == "conflict", (
+        f"非逐行视图页上不该吸收，应报冲突：{overview}"
+    )
+
+
+def test_冲突会被audit报出来并让check非零退出(monkeypatch):
+    """端到端：造一个"预设把筛选区块摆上总览页"的局面，`audit()` 必须报。
+
+    上两条钉消解函数，这条钉**它接进了 CI 那条链路**——`audit()` 认得 conflict、
+    把它算进 problems，`--check` 因此非零退出。
+    """
+    import label_block_page_kinds as lbpk
+
+    planted = {
+        "type": "合成的筛选区块",
+        "capability": "filter",
+        "generationEnabled": True,
+        "pageKinds": ["workbench"],
+        "allowedRegions": ["filters"],
+    }
+    # 让硬④ 认为有个预设在 monitor 页上用了它 —— 与硬① 正面冲突
+    monkeypatch.setattr(lbpk, "preset_pairs", lambda: {"合成的筛选区块": {"monitor"}})
+
+    problems = lbpk.audit([planted])
+    conflicts = [p for p in problems if p[2].startswith("硬判据自相矛盾")]
+    assert conflicts, f"audit 没报冲突，problems={problems}"
+    assert conflicts[0][1] == "monitor", conflicts[0]

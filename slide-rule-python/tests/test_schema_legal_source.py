@@ -122,6 +122,34 @@ def test_gate_still_blocks_off_ledger_values():
     assert "sparkline" in refs    # 非法图表形态
 
 
+def _named_between(text: str, after: str, before: str) -> set[str]:
+    """把 `after` 与 `before` 之间那串 `A, B, C` 切成**精确的名字集合**。
+
+    ## 为什么不能用 `"FilterBar" in sentence`
+
+    子串包含在这份数据上是**真的会漏**，不是理论风险。目录里：
+
+        FilterBar   是 TimelineFilterBar / WorkItemFilterBar /
+                    CatalogEntityFilterBar / QueryClauseFilterBar /
+                    CycleFilterBar / AlertRuleFilterBar 这 6 个的子串
+        StatusTabs  是 BookingStatusTabs 的子串
+        TrendChart  是 ReleaseAdoptionTrendChart / SyncVolumeTrendChart 的子串
+
+    35 个受监视的名字里有 3 个被这样掩护着。也就是说：把 `FilterBar` 从禁令里
+    整个删掉，只要那 6 个兄弟里还剩一个在，守卫照样绿灯——而 `FilterBar` 恰恰
+    是这一族里最常被模型摆出来的那个，正是整条禁令最初为它而设的。
+
+    反方向同样有问题：`ok_sentence` 里出现 `BookingStatusTabs`，会让
+    "`StatusTabs` 被推荐了"这条**误报**，把一次干净的改动判成回归。
+
+    所以按分隔符切，然后比集合。名单本身就是 `", ".join(...)` 拼出来的，
+    切回去是无损的。
+    """
+    start = text.index(after) + len(after)
+    end = text.index(before, start)
+    return {name.strip() for name in text[start:end].split(",") if name.strip()}
+
+
 def test_monitor_pages_carry_an_explicit_block_prohibition():
     """2026-08-01：总览页的禁用积木必须是**显式禁令**，不能只是"不在推荐清单里"。
 
@@ -144,12 +172,13 @@ def test_monitor_pages_carry_an_explicit_block_prohibition():
     prompt = schema_legal.experience_block_prompt_block()
     head = "On monitor / dashboard pages, NEVER emit these blocks"
     assert head in prompt
-    # 只看禁令那一句，不看整份提示词（区块清单里什么名字都有）
-    sentence = prompt[prompt.index(head) : prompt.index(head) + 4000]
-    sentence = sentence[: sentence.index("\n")] if "\n" in sentence else sentence
+
+    # 2026-08-11：三处断言从"名字是句子的子串"换成**精确名单比对**。
+    # 原来的写法在这份数据上是真的会漏（见 `_named_between` 的说明）。
+    banned = _named_between(prompt, head + ": ", ". Each is inert there")
 
     for t in ("MetricGrid", "TrendChart", "DataTable"):
-        assert t in sentence, f"{t} 不在禁令句里"
+        assert t in banned, f"{t} 不在禁令句里（禁令点名了 {len(banned)} 个）"
 
     # 机械判据：所有 filter 能力的通电区块都必须在禁令句里点名
     filters = [
@@ -158,13 +187,16 @@ def test_monitor_pages_carry_an_explicit_block_prohibition():
         if b.get("generationEnabled") and str(b.get("capability") or "") == "filter"
     ]
     assert filters, "目录里没有 filter 区块了，这条判据失去意义"
-    missing = [t for t in filters if t not in sentence]
+    missing = [t for t in filters if t not in banned]
     assert not missing, f"这些 filter 区块没被总览页禁令点名：{missing[:8]}"
 
     # 反面：被禁的不能同时出现在"总览页可以用这些"那句里
     ok_head = "monitor / dashboard pages are NOT exempt"
-    ok_sentence = prompt[prompt.index(ok_head) :].split("\n", 1)[0]
-    both = [t for t in filters + ["MetricGrid", "DataTable"] if t in ok_sentence]
+    recommended = _named_between(
+        prompt, "declare it as a block: ", ". Pick by what THIS operation"
+    )
+    assert ok_head in prompt
+    both = sorted(set(filters + ["MetricGrid", "DataTable"]) & recommended)
     assert not both, f"同一份提示词里既禁止又推荐：{both[:8]}"
 
     # 理由必须在场——筛选那条是最容易被当成"随便定的规矩"的
@@ -360,14 +392,12 @@ def test_推荐上总览页的区块_没有一个被页型MUST规则禁止():
             declared[m.group(1)] = set(m.group(2).split(","))
     assert declared, "prompt 正文里一条 `- 类型: … pages=…` 都没解析到，判据失效"
 
-    # 2) 从推荐句里取名单
-    marker = "declare it as a block: "
-    recommending = [ln for ln in text.splitlines() if marker in ln]
-    assert len(recommending) == 1, f"推荐句不是恰好一条：{len(recommending)}"
-    tail = recommending[0].split(marker, 1)[1]
-    recommended = [
-        t for t in re.findall(r"\b[A-Z]\w+\b", tail.split(". Pick by what")[0])
-    ]
+    # 2) 从推荐句里取名单。按分隔符精确切，不用 `\b[A-Z]\w+\b` 那种宽正则——
+    #    后者会把句子里任何一个大写开头的词当成区块名（"Pick"、"Declaring"），
+    #    多解析出来的名字不在 `declared` 里、被第 3 步静默跳过，等于判据缩水。
+    recommended = _named_between(
+        text, "declare it as a block: ", ". Pick by what THIS operation"
+    )
     assert recommended, "推荐句里没解析到任何区块名"
 
     # 3) 交叉核对：被推荐上总览页的，pages= 必须真的含 monitor 或 dashboard
@@ -453,4 +483,48 @@ def test_额外事件到不了岸_所以整族禁令仍然成立():
         "client 侧 eventBindings 的代码引用处变了。若已把事件名→动作 id 接进渲染层，"
         "那么筛选族禁令对 SavedViewTabs / SavedSearchPanel / "
         f"HierarchicalCategoryPicker 这几个就要重议：{hits}"
+    )
+
+
+def test_名单解析是精确匹配_不会被兄弟名字喂饱():
+    """守卫必须按名字比，不能按子串——这条把"改回子串写法"钉死。
+
+    ## 实测过的失效
+
+    把 `FilterBar` 从总览页禁令里整个删掉（只留它那 6 个兄弟），跑同一份提示词：
+
+        旧守卫（`"FilterBar" in sentence`）  报缺失 []            → 绿灯
+        新守卫（精确名单比对）              报缺失 ['FilterBar'] → 红
+
+    绿灯的原因是 `TimelineFilterBar` / `AlertRuleFilterBar` 等仍在句子里，
+    子串一找就中。而 `FilterBar` 恰恰是这一族里模型最常摆出来的那个，整条禁令
+    最初就是为它设的——守卫对"它没了"这件事完全失明。
+
+    反方向的误报同理：`BookingStatusTabs` 在场会让"`StatusTabs` 被推荐了"成立。
+    """
+    # 正向：名字不在名单里，就算兄弟在也不许算它在
+    banned = _named_between(
+        "NEVER emit these blocks: TimelineFilterBar, AlertRuleFilterBar"
+        ". Each is inert there, not merely discouraged.",
+        "NEVER emit these blocks: ",
+        ". Each is inert there",
+    )
+    assert banned == {"TimelineFilterBar", "AlertRuleFilterBar"}
+    assert "FilterBar" not in banned, "子串又漏进来了——守卫退回了旧写法"
+
+    # 反向：兄弟在场不许把短名字误判成"在名单里"
+    recommended = _named_between(
+        "declare it as a block: BookingStatusTabs"
+        ". Pick by what THIS operation actually does first",
+        "declare it as a block: ",
+        ". Pick by what THIS operation",
+    )
+    assert recommended == {"BookingStatusTabs"}
+    assert "StatusTabs" not in recommended, "反方向的误报还在"
+
+    # 目录里真实存在这种掩护关系，所以这条判据不是假想敌
+    types = {str(b["type"]) for b in schema_legal.EXPERIENCE_BLOCKS}
+    shadowed = {t for t in types if any(t != o and t in o for o in types)}
+    assert {"FilterBar", "StatusTabs", "TrendChart"} <= shadowed, (
+        f"这些名字不再被别的类型名掩护了，判据可以放宽——先确认：{sorted(shadowed)[:10]}"
     )
