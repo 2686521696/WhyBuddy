@@ -288,6 +288,77 @@ def ask(kind: str, rows: list[tuple[str, str]], model: str) -> dict[str, tuple[b
     return {}
 
 
+_FORCE_RUBRIC = """下面这些「体验区块」在逐页型评审里被判成**哪一种页都不该放**。这不可能成立
+——每个区块都是已经写好渲染器、已经放开生成的，总得有个归宿。
+
+可选的页型只有这 6 种，各自提供的东西是：
+
+{facts}
+
+请为每一个**选出最合适的 1~2 种**页型。不要选"都行"，也不要一个都不选。
+判据：这个区块需要的数据/交互，哪种页提供得起；一个正常的这种页面上，
+用户会不会期待看到它。
+
+输出 JSON：{{"items":[{{"i":行号,"kinds":["workbench"],"why":"不超过20字"}}]}}
+kinds 只能从上面那 6 个名字里取，每一行都要有，行号原样用输入给的那个数字。"""
+
+
+def force_pick(rows: list[tuple[str, str]], model: str) -> dict[str, tuple[set[str], str]]:
+    """强制选择：给被清空的区块问"至少最合适的是哪一两种页"。
+
+    跟 `ask()` 的区别是**问法从"能不能"换成"选哪个"**——逐页型问是判断题，一路
+    答否就把区块清空了；这里是选择题，答不出"都不选"。
+    """
+    import httpx
+
+    facts = "\n".join(
+        f"  · {k}：{v['provides']}" for k, v in PAGE_KIND_FACTS.items()
+    )
+    for attempt in range(3):
+        try:
+            resp = httpx.post(
+                f'{os.environ["LLM_BASE_URL"].rstrip("/")}/chat/completions',
+                headers={"Authorization": f'Bearer {os.environ["LLM_API_KEY"]}'},
+                json={
+                    "model": model,
+                    "stream": False,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {"role": "system", "content": _FORCE_RUBRIC.format(facts=facts)},
+                        {
+                            "role": "user",
+                            "content": "\n".join(
+                                f"{i}. {line}" for i, (_t, line) in enumerate(rows, 1)
+                            ),
+                        },
+                    ],
+                },
+                timeout=300,
+            )
+            resp.raise_for_status()
+            items = json.loads(resp.json()["choices"][0]["message"]["content"])["items"]
+            out: dict[str, tuple[set[str], str]] = {}
+            for it in items:
+                try:
+                    lineno = int(it["i"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if not 1 <= lineno <= len(rows):
+                    continue
+                ks = {
+                    str(k) for k in (it.get("kinds") or []) if str(k) in PAGE_KIND_FACTS
+                }
+                if ks:
+                    out[rows[lineno - 1][0]] = (ks, str(it.get("why") or "")[:40])
+            return out
+        except httpx.HTTPError as exc:
+            if attempt == 2:
+                raise
+            print(f"    重试 {attempt + 1}/2：{str(exc)[:80]}")
+            time.sleep(2**attempt)
+    return {}
+
+
 def _blessed_examples(kind: str) -> str:
     """把这种页**已经审核通过**的预设组合发给模型当正面例子。
 
@@ -369,7 +440,10 @@ def main() -> int:
     ap.add_argument("--write", action="store_true", help="把推导结果写回目录")
     ap.add_argument("--kind", action="append",
                     help="只跑指定页型（可重复），默认全部 6 种")
+    ap.add_argument("--draft-out", default="data/page_kinds_draft.json",
+                    help="原始初稿落盘路径（相对 scripts/）。一小时的产出不能只留在终端")
     args = ap.parse_args()
+    draft_path = (Path(__file__).resolve().parent / args.draft_out).resolve()
 
     catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
     blocks: list[dict[str, Any]] = catalog["blocks"]
@@ -407,7 +481,17 @@ def main() -> int:
     why_of: dict[tuple[str, str], str] = {}
 
     for kind in kinds:
-        verdict_of = {str(b["type"]): hard_verdicts(b).get(kind) for b in enabled}
+        # `require_any_row` 不是"这一格定死了"，只是"总得有一种带逐行视图的页"的
+        # 记账位，所以在这里**当没有硬判据处理**——照旧交给模型判。
+        #
+        # 2026-08-11 首轮踩过：当时把它算成"有硬判据"，于是筛选类区块的 workbench
+        # 那一格既不问模型、又不记进 asked，导致 32 个筛选类里有 31 个永远凑不满
+        # 6 种页，被差异表整批跳过（`FilterBar` 例外——它有预设 require 顶着）。
+        # 报告里"没问全的 31 个"就是这个洞，全是筛选类不是巧合。
+        verdict_of: dict[str, tuple[str, str] | None] = {}
+        for b in enabled:
+            v = hard_verdicts(b).get(kind)
+            verdict_of[str(b["type"])] = None if (v and v[0] == "require_any_row") else v
         # 硬判据已经定死的格子不问模型——问了也只会浪费一次调用，还可能被它答反
         ask_list = [b for b in enabled if verdict_of[str(b["type"])] is None]
         for b in enabled:
@@ -418,10 +502,6 @@ def main() -> int:
             asked[t].add(kind)
             if v[0] == "require":
                 derived[t].add(kind)
-            elif v[0] == "require_any_row":
-                # 这一格不是"必须是它"，只是记账位——照旧交给模型判
-                asked[t].discard(kind)
-                continue
             why_of[(t, kind)] = f"硬判据：{v[1]}"
 
         got: dict[str, tuple[bool, str]] = {}
@@ -436,6 +516,33 @@ def main() -> int:
         n_yes = sum(1 for _t, (ok, _w) in got.items() if ok)
         print(f"  {kind:<10} 问了 {len(rows):>3} 个（硬判据定死 {len(enabled) - len(rows)} 个），"
               f"模型答 yes {n_yes}，答上 {len(got)}/{len(rows)}")
+
+    # ── 兜底：被判成"哪种页都不该放"的区块，回头强制选一次 ──────────────
+    #
+    # 2026-08-11 首轮实测照出来的洞：**按页型分组问，就没有任何一处在看
+    # "这个区块还剩几种页"**。结果 8 个抽查样本 8 个被清空
+    # （AlertGroupCommandHeader / AttachmentPanel / AlertRuleCommandHeader …
+    # 现有页型被逐个否掉，一个不剩）。清空等于废掉一个渲染器，而每一轮单独看
+    # 都"答得有道理"——这正是分组问的代价。
+    #
+    # 所以补一问，换成**强制选择**：不问"能不能"，问"至少最合适的是哪一两种"。
+    # 措辞照本仓库反复验证过的那条走——给出路的问法才收得住（区域限制那次
+    # "不给出路的禁令会被绕过"记的是同一件事）。
+    if len(kinds) == len(PAGE_KIND_FACTS):
+        emptied = [b for b in enabled if asked[str(b["type"])] >= set(kinds)
+                   and not derived[str(b["type"])]]
+        if emptied:
+            print(f"\n兜底：{len(emptied)} 个区块被判成哪种页都不放，强制重选一次")
+            rows = [row_of(b) for b in emptied]
+            for start in range(0, len(rows), BATCH):
+                got2 = force_pick(rows[start : start + BATCH], model)
+                for t, (ks, why) in got2.items():
+                    derived[t] |= ks
+                    for k in ks:
+                        why_of[(t, k)] = f"兜底强制选：{why}"
+            still = [str(b["type"]) for b in emptied if not derived[str(b["type"])]]
+            print(f"  强制重选后仍为空 {len(still)} 个"
+                  + (f"：{', '.join(still[:10])}" if still else "（全部有归宿了）"))
 
     # ── 差异表 ────────────────────────────────────────────────────────
     # 只对**问全了 6 种页**的区块下结论：漏了一种页就没法说"目录更宽/更窄"。
@@ -468,6 +575,39 @@ def main() -> int:
     incomplete = [str(b["type"]) for b in enabled if b not in complete]
     if incomplete:
         print(f"\n没问全的 {len(incomplete)} 个（不下结论，重跑）：{', '.join(incomplete[:12])}")
+
+    # ── 存原始初稿 ────────────────────────────────────────────────────
+    #
+    # 2026-08-11 首轮跑完才发现漏了这件事：屏幕上的差异表两边各截 30 行，而**原始
+    # 逐格判断一个字都没留**。要复核就得再花一个小时重跑一遍全部 API 调用。
+    # 一小时的产出必须落地成文件，不能只活在终端回滚里。
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    draft_path.write_text(
+        json.dumps(
+            {
+                "model": model,
+                "kinds": kinds,
+                "pageKindFacts": {k: v["provides"] for k, v in PAGE_KIND_FACTS.items()},
+                "blocks": {
+                    str(b["type"]): {
+                        "current": sorted(set(b.get("pageKinds") or [])),
+                        "derived": sorted(derived[str(b["type"])]),
+                        "asked": sorted(asked[str(b["type"])]),
+                        "why": {
+                            k: why_of[(str(b["type"]), k)]
+                            for k in kinds
+                            if (str(b["type"]), k) in why_of
+                        },
+                    }
+                    for b in enabled
+                },
+            },
+            ensure_ascii=False,
+            indent=1,
+        ),
+        encoding="utf-8",
+    )
+    print(f"\n原始初稿已存 {draft_path}（逐格判断 + 理由，复核不用重跑）")
 
     if not args.write:
         print("\n--dry-run：没有写文件。"
