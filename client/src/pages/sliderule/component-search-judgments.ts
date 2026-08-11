@@ -114,6 +114,7 @@ export const JUDGMENTS: Judgment[] = [
       ProFormUploadDragger: 3,
       ProFormUploadButton: 3,
       "M.ImageUploader": 3,
+      ResumableUploadQueue: 3, // 2026-08-11 新增的断点上传队列，确实是上传件
       Image: 2, // 预览那一半
       "M.ImageViewer": 2,
     },

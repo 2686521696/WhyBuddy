@@ -85,6 +85,36 @@ describe("意图词表", () => {
  *     审批记录         R@5 = 0.33   ← 三个"向导"类区块占了 2~4 名
  *
  * 提这几个数是下一步的事，不是把阈值调低就算完。
+ *
+ * ## ⚠ 2026-08-11：目录 359 → 407 之后，这条护栏已经形同虚设（余量 0.008）
+ *
+ * 新增 48 个区块（独立结构族那批）之后平均掉到 **0.5961**，红了。逐条对比只有
+ * **两条**掉，其余 15 条一模一样：
+ *
+ *     上传并预览合同      0.60 → 0.20    ResumableUploadQueue / CronOccurrenceBuilder 挤掉了
+ *                                        ProFormUploadDragger 和 Upload
+ *     把选中的导成 Excel   1.00 → 0.33    BankTransactionReconciliationMatcher 和 DataTable
+ *                                        挤掉了 BatchActionBar 和 DataExportPanel
+ *
+ * 三个新来的挤进前五，原因各不相同：
+ *
+ *   · `ResumableUploadQueue`「断点上传队列」—— 它**真的**是上传件，是判定清单
+ *     过时（写清单时它还不存在）。按本文件的维护约定补进了 relevant（gain=3，
+ *     与 Upload / ProFormUploadButton 同档）。
+ *   · `CronOccurrenceBuilder`「Cron 触发预览器」—— 描述里有「**预览**」，而查询
+ *     是"上传并**预览**合同"。
+ *   · `BankTransactionReconciliationMatcher`「银行流水勾稽台」—— 描述里有
+ *     「搜索、**选择**」，而查询是"把**选中**的导成 Excel"。
+ *
+ * 后两个正是本文件开头记的那个老问题（"名字带「预览」的 6 个"）的新成员：
+ * BM25 只看词，看不出语义。**补标注治不了它们。**
+ *
+ * 所以现在的状态要说清楚：补完标注平均是 **0.6078**，只比阈值高 **0.008**。
+ * 那 0.008 来自 `上传附件` / `传个文件上来` 从 0.80 涨到 0.83——**平均被托过线，
+ * 但上面那两条查询仍然是坏的**（各 0.33）。这条护栏现在挡不住下一次加区块。
+ *
+ * 下一步该做的是排序本身（意图词表的展开太粗、描述字段权重偏高），
+ * **不是**继续补标注、也不是把 0.6 调低。
  */
 describe("检索质量（判定清单）", () => {
   const rankedFor = (q: string) => index.search(q).map(d => d.name);
