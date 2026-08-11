@@ -315,15 +315,26 @@ def test_门禁仍然不拦页型越界():
     declared = {
         str(b["type"]): list(b.get("pageKinds") or []) for b in EXPERIENCE_BLOCKS
     }
-    assert "workbench" not in declared["MuteTimingSchedule"], (
-        "MuteTimingSchedule 现在允许 workbench 了，这份样例不再越界。"
+    assert "workbench" not in declared["WizardNavigationBar"], (
+        "WizardNavigationBar 现在允许 workbench 了，这份样例不再越界。"
         "请换一个仍然不允许 workbench 的区块，否则这条路标就是空断言。"
     )
 
-    # MuteTimingSchedule 只允许 monitor/dashboard，这里故意摆进 workbench 页。
-    # （原先用的是 AlertRoutingPolicy，A 档放宽后它已经允许 workbench，这条路标会
-    #  变成永远为真的空断言，所以换成同族同能力、仍然不允许 workbench 的那个。
-    #  下面 _仍然越界 的前置断言就是防止将来再出现这种静默失效。）
+    # WizardNavigationBar 只允许 wizard，这里故意摆进 workbench 页。
+    #
+    # ## 这个样例换过两次，第三次挑的判据不一样
+    #
+    #   ① AlertRoutingPolicy —— A 档放宽后它允许了 workbench；
+    #   ② MuteTimingSchedule —— 2026-08-11 也放宽了（181 份真实生成里它在
+    #      workbench 页被用了 47 次，而目录不允许，是目录标错）。
+    #
+    # 两次都是"暂时还不允许 workbench"的块，于是两次都随着数据变好而失效。所以
+    # 这次改挑**语义上不可能属于工作台**的：向导导航条是驱动分步流程的下一步/
+    # 提交按钮，脱离 wizard 页它没有可导航的步骤。真实生成 181 份里它在
+    # workbench 页出现 0 次。
+    #
+    # 上面那条前置断言是防静默失效的：真要哪天它也放宽了，这条会直接说"换一个"，
+    # 而不是让整条路标变成永远为真的空断言。
     model = {
         "datamodel": {"entities": [{"id": "alert", "name": "告警", "fields": [
             {"id": "title", "name": "标题", "type": "string"},
@@ -332,7 +343,7 @@ def test_门禁仍然不拦页型越界():
         "workflow": {"id": "wf", "name": "流程", "nodes": [], "transitions": [], "chains": []},
         "page": {"pages": [{
             "id": "p1", "name": "路由策略管理", "kind": "workbench",
-            "blocks": [{"id": "b1", "type": "MuteTimingSchedule",
+            "blocks": [{"id": "b1", "type": "WizardNavigationBar",
                         "binding": {"entityRef": "alert"}}],
         }]},
         "aigc": {"capabilities": [{"id": "cap", "name": "摘要",

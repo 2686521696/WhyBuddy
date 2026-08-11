@@ -5404,7 +5404,8 @@
       ],
       "pageKinds": [
         "monitor",
-        "dashboard"
+        "dashboard",
+        "workbench"
       ],
       "allowedRegions": [
         "main",

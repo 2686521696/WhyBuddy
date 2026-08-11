@@ -176,19 +176,43 @@ class Test修复器只观测不改:
 
 
 class Test真实数据:
-    #: 那一趟实测的两处越界。A 档放宽后 `AlertRoutingPolicy` 已合法，只剩一处。
-    #: 判据不写死"哪个还越界"——从目录现查，这样目录再动时这条会跟着变，
-    #: 而不是悄悄变成空断言。
+    #: 那一趟实测的两处"越界"。**两处最终都被判定为目录标错，不是模型摆错。**
     _实测越界的两个区块 = ("AlertRoutingPolicy", "MuteTimingSchedule")
 
-    def test_钉住那趟实测的两处越界(self):
-        """判据取自真相源：凡是不允许 workbench 的区块，摆进 workbench 就该被记
-        一笔。用合成模型复现那一趟的形状，不依赖线上数据文件。
+    def test_那趟实测的两处越界最终都是目录标错(self):
+        """整条线的收口：第一份线上收割里那 2/15 处"越界"，**一处都不是模型的错**。
 
-        A 档放宽（见文件头"后续"）之后，这两个里 `AlertRoutingPolicy` 已经允许
-        workbench——那正是放宽想要的结果，所以它**不该**再被记一笔；
-        `MuteTimingSchedule` 属于 monitor 那批待议的，仍然越界，仍然要被记。
+        ## 两处各自的平反依据
+
+        `AlertRoutingPolicy`（A 档，2026-08-11）
+            同域同能力的近亲 `AlertTriagePanel` 早就允许 workbench，而"路由策略
+            管理页"天然是个工作台。放宽后它不再被记一笔。
+
+        `MuteTimingSchedule`（同日，跑真实话题时收的）
+            181 份真实生成模型里它在 workbench 页被摆了 **47 次**（calendar 2、
+            dashboard 2），最主要的用法恰恰是目录不允许的那个；同能力同槽位的
+            `AlertTriagePanel` / `AlertRoutingPolicy` 都已允许；当天一趟全新生成
+            又把它摆进 workbench，且三趟"对题件被选频次"都是 3/3——模型每次都要
+            用它。
+
+        所以这条用例从"钉住还剩几处越界"改成**钉住结论本身**：这两个都得是合法
+        摆放。原来那个形态（数还剩几处）已经走到尽头——它在 2026-08-11 一天里
+        因为数据变好红了两次，而每次要改的都不是判据，是那个"还剩几处"的期望值。
+
+        判据仍然从目录现查，不写死名字：哪天有人把它们改窄回去，这条会红，
+        并且报出是哪一个。
         """
+        legal_pages = {
+            t: EXPERIENCE_BLOCK_PAGE_KINDS_BY_TYPE[t] for t in self._实测越界的两个区块
+        }
+        regressed = [t for t, ks in legal_pages.items() if "workbench" not in ks]
+        assert not regressed, (
+            f"{regressed} 又不允许 workbench 了。这两处越界当初查清了是目录标错"
+            f"（AlertRoutingPolicy 有近亲对照，MuteTimingSchedule 有 47 次真实用例），"
+            "改窄回去等于把那次判定推翻了——如果确实要推翻，请连同本用例的说明一起改。"
+        )
+
+        # 正向：这两个摆进 workbench 页，修复器**不该**再记任何一笔
         model = {
             "page": {
                 "pages": [
@@ -201,23 +225,22 @@ class Test真实数据:
                 ]
             }
         }
-        仍越界 = {
-            t for t in self._实测越界的两个区块
-            if "workbench" not in EXPERIENCE_BLOCK_PAGE_KINDS_BY_TYPE[t]
-        }
-        # 先证明这份样例里确实还有越界的，否则下面就成了空断言
-        assert 仍越界, (
-            "那两个区块现在都允许 workbench 了，这条用例不再能观测到任何越界。"
-            "请换成目录里其它仍然不允许 workbench 的区块。"
-        )
-        assert 仍越界 == {"MuteTimingSchedule"}, (
-            f"实测那两处的越界状态变了（现在仍越界：{sorted(仍越界)}）。"
-            "如果是有意放宽/收紧，请连同文件头的『后续』一起更新。"
+        notes = repair_five_system_model(model)["pageKindViolations"]
+        assert notes == [], (
+            f"这三处现在都该是合法摆放，却仍被记了 {len(notes)} 笔：{notes}"
         )
 
-        notes = repair_five_system_model(model)["pageKindViolations"]
-        assert {n["blockType"] for n in notes} == 仍越界, notes
-        assert all(
-            n["allowed"] == ",".join(EXPERIENCE_BLOCK_PAGE_KINDS_BY_TYPE[n["blockType"]])
-            for n in notes
-        ), notes
+        # 反向哨兵：换一个**语义上不可能属于工作台**的块，必须照旧被记一笔
+        # ——否则上面那个 `notes == []` 可能是因为整条观测坏了，而不是因为合法。
+        assert "workbench" not in EXPERIENCE_BLOCK_PAGE_KINDS_BY_TYPE["WizardNavigationBar"]
+        sentinel = {
+            "page": {"pages": [{
+                "id": "p", "kind": "workbench",
+                "blocks": [{"id": "b", "type": "WizardNavigationBar"}],
+            }]}
+        }
+        sentinel_notes = repair_five_system_model(sentinel)["pageKindViolations"]
+        assert [n["blockType"] for n in sentinel_notes] == ["WizardNavigationBar"], (
+            f"哨兵没被记一笔（{sentinel_notes}）——说明越界观测本身坏了，"
+            "上面那条『都合法』的断言因此不可信"
+        )
