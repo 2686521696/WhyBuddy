@@ -1029,7 +1029,14 @@ def generate_five_system_model(
     #
     # 对着屏幕等的人要知道的是"建模这件事进行到哪了"，不是"这是第几次调用"。
     # 一次失败重试在 SSE 上应该表现为同一个阶段耗时更长，而不是同一条步骤
-    # 闪两遍——后者看着像出错了。真正的失败次数走 attempts 字段和日志。
+    # 闪两遍——后者看着像出错了。真正的失败次数走日志与下面的 used 字段。
+    #
+    # ⚠ `attempts` 打的是**上面那行算出来的预算**，不是这一趟试了几次：不管
+    # 成功失败它恒等于 1 或 2。实际次数是成功分支里写的 `_st["used"]`。
+    # 2026-08-11 有人把日志里的 `attempts=2` 读成"每趟都重试了一次"，据此推断
+    # "每次生成白花一倍时间"并去查根因，而同一行的 `used=1` 一直写着答案
+    # （七趟全是 1，都是一次成功）。两个字段挨着打、名字又都像次数，很容易读反
+    # ——enrich_timing.py 的模块头为此专门加了一段。
     stage_name = "model.regenerate" if gate_feedback else "model.generate"
     with _enrich_stage(stage_name, attempts=attempts, current=1, total=1) as _st:
         for attempt in range(attempts):
