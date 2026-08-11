@@ -780,8 +780,39 @@ export function AppRuntimeScreen({
    * 补回来，整页只剩一张卡。**family 回答的是"能不能独立存在"，capability 才
    * 回答"展示的是什么"** —— 这里要问的是后者。
    */
+  /**
+   * ── 2026-08-11：判据再补一维——**它落在哪个区域** ──────────────────────
+   *
+   * 上面那段记的是 family → capability 那次修正。线上截图照出同一个 bug 的第三次
+   * 变体：「宠物成长看板」整个主区**一片空白**（约 400px 高的白），卡片在、内容没有。
+   *
+   * 原因是这条判据不看区域。目录里有一批 entityRows 区块**物理上进不了 main**：
+   *
+   *     HeaderEntitySummary / HeaderProgressSummary   regions=headerContent（页头小字）
+   *     AlertRoutingPolicy                            regions=aside,supplement
+   *     RecordComparePanel                            regions=supplement,overlay
+   *     GlobalSearchPalette                           regions=overlay,headerContent
+   *
+   * 一个页面只声明了「页头说明」这种 entityRows，就被判成"记录已经有人展示了"，
+   * 内置表格不补回来——主区于是空着。放在右侧窄栏的 RecordDetail 同理：它显示的是
+   * **一条**记录，替代不了行列表。
+   *
+   * 所以"覆盖了数据"要求区块真的落在**正文带的全宽区域**（main / supplement，
+   * 见 business-page-layout 的 REGIONS_BY_BAND）。aside 是 3~4/12 的窄栏、
+   * headerContent 是页头小字、overlay 点了才出来，都替代不了主区的行列表。
+   *
+   * 没声明 layout 时所有区块都被塞进 main（renderExperienceBlockScaffold 里
+   * `regionSource?.main ?? （没 layout 就是全部）`），那种情况按全部算。
+   */
+  // 正文带的全宽区域（business-page-layout 的 REGIONS_BY_BAND.main 里那两个吃全宽的）。
+  // 直接取字段而不是按字符串索引——AppPageLayoutSchema 是具名字段，不是索引签名。
+  const coveringBlockIds = page?.layout
+    ? new Set([...(page.layout.main ?? []), ...(page.layout.supplement ?? [])])
+    : null;
   const blocksCoverData = declaredBlocks.some(
-    b => EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "entityRows"
+    b =>
+      EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "entityRows" &&
+      (coveringBlockIds === null || coveringBlockIds.has(b.id))
   );
 
   // Step 6 FilterBar：本页可筛的枚举字段（有声明选项的 enum 字段）+

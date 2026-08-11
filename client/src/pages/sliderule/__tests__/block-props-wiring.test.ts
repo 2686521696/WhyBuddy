@@ -291,9 +291,38 @@ describe("列表页归属：声明了积木就归积木", () => {
     // 判成"记录已经有人展示了"，表格没补回来，整页只剩一张卡。
     // family 回答"能不能独立存在"，capability 才回答"展示的是什么"。
     const start = runtime.indexOf("const blocksCoverData");
-    const body = runtime.slice(start, start + 220);
+    const body = runtime.slice(start, start + 320);
     expect(body).toContain('EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "entityRows"');
     expect(body, "又用回 family 了").not.toContain("FAMILY_BY_TYPE");
+  });
+
+  it("兜底判据还要看**区域** —— 页头小字/窄栏替代不了主区的行列表", () => {
+    /**
+     * 同一个 bug 的第三次变体（2026-08-11 线上截图）：「宠物成长看板」主区
+     * **一片空白**（约 400px 高），卡片在、内容没有。
+     *
+     * capability 那一维修对了，但少了区域这一维。目录里有一批 entityRows 区块
+     * 物理上进不了 main：
+     *
+     *     HeaderEntitySummary / HeaderProgressSummary  regions=headerContent
+     *     AlertRoutingPolicy                           regions=aside,supplement
+     *     RecordComparePanel                           regions=supplement,overlay
+     *
+     * 只声明了「页头说明」这种，就被判成"记录已经有人展示了"，内置表格不补回来。
+     * 放在右侧窄栏的 RecordDetail 同理——它显示的是**一条**记录。
+     *
+     * 所以判据要求区块落在正文带的全宽区域（main / supplement）。
+     */
+    const start = runtime.indexOf("const coveringBlockIds");
+    expect(start, "区域那一维不见了").toBeGreaterThan(-1);
+    const body = runtime.slice(start, start + 400);
+    expect(body, "没取 main").toContain("page.layout.main");
+    expect(body, "没取 supplement").toContain("page.layout.supplement");
+    // aside / headerContent 不算覆盖——它们替代不了行列表
+    expect(body, "把窄栏也算成覆盖了").not.toContain("page.layout.aside");
+    expect(body, "把页头小字也算成覆盖了").not.toContain("headerContent ??");
+    // 没声明 layout 时全部区块都在 main，那种情况按全部算
+    expect(runtime).toContain("coveringBlockIds === null || coveringBlockIds.has(b.id)");
   });
 
   it("「绑主实体的 DataTable 一律摘掉」那条规矩只在骨架还在时生效", () => {
