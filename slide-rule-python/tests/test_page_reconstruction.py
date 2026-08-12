@@ -190,3 +190,46 @@ def test_freeform_generator_includes_compiled_reconstruction_prompt(monkeypatch)
     first_user_text = captured["messages"][0]["content"]
     assert "页面还原契约" in first_user_text
     assert "RECONSTRUCT approval queue at x=0.100 width=0.800" in first_user_text
+
+
+def test_数字型_token_不该让整份规格作废() -> None:
+    """2026-08-12 真跑（生图开启，两趟）逮到的：`monitor.reconstruction` 稳定烧
+    81~85s 然后 status=failed，诊断是
+
+        invalid reconstruction spec: 5 validation errors
+        designTokens.titleWeight  Input should be a valid string, input_value=700
+
+    视觉 LLM 把字重写成数字 700，而 designTokens 声明的是 dict[str, str]——**5 个
+    数字让一趟 80 多秒的视觉分析整份作废**。字重本来就是数字，模型那么写最自然；
+    这份规格又只是喂给后续提示词当描述，`700` 和 `"700"` 在那里没有区别。
+    """
+    from services.page_reconstruction import PageReconstructionSpec
+
+    spec = _valid_spec()
+    spec["designTokens"] = {
+        "titleWeight": 700,          # ← 真跑里就是这个
+        "bodyWeight": 400,
+        "radius": 6,
+        "lineHeight": 1.5,
+        "dense": True,
+        "accent": "#1769e8",         # 字符串照旧
+    }
+    parsed = PageReconstructionSpec.model_validate(spec)
+    assert parsed.designTokens["titleWeight"] == "700"
+    assert parsed.designTokens["lineHeight"] == "1.5"
+    assert parsed.designTokens["dense"] == "True"
+    assert parsed.designTokens["accent"] == "#1769e8"
+
+
+def test_放宽的是格式不是判据_结构答错照旧报错() -> None:
+    """dict / list 值不是 token，是模型答错了结构——不许借着"宽容"混过去。"""
+    import pytest as _pytest
+    from pydantic import ValidationError as _VE
+
+    from services.page_reconstruction import PageReconstructionSpec
+
+    for bad in ({"nested": {"a": 1}}, {"arr": [1, 2]}, {"nil": None}):
+        spec = _valid_spec()
+        spec["designTokens"] = bad
+        with _pytest.raises(_VE):
+            PageReconstructionSpec.model_validate(spec)

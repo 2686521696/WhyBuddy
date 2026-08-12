@@ -6,7 +6,14 @@ import json
 import re
 from typing import Any, Callable, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 
 PAGE_RECONSTRUCTION_VERSION = "page-reconstruction-v1"
@@ -74,6 +81,37 @@ class PageReconstructionSpec(BaseModel):
     allowedAdaptations: list[str] = Field(default_factory=list, max_length=32)
     forbiddenDeviations: list[str] = Field(default_factory=list, max_length=64)
     uncertainRegions: list[str] = Field(default_factory=list, max_length=32)
+
+    @field_validator("designTokens", mode="before")
+    @classmethod
+    def coerce_token_scalars(cls, value: Any) -> Any:
+        """数字型 token 收成字符串。
+
+        ## 这条是怎么来的
+
+        2026-08-12 真跑（生图开启，两趟）：`monitor.reconstruction` 稳定烧 81~85s 然后
+        `status=failed`，诊断是
+
+            invalid reconstruction spec: 5 validation errors for PageReconstructionSpec
+            designTokens.titleWeight
+              Input should be a valid string, input_value=700, input_type=int
+
+        视觉 LLM 把字重写成数字 `700`，而这里声明的是 `dict[str, str]`。**5 个数字
+        让整份规格作废**——一趟 80 多秒的视觉分析，因为 `700` 不是 `"700"` 全丢。
+
+        字重、行高、圆角这些 token 本来就是数字，模型那么写最自然；而这份规格是
+        **喂给后续提示词当描述用的**（不参与运行时信任判定，见模块头注），
+        `700` 和 `"700"` 在那里没有任何区别。所以是这一侧该放宽，不是模型该改。
+
+        只收标量（int/float/bool → str）。dict / list / None **不收**：那种值不是
+        token，是模型答错了结构，该照旧报错——放宽的是格式，不是判据。
+        """
+        if not isinstance(value, dict):
+            return value
+        return {
+            k: (str(v) if isinstance(v, (int, float, bool)) else v)
+            for k, v in value.items()
+        }
 
     @model_validator(mode="after")
     def uses_one_component_library(self) -> "PageReconstructionSpec":
