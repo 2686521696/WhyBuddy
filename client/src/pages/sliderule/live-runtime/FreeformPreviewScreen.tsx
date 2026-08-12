@@ -24,10 +24,27 @@ import {
   designRecipeAlgorithms,
   resolveDesignRecipe,
 } from "./design-recipes";
+import type { AppFormFieldSchema } from "./app-runtime-schema";
 import type { RuntimeRow } from "./live-runtime";
+import type { OverviewHtmlPayload } from "./OverviewHtmlSurface";
+
+// 跟 AppRuntimeScreen 同一个理由懒加载：它拖着 DOMPurify，而这页大多数时候
+// 渲染的是受限树。
+const LazyOverviewHtmlSurface = React.lazy(() => import("./OverviewHtmlSurface"));
 
 interface FreeformPreviewPayload {
   freeformContent?: { root: Record<string, unknown> };
+  /**
+   * 总览的 **HTML 载体**（2026-08-12 傍晚，随它转为默认路径一起接上）。
+   *
+   * 不接的后果跟上面 designRecipeRef 那条一模一样、只是更彻底：HTML 成为默认
+   * 载体之后，这个自检页看到的仍然是受限树那份产物——而走 HTML 那条路的页面
+   * **根本没有**受限树产物，于是自检页只会显示"预览内容不可用"。截图评审、
+   * 版式体检（scripts/detect-design-defects.mjs）全都量不到默认路径。
+   */
+  overviewHtml?: OverviewHtmlPayload;
+  /** 实体字段声明。逐行的值靠它补单位（% / ¥ / 分 / 枚举标签）。 */
+  entityFields?: Record<string, AppFormFieldSchema[]>;
   themeId?: string;
   generatedTheme?: Record<string, unknown>;
   device?: string;
@@ -79,13 +96,18 @@ export default function FreeformPreviewScreen({ pid }: { pid?: string }) {
   if (status === "loading") {
     return <div data-testid="freeform-preview-loading" style={{ padding: 24 }} />;
   }
-  if (status === "error" || !payload?.freeformContent) {
+  if (
+    status === "error" ||
+    !payload ||
+    (!payload.freeformContent && !payload.overviewHtml?.html)
+  ) {
     return (
       <div data-testid="freeform-preview-error" style={{ padding: 24, color: "#999" }}>
         预览内容不可用或已过期
       </div>
     );
   }
+  const hasHtml = Boolean(payload.overviewHtml?.html);
 
   const identityTheme = resolveIdentityTheme(payload.themeId, payload.generatedTheme);
   const device = payload.device || "desktop";
@@ -93,8 +115,12 @@ export default function FreeformPreviewScreen({ pid }: { pid?: string }) {
   const block: ExperienceBlockInstance = {
     id: "freeform-preview",
     type: "FreeformInsight",
-    freeformContent: payload.freeformContent,
+    freeformContent: payload.freeformContent ?? { root: {} },
   };
+  // 字段声明查询：形状跟 AppRuntimeScreen 的 fieldSchemaOf 一致，只是这里的来源
+  // 是预览载荷而不是 session 里的模型。缺省时逐行的值退成裸值（不猜单位）。
+  const fieldSchemaOf = (entityId: string, fieldId: string) =>
+    (payload.entityFields ?? {})[entityId]?.find(f => f.id === fieldId);
 
   // 配方与运行时同一套解析和同一套 token 映射（不另立一份，否则自检看到的
   // 外壳跟真应用又会漂开——AppRuntimeScreen 那边是 designRecipeAlgorithms +
@@ -123,12 +149,25 @@ export default function FreeformPreviewScreen({ pid }: { pid?: string }) {
           boxSizing: "border-box",
         }}
       >
-        <ExperienceBlockBoundary
-          block={block}
-          previewId={pid}
-          entityRows={payload.entityRows || {}}
-          chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
-        />
+        {/* 两种载体同时只会有一个（生成侧 HTML 成了就不跑受限树）。顺序跟
+            AppRuntimeScreen 的 renderFreeformOverview 一致：先看 HTML。 */}
+        {hasHtml ? (
+          <React.Suspense fallback={<div style={{ minHeight: 120 }} />}>
+            <LazyOverviewHtmlSurface
+              payload={payload.overviewHtml as OverviewHtmlPayload}
+              entityRows={payload.entityRows || {}}
+              chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
+              fieldSchemaOf={fieldSchemaOf}
+            />
+          </React.Suspense>
+        ) : (
+          <ExperienceBlockBoundary
+            block={block}
+            previewId={pid}
+            entityRows={payload.entityRows || {}}
+            chartPalette={{ primary: identityTheme.primary, categorical: identityTheme.charts }}
+          />
+        )}
       </div>
     </ConfigProvider>
   );

@@ -12,6 +12,8 @@
  * 每条都配反向断言：健康形态必须**一处都不报**。判据太松等于没开，太紧会让
  * 报告变成噪音、没人看——两头都要钉。
  */
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   contrastRatio,
@@ -217,6 +219,25 @@ describe("整体", () => {
     expect(summarizeDefects(defects)).toEqual({
       "char-wrap": 1, "text-clip": 1, "low-contrast": 1,
     });
+  });
+
+  it("采集器必须穿影子根 —— 不穿的话对默认载体完全失明", () => {
+    // 首页的 HTML 载体（2026-08-12 起是默认路径）把设计挂在 attachShadow 里，
+    // 而 `document.querySelectorAll("body *")` 看不见影子根内部。不穿的后果不是
+    // 报错而是**假绿**：量到十几个外壳节点、报 0 处缺陷，看着像"很干净"。
+    // 判据这一层测不到采集器（它在浏览器里跑），所以这里退一步钉源码。
+    // cwd 取决于是从仓库根还是 client 下起的 vitest —— 两个都试，找不到就报锚点
+    const candidates = [
+      resolve("scripts/detect-design-defects.mjs"),
+      resolve("../scripts/detect-design-defects.mjs"),
+    ];
+    const found = candidates.find(p => existsSync(p));
+    expect(found, `锚点文件找不到了：${candidates.join(" / ")}`).toBeTruthy();
+    const src = readFileSync(found as string, "utf8");
+    expect(src, "没穿影子根").toContain("shadowRoot");
+    // 祖先链也要跨过影子边界，否则有效背景一律取不到、对比度判据被静默跳过
+    expect(src, "祖先链没跨影子边界").toContain("parentNode.host");
+    expect(src, "还在只认受限树那一种载体").toContain("freeformOverviewHtml");
   });
 
   it("健康的一页一处都不报 —— 反向兜底", () => {

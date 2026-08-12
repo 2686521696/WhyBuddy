@@ -144,6 +144,54 @@ def _transient(exc: Exception) -> bool:
     return isinstance(exc, urllib.error.HTTPError) and exc.code in (429, 500, 502, 503, 504)
 
 
+#: 从 URL 取回来的图最大多大。生图端点返回的 URL 不在我们控制之下，不设上限
+#: 等于让对面决定我们往内存里读多少字节。参照板 2560x1440 的 PNG 实测 1~3MB，
+#: 20MB 给足十倍余量。
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+
+def _extract_png(payload: dict, *, timeout: float) -> bytes:
+    """从响应里取出 PNG 字节。**两种形态都认**。
+
+    2026-08-12 真跑逮到的：报错就一个词 `'b64_json'`——那是
+    `payload["data"][0]["b64_json"]` 抛的 KeyError 的 repr。原因是有些端点**忽略
+    `response_format`**，无论你要什么都返回 `{"data":[{"url": "https://…"}]}`。
+    我们只认 b64 那一种，于是请求其实成功了、图也生出来了，却在解析这一步全丢。
+
+    所以这里两种都认：有 b64 用 b64，只有 url 就去把它取回来（这正是 OpenAI
+    images 接口 `response_format=url` 的标准流程）。取 URL 时只放行 http(s)、
+    带上剩余预算当超时、并且夹一个体量上限——那个地址不在我们控制之下。
+
+    两种都没有时，报错要带上**实际拿到的键名**：一个裸 KeyError 只会让人以为是
+    网络问题（这次就是这样，还顺带被误判成"重试了 3 次"）。
+    """
+    items = payload.get("data")
+    first = items[0] if isinstance(items, list) and items else None
+    if not isinstance(first, dict):
+        raise ImageGenError(
+            f"生图响应里没有 data[0]（顶层键：{sorted(payload)}）"
+        )
+    b64 = first.get("b64_json")
+    if isinstance(b64, str) and b64:
+        return base64.b64decode(b64)
+
+    url = first.get("url")
+    if isinstance(url, str) and url:
+        if not url.lower().startswith(("http://", "https://")):
+            raise ImageGenError(f"生图返回的 url 协议不允许：{url[:60]}")
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 — 协议已校验
+            data = resp.read(MAX_IMAGE_BYTES + 1)
+        if len(data) > MAX_IMAGE_BYTES:
+            raise ImageGenError(f"生图返回的图超过 {MAX_IMAGE_BYTES} 字节上限")
+        if not data:
+            raise ImageGenError("生图返回的 url 取回来是空的")
+        return data
+
+    raise ImageGenError(
+        f"生图响应里既没有 b64_json 也没有 url（data[0] 的键：{sorted(first)}）"
+    )
+
+
 def generate_image_png(
     prompt: str,
     *,
@@ -177,10 +225,12 @@ def generate_image_png(
         return float("inf") if budget <= 0 else budget - (time.monotonic() - started)
 
     last_exc: Exception | None = None
+    tried = 0
     for attempt in range(1, RETRIES + 1):
         remaining = _remaining()
         if remaining <= 0:
             break
+        tried = attempt
         try:
             req = urllib.request.Request(
                 resolved.url,
@@ -191,8 +241,7 @@ def generate_image_png(
             per_call = resolved.timeout if budget <= 0 else min(resolved.timeout, remaining)
             with urllib.request.urlopen(req, timeout=per_call) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
-            b64 = payload["data"][0]["b64_json"]
-            return base64.b64decode(b64)
+            return _extract_png(payload, timeout=max(1.0, min(60.0, _remaining())))
         except Exception as exc:  # noqa: BLE001 — 统一走下面的重试/包装逻辑
             last_exc = exc
             if attempt < RETRIES and _transient(exc):
@@ -208,4 +257,7 @@ def generate_image_png(
         raise ImageGenError(
             f"生图超出总时长预算 {budget}s（实耗 {spent:.0f}s，最后一次错误: {last_exc}）"
         )
-    raise ImageGenError(f"生图失败（已重试 {RETRIES} 次，耗时 {spent:.0f}s）: {last_exc}")
+    # 报**真实**试了几次。此前这句无论如何都写"已重试 3 次"，而只有可重试的
+    # HTTP 错误才会真的重试——响应解析失败是第 1 次就收工的。2026-08-12 那次
+    # `'b64_json'` 报错就是被这句话带偏成了"重试 3 次白烧 55s"。
+    raise ImageGenError(f"生图失败（试了 {tried} 次，耗时 {spent:.0f}s）: {last_exc}")

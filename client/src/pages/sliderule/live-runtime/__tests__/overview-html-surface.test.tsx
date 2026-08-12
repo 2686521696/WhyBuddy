@@ -4,12 +4,15 @@ import { describe, expect, it } from "vitest";
 // ?raw 是 Vite 自带的原文导入，跟测试环境无关。
 import screenSrc from "../AppRuntimeScreen.tsx?raw";
 import surfaceSrc from "../OverviewHtmlSurface.tsx?raw";
+import previewSrc from "../FreeformPreviewScreen.tsx?raw";
 import {
   computeFactText,
+  expandRowTemplates,
   mountOverviewInto,
   sanitizeOverviewHtml,
+  selectRowsFor,
 } from "../OverviewHtmlSurface";
-import type { OverviewFactSpec } from "../app-runtime-schema";
+import type { AppFormFieldSchema, OverviewFactSpec } from "../app-runtime-schema";
 import type { RuntimeRow } from "../live-runtime";
 
 /**
@@ -129,6 +132,23 @@ describe("③ 接线", () => {
     );
   });
 
+  it("逐行的值要按字段声明补单位 —— 宿主得把 fieldSchemaOf 传下来", () => {
+    // 不传的后果是真跑逮到过三次的那类事故：百分比丢百分号、金额丢 ¥、
+    // 枚举把内部 id（`music_member`）漏到界面上。
+    // 锚在 JSX 那处用法上，不是文件顶上那句 React.lazy 声明
+    const i = screen.indexOf("payload={page.freeformOverviewHtml}");
+    expect(i, "锚点要重找").toBeGreaterThan(-1);
+    expect(screen.slice(i, i + 600)).toContain("fieldSchemaOf");
+  });
+
+  it("自检预览页也要认 HTML 载体 —— 否则默认路径的截图/体检全量不到", () => {
+    // 跟 designRecipeRef 那次是同一类断口，只是更彻底：走 HTML 那条路的页面
+    // 根本没有受限树产物，自检页只会显示"预览内容不可用"。
+    expect(previewSrc).toContain("overviewHtml");
+    expect(previewSrc, "没渲染 HTML 载体").toContain("LazyOverviewHtmlSurface");
+    expect(previewSrc, "逐行的单位在自检画面里也不能丢").toContain("fieldSchemaOf");
+  });
+
   it("数据变了数字要跟着变 —— 事实是活的，不是渲染一次就定死", () => {
     const src = surfaceSrc;
     const i = src.indexOf("React.useEffect(");
@@ -180,5 +200,163 @@ describe("④ 影子根：CSS 关在里面", () => {
       {}
     );
     expect(hosts.map(h => h.id)).toEqual(["c1", "c2"]);
+  });
+});
+
+/**
+ * ⑤ 逐行（data-rows / data-field）—— 2026-08-12 补的那个功能倒退。
+ *
+ * 倒退长什么样：拿参照图还原那版**三张选题卡的分数全是同一个「76.8 分」**。
+ * 没有逐行能力，模型只能把同一个聚合 data-fact 复制三份充当列表。受限树那条路
+ * 一直有 rowsRef。这一组用例把"三张卡三个不同的分数"钉住。
+ */
+describe("⑤ 逐行", () => {
+  const TOPIC_ROWS: RuntimeRow[] = rows([
+    { title: "冷启动怎么做", score: 76.8, owner: "a1", state: "draft" },
+    { title: "定价实验复盘", score: 91.2, owner: "a2", state: "live" },
+    { title: "渠道投放盘点", score: 64.5, owner: "a3", state: "draft" },
+    { title: "低分选题", score: 12.0, owner: "a4", state: "live" },
+  ]);
+  const schemaOf = (_e: string, f: string): AppFormFieldSchema | undefined =>
+    ({
+      title: { id: "title", label: "标题", type: "string" },
+      score: { id: "score", label: "评分", type: "number", format: "score" },
+      state: {
+        id: "state",
+        label: "状态",
+        type: "enum",
+        options: [
+          { id: "draft", label: "草稿", tone: "default" },
+          { id: "live", label: "已发布", tone: "success" },
+        ],
+      },
+    } as Record<string, AppFormFieldSchema>)[f];
+
+  const expand = (html: string, rowsByEntity = { topic: TOPIC_ROWS }) => {
+    const host = document.createElement("div");
+    host.innerHTML = html;
+    expandRowTemplates(host, rowsByEntity, schemaOf);
+    return host;
+  };
+
+  it("模板按真实行展开，每行是**自己**那一行的值", () => {
+    const host = expand(
+      `<div data-rows="topic" data-limit="3">
+         <article class="card"><h4 data-field="title"></h4><b data-field="score"></b></article>
+       </div>`
+    );
+    const cards = [...host.querySelectorAll("article.card")];
+    expect(cards).toHaveLength(3);
+    expect(cards.map(c => c.querySelector("h4")?.textContent)).toEqual([
+      "冷启动怎么做", "定价实验复盘", "渠道投放盘点",
+    ]);
+    // 这一行是这次改动的全部意义：三个分数必须是三个不同的数，且带单位
+    expect(cards.map(c => c.querySelector("b")?.textContent)).toEqual([
+      "76.8 分", "91.2 分", "64.5 分",
+    ]);
+  });
+
+  it("不多包一层 —— 多出来的 div 会把设计写的 grid 子项关系打断", () => {
+    const host = expand(
+      `<div class="grid" data-rows="topic" data-limit="2"><span data-field="title"></span></div>`
+    );
+    expect([...host.querySelector(".grid")!.children].map(c => c.tagName)).toEqual([
+      "SPAN", "SPAN",
+    ]);
+  });
+
+  it("排序与条数按声明来", () => {
+    const el = document.createElement("div");
+    el.setAttribute("data-rows", "topic");
+    el.setAttribute("data-sort", "score");
+    el.setAttribute("data-limit", "2");
+    expect(selectRowsFor(el, { topic: TOPIC_ROWS }).map(r => r.values.score)).toEqual([
+      91.2, 76.8,
+    ]);
+    el.setAttribute("data-order", "asc");
+    expect(selectRowsFor(el, { topic: TOPIC_ROWS }).map(r => r.values.score)).toEqual([
+      12.0, 64.5,
+    ]);
+    // 不声明排序就按数据源自然顺序（跟 rowsRef.sortByRef 缺省一致）
+    el.removeAttribute("data-sort");
+    el.removeAttribute("data-order");
+    expect(selectRowsFor(el, { topic: TOPIC_ROWS }).map(r => r.values.score)).toEqual([
+      76.8, 91.2,
+    ]);
+  });
+
+  it("limit 夹在生成侧同一个预算里 —— 快照恢复不重跑生成侧", () => {
+    const el = document.createElement("div");
+    el.setAttribute("data-rows", "topic");
+    const many = rows(Array.from({ length: 40 }, (_, i) => ({ title: `t${i}` })));
+    el.setAttribute("data-limit", "500");
+    expect(selectRowsFor(el, { topic: many })).toHaveLength(20); // ROWS_MAX_LIMIT
+    el.setAttribute("data-limit", "0");
+    expect(selectRowsFor(el, { topic: many })).toHaveLength(1);
+    el.removeAttribute("data-limit");
+    expect(selectRowsFor(el, { topic: many })).toHaveLength(5); // 默认
+  });
+
+  it("一行都没有时出诚实空态 —— 不留空盒子、不编行", () => {
+    const host = expand(
+      `<div data-rows="topic"><span data-field="title"></span></div>`,
+      { topic: [] }
+    );
+    expect(host.querySelectorAll("[data-field]")).toHaveLength(0);
+    expect(host.querySelector(".ov-rows-empty")?.textContent).toBe("暂无数据");
+  });
+
+  it("认不出的字段/实体如实留「—」，不编值", () => {
+    const host = expand(
+      `<div data-rows="topic" data-limit="1"><span data-field="nope"></span></div>`
+    );
+    expect(host.querySelector("[data-field]")?.textContent).toBe("—");
+    // 实体查不到 → 走空态，不是崩
+    const missing = expand(
+      `<div data-rows="ghost"><span data-field="title"></span></div>`
+    );
+    expect(missing.querySelector(".ov-rows-empty")).not.toBeNull();
+  });
+
+  it("模板里混进来的聚合/图表占位被摘掉 —— 否则每行一个同样的数、N 张同 key 的图", () => {
+    // 生成侧已经拦了这种写法；这条守的是历史产物/手改产物那条路（纵深防御）
+    const host = expand(
+      `<div data-rows="topic" data-limit="2">
+         <span data-field="title"></span>
+         <span data-fact="avg_score"></span>
+         <div data-chart="c1"></div>
+       </div>`
+    );
+    expect(host.querySelectorAll("[data-fact]")).toHaveLength(0);
+    expect(host.querySelectorAll("[data-chart]")).toHaveLength(0);
+    expect(host.querySelectorAll("[data-field]")).toHaveLength(2);
+  });
+
+  it("消毒不能把逐行契约删掉 —— 删了就是整段静默失效", () => {
+    const clean = sanitizeOverviewHtml(
+      `<div data-rows="topic" data-limit="3" data-sort="score" data-order="asc">
+         <span data-field="title"></span></div>`
+    );
+    for (const attr of ["data-rows", "data-field", "data-limit", "data-sort", "data-order"]) {
+      expect(clean, `${attr} 被消毒掉了`).toContain(attr);
+    }
+  });
+
+  it("挂载时先展开再填聚合 —— 顺序反了复制出来的行是空的", () => {
+    const host = document.createElement("div");
+    const shadow = host.attachShadow({ mode: "open" });
+    mountOverviewInto(
+      shadow,
+      `<span data-fact="a"></span>
+       <div data-rows="topic" data-limit="2"><i data-field="state"></i></div>`,
+      [fact({ id: "a", entityRef: "topic", aggregate: "count" })],
+      { topic: TOPIC_ROWS },
+      schemaOf
+    );
+    expect(shadow.querySelector("[data-fact]")?.textContent).toBe("4");
+    // 枚举出中文标签，不漏内部 id
+    expect([...shadow.querySelectorAll("i")].map(i => i.textContent)).toEqual([
+      "草稿", "已发布",
+    ]);
   });
 });

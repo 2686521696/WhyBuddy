@@ -2161,6 +2161,9 @@ export function AppRuntimeScreen({
             payload={page.freeformOverviewHtml}
             entityRows={state.entities}
             chartPalette={sharedBlockRendererProps.chartPalette}
+            // 逐行的值要按字段声明补单位（% / ¥ / 分 / 枚举标签）——共用积木族
+            // 那一份查询，不另建一条会漂的线。
+            fieldSchemaOf={fieldSchemaOf}
           />
         </div>
       );

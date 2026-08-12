@@ -3314,6 +3314,21 @@ from .overview_html import (  # noqa: E402 — 与 freeform_block 互为可选�
 )
 
 
+def _page_has_overview(page: dict[str, Any]) -> bool:
+    """这一页**已经有**总览设计了吗——两种载体都算。
+
+    幂等判定的单一出口。此前只认受限树那一种，而 HTML 载体成为默认路径之后，
+    一个已经设计好的 HTML 首页会被判成"还没设计"：每次 enrich 都重跑一遍设计
+    （白烧一次 LLM 调用、且把上一版覆盖掉）。同一个判断在这个函数里出现两处
+    （eligible_pages 与循环里的幂等闸），所以收成一个函数——两处漂开比写错更难查。
+    """
+    tree = page.get("freeformOverview")
+    if isinstance(tree, dict) and tree.get("root"):
+        return True
+    markup = page.get("freeformOverviewHtml")
+    return isinstance(markup, dict) and bool(markup.get("html"))
+
+
 def enrich_monitor_page_overviews(
     model: dict[str, Any], *, preview_sink: Optional[OverviewPreviewSink] = None
 ) -> dict[str, Any]:
@@ -3385,10 +3400,7 @@ def _enrich_monitor_page_overviews_inner(
                 and (bool(page.get("stats")) or bool(page.get("charts")))
             )
         )
-        and not (
-            isinstance(page.get("freeformOverview"), dict)
-            and page["freeformOverview"].get("root")
-        )
+        and not _page_has_overview(page)
     ]
     sync_page = next(
         (page for page in eligible_pages if str(page.get("id") or "") == landing_ref),
@@ -3465,8 +3477,7 @@ def _enrich_monitor_page_overviews_inner(
         if not has_content:
             continue
         # 幂等（2026-07-27 D1）：已有总览设计的页不重生成（同上区块级注释）。
-        existing_overview = page.get("freeformOverview")
-        if isinstance(existing_overview, dict) and existing_overview.get("root"):
+        if _page_has_overview(page):
             continue
         page_id_now = str(page.get("id") or "")
         if page_id_now != sync_page_id:
@@ -3658,17 +3669,18 @@ def _enrich_monitor_page_overviews_inner(
                 skipped["got"] = 0
                 skipped["skippedReason"] = "deadline"
             continue
-        # ── HTML 载体（2026-08-12，默认关）─────────────────────────────
+        # ── HTML 载体（2026-08-12，**默认开**）────────────────────────
         #
         # 受限 JSON 节点树的天花板是词汇表：没有 table/img、图表只有四种、
         # 缺 transform/gridColumn。换成 HTML 一次性消失（见 overview_html 头注）。
         #
         # 但**数字不能编**那条保证一分不能丢：HTML 里一个数字都不写，
-        # 只摆 `data-fact` / `data-chart` 占位，运行时填。判据复用受限树那条路
-        # 的同一个 `_NUMERIC_CLAIM_RES_MATCH`。
+        # 只摆 `data-fact` / `data-field` / `data-chart` 占位，运行时填。判据复用
+        # 受限树那条路的同一个 `_NUMERIC_CLAIM_RES_MATCH`。
         #
         # 排在受限树**之前**试：成了就用它，抛错就往下走老路——两条路并存，
-        # 开关一关就完全回到今天的行为，不是单向门。
+        # `SLIDERULE_OVERVIEW_HTML=0` 一关就完全回到受限树的行为，不是单向门。
+        # 实测差距（三趟真话题）：HTML 69.6s / 9KB，受限树 162.7s 与 225.7s。
         if overview_html_enabled():
             try:
                 with _enrich_stage(

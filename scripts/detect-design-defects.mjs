@@ -94,8 +94,26 @@ const COLLECT = () => {
     return /inset\(50%\)|rect\(0/.test(s.clip || s.clipPath || "");
   };
 
+  // 影子根要穿进去。首页的 HTML 载体（2026-08-12 起是默认路径）把设计挂在
+  // `attachShadow` 里，而 `document.querySelectorAll("body *")` **看不见影子根
+  // 内部**——不穿的话这个体检对默认路径完全失明：量到十几个外壳节点、报 0 处
+  // 缺陷，看着像"很干净"。
+  const collectElements = root => {
+    const out = [];
+    for (const el of root.querySelectorAll("*")) {
+      out.push(el);
+      if (el.shadowRoot) out.push(...collectElements(el.shadowRoot));
+    }
+    return out;
+  };
+  // 祖先链也要能跨过影子边界：影子根顶层子元素的 parentElement 是 null，
+  // 它真正的视觉父级是宿主元素（`parentNode.host`）。不跨的话有效背景一律取不到，
+  // 影子根里每处文字的对比度判据都会被静默跳过。
+  const parentOf = el =>
+    el.parentElement ?? (el.parentNode && el.parentNode.host) ?? null;
+
   const nodes = [];
-  for (const el of document.querySelectorAll("body *")) {
+  for (const el of collectElements(document.body)) {
     const s = getComputedStyle(el);
     if (s.display === "none") continue;
     const rect = el.getBoundingClientRect();
@@ -107,13 +125,13 @@ const COLLECT = () => {
       .trim();
 
     let insideScroll = isScrollRegion(s);
-    for (let p = el.parentElement; p && !insideScroll; p = p.parentElement) {
+    for (let p = parentOf(el); p && !insideScroll; p = parentOf(p)) {
       if (isScrollRegion(getComputedStyle(p))) insideScroll = true;
     }
 
     // 有效背景：自己往上找第一个不透明的
     let bg = null;
-    for (let p = el; p; p = p.parentElement) {
+    for (let p = el; p; p = parentOf(p)) {
       const c = parseRgb(getComputedStyle(p).backgroundColor);
       if (c && c.a >= 0.95) { bg = { r: c.r, g: c.g, b: c.b }; break; }
     }
@@ -167,14 +185,24 @@ let total = 0;
 for (const path of MODELS) {
   const key = basename(path, ".json");
   const model = JSON.parse(readFileSync(path, "utf8"));
-  const home = (model.page?.pages ?? []).find(p => p.freeformOverview?.root);
+  // 两种载体都要能体检。HTML 自 2026-08-12 起是默认路径，只认受限树的话
+  // 这个脚本会对默认路径全盲——"没有首页设计，跳过"，然后报 0 处缺陷。
+  const pages = model.page?.pages ?? [];
+  const home =
+    pages.find(p => p.freeformOverviewHtml?.html) ?? pages.find(p => p.freeformOverview?.root);
   if (!home) {
     console.log(`[${key}] 没有首页设计，跳过`);
     continue;
   }
+  const carrier = home.freeformOverviewHtml?.html ? "html" : "tree";
   const identity = model.appbundle?.appIdentity ?? {};
   const payload = {
     freeformContent: home.freeformOverview,
+    overviewHtml: home.freeformOverviewHtml,
+    // 逐行的值要按字段声明补单位——不给的话量到的是裸数字，跟真应用不是一个画面
+    entityFields: Object.fromEntries(
+      (model.datamodel?.entities ?? []).map(e => [e.id, e.fields ?? []])
+    ),
     themeId: identity.theme ?? "",
     generatedTheme: identity.generatedTheme ?? null,
     device: model.appbundle?.preferredDevice ?? "desktop",
@@ -197,9 +225,12 @@ for (const path of MODELS) {
   const defects = detectDesignDefects(snapshot);
   const summary = summarizeDefects(defects);
   total += defects.length;
-  report.push({ key, page: home.id, nodes: snapshot.nodes.length, summary, defects });
+  report.push({ key, page: home.id, carrier, nodes: snapshot.nodes.length, summary, defects });
 
-  console.log(`\n[${key}] ${home.id} — 量了 ${snapshot.nodes.length} 个节点，缺陷 ${defects.length} 处`);
+  console.log(
+    `\n[${key}] ${home.id}（${carrier === "html" ? "HTML 载体" : "受限树"}）` +
+      ` — 量了 ${snapshot.nodes.length} 个节点，缺陷 ${defects.length} 处`
+  );
   console.log(`   char-wrap ${summary["char-wrap"]} / text-clip ${summary["text-clip"]} / low-contrast ${summary["low-contrast"]}`);
   for (const d of defects.slice(0, 12)) {
     console.log(`   [${d.severity === "critical" ? "严重" : "警告"}] ${d.id} ${d.selector}`);
