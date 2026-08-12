@@ -519,6 +519,274 @@ def build_overview_html_prompt(
 现在输出那段 HTML。"""
 
 
+# ── 自检用的种子数据 ────────────────────────────────────────────────────
+
+#: 每个实体铺几行。够看出"逐行区块长什么样"，又不至于把截图拉得老长。
+PREVIEW_SEED_ROWS = 6
+
+#: 按声明格式取的数值序列。**确定性**（不随机）：同一份产物两次截图必须一样，
+#: 否则评审看到的差异分不清是设计变了还是种子变了。
+_SEED_NUMBERS: Dict[str, List[float]] = {
+    "percent": [82, 64, 91, 47, 73, 58],
+    "progress": [40, 65, 90, 25, 78, 52],
+    "score": [76.8, 91.2, 64.5, 88.0, 70.3, 95.1],
+    "money": [12800, 6400, 32000, 4800, 21500, 8900],
+    "rating": [4.5, 3.5, 5, 4, 3, 4.5],
+    "": [1280, 640, 3200, 480, 2150, 890],
+}
+
+
+def build_preview_seed_rows(
+    datamodel: Dict[str, Any], count: int = PREVIEW_SEED_ROWS
+) -> Dict[str, List[Dict[str, Any]]]:
+    """给自检截图铺一份种子行。
+
+    ## 为什么非铺不可
+
+    这个载体的纪律是"HTML 里一个数字都不写"——所以**不铺数据的截图是一张空页**：
+    每个 `data-fact` 显示「—」、每个 `data-rows` 显示「暂无数据」。拿那张图去做
+    版式评审，模型只会说"太空了、缺内容"，而那恰恰不是设计的问题。受限树那条路
+    没这个麻烦（它的标签文字是字面量，画得出形状）。
+
+    种子值按**字段声明的 format** 取：百分比给 0~100、金额给整钱、评分给 0~100。
+    不按声明取的后果很具体——`format: percent` 的字段塞进 1280，页面上就是
+    「1280%」，评审会去修一个数据问题，而它根本不是设计的责任。
+
+    确定性、不随机：同一份产物两次截图必须一模一样。
+
+    ⚠ 与 `scripts/detect-design-defects.mjs` 里那份 `seedRows` 是同一个用途的
+    两个实现（一个在生成侧 Python、一个在体检脚本 JS），跨语言没法共用。那边
+    只求"有东西可量"，这边多了按 format 取值这一条。
+    """
+    from datetime import date, timedelta
+
+    today = date(2026, 8, 12)
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for entity in datamodel.get("entities") or []:
+        eid = str(entity.get("id") or "")
+        if not eid:
+            continue
+        fields = entity.get("fields") or []
+        rows: List[Dict[str, Any]] = []
+        for i in range(max(1, count)):
+            values: Dict[str, Any] = {}
+            for f in fields:
+                fid = str(f.get("id") or "")
+                if not fid:
+                    continue
+                ftype = str(f.get("type") or "string").lower()
+                fmt = str(f.get("format") or "")
+                label = str(f.get("name") or fid)
+                if ftype == "number":
+                    series = _SEED_NUMBERS.get(fmt) or _SEED_NUMBERS[""]
+                    values[fid] = series[i % len(series)]
+                elif ftype in ("date", "datetime"):
+                    values[fid] = (today - timedelta(days=i)).isoformat()
+                elif ftype == "boolean":
+                    values[fid] = i % 2 == 0
+                elif f.get("options"):
+                    opts = [
+                        str(o.get("id") if isinstance(o, dict) else o)
+                        for o in f["options"]
+                    ]
+                    values[fid] = opts[i % len(opts)] if opts else ""
+                else:
+                    values[fid] = f"{label} {i + 1}"
+            rows.append({"id": f"seed-{eid}-{i}", "values": values, "seed": True})
+        out[eid] = rows
+    return out
+
+
+def build_preview_entity_fields(
+    datamodel: Dict[str, Any]
+) -> Dict[str, List[Dict[str, Any]]]:
+    """预览页要的字段声明（逐行的值靠它补单位）。形状同 AppFormFieldSchema。"""
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for entity in datamodel.get("entities") or []:
+        eid = str(entity.get("id") or "")
+        if not eid:
+            continue
+        fields: List[Dict[str, Any]] = []
+        for f in entity.get("fields") or []:
+            fid = str(f.get("id") or "")
+            if not fid:
+                continue
+            item: Dict[str, Any] = {
+                "id": fid,
+                "label": str(f.get("name") or fid),
+                "type": str(f.get("type") or "string").lower(),
+            }
+            if f.get("format"):
+                item["format"] = str(f["format"])
+            if f.get("options"):
+                item["options"] = [
+                    {
+                        "id": str(o.get("id") if isinstance(o, dict) else o),
+                        "label": str(
+                            (o.get("label") or o.get("id")) if isinstance(o, dict) else o
+                        ),
+                        "tone": str(o.get("tone") or "default") if isinstance(o, dict) else "default",
+                    }
+                    for o in f["options"]
+                ]
+            fields.append(item)
+        out[eid] = fields
+    return out
+
+
+# ── 截图自检：生成 → 截图 → 自己看 → 改 ──────────────────────────────────
+
+#: 修订产物与原版的分隔标记。**不走 JSON**：一整页 HTML 塞进 JSON 字符串要转义，
+#: 受限树那条路就因此吃过 max_tokens 截断 + 解析失败（代码里留着那段留痕）。
+#: 纯文本分隔符没有转义面，截断了也只是拿不到修订、不会把整轮判成"没问题"。
+_CRITIQUE_HTML_MARK = "===HTML==="
+_CRITIQUE_GOOD_MARK = "===GOOD==="
+
+
+def _placeholder_census(markup: str) -> Tuple[int, set, set]:
+    """(逐行段数, data-field 集合, data-fact+data-chart 集合)。修订护栏用。"""
+    rows = len(re.findall(r"data-rows\s*=", markup, re.I))
+    fields = set(re.findall(r"""data-field\s*=\s*["']([^"']+)["']""", markup, re.I))
+    slots = set(_DATA_FACT_RE.findall(markup)) | set(_DATA_CHART_RE.findall(markup))
+    return rows, fields, slots
+
+
+def critique_overview_html(
+    markup: str,
+    facts: List[Dict[str, Any]],
+    charts: List[Dict[str, Any]],
+    datamodel: Dict[str, Any],
+    *,
+    design_brief: str,
+    preview_screenshot_b64: str,
+    reference_image_b64: Optional[str] = None,
+    axe_violations: Optional[list] = None,
+    max_tokens: int = 20000,
+) -> Optional[str]:
+    """看一眼真实渲染出来的样子，改一版。返回修订后的 HTML；不改/失败返回 None。
+
+    ## 跟受限树那条路的异同
+
+    同：评审维度共用 `UICRIT_REVIEW_DIMENSIONS`（UICrit 的白名单，换载体不换
+    判据）；能算准的（对比度/alt）交给 axe-core 当硬事实，不进模型的主观判断；
+    只做一轮，不递归；任何失败都静默回退原版——想变好不能反而变坏。
+
+    异：
+    · **参考图是可选的**。受限树那条路 `if reference_image_b64 and …` 才跑，
+      所以生图没配时它从来不跑。这边没有参照物也能评审——渲染出来的那张图
+      本身就是证据（"这里挤成一团"不需要参照图才看得出来）。
+    · 产物是 HTML，护栏换成对应的：过同一个 `validate_overview_html`（含"声明
+      的 KPI/图表不能漏"），且**逐行段数与 data-field 不许变少**——那是这个
+      载体里"内容被精简掉"的形状，对应受限树那边的节点数护栏。
+    """
+    from sliderule_llm.client import LlmError, call_llm_with_retry
+
+    from .freeform_block import UICRIT_REVIEW_DIMENSIONS, _format_axe_evidence
+
+    which = "第二张图" if reference_image_b64 else "这张图"
+    ref_intro = (
+        "第一张图是配色/版式参考图（草稿参照，不是真实数据）。第二张图是刚才生成的"
+        "HTML 真实渲染出来的样子。\n"
+        if reference_image_b64
+        else "这张图是刚才生成的 HTML 真实渲染出来的样子。\n"
+    )
+    prompt = (
+        f"你是资深产品设计评审。设计需求是：{design_brief}\n\n"
+        f"{ref_intro}"
+        "【不算问题、不要因此改动】图上的具体数值是自动铺的**演示数据**（为了让"
+        "版式看得出形状），数字对不对、内容合不合逻辑都不在这轮评审范围内——"
+        "这一层的 HTML 里一个数字都没有，全部由运行时按真实数据填。\n\n"
+        f"{_format_axe_evidence(axe_violations)}"
+        f"{UICRIT_REVIEW_DIMENSIONS}"
+        "**每条意见必须写成两段式**（这是真实设计师批评的固定结构，"
+        "写不出「标准」的意见一律不要提）：\n"
+        "  standard：这一条依据的设计标准是什么\n"
+        f"  observed：当前这一版具体哪里违背了它（要能在{which}上指出来）\n\n"
+        "纪律：\n"
+        f"- 只提你能在{which}里**看到**的问题，不要臆测看不见的东西\n"
+        "- 没把握的不要提。少而准 >> 多而糊\n"
+        "- 修订只能在现有版式上调整/补充，**不要删掉已有的卡片、列表、表格或占位**\n"
+        "- 占位契约一个字都不能动：`data-fact` / `data-chart` / `data-rows` /\n"
+        "  `data-field` / `data-limit` / `data-sort` / `data-order` 原样保留，\n"
+        "  也不要往 HTML 里写任何具体数字\n"
+        "- 其它规则完全不变：零外链、不许 script/on* 事件、样式收在 <style> 里\n\n"
+        "输出格式（纯文本，不要 JSON、不要 markdown 围栏）：\n"
+        f"① 有问题：先逐条写意见（每条两行 standard/observed），然后单独一行 `{_CRITIQUE_HTML_MARK}`，"
+        "再输出**完整修订后的 HTML**（跟输入同结构、可直接替换，不是 diff）。\n"
+        f"② 已经够好：只输出一行 `{_CRITIQUE_GOOD_MARK}`。\n"
+        "列了意见就必须给修订——只挑毛病不改等于白说一轮。\n\n"
+        "这是当前那一版 HTML：\n"
+        f"{markup}"
+    )
+
+    content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+    if reference_image_b64:
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{reference_image_b64}"},
+        })
+    content.append({
+        "type": "image_url",
+        "image_url": {"url": f"data:image/png;base64,{preview_screenshot_b64}"},
+    })
+
+    try:
+        result = call_llm_with_retry(
+            [{"role": "user", "content": content}],
+            max_attempts=2,
+            backoff_ms=2000,
+            temperature=0.5,
+            max_tokens=max_tokens,
+            on_delta=lambda _c: None,
+        )
+    except LlmError as exc:
+        # 静默失败会伪装成"评审认为没问题"。受限树那条路实测被这么误判过一次。
+        print(f"[overview_html] 评审 LLM 调用失败，本轮跳过：{str(exc)[:160]}")
+        return None
+
+    raw = (result.content or "").strip()
+    if not raw:
+        print("[overview_html] 评审无返回（空正文）")
+        return None
+    if _CRITIQUE_GOOD_MARK in raw and _CRITIQUE_HTML_MARK not in raw:
+        print("[overview_html] 评审认为这一版够好，不改")
+        return None
+    if _CRITIQUE_HTML_MARK not in raw:
+        print(f"[overview_html] 评审没给修订（没有分隔标记）：{raw[:120]}")
+        return None
+
+    findings_text, _, revised = raw.partition(_CRITIQUE_HTML_MARK)
+    # 意见留痕：哪怕修订最后没被采纳，也要能看到它到底看出了什么——否则
+    # "revised=0" 永远分不清是"确实没问题"还是"它根本没在看"。
+    for line in [ln.strip() for ln in findings_text.splitlines() if ln.strip()][:8]:
+        print(f"[overview_html] 评审意见 {line[:120]}")
+
+    revised = _strip_fence(revised.strip())
+    if not revised:
+        print("[overview_html] 评审给了标记但修订是空的")
+        return None
+
+    problems = validate_overview_html(revised, facts, charts, datamodel)
+    if problems:
+        print(f"[overview_html] 修订没过校验，保留原版：{'；'.join(problems[:2])[:200]}")
+        return None
+
+    before_rows, before_fields, before_slots = _placeholder_census(markup)
+    after_rows, after_fields, after_slots = _placeholder_census(revised)
+    # "精简"掉真实内容是 UICrit 那 13.1% 的另一面：模型会很自信地删东西，
+    # 而这里的修订是直接采纳的。占位就是内容的骨架，少一个就是少一块。
+    if after_rows < before_rows or not before_fields <= after_fields:
+        print(
+            f"[overview_html] 修订被拒：逐行 {before_rows}→{after_rows}、"
+            f"data-field {len(before_fields)}→{len(after_fields)}，改少了，保留原版"
+        )
+        return None
+    if not before_slots <= after_slots:
+        print(f"[overview_html] 修订被拒：丢了占位 {sorted(before_slots - after_slots)}")
+        return None
+    return revised
+
+
 def _strip_fence(text: str) -> str:
     t = (text or "").strip()
     if t.startswith("```"):

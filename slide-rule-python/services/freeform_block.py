@@ -1931,7 +1931,7 @@ def _generate_overview_sheet_b64(
 
 
 def _render_preview_screenshot_b64(
-    design_dump: dict[str, Any],
+    design_dump: Optional[dict[str, Any]],
     *,
     theme_id: str,
     device: str,
@@ -1939,6 +1939,9 @@ def _render_preview_screenshot_b64(
     design_recipe: str = "",
     reference_image_b64: Optional[str] = None,
     landing_media_b64: Optional[str] = None,
+    overview_html: Optional[dict[str, Any]] = None,
+    entity_fields: Optional[dict[str, Any]] = None,
+    entity_rows: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
     """把校验通过的候选内容真实渲染一次、截图，供下面的自我校验步骤跟参考图
     比对（借鉴 abi/screenshot-to-code 的 screenshot_preview 思路：生成→截图→
@@ -1949,6 +1952,11 @@ def _render_preview_screenshot_b64(
     截图主要用来检验版式/密度/图标使用/留白这些跟真实数据无关的部分，不能
     验证图表配色/形状本身。跟生参考图一样，任何一步不可用/失败都返回 None，
     调用方必须当作"这一步跳过"处理，不能让这个增强项拖垮主生成路径。
+
+    两种载体都截得了（2026-08-12）：受限树传 `design_dump`，HTML 传
+    `overview_html`（外加 `entity_fields` 补单位、`entity_rows` 铺种子行——
+    HTML 里一个数字都没有，不铺的话截出来是一张全是「—」和「暂无数据」的空页，
+    详见 overview_html.build_preview_seed_rows）。
     """
     try:
         from services.app_screenshot import (
@@ -1964,7 +1972,7 @@ def _render_preview_screenshot_b64(
     if not (local_screenshot_available() or e2b_screenshot_available()):
         return None
     try:
-        preview_payload = {
+        preview_payload: dict[str, Any] = {
             "freeformContent": design_dump,
             "themeId": theme_id,
             "generatedTheme": generated_theme,
@@ -1973,6 +1981,12 @@ def _render_preview_screenshot_b64(
             # 设计的首页会被渲染在白底上，自检评判的是一个不存在的页面。
             "designRecipeRef": design_recipe,
         }
+        if overview_html:
+            preview_payload["overviewHtml"] = overview_html
+        if entity_fields:
+            preview_payload["entityFields"] = entity_fields
+        if entity_rows:
+            preview_payload["entityRows"] = entity_rows
         hero_b64 = landing_media_b64 or reference_image_b64
         if hero_b64:
             preview_payload["_landingHeroB64"] = hero_b64
@@ -2016,6 +2030,26 @@ def _format_axe_evidence(violations: Optional[list]) -> str:
             lines.append(f"    实测：{str(s)[:160]}")
     lines.append("")
     return "\n".join(lines)
+
+
+#: 评审维度白名单。**两个载体共用这一份**（受限树的 `_critique_against_reference`
+#: 与 HTML 的 `critique_overview_html`）——权重取自 UICrit（UIST'24，
+#: google-research-datasets/uicrit）对 11328 条真实设计师批评的分布统计。
+#:
+#: 为什么必须是白名单：那份数据实测 zero-shot 自由评审**只有 13.1% 的意见有效**，
+#: 失败模式是大量臆测。而这里的修订是直接采纳的，等于让一个八成说胡话的评审去改
+#: 用户的页面。收成一份共享常量是因为换载体不该换判据——两边各抄一份迟早漂开。
+UICRIT_REVIEW_DIMENSIONS = (
+    "请只在下面这些维度上找问题——它们来自 UICrit（UIST'24）对 11328 条"
+    "真实设计师批评的分布统计，括号里是该类问题在真实评审中的占比：\n"
+    "1. 图标与文案是否让人一看就懂（20.6%）：图标含义含糊、标签词不达意\n"
+    "2. 视觉层级与主次（13.6%）：最重要的信息没有被突出，或次要信息喧宾夺主\n"
+    "3. 可点击元素的可用性（13.0%）：按钮/操作项看起来不像能点，或热区过小\n"
+    "4. 一致性（7.5%）：同类元素的字号/圆角/间距/颜色处理不统一\n"
+    "5. 字号与字重层级（5.9%）：标题没有明显大于正文，层级靠不住\n"
+    "6. 对齐与边界（4.9%）：元素越界、错位、参差不齐\n"
+    "7. 留白与密度（3.7%）：过于单薄大片空白，或过于拥挤没有喘息\n\n"
+)
 
 
 def _critique_against_reference(
@@ -2063,15 +2097,7 @@ def _critique_against_reference(
         "【不算问题、不要因此改动】图表显示「暂无数据」占位（此刻还没有真实行"
         "数据，是正常的）。\n\n"
         f"{axe_block}"
-        "请只在下面这些维度上找问题——它们来自 UICrit（UIST'24）对 11328 条"
-        "真实设计师批评的分布统计，括号里是该类问题在真实评审中的占比：\n"
-        "1. 图标与文案是否让人一看就懂（20.6%）：图标含义含糊、标签词不达意\n"
-        "2. 视觉层级与主次（13.6%）：最重要的信息没有被突出，或次要信息喧宾夺主\n"
-        "3. 可点击元素的可用性（13.0%）：按钮/操作项看起来不像能点，或热区过小\n"
-        "4. 一致性（7.5%）：同类元素的字号/圆角/间距/颜色处理不统一\n"
-        "5. 字号与字重层级（5.9%）：标题没有明显大于正文，层级靠不住\n"
-        "6. 对齐与边界（4.9%）：元素越界、错位、参差不齐\n"
-        "7. 留白与密度（3.7%）：过于单薄大片空白，或过于拥挤没有喘息\n\n"
+        f"{UICRIT_REVIEW_DIMENSIONS}"
         "**每条意见必须写成两段式**（这是真实设计师批评的固定结构，"
         "写不出「标准」的意见一律不要提）：\n"
         '  standard：这一条依据的设计标准是什么\n'
@@ -3329,6 +3355,111 @@ def _page_has_overview(page: dict[str, Any]) -> bool:
     return isinstance(markup, dict) and bool(markup.get("html"))
 
 
+#: 跑一轮 HTML 截图自检至少要留多少秒预算。
+#:
+#: 实测：本机 Playwright 截一张预览 ~10s，评审那一轮 LLM ~40~60s。预算不够还硬跑
+#: 的后果是把整次生成拖过 deadline —— 那比"这一版没修订"糟得多（用户拿不到应用，
+#: 而不是拿到一个没抛光的应用）。
+_HTML_SELF_VERIFY_MIN_BUDGET_S = 90
+
+
+def _self_verify_overview_html(
+    markup: str,
+    facts: list[dict[str, Any]],
+    charts: list[dict[str, Any]],
+    datamodel: dict[str, Any],
+    *,
+    page_id: str,
+    device: str,
+    brief: str,
+    theme_id: str,
+    generated_theme: Optional[dict[str, Any]],
+    design_recipe: str,
+    reference_image_b64: Optional[str],
+    allow: bool,
+) -> str:
+    """HTML 载体的"生成 → 截图 → 自己看 → 改"一轮。返回采用的 HTML。
+
+    ## 跟受限树那条路的关键差别：不挂在参考图上
+
+    那边是 `if reference_image_b64 and allow_screenshot_verify`，于是生图没配的
+    环境里**这个闭环从上线起一次都没跑过**（2026-08-04 那次修的是"只认 E2B"，
+    这次是另一半：连参考图都没有就整段不触发）。渲染出来的那张图本身就是证据
+    ——"这块挤成一团""这行字太浅"不需要参照图才看得出来。有参考图就一并喂进去。
+
+    ## 铺种子数据再截图
+
+    这个载体里一个数字都没有，不铺数据截出来是一张全是「—」和「暂无数据」的空页。
+    拿那张图去评审，模型只会说"太空了"——而那不是设计的问题（见
+    overview_html.build_preview_seed_rows）。
+
+    整段包在 try/except 里：任何异常都不能让一次**已经校验通过**的产物因为这个
+    增强步骤而报废。失败就原样返回。
+    """
+    if not allow:
+        return markup
+    remaining = remaining_run_budget_seconds()
+    if remaining is not None and remaining < _HTML_SELF_VERIFY_MIN_BUDGET_S:
+        with _enrich_stage(
+            "monitor.htmlShot", page=page_id, device=device or "unspecified"
+        ) as skipped:
+            skipped["got"] = 0
+            skipped["skippedReason"] = "deadline"
+        return markup
+    try:
+        from .overview_html import (
+            build_preview_entity_fields,
+            build_preview_seed_rows,
+            critique_overview_html,
+        )
+
+        with _enrich_stage(
+            "monitor.htmlShot", page=page_id, device=device or "unspecified"
+        ) as _st:
+            shot_b64 = _render_preview_screenshot_b64(
+                None,
+                theme_id=theme_id,
+                device=device,
+                generated_theme=generated_theme,
+                design_recipe=design_recipe,
+                overview_html={"html": markup, "facts": facts, "charts": charts},
+                entity_fields=build_preview_entity_fields(datamodel),
+                entity_rows=build_preview_seed_rows(datamodel),
+            )
+            _st["got"] = 1 if shot_b64 else 0
+        if not shot_b64:
+            return markup
+        # 截图那一趟顺带扫出来的确定性违规（本机路径才有；E2B 返回空）。
+        # 对比度/alt 这类能算准的交给 axe，不进模型的主观判断。
+        try:
+            from services.app_screenshot import last_axe_violations
+
+            axe = last_axe_violations()
+        except Exception:  # noqa: BLE001 — 拿不到证据不该拖垮评审
+            axe = []
+        with _enrich_stage(
+            "monitor.htmlCritique", page=page_id, device=device or "unspecified"
+        ) as _st:
+            _st["axe"] = len(axe)
+            revised = critique_overview_html(
+                markup,
+                facts,
+                charts,
+                datamodel,
+                design_brief=brief,
+                preview_screenshot_b64=shot_b64,
+                reference_image_b64=reference_image_b64,
+                axe_violations=axe,
+            )
+            _st["revised"] = 1 if revised else 0
+            if revised:
+                _st["bytes"] = len(revised.encode("utf-8"))
+        return revised or markup
+    except Exception as exc:  # noqa: BLE001 — 增强步骤绝不能拖垮已校验通过的主结果
+        print(f"[freeform_block] HTML 自检跳过（意外）：{str(exc)[:160]}")
+        return markup
+
+
 def enrich_monitor_page_overviews(
     model: dict[str, Any], *, preview_sink: Optional[OverviewPreviewSink] = None
 ) -> dict[str, Any]:
@@ -3696,6 +3827,40 @@ def _enrich_monitor_page_overviews_inner(
                     _hst["bytes"] = len(markup.encode("utf-8"))
                     _hst["facts"] = len(facts)
                     _hst["charts"] = len(chart_specs)
+                # ── 截图自检：生成 → 截图 → 自己看 → 改（2026-08-12 傍晚）──
+                #
+                # 受限树那条路的自检 `if reference_image_b64 and …` 才跑，所以
+                # 生图没配的时候它**从来没跑过**。HTML 这条不挂在参考图上：渲染
+                # 出来的那张图本身就是证据——"这里挤成一团"不需要参照图才看得出来。
+                # 有参考图就一并喂进去（多一份比对依据），没有也照跑。
+                #
+                # 预算与受限树共用同一个计数器（一次生成总共只自检这么多次），
+                # 且额外要一段余量：截图 ~10s + 评审一轮 ~40s，赶在总预算尾巴上
+                # 硬跑会把整次生成拖过 deadline，那比"这一版没修订"糟得多。
+                #
+                # 上面那个 allow_shot 里带着 `use_ref`（受限树的自检要参考图当
+                # 比对物），HTML 不需要——所以这里补一次判断。有参考图时那一格
+                # 已经在上面记过账了，不能重复扣。
+                if allow_shot:
+                    allow_html_shot = True
+                else:
+                    allow_html_shot = shot_used < max_screenshot_verify
+                    if allow_html_shot:
+                        shot_used += 1
+                markup = _self_verify_overview_html(
+                    markup,
+                    facts,
+                    chart_specs,
+                    datamodel,
+                    page_id=page_id,
+                    device=device,
+                    brief=brief,
+                    theme_id=theme_id,
+                    generated_theme=generated_theme,
+                    design_recipe=design_recipe,
+                    reference_image_b64=sheet_b64,
+                    allow=allow_html_shot,
+                )
                 page["freeformOverviewHtml"] = {
                     "html": markup,
                     "facts": facts,

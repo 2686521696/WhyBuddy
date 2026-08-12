@@ -239,6 +239,16 @@ const { chromium } = %(require_playwright)s;
     });
     await page.goto(%(preview_url_json)s, { waitUntil: "domcontentloaded", timeout: 25000 });
     await page.waitForSelector('[data-testid="freeform-preview-root"]', { timeout: 15000 });
+    // HTML 载体是懒加载的（它拖着 DOMPurify），而且内容挂在**影子根**里。
+    // 只等外层那个 root 的话，很可能截到 Suspense 那个空占位——评审于是对着
+    // 一个空盒子说"太空了"，整轮自检变成噪音。这里等影子根真有东西再往下走。
+    // 受限树那条路没有这个节点，谓词直接返回 true，行为一字不变。
+    await page.waitForFunction(() => {
+      const surface = document.querySelector('[data-testid="overview-html-surface"]');
+      if (!surface) return true;
+      const host = surface.querySelector("div");
+      return !!(host && host.shadowRoot && host.shadowRoot.childElementCount > 1);
+    }, { timeout: 10000 }).catch(() => {});
     // 给图表/图标这些懒加载 chunk 一点时间稳定下来，避免截到半渲染的过渡态。
     await page.waitForTimeout(1500);
     const el = await page.$('[data-testid="freeform-preview-root"]');

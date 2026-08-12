@@ -174,17 +174,32 @@ class TestPromptDiscipline:
     """prompt 是这套东西的核心资产，几条硬纪律用源码断言钉住。"""
 
     def _prompt_src(self):
+        """函数体 + 它拼进去的那份共享维度白名单。
+
+        2026-08-12：维度那一段抽成了模块级常量 `UICRIT_REVIEW_DIMENSIONS`，
+        因为 HTML 载体的评审要用同一份（换载体不换判据）。所以这里连着一起读
+        ——只读函数体的话，这几条纪律会在"抽公共"的那一刻集体假绿。
+        """
         import inspect
 
         import services.freeform_block as fb
 
-        return inspect.getsource(fb._critique_against_reference)
+        return inspect.getsource(fb._critique_against_reference) + fb.UICRIT_REVIEW_DIMENSIONS
 
     def test_维度白名单在场且带实证占比(self):
         src = self._prompt_src()
         for dim in ["图标与文案", "视觉层级", "可点击元素", "一致性", "字号与字重", "对齐与边界", "留白与密度"]:
             assert dim in src, f"缺维度：{dim}"
         assert "20.6%" in src and "13.6%" in src  # 权重来自 11328 条真实批评
+
+    def test_两个载体的评审共用同一份维度白名单(self):
+        """HTML 那条路的评审也必须拼进这份常量——各抄一份迟早漂开。"""
+        import inspect
+
+        import services.overview_html as oh
+
+        src = inspect.getsource(oh.critique_overview_html)
+        assert "UICRIT_REVIEW_DIMENSIONS" in src
 
     def test_强制两段式(self):
         src = self._prompt_src()

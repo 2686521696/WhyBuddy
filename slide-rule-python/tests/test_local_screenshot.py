@@ -63,6 +63,21 @@ class TestJsTemplate:
         assert 'data-testid="freeform-preview-root"' in js
         assert "SCREENSHOT_OK" in js
 
+    def test_等影子根真有内容再截_否则截到的是_Suspense_空盒子(self):
+        """HTML 载体懒加载（拖着 DOMPurify）且内容挂在**影子根**里。
+
+        只等外层那个 root 的话很可能截到 Suspense 的空占位——评审于是对着一个
+        空盒子说"太空了"，整轮自检变成噪音。谓词对受限树那条路是恒真（页面上
+        没有那个节点），所以老行为一字不变。
+        """
+        src = sc._FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE
+        assert 'data-testid="overview-html-surface"' in src
+        assert "shadowRoot" in src and "childElementCount" in src
+        # 这一等发生在截图**之前**，否则等了也白等
+        assert src.index("childElementCount") < src.index("el.screenshot")
+        # 等不到不能把截图整趟废掉（HTML 载体没启用时这个节点永远不出现）
+        assert ".catch(() => {})" in src
+
     def test_axe_扫描与截图同一次打开_且扫不动不影响截图(self):
         """浏览器已经开着、页面已经渲染好，顺手扫一遍几乎零开销
         （实测 2.7s → 2.8s）。但它是增强项，出错不能连累已经拿到的截图。"""
