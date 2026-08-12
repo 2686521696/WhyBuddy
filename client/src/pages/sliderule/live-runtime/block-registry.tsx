@@ -1677,12 +1677,27 @@ function formatRowCell(value: unknown): string {
  * 留给 text 自己处理。 */
 function computeDataRefText(
   dataRef: FreeformDataRef | undefined,
-  entityRows: Record<string, RuntimeRow[]> | undefined
+  entityRows: Record<string, RuntimeRow[]> | undefined,
+  /**
+   * 被聚合字段的声明。**只用来补单位**，不参与算数。
+   *
+   * 2026-08-12 真跑逮到：`store_metric.consumption_rate` 和 `renewal_rate`
+   * 在数据模型里明写了 `format: "percent"`，首页 KPI 渲染出来却是裸的
+   * `49.3` / `46.2`——一个百分比丢了百分号，读者只能猜它是"49.3%"还是
+   * "49.3 次"。声明是确定的事实，渲染这一步却没人去读它。
+   *
+   * 这跟 2026-08-11 修过的表格那次是**同一个洞的另一半**：那次修的是
+   * `fieldSemantic` 读不到 schema、只能按名字猜；这次是 dataRef 这条路
+   * 从头到尾就没接过 schema。所以判据也用同一把尺（`resolveValueType`），
+   * 不另写一套"什么算百分比"。
+   */
+  fieldSchemaOf?: (entityRef: string, fieldId: string) => AppFormFieldSchema | undefined
 ): string | null {
   if (!dataRef?.aggregate) return null;
   const rows = (entityRows ?? {})[dataRef.entityRef];
   if (!rows) return null;
   if (dataRef.aggregate === "count") {
+    // count 数的是"多少条"，跟被聚合字段无关，没有单位可补。
     return rows.length.toLocaleString("zh-CN");
   }
   const m = /^(sum|avg):(.+)$/.exec(dataRef.aggregate);
@@ -1695,13 +1710,46 @@ function computeDataRefText(
   // 一行合法数值都没有时 sum 不能显 "0" 冒充真值——用户分不清"真的是 0"
   // 和"根本没数据"。sum/avg 统一：无合法数值 → null → 上层如实显「—」。
   if (nums.length === 0) return null;
-  if (kind === "sum") {
-    return nums
-      .reduce((a, b) => a + b, 0)
-      .toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  const value =
+    kind === "sum"
+      ? nums.reduce((a, b) => a + b, 0)
+      : nums.reduce((a, b) => a + b, 0) / nums.length;
+  const digits = kind === "sum" ? 2 : 1;
+  return withDeclaredUnit(
+    value.toLocaleString("zh-CN", { maximumFractionDigits: digits }),
+    value,
+    fieldSchemaOf?.(dataRef.entityRef, fieldId)
+  );
+}
+
+/**
+ * 按字段声明给聚合值补单位。认不出档位就原样返回——不猜、不硬补。
+ *
+ * 只认三档，判据跟表格 `renderCell` 逐字一致（`${n}%` / `¥…` / `${n} 分`），
+ * 这样同一个字段在 KPI 卡和表格里读起来是同一个东西。
+ * `progress` 那档表格画的是进度条，KPI 卡是一个大数字，画不了条——退回
+ * 百分号（它的取值域本来就是 0-100），不是漏判。
+ */
+function withDeclaredUnit(
+  formatted: string,
+  value: number,
+  schema: AppFormFieldSchema | undefined
+): string {
+  if (!schema) return formatted;
+  switch (resolveValueType(schema)) {
+    case "percent":
+    case "progress":
+      return `${formatted}%`;
+    case "money":
+      return `¥${value.toLocaleString("zh-CN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
+    case "score":
+      return `${formatted} 分`;
+    default:
+      return formatted;
   }
-  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
-  return avg.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
 }
 
 /** 环比方向 → 颜色。用的是 antd 的状态色，跟 PageViews 的 TONE_COLORS 同一组。
@@ -1736,15 +1784,37 @@ const TREND_ARROWS: Record<DataRefTrend["direction"], string> = {
 function renderDataRefTrend(
   dataRef: FreeformDataRef | undefined,
   entityRows: Record<string, RuntimeRow[]> | undefined,
-  chartPalette: { primary: string; categorical: readonly string[] } | undefined
+  chartPalette: { primary: string; categorical: readonly string[] } | undefined,
+  /**
+   * 这个数字是不是被设计摆在**一行里**（父容器是横向 flex）。
+   *
+   * 2026-08-12 真跑逮到的版式串行：设计把「续卡率」那一档写成一行
+   * `[图标, 标签, 数字]`（父容器 `display:flex; alignItems:center`），而
+   * 我们在数字节点**里面**又塞了两层——环比小字 + 32px 迷你走势线。于是
+   * 那个 `<strong>` 从一行变成三行高，旁边的图标和标签被垂直居中到这坨的
+   * 中间，读起来就成了「46.2 在上、续卡率 在下」——数字看着像属于上一张卡。
+   *
+   * 横排时只出环比小字、不出走势线：一条 32px 的折线塞不进一行文字里。
+   * 这不是新发明——ant-design/pro-components 的 StatisticCard 把
+   * `chartPlacement` 做成显式属性（left/right/bottom）正是同一件事：
+   * **图往哪儿放是版式决定的，不是图自己说了算**。
+   */
+  inline = false
 ): React.ReactNode {
   if (!dataRef?.trendFieldRef) return null;
   const trend = computeDataRefTrend((entityRows ?? {})[dataRef.entityRef], dataRef);
   if (!trend) return null;
   const color = TREND_COLORS[trend.direction];
-  const sparkOption = buildSparklineOption(trend.spark, chartPalette?.primary || "#1677ff");
+  const sparkOption = inline
+    ? null
+    : buildSparklineOption(trend.spark, chartPalette?.primary || "#1677ff");
   return (
-    <span key="dataref-trend" data-testid="dataref-trend" style={{ display: "block" }}>
+    <span
+      key="dataref-trend"
+      data-testid="dataref-trend"
+      data-placement={inline ? "inline" : "block"}
+      style={{ display: inline ? "inline" : "block" }}
+    >
       <span
         data-testid="dataref-trend-delta"
         data-direction={trend.direction}
@@ -1752,7 +1822,8 @@ function renderDataRefTrend(
           display: "inline-flex",
           alignItems: "center",
           gap: 4,
-          marginTop: 4,
+          // 横排时不能再往下推——那正是把一行撑成三行的第一步
+          ...(inline ? { marginLeft: 6 } : { marginTop: 4 }),
           fontSize: 12,
           fontWeight: 400,
           lineHeight: 1.4,
@@ -1804,6 +1875,24 @@ interface FreeformRenderCtx {
   row?: RuntimeRow;
   /** 当前行允许读取的字段白名单，同上，来自最近一层 rowsRef.fieldRefs。 */
   rowFields?: ReadonlySet<string>;
+  /**
+   * 父容器是不是**横排** flex（2026-08-12）。
+   *
+   * 只有 dataRef 的环比/走势线用得上：横排时那两层要收成一行，不然会把
+   * 一行撑成三行、把旁边的标签挤到别的行去（见 renderDataRefTrend 的说明）。
+   * 逐层往下传而不是让子节点回头查父节点——渲染是自顶向下的，父样式在手上，
+   * 回查要么存 DOM 引用要么再走一遍树，两个都比传一个布尔贵。
+   */
+  inRow?: boolean;
+}
+
+/** 这个节点的样式是不是"横排 flex 容器"。`flexDirection` 默认就是 row。 */
+function isRowFlex(style: Record<string, string> | undefined): boolean {
+  if (!style) return false;
+  const display = String(style.display ?? "");
+  if (display !== "flex" && display !== "inline-flex") return false;
+  const dir = String(style.flexDirection ?? "row");
+  return dir === "row" || dir === "row-reverse";
 }
 
 function renderFreeformNode(
@@ -1893,20 +1982,27 @@ function renderFreeformNode(
     : n.rowsRef
       ? (rowsNode ?? [])
       : (Array.isArray(n.children) ? n.children : []).map((child, i) =>
-          renderFreeformNode(child, i, ctx, depth + 1, budget)
+          // 把"我是不是横排"往下传一层，供子节点的环比/走势线决定摆法
+          renderFreeformNode(
+            child,
+            i,
+            { ...ctx, inRow: isRowFlex(n.style) },
+            depth + 1,
+            budget
+          )
         );
   // dataRef 声明了 aggregate 就是"这是个数字承诺"——现算不出来（实体在
   // entityRows 里查不到/avg 没有合法数值行）也不能退回 LLM 写的 text 掩盖
   // 过去，如实显示「—」，跟别处"暂无数据"占位是同一套诚实原则。
   const hasNumericClaim = Boolean(n.dataRef?.aggregate);
   const dataRefText = hasNumericClaim
-    ? (computeDataRefText(n.dataRef, entityRows) ?? "—")
+    ? (computeDataRefText(n.dataRef, entityRows, ctx.blockProps.fieldSchemaOf) ?? "—")
     : null;
   // 环比/走势线只在数字真算出来时才挂：主数字都是「—」还配一条走势线，
   // 等于用图形给一个不存在的数字背书。
   const trendNode =
     dataRefText && dataRefText !== "—"
-      ? renderDataRefTrend(n.dataRef, entityRows, chartPalette)
+      ? renderDataRefTrend(n.dataRef, entityRows, chartPalette, ctx.inRow)
       : null;
   // fieldRef → 当前行的真实字段值。跟 dataRefText 同一个位置、同一套纪律：
   // 取不到就是「—」，不回落 LLM 写的 text 假装有值。

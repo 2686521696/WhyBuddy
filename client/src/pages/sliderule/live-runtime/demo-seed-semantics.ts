@@ -74,8 +74,16 @@ const RULES: Array<{ semantic: FieldSemantic; re: RegExp }> = [
     //
     // 这一档天生比别的宽（「说明/备注/原因」这些词能挂在任何东西上），
     // 宽的规则就该垫底：**让每一条更具体的先拿走它该拿的**。
+    // 2026-08-12 补「内容」一族：真跑一个健身房话题，
+    // `renewal_reminder.message「提醒内容」` 又掉进兜底，渲染成「提醒内容 1」
+    // 「提醒内容 12」——跟上一次的「经营表现摘要 1」一模一样的伤害，只是换了
+    // 个词。第一版的词表是照着当时那张截图列的，列的是**那次见到的词**，
+    // 不是这一类字段的说法全集，所以下一个话题换个说法就又漏。
+    //
+    // 「内容 / 文案 / 正文 / 详情 / content」都是同一件事：这一格要的是一段话。
+    // 仍然垫在最后，所以「说明书编号」「内容编号」照旧被 code 先拿走。
     semantic: "prose",
-    re: /摘要|说明|描述|备注|简介|建议|原因|理由|评价|结论|概述|summary|description|remark|note|comment|reason|advice|memo/i,
+    re: /摘要|说明|描述|备注|简介|建议|原因|理由|评价|结论|概述|内容|文案|正文|详情|summary|description|remark|note|comment|reason|advice|memo|content/i,
   },
 ];
 

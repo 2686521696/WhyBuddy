@@ -79,10 +79,78 @@ def _ensure_playwright(sandbox, timeout_s: int) -> bool:
     )
     return install.error is None
 
-_SCREENSHOT_JS_TEMPLATE = """
+_LAUNCH_CHROMIUM_JS = """
+// 启动 Chromium：先按 Playwright 自己的解析来，失败了再去找环境里**真实存在**
+// 的那个二进制（2026-08-12）。
+//
+// ## 为什么需要这一层
+//
+// 真跑一趟健身房话题时，自检截图整段哑火：
+//     browserType.launch: Executable doesn't exist at
+//     /opt/pw-browsers/chromium_headless_shell-1228/.../chrome-headless-shell
+// 而环境里烤好的是 **1194**。项目钉的 @playwright/test 1.61.1 要 1228，对不上。
+// 后果不只是"没截到图"——`block.screenshot got=0` 之后，下一步的
+// `block.critique`（拿截图跟参照图比、自己改一版）**整段不执行**，白等 49.9s，
+// 而那正是"生成→截图→自己看→改"闭环里的"看"这一步。
+//
+// ## 为什么是显式 executablePath
+//
+// Playwright **没有**自动回退：钉的 revision 不在就直接抛。预装浏览器的标准
+// 做法就是显式传 executablePath——Puppeteer 干脆把它做成一等公民环境变量
+// `PUPPETEER_EXECUTABLE_PATH`，这里照抄那个形状（一个自己的 env 覆盖 +
+// 在 PLAYWRIGHT_BROWSERS_PATH 下按目录名找）。
+//
+// ## 边界：默认路径能起就绝不插手
+//
+// 先原样 launch 一次，成功就走人；只有抛错才去找。所以 E2B 沙盒那条路
+// （现装 playwright，钉的 revision 必然在）逐字节不受影响。
+// 一个候选都起不来时抛回**原始错误**——不能用"找不到浏览器"盖掉真正的原因。
+function resolveChromiumCandidates() {
+  const fs = require("fs");
+  const path = require("path");
+  const out = [];
+  const override = process.env.SLIDERULE_CHROMIUM_EXECUTABLE_PATH;
+  if (override) out.push(override);
+  const root = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (root && fs.existsSync(root)) {
+    for (const dir of fs.readdirSync(root)) {
+      if (!dir.startsWith("chromium")) continue;
+      for (const rel of [
+        ["chrome-linux", "chrome"],
+        ["chrome-linux", "chrome-headless-shell"],
+        ["chrome-headless-shell-linux64", "chrome-headless-shell"],
+      ]) {
+        const p = path.join(root, dir, ...rel);
+        if (fs.existsSync(p)) out.push(p);
+      }
+    }
+  }
+  return out;
+}
+
+async function launchChromium(chromium, options) {
+  try {
+    return await chromium.launch(options);
+  } catch (err) {
+    for (const executablePath of resolveChromiumCandidates()) {
+      try {
+        const browser = await chromium.launch({ ...options, executablePath });
+        console.error("[screenshot] fell back to " + executablePath);
+        return browser;
+      } catch {
+        // 这个候选也起不来，试下一个
+      }
+    }
+    throw err;
+  }
+}
+"""
+
+
+_SCREENSHOT_JS_TEMPLATE = _LAUNCH_CHROMIUM_JS + """
 const { chromium } = %(require_playwright)s;
 (async () => {
-  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
+  const browser = await launchChromium(chromium, { headless: true, args: ["--no-sandbox"] });
   try {
     const ctx = await browser.newContext({
       viewport: { width: %(viewport_width)d, height: %(viewport_height)d }
@@ -152,10 +220,10 @@ def _public_app_base_url() -> Optional[str]:
 # 本机用仓库里的 @playwright/test，沙盒里用现装的 playwright。共用是为了保证
 # 两条路截出来的东西一致——否则「本地看着没问题、线上换 E2B 就不一样」这种
 # 差异极难查。
-_FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE = """
+_FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE = _LAUNCH_CHROMIUM_JS + """
 const { chromium } = %(require_playwright)s;
 (async () => {
-  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
+  const browser = await launchChromium(chromium, { headless: true, args: ["--no-sandbox"] });
   try {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 1400 } });
     const page = await ctx.newPage();
