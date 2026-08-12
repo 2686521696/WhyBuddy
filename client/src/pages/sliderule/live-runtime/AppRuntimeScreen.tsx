@@ -440,7 +440,7 @@ const BRAND_ICONS: Record<
 // --- 图表（dataviz 规范：墨色文字、细标记、状态色已校验） --------------------
 // 墨色从 business-surface-theme 来（本文件此前自己写死了一份，faint 还跟令牌
 // 版漂成了两个颜色，见那个文件的说明）。注意 faint 由 #bfbfbf 变成 #8c8c8c：
-// 下面十来处 11px 提示文字原来对白底只有约 2.3:1 的对比度，改完读得清了。
+// 下面十来处 11px 提示文字原来对白底只有 1.84:1 的对比度，改完读得清了。
 const STATUS_META: Record<string, { color: string; label: string }> = {
   running: { color: "#1677ff", label: "进行中" },
   completed: { color: "#52c41a", label: "已完成" },

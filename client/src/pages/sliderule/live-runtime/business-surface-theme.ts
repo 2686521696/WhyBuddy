@@ -43,8 +43,8 @@ import type { CSSProperties } from "react";
  *   · 令牌版指的是 **tertiary**（#8c8c8c，antd `Typography type="secondary"` 那档）
  *   · 写死版指的是 **quaternary**（#bfbfbf，antd 用来画 disabled / 占位符的那档）
  *
- * 收口时把后者单独取名 `ghost`，因为它们的用途真的不同：#bfbfbf 对白底只有
- * 约 2.3:1 的对比度，WCAG AA 要 4.5:1、连大字号的 3:1 都不到，**不该拿去写
+ * 收口时把后者单独取名 `ghost`，因为它们的用途真的不同：#bfbfbf 对白底
+ * 只有 1.84:1 的对比度，WCAG AA 要 4.5:1、连大字号的 3:1 都不到，**不该拿去写
  * 11px 的提示文字**（收口前 AppRuntimeScreen 有十来处这么用）。它适合的是
  * 分割线、饼图引导线这类"不是字"的地方。
  */

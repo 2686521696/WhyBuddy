@@ -21,6 +21,7 @@
     "check": "tsc --noEmit",
     "usage:generate": "node scripts/generate-block-component-usage.mjs",
     "usage:check": "node scripts/generate-block-component-usage.mjs --check",
+    "detect:design": "node --experimental-strip-types scripts/detect-design-defects.mjs",
     "test": "node --run test:client && node --run test:server && node --run test:executor && node --run test:scripts",
     "test:scripts": "node --test scripts/dev-all.test.mjs scripts/dev-stop.test.mjs scripts/generate-block-component-usage.test.mjs scripts/architecture-diagram.test.mjs",
     "test:client": "vitest run client/src",

@@ -78,7 +78,9 @@ describe("墨色单一真相源", () => {
 
   it("faint 是能读清的那一档，ghost 才是最浅的 —— 这次收口的核心", () => {
     // 收口前 faint 一个名字挂了两个角色：令牌版 #8c8c8c、写死版 #bfbfbf。
-    // #bfbfbf 对白底约 2.3:1，连 WCAG AA 大字号的 3:1 都不到，不该写正文。
+    // #bfbfbf 对白底只有 1.84:1，连 WCAG AA 大字号的 3:1 都不到，不该写正文。
+    // （2026-08-12 更正：此前这里写 2.3:1，是我算错的——真值更糟。
+    //  现在有 design-defect-detector 按 WCAG 公式算，那条测试钉住了真值。）
     expect(INK_HEX.faint).toBe("#8c8c8c");
     expect(INK_HEX.ghost).toBe("#bfbfbf");
     expect(INK_HEX.faint).not.toBe(INK_HEX.ghost);
