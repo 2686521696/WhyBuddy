@@ -2193,6 +2193,15 @@ export function AppRuntimeScreen({
   };
   const monitorFreeformOverview = renderFreeformOverview(false);
 
+  /**
+   * 设计独占那一页的**裸内容**——不套 Card、不加页头（2026-08-12，见下方
+   * pageContent 处的说明）。加一层薄壳只为给内容留出跟业务页一致的外边距，
+   * 让两类页面在同一个内容区里换来换去时不跳。
+   */
+  const freeformOverviewBare = page && monitorFreeformOverview && (
+    <div data-testid="app-runtime-freeform-bare">{monitorFreeformOverview}</div>
+  );
+
   const phoneSectionData = (() => {
     if (!page) return null;
     const kind = page.view.kind;
@@ -3698,7 +3707,29 @@ export function AppRuntimeScreen({
     </Card>
   );
 
-  const pageContent = defaultPageContent;
+  /**
+   * 设计独占这一页时，**不再套外层 Card**（2026-08-12）。
+   *
+   * 用户看着还原产物说的：「它最外层包了一层 Card，其实这个地方是不用包卡片的，
+   * 像首页基本上就是数据展示」。他是对的——那张卡带着标题、示例数据徽标、
+   * 列设置齿轮和「新建」按钮，而这些对总览页全是多余的：
+   *
+   *   · 标题：设计稿自己排了页头，外面再来一个 = 同一个词一屏出现三次
+   *     （面包屑 / 卡标题 / 设计稿里的页头）
+   *   · 「新建」：总览页没有"新建一条总览"这回事，那是列表页的动作
+   *   · 卡片边框：设计稿自己有卡片分区，外面再套一层就是卡里套卡
+   *
+   * 更要紧的是**边界**：`freeformOwnsPage` 的语义就是"这一页的内容归设计"，
+   * 那么这一页的**外框**也不该由运行时替它决定。留着 Card 等于一边说
+   * "整页交给你"、一边又给它套个我们自己的壳。
+   *
+   * 只影响设计独占的页（总览/落地页）。业务页照旧有 Card——那里的标题、
+   * 徽标、新建按钮都是真在用的。
+   */
+  //
+   // ⚠ `?? defaultPageContent` 不能省：设计独占但内容没渲染出来（生成失败、
+   // 快照缺字段）时，整页会空掉。fail-open 是这条链路一贯的纪律。
+  const pageContent = (freeformOwnsPage && freeformOverviewBare) || defaultPageContent;
 
   // identityTheme 已在上面 chartCard 之前声明（菜单项抽出来给 side/top 两种导航形态共用）。
   // Step 9：视觉配方——只管密度/深色开关/圆角，主色仍归 identityTheme；两者叠加。

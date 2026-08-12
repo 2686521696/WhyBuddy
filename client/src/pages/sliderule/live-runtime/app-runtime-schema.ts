@@ -398,9 +398,14 @@ export function dedupeDenormalizedFieldIds(
 }
 
 export function pageFreeformOwnsContent(
-  page: Pick<AppPageSchema, "presentation" | "view" | "freeformOverview">
+  page: Pick<
+    AppPageSchema,
+    "presentation" | "view" | "freeformOverview" | "freeformOverviewHtml"
+  >
 ): boolean {
-  return Boolean(page.freeformOverview) && (
+  // 两种载体都算"设计独占这一页"（2026-08-12）：HTML 载体加进来时漏了这一处，
+  // 结果就是 HTML 那条路照样被套上外层 Card——正是用户指出来的那圈壳。
+  return Boolean(page.freeformOverview || page.freeformOverviewHtml?.html) && (
     page.presentation === "marketing-landing" ||
     page.view.kind === "monitor" ||
     page.view.kind === "dashboard"
