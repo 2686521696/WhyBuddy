@@ -360,3 +360,25 @@ describe("⑤ 逐行", () => {
     ]);
   });
 });
+
+/**
+ * ⑥ 图表的分类标签 —— 2026-08-12 真跑当场逮到的。
+ *
+ * 无人机巡检那张首页的环图，分类标签出的是 `insulator_damage` / `foreign_object`
+ * / `wire_sag` / `tower_corrosion` / `other`——数据模型里这些取值明明声明了中文
+ * label。`buildEchartsOption` 一直支持换 label，是接线时漏了 dimensionOptions。
+ *
+ * 逮到它的是**截图自检那一轮**：图表文字画在 canvas 上，DOM 检测器和 axe 都看不见。
+ */
+describe("⑥ 图表分类标签", () => {
+  it("枚举出中文 label，不漏内部 id", () => {
+    const src = surfaceSrc;
+    const i = src.indexOf("function toChartSchema");
+    expect(i, "锚点要重找").toBeGreaterThan(-1);
+    const body = src.slice(i, i + 1200);
+    expect(body, "没带 dimensionOptions —— 图例会出内部 id").toContain("dimensionOptions");
+    expect(body, "维度名也该用声明的中文名").toContain("dimField?.label");
+    // 调用点必须把 fieldSchemaOf 传进去，否则上面那份取不到
+    expect(src).toContain("toChartSchema(spec, fieldSchemaOf)");
+  });
+});

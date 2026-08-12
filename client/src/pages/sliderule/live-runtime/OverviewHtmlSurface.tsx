@@ -273,9 +273,26 @@ export function expandRowTemplates(
   });
 }
 
-/** 把声明翻成 buildEchartsOption 认的形状。 */
-function toChartSchema(spec: OverviewChartSpec): AppPageChartSchema {
+/**
+ * 把声明翻成 buildEchartsOption 认的形状。
+ *
+ * ⚠ **`dimensionOptions` 必须带上**，否则图例和坐标轴出的是枚举的内部 id。
+ * 2026-08-12 真跑当场逮到：无人机巡检那张首页的环图，分类标签是
+ * `insulator_damage` / `foreign_object` / `wire_sag` / `tower_corrosion` / `other`
+ * ——数据模型里这些取值明明声明了中文 label。`buildEchartsOption` 一直支持
+ * 换 label（它按原值分组、只在出类目时换，见那边的注释），是我接线时漏了这一份。
+ *
+ * 这个洞是**截图自检那一轮**发现的，不是测试、也不是机械体检——图表文字画在
+ * canvas 上，DOM 检测器和 axe 都看不见它。要不是有人看了一眼那张图，这一条会
+ * 一直留在产品里。
+ */
+function toChartSchema(
+  spec: OverviewChartSpec,
+  fieldSchemaOf?: (entityId: string, fieldId: string) => AppFormFieldSchema | undefined
+): AppPageChartSchema {
   const [kind, field] = spec.metric.split(":");
+  const dimField = fieldSchemaOf?.(spec.entityRef, spec.dimensionFieldId);
+  const dimensionOptions = dimField?.options ?? [];
   return {
     id: spec.id,
     label: spec.title,
@@ -284,7 +301,8 @@ function toChartSchema(spec: OverviewChartSpec): AppPageChartSchema {
       : "bar") as AppPageChartSchema["type"],
     entityId: spec.entityRef,
     dimensionFieldId: spec.dimensionFieldId,
-    dimensionLabel: spec.dimensionFieldId,
+    dimensionLabel: dimField?.label || spec.dimensionFieldId,
+    ...(dimensionOptions.length > 0 ? { dimensionOptions } : {}),
     metric: kind === "sum" ? "sum" : "count",
     metricFieldId: kind === "sum" ? field : undefined,
     metricLabel: kind === "sum" ? field : "数量",
@@ -376,7 +394,7 @@ export default function OverviewHtmlSurface({
         if (!spec) return null;
         const rows = (entityRows ?? {})[spec.entityRef] ?? [];
         const option = buildEchartsOption(
-          toChartSchema(spec),
+          toChartSchema(spec, fieldSchemaOf),
           rows,
           chartPalette ?? DEFAULT_CHART_PALETTE
         );
