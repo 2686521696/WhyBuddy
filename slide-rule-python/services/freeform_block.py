@@ -3357,10 +3357,18 @@ def _page_has_overview(page: dict[str, Any]) -> bool:
 
 #: 跑一轮 HTML 截图自检至少要留多少秒预算。
 #:
-#: 实测：本机 Playwright 截一张预览 ~10s，评审那一轮 LLM ~40~60s。预算不够还硬跑
-#: 的后果是把整次生成拖过 deadline —— 那比"这一版没修订"糟得多（用户拿不到应用，
-#: 而不是拿到一个没抛光的应用）。
-_HTML_SELF_VERIFY_MIN_BUDGET_S = 90
+#: 预算不够还硬跑的后果是把整次生成拖过 deadline —— 那比"这一版没修订"糟得多
+#: （用户拿不到应用，而不是拿到一个没抛光的应用）。
+#:
+#: ── 取值依据（首跑实测，2026-08-12）────────────────────────────────────
+#:   monitor.htmlShot      6.1s / 5.9s   ← 本机 Playwright，比预估的 10s 还快
+#:   monitor.htmlCritique  218s / 85s    ← **比预估的 40~60s 贵得多**
+#:
+#: 评审那一轮要"读一整页 HTML + 看一张图 + 再吐一整页 HTML"，输出侧就有几千
+#: token，慢是结构性的、不是抖动。所以这个数按**实测最慢那次**取：6 + 218 ≈ 225，
+#: 上浮到 240。我最初凭估算写的 90 会让恰好剩 100s 的那次开跑然后必然超时——
+#: 那正是这道闸要拦的情形，它自己却算错了。
+_HTML_SELF_VERIFY_MIN_BUDGET_S = 240
 
 
 def _self_verify_overview_html(
@@ -3444,6 +3452,13 @@ def _self_verify_overview_html(
             return markup
         # 截图那一趟顺带扫出来的确定性违规（本机路径才有；E2B 返回空）。
         # 对比度/alt 这类能算准的交给 axe，不进模型的主观判断。
+        #
+        # ✅ 这条通道对影子根**验过是活的**（2026-08-12）：首跑两个话题都是 axe=0，
+        # 而 axe=0 有两种可能——真的干净，或者这条通道在新载体上压根是空的（HTML
+        # 载体的内容挂在 attachShadow 里）。所以拿一份故意做坏的 HTML 走完整链路探
+        # 了一次：axe 报回 `color-contrast serious 2 处`，并算出 1.41（前景 #d9d9d9、
+        # 底 #ffffff、13px）。通道是活的，那两个 axe=0 是真干净。
+        # 判据靠"我觉得"是这条链路上最常出事的形状，所以这里记的是量出来的数。
         try:
             from services.app_screenshot import last_axe_violations
 
