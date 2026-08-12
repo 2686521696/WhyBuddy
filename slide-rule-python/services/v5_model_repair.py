@@ -873,6 +873,111 @@ def _repair_layout_slot_violations(model: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _repair_block_props_placement(model: Dict[str, Any]) -> List[Dict[str, str]]:
+    """把写错位置的 binding 键从 `props` 搬回 `binding`（2026-08-12）。
+
+    ## 现场
+
+    用户圈了线上产物「团长管理」那张表：它显示的是姓名/手机号/加入日期这些，
+    而模型明明点名要「成团率 / 退款率 / 团长绩效分」。翻模型才发现声明写成了
+
+        {"type": "DataTable",
+         "props":   {"title": "团长列表", "fieldRefs": ["name", "completion_rate", …]},
+         "binding": {"entityRef": "community_leader"}}
+
+    而契约里 `fieldRefs` 属于 **binding**（`DataTable.bindingSchema.optional`），
+    `propsSchema` 是 `additionalProperties:false` 且根本没有这个键。渲染端读的是
+    `binding.fieldRefs`，读不到就退回"从真实行的键里取前 8 个"——于是模型说的话
+    **一个字都没生效，还没有任何人报错**。
+
+    ## 这不是孤例，是一半的应用都中
+
+    把线上 12 个已存应用的 144 个区块全量核了一遍（对着目录逐键比）：
+
+        props 里出现目录未声明的键   23 次，分布在 6 个应用
+        其中 fieldRefs               14 次（DataTable 5 / RecordDetail 4 /
+                                            RecordFormDialog 4 / StepsForm 1）
+        14 次里 binding 已有该键的     0 次  ← 没有一次是"两边都写"，全是搬错家
+
+    剩下 9 次是模型自己编的键（QuickActionPanel.actions、FilterBar.filterFields、
+    ApprovalQueue.pendingStatus、BookingConflictDrawer.title），那些**没地方可搬**：
+    目录里没有、渲染端也不读（这五个键逐个查过渲染器源码，一个都没被读到；
+    `title` 那个也确认了 BlockShell 不会替它兜底）。留着就是"看着像声明过、
+    其实没有任何效果"，所以一并剔除并留痕。
+
+    这跟模板组装那条路径（`block_assembler._validate` 的 `allowed_props` 过滤）
+    是同一条规矩——两条装配路径不该对同一份目录有两种态度。
+
+    ⚠️ 剔除的前提是**目录说了算**。若哪天渲染端读了一个目录没声明的 prop，
+    那是目录漏声明（该去补目录），不是这里该放行——放行等于让目录失去权威，
+    下一个人就没法拿它当判据了。
+
+    ## 为什么是搬而不是报错
+
+    位置错了，**意图是清楚的**：它说的字段名都真实存在，只是塞进了隔壁那个口袋。
+    这类"唯一解"的偏差正是这个模块存在的理由（跟 invariants 近邻修复同一条纪律：
+    确定性、零 LLM、留痕）。报错让整模型报废，代价与错误严重程度完全不匹配。
+
+    **只搬目录明确列在 bindingSchema 里的键**——编出来的键不在这条路径上，
+    不会被"顺手"塞进 binding 蒙混过关。搬完照样过门禁：字段名是不是真实存在、
+    类型对不对，由 `_validate_block_binding` 接着查，这里不替它背书。
+
+    binding 里已经有同名键时**不覆盖**：以 binding 那份为准（它在对的位置上），
+    props 那份丢掉并留痕。
+
+    原地改写 model（调用方已深拷贝），返回留痕。
+    """
+    from .schema_legal import EXPERIENCE_BLOCK_BY_TYPE
+
+    notes: List[Dict[str, str]] = []
+    for page in _as_list(_as_dict(model.get("page")).get("pages")):
+        pd = _as_dict(page)
+        pid = str(pd.get("id") or "").strip() or "<unnamed>"
+        for block in _as_list(pd.get("blocks")):
+            bd = block if isinstance(block, dict) else None
+            if bd is None:
+                continue
+            entry = EXPERIENCE_BLOCK_BY_TYPE.get(str(bd.get("type") or "").strip())
+            if entry is None:
+                continue
+            props = bd.get("props")
+            if not isinstance(props, dict) or not props:
+                continue
+            schema = entry.get("bindingSchema") or {}
+            binding_keys = set(schema.get("required") or []) | set(schema.get("optional") or [])
+            declared_props = set((entry.get("propsSchema") or {}).get("properties") or {})
+            stray = [k for k in props if k not in declared_props]
+            if not stray:
+                continue
+
+            def note(key: str, action: str) -> None:
+                notes.append({
+                    "page": pid,
+                    "block": str(bd.get("id") or ""),
+                    "type": str(bd.get("type") or ""),
+                    "key": key,
+                    "action": action,
+                })
+
+            binding = dict(_as_dict(bd.get("binding")))
+            new_props = dict(props)
+            for key in stray:
+                value = new_props.pop(key)
+                if key not in binding_keys:
+                    # 目录两边都没有这个键 —— 模型自己编的，剔除
+                    note(key, "dropped-unknown")
+                    continue
+                if binding.get(key) not in (None, "", [], {}):
+                    # binding 那份在对的位置上，以它为准；props 这份是重复声明
+                    note(key, "dropped-duplicate")
+                    continue
+                binding[key] = value
+                note(key, "moved-to-binding")
+            bd["props"] = new_props
+            bd["binding"] = binding
+    return notes
+
+
 def _observe_page_kind_violations(model: Dict[str, Any]) -> List[Dict[str, str]]:
     """**只观测，不改模型**：区块被摆在了目录不允许的页型上。
 
@@ -954,6 +1059,9 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
     #    这条修复对它们永不生效。
     page_workflow_notes = _repair_page_workflow_refs(m)
     layout_slot_notes = _repair_layout_slot_violations(m)
+    # 必须排在门禁之前（本函数就是）：搬完的 fieldRefs 还要过 binding 深校验，
+    # 修复只负责把话放对口袋，不替它担保字段真实存在。
+    props_placement_notes = _repair_block_props_placement(m)
     # 只观测不改（见函数头注：这条约束本身还没核实，先攒证据）。
     page_kind_notes = _observe_page_kind_violations(m)
 
@@ -967,6 +1075,7 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
             "presentation": presentation,
             "pageWorkflowRefs": page_workflow_notes,
             "layoutSlots": layout_slot_notes,
+            "blockPropsPlacement": props_placement_notes,
             "pageKindViolations": page_kind_notes,
         }
 
@@ -1017,5 +1126,6 @@ def repair_five_system_model(model: Dict[str, Any]) -> Dict[str, Any]:
         "presentation": presentation,
         "pageWorkflowRefs": page_workflow_notes,
         "layoutSlots": layout_slot_notes,
+        "blockPropsPlacement": props_placement_notes,
         "pageKindViolations": page_kind_notes,
     }

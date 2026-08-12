@@ -98,6 +98,24 @@ describe("a. 反规范化副本不占表格列", () => {
     expect(src, "DataTable 没开去重").toContain("boundFieldIds(block, bound.rows, 8, true)");
   });
 
+  it("老模型把 fieldRefs 写进 props 时也读得到 —— 库里那些不会自己变", () => {
+    // 契约里 fieldRefs 属于 binding，但 2026-08-12 之前生成的模型有一批写进了
+    // props：线上 12 个应用里 17 处。生成侧已经在门禁前搬回去了，可**已经存进
+    // 库里的那些不会自己变**，渲染端读不到就退回按键顺序取前 N 个——用户圈的
+    // 那张表就是这么显示成姓名/手机号/加入日期的。
+    const src = readFileSync(new URL("../block-registry.tsx", import.meta.url), "utf8");
+    const at = src.indexOf("function boundFieldIds(");
+    const body = src.slice(at, at + 1800);
+    expect(
+      body,
+      "老模型的 props.fieldRefs 读不到 —— 库里那 17 处永远显示错的列"
+    ).toContain("block.binding?.fieldRefs ?? block.props?.fieldRefs");
+    // 顺序不能反：binding 是契约位置，它在就以它为准
+    expect(body.indexOf("block.binding?.fieldRefs")).toBeLessThan(
+      body.indexOf("block.props?.fieldRefs")
+    );
+  });
+
   it("**只有表格开去重** —— 表单/详情摘掉一个字段就是让人填不了/看不到", () => {
     // 2026-08-12 线上复验逮到的：第一版把去重写死在 boundFieldIds 里，
     // 六个调用点（表单 / 弹层表单 / 详情 / 分步表单 / 可编辑子表 / 批量编辑）

@@ -52,6 +52,7 @@ from .schema_legal import (  # noqa: F401 — re-export 即接口
     EXPERIENCE_BLOCK_ALLOWED_REGIONS,
     EXPERIENCE_BLOCK_ALLOWED_REGIONS_BY_TYPE,
     EXPERIENCE_BLOCK_BINDING_SCHEMAS,
+    EXPERIENCE_BLOCK_BY_TYPE,
     EXPERIENCE_BLOCK_TYPES,
     FIELD_TONES,
     FIELD_TYPES,
@@ -789,6 +790,32 @@ def validate_five_system_model(
                     ))
                 elif btype:
                     _validate_block_binding(block_path, btype, binding, entity_ids, field_types, findings)
+            # props 逐键核对目录（2026-08-12）。
+            #
+            # 此前这一层**完全没人查**：binding 有逐类型深校验，props 一个键都不核，
+            # 于是模型把 `fieldRefs` 写进 props（契约里它属于 binding）时，渲染端
+            # 读不到、退回按键顺序取前 8 列，模型点名要的那几列一个字都没生效，
+            # 全程零报错。线上 12 个应用 144 个区块全量核了一遍：23 处多余键、
+            # 6 个应用中招，其中 14 处正是这个 fieldRefs。
+            #
+            # 搬得动的（键属于 bindingSchema）已由 v5_model_repair 在门禁前搬回
+            # binding 了 —— 走到这里还剩下的，是模型自己编的键（QuickActionPanel
+            # 的 actions、FilterBar 的 filterFields…）。那些没地方可搬：目录里
+            # 没有、渲染端也不读，留着就是**看着像声明过、其实没有任何效果**。
+            block_props = bd.get("props")
+            if isinstance(block_props, dict) and btype in EXPERIENCE_BLOCK_TYPES:
+                declared = set(
+                    (EXPERIENCE_BLOCK_BY_TYPE.get(btype, {}).get("propsSchema") or {})
+                    .get("properties")
+                    or {}
+                )
+                for key in sorted(k for k in block_props if k not in declared):
+                    findings.append(_finding(
+                        PUBLISH_INVALID_FIELD, f"{block_path}.props.{key}",
+                        f"{btype} has no prop '{key}' in the catalog "
+                        f"(declared: {sorted(declared) or '(none)'})",
+                        ref=key, skill="page",
+                    ))
             # WorkflowTimeline 深校验：props.chainRef 留空=主链路（永远合法），
             # 填值必须是 workflow.chains[] 里真实存在的链路 id，不能瞎编。
             if btype == "WorkflowTimeline":

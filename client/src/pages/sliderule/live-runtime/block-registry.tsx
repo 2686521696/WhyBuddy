@@ -4366,7 +4366,20 @@ function boundFieldIds(
    */
   dedupeDenormalized = false
 ): string[] {
-  const declared = block.binding?.fieldRefs;
+  /**
+   * `props.fieldRefs` 是**老模型的兼容读法**，不是第二个合法位置。
+   *
+   * 契约里 fieldRefs 属于 binding。但 2026-08-12 之前生成的模型有一批把它写进了
+   * props：线上 12 个已存应用里 17 处（DataTable 7 / RecordDetail 5 /
+   * RecordFormDialog 4 / StepsForm 1），渲染端读不到就退回"按键顺序取前 N 个"
+   * ——模型点名要哪几列，一个字都没生效。用户圈的那张「团长管理」表就是这么
+   * 显示成姓名/手机号/加入日期，而不是它要的成团率/退款率/绩效分。
+   *
+   * 生成侧已经在门禁前把它搬回 binding 了（v5_model_repair._repair_block_props_placement），
+   * 但**已经存进库里的那些不会自己变**。这一行是给它们的：宽进，读得懂就照做。
+   * 新模型走不到这条分支——它们的 fieldRefs 本来就在 binding 里。
+   */
+  const declared = block.binding?.fieldRefs ?? block.props?.fieldRefs;
   if (Array.isArray(declared) && declared.length > 0) {
     // 模型明说了要哪几列就照办 —— 它把 `X_ref` 和 `X_name` 一起写出来，
     // 那是它的选择，渲染层没有资格替它删。去重只管下面这条派生路径。
