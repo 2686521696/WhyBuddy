@@ -3407,11 +3407,24 @@ def _self_verify_overview_html(
             skipped["skippedReason"] = "deadline"
         return markup
     try:
+        from services.app_screenshot import e2b_screenshot_available, local_app_reachable
+
         from .overview_html import (
             build_preview_entity_fields,
             build_preview_seed_rows,
             critique_overview_html,
         )
+
+        # 先敲门再花钱：截图那一步只判了 node/playwright 在不在，判不了**应用起没起**。
+        # 受限树那条自检要先有参考图（等于从来不跑）所以没暴露过这一面；HTML 这条每次
+        # 生成都走，应用不在本机地址上的环境里就是每次白等一个 Playwright 超时（60s）。
+        if not (local_app_reachable() or e2b_screenshot_available()):
+            with _enrich_stage(
+                "monitor.htmlShot", page=page_id, device=device or "unspecified"
+            ) as skipped:
+                skipped["got"] = 0
+                skipped["skippedReason"] = "app_unreachable"
+            return markup
 
         with _enrich_stage(
             "monitor.htmlShot", page=page_id, device=device or "unspecified"

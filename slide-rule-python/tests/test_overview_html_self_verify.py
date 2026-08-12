@@ -248,3 +248,64 @@ def test_提示词把当前那一版_HTML_原样带过去(monkeypatch: pytest.Mo
     seen = _fake_llm(monkeypatch, "===GOOD===")
     _critique()
     assert ORIGINAL in seen["convo"][0]["content"][0]["text"]
+
+
+# ── 先敲门再花钱 ────────────────────────────────────────────────────────
+
+def test_应用够不着就跳过_不白等一个截图超时(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`local_screenshot_available()` 只判 node/playwright 在不在，判不了应用起没起。
+
+    受限树那条自检要先有参考图（等于从来不跑），所以从没暴露过这一面。HTML 这条
+    每次生成都走——应用不在本机地址上的环境里，那就是每次白等一个 Playwright
+    超时（上限 60s）才拿到 None。
+    """
+    from services import app_screenshot, freeform_block
+
+    monkeypatch.setattr(app_screenshot, "local_app_reachable", lambda *_a, **_k: False)
+    monkeypatch.setattr(app_screenshot, "e2b_screenshot_available", lambda: False)
+
+    def boom(*_a: Any, **_k: Any) -> None:
+        raise AssertionError("够不着还去截图了")
+
+    monkeypatch.setattr(freeform_block, "_render_preview_screenshot_b64", boom)
+    out = freeform_block._self_verify_overview_html(
+        ORIGINAL, FACTS, CHARTS, DATAMODEL,
+        page_id="law_home", device="desktop", brief="律所首页",
+        theme_id="", generated_theme=None, design_recipe="",
+        reference_image_b64=None, allow=True,
+    )
+    assert out == ORIGINAL
+
+
+def test_不给自检额度就原样返回(monkeypatch: pytest.MonkeyPatch) -> None:
+    """预算是共用的：一次生成总共只自检这么多次。"""
+    from services import freeform_block
+
+    def boom(*_a: Any, **_k: Any) -> None:
+        raise AssertionError("没额度还去截图了")
+
+    monkeypatch.setattr(freeform_block, "_render_preview_screenshot_b64", boom)
+    assert freeform_block._self_verify_overview_html(
+        ORIGINAL, FACTS, CHARTS, DATAMODEL,
+        page_id="p", device="desktop", brief="b",
+        theme_id="", generated_theme=None, design_recipe="",
+        reference_image_b64=None, allow=False,
+    ) == ORIGINAL
+
+
+def test_自检里任何意外都不许拖垮已校验通过的产物(monkeypatch: pytest.MonkeyPatch) -> None:
+    """这一步是增强项。它炸了应该是"这一版没抛光"，不该是"这次生成没产出"。"""
+    from services import app_screenshot, freeform_block
+
+    monkeypatch.setattr(app_screenshot, "local_app_reachable", lambda *_a, **_k: True)
+
+    def boom(*_a: Any, **_k: Any) -> None:
+        raise RuntimeError("浏览器炸了")
+
+    monkeypatch.setattr(freeform_block, "_render_preview_screenshot_b64", boom)
+    assert freeform_block._self_verify_overview_html(
+        ORIGINAL, FACTS, CHARTS, DATAMODEL,
+        page_id="p", device="desktop", brief="b",
+        theme_id="", generated_theme=None, design_recipe="",
+        reference_image_b64=None, allow=True,
+    ) == ORIGINAL

@@ -333,6 +333,30 @@ def local_screenshot_available() -> bool:
     return (_repo_root() / "node_modules" / "@playwright" / "test").is_dir()
 
 
+def local_app_reachable(timeout_s: float = 3.0) -> bool:
+    """本机那个应用地址现在够不着吗（2026-08-12）。
+
+    `local_screenshot_available()` 只判 node 和 playwright 在不在，**不判应用起没起**。
+    以前这不要紧：受限树那条自检要先有参考图，等于从来不跑。HTML 载体的自检不挂在
+    参考图上、每次生成都会走一遍——应用不在 localhost:3000 的环境里，那就是每次
+    白等一个 Playwright 超时（上限 60s）才拿到 None。
+
+    所以先敲一下门。只把"连不上/超时"当不可达；HTTP 几百几十都算可达（预览页对
+    不存在的 pid 本来就回 404，那不代表宿主没起）。
+    """
+    import urllib.error
+    import urllib.request
+
+    url = f"{_local_app_base_url()}/"
+    try:
+        urllib.request.urlopen(url, timeout=timeout_s).close()
+        return True
+    except urllib.error.HTTPError:
+        return True  # 有人应答，只是这个路径不给 200
+    except Exception:
+        return False
+
+
 def app_screenshot_available() -> bool:
     """Return whether a full application screenshot can run locally or in E2B."""
     return local_screenshot_available() or e2b_screenshot_available()
