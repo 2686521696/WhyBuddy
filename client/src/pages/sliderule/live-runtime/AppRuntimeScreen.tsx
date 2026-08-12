@@ -2464,7 +2464,12 @@ export function AppRuntimeScreen({
 
           外面套 phone-freeform-scope：设计树是照 preferredDevice 那一档生成的，
           desktop 档的多列/固定宽度进了 405px 会横向撑爆。强制单列不是跟设计
-          较劲，正是把 phone 档提示词里那条规矩补执行一遍。 */}
+          较劲，正是把 phone 档提示词里那条规矩补执行一遍。
+
+          ⚠ 这层收窄**够不到 HTML 载体**：那份产物挂在影子根里，页面级 CSS
+          跨不过影子边界（那正是隔离本身，不是 bug）。所以 HTML 那条路的窄屏
+          单列由**设计自己的 @media (max-width: 480px)** 负责，提示词里有这条
+          硬要求（见 overview_html.build_overview_html_prompt 第 8 条）。 */}
       {freeformOwnsPage && (
         <div className="phone-freeform-scope">
           {renderFreeformOverview(true)}
