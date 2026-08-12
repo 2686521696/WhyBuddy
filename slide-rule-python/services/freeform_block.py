@@ -2661,10 +2661,17 @@ def _enrich_freeform_blocks_inner(model: dict[str, Any]) -> dict[str, Any]:
 
 
 def _marketing_landing_design_brief(
-    page: dict[str, Any], datamodel: dict[str, Any], *, audience: str = "design"
+    page: dict[str, Any],
+    datamodel: dict[str, Any],
+    *,
+    audience: str = "design",
+    has_reference: bool = True,
 ) -> str:
     """消费型首页的视觉任务，不借用运营总览的内容与容器假设。"""
-    del datamodel
+    # has_reference 只为跟 _monitor_overview_design_brief 保持同签名（两者共用
+    # 同一个 brief_builder 调用点）。落地页的措辞里没有"按参照图取舍"那种判据，
+    # 所以这一份用不到它。
+    del datamodel, has_reference
     name = str(page.get("name") or page.get("id") or "首页")
     lines = [
         f"「{name}」是面向访客的品牌与转化首页，不是内部工作台。",
@@ -2690,8 +2697,18 @@ def _marketing_landing_design_brief(
     return "\n".join(lines)
 
 
+#: 区块 type → 目录条目。查 capability 用（判"这个积木能不能画成逐行内容"）。
+#: 从 EXPERIENCE_BLOCKS 派生，不另立一张手写表——那种副本这个仓库栽过一次
+#: （BLOCK_DEFINITIONS.uses 316 个全部与实际不符，最后整个删掉）。
+_BLOCK_BY_TYPE: dict[str, Any] = {str(b["type"]): b for b in EXPERIENCE_BLOCKS}
+
+
 def _monitor_overview_design_brief(
-    page: dict[str, Any], datamodel: dict[str, Any], *, audience: str = "design"
+    page: dict[str, Any],
+    datamodel: dict[str, Any],
+    *,
+    audience: str = "design",
+    has_reference: bool = True,
 ) -> str:
     # audience（2026-08-01）：这份 brief 有**两个消费方**，需要的说法不一样。
     #   "design" —— 首页设计 LLM。要 blockRef 的技术形态（type/binding/props
@@ -2800,6 +2817,9 @@ def _monitor_overview_design_brief(
     #
     # 所以按受众分两套说法：技术形态留给设计 LLM，画图模型拿视觉描述。
     visual_bits: list[str] = []
+    # 能被设计模型用 rowsRef 画成"一行一行"的 capability。别的形态（动作面、
+    # 流程条、图表）它没有对应画法，只进出图受众那份视觉描述。
+    _ROW_SHAPED_CAPABILITIES = frozenset({"entityRows", "timelineRows", "rankedRows"})
     _VISUAL_SHAPE = {
         "RankedList": "一张 Top-N 排行榜（名次 + 名称 + 数值，纵向若干行）",
         "ActivityFeed": "一列最近动态（按时间倒序的事件条目，每条带时间与状态标记）",
@@ -2813,6 +2833,21 @@ def _monitor_overview_design_brief(
             return
         visual_bits.append(f"{shape}{f'——{title}' if title else ''}")
     seen_row_keys: set[str] = set()
+
+    def _row_key(block_type: str, entity: str, field_refs) -> str:
+        """逐行内容的内容指纹 —— 三条来路（rankings / feeds / page.blocks）共用。
+
+        字段名**排序后**再拼：同一份动态流常被声明两遍（page.feeds 一份、
+        page.blocks 一份），而两边字段的书写顺序不一样。不排序的话
+        `ActivityFeed|log|occurred_at|action` 与 `ActivityFeed|log|action|occurred_at`
+        是两个键，去重失效，模型会把同一张卡摆两次——2026-08-12 接回
+        page.blocks 时当场撞到，测试逮住的。
+
+        口径与前端 page-panel-dedupe.ts 的 blockPanelKey 一致：类型 + 实体 +
+        关键字段，**不含 id / 名字 / 条数**。
+        """
+        keys = sorted(str(f) for f in field_refs if f)
+        return "|".join([block_type, entity, *keys])
 
     def _take(key: str) -> bool:
         if key in seen_row_keys:
@@ -2835,7 +2870,7 @@ def _monitor_overview_design_brief(
         sort_by = str(r.get("sortBy") or "").rpartition(".")[2]
         if not entity or not sort_by:
             continue
-        if not _take(f"RankedList|{entity}|{sort_by}"):
+        if not _take(_row_key("RankedList", entity, [sort_by])):
             continue
         limit = r.get("limit")
         limit_bit = f"，取前 {limit} 条" if isinstance(limit, int) else ""
@@ -2850,7 +2885,7 @@ def _monitor_overview_design_brief(
         if not entity or not time_field:
             continue
         level = str(f.get("levelField") or "").rpartition(".")[2]
-        if not _take(f"ActivityFeed|{entity}|{time_field}|{level}"):
+        if not _take(_row_key("ActivityFeed", entity, [time_field, level])):
             continue
         level_bit = f'，另有等级字段 "{level}" 可用来上色/加徽标' if level else ""
         row_bits.append(
@@ -2858,6 +2893,62 @@ def _monitor_overview_design_brief(
             f'按时间字段 "{time_field}" 倒序{level_bit}'
         )
         _visual("ActivityFeed", str(f.get("name") or ""))
+
+    # ── 这一页 page.blocks 里声明的积木（2026-08-12 接回来）────────────
+    #
+    # ## 这里原来是断的，代价是首页把声明的积木整批吞掉
+    #
+    # 上面两个循环只读 `page.rankings` / `page.feeds`——那是**旧字段**。模型现在
+    # 把逐行内容声明在 `page.blocks` 里，于是这份 brief 对它们一个字都不提。
+    #
+    # 后果不是"少说一句"，是**内容消失**：首页有 freeformOverview 时
+    # `freeformOwnsPage` 成立，前端 renderExperienceBlockScaffold 直接 return
+    # null（"设计树没安置的积木不再外挂到设计区下面"）。也就是说——
+    #
+    #     模型声明了 → 门禁批准了 → brief 不提 → 设计模型不画 → 脚手架被抑制
+    #     → 这两个积木在首页上**哪儿都不在**
+    #
+    # 两趟真实产出逐字复现（2026-08-12）：线上「采购智审」和本地「退费审批」
+    # 的首页都声明了 ApprovedQueue + ActivityFeed，rankings/feeds 全空，
+    # 成品首页的 rowsRef 节点数都是 **0**。
+    #
+    # 顺带说明这就是"每次生成的首页长得都差不多"的一个直接原因：首页唯一能
+    # 带来差异的通道（这一页自己声明了什么积木）被断开了，剩下能说的只有
+    # stats/charts 那套固定词汇（count / sum / 环图 / 趋势线）。
+    #
+    # ## 为什么用业务语言而不是把 blockRef 抄进去
+    #
+    # 固定积木那条通道**已经整体删除**（见上面 2026-08-03 那段）：设计模型现在
+    # 用 rowsRef 自己画逐行内容。所以这里跟 rankings/feeds 同一套说法——说清
+    # "有哪些一行一行的东西、绑哪个实体哪些字段"，形状由它按版式定。
+    #
+    # 只接**逐行形态**的积木（capability ∈ entityRows/timelineRows/rankedRows）。
+    # 别的形态（动作面、流程条）设计模型没有对应的画法，硬塞进"逐行内容"清单
+    # 只会让它画出一张空表——那正是 rankings/feeds 当初被限制在聚合值上的原因。
+    for b in page.get("blocks") or []:
+        btype = str((b or {}).get("type") or "").strip()
+        spec = _BLOCK_BY_TYPE.get(btype) or {}
+        if str(spec.get("capability") or "") not in _ROW_SHAPED_CAPABILITIES:
+            _visual(btype, str((b.get("props") or {}).get("title") or ""))
+            continue
+        binding = (b.get("binding") or {}) if isinstance(b.get("binding"), dict) else {}
+        entity = str(binding.get("entityRef") or "").strip()
+        if not entity:
+            continue
+        # 指纹口径跟 _take 上面那段一致：类型 + 实体 + 关键字段，不含 id/名字。
+        keys = sorted(
+            str(v) for k, v in binding.items()
+            if k.endswith("FieldRef") and isinstance(v, str) and v
+        )
+        if not _take(_row_key(btype, entity, keys)):
+            continue
+        title = str((b.get("props") or {}).get("title") or "").strip() or btype
+        field_bits = "、".join(f'"{k}"' for k in keys[:4])
+        row_bits.append(
+            f'{title}（{btype}）：实体 "{entity}"'
+            + (f'，可用字段 {field_bits}' if field_bits else "")
+        )
+        _visual(btype, title)
 
     # ── 出图受众：到此为止 ──────────────────────────────────────
     # 下面是给设计 LLM 的安置指导，只对它有意义。给生图模型的是同一批内容的
@@ -2875,9 +2966,21 @@ def _monitor_overview_design_brief(
         return "\n".join(lines)
 
     if row_bits:
+        # 措辞分两种，取决于**这一趟到底有没有参照图**。
+        #
+        # 2026-08-12：原来这里恒定说"版式由你按参照图定"，而下面的取舍规则更硬
+        # ——"参照图上画了就画、没有就不要画"。生图未配置时（线上和本地当前都是
+        # 这样）压根没有参照图，那条规则字面上等于"什么都不要画"。row_bits 以前
+        # 恒为空所以没人撞上；接回 page.blocks 之后它就会天天生效，必须先说清。
+        basis = (
+            "版式由你按参照图定（几列、多宽、怎么排都由你）"
+            if has_reference
+            else "这一趟**没有参照图**，版式由你按这个业务自己定（几列、多宽、"
+            "谁该在最显眼的位置，都由你按「这一页的人打开最先要做什么」来排）"
+        )
         lines.append(
-            "这一页还有下面这些**逐行内容**。版式由你按参照图定（几列、多宽、"
-            "怎么排都由你），数据用 rowsRef 绑（用法见下方说明）：\n- "
+            f"这一页还有下面这些**逐行内容**。{basis}，"
+            "数据用 rowsRef 绑（用法见下方说明）：\n- "
             + "\n- ".join(row_bits)
         )
 
@@ -2895,10 +2998,20 @@ def _monitor_overview_design_brief(
             "关于**逐行内容**（也只关于它）的取舍——上面「必须包含」的 KPI 统计卡"
             "与图表**不在取舍范围内，一项都不能少**：\n"
             f"· 可选的只有这几块：{'、'.join(names)}\n"
-            "· 参照图上画了 → 用 rowsRef 画出来，放哪一格、占多宽、长什么样由你定；\n"
-            "· 参照图上没有 → **不要画**。不画就是这一页没有这块内容，不会跑到"
-            "你的设计外面另起一张卡。\n"
-            "按这一页的实际需要选，不必凑齐——但这句话只对逐行内容有效，"
+            + (
+                "· 参照图上画了 → 用 rowsRef 画出来，放哪一格、占多宽、长什么样由你定；\n"
+                "· 参照图上没有 → **不要画**。不画就是这一页没有这块内容，不会跑到"
+                "你的设计外面另起一张卡。\n"
+                if has_reference
+                else
+                # 没有参照图时不能拿"图上有没有"当判据——那会变成"什么都不要画"。
+                # 判据换成业务本身：这一页的人是不是真的要用它。
+                "· 这一页的人打开后确实要用它 → 用 rowsRef 画出来，放哪一格、占多宽、"
+                "长什么样由你定；\n"
+                "· 用不上 → **不要画**。不画就是这一页没有这块内容，不会跑到你的"
+                "设计外面另起一张卡。\n"
+            )
+            + "按这一页的实际需要选，不必凑齐——但这句话只对逐行内容有效，"
             "KPI 与图表照单全画。"
         )
     return "\n".join(lines)
@@ -3098,10 +3211,11 @@ def _enrich_monitor_page_overviews_inner(
         brief_builder = (
             _marketing_landing_design_brief if is_marketing_landing else _monitor_overview_design_brief
         )
-        brief = brief_builder(page, datamodel)
         # 参照板走**出图受众**那一份：同一批内容，但积木用视觉描述而不是
         # blockRef 的 JSON 形态（见 _monitor_overview_design_brief 的 audience）。
         sheet_brief = brief_builder(page, datamodel, audience="image")
+        # 设计受众那一份**延后到知道有没有参照图之后**再建（见 has_reference）。
+        # 出图那一份不受影响：它就是用来生这张图的，谈不上"有没有图"。
         hero_brief = (
             brief_builder(page, datamodel, audience="hero")
             if is_marketing_landing
@@ -3174,6 +3288,12 @@ def _enrich_monitor_page_overviews_inner(
             # 光看 ms 会以为"生图很快"，得把这一位记下来才看得懂数据。
             _st["got"] = 1 if sheet_b64 else 0
             _st["mediaGot"] = 1 if landing_media_b64 else 0
+        # 设计受众那份 brief 现在才建 —— 它的措辞要按「这一趟到底有没有参照图」
+        # 分岔（见 _monitor_overview_design_brief 的 has_reference）。放在 sheet
+        # 之后而不是之前，是因为**打算生**和**真生出来了**是两件事：端点抖一下
+        # sheet_b64 就是 None，那时候还说"参照图上没有就不要画"，等于让模型把
+        # 逐行内容整批丢掉。
+        brief = brief_builder(page, datamodel, has_reference=sheet_b64 is not None)
         # 这张图排完版式就该丢了——但它同时也正是应用中心那张卡该显示的画面。
         # 调用方给了收集槽就交一份（见 app_preview：**没给槽就什么都不做**，
         # 所以两个脚本调用方不用改也不会被污染）。生图失败传 None 无害，

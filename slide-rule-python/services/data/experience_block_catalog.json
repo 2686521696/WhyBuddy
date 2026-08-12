@@ -17026,6 +17026,51 @@
             "region": "aside"
           }
         ]
+      },
+      {
+        "id": "queue-detail",
+        "name": "待办队列 + 明细",
+        "when": "打开这一页第一件事是处理待办：一列待处理，右边看选中那条的明细。审批、退费、工单这类「谁在等我」的业务用它。",
+        "blocks": [
+          {
+            "type": "ApprovalQueue",
+            "region": "main"
+          },
+          {
+            "type": "RecordDetail",
+            "region": "aside"
+          }
+        ]
+      },
+      {
+        "id": "board-triage",
+        "name": "看板 + 动态",
+        "when": "待办本身分几个阶段，用户要一眼看出各阶段各积压多少——多列泳道比单列列表更说明问题。",
+        "blocks": [
+          {
+            "type": "KanbanBoard",
+            "region": "main"
+          },
+          {
+            "type": "ActivityFeed",
+            "region": "aside"
+          }
+        ]
+      },
+      {
+        "id": "agenda-detail",
+        "name": "排期日历 + 明细",
+        "when": "这一页的核心是「什么时候」：值班、预约、配送、课表这类按日期铺开的业务，日历网格比列表更直观。",
+        "blocks": [
+          {
+            "type": "ScheduleCalendar",
+            "region": "main"
+          },
+          {
+            "type": "RecordDetail",
+            "region": "aside"
+          }
+        ]
       }
     ],
     "dashboard": [
