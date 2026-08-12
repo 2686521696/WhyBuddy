@@ -291,6 +291,51 @@ export interface AppPageLayoutSchema {
   grid?: BusinessGridLayouts;
 }
 
+/**
+ * 表格列去掉"反规范化副本"（2026-08-11）。
+ *
+ * ## 现场
+ *
+ * 线上产物截图里同一张表并排两列：
+ *
+ *     自提点        精选自提点
+ *     自提点名称     定制自提点     ← 同一件事说两遍，值还对不上
+ *
+ * 值对不上那半已经在种子侧修了（副本跟着 ref 的解析结果走）。剩下这半是
+ * **两列本来就该只出一列**：`pickup_point_ref` 与 `pickup_point_name` 是
+ * 模型刻意做的反规范化——存引用的同时冗余一份显示名，免得每次关联查。
+ * 那是数据层的正当设计，**不该原样端到界面上**。
+ *
+ * ## 留哪个
+ *
+ * 留 `_ref`，摘掉 `_name`。理由是 ref 那一列**带着关系**（refEntityId 已解析，
+ * 下拉、跳转、筛选都挂在它身上），而 name 只是一份快照文本。
+ * 这跟 react-admin 的 `<ReferenceField>` / Django admin 拿 FK 的 `__str__`
+ * 当列显示是同一个取舍：**列上显示人话，但那一列的身份仍是那个引用**。
+ *
+ * ## 只动表格列，不动详情
+ *
+ * `detailFields` 原样保留——摘列是为了别在一屏里说两遍，不是要把字段藏起来。
+ * 点进某一行仍然能看到冗余副本的值，数据没有变得不可达。
+ * 这条边界很重要：渲染层可以决定"别挤在一起"，但没有资格决定"你看不到"。
+ */
+export function dedupeDenormalizedColumns(
+  fields: AppFormFieldSchema[]
+): AppFormFieldSchema[] {
+  const refStems = new Set(
+    fields
+      .filter(f => f.type === "ref" || /_ref$/.test(f.id))
+      .map(f => f.id.replace(/(_ref|_id|Ref|Id)$/, ""))
+      .filter(stem => stem)
+  );
+  if (refStems.size === 0) return fields;
+  return fields.filter(f => {
+    const m = /^(.+?)(_name|_title|_label|Name|Title|Label)$/.exec(f.id);
+    // 词干必须完全相同才算副本 —— 跟种子侧同一条判据，宁可漏一个不许摘错
+    return !(m && refStems.has(m[1]));
+  });
+}
+
 export function pageFreeformOwnsContent(
   page: Pick<AppPageSchema, "presentation" | "view" | "freeformOverview">
 ): boolean {
@@ -867,7 +912,7 @@ export function deriveAppRuntimeSchema(
       presentation:
         page.presentation === "marketing-landing" ? "marketing-landing" : "application",
       entityId: entity ? entityId : null,
-      columns: allFields.slice(0, 6),
+      columns: dedupeDenormalizedColumns(allFields).slice(0, 6),
       detailFields: allFields,
       formFields: boundFields.length > 0 ? boundFields : allFields,
       actions: (page.actionPermissions ?? []).map(String),
