@@ -309,3 +309,20 @@ def test_自检里任何意外都不许拖垮已校验通过的产物(monkeypatc
         theme_id="", generated_theme=None, design_recipe="",
         reference_image_b64=None, allow=True,
     ) == ORIGINAL
+
+
+def test_探针敲的是预览接口_不是站点根路径() -> None:
+    """只探一半等于没探。
+
+    2026-08-12 实测过这个区别的代价：前端（vite :3000）活着、后端（:9700）死了，
+    敲根路径一路绿灯，然后照样白等了 67s 的 Playwright 超时才拿到 None。浏览器要走
+    的是「预览页 → /api/…/freeform-preview/<pid>」这条链，探针就该探同一条链。
+    """
+    import inspect
+
+    from services import app_screenshot
+
+    src = inspect.getsource(app_screenshot.local_app_reachable)
+    assert "freeform-preview" in src, "探针还在敲站点根路径"
+    # 404 要算"够得着"——活着的宿主对不存在的 pid 本来就回 404
+    assert "HTTPError" in src and "return True" in src

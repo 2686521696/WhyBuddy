@@ -343,11 +343,17 @@ def local_app_reachable(timeout_s: float = 3.0) -> bool:
 
     所以先敲一下门。只把"连不上/超时"当不可达；HTTP 几百几十都算可达（预览页对
     不存在的 pid 本来就回 404，那不代表宿主没起）。
+
+    ⚠ 敲的是**预览载荷那条 API**，不是站点根路径。2026-08-12 实测过这个区别的代价：
+    前端（vite :3000）活着、后端（:9700）死了，敲根路径一路绿灯，然后照样白等了
+    67s 的 Playwright 超时才拿到 None。浏览器要走的是「页面 → /api/…/freeform-preview
+    /<pid>」这条链，探针就该探同一条链——只探一半等于没探。
     """
     import urllib.error
     import urllib.request
 
-    url = f"{_local_app_base_url()}/"
+    # 随便一个不存在的 pid：活着的宿主会如实回 404，那正是"够得着"的证明。
+    url = f"{_local_app_base_url()}/api/sliderule/freeform-preview/__reachability_probe__"
     try:
         urllib.request.urlopen(url, timeout=timeout_s).close()
         return True
