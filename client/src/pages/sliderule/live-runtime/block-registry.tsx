@@ -99,6 +99,7 @@ import { MarkdownEditor, MarkdownView, SqlEditor } from "../base-components/cust
 import type { WorkflowSection } from "../system-screens/five-system-model";
 import type { RuntimeRow } from "./live-runtime";
 import type { AppFormFieldSchema } from "./app-runtime-schema";
+import { dedupeDenormalizedFieldIds } from "./app-runtime-schema";
 import type { NormalizedFieldOption } from "./field-display";
 import { resolveValueType } from "./field-value-type";
 import { buildEchartsOption } from "./build-echarts-option";
@@ -4309,9 +4310,15 @@ function boundFieldIds(
 ): string[] {
   const declared = block.binding?.fieldRefs;
   if (Array.isArray(declared) && declared.length > 0) {
+    // 模型明说了要哪几列就照办 —— 它把 `X_ref` 和 `X_name` 一起写出来，
+    // 那是它的选择，渲染层没有资格替它删。去重只管下面这条派生路径。
     return declared.map(f => String(f)).filter(Boolean);
   }
-  return [...new Set(rows.flatMap(r => Object.keys(r.values ?? {})))].slice(0, fallbackCap);
+  // 派生路径要先摘掉反规范化副本**再截断**（2026-08-12）。顺序反了的话，
+  // 「自提点 / 自提点名称」白占一格，把本该露出来的第 8 列挤下榜。
+  return dedupeDenormalizedFieldIds([
+    ...new Set(rows.flatMap(r => Object.keys(r.values ?? {}))),
+  ]).slice(0, fallbackCap);
 }
 
 const RecordFormRenderer: ExperienceBlockRenderer = ({

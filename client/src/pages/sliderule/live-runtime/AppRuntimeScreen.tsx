@@ -1991,10 +1991,17 @@ export function AppRuntimeScreen({
             : "desktop";
         const layouts =
           page.layout?.grid ??
-          regionsToGrid(page.view.kind, {
-            ...(regions as unknown as BusinessRegions),
-            main: [...regions.main, ...orphanBlocks.map(b => b.id)],
-          });
+          regionsToGrid(
+            page.view.kind,
+            {
+              ...(regions as unknown as BusinessRegions),
+              main: [...regions.main, ...orphanBlocks.map(b => b.id)],
+            },
+            // 几何必须知道内置主视图在不在。不告诉它，它就照样给
+            // PAGE_CONTENT_REF 留三行、把正文带排到那三行之后——而这一格
+            // 下面第 2014 行又会被摘掉，留下一片没人认领的空白。
+            { hasPageContent: pageContent !== undefined }
+          );
         let items = resolveBusinessGrid(layouts, breakpoint);
         const itemRefs = new Set(items.map(item => item.blockRef));
         const nextY = items.reduce((max, item) => Math.max(max, item.y + item.h), 0);

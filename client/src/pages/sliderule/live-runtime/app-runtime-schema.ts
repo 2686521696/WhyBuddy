@@ -322,15 +322,40 @@ export interface AppPageLayoutSchema {
 export function dedupeDenormalizedColumns(
   fields: AppFormFieldSchema[]
 ): AppFormFieldSchema[] {
+  const keep = new Set(
+    dedupeDenormalizedFieldIds(
+      fields.map(f => f.id),
+      id => fields.some(f => f.id === id && f.type === "ref")
+    )
+  );
+  return keep.size === fields.length ? fields : fields.filter(f => keep.has(f.id));
+}
+
+/**
+ * 同一条判据的**只认字段 id** 版本。
+ *
+ * 2026-08-12：上面那个只接了页面内置表格。用户圈空白那张截图上，「自提点 /
+ * 自提点名称」两列**照样并排**——因为那张表是 `DataTable` 积木画的，它自己
+ * 从真实行的键里派生列，根本不经过 `dedupeDenormalizedColumns`。
+ * 判据钉在一个调用点上，换条渲染路径就漏；所以判据下沉到 id 这一层，两条
+ * 路共用。
+ *
+ * `isRef` 是可选的类型旁证：拿得到字段类型就用（`type === "ref"` 最硬），
+ * 拿不到就只靠 `_ref` 后缀——积木那边只有键名，没有 schema。
+ */
+export function dedupeDenormalizedFieldIds(
+  ids: string[],
+  isRef?: (id: string) => boolean
+): string[] {
   const refStems = new Set(
-    fields
-      .filter(f => f.type === "ref" || /_ref$/.test(f.id))
-      .map(f => f.id.replace(/(_ref|_id|Ref|Id)$/, ""))
+    ids
+      .filter(id => isRef?.(id) || /_ref$/.test(id))
+      .map(id => id.replace(/(_ref|_id|Ref|Id)$/, ""))
       .filter(stem => stem)
   );
-  if (refStems.size === 0) return fields;
-  return fields.filter(f => {
-    const m = /^(.+?)(_name|_title|_label|Name|Title|Label)$/.exec(f.id);
+  if (refStems.size === 0) return ids;
+  return ids.filter(id => {
+    const m = /^(.+?)(_name|_title|_label|Name|Title|Label)$/.exec(id);
     // 词干必须完全相同才算副本 —— 跟种子侧同一条判据，宁可漏一个不许摘错
     return !(m && refStems.has(m[1]));
   });

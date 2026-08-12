@@ -221,14 +221,19 @@ const REGIONS_BY_BAND = {
 const pick = (regions: BusinessRegions, band: keyof typeof REGIONS_BY_BAND) =>
   REGIONS_BY_BAND[band].flatMap(k => regions[k as keyof BusinessRegions] ?? []);
 
-function phonePreset(kind: string, regions: BusinessRegions): BusinessGridItem[] {
+function phonePreset(
+  kind: string,
+  regions: BusinessRegions,
+  hasPageContent: boolean
+): BusinessGridItem[] {
   // 手机只有一列，带的顺序就是从上到下的顺序。仪表盘把辅助内容提到主体
   // 之前——小屏上「现在怎么样」比「全部明细」先看。
+  const content = hasPageContent ? [PAGE_CONTENT_REF] : [];
   const ordered =
     kind === "dashboard"
-      ? [...pick(regions, "top"), PAGE_CONTENT_REF, ...pick(regions, "aside"),
+      ? [...pick(regions, "top"), ...content, ...pick(regions, "aside"),
          ...pick(regions, "main"), ...pick(regions, "footer")]
-      : [...pick(regions, "top"), ...pick(regions, "main"), PAGE_CONTENT_REF,
+      : [...pick(regions, "top"), ...pick(regions, "main"), ...content,
          ...pick(regions, "aside"), ...pick(regions, "footer")];
   return ordered.map((blockRef, index) => ({
     blockRef,
@@ -241,8 +246,28 @@ function phonePreset(kind: string, regions: BusinessRegions): BusinessGridItem[]
 
 export function regionsToGrid(
   kind: string,
-  regions: BusinessRegions
+  regions: BusinessRegions,
+  options?: { hasPageContent?: boolean }
 ): Required<Pick<BusinessGridLayouts, "desktop" | "tablet" | "phone">> {
+  /**
+   * 这一页到底有没有"内置主视图"（PAGE_CONTENT_REF）。
+   *
+   * 2026-08-12：用户在「团长管理」上圈出主体区左半边一大块纯白。量出来是
+   * 870×273，位置正好是内置主视图那格。成因不是哪个区块渲染成了空——
+   * **那一格压根没进栅格**，白是邻居撑出来的：
+   *
+   *     page-content   (0,0,8,3)  ← 积木自己有表格时，上游把它整条摘掉
+   *     leader_detail  (8,0,4,3)  ← 辅助区照样占着三行
+   *     leader_table   (0,3,12,1) ← 正文带无条件排在"主视图三行"之后
+   *
+   * 于是第 1–3 行的左边 8 格没有任何东西，而右边那张详情卡把这三行撑到
+   * 273px 高。`empty:hidden` 收的是"格子里的区块渲染成空"，这里连格子都
+   * 没有，它当然收不掉——**同一片白，两种成因，上一刀只切到其中一种**。
+   *
+   * 修法是让几何知道这件事：没有内置主视图时，正文带的区块**自己就是**
+   * 主视图，占内容列（跟辅助区并排），而不是排在一段没人认领的空高之后。
+   */
+  const hasPageContent = options?.hasPageContent !== false;
   const columns = BUSINESS_GRID_COLUMNS.desktop;
   const top = pick(regions, "top");
   const mainRegion = pick(regions, "main");
@@ -251,31 +276,51 @@ export function regionsToGrid(
 
   // 看板/日历的主视图是棋盘和月历，比别的页型更吃宽度，右栏收窄一格。
   const asideWidth = kind === "kanban" || kind === "calendar" ? 3 : 4;
-  const contentWidth = aside.length > 0 ? columns - asideWidth : columns;
+  // 内容列存在的前提是**真的有东西填它**。既没有内置主视图、正文带也空的
+  // 页面（只剩一个辅助区），再给右栏留 4/12 就是把另外 8/12 让给空白。
+  const hasContentColumn = hasPageContent || mainRegion.length > 0;
+  const contentWidth =
+    aside.length > 0 && hasContentColumn ? columns - asideWidth : columns;
 
   const desktop = fullWidthItems(top, columns, 0);
   const contentY = desktop.length;
 
-  desktop.push({
-    blockRef: PAGE_CONTENT_REF,
-    x: 0,
-    y: contentY,
-    w: contentWidth,
-    h: 3,
-  });
+  // 内容列：有内置主视图就是它（占三行）；没有就由正文带的区块逐行顶上。
+  const contentItems: BusinessGridItem[] = hasPageContent
+    ? [{ blockRef: PAGE_CONTENT_REF, x: 0, y: contentY, w: contentWidth, h: 3 }]
+    : mainRegion.map((blockRef, index) => ({
+        blockRef,
+        x: 0,
+        y: contentY + index,
+        w: contentWidth,
+        h: 1,
+      }));
+  contentItems.forEach(i => desktop.push(i));
+
+  // 辅助区跨的行数跟内容列**实测**一样高，不再写死 3：写死的那个 3 正是
+  // 上面那片白的另一半原因（内容列没了，3 行照样占着）。
+  const contentRows = Math.max(
+    1,
+    contentItems.reduce((max, i) => Math.max(max, i.y + i.h - contentY), 0)
+  );
   aside.forEach((blockRef, index) => {
     desktop.push({
       blockRef,
-      x: contentWidth,
-      y: contentY + index,
-      w: asideWidth,
-      h: aside.length === 1 ? 3 : 1,
+      x: hasContentColumn ? contentWidth : 0,
+      y: contentY + (hasContentColumn ? index : contentRows + index),
+      w: hasContentColumn ? asideWidth : columns,
+      h: hasContentColumn && aside.length === 1 ? contentRows : 1,
     });
   });
 
   // 正文带的区块跟在主视图下面，整行 —— 它们是主体的一部分，不是附属。
-  fullWidthItems(mainRegion, columns, contentY + 3).forEach(i => desktop.push(i));
-  const afterMain = contentY + 3 + mainRegion.length;
+  // 没有内置主视图时它们已经在上面当过内容列了，这里不能再摆一遍。
+  const afterContent =
+    contentY + contentRows + (hasContentColumn ? 0 : aside.length);
+  if (hasPageContent) {
+    fullWidthItems(mainRegion, columns, afterContent).forEach(i => desktop.push(i));
+  }
+  const afterMain = afterContent + (hasPageContent ? mainRegion.length : 0);
   fullWidthItems(footer, columns, afterMain).forEach(i => desktop.push(i));
 
   const tablet = desktop.map(item => ({
@@ -284,5 +329,5 @@ export function regionsToGrid(
     w: BUSINESS_GRID_COLUMNS.tablet,
   }));
 
-  return { desktop, tablet, phone: phonePreset(kind, regions) };
+  return { desktop, tablet, phone: phonePreset(kind, regions, hasPageContent) };
 }

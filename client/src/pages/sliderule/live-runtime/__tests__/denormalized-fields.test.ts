@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { dedupeDenormalizedColumns } from "../app-runtime-schema";
+import { dedupeDenormalizedColumns, dedupeDenormalizedFieldIds } from "../app-runtime-schema";
 import { semanticOf } from "../demo-seed-semantics";
 import { seedRuntimeState } from "../demo-seed";
 import type { AppFormFieldSchema } from "../app-runtime-schema";
@@ -78,6 +78,34 @@ describe("a. 反规范化副本不占表格列", () => {
       src,
       "detailFields 也去重了 —— 渲染层没有资格决定「你看不到」"
     ).toContain("detailFields: allFields,");
+  });
+
+  it("积木画的表格也得去重 —— 页面内置表格只是两条渲染路径之一", () => {
+    // 2026-08-12：用户的截图上「自提点 / 自提点名称」照样并排。那张表不是
+    // 页面内置的，是 DataTable 积木画的，它自己从行的键里派生列，
+    // 压根不经过 dedupeDenormalizedColumns。判据钉在一个调用点上就是这个下场。
+    const src = readFileSync(new URL("../block-registry.tsx", import.meta.url), "utf8");
+    const i = src.indexOf("function boundFieldIds(");
+    expect(i, "boundFieldIds 没了 —— 这条断言的锚点要重找").toBeGreaterThan(-1);
+    const body = src.slice(i, i + 900);
+    expect(body, "积木的派生列没走去重").toContain("dedupeDenormalizedFieldIds");
+    // 顺序：先去重再截断，否则副本白占一格、把第 8 列挤下榜
+    expect(
+      body.indexOf("dedupeDenormalizedFieldIds"),
+      "先 slice 再去重 —— 副本占掉的那一格补不回来"
+    ).toBeLessThan(body.indexOf(".slice(0, fallbackCap)"));
+  });
+
+  it("模型明说要哪几列时不摘 —— 那是它的选择", () => {
+    const ids = dedupeDenormalizedFieldIds(["pickup_point_ref", "pickup_point_name"]);
+    expect(ids).toEqual(["pickup_point_ref"]);
+    // 但 binding.fieldRefs 那条路不经过它（判据写在 boundFieldIds 的分支里）
+    const src = readFileSync(new URL("../block-registry.tsx", import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("function boundFieldIds("), src.indexOf("function boundFieldIds(") + 900);
+    expect(
+      body.indexOf("return declared.map"),
+      "声明路径也被去重了 —— 模型明说的东西不该被渲染层删掉"
+    ).toBeLessThan(body.indexOf("dedupeDenormalizedFieldIds"));
   });
 });
 
