@@ -86,13 +86,48 @@ describe("② 消毒", () => {
     expect(clean, "正文被连坐删掉了").toContain("ok");
   });
 
-  it("表单控件不留 —— 这一层是纯展示，点了没反应比没有更糟", () => {
+  it("图像 / 字体 / 链接放行 —— 2026-08-12 撤掉的那批视觉限制", () => {
+    // 撤禁令的理由：平台 CSP 本来就允许任意 https 图片和 Google Fonts，
+    // 是白名单把它们挡在门外，而页面观感一半在图像、图标和字体上。
     const clean = sanitizeOverviewHtml(
-      `<div><form><input value="x"><button>提交</button></form></div>`
+      `<div><img src="https://images.example.com/a.jpg" alt="封面" loading="lazy">
+       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">
+       <picture><source srcset="https://x.example.com/a.webp" type="image/webp">
+       <img src="https://x.example.com/a.png" alt="图"></picture>
+       <a href="https://miantuan.ai" target="_blank" rel="noreferrer">链接</a>
+       <details><summary>更多</summary>纯 CSS 折叠</details></div>`
     );
-    expect(clean).not.toContain("<input");
-    expect(clean).not.toContain("<button");
-    expect(clean).not.toContain("<form");
+    for (const kept of ["<img", "src=", "alt=", "<link", "fonts.googleapis.com",
+                        "<picture", "srcset=", "<a", "href=", "<details"]) {
+      expect(clean, `${kept} 被消毒掉了`).toContain(kept);
+    }
+  });
+
+  it("伪协议进不来，但放行该放行的 —— 放开 src/href 之后这道闸才真正吃劲", () => {
+    const clean = sanitizeOverviewHtml(
+      `<div><a href="javascript:alert(1)">点我</a>
+       <a href="data:text/html;base64,PHNjcmlwdD4=">下载</a>
+       <img src="data:image/png;base64,iVBORw0KGgo=" alt="合法内联图">
+       <img src="https://img.example.com/a.jpg" alt="远程图"></div>`
+    );
+    expect(clean, "javascript: 伪协议").not.toContain("javascript:");
+    // 链接上的 data: 由 afterSanitizeAttributes 钩子精确摘掉：点下去等于导航到
+    // 一份自带内容的文档。图片上的 data: 是合法素材，必须留。
+    expect(clean, "链接上的 data: 该摘掉").not.toContain('href="data:');
+    expect(clean, "内联图是合法素材").toContain("data:image/png");
+    expect(clean, "远程图是合法素材").toContain("https://img.example.com/a.jpg");
+    expect(clean, "文字不该被连坐删掉").toContain("下载");
+  });
+
+  it("严格 URI 正则会砸掉占位契约 —— 这一版踩过，钉住不许回去", () => {
+    // 第一版给 ALLOWED_URI_REGEXP 塞了严格正则，DOMPurify 把它用在**所有**不在内部
+    // URI-safe 清单里的属性上，于是 data-fact / viewBox / d 全被当成"非法 URI"删掉：
+    // 页面一个数字都填不上、图标成空壳，而消毒"看着还在工作"。
+    const src = surfaceSrc;
+    // 只认"作为配置键"的形态（带冒号）：上面那段注释本身要提这个名字，
+    // 断言不能因为提到它就红——不然为了让测试过，下一个人会把教训注释删掉。
+    expect(src, "又把严格 URI 正则加回配置了").not.toContain("ALLOWED_URI_REGEXP:");
+    expect(src, "链接上的 data: 得靠这个钩子摘").toContain("afterSanitizeAttributes");
   });
 
   it("占位契约必须活着 —— 它们被删掉的话整页没有数字", () => {

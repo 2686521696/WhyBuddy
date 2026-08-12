@@ -65,37 +65,77 @@ export interface OverviewHtmlPayload {
 /**
  * 允许的标签与属性。
  *
- * 比 DOMPurify 的默认白名单**更窄**：默认允许 `<form>`/`<input>`/`<a href>`，
- * 而这一层是纯展示——一个能点的东西都不该有（点了没反应比没有更糟）。
+ * ## 2026-08-12 傍晚：视觉那一侧的限制**整批撤掉**
  *
- * 比 GitHub 那套（hast-util-sanitize 的 defaultSchema）**多一个 `<style>`**：
- * 它服务的是 Markdown 正文，剥掉样式是对的；这里样式就是产物本身。多出来的
- * 那点风险由 Shadow DOM 兜住——这两个决定是一对，不能只抄一半。
+ * 此前这份白名单比 DOMPurify 的默认还窄——**没有 `<img>`、没有 `<link>`、
+ * 没有 `<a>`**，图标只能内联 SVG，字体只能系统字体。于是产物永远是
+ * 「div + 内联样式 + 手画 SVG」，而"一张页面好不好看，一半在图像、图标和字体上"。
+ *
+ * 对照 abi/screenshot-to-code（我们的自检闭环本来就是从它那儿借的）：它出效果靠的
+ * 正是抠图、生图、Google Fonts、图标库、Tailwind。我们把这些全禁了，然后抱怨
+ * 产出难看——那不是提示词能补的差距，是材料的差距。
+ *
+ * 而且这些禁令**多数是自伤**：平台 CSP 明写
+ *   img-src   'self' data: blob: **https:**        → 任意 https 图片一直允许
+ *   style-src 'self' 'unsafe-inline' fonts.googleapis.com
+ *   font-src  'self' data: fonts.gstatic.com       → Google Fonts 一直允许
+ * 是这份白名单把平台允许的东西挡在门外。
+ *
+ * ## 唯一保留的那条线，以及它为什么不是"审美限制"
+ *
+ * 可执行内容（`script` / `on*` / `javascript:` / `iframe` / `object` / `embed`）
+ * 仍然剥掉。理由不是设计口味，是**宿主安全**：这段 HTML 是 LLM 产出的不可信内容，
+ * 挂在用户已登录会话的页面里；让它执行代码跟让它显示一张图片是两个量级的事。
+ * 而且 CSP 的 `script-src 'self'` 本来就会挡掉外域脚本——放开也变不出效果。
+ *
+ * 真要让脚本跑起来，正确做法是把容器从影子根换成 sandbox iframe（见本文件头注
+ * 那句界桩），那是独立一刀，不是往白名单里加个词能了的事。
  */
 const ALLOWED_TAGS = [
   "div", "span", "p", "section", "article", "header", "footer", "main", "aside",
-  "h1", "h2", "h3", "h4", "h5", "h6",
+  "nav", "h1", "h2", "h3", "h4", "h5", "h6",
   "ul", "ol", "li", "dl", "dt", "dd",
   "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col",
-  "strong", "em", "b", "i", "small", "code", "pre", "blockquote",
-  "hr", "br", "style",
-  "svg", "path", "circle", "rect", "line", "polyline", "polygon", "g",
+  "strong", "em", "b", "i", "u", "s", "small", "mark", "code", "pre", "blockquote",
+  "hr", "br", "wbr", "style",
+  // 图像与排版容器（2026-08-12 放开）——封面、缩略图、头像、空态插画、背景图
+  "img", "picture", "source", "figure", "figcaption",
+  // 链接（放开）：纯展示层也需要"看起来能点"的东西，而且 <a> 本身就是可达性语义
+  "a",
+  // 字体：<link rel=stylesheet> 在影子根里同样生效，CSP 只放通 Google Fonts
+  "link",
+  // 细节标签：纯 CSS 的折叠交互靠它（这一层不执行 JS）
+  "details", "summary", "time", "abbr", "kbd", "samp", "var", "sub", "sup",
+  // 内联 SVG
+  "svg", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "g",
+  "defs", "linearGradient", "radialGradient", "stop", "clipPath", "mask",
+  "text", "tspan", "use", "symbol", "title", "desc", "pattern", "filter",
+  "feGaussianBlur", "feOffset", "feBlend", "feColorMatrix", "animate",
+  "animateTransform",
 ];
 const ALLOWED_ATTR = [
-  "class", "style", "id", "title", "colspan", "rowspan", "scope",
+  "class", "style", "id", "title", "colspan", "rowspan", "scope", "lang", "dir",
+  "role", "aria-label", "aria-hidden", "aria-describedby", "datetime", "open",
   // 占位契约。`ALLOW_DATA_ATTR: false` 意味着**只有列在这儿的 data-* 能活下来**，
   // 少一个就是那个能力整条静默失效（逐行会退化成一个空模板）。
   "data-fact", "data-chart",
   "data-rows", "data-field", "data-limit", "data-sort", "data-order",
-  // 内联 svg 的形状属性——图标是设计的一部分，禁掉版式会缺一块
-  "viewBox", "fill", "stroke", "stroke-width", "d", "cx", "cy", "r",
-  "x", "y", "x1", "y1", "x2", "y2", "width", "height", "points",
-  "stroke-linecap", "stroke-linejoin", "opacity", "transform",
+  // 图片与外部资源（2026-08-12 放开）
+  "src", "srcset", "sizes", "alt", "loading", "decoding", "referrerpolicy",
+  "href", "target", "rel", "media", "type", "crossorigin",
+  // 内联 svg 的形状与外观属性
+  "viewBox", "preserveAspectRatio", "xmlns", "fill", "fill-opacity", "fill-rule",
+  "stroke", "stroke-width", "stroke-dasharray", "stroke-dashoffset",
+  "stroke-linecap", "stroke-linejoin", "stroke-opacity",
+  "d", "cx", "cy", "r", "rx", "ry", "x", "y", "x1", "y1", "x2", "y2",
+  "width", "height", "points", "opacity", "transform", "offset", "stop-color",
+  "stop-opacity", "gradientUnits", "gradientTransform", "clip-path", "mask",
+  "text-anchor", "dominant-baseline", "font-size", "font-weight", "font-family",
+  "dx", "dy", "patternUnits", "result", "in", "stdDeviation", "values",
+  "attributeName", "dur", "repeatCount", "from", "to",
 ];
-const FORBID_TAGS = [
-  "script", "iframe", "object", "embed", "link", "meta", "base",
-  "form", "input", "button", "select", "textarea", "a",
-];
+//: 只剩可执行内容。理由见上面那段——宿主安全，不是审美。
+const FORBID_TAGS = ["script", "iframe", "object", "embed", "base", "meta"];
 
 /**
  * 消毒。**没有 DOM 就返回空串**——消毒不了就不渲染。
@@ -104,9 +144,40 @@ const FORBID_TAGS = [
  * `.sanitize` 压根不存在。那种情况下"原样返回"等于把不可信 HTML 直接放行，
  * 所以这里 fail-closed：宁可这一块空着，也不能漏一次。
  */
+type PurifyLike = {
+  sanitize?: (s: string, c: object) => string;
+  addHook?: (name: string, cb: (node: Element) => void) => void;
+};
+
+/**
+ * 链接上的 `data:` 一律摘掉。
+ *
+ * ## 为什么是钩子，而不是 `ALLOWED_URI_REGEXP`
+ *
+ * 放开 `src`/`href` 之后我第一版是给 `ALLOWED_URI_REGEXP` 塞了一个严格正则，**当场
+ * 砸了自己的占位契约**：DOMPurify 把这个正则用在所有不在它内部 URI-safe 清单里的
+ * 属性上，于是 `data-fact` / `viewBox` / `d="M0 0h24"` 全被判成"非法 URI"删掉——
+ * 页面一个数字都填不上、图标全成空壳，而消毒本身"看着还在工作"。
+ *
+ * 它的**默认** URI 策略实测是对的：拦 `javascript:`、放行 https 图片、放行
+ * `data:image/`、不碰 `data-*` 与 SVG 几何属性。唯一漏的是 `data:text/html` 落在
+ * `<img src>` 上——而图片标签加载不了 HTML，那不是执行面。真正该堵的是**链接**上的
+ * `data:`（点下去等于导航到一份自带内容的文档）。所以留默认策略，只精确摘这一处。
+ */
+function installSanitizeHooks(p: PurifyLike): void {
+  if (hooksInstalled || typeof p.addHook !== "function") return;
+  p.addHook("afterSanitizeAttributes", node => {
+    const href = node.getAttribute?.("href");
+    if (href && /^\s*data:/i.test(href)) node.removeAttribute("href");
+  });
+  hooksInstalled = true;
+}
+let hooksInstalled = false;
+
 export function sanitizeOverviewHtml(markup: string): string {
-  const purify = DOMPurify as unknown as { sanitize?: (s: string, c: object) => string };
+  const purify = DOMPurify as unknown as PurifyLike;
   if (typeof purify.sanitize !== "function") return "";
+  installSanitizeHooks(purify);
   return purify.sanitize(markup, {
     ALLOWED_TAGS,
     ALLOWED_ATTR,

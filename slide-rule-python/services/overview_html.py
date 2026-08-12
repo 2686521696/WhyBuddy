@@ -150,17 +150,10 @@ def build_overview_charts(page: Dict[str, Any], datamodel: Dict[str, Any]) -> Li
 
 # ── 校验 ────────────────────────────────────────────────────────────────
 
-_SCRIPTISH_RE = re.compile(
-    r"<\s*(script|iframe|object|embed|link|meta|base|form)\b"
-    r"|\son[a-z]+\s*="
-    r"|javascript\s*:",
-    re.I,
-)
-#: 外链：任何 http(s):// 或协议相对 //host，无论出现在 src/href/url() 里。
-#: 出口策略会挡外链，而且一个 CDN 字体就能让整页版式在离线环境塌掉。
-_EXTERNAL_URL_RE = re.compile(r"""(?:src|href)\s*=\s*["']?\s*(?:https?:)?//""", re.I)
-_CSS_EXTERNAL_RE = re.compile(r"""(?:url\(|@import)\s*["']?\s*(?:https?:)?//""", re.I)
-
+# 这里原先有三个正则：`_SCRIPTISH_RE`（拦 script/iframe/on*/javascript:）与
+# `_EXTERNAL_URL_RE` / `_CSS_EXTERNAL_RE`（拦一切外链）。2026-08-12 傍晚按用户裁决
+# **整组删除**，理由写在 validate_overview_html 里那段注释。删干净而不是留着不调用：
+# 留一个不再被引用的判据，下一个人会以为这条纪律还在。
 _TAG_RE = re.compile(r"<[^>]+>")
 _DATA_FACT_RE = re.compile(r"""data-fact\s*=\s*["']([^"']+)["']""", re.I)
 _DATA_CHART_RE = re.compile(r"""data-chart\s*=\s*["']([^"']+)["']""", re.I)
@@ -362,14 +355,23 @@ def validate_overview_html(
             "把重复的行内样式收进 <style> 里的类"
         )
 
-    if _SCRIPTISH_RE.search(markup):
-        problems.append(
-            "出现了 script/iframe/on* 事件/javascript: —— 这一层不执行任何脚本，"
-            "数字用 data-fact、图表用 data-chart，运行时会填"
-        )
-    if _EXTERNAL_URL_RE.search(markup) or _CSS_EXTERNAL_RE.search(markup):
-        problems.append("引用了外部资源（CDN/字体/图片）—— 一个外链都不允许，离线也要能看")
-
+    # ⚠ 这里此前有两道视觉禁令，2026-08-12 傍晚**按用户裁决撤掉**：
+    #   ① 禁外链（CDN / Google Fonts / 外部图片 / @import）
+    #   ② 禁 script / on* 事件
+    #
+    # 撤 ① 的理由是它本来就是我们自己加的自伤：平台 CSP 明写
+    # `img-src 'self' data: blob: https:` 与 `style-src … fonts.googleapis.com`
+    # / `font-src … fonts.gstatic.com`——**任意 https 图片和 Google Fonts 一直是
+    # 允许的**，是这道校验把它们挡在门外。而"一张页面好不好看，一半在图像、图标和
+    # 字体上"：审查 abi/screenshot-to-code 时对照得很清楚，它靠的正是抠图/生图/
+    # 字体/图标库，我们把这些全禁了之后剩下纯 div + 内联样式，观感差距不是提示词
+    # 能补的。
+    #
+    # ② 不再作为**校验**拦（提示词里也不再写成禁令，只如实说"这一层不执行 JS"，
+    # 因为 CSP 的 script-src 是 'self'，外域脚本浏览器会自己挡）。渲染端的
+    # DOMPurify 仍然剥脚本——那是**宿主安全**，不是对设计的限制：这段 HTML 挂在
+    # 用户会话的页面里，让它执行代码是另一个量级的事。真要放开脚本，得把容器换成
+    # sandbox iframe（OverviewHtmlSurface 头注里那句界桩），那是独立一刀。
     known_facts = {f["id"] for f in facts}
     used_fact_refs = _DATA_FACT_RE.findall(markup)
     for ref in set(used_fact_refs):
@@ -491,30 +493,49 @@ def build_overview_html_prompt(
     放进去会变成每行都显示同一个值（看着像列表，其实是一个数复制了 N 份）。
   · 同一个 `data-fact` 整页只摆一次。
 
-## 硬性要求
+## 材料：你能用的东西（放开了，别客气）
+
+**图片随便用。** `<img src="https://…">` 任意 https 图源都可以（平台已放通），
+`data:` 内联也行；没有现成素材就用 `https://placehold.co/640x360` 这类占位图。
+封面、缩略图、头像、空态插画、背景图——想要就放，别用灰色方块凑。
+
+**字体随便挑。** Google Fonts 已放通（`fonts.googleapis.com` / `fonts.gstatic.com`），
+`<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=…">` 或
+`<style>` 里 `@import` 都行。中文字体量大，按需再定。
+
+**图标**：内联 `<svg>` 最稳（不依赖任何外部资源，随文字变色）；也可以走字体图标
+的 CSS。
+
+**CSS 全开**：渐变、多层阴影、`backdrop-filter`、动画与过渡、`transform`、
+grid/flex/subgrid、`clip-path`、伪元素、CSS 变量——想用什么用什么，`<style>`
+想写多长写多长。表格、语义标签、`<figure>`、`<picture>` 都可以。
+
+## 环境事实（不是要求，是这一层的物理规律）
+
+· **页面不执行 JavaScript**：平台 CSP 的 `script-src` 是 `'self'`，外域脚本
+  （Tailwind CDN 之类）会被浏览器直接挡掉；写了不会报错、只是没效果。所以交互与
+  动效要靠纯 CSS 拿（`:hover`、`:has()`、`@keyframes`、`details/summary`）。
+· 这段 HTML 嵌在一个**已经有左侧导航、顶栏和页面标题**的外壳里——你画的是内容区。
+· 手机上渲染的是同一份 HTML，没有别人替你收窄，窄屏靠你自己的 `@media`。
+· 深浅色跟随系统：颜色收在 CSS 变量里，`@media (prefers-color-scheme: dark)` 换一套。
+
+## 契约：只有两条，都不是审美问题
 
 1. **只输出 HTML**，从 `<div class="ov-root">` 到对应的 `</div>`。不要 markdown 围栏、不要解释。
-2. **一个数字都不要写。** 要显示某个 KPI 就摆一个空占位：
-   `<span data-fact="xxx"></span>`，运行时会把真实数值（含单位）填进去。
-   标签文字（「今日预约」）写在**相邻**节点里，不要写进占位标签内部。
-   逐行的值同理：`<span data-field="xxx"></span>`，里面留空。
-3. **图表也只摆位置**：`<div data-chart="xxx" style="height:260px"></div>`，
-   给一个明确高度，运行时会把真实图挂上去。不要自己写图表数据。
-4. 样式写在开头一个 `<style>` 里，用**类名**组织，别把几十条样式全塞进 style 属性。
-   类名统一加 `ov-` 前缀，避免跟外壳撞。
-5. **零外链**：不许 CDN、不许 Google Fonts、不许外部图片、不许 `@import`。
-6. **不许 `<script>`、不许 `on*` 事件属性**——这一层不执行任何脚本。
-7. 这段 HTML 会嵌进一个**已经有左侧导航、顶栏和页面标题**的外壳里。
-   只画内容区，不要再写页面级大标题，也不要自己搭导航。
-8. 深浅色都要能看：颜色用 CSS 变量定义，`@media (prefers-color-scheme: dark)` 里换一套。
-   **窄屏也要能看**：多栏栅格在 `@media (max-width: 480px)` 里收成单栏
-   （手机上同一份 HTML 会原样渲染，没有别人替你收窄）。
-9. **次要文字的对比度要过 WCAG AA（正文 4.5:1，18px 以上或 14px 粗体 3:1）。**
-   灰色标签/说明/表格次要列最容易踩这条——浅底上别用比 `#595959` 更浅的灰
-   （`#8c8c8c` 只有 3.36:1，`#bfbfbf` 只有 1.84:1，都不合格）。
-   机器体检真量过三张首页：每张都自己挑了一个 3.95~4.09:1 的灰，差一点点。
-10. 目标观感：信息密度高的中文 B2B 后台总览。多栏栅格、状态用色块标签、
-   表格紧凑、留白克制。不要营销落地页那一套（Hero/CTA/大标题）。
+2. **具体数值一个都不要写**——不是为了好看，是因为这一层拿不到真实数据，写出来的
+   任何数字都是编的。要显示就摆占位，运行时用真实数据填：
+   · KPI：`<span data-fact="xxx"></span>`，标签文字放**相邻**节点
+   · 逐行：`<span data-field="xxx"></span>`（在 `data-rows` 容器里）
+   · 图表：`<div data-chart="xxx" style="height:260px"></div>`，给明确高度
+
+## 观感目标
+
+信息密度高的中文 B2B 后台总览：多栏栅格、状态用色块标签、表格紧凑、留白克制。
+在这个基调上尽量做得好看——真实的图像与字体、克制的层次、经得起看的细节。
+
+次要文字的对比度建议过 WCAG AA（正文 4.5:1，18px 以上或 14px 粗体 3:1）：浅底上
+别比 `#595959` 更浅（`#8c8c8c` 只有 3.36:1、`#bfbfbf` 只有 1.84:1）。机器体检
+量过三张首页，每张都自己挑了一个 3.95~4.09:1 的灰，就差那么一点点。
 
 现在输出那段 HTML。"""
 

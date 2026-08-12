@@ -128,32 +128,45 @@ def test_css_numbers_are_not_data_claims() -> None:
     assert not any("写死了数据声明" in p for p in validate_overview_html(markup, FACTS, CHARTS))
 
 
-# ── 安全 ────────────────────────────────────────────────────────────────
-
-@pytest.mark.parametrize(
-    "bad",
-    [
-        '<div class="ov-root"><script>alert(1)</script></div>',
-        '<div class="ov-root" onclick="alert(1)"></div>',
-        '<div class="ov-root"><iframe src="x"></iframe></div>',
-        '<div class="ov-root"><a href="javascript:alert(1)">x</a></div>',
-    ],
-)
-def test_scriptish_is_rejected(bad: str) -> None:
-    assert any("script" in p or "javascript" in p for p in validate_overview_html(bad, FACTS, CHARTS))
+# ── 视觉限制已撤（2026-08-12 傍晚，用户裁决"不要加任何禁止"）──────────────
+#
+# 这里原先有两组用例：`test_scriptish_is_rejected` 与
+# `test_external_resources_are_rejected`——它们钉的是"一个外链都不允许"和"不许
+# script"。前者是自伤：平台 CSP 明写 `img-src … https:` 与 Google Fonts 放通，
+# **是我们自己的校验把平台允许的东西挡在门外**，而页面观感一半在图像/图标/字体上
+# （对照 abi/screenshot-to-code：它出效果靠的正是这些）。
+#
+# 所以判据反过来钉：这些**必须放行**。可执行内容那条不在生成侧拦，改由渲染端
+# DOMPurify 负责（宿主安全，不是对设计的限制；见 OverviewHtmlSurface 头注）。
 
 
 @pytest.mark.parametrize(
-    "bad",
+    "rich",
     [
-        '<div class="ov-root"><style>@import url(https://fonts.googleapis.com/x);</style></div>',
-        '<div class="ov-root"><img src="https://example.com/a.png"></div>',
-        '<div class="ov-root"><style>.x{background:url(//cdn.example.com/a.png)}</style></div>',
+        '<img src="https://images.example.com/cover.jpg" alt="封面">',
+        '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">',
+        '<style>@import url(https://fonts.googleapis.com/css2?family=Inter);</style>',
+        '<style>.hero{background:url(https://cdn.example.com/bg.png) center/cover}</style>',
+        '<img src="https://placehold.co/640x360" alt="占位">',
+        '<a href="https://miantuan.ai" target="_blank" rel="noreferrer">外部链接</a>',
     ],
 )
-def test_external_resources_are_rejected(bad: str) -> None:
-    """一个外链都不允许：出口策略会挡，而且离线时版式会塌。"""
-    assert any("外部资源" in p for p in validate_overview_html(bad, FACTS, CHARTS))
+def test_图像字体外链一律放行(rich: str) -> None:
+    """撤禁令之后这些是**材料**，不是违规。挡住它们等于把观感天花板焊死。"""
+    markup = GOOD.replace('<div class="ov-kpi">', f'{rich}<div class="ov-kpi">', 1)
+    assert validate_overview_html(markup, FACTS, CHARTS) == []
+
+
+def test_生成侧不再拦脚本_那一层交给渲染端的消毒() -> None:
+    """脚本不在这儿拦，但**不等于它会被渲染**——渲染端 DOMPurify 照旧剥掉。
+
+    分工：生成侧管"内容对不对"（数字不能编、占位契约、引用真实存在），
+    渲染端管"宿主安不安全"。两件事混在一处的后果就是刚撤掉的那种自伤禁令。
+    """
+    with_script = GOOD.replace(
+        '<div class="ov-kpi">', '<script>alert(1)</script><div class="ov-kpi">', 1
+    )
+    assert validate_overview_html(with_script, FACTS, CHARTS) == []
 
 
 # ── 占位契约 ────────────────────────────────────────────────────────────
