@@ -1860,6 +1860,30 @@ export function AppRuntimeScreen({
                 OVERVIEW_KINDS.has(page.view.kind) &&
                 EXPERIENCE_BLOCK_CAPABILITY_BY_TYPE[b.type] === "filter"
               )
+          )
+          // 同一条"一页一个主人"的规矩，第四例：**新建入口不许出现两个**
+          //（2026-08-11 线上产物截图照出来的）。
+          //
+          // 现场：「团长管理」页右上角有脚手架的「+ 新建」，表格底下又有一个
+          // 「新增团长」按钮——后者是 RecordFormDialog{title:"新增团长"} 画的。
+          // 两个按钮打开的是同一张表单、写的是同一个实体，用户不知道该点哪个。
+          //
+          // 成因跟 DataTable 那条完全一样：**模型不知道这一页已经自带新建入口**，
+          // 只当页面是张白纸。所以判据也照抄那条——只摘"绑本页主实体"的，
+          // 绑**别的**实体的弹层表单是真新增内容（例如在团长页上新建自提点），
+          // 必须留着。
+          //
+          // 同样只在脚手架还在的时候摘：`canCreate` 为假（无权限）或本页没有
+          // 主实体时，脚手架那个按钮根本不出现，这时候它就是唯一的入口。
+          .filter(
+            b =>
+              !(
+                b.type === "RecordFormDialog" &&
+                page.entityId &&
+                pageAccess.get(page.id)?.canCreate !== false &&
+                (b.binding as { entityRef?: string } | undefined)?.entityRef ===
+                  page.entityId
+              )
           );
         // 积木内部的自我去重：模型偶尔把同一份榜/流声明两次（见
         // page-panel-dedupe.ts 的内容指纹判定）。
@@ -3668,10 +3692,25 @@ export function AppRuntimeScreen({
     // 哪一页有货、哪一页是空的要挨个点进去才知道；有了计数，应用一打开就
     // 有"这套系统里已经有数据在跑"的实感。锁住的页不显示——那是权限信息，
     // 不该从计数里泄出去。
+    //
+    // 2026-08-11：**只数真实数据，演示种子不计**。
+    //
+    // 线上产物截图照出来的：左侧六个菜单项后面**全是 12**。因为种子生成器给
+    // 每个实体都铺同样多的行，于是这个徽标对每一页说同一个数——
+    // **每项都一样的数字等于没有信息**，只剩噪音，而且长得像未读消息角标。
+    //
+    // 上面那句"哪一页有货、哪一页是空的"正是这条的初衷，而种子把每一页都
+    // 变成"有货"，初衷当场落空。页面里本来就另有一个「示例数据 N」徽标如实
+    // 标着种子，侧栏再数一遍是把同一份假数据吹两次。
+    //
+    // 所以判据换成真实行数：全是种子时侧栏干干净净，用户写下第一条真数据
+    // 之后徽标才出现——那一刻它才真的在说"这套系统里有数据在跑"。
     const rowCount = (() => {
       if (locked || m.pageId === "home") return 0;
       const entityId = schema.pages.find(p => p.id === m.pageId)?.entityId;
-      return entityId ? (state.entities[entityId]?.length ?? 0) : 0;
+      if (!entityId) return 0;
+      const total = state.entities[entityId]?.length ?? 0;
+      return Math.max(0, total - seedRowCount(state, entityId));
     })();
     return {
       key: m.pageId,

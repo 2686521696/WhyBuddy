@@ -738,12 +738,13 @@ function cellOf(
   row: RuntimeRow,
   rows: RuntimeRow[],
   fieldTypeOf: FieldTypeLookup | undefined,
-  enumOptionsOf: EnumOptionsLookup | undefined
+  enumOptionsOf: EnumOptionsLookup | undefined,
+  fieldSchemaOf?: (entityRef: string, fieldId: string) => AppFormFieldSchema | undefined
 ): React.ReactNode {
   if (!fieldRef) return null;
   const options = enumOptionsOf?.(entityRef, fieldRef) ?? [];
   const sample = rows.find(r => r.values?.[fieldRef] != null)?.values?.[fieldRef];
-  const semantic = fieldSemantic(entityRef, fieldRef, sample, fieldTypeOf, options);
+  const semantic = fieldSemantic(entityRef, fieldRef, sample, fieldTypeOf, options, fieldSchemaOf);
   return renderCell(semantic, row.values?.[fieldRef], options, fieldRef);
 }
 
@@ -1469,6 +1470,36 @@ function sanitizeFreeformStyle(
     if (FREEFORM_DANGEROUS_VALUE_RE.test(String(v))) continue;
     if (k === "lineHeight" && BARE_NUMBER_RE.test(String(v)) && Number(v) > LINE_HEIGHT_RATIO_MAX) {
       continue; // 裸数字倍数离谱地大——多半是把像素值当倍数写，丢弃回退默认行高
+    }
+    if (k === "height") {
+      // 设计模型写的 height 一律当 minHeight 用（2026-08-11）。
+      //
+      // ## 现场
+      //
+      // 线上生成的「邻里团长 / 邻里团享」首页，三张截图上都是同一个病：KPI 卡
+      // 互相叠、环图压住下面的折线图、标题被盖掉一半、两个大数字浮在卡片上。
+      //
+      // 数一下那份设计树就清楚了：
+      //     写死 height 的节点 17 个（136px / 260px / 200px / 40px …）
+      //     用 minHeight 的      1 个
+      //     用 overflow 的       0 个
+      //
+      // 设计 LLM **不知道内容实际会多高**——它没渲染过，只能照版式直觉写个数。
+      // 内容比它高就溢出，而没有 overflow 就不裁剪，于是直接盖在下一块上。
+      //
+      // ## 为什么是当 minHeight 而不是丢弃
+      //
+      // 那个数字**不是垃圾**：它表达的是"这一块我想占这么高"，对齐、留白、
+      // 视觉节奏都靠它。丢掉会让版面塌成一团。
+      // 当成下限则两头都保住：想要的高度拿得到，内容更高时容器跟着长。
+      //
+      // ⚠ 这是渲染端的兜底，不是设计端的修复。真正的解法是让设计侧拿到高度
+      // 预算（架构图「已知缺口」里记着这条）。在那之前，这里保证**不重叠**。
+      // 只写 minHeight、**不写 height**：两个都写的话 height 仍然把盒子钉死，
+      // 内容照样溢出（min-height 只是下限，管不住"内容比 height 高"这件事）。
+      // 显式写了 minHeight 的，稍后循环走到那个键时会自然覆盖掉这里的值。
+      if (!out.minHeight) out.minHeight = v;
+      continue;
     }
     out[k] = v;
   }
@@ -3439,6 +3470,7 @@ const ColumnSettingPanelRenderer: ExperienceBlockRenderer = ({
  */
 type FieldSemantic =
   | "money" | "number" | "boolean"
+  | "percent" | "progress" | "score"
   | "date" | "datetime"
   | "email" | "url" | "image" | "richtext"
   | "enum" | "relation"
@@ -3510,8 +3542,33 @@ function fieldSemantic(
   fieldId: string,
   sample: unknown,
   fieldTypeOf?: FieldTypeLookup,
-  options?: NormalizedFieldOption[]
+  options?: NormalizedFieldOption[],
+  fieldSchemaOf?: (entityRef: string, fieldId: string) => AppFormFieldSchema | undefined
 ): FieldSemantic {
+  // 字段 schema 里的 `format` 优先（2026-08-11）。
+  //
+  // ## 现场：同一个字段两种样子
+  //
+  //     页面自带表格   成团率 68%     ← 走 FieldValue → resolveValueType(读 format)
+  //     DataTable 积木 成团率 63      ← 走这里 → 只看 type，format 根本没传进来
+  //
+  // 两张表挨着摆在同一个应用里，一个有百分号一个没有。而数据模型里
+  // `completion_rate` 的 format **写着 percent**——声明是对的，是这条路读不到。
+  //
+  // ## 为什么不按名字猜（比如 /rate|率/ → percent）
+  //
+  // 因为**声明就在那儿**。仓库里 money 那一档是按名字猜的（MONEY_HINT），
+  // 那是没有 format 可读时的历史做法；在有声明的情况下再去猜，等于把一个
+  // 确定的事实换成一个启发式——今天已经因为"判据没挂在真相上"栽过好几次。
+  //
+  // 所以：拿得到 schema 就读 format，拿不到才落到下面的老判据。
+  const schema = fieldSchemaOf?.(entityRef, fieldId);
+  if (schema) {
+    const byFormat = resolveValueType(schema);
+    if (byFormat === "percent" || byFormat === "money" || byFormat === "progress" || byFormat === "score") {
+      return byFormat as FieldSemantic;
+    }
+  }
   // **有枚举取值本身就是一种声明**，而且比 type 字段更直接：调用方能给出
   // id→label 的对照，就说明这一列是枚举。
   //
@@ -3631,6 +3688,26 @@ function renderCell(
       const color = TONE_COLOR[opt.tone];
       return color ? <Tag color={color}>{opt.label}</Tag> : <Tag>{opt.label}</Tag>;
     }
+    // 数值三档：声明里写了 format 才会走到这儿（见 fieldSemantic 头上那段）。
+    // 认不出数字就原样回退——不编、不补零。
+    case "percent": {
+      const n = Number(raw);
+      return Number.isFinite(n)
+        ? <span style={{ fontVariantNumeric: "tabular-nums" }}>{`${n}%`}</span>
+        : <>{str}</>;
+    }
+    case "score": {
+      const n = Number(raw);
+      return Number.isFinite(n)
+        ? <span style={{ fontVariantNumeric: "tabular-nums" }}>{`${n} 分`}</span>
+        : <>{str}</>;
+    }
+    case "progress": {
+      const n = Number(raw);
+      return Number.isFinite(n)
+        ? <Progress percent={Math.max(0, Math.min(100, n))} size="small" style={{ maxWidth: 120, marginBottom: 0 }} />
+        : <>{str}</>;
+    }
     case "money": {
       const n = Number(raw);
       if (!Number.isFinite(n)) return str;
@@ -3737,6 +3814,7 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
   fieldLabelOf,
   enumOptionsOf,
   fieldTypeOf,
+  fieldSchemaOf,
   selection,
   onSelectionChange,
   columnState,
@@ -3820,7 +3898,7 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
     const options = enumOptionsOf?.(bound.entityRef, c) ?? [];
     // 取第一个非空值当样本定语义——照 refine 的 inferencer，它也是看值。
     const sample = bound.rows.find(r => r.values?.[c] != null)?.values?.[c];
-    const semantic = fieldSemantic(bound.entityRef, c, sample, fieldTypeOf, options);
+    const semantic = fieldSemantic(bound.entityRef, c, sample, fieldTypeOf, options, fieldSchemaOf);
     return {
       key: c,
       dataIndex: c,
@@ -4513,6 +4591,7 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
   fieldLabelOf,
   enumOptionsOf,
   fieldTypeOf,
+  fieldSchemaOf,
   focus,
 }) => {
   // 钩子必须在任何提前 return 之前——否则 children 非空那次会少调一个 hook，
@@ -4576,7 +4655,7 @@ const RecordDetailRenderer: ExperienceBlockRenderer = ({
           // 两个区块里必须读起来一样"这句纪律本来就写在这，只是当初只兑现了
           // 枚举那一条。
           const sample = row.values?.[f];
-          const semantic = fieldSemantic(bound.entityRef, f, sample, fieldTypeOf, options);
+          const semantic = fieldSemantic(bound.entityRef, f, sample, fieldTypeOf, options, fieldSchemaOf);
           return {
             key: f,
             dataIndex: f,
@@ -6093,11 +6172,11 @@ const AnalyticsDateScopeRenderer: ExperienceBlockRenderer = ({ block, children, 
 };
 
 /** 当前业务对象的少量关键字段摘要；完整详情仍由 main/aside 的 RecordDetail 承担。 */
-const HeaderEntitySummaryRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, fieldLabelOf, fieldTypeOf, enumOptionsOf }) => {
+const HeaderEntitySummaryRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, focus, fieldLabelOf, fieldTypeOf, fieldSchemaOf, enumOptionsOf }) => {
   if (children !== undefined && children !== null) return <>{children}</>;
   const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const fields = fieldRefListOf(block, "fieldRefs"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
   if (!bound || !titleRef || !row || fields.length === 0) return <BlockShell block={block} testid="header-entity-summary"><BlockEmpty hint="页头实体摘要尚未绑定当前记录和关键字段" /></BlockShell>;
-  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? block.props?.title ?? "当前记录")} testid="header-entity-summary"><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options, fieldLabelOf?.(bound.entityRef, field) ?? field) }; })} /></BlockShell>;
+  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? block.props?.title ?? "当前记录")} testid="header-entity-summary"><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options, fieldSchemaOf); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options, fieldLabelOf?.(bound.entityRef, field) ?? field) }; })} /></BlockShell>;
 };
 
 /** 单个当前对象的进度、状态和下一节点摘要，不与多指标 MetricGrid 重复。 */
@@ -6228,11 +6307,11 @@ const DataFreshnessIndicatorRenderer: ExperienceBlockRenderer = ({ block, childr
  * 写侧（ProFormMoney 那一档）由此共用同一个 valueType 判定，跟 ProComponents
  * 把 ProField 作为 ProForm 读态的做法是同一条纪律。
  */
-const compactSummaryRenderer = (testid: string, fallback: string): ExperienceBlockRenderer => ({ block, children, entityRows, focus, fieldLabelOf, fieldTypeOf, enumOptionsOf }) => {
+const compactSummaryRenderer = (testid: string, fallback: string): ExperienceBlockRenderer => ({ block, children, entityRows, focus, fieldLabelOf, fieldTypeOf, fieldSchemaOf, enumOptionsOf }) => {
   if (children != null) return <>{children}</>;
   const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const fields = fieldRefListOf(block, "fieldRefs"); const row = bound?.rows.find(item => item.id === focus?.[bound.entityRef]) ?? bound?.rows[0];
   if (!bound || !titleRef || !fields.length || !row) return <BlockShell block={block} testid={testid}><BlockEmpty hint={`${fallback}尚未绑定当前记录和摘要字段`} /></BlockShell>;
-  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? fallback)} testid={testid}><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options, fieldLabelOf?.(bound.entityRef, field) ?? field) }; })} /></BlockShell>;
+  return <BlockShell block={block} title={String(row.values?.[titleRef] ?? fallback)} testid={testid}><ProDescriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} dataSource={row.values ?? {}} columns={fields.slice(0, 6).map(field => { const options = enumOptionsOf?.(bound.entityRef, field) ?? []; const semantic = fieldSemantic(bound.entityRef, field, row.values?.[field], fieldTypeOf, options, fieldSchemaOf); return { key: field, dataIndex: field, title: fieldLabelOf?.(bound.entityRef, field) ?? field, render: (_: unknown, record: Record<string, unknown>) => renderCell(semantic, record?.[field], options, fieldLabelOf?.(bound.entityRef, field) ?? field) }; })} /></BlockShell>;
 };
 const WorkItemContextSummaryRenderer = compactSummaryRenderer("work-item-context-summary", "工作项摘要");
 
