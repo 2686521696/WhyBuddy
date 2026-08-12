@@ -457,6 +457,65 @@ def _theme_palette(
     return palette
 
 
+#: 视觉配方 → 给设计模型的**事实**（2026-08-12）。
+#:
+#: ## 这里原来是断的
+#:
+#: `recipe` 这个词在本文件里此前出现 **0 次**：设计首页的那个 LLM 根本不知道
+#: 外壳是深色还是浅色、圆角是 4 还是 20、密度是紧还是松。它拿着色板里的浅色
+#: `contentBg` 配深色文字画卡片，而外壳可能是 `dark-monitoring` 的近黑画布
+#: ——那种情况下整页文字直接看不见。这是个一直没被触发的潜伏 bug：模型几乎
+#: 总选 compact-dense（浅色），所以没人撞上。
+#:
+#: 用户拿参照图点名要"深底大圆角"那种观感之后，这条必须先接上——不接的话
+#: 新配方一选中就是一页看不见的字。
+#:
+#: ## 只给事实，不给做法
+#:
+#: 跟这个文件另外两处改写同一个规矩：这里只说"外壳长什么样"（深/浅、画布色、
+#: 圆角、内边距），**不规定卡片该怎么排、什么该多大**——那是 craft 那一段的
+#: 职责，它会按业务现写。
+_RECIPE_FACTS = {
+    "default": ("浅色", None, 6, 16),
+    "spacious-guided": ("浅色", None, 8, 24),
+    "compact-dense": ("浅色", None, 4, 12),
+    "content-cards": ("浅色", None, 14, 18),
+    "dark-monitoring": ("深色", "#141414", 4, 12),
+    "high-contrast": ("浅色", None, 4, 16),
+    "bold-dark": ("深色", "#141414", 20, 20),
+}
+
+
+def _recipe_prompt_fragment(recipe_id: str) -> str:
+    """外壳的视觉配方——设计必须**为它**设计，不能各画各的。"""
+    facts = _RECIPE_FACTS.get((recipe_id or "").strip())
+    if not facts:
+        return ""
+    tone, canvas, radius, padding = facts
+    lines = [
+        f"这个应用的外壳用的是「{recipe_id}」配方，你的设计会嵌进这个外壳里，"
+        f"所以必须**为它**设计：",
+        f"- 明暗：{tone}外壳",
+        f"- 卡片圆角基准：{radius}px（你可以在它之上放大，但不要比它更方）",
+        f"- 内边距基准：{padding}px",
+    ]
+    if tone == "深色":
+        lines.append(
+            f"- 画布底色：{canvas}。**这是深色外壳**，所以：正文/数字用浅色"
+            "（接近白），次要文字用中性浅灰；卡片底色要比画布**略亮**一档来分层"
+            "（不是用白卡片，白卡片在近黑画布上是刺眼的色块）；分割线用极低"
+            "对比的浅色而不是深色。拿浅色底配深色字会让整页看不见——这是这条"
+            "配方下最容易犯、也最致命的错。"
+        )
+    if radius >= 16:
+        lines.append(
+            "- 这套配方的气质是**大圆角 + 宽松**：卡片之间留白，卡片内部让一个"
+            "主数字占住视觉重心、标签退到小字，强调色只点在一两处最要紧的地方，"
+            "不要每张卡都上色。"
+        )
+    return "\n".join(lines)
+
+
 def _theme_prompt_fragment(
     theme_id: str,
     generated_theme: Optional[dict[str, Any]] = None,
@@ -1187,7 +1246,11 @@ _FREEFORM_CRAFT_REFINE_SYSTEM = (
 
 
 def _refine_craft_via_llm(
-    design_brief: str, datamodel: dict[str, Any], *, device: str = ""
+    design_brief: str,
+    datamodel: dict[str, Any],
+    *,
+    device: str = "",
+    design_recipe: str = "",
 ) -> Optional[str]:
     """让 LLM 按这一页的业务现写「怎么画」。**加分项，失败静默回退。**
 
@@ -1230,6 +1293,8 @@ def _refine_craft_via_llm(
     facts = "\n".join(
         [
             f"设备档：{device or 'desktop'}。",
+            # 外壳配方也是事实——它写"怎么画"，深浅/圆角对不上就白写了
+            *( [_recipe_prompt_fragment(design_recipe)] if design_recipe else [] ),
             f"这一页要覆盖的内容范围：\n{design_brief}",
             f"真实数据字段：\n{_datamodel_summary_lines(datamodel)}",
         ]
@@ -1269,14 +1334,21 @@ def build_freeform_prompt(
     generated_theme: Optional[dict[str, Any]] = None,
     chart_colors: Optional[list[str]] = None,
     chart_variant_key: str = "",
+    design_recipe: str = "",
 ) -> str:
     # 「怎么画」这一段每页现写一次（拿确定性换多样性，理由见 _refine_craft_via_llm）。
     # 失败静默回落到兜底常量，逐字节等于改造前的行为。
-    craft = _refine_craft_via_llm(design_brief, datamodel, device=device) or _craft_fallback()
+    craft = (
+        _refine_craft_via_llm(
+            design_brief, datamodel, device=device, design_recipe=design_recipe
+        )
+        or _craft_fallback()
+    )
     return f"""你是一名前端视觉设计师。设计一个可视化组件：{design_brief}
 要有视觉创意和现代感，大胆用间距、层次、颜色对比、图标去表达内容。
 
 {_theme_prompt_fragment(theme_id, generated_theme, chart_colors, chart_variant_key)}
+{_recipe_prompt_fragment(design_recipe)}
 {_device_prompt_fragment(device)}
 
 只能用安全原子积木拼：{", ".join(FREEFORM_ALLOWED_TAGS)} 标签。
@@ -1864,6 +1936,7 @@ def _render_preview_screenshot_b64(
     theme_id: str,
     device: str,
     generated_theme: Optional[dict[str, Any]],
+    design_recipe: str = "",
     reference_image_b64: Optional[str] = None,
     landing_media_b64: Optional[str] = None,
 ) -> Optional[str]:
@@ -1896,6 +1969,9 @@ def _render_preview_screenshot_b64(
             "themeId": theme_id,
             "generatedTheme": generated_theme,
             "device": device or _DEFAULT_DEVICE,
+            # 外壳配方也要带上：预览页是截图自检的目标，不带的话一份为深色外壳
+            # 设计的首页会被渲染在白底上，自检评判的是一个不存在的页面。
+            "designRecipeRef": design_recipe,
         }
         hero_b64 = landing_media_b64 or reference_image_b64
         if hero_b64:
@@ -2281,6 +2357,7 @@ def generate_freeform_block(
     reconstruction_prompt: Optional[str] = None,
     chart_colors: Optional[list[str]] = None,
     chart_variant_key: str = "",
+    design_recipe: str = "",
 ) -> dict[str, Any]:
     """生成 + 深校验一个 FreeformInsight 区块的内容树。校验失败时把「上次
     输出 + 具体报错」拼回消息重问（跟 structured_llm_json 同一套 reask 语义，
@@ -2320,6 +2397,7 @@ def generate_freeform_block(
         design_brief, datamodel, theme_id=theme_id, device=device,
         generated_theme=generated_theme, chart_colors=chart_colors,
         chart_variant_key=chart_variant_key,
+        design_recipe=design_recipe,
     )
     if reconstruction_prompt:
         prompt_text += (
@@ -2513,6 +2591,7 @@ def generate_freeform_block(
                         theme_id=theme_id,
                         device=device,
                         generated_theme=generated_theme,
+                        design_recipe=design_recipe,
                         reference_image_b64=reference_image_b64,
                         landing_media_b64=landing_media_b64,
                     )
@@ -2586,6 +2665,9 @@ def _enrich_freeform_blocks_inner(model: dict[str, Any]) -> dict[str, Any]:
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
     theme_id = str(identity.get("theme") or "").strip()
+    # 外壳的视觉配方（2026-08-12）。此前设计模型完全不知道它，深色配方一选中
+    # 就是一页看不见的字——见 _recipe_prompt_fragment。
+    design_recipe = str(identity.get("designRecipeRef") or "").strip()
     device = "phone" if appbundle.get("preferredDevice") == "phone" else "desktop"
     # identity_theme_gen.enrich_identity_theme 如果已经跑过（在这之前调用），
     # appIdentity.generatedTheme 会有一份自定义主题——FreeformInsight 的配色
@@ -2633,7 +2715,7 @@ def _enrich_freeform_blocks_inner(model: dict[str, Any]) -> dict[str, Any]:
                 # 灰度一旦放开就直接有数，不用再回来补一次。
                 with _enrich_stage("freeform.block", page=str(page.get("id") or ""), block=bid):
                     content = generate_freeform_block(
-                        brief, datamodel, theme_id=theme_id, device=device,
+                        brief, datamodel, theme_id=theme_id, design_recipe=design_recipe, device=device,
                         generated_theme=generated_theme,
                         use_reference_image=use_ref,
                         allow_screenshot_verify=allow_shot,
@@ -3258,6 +3340,9 @@ def _enrich_monitor_page_overviews_inner(
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
     theme_id = str(identity.get("theme") or "").strip()
+    # 外壳的视觉配方（2026-08-12）。此前设计模型完全不知道它，深色配方一选中
+    # 就是一页看不见的字——见 _recipe_prompt_fragment。
+    design_recipe = str(identity.get("designRecipeRef") or "").strip()
     device = "phone" if appbundle.get("preferredDevice") == "phone" else "desktop"
     # 哪一页代表这个应用：落地页那张参照板就是用户点开应用第一眼看到的画面，
     # 也就是卡片该显示的东西（见 OverviewPreviewSink.offer 的取舍规则）。
@@ -3575,7 +3660,7 @@ def _enrich_monitor_page_overviews_inner(
                 total=design_total,
             ):
                 content = generate_freeform_block(
-                    brief, datamodel, theme_id=theme_id, device=device,
+                    brief, datamodel, theme_id=theme_id, design_recipe=design_recipe, device=device,
                     generated_theme=generated_theme,
                     use_reference_image=use_ref,
                     allow_screenshot_verify=allow_shot,

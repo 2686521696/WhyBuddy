@@ -86,6 +86,27 @@ const RECIPES: Record<string, DesignRecipe> = {
     padding: 16,
     highContrast: true,
   },
+  /**
+   * 深底大圆角（2026-08-12 新增）。
+   *
+   * 用户拿一组参照图点名要这种观感：近黑画布、20px+ 圆角、巨数字配小标签、
+   * 单一浓烈强调色只点在一两处。前面六套里没有一套是它——`dark-monitoring`
+   * 虽然也是深色，但 `borderRadius: 4` 是运维大屏的硬朗方脸，跟这个正相反。
+   *
+   * 取值依据（照参照图量的）：卡片圆角 20~28px 取 20（antd 的 borderRadius 是
+   * 基准值，实际卡片会在它之上再放大）；padding 20 对应"卡内宽松、卡间紧凑"
+   * 那种呼吸感；density 用 standard 而不是 compact——参照图的密度不高，
+   * 密的是**信息层级**不是间距。
+   */
+  "bold-dark": {
+    id: "bold-dark",
+    label: "深底大圆角 · 消费级",
+    density: "standard",
+    dark: true,
+    borderRadius: 20,
+    padding: 20,
+    highContrast: false,
+  },
 };
 
 /** 全部配方 id（parity 测试/图鉴用，顺序与 Python DESIGN_RECIPES 账本一致）。 */
@@ -96,6 +117,7 @@ export const DESIGN_RECIPE_IDS: readonly string[] = [
   "content-cards",
   "dark-monitoring",
   "high-contrast",
+  "bold-dark",
 ];
 
 /** 解析配方：未知/缺省 → default（老模型/无声明零变化）。 */

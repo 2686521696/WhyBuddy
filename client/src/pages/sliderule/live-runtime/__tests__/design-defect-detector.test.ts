@@ -5,7 +5,7 @@
  * 那张首页把 5 个子列挤到 120px、中文标题竖着一字一行，测试全绿门禁全过。
  *
  * 三条判据的夹具都取自**真实产出量到的数**，不是编的：
- *   char-wrap    「案件名称 1」6 字 / 行高 22px / 高 66px → 3 行，每行 2 字
+ *   char-wrap    「办理中案件」5 字 / 容器 30px / 高 66px → 3 行，每行 1.7 字
  *   text-clip    scrollWidth 226 vs clientWidth 120（impeccable 的 16px 阈值）
  *   low-contrast #bfbfbf 对白底 1.84:1（今天修掉的那处 11px 提示文字）
  *
@@ -53,27 +53,27 @@ const snap = (nodes: MeasuredNode[]): MeasuredSnapshot => ({
 
 // ── ① 逐字换行 ───────────────────────────────────────────────────────
 describe("char-wrap：列被挤到放不下一个词", () => {
-  it("逮住真实产出那个形态：6 字挤成 3 行", () => {
-    // 律所首页「案件名称 1」量到的：容器 120px、行高 22、总高 66
+  it("逮住真实产出那个形态：5 字挤成 3 行、容器只有 30px", () => {
+    // 律所首页「办理中案件」量到的：容器 30px、行高 22、总高 66
     const d = detectCharWrap(snap([
-      node({ selector: "strong.title", tag: "strong", ownText: "案件名称 1",
-             rect: { x: 0, y: 0, width: 120, height: 66 } }),
+      node({ selector: "strong.title", tag: "strong", ownText: "办理中案件",
+             rect: { x: 0, y: 0, width: 30, height: 66 } }),
     ]));
     expect(d).toHaveLength(1);
     expect(d[0].id).toBe("char-wrap");
     expect(d[0].severity).toBe("critical");
     expect(d[0].message).toContain("3 行");
-    expect(d[0].message).toContain("120px");
+    expect(d[0].message).toContain("30px");
   });
 
   it("正常换行不报 —— 判据不许扩大化", () => {
-    // 同一句话在 400px 里换 2 行：每行 3 字，仍在阈值之上
+    // 一句长话在 200px 里换 3 行：每行 6 字，仍在阈值之上
     expect(detectCharWrap(snap([
-      node({ ownText: "案件名称 1", rect: { x: 0, y: 0, width: 400, height: 44 } }),
+      node({ ownText: "本月办理中案件与待处理事项", rect: { x: 0, y: 0, width: 200, height: 66 } }),
     ]))).toEqual([]);
     // 单行的一律不判
     expect(detectCharWrap(snap([
-      node({ ownText: "案件名称 1", rect: { x: 0, y: 0, width: 400, height: 22 } }),
+      node({ ownText: "办理中案件", rect: { x: 0, y: 0, width: 30, height: 22 } }),
     ]))).toEqual([]);
   });
 
@@ -83,11 +83,33 @@ describe("char-wrap：列被挤到放不下一个词", () => {
     ]))).toEqual([]);
   });
 
-  it("行高取不到就跳过 —— 推不出行数时宁可漏报", () => {
+  it("行高或字号取不到就跳过 —— 推不出行数时宁可漏报", () => {
+    const narrow = { x: 0, y: 0, width: 30, height: 66 };
     expect(detectCharWrap(snap([
-      node({ ownText: "案件名称 1", lineHeightPx: 0,
-             rect: { x: 0, y: 0, width: 120, height: 66 } }),
+      node({ ownText: "办理中案件", lineHeightPx: 0, rect: narrow }),
     ]))).toEqual([]);
+    expect(detectCharWrap(snap([
+      node({ ownText: "办理中案件", fontSizePx: 0, rect: narrow }),
+    ]))).toEqual([]);
+  });
+
+  it("一行放得下就不报 —— 多出来的高度是子元素撑的，不是窄", () => {
+    // 深色版农场首页那个 KPI 的真实量值：`<strong>` 里除了「10,900」还有两行
+    // 子元素，盒子高 114 = 3×38，按高度算是 3 行——但 607px / 34px 一行能塞
+    // 17 个字，这串 6 个字根本没被挤。这是上线首日逮到的唯一一处误报。
+    expect(detectCharWrap(snap([
+      node({ selector: "strong", tag: "strong", ownText: "10,900",
+             fontSizePx: 34, fontWeight: 700, lineHeightPx: 38,
+             rect: { x: 0, y: 0, width: 607, height: 114 } }),
+    ]))).toEqual([]);
+    // 同一串数字在浅色版里容器只有 92px —— 那次是真挤，闸门必须放它过去
+    const real = detectCharWrap(snap([
+      node({ selector: "strong", tag: "strong", ownText: "10,900",
+             fontSizePx: 34, fontWeight: 700, lineHeightPx: 38,
+             rect: { x: 0, y: 0, width: 92, height: 114 } }),
+    ]));
+    expect(real).toHaveLength(1);
+    expect(real[0].message).toContain("92px");
   });
 });
 
@@ -188,7 +210,7 @@ describe("low-contrast：WCAG AA", () => {
 describe("整体", () => {
   it("三条一起跑并按 id 归组", () => {
     const defects = detectDesignDefects(snap([
-      node({ selector: "a", ownText: "案件名称 1", rect: { x: 0, y: 0, width: 120, height: 66 } }),
+      node({ selector: "a", ownText: "办理中案件", rect: { x: 0, y: 0, width: 30, height: 66 } }),
       node({ selector: "b", ownText: "很长的说明", scrollWidth: 226, clientWidth: 120 }),
       node({ selector: "c", ownText: "暂无数据", fontSizePx: 11, color: { r: 191, g: 191, b: 191 } }),
     ]));

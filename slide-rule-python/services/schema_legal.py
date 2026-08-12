@@ -72,6 +72,11 @@ DESIGN_RECIPES = (
     "content-cards",     # 圆角卡片感更强（内容创作/知识管理类）
     "dark-monitoring",   # 深色 + 紧凑（运维大屏/监控场景）
     "high-contrast",     # 边框加深、字号略增（无障碍场景）
+    # 2026-08-12 新增。前面五套都是"后台密度"档，没有一套是**深底大圆角**的
+    # 现代移动端观感（用户拿参照图点名要的那种：近黑画布、20px+ 圆角、巨数字配
+    # 小标签、单一浓烈强调色）。dark-monitoring 虽然也是深色，但它 borderRadius=4
+    # 是运维大屏的硬朗方脸，跟这个正相反，不能拿来顶。
+    "bold-dark",         # 深底 + 大圆角 + 宽松（现代移动端/消费级观感）
 )
 
 
@@ -1304,6 +1309,11 @@ def experience_block_prompt_block(
         "content-cards = larger rounded cards for content/knowledge tools; "
         "dark-monitoring = dark background + compact spacing for ops dashboards; "
         "high-contrast = darker borders and larger text for accessibility. "
+        "bold-dark = near-black canvas + LARGE 20px corner radius + generous padding, "
+        "for consumer-grade / mobile-first products where the home screen is a few big "
+        "numbers and one bold accent, not a data grid (habit trackers, weather, reading, "
+        "health, personal finance). Pick it over dark-monitoring when the product is "
+        "consumer-facing: dark-monitoring is the square-cornered ops-wall look. "
         "default = no override, follows the theme's own spacing. "
         "Do not free-generate colors or CSS — only reference a recipe by id."
     )

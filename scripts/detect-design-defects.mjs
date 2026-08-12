@@ -27,6 +27,8 @@ const flag = (name, dflt) => {
 const BASE = flag("base", "http://127.0.0.1:3000");
 const JSON_OUT = flag("json", "");
 const SHOTS = flag("shots", "");
+// 量出来的原始快照。判据报了一处、要判断它是真缺陷还是误报时，看的就是这个。
+const DUMP = flag("dump", "");
 const MODELS = args.filter(a => !a.startsWith("--") && a.endsWith(".json"))
   .filter((a, i, all) => all.indexOf(a) === i)
   .filter(a => a !== JSON_OUT);
@@ -157,6 +159,7 @@ try {
 }
 
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
+if (DUMP) mkdirSync(DUMP, { recursive: true });
 const browser = await chromium.launch({ executablePath: EXECUTABLE });
 const report = [];
 let total = 0;
@@ -175,6 +178,7 @@ for (const path of MODELS) {
     themeId: identity.theme ?? "",
     generatedTheme: identity.generatedTheme ?? null,
     device: model.appbundle?.preferredDevice ?? "desktop",
+    designRecipeRef: identity.designRecipeRef ?? "",
     entityRows: seedRows(model),
   };
 
@@ -189,6 +193,7 @@ for (const path of MODELS) {
   await page.waitForTimeout(2000);
 
   const snapshot = await page.evaluate(COLLECT);
+  if (DUMP) writeFileSync(`${DUMP}/${key}.snapshot.json`, JSON.stringify(snapshot, null, 2));
   const defects = detectDesignDefects(snapshot);
   const summary = summarizeDefects(defects);
   total += defects.length;

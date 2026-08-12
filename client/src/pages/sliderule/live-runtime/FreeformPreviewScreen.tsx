@@ -19,6 +19,11 @@ import { ConfigProvider } from "antd";
 import { ExperienceBlockBoundary } from "./block-registry";
 import type { ExperienceBlockInstance } from "./block-registry";
 import { resolveIdentityTheme } from "./identity-themes";
+import {
+  DARK_CANVAS_BG,
+  designRecipeAlgorithms,
+  resolveDesignRecipe,
+} from "./design-recipes";
 import type { RuntimeRow } from "./live-runtime";
 
 interface FreeformPreviewPayload {
@@ -27,6 +32,17 @@ interface FreeformPreviewPayload {
   generatedTheme?: Record<string, unknown>;
   device?: string;
   entityRows?: Record<string, RuntimeRow[]>;
+  /**
+   * 外壳的视觉配方（2026-08-12）。
+   *
+   * 这个预览页是**截图自检的目标**，可它此前只传了 colorPrimary：没有
+   * darkAlgorithm、没有圆角、画布固定用浅色 contentBg。于是一份为深色外壳
+   * 设计的首页会被渲染在白底上——自检看到的画面跟用户看到的不是同一个东西，
+   * 基于它的任何判断（截图评审、对比度体检）都在评判一个不存在的页面。
+   *
+   * 缺省时行为与从前逐字节一致（resolveDesignRecipe 未知/缺省 → default）。
+   */
+  designRecipeRef?: string;
 }
 
 const DEVICE_CONTENT_WIDTH: Record<string, number> = {
@@ -80,14 +96,29 @@ export default function FreeformPreviewScreen({ pid }: { pid?: string }) {
     freeformContent: payload.freeformContent,
   };
 
+  // 配方与运行时同一套解析和同一套 token 映射（不另立一份，否则自检看到的
+  // 外壳跟真应用又会漂开——AppRuntimeScreen 那边是 designRecipeAlgorithms +
+  // borderRadius/padding 两个 token + dark 时换画布）。
+  const recipe = resolveDesignRecipe(payload.designRecipeRef);
   return (
-    <ConfigProvider theme={{ token: { colorPrimary: identityTheme.primary } }}>
+    <ConfigProvider
+      theme={{
+        cssVar: true,
+        algorithm: designRecipeAlgorithms(recipe, false),
+        token: {
+          colorPrimary: identityTheme.primary,
+          borderRadius: recipe.borderRadius,
+          padding: recipe.padding,
+        },
+      }}
+    >
       <div
         data-testid="freeform-preview-root"
+        data-recipe={recipe.id}
         style={{
           width,
           minHeight: 200,
-          background: identityTheme.contentBg,
+          background: recipe.dark ? DARK_CANVAS_BG : identityTheme.contentBg,
           padding: 20,
           boxSizing: "border-box",
         }}

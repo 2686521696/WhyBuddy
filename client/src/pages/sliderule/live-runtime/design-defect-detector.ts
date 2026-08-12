@@ -104,6 +104,16 @@ const CHAR_WRAP_MAX_CHARS_PER_LINE = 2.0;
 /** 太短的串不判：一两个字本来就该一行一个。 */
 const CHAR_WRAP_MIN_TEXT_LENGTH = 4;
 
+/**
+ * 一行最多塞几个字（保守下界）。
+ *
+ * 按"每个字占满一个 em"算——中日韩全角字就是这样，拉丁字母和数字都比这窄。
+ * 所以这个容量是**低估**的：宁可少跳过（多报），不会因为高估容量而漏掉真缺陷。
+ */
+function oneLineCapacity(widthPx: number, fontSizePx: number): number {
+  return Math.floor(widthPx / fontSizePx);
+}
+
 /** 这些标签的文字溢出不算缺陷（可滚代码块、输入框自己管）。 */
 const TEXT_SKIP_TAGS = new Set([
   "pre", "code", "input", "textarea", "select", "option", "svg", "canvas",
@@ -210,8 +220,17 @@ export function detectLowContrast(snapshot: MeasuredSnapshot): DesignDefect[] {
  * 判据用**症状**而不是列宽阈值：量"平均每行几个字"。这样语言无关（中文一个字
  * 一个格、英文一个词好几格，px 下限对两者不是同一个数），而且不用猜断点。
  *
- * 行数由 `height / lineHeight` 推。lineHeight 取不到（0 或 NaN）就跳过——
- * 那种情况推不出行数，宁可漏报。
+ * 行数由 `height / lineHeight` 推。lineHeight 或字号取不到就跳过——那种情况
+ * 推不出行数，宁可漏报。
+ *
+ * ⚠ 高度推行数有个已知的坑，第一次跑深色首页就踩了：`height / lineHeight` 量的是
+ * **整个盒子**，而盒子里可能还有别的元素。深色版农场首页那个 KPI 是
+ * `<strong>` 里放了大数字 + 两行子元素，自己的文字「10,900」明明一行放得下
+ * （容器 607px、字号 34px），却按高度算出 3 行被报成逐字换行。
+ *
+ * 所以加一道**可行性闸**：这串字在这个宽度里一行放不下，才谈得上"被挤"。放得下
+ * 就说明多出来的高度是别的东西撑的，不是窄。同一个数字在浅色版里容器只有 92px
+ * ——那次是真挤——闸门照样放它过去，这才是判据该有的分辨力。
  */
 export function detectCharWrap(snapshot: MeasuredSnapshot): DesignDefect[] {
   const out: DesignDefect[] = [];
@@ -221,6 +240,8 @@ export function detectCharWrap(snapshot: MeasuredSnapshot): DesignDefect[] {
     const text = n.ownText;
     if (text.length < CHAR_WRAP_MIN_TEXT_LENGTH) continue;
     if (!Number.isFinite(n.lineHeightPx) || n.lineHeightPx <= 0) continue;
+    if (!Number.isFinite(n.fontSizePx) || n.fontSizePx <= 0) continue;
+    if (text.length <= oneLineCapacity(n.rect.width, n.fontSizePx)) continue;
     const lines = Math.round(n.rect.height / n.lineHeightPx);
     if (lines < 2) continue;
     const perLine = text.length / lines;
