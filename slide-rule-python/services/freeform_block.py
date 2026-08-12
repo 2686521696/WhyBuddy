@@ -2703,6 +2703,166 @@ def _marketing_landing_design_brief(
 _BLOCK_BY_TYPE: dict[str, Any] = {str(b["type"]): b for b in EXPERIENCE_BLOCKS}
 
 
+#: 首页 brief 改写的**元提示词**（2026-08-12）。
+#:
+#: ## 为什么要有这一步
+#:
+#: 生图那条路早就是这么干的，而且是**整段替换**：
+#:
+#:     _build_overview_sheet_prompt:
+#:         facts = _build_overview_sheet_facts(...)      # 模板，只当输入
+#:         return _refine_sheet_prompt_via_llm(facts) or facts   # 出去的是 LLM 写的
+#:
+#: 设计这条路却是**附加**：`build_freeform_prompt` 把 `{design_brief}` 原样插进
+#: f-string，`_refine_craft_via_llm` 只是旁边多加一段。所以模板那半截逐字进了
+#: 提示词——实测两个完全不同的业务域相似度 **83.3%**，而且拆开看：
+#:
+#:     删掉跟 craft 抢版式话语权的句子后  → 81.0%
+#:     再假设把硬契约整段搬走（纯事实）    → 67.2%   ← 光删句子的地板
+#:
+#: 降不下去的原因不是"话太多"，是**每一行的脚手架都一样**："必须包含的 KPI
+#: 统计卡：X（Y数量）"、"- X（Type）：实体 "y"，可用字段 …"——变的只有名字。
+#: 要真降下来，只能跟生图那条路一样：模板退成**输入**，出去的话由 LLM 现写。
+#:
+#: ## 跟生图那条路的一个必要区别：这份要校验
+#:
+#: 生图提示词写坏了只是图难看（而且真的复发过——灰条占位）。这份不一样，它带着
+#: **rowsRef 要绑的实体/字段 id**：改写把 `"approval_record"` 写成"审批记录表"，
+#: 设计模型就绑不上数据，积木照旧消失——正是今天刚修的那个 bug。所以改写完要
+#: 机械校验必须留下的词，缺一个就整段回退模板（fail-open，同这个文件另外两处）。
+_OVERVIEW_BRIEF_REFINE_SYSTEM = (
+    "你是给「界面设计模型」写设计任务书的人。下面给你一个企业应用某一页的"
+    "**事实清单**：这一页要覆盖的 KPI 与图表、可摆的逐行内容及其数据绑定、"
+    "以及若干硬性约束。\n\n"
+    "请把它改写成一段**中文设计任务书**，交给另一个模型去产出这一页的版式。\n\n"
+    "要求：\n"
+    "1. 只输出任务书正文，不要解释、不要标题、不要 markdown 代码块。\n"
+    "2. **用这个业务自己的话说**。别套「必须包含的 KPI 统计卡：…」「必须包含的"
+    "图表：…」这种清单式模板——那是喂给你的原始形态，不是你该交出去的形态。"
+    "按这一页的人打开它要干什么来组织叙述：先说这一页是干什么用的、谁在用、"
+    "打开后最要紧的是哪件事，再说要呈现哪些东西。\n"
+    "3. **一项都不能少，也一项都不能多**：事实清单里的每个 KPI、每张图表、每块"
+    "逐行内容都要在你的任务书里出现；清单之外的指标、图表、数据一个字都不许添。\n"
+    "4. **实体 id 和字段 id 必须原样保留**（那些带引号的英文标识，如 "
+    '"approval_record"、"submitted_at"）。它们是下游绑数据用的真名，翻译成中文'
+    "或改写都会让这块内容绑不上数据、直接消失。名字可以用中文讲，id 必须照抄。\n"
+    "5. 硬性约束（不能新增/遗漏、取舍规则、有没有参照图、绑数据用 rowsRef）"
+    "要完整保留其**意思**，措辞可以是你自己的。\n"
+    "6. **不要**写任何关于 JSON 结构、标签名、允许的 CSS 属性名、间距圆角具体"
+    "数值、图标怎么挂的内容——那些系统另行给出，写了会互相打架。版式与视觉气质"
+    "也不用你操心，有另一段专门负责。\n"
+    "7. 长度 250-500 字，写成连贯的中文段落。"
+)
+
+
+def _overview_brief_required_tokens(page: dict[str, Any]) -> list[str]:
+    """改写之后**必须还在**的词。缺一个就说明改写弄丢了内容，整段回退模板。
+
+    三类，理由各不相同：
+      · KPI 名 / 图表名 —— 这一页经过门禁的内容清单，"一项都不能少"就是靠它验
+      · 逐行内容的标题 —— 同上
+      · 实体 id —— 下游 rowsRef 靠它绑数据。改写把它译成中文，这块内容就消失
+        （今天刚修过一个同样形状的 bug：brief 不提 → 设计不画 → 脚手架被抑制）
+
+    **不要求字段 id 全在**：brief 给的是"可用字段"，改写少提一个只是少一个选项，
+    不影响能不能绑上；而实体 id 少一个就是绑不上。判据严到该严的那一层就够，
+    再严只会让回退变成常态、等于这一步没开。
+    """
+    tokens: list[str] = []
+    for s in page.get("stats") or []:
+        name = str(s.get("name") or s.get("id") or "").strip()
+        if name:
+            tokens.append(name)
+    for c in page.get("charts") or []:
+        name = str(c.get("name") or c.get("id") or "").strip()
+        if name:
+            tokens.append(name)
+    for b in page.get("blocks") or []:
+        binding = (b or {}).get("binding")
+        if not isinstance(binding, dict):
+            continue
+        entity = str(binding.get("entityRef") or "").strip()
+        if entity:
+            tokens.append(entity)
+    for r in page.get("rankings") or []:
+        entity = str(r.get("entity") or "").strip()
+        if entity:
+            tokens.append(entity)
+    for f in page.get("feeds") or []:
+        entity = str(f.get("entity") or "").strip()
+        if entity:
+            tokens.append(entity)
+    # 去重保序
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in tokens:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def _refine_overview_brief_via_llm(
+    facts: str, required: list[str], *, device: str = ""
+) -> Optional[str]:
+    """让 LLM 按这一页的业务现写设计任务书。**加分项，失败静默回退模板。**
+
+    与 _refine_craft_via_llm / _refine_sheet_prompt_via_llm 同一套 fail-open 纪律，
+    外加一道这两处都没有的**内容校验**（见 _overview_brief_required_tokens）。
+    """
+    if not facts.strip():
+        return None
+    try:
+        from sliderule_llm.client import LlmError, call_llm_with_retry
+    except Exception as exc:  # noqa: BLE001
+        print(f"[freeform_block] brief refine skipped (import): {str(exc)[:160]}")
+        return None
+
+    # 预算：这一步排在 craft **之前**（brief 是 craft 的输入），所以门槛要把两轮
+    # 改写和 design 本身都算进去：40（本轮）+ 40（craft）+ 130（design 准入线）
+    # + 70（两轮各自偶尔重试的余量）= 280。拿不到预算上下文时照常跑，与另外
+    # 两处判断一致。
+    remaining = remaining_run_budget_seconds()
+    if remaining is not None and remaining < 280:
+        print(f"[freeform_block] brief refine skipped: 预算只剩 {remaining:.0f}s")
+        return None
+
+    try:
+        result = call_llm_with_retry(
+            [
+                {"role": "system", "content": _OVERVIEW_BRIEF_REFINE_SYSTEM},
+                {"role": "user", "content": f"设备档：{device or 'desktop'}。\n\n{facts}"},
+            ],
+            max_attempts=2,
+            backoff_ms=1500,
+            temperature=0.8,
+            max_tokens=1200,
+        )
+    except LlmError as exc:
+        print(f"[freeform_block] brief refine skipped: {str(exc)[:160]}")
+        return None
+    except Exception as exc:  # noqa: BLE001 — 改写失败绝不能拖垮主链路
+        print(f"[freeform_block] brief refine skipped (unexpected): {str(exc)[:160]}")
+        return None
+
+    # 字段是 content 不是 text —— 用 getattr 兜底会永远拿到空串，然后被下面的
+    # 长度检查判成"回复太短"静默退回。这个坑本文件的另一处注释里记着。
+    text = (result.content or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    if len(text) < 120:
+        print(f"[freeform_block] brief refine skipped: 回复太短（{len(text)} 字）")
+        return None
+    missing = [t for t in required if t not in text]
+    if missing:
+        print(
+            "[freeform_block] brief refine 丢内容，回退模板："
+            f"缺 {len(missing)}/{len(required)} 项 {missing[:4]}"
+        )
+        return None
+    return text
+
+
 def _monitor_overview_design_brief(
     page: dict[str, Any],
     datamodel: dict[str, Any],
@@ -2789,11 +2949,24 @@ def _monitor_overview_design_brief(
             bits.append(f"{c.get('name') or c.get('id')}（按「{dim}」的{metric_desc}，用{c.get('type') or 'bar'}图）")
         lines.append("必须包含的图表：" + "、".join(bits) + "。")
 
+    # 只说"内容范围"，**不谈版式**（2026-08-12）。
+    #
+    # 这句原来后半截是"具体每一项用什么颜色、图标、分组方式、卡片大小关系、
+    # 整体版式，由你自由设计，做出比标准网格骨架更有设计感的呈现"。删掉的理由
+    # 不是啰嗦，是**两个声音在抢同一件事，而这个说得虚**：
+    #
+    #   · 版式话语权归 `_refine_craft_via_llm`——它按这一页的业务现写，实测产出
+    #     是"左侧待办主区占 56%、行高 64px、待审琥珀色"这种具体到数值的要求，
+    #     两个域之间相似度 17.6%；
+    #   · 而这句对所有应用逐字相同（实测两个域 125 字一字不差），内容是"你自由
+    #     发挥吧"——不给方向。craft 那份元提示词里真正起作用的是**点名禁止**
+    #     （"不要套顶部一排等宽指标卡+下面两张图+底部一张表"），不是"自由设计"。
+    #
+    # 一虚一实并存时，虚的那句只会稀释实的那份。所以这里退回它的本职：
+    # **说清内容范围，不碰版式**。
     lines.append(
         "这份清单是这个页面已经审核通过的真实内容范围，不能新增清单之外的统计"
-        "指标/图表，也不能遗漏清单里的任何一项；具体每一项用什么颜色、图标、"
-        "分组方式、卡片大小关系、整体版式，由你自由设计，做出比标准网格骨架"
-        "更有设计感的呈现——这正是这次设计要解决的问题。"
+        "指标/图表，也不能遗漏清单里的任何一项。"
     )
     # 这一页已经声明的**逐行内容**：以 blockRef 的形状给出，binding 直接照抄
     # 即可。2026-07-29 第一版只给了一句"适合的话就摆一个"的泛泛引导，真跑
@@ -2972,11 +3145,12 @@ def _monitor_overview_design_brief(
         # ——"参照图上画了就画、没有就不要画"。生图未配置时（线上和本地当前都是
         # 这样）压根没有参照图，那条规则字面上等于"什么都不要画"。row_bits 以前
         # 恒为空所以没人撞上；接回 page.blocks 之后它就会天天生效，必须先说清。
+        # 只交代**事实**（这一趟有没有参照图）与**绑法**（rowsRef），版式一个字
+        # 不提——同上，那是 craft 那一段的职责。
         basis = (
-            "版式由你按参照图定（几列、多宽、怎么排都由你）"
+            "版式参照下面给的那张参照图"
             if has_reference
-            else "这一趟**没有参照图**，版式由你按这个业务自己定（几列、多宽、"
-            "谁该在最显眼的位置，都由你按「这一页的人打开最先要做什么」来排）"
+            else "这一趟**没有参照图**（别等一张不存在的图）"
         )
         lines.append(
             f"这一页还有下面这些**逐行内容**。{basis}，"
@@ -2999,15 +3173,14 @@ def _monitor_overview_design_brief(
             "与图表**不在取舍范围内，一项都不能少**：\n"
             f"· 可选的只有这几块：{'、'.join(names)}\n"
             + (
-                "· 参照图上画了 → 用 rowsRef 画出来，放哪一格、占多宽、长什么样由你定；\n"
+                "· 参照图上画了 → 用 rowsRef 画出来；\n"
                 "· 参照图上没有 → **不要画**。不画就是这一页没有这块内容，不会跑到"
                 "你的设计外面另起一张卡。\n"
                 if has_reference
                 else
                 # 没有参照图时不能拿"图上有没有"当判据——那会变成"什么都不要画"。
                 # 判据换成业务本身：这一页的人是不是真的要用它。
-                "· 这一页的人打开后确实要用它 → 用 rowsRef 画出来，放哪一格、占多宽、"
-                "长什么样由你定；\n"
+                "· 这一页的人打开后确实要用它 → 用 rowsRef 画出来；\n"
                 "· 用不上 → **不要画**。不画就是这一页没有这块内容，不会跑到你的"
                 "设计外面另起一张卡。\n"
             )
@@ -3294,6 +3467,17 @@ def _enrich_monitor_page_overviews_inner(
         # sheet_b64 就是 None，那时候还说"参照图上没有就不要画"，等于让模型把
         # 逐行内容整批丢掉。
         brief = brief_builder(page, datamodel, has_reference=sheet_b64 is not None)
+        # 模板那份退成**输入**，出去的话由 LLM 按这一页的业务现写——跟生图那条路
+        # 同一套（`_build_overview_sheet_prompt` 一直是 `refine(facts) or facts`）。
+        # 改写丢内容或失败时整段回退 `brief`，所以最坏情况是"跟以前一样"。
+        # 只对运营总览那份做：落地页 brief 是另一种形态，没量过，不跟着一起动。
+        if not is_marketing_landing:
+            brief = (
+                _refine_overview_brief_via_llm(
+                    brief, _overview_brief_required_tokens(page), device=device
+                )
+                or brief
+            )
         # 这张图排完版式就该丢了——但它同时也正是应用中心那张卡该显示的画面。
         # 调用方给了收集槽就交一份（见 app_preview：**没给槽就什么都不做**，
         # 所以两个脚本调用方不用改也不会被污染）。生图失败传 None 无害，

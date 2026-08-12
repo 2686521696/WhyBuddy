@@ -150,7 +150,9 @@ def test_没有参照图时不许说_图上没有就不要画() -> None:
     assert "参照图上没有" not in without, without
     assert "按参照图定" not in without, without
     assert "没有参照图" in without
-    assert "打开最先要做什么" in without
+    # 版式话语权已经收归 craft 那一段（一虚一实并存时虚的会稀释实的），
+    # 所以这里**不再**断言 brief 谈版式——反过来要求它别谈
+    assert "版式由你" not in without
     # 反向：两种措辞必须真的不同，否则这条在空转
     assert with_ref != without
 
@@ -162,3 +164,79 @@ def test_默认值保持旧行为() -> None:
     ) == _monitor_overview_design_brief(
         _page(blocks=[_QUEUE]), _DATAMODEL, has_reference=True
     )
+
+
+# ── brief 改写（2026-08-12）────────────────────────────────────────────
+#
+# 生图那条路一直是"模板只当输入，出去的话 LLM 现写"
+# （`_build_overview_sheet_prompt` = `refine(facts) or facts`），设计这条路却是
+# 把模板原样插进提示词。实测两个不同业务域的 brief 相似度 83.3%；删掉跟 craft
+# 抢版式话语权的句子降到 81.0%，再假设把硬契约搬走也只到 67.2%——因为每一行的
+# 脚手架都一样，变的只有名字。所以改成同一套：模板退成输入。
+#
+# 但这份 brief 带着 rowsRef 要绑的实体 id，改写弄丢就是"积木消失"（今天刚修过
+# 同一形状的 bug）。所以配一道机械校验，缺内容就整段回退模板。
+
+from services.freeform_block import (  # noqa: E402
+    _overview_brief_required_tokens,
+    _refine_overview_brief_via_llm,
+)
+
+
+def test_必须留下的词_含内容清单与实体id() -> None:
+    page = _page(blocks=[_QUEUE, _FEED])
+    required = _overview_brief_required_tokens(page)
+    # KPI 名、图表名
+    assert "待处理" in required
+    assert "状态分布" in required
+    # 逐行内容的实体 id —— 下游 rowsRef 靠它绑数据
+    assert "refund" in required
+    assert "audit_log" in required
+
+
+def test_字段id不进必留清单_判据不许过严() -> None:
+    """brief 给的是"可用字段"，改写少提一个只是少个选项，不影响能不能绑上。
+
+    判据严到"实体 id 必须在"这一层就够；再严会让回退变成常态，等于这一步没开。
+    """
+    required = _overview_brief_required_tokens(_page(blocks=[_QUEUE]))
+    assert "no" not in required and "status" not in required, required
+
+
+def test_改写丢了内容就整段回退(monkeypatch) -> None:
+    """校验必须真的会拦——否则这一步是在拿"可能丢内容"换多样性。"""
+    facts = _monitor_overview_design_brief(_page(blocks=[_QUEUE]), _DATAMODEL)
+    required = _overview_brief_required_tokens(_page(blocks=[_QUEUE]))
+
+    class _R:
+        def __init__(self, c): self.content = c
+
+    # ① 把实体 id 译成中文（最典型的改写事故）→ 必须回退
+    monkeypatch.setattr(
+        "sliderule_llm.client.call_llm_with_retry",
+        lambda *a, **k: _R("这一页是退费审批的运营总览，" + "要看待处理与状态分布。" * 12),
+    )
+    assert _refine_overview_brief_via_llm(facts, required) is None
+
+    # ② 该留的全留下了 → 采用
+    kept = (
+        "这一页是给教务与财务看的退费运营总览，打开后最要紧的是处理待处理的单子。"
+        '要呈现「待处理」这个数，以及「状态分布」这张图；逐行内容取自实体 "refund"，'
+        "用 rowsRef 绑。清单之外的指标不许添，清单之内的一项都不能少。" * 2
+    )
+    monkeypatch.setattr(
+        "sliderule_llm.client.call_llm_with_retry", lambda *a, **k: _R(kept)
+    )
+    assert _refine_overview_brief_via_llm(facts, required) == kept
+
+
+def test_回复太短或空也回退(monkeypatch) -> None:
+    class _R:
+        def __init__(self, c): self.content = c
+
+    facts = _monitor_overview_design_brief(_page(blocks=[_QUEUE]), _DATAMODEL)
+    for bad in ("", "太短了", None):
+        monkeypatch.setattr(
+            "sliderule_llm.client.call_llm_with_retry", lambda *a, **k: _R(bad)
+        )
+        assert _refine_overview_brief_via_llm(facts, []) is None
