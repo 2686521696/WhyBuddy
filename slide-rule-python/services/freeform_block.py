@@ -3734,12 +3734,19 @@ def _enrich_monitor_page_overviews_inner(
         # 改写丢内容或失败时整段回退 `brief`，所以最坏情况是"跟以前一样"。
         # 只对运营总览那份做：落地页 brief 是另一种形态，没量过，不跟着一起动。
         if not is_marketing_landing:
-            brief = (
-                _refine_overview_brief_via_llm(
+            # 埋点：写设计任务书那一轮。**此前这一步没有任何埋点**，于是
+            # `monitor.total` 减去所有有埋点的阶段之后剩下一大截无主时间，只能靠
+            # 猜——我先按减法猜成"brief 要 160s"，直接量却是 18~20s。两个数差一个
+            # 数量级，说明那段时间在别处；没有埋点就永远只能这样猜下去。
+            with _enrich_stage(
+                "monitor.brief", page=page_id, device=device or "unspecified"
+            ) as _bst:
+                refined = _refine_overview_brief_via_llm(
                     brief, _overview_brief_required_tokens(page), device=device
                 )
-                or brief
-            )
+                _bst["got"] = 1 if refined else 0
+                _bst["chars"] = len(refined or brief)
+            brief = refined or brief
         # 这张图排完版式就该丢了——但它同时也正是应用中心那张卡该显示的画面。
         # 调用方给了收集槽就交一份（见 app_preview：**没给槽就什么都不做**，
         # 所以两个脚本调用方不用改也不会被污染）。生图失败传 None 无害，
@@ -3863,8 +3870,8 @@ def _enrich_monitor_page_overviews_inner(
                 # 有参考图就一并喂进去（多一份比对依据），没有也照跑。
                 #
                 # 预算与受限树共用同一个计数器（一次生成总共只自检这么多次），
-                # 且额外要一段余量：截图 ~10s + 评审一轮 ~40s，赶在总预算尾巴上
-                # 硬跑会把整次生成拖过 deadline，那比"这一版没修订"糟得多。
+                # 且额外要一段余量（实测值见 _HTML_SELF_VERIFY_MIN_BUDGET_S）：赶在
+                # 总预算尾巴上硬跑会把整次生成拖过 deadline，那比"这一版没修订"糟。
                 #
                 # 上面那个 allow_shot 里带着 `use_ref`（受限树的自检要参考图当
                 # 比对物），HTML 不需要——所以这里补一次判断。有参考图时那一格
