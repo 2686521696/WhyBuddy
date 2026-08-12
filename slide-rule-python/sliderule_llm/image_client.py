@@ -171,14 +171,19 @@ def _extract_png(payload: dict, *, timeout: float) -> bytes:
         raise ImageGenError(
             f"生图响应里没有 data[0]（顶层键：{sorted(payload)}）"
         )
+    # 走的是哪条分支要留痕。成功日志里只有 `got=1`，说不清这家端点给的是 b64 还是
+    # url——而"给哪一种"正是今天让整趟生图白丢的那个变量。不打这一行，下次换端点
+    # 又只能靠猜（或者再烧一张图去问）。
     b64 = first.get("b64_json")
     if isinstance(b64, str) and b64:
+        print(f"[image_client] 响应形态 b64_json（{len(b64)} 字符）")
         return base64.b64decode(b64)
 
     url = first.get("url")
     if isinstance(url, str) and url:
         if not url.lower().startswith(("http://", "https://")):
             raise ImageGenError(f"生图返回的 url 协议不允许：{url[:60]}")
+        print(f"[image_client] 响应形态 url，回取中：{url.split('?')[0][:80]}")
         with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 — 协议已校验
             data = resp.read(MAX_IMAGE_BYTES + 1)
         if len(data) > MAX_IMAGE_BYTES:

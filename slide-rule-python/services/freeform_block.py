@@ -3675,8 +3675,13 @@ def _enrich_monitor_page_overviews_inner(
         # 后面根本不会用来生成设计的版式区，还挤占了真正会用的那档的画布
         # 份额。生图失败返回 None，下面照旧退回纯文字生成。
         page_id = str(page.get("id") or "")
-        # 埋点①：参照板生图。单张实测 60~85s，是这一段最贵的一步，也是并行化
-        # 收益最大的那一处（见审查文档「八、7」第 2 项）——改造前后就靠这条线对比。
+        # 埋点①：参照板生图，是这一段最贵的一步，也是并行化收益最大的那一处
+        # （见审查文档「八、7」第 2 项）——改造前后就靠这条线对比。
+        #
+        # 实测：这里原先写"单张 60~85s"，而 image_client 的 DEFAULT_TOTAL_BUDGET_S
+        # 上方同期记着"参照板·桌面 2560x1440 **103.6s**"——两处对同一件事记了两个数。
+        # 2026-08-12 真跑（api.gpt.ge / gpt-image-2 / 2560x1440）量到 **99.9s**，
+        # 跟后者对得上。所以按 100s 量级记，60~85s 那个偏乐观的数不要再引用。
         with _enrich_stage(
             "monitor.sheet", page=page_id, device=device or "unspecified", current=1, total=1
         ) as _st:
