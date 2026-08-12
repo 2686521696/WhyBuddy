@@ -704,6 +704,22 @@ _refine_context_var: "ContextVar[Optional[Dict[str, Any]]]" = ContextVar(
 _model_override_var: "ContextVar[Optional[Dict[str, Any]]]" = ContextVar(
     "sliderule_model_override", default=None
 )
+#: 用户给的**目标产品界面截图**（base64 PNG），参与**建模**那一步（2026-08-12）。
+#:
+#: ## 为什么必须在这一步，而不是只在设计那一步
+#:
+#: 真跑验过：把用户那张「日历排期与内容槽位管理」的截图当参照板喂给**设计**环节，
+#: 出来的还是「KPI 行 + 图表 + 列表」那套通用后台总览——**月历那个核心控件根本没出现**。
+#: 原因是顺序：`model.generate` 先跑，那时候图还不存在，所以"这个应用有哪些页、
+#: 首页放什么"完全由文字话题决定；图只能影响"既定内容怎么摆"。而那张图真正携带的
+#: 信息是「日历就是首页」——那是**产品形状**，不是排版。
+#:
+#: 注意这跟自己生的参照板不同：那张图是从 brief 生的、brief 来自模型，天然不可能
+#: 更早。所以能往前挪的只有**用户给的**图，这也就是 abi/screenshot-to-code 的原形态
+#: （真实截图进 → 产品出）。
+_reference_screenshot_var: "ContextVar[Optional[str]]" = ContextVar(
+    "sliderule_reference_screenshot", default=None
+)
 
 
 def set_refine_context(model: "Optional[Dict[str, Any]]", instruction: str = "") -> None:
@@ -717,6 +733,43 @@ def set_refine_context(model: "Optional[Dict[str, Any]]", instruction: str = "")
 
 def get_refine_context() -> "Optional[Dict[str, Any]]":
     return _refine_context_var.get()
+
+
+#: 截图指令。跟提示词里其它块一样是**常量**，但它约束的是"照图定形状"这件事，
+#: 不是具体形状——具体是什么由那张图说。
+_REFERENCE_SHOT_INSTRUCTION = """
+
+## 目标产品界面截图（用户提供）
+
+上面这段需求还附了一张**目标产品的界面截图**。它不是配色参考，是**产品形状的依据**
+——请从图上读出这些，并让你产出的契约跟它对得上：
+
+1. **页面构成与类型**：图上呈现的是哪一类页（日历/看板/工作台/向导/监控总览）？
+   那一类就该是 `page.pages` 里的一个页，`kind` 要选对。
+2. **首页是哪一页**：图上这一屏就是用户打开应用第一眼看到的东西——`landingPageRef`
+   指向它。**不要因为习惯而另造一个 KPI 总览页当首页。**
+3. **实体与字段**：图上每张卡片、每一行、每个筛选器、每个标签都在暗示字段
+   （状态、优先级、负责人、渠道、时间、冲突标记…）。把它们建成 `datamodel` 里真实的
+   字段与 enum 取值，名字用图上的中文说法。
+4. **流程**：图上出现的状态流转（待发布 → 已排期 → 发布中 → 已发布、冲突/空档待补）
+   就是 `workflow` 该有的链与节点。
+
+图上的**具体数字与文案是占位**（「内容主题占位 01」「202X年X月」这类），一个都不要抄；
+要抄的是结构。
+"""
+
+
+def set_reference_screenshot(png_b64: "Optional[str]") -> None:
+    """设置本轮建模要参照的目标界面截图（base64 PNG）。传 None 清空。
+
+    有图时**强制走单次通道**（不走并发 DAG）：整份契约要跟同一张图对齐，分段并发
+    各看一次图既贵又容易各自解读——那正是"同一页自相矛盾"的来源。
+    """
+    _reference_screenshot_var.set(png_b64 if (png_b64 or "").strip() else None)
+
+
+def get_reference_screenshot() -> "Optional[str]":
+    return _reference_screenshot_var.get()
 
 
 def set_model_override(model: "Optional[Dict[str, Any]]") -> None:
@@ -932,9 +985,24 @@ def _default_llm_json_fn(goal: str, gate_feedback: Optional[str] = None) -> Opti
             "gate. Fix EXACTLY these violations and keep everything else unchanged:\n"
             + gate_feedback
         )
+    # 目标界面截图（用户给的）进**建模**这一步：图携带的是产品形状（哪些页、
+    # 首页是哪一页、有哪些字段），而那些只有在这一步定得下来。详见
+    # `_reference_screenshot_var` 上方那段。`detail: "high"` 是照
+    # abi/screenshot-to-code 来的——要模型照图还原，就不能给它降采样的图。
+    shot_b64 = get_reference_screenshot()
+    if shot_b64:
+        user_payload: Any = [
+            {"type": "text", "text": user_content + _REFERENCE_SHOT_INSTRUCTION},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{shot_b64}", "detail": "high"},
+            },
+        ]
+    else:
+        user_payload = user_content
     messages = [
         {"role": "system", "content": schema_instruction_for(goal)},
-        {"role": "user", "content": user_content},
+        {"role": "user", "content": user_payload},
     ]
     streaming = _delta_sink_var.get() is not None
     if not streaming:
@@ -1005,7 +1073,14 @@ def generate_five_system_model(
         _diagnostic_var.set({"outcome": "ok"})
         return dict(model_override)
     use_parallel = False
-    if llm_json_fn is None and not gate_feedback and get_refine_context() is None:
+    # 有目标界面截图时不走并发 DAG：整份契约要跟同一张图对齐，分段并发各看一次图
+    # 既贵又容易各自解读（"同一页自相矛盾"就是这么来的）。
+    if (
+        llm_json_fn is None
+        and not gate_feedback
+        and get_refine_context() is None
+        and get_reference_screenshot() is None
+    ):
         try:
             from .v5_parallel_generate import parallel_generation_enabled
 
