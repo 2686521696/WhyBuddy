@@ -3924,7 +3924,9 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
   //
   // 兜底上限从 5 提到 8：用户示范的订单页有 9 列，5 列砍掉的正是"支付状态"
   // "操作"这种一眼要看的东西——列少不等于清爽，等于信息不全。
-  const declaredCols = boundFieldIds(block, bound.rows, 8);
+  // 第 4 个参数：表格才去重反规范化副本。表单/详情那几个调用点不能开——
+  // 摘一列是"别说两遍"，摘一个表单字段是"你填不了"。
+  const declaredCols = boundFieldIds(block, bound.rows, 8, true);
   // 用户在 ColumnSettingPanel 里改过的隐藏/顺序/固定，最后套在这里。
   // 没有那个面板时 columnState 为空，applyColumnState 原样返回。
   const viewState = block.id ? columnState?.[block.id] : undefined;
@@ -4349,7 +4351,20 @@ function formItemFor(ctx: FormItemCtx, fieldId: string): React.ReactNode {
 function boundFieldIds(
   block: ExperienceBlockInstance,
   rows: RuntimeRow[],
-  fallbackCap = 6
+  fallbackCap = 6,
+  /**
+   * 派生字段里要不要摘掉反规范化副本（`X_ref` 在场时的 `X_name`）。
+   *
+   * **默认关，只有表格类调用点显式打开。** 这个函数同时喂着表单、详情、
+   * 批量编辑、可编辑子表——那几处摘一个字段等于让人**填不了 / 看不到**它，
+   * 跟表格"别在一屏里把同一件事说两遍"完全不是一回事。
+   *
+   * 2026-08-12 我第一版把去重直接写死在这里，六个调用点一起中招：线上
+   * 复验时详情卡里的「自提点名称」跟着消失了。这条边界前一天刚在
+   * `dedupeDenormalizedColumns` 的注释里写过——"渲染层可以决定别挤在一起，
+   * 但没有资格决定你看不到"——隔一个提交就自己破了。留着这段话当界桩。
+   */
+  dedupeDenormalized = false
 ): string[] {
   const declared = block.binding?.fieldRefs;
   if (Array.isArray(declared) && declared.length > 0) {
@@ -4357,11 +4372,13 @@ function boundFieldIds(
     // 那是它的选择，渲染层没有资格替它删。去重只管下面这条派生路径。
     return declared.map(f => String(f)).filter(Boolean);
   }
-  // 派生路径要先摘掉反规范化副本**再截断**（2026-08-12）。顺序反了的话，
-  // 「自提点 / 自提点名称」白占一格，把本该露出来的第 8 列挤下榜。
-  return dedupeDenormalizedFieldIds([
-    ...new Set(rows.flatMap(r => Object.keys(r.values ?? {}))),
-  ]).slice(0, fallbackCap);
+  const derived = [...new Set(rows.flatMap(r => Object.keys(r.values ?? {})))];
+  // 先去重**再截断**。顺序反了的话「自提点 / 自提点名称」白占一格，
+  // 把本该露出来的第 8 列挤下榜。
+  return (dedupeDenormalized ? dedupeDenormalizedFieldIds(derived) : derived).slice(
+    0,
+    fallbackCap
+  );
 }
 
 const RecordFormRenderer: ExperienceBlockRenderer = ({

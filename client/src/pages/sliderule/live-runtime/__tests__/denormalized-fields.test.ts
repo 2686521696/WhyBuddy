@@ -87,13 +87,30 @@ describe("a. 反规范化副本不占表格列", () => {
     const src = readFileSync(new URL("../block-registry.tsx", import.meta.url), "utf8");
     const i = src.indexOf("function boundFieldIds(");
     expect(i, "boundFieldIds 没了 —— 这条断言的锚点要重找").toBeGreaterThan(-1);
-    const body = src.slice(i, i + 900);
+    const body = src.slice(i, i + 1600);
     expect(body, "积木的派生列没走去重").toContain("dedupeDenormalizedFieldIds");
     // 顺序：先去重再截断，否则副本白占一格、把第 8 列挤下榜
     expect(
       body.indexOf("dedupeDenormalizedFieldIds"),
       "先 slice 再去重 —— 副本占掉的那一格补不回来"
-    ).toBeLessThan(body.indexOf(".slice(0, fallbackCap)"));
+    ).toBeLessThan(body.indexOf(".slice("));
+    // 只有表格那个调用点开着它
+    expect(src, "DataTable 没开去重").toContain("boundFieldIds(block, bound.rows, 8, true)");
+  });
+
+  it("**只有表格开去重** —— 表单/详情摘掉一个字段就是让人填不了/看不到", () => {
+    // 2026-08-12 线上复验逮到的：第一版把去重写死在 boundFieldIds 里，
+    // 六个调用点（表单 / 弹层表单 / 详情 / 分步表单 / 可编辑子表 / 批量编辑）
+    // 一起中招，详情卡里的「自提点名称」跟着消失了。
+    // 前一天刚写下"渲染层没有资格决定「你看不到」"，隔一个提交自己破了。
+    const src = readFileSync(new URL("../block-registry.tsx", import.meta.url), "utf8");
+    const calls = [...src.matchAll(/boundFieldIds\(block, bound\.rows[^)]*\)/g)].map(m => m[0]);
+    expect(calls.length, "调用点找不到了 —— 这条断言的锚点要重找").toBeGreaterThan(5);
+    const opted = calls.filter(c => /,\s*true\s*\)$/.test(c));
+    expect(
+      opted,
+      `开了去重的调用点不止表格一个：${opted.join(" | ")}`
+    ).toEqual(["boundFieldIds(block, bound.rows, 8, true)"]);
   });
 
   it("模型明说要哪几列时不摘 —— 那是它的选择", () => {
@@ -101,7 +118,8 @@ describe("a. 反规范化副本不占表格列", () => {
     expect(ids).toEqual(["pickup_point_ref"]);
     // 但 binding.fieldRefs 那条路不经过它（判据写在 boundFieldIds 的分支里）
     const src = readFileSync(new URL("../block-registry.tsx", import.meta.url), "utf8");
-    const body = src.slice(src.indexOf("function boundFieldIds("), src.indexOf("function boundFieldIds(") + 900);
+    const at = src.indexOf("function boundFieldIds(");
+    const body = src.slice(at, at + 1600);
     expect(
       body.indexOf("return declared.map"),
       "声明路径也被去重了 —— 模型明说的东西不该被渲染层删掉"
