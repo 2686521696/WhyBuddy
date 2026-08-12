@@ -58,7 +58,7 @@ def test_batch8_sources_and_contracts_are_verified():
 #
 # ⚠ 度量本身也差点出错：头一版把 19 个图表判成同款（ECharts 在 SSR 下只吐空容器）、
 # 把一批未绑定的判成同款（都渲染 antd Empty）。排掉这两类假重复之后才是这 34 个。
-def test_batch8_catalog_holds_316_after_dedup():
-    assert legal.EXPERIENCE_BLOCK_CATALOG_VERSION == 316
-    assert len(legal.EXPERIENCE_BLOCKS) == 316
-    assert len({block["type"] for block in legal.EXPERIENCE_BLOCKS}) == 316
+def test_batch8_catalog_keeps_the_316_deduplicated_baseline():
+    assert legal.EXPERIENCE_BLOCK_CATALOG_VERSION >= 316
+    assert len(legal.EXPERIENCE_BLOCKS) >= 316
+    assert len({block["type"] for block in legal.EXPERIENCE_BLOCKS}) == len(legal.EXPERIENCE_BLOCKS)

@@ -201,8 +201,8 @@ Rules:
   nodeParentFieldRef, operatorParentFieldRef and profileParentFieldRef, and EVERY
   one of them requires a "string" field. Typing that column "ref" reads as the
   natural choice and is exactly what gets the model rejected: NO entityFieldRef in
-  the whole catalog accepts "ref" — of 1009 required field types, 447 want string,
-  273 enum, 205 number, 84 date and ZERO want ref — because "ref" declares no
+  the whole catalog accepts "ref" — of 1148 required field types, 513 want string,
+  316 enum, 232 number, 87 date and ZERO want ref — because "ref" declares no
   target entity anywhere in this schema. Root rows carry an empty parent id; never
   invent a parent to fill it.
 - Every aigc input/output field MUST be from datamodel; roleRefs from rbac.roles.

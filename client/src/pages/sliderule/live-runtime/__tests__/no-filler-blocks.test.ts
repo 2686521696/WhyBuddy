@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -40,7 +41,7 @@ import { describe, expect, it } from "vitest";
  * 这类每个渲染器都要用的小组件），点名放行，加一个要写一句为什么。
  */
 
-const DIR = new URL("..", import.meta.url).pathname;
+const DIR = fileURLToPath(new URL("..", import.meta.url));
 
 /** 每个区块渲染器都会用的通用外壳/工具，不是"一个区块工厂"，不适用本判据。 */
 const SHARED_SHELLS = new Set([

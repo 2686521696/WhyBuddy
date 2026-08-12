@@ -207,7 +207,8 @@ describe("体验区块渲染器状态 SSOT", () => {
     // （多一层白底和本来就该有一层，长得一样）。
     const src = blockRegistrySource;
     const calls = (src.match(/<BlockShell(?=[\s>])/g) ?? []).length;
-    const withBlock = (src.match(/<BlockShell block=\{block\}/g) ?? []).length;
+    // Prettier may insert a newline before the first prop; both forms carry the same contract.
+    const withBlock = (src.match(/<BlockShell\s+block=\{block\}/g) ?? []).length;
     expect(calls, "BlockShell 调用点数量").toBeGreaterThan(0);
     expect(withBlock, `${calls - withBlock} 个 BlockShell 没传 block，surface 对它们是死的`).toBe(
       calls

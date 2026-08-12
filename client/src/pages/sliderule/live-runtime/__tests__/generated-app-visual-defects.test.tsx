@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -31,9 +32,8 @@ import { describe, expect, it } from "vitest";
  * **同一件事在两处各说各的**——今天已经栽过很多次的那个形状。
  */
 
-const SRC = new URL("..", import.meta.url).pathname;
-const registry = readFileSync(`${SRC}block-registry.tsx`, "utf8");
-const screen = readFileSync(`${SRC}AppRuntimeScreen.tsx`, "utf8");
+const registry = readFileSync(fileURLToPath(new URL("../block-registry.tsx", import.meta.url)), "utf8");
+const screen = readFileSync(fileURLToPath(new URL("../AppRuntimeScreen.tsx", import.meta.url)), "utf8");
 
 describe("线上产物截图上的四处毛病", () => {
   it("① 设计模型的 height 当 minHeight 用，且不再写死 height", () => {

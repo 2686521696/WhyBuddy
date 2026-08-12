@@ -268,6 +268,49 @@ import {
 } from "./business-surface-theme";
 // ECharts 基建走独立 chunk（跟 AppRuntimeScreen 里那份同一个组件/同一个
 // import()，Vite 按 module 去重成一个 chunk，不会重复打包）。
+import {
+  ColumnLineageImpactExplorerRenderer,
+  DocumentMailRuleComposerRenderer,
+  FileShareAccessComposerRenderer,
+  IdentitySessionRevocationConsoleRenderer,
+  INDEPENDENT_STRUCTURE_BATCH9_LABELS,
+  MergeApprovalRuleMatrixRenderer,
+  WorkflowCredentialBindingPanelRenderer,
+} from "./independent-structure-blocks-batch9";
+import {
+  AlertExpressionPipelineBuilderRenderer,
+  AuthenticationFlowExecutionTreeRenderer,
+  DashboardFilterScopeMapperRenderer,
+  INDEPENDENT_STRUCTURE_BATCH10_LABELS,
+  OrderFulfillmentAllocationComposerRenderer,
+  ScaffolderTaskExecutionConsoleRenderer,
+  SyncWaveResourceSequencerRenderer,
+} from "./independent-structure-blocks-batch10";
+import {
+  CiStageJobGraphConsoleRenderer,
+  DatacenterRackUnitPlannerRenderer,
+  DeviceCommandDispatchConsoleRenderer,
+  DocumentPermissionMovePlannerRenderer,
+  INDEPENDENT_STRUCTURE_BATCH11_LABELS,
+  SerialBatchAllocationScannerRenderer,
+  SubscriptionPhaseOverrideComposerRenderer,
+} from "./independent-structure-blocks-batch11";
+import {
+  ConversationCapacityPolicyComposerRenderer,
+  INDEPENDENT_STRUCTURE_BATCH12_LABELS,
+  NotificationPolicyRouteTreeRenderer,
+} from "./independent-structure-blocks-batch12";
+import {
+  AssetStackPrimaryOrganizerRenderer,
+  RoundRobinHostDistributionComposerRenderer,
+} from "./independent-structure-blocks-batch12-replacements";
+import {
+  BookingAvailabilityTroubleshooterRenderer,
+  CriticalPathDependencySchedulerRenderer,
+  INDEPENDENT_STRUCTURE_BATCH13_LABELS,
+  MitreTechniqueCoverageNavigatorRenderer,
+  NetworkPortPatchPanelComposerRenderer,
+} from "./independent-structure-blocks-batch13";
 const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
 
 export interface ExperienceBlockCatalogEntry {
@@ -7226,6 +7269,85 @@ export const BLOCK_DEFINITIONS: Readonly<Record<string, BlockDefinition>> =
     ProductVariantMatrixBuilder: { render: ProductVariantMatrixBuilderRenderer, label: INDEPENDENT_STRUCTURE_BATCH8_LABELS.ProductVariantMatrixBuilder, phone: true },
     InventoryLocationLevelTuner: { render: InventoryLocationLevelTunerRenderer, label: INDEPENDENT_STRUCTURE_BATCH8_LABELS.InventoryLocationLevelTuner, phone: true },
     FaceIdentityAssignmentPanel: { render: FaceIdentityAssignmentPanelRenderer, label: INDEPENDENT_STRUCTURE_BATCH8_LABELS.FaceIdentityAssignmentPanel, phone: true },
+    FileShareAccessComposer: {
+      render: FileShareAccessComposerRenderer,
+      label: INDEPENDENT_STRUCTURE_BATCH9_LABELS.FileShareAccessComposer,
+      phone: true,
+    },
+    IdentitySessionRevocationConsole: {
+      render: IdentitySessionRevocationConsoleRenderer,
+      label:
+        INDEPENDENT_STRUCTURE_BATCH9_LABELS.IdentitySessionRevocationConsole,
+      phone: true,
+    },
+    ColumnLineageImpactExplorer: {
+      render: ColumnLineageImpactExplorerRenderer,
+      label: INDEPENDENT_STRUCTURE_BATCH9_LABELS.ColumnLineageImpactExplorer,
+      phone: true,
+    },
+    WorkflowCredentialBindingPanel: {
+      render: WorkflowCredentialBindingPanelRenderer,
+      label: INDEPENDENT_STRUCTURE_BATCH9_LABELS.WorkflowCredentialBindingPanel,
+      phone: true,
+    },
+    MergeApprovalRuleMatrix: {
+      render: MergeApprovalRuleMatrixRenderer,
+      label: INDEPENDENT_STRUCTURE_BATCH9_LABELS.MergeApprovalRuleMatrix,
+      phone: true,
+    },
+    DocumentMailRuleComposer: {
+      render: DocumentMailRuleComposerRenderer,
+      label: INDEPENDENT_STRUCTURE_BATCH9_LABELS.DocumentMailRuleComposer,
+      phone: true,
+    },
+    AuthenticationFlowExecutionTree: {
+      render: AuthenticationFlowExecutionTreeRenderer,
+      label:
+        INDEPENDENT_STRUCTURE_BATCH10_LABELS.AuthenticationFlowExecutionTree,
+      phone: true,
+    },
+    DashboardFilterScopeMapper: {
+      render: DashboardFilterScopeMapperRenderer,
+      label: INDEPENDENT_STRUCTURE_BATCH10_LABELS.DashboardFilterScopeMapper,
+      phone: true,
+    },
+    OrderFulfillmentAllocationComposer: {
+      render: OrderFulfillmentAllocationComposerRenderer,
+      label:
+        INDEPENDENT_STRUCTURE_BATCH10_LABELS.OrderFulfillmentAllocationComposer,
+      phone: true,
+    },
+    AlertExpressionPipelineBuilder: {
+      render: AlertExpressionPipelineBuilderRenderer,
+      label:
+        INDEPENDENT_STRUCTURE_BATCH10_LABELS.AlertExpressionPipelineBuilder,
+      phone: true,
+    },
+    SyncWaveResourceSequencer: {
+      render: SyncWaveResourceSequencerRenderer,
+      label: INDEPENDENT_STRUCTURE_BATCH10_LABELS.SyncWaveResourceSequencer,
+      phone: true,
+    },
+    ScaffolderTaskExecutionConsole: {
+      render: ScaffolderTaskExecutionConsoleRenderer,
+      label:
+        INDEPENDENT_STRUCTURE_BATCH10_LABELS.ScaffolderTaskExecutionConsole,
+      phone: true,
+    },
+    DatacenterRackUnitPlanner: { render: DatacenterRackUnitPlannerRenderer, label: INDEPENDENT_STRUCTURE_BATCH11_LABELS.DatacenterRackUnitPlanner, phone: true },
+    DeviceCommandDispatchConsole: { render: DeviceCommandDispatchConsoleRenderer, label: INDEPENDENT_STRUCTURE_BATCH11_LABELS.DeviceCommandDispatchConsole, phone: true },
+    SubscriptionPhaseOverrideComposer: { render: SubscriptionPhaseOverrideComposerRenderer, label: INDEPENDENT_STRUCTURE_BATCH11_LABELS.SubscriptionPhaseOverrideComposer, phone: true },
+    DocumentPermissionMovePlanner: { render: DocumentPermissionMovePlannerRenderer, label: INDEPENDENT_STRUCTURE_BATCH11_LABELS.DocumentPermissionMovePlanner, phone: true },
+    CiStageJobGraphConsole: { render: CiStageJobGraphConsoleRenderer, label: INDEPENDENT_STRUCTURE_BATCH11_LABELS.CiStageJobGraphConsole, phone: true },
+    SerialBatchAllocationScanner: { render: SerialBatchAllocationScannerRenderer, label: INDEPENDENT_STRUCTURE_BATCH11_LABELS.SerialBatchAllocationScanner, phone: true },
+    RoundRobinHostDistributionComposer: { render: RoundRobinHostDistributionComposerRenderer, label: "轮询主持人分布编排器", phone: true },
+    AssetStackPrimaryOrganizer: { render: AssetStackPrimaryOrganizerRenderer, label: "资产堆叠主图整理器", phone: true },
+    ConversationCapacityPolicyComposer: { render: ConversationCapacityPolicyComposerRenderer, label: INDEPENDENT_STRUCTURE_BATCH12_LABELS.ConversationCapacityPolicyComposer, phone: true },
+    NotificationPolicyRouteTree: { render: NotificationPolicyRouteTreeRenderer, label: INDEPENDENT_STRUCTURE_BATCH12_LABELS.NotificationPolicyRouteTree, phone: true },
+    CriticalPathDependencyScheduler: { render: CriticalPathDependencySchedulerRenderer, label: INDEPENDENT_STRUCTURE_BATCH13_LABELS.CriticalPathDependencyScheduler, phone: true },
+    MitreTechniqueCoverageNavigator: { render: MitreTechniqueCoverageNavigatorRenderer, label: INDEPENDENT_STRUCTURE_BATCH13_LABELS.MitreTechniqueCoverageNavigator, phone: true },
+    BookingAvailabilityTroubleshooter: { render: BookingAvailabilityTroubleshooterRenderer, label: INDEPENDENT_STRUCTURE_BATCH13_LABELS.BookingAvailabilityTroubleshooter, phone: true },
+    NetworkPortPatchPanelComposer: { render: NetworkPortPatchPanelComposerRenderer, label: INDEPENDENT_STRUCTURE_BATCH13_LABELS.NetworkPortPatchPanelComposer, phone: true },
   });
 
 /** 手机档有专属渲染器的类型 —— 从定义表派生，不再另立名单。 */

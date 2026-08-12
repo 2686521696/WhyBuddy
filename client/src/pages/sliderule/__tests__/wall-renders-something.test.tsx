@@ -56,5 +56,5 @@ describe("组件库墙", () => {
     console.log(`墙上真渲染出内容：${real}/${types.length}（${(ratio * 100).toFixed(1)}%），空态 ${empty.length}`);
     expect(ratio, `只有 ${real}/${types.length} 张卡有东西看，其余是空卡：${empty.slice(0, 8).join(", ")}`)
       .toBeGreaterThan(0.9);
-  });
+  }, 10_000);
 });

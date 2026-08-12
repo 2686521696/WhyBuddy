@@ -46,6 +46,12 @@ import { renderIndependentStructureBatch6PhoneBlock } from "./PhoneIndependentSt
 import { renderIndependentStructureBatch7PhoneBlock } from "./PhoneIndependentStructureBlocksBatch7";
 import { renderIndependentStructureBatch8PhoneBlock } from "./PhoneIndependentStructureBlocksBatch8";
 
+import { renderIndependentStructureBatch9PhoneBlock } from "./PhoneIndependentStructureBlocksBatch9";
+import { renderIndependentStructureBatch10PhoneBlock } from "./PhoneIndependentStructureBlocksBatch10";
+import { renderIndependentStructureBatch11PhoneBlock } from "./PhoneIndependentStructureBlocksBatch11";
+import { renderIndependentStructureBatch12PhoneBlock } from "./PhoneIndependentStructureBlocksBatch12";
+import { renderIndependentStructureBatch13PhoneBlock } from "./PhoneIndependentStructureBlocksBatch13";
+
 const PhoneLazyEchartsChart = React.lazy(() => import("../EchartsChart"));
 
 /**
@@ -1618,6 +1624,26 @@ return <PhoneShell block={props.block} title={titleOf(props)||PHONE_CONTEXT_TITL
 const PhoneKeyboardCommandPalette=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="palette"/>;const PhoneNotificationCenterDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="notifications"/>;const PhoneFilterPresetDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="filterPreset"/>;const PhoneExportJobDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="exportJob"/>;const PhoneCompareSelectionTray=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="compare"/>;const PhoneDetailInspectorDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="inspector"/>;const PhoneHelpContextPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="help"/>;const PhoneAuditDiffDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="audit"/>;const PhoneSavedSearchPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="savedSearch"/>;const PhoneRecentItemsPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="recent"/>;const PhoneRelatedEntityPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="related"/>;const PhonePermissionSummaryPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="permission"/>;const PhoneSelectionInspector=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="selection"/>;const PhoneValidationIssuePanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="validation"/>;const PhoneContextHelpDrawer=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="contextHelp"/>;const PhoneChangeImpactPanel=(p:ExperienceBlockRendererProps)=><PhoneContextPanel {...p} variant="impact"/>;
 
 export default function PhoneExperienceBlock(props: ExperienceBlockRendererProps) {
+  const independentStructureBatch13Block =
+    renderIndependentStructureBatch13PhoneBlock(props);
+  if (independentStructureBatch13Block !== undefined)
+    return independentStructureBatch13Block;
+  const independentStructureBatch12Block =
+    renderIndependentStructureBatch12PhoneBlock(props);
+  if (independentStructureBatch12Block !== undefined)
+    return independentStructureBatch12Block;
+  const independentStructureBatch11Block =
+    renderIndependentStructureBatch11PhoneBlock(props);
+  if (independentStructureBatch11Block !== undefined)
+    return independentStructureBatch11Block;
+  const independentStructureBatch10Block =
+    renderIndependentStructureBatch10PhoneBlock(props);
+  if (independentStructureBatch10Block !== undefined)
+    return independentStructureBatch10Block;
+  const independentStructureBatch9Block =
+    renderIndependentStructureBatch9PhoneBlock(props);
+  if (independentStructureBatch9Block !== undefined)
+    return independentStructureBatch9Block;
   const independentStructureBatch7Block = renderIndependentStructureBatch7PhoneBlock(props);
   if (independentStructureBatch7Block !== undefined) return independentStructureBatch7Block;
   const independentStructureBatch8Block = renderIndependentStructureBatch8PhoneBlock(props);
