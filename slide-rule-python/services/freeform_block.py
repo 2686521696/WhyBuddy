@@ -3307,6 +3307,13 @@ def _write_chart_colors(model: dict[str, Any], colors: list[str]) -> None:
     identity["chartColors"] = list(colors)
 
 
+from .overview_html import (  # noqa: E402 — 与 freeform_block 互为可选载体
+    OverviewHtmlError,
+    generate_overview_html,
+    overview_html_enabled,
+)
+
+
 def enrich_monitor_page_overviews(
     model: dict[str, Any], *, preview_sink: Optional[OverviewPreviewSink] = None
 ) -> dict[str, Any]:
@@ -3651,6 +3658,45 @@ def _enrich_monitor_page_overviews_inner(
                 skipped["got"] = 0
                 skipped["skippedReason"] = "deadline"
             continue
+        # ── HTML 载体（2026-08-12，默认关）─────────────────────────────
+        #
+        # 受限 JSON 节点树的天花板是词汇表：没有 table/img、图表只有四种、
+        # 缺 transform/gridColumn。换成 HTML 一次性消失（见 overview_html 头注）。
+        #
+        # 但**数字不能编**那条保证一分不能丢：HTML 里一个数字都不写，
+        # 只摆 `data-fact` / `data-chart` 占位，运行时填。判据复用受限树那条路
+        # 的同一个 `_NUMERIC_CLAIM_RES_MATCH`。
+        #
+        # 排在受限树**之前**试：成了就用它，抛错就往下走老路——两条路并存，
+        # 开关一关就完全回到今天的行为，不是单向门。
+        if overview_html_enabled():
+            try:
+                with _enrich_stage(
+                    "monitor.designHtml",
+                    page=page_id,
+                    device=device or "unspecified",
+                    current=1,
+                    total=design_total,
+                ) as _hst:
+                    markup, facts, chart_specs = generate_overview_html(
+                        brief, datamodel, page, reference_image_b64=sheet_b64
+                    )
+                    _hst["bytes"] = len(markup.encode("utf-8"))
+                    _hst["facts"] = len(facts)
+                    _hst["charts"] = len(chart_specs)
+                page["freeformOverviewHtml"] = {
+                    "html": markup,
+                    "facts": facts,
+                    "charts": chart_specs,
+                }
+                page["freeformOverviewStatus"] = "ready"
+                continue
+            except OverviewHtmlError as exc:
+                # 退回受限树，不是失败——老路今天就在跑，它出得来东西
+                print(
+                    f"[freeform_block] {page_id} HTML 总览没通过校验，退回受限树："
+                    f"{str(exc)[:200]}"
+                )
         try:
             with _enrich_stage(
                 "monitor.design",

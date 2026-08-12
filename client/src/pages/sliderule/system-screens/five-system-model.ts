@@ -289,6 +289,13 @@ export interface PageModelDef {
    * 用页面已选定的 stats/charts/rankings/feeds 当设计输入生成，跟这些
    * 固定字段并存——后者是生成失败时的诚实兜底，不是被这个字段取代。 */
   freeformOverview?: { root: Record<string, unknown> };
+  /** 总览的 HTML 载体（2026-08-12，生成侧 SLIDERULE_OVERVIEW_HTML 开关）。
+   *  与 freeformOverview 同时只会有一个——见 app-runtime-schema 的说明。 */
+  freeformOverviewHtml?: {
+    html: string;
+    facts: unknown[];
+    charts: unknown[];
+  };
   /** 首页参考图的独立解析产物；用于审查视觉理解，不参与运行时信任判定。 */
   pageReconstruction?: PageReconstructionEvidence;
   /** 页面级动作实例（Step 5），与 actionPermissions 的权限字符串独立 */

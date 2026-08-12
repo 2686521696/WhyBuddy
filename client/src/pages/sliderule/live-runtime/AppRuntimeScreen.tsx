@@ -106,6 +106,12 @@ import {
 // ECharts 基建走独立 chunk（React.lazy）：主 bundle 不背 echarts，
 // 首个带图表声明的页面打开时才加载。
 const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
+// HTML 载体的总览渲染器。懒加载的理由跟 ProWorkbenchSurface 一样：它拖着
+// DOMPurify，而绝大多数页面根本不是总览页，不该为它多下一段。
+const LazyOverviewHtmlSurface = React.lazy(
+  () => import("./OverviewHtmlSurface")
+);
+
 const LazyProWorkbenchSurface = React.lazy(
   () => import("./ProWorkbenchSurface")
 );
@@ -2142,6 +2148,23 @@ export function AppRuntimeScreen({
    * 页面都走这条路，配合 .phone-freeform-scope 的收窄仍然读得下来。
    */
   const renderFreeformOverview = (forPhone: boolean) => {
+    // HTML 载体优先（2026-08-12）。两种载体同时只会有一个：生成侧 HTML 那条路
+    // 成了就写 freeformOverviewHtml、受限树不跑；没过校验就退回受限树。
+    // 这里先看 HTML，看不到才走下面的老路——开关一关就完全回到今天的行为。
+    if (page?.freeformOverviewHtml?.html) {
+      return (
+        <div
+          data-testid="app-runtime-monitor-freeform-overview"
+          data-freeform-variant="html"
+        >
+          <LazyOverviewHtmlSurface
+            payload={page.freeformOverviewHtml}
+            entityRows={state.entities}
+            chartPalette={sharedBlockRendererProps.chartPalette}
+          />
+        </div>
+      );
+    }
     if (!page?.freeformOverview) return null;
     const picked =
       (forPhone && page.freeformOverview.mobile) || page.freeformOverview;

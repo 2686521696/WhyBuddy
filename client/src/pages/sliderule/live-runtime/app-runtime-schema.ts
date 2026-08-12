@@ -19,6 +19,27 @@ import {
   type FieldFormat,
   type NormalizedFieldOption,
 } from "./field-display";
+/** 总览 HTML 载体里可引用的一个"事实"（数字由运行时现算，见 OverviewHtmlSurface）。 */
+export interface OverviewFactSpec {
+  id: string;
+  label: string;
+  entityRef: string;
+  /** "count" | "sum:<fieldId>" | "avg:<fieldId>" —— 跟 dataRef 同一套写法 */
+  aggregate: string;
+  /** 被聚合字段的声明格式，运行时据此补 % / ¥ / 分 */
+  format?: string;
+}
+
+/** 总览 HTML 载体里可摆的一个图表位。 */
+export interface OverviewChartSpec {
+  id: string;
+  title: string;
+  type: string;
+  entityRef: string;
+  dimensionFieldId: string;
+  metric: string;
+}
+
 import type {
   PageSurfaceDensity,
   PageSurfaceSpec,
@@ -254,6 +275,21 @@ export interface AppPageSchema {
   freeformOverview?: {
     root: Record<string, unknown>;
     mobile?: { root: Record<string, unknown> };
+  };
+  /**
+   * 总览的 **HTML 载体**（2026-08-12，生成侧开关 SLIDERULE_OVERVIEW_HTML）。
+   *
+   * 跟 `freeformOverview` 是同一件事的两种载体，**同时只会有一个**：生成侧
+   * HTML 那条路成了就写这个、受限树那条不跑；HTML 没过校验就退回受限树。
+   * 渲染端优先用 HTML（见 AppRuntimeScreen 的 renderFreeformOverview）。
+   *
+   * html 里一个数字都没有，只有 data-fact / data-chart 占位——数字和图表由
+   * 运行时按 facts / charts 声明现算现挂，"数字不能编"那条保证一分不丢。
+   */
+  freeformOverviewHtml?: {
+    html: string;
+    facts: OverviewFactSpec[];
+    charts: OverviewChartSpec[];
   };
   /** 从完整首页视觉稿解析出的可审查契约与确定性还原提示词。 */
   pageReconstruction?: PageReconstructionEvidence;
@@ -950,6 +986,12 @@ export function deriveAppRuntimeSchema(
       charts,
       view,
       freeformOverview: page.freeformOverview,
+      // 原样透传不做类型收窄（跟 freeformOverview 同一个套路）：模型来自
+      // 生成侧校验过的产物，渲染端 OverviewHtmlSurface 还会再消毒一遍，
+      // 这里再复刻一份形状校验只会多一处会漂的判据。
+      freeformOverviewHtml: page.freeformOverviewHtml as
+        | AppPageSchema["freeformOverviewHtml"]
+        | undefined,
       pageReconstruction: page.pageReconstruction,
       // 体验区块：优先用模型直接声明的 page.blocks；若无声明，从现有
       // stats/charts/rankings/feeds 自动转换（零视觉变化路径，三阶段接入前
