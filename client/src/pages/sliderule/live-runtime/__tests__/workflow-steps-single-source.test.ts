@@ -136,3 +136,68 @@ describe("内置步骤条读到的顺序（截图那份流程）", () => {
     expect(advanceCondition.get("review")).toBe("积分充足");
   });
 });
+
+/**
+ * 岔口两条边**都有条件**时选哪条（2026-08-11 真跑逮到的）。
+ *
+ * 下面这份 workflow 是线上跑「校外培训机构退费申请与审批」时模型真实产出的，
+ * 一个字没改。第一版判据（无条件优先 → 否则取目标声明序最近的）在它身上当场
+ * 翻车：`academic_review` 的两条出边都有条件，于是落到"取最近的"，选中下标 2 的
+ * **驳回节点** academic_return——一头拐进驳回分支，而它只有一条回环边，主链路
+ * 在第 3 步就断了，后面 4 个真正的正向节点全被判成"分支出口"。
+ *
+ * 根因是"模型按流程顺序声明节点"这个假设太弱：作者习惯把驳回节点紧挨着它的
+ * 来源写，所以驳回的下标恒定小于下一个真步骤。现在按"哪条还能走得更远"选。
+ */
+describe("岔口两条边都有条件时（真实产出夹具）", () => {
+  const NODES = [
+    { id: "refund_draft", name: "填写退费申请" },
+    { id: "academic_review", name: "教务核算" },
+    { id: "academic_return", name: "教务退回" },
+    { id: "finance_review", name: "财务复核" },
+    { id: "finance_return", name: "财务退回" },
+    { id: "payment_pending", name: "待打款" },
+    { id: "refund_paid", name: "完成打款" },
+    { id: "refund_closed", name: "退费归档" },
+  ];
+  const TRANSITIONS = [
+    { from: "refund_draft", to: "academic_review", condition: "申请已选择至少一条报名课程且提交" },
+    { from: "academic_review", to: "finance_review", condition: "已上课时与可退金额核算通过" },
+    { from: "academic_review", to: "academic_return", condition: "报名或课时数据不完整，或核算金额不合理" },
+    { from: "academic_return", to: "academic_review", condition: "家长补充资料并重新提交" },
+    { from: "finance_review", to: "payment_pending", condition: "财务复核金额与原始缴费记录一致" },
+    { from: "finance_review", to: "finance_return", condition: "金额、缴费凭证或收款信息不通过" },
+    { from: "finance_return", to: "academic_review", condition: "教务重新核算后再次提交" },
+    { from: "payment_pending", to: "refund_paid", condition: "银行回单或支付服务端回调核验成功" },
+    { from: "refund_paid", to: "refund_closed", condition: "已写入打款结果和审计记录" },
+  ];
+
+  it("主链路走完整条正向流程，两个「退回」都归到分支出口", () => {
+    const { mainPath, branchExits } = deriveWorkflowMainPath(NODES, TRANSITIONS);
+    expect(mainPath.map(n => n.name)).toEqual([
+      "填写退费申请",
+      "教务核算",
+      "财务复核",
+      "待打款",
+      "完成打款",
+      "退费归档",
+    ]);
+    expect(branchExits.map(b => b.node.name)).toEqual(["教务退回", "财务退回"]);
+  });
+
+  it("驳回节点的下标比下一个真步骤更小 —— 这就是旧判据踩坑的形状", () => {
+    // 反向确认夹具真的复现那个形状：不确认的话，上面那条可能只是"碰巧对了"
+    const order = new Map(NODES.map((n, i) => [n.id, i]));
+    expect(order.get("academic_return")).toBeLessThan(order.get("finance_review")!);
+    // 而且两条出边都带条件（有一条无条件的话旧判据就不会选错）
+    const outs = TRANSITIONS.filter(t => t.from === "academic_review");
+    expect(outs).toHaveLength(2);
+    expect(outs.every(t => Boolean(t.condition))).toBe(true);
+  });
+
+  it("步骤上的前进条件是通过那条，不是退回那条", () => {
+    const { advanceCondition } = deriveWorkflowMainPath(NODES, TRANSITIONS);
+    expect(advanceCondition.get("academic_review")).toBe("已上课时与可退金额核算通过");
+    expect(advanceCondition.get("finance_review")).toBe("财务复核金额与原始缴费记录一致");
+  });
+});

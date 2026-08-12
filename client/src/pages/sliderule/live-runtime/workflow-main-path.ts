@@ -34,13 +34,35 @@
  * Camunda 用网关——都没有"驳回是第 N+1 步"这种表达。
  *
  * 所以：从入口（没有入边的节点）出发，每步只走**向前**的边（目标在声明序里更
- * 靠后、且没走过），优先无条件边，其余按目标声明序取最近的那个。走不动就停。
- * 剩下的节点是分支出口，调用方单独渲染，不进 Steps。
+ * 靠后、且没走过）。走不动就停。剩下的节点是分支出口，调用方单独渲染，不进 Steps。
  *
- * 判据用"声明序"是有依据的：模型是按流程顺序声明节点的（Gate 侧也按这个读），
- * 所以"更靠后"约等于"更往后走"。选最近的那个而不是第一条声明的边，是因为驳回
- * 边有时声明在前面（`routed → rejected` 完全可能写在 `routed → notified` 之前），
- * 按目标序取近的更稳。
+ * ## 岔口选哪条：走**能走得最远**的那条（2026-08-11 实测改）
+ *
+ * 第一版的判据是"优先无条件边，其余按目标声明序取最近的"。**那条在真实产出上
+ * 是错的**，跑一趟"培训机构退费审批"当场翻车：
+ *
+ *     [0] refund_draft   [1] academic_review  [2] academic_return ← 驳回
+ *     [3] finance_review [4] finance_return   [5] payment_pending  [6..7] 打款/归档
+ *
+ *     academic_review → finance_review    「核算通过」      两条都有条件
+ *     academic_review → academic_return   「数据不完整」    ↑
+ *
+ * 两条都有条件 → 落到"取目标声明序最近的" → 选中下标 2 的 **academic_return**，
+ * 也就是**一头拐进驳回分支**；而它只有一条回环边（→ academic_review，已走过），
+ * 于是主链路在第 3 步就断了，财务复核/待打款/完成打款/归档 4 个真正的正向节点
+ * 全被判成"分支出口"。步骤条只剩 3 步，比不改还糟。
+ *
+ * 根因是"模型按流程顺序声明节点"这个假设太弱：作者习惯**把驳回节点紧挨着它的
+ * 来源写**（教务核算后面立刻写教务退回），所以驳回的下标恒定小于下一个真步骤，
+ * "取最近的"必然选中驳回。
+ *
+ * 换成结构判据：**比较两条边各自还能往前走多远**，取更长的那条。驳回节点通常
+ * 只往回连（或直接终止），前向链长 1；真正的下一步后面还挂着整条流程。上例里
+ * academic_return 长 1，finance_review 长 4，选后者。告警值班那趟同理
+ * （alert_rejected 只回连 → 1，alert_notified 一路到 resolved → 更长）。
+ *
+ * 长度相同才退回旧判据（无条件边优先 → 目标声明序靠前优先），保证结果确定。
+ * 前向图按定义是无环的（下标严格递增），所以链长可以直接记忆化递归算，不会转圈。
  */
 
 /** 迁移边。只用到这三个字段，故意不收窄成某一处的具体类型。 */
@@ -94,6 +116,28 @@ export function deriveWorkflowMainPath<N extends { id?: string }>(
   const entry = nodes.find(n => !incomingCount.get(String(n.id))) ?? nodes[0];
   const advanceCondition = new Map<string, string>();
   const walked = new Set<string>();
+
+  /**
+   * 从某个节点出发，沿**前向边**还能走多少步（记忆化）。
+   *
+   * 只看"目标下标更大"的边，所以这张图无环，递归一定收敛——不需要额外的
+   * visiting 标记。注意这是**静态**属性：不看 walked，否则同一个节点在走图
+   * 过程中会算出不同的长度，岔口的比较就没有可比性了。
+   */
+  const reachCache = new Map<string, number>();
+  const forwardReach = (id: string): number => {
+    const cached = reachCache.get(id);
+    if (cached !== undefined) return cached;
+    const here = orderOf.get(id) ?? -1;
+    let best = 0;
+    for (const e of outgoing.get(id) ?? []) {
+      if ((orderOf.get(e.to) ?? -1) <= here) continue; // 回环/横跳不算"往前"
+      best = Math.max(best, 1 + forwardReach(e.to));
+    }
+    reachCache.set(id, best);
+    return best;
+  };
+
   /**
    * 只用 id 走图（不是拿节点对象当游标）。写成 `let cursor: N | undefined` 再从
    * 循环体里回推，会让 TS 推断成环——循环体里的 forward/next 都依赖 cursor 的
@@ -108,11 +152,13 @@ export function deriveWorkflowMainPath<N extends { id?: string }>(
     const forward = (outgoing.get(cursorId) ?? []).filter(
       e => !walked.has(e.to) && (orderOf.get(e.to) ?? -1) > here
     );
-    const next: { to: string; condition?: string } | undefined =
-      forward.find(e => !e.condition) ??
-      [...forward].sort(
-        (a, b) => (orderOf.get(a.to) ?? 0) - (orderOf.get(b.to) ?? 0)
-      )[0];
+    // 走得最远的那条优先；并列时才回到"无条件优先 → 声明序靠前优先"
+    const next: { to: string; condition?: string } | undefined = [...forward].sort(
+      (a, b) =>
+        forwardReach(b.to) - forwardReach(a.to) ||
+        (a.condition ? 1 : 0) - (b.condition ? 1 : 0) ||
+        (orderOf.get(a.to) ?? 0) - (orderOf.get(b.to) ?? 0)
+    )[0];
     if (next?.condition) advanceCondition.set(cursorId, next.condition);
     cursorId = next?.to;
   }
