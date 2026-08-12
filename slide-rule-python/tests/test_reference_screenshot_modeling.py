@@ -119,3 +119,60 @@ def test_空串当没给(monkeypatch: pytest.MonkeyPatch) -> None:
     gen.set_reference_screenshot("   ")
     gen._default_llm_json_fn("做一个排期系统")
     assert isinstance(seen["messages"][1]["content"], str)
+
+
+# ── 有真图就"直接照着图画"：四步短路（2026-08-12 傍晚，用户裁决）──────────
+
+def test_四步短路的判据都挂在同一个信号上() -> None:
+    """有用户给的截图时，这四步一律不跑——它们的产物要么已经有真的、要么没人消费：
+
+        monitor.sheet          生图 + 写出图提示词   实测 120~140s   → 手上已有真图
+        monitor.brief          LLM 写设计任务书      实测 13~70s     → 图直接告诉设计模型
+        monitor.reconstruction 参照图 → 结构契约     实测 81~236s    → **零消费方**
+        monitor.palette        参照图取色            实测 19~118s    → 用户裁决去掉
+
+    合计 230~500s。判据全挂在 `user_shot` 这一个信号上（同一个 contextvar 也喂给建模），
+    所以"开没开"只有一处可看、不会两处漂。
+    """
+    import inspect
+
+    from services import freeform_block as fb
+
+    src = inspect.getsource(fb._enrich_monitor_page_overviews_inner)
+    assert "user_shot = get_reference_screenshot()" in src, "信号没接上"
+    # 四处各自的短路
+    assert 'elif user_shot:\n                # 用户给了目标界面截图' in src, "sheet 没短路"
+    assert "if not is_marketing_landing and not user_shot:" in src, "brief 没短路"
+    assert src.count('skippedReason"] = "user_shot"') >= 3, "短路要留痕，别静默跳过"
+
+
+def test_跳过也要留痕_不许静默() -> None:
+    """静默跳过的后果今天见过太多次：现象只是"某一步没花时间"，没人知道为什么。
+
+    所以四处短路都记 `skippedReason=user_shot`——跟 deadline / app_unreachable
+    那几处同一套口径。
+    """
+    import inspect
+
+    from services import freeform_block as fb
+
+    src = inspect.getsource(fb._enrich_monitor_page_overviews_inner)
+    for stage in ("monitor.brief", "monitor.reconstruction", "monitor.palette"):
+        i = src.index(stage)
+        assert "user_shot" in src[i : i + 900], f"{stage} 的短路没留痕"
+
+
+def test_取色被跳过的代价写在代码里() -> None:
+    """图表画在 canvas 上、颜色由 identity.chartColors 决定，HTML 的 CSS 管不到它
+    ——所以不取色就意味着图表用账本默认色序、跟页面用色不再自动一致。这个代价必须
+    写在跳过它的地方，否则下一个人会以为"跳过它没有损失"。"""
+    import inspect
+
+    from services import freeform_block as fb
+
+    src = inspect.getsource(fb._enrich_monitor_page_overviews_inner)
+    # 按取色那一段定位（第一处 skippedReason 是 brief 的，不是它）
+    i = src.index("if user_shot and not _existing_chart_colors(model):")
+    window = src[i : i + 1200]
+    assert "canvas" in window, "没写清图表颜色管不到的原因"
+    assert "账本默认色序" in window, "没写清跳过之后颜色会退回哪里"

@@ -3662,6 +3662,13 @@ def _enrich_monitor_page_overviews_inner(
         # 就整个应用一张图都没有。按尝试计费：生图失败也算用掉了，否则端点
         # 抖动时这个"一张"会退化成"每页都试一次"。
         is_landing = bool(landing_ref) and page_id_now == landing_ref
+        # 用户给的**目标界面截图**（同一个 contextvar 也喂给了建模，见
+        # v5_llm_generate.set_reference_screenshot）。有它就走"直接照着图画"那条短路：
+        # 不生图、不写任务书、不解析、不取色——四步实测合计 230~500s，而它们的产物
+        # 要么是"一张用来照着画的图"（手上已经有真的），要么没有消费方。
+        from .v5_llm_generate import get_reference_screenshot
+
+        user_shot = get_reference_screenshot()
         use_ref = sheet_enabled and sheet_used == 0 and reference_budget_available
         allow_shot = use_ref and shot_used < max_screenshot_verify
         if use_ref:
@@ -3714,6 +3721,13 @@ def _enrich_monitor_page_overviews_inner(
                     )
                     sheet_b64 = page_future.result()
                     landing_media_b64 = hero_future.result()
+            elif user_shot:
+                # 用户给了目标界面截图 → **它就是参照图**，不生图、也不写出图提示词。
+                # 那两步（`_refine_sheet_prompt_via_llm` + 生图）合计实测 120~140s，
+                # 而它们的产物本来就是"一张用来照着画的图"——手上已经有真的那张，
+                # 再生一张猜出来的没有意义（照着幻觉还原，得到还原得很好的幻觉）。
+                sheet_b64 = user_shot
+                _st["source"] = "user"
             elif use_ref:
                 sheet_b64 = _generate_overview_sheet_b64(
                     sheet_brief,
@@ -3738,7 +3752,7 @@ def _enrich_monitor_page_overviews_inner(
         # 同一套（`_build_overview_sheet_prompt` 一直是 `refine(facts) or facts`）。
         # 改写丢内容或失败时整段回退 `brief`，所以最坏情况是"跟以前一样"。
         # 只对运营总览那份做：落地页 brief 是另一种形态，没量过，不跟着一起动。
-        if not is_marketing_landing:
+        if not is_marketing_landing and not user_shot:
             # 埋点：写设计任务书那一轮。**此前这一步没有任何埋点**，于是
             # `monitor.total` 减去所有有埋点的阶段之后剩下一大截无主时间，只能靠
             # 猜——我先按减法猜成"brief 要 160s"，直接量却是 18~20s。两个数差一个
@@ -3752,6 +3766,18 @@ def _enrich_monitor_page_overviews_inner(
                 _bst["got"] = 1 if refined else 0
                 _bst["chars"] = len(refined or brief)
             brief = refined or brief
+        elif user_shot:
+            # 有真图就不写任务书了（实测 13~70s）。那一轮的职责是"按这一页的业务
+            # 现写该长什么样"——那正是图直接告诉设计模型的事，让文字再转述一遍
+            # 只会跟图打架（图说日历，文字说"多栏栅格 + 状态色块 + 表格紧凑"）。
+            # 模板那份 brief 留着：它承载的是**数据契约**（有哪些 KPI/图表/逐行），
+            # 图看不出这些。
+            with _enrich_stage(
+                "monitor.brief", page=page_id, device=device or "unspecified"
+            ) as _bst:
+                _bst["got"] = 0
+                _bst["skippedReason"] = "user_shot"
+                _bst["chars"] = len(brief)
         # 这张图排完版式就该丢了——但它同时也正是应用中心那张卡该显示的画面。
         # 调用方给了收集槽就交一份（见 app_preview：**没给槽就什么都不做**，
         # 所以两个脚本调用方不用改也不会被污染）。生图失败传 None 无害，
@@ -3764,6 +3790,15 @@ def _enrich_monitor_page_overviews_inner(
             )
         # 参考图先独立解析成可检查的结构契约，再交给最终页面生成器。此前最终
         # LLM 同时承担看图、理解布局和写 JSON，失败后无法区分是哪一层出了错。
+        #
+        # ⚠ 用户给了真图那条路**跳过这一步**（2026-08-12 傍晚，用户裁决"直接照着图画"）。
+        # 三条依据，都是量出来的：
+        #   · 它的产物**没有任何消费方**——写进 page.pageReconstruction、前端有类型，
+        #     但不进设计提示词、也没有 UI 渲染它（全仓 grep 过）
+        #   · 实测 81~236s，是这条链路第二贵的步骤
+        #   · 同一张图两趟一成一败（失败的两个根因同属一类：schema 要扁的、模型给了
+        #     带结构的——`titleWeight=700`、`uncertainRegions[0]` 是个 dict）
+        # 自己生的参照板那条路照旧跑它：那时候"哪一层出了错"确实需要它来分。
         with _enrich_stage(
             "monitor.reconstruction",
             page=page_id,
@@ -3771,26 +3806,31 @@ def _enrich_monitor_page_overviews_inner(
             current=1,
             total=1,
         ) as _rst:
-            try:
-                from .page_reconstruction import analyze_page_reference
+            if user_shot:
+                _rst["got"] = 0
+                _rst["status"] = "skipped"
+                _rst["skippedReason"] = "user_shot"
+            else:
+                try:
+                    from .page_reconstruction import analyze_page_reference
 
-                reconstruction = analyze_page_reference(
-                    sheet_b64,
-                    design_brief=brief,
-                    datamodel=datamodel,
-                    device=device,
-                )
-            except Exception as exc:  # noqa: BLE001 - analysis cannot block a valid model
-                reconstruction = {
-                    "version": "page-reconstruction-v1",
-                    "status": "failed",
-                    "spec": None,
-                    "prompt": "",
-                    "diagnostic": f"reconstruction orchestration failed: {str(exc)[:500]}",
-                }
-            page["pageReconstruction"] = reconstruction
-            _rst["got"] = 1 if reconstruction.get("status") == "ready" else 0
-            _rst["status"] = str(reconstruction.get("status") or "failed")
+                    reconstruction = analyze_page_reference(
+                        sheet_b64,
+                        design_brief=brief,
+                        datamodel=datamodel,
+                        device=device,
+                    )
+                except Exception as exc:  # noqa: BLE001 - analysis cannot block a valid model
+                    reconstruction = {
+                        "version": "page-reconstruction-v1",
+                        "status": "failed",
+                        "spec": None,
+                        "prompt": "",
+                        "diagnostic": f"reconstruction orchestration failed: {str(exc)[:500]}",
+                    }
+                page["pageReconstruction"] = reconstruction
+                _rst["got"] = 1 if reconstruction.get("status") == "ready" else 0
+                _rst["status"] = str(reconstruction.get("status") or "failed")
         # 顺手把这张图的**配色**也读回来（2026-08-04）。
         #
         # 用户观察："图表的颜色是一样的"。查下来是链路断在这一步：图每个应用
@@ -3806,7 +3846,21 @@ def _enrich_monitor_page_overviews_inner(
         # 取不到/不合格返回 None，什么都不写——前端读不到 chartColors 就回落
         # 账本色序，跟这次改动之前的行为一模一样（fail-open）。
         palette_remaining = remaining_run_budget_seconds()
-        if (
+        if user_shot and not _existing_chart_colors(model):
+            # 用户给了真图那条路**不取色**（2026-08-12 傍晚，用户裁决"直接照着图画"）。
+            # 实测 19~118s 一趟。
+            #
+            # ⚠ 代价如实记：图表是 ECharts 画在 canvas 上的，颜色由 `identity.chartColors`
+            # 决定，HTML 里的 CSS 管不到它。所以跳过之后**图表会用账本默认色序**，跟设计
+            # 出来那张页面的用色不再自动一致。
+            # 想两头都要而又不花这一轮 LLM：从产出的 HTML 里把 CSS 变量/十六进制色扫出来
+            # 当图表色——纯机械、零成本、且天然跟页面一致。那是独立一刀，没做。
+            with _enrich_stage(
+                "monitor.palette", page=page_id, device=device or "unspecified", current=1, total=1
+            ) as skipped:
+                skipped["got"] = 0
+                skipped["skippedReason"] = "user_shot"
+        elif (
             sheet_b64
             and not _existing_chart_colors(model)
             and (palette_remaining is None or palette_remaining >= 160)
