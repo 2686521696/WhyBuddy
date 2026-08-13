@@ -1,4 +1,75 @@
-%% 面团 AI（原 SlideRule）V5.9 架构图（推演引擎规格 · 继承 V5.8 全图 + ❖ 08-11 升版）
+%% 面团 AI（原 SlideRule）V5.9 架构图（推演引擎规格 · 继承 V5.8 全图 + ❖ 08-11 升版 + ⛔ 08-13 标红）
+%% ⛔ 2026-08-13 标红：**没有新功能，只标红四处**。这一轮不是升版，是把「链路本身
+%%   的形状问题」画到图上——它们不是 bug，每一处单独看都有合理的实现理由，合起来
+%%   才是这套系统当前最贵的那个约束。用户原话：「之前使用 5 模型喂的那一个，
+%%   他妈是垃圾，那根本就不行啊」。下面四条是查代码查出来的根据，不是感觉。
+%% ·
+%%   【⛔1 GEN5：系统真正的输入就是那一句话】
+%%     `generate_five_system_model(goal: str, *, llm_json_fn, gate_feedback)`
+%%     签名里**没有第二个内容参数**。_build_user_content(goal) 拼进 prompt 的全部东西：
+%%       ① Business intent = 用户打的那 55~100 个字
+%%       ② 已安装技能（installed_skills_for_channel）
+%%       ③ 业界参考语料 / 设计菜谱（两者都只按 goal 检索命中）
+%%       ④ refine_ctx（E29 增量改，只有二次精修时才有）
+%%     也就是说：一个 LLM 调用要从一句话里同时发明实体 / 字段 / enum / 页面 /
+%%     权限 / 工作流 / 不变式，还要从 316 个区块里选型。实测两轮全新话题
+%%     （律所案件管理、设备报修）都是第一次没过结构闸、attempts=2。
+%%     ⚠ 这不是说 GEN5 写得不好，是说**它上游是空的**——没有任何一层在它之前
+%%     把需求变厚。后面 ⛔2 说的就是那个本该在它上游的东西。
+%% ·
+%%   【⛔2 C_TREE / spec_tree：f-string 拼的占位，且是死路】
+%%     capability_maps.py 的 execute_structure_decompose 里：
+%%       req_text   = f"Implement scoped permission checks for {goal}"
+%%       risk_text  = f"Privilege escalation via inheritance in {goal}"
+%%       deliv_text = f"SPEC tree + traceability for {goal} MVP"
+%%     恒定 1 需求 1 风险 1 交付物——**换什么题材，那条唯一的需求都是同一句英文**。
+%%     底下 G_SCHEMA / G_INV 两道闸在校验这棵树，校验的是**代码上一行刚拼出来的
+%%     形状**，所以恒过。拼完存进 artifacts 给人看，不喂给任何生成。
+%%     ⚠ 对照组：experiments/visual-first/materials/spec_tree.json（用户 zip 里那份，
+%%     fingerprint crm-followup-spec-20260604）有 15 个节点、4 条 successCriteria、
+%%     每个 requirement 带 acceptance 与 coversCriteria。**同名，但不是同一种东西。**
+%%     那一轮 D 组能把字段从 25 推到 37，输入用的正是那份——生产给不出来。
+%% ·
+%%   【⛔3 ECTX ⇢ GEN5 这条边**在代码里不存在**】
+%%     图上一直画着「▲ 同一上下文纪律」这条虚线，读图的人会以为过了信任门的
+%%     产物（含 spec_tree）会回流进五系统起草的 prompt。实际：v5_llm_generate 整个
+%%     文件里 evidence_context / UPSTREAM_EVIDENCE / artifacts 作为**输入**一次都没有；
+%%     调用点 v5_capability_executor.py:420 也只传了 goal。
+%%     ⚠ 这正是本文件历来最看重的那一类问题的又一例：**照着一个不存在的结构去
+%%     理解系统，比不知道它存在更糟**。边保留在图上但改了标注，不直接删——
+%%     删掉就没人知道它曾经被以为是通的。
+%% ·
+%%   【⛔4 SHEET：图挂在模型下游，且明令不许决定内容】
+%%     出图提示词由 _monitor_overview_design_brief(page, datamodel, audience="image")
+%%     反推，而那份 brief 的口径写在它自己的 docstring 里：把这个页面**自己已经
+%%     声明、已经过 Gate 校验的 stats/charts** 当成必须覆盖的内容清单，
+%%     「LLM 只负责这批内容的视觉设计，不负责决定该不该有」。
+%%     所以图没有任何合法途径去加一个字段、加一个实体、改一次信息架构。
+%%     ⚠ 而且同一段 docstring 里另一条：**故意不把 rankings/feeds 塞进这份清单**——
+%%     参照图从来不被允许画列表。今天查 actionRef 时实测到的
+%%     「自由树只落 monitor/dashboard 页 · rowsRef 6 轮里 4 轮要靠机械修复救回来 ·
+%%     actionRef 只有 3/6 用上」，全部发生在这块图不许画的区域：**设计模型在这里
+%%     是没有参照的**。图管版式，而列表全是内容。
+%% ·
+%%   【方向性结论（尚未实施，写在这里免得下次又从头推一遍）】
+%%     实验 experiments/visual-first（分支 claude/visual-first-model-derivation）：
+%%     同样 55 字意图，唯一差别是有没有 HTML 当输入，字段 25→37、区块 10→14、臆造 0。
+%%     所以该改的是**边的方向**：视觉证据要在五系统模型的上游，不是下游。
+%%     ⚠ 但**不能整条链倒过来**，这一条也是实测钉死的：4 份 HTML 里「角色/权限/
+%%     主管/管理员」出现 0 次、「成交/流失/归档/阶段」出现 0 次，五组推出来的流程
+%%     拓扑完全相同（5 节点 6 转移）——那是模型的行业常识，不是证据。
+%%     **权限与工作流永远推不出来，只能从 spec 来。** 所以正确形状是分叉不是倒序：
+%%       spec ├─ 视觉线：出图 → 反推 页面/字段/信息架构
+%%            └─ 语义线：权限 / 工作流 / 不变式
+%%                  两条线汇合 → 五系统模型 → 结构闸 → 设计（复用同一张图当参照）
+%%     成本上这不是净增：生图那 60~85s 现在就在花，只是花在一张按设计不许决定
+%%     内容的装饰图上。
+%% ·
+%%   【⛔ 一轮实测墙钟（2026-08-13 · gpt-5.6-luna · 未配生图）】
+%%     model.generate 128.8s / 218.3s（两轮都 attempts=2）· theme ~11s ·
+%%     monitor.design 81~168s（6 次采样中位数 ~135s）· 合计 220.6s / 370.2s。
+%%     生产还要加参照板一张 60~85s，即**约 5~8 分钟一轮**。
+%% ⛔ 符号: ⛔ = 08-13 标红（不是升版，是把形状问题画上去）
 %% ❖ 2026-08-11 升版：V5.8 图（08-06 · 551394a1）之后 165 个动到
 %%   slide-rule-python/services|scripts 或 client/src 的提交。这一轮的性质：
 %%   **积木供给侧从"够用"变成了过剩，于是瓶颈整个换了位置**。
@@ -549,7 +620,7 @@ subgraph POOL["03 能力池 / Capability Pool（平权 · V5.1 原样 · 执行�
   C_SNORM["归一化 / 稳定 ID 重映射"]:::cap
   G_INV{"不变量守卫闸"}:::gate
   C_SFALL["确定性兜底"]:::fallback
-  C_TREE["结构拆解 / structure.decompose<br/>● + 旧管线推导回填(K5)"]:::cap
+  C_TREE["结构拆解 / structure.decompose<br/>● + 旧管线推导回填(K5)<br/>⛔08-13 标红:产出的 spec_tree 是 **f-string 拼的占位**·恒定 1 需求 1 风险 1 交付物<br/>唯一那条需求永远是 Implement scoped permission checks for 「goal」·换什么题材都一样<br/>底下 G_SCHEMA / G_INV 校验的是**代码上一行刚拼出来的形状**·所以恒过<br/>⚠ 而且是**死路**:拼完存进 artifacts 给人看·不喂给任何生成(见 ⛔3)<br/>⚠ 对照:用户 zip 里那份 spec_tree 有 15 节点 / 4 条 successCriteria / 每条带 acceptance<br/>**同名但不是同一种东西**——D 组字段 25→37 用的正是那份·生产给不出来"]:::cap
   C_DOC["文档生成 / document.draft"]:::cap
   C_ACC["验收 / acceptance"]:::cap
   C_PREV["效果预演 / scenario.preview"]:::cap
@@ -599,7 +670,7 @@ end
 subgraph CLOSURE["09 五系统闭环装配层 / Five-System Closure（▲ 07-17 新增子图 · app 主舞台的数据源）"]
   direction TB
   LEGAL["✱ 五系统合法域账本 / five_system_legal.json（✱07-30补画·此前图上一直缺失）<br/>补画理由:它已经有**四个**派生消费方，是这张图里存在感最强的隐形节点——<br/>合法域此前记在四处(结构门常量·修复器本地拷贝·生成契约手写枚举串·客户端渲染器<br/>手抄版)靠人肉对齐，E37 的根因就是漏账的代价。收成单一真相源后:<br/>结构门 import · 修复器经门 re-export 自动跟随 · 生成契约由 enum_str() 渲染<br/>· 客户端构建期直读同一 JSON(vitest parity 测试锁死)<br/>✱07-30 起第五个消费方:入站判定的能力面(TJCAP)<br/>加枚举=只改 JSON;哪一方没消费到,parity 测试当场红<br/>(思想同阿里低代码引擎《物料协议》:一份物料描述·编辑器/渲染器/校验器共同消费)"]:::ledger
-  GEN5["▲ 五系统起草 / v5_llm_generate<br/>schema契约+已装技能硬注入+业界参考软引用<br/>E29 精修上下文(增量改)·模型直供(回退)两通道<br/>✱07-30:prompt 里的哨兵词/占位字面量长得像值就会被当成值——binding=none 让<br/>模型给 QuickActionPanel 全填了 entityRef:「none」(4条门禁不过);「with slots」被读成<br/>键名让一轮 6 页排版全丢。两处都改成祈使句<br/>❖08-11 **区块清单不再是全量**:走 NARROW 挑出的 ~60 条进 prompt(≈7.4K token·<br/>此前 5.6 万)。窄化失效时自动退回全量·所以这条边**永远有货**·只是货有多有少<br/>❖08-11 每个区块条目加 `pages=`(允许的页型)·并补一句点名反例的规则句——<br/>光有字段不够:区域限制当初也有条目字段·照样反复被违反·直到补上举反例的<br/>规则句才收住。规则句还必须**给出路**(该改页的 kind·而不是硬塞区块)·<br/>不给出路的禁令会被绕过成「干脆不用那个区块」"]:::cap
+  GEN5["▲ 五系统起草 / v5_llm_generate<br/>schema契约+已装技能硬注入+业界参考软引用<br/>E29 精修上下文(增量改)·模型直供(回退)两通道<br/>✱07-30:prompt 里的哨兵词/占位字面量长得像值就会被当成值——binding=none 让<br/>模型给 QuickActionPanel 全填了 entityRef:「none」(4条门禁不过);「with slots」被读成<br/>键名让一轮 6 页排版全丢。两处都改成祈使句<br/>❖08-11 **区块清单不再是全量**:走 NARROW 挑出的 ~60 条进 prompt(≈7.4K token·<br/>此前 5.6 万)。窄化失效时自动退回全量·所以这条边**永远有货**·只是货有多有少<br/>❖08-11 每个区块条目加 `pages=`(允许的页型)·并补一句点名反例的规则句——<br/>光有字段不够:区域限制当初也有条目字段·照样反复被违反·直到补上举反例的<br/>规则句才收住。规则句还必须**给出路**(该改页的 kind·而不是硬塞区块)·<br/>不给出路的禁令会被绕过成「干脆不用那个区块」<br/>⛔08-13 标红:**系统真正的输入就是那一句话**。签名 generate_five_system_model(goal: str)<br/>没有第二个内容参数;_build_user_content(goal) 拼进去的只有:意图那 55~100 字 +<br/>已安装技能 + 按 goal 检索命中的参考语料/设计菜谱 + refine_ctx(仅二次精修)<br/>一个 LLM 调用要从一句话里同时发明 实体/字段/enum/页面/权限/工作流/不变式·<br/>还要从 316 个区块里选型。实测两轮全新话题都是第一次没过闸·attempts=2<br/>⚠ 病不在 GEN5 写得不好·在**它上游是空的**:没有任何一层在它之前把需求变厚"]:::cap
   DREPAIR["▲ 确定性修复 / v5_model_repair（零LLM·留痕）<br/>不变式refs近邻改写(唯一命中)·修不好整条剔除<br/>E37 展示层charts/stats同款处方(枚举违规剔除·非法format清除)<br/>骨架六系统不修——仍由门硬拦<br/>❖08-11 页型越界:**只记不改**(pageKindViolations)。跟 layout 槽位违规不同——<br/>那条改模型是因为槽位摆错会把页面真搞坏(PageHeader 钉在底部操作条上是实测过的)·<br/>页型摆错不影响渲染<br/>⚠ 不上闸的真正理由是**这条约束本身经不起推敲**:控住领域族之后仍有 **15 对**<br/>同域同能力的严格子集矛盾·而 pageKinds 从来没集中评审过(随每个区块被添加时手写)。<br/>拿一条可能标错的规则去硬拒模型·是把「违规发出去」换成「合规的也发不出去」"]:::core
   MGATE{"▲ 结构门 / v5_model_gate<br/>跨系统引用全解析·枚举合法域·页面范式绑定<br/>二元机械·任何悬空=拦<br/>✱07-30补两处漏:①**实体字段 type 纳入校验**——此前 FIELD_TYPES 只在技能<br/>binding 那儿用过·实体字段的 type 一路无人查(所谓「封闭合法域」只是 prompt 里<br/>的一句约定)。代价不是「写错没人说」而是**静默降级**:前端对认不出的类型一律<br/>return text，一个 file 字段会安安静静变成普通文本框——用户以为能传附件实际<br/>只能打字·不报错不提示测试全绿。②沿用该段口径「出现即校验·缺省不罚」"}:::gate
   REASK5["▲ 门裁决回喂 / gate-feedback retry (E37)<br/>findings原文喂回·有界重生成一次<br/>错哪改哪·两版都拦仍fail-closed"]:::fallback
@@ -624,7 +695,7 @@ subgraph ENRICH["10 体验层生成 / Experience Enrichment（★ 07-24 新增�
   APPSTORE["★ App Store 入库 / app_store.save_app（07-26补画·此前图上缺失）<br/>过门+增强完的设计模型持久化·fail-open·dedup_key去重·组建库地基<br/>✱07-30修正:降级从三级改**四级**——远端TCP → 远端SQL over HTTP →<br/>**本地SQLite** → 本地JSON。前两级是同一个远端库的两条通道(受限网络只放行<br/>443 时自动改走HTTP·数据不分叉)·第三级才是本地库<br/>此前远端一挂直接掉到最弱的JSON(整文件读写·无索引无事务·崩在写一半留半个文件)<br/>没配远端连接串时也走SQLite——没有远端不代表就该退到最弱那档<br/>✪08-03 入库时**带上归属**:owner_id 来自推演路由塞进 contextvar 的当前用户·拿不到就落无主(语义见 ✪A OWNERSHIP)·**不能为了拿归属而让闭环失败**"]:::ledger
   DEVSHELL["★ 设备壳+视觉刻度 / device shell & design tokens<br/>桌面/手机按preferredDevice切换·平板范式代码保留已下架(ADR-0001)<br/>design-token间距/圆角接antd(阴影档定义未消费)·grid-compact压实(react-grid-layout核心·MIT)<br/>layout 5槽位·designRecipe<br/>✱07-30:手机档整层换 antd-mobile(不再套PC组件)·按pageKind出骨架<br/>(dashboard/monitor/wizard/kanban/calendar)·中文locale·NavBar/Calendar/Collapse<br/>·TabBar行数徽标走主题色(默认红是「未读/紧急」的意思·这里表达的是「本页12行数据」)<br/>✪08-03 手机档渲染画布改 **9:16**(405x720)·与出图画布同比——出图侧早就是 720x1280·渲染侧不是<br/>横向空间本来就紧·所以是**加宽**不是压扁(390x844 → 405x720)"]:::core
   PALGUARD["✱ 色板合规机械校验 / palette_guard（接在 reask 环里）<br/>色板约束原本只写在 prompt 里·真跑下来模型一字不差地干它被警告过的事<br/>(橘色应用主色一次没出现·蓝占六成·还自己发明色板外的绿)<br/>两条规则都在 OKLCh 里判(HSL 色相感知不均匀·转换走 coloraide 不手搓矩阵)<br/>R1 色相落在色板某色相 ±25° 内(只比色相不比ΔE·prompt 允许深浅变体)<br/>R2 主色系用量不低于任何其他单一色相族·近中性色 chroma&lt;0.04 豁免<br/>违规先带具体偏差重问·重试耗尽机械纠偏(**只旋色相保 L/C**·明暗是设计意图)<br/>**只纠 R1·配色问题绝不抛错**(抛了调用方就回落固定骨架·那正是这条链路在治的病)"]:::trust
-  SHEET["✧ 首页参照板 / _build_overview_sheet_prompt（设计 LLM 照着它排版）<br/>✧07-31修正:**不再是三区**——「样式风格」区已拿掉(整张画布只画真实版式)·<br/>明说设备档时也不再多画另一档(白画一块后面根本不用·还挤占真正要用那档的画布)<br/>✧07-31修正:两档**各出一张**·尺寸按档位拆开(桌面1280x720/手机720x1280)<br/>⚠ 认不认 size 参数是**端点相关行为**:当前端点(api.xiaoleai.team)逐像素认·<br/>上一家完全不认(十个尺寸组合全回1672x941·形状只由提示词决定)——换端点必须<br/>拿 scripts/overview_sheet_probe.py 整份重测·别拿旧端点测出的白名单当常量<br/>✧07-31:prompt 改**两段式**——事实清单(画布/档位/内容范围/色板/真实字段·<br/>一条做法都不给) + LLM 按这一个系统现写出图提示词(版式/占位写法它定)<br/>拿确定性换多样性:原来那五段常量对每个应用说同一句话(两个完全不同业务的<br/>提示词逐字相同87%)·代价是改写 LLM 漏掉哪条·那张图就复发对应老 bug<br/>降分辨率必须**同步降密度**——不是像素总数不够·是每个元素分到的像素不够<br/>画面里不许出现 JSON/字段id/blockRef 等技术标识(brief 是照抄进 prompt 的)<br/>⚠ 图上的数字与条目数是**占位假象**:实测参照板画了9个快捷操作·而模型里<br/>actions 只有2条;画了6步流程·而 workflow 只有5个节点。它是版式参照不是数据源<br/>✪08-03 端点换第三家:api.gpt.ge(逐像素认 size·1280x720 / 720x1280 实测精确返回)<br/>⚠「换端点必须整份重测」这条 V5.7 写过·这次正是它救了场——别拿旧端点的结论当常量<br/>✪08-03 blockRef 那批**视觉描述随通道一起停了**:参照板不该承诺真实渲染兑现不了的东西·<br/>代价是画面内容从 9 块降到 5 块(3 KPI + 2 图表)·实测明显变稀<br/>⚠ 07-31 改两段式时·「占位写成看得见的文字·不许用灰条/色块/留空」和「信息层级必须画满」<br/>两条常量**没进改写系统提示词**·只活在区块级参照图那边(freeform_block.py:1224)——<br/>V5.7 ✧4 预言的「改写 LLM 漏掉哪条就复发哪个老 bug」已经兑现(实测灰条复发)"]:::cap
+  SHEET["✧ 首页参照板 / _build_overview_sheet_prompt（设计 LLM 照着它排版）<br/>✧07-31修正:**不再是三区**——「样式风格」区已拿掉(整张画布只画真实版式)·<br/>明说设备档时也不再多画另一档(白画一块后面根本不用·还挤占真正要用那档的画布)<br/>✧07-31修正:两档**各出一张**·尺寸按档位拆开(桌面1280x720/手机720x1280)<br/>⚠ 认不认 size 参数是**端点相关行为**:当前端点(api.xiaoleai.team)逐像素认·<br/>上一家完全不认(十个尺寸组合全回1672x941·形状只由提示词决定)——换端点必须<br/>拿 scripts/overview_sheet_probe.py 整份重测·别拿旧端点测出的白名单当常量<br/>✧07-31:prompt 改**两段式**——事实清单(画布/档位/内容范围/色板/真实字段·<br/>一条做法都不给) + LLM 按这一个系统现写出图提示词(版式/占位写法它定)<br/>拿确定性换多样性:原来那五段常量对每个应用说同一句话(两个完全不同业务的<br/>提示词逐字相同87%)·代价是改写 LLM 漏掉哪条·那张图就复发对应老 bug<br/>降分辨率必须**同步降密度**——不是像素总数不够·是每个元素分到的像素不够<br/>画面里不许出现 JSON/字段id/blockRef 等技术标识(brief 是照抄进 prompt 的)<br/>⚠ 图上的数字与条目数是**占位假象**:实测参照板画了9个快捷操作·而模型里<br/>actions 只有2条;画了6步流程·而 workflow 只有5个节点。它是版式参照不是数据源<br/>✪08-03 端点换第三家:api.gpt.ge(逐像素认 size·1280x720 / 720x1280 实测精确返回)<br/>⚠「换端点必须整份重测」这条 V5.7 写过·这次正是它救了场——别拿旧端点的结论当常量<br/>✪08-03 blockRef 那批**视觉描述随通道一起停了**:参照板不该承诺真实渲染兑现不了的东西·<br/>代价是画面内容从 9 块降到 5 块(3 KPI + 2 图表)·实测明显变稀<br/>⚠ 07-31 改两段式时·「占位写成看得见的文字·不许用灰条/色块/留空」和「信息层级必须画满」<br/>两条常量**没进改写系统提示词**·只活在区块级参照图那边(freeform_block.py:1224)——<br/>V5.7 ✧4 预言的「改写 LLM 漏掉哪条就复发哪个老 bug」已经兑现(实测灰条复发)<br/>⛔08-13 标红:**图挂在模型下游·明令不许决定内容**。出图提示词由<br/>_monitor_overview_design_brief(page, datamodel, audience=image) 反推·<br/>那份 brief 的口径写在自己 docstring 里:拿这一页**已经声明、已经过 Gate 的**<br/>stats/charts 当必须覆盖的清单·「只负责这批内容的视觉设计·不负责决定该不该有」<br/>⚠ 所以图没有任何合法途径去加一个字段/加一个实体/改一次信息架构<br/>⚠ 同一段 docstring 另一条:**故意不把 rankings/feeds 塞进清单**——参照图从来<br/>不被允许画列表。今天实测的「自由树只落 monitor/dashboard 页 · rowsRef 6 轮里<br/>4 轮靠机械修复救回来 · actionRef 只有 3/6」全发生在这块不许画的区域:<br/>**设计模型在这里是没有参照的**。图管版式·而列表全是内容"]:::cap
   OVDEV["✱ 首页版式按设备分档 / freeformOverview = &#123;root, mobile?:&#123;root&#125;&#125;<br/>此前只有 PC 首页是 AI 规划的·手机首页仍是固定骨架把组件堆在最上方<br/>现在两档**各设计一版**(不是把桌面版式用 CSS 挤窄)·手机档固定骨架自动让位<br/>取值规则借 react-grid-layout 的 layouts=&#123;&#123;lg,md,sm&#125;&#125; +「本档没有就回退更大一档」<br/>实测:桌面出两排三列横排·手机一个三列横排都没有·通篇单列<br/>✧07-31:档位切换器**只列真有设计的档**·没设计过的不给入口(点进去是空的<br/>比没有入口更糟)·单档时那个按钮不能收起来(原注释写反了)"]:::cap
 end
 
@@ -897,7 +968,7 @@ ATTACH -.▲ PDF走一次性沙盒.-> CODERUN
 ATTACH -.▲ 提取文本注入指令.-> INTAKE
 %% 五系统闭环装配：首次生成后先走确定性终止边；只有输入变化或 repair 才重入。
 AWAIT -.▲ 循环落定·闭环重建必跑.-> GEN5
-ECTX -.▲ 同一上下文纪律.-> GEN5
+ECTX -.⛔ 这条边在代码里不存在:GEN5 只收 goal 字符串.-x GEN5
 GEN5 --> DREPAIR
 DREPAIR --> MGATE
 MGATE -.▲ 拦截·裁决喂回.-> REASK5
@@ -1146,3 +1217,11 @@ classDef role fill:#fae8ff,stroke:#d946ef,color:#701a75
 classDef bus fill:#fef9c3,stroke:#eab308,color:#713f12
 classDef await fill:#e0f2fe,stroke:#38bdf8,color:#0c4a6e,stroke-dasharray: 5 5
 classDef runtime fill:#f5f5f4,stroke:#78716c,color:#292524
+
+%% ⛔ 08-13 标红。**必须定义在所有 classDef 之后**：mermaid 的 classDef 生成的是
+%%   同优先级 CSS 规则，靠书写顺序决胜负——写在 cap 前面的话粗红边会被 cap 的
+%%   紫边盖掉，图上什么都看不出来。
+%%   用 class 语句叠加而不是把 :::cap 改成 :::redflag：这三个节点的层色（cap=能力）
+%%   是信息，不该为了标红丢掉；两个 class 同时挂在节点上，红边只覆盖描边。
+classDef redflag fill:#fee2e2,stroke:#dc2626,stroke-width:4px,color:#7f1d1d
+class C_TREE,GEN5,SHEET redflag
