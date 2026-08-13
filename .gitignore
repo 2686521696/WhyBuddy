@@ -215,3 +215,4 @@ docs/skills-triage.partial.jsonl
 .probe.mjs
 .gen-*.mjs
 .dbg.mjs
+purge-result.json
