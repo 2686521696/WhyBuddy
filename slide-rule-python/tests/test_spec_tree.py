@@ -1,0 +1,461 @@
+"""真 spec 的契约与闸（2026-08-13）。
+
+被替换的那份 spec_tree 是 f-string 拼的，底下 G_SCHEMA / G_INV 校验的是
+**代码上一行刚拼出来的形状**，所以恒过——那不叫闸，叫留痕。
+
+所以这份用例的重点不是"合法的能过"，而是**每一条校验都能真失败**：
+下面每个 `test_拦` 都是拿一份只坏了一处的 spec 去撞，撞不出来就说明那条
+校验是摆设。一条闸如果不可能失败，它就不是闸。
+"""
+
+from __future__ import annotations
+
+import copy
+
+import pytest
+
+from services.spec_tree import (
+    SpecGenerationError,
+    SpecTree,
+    build_spec_prompt,
+    generate_spec_tree,
+    spec_to_markdown,
+    validate_spec_tree,
+)
+
+# 一份合法的最小 spec：两条判据、两个 requirement、一个 design、一个 task、
+# 一个 evidence、两页。故意做小——每个用例只在它身上坏一处，坏因才唯一。
+GOOD: dict = {
+    "rootNodeId": "n0",
+    "version": 3,
+    "successCriteria": [
+        {"id": "sc1", "text": "维修工可在 2 分钟内完成一次报修登记。"},
+        {"id": "sc2", "text": "班组长能按车间查看当日未处理工单数量。"},
+    ],
+    "nodes": [
+        {
+            "id": "n0",
+            "parentId": None,
+            "type": "requirement",
+            "title": "提供报修登记闭环",
+            "acceptance": "当维修工提交报修单时，系统应生成工单并分配初始状态。",
+            "coversCriteria": ["sc1"],
+            "evidenceRefs": ["nE1"],
+        },
+        {
+            "id": "n1",
+            "parentId": "n0",
+            "type": "requirement",
+            "title": "按车间统计未处理工单",
+            "acceptance": "当班组长打开总览页时，系统应按车间展示当日未处理工单数量。",
+            "coversCriteria": ["sc2"],
+            "evidenceRefs": ["nE1"],
+        },
+        {
+            "id": "n2",
+            "parentId": "n0",
+            "type": "design",
+            "title": "报修登记抽屉表单",
+            "notes": "顶部入口打开抽屉，必填设备与故障描述，保存后回到工单详情。",
+            "evidenceRefs": ["nE1"],
+        },
+        {
+            "id": "n3",
+            "parentId": "n2",
+            "type": "task",
+            "title": "定义工单数据模型",
+            "verify": "提交表单后能在工单列表看到新记录。",
+        },
+        {
+            "id": "nE1",
+            "parentId": "n0",
+            "type": "evidence",
+            "title": "用户要求设备报修工单系统",
+            "source": "user_input:设备报修工单系统",
+        },
+    ],
+    "pages": [
+        {
+            "id": "p1",
+            "name": "车间报修总览",
+            "audience": "班组长",
+            "purpose": "一眼看到各车间当日未处理工单数量和趋势。",
+            "coversNodes": ["n1"],
+        },
+        {
+            "id": "p2",
+            "name": "报修登记",
+            "audience": "维修工",
+            "purpose": "填写设备与故障描述，提交一张新的报修工单。",
+            "coversNodes": ["n0", "n2"],
+        },
+    ],
+}
+
+
+def broken(**patch) -> dict:
+    """复制一份合法 spec，只按 patch 坏一处。"""
+    spec = copy.deepcopy(GOOD)
+    for key, value in patch.items():
+        spec[key] = value
+    return spec
+
+
+def 失败原因(spec: dict) -> str:
+    verdict = validate_spec_tree(spec)
+    assert verdict["passed"] is False, "这份应该被拦下来，却过了"
+    return "｜".join(f["message"] for f in verdict["findings"])
+
+
+class Test合法的能过:
+    def test_基准件通过(self):
+        assert validate_spec_tree(GOOD) == {"passed": True, "findings": []}
+
+    def test_解析成模型后字段都在(self):
+        spec = SpecTree.model_validate(GOOD)
+        assert spec.rootNodeId == "n0"
+        assert len(spec.successCriteria) == 2
+        assert len({n.type for n in spec.nodes}) == 4  # 四种类型都覆盖到了
+        assert len(spec.pages) == 2
+
+
+class Test每条闸都能真失败:
+    """一条闸如果不可能失败，它就不是闸。逐条撞一遍。"""
+
+    def test_拦_孤儿判据(self):
+        # 最核心的一条：写了判据但没有 requirement 认领它
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][1]["coversCriteria"] = []
+        assert "sc2" in 失败原因(spec)
+
+    def test_拦_requirement_缺验收条件(self):
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][0]["acceptance"] = ""
+        assert "acceptance" in 失败原因(spec)
+
+    def test_拦_验收条件不是_EARS_形式(self):
+        # 「系统会展示工单」这种陈述句判不了真假，验收无从下手
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][0]["acceptance"] = "系统会展示工单列表。"
+        assert "EARS" in 失败原因(spec)
+
+    def test_接受_EARS_的三种引导词(self):
+        for lead in ("当", "若", "如果"):
+            spec = copy.deepcopy(GOOD)
+            spec["nodes"][0]["acceptance"] = f"{lead}维修工提交报修单，系统应生成工单。"
+            assert validate_spec_tree(spec)["passed"], f"「{lead}…应…」应该算 EARS"
+
+    def test_拦_design_缺说明(self):
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][2]["notes"] = ""
+        assert "notes" in 失败原因(spec)
+
+    def test_拦_task_缺验证方式(self):
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][3]["verify"] = ""
+        assert "verify" in 失败原因(spec)
+
+    def test_拦_evidence_缺来源(self):
+        # 没有 source 的 evidence 就是凭空断言
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][4]["source"] = ""
+        assert "source" in 失败原因(spec)
+
+    def test_拦_根节点不存在(self):
+        assert "rootNodeId" in 失败原因(broken(rootNodeId="n99"))
+
+    def test_拦_根节点带了父引用(self):
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][0]["parentId"] = "n1"
+        assert "parentId" in 失败原因(spec)
+
+    def test_拦_父引用悬空(self):
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][1]["parentId"] = "n404"
+        assert "n404" in 失败原因(spec)
+
+    def test_拦_成环(self):
+        # 成环是静默挂死（无限循环不报错），比结构不对更难查
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][2]["parentId"] = "n3"  # n2→n3，而 n3 的父本来就是 n2
+        assert "环" in 失败原因(spec)
+
+    def test_拦_coversCriteria_指向不存在的判据(self):
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][0]["coversCriteria"] = ["sc404"]
+        assert "sc404" in 失败原因(spec)
+
+    def test_拦_evidenceRefs_指向非_evidence_节点(self):
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][0]["evidenceRefs"] = ["n2"]  # n2 是 design
+        assert "evidence" in 失败原因(spec)
+
+    def test_拦_id_重复(self):
+        spec = copy.deepcopy(GOOD)
+        spec["nodes"][1]["id"] = "n0"
+        assert "重复" in 失败原因(spec)
+
+    def test_拦_页面清单为空(self):
+        # 没有页就没有第 3 步——不知道要出几张图、每张画什么
+        assert "pages" in 失败原因(broken(pages=[]))
+
+    def test_拦_页面没有承载节点(self):
+        spec = copy.deepcopy(GOOD)
+        spec["pages"][0]["coversNodes"] = []
+        assert "coversNodes" in 失败原因(spec)
+
+    def test_拦_页面指向_task_或_evidence(self):
+        # 拿「定义工单数据模型」去让生图模型画一页，画出来必然是废的
+        for bad in ("n3", "nE1"):
+            spec = copy.deepcopy(GOOD)
+            spec["pages"][0]["coversNodes"] = [bad]
+            assert "requirement" in 失败原因(spec)
+
+    def test_拦_整份形状不对(self):
+        for junk in ("字符串", 42, [], None):
+            assert validate_spec_tree(junk)["passed"] is False
+
+
+class Test跟被替换那份的差别:
+    def test_闸对旧的_f_string_产物不放行(self):
+        """旧产物的形状（root/requirements/risks/deliverables/nodes）在新契约下直接不成立。
+
+        这条不是为了羞辱旧代码，是钉住「不会有人把旧产物喂进新链路还以为没事」。
+        """
+        legacy = {
+            "root": {"id": "root-1", "text": "某个目标", "type": "goal"},
+            "requirements": [{"id": "r1", "text": "Implement scoped permission checks"}],
+            "risks": [{"id": "rsk1", "text": "Privilege escalation"}],
+            "deliverables": [{"id": "d1", "text": "SPEC tree + traceability"}],
+            "nodes": [{"id": "root-1", "type": "goal", "text": "某个目标"}],
+        }
+        assert validate_spec_tree(legacy)["passed"] is False
+
+
+def 放大到真实规模(spec: dict) -> dict:
+    """把基准件撑到提示词里要求的常见区间（判据 3~6、需求 3~8、页 3~8）。
+
+    基准件是给「只坏一处」的用例做的，故意做小；量内容契约得用真实规模，
+    否则量的是夹具的大小，不是契约。
+    """
+    out = copy.deepcopy(spec)
+    out["successCriteria"] += [
+        {"id": "sc3", "text": "工单从受理到关闭全程可追溯，每次流转都留下操作人和时间。"},
+        {"id": "sc4", "text": "维修工在移动端可查看指派给自己的工单并回填处理结果。"},
+    ]
+    out["nodes"] += [
+        {
+            "id": "n4",
+            "parentId": "n0",
+            "type": "requirement",
+            "title": "工单流转全程留痕",
+            "acceptance": "当工单状态发生变化时，系统应记录操作人、时间和变更前后的状态。",
+            "coversCriteria": ["sc3"],
+            "evidenceRefs": ["nE1"],
+        },
+        {
+            "id": "n5",
+            "parentId": "n0",
+            "type": "requirement",
+            "title": "维修工处理自己的工单",
+            "acceptance": "当维修工打开我的工单时，系统应只展示指派给本人且未关闭的工单。",
+            "coversCriteria": ["sc4"],
+            "evidenceRefs": ["nE1"],
+        },
+        {
+            "id": "n6",
+            "parentId": "n4",
+            "type": "design",
+            "title": "工单详情操作时间轴",
+            "notes": "详情页右侧按时间倒序展示每次状态流转，含操作人、时间与备注。",
+            "evidenceRefs": ["nE1"],
+        },
+    ]
+    out["pages"] += [
+        {
+            "id": "p3",
+            "name": "工单详情",
+            "audience": "班组长与维修工",
+            "purpose": "查看一张工单的完整信息与流转记录，并推进到下一个状态。",
+            "coversNodes": ["n4", "n6"],
+        },
+        {
+            "id": "p4",
+            "name": "我的工单",
+            "audience": "维修工",
+            "purpose": "只看指派给自己且未关闭的工单，逐条回填处理结果。",
+            "coversNodes": ["n5"],
+        },
+    ]
+    return out
+
+
+class Test渲染成_artifact_正文:
+    def test_真实规模满足既有的产物质量契约(self):
+        """_STRUCTURE_DECOMPOSE_CONTRACT：earsSections=["requirement"]、minContentChars=800。
+
+        契约本来就在，只是从前被 f-string 轻松糊弄过去。现在 EARS 由真实的
+        acceptance 满足，字数由真实内容满足——用信任层**真正会跑的那个正则**
+        来验，不自己另写一个宽松版。
+        """
+        from services.slide_rule_trust import _count_ears_like
+
+        spec = SpecTree.model_validate(放大到真实规模(GOOD))
+        assert validate_spec_tree(spec.model_dump())["passed"]
+        md = spec_to_markdown(spec)
+        assert len(md) >= 800, f"正文只有 {len(md)} 字，达不到契约的 800"
+        assert _count_ears_like(md) >= 1, "信任层数不到 EARS 句式"
+
+    def test_最小合法件够不到内容契约_这是真实的接缝(self):
+        """⚠ 一份**结构完全合法**的 spec，仍然可能过不了内容契约。
+
+        两道尺子量的不是一回事：schema 闸量「结构对不对」（引用解析得开、
+        判据有人认领），内容契约量「够不够厚」（minContentChars=800）。
+        基准件 2 判据 2 需求 2 页，结构挑不出毛病，渲染出来只有 585 字。
+
+        钉住它是因为这个接缝会**静默**咬人：spec 本身过了，产物却在信任层
+        被打回，而报错说的是「字数不够」，读的人会去查渲染器，不会想到是
+        spec 本身太薄。提示词里那句「判据 3~6 条、requirement 3~8 个、
+        页面 3~8 页」不是审美建议，是这条契约的下限倒推出来的。
+        """
+        md = spec_to_markdown(SpecTree.model_validate(GOOD))
+        assert validate_spec_tree(GOOD)["passed"], "基准件结构本身是合法的"
+        assert len(md) < 800, (
+            f"基准件现在有 {len(md)} 字了——如果是渲染器变啰嗦，"
+            f"这条用例就失去意义，改夹具而不是改断言"
+        )
+
+    def test_五个分段都在(self):
+        md = spec_to_markdown(SpecTree.model_validate(GOOD))
+        for section in ("成功判据", "需求", "设计", "任务", "页面清单", "依据"):
+            assert section in md
+
+    def test_页面清单进了正文(self):
+        # 第 3 步要按页出图，页面信息不能只活在 JSON 里、正文看不见
+        md = spec_to_markdown(SpecTree.model_validate(GOOD))
+        assert "车间报修总览" in md and "班组长" in md
+
+
+class Test生成与重问:
+    def test_一次就对直接返回(self):
+        spec = generate_spec_tree("设备报修", llm_json_fn=lambda _m: copy.deepcopy(GOOD))
+        assert isinstance(spec, SpecTree)
+        assert spec.rootNodeId == "n0"
+
+    def test_先错后对_把校验器原话喂回去(self):
+        bad = copy.deepcopy(GOOD)
+        bad["nodes"][1]["coversCriteria"] = []  # 孤儿判据
+        calls: list[list[dict]] = []
+
+        def fake(messages):
+            calls.append(messages)
+            return bad if len(calls) == 1 else copy.deepcopy(GOOD)
+
+        spec = generate_spec_tree("设备报修", llm_json_fn=fake)
+        assert isinstance(spec, SpecTree)
+        assert len(calls) == 2
+        # 第二轮的对话里必须带着第一轮的具体错处，不是泛泛的「重来」
+        回喂 = calls[1][-1]["content"]
+        assert "sc2" in 回喂 and "没通过机械校验" in 回喂
+
+    def test_一直错就抛_不回落占位(self):
+        """**失败不许回落成假 spec。**
+
+        被替换那份最大的问题不是写得糙，是它**永远成功**——一份恒定
+        1 需求 1 风险 1 交付物的假树，看起来跟真的一样，还能过自己的闸。
+        """
+        bad = copy.deepcopy(GOOD)
+        bad["pages"] = []
+        with pytest.raises(SpecGenerationError) as exc:
+            generate_spec_tree("设备报修", llm_json_fn=lambda _m: copy.deepcopy(bad))
+        assert "pages" in str(exc.value)
+
+    def test_LLM_没产出也抛(self):
+        with pytest.raises(SpecGenerationError):
+            generate_spec_tree("设备报修", llm_json_fn=lambda _m: None)
+
+    def test_注入的假_LLM_抛错按没产出处理(self):
+        def boom(_messages):
+            raise RuntimeError("网关抽风")
+
+        with pytest.raises(SpecGenerationError):
+            generate_spec_tree("设备报修", llm_json_fn=boom)
+
+
+class Test提示词:
+    def test_吃的是第一步产物_不是原始那句话(self):
+        """直接吃原句等于把「从一句话发明」原样往前挪一格，什么也没改善。"""
+        msgs = build_spec_prompt(
+            "设备报修工单系统",
+            clarified="目标用户是车间维修工与班组长；不做移动端",
+            evidence="检索到的同类系统通常包含工单状态机",
+        )
+        user = msgs[-1]["content"]
+        assert "车间维修工" in user
+        assert "工单状态机" in user
+
+    def test_没有澄清与证据时不塞空段(self):
+        user = build_spec_prompt("设备报修工单系统")[-1]["content"]
+        assert "澄清与假设" not in user and "外部证据" not in user
+
+    def test_把硬性要求写进提示词(self):
+        # 校验器会拦的每一条，提示词里都要先说清楚——否则纯靠重问去撞，浪费调用
+        user = build_spec_prompt("x")[-1]["content"]
+        for rule in ("coversCriteria", "EARS 形式" if False else "当……时，系统应", "成环", "coversNodes"):
+            assert rule in user
+
+
+class Test换实现时差点埋进去的两个坑:
+    """这两条不是契约本身，是换实现时**差一点静默生效**的东西。
+
+    都属于同一类：按具体取值分支、加一个新取值就悄悄失效。本仓踩过三次同型
+    （合法域账本抄在四处、手写 uses 声明与实际渲染不符 316 个、pageKinds 从没
+    集中评审），所以这次撞出来的两个当场钉住。
+    """
+
+    def test_新的_provenance_仍被认作有产出(self):
+        """调度核判「这条能力有没有产出」原本写的是 startswith("python-rag")。
+
+        真 spec 的 provenance 是 python-spec，会**静默掉出那个判断**——表现是
+        调度核认为 structure.decompose 从没产出过，于是每一轮都重新排它，
+        无限重跑，且不报任何错。
+        """
+        from models.v5_state import Artifact, V5SessionState
+        from services.slide_rule_orchestrator import _has_capability_output
+
+        state = V5SessionState(
+            sessionId="s1",
+            goal={"text": "x"},
+            artifacts=[
+                # producedBy 是服务端所有，普通构造会被防伪造守卫拒掉——
+                # 这条守卫本身是对的，测试跟着走它给的口子。
+                Artifact.server_construct(
+                    id="a1",
+                    title="SPEC Tree",
+                    summary="1 条成功判据",
+                    content="# SPEC Tree",
+                    provenance="python-spec",
+                    producedBy={"capabilityId": "structure.decompose", "capabilityRunId": "run-1"},
+                )
+            ],
+            capabilityRuns=[],
+        )
+        assert _has_capability_output(state, "structure.decompose") is True
+
+    def test_spec_不算外部证据(self):
+        """spec 是推导出来的，不是外部证据——不该给「有据可依」这道闸充数。
+
+        跟上一条相反：这一条是**故意不放行**。留着用例是因为将来有人可能顺手
+        把 python-spec 加进 is_external_grounding_provenance 的名单里"图个统一"，
+        那会让一份自己写的规格冒充外部依据。
+        """
+        from services.slide_rule_coverage import is_grounded_evidence_artifact
+
+        art = {
+            "kind": "spec_tree",
+            "provenance": "python-spec",
+            "producedBy": {"capabilityId": "structure.decompose"},
+            "content": "# SPEC Tree",
+            "sources": [{"id": "e1", "source": "x"}],
+        }
+        assert is_grounded_evidence_artifact(art) is False

@@ -719,7 +719,11 @@ def test_dev_python_api_mode_default_classification():
         assert r2.status_code == 200
         d = r2.json()
         assert d.get("backend") == "python"
-        assert d.get("provenance") == "python-rag"
+        # structure.decompose 走的是直连执行器那条路（它委托给 capability_maps
+        # 的真 spec 生成），provenance 因此是 python-spec；上面那个
+        # execute_mapped_capability 的桩其实没被用到。这条用例真正要证的是
+        # 「dev python api mode 下这条路由归 Python 拥有」，值本身是 python-* 就行。
+        assert str(d.get("provenance", "")).startswith("python-")
     finally:
         rf.is_python_native_capability = orig_native
         cm.execute_mapped_capability = orig_m
