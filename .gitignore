@@ -216,3 +216,6 @@ docs/skills-triage.partial.jsonl
 .gen-*.mjs
 .dbg.mjs
 purge-result.json
+
+# 图钩实验的产物：HTML/PNG 每轮重生成，几 MB，不进仓
+experiments/visual-first/runs/
