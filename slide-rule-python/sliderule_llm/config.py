@@ -88,6 +88,43 @@ def default_max_tokens() -> int:
     return _positive_int(os.environ.get("LLM_MAX_TOKENS"), DEFAULT_MAX_TOKENS)
 
 
+#: 结构化生成（深层节点树 / 严格 JSON 契约）的推理档位（2026-08-13）。
+#:
+#: ## 为什么这个要分路，而上面那个不许分路
+#:
+#: 看着像自相矛盾，其实是两种不同的东西：
+#:
+#: - `max_tokens` 是**上限**。分路只会让某条路比全局更窄，是纯粹的坑，
+#:   所以收成一个数（见 DEFAULT_MAX_TOKENS 头上那段）。
+#: - `reasoning_effort` 是**任务属性**。"判个意图要不要澄清"和"拼一棵七层
+#:   深的节点树"需要的思考量本来就差一个量级，一个数按不住两头。
+#:   仓库里早就在这么用了（v5_agentic_pick 那处显式传 low）。
+#:
+#: ## 实测（deepseek-v4-flash，同一道真题）
+#:
+#:     全局 medium：model.generate 281.9s ok=1   monitor.design 292.1s ok=1
+#:     全局 low   ：model.generate 139.4s ok=1   monitor.design  95.3s **ok=0**
+#:
+#: low 把生成提速一倍，却把首页设计跑挂了——3 次尝试全是
+#: `5 validation errors ... tag Field required`：思考砍太狠，模型拼不出合法的
+#: 深层树。机械修复（json-repair / rowsRef 修补）都触发了也没救回来。
+#:
+#: 所以：全局走 low 吃掉那一倍提速，**结构化生成这条路单独抬回来**。
+DEFAULT_STRUCTURED_REASONING_EFFORT = "medium"
+
+
+def structured_reasoning_effort() -> str:
+    """结构化生成的推理档位。`LLM_STRUCTURED_REASONING_EFFORT` 可覆盖。
+
+    返回空串表示"不要覆盖，跟全局走"——给的是逃生舱：某些网关不认这个参数，
+    或者换了个不需要额外思考的模型时，配个空值就能整条退回全局档位。
+    """
+    raw = os.environ.get("LLM_STRUCTURED_REASONING_EFFORT")
+    if raw is None:
+        return DEFAULT_STRUCTURED_REASONING_EFFORT
+    return raw.strip()
+
+
 def _provider_name(base_url: str) -> str:
     parsed = urlparse(base_url or "")
     return parsed.netloc or base_url

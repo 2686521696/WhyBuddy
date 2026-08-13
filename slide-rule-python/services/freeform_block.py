@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from pathlib import Path
 
-from sliderule_llm.config import default_max_tokens
+from sliderule_llm.config import default_max_tokens, structured_reasoning_effort
 
 from .app_preview import OverviewPreviewSink
 from .enrich_timing import remaining_run_budget_seconds, stage as _enrich_stage
@@ -2387,6 +2387,10 @@ def generate_freeform_block(
                 backoff_ms=2000,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                # 这条路要拼一棵七层深、带严格契约的节点树，思考量跟"判个意图"
+                # 不是一个量级：全局 low 时实测 3 次尝试全挂在
+                # `tag Field required`。理由与实测见 config 那个常量头上。
+                **({"reasoning_effort": _effort} if (_effort := structured_reasoning_effort()) else {}),
                 on_delta=lambda _chunk: None,  # 强制流式，免疫 CF 524（跟 structured_llm_json 同招）
             )
         except LlmError as exc:
