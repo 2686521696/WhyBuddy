@@ -836,6 +836,73 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
                     )
             return self
 
+    class ActionRef(BaseModel):
+        """这个节点点了之后干什么（2026-08-13 新增）。
+
+        ## 为什么补这一维
+
+        节点契约原来只有 tag/style/text/iconRef/imageRef/dataRef/chart/
+        rowsRef/fieldRef/children ——**没有任何"点了干什么"**。于是设计模型
+        画得出「编辑」按钮，却没地方写它该触发什么，渲染出来是个会发光的 div。
+
+        而管道一直是通的：`ExperienceBlockRendererProps` 里有
+        `onAction(actionId, eventData)`，所有渲染器都收得到，组件区块靠它干活
+        （DataTable 行内那两个链接就是）。自由树那边调用次数是 0——不是线断了，
+        是节点上没有可以接线的地方。
+
+        ## 抄了什么、没抄什么
+
+        抄 nocobase 的 Action：**容器由动作自己决定（openMode: drawer/modal/
+        page），不由触发它的那个组件决定**。仓库里 pagePipes 的注释已经引过
+        这一条，这里保持同一套分层。
+
+        **没抄它的内嵌式**：nocobase 把"要打开的东西"作为按钮的子 schema
+        （`properties.drawer1`）。那样自包含、不用解析引用，但同一个表单在多处
+        打开就要写多遍，且 schema 会很深。我们这边模型本来就是引用式的
+        （entityRef/fieldRef 全是引用），而且有结构闸专门查悬空引用——
+        用引用更贴本仓的既有纪律。
+
+        ## 为什么只有这三种
+
+        `navigate`（跳到某一页）**这一版没有**：目标是 page id，而
+        `build_freeform_models` 只拿得到 datamodel、结构闸也没走进自由树——
+        **验不了的引用不该让模型写**，否则就是又开一个可以瞎填的字段。
+        等 page id 能传进来再补。
+
+        这三种全部落在 datamodel 上，验得死；而且运行时那三个入口
+        （pagePipes 的 openCreate / openRecordById / openEdit）**全是现成的**，
+        一个都不用新加。
+
+        ## 标签白名单一个字不动
+
+        白名单里**没有 `button`**（只有 div/span/p/strong/em/small/h1-3/ul/li）
+        ——这本身就印证了"自由树从来没打算能点"。但不加：加了之后模型能画出
+        不带 actionRef 的 `<button>`，那就是又造一批死按钮，回到原点。
+
+        改成**带 actionRef 的节点自动变可交互**（渲染层加 role="button"、
+        tabIndex、键盘事件）。好处是顺带更有表达力——整张卡片可点，不只是
+        卡片角落那个按钮；而且白名单是 XSS 防线，能不动就不动。
+
+        ## 写入仍然归组件
+
+        动作只负责"打开哪个容器"，真正的增删改查由组件完成。理由是实测的：
+        让模型自己写 JS 实现增删改查，六项功能通过 12/18，三份里只有 1 份全过，
+        而且失败是静默的（能点、不报错、就是没反应）。
+        """
+
+        kind: Literal["createRecord", "openRecord", "editRecord"]
+        entityRef: str
+
+        @field_validator("entityRef")
+        @classmethod
+        def check_entity(cls, v: str) -> str:
+            if v not in entities:
+                raise ValueError(
+                    f"actionRef.entityRef '{v}' does not exist. "
+                    f"Real entities are: {list(entities.keys())}"
+                )
+            return v
+
     class FreeformNode(BaseModel):
         tag: str
         style: dict[str, str] = Field(default_factory=dict)
@@ -850,6 +917,10 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
         #: 取当前行的某个字段值（只在 rowsRef 子树内有意义，且必须在该
         #: rowsRef 的 fieldRefs 白名单里——两条都由 FreeformDesign 树级校验保证）。
         fieldRef: Optional[str] = None
+        #: 点了干什么。openRecord/editRecord 要有"当前行"，所以必须落在
+        #: rowsRef 子树内且实体对得上——跟 fieldRef 同一条作用域规则，
+        #: 由 FreeformDesign 树级校验保证。
+        actionRef: Optional[ActionRef] = None
         children: list["FreeformNode"] = Field(default_factory=list)
 
         @field_validator("tag")
@@ -948,6 +1019,45 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
         root: FreeformNode
 
         @model_validator(mode="after")
+        def check_action_refs_scoped(self) -> "FreeformDesign":
+            """openRecord / editRecord 必须落在某个 rowsRef 的子树里，且实体对得上。
+
+            跟 fieldRef 同一条作用域规则，理由也同一条：这两个动作要的是
+            **当前这一行**，作用域外没有"当前行"可言，渲染期无解。
+
+            createRecord 不受这条限制——新建不需要当前行，页头那个「+ 新建」
+            按钮就该在列表外面。
+
+            实体对得上这条是防串台：在 customer 的列表里放一个
+            `editRecord(follow_up)`，运行时会拿着客户的行 id 去开跟进记录的
+            表单，打开的是一条不存在的记录。这种错单看节点看不出来，只有
+            树级才判得了。
+            """
+
+            def walk(node: "FreeformNode", row_entity: Optional[str]) -> None:
+                scope = node.rowsRef.entityRef if node.rowsRef is not None else row_entity
+                a = node.actionRef
+                if a is not None and a.kind in ("openRecord", "editRecord"):
+                    if scope is None:
+                        raise ValueError(
+                            f"actionRef '{a.kind}' 不在任何 rowsRef 里——"
+                            "打开/编辑某一条记录必须放在声明了 rowsRef 的列表容器内部"
+                            "（要有\"当前行\"才知道开哪一条）。"
+                            "页头那种「新建」按钮请用 kind='createRecord'。"
+                        )
+                    if a.entityRef != scope:
+                        raise ValueError(
+                            f"actionRef '{a.kind}' 的 entityRef 是 '{a.entityRef}'，"
+                            f"但它所在的列表是 '{scope}' 的——两者必须一致，"
+                            "否则会拿着这张表的行 id 去开另一张表的记录。"
+                        )
+                for child in node.children:
+                    walk(child, scope)
+
+            walk(self.root, None)
+            return self
+
+        @model_validator(mode="after")
         def check_field_refs_scoped(self) -> "FreeformDesign":
             """fieldRef 必须落在某个 rowsRef 的子树里，且取的字段被那个
             rowsRef 显式声明过。
@@ -999,6 +1109,39 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
             return self
 
     return FreeformDesign
+
+
+def _action_prompt_fragment() -> str:
+    """按钮怎么才能真的能点——actionRef 的用法（2026-08-13）。
+
+    不写这一段的话模型永远不会用它：契约里加了字段，但提示词里没提，
+    等于加了个没人知道的开关。这跟 rowsRef 上线时是同一个道理。
+    """
+    return """\
+想让某个元素**点了有反应**（按钮、卡片、一行记录），给它加 actionRef。
+不加 actionRef 的元素点了什么都不会发生——不要画一个写着「编辑」却没有
+actionRef 的框，那对用户是纯误导。
+
+    {"tag": "div", "text": "+ 新建客户",
+     "actionRef": {"kind": "createRecord", "entityRef": "customer"}}
+
+三种动作，只有这三种：
+
+    createRecord   打开新建表单。**不需要当前行**，页头那个「新建」就用它。
+    openRecord     打开这一行的详情。
+    editRecord     打开这一行的编辑表单。
+
+⚠️ openRecord / editRecord **必须写在 rowsRef 列表容器的内部**——它们要的是
+"当前这一行"，写在列表外面没有当前行可言，会被直接判失败。
+而且 entityRef 必须跟所在列表的 entityRef 一致，否则会拿着这张表的行 id
+去开另一张表的记录。
+
+⚠️ 标签白名单里**没有 button**。带了 actionRef 的元素会自动变成可点击的
+（含键盘可达），所以用 div/span 加 actionRef 就行，整张卡片也可以点。
+
+⚠️ actionRef 只负责"打开哪个容器"，**不做写入**。真正的保存/删除由打开的
+那个表单完成，你不需要也不能表达"点了直接改数据"。
+"""
 
 
 def _rows_prompt_fragment() -> str:
@@ -1326,6 +1469,7 @@ listStyle）会被直接判失败：{", ".join(FREEFORM_ALLOWED_STYLE_PROPS)}。
 调整周围留白，而不是在 chart 节点自己身上加一个不会生效的 height 期望。
 {_chart_candidates_prompt_fragment(datamodel)}
 {_rows_prompt_fragment()}
+{_action_prompt_fragment()}
 下面是这个应用真实的数据模型，唯一可以引用的数据来源：
 {json.dumps(datamodel, ensure_ascii=False, indent=2)}
 

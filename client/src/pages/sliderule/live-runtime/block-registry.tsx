@@ -339,7 +339,19 @@ export interface FreeformNode {
   rowsRef?: FreeformRowsRef;
   /** 取当前行的字段值——只在 rowsRef 子树内有意义。 */
   fieldRef?: string;
+  /**
+   * 点了干什么（2026-08-13）。带了它的节点自动变可交互——**不加 `button`
+   * 到标签白名单**：加了模型就能画出不带 actionRef 的死按钮，回到原点。
+   * 而且这样整张卡片都能点，比只让角落那个按钮能点更有表达力。
+   */
+  actionRef?: FreeformActionRef;
   children?: FreeformNode[];
+}
+
+/** 受控动作：只管"打开哪个容器"，写入由组件完成（理由见 Python 侧同名契约）。 */
+export interface FreeformActionRef {
+  kind: "createRecord" | "openRecord" | "editRecord";
+  entityRef: string;
 }
 
 /**
@@ -1893,9 +1905,55 @@ function renderFreeformNode(
         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
       />
     ) : null;
+  // actionRef → 接上那条一直闲置的 onAction（2026-08-13）。
+  //
+  // 管道本来就是通的：ExperienceBlockRendererProps 里有 onAction，所有渲染器
+  // 都收得到，组件区块靠它干活。自由树这边此前调用次数是 0——不是线断了，
+  // 是节点上没有可以接线的地方。补上 actionRef 之后这里才有东西可发。
+  //
+  // 三个 kind 对应页面侧三个**现成**的入口（pagePipes 的 openCreate /
+  // openRecordById / openEdit），一个都不用新加。
+  const action = n.actionRef;
+  const onAction = ctx.blockProps.onAction;
+  const rowId = ctx.row?.id;
+  const actionProps: Record<string, unknown> = {};
+  if (action && onAction) {
+    const fire = () => {
+      if (action.kind === "createRecord") {
+        onAction("createRequest", { entityRef: action.entityRef });
+        return;
+      }
+      // openRecord/editRecord 要当前行——Python 侧的树级校验已经保证它必然
+      // 落在 rowsRef 子树内，这里再兜一次：拿不到行就不发，别发一个空事件。
+      if (!rowId) return;
+      onAction(action.kind === "openRecord" ? "viewRequest" : "editRequest", {
+        entityRef: action.entityRef,
+        rowId,
+      });
+    };
+    Object.assign(actionProps, {
+      role: "button",
+      tabIndex: 0,
+      onClick: (e: React.MouseEvent) => {
+        e.stopPropagation();
+        fire();
+      },
+      // 键盘可达：role="button" 之后不给键盘事件，等于给自己造一个
+      // 无障碍缺陷（axe 会直接报）。
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          fire();
+        }
+      },
+      style: { ...sanitizeFreeformStyle(n.style), cursor: "pointer" },
+    });
+  }
+
   return React.createElement(
     tag,
-    { key, style: sanitizeFreeformStyle(n.style) },
+    { key, style: sanitizeFreeformStyle(n.style), ...actionProps },
     icon ? (
       <span
         key="icon"
