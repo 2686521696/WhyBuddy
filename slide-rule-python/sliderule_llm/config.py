@@ -109,20 +109,56 @@ def default_max_tokens() -> int:
 #: `5 validation errors ... tag Field required`：思考砍太狠，模型拼不出合法的
 #: 深层树。机械修复（json-repair / rowsRef 修补）都触发了也没救回来。
 #:
-#: 所以：全局走 low 吃掉那一倍提速，**结构化生成这条路单独抬回来**。
+#: ## 它现在是地板，不是补丁（2026-08-13 当日修正）
+#:
+#: 这个常量原本的用途是"全局走 low 吃掉那一倍提速，结构化生成单独抬回来"。
+#: **那个前提已经撤销了**——全局回到 medium（理由写在 .env.example 的
+#: LLM_REASONING_EFFORT 头上：low 省的是思考量，而这条链上到处是深层 JSON
+#: 契约，按住一个崩点不等于按住下一个，何况崩起来是静默的校验失败）。
+#:
+#: 常量留着，语义从"补丁"变成"地板"：全局配到 medium 以下时，这条路不跟着降。
+#: 没删是因为它按住的那个崩点是实测过的，删掉等于把这条经验也删了——
+#: 谁再去调全局旋钮，首页设计不会跟着一起掉下去。
 DEFAULT_STRUCTURED_REASONING_EFFORT = "medium"
 
 
-def structured_reasoning_effort() -> str:
-    """结构化生成的推理档位。`LLM_STRUCTURED_REASONING_EFFORT` 可覆盖。
+#: 档位强弱次序，只用来比大小。表外的值（网关自定义档位）一律当"不认识"，
+#: 见 structured_reasoning_effort 里的处理。
+_REASONING_EFFORT_RANK = {"minimal": 0, "none": 0, "low": 1, "medium": 2, "high": 3}
 
-    返回空串表示"不要覆盖，跟全局走"——给的是逃生舱：某些网关不认这个参数，
-    或者换了个不需要额外思考的模型时，配个空值就能整条退回全局档位。
+
+def structured_reasoning_effort() -> str:
+    """结构化生成的推理档位，**地板语义**。`LLM_STRUCTURED_REASONING_EFFORT` 可覆盖。
+
+    返回空串表示"不要覆盖，跟全局走"。两种情况会返回空串：
+
+    1. 显式配了空值——逃生舱：某些网关不认这个参数，或者换了个不需要额外思考的
+       模型时，配个空值就能整条退回全局档位。
+    2. **全局档位已经不低于地板**——这条是关键，不是优化。
+
+    ## 为什么第 2 条必须在
+
+    这个分路旋钮原本是配合"全局 low"用的，无条件覆盖没问题（medium > low）。
+    全局回到 medium 之后，无条件覆盖就变成了一个**反向收窄**的陷阱：谁把全局
+    调到 high，这条最需要思考的路会被这里悄悄按回 medium——正是
+    DEFAULT_MAX_TOKENS 头上那段警告的"分路值反向咬人"，只是这次咬的是思考量，
+    而且症状同样是静默的深层 JSON 校验失败，最难查。
+
+    所以只在"全局比地板低"时才覆盖。全局设了但**不认识**（网关自定义档位）
+    也不覆盖——那是运维明确写下的选择，不该被一个默认值改掉。
     """
     raw = os.environ.get("LLM_STRUCTURED_REASONING_EFFORT")
-    if raw is None:
-        return DEFAULT_STRUCTURED_REASONING_EFFORT
-    return raw.strip()
+    floor = DEFAULT_STRUCTURED_REASONING_EFFORT if raw is None else raw.strip()
+    if not floor:
+        return ""
+    global_effort = (_pick("LLM_REASONING_EFFORT", "OPENAI_REASONING_EFFORT") or "").strip()
+    if global_effort:
+        global_rank = _REASONING_EFFORT_RANK.get(global_effort.lower())
+        floor_rank = _REASONING_EFFORT_RANK.get(floor.lower())
+        # 认不出全局、或全局已经不低于地板 → 不插手
+        if global_rank is None or floor_rank is None or global_rank >= floor_rank:
+            return ""
+    return floor
 
 
 def _provider_name(base_url: str) -> str:

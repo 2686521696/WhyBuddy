@@ -236,3 +236,77 @@ class Test空内容报错必须说清为什么:
             assert site.lstrip("raise LlmError(").lstrip().startswith("f"), (
                 f"这处空内容报错还是死字符串，没带 finish_reason：{site}"
             )
+
+
+class Test结构化档位是地板不是收窄:
+    """`reasoning_effort` 允许分路（它是任务属性），但分路值**只许往上抬**。
+
+    这条闸和上面 `max_tokens` 那组是同一条纪律的两面：
+
+    - `max_tokens` 是上限，分路只会更窄 → 旋钮直接收成一个（见文件头）。
+    - `reasoning_effort` 是任务属性，"判个意图"和"拼一棵七层深的节点树"
+      需要的思考量差一个量级，所以留了分路。
+
+    但留分路就得防它反向咬人。这个常量当初是配"全局 low"用的，无条件覆盖成
+    medium 没问题；全局回到 medium 之后，无条件覆盖就变成陷阱——谁把全局调到
+    high，最需要思考的那条路会被默认值悄悄按回 medium。症状是深层 JSON 契约
+    静默校验失败（`5 validation errors ... tag Field required`），
+    和当初 low 跑挂首页设计一模一样，最难查。
+    """
+
+    def test_全局比地板低时抬回来(self, monkeypatch):
+        from sliderule_llm.config import DEFAULT_STRUCTURED_REASONING_EFFORT, structured_reasoning_effort
+
+        monkeypatch.setenv("LLM_REASONING_EFFORT", "low")
+        monkeypatch.delenv("LLM_STRUCTURED_REASONING_EFFORT", raising=False)
+        assert structured_reasoning_effort() == DEFAULT_STRUCTURED_REASONING_EFFORT == "medium"
+
+    @pytest.mark.parametrize("global_effort", ["medium", "high"])
+    def test_全局已经不低于地板就不插手(self, monkeypatch, global_effort):
+        """返回空串 = 不传 reasoning_effort = 跟全局走。全局 high 时**尤其**
+        不能覆盖：那才是这条闸存在的理由。"""
+        from sliderule_llm.config import structured_reasoning_effort
+
+        monkeypatch.setenv("LLM_REASONING_EFFORT", global_effort)
+        monkeypatch.delenv("LLM_STRUCTURED_REASONING_EFFORT", raising=False)
+        assert structured_reasoning_effort() == ""
+
+    def test_认不出的全局档位不插手(self, monkeypatch):
+        """网关自定义档位是运维明确写下的选择，不该被一个默认值改掉。"""
+        from sliderule_llm.config import structured_reasoning_effort
+
+        monkeypatch.setenv("LLM_REASONING_EFFORT", "turbo-thinking")
+        monkeypatch.delenv("LLM_STRUCTURED_REASONING_EFFORT", raising=False)
+        assert structured_reasoning_effort() == ""
+
+    def test_显式配空串是逃生舱(self, monkeypatch):
+        """某些网关不认这个参数，配空值要能整条退回全局档位。"""
+        from sliderule_llm.config import structured_reasoning_effort
+
+        monkeypatch.setenv("LLM_REASONING_EFFORT", "low")
+        monkeypatch.setenv("LLM_STRUCTURED_REASONING_EFFORT", "")
+        assert structured_reasoning_effort() == ""
+
+    def test_显式配的地板照样只往上抬(self, monkeypatch):
+        from sliderule_llm.config import structured_reasoning_effort
+
+        monkeypatch.setenv("LLM_REASONING_EFFORT", "high")
+        monkeypatch.setenv("LLM_STRUCTURED_REASONING_EFFORT", "medium")
+        assert structured_reasoning_effort() == ""
+
+        monkeypatch.setenv("LLM_REASONING_EFFORT", "low")
+        monkeypatch.setenv("LLM_STRUCTURED_REASONING_EFFORT", "high")
+        assert structured_reasoning_effort() == "high"
+
+    def test_模板里全局不是_low(self):
+        """.env.example 是新部署的默认值。low 省的是思考量，也就是产出正确率
+        （实测把首页设计跑挂，3 次尝试全是 `tag Field required`）。"""
+        import re
+
+        text = (_PY_ROOT.parent / ".env.example").read_text(encoding="utf-8")
+        values = re.findall(r"^LLM_REASONING_EFFORT=(.*)$", text, re.MULTILINE)
+        assert values, "模板里找不到 LLM_REASONING_EFFORT"
+        for value in values:
+            assert value.strip().lower() != "low", (
+                "模板把全局推理档位配成了 low：它快一倍，但快出来的那一半是从产出里省的。"
+            )
