@@ -212,10 +212,107 @@ def run_b(
     return None
 
 
+def load_html() -> list[tuple[str, str]]:
+    """图转出来的 HTML。由 screenshot-to-code 原生跑出，缓存在 materials/html/。
+
+    为什么不自己写一版图转 HTML：C 组要测的是"HTML 这个载体好不好用"，
+    不是"我的图转 HTML 提示词写得好不好"。用成熟工具跑，C 组才是在它的最好
+    状态下被测——否则测出来的差可能只是我 prompt 没调好。
+    """
+    out = []
+    for p in sorted((MATERIALS / "html").glob("*.html")):
+        out.append((p.stem, p.read_text(encoding="utf-8")))
+    return out
+
+
+def _run_with_evidence(goal: str, text_blocks: list[str], images: list[tuple[str, str]],
+                       failures: list[str] | None = None) -> dict | None:
+    """B/C/D 共用的一条路：system 契约不动，只往 user 消息上挂证据。
+
+    三组的差别**只在传进来的证据**，代码路径完全一样——这样组间差异才归得了因。
+    """
+    from services.v5_llm_generate import generate_five_system_model
+    from sliderule_llm.client import call_llm_json_with_shape
+
+    _REQUIRED = ("datamodel", "rbac", "workflow", "page", "aigc", "appbundle")
+
+    def fn(g: str):
+        parts: list[dict] = [{"type": "text", "text": _build_user_content(g) + "\n\n" + "\n\n".join(text_blocks)}]
+        for name, b64 in images:
+            parts.append({"type": "text", "text": f"界面草样：{name}"})
+            parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+        try:
+            parsed, _ = call_llm_json_with_shape(
+                [
+                    {"role": "system", "content": schema_instruction_for(g)},
+                    {"role": "user", "content": parts},
+                ],
+                required_keys=_REQUIRED,
+                max_shape_retries=2,
+                temperature=0.2,
+                backoff_ms=2000,
+            )
+        except Exception as exc:  # noqa: BLE001 — 失败原因要留证
+            if failures is not None:
+                failures.append(str(exc)[:8000])
+            raise
+        return parsed if isinstance(parsed, dict) else None
+
+    for _ in range(2):  # 对齐 A 的 attempts=2
+        model = generate_five_system_model(goal, llm_json_fn=fn)
+        if model:
+            return model
+    return None
+
+
+_EVIDENCE_NOTE = (
+    "**这些界面产物是结构证据，不是取值来源**：从里面读「有哪些实体、哪些列表、"
+    "哪些字段同时出现、有哪些动作、页面之间怎么跳」；界面上的具体文字"
+    "（客户A、示例公司、占位）都是刻意的占位符，一律不要当成枚举值或默认值。"
+)
+
+
+def run_e(goal: str, spec: str, failures=None) -> dict | None:
+    """goal + spec 摘要，**不带任何视觉产物**——补上缺的那一格。
+
+    没有这一格，B/C 相对 A 的提升就归不了因：A 只拿到 55 字意图，B/C 还多拿了
+    384 字的 spec 摘要，那部分提升可能跟图/HTML 一点关系都没有。
+    有了 E，「视觉产物的净增量」才量得出来（E→C 与 E→B），
+    而 A→D 是另一条干净的对照（两边都只有意图，差别只在有没有 HTML）。
+    """
+    return _run_with_evidence(
+        goal, ["以下是这个产品的需求树节点（权威语义来源）：\n" + spec], [], failures
+    )
+
+
+def run_c(goal: str, spec: str, html: list[tuple[str, str]], failures=None) -> dict | None:
+    """spec + HTML。测的是"HTML 这个载体比栅格图更适合被反推"这个假设。"""
+    blocks = [
+        "以下是这个产品的需求树节点（权威语义来源）：\n" + spec,
+        f"以下是由界面草样还原出的 {len(html)} 份 HTML。" + _EVIDENCE_NOTE
+        + "枚举值只能来自上面的需求树；HTML 与需求树冲突时以需求树为准。\n\n"
+        + "\n\n".join(f"—— {name} ——\n{src}" for name, src in html),
+    ]
+    return _run_with_evidence(goal, blocks, [], failures)
+
+
+def run_d(goal: str, html: list[tuple[str, str]], failures=None) -> dict | None:
+    """只有 HTML，**丢掉 spec**——这是"由应用反推"的字面版本。
+
+    单列一组是因为它跟 C 差的正是那句「需求树是权威」。C 有语义锚，D 没有。
+    两组一比，就知道那个锚值多少——这个问题不该靠谁说话大声来定。
+    """
+    blocks = [
+        f"以下是这个产品的 {len(html)} 份界面 HTML，是你唯一的依据。" + _EVIDENCE_NOTE
+        + "\n\n" + "\n\n".join(f"—— {name} ——\n{src}" for name, src in html),
+    ]
+    return _run_with_evidence(goal, blocks, [], failures)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=3, help="每组跑几次（方差大，默认 3 取中位数）")
-    ap.add_argument("--only", choices=["A", "B"], default=None)
+    ap.add_argument("--only", choices=["A", "B", "C", "D", "E"], default=None)
     args = ap.parse_args()
 
     cfg = get_llm_config()
@@ -240,14 +337,23 @@ def main() -> int:
     outdir.mkdir(parents=True, exist_ok=True)
     (outdir / "terms.json").write_text(json.dumps(terms, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    results: dict[str, list[dict]] = {"A": [], "B": []}
-    groups = [args.only] if args.only else ["A", "B"]
+    html = load_html()
+    print(f"HTML 载体 {len(html)} 份，共 {sum(len(h) for _, h in html)} 字符", flush=True)
+
+    results: dict[str, list[dict]] = {"A": [], "E": [], "B": [], "C": [], "D": []}
+    groups = [args.only] if args.only else ["A", "E", "B", "C", "D"]
     for group in groups:
         for i in range(args.n):
             t0 = time.time()
             try:
                 fails: list[str] = []
-                model = run_a(goal) if group == "A" else run_b(goal, spec, images, fails)
+                model = {
+                    "A": lambda: run_a(goal),
+                    "B": lambda: run_b(goal, spec, images, fails),
+                    "C": lambda: run_c(goal, spec, html, fails),
+                    "D": lambda: run_d(goal, html, fails),
+                    "E": lambda: run_e(goal, spec, fails),
+                }[group]()
                 if fails:
                     (outdir / f"fail_{group}{i+1}.txt").write_text(
                         "\n\n---\n\n".join(fails), encoding="utf-8")
@@ -281,8 +387,8 @@ def main() -> int:
         vals = [r[key] for r in results[group] if r.get("ok") and isinstance(r.get(key), (int, float))]
         return statistics.median(vals) if vals else None
 
-    print("\n" + "=" * 76)
-    print(f"{'指标':<22}{'A 纯 spec':>16}{'B spec+图':>16}   说明")
+    print("\n" + "=" * 96)
+    print(f"{'指标':<20}{'A 纯spec':>13}{'B spec+图':>13}{'C spec+HTML':>14}{'D 只有HTML':>13}   说明")
     rows = [
         ("闸 findings", "gate_findings", "越少越好"),
         ("实体数", "entities", ""),
@@ -300,12 +406,19 @@ def main() -> int:
         ("臆造命中", "fabrication_hits", "越少越好"),
         ("耗时 s", "seconds", ""),
     ]
+    def fmt(g, key):
+        v = med(g, key)
+        if v is None:
+            return "-"
+        return f"{v:.0%}" if key == "coverage" else f"{v:g}"
+
     for label, key, note in rows:
-        a, b = med("A", key), med("B", key)
-        fa = "-" if a is None else (f"{a:.0%}" if key == "coverage" else f"{a:g}")
-        fb = "-" if b is None else (f"{b:.0%}" if key == "coverage" else f"{b:g}")
-        print(f"{label:<22}{fa:>16}{fb:>16}   {note}")
-    print("=" * 76)
+        print(f"{label:<20}{fmt('A',key):>13}{fmt('B',key):>13}"
+              f"{fmt('C',key):>14}{fmt('D',key):>13}   {note}")
+    ok = {g: sum(1 for r in results[g] if r.get("ok")) for g in results}
+    print(f"{'成功次数':<20}" + "".join(f"{str(ok[g])+'/'+str(len(results[g])):>13}" for g in ("A","B"))
+          + f"{str(ok['C'])+'/'+str(len(results['C'])):>14}{str(ok['D'])+'/'+str(len(results['D'])):>13}")
+    print("=" * 96)
     print(f"中位数，各 n={args.n}。原始数据 {outdir}")
     return 0
 
