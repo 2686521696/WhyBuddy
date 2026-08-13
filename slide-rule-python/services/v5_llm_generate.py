@@ -21,34 +21,21 @@ import os
 from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional
 
+from sliderule_llm.config import default_max_tokens
+
 from .enrich_timing import stage as _enrich_stage
 
 # Sections the model must contain — mirrors v5_model_gate.SKILL_KEYS.
 _REQUIRED_SECTIONS = ("datamodel", "rbac", "workflow", "page", "aigc", "appbundle")
 
-# 生成一份五系统模型的输出上限。默认 8000 是给**非推理模型**定的（历史上从
-# 4000 提到 8000，理由同样是"截断 → shape 失败 → fail-closed，宁可放宽"）。
+# 生成调用的输出上限走**全局那一个** `default_max_tokens()`。
 #
-# ⚠️ 推理模型必须调大。它们的思考 token 和正文**共用同一个 max_tokens**：
-# 实测 deepseek-v4 在这条链路上 8000 全被思考吃掉，正文一个字都没有，
-# finish_reason=length，客户端看到的是 `empty content from LLM (stream)`
-# ——表现像"服务商坏了"，其实是预算不够。换这类模型时把这个值调到 32000 以上。
-_DEFAULT_GENERATE_MAX_TOKENS = 8000
-
-
-def _generate_max_tokens() -> int:
-    """生成调用的输出上限。`LLM_GENERATE_MAX_TOKENS` 可覆盖。
-
-    每次读而不是模块级常量：测试和评测脚本要能 monkeypatch 环境变量后立刻生效。
-    """
-    raw = (os.getenv("LLM_GENERATE_MAX_TOKENS") or "").strip()
-    if not raw:
-        return _DEFAULT_GENERATE_MAX_TOKENS
-    try:
-        value = int(raw)
-    except ValueError:
-        return _DEFAULT_GENERATE_MAX_TOKENS
-    return value if value > 0 else _DEFAULT_GENERATE_MAX_TOKENS
+# 这里以前有个 `_DEFAULT_GENERATE_MAX_TOKENS = 8000` 和它专属的
+# `LLM_GENERATE_MAX_TOKENS`，**已经删了**。它救不了这条链路：推理模型的思考
+# token 和正文共用 max_tokens，8000 全被思考吃掉、正文一个字没有、
+# finish_reason=length、客户端只看到 `empty content from LLM (stream)`
+# ——而下游还有一堆这个旋钮管不着的写死预算，调它只是把病挪个地方发作。
+# 现在全链路一个 `LLM_MAX_TOKENS`，理由见 sliderule_llm.config.DEFAULT_MAX_TOKENS。
 
 # The JSON contract handed to the LLM. Kept explicit so the model emits exactly
 # the shape the gate validates (cross-refs must be internally consistent).
@@ -846,7 +833,7 @@ def _structured_llm_json_fn(messages: list) -> Optional[Dict[str, Any]]:
             messages,
             required_keys=_REQUIRED_SECTIONS,
             temperature=0.2,
-            max_tokens=_generate_max_tokens(),
+            max_tokens=default_max_tokens(),
             max_retries=2,
         )
         return parsed if isinstance(parsed, dict) else None
@@ -867,7 +854,7 @@ def _parallel_json_call(
     valid preview stream. Progress is exposed through the per-node timing/SSE
     stages instead; the final assembled model still follows the existing stream.
     """
-    effective_max_tokens = max(max_tokens, _generate_max_tokens())
+    effective_max_tokens = max(max_tokens, default_max_tokens())
     try:
         from sliderule_llm.structured import (
             StructuredLlmError,
@@ -949,8 +936,8 @@ def _default_llm_json_fn(goal: str, gate_feedback: Optional[str] = None) -> Opti
             temperature=0.2,
             # 多链路 + 不变式后契约变大（原 4000 面向单链路模型）；截断会直接
             # 变成 shape 失败 → 重试 → fail-closed，宁可放宽。
-            # 推理模型还要再放宽一截——思考和正文共用这个预算（见 _generate_max_tokens）。
-            max_tokens=_generate_max_tokens(),
+            # 推理模型还要再放宽一截——思考和正文共用这个预算（见 config.DEFAULT_MAX_TOKENS）。
+            max_tokens=default_max_tokens(),
             # 瞬时错误（网关 502/503/超时）退避拉长：默认 200ms 扛不过几秒级
             # 的网关抖动（线上案例：blackaicoding 502 连吃三发）。
             backoff_ms=2000,

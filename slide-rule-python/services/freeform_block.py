@@ -36,6 +36,8 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from pathlib import Path
 
+from sliderule_llm.config import default_max_tokens
+
 from .app_preview import OverviewPreviewSink
 from .enrich_timing import remaining_run_budget_seconds, stage as _enrich_stage
 from .identity_palette_hint import BRAND_LABEL, BRAND_SEED, derive_prompt_palette
@@ -1243,7 +1245,7 @@ def _refine_craft_via_llm(
             max_attempts=2,
             backoff_ms=1500,
             temperature=0.9,  # 比出图改写更高：这一步要的就是发散
-            max_tokens=1200,
+            max_tokens=default_max_tokens(),
         )
     except LlmError as exc:
         print(f"[freeform_block] craft refine skipped: {str(exc)[:160]}")
@@ -1579,7 +1581,7 @@ def _refine_sheet_prompt_via_llm(facts: str, *, device: str = "") -> Optional[st
             max_attempts=2,
             backoff_ms=1500,
             temperature=0.7,
-            max_tokens=2000,
+            max_tokens=default_max_tokens(),
         )
     except LlmError as exc:
         print(f"[freeform_block] sheet prompt refine skipped: {str(exc)[:160]}")
@@ -2030,7 +2032,7 @@ def _critique_against_reference(
             max_attempts=2,
             backoff_ms=2000,
             temperature=0.5,
-            max_tokens=14000,
+            max_tokens=default_max_tokens(),
             on_delta=lambda _chunk: None,
         )
     except LlmError as exc:
@@ -2272,7 +2274,7 @@ def generate_freeform_block(
     generated_theme: Optional[dict[str, Any]] = None,
     max_retries: int = 2,
     temperature: float = 0.7,
-    max_tokens: int = 14000,
+    max_tokens: int | None = None,
     use_reference_image: bool = True,
     allow_screenshot_verify: bool = True,
     reference_image_b64: Optional[str] = None,
@@ -2302,11 +2304,15 @@ def generate_freeform_block(
     视觉 LLM 一起看（需要网关声明 LLM_SUPPORTS_IMAGE_CONTENT_PARTS=1，未声明
     或生图不可用时自动降级为纯文字生成，行为与加这段之前完全一致）。
 
-    max_tokens 默认 7000 → 10000 → 14000：每次都是被真实截断推上去的。
-    10000 那次是加了视觉参照（模型描述更细、节点数变多）；14000 这次是加了
+    max_tokens 缺省走全局 `default_max_tokens()`。这里的写死值一路 7000 →
+    10000 → 14000，**每一次都是被真实截断推上去的**，从来没有一次是预判对的：
+    10000 那次是加了视觉参照（模型描述更细、节点数变多）；14000 那次是加了
     blockRef（可嵌积木清单进 prompt、逐行内容清单进 brief，输出又长一截，
-    实测在 6580 字符处被切断、三次重试全挂在同一个位置）。截断表现为
-    "invalid JSON: Expecting ',' delimiter"，不是模型写错了 JSON，是话没说完。
+    实测在 6580 字符处被切断、三次重试全挂在同一个位置）；再往后换了推理模型，
+    14000 又被思考 token 整个吃光，正文一个字没有、首页设计整段失败。
+    这条追赶曲线就是"预算不该写死"的证据本身，所以不再猜，交给全局那一个。
+    截断表现为 "invalid JSON: Expecting ',' delimiter"——不是模型写错了 JSON，
+    是话没说完。
     """
     design_brief = (design_brief or "").strip()
     if not design_brief:

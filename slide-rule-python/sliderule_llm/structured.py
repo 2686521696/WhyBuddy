@@ -70,7 +70,7 @@ def structured_llm_json(
     *,
     required_keys: tuple[str, ...],
     temperature: float = 0.2,
-    max_tokens: int = 8000,
+    max_tokens: int | None = None,
     max_retries: int = 2,
     reasoning_effort: str | None = None,
 ) -> dict[str, Any]:

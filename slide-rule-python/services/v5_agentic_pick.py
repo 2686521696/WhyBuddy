@@ -26,6 +26,7 @@ import os
 from typing import Any, Optional
 
 from models.v5_state import V5SessionState
+from sliderule_llm.config import default_max_tokens
 
 # ── V5.2 能力词表（与 slide_rule_session.pick_next_capabilities 的产出
 #    全集一致；中文注解给 LLM 读）─────────────────────────────────────
@@ -439,7 +440,7 @@ def agentic_pick_next_capabilities(
             parsed, _res = call_llm_json(
                 messages,
                 temperature=0.2,
-                max_tokens=4000,
+                max_tokens=default_max_tokens(),
                 max_attempts=1,
                 reasoning_effort="low",
                 # E32 转正后 pick 在每轮主路径上：选材是快决策，不给它

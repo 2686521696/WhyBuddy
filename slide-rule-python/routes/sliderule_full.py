@@ -37,6 +37,7 @@ from config.settings import settings
 from sliderule_llm.capabilities import execute_capability, is_python_native_capability
 from sliderule_llm.client import LlmError
 from sliderule_llm.evidence import execute_evidence_runtime
+from sliderule_llm.config import default_max_tokens
 
 # Standardized Python provenance fields (values + attachment) for browser smokes
 # and contract tests (e.g. test_v5_smoke.py). Python is source of truth.
@@ -1328,7 +1329,7 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
             max_attempts=3,
             backoff_ms=1500,
             temperature=0.4,
-            max_tokens=600,
+            max_tokens=default_max_tokens(),
             timeout_ms=timeout_ms,
         )
     except LlmError as exc:
@@ -1406,7 +1407,7 @@ def prompt_refine(payload: Dict[str, Any], x_internal_key: Optional[str] = Heade
             max_attempts=3,
             backoff_ms=1500,
             temperature=0.5,
-            max_tokens=400,
+            max_tokens=default_max_tokens(),
             timeout_ms=timeout_ms,
         )
     except LlmError as exc:
@@ -1532,7 +1533,7 @@ def skill_package_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] 
             max_attempts=3,
             backoff_ms=1500,
             temperature=0.5,
-            max_tokens=1600,
+            max_tokens=default_max_tokens(),
             timeout_ms=timeout_ms,
         )
     except LlmError as exc:
@@ -1616,7 +1617,7 @@ def aigc_pipeline_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] 
             result = call_llm(
                 [{"role": "system", "content": system}, {"role": "user", "content": user}],
                 temperature=0.4,
-                max_tokens=600,
+                max_tokens=default_max_tokens(),
                 timeout_ms=timeout_ms,
             )
         except LlmError as exc:

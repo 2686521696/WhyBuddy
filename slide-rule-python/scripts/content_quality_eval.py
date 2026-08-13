@@ -37,6 +37,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from agentic_pick_eval import MODES, TOPICS, _spawn_case  # noqa: E402
+from sliderule_llm.config import default_max_tokens  # noqa: E402
 
 DIMENSIONS = ("针对性", "完整性", "一致性", "可操作性")
 
@@ -82,7 +83,7 @@ def _judge_once(topic: str, first: dict, second: dict) -> dict | None:
             },
         ],
         temperature=0.1,
-        max_tokens=3000,
+        max_tokens=default_max_tokens(),
         max_attempts=2,
         reasoning_effort="low",
     )

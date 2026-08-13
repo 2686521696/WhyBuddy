@@ -209,7 +209,7 @@ def generate_identity_theme(
     device: str = "",
     max_retries: int = 2,
     temperature: float = 0.9,
-    max_tokens: int = 400,
+    max_tokens: int | None = None,
     use_reference_image: bool = False,
 ) -> dict[str, Any]:
     """生成 + 校验一个身份主题种子色。跟 freeform_block.generate_freeform_block
@@ -219,8 +219,10 @@ def generate_identity_theme(
     temperature 给到 0.9：这是纯选色发挥，没有真实数据/结构约束要守，更高
     的温度换更大胆多样的选色，不必担心跑偏出编造数据那类真实性问题。
 
-    max_tokens 从 2000 降到 400：旧版要吐 11 个字段的完整 JSON，现在只有
-    label+seed 两个字段，输出短得多，没必要留那么大的余量。
+    max_tokens 缺省走全局 `default_max_tokens()`。这里一度写死 400（理由是
+    「只有 label+seed 两个字段，输出短」）——那个理由在推理模型上不成立：
+    思考 token 跟正文共用这个预算，400 连思考都不够，正文必然是空的。
+    上限不是配额，按实际生成计费，留大不花钱。见 config.DEFAULT_MAX_TOKENS。
 
     `use_reference_image` 默认 **False**（2026-08-03 改）：生产路径不再为
     选一个色值去生一张 ~74s 的 PNG（见 _enrich_identity_theme_inner 的说明）。

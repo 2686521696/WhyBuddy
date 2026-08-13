@@ -8,6 +8,8 @@ from typing import Any, Callable, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from sliderule_llm.config import default_max_tokens
+
 
 PAGE_RECONSTRUCTION_VERSION = "page-reconstruction-v1"
 
@@ -207,7 +209,7 @@ def analyze_page_reference(
             max_attempts=2,
             backoff_ms=1500,
             temperature=0.1,
-            max_tokens=6000,
+            max_tokens=default_max_tokens(),
         )
         parsed = PageReconstructionSpec.model_validate(_parse_json_object(response.content or ""))
         if parsed.device != device:

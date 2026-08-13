@@ -21,6 +21,7 @@ from contextvars import ContextVar
 from typing import Any, Callable
 
 from .client import LlmError, LlmResult, call_llm_json_with_shape, call_llm_with_retry
+from .config import default_max_tokens
 from .evidence import EvidenceRetrievalResult, generated_sources_from_content
 
 
@@ -211,9 +212,8 @@ CAPABILITY_TITLES: dict[str, str] = {
 STRUCTURED_JSON_CAPABILITIES: frozenset[str] = frozenset({"report.write"})
 
 REPORT_WRITE_REQUIRED_KEYS = ("title", "summary", "content")
-REPORT_WRITE_MAX_TOKENS = 4000
 
-#: 轮内能力的输出上限。**2000 → 8000（2026-08-11 线上实测之后）。**
+#: 轮内能力的输出上限。**2000 → 8000（2026-08-11）→ 并进全局口径（2026-08-13）。**
 #:
 #: ## 为什么翻上来
 #:
@@ -222,34 +222,17 @@ REPORT_WRITE_MAX_TOKENS = 4000
 #: `empty content from LLM (stream)`，整轮被它一个人从 22 秒拖到 116 秒
 #: （并行批的耗时等于最慢那个），最后还得回退 RAG——**产出也打了折**。
 #:
-#: 这个坑仓库**已经踩过一次并写下来了**，就在 v5_llm_generate.py 的
-#: `_DEFAULT_GENERATE_MAX_TOKENS` 头上：「推理模型必须调大…8000 全被思考吃掉，
-#: 正文一个字都没有，finish_reason=length…表现像"服务商坏了"，其实是预算不够」。
-#: 但那次只补在了**生成**那条路上，轮内能力这条路还写死在函数默认值 2000。
+#: ## 为什么后来连"轮内能力专属的那个旋钮"也撤了
 #:
-#: ## 纪律
+#: 因为分路旋钮没解决问题。8000 和它的 `LLM_ROUND_CAP_MAX_TOKENS` 都调过了，
+#: 换 DeepSeek 那趟挂的是**第三处**、这个旋钮管不着的硬编码。预算的分路数量
+#: 本身就是病因。现在全链路一个 `LLM_MAX_TOKENS`，见 config.DEFAULT_MAX_TOKENS。
 #:
-#: **走 LLM 的路径，token 预算不许写死在函数默认值里。** 写在那儿的东西
-#: 没有名字、搜不到、也没人会想起来它跟模型换代有关系——今天这是第二次栽。
-#: 预算一律做成"有名字的常量 + 环境变量可覆盖"，换模型时有地方可查。
+#: ## 纪律（没变，只是收得更紧了）
+#:
+#: **走 LLM 的路径，token 预算不许写死**——不许写在函数默认值里，也不许写在
+#: 调用点上。写死的东西没有名字、搜不到、也没人会想起来它跟模型换代有关系。
 #: 判据见 tests/test_llm_token_budget.py。
-_DEFAULT_ROUND_CAP_MAX_TOKENS = 8000
-
-
-def round_cap_max_tokens() -> int:
-    """轮内能力的输出上限。`LLM_ROUND_CAP_MAX_TOKENS` 可覆盖。
-
-    每次读而不是模块级常量——跟 `_generate_max_tokens()` 同一条理由：
-    测试与评测脚本要能改完环境变量立刻生效。
-    """
-    raw = (os.getenv("LLM_ROUND_CAP_MAX_TOKENS") or "").strip()
-    if not raw:
-        return _DEFAULT_ROUND_CAP_MAX_TOKENS
-    try:
-        value = int(raw)
-    except ValueError:
-        return _DEFAULT_ROUND_CAP_MAX_TOKENS
-    return value if value > 0 else _DEFAULT_ROUND_CAP_MAX_TOKENS
 REPORT_WRITE_SECTION_MARKERS = (
     "结论",
     "支撑证据",
@@ -365,8 +348,9 @@ def _execute_report_write(
     body: dict[str, Any],
     *,
     json_caller: Callable[..., tuple[dict[str, Any], LlmResult]] | None = None,
-    max_tokens: int = REPORT_WRITE_MAX_TOKENS,
+    max_tokens: int | None = None,
 ) -> dict[str, Any]:
+    max_tokens = max_tokens or default_max_tokens()
     messages = build_report_write_messages(body)
     caller = json_caller or call_llm_json_with_shape
     kwargs: dict[str, Any] = {}
@@ -410,16 +394,17 @@ def execute_capability(
     """Run one capability via a REAL LLM call. Raises UnsupportedCapability / LlmError on failure
     (caller decides fallback). `caller` / `json_caller` are injectable for deterministic unit tests.
 
-    `max_tokens=None`（缺省）走 `round_cap_max_tokens()`——**不再写死在签名里**，
-    理由见那个常量头上的长注释。显式传值仍然优先（测试与评测靠它）。
+    `max_tokens=None`（缺省）走 `default_max_tokens()`——**不再写死在签名里**，
+    理由见 config.DEFAULT_MAX_TOKENS 头上的长注释。显式传值仍然优先
+    （测试与评测靠它控成本）。
     """
-    max_tokens = max_tokens or round_cap_max_tokens()
+    max_tokens = max_tokens or default_max_tokens()
     capability_id = body.get("capabilityId")
     if not is_python_native_capability(capability_id):
         raise UnsupportedCapability(str(capability_id))
 
     if capability_id == "report.write":
-        return _execute_report_write(body, json_caller=json_caller, max_tokens=max_tokens or REPORT_WRITE_MAX_TOKENS)
+        return _execute_report_write(body, json_caller=json_caller, max_tokens=max_tokens)
 
     messages = build_messages(capability_id, body)
     llm_caller = caller or call_llm_with_retry

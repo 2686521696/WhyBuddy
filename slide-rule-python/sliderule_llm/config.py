@@ -44,6 +44,50 @@ def _positive_int(v: str | None, default: int) -> int:
     return parsed if parsed > 0 else default
 
 
+#: 所有调用的输出上限，一个口径（2026-08-13）。
+#:
+#: ## 为什么必须统一
+#:
+#: `max_tokens` 在非推理模型上是"输出上限"，在**推理模型上是"思考 + 输出的
+#: 共享池"**。这个语义变化让所有按旧口径定的预算一起失效——而且失败形态是
+#: **静默返回空正文**（`finish_reason=length` + `completion_tokens` 顶满），
+#: 不是报错，最难查。
+#:
+#: 换 DeepSeek 那趟实测，18 处硬编码预算里当场挂了两处：
+#:
+#:     freeform_block:1246  max_tokens=1200   思考吃光 → 「怎么画」的润色静默跳过
+#:     freeform_block:2033  max_tokens=14000  思考吃光 → **整个首页设计失败**，
+#:                                            3 次重试全一样，白烧 433.8s
+#:
+#: 逐个调大是治不完的：18 个点、每换一次模型再来一遍。所以收成一个数。
+#:
+#: ## 为什么调大是安全的
+#:
+#: `max_tokens` 是**上限不是配额**——按实际生成的 token 计费，模型说完就停。
+#: 把上限抬高不会让正常调用变贵，只是让"思考+正文"不再被人为截断。
+#: 唯一的代价是失控生成时的天花板变高，这由各调用点自己的提示词约束兜着。
+#:
+#: ## 为什么连"分路旋钮"也一起收掉
+#:
+#: 以前有 `LLM_GENERATE_MAX_TOKENS` / `LLM_ROUND_CAP_MAX_TOKENS` 两个分路开关，
+#: **它们已经删了**。分路旋钮救不了这个病，反而是病因的一部分：换模型那趟，
+#: 这两个都调大了，挂掉的却是它俩都管不着的第三处硬编码。而且留着分路值
+#: 还会**反向咬人**——旧 .env 里一个 `LLM_ROUND_CAP_MAX_TOKENS=32000`
+#: 会让那条路悄悄比全局窄，正是要根除的形态。现在只剩一个 `LLM_MAX_TOKENS`：
+#: 调它，全链路一起变；旧变量留在 .env 里也只是被忽略，不会再造成局部收窄。
+DEFAULT_MAX_TOKENS = 65536
+
+
+def default_max_tokens() -> int:
+    """所有 LLM 调用的输出上限。`LLM_MAX_TOKENS` 可覆盖，全链路唯一旋钮。
+
+    **每次读环境变量**，不做模块级常量：测试与评测脚本要能改完立刻生效。
+    写坏了（空/非数字/非正数）退回默认值而不是抛——配错一个数就让整场推演
+    挂掉，比用默认值糟得多。
+    """
+    return _positive_int(os.environ.get("LLM_MAX_TOKENS"), DEFAULT_MAX_TOKENS)
+
+
 def _provider_name(base_url: str) -> str:
     parsed = urlparse(base_url or "")
     return parsed.netloc or base_url

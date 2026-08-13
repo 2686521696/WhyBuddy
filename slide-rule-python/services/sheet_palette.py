@@ -42,6 +42,8 @@ import json
 import re
 from typing import Any, Iterable, Optional
 
+from sliderule_llm.config import default_max_tokens
+
 __all__ = [
     "CHART_COLOR_COUNT",
     "MIN_USABLE_COLORS",
@@ -224,7 +226,7 @@ def extract_chart_palette(sheet_b64: str) -> Optional[list[str]]:
             backoff_ms=1500,
             # 温度压到 0：这一步是**读图上已经有的事实**，不是发挥。
             temperature=0.0,
-            max_tokens=300,
+            max_tokens=default_max_tokens(),
             on_delta=lambda _chunk: None,
         )
     except LlmError as exc:

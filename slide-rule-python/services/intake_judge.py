@@ -54,6 +54,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
 
+from sliderule_llm.config import default_max_tokens
+
 Verdict = Literal["real", "iteration", "vague", "off_topic", "meta", "out_of_scope"]
 Action = Literal["proceed", "hint"]
 # 设备档。**只有三个取值，没有 tablet**——appbundle.preferredDevice 的合法域是
@@ -510,7 +512,7 @@ def judge_turn(
 
             payload = structured_llm_json(
                 messages, required_keys=_REQUIRED_KEYS,
-                temperature=0.0, max_tokens=800, max_retries=1,
+                temperature=0.0, max_tokens=default_max_tokens(), max_retries=1,
             )
         if not isinstance(payload, dict):
             raise ValueError("payload 不是对象")

@@ -17,7 +17,13 @@ from urllib.parse import urlparse
 
 import httpx
 
-from .config import FallbackLlmConfig, LlmConfig, get_fallback_llm_config, get_llm_config
+from .config import (
+    FallbackLlmConfig,
+    LlmConfig,
+    default_max_tokens,
+    get_fallback_llm_config,
+    get_llm_config,
+)
 
 ContentPart = dict[str, Any]
 MessageContent = str | list[ContentPart]
@@ -284,7 +290,7 @@ def _empty_content_hint(finish: str | None, max_tokens: int, usage: dict | None)
     于是去查上游、查网络——**而真因是 max_tokens 不够**：推理模型的思考 token
     和正文共用同一个预算，思考把它吃光，`finish_reason=length`，正文自然是空的。
 
-    仓库里那条 `_DEFAULT_GENERATE_MAX_TOKENS` 的注释原话就是「表现像"服务商坏了"，
+    仓库里那条 `config.DEFAULT_MAX_TOKENS` 的注释原话就是「表现像"服务商坏了"，
     其实是预算不够」——**它预言了这次误诊，而报错消息里偏偏没带这个词。**
     信息一直在手上（`finish` 就在同一个函数里，成功路径还会塞进返回值），
     只是没写进错误。
@@ -298,7 +304,7 @@ def _empty_content_hint(finish: str | None, max_tokens: int, usage: dict | None)
                 bits.append(f"{key}={usage[key]}")
     tail = ""
     if str(finish or "").lower() == "length":
-        tail = "（预算被吃光，不是服务商故障：推理模型的思考 token 与正文共用 max_tokens，调大 LLM_ROUND_CAP_MAX_TOKENS / LLM_GENERATE_MAX_TOKENS）"
+        tail = "（预算被吃光，不是服务商故障：推理模型的思考 token 与正文共用 max_tokens，调大 LLM_MAX_TOKENS——全链路就这一个旋钮）"
     return f"[{' '.join(bits)}]{tail}"
 
 
@@ -590,12 +596,15 @@ def _call_llm_once(
     cfg: LlmConfig,
     model: str | None = None,
     temperature: float = 0.2,
-    max_tokens: int = 2000,
+    max_tokens: int | None = None,
     reasoning_effort: str | None = None,
     timeout_ms: int | None = None,
 ) -> LlmResult:
     if not cfg.api_key:
         raise LlmError("LLM not configured (no api_key)", transient=False)
+    # 预算在**这里**兜底，不在签名默认值上：以前写死 2000，凡是没显式传的调用点
+    # 都被悄悄按在 2000——推理模型下等于必然空正文。见 config.DEFAULT_MAX_TOKENS。
+    max_tokens = max_tokens or default_max_tokens()
     messages = _normalize_messages(messages)
     if _has_image_content_parts(messages) and not cfg.supports_image_content_parts:
         raise LlmError(
@@ -655,7 +664,7 @@ def _call_llm_once_streaming(
     on_delta: Callable[[str], None],
     model: str | None = None,
     temperature: float = 0.2,
-    max_tokens: int = 2000,
+    max_tokens: int | None = None,
     reasoning_effort: str | None = None,
     timeout_ms: int | None = None,
 ) -> LlmResult:
@@ -665,6 +674,9 @@ def _call_llm_once_streaming(
     """
     if not cfg.api_key:
         raise LlmError("LLM not configured (no api_key)", transient=False)
+    # 预算在**这里**兜底，不在签名默认值上：以前写死 2000，凡是没显式传的调用点
+    # 都被悄悄按在 2000——推理模型下等于必然空正文。见 config.DEFAULT_MAX_TOKENS。
+    max_tokens = max_tokens or default_max_tokens()
     messages = _normalize_messages(messages)
     if _has_image_content_parts(messages) and not cfg.supports_image_content_parts:
         raise LlmError(
@@ -758,7 +770,7 @@ def call_llm(
     config: LlmConfig | None = None,
     model: str | None = None,
     temperature: float = 0.2,
-    max_tokens: int = 2000,
+    max_tokens: int | None = None,
     reasoning_effort: str | None = None,
     timeout_ms: int | None = None,
     on_delta: Callable[[str], None] | None = None,
@@ -1028,7 +1040,9 @@ def call_llm_json_with_shape(
 def call_llm_json(messages: list[Message], **kwargs: Any) -> tuple[dict[str, Any], LlmResult]:
     """call_llm_with_retry + parse the content as a JSON object. Raises LlmError if not parseable."""
     max_attempts = int(kwargs.pop("max_attempts", 3))
-    max_tokens = kwargs.get("max_tokens", "default")
+    # 报**生效的那个数**，不是 "default"：截断消息里写 "default" 等于没写，
+    # 读的人还得回头去猜到底是多少（跟 _empty_content_hint 同一条教训）。
+    max_tokens = kwargs.get("max_tokens") or default_max_tokens()
     result = call_llm_with_retry(messages, max_attempts=max_attempts, **kwargs)
     raw = _strip_fences(result.content)
     if not raw.startswith("{"):
@@ -1041,7 +1055,7 @@ def call_llm_json(messages: list[Message], **kwargs: Any) -> tuple[dict[str, Any
         if result.finish_reason == "length":
             raise LlmError(
                 f"LLM JSON response was truncated by the max token limit ({max_tokens}). "
-                "Increase maxTokens or reduce the requested JSON size.",
+                "Raise LLM_MAX_TOKENS or reduce the requested JSON size.",
                 transient=False,
             ) from e
         raise LlmError(f"LLM JSON parse failed: {result.content[:200]}", transient=False) from e
