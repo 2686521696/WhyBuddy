@@ -175,3 +175,117 @@ class Test这里不打_data_洞:
             "第 3 步开始认 data-* 了——那是第 6 步的事。"
             "分工写在 spec_page_html 的模块 docstring 里，改之前先读它。"
         )
+
+
+class Test瞬时错误不该打死整轮:
+    """2026-08-13 真机撞到的：六页并发跑，一次 httpx.RemoteProtocolError
+    （网关断开）把**整轮**打死，前面 70 秒的 SPEC 白跑。而那是瞬时错误，
+    重跑一次就好。
+
+    两个独立的洞，各修各的：
+      ① generate_page_html 调的是裸 call_llm，一次网络重试都没有
+      ② 调用方用 pool.map —— 任何一个 worker 抛异常，整个迭代就抛
+    """
+
+    def test_默认走带重试的调用_不是裸_call_llm(self):
+        """判据钉在源码上：这条线断了不会有任何用例变红（网络错误在测试里
+        本来就不会发生），只能靠源码断言守。"""
+        import inspect
+
+        import services.spec_page_html as mod
+
+        src = inspect.getsource(mod.generate_page_html)
+        assert "call_llm_with_retry" in src
+        assert "from sliderule_llm.client import call_llm\n" not in src, "又退回裸调用了"
+
+    def test_不引_tenacity_或_backoff(self):
+        """仓里现成的 call_llm_with_retry 已经分好了 transient / 非 transient，
+        还带 gRPC hedging 治长尾慢请求——tenacity 只覆盖重试不覆盖对冲，比它弱，
+        引进来是多一个依赖换一个更差的实现。
+
+        ⚠ 走 AST 查真实 import，**不做字符串搜索**。头一版就是 `"tenacity"
+        not in src`，结果被模块里那句「不引 tenacity」的注释判红——
+        判据必须钉在**真实语句**上，不是"文件里出现过这个词"。
+        这条教训本仓记过（AST 里没有注释，所以墓碑注释能留、真实读取被禁）。
+        """
+        import ast
+        import inspect
+
+        import services.spec_page_html as mod
+
+        tree = ast.parse(inspect.getsource(mod))
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported |= {a.name.split(".")[0] for a in node.names}
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module.split(".")[0])
+        assert not ({"tenacity", "backoff"} & imported), f"引了 {imported}"
+
+    def test_单页失败不拖垮整批(self):
+        from services.spec_page_html import generate_pages_parallel
+
+        spec = {
+            "appName": "测试应用",
+            "pages": [
+                {"id": "p1", "name": "甲页", "purpose": "看甲", "audience": "甲方", "coversNodes": []},
+                {"id": "p2", "name": "乙页", "purpose": "看乙", "audience": "乙方", "coversNodes": []},
+                {"id": "p3", "name": "丙页", "purpose": "看丙", "audience": "丙方", "coversNodes": []},
+            ],
+            "nodes": [],
+        }
+        good = ('<!DOCTYPE html><html lang="zh-CN"><head>'
+                '<script src="https://cdn.tailwindcss.com"></script></head>'
+                '<body><main>中文正文</main></body></html>')
+
+        class _R:
+            def __init__(self, c): self.content = c
+
+        seen: list = []
+
+        def flaky(messages, **kwargs):
+            seen.append(1)
+            if len(seen) == 2:  # 第二页炸一次，模拟网关断开
+                raise RuntimeError("Server disconnected without sending a response")
+            return _R(good)
+
+        out = generate_pages_parallel(spec, max_workers=1, llm_call=flaky)
+        assert len(out["pages"]) == 2, "另外两页应该照样产出"
+        assert len(out["failed"]) == 1
+        assert "disconnected" in list(out["failed"].values())[0]
+
+    def test_全部成功时_failed_是空的(self):
+        from services.spec_page_html import generate_pages_parallel
+
+        spec = {"appName": "x", "nodes": [],
+                "pages": [{"id": "p1", "name": "甲", "purpose": "看", "audience": "谁", "coversNodes": []}]}
+
+        class _R:
+            content = ('<!DOCTYPE html><html><head>'
+                       '<script src="https://cdn.tailwindcss.com"></script></head>'
+                       '<body><main>中文</main></body></html>')
+
+        out = generate_pages_parallel(spec, llm_call=lambda *a, **k: _R())
+        assert out["failed"] == {} and len(out["pages"]) == 1
+
+    def test_失败的页不产出占位_HTML(self):
+        """**不 fail-open**：失败就是失败，不塞一份看着像那么回事的空壳。
+
+        缺页不会被静默吞掉——第 4 步那条页面覆盖判据会发现（喂几份出几页）。
+        """
+        from services.spec_page_html import generate_pages_parallel
+
+        spec = {"appName": "x", "nodes": [],
+                "pages": [{"id": "p1", "name": "甲", "purpose": "看", "audience": "谁", "coversNodes": []}]}
+
+        def boom(*a, **k):
+            raise RuntimeError("网关断开")
+
+        out = generate_pages_parallel(spec, llm_call=boom)
+        assert out["pages"] == {}, "失败的页不该有任何产出"
+        assert "p1" in out["failed"]
+
+    def test_没有页面时不炸(self):
+        from services.spec_page_html import generate_pages_parallel
+
+        assert generate_pages_parallel({"pages": []}) == {"pages": {}, "failed": {}}

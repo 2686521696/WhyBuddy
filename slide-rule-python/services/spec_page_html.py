@@ -174,9 +174,26 @@ def generate_page_html(
     brief = build_page_brief(page, spec)
     prompt = build_page_html_prompt(brief)
     if llm_call is None:
-        from sliderule_llm.client import call_llm
+        # ⚠ 用带重试的那个，不是裸 call_llm（2026-08-13 修）。
+        #
+        # 病灶：真机跑六页时一次 httpx.RemoteProtocolError（网关断开）就把
+        # **整轮**打死了——前面那 70 秒的 SPEC 白跑。而那是个瞬时错误，
+        # 重跑一次就好。
+        #
+        # 下面 max_attempts 那个循环治的是**校验不过**（HTML 被截断、没引
+        # Tailwind…），跟网络断开是两回事：网络类错误连 HTML 都没拿到，
+        # 拿什么去校验？两者混在一个计数里，等于一次网络抖动就吃掉一次
+        # 宝贵的重问额度。
+        #
+        # 仓里现成的 call_llm_with_retry 已经把这件事分好了：LlmError 带
+        # transient 标志（429/524/5xx/连接断开为 True，401/404 为 False），
+        # 只对瞬时错误重试，还带 gRPC hedging 语义治长尾慢请求。
+        # ⚠ 所以**不引 tenacity / backoff**：那会是个新依赖，且只覆盖重试
+        # 不覆盖对冲，比现有的弱。
+        from sliderule_llm.client import call_llm_with_retry
 
-        llm_call = call_llm
+        def llm_call(messages, **kwargs):  # type: ignore[misc]
+            return call_llm_with_retry(messages, max_attempts=3, backoff_ms=2000, **kwargs)
 
     last: List[str] = []
     for _ in range(max(1, max_attempts)):
@@ -200,3 +217,51 @@ def generate_page_html(
     raise SpecPageHtmlError(
         f"页面 {page.get('id')} 的 HTML 未通过校验：{'；'.join(last)}"
     )
+
+
+def generate_pages_parallel(
+    spec: Dict[str, Any],
+    *,
+    max_workers: int = 6,
+    llm_call: Optional[Callable[..., Any]] = None,
+) -> Dict[str, Any]:
+    """把 spec 的每一页并发生成 HTML。**单页失败不拖垮整批。**
+
+    ## 为什么要有这个函数
+
+    调用方原本自己写 `pool.map(lambda pg: generate_page_html(pg, spec), pages)`
+    ——`pool.map` 的语义是**任何一个 worker 抛异常，整个迭代就抛**。六页里挂
+    一页，另外五页的成果一起丢，而它们已经烧掉了几分钟。页数越多越容易踩：
+    六页比三页翻倍。
+
+    写法照 `freeform_block.refine_sheet_prompts_parallel`（本仓已有的同型
+    并发批量）：逐个 future 取结果，失败的位置单独记账，不抛。
+
+    ## 跟 fail-open 的区别
+
+    这里**不 fail-open**。失败的页不产出占位 HTML，而是如实记进 `failed`，
+    由调用方决定是整轮停还是带着缺页往下走——第 4 步那条页面覆盖判据会发现
+    缺页（喂几份出几页），所以缺页不会被静默吞掉。
+
+    返回 {"pages": {pageId: html}, "failed": {pageId: 原因}}。
+    """
+    pages = list(spec.get("pages") or [])
+    if not pages:
+        return {"pages": {}, "failed": {}}
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    ok: Dict[str, str] = {}
+    failed: Dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(pages))) as pool:
+        futures = [
+            (str(pg.get("id") or ""), pool.submit(generate_page_html, pg, spec, llm_call=llm_call))
+            for pg in pages
+        ]
+        for page_id, fut in futures:
+            try:
+                ok[page_id] = fut.result()["html"]
+            except Exception as exc:  # noqa: BLE001 — 单页失败不拖垮整批
+                failed[page_id] = str(exc)[:200]
+                print(f"[spec_page_html] 页面 {page_id} 生成失败：{str(exc)[:160]}")
+    return {"pages": ok, "failed": failed}
