@@ -1,0 +1,345 @@
+"""第 6 步：把前五步的产物汇合成完整五系统模型，过结构闸。
+
+## 这一步在链路里的位置
+
+    1 澄清+缺口+证据      ✅ 现成能力
+    2 起草 SPEC           ✅ services/spec_tree.py
+    3 spec 每页 → HTML    ✅ services/spec_page_html.py
+  3.5 外壳统一            ✅ services/page_shell.py
+    4 HTML → 结构         ✅ services/html_structure.py
+    5 结构+SPEC → 语义    ✅ services/spec_semantics.py
+    6 **本文件**：汇合 → 五系统模型 → 结构闸 → 交给设计段
+
+## 它不是纯拼装
+
+结构闸要六段齐全（datamodel / rbac / workflow / page / aigc / appbundle），
+而前五步只产出了其中的一部分。缺的四样是**跨系统的绑定**：
+
+    page.pages[].fieldBindings      这一页显示哪些 实体.字段
+    page.pages[].actionPermissions  这一页的操作要哪些权限
+    rbac.menus                      哪个角色看得到哪个菜单
+    aigc.capabilities               AI 能力吃哪些字段、写回哪个字段
+    appbundle.pageBindings          页面 ↔ 工作流
+
+## 分工：能机械拼的一律机械拼
+
+只有上面那五样需要判断，其余全是搬运：
+
+    机械（零 LLM）  datamodel / rbac.roles / rbac.permissions / workflow /
+                   page 的 id·name·kind / appbundle 的 roleRefs·dataModelRefs·
+                   landingPageRef·preferredDevice·appIdentity·invariants
+    要判断（1 次）  上面那五样绑定
+
+这样切的理由：**每多一样交给模型，就多一处会编的地方**。而这一步的词汇表
+已经全部封闭了——实体、字段、页面、角色、权限、工作流节点都在前五步定死并
+校验过，所以模型只能在既有 id 里挑，编不出新的，闸也验得了。
+
+## 抄了什么
+
+⚠ **绑定推导这件事没有开源可抄。** 查过 amis（百度）和 Formily（阿里）——
+它们都是**消费** JSON schema 的渲染器，schema 是人写的；没有一个是从数据模型
+反推页面绑定的。这跟 docs/绑定契约草案-v1.md 第六节查到的一致
+（那批字段清单驱动的项目全是 JSON 驱动，没有一个做这一步）。所以这里
+写清是自研，不假称有出处。
+
+**照抄的是仓里自己的一条：结构闸裁决回喂（E37）。**
+`generate_five_system_model(goal, gate_feedback=...)` 早就在这么干——把
+闸的 findings 原文喂回去、有界重生成一次、两版都拦仍然 fail-closed。
+这一步同理：闸报什么就回喂什么，不自己另发明一套错误话术。
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, List, Optional
+
+MODEL_ASSEMBLY_VERSION = "model-assembly-v1"
+
+
+class ModelAssemblyError(RuntimeError):
+    """汇合失败。**不回落**——一份过不了闸的模型往下走，只会在更远的地方炸。"""
+
+
+# ── 机械段：零 LLM，纯搬运 ─────────────────────────────────────────────
+
+
+def assemble_mechanical(
+    structure: Dict[str, Any],
+    semantics: Dict[str, Any],
+    spec: Dict[str, Any],
+) -> Dict[str, Any]:
+    """把前五步已经定死的东西搬进六段骨架，绑定那一层留空。
+
+    这里一个判断都不做——搬运出错是能被 diff 出来的，判断出错不能。
+    """
+    from .html_structure import HtmlStructure, to_datamodel
+    from .spec_semantics import SpecSemantics, to_model_sections
+
+    st = structure if isinstance(structure, HtmlStructure) else HtmlStructure.model_validate(structure)
+    sem = semantics if isinstance(semantics, SpecSemantics) else SpecSemantics.model_validate(semantics)
+    sections = to_model_sections(sem)
+
+    pages = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "kind": p.kind,
+            "fieldBindings": [],       # ← 绑定层填
+            "actionPermissions": [],   # ← 绑定层填
+        }
+        for p in st.pages
+    ]
+    entity_ids = [e.id for e in st.entities]
+    role_ids = [r.id for r in sem.roles]
+
+    return {
+        "datamodel": to_datamodel(st),
+        "rbac": {**sections["rbac"], "menus": []},   # ← 绑定层填
+        "workflow": {"id": "main_flow", "name": "主流程", **sections["workflow"]},
+        "page": {"pages": pages},
+        "aigc": {"capabilities": []},                # ← 绑定层填
+        "appbundle": {
+            "pageBindings": [],                      # ← 绑定层填
+            "landingPageRef": pages[0]["id"] if pages else "",
+            "preferredDevice": "desktop",
+            "roleRefs": role_ids,
+            "dataModelRefs": entity_ids,
+            "appIdentity": {"appName": str(spec.get("appName") or "").strip()},
+            "invariants": sections["invariants"],
+        },
+    }
+
+
+def _vocabulary(model: Dict[str, Any]) -> Dict[str, List[str]]:
+    """把模型里已经定死的 id 摊成词汇表，喂给绑定层当"只能用这些"。"""
+    fields = [
+        f"{e['id']}.{f['id']}"
+        for e in model["datamodel"]["entities"]
+        for f in e["fields"]
+    ]
+    return {
+        "fields": fields,
+        "pages": [p["id"] for p in model["page"]["pages"]],
+        "roles": [r["id"] for r in model["rbac"]["roles"]],
+        "permissions": list(model["rbac"]["permissions"]),
+        "workflowNodes": [n["id"] for n in model["workflow"]["nodes"]],
+    }
+
+
+# ── 绑定层：一次 LLM，词汇表全封闭 ──────────────────────────────────────
+
+_SYSTEM = (
+    "你在给一个已经定好的应用补跨系统绑定关系。只输出一个 JSON 对象，"
+    "不要解释、不要 markdown 围栏。"
+)
+
+
+def build_binding_prompt(model: Dict[str, Any], gate_feedback: str = "") -> List[Dict[str, str]]:
+    import json as _json
+
+    vocab = _vocabulary(model)
+    pages_brief = "\n".join(
+        f"- {p['id']}（{p['kind']}）{p['name']}" for p in model["page"]["pages"]
+    )
+    feedback = ""
+    if gate_feedback.strip():
+        # 闸的裁决原文回喂——照 E37 那条既有做法，不自己另写一套错误话术。
+        feedback = (
+            f"\n\n⚠ 上一版被结构闸拦下了，findings 原文如下。**只改这些地方**：\n"
+            f"{gate_feedback.strip()}\n"
+        )
+
+    body = f"""下面这个应用的实体、字段、页面、角色、权限、工作流**都已经定死了**。
+请只补它们之间的绑定关系。
+
+页面：
+{pages_brief}
+
+**只能用下面这些 id，一个都不许新造**：
+{_json.dumps(vocab, ensure_ascii=False, indent=1)}
+
+输出这个形状：
+
+{{
+  "pageBindings": [
+    {{"pageId": "<页面id>",
+      "fieldBindings": ["<实体id>.<字段id>"],
+      "actionPermissions": ["<权限>"]}}
+  ],
+  "menus": [
+    {{"id": "<菜单id>", "label": "<菜单名>",
+      "roleRefs": ["<角色id>"], "permissionRefs": ["<权限>"]}}
+  ],
+  "aigcCapabilities": [
+    {{"id": "<能力id>", "name": "<能力名>",
+      "inputFields": ["<实体id>.<字段id>"], "outputField": "<实体id>.<字段id>",
+      "roleRefs": ["<角色id>"]}}
+  ],
+  "workflowPageBindings": [
+    {{"pageRef": "<页面id>", "workflowRef": "<工作流节点id 或 main_flow>"}}
+  ]
+}}
+
+硬性要求：
+
+1. **每一个页面都要出现在 pageBindings 里**，一个都不许少。
+2. fieldBindings 只能从上面 fields 里挑；actionPermissions 只能从 permissions 里挑。
+   挑不到合适的就给空数组，**不要造一个看着像的**。
+3. menus 至少一条，roleRefs / permissionRefs 都必须是上面列过的。
+4. aigcCapabilities 至少一条。inputFields 和 outputField 都必须是真实字段，
+   且 **outputField 不能出现在 inputFields 里**（自己写自己没有意义）。
+5. workflowPageBindings 的 workflowRef 只能是工作流节点 id 或 "main_flow"。
+{feedback}"""
+    return [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": body}]
+
+
+def apply_bindings(model: Dict[str, Any], bindings: Dict[str, Any]) -> Dict[str, Any]:
+    """把绑定层的产出灌回六段骨架。原地不改，返回新的一份。"""
+    import copy
+
+    # ⚠ 两侧都要 deepcopy。
+    #
+    # 头一版只 deepcopy 了 model，绑定那几段用的是 `list(...)`——那只复制外层
+    # 列表，**里面的 dict 还是调用方那几个对象**。后果不是"多占内存"，是
+    # **调用方之后改自己的 bindings，模型会跟着变**（写测试时当场撞到：一个
+    # 用例改了 aigc 的 inputFields，后面所有用例都跟着坏，坏因还完全看不出来）。
+    #
+    # 汇合这一步的产物要交给下游设计段，中途被别处改掉是最难查的一类问题。
+    out = copy.deepcopy(model)
+    src = copy.deepcopy(bindings)
+    by_page = {str(b.get("pageId") or ""): b for b in (src.get("pageBindings") or [])}
+    for page in out["page"]["pages"]:
+        b = by_page.get(page["id"]) or {}
+        page["fieldBindings"] = list(b.get("fieldBindings") or [])
+        page["actionPermissions"] = list(b.get("actionPermissions") or [])
+    out["rbac"]["menus"] = list(src.get("menus") or [])
+    out["aigc"]["capabilities"] = list(src.get("aigcCapabilities") or [])
+    out["appbundle"]["pageBindings"] = list(src.get("workflowPageBindings") or [])
+    return out
+
+
+def check_bindings_closed(model: Dict[str, Any]) -> List[Dict[str, str]]:
+    """绑定层是不是只用了既有 id。
+
+    结构闸也查一部分（fieldBindings / actionPermissions / assigneeRole），
+    但**它不查 aigc 的 outputField 自环、也不查每页是不是都被绑定过**。
+    这两条是这一步自己该守的：
+
+      · outputField 出现在 inputFields 里 = 拿一个字段算它自己，是句废话
+      · 有页面没进 pageBindings = 那一页没有任何数据，界面上是空的
+        （跟第 4 步那条"整页被丢"同型——**东西少了、闸却绿**）
+    """
+    vocab = _vocabulary(model)
+    fields, perms = set(vocab["fields"]), set(vocab["permissions"])
+    roles, nodes = set(vocab["roles"]), set(vocab["workflowNodes"]) | {"main_flow"}
+    problems: List[Dict[str, str]] = []
+
+    bound_pages = set()
+    for page in model["page"]["pages"]:
+        bound_pages.add(page["id"])
+        for fb in page.get("fieldBindings") or []:
+            if fb not in fields:
+                problems.append({"path": f"page.pages[{page['id']}].fieldBindings",
+                                 "message": f"'{fb}' 不是真实字段"})
+        for ap in page.get("actionPermissions") or []:
+            if ap not in perms:
+                problems.append({"path": f"page.pages[{page['id']}].actionPermissions",
+                                 "message": f"'{ap}' 不在权限清单里"})
+        if not (page.get("fieldBindings") or page.get("actionPermissions")):
+            problems.append({
+                "path": f"page.pages[{page['id']}]",
+                "message": "既没有 fieldBindings 也没有 actionPermissions——"
+                           "这一页在界面上会是空的",
+            })
+
+    for menu in model["rbac"].get("menus") or []:
+        for r in menu.get("roleRefs") or []:
+            if r not in roles:
+                problems.append({"path": f"rbac.menus[{menu.get('id')}].roleRefs",
+                                 "message": f"'{r}' 不是已声明的角色"})
+        for p in menu.get("permissionRefs") or []:
+            if p not in perms:
+                problems.append({"path": f"rbac.menus[{menu.get('id')}].permissionRefs",
+                                 "message": f"'{p}' 不在权限清单里"})
+
+    for cap in model["aigc"].get("capabilities") or []:
+        ins = list(cap.get("inputFields") or [])
+        out_f = str(cap.get("outputField") or "")
+        for fld in ins + ([out_f] if out_f else []):
+            if fld not in fields:
+                problems.append({"path": f"aigc.capabilities[{cap.get('id')}]",
+                                 "message": f"'{fld}' 不是真实字段"})
+        if out_f and out_f in ins:
+            problems.append({
+                "path": f"aigc.capabilities[{cap.get('id')}].outputField",
+                "message": f"'{out_f}' 同时出现在 inputFields 里——拿一个字段算它自己是句废话",
+            })
+
+    for pb in model["appbundle"].get("pageBindings") or []:
+        if str(pb.get("pageRef")) not in bound_pages:
+            problems.append({"path": "appbundle.pageBindings",
+                             "message": f"pageRef '{pb.get('pageRef')}' 不是已有页面"})
+        if str(pb.get("workflowRef")) not in nodes:
+            problems.append({"path": "appbundle.pageBindings",
+                             "message": f"workflowRef '{pb.get('workflowRef')}' 不是工作流节点"})
+    return problems
+
+
+def assemble(
+    structure: Dict[str, Any],
+    semantics: Dict[str, Any],
+    spec: Dict[str, Any],
+    *,
+    llm_json_fn: Optional[Callable[[List[Dict[str, str]]], Optional[Dict[str, Any]]]] = None,
+    max_reask: int = 2,
+) -> Dict[str, Any]:
+    """汇合成完整五系统模型并过闸。过不了就把**闸的裁决原文**回喂重来。
+
+    返回 {"model": {...}, "gate": {"passed": True, "findings": []}}。
+    """
+    from .v5_model_gate import validate_five_system_model
+
+    skeleton = assemble_mechanical(structure, semantics, spec)
+    feedback = ""
+    last = "未调用"
+
+    for attempt in range(max_reask + 1):
+        payload = _call(build_binding_prompt(skeleton, feedback), llm_json_fn)
+        if payload is None:
+            last = "LLM 没有返回可解析的 JSON"
+        else:
+            model = apply_bindings(skeleton, payload)
+            own = check_bindings_closed(model)
+            gate = validate_five_system_model(
+                model, require_landing_page_ref=True, require_preferred_device=True
+            )
+            if not own and gate["passed"]:
+                return {"model": model, "gate": gate}
+            last = "；".join(
+                [f"{p['path']}：{p['message']}" for p in own[:6]]
+                + [f"{f.get('path')}：{f.get('message')}" for f in (gate["findings"] or [])[:6]]
+            )
+        if attempt == max_reask:
+            break
+        feedback = last
+
+    raise ModelAssemblyError(f"汇合后过不了闸（重问 {max_reask} 次后）：{last}")
+
+
+def _call(
+    messages: List[Dict[str, str]],
+    llm_json_fn: Optional[Callable[[List[Dict[str, str]]], Optional[Dict[str, Any]]]],
+) -> Optional[Dict[str, Any]]:
+    if llm_json_fn is not None:
+        try:
+            return llm_json_fn(messages)
+        except Exception:  # noqa: BLE001
+            return None
+    try:
+        from sliderule_llm.client import call_llm_json
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        payload, _ = call_llm_json(messages, temperature=0.2)
+    except Exception:  # noqa: BLE001
+        return None
+    return payload if isinstance(payload, dict) else None
