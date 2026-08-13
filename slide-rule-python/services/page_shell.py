@@ -152,6 +152,38 @@ def build_nav_items(
     return "\n".join(out)
 
 
+_CN_TEXT = re.compile(r">([^<>]+)<")
+
+
+def detect_brand_and_role(aside_html: str) -> Tuple[str, str]:
+    """从一段侧栏里认出「模型编的产品名」和「模型编的角色」。
+
+    启发式：侧栏里**第一段中文**是产品名，**最后一段中文**是角色。
+    这不是拍脑袋——拿 9 份真实产物验过，9/9 命中：
+
+        r1/T_p1  首「智维工单」    末「维修主管」
+        r2/T_p3  首「智维运维平台」 末「行政部 · 普通员工」
+        r3/T_p2  首「维保云」      末「维修主管」
+
+    ⚠ 但它终究是启发式，认错了不会自己喊。所以**替换完必须有一道硬校验**
+    （check_shell_consistency 里那条 appName）：spec 的名字必须出现在每一页、
+    旧名字必须一处不剩。认错就当场报出来，绝不半改——半改比不改更糟，
+    那会出现"侧栏是新名字、顶栏还是旧名字"这种没人看得懂的中间态。
+    """
+    texts = [s.strip() for s in _CN_TEXT.findall(aside_html or "") if s.strip()]
+    texts = [s for s in texts if re.search(r"[\u4e00-\u9fff]", s)]
+    if not texts:
+        return "", ""
+    return texts[0], texts[-1]
+
+
+def _apply_identity(shell_part: str, old: str, new: str) -> str:
+    """整段替换产品名 / 角色。空值或没变化时原样返回。"""
+    if not old or not new or old == new:
+        return shell_part
+    return shell_part.replace(old, new)
+
+
 def _pick_shell_source(pages_html: Dict[str, str]) -> str:
     """选哪一页的壳当模板：**导航链接最多的那一页**。
 
@@ -186,6 +218,23 @@ def unify_shell(
     if not shell["aside"] and not shell["header"]:
         raise PageShellError(f"选中的源页 {source_id} 既没有 <aside> 也没有 <header>，抠不出壳")
 
+    # 产品名与角色：spec 里有就按 spec 灌，没有就保持模型编的那一套。
+    # 保持也算合格——统一是本模块的职责，起名不是；spec 没给就不该由这里发明。
+    app_name = str(spec.get("appName") or "").strip()
+    personas = list(spec.get("personas") or [])
+    role = str((personas[0] or {}).get("name") or "").strip() if personas else ""
+    old_brand, old_role = detect_brand_and_role(shell["aside"])
+    for part in ("aside", "header"):
+        shell[part] = _apply_identity(shell[part], old_brand, app_name)
+        shell[part] = _apply_identity(shell[part], old_role, role)
+
+    # ⚠ 顺序要紧：nav 必须在**身份替换之后**重新定位。
+    #
+    # 先定位再替换的话，一旦产品名或角色那几个字正好落在 nav 里（比如某个菜单项
+    # 就叫「维修主管」），替换会把 nav 的原文改掉，后面拿旧的 nav_match 去
+    # `replace` 就匹配不上——导航重排**静默不发生**，而各页壳仍然一致，
+    # check_shell_consistency 的前两条也照样绿。这种"闸全绿但功能没生效"的
+    # 形状，本仓踩过不止一次。
     nav_match = _NAV.search(shell["aside"])
     templates = nav_templates(nav_match.group(0)) if nav_match else None
 
@@ -213,6 +262,8 @@ def unify_shell(
         "sourcePageId": source_id,
         "navAnchored": bool(templates),
         "navItems": [str(p.get("name") or p.get("id")) for p in spec_pages],
+        "appName": app_name or old_brand,
+        "personaRole": role or old_role,
         "pages": out,
     }
 
@@ -284,6 +335,17 @@ def check_shell_consistency(
                 "path": f"{pid}.nav",
                 "message": f"导航项 {got} 跟 spec 的页面清单 {want} 对不上",
             })
+
+    app_name = str(spec.get("appName") or "").strip()
+    if app_name:
+        for pid, s in shells.items():
+            blob = s["aside"] + s["header"]
+            if blob and app_name not in blob:
+                problems.append({
+                    "path": f"{pid}.appName",
+                    "message": f"壳上没有 spec 的产品名「{app_name}」——"
+                               f"多半是认错了模型编的那个名字，替换没落到实处",
+                })
 
     for pid, s in shells.items():
         if not s["aside"] and not s["header"]:

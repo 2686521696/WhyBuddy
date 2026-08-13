@@ -366,6 +366,8 @@ STRUCTURE_SECTION_MARKERS = (
 _FAKE_SPEC = {
     "rootNodeId": "n0",
     "version": 3,
+    "appName": "权限哨",
+    "personas": [{"id": "u1", "name": "系统管理员", "goals": ["盯住越权风险"]}],
     "successCriteria": [{"id": "sc1", "text": "管理员可在一处看到全部越权风险项。"}],
     "nodes": [
         {

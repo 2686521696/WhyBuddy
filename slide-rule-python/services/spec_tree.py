@@ -54,6 +54,36 @@ SPEC_VERSION = 3
 _EARS_CN = re.compile(r"(当|若|如果)[^。\n]{2,80}(应|必须|须)")
 
 
+#: 产品名里不许出现的纯类目词。单独一个「系统」「平台」不是名字，是品类——
+#: 壳上挂它等于没起名，而且每次生成都会撞脸。
+_GENERIC_APP_NAMES = {"系统", "平台", "管理系统", "管理平台", "应用", "工具", "后台"}
+
+
+class Persona(BaseModel):
+    """一类使用者。形状照 `experiments/visual-first/materials/clarified_brief.json`
+    （用户给的参照件，fingerprint crm-followup-spec-20260604）里的 personas。
+
+    ⚠ 不是照 GitHub spec-kit 抄的——查过了，spec-kit 的 spec-template.md **没有**
+    persona 这一节，也没有产品名（只有 `# Feature Specification: [FEATURE NAME]`，
+    那是功能名不是产品名）。这两项在开源里没有现成约定，所以照本项目自己的
+    参照件走，并在这里注明来源，免得下次有人以为它有出处。
+
+    `name` 是**角色名**（「维修主管」「个人销售」），不是某个人的名字——
+    界面上那个「李主管」是占位数据，不该进 spec。
+    """
+
+    id: str
+    name: str
+    goals: list[str] = Field(default_factory=list)
+
+    @field_validator("id", "name")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        if not (v or "").strip():
+            raise ValueError("persona 的 id 和 name 都不能为空")
+        return v.strip()
+
+
 class SuccessCriterion(BaseModel):
     """一条可验收的成功判据。整棵树最后都要回指到它们身上。"""
 
@@ -138,9 +168,41 @@ class SpecPage(BaseModel):
 class SpecTree(BaseModel):
     rootNodeId: str
     version: int = SPEC_VERSION
+    #: 产品名。2026-08-13 补——在它之前，页面外壳上的产品名是**每页各编一个**的：
+    #: 同一份 spec 的三页量出来是「智维工单」「维保云」「智维运维平台」，
+    #: 三个产品名三个登录人三套菜单，根本不像同一个应用。页面清单能锚住菜单，
+    #: 锚不住这两样，所以补进契约。
+    appName: str
+    #: 使用者类型。壳上那个登录身份从 personas[0] 来（谁排第一谁是默认身份，
+    #: 不另设 primaryPersonaRef——少一个旋钮少一处对不齐的机会）。
+    personas: list[Persona]
     successCriteria: list[SuccessCriterion]
     nodes: list[SpecNode]
     pages: list[SpecPage]
+
+    @field_validator("appName")
+    @classmethod
+    def app_name_is_a_name(cls, v: str) -> str:
+        name = (v or "").strip()
+        if not name:
+            raise ValueError("appName 不能为空——壳上要挂它")
+        if name in _GENERIC_APP_NAMES:
+            raise ValueError(
+                f"appName「{name}」是品类不是名字，换一个这个产品自己的名字"
+            )
+        if len(name) > 20:
+            raise ValueError(f"appName「{name[:20]}…」太长了，侧栏挂不下，控制在 20 字以内")
+        return name
+
+    @model_validator(mode="after")
+    def personas_usable(self) -> "SpecTree":
+        if not self.personas:
+            raise ValueError("personas 不能为空——壳上的登录身份要从它来")
+        ids = [p.id for p in self.personas]
+        dupes = sorted({i for i in ids if ids.count(i) > 1})
+        if dupes:
+            raise ValueError(f"persona id 重复：{dupes}")
+        return self
 
     # ── 下面每一条都能真失败。被替换那份的闸校验的是自己刚拼出来的形状，
     #    恒过；那不叫闸，叫留痕。 ────────────────────────────────────
@@ -282,7 +344,12 @@ def spec_to_markdown(spec: SpecTree) -> str:
     for n in spec.nodes:
         by_parent.setdefault(n.parentId, []).append(n)
 
-    lines = ["# SPEC Tree", ""]
+    lines = [f"# SPEC Tree：{spec.appName}", ""]
+    lines.append("## 使用者 (personas)")
+    for i, p in enumerate(spec.personas):
+        默认 = "（界面默认登录身份）" if i == 0 else ""
+        lines.append(f"- {p.id} {p.name}{默认}" + (f"：{'；'.join(p.goals)}" if p.goals else ""))
+    lines.append("")
     lines.append("## 成功判据 (success criteria)")
     for c in spec.successCriteria:
         lines.append(f"- id:{c.id} {c.text}")
@@ -359,6 +426,11 @@ def build_spec_prompt(
 {
   "rootNodeId": "n0",
   "version": 3,
+  "appName": "给这个产品起的名字（2~20 字，是名字不是品类——「维保云」行，「管理系统」不行）",
+  "personas": [
+    {"id": "u1", "name": "角色名（如「维修主管」，不是某个人的名字）",
+     "goals": ["这个角色打开系统主要要干什么"]}
+  ],
   "successCriteria": [
     {"id": "sc1", "text": "可验收的一句话，要能判定做到没做到（含数量/时间这类硬指标更好）"}
   ],
@@ -394,6 +466,10 @@ def build_spec_prompt(
    （task 是工程活儿、evidence 是依据，都画不出界面）。
 6. pages 是**粗粒度**的：说清楚有哪几页、每页给谁用、要干什么就够了，
    不要写字段名、组件名、接口名——那些由下游根据界面反推，不归你定。
+7. **appName 和 personas 会被挂到每一页的侧栏上**，所以它们必须是这个产品的
+   一套、而不是每页各来一套。appName 要是个真名字（「维保云」「智维工单」），
+   单独一个「系统」「平台」「管理系统」会被拦下来。personas 至少一条，
+   排在第一位的那个是界面上默认的登录身份。
 
 规模按这个产品**真实的复杂度**来，不要凑数也不要偷懒：
 判据 3~6 条，requirement 3~8 个，页面 3~8 页是常见区间。"""

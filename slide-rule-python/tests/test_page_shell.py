@@ -228,3 +228,90 @@ class Test产出形状:
         src = inspect.getsource(mod)
         for banned in ("call_llm", "llm_json", "generate_"):
             assert banned not in src, f"page_shell 里出现了 {banned}，它该是零 LLM 的"
+
+
+SPEC_WITH_IDENTITY = {
+    **SPEC,
+    "appName": "维保云",
+    "personas": [{"id": "u1", "name": "维修主管", "goals": ["盯住未处理工单"]}],
+}
+
+
+class Test身份也按_spec_锚定:
+    """产品名和登录角色原本是**从被选中那页继承**的——统一了，但仍然是模型编的。
+
+    spec 契约补上 appName / personas 之后，这里要真的灌进去；不灌的话
+    加字段等于没加。
+    """
+
+    def test_产品名换成_spec_的(self):
+        out = unify_shell(PAGES, SPEC_WITH_IDENTITY)
+        for html in out["pages"].values():
+            aside = extract_shell(html)["aside"]
+            assert "维保云" in aside
+            # 源页是 p3（导航链接最多），它编的名字必须一处不剩
+            assert "智维运维平台" not in aside
+
+    def test_角色换成_spec_第一个_persona(self):
+        out = unify_shell(PAGES, SPEC_WITH_IDENTITY)
+        for html in out["pages"].values():
+            assert "维修主管" in extract_shell(html)["aside"]
+            assert "李晓雯 · 普通员工" not in extract_shell(html)["aside"]
+
+    def test_Header_上的产品名也换(self):
+        # 只换侧栏不换顶栏，会出现"侧栏新名字、顶栏旧名字"这种没人看得懂的中间态
+        out = unify_shell(PAGES, SPEC_WITH_IDENTITY)
+        for html in out["pages"].values():
+            header = extract_shell(html)["header"]
+            assert "维保云" in header and "智维运维平台" not in header
+
+    def test_spec_没给身份时保持模型编的那套(self):
+        """统一是本模块的职责，起名不是。spec 没给就不该由这里发明一个。"""
+        out = unify_shell(PAGES, SPEC)
+        brands = {extract_shell(h)["aside"].split('brand">')[1].split("<")[0]
+                  for h in out["pages"].values()}
+        assert brands == {"智维运维平台"}  # 仍然统一，只是名字来自源页
+
+    def test_产出带上最终用的身份(self):
+        out = unify_shell(PAGES, SPEC_WITH_IDENTITY)
+        assert out["appName"] == "维保云"
+        assert out["personaRole"] == "维修主管"
+
+    def test_判据能抓到替换没落实(self):
+        """detect_brand_and_role 是启发式（9/9 验过，但终究是启发式）。
+
+        认错了不会自己喊，所以配一道硬校验：spec 的名字必须出现在每一页。
+        这条用例就是拿"没换过的页"去撞它。
+        """
+        probs = check_shell_consistency(PAGES, SPEC_WITH_IDENTITY)
+        assert any(p["path"].endswith(".appName") for p in probs)
+
+    def test_统一后这道硬校验也过(self):
+        out = unify_shell(PAGES, SPEC_WITH_IDENTITY)
+        assert check_shell_consistency(out["pages"], SPEC_WITH_IDENTITY) == []
+
+
+class Test身份替换与导航重排的先后顺序:
+    def test_角色名正好是菜单项时_导航仍然重排(self):
+        """⚠ 顺序坑：nav 必须在**身份替换之后**重新定位。
+
+        先定位再替换的话，一旦角色名那几个字正好落在 nav 里，替换会改掉 nav
+        的原文，后面拿旧 nav_match 去 replace 就匹配不上——**导航重排静默不
+        发生**，而各页壳仍然一致、前两条判据照样绿。这种"闸全绿但功能没生效"
+        的形状本仓踩过不止一次，所以单独钉一条。
+        """
+        # 让源页的菜单里就有「维修主管」这一项，替换必然会动到 nav 原文
+        pages = dict(PAGES)
+        pages["p3"] = page("智维运维平台", "李晓雯 · 普通员工",
+                           ["首页", "维修主管", "我的工单", "全部工单", "设备台账"])
+        spec = {
+            **SPEC,
+            "appName": "维保云",
+            "personas": [{"id": "u1", "name": "维修主管", "goals": []}],
+        }
+        out = unify_shell(pages, spec)
+        for pid, html in out["pages"].items():
+            aside = extract_shell(html)["aside"]
+            for want in ("工单工作台首页", "工单详情页", "新建报修页"):
+                assert want in aside, f"{pid} 的导航没被重排——多半是踩了顺序坑"
+            assert "设备台账" not in aside

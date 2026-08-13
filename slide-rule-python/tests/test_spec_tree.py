@@ -28,6 +28,11 @@ from services.spec_tree import (
 GOOD: dict = {
     "rootNodeId": "n0",
     "version": 3,
+    "appName": "维保云",
+    "personas": [
+        {"id": "u1", "name": "维修主管", "goals": ["盯住各车间的未处理工单"]},
+        {"id": "u2", "name": "维修工", "goals": ["处理指派给自己的工单"]},
+    ],
     "successCriteria": [
         {"id": "sc1", "text": "维修工可在 2 分钟内完成一次报修登记。"},
         {"id": "sc2", "text": "班组长能按车间查看当日未处理工单数量。"},
@@ -459,3 +464,67 @@ class Test换实现时差点埋进去的两个坑:
             "sources": [{"id": "e1", "source": "x"}],
         }
         assert is_grounded_evidence_artifact(art) is False
+
+
+class Test产品名与使用者_把外壳也锚住:
+    """2026-08-13 补的两项。
+
+    在它们之前，页面外壳上的产品名是**每页各编一个**的——同一份 spec 的三页
+    量出来是「智维工单」「维保云」「智维运维平台」，三个产品名三个登录人。
+    页面清单能锚住菜单，锚不住这两样，所以补进契约。
+
+    ⚠ 形状照的是本项目自己的参照件（materials/clarified_brief.json 的 personas），
+    **不是 spec-kit**——查过了，spec-kit 的 spec-template.md 没有 persona 这一节，
+    也没有产品名（只有 `# Feature Specification: [FEATURE NAME]`，那是功能名）。
+    这条注在这里，免得下次有人以为它有开源出处。
+    """
+
+    def test_拦_没有产品名(self):
+        s = copy.deepcopy(GOOD)
+        del s["appName"]
+        assert validate_spec_tree(s)["passed"] is False
+
+    def test_拦_产品名是空的(self):
+        assert "不能为空" in 失败原因(broken(appName="   "))
+
+    @pytest.mark.parametrize("generic", ["系统", "平台", "管理系统", "管理平台", "应用", "工具", "后台"])
+    def test_拦_产品名是品类不是名字(self, generic):
+        """单独一个「系统」不是名字，是品类——挂在侧栏上等于没起名，而且每次
+        生成都会撞脸。这一条是这两个字段里唯一真正会咬人的判据。"""
+        assert "品类" in 失败原因(broken(appName=generic))
+
+    def test_品类词做前后缀是允许的(self):
+        # 「维保云管理系统」有自己的名字在前面，不该被误伤
+        assert validate_spec_tree(broken(appName="维保云管理系统"))["passed"] is True
+
+    def test_拦_产品名太长(self):
+        assert "太长" in 失败原因(broken(appName="设备报修与维修工单全生命周期综合管理服务平台系统"))
+
+    def test_拦_没有使用者(self):
+        assert "personas" in 失败原因(broken(personas=[]))
+
+    def test_拦_使用者_id_重复(self):
+        s = copy.deepcopy(GOOD)
+        s["personas"][1]["id"] = "u1"
+        assert "重复" in 失败原因(s)
+
+    def test_拦_使用者没有名字(self):
+        s = copy.deepcopy(GOOD)
+        s["personas"][0]["name"] = ""
+        assert validate_spec_tree(s)["passed"] is False
+
+    def test_排第一的那个是默认登录身份(self):
+        """不另设 primaryPersonaRef——少一个旋钮少一处对不齐的机会。"""
+        spec = SpecTree.model_validate(GOOD)
+        assert spec.personas[0].name == "维修主管"
+
+    def test_两项都进了正文(self):
+        # 只活在 JSON 里的话，人查产物时看不见，也没法核对
+        md = spec_to_markdown(SpecTree.model_validate(GOOD))
+        assert "维保云" in md
+        assert "维修主管" in md and "界面默认登录身份" in md
+
+    def test_提示词里说清它们会被挂到侧栏上(self):
+        user = build_spec_prompt("设备报修")[-1]["content"]
+        assert "appName" in user and "personas" in user
+        assert "侧栏" in user, "不说用途，模型不知道为什么要统一"
