@@ -170,15 +170,40 @@ def _blob_store(store_file: Optional[StorePath] = None):
 _import_attempted = False
 
 
-def _import_local_once(store) -> None:
-    """首次用库时，把本机文件里库中还没有的会话搬进去。
+#: 本机文件存档 → 库的自动导入开关。**默认关**（2026-08-13 改）。
+#:
+#: ## 为什么从"默认开"改成"默认关"
+#:
+#: 这段原本是一次性的迁移辅助：换到查库那版时，磁盘上原有的会话得搬进去，
+#: 否则「数据还在，界面上却没了」。迁移早就完成了，但这段代码一直留着——
+#: 于是它从"救命的"变成了"埋雷的"。
+#:
+#: 2026-08-13 实际炸了一次：本地起了一个进程、加载的是**生产 .env**，
+#: 这段就把 data/sliderule-sessions.json 里 21 条**早就清掉的**旧会话
+#: 原样推回了生产库。用户在线上又看见了本该没有的数据。
+#: 日志里明明白白写着「新增 21 条」，但它长得跟启动噪音一模一样，没人会停下来看。
+#:
+#: 这个方向天然是危险的：**本地文件是陈旧副本，库才是真相**，而这段代码
+#: 让陈旧副本单向地往真相里写。它"只插不改"保护的是"库里已有的那条"，
+#: 保护不了"库里已经被删掉的那条"——删除在它眼里跟"还没导入"长得一样。
+#:
+#: 现在的口径：**一切走库，本地文件不回灌**。真要做一次性迁移，显式打开
+#: 这个开关跑一次，别让它常驻在启动路径上。
+_LOCAL_IMPORT_ENV = "SLIDERULE_SESSION_LOCAL_IMPORT"
 
-    不做这件事的话，升级到这版之后这台机器原有的会话会**从界面上消失**——
-    数据还在磁盘上，但读取路径已经改成查库了。那比原来的问题更糟。
+
+def _local_import_enabled() -> bool:
+    return (os.getenv(_LOCAL_IMPORT_ENV) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _import_local_once(store) -> None:
+    """把本机文件存档里库中还没有的会话搬进库。**默认不跑**，见上面那段。
 
     只插不改：库里已有的那条永远更权威（本地文件可能是很旧的副本）。
     """
     global _import_attempted
+    if not _local_import_enabled():
+        return
     if _import_attempted:
         return
     _import_attempted = True

@@ -280,16 +280,70 @@ def test_exhausted_retries_report_failure_not_silent_loss(db, monkeypatch):
     assert result["reason"] == "cas_conflict"
 
 
-# ────────────────────── ④ 升级不能让本机会话消失 ──────────────────────
+# ─────────── ④ 本机文件不许回灌进库（除非显式打开一次性迁移）───────────
+#
+# 这一节原来叫「升级不能让本机会话消失」，守的是反方向：首次用库时把本机
+# 文件里的会话搬进去。那是一次性的迁移辅助，迁完之后它就从"救命的"变成
+# "埋雷的"——2026-08-13 实际炸了一次：一个加载了生产 .env 的本地进程，
+# 把本机文件里 21 条**早就清掉的**旧会话原样推回了生产库。
+#
+# 根子在方向：**本地文件是陈旧副本，库才是真相**，这段代码却让陈旧副本
+# 单向往真相里写。它的"只插不改"保护得了"库里已有的那条"，保护不了
+# "库里已经被删掉的那条"——删除在它眼里跟"还没导入"长得一模一样。
+#
+# 所以现在默认关。迁移仍然做得了，但必须显式打开、跑完就关。
+
+
+def test_本机文件默认不回灌进库(db, tmp_path, monkeypatch):
+    """默认口径：一切走库，本地文件不回灌。
+
+    这条守的正是那次事故的形态——本机躺着一份陈旧存档，进程一起就被推上去。
+    """
+    from config.settings import settings
+
+    store_file = tmp_path / "data" / "sliderule-sessions.json"
+    store_file.parent.mkdir(parents=True)
+    store_file.write_text(
+        json.dumps([["sr-stale", _state("sr-stale", goal="早该清掉的旧会话").model_dump()]],
+                   ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SLIDERULE_SESSIONS_FILE", raising=False)
+    monkeypatch.delenv("SLIDERULE_SESSION_LOCAL_IMPORT", raising=False)
+    session_blob_store.reset_cache()
+
+    assert persistence.load_all() == {}, "本机陈旧存档又被推进库里了——正是那次事故"
+
+
+def test_显式打开才做一次性迁移(tmp_path, monkeypatch):
+    """迁移能力保留：显式打开就该照常搬。"""
+    from config.settings import settings
+
+    store_file = tmp_path / "data" / "sliderule-sessions.json"
+    store_file.parent.mkdir(parents=True)
+    store_file.write_text(
+        json.dumps([["sr-old-1", _state("sr-old-1", goal="老会话一").model_dump()]],
+                   ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        settings, "APP_STORE_DATABASE_URL", f"sqlite:///{tmp_path / 'migrate.db'}", raising=False
+    )
+    monkeypatch.delenv("SLIDERULE_SESSIONS_FILE", raising=False)
+    monkeypatch.setenv("SLIDERULE_SESSION_LOCAL_IMPORT", "1")
+    session_blob_store.reset_cache()
+
+    got = persistence.load_all()
+    assert set(got) == {"sr-old-1"}, f"显式打开了却没迁移: {set(got)}"
 
 
 def test_existing_file_sessions_are_imported_on_first_db_use(tmp_path, monkeypatch):
-    """升级到落库版之后，这台机器原有的会话必须还在。
-
-    不导入的话它们会**从界面上消失**——数据还在磁盘上，但读取路径已经改成
-    查库了。那比原来的问题更糟：原问题是别处的应用打不开，这个是自己的没了。
-    """
+    """显式打开时，这台机器原有的会话必须还在（原「升级不丢数据」那条）。"""
     from config.settings import settings
+
+    monkeypatch.setenv("SLIDERULE_SESSION_LOCAL_IMPORT", "1")
 
     store_file = tmp_path / "data" / "sliderule-sessions.json"
     store_file.parent.mkdir(parents=True)
