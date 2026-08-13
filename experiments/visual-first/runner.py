@@ -144,8 +144,23 @@ def run_a(goal: str) -> dict | None:
     return generate_five_system_model(goal)
 
 
-def run_b(goal: str, spec: str, images: list[tuple[str, str]]) -> dict | None:
-    """spec + 图。system 契约与 A 完全一致，只在 user 消息上加证据。"""
+def run_b(
+    goal: str, spec: str, images: list[tuple[str, str]], failures: list[str] | None = None
+) -> dict | None:
+    """spec + 图。system 契约与 A 完全一致，只在 user 消息上加证据。
+
+    ## 重试预算必须跟 A 对齐（2026-08-13 修，第一轮跑完才发现）
+
+    `generate_five_system_model` 里有这么一行：
+
+        attempts = 1 if use_parallel else (2 if llm_json_fn is None else 1)
+
+    **注入 llm_json_fn 会把外层重试从 2 次砍成 1 次。** 第一轮 B 组 3 跑挂 2，
+    挂的是我这个台子，不是这条路线——A 有两次机会，B 只有一次，还不算 A 的
+    结构化通道内部那 2 次错误回喂。这么比出来的失败率没有意义。
+
+    所以这里自己补上外层重试，并把 shape 回喂提到 2，让两组的预算量级对齐。
+    """
     from services.v5_llm_generate import generate_five_system_model
     from sliderule_llm.client import call_llm_json_with_shape
 
@@ -172,19 +187,29 @@ def run_b(goal: str, spec: str, images: list[tuple[str, str]]) -> dict | None:
             parts.append(
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
             )
-        parsed, _ = call_llm_json_with_shape(
-            [
-                {"role": "system", "content": schema_instruction_for(g)},
-                {"role": "user", "content": parts},
-            ],
-            required_keys=_REQUIRED,
-            max_shape_retries=1,
-            temperature=0.2,
-            backoff_ms=2000,
-        )
+        try:
+            parsed, _ = call_llm_json_with_shape(
+                [
+                    {"role": "system", "content": schema_instruction_for(g)},
+                    {"role": "user", "content": parts},
+                ],
+                required_keys=_REQUIRED,
+                max_shape_retries=2,
+                temperature=0.2,
+                backoff_ms=2000,
+            )
+        except Exception as exc:  # noqa: BLE001 — 失败原因要留证，不能只看到"没模型"
+            if failures is not None:
+                failures.append(str(exc)[:4000])
+            raise
         return parsed if isinstance(parsed, dict) else None
 
-    return generate_five_system_model(goal, llm_json_fn=fn)
+    # 外层两次，对齐 A 的 `attempts=2`（见上面 docstring）
+    for _ in range(2):
+        model = generate_five_system_model(goal, llm_json_fn=fn)
+        if model:
+            return model
+    return None
 
 
 def main() -> int:
@@ -221,7 +246,11 @@ def main() -> int:
         for i in range(args.n):
             t0 = time.time()
             try:
-                model = run_a(goal) if group == "A" else run_b(goal, spec, images)
+                fails: list[str] = []
+                model = run_a(goal) if group == "A" else run_b(goal, spec, images, fails)
+                if fails:
+                    (outdir / f"fail_{group}{i+1}.txt").write_text(
+                        "\n\n---\n\n".join(fails), encoding="utf-8")
             except Exception as exc:  # noqa: BLE001 — 一次失败不该带走整场
                 print(f"[{group}{i+1}] 抛异常：{str(exc)[:200]}", flush=True)
                 model = None
