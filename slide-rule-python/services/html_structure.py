@@ -281,6 +281,38 @@ def check_grounding(structure: HtmlStructure, html_by_page: Dict[str, str]) -> L
     return problems
 
 
+def check_page_coverage(
+    structure: HtmlStructure, html_by_page: Dict[str, str]
+) -> List[Dict[str, str]]:
+    """喂进去几份 HTML，就该产出几个页面——**一页都不许少**。
+
+    2026-08-13 全链路实测撞到的：spec 有 5 页、第 3 步出了 5 份 HTML，
+    第 4 步只产出 4 个页面，`p5 权限与审计` 被整页丢掉，而**闸全绿**。
+
+    根因是提示词里那条「不要产出权限、角色、工作流」写得太宽——模型看到一个
+    叫「权限与审计」的页面，就把整页跳过了。那条本意是"别产出权限**内容**"，
+    页面本身是结构，该留。提示词已收窄，但**光靠改提示词不够**：
+    这类"东西悄悄少了、判据照样绿"的形状今天出现过不止一次，得有判据兜住。
+
+    也查反向：产出的 sourcePageId 必须是真喂过的页，不能凭空多一个。
+    """
+    problems: List[Dict[str, str]] = []
+    fed = set(html_by_page)
+    got = {p.sourcePageId for p in structure.pages}
+    for missing in sorted(fed - got):
+        problems.append({
+            "path": f"pages[{missing}]",
+            "message": f"喂了 {missing} 这一页的 HTML，却没有对应的 pages 条目——"
+                       f"整页被丢了（哪怕它是「权限与审计」这类页，页面本身也要保留）",
+        })
+    for extra in sorted(got - fed):
+        problems.append({
+            "path": f"pages[{extra}]",
+            "message": f"sourcePageId '{extra}' 不在喂进来的页面里，真实页面是 {sorted(fed)}",
+        })
+    return problems
+
+
 def validate_structure(payload: Any, html_by_page: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """契约校验 + grounding 校验，返回 {passed, findings}。
 
@@ -303,6 +335,8 @@ def validate_structure(payload: Any, html_by_page: Optional[Dict[str, str]] = No
         return {"passed": False, "findings": [{"path": "structure", "message": str(exc)[:200]}]}
 
     findings = check_grounding(structure, html_by_page) if html_by_page else []
+    if html_by_page:
+        findings += check_page_coverage(structure, html_by_page)
     return {"passed": not findings, "findings": findings}
 
 
@@ -356,8 +390,14 @@ def build_prompt(html_by_page: Dict[str, str], goal: str = "") -> List[Dict[str,
 4. 页面 kind 只能是：{", ".join(PAGE_KINDS)}。
 5. sourcePageId 照抄上面给你的页面 id，不要自己改名。
 6. sections 只记「这一页分了哪几块」，不记怎么摆、不记颜色尺寸——排版不归你定。
-7. **不要产出权限、角色、工作流、审批流、状态机**。画面上读不出那些东西，
-   编出来的一定是行业常识而不是这个产品的真实需求。它们由后一步从 SPEC 来。
+7. **不要产出权限、角色、工作流、审批流、状态机这些内容**。画面上读不出
+   那些东西，编出来的一定是行业常识而不是这个产品的真实需求，它们由后一步
+   从 SPEC 来。
+   ⚠ 但这条只管**内容**，不管**页面**：哪怕某一页就叫「权限与审计」，
+   它也必须照样出现在 pages 里（记它的 name / kind / sections 就行，
+   不要展开里面的角色和权限清单）。**给你几份 HTML 就要产出几个页面，
+   一页都不许少。**
+8. **每一份输入的 HTML 都必须对应一个 pages 条目**，sourcePageId 逐一对上。
 
 {chr(10).join(blocks)}"""
     return [

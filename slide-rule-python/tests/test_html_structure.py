@@ -395,3 +395,40 @@ class Test闸不是摆设_反向对照:
         assert _normalize("（设备）") == "设备"
         # 汉字一个都不能少，否则 needle 会退化成空串、恒命中
         assert len(_normalize("维修成本")) == 4
+
+
+class Test页面覆盖_喂几页就要出几页:
+    """2026-08-13 全链路实测撞到的：spec 5 页、第 3 步出 5 份 HTML，
+    第 4 步只产出 4 个页面，`p5 权限与审计` 被整页丢掉，而**闸全绿**。
+
+    根因是提示词里「不要产出权限、角色、工作流」写得太宽——模型看到一个叫
+    「权限与审计」的页面就把整页跳过了。那条本意是"别产出权限**内容**"，
+    页面本身是结构，该留。
+
+    提示词已收窄，但**光靠改提示词不够**：这类"东西悄悄少了、判据照样绿"的
+    形状今天出现过不止一次，所以补判据兜住。
+    """
+
+    def test_拦_少了一页(self):
+        s = copy.deepcopy(GOOD)
+        s["pages"] = [s["pages"][0]]  # 喂了 p1/p2，只产出 p1
+        msg = 失败原因(s)
+        assert "p2" in msg and "整页被丢了" in msg
+
+    def test_拦_多出一个不存在的源页(self):
+        s = copy.deepcopy(GOOD)
+        s["pages"][1]["sourcePageId"] = "p99"
+        assert "p99" in 失败原因(s)
+
+    def test_没给_HTML_时不查覆盖(self):
+        # 没有输入语料就无从谈覆盖，跳过而不是误报
+        s = copy.deepcopy(GOOD)
+        s["pages"] = [s["pages"][0]]
+        assert validate_structure(s)["passed"] is True
+
+    def test_提示词把这条写进去了(self):
+        user = build_prompt(PAGES, "x")[-1]["content"]
+        assert "一页都不许少" in user
+        assert "权限与审计" in user, "要点名这个具体反例，泛泛说一句拦不住"
+        # 原来那条禁令要收窄成只管内容，别再把整页带走
+        assert "这些内容" in user
