@@ -13,7 +13,11 @@
  * 纯函数模块：所有变更返回新对象，无副作用，便于单测与撤销。
  */
 
-import type { FiveSystemModel, WorkflowTransition } from "../system-screens/five-system-model";
+import type {
+  FiveSystemField,
+  FiveSystemModel,
+  WorkflowTransition,
+} from "../system-screens/five-system-model";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,21 +121,91 @@ export function deleteRow(state: RuntimeState, entityId: string, rowId: string):
   return { ...state, entities: { ...state.entities, [entityId]: rows } };
 }
 
-/** 必填/类型的轻校验（语义参考 dynamicDataService 的 validation 接入点）。 */
+/** 一条字段级的校验结论：`fieldId` 让表单能把红字标在出问题的那一栏上。 */
+export interface FieldProblem {
+  fieldId: string;
+  message: string;
+}
+
+const _blank = (v: unknown) => v === undefined || v === null || v === "";
+
+/**
+ * 表单校验：**只验模型真的声明过的东西**（2026-08-13 扩）。
+ *
+ * ## 为什么不做"必填"
+ *
+ * `FiveSystemField` 里**没有 required 这一维**（id / name / type / options /
+ * format / refEntity 就这些）。要标必填就得靠猜——猜哪个字段重要，猜错的代价是
+ * 用户被拦住却不知道为什么。所以这里一条都不猜，只把已声明的约束验到位；
+ * 真要必填，得先往契约里加 `required`，让生成侧显式声明。
+ *
+ * 唯一的例外是最后那条「整条全空」：它不需要知道哪个字段重要，只是拦住
+ * "什么都没填就点保存"——那种记录对任何模型都没有意义。
+ *
+ * ## 扩之前只有一条
+ *
+ * 原来只验 number 能不能转成数。于是 enum 字段能存进 options 里根本没有的值、
+ * ref 字段能指向一条不存在的记录、date 字段能存 "昨天下午"——**这些约束模型
+ * 全都声明了，只是没人去对**。线上那个音乐收藏库就是这么被填进一行全 "1" 的。
+ *
+ * `rows` 可选：只有验 ref 指向存在时才需要它。不传就跳过那一条（旧调用方
+ * 逐字节保持原行为）。
+ */
+export function validateRowFields(
+  model: FiveSystemModel | null | undefined,
+  entityId: string,
+  values: Record<string, unknown>,
+  rows?: Record<string, RuntimeRow[]>
+): FieldProblem[] {
+  const entity = (model?.datamodel?.entities ?? []).find((e) => e.id === entityId);
+  if (!entity) return [];
+  const problems: FieldProblem[] = [];
+  const label = (f: FiveSystemField) => f.name || f.id;
+
+  for (const field of entity.fields ?? []) {
+    const v = values[field.id];
+    if (_blank(v)) continue; // 空值交给下面那条「整条全空」，单字段不拦
+
+    if (field.type === "number" && Number.isNaN(Number(v))) {
+      problems.push({ fieldId: field.id, message: `${label(field)} 应为数字` });
+      continue;
+    }
+    if (field.type === "enum" && (field.options?.length ?? 0) > 0) {
+      const ok = field.options!.some((o) => o.id === String(v));
+      if (!ok) {
+        const names = field.options!.map((o) => o.label || o.id).join(" / ");
+        problems.push({ fieldId: field.id, message: `${label(field)} 只能是：${names}` });
+      }
+      continue;
+    }
+    if (field.type === "date" && Number.isNaN(new Date(String(v)).getTime())) {
+      problems.push({ fieldId: field.id, message: `${label(field)} 不是有效日期` });
+      continue;
+    }
+    if (field.type === "ref" && rows) {
+      // refEntity 缺席是存量模型的常态（见它的契约注释），那种情况不判——
+      // 猜出来的目标实体验不准，宁可不验。
+      const target = field.refEntity;
+      if (target && !(rows[target] ?? []).some((r) => r.id === String(v))) {
+        problems.push({ fieldId: field.id, message: `${label(field)} 指向的记录不存在` });
+      }
+    }
+  }
+
+  const allBlank = (entity.fields ?? []).every((f) => _blank(values[f.id]));
+  if (allBlank) problems.push({ fieldId: "", message: "至少填写一个字段" });
+
+  return problems;
+}
+
+/** `validateRowFields` 的字符串视图。老调用方（EntityDataPanel 等）继续用它。 */
 export function validateRowValues(
   model: FiveSystemModel | null | undefined,
   entityId: string,
-  values: Record<string, unknown>
+  values: Record<string, unknown>,
+  rows?: Record<string, RuntimeRow[]>
 ): string[] {
-  const entity = (model?.datamodel?.entities ?? []).find((e) => e.id === entityId);
-  const problems: string[] = [];
-  for (const field of entity?.fields ?? []) {
-    const v = values[field.id];
-    if (field.type === "number" && v !== undefined && v !== "" && Number.isNaN(Number(v))) {
-      problems.push(`${field.name || field.id} 应为数字`);
-    }
-  }
-  return problems;
+  return validateRowFields(model, entityId, values, rows).map((p) => p.message);
 }
 
 // ---------------------------------------------------------------------------

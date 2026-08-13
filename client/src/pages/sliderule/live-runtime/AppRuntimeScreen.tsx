@@ -162,7 +162,7 @@ import {
   addRow,
   deleteRow,
   updateRow,
-  validateRowValues,
+  validateRowFields,
   startInstance,
   nodeById,
 } from "./live-runtime";
@@ -639,6 +639,14 @@ export function AppRuntimeScreen({
   const [formValues, setFormValues] = React.useState<Record<string, unknown>>(
     {}
   );
+  //: 表单当前在改哪一行；null = 新建。**这一维之前根本不存在**——表单只有
+  //: openCreate 一个入口（`setFormValues({})` 恒清空），所以行内那个「编辑」
+  //: 无处可去，被接到了详情抽屉上。见 handleBlockAction 的 editRequest。
+  const [editingRowId, setEditingRowId] = React.useState<string | null>(null);
+  //: 提交被拦下时的字段级问题（fieldId → 提示）。空 fieldId 是整表级的。
+  const [formProblems, setFormProblems] = React.useState<
+    Record<string, string>
+  >({});
   const [detailRow, setDetailRow] = React.useState<RuntimeRow | null>(null);
   // 手机档看板当前选中的状态列（桌面档并排显示所有列，不需要这个 state）
   const [phoneKanbanKey, setPhoneKanbanKey] = React.useState("");
@@ -1070,11 +1078,36 @@ export function AppRuntimeScreen({
     ];
   };
 
+  const closeForm = () => {
+    setFormOpen(false);
+    setFormValues({});
+    setEditingRowId(null);
+    setFormProblems({});
+  };
+
+  /** 新建与编辑共用一条提交路径——差别只在最后落地那一步是 add 还是 update。 */
   const handleCreate = () => {
     if (!page?.entityId) return;
-    const problems = validateRowValues(model, page.entityId, formValues);
+    // 校验带上 state.entities：ref 字段要能验"指向的记录真的存在"。
+    const problems = validateRowFields(
+      model,
+      page.entityId,
+      formValues,
+      state.entities
+    );
     if (problems.length > 0) {
-      toast("warning", problems.join("；"));
+      // 字段级的红字标在对应那一栏；同时保留 toast，手机档没有 Form.Item 的
+      // 错误位，只靠红字的话那边等于没提示。
+      setFormProblems(
+        Object.fromEntries(problems.map(p => [p.fieldId, p.message]))
+      );
+      toast("warning", problems.map(p => p.message).join("；"));
+      return;
+    }
+    if (editingRowId) {
+      apply(updateRow(state, page.entityId, editingRowId, formValues));
+      closeForm();
+      toast("success", "已保存");
       return;
     }
     // 第一条真实数据落地前，先把这张表的演示种子整批清掉——种子和真实数据
@@ -1086,8 +1119,7 @@ export function AppRuntimeScreen({
       new Date().toISOString()
     );
     apply(next);
-    setFormOpen(false);
-    setFormValues({});
+    closeForm();
     toast("success", "已保存");
   };
 
@@ -1648,9 +1680,30 @@ export function AppRuntimeScreen({
       /** 打开「新建」表单（骨架的新建按钮、积木的 createRequest 都走这条）。 */
       openCreate: () => {
         setFormValues({});
+        setEditingRowId(null);
+        setFormProblems({});
         setFormOpen(true);
       },
-      /** 打开某一行的详情（骨架的行点击、积木的 editRequest 都走这条）。 */
+      /**
+       * 打开「编辑」表单：把这一行的值预填进去，落地时走 update 而不是 add。
+       *
+       * 2026-08-13 补。在这之前**编辑根本没有落点**——积木的 editRequest 被
+       * 接到了 openRecordById 上，于是行内点「编辑」弹出来的是详情抽屉。
+       * 一个只读的抽屉顶着「编辑」这个名字，比没有这个按钮更误导。
+       */
+      openEdit: (rowId: string) => {
+        for (const list of Object.values(state.entities)) {
+          const hit = (list ?? []).find(r => r.id === rowId);
+          if (hit) {
+            setFormValues({ ...hit.values });
+            setEditingRowId(rowId);
+            setFormProblems({});
+            setFormOpen(true);
+            return;
+          }
+        }
+      },
+      /** 打开某一行的详情（骨架的行点击、积木的 viewRequest 都走这条）。 */
       openRecord: (row: RuntimeRow | null | undefined) => {
         if (row) setDetailRow(row);
       },
@@ -1685,14 +1738,23 @@ export function AppRuntimeScreen({
       if (owner) setFocus(prev => ({ ...prev, [owner[0]]: rowId }));
       return;
     }
-    // 积木要打开的那两样，跟骨架走同一条管道（见 pagePipes 的说明）。
+    // 积木要打开的那几样，跟骨架走同一条管道（见 pagePipes 的说明）。
     //
     // rowSelect 故意**不**弹抽屉：这一页可能已经摆了 RecordDetail 积木，
-    // 点一行的本意是"换一条看"，再弹一个抽屉是同一件事做两遍。要看抽屉
-    // 走 editRequest（表格行内那个「编辑」），跟骨架的行为对齐。
-    if (actionId === "editRequest") {
+    // 点一行的本意是"换一条看"，再弹一个抽屉是同一件事做两遍。
+    //
+    // 2026-08-13 把「看」和「改」分开：以前只有 editRequest 一个入口、还接在
+    // 详情上，结果是**行内两个链接一个没反应、一个名不副实**——「查看」发
+    // rowSelect（只换焦点，页面上已有详情面板时纹丝不动），「编辑」弹出只读
+    // 抽屉。现在 viewRequest 管看，editRequest 管改，各归各位。
+    if (actionId === "viewRequest") {
       const rowId = String(eventData?.rowId ?? "");
       if (rowId) pagePipes.openRecordById(rowId);
+      return;
+    }
+    if (actionId === "editRequest") {
+      const rowId = String(eventData?.rowId ?? "");
+      if (rowId) pagePipes.openEdit(rowId);
       return;
     }
     if (actionId === "createRequest") {
@@ -4170,13 +4232,13 @@ export function AppRuntimeScreen({
               <React.Suspense fallback={null}>
                 <LazyPhoneFormPopup
                   open={formOpen}
-                  title={`新建 · ${page?.title ?? ""}`}
+                  title={`${editingRowId ? "编辑" : "新建"} · ${page?.title ?? ""}`}
                   fields={page?.formFields ?? []}
                   values={formValues}
                   onChange={(fieldId, v) =>
                     setFormValues(prev => ({ ...prev, [fieldId]: v }))
                   }
-                  onCancel={() => setFormOpen(false)}
+                  onCancel={closeForm}
                   onSubmit={handleCreate}
                   refRowsFor={refRowsFor}
                   enumOptionsFor={enumOptionsFor}
@@ -4195,10 +4257,10 @@ export function AppRuntimeScreen({
               </React.Suspense>
             ) : (
               <Modal
-                title={`新建 · ${page?.title ?? ""}`}
+                title={`${editingRowId ? "编辑" : "新建"} · ${page?.title ?? ""}`}
                 open={formOpen}
                 onOk={handleCreate}
-                onCancel={() => setFormOpen(false)}
+                onCancel={closeForm}
                 okText="保存"
                 cancelText="取消"
                 destroyOnHidden
@@ -4219,18 +4281,33 @@ export function AppRuntimeScreen({
                     Form.Item 一律**不给 name**：值仍由 formValues 这个受控
                     state 持有（handleCreate 照旧读它）。不带 name 的 Form.Item
                     在 antd 里就是纯布局容器（form-item.js:213 直接走
-                    renderLayout），跟父级受控的值兼容，不会来抢数据。 */}
+                    renderLayout），跟父级受控的值兼容，不会来抢数据。
+
+                    校验也因此**不能用 Form 的 rules**（rules 挂在 name 上，这里
+                    没有 name）。所以走 validateRowFields + 受控的 validateStatus/
+                    help：提交时算一次，红字标在出问题那一栏。这跟"值由父级持有"
+                    是同一个取舍的两面，不是偷懒。 */}
                 <Form
                   layout="vertical"
                   size="small"
                   requiredMark
                   style={{ paddingTop: 8 }}
                 >
+                  {formProblems[""] && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message={formProblems[""]}
+                      style={{ marginBottom: 12 }}
+                    />
+                  )}
                   {(page?.formFields ?? []).map(f => (
                     <Form.Item
                       key={f.id}
                       label={f.label}
                       style={{ marginBottom: 14 }}
+                      validateStatus={formProblems[f.id] ? "error" : undefined}
+                      help={formProblems[f.id]}
                     >
                       {/* 游标探针挂在内层 div，不挂 Form.Item——Form.Item 的
                           props 是它自己的一套（onReset 等签名跟 DOM 事件不兼容），

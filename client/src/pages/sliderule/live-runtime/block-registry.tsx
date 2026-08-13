@@ -3932,11 +3932,16 @@ const DataTableRenderer: ExperienceBlockRenderer = ({
       fixed: undefined,
       render: (_: unknown, row: RuntimeRow) => (
         <Space size={4}>
+          {/* 「查看」发 viewRequest，**不是** rowSelect（2026-08-13 修）。
+              rowSelect 是"换一条看"的行选中语义，故意不弹抽屉（见
+              AppRuntimeScreen 里那段注释）。这里复用它的后果是：页面上已经
+              摆着详情面板时，点「查看」把焦点设成同一条，界面纹丝不动——
+              用户看到的就是"这个链接点了没反应"。线上实测到的就是这一条。 */}
           <Typography.Link
             style={{ fontSize: 12 }}
             onClick={e => {
               e.stopPropagation();
-              onAction("rowSelect", { rowId: row.id });
+              onAction("viewRequest", { rowId: row.id });
             }}
           >
             查看
