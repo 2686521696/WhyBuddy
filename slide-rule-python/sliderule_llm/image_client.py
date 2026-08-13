@@ -144,6 +144,41 @@ def _transient(exc: Exception) -> bool:
     return isinstance(exc, urllib.error.HTTPError) and exc.code in (429, 500, 502, 503, 504)
 
 
+def _png_from_payload(payload: dict, *, timeout: float) -> bytes:
+    """从生图响应里取出图片字节——**两种形状都要认**。
+
+    ## 为什么不能只认 b64_json
+
+    请求体里明写了 `response_format: "b64_json"`，但 api.gpt.ge + gpt-image-2
+    **不保证照办**。2026-08-13 实测，同一个尺寸（1024x1024）连着两次探测：
+    第一次返回 `data[0].b64_json`，第二次返回 `data[0].url`。五个尺寸各探一次
+    时全是 `url`。也就是说这不是"某些尺寸走 url"，是**同一路请求随机返两种**。
+
+    只认 b64_json 的后果不是"报错好查"，是**随机失败**：整条链路上生图是
+    fail-open 的（失败就静默退回纯文字设计），所以表现成"有时候有参照图、
+    有时候没有"，而且没有任何一处会说为什么。
+
+    ⚠ 这正是本仓那条老规矩的又一次兑现：**认不认某个参数是端点相关行为，
+    换端点必须整份重测，别把旧结论当常量**。上一版客户端是对着上一家端点写的。
+    """
+    data = (payload or {}).get("data") or []
+    if not data or not isinstance(data[0], dict):
+        raise ImageGenError(f"生图响应里没有 data：{str(payload)[:200]}")
+    item = data[0]
+    b64 = item.get("b64_json")
+    if b64:
+        return base64.b64decode(b64)
+    url = item.get("url")
+    if url:
+        # 图片托管在服务商那边，取一次。这一跳的超时跟生图请求共用同一个数——
+        # 它本来就在同一段总预算里，单独给它一个更长的超时等于绕开预算闸。
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.read()
+    raise ImageGenError(
+        f"生图响应既没有 b64_json 也没有 url，拿到的字段是 {sorted(item.keys())}"
+    )
+
+
 def generate_image_png(
     prompt: str,
     *,
@@ -191,8 +226,7 @@ def generate_image_png(
             per_call = resolved.timeout if budget <= 0 else min(resolved.timeout, remaining)
             with urllib.request.urlopen(req, timeout=per_call) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
-            b64 = payload["data"][0]["b64_json"]
-            return base64.b64decode(b64)
+            return _png_from_payload(payload, timeout=per_call)
         except Exception as exc:  # noqa: BLE001 — 统一走下面的重试/包装逻辑
             last_exc = exc
             if attempt < RETRIES and _transient(exc):
