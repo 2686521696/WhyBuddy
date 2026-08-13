@@ -640,25 +640,6 @@ subgraph TRIAGE["00.1 入站判定闸门 / Intake Triage（✱ 07-30 新增子�
   TJDEV["✧ 设备档判定 / _DEVICE_RUBRIC（07-31 新增·与入站判定共用同一份判据）<br/>此前 preferredDevice 生成契约**只声明合法域·没给任何判据**·模型无从选择<br/>就一路倒向 desktop(扫过真实数据:9个应用全是 desktop·不是它们真都是桌面应用)<br/>于是「两档都生成设计」实际是在为一个没人做过的判断买单(每页多花约67s)<br/>补了姿态判据之后这个字段才有意义·下游 MONITOROV 据此决定砍不砍手机档"]:::gate
 end
  
-subgraph SPECFIRST["00.2 真 spec 前置层 / Spec-First（☐ 08-13 **提案·一行代码都还没有**）"]
-  direction TB
-  SPECSRC["☐ 提案 · 第2步 spec 来源【已裁决】:LLM 从**澄清后的需求**生成<br/>吃第1步的产物(澄清需求 + 定位缺口 + 外部证据)·不是吃原始那一句话<br/>产出 requirement / design / tasks 三件套(spec-kit / Kiro 口径)+ 成功判据 + 页面清单<br/>⚠ 它仍然是「从文字发明」·但比 GEN5 直接发明强的地方在于:**有验收条件·有页面清单**·<br/>下游能对着它检查。这一点未测·是假设<br/>⚠ 参照形状(用户 zip 那份·promptId=whybuddy-crm-mvp-v1):15 节点 · 4 条 successCriteria ·<br/>每个 requirement 带 acceptance 与 coversCriteria。生产那份只有 1 需求 1 风险 1 交付物"]:::propose
-  SPECREAL["☐ 提案 · 真 spec / 取代 ⛔2 那份 f-string 占位<br/>**存**:成功判据 · 需求节点 + 验收条件 · 页面清单<br/>⚠ 页面清单是**粗粒度**的(有哪几页 · 每页给谁用 · 要干什么)——跟五系统模型里<br/>那份细的(kind / stats / charts / blocks / 绑定)不是一回事·所以不构成循环依赖<br/>粗的这份必须在**出图之前**就有:否则不知道并发出几张图·每张画什么<br/>参照形状(用户 zip 那份):15 节点 · 4 条 successCriteria · 每个 requirement<br/>带 acceptance 与 coversCriteria。现在生产那份只有 1 需求 1 风险 1 交付物"]:::propose
-  VISPROMPT["☐ 提案 · 视觉线① 出图提示词由 spec 反推<br/>⚠ 这是个**新函数**·今天不存在:现有 _build_overview_sheet_facts 的入参是<br/>(design_brief, datamodel)·两个都是**五系统模型的产物**——上游版本一个都拿不到<br/>要写的是 facts_from_spec(页面清单条目) → 出图提示词"]:::propose
-  VISIMG["☐ 提案 · 视觉线② 并发出图 N 张(每页一张)<br/>**代价明确**:墙钟仍 60~85s(并发)·但请求数从 1 变 N·这笔是净增·得认<br/>今天只出 1 张(仅落地页)·且那一张在下游·只能给已定的 stats/charts 化妆"]:::propose
-  VISHTML["☐ 提案 · 第5步 图 → HTML【已裁决】:screenshot-to-code 原生<br/>⚠ **这一步不能省**:D 组那个 25→37 是 **HTML** 喂出来的·不是图喂出来的——<br/>runner.py 的 run_d 原文「以下是这个产品的 N 份界面 HTML·是你唯一的依据」·<br/>load_html 的 docstring 写着「图转出来的 HTML·由 screenshot-to-code 原生跑出」<br/>跳过这一步等于把唯一有实测的那条边拆了<br/>⚠ 只让它画版式与绑定·**别让它写行为逻辑**:F 组让模型现写 JS·六项通过 12/18·<br/>三份里只有 1 份全过·且失败是静默的(能点·不报错·没反应)"]:::propose
-  VISDERIVE["☐ 提案 · 第6步 HTML → 实体 / 字段 / 关联关系 / 页面结构<br/>**唯一有实测撑着的一条边**:同 55 字意图·唯一差别是有没有 HTML 当输入·<br/>字段 25→37 · 区块 10→14 · 臆造 0(A/D 两组同意图·这一对是干净的)<br/>⚠ 但 D 组跑在实验台里·用的是手工 HTML + 手工 spec——**没面对**结构闸 /<br/>316 区块目录 / 权限与工作流要求。生产链上没跑过"]:::propose
-  SEMLINE["☐ 提案 · 第7步 (第6步产物 + SPEC) → 权限 / 工作流 / 不变式<br/>⚠ **两个输入都要·串行在第6步之后·不是跟它并列**(2026-08-13 用户裁决·<br/>推翻了本图上一版画的「语义线与视觉线并行」——那个画法是错的):<br/>· 第6步产物给「**挂在什么上**」:真实的 entityRef / fieldRef / pageRef<br/>· SPEC 给「**该有什么规则**」:哪几类角色 · 什么审批流 · 什么约束<br/>⚠ 少了第6步产物会怎样·今天就有现场证据(act2 那轮结构闸 findings=1):<br/>invariants[reassignment_preserves_audit_context].refs: invariant ref<br/>'reassign_work_order' not found in model——**不变式引用了一个不存在的东西**<br/>⚠ 少了 SPEC 会怎样·也是实测:4 份 HTML 里「角色/权限/主管/管理员」出现 **0 次**·<br/>「成交/流失/归档/阶段」**0 次**;五组推出来的流程拓扑完全相同(5 节点 6 转移)<br/>——那是模型的行业常识·不是从画面里读到的证据<br/>⚠ 纠正一个曾经的误译:实测说的是「**光有 HTML** 推不出权限/工作流」·<br/>不是「别看 HTML」。**是相加·不是替代**"]:::propose
-  SPECGAP["☐ ⚠ 读图纪律:本子图**没有任何一条对应代码**<br/>画上来是因为「有想法没接线」被误当成已生效·是这份文件反复吃过亏的那种错<br/>(V5.8 图八天渲染不出来没人发现 · 手写 uses 声明与实际渲染不符 316 个 ·<br/>ECTX ⇢ GEN5 那条边被以为通了很久)<br/>判据:这一格里任何一个节点接进主轴之前·虚线红框都不许改成实线"]:::propose
-  SPECSRC ==> SPECREAL
-  SPECREAL ==> VISPROMPT
-  VISPROMPT ==> VISIMG
-  VISIMG ==> VISHTML
-  VISHTML ==> VISDERIVE
-  VISDERIVE ==>|"☐ 结构先出来·第7步才有东西可挂"| SEMLINE
-  SPECREAL ==>|"☐ 规则从这来·HTML 上一个字都没有"| SEMLINE
-  SPECREAL -.- SPECGAP
-end
  
 subgraph CORE["01 控制平面 / Control Plane（V5.1 脊柱 · 零改动）"]
   direction TB
@@ -709,6 +690,8 @@ subgraph POOL["03 能力池 / Capability Pool（平权 · V5.1 原样 · 执行�
   G_INV{"不变量守卫闸"}:::gate
   C_SFALL["确定性兜底"]:::fallback
   C_TREE["结构拆解 / structure.decompose<br/>● + 旧管线推导回填(K5)<br/>⛔08-13 标红:产出的 spec_tree 是 **f-string 拼的占位**·恒定 1 需求 1 风险 1 交付物<br/>唯一那条需求永远是 Implement scoped permission checks for 「goal」·换什么题材都一样<br/>底下 G_SCHEMA / G_INV 校验的是**代码上一行刚拼出来的形状**·所以恒过<br/>⚠ 而且是**死路**:拼完存进 artifacts 给人看·不喂给任何生成(见 ⛔3)<br/>⚠ 对照:用户 zip 里那份 spec_tree 有 15 节点 / 4 条 successCriteria / 每条带 acceptance<br/>**同名但不是同一种东西**——D 组字段 25→37 用的正是那份·生产给不出来"]:::cap
+  SPECSRC["☐ 提案 · 第2步 spec 来源【已裁决】:LLM 从**澄清后的需求**生成<br/>吃第1步的产物(澄清需求 + 定位缺口 + 外部证据)·不是吃原始那一句话<br/>产出 requirement / design / tasks 三件套(spec-kit / Kiro 口径)+ 成功判据 + 页面清单<br/>⚠ 它仍然是「从文字发明」·但比 GEN5 直接发明强的地方在于:**有验收条件·有页面清单**·<br/>下游能对着它检查。这一点未测·是假设<br/>⚠ 参照形状(用户 zip 那份·promptId=whybuddy-crm-mvp-v1):15 节点 · 4 条 successCriteria ·<br/>每个 requirement 带 acceptance 与 coversCriteria。生产那份只有 1 需求 1 风险 1 交付物"]:::propose
+  SPECREAL["☐ 提案 · 真 spec / 取代 ⛔2 那份 f-string 占位<br/>**存**:成功判据 · 需求节点 + 验收条件 · 页面清单<br/>⚠ 页面清单是**粗粒度**的(有哪几页 · 每页给谁用 · 要干什么)——跟五系统模型里<br/>那份细的(kind / stats / charts / blocks / 绑定)不是一回事·所以不构成循环依赖<br/>粗的这份必须在**出图之前**就有:否则不知道并发出几张图·每张画什么<br/>参照形状(用户 zip 那份):15 节点 · 4 条 successCriteria · 每个 requirement<br/>带 acceptance 与 coversCriteria。现在生产那份只有 1 需求 1 风险 1 交付物"]:::propose
   C_DOC["文档生成 / document.draft"]:::cap
   C_ACC["验收 / acceptance"]:::cap
   C_PREV["效果预演 / scenario.preview"]:::cap
@@ -758,6 +741,12 @@ end
 subgraph CLOSURE["09 五系统闭环装配层 / Five-System Closure（▲ 07-17 新增子图 · app 主舞台的数据源）"]
   direction TB
   LEGAL["✱ 五系统合法域账本 / five_system_legal.json（✱07-30补画·此前图上一直缺失）<br/>补画理由:它已经有**四个**派生消费方，是这张图里存在感最强的隐形节点——<br/>合法域此前记在四处(结构门常量·修复器本地拷贝·生成契约手写枚举串·客户端渲染器<br/>手抄版)靠人肉对齐，E37 的根因就是漏账的代价。收成单一真相源后:<br/>结构门 import · 修复器经门 re-export 自动跟随 · 生成契约由 enum_str() 渲染<br/>· 客户端构建期直读同一 JSON(vitest parity 测试锁死)<br/>✱07-30 起第五个消费方:入站判定的能力面(TJCAP)<br/>加枚举=只改 JSON;哪一方没消费到,parity 测试当场红<br/>(思想同阿里低代码引擎《物料协议》:一份物料描述·编辑器/渲染器/校验器共同消费)"]:::ledger
+  VISPROMPT["☐ 提案 · 视觉线① 出图提示词由 spec 反推<br/>⚠ 这是个**新函数**·今天不存在:现有 _build_overview_sheet_facts 的入参是<br/>(design_brief, datamodel)·两个都是**五系统模型的产物**——上游版本一个都拿不到<br/>要写的是 facts_from_spec(页面清单条目) → 出图提示词"]:::propose
+  VISIMG["☐ 提案 · 视觉线② 并发出图 N 张(每页一张)<br/>**代价明确**:墙钟仍 60~85s(并发)·但请求数从 1 变 N·这笔是净增·得认<br/>今天只出 1 张(仅落地页)·且那一张在下游·只能给已定的 stats/charts 化妆"]:::propose
+  VISHTML["☐ 提案 · 第5步 图 → HTML【已裁决】:screenshot-to-code 原生<br/>⚠ **这一步不能省**:D 组那个 25→37 是 **HTML** 喂出来的·不是图喂出来的——<br/>runner.py 的 run_d 原文「以下是这个产品的 N 份界面 HTML·是你唯一的依据」·<br/>load_html 的 docstring 写着「图转出来的 HTML·由 screenshot-to-code 原生跑出」<br/>跳过这一步等于把唯一有实测的那条边拆了<br/>⚠ 只让它画版式与绑定·**别让它写行为逻辑**:F 组让模型现写 JS·六项通过 12/18·<br/>三份里只有 1 份全过·且失败是静默的(能点·不报错·没反应)"]:::propose
+  VISDERIVE["☐ 提案 · 第6步 HTML → 实体 / 字段 / 关联关系 / 页面结构<br/>**唯一有实测撑着的一条边**:同 55 字意图·唯一差别是有没有 HTML 当输入·<br/>字段 25→37 · 区块 10→14 · 臆造 0(A/D 两组同意图·这一对是干净的)<br/>⚠ 但 D 组跑在实验台里·用的是手工 HTML + 手工 spec——**没面对**结构闸 /<br/>316 区块目录 / 权限与工作流要求。生产链上没跑过"]:::propose
+  SEMLINE["☐ 提案 · 第7步 (第6步产物 + SPEC) → 权限 / 工作流 / 不变式<br/>⚠ **两个输入都要·串行在第6步之后·不是跟它并列**(2026-08-13 用户裁决·<br/>推翻了本图上一版画的「语义线与视觉线并行」——那个画法是错的):<br/>· 第6步产物给「**挂在什么上**」:真实的 entityRef / fieldRef / pageRef<br/>· SPEC 给「**该有什么规则**」:哪几类角色 · 什么审批流 · 什么约束<br/>⚠ 少了第6步产物会怎样·今天就有现场证据(act2 那轮结构闸 findings=1):<br/>invariants[reassignment_preserves_audit_context].refs: invariant ref<br/>'reassign_work_order' not found in model——**不变式引用了一个不存在的东西**<br/>⚠ 少了 SPEC 会怎样·也是实测:4 份 HTML 里「角色/权限/主管/管理员」出现 **0 次**·<br/>「成交/流失/归档/阶段」**0 次**;五组推出来的流程拓扑完全相同(5 节点 6 转移)<br/>——那是模型的行业常识·不是从画面里读到的证据<br/>⚠ 纠正一个曾经的误译:实测说的是「**光有 HTML** 推不出权限/工作流」·<br/>不是「别看 HTML」。**是相加·不是替代**"]:::propose
+  SPECGAP["☐ ⚠ 读图纪律:本子图**没有任何一条对应代码**<br/>画上来是因为「有想法没接线」被误当成已生效·是这份文件反复吃过亏的那种错<br/>(V5.8 图八天渲染不出来没人发现 · 手写 uses 声明与实际渲染不符 316 个 ·<br/>ECTX ⇢ GEN5 那条边被以为通了很久)<br/>判据:这一格里任何一个节点接进主轴之前·虚线红框都不许改成实线"]:::propose
   GEN5["▲ 五系统起草 / v5_llm_generate<br/>schema契约+已装技能硬注入+业界参考软引用<br/>E29 精修上下文(增量改)·模型直供(回退)两通道<br/>✱07-30:prompt 里的哨兵词/占位字面量长得像值就会被当成值——binding=none 让<br/>模型给 QuickActionPanel 全填了 entityRef:「none」(4条门禁不过);「with slots」被读成<br/>键名让一轮 6 页排版全丢。两处都改成祈使句<br/>❖08-11 **区块清单不再是全量**:走 NARROW 挑出的 ~60 条进 prompt(≈7.4K token·<br/>此前 5.6 万)。窄化失效时自动退回全量·所以这条边**永远有货**·只是货有多有少<br/>❖08-11 每个区块条目加 `pages=`(允许的页型)·并补一句点名反例的规则句——<br/>光有字段不够:区域限制当初也有条目字段·照样反复被违反·直到补上举反例的<br/>规则句才收住。规则句还必须**给出路**(该改页的 kind·而不是硬塞区块)·<br/>不给出路的禁令会被绕过成「干脆不用那个区块」<br/>⛔08-13 标红:**系统真正的输入就是那一句话**。签名 generate_five_system_model(goal: str)<br/>没有第二个内容参数;_build_user_content(goal) 拼进去的只有:意图那 55~100 字 +<br/>已安装技能 + 按 goal 检索命中的参考语料/设计菜谱 + refine_ctx(仅二次精修)<br/>一个 LLM 调用要从一句话里同时发明 实体/字段/enum/页面/权限/工作流/不变式·<br/>还要从 316 个区块里选型。实测两轮全新话题都是第一次没过闸·attempts=2<br/>⚠ 病不在 GEN5 写得不好·在**它上游是空的**:没有任何一层在它之前把需求变厚"]:::cap
   DREPAIR["▲ 确定性修复 / v5_model_repair（零LLM·留痕）<br/>不变式refs近邻改写(唯一命中)·修不好整条剔除<br/>E37 展示层charts/stats同款处方(枚举违规剔除·非法format清除)<br/>骨架六系统不修——仍由门硬拦<br/>❖08-11 页型越界:**只记不改**(pageKindViolations)。跟 layout 槽位违规不同——<br/>那条改模型是因为槽位摆错会把页面真搞坏(PageHeader 钉在底部操作条上是实测过的)·<br/>页型摆错不影响渲染<br/>⚠ 不上闸的真正理由是**这条约束本身经不起推敲**:控住领域族之后仍有 **15 对**<br/>同域同能力的严格子集矛盾·而 pageKinds 从来没集中评审过(随每个区块被添加时手写)。<br/>拿一条可能标错的规则去硬拒模型·是把「违规发出去」换成「合规的也发不出去」"]:::core
   MGATE{"▲ 结构门 / v5_model_gate<br/>跨系统引用全解析·枚举合法域·页面范式绑定<br/>二元机械·任何悬空=拦<br/>✱07-30补两处漏:①**实体字段 type 纳入校验**——此前 FIELD_TYPES 只在技能<br/>binding 那儿用过·实体字段的 type 一路无人查(所谓「封闭合法域」只是 prompt 里<br/>的一句约定)。代价不是「写错没人说」而是**静默降级**:前端对认不出的类型一律<br/>return text，一个 file 字段会安安静静变成普通文本框——用户以为能传附件实际<br/>只能打字·不报错不提示测试全绿。②沿用该段口径「出现即校验·缺省不罚」"}:::gate
@@ -1194,27 +1183,38 @@ TPLSHAPE -.❖ ⚠ 尚未接线:推演路径没有任何一处读它.-> TPLGAP
 %% ❖E 演示域旁路默认关闭后，主轴上不再有「零 LLM 直达闭环」这条常态路径。
 DOMFIX -.❖ 默认关闭(SLIDERULE_DEMO_FIXTURE_ENABLED)·常态走 GEN5.-> GEN5
 
-%% ===== ☐ 08-13 提案接线（**全部未实施**·虚线红框那一格）=====
-%%  这一段画的是「如果按分叉方案改，边会怎么走」。**一条都还没接。**
-%%  读图纪律见 SPECGAP：这些边在代码里全是空的，别拿它们当现状。
-%%  真正改的**只有一条边的方向**——图从五模型的下游掉头到上游。其余节点
-%%  都是这条边掉头之后必须跟着长出来的东西。
-TJACT -.☐ 提案:判为 real/iteration 之后·先立 spec 再进推演.-> SPECSRC
-C_TREE -.☐ 提案:真 spec 取代这份 f-string 占位(⛔2).-> SPECREAL
-%%  两条线在 GEN5 汇合 —— 注意 GEN5 **本身不动**，动的是喂给它什么：
-%%  今天它只收一个 goal 字符串（⛔1），改后收的是「反推出来的页面/字段/信息架构」
-%%  加「spec 推出来的权限/工作流/不变式」。签名要加参数，prompt 装配要重写。
-VISDERIVE ==>|"☐ 提案:实体/字段/关联/页面结构"| GEN5
-SEMLINE ==>|"☐ 提案:权限/工作流/不变式"| GEN5
-%%  同一张图用两次：上游当证据反推模型，下游当版式参照给设计段。
-%%  ⚠ 这条边同时**关掉了 ⛔4 那个洞**——上游那张图是照 spec 画的，spec 里写着
+%% ===== ☐ 08-13 提案接线（**全部未实施**·节点用虚线红框标着）=====
+%%  ⚠ 上一版把这八步做成了一个独立子图 SPECFIRST，结果 dagre 把那个 cluster 扔到
+%%  画布角落，看着像挂在系统旁边的一个附件——**而它本来就是**：一个自带边界的
+%%  盒子，无论摆哪都读作「旁边那块」。现在拆开了，每个节点放进它真正所属的层：
+%%      SPECSRC / SPECREAL      → POOL，紧贴 C_TREE（它就是取代 C_TREE 的那个能力）
+%%      VISPROMPT…SEMLINE       → CLOSURE，排在 GEN5 之前（产物直接进 GEN5）
+%%  并且新链路走**粗实线**（==>），跟主轴同级——dagre 按边定秩，细虚线排不进主流。
+%%  「还没实现」这件事由**节点的虚线红框**承担，不由位置承担：位置说的是它该在哪，
+%%  边框说的是它还不存在。两件事分开表达，才不会为了标清楚没实现而把它画到边上去。
+%%  ⚠ 第1步（澄清需求/定位缺口/外部证据）用的是**现成能力**，图上本来就有，不新增节点。
+C_GAP ==>|"☐ 第1步产物：澄清后的需求"| SPECSRC
+C_EVID ==>|"☐ 第1步产物：外部证据"| SPECSRC
+SPECSRC ==>|"☐ 第2步"| SPECREAL
+C_TREE -.☐ 第2步**整个取代**这一步(⛔2 那份 f-string 占位·无下游消费).-x SPECREAL
+SPECREAL ==>|"☐ 第3步：按页面清单逐页"| VISPROMPT
+VISPROMPT ==>|"☐ 第4步"| VISIMG
+VISIMG ==>|"☐ 第5步：screenshot-to-code"| VISHTML
+VISHTML ==>|"☐ 第6步"| VISDERIVE
+%%  第7步两个输入：结构给「挂在什么上」，SPEC 给「该有什么规则」。缺任一个都塌，
+%%  两侧各有实测（见 SEMLINE 节点标签里那两条）。
+VISDERIVE ==>|"☐ 第7步输入①：结构先出来才有东西可挂"| SEMLINE
+SPECREAL ==>|"☐ 第7步输入②：规则从这来·HTML 上一个字都没有"| SEMLINE
+%%  第8步：两股产物汇进 GEN5。GEN5 本身不动，动的是喂给它什么——
+%%  今天它只收一个 goal 字符串（⛔1），改后收结构 + 规则，签名与 prompt 装配要重写。
+VISDERIVE ==>|"☐ 第8步：实体/字段/关联/页面结构"| GEN5
+SEMLINE ==>|"☐ 第8步：权限/工作流/不变式"| GEN5
+%%  同一张图用两次：上游当证据推结构，下游当版式参照给设计段。
+%%  ⚠ 这条边同时关掉 ⛔4 那个洞——上游那张图是照 spec 画的，spec 里写着
 %%  「今日待跟进列表」图上就有列表，设计段第一次在列表区拿到参照。
-%%  今天实测的 rowsRef 4/6 靠机械修复、actionRef 只有 3/6，全发生在那块空白里。
-VISIMG -.☐ 提案:同一张图复用为版式参照·设计段不再重新生图.-> MONITOROV
-SHEET -.☐ 提案:这条下游出图路被 VISIMG 取代(⛔4).-x VISIMG
-%%  下面三段**一行不动**——今天它们是好的，不该被顺手重写。
-%%  改的是它们上游喂什么，不是它们本身。
-MGATE -.☐ 提案:结构闸 / 窄化 / 设计段三段保持原样.-> NARROWSEL
+VISIMG -.☐ 同一张图复用为版式参照·设计段不再重新生图.-> MONITOROV
+SHEET -.☐ 这条下游出图路被 VISIMG 取代(⛔4).-x VISIMG
+SPECREAL -.- SPECGAP
 
 %% ===== 输出 =====
 C_REP ==> REPORT
