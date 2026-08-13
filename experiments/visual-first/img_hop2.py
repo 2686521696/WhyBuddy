@@ -65,7 +65,6 @@ os.environ["SLIDERULE_SESSION_LOCAL_IMPORT"] = "0"
 from img_hop import (  # noqa: E402 — 复用上一轮，两轮才可比
     _DESIGN_SYSTEM,
     _STACK,
-    html_from_image,
     html_from_text,
     page_brief,
     strip_fences,  # noqa: F401 — 供交互式调试
@@ -167,6 +166,67 @@ def layout_metrics(html: str) -> dict:
     }
 
 
+# ── V 路第 3 跳：图 → HTML，换成 screenshot-to-code 的原版口径 ──────────
+#
+# 上一版（img_hop.html_from_image）是我自己随手写的一句「Generate the HTML for
+# this UI screenshot」。修完第 1 跳之后它就成了这条路上最后一处**不对称**：
+# T 路逐字抄了 create/text.py，V 路的图转 HTML 却没抄 create/image.py。
+#
+# 拉下来逐字对，差四处，最后一处是硬伤：
+#   ① 它说 "looks **exactly** like the provided screenshot(s)"，我只说 "generate the HTML"
+#   ② 它有一整段 Replication instructions（照抄原文里不依赖工具的那两条）
+#   ③ 它把**图放在文字前面**，我放在后面
+#   ④ **`detail: "high"`** —— 我压根没传。不传就是 auto，2560x1440 这种密集
+#      界面会被降采样，模型看到的根本不是那张图。这一条足以单独解释
+#      「图很漂亮但 HTML 很薄」（r1 实测丢了分页）。
+#
+# ⚠ 三条 asset 工具指令（extract_assets / edit_images / generate_images）**故意不抄**：
+#   我们这个 harness 没有这些工具，抄进来等于让模型去调不存在的东西。
+#   对应地，image policy 取它 `build_user_image_policy(False)` 那一支的原文。
+# ⚠ system 消息保持 "You are an expert at building front-ends."：上游 main 已经
+#   改成带工具的 agent 架构（create_file / screenshot_preview…），跟这个单发
+#   harness 不是一回事。**这是一处明写的偏离，不是抄漏了。**
+_S2C_STACK_POLICY = "Selected stack: html_tailwind."
+_S2C_IMAGE_POLICY = (
+    "Image generation is disabled for this request. Do not call generate_images. "
+    "Use provided media, CSS effects, or placeholder URLs (https://placehold.co)."
+)
+
+
+def html_from_image_s2c(png: bytes, brief: str) -> str:
+    from sliderule_llm.client import call_llm
+
+    b64 = base64.b64encode(png).decode()
+    user_text = f"""
+Generate code for a web page that looks exactly like the provided screenshot(s).
+
+{_S2C_STACK_POLICY}
+{_STACK}
+{_DESIGN_SYSTEM}
+
+## Replication instructions
+
+- Make sure the web page looks exactly like the screenshot.
+- Use the exact text from the screenshot.
+- {_S2C_IMAGE_POLICY}
+
+Additional instructions: 业务背景（仅用于给元素取中文名，版式一律以图为准）：
+{brief}
+""".strip()
+    return strip_fences((call_llm(
+        [
+            {"role": "system", "content": "You are an expert at building front-ends."},
+            {"role": "user", "content": [
+                # 图在前、文字在后——跟 create/image.py 的 user_content 装配顺序一致
+                {"type": "image_url",
+                 "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"}},
+                {"type": "text", "text": user_text},
+            ]},
+        ],
+        temperature=0.2,
+    ).content or ""))
+
+
 def measure_model(model: dict | None) -> dict:
     """上一轮那四项原样保留——不是因为它们判得了这件事，是为了**两轮可比**。"""
     if not model:
@@ -231,6 +291,8 @@ def main() -> int:
     ap.add_argument("--spec", default=str(_HERE / "runs" / "spec-cache" / "报修.json"))
     ap.add_argument("--pages", type=int, default=3)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--reuse-images", default="",
+                    help="复用某轮产物目录里的 V_*.png，不重新出图——把变量锁在图转HTML那一跳")
     ap.add_argument("--skip-model", action="store_true",
                     help="只跑到 HTML + 版面判据，不推五系统模型（省一半时间）")
     args = ap.parse_args()
@@ -274,10 +336,21 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             return None, str(exc)[:300]
 
-    t0 = time.time()
-    with ThreadPoolExecutor(max_workers=len(briefs)) as pool:
-        gen = list(pool.map(_gen, prompts))
-    i_cost = time.time() - t0
+    if args.reuse_images:
+        # 复用上一轮的图，把变量锁死在「图转 HTML 的提示词」这一处。
+        # ⚠ 这是这一轮唯一能干净归因的做法：重新出图会同时改变图本身，
+        #   那样又变成两个变量一起动——正是前几轮栽过的形状。
+        src = pathlib.Path(args.reuse_images)
+        gen = [((src / f"V_{pid}.png").read_bytes()
+                if (src / f"V_{pid}.png").exists() else None, None) for pid, _ in briefs]
+        i_cost = 0.0
+        print(f"[V 有图] 复用 {args.reuse_images} 的图"
+              f"（{sum(1 for g, _ in gen if g)}/{len(gen)} 张）——变量只剩图转HTML的提示词", flush=True)
+    else:
+        t0 = time.time()
+        with ThreadPoolExecutor(max_workers=len(briefs)) as pool:
+            gen = list(pool.map(_gen, prompts))
+        i_cost = time.time() - t0
 
     metas = []
     for (pid, _), (png, err), pr in zip(briefs, gen, prompts):
@@ -311,7 +384,7 @@ def main() -> int:
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=len(briefs)) as pool:
         v_html = list(pool.map(
-            lambda x: html_from_image(x[0][0], x[1][1]) if x[0][0] else "",
+            lambda x: html_from_image_s2c(x[0][0], x[1][1]) if x[0][0] else "",
             list(zip(gen, briefs))))
     v_cost = time.time() - t0
     for (pid, _), src in zip(briefs, v_html):
