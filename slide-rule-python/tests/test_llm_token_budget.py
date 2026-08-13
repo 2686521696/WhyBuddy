@@ -238,65 +238,98 @@ class Test空内容报错必须说清为什么:
             )
 
 
-class Test结构化档位是地板不是收窄:
-    """`reasoning_effort` 允许分路（它是任务属性），但分路值**只许往上抬**。
+class Test推理档位只有一个来源:
+    """`reasoning_effort` 一律走 .env 的 `LLM_REASONING_EFFORT`，代码里不许写死。
 
-    这条闸和上面 `max_tokens` 那组是同一条纪律的两面：
+    这条和上面 `max_tokens` 那组是同一条纪律，不是两条：**旋钮越多，漏的越多。**
 
-    - `max_tokens` 是上限，分路只会更窄 → 旋钮直接收成一个（见文件头）。
-    - `reasoning_effort` 是任务属性，"判个意图"和"拼一棵七层深的节点树"
-      需要的思考量差一个量级，所以留了分路。
+    这个病在 max_tokens 上犯过三次（见文件头），每次的"修法"都是再加一个分路
+    旋钮，而每次挂掉的都是新旋钮管不着的第三处。档位上差点走同一条路：
+    2026-08-13 全局降 low 把首页设计跑挂（`5 validation errors ... tag Field
+    required`，思考砍到中位数 12 token），当时的处置是给结构化生成单独定一个
+    medium 的默认档位。全局回到 medium 之后那个默认值就只剩风险——谁把 .env 调到
+    high，最吃思考的那条路会被它悄悄按回 medium，症状还是静默的深层 JSON 校验
+    失败，和当初 low 跑挂首页一模一样。所以删掉，只留 .env 一个来源。
 
-    但留分路就得防它反向咬人。这个常量当初是配"全局 low"用的，无条件覆盖成
-    medium 没问题；全局回到 medium 之后，无条件覆盖就变成陷阱——谁把全局调到
-    high，最需要思考的那条路会被默认值悄悄按回 medium。症状是深层 JSON 契约
-    静默校验失败（`5 validation errors ... tag Field required`），
-    和当初 low 跑挂首页设计一模一样，最难查。
+    判据钉在**字面量**上：注释里的墓碑（"这里曾经写死过 low，别再加回来"）是要
+    留的，真的传参才是要禁的。AST 里没有注释，正好分得开。
     """
 
-    def test_全局比地板低时抬回来(self, monkeypatch):
-        from sliderule_llm.config import DEFAULT_STRUCTURED_REASONING_EFFORT, structured_reasoning_effort
+    #: 允许保留的档位来源。都是"provider 自己的那份 .env 配置"，不是分路旋钮：
+    #: cfg.reasoning_effort 是主配置（LLM_REASONING_EFFORT），
+    #: fallback.* 是回落 provider 的（FALLBACK_LLM_REASONING_EFFORT）——
+    #: 回落是**另一家服务商**，它有自己的一份 .env，不是同一条路上的分路值。
+    _ALLOWED_SOURCES = (
+        "cfg.reasoning_effort",
+        "fallback.reasoning_effort",
+        "_pick('FALLBACK_LLM_REASONING_EFFORT')",
+    )
 
-        monkeypatch.setenv("LLM_REASONING_EFFORT", "low")
-        monkeypatch.delenv("LLM_STRUCTURED_REASONING_EFFORT", raising=False)
-        assert structured_reasoning_effort() == DEFAULT_STRUCTURED_REASONING_EFFORT == "medium"
+    def test_没有写死的档位(self):
+        offenders: list[str] = []
+        for folder in _SCANNED_DIRS:
+            for path in sorted((_PY_ROOT / folder).rglob("*.py")):
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    for kw in node.keywords:
+                        if kw.arg != "reasoning_effort":
+                            continue
+                        # 字符串字面量 = 写死了；None / 变量 = 跟配置走
+                        if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                            offenders.append(
+                                f"{path.relative_to(_PY_ROOT)}:{kw.value.lineno} "
+                                f"reasoning_effort={kw.value.value!r}"
+                            )
+        assert not offenders, (
+            "又有人在代码里写死推理档位了：\n  "
+            + "\n  ".join(offenders)
+            + "\n\n删掉这个参数，让它跟 .env 的 LLM_REASONING_EFFORT 走。"
+            "理由见本文件头与 config.py 那块墓碑——这个病在 max_tokens 上犯过三次。"
+        )
 
-    @pytest.mark.parametrize("global_effort", ["medium", "high"])
-    def test_全局已经不低于地板就不插手(self, monkeypatch, global_effort):
-        """返回空串 = 不传 reasoning_effort = 跟全局走。全局 high 时**尤其**
-        不能覆盖：那才是这条闸存在的理由。"""
-        from sliderule_llm.config import structured_reasoning_effort
+    @pytest.mark.parametrize(
+        "retired", ["LLM_STRUCTURED_REASONING_EFFORT", "DEFAULT_STRUCTURED_REASONING_EFFORT"]
+    )
+    def test_分路旋钮删干净了(self, retired):
+        """留着分路值比没有更糟：旧 .env 里一个
+        `LLM_STRUCTURED_REASONING_EFFORT=low` 会让最吃思考的那条路悄悄比全局低。"""
+        offenders: list[str] = []
+        for folder in _SCANNED_DIRS:
+            for path in sorted((_PY_ROOT / folder).rglob("*.py")):
+                for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                    if isinstance(node, ast.Constant) and node.value == retired:
+                        offenders.append(f"{path.relative_to(_PY_ROOT)}:{node.lineno}")
+                    if isinstance(node, ast.Name) and node.id == retired:
+                        offenders.append(f"{path.relative_to(_PY_ROOT)}:{node.lineno}")
+        assert not offenders, f"{retired} 已经废弃，但还有人读它：{offenders}"
 
-        monkeypatch.setenv("LLM_REASONING_EFFORT", global_effort)
-        monkeypatch.delenv("LLM_STRUCTURED_REASONING_EFFORT", raising=False)
-        assert structured_reasoning_effort() == ""
+    def test_档位来源只剩配置对象(self):
+        """扫一遍还在传这个参数的地方，确认传的都是配置对象的字段。
 
-    def test_认不出的全局档位不插手(self, monkeypatch):
-        """网关自定义档位是运维明确写下的选择，不该被一个默认值改掉。"""
-        from sliderule_llm.config import structured_reasoning_effort
-
-        monkeypatch.setenv("LLM_REASONING_EFFORT", "turbo-thinking")
-        monkeypatch.delenv("LLM_STRUCTURED_REASONING_EFFORT", raising=False)
-        assert structured_reasoning_effort() == ""
-
-    def test_显式配空串是逃生舱(self, monkeypatch):
-        """某些网关不认这个参数，配空值要能整条退回全局档位。"""
-        from sliderule_llm.config import structured_reasoning_effort
-
-        monkeypatch.setenv("LLM_REASONING_EFFORT", "low")
-        monkeypatch.setenv("LLM_STRUCTURED_REASONING_EFFORT", "")
-        assert structured_reasoning_effort() == ""
-
-    def test_显式配的地板照样只往上抬(self, monkeypatch):
-        from sliderule_llm.config import structured_reasoning_effort
-
-        monkeypatch.setenv("LLM_REASONING_EFFORT", "high")
-        monkeypatch.setenv("LLM_STRUCTURED_REASONING_EFFORT", "medium")
-        assert structured_reasoning_effort() == ""
-
-        monkeypatch.setenv("LLM_REASONING_EFFORT", "low")
-        monkeypatch.setenv("LLM_STRUCTURED_REASONING_EFFORT", "high")
-        assert structured_reasoning_effort() == "high"
+        这条比上面那条严：写死的字面量固然要禁，但"从别处算一个档位出来"也是
+        第二个来源。目前只该有主配置和回落 provider 各自的那份 .env 值。
+        """
+        sources: set[str] = set()
+        for folder in _SCANNED_DIRS:
+            for path in sorted((_PY_ROOT / folder).rglob("*.py")):
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    for kw in node.keywords:
+                        if kw.arg != "reasoning_effort":
+                            continue
+                        if isinstance(kw.value, ast.Constant) and kw.value.value is None:
+                            continue  # None = 不覆盖，跟配置走
+                        if isinstance(kw.value, ast.Name):
+                            continue  # 透传上游形参
+                        sources.add(ast.unparse(kw.value))
+        assert sources <= set(self._ALLOWED_SOURCES), (
+            f"出现了新的档位来源：{sorted(sources - set(self._ALLOWED_SOURCES))}。"
+            "档位只该来自 .env——新增来源前先读 config.py 那块墓碑。"
+        )
 
     def test_模板里全局不是_low(self):
         """.env.example 是新部署的默认值。low 省的是思考量，也就是产出正确率

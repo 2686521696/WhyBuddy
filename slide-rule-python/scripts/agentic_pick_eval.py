@@ -157,7 +157,9 @@ def _simulated_owner_answer(topic: str, questions: list[str], closing: bool) -> 
             temperature=0.4,
             max_tokens=default_max_tokens(),
             max_attempts=1,
-            reasoning_effort="low",
+            # 档位走 .env（见 config.py 那块墓碑）。评测尤其不该自己定档：
+            # 模拟用户和被评测的产品链路必须在同一份配置下跑，否则测出来的数
+            # 和线上不是一回事。
         )
         answer = str(parsed.get("answer") or "").strip()
         if len(answer) >= 14:

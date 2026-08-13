@@ -442,9 +442,11 @@ def agentic_pick_next_capabilities(
                 temperature=0.2,
                 max_tokens=default_max_tokens(),
                 max_attempts=1,
-                reasoning_effort="low",
-                # E32 转正后 pick 在每轮主路径上：选材是快决策，不给它
-                # 全局 600s 的深思预算——60s 答不上来就回落规则版（fail-open）
+                # 档位不写死（2026-08-13）：这里原本传 `reasoning_effort="low"`，
+                # 理由是"选材是快决策"。但档位一律走 .env 的 LLM_REASONING_EFFORT，
+                # 代码里写死等于给全链路开第二个来源——见 config.py 那块墓碑。
+                # 快这件事由下面的 60s 超时兜着，那是真正的约束，不是靠少想。
+                # E32 转正后 pick 在每轮主路径上：60s 答不上来就回落规则版（fail-open）
                 timeout_ms=60_000,
             )
             break

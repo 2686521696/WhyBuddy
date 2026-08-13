@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from pathlib import Path
 
-from sliderule_llm.config import default_max_tokens, structured_reasoning_effort
+from sliderule_llm.config import default_max_tokens
 
 from .app_preview import OverviewPreviewSink
 from .enrich_timing import remaining_run_budget_seconds, stage as _enrich_stage
@@ -2387,10 +2387,10 @@ def generate_freeform_block(
                 backoff_ms=2000,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                # 这条路要拼一棵七层深、带严格契约的节点树，思考量跟"判个意图"
-                # 不是一个量级：全局 low 时实测 3 次尝试全挂在
-                # `tag Field required`。理由与实测见 config 那个常量头上。
-                **({"reasoning_effort": _effort} if (_effort := structured_reasoning_effort()) else {}),
+                # 推理档位不在这里定。这条路是全链路最吃思考的一段（七层深、带严格
+                # 契约的节点树，全局 low 时实测 3 次尝试全挂在 `tag Field required`），
+                # 但正因为它最吃思考，才**不该**由代码写死一个档位盖住 .env——
+                # 那是"分路值反向咬人"的形态，理由见 config.py 那块墓碑。
                 on_delta=lambda _chunk: None,  # 强制流式，免疫 CF 524（跟 structured_llm_json 同招）
             )
         except LlmError as exc:

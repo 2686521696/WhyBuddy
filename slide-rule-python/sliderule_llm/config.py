@@ -88,78 +88,28 @@ def default_max_tokens() -> int:
     return _positive_int(os.environ.get("LLM_MAX_TOKENS"), DEFAULT_MAX_TOKENS)
 
 
-#: 结构化生成（深层节点树 / 严格 JSON 契约）的推理档位（2026-08-13）。
+#: 推理档位没有分路旋钮——**一律走 .env 的 `LLM_REASONING_EFFORT`**（2026-08-13）。
 #:
-#: ## 为什么这个要分路，而上面那个不许分路
+#: ## 这里曾经有一个 DEFAULT_STRUCTURED_REASONING_EFFORT = "medium"，已经删了
 #:
-#: 看着像自相矛盾，其实是两种不同的东西：
+#: 它的由来：同日早些时候把全局降到 low 提速，结果把首页设计跑挂了——
+#: 3 次尝试全是 `5 validation errors ... tag Field required`，思考砍到中位数
+#: 12 个 token，模型拼不出合法的深层节点树。当时的处置是给结构化生成这条路
+#: 单独定一个 medium 的默认档位，把它抬回来。
 #:
-#: - `max_tokens` 是**上限**。分路只会让某条路比全局更窄，是纯粹的坑，
-#:   所以收成一个数（见 DEFAULT_MAX_TOKENS 头上那段）。
-#: - `reasoning_effort` 是**任务属性**。"判个意图要不要澄清"和"拼一棵七层
-#:   深的节点树"需要的思考量本来就差一个量级，一个数按不住两头。
-#:   仓库里早就在这么用了（v5_agentic_pick 那处显式传 low）。
+#: 为什么删：**全局已经回到 medium 了**（理由见 .env.example 的
+#: LLM_REASONING_EFFORT 头上），那个默认值于是从"补丁"退化成一个纯风险项——
+#: 它是代码里写死的第二个档位来源，而写死的分路值只会反向咬人：谁把 .env 调到
+#: high，最需要思考的那条路会被这个 medium 悄悄按回去，症状还是静默的深层
+#: JSON 校验失败，和当初 low 跑挂首页一模一样。
 #:
-#: ## 实测（deepseek-v4-flash，同一道真题）
+#: 这跟 DEFAULT_MAX_TOKENS 头上那段是同一条纪律，不是例外：**旋钮越多，
+#: 漏的越多。** 那个病在 max_tokens 上犯过三次，每次的"修法"都是再加一个分路
+#: 旋钮，而每次挂掉的都是新旋钮管不着的第三处。所以这里不留第二个来源——
+#: 要调思考量，改 .env 里那一个数，全链路一起变。
 #:
-#:     全局 medium：model.generate 281.9s ok=1   monitor.design 292.1s ok=1
-#:     全局 low   ：model.generate 139.4s ok=1   monitor.design  95.3s **ok=0**
-#:
-#: low 把生成提速一倍，却把首页设计跑挂了——3 次尝试全是
-#: `5 validation errors ... tag Field required`：思考砍太狠，模型拼不出合法的
-#: 深层树。机械修复（json-repair / rowsRef 修补）都触发了也没救回来。
-#:
-#: ## 它现在是地板，不是补丁（2026-08-13 当日修正）
-#:
-#: 这个常量原本的用途是"全局走 low 吃掉那一倍提速，结构化生成单独抬回来"。
-#: **那个前提已经撤销了**——全局回到 medium（理由写在 .env.example 的
-#: LLM_REASONING_EFFORT 头上：low 省的是思考量，而这条链上到处是深层 JSON
-#: 契约，按住一个崩点不等于按住下一个，何况崩起来是静默的校验失败）。
-#:
-#: 常量留着，语义从"补丁"变成"地板"：全局配到 medium 以下时，这条路不跟着降。
-#: 没删是因为它按住的那个崩点是实测过的，删掉等于把这条经验也删了——
-#: 谁再去调全局旋钮，首页设计不会跟着一起掉下去。
-DEFAULT_STRUCTURED_REASONING_EFFORT = "medium"
-
-
-#: 档位强弱次序，只用来比大小。表外的值（网关自定义档位）一律当"不认识"，
-#: 见 structured_reasoning_effort 里的处理。
-_REASONING_EFFORT_RANK = {"minimal": 0, "none": 0, "low": 1, "medium": 2, "high": 3}
-
-
-def structured_reasoning_effort() -> str:
-    """结构化生成的推理档位，**地板语义**。`LLM_STRUCTURED_REASONING_EFFORT` 可覆盖。
-
-    返回空串表示"不要覆盖，跟全局走"。两种情况会返回空串：
-
-    1. 显式配了空值——逃生舱：某些网关不认这个参数，或者换了个不需要额外思考的
-       模型时，配个空值就能整条退回全局档位。
-    2. **全局档位已经不低于地板**——这条是关键，不是优化。
-
-    ## 为什么第 2 条必须在
-
-    这个分路旋钮原本是配合"全局 low"用的，无条件覆盖没问题（medium > low）。
-    全局回到 medium 之后，无条件覆盖就变成了一个**反向收窄**的陷阱：谁把全局
-    调到 high，这条最需要思考的路会被这里悄悄按回 medium——正是
-    DEFAULT_MAX_TOKENS 头上那段警告的"分路值反向咬人"，只是这次咬的是思考量，
-    而且症状同样是静默的深层 JSON 校验失败，最难查。
-
-    所以只在"全局比地板低"时才覆盖。全局设了但**不认识**（网关自定义档位）
-    也不覆盖——那是运维明确写下的选择，不该被一个默认值改掉。
-    """
-    raw = os.environ.get("LLM_STRUCTURED_REASONING_EFFORT")
-    floor = DEFAULT_STRUCTURED_REASONING_EFFORT if raw is None else raw.strip()
-    if not floor:
-        return ""
-    global_effort = (_pick("LLM_REASONING_EFFORT", "OPENAI_REASONING_EFFORT") or "").strip()
-    if global_effort:
-        global_rank = _REASONING_EFFORT_RANK.get(global_effort.lower())
-        floor_rank = _REASONING_EFFORT_RANK.get(floor.lower())
-        # 认不出全局、或全局已经不低于地板 → 不插手
-        if global_rank is None or floor_rank is None or global_rank >= floor_rank:
-            return ""
-    return floor
-
+#: 判据钉在 tests/test_llm_token_budget.py（AST 扫描写死的 reasoning_effort），
+#: 不靠自觉。
 
 def _provider_name(base_url: str) -> str:
     parsed = urlparse(base_url or "")
