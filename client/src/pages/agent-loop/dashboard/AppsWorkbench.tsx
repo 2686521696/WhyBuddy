@@ -52,6 +52,12 @@ import {
 import { requestMountPermit } from "@/lib/mount-scheduler";
 import { captureAndUpload } from "@/lib/thumb-capture";
 import { resolveIdentityTheme } from "@/pages/sliderule/live-runtime/identity-themes";
+// spec-first HTML 应用面的配料（2026-08-14 应用中心接线）。这几个都是轻量纯
+// TS（无重依赖）；重的 DOMPurify/渲染面走下面的 React.lazy 分包。
+import { SPEC_PAGE_VIEWPORT, useScaleToFit } from "@/pages/sliderule/live-runtime/canvas-scale";
+import { deriveBindingSource } from "@/pages/sliderule/live-runtime/derive-binding-source";
+import { initRuntimeState } from "@/pages/sliderule/live-runtime/live-runtime";
+import { seedRuntimeState } from "@/pages/sliderule/live-runtime/demo-seed";
 import {
   mergeFiveSystemModels,
   parseFiveSystemModelFromPerSkillEvidence,
@@ -94,6 +100,68 @@ export interface SessionListItem {
 
 export type AppCardStatus = "runnable" | "awaiting" | "draft";
 
+/**
+ * spec-first 整页 HTML（校验过形状的那份）。来源两处、同一形状：
+ *   - 会话卡：state.specFirstPages（GET /sessions/:id 的完整会话态）
+ *   - App Store 卡：完整记录的 pages_json（GET /apps/:id）
+ */
+export interface SpecPagesDetail {
+  /** pageId → 完整 HTML 文档（带 data-* 绑定孔），至少一页 */
+  pages: Record<string, string>;
+  /** 外壳统一时定下的导航顺序；第一项就是落地页 */
+  navItems: Array<{ pageId?: string; label?: string }>;
+  /** 打过孔（6.5 步绑定成功）的页数；0 = 素颜页 */
+  boundPages: number;
+}
+
+/**
+ * 把后端载荷收成 SpecPagesDetail；形状不对/没有一页就 null。
+ * **判空必须严**：空壳 {} 判成"有页面"的话，卡片会挂一个空白 iframe——
+ * 比老的区块渲染更糟（那至少是真数据）。
+ */
+export function extractSpecPages(raw: unknown): SpecPagesDetail | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const pagesRaw = r.pages;
+  if (!pagesRaw || typeof pagesRaw !== "object") return null;
+  const pages: Record<string, string> = {};
+  for (const [id, html] of Object.entries(pagesRaw as Record<string, unknown>)) {
+    if (typeof html === "string" && html.trim()) pages[id] = html;
+  }
+  if (Object.keys(pages).length === 0) return null;
+  const navItems = Array.isArray(r.navItems)
+    ? (r.navItems.filter(n => n && typeof n === "object") as Array<{
+        pageId?: string;
+        label?: string;
+      }>)
+    : [];
+  return {
+    pages,
+    navItems,
+    boundPages: typeof r.boundPages === "number" ? r.boundPages : 0,
+  };
+}
+
+/**
+ * 按导航顺序排页面（导航第一项 = 落地页），导航没提到的页排在后面兜底。
+ * 缩略图取第一张；预览模态的页签也按这个序。
+ */
+export function orderedSpecPages(sp: SpecPagesDetail): Array<{ pageId: string; html: string }> {
+  const out: Array<{ pageId: string; html: string }> = [];
+  const seen = new Set<string>();
+  for (const nav of sp.navItems) {
+    const id = nav.pageId ?? "";
+    if (id && sp.pages[id] && !seen.has(id)) {
+      out.push({ pageId: id, html: sp.pages[id] });
+      seen.add(id);
+    }
+  }
+  for (const [pageId, html] of Object.entries(sp.pages)) {
+    if (!seen.has(pageId)) out.push({ pageId, html });
+  }
+  return out;
+}
+
 export interface AppCardDetail {
   status: AppCardStatus;
   evidenceCount: number;
@@ -113,6 +181,9 @@ export interface AppCardDetail {
   /** 2026-07-23：完整五系统模型——「活渲染缩略图」直接拿它挂 AppRuntimeScreen，
    *  不再截图。null 表示模型不完整（非 runnable），缩略图走占位态。 */
   model: FiveSystemModel | null;
+  /** 2026-08-14：spec-first 整页 HTML。非 null 时缩略图与只读预览一律走
+   *  HTML 应用面（同推演舞台一路），不再拿区块渲染器凑合出光板表格。 */
+  specPages: SpecPagesDetail | null;
 }
 
 /**
@@ -121,7 +192,13 @@ export interface AppCardDetail {
  */
 export function buildDetailFromModel(
   model: FiveSystemModel | null,
-  opts: { evidenceCount: number; blocked: boolean; awaitReason?: unknown; stableDigest?: string }
+  opts: {
+    evidenceCount: number;
+    blocked: boolean;
+    awaitReason?: unknown;
+    stableDigest?: string;
+    specPages?: SpecPagesDetail | null;
+  }
 ): AppCardDetail {
   const entitiesArr = model?.datamodel?.entities ?? [];
   const pagesArr = model?.page?.pages ?? [];
@@ -157,6 +234,7 @@ export function buildDetailFromModel(
     entityNames: entitiesArr.map((e: any) => String(e?.name ?? e?.id ?? "")).filter(Boolean).slice(0, 4),
     stableDigest: opts.stableDigest,
     model,
+    specPages: opts.specPages ?? null,
   };
 }
 
@@ -173,6 +251,8 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
     blocked: Boolean(closure.blocked),
     awaitReason: s.awaitReason,
     stableDigest: String(closure.stableDigest ?? closure.closureHash ?? "").slice(0, 32) || undefined,
+    // 会话态里的 spec-first 整页 HTML（与推演舞台/交付物同一份）
+    specPages: extractSpecPages(s.specFirstPages),
   });
 }
 
@@ -181,14 +261,19 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
  * model_json 就是那份 five-system 模型，直接喂 buildDetailFromModel（证据满 6、
  * 不 blocked），得到的指标/身份/活渲染模型跟会话卡完全同源。
  */
-export function deriveDetailFromAppRecord(modelJson: unknown): AppCardDetail {
+export function deriveDetailFromAppRecord(modelJson: unknown, pagesJson?: unknown): AppCardDetail {
   // 空对象 {} 不算可运行模型——truthy 判定会让 LiveAppThumb 挂载空模型
   // 渲染（2026-07-27 审查修复 #14）。
   const model =
     modelJson && typeof modelJson === "object" && Object.keys(modelJson).length > 0
       ? (modelJson as FiveSystemModel)
       : null;
-  return buildDetailFromModel(model, { evidenceCount: 6, blocked: false });
+  return buildDetailFromModel(model, {
+    evidenceCount: 6,
+    blocked: false,
+    // 记录里的 spec-first 整页 HTML（pages_json）；老记录没有 → null → 区块渲染
+    specPages: extractSpecPages(pagesJson),
+  });
 }
 
 /**
@@ -218,6 +303,7 @@ export function deriveDetailFromAppSummary(s: AppStoreSummary): AppCardDetail {
     entityNames: [],
     stableDigest: undefined,
     model: null, // 懒加载：卡进视口再 getApp 拉完整模型
+    specPages: null, // 摘要不含页面本体（has_pages 只是一位布尔），拉到完整记录再升级
   };
 }
 
@@ -469,6 +555,21 @@ const LazyAppRuntimeScreen = React.lazy(() =>
   }))
 );
 
+// spec-first HTML 应用面（同源 iframe + DOMPurify + 填孔运行时）。DOMPurify
+// 不该进应用中心首屏包——只有带 pages_json 的卡才需要它，同一套 lazy 纪律。
+const LazyHtmlAppSurface = React.lazy(() =>
+  import("@/pages/sliderule/live-runtime/html-app-surface").then(m => ({
+    default: m.HtmlAppSurface,
+  }))
+);
+
+// 只读预览模态用的整页舞台（页签 + 缩放画布 + 填数角标），与推演右侧同一个组件。
+const LazySpecPageStage = React.lazy(() =>
+  import("@/pages/sliderule/live-runtime/SpecPageLiveStage").then(m => ({
+    default: m.SpecPageLiveStage,
+  }))
+);
+
 /**
  * 活渲染缩略图（2026-07-23，取代 Phase A 的服务端截图方案）。
  *
@@ -499,28 +600,18 @@ const LazyAppRuntimeScreen = React.lazy(() =>
  */
 const CAPTURE_SETTLE_MS = 1500;
 
-function LiveAppThumb({
-  sessionId,
-  model,
-  goal,
-  captureFor,
-  device,
-}: {
-  sessionId: string;
-  model: FiveSystemModel;
-  goal: string;
-  /**
-   * 采集回传的目标 app_id。传了就表示"这张卡是在活渲染，而这个应用还没有真
-   * 截图"——渲染稳定之后就地采一张存住，于是这次活渲染是最后一次
-   * （见 lib/thumb-capture.ts）。不传（会话卡、已经有图）就只渲染，不采集。
-   */
-  captureFor?: string | null;
-  /** 应用档位，决定采集画幅。 */
-  device?: string | null;
-}) {
+/**
+ * 活渲染缩略图的双闸（LiveAppThumb / HtmlLiveThumb 共用）：
+ *   闸一：进视口了吗（IntersectionObserver，rootMargin 200px 预热）；
+ *   闸二：排到我了吗（requestMountPermit，全局批 3、批间 yield）。
+ * 两个都过才挂真渲染。原先整套长在 LiveAppThumb 里，HTML 缩略图要同一套
+ * 节流——抽出来共用而不是复制一份（复制必然分叉，本仓数过太多次）。
+ */
+function useThumbMountGate(): {
+  wrapRef: React.RefObject<HTMLDivElement | null>;
+  visible: boolean;
+} {
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
-  const [hiddenControls, setHiddenControls] = React.useState<HTMLDivElement | null>(null);
-  // 闸一：进视口了吗。闸二：排到我了吗。两个都过才挂。
   const [inView, setInView] = React.useState(false);
   const [granted, setGranted] = React.useState(false);
 
@@ -550,7 +641,30 @@ function LiveAppThumb({
     return requestMountPermit(() => setGranted(true));
   }, [inView]);
 
-  const visible = inView && granted;
+  return { wrapRef, visible: inView && granted };
+}
+
+function LiveAppThumb({
+  sessionId,
+  model,
+  goal,
+  captureFor,
+  device,
+}: {
+  sessionId: string;
+  model: FiveSystemModel;
+  goal: string;
+  /**
+   * 采集回传的目标 app_id。传了就表示"这张卡是在活渲染，而这个应用还没有真
+   * 截图"——渲染稳定之后就地采一张存住，于是这次活渲染是最后一次
+   * （见 lib/thumb-capture.ts）。不传（会话卡、已经有图）就只渲染，不采集。
+   */
+  captureFor?: string | null;
+  /** 应用档位，决定采集画幅。 */
+  device?: string | null;
+}) {
+  const { wrapRef, visible } = useThumbMountGate();
+  const [hiddenControls, setHiddenControls] = React.useState<HTMLDivElement | null>(null);
 
   // 渲染稳定之后采一张存住（缩略图三级来源的第一级，见 lib/thumb-capture.ts）。
   //
@@ -613,6 +727,119 @@ function LiveAppThumb({
         </React.Suspense>
       )}
     </div>
+  );
+}
+
+/**
+ * spec-first HTML 应用的活渲染缩略图（2026-08-14 应用中心接线）。
+ *
+ * ## 为什么它排在 shot / sheet 之前（见卡片 media 处的判定）
+ *
+ * 带 pages_json 的应用，另外两级来源都是**错的或不存在的**：
+ *   - shot：html-to-image 拍不到 iframe 框内内容（同源 srcdoc 也拍不到），
+ *     存量的 shot 是接线前老区块渲染器画的光板 antd 表格——正是这次要消掉的
+ *     歧义本身，贴它等于把病灶存档展览；
+ *   - sheet：⚑3 定案后 spec-first 轮次不再生成首页参照板，压根没有。
+ * 所以有页面就直接活渲染真页面。同理，这张卡**不参与截图采集**
+ * （captureAndUpload 拍到的会是一张空白）。
+ *
+ * ## 渲染成本
+ *
+ * 比 LiveAppThumb 轻：一个 iframe + Tailwind Play 编译一页，没有 antd 表格
+ * /echarts 全家桶。仍然过同一套双闸（视口 + 挂载调度），滚动时不齐射。
+ *
+ * 落地页取导航第一项（orderedSpecPages）——跟推演舞台/交付物的页序同源。
+ * 填数走 deriveBindingSource(model, 种子运行时)：缩略图要让人看出"这是个
+ * 有数据的真应用"，跟 AppRuntimeScreen 缩略图用同一份种子纪律。
+ */
+function HtmlLiveThumb({
+  specPages,
+  model,
+}: {
+  specPages: SpecPagesDetail;
+  model: FiveSystemModel | null;
+}) {
+  const { wrapRef, visible } = useThumbMountGate();
+  // 宽度定缩放（跟 LiveAppThumb 的 scaleFit="width" 同一条理由）：页面是照
+  // 1920 画的，卡片看顶部那一屏就够；contain 在 9:16 的手机档卡里会留大灰边。
+  const { ref: fitRef, scale } = useScaleToFit(
+    SPEC_PAGE_VIEWPORT.w,
+    SPEC_PAGE_VIEWPORT.h,
+    "width"
+  );
+  const landing = React.useMemo(() => orderedSpecPages(specPages)[0] ?? null, [specPages]);
+  const source = React.useMemo(
+    () => deriveBindingSource(model, model ? seedRuntimeState(initRuntimeState(model), model) : null),
+    [model]
+  );
+  return (
+    <div
+      ref={wrapRef}
+      className="pointer-events-none h-full w-full overflow-hidden bg-[#f0f2f5]"
+      data-testid="app-thumb-html"
+    >
+      <div ref={fitRef} className="h-full w-full overflow-hidden">
+        {visible && landing && (
+          <React.Suspense fallback={<div className="h-full w-full bg-[#f0f2f5]" />}>
+            <div
+              style={{
+                width: SPEC_PAGE_VIEWPORT.w,
+                height: SPEC_PAGE_VIEWPORT.h,
+                transform: `scale(${scale})`,
+                transformOrigin: "top left",
+                overflow: "hidden",
+                background: "#fff",
+              }}
+            >
+              <LazyHtmlAppSurface html={landing.html} source={source} />
+            </div>
+          </React.Suspense>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 只读预览模态里的 HTML 应用面：与推演右侧同一个舞台组件
+ * （SpecPageLiveStage：页签 + 1920×1080 缩放画布 + 填数角标），running=false、
+ * 开屏落在导航第一页。运行时是**内存种子**、不传 onAction——只读预览既不该
+ * 改数据，也不该在本机留痕（比 preview:{id} 命名空间做得更干净：连槽位都不占）。
+ */
+function SpecPagesPreview({
+  specPages,
+  model,
+}: {
+  specPages: SpecPagesDetail;
+  model: FiveSystemModel | null;
+}) {
+  const runtime = React.useMemo(
+    () => (model ? seedRuntimeState(initRuntimeState(model), model) : null),
+    [model]
+  );
+  const pages = React.useMemo(() => {
+    const ordered = orderedSpecPages(specPages);
+    return ordered.map((p, i) => ({
+      pageId: p.pageId,
+      html: p.html,
+      current: i + 1,
+      total: ordered.length,
+      bound: (specPages.boundPages ?? 0) > 0,
+    }));
+  }, [specPages]);
+  return (
+    <React.Suspense
+      fallback={<div className="p-6 text-[13px] text-slate-400">预览加载中…</div>}
+    >
+      <LazySpecPageStage
+        pages={pages}
+        running={false}
+        model={model}
+        runtime={runtime}
+        defaultPageId={pages[0]?.pageId ?? null}
+        className="h-full p-3"
+      />
+    </React.Suspense>
   );
 }
 
@@ -1073,7 +1300,7 @@ export function AppsWorkbench() {
           setDetails(prev => ({
             ...prev,
             [gi.key]: rec
-              ? deriveDetailFromAppRecord(rec.model_json) // 完整模型 → 活渲染 + 全指标
+              ? deriveDetailFromAppRecord(rec.model_json, rec.pages_json) // 完整模型+页面 → 活渲染 + 全指标
               : gi.summary
                 ? deriveDetailFromAppSummary(gi.summary) // 拉不到详情退摘要占位
                 : null,
@@ -1398,6 +1625,19 @@ export function AppsWorkbench() {
           // 上就地采一张存住**，于是这次活渲染是最后一次
           // （见 lib/thumb-capture.ts）。已经有真截图的（preview_source==="shot"）
           // 不再采——那正是这套东西要消灭的重复劳动。
+          // spec-first 应用（有整页 HTML）一律活渲染真页面，**不走 shot/sheet**：
+          // 截图拍不到 iframe 内容，存量 shot 是接线前老区块渲染器画的光板表格
+          // ——正是要消掉的歧义；sheet 在 spec-first 轮次根本不生成。
+          // 判定也不看 status：页面本身就是成品，有就摆出来。
+          if (detail?.specPages) {
+            return <HtmlLiveThumb specPages={detail.specPages} model={detail.model} />;
+          }
+          // 摘要说有页面、完整记录还没拉到：宁可空一拍，也不先贴 shot——
+          // 这类应用的存量 shot 是错渲染器的光板表格，闪一下再换等于把
+          // 病灶展示一遍。detail 到了自然走上面那个分支。
+          if (!detail && item.summary?.has_pages) {
+            return <div className="h-full w-full bg-[#f0f2f5]" data-testid="app-thumb-html-pending" />;
+          }
           const needsShot =
             Boolean(item.appId) && item.summary?.preview_source !== "shot";
           const live =
@@ -1463,9 +1703,13 @@ export function AppsWorkbench() {
         statusDot={meta?.dot ?? "bg-stone-300"}
         statusLabel={meta?.label ?? "…"}
         // 进不去会话不再是"点了没反应"——那和白屏一样让人以为坏了。
-        // 有模型就开只读预览，没有模型（非 runnable）才真的不响应。
+        // 有模型或有整页 HTML 就开只读预览，两样都没有才真的不响应。
         onClick={() =>
-          canOpen ? open(item.sessionId!) : detail?.model ? setPreviewModal(item) : undefined
+          canOpen
+            ? open(item.sessionId!)
+            : detail?.model || detail?.specPages
+              ? setPreviewModal(item)
+              : undefined
         }
         topRight={
           <>
@@ -1960,20 +2204,29 @@ export function AppsWorkbench() {
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden bg-[#f0f2f5]">
-              <React.Suspense
-                fallback={<div className="p-6 text-[13px] text-slate-400">预览加载中…</div>}
-              >
-                <LazyAppRuntimeScreen
-                  model={details[previewModal.key]!.model!}
-                  // 运行期状态（种子数据的增删改、当前角色）按这个 key 存本地。
-                  // **不能用对方真实的 sessionId**：在预览里点两下"新建"，
-                  // 就会把痕迹写进人家会话的本地状态槽位里。给预览一个独立
-                  // 命名空间，关掉即弃。
-                  sessionId={`preview:${previewModal.appId || previewModal.key}`}
-                  appTitle={previewModal.goal}
-                  scaleFit="width"
+              {details[previewModal.key]?.specPages ? (
+                // spec-first 应用：预览的就是交付的那几页 HTML（与推演舞台
+                // 同一个组件、同一份页面），不再拿区块渲染器另画一份。
+                <SpecPagesPreview
+                  specPages={details[previewModal.key]!.specPages!}
+                  model={details[previewModal.key]!.model}
                 />
-              </React.Suspense>
+              ) : (
+                <React.Suspense
+                  fallback={<div className="p-6 text-[13px] text-slate-400">预览加载中…</div>}
+                >
+                  <LazyAppRuntimeScreen
+                    model={details[previewModal.key]!.model!}
+                    // 运行期状态（种子数据的增删改、当前角色）按这个 key 存本地。
+                    // **不能用对方真实的 sessionId**：在预览里点两下"新建"，
+                    // 就会把痕迹写进人家会话的本地状态槽位里。给预览一个独立
+                    // 命名空间，关掉即弃。
+                    sessionId={`preview:${previewModal.appId || previewModal.key}`}
+                    appTitle={previewModal.goal}
+                    scaleFit="width"
+                  />
+                </React.Suspense>
+              )}
             </div>
           </div>
         </div>

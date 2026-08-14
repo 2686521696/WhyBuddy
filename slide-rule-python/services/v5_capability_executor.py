@@ -608,7 +608,10 @@ def _try_llm_generate_evidence(
     #   freeform 那段另算。省的不是"可能没用的东西"，是**确定没人看的东西**。
     #
     # ⚠ 回落老链路的那一轮 from_spec_first 为 False，两段照常跑——
-    #   那时区块页仍是唯一产出，砍了就真没东西可看了。
+    #   那时区块页仍是唯一产出。⚠ 口径收窄（3513b0df 之后）：会话舞台不再
+    #   回落区块页（spec-first 挂掉的轮次右侧退到推演剧场/证据看板），这份
+    #   产物只在应用中心（AppBundleScreen → AppRuntimeScreen）出现——
+    #   但那是回落轮唯一可交互的东西，砍了它回落轮就真的什么都不剩。
     if from_spec_first:
         print("[v5_capability_executor] 新链路产出模型，跳过 enrich_*（版式来自第 3 步 HTML）")
     try:
@@ -685,6 +688,7 @@ def _try_llm_generate_evidence(
         # （血缘/版本链/v2 徽标由此激活），不再每次精修都新建孤儿 root、
         # 画廊堆同名重复卡。模型未变仍走 dedup 幂等更新。
         from .request_context import current_user_id
+        from .spec_first_pipeline import peek_last_pages
 
         app_store.save_app_or_version(
             model, goal=goal, session_id=session_id, gate_passed=True,
@@ -695,6 +699,11 @@ def _try_llm_generate_evidence(
             # 没收到图（生图失败/预算撞顶/这个应用没有总览页）传 None——落库侧
             # 按"保留既有那张"处理，不会把已有卡片打回活渲染。
             preview_png_b64=preview_sink.png_b64 if preview_sink else None,
+            # spec-first 这一轮画的整页 HTML 跟着设计层一起落——应用中心的卡
+            # 和只读预览靠它渲染真页面，不再拿区块渲染器凑合。**peek 不 take**：
+            # 会话侧的落库（_cache_spec_first_pages）还没跑，take 会把它饿死。
+            # 回落老链路那一轮暂存是空的，落 None——诚实，没有页面就是没有。
+            pages_json=peek_last_pages(),
         )
     except Exception as exc:  # noqa: BLE001 — 存储是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] app store save skipped: {str(exc)[:160]}")

@@ -9,6 +9,8 @@ import {
   deriveAppCardDetail,
   deriveDetailFromAppSummary,
   deriveDetailFromAppRecord,
+  extractSpecPages,
+  orderedSpecPages,
   mergeGalleryItems,
   filterCards,
   formatUpdatedAt,
@@ -156,6 +158,89 @@ describe("deriveDetailFromAppRecord", () => {
   it("坏 model_json（非对象）→ 不崩，退成空指标 draft", () => {
     expect(deriveDetailFromAppRecord(null).model).toBeNull();
     expect(deriveDetailFromAppRecord("nope").entities).toBe(0);
+  });
+});
+
+// ── spec-first 整页 HTML 进应用中心（2026-08-14 接线）─────────────────────
+//
+// 有 pages_json / specFirstPages 的应用，缩略图与只读预览走 HTML 应用面
+// （与推演舞台同一路），不再拿区块渲染器凑合出光板表格。这里钉判空口径、
+// 页序、以及两条数据源（App Store 记录 / 会话态）都把页面带进详情。
+
+const pagesPayload = {
+  version: "spec-first-pipeline-v1",
+  pages: {
+    "page-orders": "<!DOCTYPE html><html><body>订单页</body></html>",
+    "page-home": "<!DOCTYPE html><html><body>首页</body></html>",
+  },
+  navItems: [{ pageId: "page-home", label: "首页" }, { pageId: "page-orders", label: "订单" }],
+  boundPages: 2,
+};
+
+describe("extractSpecPages", () => {
+  it("合法载荷 → 收成 SpecPagesDetail", () => {
+    const sp = extractSpecPages(pagesPayload)!;
+    expect(Object.keys(sp.pages)).toHaveLength(2);
+    expect(sp.boundPages).toBe(2);
+    expect(sp.navItems[0].pageId).toBe("page-home");
+  });
+
+  it("空壳/坏形状一律 null——空壳判成有页面会挂出一个空白 iframe", () => {
+    expect(extractSpecPages(null)).toBeNull();
+    expect(extractSpecPages("nope")).toBeNull();
+    expect(extractSpecPages({})).toBeNull();
+    expect(extractSpecPages({ pages: {} })).toBeNull();
+    expect(extractSpecPages({ pages: { p1: "" } })).toBeNull();
+    expect(extractSpecPages({ pages: { p1: 42 } })).toBeNull();
+  });
+
+  it("个别页坏了只丢那一页，好页留下", () => {
+    const sp = extractSpecPages({ pages: { good: "<html></html>", bad: 42 } })!;
+    expect(Object.keys(sp.pages)).toEqual(["good"]);
+  });
+});
+
+describe("orderedSpecPages", () => {
+  it("按导航排序（第一项 = 落地页），导航没提到的页兜底排后", () => {
+    const sp = extractSpecPages({
+      ...pagesPayload,
+      pages: { ...pagesPayload.pages, "page-orphan": "<html>没进导航</html>" },
+    })!;
+    expect(orderedSpecPages(sp).map(p => p.pageId)).toEqual([
+      "page-home",
+      "page-orders",
+      "page-orphan",
+    ]);
+  });
+
+  it("导航引用不存在的页不炸、不出空项", () => {
+    const sp = extractSpecPages({
+      pages: { p1: "<html></html>" },
+      navItems: [{ pageId: "ghost" }, { pageId: "p1" }],
+    })!;
+    expect(orderedSpecPages(sp).map(p => p.pageId)).toEqual(["p1"]);
+  });
+});
+
+describe("详情把页面带进来（两条数据源同口径）", () => {
+  it("App Store 记录：pages_json → detail.specPages", () => {
+    const d = deriveDetailFromAppRecord({ datamodel: { entities: [{ name: "订单" }] } }, pagesPayload);
+    expect(d.specPages).not.toBeNull();
+    expect(Object.keys(d.specPages!.pages)).toHaveLength(2);
+  });
+
+  it("老记录没有 pages_json → null，回落区块渲染（改动前行为）", () => {
+    const d = deriveDetailFromAppRecord({ datamodel: { entities: [] } });
+    expect(d.specPages).toBeNull();
+  });
+
+  it("会话态：specFirstPages → detail.specPages", () => {
+    const d = deriveAppCardDetail({ ...runnableState, specFirstPages: pagesPayload });
+    expect(d.specPages).not.toBeNull();
+  });
+
+  it("摘要占位不含页面本体（has_pages 只是一位布尔）", () => {
+    expect(deriveDetailFromAppSummary(summary({ has_pages: true })).specPages).toBeNull();
   });
 });
 

@@ -69,6 +69,10 @@ export interface SpecPageLiveStageProps {
   onAction?: (event: BindingActionEvent) => void;
   /** 游标：鼠标停在带绑定的元素上 */
   onHoverBinding?: (info: { attr: string; value: string; el: Element } | null) => void;
+  /** 初始选中的页。不传 = 跟最新到达的一页（推演场景，页面在陆续到达）；
+   *  应用中心只读预览传落地页——那儿页面是一次到齐的，"最新"没有意义，
+   *  开屏看到的应该是导航第一项，跟真用户进应用的第一眼一致。 */
+  defaultPageId?: string | null;
   className?: string;
 }
 
@@ -80,12 +84,13 @@ export function SpecPageLiveStage({
   runtime = null,
   onAction,
   onHoverBinding,
+  defaultPageId = null,
   className = "",
 }: SpecPageLiveStageProps): React.ReactElement | null {
   // 手动选过就听手动的；没选过恒跟最新一页（页面在陆续到达，跟着最新的
   // 才叫"实时"）。⚠ 存 pageId 而不是下标：下标会被新到达的页面挤走，
   // 表现是"我明明点了甲页，它自己跳到乙页去了"。
-  const [picked, setPicked] = React.useState<string | null>(null);
+  const [picked, setPicked] = React.useState<string | null>(defaultPageId);
   // 填数报告：填了几个孔、哪些孔填不上。**如实展示**——填不上是模型的问题
   // （引用了不存在的实体/字段），拿假数据盖住等于把问题藏起来。
   const [report, setReport] = React.useState<{ filled: number; problems: string[] } | null>(null);

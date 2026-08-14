@@ -667,3 +667,70 @@ def test_http_preference_ignored_for_non_neon_hosts(monkeypatch, tmp_path):
         assert tcp, "非 Neon 主机应当照常走 TCP"
     finally:
         store.reset_backend_cache()
+
+
+# ── spec-first 整页 HTML（pages_json，2026-08-14）────────────────────────
+#
+# 应用中心的卡和只读预览靠这份 HTML 渲染真页面。这里钉四条语义：
+# 落库回读、摘要不带本体只带 has_pages 一位、幂等更新"没传保留"、
+# 新版本"不继承"（模型变了，旧 HTML 是照旧模型打的孔）。
+
+
+def _pages(n: int = 2) -> dict:
+    return {
+        "version": "spec-first-pipeline-v1",
+        "pages": {f"p{i}": f"<!DOCTYPE html><html><body>页 {i}</body></html>" for i in range(n)},
+        "navItems": [{"pageId": f"p{i}", "label": f"页{i}"} for i in range(n)],
+        "boundPages": n,
+        "failedPages": {},
+    }
+
+
+def test_pages_json_roundtrip_and_summary_flag(configured_store):
+    with_pages = store.save_app(_model("咖营通"), session_id="s1", pages_json=_pages())
+    without = store.save_app(_model("宠医云"), session_id="s2")
+    rec = store.get_app(with_pages)
+    assert rec["pages_json"]["pages"]["p0"].startswith("<!DOCTYPE html>"), "完整记录回读到整页 HTML"
+    assert rec["pages_json"]["boundPages"] == 2
+    assert store.get_app(without)["pages_json"] is None, "没有页面就是 None，不造空 dict"
+    summaries = {s["product_name"]: s for s in store.list_apps()}
+    assert all("pages_json" not in s for s in summaries.values()), "摘要不带页面本体（大载荷）"
+    assert summaries["咖营通"]["has_pages"] is True
+    assert summaries["宠医云"]["has_pages"] is False
+
+
+def test_pages_json_empty_pages_normalized_to_none(configured_store):
+    """{"pages": {}} 这种"有壳没页"的载荷落成 None——前端拿到空壳会当成
+    "有页面但空"，判定分支走错。判空在落库口做一次，三个后端同一行为。"""
+    app_id = store.save_app(_model("咖营通"), pages_json={"pages": {}, "navItems": []})
+    assert store.get_app(app_id)["pages_json"] is None
+
+
+def test_pages_json_kept_on_dedup_resave_without_pages(configured_store):
+    """幂等重存（同会话同模型，如重开夹具）不带页面是常态——纪律与
+    preview_png_b64 同款：没传就保留既有那份，不把卡打回区块渲染。"""
+    model = _model("咖营通")
+    first = store.save_app_or_version(model, session_id="s1", pages_json=_pages())
+    again = store.save_app_or_version(model, session_id="s1")  # 同模型 → dedup 幂等更新
+    assert again == first
+    assert store.get_app(first)["pages_json"]["pages"], "重存没传页面，既有那份还在"
+
+
+def test_pages_json_not_inherited_by_new_version(configured_store):
+    """模型变了才会开新版本，上一版的 HTML 是照旧模型打的孔——挂过去就是
+    「东西看着在，其实是旧的」。新版本自己没画页面就落 None。"""
+    first = store.save_app_or_version(_model("咖营通"), session_id="s1", pages_json=_pages())
+    second = store.save_app_or_version(_model("咖营通", entities=3), session_id="s1")
+    assert second != first
+    rec = store.get_app(second)
+    assert rec["version"] == 2 and rec["pages_json"] is None
+    # 这一版自己画了页面就用自己的
+    third = store.save_app_or_version(_model("咖营通", entities=4), session_id="s1", pages_json=_pages(3))
+    assert store.get_app(third)["pages_json"]["boundPages"] == 3
+
+
+def test_pages_json_copied_on_fork(configured_store):
+    """fork 的设计层逐字拷贝、模型没变，孔照样对得上——页面跟着走。"""
+    src = store.save_app(_model("咖营通"), session_id="s1", pages_json=_pages())
+    fk = store.fork_app(src, session_id="s9")
+    assert store.get_app(fk)["pages_json"]["pages"] == _pages()["pages"]

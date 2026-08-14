@@ -119,6 +119,21 @@ def take_last_pages() -> Optional[Dict[str, Any]]:
     return got
 
 
+def peek_last_pages() -> Optional[Dict[str, Any]]:
+    """只读不清——给**同一轮里、take 之前**的顺路消费用。
+
+    具体是 executor 往 App Store 落闭环记录那一处（应用中心的卡要带页面）：
+    它跑在 run_spec_first 刚返回之后、_cache_spec_first_pages 的 take 之前。
+    在那里 take 会把会话侧的落库饿死；再传一遍参数又是改十几处签名（见
+    _last_pages_var 头注）。所以 peek。
+
+    ⚠ 防串轮的责任仍然在 take 那一次：本函数**只允许**在同一请求域里、
+    take 发生前调用。跨轮读到旧页面的风险由"take 清场 + run_spec_first
+    只在整链跑成时写入"这两条原有纪律兜住，peek 不新增窗口。
+    """
+    return _last_pages_var.get()
+
+
 _ENABLE_ENV = "SLIDERULE_SPEC_FIRST"
 #: **默认开，显式关才关**（2026-08-14）。词表照仓里另外六处同款开关逐字一致
 #: （enrich_timing / block_narrowing / intake_judge / v5_parallel_generate /

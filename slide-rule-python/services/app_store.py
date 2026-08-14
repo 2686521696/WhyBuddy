@@ -173,6 +173,7 @@ def _build_record(
     dedup_key: Optional[str] = None,
     owner_id: Optional[str] = None,
     visibility: Optional[str] = None,
+    pages_json: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     from .app_access import normalize_visibility
 
@@ -192,6 +193,10 @@ def _build_record(
         "owner_id": (owner_id or None),
         "visibility": normalize_visibility(visibility),
         "model_json": model,
+        # spec-first 链路画的整页 HTML（{version, pages, navItems, boundPages,
+        # failedPages}，形状与会话侧 state.specFirstPages 同源）。None = 这一版
+        # 没有页面（老链路产出）——应用中心对这种记录回落区块渲染，不编造。
+        "pages_json": pages_json if isinstance(pages_json, dict) and pages_json.get("pages") else None,
         **meta,
     }
 
@@ -207,8 +212,13 @@ def model_signature(session_id: Optional[str], model: dict[str, Any]) -> str:
 
 
 def _summary(record: dict[str, Any]) -> dict[str, Any]:
-    """列表用摘要——去掉 model_json 这个大载荷，只留可查询/展示字段。"""
-    return {k: v for k, v in record.items() if k != "model_json"}
+    """列表用摘要——去掉 model_json / pages_json 两个大载荷（后者是整套页面
+    HTML，一份约 100KB+），只留可查询/展示字段 + has_pages 一位布尔：前端靠它
+    决定这张卡走 HTML 活渲染还是老的区块渲染，不用为了判定去拉完整记录。"""
+    out = {k: v for k, v in record.items() if k not in ("model_json", "pages_json")}
+    pages = record.get("pages_json")
+    out["has_pages"] = bool(isinstance(pages, dict) and pages.get("pages"))
+    return out
 
 
 # ────────────────────────── 后端接口 ──────────────────────────
@@ -633,6 +643,9 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
         owner_id = Column(String(64), nullable=True, index=True)
         visibility = Column(String(16), default="public", index=True)
         model_json = Column(json_type)
+        # spec-first 整页 HTML（2026-08-14）。老库靠 _init 里的 add-column
+        # 就地补；补不上读到 None，等同"这一版没有页面"，前端回落区块渲染。
+        pages_json = Column(json_type, nullable=True)
 
         def to_record(self) -> dict[str, Any]:
             return {
@@ -647,6 +660,7 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 "owner_id": self.owner_id,
                 "visibility": self.visibility or "public",
                 "model_json": self.model_json,
+                "pages_json": self.pages_json if isinstance(self.pages_json, dict) else None,
             }
 
     class GeneratedAppPreview(Base):
@@ -747,12 +761,22 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
             _app_cols = {
                 c["name"] for c in _sql_inspect(_init_conn).get_columns("generated_app")
             }
+            # pages_json 的列类型分方言：Postgres 用 jsonb（与 ORM 的 JSONB
+            # variant 对齐，存 text 的话 psycopg 按 JSON 绑参会报类型不符）；
+            # SQLite 用 text（它本来就不强制类型，SQLAlchemy 的 JSON 类型在
+            # Python 层做序列化，落什么亲和类型都读得回来）。
+            _pages_ddl = (
+                "alter table generated_app add column pages_json jsonb"
+                if _init_conn.dialect.name == "postgresql"
+                else "alter table generated_app add column pages_json text"
+            )
             for _col, _ddl in (
                 ("owner_id", "alter table generated_app add column owner_id varchar(64)"),
                 (
                     "visibility",
                     "alter table generated_app add column visibility varchar(16) default 'public'",
                 ),
+                ("pages_json", _pages_ddl),
             ):
                 if _col not in _app_cols:
                     _init_conn.execute(_sql_text(_ddl))
@@ -785,6 +809,7 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 owner_id=record.get("owner_id"),
                 visibility=record.get("visibility") or "public",
                 model_json=record.get("model_json") or {},
+                pages_json=record.get("pages_json"),
             )
 
         def save(self, record: dict[str, Any]) -> str:
@@ -992,6 +1017,10 @@ def _neon_normalize_row(row: dict[str, Any]) -> dict[str, Any]:
             pass  # 解析不了就原样留着，不编造时间
     if not isinstance(out.get("model_json"), dict):
         out["model_json"] = out.get("model_json") or {}
+    # pages_json 与 model_json 的空语义不同：没有页面就是 None，不造空 dict
+    # ——前端拿 {} 会当成"有页面但空"，判定分支就走错了。
+    if not isinstance(out.get("pages_json"), dict):
+        out["pages_json"] = None
     return out
 
 
@@ -1055,8 +1084,11 @@ _NEON_COLUMNS = (
     "product_name", "theme_id", "theme_label", "device", "landing_page_ref",
     "entity_count", "page_count", "gate_passed", "dedup_key", "created_at",
     "owner_id", "visibility",
-    "model_json",
+    "model_json", "pages_json",
 )
+
+#: jsonb 列——绑参按 JSON 文本传、占位符带 ::jsonb 转型的那几列。
+_NEON_JSON_COLUMNS = frozenset({"model_json", "pages_json"})
 
 
 class NeonHttpAppStore(AppStoreBackend):
@@ -1108,7 +1140,8 @@ class NeonHttpAppStore(AppStoreBackend):
                 gate_passed boolean,
                 dedup_key varchar(80),
                 created_at timestamptz,
-                model_json jsonb
+                model_json jsonb,
+                pages_json jsonb
             )
             """
         )
@@ -1137,6 +1170,9 @@ class NeonHttpAppStore(AppStoreBackend):
             "alter table generated_app add column if not exists visibility"
             " varchar(16) default 'public'"
         )
+        # spec-first 整页 HTML（2026-08-14）：老库就地补列，补不上读到 NULL，
+        # 等同"这一版没有页面"，前端回落区块渲染。
+        self._q("alter table generated_app add column if not exists pages_json jsonb")
         self._q(
             "create table if not exists generated_app_grant ("
             " app_id varchar(36) not null, user_id varchar(64) not null,"
@@ -1149,10 +1185,14 @@ class NeonHttpAppStore(AppStoreBackend):
         params: list[Any] = []
         for col in _NEON_COLUMNS:
             val = record.get(col)
-            if col == "model_json":
+            if col in _NEON_JSON_COLUMNS:
                 # jsonb 参数按 JSON 文本传，SQL 里再 ::jsonb 转——直接塞 dict 会被
-                # 当成未知类型
-                val = json.dumps(val or {}, ensure_ascii=False)
+                # 当成未知类型。pages_json 允许"没有"：None 原样传，落 NULL——
+                # dumps 成 "{}" 会把"没有页面"变成"有一份空页面"，前端判空就错了。
+                if col == "model_json":
+                    val = json.dumps(val or {}, ensure_ascii=False)
+                else:
+                    val = json.dumps(val, ensure_ascii=False) if isinstance(val, dict) else None
             elif col == "version":
                 val = int(val or 1)
             elif col in ("entity_count", "page_count"):
@@ -1161,7 +1201,7 @@ class NeonHttpAppStore(AppStoreBackend):
                 val = bool(val)
             params.append(val)
         placeholders = ", ".join(
-            f"${i + 1}::jsonb" if col == "model_json" else f"${i + 1}"
+            f"${i + 1}::jsonb" if col in _NEON_JSON_COLUMNS else f"${i + 1}"
             for i, col in enumerate(_NEON_COLUMNS)
         )
         updates = ", ".join(f"{c} = excluded.{c}" for c in _NEON_COLUMNS if c != "id")
@@ -1714,6 +1754,7 @@ def save_app(
     preview_png_b64: Optional[str] = None,
     owner_id: Optional[str] = None,
     visibility: Optional[str] = None,
+    pages_json: Optional[dict[str, Any]] = None,
 ) -> str:
     """存一个新生成的原始应用（root=自己·v1·无 parent）。返回 app id。
 
@@ -1727,6 +1768,11 @@ def save_app(
     app_preview）。**没传就保留既有的那张**，不清空——这一路上大部分调用
     根本没生成图（重开夹具、纯精修、fork），若按"没传即无图"处理，一次重存
     就会把卡片打回活渲染。
+
+    pages_json 是 spec-first 链路画的整页 HTML（形状同会话侧
+    state.specFirstPages）。幂等更新时**没传就保留既有那份**，纪律与
+    preview_png_b64 同款：同一个模型重存（重开夹具等）不带页面是常态，
+    按"没传即无页"处理的话，一次重存就把应用中心的卡打回区块渲染。
     """
     backend = get_backend()
     if dedup_key:
@@ -1742,6 +1788,7 @@ def save_app(
                 # 已有主的应用变成无主、把私有变成公开。
                 owner_id=existing.get("owner_id") or owner_id,
                 visibility=existing.get("visibility") or visibility,
+                pages_json=pages_json if pages_json is not None else existing.get("pages_json"),
             )
             record["created_at"] = existing.get("created_at") or record["created_at"]
             app_id = backend.save(record)
@@ -1751,7 +1798,7 @@ def save_app(
     record = _build_record(
         model, goal=goal, session_id=session_id, gate_passed=gate_passed,
         app_id=app_id, root_id=app_id, parent_id=None, version=1, dedup_key=dedup_key,
-        owner_id=owner_id, visibility=visibility,
+        owner_id=owner_id, visibility=visibility, pages_json=pages_json,
     )
     saved = backend.save(record)
     _attach_preview(backend, saved, preview_png_b64, inherit_from=None)
@@ -1846,6 +1893,7 @@ def save_app_or_version(
     gate_passed: bool = True,
     preview_png_b64: Optional[str] = None,
     owner_id: Optional[str] = None,
+    pages_json: Optional[dict[str, Any]] = None,
 ) -> str:
     """闭环落库的正确入口（2026-07-27，审查修复）：
 
@@ -1857,6 +1905,9 @@ def save_app_or_version(
     此前闭环路径只调 save_app(dedup_key=会话+模型签名)：模型一变签名就变
     → miss → 每次精修都新建 root——版本链永远不产生（save_version 是全仓
     零调用的死代码），画廊里同一会话堆同名重复卡，v2 徽标恒为死代码。
+
+    pages_json：spec-first 这一轮画的整页 HTML，三条分支都原样传下去
+    （幂等更新按"没传保留既有"、新版本按"不继承"，语义各写在各自入口）。
     """
     dedup_key = model_signature(session_id, model)
     backend = get_backend()
@@ -1866,6 +1917,7 @@ def save_app_or_version(
             model, goal=goal, session_id=session_id,
             gate_passed=gate_passed, dedup_key=dedup_key,
             preview_png_b64=preview_png_b64, owner_id=owner_id,
+            pages_json=pages_json,
         )
     prior = backend.find_latest_by_session(session_id) if session_id else None
     if prior is not None:
@@ -1874,11 +1926,13 @@ def save_app_or_version(
             goal=goal or (prior.get("goal") or ""),
             session_id=session_id, gate_passed=gate_passed,
             preview_png_b64=preview_png_b64,
+            pages_json=pages_json,
         )
     return save_app(
         model, goal=goal, session_id=session_id,
         gate_passed=gate_passed, dedup_key=dedup_key,
         preview_png_b64=preview_png_b64, owner_id=owner_id,
+        pages_json=pages_json,
     )
 
 
@@ -1891,12 +1945,18 @@ def save_version(
     session_id: Optional[str] = None,
     gate_passed: bool = True,
     preview_png_b64: Optional[str] = None,
+    pages_json: Optional[dict[str, Any]] = None,
 ) -> str:
     """同一应用的新一版（同 root，version 递增）。用于对已有应用精修/重生成。
 
     缩略图：这一版自己生了图就用自己的，没生就继承上一版那张（见
     _attach_preview）——精修通常不重跑生图，不继承的话每精修一次卡片就掉回
     活渲染一次。
+
+    pages_json（spec-first 整页 HTML）**不继承上一版**，跟参照板的继承纪律
+    相反：开新版本意味着模型变了，上一版的 HTML 是照着旧模型打的孔，挂到
+    新版本上就是"东西看着在，其实是旧的"。这一版自己没画页面就落 None，
+    应用中心对它诚实回落区块渲染。
     """
     backend = get_backend()
     existing = backend.versions(root_id)
@@ -1914,6 +1974,7 @@ def save_version(
         app_id=app_id, root_id=root_id, parent_id=parent_id, version=next_version,
         owner_id=(base or {}).get("owner_id"),
         visibility=(base or {}).get("visibility"),
+        pages_json=pages_json,
     )
     saved = backend.save(record)
     _attach_preview(backend, saved, preview_png_b64, inherit_from=parent_id)
@@ -1957,6 +2018,10 @@ def fork_app(
         # 传进来——**不在这里默认 public**，那会让 Fork 成为绕过私有的后门。
         owner_id=owner_id,
         visibility=visibility if visibility is not None else source.get("visibility"),
+        # 副本的设计层逐字拷贝，页面 HTML 是设计层的一部分：模型没变，
+        # 孔照样对得上，跟着走。这跟 save_version 的"不继承"不矛盾——
+        # 那边是模型变了，这边是模型没变。
+        pages_json=source.get("pages_json"),
     )
     backend = get_backend()
     saved = backend.save(record)

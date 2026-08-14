@@ -125,6 +125,42 @@ class Test落库那一处:
         assert now.specFirstPages is None, "读到了上一轮的页面——东西看着在，其实是旧的"
 
 
+class Test应用中心那一份:
+    """页面除了落会话（上面那组），还要跟着闭环记录落进 App Store（2026-08-14）
+    ——应用中心的卡和只读预览靠它渲染真页面，不再拿区块渲染器凑合出一张
+    光板 antd 表格。"""
+
+    def test_peek只读不清(self):
+        """落 App Store 用的是 peek：它跑在会话侧 take 之前，用 take 会把
+        _cache_spec_first_pages 饿死——页面进了应用中心、会话里却没了。"""
+        sfp._last_pages_var.set({"pages": {"p1": "<html>甲</html>"}})
+        assert sfp.peek_last_pages() is not None
+        assert sfp.peek_last_pages() is not None, "peek 不许清场"
+        assert sfp.take_last_pages() is not None, "take 还能取到——peek 没动它"
+        assert sfp.take_last_pages() is None
+
+    def test_闭环落库真的带上了页面(self):
+        """判据钉在源码上：这条线断了不会有用例变红（落库照常成功、模型照常
+        正确，只有应用中心的卡永远回落区块渲染）。"""
+        from services import v5_capability_executor as ex
+
+        src = inspect.getsource(ex)
+        save_at = src.index("app_store.save_app_or_version(")
+        # 只看该调用后的一小段，防止匹配到文件里别处的同名字样
+        call = src[save_at: save_at + 1200]
+        assert "pages_json=peek_last_pages()" in call, (
+            "闭环落库没带页面——应用中心的卡拿不到 HTML"
+        )
+
+    def test_落库入口把页面传到了三条分支(self):
+        """save_app_or_version 三条分支（幂等更新/新版本/新应用）都得把
+        pages_json 传下去，漏一条就是"某些路径下页面没了"。"""
+        import services.app_store as store
+
+        src = inspect.getsource(store.save_app_or_version)
+        assert src.count("pages_json=pages_json") == 3
+
+
 class Test状态字段本身:
     def test_字段在_且默认为空(self):
         state = V5SessionState(sessionId="s4", goal={"text": "x"}, artifacts=[])

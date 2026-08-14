@@ -74,11 +74,36 @@ export interface AppStoreSummary {
    * URL 不跟着变，浏览器就永远停在升级前那张。
    */
   preview_tag?: string;
+  /**
+   * 这条记录有没有 spec-first 整页 HTML（2026-08-14）。有的话卡片缩略图和
+   * 只读预览走 HTML 活渲染（同推演舞台的 SpecPageLiveStage 一路），没有才
+   * 回落老的区块渲染（AppRuntimeScreen）。
+   *
+   * 页面本体不在摘要里（一套约 100KB+），在完整记录的 pages_json 里按卡懒拉
+   * ——跟 model_json 同一套两级取数纪律。可选：老后端不返回，缺失按 false
+   * 处理 = 区块渲染，即改动前的行为。
+   */
+  has_pages?: boolean;
 }
 
-/** 完整记录——摘要 + model_json（可直接重开渲染）。 */
+/**
+ * spec-first 整页 HTML 载荷——形状与会话侧 state.specFirstPages 同源
+ * （Python spec_first_pipeline 落库时的暂存形状）。
+ */
+export interface SpecPagesPayload {
+  version?: string;
+  /** pageId → 完整 HTML 文档（带 data-* 绑定孔） */
+  pages: Record<string, string>;
+  navItems?: Array<{ pageId?: string; label?: string }>;
+  /** 打过孔（6.5 步绑定成功）的页数；0 = 素颜页 */
+  boundPages?: number;
+}
+
+/** 完整记录——摘要 + model_json（可直接重开渲染）+ pages_json（整页 HTML）。 */
 export interface AppStoreRecord extends AppStoreSummary {
   model_json: unknown;
+  /** spec-first 整页 HTML；null/缺失 = 这一版没有页面（老链路产出）。 */
+  pages_json?: unknown;
 }
 
 const BASE = "/api/sliderule";

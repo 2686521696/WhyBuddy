@@ -218,6 +218,10 @@
 %%     ⚑ 现已落地：从 run_spec_first 带出 from_spec_first 标志，两段 enrich_*
 %%       与 preview_sink 一并按它跳过；回落老链路那一轮照常跑（那时区块页是
 %%       唯一产出，砍了就真没东西可看）。
+%%       ⚠ ⚑⚑G 把「可看」收窄成准确范围：3513b0df 之后**会话舞台不再回落
+%%       区块页**（spec-first 挂掉的轮次右侧退到推演剧场/证据看板），回落轮的
+%%       enrich 产物只在**应用中心**出现（AppBundleScreen 照旧走 AppRuntimeScreen）。
+%%       理由变窄了，结论不变：回落轮照跑——那仍是回落轮唯一可交互的产出。
 %%       判据 tests/test_enrich_skipped_on_spec_first.py，**双向各一条**，
 %%       且是**行为判据不是源码文本判据**（把两个 enrich 换成计数器真跑一遍）——
 %%       只查「新链路不跑」会被「把 enrich 整个删掉」骗过，那会把老路一起砍了。
@@ -282,11 +286,17 @@
 %%       成功、problems 也是空的）。踩过一次 ALLOWED_URI_REGEXP——它作用在
 %%       **所有**非 URI-safe 属性上，把 data-field / viewBox / d 全删了。
 %% ·
-%%   【⚑⚑E' 08-14 之后新欠的两样】
-%%     · **主轴仍然把新链路的页面扔掉**：executor 只取 run_spec_first(...)["model"]，
-%%       res["pages"] 整个丢弃。推演**过程中**右侧能看到新链路的 HTML
-%%       （spec_page 事件 → SpecPageLiveStage），推演**结束后**接管舞台的
-%%       还是老 ENRICH 路径生成的东西。HTML 载体这条线在交付口上还没接通。
+%%   【⚑⚑E' 08-14 之后新欠的两样 —— ⚑⚑G 复核：两条都过期了】
+%%     · ~~**主轴仍然把新链路的页面扔掉**~~ —— ⚑⚑G 更正：**已接通，且修在 ⚑⚑F 复核之前**。
+%%       原文写「executor 只取 run_spec_first(...)["model"]，res["pages"] 整个丢弃…
+%%       HTML 载体这条线在交付口上还没接通」。真相源三处，图上不复述细节：
+%%         v5_capability_executor._cache_spec_first_pages（a91998cd 02:54·两个分支都落页面）
+%%         serialize-sliderule-delivery-html.ts（9352d4c2 03:07·交付物打包+版本回退带页面）
+%%         SlideRuleStudio 的 livePages 合并（3513b0df·跑完之后接管舞台的就是 spec 页）
+%%       ⚠ 「做完了还标着没做」的**第七例**。刺眼的在时间线：⚑⚑F 复核
+%%       （326aa1aa 04:59）发生在前两个修复**之后**，却只墓碑了下面第二条、
+%%       漏扫了这一条——连 _cache_spec_first_pages 的 docstring 引用的都是
+%%       本段原文当病灶描述。漏的原因见 ⚑⚑G 段。
 %%     · ~~**没有人造 BindingSource**~~ —— ⚑⚑F 更正：**这条当场就过期了**。
 %%       原文写「全仓零处产出这个结构，所以解释器今天恒收到空数据源、bound 恒为 false」，
 %%       但 client/…/live-runtime/derive-binding-source.ts 已经存在，且
@@ -344,6 +354,52 @@
 %%     已补进 dependencies（66 条用例随即全过）。
 %%     ⚠ 同时发现 committed lockfile 与 package.json 本就对不上（jsdom 声明了却不在
 %%       importers 段），CI 若跑 --frozen-lockfile 会直接失败；已一并对齐。
+%% ·
+%% ═══════════════════════════════════════════════════════════════════════════
+%% ⚑⚑G 2026-08-14（第三遍复核）：⚑⚑E' 首条过期 —— 复核晚于修复，还是漏了
+%% ═══════════════════════════════════════════════════════════════════════════
+%%   这一轮同样没有新功能，核出一处过期 + 收窄一处口径，更正都写在原地
+%%   （墓碑体例，此处不复述第二份口径）：
+%%     · ⚑⚑E' 首条「主轴仍然把新链路的页面扔掉」——a91998cd（02:54）/
+%%       9352d4c2（03:07）就修掉了，⚑⚑F 复核（326aa1aa 04:59）在**之后**，
+%%       却只墓碑了同段第二条。第七例，方向仍是「做完了还标着没做」。
+%%     · ⚑⚑B 回落轮照跑 enrich 的理由——3513b0df（05:27）把区块页从会话舞台
+%%       下架后，「砍了就真没东西可看」只对**应用中心**成立，已按准确范围收窄。
+%%       （dcb42385 05:38 写那句时晚于 3513b0df 十一分钟——同一天两只手各改
+%%       一处，谁也没抬头看对方。executor 里那条同款注释已一并改口径。）
+%%   ⚠ ⚑⚑F 漏扫的原因值得记：它扫的范围是**节点标签与正文断言**，没把
+%%     「欠账清单」（⚑⚑E'）当成要核的口径。欠账也是口径——一条「还欠」写在
+%%     图上，跟一条「已做完」一样会被人当真。复核范围从此明确包含欠账清单。
+%% ·
+%% ═══════════════════════════════════════════════════════════════════════════
+%% ⚑⚑H 2026-08-14（下午·新落地）：应用中心接上 spec-first 页面 —— 木偶摆上台
+%% ═══════════════════════════════════════════════════════════════════════════
+%%   病灶（当天截图实锤）：spec-first 应用的模型**故意零区块**（版式在 HTML 里），
+%%   而应用中心（✧A AppsWorkbench）的缩略图与只读预览仍走区块渲染器
+%%   AppRuntimeScreen——渲染一个零区块模型，得到一张光板 antd 表格，还被
+%%   thumb-capture 采成 shot 存了档。交付物是 HTML，货架上摆的却是错渲染器的输出。
+%%   接线（纯管道，不新造渲染能力，真相源五处）：
+%%     · app_store 新列 pages_json（三个后端就地补列；摘要只带 has_pages 一位，
+%%       本体按卡懒拉——与 model_json 同一套两级取数）；executor 闭环落库时
+%%       pages_json=peek_last_pages()——**peek 不 take**，会话侧 _cache_spec_first_pages
+%%       的取走语义原样保留，防串轮的责任仍在 take 那一次
+%%     · 语义三条：dedup 幂等重存没传就保留（同 preview 纪律）；save_version
+%%       **不继承**（模型变了，旧 HTML 是照旧模型打的孔——"东西看着在其实是旧的"
+%%       就是这么来的）；fork **拷贝**（模型没变，孔照样对得上）
+%%     · 前端 AppsWorkbench：有页面的卡走 HtmlLiveThumb（同源 iframe 活渲染，
+%%       双闸节流与 LiveAppThumb 共用同一个 useThumbMountGate）；只读预览模态走
+%%       SpecPagesPreview → SpecPageLiveStage（与推演舞台同一个组件，开屏落在
+%%       导航第一页）。**shot/sheet 对这类应用停用**：html-to-image 拍不到 iframe
+%%       内容，存量 shot 正是要消掉的光板表格；sheet 在 spec-first 轮次根本不生成
+%%     · 存量卡不回填：接线前落库的记录没有 pages_json，照旧走区块渲染——
+%%       下一次闭环自然带上，不做数据迁移去编造"当时画过的页面"
+%%   判据 test_app_store.py（pages_json 五条×两后端）+ test_spec_first_pages_persisted.py
+%%   （Test应用中心那一份）+ apps-workbench.test.ts（extractSpecPages/orderedSpecPages/
+%%   两条数据源同口径）。全量 py 3397 / client 5770 绿。
+%%   ⚠ 顺手修的两笔环境账，记在这防"谁改的找不到主"：package.json overrides 里
+%%     dompurify 与直接依赖不一致导致 npm install 必炸 EOVERRIDE（改成 $dompurify，
+%%     仓里 ws 已有同款写法）；两个测试文件用 URL.pathname 拼 fs 路径，Windows 上
+%%     必红 C:\C:\…（改 fileURLToPath）。
 %% ·
 %% ★ 以下为 V5.9（08-13 白天）图全文，逐字保留；节点区含 ⚑ V6.0 标注的修正：
 %% ---------------------------------------------------------------------------
