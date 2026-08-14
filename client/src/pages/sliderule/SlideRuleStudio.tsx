@@ -91,6 +91,12 @@ interface SlideRuleStudioProps {
    *  证据看板 / 起草 JSON，**过程的碎片**；这里上屏的是成品页面本身，
    *  跟最后交付的是同一份 HTML。 */
   specPages?: SpecPageLive[];
+  /** 落库的 spec-first 产物（刷新之后的唯一来源）：
+   *  {version, pages: {pageId: html}, navItems, boundPages}。
+   *
+   *  ⚠ 跟 specPages 不是二选一，是**同一份东西的两个来源**：推演中走 SSE
+   *  逐页到达，跑完/刷新之后走这份。合并逻辑在下面一处做完，别在两处判。 */
+  specFirstPages?: { pages?: Record<string, string>; navItems?: unknown[] } | null;
 
   className?: string;
 }
@@ -110,6 +116,7 @@ export function SlideRuleStudio({
   llmDraftLabel = null,
   liveActionLabel = null,
   specPages = [],
+  specFirstPages = null,
   className = "",
   modelVersions = [],
   currentModelVersionId = null,
@@ -155,17 +162,46 @@ export function SlideRuleStudio({
     [fiveSystemModel, appTitle]
   );
 
+  // 两个来源合并成一份：推演中走 SSE 逐页到达（specPages），跑完/刷新之后
+  // 走落库的那份（specFirstPages）。
+  //
+  // ⚠ **落库的那份优先**：它是第 6.5 步打完孔、外壳统一之后的成品；
+  //   SSE 那份是第 3 步的素颜页。两份同 pageId 时拿素颜页覆盖成品，
+  //   等于把做完的活儿退回去——而且不会有任何一处报错。
+  const livePages = useMemo<SpecPageLive[]>(() => {
+    const settled = specFirstPages?.pages || null;
+    if (settled && Object.keys(settled).length > 0) {
+      const ids = Object.keys(settled);
+      return ids.map((id, i) => ({
+        pageId: id, html: settled[id], current: i + 1, total: ids.length,
+        // 落库那份是走完 6.5 步的。boundPages 为 0 时说明打孔没成，如实说
+        bound: Number((specFirstPages as { boundPages?: number })?.boundPages ?? 0) > 0,
+      }));
+    }
+    return specPages;
+  }, [specFirstPages, specPages]);
+
   // 舞台：推演中恒为 live 占位（用户裁决 2026-07-14：执行期不看中间过程
   // ——系统屏/看板/起草预览一律不展示，只留"推演中 + 当前动作"极简态，
   // 过程细节由左栏分阶段叙事承载）；推演完成直接呈现效果页：
   // 应用主舞台 > 推演剧场（缩略图手动透视）> 证据看板。
-  const stage: "theater" | "app" | "live" | "board" = isRunning
+  // ⚑ 2026-08-14：跑完之后**新链路的页面优先于老链路的区块页**。
+  //
+  // 用户原话「最后执行完，我发现变成老链路了」——过程中右侧是新链路的 HTML，
+  // 一收口就换成 AppRuntimeScreen 那套区块渲染（示例数据、年龄 148 那种）。
+  // 花 18 分钟画出来的五页在交付那一刻被顶掉。
+  //
+  // ⚠ 没有新链路页面时**原样走老路**：老链路今天还在跑（spec-first 挂了会
+  //   显式回落），那时区块页是唯一的产出，不能因为这条判定把它也挡掉。
+  const stage: "theater" | "app" | "live" | "pages" | "board" = isRunning
     ? "live"
-    : appSchema && fiveSystemModel
-      ? "app"
-      : activeSkillId
-        ? "theater"
-        : "board";
+    : livePages.length > 0
+      ? "pages"
+      : appSchema && fiveSystemModel
+        ? "app"
+        : activeSkillId
+          ? "theater"
+          : "board";
 
   // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化）+ 跟随应用内当前页
   const [xrayOn, setXrayOn] = useState<boolean>(() => {
@@ -348,13 +384,14 @@ export function SlideRuleStudio({
               )}
             </div>
           </>
-        ) : stage === "live" && specPages.length > 0 ? (
+        ) : (stage === "live" && livePages.length > 0) || stage === "pages" ? (
           /* 新链路已经交出页面：直接渲染，不再摆三个点。
              判据是"手上有没有能看的东西"，不是阶段名——没有页面时下面那支
              原样保留（老链路今天还在跑，它整轮都没有可看的中间产物）。 */
           <SpecPageLiveStage
-            pages={specPages}
-            statusLabel={liveActionLabel}
+            pages={livePages}
+            statusLabel={isRunning ? liveActionLabel : null}
+            running={isRunning}
             className="min-h-0 flex-1"
           />
         ) : stage === "live" ? (

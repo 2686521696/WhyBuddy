@@ -83,10 +83,16 @@ function preservePythonEvidenceProjection(
 ): V5SessionState {
   const pc = (state as any).publishClosure;
   const sg = (state as any).skillRuntimeGraph;
-  if (pc === undefined && sg === undefined) return state;
+  // spec-first 的整页 HTML 跟上面两个同一个道理：它是**交付物本身**，
+  // 掉了的话刷新之后右侧就只剩老链路的区块页（用户 08-14 报的那个现象的
+  // 持久化版本）。⚠ 这个函数是"存回去"那一侧，漏列一个键 = 存一次丢一次，
+  // 而且不会有任何一处报错。
+  const sp = (state as any).specFirstPages;
+  if (pc === undefined && sg === undefined && sp === undefined) return state;
   const next: any = { ...state };
   if (pc !== undefined) next.publishClosure = pc;
   if (sg !== undefined) next.skillRuntimeGraph = sg;
+  if (sp !== undefined) next.specFirstPages = sp;
   return next as V5SessionState;
 }
 

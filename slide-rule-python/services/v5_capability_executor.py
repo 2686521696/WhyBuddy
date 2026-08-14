@@ -669,6 +669,40 @@ def _try_llm_generate_evidence(
     return {a["id"].replace("llm-linkage-", ""): a for a in artifacts}
 
 
+def _cache_spec_first_pages(state: "V5SessionState") -> None:
+    """把 spec-first 这一轮画出来的整页 HTML 落到会话上。
+
+    ## 为什么需要这一步
+
+    此前 `_try_llm_generate_evidence` 只取 `run_spec_first(...)["model"]`，
+    **`res["pages"]` 整个扔掉**。表现是：推演过程中右侧能看到新链路的 HTML
+    （spec_page 事件逐页推），一跑完就换回老 ENRICH 区块路径——用户原话
+    「最后执行完，我发现变成老链路了」。花 18 分钟画出来的五页，交付那一刻蒸发。
+
+    ⚠ 这里没法从返回值拿：那个函数只回 model，而且**它拿不到 state**
+    （state 在调用方手里）。改签名要动十几处调用点，为一件"顺路交产物"的事
+    不划算。所以走请求域暂存，取一次就清（见 spec_first_pipeline.take_last_pages）。
+
+    ⚠ **回落老链路的那一轮不许留下页面**：take_last_pages 是"取走"语义，
+    而且只在整条链跑成时才写入。两条合起来保证——新链路挂了、老路兜住的
+    那一轮，state.specFirstPages 是空的，而不是上一轮的旧页面。
+    「东西看着在，其实是旧的」是本仓数得最多的那个形状。
+
+    任何异常都吞掉：这是"顺路"的事，绝不能把一次能正常跑完的推演带崩
+    （与 _cache_gate_passed_model 同一条纪律）。
+    """
+    try:
+        from .spec_first_pipeline import take_last_pages
+
+        got = take_last_pages()
+        if not got or not (got.get("pages") or {}):
+            return
+        state.specFirstPages = got
+        print(f"[v5_capability_executor] spec-first 页面落库：{len(got['pages'])} 份")
+    except Exception as exc:  # noqa: BLE001 — 顺路的事不许打死主路
+        print(f"[v5_capability_executor] spec-first 页面落库失败（不影响推演）：{str(exc)[:160]}")
+
+
 def _cache_gate_passed_model(
     state: V5SessionState, llm_result: Dict[str, Dict[str, Any]], instruction: str
 ) -> None:
@@ -809,6 +843,7 @@ def _build_per_skill_evidence(
             for skill in REQUIRED_EVIDENCE_KEYS:
                 matches[skill] = llm_result[skill]
             _cache_gate_passed_model(state, llm_result, goal)
+            _cache_spec_first_pages(state)
         else:
             # D2 修复（2026-07-27 迭代体验审查）：精修失败（LLM 网关抖动/
             # 输出截断/过不了闸）不得摧毁已收口的 6/6 闭环——此前六段证据
@@ -867,6 +902,7 @@ def _build_per_skill_evidence(
                 if existing is None or "_model_section" not in existing:
                     matches[skill] = llm_result[skill]
             _cache_gate_passed_model(state, llm_result, goal)
+            _cache_spec_first_pages(state)
     elif not blocked_signal and recognized_domain is None and (goal or "").strip():
         # 新颖意图但 LLM 生成未开启 → 注定 0/6。把原因留痕给 blocker，
         # 否则用户只看到笼统的 closure blocked，无从排查。

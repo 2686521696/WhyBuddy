@@ -403,6 +403,19 @@ class V5SessionState(BaseModel):
     # skillRuntimeGraph (cross-skill runtime evidence graph from python /drive-full and /drive-marathon):
     # Kept durable alongside publishClosure so browser reload can replay Skill linkage surfaces.
     skillRuntimeGraph: Optional[Dict[str, Any]] = None
+    # spec-first 链路产出的整页 HTML（2026-08-14）：
+    # {version, pages: {pageId: html}, navItems: [...], boundPages: int}
+    #
+    # ## 为什么必须落到状态里，而不是只走 SSE
+    #
+    # 此前主轴只取 run_spec_first(...)["model"]，**res["pages"] 整个扔掉**。
+    # 结果是：推演**过程中**右侧能看到新链路的 HTML（spec_page 事件），
+    # 一跑完就换回老 ENRICH 区块路径——用户原话「最后执行完，我发现变成
+    # 老链路了」。花了 18 分钟画出来的五页，交付那一刻蒸发。
+    #
+    # 位置照 skillRuntimeGraph 的先例（它的注释写得很清楚：durable 是为了
+    # 刷新之后还能重放）。只走 SSE 的话，关掉页面再进来就什么都没有了。
+    specFirstPages: Optional[Dict[str, Any]] = None
     # 本轮运行的降级状况（services/run_degradation.py 写、闭环判定读）。
     # 结构照 Kubernetes metav1.Condition：{type,status,reason,message,lastTransitionTime}。
     # 存在降级条目时闭环不许判 closed——降级轮的产出不可信，详见该模块头。

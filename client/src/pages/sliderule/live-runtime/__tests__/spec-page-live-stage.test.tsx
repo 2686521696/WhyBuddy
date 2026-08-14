@@ -145,3 +145,29 @@ describe("换页要重挂，不能留着上一页", () => {
     expect(frames()[0]).not.toBe(before);
   });
 });
+
+describe("跑完之后不许假装还在生成", () => {
+  /**
+   * ⚠ 这条是 08-14 那次交接改动带出来的：舞台在推演结束后**继续**渲染
+   * 新链路的页面（原来是一收口就换回老链路区块页）。角标如果还挂着
+   * 「界面生成中 5/5」，用户会一直等一个不会再变的东西。
+   */
+  it("running=false 时角标说『共几页』，不说『生成中』", () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() =>
+      root!.render(
+        <SpecPageLiveStage pages={[page("p1", 1, 2), page("p2", 2, 2)]} running={false} />
+      )
+    );
+    const text = stageText();
+    expect(text).toContain("共 2 页");
+    expect(text).not.toContain("生成中");
+  });
+
+  it("默认仍按推演中处理 —— 老调用方不受影响", () => {
+    mount([page("p1", 1, 2)]);
+    expect(stageText()).toContain("生成中");
+  });
+});

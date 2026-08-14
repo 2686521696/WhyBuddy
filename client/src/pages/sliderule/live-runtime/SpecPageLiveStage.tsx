@@ -57,12 +57,16 @@ export interface SpecPageLiveStageProps {
   pages: SpecPageLive[];
   /** 当前步骤一句话（"逐页画界面（并发）"…）——右上角标注，不重复左栏 */
   statusLabel?: string | null;
+  /** 还在推演中。角标据此说"生成中 n/m"还是"共 n 页"——**跑完了还挂着
+   *  「生成中」是在撒谎**，用户会一直等一个不会再变的东西。 */
+  running?: boolean;
   className?: string;
 }
 
 export function SpecPageLiveStage({
   pages,
   statusLabel = null,
+  running = true,
   className = "",
 }: SpecPageLiveStageProps): React.ReactElement | null {
   // 手动选过就听手动的；没选过恒跟最新一页（页面在陆续到达，跟着最新的
@@ -86,10 +90,16 @@ export function SpecPageLiveStage({
       data-testid="sliderule-spec-page-stage"
     >
       <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-        <span className="flex items-center gap-1.5 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#1677ff]" />
-          界面生成中 {pages.length}/{total || pages.length}
-        </span>
+        {running ? (
+          <span className="flex items-center gap-1.5 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#1677ff]" />
+            界面生成中 {pages.length}/{total || pages.length}
+          </span>
+        ) : (
+          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+            运行中 · 共 {pages.length} 页
+          </span>
+        )}
         {pages.map(p => (
           <button
             key={p.pageId}

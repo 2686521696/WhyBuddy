@@ -93,6 +93,32 @@ def set_page_sink(sink: Optional[Callable[[str, str, int, int], None]]) -> None:
     _page_sink_var.set(sink)
 
 
+#: 本轮跑出来的整页 HTML，供**调用方落库**用。
+#:
+#: 为什么要这么一个暂存而不是从返回值里拿：主轴那一处
+#: （v5_capability_executor._try_llm_generate_evidence）只回 model，它自己
+#: **拿不到 state**——state 在它的调用方手里。改签名要动十几处调用点，
+#: 而这件事本身只是"顺路把产物交出去"。
+#:
+#: ⚠ 同样是 ContextVar 不是模块属性，理由跟上面那条 sink 一样：
+#: 多租户下页面串台等于把 A 的界面存进 B 的会话。
+_last_pages_var: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
+    "sliderule_spec_first_last_pages", default=None
+)
+
+
+def take_last_pages() -> Optional[Dict[str, Any]]:
+    """取走本轮产物（取一次就清）。
+
+    **取走**而不是"读一遍"：留在原地的话，下一轮如果新链路挂了回落老路，
+    调用方会读到**上一轮的页面**当成这一轮的产出落库——那正是本仓反复
+    数到的那个形状（东西看着在，其实是旧的）。
+    """
+    got = _last_pages_var.get()
+    _last_pages_var.set(None)
+    return got
+
+
 _ENABLE_ENV = "SLIDERULE_SPEC_FIRST"
 #: **默认开，显式关才关**（2026-08-14）。词表照仓里另外六处同款开关逐字一致
 #: （enrich_timing / block_narrowing / intake_judge / v5_parallel_generate /
@@ -266,7 +292,7 @@ def run_spec_first(
             st["failed"] = len(bound_failed)
         stages["bind"] = dict(st)
 
-    return {
+    result = {
         "version": SPEC_FIRST_VERSION,
         "model": model,
         "spec": spec,
@@ -277,3 +303,14 @@ def run_spec_first(
         "failedPages": {**failed, **bound_failed},
         "stages": stages,
     }
+    # 顺路把页面留给调用方落库（见 take_last_pages 的说明）。
+    # ⚠ 只在**整条链跑成**之后写：中途抛 SpecFirstError 时这里根本不执行，
+    #   于是暂存里不会留下半份产物冒充成品。
+    _last_pages_var.set({
+        "version": SPEC_FIRST_VERSION,
+        "pages": dict(pages),
+        "navItems": list(result["navItems"]),
+        "boundPages": len(pages) if bind_html and not bound_failed else 0,
+        "failedPages": dict(result["failedPages"]),
+    })
+    return result

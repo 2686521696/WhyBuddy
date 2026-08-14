@@ -1248,6 +1248,11 @@ function SlideRuleUnified({
             // 掐）——掐掉的话闭环那一瞬间页面会先消失、再由应用舞台接管，
             // 中间闪一下空白。舞台判定在 Studio 里一处做完。
             specPages={specPages}
+            // 落库的那份：刷新之后右侧还能是新链路的页面，而不是掉回区块页
+            specFirstPages={
+              (sessionState as { specFirstPages?: { pages?: Record<string, string> } | null })
+                .specFirstPages ?? null
+            }
             modelVersions={(sessionState as { modelVersions?: Array<{ id: string; instruction?: string }> }).modelVersions ?? []}
             currentModelVersionId={(sessionState as { currentModelVersionId?: string | null }).currentModelVersionId ?? null}
             onRestoreVersion={restoreModelVersion}
