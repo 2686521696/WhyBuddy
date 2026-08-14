@@ -341,11 +341,31 @@ def generate_pages_parallel(
         # 锚在开始的话，页数一多就必然误伤：6 页本来就比 3 页久，一个固定的
         # 总时长要么对小批太松、要么对大批太严。锚在"上次有页落地"则跟批量
         # 大小无关，量的是**这批还在不在动**。
-        last_progress = time.monotonic()
+        #
+        # ★ 但它**只在第一页落地之后才上膛**（2026-08-14 当天真机修回来的）：
+        #
+        #   头一版从整批开跑就开始计时，结果 120s 的预算在第一张页到达之前
+        #   就开火——真机 `got=0 failed=5 missingPages=p1..p5`，整条新链路
+        #   被自己的截止线打死、回落老链路。
+        #
+        #   ⚠ 阈值是我从"页与页之间最大间隔 43s"推的，**而开跑到第一张页
+        #     本来就要 150~175s**（单页基准 149.0s）。同一批数据里两个区间
+        #     量的是不同的东西，我拿其中一个去卡另一个。
+        #
+        #   概念上也应当如此：「落后者」的前提是**别人已经到了**。一个都没到
+        #   的时候大家都在飞，没有落后者可言。那一段的兜底是每页自己的
+        #   LLM 超时与重试（call_llm_with_retry），不归这条线管。
+        last_progress: Optional[float] = None
         while pending:
+            # last_progress 为 None = 还没有任何一页落地 → 不设限，等着
+            budget = (
+                None
+                if last_progress is None
+                else max(0.0, idle_budget - (time.monotonic() - last_progress))
+            )
             waited, pending = wait(
                 pending,
-                timeout=max(0.0, idle_budget - (time.monotonic() - last_progress)),
+                timeout=budget,
                 return_when=FIRST_COMPLETED,
             )
             if not waited:

@@ -120,6 +120,50 @@ class Test落后者不再钉死整批:
         assert "p3" not in res["pages"], "超时的页不许被塞一份占位 HTML"
 
 
+class Test第一页之前不上膛:
+    """★ 这一条是**真机打脸补回来的**（2026-08-14 当天）。
+
+    头一版从整批开跑就计时，于是 120s 预算在第一张页到达之前就开火：
+    真机 `got=0 failed=5 missingPages=p1..p5`，整条新链路被自己的截止线
+    打死、回落老链路。
+
+    ⚠ 根因是我推阈值时用错了区间：120s 来自「页与页之间最大间隔 43s」，
+      **而开跑到第一张页本来就要 150~175s**（单页基准 149.0s）。
+      同一批数据里的两个区间量的是不同的东西，我拿其中一个去卡了另一个。
+
+    ⚠ 原来那批用例全都用「毫秒级返回的假页」，第一页永远在预算内到达，
+      所以**一条都没红**。这条用例专门把第一页拖到超过预算。
+    """
+
+    def test_第一页比预算慢也不许被截断(self):
+        # 预算 0.6s（见 fixture），所有页都要 1.2s —— 全都比预算慢
+        res = spec_page_html.generate_pages_parallel(
+            _spec(3), llm_call=_maker({f"p{i}": 1.2 for i in range(1, 4)}), max_workers=3
+        )
+        assert res["failed"] == {}, (
+            f"第一页还没到就被截断了 —— 截止线在首页之前就上膛了？{res['failed']}"
+        )
+        assert len(res["pages"]) == 3
+
+    def test_一页都不来时仍由单页超时兜底_不在这里死等(self):
+        """⚠ 反向那半：首页之前不设限，不等于"永远等下去"。
+
+        这一段的兜底是每页自己的 LLM 超时与重试（call_llm_with_retry），
+        不归这条线管。这里验的是**职责边界**：单页自己抛错时整批照常收尾。
+        """
+        def boom(messages, **kw):
+            raise RuntimeError("用例注入：这一页自己挂了")
+
+        res = spec_page_html.generate_pages_parallel(
+            _spec(2), llm_call=boom, max_workers=2
+        )
+        assert res["pages"] == {}
+        assert set(res["failed"]) == {"p1", "p2"}
+        assert all("截止线" not in v and "静默" not in v for v in res["failed"].values()), (
+            f"这是单页自己失败，不该被记成截止线超时：{res['failed']}"
+        )
+
+
 class Test截止线锚在进展上:
     def test_一直有进展就不该被截断(self):
         """⚠ 反向判据：把锚点写成「整批开始」也能让上面那条变绿，
